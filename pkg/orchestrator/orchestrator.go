@@ -267,6 +267,15 @@ func wtIMPLPath(repoPath, implDocPath, wtPath string) string {
 	return filepath.Join(wtPath, rel)
 }
 
+// AgentBlockedPayload is the event data published when an agent reports partial or blocked status (E19).
+type AgentBlockedPayload struct {
+	Agent       string             `json:"agent"`
+	Wave        int                `json:"wave"`
+	Status      string             `json:"status"`
+	FailureType string             `json:"failure_type"`
+	Action      OrchestratorAction `json:"action"`
+}
+
 // launchAgent creates a worktree for one agent, calls Execute, then
 // polls WaitForCompletion. Returns the first non-nil error encountered.
 func (o *Orchestrator) launchAgent(
@@ -301,6 +310,14 @@ func (o *Orchestrator) launchAgent(
 			Files: agentSpec.FilesOwned,
 		},
 	})
+
+	// E23: Construct per-agent context payload instead of passing full IMPL doc prompt.
+	if payload, err := protocol.ExtractAgentContext(o.implDocPath, agentSpec.Letter); err == nil {
+		agentSpec.Prompt = protocol.FormatAgentContextPayload(payload)
+	} else {
+		// Fallback: use existing prompt from agentSpec (already set from IMPL doc parse).
+		fmt.Fprintf(os.Stderr, "orchestrator: E23 context extraction failed for agent %s: %v (falling back to full prompt)\n", agentSpec.Letter, err)
+	}
 
 	// b. Execute the agent via the backend, streaming output chunks as SSE events.
 	if _, err := runner.ExecuteStreaming(ctx, &agentSpec, wtPath, func(chunk string) {
@@ -358,6 +375,22 @@ func (o *Orchestrator) launchAgent(
 			Branch: fmt.Sprintf("saw/wave%d-agent-%s", waveNum, agentSpec.Letter),
 		},
 	})
+
+	// E19: If agent reported partial or blocked, route the failure and publish an event.
+	// This does NOT relaunch the agent — that is a future follow-on task.
+	if report != nil && (report.Status == types.StatusPartial || report.Status == types.StatusBlocked) {
+		action := RouteFailure(report.FailureType)
+		o.publish(OrchestratorEvent{
+			Event: "agent_blocked",
+			Data: AgentBlockedPayload{
+				Agent:       agentSpec.Letter,
+				Wave:        waveNum,
+				Status:      string(report.Status),
+				FailureType: string(report.FailureType),
+				Action:      action,
+			},
+		})
+	}
 
 	return nil
 }
