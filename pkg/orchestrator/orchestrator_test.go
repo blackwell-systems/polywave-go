@@ -682,6 +682,140 @@ func TestLaunchAgent_PollsWorktreeIMPLDoc(t *testing.T) {
 	}
 }
 
+// TestLaunchAgentE23FallbackOnExtractError verifies that when ExtractAgentContext
+// fails (e.g. agent letter not found in IMPL doc), launchAgent still runs the
+// agent with its original prompt and does not panic.
+func TestLaunchAgentE23FallbackOnExtractError(t *testing.T) {
+	origCreator := worktreeCreatorFunc
+	origWait := waitForCompletionFunc
+	origNewBackend := newBackendFunc
+	origNewRunner := newRunnerFunc
+	t.Cleanup(func() {
+		worktreeCreatorFunc = origCreator
+		waitForCompletionFunc = origWait
+		newBackendFunc = origNewBackend
+		newRunnerFunc = origNewRunner
+	})
+
+	worktreeCreatorFunc = func(_ *worktree.Manager, _ int, letter string) (string, error) {
+		return "/tmp/fake-wt-" + letter, nil
+	}
+	waitForCompletionFunc = func(_, _ string, _, _ time.Duration) (*types.CompletionReport, error) {
+		return &types.CompletionReport{Status: types.StatusComplete}, nil
+	}
+
+	var capturedPrompt string
+	fake := &fakeBackend{}
+	fake.runFn = func(systemPrompt string) (string, error) {
+		capturedPrompt = systemPrompt
+		return "response", nil
+	}
+	newBackendFunc = func(_ BackendConfig) (backend.Backend, error) {
+		return fake, nil
+	}
+	newRunnerFunc = func(b backend.Backend, wm *worktree.Manager) *agent.Runner {
+		return agent.NewRunner(b, wm)
+	}
+
+	// IMPL doc path does not exist, so ExtractAgentContext will fail.
+	// The agent should still run with its original prompt (fallback).
+	const originalPrompt = "original agent prompt"
+	doc := &types.IMPLDoc{
+		Waves: []types.Wave{
+			{
+				Number: 1,
+				Agents: []types.AgentSpec{
+					{Letter: "Z", Prompt: originalPrompt},
+				},
+			},
+		},
+	}
+	// Use a non-existent implDocPath so ExtractAgentContext always errors.
+	o := newFromDoc(doc, "/repo", "/nonexistent/IMPL.md")
+
+	if err := o.RunWave(1); err != nil {
+		t.Fatalf("RunWave returned unexpected error: %v", err)
+	}
+
+	// The backend should have been called with the original prompt (fallback).
+	if capturedPrompt != originalPrompt {
+		t.Errorf("E23 fallback: backend received prompt %q, want original %q", capturedPrompt, originalPrompt)
+	}
+}
+
+// TestLaunchAgentE19BlockedEvent verifies that when an agent reports blocked status,
+// an "agent_blocked" event is published with the correct RouteFailure action.
+func TestLaunchAgentE19BlockedEvent(t *testing.T) {
+	origCreator := worktreeCreatorFunc
+	origWait := waitForCompletionFunc
+	origNewBackend := newBackendFunc
+	origNewRunner := newRunnerFunc
+	t.Cleanup(func() {
+		worktreeCreatorFunc = origCreator
+		waitForCompletionFunc = origWait
+		newBackendFunc = origNewBackend
+		newRunnerFunc = origNewRunner
+	})
+
+	worktreeCreatorFunc = func(_ *worktree.Manager, _ int, letter string) (string, error) {
+		return "/tmp/fake-wt-" + letter, nil
+	}
+	waitForCompletionFunc = func(_, _ string, _, _ time.Duration) (*types.CompletionReport, error) {
+		return &types.CompletionReport{
+			Status:      types.StatusBlocked,
+			FailureType: types.FailureTypeTransient,
+		}, nil
+	}
+
+	fake := &fakeBackend{}
+	newBackendFunc = func(_ BackendConfig) (backend.Backend, error) {
+		return fake, nil
+	}
+	newRunnerFunc = func(b backend.Backend, wm *worktree.Manager) *agent.Runner {
+		return agent.NewRunner(b, wm)
+	}
+
+	var mu sync.Mutex
+	var received []OrchestratorEvent
+	o := makeOrchWithWave(1, "A")
+	o.SetEventPublisher(func(ev OrchestratorEvent) {
+		mu.Lock()
+		received = append(received, ev)
+		mu.Unlock()
+	})
+
+	if err := o.RunWave(1); err != nil {
+		t.Fatalf("RunWave returned unexpected error: %v", err)
+	}
+
+	mu.Lock()
+	defer mu.Unlock()
+
+	var blockedEv *OrchestratorEvent
+	for i := range received {
+		if received[i].Event == "agent_blocked" {
+			blockedEv = &received[i]
+			break
+		}
+	}
+	if blockedEv == nil {
+		t.Fatal("expected agent_blocked event, got none")
+	}
+	payload, ok := blockedEv.Data.(AgentBlockedPayload)
+	if !ok {
+		t.Fatalf("agent_blocked Data is %T, want AgentBlockedPayload", blockedEv.Data)
+	}
+	if payload.Agent != "A" {
+		t.Errorf("agent_blocked payload.Agent = %q, want A", payload.Agent)
+	}
+	if payload.Status != "blocked" {
+		t.Errorf("agent_blocked payload.Status = %q, want blocked", payload.Status)
+	}
+	if payload.Action != ActionRetry {
+		t.Errorf("agent_blocked payload.Action = %v, want ActionRetry (transient failure)", payload.Action)
+	}
+}
+
 // TestState_String verifies that each state produces a human-readable name.
 func TestState_String(t *testing.T) {
 	cases := []struct {
