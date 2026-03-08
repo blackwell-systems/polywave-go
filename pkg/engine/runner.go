@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"sync"
 	"time"
@@ -50,8 +51,16 @@ func RunScout(ctx context.Context, opts RunScoutOpts, onChunk func(string)) erro
 		scoutMdBytes = []byte("You are a Scout agent. Analyze the codebase and produce an IMPL doc.")
 	}
 
-	prompt := fmt.Sprintf("%s\n\n## Feature\n%s\n\n## IMPL Output Path\n%s\n",
-		string(scoutMdBytes), opts.Feature, opts.IMPLOutPath)
+	// E17: Prepend docs/CONTEXT.md if present, so Scout has project memory.
+	contextMD := readContextMD(opts.RepoPath)
+	var prompt string
+	if contextMD != "" {
+		prompt = fmt.Sprintf("## Project Memory (docs/CONTEXT.md)\n\n%s\n\n%s\n\n## Feature\n%s\n\n## IMPL Output Path\n%s\n",
+			contextMD, string(scoutMdBytes), opts.Feature, opts.IMPLOutPath)
+	} else {
+		prompt = fmt.Sprintf("%s\n\n## Feature\n%s\n\n## IMPL Output Path\n%s\n",
+			string(scoutMdBytes), opts.Feature, opts.IMPLOutPath)
+	}
 
 	b := cli.New("", backend.Config{})
 	runner := agent.NewRunner(b, nil)
@@ -109,6 +118,28 @@ func StartWave(ctx context.Context, opts RunWaveOpts, onEvent func(Event)) error
 			return fmt.Errorf("engine.StartWave: RunWave %d: %w", waveNum, err)
 		}
 
+		// E20: Post-wave stub scan (informational only).
+		if doc := orch.IMPLDoc(); doc != nil {
+			stubReports := make(map[string]*types.CompletionReport)
+			for _, ag := range wave.Agents {
+				if r, err := protocol.ParseCompletionReport(opts.IMPLPath, ag.Letter); err == nil {
+					stubReports[ag.Letter] = r
+				}
+			}
+			_ = orchestrator.RunStubScan(opts.IMPLPath, waveNum, stubReports, "")
+		}
+
+		// E21: Post-wave quality gates before merge.
+		if doc := orch.IMPLDoc(); doc != nil && doc.QualityGates != nil {
+			results, err := orchestrator.RunQualityGates(opts.RepoPath, doc.QualityGates)
+			for _, r := range results {
+				onEvent(Event{Event: "quality_gate_result", Data: r})
+			}
+			if err != nil {
+				return fmt.Errorf("engine.StartWave: quality gate wave %d: %w", waveNum, err)
+			}
+		}
+
 		if err := orch.MergeWave(waveNum); err != nil {
 			publish("run_failed", map[string]string{"error": err.Error()})
 			return fmt.Errorf("engine.StartWave: MergeWave %d: %w", waveNum, err)
@@ -132,6 +163,22 @@ func StartWave(ctx context.Context, opts RunWaveOpts, onEvent func(Event)) error
 
 		// Between waves, pause at gate (no-op in engine layer — callers handle gating).
 		_ = i
+	}
+
+	// E18: Update project memory after final wave completes.
+	slug := opts.Slug
+	if slug == "" {
+		slug = filepath.Base(filepath.Dir(opts.IMPLPath))
+	}
+	entry := orchestrator.ContextMDEntry{
+		Slug:    slug,
+		ImplDoc: opts.IMPLPath,
+		Waves:   len(waves),
+		Agents:  totalAgents,
+	}
+	if err := orchestrator.UpdateContextMD(opts.RepoPath, entry); err != nil {
+		// Non-fatal: log but don't abort.
+		fmt.Fprintf(os.Stderr, "engine: E18 UpdateContextMD failed: %v\n", err)
 	}
 
 	publish("run_complete", orchestrator.RunCompletePayload{
@@ -210,7 +257,41 @@ func RunScaffold(ctx context.Context, implPath, repoPath, sawRepoPath string, on
 		return fmt.Errorf("engine.RunScaffold: scaffold agent failed: %w", execErr)
 	}
 
+	// E22: Scaffold build verification — compile to catch scaffold errors early.
+	if err := runScaffoldBuildVerification(repoPath, onEvent); err != nil {
+		return fmt.Errorf("engine.RunScaffold: build verification failed: %w", err)
+	}
+
 	publish("scaffold_complete", map[string]string{"impl_path": implPath})
+	return nil
+}
+
+// readContextMD reads docs/CONTEXT.md from repoPath and returns its contents (E17).
+// Returns empty string if the file does not exist or cannot be read.
+func readContextMD(repoPath string) string {
+	p := filepath.Join(repoPath, "docs", "CONTEXT.md")
+	b, err := os.ReadFile(p)
+	if err != nil {
+		return ""
+	}
+	return string(b)
+}
+
+// runScaffoldBuildVerification runs `go build ./...` in repoPath to catch
+// scaffold errors early (E22). If no go.mod exists in repoPath, returns nil
+// (skip silently — not a Go project).
+func runScaffoldBuildVerification(repoPath string, onEvent func(Event)) error {
+	// Guard: only run for Go projects.
+	if _, err := os.Stat(filepath.Join(repoPath, "go.mod")); os.IsNotExist(err) {
+		return nil
+	}
+
+	cmd := exec.Command("go", "build", "./...")
+	cmd.Dir = repoPath
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("go build ./... failed: %w\n%s", err, string(out))
+	}
 	return nil
 }
 
