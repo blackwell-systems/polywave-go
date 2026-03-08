@@ -2,7 +2,7 @@ package worktree
 
 import (
 	"fmt"
-	"os"
+	"os/exec"
 	"path/filepath"
 	"testing"
 )
@@ -24,21 +24,26 @@ func TestManagerNew(t *testing.T) {
 	}
 }
 
-// TestManagerCreateRemoveRoundtrip creates a worktree entry and removes it,
-// verifying that the Manager's tracking map is updated correctly.
-// Because internal/git is a stub (no-op) in this worktree, we exercise the
-// Manager's path/branch logic and tracking bookkeeping end-to-end.
+// TestManagerCreateRemoveRoundtrip creates a worktree and removes it in a
+// real git repo, verifying path construction and tracking map correctness.
 func TestManagerCreateRemoveRoundtrip(t *testing.T) {
 	repoDir := t.TempDir()
 
-	// Initialize a bare-enough git repo so MkdirAll in Create doesn't fail.
-	if err := os.MkdirAll(filepath.Join(repoDir, ".git"), 0o755); err != nil {
-		t.Fatalf("setup git dir: %v", err)
+	// Initialize a real git repo so git worktree commands work.
+	cmds := [][]string{
+		{"git", "-C", repoDir, "init", "-b", "main"},
+		{"git", "-C", repoDir, "config", "user.email", "test@test.com"},
+		{"git", "-C", repoDir, "config", "user.name", "Test"},
+		{"git", "-C", repoDir, "commit", "--allow-empty", "-m", "init"},
+	}
+	for _, args := range cmds {
+		if out, err := exec.Command(args[0], args[1:]...).CombinedOutput(); err != nil {
+			t.Fatalf("setup: %v: %s", err, out)
+		}
 	}
 
 	m := New(repoDir)
 
-	// Create — git.WorktreeAdd is a stub so it succeeds without touching disk.
 	wtPath, err := m.Create(1, "D")
 	if err != nil {
 		t.Fatalf("Create returned unexpected error: %v", err)
