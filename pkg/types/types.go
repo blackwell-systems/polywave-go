@@ -76,8 +76,9 @@ type IMPLDoc struct {
 	InterfaceContractsText string
 	DependencyGraphText    string
 	PostMergeChecklistText string
-	PreMortem              *PreMortem // parsed ## Pre-Mortem section; nil if absent
-	StubReportText         string     // raw markdown content of ## Stub Report section; empty if absent
+	PreMortem              *PreMortem   // parsed ## Pre-Mortem section; nil if absent
+	StubReportText         string       // raw markdown content of ## Stub Report section; empty if absent
+	QualityGates           *QualityGates // nil if absent; E21
 }
 
 // FileOwnershipInfo holds parsed data for one row of the file ownership table.
@@ -113,6 +114,7 @@ type CompletionReport struct {
 	OutOfScopeDeps       []string
 	TestsAdded           []string
 	Verification         string
+	FailureType          FailureType `yaml:"failure_type,omitempty"` // E19
 }
 
 // InterfaceDeviation records a deviation from the spec contract
@@ -155,4 +157,31 @@ type ValidationError struct {
 	BlockType  string // e.g. "impl-file-ownership", "impl-dep-graph", "impl-wave-structure", "impl-completion-report"
 	LineNumber int    // 1-based line number of the opening fence in the IMPL doc
 	Message    string // human-readable description of the violation
+}
+
+// FailureType classifies why an agent reported partial or blocked status.
+// E19
+type FailureType string
+
+const (
+	FailureTypeTransient   FailureType = "transient"
+	FailureTypeFixable     FailureType = "fixable"
+	FailureTypeNeedsReplan FailureType = "needs_replan"
+	FailureTypeEscalate    FailureType = "escalate"
+	FailureTypeTimeout     FailureType = "timeout"
+)
+
+// QualityGate is one gate from the ## Quality Gates IMPL doc section (E21).
+type QualityGate struct {
+	Type        string
+	Command     string
+	Required    bool
+	Description string
+}
+
+// QualityGates holds the parsed ## Quality Gates section.
+// E21
+type QualityGates struct {
+	Level string
+	Gates []QualityGate
 }
