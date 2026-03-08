@@ -31,6 +31,15 @@ func TestStartWaveEmptyIMPL(t *testing.T) {
 	}
 }
 
+// TestReadContextMDMissing verifies that readContextMD returns "" when no CONTEXT.md exists.
+func TestReadContextMDMissing(t *testing.T) {
+	dir := t.TempDir()
+	result := readContextMD(dir)
+	if result != "" {
+		t.Errorf("expected empty string for missing CONTEXT.md, got %q", result)
+	}
+}
+
 // TestParseIMPLDocDelegate writes a minimal IMPL doc and verifies ParseIMPLDoc returns non-nil.
 func TestParseIMPLDocDelegate(t *testing.T) {
 	dir := t.TempDir()
