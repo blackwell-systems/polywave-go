@@ -262,6 +262,12 @@ func ParseIMPLDoc(path string) (*types.IMPLDoc, error) {
 			doc.StubReportText = parseInterfaceContractsSection(scanner)
 			state = stateTop
 
+		// ── Quality Gates section: ## Quality Gates
+		case trimmed == "## Quality Gates" || trimmed == "### Quality Gates":
+			flushAgent()
+			doc.QualityGates = parseQualityGatesSection(scanner)
+			state = stateTop
+
 		// ── Agent subsection: ### Agent X: Description  or  #### Agent X — Description
 		//    Accepted in any state (wave, agent, or top-level). If no ## Wave N
 		//    section is active, auto-create wave 1.
@@ -1001,6 +1007,127 @@ func parsePreMortemSection(scanner *bufio.Scanner) *types.PreMortem {
 		return nil
 	}
 	return pm
+}
+
+// ParseQualityGates extracts the ## Quality Gates section from an IMPL doc at
+// path. Returns nil, nil if the section is absent (quality gates are optional).
+// The section is parsed by hand (no external YAML library) consistent with the
+// rest of the parser.
+func ParseQualityGates(implDocPath string) (*types.QualityGates, error) {
+	f, err := os.Open(implDocPath)
+	if err != nil {
+		return nil, fmt.Errorf("ParseQualityGates: cannot open %q: %w", implDocPath, err)
+	}
+	defer f.Close()
+
+	scanner := bufio.NewScanner(f)
+
+	// Scan for the ## Quality Gates heading.
+	found := false
+	for scanner.Scan() {
+		trimmed := strings.TrimSpace(scanner.Text())
+		if trimmed == "## Quality Gates" || trimmed == "### Quality Gates" {
+			found = true
+			break
+		}
+	}
+	if err2 := scanner.Err(); err2 != nil {
+		return nil, fmt.Errorf("ParseQualityGates: scanner error reading %q: %w", implDocPath, err2)
+	}
+	if !found {
+		return nil, nil
+	}
+
+	return parseQualityGatesSection(scanner), nil
+}
+
+// parseQualityGatesSection parses a Quality Gates section from an already-
+// positioned scanner (the heading line has been consumed). It reads until the
+// next ## or ### heading, or EOF.
+//
+// Expected format:
+//
+//	level: standard
+//	gates:
+//	  - type: build
+//	    command: go build ./...
+//	    required: true
+//	    description: must compile
+func parseQualityGatesSection(scanner *bufio.Scanner) *types.QualityGates {
+	qg := &types.QualityGates{}
+	inGatesList := false
+	var current *types.QualityGate
+
+	flushGate := func() {
+		if current != nil {
+			qg.Gates = append(qg.Gates, *current)
+			current = nil
+		}
+	}
+
+	for scanner.Scan() {
+		line := scanner.Text()
+		trimmed := strings.TrimSpace(line)
+
+		// Stop at the next ## or ### heading.
+		if strings.HasPrefix(trimmed, "## ") || strings.HasPrefix(trimmed, "### ") {
+			break
+		}
+
+		// Skip blank lines and code fences.
+		if trimmed == "" || strings.HasPrefix(trimmed, "```") {
+			continue
+		}
+
+		// level: <value>
+		if strings.HasPrefix(trimmed, "level:") {
+			val := strings.TrimSpace(strings.TrimPrefix(trimmed, "level:"))
+			qg.Level = val
+			continue
+		}
+
+		// gates: (list marker — just toggle mode)
+		if trimmed == "gates:" {
+			inGatesList = true
+			continue
+		}
+
+		if !inGatesList {
+			continue
+		}
+
+		// New gate entry: "  - type: build"
+		if strings.HasPrefix(trimmed, "- type:") {
+			flushGate()
+			current = &types.QualityGate{}
+			current.Type = strings.TrimSpace(strings.TrimPrefix(trimmed, "- type:"))
+			continue
+		}
+
+		// Properties of the current gate (may be indented with spaces).
+		if current == nil {
+			continue
+		}
+
+		switch {
+		case strings.HasPrefix(trimmed, "type:"):
+			current.Type = strings.TrimSpace(strings.TrimPrefix(trimmed, "type:"))
+		case strings.HasPrefix(trimmed, "command:"):
+			current.Command = strings.TrimSpace(strings.TrimPrefix(trimmed, "command:"))
+		case strings.HasPrefix(trimmed, "required:"):
+			val := strings.TrimSpace(strings.TrimPrefix(trimmed, "required:"))
+			current.Required = strings.EqualFold(val, "true")
+		case strings.HasPrefix(trimmed, "description:"):
+			current.Description = strings.TrimSpace(strings.TrimPrefix(trimmed, "description:"))
+		}
+	}
+
+	flushGate()
+
+	if qg.Level == "" && len(qg.Gates) == 0 {
+		return nil
+	}
+	return qg
 }
 
 // classifyAction normalizes an action string to "new", "modify", or "delete".
