@@ -1,7 +1,6 @@
 package engine
 
 import (
-	"context"
 	"errors"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/types"
 )
@@ -43,60 +42,5 @@ type RunVerificationOpts struct {
 	TestCommand string // falls back to "go test ./..." if empty
 }
 
-// RunScout executes a Scout agent, calling onChunk for each output fragment.
-// Returns when the agent finishes. Cancellable via ctx.
-func RunScout(ctx context.Context, opts RunScoutOpts, onChunk func(string)) error {
-	return nil
-}
-
-// StartWave executes a full wave run (all waves in the IMPL doc).
-// Publishes lifecycle events via onEvent. Blocks until all waves complete
-// or a fatal error occurs.
-func StartWave(ctx context.Context, opts RunWaveOpts, onEvent func(Event)) error {
-	return nil
-}
-
-// RunSingleWave executes exactly one wave (waveNum) of the IMPL doc.
-// Used by CLI to drive the wave loop with inter-wave prompts.
-func RunSingleWave(ctx context.Context, opts RunWaveOpts, waveNum int, onEvent func(Event)) error {
-	return nil
-}
-
-// RunScaffold checks for pending scaffold files and runs a Scaffold agent if needed.
-func RunScaffold(ctx context.Context, implPath, repoPath, sawRepoPath string, onEvent func(Event)) error {
-	return nil
-}
-
-// MergeWave merges all agent worktrees for the given wave number.
-func MergeWave(ctx context.Context, opts RunMergeOpts) error {
-	return nil
-}
-
-// RunVerification runs the test suite and returns an error if it fails.
-func RunVerification(ctx context.Context, opts RunVerificationOpts) error {
-	return nil
-}
-
-// ParseIMPLDoc parses an IMPL doc and returns the structured representation.
-// Delegates to pkg/protocol.ParseIMPLDoc.
-func ParseIMPLDoc(path string) (*types.IMPLDoc, error) {
-	return nil, nil
-}
-
-// ParseCompletionReport parses an agent's completion report from the IMPL doc.
-// Delegates to pkg/protocol.ParseCompletionReport.
-func ParseCompletionReport(implDocPath, agentLetter string) (*types.CompletionReport, error) {
-	return nil, nil
-}
-
-// UpdateIMPLStatus ticks status checkboxes for completed agents.
-// Delegates to pkg/protocol.UpdateIMPLStatus.
-func UpdateIMPLStatus(implDocPath string, completedLetters []string) error {
-	return nil
-}
-
-// ValidateInvariants validates disjoint file ownership invariants.
-// Delegates to pkg/protocol.ValidateInvariants.
-func ValidateInvariants(doc *types.IMPLDoc) error {
-	return nil
-}
+// Ensure types package is used (IMPLDoc referenced in function signatures).
+var _ *types.IMPLDoc
