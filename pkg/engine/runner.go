@@ -2,6 +2,7 @@ package engine
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -262,8 +263,14 @@ func ParseIMPLDoc(path string) (*types.IMPLDoc, error) {
 
 // ParseCompletionReport parses an agent's completion report from the IMPL doc.
 // Delegates to pkg/protocol.ParseCompletionReport.
+// Maps protocol.ErrReportNotFound to engine.ErrReportNotFound so callers can
+// use errors.Is(err, engine.ErrReportNotFound) without importing pkg/protocol.
 func ParseCompletionReport(implDocPath, agentLetter string) (*types.CompletionReport, error) {
-	return protocol.ParseCompletionReport(implDocPath, agentLetter)
+	report, err := protocol.ParseCompletionReport(implDocPath, agentLetter)
+	if errors.Is(err, protocol.ErrReportNotFound) {
+		return nil, ErrReportNotFound
+	}
+	return report, err
 }
 
 // UpdateIMPLStatus ticks status checkboxes for completed agents.
