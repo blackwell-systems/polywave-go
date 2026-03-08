@@ -213,6 +213,47 @@ func RunScaffold(ctx context.Context, implPath, repoPath, sawRepoPath string, on
 	return nil
 }
 
+// RunSingleWave runs the agents for one wave number without merging or verifying.
+// The caller is responsible for calling MergeWave and RunVerification afterwards.
+func RunSingleWave(ctx context.Context, opts RunWaveOpts, waveNum int, onEvent func(Event)) error {
+	if opts.IMPLPath == "" {
+		return fmt.Errorf("engine.RunSingleWave: IMPLPath is required")
+	}
+	orch, err := orchestrator.New(opts.RepoPath, opts.IMPLPath)
+	if err != nil {
+		return fmt.Errorf("engine.RunSingleWave: %w", err)
+	}
+	orch.SetEventPublisher(func(ev orchestrator.OrchestratorEvent) {
+		onEvent(Event{Event: ev.Event, Data: ev.Data})
+	})
+	return orch.RunWave(waveNum)
+}
+
+// MergeWave merges the agent branches for the given wave into the repo's main branch.
+func MergeWave(ctx context.Context, opts RunMergeOpts) error {
+	if opts.IMPLPath == "" {
+		return fmt.Errorf("engine.MergeWave: IMPLPath is required")
+	}
+	orch, err := orchestrator.New(opts.RepoPath, opts.IMPLPath)
+	if err != nil {
+		return fmt.Errorf("engine.MergeWave: %w", err)
+	}
+	return orch.MergeWave(opts.WaveNum)
+}
+
+// RunVerification runs post-merge verification (go vet + test command).
+func RunVerification(ctx context.Context, opts RunVerificationOpts) error {
+	testCmd := opts.TestCommand
+	if testCmd == "" {
+		testCmd = "go test ./..."
+	}
+	orch, err := orchestrator.New(opts.RepoPath, "")
+	if err != nil {
+		return fmt.Errorf("engine.RunVerification: %w", err)
+	}
+	return orch.RunVerification(testCmd)
+}
+
 // ParseIMPLDoc parses an IMPL doc and returns the structured representation.
 // Delegates to pkg/protocol.ParseIMPLDoc.
 func ParseIMPLDoc(path string) (*types.IMPLDoc, error) {
