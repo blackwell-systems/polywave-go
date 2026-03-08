@@ -1,38 +1,42 @@
 package orchestrator
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/types"
+)
 
 // TestRouteFailureAllTypes verifies that all five known failure types route
 // to their expected OrchestratorAction per E19.
 func TestRouteFailureAllTypes(t *testing.T) {
 	tests := []struct {
 		name        string
-		failureType FailureType
+		failureType types.FailureType
 		want        OrchestratorAction
 	}{
 		{
 			name:        "transient routes to ActionRetry",
-			failureType: FailureTypeTransient,
+			failureType: types.FailureTypeTransient,
 			want:        ActionRetry,
 		},
 		{
 			name:        "fixable routes to ActionApplyAndRelaunch",
-			failureType: FailureTypeFixable,
+			failureType: types.FailureTypeFixable,
 			want:        ActionApplyAndRelaunch,
 		},
 		{
 			name:        "needs_replan routes to ActionReplan",
-			failureType: FailureTypeNeedsReplan,
+			failureType: types.FailureTypeNeedsReplan,
 			want:        ActionReplan,
 		},
 		{
 			name:        "escalate routes to ActionEscalate",
-			failureType: FailureTypeEscalate,
+			failureType: types.FailureTypeEscalate,
 			want:        ActionEscalate,
 		},
 		{
 			name:        "timeout routes to ActionRetryWithScope",
-			failureType: FailureTypeTimeout,
+			failureType: types.FailureTypeTimeout,
 			want:        ActionRetryWithScope,
 		},
 		{
@@ -69,7 +73,7 @@ func TestRouteFailureEmptyIsEscalate(t *testing.T) {
 // TestRouteFailureUnknownIsEscalate verifies that any unrecognized failure type
 // defaults to ActionEscalate rather than silently picking an incorrect action.
 func TestRouteFailureUnknownIsEscalate(t *testing.T) {
-	unknownValues := []FailureType{
+	unknownValues := []types.FailureType{
 		"TRANSIENT",        // case-sensitive check
 		"Fixable",          // mixed case
 		"partial",          // completion status, not failure type

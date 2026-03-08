@@ -1,18 +1,7 @@
 // E19: Failure type routing decision tree — see execution-rules.md §E19
 package orchestrator
 
-// TEMP: remove after merge with Agent A.
-// FailureType mirrors types.FailureType which will be defined in pkg/types by Agent A.
-// Once merged, update RouteFailure's parameter type to types.FailureType and remove this block.
-type FailureType = string
-
-const (
-	FailureTypeTransient   FailureType = "transient"
-	FailureTypeFixable     FailureType = "fixable"
-	FailureTypeNeedsReplan FailureType = "needs_replan"
-	FailureTypeEscalate    FailureType = "escalate"
-	FailureTypeTimeout     FailureType = "timeout"
-)
+import "github.com/blackwell-systems/scout-and-wave-go/pkg/types"
 
 // OrchestratorAction is the action to take after a partial/blocked completion report.
 type OrchestratorAction int
@@ -27,18 +16,17 @@ const (
 
 // RouteFailure maps a FailureType to an OrchestratorAction per E19.
 // Empty failureType (absent from report) returns ActionEscalate (conservative fallback).
-// TEMP: parameter type should be types.FailureType after merge with Agent A.
-func RouteFailure(failureType FailureType) OrchestratorAction {
+func RouteFailure(failureType types.FailureType) OrchestratorAction {
 	switch failureType {
-	case FailureTypeTransient:
+	case types.FailureTypeTransient:
 		return ActionRetry
-	case FailureTypeFixable:
+	case types.FailureTypeFixable:
 		return ActionApplyAndRelaunch
-	case FailureTypeNeedsReplan:
+	case types.FailureTypeNeedsReplan:
 		return ActionReplan
-	case FailureTypeEscalate:
+	case types.FailureTypeEscalate:
 		return ActionEscalate
-	case FailureTypeTimeout:
+	case types.FailureTypeTimeout:
 		return ActionRetryWithScope
 	default:
 		// Covers both empty string (absent from report) and any unknown value.
