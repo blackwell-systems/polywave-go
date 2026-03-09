@@ -101,6 +101,14 @@ func (c *Client) Run(ctx context.Context, systemPrompt, userMessage, workDir str
 
 		switch choice.FinishReason {
 		case "stop":
+			// Content-mode tool call fallback: some local models (e.g. Qwen via Ollama)
+			// embed the tool call as JSON in content instead of using the tool_calls array.
+			if ctc := parseContentToolCall(choice.Message.Content, toolMap); ctc != nil {
+				messages = append(messages, chatMessage{Role: "assistant", Content: choice.Message.Content})
+				result := executeTool(toolMap, ctc.Name, ctc.Arguments, workDir)
+				messages = append(messages, chatMessage{Role: "user", Content: "Function result:\n" + result})
+				continue
+			}
 			return choice.Message.Content, nil
 
 		case "tool_calls":
@@ -156,6 +164,13 @@ func (c *Client) RunStreaming(ctx context.Context, systemPrompt, userMessage, wo
 
 		switch choice.FinishReason {
 		case "stop":
+			// Content-mode tool call fallback (same as Run).
+			if ctc := parseContentToolCall(choice.Message.Content, toolMap); ctc != nil {
+				messages = append(messages, chatMessage{Role: "assistant", Content: choice.Message.Content})
+				result := executeTool(toolMap, ctc.Name, ctc.Arguments, workDir)
+				messages = append(messages, chatMessage{Role: "user", Content: "Function result:\n" + result})
+				continue
+			}
 			// Re-issue as streaming so onChunk receives fragments.
 			return c.streamFinalTurn(ctx, messages, tools, onChunk)
 
@@ -294,6 +309,40 @@ func (c *Client) buildRequestBody(messages []chatMessage, tools []tool, stream b
 		body["stream"] = true
 	}
 	return body
+}
+
+// --- Content-mode tool call fallback ---
+
+// contentToolCallJSON is the JSON shape used by local models (e.g. Qwen via Ollama)
+// that embed tool calls in response content instead of the tool_calls array.
+type contentToolCallJSON struct {
+	Name      string                 `json:"name"`
+	Arguments map[string]interface{} `json:"arguments"`
+}
+
+// parseContentToolCall detects the content-mode tool call pattern:
+//
+//	{"name": "<tool>", "arguments": {...}}
+//
+// Returns non-nil only when content is valid JSON with a non-empty "name" that
+// exists in toolMap, preventing false positives on legitimate JSON final answers.
+func parseContentToolCall(content string, toolMap map[string]tool) *contentToolCallJSON {
+	content = strings.TrimSpace(content)
+	if !strings.HasPrefix(content, "{") {
+		return nil
+	}
+	var tc contentToolCallJSON
+	if err := json.Unmarshal([]byte(content), &tc); err != nil {
+		return nil
+	}
+	if tc.Name == "" {
+		return nil
+	}
+	// Only treat as a tool call if the named tool is actually registered.
+	if _, ok := toolMap[tc.Name]; !ok {
+		return nil
+	}
+	return &tc
 }
 
 // --- Message construction helpers ---

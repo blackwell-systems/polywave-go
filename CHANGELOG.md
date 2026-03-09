@@ -8,6 +8,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 | Version | Date | Headline |
 |---------|------|----------|
+| [0.8.0] | 2026-03-09 | Content-mode tool call fallback — handles local models (e.g. Qwen via Ollama) that embed tool calls in response content instead of `tool_calls` array |
 | [0.7.0] | 2026-03-09 | Local model shortcuts — `ollama:` and `lmstudio:` provider prefixes with hardcoded default base URLs |
 | [0.6.0] | 2026-03-09 | OpenAI-compatible API backend + provider-prefix routing — `openai:gpt-4o`, `cli:kimi`, `anthropic:claude-*` prefix dispatch in `newBackendFunc` |
 | [0.5.0] | 2026-03-09 | Configurable CLI binary — `BinaryPath` in `backend.Config` allows swapping `claude` for any compatible CLI |
@@ -15,6 +16,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 | [0.3.0] | 2026-03-08 | Protocol audit fixes — P0: failure_type parsing, multi-gen agent IDs; P1: E22 2-pass scaffold build, cross-repo Repo column; P2: repo field in completion reports |
 | [0.2.0] | 2026-03-08 | Engine protocol parity — E17–E23 implemented (context memory, failure routing, stub scan, quality gates, scaffold build verify, per-agent context extraction) |
 | [0.1.0] | 2026-03-08 | Initial engine extraction — parser, orchestrator, agent runner, git, worktree management |
+
+---
+
+## [0.8.0] - 2026-03-09
+
+### Added
+
+- **Content-mode tool call fallback** (`pkg/agent/backend/openai/client.go`) — local models such as Qwen2.5-Coder via Ollama return tool calls as a JSON string in `content` with `finish_reason: "stop"` rather than in the `tool_calls` array. `parseContentToolCall` detects this pattern (valid JSON with `name` + `arguments`, where `name` is a registered tool) and routes it through the same execution path. False positives are prevented by requiring the tool name to exist in the tool map — a legitimate JSON final answer with an unknown key passes through as normal. The tool result is sent back as a user message (`"Function result:\n<result>"`) and the loop continues. Applied in both `Run` and `RunStreaming`.
 
 ---
 
