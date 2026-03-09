@@ -193,6 +193,13 @@ func (c *Client) RunStreaming(ctx context.Context, systemPrompt, userMessage, wo
 	return "", fmt.Errorf("openai backend: tool use loop exceeded maxTurns (%d)", c.maxTurns)
 }
 
+// RunStreamingWithTools implements backend.Backend.
+// OpenAI backend does not yet support tool call event streaming, so this
+// delegates to RunStreaming (no-op for onToolCall).
+func (c *Client) RunStreamingWithTools(ctx context.Context, systemPrompt, userMessage, workDir string, onChunk backend.ChunkCallback, onToolCall backend.ToolCallCallback) (string, error) {
+	return c.RunStreaming(ctx, systemPrompt, userMessage, workDir, onChunk)
+}
+
 // streamFinalTurn issues a streaming chat completion and calls onChunk for each delta.
 // Returns the full concatenated text.
 func (c *Client) streamFinalTurn(ctx context.Context, messages []chatMessage, tools []tool, onChunk backend.ChunkCallback) (string, error) {
