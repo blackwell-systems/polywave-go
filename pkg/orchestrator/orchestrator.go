@@ -419,16 +419,35 @@ func (o *Orchestrator) launchAgent(
 	}
 
 	// b. Execute the agent via the backend, streaming output chunks as SSE events.
-	if _, err := runner.ExecuteStreaming(ctx, &agentSpec, wtPath, func(chunk string) {
-		o.publish(OrchestratorEvent{
-			Event: "agent_output",
-			Data: AgentOutputPayload{
-				Agent: agentSpec.Letter,
-				Wave:  waveNum,
-				Chunk: chunk,
-			},
-		})
-	}); err != nil {
+	if _, err := runner.ExecuteStreamingWithTools(ctx, &agentSpec, wtPath,
+		// onChunk — stream output chunks as SSE events
+		func(chunk string) {
+			o.publish(OrchestratorEvent{
+				Event: "agent_output",
+				Data: AgentOutputPayload{
+					Agent: agentSpec.Letter,
+					Wave:  waveNum,
+					Chunk: chunk,
+				},
+			})
+		},
+		// onToolCall — stream tool invocations and results as SSE events
+		func(ev backend.ToolCallEvent) {
+			o.publish(OrchestratorEvent{
+				Event: "agent_tool_call",
+				Data: AgentToolCallPayload{
+					Agent:      agentSpec.Letter,
+					Wave:       waveNum,
+					ToolID:     ev.ID,
+					ToolName:   ev.Name,
+					Input:      ev.Input,
+					IsResult:   ev.IsResult,
+					IsError:    ev.IsError,
+					DurationMs: ev.DurationMs,
+				},
+			})
+		},
+	); err != nil {
 		o.publish(OrchestratorEvent{
 			Event: "agent_failed",
 			Data: AgentFailedPayload{
