@@ -92,6 +92,27 @@ type BackendConfig struct {
 	BaseURL string
 }
 
+// validateModelName ensures model name contains only safe characters and is
+// within reasonable length limits. Returns error if validation fails.
+func validateModelName(model string) error {
+	if model == "" {
+		return nil // empty is allowed (falls back to defaults)
+	}
+	if len(model) > 200 {
+		return fmt.Errorf("model name too long (max 200 chars)")
+	}
+	// Allow alphanumeric, hyphens, dots, colons, underscores, slashes (for paths like us.anthropic.X)
+	for _, ch := range model {
+		if !(ch >= 'a' && ch <= 'z') &&
+			!(ch >= 'A' && ch <= 'Z') &&
+			!(ch >= '0' && ch <= '9') &&
+			ch != '-' && ch != '.' && ch != ':' && ch != '_' && ch != '/' {
+			return fmt.Errorf("model name contains invalid character: %q", ch)
+		}
+	}
+	return nil
+}
+
 // parseProviderPrefix splits a provider-qualified model string.
 // Input "openai:gpt-4o" returns ("openai", "gpt-4o").
 // Input "cli:kimi" returns ("cli", "kimi").
@@ -134,6 +155,11 @@ func expandBedrockModelID(shortName string) string {
 
 // newBackendFunc constructs a backend.Backend from config. Seam for tests.
 var newBackendFunc = func(cfg BackendConfig) (backend.Backend, error) {
+	// Validate model name before processing to prevent injection attacks.
+	if err := validateModelName(cfg.Model); err != nil {
+		return nil, fmt.Errorf("orchestrator: invalid model name: %w", err)
+	}
+	
 	// Parse any provider prefix from the model string (e.g. "openai:gpt-4o").
 	provider, bareModel := parseProviderPrefix(cfg.Model)
 
