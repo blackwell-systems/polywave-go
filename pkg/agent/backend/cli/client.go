@@ -9,6 +9,7 @@ import (
 	"os/exec"
 	"regexp"
 	"strings"
+	"time"
 
 	"github.com/creack/pty"
 
@@ -159,6 +160,173 @@ func (c *Client) RunStreaming(ctx context.Context, systemPrompt, userMessage, wo
 	return sb.String(), nil
 }
 
+// RunStreamingWithTools implements backend.Backend.
+// It behaves identically to RunStreaming, but additionally calls onToolCall
+// for each tool_use and tool_result event parsed from the stream.
+// Both onChunk and onToolCall may be nil.
+func (c *Client) RunStreamingWithTools(ctx context.Context, systemPrompt, userMessage, workDir string, onChunk backend.ChunkCallback, onToolCall backend.ToolCallCallback) (string, error) {
+	claudePath := c.claudePath
+	if claudePath == "" {
+		claudePath = c.cfg.BinaryPath
+	}
+	if claudePath == "" {
+		var err error
+		claudePath, err = exec.LookPath("claude")
+		if err != nil {
+			return "", fmt.Errorf("cli backend: claude binary not found in PATH: %w", err)
+		}
+	}
+
+	var prompt string
+	if systemPrompt == "" {
+		prompt = userMessage
+	} else {
+		prompt = systemPrompt + "\n\n" + userMessage
+	}
+
+	args := []string{
+		"--print",
+		"--output-format", "stream-json",
+		"--allowedTools", "Bash,Read,Write,Edit,Glob,Grep",
+		"--dangerously-skip-permissions",
+	}
+	if c.cfg.Model != "" {
+		args = append(args, "--model", c.cfg.Model)
+	}
+	if c.cfg.MaxTurns > 0 {
+		args = append(args, "--max-turns", fmt.Sprintf("%d", c.cfg.MaxTurns))
+	}
+	args = append(args, "-p", prompt)
+
+	cmd := exec.CommandContext(ctx, claudePath, args...)
+	cmd.Dir = workDir
+
+	// Strip CLAUDECODE so a nested claude process isn't rejected.
+	filtered := make([]string, 0, len(os.Environ()))
+	for _, env := range os.Environ() {
+		if !strings.HasPrefix(env, "CLAUDECODE=") {
+			filtered = append(filtered, env)
+		}
+	}
+	cmd.Env = filtered
+
+	// PTY forces Node.js to line-buffer stdout (real-time streaming).
+	ptmx, err := pty.Start(cmd)
+	if err != nil {
+		return "", fmt.Errorf("cli backend: failed to start claude with PTY: %w", err)
+	}
+	defer ptmx.Close()
+
+	// Max columns prevents PTY from wrapping JSON lines.
+	// uint16 max = 65535; virtually no stream-json event reaches this length.
+	_ = pty.Setsize(ptmx, &pty.Winsize{Rows: 50, Cols: 65535})
+
+	var sb strings.Builder
+	scanner := bufio.NewScanner(ptmx)
+	// 1 MB scanner buffer for large tool-result lines.
+	scanner.Buffer(make([]byte, 1024*1024), 1024*1024)
+
+	// pending accumulates PTY-wrapped fragments until we have a full JSON object.
+	var pending strings.Builder
+
+	// Track tool call start times for duration calculation.
+	toolStartTimes := make(map[string]int64)
+
+	for scanner.Scan() {
+		// PTY converts \n -> \r\n; strip trailing \r.
+		text := strings.TrimRight(scanner.Text(), "\r")
+		// Strip ANSI escape sequences.
+		text = ansiRE.ReplaceAllString(text, "")
+		if text == "" {
+			continue
+		}
+
+		pending.WriteString(text)
+		candidate := pending.String()
+
+		// Test if we have a complete JSON object yet.
+		var probe json.RawMessage
+		if json.Unmarshal([]byte(candidate), &probe) != nil {
+			// Incomplete — keep accumulating (PTY wrapped mid-JSON).
+			continue
+		}
+
+		// Complete JSON object — process it.
+		pending.Reset()
+		sb.WriteString(candidate + "\n")
+
+		// Parse event for tool call tracking.
+		if onToolCall != nil {
+			var ev streamEvent
+			if json.Unmarshal([]byte(candidate), &ev) == nil {
+				// Handle assistant messages with tool_use content blocks.
+				if ev.Type == "assistant" && ev.Message != nil {
+					for _, c := range ev.Message.Content {
+						if c.Type == "tool_use" {
+							// Record start time and emit tool_use event.
+							toolStartTimes[c.ID] = time.Now().UnixMilli()
+							onToolCall(backend.ToolCallEvent{
+								ID:       c.ID,
+								Name:     c.Name,
+								Input:    extractToolInput(c.Name, c.Input),
+								IsResult: false,
+							})
+						}
+					}
+				}
+				// Handle tool_result events (top-level with tool_use_id).
+				if ev.Type == "tool_result" {
+					// Parse the full tool_result event to get tool_use_id and is_error.
+					var toolResult struct {
+						Type      string `json:"type"`
+						ToolUseID string `json:"tool_use_id"`
+						IsError   bool   `json:"is_error"`
+					}
+					if json.Unmarshal([]byte(candidate), &toolResult) == nil {
+						var durationMs int64
+						if startTime, ok := toolStartTimes[toolResult.ToolUseID]; ok {
+							durationMs = time.Now().UnixMilli() - startTime
+							delete(toolStartTimes, toolResult.ToolUseID)
+						}
+						onToolCall(backend.ToolCallEvent{
+							ID:         toolResult.ToolUseID,
+							IsResult:   true,
+							IsError:    toolResult.IsError,
+							DurationMs: durationMs,
+						})
+					}
+				}
+			}
+		}
+
+		if onChunk != nil {
+			if formatted := formatStreamEvent(candidate); formatted != "" {
+				onChunk(formatted + "\n")
+			}
+		}
+	}
+
+	if scanErr := scanner.Err(); scanErr != nil {
+		if ctx.Err() != nil {
+			_ = cmd.Wait()
+			return "", fmt.Errorf("cli backend: context cancelled: %w", ctx.Err())
+		}
+		return "", fmt.Errorf("cli backend: error reading PTY: %w", scanErr)
+	}
+
+	if err := cmd.Wait(); err != nil {
+		if ctx.Err() != nil {
+			return "", fmt.Errorf("cli backend: context cancelled: %w", ctx.Err())
+		}
+		if exitErr, ok := err.(*exec.ExitError); ok {
+			return "", fmt.Errorf("cli backend: claude exited with code %d", exitErr.ExitCode())
+		}
+		return "", fmt.Errorf("cli backend: claude failed: %w", err)
+	}
+
+	return sb.String(), nil
+}
+
 // ── stream-json event parsing ────────────────────────────────────────────────
 
 type streamEvent struct {
@@ -178,6 +346,7 @@ type streamMessage struct {
 type streamContent struct {
 	Type  string          `json:"type"`
 	Text  string          `json:"text,omitempty"`
+	ID    string          `json:"id,omitempty"`    // tool_use
 	Name  string          `json:"name,omitempty"`  // tool_use
 	Input json.RawMessage `json:"input,omitempty"` // tool_use
 }
@@ -236,7 +405,9 @@ func formatStreamEvent(raw string) string {
 	return ""
 }
 
-func toolLabel(name string, inputRaw json.RawMessage) string {
+// extractToolInput extracts the primary input field from a tool invocation.
+// Used by both toolLabel (for display) and RunStreamingWithTools (for events).
+func extractToolInput(name string, inputRaw json.RawMessage) string {
 	var input map[string]interface{}
 	if inputRaw != nil {
 		_ = json.Unmarshal(inputRaw, &input)
@@ -270,7 +441,11 @@ func toolLabel(name string, inputRaw json.RawMessage) string {
 			}
 		}
 	}
+	return detail
+}
 
+func toolLabel(name string, inputRaw json.RawMessage) string {
+	detail := extractToolInput(name, inputRaw)
 	if detail == "" {
 		return "-> " + name
 	}

@@ -34,6 +34,20 @@ type Config struct {
 // chunk is a raw text fragment (may be a partial word or sentence).
 type ChunkCallback func(chunk string)
 
+// ToolCallEvent carries a single tool invocation or result from the CLI stream.
+type ToolCallEvent struct {
+	ID         string `json:"id"`
+	Name       string `json:"name"`
+	Input      string `json:"input"`
+	IsResult   bool   `json:"is_result"`
+	IsError    bool   `json:"is_error"`
+	DurationMs int64  `json:"duration_ms"`
+}
+
+// ToolCallCallback is called for each tool_use/tool_result event parsed
+// from the CLI stream. Implementations must be goroutine-safe.
+type ToolCallCallback func(ev ToolCallEvent)
+
 // Backend is the abstraction both the API client and the CLI client implement.
 // Runner accepts a Backend and delegates all LLM interaction through it.
 type Backend interface {
@@ -47,4 +61,10 @@ type Backend interface {
 	// case RunStreaming behaves identically to Run.
 	// Returns the full concatenated output and any error, same as Run.
 	RunStreaming(ctx context.Context, systemPrompt, userMessage, workDir string, onChunk ChunkCallback) (string, error)
+
+	// RunStreamingWithTools executes the agent identically to RunStreaming,
+	// but additionally calls onToolCall for each tool_use and tool_result
+	// event parsed from the stream. Both callbacks may be nil.
+	// Returns the full concatenated output and any error, same as RunStreaming.
+	RunStreamingWithTools(ctx context.Context, systemPrompt, userMessage, workDir string, onChunk ChunkCallback, onToolCall ToolCallCallback) (string, error)
 }

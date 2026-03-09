@@ -403,3 +403,10 @@ func (c *Client) RunStreaming(ctx context.Context, systemPrompt, userMessage, wo
 
 	return "", fmt.Errorf("api: tool use loop exceeded maxTurns (%d)", c.maxTurns)
 }
+
+// RunStreamingWithTools implements backend.Backend.
+// API backend does not yet support tool call event streaming, so this
+// delegates to RunStreaming (no-op for onToolCall).
+func (c *Client) RunStreamingWithTools(ctx context.Context, systemPrompt, userMessage, workDir string, onChunk backend.ChunkCallback, onToolCall backend.ToolCallCallback) (string, error) {
+	return c.RunStreaming(ctx, systemPrompt, userMessage, workDir, onChunk)
+}
