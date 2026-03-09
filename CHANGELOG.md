@@ -8,6 +8,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 | Version | Date | Headline |
 |---------|------|----------|
+| [0.10.0] | 2026-03-09 | Model name validation — input sanitization to prevent command injection via provider-prefixed model names |
 | [0.9.0] | 2026-03-09 | Agent Observatory — real-time tool call visibility per wave agent via SSE |
 | [0.8.0] | 2026-03-09 | Content-mode tool call fallback — handles local models (e.g. Qwen via Ollama) that embed tool calls in response content instead of `tool_calls` array |
 | [0.7.0] | 2026-03-09 | Local model shortcuts — `ollama:` and `lmstudio:` provider prefixes with hardcoded default base URLs |
