@@ -1,4 +1,535 @@
 # Proposal: Protocol SDK Migration
+# Foreword: Why Protocol SDK Migration
+
+**Date:** March 9, 2026
+**Author:** Dayna Blackwell
+**Status:** Foundational architectural decision
+
+---
+
+## The Problem We Solved
+
+Scout-and-Wave began with an elegant vision: **a protocol based entirely on natural language.** Agents coordinate through prose IMPL documents. Scout writes markdown, Wave agents read markdown, orchestrator parses markdown. No schemas, no rigid formats—just humans and LLMs communicating in shared language.
+
+This worked. Wave 1 of the tool refactor executed successfully just hours before writing this. Four agents coordinated in parallel, delivered working code, and merged cleanly. The protocol functions.
+
+But as we scaled—more features, more agents, more complexity—cracks appeared:
+
+**1. Parse errors and retry loops**
+- Scout writes IMPL doc → Validator parses with regex → Rejects malformed structure
+- Scout retries (up to 3 attempts) with corrections
+- Still fails on novel formatting variations
+- No compile-time safety; errors discovered at runtime after Scout completes
+
+**2. No code reuse**
+- Bash scripts parse markdown for CLI orchestration (400 lines of grep/sed)
+- Go parser parses markdown for web UI (800 lines of state machine)
+- Two implementations, diverging logic, double maintenance burden
+- External tools can't consume protocol state without writing their own parser
+
+**3. Reactive enforcement**
+- File ownership violations caught at merge time, not registration time
+- Stub detection happens after agents finish (post-mortem scan)
+- Interface contract deviations reported in completion reports, not blocked upfront
+- Every check is "did this already happen?" instead of "prevent this from happening"
+
+**4. Merge conflicts scale with agents**
+- Multiple agents append to same markdown IMPL doc → expected conflicts
+- Workaround: Per-agent report files for waves with ≥5 agents
+- Coordination overhead grows with team size
+
+**5. Limited programmatic access**
+- Want IDE plugin that validates IMPL doc on save? Write a markdown parser.
+- Want CI/CD that runs wave orchestration? Parse markdown with bash.
+- Want monitoring dashboard that shows wave status? Parse markdown with JavaScript.
+- No SDK, no API—just text files and regex.
+
+These aren't fatal flaws. We worked around them. But each workaround added friction. Each parse error added a retry loop. Each new tool added another markdown parser.
+
+The vision was pure: **natural language coordination.** The reality was brittle: **regex parsing with hope.**
+
+---
+
+## What We're Building
+
+**Protocol as SDK:** Structured types and operations, importable as a Go library. YAML manifests replace markdown documents. Validation is schema-based, not regex-based. Operations are functions, not scripts.
+
+**But we keep what works:** Claude-as-orchestrator remains primary. Conversational error recovery. Human-in-the-loop checkpoints. Interactivity over automation.
+
+**The shift:**
+- **Before:** Protocol = prose instructions, coordination = interpret prose
+- **After:** Protocol = structured data, coordination = call SDK operations
+
+**What's preserved:**
+- Claude coordinates wave execution (still primary model)
+- Task descriptions are prose (agents interpret creative work)
+- Error recovery is conversational (Claude analyzes, suggests, adapts)
+- Human review at checkpoints (approve merge, request changes)
+
+**What changes:**
+- IMPL docs are YAML (schema-validated)
+- File ownership is data structure (not markdown table)
+- Validation is code (not bash regex)
+- Operations are importable (SDK functions)
+- Orchestrator/agent backends are configurable (not locked)
+
+---
+
+## The Tensions We Resolved
+
+### Tension 1: Interactivity vs Determinism
+
+**Natural language protocol:**
+- ✓ Flexible (Scout adapts IMPL doc format)
+- ✓ Readable (humans review prose)
+- ✗ Brittle (parse errors on format variations)
+- ✗ Unpredictable (validation passes or fails mysteriously)
+
+**Structured protocol:**
+- ✓ Deterministic (schema validation, no parse errors)
+- ✓ Predictable (same input always validates same way)
+- ✗ Rigid (schema changes require coordination)
+- ✗ Less readable (YAML vs prose)
+
+**Our resolution:**
+- **Structure the data** (YAML manifest, schema validation)
+- **Keep prose where it matters** (task descriptions, pre-mortem notes)
+- **Preserve interactivity** (Claude orchestrates, handles errors conversationally)
+- **Generate human-readable views** (`saw render` produces markdown for review)
+
+Result: **Deterministic data operations with interactive coordination.**
+
+### Tension 2: Automation vs Human Judgment
+
+**Wave 1 execution (hours before writing this):**
+- Agent B created duplicate `NewWorkshop()` declaration (temporary stub for testing)
+- Agent D duplicated `executorFunc` in test file (mock vs production)
+- Programmatic response: "Error: redeclared in this block" → exit code 1
+- Claude response: Read both files, understood intent (stub vs real), removed stubs
+
+**The insight:** Unexpected errors need semantic understanding, not predefined handlers.
+
+**Pure automation approach:**
+```go
+func handleRedeclaration(err error) error {
+    // How do we decide which declaration to keep?
+    // - Check timestamps? (unreliable)
+    // - Parse ownership? (what if both agents own file?)
+    // - Delete one randomly? (wrong)
+    return fmt.Errorf("manual intervention required")
+}
+```
+
+Every error would escalate to human. Automation gains nothing.
+
+**Our resolution:**
+- **Happy path is automated** (SDK validates manifest, agents execute, merge proceeds)
+- **Error recovery is interactive** (Claude reads context, suggests fixes, asks human)
+- **Known patterns codified** (expected IMPL doc conflicts auto-resolved)
+- **Novel failures escalate** (Claude analyzes, human decides)
+
+Result: **Automation for predictable work, human judgment for novel failures.**
+
+### Tension 3: Single Backend vs Multi-Backend
+
+**Original assumption:** Scout-and-Wave runs in Claude Code CLI.
+
+**Reality:** Users want:
+- **CLI with Max Plan** (your use case)
+- **CLI with Bedrock** (enterprise AWS)
+- **Web UI** (browser-based, no CLI)
+- **Programmatic Go** (CI/CD, batch processing)
+- **API-first** (direct Anthropic API, no Max Plan)
+
+Each execution context has different capabilities:
+- CLI: Interactive, conversational, Claude-powered
+- Web: Browser-based, form inputs, HTTP requests
+- Programmatic: Automated, no human, exit codes
+
+**Our resolution:**
+- **Protocol SDK is backend-agnostic** (Load/Validate work everywhere)
+- **Orchestrator backend is pluggable** (CLI/Web/API all supported)
+- **Agent backend is pluggable** (already works)
+- **Primary remains CLI with Claude** (best for interactivity)
+
+Result: **Write SDK once, use everywhere. Optimize orchestrator per context.**
+
+### Tension 4: Flexibility vs Reliability
+
+**Natural language:**
+- ✓ Flexible (Scout can adapt format)
+- ✗ Unreliable (validation failures, retries)
+
+**Rigid schema:**
+- ✓ Reliable (validation always works)
+- ✗ Inflexible (schema changes are breaking)
+
+**Our resolution:**
+- **Core structure is rigid** (file ownership, wave structure, completion reports)
+- **Content is flexible** (task descriptions, notes, explanations)
+- **Schema evolution is supported** (migration utility for format changes)
+- **Human-readable views preserve accessibility** (generated markdown)
+
+Result: **Structured coordination with flexible content.**
+
+---
+
+## Why This Architecture
+
+### Design Constraint 1: All Execution Environments
+
+**Must work in:**
+- CLI with skill (bash + Claude)
+- Web UI (HTTP + browser)
+- Programmatic Go (library import)
+
+**SDK layer enables this:**
+```
+SDK (pure Go library)
+  ↓ used by
+CLI binary (shell commands) + Web UI (HTTP) + Programmatic (import)
+  ↓ each exposes
+Same operations, different interface
+```
+
+No SDK = each context reimplements parsing/validation. With SDK = one implementation, three interfaces.
+
+### Design Constraint 2: Orchestrator/Agent Separation
+
+**Orchestrator** (coordinates):
+- Reads IMPL manifest
+- Launches agents
+- Monitors progress
+- Handles errors
+- Merges results
+
+**Agents** (execute):
+- Receive task context
+- Write code
+- Run verification
+- Report completion
+
+**These use different backends:**
+- Orchestrator: Your Claude session (Max Plan or Bedrock)
+- Agents: Company Bedrock account, or API key, or OpenAI
+
+**Architecture enables cost/compliance separation:**
+```yaml
+orchestrator:
+  backend: api  # Your API key (coordination)
+agents:
+  backend: bedrock  # Company AWS (compute)
+```
+
+Result: Coordinate on your account, execute on company account.
+
+### Design Constraint 3: Preserve Interactive Recovery
+
+**Why Claude-as-orchestrator remains primary:**
+
+Pure Go orchestrator would gain:
+- ✓ Standalone binary (no CLI dependency)
+- ✓ Testable (Go unit tests)
+- ✓ Distributable (compile once, run anywhere)
+
+But lose:
+- ✗ Conversational recovery ("duplicate NewWorkshop() - why?")
+- ✗ Mid-execution flexibility (pause, inspect, adapt)
+- ✗ Human-in-the-loop (Claude asks "should I proceed?")
+
+**We chose interactivity.** CLI with Claude as primary, Go orchestrator as secondary (for CI/CD where errors → hard fail anyway).
+
+### Design Constraint 4: Incremental Adoption
+
+**Can't rewrite everything at once.** Must ship in phases:
+
+**Phase 1:** Protocol SDK (manifests, validation, CLI commands)
+- Agents remain pluggable (already works)
+- Orchestrator remains Claude-in-CLI (current model)
+- **Shippable independently**, validates in production
+
+**Phase 2:** Orchestrator backend (full pluggability)
+- Orchestrator becomes pluggable (API/Bedrock/OpenAI)
+- Builds on Phase 1 (SDK already validated)
+- **Ships only if Phase 1 stable**
+
+This de-risks execution. Phase 1 delivers value (code reuse, deterministic validation) without requiring Phase 2 (orchestrator abstraction).
+
+---
+
+## What We Gain
+
+### 1. Deterministic Validation (No More Retry Loops)
+
+**Before:**
+```bash
+Scout writes markdown → bash script parses → validation fails → Scout retries (3x)
+```
+
+**After:**
+```bash
+Scout writes YAML → SDK validates → schema error → Scout fixes immediately
+```
+
+Schema errors are precise: "field `waves[0].agents[1].files` is required but missing". Not "parse error on line 342".
+
+### 2. Code Reuse (Write Once, Use Everywhere)
+
+**Before:**
+- Bash scripts parse markdown (CLI)
+- Go parser parses markdown (web UI)
+- Would need JS parser (frontend monitoring)
+- Would need Rust parser (IDE plugin)
+
+**After:**
+```go
+import "github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
+
+manifest, _ := protocol.Load("IMPL-foo.yaml")
+protocol.Validate(manifest)
+```
+
+One implementation, importable by all tools.
+
+### 3. Programmatic Access (SDK as API)
+
+**Before:**
+External tool wants to check wave status → must parse markdown with regex.
+
+**After:**
+```go
+manifest, _ := protocol.Load("IMPL-foo.yaml")
+currentWave := manifest.CurrentWave()
+for _, agent := range currentWave.Agents {
+    report := manifest.CompletionReports[agent.ID]
+    fmt.Printf("%s: %s\n", agent.ID, report.Status)
+}
+```
+
+Protocol state is queryable. IDE plugins, monitoring dashboards, CI/CD tools all use SDK.
+
+### 4. Preventive Enforcement (Not Reactive)
+
+**Before:**
+- Agent B writes to `pkg/tools/workshop.go`
+- Agent A also writes to `pkg/tools/workshop.go`
+- Merge conflict detected at merge time (too late)
+
+**After:**
+```go
+// At manifest validation time (before agents launch)
+func Validate(m *Manifest) error {
+    seen := make(map[string]string)
+    for _, fo := range m.FileOwnership {
+        if owner, exists := seen[fo.File]; exists {
+            return fmt.Errorf("I1 violation: %s owned by %s and %s",
+                fo.File, owner, fo.Agent)
+        }
+        seen[fo.File] = fo.Agent
+    }
+}
+```
+
+Conflict prevented before agents start. Fail-fast, not fail-late.
+
+### 5. Scalability (No Merge Conflicts)
+
+**Before:**
+```markdown
+### Agent A — Completion Report
+...
+### Agent B — Completion Report
+...
+```
+4+ agents → merge conflicts in IMPL doc.
+
+**After:**
+```bash
+# Each agent writes to separate file
+saw set-completion IMPL-foo.yaml agent-A < completion-report.yaml
+# SDK updates manifest atomically, no conflicts
+```
+
+Agent count scales without coordination overhead.
+
+### 6. Multi-Backend Interoperability
+
+**Before:**
+Orchestrator locked to Claude Code CLI.
+
+**After:**
+```yaml
+orchestrator:
+  backend: bedrock  # AWS account A
+agents:
+  backend: api  # API key for account B
+```
+
+Mix and match backends. Orchestrate on Bedrock, execute on API. Cost separation, compliance separation, model flexibility.
+
+---
+
+## The Balance We Struck
+
+### What We Structured
+
+**Data and coordination primitives:**
+- ✓ YAML manifests (schema-validated)
+- ✓ File ownership (map structure)
+- ✓ Wave structure (typed objects)
+- ✓ Completion reports (structured JSON/YAML)
+- ✓ Validation rules (Go code, not regex)
+
+### What Stays Prose
+
+**Creative and interpretive work:**
+- ✓ Task descriptions (agents interpret)
+- ✓ Pre-mortem analysis (exploratory thinking)
+- ✓ Architectural notes (CONTEXT.md)
+- ✓ Deviation explanations (freeform text in reports)
+
+### What Stays Interactive
+
+**Coordination and recovery:**
+- ✓ Claude-as-orchestrator (conversational recovery)
+- ✓ Human review checkpoints (approve/reject)
+- ✓ Error analysis (Claude reads, suggests, asks)
+- ✓ Mid-execution decisions (proceed? retry? escalate?)
+
+---
+
+## Why Now
+
+**Wave 1 of tool refactor just completed successfully.** Four agents, parallel execution, clean merge. Protocol works.
+
+But we hit friction:
+- Duplicate `NewWorkshop()` required manual investigation
+- Agent D's mock `executorFunc` conflicted with production
+- Completion reports needed careful merge conflict resolution
+
+These are solvable with better tooling. But they're symptoms of deeper architectural debt:
+- Parse errors accumulate
+- Code duplication proliferates (bash + Go + future JS)
+- External tools can't access protocol state
+- Orchestrator locked to Claude CLI
+
+**We're at the right inflection point:**
+- Protocol is proven (tool refactor Wave 1 succeeded)
+- Pain points are clear (parse errors, code duplication)
+- Solution is understood (SDK + structured manifests)
+- Team has bandwidth (can dedicate waves to this)
+
+Delaying means:
+- More features using markdown (harder migration later)
+- More parsers proliferating (bash + Go + JS + Rust)
+- More external tools blocked (no SDK to import)
+- More orchestrator coupling (harder to make pluggable)
+
+**Now is the time.**
+
+---
+
+## Success Criteria
+
+This refactor succeeds if:
+
+**1. Zero parse errors**
+- Scout generates valid YAML (schema-enforced)
+- Validator never rejects well-formed manifests
+- No retry loops for format issues
+
+**2. One implementation**
+- CLI, web UI, external tools all use SDK
+- Protocol rule changes update one place
+- No diverging parsers
+
+**3. Preventive enforcement**
+- I1 violations caught before agents launch
+- File ownership conflicts impossible
+- Validation is fail-fast, not fail-late
+
+**4. Preserved interactivity**
+- Claude still orchestrates (conversational recovery)
+- Human review still happens (checkpoints)
+- Error handling still flexible (analyze, not exit code)
+
+**5. Backend flexibility**
+- Orchestrator configurable (API/Bedrock/OpenAI/CLI)
+- Agents configurable (already works)
+- Mix and match freely (cost optimization, compliance)
+
+**6. Incremental delivery**
+- Phase 1 ships independently (SDK + CLI)
+- Phase 2 ships after Phase 1 stable (orchestrator abstraction)
+- Each phase tested in production before next begins
+
+---
+
+## Long-Term Vision
+
+This refactor isn't just about fixing parse errors. It's about making Scout-and-Wave **a platform**, not just a tool.
+
+**With SDK:**
+- IDE plugins validate IMPL docs in real-time
+- Monitoring dashboards show wave status
+- CI/CD pipelines orchestrate wave execution
+- External tools query protocol state programmatically
+
+**With orchestrator backend abstraction:**
+- Enterprise deploys on Bedrock (AWS-only)
+- Startups use direct API (fine-grained cost control)
+- Developers use Max Plan (fast iteration)
+- All use same protocol, same SDK, same guarantees
+
+**With structured enforcement:**
+- File ownership conflicts impossible (I1 enforced at registration)
+- Interface contracts importable (types, not descriptions)
+- Validation deterministic (same manifest always validates same)
+- Operations testable (unit tests for protocol rules)
+
+**The protocol becomes:**
+- **Reliable** (deterministic validation)
+- **Reusable** (SDK importable)
+- **Interoperable** (multi-backend)
+- **Interactive** (Claude coordinates)
+- **Incremental** (phased delivery)
+
+This is the foundation for scaling Scout-and-Wave from "tool that works" to "platform for parallel AI development."
+
+---
+
+## Personal Note
+
+This is one of my biggest architectural decisions. I'm choosing to add significant complexity (SDK types, CLI binary, backend abstraction) to solve problems that have workarounds (retry on parse errors, write another parser).
+
+I'm doing this because I see where it goes:
+- Parse errors accumulate into death by a thousand cuts
+- Code duplication creates maintenance burden that scales with features
+- External tool blockers prevent ecosystem growth
+- Orchestrator coupling limits deployment flexibility
+
+**I believe this refactor is worth it.** Not because the current system is broken (it works), but because the future system is significantly better (deterministic, reusable, flexible).
+
+**I'm committing to phased execution** (Phase 1 → validate → Phase 2) because the scope is large and the risk is real. If Phase 1 doesn't deliver value, Phase 2 doesn't happen.
+
+**I'm using SAW to implement itself** (self-validation) because if the protocol can't build itself, it's not ready for production.
+
+This document exists so future-me (and future-contributors) can remember:
+- **Why we did this** (parse errors, code duplication, limited programmatic access)
+- **What we gained** (determinism, reuse, flexibility)
+- **What we preserved** (interactivity, human judgment, conversational recovery)
+- **Why this architecture** (all execution contexts, orchestrator/agent separation)
+
+**If this refactor succeeds, Scout-and-Wave becomes a platform.**
+**If it fails, we have a clearer understanding of why natural language protocols have limits.**
+**Either outcome is valuable.**
+
+Let's build.
+
+—Dayna Blackwell
+March 9, 2026
+
+---
 
 **Version:** 2.0
 **Date:** 2026-03-09
@@ -2033,6 +2564,219 @@ This IMPL doc becomes the canonical example of:
 - Cross-repo coordination (scout-and-wave-go, scout-and-wave-web, scout-and-wave)
 - Incremental delivery with testing checkpoints
 - Self-validation during development
+
+---
+
+## Structured Output Integration
+
+**Claude supports structured output mode** - returning pure JSON that matches a schema, eliminating parsing ambiguity entirely. This pairs perfectly with SDK types.
+
+### Current Approach (Text Parsing)
+
+**Scout generates IMPL doc:**
+```
+Agent A calls API:
+  → Returns: "### Agent A\n\n**Task:** Implement workshop..."
+  → Claude writes markdown with YAML blocks
+  → Validator parses markdown with regex
+  → Extracts typed blocks: type=impl-completion-report
+```
+
+**Fragile points:**
+- Markdown format variations break parser
+- YAML block extraction uses regex
+- No guarantee output matches schema
+
+### Structured Output Approach
+
+**Scout generates manifest directly:**
+```go
+// Agent A calls API with schema
+response := client.Messages.Create(ctx, anthropic.MessagesRequest{
+    Model: "claude-sonnet-4-6",
+    Messages: [...],
+    OutputConfig: anthropic.OutputConfig{
+        Type: "json_schema",
+        Schema: IMPLManifestSchema,  // SDK type as JSON Schema
+    },
+})
+
+// Response is guaranteed valid JSON matching schema
+var manifest protocol.IMPLManifest
+json.Unmarshal(response.Content, &manifest)
+// No parsing errors possible - schema-enforced by Claude
+```
+
+**Benefits:**
+- ✓ No parse errors (Claude returns valid JSON or fails)
+- ✓ No validation retry loops (schema-enforced at generation time)
+- ✓ Direct SDK type unmarshaling (JSON → Go struct)
+- ✓ Works with any backend supporting structured output
+
+### Where to Use Structured Output
+
+**Ideal candidates:**
+
+**1. Scout generating IMPL manifest**
+```go
+// Input: Feature description
+// Output schema: protocol.IMPLManifest
+// Result: Valid YAML/JSON manifest, no parsing needed
+```
+
+**2. Agents generating completion reports**
+```go
+// Input: Task context
+// Output schema: protocol.CompletionReport
+// Result: Valid completion report, direct SDK registration
+```
+
+**3. Orchestrator making decisions**
+```go
+// Input: Error context, options
+// Output schema:
+type Decision struct {
+    Choice      string   `json:"choice"`       // "proceed" | "retry" | "escalate"
+    Reasoning   string   `json:"reasoning"`
+    Actions     []string `json:"actions"`
+}
+// Result: Structured decision, no text parsing
+```
+
+**Not appropriate for:**
+- ✗ Code generation (agents write Go/JS/etc, not JSON)
+- ✗ Exploratory analysis (pre-mortem needs freeform prose)
+- ✗ Error explanations (freeform text more useful than structured)
+
+### Implementation Approach
+
+**Phase 1: Optional structured output**
+```go
+// pkg/agent/backend/api/client.go
+type RunOptions struct {
+    OutputSchema *jsonschema.Schema  // Optional
+}
+
+func (c *Client) Run(ctx context.Context, opts RunOptions) (string, error) {
+    if opts.OutputSchema != nil {
+        // Use structured output mode
+        req.OutputConfig = &anthropic.OutputConfig{
+            Type: "json_schema",
+            Schema: opts.OutputSchema,
+        }
+    }
+    // Otherwise text mode (current behavior)
+}
+```
+
+**Phase 2: SDK types as schemas**
+```go
+// pkg/protocol/schema.go
+var IMPLManifestSchema = generateSchema(protocol.IMPLManifest{})
+var CompletionReportSchema = generateSchema(protocol.CompletionReport{})
+
+// Use in Scout agent
+schema := protocol.IMPLManifestSchema
+response := backend.Run(ctx, RunOptions{
+    OutputSchema: &schema,
+})
+```
+
+**Phase 3: Validation becomes assertion**
+```go
+// Before: Validate manifest after Scout writes it
+manifest, err := protocol.Load("IMPL-foo.yaml")
+if err := protocol.Validate(manifest); err != nil {
+    // Scout wrote invalid manifest, retry
+}
+
+// After: Manifest is guaranteed valid (schema-enforced)
+var manifest protocol.IMPLManifest
+json.Unmarshal(response, &manifest)
+// Validation is assertion, not check
+// If this fails, it's a bug in schema definition, not Scout's output
+```
+
+### Benefits for Protocol SDK Migration
+
+**Structured output + SDK types = zero parsing:**
+
+```
+Scout prompt → Claude API (structured output mode)
+  ↓
+Returns: JSON matching IMPLManifest schema
+  ↓
+json.Unmarshal → Go struct (protocol.IMPLManifest)
+  ↓
+No validation needed (schema-enforced)
+  ↓
+Save as YAML for human readability
+```
+
+**Eliminates entire error class:**
+- ✗ Parse errors (Claude returns valid JSON)
+- ✗ Validation errors (schema-enforced at generation)
+- ✗ Retry loops (no malformed output possible)
+- ✗ Format variations (schema is rigid)
+
+**Pairs perfectly with SDK:**
+- SDK defines types → Generate JSON Schema → Claude uses schema
+- One source of truth: SDK types
+- Frontend, backend, Claude all use same schema
+- Type changes propagate automatically
+
+### Migration Path
+
+**Phase 1 (current proposal):**
+- Scout writes YAML manifest (text mode)
+- Validator parses + validates
+- Works with current approach
+
+**Phase 1.5 (add structured output):**
+- Scout writes JSON via structured output mode
+- SDK unmarshals directly
+- Convert to YAML for human readability
+
+**Phase 2 (orchestrator backend):**
+- Orchestrator decisions use structured output
+- Coordination operations return typed responses
+- No parsing orchestrator output
+
+### Backend Support
+
+**Structured output availability:**
+
+| Backend | Structured Output Support | Notes |
+|---------|--------------------------|-------|
+| Anthropic API | ✓ | `output_config.type = "json_schema"` |
+| AWS Bedrock | ✓ | Same as Anthropic API |
+| OpenAI | ✓ | `response_format.type = "json_schema"` |
+| Claude Code CLI | ? | May not support (check docs) |
+
+**Fallback strategy:**
+```go
+func (c *Client) Run(ctx context.Context, opts RunOptions) (string, error) {
+    if opts.OutputSchema != nil && c.supportsStructuredOutput() {
+        // Use structured output
+        return c.runStructured(ctx, opts)
+    }
+    // Fall back to text mode + parsing
+    return c.runText(ctx, opts)
+}
+```
+
+### Open Questions
+
+1. **CLI backend support:** Does Claude Code CLI support structured output mode?
+2. **Schema evolution:** How to handle breaking changes in SDK types?
+3. **Human readability:** Should we store JSON (machine) or YAML (human)?
+4. **Validation role:** If schema-enforced, what does `protocol.Validate()` check?
+
+**Recommendations:**
+1. CLI fallback: Use text mode + parsing if structured output unsupported
+2. Schema versioning: Include version field in manifest (`schema_version: "2.0"`)
+3. Store YAML: Convert JSON → YAML for human readability (`saw render`)
+4. Validation checks: Semantic rules (I1-I6) not covered by schema
 
 ---
 ## Open Questions for Scout
