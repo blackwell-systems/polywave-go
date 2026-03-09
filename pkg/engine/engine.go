@@ -57,6 +57,7 @@ type RunChatOpts struct {
 	SAWRepoPath string        // path to scout-and-wave protocol repo (optional)
 	History     []ChatMessage // previous conversation turns (optional)
 	Message     string        // current user message (required)
+	ChatModel   string        // model override (e.g. "ollama:qwen2.5-coder:32b"); empty = backend default
 }
 
 // Ensure types package is used (IMPLDoc referenced in function signatures).

@@ -5,15 +5,18 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/agent/backend"
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/agent/backend/api"
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/agent/backend/cli"
+	apiclient "github.com/blackwell-systems/scout-and-wave-go/pkg/agent/backend/api"
+	cliclient "github.com/blackwell-systems/scout-and-wave-go/pkg/agent/backend/cli"
+	openaibackend "github.com/blackwell-systems/scout-and-wave-go/pkg/agent/backend/openai"
 )
 
 // RunChat executes a chat agent with proper conversation history.
 // Unlike RunScout which flattens history into the prompt, this uses the
 // backend's native message API for proper turn-by-turn context.
+// ChatModel in opts selects the model; empty string uses the backend default.
 func RunChat(ctx context.Context, opts RunChatOpts, onChunk func(string)) error {
 	if opts.Message == "" {
 		return fmt.Errorf("engine.RunChat: Message is required")
@@ -44,9 +47,47 @@ Read the IMPL doc at: %s
 Use the Read tool to read it, then answer the user's question concisely.
 You MUST NOT modify the IMPL doc or any source files. Read-only.`, opts.IMPLPath)
 
-	// If using CLI backend (no API key), enable explanatory output mode.
+	// Select backend: provider-prefix routing when ChatModel is set,
+	// otherwise fall back to API key → CLI heuristic.
 	apiKey := os.Getenv("ANTHROPIC_API_KEY")
-	if apiKey == "" {
+	var b backend.Backend
+	if opts.ChatModel != "" {
+		provider, bareModel := chatParseProviderPrefix(opts.ChatModel)
+		switch provider {
+		case "openai":
+			b = openaibackend.New(backend.Config{Model: bareModel, APIKey: os.Getenv("OPENAI_API_KEY")})
+		case "ollama":
+			b = openaibackend.New(backend.Config{Model: bareModel, BaseURL: "http://localhost:11434/v1"})
+		case "lmstudio":
+			b = openaibackend.New(backend.Config{Model: bareModel, BaseURL: "http://localhost:1234/v1"})
+		case "anthropic":
+			b = apiclient.New(apiKey, backend.Config{Model: bareModel})
+		case "cli":
+			b = cliclient.New("", backend.Config{Model: bareModel})
+		default:
+			// Plain model name — use API if key present, else CLI.
+			if apiKey != "" {
+				b = apiclient.New(apiKey, backend.Config{Model: opts.ChatModel})
+			} else {
+				b = cliclient.New("", backend.Config{Model: opts.ChatModel})
+			}
+		}
+	} else {
+		if apiKey != "" {
+			b = apiclient.New(apiKey, backend.Config{})
+		} else {
+			b = cliclient.New("", backend.Config{})
+		}
+	}
+
+	// Explanatory mode for CLI/local backends (no Anthropic API key in use).
+	usesCLI := opts.ChatModel == "" && apiKey == ""
+	if !usesCLI {
+		if p, _ := chatParseProviderPrefix(opts.ChatModel); p == "cli" || p == "ollama" || p == "lmstudio" {
+			usesCLI = true
+		}
+	}
+	if usesCLI {
 		systemPrompt += `
 
 # Output Style: Explanatory
@@ -58,14 +99,6 @@ You are in explanatory mode. Before and after answering questions, provide brief
 ` + "`─────────────────────────────────────────────────`" + `
 
 Focus on interesting insights specific to this IMPL doc rather than general programming concepts. Help the user learn about SAW protocol patterns, wave structure decisions, interface contract design, and agent coordination strategies.`
-	}
-
-	// Select backend based on API key presence.
-	var b backend.Backend
-	if apiKey != "" {
-		b = api.New(apiKey, backend.Config{})
-	} else {
-		b = cli.New("", backend.Config{})
 	}
 
 	// Format history into the system prompt for now.
@@ -86,4 +119,14 @@ Focus on interesting insights specific to this IMPL doc rather than general prog
 
 	_ = response // Response is already streamed via onChunk
 	return nil
+}
+
+// chatParseProviderPrefix splits "ollama:qwen2.5-coder:32b" into ("ollama", "qwen2.5-coder:32b").
+// Returns ("", model) when no colon-prefix is present.
+func chatParseProviderPrefix(model string) (provider, bare string) {
+	idx := strings.Index(model, ":")
+	if idx < 0 {
+		return "", model
+	}
+	return model[:idx], model[idx+1:]
 }
