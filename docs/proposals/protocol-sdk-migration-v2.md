@@ -223,6 +223,326 @@ func lintIMPLDoc(path string) error {
 
 ---
 
+
+## Execution Contexts and Backend Configuration
+
+**Critical architectural complexity:** The orchestrator (where `/saw` skill runs) and agents (where wave work executes) can use **different backends**. Understanding this split is essential for deployment flexibility.
+
+### Two Execution Layers
+
+#### Orchestrator Layer (Where `/saw` Runs)
+
+**The `/saw` skill always runs in Claude Code CLI** - it is instructions for Claude (the orchestrator) to execute.
+
+**Two deployment contexts for orchestrator:**
+
+| Context | How Invoked | Backend Powering Orchestrator |
+|---------|-------------|-------------------------------|
+| **Max Plan** | `claude` CLI with Max Plan subscription | Claude API (subscription-based) |
+| **Bedrock** | `claude` CLI with `ANTHROPIC_BEDROCK_ENABLED=true` | AWS Bedrock (pay-per-use) |
+
+**Key point:** The orchestrator uses YOUR Claude session. This is the Claude instance interpreting the skill, coordinating wave execution, handling errors conversationally.
+
+#### Agent Layer (Where Wave Work Executes)
+
+**Agents are spawned by the orchestrator.** Each agent can use a **different backend** than the orchestrator.
+
+**Agent backend options:**
+
+| Backend | Configuration | Use Case |
+|---------|--------------|----------|
+| **Anthropic API** | `agent_backend: api`<br>`ANTHROPIC_API_KEY=sk-ant-...` | Direct billing to Anthropic account |
+| **AWS Bedrock** | `agent_backend: bedrock`<br>AWS credentials | Enterprise AWS deployments |
+| **Claude Code CLI** | `agent_backend: cli`<br>`claude` binary available | Same as orchestrator (default) |
+| **OpenAI-compatible** | `agent_backend: openai`<br>`OPENAI_API_KEY=...` | Alternative models (GPT-4, Groq, Ollama) |
+
+**Key point:** Orchestrator and agents are decoupled. You can coordinate with Max Plan Claude while agents execute on Bedrock.
+
+### Four Main Execution Scenarios
+
+#### Scenario 1: Max Plan Orchestrator + Max Plan Agents
+
+**Setup:**
+```bash
+# Your Claude Code session (default configuration)
+/saw wave
+```
+
+**Execution:**
+```
+Orchestrator: Max Plan subscription
+  ↓ spawns agents
+Agents: CLI backend (claude binary, also Max Plan)
+  ↓ execute in worktrees
+Result: Unified billing through Max Plan
+```
+
+**When to use:** Simple setup, all costs on one subscription.
+
+#### Scenario 2: Max Plan Orchestrator + Bedrock Agents
+
+**Setup:**
+```bash
+# Orchestrator on Max Plan
+export AWS_REGION=us-east-1
+/saw wave
+```
+
+**Configuration:**
+```yaml
+# manifest or config
+agent_backend: bedrock
+bedrock_model: anthropic.claude-sonnet-4-6-v1
+```
+
+**Execution:**
+```
+Orchestrator: Max Plan (you coordinate)
+  ↓ spawns agents
+Agents: AWS Bedrock backend (pkg/agent/backend/bedrock/)
+  ↓ uses AWS credentials
+  ↓ execute in worktrees
+Result: Orchestration on Max Plan, compute on AWS
+```
+
+**When to use:** Heavy compute (many agents, long-running) where AWS pricing is better. You coordinate with Max Plan but offload agent work to Bedrock.
+
+#### Scenario 3: Bedrock Orchestrator + Bedrock Agents
+
+**Setup:**
+```bash
+# Configure Claude Code for Bedrock
+export ANTHROPIC_BEDROCK_ENABLED=true
+export AWS_REGION=us-east-1
+
+/saw wave
+```
+
+**Execution:**
+```
+Orchestrator: AWS Bedrock
+  ↓ spawns agents
+Agents: AWS Bedrock (same)
+  ↓ execute in worktrees
+Result: Unified AWS billing
+```
+
+**When to use:** Enterprise AWS-only deployments. All costs on AWS invoice.
+
+#### Scenario 4: Max Plan Orchestrator + Direct API Agents
+
+**Setup:**
+```bash
+# Orchestrator on Max Plan
+export ANTHROPIC_API_KEY=sk-ant-...
+/saw wave
+```
+
+**Configuration:**
+```yaml
+agent_backend: api
+api_key: ${ANTHROPIC_API_KEY}
+```
+
+**Execution:**
+```
+Orchestrator: Max Plan
+  ↓ spawns agents
+Agents: Anthropic API backend (pkg/agent/backend/api/)
+  ↓ direct API calls with your key
+  ↓ execute in worktrees
+Result: Orchestration on Max Plan, agents billed to API account
+```
+
+**When to use:** Fine-grained cost control. Track agent API usage separately from orchestration.
+
+### How Protocol SDK Fits In
+
+**The protocol SDK is backend-agnostic** - it manages IMPL manifests (YAML parsing, validation, context extraction), not agent execution.
+
+**Orchestrator uses SDK:**
+```bash
+# Skill (bash) calls protocol SDK operations
+saw validate "$impl_path"          # Load + validate manifest
+saw extract-context "$impl_path" "$agent_id"  # Get agent payload
+saw set-completion "$impl_path" "$agent_id"   # Register report
+```
+
+**These operations work identically regardless of:**
+- Whether orchestrator runs on Max Plan or Bedrock
+- Whether agents use Bedrock, API, CLI, or OpenAI
+- Whether invoked via skill, web UI, or programmatic Go
+
+**Agent execution is separate:**
+```
+Skill launches agent:
+  claude agent --type wave-agent --prompt "$context"
+  (or programmatic: backend.RunStreamingWithTools(...))
+    ↓
+Agent uses configured backend:
+  - Bedrock: AWS SDK v2, InvokeModelWithResponseStream
+  - API: Raw HTTP to api.anthropic.com/v1/messages
+  - CLI: Subprocess execution of claude binary
+  - OpenAI: Raw HTTP to OpenAI-compatible endpoint
+    ↓
+Agent executes tools in worktree:
+  - file:read, file:write, bash (via Workshop)
+    ↓
+Agent writes completion report:
+  - completion-report.yaml in worktree
+    ↓
+Skill registers it via SDK:
+  saw set-completion (protocol SDK updates manifest)
+```
+
+### Configuration Approach
+
+**Backend selection:**
+
+```yaml
+# In IMPL manifest or orchestrator config file
+
+# Agent backend configuration
+agent_backend: "bedrock"  # "api" | "bedrock" | "cli" | "openai"
+
+# Backend-specific settings
+bedrock:
+  region: "us-east-1"
+  model: "anthropic.claude-sonnet-4-6-v1"
+  max_tokens: 4096
+
+api:
+  api_key: "${ANTHROPIC_API_KEY}"
+  model: "claude-sonnet-4-6"
+  max_tokens: 4096
+
+openai:
+  api_key: "${OPENAI_API_KEY}"
+  base_url: "https://api.openai.com/v1"
+  model: "gpt-4"
+  max_tokens: 4096
+
+cli:
+  binary_path: "/usr/local/bin/claude"
+  model: "claude-sonnet-4-6"
+```
+
+**Per-agent backend override:**
+
+```yaml
+# In IMPL manifest
+waves:
+  - number: 1
+    agents:
+      - id: A
+        task: "Complex analysis requiring Claude"
+        model: "claude-sonnet-4-6"
+        backend: "api"  # Override: use API for this agent
+
+      - id: B
+        task: "Simple code generation"
+        model: "gpt-4"
+        backend: "openai"  # Override: use OpenAI for this agent
+```
+
+**Environment-based configuration:**
+
+```bash
+# Override via environment variables
+export SAW_AGENT_BACKEND=bedrock
+export SAW_BEDROCK_REGION=us-west-2
+export SAW_BEDROCK_MODEL=anthropic.claude-sonnet-4-6-v1
+
+/saw wave
+```
+
+### Why This Complexity Matters
+
+**1. Cost optimization:**
+- Coordinate with Max Plan (fixed cost)
+- Execute heavy work on Bedrock (pay-per-use)
+- Result: Predictable orchestration cost, scale agent compute as needed
+
+**2. Compliance:**
+- Some enterprises require AWS-only deployments
+- Bedrock orchestrator + Bedrock agents = fully AWS
+- No external API calls
+
+**3. Model flexibility:**
+- Use Claude for orchestration (best at coordination)
+- Use GPT-4 for specific agents (if specialized task benefits)
+- Use local Ollama for testing (no API costs)
+
+**4. Development workflow:**
+- Develop with Max Plan (fast, interactive)
+- Test with Bedrock (production-like)
+- CI/CD with API keys (automated, no interactive CLI)
+
+### SDK Design Implications
+
+**Protocol SDK must be backend-agnostic:**
+
+```go
+// Good: No backend assumptions
+func Load(path string) (*IMPLManifest, error) {
+    data, _ := os.ReadFile(path)
+    var manifest IMPLManifest
+    yaml.Unmarshal(data, &manifest)
+    return &manifest, nil
+}
+
+// Good: Validates structure only
+func Validate(m *IMPLManifest) error {
+    // I1-I6 checks
+    // No backend-specific logic
+}
+
+// Bad: Would break backend flexibility
+func ValidateWithBackend(m *IMPLManifest, backend string) error {
+    if backend == "bedrock" {
+        // Special validation for Bedrock
+    }
+    // This couples SDK to backend implementation
+}
+```
+
+**Orchestrator uses SDK regardless of backend:**
+
+```bash
+# Works with Max Plan orchestrator
+/saw wave
+  → saw validate (protocol SDK)
+  → launch agents on Bedrock
+
+# Works with Bedrock orchestrator
+/saw wave
+  → saw validate (same protocol SDK)
+  → launch agents on API
+
+# Works with programmatic Go
+saw.Wave(manifest, backend)
+  → protocol.Validate (same SDK)
+  → launch agents on OpenAI
+```
+
+**Result:** SDK is a pure data layer (YAML ↔ Go structs), orchestrator and agents are execution layers (backend-specific).
+
+### Testing Matrix
+
+**SDK operations must work in all contexts:**
+
+| Orchestrator Backend | Agent Backend | SDK Operations |
+|---------------------|---------------|----------------|
+| Max Plan | CLI (Max Plan) | ✓ Load, Validate, Extract |
+| Max Plan | Bedrock | ✓ Load, Validate, Extract |
+| Max Plan | API | ✓ Load, Validate, Extract |
+| Bedrock | Bedrock | ✓ Load, Validate, Extract |
+| Bedrock | API | ✓ Load, Validate, Extract |
+| Programmatic Go | Any | ✓ Load, Validate, Extract |
+
+**All combinations must work** because SDK is backend-agnostic.
+
+---
 ## Architecture
 
 ### Layer 1: SDK (scout-and-wave-go/pkg/protocol)
