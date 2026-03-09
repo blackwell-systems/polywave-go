@@ -8,9 +8,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 | Version | Date | Headline |
 |---------|------|----------|
-| [0.7.0] | 2026-03-09 | Local model shortcuts — `ollama:` and `lmstudio:` provider prefixes with hardcoded default base URLs |
 | [0.9.0] | 2026-03-09 | Agent Observatory — real-time tool call visibility per wave agent via SSE |
 | [0.8.0] | 2026-03-09 | Content-mode tool call fallback — handles local models (e.g. Qwen via Ollama) that embed tool calls in response content instead of `tool_calls` array |
+| [0.7.0] | 2026-03-09 | Local model shortcuts — `ollama:` and `lmstudio:` provider prefixes with hardcoded default base URLs |
 | [0.6.0] | 2026-03-09 | OpenAI-compatible API backend + provider-prefix routing — `openai:gpt-4o`, `cli:kimi`, `anthropic:claude-*` prefix dispatch in `newBackendFunc` |
 | [0.5.0] | 2026-03-09 | Configurable CLI binary — `BinaryPath` in `backend.Config` allows swapping `claude` for any compatible CLI |
 | [0.4.0] | 2026-03-09 | Per-agent model routing — ScoutModel/WaveModel opts, `model:` field in IMPL doc agent sections, per-agent backend dispatch |
