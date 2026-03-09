@@ -1,0 +1,69 @@
+# SAW Engine — Project Memory
+
+## Completed Features
+
+### v0.5.0 — Configurable CLI binary (2026-03-09)
+- `BinaryPath string` in `backend.Config` — optional path to CLI binary; resolution order: `Client.claudePath` → `Config.BinaryPath` → PATH lookup for `"claude"`
+
+### v0.4.0 — Per-agent model routing (2026-03-09)
+- `RunScoutOpts.ScoutModel` / `RunWaveOpts.WaveModel` — model overrides at the run level
+- `AgentSpec.Model` — per-agent model field parsed from `**model:**` in IMPL doc sections
+- `Orchestrator.SetDefaultModel()` + per-agent backend dispatch in `RunWave`
+- `--model <model>` flag wired in CLI backend (was silently ignored before)
+
+### v0.6.0 — OpenAI-compatible backend + provider-prefix routing (2026-03-09)
+- `pkg/agent/backend/openai/` — new package implementing `backend.Backend` via `net/http` against OpenAI `/v1/chat/completions`; tool-call loop (Bash, Read, Write, Edit, Glob, Grep); streaming SSE for final stop turn
+- `backend.Config.APIKey` / `backend.Config.BaseURL` — struct-based config for OpenAI backend; env var fallback (`OPENAI_API_KEY`)
+- `BackendConfig.OpenAIKey` / `BackendConfig.BaseURL` — orchestrator-level config
+- `parseProviderPrefix("openai:gpt-4o")` → `("openai", "gpt-4o")` — routing prefix parsed in `newBackendFunc`
+- Provider dispatch: `"openai:*"` → openai backend; `"cli:*"` → CLI backend (binary from `SAW_CLI_BINARY` env); `"anthropic:*"` → Anthropic API backend; no prefix → existing auto logic
+
+## Established Interfaces
+
+### `backend.Backend`
+```go
+type Backend interface {
+    Run(ctx context.Context, systemPrompt, userMessage, workDir string) (string, error)
+    RunStreaming(ctx context.Context, systemPrompt, userMessage, workDir string, onChunk ChunkCallback) (string, error)
+}
+```
+
+### `backend.Config`
+```go
+type Config struct {
+    Model      string
+    MaxTokens  int
+    MaxTurns   int
+    BinaryPath string // CLI binary path override
+    APIKey     string // OpenAI-compatible API key (falls back to OPENAI_API_KEY)
+    BaseURL    string // OpenAI-compatible endpoint override
+}
+```
+
+### `openai.New`
+```go
+func New(cfg backend.Config) *Client
+// cfg.APIKey → OPENAI_API_KEY env fallback
+// cfg.BaseURL → defaults to "https://api.openai.com/v1"
+// cfg.Model   → defaults to "gpt-4o"
+```
+
+### `BackendConfig` (orchestrator)
+```go
+type BackendConfig struct {
+    Kind      string // "api" | "cli" | "openai" | "auto" | or inferred from provider prefix
+    APIKey    string // Anthropic key
+    OpenAIKey string // OpenAI key (falls back to OPENAI_API_KEY)
+    BaseURL   string // endpoint override for openai kind
+    Model     string // may carry provider prefix: "openai:gpt-4o", "cli:kimi"
+    MaxTokens int
+    MaxTurns  int
+}
+```
+
+## Architectural Decisions
+
+- **Tool type is package-local** in both `api/` and `openai/` backends — avoids circular imports; each backend defines its own `tool` struct
+- **net/http over openai-go SDK** — OpenAI backend uses raw HTTP; SDK is in go.mod but raw HTTP avoids SDK type churn
+- **Provider prefix overrides Kind** — if `parseProviderPrefix(cfg.Model)` returns a non-empty provider, it takes precedence over `cfg.Kind`; this lets per-agent `model:` fields in IMPL docs route to any backend without changing orchestrator config
+- **`SAW_CLI_BINARY` env** — custom CLI binary path for the `"cli:*"` dispatch case; complements `BinaryPath` in `backend.Config`
