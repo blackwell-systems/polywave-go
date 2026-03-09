@@ -8,11 +8,34 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 | Version | Date | Headline |
 |---------|------|----------|
+| [0.6.0] | 2026-03-09 | OpenAI-compatible API backend + provider-prefix routing — `openai:gpt-4o`, `cli:kimi`, `anthropic:claude-*` prefix dispatch in `newBackendFunc` |
 | [0.5.0] | 2026-03-09 | Configurable CLI binary — `BinaryPath` in `backend.Config` allows swapping `claude` for any compatible CLI |
 | [0.4.0] | 2026-03-09 | Per-agent model routing — ScoutModel/WaveModel opts, `model:` field in IMPL doc agent sections, per-agent backend dispatch |
 | [0.3.0] | 2026-03-08 | Protocol audit fixes — P0: failure_type parsing, multi-gen agent IDs; P1: E22 2-pass scaffold build, cross-repo Repo column; P2: repo field in completion reports |
 | [0.2.0] | 2026-03-08 | Engine protocol parity — E17–E23 implemented (context memory, failure routing, stub scan, quality gates, scaffold build verify, per-agent context extraction) |
 | [0.1.0] | 2026-03-08 | Initial engine extraction — parser, orchestrator, agent runner, git, worktree management |
+
+---
+
+## [0.6.0] - 2026-03-09
+
+### Added
+
+- **`pkg/agent/backend/openai/` package** — new backend implementing `backend.Backend` via `net/http` against any OpenAI-compatible `POST /v1/chat/completions` endpoint. Supports the full tool-call loop (Bash, Read, Write, Edit, Glob, Grep) and streaming SSE for the final stop turn. Default model: `"gpt-4o"`. Constructor: `openai.New(cfg backend.Config) *Client`.
+- **`backend.Config.APIKey string`** (`pkg/agent/backend/backend.go`) — API key for the OpenAI-compatible backend; falls back to `OPENAI_API_KEY` env var if empty.
+- **`backend.Config.BaseURL string`** (`pkg/agent/backend/backend.go`) — optional endpoint override (e.g. `"https://api.groq.com/openai/v1"` for Groq, `"http://localhost:11434/v1"` for Ollama). Defaults to the official OpenAI endpoint.
+- **`BackendConfig.OpenAIKey string`** (`pkg/orchestrator/orchestrator.go`) — orchestrator-level OpenAI key; falls back to `OPENAI_API_KEY`.
+- **`BackendConfig.BaseURL string`** (`pkg/orchestrator/orchestrator.go`) — endpoint override forwarded to the OpenAI backend.
+- **`parseProviderPrefix(model string) (provider, bareModel string)`** (`pkg/orchestrator/orchestrator.go`) — splits `"openai:gpt-4o"` → `("openai", "gpt-4o")`; no-colon input returns `("", model)`.
+- **Provider-prefix routing in `newBackendFunc`** (`pkg/orchestrator/orchestrator.go`) — prefix parsed from `cfg.Model` overrides `cfg.Kind`; new dispatch cases:
+  - `"openai"` → `openaibackend.New(backend.Config{...APIKey, BaseURL})`
+  - `"anthropic"` → `apiclient.New(apiKey, backend.Config{...})`
+  - `"cli"` → `cliclient.New(binaryPath, backend.Config{...})` where `binaryPath` comes from `SAW_CLI_BINARY` env
+  - existing `"api"` / `"auto"` / `""` cases unchanged
+
+### Changed
+
+- `backend.Config` doc comment updated: `Model` is provider-agnostic; any model identifier accepted by the target backend is valid.
 
 ---
 
