@@ -8,12 +8,6 @@ import (
 	"time"
 )
 
-// Mock implementations for middleware testing
-type executorFunc func(context.Context, ExecutionContext, map[string]interface{}) (string, error)
-
-func (f executorFunc) Execute(ctx context.Context, execCtx ExecutionContext, input map[string]interface{}) (string, error) {
-	return f(ctx, execCtx, input)
-}
 
 // mockMiddlewareApply is a mock implementation of Apply for testing
 func mockMiddlewareApply(executor ToolExecutor, middlewares ...Middleware) ToolExecutor {
