@@ -2120,7 +2120,7 @@ saw render IMPL-tool-refactor.yaml > IMPL-tool-refactor.md
 
 **Deliverable:** Protocol as SDK, agents pluggable, orchestrator fixed.
 
-#### Wave 1-1: SDK Core Implementation
+#### Wave 1: SDK Core Implementation
 
 **scout-and-wave-go (SDK):**
 - `pkg/protocol/manifest.go` - Core types (IMPLManifest, Wave, Agent, FileOwnership, CompletionReport)
@@ -2132,7 +2132,7 @@ saw render IMPL-tool-refactor.yaml > IMPL-tool-refactor.md
 
 **Success criteria:** SDK functions work in isolation, all unit tests pass.
 
-#### Wave 1-2: CLI Binary (SDK Bridge)
+#### Wave 2: CLI Binary (SDK Bridge)
 
 **scout-and-wave-web (CLI commands):**
 - `cmd/saw/validate.go` - `saw validate <manifest>` command
@@ -2146,7 +2146,7 @@ saw render IMPL-tool-refactor.yaml > IMPL-tool-refactor.md
 
 **Success criteria:** CLI binary wraps SDK operations, skill can call commands via bash.
 
-#### Wave 1-3: Skill Migration
+#### Wave 3: Skill Migration
 
 **scout-and-wave (skill updates):**
 - Update `/saw` skill to call `saw validate` instead of `validate-impl.sh`
@@ -2157,7 +2157,7 @@ saw render IMPL-tool-refactor.yaml > IMPL-tool-refactor.md
 
 **Success criteria:** `/saw wave` works with new CLI commands, agents execute normally.
 
-#### Wave 1-4: Scout Agent Updates
+#### Wave 4: Scout Agent Updates
 
 **scout-and-wave (Scout changes):**
 - Scout generates YAML manifest instead of markdown IMPL doc
@@ -2166,7 +2166,7 @@ saw render IMPL-tool-refactor.yaml > IMPL-tool-refactor.md
 
 **Success criteria:** Scout produces valid YAML, `saw validate` passes.
 
-#### Wave 1-5: Web UI Integration
+#### Wave 5: Web UI Integration
 
 **scout-and-wave-web (HTTP + frontend):**
 - Update HTTP handlers to import SDK directly (`protocol.Load`, `protocol.Validate`)
@@ -2510,7 +2510,7 @@ saw set-completion IMPL-foo.yaml agent-A < report.yaml
 ```bash
 # Phase 1: Protocol SDK
 /saw scout "Protocol SDK migration per docs/proposals/protocol-sdk-migration-v2.md Phase 1"
-  → Scout designs Wave 1-1 through Wave 1-5
+  → Scout designs Wave 1 through Wave 5
   → Each wave builds on previous (SDK → CLI → Skill → Scout → Web UI)
 
 # After Wave 1-2 completes (CLI binary available):
