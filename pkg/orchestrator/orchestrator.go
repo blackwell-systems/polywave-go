@@ -185,15 +185,15 @@ var newBackendFunc = func(cfg BackendConfig) (backend.Backend, error) {
 			BaseURL:   baseURL,
 		}), nil
 	case "bedrock":
-		apiKey := cfg.APIKey
-		if apiKey == "" {
-			apiKey = os.Getenv("ANTHROPIC_API_KEY")
-		}
+		// bedrock: prefix uses CLI backend with expanded Bedrock model IDs.
+		// The claude CLI command is already configured to talk to Bedrock.
 		fullID := expandBedrockModelID(bareModel)
-		return apiclient.New(apiKey, backend.Config{
-			Model:     fullID,
-			MaxTokens: cfg.MaxTokens,
-			MaxTurns:  cfg.MaxTurns,
+		binaryPath := os.Getenv("SAW_CLI_BINARY")
+		return cliclient.New(binaryPath, backend.Config{
+			Model:      fullID,
+			MaxTokens:  cfg.MaxTokens,
+			MaxTurns:   cfg.MaxTurns,
+			BinaryPath: binaryPath,
 		}), nil
 	case "anthropic":
 		apiKey := cfg.APIKey
