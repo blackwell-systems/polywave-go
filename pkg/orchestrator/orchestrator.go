@@ -77,7 +77,7 @@ var waitForCompletionFunc = func(implDocPath, agentLetter string, timeout, pollI
 
 // BackendConfig carries backend selection + credentials for newBackendFunc.
 type BackendConfig struct {
-	Kind      string // "api" | "cli" | "auto" | "openai" | "anthropic"
+	Kind      string // "api" | "cli" | "auto" | "openai" | "anthropic" | "ollama" | "lmstudio"
 	APIKey    string
 	Model     string
 	MaxTokens int
@@ -134,6 +134,29 @@ var newBackendFunc = func(cfg BackendConfig) (backend.Backend, error) {
 			APIKey:    apiKey,
 			BaseURL:   cfg.BaseURL,
 		}), nil
+	case "ollama":
+		baseURL := cfg.BaseURL
+		if baseURL == "" {
+			baseURL = "http://localhost:11434/v1"
+		}
+		return openaibackend.New(backend.Config{
+			Model:     bareModel,
+			MaxTokens: cfg.MaxTokens,
+			MaxTurns:  cfg.MaxTurns,
+			BaseURL:   baseURL,
+			// Ollama does not require an API key; pass empty string.
+		}), nil
+	case "lmstudio":
+		baseURL := cfg.BaseURL
+		if baseURL == "" {
+			baseURL = "http://localhost:1234/v1"
+		}
+		return openaibackend.New(backend.Config{
+			Model:     bareModel,
+			MaxTokens: cfg.MaxTokens,
+			MaxTurns:  cfg.MaxTurns,
+			BaseURL:   baseURL,
+		}), nil
 	case "anthropic":
 		apiKey := cfg.APIKey
 		if apiKey == "" {
@@ -168,7 +191,7 @@ var newBackendFunc = func(cfg BackendConfig) (backend.Backend, error) {
 		}
 		return cliclient.New("", bcfg), nil
 	default:
-		return nil, fmt.Errorf("orchestrator: unknown backend kind %q; valid values: api, cli, auto, openai, anthropic", effectiveKind)
+		return nil, fmt.Errorf("orchestrator: unknown backend kind %q; valid values: api, cli, auto, openai, anthropic, ollama, lmstudio", effectiveKind)
 	}
 }
 

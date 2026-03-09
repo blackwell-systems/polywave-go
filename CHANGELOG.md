@@ -8,12 +8,27 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 | Version | Date | Headline |
 |---------|------|----------|
+| [0.7.0] | 2026-03-09 | Local model shortcuts — `ollama:` and `lmstudio:` provider prefixes with hardcoded default base URLs |
 | [0.6.0] | 2026-03-09 | OpenAI-compatible API backend + provider-prefix routing — `openai:gpt-4o`, `cli:kimi`, `anthropic:claude-*` prefix dispatch in `newBackendFunc` |
 | [0.5.0] | 2026-03-09 | Configurable CLI binary — `BinaryPath` in `backend.Config` allows swapping `claude` for any compatible CLI |
 | [0.4.0] | 2026-03-09 | Per-agent model routing — ScoutModel/WaveModel opts, `model:` field in IMPL doc agent sections, per-agent backend dispatch |
 | [0.3.0] | 2026-03-08 | Protocol audit fixes — P0: failure_type parsing, multi-gen agent IDs; P1: E22 2-pass scaffold build, cross-repo Repo column; P2: repo field in completion reports |
 | [0.2.0] | 2026-03-08 | Engine protocol parity — E17–E23 implemented (context memory, failure routing, stub scan, quality gates, scaffold build verify, per-agent context extraction) |
 | [0.1.0] | 2026-03-08 | Initial engine extraction — parser, orchestrator, agent runner, git, worktree management |
+
+---
+
+## [0.7.0] - 2026-03-09
+
+### Added
+
+- **`"ollama"` provider prefix** (`pkg/orchestrator/orchestrator.go`) — `"ollama:granite3.1-dense:8b"` routes to the OpenAI-compatible backend with `BaseURL` defaulting to `"http://localhost:11434/v1"`. No API key required. `BaseURL` can be overridden via `BackendConfig.BaseURL` for non-default Ollama ports.
+- **`"lmstudio"` provider prefix** (`pkg/orchestrator/orchestrator.go`) — `"lmstudio:phi-4"` routes to the OpenAI-compatible backend with `BaseURL` defaulting to `"http://localhost:1234/v1"`. No API key required.
+
+Both prefixes alias into the existing `openaibackend` — no new package. Local model usage example in `saw.config.json`:
+```json
+{ "agent": { "wave_model": "ollama:granite3.1-dense:8b" } }
+```
 
 ---
 
