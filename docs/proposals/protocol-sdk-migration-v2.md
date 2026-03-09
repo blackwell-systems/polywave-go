@@ -1964,6 +1964,77 @@ saw set-completion IMPL-foo.yaml agent-A < report.yaml
 
 ---
 
+
+### Self-Validation Approach: SAW Implements SAW
+
+**Critical advantage:** Use Scout-and-Wave to implement the protocol SDK migration itself.
+
+**Why this works:**
+1. **Immediate dog-fooding** - Protocol improvements tested during development
+2. **Failure detection** - Protocol gaps surface in real execution, not theory
+3. **Incremental validation** - Each wave validates previous waves' work
+4. **Living documentation** - IMPL doc for this migration becomes reference implementation
+
+**Execution:**
+```bash
+# Phase 1: Protocol SDK
+/saw scout "Protocol SDK migration per docs/proposals/protocol-sdk-migration-v2.md Phase 1"
+  → Scout designs Wave 1-1 through Wave 1-5
+  → Each wave builds on previous (SDK → CLI → Skill → Scout → Web UI)
+
+# After Wave 1-2 completes (CLI binary available):
+# Skill starts using saw validate, saw extract-context
+# Rest of Phase 1 uses new CLI commands
+# Protocol tests itself as it's being built
+
+# Phase 2: Orchestrator Backend
+/saw scout "Orchestrator backend abstraction per docs/proposals/protocol-sdk-migration-v2.md Phase 2"
+  → Scout designs Wave 2-1 through Wave 2-8
+  → Uses Phase 1 SDK (already shipped and validated)
+  → Tests orchestrator pluggability in real wave execution
+```
+
+**Self-validation checkpoints:**
+
+**Wave 1-2 (CLI binary):**
+- Remaining Phase 1 waves use `saw validate` for their own IMPL docs
+- If SDK is wrong, validation fails immediately
+- Fix SDK, re-run wave
+
+**Wave 1-4 (Scout updates):**
+- Scout generates YAML for its own Phase 2 design
+- If manifest schema is wrong, Scout's output fails validation
+- Fix schema, regenerate
+
+**Wave 2-6 (Skill updates):**
+- Skill uses `saw orchestrate` to launch its own remaining waves
+- If orchestrator backend routing is wrong, execution fails
+- Fix routing, re-run
+
+**Benefits:**
+- **No separate test suite needed** - The migration IS the test
+- **Real-world complexity** - Not toy examples, actual production use
+- **Continuous validation** - Every wave validates protocol assumptions
+- **Early failure detection** - Don't discover SDK bugs in unrelated features months later
+
+**Risk mitigation:**
+- Phase 1 Wave 1 uses current protocol (bootstrap)
+- Once CLI binary works (Wave 1-2), switch to new commands
+- If new commands fail, old protocol is still available (rollback)
+- Phase 2 depends on Phase 1 being production-stable (checkpoint)
+
+**IMPL doc location:**
+```
+scout-and-wave-go/docs/IMPL/IMPL-protocol-sdk-migration.yaml
+```
+
+This IMPL doc becomes the canonical example of:
+- Multi-phase project structure
+- Cross-repo coordination (scout-and-wave-go, scout-and-wave-web, scout-and-wave)
+- Incremental delivery with testing checkpoints
+- Self-validation during development
+
+---
 ## Open Questions for Scout
 
 1. **Manifest format:** YAML vs JSON vs TOML?
