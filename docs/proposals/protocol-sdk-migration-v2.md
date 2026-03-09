@@ -594,6 +594,375 @@ saw.Wave(manifest, backend)
 **All combinations must work** because SDK is backend-agnostic.
 
 ---
+
+## Orchestrator Backend Abstraction
+
+**Critical requirement:** The orchestrator (who coordinates wave execution) must be as pluggable as agents. Full interoperability means both orchestrator AND agents can use any backend.
+
+### Current Limitation
+
+**Agents are pluggable:**
+```yaml
+waves:
+  - agents:
+    - id: A
+      backend: bedrock
+    - id: B
+      backend: openai
+```
+
+**Orchestrator is locked:**
+```bash
+/saw wave  # Always uses YOUR Claude session (Max Plan or Bedrock)
+# Cannot specify: orchestrator should use GPT-4
+```
+
+**Architectural inconsistency:** If we support agent backend flexibility, orchestrator backend must be flexible too.
+
+### Proposed Solution
+
+**Orchestrator backend configuration:**
+
+```yaml
+# scout-and-wave config or IMPL manifest
+
+orchestrator:
+  backend: api
+  model: claude-sonnet-4-6
+  api_key: ${ORCHESTRATOR_API_KEY}
+  # OR
+  backend: bedrock
+  region: us-east-1
+  model: anthropic.claude-sonnet-4-6-v1
+  # OR
+  backend: openai
+  model: gpt-4
+  api_key: ${OPENAI_API_KEY}
+
+agents:
+  default_backend: bedrock  # Different from orchestrator
+  bedrock:
+    region: us-west-2
+    model: anthropic.claude-sonnet-4-6-v1
+```
+
+**Result:** Orchestrator and agents use independent backends. Mix and match freely.
+
+### Use Cases
+
+**1. Cost separation**
+```yaml
+orchestrator:
+  backend: api
+  api_key: ${PERSONAL_KEY}  # Your API key
+agents:
+  backend: bedrock
+  # Uses company AWS account
+```
+Result: You pay for coordination, company pays for compute.
+
+**2. Compliance**
+```yaml
+orchestrator:
+  backend: bedrock
+  region: us-gov-west-1  # GovCloud
+agents:
+  backend: bedrock
+  region: us-gov-west-1  # Same region
+```
+Result: All execution in government cloud.
+
+**3. Multi-tenancy**
+```yaml
+orchestrator:
+  backend: api
+  api_key: ${ADMIN_KEY}
+agents:
+  per_agent:
+    A:
+      backend: api
+      api_key: ${TENANT_A_KEY}
+    B:
+      backend: api
+      api_key: ${TENANT_B_KEY}
+```
+Result: Per-tenant billing and access control.
+
+**4. Development workflow**
+```yaml
+orchestrator:
+  backend: openai
+  model: gpt-4  # Fast, cheap for coordination
+agents:
+  backend: api
+  model: claude-sonnet-4-6  # Quality for implementation
+```
+Result: Optimize cost vs quality per layer.
+
+### Implementation Requirements
+
+#### 1. Generic Orchestration Interface
+
+**Current skill is Claude-specific:**
+```bash
+claude agent --type wave-agent ...  # Claude Code Agent tool
+```
+
+**Must become backend-agnostic:**
+```bash
+saw launch-agent "$manifest" "$agent_id" --backend "${AGENT_BACKEND}"
+# Works with any orchestrator backend
+```
+
+**SDK provides generic launch:**
+```go
+// pkg/orchestrator/orchestrator.go
+type Orchestrator struct {
+    orchestratorBackend Backend  // For coordination
+    agentBackendConfig  BackendConfig  // For agents
+    sdk                 *protocol.SDK
+}
+
+func (o *Orchestrator) RunWave(manifest *protocol.IMPLManifest) error {
+    // Orchestrator uses its backend for coordination tasks:
+    // - Reading IMPL doc
+    // - Making decisions (proceed? retry? escalate?)
+    // - Writing status updates
+
+    // Agents use their configured backend:
+    for _, agent := range manifest.CurrentWave().Agents {
+        agentBackend := o.selectAgentBackend(agent)
+        o.launchAgent(agent, agentBackend)
+    }
+}
+```
+
+#### 2. Orchestration as Structured Operations
+
+**Orchestrator operations must work with any backend:**
+
+```go
+// Orchestration operations (SDK provides these)
+protocol.Load(manifest_path)           // Read manifest
+protocol.Validate(manifest)            // Check I1-I6
+protocol.ExtractAgentContext(...)      // Get agent payload
+protocol.SetCompletionReport(...)      // Register completion
+
+// Coordination decisions (orchestrator backend provides these)
+orchestratorBackend.Analyze(context)   // "Should I proceed?"
+orchestratorBackend.Resolve(error)     // "How to fix this?"
+orchestratorBackend.Review(manifest)   // "Is this ready to merge?"
+```
+
+**Key distinction:**
+- **Protocol SDK:** Data operations (YAML parsing, validation) - backend-agnostic
+- **Orchestrator backend:** Coordination logic (decisions, recovery) - uses configured LLM
+
+#### 3. Skill Becomes Backend-Agnostic
+
+**Current skill:**
+```bash
+# Claude-specific
+/saw wave
+  → Claude interprets bash instructions
+  → Calls: claude agent (Claude Code tool)
+```
+
+**Revised skill:**
+```bash
+# Generic coordination script
+saw orchestrate wave "$manifest"
+  → Uses configured orchestrator backend
+  → Launches agents with configured agent backends
+```
+
+**Execution modes:**
+
+**Mode 1: CLI with skill**
+```bash
+# User invokes
+/saw wave
+
+# Skill calls
+saw orchestrate wave IMPL-foo.yaml \
+  --orchestrator-backend api \
+  --agent-backend bedrock
+```
+
+**Mode 2: Web UI**
+```
+User clicks "Start Wave"
+  ↓
+HTTP POST /api/wave/:slug/start
+  ↓
+orchestrator.RunWave(manifest, orchestratorBackend, agentBackendConfig)
+```
+
+**Mode 3: Programmatic**
+```go
+orchestrator := orchestrator.New(
+    orchestratorBackend: api.New(apiKey),
+    agentBackendConfig: bedrock.NewConfig(region),
+)
+orchestrator.RunWave(manifest)
+```
+
+#### 4. Backend Adapter Pattern (Same as Agents)
+
+**Orchestrator backends implement common interface:**
+
+```go
+// pkg/orchestrator/backend/backend.go
+type OrchestratorBackend interface {
+    // Coordination operations
+    Decide(ctx context.Context, decision Decision) (string, error)
+    Analyze(ctx context.Context, analysis Analysis) (string, error)
+    Resolve(ctx context.Context, error Error) (string, error)
+}
+
+type Decision struct {
+    Type    string  // "proceed" | "retry" | "escalate"
+    Context string  // Situation description
+    Options []string  // Available choices
+}
+```
+
+**Implementations:**
+
+```go
+// pkg/orchestrator/backend/api/
+type AnthropicOrchestratorBackend struct {
+    client *anthropic.Client
+}
+
+func (b *AnthropicOrchestratorBackend) Decide(ctx context.Context, d Decision) (string, error) {
+    // Call Anthropic API with decision prompt
+}
+
+// pkg/orchestrator/backend/openai/
+type OpenAIOrchestratorBackend struct {
+    client *openai.Client
+}
+
+func (b *OpenAIOrchestratorBackend) Decide(ctx context.Context, d Decision) (string, error) {
+    // Call OpenAI API with decision prompt
+}
+```
+
+**Same pattern as agent backends** - just different interface (coordination vs execution).
+
+### Configuration Schema
+
+**Complete configuration:**
+
+```yaml
+# Orchestrator backend
+orchestrator:
+  backend: api  # "api" | "bedrock" | "openai" | "cli"
+
+  # Backend-specific config
+  api:
+    api_key: ${ORCHESTRATOR_API_KEY}
+    model: claude-sonnet-4-6
+    max_tokens: 4096
+
+  bedrock:
+    region: us-east-1
+    model: anthropic.claude-sonnet-4-6-v1
+
+  openai:
+    api_key: ${OPENAI_API_KEY}
+    model: gpt-4
+    base_url: https://api.openai.com/v1
+
+# Agent backends (already designed)
+agents:
+  default_backend: bedrock
+
+  bedrock:
+    region: us-west-2
+    model: anthropic.claude-sonnet-4-6-v1
+
+  api:
+    api_key: ${AGENT_API_KEY}
+    model: claude-sonnet-4-6
+
+  # Per-agent overrides
+  per_agent:
+    A:
+      backend: api  # Agent A uses direct API
+    B:
+      backend: bedrock  # Agent B uses Bedrock
+    C:
+      backend: openai
+      model: gpt-4  # Agent C uses OpenAI
+```
+
+### Migration Impact
+
+**Scope additions to proposal:**
+
+**scout-and-wave-go (SDK):**
+- Already backend-agnostic ✓
+- No changes needed
+
+**scout-and-wave-web (orchestrator):**
+- `pkg/orchestrator/backend/` - Orchestrator backend interface + implementations
+- `pkg/orchestrator/orchestrator.go` - Use orchestrator backend for coordination
+- `cmd/saw/orchestrate.go` - New command: `saw orchestrate wave <manifest>`
+- Backend routing based on config (same pattern as agent backends)
+
+**scout-and-wave (skill):**
+- Update skill to call `saw orchestrate` instead of direct agent launches
+- Orchestrator backend config in skill header
+- Remains bash-based but backend-agnostic
+
+### Why This Is Critical
+
+**1. Architectural consistency**
+- Agents pluggable → Orchestrator must be pluggable
+- Otherwise "interoperability" is incomplete
+
+**2. Cost optimization**
+- Orchestrator: Low-cost backend (GPT-4, local Ollama)
+- Agents: High-quality backend (Claude)
+- Split billing and optimize per layer
+
+**3. Compliance requirements**
+- Some enterprises mandate AWS-only (Bedrock orchestrator + Bedrock agents)
+- Others mandate API keys (no CLI, no Max Plan dependencies)
+
+**4. Multi-tenancy**
+- Different API keys per agent
+- Central orchestrator with tenant-specific agent execution
+
+**5. Development flexibility**
+- Test orchestrator with cheap model
+- Production agents with production model
+- No coupling between layers
+
+### Testing Requirements
+
+**All orchestrator + agent combinations must work:**
+
+| Orchestrator Backend | Agent Backend | Status |
+|---------------------|---------------|--------|
+| API (Claude) | Bedrock | ✓ |
+| API (Claude) | API (Claude) | ✓ |
+| API (Claude) | OpenAI | ✓ |
+| Bedrock | Bedrock | ✓ |
+| Bedrock | API | ✓ |
+| OpenAI | Bedrock | ✓ |
+| OpenAI | OpenAI | ✓ |
+| CLI (Max Plan) | Any | ✓ |
+
+**Integration tests validate:**
+- Orchestrator backend handles coordination (decisions, analysis)
+- Agent backends handle execution (tool calls, code generation)
+- Protocol SDK operations work identically regardless of backends
+- Configuration routing selects correct backend per layer
+
+---
 ## Architecture
 
 ### Layer 1: SDK (scout-and-wave-go/pkg/protocol)
@@ -1210,65 +1579,220 @@ saw render IMPL-tool-refactor.yaml > IMPL-tool-refactor.md
 
 ## Migration Strategy
 
-### Phase 1: SDK Implementation (Wave 1)
-
-**scout-and-wave-go (SDK core):**
-- `pkg/protocol/manifest.go` - Core types (IMPLManifest, Wave, Agent, FileOwnership, etc.)
-- `pkg/protocol/validation.go` - I1-I6 invariant enforcement
-- `pkg/protocol/extract.go` - Agent context extraction (E23)
-- `pkg/protocol/render.go` - Markdown generation
-- `pkg/protocol/migrate.go` - Markdown → YAML migration utility
-- Unit tests for all operations
-
-### Phase 2: CLI Integration (Wave 2)
-
-**scout-and-wave-web (CLI binary):**
-- `cmd/saw/validate.go` - Validate command
-- `cmd/saw/extract.go` - Extract context command
-- `cmd/saw/completion.go` - Set completion command
-- `cmd/saw/wave.go` - Current wave command
-- `cmd/saw/merge.go` - Merge wave command
-- `cmd/saw/render.go` - Render markdown command
-- `cmd/saw/migrate.go` - Migrate markdown command
-- Integration tests
-
-### Phase 3: Skill Update (Wave 3)
-
-**scout-and-wave (protocol repo):**
-- Update `~/.claude/skills/saw/saw.md` to call SDK commands instead of bash scripts
-- Update Scout agent to generate YAML manifest instead of markdown
-- Update Wave agent prompts to expect structured JSON payload
-- Archive bash scripts (`validate-impl.sh`, `scan-stubs.sh`)
-
-### Phase 4: Web UI Integration (Wave 4)
-
-**scout-and-wave-web (web UI):**
-- Update HTTP handlers to use SDK operations
-- Add manifest editor UI (YAML editor or form-based)
-- Update frontend components to render from structured data
-- Manifest validation in UI (real-time feedback)
-
-### Phase 5: Migration Utility (Wave 5)
-
-- Run migration utility on existing IMPL docs: `saw migrate IMPL-old.md > IMPL-new.yaml`
-- Generate markdown views: `saw render IMPL-new.yaml > IMPL-new.md`
-- Validate migration: `saw validate IMPL-new.yaml`
-- Update references in documentation
+**Two-phase execution for incremental delivery and testing:**
 
 ---
 
-## Backward Compatibility
+### Phase 1: Protocol SDK Migration (Shippable Core)
 
-**Incremental migration approach:**
-- New features use YAML manifest
-- Existing markdown IMPL docs continue to work (current parser remains)
-- Migration utility converts markdown → YAML on-demand
-- Eventually deprecate markdown support (v2.0 breaking change)
+**Goal:** Replace markdown parsing with structured YAML manifests and SDK operations. Orchestrator remains Claude-in-CLI (current model).
 
-**Transition period:**
-- Both formats supported
-- Scout generates YAML for new features
-- Existing features can be migrated individually using `saw migrate`
+**Deliverable:** Protocol as SDK, agents pluggable, orchestrator fixed.
+
+#### Wave 1-1: SDK Core Implementation
+
+**scout-and-wave-go (SDK):**
+- `pkg/protocol/manifest.go` - Core types (IMPLManifest, Wave, Agent, FileOwnership, CompletionReport)
+- `pkg/protocol/validation.go` - I1-I6 invariant enforcement with structured errors
+- `pkg/protocol/extract.go` - Agent context extraction (E23)
+- `pkg/protocol/render.go` - Markdown generation for human review
+- `pkg/protocol/migrate.go` - Markdown → YAML migration utility
+- Comprehensive unit tests
+
+**Success criteria:** SDK functions work in isolation, all unit tests pass.
+
+#### Wave 1-2: CLI Binary (SDK Bridge)
+
+**scout-and-wave-web (CLI commands):**
+- `cmd/saw/validate.go` - `saw validate <manifest>` command
+- `cmd/saw/extract.go` - `saw extract-context <manifest> <agent>` command
+- `cmd/saw/completion.go` - `saw set-completion <manifest> <agent>` command
+- `cmd/saw/wave.go` - `saw current-wave <manifest>` command
+- `cmd/saw/merge.go` - `saw merge-wave <manifest> <wave>` command
+- `cmd/saw/render.go` - `saw render <manifest>` command
+- `cmd/saw/migrate.go` - `saw migrate <old-impl.md>` command
+- Integration tests for each command
+
+**Success criteria:** CLI binary wraps SDK operations, skill can call commands via bash.
+
+#### Wave 1-3: Skill Migration
+
+**scout-and-wave (skill updates):**
+- Update `/saw` skill to call `saw validate` instead of `validate-impl.sh`
+- Update skill to call `saw extract-context` for agent payloads
+- Update skill to call `saw set-completion` for report registration
+- Skill remains bash-based, orchestrator remains Claude
+- Archive old bash scripts
+
+**Success criteria:** `/saw wave` works with new CLI commands, agents execute normally.
+
+#### Wave 1-4: Scout Agent Updates
+
+**scout-and-wave (Scout changes):**
+- Scout generates YAML manifest instead of markdown IMPL doc
+- Manifest follows schema (enforced by SDK validation)
+- Scout still runs as agent (no orchestrator changes)
+
+**Success criteria:** Scout produces valid YAML, `saw validate` passes.
+
+#### Wave 1-5: Web UI Integration
+
+**scout-and-wave-web (HTTP + frontend):**
+- Update HTTP handlers to import SDK directly (`protocol.Load`, `protocol.Validate`)
+- Add manifest editor UI (YAML textarea with validation feedback)
+- Update frontend components to render from structured data
+- Manifest validation in browser (call POST /api/impl/validate)
+
+**Success criteria:** Web UI loads manifests, validates in real-time, renders waves/agents.
+
+**Phase 1 Checkpoint:** Protocol SDK deployed, tested in production. Agents pluggable, orchestrator fixed to Claude CLI. No orchestrator backend abstraction yet.
+
+---
+
+### Phase 2: Orchestrator Backend Abstraction (Full Pluggability)
+
+**Goal:** Make orchestrator backend configurable (API, Bedrock, OpenAI, CLI). Complete interoperability - both orchestrator AND agents can use any backend.
+
+**Deliverable:** Orchestrator pluggable, full backend matrix supported.
+
+**Depends on:** Phase 1 complete and validated. SDK must be backend-agnostic (already designed this way).
+
+#### Wave 2-1: Orchestrator Backend Interface
+
+**scout-and-wave-go (orchestrator abstraction):**
+- `pkg/orchestrator/backend/backend.go` - OrchestratorBackend interface
+  ```go
+  type OrchestratorBackend interface {
+      Decide(ctx context.Context, decision Decision) (string, error)
+      Analyze(ctx context.Context, analysis Analysis) (string, error)
+      Resolve(ctx context.Context, error Error) (string, error)
+  }
+  ```
+- Define coordination operation types (Decision, Analysis, Error)
+- Unit tests for interface contract
+
+**Success criteria:** Interface defined, contract clear, testable with mocks.
+
+#### Wave 2-2: Backend Implementations
+
+**scout-and-wave-go (backend implementations):**
+- `pkg/orchestrator/backend/api/` - Anthropic API orchestrator backend
+- `pkg/orchestrator/backend/bedrock/` - AWS Bedrock orchestrator backend
+- `pkg/orchestrator/backend/openai/` - OpenAI-compatible orchestrator backend
+- `pkg/orchestrator/backend/cli/` - Claude Code CLI orchestrator backend
+- Integration tests for each backend
+
+**Success criteria:** Each backend can handle coordination operations (decide, analyze, resolve).
+
+#### Wave 2-3: Orchestrator Refactoring
+
+**scout-and-wave-go (orchestrator updates):**
+- Update `pkg/orchestrator/orchestrator.go` to use OrchestratorBackend
+- Separate orchestrator backend from agent backend in Orchestrator struct
+- Backend selection based on config
+- Backward compatibility: default to CLI backend (current behavior)
+
+**Success criteria:** Orchestrator uses configured backend for coordination, agents use configured backends for execution.
+
+#### Wave 2-4: Configuration Schema
+
+**scout-and-wave-go (config):**
+- Add orchestrator backend config to IMPL manifest schema
+- Add orchestrator backend config to orchestrator config file
+- Environment variable overrides
+- Validation: ensure orchestrator + agent backend combinations are valid
+
+**Success criteria:** Config parsed correctly, backend routing works as specified.
+
+#### Wave 2-5: CLI Orchestrate Command
+
+**scout-and-wave-web (new command):**
+- `cmd/saw/orchestrate.go` - `saw orchestrate wave <manifest>` command
+- Uses orchestrator backend from config
+- Launches agents with agent backend from config
+- Replaces direct `claude agent` calls in skill
+
+**Success criteria:** `saw orchestrate wave` works with any orchestrator backend, launches agents with any agent backend.
+
+#### Wave 2-6: Skill Updates (Backend-Agnostic)
+
+**scout-and-wave (skill updates):**
+- Update skill to call `saw orchestrate wave` instead of direct agent launches
+- Orchestrator backend config in skill header or env vars
+- Remove Claude-specific assumptions (Agent tool calls)
+- Skill becomes generic coordination script
+
+**Success criteria:** Skill works with any orchestrator backend (API, Bedrock, OpenAI, CLI).
+
+#### Wave 2-7: Web UI Orchestrator Config
+
+**scout-and-wave-web (UI updates):**
+- Add orchestrator backend selector in UI
+- Update HTTP handlers to use orchestrator backend from config
+- Display orchestrator backend in wave status
+- Per-wave backend override in UI
+
+**Success criteria:** Web UI respects orchestrator backend config, shows backend in use.
+
+#### Wave 2-8: Integration Testing Matrix
+
+**Test all combinations:**
+
+| Orchestrator Backend | Agent Backend | Test Status |
+|---------------------|---------------|-------------|
+| API (Claude) | Bedrock | ✓ |
+| API (Claude) | API (Claude) | ✓ |
+| API (Claude) | OpenAI | ✓ |
+| Bedrock | Bedrock | ✓ |
+| Bedrock | API | ✓ |
+| OpenAI | Bedrock | ✓ |
+| OpenAI | OpenAI | ✓ |
+| CLI (Max Plan) | Any | ✓ |
+
+**Success criteria:** All 8+ combinations work, no backend-specific bugs.
+
+**Phase 2 Checkpoint:** Full interoperability achieved. Orchestrator and agents both pluggable. Backend matrix validated.
+
+---
+
+### Incremental Testing Strategy
+
+**After each wave:**
+1. **Unit tests** - SDK functions, backend implementations
+2. **Integration tests** - CLI commands, HTTP endpoints
+3. **Manual testing** - Run `/saw wave` on real IMPL doc
+4. **Validation** - Compare behavior to previous version
+
+**Abort criteria:**
+- Phase 1 Wave X fails validation → Fix before proceeding
+- Phase 1 complete but unstable → Stabilize before Phase 2
+- Phase 2 Wave X breaks Phase 1 → Roll back, redesign
+
+**Ship criteria:**
+- Phase 1 can ship independently (agents pluggable, SDK working)
+- Phase 2 only ships after Phase 1 is production-stable
+
+---
+
+### Backward Compatibility During Migration
+
+**Phase 1 (Protocol SDK):**
+- Markdown IMPL docs continue to work (current parser remains)
+- YAML manifests work via SDK
+- Both formats supported during transition
+- Migration utility: `saw migrate` converts markdown → YAML on-demand
+
+**Phase 2 (Orchestrator Backend):**
+- Default orchestrator backend: CLI (current behavior)
+- Explicitly configured backends opt-in to new behavior
+- No breaking changes for existing deployments
+
+**Deprecation timeline:**
+- v2.0: Phase 1 ships, both formats supported
+- v2.1: Phase 2 ships, orchestrator pluggable
+- v3.0: Markdown IMPL docs deprecated (YAML only)
+
+---
 
 ---
 
