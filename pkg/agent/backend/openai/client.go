@@ -31,11 +31,14 @@ type Client struct {
 }
 
 // New creates a new Client configured from cfg.
-// APIKey is read from cfg.APIKey (if the field exists) then OPENAI_API_KEY env var.
+// APIKey is read from cfg.APIKey then OPENAI_API_KEY env var.
 // BaseURL defaults to "https://api.openai.com/v1".
 // Model defaults to "gpt-4o"; MaxTokens to 4096; MaxTurns to 50.
 func New(cfg backend.Config) *Client {
-	apiKey := os.Getenv("OPENAI_API_KEY")
+	apiKey := cfg.APIKey
+	if apiKey == "" {
+		apiKey = os.Getenv("OPENAI_API_KEY")
+	}
 
 	model := cfg.Model
 	if model == "" {
@@ -49,10 +52,14 @@ func New(cfg backend.Config) *Client {
 	if maxTurns <= 0 {
 		maxTurns = defaultMaxTurns
 	}
+	baseURL := cfg.BaseURL
+	if baseURL == "" {
+		baseURL = defaultBaseURL
+	}
 	return &Client{
 		apiKey:    apiKey,
 		model:     model,
-		baseURL:   defaultBaseURL,
+		baseURL:   baseURL,
 		maxTokens: maxTokens,
 		maxTurns:  maxTurns,
 	}

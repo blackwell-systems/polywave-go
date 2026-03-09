@@ -18,6 +18,15 @@ type Config struct {
 	// If empty, the CLI backend locates "claude" via PATH.
 	// Set this to use a different compatible CLI (e.g. "/usr/local/bin/kimi").
 	BinaryPath string
+
+	// APIKey is the API key for the OpenAI-compatible backend.
+	// If empty, the OPENAI_API_KEY environment variable is used.
+	APIKey string
+
+	// BaseURL is an optional endpoint override for the OpenAI-compatible backend
+	// (e.g. "https://api.groq.com/openai/v1" for Groq, "http://localhost:11434/v1" for Ollama).
+	// If empty, the official OpenAI endpoint is used.
+	BaseURL string
 }
 
 // ChunkCallback is called with each text chunk as it arrives from the backend.

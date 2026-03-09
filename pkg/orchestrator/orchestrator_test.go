@@ -816,6 +816,61 @@ func TestLaunchAgentE19BlockedEvent(t *testing.T) {
 	}
 }
 
+// TestParseProviderPrefix_WithPrefix verifies "openai:gpt-4o" splits correctly.
+func TestParseProviderPrefix_WithPrefix(t *testing.T) {
+	provider, bareModel := parseProviderPrefix("openai:gpt-4o")
+	if provider != "openai" {
+		t.Errorf("provider = %q, want %q", provider, "openai")
+	}
+	if bareModel != "gpt-4o" {
+		t.Errorf("bareModel = %q, want %q", bareModel, "gpt-4o")
+	}
+}
+
+// TestParseProviderPrefix_NoPrefix verifies "gpt-4o" (no colon) returns empty provider.
+func TestParseProviderPrefix_NoPrefix(t *testing.T) {
+	provider, bareModel := parseProviderPrefix("gpt-4o")
+	if provider != "" {
+		t.Errorf("provider = %q, want %q", provider, "")
+	}
+	if bareModel != "gpt-4o" {
+		t.Errorf("bareModel = %q, want %q", bareModel, "gpt-4o")
+	}
+}
+
+// TestParseProviderPrefix_CLIPrefix verifies "cli:kimi" splits correctly.
+func TestParseProviderPrefix_CLIPrefix(t *testing.T) {
+	provider, bareModel := parseProviderPrefix("cli:kimi")
+	if provider != "cli" {
+		t.Errorf("provider = %q, want %q", provider, "cli")
+	}
+	if bareModel != "kimi" {
+		t.Errorf("bareModel = %q, want %q", bareModel, "kimi")
+	}
+}
+
+// TestNewBackendFunc_OpenAIKind verifies BackendConfig{Kind:"openai"} produces a backend without error.
+func TestNewBackendFunc_OpenAIKind(t *testing.T) {
+	b, err := newBackendFunc(BackendConfig{Kind: "openai", Model: "gpt-4o"})
+	if err != nil {
+		t.Fatalf("newBackendFunc returned error: %v", err)
+	}
+	if b == nil {
+		t.Fatal("newBackendFunc returned nil backend")
+	}
+}
+
+// TestNewBackendFunc_OpenAIPrefix verifies BackendConfig{Kind:"auto", Model:"openai:gpt-4o"} produces a backend without error.
+func TestNewBackendFunc_OpenAIPrefix(t *testing.T) {
+	b, err := newBackendFunc(BackendConfig{Kind: "auto", Model: "openai:gpt-4o"})
+	if err != nil {
+		t.Fatalf("newBackendFunc returned error: %v", err)
+	}
+	if b == nil {
+		t.Fatal("newBackendFunc returned nil backend")
+	}
+}
+
 // TestState_String verifies that each state produces a human-readable name.
 func TestState_String(t *testing.T) {
 	cases := []struct {

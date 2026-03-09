@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"golang.org/x/sync/errgroup"
@@ -19,6 +20,7 @@ import (
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/agent/backend"
 	apiclient "github.com/blackwell-systems/scout-and-wave-go/pkg/agent/backend/api"
 	cliclient "github.com/blackwell-systems/scout-and-wave-go/pkg/agent/backend/cli"
+	openaibackend "github.com/blackwell-systems/scout-and-wave-go/pkg/agent/backend/openai"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/types"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/worktree"
@@ -75,21 +77,73 @@ var waitForCompletionFunc = func(implDocPath, agentLetter string, timeout, pollI
 
 // BackendConfig carries backend selection + credentials for newBackendFunc.
 type BackendConfig struct {
-	Kind      string // "api" | "cli" | "auto"
+	Kind      string // "api" | "cli" | "auto" | "openai" | "anthropic"
 	APIKey    string
 	Model     string
 	MaxTokens int
 	MaxTurns  int
+
+	// OpenAIKey is the API key for the OpenAI-compatible backend.
+	// Falls back to OPENAI_API_KEY env var if empty.
+	OpenAIKey string
+
+	// BaseURL is an optional endpoint override used when Kind == "openai"
+	// or when the provider prefix is "openai".
+	BaseURL string
+}
+
+// parseProviderPrefix splits a provider-qualified model string.
+// Input "openai:gpt-4o" returns ("openai", "gpt-4o").
+// Input "cli:kimi" returns ("cli", "kimi").
+// Input "anthropic:claude-opus-4-6" returns ("anthropic", "claude-opus-4-6").
+// Input "gpt-4o" (no colon) returns ("", "gpt-4o").
+func parseProviderPrefix(model string) (provider, bareModel string) {
+	idx := strings.Index(model, ":")
+	if idx < 0 {
+		return "", model
+	}
+	return model[:idx], model[idx+1:]
 }
 
 // newBackendFunc constructs a backend.Backend from config. Seam for tests.
 var newBackendFunc = func(cfg BackendConfig) (backend.Backend, error) {
+	// Parse any provider prefix from the model string (e.g. "openai:gpt-4o").
+	provider, bareModel := parseProviderPrefix(cfg.Model)
+
+	// Determine effective kind: explicit prefix overrides cfg.Kind.
+	effectiveKind := cfg.Kind
+	if provider != "" {
+		effectiveKind = provider
+	}
+
 	bcfg := backend.Config{
-		Model:     cfg.Model,
+		Model:     bareModel,
 		MaxTokens: cfg.MaxTokens,
 		MaxTurns:  cfg.MaxTurns,
 	}
-	switch cfg.Kind {
+	switch effectiveKind {
+	case "openai":
+		apiKey := cfg.OpenAIKey
+		if apiKey == "" {
+			apiKey = os.Getenv("OPENAI_API_KEY")
+		}
+		return openaibackend.New(backend.Config{
+			Model:     bareModel,
+			MaxTokens: cfg.MaxTokens,
+			MaxTurns:  cfg.MaxTurns,
+			APIKey:    apiKey,
+			BaseURL:   cfg.BaseURL,
+		}), nil
+	case "anthropic":
+		apiKey := cfg.APIKey
+		if apiKey == "" {
+			apiKey = os.Getenv("ANTHROPIC_API_KEY")
+		}
+		return apiclient.New(apiKey, backend.Config{
+			Model:     bareModel,
+			MaxTokens: cfg.MaxTokens,
+			MaxTurns:  cfg.MaxTurns,
+		}), nil
 	case "api":
 		apiKey := cfg.APIKey
 		if apiKey == "" {
@@ -97,7 +151,13 @@ var newBackendFunc = func(cfg BackendConfig) (backend.Backend, error) {
 		}
 		return apiclient.New(apiKey, bcfg), nil
 	case "cli":
-		return cliclient.New("", bcfg), nil
+		binaryPath := os.Getenv("SAW_CLI_BINARY")
+		return cliclient.New(binaryPath, backend.Config{
+			Model:      bareModel,
+			MaxTokens:  cfg.MaxTokens,
+			MaxTurns:   cfg.MaxTurns,
+			BinaryPath: binaryPath,
+		}), nil
 	case "auto", "":
 		apiKey := cfg.APIKey
 		if apiKey == "" {
@@ -108,7 +168,7 @@ var newBackendFunc = func(cfg BackendConfig) (backend.Backend, error) {
 		}
 		return cliclient.New("", bcfg), nil
 	default:
-		return nil, fmt.Errorf("orchestrator: unknown backend kind %q; valid values: api, cli, auto", cfg.Kind)
+		return nil, fmt.Errorf("orchestrator: unknown backend kind %q; valid values: api, cli, auto, openai, anthropic", effectiveKind)
 	}
 }
 
