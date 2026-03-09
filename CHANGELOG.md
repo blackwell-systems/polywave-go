@@ -8,8 +8,29 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 | Version | Date | Headline |
 |---------|------|----------|
+| [0.3.0] | 2026-03-08 | Protocol audit fixes — P0: failure_type parsing, multi-gen agent IDs; P1: E22 2-pass scaffold build, cross-repo Repo column; P2: repo field in completion reports |
 | [0.2.0] | 2026-03-08 | Engine protocol parity — E17–E23 implemented (context memory, failure routing, stub scan, quality gates, scaffold build verify, per-agent context extraction) |
 | [0.1.0] | 2026-03-08 | Initial engine extraction — parser, orchestrator, agent runner, git, worktree management |
+
+---
+
+## [0.3.0] - 2026-03-08
+
+### Fixed
+
+**Protocol audit — 6 gaps identified by cross-referencing engine against protocol spec v0.14.5**
+
+- **P0: `failure_type` not parsed in `ParseCompletionReport`** (`pkg/protocol/parser.go`) — The `raw` anonymous struct used for YAML unmarshaling had no `failure_type` field. `report.FailureType` was always empty string, routing every partial/blocked agent to `ActionEscalate` via `RouteFailure`. Added `FailureType string \`yaml:"failure_type"\`` to `raw` struct; result assigned to `report.FailureType`.
+
+- **P0: Agent ID format `[A-Z][2-9]?` not supported** (`pkg/protocol/parser.go`, `pkg/protocol/validator.go`) — `isAgentHeader` checked `rest[1]` for `:`, ` `, or `—` only, so multi-char IDs like `A2` silently failed to parse (wave returned zero agents, `StartWave` exited immediately with no error). `extractAgentLetter` returned only `string(rest[0])`. Validator regexes `agentLineRe` and `agentRefRe` captured only `[A-Z]`. All fixed to support `[A-Z][2-9]?`.
+
+- **P1: E22 scaffold build single-pass, no dependency resolution** (`pkg/engine/runner.go`) — `runScaffoldBuildVerification` ran only `go build ./...`. Protocol spec v0.14.2/v0.14.3 requires three steps: (1) dependency resolution (`go get ./...` + `go mod tidy`), (2) scaffold-package-only build (Pass 1), (3) full project build (Pass 2). Added dependency resolution step before build. Added scaffold-package-only Pass 1 using the scaffold file paths from `doc.ScaffoldsDetail` to derive the package set. Added language detection to handle Rust (`cargo fetch` + `cargo build -p <crate>`) and Node (`npm install` + `tsc --noEmit`); Python deferred.
+
+- **P1: Cross-repo `Repo` column silently dropped** (`pkg/types/types.go`, `pkg/protocol/parser.go`, `pkg/orchestrator/orchestrator.go`) — `FileOwnershipInfo` had no `Repo` field. `parseFileOwnershipRow` handled 4-column tables only; a 5-column cross-repo table had the `Repo` column silently ignored. `ValidateInvariants` grouped file conflicts by `file` path alone, producing false I1 violations when the same filename existed in different repos. Fixed: added `Repo string` to `FileOwnershipInfo`; `parseFileOwnershipRow` detects and parses 5-column tables; `ValidateInvariants` now groups by `repo+file` composite key.
+
+- **P2: `repo` field in completion reports not parsed** (`pkg/types/types.go`, `pkg/protocol/parser.go`) — `CompletionReport` had no `Repo` field; `raw` struct in `ParseCompletionReport` had no `repo` field. Added `Repo string \`yaml:"repo,omitempty"\`` to both.
+
+- **P2: E19 auto-remediation not wired** — `RouteFailure` correctly computes and publishes the action as SSE but takes no automatic retry/relaunch action. Full auto-remediation requires significant orchestrator logic and LLM session management; deferred to a future release. Noted in orchestrator.go comment.
 
 ---
 
