@@ -392,6 +392,9 @@ func RunSingleWave(ctx context.Context, opts RunWaveOpts, waveNum int, onEvent f
 	if err != nil {
 		return fmt.Errorf("engine.RunSingleWave: %w", err)
 	}
+	if opts.WaveModel != "" {
+		orch.SetDefaultModel(opts.WaveModel)
+	}
 	orch.SetEventPublisher(func(ev orchestrator.OrchestratorEvent) {
 		onEvent(Event{Event: ev.Event, Data: ev.Data})
 	})
