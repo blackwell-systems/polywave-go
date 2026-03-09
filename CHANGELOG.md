@@ -8,9 +8,29 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 | Version | Date | Headline |
 |---------|------|----------|
+| [0.4.0] | 2026-03-09 | Per-agent model routing — ScoutModel/WaveModel opts, `model:` field in IMPL doc agent sections, per-agent backend dispatch |
 | [0.3.0] | 2026-03-08 | Protocol audit fixes — P0: failure_type parsing, multi-gen agent IDs; P1: E22 2-pass scaffold build, cross-repo Repo column; P2: repo field in completion reports |
 | [0.2.0] | 2026-03-08 | Engine protocol parity — E17–E23 implemented (context memory, failure routing, stub scan, quality gates, scaffold build verify, per-agent context extraction) |
 | [0.1.0] | 2026-03-08 | Initial engine extraction — parser, orchestrator, agent runner, git, worktree management |
+
+---
+
+## [0.4.0] - 2026-03-09
+
+### Added
+
+**Per-agent model routing** — each wave agent can now run on a different LLM model (e.g. Scout on Opus, wave agents on Haiku), configured at two levels:
+
+- **`RunScoutOpts.ScoutModel string`** (`pkg/engine/engine.go`) — model override for the Scout agent. Empty string uses the CLI/API default.
+- **`RunWaveOpts.WaveModel string`** (`pkg/engine/engine.go`) — default model for all wave agents in the run. Per-agent `model:` field overrides this.
+- **`AgentSpec.Model string`** (`pkg/types/types.go`) — per-agent model field parsed from the IMPL doc. Scout can write `**model:** claude-haiku-4-5` in any agent section to route that agent to a specific model.
+- **`**model:**` parser** (`pkg/protocol/parser.go`) — parser now extracts `**model:** <id>` from agent sections, same pattern as the existing `**wave:**` metadata. Value is trimmed and stored in `AgentSpec.Model`.
+- **`Orchestrator.SetDefaultModel(model string)`** (`pkg/orchestrator/orchestrator.go`) — sets the fallback model for agents that do not have a per-agent `model:` field.
+- **Per-agent backend dispatch** (`pkg/orchestrator/orchestrator.go`) — `RunWave` now creates a separate backend instance for agents whose `AgentSpec.Model` differs from the wave default, enabling true per-agent provider routing. Agents without a model override share the default runner (zero extra backend construction).
+
+### Fixed
+
+- **`cli/client.go` silently ignored `Config.Model`** (`pkg/agent/backend/cli/client.go`) — `--model <model>` was never passed to the claude CLI even when `Config.Model` was set. Fixed by appending `--model` to args when the field is non-empty.
 
 ---
 
