@@ -42,5 +42,20 @@ type RunVerificationOpts struct {
 	TestCommand string // falls back to "go test ./..." if empty
 }
 
+// ChatMessage represents a single message in a conversation.
+type ChatMessage struct {
+	Role    string // "user" or "assistant"
+	Content string
+}
+
+// RunChatOpts configures a chat agent run with conversation history.
+type RunChatOpts struct {
+	IMPLPath    string        // path to IMPL doc for context (required)
+	RepoPath    string        // absolute path to the repository (required)
+	SAWRepoPath string        // path to scout-and-wave protocol repo (optional)
+	History     []ChatMessage // previous conversation turns (optional)
+	Message     string        // current user message (required)
+}
+
 // Ensure types package is used (IMPLDoc referenced in function signatures).
 var _ *types.IMPLDoc
