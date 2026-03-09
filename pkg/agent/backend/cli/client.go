@@ -66,6 +66,9 @@ func (c *Client) RunStreaming(ctx context.Context, systemPrompt, userMessage, wo
 		"--allowedTools", "Bash,Read,Write,Edit,Glob,Grep",
 		"--dangerously-skip-permissions",
 	}
+	if c.cfg.Model != "" {
+		args = append(args, "--model", c.cfg.Model)
+	}
 	if c.cfg.MaxTurns > 0 {
 		args = append(args, "--max-turns", fmt.Sprintf("%d", c.cfg.MaxTurns))
 	}

@@ -20,13 +20,15 @@ type RunScoutOpts struct {
 	RepoPath    string // absolute path to the repository being scouted (required)
 	SAWRepoPath string // path to scout-and-wave protocol repo (optional; falls back to $SAW_REPO then ~/code/scout-and-wave)
 	IMPLOutPath string // where to write the IMPL doc (required)
+	ScoutModel  string // optional: model override for the Scout agent (e.g. "claude-opus-4-6")
 }
 
 // RunWaveOpts configures a wave execution run.
 type RunWaveOpts struct {
-	IMPLPath string // absolute path to IMPL doc (required)
-	RepoPath string // absolute path to the target repository (required)
-	Slug     string // IMPL slug for event routing (required)
+	IMPLPath  string // absolute path to IMPL doc (required)
+	RepoPath  string // absolute path to the target repository (required)
+	Slug      string // IMPL slug for event routing (required)
+	WaveModel string // optional: default model for wave agents; per-agent model: field overrides this
 }
 
 // RunMergeOpts configures a merge operation.

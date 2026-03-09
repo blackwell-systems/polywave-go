@@ -127,6 +127,13 @@ type Orchestrator struct {
 	currentWave    int
 	implDocPath    string
 	eventPublisher EventPublisher
+	defaultModel   string // optional default model for wave agents (e.g. "claude-haiku-4-5")
+}
+
+// SetDefaultModel sets the fallback model used for wave agents that have no
+// per-agent model: field in the IMPL doc. Empty string means use the CLI/API default.
+func (o *Orchestrator) SetDefaultModel(model string) {
+	o.defaultModel = model
 }
 
 // publish sends ev to the registered EventPublisher, if any.
@@ -220,13 +227,13 @@ func (o *Orchestrator) RunWave(waveNum int) error {
 		return nil
 	}
 
-	// Build the worktree manager and agent runner.
+	// Build the worktree manager and default agent runner.
 	wm := worktree.New(o.repoPath)
-	b, err := newBackendFunc(BackendConfig{Kind: "auto"})
+	defaultBackend, err := newBackendFunc(BackendConfig{Kind: "auto", Model: o.defaultModel})
 	if err != nil {
 		return fmt.Errorf("orchestrator.RunWave: failed to create backend: %w", err)
 	}
-	runner := newRunnerFunc(b, wm)
+	defaultRunner := newRunnerFunc(defaultBackend, wm)
 
 	// Launch all agents concurrently and collect the first error.
 	eg, ctx := errgroup.WithContext(context.Background())
@@ -234,6 +241,15 @@ func (o *Orchestrator) RunWave(waveNum int) error {
 	for _, spec := range wave.Agents {
 		agentSpec := spec // capture loop variable
 		eg.Go(func() error {
+			runner := defaultRunner
+			// Per-agent model override: create a separate backend for this agent.
+			if agentSpec.Model != "" && agentSpec.Model != o.defaultModel {
+				b2, err2 := newBackendFunc(BackendConfig{Kind: "auto", Model: agentSpec.Model})
+				if err2 != nil {
+					return fmt.Errorf("orchestrator: agent %s: create backend: %w", agentSpec.Letter, err2)
+				}
+				runner = newRunnerFunc(b2, wm)
+			}
 			return o.launchAgent(ctx, runner, wm, waveNum, agentSpec)
 		})
 	}

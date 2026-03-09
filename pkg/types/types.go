@@ -101,6 +101,7 @@ type AgentSpec struct {
 	Letter     string
 	Prompt     string
 	FilesOwned []string
+	Model      string // optional: per-agent model override (e.g. "claude-opus-4-6")
 }
 
 // CompletionReport is the structured YAML block each agent appends to the IMPL doc

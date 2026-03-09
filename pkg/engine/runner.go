@@ -62,7 +62,7 @@ func RunScout(ctx context.Context, opts RunScoutOpts, onChunk func(string)) erro
 			string(scoutMdBytes), opts.Feature, opts.IMPLOutPath)
 	}
 
-	b := cli.New("", backend.Config{})
+	b := cli.New("", backend.Config{Model: opts.ScoutModel})
 	runner := agent.NewRunner(b, nil)
 	spec := &types.AgentSpec{Letter: "scout", Prompt: prompt}
 
@@ -91,6 +91,10 @@ func StartWave(ctx context.Context, opts RunWaveOpts, onEvent func(Event)) error
 	if err != nil {
 		publish("run_failed", map[string]string{"error": err.Error()})
 		return fmt.Errorf("engine.StartWave: %w", err)
+	}
+
+	if opts.WaveModel != "" {
+		orch.SetDefaultModel(opts.WaveModel)
 	}
 
 	// Wire orchestrator events to the onEvent callback.

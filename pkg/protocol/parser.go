@@ -290,7 +290,7 @@ func ParseIMPLDoc(path string) (*types.IMPLDoc, error) {
 		case state == stateFileOwner && strings.HasPrefix(line, "|"):
 			parseFileOwnershipRow(line, doc.FileOwnership, &doc.FileOwnershipCol4)
 
-		// ── Accumulate agent prompt text; extract **wave:** N metadata
+		// ── Accumulate agent prompt text; extract **wave:** N and **model:** metadata
 		case state == stateAgent:
 			if strings.HasPrefix(trimmed, "**wave:**") {
 				waveVal := strings.TrimSpace(strings.TrimPrefix(trimmed, "**wave:**"))
@@ -298,6 +298,9 @@ func ParseIMPLDoc(path string) (*types.IMPLDoc, error) {
 				if _, err2 := fmt.Sscanf(waveVal, "%d", &n); err2 == nil && currentWave != nil {
 					currentWave.Number = n
 				}
+			}
+			if strings.HasPrefix(trimmed, "**model:**") && currentAgent != nil {
+				currentAgent.Model = strings.TrimSpace(strings.TrimPrefix(trimmed, "**model:**"))
 			}
 			agentPromptLines = append(agentPromptLines, line)
 		}
