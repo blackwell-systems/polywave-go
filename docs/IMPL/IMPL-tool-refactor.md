@@ -74,7 +74,7 @@ The following types must be created before Wave 1 launches. These interfaces are
 
 | File | Contents | Import path | Status |
 |------|----------|-------------|--------|
-| `pkg/tools/types.go` | `Workshop` interface (4 methods), `ToolExecutor` interface (1 method), `Middleware` type (function signature), `ToolAdapter` interface (2 methods), `Tool` struct (Name, Description, InputSchema, Namespace, Executor), `ExecutionContext` struct (WorkDir, Metadata map[string]interface{}) | `github.com/blackwell-systems/scout-and-wave-go/pkg/tools` | pending |
+| `pkg/tools/types.go` | `Workshop` interface (4 methods), `ToolExecutor` interface (1 method), `Middleware` type (function signature), `ToolAdapter` interface (2 methods), `Tool` struct (Name, Description, InputSchema, Namespace, Executor), `ExecutionContext` struct (WorkDir, Metadata map[string]interface{}) | `github.com/blackwell-systems/scout-and-wave-go/pkg/tools` | committed (617b7f5) |
 
 **File contents (exact signatures for Scaffold Agent):**
 
