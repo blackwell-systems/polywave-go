@@ -19,6 +19,7 @@ import (
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/agent"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/agent/backend"
 	apiclient "github.com/blackwell-systems/scout-and-wave-go/pkg/agent/backend/api"
+	bedrockbackend "github.com/blackwell-systems/scout-and-wave-go/pkg/agent/backend/bedrock"
 	cliclient "github.com/blackwell-systems/scout-and-wave-go/pkg/agent/backend/cli"
 	openaibackend "github.com/blackwell-systems/scout-and-wave-go/pkg/agent/backend/openai"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
@@ -211,15 +212,11 @@ var newBackendFunc = func(cfg BackendConfig) (backend.Backend, error) {
 			BaseURL:   baseURL,
 		}), nil
 	case "bedrock":
-		// bedrock: prefix uses API client with expanded Bedrock model IDs.
-		// This makes direct API calls to Bedrock (not via CLI).
+		// bedrock: prefix uses AWS Bedrock SDK with expanded Bedrock model IDs.
+		// Uses AWS credentials from default chain (~/.aws/credentials, env vars, IAM role).
 		// Use cli: prefix if you want to shell out to the claude CLI command instead.
-		apiKey := cfg.APIKey
-		if apiKey == "" {
-			apiKey = os.Getenv("ANTHROPIC_API_KEY")
-		}
 		fullID := expandBedrockModelID(bareModel)
-		return apiclient.New(apiKey, backend.Config{
+		return bedrockbackend.New(backend.Config{
 			Model:     fullID,
 			MaxTokens: cfg.MaxTokens,
 			MaxTurns:  cfg.MaxTurns,

@@ -9,6 +9,7 @@ import (
 
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/agent/backend"
 	apiclient "github.com/blackwell-systems/scout-and-wave-go/pkg/agent/backend/api"
+	bedrockbackend "github.com/blackwell-systems/scout-and-wave-go/pkg/agent/backend/bedrock"
 	cliclient "github.com/blackwell-systems/scout-and-wave-go/pkg/agent/backend/cli"
 	openaibackend "github.com/blackwell-systems/scout-and-wave-go/pkg/agent/backend/openai"
 )
@@ -64,7 +65,7 @@ You MUST NOT modify the IMPL doc or any source files. Read-only.`, opts.IMPLPath
 			b = apiclient.New(apiKey, backend.Config{Model: bareModel})
 		case "bedrock":
 			fullID := chatExpandBedrockModelID(bareModel)
-			b = apiclient.New(apiKey, backend.Config{Model: fullID})
+			b = bedrockbackend.New(backend.Config{Model: fullID})
 		case "cli":
 			b = cliclient.New("", backend.Config{Model: bareModel})
 		default:
