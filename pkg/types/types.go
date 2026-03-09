@@ -87,6 +87,7 @@ type FileOwnershipInfo struct {
 	Wave      int    // wave number (0 if not specified)
 	Action    string // "new", "modify", "delete", or "" if not specified
 	DependsOn string // 4th column when header is "Depends On" (not "Action")
+	Repo      string // 5th column for cross-repo waves (e.g. "scout-and-wave-web"); empty for single-repo
 }
 
 // Wave represents one wave of parallel agents
@@ -115,6 +116,7 @@ type CompletionReport struct {
 	TestsAdded           []string
 	Verification         string
 	FailureType          FailureType `yaml:"failure_type,omitempty"` // E19
+	Repo                 string      `yaml:"repo,omitempty"`         // cross-repo waves: source repo identifier
 }
 
 // InterfaceDeviation records a deviation from the spec contract

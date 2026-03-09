@@ -386,23 +386,31 @@ func ParseIMPLDoc(path string) (*types.IMPLDoc, error) {
 }
 
 // ValidateInvariants checks Invariant I1: no file appears in two different
-// agents' ownership lists within the same wave. Returns a descriptive error
-// for the first violation found, or nil if the document is clean.
+// agents' ownership lists within the same wave. For cross-repo waves, the key
+// is "repo:file" so files with the same name in different repos are not flagged.
+// Returns a descriptive error for the first violation found, or nil if the
+// document is clean.
 func ValidateInvariants(doc *types.IMPLDoc) error {
 	if doc == nil {
 		return nil
 	}
 	for _, wave := range doc.Waves {
-		seen := make(map[string]string) // file -> agent letter
+		seen := make(map[string]string) // "repo:file" -> agent letter
 		for _, agent := range wave.Agents {
 			for _, file := range agent.FilesOwned {
-				if prev, ok := seen[file]; ok {
+				// Build composite key: use repo from ownership table if available.
+				repo := ""
+				if info, ok := doc.FileOwnership[file]; ok {
+					repo = info.Repo
+				}
+				key := repo + ":" + file
+				if prev, ok := seen[key]; ok {
 					return fmt.Errorf(
 						"I1 violation in Wave %d: file %q claimed by both Agent %s and Agent %s",
 						wave.Number, file, prev, agent.Letter,
 					)
 				}
-				seen[file] = agent.Letter
+				seen[key] = agent.Letter
 			}
 		}
 	}
@@ -492,6 +500,8 @@ done:
 		OutOfScopeDeps []string `yaml:"out_of_scope_deps"`
 		TestsAdded     []string `yaml:"tests_added"`
 		Verification   string   `yaml:"verification"`
+		FailureType    string   `yaml:"failure_type"`
+		Repo           string   `yaml:"repo,omitempty"`
 	}{}
 
 	yamlStr := strings.Join(yamlLines, "\n")
@@ -509,6 +519,8 @@ done:
 		OutOfScopeDeps: raw.OutOfScopeDeps,
 		TestsAdded:     raw.TestsAdded,
 		Verification:   raw.Verification,
+		FailureType:    types.FailureType(raw.FailureType),
+		Repo:           raw.Repo,
 	}
 	for _, d := range raw.InterfaceDeviations {
 		report.InterfaceDeviations = append(report.InterfaceDeviations, types.InterfaceDeviation{
@@ -746,8 +758,8 @@ func parsePostMergeChecklistSection(scanner *bufio.Scanner) string {
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 
-// isAgentHeader returns true for lines like "### Agent A: Description"
-// or "#### Agent A — Description".
+// isAgentHeader returns true for lines like "### Agent A: Description",
+// "#### Agent A — Description", or "### Agent A2: Description" (multi-gen IDs).
 func isAgentHeader(line string) bool {
 	rest := ""
 	switch {
@@ -758,15 +770,18 @@ func isAgentHeader(line string) bool {
 	default:
 		return false
 	}
-	if len(rest) == 0 {
-		return false
-	}
-	letter := rest[0]
-	if letter < 'A' || letter > 'Z' {
+	if len(rest) == 0 || rest[0] < 'A' || rest[0] > 'Z' {
 		return false
 	}
 	if len(rest) == 1 {
-		return true
+		return false // need at least a separator after the letter
+	}
+	// Check for multi-gen agent ID like A2, B3 (digit 2-9 after letter).
+	if rest[1] >= '2' && rest[1] <= '9' {
+		if len(rest) < 3 {
+			return false
+		}
+		return rest[2] == ':' || rest[2] == ' ' || rest[2] == 0xE2 // '—' starts with 0xE2 in UTF-8
 	}
 	return rest[1] == ':' || rest[1] == ' ' || rest[1] == 0xE2 // '—' starts with 0xE2 in UTF-8
 }
@@ -780,8 +795,9 @@ func isCompletionReportHeader(line string) bool {
 	return strings.Contains(line, "- Completion Report")
 }
 
-// extractAgentLetter returns the single uppercase letter from a header like
-// "### Agent A: ...", "#### Agent A — ...", or "### Agent A - Completion Report".
+// extractAgentLetter returns the agent ID from a header like
+// "### Agent A: ...", "#### Agent A — ...", "### Agent A2: ..." (multi-gen IDs).
+// Returns a single letter (e.g. "A") or a letter+digit (e.g. "A2").
 func extractAgentLetter(line string) string {
 	var rest string
 	switch {
@@ -790,8 +806,12 @@ func extractAgentLetter(line string) string {
 	case strings.HasPrefix(line, "### Agent "):
 		rest = strings.TrimPrefix(line, "### Agent ")
 	}
-	if len(rest) == 0 {
+	if len(rest) == 0 || rest[0] < 'A' || rest[0] > 'Z' {
 		return ""
+	}
+	// Multi-gen agent ID: letter followed by digit 2-9.
+	if len(rest) > 1 && rest[1] >= '2' && rest[1] <= '9' {
+		return string(rest[0]) + string(rest[1])
 	}
 	return string(rest[0])
 }
@@ -892,6 +912,15 @@ func parseFileOwnershipRow(line string, ownership map[string]types.FileOwnership
 					info.DependsOn = val
 				}
 			}
+		}
+	}
+
+	// Parse 5th column as Repo for cross-repo waves (File | Agent | Wave | Depends On | Repo).
+	if len(parts) >= 7 {
+		repoVal := strings.TrimSpace(parts[5])
+		repoVal = strings.Trim(repoVal, "` ")
+		if repoVal != "" && repoVal != "—" && repoVal != "-" {
+			info.Repo = repoVal
 		}
 	}
 

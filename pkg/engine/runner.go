@@ -277,21 +277,104 @@ func readContextMD(repoPath string) string {
 	return string(b)
 }
 
-// runScaffoldBuildVerification runs `go build ./...` in repoPath to catch
-// scaffold errors early (E22). If no go.mod exists in repoPath, returns nil
-// (skip silently — not a Go project).
+// runScaffoldBuildVerification verifies the scaffold files compile correctly (E22).
+// For Go projects it runs dependency resolution then a 2-pass build
+// (scaffold packages first, then full project). For other project types it
+// attempts basic detection and runs the appropriate install/build command.
+// Signature accepts *types.IMPLDoc so the caller can pass doc for Pass 1 package
+// derivation; passing nil skips Pass 1 and only runs Pass 2.
 func runScaffoldBuildVerification(repoPath string, onEvent func(Event)) error {
-	// Guard: only run for Go projects.
-	if _, err := os.Stat(filepath.Join(repoPath, "go.mod")); os.IsNotExist(err) {
+	return runScaffoldBuildVerificationWithDoc(context.Background(), repoPath, nil, onEvent)
+}
+
+// runScaffoldBuildVerificationWithDoc is the full implementation of E22 scaffold
+// build verification. It is separated from runScaffoldBuildVerification so that
+// the engine layer can pass an *types.IMPLDoc for scaffold-package derivation.
+func runScaffoldBuildVerificationWithDoc(ctx context.Context, repoPath string, doc *types.IMPLDoc, onEvent func(Event)) error {
+	// ── Go project ────────────────────────────────────────────────────────────
+	if _, err := os.Stat(filepath.Join(repoPath, "go.mod")); err == nil {
+		// Dependency resolution: go get ./...
+		getCmd := exec.CommandContext(ctx, "go", "get", "./...")
+		getCmd.Dir = repoPath
+		if out, err := getCmd.CombinedOutput(); err != nil {
+			// Log but don't fail — some projects don't need go get.
+			fmt.Fprintf(os.Stderr, "scaffold build: go get ./... (non-fatal): %v\n%s", err, string(out))
+		}
+
+		// go mod tidy
+		tidyCmd := exec.CommandContext(ctx, "go", "mod", "tidy")
+		tidyCmd.Dir = repoPath
+		if out, err := tidyCmd.CombinedOutput(); err != nil {
+			// Log but don't fail.
+			fmt.Fprintf(os.Stderr, "scaffold build: go mod tidy (non-fatal): %v\n%s", err, string(out))
+		}
+
+		// Pass 1 (scaffold-only): build only the packages containing scaffold files.
+		if doc != nil && len(doc.ScaffoldsDetail) > 0 {
+			pkgSet := make(map[string]bool)
+			for _, sf := range doc.ScaffoldsDetail {
+				dir := filepath.Dir(sf.FilePath)
+				if dir == "." || dir == "" {
+					pkgSet["./"] = true
+				} else {
+					pkgSet["./"+dir] = true
+				}
+			}
+			scaffoldPkgs := make([]string, 0, len(pkgSet))
+			for pkg := range pkgSet {
+				scaffoldPkgs = append(scaffoldPkgs, pkg)
+			}
+			args := append([]string{"build"}, scaffoldPkgs...)
+			pass1Cmd := exec.CommandContext(ctx, "go", args...)
+			pass1Cmd.Dir = repoPath
+			if out, err := pass1Cmd.CombinedOutput(); err != nil {
+				return fmt.Errorf("go build (scaffold-only) failed: %w\n%s", err, string(out))
+			}
+		}
+
+		// Pass 2 (full project): go build ./...
+		pass2Cmd := exec.CommandContext(ctx, "go", "build", "./...")
+		pass2Cmd.Dir = repoPath
+		if out, err := pass2Cmd.CombinedOutput(); err != nil {
+			return fmt.Errorf("go build ./... failed: %w\n%s", err, string(out))
+		}
 		return nil
 	}
 
-	cmd := exec.Command("go", "build", "./...")
-	cmd.Dir = repoPath
-	out, err := cmd.CombinedOutput()
-	if err != nil {
-		return fmt.Errorf("go build ./... failed: %w\n%s", err, string(out))
+	// ── Rust project ──────────────────────────────────────────────────────────
+	if _, err := os.Stat(filepath.Join(repoPath, "Cargo.toml")); err == nil {
+		fetchCmd := exec.CommandContext(ctx, "cargo", "fetch")
+		fetchCmd.Dir = repoPath
+		if out, err := fetchCmd.CombinedOutput(); err != nil {
+			fmt.Fprintf(os.Stderr, "scaffold build: cargo fetch (non-fatal): %v\n%s", err, string(out))
+		}
+		buildCmd := exec.CommandContext(ctx, "cargo", "build")
+		buildCmd.Dir = repoPath
+		if out, err := buildCmd.CombinedOutput(); err != nil {
+			return fmt.Errorf("cargo build failed: %w\n%s", err, string(out))
+		}
+		return nil
 	}
+
+	// ── Node/TypeScript project ────────────────────────────────────────────────
+	if _, err := os.Stat(filepath.Join(repoPath, "package.json")); err == nil {
+		// Use yarn if yarn.lock exists, else npm.
+		installArgs := []string{"install"}
+		npmBin := "npm"
+		if _, yarnErr := os.Stat(filepath.Join(repoPath, "yarn.lock")); yarnErr == nil {
+			npmBin = "yarn"
+		}
+		installCmd := exec.CommandContext(ctx, npmBin, installArgs...)
+		installCmd.Dir = repoPath
+		if out, err := installCmd.CombinedOutput(); err != nil {
+			return fmt.Errorf("%s install failed: %w\n%s", npmBin, err, string(out))
+		}
+		// Skip TypeScript compilation — requires project-specific config.
+		return nil
+	}
+
+	// Unrecognized project type — skip silently.
+	fmt.Fprintf(os.Stderr, "scaffold build verification: unrecognized project type, skipping\n")
 	return nil
 }
 

@@ -26,14 +26,15 @@ var e16cWaveRe = regexp.MustCompile(`Wave`)
 // that uses typed blocks (i.e. block_count > 0).
 var e16aRequiredBlocks = []string{"impl-file-ownership", "impl-dep-graph", "impl-wave-structure"}
 
-// agentLineRe matches agent lines like "    [A] some/file" (leading whitespace + [LETTER]).
-var agentLineRe = regexp.MustCompile(`^\s+\[([A-Z])\]`)
+// agentLineRe matches agent lines like "    [A] some/file" or "    [A2] some/file"
+// (leading whitespace + [LETTER] or [LETTER+DIGIT]).
+var agentLineRe = regexp.MustCompile(`^\s+\[([A-Z][2-9]?)\]`)
 
 // waveHeaderRe matches "Wave N" at the start of a line.
 var waveHeaderRe = regexp.MustCompile(`^Wave [0-9]+`)
 
-// agentRefRe matches any [A-Z] reference.
-var agentRefRe = regexp.MustCompile(`\[[A-Z]\]`)
+// agentRefRe matches any [A-Z] or [A2]-style reference.
+var agentRefRe = regexp.MustCompile(`\[[A-Z][2-9]?\]`)
 
 // waveStructureRe matches "Wave N:" at the start of a line.
 var waveStructureRe = regexp.MustCompile(`^Wave [0-9]+:`)
