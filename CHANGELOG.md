@@ -8,10 +8,24 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 | Version | Date | Headline |
 |---------|------|----------|
+| [0.5.0] | 2026-03-09 | Configurable CLI binary — `BinaryPath` in `backend.Config` allows swapping `claude` for any compatible CLI |
 | [0.4.0] | 2026-03-09 | Per-agent model routing — ScoutModel/WaveModel opts, `model:` field in IMPL doc agent sections, per-agent backend dispatch |
 | [0.3.0] | 2026-03-08 | Protocol audit fixes — P0: failure_type parsing, multi-gen agent IDs; P1: E22 2-pass scaffold build, cross-repo Repo column; P2: repo field in completion reports |
 | [0.2.0] | 2026-03-08 | Engine protocol parity — E17–E23 implemented (context memory, failure routing, stub scan, quality gates, scaffold build verify, per-agent context extraction) |
 | [0.1.0] | 2026-03-08 | Initial engine extraction — parser, orchestrator, agent runner, git, worktree management |
+
+---
+
+## [0.5.0] - 2026-03-09
+
+### Added
+
+- **`BinaryPath string` in `backend.Config`** (`pkg/agent/backend/backend.go`) — optional path to the CLI binary used by the CLI backend. When set, takes priority over the `claudePath` field on `Client` and over PATH lookup. Allows swapping `claude` for any compatible CLI binary (e.g. a future Kimi CLI, a local proxy, or an absolute path to a pinned version).
+- **CLI binary resolution order** (`pkg/agent/backend/cli/client.go`) — updated to: `Client.claudePath` → `Config.BinaryPath` → PATH lookup for `"claude"`. Empty string at each step falls through to the next, preserving full backward compatibility.
+
+### Changed
+
+- `backend.Config.Model` doc comment updated to reflect that it is no longer Claude-specific — any model identifier the target CLI accepts is valid.
 
 ---
 
