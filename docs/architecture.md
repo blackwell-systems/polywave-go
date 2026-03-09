@@ -183,7 +183,7 @@ The `saw serve` command in `scout-and-wave-web` wraps the engine with HTTP handl
 ## Extension Points
 
 1. **Custom Backends** — Implement `backend.Backend` for new LLM providers
-2. **Custom Tools** — Register tools via `ToolRegistry` (after refactoring, see ROADMAP.md)
+2. **Custom Tools** — Register tools via `Workshop` (after refactoring, see ROADMAP.md)
 3. **Middleware** — Wrap tool execution (logging, timing, validation, permissions)
 4. **Quality Gates** — Add custom verification scripts to IMPL doc `## Quality Gates` section
 5. **SSE Consumers** — Subscribe to orchestrator events for custom monitoring/logging

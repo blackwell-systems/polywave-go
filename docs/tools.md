@@ -6,7 +6,7 @@
 
 The tool system provides agents with capabilities to interact with the filesystem, execute commands, and perform searches. After refactoring, it is built on five foundational patterns:
 
-1. **Tool Registry** — Dynamic registration and composition
+1. **Tool Workshop** — Dynamic registration and composition
 2. **ToolExecutor Interface** — Testable, stateful tool execution
 3. **Middleware Stack** — Cross-cutting concerns (logging, timing, validation, permissions)
 4. **Backend Adapters** — Decoupled serialization for each LLM provider
@@ -14,39 +14,39 @@ The tool system provides agents with capabilities to interact with the filesyste
 
 ## Architecture
 
-### 1. Tool Registry
+### 1. Tool Workshop
 
-The `ToolRegistry` replaces the hardcoded `StandardTools()` function.
+The `Workshop` replaces the hardcoded `StandardTools()` function.
 
 **Interface:**
 
 ```go
-type ToolRegistry struct {
+type Workshop struct {
     tools map[string]Tool
 }
 
-func NewRegistry() *ToolRegistry
-func (r *ToolRegistry) Register(tool Tool) error
-func (r *ToolRegistry) Get(name string) (Tool, bool)
-func (r *ToolRegistry) All() []Tool
-func (r *ToolRegistry) Namespace(prefix string) []Tool
+func NewWorkshop() *Workshop
+func (r *Workshop) Register(tool Tool) error
+func (r *Workshop) Get(name string) (Tool, bool)
+func (r *Workshop) All() []Tool
+func (r *Workshop) Namespace(prefix string) []Tool
 ```
 
 **Usage:**
 
 ```go
-registry := tools.NewRegistry()
+workshop := tools.NewWorkshop()
 
 // Register standard tools
-registry.Register(tools.Read(workDir))
-registry.Register(tools.Write(workDir))
-registry.Register(tools.Edit(workDir))
-registry.Register(tools.Bash(workDir))
-registry.Register(tools.Glob(workDir))
-registry.Register(tools.Grep(workDir))
+workshop.Register(tools.Read(workDir))
+workshop.Register(tools.Write(workDir))
+workshop.Register(tools.Edit(workDir))
+workshop.Register(tools.Bash(workDir))
+workshop.Register(tools.Glob(workDir))
+workshop.Register(tools.Grep(workDir))
 
 // Register custom tool
-registry.Register(tools.Tool{
+workshop.Register(tools.Tool{
     Name:        "query_vector_db",
     Description: "Search the vector database for similar code snippets",
     InputSchema: map[string]interface{}{
@@ -258,7 +258,7 @@ func (a *OpenAIToolAdapter) Serialize(tools []Tool) interface{} {
 ```go
 // In pkg/agent/backend/api/client.go
 adapter := tools.NewAnthropicToolAdapter()
-serializedTools := adapter.Serialize(registry.All())
+serializedTools := adapter.Serialize(workshop.All())
 
 reqBody := map[string]interface{}{
     "model":   model,
@@ -290,19 +290,19 @@ agent:spawn
 
 ```go
 // Scout agents: read-only
-scoutTools := registry.Namespace("file:read", "file:list")
+scoutTools := workshop.Namespace("file:read", "file:list")
 
 // Wave agents: read-write + bash
-waveTools := registry.Namespace("file:", "git:", "bash:")
+waveTools := workshop.Namespace("file:", "git:", "bash:")
 
 // Chat: all tools
-chatTools := registry.All()
+chatTools := workshop.All()
 ```
 
-**Registry Namespace Filtering:**
+**Workshop Namespace Filtering:**
 
 ```go
-func (r *ToolRegistry) Namespace(prefixes ...string) []Tool {
+func (r *Workshop) Namespace(prefixes ...string) []Tool {
     var filtered []Tool
     for _, tool := range r.tools {
         for _, prefix := range prefixes {
@@ -337,7 +337,7 @@ The timing middleware publishes SSE events for every tool call:
 
 ```go
 func (o *Orchestrator) launchAgent(ctx context.Context, agent types.Agent) {
-    registry := tools.NewRegistry()
+    workshop := tools.NewWorkshop()
 
     // Wrap all tools with timing middleware
     onDuration := func(toolName string, dur time.Duration) {
@@ -353,7 +353,7 @@ func (o *Orchestrator) launchAgent(ctx context.Context, agent types.Agent) {
 
     for _, tool := range standardTools {
         wrappedTool := tool.WithMiddleware(tools.TimingMiddleware(onDuration))
-        registry.Register(wrappedTool)
+        workshop.Register(wrappedTool)
     }
 
     // Pass registry to agent runner
@@ -387,7 +387,7 @@ func (e *VectorDBExecutor) Execute(ctx context.Context, input map[string]interfa
 }
 
 // Registration
-registry.Register(tools.Tool{
+workshop.Register(tools.Tool{
     Name:        "vectordb:search",
     Description: "Search the vector database for similar code snippets",
     InputSchema: map[string]interface{}{
@@ -429,8 +429,8 @@ func (m *MockReadExecutor) Execute(ctx context.Context, input map[string]interfa
 
 // Test
 func TestAgentReadsFile(t *testing.T) {
-    registry := tools.NewRegistry()
-    registry.Register(tools.Tool{
+    workshop := tools.NewWorkshop()
+    workshop.Register(tools.Tool{
         Name:     "file:read",
         Executor: &MockReadExecutor{
             files: map[string]string{
@@ -449,7 +449,7 @@ func TestAgentReadsFile(t *testing.T) {
 The refactoring is implemented as a clean-slate breaking change:
 
 1. Delete `StandardTools()` and current `[]Tool` slice implementation
-2. Implement `ToolRegistry` with namespace support
+2. Implement `Workshop` with namespace support
 3. Convert all tools to use `ToolExecutor` interface
 4. Apply middleware stack uniformly to all tools
 5. Create backend adapters and remove inline serialization
