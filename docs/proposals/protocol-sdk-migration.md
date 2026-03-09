@@ -131,16 +131,91 @@ func (m *IMPLManifest) SetCompletionReport(agentID string, report CompletionRepo
 - `pkg/protocol/validation.go` - I1-I6 invariant enforcement
 - `pkg/protocol/extract.go` - agent context extraction (E23)
 - `pkg/protocol/render.go` - markdown generation for human review
+- Pure Go library, no I/O or CLI concerns
 
-**Layer 2: Orchestrator (CLI + web)**
-- CLI orchestrator (`/saw` skill) consumes SDK, passes structured payloads to agents
-- Web UI HTTP handlers wrap SDK operations (load manifest, validate, update completion reports)
-- Direct SDK usage for external tools (import `github.com/blackwell-systems/scout-and-wave-go/pkg/protocol`)
+**Layer 2A: CLI Binary (scout-and-wave-web/cmd/saw)**
+- Thin wrapper around SDK operations, exposes them as shell commands
+- The skill calls this binary via Bash tool (subprocess execution)
+
+Example CLI commands:
+```bash
+# Validate manifest structure + invariants
+saw validate docs/IMPL/IMPL-tool-refactor.yaml
+
+# Extract structured agent context (E23)
+saw extract-context docs/IMPL/IMPL-tool-refactor.yaml agent-A > context.json
+
+# Register completion report
+saw set-completion docs/IMPL/IMPL-tool-refactor.yaml agent-A < report.yaml
+
+# Get current wave number
+saw current-wave docs/IMPL/IMPL-tool-refactor.yaml
+
+# Perform merge operations
+saw merge-wave docs/IMPL/IMPL-tool-refactor.yaml 1
+
+# Generate human-readable markdown view
+saw render docs/IMPL/IMPL-tool-refactor.yaml > IMPL-tool-refactor.md
+```
+
+**Layer 2B: Skill Coordination (~/.claude/skills/saw/saw.md)**
+- State machine (scout → review → wave → merge → next wave)
+- Calls CLI binary for SDK operations (replaces bash scripts parsing markdown)
+- Launches agents via Agent tool
+- Git operations (worktree creation, merge, cleanup)
+- Human interaction (review checkpoints, approval)
+
+Example skill flow:
+```bash
+# /saw wave execution
+
+# 1. Load and validate manifest
+saw validate "$impl_path" || exit 1
+
+# 2. Get current wave
+current_wave=$(saw current-wave "$impl_path")
+
+# 3. For each agent in wave:
+for agent_id in A B C D; do
+    # Extract structured agent context
+    agent_context=$(saw extract-context "$impl_path" "$agent_id")
+
+    # Launch agent with structured payload (Agent tool)
+    claude agent \
+        --type wave-agent \
+        --prompt "$agent_context" \
+        --description "[SAW:wave${current_wave}:agent-${agent_id}] ..."
+done
+
+# 4. After all agents complete, register completion reports
+for agent_id in A B C D; do
+    report_path=".claude/worktrees/wave${current_wave}-agent-${agent_id}/completion-report.yaml"
+    saw set-completion "$impl_path" "$agent_id" < "$report_path"
+done
+
+# 5. Merge wave
+saw merge-wave "$impl_path" "$current_wave"
+```
+
+**Layer 2C: Web UI (scout-and-wave-web)**
+- HTTP handlers wrap SDK operations (same operations as CLI binary, different interface)
+- Frontend components render from structured data
+- Manifest editor UI (YAML editing with validation, or form-based editor)
+
+Example HTTP endpoints:
+```go
+GET  /api/impl/:slug           // Load(manifest) → JSON
+POST /api/impl/:slug/validate  // Validate(manifest) → errors
+GET  /api/impl/:slug/wave/:n   // CurrentWave() → wave details
+POST /api/impl/:slug/agents/:id/complete  // SetCompletionReport()
+```
 
 **Layer 3: Agent execution**
 - Agents receive structured JSON/YAML payload (not markdown with tables)
 - Agents return structured completion reports (JSON/YAML, not freeform text)
 - No parsing ambiguity, no retry loops
+
+**Key architectural point:** The `/saw` skill (running as Claude Code prompts) cannot directly import Go packages. It uses the Bash tool to call the `saw` CLI binary, which wraps SDK operations. This is standard subprocess execution - the same pattern used for `git`, `go build`, and current bash scripts.
 
 ### 4. Benefits
 
@@ -187,11 +262,11 @@ Natural language remains for creative/interpretive work; structure enforces coor
 - Update `pkg/orchestrator/*.go` to consume manifest types instead of parsing markdown
 - Update `pkg/engine/runner.go` to use SDK operations
 
-**scout-and-wave-web (orchestrator integration):**
+**scout-and-wave-web (CLI binary + web UI):**
+- Add CLI commands wrapping SDK operations (`saw validate`, `saw extract-context`, `saw set-completion`, `saw merge-wave`, etc.)
 - Update HTTP handlers to consume SDK manifest types (`/api/impl/:slug`, `/api/wave/:slug/start`, etc.)
 - Add manifest editor UI (YAML editing with schema validation, or form-based editor)
 - Update frontend components to render from structured data
-- Update `saw` CLI commands to use SDK operations
 
 **scout-and-wave (protocol repo):**
 - Update `/saw` skill to use SDK operations (no bash parsing)
@@ -214,7 +289,14 @@ Natural language remains for creative/interpretive work; structure enforces coor
 3. **Human review:** Generated markdown view must be readable/reviewable before wave execution.
 4. **No new dependencies:** Use Go stdlib (`encoding/json`, `gopkg.in/yaml.v3`) + existing deps. No heavy schema validation frameworks.
 5. **Claude Code compatibility:** Manifest format must be editable by LLMs (YAML/JSON, not binary).
+6. **Multi-backend support:** Must work with all backend configurations:
+   - **CLI with Bedrock** - AWS Bedrock backend, subprocess orchestration
+   - **CLI with Max Plan** - Claude Code CLI backend (current context)
+   - **API key + SDK** - Direct Anthropic API usage, programmatic orchestration
 
+   The SDK layer is backend-agnostic. The CLI binary and skill coordination logic work the same regardless of which backend launches agents.
+
+7. **Preserve `/saw` command:** The `/saw` skill invocation from Claude Code CLI must continue to work. The skill coordinates execution by calling the `saw` CLI binary (Layer 2A) via Bash tool, which wraps SDK operations. This is the primary user-facing interface for CLI-based orchestration.
 ## Success Criteria
 
 1. **Zero parse errors:** Schema validation catches all structural issues before Scout/agents execute.
