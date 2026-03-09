@@ -230,18 +230,67 @@ func lintIMPLDoc(path string) error {
 
 ### Two Execution Layers
 
-#### Orchestrator Layer (Where `/saw` Runs)
+#### Orchestrator Layer (Who Coordinates Wave Execution)
 
-**The `/saw` skill always runs in Claude Code CLI** - it is instructions for Claude (the orchestrator) to execute.
+**Three orchestration modes:**
 
-**Two deployment contexts for orchestrator:**
+**Mode 1: CLI with Skill (Interactive)**
 
-| Context | How Invoked | Backend Powering Orchestrator |
-|---------|-------------|-------------------------------|
-| **Max Plan** | `claude` CLI with Max Plan subscription | Claude API (subscription-based) |
-| **Bedrock** | `claude` CLI with `ANTHROPIC_BEDROCK_ENABLED=true` | AWS Bedrock (pay-per-use) |
+```bash
+# User invokes skill in Claude Code CLI
+/saw wave
+```
 
-**Key point:** The orchestrator uses YOUR Claude session. This is the Claude instance interpreting the skill, coordinating wave execution, handling errors conversationally.
+**Orchestrator:** Claude (me) interprets skill instructions (bash)
+**Backend options:**
+- Max Plan: `claude` CLI with subscription
+- Bedrock: `claude` CLI with `ANTHROPIC_BEDROCK_ENABLED=true`
+
+**Key characteristics:**
+- Conversational error recovery (Claude can pause, analyze, ask)
+- Human-in-the-loop at review checkpoints
+- Calls protocol SDK via CLI binary (`saw validate`, etc.)
+- Launches agents via Agent tool
+
+**Mode 2: Web UI (Browser-Based)**
+
+```
+User clicks "Start Wave" button in browser
+  ↓
+HTTP request to saw server
+  ↓
+Server orchestrates (Go code in scout-and-wave-web)
+```
+
+**Orchestrator:** HTTP handler (Go program)
+**Backend options:** Server can launch agents using any backend (Bedrock/API/CLI/OpenAI)
+
+**Key characteristics:**
+- No Claude involved in orchestration logic (pure Go)
+- Review checkpoints via UI forms/buttons
+- Calls protocol SDK directly (Go imports)
+- Launches agents programmatically (backend.RunStreamingWithTools)
+
+**Mode 3: Programmatic (Go Application)**
+
+```go
+// Custom application orchestrates
+import "github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
+
+manifest, _ := protocol.Load("IMPL-foo.yaml")
+orchestrator.RunWave(manifest, backendConfig)
+```
+
+**Orchestrator:** Your Go application
+**Backend options:** Configure any backend (Bedrock/API/CLI/OpenAI)
+
+**Key characteristics:**
+- Fully automated (no human checkpoints unless you build them)
+- Calls protocol SDK directly (library import)
+- Launches agents programmatically
+- Useful for CI/CD, batch processing, automated testing
+
+**Key point:** The orchestrator layer is **who coordinates** (CLI skill / web server / Go app), separate from **who executes agents** (Bedrock / API / CLI / OpenAI).
 
 #### Agent Layer (Where Wave Work Executes)
 
@@ -259,6 +308,8 @@ func lintIMPLDoc(path string) error {
 **Key point:** Orchestrator and agents are decoupled. You can coordinate with Max Plan Claude while agents execute on Bedrock.
 
 ### Four Main Execution Scenarios
+
+**Note:** These scenarios show CLI skill examples, but the same backend combinations work with web UI and programmatic Go orchestration. The key is orchestrator backend (how coordination runs) vs agent backend (how work executes).
 
 #### Scenario 1: Max Plan Orchestrator + Max Plan Agents
 
