@@ -46,6 +46,9 @@ func (c *Client) Run(ctx context.Context, systemPrompt, userMessage, workDir str
 func (c *Client) RunStreaming(ctx context.Context, systemPrompt, userMessage, workDir string, onChunk backend.ChunkCallback) (string, error) {
 	claudePath := c.claudePath
 	if claudePath == "" {
+		claudePath = c.cfg.BinaryPath
+	}
+	if claudePath == "" {
 		var err error
 		claudePath, err = exec.LookPath("claude")
 		if err != nil {

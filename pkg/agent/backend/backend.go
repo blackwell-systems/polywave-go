@@ -4,8 +4,8 @@ import "context"
 
 // Config carries backend-agnostic configuration.
 type Config struct {
-	// Model is the Claude model identifier (e.g. "claude-sonnet-4-5").
-	// Ignored by the CLI backend (model is configured in Claude Code settings).
+	// Model is the model identifier (e.g. "claude-sonnet-4-6", "gpt-4o").
+	// CLI backend passes it as --model; API backend passes it in the request body.
 	Model string
 
 	// MaxTokens caps output token count. Ignored by the CLI backend.
@@ -13,6 +13,11 @@ type Config struct {
 
 	// MaxTurns is the tool-use loop limit. 0 means use the backend default (50).
 	MaxTurns int
+
+	// BinaryPath is the path to the CLI binary used by the CLI backend.
+	// If empty, the CLI backend locates "claude" via PATH.
+	// Set this to use a different compatible CLI (e.g. "/usr/local/bin/kimi").
+	BinaryPath string
 }
 
 // ChunkCallback is called with each text chunk as it arrives from the backend.
