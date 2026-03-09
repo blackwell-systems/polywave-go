@@ -51,6 +51,11 @@ func (f *fakeBackend) RunStreaming(_ context.Context, systemPrompt, _, _ string,
 	return f.Run(context.Background(), systemPrompt, "", "")
 }
 
+func (f *fakeBackend) RunStreamingWithTools(_ context.Context, systemPrompt, _, _ string, _ backend.ChunkCallback, _ backend.ToolCallCallback) (string, error) {
+	return f.Run(context.Background(), systemPrompt, "", "")
+}
+
+
 func (f *fakeBackend) Run(_ context.Context, systemPrompt, _, _ string) (string, error) {
 	f.mu.Lock()
 	f.called = append(f.called, systemPrompt)

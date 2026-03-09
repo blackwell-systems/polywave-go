@@ -56,6 +56,19 @@ type AgentOutputPayload struct {
 	Chunk string `json:"chunk"`
 }
 
+// AgentToolCallPayload is the Data payload for the "agent_tool_call" SSE event.
+// Emitted once per tool invocation (IsResult=false) and once per tool result (IsResult=true).
+type AgentToolCallPayload struct {
+	Agent      string `json:"agent"`
+	Wave       int    `json:"wave"`
+	ToolID     string `json:"tool_id"`
+	ToolName   string `json:"tool_name"`
+	Input      string `json:"input"`
+	IsResult   bool   `json:"is_result"`
+	IsError    bool   `json:"is_error"`
+	DurationMs int64  `json:"duration_ms"`
+}
+
 // SetEventPublisher injects a publisher function that will receive all
 // OrchestratorEvents emitted during wave execution.
 func (o *Orchestrator) SetEventPublisher(pub EventPublisher) {
