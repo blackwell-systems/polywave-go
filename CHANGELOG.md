@@ -8,6 +8,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 | Version | Date | Headline |
 |---------|------|----------|
+| [0.11.0] | 2026-03-09 | AWS Bedrock backend — real AWS SDK integration with inference profile IDs, replaces fake Bedrock routing |
 | [0.10.0] | 2026-03-09 | Model name validation — input sanitization to prevent command injection via provider-prefixed model names |
 | [0.9.0] | 2026-03-09 | Agent Observatory — real-time tool call visibility per wave agent via SSE |
 | [0.8.0] | 2026-03-09 | Content-mode tool call fallback — handles local models (e.g. Qwen via Ollama) that embed tool calls in response content instead of `tool_calls` array |
@@ -18,6 +19,24 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 | [0.3.0] | 2026-03-08 | Protocol audit fixes — P0: failure_type parsing, multi-gen agent IDs; P1: E22 2-pass scaffold build, cross-repo Repo column; P2: repo field in completion reports |
 | [0.2.0] | 2026-03-08 | Engine protocol parity — E17–E23 implemented (context memory, failure routing, stub scan, quality gates, scaffold build verify, per-agent context extraction) |
 | [0.1.0] | 2026-03-08 | Initial engine extraction — parser, orchestrator, agent runner, git, worktree management |
+
+## [0.11.0] - 2026-03-09
+
+### Added
+
+- **Real AWS Bedrock backend** (`pkg/agent/backend/bedrock/`) — new package using AWS SDK v2 `bedrockruntime` service for authentic AWS Bedrock API calls. Authenticates via default credential chain (~/.aws/credentials, AWS env vars, IAM roles). Supports streaming with `InvokeModelWithResponseStream`. Uses Anthropic Messages API format (`bedrock-2023-05-31`).
+- **Bedrock inference profile ID mapping** (`pkg/orchestrator/orchestrator.go`, `pkg/engine/chat.go`) — `expandBedrockModelID()` now maps short names to inference profile IDs required by Bedrock on-demand throughput: `claude-sonnet-4-5` → `us.anthropic.claude-sonnet-4-5-20250929-v1:0`. Profiles queried from `aws bedrock list-inference-profiles`.
+- **AWS SDK dependencies** (`go.mod`) — added `github.com/aws/aws-sdk-go-v2`, `github.com/aws/aws-sdk-go-v2/config`, `github.com/aws/aws-sdk-go-v2/service/bedrockruntime`.
+
+### Changed
+
+- **`bedrock:` prefix behavior** — previously called Anthropic API with Bedrock-formatted model IDs (broken). Now creates real Bedrock backend using AWS SDK. **Breaking change**: requires AWS credentials instead of `ANTHROPIC_API_KEY`.
+
+### Fixed
+
+- **Chat backend missing bedrock case** — `pkg/engine/chat.go` provider routing had no `bedrock` case, causing `bedrock:` prefix to fall through to default CLI backend. Added `bedrock` case with `chatExpandBedrockModelID()` helper.
+
+---
 
 ---
 
