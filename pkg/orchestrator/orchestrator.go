@@ -137,12 +137,12 @@ func expandBedrockModelID(shortName string) string {
 		return shortName
 	}
 	
-	// Map of short names to full Bedrock IDs (us-east-1 region)
+	// Map of short names to full Bedrock IDs (using global region for cross-region support)
 	mapping := map[string]string{
-		"claude-sonnet-4-5":          "us.anthropic.claude-sonnet-4-5-20250929-v1:0",
-		"claude-opus-4-6":            "us.anthropic.claude-opus-4-6-20250519-v1:0",
-		"claude-haiku-4-5":           "us.anthropic.claude-haiku-4-5-20251001-v1:0",
-		"claude-haiku-4-5-20251001":  "us.anthropic.claude-haiku-4-5-20251001-v1:0",
+		"claude-sonnet-4-5":          "global.anthropic.claude-sonnet-4-20250514-v1:0",
+		"claude-opus-4-6":            "global.anthropic.claude-opus-4-20250519-v1:0",
+		"claude-haiku-4-5":           "global.anthropic.claude-haiku-4-20251001-v1:0",
+		"claude-haiku-4-5-20251001":  "global.anthropic.claude-haiku-4-20251001-v1:0",
 	}
 	
 	if fullID, ok := mapping[shortName]; ok {

@@ -62,6 +62,9 @@ You MUST NOT modify the IMPL doc or any source files. Read-only.`, opts.IMPLPath
 			b = openaibackend.New(backend.Config{Model: bareModel, BaseURL: "http://localhost:1234/v1"})
 		case "anthropic":
 			b = apiclient.New(apiKey, backend.Config{Model: bareModel})
+		case "bedrock":
+			fullID := chatExpandBedrockModelID(bareModel)
+			b = apiclient.New(apiKey, backend.Config{Model: fullID})
 		case "cli":
 			b = cliclient.New("", backend.Config{Model: bareModel})
 		default:
@@ -119,6 +122,23 @@ Focus on interesting insights specific to this IMPL doc rather than general prog
 
 	_ = response // Response is already streamed via onChunk
 	return nil
+}
+
+// chatExpandBedrockModelID converts short Bedrock model names to full region-prefixed IDs.
+func chatExpandBedrockModelID(shortName string) string {
+	if strings.Contains(shortName, ".anthropic.") {
+		return shortName
+	}
+	mapping := map[string]string{
+		"claude-sonnet-4-5":          "global.anthropic.claude-sonnet-4-20250514-v1:0",
+		"claude-opus-4-6":            "global.anthropic.claude-opus-4-20250519-v1:0",
+		"claude-haiku-4-5":           "global.anthropic.claude-haiku-4-20251001-v1:0",
+		"claude-haiku-4-5-20251001":  "global.anthropic.claude-haiku-4-20251001-v1:0",
+	}
+	if fullID, ok := mapping[shortName]; ok {
+		return fullID
+	}
+	return shortName
 }
 
 // chatParseProviderPrefix splits "ollama:qwen2.5-coder:32b" into ("ollama", "qwen2.5-coder:32b").
