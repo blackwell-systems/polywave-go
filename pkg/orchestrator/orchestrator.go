@@ -77,7 +77,7 @@ var waitForCompletionFunc = func(implDocPath, agentLetter string, timeout, pollI
 
 // BackendConfig carries backend selection + credentials for newBackendFunc.
 type BackendConfig struct {
-	Kind      string // "api" | "cli" | "auto" | "openai" | "anthropic" | "ollama" | "lmstudio"
+	Kind      string // "api" | "cli" | "auto" | "openai" | "anthropic" | "bedrock" | "ollama" | "lmstudio"
 	APIKey    string
 	Model     string
 	MaxTokens int
@@ -103,6 +103,33 @@ func parseProviderPrefix(model string) (provider, bareModel string) {
 		return "", model
 	}
 	return model[:idx], model[idx+1:]
+}
+
+// expandBedrockModelID converts short Bedrock model names to full region-prefixed IDs.
+// "claude-sonnet-4-5" → "us.anthropic.claude-sonnet-4-5-20250929-v1:0"
+// "claude-opus-4-6" → "us.anthropic.claude-opus-4-6-20250519-v1:0"
+// "claude-haiku-4-5" → "us.anthropic.claude-haiku-4-5-20251001-v1:0"
+// Already-expanded IDs are returned unchanged.
+func expandBedrockModelID(shortName string) string {
+	// If already a full Bedrock ID (contains region prefix), return as-is
+	if strings.Contains(shortName, ".anthropic.") {
+		return shortName
+	}
+	
+	// Map of short names to full Bedrock IDs (us-east-1 region)
+	mapping := map[string]string{
+		"claude-sonnet-4-5":          "us.anthropic.claude-sonnet-4-5-20250929-v1:0",
+		"claude-opus-4-6":            "us.anthropic.claude-opus-4-6-20250519-v1:0",
+		"claude-haiku-4-5":           "us.anthropic.claude-haiku-4-5-20251001-v1:0",
+		"claude-haiku-4-5-20251001":  "us.anthropic.claude-haiku-4-5-20251001-v1:0",
+	}
+	
+	if fullID, ok := mapping[shortName]; ok {
+		return fullID
+	}
+	
+	// Unknown short name: return as-is (may be a custom model or different region)
+	return shortName
 }
 
 // newBackendFunc constructs a backend.Backend from config. Seam for tests.
@@ -157,6 +184,17 @@ var newBackendFunc = func(cfg BackendConfig) (backend.Backend, error) {
 			MaxTurns:  cfg.MaxTurns,
 			BaseURL:   baseURL,
 		}), nil
+	case "bedrock":
+		apiKey := cfg.APIKey
+		if apiKey == "" {
+			apiKey = os.Getenv("ANTHROPIC_API_KEY")
+		}
+		fullID := expandBedrockModelID(bareModel)
+		return apiclient.New(apiKey, backend.Config{
+			Model:     fullID,
+			MaxTokens: cfg.MaxTokens,
+			MaxTurns:  cfg.MaxTurns,
+		}), nil
 	case "anthropic":
 		apiKey := cfg.APIKey
 		if apiKey == "" {
@@ -191,7 +229,7 @@ var newBackendFunc = func(cfg BackendConfig) (backend.Backend, error) {
 		}
 		return cliclient.New("", bcfg), nil
 	default:
-		return nil, fmt.Errorf("orchestrator: unknown backend kind %q; valid values: api, cli, auto, openai, anthropic, ollama, lmstudio", effectiveKind)
+		return nil, fmt.Errorf("orchestrator: unknown backend kind %q; valid values: api, cli, auto, openai, anthropic, bedrock, ollama, lmstudio", effectiveKind)
 	}
 }
 
