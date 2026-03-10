@@ -2,46 +2,41 @@ package main
 
 import (
 	"encoding/json"
-	"errors"
-	"flag"
 	"fmt"
 
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
+	"github.com/spf13/cobra"
 )
 
-func runUpdateStatus(args []string) error {
-	fs := flag.NewFlagSet("update-status", flag.ContinueOnError)
-	waveNum := fs.Int("wave", 0, "Wave number (required)")
-	agentID := fs.String("agent", "", "Agent ID (required)")
-	status := fs.String("status", "", "Status: complete|partial|blocked (required)")
+func newUpdateStatusCmd() *cobra.Command {
+	var waveNum int
+	var agentID string
+	var status string
 
-	if err := fs.Parse(args); err != nil {
-		if errors.Is(err, flag.ErrHelp) {
+	cmd := &cobra.Command{
+		Use:   "update-status <manifest-path>",
+		Short: "Update agent status in manifest",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			manifestPath := args[0]
+			result, err := protocol.UpdateStatus(manifestPath, waveNum, agentID, status)
+			if err != nil {
+				return fmt.Errorf("update-status: %w", err)
+			}
+
+			out, _ := json.MarshalIndent(result, "", "  ")
+			fmt.Println(string(out))
 			return nil
-		}
-		return fmt.Errorf("update-status: %w", err)
+		},
 	}
 
-	if fs.NArg() < 1 {
-		return fmt.Errorf("update-status: manifest path required\nUsage: saw update-status <manifest-path> --wave <N> --agent <ID> --status <complete|partial|blocked>")
-	}
-	if *waveNum == 0 {
-		return fmt.Errorf("update-status: --wave is required")
-	}
-	if *agentID == "" {
-		return fmt.Errorf("update-status: --agent is required")
-	}
-	if *status == "" {
-		return fmt.Errorf("update-status: --status is required")
-	}
+	cmd.Flags().IntVar(&waveNum, "wave", 0, "Wave number (required)")
+	cmd.Flags().StringVar(&agentID, "agent", "", "Agent ID (required)")
+	cmd.Flags().StringVar(&status, "status", "", "Status: complete|partial|blocked (required)")
 
-	manifestPath := fs.Arg(0)
-	result, err := protocol.UpdateStatus(manifestPath, *waveNum, *agentID, *status)
-	if err != nil {
-		return fmt.Errorf("update-status: %w", err)
-	}
+	_ = cmd.MarkFlagRequired("wave")
+	_ = cmd.MarkFlagRequired("agent")
+	_ = cmd.MarkFlagRequired("status")
 
-	out, _ := json.MarshalIndent(result, "", "  ")
-	fmt.Println(string(out))
-	return nil
+	return cmd
 }
