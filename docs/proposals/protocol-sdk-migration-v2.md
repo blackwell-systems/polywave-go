@@ -496,6 +496,15 @@ This refactor isn't just about fixing parse errors. It's about making Scout-and-
 
 This is the foundation for scaling Scout-and-Wave from "tool that works" to "platform for parallel AI development."
 
+**Phase 3 consideration: Agent Runtime Abstraction**
+
+The SDK's agent execution layer should define a `Runtime` interface that abstracts how agents are launched and monitored. Phase 1 implements this as "launch Claude Code subagent via Agent tool." Future phases could swap in:
+- **Claude Agent SDK** (Python/TS) — Anthropic's official agent runtime, with built-in tools, hooks, Skills, and subagent orchestration
+- **Google ADK** (Go) — ParallelAgent primitive, model-agnostic design, but genai type tax
+- **Direct LLM API** — Raw conversation loop with tool dispatch, maximum control
+
+Designing the `Runtime` interface now (even if Phase 1 only has one implementation) keeps these paths open without committing prematurely. See *Appendix: Framework Evaluation* for the full analysis.
+
 ---
 
 ## Personal Note
@@ -2805,6 +2814,9 @@ func (c *Client) Run(ctx context.Context, opts RunOptions) (string, error) {
 8. **Error recovery strategy:** Codify known error patterns in Go vs always defer to Claude?
    **Recommendation:** Hybrid (implement known patterns in `saw merge-wave`, unknown errors exit with context for Claude)
 
+9. **Agent runtime abstraction:** Should the SDK define a `Runtime` interface for agent execution?
+   **Recommendation:** Yes. Define `Runtime` interface in Phase 1 (with single Claude Code implementation). This keeps the door open for Claude Agent SDK, Google ADK, or direct API backends in future phases without requiring SDK-level changes. See *Appendix: Framework Evaluation*.
+
 ---
 
 ## Related Work
@@ -2813,6 +2825,10 @@ func (c *Client) Run(ctx context.Context, opts RunOptions) (string, error) {
 - **ROADMAP.md** - Current roadmap items (this would be v2.0 milestone)
 - **docs/protocol/invariants.md** - I1-I6 invariants that SDK must enforce
 - **docs/protocol/execution-rules.md** - E1-E23 rules that become SDK operations
+- **Claude Agent SDK** - Anthropic's agent runtime (Python/TS): https://platform.claude.com/docs/en/agent-sdk/overview
+- **Google ADK** - Google's Agent Development Kit (Go/Python/TS/Java): https://google.github.io/adk-docs/
+- **GoAgents** - Ingenimax Go agent framework: https://docs.goagents.dev/
+- **Anthropic Agent Skills** - Skills standard SAW already implements: https://platform.claude.com/docs/en/agents-and-tools/agent-skills/overview
 
 ---
 
@@ -2859,3 +2875,126 @@ func (c *Client) Run(ctx context.Context, opts RunOptions) (string, error) {
 - Progressive automation (proven patterns migrate from skill to Go over time)
 
 **Standalone `saw wave` is possible** but secondary use case (CI/CD where errors cause hard failure anyway).
+
+---
+
+## Appendix: Framework Evaluation
+
+**Date:** March 9, 2026
+**Context:** Before locking in the Protocol SDK architecture, we evaluated whether SAW should be built on an existing agentic framework instead of a purpose-built Go SDK.
+
+### Frameworks Evaluated
+
+| Framework | Language | Maturity | Model Support | Parallel Agents | Key Trait |
+|-----------|----------|----------|---------------|-----------------|-----------|
+| **Claude Agent SDK** | Python, TypeScript | Production (powers Claude Code) | Claude (+ Bedrock, Vertex, Azure) | Subagents via `Agent` tool | Built-in tools (Read, Edit, Bash), Skills, hooks |
+| **Google ADK** | Go, Python, TS, Java | v0.6.0 (early) | Gemini-native, model-agnostic | `ParallelAgent` (errgroup) | Go-native, `BeforeAgent`/`AfterAgent` callbacks |
+| **GoAgents (Ingenimax)** | Go | Early | OpenAI, Claude, Gemini, DeepSeek, Ollama, vLLM | Not confirmed | YAML config, MCP support, multi-provider |
+| **LangGraph** | Python | Mature | Multi-model | Graph-based | Checkpointing, state machines |
+| **CrewAI** | Python | Mature | Multi-model | Role-based delegation | Opinionated roles |
+| **AutoGen** | Python, .NET | Mature | Multi-model | Multi-agent conversation | Conversation-centric |
+
+### SAW's Execution Model vs Framework Assumptions
+
+Most agentic frameworks assume:
+- **Agents are LLM conversation loops** — generate → tool call → resume, managed in-process
+- **Coordination is conversational** — agents communicate via shared session state or message passing
+- **Orchestration is autonomous** — framework decides next steps based on LLM output
+
+SAW's model is fundamentally different:
+- **Agents are isolated processes** — each runs in a separate git worktree with disjoint file ownership (I1)
+- **Coordination is document-based** — IMPL manifest is the single source of truth (I4), not session state
+- **Orchestration is human-supervised** — Claude-as-orchestrator with review checkpoints, not autonomous
+
+This mismatch means adopting a framework would require building SAW's unique primitives (worktree isolation, file ownership enforcement, manifest lifecycle, merge sequencing) on top of the framework — using it as a glorified LLM conversation loop while ignoring most of its orchestration features.
+
+### Claude Agent SDK — Closest Fit
+
+The Claude Agent SDK is the most interesting option because **SAW already uses its execution model.** SAW agents are Claude Code subagents with per-agent tool restrictions, launched via the `Agent` tool — which is exactly what the Agent SDK provides programmatically:
+
+```python
+# What SAW does today (via Claude Code Agent tool):
+# Launch wave agent with restricted tools, isolated context
+
+# What it would look like with Claude Agent SDK:
+async for message in query(
+    prompt=agent_context_payload,
+    options=ClaudeAgentOptions(
+        allowed_tools=["Read", "Edit", "Bash", "Glob", "Grep"],
+        # No "Agent" tool — wave agents can't spawn sub-agents
+    ),
+):
+    handle(message)
+```
+
+**What the Agent SDK provides that SAW needs:**
+- Per-agent tool restrictions (scout can't Edit, wave agents can't spawn)
+- Hooks (PreToolUse, PostToolUse — like claudewatch)
+- Sessions (resume, fork — useful for agent retry)
+- Skills (progressive disclosure — what SAW's skill files already are)
+- Subagent definitions with isolated tool sets
+
+**What blocks adoption today:**
+- **No Go SDK.** Python and TypeScript only. SAW's engine is Go. Adding a Python/TS process into the `saw` CLI creates a language boundary and deployment complexity.
+- **Claude-only.** SAW already supports Qwen and is built against the agent-skills standard for cross-runtime compatibility. The Agent SDK is Claude-specific.
+
+**Verdict:** Monitor for Go SDK release. If one appears, the Agent SDK becomes the natural runtime backend for SAW's `Runtime` interface.
+
+### Google ADK — Go-Native but Wrong Abstraction
+
+ADK's `ParallelAgent` runs sub-agents concurrently using Go's `errgroup`, which superficially maps to SAW waves. However:
+
+**Isolation model mismatch:** ADK's "isolation" is *conversation branching* — each sub-agent gets a `Branch` string so they don't see each other's conversation history. All agents share the same `Session`, `Artifacts`, and `Memory` objects. SAW's isolation is *filesystem-level* — separate git worktrees with disjoint file ownership.
+
+**genai type tax:** Every agent interaction flows through `google.golang.org/genai` types (`genai.Content`, `genai.Part`). Using Claude or Qwen requires adapters that translate to/from these types on every API call.
+
+**Useful primitives:** `BeforeAgentCallback` / `AfterAgentCallback` hooks are where worktree creation and merge could be wired in. The agent composition model (`Config.SubAgents`, per-agent tool sets) maps to SAW's agent definitions.
+
+**Verdict:** ADK could serve as the LLM conversation loop if SAW agents become direct API callers (not Claude Code subagents). But it provides no help with SAW's core coordination primitives — those would all be custom code on top of ADK.
+
+### GoAgents (Ingenimax) — Multi-Provider but Immature
+
+GoAgents is notable for its broad model support (OpenAI, Claude, Gemini, DeepSeek, Ollama, vLLM) and YAML-based agent configuration. It also supports MCP servers natively.
+
+**Limitations:** Early-stage project, no confirmed parallel execution support, no workflow orchestration primitives comparable to ADK's ParallelAgent. Documentation is thin on multi-agent coordination patterns.
+
+**Verdict:** Worth watching for its multi-provider abstraction layer, but too immature for production use.
+
+### Decision: Purpose-Built SDK with Runtime Interface
+
+**Phase 1:** Build the Protocol SDK as designed — YAML manifests, Go validation, CLI commands. Agent execution continues via Claude Code's `Agent` tool (current model). No framework dependency.
+
+**Design for the future:** Define a `Runtime` interface in the SDK:
+
+```go
+// pkg/protocol/runtime.go
+type Runtime interface {
+    // LaunchAgent starts an agent with the given context and tool restrictions.
+    LaunchAgent(ctx context.Context, cfg AgentConfig) (AgentHandle, error)
+
+    // WaitForCompletion blocks until the agent finishes and returns its report.
+    WaitForCompletion(handle AgentHandle) (*CompletionReport, error)
+}
+
+type AgentConfig struct {
+    ID          string
+    Prompt      string
+    Tools       []string   // allowed tools
+    WorkDir     string     // worktree path
+    Model       string     // model identifier
+    Backend     string     // runtime backend
+}
+```
+
+**Phase 1 implementation:** `ClaudeCodeRuntime` — wraps the current "launch via Agent tool" model.
+
+**Future implementations:**
+- `AgentSDKRuntime` — calls Claude Agent SDK (Python/TS) for direct API control
+- `ADKRuntime` — uses Google ADK for Go-native LLM loops
+- `DirectAPIRuntime` — raw Anthropic/OpenAI API with custom tool dispatch
+
+This approach gets us shipping now (no framework dependency, no language boundary) while keeping every framework option open for later phases. The `Runtime` interface is the insurance policy — swap the backend without changing protocol logic.
+
+### Key Insight
+
+SAW's value is not in the agent execution loop (any framework can do that). SAW's value is in the **coordination protocol** — wave sequencing, disjoint file ownership, interface contracts, manifest lifecycle, merge verification. No framework provides these. The Protocol SDK is the right investment because it codifies what's unique to SAW; agent execution is the commodity layer that can be delegated to whatever runtime fits best.

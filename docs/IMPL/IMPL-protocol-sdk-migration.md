@@ -17,7 +17,7 @@
 **Sequential baseline:** ~240 min (13 agents × 18 min avg sequential time)
 **Time savings:** ~45 min (19% faster)
 
-**Recommendation:** Clear speedup. This is a major architectural refactor touching core protocol logic across 3 repos. Parallelization benefits from independent SDK development (Wave 1-1) enabling downstream CLI/skill/UI work to proceed in parallel once complete.
+**Recommendation:** Clear speedup. This is a major architectural refactor touching core protocol logic across 3 repos. Parallelization benefits from independent SDK development (Wave 1) enabling downstream CLI/skill/UI work to proceed in parallel once complete.
 
 ### Suitability Analysis
 
@@ -38,7 +38,7 @@
 **5. Parallelization value check:** High value.
    - Build/test cycle length: ~15-20 seconds (go build + go test)
    - Files per agent: 2-4 files average
-   - Agent independence: Wave 1-1 is foundation (SDK core), then Waves 1-2 through 1-5 can proceed with some parallelism after SDK types stabilize
+   - Agent independence: Wave 1 is foundation (SDK core), then Waves 2 through 5 can proceed with some parallelism after SDK types stabilize
    - Task complexity: Significant - implementing YAML manifest schema, validation logic, CLI commands, skill migration, web UI integration
 
 ## Quality Gates
@@ -67,7 +67,10 @@ gates:
 
 ## Scaffolds
 
-No scaffolds needed - agents have independent type ownership. SDK types are defined by Wave 1-1 Agent A and imported by downstream agents.
+- file_path: /Users/dayna.blackwell/code/scout-and-wave-go/pkg/protocol/types.go
+  status: pending
+  description: Type scaffold for SDK core types. Agent B (validation) imports these types during parallel execution with Agent A (manifest). Agent A owns the full implementation and will extend this file; the scaffold provides compile-ready type stubs so B can develop validation logic against real types.
+  import_path: github.com/blackwell-systems/scout-and-wave-go/pkg/protocol
 
 ## Pre-Mortem
 
@@ -77,21 +80,23 @@ No scaffolds needed - agents have independent type ownership. SDK types are defi
 
 | Scenario | Likelihood | Impact | Mitigation |
 |----------|-----------|--------|------------|
-| SDK schema design requires changes mid-implementation, forcing rework in downstream waves | medium | high | Wave 1-1 Agent A implements comprehensive unit tests with real-world IMPL doc examples; human review checkpoint before launching Wave 1-2 |
-| CLI binary commands have incompatible signatures with skill expectations | low | medium | Wave 1-2 agents test CLI commands manually before Wave 1-3 skill migration; integration tests validate command I/O |
-| Web UI breaks due to SDK import changes | low | medium | Wave 1-5 maintains backward compatibility by checking for both old parser and new SDK; gradual migration with feature flags |
+| SDK schema design requires changes mid-implementation, forcing rework in downstream waves | medium | high | Wave 1 Agent A implements comprehensive unit tests with real-world IMPL doc examples; human review checkpoint before launching Wave 2 |
+| CLI binary commands have incompatible signatures with skill expectations | low | medium | Wave 2 agents test CLI commands manually before Wave 3 skill migration; integration tests validate command I/O |
+| Web UI breaks due to SDK import changes | low | medium | Wave 5 maintains backward compatibility by checking for both old parser and new SDK; gradual migration with feature flags |
 | Cross-repo coordination failures (SDK changes in scout-and-wave-go not reflected in scout-and-wave-web) | medium | high | File ownership table explicitly tracks repo column; agents check imports after SDK changes; Orchestrator verifies builds in both repos post-merge |
-| Scout agent generates invalid YAML manifests | medium | medium | Wave 1-4 Agent implements schema validation as first step; extensive testing with validator before migration |
+| Scout agent generates invalid YAML manifests | medium | medium | Wave 4 Agent implements schema validation as first step; extensive testing with validator before migration |
 | Backward compatibility broken (existing markdown IMPL docs stop working) | low | high | Maintain existing parser.go in parallel; SDK validates but doesn't replace until Phase 1 complete; migration utility tested on all existing IMPL docs |
 
 ## Known Issues
 
-None identified. This is greenfield implementation of SDK layer alongside existing markdown parser (not replacing it yet).
+- description: "Cross-repo dependency: Wave 2 agents (C-F) in scout-and-wave-web import SDK from scout-and-wave-go. After Wave 1 merge, scout-and-wave-go must be pushed and scout-and-wave-web go.mod updated with `go get github.com/blackwell-systems/scout-and-wave-go@latest` before Wave 2 worktrees are created."
+  status: open
+  workaround: "Orchestrator runs go.mod update as part of post-Wave-1 merge procedure"
 
 ## Dependency Graph
 
 ```yaml type=impl-dep-graph
-Wave 1-1 (2 parallel agents, SDK foundation):
+Wave 1 (2 parallel agents, SDK foundation):
     [A] /Users/dayna.blackwell/code/scout-and-wave-go/pkg/protocol/manifest.go
         /Users/dayna.blackwell/code/scout-and-wave-go/pkg/protocol/manifest_test.go
         (Define core types: IMPLManifest, Wave, Agent, FileOwnership, CompletionReport with YAML tags)
@@ -102,7 +107,7 @@ Wave 1-1 (2 parallel agents, SDK foundation):
         (Implement I1-I6 invariant validation with structured errors)
         depends on: [A] (imports manifest types)
 
-Wave 1-2 (4 parallel agents, CLI binary):
+Wave 2 (4 parallel agents, CLI binary):
     [C] /Users/dayna.blackwell/code/scout-and-wave-web/cmd/saw/validate.go
         /Users/dayna.blackwell/code/scout-and-wave-web/cmd/saw/validate_test.go
         (Implement `saw validate` command)
@@ -123,7 +128,7 @@ Wave 1-2 (4 parallel agents, CLI binary):
         (Implement `saw current-wave` command)
         depends on: [A] (imports manifest types)
 
-Wave 1-3 (2 parallel agents, additional CLI commands + skill migration):
+Wave 3 (2 parallel agents, additional CLI commands + skill migration):
     [G] /Users/dayna.blackwell/code/scout-and-wave-web/cmd/saw/merge.go
         /Users/dayna.blackwell/code/scout-and-wave-web/cmd/saw/merge_test.go
         /Users/dayna.blackwell/code/scout-and-wave-web/cmd/saw/render.go
@@ -136,36 +141,31 @@ Wave 1-3 (2 parallel agents, additional CLI commands + skill migration):
         (Implement `saw migrate` command to convert markdown → YAML)
         depends on: [A] (imports manifest types; also imports existing parser.go)
 
-Wave 1-4 (2 parallel agents, skill migration):
-    [I] /Users/dayna.blackwell/code/scout-and-wave/docs/skills/saw-wave.md
-        /Users/dayna.blackwell/code/scout-and-wave/docs/skills/saw-validate.md
-        (Update skill to call `saw validate` instead of bash regex validation)
-        depends on: [C] (CLI validate command must exist)
+Wave 4 (1 agent, skill migration):
+    [I] /Users/dayna.blackwell/code/scout-and-wave/implementations/claude-code/prompts/saw-skill.md
+        /Users/dayna.blackwell/code/scout-and-wave/implementations/claude-code/scripts/validate-impl.sh
+        (Update skill to call `saw validate`, `saw extract-context`, `saw set-completion` instead of bash scripts)
+        depends on: [C] [D] [E] (CLI commands must exist)
 
-    [J] /Users/dayna.blackwell/code/scout-and-wave/docs/skills/saw-extract.md
-        /Users/dayna.blackwell/code/scout-and-wave/docs/skills/saw-completion.md
-        (Update skill to call `saw extract-context` and `saw set-completion`)
-        depends on: [D] [E] (CLI commands must exist)
-
-Wave 1-5 (3 parallel agents, Scout updates + web UI integration):
-    [K] /Users/dayna.blackwell/code/scout-and-wave/docs/agent-prompts/scout.md
+Wave 5 (3 parallel agents, Scout updates + web UI integration):
+    [J] /Users/dayna.blackwell/code/scout-and-wave/implementations/claude-code/prompts/scout.md
         (Update Scout agent to generate YAML manifests with schema validation)
         depends on: [A] [B] [C] (Scout must generate manifests that pass SDK validation)
 
-    [L] /Users/dayna.blackwell/code/scout-and-wave-web/pkg/api/impl_handlers.go
+    [K] /Users/dayna.blackwell/code/scout-and-wave-web/pkg/api/impl_handlers.go
         /Users/dayna.blackwell/code/scout-and-wave-web/pkg/api/impl_handlers_test.go
         (Update HTTP handlers to import SDK directly for Load/Validate operations)
         depends on: [A] [B] (imports protocol SDK)
 
-    [M] /Users/dayna.blackwell/code/scout-and-wave-web/web/src/api/manifest.ts
+    [L] /Users/dayna.blackwell/code/scout-and-wave-web/web/src/api/manifest.ts
         /Users/dayna.blackwell/code/scout-and-wave-web/web/src/components/ManifestEditor.tsx
         (Add manifest editor UI with YAML validation and real-time feedback)
-        depends on: [L] (API handlers must support manifest operations)
+        depends on: [K] (API handlers must support manifest operations)
 ```
 
 ## Interface Contracts
 
-### SDK Core Types (Wave 1-1 Agent A)
+### SDK Core Types (Wave 1 Agent A)
 
 **Location:** `/Users/dayna.blackwell/code/scout-and-wave-go/pkg/protocol/manifest.go`
 
@@ -278,7 +278,7 @@ type KnownIssue struct {
 }
 ```
 
-### SDK Operations (Wave 1-1 Agent A)
+### SDK Operations (Wave 1 Agent A)
 
 **Location:** `/Users/dayna.blackwell/code/scout-and-wave-go/pkg/protocol/manifest.go`
 
@@ -296,7 +296,7 @@ func (m *IMPLManifest) CurrentWave() *Wave
 func (m *IMPLManifest) SetCompletionReport(agentID string, report CompletionReport) error
 ```
 
-### SDK Validation (Wave 1-1 Agent B)
+### SDK Validation (Wave 1 Agent B)
 
 **Location:** `/Users/dayna.blackwell/code/scout-and-wave-go/pkg/protocol/validation.go`
 
@@ -321,16 +321,16 @@ func validateI5FileOwnershipComplete(m *IMPLManifest) []ValidationError // I5: a
 func validateI6NoCycles(m *IMPLManifest) []ValidationError           // I6: dependency graph acyclic
 ```
 
-### CLI Commands (Wave 1-2, Wave 1-3)
+### CLI Commands (Wave 2, Wave 3)
 
-**validate command** (Wave 1-2 Agent C):
+**validate command** (Wave 2 Agent C):
 ```bash
 saw validate <manifest-path>
 # Exit 0: valid
 # Exit 1: invalid (structured errors on stderr as JSON)
 ```
 
-**extract-context command** (Wave 1-2 Agent D):
+**extract-context command** (Wave 2 Agent D):
 ```bash
 saw extract-context <manifest-path> <agent-id>
 # stdout: JSON agent context payload
@@ -338,7 +338,7 @@ saw extract-context <manifest-path> <agent-id>
 # Exit 1: agent not found or manifest invalid
 ```
 
-**set-completion command** (Wave 1-2 Agent E):
+**set-completion command** (Wave 2 Agent E):
 ```bash
 saw set-completion <manifest-path> <agent-id> < completion-report.yaml
 # stdin: YAML completion report
@@ -346,7 +346,7 @@ saw set-completion <manifest-path> <agent-id> < completion-report.yaml
 # Exit 1: validation failed or manifest not found
 ```
 
-**current-wave command** (Wave 1-2 Agent F):
+**current-wave command** (Wave 2 Agent F):
 ```bash
 saw current-wave <manifest-path>
 # stdout: wave number (integer) or empty if all complete
@@ -354,7 +354,7 @@ saw current-wave <manifest-path>
 # Exit 1: manifest not found
 ```
 
-**merge-wave command** (Wave 1-3 Agent G):
+**merge-wave command** (Wave 3 Agent G):
 ```bash
 saw merge-wave <manifest-path> <wave-number>
 # stdout: merge status
@@ -363,7 +363,7 @@ saw merge-wave <manifest-path> <wave-number>
 # Exit 1: conflicts or errors
 ```
 
-**render command** (Wave 1-3 Agent G):
+**render command** (Wave 3 Agent G):
 ```bash
 saw render <manifest-path>
 # stdout: human-readable markdown
@@ -371,7 +371,7 @@ saw render <manifest-path>
 # Exit 1: render failed
 ```
 
-**migrate command** (Wave 1-3 Agent H):
+**migrate command** (Wave 3 Agent H):
 ```bash
 saw migrate <old-impl.md>
 # stdout: YAML manifest
@@ -379,7 +379,7 @@ saw migrate <old-impl.md>
 # Exit 1: parse failed
 ```
 
-### Web UI API Contracts (Wave 1-5 Agent L)
+### Web UI API Contracts (Wave 5 Agent K)
 
 **GET /api/impl/:slug** - Load manifest
 ```json
@@ -411,58 +411,56 @@ Response 400: {"error": "..."}
 ```yaml type=impl-file-ownership
 | File | Agent | Wave | Depends On | Repo |
 |------|-------|------|------------|------|
-| /Users/dayna.blackwell/code/scout-and-wave-go/pkg/protocol/manifest.go | A | 1-1 | — | scout-and-wave-go |
-| /Users/dayna.blackwell/code/scout-and-wave-go/pkg/protocol/manifest_test.go | A | 1-1 | — | scout-and-wave-go |
-| /Users/dayna.blackwell/code/scout-and-wave-go/pkg/protocol/validation.go | B | 1-1 | A | scout-and-wave-go |
-| /Users/dayna.blackwell/code/scout-and-wave-go/pkg/protocol/validation_test.go | B | 1-1 | A | scout-and-wave-go |
-| /Users/dayna.blackwell/code/scout-and-wave-web/cmd/saw/validate.go | C | 1-2 | A+B | scout-and-wave-web |
-| /Users/dayna.blackwell/code/scout-and-wave-web/cmd/saw/validate_test.go | C | 1-2 | A+B | scout-and-wave-web |
-| /Users/dayna.blackwell/code/scout-and-wave-web/cmd/saw/extract.go | D | 1-2 | A | scout-and-wave-web |
-| /Users/dayna.blackwell/code/scout-and-wave-web/cmd/saw/extract_test.go | D | 1-2 | A | scout-and-wave-web |
-| /Users/dayna.blackwell/code/scout-and-wave-web/cmd/saw/completion.go | E | 1-2 | A | scout-and-wave-web |
-| /Users/dayna.blackwell/code/scout-and-wave-web/cmd/saw/completion_test.go | E | 1-2 | A | scout-and-wave-web |
-| /Users/dayna.blackwell/code/scout-and-wave-web/cmd/saw/wave.go | F | 1-2 | A | scout-and-wave-web |
-| /Users/dayna.blackwell/code/scout-and-wave-web/cmd/saw/wave_test.go | F | 1-2 | A | scout-and-wave-web |
-| /Users/dayna.blackwell/code/scout-and-wave-web/cmd/saw/merge.go | G | 1-3 | A | scout-and-wave-web |
-| /Users/dayna.blackwell/code/scout-and-wave-web/cmd/saw/merge_test.go | G | 1-3 | A | scout-and-wave-web |
-| /Users/dayna.blackwell/code/scout-and-wave-web/cmd/saw/render.go | G | 1-3 | A | scout-and-wave-web |
-| /Users/dayna.blackwell/code/scout-and-wave-web/cmd/saw/render_test.go | G | 1-3 | A | scout-and-wave-web |
-| /Users/dayna.blackwell/code/scout-and-wave-web/cmd/saw/migrate.go | H | 1-3 | A | scout-and-wave-web |
-| /Users/dayna.blackwell/code/scout-and-wave-web/cmd/saw/migrate_test.go | H | 1-3 | A | scout-and-wave-web |
-| /Users/dayna.blackwell/code/scout-and-wave/docs/skills/saw-wave.md | I | 1-4 | C | scout-and-wave |
-| /Users/dayna.blackwell/code/scout-and-wave/docs/skills/saw-validate.md | I | 1-4 | C | scout-and-wave |
-| /Users/dayna.blackwell/code/scout-and-wave/docs/skills/saw-extract.md | J | 1-4 | D+E | scout-and-wave |
-| /Users/dayna.blackwell/code/scout-and-wave/docs/skills/saw-completion.md | J | 1-4 | D+E | scout-and-wave |
-| /Users/dayna.blackwell/code/scout-and-wave/docs/agent-prompts/scout.md | K | 1-5 | A+B+C | scout-and-wave |
-| /Users/dayna.blackwell/code/scout-and-wave-web/pkg/api/impl_handlers.go | L | 1-5 | A+B | scout-and-wave-web |
-| /Users/dayna.blackwell/code/scout-and-wave-web/pkg/api/impl_handlers_test.go | L | 1-5 | A+B | scout-and-wave-web |
-| /Users/dayna.blackwell/code/scout-and-wave-web/web/src/api/manifest.ts | M | 1-5 | L | scout-and-wave-web |
-| /Users/dayna.blackwell/code/scout-and-wave-web/web/src/components/ManifestEditor.tsx | M | 1-5 | L | scout-and-wave-web |
+| /Users/dayna.blackwell/code/scout-and-wave-go/pkg/protocol/manifest.go | A | 1 | — | scout-and-wave-go |
+| /Users/dayna.blackwell/code/scout-and-wave-go/pkg/protocol/manifest_test.go | A | 1 | — | scout-and-wave-go |
+| /Users/dayna.blackwell/code/scout-and-wave-go/pkg/protocol/validation.go | B | 1 | A | scout-and-wave-go |
+| /Users/dayna.blackwell/code/scout-and-wave-go/pkg/protocol/validation_test.go | B | 1 | A | scout-and-wave-go |
+| /Users/dayna.blackwell/code/scout-and-wave-web/cmd/saw/validate.go | C | 2 | A+B | scout-and-wave-web |
+| /Users/dayna.blackwell/code/scout-and-wave-web/cmd/saw/validate_test.go | C | 2 | A+B | scout-and-wave-web |
+| /Users/dayna.blackwell/code/scout-and-wave-web/cmd/saw/extract.go | D | 2 | A | scout-and-wave-web |
+| /Users/dayna.blackwell/code/scout-and-wave-web/cmd/saw/extract_test.go | D | 2 | A | scout-and-wave-web |
+| /Users/dayna.blackwell/code/scout-and-wave-web/cmd/saw/completion.go | E | 2 | A | scout-and-wave-web |
+| /Users/dayna.blackwell/code/scout-and-wave-web/cmd/saw/completion_test.go | E | 2 | A | scout-and-wave-web |
+| /Users/dayna.blackwell/code/scout-and-wave-web/cmd/saw/wave.go | F | 2 | A | scout-and-wave-web |
+| /Users/dayna.blackwell/code/scout-and-wave-web/cmd/saw/wave_test.go | F | 2 | A | scout-and-wave-web |
+| /Users/dayna.blackwell/code/scout-and-wave-web/cmd/saw/merge.go | G | 3 | A | scout-and-wave-web |
+| /Users/dayna.blackwell/code/scout-and-wave-web/cmd/saw/merge_test.go | G | 3 | A | scout-and-wave-web |
+| /Users/dayna.blackwell/code/scout-and-wave-web/cmd/saw/render.go | G | 3 | A | scout-and-wave-web |
+| /Users/dayna.blackwell/code/scout-and-wave-web/cmd/saw/render_test.go | G | 3 | A | scout-and-wave-web |
+| /Users/dayna.blackwell/code/scout-and-wave-web/cmd/saw/migrate.go | H | 3 | A | scout-and-wave-web |
+| /Users/dayna.blackwell/code/scout-and-wave-web/cmd/saw/migrate_test.go | H | 3 | A | scout-and-wave-web |
+| /Users/dayna.blackwell/code/scout-and-wave/implementations/claude-code/prompts/saw-skill.md | I | 4 | C+D+E | scout-and-wave |
+| /Users/dayna.blackwell/code/scout-and-wave/implementations/claude-code/scripts/validate-impl.sh | I | 4 | C+D+E | scout-and-wave |
+| /Users/dayna.blackwell/code/scout-and-wave/implementations/claude-code/prompts/scout.md | J | 5 | A+B+C | scout-and-wave |
+| /Users/dayna.blackwell/code/scout-and-wave-web/pkg/api/impl_handlers.go | K | 5 | A+B | scout-and-wave-web |
+| /Users/dayna.blackwell/code/scout-and-wave-web/pkg/api/impl_handlers_test.go | K | 5 | A+B | scout-and-wave-web |
+| /Users/dayna.blackwell/code/scout-and-wave-web/web/src/api/manifest.ts | L | 5 | K | scout-and-wave-web |
+| /Users/dayna.blackwell/code/scout-and-wave-web/web/src/components/ManifestEditor.tsx | L | 5 | K | scout-and-wave-web |
 ```
 
 ## Wave Structure
 
 ```yaml type=impl-wave-structure
-Wave 1: [A] [B]          <- 2 parallel agents (SDK foundation)
+Wave 1: [A] [B]            <- 2 parallel agents (SDK foundation)
              | (A+B complete)
-Wave 2:   [C] [D] [E] [F] <- 4 parallel agents (CLI binary)
+Wave 2: [C] [D] [E] [F]   <- 4 parallel agents (CLI binary)
              | (C+D+E+F complete)
-Wave 3:    [G] [H]        <- 2 parallel agents (additional CLI + migrate)
+Wave 3: [G] [H]            <- 2 parallel agents (additional CLI + migrate)
              | (G+H complete)
-Wave 4:    [I] [J]        <- 2 parallel agents (skill migration)
-             | (I+J complete)
-Wave 5:    [K] [L] [M]    <- 3 parallel agents (Scout + web UI)
+Wave 4: [I]                <- 1 agent (skill migration)
+             | (I complete)
+Wave 5: [J] [K] [L]        <- 3 parallel agents (Scout + web UI)
 ```
 
-## Wave 1-1
+## Wave 1
 
 **Foundation: SDK Core Implementation**
 
-This wave implements the foundational SDK types and validation logic. All downstream waves depend on these interfaces. Wave 1-1 must be complete and stable before Wave 1-2 begins.
+This wave implements the foundational SDK types and validation logic. All downstream waves depend on these interfaces. Wave 1 must be complete and stable before Wave 2 begins.
 
 ### Agent A — SDK Core Types
 
-**wave:** 1-1
+**wave:** 1
 
 **model:** claude-sonnet-4-6
 
@@ -494,8 +492,8 @@ You are implementing the foundational data structures for the SAW protocol SDK. 
 **interface contracts:**
 Exports all types defined in Interface Contracts section above. These are imported by:
 - Agent B (validation.go)
-- All Wave 1-2 agents (CLI commands)
-- Agent L (web UI handlers)
+- All Wave 2 agents (CLI commands)
+- Agent K (web UI handlers)
 
 **dependencies:**
 None (root agent)
@@ -518,7 +516,7 @@ go test ./pkg/protocol -run TestManifest -v
 
 ### Agent B — SDK Validation Logic
 
-**wave:** 1-1
+**wave:** 1
 
 **model:** claude-sonnet-4-6
 
@@ -564,8 +562,8 @@ Exports:
 
 Imported by:
 - Agent C (CLI validate command)
-- Agent K (Scout manifest generation)
-- Agent L (web UI validation)
+- Agent J (Scout manifest generation)
+- Agent K (web UI validation)
 
 **dependencies:**
 - Agent A (imports manifest types)
@@ -587,15 +585,15 @@ go test ./pkg/protocol -run TestValidation -v
 
 ---
 
-## Wave 1-2
+## Wave 2
 
 **CLI Binary: SDK Bridge Commands**
 
-This wave implements CLI commands that wrap SDK operations for bash skill consumption. Wave 1-2 agents can proceed in parallel after Wave 1-1 completes.
+This wave implements CLI commands that wrap SDK operations for bash skill consumption. Wave 2 agents can proceed in parallel after Wave 1 completes.
 
 ### Agent C — CLI Validate Command
 
-**wave:** 1-2
+**wave:** 2
 
 **model:** claude-sonnet-4-6
 
@@ -655,7 +653,7 @@ go test ./cmd/saw -run TestValidateCommand -v
 
 ### Agent D — CLI Extract Context Command
 
-**wave:** 1-2
+**wave:** 2
 
 **model:** claude-sonnet-4-6
 
@@ -725,7 +723,7 @@ go test ./cmd/saw -run TestExtractCommand -v
 
 ### Agent E — CLI Set Completion Command
 
-**wave:** 1-2
+**wave:** 2
 
 **model:** claude-sonnet-4-6
 
@@ -785,7 +783,7 @@ go test ./cmd/saw -run TestSetCompletionCommand -v
 
 ### Agent F — CLI Current Wave Command
 
-**wave:** 1-2
+**wave:** 2
 
 **model:** claude-sonnet-4-6
 
@@ -844,7 +842,7 @@ go test ./cmd/saw -run TestCurrentWaveCommand -v
 
 ---
 
-## Wave 1-3
+## Wave 3
 
 **Additional CLI Commands**
 
@@ -852,7 +850,7 @@ This wave completes the CLI binary with merge, render, and migrate commands.
 
 ### Agent G — CLI Merge and Render Commands
 
-**wave:** 1-3
+**wave:** 3
 
 **model:** claude-sonnet-4-6
 
@@ -915,7 +913,7 @@ saw render IMPL-foo.yaml > IMPL-foo.md
 ```bash
 cd /Users/dayna.blackwell/code/scout-and-wave-web
 go build -o saw ./cmd/saw
-./saw merge-wave ../scout-and-wave-go/docs/IMPL/IMPL-protocol-sdk-migration.yaml 1-1
+./saw merge-wave ../scout-and-wave-go/docs/IMPL/IMPL-protocol-sdk-migration.yaml 1
 ./saw render ../scout-and-wave-go/docs/IMPL/IMPL-protocol-sdk-migration.yaml | head -20
 go test ./cmd/saw -run TestMerge -v
 go test ./cmd/saw -run TestRender -v
@@ -931,7 +929,7 @@ go test ./cmd/saw -run TestRender -v
 
 ### Agent H — CLI Migrate Command
 
-**wave:** 1-3
+**wave:** 3
 
 **model:** claude-sonnet-4-6
 
@@ -990,31 +988,30 @@ go test ./cmd/saw -run TestMigrate -v
 
 ---
 
-## Wave 1-4
+## Wave 4
 
 **Skill Migration**
 
 This wave updates the SAW skill to call new CLI commands instead of bash scripts.
 
-### Agent I — Skill Validation Updates
+### Agent I — Skill Migration (Validation + Context Extraction)
 
-**wave:** 1-4
+**wave:** 4
 
 **model:** claude-sonnet-4-6
 
 **files:**
-- `/Users/dayna.blackwell/code/scout-and-wave/docs/skills/saw-wave.md`
-- `/Users/dayna.blackwell/code/scout-and-wave/docs/skills/saw-validate.md`
+- `/Users/dayna.blackwell/code/scout-and-wave/implementations/claude-code/prompts/saw-skill.md`
+- `/Users/dayna.blackwell/code/scout-and-wave/implementations/claude-code/scripts/validate-impl.sh`
 
 **task:**
-Update SAW skill to call `saw validate` CLI command instead of bash regex validation scripts.
+Update SAW skill to call SDK CLI commands (`saw validate`, `saw extract-context`, `saw set-completion`) instead of bash regex parsing scripts.
 
 **context:**
-Current skill calls `validate-impl.sh` which uses grep/sed/awk. Replace with `saw validate` which uses SDK validation. Skill remains bash-based but calls structured commands.
+Current skill calls `validate-impl.sh` which uses grep/sed/awk for validation, constructs agent prompts from markdown parsing, and appends completion reports to markdown. Replace all three with structured SDK CLI commands. Skill remains bash-based but calls structured commands.
 
 **requirements:**
-1. Locate current validation call in skill
-2. Replace:
+1. Replace validation:
    ```bash
    # Old:
    bash scripts/validate-impl.sh "$impl_path" || exit 1
@@ -1026,56 +1023,8 @@ Current skill calls `validate-impl.sh` which uses grep/sed/awk. Replace with `sa
        exit 1
    }
    ```
-3. Update skill to handle JSON error output
-4. Preserve existing skill structure (conversational flow)
-5. Test skill manually with:
-   - Valid manifest (skill proceeds)
-   - Invalid manifest (skill shows structured errors)
 
-**interface contracts:**
-Skill calls:
-```bash
-saw validate "$impl_path"
-```
-
-**dependencies:**
-- Agent C (CLI validate command must exist and work)
-
-**verification gate:**
-```bash
-# Manual test: invoke skill with IMPL doc
-cd /Users/dayna.blackwell/code/scout-and-wave
-# In Claude CLI:
-# /saw validate
-# Verify it calls `saw validate` and shows structured errors
-```
-
-**success criteria:**
-- Skill calls `saw validate` instead of bash scripts
-- Validation errors displayed clearly to user
-- Skill flow unchanged (still conversational)
-- No breaking changes to user experience
-
----
-
-### Agent J — Skill Context Extraction Updates
-
-**wave:** 1-4
-
-**model:** claude-sonnet-4-6
-
-**files:**
-- `/Users/dayna.blackwell/code/scout-and-wave/docs/skills/saw-extract.md`
-- `/Users/dayna.blackwell/code/scout-and-wave/docs/skills/saw-completion.md`
-
-**task:**
-Update SAW skill to call `saw extract-context` and `saw set-completion` CLI commands for agent coordination.
-
-**context:**
-Current skill constructs agent prompts from markdown parsing. Replace with structured context extraction. Completion reports currently appended to markdown; replace with atomic SDK registration.
-
-**requirements:**
-1. Update agent launch flow:
+2. Replace agent context extraction:
    ```bash
    # Old:
    # Read markdown, construct prompt from text
@@ -1083,12 +1032,10 @@ Current skill constructs agent prompts from markdown parsing. Replace with struc
    # New:
    agent_context=$(saw extract-context "$impl_path" "$agent_id")
    echo "$agent_context" | jq .  # Show context to user
-
-   # Launch agent with structured context
-   # (Agent tool receives JSON context)
+   # Launch agent with structured context (Agent tool receives JSON)
    ```
 
-2. Update completion registration:
+3. Replace completion registration:
    ```bash
    # Old:
    # Append YAML block to markdown IMPL doc
@@ -1103,46 +1050,55 @@ Current skill constructs agent prompts from markdown parsing. Replace with struc
    fi
    ```
 
-3. Preserve skill's conversational error recovery
-4. Test skill manually with agent execution
+4. Update skill to handle JSON error output
+5. Preserve existing skill structure (conversational flow, error recovery)
+6. Test skill manually with:
+   - Valid manifest (skill proceeds)
+   - Invalid manifest (skill shows structured errors)
+   - Agent launch with context extraction
+   - Completion registration
 
 **interface contracts:**
 Skill calls:
 ```bash
+saw validate "$impl_path"
 saw extract-context "$impl_path" "$agent_id"
 saw set-completion "$impl_path" "$agent_id" < completion-report.yaml
 ```
 
 **dependencies:**
-- Agent D (extract command)
-- Agent E (set-completion command)
+- Agent C (CLI validate command)
+- Agent D (CLI extract-context command)
+- Agent E (CLI set-completion command)
 
 **verification gate:**
 ```bash
-# Manual test: invoke skill to launch agent
+# Manual test: invoke skill with IMPL doc
 cd /Users/dayna.blackwell/code/scout-and-wave
 # In Claude CLI:
-# /saw wave
-# Verify context extraction and completion registration work
+# /saw validate — verify it calls `saw validate` with structured errors
+# /saw wave — verify context extraction and completion registration work
 ```
 
 **success criteria:**
-- Skill calls CLI commands for agent operations
-- Agent context extracted as JSON
-- Completion reports registered atomically
-- No manual markdown editing required
+- Skill calls `saw validate` instead of bash scripts
+- Agent context extracted as JSON via `saw extract-context`
+- Completion reports registered atomically via `saw set-completion`
+- Validation errors displayed clearly to user
+- Skill flow unchanged (still conversational)
+- No breaking changes to user experience
 
 ---
 
-## Wave 1-5
+## Wave 5
 
 **Scout Updates and Web UI Integration**
 
 This wave completes Phase 1 by updating Scout to generate YAML and integrating SDK into web UI.
 
-### Agent K — Scout YAML Generation
+### Agent J — Scout YAML Generation
 
-**wave:** 1-5
+**wave:** 5
 
 **model:** claude-sonnet-4-6
 
@@ -1223,9 +1179,9 @@ cd /Users/dayna.blackwell/code/scout-and-wave
 
 ---
 
-### Agent L — Web UI SDK Integration
+### Agent K — Web UI SDK Integration
 
-**wave:** 1-5
+**wave:** 5
 
 **model:** claude-sonnet-4-6
 
@@ -1297,9 +1253,9 @@ pkill -f "saw serve"
 
 ---
 
-### Agent M — Web UI Manifest Editor
+### Agent L — Web UI Manifest Editor
 
-**wave:** 1-5
+**wave:** 5
 
 **model:** claude-sonnet-4-6
 
@@ -1338,7 +1294,7 @@ Web UI currently renders markdown IMPL docs. Add manifest editor (YAML textarea)
    - Test save operation
 
 **interface contracts:**
-Frontend calls API handlers from Agent L:
+Frontend calls API handlers from Agent K:
 ```typescript
 const result = await validateManifest(manifest);
 if (result.errors.length > 0) {
@@ -1347,7 +1303,7 @@ if (result.errors.length > 0) {
 ```
 
 **dependencies:**
-- Agent L (API handlers must exist)
+- Agent K (API handlers must exist)
 
 **verification gate:**
 ```bash
@@ -1407,11 +1363,11 @@ After wave {N} completes:
 - [ ] Update interface contracts for any deviations logged by agents
 - [ ] Apply `out_of_scope_deps` fixes flagged in completion reports
 - [ ] Feature-specific steps:
-      - [ ] After Wave 1-1: Manually verify SDK types compile and tests pass before launching Wave 1-2
-      - [ ] After Wave 1-2: Test all CLI commands manually (`saw validate`, `saw extract-context`, etc.) before Wave 1-3
-      - [ ] After Wave 1-3: Run `saw migrate` on existing IMPL docs to validate migration utility
-      - [ ] After Wave 1-4: Test skill with new CLI commands (`/saw wave`) before Wave 1-5
-      - [ ] After Wave 1-5: Test Scout generates valid YAML; test web UI manifest editor
+      - [ ] After Wave 1: Manually verify SDK types compile and tests pass before launching Wave 2
+      - [ ] After Wave 2: Test all CLI commands manually (`saw validate`, `saw extract-context`, etc.) before Wave 3
+      - [ ] After Wave 3: Run `saw migrate` on existing IMPL docs to validate migration utility
+      - [ ] After Wave 4: Test skill with new CLI commands (`/saw wave`) before Wave 5
+      - [ ] After Wave 5: Test Scout generates valid YAML; test web UI manifest editor
 - [ ] Commit: `git commit -m "Protocol SDK Migration Phase 1 — Wave {N} complete: <agents>"`
 - [ ] Launch next wave (or pause for review if not `--auto`)
 
@@ -1419,17 +1375,17 @@ After wave {N} completes:
 
 | Wave | Agent | Description | Status |
 |------|-------|-------------|--------|
-| 1-1 | A | SDK Core Types (manifest.go) | TO-DO |
-| 1-1 | B | SDK Validation Logic (validation.go) | TO-DO |
-| 1-2 | C | CLI Validate Command | TO-DO |
-| 1-2 | D | CLI Extract Context Command | TO-DO |
-| 1-2 | E | CLI Set Completion Command | TO-DO |
-| 1-2 | F | CLI Current Wave Command | TO-DO |
-| 1-3 | G | CLI Merge and Render Commands | TO-DO |
-| 1-3 | H | CLI Migrate Command | TO-DO |
-| 1-4 | I | Skill Validation Updates | TO-DO |
-| 1-4 | J | Skill Context Extraction Updates | TO-DO |
-| 1-5 | K | Scout YAML Generation | TO-DO |
-| 1-5 | L | Web UI SDK Integration | TO-DO |
-| 1-5 | M | Web UI Manifest Editor | TO-DO |
+| 1 | A | SDK Core Types (manifest.go) | TO-DO |
+| 1 | B | SDK Validation Logic (validation.go) | TO-DO |
+| 2 | C | CLI Validate Command | TO-DO |
+| 2 | D | CLI Extract Context Command | TO-DO |
+| 2 | E | CLI Set Completion Command | TO-DO |
+| 2 | F | CLI Current Wave Command | TO-DO |
+| 3 | G | CLI Merge and Render Commands | TO-DO |
+| 3 | H | CLI Migrate Command | TO-DO |
+| 4 | I | Skill Validation Updates | TO-DO |
+| 4 | J | Skill Context Extraction Updates | TO-DO |
+| 5 | K | Scout YAML Generation | TO-DO |
+| 5 | L | Web UI SDK Integration | TO-DO |
+| 5 | M | Web UI Manifest Editor | TO-DO |
 | — | Orch | Post-merge integration + CLI binary install | TO-DO |
