@@ -86,4 +86,96 @@ Four more waves to go.
 
 ---
 
+## Phase 2: Closing Every Gap
+
+Phase 1 proved the concept: structured manifests, typed validation, importable operations. But it covered 13 of 30 orchestrator responsibilities. The other 17 were still ad-hoc bash — `git worktree add` loops, `git rev-list --count` for commit verification, manual `git merge --no-ff` per agent, regex-based stub scanning. Every orchestrator session ran these commands inline, hoping the LLM would get the flags right.
+
+Phase 2's mandate: close every gap. Turn every ad-hoc bash operation into a Go function with a CLI wrapper.
+
+A conformance audit mapped all 30 orchestrator responsibilities against SDK coverage. The result: 9 new SDK functions, 9 CLI commands, a capstone orchestration pipeline, and a `main.go` wiring pass. 24 agents across 5 waves — the largest SAW execution to date.
+
+### Wave 1: Ten Agents, Zero Conflicts
+
+Wave 1 was the stress test. Ten agents, each creating a new SDK function in `pkg/protocol/` or `internal/git/`:
+
+| Agent | Function | Purpose |
+|-------|----------|---------|
+| A | `CreateWorktrees` | Batch worktree creation for a wave |
+| B | `VerifyCommits` | I5 trip wire — verify agent branches have commits |
+| C | `ScanStubs` | E20 stub/TODO pattern detection |
+| D | `MergeAgents` | `git merge --no-ff` per agent with conflict detection |
+| E | `Cleanup` | Idempotent worktree/branch removal |
+| F | `VerifyBuild` | Run test_command + lint_command from manifest |
+| G | `UpdateStatus` | Set agent completion status in manifest |
+| H | `UpdateContext` | E18 project memory (docs/CONTEXT.md) updates |
+| I | `ListIMPLs` | IMPL manifest discovery and summarization |
+| K | `CommitCount` | Git helper for rev-list commit counting |
+
+All ten launched simultaneously into isolated worktrees branching from the same commit. Each owned exactly two files (implementation + test). No file appeared in more than one agent's ownership table.
+
+**Results:** ~40 tests across 10 agents, all passing in isolation. Post-merge `go test ./...` passed on the first try. Zero merge conflicts. Total wall clock for agent execution: under 5 minutes.
+
+### What the Safety Nets Caught
+
+Perfect isolation is aspirational. Prompt-based agents don't always follow instructions. SAW's value isn't preventing failures — it's catching them before they cause damage.
+
+**Agent A staged files but never committed.** The agent wrote correct code, added it to the git index, then reported success without running `git commit`. The I5 trip wire (Step 1.5 of the merge procedure) caught this immediately: `git rev-list` returned 0 commits for Agent A's branch. One manual commit fixed it. Without the trip wire, we'd have merged an empty branch.
+
+**Three agents leaked files to main.** Agents C, F, and K wrote their implementation files to both their worktree AND the main working directory. The merge step caught this: "untracked working tree files would be overwritten by merge." Quick cleanup (`rm` the duplicates, `git checkout` the modified files), then merges proceeded cleanly.
+
+The isolation leak rate was 30% (3/10 agents). But the 4-layer defense model — pre-commit hook (Layer 0), pre-created worktrees (Layer 1), Field 0 self-verification (Layer 3), and the merge trip wire (Layer 4) — caught every single leak before any bad merge occurred.
+
+### Wave 2: Nine CLI Wrappers
+
+With SDK functions proven, Wave 2 wrapped each as a `cmd/saw/` subcommand. Nine agents, each creating a single file:
+
+```
+saw create-worktrees <manifest> --wave <N> [--repo-dir <path>]
+saw verify-commits   <manifest> --wave <N> [--repo-dir <path>]
+saw scan-stubs       <file1> [file2 ...]
+saw merge-agents     <manifest> --wave <N> [--repo-dir <path>]
+saw cleanup          <manifest> --wave <N> [--repo-dir <path>]
+saw verify-build     <manifest> [--repo-dir <path>]
+saw update-status    <manifest> --wave <N> --agent <ID> --status <s>
+saw update-context   <manifest> [--project-root <path>]
+saw list-impls       [--dir <path>]
+```
+
+Each agent followed the same pattern: `flag.NewFlagSet`, SDK call, `json.MarshalIndent` to stdout, exit code reflecting success/failure. Thin wrappers over tested functions.
+
+Nine agents. Nine files. Zero merge conflicts. Zero isolation leaks this time. Build + full test suite passed post-merge.
+
+### The Numbers
+
+| Metric | Phase 1 (March 7) | Phase 2 Wave 1 (March 9) |
+|--------|-------------------|--------------------------|
+| Agents | 2 | 10 |
+| New files | 4 | 20 |
+| Lines of Go | 1,400 | 3,300+ |
+| Tests | 33 | ~40 |
+| Merge conflicts | 0 | 0 |
+| Isolation leaks | 0 | 3 (all caught) |
+| Post-merge test pass | First try | First try |
+| Wall clock (agents) | ~5 min | ~5 min |
+
+The wall clock didn't change because parallelism scales horizontally. Ten agents take the same time as two when file ownership is disjoint.
+
+### The Bootstrap Paradox, Resolved
+
+Phase 2 was SAW building the commands that will replace SAW's current ad-hoc operations. The orchestrator used `git worktree add` loops to create worktrees for agents building `CreateWorktrees()`. It used `git rev-list --count` to verify commits from agents building `VerifyCommits()`. It used `git merge --no-ff` per agent for agents building `MergeAgents()`.
+
+The old system built its replacement. The new commands are tested, typed, and return structured JSON. When the skill prompts are updated (Wave 5), the orchestrator will call `saw create-worktrees` instead of a bash loop, `saw verify-commits` instead of inline git commands, `saw merge-agents` instead of a manual merge procedure.
+
+The markdown IMPL format was deprecated by Phase 1. The ad-hoc bash commands are being deprecated by Phase 2. Not by decree — by obsolescence.
+
+## The Takeaway (Updated)
+
+If your protocol can't build itself, it's not ready for production.
+
+If your protocol can build itself *at 10x parallelism with 30% isolation failure rate and still produce zero merge conflicts*, it might actually be ready.
+
+SAW's Protocol SDK migration is now 19 of 24 agents complete across 3 waves. Three waves remain: main.go wiring + capstone pipeline (Wave 3), the `run-wave` CLI wrapper (Wave 4), and skill prompt updates (Wave 5). The old system is still flying the plane. The new engine is being bolted on mid-flight.
+
+---
+
 *Scout-and-Wave is an open protocol for parallel AI agent coordination. The Protocol SDK lives at `github.com/blackwell-systems/scout-and-wave-go/pkg/protocol`.*
