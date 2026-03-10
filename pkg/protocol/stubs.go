@@ -2,6 +2,7 @@ package protocol
 
 import (
 	"bufio"
+	"fmt"
 	"os"
 	"strings"
 )
@@ -81,4 +82,21 @@ func ScanStubs(files []string) (*ScanStubsResult, error) {
 	}
 
 	return result, nil
+}
+
+// AppendStubReport loads the manifest at manifestPath, stores result under
+// waveKey (e.g. "wave1"), and saves the manifest back to disk.
+func AppendStubReport(manifestPath, waveKey string, result *ScanStubsResult) error {
+	manifest, err := Load(manifestPath)
+	if err != nil {
+		return fmt.Errorf("AppendStubReport: failed to load manifest: %w", err)
+	}
+	if manifest.StubReports == nil {
+		manifest.StubReports = make(map[string]*ScanStubsResult)
+	}
+	manifest.StubReports[waveKey] = result
+	if err := Save(manifest, manifestPath); err != nil {
+		return fmt.Errorf("AppendStubReport: failed to save manifest: %w", err)
+	}
+	return nil
 }

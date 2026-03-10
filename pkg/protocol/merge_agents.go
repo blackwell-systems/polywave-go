@@ -8,10 +8,11 @@ import (
 
 // MergeStatus represents the outcome of merging a single agent branch.
 type MergeStatus struct {
-	Agent   string `json:"agent"`
-	Branch  string `json:"branch"`
-	Success bool   `json:"success"`
-	Error   string `json:"error,omitempty"`
+	Agent         string `json:"agent"`
+	Branch        string `json:"branch"`
+	Success       bool   `json:"success"`
+	StatusUpdated bool   `json:"status_updated,omitempty"`
+	Error         string `json:"error,omitempty"`
 }
 
 // MergeAgentsResult represents the outcome of merging all agents in a wave.
@@ -93,8 +94,11 @@ func MergeAgents(manifestPath string, waveNum int, repoDir string) (*MergeAgents
 			return result, nil
 		}
 
-		// Merge succeeded
+		// Merge succeeded — auto-update completion status (best-effort)
 		status.Success = true
+		if _, err := UpdateStatus(manifestPath, waveNum, agent.ID, "complete"); err == nil {
+			status.StatusUpdated = true
+		}
 		result.Merges = append(result.Merges, status)
 	}
 

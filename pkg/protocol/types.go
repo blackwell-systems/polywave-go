@@ -23,6 +23,7 @@ type IMPLManifest struct {
 	QualityGates       *QualityGates                  `yaml:"quality_gates,omitempty" json:"quality_gates,omitempty"`
 	Scaffolds          []ScaffoldFile                 `yaml:"scaffolds,omitempty" json:"scaffolds,omitempty"`
 	CompletionReports  map[string]CompletionReport    `yaml:"completion_reports,omitempty" json:"completion_reports,omitempty"`
+	StubReports        map[string]*ScanStubsResult    `yaml:"stub_reports,omitempty" json:"stub_reports,omitempty"`
 	PreMortem          *PreMortem                     `yaml:"pre_mortem,omitempty" json:"pre_mortem,omitempty"`
 	KnownIssues        []KnownIssue                   `yaml:"known_issues,omitempty" json:"known_issues,omitempty"`
 	State              ProtocolState                  `yaml:"state,omitempty" json:"state,omitempty"`
