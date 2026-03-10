@@ -265,6 +265,22 @@ The workaround was one line: put the flags first. The fix is the wave that's cur
 
 This is what dogfooding actually means. Not a demo. Not a controlled test. The system running on itself in production, surfacing real friction in real time, generating real work items. The flag-order bug will be permanently fixed by the 11 agents currently working in their worktrees. By the time this post is published, `saw create-worktrees /path --wave 1` will just work.
 
+### The Run Completed
+
+It did. All 11 agents merged via `saw merge-agents` — 11/11, no conflicts. Wave 2 wired cobra into `main.go`, `go build ./...` passed, `go test ./...` green. The binary was rebuilt and installed. `saw create-worktrees /path --wave 1` now works exactly as written.
+
+The first thing the completed migration revealed was three more friction points — found by running the system, not by reading the prompts:
+
+- **Field 0 isolation verification** was still inline bash. → `saw verify-isolation --branch wave1-agent-A`
+- **Stub scan results** still required manual copy-paste into the IMPL doc. → `saw scan-stubs --append-impl`
+- **`merge-agents`** succeeded but the orchestrator still had to call `update-status` separately. → Auto-wired: successful merge now marks `status_updated: true` in the manifest.
+
+All three were built and shipped the same session.
+
+This is the compounding effect the protocol is designed for. Each production run sharpens the tool. Each gap found becomes a CLI command. Each CLI command removes a manual step from the next run. The system gets less friction to operate the more it operates itself.
+
+`saw create-worktrees /path --wave 1` just works. So does everything else.
+
 ---
 
 *Scout-and-Wave is an open protocol for parallel AI agent coordination. The Protocol SDK lives at `github.com/blackwell-systems/scout-and-wave-go/pkg/protocol`.*
