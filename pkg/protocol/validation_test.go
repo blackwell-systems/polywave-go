@@ -722,3 +722,270 @@ func TestValidateSM01StateValid_Empty(t *testing.T) {
 		t.Errorf("Expected no errors for empty state, got %d: %v", len(errs), errs)
 	}
 }
+
+// TestValidateAgentIDs_Valid tests that all valid agent ID formats pass validation.
+func TestValidateAgentIDs_Valid(t *testing.T) {
+	m := &IMPLManifest{
+		Waves: []Wave{
+			{
+				Number: 1,
+				Agents: []Agent{
+					{ID: "A", Task: "task A"},
+					{ID: "B", Task: "task B"},
+					{ID: "C2", Task: "task C2"},
+					{ID: "D9", Task: "task D9"},
+				},
+			},
+		},
+		FileOwnership: []FileOwnership{
+			{File: "file1.go", Agent: "A", Wave: 1},
+			{File: "file2.go", Agent: "B", Wave: 1},
+		},
+		CompletionReports: map[string]CompletionReport{
+			"A": {Status: "complete", Commit: "abc123"},
+			"B": {Status: "complete", Commit: "def456"},
+		},
+	}
+
+	errs := validateAgentIDs(m)
+	if len(errs) != 0 {
+		t.Errorf("Expected no errors for valid agent IDs, got %d: %v", len(errs), errs)
+	}
+}
+
+// TestValidateAgentIDs_InvalidLowercase tests that lowercase agent IDs are rejected.
+func TestValidateAgentIDs_InvalidLowercase(t *testing.T) {
+	m := &IMPLManifest{
+		Waves: []Wave{
+			{
+				Number: 1,
+				Agents: []Agent{
+					{ID: "a", Task: "task a"},
+				},
+			},
+		},
+	}
+
+	errs := validateAgentIDs(m)
+	if len(errs) != 1 {
+		t.Fatalf("Expected 1 error, got %d: %v", len(errs), errs)
+	}
+	if errs[0].Code != "DC04_INVALID_AGENT_ID" {
+		t.Errorf("Expected DC04_INVALID_AGENT_ID, got %s", errs[0].Code)
+	}
+}
+
+// TestValidateAgentIDs_InvalidMultiChar tests that multi-character agent IDs are rejected.
+func TestValidateAgentIDs_InvalidMultiChar(t *testing.T) {
+	m := &IMPLManifest{
+		Waves: []Wave{
+			{
+				Number: 1,
+				Agents: []Agent{
+					{ID: "AB", Task: "task AB"},
+				},
+			},
+		},
+	}
+
+	errs := validateAgentIDs(m)
+	if len(errs) != 1 {
+		t.Fatalf("Expected 1 error, got %d: %v", len(errs), errs)
+	}
+	if errs[0].Code != "DC04_INVALID_AGENT_ID" {
+		t.Errorf("Expected DC04_INVALID_AGENT_ID, got %s", errs[0].Code)
+	}
+}
+
+// TestValidateAgentIDs_InvalidDigit1 tests that agent IDs with digit 1 are rejected.
+func TestValidateAgentIDs_InvalidDigit1(t *testing.T) {
+	m := &IMPLManifest{
+		Waves: []Wave{
+			{
+				Number: 1,
+				Agents: []Agent{
+					{ID: "A1", Task: "task A1"},
+				},
+			},
+		},
+	}
+
+	errs := validateAgentIDs(m)
+	if len(errs) != 1 {
+		t.Fatalf("Expected 1 error, got %d: %v", len(errs), errs)
+	}
+	if errs[0].Code != "DC04_INVALID_AGENT_ID" {
+		t.Errorf("Expected DC04_INVALID_AGENT_ID, got %s", errs[0].Code)
+	}
+}
+
+// TestValidateAgentIDs_InvalidDigit0 tests that agent IDs with digit 0 are rejected.
+func TestValidateAgentIDs_InvalidDigit0(t *testing.T) {
+	m := &IMPLManifest{
+		Waves: []Wave{
+			{
+				Number: 1,
+				Agents: []Agent{
+					{ID: "A0", Task: "task A0"},
+				},
+			},
+		},
+	}
+
+	errs := validateAgentIDs(m)
+	if len(errs) != 1 {
+		t.Fatalf("Expected 1 error, got %d: %v", len(errs), errs)
+	}
+	if errs[0].Code != "DC04_INVALID_AGENT_ID" {
+		t.Errorf("Expected DC04_INVALID_AGENT_ID, got %s", errs[0].Code)
+	}
+}
+
+// TestValidateAgentIDs_Empty tests that empty agent IDs are rejected.
+func TestValidateAgentIDs_Empty(t *testing.T) {
+	m := &IMPLManifest{
+		Waves: []Wave{
+			{
+				Number: 1,
+				Agents: []Agent{
+					{ID: "", Task: "task"},
+				},
+			},
+		},
+	}
+
+	errs := validateAgentIDs(m)
+	if len(errs) != 1 {
+		t.Fatalf("Expected 1 error, got %d: %v", len(errs), errs)
+	}
+	if errs[0].Code != "DC04_INVALID_AGENT_ID" {
+		t.Errorf("Expected DC04_INVALID_AGENT_ID, got %s", errs[0].Code)
+	}
+}
+
+// TestValidateAgentIDs_FileOwnership tests that invalid agent IDs in FileOwnership are caught.
+func TestValidateAgentIDs_FileOwnership(t *testing.T) {
+	m := &IMPLManifest{
+		FileOwnership: []FileOwnership{
+			{File: "file1.go", Agent: "agent-1", Wave: 1},
+		},
+	}
+
+	errs := validateAgentIDs(m)
+	if len(errs) != 1 {
+		t.Fatalf("Expected 1 error, got %d: %v", len(errs), errs)
+	}
+	if errs[0].Code != "DC04_INVALID_AGENT_ID" {
+		t.Errorf("Expected DC04_INVALID_AGENT_ID, got %s", errs[0].Code)
+	}
+	if !contains(errs[0].Field, "file_ownership") {
+		t.Errorf("Expected field to contain 'file_ownership', got %s", errs[0].Field)
+	}
+}
+
+// TestValidateAgentIDs_CompletionReports tests that invalid agent IDs in CompletionReports are caught.
+func TestValidateAgentIDs_CompletionReports(t *testing.T) {
+	m := &IMPLManifest{
+		CompletionReports: map[string]CompletionReport{
+			"agent-X": {Status: "complete", Commit: "abc123"},
+		},
+	}
+
+	errs := validateAgentIDs(m)
+	if len(errs) != 1 {
+		t.Fatalf("Expected 1 error, got %d: %v", len(errs), errs)
+	}
+	if errs[0].Code != "DC04_INVALID_AGENT_ID" {
+		t.Errorf("Expected DC04_INVALID_AGENT_ID, got %s", errs[0].Code)
+	}
+	if !contains(errs[0].Field, "completion_reports") {
+		t.Errorf("Expected field to contain 'completion_reports', got %s", errs[0].Field)
+	}
+}
+
+// TestValidateGateTypes_Valid tests that all valid gate types pass validation.
+func TestValidateGateTypes_Valid(t *testing.T) {
+	m := &IMPLManifest{
+		QualityGates: &QualityGates{
+			Level: "standard",
+			Gates: []QualityGate{
+				{Type: "build", Command: "go build", Required: true},
+				{Type: "lint", Command: "golint", Required: true},
+				{Type: "test", Command: "go test", Required: true},
+				{Type: "typecheck", Command: "go vet", Required: false},
+				{Type: "custom", Command: "./custom.sh", Required: false},
+			},
+		},
+	}
+
+	errs := validateGateTypes(m)
+	if len(errs) != 0 {
+		t.Errorf("Expected no errors for valid gate types, got %d: %v", len(errs), errs)
+	}
+}
+
+// TestValidateGateTypes_Invalid tests that invalid gate types are rejected.
+func TestValidateGateTypes_Invalid(t *testing.T) {
+	m := &IMPLManifest{
+		QualityGates: &QualityGates{
+			Level: "standard",
+			Gates: []QualityGate{
+				{Type: "compile", Command: "make", Required: true},
+			},
+		},
+	}
+
+	errs := validateGateTypes(m)
+	if len(errs) != 1 {
+		t.Fatalf("Expected 1 error, got %d: %v", len(errs), errs)
+	}
+	if errs[0].Code != "DC07_INVALID_GATE_TYPE" {
+		t.Errorf("Expected DC07_INVALID_GATE_TYPE, got %s", errs[0].Code)
+	}
+}
+
+// TestValidateGateTypes_NoGates tests that nil QualityGates returns empty.
+func TestValidateGateTypes_NoGates(t *testing.T) {
+	m := &IMPLManifest{
+		QualityGates: nil,
+	}
+
+	errs := validateGateTypes(m)
+	if len(errs) != 0 {
+		t.Errorf("Expected no errors when QualityGates is nil, got %d: %v", len(errs), errs)
+	}
+}
+
+// TestValidateGateTypes_EmptyType tests that empty gate type returns error.
+func TestValidateGateTypes_EmptyType(t *testing.T) {
+	m := &IMPLManifest{
+		QualityGates: &QualityGates{
+			Level: "standard",
+			Gates: []QualityGate{
+				{Type: "", Command: "make", Required: true},
+			},
+		},
+	}
+
+	errs := validateGateTypes(m)
+	if len(errs) != 1 {
+		t.Fatalf("Expected 1 error, got %d: %v", len(errs), errs)
+	}
+	if errs[0].Code != "DC07_INVALID_GATE_TYPE" {
+		t.Errorf("Expected DC07_INVALID_GATE_TYPE, got %s", errs[0].Code)
+	}
+}
+
+// contains is a helper function to check if a string contains a substring.
+func contains(s, substr string) bool {
+	return len(s) > 0 && len(substr) > 0 && (s == substr || len(s) >= len(substr) && (s[:len(substr)] == substr || s[len(s)-len(substr):] == substr || containsMiddle(s, substr)))
+}
+
+func containsMiddle(s, substr string) bool {
+	for i := 0; i <= len(s)-len(substr); i++ {
+		if s[i:i+len(substr)] == substr {
+			return true
+		}
+	}
+	return false
+}
