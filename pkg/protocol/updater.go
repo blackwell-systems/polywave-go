@@ -94,3 +94,25 @@ func UpdateIMPLStatusBytes(content []byte, completedAgents []string) []byte {
 
 	return []byte(strings.Join(lines, "\n"))
 }
+
+// UpdateAgentPrompt updates the task/prompt text for a specific agent in a YAML manifest.
+// Returns ErrAgentNotFound if the agent ID doesn't exist in any wave.
+func UpdateAgentPrompt(m *IMPLManifest, agentID string, newPrompt string) error {
+	if agentID == "" {
+		return fmt.Errorf("agent ID cannot be empty")
+	}
+
+	// Search all waves for the agent with matching ID
+	for i := range m.Waves {
+		for j := range m.Waves[i].Agents {
+			if m.Waves[i].Agents[j].ID == agentID {
+				// Update the agent's Task field with newPrompt
+				m.Waves[i].Agents[j].Task = newPrompt
+				return nil
+			}
+		}
+	}
+
+	// Agent not found in any wave
+	return fmt.Errorf("%w: %s", ErrAgentNotFound, agentID)
+}
