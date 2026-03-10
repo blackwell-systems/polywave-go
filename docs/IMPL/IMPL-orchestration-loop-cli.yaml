@@ -1,3 +1,4 @@
+# SAW:COMPLETE 2026-03-09
 title: "Orchestration Loop CLI — Close All Ad-Hoc Gaps"
 feature_slug: orchestration-loop-cli
 verdict: SUITABLE
@@ -1585,5 +1586,78 @@ completion_reports:
       result and exits with code 1 on failure. Added command to main.go switch and printUsage.
       All verification gates pass. Solo agent wave on develop branch.
 
-state: SCOUT_PENDING
+  X:
+    status: complete
+    repo: /Users/dayna.blackwell/code/scout-and-wave
+    worktree: .claude/worktrees/wave5-agent-X
+    branch: wave5-agent-X
+    commit: 1f548dff5a521e387fc872d6daf88caa204fc05f
+    files_changed:
+      - implementations/claude-code/prompts/saw-skill.md
+    files_created: []
+    interface_deviations: []
+    out_of_scope_deps: []
+    tests_added: []
+    verification: "PASS (grep count 20 >= 9 for CLI command references)"
+    notes: |
+      Updated saw-skill.md (version 0.6.0 → 0.7.0) to replace ad-hoc bash operations with
+      Protocol SDK CLI commands:
+
+      - IMPL discovery: Added saw list-impls at top of execution logic
+      - Worktree creation: Replaced manual git worktree add with saw create-worktrees
+      - Wave execution: Added saw run-wave for fully automated execution
+      - Stub scan (E20): Replaced bash scripts/scan-stubs.sh with saw scan-stubs
+      - Merge procedure: Replaced manual operations with saw verify-commits, saw merge-agents,
+        saw verify-build, saw cleanup
+      - Status tracking: Added saw update-status after agent completion
+      - Project memory (E18): Replaced manual CONTEXT.md updates with saw update-context
+
+      Updated dual-mode documentation to clarify core CLI commands (work with both markdown
+      and YAML) vs YAML-specific commands (require YAML manifest). Preserved saw-worktree.md
+      and saw-merge.md references as optional documentation.
+
+      All protocol logic (I1-I6, E1-E23), error handling (E7/E7a/E8), and invariant enforcement
+      preserved verbatim. No changes to invocation modes, supporting files section, or agent
+      launch procedures. Verification gate passes with 20 CLI command references.
+  Y:
+    status: complete
+    repo: /Users/dayna.blackwell/code/scout-and-wave
+    worktree: .claude/worktrees/wave5-agent-Y
+    branch: wave5-agent-Y
+    commit: e426d2e321f5822a7593cbfde3c71c25612af380
+    files_changed:
+      - implementations/claude-code/prompts/saw-merge.md
+      - implementations/claude-code/prompts/saw-worktree.md
+    files_created: []
+    interface_deviations: []
+    out_of_scope_deps: []
+    tests_added: []
+    verification: "PASS (grep counts: saw-merge 4 CLI commands, saw-worktree 7 CLI command references)"
+    notes: |
+      Simplified saw-merge.md and saw-worktree.md by replacing manual bash procedures
+      with CLI command references while preserving protocol documentation and rationale.
+      Files now explain WHY (protocol invariants, error handling, recovery) while CLI
+      commands handle WHAT (implementation).
+
+      saw-merge.md (v0.5.0 → v0.6.0):
+      - Step 1.5: saw verify-commits replaces manual git rev-list commit counting
+      - Step 1.75: saw check-conflicts for file ownership verification
+      - Step 1.9: saw scan-stubs replaces bash script invocation
+      - Step 4: saw merge-agents replaces manual git merge loop
+      - Step 5: saw cleanup replaces manual worktree removal and branch deletion
+      - Step 6: saw verify-build and saw validate-scaffolds for post-merge checks
+
+      saw-worktree.md (v0.5.1 → v0.6.0):
+      - Cross-repo mode: saw create-worktrees with --repo-dir flag for multi-repo waves
+      - Preflight: CLI handles working tree checks automatically
+      - Creation: saw create-worktrees replaces manual git worktree add loop
+      - Hook installation: CLI installs pre-commit guard automatically
+      - Cleanup: saw cleanup replaces manual worktree/branch removal
+
+      Preserved all critical content: I1/I2/I5 invariants, crash recovery procedures,
+      cross-repo coordination notes, error handling guidance, and SAW_ALLOW_MAIN_COMMIT
+      documentation. The files remain valuable as reference documentation that explains
+      the merge and worktree lifecycle with CLI commands as the implementation mechanism.
+
+state: COMPLETE
 merge_state: idle
