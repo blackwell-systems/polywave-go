@@ -70,7 +70,7 @@ Total time from scaffold commit to post-merge verification: under 5 minutes of w
 
 We used a markdown-based protocol to build the system that replaces markdown-based protocols. The IMPL document that coordinated Wave 1 was parsed by the very regex scripts that Wave 1's output will eventually replace.
 
-By Wave 5, Scout will generate YAML manifests instead of markdown. The skill will call `saw validate` instead of `bash validate-impl.sh`. The web UI will import `pkg/protocol` instead of running its own parser.
+By Wave 5, Scout will generate YAML manifests instead of markdown. The skill will call `sawtools validate` instead of `bash validate-impl.sh`. The web UI will import `pkg/protocol` instead of running its own parser.
 
 At that point, the old system will have built its own replacement, validated it in production, and gracefully handed off coordination to the new one. The markdown IMPL format won't be deprecated by decree — it'll be deprecated by obsolescence. The new system will simply be better at the job the old system was designed to do.
 
@@ -82,7 +82,7 @@ So what did the migration actually buy?
 
 **Not correctness.** The old system was already correct in the ways that mattered. SAW's invariants — disjoint file ownership, wave sequencing, the I5 trip wire — did the real safety work. Those are protocol properties, not implementation properties. They hold whether the merge step is a bash loop or a Go function.
 
-**Reproducibility.** `saw merge-agents` runs the same logic every time. The bash equivalent depended on the orchestrator LLM remembering the right flags, in the right order, on the right branches. It worked because the LLM is good at following instructions. But "good at following instructions" is not the same as "deterministic." The CLI eliminates the variance.
+**Reproducibility.** `sawtools merge-agents` runs the same logic every time. The bash equivalent depended on the orchestrator LLM remembering the right flags, in the right order, on the right branches. It worked because the LLM is good at following instructions. But "good at following instructions" is not the same as "deterministic." The CLI eliminates the variance.
 
 **Session independence.** The old orchestrator carried state in its context window — which worktrees exist, which agents committed, which branches to merge. That state evaporates when the session ends. The CLI externalizes that state into the YAML manifest. A fresh orchestrator can resume a wave mid-execution by reading the file. This matters most in long-running executions where context pressure is real.
 
@@ -90,7 +90,7 @@ So what did the migration actually buy?
 
 None of these are dramatic improvements. The old system would have kept working. The migration was not a rescue — it was a reliability upgrade. The distinction matters because most infrastructure work that actually ships is this kind: fixing things that aren't broken yet, before the scale or frequency that would break them arrives.
 
-The proof that the migration was worth doing isn't in the feature list. It's in what runs next. The Cobra CLI refactor — the feature being scouted right now — will be the first SAW execution where the orchestrator calls `saw create-worktrees` instead of typing `git worktree add` into a bash loop. If that works without drama, the upgrade paid off. If it doesn't, we'll know exactly which CLI command failed and why.
+The proof that the migration was worth doing isn't in the feature list. It's in what runs next. The Cobra CLI refactor — the feature being scouted right now — will be the first SAW execution where the orchestrator calls `sawtools create-worktrees` instead of typing `git worktree add` into a bash loop. If that works without drama, the upgrade paid off. If it doesn't, we'll know exactly which CLI command failed and why.
 
 ---
 
@@ -138,15 +138,15 @@ The isolation leak rate was 30% (3/10 agents). But the 4-layer defense model —
 With SDK functions proven, Wave 2 wrapped each as a `cmd/saw/` subcommand. Nine agents, each creating a single file:
 
 ```
-saw create-worktrees <manifest> --wave <N> [--repo-dir <path>]
-saw verify-commits   <manifest> --wave <N> [--repo-dir <path>]
-saw scan-stubs       <file1> [file2 ...]
-saw merge-agents     <manifest> --wave <N> [--repo-dir <path>]
-saw cleanup          <manifest> --wave <N> [--repo-dir <path>]
-saw verify-build     <manifest> [--repo-dir <path>]
-saw update-status    <manifest> --wave <N> --agent <ID> --status <s>
-saw update-context   <manifest> [--project-root <path>]
-saw list-impls       [--dir <path>]
+sawtools create-worktrees <manifest> --wave <N> [--repo-dir <path>]
+sawtools verify-commits   <manifest> --wave <N> [--repo-dir <path>]
+sawtools scan-stubs       <file1> [file2 ...]
+sawtools merge-agents     <manifest> --wave <N> [--repo-dir <path>]
+sawtools cleanup          <manifest> --wave <N> [--repo-dir <path>]
+sawtools verify-build     <manifest> [--repo-dir <path>]
+sawtools update-status    <manifest> --wave <N> --agent <ID> --status <s>
+sawtools update-context   <manifest> [--project-root <path>]
+sawtools list-impls       [--dir <path>]
 ```
 
 Each agent followed the same pattern: `flag.NewFlagSet`, SDK call, `json.MarshalIndent` to stdout, exit code reflecting success/failure. Thin wrappers over tested functions.
@@ -180,15 +180,15 @@ The markdown IMPL format was deprecated by Phase 1. The ad-hoc bash commands are
 
 With SDK functions proven (Wave 1) and CLI wrappers built (Wave 2), the remaining waves assembled the pieces into a working system.
 
-**Wave 3** (2 agents, parallel): Agent U wired all 9 CLI commands into `cmd/saw/main.go` — the central switch statement that routes `saw <command>` invocations. Agent V built the capstone: `RunWaveFull()` in `pkg/engine/`, a single function that orchestrates the entire wave lifecycle — create worktrees, verify commits, merge agents, verify build, clean up. The capstone function is what turns 5 sequential CLI calls into one: `saw run-wave`. Two agents, two files each, zero conflicts. Post-merge `go test ./...` passed on the first try.
+**Wave 3** (2 agents, parallel): Agent U wired all 9 CLI commands into `cmd/saw/main.go` — the central switch statement that routes `sawtools <command>` invocations. Agent V built the capstone: `RunWaveFull()` in `pkg/engine/`, a single function that orchestrates the entire wave lifecycle — create worktrees, verify commits, merge agents, verify build, clean up. The capstone function is what turns 5 sequential CLI calls into one: `sawtools run-wave`. Two agents, two files each, zero conflicts. Post-merge `go test ./...` passed on the first try.
 
 **Wave 4** (1 agent, solo): Agent W wrapped `RunWaveFull` as the `saw run-wave` CLI command. Solo agent wave — no worktree needed, worked directly on the develop branch. The CLI now has 10 commands covering every orchestrator responsibility that was previously ad-hoc bash:
 
 ```
-saw create-worktrees    saw verify-commits    saw scan-stubs
-saw merge-agents        saw cleanup           saw verify-build
-saw update-status       saw update-context    saw list-impls
-saw run-wave
+sawtools create-worktrees    sawtools verify-commits    sawtools scan-stubs
+sawtools merge-agents        sawtools cleanup           sawtools verify-build
+sawtools update-status       sawtools update-context    sawtools list-impls
+sawtools run-wave
 ```
 
 **Wave 5** (2 agents, cross-repo): The final wave was the most conceptually interesting. Agents X and Y didn't write Go — they updated the SAW protocol's own prompt files in a different repository.
@@ -196,8 +196,8 @@ saw run-wave
 | Agent | File | Change |
 |-------|------|--------|
 | X | `saw-skill.md` (v0.6.0 → v0.7.0) | Replaced every ad-hoc bash operation with CLI command references. Added dual-mode documentation (YAML + markdown). 18 CLI command references where there were 0 before. |
-| Y | `saw-merge.md` (v0.5.0 → v0.6.0) | Replaced manual `git merge --no-ff` loops, `git rev-list` verification, bash stub scanner with `saw merge-agents`, `saw verify-commits`, `saw scan-stubs`. Kept the procedural explanation as documentation — the files explain *why*, the CLI handles *what*. |
-| Y | `saw-worktree.md` (v0.5.1 → v0.6.0) | Replaced manual `git worktree add` loops with `saw create-worktrees`. Added `--repo-dir` cross-repo documentation. 7 CLI command references. |
+| Y | `saw-merge.md` (v0.5.0 → v0.6.0) | Replaced manual `git merge --no-ff` loops, `git rev-list` verification, bash stub scanner with `sawtools merge-agents`, `sawtools verify-commits`, `sawtools scan-stubs`. Kept the procedural explanation as documentation — the files explain *why*, the CLI handles *what*. |
+| Y | `saw-worktree.md` (v0.5.1 → v0.6.0) | Replaced manual `git worktree add` loops with `sawtools create-worktrees`. Added `--repo-dir` cross-repo documentation. 7 CLI command references. |
 
 These agents worked in the `scout-and-wave` protocol spec repo while the IMPL manifest lived in `scout-and-wave-go` — a cross-repo wave. Worktrees were created in the target repo; Field 0 isolation navigated agents to the correct directory. Both committed to their branches. Both merged clean. Zero isolation leaks.
 
@@ -244,18 +244,18 @@ If your protocol can build itself at 12x parallelism — and then use the result
 
 The SAW Protocol SDK migration is complete. 24 agents across 5 waves, spanning 2 repositories. The old markdown-and-bash system coordinated every agent that built the typed Go system that replaces it. Wave 5's agents updated the very prompt files that drove Waves 1–4. The bootstrap paradox didn't just resolve — it closed cleanly.
 
-The next time someone runs `/saw wave`, the orchestrator will call `saw create-worktrees` instead of a bash loop. `saw merge-agents` instead of manual `git merge --no-ff`. `saw verify-build` instead of hoping the LLM remembers the right flags. The plane is still flying. The new engine is installed. The old one can be unbolted.
+The next time someone runs `/saw wave`, the orchestrator will call `sawtools create-worktrees` instead of a bash loop. `sawtools merge-agents` instead of manual `git merge --no-ff`. `sawtools verify-build` instead of hoping the LLM remembers the right flags. The plane is still flying. The new engine is installed. The old one can be unbolted.
 
 ## Epilogue: The First Production Run
 
 The ink wasn't dry on Wave 5 before we ran the new system for real.
 
-The Cobra CLI migration — replacing `cmd/saw/`'s hand-rolled `flag.NewFlagSet` switch with cobra commands — became the first feature executed entirely under the new Protocol SDK tooling. Scout produced a YAML manifest (not markdown). The orchestrator called `saw create-worktrees` to set up 11 worktrees. Wave 1 launched 11 agents in parallel.
+The Cobra CLI migration — replacing `cmd/saw/`'s hand-rolled `flag.NewFlagSet` switch with cobra commands — became the first feature executed entirely under the new Protocol SDK tooling. Scout produced a YAML manifest (not markdown). The orchestrator called `sawtools create-worktrees` to set up 11 worktrees. Wave 1 launched 11 agents in parallel.
 
-The very first `saw` command of that run failed:
+The very first `sawtools` command of that run failed:
 
 ```
-$ saw create-worktrees /path/to/manifest --wave 1 --repo-dir /path/to/repo
+$ sawtools create-worktrees /path/to/manifest --wave 1 --repo-dir /path/to/repo
 create-worktrees: --wave is required
 ```
 
@@ -263,23 +263,23 @@ create-worktrees: --wave is required
 
 The workaround was one line: put the flags first. The fix is the wave that's currently running.
 
-This is what dogfooding actually means. Not a demo. Not a controlled test. The system running on itself in production, surfacing real friction in real time, generating real work items. The flag-order bug will be permanently fixed by the 11 agents currently working in their worktrees. By the time this post is published, `saw create-worktrees /path --wave 1` will just work.
+This is what dogfooding actually means. Not a demo. Not a controlled test. The system running on itself in production, surfacing real friction in real time, generating real work items. The flag-order bug will be permanently fixed by the 11 agents currently working in their worktrees. By the time this post is published, `sawtools create-worktrees /path --wave 1` will just work.
 
 ### The Run Completed
 
-It did. All 11 agents merged via `saw merge-agents` — 11/11, no conflicts. Wave 2 wired cobra into `main.go`, `go build ./...` passed, `go test ./...` green. The binary was rebuilt and installed. `saw create-worktrees /path --wave 1` now works exactly as written.
+It did. All 11 agents merged via `sawtools merge-agents` — 11/11, no conflicts. Wave 2 wired cobra into `main.go`, `go build ./...` passed, `go test ./...` green. The binary was rebuilt and installed. `sawtools create-worktrees /path --wave 1` now works exactly as written.
 
 The first thing the completed migration revealed was three more friction points — found by running the system, not by reading the prompts:
 
-- **Field 0 isolation verification** was still inline bash. → `saw verify-isolation --branch wave1-agent-A`
-- **Stub scan results** still required manual copy-paste into the IMPL doc. → `saw scan-stubs --append-impl`
+- **Field 0 isolation verification** was still inline bash. → `sawtools verify-isolation --branch wave1-agent-A`
+- **Stub scan results** still required manual copy-paste into the IMPL doc. → `sawtools scan-stubs --append-impl`
 - **`merge-agents`** succeeded but the orchestrator still had to call `update-status` separately. → Auto-wired: successful merge now marks `status_updated: true` in the manifest.
 
 All three were built and shipped the same session.
 
 This is the compounding effect the protocol is designed for. Each production run sharpens the tool. Each gap found becomes a CLI command. Each CLI command removes a manual step from the next run. The system gets less friction to operate the more it operates itself.
 
-`saw create-worktrees /path --wave 1` just works. So does everything else.
+`sawtools create-worktrees /path --wave 1` just works. So does everything else.
 
 ---
 

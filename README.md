@@ -17,7 +17,7 @@ Go engine and Protocol SDK for the Scout-and-Wave parallel agent coordination sy
 │  Orchestrator (Claude via skill, or CLI)    │
 │  Decides what to do, handles errors         │
 ├─────────────────────────────────────────────┤
-│  CLI Binary (saw validate, saw extract...)  │
+│  CLI Binary (sawtools validate, sawtools extract...)  │
 │  Thin wrappers — deterministic I/O          │
 ├─────────────────────────────────────────────┤
 │  Protocol SDK (pkg/protocol)                │
@@ -126,17 +126,17 @@ internal/
 
 ## CLI Commands
 
-The `saw` binary wraps SDK operations as shell commands. Each command is single-purpose with structured I/O:
+The `sawtools` binary wraps SDK operations as shell commands. Each command is single-purpose with structured I/O:
 
 | Command | Input | Output | Exit Code |
 |---------|-------|--------|-----------|
-| `saw validate <manifest>` | YAML path | Errors (JSON) | 0=valid, 1=invalid |
-| `saw extract-context <manifest> <agent>` | Manifest + agent ID | Agent context (JSON) | 0=ok, 1=not found |
-| `saw current-wave <manifest>` | YAML path | Wave number | 0=ok, 1=no pending |
-| `saw set-completion <manifest> <agent>` | Manifest + stdin (YAML) | Success | 0=ok, 1=failed |
-| `saw merge-wave <manifest> <wave>` | Manifest + wave number | Merge status | 0=ok, 1=conflicts |
-| `saw render <manifest>` | YAML path | Markdown | 0=ok, 1=failed |
-| `saw migrate <impl.md>` | Markdown path | YAML path | 0=ok, 1=failed |
+| `sawtools validate <manifest>` | YAML path | Errors (JSON) | 0=valid, 1=invalid |
+| `sawtools extract-context <manifest> <agent>` | Manifest + agent ID | Agent context (JSON) | 0=ok, 1=not found |
+| `sawtools current-wave <manifest>` | YAML path | Wave number | 0=ok, 1=no pending |
+| `sawtools set-completion <manifest> <agent>` | Manifest + stdin (YAML) | Success | 0=ok, 1=failed |
+| `sawtools merge-wave <manifest> <wave>` | Manifest + wave number | Merge status | 0=ok, 1=conflicts |
+| `sawtools render <manifest>` | YAML path | Markdown | 0=ok, 1=failed |
+| `sawtools migrate <impl.md>` | Markdown path | YAML path | 0=ok, 1=failed |
 
 ## Design Principles
 

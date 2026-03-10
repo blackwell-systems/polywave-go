@@ -10,8 +10,8 @@ var repoDir string
 // Called by main() in main.go. Subcommands are added there via AddCommand.
 func newRootCmd() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "saw",
-		Short: "SAW Protocol SDK CLI",
+		Use:   "sawtools",
+		Short: "SAW Protocol SDK CLI (toolkit)",
 	}
 
 	cmd.PersistentFlags().StringVar(&repoDir, "repo-dir", ".", "Repository root directory")

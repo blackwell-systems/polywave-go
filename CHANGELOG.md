@@ -8,6 +8,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 | Version | Date | Headline |
 |---------|------|----------|
+| [0.15.0] | 2026-03-09 | Binary rename — `sawtools` replaces `saw` as the protocol toolkit CLI name |
 | [0.14.0] | 2026-03-09 | Protocol gap closures — `verify-isolation` command, `scan-stubs --append-impl`, `merge-agents` auto-status-update after successful merge |
 | [0.13.0] | 2026-03-09 | Cobra CLI migration — all 10 subcommands converted from flag.FlagSet to cobra.Command; fixes arg-order bug in create-worktrees |
 | [0.12.0] | 2026-03-09 | Protocol SDK conformance — 44-gap remediation: state machine, freeze enforcement, conflict detection, quality gates, failure routing, scaffold/enum validation, project memory |
@@ -22,6 +23,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 | [0.3.0] | 2026-03-08 | Protocol audit fixes — P0: failure_type parsing, multi-gen agent IDs; P1: E22 2-pass scaffold build, cross-repo Repo column; P2: repo field in completion reports |
 | [0.2.0] | 2026-03-08 | Engine protocol parity — E17–E23 implemented (context memory, failure routing, stub scan, quality gates, scaffold build verify, per-agent context extraction) |
 | [0.1.0] | 2026-03-08 | Initial engine extraction — parser, orchestrator, agent runner, git, worktree management |
+
+## [0.15.0] - 2026-03-09
+
+### Changed
+
+- **Binary renamed from `saw` to `sawtools`** — clarifies the architectural split between `sawtools` (scout-and-wave-go: protocol toolkit, git/manifest operations, no agent execution) and `saw` (scout-and-wave-web: orchestration loop, runs agents, drives the full protocol lifecycle). All CLI subcommand names are unchanged; only the top-level binary name changes. Install: `go build -o sawtools ./cmd/saw` and copy to PATH.
 
 ## [0.14.0] - 2026-03-09
 
