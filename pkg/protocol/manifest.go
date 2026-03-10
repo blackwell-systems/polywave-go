@@ -103,3 +103,78 @@ func SetCompletionReport(m *IMPLManifest, agentID string, report CompletionRepor
 
 	return nil
 }
+
+// ValidateSM02TransitionGuards validates that a state transition from 'from' to 'to' is legal
+// according to the SAW protocol state machine (SM-02).
+// Returns validation errors if the transition is not allowed.
+func ValidateSM02TransitionGuards(from, to ProtocolState, m *IMPLManifest) []ValidationError {
+	var errs []ValidationError
+
+	// Define valid transitions
+	validTransitions := map[ProtocolState][]ProtocolState{
+		StateScoutPending:    {StateScoutValidating, StateBlocked},
+		StateScoutValidating: {StateReviewed, StateNotSuitable, StateBlocked},
+		StateReviewed:        {StateScaffoldPending, StateWavePending, StateBlocked},
+		StateScaffoldPending: {StateWavePending, StateBlocked},
+		StateWavePending:     {StateWaveExecuting, StateBlocked},
+		StateWaveExecuting:   {StateWaveMerging, StateBlocked},
+		StateWaveMerging:     {StateWaveVerified, StateBlocked},
+		StateWaveVerified:    {StateWavePending, StateComplete, StateBlocked},
+		StateBlocked: {
+			StateScoutPending, StateScoutValidating, StateReviewed,
+			StateScaffoldPending, StateWavePending, StateWaveExecuting,
+			StateWaveMerging, StateWaveVerified, StateComplete, StateNotSuitable,
+		},
+		StateComplete:    {},
+		StateNotSuitable: {},
+	}
+
+	// Check if transition is in valid list
+	allowed := false
+	for _, validTo := range validTransitions[from] {
+		if validTo == to {
+			allowed = true
+			break
+		}
+	}
+
+	if !allowed {
+		errs = append(errs, ValidationError{
+			Code:    "SM02_INVALID_TRANSITION",
+			Message: fmt.Sprintf("invalid state transition from %q to %q", from, to),
+			Field:   "state",
+		})
+		return errs
+	}
+
+	// Special guards for specific transitions
+	switch {
+	case from == StateWaveExecuting && to == StateWaveMerging:
+		// Require all agents in current wave to be complete
+		currentWave := CurrentWave(m)
+		if currentWave != nil {
+			for _, agent := range currentWave.Agents {
+				report, exists := m.CompletionReports[agent.ID]
+				if !exists || report.Status != "complete" {
+					errs = append(errs, ValidationError{
+						Code:    "SM02_INVALID_TRANSITION",
+						Message: fmt.Sprintf("cannot transition from WAVE_EXECUTING to WAVE_MERGING: agent %s is not complete (status=%s)", agent.ID, report.Status),
+						Field:   "state",
+					})
+				}
+			}
+		}
+
+	case from == StateWaveMerging && to == StateWaveVerified:
+		// Require merge_state == completed
+		if m.MergeState != MergeStateCompleted {
+			errs = append(errs, ValidationError{
+				Code:    "SM02_INVALID_TRANSITION",
+				Message: fmt.Sprintf("cannot transition from WAVE_MERGING to WAVE_VERIFIED: merge_state must be 'completed' (got %q)", m.MergeState),
+				Field:   "state",
+			})
+		}
+	}
+
+	return errs
+}

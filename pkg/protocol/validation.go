@@ -17,6 +17,9 @@ func Validate(m *IMPLManifest) []ValidationError {
 	errs = append(errs, validateI4RequiredFields(m)...)
 	errs = append(errs, validateI5FileOwnershipComplete(m)...)
 	errs = append(errs, validateI6NoCycles(m)...)
+	errs = append(errs, validateI5CommitBeforeReport(m)...)
+	errs = append(errs, validateE9MergeState(m)...)
+	errs = append(errs, validateSM01StateValid(m)...)
 
 	return errs
 }
@@ -274,6 +277,88 @@ func validateI6NoCycles(m *IMPLManifest) []ValidationError {
 				break
 			}
 		}
+	}
+
+	return errs
+}
+
+// validateI5CommitBeforeReport checks that all completion reports have a valid commit hash.
+// Enforces I5: agents must commit before reporting (commit field must be non-empty and not "uncommitted").
+func validateI5CommitBeforeReport(m *IMPLManifest) []ValidationError {
+	var errs []ValidationError
+
+	for agentID, report := range m.CompletionReports {
+		if strings.TrimSpace(report.Commit) == "" || report.Commit == "uncommitted" {
+			errs = append(errs, ValidationError{
+				Code:    "I5_UNCOMMITTED",
+				Message: fmt.Sprintf("agent %s completion report has no valid commit (commit=%q) — agents must commit before reporting", agentID, report.Commit),
+				Field:   fmt.Sprintf("completion_reports[%s].commit", agentID),
+			})
+		}
+	}
+
+	return errs
+}
+
+// validateE9MergeState checks that merge_state field contains a valid value.
+// Valid values: "idle", "in_progress", "completed", "failed".
+// Empty/omitted values are valid (backward compatibility).
+func validateE9MergeState(m *IMPLManifest) []ValidationError {
+	var errs []ValidationError
+
+	// Empty is valid (backward compat)
+	if strings.TrimSpace(string(m.MergeState)) == "" {
+		return errs
+	}
+
+	validStates := map[MergeState]bool{
+		MergeStateIdle:       true,
+		MergeStateInProgress: true,
+		MergeStateCompleted:  true,
+		MergeStateFailed:     true,
+	}
+
+	if !validStates[m.MergeState] {
+		errs = append(errs, ValidationError{
+			Code:    "E9_INVALID_MERGE_STATE",
+			Message: fmt.Sprintf("merge_state has invalid value %q — must be one of: idle, in_progress, completed, failed", m.MergeState),
+			Field:   "merge_state",
+		})
+	}
+
+	return errs
+}
+
+// validateSM01StateValid checks that state field contains a valid ProtocolState value.
+// Empty/omitted values are valid (backward compatibility).
+func validateSM01StateValid(m *IMPLManifest) []ValidationError {
+	var errs []ValidationError
+
+	// Empty is valid (backward compat)
+	if strings.TrimSpace(string(m.State)) == "" {
+		return errs
+	}
+
+	validStates := map[ProtocolState]bool{
+		StateScoutPending:    true,
+		StateScoutValidating: true,
+		StateReviewed:        true,
+		StateScaffoldPending: true,
+		StateWavePending:     true,
+		StateWaveExecuting:   true,
+		StateWaveMerging:     true,
+		StateWaveVerified:    true,
+		StateBlocked:         true,
+		StateComplete:        true,
+		StateNotSuitable:     true,
+	}
+
+	if !validStates[m.State] {
+		errs = append(errs, ValidationError{
+			Code:    "SM01_INVALID_STATE",
+			Message: fmt.Sprintf("state has invalid value %q — must be one of: SCOUT_PENDING, SCOUT_VALIDATING, REVIEWED, SCAFFOLD_PENDING, WAVE_PENDING, WAVE_EXECUTING, WAVE_MERGING, WAVE_VERIFIED, BLOCKED, COMPLETE, NOT_SUITABLE", m.State),
+			Field:   "state",
+		})
 	}
 
 	return errs
