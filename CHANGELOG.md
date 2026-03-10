@@ -8,6 +8,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 | Version | Date | Headline |
 |---------|------|----------|
+| [0.17.0] | 2026-03-10 | Structured output parsing — JSON schema-constrained Scout output via Anthropic API `output_config.format`; eliminates brittle markdown parser path |
 | [0.16.0] | 2026-03-10 | YAML-mode CLI commands — 9 missing commands: `validate`, `extract-context`, `set-completion`, `mark-complete`, `run-gates`, `check-conflicts`, `validate-scaffolds`, `freeze-check`, `update-agent-prompt` |
 | [0.15.0] | 2026-03-09 | Binary rename — `sawtools` replaces `saw` as the protocol toolkit CLI name |
 | [0.14.0] | 2026-03-09 | Protocol gap closures — `verify-isolation` command, `scan-stubs --append-impl`, `merge-agents` auto-status-update after successful merge |
@@ -24,6 +25,21 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 | [0.3.0] | 2026-03-08 | Protocol audit fixes — P0: failure_type parsing, multi-gen agent IDs; P1: E22 2-pass scaffold build, cross-repo Repo column; P2: repo field in completion reports |
 | [0.2.0] | 2026-03-08 | Engine protocol parity — E17–E23 implemented (context memory, failure routing, stub scan, quality gates, scaffold build verify, per-agent context extraction) |
 | [0.1.0] | 2026-03-08 | Initial engine extraction — parser, orchestrator, agent runner, git, worktree management |
+
+## [0.17.0] - 2026-03-10
+
+### Added
+
+- **`GenerateScoutSchema()`** (`pkg/protocol/schema.go`) — reflects `scoutOutputSchema` (a stripped `IMPLManifest` without runtime-only fields) into a JSON Schema using `invopop/jsonschema` with `DoNotReference: true` to flatten `$ref` pointers as required by the Anthropic API
+- **`scoutOutputSchema`** (unexported, `pkg/protocol/schema.go`) — mirrors `IMPLManifest` but omits `completion_reports`, `stub_reports`, `merge_state`, `worktrees_created_at`, `frozen_contracts_hash`, `frozen_scaffolds_hash`; Scout writes none of these
+- **`WithOutputConfig(schema map[string]any) *Client`** (`pkg/agent/backend/api/client.go`) — sets `anthropic.OutputConfigParam` on the API client; wired into both `Run` and `RunStreaming`
+- **`UseStructuredOutput bool`** and **`OutputSchemaOverride map[string]any`** on `RunScoutOpts` (`pkg/engine/engine.go`) — opt-in flags for structured output path
+- **`runScoutStructured()`** (unexported, `pkg/engine/runner.go`) — calls API backend with output config, unmarshals JSON response directly into `*protocol.IMPLManifest`, saves to disk as YAML; activated when `UseStructuredOutput: true`
+- **`SuitabilityAssessment string`** and **`CompletionDate string`** fields on `IMPLManifest` (`pkg/protocol/types.go`) — required by Scout structured output schema
+
+### Dependencies
+
+- Added `github.com/invopop/jsonschema v0.13.0` for Go struct → JSON Schema reflection
 
 ## [0.16.0] - 2026-03-10
 
