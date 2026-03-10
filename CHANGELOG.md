@@ -8,6 +8,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 | Version | Date | Headline |
 |---------|------|----------|
+| [0.25.0] | 2026-03-10 | mark-complete preservation fix — text-based YAML editing preserves all 1600+ lines of IMPL doc structure instead of compacting to 50 lines |
 | [0.24.0] | 2026-03-10 | Cross-repo worktree support — `create-worktrees` resolves agent repos from FileOwnership table, creates worktrees in correct sibling directories |
 | [0.23.0] | 2026-03-10 | Hybrid IMPL doc support — `create-worktrees` parses markdown/YAML manifests via `ParseIMPLDoc()` instead of pure YAML `Load()` |
 | [0.22.0] | 2026-03-10 | E5/E10 validator hardening — solo-wave exemption, lenient verification format, CLI reference docs |
@@ -32,6 +33,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 | [0.3.0] | 2026-03-08 | Protocol audit fixes — P0: failure_type parsing, multi-gen agent IDs; P1: E22 2-pass scaffold build, cross-repo Repo column; P2: repo field in completion reports |
 | [0.2.0] | 2026-03-08 | Engine protocol parity — E17–E23 implemented (context memory, failure routing, stub scan, quality gates, scaffold build verify, per-agent context extraction) |
 | [0.1.0] | 2026-03-08 | Initial engine extraction — parser, orchestrator, agent runner, git, worktree management |
+
+## [0.25.0] - 2026-03-10
+
+### Fixed
+
+- **`mark-complete` preservation bug** (`pkg/protocol/marker.go`) — `writeCompletionMarkerYAML` was using `map[string]interface{}` round-trip which destroyed IMPL doc structure. When `yaml.Unmarshal` parses into a map, it only preserves fields present in the YAML. When `yaml.Marshal` writes from the map, it has no knowledge of the `IMPLManifest` struct tags, so it only outputs what's in the map with default formatting. This compacted a 1613-line IMPL doc (with detailed agent prompts, completion reports, interface contracts, quality gates) down to 50 lines of minimal YAML.
+- **Line-based YAML editing** — Rewrote `writeCompletionMarkerYAML` to use text-based line manipulation (`bufio.Scanner`, `strings.HasPrefix`) to find and update the `completion_date:` field in place, preserving 100% of original formatting, comments, block scalars, and indentation. Validates the modified YAML with `yaml.Unmarshal` before writing to catch errors. This is the correct approach for single-field updates when preservation is required — YAML libraries prioritize correctness over formatting.
+
+---
 
 ## [0.24.0] - 2026-03-10
 
