@@ -432,3 +432,103 @@ waves:
 func intPtr(i int) *int {
 	return &i
 }
+
+// TestValidateSM02_WaveExecutingToMerging_AllComplete tests legal transition when all agents complete.
+func TestValidateSM02_WaveExecutingToMerging_AllComplete(t *testing.T) {
+	m := &IMPLManifest{
+		Waves: []Wave{
+			{Number: 1, Agents: []Agent{
+				{ID: "A", Task: "Test A"},
+				{ID: "B", Task: "Test B"},
+			}},
+		},
+		CompletionReports: map[string]CompletionReport{
+			"A": {Status: "complete", Commit: "abc123"},
+			"B": {Status: "complete", Commit: "def456"},
+		},
+	}
+
+	errs := ValidateSM02TransitionGuards(StateWaveExecuting, StateWaveMerging, m)
+	if len(errs) != 0 {
+		t.Errorf("Expected no errors when all agents complete, got %d: %v", len(errs), errs)
+	}
+}
+
+// TestValidateSM02_WaveExecutingToMerging_Incomplete tests blocked transition when agent incomplete.
+func TestValidateSM02_WaveExecutingToMerging_Incomplete(t *testing.T) {
+	m := &IMPLManifest{
+		Waves: []Wave{
+			{Number: 1, Agents: []Agent{
+				{ID: "A", Task: "Test A"},
+				{ID: "B", Task: "Test B"},
+			}},
+		},
+		CompletionReports: map[string]CompletionReport{
+			"A": {Status: "complete", Commit: "abc123"},
+			// B is missing
+		},
+	}
+
+	errs := ValidateSM02TransitionGuards(StateWaveExecuting, StateWaveMerging, m)
+	if len(errs) == 0 {
+		t.Error("Expected error when agent B incomplete")
+	}
+	if len(errs) > 0 && errs[0].Code != "SM02_INVALID_TRANSITION" {
+		t.Errorf("Expected SM02_INVALID_TRANSITION, got %s", errs[0].Code)
+	}
+}
+
+// TestValidateSM02_IllegalTransition tests that illegal transitions are blocked.
+func TestValidateSM02_IllegalTransition(t *testing.T) {
+	m := &IMPLManifest{}
+
+	errs := ValidateSM02TransitionGuards(StateScoutPending, StateWaveMerging, m)
+	if len(errs) != 1 {
+		t.Fatalf("Expected 1 error for illegal transition, got %d: %v", len(errs), errs)
+	}
+	if errs[0].Code != "SM02_INVALID_TRANSITION" {
+		t.Errorf("Expected SM02_INVALID_TRANSITION, got %s", errs[0].Code)
+	}
+}
+
+// TestValidateSM02_BlockedToAny tests that BLOCKED can transition to any state.
+func TestValidateSM02_BlockedToAny(t *testing.T) {
+	m := &IMPLManifest{}
+
+	targetStates := []ProtocolState{
+		StateScoutPending,
+		StateScoutValidating,
+		StateReviewed,
+		StateScaffoldPending,
+		StateWavePending,
+		StateWaveExecuting,
+		StateWaveMerging,
+		StateWaveVerified,
+		StateComplete,
+		StateNotSuitable,
+	}
+
+	for _, targetState := range targetStates {
+		errs := ValidateSM02TransitionGuards(StateBlocked, targetState, m)
+		if len(errs) != 0 {
+			t.Errorf("Expected no errors for BLOCKED -> %s, got %d: %v", targetState, len(errs), errs)
+		}
+	}
+}
+
+// TestValidateSM02_MergingToVerified_RequiresCompleted tests merge state guard.
+func TestValidateSM02_MergingToVerified_RequiresCompleted(t *testing.T) {
+	// Should fail without completed merge state
+	m := &IMPLManifest{MergeState: MergeStateInProgress}
+	errs := ValidateSM02TransitionGuards(StateWaveMerging, StateWaveVerified, m)
+	if len(errs) == 0 {
+		t.Error("Expected error when merge_state is not 'completed'")
+	}
+
+	// Should pass with completed merge state
+	m.MergeState = MergeStateCompleted
+	errs = ValidateSM02TransitionGuards(StateWaveMerging, StateWaveVerified, m)
+	if len(errs) != 0 {
+		t.Errorf("Expected no errors when merge_state is 'completed', got %d: %v", len(errs), errs)
+	}
+}

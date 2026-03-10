@@ -581,3 +581,144 @@ func TestValidate_CrossRepoOwnership(t *testing.T) {
 		t.Errorf("Expected no errors for valid cross-repo manifest, got %d: %v", len(errs), errs)
 	}
 }
+
+// TestValidateI5CommitBeforeReport_Valid tests that reports with valid commits pass validation.
+func TestValidateI5CommitBeforeReport_Valid(t *testing.T) {
+	m := &IMPLManifest{
+		CompletionReports: map[string]CompletionReport{
+			"A": {Status: "complete", Commit: "abc123def456"},
+			"B": {Status: "complete", Commit: "789012345678"},
+		},
+	}
+
+	errs := validateI5CommitBeforeReport(m)
+	if len(errs) != 0 {
+		t.Errorf("Expected no errors for valid commits, got %d: %v", len(errs), errs)
+	}
+}
+
+// TestValidateI5CommitBeforeReport_Uncommitted tests that "uncommitted" is rejected.
+func TestValidateI5CommitBeforeReport_Uncommitted(t *testing.T) {
+	m := &IMPLManifest{
+		CompletionReports: map[string]CompletionReport{
+			"A": {Status: "complete", Commit: "uncommitted"},
+		},
+	}
+
+	errs := validateI5CommitBeforeReport(m)
+	if len(errs) != 1 {
+		t.Fatalf("Expected 1 error, got %d: %v", len(errs), errs)
+	}
+	if errs[0].Code != "I5_UNCOMMITTED" {
+		t.Errorf("Expected I5_UNCOMMITTED, got %s", errs[0].Code)
+	}
+}
+
+// TestValidateI5CommitBeforeReport_Empty tests that empty commit is rejected.
+func TestValidateI5CommitBeforeReport_Empty(t *testing.T) {
+	m := &IMPLManifest{
+		CompletionReports: map[string]CompletionReport{
+			"A": {Status: "complete", Commit: ""},
+			"B": {Status: "complete", Commit: "   "},
+		},
+	}
+
+	errs := validateI5CommitBeforeReport(m)
+	if len(errs) != 2 {
+		t.Fatalf("Expected 2 errors, got %d: %v", len(errs), errs)
+	}
+	for _, err := range errs {
+		if err.Code != "I5_UNCOMMITTED" {
+			t.Errorf("Expected I5_UNCOMMITTED, got %s", err.Code)
+		}
+	}
+}
+
+// TestValidateE9MergeState_Valid tests that all valid merge states pass.
+func TestValidateE9MergeState_Valid(t *testing.T) {
+	validStates := []MergeState{
+		MergeStateIdle,
+		MergeStateInProgress,
+		MergeStateCompleted,
+		MergeStateFailed,
+	}
+
+	for _, state := range validStates {
+		m := &IMPLManifest{MergeState: state}
+		errs := validateE9MergeState(m)
+		if len(errs) != 0 {
+			t.Errorf("Expected no errors for merge_state=%q, got %d: %v", state, len(errs), errs)
+		}
+	}
+}
+
+// TestValidateE9MergeState_Invalid tests that invalid merge states are rejected.
+func TestValidateE9MergeState_Invalid(t *testing.T) {
+	m := &IMPLManifest{MergeState: "merging"}
+
+	errs := validateE9MergeState(m)
+	if len(errs) != 1 {
+		t.Fatalf("Expected 1 error, got %d: %v", len(errs), errs)
+	}
+	if errs[0].Code != "E9_INVALID_MERGE_STATE" {
+		t.Errorf("Expected E9_INVALID_MERGE_STATE, got %s", errs[0].Code)
+	}
+}
+
+// TestValidateE9MergeState_Empty tests that empty merge state is valid (backward compat).
+func TestValidateE9MergeState_Empty(t *testing.T) {
+	m := &IMPLManifest{MergeState: ""}
+
+	errs := validateE9MergeState(m)
+	if len(errs) != 0 {
+		t.Errorf("Expected no errors for empty merge_state, got %d: %v", len(errs), errs)
+	}
+}
+
+// TestValidateSM01StateValid_AllStates tests that all valid protocol states pass.
+func TestValidateSM01StateValid_AllStates(t *testing.T) {
+	validStates := []ProtocolState{
+		StateScoutPending,
+		StateScoutValidating,
+		StateReviewed,
+		StateScaffoldPending,
+		StateWavePending,
+		StateWaveExecuting,
+		StateWaveMerging,
+		StateWaveVerified,
+		StateBlocked,
+		StateComplete,
+		StateNotSuitable,
+	}
+
+	for _, state := range validStates {
+		m := &IMPLManifest{State: state}
+		errs := validateSM01StateValid(m)
+		if len(errs) != 0 {
+			t.Errorf("Expected no errors for state=%q, got %d: %v", state, len(errs), errs)
+		}
+	}
+}
+
+// TestValidateSM01StateValid_Invalid tests that invalid protocol states are rejected.
+func TestValidateSM01StateValid_Invalid(t *testing.T) {
+	m := &IMPLManifest{State: "RUNNING"}
+
+	errs := validateSM01StateValid(m)
+	if len(errs) != 1 {
+		t.Fatalf("Expected 1 error, got %d: %v", len(errs), errs)
+	}
+	if errs[0].Code != "SM01_INVALID_STATE" {
+		t.Errorf("Expected SM01_INVALID_STATE, got %s", errs[0].Code)
+	}
+}
+
+// TestValidateSM01StateValid_Empty tests that empty state is valid (backward compat).
+func TestValidateSM01StateValid_Empty(t *testing.T) {
+	m := &IMPLManifest{State: ""}
+
+	errs := validateSM01StateValid(m)
+	if len(errs) != 0 {
+		t.Errorf("Expected no errors for empty state, got %d: %v", len(errs), errs)
+	}
+}
