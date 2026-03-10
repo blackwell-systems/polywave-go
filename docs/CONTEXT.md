@@ -81,3 +81,5 @@ type BackendConfig struct {
 - **net/http over openai-go SDK** — OpenAI backend uses raw HTTP; SDK is in go.mod but raw HTTP avoids SDK type churn
 - **Provider prefix overrides Kind** — if `parseProviderPrefix(cfg.Model)` returns a non-empty provider, it takes precedence over `cfg.Kind`; this lets per-agent `model:` fields in IMPL docs route to any backend without changing orchestrator config
 - **`SAW_CLI_BINARY` env** — custom CLI binary path for the `"cli:*"` dispatch case; complements `BinaryPath` in `backend.Config`
+- **structured-output-parsing**: completed 2026-03-10, 3 waves, 4 agents
+  - IMPL doc: docs/IMPL/IMPL-structured-output-parsing.yaml
