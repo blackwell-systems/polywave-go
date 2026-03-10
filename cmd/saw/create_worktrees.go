@@ -2,42 +2,33 @@ package main
 
 import (
 	"encoding/json"
-	"errors"
-	"flag"
 	"fmt"
 
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
+	"github.com/spf13/cobra"
 )
 
-// runCreateWorktrees creates git worktrees for all agents in a wave.
-// Command: saw create-worktrees <manifest-path> --wave <N> [--repo-dir <path>]
-// Outputs JSON result with created worktrees and branches.
-func runCreateWorktrees(args []string) error {
-	fs := flag.NewFlagSet("create-worktrees", flag.ContinueOnError)
-	waveNum := fs.Int("wave", 0, "Wave number (required)")
-	repoDir := fs.String("repo-dir", ".", "Repository directory")
+func newCreateWorktreesCmd() *cobra.Command {
+	var waveNum int
 
-	if err := fs.Parse(args); err != nil {
-		if errors.Is(err, flag.ErrHelp) {
+	cmd := &cobra.Command{
+		Use:   "create-worktrees <manifest-path>",
+		Short: "Create git worktrees for all agents in a wave",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			manifestPath := args[0]
+			result, err := protocol.CreateWorktrees(manifestPath, waveNum, repoDir)
+			if err != nil {
+				return fmt.Errorf("create-worktrees: %w", err)
+			}
+			out, _ := json.MarshalIndent(result, "", "  ")
+			fmt.Println(string(out))
 			return nil
-		}
-		return fmt.Errorf("create-worktrees: %w", err)
+		},
 	}
 
-	if fs.NArg() < 1 {
-		return fmt.Errorf("create-worktrees: manifest path required\nUsage: saw create-worktrees <manifest-path> --wave <N> [--repo-dir <path>]")
-	}
-	if *waveNum == 0 {
-		return fmt.Errorf("create-worktrees: --wave is required")
-	}
+	cmd.Flags().IntVar(&waveNum, "wave", 0, "Wave number (required)")
+	cmd.MarkFlagRequired("wave")
 
-	manifestPath := fs.Arg(0)
-	result, err := protocol.CreateWorktrees(manifestPath, *waveNum, *repoDir)
-	if err != nil {
-		return fmt.Errorf("create-worktrees: %w", err)
-	}
-
-	out, _ := json.MarshalIndent(result, "", "  ")
-	fmt.Println(string(out))
-	return nil
+	return cmd
 }
