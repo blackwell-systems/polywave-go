@@ -8,6 +8,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 | Version | Date | Headline |
 |---------|------|----------|
+| [0.16.0] | 2026-03-10 | YAML-mode CLI commands — 9 missing commands: `validate`, `extract-context`, `set-completion`, `mark-complete`, `run-gates`, `check-conflicts`, `validate-scaffolds`, `freeze-check`, `update-agent-prompt` |
 | [0.15.0] | 2026-03-09 | Binary rename — `sawtools` replaces `saw` as the protocol toolkit CLI name |
 | [0.14.0] | 2026-03-09 | Protocol gap closures — `verify-isolation` command, `scan-stubs --append-impl`, `merge-agents` auto-status-update after successful merge |
 | [0.13.0] | 2026-03-09 | Cobra CLI migration — all 10 subcommands converted from flag.FlagSet to cobra.Command; fixes arg-order bug in create-worktrees |
@@ -23,6 +24,24 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 | [0.3.0] | 2026-03-08 | Protocol audit fixes — P0: failure_type parsing, multi-gen agent IDs; P1: E22 2-pass scaffold build, cross-repo Repo column; P2: repo field in completion reports |
 | [0.2.0] | 2026-03-08 | Engine protocol parity — E17–E23 implemented (context memory, failure routing, stub scan, quality gates, scaffold build verify, per-agent context extraction) |
 | [0.1.0] | 2026-03-08 | Initial engine extraction — parser, orchestrator, agent runner, git, worktree management |
+
+## [0.16.0] - 2026-03-10
+
+### Added
+
+- **9 YAML-mode CLI commands** completing the YAML manifest interaction layer:
+  - `sawtools validate` — E16 invariant + typed-block validation; JSON output with error codes; exits 1 on failures
+  - `sawtools extract-context --agent <ID>` — E23 per-agent context extraction; outputs `AgentContextJSONPayload` JSON with agent task, file ownership, interface contracts, scaffolds, quality gates
+  - `sawtools set-completion --agent <ID> --status <complete|partial|blocked> --commit <sha>` — I4/I5 completion report registration; writes to manifest and saves
+  - `sawtools mark-complete [--date YYYY-MM-DD]` — E15 completion marker; writes `completion_date` to manifest
+  - `sawtools run-gates [--wave <N>]` — E21 quality gate execution; exits 1 if any required gate fails
+  - `sawtools check-conflicts` — I1 file ownership conflict detection from completion reports; exits 1 if conflicts found
+  - `sawtools validate-scaffolds` — I2 scaffold commit verification; exits 1 if any scaffold not committed
+  - `sawtools freeze-check` — I2 interface contract freeze enforcement; exits 1 if violations found
+  - `sawtools update-agent-prompt --agent <ID> --prompt <text>` — E8 downstream prompt updates
+- **`ExtractAgentContextFromManifest`** (`pkg/protocol/extract.go`) — new YAML-mode SDK function; YAML equivalent of the existing markdown `ExtractAgentContext`; returns `*AgentContextJSONPayload` with typed fields importable by web server
+- **`AgentContextJSONPayload`** struct in `pkg/protocol/extract.go` — structured output type for `extract-context`; JSON-serializable; includes `impl_doc_path`, `agent_id`, `agent_task`, `file_ownership`, `interface_contracts`, `scaffolds`, `quality_gates`
+- **Fixed `.gitignore`** — anchored `saw` and `sawtools` patterns to `/saw` and `/sawtools` to prevent shadowing `cmd/saw/` source directory
 
 ## [0.15.0] - 2026-03-09
 
