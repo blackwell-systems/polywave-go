@@ -56,6 +56,11 @@ func main() {
 			fmt.Fprintln(os.Stderr, err)
 			os.Exit(1)
 		}
+	case "run-wave":
+		if err := runRunWave(os.Args[2:]); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
 	default:
 		fmt.Fprintf(os.Stderr, "unknown command: %s\n", os.Args[1])
 		printUsage(os.Stderr)
@@ -76,4 +81,5 @@ func printUsage(w *os.File) {
 	fmt.Fprintln(w, "  update-status      Update agent status in manifest")
 	fmt.Fprintln(w, "  update-context     Update project CONTEXT.md (E18)")
 	fmt.Fprintln(w, "  list-impls         List all IMPL manifests in a directory")
+	fmt.Fprintln(w, "  run-wave           Execute full wave lifecycle (create, verify, merge, build, cleanup)")
 }
