@@ -532,3 +532,104 @@ func TestValidateSM02_MergingToVerified_RequiresCompleted(t *testing.T) {
 		t.Errorf("Expected no errors when merge_state is 'completed', got %d: %v", len(errs), errs)
 	}
 }
+
+// TestTransitionTo_ValidTransition tests successful state transition.
+func TestTransitionTo_ValidTransition(t *testing.T) {
+	m := &IMPLManifest{
+		State: StateScoutPending,
+	}
+
+	errs := TransitionTo(m, StateScoutValidating)
+	if len(errs) != 0 {
+		t.Errorf("Expected no errors for valid transition, got %d: %v", len(errs), errs)
+	}
+
+	if m.State != StateScoutValidating {
+		t.Errorf("State = %q, want %q", m.State, StateScoutValidating)
+	}
+}
+
+// TestTransitionTo_InvalidTransition tests that invalid transitions return errors and don't change state.
+func TestTransitionTo_InvalidTransition(t *testing.T) {
+	m := &IMPLManifest{
+		State: StateScoutPending,
+	}
+
+	errs := TransitionTo(m, StateWaveMerging)
+	if len(errs) == 0 {
+		t.Error("Expected error for invalid transition SCOUT_PENDING -> WAVE_MERGING")
+	}
+
+	// State should remain unchanged
+	if m.State != StateScoutPending {
+		t.Errorf("State = %q, want %q (should be unchanged after failed transition)", m.State, StateScoutPending)
+	}
+
+	if len(errs) > 0 && errs[0].Code != "SM02_INVALID_TRANSITION" {
+		t.Errorf("Expected SM02_INVALID_TRANSITION error code, got %s", errs[0].Code)
+	}
+}
+
+// TestTransitionTo_DefaultState tests that empty state defaults to SCOUT_PENDING.
+func TestTransitionTo_DefaultState(t *testing.T) {
+	m := &IMPLManifest{
+		State: "", // empty state
+	}
+
+	// Should allow transition from default SCOUT_PENDING to SCOUT_VALIDATING
+	errs := TransitionTo(m, StateScoutValidating)
+	if len(errs) != 0 {
+		t.Errorf("Expected no errors for transition from default state, got %d: %v", len(errs), errs)
+	}
+
+	if m.State != StateScoutValidating {
+		t.Errorf("State = %q, want %q", m.State, StateScoutValidating)
+	}
+}
+
+// TestTransitionTo_BlockedEscape tests that BLOCKED can transition to any state.
+func TestTransitionTo_BlockedEscape(t *testing.T) {
+	targetStates := []ProtocolState{
+		StateScoutPending,
+		StateScoutValidating,
+		StateReviewed,
+		StateScaffoldPending,
+		StateWavePending,
+		StateWaveExecuting,
+		StateWaveMerging,
+		StateWaveVerified,
+		StateComplete,
+		StateNotSuitable,
+	}
+
+	for _, targetState := range targetStates {
+		m := &IMPLManifest{
+			State: StateBlocked,
+		}
+
+		errs := TransitionTo(m, targetState)
+		if len(errs) != 0 {
+			t.Errorf("Expected no errors for BLOCKED -> %s, got %d: %v", targetState, len(errs), errs)
+		}
+
+		if m.State != targetState {
+			t.Errorf("State = %q, want %q", m.State, targetState)
+		}
+	}
+}
+
+// TestTransitionTo_Idempotent tests that transitioning to current state is valid.
+func TestTransitionTo_Idempotent(t *testing.T) {
+	m := &IMPLManifest{
+		State: StateWaveExecuting,
+	}
+
+	errs := TransitionTo(m, StateWaveExecuting)
+	if len(errs) != 0 {
+		t.Errorf("Expected no errors for idempotent transition, got %d: %v", len(errs), errs)
+	}
+
+	if m.State != StateWaveExecuting {
+		t.Errorf("State = %q, want %q", m.State, StateWaveExecuting)
+	}
+}

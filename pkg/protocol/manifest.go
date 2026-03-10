@@ -178,3 +178,26 @@ func ValidateSM02TransitionGuards(from, to ProtocolState, m *IMPLManifest) []Val
 
 	return errs
 }
+
+// TransitionTo attempts to transition the manifest from its current state to the target state.
+// Returns validation errors if the transition is invalid per SM-02 guards.
+// On success, updates m.State to the target state and returns nil.
+func TransitionTo(m *IMPLManifest, target ProtocolState) []ValidationError {
+	from := m.State
+	if from == "" {
+		from = StateScoutPending // default initial state
+	}
+
+	// Allow idempotent transitions (transitioning to current state is valid)
+	if from == target {
+		return nil
+	}
+
+	errs := ValidateSM02TransitionGuards(from, target, m)
+	if len(errs) > 0 {
+		return errs
+	}
+
+	m.State = target
+	return nil
+}

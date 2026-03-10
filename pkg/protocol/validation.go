@@ -26,6 +26,11 @@ func Validate(m *IMPLManifest) []ValidationError {
 	errs = append(errs, validateSM01StateValid(m)...)
 	errs = append(errs, validateAgentIDs(m)...)
 	errs = append(errs, validateGateTypes(m)...)
+	errs = append(errs, ValidateWorktreeNames(m)...)
+	errs = append(errs, ValidateVerificationField(m)...)
+	errs = append(errs, ValidateCompletionStatuses(m)...)
+	errs = append(errs, ValidateFailureTypes(m)...)
+	errs = append(errs, ValidatePreMortemRisk(m)...)
 
 	return errs
 }
