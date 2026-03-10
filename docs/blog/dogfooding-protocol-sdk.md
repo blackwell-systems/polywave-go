@@ -209,6 +209,25 @@ Twenty-six agents (2 in Phase 1, 24 in Phase 2). Zero merge conflicts. The isola
 
 The entire Phase 2 execution — from the conformance audit that identified 17 gaps through the final Wave 5 cross-repo merge — happened in a single day.
 
+### The Time Math
+
+Agent task completions include wall-clock duration. Here's what parallelism actually bought:
+
+| Wave | Agents | Sequential (est.) | Parallel (actual) | Speedup |
+|------|--------|-------------------|-------------------|---------|
+| Wave 1 | 10 | ~40 min | ~5 min | 8x |
+| Wave 2 | 9 | ~27 min | ~3 min | 9x |
+| Wave 3 | 2 | ~10 min | ~5 min | 2x |
+| Wave 4 | 1 | ~3 min | ~3 min | 1x |
+| Wave 5 | 2 | ~10 min | ~5.5 min | 1.8x |
+| **Total** | **24** | **~90 min** | **~21.5 min** | **~4.2x** |
+
+Wave 5 has the hardest numbers: Agent X completed in 223 seconds (3.7 min, 18 tool uses), Agent Y in 332 seconds (5.5 min, 34 tool uses). Parallel wall clock: 5.5 minutes — the slower agent. Sequential would have been 9.2 minutes. Waves 1 and 2 show the biggest wins because that's where disjoint file ownership pays off most: 10 independent functions or 9 independent CLI wrappers, each self-contained, each compilable in isolation.
+
+Add orchestration overhead — worktree creation, I5 trip wire verification, merge, post-merge test suite, cleanup — at roughly 5–10 minutes per wave. Total active time for Phase 2: under 90 minutes. Not counting the human review pauses between waves, which are a feature (quality gate), not overhead.
+
+But the comparison that matters isn't "parallel agents vs sequential agents." It's "parallel agents vs writing this by hand." Nine SDK functions, ten CLI commands, a capstone orchestration pipeline, three prompt file rewrites, ~75 tests, across two repositories, with full merge safety. A developer writing this manually — understanding each operation, writing Go, writing tests, wiring the CLI, updating the prompts — is looking at 2–3 days of focused work. SAW compressed that into an afternoon. The protocol's invariants (disjoint ownership, interface contracts, wave sequencing) are what made the compression safe: 26 agents, zero merge conflicts, every post-merge test passing on the first try.
+
 ## The Takeaway (Final)
 
 If your protocol can't build itself, it's not ready for production.
