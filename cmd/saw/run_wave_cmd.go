@@ -3,53 +3,49 @@ package main
 import (
 	"context"
 	"encoding/json"
-	"errors"
-	"flag"
 	"fmt"
 	"os"
 
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/engine"
+	"github.com/spf13/cobra"
 )
 
-func runRunWave(args []string) error {
-	fs := flag.NewFlagSet("run-wave", flag.ContinueOnError)
-	waveNum := fs.Int("wave", 0, "Wave number (required)")
-	repoDir := fs.String("repo-dir", ".", "Repository directory")
+func newRunWaveCmd() *cobra.Command {
+	var waveNum int
 
-	if err := fs.Parse(args); err != nil {
-		if errors.Is(err, flag.ErrHelp) {
-			return nil
-		}
-		return fmt.Errorf("run-wave: %w", err)
-	}
+	cmd := &cobra.Command{
+		Use:   "run-wave <manifest-path>",
+		Short: "Execute full wave lifecycle (create, verify, merge, build, cleanup)",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			manifestPath := args[0]
 
-	if fs.NArg() < 1 {
-		return fmt.Errorf("run-wave: manifest path required\nUsage: saw run-wave <manifest-path> --wave <N> [--repo-dir <path>]")
-	}
-	if *waveNum == 0 {
-		return fmt.Errorf("run-wave: --wave is required")
-	}
+			result, err := engine.RunWaveFull(context.Background(), engine.RunWaveFullOpts{
+				ManifestPath: manifestPath,
+				RepoPath:     repoDir,
+				WaveNum:      waveNum,
+			})
+			if err != nil {
+				// Still output partial result if available
+				if result != nil {
+					out, _ := json.MarshalIndent(result, "", "  ")
+					fmt.Println(string(out))
+				}
+				return fmt.Errorf("run-wave: %w", err)
+			}
 
-	manifestPath := fs.Arg(0)
-	result, err := engine.RunWaveFull(context.Background(), engine.RunWaveFullOpts{
-		ManifestPath: manifestPath,
-		RepoPath:     *repoDir,
-		WaveNum:      *waveNum,
-	})
-	if err != nil {
-		// Still output partial result if available
-		if result != nil {
 			out, _ := json.MarshalIndent(result, "", "  ")
 			fmt.Println(string(out))
-		}
-		return fmt.Errorf("run-wave: %w", err)
+
+			if !result.Success {
+				os.Exit(1)
+			}
+			return nil
+		},
 	}
 
-	out, _ := json.MarshalIndent(result, "", "  ")
-	fmt.Println(string(out))
+	cmd.Flags().IntVar(&waveNum, "wave", 0, "Wave number (required)")
+	_ = cmd.MarkFlagRequired("wave")
 
-	if !result.Success {
-		os.Exit(1)
-	}
-	return nil
+	return cmd
 }
