@@ -8,6 +8,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 | Version | Date | Headline |
 |---------|------|----------|
+| [0.22.0] | 2026-03-10 | E5/E10 validator hardening — solo-wave exemption, lenient verification format, CLI reference docs |
+| [0.21.0] | 2026-03-10 | Constraint solver — Kahn's topological sort, cycle detection, `SolveManifest`, `sawtools solve` command |
+| [0.20.0] | 2026-03-10 | Tool middleware wired — TimingMiddleware feeds Observatory SSE, PermissionMiddleware gives Scout read-only tools, `ReadOnlyTools()` factory |
+| [0.19.0] | 2026-03-10 | Tool system refactoring — unified `pkg/tools` Workshop wired into both Anthropic and OpenAI backends; 7 standard tools, 3 old duplicated tool files deleted |
+| [0.18.0] | 2026-03-10 | E16A/E16C validator tests — 5 new tests for required block presence and out-of-band dep graph warning in `validator_test.go` |
+| [0.17.0] | 2026-03-10 | Structured output parsing — JSON schema-constrained Scout output via Anthropic API `output_config.format`; eliminates brittle markdown parser path |
 | [0.16.0] | 2026-03-10 | YAML-mode CLI commands — 9 missing commands: `validate`, `extract-context`, `set-completion`, `mark-complete`, `run-gates`, `check-conflicts`, `validate-scaffolds`, `freeze-check`, `update-agent-prompt` |
 | [0.15.0] | 2026-03-09 | Binary rename — `sawtools` replaces `saw` as the protocol toolkit CLI name |
 | [0.14.0] | 2026-03-09 | Protocol gap closures — `verify-isolation` command, `scan-stubs --append-impl`, `merge-agents` auto-status-update after successful merge |
@@ -24,6 +30,84 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 | [0.3.0] | 2026-03-08 | Protocol audit fixes — P0: failure_type parsing, multi-gen agent IDs; P1: E22 2-pass scaffold build, cross-repo Repo column; P2: repo field in completion reports |
 | [0.2.0] | 2026-03-08 | Engine protocol parity — E17–E23 implemented (context memory, failure routing, stub scan, quality gates, scaffold build verify, per-agent context extraction) |
 | [0.1.0] | 2026-03-08 | Initial engine extraction — parser, orchestrator, agent runner, git, worktree management |
+
+## [0.22.0] - 2026-03-10
+
+### Fixed
+
+- **E5 solo-wave exemption** (`pkg/protocol/fieldvalidation.go`) — `ValidateWorktreeNames` now builds a `waveSize` map and skips branch/worktree pattern checks for single-agent waves. Solo agents commit directly to main/develop per protocol; the `wave{N}-agent-{ID}` pattern only applies to multi-agent waves that use worktree isolation.
+- **E10 lenient verification** (`pkg/protocol/fieldvalidation.go`) — Verification regex relaxed from `^(PASS|FAIL)(\s+\(.*\))?$` to `\b(PASS|FAIL)\b`. Accepts natural agent phrasing like `"go build, go test — all 18 tests PASS"` while still rejecting text without a PASS/FAIL keyword.
+
+### Added
+
+- **CLI reference docs** (`docs/cli-reference.md`) — All 21 `sawtools` commands documented with usage, flags, exit codes, and examples. Grouped into 5 categories: Validation, Context & Discovery, Wave Execution, Status & Reporting, Quality & Safety.
+- 4 new validator tests: `SoloWaveExempt`, `SoloWaveStillFailsMultiAgent`, `DescriptivePass` (3 subtests). 4 existing tests updated to use multi-agent wave fixtures.
+
+---
+
+## [0.21.0] - 2026-03-10
+
+### Added
+
+- **Constraint solver** (`pkg/solver/`) — Kahn's algorithm (BFS topological sort) assigns agents to waves respecting dependency order. Protocol-independent: stdlib only, no imports from `pkg/protocol`.
+  - `solver.go` — `Solve(nodes []DepNode) (*SolveResult, error)`: topological sort with wave-level assignment
+  - `graph.go` — `DetectCycles`, `TransitiveDeps`, `CriticalPath`, `ValidateRefs`: graph analysis utilities
+  - `types.go` — `DepNode`, `Assignment`, `SolveResult` type definitions
+- **`SolveManifest`** (`pkg/protocol/solver_integration.go`) — Full pipeline: extract nodes from manifest → solve → compare computed vs declared waves → apply corrections → return rewritten manifest + change descriptions.
+- **`sawtools solve`** (`cmd/saw/solve_cmd.go`) — CLI command: reads IMPL manifest, runs constraint solver, reports corrections. `--dry-run` shows changes without writing. `--json` for machine-readable output.
+- **`--solver` flag on `sawtools validate`** (`cmd/saw/validate_cmd.go`) — Runs constraint solver as additional validation pass alongside E5/E10/E16 checks.
+- 42 tests across solver (10), graph (14), integration (18).
+
+---
+
+## [0.20.0] - 2026-03-10
+
+### Added
+
+- **TimingMiddleware** (`pkg/tools/middleware.go`) — wraps tool execution with wall-clock timing. Emits `ToolCallEvent` (tool name, duration in ms, error status) after each call. Tool name is baked in at wrap time, not resolved from runtime metadata.
+- **PermissionMiddleware** (`pkg/tools/middleware.go`) — blocks execution of tools not in an allowed set. Returns a denial message to the model (not a Go error) so it can adjust its approach. Used to enforce read-only mode for Scout agents.
+- **`WithTiming(w Workshop, onCall)` / `WithPermissions(w Workshop, allowed)`** (`pkg/tools/middleware.go`) — convenience functions that return a new Workshop with middleware applied to every tool's executor. Original Workshop is not modified.
+- **`ReadOnlyTools(workDir string) Workshop`** (`pkg/tools/middleware.go`) — factory for Scout agents. All 7 tools registered (model sees them) but `write_file` and `edit_file` blocked at execution time. `bash` permitted for codebase analysis.
+- **`ReadOnlyAllowed` permission set** — `read_file`, `list_directory`, `glob`, `grep`, `bash` permitted; `write_file`, `edit_file` denied.
+- **`OnToolCall ToolCallCallback`** on `backend.Config` (`pkg/agent/backend/backend.go`) — optional callback for tool timing events. When set, backends wrap the Workshop with `WithTiming` and bridge `tools.ToolCallEvent` → `backend.ToolCallEvent`.
+- **`ReadOnly bool`** on `backend.Config` — when true, backends use `ReadOnlyTools()` instead of `StandardTools()`. Used for Scout agent backends.
+- **`buildWorkshop(workDir)` method** on both `api.Client` and `openai.Client` — applies timing and permission middleware based on Config fields, replacing direct `tools.StandardTools()` calls.
+
+## [0.19.0] - 2026-03-10
+
+### Added
+
+- **Unified tool system wiring** — `pkg/tools.Workshop` now powers both the Anthropic API backend (`pkg/agent/backend/api/client.go`) and the OpenAI-compatible backend (`pkg/agent/backend/openai/client.go`). Both backends call `tools.StandardTools(workDir)` to get a Workshop, iterate `Workshop.All()` for serialization, and call `tool.Executor.Execute(ctx, execCtx, input)` for execution. Eliminates 3 duplicated tool files.
+- **3 new tool executors** (`pkg/tools/executors.go`) — `EditExecutor` (search-and-replace in files), `GlobExecutor` (file pattern matching), `GrepExecutor` (content search via ripgrep with line-scan fallback). All implement `ToolExecutor` interface.
+- **7 standard tools** (`pkg/tools/standard.go`) — `read_file`, `write_file`, `list_directory`, `bash`, `edit_file`, `glob`, `grep`. Tool names use underscores (OpenAI function name compatible). Up from 4 tools in the old system.
+- **Absolute path support** — all file executors use `resolvePath()` which passes absolute paths through unchanged and joins relative paths with `workDir`. Replaces the old relative-only + traversal-check pattern.
+
+### Removed
+
+- **`pkg/agent/tools.go`** — superseded by `pkg/tools/standard.go` + `pkg/tools/executors.go`
+- **`pkg/agent/backend/api/tools.go`** — duplicated tool definitions for Anthropic backend, superseded by Workshop
+- **`pkg/agent/backend/openai/tools.go`** — duplicated tool definitions for OpenAI backend (6 tools with local `tool` struct), superseded by Workshop
+
+## [0.18.0] - 2026-03-10
+
+### Added
+
+- **E16A/E16C validator tests** (`pkg/protocol/validator_test.go`) — 5 new tests covering required block presence enforcement (E16A: missing blocks, all blocks present, no typed blocks) and out-of-band dep graph detection (E16C: warns on plain fenced block, no false positive on typed block). Validator logic for E16A and E16C was already implemented; tests verify correctness and prevent regressions.
+
+## [0.17.0] - 2026-03-10
+
+### Added
+
+- **`GenerateScoutSchema()`** (`pkg/protocol/schema.go`) — reflects `scoutOutputSchema` (a stripped `IMPLManifest` without runtime-only fields) into a JSON Schema using `invopop/jsonschema` with `DoNotReference: true` to flatten `$ref` pointers as required by the Anthropic API
+- **`scoutOutputSchema`** (unexported, `pkg/protocol/schema.go`) — mirrors `IMPLManifest` but omits `completion_reports`, `stub_reports`, `merge_state`, `worktrees_created_at`, `frozen_contracts_hash`, `frozen_scaffolds_hash`; Scout writes none of these
+- **`WithOutputConfig(schema map[string]any) *Client`** (`pkg/agent/backend/api/client.go`) — sets `anthropic.OutputConfigParam` on the API client; wired into both `Run` and `RunStreaming`
+- **`UseStructuredOutput bool`** and **`OutputSchemaOverride map[string]any`** on `RunScoutOpts` (`pkg/engine/engine.go`) — opt-in flags for structured output path
+- **`runScoutStructured()`** (unexported, `pkg/engine/runner.go`) — calls API backend with output config, unmarshals JSON response directly into `*protocol.IMPLManifest`, saves to disk as YAML; activated when `UseStructuredOutput: true`
+- **`SuitabilityAssessment string`** and **`CompletionDate string`** fields on `IMPLManifest` (`pkg/protocol/types.go`) — required by Scout structured output schema
+
+### Dependencies
+
+- Added `github.com/invopop/jsonschema v0.13.0` for Go struct → JSON Schema reflection
 
 ## [0.16.0] - 2026-03-10
 

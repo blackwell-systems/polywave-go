@@ -12,26 +12,28 @@ var ErrReportNotFound = errors.New("completion report not found")
 // IMPLManifest is the structured representation of a SAW IMPL document.
 // It contains all metadata, wave definitions, agent tasks, and completion reports.
 type IMPLManifest struct {
-	Title              string                         `yaml:"title" json:"title"`
-	FeatureSlug        string                         `yaml:"feature_slug" json:"feature_slug"`
-	Verdict            string                         `yaml:"verdict" json:"verdict"` // "SUITABLE" | "NOT_SUITABLE" | "SUITABLE_WITH_CAVEATS"
-	TestCommand        string                         `yaml:"test_command" json:"test_command"`
-	LintCommand        string                         `yaml:"lint_command" json:"lint_command"`
-	FileOwnership      []FileOwnership                `yaml:"file_ownership" json:"file_ownership"`
-	InterfaceContracts []InterfaceContract            `yaml:"interface_contracts" json:"interface_contracts"`
-	Waves              []Wave                         `yaml:"waves" json:"waves"`
-	QualityGates       *QualityGates                  `yaml:"quality_gates,omitempty" json:"quality_gates,omitempty"`
-	Scaffolds          []ScaffoldFile                 `yaml:"scaffolds,omitempty" json:"scaffolds,omitempty"`
-	CompletionReports  map[string]CompletionReport    `yaml:"completion_reports,omitempty" json:"completion_reports,omitempty"`
-	StubReports        map[string]*ScanStubsResult    `yaml:"stub_reports,omitempty" json:"stub_reports,omitempty"`
-	PreMortem          *PreMortem                     `yaml:"pre_mortem,omitempty" json:"pre_mortem,omitempty"`
-	KnownIssues        []KnownIssue                   `yaml:"known_issues,omitempty" json:"known_issues,omitempty"`
-	State              ProtocolState                  `yaml:"state,omitempty" json:"state,omitempty"`
-	MergeState         MergeState                     `yaml:"merge_state,omitempty" json:"merge_state,omitempty"`
+	Title                 string                         `yaml:"title" json:"title"`
+	FeatureSlug           string                         `yaml:"feature_slug" json:"feature_slug"`
+	Verdict               string                         `yaml:"verdict" json:"verdict"` // "SUITABLE" | "NOT_SUITABLE" | "SUITABLE_WITH_CAVEATS"
+	SuitabilityAssessment string                         `yaml:"suitability_assessment,omitempty" json:"suitability_assessment,omitempty"`
+	TestCommand           string                         `yaml:"test_command" json:"test_command"`
+	LintCommand           string                         `yaml:"lint_command" json:"lint_command"`
+	FileOwnership         []FileOwnership                `yaml:"file_ownership" json:"file_ownership"`
+	InterfaceContracts    []InterfaceContract            `yaml:"interface_contracts" json:"interface_contracts"`
+	Waves                 []Wave                         `yaml:"waves" json:"waves"`
+	QualityGates          *QualityGates                  `yaml:"quality_gates,omitempty" json:"quality_gates,omitempty"`
+	Scaffolds             []ScaffoldFile                 `yaml:"scaffolds,omitempty" json:"scaffolds,omitempty"`
+	CompletionReports     map[string]CompletionReport    `yaml:"completion_reports,omitempty" json:"completion_reports,omitempty"`
+	StubReports           map[string]*ScanStubsResult    `yaml:"stub_reports,omitempty" json:"stub_reports,omitempty"`
+	PreMortem             *PreMortem                     `yaml:"pre_mortem,omitempty" json:"pre_mortem,omitempty"`
+	KnownIssues           []KnownIssue                   `yaml:"known_issues,omitempty" json:"known_issues,omitempty"`
+	State                 ProtocolState                  `yaml:"state,omitempty" json:"state,omitempty"`
+	MergeState            MergeState                     `yaml:"merge_state,omitempty" json:"merge_state,omitempty"`
 	// Freeze enforcement fields (E2/I2-02)
 	WorktreesCreatedAt  *time.Time `yaml:"worktrees_created_at,omitempty" json:"worktrees_created_at,omitempty"`
 	FrozenContractsHash string     `yaml:"frozen_contracts_hash,omitempty" json:"frozen_contracts_hash,omitempty"`
 	FrozenScaffoldsHash string     `yaml:"frozen_scaffolds_hash,omitempty" json:"frozen_scaffolds_hash,omitempty"`
+	CompletionDate      string     `yaml:"completion_date,omitempty"        json:"completion_date,omitempty"`
 }
 
 // FileOwnership tracks which agent owns which file in which wave.
@@ -76,6 +78,7 @@ type CompletionReport struct {
 	TestsAdded          []string              `yaml:"tests_added,omitempty" json:"tests_added,omitempty"`
 	Verification        string                `yaml:"verification,omitempty" json:"verification,omitempty"`
 	FailureType         string                `yaml:"failure_type,omitempty" json:"failure_type,omitempty"`
+	Notes               string                `yaml:"notes,omitempty" json:"notes,omitempty"`
 	Repo                string                `yaml:"repo,omitempty" json:"repo,omitempty"`
 }
 

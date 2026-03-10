@@ -10,8 +10,10 @@ import (
 // where N is a digit sequence and ID is an agent ID matching agentIDRegex pattern
 var worktreeBranchRegex = regexp.MustCompile(`^wave(\d+)-agent-([A-Z][2-9]?)$`)
 
-// verificationRegex validates verification field: "PASS" or "FAIL" optionally followed by " (details)"
-var verificationRegex = regexp.MustCompile(`^(PASS|FAIL)(\s+\(.*\))?$`)
+// verificationRegex validates verification field: must contain "PASS" or "FAIL"
+// as a standalone word. Lenient: agents write varied formats like
+// "PASS — all tests green" or "go build, go test — all 18 tests PASS".
+var verificationRegex = regexp.MustCompile(`\b(PASS|FAIL)\b`)
 
 // ValidateWorktreeNames checks completion report worktree and branch fields
 // match the expected wave{N}-agent-{ID} naming convention (E5).
@@ -20,6 +22,8 @@ var verificationRegex = regexp.MustCompile(`^(PASS|FAIL)(\s+\(.*\))?$`)
 //   - If branch is non-empty, validates it matches wave{N}-agent-{ID} where N is the agent's wave number
 //   - If worktree is non-empty, validates it contains wave{N}-agent-{ID} as a path segment
 //   - Empty fields are valid (backward compatibility)
+//   - Solo-wave agents (single agent in a wave) are exempt: they commit directly
+//     to the working branch (main/develop) per protocol, not to a worktree branch
 //
 // Returns:
 //   - E5_INVALID_WORKTREE_NAME for branch violations
@@ -27,9 +31,11 @@ var verificationRegex = regexp.MustCompile(`^(PASS|FAIL)(\s+\(.*\))?$`)
 func ValidateWorktreeNames(m *IMPLManifest) []ValidationError {
 	var errs []ValidationError
 
-	// Build map of agent -> wave number
+	// Build map of agent -> wave number and wave -> agent count
 	agentWave := make(map[string]int)
+	waveSize := make(map[int]int)
 	for _, wave := range m.Waves {
+		waveSize[wave.Number] = len(wave.Agents)
 		for _, agent := range wave.Agents {
 			agentWave[agent.ID] = wave.Number
 		}
@@ -44,8 +50,12 @@ func ValidateWorktreeNames(m *IMPLManifest) []ValidationError {
 			continue
 		}
 
+		// Solo-wave agents (single agent in wave) commit directly to the working
+		// branch (main/develop) — skip worktree naming checks entirely.
+		isSolo := waveSize[waveNum] == 1
+
 		// Validate branch name if present
-		if strings.TrimSpace(report.Branch) != "" {
+		if strings.TrimSpace(report.Branch) != "" && !isSolo {
 			matches := worktreeBranchRegex.FindStringSubmatch(report.Branch)
 			if matches == nil {
 				errs = append(errs, ValidationError{
@@ -79,8 +89,8 @@ func ValidateWorktreeNames(m *IMPLManifest) []ValidationError {
 			}
 		}
 
-		// Validate worktree path if present
-		if strings.TrimSpace(report.Worktree) != "" {
+		// Validate worktree path if present (skip for solo-wave agents)
+		if strings.TrimSpace(report.Worktree) != "" && !isSolo {
 			expectedSegment := fmt.Sprintf("wave%d-agent-%s", waveNum, agentID)
 			// Check if worktree path contains the expected segment
 			// Split by both '/' and '\' to handle Unix and Windows paths

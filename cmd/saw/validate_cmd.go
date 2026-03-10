@@ -25,7 +25,8 @@ type validateError struct {
 }
 
 func newValidateCmd() *cobra.Command {
-	return &cobra.Command{
+	var useSolver bool
+	cmd := &cobra.Command{
 		Use:   "validate <manifest-path>",
 		Short: "Validate a YAML IMPL manifest against protocol invariants",
 		Args:  cobra.ExactArgs(1),
@@ -40,8 +41,14 @@ func newValidateCmd() *cobra.Command {
 
 			var errs []validateError
 
-			// Run struct-level I1-I6 invariant checks.
-			for _, ve := range protocol.Validate(m) {
+			// Run struct-level invariant checks (solver-based or standard).
+			var structErrs []protocol.ValidationError
+			if useSolver {
+				structErrs = protocol.ValidateWithSolver(m)
+			} else {
+				structErrs = protocol.Validate(m)
+			}
+			for _, ve := range structErrs {
 				errs = append(errs, validateError{
 					Code:    ve.Code,
 					Message: ve.Message,
@@ -83,4 +90,6 @@ func newValidateCmd() *cobra.Command {
 			return nil
 		},
 	}
+	cmd.Flags().BoolVar(&useSolver, "solver", false, "use CSP solver for wave assignment validation")
+	return cmd
 }

@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/agent/backend"
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/tools"
 )
 
 const (
@@ -23,11 +24,13 @@ const (
 
 // Client is an OpenAI-compatible backend. It implements backend.Backend.
 type Client struct {
-	apiKey    string
-	model     string
-	baseURL   string
-	maxTokens int
-	maxTurns  int
+	apiKey     string
+	model      string
+	baseURL    string
+	maxTokens  int
+	maxTurns   int
+	onToolCall backend.ToolCallCallback
+	readOnly   bool
 }
 
 // New creates a new Client configured from cfg.
@@ -57,16 +60,38 @@ func New(cfg backend.Config) *Client {
 		baseURL = defaultBaseURL
 	}
 	return &Client{
-		apiKey:    apiKey,
-		model:     model,
-		baseURL:   baseURL,
-		maxTokens: maxTokens,
-		maxTurns:  maxTurns,
+		apiKey:     apiKey,
+		model:      model,
+		baseURL:    baseURL,
+		maxTokens:  maxTokens,
+		maxTurns:   maxTurns,
+		onToolCall: cfg.OnToolCall,
+		readOnly:   cfg.ReadOnly,
 	}
 }
 
-// WithAPIKey sets the API key. Returns c for chaining. Used in tests and
-// to support cfg.APIKey once Wave 2 adds it to backend.Config.
+// buildWorkshop creates a Workshop with middleware applied based on client config.
+func (c *Client) buildWorkshop(workDir string) tools.Workshop {
+	var w tools.Workshop
+	if c.readOnly {
+		w = tools.ReadOnlyTools(workDir)
+	} else {
+		w = tools.StandardTools(workDir)
+	}
+	if c.onToolCall != nil {
+		w = tools.WithTiming(w, func(ev tools.ToolCallEvent) {
+			c.onToolCall(backend.ToolCallEvent{
+				Name:       ev.ToolName,
+				DurationMs: ev.DurationMs,
+				IsError:    ev.IsError,
+				IsResult:   true,
+			})
+		})
+	}
+	return w
+}
+
+// WithAPIKey sets the API key. Returns c for chaining.
 func (c *Client) WithAPIKey(key string) *Client {
 	c.apiKey = key
 	return c
@@ -78,18 +103,59 @@ func (c *Client) WithBaseURL(url string) *Client {
 	return c
 }
 
+// execTool looks up and executes a tool from the Workshop, returning a string result.
+func execTool(ctx context.Context, workshop tools.Workshop, name string, inputMap map[string]interface{}, workDir string) string {
+	tool, found := workshop.Get(name)
+	if !found {
+		return fmt.Sprintf("Error: unknown tool %q", name)
+	}
+	execCtx := tools.ExecutionContext{WorkDir: workDir}
+	result, err := tool.Executor.Execute(ctx, execCtx, inputMap)
+	if err != nil {
+		return fmt.Sprintf("Error: %v", err)
+	}
+	return result
+}
+
+// buildToolDefs converts Workshop tools to OpenAI function calling format.
+func buildToolDefs(workshop tools.Workshop) []map[string]interface{} {
+	allTools := workshop.All()
+	defs := make([]map[string]interface{}, 0, len(allTools))
+	for _, t := range allTools {
+		defs = append(defs, map[string]interface{}{
+			"type": "function",
+			"function": map[string]interface{}{
+				"name":        t.Name,
+				"description": t.Description,
+				"parameters":  t.InputSchema,
+			},
+		})
+	}
+	return defs
+}
+
+// toolNameSet returns a set of registered tool names for content-mode fallback detection.
+func toolNameSet(workshop tools.Workshop) map[string]bool {
+	allTools := workshop.All()
+	set := make(map[string]bool, len(allTools))
+	for _, t := range allTools {
+		set[t.Name] = true
+	}
+	return set
+}
+
 // Run executes the agent described by systemPrompt and userMessage.
 // It runs a tool-use loop until finish_reason == "stop" or maxTurns is exceeded.
 // Run implements backend.Backend.
 func (c *Client) Run(ctx context.Context, systemPrompt, userMessage, workDir string) (string, error) {
-	tools := standardTools(workDir)
-	toolMap := buildToolMap(tools)
+	workshop := c.buildWorkshop(workDir)
+	toolDefs := buildToolDefs(workshop)
+	nameSet := toolNameSet(workshop)
 
-	// Build initial messages.
 	messages := buildInitialMessages(systemPrompt, userMessage)
 
 	for turn := 0; turn < c.maxTurns; turn++ {
-		resp, err := c.chatCompletion(ctx, messages, tools, false)
+		resp, err := c.chatCompletion(ctx, messages, toolDefs, false)
 		if err != nil {
 			return "", fmt.Errorf("openai backend: API error (turn %d): %w", turn, err)
 		}
@@ -103,25 +169,22 @@ func (c *Client) Run(ctx context.Context, systemPrompt, userMessage, workDir str
 		case "stop":
 			// Content-mode tool call fallback: some local models (e.g. Qwen via Ollama)
 			// embed the tool call as JSON in content instead of using the tool_calls array.
-			if ctc := parseContentToolCall(choice.Message.Content, toolMap); ctc != nil {
+			if ctc := parseContentToolCall(choice.Message.Content, nameSet); ctc != nil {
 				messages = append(messages, chatMessage{Role: "assistant", Content: choice.Message.Content})
-				result := executeTool(toolMap, ctc.Name, ctc.Arguments, workDir)
+				result := execTool(ctx, workshop, ctc.Name, ctc.Arguments, workDir)
 				messages = append(messages, chatMessage{Role: "user", Content: "Function result:\n" + result})
 				continue
 			}
 			return choice.Message.Content, nil
 
 		case "tool_calls":
-			// Append the assistant message.
 			messages = append(messages, assistantMessage(choice.Message))
-
-			// Execute all tool calls and append results.
 			for _, tc := range choice.Message.ToolCalls {
 				var inputMap map[string]interface{}
 				if err := json.Unmarshal([]byte(tc.Function.Arguments), &inputMap); err != nil {
 					inputMap = map[string]interface{}{}
 				}
-				result := executeTool(toolMap, tc.Function.Name, inputMap, workDir)
+				result := execTool(ctx, workshop, tc.Function.Name, inputMap, workDir)
 				messages = append(messages, toolResultMessage(tc.ID, result))
 			}
 
@@ -142,17 +205,14 @@ func (c *Client) RunStreaming(ctx context.Context, systemPrompt, userMessage, wo
 		return c.Run(ctx, systemPrompt, userMessage, workDir)
 	}
 
-	tools := standardTools(workDir)
-	toolMap := buildToolMap(tools)
+	workshop := c.buildWorkshop(workDir)
+	toolDefs := buildToolDefs(workshop)
+	nameSet := toolNameSet(workshop)
 
 	messages := buildInitialMessages(systemPrompt, userMessage)
 
 	for turn := 0; turn < c.maxTurns; turn++ {
-		// Use non-streaming to get the full response for tool-call turns.
-		// We always do a non-streaming call first, then if it was "stop" we
-		// re-issue as streaming to deliver chunks. This is the simplest correct
-		// approach that avoids buffering streaming tool-call inputs.
-		resp, err := c.chatCompletion(ctx, messages, tools, false)
+		resp, err := c.chatCompletion(ctx, messages, toolDefs, false)
 		if err != nil {
 			return "", fmt.Errorf("openai backend: API error (turn %d): %w", turn, err)
 		}
@@ -164,15 +224,13 @@ func (c *Client) RunStreaming(ctx context.Context, systemPrompt, userMessage, wo
 
 		switch choice.FinishReason {
 		case "stop":
-			// Content-mode tool call fallback (same as Run).
-			if ctc := parseContentToolCall(choice.Message.Content, toolMap); ctc != nil {
+			if ctc := parseContentToolCall(choice.Message.Content, nameSet); ctc != nil {
 				messages = append(messages, chatMessage{Role: "assistant", Content: choice.Message.Content})
-				result := executeTool(toolMap, ctc.Name, ctc.Arguments, workDir)
+				result := execTool(ctx, workshop, ctc.Name, ctc.Arguments, workDir)
 				messages = append(messages, chatMessage{Role: "user", Content: "Function result:\n" + result})
 				continue
 			}
-			// Re-issue as streaming so onChunk receives fragments.
-			return c.streamFinalTurn(ctx, messages, tools, onChunk)
+			return c.streamFinalTurn(ctx, messages, toolDefs, onChunk)
 
 		case "tool_calls":
 			messages = append(messages, assistantMessage(choice.Message))
@@ -181,7 +239,7 @@ func (c *Client) RunStreaming(ctx context.Context, systemPrompt, userMessage, wo
 				if err := json.Unmarshal([]byte(tc.Function.Arguments), &inputMap); err != nil {
 					inputMap = map[string]interface{}{}
 				}
-				result := executeTool(toolMap, tc.Function.Name, inputMap, workDir)
+				result := execTool(ctx, workshop, tc.Function.Name, inputMap, workDir)
 				messages = append(messages, toolResultMessage(tc.ID, result))
 			}
 
@@ -201,9 +259,8 @@ func (c *Client) RunStreamingWithTools(ctx context.Context, systemPrompt, userMe
 }
 
 // streamFinalTurn issues a streaming chat completion and calls onChunk for each delta.
-// Returns the full concatenated text.
-func (c *Client) streamFinalTurn(ctx context.Context, messages []chatMessage, tools []tool, onChunk backend.ChunkCallback) (string, error) {
-	body := c.buildRequestBody(messages, tools, true)
+func (c *Client) streamFinalTurn(ctx context.Context, messages []chatMessage, toolDefs []map[string]interface{}, onChunk backend.ChunkCallback) (string, error) {
+	body := c.buildRequestBody(messages, toolDefs, true)
 	reqData, err := json.Marshal(body)
 	if err != nil {
 		return "", fmt.Errorf("openai backend: marshal request: %w", err)
@@ -259,9 +316,8 @@ func (c *Client) streamFinalTurn(ctx context.Context, messages []chatMessage, to
 
 // --- HTTP request helpers ---
 
-// chatCompletion sends a POST /chat/completions request and decodes the response.
-func (c *Client) chatCompletion(ctx context.Context, messages []chatMessage, tools []tool, stream bool) (*chatCompletionResponse, error) {
-	body := c.buildRequestBody(messages, tools, stream)
+func (c *Client) chatCompletion(ctx context.Context, messages []chatMessage, toolDefs []map[string]interface{}, stream bool) (*chatCompletionResponse, error) {
+	body := c.buildRequestBody(messages, toolDefs, stream)
 	reqData, err := json.Marshal(body)
 	if err != nil {
 		return nil, fmt.Errorf("openai backend: marshal request: %w", err)
@@ -292,24 +348,12 @@ func (c *Client) chatCompletion(ctx context.Context, messages []chatMessage, too
 	return &result, nil
 }
 
-func (c *Client) buildRequestBody(messages []chatMessage, tools []tool, stream bool) map[string]interface{} {
-	toolDefs := make([]map[string]interface{}, 0, len(tools))
-	for _, t := range tools {
-		toolDefs = append(toolDefs, map[string]interface{}{
-			"type": "function",
-			"function": map[string]interface{}{
-				"name":        t.Name,
-				"description": t.Description,
-				"parameters":  t.Parameters,
-			},
-		})
-	}
-
+func (c *Client) buildRequestBody(messages []chatMessage, toolDefs []map[string]interface{}, stream bool) map[string]interface{} {
 	body := map[string]interface{}{
-		"model":      c.model,
-		"max_tokens": c.maxTokens,
-		"messages":   messages,
-		"tools":      toolDefs,
+		"model":       c.model,
+		"max_tokens":  c.maxTokens,
+		"messages":    messages,
+		"tools":       toolDefs,
 		"tool_choice": "auto",
 	}
 	if stream {
@@ -320,20 +364,13 @@ func (c *Client) buildRequestBody(messages []chatMessage, tools []tool, stream b
 
 // --- Content-mode tool call fallback ---
 
-// contentToolCallJSON is the JSON shape used by local models (e.g. Qwen via Ollama)
-// that embed tool calls in response content instead of the tool_calls array.
 type contentToolCallJSON struct {
 	Name      string                 `json:"name"`
 	Arguments map[string]interface{} `json:"arguments"`
 }
 
-// parseContentToolCall detects the content-mode tool call pattern:
-//
-//	{"name": "<tool>", "arguments": {...}}
-//
-// Returns non-nil only when content is valid JSON with a non-empty "name" that
-// exists in toolMap, preventing false positives on legitimate JSON final answers.
-func parseContentToolCall(content string, toolMap map[string]tool) *contentToolCallJSON {
+// parseContentToolCall detects content-mode tool calls (used by local models like Qwen via Ollama).
+func parseContentToolCall(content string, nameSet map[string]bool) *contentToolCallJSON {
 	content = strings.TrimSpace(content)
 	if !strings.HasPrefix(content, "{") {
 		return nil
@@ -345,8 +382,7 @@ func parseContentToolCall(content string, toolMap map[string]tool) *contentToolC
 	if tc.Name == "" {
 		return nil
 	}
-	// Only treat as a tool call if the named tool is actually registered.
-	if _, ok := toolMap[tc.Name]; !ok {
+	if !nameSet[tc.Name] {
 		return nil
 	}
 	return &tc
@@ -383,7 +419,6 @@ type chatCompletionResponse struct {
 	} `json:"choices"`
 }
 
-// streamChunk is one SSE event from a streaming completion.
 type streamChunk struct {
 	Choices []struct {
 		Delta struct {
@@ -422,7 +457,6 @@ func toolResultMessage(toolCallID, content string) chatMessage {
 	}
 }
 
-// newSSEScanner returns a line scanner over r suitable for SSE streams.
 func newSSEScanner(r io.Reader) *bufioScanner {
 	return &bufioScanner{s: bufio.NewScanner(r)}
 }

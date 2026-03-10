@@ -28,6 +28,7 @@ func main() {
 		newValidateScaffoldsCmd(),
 		newFreezeCheckCmd(),
 		newUpdateAgentPromptCmd(),
+		newSolveCmd(),
 	)
 	if err := rootCmd.Execute(); err != nil {
 		fmt.Fprintln(os.Stderr, err)

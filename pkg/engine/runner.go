@@ -2,6 +2,7 @@ package engine
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -12,6 +13,7 @@ import (
 
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/agent"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/agent/backend"
+	apiclient "github.com/blackwell-systems/scout-and-wave-go/pkg/agent/backend/api"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/agent/backend/cli"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/orchestrator"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
@@ -62,12 +64,64 @@ func RunScout(ctx context.Context, opts RunScoutOpts, onChunk func(string)) erro
 			string(scoutMdBytes), opts.Feature, opts.IMPLOutPath)
 	}
 
+	var execErr error
+
+	if opts.UseStructuredOutput {
+		_, execErr = runScoutStructured(ctx, opts, prompt, onChunk)
+		return execErr
+	}
+
 	b := cli.New("", backend.Config{Model: opts.ScoutModel})
 	runner := agent.NewRunner(b, nil)
 	spec := &types.AgentSpec{Letter: "scout", Prompt: prompt}
 
-	_, execErr := runner.ExecuteStreaming(ctx, spec, opts.RepoPath, onChunk)
+	_, execErr = runner.ExecuteStreaming(ctx, spec, opts.RepoPath, onChunk)
 	return execErr
+}
+
+// runScoutStructured runs the Scout agent via the API backend with structured
+// output enabled. It applies opts.OutputSchemaOverride if non-nil, otherwise
+// calls protocol.GenerateScoutSchema(). The API response JSON is unmarshalled
+// directly into a protocol.IMPLManifest and saved to opts.IMPLOutPath.
+func runScoutStructured(ctx context.Context, opts RunScoutOpts, prompt string, onChunk func(string)) (*protocol.IMPLManifest, error) {
+	// Resolve schema: use override if provided, otherwise generate from protocol.
+	var schema map[string]any
+	if opts.OutputSchemaOverride != nil {
+		schema = opts.OutputSchemaOverride
+	} else {
+		var err error
+		schema, err = protocol.GenerateScoutSchema()
+		if err != nil {
+			return nil, fmt.Errorf("runScoutStructured: generate schema: %w", err)
+		}
+	}
+
+	// Build API client with structured output config.
+	apiClient := apiclient.New("", backend.Config{Model: opts.ScoutModel})
+	apiClient.WithOutputConfig(schema)
+
+	// Run the agent and collect output.
+	var chunkCallback func(string)
+	if onChunk != nil {
+		chunkCallback = onChunk
+	}
+	jsonStr, err := apiClient.RunStreaming(ctx, "", prompt, opts.RepoPath, chunkCallback)
+	if err != nil {
+		return nil, fmt.Errorf("runScoutStructured: API run: %w", err)
+	}
+
+	// Unmarshal the structured JSON response into IMPLManifest.
+	var manifest protocol.IMPLManifest
+	if err := json.Unmarshal([]byte(jsonStr), &manifest); err != nil {
+		return nil, fmt.Errorf("runScoutStructured: unmarshal manifest: %w", err)
+	}
+
+	// Persist to disk.
+	if err := protocol.Save(&manifest, opts.IMPLOutPath); err != nil {
+		return nil, fmt.Errorf("runScoutStructured: save manifest: %w", err)
+	}
+
+	return &manifest, nil
 }
 
 // StartWave executes a full wave run (all waves in the IMPL doc).
@@ -399,6 +453,26 @@ func RunSingleWave(ctx context.Context, opts RunWaveOpts, waveNum int, onEvent f
 		onEvent(Event{Event: ev.Event, Data: ev.Data})
 	})
 	return orch.RunWave(waveNum)
+}
+
+// RunSingleAgent runs exactly one agent from the specified wave. This is used
+// for single-agent reruns (e.g. retrying a failed agent). If promptPrefix is
+// non-empty it is prepended to the agent's task prompt before execution.
+func RunSingleAgent(ctx context.Context, opts RunWaveOpts, waveNum int, agentLetter string, promptPrefix string, onEvent func(Event)) error {
+	if opts.IMPLPath == "" {
+		return fmt.Errorf("engine.RunSingleAgent: IMPLPath is required")
+	}
+	orch, err := orchestrator.New(opts.RepoPath, opts.IMPLPath)
+	if err != nil {
+		return fmt.Errorf("engine.RunSingleAgent: %w", err)
+	}
+	if opts.WaveModel != "" {
+		orch.SetDefaultModel(opts.WaveModel)
+	}
+	orch.SetEventPublisher(func(ev orchestrator.OrchestratorEvent) {
+		onEvent(Event{Event: ev.Event, Data: ev.Data})
+	})
+	return orch.RunAgent(waveNum, agentLetter, promptPrefix)
 }
 
 // MergeWave merges the agent branches for the given wave into the repo's main branch.

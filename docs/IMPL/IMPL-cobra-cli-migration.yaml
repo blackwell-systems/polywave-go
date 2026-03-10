@@ -4,7 +4,7 @@ feature_slug: "cobra-cli-migration"
 verdict: "SUITABLE"
 test_command: "go test ./..."
 lint_command: "go vet ./..."
-state: "SCOUT_PENDING"
+state: "COMPLETE"
 
 # Suitability Assessment
 # ---------------------------------------------------------------------------
@@ -245,36 +245,7 @@ file_ownership:
     wave: 1
     action: "modify"
 
-  - file: "cmd/saw/main.go"
-    agent: "orchestrator"
-    wave: 2
-    action: "modify"
-    depends_on:
-      - "A"
-      - "B"
-      - "C"
-      - "D"
-      - "E"
-      - "F"
-      - "G"
-      - "H"
-      - "I"
-      - "J"
-      - "K"
-
-  - file: "go.mod"
-    agent: "orchestrator"
-    wave: 2
-    action: "modify"
-    depends_on:
-      - "A"
-
-  - file: "go.sum"
-    agent: "orchestrator"
-    wave: 2
-    action: "modify"
-    depends_on:
-      - "A"
+  # cmd/saw/main.go, go.mod, go.sum — orchestrator-owned, modified post-merge
 
 # Waves
 # ---------------------------------------------------------------------------
@@ -958,103 +929,24 @@ waves:
         files:
           - "cmd/saw/run_wave_cmd.go"
 
-  - number: 2
-    agents:
-      - id: "orchestrator"
-        task: |
-          ## What to Implement
-
-          This wave is executed by the orchestrator (human or automated), not a
-          parallel agent. After Wave 1 merges complete:
-
-          ### Step 1 — Add cobra dependency
-
-          ```bash
-          cd /path/to/scout-and-wave-go
-          go get github.com/spf13/cobra@latest
-          go mod tidy
-          ```
-
-          This updates go.mod and go.sum. Commit these changes.
-
-          ### Step 2 — Rewrite main.go
-
-          Replace `cmd/saw/main.go` entirely. The new main.go must:
-          - Remove the hand-rolled switch statement and `printUsage` function
-          - Create the root command via `newRootCmd()`
-          - Add all 10 subcommands via `rootCmd.AddCommand(...)`
-          - Call `rootCmd.Execute()` and exit 1 on error
-
-          New main.go content:
-
-          ```go
-          package main
-
-          import (
-              "fmt"
-              "os"
-          )
-
-          func main() {
-              rootCmd := newRootCmd()
-              rootCmd.AddCommand(
-                  newCreateWorktreesCmd(),
-                  newVerifyCommitsCmd(),
-                  newScanStubsCmd(),
-                  newMergeAgentsCmd(),
-                  newCleanupCmd(),
-                  newVerifyBuildCmd(),
-                  newUpdateStatusCmd(),
-                  newUpdateContextCmd(),
-                  newListIMPLsCmd(),
-                  newRunWaveCmd(),
-              )
-              if err := rootCmd.Execute(); err != nil {
-                  fmt.Fprintln(os.Stderr, err)
-                  os.Exit(1)
-              }
-          }
-          ```
-
-          ### Step 3 — Verify full build and tests
-
-          ```bash
-          go build ./...
-          go vet ./...
-          go test ./...
-          ```
-
-          ### Step 4 — Smoke test shell completions
-
-          ```bash
-          ./saw completion bash   # or zsh, fish, powershell
-          ```
-
-          Cobra generates completion scripts automatically. No additional code needed.
-
-          ## Constraints
-
-          - main.go must remain `package main`
-          - The `printUsage` function is removed entirely (cobra generates help)
-          - Shell completions are provided by cobra for free via `completion` subcommand
-            that cobra registers automatically on the root command
-          - go.mod and go.sum are committed together with main.go changes
-        files:
-          - "cmd/saw/main.go"
-          - "go.mod"
-          - "go.sum"
-        dependencies:
-          - "A"
-          - "B"
-          - "C"
-          - "D"
-          - "E"
-          - "F"
-          - "G"
-          - "H"
-          - "I"
-          - "J"
-          - "K"
+# Post-Merge Steps (orchestrator, not a wave)
+# ---------------------------------------------------------------------------
+# After Wave 1 merge completes:
+#
+# 1. Add cobra dependency:
+#    go get github.com/spf13/cobra@latest && go mod tidy
+#
+# 2. Rewrite cmd/saw/main.go:
+#    - Remove hand-rolled switch statement and printUsage function
+#    - Create root command via newRootCmd()
+#    - Add all 10 subcommands via rootCmd.AddCommand(...)
+#    - Call rootCmd.Execute() and exit 1 on error
+#
+# 3. Verify: go build ./... && go vet ./... && go test ./...
+#
+# 4. Smoke test: ./saw completion bash
+#
+# Files touched: cmd/saw/main.go, go.mod, go.sum
 
 # Pre-Mortem
 # ---------------------------------------------------------------------------

@@ -1,0 +1,732 @@
+completion_date: "2026-03-10"
+completion_reports:
+    A:
+        branch: develop
+        commit: dabebe0d8384e9b1864817e21c6a34c0aa3e8871
+        files_changed:
+            - pkg/protocol/types.go
+        status: complete
+        verification: go build ./..., go vet ./..., go test ./pkg/protocol/... all pass
+    B:
+        branch: wave2-agent-B
+        commit: 5984b450739916b60bcffa69362589253ca227d4
+        files_created:
+            - pkg/protocol/schema.go
+            - pkg/protocol/schema_test.go
+        status: complete
+        verification: go build, go vet, TestGenerateScoutSchema all pass
+    C:
+        branch: wave2-agent-C
+        commit: d7eb0045738801a17388d529a397ded7116b5e60
+        files_changed:
+            - pkg/agent/backend/api/client.go
+            - pkg/engine/engine.go
+            - pkg/engine/runner.go
+        status: complete
+        verification: go vet ./pkg/agent/backend/api/... passes clean; engine package fails only on expected protocol.GenerateScoutSchema undefined (Agent B dependency)
+    D:
+        branch: wave3-agent-D
+        commit: da34c2c
+        files_changed:
+            - pkg/api/scout.go
+            - pkg/api/impl.go
+        status: complete
+        verification: go build ./... passes; go vet pre-existing failures in server_test.go and wave_runner_test.go (not owned by Agent D)
+feature_slug: structured-output-parsing
+file_ownership:
+    - action: modify
+      agent: A
+      file: pkg/protocol/types.go
+      wave: 1
+    - action: new
+      agent: B
+      depends_on:
+        - A
+      file: pkg/protocol/schema.go
+      wave: 2
+    - action: new
+      agent: B
+      depends_on:
+        - A
+      file: pkg/protocol/schema_test.go
+      wave: 2
+    - action: modify
+      agent: C
+      depends_on:
+        - A
+      file: pkg/agent/backend/api/client.go
+      wave: 2
+    - action: modify
+      agent: C
+      depends_on:
+        - A
+      file: pkg/engine/engine.go
+      wave: 2
+    - action: modify
+      agent: C
+      depends_on:
+        - A
+      file: pkg/engine/runner.go
+      wave: 2
+    - action: modify
+      agent: D
+      depends_on:
+        - A
+        - B
+        - C
+      file: pkg/api/scout.go
+      wave: 3
+    - action: modify
+      agent: D
+      depends_on:
+        - A
+        - B
+        - C
+      file: pkg/api/impl.go
+      wave: 3
+interface_contracts:
+    - definition: |
+        // In struct IMPLManifest (pkg/protocol/types.go), add after Verdict:
+        SuitabilityAssessment string `yaml:"suitability_assessment,omitempty" json:"suitability_assessment,omitempty"`
+        CompletionDate        string `yaml:"completion_date,omitempty"        json:"completion_date,omitempty"`
+      description: |
+        Two new string fields added to protocol.IMPLManifest in pkg/protocol/types.go.
+        These are present in real Scout-written YAML manifests but currently silently
+        dropped on unmarshal. Both are Scout-output-only fields (not runtime state).
+      location: pkg/protocol/types.go
+      name: IMPLManifest (updated fields)
+    - definition: |
+        // pkg/protocol/schema.go
+        func GenerateScoutSchema() (map[string]any, error)
+      description: |
+        Returns a JSON Schema map[string]any describing the Scout-output subset of
+        IMPLManifest. Excludes runtime-only fields (completion_reports, stub_reports,
+        merge_state, worktrees_created_at, frozen_contracts_hash, frozen_scaffolds_hash)
+        so Scout output is validated against only the fields it actually writes.
+        Uses invopop/jsonschema Reflector with AllowAdditionalProperties: false.
+      location: pkg/protocol/schema.go
+      name: GenerateScoutSchema
+    - definition: |
+        // Unexported helper type used inside GenerateScoutSchema only.
+        // Fields must have json tags matching the yaml tags on IMPLManifest.
+        type scoutOutputSchema struct {
+          Title                 string               `json:"title"`
+          FeatureSlug           string               `json:"feature_slug"`
+          Verdict               string               `json:"verdict"`
+          SuitabilityAssessment string               `json:"suitability_assessment,omitempty"`
+          TestCommand           string               `json:"test_command"`
+          LintCommand           string               `json:"lint_command"`
+          State                 string               `json:"state,omitempty"`
+          FileOwnership         []FileOwnership      `json:"file_ownership"`
+          InterfaceContracts    []InterfaceContract  `json:"interface_contracts"`
+          Waves                 []Wave               `json:"waves"`
+          QualityGates          *QualityGates        `json:"quality_gates,omitempty"`
+          Scaffolds             []ScaffoldFile       `json:"scaffolds,omitempty"`
+          PreMortem             *PreMortem           `json:"pre_mortem,omitempty"`
+          KnownIssues           []KnownIssue         `json:"known_issues,omitempty"`
+          CompletionDate        string               `json:"completion_date,omitempty"`
+        }
+      description: |
+        A stripped-down struct used only for schema generation — mirrors IMPLManifest
+        but omits runtime fields. Defined in pkg/protocol/schema.go alongside
+        GenerateScoutSchema. Not exported for general use; it is unexported.
+      location: pkg/protocol/schema.go
+      name: ScoutOutputSchema
+    - definition: |
+        // In struct RunScoutOpts (pkg/engine/engine.go), add:
+        UseStructuredOutput  bool           // if true, use API backend with output_config.format
+        OutputSchemaOverride map[string]any // optional: overrides GenerateScoutSchema() result
+      description: |
+        Two new optional fields added to engine.RunScoutOpts enabling the structured
+        output path. UseStructuredOutput activates the API backend path with
+        output_config.format; OutputSchemaOverride replaces the default
+        GenerateScoutSchema() result if provided (useful in tests).
+      location: pkg/engine/engine.go
+      name: RunScoutOpts (updated fields)
+    - definition: |
+        // pkg/engine/runner.go (unexported, called by RunScout)
+        func runScoutStructured(ctx context.Context, opts RunScoutOpts, prompt string, onChunk func(string)) (*protocol.IMPLManifest, error)
+      description: |
+        Executes Scout via the Anthropic API backend with output_config.format JSON schema.
+        Returns the parsed IMPLManifest directly — no disk file parsing needed.
+        Writes the YAML manifest and markdown IMPL doc to disk as side effects (I4).
+        Called by RunScout when opts.UseStructuredOutput is true.
+      location: pkg/engine/runner.go
+      name: RunScoutStructured
+    - definition: |
+        // pkg/agent/backend/api/client.go
+        func (c *Client) WithOutputConfig(schema map[string]any) *Client
+      description: |
+        Functional option on the API backend Client that sets output_config.format
+        for all subsequent Run/RunStreaming calls. Returns *Client for chaining.
+        Does not modify the original client — call before handing to runner.
+      location: pkg/agent/backend/api/client.go
+      name: Client.WithOutputConfig
+    - definition: |
+        // pkg/api/scout.go — IMPLOutPath switches extension based on UseStructuredOutput
+        implOut := filepath.Join(repoRoot, "docs", "IMPL", "IMPL-"+slug+".yaml")  // when structured
+        implOut := filepath.Join(repoRoot, "docs", "IMPL", "IMPL-"+slug+".md")    // fallback
+      description: |
+        When UseStructuredOutput is true in RunScoutOpts, the web API sets
+        IMPLOutPath to a .yaml path (not .md), and after RunScout returns, the
+        scout_complete event payload includes the YAML path and a parsed manifest
+        struct for direct serving — no ParseIMPLDoc call needed.
+      location: pkg/api/scout.go
+      name: runScoutAgent (web, updated)
+known_issues:
+    - description: |
+        The subagent_type: scout custom type in Claude Code's agent registry still has an old .md description baked in (noted in MEMORY.md). This IMPL does not fix that — it only affects the API backend path (web UI Scout invocations). CLI-launched Scouts continue to write markdown.
+      status: Pre-existing, out of scope for this feature
+      workaround: |
+        CLI path is unchanged. Only web API Scout invocations (engine.RunScout with UseStructuredOutput: true) use structured output. No workaround needed.
+lint_command: go vet ./...
+pre_mortem:
+    overall_risk: medium
+    rows:
+        - impact: high
+          likelihood: low
+          mitigation: |
+            Agent B tests the schema size by marshaling to JSON and logging byte count. If over 50KB, consider splitting the task field to a simple string type (it already is a string) and removing description annotations. The Anthropic API accepts schemas without description fields.
+          scenario: |
+            invopop/jsonschema DoNotReference: true inlines all nested type definitions but the resulting schema may be too large for Anthropic's output_config validation (size limit unknown). IMPLManifest has deeply nested types (Wave → Agent → task string; PreMortem → rows).
+        - impact: medium
+          likelihood: low
+          mitigation: |
+            Agent B's test explicitly checks that all property types in the generated schema are primitive JSON types (string, number, boolean, array, object). If time.Time leaks in via a nested type, add a custom jsonschema tag to override the type to "string".
+          scenario: |
+            The Anthropic API rejects the schema because it contains time.Time fields (even though worktrees_created_at is excluded from scoutOutputSchema). Nested types like QualityGate or ScaffoldFile may pull in unexpected types.
+        - impact: medium
+          likelihood: medium
+          mitigation: |
+            When UseStructuredOutput is true, the output_config.format schema enforces property names via JSON Schema. The model is constrained to use exactly the property names in the schema. No prompt-level instruction needed.
+          scenario: |
+            runScoutStructured unmarshals a JSON response where the model wrote valid JSON but with field names that don't match the struct tags (e.g., camelCase instead of snake_case). The IMPLManifest uses json:"feature_slug" etc. but Scout prompt instructions currently say nothing about JSON field names.
+        - impact: medium
+          likelihood: low
+          mitigation: |
+            The orchestrator runs `go get github.com/invopop/jsonschema@v0.13.0 && go mod tidy` in scout-and-wave-go after Agent B completes. The package is already in the local module cache (v0.13.0 confirmed). The web repo inherits it transitively via replace.
+          scenario: |
+            go.mod in scout-and-wave-web uses a replace directive pointing at the local scout-and-wave-go. After Wave 2 agents add invopop/jsonschema to scout-and-wave-go's go.mod, the web repo will pick it up transitively. But if the module cache doesn't have it, go build fails.
+        - impact: low
+          likelihood: high
+          mitigation: |
+            Agent D updates handleListImpls in the same wave to handle both extensions. No deployment gap — the changes ship together.
+          scenario: |
+            The existing impl.go handleListImpls scans for .md only. After this change, new Scout runs produce .yaml files. Users with only .yaml files would see an empty list until Agent D's handleListImpls update is deployed.
+quality_gates:
+    gates:
+        - command: go build ./...
+          required: true
+          type: build
+        - command: go vet ./...
+          required: true
+          type: lint
+        - command: go test ./...
+          required: true
+          type: test
+    level: standard
+state: COMPLETE
+test_command: go test ./...
+title: Structured Output Parsing — Scout via output_config.format
+verdict: SUITABLE
+waves:
+    - agents:
+        - files:
+            - pkg/protocol/types.go
+          id: A
+          task: |
+            ## What to Implement
+
+            Add two missing fields to `protocol.IMPLManifest` in
+            `/Users/dayna.blackwell/code/scout-and-wave-go/pkg/protocol/types.go`.
+
+            These fields exist in every real Scout-written YAML manifest but are silently
+            dropped on unmarshal because the struct does not declare them.
+
+            **File to modify:** `pkg/protocol/types.go` (repo: scout-and-wave-go)
+
+            ## Interfaces to Implement
+
+            In the `IMPLManifest` struct, add exactly these two fields:
+
+            ```go
+            SuitabilityAssessment string `yaml:"suitability_assessment,omitempty" json:"suitability_assessment,omitempty"`
+            CompletionDate        string `yaml:"completion_date,omitempty"        json:"completion_date,omitempty"`
+            ```
+
+            Place `SuitabilityAssessment` immediately after the `Verdict` field.
+            Place `CompletionDate` at the end of the struct, before the closing brace,
+            after `FrozenScaffoldsHash`.
+
+            Do not add struct comments beyond the existing style in the file. Keep the two-space
+            indent alignment with the surrounding fields.
+
+            ## Interfaces to Call
+
+            None. This is a pure struct addition.
+
+            ## Tests to Write
+
+            Do NOT write new test files for this agent. The existing YAML round-trip tests in
+            `pkg/protocol/manifest_test.go` will pick up the new fields automatically.
+            Verify the existing tests still pass; do not touch them.
+
+            ## Verification Gate
+
+            Run from `/Users/dayna.blackwell/code/scout-and-wave-go`:
+
+            ```bash
+            go build ./...
+            go vet ./...
+            go test ./pkg/protocol/...
+            ```
+
+            ## Constraints
+
+            - Do not rename, reorder, or remove any existing fields.
+            - Do not modify any other file. Only `pkg/protocol/types.go`.
+            - `omitempty` on both yaml and json tags is required — these fields are absent from
+              NOT_SUITABLE manifests and from runtime state updates that re-save the manifest.
+            - The yaml tag `completion_date` matches what `IMPL-yaml-mode-cli.yaml` writes.
+            - The yaml tag `suitability_assessment` matches what `IMPL-orchestration-loop-cli.yaml` writes.
+      number: 1
+    - agents:
+        - dependencies:
+            - A
+          files:
+            - pkg/protocol/schema.go
+            - pkg/protocol/schema_test.go
+          id: B
+          task: |
+            ## What to Implement
+
+            Create `pkg/protocol/schema.go` in the `scout-and-wave-go` repo.
+            This file provides `GenerateScoutSchema()` — a function that returns a
+            `map[string]any` JSON Schema describing the Scout-output subset of `IMPLManifest`.
+
+            The schema is used by `pkg/engine/runner.go` (Agent C) to populate
+            `anthropic.OutputConfigParam.Format.Schema` when invoking Scout via the API backend.
+
+            **File to create:** `pkg/protocol/schema.go`
+            **Test file to create:** `pkg/protocol/schema_test.go`
+
+            ## Dependency Note
+
+            Agent A adds `SuitabilityAssessment` and `CompletionDate` to `IMPLManifest` in Wave 1.
+            This agent's schema struct must include those fields. Read `pkg/protocol/types.go`
+            after Agent A completes (Wave 1 merges before Wave 2 starts).
+
+            ## Interfaces to Implement
+
+            ### `GenerateScoutSchema() (map[string]any, error)`
+
+            Uses `github.com/invopop/jsonschema` to reflect a stripped-down struct
+            `scoutOutputSchema` (unexported) that mirrors the Scout-output subset of
+            `IMPLManifest`. Returns the JSON Schema as `map[string]any`.
+
+            **Important:** The schema must omit these runtime-only fields from `IMPLManifest`:
+            `completion_reports`, `stub_reports`, `merge_state`, `worktrees_created_at`,
+            `frozen_contracts_hash`, `frozen_scaffolds_hash`.
+
+            These fields are populated by the orchestrator after Scout runs — they must not
+            appear in the Scout output schema or Anthropic will reject the response.
+
+            **`scoutOutputSchema` struct** (unexported, in schema.go only):
+
+            ```go
+            type scoutOutputSchema struct {
+              Title                 string               `json:"title"`
+              FeatureSlug           string               `json:"feature_slug"`
+              Verdict               string               `json:"verdict"`
+              SuitabilityAssessment string               `json:"suitability_assessment,omitempty"`
+              TestCommand           string               `json:"test_command"`
+              LintCommand           string               `json:"lint_command"`
+              State                 string               `json:"state,omitempty"`
+              FileOwnership         []FileOwnership      `json:"file_ownership"`
+              InterfaceContracts    []InterfaceContract  `json:"interface_contracts"`
+              Waves                 []Wave               `json:"waves"`
+              QualityGates          *QualityGates        `json:"quality_gates,omitempty"`
+              Scaffolds             []ScaffoldFile       `json:"scaffolds,omitempty"`
+              PreMortem             *PreMortem           `json:"pre_mortem,omitempty"`
+              KnownIssues           []KnownIssue         `json:"known_issues,omitempty"`
+              CompletionDate        string               `json:"completion_date,omitempty"`
+            }
+            ```
+
+            **Reflector configuration:**
+
+            ```go
+            r := &jsonschema.Reflector{
+              AllowAdditionalProperties: false,
+              DoNotReference:            true, // inline all $defs so the schema is a flat map[string]any
+            }
+            schema := r.Reflect(&scoutOutputSchema{})
+            ```
+
+            Convert the `*jsonschema.Schema` to `map[string]any` by marshaling to JSON
+            and then unmarshaling into `map[string]any`. Return this map.
+
+            **Important:** The `FileOwnership`, `InterfaceContract`, `Wave`, `Agent`,
+            `QualityGates`, `QualityGate`, `ScaffoldFile`, `PreMortem`, `PreMortemRow`,
+            and `KnownIssue` types are defined in `pkg/protocol/types.go` (the `protocol`
+            package). Use them directly — do not redefine them.
+
+            ## Interfaces to Call
+
+            - `github.com/invopop/jsonschema` — add to `go.mod` in the orchestrator step;
+              write the import and the code will compile once the dep is added.
+            - `encoding/json` — for schema-to-map conversion.
+            - Types from `pkg/protocol/types.go` (same package): `FileOwnership`,
+              `InterfaceContract`, `Wave`, `QualityGates`, `ScaffoldFile`, `PreMortem`, `KnownIssue`.
+
+            ## Tests to Write
+
+            **`pkg/protocol/schema_test.go`:**
+
+            1. `TestGenerateScoutSchema_ReturnsSchema` — call `GenerateScoutSchema()`, assert
+               no error, assert returned map has key `"type"` = `"object"` or has `"properties"`,
+               assert `"title"` key exists in properties.
+            2. `TestGenerateScoutSchema_ExcludesRuntimeFields` — assert the returned schema's
+               `properties` map does NOT contain `"completion_reports"`, `"stub_reports"`,
+               `"merge_state"`, `"worktrees_created_at"`, `"frozen_contracts_hash"`,
+               `"frozen_scaffolds_hash"`.
+            3. `TestGenerateScoutSchema_IncludesRequiredFields` — assert `properties` contains
+               `"feature_slug"`, `"verdict"`, `"waves"`, `"file_ownership"`.
+
+            ## Verification Gate
+
+            Run from `/Users/dayna.blackwell/code/scout-and-wave-go`:
+
+            ```bash
+            go build ./...
+            go vet ./...
+            go test ./pkg/protocol/... -run TestGenerateScoutSchema
+            ```
+
+            Note: `invopop/jsonschema` must be in `go.mod` before this compiles. After writing
+            the code, run `go get github.com/invopop/jsonschema@v0.13.0` and `go mod tidy` to
+            update `go.mod` and `go.sum`. The orchestrator will commit these changes.
+
+            ## Constraints
+
+            - `scoutOutputSchema` is unexported. Do not export it.
+            - `GenerateScoutSchema` is exported. It is called by `pkg/engine/runner.go`.
+            - `DoNotReference: true` ensures the schema has no `$ref` pointers — the Anthropic
+              API requires a flat schema with no `$defs` section.
+            - If `invopop/jsonschema` reflects `time.Time` to a `format: date-time` string,
+              that is correct — leave it. The `WorktreesCreatedAt` field is excluded anyway.
+            - Do not use `Reflector.AddGoComments` — it requires filesystem access to Go source.
+        - dependencies:
+            - A
+          files:
+            - pkg/agent/backend/api/client.go
+            - pkg/engine/engine.go
+            - pkg/engine/runner.go
+          id: C
+          task: |
+            ## What to Implement
+
+            Three related changes in the `scout-and-wave-go` repo that wire up the structured
+            output path end-to-end within the engine layer:
+
+            1. **`pkg/agent/backend/api/client.go`** — add `WithOutputConfig` method
+            2. **`pkg/engine/engine.go`** — add two fields to `RunScoutOpts`
+            3. **`pkg/engine/runner.go`** — add `runScoutStructured` (unexported) and wire it
+               into `RunScout` when `opts.UseStructuredOutput` is true
+
+            **Repo:** `scout-and-wave-go`
+
+            ## Dependency Note
+
+            - Agent A (Wave 1) adds `SuitabilityAssessment` and `CompletionDate` to `IMPLManifest`
+              (needed when unmarshaling the structured response in runner.go). Wave 1 merges before
+              Wave 2 starts.
+            - Agent B (Wave 2) provides `protocol.GenerateScoutSchema()` (called in
+              runScoutStructured). B and C run in parallel — read B's interface contract in the
+              IMPL doc for the exact signature. The Wave 2 merge (after both B and C complete)
+              is when runner.go can be verified end-to-end; your build may show a compile error
+              for the GenerateScoutSchema call until B's schema.go is merged. This is expected
+              for the parallel wave; the post-merge verification gate catches it.
+
+            ## Interfaces to Implement
+
+            ### 1. `Client.WithOutputConfig` — `pkg/agent/backend/api/client.go`
+
+            Add a field `outputSchema map[string]any` to the `Client` struct (unexported).
+            Add `WithOutputConfig`:
+
+            ```go
+            // WithOutputConfig sets a JSON schema for output_config.format on all API calls.
+            // When set, the Anthropic API returns validated JSON matching the schema.
+            // Returns c (modified in place) for chaining.
+            func (c *Client) WithOutputConfig(schema map[string]any) *Client {
+                c.outputSchema = schema
+                return c
+            }
+            ```
+
+            In both `Run` and `RunStreaming`, when `c.outputSchema != nil`, set
+            `params.OutputConfig` on `anthropic.MessageNewParams`:
+
+            ```go
+            if c.outputSchema != nil {
+                params.OutputConfig = anthropic.OutputConfigParam{
+                    Format: anthropic.JSONOutputFormatParam{
+                        Schema: c.outputSchema,
+                    },
+                }
+            }
+            ```
+
+            The `OutputConfig` field exists on `anthropic.MessageNewParams` (confirmed in SDK
+            v1.26.0 at line 9078). Import path: `anthropic "github.com/anthropics/anthropic-sdk-go"`.
+
+            ### 2. `RunScoutOpts` additions — `pkg/engine/engine.go`
+
+            Add to the `RunScoutOpts` struct:
+
+            ```go
+            UseStructuredOutput  bool           // if true, invoke Scout via API backend with output_config.format
+            OutputSchemaOverride map[string]any // optional: overrides GenerateScoutSchema(); useful in tests
+            ```
+
+            ### 3. `runScoutStructured` — `pkg/engine/runner.go`
+
+            Add an unexported function:
+
+            ```go
+            func runScoutStructured(ctx context.Context, opts RunScoutOpts, prompt string, onChunk func(string)) (*protocol.IMPLManifest, error)
+            ```
+
+            This function:
+            1. Calls `protocol.GenerateScoutSchema()` (or uses `opts.OutputSchemaOverride` if set).
+            2. Creates an API backend client: `apiClient := apiclient.New("", backend.Config{Model: opts.ScoutModel})`
+               with `apiClient.WithOutputConfig(schema)`.
+            3. Calls `runner.ExecuteStreaming(ctx, spec, opts.RepoPath, onChunk)` — the runner
+               uses the API backend; the final response is the JSON string from the model.
+            4. Unmarshals the JSON response into `*protocol.IMPLManifest`:
+               ```go
+               var manifest protocol.IMPLManifest
+               if err := json.Unmarshal([]byte(jsonStr), &manifest); err != nil {
+                   return nil, fmt.Errorf("runScoutStructured: unmarshal: %w", err)
+               }
+               ```
+            5. Writes the manifest to disk as YAML (the canonical on-disk format) at
+               `opts.IMPLOutPath` using `protocol.Save(&manifest, opts.IMPLOutPath)`.
+            6. Returns `&manifest, nil`.
+
+            **Import additions for runner.go:**
+            ```go
+            apiclient "github.com/blackwell-systems/scout-and-wave-go/pkg/agent/backend/api"
+            "encoding/json"
+            ```
+
+            **Wire into `RunScout`:** After building `prompt`, add:
+            ```go
+            if opts.UseStructuredOutput {
+                _, execErr = runScoutStructured(ctx, opts, prompt, onChunk)
+                return execErr
+            }
+            ```
+            (before the existing `b := cli.New(...)` line)
+
+            The `RunScout` signature does not change. The web API backend (`scout.go`) controls
+            whether structured output is used via `opts.UseStructuredOutput`.
+
+            ## Interfaces to Call
+
+            - `protocol.GenerateScoutSchema()` from `pkg/protocol/schema.go` (Agent B, same wave)
+            - `protocol.IMPLManifest` (Agent A's updated struct, Wave 1)
+            - `protocol.Save()` from `pkg/protocol/manifest.go` (already exists)
+            - `anthropic.OutputConfigParam`, `anthropic.JSONOutputFormatParam` from SDK
+            - `apiclient "github.com/blackwell-systems/scout-and-wave-go/pkg/agent/backend/api"`
+
+            ## Tests to Write
+
+            No new test files. The web API integration (Agent D) tests the full path.
+            Verify that:
+            - `go build ./...` passes after adding the import for `apiclient`
+            - The `runner_test.go` and `engine_test.go` files (if any exist) still pass
+
+            Check `pkg/engine/runner_test.go` and adjust if any test mocks `RunScout` behavior
+            that now needs `UseStructuredOutput: false` to keep the old path.
+
+            ## Verification Gate
+
+            Run from `/Users/dayna.blackwell/code/scout-and-wave-go`:
+
+            ```bash
+            go build ./...
+            go vet ./...
+            go test ./pkg/agent/backend/api/... ./pkg/engine/...
+            ```
+
+            ## Constraints
+
+            - Do not change the `RunScout` function signature.
+            - `runScoutStructured` is unexported.
+            - `WithOutputConfig` modifies `c` in place and returns `c` — it is NOT a copy.
+              This is consistent with the existing `WithBaseURL` pattern on the same struct.
+            - The YAML file written to disk must use `protocol.Save()` so that the existing
+              protocol.Load/Save round-trip works unchanged.
+            - Do not write a markdown `.md` file in `runScoutStructured` — the web API layer
+              (Agent D) now points `IMPLOutPath` at a `.yaml` path.
+            - If `opts.OutputSchemaOverride` is non-nil, use it instead of calling
+              `GenerateScoutSchema()`. This supports test injection.
+      number: 2
+    - agents:
+        - dependencies:
+            - A
+            - B
+            - C
+          files:
+            - pkg/api/scout.go
+            - pkg/api/impl.go
+          id: D
+          task: |
+            ## What to Implement
+
+            Update `pkg/api/scout.go` and `pkg/api/impl.go` in the `scout-and-wave-web` repo
+            to use the structured output path when invoking Scout.
+
+            **Repo:** `scout-and-wave-web`
+
+            ## Dependency Note
+
+            This agent depends on Agents A, B, C completing in Waves 1 and 2 and their changes
+            being merged into the `scout-and-wave-go` repo. Read the following files before
+            implementing to verify the final signatures:
+            - `/Users/dayna.blackwell/code/scout-and-wave-go/pkg/engine/engine.go` (RunScoutOpts)
+            - `/Users/dayna.blackwell/code/scout-and-wave-go/pkg/engine/runner.go` (RunScout)
+
+            ## What Changes in scout.go
+
+            **Current path** (lines 134, 170 in pkg/api/scout.go):
+            ```go
+            implOut := filepath.Join(repoRoot, "docs", "IMPL", "IMPL-"+slug+".md")
+            // ...
+            execErr := engine.RunScout(ctx, engine.RunScoutOpts{
+                Feature:     feature,
+                RepoPath:    repoRoot,
+                SAWRepoPath: sawRepo,
+                IMPLOutPath: implOut,
+                ScoutModel:  scoutModel,
+            }, onChunk)
+            ```
+
+            **New path:**
+            1. Change `implOut` to use `.yaml` extension.
+            2. Set `UseStructuredOutput: true` in `RunScoutOpts`.
+            3. In the `scout_complete` event, include both `impl_path` (yaml) and `slug`.
+
+            **Do NOT change the CLI fallback path** — `UseStructuredOutput: true` is controlled
+            here in scout.go. The CLI backend (subagent_type tool calls) is unaffected.
+
+            ## Exact Code Changes
+
+            Replace line:
+            ```go
+            implOut := filepath.Join(repoRoot, "docs", "IMPL", "IMPL-"+slug+".md")
+            ```
+            With:
+            ```go
+            implOut := filepath.Join(repoRoot, "docs", "IMPL", "IMPL-"+slug+".yaml")
+            ```
+
+            Add `UseStructuredOutput: true` to the `RunScoutOpts` literal:
+            ```go
+            execErr := engine.RunScout(ctx, engine.RunScoutOpts{
+                Feature:             feature,
+                RepoPath:            repoRoot,
+                SAWRepoPath:         sawRepo,
+                IMPLOutPath:         implOut,
+                ScoutModel:          scoutModel,
+                UseStructuredOutput: true,
+            }, onChunk)
+            ```
+
+            The `scout_complete` event payload already publishes `impl_path`, which will now
+            point to the `.yaml` file — no change needed to the event payload shape.
+
+            ## Cascading Effect on impl.go and handleGetImpl
+
+            After this change, `runScoutAgent` writes `.yaml` files. The existing
+            `handleGetImpl` in `impl.go` looks for `.md` files:
+            ```go
+            implPath := filepath.Join(s.cfg.IMPLDir, "IMPL-"+slug+".md")
+            ```
+
+            Update `handleGetImpl` to check for `.yaml` first, falling back to `.md`:
+            ```go
+            implPath := filepath.Join(s.cfg.IMPLDir, "IMPL-"+slug+".yaml")
+            if _, err := os.Stat(implPath); os.IsNotExist(err) {
+                implPath = filepath.Join(s.cfg.IMPLDir, "IMPL-"+slug+".md")
+            }
+            ```
+
+            Also update `handleListImpls` to scan for both `.yaml` and `.md` files.
+            The current filter:
+            ```go
+            if strings.HasPrefix(name, "IMPL-") && strings.HasSuffix(name, ".md") {
+            ```
+            Should become:
+            ```go
+            if strings.HasPrefix(name, "IMPL-") && (strings.HasSuffix(name, ".md") || strings.HasSuffix(name, ".yaml")) {
+            ```
+            When the file is `.yaml`, `waveCount` and `agentCount` from raw text scanning
+            will return 0 (since YAML manifests don't use `## Wave N` headers). For `.yaml`
+            files, use `protocol.Load()` instead of raw text scanning:
+            ```go
+            if strings.HasSuffix(name, ".yaml") {
+                if m, err := protocol.Load(filepath.Join(s.cfg.IMPLDir, name)); err == nil {
+                    for _, w := range m.Waves {
+                        waveCount++
+                        agentCount += len(w.Agents)
+                    }
+                    if m.State == protocol.StateComplete {
+                        status = "complete"
+                    }
+                }
+            }
+            ```
+
+            Note: `impl.go` is also owned by Agent D.
+
+            ## Interfaces to Call
+
+            - `engine.RunScout` (unchanged signature, new `UseStructuredOutput` field in opts)
+            - `engine.RunScoutOpts` (adds `UseStructuredOutput bool`)
+            - `protocol.Load` (from `pkg/protocol/manifest.go`, already imported in impl_handlers.go)
+            - `protocol.StateComplete` constant
+
+            ## Tests to Write
+
+            No new test files for this wave. Verify:
+            - `go build ./...` passes in scout-and-wave-web
+            - `go vet ./...` passes
+            - `go test ./pkg/api/...` passes (existing tests should not break)
+
+            Read `pkg/api/impl_handlers_test.go` and `pkg/api/server_test.go` to check if any
+            test fixture references `.md` path expectations that need updating.
+
+            ## Verification Gate
+
+            Run from `/Users/dayna.blackwell/code/scout-and-wave-web`:
+
+            ```bash
+            go build ./...
+            go vet ./...
+            go test ./pkg/api/...
+            ```
+
+            ## Constraints
+
+            - Do not break the existing `.md` fallback in `handleGetImpl` — old markdown IMPL
+              docs must still load correctly for users who have them on disk.
+            - Do not change `ScoutRunRequest`, `ScoutRunResponse`, or the SSE event names/shapes.
+            - Do not change `handleScoutEvents` or `handleScoutCancel`.
+            - The `slug` derivation (via `scoutSlugify`) is unchanged.
+            - `handleListImpls` must remain backward-compatible — do not remove `.md` support.
+            - If `protocol.Load` is not already imported in `impl.go`, add the import
+              `"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"`.
+      number: 3

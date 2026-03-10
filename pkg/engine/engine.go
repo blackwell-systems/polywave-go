@@ -16,11 +16,13 @@ var ErrReportNotFound = errors.New("completion report not found")
 
 // RunScoutOpts configures a Scout agent run.
 type RunScoutOpts struct {
-	Feature     string // human feature description (required)
-	RepoPath    string // absolute path to the repository being scouted (required)
-	SAWRepoPath string // path to scout-and-wave protocol repo (optional; falls back to $SAW_REPO then ~/code/scout-and-wave)
-	IMPLOutPath string // where to write the IMPL doc (required)
-	ScoutModel  string // optional: model override for the Scout agent (e.g. "claude-opus-4-6")
+	Feature              string         // human feature description (required)
+	RepoPath             string         // absolute path to the repository being scouted (required)
+	SAWRepoPath          string         // path to scout-and-wave protocol repo (optional; falls back to $SAW_REPO then ~/code/scout-and-wave)
+	IMPLOutPath          string         // where to write the IMPL doc (required)
+	ScoutModel           string         // optional: model override for the Scout agent (e.g. "claude-opus-4-6")
+	UseStructuredOutput  bool           // if true, invoke Scout via API backend with output_config.format
+	OutputSchemaOverride map[string]any // optional: overrides GenerateScoutSchema(); useful in tests
 }
 
 // RunWaveOpts configures a wave execution run.
