@@ -2,44 +2,39 @@ package main
 
 import (
 	"encoding/json"
-	"errors"
-	"flag"
 	"fmt"
 	"os"
 
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
+	"github.com/spf13/cobra"
 )
 
-func runMergeAgents(args []string) error {
-	fs := flag.NewFlagSet("merge-agents", flag.ContinueOnError)
-	waveNum := fs.Int("wave", 0, "Wave number (required)")
-	repoDir := fs.String("repo-dir", ".", "Repository directory")
+func newMergeAgentsCmd() *cobra.Command {
+	var waveNum int
 
-	if err := fs.Parse(args); err != nil {
-		if errors.Is(err, flag.ErrHelp) {
+	cmd := &cobra.Command{
+		Use:   "merge-agents <manifest-path>",
+		Short: "Merge all agent branches for a wave",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			manifestPath := args[0]
+			result, err := protocol.MergeAgents(manifestPath, waveNum, repoDir)
+			if err != nil {
+				return fmt.Errorf("merge-agents: %w", err)
+			}
+
+			out, _ := json.MarshalIndent(result, "", "  ")
+			fmt.Println(string(out))
+
+			if !result.Success {
+				os.Exit(1)
+			}
 			return nil
-		}
-		return fmt.Errorf("merge-agents: %w", err)
+		},
 	}
 
-	if fs.NArg() < 1 {
-		return fmt.Errorf("merge-agents: manifest path required\nUsage: saw merge-agents <manifest-path> --wave <N> [--repo-dir <path>]")
-	}
-	if *waveNum == 0 {
-		return fmt.Errorf("merge-agents: --wave is required")
-	}
+	cmd.Flags().IntVar(&waveNum, "wave", 0, "Wave number (required)")
+	cmd.MarkFlagRequired("wave")
 
-	manifestPath := fs.Arg(0)
-	result, err := protocol.MergeAgents(manifestPath, *waveNum, *repoDir)
-	if err != nil {
-		return fmt.Errorf("merge-agents: %w", err)
-	}
-
-	out, _ := json.MarshalIndent(result, "", "  ")
-	fmt.Println(string(out))
-
-	if !result.Success {
-		os.Exit(1)
-	}
-	return nil
+	return cmd
 }
