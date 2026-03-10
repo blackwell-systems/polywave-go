@@ -25,11 +25,12 @@ const (
 
 // Client is an Anthropic API backend. It implements backend.Backend.
 type Client struct {
-	apiKey    string
-	model     string
-	maxTokens int
-	maxTurns  int
-	baseURL   string // optional override for testing
+	apiKey       string
+	model        string
+	maxTokens    int
+	maxTurns     int
+	baseURL      string         // optional override for testing
+	outputSchema map[string]any // optional: structured output schema
 }
 
 // New creates a new Client configured from cfg.
@@ -65,6 +66,14 @@ func New(apiKey string, cfg backend.Config) *Client {
 // a mock HTTP server. Returns c for chaining.
 func (c *Client) WithBaseURL(url string) *Client {
 	c.baseURL = url
+	return c
+}
+
+// WithOutputConfig sets a JSON schema for structured output. When non-nil,
+// the schema is passed as OutputConfig.Format to the Anthropic API, enabling
+// constrained JSON generation. Returns c for chaining.
+func (c *Client) WithOutputConfig(schema map[string]any) *Client {
+	c.outputSchema = schema
 	return c
 }
 
@@ -121,6 +130,13 @@ func (c *Client) Run(ctx context.Context, systemPrompt, userMessage, workDir str
 	if systemPrompt != "" {
 		params.System = []anthropic.TextBlockParam{
 			{Text: systemPrompt},
+		}
+	}
+	if c.outputSchema != nil {
+		params.OutputConfig = anthropic.OutputConfigParam{
+			Format: anthropic.JSONOutputFormatParam{
+				Schema: c.outputSchema,
+			},
 		}
 	}
 
@@ -246,6 +262,13 @@ func (c *Client) RunStreaming(ctx context.Context, systemPrompt, userMessage, wo
 	if systemPrompt != "" {
 		params.System = []anthropic.TextBlockParam{
 			{Text: systemPrompt},
+		}
+	}
+	if c.outputSchema != nil {
+		params.OutputConfig = anthropic.OutputConfigParam{
+			Format: anthropic.JSONOutputFormatParam{
+				Schema: c.outputSchema,
+			},
 		}
 	}
 
