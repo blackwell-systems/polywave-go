@@ -1339,7 +1339,190 @@ waves:
           - implementations/claude-code/prompts/saw-worktree.md
         dependencies: [W]
 
-completion_reports: {}
+completion_reports:
+  A:
+    status: complete
+    worktree: .claude/worktrees/wave1-agent-A
+    branch: wave1-agent-A
+    commit: 90278f1cd158e75377226bcbb5156c3c3badbe84
+    files_created:
+      - pkg/protocol/worktree.go
+      - pkg/protocol/worktree_test.go
+    interface_deviations: []
+    out_of_scope_deps: []
+    tests_added:
+      - TestCreateWorktrees_HappyPath
+      - TestCreateWorktrees_WaveNotFound
+      - TestCreateWorktrees_ManifestLoadFailure
+      - TestCreateWorktrees_GitFailure
+      - TestCreateWorktrees_EmptyWave
+    verification: PASS (go build ./pkg/protocol && go vet ./pkg/protocol && go test ./pkg/protocol -run TestCreateWorktrees -v)
+  B:
+    status: complete
+    worktree: .claude/worktrees/wave1-agent-B
+    branch: wave1-agent-B
+    commit: 07a8539a62b3bb7dc4c017951d22f128c61e87cf
+    files_created:
+      - pkg/protocol/commit_verify.go
+      - pkg/protocol/commit_verify_test.go
+    interface_deviations: []
+    out_of_scope_deps: []
+    tests_added:
+      - TestVerifyCommits_AllValid
+      - TestVerifyCommits_MissingCommits
+      - TestVerifyCommits_BranchNotExist
+    verification: PASS (go build ./pkg/protocol && go vet ./pkg/protocol && go test ./pkg/protocol -run TestVerifyCommits -v)
+  C:
+    status: complete
+    worktree: .claude/worktrees/wave1-agent-C
+    branch: wave1-agent-C
+    commit: efbb1ec991e73dc8e01d0eeecf38d78427d3290d
+    files_created:
+      - pkg/protocol/stubs.go
+      - pkg/protocol/stubs_test.go
+    interface_deviations: []
+    out_of_scope_deps: []
+    tests_added:
+      - TestScanStubs_NoStubs
+      - TestScanStubs_HasStubs
+      - TestScanStubs_FileNotFound
+      - TestScanStubs_EmptyFiles
+      - TestScanStubs_CaseInsensitive
+      - TestScanStubs_MultipleFiles
+      - TestScanStubs_RustPatterns
+    verification: PASS (go build ./pkg/protocol && go vet ./pkg/protocol && go test ./pkg/protocol -run TestScanStubs -v)
+    notes: |
+      Implemented pure Go stub scanner with comprehensive pattern detection.
+      All patterns (TODO, FIXME, HACK, XXX, panic, Rust macros) are case-insensitive.
+      Missing files are silently skipped per E20 (informational only).
+      All tests pass with 100% coverage of edge cases.
+  D:
+    status: complete
+    worktree: .claude/worktrees/wave1-agent-D
+    branch: wave1-agent-D
+    commit: c0dfd6d73de431e2a06f6c8a8a3e58cea0e78494
+    files_created:
+      - pkg/protocol/merge_agents.go
+      - pkg/protocol/merge_agents_test.go
+    interface_deviations: []
+    out_of_scope_deps: []
+    tests_added:
+      - TestMergeAgents_AllSucceed
+      - TestMergeAgents_ConflictStops
+      - TestMergeAgents_WaveNotFound
+      - TestMergeAgents_BranchNotFound
+      - TestMergeAgents_TaskTruncation
+    verification: PASS (go build ./pkg/protocol && go vet ./pkg/protocol && go test ./pkg/protocol -run TestMergeAgents -v)
+    notes: |
+      Implemented MergeAgents function to orchestrate no-FF merges of agent branches
+      into main after wave execution. Function stops on first merge conflict and returns
+      partial result with Success=false. All tests pass including conflict detection,
+      missing branch handling, and commit message truncation to 50 characters.
+  G:
+    status: complete
+    worktree: .claude/worktrees/wave1-agent-G
+    branch: wave1-agent-G
+    commit: cbc185aa48c9f5f2d05f371d346b20b260e3af87
+    files_created:
+      - pkg/protocol/status_update.go
+      - pkg/protocol/status_update_test.go
+    interface_deviations: []
+    out_of_scope_deps: []
+    tests_added:
+      - TestUpdateStatus_NewReport
+      - TestUpdateStatus_ExistingReport
+      - TestUpdateStatus_AgentNotFound
+      - TestUpdateStatus_WaveNotFound
+    verification: "PASS (go build, go vet, go test)"
+  I:
+    status: complete
+    worktree: .claude/worktrees/wave1-agent-I
+    branch: wave1-agent-I
+    commit: f61fac1
+    files_created:
+      - pkg/protocol/discovery.go
+      - pkg/protocol/discovery_test.go
+    interface_deviations: []
+    out_of_scope_deps: []
+    tests_added:
+      - TestListIMPLs_MultipleFiles
+      - TestListIMPLs_EmptyDir
+      - TestListIMPLs_InvalidDir
+      - TestListIMPLs_InvalidYAML
+      - TestListIMPLs_CompleteFeature
+      - TestListIMPLs_Sorting
+    verification: "PASS (go build ./pkg/protocol && go vet ./pkg/protocol && go test ./pkg/protocol -run TestListIMPLs -v)"
+  H:
+    status: complete
+    worktree: .claude/worktrees/wave1-agent-H
+    branch: wave1-agent-H
+    commit: b52a3a3d472b1a9e23b1ad578f23f59bd2f76357
+    files_created:
+      - pkg/protocol/context_update.go
+      - pkg/protocol/context_update_test.go
+    interface_deviations: []
+    out_of_scope_deps: []
+    tests_added:
+      - TestUpdateContext_NewFile
+      - TestUpdateContext_ExistingFile
+      - TestUpdateContext_InvalidRoot
+      - TestUpdateContext_ReadOnlyDirectory
+      - TestUpdateContext_ZeroWaves
+    verification: "PASS (go build, go vet, go test)"
+  F:
+    status: complete
+    worktree: .claude/worktrees/wave1-agent-F
+    branch: wave1-agent-F
+    commit: f387794d341d33e6d631451f0ddfa839d6a7f6b9
+    files_created:
+      - pkg/protocol/verify_build.go
+      - pkg/protocol/verify_build_test.go
+    interface_deviations: []
+    out_of_scope_deps: []
+    tests_added:
+      - TestVerifyBuild_BothPass
+      - TestVerifyBuild_TestFails
+      - TestVerifyBuild_EmptyCommand
+    verification: "PASS (go build ./pkg/protocol && go vet ./pkg/protocol && go test ./pkg/protocol -run TestVerifyBuild -v)"
+
+  E:
+    status: complete
+    worktree: .claude/worktrees/wave1-agent-E
+    branch: wave1-agent-E
+    commit: 230d3170c481ed1714918cb7c09093a8ef52bade
+    files_created:
+      - pkg/protocol/cleanup.go
+      - pkg/protocol/cleanup_test.go
+    interface_deviations: []
+    out_of_scope_deps: []
+    tests_added:
+      - TestCleanup_AllRemoved
+      - TestCleanup_AlreadyGone
+      - TestCleanup_WaveNotFound
+      - TestCleanup_PartialFailure
+    verification: "PASS (go build ./pkg/protocol && go vet ./pkg/protocol && go test ./pkg/protocol -run TestCleanup -v)"
+
+  K:
+    status: complete
+    worktree: .claude/worktrees/wave1-agent-K
+    branch: wave1-agent-K
+    commit: e0df349873d1715c86d5f0aa79a8095858b3a0e3
+    files_changed:
+      - internal/git/commands.go
+      - internal/git/commands_test.go
+    files_created: []
+    interface_deviations: []
+    out_of_scope_deps: []
+    tests_added:
+      - TestCommitCount_ValidRefs
+      - TestCommitCount_InvalidRefs
+      - TestCommitCount_NoBranch
+    verification: PASS (go build ./internal/git && go vet ./internal/git && go test ./internal/git -run TestCommitCount -v)
+    notes: |
+      Added CommitCount function to internal/git/commands.go that uses git rev-list --count.
+      Function follows existing patterns: accepts repoPath, uses Run() wrapper, returns structured errors.
+      All three test cases pass: valid refs with known commit count, invalid refs error handling, and nonexistent branch error handling.
+      Tests handle both "main" and "master" as default branch names by detecting the actual branch name.
 
 state: SCOUT_PENDING
 merge_state: idle
