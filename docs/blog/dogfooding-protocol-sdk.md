@@ -74,15 +74,23 @@ By Wave 5, Scout will generate YAML manifests instead of markdown. The skill wil
 
 At that point, the old system will have built its own replacement, validated it in production, and gracefully handed off coordination to the new one. The markdown IMPL format won't be deprecated by decree — it'll be deprecated by obsolescence. The new system will simply be better at the job the old system was designed to do.
 
-## The Takeaway
+## The Honest Tension
 
-If your protocol can't build itself, it's not ready for production.
+The old system wasn't broken. It ran 24 agents across 5 waves, produced zero merge conflicts, and passed every post-merge test suite on the first try. The bash loops worked. The markdown parsing worked. The ad-hoc `git worktree add` and `git merge --no-ff` instructions the LLM followed — they worked too.
 
-SAW's Protocol SDK migration is the first feature where the protocol's own invariants were the primary defense against implementation failure. Not code review. Not manual testing. Not hoping agents would follow instructions. Actual Go functions that return structured errors when rules are violated.
+So what did the migration actually buy?
 
-That's the shift: from "rules that agents are told to follow" to "rules that code enforces."
+**Not correctness.** The old system was already correct in the ways that mattered. SAW's invariants — disjoint file ownership, wave sequencing, the I5 trip wire — did the real safety work. Those are protocol properties, not implementation properties. They hold whether the merge step is a bash loop or a Go function.
 
-Four more waves to go.
+**Reproducibility.** `saw merge-agents` runs the same logic every time. The bash equivalent depended on the orchestrator LLM remembering the right flags, in the right order, on the right branches. It worked because the LLM is good at following instructions. But "good at following instructions" is not the same as "deterministic." The CLI eliminates the variance.
+
+**Session independence.** The old orchestrator carried state in its context window — which worktrees exist, which agents committed, which branches to merge. That state evaporates when the session ends. The CLI externalizes that state into the YAML manifest. A fresh orchestrator can resume a wave mid-execution by reading the file. This matters most in long-running executions where context pressure is real.
+
+**Observability.** JSON stdout means every operation is parseable. When something fails, you get structured output — which agent, which file, what error code. The bash version gave you whatever git printed.
+
+None of these are dramatic improvements. The old system would have kept working. The migration was not a rescue — it was a reliability upgrade. The distinction matters because most infrastructure work that actually ships is this kind: fixing things that aren't broken yet, before the scale or frequency that would break them arrives.
+
+The proof that the migration was worth doing isn't in the feature list. It's in what runs next. The Cobra CLI refactor — the feature being scouted right now — will be the first SAW execution where the orchestrator calls `saw create-worktrees` instead of typing `git worktree add` into a bash loop. If that works without drama, the upgrade paid off. If it doesn't, we'll know exactly which CLI command failed and why.
 
 ---
 
