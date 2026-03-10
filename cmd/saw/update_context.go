@@ -2,35 +2,33 @@ package main
 
 import (
 	"encoding/json"
-	"errors"
-	"flag"
 	"fmt"
 
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
+	"github.com/spf13/cobra"
 )
 
-func runUpdateContext(args []string) error {
-	fs := flag.NewFlagSet("update-context", flag.ContinueOnError)
-	projectRoot := fs.String("project-root", ".", "Project root directory")
+func newUpdateContextCmd() *cobra.Command {
+	var projectRoot string
 
-	if err := fs.Parse(args); err != nil {
-		if errors.Is(err, flag.ErrHelp) {
+	cmd := &cobra.Command{
+		Use:   "update-context <manifest-path>",
+		Short: "Update project CONTEXT.md (E18)",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			manifestPath := args[0]
+			result, err := protocol.UpdateContext(manifestPath, projectRoot)
+			if err != nil {
+				return fmt.Errorf("update-context: %w", err)
+			}
+
+			out, _ := json.MarshalIndent(result, "", "  ")
+			fmt.Println(string(out))
 			return nil
-		}
-		return fmt.Errorf("update-context: %w", err)
+		},
 	}
 
-	if fs.NArg() < 1 {
-		return fmt.Errorf("update-context: manifest path required\nUsage: saw update-context <manifest-path> [--project-root <path>]")
-	}
+	cmd.Flags().StringVar(&projectRoot, "project-root", ".", "Project root directory")
 
-	manifestPath := fs.Arg(0)
-	result, err := protocol.UpdateContext(manifestPath, *projectRoot)
-	if err != nil {
-		return fmt.Errorf("update-context: %w", err)
-	}
-
-	out, _ := json.MarshalIndent(result, "", "  ")
-	fmt.Println(string(out))
-	return nil
+	return cmd
 }
