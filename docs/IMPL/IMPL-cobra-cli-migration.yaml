@@ -4,7 +4,7 @@ feature_slug: "cobra-cli-migration"
 verdict: "SUITABLE"
 test_command: "go test ./..."
 lint_command: "go vet ./..."
-state: "SCOUT_PENDING"
+state: "COMPLETE"
 
 # Suitability Assessment
 # ---------------------------------------------------------------------------

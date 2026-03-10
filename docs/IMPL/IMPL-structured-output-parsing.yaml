@@ -225,7 +225,7 @@ quality_gates:
           required: true
           type: test
     level: standard
-state: SCOUT_PENDING
+state: COMPLETE
 test_command: go test ./...
 title: Structured Output Parsing — Scout via output_config.format
 verdict: SUITABLE

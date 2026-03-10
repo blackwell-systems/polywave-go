@@ -252,7 +252,7 @@ scaffolds:
       file_path: pkg/solver/types.go
       import_path: github.com/blackwell-systems/scout-and-wave-go/pkg/solver
       status: committed (2361202)
-state: SCOUT_PENDING
+state: COMPLETE
 test_command: go test ./...
 title: Constraint-Solving Validator — CSP Wave Assignment from Dependency Declarations
 verdict: SUITABLE
