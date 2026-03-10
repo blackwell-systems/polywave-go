@@ -59,6 +59,7 @@ func ParseIMPLDoc(path string) (*types.IMPLDoc, error) {
 	// the heading-based fallback must not overwrite it.
 	hasTypedFileOwnership := false
 	hasTypedDepGraph := false
+	hasTypedWaveStructure := false
 
 	scanner := bufio.NewScanner(f)
 	lineNum := 0
@@ -75,7 +76,28 @@ func ParseIMPLDoc(path string) (*types.IMPLDoc, error) {
 	flushWave := func() {
 		flushAgent()
 		if currentWave != nil {
-			doc.Waves = append(doc.Waves, *currentWave)
+			// If typed wave structure exists, waves are already in doc.Waves.
+			// Merge agent prompts into the existing wave's agents by Letter.
+			if hasTypedWaveStructure {
+				for i := range doc.Waves {
+					if doc.Waves[i].Number == currentWave.Number {
+						// Merge prompts from markdown into typed-block agents
+						for j := range doc.Waves[i].Agents {
+							for k := range currentWave.Agents {
+								if doc.Waves[i].Agents[j].Letter == currentWave.Agents[k].Letter {
+									doc.Waves[i].Agents[j].Prompt = currentWave.Agents[k].Prompt
+									doc.Waves[i].Agents[j].FilesOwned = currentWave.Agents[k].FilesOwned
+									doc.Waves[i].Agents[j].Model = currentWave.Agents[k].Model
+									break
+								}
+							}
+						}
+						break
+					}
+				}
+			} else {
+				doc.Waves = append(doc.Waves, *currentWave)
+			}
 			currentWave = nil
 		}
 	}
@@ -115,6 +137,7 @@ func ParseIMPLDoc(path string) (*types.IMPLDoc, error) {
 				case "impl-wave-structure":
 					// Parse wave structure: "Wave 1: [A] [B] [D] [E]"
 					parseWaveStructureBlock(blockLines, doc)
+					hasTypedWaveStructure = true
 				case "impl-completion-report":
 					// Skip: completion reports are parsed by ParseCompletionReport.
 				}

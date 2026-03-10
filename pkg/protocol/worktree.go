@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 
 	"github.com/blackwell-systems/scout-and-wave-go/internal/git"
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/types"
 )
 
 // WorktreeInfo contains the details of a created worktree for a single agent.
@@ -20,31 +21,31 @@ type CreateWorktreesResult struct {
 }
 
 // CreateWorktrees creates git worktrees for all agents in the specified wave.
-// It loads the manifest from manifestPath, finds the wave by waveNum, and
+// It parses the IMPL doc from manifestPath, finds the wave by waveNum, and
 // creates a worktree for each agent in that wave.
 //
-// Each worktree is created at {repoDir}/.claude/worktrees/wave{N}-agent-{ID}
-// on a new branch named wave{N}-agent-{ID}.
+// Each worktree is created at {repoDir}/.claude/worktrees/wave{N}-agent-{Letter}
+// on a new branch named wave{N}-agent-{Letter}.
 //
 // If any worktree creation fails, returns an error immediately without
 // attempting to create remaining worktrees.
 //
 // Returns an error if:
-// - The manifest file cannot be loaded
-// - The specified wave number is not found in the manifest
+// - The IMPL doc cannot be parsed
+// - The specified wave number is not found in the document
 // - Any git worktree add operation fails
 func CreateWorktrees(manifestPath string, waveNum int, repoDir string) (*CreateWorktreesResult, error) {
-	// Load manifest
-	manifest, err := Load(manifestPath)
+	// Parse IMPL doc (supports hybrid markdown/YAML format)
+	doc, err := ParseIMPLDoc(manifestPath)
 	if err != nil {
-		return nil, fmt.Errorf("failed to load manifest: %w", err)
+		return nil, fmt.Errorf("failed to parse IMPL doc: %w", err)
 	}
 
 	// Find the specified wave
-	var targetWave *Wave
-	for i := range manifest.Waves {
-		if manifest.Waves[i].Number == waveNum {
-			targetWave = &manifest.Waves[i]
+	var targetWave *types.Wave
+	for i := range doc.Waves {
+		if doc.Waves[i].Number == waveNum {
+			targetWave = &doc.Waves[i]
 			break
 		}
 	}
@@ -57,17 +58,17 @@ func CreateWorktrees(manifestPath string, waveNum int, repoDir string) (*CreateW
 	var worktrees []WorktreeInfo
 	for _, agent := range targetWave.Agents {
 		// Construct worktree path and branch name
-		worktreePath := filepath.Join(repoDir, ".claude", "worktrees", fmt.Sprintf("wave%d-agent-%s", waveNum, agent.ID))
-		branchName := fmt.Sprintf("wave%d-agent-%s", waveNum, agent.ID)
+		worktreePath := filepath.Join(repoDir, ".claude", "worktrees", fmt.Sprintf("wave%d-agent-%s", waveNum, agent.Letter))
+		branchName := fmt.Sprintf("wave%d-agent-%s", waveNum, agent.Letter)
 
 		// Create the worktree
 		if err := git.WorktreeAdd(repoDir, worktreePath, branchName); err != nil {
-			return nil, fmt.Errorf("failed to create worktree for agent %s: %w", agent.ID, err)
+			return nil, fmt.Errorf("failed to create worktree for agent %s: %w", agent.Letter, err)
 		}
 
 		// Collect worktree info
 		worktrees = append(worktrees, WorktreeInfo{
-			Agent:  agent.ID,
+			Agent:  agent.Letter,
 			Path:   worktreePath,
 			Branch: branchName,
 		})
