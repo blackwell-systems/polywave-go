@@ -8,6 +8,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 | Version | Date | Headline |
 |---------|------|----------|
+| [0.24.0] | 2026-03-10 | Cross-repo worktree support — `create-worktrees` resolves agent repos from FileOwnership table, creates worktrees in correct sibling directories |
 | [0.23.0] | 2026-03-10 | Hybrid IMPL doc support — `create-worktrees` parses markdown/YAML manifests via `ParseIMPLDoc()` instead of pure YAML `Load()` |
 | [0.22.0] | 2026-03-10 | E5/E10 validator hardening — solo-wave exemption, lenient verification format, CLI reference docs |
 | [0.21.0] | 2026-03-10 | Constraint solver — Kahn's topological sort, cycle detection, `SolveManifest`, `sawtools solve` command |
@@ -31,6 +32,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 | [0.3.0] | 2026-03-08 | Protocol audit fixes — P0: failure_type parsing, multi-gen agent IDs; P1: E22 2-pass scaffold build, cross-repo Repo column; P2: repo field in completion reports |
 | [0.2.0] | 2026-03-08 | Engine protocol parity — E17–E23 implemented (context memory, failure routing, stub scan, quality gates, scaffold build verify, per-agent context extraction) |
 | [0.1.0] | 2026-03-08 | Initial engine extraction — parser, orchestrator, agent runner, git, worktree management |
+
+## [0.24.0] - 2026-03-10
+
+### Added
+
+- **Cross-repo worktree support** (`pkg/protocol/worktree.go`) — `CreateWorktrees` now looks up each agent's repo from the FileOwnership table's Repo column. For cross-repo waves, worktrees are created in sibling directories (e.g., if orchestrating from scout-and-wave, Agent I worktree goes in scout-and-wave-go, Agent J in scout-and-wave-web). Falls back to single-repo behavior when Repo column is empty.
+- **`determineAgentRepo` helper** — Scans FileOwnership map for agent's first file and returns its Repo field, enabling repo resolution without adding fields to Agent type.
+
+---
 
 ## [0.23.0] - 2026-03-10
 
