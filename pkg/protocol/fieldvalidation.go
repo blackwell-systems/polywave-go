@@ -1,0 +1,139 @@
+package protocol
+
+import (
+	"fmt"
+	"regexp"
+	"strings"
+)
+
+// worktreeBranchRegex validates branch names: wave{N}-agent-{ID}
+// where N is a digit sequence and ID is an agent ID matching agentIDRegex pattern
+var worktreeBranchRegex = regexp.MustCompile(`^wave(\d+)-agent-([A-Z][2-9]?)$`)
+
+// verificationRegex validates verification field: "PASS" or "FAIL" optionally followed by " (details)"
+var verificationRegex = regexp.MustCompile(`^(PASS|FAIL)(\s+\(.*\))?$`)
+
+// ValidateWorktreeNames checks completion report worktree and branch fields
+// match the expected wave{N}-agent-{ID} naming convention (E5).
+//
+// For each completion report:
+//   - If branch is non-empty, validates it matches wave{N}-agent-{ID} where N is the agent's wave number
+//   - If worktree is non-empty, validates it contains wave{N}-agent-{ID} as a path segment
+//   - Empty fields are valid (backward compatibility)
+//
+// Returns:
+//   - E5_INVALID_WORKTREE_NAME for branch violations
+//   - E5_INVALID_WORKTREE_PATH for worktree path violations
+func ValidateWorktreeNames(m *IMPLManifest) []ValidationError {
+	var errs []ValidationError
+
+	// Build map of agent -> wave number
+	agentWave := make(map[string]int)
+	for _, wave := range m.Waves {
+		for _, agent := range wave.Agents {
+			agentWave[agent.ID] = wave.Number
+		}
+	}
+
+	// Validate each completion report
+	for agentID, report := range m.CompletionReports {
+		// Find agent's wave number
+		waveNum, found := agentWave[agentID]
+		if !found {
+			// Agent not in wave structure — skip validation (may be error caught elsewhere)
+			continue
+		}
+
+		// Validate branch name if present
+		if strings.TrimSpace(report.Branch) != "" {
+			matches := worktreeBranchRegex.FindStringSubmatch(report.Branch)
+			if matches == nil {
+				errs = append(errs, ValidationError{
+					Code:    "E5_INVALID_WORKTREE_NAME",
+					Message: fmt.Sprintf("agent %s branch %q does not match pattern wave{N}-agent-{ID}", agentID, report.Branch),
+					Field:   fmt.Sprintf("completion_reports[%s].branch", agentID),
+				})
+			} else {
+				// Extract wave number and agent ID from branch name
+				branchWave := matches[1]
+				branchAgent := matches[2]
+
+				// Validate wave number matches
+				expectedWave := fmt.Sprintf("%d", waveNum)
+				if branchWave != expectedWave {
+					errs = append(errs, ValidationError{
+						Code:    "E5_INVALID_WORKTREE_NAME",
+						Message: fmt.Sprintf("agent %s (wave %d) branch %q has wrong wave number (expected wave%s-agent-%s)", agentID, waveNum, report.Branch, expectedWave, agentID),
+						Field:   fmt.Sprintf("completion_reports[%s].branch", agentID),
+					})
+				}
+
+				// Validate agent ID matches
+				if branchAgent != agentID {
+					errs = append(errs, ValidationError{
+						Code:    "E5_INVALID_WORKTREE_NAME",
+						Message: fmt.Sprintf("agent %s branch %q has wrong agent ID (expected wave%s-agent-%s)", agentID, report.Branch, expectedWave, agentID),
+						Field:   fmt.Sprintf("completion_reports[%s].branch", agentID),
+					})
+				}
+			}
+		}
+
+		// Validate worktree path if present
+		if strings.TrimSpace(report.Worktree) != "" {
+			expectedSegment := fmt.Sprintf("wave%d-agent-%s", waveNum, agentID)
+			// Check if worktree path contains the expected segment
+			// Split by both '/' and '\' to handle Unix and Windows paths
+			pathNormalized := strings.ReplaceAll(report.Worktree, "\\", "/")
+			pathSegments := strings.Split(pathNormalized, "/")
+			found := false
+			for _, segment := range pathSegments {
+				if segment == expectedSegment {
+					found = true
+					break
+				}
+			}
+
+			if !found {
+				errs = append(errs, ValidationError{
+					Code:    "E5_INVALID_WORKTREE_PATH",
+					Message: fmt.Sprintf("agent %s worktree path %q does not contain expected segment %q", agentID, report.Worktree, expectedSegment),
+					Field:   fmt.Sprintf("completion_reports[%s].worktree", agentID),
+				})
+			}
+		}
+	}
+
+	return errs
+}
+
+// ValidateVerificationField checks that completion report verification fields
+// use the structured format: "PASS" or "FAIL ({details})" (E10).
+//
+// For each completion report:
+//   - If verification is empty, it is valid (backward compatibility)
+//   - Otherwise, validates it matches the pattern: "PASS" or "FAIL" optionally followed by " (details)"
+//
+// Returns:
+//   - E10_INVALID_VERIFICATION for format violations
+func ValidateVerificationField(m *IMPLManifest) []ValidationError {
+	var errs []ValidationError
+
+	for agentID, report := range m.CompletionReports {
+		// Empty is valid (backward compatibility)
+		if strings.TrimSpace(report.Verification) == "" {
+			continue
+		}
+
+		// Validate format
+		if !verificationRegex.MatchString(report.Verification) {
+			errs = append(errs, ValidationError{
+				Code:    "E10_INVALID_VERIFICATION",
+				Message: fmt.Sprintf("agent %s verification field %q does not match format 'PASS' or 'FAIL (details)'", agentID, report.Verification),
+				Field:   fmt.Sprintf("completion_reports[%s].verification", agentID),
+			})
+		}
+	}
+
+	return errs
+}

@@ -581,3 +581,411 @@ func TestValidate_CrossRepoOwnership(t *testing.T) {
 		t.Errorf("Expected no errors for valid cross-repo manifest, got %d: %v", len(errs), errs)
 	}
 }
+
+// TestValidateI5CommitBeforeReport_Valid tests that reports with valid commits pass validation.
+func TestValidateI5CommitBeforeReport_Valid(t *testing.T) {
+	m := &IMPLManifest{
+		CompletionReports: map[string]CompletionReport{
+			"A": {Status: "complete", Commit: "abc123def456"},
+			"B": {Status: "complete", Commit: "789012345678"},
+		},
+	}
+
+	errs := validateI5CommitBeforeReport(m)
+	if len(errs) != 0 {
+		t.Errorf("Expected no errors for valid commits, got %d: %v", len(errs), errs)
+	}
+}
+
+// TestValidateI5CommitBeforeReport_Uncommitted tests that "uncommitted" is rejected.
+func TestValidateI5CommitBeforeReport_Uncommitted(t *testing.T) {
+	m := &IMPLManifest{
+		CompletionReports: map[string]CompletionReport{
+			"A": {Status: "complete", Commit: "uncommitted"},
+		},
+	}
+
+	errs := validateI5CommitBeforeReport(m)
+	if len(errs) != 1 {
+		t.Fatalf("Expected 1 error, got %d: %v", len(errs), errs)
+	}
+	if errs[0].Code != "I5_UNCOMMITTED" {
+		t.Errorf("Expected I5_UNCOMMITTED, got %s", errs[0].Code)
+	}
+}
+
+// TestValidateI5CommitBeforeReport_Empty tests that empty commit is rejected.
+func TestValidateI5CommitBeforeReport_Empty(t *testing.T) {
+	m := &IMPLManifest{
+		CompletionReports: map[string]CompletionReport{
+			"A": {Status: "complete", Commit: ""},
+			"B": {Status: "complete", Commit: "   "},
+		},
+	}
+
+	errs := validateI5CommitBeforeReport(m)
+	if len(errs) != 2 {
+		t.Fatalf("Expected 2 errors, got %d: %v", len(errs), errs)
+	}
+	for _, err := range errs {
+		if err.Code != "I5_UNCOMMITTED" {
+			t.Errorf("Expected I5_UNCOMMITTED, got %s", err.Code)
+		}
+	}
+}
+
+// TestValidateE9MergeState_Valid tests that all valid merge states pass.
+func TestValidateE9MergeState_Valid(t *testing.T) {
+	validStates := []MergeState{
+		MergeStateIdle,
+		MergeStateInProgress,
+		MergeStateCompleted,
+		MergeStateFailed,
+	}
+
+	for _, state := range validStates {
+		m := &IMPLManifest{MergeState: state}
+		errs := validateE9MergeState(m)
+		if len(errs) != 0 {
+			t.Errorf("Expected no errors for merge_state=%q, got %d: %v", state, len(errs), errs)
+		}
+	}
+}
+
+// TestValidateE9MergeState_Invalid tests that invalid merge states are rejected.
+func TestValidateE9MergeState_Invalid(t *testing.T) {
+	m := &IMPLManifest{MergeState: "merging"}
+
+	errs := validateE9MergeState(m)
+	if len(errs) != 1 {
+		t.Fatalf("Expected 1 error, got %d: %v", len(errs), errs)
+	}
+	if errs[0].Code != "E9_INVALID_MERGE_STATE" {
+		t.Errorf("Expected E9_INVALID_MERGE_STATE, got %s", errs[0].Code)
+	}
+}
+
+// TestValidateE9MergeState_Empty tests that empty merge state is valid (backward compat).
+func TestValidateE9MergeState_Empty(t *testing.T) {
+	m := &IMPLManifest{MergeState: ""}
+
+	errs := validateE9MergeState(m)
+	if len(errs) != 0 {
+		t.Errorf("Expected no errors for empty merge_state, got %d: %v", len(errs), errs)
+	}
+}
+
+// TestValidateSM01StateValid_AllStates tests that all valid protocol states pass.
+func TestValidateSM01StateValid_AllStates(t *testing.T) {
+	validStates := []ProtocolState{
+		StateScoutPending,
+		StateScoutValidating,
+		StateReviewed,
+		StateScaffoldPending,
+		StateWavePending,
+		StateWaveExecuting,
+		StateWaveMerging,
+		StateWaveVerified,
+		StateBlocked,
+		StateComplete,
+		StateNotSuitable,
+	}
+
+	for _, state := range validStates {
+		m := &IMPLManifest{State: state}
+		errs := validateSM01StateValid(m)
+		if len(errs) != 0 {
+			t.Errorf("Expected no errors for state=%q, got %d: %v", state, len(errs), errs)
+		}
+	}
+}
+
+// TestValidateSM01StateValid_Invalid tests that invalid protocol states are rejected.
+func TestValidateSM01StateValid_Invalid(t *testing.T) {
+	m := &IMPLManifest{State: "RUNNING"}
+
+	errs := validateSM01StateValid(m)
+	if len(errs) != 1 {
+		t.Fatalf("Expected 1 error, got %d: %v", len(errs), errs)
+	}
+	if errs[0].Code != "SM01_INVALID_STATE" {
+		t.Errorf("Expected SM01_INVALID_STATE, got %s", errs[0].Code)
+	}
+}
+
+// TestValidateSM01StateValid_Empty tests that empty state is valid (backward compat).
+func TestValidateSM01StateValid_Empty(t *testing.T) {
+	m := &IMPLManifest{State: ""}
+
+	errs := validateSM01StateValid(m)
+	if len(errs) != 0 {
+		t.Errorf("Expected no errors for empty state, got %d: %v", len(errs), errs)
+	}
+}
+
+// TestValidateAgentIDs_Valid tests that all valid agent ID formats pass validation.
+func TestValidateAgentIDs_Valid(t *testing.T) {
+	m := &IMPLManifest{
+		Waves: []Wave{
+			{
+				Number: 1,
+				Agents: []Agent{
+					{ID: "A", Task: "task A"},
+					{ID: "B", Task: "task B"},
+					{ID: "C2", Task: "task C2"},
+					{ID: "D9", Task: "task D9"},
+				},
+			},
+		},
+		FileOwnership: []FileOwnership{
+			{File: "file1.go", Agent: "A", Wave: 1},
+			{File: "file2.go", Agent: "B", Wave: 1},
+		},
+		CompletionReports: map[string]CompletionReport{
+			"A": {Status: "complete", Commit: "abc123"},
+			"B": {Status: "complete", Commit: "def456"},
+		},
+	}
+
+	errs := validateAgentIDs(m)
+	if len(errs) != 0 {
+		t.Errorf("Expected no errors for valid agent IDs, got %d: %v", len(errs), errs)
+	}
+}
+
+// TestValidateAgentIDs_InvalidLowercase tests that lowercase agent IDs are rejected.
+func TestValidateAgentIDs_InvalidLowercase(t *testing.T) {
+	m := &IMPLManifest{
+		Waves: []Wave{
+			{
+				Number: 1,
+				Agents: []Agent{
+					{ID: "a", Task: "task a"},
+				},
+			},
+		},
+	}
+
+	errs := validateAgentIDs(m)
+	if len(errs) != 1 {
+		t.Fatalf("Expected 1 error, got %d: %v", len(errs), errs)
+	}
+	if errs[0].Code != "DC04_INVALID_AGENT_ID" {
+		t.Errorf("Expected DC04_INVALID_AGENT_ID, got %s", errs[0].Code)
+	}
+}
+
+// TestValidateAgentIDs_InvalidMultiChar tests that multi-character agent IDs are rejected.
+func TestValidateAgentIDs_InvalidMultiChar(t *testing.T) {
+	m := &IMPLManifest{
+		Waves: []Wave{
+			{
+				Number: 1,
+				Agents: []Agent{
+					{ID: "AB", Task: "task AB"},
+				},
+			},
+		},
+	}
+
+	errs := validateAgentIDs(m)
+	if len(errs) != 1 {
+		t.Fatalf("Expected 1 error, got %d: %v", len(errs), errs)
+	}
+	if errs[0].Code != "DC04_INVALID_AGENT_ID" {
+		t.Errorf("Expected DC04_INVALID_AGENT_ID, got %s", errs[0].Code)
+	}
+}
+
+// TestValidateAgentIDs_InvalidDigit1 tests that agent IDs with digit 1 are rejected.
+func TestValidateAgentIDs_InvalidDigit1(t *testing.T) {
+	m := &IMPLManifest{
+		Waves: []Wave{
+			{
+				Number: 1,
+				Agents: []Agent{
+					{ID: "A1", Task: "task A1"},
+				},
+			},
+		},
+	}
+
+	errs := validateAgentIDs(m)
+	if len(errs) != 1 {
+		t.Fatalf("Expected 1 error, got %d: %v", len(errs), errs)
+	}
+	if errs[0].Code != "DC04_INVALID_AGENT_ID" {
+		t.Errorf("Expected DC04_INVALID_AGENT_ID, got %s", errs[0].Code)
+	}
+}
+
+// TestValidateAgentIDs_InvalidDigit0 tests that agent IDs with digit 0 are rejected.
+func TestValidateAgentIDs_InvalidDigit0(t *testing.T) {
+	m := &IMPLManifest{
+		Waves: []Wave{
+			{
+				Number: 1,
+				Agents: []Agent{
+					{ID: "A0", Task: "task A0"},
+				},
+			},
+		},
+	}
+
+	errs := validateAgentIDs(m)
+	if len(errs) != 1 {
+		t.Fatalf("Expected 1 error, got %d: %v", len(errs), errs)
+	}
+	if errs[0].Code != "DC04_INVALID_AGENT_ID" {
+		t.Errorf("Expected DC04_INVALID_AGENT_ID, got %s", errs[0].Code)
+	}
+}
+
+// TestValidateAgentIDs_Empty tests that empty agent IDs are rejected.
+func TestValidateAgentIDs_Empty(t *testing.T) {
+	m := &IMPLManifest{
+		Waves: []Wave{
+			{
+				Number: 1,
+				Agents: []Agent{
+					{ID: "", Task: "task"},
+				},
+			},
+		},
+	}
+
+	errs := validateAgentIDs(m)
+	if len(errs) != 1 {
+		t.Fatalf("Expected 1 error, got %d: %v", len(errs), errs)
+	}
+	if errs[0].Code != "DC04_INVALID_AGENT_ID" {
+		t.Errorf("Expected DC04_INVALID_AGENT_ID, got %s", errs[0].Code)
+	}
+}
+
+// TestValidateAgentIDs_FileOwnership tests that invalid agent IDs in FileOwnership are caught.
+func TestValidateAgentIDs_FileOwnership(t *testing.T) {
+	m := &IMPLManifest{
+		FileOwnership: []FileOwnership{
+			{File: "file1.go", Agent: "agent-1", Wave: 1},
+		},
+	}
+
+	errs := validateAgentIDs(m)
+	if len(errs) != 1 {
+		t.Fatalf("Expected 1 error, got %d: %v", len(errs), errs)
+	}
+	if errs[0].Code != "DC04_INVALID_AGENT_ID" {
+		t.Errorf("Expected DC04_INVALID_AGENT_ID, got %s", errs[0].Code)
+	}
+	if !contains(errs[0].Field, "file_ownership") {
+		t.Errorf("Expected field to contain 'file_ownership', got %s", errs[0].Field)
+	}
+}
+
+// TestValidateAgentIDs_CompletionReports tests that invalid agent IDs in CompletionReports are caught.
+func TestValidateAgentIDs_CompletionReports(t *testing.T) {
+	m := &IMPLManifest{
+		CompletionReports: map[string]CompletionReport{
+			"agent-X": {Status: "complete", Commit: "abc123"},
+		},
+	}
+
+	errs := validateAgentIDs(m)
+	if len(errs) != 1 {
+		t.Fatalf("Expected 1 error, got %d: %v", len(errs), errs)
+	}
+	if errs[0].Code != "DC04_INVALID_AGENT_ID" {
+		t.Errorf("Expected DC04_INVALID_AGENT_ID, got %s", errs[0].Code)
+	}
+	if !contains(errs[0].Field, "completion_reports") {
+		t.Errorf("Expected field to contain 'completion_reports', got %s", errs[0].Field)
+	}
+}
+
+// TestValidateGateTypes_Valid tests that all valid gate types pass validation.
+func TestValidateGateTypes_Valid(t *testing.T) {
+	m := &IMPLManifest{
+		QualityGates: &QualityGates{
+			Level: "standard",
+			Gates: []QualityGate{
+				{Type: "build", Command: "go build", Required: true},
+				{Type: "lint", Command: "golint", Required: true},
+				{Type: "test", Command: "go test", Required: true},
+				{Type: "typecheck", Command: "go vet", Required: false},
+				{Type: "custom", Command: "./custom.sh", Required: false},
+			},
+		},
+	}
+
+	errs := validateGateTypes(m)
+	if len(errs) != 0 {
+		t.Errorf("Expected no errors for valid gate types, got %d: %v", len(errs), errs)
+	}
+}
+
+// TestValidateGateTypes_Invalid tests that invalid gate types are rejected.
+func TestValidateGateTypes_Invalid(t *testing.T) {
+	m := &IMPLManifest{
+		QualityGates: &QualityGates{
+			Level: "standard",
+			Gates: []QualityGate{
+				{Type: "compile", Command: "make", Required: true},
+			},
+		},
+	}
+
+	errs := validateGateTypes(m)
+	if len(errs) != 1 {
+		t.Fatalf("Expected 1 error, got %d: %v", len(errs), errs)
+	}
+	if errs[0].Code != "DC07_INVALID_GATE_TYPE" {
+		t.Errorf("Expected DC07_INVALID_GATE_TYPE, got %s", errs[0].Code)
+	}
+}
+
+// TestValidateGateTypes_NoGates tests that nil QualityGates returns empty.
+func TestValidateGateTypes_NoGates(t *testing.T) {
+	m := &IMPLManifest{
+		QualityGates: nil,
+	}
+
+	errs := validateGateTypes(m)
+	if len(errs) != 0 {
+		t.Errorf("Expected no errors when QualityGates is nil, got %d: %v", len(errs), errs)
+	}
+}
+
+// TestValidateGateTypes_EmptyType tests that empty gate type returns error.
+func TestValidateGateTypes_EmptyType(t *testing.T) {
+	m := &IMPLManifest{
+		QualityGates: &QualityGates{
+			Level: "standard",
+			Gates: []QualityGate{
+				{Type: "", Command: "make", Required: true},
+			},
+		},
+	}
+
+	errs := validateGateTypes(m)
+	if len(errs) != 1 {
+		t.Fatalf("Expected 1 error, got %d: %v", len(errs), errs)
+	}
+	if errs[0].Code != "DC07_INVALID_GATE_TYPE" {
+		t.Errorf("Expected DC07_INVALID_GATE_TYPE, got %s", errs[0].Code)
+	}
+}
+
+// contains is a helper function to check if a string contains a substring.
+func contains(s, substr string) bool {
+	return len(s) > 0 && len(substr) > 0 && (s == substr || len(s) >= len(substr) && (s[:len(substr)] == substr || s[len(s)-len(substr):] == substr || containsMiddle(s, substr)))
+}
+
+func containsMiddle(s, substr string) bool {
+	for i := 0; i <= len(s)-len(substr); i++ {
+		if s[i:i+len(substr)] == substr {
+			return true
+		}
+	}
+	return false
+}

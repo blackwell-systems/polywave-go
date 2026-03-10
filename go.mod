@@ -8,6 +8,7 @@ require (
 	github.com/aws/aws-sdk-go-v2/config v1.32.11
 	github.com/aws/aws-sdk-go-v2/service/bedrockruntime v1.50.1
 	github.com/creack/pty v1.1.24
+	github.com/spf13/cobra v1.10.2
 	golang.org/x/sync v0.16.0
 	gopkg.in/yaml.v3 v3.0.1
 )
@@ -26,6 +27,8 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/ssooidc v1.35.16 // indirect
 	github.com/aws/aws-sdk-go-v2/service/sts v1.41.8 // indirect
 	github.com/aws/smithy-go v1.24.2 // indirect
+	github.com/inconshreveable/mousetrap v1.1.0 // indirect
+	github.com/spf13/pflag v1.0.9 // indirect
 	github.com/tidwall/gjson v1.18.0 // indirect
 	github.com/tidwall/match v1.1.1 // indirect
 	github.com/tidwall/pretty v1.2.1 // indirect

@@ -2,6 +2,7 @@ package protocol
 
 import (
 	"errors"
+	"time"
 )
 
 // ErrReportNotFound is returned by ParseCompletionReport when the requested
@@ -22,8 +23,15 @@ type IMPLManifest struct {
 	QualityGates       *QualityGates                  `yaml:"quality_gates,omitempty" json:"quality_gates,omitempty"`
 	Scaffolds          []ScaffoldFile                 `yaml:"scaffolds,omitempty" json:"scaffolds,omitempty"`
 	CompletionReports  map[string]CompletionReport    `yaml:"completion_reports,omitempty" json:"completion_reports,omitempty"`
+	StubReports        map[string]*ScanStubsResult    `yaml:"stub_reports,omitempty" json:"stub_reports,omitempty"`
 	PreMortem          *PreMortem                     `yaml:"pre_mortem,omitempty" json:"pre_mortem,omitempty"`
 	KnownIssues        []KnownIssue                   `yaml:"known_issues,omitempty" json:"known_issues,omitempty"`
+	State              ProtocolState                  `yaml:"state,omitempty" json:"state,omitempty"`
+	MergeState         MergeState                     `yaml:"merge_state,omitempty" json:"merge_state,omitempty"`
+	// Freeze enforcement fields (E2/I2-02)
+	WorktreesCreatedAt  *time.Time `yaml:"worktrees_created_at,omitempty" json:"worktrees_created_at,omitempty"`
+	FrozenContractsHash string     `yaml:"frozen_contracts_hash,omitempty" json:"frozen_contracts_hash,omitempty"`
+	FrozenScaffoldsHash string     `yaml:"frozen_scaffolds_hash,omitempty" json:"frozen_scaffolds_hash,omitempty"`
 }
 
 // FileOwnership tracks which agent owns which file in which wave.
@@ -143,3 +151,30 @@ type ValidationError struct {
 	Field   string `json:"field,omitempty"`
 	Line    int    `json:"line,omitempty"`
 }
+
+// ProtocolState represents the current state of the IMPL manifest in the SAW protocol state machine.
+type ProtocolState string
+
+const (
+	StateScoutPending    ProtocolState = "SCOUT_PENDING"
+	StateScoutValidating ProtocolState = "SCOUT_VALIDATING"
+	StateReviewed        ProtocolState = "REVIEWED"
+	StateScaffoldPending ProtocolState = "SCAFFOLD_PENDING"
+	StateWavePending     ProtocolState = "WAVE_PENDING"
+	StateWaveExecuting   ProtocolState = "WAVE_EXECUTING"
+	StateWaveMerging     ProtocolState = "WAVE_MERGING"
+	StateWaveVerified    ProtocolState = "WAVE_VERIFIED"
+	StateBlocked         ProtocolState = "BLOCKED"
+	StateComplete        ProtocolState = "COMPLETE"
+	StateNotSuitable     ProtocolState = "NOT_SUITABLE"
+)
+
+// MergeState represents the state of the merge operation for a wave.
+type MergeState string
+
+const (
+	MergeStateIdle       MergeState = "idle"
+	MergeStateInProgress MergeState = "in_progress"
+	MergeStateCompleted  MergeState = "completed"
+	MergeStateFailed     MergeState = "failed"
+)

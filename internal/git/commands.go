@@ -7,6 +7,7 @@ package git
 import (
 	"fmt"
 	"os/exec"
+	"strconv"
 	"strings"
 )
 
@@ -141,4 +142,19 @@ func DiffNameOnly(repoPath, fromRef, toRef string) ([]string, error) {
 	}
 
 	return strings.Split(trimmed, "\n"), nil
+}
+
+// CommitCount returns the number of commits between fromRef and toRef
+// in the repository at repoPath. Uses git rev-list --count.
+func CommitCount(repoPath, fromRef, toRef string) (int, error) {
+	rangeArg := fromRef + ".." + toRef
+	out, err := Run(repoPath, "rev-list", "--count", rangeArg)
+	if err != nil {
+		return 0, fmt.Errorf("git rev-list --count failed: %w", err)
+	}
+	count, err := strconv.Atoi(strings.TrimSpace(out))
+	if err != nil {
+		return 0, fmt.Errorf("failed to parse commit count: %w", err)
+	}
+	return count, nil
 }

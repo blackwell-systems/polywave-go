@@ -1,0 +1,98 @@
+package protocol
+
+import (
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
+	"fmt"
+	"time"
+)
+
+// FreezeViolation represents a detected modification to frozen sections of the manifest.
+type FreezeViolation struct {
+	Section string `json:"section"` // "interface_contracts" | "scaffolds"
+	Message string `json:"message"`
+}
+
+// SetFreezeTimestamp sets the worktrees_created_at timestamp on a manifest
+// and computes hash checksums for interface contracts and scaffolds to detect
+// future modifications.
+func SetFreezeTimestamp(m *IMPLManifest, t time.Time) error {
+	m.WorktreesCreatedAt = &t
+
+	// Compute and store hash of interface contracts
+	contractsHash, err := computeHash(m.InterfaceContracts)
+	if err != nil {
+		return fmt.Errorf("failed to compute contracts hash: %w", err)
+	}
+	m.FrozenContractsHash = contractsHash
+
+	// Compute and store hash of scaffolds
+	scaffoldsHash, err := computeHash(m.Scaffolds)
+	if err != nil {
+		return fmt.Errorf("failed to compute scaffolds hash: %w", err)
+	}
+	m.FrozenScaffoldsHash = scaffoldsHash
+
+	return nil
+}
+
+// CheckFreeze checks if the manifest has been modified after worktree creation.
+// Returns violations if interface contracts or scaffolds were edited post-freeze.
+// Returns empty slice if no freeze timestamp is set (backward compatible).
+func CheckFreeze(manifest *IMPLManifest) ([]FreezeViolation, error) {
+	// No freeze timestamp means no freeze enforcement (backward compatible)
+	if manifest.WorktreesCreatedAt == nil {
+		return nil, nil
+	}
+
+	var violations []FreezeViolation
+
+	// Check interface contracts
+	if manifest.FrozenContractsHash != "" {
+		currentHash, err := computeHash(manifest.InterfaceContracts)
+		if err != nil {
+			return nil, fmt.Errorf("failed to compute current contracts hash: %w", err)
+		}
+		if currentHash != manifest.FrozenContractsHash {
+			violations = append(violations, FreezeViolation{
+				Section: "interface_contracts",
+				Message: fmt.Sprintf("Interface contracts have been modified after freeze at %s. Expected hash %s, got %s",
+					manifest.WorktreesCreatedAt.Format(time.RFC3339),
+					manifest.FrozenContractsHash[:8],
+					currentHash[:8]),
+			})
+		}
+	}
+
+	// Check scaffolds
+	if manifest.FrozenScaffoldsHash != "" {
+		currentHash, err := computeHash(manifest.Scaffolds)
+		if err != nil {
+			return nil, fmt.Errorf("failed to compute current scaffolds hash: %w", err)
+		}
+		if currentHash != manifest.FrozenScaffoldsHash {
+			violations = append(violations, FreezeViolation{
+				Section: "scaffolds",
+				Message: fmt.Sprintf("Scaffolds have been modified after freeze at %s. Expected hash %s, got %s",
+					manifest.WorktreesCreatedAt.Format(time.RFC3339),
+					manifest.FrozenScaffoldsHash[:8],
+					currentHash[:8]),
+			})
+		}
+	}
+
+	return violations, nil
+}
+
+// computeHash returns the SHA256 hash of the JSON serialization of the given data.
+// This provides a deterministic fingerprint for detecting changes.
+func computeHash(data interface{}) (string, error) {
+	jsonBytes, err := json.Marshal(data)
+	if err != nil {
+		return "", err
+	}
+
+	hash := sha256.Sum256(jsonBytes)
+	return hex.EncodeToString(hash[:]), nil
+}

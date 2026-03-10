@@ -18,6 +18,20 @@
 - `parseProviderPrefix("openai:gpt-4o")` → `("openai", "gpt-4o")` — routing prefix parsed in `newBackendFunc`
 - Provider dispatch: `"openai:*"` → openai backend; `"cli:*"` → CLI backend (binary from `SAW_CLI_BINARY` env); `"anthropic:*"` → Anthropic API backend; no prefix → existing auto logic
 
+### v0.7.0 — Protocol SDK Phase 2: Orchestration Loop CLI (2026-03-09)
+- 9 SDK functions in `pkg/protocol/`: `CreateWorktrees`, `VerifyCommits`, `ScanStubs`, `MergeAgents`, `Cleanup`, `VerifyBuild`, `UpdateStatus`, `UpdateContext`, `ListIMPLs`
+- 1 git helper in `internal/git/`: `CommitCount`
+- 10 CLI commands in `cmd/saw/`: `create-worktrees`, `verify-commits`, `scan-stubs`, `merge-agents`, `cleanup`, `verify-build`, `update-status`, `update-context`, `list-impls`, `run-wave`
+- Binary output named `sawtools` (directory `cmd/saw/` is unchanged)
+- Capstone orchestration: `RunWaveFull()` in `pkg/engine/` — full wave lifecycle in one call
+- IMPL doc: `docs/IMPL/IMPL-orchestration-loop-cli.yaml` — 24 agents, 5 waves, SAW:COMPLETE 2026-03-09
+- Cross-repo prompt updates: `saw-skill.md` v0.7.0, `saw-merge.md` v0.6.0, `saw-worktree.md` v0.6.0 in scout-and-wave repo
+
+### v0.15.0 — Binary rename to sawtools (2026-03-09)
+- Binary output renamed from `saw` to `sawtools`
+- `cmd/saw/root.go`: Use field updated to `"sawtools"`, Short updated
+- Clarifies split: `sawtools` = toolkit (this repo), `saw` = orchestrator (scout-and-wave-web)
+
 ## Established Interfaces
 
 ### `backend.Backend`
