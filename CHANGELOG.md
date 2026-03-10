@@ -8,6 +8,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 | Version | Date | Headline |
 |---------|------|----------|
+| [0.12.0] | 2026-03-09 | Protocol SDK conformance — 44-gap remediation: state machine, freeze enforcement, conflict detection, quality gates, failure routing, scaffold/enum validation, project memory |
 | [0.11.0] | 2026-03-09 | AWS Bedrock backend — real AWS SDK integration with inference profile IDs, replaces fake Bedrock routing |
 | [0.10.0] | 2026-03-09 | Model name validation — input sanitization to prevent command injection via provider-prefixed model names |
 | [0.9.0] | 2026-03-09 | Agent Observatory — real-time tool call visibility per wave agent via SSE |
@@ -19,6 +20,33 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 | [0.3.0] | 2026-03-08 | Protocol audit fixes — P0: failure_type parsing, multi-gen agent IDs; P1: E22 2-pass scaffold build, cross-repo Repo column; P2: repo field in completion reports |
 | [0.2.0] | 2026-03-08 | Engine protocol parity — E17–E23 implemented (context memory, failure routing, stub scan, quality gates, scaffold build verify, per-agent context extraction) |
 | [0.1.0] | 2026-03-08 | Initial engine extraction — parser, orchestrator, agent runner, git, worktree management |
+
+## [0.12.0] - 2026-03-09
+
+### Added
+
+- **Protocol state machine** (`pkg/protocol/types.go`, `pkg/protocol/manifest.go`) — 11 `ProtocolState` constants (SCOUT_PENDING → COMPLETE), 4 `MergeState` constants, `State`/`MergeState` fields on `IMPLManifest`. `TransitionTo(m, target)` enforces SM-02 transition guards with structured `ValidationError` output. `ValidateSM02TransitionGuards()` implements full adjacency list matching protocol spec.
+- **Interface freeze enforcement** (`pkg/protocol/freeze.go`) — `CheckFreeze(manifest)` detects post-worktree modifications to interface contracts and scaffolds via SHA256 hash comparison. `SetFreezeTimestamp(m, t)` records the freeze point. `FreezeViolation` struct for structured reporting. Implements E2/I2-02.
+- **Quality gates runner** (`pkg/protocol/gates.go`) — `RunGates(manifest, waveNumber, repoDir)` executes quality gate commands via `os/exec`, captures stdout/stderr/exit code. `GateResult` struct with pass/fail, required flag. Implements E21.
+- **Completion marker writer** (`pkg/protocol/marker.go`) — `WriteCompletionMarker(implDocPath, date)` inserts `<!-- SAW:COMPLETE date -->` after `# IMPL:` title. Handles both `.md` and `.yaml` files. Implements E15.
+- **Ownership conflict detection** (`pkg/protocol/conflict.go`) — `DetectOwnershipConflicts(manifest, reports)` cross-references agent file lists to detect same-wave conflicts and undeclared modifications. `OwnershipConflict` struct. Implements E11.
+- **Failure type decision tree** (`pkg/protocol/failure.go`) — `FailureTypeEnum` with 5 constants (transient, fixable, needs_replan, escalate, timeout). `ShouldRetry()`, `MaxRetries()`, `ActionRequired()` decision helpers. Implements E19.
+- **Solo wave and completion helpers** (`pkg/protocol/helpers.go`) — `IsSoloWave(wave)`, `IsWaveComplete(wave, reports)`, `IsFinalWave(manifest, waveNumber)`. Implements SM-03.
+- **Field format validation** (`pkg/protocol/fieldvalidation.go`) — `ValidateWorktreeNames(m)` (E5 branch naming regex), `ValidateVerificationField(m)` (E10 verification format).
+- **Scaffold validation** (`pkg/protocol/scaffold_validation.go`) — `ValidateScaffolds(m)` returns per-file `ScaffoldStatus`, `AllScaffoldsCommitted(m)` boolean check. Implements SKILL-04.
+- **Enum validation** (`pkg/protocol/enumvalidation.go`) — `ValidateCompletionStatuses(m)` (DC-02), `ValidateFailureTypes(m)` (DC-03), `ValidatePreMortemRisk(m)` (DC-06).
+- **Project memory helpers** (`pkg/protocol/memory.go`) — `ProjectMemory` type with nested types, `LoadProjectMemory(path)`, `SaveProjectMemory(path, pm)`, `AddCompletedFeature(pm, feature)`. Implements E17/E18.
+- **Agent prompt updater** (`pkg/protocol/updater.go`) — `UpdateAgentPrompt(m, agentID, newPrompt)` for E8 downstream prompt propagation.
+
+### Changed
+
+- **`Validate()` function wired** (`pkg/protocol/validation.go`) — all new validators (ValidateWorktreeNames, ValidateVerificationField, ValidateCompletionStatuses, ValidateFailureTypes, ValidatePreMortemRisk) now called from the main `Validate()` entrypoint. Previously only I1–I6 core validators were wired.
+
+### Implementation
+
+Delivered via SAW protocol: 3 waves, 12 agents (A–L). Wave 1 (5 agents): state machine, gates, freeze, prompt updater, enum validation. Wave 2 (4 agents): conflict detection, failure routing, helpers, field validation. Wave 3 (3 agents): scaffold validation, enum validation, project memory. Post-wave gap closure: wired all validators into `Validate()`, added `TransitionTo()`. Conformance audit: 91% coverage, zero critical gaps.
+
+---
 
 ## [0.11.0] - 2026-03-09
 
