@@ -2,6 +2,7 @@ package protocol
 
 import (
 	"errors"
+	"time"
 )
 
 // ErrReportNotFound is returned by ParseCompletionReport when the requested
@@ -26,6 +27,10 @@ type IMPLManifest struct {
 	KnownIssues        []KnownIssue                   `yaml:"known_issues,omitempty" json:"known_issues,omitempty"`
 	State              ProtocolState                  `yaml:"state,omitempty" json:"state,omitempty"`
 	MergeState         MergeState                     `yaml:"merge_state,omitempty" json:"merge_state,omitempty"`
+	// Freeze enforcement fields (E2/I2-02)
+	WorktreesCreatedAt  *time.Time `yaml:"worktrees_created_at,omitempty" json:"worktrees_created_at,omitempty"`
+	FrozenContractsHash string     `yaml:"frozen_contracts_hash,omitempty" json:"frozen_contracts_hash,omitempty"`
+	FrozenScaffoldsHash string     `yaml:"frozen_scaffolds_hash,omitempty" json:"frozen_scaffolds_hash,omitempty"`
 }
 
 // FileOwnership tracks which agent owns which file in which wave.
