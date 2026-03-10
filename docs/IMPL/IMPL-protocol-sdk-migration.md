@@ -68,7 +68,7 @@ gates:
 ## Scaffolds
 
 - file_path: /Users/dayna.blackwell/code/scout-and-wave-go/pkg/protocol/types.go
-  status: pending
+  status: committed (dfde126)
   description: Type scaffold for SDK core types. Agent B (validation) imports these types during parallel execution with Agent A (manifest). Agent A owns the full implementation and will extend this file; the scaffold provides compile-ready type stubs so B can develop validation logic against real types.
   import_path: github.com/blackwell-systems/scout-and-wave-go/pkg/protocol
 
