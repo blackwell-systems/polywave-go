@@ -8,6 +8,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 | Version | Date | Headline |
 |---------|------|----------|
+| [0.22.0] | 2026-03-10 | E5/E10 validator hardening — solo-wave exemption, lenient verification format, CLI reference docs |
+| [0.21.0] | 2026-03-10 | Constraint solver — Kahn's topological sort, cycle detection, `SolveManifest`, `sawtools solve` command |
 | [0.20.0] | 2026-03-10 | Tool middleware wired — TimingMiddleware feeds Observatory SSE, PermissionMiddleware gives Scout read-only tools, `ReadOnlyTools()` factory |
 | [0.19.0] | 2026-03-10 | Tool system refactoring — unified `pkg/tools` Workshop wired into both Anthropic and OpenAI backends; 7 standard tools, 3 old duplicated tool files deleted |
 | [0.18.0] | 2026-03-10 | E16A/E16C validator tests — 5 new tests for required block presence and out-of-band dep graph warning in `validator_test.go` |
@@ -28,6 +30,35 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 | [0.3.0] | 2026-03-08 | Protocol audit fixes — P0: failure_type parsing, multi-gen agent IDs; P1: E22 2-pass scaffold build, cross-repo Repo column; P2: repo field in completion reports |
 | [0.2.0] | 2026-03-08 | Engine protocol parity — E17–E23 implemented (context memory, failure routing, stub scan, quality gates, scaffold build verify, per-agent context extraction) |
 | [0.1.0] | 2026-03-08 | Initial engine extraction — parser, orchestrator, agent runner, git, worktree management |
+
+## [0.22.0] - 2026-03-10
+
+### Fixed
+
+- **E5 solo-wave exemption** (`pkg/protocol/fieldvalidation.go`) — `ValidateWorktreeNames` now builds a `waveSize` map and skips branch/worktree pattern checks for single-agent waves. Solo agents commit directly to main/develop per protocol; the `wave{N}-agent-{ID}` pattern only applies to multi-agent waves that use worktree isolation.
+- **E10 lenient verification** (`pkg/protocol/fieldvalidation.go`) — Verification regex relaxed from `^(PASS|FAIL)(\s+\(.*\))?$` to `\b(PASS|FAIL)\b`. Accepts natural agent phrasing like `"go build, go test — all 18 tests PASS"` while still rejecting text without a PASS/FAIL keyword.
+
+### Added
+
+- **CLI reference docs** (`docs/cli-reference.md`) — All 21 `sawtools` commands documented with usage, flags, exit codes, and examples. Grouped into 5 categories: Validation, Context & Discovery, Wave Execution, Status & Reporting, Quality & Safety.
+- 4 new validator tests: `SoloWaveExempt`, `SoloWaveStillFailsMultiAgent`, `DescriptivePass` (3 subtests). 4 existing tests updated to use multi-agent wave fixtures.
+
+---
+
+## [0.21.0] - 2026-03-10
+
+### Added
+
+- **Constraint solver** (`pkg/solver/`) — Kahn's algorithm (BFS topological sort) assigns agents to waves respecting dependency order. Protocol-independent: stdlib only, no imports from `pkg/protocol`.
+  - `solver.go` — `Solve(nodes []DepNode) (*SolveResult, error)`: topological sort with wave-level assignment
+  - `graph.go` — `DetectCycles`, `TransitiveDeps`, `CriticalPath`, `ValidateRefs`: graph analysis utilities
+  - `types.go` — `DepNode`, `Assignment`, `SolveResult` type definitions
+- **`SolveManifest`** (`pkg/protocol/solver_integration.go`) — Full pipeline: extract nodes from manifest → solve → compare computed vs declared waves → apply corrections → return rewritten manifest + change descriptions.
+- **`sawtools solve`** (`cmd/saw/solve_cmd.go`) — CLI command: reads IMPL manifest, runs constraint solver, reports corrections. `--dry-run` shows changes without writing. `--json` for machine-readable output.
+- **`--solver` flag on `sawtools validate`** (`cmd/saw/validate_cmd.go`) — Runs constraint solver as additional validation pass alongside E5/E10/E16 checks.
+- 42 tests across solver (10), graph (14), integration (18).
+
+---
 
 ## [0.20.0] - 2026-03-10
 
