@@ -145,20 +145,20 @@ Each agent followed the same pattern: `flag.NewFlagSet`, SDK call, `json.Marshal
 
 Nine agents. Nine files. Zero merge conflicts. Zero isolation leaks this time. Build + full test suite passed post-merge.
 
-### The Numbers
+### The Numbers (Waves 1–2)
 
-| Metric | Phase 1 (March 7) | Phase 2 Wave 1 (March 9) |
-|--------|-------------------|--------------------------|
-| Agents | 2 | 10 |
-| New files | 4 | 20 |
-| Lines of Go | 1,400 | 3,300+ |
-| Tests | 33 | ~40 |
-| Merge conflicts | 0 | 0 |
-| Isolation leaks | 0 | 3 (all caught) |
-| Post-merge test pass | First try | First try |
-| Wall clock (agents) | ~5 min | ~5 min |
+| Metric | Phase 1 (March 7) | Phase 2 Wave 1 (March 9) | Phase 2 Wave 2 |
+|--------|-------------------|--------------------------|----------------|
+| Agents | 2 | 10 | 9 |
+| New files | 4 | 20 | 9 |
+| Lines of Go | 1,400 | 3,300+ | 900+ |
+| Tests | 33 | ~40 | 0 (thin wrappers) |
+| Merge conflicts | 0 | 0 | 0 |
+| Isolation leaks | 0 | 3 (all caught) | 0 |
+| Post-merge test pass | First try | First try | First try |
+| Wall clock (agents) | ~5 min | ~5 min | ~3 min |
 
-The wall clock didn't change because parallelism scales horizontally. Ten agents take the same time as two when file ownership is disjoint.
+The wall clock didn't change because parallelism scales horizontally. Ten agents take the same time as two when file ownership is disjoint. Wave 2 was faster because CLI wrappers are formulaic — `flag.NewFlagSet`, call SDK, marshal JSON, exit.
 
 ### The Bootstrap Paradox, Resolved
 
@@ -168,13 +168,56 @@ The old system built its replacement. The new commands are tested, typed, and re
 
 The markdown IMPL format was deprecated by Phase 1. The ad-hoc bash commands are being deprecated by Phase 2. Not by decree — by obsolescence.
 
-## The Takeaway (Updated)
+### Waves 3–5: Wiring, Capstone, and the Final Handoff
+
+With SDK functions proven (Wave 1) and CLI wrappers built (Wave 2), the remaining waves assembled the pieces into a working system.
+
+**Wave 3** (2 agents, parallel): Agent U wired all 9 CLI commands into `cmd/saw/main.go` — the central switch statement that routes `saw <command>` invocations. Agent V built the capstone: `RunWaveFull()` in `pkg/engine/`, a single function that orchestrates the entire wave lifecycle — create worktrees, verify commits, merge agents, verify build, clean up. The capstone function is what turns 5 sequential CLI calls into one: `saw run-wave`. Two agents, two files each, zero conflicts. Post-merge `go test ./...` passed on the first try.
+
+**Wave 4** (1 agent, solo): Agent W wrapped `RunWaveFull` as the `saw run-wave` CLI command. Solo agent wave — no worktree needed, worked directly on the develop branch. The CLI now has 10 commands covering every orchestrator responsibility that was previously ad-hoc bash:
+
+```
+saw create-worktrees    saw verify-commits    saw scan-stubs
+saw merge-agents        saw cleanup           saw verify-build
+saw update-status       saw update-context    saw list-impls
+saw run-wave
+```
+
+**Wave 5** (2 agents, cross-repo): The final wave was the most conceptually interesting. Agents X and Y didn't write Go — they updated the SAW protocol's own prompt files in a different repository.
+
+| Agent | File | Change |
+|-------|------|--------|
+| X | `saw-skill.md` (v0.6.0 → v0.7.0) | Replaced every ad-hoc bash operation with CLI command references. Added dual-mode documentation (YAML + markdown). 18 CLI command references where there were 0 before. |
+| Y | `saw-merge.md` (v0.5.0 → v0.6.0) | Replaced manual `git merge --no-ff` loops, `git rev-list` verification, bash stub scanner with `saw merge-agents`, `saw verify-commits`, `saw scan-stubs`. Kept the procedural explanation as documentation — the files explain *why*, the CLI handles *what*. |
+| Y | `saw-worktree.md` (v0.5.1 → v0.6.0) | Replaced manual `git worktree add` loops with `saw create-worktrees`. Added `--repo-dir` cross-repo documentation. 7 CLI command references. |
+
+These agents worked in the `scout-and-wave` protocol spec repo while the IMPL manifest lived in `scout-and-wave-go` — a cross-repo wave. Worktrees were created in the target repo; Field 0 isolation navigated agents to the correct directory. Both committed to their branches. Both merged clean. Zero isolation leaks.
+
+### The Full Ledger
+
+| Wave | Agents | Output | Conflicts | Leaks | Post-merge |
+|------|--------|--------|-----------|-------|------------|
+| Phase 1 | 2 (A, B) | 4 files, 1,400 LOC, 33 tests | 0 | 0 | Pass (1st try) |
+| Wave 1 | 10 (A–I, K) | 20 files, 3,300+ LOC, ~40 tests | 0 | 3 (caught) | Pass (1st try) |
+| Wave 2 | 9 (L–T) | 9 files, 900+ LOC | 0 | 0 | Pass (1st try) |
+| Wave 3 | 2 (U, V) | 3 files, main.go wiring + capstone | 0 | 0 | Pass (1st try) |
+| Wave 4 | 1 (W) | 2 files, run-wave CLI | 0 | 0 | Pass (1st try) |
+| Wave 5 | 2 (X, Y) | 3 prompt files, cross-repo | 0 | 0 | Pass (gates) |
+| **Total** | **26** | **~40 files, 5,600+ LOC, ~75 tests** | **0** | **3** | **6/6 waves** |
+
+Twenty-six agents (2 in Phase 1, 24 in Phase 2). Zero merge conflicts. The isolation leak rate dropped from 30% (Wave 1) to 0% (Waves 2–5). Every wave's post-merge verification passed on the first try. The three leaks in Wave 1 were caught by the 4-layer defense model before any bad merge occurred — the system worked exactly as designed.
+
+The entire Phase 2 execution — from the conformance audit that identified 17 gaps through the final Wave 5 cross-repo merge — happened in a single day.
+
+## The Takeaway (Final)
 
 If your protocol can't build itself, it's not ready for production.
 
-If your protocol can build itself *at 10x parallelism with 30% isolation failure rate and still produce zero merge conflicts*, it might actually be ready.
+If your protocol can build itself at 12x parallelism — and then use the result to update its own instructions — it might actually be ready.
 
-SAW's Protocol SDK migration is now 19 of 24 agents complete across 3 waves. Three waves remain: main.go wiring + capstone pipeline (Wave 3), the `run-wave` CLI wrapper (Wave 4), and skill prompt updates (Wave 5). The old system is still flying the plane. The new engine is being bolted on mid-flight.
+The SAW Protocol SDK migration is complete. 24 agents across 5 waves, spanning 2 repositories. The old markdown-and-bash system coordinated every agent that built the typed Go system that replaces it. Wave 5's agents updated the very prompt files that drove Waves 1–4. The bootstrap paradox didn't just resolve — it closed cleanly.
+
+The next time someone runs `/saw wave`, the orchestrator will call `saw create-worktrees` instead of a bash loop. `saw merge-agents` instead of manual `git merge --no-ff`. `saw verify-build` instead of hoping the LLM remembers the right flags. The plane is still flying. The new engine is installed. The old one can be unbolted.
 
 ---
 
