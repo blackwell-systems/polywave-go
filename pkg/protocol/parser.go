@@ -113,8 +113,8 @@ func ParseIMPLDoc(path string) (*types.IMPLDoc, error) {
 					doc.DependencyGraphText = strings.Join(blockLines, "\n")
 					hasTypedDepGraph = true
 				case "impl-wave-structure":
-					// Store raw content (ignored by parser beyond storage).
-					// Currently no field in IMPLDoc for this; skip silently.
+					// Parse wave structure: "Wave 1: [A] [B] [D] [E]"
+					parseWaveStructureBlock(blockLines, doc)
 				case "impl-completion-report":
 					// Skip: completion reports are parsed by ParseCompletionReport.
 				}
@@ -1102,5 +1102,59 @@ func classifyAction(s string) string {
 		return "delete"
 	default:
 		return s
+	}
+}
+
+// parseWaveStructureBlock parses the impl-wave-structure typed block.
+// Format: "Wave 1: [A] [B] [D] [E]" with optional comments after "<-"
+// Populates doc.Waves with wave number and agent IDs (prompts come from markdown).
+func parseWaveStructureBlock(blockLines []string, doc *types.IMPLDoc) {
+	waveRe := regexp.MustCompile(`^Wave\s+(\d+):\s*(.*)`)
+
+	for _, line := range blockLines {
+		// Strip comments (anything after "<-")
+		if idx := strings.Index(line, "<-"); idx >= 0 {
+			line = line[:idx]
+		}
+
+		line = strings.TrimSpace(line)
+
+		// Skip empty lines and visual separators
+		if line == "" || strings.HasPrefix(line, "|") {
+			continue
+		}
+
+		// Match "Wave N: [A] [B] ..."
+		matches := waveRe.FindStringSubmatch(line)
+		if len(matches) != 3 {
+			continue
+		}
+
+		var waveNum int
+		if _, err := fmt.Sscanf(matches[1], "%d", &waveNum); err != nil {
+			continue
+		}
+
+		// Extract agent IDs from [A] [B] [D] [E]
+		agentIDsStr := matches[2]
+		agentRe := regexp.MustCompile(`\[([A-Z]\d?)\]`)
+		agentMatches := agentRe.FindAllStringSubmatch(agentIDsStr, -1)
+
+		var agents []types.AgentSpec
+		for _, m := range agentMatches {
+			if len(m) == 2 {
+				agents = append(agents, types.AgentSpec{
+					Letter: m[1],
+					// Prompt will be filled by markdown section parser
+				})
+			}
+		}
+
+		if len(agents) > 0 {
+			doc.Waves = append(doc.Waves, types.Wave{
+				Number: waveNum,
+				Agents: agents,
+			})
+		}
 	}
 }
