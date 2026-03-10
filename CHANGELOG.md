@@ -8,6 +8,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 | Version | Date | Headline |
 |---------|------|----------|
+| [0.19.0] | 2026-03-10 | Tool system refactoring — unified `pkg/tools` Workshop wired into both Anthropic and OpenAI backends; 7 standard tools, 3 old duplicated tool files deleted |
 | [0.18.0] | 2026-03-10 | E16A/E16C validator tests — 5 new tests for required block presence and out-of-band dep graph warning in `validator_test.go` |
 | [0.17.0] | 2026-03-10 | Structured output parsing — JSON schema-constrained Scout output via Anthropic API `output_config.format`; eliminates brittle markdown parser path |
 | [0.16.0] | 2026-03-10 | YAML-mode CLI commands — 9 missing commands: `validate`, `extract-context`, `set-completion`, `mark-complete`, `run-gates`, `check-conflicts`, `validate-scaffolds`, `freeze-check`, `update-agent-prompt` |
@@ -26,6 +27,21 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 | [0.3.0] | 2026-03-08 | Protocol audit fixes — P0: failure_type parsing, multi-gen agent IDs; P1: E22 2-pass scaffold build, cross-repo Repo column; P2: repo field in completion reports |
 | [0.2.0] | 2026-03-08 | Engine protocol parity — E17–E23 implemented (context memory, failure routing, stub scan, quality gates, scaffold build verify, per-agent context extraction) |
 | [0.1.0] | 2026-03-08 | Initial engine extraction — parser, orchestrator, agent runner, git, worktree management |
+
+## [0.19.0] - 2026-03-10
+
+### Added
+
+- **Unified tool system wiring** — `pkg/tools.Workshop` now powers both the Anthropic API backend (`pkg/agent/backend/api/client.go`) and the OpenAI-compatible backend (`pkg/agent/backend/openai/client.go`). Both backends call `tools.StandardTools(workDir)` to get a Workshop, iterate `Workshop.All()` for serialization, and call `tool.Executor.Execute(ctx, execCtx, input)` for execution. Eliminates 3 duplicated tool files.
+- **3 new tool executors** (`pkg/tools/executors.go`) — `EditExecutor` (search-and-replace in files), `GlobExecutor` (file pattern matching), `GrepExecutor` (content search via ripgrep with line-scan fallback). All implement `ToolExecutor` interface.
+- **7 standard tools** (`pkg/tools/standard.go`) — `read_file`, `write_file`, `list_directory`, `bash`, `edit_file`, `glob`, `grep`. Tool names use underscores (OpenAI function name compatible). Up from 4 tools in the old system.
+- **Absolute path support** — all file executors use `resolvePath()` which passes absolute paths through unchanged and joins relative paths with `workDir`. Replaces the old relative-only + traversal-check pattern.
+
+### Removed
+
+- **`pkg/agent/tools.go`** — superseded by `pkg/tools/standard.go` + `pkg/tools/executors.go`
+- **`pkg/agent/backend/api/tools.go`** — duplicated tool definitions for Anthropic backend, superseded by Workshop
+- **`pkg/agent/backend/openai/tools.go`** — duplicated tool definitions for OpenAI backend (6 tools with local `tool` struct), superseded by Workshop
 
 ## [0.18.0] - 2026-03-10
 

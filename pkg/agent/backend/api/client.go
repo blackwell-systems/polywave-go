@@ -1,6 +1,6 @@
 // Package api provides an Anthropic API backend that implements the backend.Backend
 // interface. It runs a full tool-use loop against the Anthropic Messages API,
-// using the standard SAW tools (read_file, write_file, list_directory, bash).
+// using the standard SAW tools from pkg/tools.
 package api
 
 import (
@@ -15,6 +15,7 @@ import (
 	"github.com/anthropics/anthropic-sdk-go/packages/param"
 
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/agent/backend"
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/tools"
 )
 
 const (
@@ -85,18 +86,11 @@ func (c *Client) sendOpts() []option.RequestOption {
 	return opts
 }
 
-// Run executes the agent described by systemPrompt and userMessage.
-// It runs a tool-use loop using StandardTools scoped to workDir until the model
-// signals end_turn or maxTurns is exceeded.
-// Run implements backend.Backend.
-func (c *Client) Run(ctx context.Context, systemPrompt, userMessage, workDir string) (string, error) {
-	tools := StandardTools(workDir)
-
-	sdkClient := anthropic.NewClient(c.sendOpts()...)
-
-	// Build tool params for the API.
-	toolParams := make([]anthropic.ToolUnionParam, 0, len(tools))
-	for _, t := range tools {
+// buildToolParams converts Workshop tools to Anthropic SDK tool params.
+func buildToolParams(workshop tools.Workshop) []anthropic.ToolUnionParam {
+	allTools := workshop.All()
+	toolParams := make([]anthropic.ToolUnionParam, 0, len(allTools))
+	for _, t := range allTools {
 		schema := anthropic.ToolInputSchemaParam{
 			Properties: t.InputSchema["properties"],
 		}
@@ -111,12 +105,31 @@ func (c *Client) Run(ctx context.Context, systemPrompt, userMessage, workDir str
 		}
 		toolParams = append(toolParams, tp)
 	}
+	return toolParams
+}
 
-	// Build tool lookup map.
-	toolMap := make(map[string]Tool, len(tools))
-	for _, t := range tools {
-		toolMap[t.Name] = t
+// executeTool looks up and executes a tool from the Workshop.
+func executeTool(ctx context.Context, workshop tools.Workshop, name string, input map[string]interface{}, workDir string) (string, bool) {
+	tool, found := workshop.Get(name)
+	if !found {
+		return fmt.Sprintf("error: unknown tool %q", name), true
 	}
+	execCtx := tools.ExecutionContext{WorkDir: workDir}
+	result, err := tool.Executor.Execute(ctx, execCtx, input)
+	if err != nil {
+		return fmt.Sprintf("error: %v", err), true
+	}
+	return result, false
+}
+
+// Run executes the agent described by systemPrompt and userMessage.
+// It runs a tool-use loop using StandardTools scoped to workDir until the model
+// signals end_turn or maxTurns is exceeded.
+// Run implements backend.Backend.
+func (c *Client) Run(ctx context.Context, systemPrompt, userMessage, workDir string) (string, error) {
+	workshop := tools.StandardTools(workDir)
+	toolParams := buildToolParams(workshop)
+	sdkClient := anthropic.NewClient(c.sendOpts()...)
 
 	messages := []anthropic.MessageParam{
 		anthropic.NewUserMessage(anthropic.NewTextBlock(userMessage)),
@@ -189,20 +202,7 @@ func (c *Client) Run(ctx context.Context, systemPrompt, userMessage, workDir str
 				inputMap = map[string]interface{}{}
 			}
 
-			tool, found := toolMap[tu.Name]
-			var result string
-			var isError bool
-			if !found {
-				result = fmt.Sprintf("error: unknown tool %q", tu.Name)
-				isError = true
-			} else {
-				var execErr error
-				result, execErr = tool.Execute(inputMap, workDir)
-				if execErr != nil {
-					result = fmt.Sprintf("error: %v", execErr)
-					isError = true
-				}
-			}
+			result, isError := executeTool(ctx, workshop, tu.Name, inputMap, workDir)
 			toolResultBlocks = append(toolResultBlocks, anthropic.NewToolResultBlock(tu.ID, result, isError))
 		}
 		messages = append(messages, anthropic.NewUserMessage(toolResultBlocks...))
@@ -222,33 +222,9 @@ func (c *Client) RunStreaming(ctx context.Context, systemPrompt, userMessage, wo
 		return c.Run(ctx, systemPrompt, userMessage, workDir)
 	}
 
-	tools := StandardTools(workDir)
-
+	workshop := tools.StandardTools(workDir)
+	toolParams := buildToolParams(workshop)
 	sdkClient := anthropic.NewClient(c.sendOpts()...)
-
-	// Build tool params for the API.
-	toolParams := make([]anthropic.ToolUnionParam, 0, len(tools))
-	for _, t := range tools {
-		schema := anthropic.ToolInputSchemaParam{
-			Properties: t.InputSchema["properties"],
-		}
-		if req, ok := t.InputSchema["required"]; ok {
-			if reqSlice, ok := req.([]string); ok {
-				schema.Required = reqSlice
-			}
-		}
-		tp := anthropic.ToolUnionParamOfTool(schema, t.Name)
-		if tp.OfTool != nil && t.Description != "" {
-			tp.OfTool.Description = param.NewOpt(t.Description)
-		}
-		toolParams = append(toolParams, tp)
-	}
-
-	// Build tool lookup map.
-	toolMap := make(map[string]Tool, len(tools))
-	for _, t := range tools {
-		toolMap[t.Name] = t
-	}
 
 	messages := []anthropic.MessageParam{
 		anthropic.NewUserMessage(anthropic.NewTextBlock(userMessage)),
@@ -344,7 +320,6 @@ func (c *Client) RunStreaming(ctx context.Context, systemPrompt, userMessage, wo
 		}
 
 		// Reconstruct content blocks from stream.
-		// Build ordered list by index.
 		for i := 0; ; i++ {
 			blk, ok := blockMap[i]
 			if !ok {
@@ -398,20 +373,7 @@ func (c *Client) RunStreaming(ctx context.Context, systemPrompt, userMessage, wo
 				inputMap = map[string]interface{}{}
 			}
 
-			tool, found := toolMap[blk.toolName]
-			var result string
-			var isError bool
-			if !found {
-				result = fmt.Sprintf("error: unknown tool %q", blk.toolName)
-				isError = true
-			} else {
-				var execErr error
-				result, execErr = tool.Execute(inputMap, workDir)
-				if execErr != nil {
-					result = fmt.Sprintf("error: %v", execErr)
-					isError = true
-				}
-			}
+			result, isError := executeTool(ctx, workshop, blk.toolName, inputMap, workDir)
 			toolResultBlocks = append(toolResultBlocks, anthropic.NewToolResultBlock(blk.toolID, result, isError))
 		}
 		messages = append(messages, anthropic.NewUserMessage(toolResultBlocks...))
