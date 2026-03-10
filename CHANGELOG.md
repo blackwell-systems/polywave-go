@@ -8,6 +8,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 | Version | Date | Headline |
 |---------|------|----------|
+| [0.18.0] | 2026-03-10 | E16A/E16C validator tests — 5 new tests for required block presence and out-of-band dep graph warning in `validator_test.go` |
 | [0.17.0] | 2026-03-10 | Structured output parsing — JSON schema-constrained Scout output via Anthropic API `output_config.format`; eliminates brittle markdown parser path |
 | [0.16.0] | 2026-03-10 | YAML-mode CLI commands — 9 missing commands: `validate`, `extract-context`, `set-completion`, `mark-complete`, `run-gates`, `check-conflicts`, `validate-scaffolds`, `freeze-check`, `update-agent-prompt` |
 | [0.15.0] | 2026-03-09 | Binary rename — `sawtools` replaces `saw` as the protocol toolkit CLI name |
@@ -25,6 +26,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 | [0.3.0] | 2026-03-08 | Protocol audit fixes — P0: failure_type parsing, multi-gen agent IDs; P1: E22 2-pass scaffold build, cross-repo Repo column; P2: repo field in completion reports |
 | [0.2.0] | 2026-03-08 | Engine protocol parity — E17–E23 implemented (context memory, failure routing, stub scan, quality gates, scaffold build verify, per-agent context extraction) |
 | [0.1.0] | 2026-03-08 | Initial engine extraction — parser, orchestrator, agent runner, git, worktree management |
+
+## [0.18.0] - 2026-03-10
+
+### Added
+
+- **E16A/E16C validator tests** (`pkg/protocol/validator_test.go`) — 5 new tests covering required block presence enforcement (E16A: missing blocks, all blocks present, no typed blocks) and out-of-band dep graph detection (E16C: warns on plain fenced block, no false positive on typed block). Validator logic for E16A and E16C was already implemented; tests verify correctness and prevent regressions.
 
 ## [0.17.0] - 2026-03-10
 
