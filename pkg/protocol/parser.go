@@ -253,7 +253,9 @@ func ParseIMPLDoc(path string) (*types.IMPLDoc, error) {
 		// ── Post-Merge Checklist section: ### Orchestrator Post-Merge Checklist
 		case strings.HasPrefix(trimmed, "### Orchestrator Post-Merge Checklist"):
 			flushAgent()
-			doc.PostMergeChecklistText = parsePostMergeChecklistSection(scanner)
+			// TODO: parsePostMergeChecklistSection now returns *PostMergeChecklist.
+			// IMPLDoc needs PostMergeChecklist field added (currently only has PostMergeChecklistText string).
+			_ = parsePostMergeChecklistSection(scanner)
 			state = stateTop
 
 		// ── Stub Report section: ## Stub Report
@@ -536,58 +538,31 @@ done:
 	return report, nil
 }
 
-// parseKnownIssuesSection extracts "### Known Issues" content as []types.KnownIssue.
-// Format: Free-form text (bullets, paragraphs, or "None identified"). Parse heuristically.
+// parseKnownIssuesSection extracts ```yaml type=impl-known-issues block.
+// HARD CUTOVER: no fallback to prose parsing. Returns nil if typed block not found.
 func parseKnownIssuesSection(scanner *bufio.Scanner) []types.KnownIssue {
-	var issues []types.KnownIssue
-	var currentIssue strings.Builder
-	inYAMLBlock := false
-
 	for scanner.Scan() {
 		line := scanner.Text()
 		trimmed := strings.TrimSpace(line)
 
-		// Track code fences
-		if strings.HasPrefix(trimmed, "```") {
-			inYAMLBlock = !inYAMLBlock
-		}
-
-		// Stop at next header
-		if !inYAMLBlock && (strings.HasPrefix(trimmed, "### ") || strings.HasPrefix(trimmed, "## ")) {
+		if strings.HasPrefix(trimmed, "## ") || strings.HasPrefix(trimmed, "### ") {
 			break
 		}
 
-		// Stop at horizontal rule between sections
-		if !inYAMLBlock && trimmed == "---" {
-			break
+		if strings.Contains(trimmed, "type=impl-known-issues") {
+			blockLines, found := extractTypedBlock(scanner)
+			if !found {
+				return nil
+			}
+			yamlBytes := []byte(strings.Join(blockLines, "\n"))
+			var issues []types.KnownIssue
+			if err := yaml.Unmarshal(yamlBytes, &issues); err != nil {
+				return nil
+			}
+			return issues
 		}
-
-		if inYAMLBlock || trimmed == "" {
-			continue
-		}
-
-		// Accumulate text
-		currentIssue.WriteString(line)
-		currentIssue.WriteString("\n")
 	}
-
-	// Simple heuristic: if text contains "None identified" or "None", return empty list
-	text := currentIssue.String()
-	if strings.Contains(strings.ToLower(text), "none identified") ||
-		(strings.Contains(strings.ToLower(text), "none") && len(text) < 100) {
-		return issues
-	}
-
-	// Otherwise, treat entire section as a single issue description
-	if trimmed := strings.TrimSpace(text); trimmed != "" {
-		issues = append(issues, types.KnownIssue{
-			Description: trimmed,
-			Status:      "",
-			Workaround:  "",
-		})
-	}
-
-	return issues
+	return nil
 }
 
 // parseScaffoldsDetailSection extracts "### Scaffolds" table as []types.ScaffoldFile.
@@ -730,33 +705,30 @@ func parseDependencyGraphSection(scanner *bufio.Scanner) string {
 	return strings.TrimSpace(buf.String())
 }
 
-// parsePostMergeChecklistSection extracts "### Orchestrator Post-Merge Checklist" as raw markdown.
-func parsePostMergeChecklistSection(scanner *bufio.Scanner) string {
-	var buf strings.Builder
-	inYAMLBlock := false
-
+// parsePostMergeChecklistSection extracts ```yaml type=impl-post-merge-checklist block.
+func parsePostMergeChecklistSection(scanner *bufio.Scanner) *PostMergeChecklist {
 	for scanner.Scan() {
 		line := scanner.Text()
 		trimmed := strings.TrimSpace(line)
 
-		// Track code fences
-		if strings.HasPrefix(trimmed, "```") {
-			inYAMLBlock = !inYAMLBlock
-			buf.WriteString(line)
-			buf.WriteString("\n")
-			continue
-		}
-
-		// Stop at next section header
-		if !inYAMLBlock && (strings.HasPrefix(trimmed, "### ") || strings.HasPrefix(trimmed, "## ")) {
+		if strings.HasPrefix(trimmed, "## ") || strings.HasPrefix(trimmed, "### ") {
 			break
 		}
 
-		buf.WriteString(line)
-		buf.WriteString("\n")
+		if strings.Contains(trimmed, "type=impl-post-merge-checklist") {
+			blockLines, found := extractTypedBlock(scanner)
+			if !found {
+				return nil
+			}
+			yamlBytes := []byte(strings.Join(blockLines, "\n"))
+			var pmc PostMergeChecklist
+			if err := yaml.Unmarshal(yamlBytes, &pmc); err != nil {
+				return nil
+			}
+			return &pmc
+		}
 	}
-
-	return strings.TrimSpace(buf.String())
+	return nil
 }
 
 // ── helpers ──────────────────────────────────────────────────────────────────
@@ -946,6 +918,21 @@ func readUntilClosingFence(scanner *bufio.Scanner) []string {
 	return lines
 }
 
+// extractTypedBlock reads lines from scanner until closing fence.
+// Returns (blockLines, found). blockLines excludes fence markers.
+// Scanner is positioned after closing fence on return.
+func extractTypedBlock(scanner *bufio.Scanner) ([]string, bool) {
+	var lines []string
+	for scanner.Scan() {
+		line := scanner.Text()
+		if strings.HasPrefix(strings.TrimSpace(line), "```") {
+			return lines, true
+		}
+		lines = append(lines, line)
+	}
+	return lines, false // EOF without closing fence
+}
+
 // parsePreMortemSection parses a ## Pre-Mortem or ### Pre-Mortem section.
 // It scans until the next ## or ### header or EOF. It looks for:
 //   - **Overall risk:** <level>  (case-insensitive)
@@ -1073,93 +1060,33 @@ func ParseQualityGates(implDocPath string) (*types.QualityGates, error) {
 	return parseQualityGatesSection(scanner), nil
 }
 
-// parseQualityGatesSection parses a Quality Gates section from an already-
-// positioned scanner (the heading line has been consumed). It reads until the
-// next ## or ### heading, or EOF.
-//
-// Expected format:
-//
-//	level: standard
-//	gates:
-//	  - type: build
-//	    command: go build ./...
-//	    required: true
-//	    description: must compile
+// parseQualityGatesSection extracts ```yaml type=impl-quality-gates block.
+// HARD CUTOVER: no fallback to unfenced YAML. Returns nil if typed block not found.
 func parseQualityGatesSection(scanner *bufio.Scanner) *types.QualityGates {
-	qg := &types.QualityGates{}
-	inGatesList := false
-	var current *types.QualityGate
-
-	flushGate := func() {
-		if current != nil {
-			qg.Gates = append(qg.Gates, *current)
-			current = nil
-		}
-	}
-
 	for scanner.Scan() {
 		line := scanner.Text()
 		trimmed := strings.TrimSpace(line)
 
-		// Stop at the next ## or ### heading.
+		// Stop at next heading
 		if strings.HasPrefix(trimmed, "## ") || strings.HasPrefix(trimmed, "### ") {
 			break
 		}
 
-		// Skip blank lines and code fences.
-		if trimmed == "" || strings.HasPrefix(trimmed, "```") {
-			continue
-		}
-
-		// level: <value>
-		if strings.HasPrefix(trimmed, "level:") {
-			val := strings.TrimSpace(strings.TrimPrefix(trimmed, "level:"))
-			qg.Level = val
-			continue
-		}
-
-		// gates: (list marker — just toggle mode)
-		if trimmed == "gates:" {
-			inGatesList = true
-			continue
-		}
-
-		if !inGatesList {
-			continue
-		}
-
-		// New gate entry: "  - type: build"
-		if strings.HasPrefix(trimmed, "- type:") {
-			flushGate()
-			current = &types.QualityGate{}
-			current.Type = strings.TrimSpace(strings.TrimPrefix(trimmed, "- type:"))
-			continue
-		}
-
-		// Properties of the current gate (may be indented with spaces).
-		if current == nil {
-			continue
-		}
-
-		switch {
-		case strings.HasPrefix(trimmed, "type:"):
-			current.Type = strings.TrimSpace(strings.TrimPrefix(trimmed, "type:"))
-		case strings.HasPrefix(trimmed, "command:"):
-			current.Command = strings.TrimSpace(strings.TrimPrefix(trimmed, "command:"))
-		case strings.HasPrefix(trimmed, "required:"):
-			val := strings.TrimSpace(strings.TrimPrefix(trimmed, "required:"))
-			current.Required = strings.EqualFold(val, "true")
-		case strings.HasPrefix(trimmed, "description:"):
-			current.Description = strings.TrimSpace(strings.TrimPrefix(trimmed, "description:"))
+		// Find typed block
+		if strings.Contains(trimmed, "type=impl-quality-gates") {
+			blockLines, found := extractTypedBlock(scanner)
+			if !found {
+				return nil
+			}
+			yamlBytes := []byte(strings.Join(blockLines, "\n"))
+			var gates types.QualityGates
+			if err := yaml.Unmarshal(yamlBytes, &gates); err != nil {
+				return nil
+			}
+			return &gates
 		}
 	}
-
-	flushGate()
-
-	if qg.Level == "" && len(qg.Gates) == 0 {
-		return nil
-	}
-	return qg
+	return nil
 }
 
 // classifyAction normalizes an action string to "new", "modify", or "delete".
