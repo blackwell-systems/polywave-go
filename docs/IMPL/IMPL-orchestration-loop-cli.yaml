@@ -1524,5 +1524,66 @@ completion_reports:
       All three test cases pass: valid refs with known commit count, invalid refs error handling, and nonexistent branch error handling.
       Tests handle both "main" and "master" as default branch names by detecting the actual branch name.
 
+  U:
+    status: complete
+    worktree: .claude/worktrees/wave3-agent-U
+    branch: wave3-agent-U
+    commit: 222f035c58f7aba5eda128e15f9b3a92426d32e1
+    files_changed:
+      - cmd/saw/main.go
+    files_created: []
+    interface_deviations: []
+    out_of_scope_deps: []
+    tests_added: []
+    verification: PASS (go build ./cmd/saw && go vet ./cmd/saw && help output verified for all 9 commands)
+    notes: |
+      Replaced placeholder switch in cmd/saw/main.go with complete command routing for all 9
+      orchestration commands: create-worktrees, verify-commits, scan-stubs, merge-agents,
+      cleanup, verify-build, update-status, update-context, list-impls. Each case routes
+      to its corresponding run* function (implemented by other agents). Updated printUsage
+      to list all commands with descriptions. All verification gates pass.
+
+  V:
+    status: complete
+    worktree: .claude/worktrees/wave3-agent-V
+    branch: wave3-agent-V
+    commit: d1fa6ac3046bf6750fbd09043ba01a73b07bf1a6
+    files_created:
+      - pkg/engine/run_wave_full.go
+      - pkg/engine/run_wave_full_test.go
+    interface_deviations: []
+    out_of_scope_deps: []
+    tests_added:
+      - TestRunWaveFull_Success
+      - TestRunWaveFull_WorktreeFailure
+      - TestRunWaveFull_MergeFailure
+    verification: PASS (go build ./pkg/engine && go vet ./pkg/engine && go test ./pkg/engine -run TestRunWaveFull -v)
+    notes: |
+      Implemented RunWaveFull orchestration function that coordinates the full wave lifecycle:
+      worktree creation, commit verification, merge, build verification, and cleanup. The
+      function follows the interface contract exactly and returns detailed results for each
+      step. Tests cover success and failure paths (worktree creation failure, commit verification
+      failure). All verification gates pass. Note: The function design has agent execution
+      happening externally between CreateWorktrees and VerifyCommits - this is handled by the
+      caller (orchestrator) launching agents after worktree creation.
+  W:
+    status: complete
+    repo: /Users/dayna.blackwell/code/scout-and-wave-go
+    branch: develop
+    commit: f2c46f0
+    files_created:
+      - cmd/saw/run_wave_cmd.go
+    files_changed:
+      - cmd/saw/main.go
+    interface_deviations: []
+    out_of_scope_deps: []
+    tests_added: []
+    verification: PASS (go build ./cmd/saw && go vet ./cmd/saw && ./saw --help | grep run-wave && ./saw run-wave --help)
+    notes: |
+      Implemented run-wave CLI command that calls engine.RunWaveFull. The command accepts
+      manifest path, --wave flag (required), and optional --repo-dir flag. Outputs JSON
+      result and exits with code 1 on failure. Added command to main.go switch and printUsage.
+      All verification gates pass. Solo agent wave on develop branch.
+
 state: SCOUT_PENDING
 merge_state: idle
