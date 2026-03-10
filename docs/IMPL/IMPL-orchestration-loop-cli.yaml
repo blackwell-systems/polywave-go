@@ -1,0 +1,1345 @@
+title: "Orchestration Loop CLI — Close All Ad-Hoc Gaps"
+feature_slug: orchestration-loop-cli
+verdict: SUITABLE
+test_command: "go test ./..."
+lint_command: "go vet ./..."
+
+suitability_assessment: |
+  Verdict: SUITABLE
+
+  File decomposition: The work spans 12 distinct SDK functions across pkg/protocol/ and pkg/engine/, plus 12 CLI command wrappers in cmd/saw/. Each gap (worktree creation, commit verification, merge execution, etc.) can be assigned to a separate agent with disjoint file ownership.
+
+  Investigation-first items: None. All operations are already performed as ad-hoc bash commands in the orchestrator skill — the task is to formalize them as SDK functions and CLI commands following established patterns (pkg/protocol/manifest.go, cmd/saw/validate.go).
+
+  Interface discoverability: All cross-agent interfaces are known: SDK functions return JSON-serializable structs for CLI output, CLI commands follow the existing pattern (flag parsing → SDK call → JSON output → exit code). No upstream-dependent interfaces.
+
+  Pre-implementation status: Phase 1 delivered 13 CLI commands (validate, extract-context, set-completion, etc.). This feature completes the orchestration loop with the remaining 12 gaps. No overlap with existing commands.
+
+  Parallelization value: High. 12 agents working on independent SDK functions and CLI commands. Each agent owns 1-2 files. Build/test cycle for Go is ~15-20s per package. Full parallelization saves ~20-25 minutes vs. sequential (12 agents × 2 min avg vs. 2 waves × 6 agents × 2 min).
+
+quality_gates:
+  level: standard
+  gates:
+    - type: build
+      command: go build ./...
+      required: true
+    - type: lint
+      command: go vet ./...
+      required: true
+    - type: test
+      command: go test ./...
+      required: true
+
+scaffolds: []
+
+pre_mortem:
+  overall_risk: medium
+  rows:
+    - scenario: "Cross-repo worktree coordination (gap 11) requires --repo-dir flag threading through all worktree operations, but existing internal/git/ commands don't accept repo paths — they use cwd"
+      likelihood: high
+      impact: medium
+      mitigation: "Agent K extends internal/git/commands.go with Run() variants that accept repoPath parameter. All new worktree operations use these variants. Existing commands unchanged."
+    - scenario: "saw run-wave (gap 10) composes all other commands but those commands aren't committed yet — circular dependency across waves"
+      likelihood: medium
+      impact: high
+      mitigation: "Wave 1 delivers all atomic SDK functions (worktree create, merge, verify, etc.). Wave 2 delivers CLI wrappers for each. Wave 3 delivers saw run-wave which calls SDK functions directly (not via CLI). No circular dependency."
+    - scenario: "E20 stub scan (gap 3) currently shells out to bash script; moving to Go requires reimplementing regex patterns or shelling out from Go CLI"
+      likelihood: low
+      impact: low
+      mitigation: "Agent C wraps the bash script via exec.Command (same as pkg/orchestrator/stubs.go pattern). Pure Go rewrite is out of scope for this wave."
+
+known_issues: []
+
+file_ownership:
+  # Wave 1 — SDK functions (pkg/protocol/ and pkg/engine/)
+  - file: pkg/protocol/worktree.go
+    agent: A
+    wave: 1
+    action: new
+    depends_on: []
+  - file: pkg/protocol/worktree_test.go
+    agent: A
+    wave: 1
+    action: new
+    depends_on: []
+  - file: pkg/protocol/commit_verify.go
+    agent: B
+    wave: 1
+    action: new
+    depends_on: []
+  - file: pkg/protocol/commit_verify_test.go
+    agent: B
+    wave: 1
+    action: new
+    depends_on: []
+  - file: pkg/protocol/stubs.go
+    agent: C
+    wave: 1
+    action: new
+    depends_on: []
+  - file: pkg/protocol/stubs_test.go
+    agent: C
+    wave: 1
+    action: new
+    depends_on: []
+  - file: pkg/protocol/merge_agents.go
+    agent: D
+    wave: 1
+    action: new
+    depends_on: []
+  - file: pkg/protocol/merge_agents_test.go
+    agent: D
+    wave: 1
+    action: new
+    depends_on: []
+  - file: pkg/protocol/cleanup.go
+    agent: E
+    wave: 1
+    action: new
+    depends_on: []
+  - file: pkg/protocol/cleanup_test.go
+    agent: E
+    wave: 1
+    action: new
+    depends_on: []
+  - file: pkg/protocol/verify_build.go
+    agent: F
+    wave: 1
+    action: new
+    depends_on: []
+  - file: pkg/protocol/verify_build_test.go
+    agent: F
+    wave: 1
+    action: new
+    depends_on: []
+  - file: pkg/protocol/status_update.go
+    agent: G
+    wave: 1
+    action: new
+    depends_on: []
+  - file: pkg/protocol/status_update_test.go
+    agent: G
+    wave: 1
+    action: new
+    depends_on: []
+  - file: pkg/protocol/context_update.go
+    agent: H
+    wave: 1
+    action: new
+    depends_on: []
+  - file: pkg/protocol/context_update_test.go
+    agent: H
+    wave: 1
+    action: new
+    depends_on: []
+  - file: pkg/protocol/discovery.go
+    agent: I
+    wave: 1
+    action: new
+    depends_on: []
+  - file: pkg/protocol/discovery_test.go
+    agent: I
+    wave: 1
+    action: new
+    depends_on: []
+  - file: internal/git/commands.go
+    agent: K
+    wave: 1
+    action: modify
+    depends_on: []
+  - file: internal/git/commands_test.go
+    agent: K
+    wave: 1
+    action: modify
+    depends_on: []
+
+  # Wave 2 — CLI commands (cmd/saw/)
+  - file: cmd/saw/create_worktrees.go
+    agent: L
+    wave: 2
+    action: new
+    depends_on: [A]
+  - file: cmd/saw/verify_commits.go
+    agent: M
+    wave: 2
+    action: new
+    depends_on: [B]
+  - file: cmd/saw/scan_stubs.go
+    agent: N
+    wave: 2
+    action: new
+    depends_on: [C]
+  - file: cmd/saw/merge_agents.go
+    agent: O
+    wave: 2
+    action: new
+    depends_on: [D]
+  - file: cmd/saw/cleanup.go
+    agent: P
+    wave: 2
+    action: new
+    depends_on: [E]
+  - file: cmd/saw/verify_build.go
+    agent: Q
+    wave: 2
+    action: new
+    depends_on: [F]
+  - file: cmd/saw/update_status.go
+    agent: R
+    wave: 2
+    action: new
+    depends_on: [G]
+  - file: cmd/saw/update_context.go
+    agent: S
+    wave: 2
+    action: new
+    depends_on: [H]
+  - file: cmd/saw/list_impls.go
+    agent: T
+    wave: 2
+    action: new
+    depends_on: [I]
+  # Wave 3 — main.go wiring + capstone SDK
+  - file: cmd/saw/main.go
+    agent: U
+    wave: 3
+    action: modify
+    depends_on: [L, M, N, O, P, Q, R, S, T]
+  - file: pkg/engine/run_wave_full.go
+    agent: V
+    wave: 3
+    action: new
+    depends_on: [A, B, C, D, E, F, G, H, I]
+  - file: pkg/engine/run_wave_full_test.go
+    agent: V
+    wave: 3
+    action: new
+    depends_on: [A, B, C, D, E, F, G, H, I]
+
+  # Wave 4 — run-wave CLI wrapper
+  - file: cmd/saw/run_wave_cmd.go
+    agent: W
+    wave: 4
+    action: new
+    depends_on: [V, U]
+
+  # Wave 5 — skill prompt updates (scout-and-wave repo)
+  - file: implementations/claude-code/prompts/saw-skill.md
+    agent: X
+    wave: 5
+    action: modify
+    depends_on: [W]
+    repo: scout-and-wave
+  - file: implementations/claude-code/prompts/saw-merge.md
+    agent: Y
+    wave: 5
+    action: modify
+    depends_on: [W]
+    repo: scout-and-wave
+  - file: implementations/claude-code/prompts/saw-worktree.md
+    agent: Y
+    wave: 5
+    action: modify
+    depends_on: [W]
+    repo: scout-and-wave
+
+interface_contracts:
+  - name: CreateWorktreesResult
+    location: pkg/protocol/worktree.go
+    definition: |
+      type WorktreeInfo struct {
+          Agent    string `json:"agent"`
+          Path     string `json:"path"`
+          Branch   string `json:"branch"`
+      }
+      type CreateWorktreesResult struct {
+          Worktrees []WorktreeInfo `json:"worktrees"`
+      }
+      func CreateWorktrees(manifestPath string, waveNum int, repoDir string) (*CreateWorktreesResult, error)
+
+  - name: VerifyCommitsResult
+    location: pkg/protocol/commit_verify.go
+    definition: |
+      type CommitStatus struct {
+          Agent       string `json:"agent"`
+          Branch      string `json:"branch"`
+          CommitCount int    `json:"commit_count"`
+          HasCommits  bool   `json:"has_commits"`
+      }
+      type VerifyCommitsResult struct {
+          BaseCommit string         `json:"base_commit"`
+          Agents     []CommitStatus `json:"agents"`
+          AllValid   bool           `json:"all_valid"`
+      }
+      func VerifyCommits(manifestPath string, waveNum int, repoDir string) (*VerifyCommitsResult, error)
+
+  - name: ScanStubsResult
+    location: pkg/protocol/stubs.go
+    definition: |
+      type StubHit struct {
+          File    string `json:"file"`
+          Line    int    `json:"line"`
+          Pattern string `json:"pattern"`
+          Context string `json:"context"`
+      }
+      type ScanStubsResult struct {
+          Hits []StubHit `json:"hits"`
+      }
+      func ScanStubs(files []string) (*ScanStubsResult, error)
+
+  - name: MergeAgentsResult
+    location: pkg/protocol/merge_agents.go
+    definition: |
+      type MergeStatus struct {
+          Agent   string `json:"agent"`
+          Branch  string `json:"branch"`
+          Success bool   `json:"success"`
+          Error   string `json:"error,omitempty"`
+      }
+      type MergeAgentsResult struct {
+          Wave    int           `json:"wave"`
+          Merges  []MergeStatus `json:"merges"`
+          Success bool          `json:"success"`
+      }
+      func MergeAgents(manifestPath string, waveNum int, repoDir string) (*MergeAgentsResult, error)
+
+  - name: CleanupResult
+    location: pkg/protocol/cleanup.go
+    definition: |
+      type CleanupStatus struct {
+          Agent            string `json:"agent"`
+          WorktreeRemoved  bool   `json:"worktree_removed"`
+          BranchDeleted    bool   `json:"branch_deleted"`
+      }
+      type CleanupResult struct {
+          Wave    int             `json:"wave"`
+          Agents  []CleanupStatus `json:"agents"`
+      }
+      func Cleanup(manifestPath string, waveNum int, repoDir string) (*CleanupResult, error)
+
+  - name: VerifyBuildResult
+    location: pkg/protocol/verify_build.go
+    definition: |
+      type VerifyBuildResult struct {
+          TestCommand  string `json:"test_command"`
+          LintCommand  string `json:"lint_command"`
+          TestPassed   bool   `json:"test_passed"`
+          LintPassed   bool   `json:"lint_passed"`
+          TestOutput   string `json:"test_output,omitempty"`
+          LintOutput   string `json:"lint_output,omitempty"`
+      }
+      func VerifyBuild(manifestPath string, repoDir string) (*VerifyBuildResult, error)
+
+  - name: UpdateStatusResult
+    location: pkg/protocol/status_update.go
+    definition: |
+      type UpdateStatusResult struct {
+          Wave        int      `json:"wave"`
+          Agent       string   `json:"agent"`
+          OldStatus   string   `json:"old_status"`
+          NewStatus   string   `json:"new_status"`
+          Updated     bool     `json:"updated"`
+      }
+      func UpdateStatus(manifestPath string, waveNum int, agentID string, status string) (*UpdateStatusResult, error)
+
+  - name: UpdateContextResult
+    location: pkg/protocol/context_update.go
+    definition: |
+      type UpdateContextResult struct {
+          ContextPath string   `json:"context_path"`
+          Updated     bool     `json:"updated"`
+          NewEntries  []string `json:"new_entries"`
+      }
+      func UpdateContext(manifestPath string, projectRoot string) (*UpdateContextResult, error)
+
+  - name: ListIMPLsResult
+    location: pkg/protocol/discovery.go
+    definition: |
+      type IMPLSummary struct {
+          Path        string `json:"path"`
+          FeatureSlug string `json:"feature_slug"`
+          Verdict     string `json:"verdict"`
+          CurrentWave int    `json:"current_wave"`
+          TotalWaves  int    `json:"total_waves"`
+      }
+      type ListIMPLsResult struct {
+          IMPLs []IMPLSummary `json:"impls"`
+      }
+      func ListIMPLs(dir string) (*ListIMPLsResult, error)
+
+waves:
+  - number: 1
+    agents:
+      - id: A
+        task: |
+          **Goal:** Implement worktree creation SDK function that creates all worktrees for a wave in one call.
+
+          **Signature (binding contract):**
+          ```go
+          type WorktreeInfo struct {
+              Agent    string `json:"agent"`
+              Path     string `json:"path"`
+              Branch   string `json:"branch"`
+          }
+          type CreateWorktreesResult struct {
+              Worktrees []WorktreeInfo `json:"worktrees"`
+          }
+          func CreateWorktrees(manifestPath string, waveNum int, repoDir string) (*CreateWorktreesResult, error)
+          ```
+
+          **Implementation:**
+          - Load manifest via protocol.Load(manifestPath)
+          - Find wave by waveNum; return error if not found
+          - For each agent in wave:
+            - Construct worktree path: `{repoDir}/.claude/worktrees/wave{N}-agent-{ID}`
+            - Construct branch name: `wave{N}-agent-{ID}`
+            - Call internal/git.WorktreeAdd(repoDir, path, branch)
+            - Collect WorktreeInfo{Agent: ID, Path: path, Branch: branch}
+          - Return CreateWorktreesResult with all worktrees
+          - If any WorktreeAdd fails, return error immediately (no partial creation)
+
+          **Test coverage:**
+          - Happy path: 3-agent wave creates 3 worktrees, returns 3 WorktreeInfo entries
+          - Wave not found: returns error
+          - Git worktree add failure: returns error
+
+          **Files:** pkg/protocol/worktree.go, pkg/protocol/worktree_test.go
+
+          **Verification gate:**
+          ```bash
+          go build ./pkg/protocol
+          go vet ./pkg/protocol
+          go test ./pkg/protocol -run TestCreateWorktrees
+          ```
+        files:
+          - pkg/protocol/worktree.go
+          - pkg/protocol/worktree_test.go
+        dependencies: []
+
+      - id: B
+        task: |
+          **Goal:** Implement commit verification SDK function (I5 trip wire) that checks each agent branch has commits.
+
+          **Signature (binding contract):**
+          ```go
+          type CommitStatus struct {
+              Agent       string `json:"agent"`
+              Branch      string `json:"branch"`
+              CommitCount int    `json:"commit_count"`
+              HasCommits  bool   `json:"has_commits"`
+          }
+          type VerifyCommitsResult struct {
+              BaseCommit string         `json:"base_commit"`
+              Agents     []CommitStatus `json:"agents"`
+              AllValid   bool           `json:"all_valid"`
+          }
+          func VerifyCommits(manifestPath string, waveNum int, repoDir string) (*VerifyCommitsResult, error)
+          ```
+
+          **Implementation:**
+          - Get base commit: internal/git.RevParse(repoDir, "HEAD")
+          - Load manifest, find wave by waveNum
+          - For each agent in wave:
+            - Branch name: `wave{N}-agent-{ID}`
+            - Count commits: git rev-list {base}..{branch} --count via internal/git
+            - Build CommitStatus{Agent: ID, Branch: branch, CommitCount: count, HasCommits: count > 0}
+          - Set AllValid = true if all agents have HasCommits == true
+          - Return VerifyCommitsResult
+
+          **Test coverage:**
+          - All agents have commits: AllValid == true
+          - One agent has 0 commits: AllValid == false
+          - Branch does not exist: treat as 0 commits (HasCommits == false)
+
+          **Files:** pkg/protocol/commit_verify.go, pkg/protocol/commit_verify_test.go
+
+          **Verification gate:**
+          ```bash
+          go build ./pkg/protocol
+          go vet ./pkg/protocol
+          go test ./pkg/protocol -run TestVerifyCommits
+          ```
+        files:
+          - pkg/protocol/commit_verify.go
+          - pkg/protocol/commit_verify_test.go
+        dependencies: []
+
+      - id: C
+        task: |
+          **Goal:** Implement E20 stub scan SDK function by wrapping scan-stubs.sh bash script.
+
+          **Signature (binding contract):**
+          ```go
+          type StubHit struct {
+              File    string `json:"file"`
+              Line    int    `json:"line"`
+              Pattern string `json:"pattern"`
+              Context string `json:"context"`
+          }
+          type ScanStubsResult struct {
+              Hits []StubHit `json:"hits"`
+          }
+          func ScanStubs(files []string) (*ScanStubsResult, error)
+          ```
+
+          **Implementation:**
+          - Follow pkg/orchestrator/stubs.go pattern: use exec.Command to run bash script
+          - Locate script: $SAW_REPO/implementations/claude-code/scripts/scan-stubs.sh (fallback: ~/code/scout-and-wave/...)
+          - Run: `bash {scriptPath} {file1} {file2} ...`
+          - Parse stdout (markdown table format) into []StubHit
+          - If script not found or exit error, return empty Hits (E20: informational only, never blocks)
+
+          **Test coverage:**
+          - Script found, no stubs: returns empty Hits
+          - Script found, has stubs: parses table into StubHit slice
+          - Script not found: returns empty Hits, no error
+
+          **Files:** pkg/protocol/stubs.go, pkg/protocol/stubs_test.go
+
+          **Verification gate:**
+          ```bash
+          go build ./pkg/protocol
+          go vet ./pkg/protocol
+          go test ./pkg/protocol -run TestScanStubs
+          ```
+        files:
+          - pkg/protocol/stubs.go
+          - pkg/protocol/stubs_test.go
+        dependencies: []
+
+      - id: D
+        task: |
+          **Goal:** Implement merge agents SDK function that performs git merge --no-ff for all agents in a wave.
+
+          **Signature (binding contract):**
+          ```go
+          type MergeStatus struct {
+              Agent   string `json:"agent"`
+              Branch  string `json:"branch"`
+              Success bool   `json:"success"`
+              Error   string `json:"error,omitempty"`
+          }
+          type MergeAgentsResult struct {
+              Wave    int           `json:"wave"`
+              Merges  []MergeStatus `json:"merges"`
+              Success bool          `json:"success"`
+          }
+          func MergeAgents(manifestPath string, waveNum int, repoDir string) (*MergeAgentsResult, error)
+          ```
+
+          **Implementation:**
+          - Load manifest, find wave by waveNum
+          - For each agent in wave:
+            - Branch: `wave{N}-agent-{ID}`
+            - Message: `Merge wave{N}-agent-{ID}: {agent task summary}`
+            - Call internal/git.MergeNoFF(repoDir, branch, message)
+            - Build MergeStatus{Agent: ID, Branch: branch, Success: err == nil, Error: err.Error() if err}
+          - Set Success = true only if ALL merges succeeded
+          - Return MergeAgentsResult
+          - Stop on first conflict: if any merge fails, return immediately with partial result
+
+          **Test coverage:**
+          - All merges succeed: Success == true
+          - One merge fails (conflict): Success == false, Error field populated
+          - Wave not found: returns error
+
+          **Files:** pkg/protocol/merge_agents.go, pkg/protocol/merge_agents_test.go
+
+          **Verification gate:**
+          ```bash
+          go build ./pkg/protocol
+          go vet ./pkg/protocol
+          go test ./pkg/protocol -run TestMergeAgents
+          ```
+        files:
+          - pkg/protocol/merge_agents.go
+          - pkg/protocol/merge_agents_test.go
+        dependencies: []
+
+      - id: E
+        task: |
+          **Goal:** Implement worktree cleanup SDK function that removes worktrees and deletes branches.
+
+          **Signature (binding contract):**
+          ```go
+          type CleanupStatus struct {
+              Agent            string `json:"agent"`
+              WorktreeRemoved  bool   `json:"worktree_removed"`
+              BranchDeleted    bool   `json:"branch_deleted"`
+          }
+          type CleanupResult struct {
+              Wave    int             `json:"wave"`
+              Agents  []CleanupStatus `json:"agents"`
+          }
+          func Cleanup(manifestPath string, waveNum int, repoDir string) (*CleanupResult, error)
+          ```
+
+          **Implementation:**
+          - Load manifest, find wave by waveNum
+          - For each agent in wave:
+            - Worktree path: `{repoDir}/.claude/worktrees/wave{N}-agent-{ID}`
+            - Branch: `wave{N}-agent-{ID}`
+            - Call internal/git.WorktreeRemove(repoDir, path)
+            - Call internal/git.DeleteBranch(repoDir, branch)
+            - Build CleanupStatus{Agent: ID, WorktreeRemoved: err == nil, BranchDeleted: err == nil}
+          - Return CleanupResult with all statuses
+          - Non-fatal: if worktree/branch already gone, mark as removed/deleted (success)
+
+          **Test coverage:**
+          - All worktrees/branches removed: all statuses true
+          - Worktree already removed: WorktreeRemoved == true (idempotent)
+          - Wave not found: returns error
+
+          **Files:** pkg/protocol/cleanup.go, pkg/protocol/cleanup_test.go
+
+          **Verification gate:**
+          ```bash
+          go build ./pkg/protocol
+          go vet ./pkg/protocol
+          go test ./pkg/protocol -run TestCleanup
+          ```
+        files:
+          - pkg/protocol/cleanup.go
+          - pkg/protocol/cleanup_test.go
+        dependencies: []
+
+      - id: F
+        task: |
+          **Goal:** Implement post-merge build verification SDK function that runs test_command and lint_command from manifest.
+
+          **Signature (binding contract):**
+          ```go
+          type VerifyBuildResult struct {
+              TestCommand  string `json:"test_command"`
+              LintCommand  string `json:"lint_command"`
+              TestPassed   bool   `json:"test_passed"`
+              LintPassed   bool   `json:"lint_passed"`
+              TestOutput   string `json:"test_output,omitempty"`
+              LintOutput   string `json:"lint_output,omitempty"`
+          }
+          func VerifyBuild(manifestPath string, repoDir string) (*VerifyBuildResult, error)
+          ```
+
+          **Implementation:**
+          - Load manifest via protocol.Load(manifestPath)
+          - Get test_command and lint_command from manifest
+          - Run test command: exec.Command("bash", "-c", test_command) with Dir = repoDir
+          - Run lint command: exec.Command("bash", "-c", lint_command) with Dir = repoDir
+          - Capture stdout+stderr for both
+          - Set TestPassed = (test exit code == 0), LintPassed = (lint exit code == 0)
+          - Return VerifyBuildResult
+          - If either command empty, skip and mark as passed
+
+          **Test coverage:**
+          - Both commands pass: TestPassed == true, LintPassed == true
+          - Test fails: TestPassed == false, captures output
+          - Lint command empty: LintPassed == true
+
+          **Files:** pkg/protocol/verify_build.go, pkg/protocol/verify_build_test.go
+
+          **Verification gate:**
+          ```bash
+          go build ./pkg/protocol
+          go vet ./pkg/protocol
+          go test ./pkg/protocol -run TestVerifyBuild
+          ```
+        files:
+          - pkg/protocol/verify_build.go
+          - pkg/protocol/verify_build_test.go
+        dependencies: []
+
+      - id: G
+        task: |
+          **Goal:** Implement IMPL status update SDK function that sets agent/wave status in manifest.
+
+          **Signature (binding contract):**
+          ```go
+          type UpdateStatusResult struct {
+              Wave        int      `json:"wave"`
+              Agent       string   `json:"agent"`
+              OldStatus   string   `json:"old_status"`
+              NewStatus   string   `json:"new_status"`
+              Updated     bool     `json:"updated"`
+          }
+          func UpdateStatus(manifestPath string, waveNum int, agentID string, status string) (*UpdateStatusResult, error)
+          ```
+
+          **Implementation:**
+          - Load manifest via protocol.Load(manifestPath)
+          - Find wave by waveNum, find agent by agentID
+          - Get current completion report status (if exists)
+          - Update manifest.CompletionReports[agentID].Status = status
+          - Save manifest via protocol.Save(manifest, manifestPath)
+          - Return UpdateStatusResult{Wave: waveNum, Agent: agentID, OldStatus: old, NewStatus: status, Updated: true}
+          - If agent not found in wave, return error
+
+          **Test coverage:**
+          - Agent exists, status changes: Updated == true
+          - Agent not found: returns error
+          - Status already set: OldStatus == NewStatus, Updated == true
+
+          **Files:** pkg/protocol/status_update.go, pkg/protocol/status_update_test.go
+
+          **Verification gate:**
+          ```bash
+          go build ./pkg/protocol
+          go vet ./pkg/protocol
+          go test ./pkg/protocol -run TestUpdateStatus
+          ```
+        files:
+          - pkg/protocol/status_update.go
+          - pkg/protocol/status_update_test.go
+        dependencies: []
+
+      - id: H
+        task: |
+          **Goal:** Implement E18 project memory update SDK function that appends to docs/CONTEXT.md.
+
+          **Signature (binding contract):**
+          ```go
+          type UpdateContextResult struct {
+              ContextPath string   `json:"context_path"`
+              Updated     bool     `json:"updated"`
+              NewEntries  []string `json:"new_entries"`
+          }
+          func UpdateContext(manifestPath string, projectRoot string) (*UpdateContextResult, error)
+          ```
+
+          **Implementation:**
+          - Load manifest to get feature_slug, waves count, agent count
+          - Context file: {projectRoot}/docs/CONTEXT.md
+          - Read existing CONTEXT.md (create if missing)
+          - Append entry per E18 schema: feature slug, completion timestamp, wave/agent counts
+          - Return UpdateContextResult{ContextPath: path, Updated: true, NewEntries: [slug]}
+          - Non-fatal if CONTEXT.md write fails: return error but don't block
+
+          **Test coverage:**
+          - CONTEXT.md exists: appends entry
+          - CONTEXT.md missing: creates file, appends entry
+          - projectRoot invalid: returns error
+
+          **Files:** pkg/protocol/context_update.go, pkg/protocol/context_update_test.go
+
+          **Verification gate:**
+          ```bash
+          go build ./pkg/protocol
+          go vet ./pkg/protocol
+          go test ./pkg/protocol -run TestUpdateContext
+          ```
+        files:
+          - pkg/protocol/context_update.go
+          - pkg/protocol/context_update_test.go
+        dependencies: []
+
+      - id: I
+        task: |
+          **Goal:** Implement IMPL doc discovery SDK function that lists all IMPL docs with current state.
+
+          **Signature (binding contract):**
+          ```go
+          type IMPLSummary struct {
+              Path        string `json:"path"`
+              FeatureSlug string `json:"feature_slug"`
+              Verdict     string `json:"verdict"`
+              CurrentWave int    `json:"current_wave"`
+              TotalWaves  int    `json:"total_waves"`
+          }
+          type ListIMPLsResult struct {
+              IMPLs []IMPLSummary `json:"impls"`
+          }
+          func ListIMPLs(dir string) (*ListIMPLsResult, error)
+          ```
+
+          **Implementation:**
+          - Glob for {dir}/IMPL-*.yaml and {dir}/IMPL-*.yml (YAML manifests)
+          - For each manifest path:
+            - Load via protocol.Load(path)
+            - Compute CurrentWave via protocol.CurrentWave(manifest)
+            - Build IMPLSummary{Path: path, FeatureSlug: slug, Verdict: verdict, CurrentWave: num, TotalWaves: len(waves)}
+          - Return ListIMPLsResult with all summaries
+          - If dir invalid or no IMPLs found, return empty list (not error)
+
+          **Test coverage:**
+          - Dir with 2 IMPL files: returns 2 summaries
+          - Dir empty: returns empty list
+          - Dir not found: returns error
+
+          **Files:** pkg/protocol/discovery.go, pkg/protocol/discovery_test.go
+
+          **Verification gate:**
+          ```bash
+          go build ./pkg/protocol
+          go vet ./pkg/protocol
+          go test ./pkg/protocol -run TestListIMPLs
+          ```
+        files:
+          - pkg/protocol/discovery.go
+          - pkg/protocol/discovery_test.go
+        dependencies: []
+
+      - id: K
+        task: |
+          **Goal:** Extend internal/git/commands.go with --repo-dir support for cross-repo worktrees (gap 11).
+
+          **Implementation:**
+          - Add CommitCount(repoPath, fromRef, toRef string) (int, error) function:
+            - Runs: git -C {repoPath} rev-list {fromRef}..{toRef} --count
+            - Parses output as int
+            - Returns commit count
+          - Update Run() to accept repoPath as first parameter (already exists, verify signature)
+          - All new SDK functions (Agent A, B, D, E) will use these helpers
+
+          **Test coverage:**
+          - CommitCount with valid refs: returns correct count
+          - CommitCount with invalid refs: returns error
+          - Run() with custom repoPath: executes in correct directory
+
+          **Files:** internal/git/commands.go, internal/git/commands_test.go
+
+          **Verification gate:**
+          ```bash
+          go build ./internal/git
+          go vet ./internal/git
+          go test ./internal/git -run TestCommitCount
+          ```
+        files:
+          - internal/git/commands.go
+          - internal/git/commands_test.go
+        dependencies: []
+
+  - number: 2
+    agents:
+      - id: L
+        task: |
+          **Goal:** Implement `saw create-worktrees` CLI command.
+
+          **Command signature:**
+          ```
+          saw create-worktrees <manifest-path> --wave <N> [--repo-dir <path>]
+          ```
+
+          **Implementation:**
+          - Follow cmd/saw/validate.go pattern: flag parsing, SDK call, JSON output
+          - Parse flags: manifestPath (positional), --wave (required), --repo-dir (optional, default: auto-detect)
+          - Call protocol.CreateWorktrees(manifestPath, waveNum, repoDir)
+          - Marshal result to JSON, print to stdout
+          - Exit 0 on success, exit 1 on error
+
+          **Test coverage:**
+          - Happy path: creates worktrees, prints JSON
+          - Wave not found: exits 1 with error message
+          - Invalid flags: exits 1 with usage
+
+          **Files:** cmd/saw/create_worktrees.go
+
+          **Verification gate:**
+          ```bash
+          go build ./cmd/saw
+          go vet ./cmd/saw
+          ./saw create-worktrees --help
+          ```
+        files:
+          - cmd/saw/create_worktrees.go
+        dependencies: [A]
+
+      - id: M
+        task: |
+          **Goal:** Implement `saw verify-commits` CLI command.
+
+          **Command signature:**
+          ```
+          saw verify-commits <manifest-path> --wave <N> [--repo-dir <path>]
+          ```
+
+          **Implementation:**
+          - Parse flags: manifestPath, --wave, --repo-dir
+          - Call protocol.VerifyCommits(manifestPath, waveNum, repoDir)
+          - Marshal result to JSON, print to stdout
+          - Exit 0 if AllValid == true, exit 1 if AllValid == false
+
+          **Test coverage:**
+          - All commits present: exits 0
+          - Missing commits: exits 1
+
+          **Files:** cmd/saw/verify_commits.go
+
+          **Verification gate:**
+          ```bash
+          go build ./cmd/saw
+          go vet ./cmd/saw
+          ./saw verify-commits --help
+          ```
+        files:
+          - cmd/saw/verify_commits.go
+        dependencies: [B]
+
+      - id: N
+        task: |
+          **Goal:** Implement `saw scan-stubs` CLI command.
+
+          **Command signature:**
+          ```
+          saw scan-stubs <file1> [file2 ...]
+          ```
+
+          **Implementation:**
+          - Parse positional args as file list
+          - Call protocol.ScanStubs(files)
+          - Marshal result to JSON, print to stdout
+          - Exit 0 always (E20: informational only)
+
+          **Test coverage:**
+          - No stubs: prints empty Hits array
+          - Has stubs: prints populated Hits array
+
+          **Files:** cmd/saw/scan_stubs.go
+
+          **Verification gate:**
+          ```bash
+          go build ./cmd/saw
+          go vet ./cmd/saw
+          ./saw scan-stubs --help
+          ```
+        files:
+          - cmd/saw/scan_stubs.go
+        dependencies: [C]
+
+      - id: O
+        task: |
+          **Goal:** Implement `saw merge-agents` CLI command.
+
+          **Command signature:**
+          ```
+          saw merge-agents <manifest-path> --wave <N> [--repo-dir <path>]
+          ```
+
+          **Implementation:**
+          - Parse flags: manifestPath, --wave, --repo-dir
+          - Call protocol.MergeAgents(manifestPath, waveNum, repoDir)
+          - Marshal result to JSON, print to stdout
+          - Exit 0 if Success == true, exit 1 if Success == false
+
+          **Test coverage:**
+          - All merges succeed: exits 0
+          - Merge conflict: exits 1
+
+          **Files:** cmd/saw/merge_agents.go
+
+          **Verification gate:**
+          ```bash
+          go build ./cmd/saw
+          go vet ./cmd/saw
+          ./saw merge-agents --help
+          ```
+        files:
+          - cmd/saw/merge_agents.go
+        dependencies: [D]
+
+      - id: P
+        task: |
+          **Goal:** Implement `saw cleanup` CLI command.
+
+          **Command signature:**
+          ```
+          saw cleanup <manifest-path> --wave <N> [--repo-dir <path>]
+          ```
+
+          **Implementation:**
+          - Parse flags: manifestPath, --wave, --repo-dir
+          - Call protocol.Cleanup(manifestPath, waveNum, repoDir)
+          - Marshal result to JSON, print to stdout
+          - Exit 0 always (cleanup is idempotent, non-fatal)
+
+          **Test coverage:**
+          - All worktrees removed: prints success
+          - Worktrees already gone: prints success (idempotent)
+
+          **Files:** cmd/saw/cleanup.go
+
+          **Verification gate:**
+          ```bash
+          go build ./cmd/saw
+          go vet ./cmd/saw
+          ./saw cleanup --help
+          ```
+        files:
+          - cmd/saw/cleanup.go
+        dependencies: [E]
+
+      - id: Q
+        task: |
+          **Goal:** Implement `saw verify-build` CLI command.
+
+          **Command signature:**
+          ```
+          saw verify-build <manifest-path> [--repo-dir <path>]
+          ```
+
+          **Implementation:**
+          - Parse flags: manifestPath, --repo-dir
+          - Call protocol.VerifyBuild(manifestPath, repoDir)
+          - Marshal result to JSON, print to stdout
+          - Exit 0 if TestPassed && LintPassed, exit 1 otherwise
+
+          **Test coverage:**
+          - Both pass: exits 0
+          - Test fails: exits 1
+
+          **Files:** cmd/saw/verify_build.go
+
+          **Verification gate:**
+          ```bash
+          go build ./cmd/saw
+          go vet ./cmd/saw
+          ./saw verify-build --help
+          ```
+        files:
+          - cmd/saw/verify_build.go
+        dependencies: [F]
+
+      - id: R
+        task: |
+          **Goal:** Implement `saw update-status` CLI command.
+
+          **Command signature:**
+          ```
+          saw update-status <manifest-path> --wave <N> --agent <ID> --status <complete|partial|blocked>
+          ```
+
+          **Implementation:**
+          - Parse flags: manifestPath, --wave, --agent, --status
+          - Call protocol.UpdateStatus(manifestPath, waveNum, agentID, status)
+          - Marshal result to JSON, print to stdout
+          - Exit 0 on success, exit 1 on error
+
+          **Test coverage:**
+          - Valid update: exits 0
+          - Agent not found: exits 1
+
+          **Files:** cmd/saw/update_status.go
+
+          **Verification gate:**
+          ```bash
+          go build ./cmd/saw
+          go vet ./cmd/saw
+          ./saw update-status --help
+          ```
+        files:
+          - cmd/saw/update_status.go
+        dependencies: [G]
+
+      - id: S
+        task: |
+          **Goal:** Implement `saw update-context` CLI command.
+
+          **Command signature:**
+          ```
+          saw update-context <manifest-path> [--project-root <path>]
+          ```
+
+          **Implementation:**
+          - Parse flags: manifestPath, --project-root (optional, default: auto-detect)
+          - Call protocol.UpdateContext(manifestPath, projectRoot)
+          - Marshal result to JSON, print to stdout
+          - Exit 0 on success, exit 1 on error
+
+          **Test coverage:**
+          - CONTEXT.md updated: exits 0
+          - projectRoot invalid: exits 1
+
+          **Files:** cmd/saw/update_context.go
+
+          **Verification gate:**
+          ```bash
+          go build ./cmd/saw
+          go vet ./cmd/saw
+          ./saw update-context --help
+          ```
+        files:
+          - cmd/saw/update_context.go
+        dependencies: [H]
+
+      - id: T
+        task: |
+          **Goal:** Implement `saw list-impls` CLI command.
+
+          **Command signature:**
+          ```
+          saw list-impls [--dir <path>]
+          ```
+
+          **Implementation:**
+          - Parse flags: --dir (optional, default: docs/IMPL)
+          - Call protocol.ListIMPLs(dir)
+          - Marshal result to JSON, print to stdout
+          - Exit 0 always (empty list is valid output)
+
+          **Test coverage:**
+          - Dir with IMPLs: prints summaries
+          - Dir empty: prints empty array
+
+          **Files:** cmd/saw/list_impls.go
+
+          **Verification gate:**
+          ```bash
+          go build ./cmd/saw
+          go vet ./cmd/saw
+          ./saw list-impls --help
+          ```
+        files:
+          - cmd/saw/list_impls.go
+        dependencies: [I]
+
+  - number: 3
+    agents:
+      - id: U
+        task: |
+          **Goal:** Wire new CLI commands into cmd/saw/main.go switch statement.
+
+          **Implementation:**
+          - Add cases to main.go switch for:
+            - "create-worktrees" → runCreateWorktrees(os.Args[2:])
+            - "verify-commits" → runVerifyCommits(os.Args[2:])
+            - "scan-stubs" → runScanStubs(os.Args[2:])
+            - "merge-agents" → runMergeAgents(os.Args[2:])
+            - "cleanup" → runCleanup(os.Args[2:])
+            - "verify-build" → runVerifyBuild(os.Args[2:])
+            - "update-status" → runUpdateStatus(os.Args[2:])
+            - "update-context" → runUpdateContext(os.Args[2:])
+            - "list-impls" → runListIMPLs(os.Args[2:])
+          - Update printUsage() to list new commands with descriptions
+
+          **Test coverage:**
+          - Build main: `go build ./cmd/saw`
+          - Run `./saw --help`: verify new commands listed
+          - Run each command with --help: verify usage prints
+
+          **Files:** cmd/saw/main.go
+
+          **Verification gate:**
+          ```bash
+          go build ./cmd/saw
+          go vet ./cmd/saw
+          ./saw --help | grep create-worktrees
+          ./saw --help | grep verify-commits
+          ./saw --help | grep scan-stubs
+          ./saw --help | grep merge-agents
+          ./saw --help | grep cleanup
+          ./saw --help | grep verify-build
+          ./saw --help | grep update-status
+          ./saw --help | grep update-context
+          ./saw --help | grep list-impls
+          ```
+        files:
+          - cmd/saw/main.go
+        dependencies: [L, M, N, O, P, Q, R, S, T]
+
+      - id: V
+        task: |
+          **Goal:** Implement full wave execution orchestration in pkg/engine/run_wave_full.go (gap 10 capstone).
+
+          **Signature (binding contract):**
+          ```go
+          type RunWaveFullOpts struct {
+              ManifestPath string
+              RepoPath     string
+              WaveNum      int
+          }
+          type RunWaveFullResult struct {
+              Wave            int                           `json:"wave"`
+              WorktreesCreated *protocol.CreateWorktreesResult `json:"worktrees_created"`
+              CommitsVerified  *protocol.VerifyCommitsResult   `json:"commits_verified"`
+              Merged           *protocol.MergeAgentsResult     `json:"merged"`
+              BuildVerified    *protocol.VerifyBuildResult     `json:"build_verified"`
+              Cleaned          *protocol.CleanupResult         `json:"cleaned"`
+              Success          bool                            `json:"success"`
+          }
+          func RunWaveFull(ctx context.Context, opts RunWaveFullOpts) (*RunWaveFullResult, error)
+          ```
+
+          **Implementation:**
+          - Step 1: protocol.CreateWorktrees(manifestPath, waveNum, repoPath)
+          - Step 2: Launch agents via existing engine.RunSingleWave(...)
+          - Step 3: protocol.VerifyCommits(manifestPath, waveNum, repoPath)
+          - Step 4: protocol.MergeAgents(manifestPath, waveNum, repoPath)
+          - Step 5: protocol.VerifyBuild(manifestPath, repoPath)
+          - Step 6: protocol.Cleanup(manifestPath, waveNum, repoPath)
+          - Return RunWaveFullResult with all intermediate results
+          - Stop on first error: if any step fails, return immediately
+
+          **Test coverage:**
+          - Full wave succeeds: Success == true, all sub-results populated
+          - Worktree creation fails: returns error before launching agents
+          - Merge fails: returns error, cleanup not called
+
+          **Files:** pkg/engine/run_wave_full.go, pkg/engine/run_wave_full_test.go
+
+          **Verification gate:**
+          ```bash
+          go build ./pkg/engine
+          go vet ./pkg/engine
+          go test ./pkg/engine -run TestRunWaveFull
+          ```
+        files:
+          - pkg/engine/run_wave_full.go
+          - pkg/engine/run_wave_full_test.go
+        dependencies: [A, B, C, D, E, F, G, H, I]
+
+  - number: 4
+    agents:
+      - id: W
+        task: |
+          **Goal:** Implement `saw run-wave` CLI command (gap 10 CLI wrapper).
+
+          **Command signature:**
+          ```
+          saw run-wave <manifest-path> --wave <N> [--repo-dir <path>]
+          ```
+
+          **Implementation:**
+          - Parse flags: manifestPath, --wave, --repo-dir
+          - Call engine.RunWaveFull(ctx, engine.RunWaveFullOpts{ManifestPath: manifestPath, RepoPath: repoPath, WaveNum: waveNum})
+          - Marshal result to JSON, print to stdout
+          - Exit 0 if Success == true, exit 1 if Success == false
+          - Wire into main.go switch: "run-wave" → runRunWave(os.Args[2:])
+
+          **Test coverage:**
+          - Wave completes: exits 0
+          - Wave fails: exits 1
+
+          **Files:** cmd/saw/run_wave_cmd.go, cmd/saw/main.go
+
+          **Verification gate:**
+          ```bash
+          go build ./cmd/saw
+          go vet ./cmd/saw
+          ./saw run-wave --help
+          ```
+        files:
+          - cmd/saw/run_wave_cmd.go
+          - cmd/saw/main.go
+        dependencies: [V, U]
+
+  - number: 5
+    agents:
+      - id: X
+        task: |
+          **Goal:** Update saw-skill.md to replace ad-hoc bash/git commands with new SDK CLI commands.
+
+          **Repository:** scout-and-wave (`/Users/dayna.blackwell/code/scout-and-wave`)
+
+          **Files:** implementations/claude-code/prompts/saw-skill.md
+
+          **Changes:**
+
+          Replace ad-hoc operations with CLI commands throughout the skill:
+
+          1. **Worktree creation** (step 3 of IMPL-exists flow): Replace manual `git worktree add` instructions with:
+             ```
+             saw create-worktrees "<manifest-path>" --wave <N> --repo-dir "<repo-path>"
+             ```
+
+          2. **Wave execution** (step 4): Replace Agent tool wave launch with:
+             ```
+             saw run-wave "<manifest-path>" --wave <N> --repo-dir "<repo-path>"
+             ```
+             This replaces the entire agent launch + completion polling + commit verification block.
+
+          3. **E20 stub scan** (after step 4): Replace `bash scripts/scan-stubs.sh` with:
+             ```
+             saw scan-stubs <file1> <file2> ...
+             ```
+
+          4. **Merge and verify** (step 5): Replace manual git merge procedure with:
+             ```
+             saw merge-agents "<manifest-path>" --wave <N> --repo-dir "<repo-path>"
+             ```
+             And replace manual test_command run with:
+             ```
+             saw verify-build "<manifest-path>" --repo-dir "<repo-path>"
+             ```
+
+          5. **Worktree cleanup** (in merge procedure): Replace manual git worktree remove with:
+             ```
+             saw cleanup "<manifest-path>" --wave <N> --repo-dir "<repo-path>"
+             ```
+
+          6. **E15 + E18** (step 6): After `saw mark-complete`, add:
+             ```
+             saw update-context "<manifest-path>" --project-root "<repo-path>"
+             ```
+
+          7. **Status tracking**: After each wave completes, add:
+             ```
+             saw update-status "<manifest-path>" --wave <N> --agent <ID> --status complete
+             ```
+
+          8. **IMPL discovery** (top of execution logic): Replace glob-based discovery with:
+             ```
+             saw list-impls --dir "<repo-path>/docs/IMPL"
+             ```
+
+          **Preserve:**
+          - Scout agent launch via Agent tool (unchanged)
+          - Scaffold agent launch via Agent tool (unchanged)
+          - Human review checkpoints (unchanged)
+          - Dual-mode detection notes (update to note CLI commands work with both formats)
+          - All invariant/execution-rule inline documentation
+
+          **Remove:**
+          - References to `saw-worktree.md` for worktree creation (now handled by CLI)
+          - References to `saw-merge.md` for merge procedure (now handled by CLI)
+          - Manual `git worktree add/remove` and `git merge --no-ff` instructions
+          - Manual `git rev-list` commit verification
+          - `bash scripts/scan-stubs.sh` invocation
+
+          **Verification gate:**
+          ```bash
+          # No automated test for skill markdown — verify structure manually
+          grep -c "saw create-worktrees\|saw run-wave\|saw merge-agents\|saw verify-build\|saw cleanup\|saw scan-stubs\|saw update-status\|saw update-context\|saw list-impls" /Users/dayna.blackwell/code/scout-and-wave/implementations/claude-code/prompts/saw-skill.md
+          ```
+        files:
+          - implementations/claude-code/prompts/saw-skill.md
+        dependencies: [W]
+
+      - id: Y
+        task: |
+          **Goal:** Simplify saw-merge.md and saw-worktree.md now that CLI commands handle the heavy lifting.
+
+          **Repository:** scout-and-wave (`/Users/dayna.blackwell/code/scout-and-wave`)
+
+          **Files:** implementations/claude-code/prompts/saw-merge.md, implementations/claude-code/prompts/saw-worktree.md
+
+          **Changes to saw-merge.md:**
+          - Replace the manual merge procedure (conflict detection → git merge --no-ff per agent → cleanup) with references to `saw merge-agents` and `saw cleanup` CLI commands
+          - Replace manual post-merge verification with `saw verify-build`
+          - Replace manual file ownership cross-reference with `saw check-conflicts` (already exists) + `saw verify-commits`
+          - Keep the procedural outline as documentation but mark CLI commands as the implementation
+          - Bump version
+
+          **Changes to saw-worktree.md:**
+          - Replace the manual worktree creation procedure with reference to `saw create-worktrees` CLI command
+          - Replace manual scaffold/freeze verification with existing `saw validate-scaffolds` + `saw freeze-check` (already referenced)
+          - Keep cross-repo notes (--repo-dir flag threading)
+          - Bump version
+
+          **Preserve:**
+          - All invariant documentation (I1, I2, I5)
+          - Cross-repo coordination notes
+          - Error handling guidance
+          - The files as reference documentation (they explain WHY, the CLI does WHAT)
+
+          **Verification gate:**
+          ```bash
+          grep -c "saw create-worktrees\|saw merge-agents\|saw cleanup\|saw verify-build\|saw verify-commits" /Users/dayna.blackwell/code/scout-and-wave/implementations/claude-code/prompts/saw-merge.md
+          grep -c "saw create-worktrees" /Users/dayna.blackwell/code/scout-and-wave/implementations/claude-code/prompts/saw-worktree.md
+          ```
+        files:
+          - implementations/claude-code/prompts/saw-merge.md
+          - implementations/claude-code/prompts/saw-worktree.md
+        dependencies: [W]
+
+completion_reports: {}
+
+state: SCOUT_PENDING
+merge_state: idle
