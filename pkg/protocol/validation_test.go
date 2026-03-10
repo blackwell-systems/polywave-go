@@ -1,0 +1,583 @@
+package protocol
+
+import (
+	"testing"
+)
+
+// TestValidateI1DisjointOwnership_Valid tests that disjoint ownership passes validation.
+func TestValidateI1DisjointOwnership_Valid(t *testing.T) {
+	m := &IMPLManifest{
+		FileOwnership: []FileOwnership{
+			{File: "file1.go", Agent: "A", Wave: 1},
+			{File: "file2.go", Agent: "B", Wave: 1},
+			{File: "file1.go", Agent: "C", Wave: 2}, // Same file, different wave - OK
+		},
+	}
+
+	errs := validateI1DisjointOwnership(m)
+	if len(errs) != 0 {
+		t.Errorf("Expected no errors, got %d: %v", len(errs), errs)
+	}
+}
+
+// TestValidateI1DisjointOwnership_Violation tests that duplicate ownership in same wave is caught.
+func TestValidateI1DisjointOwnership_Violation(t *testing.T) {
+	m := &IMPLManifest{
+		FileOwnership: []FileOwnership{
+			{File: "file1.go", Agent: "A", Wave: 1},
+			{File: "file1.go", Agent: "B", Wave: 1}, // Same file, same wave - violation
+		},
+	}
+
+	errs := validateI1DisjointOwnership(m)
+	if len(errs) != 1 {
+		t.Fatalf("Expected 1 error, got %d: %v", len(errs), errs)
+	}
+	if errs[0].Code != "I1_VIOLATION" {
+		t.Errorf("Expected I1_VIOLATION, got %s", errs[0].Code)
+	}
+	if errs[0].Field != "file_ownership" {
+		t.Errorf("Expected field 'file_ownership', got %s", errs[0].Field)
+	}
+}
+
+// TestValidateI2AgentDependencies_Valid tests valid cross-wave dependencies.
+func TestValidateI2AgentDependencies_Valid(t *testing.T) {
+	m := &IMPLManifest{
+		Waves: []Wave{
+			{
+				Number: 1,
+				Agents: []Agent{
+					{ID: "A", Task: "task A"},
+					{ID: "B", Task: "task B"},
+				},
+			},
+			{
+				Number: 2,
+				Agents: []Agent{
+					{ID: "C", Task: "task C", Dependencies: []string{"A"}},
+					{ID: "D", Task: "task D", Dependencies: []string{"A", "B"}},
+				},
+			},
+		},
+	}
+
+	errs := validateI2AgentDependencies(m)
+	if len(errs) != 0 {
+		t.Errorf("Expected no errors, got %d: %v", len(errs), errs)
+	}
+}
+
+// TestValidateI2AgentDependencies_MissingDep tests unknown dependency detection.
+func TestValidateI2AgentDependencies_MissingDep(t *testing.T) {
+	m := &IMPLManifest{
+		Waves: []Wave{
+			{
+				Number: 1,
+				Agents: []Agent{
+					{ID: "A", Task: "task A", Dependencies: []string{"Z"}}, // Z doesn't exist
+				},
+			},
+		},
+	}
+
+	errs := validateI2AgentDependencies(m)
+	if len(errs) != 1 {
+		t.Fatalf("Expected 1 error, got %d: %v", len(errs), errs)
+	}
+	if errs[0].Code != "I2_MISSING_DEP" {
+		t.Errorf("Expected I2_MISSING_DEP, got %s", errs[0].Code)
+	}
+}
+
+// TestValidateI2AgentDependencies_SameWave tests that same-wave dependencies are rejected.
+func TestValidateI2AgentDependencies_SameWave(t *testing.T) {
+	m := &IMPLManifest{
+		Waves: []Wave{
+			{
+				Number: 1,
+				Agents: []Agent{
+					{ID: "A", Task: "task A"},
+					{ID: "B", Task: "task B", Dependencies: []string{"A"}}, // Same wave
+				},
+			},
+		},
+	}
+
+	errs := validateI2AgentDependencies(m)
+	if len(errs) != 1 {
+		t.Fatalf("Expected 1 error, got %d: %v", len(errs), errs)
+	}
+	if errs[0].Code != "I2_WAVE_ORDER" {
+		t.Errorf("Expected I2_WAVE_ORDER, got %s", errs[0].Code)
+	}
+}
+
+// TestValidateI2AgentDependencies_FutureWave tests that future-wave dependencies are rejected.
+func TestValidateI2AgentDependencies_FutureWave(t *testing.T) {
+	m := &IMPLManifest{
+		Waves: []Wave{
+			{
+				Number: 1,
+				Agents: []Agent{
+					{ID: "A", Task: "task A", Dependencies: []string{"B"}}, // B is in future wave
+				},
+			},
+			{
+				Number: 2,
+				Agents: []Agent{
+					{ID: "B", Task: "task B"},
+				},
+			},
+		},
+	}
+
+	errs := validateI2AgentDependencies(m)
+	if len(errs) != 1 {
+		t.Fatalf("Expected 1 error, got %d: %v", len(errs), errs)
+	}
+	if errs[0].Code != "I2_WAVE_ORDER" {
+		t.Errorf("Expected I2_WAVE_ORDER, got %s", errs[0].Code)
+	}
+}
+
+// TestValidateI2AgentDependencies_FileOwnership tests dependency validation in FileOwnership.
+func TestValidateI2AgentDependencies_FileOwnership(t *testing.T) {
+	m := &IMPLManifest{
+		Waves: []Wave{
+			{Number: 1, Agents: []Agent{{ID: "A", Task: "task A"}}},
+			{Number: 2, Agents: []Agent{{ID: "B", Task: "task B"}}},
+		},
+		FileOwnership: []FileOwnership{
+			{File: "file1.go", Agent: "B", Wave: 2, DependsOn: []string{"A:file0.go"}}, // Valid
+			{File: "file2.go", Agent: "B", Wave: 2, DependsOn: []string{"Z"}},         // Unknown agent
+		},
+	}
+
+	errs := validateI2AgentDependencies(m)
+	if len(errs) != 1 {
+		t.Fatalf("Expected 1 error, got %d: %v", len(errs), errs)
+	}
+	if errs[0].Code != "I2_MISSING_DEP" {
+		t.Errorf("Expected I2_MISSING_DEP, got %s", errs[0].Code)
+	}
+}
+
+// TestValidateI3WaveOrdering_Valid tests sequential wave numbering.
+func TestValidateI3WaveOrdering_Valid(t *testing.T) {
+	m := &IMPLManifest{
+		Waves: []Wave{
+			{Number: 1, Agents: []Agent{{ID: "A", Task: "task A"}}},
+			{Number: 2, Agents: []Agent{{ID: "B", Task: "task B"}}},
+			{Number: 3, Agents: []Agent{{ID: "C", Task: "task C"}}},
+		},
+	}
+
+	errs := validateI3WaveOrdering(m)
+	if len(errs) != 0 {
+		t.Errorf("Expected no errors, got %d: %v", len(errs), errs)
+	}
+}
+
+// TestValidateI3WaveOrdering_SkippedWave tests that skipped wave numbers are caught.
+func TestValidateI3WaveOrdering_SkippedWave(t *testing.T) {
+	m := &IMPLManifest{
+		Waves: []Wave{
+			{Number: 1, Agents: []Agent{{ID: "A", Task: "task A"}}},
+			{Number: 3, Agents: []Agent{{ID: "B", Task: "task B"}}}, // Skipped wave 2
+		},
+	}
+
+	errs := validateI3WaveOrdering(m)
+	if len(errs) != 1 {
+		t.Fatalf("Expected 1 error, got %d: %v", len(errs), errs)
+	}
+	if errs[0].Code != "I3_WAVE_ORDER" {
+		t.Errorf("Expected I3_WAVE_ORDER, got %s", errs[0].Code)
+	}
+}
+
+// TestValidateI3WaveOrdering_EmptyManifest tests that empty manifests are valid.
+func TestValidateI3WaveOrdering_EmptyManifest(t *testing.T) {
+	m := &IMPLManifest{
+		Waves: []Wave{},
+	}
+
+	errs := validateI3WaveOrdering(m)
+	if len(errs) != 0 {
+		t.Errorf("Expected no errors for empty manifest, got %d: %v", len(errs), errs)
+	}
+}
+
+// TestValidateI4RequiredFields_Valid tests that all required fields pass validation.
+func TestValidateI4RequiredFields_Valid(t *testing.T) {
+	m := &IMPLManifest{
+		Title:       "Test Feature",
+		FeatureSlug: "test-feature",
+		Verdict:     "SUITABLE",
+	}
+
+	errs := validateI4RequiredFields(m)
+	if len(errs) != 0 {
+		t.Errorf("Expected no errors, got %d: %v", len(errs), errs)
+	}
+}
+
+// TestValidateI4RequiredFields_MissingTitle tests that missing title is caught.
+func TestValidateI4RequiredFields_MissingTitle(t *testing.T) {
+	m := &IMPLManifest{
+		Title:       "",
+		FeatureSlug: "test-feature",
+		Verdict:     "SUITABLE",
+	}
+
+	errs := validateI4RequiredFields(m)
+	if len(errs) != 1 {
+		t.Fatalf("Expected 1 error, got %d: %v", len(errs), errs)
+	}
+	if errs[0].Code != "I4_MISSING_FIELD" {
+		t.Errorf("Expected I4_MISSING_FIELD, got %s", errs[0].Code)
+	}
+	if errs[0].Field != "title" {
+		t.Errorf("Expected field 'title', got %s", errs[0].Field)
+	}
+}
+
+// TestValidateI4RequiredFields_MultipleErrors tests that multiple missing fields are reported.
+func TestValidateI4RequiredFields_MultipleErrors(t *testing.T) {
+	m := &IMPLManifest{
+		Title:       "",
+		FeatureSlug: "",
+		Verdict:     "",
+	}
+
+	errs := validateI4RequiredFields(m)
+	if len(errs) != 3 {
+		t.Errorf("Expected 3 errors, got %d: %v", len(errs), errs)
+	}
+}
+
+// TestValidateI4RequiredFields_InvalidVerdict tests that invalid verdict values are caught.
+func TestValidateI4RequiredFields_InvalidVerdict(t *testing.T) {
+	m := &IMPLManifest{
+		Title:       "Test Feature",
+		FeatureSlug: "test-feature",
+		Verdict:     "MAYBE",
+	}
+
+	errs := validateI4RequiredFields(m)
+	if len(errs) != 1 {
+		t.Fatalf("Expected 1 error, got %d: %v", len(errs), errs)
+	}
+	if errs[0].Code != "I4_INVALID_VALUE" {
+		t.Errorf("Expected I4_INVALID_VALUE, got %s", errs[0].Code)
+	}
+}
+
+// TestValidateI4RequiredFields_AllVerdictValues tests all valid verdict values.
+func TestValidateI4RequiredFields_AllVerdictValues(t *testing.T) {
+	validVerdicts := []string{"SUITABLE", "NOT_SUITABLE", "SUITABLE_WITH_CAVEATS"}
+
+	for _, verdict := range validVerdicts {
+		m := &IMPLManifest{
+			Title:       "Test Feature",
+			FeatureSlug: "test-feature",
+			Verdict:     verdict,
+		}
+
+		errs := validateI4RequiredFields(m)
+		if len(errs) != 0 {
+			t.Errorf("Expected no errors for verdict %q, got %d: %v", verdict, len(errs), errs)
+		}
+	}
+}
+
+// TestValidateI5FileOwnershipComplete_Valid tests that all agent files are in ownership table.
+func TestValidateI5FileOwnershipComplete_Valid(t *testing.T) {
+	m := &IMPLManifest{
+		Waves: []Wave{
+			{
+				Number: 1,
+				Agents: []Agent{
+					{ID: "A", Task: "task A", Files: []string{"file1.go", "file2.go"}},
+				},
+			},
+		},
+		FileOwnership: []FileOwnership{
+			{File: "file1.go", Agent: "A", Wave: 1},
+			{File: "file2.go", Agent: "A", Wave: 1},
+		},
+	}
+
+	errs := validateI5FileOwnershipComplete(m)
+	if len(errs) != 0 {
+		t.Errorf("Expected no errors, got %d: %v", len(errs), errs)
+	}
+}
+
+// TestValidateI5FileOwnershipComplete_OrphanFile tests that missing ownership entries are caught.
+func TestValidateI5FileOwnershipComplete_OrphanFile(t *testing.T) {
+	m := &IMPLManifest{
+		Waves: []Wave{
+			{
+				Number: 1,
+				Agents: []Agent{
+					{ID: "A", Task: "task A", Files: []string{"file1.go", "file2.go"}},
+				},
+			},
+		},
+		FileOwnership: []FileOwnership{
+			{File: "file1.go", Agent: "A", Wave: 1},
+			// file2.go is missing from ownership table
+		},
+	}
+
+	errs := validateI5FileOwnershipComplete(m)
+	if len(errs) != 1 {
+		t.Fatalf("Expected 1 error, got %d: %v", len(errs), errs)
+	}
+	if errs[0].Code != "I5_ORPHAN_FILE" {
+		t.Errorf("Expected I5_ORPHAN_FILE, got %s", errs[0].Code)
+	}
+}
+
+// TestValidateI6NoCycles_Valid tests that acyclic dependency graphs pass validation.
+func TestValidateI6NoCycles_Valid(t *testing.T) {
+	m := &IMPLManifest{
+		Waves: []Wave{
+			{Number: 1, Agents: []Agent{{ID: "A", Task: "task A"}}},
+			{Number: 2, Agents: []Agent{{ID: "B", Task: "task B", Dependencies: []string{"A"}}}},
+			{Number: 3, Agents: []Agent{{ID: "C", Task: "task C", Dependencies: []string{"A", "B"}}}},
+		},
+	}
+
+	errs := validateI6NoCycles(m)
+	if len(errs) != 0 {
+		t.Errorf("Expected no errors, got %d: %v", len(errs), errs)
+	}
+}
+
+// TestValidateI6NoCycles_SimpleCycle tests that simple cycles are detected.
+func TestValidateI6NoCycles_SimpleCycle(t *testing.T) {
+	m := &IMPLManifest{
+		Waves: []Wave{
+			{
+				Number: 1,
+				Agents: []Agent{
+					{ID: "A", Task: "task A", Dependencies: []string{"B"}},
+					{ID: "B", Task: "task B", Dependencies: []string{"A"}}, // Cycle: A -> B -> A
+				},
+			},
+		},
+	}
+
+	errs := validateI6NoCycles(m)
+	if len(errs) != 1 {
+		t.Fatalf("Expected 1 error, got %d: %v", len(errs), errs)
+	}
+	if errs[0].Code != "I6_CYCLE" {
+		t.Errorf("Expected I6_CYCLE, got %s", errs[0].Code)
+	}
+}
+
+// TestValidateI6NoCycles_ComplexCycle tests that longer cycles are detected.
+func TestValidateI6NoCycles_ComplexCycle(t *testing.T) {
+	m := &IMPLManifest{
+		Waves: []Wave{
+			{
+				Number: 1,
+				Agents: []Agent{
+					{ID: "A", Task: "task A", Dependencies: []string{"B"}},
+					{ID: "B", Task: "task B", Dependencies: []string{"C"}},
+					{ID: "C", Task: "task C", Dependencies: []string{"A"}}, // Cycle: A -> B -> C -> A
+				},
+			},
+		},
+	}
+
+	errs := validateI6NoCycles(m)
+	if len(errs) != 1 {
+		t.Fatalf("Expected 1 error, got %d: %v", len(errs), errs)
+	}
+	if errs[0].Code != "I6_CYCLE" {
+		t.Errorf("Expected I6_CYCLE, got %s", errs[0].Code)
+	}
+}
+
+// TestValidateI6NoCycles_NoDependencies tests that agents with no dependencies are valid.
+func TestValidateI6NoCycles_NoDependencies(t *testing.T) {
+	m := &IMPLManifest{
+		Waves: []Wave{
+			{
+				Number: 1,
+				Agents: []Agent{
+					{ID: "A", Task: "task A"},
+					{ID: "B", Task: "task B"},
+					{ID: "C", Task: "task C"},
+				},
+			},
+		},
+	}
+
+	errs := validateI6NoCycles(m)
+	if len(errs) != 0 {
+		t.Errorf("Expected no errors, got %d: %v", len(errs), errs)
+	}
+}
+
+// TestValidate_CompleteManifest tests validation of a complete valid manifest.
+func TestValidate_CompleteManifest(t *testing.T) {
+	m := &IMPLManifest{
+		Title:       "Test Feature",
+		FeatureSlug: "test-feature",
+		Verdict:     "SUITABLE",
+		Waves: []Wave{
+			{
+				Number: 1,
+				Agents: []Agent{
+					{ID: "A", Task: "task A", Files: []string{"file1.go"}},
+					{ID: "B", Task: "task B", Files: []string{"file2.go"}},
+				},
+			},
+			{
+				Number: 2,
+				Agents: []Agent{
+					{ID: "C", Task: "task C", Files: []string{"file3.go"}, Dependencies: []string{"A"}},
+				},
+			},
+		},
+		FileOwnership: []FileOwnership{
+			{File: "file1.go", Agent: "A", Wave: 1},
+			{File: "file2.go", Agent: "B", Wave: 1},
+			{File: "file3.go", Agent: "C", Wave: 2, DependsOn: []string{"A"}},
+		},
+	}
+
+	errs := Validate(m)
+	if len(errs) != 0 {
+		t.Errorf("Expected no errors for valid manifest, got %d: %v", len(errs), errs)
+	}
+}
+
+// TestValidate_MultipleErrors tests that all errors are reported together.
+func TestValidate_MultipleErrors(t *testing.T) {
+	m := &IMPLManifest{
+		Title:       "", // Missing title (I4)
+		FeatureSlug: "",
+		Verdict:     "",
+		Waves: []Wave{
+			{
+				Number: 1,
+				Agents: []Agent{
+					{ID: "A", Task: "task A", Files: []string{"file1.go"}},
+				},
+			},
+			{
+				Number: 3, // Skipped wave 2 (I3)
+				Agents: []Agent{
+					{ID: "B", Task: "task B", Files: []string{"file2.go"}, Dependencies: []string{"Z"}}, // Unknown dep (I2)
+				},
+			},
+		},
+		FileOwnership: []FileOwnership{
+			{File: "file1.go", Agent: "A", Wave: 1},
+			{File: "file1.go", Agent: "B", Wave: 1}, // Duplicate ownership (I1)
+			// file2.go missing from ownership (I5)
+		},
+	}
+
+	errs := Validate(m)
+	// Should have errors from I1, I2, I3, I4, I5
+	if len(errs) < 5 {
+		t.Errorf("Expected at least 5 errors, got %d: %v", len(errs), errs)
+	}
+
+	// Check that we have errors from different invariants
+	codes := make(map[string]bool)
+	for _, err := range errs {
+		codes[err.Code] = true
+	}
+
+	expectedCodes := []string{"I1_VIOLATION", "I2_MISSING_DEP", "I3_WAVE_ORDER", "I4_MISSING_FIELD", "I5_ORPHAN_FILE"}
+	for _, code := range expectedCodes {
+		if !codes[code] {
+			t.Errorf("Expected error code %s, but it was not found in errors: %v", code, errs)
+		}
+	}
+}
+
+// TestValidate_EmptyManifest tests that an empty manifest is handled gracefully.
+func TestValidate_EmptyManifest(t *testing.T) {
+	m := &IMPLManifest{}
+
+	errs := Validate(m)
+	// Should have I4 errors for missing required fields
+	if len(errs) == 0 {
+		t.Error("Expected errors for empty manifest (missing required fields)")
+	}
+
+	foundI4 := false
+	for _, err := range errs {
+		if err.Code == "I4_MISSING_FIELD" {
+			foundI4 = true
+			break
+		}
+	}
+	if !foundI4 {
+		t.Error("Expected I4_MISSING_FIELD error for empty manifest")
+	}
+}
+
+// TestValidate_SingleWave tests validation of a single-wave manifest.
+func TestValidate_SingleWave(t *testing.T) {
+	m := &IMPLManifest{
+		Title:       "Single Wave Feature",
+		FeatureSlug: "single-wave",
+		Verdict:     "SUITABLE",
+		Waves: []Wave{
+			{
+				Number: 1,
+				Agents: []Agent{
+					{ID: "A", Task: "task A", Files: []string{"file1.go"}},
+					{ID: "B", Task: "task B", Files: []string{"file2.go"}},
+				},
+			},
+		},
+		FileOwnership: []FileOwnership{
+			{File: "file1.go", Agent: "A", Wave: 1},
+			{File: "file2.go", Agent: "B", Wave: 1},
+		},
+	}
+
+	errs := Validate(m)
+	if len(errs) != 0 {
+		t.Errorf("Expected no errors for valid single-wave manifest, got %d: %v", len(errs), errs)
+	}
+}
+
+// TestValidate_CrossRepoOwnership tests validation with cross-repo file ownership.
+func TestValidate_CrossRepoOwnership(t *testing.T) {
+	m := &IMPLManifest{
+		Title:       "Cross-Repo Feature",
+		FeatureSlug: "cross-repo",
+		Verdict:     "SUITABLE",
+		Waves: []Wave{
+			{
+				Number: 1,
+				Agents: []Agent{
+					{ID: "A", Task: "task A", Files: []string{"repo1/file1.go"}},
+					{ID: "B", Task: "task B", Files: []string{"repo2/file2.go"}},
+				},
+			},
+		},
+		FileOwnership: []FileOwnership{
+			{File: "repo1/file1.go", Agent: "A", Wave: 1, Repo: "repo1"},
+			{File: "repo2/file2.go", Agent: "B", Wave: 1, Repo: "repo2"},
+		},
+	}
+
+	errs := Validate(m)
+	if len(errs) != 0 {
+		t.Errorf("Expected no errors for valid cross-repo manifest, got %d: %v", len(errs), errs)
+	}
+}
