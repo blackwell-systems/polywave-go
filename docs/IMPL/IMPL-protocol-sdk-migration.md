@@ -514,6 +514,45 @@ go test ./pkg/protocol -run TestManifest -v
 
 ---
 
+### Agent A - Completion Report
+
+```yaml type=impl-completion-report
+status: complete
+repo: /Users/dayna.blackwell/code/scout-and-wave-go
+worktree: .claude/worktrees/wave1-agent-A
+branch: wave1-agent-A
+commit: 094a8f50b0e21e0a07e7d042d5c643d3a1aff601
+files_changed: []
+files_created:
+  - pkg/protocol/manifest.go
+  - pkg/protocol/manifest_test.go
+interface_deviations: []
+out_of_scope_deps: []
+tests_added:
+  - TestManifestLoadSave
+  - TestManifestLoadInvalidFile
+  - TestManifestLoadInvalidYAML
+  - TestManifestCurrentWave
+  - TestManifestSetCompletionReport
+  - TestManifestYAMLUnmarshalOptionalFields
+  - TestManifestJSONMarshal
+  - TestManifestLoadInitializesNilMaps
+verification: PASS (go build, go vet, go test all passing)
+```
+
+Implementation complete. Key points:
+
+1. **Manifest operations implemented**: Load, Save, CurrentWave, SetCompletionReport all working as specified
+2. **YAML/JSON compatibility**: Full roundtrip tested with gopkg.in/yaml.v3, JSON marshal verified for web UI
+3. **CurrentWave logic**: Correctly identifies first incomplete wave (missing reports or status != "complete")
+4. **Validation**: SetCompletionReport validates agent existence and returns structured errors
+5. **Test coverage**: 8 comprehensive test cases covering all operations, edge cases, and error paths
+6. **Clean separation**: No dependencies on existing parser.go - ready for Agent B to import
+
+The types.go scaffold was already provided and contains all struct definitions. I only needed to implement the four operations in manifest.go. All verification gates pass.
+
+---
+
 ### Agent B — SDK Validation Logic
 
 **wave:** 1
@@ -582,6 +621,65 @@ go test ./pkg/protocol -run TestValidation -v
 - Tests cover valid manifests (no errors) and invalid manifests (specific errors)
 - No false positives (valid manifests pass)
 - No false negatives (invalid manifests caught)
+
+### Agent B - Completion Report
+
+```yaml type=impl-completion-report
+status: complete
+repo: /Users/dayna.blackwell/code/scout-and-wave-go
+worktree: .claude/worktrees/wave1-agent-B
+branch: wave1-agent-B
+commit: 1354618413db0cb91c5c37fdb5eb7ad84c39cc32
+files_changed: []
+files_created:
+  - pkg/protocol/validation.go
+  - pkg/protocol/validation_test.go
+interface_deviations: []
+out_of_scope_deps: []
+tests_added:
+  - TestValidateI1DisjointOwnership_Valid
+  - TestValidateI1DisjointOwnership_Violation
+  - TestValidateI2AgentDependencies_Valid
+  - TestValidateI2AgentDependencies_MissingDep
+  - TestValidateI2AgentDependencies_SameWave
+  - TestValidateI2AgentDependencies_FutureWave
+  - TestValidateI2AgentDependencies_FileOwnership
+  - TestValidateI3WaveOrdering_Valid
+  - TestValidateI3WaveOrdering_SkippedWave
+  - TestValidateI3WaveOrdering_EmptyManifest
+  - TestValidateI4RequiredFields_Valid
+  - TestValidateI4RequiredFields_MissingTitle
+  - TestValidateI4RequiredFields_MultipleErrors
+  - TestValidateI4RequiredFields_InvalidVerdict
+  - TestValidateI4RequiredFields_AllVerdictValues
+  - TestValidateI5FileOwnershipComplete_Valid
+  - TestValidateI5FileOwnershipComplete_OrphanFile
+  - TestValidateI6NoCycles_Valid
+  - TestValidateI6NoCycles_SimpleCycle
+  - TestValidateI6NoCycles_ComplexCycle
+  - TestValidateI6NoCycles_NoDependencies
+  - TestValidate_CompleteManifest
+  - TestValidate_MultipleErrors
+  - TestValidate_EmptyManifest
+  - TestValidate_SingleWave
+  - TestValidate_CrossRepoOwnership
+verification: PASS (go build, go vet, go test all passing - 25 tests pass)
+```
+
+Implementation complete. Key points:
+
+1. **All I1-I6 invariants implemented**: Each with dedicated validation function and comprehensive error messages
+2. **I1 (Disjoint ownership)**: Detects files owned by multiple agents within same wave
+3. **I2 (Agent dependencies)**: Validates dependencies reference only prior waves; checks both Agent.Dependencies and FileOwnership.DependsOn fields
+4. **I3 (Wave ordering)**: Ensures sequential wave numbering (1, 2, 3, ...)
+5. **I4 (Required fields)**: Validates title, feature_slug, verdict presence and verdict enum values
+6. **I5 (File ownership completeness)**: Ensures all Agent.Files entries exist in FileOwnership table
+7. **I6 (No cycles)**: DFS-based cycle detection in dependency graph
+8. **Structured errors**: All errors use ValidationError struct with Code, Message, Field for JSON serialization
+9. **Multi-error reporting**: Validate() runs all checks and returns all errors together for comprehensive feedback
+10. **Test coverage**: 25 tests covering valid cases, violation detection, edge cases (empty manifests, single waves), and cross-repo ownership
+
+The ValidationError type was already defined in types.go by Agent A, so I used that existing definition. All verification gates pass.
 
 ---
 
