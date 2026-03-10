@@ -1,0 +1,1242 @@
+# IMPL: cobra-cli-migration
+title: "Cobra CLI Migration"
+feature_slug: "cobra-cli-migration"
+verdict: "SUITABLE"
+test_command: "go test ./..."
+lint_command: "go vet ./..."
+state: "SCOUT_PENDING"
+
+# Suitability Assessment
+# ---------------------------------------------------------------------------
+# Verdict: SUITABLE
+#
+# 1. File decomposition: 11 files change (main.go + 10 subcommand files) plus
+#    2 new files (root.go, completion.go). Each subcommand file maps 1:1 to one
+#    agent. main.go is orchestrator-owned and assembled post-wave-1 merge.
+#    root.go is owned by Agent A (Wave 1) and read-only consumed by all others
+#    via the shared func newXxxCmd() *cobra.Command interface.
+#
+# 2. Investigation-first: None. All behavior is explicit in source.
+#
+# 3. Interface discoverability: Each subcommand exports func newXxxCmd() *cobra.Command.
+#    The persistent --repo-dir flag lives on the root command in root.go.
+#    Contracts are fully definable upfront.
+#
+# 4. Pre-implementation status:
+#    - Total items: 10 subcommands + root + main wiring = 12 units
+#    - Already implemented (cobra): 0
+#    - To-do: 12
+#    All agents proceed as planned.
+#
+# 5. Parallelization value: HIGH. 10 independent subcommand files, each with
+#    non-trivial cobra wiring (flags, args, exit codes, JSON stdout). Go build
+#    + test cycle is substantial. Maximum Wave 1 parallelism across 10 agents.
+#
+# Estimated times:
+# - Scout phase: ~10 min
+# - Agent execution: ~11 agents × ~8 min avg = ~88 min total work,
+#   parallelized to ~8 min for Wave 1 (10 agents) + ~5 min for Wave 2 (1 agent)
+# - Merge & verification: ~5 min
+# Total SAW time: ~28 min
+#
+# Sequential baseline: ~12 units × 8 min = ~96 min
+# Time savings: ~68 min (~71% faster)
+#
+# Recommendation: Clear speedup. Proceed.
+
+quality_gates:
+  level: "standard"
+  gates:
+    - type: "build"
+      command: "go build ./..."
+      required: true
+    - type: "lint"
+      command: "go vet ./..."
+      required: false
+    - type: "test"
+      command: "go test ./..."
+      required: true
+
+# Scaffolds
+# ---------------------------------------------------------------------------
+# root.go is owned by Agent A and defines the root cobra.Command plus the
+# --repo-dir persistent flag. All other agents import nothing from it directly
+# (same package `main`) but depend on Agent A completing before Wave 2 (main.go).
+# No cross-package shared types are introduced. cobra is the only new import.
+# No scaffold files needed beyond what Agent A creates.
+scaffolds: []
+
+# Interface Contracts
+# ---------------------------------------------------------------------------
+# The binding contract across all agents: each subcommand file exposes exactly
+# one exported-style function with this signature (unexported, same package):
+#
+#   func newXxxCmd() *cobra.Command
+#
+# The root command in root.go calls rootCmd.AddCommand(newXxxCmd()) for each.
+# main.go calls Execute() on the root command.
+#
+# Persistent flag on root command (defined in root.go, available to all subcommands):
+#   --repo-dir string   Repository root directory (default ".")
+#
+# NOTE: update-context uses --project-root instead of --repo-dir. That flag is
+# subcommand-local and is NOT replaced by the persistent --repo-dir. Preserve it.
+# NOTE: list-impls uses --dir, not --repo-dir. Preserve that local flag too.
+# NOTE: scan-stubs takes variadic positional args (no flags beyond cobra defaults).
+interface_contracts:
+  - name: "newRootCmd"
+    description: "Returns the cobra root command with --repo-dir as a PersistentFlag"
+    definition: |
+      func newRootCmd() *cobra.Command
+      // PersistentFlags: --repo-dir string (default ".")
+    location: "cmd/saw/root.go"
+
+  - name: "newCreateWorktreesCmd"
+    description: "cobra.Command for create-worktrees subcommand"
+    definition: |
+      func newCreateWorktreesCmd() *cobra.Command
+      // Flags: --wave int (required), inherits --repo-dir from root
+      // Args: cobra.ExactArgs(1) — manifest path
+      // On error: returns error (cobra prints it); on AllValid false: os.Exit(1)
+      // Stdout: JSON-encoded protocol.CreateWorktreesResult
+    location: "cmd/saw/create_worktrees.go"
+
+  - name: "newVerifyCommitsCmd"
+    description: "cobra.Command for verify-commits subcommand"
+    definition: |
+      func newVerifyCommitsCmd() *cobra.Command
+      // Flags: --wave int (required), inherits --repo-dir from root
+      // Args: cobra.ExactArgs(1) — manifest path
+      // Exit 1 if !result.AllValid
+      // Stdout: JSON-encoded protocol.VerifyCommitsResult
+    location: "cmd/saw/verify_commits.go"
+
+  - name: "newScanStubsCmd"
+    description: "cobra.Command for scan-stubs subcommand"
+    definition: |
+      func newScanStubsCmd() *cobra.Command
+      // Args: cobra.MinimumNArgs(1) — one or more file paths
+      // No --repo-dir usage (operates on explicit file list)
+      // Stdout: JSON-encoded protocol.ScanStubsResult
+    location: "cmd/saw/scan_stubs.go"
+
+  - name: "newMergeAgentsCmd"
+    description: "cobra.Command for merge-agents subcommand"
+    definition: |
+      func newMergeAgentsCmd() *cobra.Command
+      // Flags: --wave int (required), inherits --repo-dir from root
+      // Args: cobra.ExactArgs(1) — manifest path
+      // Exit 1 if !result.Success
+      // Stdout: JSON-encoded protocol.MergeAgentsResult
+    location: "cmd/saw/merge_agents.go"
+
+  - name: "newCleanupCmd"
+    description: "cobra.Command for cleanup subcommand"
+    definition: |
+      func newCleanupCmd() *cobra.Command
+      // Flags: --wave int (required), inherits --repo-dir from root
+      // Args: cobra.ExactArgs(1) — manifest path
+      // Stdout: JSON-encoded protocol.CleanupResult
+    location: "cmd/saw/cleanup.go"
+
+  - name: "newVerifyBuildCmd"
+    description: "cobra.Command for verify-build subcommand"
+    definition: |
+      func newVerifyBuildCmd() *cobra.Command
+      // Flags: inherits --repo-dir from root
+      // Args: cobra.ExactArgs(1) — manifest path
+      // Exit 1 if !result.TestPassed || !result.LintPassed
+      // Stdout: JSON-encoded protocol.VerifyBuildResult
+    location: "cmd/saw/verify_build.go"
+
+  - name: "newUpdateStatusCmd"
+    description: "cobra.Command for update-status subcommand"
+    definition: |
+      func newUpdateStatusCmd() *cobra.Command
+      // Flags: --wave int (required), --agent string (required), --status string (required)
+      // Args: cobra.ExactArgs(1) — manifest path
+      // Stdout: JSON-encoded protocol.UpdateStatusResult
+    location: "cmd/saw/update_status.go"
+
+  - name: "newUpdateContextCmd"
+    description: "cobra.Command for update-context subcommand"
+    definition: |
+      func newUpdateContextCmd() *cobra.Command
+      // Flags: --project-root string (default ".") — subcommand-local, NOT the persistent --repo-dir
+      // Args: cobra.ExactArgs(1) — manifest path
+      // Stdout: JSON-encoded protocol.UpdateContextResult
+    location: "cmd/saw/update_context.go"
+
+  - name: "newListIMPLsCmd"
+    description: "cobra.Command for list-impls subcommand"
+    definition: |
+      func newListIMPLsCmd() *cobra.Command
+      // Flags: --dir string (default "docs/IMPL") — subcommand-local
+      // Args: cobra.NoArgs
+      // Always exits 0
+      // Stdout: JSON-encoded protocol.ListIMPLsResult
+    location: "cmd/saw/list_impls.go"
+
+  - name: "newRunWaveCmd"
+    description: "cobra.Command for run-wave subcommand"
+    definition: |
+      func newRunWaveCmd() *cobra.Command
+      // Flags: --wave int (required), inherits --repo-dir from root
+      // Args: cobra.ExactArgs(1) — manifest path
+      // Exit 1 if !result.Success (even on error, prints partial JSON if available)
+      // Stdout: JSON-encoded engine.RunWaveFullResult
+    location: "cmd/saw/run_wave_cmd.go"
+
+# File Ownership
+# ---------------------------------------------------------------------------
+file_ownership:
+  - file: "cmd/saw/root.go"
+    agent: "A"
+    wave: 1
+    action: "new"
+
+  - file: "cmd/saw/create_worktrees.go"
+    agent: "B"
+    wave: 1
+    action: "modify"
+
+  - file: "cmd/saw/verify_commits.go"
+    agent: "C"
+    wave: 1
+    action: "modify"
+
+  - file: "cmd/saw/scan_stubs.go"
+    agent: "D"
+    wave: 1
+    action: "modify"
+
+  - file: "cmd/saw/merge_agents.go"
+    agent: "E"
+    wave: 1
+    action: "modify"
+
+  - file: "cmd/saw/cleanup.go"
+    agent: "F"
+    wave: 1
+    action: "modify"
+
+  - file: "cmd/saw/verify_build.go"
+    agent: "G"
+    wave: 1
+    action: "modify"
+
+  - file: "cmd/saw/update_status.go"
+    agent: "H"
+    wave: 1
+    action: "modify"
+
+  - file: "cmd/saw/update_context.go"
+    agent: "I"
+    wave: 1
+    action: "modify"
+
+  - file: "cmd/saw/list_impls.go"
+    agent: "J"
+    wave: 1
+    action: "modify"
+
+  - file: "cmd/saw/run_wave_cmd.go"
+    agent: "K"
+    wave: 1
+    action: "modify"
+
+  - file: "cmd/saw/main.go"
+    agent: "orchestrator"
+    wave: 2
+    action: "modify"
+    depends_on:
+      - "A"
+      - "B"
+      - "C"
+      - "D"
+      - "E"
+      - "F"
+      - "G"
+      - "H"
+      - "I"
+      - "J"
+      - "K"
+
+  - file: "go.mod"
+    agent: "orchestrator"
+    wave: 2
+    action: "modify"
+    depends_on:
+      - "A"
+
+  - file: "go.sum"
+    agent: "orchestrator"
+    wave: 2
+    action: "modify"
+    depends_on:
+      - "A"
+
+# Waves
+# ---------------------------------------------------------------------------
+waves:
+  - number: 1
+    agents:
+      - id: "A"
+        task: |
+          ## What to Implement
+
+          Create `cmd/saw/root.go` in package `main`. This file defines the cobra
+          root command for the `saw` binary and is the foundation all other Wave 1
+          agents depend on conceptually (though they implement independently in
+          parallel — the root command wiring in main.go happens in Wave 2).
+
+          The root command must:
+          - Use `cobra.Command` with `Use: "saw"`, `Short: "SAW Protocol SDK CLI"`
+          - Define `--repo-dir` as a **PersistentFlag** (string, default `"."`,
+            usage `"Repository root directory"`) so all subcommands inherit it
+          - NOT call `rootCmd.AddCommand(...)` — that happens in main.go (Wave 2)
+          - Export a package-level `var repoDir string` that the PersistentPreRun
+            or PersistentFlags binding sets, so subcommands can read it
+
+          The cleanest pattern: use a package-level variable bound via
+          `rootCmd.PersistentFlags().StringVar(&repoDir, "repo-dir", ".", "Repository root directory")`
+
+          Also add `cobra.Command` import: `github.com/spf13/cobra`
+
+          Do NOT add cobra to go.mod yourself. The orchestrator runs
+          `go get github.com/spf13/cobra` and `go mod tidy` after Wave 1 merges.
+          Your file must compile as-is after go.mod is updated; write it assuming
+          cobra is available.
+
+          ## Interfaces to Implement
+
+          ```go
+          // package-level variable read by subcommand cobra.Commands
+          var repoDir string
+
+          // newRootCmd returns the configured root cobra.Command.
+          // Called by main() in main.go (Wave 2).
+          func newRootCmd() *cobra.Command
+          ```
+
+          The root command's PersistentFlags must bind repoDir:
+          ```go
+          cmd.PersistentFlags().StringVar(&repoDir, "repo-dir", ".", "Repository root directory")
+          ```
+
+          ## Interfaces to Call
+
+          None. This file has no dependencies on other new files.
+
+          ## Tests to Write
+
+          No tests required for root.go itself (it is pure wiring). The full
+          integration is verified at the Wave 2 build gate.
+
+          ## Verification Gate
+
+          ```bash
+          # After orchestrator adds cobra to go.mod:
+          go build ./cmd/saw/...
+          go vet ./cmd/saw/...
+          ```
+
+          Note: you cannot run `go build` until cobra is in go.mod. Write the
+          file correctly and the build gate will be verified by the orchestrator
+          post-merge when `go get github.com/spf13/cobra && go mod tidy` runs.
+
+          ## Constraints
+
+          - Package must be `package main`
+          - File path: `cmd/saw/root.go`
+          - Do NOT call `os.Exit` anywhere in root.go
+          - Do NOT add `AddCommand` calls — those go in main.go
+          - `repoDir` must be a package-level `var` (not local) so subcommand
+            RunE closures can capture it
+          - cobra import path: `github.com/spf13/cobra`
+        files:
+          - "cmd/saw/root.go"
+
+      - id: "B"
+        task: |
+          ## What to Implement
+
+          Rewrite `cmd/saw/create_worktrees.go` to use cobra instead of
+          `flag.NewFlagSet`. Replace the `runCreateWorktrees(args []string) error`
+          function with `newCreateWorktreesCmd() *cobra.Command`.
+
+          Current behavior to preserve exactly:
+          - Flag: `--wave int` (required, no default, usage "Wave number (required)")
+          - Reads `repoDir` from the package-level `var repoDir string` (set by
+            the persistent --repo-dir flag on the root command, defined in root.go)
+          - Positional arg: exactly 1 (manifest path), validated with cobra.ExactArgs(1)
+          - Calls: `protocol.CreateWorktrees(manifestPath, waveNum, repoDir)`
+          - Outputs: `json.MarshalIndent(result, "", "  ")` to stdout
+          - Error handling: return error from RunE (cobra prints it to stderr)
+          - Exit code: normal cobra behavior (exit 1 on error); no special os.Exit
+            needed for this command (no AllValid check in create-worktrees)
+
+          ## Interfaces to Implement
+
+          ```go
+          func newCreateWorktreesCmd() *cobra.Command
+          ```
+
+          The returned command must:
+          - `Use: "create-worktrees <manifest-path>"`
+          - `Short: "Create git worktrees for all agents in a wave"`
+          - `Args: cobra.ExactArgs(1)`
+          - Local flag: `--wave int` with `cmd.MarkFlagRequired("wave")`
+          - `RunE` closure that reads `args[0]` as manifestPath and `repoDir`
+            package-level var for the repo directory
+
+          ## Interfaces to Call
+
+          ```go
+          // package-level var defined in root.go (same package):
+          var repoDir string
+
+          // SDK function (unchanged):
+          protocol.CreateWorktrees(manifestPath string, waveNum int, repoDir string) (*protocol.CreateWorktreesResult, error)
+          ```
+
+          ## Tests to Write
+
+          No new tests required. The existing SDK is tested in pkg/protocol/.
+          Cobra wiring is verified by the build + vet gate.
+
+          ## Verification Gate
+
+          ```bash
+          go build ./cmd/saw/...
+          go vet ./cmd/saw/...
+          ```
+
+          (Requires cobra in go.mod — orchestrator adds it post-merge.)
+
+          ## Constraints
+
+          - Remove all `flag` package imports and `flag.NewFlagSet` usage
+          - Remove the `runCreateWorktrees(args []string) error` function entirely
+          - Replace with `newCreateWorktreesCmd() *cobra.Command`
+          - Do NOT copy `repoDir` as a local flag — read the package-level `repoDir` var
+          - Import `github.com/spf13/cobra`
+          - Keep `encoding/json`, `fmt`, and the `protocol` import
+          - Keep `errors` import only if still needed (it won't be — remove it)
+          - Package: `package main`
+        files:
+          - "cmd/saw/create_worktrees.go"
+
+      - id: "C"
+        task: |
+          ## What to Implement
+
+          Rewrite `cmd/saw/verify_commits.go` to use cobra. Replace
+          `runVerifyCommits(args []string) error` with
+          `newVerifyCommitsCmd() *cobra.Command`.
+
+          Current behavior to preserve exactly:
+          - Flags: `--wave int` (required)
+          - Reads `repoDir` from package-level `var repoDir string` (root.go)
+          - Positional arg: exactly 1 (manifest path)
+          - Calls: `protocol.VerifyCommits(manifestPath, waveNum, repoDir)`
+          - Outputs JSON to stdout
+          - **Special exit behavior:** if `!result.AllValid`, calls `os.Exit(1)`
+            AFTER printing the JSON result. This must be preserved.
+
+          ## Interfaces to Implement
+
+          ```go
+          func newVerifyCommitsCmd() *cobra.Command
+          ```
+
+          - `Use: "verify-commits <manifest-path>"`
+          - `Short: "Verify each agent branch has commits (I5 trip wire)"`
+          - `Args: cobra.ExactArgs(1)`
+          - Local flag: `--wave int` with `cmd.MarkFlagRequired("wave")`
+          - `RunE` that prints JSON then calls `os.Exit(1)` if `!result.AllValid`
+
+          ## Interfaces to Call
+
+          ```go
+          var repoDir string  // package-level, root.go
+
+          protocol.VerifyCommits(manifestPath string, waveNum int, repoDir string) (*protocol.VerifyCommitsResult, error)
+          // result.AllValid bool
+          ```
+
+          ## Tests to Write
+
+          None required. SDK tested in pkg/protocol/.
+
+          ## Verification Gate
+
+          ```bash
+          go build ./cmd/saw/...
+          go vet ./cmd/saw/...
+          ```
+
+          ## Constraints
+
+          - Keep `os` import (needed for os.Exit)
+          - Remove `flag`, `errors` imports
+          - Replace `runVerifyCommits` with `newVerifyCommitsCmd`
+          - The `os.Exit(1)` call after printing JSON must remain — do not convert
+            it to a returned error, as that would suppress the JSON output
+          - Package: `package main`
+        files:
+          - "cmd/saw/verify_commits.go"
+
+      - id: "D"
+        task: |
+          ## What to Implement
+
+          Rewrite `cmd/saw/scan_stubs.go` to use cobra. Replace
+          `runScanStubs(args []string) error` with
+          `newScanStubsCmd() *cobra.Command`.
+
+          Current behavior to preserve exactly:
+          - No flags (no --wave, no --repo-dir usage)
+          - Takes one or more file paths as positional arguments
+          - Calls: `protocol.ScanStubs(args)` where args is the slice of file paths
+          - Outputs JSON to stdout
+          - No special exit code beyond cobra default error handling
+
+          ## Interfaces to Implement
+
+          ```go
+          func newScanStubsCmd() *cobra.Command
+          ```
+
+          - `Use: "scan-stubs <file> [file...]"`
+          - `Short: "Scan files for stub/TODO patterns (E20)"`
+          - `Args: cobra.MinimumNArgs(1)`
+          - `RunE` that passes `args` directly to `protocol.ScanStubs(args)`
+
+          ## Interfaces to Call
+
+          ```go
+          protocol.ScanStubs(files []string) (*protocol.ScanStubsResult, error)
+          ```
+
+          ## Tests to Write
+
+          None required.
+
+          ## Verification Gate
+
+          ```bash
+          go build ./cmd/saw/...
+          go vet ./cmd/saw/...
+          ```
+
+          ## Constraints
+
+          - No `--repo-dir` flag for this command (it operates on explicit file list)
+          - Remove all `flag` imports
+          - Replace `runScanStubs` with `newScanStubsCmd`
+          - Keep `encoding/json` and `fmt` imports
+          - Package: `package main`
+        files:
+          - "cmd/saw/scan_stubs.go"
+
+      - id: "E"
+        task: |
+          ## What to Implement
+
+          Rewrite `cmd/saw/merge_agents.go` to use cobra. Replace
+          `runMergeAgents(args []string) error` with
+          `newMergeAgentsCmd() *cobra.Command`.
+
+          Current behavior to preserve exactly:
+          - Flags: `--wave int` (required)
+          - Reads `repoDir` from package-level `var repoDir string` (root.go)
+          - Positional arg: exactly 1 (manifest path)
+          - Calls: `protocol.MergeAgents(manifestPath, waveNum, repoDir)`
+          - Outputs JSON to stdout
+          - **Special exit behavior:** if `!result.Success`, calls `os.Exit(1)`
+            AFTER printing the JSON result.
+
+          ## Interfaces to Implement
+
+          ```go
+          func newMergeAgentsCmd() *cobra.Command
+          ```
+
+          - `Use: "merge-agents <manifest-path>"`
+          - `Short: "Merge all agent branches for a wave"`
+          - `Args: cobra.ExactArgs(1)`
+          - Local flag: `--wave int` with `cmd.MarkFlagRequired("wave")`
+          - `RunE` that prints JSON then calls `os.Exit(1)` if `!result.Success`
+
+          ## Interfaces to Call
+
+          ```go
+          var repoDir string  // package-level, root.go
+
+          protocol.MergeAgents(manifestPath string, waveNum int, repoDir string) (*protocol.MergeAgentsResult, error)
+          // result.Success bool
+          ```
+
+          ## Tests to Write
+
+          None required.
+
+          ## Verification Gate
+
+          ```bash
+          go build ./cmd/saw/...
+          go vet ./cmd/saw/...
+          ```
+
+          ## Constraints
+
+          - Keep `os` import for os.Exit(1)
+          - Remove `flag`, `errors` imports
+          - Replace `runMergeAgents` with `newMergeAgentsCmd`
+          - Package: `package main`
+        files:
+          - "cmd/saw/merge_agents.go"
+
+      - id: "F"
+        task: |
+          ## What to Implement
+
+          Rewrite `cmd/saw/cleanup.go` to use cobra. Replace
+          `runCleanup(args []string) error` with
+          `newCleanupCmd() *cobra.Command`.
+
+          Current behavior to preserve exactly:
+          - Flags: `--wave int` (required)
+          - Reads `repoDir` from package-level `var repoDir string` (root.go)
+          - Positional arg: exactly 1 (manifest path)
+          - Calls: `protocol.Cleanup(manifestPath, waveNum, repoDir)`
+          - Outputs JSON to stdout
+          - No special exit code (cleanup always exits 0 on success)
+
+          ## Interfaces to Implement
+
+          ```go
+          func newCleanupCmd() *cobra.Command
+          ```
+
+          - `Use: "cleanup <manifest-path>"`
+          - `Short: "Remove worktrees and branches after merge"`
+          - `Args: cobra.ExactArgs(1)`
+          - Local flag: `--wave int` with `cmd.MarkFlagRequired("wave")`
+          - `RunE` that reads `repoDir` package-level var
+
+          ## Interfaces to Call
+
+          ```go
+          var repoDir string  // package-level, root.go
+
+          protocol.Cleanup(manifestPath string, waveNum int, repoDir string) (*protocol.CleanupResult, error)
+          ```
+
+          ## Tests to Write
+
+          None required.
+
+          ## Verification Gate
+
+          ```bash
+          go build ./cmd/saw/...
+          go vet ./cmd/saw/...
+          ```
+
+          ## Constraints
+
+          - Remove `flag`, `errors` imports
+          - No `os` import needed (no os.Exit)
+          - Replace `runCleanup` with `newCleanupCmd`
+          - Package: `package main`
+        files:
+          - "cmd/saw/cleanup.go"
+
+      - id: "G"
+        task: |
+          ## What to Implement
+
+          Rewrite `cmd/saw/verify_build.go` to use cobra. Replace
+          `runVerifyBuild(args []string) error` with
+          `newVerifyBuildCmd() *cobra.Command`.
+
+          Current behavior to preserve exactly:
+          - Flags: none local (only inherits --repo-dir from root)
+          - Reads `repoDir` from package-level `var repoDir string` (root.go)
+          - Positional arg: exactly 1 (manifest path)
+          - Calls: `protocol.VerifyBuild(manifestPath, repoDir)`
+          - Outputs JSON to stdout
+          - **Special exit behavior:** if `!result.TestPassed || !result.LintPassed`,
+            calls `os.Exit(1)` AFTER printing JSON.
+
+          ## Interfaces to Implement
+
+          ```go
+          func newVerifyBuildCmd() *cobra.Command
+          ```
+
+          - `Use: "verify-build <manifest-path>"`
+          - `Short: "Run test and lint commands from manifest"`
+          - `Args: cobra.ExactArgs(1)`
+          - No local flags (uses persistent --repo-dir)
+          - `RunE` that prints JSON then calls `os.Exit(1)` if build/lint failed
+
+          ## Interfaces to Call
+
+          ```go
+          var repoDir string  // package-level, root.go
+
+          protocol.VerifyBuild(manifestPath string, repoDir string) (*protocol.VerifyBuildResult, error)
+          // result.TestPassed bool
+          // result.LintPassed bool
+          ```
+
+          ## Tests to Write
+
+          None required.
+
+          ## Verification Gate
+
+          ```bash
+          go build ./cmd/saw/...
+          go vet ./cmd/saw/...
+          ```
+
+          ## Constraints
+
+          - Keep `os` import for os.Exit(1)
+          - Remove `flag`, `errors` imports
+          - Replace `runVerifyBuild` with `newVerifyBuildCmd`
+          - Package: `package main`
+        files:
+          - "cmd/saw/verify_build.go"
+
+      - id: "H"
+        task: |
+          ## What to Implement
+
+          Rewrite `cmd/saw/update_status.go` to use cobra. Replace
+          `runUpdateStatus(args []string) error` with
+          `newUpdateStatusCmd() *cobra.Command`.
+
+          Current behavior to preserve exactly:
+          - Flags: `--wave int` (required), `--agent string` (required),
+            `--status string` (required, values: complete|partial|blocked)
+          - No --repo-dir usage (update-status operates on the manifest file only)
+          - Positional arg: exactly 1 (manifest path)
+          - Calls: `protocol.UpdateStatus(manifestPath, waveNum, agentID, status)`
+          - Outputs JSON to stdout
+          - No special exit code
+
+          ## Interfaces to Implement
+
+          ```go
+          func newUpdateStatusCmd() *cobra.Command
+          ```
+
+          - `Use: "update-status <manifest-path>"`
+          - `Short: "Update agent status in manifest"`
+          - `Args: cobra.ExactArgs(1)`
+          - Local flags: `--wave int`, `--agent string`, `--status string`
+          - All three marked required with `cmd.MarkFlagRequired(...)`
+          - `RunE` closure
+
+          ## Interfaces to Call
+
+          ```go
+          protocol.UpdateStatus(manifestPath string, waveNum int, agentID string, status string) (*protocol.UpdateStatusResult, error)
+          ```
+
+          ## Tests to Write
+
+          None required.
+
+          ## Verification Gate
+
+          ```bash
+          go build ./cmd/saw/...
+          go vet ./cmd/saw/...
+          ```
+
+          ## Constraints
+
+          - Remove `flag`, `errors` imports
+          - No `os` import needed
+          - Does NOT use `repoDir` — do not reference the package-level var
+          - Replace `runUpdateStatus` with `newUpdateStatusCmd`
+          - Package: `package main`
+        files:
+          - "cmd/saw/update_status.go"
+
+      - id: "I"
+        task: |
+          ## What to Implement
+
+          Rewrite `cmd/saw/update_context.go` to use cobra. Replace
+          `runUpdateContext(args []string) error` with
+          `newUpdateContextCmd() *cobra.Command`.
+
+          Current behavior to preserve exactly:
+          - Flag: `--project-root string` (default `"."`, usage "Project root directory")
+            This is a SUBCOMMAND-LOCAL flag, NOT the persistent --repo-dir.
+            The flag is named differently on purpose — preserve `--project-root`.
+          - Positional arg: exactly 1 (manifest path)
+          - Calls: `protocol.UpdateContext(manifestPath, projectRoot)`
+          - Outputs JSON to stdout
+          - No special exit code
+
+          ## Interfaces to Implement
+
+          ```go
+          func newUpdateContextCmd() *cobra.Command
+          ```
+
+          - `Use: "update-context <manifest-path>"`
+          - `Short: "Update project CONTEXT.md (E18)"`
+          - `Args: cobra.ExactArgs(1)`
+          - Local flag: `--project-root string` (default `"."`) — subcommand-local,
+            do NOT use the persistent `repoDir` var for this command
+          - `RunE` closure using local `projectRoot` variable
+
+          ## Interfaces to Call
+
+          ```go
+          protocol.UpdateContext(manifestPath string, projectRoot string) (*protocol.UpdateContextResult, error)
+          ```
+
+          ## Tests to Write
+
+          None required.
+
+          ## Verification Gate
+
+          ```bash
+          go build ./cmd/saw/...
+          go vet ./cmd/saw/...
+          ```
+
+          ## Constraints
+
+          - Remove `flag`, `errors` imports
+          - The `--project-root` flag is local to this command (use a local var,
+            not the package-level `repoDir`)
+          - Do NOT rename the flag to `--repo-dir`
+          - Replace `runUpdateContext` with `newUpdateContextCmd`
+          - Package: `package main`
+        files:
+          - "cmd/saw/update_context.go"
+
+      - id: "J"
+        task: |
+          ## What to Implement
+
+          Rewrite `cmd/saw/list_impls.go` to use cobra. Replace
+          `runListIMPLs(args []string) error` with
+          `newListIMPLsCmd() *cobra.Command`.
+
+          Current behavior to preserve exactly:
+          - Flag: `--dir string` (default `"docs/IMPL"`, usage "Directory to scan
+            for IMPL manifests") — subcommand-local, NOT --repo-dir
+          - No positional args
+          - Calls: `protocol.ListIMPLs(dir)`
+          - Outputs JSON to stdout
+          - Always exits 0 (empty list is valid)
+
+          ## Interfaces to Implement
+
+          ```go
+          func newListIMPLsCmd() *cobra.Command
+          ```
+
+          - `Use: "list-impls"`
+          - `Short: "List all IMPL manifests in a directory"`
+          - `Args: cobra.NoArgs`
+          - Local flag: `--dir string` (default `"docs/IMPL"`)
+          - `RunE` closure
+
+          ## Interfaces to Call
+
+          ```go
+          protocol.ListIMPLs(dir string) (*protocol.ListIMPLsResult, error)
+          ```
+
+          ## Tests to Write
+
+          None required.
+
+          ## Verification Gate
+
+          ```bash
+          go build ./cmd/saw/...
+          go vet ./cmd/saw/...
+          ```
+
+          ## Constraints
+
+          - Remove `flag`, `errors` imports
+          - `--dir` is local to this command (use a local var, not `repoDir`)
+          - Replace `runListIMPLs` with `newListIMPLsCmd`
+          - Package: `package main`
+        files:
+          - "cmd/saw/list_impls.go"
+
+      - id: "K"
+        task: |
+          ## What to Implement
+
+          Rewrite `cmd/saw/run_wave_cmd.go` to use cobra. Replace
+          `runRunWave(args []string) error` with
+          `newRunWaveCmd() *cobra.Command`.
+
+          Current behavior to preserve exactly:
+          - Flags: `--wave int` (required)
+          - Reads `repoDir` from package-level `var repoDir string` (root.go)
+          - Positional arg: exactly 1 (manifest path)
+          - Calls: `engine.RunWaveFull(ctx, engine.RunWaveFullOpts{...})`
+          - **Partial result output on error:** if err != nil AND result != nil,
+            prints the partial JSON BEFORE returning the error
+          - Outputs JSON to stdout on success
+          - **Special exit behavior:** if `!result.Success`, calls `os.Exit(1)`
+            AFTER printing JSON
+
+          ## Interfaces to Implement
+
+          ```go
+          func newRunWaveCmd() *cobra.Command
+          ```
+
+          - `Use: "run-wave <manifest-path>"`
+          - `Short: "Execute full wave lifecycle (create, verify, merge, build, cleanup)"`
+          - `Args: cobra.ExactArgs(1)`
+          - Local flag: `--wave int` with `cmd.MarkFlagRequired("wave")`
+          - `RunE` that handles partial-result-on-error and os.Exit(1) on !Success
+
+          ## Interfaces to Call
+
+          ```go
+          var repoDir string  // package-level, root.go
+
+          engine.RunWaveFull(ctx context.Context, opts engine.RunWaveFullOpts) (*engine.RunWaveFullResult, error)
+
+          type engine.RunWaveFullOpts struct {
+              ManifestPath string
+              RepoPath     string
+              WaveNum      int
+          }
+          // result.Success bool
+          ```
+
+          ## Tests to Write
+
+          None required.
+
+          ## Verification Gate
+
+          ```bash
+          go build ./cmd/saw/...
+          go vet ./cmd/saw/...
+          ```
+
+          ## Constraints
+
+          - Keep `context`, `os` imports
+          - Remove `flag`, `errors` imports
+          - The partial-result-on-error pattern must be preserved:
+            ```go
+            if err != nil {
+                if result != nil {
+                    out, _ := json.MarshalIndent(result, "", "  ")
+                    fmt.Println(string(out))
+                }
+                return fmt.Errorf("run-wave: %w", err)
+            }
+            ```
+          - Replace `runRunWave` with `newRunWaveCmd`
+          - Package: `package main`
+        files:
+          - "cmd/saw/run_wave_cmd.go"
+
+  - number: 2
+    agents:
+      - id: "orchestrator"
+        task: |
+          ## What to Implement
+
+          This wave is executed by the orchestrator (human or automated), not a
+          parallel agent. After Wave 1 merges complete:
+
+          ### Step 1 — Add cobra dependency
+
+          ```bash
+          cd /path/to/scout-and-wave-go
+          go get github.com/spf13/cobra@latest
+          go mod tidy
+          ```
+
+          This updates go.mod and go.sum. Commit these changes.
+
+          ### Step 2 — Rewrite main.go
+
+          Replace `cmd/saw/main.go` entirely. The new main.go must:
+          - Remove the hand-rolled switch statement and `printUsage` function
+          - Create the root command via `newRootCmd()`
+          - Add all 10 subcommands via `rootCmd.AddCommand(...)`
+          - Call `rootCmd.Execute()` and exit 1 on error
+
+          New main.go content:
+
+          ```go
+          package main
+
+          import (
+              "fmt"
+              "os"
+          )
+
+          func main() {
+              rootCmd := newRootCmd()
+              rootCmd.AddCommand(
+                  newCreateWorktreesCmd(),
+                  newVerifyCommitsCmd(),
+                  newScanStubsCmd(),
+                  newMergeAgentsCmd(),
+                  newCleanupCmd(),
+                  newVerifyBuildCmd(),
+                  newUpdateStatusCmd(),
+                  newUpdateContextCmd(),
+                  newListIMPLsCmd(),
+                  newRunWaveCmd(),
+              )
+              if err := rootCmd.Execute(); err != nil {
+                  fmt.Fprintln(os.Stderr, err)
+                  os.Exit(1)
+              }
+          }
+          ```
+
+          ### Step 3 — Verify full build and tests
+
+          ```bash
+          go build ./...
+          go vet ./...
+          go test ./...
+          ```
+
+          ### Step 4 — Smoke test shell completions
+
+          ```bash
+          ./saw completion bash   # or zsh, fish, powershell
+          ```
+
+          Cobra generates completion scripts automatically. No additional code needed.
+
+          ## Constraints
+
+          - main.go must remain `package main`
+          - The `printUsage` function is removed entirely (cobra generates help)
+          - Shell completions are provided by cobra for free via `completion` subcommand
+            that cobra registers automatically on the root command
+          - go.mod and go.sum are committed together with main.go changes
+        files:
+          - "cmd/saw/main.go"
+          - "go.mod"
+          - "go.sum"
+        dependencies:
+          - "A"
+          - "B"
+          - "C"
+          - "D"
+          - "E"
+          - "F"
+          - "G"
+          - "H"
+          - "I"
+          - "J"
+          - "K"
+
+# Pre-Mortem
+# ---------------------------------------------------------------------------
+pre_mortem:
+  overall_risk: "low"
+  rows:
+    - scenario: "repoDir package-level var race: agents write different bindings"
+      likelihood: "low"
+      impact: "high"
+      mitigation: >
+        All Wave 1 agents are in separate worktrees. Only root.go (Agent A) defines
+        `var repoDir string` and binds it. All other agents READ it. No two agents
+        write the same declaration. Post-merge, there will be exactly one definition.
+
+    - scenario: "cobra not in go.mod when agents run go build verification"
+      likelihood: "medium"
+      impact: "low"
+      mitigation: >
+        Agent verification gates (go build ./cmd/saw/...) will fail if cobra is
+        not in go.mod. Agents are told in their task prompts that the orchestrator
+        adds cobra post-merge; they should note this in their completion reports
+        and not block on it. The Wave 2 orchestrator step adds cobra before the
+        final build gate.
+
+    - scenario: "update-context --project-root renamed to --repo-dir by mistake"
+      likelihood: "low"
+      impact: "medium"
+      mitigation: >
+        Agent I's constraints explicitly state: do NOT rename to --repo-dir.
+        The interface contract documents --project-root as subcommand-local.
+        Post-merge verification catches this if it slips through.
+
+    - scenario: "os.Exit(1) pattern lost in verify-commits, merge-agents, verify-build, run-wave"
+      likelihood: "low"
+      impact: "high"
+      mitigation: >
+        Each affected agent's task (C, E, G, K) explicitly calls out the os.Exit
+        pattern and states it must be preserved. The constraint notes that returning
+        an error from RunE would suppress already-printed JSON output.
+
+    - scenario: "duplicate repoDir flag: both persistent root flag and local --repo-dir flag defined"
+      likelihood: "low"
+      impact: "medium"
+      mitigation: >
+        Agents B, C, E, F, G, K are explicitly told to NOT define a local --repo-dir
+        flag and to read the package-level `repoDir` var instead. Each agent task
+        states this constraint.
+
+# Cascade Candidates (files that reference cmd/saw interfaces but are not in scope)
+# ---------------------------------------------------------------------------
+# These files import or shell-exec the `saw` binary. They are not modified by
+# any agent but may need attention if CLI flag signatures change.
+#
+# - pkg/engine/run_wave_full.go — calls protocol functions directly, not the CLI
+# - docs/CONTEXT.md — documents CLI commands; update after migration if needed
+# - Any shell scripts or skill docs that invoke `saw <subcommand>` — flag names
+#   are preserved so no cascade breakage expected.
+#
+# Type rename cascade: none. No types are renamed in this migration.
+
+# Completion Reports (populated by agents via saw set-completion)
+completion_reports:
+  A:
+    status: complete
+    worktree: .claude/worktrees/wave1-agent-A
+    branch: wave1-agent-A
+    commit: 0b94ce3
+    files_created:
+      - cmd/saw/root.go
+    files_changed: []
+    interface_deviations: []
+    out_of_scope_deps: []
+    tests_added: []
+    verification: "PASS (file created; go build pending cobra in go.mod at Wave 2)"
+  B:
+    status: complete
+    worktree: .claude/worktrees/wave1-agent-B
+    branch: wave1-agent-B
+    commit: 223245d
+    files_changed:
+      - cmd/saw/create_worktrees.go
+    files_created: []
+    interface_deviations: []
+    out_of_scope_deps: []
+    tests_added: []
+    verification: "PASS (file rewritten; go build pending cobra at Wave 2)"
+  C:
+    status: complete
+    branch: wave1-agent-C
+    commit: 891da00
+    files_changed:
+      - cmd/saw/verify_commits.go
+    files_created: []
+    interface_deviations: []
+    out_of_scope_deps: []
+    tests_added: []
+    verification: "PASS (os.Exit(1) pattern preserved; build pending cobra at Wave 2)"
+  D:
+    status: complete
+    branch: wave1-agent-D
+    commit: a551841
+    files_changed:
+      - cmd/saw/scan_stubs.go
+    files_created: []
+    interface_deviations: []
+    out_of_scope_deps: []
+    tests_added: []
+    verification: "PASS (no flags, variadic args; build pending cobra at Wave 2)"
+  E:
+    status: complete
+    branch: wave1-agent-E
+    commit: c336d11
+    files_changed:
+      - cmd/saw/merge_agents.go
+    files_created: []
+    interface_deviations: []
+    out_of_scope_deps: []
+    tests_added: []
+    verification: "PASS (os.Exit(1) preserved; build pending cobra at Wave 2)"
+  F:
+    status: complete
+    branch: wave1-agent-F
+    commit: 7bec26b
+    files_changed:
+      - cmd/saw/cleanup.go
+    files_created: []
+    interface_deviations: []
+    out_of_scope_deps: []
+    tests_added: []
+    verification: "PASS (no special exit; build pending cobra at Wave 2)"
+  G:
+    status: complete
+    branch: wave1-agent-G
+    commit: a1b2aa7
+    files_changed:
+      - cmd/saw/verify_build.go
+    files_created: []
+    interface_deviations: []
+    out_of_scope_deps: []
+    tests_added: []
+    verification: "PASS (os.Exit(1) preserved; build pending cobra at Wave 2)"
+  H:
+    status: complete
+    branch: wave1-agent-H
+    commit: 8e6bada
+    files_changed:
+      - cmd/saw/update_status.go
+    files_created: []
+    interface_deviations: []
+    out_of_scope_deps: []
+    tests_added: []
+    verification: "PASS (3 required flags; build pending cobra at Wave 2)"
+  I:
+    status: complete
+    branch: wave1-agent-I
+    commit: 5a9e924
+    files_changed:
+      - cmd/saw/update_context.go
+    files_created: []
+    interface_deviations: []
+    out_of_scope_deps: []
+    tests_added: []
+    verification: "PASS (--project-root preserved as local flag; build pending Wave 2)"
+  J:
+    status: complete
+    branch: wave1-agent-J
+    commit: c919998
+    files_changed:
+      - cmd/saw/list_impls.go
+    files_created: []
+    interface_deviations: []
+    out_of_scope_deps: []
+    tests_added: []
+    verification: "PASS (--dir local flag, cobra.NoArgs; build pending Wave 2)"
+  K:
+    status: complete
+    branch: wave1-agent-K
+    commit: 3bd8563
+    files_changed:
+      - cmd/saw/run_wave_cmd.go
+    files_created: []
+    interface_deviations: []
+    out_of_scope_deps: []
+    tests_added: []
+    verification: "PASS (partial-result-on-error + os.Exit(1) preserved; build pending Wave 2)"
