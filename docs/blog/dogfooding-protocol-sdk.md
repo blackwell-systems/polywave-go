@@ -246,6 +246,25 @@ The SAW Protocol SDK migration is complete. 24 agents across 5 waves, spanning 2
 
 The next time someone runs `/saw wave`, the orchestrator will call `saw create-worktrees` instead of a bash loop. `saw merge-agents` instead of manual `git merge --no-ff`. `saw verify-build` instead of hoping the LLM remembers the right flags. The plane is still flying. The new engine is installed. The old one can be unbolted.
 
+## Epilogue: The First Production Run
+
+The ink wasn't dry on Wave 5 before we ran the new system for real.
+
+The Cobra CLI migration — replacing `cmd/saw/`'s hand-rolled `flag.NewFlagSet` switch with cobra commands — became the first feature executed entirely under the new Protocol SDK tooling. Scout produced a YAML manifest (not markdown). The orchestrator called `saw create-worktrees` to set up 11 worktrees. Wave 1 launched 11 agents in parallel.
+
+The very first `saw` command of that run failed:
+
+```
+$ saw create-worktrees /path/to/manifest --wave 1 --repo-dir /path/to/repo
+create-worktrees: --wave is required
+```
+
+`flag.FlagSet` stops parsing at the first non-flag argument. Positional args must come *after* flags. We'd hit the exact limitation the Cobra migration was designed to fix — on the first command of the run that would fix it.
+
+The workaround was one line: put the flags first. The fix is the wave that's currently running.
+
+This is what dogfooding actually means. Not a demo. Not a controlled test. The system running on itself in production, surfacing real friction in real time, generating real work items. The flag-order bug will be permanently fixed by the 11 agents currently working in their worktrees. By the time this post is published, `saw create-worktrees /path --wave 1` will just work.
+
 ---
 
 *Scout-and-Wave is an open protocol for parallel AI agent coordination. The Protocol SDK lives at `github.com/blackwell-systems/scout-and-wave-go/pkg/protocol`.*
