@@ -2,44 +2,39 @@ package main
 
 import (
 	"encoding/json"
-	"errors"
-	"flag"
 	"fmt"
 	"os"
 
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
+	"github.com/spf13/cobra"
 )
 
-func runVerifyCommits(args []string) error {
-	fs := flag.NewFlagSet("verify-commits", flag.ContinueOnError)
-	waveNum := fs.Int("wave", 0, "Wave number (required)")
-	repoDir := fs.String("repo-dir", ".", "Repository directory")
+func newVerifyCommitsCmd() *cobra.Command {
+	var waveNum int
 
-	if err := fs.Parse(args); err != nil {
-		if errors.Is(err, flag.ErrHelp) {
+	cmd := &cobra.Command{
+		Use:   "verify-commits <manifest-path>",
+		Short: "Verify each agent branch has commits (I5 trip wire)",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			manifestPath := args[0]
+			result, err := protocol.VerifyCommits(manifestPath, waveNum, repoDir)
+			if err != nil {
+				return fmt.Errorf("verify-commits: %w", err)
+			}
+
+			out, _ := json.MarshalIndent(result, "", "  ")
+			fmt.Println(string(out))
+
+			if !result.AllValid {
+				os.Exit(1)
+			}
 			return nil
-		}
-		return fmt.Errorf("verify-commits: %w", err)
+		},
 	}
 
-	if fs.NArg() < 1 {
-		return fmt.Errorf("verify-commits: manifest path required\nUsage: saw verify-commits <manifest-path> --wave <N> [--repo-dir <path>]")
-	}
-	if *waveNum == 0 {
-		return fmt.Errorf("verify-commits: --wave is required")
-	}
+	cmd.Flags().IntVar(&waveNum, "wave", 0, "Wave number (required)")
+	_ = cmd.MarkFlagRequired("wave")
 
-	manifestPath := fs.Arg(0)
-	result, err := protocol.VerifyCommits(manifestPath, *waveNum, *repoDir)
-	if err != nil {
-		return fmt.Errorf("verify-commits: %w", err)
-	}
-
-	out, _ := json.MarshalIndent(result, "", "  ")
-	fmt.Println(string(out))
-
-	if !result.AllValid {
-		os.Exit(1)
-	}
-	return nil
+	return cmd
 }
