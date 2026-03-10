@@ -142,6 +142,7 @@ type PreMortemRow struct {
 
 // KnownIssue records an issue discovered during scout phase with status and workaround.
 type KnownIssue struct {
+	Title       string `yaml:"title,omitempty" json:"title,omitempty"`
 	Description string `yaml:"description" json:"description"`
 	Status      string `yaml:"status,omitempty" json:"status,omitempty"`
 	Workaround  string `yaml:"workaround,omitempty" json:"workaround,omitempty"`
