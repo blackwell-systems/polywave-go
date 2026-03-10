@@ -1,4 +1,5 @@
 # IMPL: Protocol SDK Migration Phase 1
+<!-- SAW:COMPLETE 2026-03-09 -->
 
 ## Suitability Assessment
 
@@ -1756,4 +1757,140 @@ verification: PASS (validate-impl.sh passes for .md files; YAML delegation added
 5. **Forward compatibility confirmed**: `saw validate` command exists in scout-and-wave-web binary and accepts `--help` flag.
 
 **No breaking changes:** All existing markdown-based workflows continue to work exactly as before. YAML mode is dormant until Wave 5 Scout begins generating `.yaml` manifests.
+
+
+
+### Agent L - Completion Report
+
+```yaml type=impl-completion-report
+status: complete
+repo: /Users/dayna.blackwell/code/scout-and-wave-web
+worktree: .claude/worktrees/wave5-agent-L
+branch: wave5-agent-L
+commit: 28d7a90
+files_created:
+  - web/src/lib/manifest.ts
+  - web/src/components/ManifestValidation.tsx
+interface_deviations: []
+out_of_scope_deps: []
+tests_added: []
+verification: PASS (npm run build)
+```
+
+Implementation complete. Created TypeScript API client and React validation component:
+
+**manifest.ts**
+- Full TypeScript type definitions matching Protocol SDK Go types
+- API functions for loading and validating manifests
+- Clean separation of concerns (types + API)
+
+**ManifestValidation.tsx**
+- React component with validation trigger button
+- Green checkmark for valid manifests
+- Detailed error display with code, field, and message
+- Consistent with existing UI patterns (Card, Button, Tailwind CSS)
+- Light/dark mode support
+
+Build verification passed with no TypeScript errors. Component is ready for integration into the IMPL review UI.
+
+
+### Agent K - Completion Report
+
+```yaml type=impl-completion-report
+status: complete
+repo: /Users/dayna.blackwell/code/scout-and-wave-web
+worktree: .claude/worktrees/wave5-agent-K
+branch: wave5-agent-K
+commit: 47dfd3a435e43543350507f29db625647db92a7f
+files_created:
+  - pkg/api/impl_handlers.go
+  - pkg/api/impl_handlers_test.go
+interface_deviations: []
+out_of_scope_deps: []
+tests_added:
+  - TestLoadManifest_ValidYAML
+  - TestLoadManifest_MissingFile
+  - TestLoadManifest_InvalidYAML
+  - TestValidateManifest_Valid
+  - TestValidateManifest_Invalid
+  - TestValidateManifest_MissingFile
+  - TestGetManifestWave_ValidWave
+  - TestGetManifestWave_InvalidWaveNumber
+  - TestGetManifestWave_MissingFile
+  - TestSetManifestCompletion_Success
+  - TestSetManifestCompletion_UnknownAgent
+  - TestSetManifestCompletion_MissingFile
+verification: PASS (go build ./pkg/api/)
+```
+
+## Implementation Notes
+
+Successfully implemented YAML manifest handler utility functions for Protocol SDK integration in the web API layer.
+
+**New functions in pkg/api/impl_handlers.go:**
+- `LoadManifest(yamlPath)`: Loads and parses YAML manifest using protocol.Load
+- `ValidateManifest(yamlPath)`: Validates manifest using protocol.Validate, returns structured errors
+- `GetManifestWave(yamlPath, waveNum)`: Retrieves specific wave by number (1-based indexing)
+- `SetManifestCompletion(yamlPath, agentID, report)`: Registers completion report and saves manifest atomically
+
+**Key design decisions:**
+1. These are utility functions (not HTTP handlers directly) - the existing router in impl.go will detect .yaml files and call these functions
+2. All functions follow the same error-handling pattern: return descriptive errors with context
+3. SetManifestCompletion is atomic: load → validate agent exists → update → save in one operation
+4. Wave numbers use 1-based indexing (protocol convention) but map to 0-based slice access internally
+
+**Test coverage:** 12 comprehensive test cases covering:
+- Valid/invalid YAML loading
+- Manifest validation (valid manifests pass, missing required fields caught)
+- Wave retrieval (valid/invalid wave numbers, boundary conditions)
+- Completion report registration (success, unknown agent, file I/O errors)
+- Missing file error handling across all operations
+
+**Integration pattern:** These functions bridge the existing markdown-based IMPL doc handlers with the new YAML manifest SDK. The existing impl.go router can now:
+1. Detect file extension (.md vs .yaml)
+2. For .yaml files, call these SDK bridge functions
+3. For .md files, continue using existing engine.ParseIMPLDoc flow
+
+No modifications to existing files required - this is a pure additive change providing the SDK integration layer for future dual-format support.
+
+
+### Agent J - Completion Report
+
+```yaml type=impl-completion-report
+status: complete
+branch: develop
+commit: cdf8e76
+files_changed:
+  - implementations/claude-code/prompts/scout.md
+test_results: "scout prompt updated with YAML output format and self-validation"
+interface_deviations: []
+```
+
+**Summary:**
+
+Successfully updated the Scout agent prompt to generate YAML manifests instead of markdown IMPL docs. The Scout now:
+
+1. **Generates structured YAML** following the `IMPLManifest` schema from the protocol SDK
+2. **Self-validates** using `saw validate` command after generation (up to 3 retry attempts)
+3. **Preserves all analysis methodology** - only the output format changed, not the scouting logic
+4. **Uses multiline YAML strings** for agent task definitions (9-field format)
+5. **Supports all manifest features**: file ownership, waves, agents, interface contracts, scaffolds, quality gates, pre-mortem, known issues
+
+**Key changes:**
+
+- Output path: `docs/IMPL/IMPL-<slug>.md` → `docs/IMPL/IMPL-<slug>.yaml`
+- Added validation workflow with JSON error feedback loop
+- Updated all references throughout the 655-line prompt file
+- 31 YAML/yaml references added for format consistency
+- Backward compatibility note: `saw migrate` converts old markdown to YAML
+
+**Verification:**
+
+- Scout prompt is valid markdown (655 lines)
+- Contains YAML format instructions and schema examples
+- Includes self-validation workflow (saw validate command)
+- Mentions SDK types (`IMPLManifest` from protocol package)
+- 278 insertions, 251 deletions (net +27 lines)
+
+The Scout agent is now ready to generate machine-readable, schema-validated YAML manifests that the orchestrator can parse and validate programmatically.
 
