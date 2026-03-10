@@ -24,11 +24,13 @@ const (
 
 // Client is an OpenAI-compatible backend. It implements backend.Backend.
 type Client struct {
-	apiKey    string
-	model     string
-	baseURL   string
-	maxTokens int
-	maxTurns  int
+	apiKey     string
+	model      string
+	baseURL    string
+	maxTokens  int
+	maxTurns   int
+	onToolCall backend.ToolCallCallback
+	readOnly   bool
 }
 
 // New creates a new Client configured from cfg.
@@ -58,12 +60,35 @@ func New(cfg backend.Config) *Client {
 		baseURL = defaultBaseURL
 	}
 	return &Client{
-		apiKey:    apiKey,
-		model:     model,
-		baseURL:   baseURL,
-		maxTokens: maxTokens,
-		maxTurns:  maxTurns,
+		apiKey:     apiKey,
+		model:      model,
+		baseURL:    baseURL,
+		maxTokens:  maxTokens,
+		maxTurns:   maxTurns,
+		onToolCall: cfg.OnToolCall,
+		readOnly:   cfg.ReadOnly,
 	}
+}
+
+// buildWorkshop creates a Workshop with middleware applied based on client config.
+func (c *Client) buildWorkshop(workDir string) tools.Workshop {
+	var w tools.Workshop
+	if c.readOnly {
+		w = tools.ReadOnlyTools(workDir)
+	} else {
+		w = tools.StandardTools(workDir)
+	}
+	if c.onToolCall != nil {
+		w = tools.WithTiming(w, func(ev tools.ToolCallEvent) {
+			c.onToolCall(backend.ToolCallEvent{
+				Name:       ev.ToolName,
+				DurationMs: ev.DurationMs,
+				IsError:    ev.IsError,
+				IsResult:   true,
+			})
+		})
+	}
+	return w
 }
 
 // WithAPIKey sets the API key. Returns c for chaining.
@@ -123,7 +148,7 @@ func toolNameSet(workshop tools.Workshop) map[string]bool {
 // It runs a tool-use loop until finish_reason == "stop" or maxTurns is exceeded.
 // Run implements backend.Backend.
 func (c *Client) Run(ctx context.Context, systemPrompt, userMessage, workDir string) (string, error) {
-	workshop := tools.StandardTools(workDir)
+	workshop := c.buildWorkshop(workDir)
 	toolDefs := buildToolDefs(workshop)
 	nameSet := toolNameSet(workshop)
 
@@ -180,7 +205,7 @@ func (c *Client) RunStreaming(ctx context.Context, systemPrompt, userMessage, wo
 		return c.Run(ctx, systemPrompt, userMessage, workDir)
 	}
 
-	workshop := tools.StandardTools(workDir)
+	workshop := c.buildWorkshop(workDir)
 	toolDefs := buildToolDefs(workshop)
 	nameSet := toolNameSet(workshop)
 

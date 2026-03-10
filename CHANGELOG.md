@@ -8,6 +8,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 | Version | Date | Headline |
 |---------|------|----------|
+| [0.20.0] | 2026-03-10 | Tool middleware wired — TimingMiddleware feeds Observatory SSE, PermissionMiddleware gives Scout read-only tools, `ReadOnlyTools()` factory |
 | [0.19.0] | 2026-03-10 | Tool system refactoring — unified `pkg/tools` Workshop wired into both Anthropic and OpenAI backends; 7 standard tools, 3 old duplicated tool files deleted |
 | [0.18.0] | 2026-03-10 | E16A/E16C validator tests — 5 new tests for required block presence and out-of-band dep graph warning in `validator_test.go` |
 | [0.17.0] | 2026-03-10 | Structured output parsing — JSON schema-constrained Scout output via Anthropic API `output_config.format`; eliminates brittle markdown parser path |
@@ -27,6 +28,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 | [0.3.0] | 2026-03-08 | Protocol audit fixes — P0: failure_type parsing, multi-gen agent IDs; P1: E22 2-pass scaffold build, cross-repo Repo column; P2: repo field in completion reports |
 | [0.2.0] | 2026-03-08 | Engine protocol parity — E17–E23 implemented (context memory, failure routing, stub scan, quality gates, scaffold build verify, per-agent context extraction) |
 | [0.1.0] | 2026-03-08 | Initial engine extraction — parser, orchestrator, agent runner, git, worktree management |
+
+## [0.20.0] - 2026-03-10
+
+### Added
+
+- **TimingMiddleware** (`pkg/tools/middleware.go`) — wraps tool execution with wall-clock timing. Emits `ToolCallEvent` (tool name, duration in ms, error status) after each call. Tool name is baked in at wrap time, not resolved from runtime metadata.
+- **PermissionMiddleware** (`pkg/tools/middleware.go`) — blocks execution of tools not in an allowed set. Returns a denial message to the model (not a Go error) so it can adjust its approach. Used to enforce read-only mode for Scout agents.
+- **`WithTiming(w Workshop, onCall)` / `WithPermissions(w Workshop, allowed)`** (`pkg/tools/middleware.go`) — convenience functions that return a new Workshop with middleware applied to every tool's executor. Original Workshop is not modified.
+- **`ReadOnlyTools(workDir string) Workshop`** (`pkg/tools/middleware.go`) — factory for Scout agents. All 7 tools registered (model sees them) but `write_file` and `edit_file` blocked at execution time. `bash` permitted for codebase analysis.
+- **`ReadOnlyAllowed` permission set** — `read_file`, `list_directory`, `glob`, `grep`, `bash` permitted; `write_file`, `edit_file` denied.
+- **`OnToolCall ToolCallCallback`** on `backend.Config` (`pkg/agent/backend/backend.go`) — optional callback for tool timing events. When set, backends wrap the Workshop with `WithTiming` and bridge `tools.ToolCallEvent` → `backend.ToolCallEvent`.
+- **`ReadOnly bool`** on `backend.Config` — when true, backends use `ReadOnlyTools()` instead of `StandardTools()`. Used for Scout agent backends.
+- **`buildWorkshop(workDir)` method** on both `api.Client` and `openai.Client` — applies timing and permission middleware based on Config fields, replacing direct `tools.StandardTools()` calls.
 
 ## [0.19.0] - 2026-03-10
 

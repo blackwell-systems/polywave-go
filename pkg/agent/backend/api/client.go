@@ -32,6 +32,8 @@ type Client struct {
 	maxTurns     int
 	baseURL      string         // optional override for testing
 	outputSchema map[string]any // optional: structured output schema
+	onToolCall   backend.ToolCallCallback // optional: timing events for Observatory
+	readOnly     bool                     // if true, block write_file/edit_file
 }
 
 // New creates a new Client configured from cfg.
@@ -56,11 +58,34 @@ func New(apiKey string, cfg backend.Config) *Client {
 		maxTurns = defaultMaxTurns
 	}
 	return &Client{
-		apiKey:    apiKey,
-		model:     model,
-		maxTokens: maxTokens,
-		maxTurns:  maxTurns,
+		apiKey:     apiKey,
+		model:      model,
+		maxTokens:  maxTokens,
+		maxTurns:   maxTurns,
+		onToolCall: cfg.OnToolCall,
+		readOnly:   cfg.ReadOnly,
 	}
+}
+
+// buildWorkshop creates a Workshop with middleware applied based on client config.
+func (c *Client) buildWorkshop(workDir string) tools.Workshop {
+	var w tools.Workshop
+	if c.readOnly {
+		w = tools.ReadOnlyTools(workDir)
+	} else {
+		w = tools.StandardTools(workDir)
+	}
+	if c.onToolCall != nil {
+		w = tools.WithTiming(w, func(ev tools.ToolCallEvent) {
+			c.onToolCall(backend.ToolCallEvent{
+				Name:       ev.ToolName,
+				DurationMs: ev.DurationMs,
+				IsError:    ev.IsError,
+				IsResult:   true,
+			})
+		})
+	}
+	return w
 }
 
 // WithBaseURL overrides the Anthropic API endpoint. Used in tests to point at
@@ -127,7 +152,7 @@ func executeTool(ctx context.Context, workshop tools.Workshop, name string, inpu
 // signals end_turn or maxTurns is exceeded.
 // Run implements backend.Backend.
 func (c *Client) Run(ctx context.Context, systemPrompt, userMessage, workDir string) (string, error) {
-	workshop := tools.StandardTools(workDir)
+	workshop := c.buildWorkshop(workDir)
 	toolParams := buildToolParams(workshop)
 	sdkClient := anthropic.NewClient(c.sendOpts()...)
 
@@ -222,7 +247,7 @@ func (c *Client) RunStreaming(ctx context.Context, systemPrompt, userMessage, wo
 		return c.Run(ctx, systemPrompt, userMessage, workDir)
 	}
 
-	workshop := tools.StandardTools(workDir)
+	workshop := c.buildWorkshop(workDir)
 	toolParams := buildToolParams(workshop)
 	sdkClient := anthropic.NewClient(c.sendOpts()...)
 

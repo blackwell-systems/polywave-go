@@ -27,6 +27,14 @@ type Config struct {
 	// (e.g. "https://api.groq.com/openai/v1" for Groq, "http://localhost:11434/v1" for Ollama).
 	// If empty, the official OpenAI endpoint is used.
 	BaseURL string
+
+	// OnToolCall, if non-nil, is called after each tool execution with timing
+	// data. Backends use this to feed the Agent Observatory SSE pipeline.
+	OnToolCall ToolCallCallback
+
+	// ReadOnly, when true, applies permission middleware that blocks write_file
+	// and edit_file at execution time. Used for Scout agents.
+	ReadOnly bool
 }
 
 // ChunkCallback is called with each text chunk as it arrives from the backend.
