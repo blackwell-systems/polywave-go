@@ -2,8 +2,12 @@ package protocol
 
 import (
 	"fmt"
+	"regexp"
 	"strings"
 )
+
+// agentIDRegex validates agent IDs: one uppercase letter, optionally followed by a digit 2-9
+var agentIDRegex = regexp.MustCompile(`^[A-Z][2-9]?$`)
 
 // Validate runs all I1-I6 invariant checks on an IMPLManifest.
 // Returns a slice of ValidationErrors (empty if valid).
@@ -20,6 +24,8 @@ func Validate(m *IMPLManifest) []ValidationError {
 	errs = append(errs, validateI5CommitBeforeReport(m)...)
 	errs = append(errs, validateE9MergeState(m)...)
 	errs = append(errs, validateSM01StateValid(m)...)
+	errs = append(errs, validateAgentIDs(m)...)
+	errs = append(errs, validateGateTypes(m)...)
 
 	return errs
 }
@@ -359,6 +365,81 @@ func validateSM01StateValid(m *IMPLManifest) []ValidationError {
 			Message: fmt.Sprintf("state has invalid value %q — must be one of: SCOUT_PENDING, SCOUT_VALIDATING, REVIEWED, SCAFFOLD_PENDING, WAVE_PENDING, WAVE_EXECUTING, WAVE_MERGING, WAVE_VERIFIED, BLOCKED, COMPLETE, NOT_SUITABLE", m.State),
 			Field:   "state",
 		})
+	}
+
+	return errs
+}
+
+// validateAgentIDs checks that all agent IDs conform to the protocol regex: ^[A-Z][2-9]?$
+// Valid examples: "A", "B", "C2", "D9"
+// Invalid examples: "a", "AB", "A1", "A10", "1A", ""
+func validateAgentIDs(m *IMPLManifest) []ValidationError {
+	var errs []ValidationError
+
+	// Check agent IDs in wave definitions
+	for _, wave := range m.Waves {
+		for _, agent := range wave.Agents {
+			if !agentIDRegex.MatchString(agent.ID) {
+				errs = append(errs, ValidationError{
+					Code:    "DC04_INVALID_AGENT_ID",
+					Message: fmt.Sprintf("agent ID %q in wave %d does not match protocol pattern ^[A-Z][2-9]?$ (one uppercase letter, optionally followed by digit 2-9)", agent.ID, wave.Number),
+					Field:   fmt.Sprintf("waves[%d].agents[%s].id", wave.Number-1, agent.ID),
+				})
+			}
+		}
+	}
+
+	// Check agent IDs in FileOwnership
+	for i, fo := range m.FileOwnership {
+		if !agentIDRegex.MatchString(fo.Agent) {
+			errs = append(errs, ValidationError{
+				Code:    "DC04_INVALID_AGENT_ID",
+				Message: fmt.Sprintf("agent ID %q in file_ownership entry %d (file=%q) does not match protocol pattern ^[A-Z][2-9]?$", fo.Agent, i, fo.File),
+				Field:   fmt.Sprintf("file_ownership[%d].agent", i),
+			})
+		}
+	}
+
+	// Check agent IDs in CompletionReports map keys
+	for agentID := range m.CompletionReports {
+		if !agentIDRegex.MatchString(agentID) {
+			errs = append(errs, ValidationError{
+				Code:    "DC04_INVALID_AGENT_ID",
+				Message: fmt.Sprintf("agent ID %q in completion_reports does not match protocol pattern ^[A-Z][2-9]?$", agentID),
+				Field:   fmt.Sprintf("completion_reports[%s]", agentID),
+			})
+		}
+	}
+
+	return errs
+}
+
+// validateGateTypes checks that all quality gate types are valid.
+// Valid types: "build", "lint", "test", "typecheck", "custom"
+func validateGateTypes(m *IMPLManifest) []ValidationError {
+	var errs []ValidationError
+
+	// If no quality gates defined, return empty
+	if m.QualityGates == nil {
+		return errs
+	}
+
+	validTypes := map[string]bool{
+		"build":     true,
+		"lint":      true,
+		"test":      true,
+		"typecheck": true,
+		"custom":    true,
+	}
+
+	for i, gate := range m.QualityGates.Gates {
+		if !validTypes[gate.Type] {
+			errs = append(errs, ValidationError{
+				Code:    "DC07_INVALID_GATE_TYPE",
+				Message: fmt.Sprintf("quality gate type %q is invalid — must be one of: build, lint, test, typecheck, custom", gate.Type),
+				Field:   fmt.Sprintf("quality_gates.gates[%d].type", i),
+			})
+		}
 	}
 
 	return errs
