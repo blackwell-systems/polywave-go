@@ -1621,20 +1621,20 @@ After wave {N} completes:
 
 | Wave | Agent | Description | Status |
 |------|-------|-------------|--------|
-| 1 | A | SDK Core Types (manifest.go) | TO-DO |
-| 1 | B | SDK Validation Logic (validation.go) | TO-DO |
-| 2 | C | CLI Validate Command | TO-DO |
-| 2 | D | CLI Extract Context Command | TO-DO |
-| 2 | E | CLI Set Completion Command | TO-DO |
-| 2 | F | CLI Current Wave Command | TO-DO |
-| 3 | G | CLI Merge and Render Commands | TO-DO |
-| 3 | H | CLI Migrate Command | TO-DO |
-| 4 | I | Skill Validation Updates | TO-DO |
-| 4 | J | Skill Context Extraction Updates | TO-DO |
-| 5 | K | Scout YAML Generation | TO-DO |
-| 5 | L | Web UI SDK Integration | TO-DO |
-| 5 | M | Web UI Manifest Editor | TO-DO |
-| — | Orch | Post-merge integration + CLI binary install | TO-DO |
+| 1 | A | SDK Core Types (manifest.go) | DONE  |
+| 1 | B | SDK Validation Logic (validation.go) | DONE  |
+| 2 | C | CLI Validate Command | DONE  |
+| 2 | D | CLI Extract Context Command | DONE  |
+| 2 | E | CLI Set Completion Command | DONE  |
+| 2 | F | CLI Current Wave Command | DONE  |
+| 3 | G | CLI Merge and Render Commands | DONE  |
+| 3 | H | CLI Migrate Command | DONE  |
+| 4 | I | Skill Validation Updates | DONE  |
+| 4 | J | Skill Context Extraction Updates | DONE  |
+| 5 | K | Scout YAML Generation | DONE  |
+| 5 | L | Web UI SDK Integration | DONE  |
+| 5 | M | Web UI Manifest Editor | DONE  |
+| — | Orch | Post-merge integration + CLI binary install | DONE  |
 
 ### Agent G - Completion Report
 
