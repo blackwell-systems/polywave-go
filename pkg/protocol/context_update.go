@@ -1,0 +1,91 @@
+package protocol
+
+import (
+	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
+	"time"
+)
+
+// UpdateContextResult contains the result of updating the project context file.
+type UpdateContextResult struct {
+	ContextPath string   `json:"context_path"`
+	Updated     bool     `json:"updated"`
+	NewEntries  []string `json:"new_entries"`
+}
+
+// UpdateContext appends a completion entry to the project CONTEXT.md file.
+// It loads the manifest to extract feature metadata and appends a completion record per E18 schema.
+// If CONTEXT.md doesn't exist, it creates it with the standard header.
+func UpdateContext(manifestPath string, projectRoot string) (*UpdateContextResult, error) {
+	// Load manifest to get feature metadata
+	manifest, err := Load(manifestPath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to load manifest: %w", err)
+	}
+
+	// Calculate wave count and agent count
+	waveCount := len(manifest.Waves)
+	agentCount := 0
+	for _, wave := range manifest.Waves {
+		agentCount += len(wave.Agents)
+	}
+
+	// Determine context file path
+	contextPath := filepath.Join(projectRoot, "docs", "CONTEXT.md")
+
+	// Ensure docs directory exists
+	docsDir := filepath.Dir(contextPath)
+	if err := os.MkdirAll(docsDir, 0755); err != nil {
+		return nil, fmt.Errorf("failed to create docs directory: %w", err)
+	}
+
+	// Check if CONTEXT.md exists
+	var content string
+	data, err := os.ReadFile(contextPath)
+	if err != nil {
+		if !os.IsNotExist(err) {
+			return nil, fmt.Errorf("failed to read context file: %w", err)
+		}
+		// Create new file with header
+		content = "# Project Context\n\n## Features Completed\n"
+	} else {
+		content = string(data)
+	}
+
+	// Get relative path to manifest from project root
+	relManifestPath, err := filepath.Rel(projectRoot, manifestPath)
+	if err != nil {
+		// If we can't get relative path, use absolute path
+		relManifestPath = manifestPath
+	}
+
+	// Format date as YYYY-MM-DD
+	date := time.Now().Format("2006-01-02")
+
+	// Build entry per E18 schema format
+	entry := fmt.Sprintf("- **%s**: completed %s, %d waves, %d agents\n  - IMPL doc: %s\n",
+		manifest.FeatureSlug,
+		date,
+		waveCount,
+		agentCount,
+		relManifestPath)
+
+	// Append entry
+	if !strings.HasSuffix(content, "\n") {
+		content += "\n"
+	}
+	content += entry
+
+	// Write updated content
+	if err := os.WriteFile(contextPath, []byte(content), 0644); err != nil {
+		return nil, fmt.Errorf("failed to write context file: %w", err)
+	}
+
+	return &UpdateContextResult{
+		ContextPath: contextPath,
+		Updated:     true,
+		NewEntries:  []string{manifest.FeatureSlug},
+	}, nil
+}
