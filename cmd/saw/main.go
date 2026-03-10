@@ -19,6 +19,15 @@ func main() {
 		newListIMPLsCmd(),
 		newRunWaveCmd(),
 		newVerifyIsolationCmd(),
+		newValidateCmd(),
+		newExtractContextCmd(),
+		newSetCompletionCmd(),
+		newMarkCompleteCmd(),
+		newRunGatesCmd(),
+		newCheckConflictsCmd(),
+		newValidateScaffoldsCmd(),
+		newFreezeCheckCmd(),
+		newUpdateAgentPromptCmd(),
 	)
 	if err := rootCmd.Execute(); err != nil {
 		fmt.Fprintln(os.Stderr, err)
