@@ -2,39 +2,35 @@ package main
 
 import (
 	"encoding/json"
-	"errors"
-	"flag"
 	"fmt"
 
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
+	"github.com/spf13/cobra"
 )
 
-func runCleanup(args []string) error {
-	fs := flag.NewFlagSet("cleanup", flag.ContinueOnError)
-	waveNum := fs.Int("wave", 0, "Wave number (required)")
-	repoDir := fs.String("repo-dir", ".", "Repository directory")
+func newCleanupCmd() *cobra.Command {
+	var waveNum int
 
-	if err := fs.Parse(args); err != nil {
-		if errors.Is(err, flag.ErrHelp) {
+	cmd := &cobra.Command{
+		Use:   "cleanup <manifest-path>",
+		Short: "Remove worktrees and branches after merge",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			manifestPath := args[0]
+
+			result, err := protocol.Cleanup(manifestPath, waveNum, repoDir)
+			if err != nil {
+				return fmt.Errorf("cleanup: %w", err)
+			}
+
+			out, _ := json.MarshalIndent(result, "", "  ")
+			fmt.Println(string(out))
 			return nil
-		}
-		return fmt.Errorf("cleanup: %w", err)
+		},
 	}
 
-	if fs.NArg() < 1 {
-		return fmt.Errorf("cleanup: manifest path required\nUsage: saw cleanup <manifest-path> --wave <N> [--repo-dir <path>]")
-	}
-	if *waveNum == 0 {
-		return fmt.Errorf("cleanup: --wave is required")
-	}
+	cmd.Flags().IntVar(&waveNum, "wave", 0, "Wave number (required)")
+	_ = cmd.MarkFlagRequired("wave")
 
-	manifestPath := fs.Arg(0)
-	result, err := protocol.Cleanup(manifestPath, *waveNum, *repoDir)
-	if err != nil {
-		return fmt.Errorf("cleanup: %w", err)
-	}
-
-	out, _ := json.MarshalIndent(result, "", "  ")
-	fmt.Println(string(out))
-	return nil
+	return cmd
 }
