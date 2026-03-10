@@ -83,3 +83,5 @@ type BackendConfig struct {
 - **`SAW_CLI_BINARY` env** — custom CLI binary path for the `"cli:*"` dispatch case; complements `BinaryPath` in `backend.Config`
 - **structured-output-parsing**: completed 2026-03-10, 3 waves, 4 agents
   - IMPL doc: docs/IMPL/IMPL-structured-output-parsing.yaml
+- **constraint-solver**: completed 2026-03-10, 3 waves, 4 agents
+  - IMPL doc: docs/IMPL/IMPL-constraint-solver.yaml
