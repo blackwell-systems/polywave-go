@@ -37,6 +37,7 @@ func TestValidateWorktreeNames_InvalidBranch(t *testing.T) {
 				Number: 1,
 				Agents: []Agent{
 					{ID: "A", Task: "task a", Files: []string{"file1.go"}},
+					{ID: "B", Task: "task b", Files: []string{"file2.go"}},
 				},
 			},
 		},
@@ -65,6 +66,7 @@ func TestValidateWorktreeNames_WrongWave(t *testing.T) {
 				Number: 1,
 				Agents: []Agent{
 					{ID: "A", Task: "task a", Files: []string{"file1.go"}},
+					{ID: "B", Task: "task b", Files: []string{"file2.go"}},
 				},
 			},
 		},
@@ -165,6 +167,7 @@ func TestValidateWorktreeNames_InvalidPath(t *testing.T) {
 				Number: 1,
 				Agents: []Agent{
 					{ID: "A", Task: "task a", Files: []string{"file1.go"}},
+					{ID: "B", Task: "task b", Files: []string{"file2.go"}},
 				},
 			},
 		},
@@ -219,6 +222,7 @@ func TestValidateWorktreeNames_WrongAgentID(t *testing.T) {
 				Number: 1,
 				Agents: []Agent{
 					{ID: "A", Task: "task a", Files: []string{"file1.go"}},
+					{ID: "B", Task: "task b", Files: []string{"file2.go"}},
 				},
 			},
 		},
@@ -234,6 +238,82 @@ func TestValidateWorktreeNames_WrongAgentID(t *testing.T) {
 	errs := ValidateWorktreeNames(m)
 	if len(errs) != 1 {
 		t.Fatalf("Expected 1 error for wrong agent ID, got %d: %v", len(errs), errs)
+	}
+	if errs[0].Code != "E5_INVALID_WORKTREE_NAME" {
+		t.Errorf("Expected E5_INVALID_WORKTREE_NAME, got %s", errs[0].Code)
+	}
+}
+
+func TestValidateWorktreeNames_SoloWaveExempt(t *testing.T) {
+	// Solo-wave agent commits to develop/main, not wave{N}-agent-{ID}
+	m := &IMPLManifest{
+		Waves: []Wave{
+			{
+				Number: 1,
+				Agents: []Agent{
+					{ID: "A", Task: "task a", Files: []string{"file1.go"}},
+					{ID: "B", Task: "task b", Files: []string{"file2.go"}},
+				},
+			},
+			{
+				Number: 2,
+				Agents: []Agent{
+					{ID: "C", Task: "task c", Files: []string{"file3.go"}},
+				},
+			},
+		},
+		CompletionReports: map[string]CompletionReport{
+			"A": {
+				Status:   "complete",
+				Branch:   "wave1-agent-A",
+				Worktree: ".claude/worktrees/wave1-agent-A",
+				Commit:   "abc123",
+			},
+			"B": {
+				Status:   "complete",
+				Branch:   "wave1-agent-B",
+				Worktree: ".claude/worktrees/wave1-agent-B",
+				Commit:   "def456",
+			},
+			"C": {
+				Status:   "complete",
+				Branch:   "develop",
+				Worktree: "/Users/dev/code/myrepo",
+				Commit:   "ghi789",
+			},
+		},
+	}
+
+	errs := ValidateWorktreeNames(m)
+	if len(errs) != 0 {
+		t.Errorf("Expected no errors (solo agent C exempt from E5), got %d: %v", len(errs), errs)
+	}
+}
+
+func TestValidateWorktreeNames_SoloWaveStillFailsMultiAgent(t *testing.T) {
+	// Multi-agent wave should still enforce E5
+	m := &IMPLManifest{
+		Waves: []Wave{
+			{
+				Number: 1,
+				Agents: []Agent{
+					{ID: "A", Task: "task a", Files: []string{"file1.go"}},
+					{ID: "B", Task: "task b", Files: []string{"file2.go"}},
+				},
+			},
+		},
+		CompletionReports: map[string]CompletionReport{
+			"A": {
+				Status: "complete",
+				Branch: "develop",
+				Commit: "abc123",
+			},
+		},
+	}
+
+	errs := ValidateWorktreeNames(m)
+	if len(errs) != 1 {
+		t.Fatalf("Expected 1 error (multi-agent wave must use worktree branch), got %d: %v", len(errs), errs)
 	}
 	if errs[0].Code != "E5_INVALID_WORKTREE_NAME" {
 		t.Errorf("Expected E5_INVALID_WORKTREE_NAME, got %s", errs[0].Code)
@@ -310,12 +390,12 @@ func TestValidateVerificationField_Invalid(t *testing.T) {
 			verification: "maybe",
 		},
 		{
-			name:         "incomplete format",
-			verification: "FAIL incomplete",
-		},
-		{
 			name:         "wrong case",
 			verification: "Pass",
+		},
+		{
+			name:         "descriptive without keyword",
+			verification: "all tests green",
 		},
 	}
 
@@ -337,6 +417,45 @@ func TestValidateVerificationField_Invalid(t *testing.T) {
 			}
 			if errs[0].Code != "E10_INVALID_VERIFICATION" {
 				t.Errorf("Expected E10_INVALID_VERIFICATION, got %s", errs[0].Code)
+			}
+		})
+	}
+}
+
+func TestValidateVerificationField_DescriptivePass(t *testing.T) {
+	testCases := []struct {
+		name         string
+		verification string
+	}{
+		{
+			name:         "PASS with dash details",
+			verification: "PASS — all tests green, go build clean",
+		},
+		{
+			name:         "FAIL with freeform",
+			verification: "FAIL incomplete build, 3 errors",
+		},
+		{
+			name:         "PASS with colon details",
+			verification: "PASS: go test ./... exits 0",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			m := &IMPLManifest{
+				CompletionReports: map[string]CompletionReport{
+					"A": {
+						Status:       "complete",
+						Verification: tc.verification,
+						Commit:       "abc123",
+					},
+				},
+			}
+
+			errs := ValidateVerificationField(m)
+			if len(errs) != 0 {
+				t.Errorf("Expected no errors for descriptive verification %q, got %d: %v", tc.verification, len(errs), errs)
 			}
 		})
 	}
