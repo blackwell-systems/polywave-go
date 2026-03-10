@@ -8,6 +8,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 | Version | Date | Headline |
 |---------|------|----------|
+| [0.23.0] | 2026-03-10 | Hybrid IMPL doc support — `create-worktrees` parses markdown/YAML manifests via `ParseIMPLDoc()` instead of pure YAML `Load()` |
 | [0.22.0] | 2026-03-10 | E5/E10 validator hardening — solo-wave exemption, lenient verification format, CLI reference docs |
 | [0.21.0] | 2026-03-10 | Constraint solver — Kahn's topological sort, cycle detection, `SolveManifest`, `sawtools solve` command |
 | [0.20.0] | 2026-03-10 | Tool middleware wired — TimingMiddleware feeds Observatory SSE, PermissionMiddleware gives Scout read-only tools, `ReadOnlyTools()` factory |
@@ -30,6 +31,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 | [0.3.0] | 2026-03-08 | Protocol audit fixes — P0: failure_type parsing, multi-gen agent IDs; P1: E22 2-pass scaffold build, cross-repo Repo column; P2: repo field in completion reports |
 | [0.2.0] | 2026-03-08 | Engine protocol parity — E17–E23 implemented (context memory, failure routing, stub scan, quality gates, scaffold build verify, per-agent context extraction) |
 | [0.1.0] | 2026-03-08 | Initial engine extraction — parser, orchestrator, agent runner, git, worktree management |
+
+## [0.23.0] - 2026-03-10
+
+### Fixed
+
+- **Hybrid IMPL doc parsing in `create-worktrees`** (`pkg/protocol/worktree.go`) — Changed from `Load()` (pure YAML unmarshaling) to `ParseIMPLDoc()` (hybrid markdown/YAML parser). IMPL docs started as pure markdown, then evolved to include typed YAML blocks (`type=impl-wave-structure`, `type=impl-quality-gates`) for machine-readable structure while keeping agent prompts in readable markdown. `create-worktrees` was calling the wrong parser (`Load()` expects 100% YAML) and failing with "wave N not found". Now uses `ParseIMPLDoc()` which handles the hybrid format.
+- **Wave structure typed-block extraction** (`pkg/protocol/parser.go`) — Added `parseWaveStructureBlock()` to extract wave numbers and agent IDs from `type=impl-wave-structure` blocks. Parser now merges typed-block wave structure with markdown agent prompts, supporting the hybrid format throughout the toolchain.
+
+### Changed
+
+- **Wave/Agent type references** (`pkg/protocol/worktree.go`) — Updated to use `types.Wave` and `types.AgentSpec` with `Letter` field instead of deprecated `Agent.ID`, aligning with the hybrid format's agent identification scheme.
+
+---
 
 ## [0.22.0] - 2026-03-10
 
