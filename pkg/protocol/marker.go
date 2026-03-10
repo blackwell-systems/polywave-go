@@ -5,8 +5,6 @@ import (
 	"fmt"
 	"os"
 	"strings"
-
-	"gopkg.in/yaml.v3"
 )
 
 // WriteCompletionMarker writes <!-- SAW:COMPLETE YYYY-MM-DD --> to an IMPL doc.
@@ -90,30 +88,18 @@ func writeCompletionMarkerMarkdown(implDocPath string, date string) error {
 
 // writeCompletionMarkerYAML sets the completion_date field in a YAML file.
 func writeCompletionMarkerYAML(implDocPath string, date string) error {
-	// Read the file
-	data, err := os.ReadFile(implDocPath)
+	// Load manifest as IMPLManifest to preserve all fields
+	manifest, err := Load(implDocPath)
 	if err != nil {
-		return fmt.Errorf("cannot read YAML file: %w", err)
-	}
-
-	// Unmarshal to map
-	var doc map[string]interface{}
-	if err := yaml.Unmarshal(data, &doc); err != nil {
-		return fmt.Errorf("cannot parse YAML file: %w", err)
+		return fmt.Errorf("cannot load manifest: %w", err)
 	}
 
 	// Set completion_date field
-	doc["completion_date"] = date
+	manifest.CompletionDate = date
 
-	// Marshal back
-	out, err := yaml.Marshal(doc)
-	if err != nil {
-		return fmt.Errorf("cannot marshal YAML: %w", err)
-	}
-
-	// Write back
-	if err := os.WriteFile(implDocPath, out, 0644); err != nil {
-		return fmt.Errorf("cannot write YAML file: %w", err)
+	// Save back using Save() to preserve structure
+	if err := Save(manifest, implDocPath); err != nil {
+		return fmt.Errorf("cannot save manifest: %w", err)
 	}
 
 	return nil
