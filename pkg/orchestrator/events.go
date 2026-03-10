@@ -32,6 +32,7 @@ type AgentFailedPayload struct {
 	Wave        int    `json:"wave"`
 	Status      string `json:"status"`
 	FailureType string `json:"failure_type"`
+	Notes       string `json:"notes,omitempty"`
 	Message     string `json:"message"`
 }
 

@@ -579,6 +579,61 @@ func (o *Orchestrator) launchAgent(
 	return nil
 }
 
+// RunAgent executes a single agent from the specified wave. Unlike RunWave
+// (which launches all agents concurrently), RunAgent targets exactly one agent
+// by letter. This is used for single-agent reruns. If promptPrefix is non-empty,
+// it is prepended to the agent's task prompt (e.g. scope-reduction hints for
+// timeout reruns).
+func (o *Orchestrator) RunAgent(waveNum int, agentLetter string, promptPrefix string) error {
+	if o.implDoc == nil {
+		return fmt.Errorf("orchestrator.RunAgent: no IMPL doc loaded")
+	}
+	// Find the wave.
+	var wave *types.Wave
+	for i := range o.implDoc.Waves {
+		if o.implDoc.Waves[i].Number == waveNum {
+			wave = &o.implDoc.Waves[i]
+			break
+		}
+	}
+	if wave == nil {
+		return fmt.Errorf("orchestrator.RunAgent: wave %d not found", waveNum)
+	}
+	// Find the agent in the wave.
+	var agentSpec *types.AgentSpec
+	for i := range wave.Agents {
+		if strings.EqualFold(wave.Agents[i].Letter, agentLetter) {
+			agentSpec = &wave.Agents[i]
+			break
+		}
+	}
+	if agentSpec == nil {
+		return fmt.Errorf("orchestrator.RunAgent: agent %s not found in wave %d", agentLetter, waveNum)
+	}
+
+	// Apply prompt prefix if provided (e.g. scope hint for timeout reruns).
+	spec := *agentSpec
+	if promptPrefix != "" {
+		spec.Prompt = promptPrefix + "\n\n" + spec.Prompt
+	}
+
+	// Build worktree manager and backend.
+	wm := worktree.New(o.repoPath)
+	b, err := newBackendFunc(BackendConfig{Kind: "auto", Model: o.defaultModel})
+	if err != nil {
+		return fmt.Errorf("orchestrator.RunAgent: create backend: %w", err)
+	}
+	if spec.Model != "" && spec.Model != o.defaultModel {
+		b, err = newBackendFunc(BackendConfig{Kind: "auto", Model: spec.Model})
+		if err != nil {
+			return fmt.Errorf("orchestrator.RunAgent: create backend for model %s: %w", spec.Model, err)
+		}
+	}
+	runner := newRunnerFunc(b, wm)
+
+	return o.launchAgent(context.Background(), runner, wm, waveNum, spec)
+}
+
 // MergeWave merges the worktrees for wave waveNum.
 // Implementation is provided by merge.go via mergeWaveFunc.
 func (o *Orchestrator) MergeWave(waveNum int) error {

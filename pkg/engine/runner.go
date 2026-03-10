@@ -455,6 +455,26 @@ func RunSingleWave(ctx context.Context, opts RunWaveOpts, waveNum int, onEvent f
 	return orch.RunWave(waveNum)
 }
 
+// RunSingleAgent runs exactly one agent from the specified wave. This is used
+// for single-agent reruns (e.g. retrying a failed agent). If promptPrefix is
+// non-empty it is prepended to the agent's task prompt before execution.
+func RunSingleAgent(ctx context.Context, opts RunWaveOpts, waveNum int, agentLetter string, promptPrefix string, onEvent func(Event)) error {
+	if opts.IMPLPath == "" {
+		return fmt.Errorf("engine.RunSingleAgent: IMPLPath is required")
+	}
+	orch, err := orchestrator.New(opts.RepoPath, opts.IMPLPath)
+	if err != nil {
+		return fmt.Errorf("engine.RunSingleAgent: %w", err)
+	}
+	if opts.WaveModel != "" {
+		orch.SetDefaultModel(opts.WaveModel)
+	}
+	orch.SetEventPublisher(func(ev orchestrator.OrchestratorEvent) {
+		onEvent(Event{Event: ev.Event, Data: ev.Data})
+	})
+	return orch.RunAgent(waveNum, agentLetter, promptPrefix)
+}
+
 // MergeWave merges the agent branches for the given wave into the repo's main branch.
 func MergeWave(ctx context.Context, opts RunMergeOpts) error {
 	if opts.IMPLPath == "" {

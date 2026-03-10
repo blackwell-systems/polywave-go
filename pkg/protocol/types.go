@@ -78,6 +78,7 @@ type CompletionReport struct {
 	TestsAdded          []string              `yaml:"tests_added,omitempty" json:"tests_added,omitempty"`
 	Verification        string                `yaml:"verification,omitempty" json:"verification,omitempty"`
 	FailureType         string                `yaml:"failure_type,omitempty" json:"failure_type,omitempty"`
+	Notes               string                `yaml:"notes,omitempty" json:"notes,omitempty"`
 	Repo                string                `yaml:"repo,omitempty" json:"repo,omitempty"`
 }
 
