@@ -1,0 +1,627 @@
+title: "Constraint-Solving Validator — CSP Wave Assignment from Dependency Declarations"
+feature_slug: constraint-solver
+verdict: SUITABLE
+suitability_assessment: |
+  The feature decomposes cleanly into a new package (pkg/solver/) with well-defined
+  input/output types. The existing validator in pkg/protocol/validation.go has clear
+  seams — validateI2AgentDependencies and validateI3WaveOrdering are the two functions
+  whose checks are superseded by solver-computed assignments. The existing IMPLManifest
+  types provide all needed input data. Risk is low because the solver is additive:
+  existing validation rules (I1, I4, I5, I6, enum checks, etc.) are untouched.
+  Backward compatibility is maintained by keeping the existing Validate() function
+  signature and adding an optional ValidateWithSolver mode.
+
+  IMPORT GRAPH NOTE: pkg/solver/ must NOT import pkg/protocol/ to avoid circular
+  imports. The solver operates on its own DepNode type. Conversion between
+  protocol.IMPLManifest and solver.DepNode lives in pkg/protocol/solver_integration.go,
+  which imports pkg/solver (one-directional dependency: protocol -> solver).
+test_command: go test ./...
+lint_command: go vet ./...
+state: SCOUT_PENDING
+
+quality_gates:
+  level: standard
+  gates:
+    - type: build
+      command: go build ./...
+      required: true
+    - type: lint
+      command: go vet ./...
+      required: true
+    - type: test
+      command: go test ./...
+      required: true
+
+scaffolds:
+  - file_path: pkg/solver/types.go
+    contents: |
+      package solver
+
+      // DepNode represents one agent in the dependency graph.
+      // AgentID is the protocol agent ID (e.g. "A", "B2").
+      // DependsOn lists agent IDs this agent depends on.
+      type DepNode struct {
+          AgentID   string
+          DependsOn []string
+          Files     []string
+      }
+
+      // Assignment is the solver output: an agent ID mapped to its computed wave number.
+      type Assignment struct {
+          AgentID string
+          Wave    int
+      }
+
+      // SolveResult holds the full solver output.
+      type SolveResult struct {
+          Assignments []Assignment
+          WaveCount   int
+          Valid       bool
+          Errors      []string
+      }
+    import_path: github.com/blackwell-systems/scout-and-wave-go/pkg/solver
+    status: pending
+
+interface_contracts:
+  - name: "DepNode / Assignment / SolveResult"
+    description: |
+      Shared types used by solver and integration code. Defined in the scaffold
+      file pkg/solver/types.go. DepNode is the solver input, Assignment + SolveResult
+      are the solver output. The solver package does NOT import pkg/protocol —
+      all protocol-to-solver conversion lives in pkg/protocol/solver_integration.go.
+    definition: |
+      // pkg/solver/types.go
+      type DepNode struct {
+          AgentID   string
+          DependsOn []string
+          Files     []string
+      }
+      type Assignment struct {
+          AgentID string
+          Wave    int
+      }
+      type SolveResult struct {
+          Assignments []Assignment
+          WaveCount   int
+          Valid       bool
+          Errors      []string
+      }
+    location: pkg/solver/types.go
+
+  - name: "Solve"
+    description: |
+      The core solver function. Takes a slice of DepNode (one per agent) and returns
+      a SolveResult with computed wave assignments. Returns Valid=false with Errors
+      if the graph has cycles or missing dependencies. Wave numbers are 1-based and
+      sequential. Agents with no dependencies get wave 1. Agents depending only on
+      wave-1 agents get wave 2, etc. This is a topological sort with level assignment.
+    definition: |
+      // pkg/solver/solver.go
+      func Solve(nodes []DepNode) SolveResult
+    location: pkg/solver/solver.go
+
+  - name: "Graph analysis utilities"
+    description: |
+      Diagnostic graph functions in pkg/solver/graph.go. DetectCycles finds all
+      cycles (not just the first). TransitiveDeps computes full transitive closure.
+      CriticalPath finds the longest dependency chain. ValidateRefs checks that
+      all DependsOn entries reference existing agents. All functions are pure —
+      no protocol imports.
+    definition: |
+      // pkg/solver/graph.go
+      func DetectCycles(nodes []DepNode) [][]string
+      func TransitiveDeps(nodes []DepNode, agentID string) []string
+      func CriticalPath(nodes []DepNode) []string
+      func ValidateRefs(nodes []DepNode) []string
+    location: pkg/solver/graph.go
+
+  - name: "ValidateWithSolver"
+    description: |
+      New exported function in pkg/protocol/solver_integration.go that converts
+      the manifest to solver nodes, runs the solver, compares assignments, and
+      runs the existing Validate() checks. Also contains ManifestToNodes,
+      ApplyResult, and CompareAssignments as unexported helpers. This file is
+      the ONLY place that bridges pkg/protocol and pkg/solver (one-directional
+      import: protocol -> solver).
+    definition: |
+      // pkg/protocol/solver_integration.go
+      func ValidateWithSolver(m *IMPLManifest) []ValidationError
+      func manifestToNodes(m *IMPLManifest) []solver.DepNode
+      func applyResult(result solver.SolveResult, m *IMPLManifest) (*IMPLManifest, error)
+      func compareAssignments(m *IMPLManifest, result solver.SolveResult) []waveMismatch
+    location: pkg/protocol/solver_integration.go
+
+  - name: "validate_cmd.go --solver flag"
+    description: |
+      Adds a --solver boolean flag to the validate CLI command. When set, runs
+      ValidateWithSolver instead of Validate. Default is false for backward
+      compatibility.
+    definition: |
+      // cmd/saw/validate_cmd.go
+      // Flag: --solver (bool, default false)
+      // When true: calls protocol.ValidateWithSolver(m) instead of protocol.Validate(m)
+    location: cmd/saw/validate_cmd.go
+
+file_ownership:
+  # Wave 1 — solver core (pure algorithm, no protocol import)
+  - file: pkg/solver/solver.go
+    agent: A
+    wave: 1
+    action: new
+  - file: pkg/solver/solver_test.go
+    agent: A
+    wave: 1
+    action: new
+  - file: pkg/solver/graph.go
+    agent: B
+    wave: 1
+    action: new
+  - file: pkg/solver/graph_test.go
+    agent: B
+    wave: 1
+    action: new
+  # Wave 2 — integration (protocol -> solver bridge) + CLI wiring
+  - file: pkg/protocol/solver_integration.go
+    agent: C
+    wave: 2
+    action: new
+    depends_on: ["A", "B"]
+  - file: pkg/protocol/solver_integration_test.go
+    agent: C
+    wave: 2
+    action: new
+    depends_on: ["A", "B"]
+  - file: cmd/saw/validate_cmd.go
+    agent: D
+    wave: 3
+    action: modify
+    depends_on: ["A", "B", "C"]
+
+waves:
+  - number: 1
+    agents:
+      - id: A
+        task: |
+          ## What to Implement
+
+          Create `pkg/solver/solver.go` — the core CSP solver function that computes
+          wave assignments from dependency declarations using topological sort with
+          level assignment (Kahn's algorithm variant).
+
+          **Repo:** scout-and-wave-go
+          **Files to create:** `pkg/solver/solver.go`, `pkg/solver/solver_test.go`
+
+          ## Interfaces to Implement
+
+          ### `Solve(nodes []DepNode) SolveResult`
+
+          The main solver function. Algorithm:
+
+          1. Build an adjacency list and in-degree map from the `DepNode` slice.
+          2. Validate: check that all `DependsOn` references exist in the node set.
+             If any are missing, return `SolveResult{Valid: false, Errors: ["missing dep: agent X references unknown agent Y"]}`.
+          3. Run a modified Kahn's algorithm (BFS topological sort) that assigns
+             wave levels:
+             - All nodes with in-degree 0 get wave 1.
+             - Remove those nodes from the graph, decrement in-degrees of their
+               dependents. Nodes that reach in-degree 0 get wave 2. Repeat.
+          4. If not all nodes are assigned after the BFS completes, a cycle exists.
+             Return `SolveResult{Valid: false, Errors: ["dependency cycle detected: agents X, Y, Z are in a cycle"]}`.
+             List the unassigned agents in the error message (sorted alphabetically).
+          5. Return `SolveResult{Assignments: [...], WaveCount: maxWave, Valid: true}`.
+
+          The `Assignments` slice must be sorted by (Wave ASC, AgentID ASC) for
+          deterministic output.
+
+          **Import the scaffold type:** `DepNode`, `Assignment`, `SolveResult` from
+          `pkg/solver/types.go` (same package, no import needed).
+
+          ## Interfaces to Call
+
+          None. This is a pure algorithm with no external dependencies.
+
+          ## Tests to Write
+
+          **`pkg/solver/solver_test.go`:**
+
+          1. `TestSolve_SingleAgent` — one agent "A", no deps. Expect wave 1, WaveCount 1.
+          2. `TestSolve_LinearChain` — A has no deps, B depends on A, C depends on B.
+             Expect A=1, B=2, C=3. WaveCount=3.
+          3. `TestSolve_DiamondDependency` — A,B independent; C depends on A and B.
+             Expect A=1, B=1, C=2. WaveCount=2.
+          4. `TestSolve_ComplexGraph` — 6 agents: A(root), B(root), C(depends A),
+             D(depends A,B), E(depends C,D), F(depends E). Expect A=1, B=1, C=2,
+             D=2, E=3, F=4.
+          5. `TestSolve_CycleDetection` — A depends on B, B depends on A.
+             Expect Valid=false, at least one error containing "cycle".
+          6. `TestSolve_MissingDependency` — A depends on "Z" (not in nodes).
+             Expect Valid=false, at least one error containing "missing" or "unknown".
+          7. `TestSolve_AllRoots` — A, B, C with no deps. All get wave 1, WaveCount=1.
+          8. `TestSolve_DeterministicOrdering` — run Solve 10 times on the same 5-node
+             input, verify output is identical each time.
+          9. `TestSolve_EmptyInput` — no nodes. Expect Valid=true, WaveCount=0,
+             empty Assignments.
+          10. `TestSolve_SelfDependency` — A depends on A. Expect Valid=false, cycle error.
+
+          ## Verification Gate
+
+          ```bash
+          cd /Users/dayna.blackwell/code/scout-and-wave-go
+          go build ./pkg/solver/...
+          go vet ./pkg/solver/...
+          go test ./pkg/solver/... -run TestSolve -v
+          ```
+
+          ## Constraints
+
+          - Do NOT import any packages outside the Go standard library (`sort`, `fmt`, `strings`).
+          - Do NOT modify `pkg/solver/types.go` (the scaffold file).
+          - Do NOT import `pkg/protocol` — the solver package must stay protocol-independent.
+          - The `Solve` function must be deterministic — same input always produces
+            same output. Use sorted iteration over maps where ordering matters.
+          - Wave numbers are 1-based (first wave is 1, not 0).
+        files:
+          - pkg/solver/solver.go
+          - pkg/solver/solver_test.go
+
+      - id: B
+        task: |
+          ## What to Implement
+
+          Create `pkg/solver/graph.go` — graph analysis utilities that support the
+          solver and provide diagnostic capabilities: cycle path extraction, transitive
+          dependency computation, and critical path analysis.
+
+          **Repo:** scout-and-wave-go
+          **Files to create:** `pkg/solver/graph.go`, `pkg/solver/graph_test.go`
+
+          ## Interfaces to Implement
+
+          ### `DetectCycles(nodes []DepNode) [][]string`
+
+          Uses DFS with a recursion stack to find all cycles in the dependency graph.
+          Returns a slice of cycle paths, where each path is a slice of agent IDs
+          forming the cycle (e.g. `["A", "B", "A"]`). Returns nil if no cycles exist.
+          Cycles are reported in sorted order (by first element) for determinism.
+
+          ### `TransitiveDeps(nodes []DepNode, agentID string) []string`
+
+          Returns all transitive dependencies of the given agent (not just direct deps).
+          Result is sorted alphabetically for determinism. Returns nil if agentID is not
+          found in the node set or has no transitive deps.
+
+          ### `CriticalPath(nodes []DepNode) []string`
+
+          Returns the longest dependency chain in the graph as a slice of agent IDs
+          (from root to leaf along the longest path). This represents the minimum
+          number of waves needed. Useful for diagnostics. Returns nil if the graph
+          has cycles.
+
+          ### `ValidateRefs(nodes []DepNode) []string`
+
+          Checks that all DependsOn entries reference agents that exist in the node set.
+          Returns a slice of error messages for each invalid reference (sorted for
+          determinism). Returns nil if all references are valid.
+
+          ## Interfaces to Call
+
+          None. Pure graph algorithms using only the scaffold types from `pkg/solver/types.go`.
+
+          ## Tests to Write
+
+          **`pkg/solver/graph_test.go`:**
+
+          1. `TestDetectCycles_NoCycle` — DAG: A->B->C. Expect nil.
+          2. `TestDetectCycles_SimpleCycle` — A depends on B, B depends on A.
+             Expect one cycle containing both A and B.
+          3. `TestDetectCycles_MultipleCycles` — {A<->B} and {C<->D} as two
+             independent cycles. Expect two cycle paths.
+          4. `TestDetectCycles_SelfLoop` — A depends on A. Expect one cycle [A, A].
+          5. `TestTransitiveDeps_Linear` — C depends on B, B depends on A.
+             TransitiveDeps(nodes, "C") = ["A", "B"].
+          6. `TestTransitiveDeps_Diamond` — C depends on A and B; A and B are roots.
+             TransitiveDeps(nodes, "C") = ["A", "B"].
+          7. `TestTransitiveDeps_UnknownAgent` — agent "Z" not in graph. Expect nil.
+          8. `TestTransitiveDeps_Root` — agent with no deps. Expect nil (no transitive deps).
+          9. `TestCriticalPath_Linear` — A->B->C. Critical path = ["A", "B", "C"].
+          10. `TestCriticalPath_Wide` — A,B,C all roots. Critical path length = 1.
+          11. `TestCriticalPath_WithCycle` — graph has a cycle. Expect nil.
+          12. `TestValidateRefs_AllValid` — all refs exist. Expect nil.
+          13. `TestValidateRefs_MissingRef` — A depends on "Z". Expect error mentioning Z.
+          14. `TestValidateRefs_MultipleMissing` — multiple bad refs. Expect one error per ref.
+
+          ## Verification Gate
+
+          ```bash
+          cd /Users/dayna.blackwell/code/scout-and-wave-go
+          go build ./pkg/solver/...
+          go vet ./pkg/solver/...
+          go test ./pkg/solver/... -run "TestDetectCycles|TestTransitiveDeps|TestCriticalPath|TestValidateRefs" -v
+          ```
+
+          ## Constraints
+
+          - Do NOT import any packages outside the Go standard library (`sort`, `fmt`, `strings`).
+          - Do NOT modify `pkg/solver/types.go` (the scaffold file).
+          - Do NOT import `pkg/protocol` — the solver package must stay protocol-independent.
+          - All functions must be deterministic — use sorted iteration over maps.
+          - Do NOT duplicate the core Solve algorithm from solver.go — these are
+            analysis utilities only. DetectCycles uses DFS (not Kahn's), TransitiveDeps
+            uses BFS/DFS closure, CriticalPath uses longest-path DP.
+          - DetectCycles reports ALL cycles, not just the first one (unlike validateI6NoCycles
+            in validation.go which stops at the first). This is intentional for better diagnostics.
+        files:
+          - pkg/solver/graph.go
+          - pkg/solver/graph_test.go
+
+  - number: 2
+    agents:
+      - id: C
+        dependencies: ["A", "B"]
+        task: |
+          ## What to Implement
+
+          Create `pkg/protocol/solver_integration.go` — the bridge between the protocol
+          package's IMPLManifest type and the solver package. This file contains:
+          1. `ValidateWithSolver` — the main entry point for solver-based validation
+          2. `manifestToNodes` — converts IMPLManifest to solver.DepNode slice
+          3. `applyResult` — applies solver output back to an IMPLManifest
+          4. `compareAssignments` — compares manifest wave numbers with solver-computed ones
+
+          **CRITICAL IMPORT DIRECTION:** This file lives in `pkg/protocol/` and imports
+          `pkg/solver`. The solver package does NOT import protocol. This is a one-directional
+          dependency: protocol -> solver. Do NOT create any files in pkg/solver/ that
+          import pkg/protocol.
+
+          **Repo:** scout-and-wave-go
+          **Files to create:** `pkg/protocol/solver_integration.go`,
+          `pkg/protocol/solver_integration_test.go`
+
+          ## Interfaces to Implement
+
+          ### `ValidateWithSolver(m *IMPLManifest) []ValidationError` (exported)
+
+          1. Convert manifest to solver nodes: `nodes := manifestToNodes(m)`
+          2. Run solver: `result := solver.Solve(nodes)`
+          3. If `result.Valid` is false:
+             - For each error string in `result.Errors`:
+               - If it contains "cycle": emit `ValidationError{Code: "SOLVER_CYCLE", Message: errStr, Field: "waves"}`
+               - If it contains "missing" or "unknown": emit `ValidationError{Code: "SOLVER_MISSING_DEP", Message: errStr, Field: "waves"}`
+               - Otherwise: emit `ValidationError{Code: "SOLVER_ERROR", Message: errStr, Field: "waves"}`
+             - Return these errors immediately (do not run further validation).
+          4. If solver succeeded, compare assignments:
+             `mismatches := compareAssignments(m, result)`
+             - For each mismatch, emit `ValidationError{Code: "SOLVER_WAVE_MISMATCH",
+               Message: fmt.Sprintf("agent %s is in wave %d but solver computed wave %d",
+               mm.agentID, mm.manifestWave, mm.solverWave),
+               Field: fmt.Sprintf("waves[%d]", mm.manifestWave-1)}`
+          5. Run the existing `Validate(m)` checks and append those errors.
+          6. Return the combined error slice.
+
+          ### `manifestToNodes(m *IMPLManifest) []solver.DepNode` (unexported)
+
+          Iterates `m.Waves` and their `Agents`. For each agent, creates a
+          `solver.DepNode{AgentID: agent.ID, DependsOn: agent.Dependencies, Files: agent.Files}`.
+          The wave number from the manifest is deliberately ignored — the solver computes it.
+          Returns a deduplicated slice sorted by AgentID.
+
+          ### `applyResult(result solver.SolveResult, m *IMPLManifest) (*IMPLManifest, error)` (unexported)
+
+          1. If `result.Valid` is false, return error.
+          2. Build a map of agentID -> computed wave from `result.Assignments`.
+          3. Deep-copy the manifest using YAML marshal/unmarshal (`gopkg.in/yaml.v3`).
+          4. Rebuild `copy.Waves`: group agents by their computed wave number. Preserve
+             agent Task, Files, Dependencies, Model fields. Set Wave.Number to computed wave.
+             Sort waves by number, agents within each wave by ID.
+          5. Update `copy.FileOwnership`: for each entry, look up the agent's computed
+             wave and set `fo.Wave` to that value.
+          6. Return the rewritten manifest.
+
+          ### `compareAssignments(m *IMPLManifest, result solver.SolveResult) []waveMismatch` (unexported)
+
+          ```go
+          type waveMismatch struct {
+              agentID      string
+              manifestWave int
+              solverWave   int
+          }
+          ```
+
+          Compares the manifest's current wave assignments with the solver's computed
+          assignments. Returns nil if all match. Builds a map from each agent to its
+          manifest wave (from m.Waves), then checks each solver Assignment against it.
+
+          ## Interfaces to Call
+
+          - `solver.Solve` from `pkg/solver/solver.go` (Agent A, Wave 1)
+          - `solver.DepNode`, `solver.SolveResult`, `solver.Assignment` from `pkg/solver/types.go`
+          - `Validate` from `pkg/protocol/validation.go` (existing, same package)
+          - `IMPLManifest`, `Wave`, `Agent`, `FileOwnership`, `ValidationError` from
+            `pkg/protocol/types.go` (same package)
+          - `gopkg.in/yaml.v3` for deep copy
+
+          ## Tests to Write
+
+          **`pkg/protocol/solver_integration_test.go`:**
+
+          1. `TestValidateWithSolver_ValidManifest` — well-formed manifest: A(wave 1, root),
+             B(wave 1, root), C(wave 2, depends A,B). All fields present (title, slug, verdict).
+             Expect no SOLVER_* errors. May have zero total errors.
+          2. `TestValidateWithSolver_DetectsCycle` — A depends on B, B depends on A, both
+             in wave 1. Expect at least one error with Code "SOLVER_CYCLE".
+          3. `TestValidateWithSolver_DetectsMissingDep` — agent C depends on "Z" which is
+             not in any wave. Expect error with Code "SOLVER_MISSING_DEP".
+          4. `TestValidateWithSolver_DetectsMismatch` — agent C depends on A but is placed
+             in wave 1 alongside A. Solver says C should be wave 2. Expect at least one
+             error with Code "SOLVER_WAVE_MISMATCH".
+          5. `TestValidateWithSolver_IncludesBaseValidation` — manifest with valid graph
+             but missing title. Expect both zero SOLVER_* errors and an I4_MISSING_FIELD error.
+          6. `TestValidateWithSolver_OptimalAssignment` — manifest where all agents are in
+             solver-optimal waves. Expect no SOLVER_WAVE_MISMATCH errors.
+          7. `TestManifestToNodes_Basic` — manifest with 2 waves, 3 agents. Verify
+             all agents extracted with correct DependsOn and Files, sorted by ID.
+          8. `TestManifestToNodes_Empty` — manifest with no waves. Expect empty slice.
+          9. `TestApplyResult_Reorders` — manifest with agents in wrong waves. Apply solver
+             result. Verify output manifest has agents in correct waves.
+          10. `TestApplyResult_UpdatesFileOwnership` — verify FileOwnership wave numbers
+              are updated to match solver assignments.
+          11. `TestApplyResult_InvalidResult` — SolveResult with Valid=false. Expect error.
+          12. `TestCompareAssignments_AllMatch` — all waves match. Expect nil.
+          13. `TestCompareAssignments_OneMismatch` — agent C in wave 1 but solver says 2.
+              Expect one mismatch entry.
+          14. `TestRoundTrip_SolveAndApply` — create a manifest with agents in wrong waves,
+              extract nodes, solve, apply result, run Validate() on output, verify no
+              I2_WAVE_ORDER or I3_WAVE_ORDER errors.
+
+          ## Verification Gate
+
+          ```bash
+          cd /Users/dayna.blackwell/code/scout-and-wave-go
+          go build ./...
+          go vet ./...
+          go test ./pkg/protocol/... -run "TestValidateWithSolver|TestManifestToNodes|TestApplyResult|TestCompareAssignments|TestRoundTrip" -v
+          ```
+
+          ## Constraints
+
+          - This file lives in `pkg/protocol/` (package `protocol`).
+          - Import `"github.com/blackwell-systems/scout-and-wave-go/pkg/solver"` — one-directional.
+          - Do NOT modify `validation.go` — create a new file `solver_integration.go`.
+          - Do NOT remove or change any existing validation functions.
+          - `ValidateWithSolver` is exported. The helper functions (`manifestToNodes`,
+            `applyResult`, `compareAssignments`, `waveMismatch`) are unexported.
+          - `applyResult` must NOT mutate the input manifest — return a deep copy.
+          - For deep copy, use YAML marshal/unmarshal via `gopkg.in/yaml.v3` (already in go.mod).
+          - `ValidateWithSolver` is additive — it runs the solver AND the existing Validate().
+          - SOLVER_WAVE_MISMATCH is informational. Use the same `ValidationError` type
+            but the `SOLVER_` code prefix distinguishes solver errors from invariant errors.
+        files:
+          - pkg/protocol/solver_integration.go
+          - pkg/protocol/solver_integration_test.go
+
+  - number: 3
+    agents:
+      - id: D
+        dependencies: ["A", "B", "C"]
+        task: |
+          ## What to Implement
+
+          Modify `cmd/saw/validate_cmd.go` to add a `--solver` flag that enables
+          solver-based validation via `protocol.ValidateWithSolver`.
+
+          **Repo:** scout-and-wave-go
+          **File to modify:** `cmd/saw/validate_cmd.go`
+
+          ## Interfaces to Implement
+
+          Update `newValidateCmd()` to:
+
+          1. Declare a `bool` variable `useSolver` before the `&cobra.Command` literal.
+          2. Change the return type from inline to a named variable `cmd`:
+             ```go
+             var useSolver bool
+             cmd := &cobra.Command{
+                 // ... existing fields unchanged ...
+                 RunE: func(cmd *cobra.Command, args []string) error {
+                     // ... existing load logic ...
+
+                     // Replace the direct protocol.Validate(m) call:
+                     var structErrs []protocol.ValidationError
+                     if useSolver {
+                         structErrs = protocol.ValidateWithSolver(m)
+                     } else {
+                         structErrs = protocol.Validate(m)
+                     }
+
+                     // ... rest of function unchanged (convert to validateError, etc.) ...
+                 },
+             }
+             cmd.Flags().BoolVar(&useSolver, "solver", false, "use CSP solver for wave assignment validation")
+             return cmd
+             ```
+          3. The E16 typed-block validation pass (ValidateIMPLDoc) remains unchanged and
+             runs after the struct validation regardless of --solver flag.
+
+          ## Interfaces to Call
+
+          - `protocol.ValidateWithSolver` from `pkg/protocol/solver_integration.go` (Agent C)
+          - `protocol.Validate` from `pkg/protocol/validation.go` (existing)
+          - `protocol.Load` from `pkg/protocol/manifest.go` (existing, already called)
+
+          ## Tests to Write
+
+          No new test files. The integration is tested via Agent C's
+          `solver_integration_test.go`. Manual verification:
+
+          ```bash
+          cd /Users/dayna.blackwell/code/scout-and-wave-go
+          go build -o sawtools ./cmd/saw
+          # Without --solver (existing behavior):
+          ./sawtools validate docs/IMPL/IMPL-structured-output-parsing.yaml
+          # With --solver (new behavior):
+          ./sawtools validate --solver docs/IMPL/IMPL-structured-output-parsing.yaml
+          ```
+
+          Both should produce `"valid": true` for the same well-formed manifest.
+
+          ## Verification Gate
+
+          ```bash
+          cd /Users/dayna.blackwell/code/scout-and-wave-go
+          go build -o sawtools ./cmd/saw
+          go vet ./cmd/saw/...
+          ./sawtools validate docs/IMPL/IMPL-structured-output-parsing.yaml
+          ./sawtools validate --solver docs/IMPL/IMPL-structured-output-parsing.yaml
+          ```
+
+          ## Constraints
+
+          - Do NOT change the default behavior — without `--solver`, `sawtools validate`
+            must behave identically to the current implementation.
+          - Do NOT modify the `validateOutput` or `validateError` structs.
+          - Do NOT remove or rename the existing `validate` command.
+          - The `--solver` flag defaults to `false`.
+          - Keep the existing E16 typed-block validation pass — it runs after struct
+            validation regardless of the --solver flag.
+          - The `protocol` import is already present — no new import needed.
+        files:
+          - cmd/saw/validate_cmd.go
+
+pre_mortem:
+  overall_risk: low
+  rows:
+    - scenario: |
+        Solver's topological sort produces different wave groupings than a human would
+        choose (e.g. solver puts agent D in wave 2 when a human put it in wave 3 for
+        readability). SOLVER_WAVE_MISMATCH floods output with false warnings.
+      likelihood: medium
+      impact: low
+      mitigation: |
+        SOLVER_WAVE_MISMATCH is a distinct error code. The CLI could filter these out
+        or suppress them by default in a future PR. The solver's assignment is
+        mathematically optimal (minimum waves) but the human's is valid too — both
+        satisfy dependency ordering. The code treats mismatches as informational, not
+        as validation failures (exit code 0 if only mismatches).
+    - scenario: |
+        The YAML deep-copy in applyResult (marshal/unmarshal) drops fields that have
+        custom serialization behavior or zero values that differ from Go defaults.
+      likelihood: low
+      impact: medium
+      mitigation: |
+        IMPLManifest uses only standard yaml tags with exported fields and omitempty.
+        Agent C's TestRoundTrip_SolveAndApply test verifies that no fields are lost.
+        If a field is dropped, switch to a field-by-field copy approach.
+    - scenario: |
+        Agent A's Solve and Agent B's DetectCycles have overlapping cycle detection
+        logic, leading to inconsistent error messages between the two code paths.
+      likelihood: medium
+      impact: low
+      mitigation: |
+        Solve uses Kahn's algorithm (BFS) which detects cycles by checking if all
+        nodes were assigned. DetectCycles uses DFS with recursion stack which finds
+        actual cycle paths. The two approaches are complementary: Solve reports
+        "cycle exists among agents X,Y,Z" while DetectCycles reports the exact
+        cycle path. ValidateWithSolver uses only Solve for its error reporting.
+        DetectCycles is available for richer diagnostics in future CLI commands.
+
+completion_reports: {}
