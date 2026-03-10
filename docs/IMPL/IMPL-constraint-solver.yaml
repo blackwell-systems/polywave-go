@@ -60,7 +60,7 @@ scaffolds:
           Errors      []string
       }
     import_path: github.com/blackwell-systems/scout-and-wave-go/pkg/solver
-    status: pending
+    status: committed (2361202)
 
 interface_contracts:
   - name: "DepNode / Assignment / SolveResult"
@@ -115,32 +115,46 @@ interface_contracts:
       func ValidateRefs(nodes []DepNode) []string
     location: pkg/solver/graph.go
 
-  - name: "ValidateWithSolver"
+  - name: "ValidateWithSolver + SolveManifest"
     description: |
-      New exported function in pkg/protocol/solver_integration.go that converts
-      the manifest to solver nodes, runs the solver, compares assignments, and
-      runs the existing Validate() checks. Also contains ManifestToNodes,
-      ApplyResult, and CompareAssignments as unexported helpers. This file is
-      the ONLY place that bridges pkg/protocol and pkg/solver (one-directional
-      import: protocol -> solver).
+      Exported functions in pkg/protocol/solver_integration.go.
+      ValidateWithSolver: converts manifest to solver nodes, runs solver,
+      compares assignments, runs existing Validate() checks.
+      SolveManifest: full pipeline that computes optimal wave assignments and
+      returns a rewritten manifest with corrected wave numbers. This is the
+      "computed, not guessed" entry point — used by `sawtools solve`.
+      Helper functions (manifestToNodes, applyResult, compareAssignments) are
+      unexported. This file is the ONLY bridge between pkg/protocol and
+      pkg/solver (one-directional import: protocol -> solver).
     definition: |
       // pkg/protocol/solver_integration.go
       func ValidateWithSolver(m *IMPLManifest) []ValidationError
+      func SolveManifest(m *IMPLManifest) (*IMPLManifest, []string, error)
+      // SolveManifest returns: (rewritten manifest, list of wave changes, error)
+      // Changes are human-readable strings like "agent C: wave 1 → wave 2"
+      // Error if graph has cycles or missing deps.
       func manifestToNodes(m *IMPLManifest) []solver.DepNode
       func applyResult(result solver.SolveResult, m *IMPLManifest) (*IMPLManifest, error)
       func compareAssignments(m *IMPLManifest, result solver.SolveResult) []waveMismatch
     location: pkg/protocol/solver_integration.go
 
-  - name: "validate_cmd.go --solver flag"
+  - name: "validate --solver flag + solve command"
     description: |
-      Adds a --solver boolean flag to the validate CLI command. When set, runs
-      ValidateWithSolver instead of Validate. Default is false for backward
-      compatibility.
+      Two CLI additions: (1) --solver boolean flag on validate command that runs
+      ValidateWithSolver instead of Validate. (2) New `sawtools solve <manifest>`
+      command that runs SolveManifest and writes the corrected manifest back to disk.
+      Prints a summary of wave reassignments. Exit 0 if no changes needed, exit 0
+      with summary if changes applied, exit 1 if graph is invalid (cycles/missing deps).
     definition: |
       // cmd/saw/validate_cmd.go
       // Flag: --solver (bool, default false)
       // When true: calls protocol.ValidateWithSolver(m) instead of protocol.Validate(m)
-    location: cmd/saw/validate_cmd.go
+
+      // cmd/saw/solve_cmd.go (new file)
+      // func newSolveCmd() *cobra.Command
+      // Loads manifest, calls protocol.SolveManifest, saves result, prints changes.
+      // --dry-run flag: print changes without writing.
+    location: cmd/saw/validate_cmd.go, cmd/saw/solve_cmd.go
 
 file_ownership:
   # Wave 1 — solver core (pure algorithm, no protocol import)
@@ -175,6 +189,11 @@ file_ownership:
     agent: D
     wave: 3
     action: modify
+    depends_on: ["A", "B", "C"]
+  - file: cmd/saw/solve_cmd.go
+    agent: D
+    wave: 3
+    action: new
     depends_on: ["A", "B", "C"]
 
 waves:
@@ -363,10 +382,11 @@ waves:
 
           Create `pkg/protocol/solver_integration.go` — the bridge between the protocol
           package's IMPLManifest type and the solver package. This file contains:
-          1. `ValidateWithSolver` — the main entry point for solver-based validation
-          2. `manifestToNodes` — converts IMPLManifest to solver.DepNode slice
-          3. `applyResult` — applies solver output back to an IMPLManifest
-          4. `compareAssignments` — compares manifest wave numbers with solver-computed ones
+          1. `ValidateWithSolver` — solver-based validation (detect mismatches)
+          2. `SolveManifest` — full pipeline: compute + apply optimal wave assignments
+          3. `manifestToNodes` — converts IMPLManifest to solver.DepNode slice
+          4. `applyResult` — applies solver output back to an IMPLManifest
+          5. `compareAssignments` — compares manifest wave numbers with solver-computed ones
 
           **CRITICAL IMPORT DIRECTION:** This file lives in `pkg/protocol/` and imports
           `pkg/solver`. The solver package does NOT import protocol. This is a one-directional
@@ -397,6 +417,19 @@ waves:
                Field: fmt.Sprintf("waves[%d]", mm.manifestWave-1)}`
           5. Run the existing `Validate(m)` checks and append those errors.
           6. Return the combined error slice.
+
+          ### `SolveManifest(m *IMPLManifest) (*IMPLManifest, []string, error)` (exported)
+
+          The "computed, not guessed" entry point. Full pipeline:
+          1. Convert manifest to solver nodes: `nodes := manifestToNodes(m)`
+          2. Run solver: `result := solver.Solve(nodes)`
+          3. If `result.Valid` is false, return nil, nil, and an error describing cycles/missing deps.
+          4. Compare assignments: `mismatches := compareAssignments(m, result)`
+          5. If no mismatches, return the original manifest unchanged, nil changes, nil error.
+          6. If mismatches exist, apply the solver result: `fixed, err := applyResult(result, m)`
+          7. Build a `[]string` of human-readable change descriptions:
+             `fmt.Sprintf("agent %s: wave %d → wave %d", mm.agentID, mm.manifestWave, mm.solverWave)`
+          8. Return the fixed manifest, the changes slice, nil error.
 
           ### `manifestToNodes(m *IMPLManifest) []solver.DepNode` (unexported)
 
@@ -472,6 +505,14 @@ waves:
           14. `TestRoundTrip_SolveAndApply` — create a manifest with agents in wrong waves,
               extract nodes, solve, apply result, run Validate() on output, verify no
               I2_WAVE_ORDER or I3_WAVE_ORDER errors.
+          15. `TestSolveManifest_NoChanges` — manifest already optimal. Expect same manifest
+              back, nil changes, nil error.
+          16. `TestSolveManifest_FixesMisassignment` — agent C in wave 1 but depends on A.
+              Expect corrected manifest with C in wave 2, changes slice contains "agent C: wave 1 → wave 2".
+          17. `TestSolveManifest_CycleReturnsError` — A depends on B, B depends on A.
+              Expect nil manifest, nil changes, non-nil error mentioning "cycle".
+          18. `TestSolveManifest_UpdatesFileOwnership` — verify FileOwnership wave numbers
+              updated in the returned manifest.
 
           ## Verification Gate
 
@@ -479,7 +520,7 @@ waves:
           cd /Users/dayna.blackwell/code/scout-and-wave-go
           go build ./...
           go vet ./...
-          go test ./pkg/protocol/... -run "TestValidateWithSolver|TestManifestToNodes|TestApplyResult|TestCompareAssignments|TestRoundTrip" -v
+          go test ./pkg/protocol/... -run "TestValidateWithSolver|TestSolveManifest|TestManifestToNodes|TestApplyResult|TestCompareAssignments|TestRoundTrip" -v
           ```
 
           ## Constraints
@@ -488,8 +529,8 @@ waves:
           - Import `"github.com/blackwell-systems/scout-and-wave-go/pkg/solver"` — one-directional.
           - Do NOT modify `validation.go` — create a new file `solver_integration.go`.
           - Do NOT remove or change any existing validation functions.
-          - `ValidateWithSolver` is exported. The helper functions (`manifestToNodes`,
-            `applyResult`, `compareAssignments`, `waveMismatch`) are unexported.
+          - `ValidateWithSolver` and `SolveManifest` are exported. The helper functions
+            (`manifestToNodes`, `applyResult`, `compareAssignments`, `waveMismatch`) are unexported.
           - `applyResult` must NOT mutate the input manifest — return a deep copy.
           - For deep copy, use YAML marshal/unmarshal via `gopkg.in/yaml.v3` (already in go.mod).
           - `ValidateWithSolver` is additive — it runs the solver AND the existing Validate().
@@ -506,13 +547,17 @@ waves:
         task: |
           ## What to Implement
 
-          Modify `cmd/saw/validate_cmd.go` to add a `--solver` flag that enables
-          solver-based validation via `protocol.ValidateWithSolver`.
+          Two CLI additions:
+          1. Add `--solver` flag to `cmd/saw/validate_cmd.go` for solver-based validation
+          2. Create `cmd/saw/solve_cmd.go` — new `sawtools solve` command that computes
+             optimal wave assignments and rewrites the manifest in-place
 
           **Repo:** scout-and-wave-go
-          **File to modify:** `cmd/saw/validate_cmd.go`
+          **Files:** `cmd/saw/validate_cmd.go` (modify), `cmd/saw/solve_cmd.go` (new)
 
           ## Interfaces to Implement
+
+          ### validate_cmd.go — `--solver` flag
 
           Update `newValidateCmd()` to:
 
@@ -542,27 +587,81 @@ waves:
           3. The E16 typed-block validation pass (ValidateIMPLDoc) remains unchanged and
              runs after the struct validation regardless of --solver flag.
 
+          ### solve_cmd.go — `sawtools solve <manifest-path>`
+
+          Create `newSolveCmd() *cobra.Command`:
+
+          ```go
+          func newSolveCmd() *cobra.Command {
+              var dryRun bool
+              cmd := &cobra.Command{
+                  Use:   "solve <manifest-path>",
+                  Short: "Compute optimal wave assignments from dependency declarations",
+                  Long:  "Runs the constraint solver on a YAML IMPL manifest. Computes wave " +
+                      "numbers from dependency declarations using topological sort. Rewrites " +
+                      "the manifest in-place with corrected wave assignments.",
+                  Args:  cobra.ExactArgs(1),
+                  RunE: func(cmd *cobra.Command, args []string) error {
+                      // 1. Load manifest
+                      // 2. Call protocol.SolveManifest(m)
+                      // 3. If error (cycles/missing deps): print error, exit 1
+                      // 4. If no changes: print "✓ All wave assignments are optimal", exit 0
+                      // 5. If changes: print each change, then:
+                      //    - If --dry-run: print "dry run — no changes written", exit 0
+                      //    - Else: call m.Save(path), print "✓ Manifest updated", exit 0
+                  },
+              }
+              cmd.Flags().BoolVar(&dryRun, "dry-run", false, "print changes without writing")
+              return cmd
+          }
+          ```
+
+          Output format:
+          ```
+          # No changes needed:
+          ✓ All wave assignments are optimal (3 agents, 2 waves)
+
+          # Changes applied:
+          solver: agent C: wave 1 → wave 2
+          solver: agent D: wave 1 → wave 3
+          ✓ Manifest updated with 2 wave reassignments (4 agents, 3 waves)
+
+          # Dry run with changes:
+          solver: agent C: wave 1 → wave 2
+          ⓘ Dry run — no changes written
+
+          # Error (cycles):
+          ✗ Cannot solve: dependency cycle detected: agents A, B are in a cycle
+          ```
+
+          Register the command in `cmd/saw/root.go` (or wherever commands are added):
+          `rootCmd.AddCommand(newSolveCmd())`
+
           ## Interfaces to Call
 
           - `protocol.ValidateWithSolver` from `pkg/protocol/solver_integration.go` (Agent C)
+          - `protocol.SolveManifest` from `pkg/protocol/solver_integration.go` (Agent C)
           - `protocol.Validate` from `pkg/protocol/validation.go` (existing)
-          - `protocol.Load` from `pkg/protocol/manifest.go` (existing, already called)
+          - `protocol.Load` from `pkg/protocol/manifest.go` (existing)
+          - `(*IMPLManifest).Save` from `pkg/protocol/manifest.go` (existing)
 
           ## Tests to Write
 
-          No new test files. The integration is tested via Agent C's
+          No new test files — the solver logic is tested via Agent C's
           `solver_integration_test.go`. Manual verification:
 
           ```bash
           cd /Users/dayna.blackwell/code/scout-and-wave-go
           go build -o sawtools ./cmd/saw
-          # Without --solver (existing behavior):
-          ./sawtools validate docs/IMPL/IMPL-structured-output-parsing.yaml
-          # With --solver (new behavior):
-          ./sawtools validate --solver docs/IMPL/IMPL-structured-output-parsing.yaml
-          ```
 
-          Both should produce `"valid": true` for the same well-formed manifest.
+          # Validate without/with solver:
+          ./sawtools validate docs/IMPL/IMPL-structured-output-parsing.yaml
+          ./sawtools validate --solver docs/IMPL/IMPL-structured-output-parsing.yaml
+
+          # Solve (dry run first):
+          ./sawtools solve --dry-run docs/IMPL/IMPL-constraint-solver.yaml
+          ./sawtools solve docs/IMPL/IMPL-constraint-solver.yaml
+          ```
 
           ## Verification Gate
 
@@ -572,6 +671,7 @@ waves:
           go vet ./cmd/saw/...
           ./sawtools validate docs/IMPL/IMPL-structured-output-parsing.yaml
           ./sawtools validate --solver docs/IMPL/IMPL-structured-output-parsing.yaml
+          ./sawtools solve --dry-run docs/IMPL/IMPL-constraint-solver.yaml
           ```
 
           ## Constraints
@@ -584,8 +684,11 @@ waves:
           - Keep the existing E16 typed-block validation pass — it runs after struct
             validation regardless of the --solver flag.
           - The `protocol` import is already present — no new import needed.
+          - The `solve` command must use `(*IMPLManifest).Save()` to write — do NOT
+            implement custom YAML serialization.
         files:
           - cmd/saw/validate_cmd.go
+          - cmd/saw/solve_cmd.go
 
 pre_mortem:
   overall_risk: low
