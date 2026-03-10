@@ -747,6 +747,49 @@ go test ./cmd/saw -run TestValidateCommand -v
 - Integration tests pass
 - Help text explains usage
 
+### Agent C - Completion Report
+
+```yaml type=impl-completion-report
+status: complete
+repo: /Users/dayna.blackwell/code/scout-and-wave-web
+worktree: .claude/worktrees/wave2-agent-C
+branch: wave2-agent-C
+commit: 9ec38418192f49c42609069402428f01caa4d984
+files_changed:
+  - cmd/saw/main.go
+  - go.mod
+files_created:
+  - cmd/saw/validate.go
+  - cmd/saw/validate_test.go
+interface_deviations: []
+out_of_scope_deps: []
+tests_added:
+  - TestValidate_ValidManifest
+  - TestValidate_InvalidManifest
+  - TestValidate_FileNotFound
+  - TestValidate_InvalidYAML
+  - TestValidate_MissingArgument
+  - TestValidate_I1Violation
+verification: PASS (go build ./cmd/saw && go test ./cmd/saw/... -run TestValidate -v)
+```
+
+Implementation complete. The `saw validate` command is fully functional and tested.
+
+**Key decisions:**
+1. **CLI pattern:** Discovered this project uses a simple switch statement in main.go rather than urfave/cli. Followed the existing pattern (merge_cmd.go, serve_cmd.go) for consistency.
+2. **go.mod worktree fix:** The worktree's go.mod had a relative replace directive that didn't work from the worktree location. Changed to absolute path: `/Users/dayna.blackwell/code/scout-and-wave-go`
+3. **Error handling:** The SDK's Load() function returns detailed YAML parse errors, which we pass through. The command distinguishes between file-not-found, parse errors, and validation errors cleanly.
+4. **Test coverage:** Added 6 comprehensive tests covering valid manifests, missing fields (I4), file ownership violations (I1), file not found, invalid YAML, and missing arguments.
+
+**Command usage:**
+```bash
+saw validate <manifest-path>
+# Exit 0: ✓ Manifest valid
+# Exit 1: JSON error array on stderr
+```
+
+All verification gates passed. The command integrates cleanly with the existing CLI structure.
+
 ---
 
 ### Agent D — CLI Extract Context Command
@@ -817,6 +860,41 @@ go test ./cmd/saw -run TestExtractCommand -v
 - Integration tests validate JSON structure
 - Context includes all fields needed by agents
 
+### Agent D - Completion Report
+
+```yaml type=impl-completion-report
+status: complete
+repo: /Users/dayna.blackwell/code/scout-and-wave-web
+worktree: .claude/worktrees/wave2-agent-D
+branch: wave2-agent-D
+commit: 219cb103e52382741aed55dc669809d4704b1a47
+files_changed:
+  - cmd/saw/main.go
+  - go.mod
+files_created:
+  - cmd/saw/extract.go
+  - cmd/saw/extract_test.go
+interface_deviations: []
+out_of_scope_deps: []
+tests_added:
+  - TestExtractContextSuccess
+  - TestExtractContextAgentNotFound
+  - TestExtractContextMissingFlags
+  - TestExtractContextWave2Agent
+verification: PASS
+```
+
+Implementation notes:
+- Command follows the simple switch-case pattern used by other saw commands (not urfave/cli)
+- Uses protocol.Load() from SDK to parse YAML manifests
+- Outputs structured JSON with all required fields: agent_id, wave, task, files, dependencies, model, interface_contracts, quality_gates, impl_doc_path
+- Comprehensive test coverage with 4 test cases covering success, error handling, and validation
+- All tests pass (go test ./cmd/saw/... -run TestExtract -v)
+- Manual verification successful with test YAML manifest
+- Exit codes correct: 0 for success, 1 for agent not found or errors
+- Updated main.go switch statement and help text to register the new command
+- Had to update go.mod replace directive from relative to absolute path for worktree compatibility
+
 ---
 
 ### Agent E — CLI Set Completion Command
@@ -876,6 +954,43 @@ go test ./cmd/saw -run TestSetCompletionCommand -v
 - Manifest updated atomically (no partial writes)
 - Integration tests validate report persistence
 - Duplicate registration handled gracefully
+
+### Agent E - Completion Report
+
+```yaml type=impl-completion-report
+status: complete
+repo: /Users/dayna.blackwell/code/scout-and-wave-web
+worktree: .claude/worktrees/wave2-agent-E
+branch: wave2-agent-E
+commit: 9957333c88529c065e8a596f3c4395c29775d19e
+files_changed:
+  - cmd/saw/main.go
+  - go.mod
+files_created:
+  - cmd/saw/completion.go
+  - cmd/saw/completion_test.go
+interface_deviations: []
+out_of_scope_deps: []
+tests_added:
+  - TestRunSetCompletion_MissingArgs
+  - TestRunSetCompletion_InvalidStatus
+  - TestRunSetCompletion_AgentNotFound
+  - TestRunSetCompletion_Success
+  - TestRunSetCompletion_PartialStatus
+verification: PASS (go test ./cmd/saw/... -run TestRunSetCompletion -v)
+```
+
+**Implementation notes:**
+
+The CLI pattern in this project does NOT use urfave/cli as indicated in the original spec. Instead, it uses a simple switch statement on `os.Args[1]` in `main.go`. I followed the existing pattern by:
+
+1. Creating `completion.go` with a `runSetCompletion(args []string) error` function
+2. Adding the `"set-completion"` case to the switch in `main.go`
+3. Adding the command to the `printUsage` help text
+
+The implementation reads YAML from stdin, validates the status field (must be "complete", "partial", or "blocked"), loads the manifest using the protocol SDK, registers the completion report, and saves the manifest back. All tests pass and the command integrates cleanly with the existing CLI structure.
+
+The go.mod file was updated to use an absolute path for the replace directive (`/Users/dayna.blackwell/code/scout-and-wave-go`) instead of the relative path (`../scout-and-wave-go`) because worktrees don't have the same relative path structure as the main repo.
 
 ---
 
@@ -937,6 +1052,38 @@ go test ./cmd/saw -run TestCurrentWaveCommand -v
 - Command outputs empty for complete manifests
 - Integration tests validate wave detection logic
 - Edge case: all agents blocked still returns wave number
+
+### Agent F - Completion Report
+
+```yaml type=impl-completion-report
+status: complete
+repo: /Users/dayna.blackwell/code/scout-and-wave-web
+worktree: .claude/worktrees/wave2-agent-F
+branch: wave2-agent-F
+commit: 8aa071f
+files_changed:
+  - cmd/saw/main.go
+  - go.mod
+files_created:
+  - cmd/saw/wave_cmd.go
+  - cmd/saw/wave_cmd_test.go
+interface_deviations: []
+out_of_scope_deps: []
+tests_added:
+  - TestCurrentWave_MissingManifestPath
+  - TestCurrentWave_InvalidManifest
+  - TestCurrentWave_ValidManifest
+  - TestCurrentWave_AllComplete
+  - TestCurrentWave_PartialWaveComplete
+verification: PASS (go build ./cmd/saw && go test ./cmd/saw/... -run TestCurrentWave -v)
+```
+
+**Implementation notes:**
+- Used `wave_cmd.go` filename (not `wave.go`) to avoid collision with existing `wave_loop_test.go`
+- Followed project's simple CLI pattern (switch in main.go) instead of urfave/cli
+- Fixed go.mod replace directive to use absolute path for worktree compatibility
+- Output behavior: prints just the wave number (integer) for incomplete wave, or "complete" if all done
+- All tests pass with comprehensive coverage: missing args, invalid manifest, incomplete waves, all complete, partial completion
 
 ---
 
@@ -1487,3 +1634,126 @@ After wave {N} completes:
 | 5 | L | Web UI SDK Integration | TO-DO |
 | 5 | M | Web UI Manifest Editor | TO-DO |
 | — | Orch | Post-merge integration + CLI binary install | TO-DO |
+
+### Agent G - Completion Report
+
+```yaml type=impl-completion-report
+status: complete
+worktree: .claude/worktrees/wave3-agent-G
+branch: wave3-agent-G
+commit: b63bcc85d55622e040203e380db91435d32b4569
+files_created:
+  - cmd/saw/merge_wave.go
+  - cmd/saw/merge_wave_test.go
+  - cmd/saw/render.go
+  - cmd/saw/render_test.go
+files_changed:
+  - cmd/saw/main.go
+interface_deviations: []
+out_of_scope_deps: []
+tests_added:
+  - TestMergeWave
+  - TestMergeWaveErrors
+  - TestRender
+  - TestRenderErrors
+  - TestRenderMarkdownOutput
+verification: PASS
+```
+
+**Implementation notes:**
+
+Successfully implemented both CLI commands using the protocol SDK:
+
+1. **merge-wave command**: Checks if all agents in a specified wave have `status: complete` and outputs JSON status to stdout. Exit code 0 if ready to merge, 1 if not ready. Command signature: `saw merge-wave <manifest-path> <wave-number>`
+
+2. **render command**: Converts YAML IMPL manifest to markdown format with full fidelity, including title, verdict, file ownership table, waves/agents, interface contracts, quality gates, scaffolds, and completion reports. Command signature: `saw render <manifest-path>`
+
+Both commands follow the established pattern in the codebase:
+- Used `flag.NewFlagSet` for argument parsing (stdlib pattern, not urfave/cli)
+- Proper error handling with descriptive messages
+- JSON output for machine-readable results (merge-wave)
+- Markdown output to stdout (render)
+- Comprehensive test coverage including edge cases
+
+**File naming note:** Created `merge_wave.go` (not `merge.go`) to avoid confusion with existing `merge_cmd.go` which implements the `merge` command (a different command that actually performs the git merge operation).
+
+**Test results:** All tests pass (14 test cases total across both commands).
+
+**Verification:** Build successful, all tests pass, commands integrate cleanly into main.go switch statement.
+
+### Agent H - Completion Report
+
+```yaml type=impl-completion-report
+status: complete
+worktree: .claude/worktrees/wave3-agent-H
+branch: wave3-agent-H
+commit: b797c126fbdbe6d025e503eee10dfd508cc248ac
+files_created:
+  - cmd/saw/migrate.go
+  - cmd/saw/migrate_test.go
+files_changed:
+  - cmd/saw/main.go
+interface_deviations: []
+out_of_scope_deps: []
+tests_added:
+  - TestSlugify
+  - TestNormalizeVerdict
+  - TestConvertToManifest
+  - TestConvertFileOwnershipWithDependsOn
+verification: PASS (go build ./cmd/saw/ && go test ./cmd/saw/)
+```
+
+## Implementation Notes
+
+Successfully implemented the `saw migrate` command that converts markdown IMPL docs to YAML manifests.
+
+**Key decisions:**
+1. Reused existing `slugify` function from commands.go via wrapper to avoid duplication
+2. Handled type conversions between `types.*` (old parser output) and `protocol.*` (new manifest format)
+3. Interface contracts left as empty slice - would require complex markdown parsing to extract from text
+4. All quality gates, scaffolds, pre-mortem, and known issues properly converted with field mappings
+
+**Type mappings:**
+- `types.IMPLDoc` → `protocol.IMPLManifest`
+- `types.Wave.Agents[]AgentSpec` → `protocol.Wave.Agents[]Agent` (Letter→ID, Prompt→Task, FilesOwned→Files)
+- `types.FileOwnershipInfo` → `protocol.FileOwnership` (DependsOn string→[]string split by comma)
+- `types.QualityGates/QualityGate` → `protocol.QualityGates/QualityGate` (proper field mapping)
+- `types.ScaffoldFile` → `protocol.ScaffoldFile` (FilePath/Contents/ImportPath fields)
+- `types.PreMortem` → `protocol.PreMortem` (OverallRisk + Rows array conversion)
+- `types.KnownIssue` → `protocol.KnownIssue` (Description/Status/Workaround)
+
+**Tests:** All unit tests pass, including conversion logic tests for slugification, verdict normalization, manifest conversion, and DependsOn field handling.
+
+
+### Agent I - Completion Report
+
+```yaml type=impl-completion-report
+status: complete
+branch: develop
+commit: 83fa103cfa609640cb31da8384f86dc13b7c2471
+files_changed:
+  - implementations/claude-code/prompts/saw-skill.md
+  - implementations/claude-code/scripts/validate-impl.sh
+interface_deviations: []
+out_of_scope_deps: []
+tests_added: []
+verification: PASS (validate-impl.sh passes for .md files; YAML delegation added)
+```
+
+**Key implementation notes:**
+
+1. **validate-impl.sh**: Added YAML detection at line 30-35, immediately after file existence check. If extension is `.yaml` or `.yml`, the script executes `saw validate "$impl_doc"` directly via `exec`, making it a transparent proxy.
+
+2. **saw-skill.md**: Added dual-mode notes in three critical locations:
+   - E16 validation step (line 127): Documents that validator auto-detects YAML and delegates to SDK CLI
+   - Agent context extraction (line 134): Instructs orchestrator to use `saw extract-context` for YAML manifests
+   - Completion registration (line 136): Instructs agents to use `saw set-completion` for YAML manifests
+
+3. **Dual-Mode Operation section**: Added comprehensive explanation (after Invocation Modes) documenting the two modes, detection mechanism, and deprecation timeline.
+
+4. **Backward compatibility verified**: Tested validate-impl.sh against IMPL-protocol-sdk-migration.md (this doc) — passes with 11 blocks checked, 0 errors.
+
+5. **Forward compatibility confirmed**: `saw validate` command exists in scout-and-wave-web binary and accepts `--help` flag.
+
+**No breaking changes:** All existing markdown-based workflows continue to work exactly as before. YAML mode is dormant until Wave 5 Scout begins generating `.yaml` manifests.
+
