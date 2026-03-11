@@ -1,6 +1,7 @@
 package protocol
 
 import (
+	"os"
 	"path/filepath"
 	"sort"
 )
@@ -43,24 +44,34 @@ func ListIMPLs(dir string) (*ListIMPLsResult, error) {
 		IMPLs: []IMPLSummary{},
 	}
 
-	// Find all IMPL-*.yaml and IMPL-*.yml files
-	yamlPattern := filepath.Join(dir, "IMPL-*.yaml")
-	ymlPattern := filepath.Join(dir, "IMPL-*.yml")
-
-	yamlMatches, err := filepath.Glob(yamlPattern)
-	if err != nil {
-		// Invalid dir or glob pattern — return empty list
-		return result, nil
+	// Scan both active and complete directories
+	dirs := []string{
+		dir,
+		filepath.Join(dir, "complete"),
 	}
 
-	ymlMatches, err := filepath.Glob(ymlPattern)
-	if err != nil {
-		// Invalid dir or glob pattern — return empty list
-		return result, nil
-	}
+	var allMatches []string
+	for _, scanDir := range dirs {
+		// Find all IMPL-*.yaml and IMPL-*.yml files
+		yamlPattern := filepath.Join(scanDir, "IMPL-*.yaml")
+		ymlPattern := filepath.Join(scanDir, "IMPL-*.yml")
 
-	// Combine matches
-	allMatches := append(yamlMatches, ymlMatches...)
+		yamlMatches, err := filepath.Glob(yamlPattern)
+		if err != nil {
+			// Invalid dir or glob pattern — skip this directory
+			continue
+		}
+
+		ymlMatches, err := filepath.Glob(ymlPattern)
+		if err != nil {
+			// Invalid dir or glob pattern — skip this directory
+			continue
+		}
+
+		// Combine matches from this directory
+		allMatches = append(allMatches, yamlMatches...)
+		allMatches = append(allMatches, ymlMatches...)
+	}
 
 	// Process each manifest file
 	for _, path := range allMatches {
@@ -95,4 +106,31 @@ func ListIMPLs(dir string) (*ListIMPLsResult, error) {
 	})
 
 	return result, nil
+}
+
+// ArchiveIMPL moves an IMPL doc from docs/IMPL/ to docs/IMPL/complete/.
+// Returns the new path if successful.
+func ArchiveIMPL(manifestPath string) (string, error) {
+	// Get directory and filename
+	dir := filepath.Dir(manifestPath)
+	filename := filepath.Base(manifestPath)
+
+	// Check if already in complete directory
+	if filepath.Base(dir) == "complete" {
+		return manifestPath, nil // already archived
+	}
+
+	// Ensure complete directory exists
+	completeDir := filepath.Join(dir, "complete")
+	if err := os.MkdirAll(completeDir, 0755); err != nil {
+		return "", err
+	}
+
+	// Move file
+	destPath := filepath.Join(completeDir, filename)
+	if err := os.Rename(manifestPath, destPath); err != nil {
+		return "", err
+	}
+
+	return destPath, nil
 }
