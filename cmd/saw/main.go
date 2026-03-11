@@ -29,6 +29,7 @@ func main() {
 		newFreezeCheckCmd(),
 		newUpdateAgentPromptCmd(),
 		newSolveCmd(),
+		newDebugJournalCmd(),
 	)
 	if err := rootCmd.Execute(); err != nil {
 		fmt.Fprintln(os.Stderr, err)
