@@ -15,6 +15,7 @@ import (
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/agent/backend"
 	apiclient "github.com/blackwell-systems/scout-and-wave-go/pkg/agent/backend/api"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/agent/backend/cli"
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/journal"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/orchestrator"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/types"
@@ -476,6 +477,7 @@ func RunSingleAgent(ctx context.Context, opts RunWaveOpts, waveNum int, agentLet
 }
 
 // MergeWave merges the agent branches for the given wave into the repo's main branch.
+// After successful merge, archives journals for all agents in the wave.
 func MergeWave(ctx context.Context, opts RunMergeOpts) error {
 	if opts.IMPLPath == "" {
 		return fmt.Errorf("engine.MergeWave: IMPLPath is required")
@@ -484,7 +486,33 @@ func MergeWave(ctx context.Context, opts RunMergeOpts) error {
 	if err != nil {
 		return fmt.Errorf("engine.MergeWave: %w", err)
 	}
-	return orch.MergeWave(opts.WaveNum)
+
+	// Merge the wave
+	if err := orch.MergeWave(opts.WaveNum); err != nil {
+		return err
+	}
+
+	// Archive journals for all agents in this wave (non-fatal)
+	doc := orch.IMPLDoc()
+	if doc != nil {
+		for _, wave := range doc.Waves {
+			if wave.Number == opts.WaveNum {
+				for _, agent := range wave.Agents {
+					agentPath := fmt.Sprintf("wave%d/agent-%s", opts.WaveNum, agent.Letter)
+					observer, obsErr := journal.NewObserver(opts.RepoPath, agentPath)
+					if obsErr == nil {
+						if archErr := observer.Archive(); archErr != nil {
+							// Log but don't fail the merge
+							fmt.Fprintf(os.Stderr, "engine: failed to archive journal for agent %s: %v\n", agent.Letter, archErr)
+						}
+					}
+				}
+				break
+			}
+		}
+	}
+
+	return nil
 }
 
 // RunVerification runs post-merge verification (go vet + test command).
@@ -528,6 +556,122 @@ func UpdateIMPLStatus(implDocPath string, completedLetters []string) error {
 // Delegates to pkg/protocol.ValidateInvariants.
 func ValidateInvariants(doc *types.IMPLDoc) error {
 	return protocol.ValidateInvariants(doc)
+}
+
+// JournalIntegration provides journal lifecycle hooks for wave execution.
+// It creates journal observers for agents, syncs session logs, injects context,
+// triggers checkpoints at milestones, and archives journals after merge.
+type JournalIntegration struct {
+	repoPath string
+	logger   func(msg string, args ...interface{})
+}
+
+// NewJournalIntegration creates a journal integration instance for the given repo.
+func NewJournalIntegration(repoPath string, logger func(string, ...interface{})) *JournalIntegration {
+	if logger == nil {
+		logger = func(string, ...interface{}) {} // no-op logger
+	}
+	return &JournalIntegration{
+		repoPath: repoPath,
+		logger:   logger,
+	}
+}
+
+// PrepareAgentContext creates a journal observer, syncs from session logs,
+// and generates context markdown to prepend to the agent prompt.
+// Returns the enriched prompt and the observer (for later checkpoint/archive calls).
+// Non-fatal: returns original prompt if journal operations fail.
+func (ji *JournalIntegration) PrepareAgentContext(waveNum int, agentID string, originalPrompt string) (enrichedPrompt string, observer *journal.JournalObserver, err error) {
+	// Create journal observer
+	agentPath := fmt.Sprintf("wave%d/agent-%s", waveNum, agentID)
+	observer, err = journal.NewObserver(ji.repoPath, agentPath)
+	if err != nil {
+		ji.logger("Failed to create journal observer", "agent", agentID, "error", err)
+		return originalPrompt, nil, fmt.Errorf("create journal observer: %w", err)
+	}
+
+	// Sync from Claude Code session logs (incremental tail)
+	result, err := observer.Sync()
+	if err != nil {
+		ji.logger("Failed to sync journal", "agent", agentID, "error", err)
+		// Non-fatal: continue without journal recovery
+		return originalPrompt, observer, nil
+	}
+
+	// If journal has events, generate context and prepend to prompt
+	if result != nil && result.NewToolUses > 0 {
+		contextMd, err := observer.GenerateContext()
+		if err != nil {
+			ji.logger("Failed to generate context", "agent", agentID, "error", err)
+			return originalPrompt, observer, nil
+		}
+
+		ji.logger("Recovered session context", "agent", agentID, "tool_calls", result.NewToolUses)
+		enrichedPrompt = contextMd + "\n\n---\n\n" + originalPrompt
+		return enrichedPrompt, observer, nil
+	}
+
+	return originalPrompt, observer, nil
+}
+
+// StartPeriodicSync launches a background goroutine that syncs the journal every 30 seconds.
+// Returns a cancel function to stop the sync goroutine.
+func (ji *JournalIntegration) StartPeriodicSync(ctx context.Context, observer *journal.JournalObserver) func() {
+	if observer == nil {
+		return func() {} // no-op if observer wasn't created
+	}
+
+	ctx, cancel := context.WithCancel(ctx)
+
+	go func() {
+		ticker := time.NewTicker(30 * time.Second)
+		defer ticker.Stop()
+
+		for {
+			select {
+			case <-ticker.C:
+				// Sync journal from Claude Code session logs
+				if _, err := observer.Sync(); err != nil {
+					ji.logger("Periodic sync failed", "error", err)
+				}
+			case <-ctx.Done():
+				return
+			}
+		}
+	}()
+
+	return cancel
+}
+
+// TriggerCheckpoint creates a named checkpoint snapshot of the journal.
+// Checkpoint names follow E23A protocol: 001-isolation, 002-first-edit, 003-tests, 004-pre-report.
+func (ji *JournalIntegration) TriggerCheckpoint(observer *journal.JournalObserver, name string) error {
+	if observer == nil {
+		return nil // no-op if observer wasn't created
+	}
+
+	if err := observer.Checkpoint(name); err != nil {
+		ji.logger("Checkpoint failed", "name", name, "error", err)
+		return fmt.Errorf("checkpoint %s: %w", name, err)
+	}
+
+	ji.logger("Checkpoint created", "name", name)
+	return nil
+}
+
+// ArchiveJournal compresses the journal directory to .tar.gz after wave merge succeeds.
+func (ji *JournalIntegration) ArchiveJournal(observer *journal.JournalObserver) error {
+	if observer == nil {
+		return nil // no-op if observer wasn't created
+	}
+
+	if err := observer.Archive(); err != nil {
+		ji.logger("Archive failed", "error", err)
+		return fmt.Errorf("archive journal: %w", err)
+	}
+
+	ji.logger("Journal archived")
+	return nil
 }
 
 // startWaveWithGate runs waves with an inter-wave gate. gateCh receives true to
