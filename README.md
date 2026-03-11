@@ -30,6 +30,17 @@ Go engine and Protocol SDK for the Scout-and-Wave parallel agent coordination sy
 └─────────────────────────────────────────────┘
 ```
 
+## Binary: sawtools
+
+This repo provides the **`sawtools` CLI** — the full protocol SDK toolkit for CI/CD, power users, and CLI orchestration (e.g., the `/saw` skill).
+
+```bash
+go build -o sawtools ./cmd/saw
+cp sawtools ~/.local/bin/sawtools
+```
+
+**Note:** There's also a separate `saw` binary in [scout-and-wave-web](https://github.com/blackwell-systems/scout-and-wave-web) that provides a web UI + HTTP API. See [docs/binaries.md](docs/binaries.md) for the complete explanation of why two binaries exist and when to use which.
+
 ## Installation
 
 ```bash
