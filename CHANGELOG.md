@@ -8,6 +8,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 | Version | Date | Headline |
 |---------|------|----------|
+| [0.27.0] | 2026-03-10 | Tool Journaling Wave 1 — Core observer, context generator, checkpoint system, archive policy (4 agents, 53 tests) |
 | [0.26.0] | 2026-03-10 | Scaffold agent ID validation — validator accepts "Scaffold" for wave 0 file ownership entries |
 | [0.25.0] | 2026-03-10 | mark-complete preservation fix — text-based YAML editing preserves all 1600+ lines of IMPL doc structure instead of compacting to 50 lines |
 | [0.24.0] | 2026-03-10 | Cross-repo worktree support — `create-worktrees` resolves agent repos from FileOwnership table, creates worktrees in correct sibling directories |
@@ -34,6 +35,31 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 | [0.3.0] | 2026-03-08 | Protocol audit fixes — P0: failure_type parsing, multi-gen agent IDs; P1: E22 2-pass scaffold build, cross-repo Repo column; P2: repo field in completion reports |
 | [0.2.0] | 2026-03-08 | Engine protocol parity — E17–E23 implemented (context memory, failure routing, stub scan, quality gates, scaffold build verify, per-agent context extraction) |
 | [0.1.0] | 2026-03-08 | Initial engine extraction — parser, orchestrator, agent runner, git, worktree management |
+
+## [0.27.0] - 2026-03-10
+
+### Added
+
+- **Tool Journaling Wave 1** — Complete foundation for external log observer pattern (4 agents, 4605 lines, 53 tests passing):
+  - **pkg/journal/observer.go** (430 lines) — Core `JournalObserver` that tails Claude Code session logs (`~/.claude/projects/<project>/*.jsonl`), extracts tool_use/tool_result blocks, maintains cursor for incremental reads, appends to index.jsonl, caches last 30 events in recent.json
+  - **pkg/journal/context.go** (602 lines) — Context generator analyzes journal entries and produces markdown summaries for agent recovery after compaction. Extracts files modified, test results, git commits, scaffold imports, verification gates, completion report status
+  - **pkg/journal/checkpoint.go** (277 lines) — Checkpoint system creates immutable snapshots of journal state at milestones. Supports list, restore, delete operations. Preserves checkpoints during restore
+  - **pkg/journal/archive.go** (388 lines) — Archive policy compresses journal directories to .tar.gz with gzip, achieves 10:1 compression ratio, automatic retention cleanup, metadata tracking
+  - **pkg/journal/types.go** (66 lines) — Shared types: `SessionCursor`, `ToolEntry`, `SyncResult`
+  - **pkg/journal/doc.go** (67 lines) — Package documentation explaining external observer architecture
+
+### Fixed
+
+- **JournalObserver field visibility** — Capitalized private fields (`CursorPath`, `IndexPath`, `RecentPath`, `ResultsDir`) to allow checkpoint and archive methods to access them across files
+- **Merge conflict resolution** — Removed stub `JournalObserver` declarations from archive.go and placeholder methods from observer.go after merging Wave 1 agents
+- **Test field references** — Updated all test files to use capitalized field names after struct visibility changes
+
+### Changed
+
+- **53 tests passing** — Comprehensive test coverage: observer (9 tests), context (19 tests), checkpoint (12 tests), archive (13 tests)
+- **Build verification** — `go build ./pkg/journal/...` and `go vet ./pkg/journal/...` pass cleanly
+
+---
 
 ## [0.26.0] - 2026-03-10
 
