@@ -70,6 +70,17 @@ type AgentToolCallPayload struct {
 	DurationMs int64  `json:"duration_ms"`
 }
 
+// AgentPrioritizedPayload is the Data payload for the "agent_prioritized" event.
+// It shows when agents in a wave are reordered for optimal scheduling based on
+// dependency graph critical path analysis.
+type AgentPrioritizedPayload struct {
+	Wave             int      `json:"wave"`
+	OriginalOrder    []string `json:"original_order"`
+	PrioritizedOrder []string `json:"prioritized_order"`
+	Reordered        bool     `json:"reordered"`
+	Reason           string   `json:"reason"`
+}
+
 // SetEventPublisher injects a publisher function that will receive all
 // OrchestratorEvents emitted during wave execution.
 func (o *Orchestrator) SetEventPublisher(pub EventPublisher) {

@@ -898,3 +898,192 @@ func TestState_String(t *testing.T) {
 		}
 	}
 }
+
+// TestRunWave_AgentPrioritization verifies that prioritizeAgentsFunc is called and used.
+func TestRunWave_AgentPrioritization(t *testing.T) {
+	origCreator := worktreeCreatorFunc
+	origWait := waitForCompletionFunc
+	origNewBackend := newBackendFunc
+	origNewRunner := newRunnerFunc
+	origPrioritize := prioritizeAgentsFunc
+	t.Cleanup(func() {
+		worktreeCreatorFunc = origCreator
+		waitForCompletionFunc = origWait
+		newBackendFunc = origNewBackend
+		newRunnerFunc = origNewRunner
+		prioritizeAgentsFunc = origPrioritize
+	})
+
+	// Track which agents were launched
+	var launchedAgents []string
+	var mu sync.Mutex
+
+	worktreeCreatorFunc = func(_ *worktree.Manager, _ int, letter string) (string, error) {
+		mu.Lock()
+		launchedAgents = append(launchedAgents, letter)
+		mu.Unlock()
+		return "/tmp/fake-wt-" + letter, nil
+	}
+	waitForCompletionFunc = func(_, _ string, _, _ time.Duration) (*types.CompletionReport, error) {
+		return &types.CompletionReport{Status: types.StatusComplete}, nil
+	}
+
+	fake := &fakeBackend{}
+	newBackendFunc = func(_ BackendConfig) (backend.Backend, error) {
+		return fake, nil
+	}
+	newRunnerFunc = func(b backend.Backend, wm *worktree.Manager) *agent.Runner {
+		return agent.NewRunner(b, wm)
+	}
+
+	// Track that prioritization was called with correct parameters
+	var prioritizeCalled atomic.Bool
+	var prioritizeWaveNum atomic.Int32
+
+	prioritizeAgentsFunc = func(manifest *types.IMPLDoc, waveNum int) []string {
+		prioritizeCalled.Store(true)
+		prioritizeWaveNum.Store(int32(waveNum))
+		// Return prioritized order (reversed for testing)
+		return []string{"C", "B", "A"}
+	}
+
+	o := makeOrchWithWave(1, "A", "B", "C")
+
+	if err := o.RunWave(1); err != nil {
+		t.Fatalf("RunWave returned error: %v", err)
+	}
+
+	// Verify prioritization function was called
+	if !prioritizeCalled.Load() {
+		t.Error("prioritizeAgentsFunc was not called")
+	}
+	if prioritizeWaveNum.Load() != 1 {
+		t.Errorf("prioritizeAgentsFunc called with wave %d, want 1", prioritizeWaveNum.Load())
+	}
+
+	// Verify all agents were launched (order may vary due to concurrency)
+	mu.Lock()
+	defer mu.Unlock()
+
+	if len(launchedAgents) != 3 {
+		t.Fatalf("expected 3 agents to launch, got %d", len(launchedAgents))
+	}
+
+	// Verify all expected agents are present (regardless of order)
+	expectedAgents := map[string]bool{"A": true, "B": true, "C": true}
+	for _, agent := range launchedAgents {
+		if !expectedAgents[agent] {
+			t.Errorf("unexpected agent launched: %q", agent)
+		}
+		delete(expectedAgents, agent)
+	}
+	if len(expectedAgents) > 0 {
+		t.Errorf("agents not launched: %v", expectedAgents)
+	}
+}
+
+// TestRunWave_AgentPrioritizedEvent verifies that the agent_prioritized SSE event is emitted.
+func TestRunWave_AgentPrioritizedEvent(t *testing.T) {
+	origCreator := worktreeCreatorFunc
+	origWait := waitForCompletionFunc
+	origNewBackend := newBackendFunc
+	origNewRunner := newRunnerFunc
+	origPrioritize := prioritizeAgentsFunc
+	t.Cleanup(func() {
+		worktreeCreatorFunc = origCreator
+		waitForCompletionFunc = origWait
+		newBackendFunc = origNewBackend
+		newRunnerFunc = origNewRunner
+		prioritizeAgentsFunc = origPrioritize
+	})
+
+	worktreeCreatorFunc = func(_ *worktree.Manager, _ int, letter string) (string, error) {
+		return "/tmp/fake-wt-" + letter, nil
+	}
+	waitForCompletionFunc = func(_, _ string, _, _ time.Duration) (*types.CompletionReport, error) {
+		return &types.CompletionReport{Status: types.StatusComplete}, nil
+	}
+
+	fake := &fakeBackend{}
+	newBackendFunc = func(_ BackendConfig) (backend.Backend, error) {
+		return fake, nil
+	}
+	newRunnerFunc = func(b backend.Backend, wm *worktree.Manager) *agent.Runner {
+		return agent.NewRunner(b, wm)
+	}
+
+	// Mock prioritization: reverse the agent order
+	prioritizeAgentsFunc = func(manifest *types.IMPLDoc, waveNum int) []string {
+		return []string{"C", "B", "A"}
+	}
+
+	// Capture published events
+	var events []OrchestratorEvent
+	var mu sync.Mutex
+
+	o := makeOrchWithWave(1, "A", "B", "C")
+	o.SetEventPublisher(func(ev OrchestratorEvent) {
+		mu.Lock()
+		events = append(events, ev)
+		mu.Unlock()
+	})
+
+	if err := o.RunWave(1); err != nil {
+		t.Fatalf("RunWave returned error: %v", err)
+	}
+
+	// Find the agent_prioritized event
+	mu.Lock()
+	defer mu.Unlock()
+
+	var foundEvent *OrchestratorEvent
+	for i := range events {
+		if events[i].Event == "agent_prioritized" {
+			foundEvent = &events[i]
+			break
+		}
+	}
+
+	if foundEvent == nil {
+		t.Fatal("agent_prioritized event was not published")
+	}
+
+	// Verify payload structure
+	payload, ok := foundEvent.Data.(AgentPrioritizedPayload)
+	if !ok {
+		t.Fatalf("agent_prioritized event Data is not AgentPrioritizedPayload, got %T", foundEvent.Data)
+	}
+
+	if payload.Wave != 1 {
+		t.Errorf("payload.Wave = %d, want 1", payload.Wave)
+	}
+	if len(payload.OriginalOrder) != 3 {
+		t.Errorf("payload.OriginalOrder length = %d, want 3", len(payload.OriginalOrder))
+	}
+	if len(payload.PrioritizedOrder) != 3 {
+		t.Errorf("payload.PrioritizedOrder length = %d, want 3", len(payload.PrioritizedOrder))
+	}
+
+	// Verify original order is A, B, C (declaration order)
+	expectedOriginal := []string{"A", "B", "C"}
+	for i, expected := range expectedOriginal {
+		if payload.OriginalOrder[i] != expected {
+			t.Errorf("payload.OriginalOrder[%d] = %q, want %q", i, payload.OriginalOrder[i], expected)
+		}
+	}
+
+	// Verify prioritized order is C, B, A (reversed)
+	expectedPrioritized := []string{"C", "B", "A"}
+	for i, expected := range expectedPrioritized {
+		if payload.PrioritizedOrder[i] != expected {
+			t.Errorf("payload.PrioritizedOrder[%d] = %q, want %q", i, payload.PrioritizedOrder[i], expected)
+		}
+	}
+
+	if !payload.Reordered {
+		t.Error("payload.Reordered = false, want true")
+	}
+	if payload.Reason != "critical_path_scheduling" {
+		t.Errorf("payload.Reason = %q, want %q", payload.Reason, "critical_path_scheduling")
+	}
+}
