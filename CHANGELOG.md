@@ -8,6 +8,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 | Version | Date | Headline |
 |---------|------|----------|
+| [0.29.0] | 2026-03-10 | LLM orchestrator journal integration — journal-init and journal-context CLI commands for saw-skill.md |
 | [0.28.0] | 2026-03-10 | Multi-repo wave support — merge-agents and verify-commits auto-detect cross-repo waves from file ownership table |
 | [0.27.0] | 2026-03-10 | Tool Journaling Wave 1 — Core observer, context generator, checkpoint system, archive policy (4 agents, 53 tests) |
 | [0.26.0] | 2026-03-10 | Scaffold agent ID validation — validator accepts "Scaffold" for wave 0 file ownership entries |
@@ -35,6 +36,20 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 | [0.4.0] | 2026-03-09 | Per-agent model routing — ScoutModel/WaveModel opts, `model:` field in IMPL doc agent sections, per-agent backend dispatch |
 | [0.3.0] | 2026-03-08 | Protocol audit fixes — P0: failure_type parsing, multi-gen agent IDs; P1: E22 2-pass scaffold build, cross-repo Repo column; P2: repo field in completion reports |
 | [0.2.0] | 2026-03-08 | Engine protocol parity — E17–E23 implemented (context memory, failure routing, stub scan, quality gates, scaffold build verify, per-agent context extraction) |
+## [0.29.0] - 2026-03-10
+
+### Added
+
+- **LLM orchestrator journal integration** — `sawtools journal-init` and `sawtools journal-context` CLI commands enable saw-skill.md (LLM orchestrator) to use tool journaling for agent recovery after context compaction. These commands provide the same functionality that the Go orchestrator (web app) gets automatically via `pkg/engine` integration.
+- **`sawtools journal-init`** (`cmd/saw/journal_init.go`) — Creates journal directory structure (`.saw-state/journals/wave<N>/agent-<ID>/`) and initializes cursor file. Called by LLM orchestrator before launching wave agents. Output: JSON with status, journal_dir, cursor_path, index_path, results_dir.
+- **`sawtools journal-context`** (`cmd/saw/journal_context.go`) — Syncs journal from Claude Code session logs, loads entries from index.jsonl, generates context.md markdown summary via `journal.GenerateContext()`. Output: JSON with sync stats, context file path, length, availability. Supports `--max-entries` flag to limit context size.
+- **Dual orchestrator support** — Journal recovery now works in both execution modes: (1) Go orchestrator (web app) uses automatic `JournalIntegration` in runner.go, (2) LLM orchestrator (saw-skill.md) calls `journal-init` + `journal-context` before/during wave execution.
+
+### Changed
+
+- **Agent J's saw-skill.md changes restored** — Originally reverted because commands didn't exist. After implementing the CLI commands, restored Agent J's orchestrator instructions for journal integration (step 4: init/context, step 5: prepend context to prompts).
+
+---
 | [0.1.0] | 2026-03-08 | Initial engine extraction — parser, orchestrator, agent runner, git, worktree management |
 ## [0.28.0] - 2026-03-10
 
