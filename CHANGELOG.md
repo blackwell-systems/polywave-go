@@ -8,6 +8,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 | Version | Date | Headline |
 |---------|------|----------|
+| [0.30.0] | 2026-03-10 | Engine roadmap — verification loop (E24), agent launch prioritization, wave timeout enforcement, persistent memory system |
 | [0.29.0] | 2026-03-10 | LLM orchestrator journal integration — journal-init and journal-context CLI commands for saw-skill.md |
 | [0.28.0] | 2026-03-10 | Multi-repo wave support — merge-agents and verify-commits auto-detect cross-repo waves from file ownership table |
 | [0.27.0] | 2026-03-10 | Tool Journaling Wave 1 — Core observer, context generator, checkpoint system, archive policy (4 agents, 53 tests) |
