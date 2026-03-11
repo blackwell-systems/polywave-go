@@ -245,7 +245,7 @@ func TestSync_FirstRun(t *testing.T) {
 	}
 
 	// Verify index.jsonl was created
-	if _, err := os.Stat(obs.indexPath); os.IsNotExist(err) {
+	if _, err := os.Stat(obs.IndexPath); os.IsNotExist(err) {
 		t.Errorf("index.jsonl not created")
 	}
 
@@ -439,7 +439,7 @@ func TestAppendToIndex_PreservesExisting(t *testing.T) {
 	}
 
 	// Read back and verify both entries exist
-	data, err := os.ReadFile(obs.indexPath)
+	data, err := os.ReadFile(obs.IndexPath)
 	if err != nil {
 		t.Fatalf("Failed to read index: %v", err)
 	}
@@ -481,7 +481,7 @@ func TestUpdateRecent_MaintainsLast30(t *testing.T) {
 	}
 
 	// Load recent.json and verify it has exactly 30 entries
-	data, err := os.ReadFile(obs.recentPath)
+	data, err := os.ReadFile(obs.RecentPath)
 	if err != nil {
 		t.Fatalf("Failed to read recent.json: %v", err)
 	}
@@ -538,7 +538,7 @@ func TestSync_ExtractsToolBlocks(t *testing.T) {
 	}
 
 	// Read index and verify extracted fields
-	data, err := os.ReadFile(obs.indexPath)
+	data, err := os.ReadFile(obs.IndexPath)
 	if err != nil {
 		t.Fatalf("Failed to read index: %v", err)
 	}
@@ -609,7 +609,7 @@ func TestSync_SavesFullOutputToFiles(t *testing.T) {
 	}
 
 	// Verify full content was saved to file
-	resultFile := filepath.Join(obs.resultsDir, "toolu_big.txt")
+	resultFile := filepath.Join(obs.ResultsDir, "toolu_big.txt")
 	savedContent, err := os.ReadFile(resultFile)
 	if err != nil {
 		t.Fatalf("Failed to read result file: %v", err)
@@ -620,7 +620,7 @@ func TestSync_SavesFullOutputToFiles(t *testing.T) {
 	}
 
 	// Verify preview was truncated in index
-	data, err := os.ReadFile(obs.indexPath)
+	data, err := os.ReadFile(obs.IndexPath)
 	if err != nil {
 		t.Fatalf("Failed to read index: %v", err)
 	}

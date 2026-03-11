@@ -24,14 +24,6 @@ type ArchiveMetadata struct {
 	CompressionRatio    float64   `json:"compression_ratio"`
 }
 
-// JournalObserver represents the observer that will call Archive()
-// This is a stub to satisfy the interface contract until Agent A implements the full version
-type JournalObserver struct {
-	ProjectRoot string
-	JournalDir  string
-	AgentID     string
-}
-
 // Archive compresses the journal directory to .tar.gz in archive subdirectory
 func (o *JournalObserver) Archive() error {
 	// Parse wave and agent from journal directory path

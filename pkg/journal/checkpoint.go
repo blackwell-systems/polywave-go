@@ -44,7 +44,7 @@ func (o *JournalObserver) Checkpoint(name string) error {
 	}
 
 	// Count entries in index.jsonl
-	entryCount, err := countJSONLLines(string(o.indexPath))
+	entryCount, err := countJSONLLines(string(o.IndexPath))
 	if err != nil && !os.IsNotExist(err) {
 		return fmt.Errorf("failed to count entries: %w", err)
 	}
@@ -54,15 +54,15 @@ func (o *JournalObserver) Checkpoint(name string) error {
 
 	// Copy index.jsonl (optional - may not exist for empty journal)
 	indexSnapshot := snapshotPrefix + "-index.jsonl"
-	_ = copyFileIfExists(string(o.indexPath), indexSnapshot)
+	_ = copyFileIfExists(string(o.IndexPath), indexSnapshot)
 
 	// Copy cursor.json (optional - may not exist for empty journal)
 	cursorSnapshot := snapshotPrefix + "-cursor.json"
-	_ = copyFileIfExists(string(o.cursorPath), cursorSnapshot)
+	_ = copyFileIfExists(string(o.CursorPath), cursorSnapshot)
 
 	// Copy recent.json (optional - may not exist yet)
 	recentSnapshot := snapshotPrefix + "-recent.json"
-	_ = copyFileIfExists(string(o.recentPath), recentSnapshot)
+	_ = copyFileIfExists(string(o.RecentPath), recentSnapshot)
 
 	// Create checkpoint metadata
 	checkpoint := Checkpoint{
@@ -165,10 +165,10 @@ func (o *JournalObserver) RestoreCheckpoint(name string) error {
 
 	// Restore index.jsonl (delete target if snapshot doesn't exist - restoring to empty state)
 	indexSnapshot := checkpoint.SnapshotPath + "-index.jsonl"
-	if err := copyFileIfExists(indexSnapshot, string(o.indexPath)); err != nil {
+	if err := copyFileIfExists(indexSnapshot, string(o.IndexPath)); err != nil {
 		if os.IsNotExist(err) {
 			// Snapshot doesn't exist - restore to empty state by removing target
-			os.Remove(string(o.indexPath))
+			os.Remove(string(o.IndexPath))
 		} else {
 			return fmt.Errorf("failed to restore index: %w", err)
 		}
@@ -176,9 +176,9 @@ func (o *JournalObserver) RestoreCheckpoint(name string) error {
 
 	// Restore cursor.json (delete target if snapshot doesn't exist)
 	cursorSnapshot := checkpoint.SnapshotPath + "-cursor.json"
-	if err := copyFileIfExists(cursorSnapshot, string(o.cursorPath)); err != nil {
+	if err := copyFileIfExists(cursorSnapshot, string(o.CursorPath)); err != nil {
 		if os.IsNotExist(err) {
-			os.Remove(string(o.cursorPath))
+			os.Remove(string(o.CursorPath))
 		} else {
 			return fmt.Errorf("failed to restore cursor: %w", err)
 		}
@@ -186,9 +186,9 @@ func (o *JournalObserver) RestoreCheckpoint(name string) error {
 
 	// Restore recent.json (optional)
 	recentSnapshot := checkpoint.SnapshotPath + "-recent.json"
-	if err := copyFileIfExists(recentSnapshot, string(o.recentPath)); err != nil {
+	if err := copyFileIfExists(recentSnapshot, string(o.RecentPath)); err != nil {
 		if os.IsNotExist(err) {
-			os.Remove(string(o.recentPath))
+			os.Remove(string(o.RecentPath))
 		}
 	}
 

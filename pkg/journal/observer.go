@@ -17,10 +17,10 @@ type JournalObserver struct {
 	ProjectRoot string
 	JournalDir  string
 	AgentID     string
-	cursorPath  string
-	indexPath   string
-	recentPath  string
-	resultsDir  string
+	CursorPath  string
+	IndexPath   string
+	RecentPath  string
+	ResultsDir  string
 }
 
 // NewObserver creates a journal observer instance for an agent.
@@ -39,13 +39,13 @@ func NewObserver(projectRoot string, agentID string) (*JournalObserver, error) {
 	}
 
 	journalDir := filepath.Join(projectRoot, ".saw-state", waveDir, agentID)
-	resultsDir := filepath.Join(journalDir, "tool-results")
+	ResultsDir := filepath.Join(journalDir, "tool-results")
 
 	// Create directory structure
 	if err := os.MkdirAll(journalDir, 0755); err != nil {
 		return nil, fmt.Errorf("failed to create journal dir: %w", err)
 	}
-	if err := os.MkdirAll(resultsDir, 0755); err != nil {
+	if err := os.MkdirAll(ResultsDir, 0755); err != nil {
 		return nil, fmt.Errorf("failed to create results dir: %w", err)
 	}
 
@@ -53,10 +53,10 @@ func NewObserver(projectRoot string, agentID string) (*JournalObserver, error) {
 		ProjectRoot: projectRoot,
 		JournalDir:  journalDir,
 		AgentID:     agentID,
-		cursorPath:  filepath.Join(journalDir, "cursor.json"),
-		indexPath:   filepath.Join(journalDir, "index.jsonl"),
-		recentPath:  filepath.Join(journalDir, "recent.json"),
-		resultsDir:  resultsDir,
+		CursorPath:  filepath.Join(journalDir, "cursor.json"),
+		IndexPath:   filepath.Join(journalDir, "index.jsonl"),
+		RecentPath:  filepath.Join(journalDir, "recent.json"),
+		ResultsDir:  ResultsDir,
 	}
 
 	return o, nil
@@ -264,7 +264,7 @@ func (o *JournalObserver) extractToolResult(block map[string]interface{}, timest
 	}
 
 	// Save full content to file
-	contentFile := filepath.Join(o.resultsDir, fmt.Sprintf("%s.txt", toolUseID))
+	contentFile := filepath.Join(o.ResultsDir, fmt.Sprintf("%s.txt", toolUseID))
 	if err := os.WriteFile(contentFile, []byte(fullContent), 0644); err == nil {
 		contentFile = filepath.Join("tool-results", fmt.Sprintf("%s.txt", toolUseID))
 	} else {
@@ -343,7 +343,7 @@ func (o *JournalObserver) getClaudeProjectDir() string {
 
 // loadCursor loads the session cursor from disk.
 func (o *JournalObserver) loadCursor() (*SessionCursor, error) {
-	data, err := os.ReadFile(o.cursorPath)
+	data, err := os.ReadFile(o.CursorPath)
 	if os.IsNotExist(err) {
 		// No cursor yet, start from beginning
 		return &SessionCursor{}, nil
@@ -366,12 +366,12 @@ func (o *JournalObserver) saveCursor(cursor *SessionCursor) error {
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(o.cursorPath, data, 0644)
+	return os.WriteFile(o.CursorPath, data, 0644)
 }
 
 // appendToIndex appends new tool entries to the index.jsonl file.
 func (o *JournalObserver) appendToIndex(entries []ToolEntry) error {
-	f, err := os.OpenFile(o.indexPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	f, err := os.OpenFile(o.IndexPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 	if err != nil {
 		return err
 	}
@@ -391,7 +391,7 @@ func (o *JournalObserver) appendToIndex(entries []ToolEntry) error {
 func (o *JournalObserver) updateRecent(newEntries []ToolEntry) error {
 	// Load existing recent entries
 	var existing []ToolEntry
-	if data, err := os.ReadFile(o.recentPath); err == nil {
+	if data, err := os.ReadFile(o.RecentPath); err == nil {
 		_ = json.Unmarshal(data, &existing)
 	}
 
@@ -408,7 +408,7 @@ func (o *JournalObserver) updateRecent(newEntries []ToolEntry) error {
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(o.recentPath, data, 0644)
+	return os.WriteFile(o.RecentPath, data, 0644)
 }
 
 // GenerateContext is a placeholder for the context generation interface.
@@ -417,14 +417,3 @@ func (o *JournalObserver) GenerateContext() (string, error) {
 	return "", fmt.Errorf("not implemented: GenerateContext will be provided by agent B")
 }
 
-// Checkpoint is a placeholder for the checkpoint management interface.
-// Implementation will be provided by agent C.
-func (o *JournalObserver) Checkpoint(name string) error {
-	return fmt.Errorf("not implemented: Checkpoint will be provided by agent C")
-}
-
-// Archive is a placeholder for the archive policy interface.
-// Implementation will be provided by agent D.
-func (o *JournalObserver) Archive() error {
-	return fmt.Errorf("not implemented: Archive will be provided by agent D")
-}

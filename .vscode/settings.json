@@ -1,0 +1,7 @@
+{
+  "gopls": {
+    "directoryFilters": [
+      "-**/.claude/worktrees"
+    ]
+  }
+}

@@ -20,13 +20,13 @@ func setupTestObserver(t *testing.T) (*JournalObserver, func()) {
 	}
 
 	observer := &JournalObserver{
-		ProjectRoot: Path(tmpDir),
-		JournalDir:  Path(journalDir),
+		ProjectRoot: tmpDir,
+		JournalDir:  journalDir,
 		AgentID:     "agent-test",
-		cursorPath:  Path(filepath.Join(journalDir, "cursor.json")),
-		indexPath:   Path(filepath.Join(journalDir, "index.jsonl")),
-		recentPath:  Path(filepath.Join(journalDir, "recent.json")),
-		resultsDir:  Path(filepath.Join(journalDir, "tool-results")),
+		CursorPath:  filepath.Join(journalDir, "cursor.json"),
+		IndexPath:   filepath.Join(journalDir, "index.jsonl"),
+		RecentPath:  filepath.Join(journalDir, "recent.json"),
+		ResultsDir:  filepath.Join(journalDir, "tool-results"),
 	}
 
 	cleanup := func() {
@@ -77,8 +77,8 @@ func TestCheckpoint_CreatesSnapshot(t *testing.T) {
 	defer cleanup()
 
 	// Create test journal files
-	writeTestIndex(t, string(observer.indexPath), 5)
-	writeTestCursor(t, string(observer.cursorPath))
+	writeTestIndex(t, string(observer.IndexPath), 5)
+	writeTestCursor(t, string(observer.CursorPath))
 
 	// Create checkpoint
 	err := observer.Checkpoint("test-checkpoint")
@@ -107,8 +107,8 @@ func TestCheckpoint_SavesMetadata(t *testing.T) {
 	defer cleanup()
 
 	// Create test journal files
-	writeTestIndex(t, string(observer.indexPath), 3)
-	writeTestCursor(t, string(observer.cursorPath))
+	writeTestIndex(t, string(observer.IndexPath), 3)
+	writeTestCursor(t, string(observer.CursorPath))
 
 	// Create checkpoint
 	err := observer.Checkpoint("metadata-test")
@@ -144,8 +144,8 @@ func TestListCheckpoints_ReturnsAll(t *testing.T) {
 	defer cleanup()
 
 	// Create test journal files
-	writeTestIndex(t, string(observer.indexPath), 2)
-	writeTestCursor(t, string(observer.cursorPath))
+	writeTestIndex(t, string(observer.IndexPath), 2)
+	writeTestCursor(t, string(observer.CursorPath))
 
 	// Create multiple checkpoints with delays to ensure different timestamps
 	checkpoints := []string{"001-first", "002-second", "003-third"}
@@ -183,8 +183,8 @@ func TestRestoreCheckpoint_RollsBackIndex(t *testing.T) {
 	defer cleanup()
 
 	// Create initial state with 5 entries
-	writeTestIndex(t, string(observer.indexPath), 5)
-	writeTestCursor(t, string(observer.cursorPath))
+	writeTestIndex(t, string(observer.IndexPath), 5)
+	writeTestCursor(t, string(observer.CursorPath))
 
 	// Create checkpoint
 	if err := observer.Checkpoint("rollback-test"); err != nil {
@@ -192,10 +192,10 @@ func TestRestoreCheckpoint_RollsBackIndex(t *testing.T) {
 	}
 
 	// Modify index (simulate more entries added)
-	writeTestIndex(t, string(observer.indexPath), 10)
+	writeTestIndex(t, string(observer.IndexPath), 10)
 
 	// Verify index now has 10 entries
-	count, err := countJSONLLines(string(observer.indexPath))
+	count, err := countJSONLLines(string(observer.IndexPath))
 	if err != nil {
 		t.Fatalf("Failed to count lines: %v", err)
 	}
@@ -209,7 +209,7 @@ func TestRestoreCheckpoint_RollsBackIndex(t *testing.T) {
 	}
 
 	// Verify index rolled back to 5 entries
-	count, err = countJSONLLines(string(observer.indexPath))
+	count, err = countJSONLLines(string(observer.IndexPath))
 	if err != nil {
 		t.Fatalf("Failed to count lines after restore: %v", err)
 	}
@@ -225,7 +225,7 @@ func TestRestoreCheckpoint_RollsBackCursor(t *testing.T) {
 	// Create initial cursor
 	originalCursor := SessionCursor{SessionFile: "session-1.jsonl", Offset: 100}
 	data, _ := json.Marshal(originalCursor)
-	os.WriteFile(string(observer.cursorPath), data, 0644)
+	os.WriteFile(string(observer.CursorPath), data, 0644)
 
 	// Create checkpoint
 	if err := observer.Checkpoint("cursor-test"); err != nil {
@@ -235,7 +235,7 @@ func TestRestoreCheckpoint_RollsBackCursor(t *testing.T) {
 	// Modify cursor
 	modifiedCursor := SessionCursor{SessionFile: "session-2.jsonl", Offset: 500}
 	data, _ = json.Marshal(modifiedCursor)
-	os.WriteFile(string(observer.cursorPath), data, 0644)
+	os.WriteFile(string(observer.CursorPath), data, 0644)
 
 	// Restore checkpoint
 	if err := observer.RestoreCheckpoint("cursor-test"); err != nil {
@@ -243,7 +243,7 @@ func TestRestoreCheckpoint_RollsBackCursor(t *testing.T) {
 	}
 
 	// Verify cursor restored
-	data, err := os.ReadFile(string(observer.cursorPath))
+	data, err := os.ReadFile(string(observer.CursorPath))
 	if err != nil {
 		t.Fatalf("Failed to read cursor: %v", err)
 	}
@@ -263,8 +263,8 @@ func TestRestoreCheckpoint_PreservesCheckpoints(t *testing.T) {
 	defer cleanup()
 
 	// Create test journal files
-	writeTestIndex(t, string(observer.indexPath), 2)
-	writeTestCursor(t, string(observer.cursorPath))
+	writeTestIndex(t, string(observer.IndexPath), 2)
+	writeTestCursor(t, string(observer.CursorPath))
 
 	// Create checkpoint
 	if err := observer.Checkpoint("preserve-test"); err != nil {
@@ -293,8 +293,8 @@ func TestDeleteCheckpoint_RemovesFiles(t *testing.T) {
 	defer cleanup()
 
 	// Create test journal files
-	writeTestIndex(t, string(observer.indexPath), 2)
-	writeTestCursor(t, string(observer.cursorPath))
+	writeTestIndex(t, string(observer.IndexPath), 2)
+	writeTestCursor(t, string(observer.CursorPath))
 
 	// Create checkpoint
 	if err := observer.Checkpoint("delete-test"); err != nil {
@@ -326,8 +326,8 @@ func TestCheckpoint_DuplicateName(t *testing.T) {
 	defer cleanup()
 
 	// Create test journal files
-	writeTestIndex(t, string(observer.indexPath), 2)
-	writeTestCursor(t, string(observer.cursorPath))
+	writeTestIndex(t, string(observer.IndexPath), 2)
+	writeTestCursor(t, string(observer.CursorPath))
 
 	// Create first checkpoint
 	if err := observer.Checkpoint("duplicate"); err != nil {
@@ -364,8 +364,8 @@ func TestCheckpoint_CountsEntries(t *testing.T) {
 
 	// Create index with known number of entries
 	entryCount := 7
-	writeTestIndex(t, string(observer.indexPath), entryCount)
-	writeTestCursor(t, string(observer.cursorPath))
+	writeTestIndex(t, string(observer.IndexPath), entryCount)
+	writeTestCursor(t, string(observer.CursorPath))
 
 	// Create checkpoint
 	if err := observer.Checkpoint("count-test"); err != nil {
