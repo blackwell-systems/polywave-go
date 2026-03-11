@@ -2,6 +2,8 @@ package protocol
 
 import (
 	"fmt"
+	"os"
+	"strings"
 
 	"github.com/blackwell-systems/scout-and-wave-go/internal/git"
 )
@@ -17,9 +19,10 @@ type MergeStatus struct {
 
 // MergeAgentsResult represents the outcome of merging all agents in a wave.
 type MergeAgentsResult struct {
-	Wave    int           `json:"wave"`
-	Merges  []MergeStatus `json:"merges"`
-	Success bool          `json:"success"`
+	Wave      int           `json:"wave"`
+	Merges    []MergeStatus `json:"merges"`
+	Success   bool          `json:"success"`
+	NextState ProtocolState `json:"next_state,omitempty"` // State after successful merge
 }
 
 // MergeAgents merges all agent branches from a specified wave into the main branch.
@@ -102,5 +105,54 @@ func MergeAgents(manifestPath string, waveNum int, repoDir string) (*MergeAgents
 		result.Merges = append(result.Merges, status)
 	}
 
+	// All merges succeeded - update state to next wave or COMPLETE
+	nextState := determineNextState(manifest, waveNum)
+	if err := updateManifestState(manifestPath, nextState); err == nil {
+		result.NextState = nextState
+	}
+
 	return result, nil
+}
+
+// determineNextState calculates the next protocol state after a successful wave merge.
+func determineNextState(manifest *IMPLManifest, completedWave int) ProtocolState {
+	// If this was the final wave, mark complete
+	if completedWave >= len(manifest.Waves) {
+		return StateComplete
+	}
+
+	// Otherwise, next wave is pending
+	return StateWavePending // Orchestrator will update to WAVE{N}_PENDING format
+}
+
+// updateManifestState updates the state field in the IMPL manifest file.
+// Uses line-based editing to preserve formatting (same pattern as mark-complete).
+func updateManifestState(manifestPath string, newState ProtocolState) error {
+	content, err := os.ReadFile(manifestPath)
+	if err != nil {
+		return fmt.Errorf("failed to read manifest: %w", err)
+	}
+
+	lines := strings.Split(string(content), "\n")
+	stateUpdated := false
+
+	for i, line := range lines {
+		if strings.HasPrefix(line, "state:") {
+			lines[i] = fmt.Sprintf("state: \"%s\"", newState)
+			stateUpdated = true
+			break
+		}
+	}
+
+	if !stateUpdated {
+		return fmt.Errorf("state field not found in manifest")
+	}
+
+	// Write back
+	updated := strings.Join(lines, "\n")
+	if err := os.WriteFile(manifestPath, []byte(updated), 0644); err != nil {
+		return fmt.Errorf("failed to write manifest: %w", err)
+	}
+
+	return nil
 }
