@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"os"
 	"reflect"
 	"testing"
 
@@ -233,5 +234,39 @@ func TestPrioritizeAgents_WaveNotFound(t *testing.T) {
 
 	if !reflect.DeepEqual(result, expected) {
 		t.Errorf("Expected %v, got %v", expected, result)
+	}
+}
+
+func TestPrioritizeAgents_Disabled(t *testing.T) {
+	// Set environment variable to disable prioritization
+	os.Setenv("SAW_NO_PRIORITIZE", "1")
+	defer os.Unsetenv("SAW_NO_PRIORITIZE")
+
+	// A → B → C (linear chain)
+	// Without prioritization, should return declaration order: C, B, A
+	// With prioritization, would return: A, B, C
+	manifest := &protocol.IMPLManifest{
+		Waves: []protocol.Wave{
+			{
+				Number: 1,
+				Agents: []protocol.Agent{
+					{ID: "C", Files: []string{"c.go"}},
+					{ID: "B", Files: []string{"b.go"}},
+					{ID: "A", Files: []string{"a.go"}},
+				},
+			},
+		},
+		FileOwnership: []protocol.FileOwnership{
+			{File: "a.go", Agent: "A", Wave: 1},
+			{File: "b.go", Agent: "B", Wave: 1, DependsOn: []string{"A"}},
+			{File: "c.go", Agent: "C", Wave: 1, DependsOn: []string{"B"}},
+		},
+	}
+
+	result := PrioritizeAgents(manifest, 1)
+	expected := []string{"C", "B", "A"} // Declaration order, not prioritized
+
+	if !reflect.DeepEqual(result, expected) {
+		t.Errorf("Expected declaration order %v, got %v", expected, result)
 	}
 }

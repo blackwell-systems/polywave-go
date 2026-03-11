@@ -613,7 +613,7 @@ completion_reports:
             The orchestrator is now ready to use Agent A's scheduler once merged.
             No downstream dependencies or interface deviations.
     D:
-        status: partial
+        status: complete
         worktree: .claude/worktrees/wave1-agent-D
         branch: wave1-agent-D
         commit: baef3ab

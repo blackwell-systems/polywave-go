@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"os"
 	"sort"
 
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
@@ -16,6 +17,26 @@ import (
 // Tie-breaker: when two agents have equal critical path depth, the agent
 // with fewer files launches first (lower implementation risk).
 func PrioritizeAgents(manifest *protocol.IMPLManifest, waveNum int) []string {
+	// Check for prioritization disable flag (set by --no-prioritize CLI flag)
+	if os.Getenv("SAW_NO_PRIORITIZE") == "1" {
+		// Return agents in declaration order (no prioritization)
+		var targetWave *protocol.Wave
+		for i := range manifest.Waves {
+			if manifest.Waves[i].Number == waveNum {
+				targetWave = &manifest.Waves[i]
+				break
+			}
+		}
+		if targetWave == nil || len(targetWave.Agents) == 0 {
+			return []string{}
+		}
+		order := make([]string, len(targetWave.Agents))
+		for i, agent := range targetWave.Agents {
+			order[i] = agent.ID
+		}
+		return order
+	}
+
 	// Find the target wave
 	var targetWave *protocol.Wave
 	for i := range manifest.Waves {
