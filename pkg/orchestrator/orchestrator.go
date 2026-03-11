@@ -76,6 +76,41 @@ var waitForCompletionFunc = func(implDocPath, agentLetter string, timeout, pollI
 	return agent.WaitForCompletion(implDocPath, agentLetter, timeout, pollInterval)
 }
 
+// prioritizeAgentsFunc is replaced by pkg/engine/scheduler.go via SetPrioritizeAgentsFunc.
+// Default implementation returns agents in declaration order (no reordering).
+var prioritizeAgentsFunc = func(manifest *types.IMPLDoc, waveNum int) []string {
+	// Fallback: return agents in declaration order if scheduler not available yet
+	for _, wave := range manifest.Waves {
+		if wave.Number == waveNum {
+			order := make([]string, len(wave.Agents))
+			for i, a := range wave.Agents {
+				order[i] = a.Letter
+			}
+			return order
+		}
+	}
+	return []string{}
+}
+
+// SetPrioritizeAgentsFunc allows pkg/engine to inject the real scheduler implementation
+// without a direct import cycle.
+func SetPrioritizeAgentsFunc(f func(manifest *types.IMPLDoc, waveNum int) []string) {
+	prioritizeAgentsFunc = f
+}
+
+// slicesEqual compares two string slices for equality.
+func slicesEqual(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
+}
+
 // BackendConfig carries backend selection + credentials for newBackendFunc.
 type BackendConfig struct {
 	Kind      string // "api" | "cli" | "auto" | "openai" | "anthropic" | "bedrock" | "ollama" | "lmstudio"
@@ -387,8 +422,42 @@ func (o *Orchestrator) RunWave(waveNum int) error {
 	// Launch all agents concurrently and collect the first error.
 	eg, ctx := errgroup.WithContext(context.Background())
 
-	for _, spec := range wave.Agents {
-		agentSpec := spec // capture loop variable
+	// Prioritize agent launch order based on dependency graph critical path depth.
+	agentOrder := prioritizeAgentsFunc(o.implDoc, waveNum)
+
+	// Emit SSE event showing reordering (observability).
+	originalOrder := make([]string, len(wave.Agents))
+	for i, a := range wave.Agents {
+		originalOrder[i] = a.Letter
+	}
+	reordered := !slicesEqual(originalOrder, agentOrder)
+	o.publish(OrchestratorEvent{
+		Event: "agent_prioritized",
+		Data: AgentPrioritizedPayload{
+			Wave:             waveNum,
+			OriginalOrder:    originalOrder,
+			PrioritizedOrder: agentOrder,
+			Reordered:        reordered,
+			Reason:           "critical_path_scheduling",
+		},
+	})
+
+	// Launch agents in prioritized order instead of declaration order.
+	for _, agentID := range agentOrder {
+		// Find the agent spec by ID
+		var agentSpec types.AgentSpec
+		found := false
+		for _, a := range wave.Agents {
+			if a.Letter == agentID {
+				agentSpec = a
+				found = true
+				break
+			}
+		}
+		if !found {
+			return fmt.Errorf("orchestrator.RunWave: prioritized agent %s not found in wave %d", agentID, waveNum)
+		}
+
 		eg.Go(func() error {
 			runner := defaultRunner
 			// Per-agent model override: create a separate backend for this agent.
