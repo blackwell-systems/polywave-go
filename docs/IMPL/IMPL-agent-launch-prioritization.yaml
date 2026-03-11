@@ -644,4 +644,17 @@ completion_reports:
 
             Create Wave 2 agent or reassign scheduler.go to Agent D. The --no-prioritize flag
             currently has no effect because scheduler.go does not check SAW_NO_PRIORITIZE env var.
-state: SCOUT_PENDING
+
+            ## Post-Wave Fix (2026-03-10)
+
+            ✅ Fixed by directly modifying scheduler.go and scheduler_test.go
+            ✅ Added env var check at start of PrioritizeAgents()
+            ✅ Added TestPrioritizeAgents_Disabled test case
+            ✅ All tests pass
+            ✅ Committed: 0092f0b "fix: --no-prioritize flag now respects declaration order"
+
+            The --no-prioritize flag now works correctly. File ownership conflict resolved.
+
+# SAW:COMPLETE 2026-03-10
+
+state: COMPLETE
