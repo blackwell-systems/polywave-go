@@ -33,27 +33,6 @@ This is the engine/SDK roadmap. See also:
 
 ---
 
-### v0.31.0 — Agent Launch Prioritization
-
-**Why:** Agents launch in declaration order (static). Critical path scheduling reduces wave completion time by unblocking downstream agents faster.
-
-**Scope:**
-1. Before `orch.RunWave()`, compute agent dependency graph from E16 presence grammar
-2. Calculate critical path depth (longest path from agent to wave completion)
-3. Sort agents by: critical path depth (desc), file count (asc), declaration order (tie-breaker)
-4. Launch in sorted order (already async)
-5. Store launch order in manifest: `wave.agent_launch_order: ["A", "C", "B"]`
-
-**Implementation:**
-- `pkg/protocol/dep_graph.go` — add critical path calculation
-- `pkg/engine/scheduler.go` — new file for launch prioritization
-- `pkg/engine/runner.go` — call scheduler before launching agents
-
-**Effort:** 1-2 days
-**Value:** Reduces wave completion time by 10-20%
-
----
-
 ### v0.32.0 — Wave Timeout Enforcement
 
 **Why:** Hung agents block waves indefinitely. Automatic timeout + recovery prevents gridlock.
@@ -195,6 +174,4 @@ This is the engine/SDK roadmap. See also:
 
 **Now:** v0.30.0 — Verification Loop (E24 implementation)
 
-**Next:** v0.31.0 — Agent Launch Prioritization
-
-**Then:** v0.32.0 — Wave Timeout Enforcement
+**Next:** v0.32.0 — Wave Timeout Enforcement
