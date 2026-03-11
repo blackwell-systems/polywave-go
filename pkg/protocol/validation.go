@@ -396,6 +396,10 @@ func validateAgentIDs(m *IMPLManifest) []ValidationError {
 
 	// Check agent IDs in FileOwnership
 	for i, fo := range m.FileOwnership {
+		// Allow "Scaffold" for wave 0 entries (scaffold files created before Wave 1)
+		if fo.Agent == "Scaffold" && fo.Wave == 0 {
+			continue
+		}
 		if !agentIDRegex.MatchString(fo.Agent) {
 			errs = append(errs, ValidationError{
 				Code:    "DC04_INVALID_AGENT_ID",

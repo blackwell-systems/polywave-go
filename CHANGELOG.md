@@ -8,6 +8,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 | Version | Date | Headline |
 |---------|------|----------|
+| [0.26.0] | 2026-03-10 | Scaffold agent ID validation — validator accepts "Scaffold" for wave 0 file ownership entries |
 | [0.25.0] | 2026-03-10 | mark-complete preservation fix — text-based YAML editing preserves all 1600+ lines of IMPL doc structure instead of compacting to 50 lines |
 | [0.24.0] | 2026-03-10 | Cross-repo worktree support — `create-worktrees` resolves agent repos from FileOwnership table, creates worktrees in correct sibling directories |
 | [0.23.0] | 2026-03-10 | Hybrid IMPL doc support — `create-worktrees` parses markdown/YAML manifests via `ParseIMPLDoc()` instead of pure YAML `Load()` |
@@ -33,6 +34,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 | [0.3.0] | 2026-03-08 | Protocol audit fixes — P0: failure_type parsing, multi-gen agent IDs; P1: E22 2-pass scaffold build, cross-repo Repo column; P2: repo field in completion reports |
 | [0.2.0] | 2026-03-08 | Engine protocol parity — E17–E23 implemented (context memory, failure routing, stub scan, quality gates, scaffold build verify, per-agent context extraction) |
 | [0.1.0] | 2026-03-08 | Initial engine extraction — parser, orchestrator, agent runner, git, worktree management |
+
+## [0.26.0] - 2026-03-10
+
+### Fixed
+
+- **Scaffold agent ID validation** (`pkg/protocol/validation.go`) — `validateAgentIDs` now accepts `"Scaffold"` as a special agent ID for wave 0 entries in the file ownership table. Previously rejected with `DC04_INVALID_AGENT_ID` because it didn't match the protocol pattern `^[A-Z][2-9]?$` (single uppercase letter, optionally followed by 2-9). Scaffold files are created before Wave 1 by the Scaffold Agent and need to appear in the file ownership table for complete tracking, but aren't owned by any Wave agent (A, B, C, etc.). The validator now special-cases `agent: "Scaffold"` with `wave: 0` to allow this pattern while maintaining strict validation for all Wave agents.
+
+---
 
 ## [0.25.0] - 2026-03-10
 
