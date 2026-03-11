@@ -8,6 +8,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 | Version | Date | Headline |
 |---------|------|----------|
+| [0.28.0] | 2026-03-10 | Multi-repo wave support — merge-agents and verify-commits auto-detect cross-repo waves from file ownership table |
 | [0.27.0] | 2026-03-10 | Tool Journaling Wave 1 — Core observer, context generator, checkpoint system, archive policy (4 agents, 53 tests) |
 | [0.26.0] | 2026-03-10 | Scaffold agent ID validation — validator accepts "Scaffold" for wave 0 file ownership entries |
 | [0.25.0] | 2026-03-10 | mark-complete preservation fix — text-based YAML editing preserves all 1600+ lines of IMPL doc structure instead of compacting to 50 lines |
@@ -35,6 +36,20 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 | [0.3.0] | 2026-03-08 | Protocol audit fixes — P0: failure_type parsing, multi-gen agent IDs; P1: E22 2-pass scaffold build, cross-repo Repo column; P2: repo field in completion reports |
 | [0.2.0] | 2026-03-08 | Engine protocol parity — E17–E23 implemented (context memory, failure routing, stub scan, quality gates, scaffold build verify, per-agent context extraction) |
 | [0.1.0] | 2026-03-08 | Initial engine extraction — parser, orchestrator, agent runner, git, worktree management |
+## [0.28.0] - 2026-03-10
+
+### Added
+
+- **Multi-repo wave support** — `MergeAgents` and `VerifyCommits` now automatically detect cross-repo waves by reading `file_ownership.repo` and `completion_reports.repo` fields. Single-repo waves use optimized path; multi-repo waves group agents by repository and execute git operations per-repo. Fixes false reporting in Wave 2 execution where Agent G (scout-and-wave-web) was incorrectly reported as merged/verified in scout-and-wave-go.
+- **`mergeAgentsMultiRepo()`** (`pkg/protocol/merge_agents.go`) — groups agents by repository, resolves relative paths from manifest directory, performs git merge operations in each repo separately. Error messages include repo context for debugging.
+- **Repository resolution logic** — checks `FileOwnership.Repo` first (wave-specific files), falls back to `CompletionReport.Repo` (agent-level override), defaults to CLI-provided `--repo-dir` when both empty.
+- **`VerifyCommits` repo-awareness** (`pkg/protocol/commit_verify.go`) — each agent's commit count checked in its correct repository using per-repo base commit (HEAD). Prevents false "no commits" reports when agent worked in different repo than CLI default.
+
+### Changed
+
+- **`MergeAgents` function signature unchanged** — backward compatible; single `--repo-dir` parameter still accepted, used as default for agents without explicit repo specification.
+
+---
 
 ## [0.27.0] - 2026-03-10
 
