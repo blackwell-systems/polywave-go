@@ -30,6 +30,8 @@ func main() {
 		newUpdateAgentPromptCmd(),
 		newSolveCmd(),
 		newDebugJournalCmd(),
+		newJournalInitCmd(),
+		newJournalContextCmd(),
 	)
 	if err := rootCmd.Execute(); err != nil {
 		fmt.Fprintln(os.Stderr, err)
