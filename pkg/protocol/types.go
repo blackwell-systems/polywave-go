@@ -51,8 +51,9 @@ type FileOwnership struct {
 // Wave represents a concurrent execution phase with multiple agents.
 // Agents in the same wave run in parallel; waves execute sequentially.
 type Wave struct {
-	Number int     `yaml:"number" json:"number"`
-	Agents []Agent `yaml:"agents" json:"agents"`
+	Number           int      `yaml:"number" json:"number"`
+	Agents           []Agent  `yaml:"agents" json:"agents"`
+	AgentLaunchOrder []string `yaml:"agent_launch_order,omitempty" json:"agent_launch_order,omitempty"`
 }
 
 // Agent represents a single concurrent task within a wave.
