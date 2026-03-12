@@ -29,13 +29,41 @@ func executeMergeWave(o *Orchestrator, waveNum int) error {
 		return fmt.Errorf("executeMergeWave: wave %d not found in IMPL doc", waveNum)
 	}
 
-	// Step 2: Parse completion reports; abort if any agent is partial or blocked.
+	// Step 2: Load manifest and check completion reports; abort if any agent is partial or blocked.
+	manifest, err := protocol.Load(o.implDocPath)
+	if err != nil {
+		return fmt.Errorf("executeMergeWave: loading manifest: %w", err)
+	}
+
 	reports := make(map[string]*types.CompletionReport, len(wave.Agents))
 	for _, agent := range wave.Agents {
-		report, err := protocol.ParseCompletionReport(o.implDocPath, agent.Letter)
-		if err != nil {
-			return fmt.Errorf("executeMergeWave: parsing completion report for agent %s: %w", agent.Letter, err)
+		protoReport, ok := manifest.CompletionReports[agent.Letter]
+		if !ok {
+			return fmt.Errorf("executeMergeWave: no completion report for agent %s", agent.Letter)
 		}
+
+		// Convert protocol.CompletionReport to types.CompletionReport
+		var status types.CompletionStatus
+		switch protoReport.Status {
+		case "complete":
+			status = types.StatusComplete
+		case "partial":
+			status = types.StatusPartial
+		case "blocked":
+			status = types.StatusBlocked
+		default:
+			status = types.StatusPartial
+		}
+
+		report := &types.CompletionReport{
+			Status:       status,
+			Worktree:     protoReport.Worktree,
+			Branch:       protoReport.Branch,
+			Commit:       protoReport.Commit,
+			FilesChanged: protoReport.FilesChanged,
+			FilesCreated: protoReport.FilesCreated,
+		}
+
 		if report.Status == types.StatusPartial || report.Status == types.StatusBlocked {
 			return fmt.Errorf("executeMergeWave: agent %s has status %q — merge aborted", agent.Letter, report.Status)
 		}

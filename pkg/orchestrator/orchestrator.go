@@ -7,7 +7,7 @@ package orchestrator
 
 import (
 	"context"
-	"errors"
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -28,7 +28,7 @@ import (
 )
 
 func init() {
-	SetParseIMPLDocFunc(protocol.ParseIMPLDoc)
+	// ParseIMPLDoc removed in markdown system cleanup - now use protocol.Load() directly
 	SetValidateInvariantsFunc(protocol.ValidateInvariants)
 }
 
@@ -72,7 +72,7 @@ var worktreeCreatorFunc = func(wm *worktree.Manager, waveNum int, agentLetter st
 }
 
 // waitForCompletionFunc is a seam for tests: wraps agent.WaitForCompletion.
-var waitForCompletionFunc = func(implDocPath, agentLetter string, timeout, pollInterval time.Duration) (*types.CompletionReport, error) {
+var waitForCompletionFunc = func(implDocPath, agentLetter string, timeout, pollInterval time.Duration) (*protocol.CompletionReport, error) {
 	return agent.WaitForCompletion(implDocPath, agentLetter, timeout, pollInterval)
 }
 
@@ -546,11 +546,20 @@ func (o *Orchestrator) launchAgent(
 	})
 
 	// E23: Construct per-agent context payload instead of passing full IMPL doc prompt.
-	if payload, err := protocol.ExtractAgentContext(o.implDocPath, agentSpec.Letter); err == nil {
-		agentSpec.Prompt = protocol.FormatAgentContextPayload(payload)
+	manifest, err := protocol.Load(o.implDocPath)
+	if err == nil {
+		if contextPayload, extractErr := protocol.ExtractAgentContextFromManifest(manifest, agentSpec.Letter); extractErr == nil {
+			if jsonBytes, marshalErr := json.Marshal(contextPayload); marshalErr == nil {
+				agentSpec.Prompt = string(jsonBytes)
+			} else {
+				fmt.Fprintf(os.Stderr, "orchestrator: failed to marshal E23 context: %v\n", marshalErr)
+			}
+		} else {
+			// Fallback: use existing prompt from agentSpec (already set from IMPL doc parse).
+			fmt.Fprintf(os.Stderr, "orchestrator: E23 context extraction failed for agent %s: %v (falling back to full prompt)\n", agentSpec.Letter, extractErr)
+		}
 	} else {
-		// Fallback: use existing prompt from agentSpec (already set from IMPL doc parse).
-		fmt.Fprintf(os.Stderr, "orchestrator: E23 context extraction failed for agent %s: %v (falling back to full prompt)\n", agentSpec.Letter, err)
+		fmt.Fprintf(os.Stderr, "orchestrator: failed to load manifest for E23 extraction: %v\n", err)
 	}
 
 	// b. Execute the agent via the backend, streaming output chunks as SSE events.
@@ -631,15 +640,29 @@ func (o *Orchestrator) launchAgent(
 
 	// E19: If agent reported partial or blocked, route the failure and publish an event.
 	// This does NOT relaunch the agent — that is a future follow-on task.
-	if report != nil && (report.Status == types.StatusPartial || report.Status == types.StatusBlocked) {
-		action := RouteFailure(report.FailureType)
+	if report != nil && (report.Status == "partial" || report.Status == "blocked") {
+		var failureType types.FailureType
+		switch report.FailureType {
+		case "transient":
+			failureType = types.FailureTypeTransient
+		case "fixable":
+			failureType = types.FailureTypeFixable
+		case "needs_replan":
+			failureType = types.FailureTypeNeedsReplan
+		case "escalate":
+			failureType = types.FailureTypeEscalate
+		default:
+			failureType = types.FailureTypeEscalate
+		}
+
+		action := RouteFailure(failureType)
 		o.publish(OrchestratorEvent{
 			Event: "agent_blocked",
 			Data: AgentBlockedPayload{
 				Agent:       agentSpec.Letter,
 				Wave:        waveNum,
-				Status:      string(report.Status),
-				FailureType: string(report.FailureType),
+				Status:      report.Status,
+				FailureType: report.FailureType,
 				Action:      action,
 			},
 		})
@@ -731,19 +754,20 @@ func (o *Orchestrator) UpdateIMPLStatus(waveNum int) error {
 		return nil
 	}
 
-	// 2. For each agent in the wave, call protocol.ParseCompletionReport.
-	//    If ErrReportNotFound or status != StatusComplete, skip.
+	// 2. Load manifest and check completion reports.
+	//    If report not found or status != StatusComplete, skip.
+	manifest, err := protocol.Load(o.implDocPath)
+	if err != nil {
+		return nil // Cannot determine completed agents without manifest
+	}
+
 	var completedLetters []string
 	for _, agentSpec := range wave.Agents {
-		report, err := protocol.ParseCompletionReport(o.implDocPath, agentSpec.Letter)
-		if err != nil {
-			if errors.Is(err, protocol.ErrReportNotFound) {
-				continue
-			}
-			// Non-fatal: skip agents whose reports cannot be parsed.
-			continue
+		report, ok := manifest.CompletionReports[agentSpec.Letter]
+		if !ok {
+			continue // Report not found
 		}
-		if report.Status != types.StatusComplete {
+		if report.Status != "complete" {
 			continue
 		}
 		completedLetters = append(completedLetters, agentSpec.Letter)

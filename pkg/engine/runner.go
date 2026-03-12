@@ -3,7 +3,6 @@ package engine
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -179,13 +178,32 @@ func StartWave(ctx context.Context, opts RunWaveOpts, onEvent func(Event)) error
 
 		// E20: Post-wave stub scan (informational only).
 		if doc := orch.IMPLDoc(); doc != nil {
-			stubReports := make(map[string]*types.CompletionReport)
-			for _, ag := range wave.Agents {
-				if r, err := protocol.ParseCompletionReport(opts.IMPLPath, ag.Letter); err == nil {
-					stubReports[ag.Letter] = r
+			manifest, err := protocol.Load(opts.IMPLPath)
+			if err == nil {
+				stubReports := make(map[string]*types.CompletionReport)
+				for _, ag := range wave.Agents {
+					if protoReport, ok := manifest.CompletionReports[ag.Letter]; ok {
+						// Convert protocol.CompletionReport to types.CompletionReport
+						var status types.CompletionStatus
+						switch protoReport.Status {
+						case "complete":
+							status = types.StatusComplete
+						case "partial":
+							status = types.StatusPartial
+						case "blocked":
+							status = types.StatusBlocked
+						default:
+							status = types.StatusPartial
+						}
+						stubReports[ag.Letter] = &types.CompletionReport{
+							Status:       status,
+							FilesChanged: protoReport.FilesChanged,
+							FilesCreated: protoReport.FilesCreated,
+						}
+					}
 				}
+				_ = orchestrator.RunStubScan(opts.IMPLPath, waveNum, stubReports, "")
 			}
-			_ = orchestrator.RunStubScan(opts.IMPLPath, waveNum, stubReports, "")
 		}
 
 		// E21: Post-wave quality gates before merge.
@@ -257,13 +275,13 @@ func RunScaffold(ctx context.Context, implPath, repoPath, sawRepoPath string, on
 		onEvent(Event{Event: event, Data: data})
 	}
 
-	// Parse IMPL doc to get scaffold files.
-	doc, err := protocol.ParseIMPLDoc(implPath)
+	// Load YAML manifest to get scaffold files.
+	manifest, err := protocol.Load(implPath)
 	if err != nil {
-		return fmt.Errorf("engine.RunScaffold: parse IMPL doc: %w", err)
+		return fmt.Errorf("engine.RunScaffold: load manifest: %w", err)
 	}
 
-	scaffolds := doc.ScaffoldsDetail
+	scaffolds := manifest.Scaffolds
 	if len(scaffolds) == 0 {
 		return nil
 	}
@@ -528,22 +546,94 @@ func RunVerification(ctx context.Context, opts RunVerificationOpts) error {
 	return orch.RunVerification(testCmd)
 }
 
-// ParseIMPLDoc parses an IMPL doc and returns the structured representation.
-// Delegates to pkg/protocol.ParseIMPLDoc.
+// ParseIMPLDoc loads a YAML manifest and converts it to types.IMPLDoc.
+// This is a compatibility shim - new code should use protocol.Load() directly.
 func ParseIMPLDoc(path string) (*types.IMPLDoc, error) {
-	return protocol.ParseIMPLDoc(path)
+	manifest, err := protocol.Load(path)
+	if err != nil {
+		return nil, err
+	}
+
+	// Convert protocol.IMPLManifest to types.IMPLDoc
+	doc := &types.IMPLDoc{
+		FeatureName:     manifest.Title,
+		Status:          "SUITABLE", // Assume suitable if manifest loaded
+		TestCommand:     manifest.TestCommand,
+		Waves:           make([]types.Wave, len(manifest.Waves)),
+		FileOwnership:   make(map[string]types.FileOwnershipInfo),
+		ScaffoldsDetail: make([]types.ScaffoldFile, len(manifest.Scaffolds)),
+	}
+
+	// Convert scaffolds
+	for i, s := range manifest.Scaffolds {
+		doc.ScaffoldsDetail[i] = types.ScaffoldFile{
+			FilePath:   s.FilePath,
+			Contents:   s.Contents,
+			ImportPath: s.ImportPath,
+		}
+	}
+
+	// Convert waves
+	for i, w := range manifest.Waves {
+		agents := make([]types.AgentSpec, len(w.Agents))
+		for j, a := range w.Agents {
+			agents[j] = types.AgentSpec{
+				Letter: a.ID,
+				Prompt: a.Task,
+			}
+		}
+		doc.Waves[i] = types.Wave{
+			Number: w.Number,
+			Agents: agents,
+		}
+	}
+
+	// Convert file ownership
+	for _, fo := range manifest.FileOwnership {
+		doc.FileOwnership[fo.File] = types.FileOwnershipInfo{
+			Agent:  fo.Agent,
+			Wave:   fo.Wave,
+			Action: fo.Action,
+		}
+	}
+
+	return doc, nil
 }
 
-// ParseCompletionReport parses an agent's completion report from the IMPL doc.
-// Delegates to pkg/protocol.ParseCompletionReport.
-// Maps protocol.ErrReportNotFound to engine.ErrReportNotFound so callers can
-// use errors.Is(err, engine.ErrReportNotFound) without importing pkg/protocol.
+// ParseCompletionReport reads a completion report from the manifest.
+// Maps protocol.ErrAgentNotFound to engine.ErrReportNotFound for compatibility.
 func ParseCompletionReport(implDocPath, agentLetter string) (*types.CompletionReport, error) {
-	report, err := protocol.ParseCompletionReport(implDocPath, agentLetter)
-	if errors.Is(err, protocol.ErrReportNotFound) {
+	manifest, err := protocol.Load(implDocPath)
+	if err != nil {
+		return nil, err
+	}
+
+	protoReport, ok := manifest.CompletionReports[agentLetter]
+	if !ok {
 		return nil, ErrReportNotFound
 	}
-	return report, err
+
+	// Convert protocol.CompletionReport to types.CompletionReport
+	var status types.CompletionStatus
+	switch protoReport.Status {
+	case "complete":
+		status = types.StatusComplete
+	case "partial":
+		status = types.StatusPartial
+	case "blocked":
+		status = types.StatusBlocked
+	default:
+		status = types.StatusPartial
+	}
+
+	return &types.CompletionReport{
+		Status:       status,
+		Worktree:     protoReport.Worktree,
+		Branch:       protoReport.Branch,
+		Commit:       protoReport.Commit,
+		FilesChanged: protoReport.FilesChanged,
+		FilesCreated: protoReport.FilesCreated,
+	}, nil
 }
 
 // UpdateIMPLStatus ticks status checkboxes for completed agents.
