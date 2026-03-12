@@ -113,7 +113,7 @@ func resolveRustImport(repoRoot, currentFile, importPath string, allFiles []stri
 		targetPath = filepath.Join(srcDir, strings.Join(moduleParts, string(filepath.Separator))+".rs")
 
 		// If not found, try src/module/mod.rs
-		if !fileExists(targetPath, allFiles) {
+		if !containsFile(targetPath, allFiles) {
 			targetPath = filepath.Join(srcDir, strings.Join(moduleParts, string(filepath.Separator)), "mod.rs")
 		}
 
@@ -125,7 +125,7 @@ func resolveRustImport(repoRoot, currentFile, importPath string, allFiles []stri
 		parentDir := filepath.Dir(currentDir)
 		targetPath = filepath.Join(parentDir, strings.Join(moduleParts, string(filepath.Separator))+".rs")
 
-		if !fileExists(targetPath, allFiles) {
+		if !containsFile(targetPath, allFiles) {
 			targetPath = filepath.Join(parentDir, strings.Join(moduleParts, string(filepath.Separator)), "mod.rs")
 		}
 
@@ -136,7 +136,7 @@ func resolveRustImport(repoRoot, currentFile, importPath string, allFiles []stri
 
 		targetPath = filepath.Join(currentDir, strings.Join(moduleParts, string(filepath.Separator))+".rs")
 
-		if !fileExists(targetPath, allFiles) {
+		if !containsFile(targetPath, allFiles) {
 			targetPath = filepath.Join(currentDir, strings.Join(moduleParts, string(filepath.Separator)), "mod.rs")
 		}
 
@@ -145,15 +145,15 @@ func resolveRustImport(repoRoot, currentFile, importPath string, allFiles []stri
 	}
 
 	// Check if the resolved path is in our files list
-	if fileExists(targetPath, allFiles) {
+	if containsFile(targetPath, allFiles) {
 		return targetPath, nil
 	}
 
 	return "", fmt.Errorf("resolved import path %s not found in files list", targetPath)
 }
 
-// fileExists checks if a file path exists in the given list of files.
-func fileExists(path string, files []string) bool {
+// containsFile checks if a file path exists in the given list of files.
+func containsFile(path string, files []string) bool {
 	for _, f := range files {
 		if f == path {
 			return true

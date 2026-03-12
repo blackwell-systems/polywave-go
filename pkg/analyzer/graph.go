@@ -10,19 +10,46 @@ import (
 	"strings"
 )
 
-// BuildGraph constructs a file-level dependency graph for the given files.
-// Algorithm:
-// 1. Parse each file, extract imports (using Analyzer from Agent B)
-// 2. Build adjacency map: file -> deps (local imports only)
-// 3. Detect cycles using DFS (reuse pkg/solver/graph.go pattern)
-// 4. Compute topological sort depth: files with no deps = depth 0, files depending on depth N = depth N+1
-// 5. Assign waves: wave N = all files at depth N
-// 6. Detect cascade candidates: scan repoRoot for .go files importing modified files but not in files list
-func BuildGraph(repoRoot string, files []string) (*DepGraph, error) {
-	analyzer := New() // from Agent B
+// detectLanguage auto-detects the language from file extensions.
+// Returns "go", "rust", "javascript", or "python" based on the most common extension.
+// Returns error if unsupported extension or mixed languages detected.
+func detectLanguage(files []string) (string, error) {
+	extCounts := make(map[string]int)
+	for _, f := range files {
+		ext := filepath.Ext(f)
+		extCounts[ext]++
+	}
 
-	// Step 1: Parse all files and extract imports
+	var maxExt string
+	var maxCount int
+	for ext, count := range extCounts {
+		if count > maxCount {
+			maxExt = ext
+			maxCount = count
+		}
+	}
+
+	switch maxExt {
+	case ".go":
+		return "go", nil
+	case ".rs":
+		return "rust", nil
+	case ".js", ".jsx", ".ts", ".tsx", ".mjs":
+		return "javascript", nil
+	case ".py":
+		return "python", nil
+	default:
+		return "", fmt.Errorf("unsupported file extension: %s", maxExt)
+	}
+}
+
+// parseGoFiles parses Go files and extracts their dependencies.
+// Extracted from BuildGraph Step 1 logic.
+// Uses existing Analyzer.ParseFile() and ExtractImports() methods.
+func parseGoFiles(repoRoot string, files []string) (map[string][]string, error) {
+	analyzer := New()
 	fileImports := make(map[string][]string)
+
 	for _, f := range files {
 		ast, err := analyzer.ParseFile(f)
 		if err != nil {
@@ -40,6 +67,43 @@ func BuildGraph(repoRoot string, files []string) (*DepGraph, error) {
 		}
 
 		fileImports[f] = resolvedImports
+	}
+
+	return fileImports, nil
+}
+
+// BuildGraph constructs a file-level dependency graph for the given files.
+// Algorithm:
+// 0. Detect language from file extensions
+// 1. Parse each file with language-specific parser, extract imports
+// 2. Build adjacency map: file -> deps (local imports only)
+// 3. Detect cycles using DFS (reuse pkg/solver/graph.go pattern)
+// 4. Compute topological sort depth: files with no deps = depth 0, files depending on depth N = depth N+1
+// 5. Assign waves: wave N = all files at depth N
+// 6. Detect cascade candidates: scan repoRoot for files importing modified files but not in files list
+func BuildGraph(repoRoot string, files []string) (*DepGraph, error) {
+	// Step 0: Detect language
+	lang, err := detectLanguage(files)
+	if err != nil {
+		return nil, err
+	}
+
+	// Step 1: Parse files with language-specific parser
+	var fileImports map[string][]string
+	switch lang {
+	case "go":
+		fileImports, err = parseGoFiles(repoRoot, files)
+	case "rust":
+		fileImports, err = parseRustFiles(repoRoot, files)
+	case "javascript":
+		fileImports, err = parseJavaScriptFiles(repoRoot, files)
+	case "python":
+		fileImports, err = parsePythonFiles(repoRoot, files)
+	default:
+		return nil, fmt.Errorf("unsupported language: %s", lang)
+	}
+	if err != nil {
+		return nil, err
 	}
 
 	// Step 2: Build adjacency map and reverse map

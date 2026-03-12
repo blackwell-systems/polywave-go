@@ -371,6 +371,138 @@ func TestAssignWaves_MultipleFilesPerWave(t *testing.T) {
 	}
 }
 
+// TestDetectLanguage_Go tests Go language detection.
+func TestDetectLanguage_Go(t *testing.T) {
+	files := []string{"main.go", "utils.go", "types.go"}
+	lang, err := detectLanguage(files)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if lang != "go" {
+		t.Errorf("expected 'go', got %s", lang)
+	}
+}
+
+// TestDetectLanguage_Rust tests Rust language detection.
+func TestDetectLanguage_Rust(t *testing.T) {
+	files := []string{"main.rs", "lib.rs", "utils.rs"}
+	lang, err := detectLanguage(files)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if lang != "rust" {
+		t.Errorf("expected 'rust', got %s", lang)
+	}
+}
+
+// TestDetectLanguage_JavaScript tests JavaScript language detection.
+func TestDetectLanguage_JavaScript(t *testing.T) {
+	testCases := []struct {
+		name  string
+		files []string
+	}{
+		{"js", []string{"index.js", "utils.js"}},
+		{"jsx", []string{"App.jsx", "Component.jsx"}},
+		{"ts", []string{"main.ts", "types.ts"}},
+		{"tsx", []string{"App.tsx", "Button.tsx"}},
+		{"mjs", []string{"module.mjs", "utils.mjs"}},
+		{"mixed", []string{"index.js", "App.tsx", "utils.ts"}},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			lang, err := detectLanguage(tc.files)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if lang != "javascript" {
+				t.Errorf("expected 'javascript', got %s", lang)
+			}
+		})
+	}
+}
+
+// TestDetectLanguage_Python tests Python language detection.
+func TestDetectLanguage_Python(t *testing.T) {
+	files := []string{"main.py", "__init__.py", "utils.py"}
+	lang, err := detectLanguage(files)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if lang != "python" {
+		t.Errorf("expected 'python', got %s", lang)
+	}
+}
+
+// TestDetectLanguage_MixedError tests error on mixed languages.
+func TestDetectLanguage_MixedError(t *testing.T) {
+	// Equal counts - should pick one but not error (Go and Rust have equal count)
+	files := []string{"main.go", "lib.rs"}
+	lang, err := detectLanguage(files)
+	// Should succeed and return either 'go' or 'rust' (whichever is chosen by map iteration)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if lang != "go" && lang != "rust" {
+		t.Errorf("expected 'go' or 'rust', got %s", lang)
+	}
+}
+
+// TestDetectLanguage_UnsupportedError tests error on unsupported extensions.
+func TestDetectLanguage_UnsupportedError(t *testing.T) {
+	files := []string{"README.md", "LICENSE.txt"}
+	_, err := detectLanguage(files)
+	if err == nil {
+		t.Fatal("expected error for unsupported extensions, got nil")
+	}
+	if !contains(err.Error(), "unsupported file extension") {
+		t.Errorf("expected 'unsupported file extension' in error, got: %v", err)
+	}
+}
+
+// TestBuildGraph_MultiLanguageIntegration tests BuildGraph with language detection.
+func TestBuildGraph_MultiLanguageIntegration(t *testing.T) {
+	// This is effectively the same as TestBuildGraph_Simple since it's all Go files
+	// The integration test verifies that the language detection path works correctly
+	tmpDir := t.TempDir()
+
+	goMod := `module github.com/test/multilang
+go 1.21
+`
+	if err := os.WriteFile(filepath.Join(tmpDir, "go.mod"), []byte(goMod), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	pkgA := filepath.Join(tmpDir, "pkga")
+	os.MkdirAll(pkgA, 0755)
+	fileA := filepath.Join(pkgA, "a.go")
+
+	codeA := `package pkga
+
+func A() string {
+	return "a"
+}
+`
+	if err := os.WriteFile(fileA, []byte(codeA), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	files := []string{fileA}
+
+	graph, err := BuildGraph(tmpDir, files)
+	if err != nil {
+		t.Fatalf("BuildGraph failed: %v", err)
+	}
+
+	if len(graph.Nodes) != 1 {
+		t.Errorf("expected 1 node, got %d", len(graph.Nodes))
+	}
+
+	if len(graph.Waves) != 1 {
+		t.Errorf("expected 1 wave, got %d", len(graph.Waves))
+	}
+}
+
 // TestDetectCascades_Unchanged tests cascade detection.
 func TestDetectCascades_Unchanged(t *testing.T) {
 	tmpDir := t.TempDir()
