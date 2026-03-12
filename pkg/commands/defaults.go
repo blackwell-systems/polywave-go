@@ -6,10 +6,14 @@ import (
 	"path/filepath"
 )
 
-// LanguageDefaults detects the project's toolchain from marker files
+// LanguageDefaults is a variable that holds the language defaults implementation.
+// It can be reassigned for testing purposes.
+var LanguageDefaults = languageDefaultsImpl
+
+// languageDefaultsImpl detects the project's toolchain from marker files
 // and returns standard commands for that language. This is the lowest-priority
 // fallback (priority 0) used when no CI or build system configs are found.
-func LanguageDefaults(repoRoot string) (*CommandSet, error) {
+func languageDefaultsImpl(repoRoot string) (*CommandSet, error) {
 	// Check for Go
 	if _, err := os.Stat(filepath.Join(repoRoot, "go.mod")); err == nil {
 		return &CommandSet{
