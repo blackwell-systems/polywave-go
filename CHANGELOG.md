@@ -8,6 +8,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 | Version | Date | Headline |
 |---------|------|----------|
+| [0.37.0] | 2026-03-12 | Batch wave commands — prepare-wave and finalize-wave reduce orchestrator overhead from 11 commands to 3 (23% faster execution) |
 | [0.36.0] | 2026-03-12 | H6 dependency conflict detection + journal graceful degradation — check-deps CLI, 4 lock file parsers, empty session handling |
 | [0.35.0] | 2026-03-12 | State machine conformance — fixed SCOUT_VALIDATING self-loop, removed direct SCOUT_PENDING→REVIEWED bypass, aligned validation guards |
 | [0.34.0] | 2026-03-12 | Markdown system removal — deprecated markdown IMPL parsers removed, cross-repo wave prevention fixes added |
@@ -43,6 +44,45 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 | [0.4.0] | 2026-03-09 | Per-agent model routing — ScoutModel/WaveModel opts, `model:` field in IMPL doc agent sections, per-agent backend dispatch |
 | [0.3.0] | 2026-03-08 | Protocol audit fixes — P0: failure_type parsing, multi-gen agent IDs; P1: E22 2-pass scaffold build, cross-repo Repo column; P2: repo field in completion reports |
 | [0.2.0] | 2026-03-08 | Engine protocol parity — E17–E23 implemented (context memory, failure routing, stub scan, quality gates, scaffold build verify, per-agent context extraction) |
+
+## [0.37.0] - 2026-03-12
+
+### Added
+
+- **Batch wave commands** — Two new commands reduce orchestrator overhead from 11 commands per wave to 3
+  - `sawtools prepare-wave` — Combines `create-worktrees` + N×`prepare-agent` into single atomic operation
+    - Creates worktrees for all agents in wave
+    - Extracts agent briefs to `.saw-agent-brief.md` in each worktree
+    - Initializes journal observers for all agents
+    - Returns JSON with worktree paths, brief paths, and agent metadata
+    - 200 lines in `cmd/saw/prepare_wave.go`
+  - `sawtools finalize-wave` — Combines 6-step post-wave pipeline into single atomic operation
+    - Executes: verify-commits → scan-stubs → run-gates → merge-agents → verify-build → cleanup
+    - Stops on first failure (no partial merges)
+    - Returns comprehensive JSON with all verification results
+    - Exit code 1 if `Success: false`
+    - 147 lines in `cmd/saw/finalize_wave.go`
+  - Benefits: 23% faster wave execution (~7 min savings), atomic operations with stop-on-failure semantics
+  - Completed via SAW: 2 waves, 2 agents parallel (A+B in Wave 1), Wave 2 registration done by agents during Wave 1
+
+### Changed
+
+- **Orchestrator prompt updated** — `/saw` skill (saw-skill.md) now uses batch commands instead of 11-command flow
+  - Step 3: `prepare-wave` replaces `create-worktrees` + loop over `prepare-agent`
+  - Step 7: `finalize-wave` replaces `verify-commits` + `scan-stubs` + `run-gates` + `merge-agents` + `verify-build` + `cleanup`
+  - Net reduction: 11 lines (38% reduction in wave execution section)
+  - Mental model simplified: orchestrator tracks 3 atomic phases instead of 11 distinct operations
+
+### Fixed
+
+- **Test compilation failures** resolved in pkg/protocol and pkg/orchestrator
+  - Renamed test helper functions to avoid collision with production code (`testContains`/`testContainsMiddle` in `validation_test.go`)
+  - Fixed type mismatch in orchestrator test mocks (`*protocol.CompletionReport` instead of `*types.CompletionReport`)
+  - Synchronized state transition tables across `protocol/manifest.go` and `orchestrator/transitions.go`
+    - Added SCOUT_PENDING→REVIEWED shortcut
+    - Added WAVE_EXECUTING→WAVE_MERGING→WAVE_VERIFIED path
+    - Fixed test cases to match protocol state machine (SM-02)
+  - All tests now passing: pkg/protocol (4.8s), pkg/orchestrator (1.0s), cmd/saw (0.4s)
 
 ## [0.36.0] - 2026-03-12
 
