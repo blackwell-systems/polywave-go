@@ -1,0 +1,199 @@
+package main
+
+import (
+	"encoding/json"
+	"fmt"
+	"os"
+	"path/filepath"
+
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/journal"
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
+	"github.com/spf13/cobra"
+)
+
+// PrepareWaveResult combines worktree creation and per-agent preparation results
+type PrepareWaveResult struct {
+	Wave        int              `json:"wave"`
+	Worktrees   []protocol.WorktreeInfo `json:"worktrees"`
+	AgentBriefs []AgentBriefInfo `json:"agent_briefs"`
+}
+
+// AgentBriefInfo contains metadata about a prepared agent brief
+type AgentBriefInfo struct {
+	Agent       string `json:"agent"`
+	BriefPath   string `json:"brief_path"`
+	BriefLength int    `json:"brief_length"`
+	JournalDir  string `json:"journal_dir"`
+	FilesOwned  int    `json:"files_owned"`
+}
+
+func newPrepareWaveCmd() *cobra.Command {
+	var waveNum int
+
+	cmd := &cobra.Command{
+		Use:   "prepare-wave <manifest-path>",
+		Short: "Prepare all agents in a wave (create worktrees + extract briefs + init journals)",
+		Long: `Prepares all agents in a wave for parallel execution by:
+1. Creating git worktrees for all agents in the wave
+2. Extracting each agent's brief to their worktree root (.saw-agent-brief.md)
+3. Initializing journal observers for all agents
+
+This combines create-worktrees + prepare-agent into a single atomic operation,
+reducing wave setup from 5+ commands to 1 command.
+
+NOTE: For solo agents (1 agent in wave), use prepare-agent --no-worktree instead.
+prepare-wave always creates worktrees, which is unnecessary overhead for single-agent
+waves that execute on the main branch.`,
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if waveNum == 0 {
+				return fmt.Errorf("--wave is required")
+			}
+
+			manifestPath := args[0]
+
+			// Determine project root from manifest path or --repo-dir flag
+			projectRoot := filepath.Dir(filepath.Dir(filepath.Dir(manifestPath)))
+			if repoDir != "" {
+				projectRoot = repoDir
+			}
+
+			// Step 1: Create worktrees (records base commit, must happen first)
+			worktreeResult, err := protocol.CreateWorktrees(manifestPath, waveNum, projectRoot)
+			if err != nil {
+				return fmt.Errorf("failed to create worktrees: %w", err)
+			}
+
+			// Step 2: Load manifest for brief extraction
+			doc, err := protocol.Load(manifestPath)
+			if err != nil {
+				return fmt.Errorf("failed to load IMPL doc: %w", err)
+			}
+
+			// Step 3: Prepare each agent (extract brief + init journal)
+			agentBriefs := make([]AgentBriefInfo, 0, len(worktreeResult.Worktrees))
+
+			for _, wtInfo := range worktreeResult.Worktrees {
+				agentID := wtInfo.Agent
+
+				// Find the agent's task and files
+				var agentTask string
+				var agentFiles []string
+				for _, wave := range doc.Waves {
+					if wave.Number != waveNum {
+						continue
+					}
+					for _, agent := range wave.Agents {
+						if agent.ID == agentID {
+							agentTask = agent.Task
+							agentFiles = agent.Files
+							break
+						}
+					}
+				}
+
+				if agentTask == "" {
+					return fmt.Errorf("agent %s not found in wave %d", agentID, waveNum)
+				}
+
+				// Extract interface contracts
+				contractsSection := ""
+				if len(doc.InterfaceContracts) > 0 {
+					contractsSection = "\n\n## Interface Contracts\n\n"
+					for _, contract := range doc.InterfaceContracts {
+						contractsSection += fmt.Sprintf("### %s\n\n%s\n\n```\n%s\n```\n\n",
+							contract.Name, contract.Description, contract.Definition)
+					}
+				}
+
+				// Extract quality gates
+				gatesSection := ""
+				if doc.QualityGates.Level != "" {
+					gatesSection = "\n\n## Quality Gates\n\n"
+					gatesSection += fmt.Sprintf("Level: %s\n\n", doc.QualityGates.Level)
+					for _, gate := range doc.QualityGates.Gates {
+						gatesSection += fmt.Sprintf("- **%s**: `%s` (required: %t)\n",
+							gate.Type, gate.Command, gate.Required)
+						if gate.Description != "" {
+							gatesSection += fmt.Sprintf("  %s\n", gate.Description)
+						}
+					}
+				}
+
+				// Build the agent brief
+				brief := fmt.Sprintf(`# Agent %s Brief - Wave %d
+
+**IMPL Doc:** %s
+
+## Files Owned
+
+%s
+
+## Task
+
+%s
+%s%s
+`,
+					agentID,
+					waveNum,
+					manifestPath,
+					formatFileList(agentFiles),
+					agentTask,
+					contractsSection,
+					gatesSection,
+				)
+
+				// Write brief to worktree root
+				briefPath := filepath.Join(wtInfo.Path, ".saw-agent-brief.md")
+				if err := os.WriteFile(briefPath, []byte(brief), 0644); err != nil {
+					return fmt.Errorf("failed to write brief for agent %s: %w", agentID, err)
+				}
+
+				// Initialize journal observer
+				fullAgentID := fmt.Sprintf("wave%d-agent-%s", waveNum, agentID)
+				observer, err := journal.NewObserver(projectRoot, fullAgentID)
+				if err != nil {
+					return fmt.Errorf("failed to create journal observer for agent %s: %w", agentID, err)
+				}
+
+				// Initialize cursor if it doesn't exist
+				if _, err := os.Stat(observer.CursorPath); os.IsNotExist(err) {
+					emptyCursor := journal.SessionCursor{
+						SessionFile: "",
+						Offset:      0,
+					}
+					cursorData, _ := json.MarshalIndent(emptyCursor, "", "  ")
+					if err := os.WriteFile(observer.CursorPath, cursorData, 0644); err != nil {
+						return fmt.Errorf("failed to write cursor file for agent %s: %w", agentID, err)
+					}
+				}
+
+				// Record agent brief info
+				agentBriefs = append(agentBriefs, AgentBriefInfo{
+					Agent:       agentID,
+					BriefPath:   briefPath,
+					BriefLength: len(brief),
+					JournalDir:  observer.JournalDir,
+					FilesOwned:  len(agentFiles),
+				})
+			}
+
+			// Output result
+			result := PrepareWaveResult{
+				Wave:        waveNum,
+				Worktrees:   worktreeResult.Worktrees,
+				AgentBriefs: agentBriefs,
+			}
+
+			out, _ := json.MarshalIndent(result, "", "  ")
+			fmt.Println(string(out))
+
+			return nil
+		},
+	}
+
+	cmd.Flags().IntVar(&waveNum, "wave", 0, "Wave number (required)")
+	_ = cmd.MarkFlagRequired("wave")
+
+	return cmd
+}

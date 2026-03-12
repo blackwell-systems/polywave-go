@@ -34,6 +34,7 @@ func main() {
 		newDebugJournalCmd(),
 		newJournalInitCmd(),
 		newPrepareAgentCmd(),
+		newPrepareWaveCmd(),
 		newJournalContextCmd(),
 		newAnalyzeDepsCmd(),
 		newDetectScaffoldsCmd(),
