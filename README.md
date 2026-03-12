@@ -137,17 +137,9 @@ internal/
 
 ## CLI Commands
 
-The `sawtools` binary wraps SDK operations as shell commands. Each command is single-purpose with structured I/O:
+The `sawtools` binary wraps SDK operations as shell commands. Each command is single-purpose with structured I/O.
 
-| Command | Input | Output | Exit Code |
-|---------|-------|--------|-----------|
-| `sawtools validate <manifest>` | YAML path | Errors (JSON) | 0=valid, 1=invalid |
-| `sawtools extract-context <manifest> <agent>` | Manifest + agent ID | Agent context (JSON) | 0=ok, 1=not found |
-| `sawtools current-wave <manifest>` | YAML path | Wave number | 0=ok, 1=no pending |
-| `sawtools set-completion <manifest> <agent>` | Manifest + stdin (YAML) | Success | 0=ok, 1=failed |
-| `sawtools merge-wave <manifest> <wave>` | Manifest + wave number | Merge status | 0=ok, 1=conflicts |
-| `sawtools render <manifest>` | YAML path | Markdown | 0=ok, 1=failed |
-| `sawtools migrate <impl.md>` | Markdown path | YAML path | 0=ok, 1=failed |
+**See [docs/cli-reference.md](docs/cli-reference.md) for the complete command reference** (20+ commands including validation, context extraction, worktree management, merge operations, and more).
 
 ## Design Principles
 
