@@ -112,3 +112,5 @@ type BackendConfig struct {
   - IMPL doc: docs/IMPL/complete/IMPL-constraint-solver.yaml
 - **structured-output-parsing**: completed 2026-03-12, 3 waves, 4 agents
   - IMPL doc: docs/IMPL/complete/IMPL-structured-output-parsing.yaml
+- **m1-agent-id-assignment**: completed 2026-03-12, 3 waves, 3 agents
+  - IMPL doc: docs/IMPL/complete/IMPL-m1-agent-id-assignment.yaml
