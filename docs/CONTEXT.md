@@ -91,3 +91,8 @@ type BackendConfig struct {
   - IMPL doc: docs/IMPL/IMPL-h3-phase2-multi-language.yaml
 - **scaffold-detection**: completed 2026-03-12, 1 waves, 3 agents
   - IMPL doc: docs/IMPL/complete/IMPL-scaffold-detection.yaml
+- **phase2-determinism-final**: completed 2026-03-12, 1 waves, 4 agents
+  - IMPL doc: docs/IMPL/complete/IMPL-phase2-determinism-final.yaml
+  - Deliverables: H1a (analyze-suitability), M2 (detect-cascades)
+  - New packages: `pkg/suitability/` (pre-implementation scanning), `pkg/analyzer/` (cascade detection)
+  - New commands: `sawtools analyze-suitability`, `sawtools detect-cascades`
