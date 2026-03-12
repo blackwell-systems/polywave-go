@@ -878,7 +878,7 @@ func TestValidateAgentIDs_FileOwnership(t *testing.T) {
 	if errs[0].Code != "DC04_INVALID_AGENT_ID" {
 		t.Errorf("Expected DC04_INVALID_AGENT_ID, got %s", errs[0].Code)
 	}
-	if !contains(errs[0].Field, "file_ownership") {
+	if !testContains(errs[0].Field, "file_ownership") {
 		t.Errorf("Expected field to contain 'file_ownership', got %s", errs[0].Field)
 	}
 }
@@ -898,7 +898,7 @@ func TestValidateAgentIDs_CompletionReports(t *testing.T) {
 	if errs[0].Code != "DC04_INVALID_AGENT_ID" {
 		t.Errorf("Expected DC04_INVALID_AGENT_ID, got %s", errs[0].Code)
 	}
-	if !contains(errs[0].Field, "completion_reports") {
+	if !testContains(errs[0].Field, "completion_reports") {
 		t.Errorf("Expected field to contain 'completion_reports', got %s", errs[0].Field)
 	}
 }
@@ -976,12 +976,12 @@ func TestValidateGateTypes_EmptyType(t *testing.T) {
 	}
 }
 
-// contains is a helper function to check if a string contains a substring.
-func contains(s, substr string) bool {
-	return len(s) > 0 && len(substr) > 0 && (s == substr || len(s) >= len(substr) && (s[:len(substr)] == substr || s[len(s)-len(substr):] == substr || containsMiddle(s, substr)))
+// testContains is a helper function to check if a string contains a substring.
+func testContains(s, substr string) bool {
+	return len(s) > 0 && len(substr) > 0 && (s == substr || len(s) >= len(substr) && (s[:len(substr)] == substr || s[len(s)-len(substr):] == substr || testContainsMiddle(s, substr)))
 }
 
-func containsMiddle(s, substr string) bool {
+func testContainsMiddle(s, substr string) bool {
 	for i := 0; i <= len(s)-len(substr); i++ {
 		if s[i:i+len(substr)] == substr {
 			return true

@@ -238,8 +238,8 @@ func TestRunWave_LaunchesAllAgents(t *testing.T) {
 		atomic.AddInt32(&worktreeCount, 1)
 		return "/tmp/fake-wt-" + letter, nil
 	}
-	waitForCompletionFunc = func(_, _ string, _, _ time.Duration) (*types.CompletionReport, error) {
-		return &types.CompletionReport{Status: types.StatusComplete}, nil
+	waitForCompletionFunc = func(_, _ string, _, _ time.Duration) (*protocol.CompletionReport, error) {
+		return &protocol.CompletionReport{Status: "complete"}, nil
 	}
 	newBackendFunc = func(_ BackendConfig) (backend.Backend, error) {
 		return fake, nil
@@ -295,8 +295,8 @@ func TestRunWave_ReturnsErrorOnAgentFailure(t *testing.T) {
 	worktreeCreatorFunc = func(_ *worktree.Manager, _ int, letter string) (string, error) {
 		return "/tmp/fake-wt-" + letter, nil
 	}
-	waitForCompletionFunc = func(_, _ string, _, _ time.Duration) (*types.CompletionReport, error) {
-		return &types.CompletionReport{Status: types.StatusComplete}, nil
+	waitForCompletionFunc = func(_, _ string, _, _ time.Duration) (*protocol.CompletionReport, error) {
+		return &protocol.CompletionReport{Status: "complete"}, nil
 	}
 	newBackendFunc = func(_ BackendConfig) (backend.Backend, error) {
 		return fake, nil
@@ -471,8 +471,8 @@ func TestSetEventPublisher_NilPublisher_NoOp(t *testing.T) {
 	worktreeCreatorFunc = func(_ *worktree.Manager, _ int, letter string) (string, error) {
 		return "/tmp/fake-wt-" + letter, nil
 	}
-	waitForCompletionFunc = func(_, _ string, _, _ time.Duration) (*types.CompletionReport, error) {
-		return &types.CompletionReport{Status: types.StatusComplete}, nil
+	waitForCompletionFunc = func(_, _ string, _, _ time.Duration) (*protocol.CompletionReport, error) {
+		return &protocol.CompletionReport{Status: "complete"}, nil
 	}
 
 	fake := &fakeBackend{}
@@ -507,8 +507,8 @@ func TestPublish_EmitsAgentStarted(t *testing.T) {
 	worktreeCreatorFunc = func(_ *worktree.Manager, _ int, letter string) (string, error) {
 		return "/tmp/fake-wt-" + letter, nil
 	}
-	waitForCompletionFunc = func(_, _ string, _, _ time.Duration) (*types.CompletionReport, error) {
-		return &types.CompletionReport{Status: types.StatusComplete}, nil
+	waitForCompletionFunc = func(_, _ string, _, _ time.Duration) (*protocol.CompletionReport, error) {
+		return &protocol.CompletionReport{Status: "complete"}, nil
 	}
 
 	fake := &fakeBackend{}
@@ -650,9 +650,9 @@ func TestLaunchAgent_PollsWorktreeIMPLDoc(t *testing.T) {
 	}
 
 	var gotIMPLPath string
-	waitForCompletionFunc = func(implDoc, _ string, _, _ time.Duration) (*types.CompletionReport, error) {
+	waitForCompletionFunc = func(implDoc, _ string, _, _ time.Duration) (*protocol.CompletionReport, error) {
 		gotIMPLPath = implDoc
-		return &types.CompletionReport{Status: types.StatusComplete}, nil
+		return &protocol.CompletionReport{Status: "complete"}, nil
 	}
 
 	fake := &fakeBackend{}
@@ -706,8 +706,8 @@ func TestLaunchAgentE23FallbackOnExtractError(t *testing.T) {
 	worktreeCreatorFunc = func(_ *worktree.Manager, _ int, letter string) (string, error) {
 		return "/tmp/fake-wt-" + letter, nil
 	}
-	waitForCompletionFunc = func(_, _ string, _, _ time.Duration) (*types.CompletionReport, error) {
-		return &types.CompletionReport{Status: types.StatusComplete}, nil
+	waitForCompletionFunc = func(_, _ string, _, _ time.Duration) (*protocol.CompletionReport, error) {
+		return &protocol.CompletionReport{Status: "complete"}, nil
 	}
 
 	var capturedPrompt string
@@ -766,10 +766,10 @@ func TestLaunchAgentE19BlockedEvent(t *testing.T) {
 	worktreeCreatorFunc = func(_ *worktree.Manager, _ int, letter string) (string, error) {
 		return "/tmp/fake-wt-" + letter, nil
 	}
-	waitForCompletionFunc = func(_, _ string, _, _ time.Duration) (*types.CompletionReport, error) {
-		return &types.CompletionReport{
-			Status:      types.StatusBlocked,
-			FailureType: types.FailureTypeTransient,
+	waitForCompletionFunc = func(_, _ string, _, _ time.Duration) (*protocol.CompletionReport, error) {
+		return &protocol.CompletionReport{
+			Status:      "blocked",
+			FailureType: "transient",
 		}, nil
 	}
 
@@ -925,8 +925,8 @@ func TestRunWave_AgentPrioritization(t *testing.T) {
 		mu.Unlock()
 		return "/tmp/fake-wt-" + letter, nil
 	}
-	waitForCompletionFunc = func(_, _ string, _, _ time.Duration) (*types.CompletionReport, error) {
-		return &types.CompletionReport{Status: types.StatusComplete}, nil
+	waitForCompletionFunc = func(_, _ string, _, _ time.Duration) (*protocol.CompletionReport, error) {
+		return &protocol.CompletionReport{Status: "complete"}, nil
 	}
 
 	fake := &fakeBackend{}
@@ -1001,8 +1001,8 @@ func TestRunWave_AgentPrioritizedEvent(t *testing.T) {
 	worktreeCreatorFunc = func(_ *worktree.Manager, _ int, letter string) (string, error) {
 		return "/tmp/fake-wt-" + letter, nil
 	}
-	waitForCompletionFunc = func(_, _ string, _, _ time.Duration) (*types.CompletionReport, error) {
-		return &types.CompletionReport{Status: types.StatusComplete}, nil
+	waitForCompletionFunc = func(_, _ string, _, _ time.Duration) (*protocol.CompletionReport, error) {
+		return &protocol.CompletionReport{Status: "complete"}, nil
 	}
 
 	fake := &fakeBackend{}
