@@ -33,6 +33,7 @@ func main() {
 		newSolveCmd(),
 		newDebugJournalCmd(),
 		newJournalInitCmd(),
+		newPrepareAgentCmd(),
 		newJournalContextCmd(),
 		newAnalyzeDepsCmd(),
 		newDetectScaffoldsCmd(),
