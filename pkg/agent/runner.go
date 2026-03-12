@@ -7,7 +7,6 @@ import (
 	"fmt"
 
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/agent/backend"
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/types"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/worktree"
 )
@@ -101,11 +100,4 @@ func (r *Runner) ExecuteStreamingWithTools(
 	}
 
 	return response, nil
-}
-
-// ParseCompletionReport reads the IMPL doc at implDocPath and extracts the
-// completion report for agentLetter. It delegates to protocol.ParseCompletionReport.
-// Returns protocol.ErrReportNotFound if the section does not exist yet.
-func (r *Runner) ParseCompletionReport(implDocPath string, agentLetter string) (*types.CompletionReport, error) {
-	return protocol.ParseCompletionReport(implDocPath, agentLetter)
 }
