@@ -1,57 +1,62 @@
-// Package protocol provides IMPL document parsing, validation, and extraction.
+// Package protocol provides YAML-only IMPL manifest parsing, validation, and extraction.
 //
-// # IMPL Document Format
+// # IMPL Manifest Format
 //
-// IMPL docs are markdown with structured sections:
+// IMPL manifests are structured YAML documents:
 //
-//	# IMPL: Add User Authentication
+//	title: Add User Authentication
+//	feature_slug: add-user-authentication
+//	verdict: SUITABLE
 //
-//	**verdict:** SUITABLE
+//	interface_contracts:
+//	  - name: Authenticator
+//	    definition: |
+//	      type Authenticator interface {
+//	        Login(username, password string) error
+//	      }
 //
-//	## File Ownership
+//	file_ownership:
+//	  - file: src/auth.go
+//	    agent: A
+//	    wave: 1
+//	    action: new
 //
-//	| Wave | Agent | File | Lines | Dependencies |
-//	|------|-------|------|-------|--------------|
-//	| 1 | A | src/auth.go | 50 | crypto/bcrypt |
-//	| 1 | B | src/middleware.go | 30 | src/auth.go |
-//
-//	## Wave 1
-//
-//	### Agent A — Authentication Module
-//
-//	**task:** Implement user authentication logic
-//
-//	### Agent A Completion Report
-//
-//	```yaml
-//	status: complete
-//	files:
-//	  - src/auth.go
-//	```
+//	waves:
+//	  - number: 1
+//	    agents:
+//	      - letter: A
+//	        task: Implement user authentication logic
+//	        completion:
+//	          status: complete
+//	          files_changed:
+//	            - src/auth.go
 //
 // See the scout-and-wave protocol spec for full format definition:
 // https://github.com/blackwell-systems/scout-and-wave/tree/main/protocol
 //
-// # Parsing
+// # Loading and Saving
 //
-// ParseIMPLDoc parses markdown IMPL docs into types.IMPLDoc:
+// Load reads a YAML manifest from disk:
 //
-//	doc, err := protocol.ParseIMPLDoc("/path/to/IMPL-feature.md")
+//	manifest, err := protocol.Load("/path/to/IMPL-feature.yaml")
 //	if err != nil {
-//	    log.Fatalf("Parse failed: %v", err)
+//	    log.Fatalf("Load failed: %v", err)
 //	}
 //
-//	fmt.Printf("Verdict: %s\n", doc.Verdict)
-//	fmt.Printf("Waves: %d\n", len(doc.Waves))
-//	for _, wave := range doc.Waves {
-//	    fmt.Printf("Wave %d has %d agents\n", wave.Number, len(wave.Agents))
+//	fmt.Printf("Title: %s\n", manifest.Title)
+//	fmt.Printf("Waves: %d\n", len(manifest.Waves))
+//
+// Save writes a manifest back to disk:
+//
+//	if err := protocol.Save(manifest, "/path/to/IMPL-feature.yaml"); err != nil {
+//	    log.Fatalf("Save failed: %v", err)
 //	}
 //
 // # Validation
 //
 // ValidateInvariants checks protocol invariants (I1–I6):
 //
-//	violations := protocol.ValidateInvariants(doc)
+//	violations := protocol.ValidateInvariants(manifest)
 //	if len(violations) > 0 {
 //	    for _, v := range violations {
 //	        fmt.Println("Invariant violation:", v)
@@ -60,22 +65,17 @@
 //
 // # Per-Agent Context Extraction (E23)
 //
-// ExtractAgentContext trims the IMPL doc to only sections relevant to a single agent:
+// ExtractAgentContextFromManifest trims the manifest to only sections relevant to a single agent:
 //
-//	agentContext, err := protocol.ExtractAgentContext(doc, waveNum, agentLetter)
-//	payload := protocol.FormatAgentContextPayload(agentContext)
-//	// payload contains: agent prompt, interface contracts, file ownership, scaffolds, quality gates
-//	// Other agents' prompts are omitted — reduces context waste
+//	agentContext, err := protocol.ExtractAgentContextFromManifest(manifest, agentID)
+//	// agentContext contains: agent task, interface contracts, file ownership, scaffolds, quality gates
+//	// Other agents' tasks are omitted — reduces context waste
 //
-// # Parser Architecture
+// # Architecture
 //
-// The parser uses a line-by-line state machine with section header detection:
+// The protocol package provides a YAML-based implementation of the Scout-and-Wave
+// protocol. All IMPL documents are now YAML manifests (*.yaml or *.yml).
+// Markdown parsing support has been removed.
 //
-//   - ## Wave N → stateWave
-//   - ### Agent X → stateAgent
-//   - ## File Ownership → stateFileOwnership
-//   - YAML fence → parse completion report
-//   - Go/Rust/etc fence → parse scaffold
-//
-// See docs/protocol-parsing.md for parser internals and architecture.
+// See docs/protocol-parsing.md for manifest schema and architecture details.
 package protocol
