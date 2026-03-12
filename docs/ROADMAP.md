@@ -4,11 +4,13 @@ This is the engine/SDK roadmap. See also:
 - **scout-and-wave-web** roadmap for UI/UX features
 - **scout-and-wave** (protocol repo) roadmap for protocol enhancements
 
+**Current version:** v0.34.0 (markdown system removal complete, base commit tracking, duplicate report detection)
+
 ---
 
 ## Phase 1: Self-Healing & Observability
 
-### v0.30.0 — Verification Loop with Auto-Retry (E24)
+### v0.35.0 — Verification Loop with Auto-Retry (E24)
 
 **Why:** Quality gates currently report failures but don't trigger recovery. Automated retry with context preservation eliminates manual debugging cycles.
 
@@ -33,7 +35,7 @@ This is the engine/SDK roadmap. See also:
 
 ---
 
-### v0.32.0 — Wave Timeout Enforcement
+### v0.36.0 — Wave Timeout Enforcement
 
 **Why:** Hung agents block waves indefinitely. Automatic timeout + recovery prevents gridlock.
 
@@ -57,7 +59,7 @@ This is the engine/SDK roadmap. See also:
 
 ## Phase 2: Intelligence & Learning
 
-### v0.33.0 — Persistent Memory System
+### v0.37.0 — Persistent Memory System
 
 **Why:** Agents repeat mistakes across waves (e.g., forgetting cross-repo dependencies, missing common pitfalls). Memory system learns patterns from completion reports and injects them into future Scout/Wave agents.
 
@@ -81,7 +83,7 @@ This is the engine/SDK roadmap. See also:
 
 ---
 
-### v0.34.0 — Agent Progress Tracking API
+### v0.38.0 — Agent Progress Tracking API
 
 **Why:** Wave execution is a black box. SSE events contain file writes, command executions, and tool calls but aren't structured for progress tracking.
 
@@ -106,7 +108,7 @@ This is the engine/SDK roadmap. See also:
 
 ## Phase 3: Multi-Provider & Scale
 
-### v0.35.0 — Multi-Provider Backends
+### v0.39.0 — Multi-Provider Backends
 
 **Why:** Claude-only execution limits deployment scenarios (air-gapped, cost optimization, alternative reasoning models).
 
@@ -133,7 +135,7 @@ This is the engine/SDK roadmap. See also:
 
 ---
 
-### v0.36.0 — Lease Visualization (Informational)
+### v0.40.0 — Lease Visualization (Informational)
 
 **Why:** Worktree isolation prevents conflicts, but file contention is invisible. Showing which agents work on which files aids debugging.
 
@@ -154,14 +156,14 @@ This is the engine/SDK roadmap. See also:
 
 ## Phase 4: Production Hardening
 
-### v0.40.0 — Observability Stack
+### v0.45.0 — Observability Stack
 
 - OpenTelemetry tracing (spans per wave/agent/tool call)
 - Structured logging (`slog` with context propagation)
 - Cost tracking per IMPL doc (token usage, model costs)
 - Prometheus metrics endpoint
 
-### v0.41.0 — Sandboxed Execution
+### v0.46.0 — Sandboxed Execution
 
 - Agents run in isolated containers (Docker/Podman)
 - Filesystem restrictions (read-only except worktree)
@@ -172,6 +174,6 @@ This is the engine/SDK roadmap. See also:
 
 ## Current Focus
 
-**Now:** v0.30.0 — Verification Loop (E24 implementation)
+**Now:** v0.35.0 — Verification Loop (E24 implementation)
 
-**Next:** v0.32.0 — Wave Timeout Enforcement
+**Next:** v0.36.0 — Wave Timeout Enforcement
