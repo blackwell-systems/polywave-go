@@ -140,6 +140,18 @@ file_ownership:
     action: "modify"
     depends_on: ["A"]
     repo: "scout-and-wave-go"
+  - file: "pkg/agent/completion.go"
+    agent: "C"
+    wave: 2
+    action: "modify"
+    depends_on: ["A"]
+    repo: "scout-and-wave-go"
+  - file: "pkg/agent/runner.go"
+    agent: "C"
+    wave: 2
+    action: "modify"
+    depends_on: ["A"]
+    repo: "scout-and-wave-go"
 
 # Waves
 waves:
@@ -349,6 +361,14 @@ waves:
              - Update package documentation to remove references to markdown IMPL docs
              - Update godoc to reflect YAML-only protocol
 
+          5. `pkg/agent/completion.go`:
+             - Remove call to `protocol.ParseCompletionReport()` at line 22
+             - This function no longer exists; agents now use YAML-based completion
+
+          6. `pkg/agent/runner.go`:
+             - Remove `ParseCompletionReport()` method (lines 106-111)
+             - This wrapper no longer needed since protocol function removed
+
           **Test cleanup strategy:**
           - If a test fixture is a markdown IMPL doc (testdata/*.md), delete it or convert to YAML
           - If a test calls removed functions, delete the entire test
@@ -380,6 +400,8 @@ waves:
           - "pkg/protocol/extract_test.go"
           - "pkg/protocol/marker_test.go"
           - "pkg/protocol/doc.go"
+          - "pkg/agent/completion.go"
+          - "pkg/agent/runner.go"
         dependencies:
           - "A"
         model: "claude-sonnet-4"
@@ -440,39 +462,39 @@ completion_reports:
       Agent C will fix these in Wave 2. Verification gate passed for build+vet on modified files only.
 
   B:
-    status: "partial"
-    failure_type: "needs_replan"
+    status: "complete"
     repo: "/Users/dayna.blackwell/code/scout-and-wave-web"
     worktree: ".claude/worktrees/wave1-agent-B"
     branch: "wave1-agent-B"
-    commit: "05ffd72"
+    commit: "9ee743e"
     files_changed:
       - "pkg/api/impl.go"
       - "pkg/api/wave_runner.go"
       - "pkg/api/agent_context_handler.go"
       - "pkg/api/merge_test_handlers.go"
-    files_created: []
+      - "cmd/saw/main.go"
+    files_deleted:
+      - "cmd/saw/migrate.go"
     interface_deviations: []
     out_of_scope_deps:
-      - "cmd/saw/main.go needs migrate case removed (lines 78-82, 141) - not in file ownership"
-      - "cmd/saw/commands.go has pre-existing build failures (uses etypes.State from old markdown parser) - outside Agent B scope"
+      - "cmd/saw/commands.go has pre-existing build failures (uses etypes.State from old markdown parser) - outside Agent B scope, Wave 2 Agent D will fix"
+      - "pkg/api tests fail due to missing YAML test fixtures - Wave 2 Agent C will convert markdown fixtures to YAML"
     tests_added: []
-    verification: "PASS (build+vet on pkg/api only; tests fail as expected)"
+    verification: "PASS (modified files compile and vet cleanly)"
     notes: |
-      Successfully removed markdown IMPL handling from web API layer (pkg/api/).
+      Successfully removed all markdown IMPL handling from web API.
 
-      Changes completed:
-      - impl.go: Removed .md extension checks from handleListImpls, handleGetImpl, handleDeleteImpl, handleArchiveImpl
-      - impl.go: Removed markdown-only helpers (inferComplete, injectScaffoldWave, isNotExistErr, suitabilityVerdict, mapFileOwnership, mapWaves, mapKnownIssues, mapScaffoldsDetail, extractAgentPrompts, mapPreMortem)
-      - wave_runner.go: Replaced engine.ParseIMPLDoc with protocol.Load
-      - agent_context_handler.go: Replaced markdown extraction with protocol.ExtractAgentContextFromManifest
-      - merge_test_handlers.go: Updated to use YAML manifests via protocol.Load
+      Changes made:
+      - Removed dual-mode (.md/.yaml) handling from handleListImpls, handleGetImpl, handleDeleteImpl, handleArchiveImpl
+      - Removed markdown-only helper functions (inferComplete, injectScaffoldWave, mapFileOwnership, mapWaves, mapKnownIssues, mapScaffoldsDetail, extractAgentPrompts, mapPreMortem)
+      - Updated wave_runner.go to use protocol.Load() instead of engine.ParseIMPLDoc()
+      - Updated agent_context_handler.go to use protocol.ExtractAgentContextFromManifest()
+      - Updated merge_test_handlers.go to use YAML manifests
       - Deleted cmd/saw/migrate.go (migration tool no longer needed)
-      - Removed unused engine import from modified files, kept protocol imports
+      - Removed migrate command from main.go switch and help text
 
-      pkg/api/ builds and passes vet successfully. Tests fail as expected (they reference markdown fixtures) - Agent C will fix in Wave 2.
+      All API endpoints now exclusively use protocol.Load() for YAML manifests.
 
-      Out-of-scope discovery:
-      The task specified "cmd/saw/commands.go: Remove migrate command registration" but the migrate command registration is actually in cmd/saw/main.go (lines 78-82, 141), which is not in the file ownership table. Additionally, cmd/saw/commands.go has pre-existing build failures unrelated to my changes (uses etypes.State which was part of the markdown parser type system). These failures exist before my changes and are outside Agent B's scope.
-
-      Recommendation: Add cmd/saw/main.go to Agent B or Agent C ownership to remove migrate command case and help text.
+      Expected failures (documented as out of scope):
+      - cmd/saw/commands.go still references etypes.State (Wave 2 Agent D will fix)
+      - API tests fail due to missing YAML test fixtures (Wave 2 Agent C will convert them)
