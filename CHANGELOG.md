@@ -8,6 +8,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 | Version | Date | Headline |
 |---------|------|----------|
+| [0.36.0] | 2026-03-12 | H6 dependency conflict detection + journal graceful degradation — check-deps CLI, 4 lock file parsers, empty session handling |
 | [0.35.0] | 2026-03-12 | State machine conformance — fixed SCOUT_VALIDATING self-loop, removed direct SCOUT_PENDING→REVIEWED bypass, aligned validation guards |
 | [0.34.0] | 2026-03-12 | Markdown system removal — deprecated markdown IMPL parsers removed, cross-repo wave prevention fixes added |
 | [0.33.0] | 2026-03-11 | mark-complete simplification — always archives to complete/ directory, removed --archive flag |
@@ -43,7 +44,27 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 | [0.3.0] | 2026-03-08 | Protocol audit fixes — P0: failure_type parsing, multi-gen agent IDs; P1: E22 2-pass scaffold build, cross-repo Repo column; P2: repo field in completion reports |
 | [0.2.0] | 2026-03-08 | Engine protocol parity — E17–E23 implemented (context memory, failure routing, stub scan, quality gates, scaffold build verify, per-agent context extraction) |
 
-## [0.35.0] - 2026-03-12
+## [0.36.0] - 2026-03-12
+
+### Added
+
+- **H6: Dependency conflict detection** — Phase 3 determinism tool for pre-wave dependency scanning
+  - `pkg/deps/` package with `CheckDeps()` function and `LockFileParser` interface
+  - 4 lock file parsers: `GoSumParser` (go.sum), `PackageLockParser` (package-lock.json), `CargoLockParser` (Cargo.lock), `PoetryLockParser` (poetry.lock)
+  - `sawtools check-deps` CLI command with JSON output
+  - Detects missing dependencies (imports not in lock files) and version conflicts (agents requiring different versions)
+  - 46 tests passing (8 in checker, 6+8+7+6 in parsers, 5 in CLI)
+  - Completed via SAW: 3 waves, 6 agents (A solo, B-E parallel, F solo)
+
+### Fixed
+
+- **Journal graceful degradation** — `journal-context` no longer fails with noisy errors when no session files exist (fresh sessions with no prior tool execution)
+  - `observer.go`: `findLatestSessionFile()` returns empty string (not error) when no session files found
+  - `observer.go`: `Sync()` returns empty `SyncResult` when `sessionFile == ""`
+  - `debug_journal.go`: `loadJournalEntries()` returns empty slice when `index.jsonl` doesn't exist
+  - Generated `context.md` now shows clear message: "No tool activity recorded yet."
+- **Test fix** — `analyze-suitability` validates repo root exists before calling `ScanPreImplementation`, fixing `TestAnalyzeSuitabilityCmd_InvalidRepoRoot`
+
 
 ### Fixed
 
