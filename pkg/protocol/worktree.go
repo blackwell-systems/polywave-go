@@ -59,6 +59,18 @@ func CreateWorktrees(manifestPath string, waveNum int, repoDir string) (*CreateW
 		return nil, fmt.Errorf("wave %d not found in manifest", waveNum)
 	}
 
+	// Record base commit for post-merge verification (prevention fix for verify-commits bug)
+	baseCommit, err := git.RevParse(repoDir, "HEAD")
+	if err != nil {
+		return nil, fmt.Errorf("failed to get base commit: %w", err)
+	}
+	targetWave.BaseCommit = baseCommit
+
+	// Save manifest with base commit recorded
+	if err := Save(doc, manifestPath); err != nil {
+		return nil, fmt.Errorf("failed to save manifest with base commit: %w", err)
+	}
+
 	// Determine parent directory for cross-repo resolution
 	repoParent := filepath.Dir(repoDir)
 

@@ -83,11 +83,16 @@ func VerifyCommits(manifestPath string, waveNum int, repoDir string) (*VerifyCom
 		}
 	}
 
-	// Get base commit - use the first repo's HEAD as the baseline
-	// (In multi-repo scenarios, each repo has its own base, but we need one for the result)
-	baseCommit, err := git.RevParse(repoDir, "HEAD")
-	if err != nil {
-		return nil, fmt.Errorf("failed to get base commit: %w", err)
+	// Get base commit - use wave's recorded base commit if available (prevention fix),
+	// otherwise fall back to current HEAD for backward compatibility
+	baseCommit := targetWave.BaseCommit
+	if baseCommit == "" {
+		// Backward compatibility: wave created before base commit tracking
+		var err error
+		baseCommit, err = git.RevParse(repoDir, "HEAD")
+		if err != nil {
+			return nil, fmt.Errorf("failed to get base commit: %w", err)
+		}
 	}
 
 	// Build the result
