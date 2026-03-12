@@ -8,6 +8,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 | Version | Date | Headline |
 |---------|------|----------|
+| [0.33.0] | 2026-03-11 | mark-complete simplification — always archives to complete/ directory, removed --archive flag |
 | [0.32.0] | 2026-03-11 | Multi-language dependency analysis — Rust, JavaScript/TypeScript, Python parsers added to analyze-deps (H3 Phase 2 complete) |
 | [0.31.0] | 2026-03-10 | Agent launch prioritization — critical path scheduling reduces wave completion time 10-20% |
 | [0.30.0] | 2026-03-10 | Engine roadmap — verification loop (E24), agent launch prioritization, wave timeout enforcement, persistent memory system |
@@ -39,6 +40,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 | [0.4.0] | 2026-03-09 | Per-agent model routing — ScoutModel/WaveModel opts, `model:` field in IMPL doc agent sections, per-agent backend dispatch |
 | [0.3.0] | 2026-03-08 | Protocol audit fixes — P0: failure_type parsing, multi-gen agent IDs; P1: E22 2-pass scaffold build, cross-repo Repo column; P2: repo field in completion reports |
 | [0.2.0] | 2026-03-08 | Engine protocol parity — E17–E23 implemented (context memory, failure routing, stub scan, quality gates, scaffold build verify, per-agent context extraction) |
+
+## [0.33.0] - 2026-03-11
+
+### Changed
+
+- **`sawtools mark-complete` always archives** — Removed `--archive` flag. Command now always moves completed IMPL docs from `docs/IMPL/` to `docs/IMPL/complete/`. There is no use case for marking complete without archiving, so the optional flag created unnecessary complexity.
+
+### Rationale
+
+If an IMPL is complete, it should be archived. If it's not ready to archive, it's not actually complete. The flag created a half-state that the protocol doesn't need. Simplified both code (7 fewer lines, no conditional logic) and user mental model (one command, one outcome).
+
+---
 
 ## [0.32.0] - 2026-03-11
 
