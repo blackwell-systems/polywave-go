@@ -105,19 +105,19 @@ file_ownership:
     agent: A
     wave: 1
     action: new
-  - file: pkg/idgen/generator_test.go
-    agent: C
-    wave: 2
-    action: new
-    depends_on: ["A"]
   - file: cmd/saw/assign_agent_ids_cmd.go
     agent: B
     wave: 2
     action: new
     depends_on: ["A"]
+  - file: pkg/idgen/generator_test.go
+    agent: C
+    wave: 3
+    action: new
+    depends_on: ["A"]
   - file: cmd/saw/assign_agent_ids_cmd_test.go
     agent: C
-    wave: 2
+    wave: 3
     action: new
     depends_on: ["B"]
 
@@ -294,6 +294,8 @@ waves:
         dependencies:
           - A
 
+  - number: 3
+    agents:
       - id: C
         task: |
           ## What to Implement
