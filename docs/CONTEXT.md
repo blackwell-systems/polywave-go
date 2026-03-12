@@ -100,3 +100,5 @@ type BackendConfig struct {
   - IMPL doc: docs/IMPL/complete/IMPL-h2-command-extraction.yaml
 - **h8-scaffold-validation**: completed 2026-03-12, 3 waves, 3 agents
   - IMPL doc: docs/IMPL/complete/IMPL-h8-scaffold-validation.yaml
+- **h6-dependency-conflict-detection**: completed 2026-03-12, 3 waves, 6 agents
+  - IMPL doc: docs/IMPL/complete/IMPL-h6-dependency-conflict-detection.yaml

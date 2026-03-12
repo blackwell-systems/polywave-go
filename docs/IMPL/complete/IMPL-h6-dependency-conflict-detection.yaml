@@ -1,0 +1,765 @@
+completion_date: "2026-03-12"
+title: 'H6: Dependency Conflict Detection'
+feature_slug: h6-dependency-conflict-detection
+verdict: SUITABLE
+test_command: go test ./pkg/deps/... ./cmd/saw/...
+lint_command: go vet ./pkg/deps/... ./cmd/saw/...
+file_ownership:
+    - file: pkg/deps/types.go
+      agent: A
+      wave: 1
+      action: new
+    - file: pkg/deps/types_test.go
+      agent: A
+      wave: 1
+      action: new
+    - file: pkg/deps/checker.go
+      agent: A
+      wave: 1
+      action: new
+    - file: pkg/deps/checker_test.go
+      agent: A
+      wave: 1
+      action: new
+    - file: pkg/deps/gosum.go
+      agent: B
+      wave: 2
+      action: new
+    - file: pkg/deps/gosum_test.go
+      agent: B
+      wave: 2
+      action: new
+    - file: pkg/deps/packagelock.go
+      agent: C
+      wave: 2
+      action: new
+    - file: pkg/deps/packagelock_test.go
+      agent: C
+      wave: 2
+      action: new
+    - file: pkg/deps/cargolock.go
+      agent: D
+      wave: 2
+      action: new
+    - file: pkg/deps/cargolock_test.go
+      agent: D
+      wave: 2
+      action: new
+    - file: pkg/deps/poetrylock.go
+      agent: E
+      wave: 2
+      action: new
+    - file: pkg/deps/poetrylock_test.go
+      agent: E
+      wave: 2
+      action: new
+    - file: cmd/saw/check_deps_cmd.go
+      agent: F
+      wave: 3
+      action: new
+    - file: cmd/saw/check_deps_cmd_test.go
+      agent: F
+      wave: 3
+      action: new
+interface_contracts:
+    - name: LockFileParser
+      description: |
+        Interface for parsing lock files across different package managers.
+        Each language implementation (Go, Rust, JS, Python) must implement this interface.
+      definition: |
+        type LockFileParser interface {
+          // Parse reads a lock file and returns package metadata
+          Parse(filePath string) ([]PackageInfo, error)
+
+          // Detect checks if this parser can handle the given file
+          Detect(filePath string) bool
+        }
+
+        type PackageInfo struct {
+          Name    string
+          Version string
+          Source  string // registry URL or repo URL
+        }
+      location: pkg/deps/types.go
+    - name: CheckDeps
+      description: |
+        Main entrypoint for dependency conflict detection.
+        Called by CLI command to analyze IMPL doc and lock files.
+      definition: |
+        func CheckDeps(implPath string, wave int) (*ConflictReport, error)
+
+        type ConflictReport struct {
+          MissingDeps      []MissingDep      `json:"missing_deps"`
+          VersionConflicts []VersionConflict `json:"version_conflicts"`
+          Recommendations  []string          `json:"recommendations"`
+        }
+
+        type MissingDep struct {
+          Agent        string `json:"agent"`
+          Package      string `json:"package"`
+          RequiredBy   string `json:"required_by"`
+          AvailableVer string `json:"available_version"`
+        }
+
+        type VersionConflict struct {
+          Agents             []string `json:"agents"`
+          Package            string   `json:"package"`
+          Versions           []string `json:"versions"`
+          ResolutionNeeded   bool     `json:"resolution_needed"`
+        }
+      location: pkg/deps/checker.go
+waves:
+    - number: 1
+      agents:
+        - id: A
+          task: |
+            ## What to Implement
+
+            Create the core types and checker logic for dependency conflict detection. This includes the `LockFileParser` interface, data structures for conflict reporting, and the main `CheckDeps` function.
+
+            ## Interfaces to Implement
+
+            ```go
+            // pkg/deps/types.go
+            package deps
+
+            // LockFileParser interface for multi-language lock file parsing
+            type LockFileParser interface {
+              Parse(filePath string) ([]PackageInfo, error)
+              Detect(filePath string) bool
+            }
+
+            type PackageInfo struct {
+              Name    string `json:"name"`
+              Version string `json:"version"`
+              Source  string `json:"source"`
+            }
+
+            type ConflictReport struct {
+              MissingDeps      []MissingDep      `json:"missing_deps"`
+              VersionConflicts []VersionConflict `json:"version_conflicts"`
+              Recommendations  []string          `json:"recommendations"`
+            }
+
+            type MissingDep struct {
+              Agent        string `json:"agent"`
+              Package      string `json:"package"`
+              RequiredBy   string `json:"required_by"`
+              AvailableVer string `json:"available_version"`
+            }
+
+            type VersionConflict struct {
+              Agents           []string `json:"agents"`
+              Package          string   `json:"package"`
+              Versions         []string `json:"versions"`
+              ResolutionNeeded bool     `json:"resolution_needed"`
+            }
+            ```
+
+            ```go
+            // pkg/deps/checker.go
+            package deps
+
+            import (
+              "fmt"
+              "path/filepath"
+              "github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
+            )
+
+            // CheckDeps analyzes IMPL doc and lock files for dependency conflicts
+            func CheckDeps(implPath string, wave int) (*ConflictReport, error) {
+              // 1. Parse IMPL doc to get file ownership for specified wave
+              // 2. Extract import statements from owned files (use existing analyzer package)
+              // 3. Detect lock files in repo root (go.sum, package-lock.json, etc.)
+              // 4. Parse lock files using registered parsers
+              // 5. Cross-reference imports against lock file contents
+              // 6. Identify missing deps and version conflicts
+              // 7. Generate recommendations
+              return &ConflictReport{}, nil
+            }
+
+            // RegisterParser adds a lock file parser to the registry
+            var parsers []LockFileParser
+
+            func RegisterParser(p LockFileParser) {
+              parsers = append(parsers, p)
+            }
+
+            // DetectLockFiles scans repo root for lock files
+            func DetectLockFiles(repoRoot string) ([]string, error) {
+              // Check for go.sum, package-lock.json, Cargo.lock, poetry.lock
+              return nil, nil
+            }
+            ```
+
+            ## Interfaces to Call
+
+            - `protocol.ParseIMPLManifest(implPath)` — parse IMPL doc to get file ownership
+            - `analyzer.AnalyzeDeps(repoRoot, files)` — extract import statements (already exists in pkg/analyzer/)
+
+            ## Tests to Write
+
+            1. `TestLockFileParserInterface` - verify interface contract
+            2. `TestCheckDeps_NoConflicts` - happy path with clean dependencies
+            3. `TestCheckDeps_MissingDeps` - detects packages not in lock file
+            4. `TestCheckDeps_VersionConflicts` - detects conflicting version requirements
+            5. `TestRegisterParser` - parser registration works
+            6. `TestDetectLockFiles` - finds lock files in repo root
+
+            ## Verification Gate
+
+            ```bash
+            go build ./pkg/deps/...
+            go vet ./pkg/deps/...
+            go test ./pkg/deps/... -v
+            ```
+
+            ## Constraints
+
+            - Use existing `pkg/analyzer` for import extraction (do NOT reimplement)
+            - Use existing `pkg/protocol` for IMPL doc parsing
+            - Keep parser registration simple (global slice, init-time registration)
+            - Return JSON-serializable types (for CLI output)
+            - Handle missing lock files gracefully (empty report, not error)
+          files:
+            - pkg/deps/types.go
+            - pkg/deps/types_test.go
+            - pkg/deps/checker.go
+            - pkg/deps/checker_test.go
+    - number: 2
+      agents:
+        - id: B
+          task: |
+            ## What to Implement
+
+            Implement Go lock file parser for `go.sum` format. This parser extracts module dependencies and versions.
+
+            ## Interfaces to Implement
+
+            ```go
+            // pkg/deps/gosum.go
+            package deps
+
+            import (
+              "bufio"
+              "os"
+              "strings"
+            )
+
+            type GoSumParser struct{}
+
+            func (p *GoSumParser) Parse(filePath string) ([]PackageInfo, error) {
+              // Parse go.sum format:
+              // github.com/foo/bar v1.2.3 h1:hash
+              // github.com/foo/bar v1.2.3/go.mod h1:hash
+
+              // Read file line by line
+              // Extract module name and version
+              // Skip /go.mod lines (duplicates)
+              // Return unique packages
+              return nil, nil
+            }
+
+            func (p *GoSumParser) Detect(filePath string) bool {
+              return strings.HasSuffix(filePath, "go.sum")
+            }
+
+            func init() {
+              RegisterParser(&GoSumParser{})
+            }
+            ```
+
+            ## Interfaces to Call
+
+            - `RegisterParser(&GoSumParser{})` — register parser in init()
+            - `LockFileParser` interface from `pkg/deps/types.go`
+
+            ## Tests to Write
+
+            1. `TestGoSumParser_Parse_Valid` - parse valid go.sum file
+            2. `TestGoSumParser_Parse_EmptyFile` - handle empty file gracefully
+            3. `TestGoSumParser_Parse_MalformedLine` - skip invalid lines
+            4. `TestGoSumParser_Detect` - correctly identifies go.sum files
+            5. `TestGoSumParser_DeduplicatesModLines` - skips /go.mod duplicate entries
+
+            ## Verification Gate
+
+            ```bash
+            go build ./pkg/deps/...
+            go vet ./pkg/deps/...
+            go test ./pkg/deps/... -run TestGoSum -v
+            ```
+
+            ## Constraints
+
+            - Skip `/go.mod` suffix lines (they duplicate module entries)
+            - Handle whitespace variations in go.sum format
+            - Return empty slice (not error) for malformed file
+            - Use `strings.Fields()` for line splitting (handles variable whitespace)
+          files:
+            - pkg/deps/gosum.go
+            - pkg/deps/gosum_test.go
+          dependencies:
+            - A
+        - id: C
+          task: |
+            ## What to Implement
+
+            Implement Node.js lock file parser for `package-lock.json` format (npm v7+).
+
+            ## Interfaces to Implement
+
+            ```go
+            // pkg/deps/packagelock.go
+            package deps
+
+            import (
+              "encoding/json"
+              "os"
+              "strings"
+            )
+
+            type PackageLockParser struct{}
+
+            func (p *PackageLockParser) Parse(filePath string) ([]PackageInfo, error) {
+              // Parse package-lock.json format (npm v7+):
+              // {
+              //   "packages": {
+              //     "node_modules/lodash": {
+              //       "version": "4.17.21",
+              //       "resolved": "https://registry.npmjs.org/lodash/-/lodash-4.17.21.tgz"
+              //     }
+              //   }
+              // }
+
+              // Read JSON, extract packages map
+              // Parse node_modules/* entries
+              // Return package name (strip node_modules/ prefix), version, resolved URL
+              return nil, nil
+            }
+
+            func (p *PackageLockParser) Detect(filePath string) bool {
+              return strings.HasSuffix(filePath, "package-lock.json")
+            }
+
+            func init() {
+              RegisterParser(&PackageLockParser{})
+            }
+            ```
+
+            ## Interfaces to Call
+
+            - `RegisterParser(&PackageLockParser{})` — register parser in init()
+            - `LockFileParser` interface from `pkg/deps/types.go`
+
+            ## Tests to Write
+
+            1. `TestPackageLockParser_Parse_Valid` - parse valid package-lock.json
+            2. `TestPackageLockParser_Parse_EmptyPackages` - handle empty packages map
+            3. `TestPackageLockParser_Parse_MalformedJSON` - return error for invalid JSON
+            4. `TestPackageLockParser_Detect` - correctly identifies package-lock.json files
+            5. `TestPackageLockParser_StripNodeModulesPrefix` - removes node_modules/ from names
+
+            ## Verification Gate
+
+            ```bash
+            go build ./pkg/deps/...
+            go vet ./pkg/deps/...
+            go test ./pkg/deps/... -run TestPackageLock -v
+            ```
+
+            ## Constraints
+
+            - Support npm v7+ format (lockfileVersion >= 2)
+            - Strip `node_modules/` prefix from package names
+            - Handle scoped packages (`@org/package`) correctly
+            - Return error for malformed JSON (unlike Go parser)
+          files:
+            - pkg/deps/packagelock.go
+            - pkg/deps/packagelock_test.go
+          dependencies:
+            - A
+        - id: D
+          task: |
+            ## What to Implement
+
+            Implement Rust lock file parser for `Cargo.lock` format (TOML).
+
+            ## Interfaces to Implement
+
+            ```go
+            // pkg/deps/cargolock.go
+            package deps
+
+            import (
+              "os"
+              "strings"
+              "gopkg.in/yaml.v3" // TOML is similar enough to YAML for simple parsing
+            )
+
+            type CargoLockParser struct{}
+
+            func (p *CargoLockParser) Parse(filePath string) ([]PackageInfo, error) {
+              // Parse Cargo.lock format (TOML):
+              // [[package]]
+              // name = "serde"
+              // version = "1.0.136"
+              // source = "registry+https://github.com/rust-lang/crates.io-index"
+
+              // Read file, extract [[package]] sections
+              // Parse name, version, source fields
+              // Return packages
+              return nil, nil
+            }
+
+            func (p *CargoLockParser) Detect(filePath string) bool {
+              return strings.HasSuffix(filePath, "Cargo.lock")
+            }
+
+            func init() {
+              RegisterParser(&CargoLockParser{})
+            }
+            ```
+
+            ## Interfaces to Call
+
+            - `RegisterParser(&CargoLockParser{})` — register parser in init()
+            - `LockFileParser` interface from `pkg/deps/types.go`
+
+            ## Tests to Write
+
+            1. `TestCargoLockParser_Parse_Valid` - parse valid Cargo.lock file
+            2. `TestCargoLockParser_Parse_EmptyPackages` - handle file with no packages
+            3. `TestCargoLockParser_Parse_MalformedTOML` - return error for invalid TOML
+            4. `TestCargoLockParser_Detect` - correctly identifies Cargo.lock files
+            5. `TestCargoLockParser_MultiplePackages` - handles [[package]] array correctly
+
+            ## Verification Gate
+
+            ```bash
+            go build ./pkg/deps/...
+            go vet ./pkg/deps/...
+            go test ./pkg/deps/... -run TestCargoLock -v
+            ```
+
+            ## Constraints
+
+            - Use `gopkg.in/yaml.v3` for TOML parsing (already in go.mod, YAML can parse TOML subset)
+            - Handle `[[package]]` array syntax (multiple packages)
+            - Parse `source = "registry+https://..."` format
+            - Return error for malformed TOML
+          files:
+            - pkg/deps/cargolock.go
+            - pkg/deps/cargolock_test.go
+          dependencies:
+            - A
+        - id: E
+          task: |
+            ## What to Implement
+
+            Implement Python lock file parser for `poetry.lock` format (TOML).
+
+            ## Interfaces to Implement
+
+            ```go
+            // pkg/deps/poetrylock.go
+            package deps
+
+            import (
+              "os"
+              "strings"
+              "gopkg.in/yaml.v3" // TOML is similar enough to YAML for simple parsing
+            )
+
+            type PoetryLockParser struct{}
+
+            func (p *PoetryLockParser) Parse(filePath string) ([]PackageInfo, error) {
+              // Parse poetry.lock format (TOML):
+              // [[package]]
+              // name = "requests"
+              // version = "2.28.1"
+              // description = "Python HTTP for Humans."
+              // category = "main"
+              // optional = false
+              // python-versions = ">=3.7, <4"
+
+              // Read file, extract [[package]] sections
+              // Parse name, version fields
+              // Return packages
+              return nil, nil
+            }
+
+            func (p *PoetryLockParser) Detect(filePath string) bool {
+              return strings.HasSuffix(filePath, "poetry.lock")
+            }
+
+            func init() {
+              RegisterParser(&PoetryLockParser{})
+            }
+            ```
+
+            ## Interfaces to Call
+
+            - `RegisterParser(&PoetryLockParser{})` — register parser in init()
+            - `LockFileParser` interface from `pkg/deps/types.go`
+
+            ## Tests to Write
+
+            1. `TestPoetryLockParser_Parse_Valid` - parse valid poetry.lock file
+            2. `TestPoetryLockParser_Parse_EmptyPackages` - handle file with no packages
+            3. `TestPoetryLockParser_Parse_MalformedTOML` - return error for invalid TOML
+            4. `TestPoetryLockParser_Detect` - correctly identifies poetry.lock files
+            5. `TestPoetryLockParser_OptionalVsRequired` - parses both optional and required packages
+
+            ## Verification Gate
+
+            ```bash
+            go build ./pkg/deps/...
+            go vet ./pkg/deps/...
+            go test ./pkg/deps/... -run TestPoetryLock -v
+            ```
+
+            ## Constraints
+
+            - Use `gopkg.in/yaml.v3` for TOML parsing (same as Cargo.lock)
+            - Handle `[[package]]` array syntax
+            - Parse both optional and required packages (no filtering)
+            - Return error for malformed TOML
+          files:
+            - pkg/deps/poetrylock.go
+            - pkg/deps/poetrylock_test.go
+          dependencies:
+            - A
+    - number: 3
+      agents:
+        - id: F
+          task: |
+            ## What to Implement
+
+            Create the `sawtools check-deps` CLI command that invokes the dependency conflict detector and outputs JSON results.
+
+            ## Interfaces to Implement
+
+            ```go
+            // cmd/saw/check_deps_cmd.go
+            package main
+
+            import (
+              "encoding/json"
+              "fmt"
+              "os"
+              "github.com/spf13/cobra"
+              "github.com/blackwell-systems/scout-and-wave-go/pkg/deps"
+            )
+
+            func newCheckDepsCmd() *cobra.Command {
+              var wave int
+
+              cmd := &cobra.Command{
+                Use:   "check-deps <impl-doc>",
+                Short: "Detect dependency conflicts before wave execution",
+                Long: `Analyzes IMPL doc file ownership and lock files to detect:
+            - Missing dependencies (imports not in lock file)
+            - Version conflicts (agents requiring different versions)
+
+            Prevents agents wasting time on dependency thrashing.`,
+                Args: cobra.ExactArgs(1),
+                RunE: func(cmd *cobra.Command, args []string) error {
+                  implPath := args[0]
+
+                  // Run conflict detection
+                  report, err := deps.CheckDeps(implPath, wave)
+                  if err != nil {
+                    return fmt.Errorf("failed to check deps: %w", err)
+                  }
+
+                  // Output JSON
+                  enc := json.NewEncoder(os.Stdout)
+                  enc.SetIndent("", "  ")
+                  if err := enc.Encode(report); err != nil {
+                    return fmt.Errorf("failed to encode report: %w", err)
+                  }
+
+                  // Exit code: 0 if no conflicts, 1 if conflicts found
+                  if len(report.MissingDeps) > 0 || len(report.VersionConflicts) > 0 {
+                    os.Exit(1)
+                  }
+
+                  return nil
+                },
+              }
+
+              cmd.Flags().IntVar(&wave, "wave", 0, "Wave number to check (0 = all waves)")
+
+              return cmd
+            }
+            ```
+
+            ## Interfaces to Call
+
+            - `deps.CheckDeps(implPath, wave)` — run conflict detection
+            - `json.NewEncoder(os.Stdout).Encode(report)` — output JSON
+
+            ## Tests to Write
+
+            1. `TestCheckDepsCmd_NoConflicts` - exit 0 when no conflicts
+            2. `TestCheckDepsCmd_WithConflicts` - exit 1 when conflicts found
+            3. `TestCheckDepsCmd_InvalidIMPLPath` - return error for missing IMPL doc
+            4. `TestCheckDepsCmd_WaveFlag` - respects --wave flag
+            5. `TestCheckDepsCmd_JSONOutput` - validates JSON format
+
+            ## Verification Gate
+
+            ```bash
+            go build ./cmd/saw/...
+            go vet ./cmd/saw/...
+            go test ./cmd/saw/... -run TestCheckDeps -v
+
+            # Integration test with real IMPL doc
+            ./sawtools check-deps docs/IMPL/IMPL-h6-dependency-conflict-detection.yaml --wave 1
+            ```
+
+            ## Constraints
+
+            - Exit code 0 if no conflicts, 1 if conflicts found (for CI integration)
+            - Pretty-print JSON with 2-space indent
+            - Use cobra.ExactArgs(1) to enforce <impl-doc> argument
+            - Add command to main.go's rootCmd.AddCommand() list
+          files:
+            - cmd/saw/check_deps_cmd.go
+            - cmd/saw/check_deps_cmd_test.go
+          dependencies:
+            - A
+            - B
+            - C
+            - D
+            - E
+quality_gates:
+    level: standard
+    gates:
+        - type: build
+          command: go build ./pkg/deps/... ./cmd/saw/...
+          required: true
+        - type: lint
+          command: go vet ./pkg/deps/... ./cmd/saw/...
+          required: false
+          description: Check for common Go mistakes
+        - type: test
+          command: go test ./pkg/deps/... ./cmd/saw/...
+          required: true
+completion_reports:
+    A:
+        status: complete
+        branch: develop
+        commit: 47d977e
+        files_changed:
+            - pkg/deps/types.go
+            - pkg/deps/checker.go
+            - pkg/deps/types_test.go
+            - pkg/deps/checker_test.go
+        files_created:
+            - pkg/deps/types.go
+            - pkg/deps/checker.go
+            - pkg/deps/types_test.go
+            - pkg/deps/checker_test.go
+        tests_added:
+            - TestLockFileParserInterface
+            - TestConflictReportStructure
+            - TestRegisterParser
+            - TestDetectLockFiles
+            - TestDetectLockFiles_EmptyDir
+            - TestCheckDeps_NoConflicts
+            - TestCheckDeps_EmptyWave
+            - TestNormalizePackageName
+        verification: PASS - All 8 core tests passing. Core dependency conflict detection complete. LockFileParser interface and CheckDeps function implemented. External package import extraction works for Go files. Parser registration system ready for Wave 2.
+    B:
+        status: complete
+        branch: wave2-agent-B
+        commit: 17cb524
+        files_created:
+            - pkg/deps/gosum.go
+            - pkg/deps/gosum_test.go
+        tests_added:
+            - TestGoSumParser_Parse_Valid
+            - TestGoSumParser_Parse_EmptyFile
+            - TestGoSumParser_Parse_MalformedLine
+            - TestGoSumParser_Detect
+            - TestGoSumParser_DeduplicatesModLines
+            - TestGoSumParser_WhitespaceVariations
+        verification: PASS - Build, vet, and all 6 tests passing
+    C:
+        status: complete
+        branch: wave2-agent-C
+        commit: f77aebc
+        files_changed:
+            - pkg/deps/packagelock.go
+            - pkg/deps/packagelock_test.go
+        files_created:
+            - pkg/deps/packagelock.go
+            - pkg/deps/packagelock_test.go
+        tests_added:
+            - TestPackageLockParser_Parse_Valid
+            - TestPackageLockParser_Parse_EmptyPackages
+            - TestPackageLockParser_Parse_MalformedJSON
+            - TestPackageLockParser_Detect
+            - TestPackageLockParser_StripNodeModulesPrefix
+            - TestPackageLockParser_Parse_UnsupportedVersion
+            - TestPackageLockParser_Parse_SkipsRootPackage
+            - TestPackageLockParser_Parse_SkipsPackagesWithoutVersion
+        verification: PASS
+    D:
+        status: complete
+        branch: wave2-agent-D
+        commit: 0e5bbfb
+        files_changed:
+            - pkg/deps/cargolock.go
+            - pkg/deps/cargolock_test.go
+        files_created:
+            - pkg/deps/cargolock.go
+            - pkg/deps/cargolock_test.go
+        tests_added:
+            - TestCargoLockParser_Parse_Valid
+            - TestCargoLockParser_Parse_EmptyPackages
+            - TestCargoLockParser_Parse_MalformedTOML
+            - TestCargoLockParser_Parse_FileNotFound
+            - TestCargoLockParser_Detect
+            - TestCargoLockParser_MultiplePackages
+            - TestUnquoteTOML
+        verification: PASS
+    E:
+        status: complete
+        branch: wave2-agent-E
+        commit: e2e22aa
+        files_changed:
+            - pkg/deps/poetrylock.go
+            - pkg/deps/poetrylock_test.go
+        files_created:
+            - pkg/deps/poetrylock.go
+            - pkg/deps/poetrylock_test.go
+        tests_added:
+            - TestPoetryLockParser_Parse_Valid
+            - TestPoetryLockParser_Parse_EmptyPackages
+            - TestPoetryLockParser_Parse_MalformedTOML
+            - TestPoetryLockParser_Detect
+            - TestPoetryLockParser_OptionalVsRequired
+            - TestPoetryLockParser_WithSourceField
+        verification: PASS
+    F:
+        status: complete
+        branch: develop
+        commit: b8cb590c8fc72657537c74dc85d8d3751156d438
+        files_changed:
+            - cmd/saw/check_deps_cmd.go
+            - cmd/saw/check_deps_cmd_test.go
+            - cmd/saw/main.go
+        files_created:
+            - cmd/saw/check_deps_cmd.go
+            - cmd/saw/check_deps_cmd_test.go
+        tests_added:
+            - TestCheckDepsCmd_InvalidIMPLPath
+            - TestCheckDepsCmd_WaveFlag
+            - TestCheckDepsCmd_JSONOutput
+            - TestCheckDepsCmd_NoConflicts
+            - TestCheckDepsCmd_WithConflicts
+        verification: PASS
+state: WAVE_PENDING
