@@ -96,3 +96,5 @@ type BackendConfig struct {
   - Deliverables: H1a (analyze-suitability), M2 (detect-cascades)
   - New packages: `pkg/suitability/` (pre-implementation scanning), `pkg/analyzer/` (cascade detection)
   - New commands: `sawtools analyze-suitability`, `sawtools detect-cascades`
+- **h2-command-extraction**: completed 2026-03-12, 2 waves, 6 agents
+  - IMPL doc: docs/IMPL/complete/IMPL-h2-command-extraction.yaml
