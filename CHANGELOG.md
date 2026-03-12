@@ -8,6 +8,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 | Version | Date | Headline |
 |---------|------|----------|
+| [0.34.0] | 2026-03-12 | Markdown system removal — deprecated markdown IMPL parsers removed, cross-repo wave prevention fixes added |
 | [0.33.0] | 2026-03-11 | mark-complete simplification — always archives to complete/ directory, removed --archive flag |
 | [0.32.0] | 2026-03-11 | Multi-language dependency analysis — Rust, JavaScript/TypeScript, Python parsers added to analyze-deps (H3 Phase 2 complete) |
 | [0.31.0] | 2026-03-10 | Agent launch prioritization — critical path scheduling reduces wave completion time 10-20% |
@@ -99,6 +100,46 @@ If an IMPL is complete, it should be archived. If it's not ready to archive, it'
 ### Changed
 
 - **Agent J's saw-skill.md changes restored** — Originally reverted because commands didn't exist. After implementing the CLI commands, restored Agent J's orchestrator instructions for journal integration (step 4: init/context, step 5: prepend context to prompts).
+
+---
+
+## [0.34.0] - 2026-03-12
+
+### Removed
+
+- **Markdown IMPL parsing system deprecated** — Complete removal of markdown-based IMPL doc parsing in favor of YAML-only manifests. Protocol v0.7.0+ mandates YAML format; markdown support was a migration shim that is no longer needed.
+- **`protocol.ParseIMPLDoc()` function removed** (1,184 lines) — Full markdown IMPL doc parser eliminated from `pkg/protocol/parser.go`. Replaced by YAML-only `protocol.Load()` function.
+- **`protocol.ParseCompletionReport()` removed** — Markdown completion report parser eliminated. Completion reports now read from manifest's `completion_reports` YAML map.
+- **`protocol.ExtractAgentContext()` and `FormatAgentContextPayload()` removed** — Markdown-specific context extraction helpers eliminated from `pkg/protocol/extract.go`. Replaced by `ExtractAgentContextFromManifest()` for YAML manifests.
+- **`protocol.writeCompletionMarkerMarkdown()` removed** — Markdown completion marker writer eliminated from `pkg/protocol/marker.go`. Only YAML path remains.
+- **15 markdown parsing helper functions removed** — `isAgentHeader`, `extractAgentLetter`, `parseFileOwnershipRow`, `readUntilClosingFence`, `extractTypedBlock`, `parsePreMortemSection`, `parseKnownIssuesSection`, `parseScaffoldsDetailSection`, `parseInterfaceContractsSection`, `parseDependencyGraphSection`, `parsePostMergeChecklistSection`, `parseWaveStructureBlock`, `classifyAction` all eliminated.
+- **Markdown test coverage removed** (510 lines) — `TestParseIMPLDocMinimal`, `TestParseCompletionReportNotFound`, `TestExtractAgentContextFound`, `TestExtractAgentContextNotFound`, `TestFormatAgentContextPayload`, `TestWriteCompletionMarker_Markdown*` all deleted from test files.
+- **Web API markdown handlers removed** (scout-and-wave-web) — Dual-format branching removed from `handleListImpls`, `handleGetImpl`, `handleDeleteImpl`, `handleArchiveImpl`. All API endpoints now use `protocol.Load()` exclusively.
+- **Migration tool deleted** — `cmd/saw/migrate.go` (206 lines) removed from scout-and-wave-web as markdown-to-YAML migration is complete.
+
+### Added
+
+- **Base commit tracking for post-merge verification** (Prevention fix #1) — `Wave.BaseCommit` field records HEAD when worktrees are created. `CreateWorktrees()` saves this to manifest; `VerifyCommits()` uses it instead of current HEAD. Prevents false "0 commits" reports after branches are already merged.
+- **Duplicate completion report detection** (Prevention fix #2) — `protocol.Load()` enhanced to detect duplicate YAML keys (agents appending instead of replacing reports) with error message "completion report written twice". Validates all completion report keys match existing agents. Prevents YAML parse failures from duplicate keys.
+- **Compatibility shims in pkg/engine** — `ParseIMPLDoc()` and `ParseCompletionReport()` functions re-implemented as converters from `protocol.IMPLManifest` to legacy `types.IMPLDoc` format, maintaining backward compatibility for scout-and-wave-web's `cmd/saw/commands.go` callers.
+
+### Changed
+
+- **`pkg/orchestrator` migrated to YAML-only** — `merge.go` and `orchestrator.go` now use `protocol.Load()` and convert completion reports from protocol types to engine types. No longer call removed markdown parsers.
+- **`pkg/agent/completion.go`** — `WaitForCompletion()` updated to read from `manifest.CompletionReports` map instead of calling removed `ParseCompletionReport()`.
+- **`pkg/agent/runner.go`** — Removed `ParseCompletionReport()` wrapper method and unused protocol import.
+- **Cross-repo wave file ownership** — IMPL manifests now use absolute paths (`/Users/.../scout-and-wave-go`) instead of relative paths (`scout-and-wave-go`) in `FileOwnership.Repo` field to fix worktree creation and verification across repositories.
+
+### Fixed
+
+- **Cross-repo verify-commits bug** — Fixed issue where `verify-commits` reported 0 commits for all agents after merge because it compared `HEAD..branchName` when branches were already merged into HEAD. Now uses recorded `Wave.BaseCommit` from worktree creation time.
+- **Agent completion report idempotency** — Agents writing completion reports twice (appending to YAML) now caught immediately with clear error instead of silent YAML parse failure.
+
+### Metrics
+
+- **Total lines removed**: ~2,500 across both scout-and-wave-go and scout-and-wave-web repositories
+- **Cross-repo wave execution**: Wave 1 (Agents A & B in parallel across 2 repos), Wave 2 (Agent C cleanup), manual fixes for pkg/orchestrator and pkg/engine
+- **Test coverage maintained**: All YAML-related tests preserved; only markdown-specific tests removed
 
 ---
 | [0.1.0] | 2026-03-08 | Initial engine extraction — parser, orchestrator, agent runner, git, worktree management |
