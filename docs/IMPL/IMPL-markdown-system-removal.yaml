@@ -70,88 +70,88 @@ file_ownership:
     agent: "A"
     wave: 1
     action: "modify"
-    repo: "scout-and-wave-go"
+    repo: "/Users/dayna.blackwell/code/scout-and-wave-go"
   - file: "pkg/protocol/marker.go"
     agent: "A"
     wave: 1
     action: "modify"
-    repo: "scout-and-wave-go"
+    repo: "/Users/dayna.blackwell/code/scout-and-wave-go"
   - file: "pkg/protocol/extract.go"
     agent: "A"
     wave: 1
     action: "modify"
-    repo: "scout-and-wave-go"
+    repo: "/Users/dayna.blackwell/code/scout-and-wave-go"
   - file: "pkg/api/impl.go"
     agent: "B"
     wave: 1
     action: "modify"
-    repo: "scout-and-wave-web"
+    repo: "/Users/dayna.blackwell/code/scout-and-wave-web"
   - file: "pkg/api/wave_runner.go"
     agent: "B"
     wave: 1
     action: "modify"
-    repo: "scout-and-wave-web"
+    repo: "/Users/dayna.blackwell/code/scout-and-wave-web"
   - file: "pkg/api/agent_context_handler.go"
     agent: "B"
     wave: 1
     action: "modify"
-    repo: "scout-and-wave-web"
+    repo: "/Users/dayna.blackwell/code/scout-and-wave-web"
   - file: "cmd/saw/migrate.go"
     agent: "B"
     wave: 1
     action: "delete"
-    repo: "scout-and-wave-web"
+    repo: "/Users/dayna.blackwell/code/scout-and-wave-web"
   - file: "cmd/saw/commands.go"
     agent: "B"
     wave: 1
     action: "modify"
-    repo: "scout-and-wave-web"
+    repo: "/Users/dayna.blackwell/code/scout-and-wave-web"
   - file: "cmd/saw/main.go"
     agent: "B"
     wave: 1
     action: "modify"
-    repo: "scout-and-wave-web"
+    repo: "/Users/dayna.blackwell/code/scout-and-wave-web"
   - file: "pkg/api/merge_test_handlers.go"
     agent: "B"
     wave: 1
     action: "modify"
-    repo: "scout-and-wave-web"
+    repo: "/Users/dayna.blackwell/code/scout-and-wave-web"
   - file: "pkg/protocol/parser_test.go"
     agent: "C"
     wave: 2
     action: "modify"
     depends_on: ["A"]
-    repo: "scout-and-wave-go"
+    repo: "/Users/dayna.blackwell/code/scout-and-wave-go"
   - file: "pkg/protocol/extract_test.go"
     agent: "C"
     wave: 2
     action: "modify"
     depends_on: ["A"]
-    repo: "scout-and-wave-go"
+    repo: "/Users/dayna.blackwell/code/scout-and-wave-go"
   - file: "pkg/protocol/marker_test.go"
     agent: "C"
     wave: 2
     action: "modify"
     depends_on: ["A"]
-    repo: "scout-and-wave-go"
+    repo: "/Users/dayna.blackwell/code/scout-and-wave-go"
   - file: "pkg/protocol/doc.go"
     agent: "C"
     wave: 2
     action: "modify"
     depends_on: ["A"]
-    repo: "scout-and-wave-go"
+    repo: "/Users/dayna.blackwell/code/scout-and-wave-go"
   - file: "pkg/agent/completion.go"
     agent: "C"
     wave: 2
     action: "modify"
     depends_on: ["A"]
-    repo: "scout-and-wave-go"
+    repo: "/Users/dayna.blackwell/code/scout-and-wave-go"
   - file: "pkg/agent/runner.go"
     agent: "C"
     wave: 2
     action: "modify"
     depends_on: ["A"]
-    repo: "scout-and-wave-go"
+    repo: "/Users/dayna.blackwell/code/scout-and-wave-go"
 
 # Waves
 waves:
@@ -498,3 +498,48 @@ completion_reports:
       Expected failures (documented as out of scope):
       - cmd/saw/commands.go still references etypes.State (Wave 2 Agent D will fix)
       - API tests fail due to missing YAML test fixtures (Wave 2 Agent C will convert them)
+  C:
+    status: "complete"
+    repo: "/Users/dayna.blackwell/code/scout-and-wave-go"
+    worktree: ".claude/worktrees/wave2-agent-C"
+    branch: "wave2-agent-C"
+    commit: "8e02116c09e0ddfaf90c940638105aeb3fb5c09f"
+    files_changed:
+      - "pkg/protocol/parser_test.go"
+      - "pkg/protocol/extract_test.go"
+      - "pkg/protocol/marker_test.go"
+      - "pkg/protocol/doc.go"
+      - "pkg/agent/completion.go"
+      - "pkg/agent/runner.go"
+    files_created: []
+    interface_deviations: []
+    out_of_scope_deps:
+      - "pkg/orchestrator/merge.go uses protocol.ParseCompletionReport (removed)"
+      - "pkg/orchestrator/orchestrator.go uses protocol.ParseIMPLDoc, ExtractAgentContext, FormatAgentContextPayload (removed)"
+    tests_added: []
+    verification: "PASS (build, vet, test for owned packages)"
+    notes: |
+      Successfully cleaned up all markdown-related test files and updated documentation.
+
+      Removed tests:
+      - TestParseIMPLDocMinimal (markdown parser)
+      - TestParseCompletionReportNotFound (markdown completion report)
+      - TestExtractAgentContextFound (markdown extraction)
+      - TestExtractAgentContextNotFound (markdown extraction)
+      - TestFormatAgentContextPayload (markdown payload formatting)
+      - TestWriteCompletionMarker_Markdown (markdown marker)
+      - TestWriteCompletionMarker_Markdown_NoTitle (markdown marker)
+      - TestWriteCompletionMarker_Idempotent (markdown marker)
+      - Helper function tests (parseQualityGatesSection, etc.)
+
+      Updated:
+      - pkg/protocol/doc.go: Rewrote package documentation to reflect YAML-only protocol
+      - pkg/agent/completion.go: Updated WaitForCompletion to use manifest.CompletionReports map
+      - pkg/agent/runner.go: Removed ParseCompletionReport wrapper method and unused protocol import
+
+      Out-of-scope dependencies found:
+      - pkg/orchestrator package uses removed functions but is not in my file ownership
+      - These will need to be fixed by another agent or in a follow-up wave
+
+      Verification: pkg/protocol and pkg/agent packages build, pass vet, and all tests pass.
+      Full repo build fails due to orchestrator using removed functions (expected, out of scope).
