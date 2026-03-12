@@ -337,7 +337,8 @@ func TestTransitionTo_ValidTransitions(t *testing.T) {
 		{protocol.StateScoutPending, protocol.StateNotSuitable},
 		{protocol.StateReviewed, protocol.StateWavePending},
 		{protocol.StateWavePending, protocol.StateWaveExecuting},
-		{protocol.StateWaveExecuting, protocol.StateWaveVerified},
+		{protocol.StateWaveExecuting, protocol.StateWaveMerging},
+		{protocol.StateWaveMerging, protocol.StateWaveVerified},
 		{protocol.StateWaveVerified, protocol.StateComplete},
 		{protocol.StateWaveVerified, protocol.StateWavePending},
 	}
@@ -407,7 +408,8 @@ func TestIsValidTransition(t *testing.T) {
 		{protocol.StateScoutPending, protocol.StateNotSuitable},
 		{protocol.StateReviewed, protocol.StateWavePending},
 		{protocol.StateWavePending, protocol.StateWaveExecuting},
-		{protocol.StateWaveExecuting, protocol.StateWaveVerified},
+		{protocol.StateWaveExecuting, protocol.StateWaveMerging},
+		{protocol.StateWaveMerging, protocol.StateWaveVerified},
 		{protocol.StateWaveVerified, protocol.StateComplete},
 		{protocol.StateWaveVerified, protocol.StateWavePending},
 	}

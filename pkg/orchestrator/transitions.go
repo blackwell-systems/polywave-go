@@ -7,15 +7,15 @@ import (
 // validTransitions maps each state to the set of states reachable from it.
 // The SAW protocol defines 11 states with the following directed edges.
 var validTransitions = map[protocol.ProtocolState][]protocol.ProtocolState{
-	protocol.StateScoutPending:    {protocol.StateScoutValidating, protocol.StateNotSuitable},
+	protocol.StateScoutPending:    {protocol.StateScoutValidating, protocol.StateReviewed, protocol.StateNotSuitable, protocol.StateBlocked},
 	protocol.StateScoutValidating: {protocol.StateReviewed, protocol.StateScoutValidating, protocol.StateBlocked},
-	protocol.StateReviewed:        {protocol.StateScaffoldPending, protocol.StateWavePending},
+	protocol.StateReviewed:        {protocol.StateScaffoldPending, protocol.StateWavePending, protocol.StateBlocked},
 	protocol.StateScaffoldPending: {protocol.StateWavePending, protocol.StateBlocked},
-	protocol.StateWavePending:     {protocol.StateWaveExecuting},
-	protocol.StateWaveExecuting:   {protocol.StateWaveMerging, protocol.StateWaveVerified, protocol.StateBlocked},
+	protocol.StateWavePending:     {protocol.StateWaveExecuting, protocol.StateBlocked},
+	protocol.StateWaveExecuting:   {protocol.StateWaveMerging, protocol.StateBlocked},
 	protocol.StateWaveMerging:     {protocol.StateWaveVerified, protocol.StateBlocked},
-	protocol.StateWaveVerified:    {protocol.StateComplete, protocol.StateWavePending},
-	protocol.StateBlocked:         {protocol.StateWavePending, protocol.StateWaveVerified},
+	protocol.StateWaveVerified:    {protocol.StateComplete, protocol.StateWavePending, protocol.StateBlocked},
+	protocol.StateBlocked:         {protocol.StateScoutPending, protocol.StateScoutValidating, protocol.StateReviewed, protocol.StateScaffoldPending, protocol.StateWavePending, protocol.StateWaveExecuting, protocol.StateWaveMerging, protocol.StateWaveVerified, protocol.StateComplete, protocol.StateNotSuitable},
 	protocol.StateNotSuitable:     {},
 	protocol.StateComplete:        {},
 }
