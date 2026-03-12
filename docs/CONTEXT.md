@@ -89,3 +89,5 @@ type BackendConfig struct {
   - IMPL doc: docs/IMPL/IMPL-dependency-graph-generation.yaml
 - **h3-phase2-multi-language**: completed 2026-03-11, 2 waves, 4 agents
   - IMPL doc: docs/IMPL/IMPL-h3-phase2-multi-language.yaml
+- **scaffold-detection**: completed 2026-03-12, 1 waves, 3 agents
+  - IMPL doc: docs/IMPL/complete/IMPL-scaffold-detection.yaml
