@@ -6,7 +6,11 @@ import (
 )
 
 func TestRegisterPatterns(t *testing.T) {
-	// Clear catalogs first
+	// Save and restore catalogs
+	originalCatalogs := catalogs
+	defer func() { catalogs = originalCatalogs }()
+
+	// Clear catalogs for test
 	catalogs = make(map[string][]ErrorPattern)
 
 	patterns := []ErrorPattern{
@@ -37,6 +41,10 @@ func TestRegisterPatterns(t *testing.T) {
 }
 
 func TestDiagnoseError_KnownPattern(t *testing.T) {
+	// Save and restore catalogs
+	originalCatalogs := catalogs
+	defer func() { catalogs = originalCatalogs }()
+
 	// Clear and register test patterns
 	catalogs = make(map[string][]ErrorPattern)
 
@@ -78,6 +86,10 @@ func TestDiagnoseError_KnownPattern(t *testing.T) {
 }
 
 func TestDiagnoseError_NoMatch(t *testing.T) {
+	// Save and restore catalogs
+	originalCatalogs := catalogs
+	defer func() { catalogs = originalCatalogs }()
+
 	// Clear and register test patterns
 	catalogs = make(map[string][]ErrorPattern)
 
@@ -119,6 +131,10 @@ func TestDiagnoseError_NoMatch(t *testing.T) {
 }
 
 func TestDiagnoseError_UnsupportedLanguage(t *testing.T) {
+	// Save and restore catalogs
+	originalCatalogs := catalogs
+	defer func() { catalogs = originalCatalogs }()
+
 	// Clear catalogs
 	catalogs = make(map[string][]ErrorPattern)
 
@@ -135,6 +151,10 @@ func TestDiagnoseError_UnsupportedLanguage(t *testing.T) {
 }
 
 func TestDiagnoseError_InvalidRegex(t *testing.T) {
+	// Save and restore catalogs
+	originalCatalogs := catalogs
+	defer func() { catalogs = originalCatalogs }()
+
 	// Clear and register patterns with invalid regex
 	catalogs = make(map[string][]ErrorPattern)
 
@@ -173,6 +193,10 @@ func TestDiagnoseError_InvalidRegex(t *testing.T) {
 }
 
 func TestSupportedLanguages(t *testing.T) {
+	// Save and restore catalogs
+	originalCatalogs := catalogs
+	defer func() { catalogs = originalCatalogs }()
+
 	// Clear and register multiple languages
 	catalogs = make(map[string][]ErrorPattern)
 
@@ -202,6 +226,10 @@ func TestSupportedLanguages(t *testing.T) {
 }
 
 func TestRegisterPatterns_CaseInsensitive(t *testing.T) {
+	// Save and restore catalogs
+	originalCatalogs := catalogs
+	defer func() { catalogs = originalCatalogs }()
+
 	// Clear catalogs
 	catalogs = make(map[string][]ErrorPattern)
 
