@@ -39,6 +39,7 @@ func main() {
 		newDetectScaffoldsCmd(),
 		newAnalyzeSuitabilityCmd(),
 		newExtractCommandsCmd(),
+		newFinalizeWaveCmd(),
 	)
 	if err := rootCmd.Execute(); err != nil {
 		fmt.Fprintln(os.Stderr, err)
