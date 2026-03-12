@@ -116,9 +116,14 @@ func debugJournalCommand(repoRoot string, agentPath string, opts DebugOpts) erro
 	return nil
 }
 
-// loadJournalEntries reads all entries from index.jsonl
+// loadJournalEntries reads all entries from index.jsonl.
+// Returns empty slice (not error) if index.jsonl doesn't exist yet.
 func loadJournalEntries(journalPath string) ([]journal.ToolEntry, error) {
 	f, err := os.Open(journalPath)
+	if os.IsNotExist(err) {
+		// Fresh session - no entries yet
+		return []journal.ToolEntry{}, nil
+	}
 	if err != nil {
 		return nil, err
 	}

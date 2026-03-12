@@ -71,6 +71,15 @@ func (o *JournalObserver) Sync() (*SyncResult, error) {
 		return nil, fmt.Errorf("failed to find session file: %w", err)
 	}
 
+	// No session files yet - return empty result (fresh session)
+	if sessionFile == "" {
+		return &SyncResult{
+			NewToolUses:    0,
+			NewToolResults: 0,
+			NewBytes:       0,
+		}, nil
+	}
+
 	// Load cursor
 	cursor, err := o.loadCursor()
 	if err != nil {
@@ -290,6 +299,7 @@ func (o *JournalObserver) extractToolResult(block map[string]interface{}, timest
 }
 
 // findLatestSessionFile locates the most recent .jsonl file in the Claude project directory.
+// Returns empty string (not error) when no session files exist yet.
 func (o *JournalObserver) findLatestSessionFile() (string, error) {
 	projectDir := o.getClaudeProjectDir()
 
@@ -301,7 +311,8 @@ func (o *JournalObserver) findLatestSessionFile() (string, error) {
 	}
 
 	if len(matches) == 0 {
-		return "", fmt.Errorf("no session files found in %s", projectDir)
+		// No session files yet - fresh session with no prior tool execution
+		return "", nil
 	}
 
 	// Sort by mtime (most recent first)
