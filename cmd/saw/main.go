@@ -35,6 +35,7 @@ func main() {
 		newAnalyzeDepsCmd(),
 		newDetectScaffoldsCmd(),
 		newAnalyzeSuitabilityCmd(),
+		newExtractCommandsCmd(),
 	)
 	if err := rootCmd.Execute(); err != nil {
 		fmt.Fprintln(os.Stderr, err)
