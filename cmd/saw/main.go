@@ -42,6 +42,7 @@ func main() {
 		newExtractCommandsCmd(),
 		newFinalizeWaveCmd(),
 		newDiagnoseBuildFailureCmd(),
+		newAssignAgentIDsCmd(),
 	)
 	if err := rootCmd.Execute(); err != nil {
 		fmt.Fprintln(os.Stderr, err)
