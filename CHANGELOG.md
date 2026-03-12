@@ -8,6 +8,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 | Version | Date | Headline |
 |---------|------|----------|
+| [0.35.0] | 2026-03-12 | State machine conformance — fixed SCOUT_VALIDATING self-loop, removed direct SCOUT_PENDING→REVIEWED bypass, aligned validation guards |
 | [0.34.0] | 2026-03-12 | Markdown system removal — deprecated markdown IMPL parsers removed, cross-repo wave prevention fixes added |
 | [0.33.0] | 2026-03-11 | mark-complete simplification — always archives to complete/ directory, removed --archive flag |
 | [0.32.0] | 2026-03-11 | Multi-language dependency analysis — Rust, JavaScript/TypeScript, Python parsers added to analyze-deps (H3 Phase 2 complete) |
@@ -42,7 +43,21 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 | [0.3.0] | 2026-03-08 | Protocol audit fixes — P0: failure_type parsing, multi-gen agent IDs; P1: E22 2-pass scaffold build, cross-repo Repo column; P2: repo field in completion reports |
 | [0.2.0] | 2026-03-08 | Engine protocol parity — E17–E23 implemented (context memory, failure routing, stub scan, quality gates, scaffold build verify, per-agent context extraction) |
 
-## [0.33.0] - 2026-03-11
+## [0.35.0] - 2026-03-12
+
+### Fixed
+
+- **State machine conformance** — Fixed two critical state transition violations identified in AUDIT-state-machine.md:
+  1. Added SCOUT_VALIDATING self-loop transition (enables E16 validation retry loop)
+  2. Removed direct SCOUT_PENDING → REVIEWED bypass (forces validation through SCOUT_VALIDATING)
+- **Aligned transition guards** — Synchronized `pkg/orchestrator/transitions.go` and `pkg/protocol/manifest.go` state machines to enforce consistent rules
+
+### Changed
+
+- **State transitions** — Scout validation now requires explicit SCOUT_VALIDATING state; cannot skip validation gate
+- **Validation retry** — SCOUT_VALIDATING → SCOUT_VALIDATING self-loop allows retrying validation up to retry limit before blocking
+
+## [0.34.0] - 2026-03-12
 
 ### Changed
 

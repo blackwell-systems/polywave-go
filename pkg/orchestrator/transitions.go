@@ -7,8 +7,8 @@ import (
 // validTransitions maps each state to the set of states reachable from it.
 // The SAW protocol defines 11 states with the following directed edges.
 var validTransitions = map[protocol.ProtocolState][]protocol.ProtocolState{
-	protocol.StateScoutPending:    {protocol.StateScoutValidating, protocol.StateReviewed, protocol.StateNotSuitable},
-	protocol.StateScoutValidating: {protocol.StateReviewed, protocol.StateBlocked},
+	protocol.StateScoutPending:    {protocol.StateScoutValidating, protocol.StateNotSuitable},
+	protocol.StateScoutValidating: {protocol.StateReviewed, protocol.StateScoutValidating, protocol.StateBlocked},
 	protocol.StateReviewed:        {protocol.StateScaffoldPending, protocol.StateWavePending},
 	protocol.StateScaffoldPending: {protocol.StateWavePending, protocol.StateBlocked},
 	protocol.StateWavePending:     {protocol.StateWaveExecuting},

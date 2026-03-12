@@ -160,8 +160,8 @@ func ValidateSM02TransitionGuards(from, to ProtocolState, m *IMPLManifest) []Val
 
 	// Define valid transitions
 	validTransitions := map[ProtocolState][]ProtocolState{
-		StateScoutPending:    {StateScoutValidating, StateBlocked},
-		StateScoutValidating: {StateReviewed, StateNotSuitable, StateBlocked},
+		StateScoutPending:    {StateScoutValidating, StateNotSuitable, StateBlocked},
+		StateScoutValidating: {StateReviewed, StateScoutValidating, StateBlocked},
 		StateReviewed:        {StateScaffoldPending, StateWavePending, StateBlocked},
 		StateScaffoldPending: {StateWavePending, StateBlocked},
 		StateWavePending:     {StateWaveExecuting, StateBlocked},
