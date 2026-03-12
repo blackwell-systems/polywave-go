@@ -8,6 +8,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 | Version | Date | Headline |
 |---------|------|----------|
+| [0.38.0] | 2026-03-12 | H7 build failure diagnosis — pattern-matching engine with 27 error patterns across 4 languages (Go, Rust, JS/TS, Python) |
 | [0.37.0] | 2026-03-12 | Batch wave commands — prepare-wave and finalize-wave reduce orchestrator overhead from 11 commands to 3 (23% faster execution) |
 | [0.36.0] | 2026-03-12 | H6 dependency conflict detection + journal graceful degradation — check-deps CLI, 4 lock file parsers, empty session handling |
 | [0.35.0] | 2026-03-12 | State machine conformance — fixed SCOUT_VALIDATING self-loop, removed direct SCOUT_PENDING→REVIEWED bypass, aligned validation guards |
@@ -44,6 +45,32 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 | [0.4.0] | 2026-03-09 | Per-agent model routing — ScoutModel/WaveModel opts, `model:` field in IMPL doc agent sections, per-agent backend dispatch |
 | [0.3.0] | 2026-03-08 | Protocol audit fixes — P0: failure_type parsing, multi-gen agent IDs; P1: E22 2-pass scaffold build, cross-repo Repo column; P2: repo field in completion reports |
 | [0.2.0] | 2026-03-08 | Engine protocol parity — E17–E23 implemented (context memory, failure routing, stub scan, quality gates, scaffold build verify, per-agent context extraction) |
+
+## [0.38.0] - 2026-03-12
+
+### Added
+
+- **H7: Build failure diagnosis** — Phase 3 determinism tool that turns cryptic build errors into actionable fixes
+  - `pkg/builddiag/` package with pattern-matching diagnosis engine
+  - `ErrorPattern` struct (name, regex, fix, rationale, auto_fixable, confidence)
+  - `DiagnoseError(errorLog, language)` function matches error logs against language-specific catalogs
+  - 4 language catalogs with 27 total patterns:
+    - Go: 6 patterns (missing_package, missing_go_sum_entry, undefined_identifier, type_mismatch, import_cycle, syntax_error)
+    - Rust: 5 patterns (E0425, E0277, E0308, E0432, macro errors)
+    - JavaScript/TypeScript: 5 patterns (module_not_found, property_not_exist, syntax_error, type_any_implicit, import_path_invalid)
+    - Python: 6 patterns (ModuleNotFoundError, NameError, SyntaxError, ImportError, IndentationError, TypeError)
+  - `sawtools diagnose-build-failure <error-log> --language <lang>` CLI command
+  - Outputs structured YAML with diagnosis, confidence, fix recommendation, rationale, and auto-fixability
+  - 42 tests passing across all agents (7 core engine, 35 language-specific)
+  - Completed via SAW: 3 waves, 6 agents (A solo, B-E parallel, F solo)
+
+### Fixed
+
+- **Test isolation bug** in `pkg/builddiag/diagnose_test.go`
+  - Tests were clearing global `catalogs` map without restoring it, causing failures when language pattern `init()` functions ran before tests
+  - Added save/restore pattern using defer to all 7 test functions
+  - Pattern: `originalCatalogs := catalogs; defer func() { catalogs = originalCatalogs }()`
+  - All 42 tests now pass in full suite (previously only passed in isolation)
 
 ## [0.37.0] - 2026-03-12
 
