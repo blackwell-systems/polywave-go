@@ -106,3 +106,5 @@ type BackendConfig struct {
   - IMPL doc: docs/IMPL/complete/IMPL-batch-wave-commands.yaml
 - **h7-build-failure-diagnosis**: completed 2026-03-12, 3 waves, 6 agents
   - IMPL doc: docs/IMPL/complete/IMPL-h7-build-failure-diagnosis.yaml
+- **dependency-graph-generation**: completed 2026-03-12, 3 waves, 6 agents
+  - IMPL doc: docs/IMPL/complete/IMPL-dependency-graph-generation.yaml
