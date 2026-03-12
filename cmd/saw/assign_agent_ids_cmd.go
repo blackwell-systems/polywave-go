@@ -49,7 +49,7 @@ Examples:
 			}
 
 			// Output space-separated IDs
-			fmt.Println(strings.Join(ids, " "))
+			fmt.Fprintln(cmd.OutOrStdout(), strings.Join(ids, " "))
 			return nil
 		},
 	}
