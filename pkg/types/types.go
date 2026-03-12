@@ -4,53 +4,6 @@
 // rather than defining their own protocol structs.
 package types
 
-// State represents the state of the protocol state machine
-type State int
-
-const (
-	ScoutPending    State = iota // Scout agent is analyzing the codebase (SCOUT_PENDING)
-	ScoutValidating              // Scout has written the IMPL doc; E16 validation in progress (SCOUT_VALIDATING)
-	NotSuitable                  // feature was rejected by the suitability gate; terminal
-	Reviewed                     // IMPL doc has been reviewed and approved by a human
-	ScaffoldPending              // Scaffold agent is creating shared type scaffold files
-	WavePending                  // wave is ready to execute; agents not yet launched
-	WaveExecuting                // wave agents are running concurrently
-	WaveMerging                  // orchestrator is merging agent worktrees into HEAD
-	WaveVerified                 // post-merge verification passed
-	Blocked                      // agent failure or verification failure; requires resolution
-	Complete                     // all waves merged and verified; terminal
-)
-
-// String returns the string representation of the State
-func (s State) String() string {
-	switch s {
-	case ScoutPending:
-		return "ScoutPending"
-	case ScoutValidating:
-		return "ScoutValidating"
-	case NotSuitable:
-		return "NotSuitable"
-	case Reviewed:
-		return "Reviewed"
-	case ScaffoldPending:
-		return "ScaffoldPending"
-	case WavePending:
-		return "WavePending"
-	case WaveExecuting:
-		return "WaveExecuting"
-	case WaveMerging:
-		return "WaveMerging"
-	case WaveVerified:
-		return "WaveVerified"
-	case Blocked:
-		return "Blocked"
-	case Complete:
-		return "Complete"
-	default:
-		return "Unknown"
-	}
-}
-
 // CompletionStatus represents the completion status of an agent's work
 type CompletionStatus string
 

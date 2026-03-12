@@ -305,7 +305,7 @@ var newRunnerFunc = func(b backend.Backend, wm *worktree.Manager) *agent.Runner 
 // Orchestrator drives SAW protocol wave coordination.
 // State mutations must go through TransitionTo — never set o.state directly.
 type Orchestrator struct {
-	state          types.State
+	state          protocol.ProtocolState
 	implDoc        *types.IMPLDoc
 	repoPath       string
 	currentWave    int
@@ -336,7 +336,7 @@ func New(repoPath string, implDocPath string) (*Orchestrator, error) {
 		return nil, fmt.Errorf("orchestrator.New: failed to parse IMPL doc %q: %w", implDocPath, err)
 	}
 	return &Orchestrator{
-		state:       types.ScoutPending,
+		state:       protocol.StateScoutPending,
 		implDoc:     doc,
 		repoPath:    repoPath,
 		implDocPath: implDocPath,
@@ -347,7 +347,7 @@ func New(repoPath string, implDocPath string) (*Orchestrator, error) {
 // Used in tests to avoid the pkg/protocol dependency.
 func newFromDoc(doc *types.IMPLDoc, repoPath, implDocPath string) *Orchestrator {
 	return &Orchestrator{
-		state:       types.ScoutPending,
+		state:       protocol.StateScoutPending,
 		implDoc:     doc,
 		repoPath:    repoPath,
 		implDocPath: implDocPath,
@@ -355,7 +355,7 @@ func newFromDoc(doc *types.IMPLDoc, repoPath, implDocPath string) *Orchestrator 
 }
 
 // State returns the current protocol state.
-func (o *Orchestrator) State() types.State {
+func (o *Orchestrator) State() protocol.ProtocolState {
 	return o.state
 }
 
@@ -371,7 +371,7 @@ func (o *Orchestrator) RepoPath() string {
 
 // TransitionTo advances the state machine to newState.
 // It returns a descriptive error if the transition is not permitted.
-func (o *Orchestrator) TransitionTo(newState types.State) error {
+func (o *Orchestrator) TransitionTo(newState protocol.ProtocolState) error {
 	if !isValidTransition(o.state, newState) {
 		return fmt.Errorf(
 			"orchestrator: invalid state transition from %s to %s",

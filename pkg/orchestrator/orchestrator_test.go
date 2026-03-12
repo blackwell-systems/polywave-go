@@ -12,6 +12,7 @@ import (
 
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/agent"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/agent/backend"
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/types"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/worktree"
 )
@@ -87,7 +88,7 @@ func TestOrchestratorNew(t *testing.T) {
 	if o == nil {
 		t.Fatal("New returned nil orchestrator")
 	}
-	if o.State() != types.ScoutPending {
+	if o.State() != protocol.StateScoutPending {
 		t.Errorf("initial state = %s, want ScoutPending", o.State())
 	}
 	if o.IMPLDoc().FeatureName != "test" {
@@ -125,7 +126,7 @@ func TestNew_LoadsDoc(t *testing.T) {
 	if o == nil {
 		t.Fatal("New returned nil orchestrator")
 	}
-	if o.State() != types.ScoutPending {
+	if o.State() != protocol.StateScoutPending {
 		t.Errorf("initial state = %s, want ScoutPending", o.State())
 	}
 	if o.IMPLDoc().FeatureName != "test" {
@@ -329,16 +330,16 @@ func TestRunWave_ReturnsErrorOnAgentFailure(t *testing.T) {
 // TestTransitionTo_ValidTransitions exercises every edge in the state graph.
 func TestTransitionTo_ValidTransitions(t *testing.T) {
 	cases := []struct {
-		from types.State
-		to   types.State
+		from protocol.ProtocolState
+		to   protocol.ProtocolState
 	}{
-		{types.ScoutPending, types.Reviewed},
-		{types.ScoutPending, types.NotSuitable},
-		{types.Reviewed, types.WavePending},
-		{types.WavePending, types.WaveExecuting},
-		{types.WaveExecuting, types.WaveVerified},
-		{types.WaveVerified, types.Complete},
-		{types.WaveVerified, types.WavePending},
+		{protocol.StateScoutPending, protocol.StateReviewed},
+		{protocol.StateScoutPending, protocol.StateNotSuitable},
+		{protocol.StateReviewed, protocol.StateWavePending},
+		{protocol.StateWavePending, protocol.StateWaveExecuting},
+		{protocol.StateWaveExecuting, protocol.StateWaveVerified},
+		{protocol.StateWaveVerified, protocol.StateComplete},
+		{protocol.StateWaveVerified, protocol.StateWavePending},
 	}
 
 	for _, tc := range cases {
@@ -358,32 +359,32 @@ func TestTransitionTo_ValidTransitions(t *testing.T) {
 // TestTransitionTo_InvalidTransition verifies that an illegal transition returns an error.
 func TestTransitionTo_InvalidTransition(t *testing.T) {
 	o := makeOrch()
-	err := o.TransitionTo(types.Complete)
+	err := o.TransitionTo(protocol.StateComplete)
 	if err == nil {
-		t.Fatal("expected error for ScoutPending -> Complete, got nil")
+		t.Fatal("expected error for SCOUT_PENDING -> COMPLETE, got nil")
 	}
-	if !strings.Contains(err.Error(), "ScoutPending") {
-		t.Errorf("error should mention source state ScoutPending, got: %v", err)
+	if !strings.Contains(err.Error(), "SCOUT_PENDING") {
+		t.Errorf("error should mention source state SCOUT_PENDING, got: %v", err)
 	}
-	if !strings.Contains(err.Error(), "Complete") {
-		t.Errorf("error should mention target state Complete, got: %v", err)
+	if !strings.Contains(err.Error(), "COMPLETE") {
+		t.Errorf("error should mention target state COMPLETE, got: %v", err)
 	}
-	if o.State() != types.ScoutPending {
+	if o.State() != protocol.StateScoutPending {
 		t.Errorf("state changed after invalid transition: got %s", o.State())
 	}
 }
 
 // TestTransitionTo_TerminalState verifies that NotSuitable and Complete cannot be exited.
 func TestTransitionTo_TerminalState(t *testing.T) {
-	terminalStates := []types.State{types.NotSuitable, types.Complete}
-	allStates := []types.State{
-		types.ScoutPending,
-		types.Reviewed,
-		types.WavePending,
-		types.WaveExecuting,
-		types.WaveVerified,
-		types.NotSuitable,
-		types.Complete,
+	terminalStates := []protocol.ProtocolState{protocol.StateNotSuitable, protocol.StateComplete}
+	allStates := []protocol.ProtocolState{
+		protocol.StateScoutPending,
+		protocol.StateReviewed,
+		protocol.StateWavePending,
+		protocol.StateWaveExecuting,
+		protocol.StateWaveVerified,
+		protocol.StateNotSuitable,
+		protocol.StateComplete,
 	}
 
 	for _, terminal := range terminalStates {
@@ -401,14 +402,14 @@ func TestTransitionTo_TerminalState(t *testing.T) {
 
 // TestIsValidTransition unit-tests the guard function directly.
 func TestIsValidTransition(t *testing.T) {
-	valid := []struct{ from, to types.State }{
-		{types.ScoutPending, types.Reviewed},
-		{types.ScoutPending, types.NotSuitable},
-		{types.Reviewed, types.WavePending},
-		{types.WavePending, types.WaveExecuting},
-		{types.WaveExecuting, types.WaveVerified},
-		{types.WaveVerified, types.Complete},
-		{types.WaveVerified, types.WavePending},
+	valid := []struct{ from, to protocol.ProtocolState }{
+		{protocol.StateScoutPending, protocol.StateReviewed},
+		{protocol.StateScoutPending, protocol.StateNotSuitable},
+		{protocol.StateReviewed, protocol.StateWavePending},
+		{protocol.StateWavePending, protocol.StateWaveExecuting},
+		{protocol.StateWaveExecuting, protocol.StateWaveVerified},
+		{protocol.StateWaveVerified, protocol.StateComplete},
+		{protocol.StateWaveVerified, protocol.StateWavePending},
 	}
 	for _, tc := range valid {
 		if !isValidTransition(tc.from, tc.to) {
@@ -416,13 +417,13 @@ func TestIsValidTransition(t *testing.T) {
 		}
 	}
 
-	invalid := []struct{ from, to types.State }{
-		{types.ScoutPending, types.Complete},
-		{types.ScoutPending, types.WaveExecuting},
-		{types.Reviewed, types.Complete},
-		{types.NotSuitable, types.Reviewed},
-		{types.Complete, types.WavePending},
-		{types.WaveExecuting, types.WavePending},
+	invalid := []struct{ from, to protocol.ProtocolState }{
+		{protocol.StateScoutPending, protocol.StateComplete},
+		{protocol.StateScoutPending, protocol.StateWaveExecuting},
+		{protocol.StateReviewed, protocol.StateComplete},
+		{protocol.StateNotSuitable, protocol.StateReviewed},
+		{protocol.StateComplete, protocol.StateWavePending},
+		{protocol.StateWaveExecuting, protocol.StateWavePending},
 	}
 	for _, tc := range invalid {
 		if isValidTransition(tc.from, tc.to) {
@@ -439,7 +440,7 @@ func TestNewFromDoc(t *testing.T) {
 	}
 	o := newFromDoc(doc, "/some/repo", "/some/repo/IMPL.md")
 
-	if o.State() != types.ScoutPending {
+	if o.State() != protocol.StateScoutPending {
 		t.Errorf("initial state: got %s, want ScoutPending", o.State())
 	}
 	if o.IMPLDoc() != doc {
@@ -876,25 +877,25 @@ func TestNewBackendFunc_OpenAIPrefix(t *testing.T) {
 	}
 }
 
-// TestState_String verifies that each state produces a human-readable name.
+// TestState_String verifies that each state constant has the expected string value.
 func TestState_String(t *testing.T) {
 	cases := []struct {
-		state types.State
+		state protocol.ProtocolState
 		want  string
 	}{
-		{types.ScoutPending, "ScoutPending"},
-		{types.NotSuitable, "NotSuitable"},
-		{types.Reviewed, "Reviewed"},
-		{types.WavePending, "WavePending"},
-		{types.WaveExecuting, "WaveExecuting"},
-		{types.WaveVerified, "WaveVerified"},
-		{types.Complete, "Complete"},
+		{protocol.StateScoutPending, "SCOUT_PENDING"},
+		{protocol.StateNotSuitable, "NOT_SUITABLE"},
+		{protocol.StateReviewed, "REVIEWED"},
+		{protocol.StateWavePending, "WAVE_PENDING"},
+		{protocol.StateWaveExecuting, "WAVE_EXECUTING"},
+		{protocol.StateWaveVerified, "WAVE_VERIFIED"},
+		{protocol.StateComplete, "COMPLETE"},
 	}
 
 	for _, tc := range cases {
-		got := tc.state.String()
+		got := string(tc.state)
 		if got != tc.want {
-			t.Errorf("State(%d).String() = %q, want %q", int(tc.state), got, tc.want)
+			t.Errorf("State constant = %q, want %q", got, tc.want)
 		}
 	}
 }
