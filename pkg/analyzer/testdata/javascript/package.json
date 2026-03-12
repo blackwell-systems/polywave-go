@@ -1,0 +1,11 @@
+{
+  "name": "test-package",
+  "version": "1.0.0",
+  "description": "Test package for JavaScript parser",
+  "type": "module",
+  "dependencies": {
+    "lodash": "^4.17.21",
+    "express": "^4.18.0",
+    "react": "^18.0.0"
+  }
+}
