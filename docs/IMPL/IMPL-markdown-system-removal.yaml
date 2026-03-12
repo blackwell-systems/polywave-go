@@ -106,6 +106,11 @@ file_ownership:
     wave: 1
     action: "modify"
     repo: "scout-and-wave-web"
+  - file: "cmd/saw/main.go"
+    agent: "B"
+    wave: 1
+    action: "modify"
+    repo: "scout-and-wave-web"
   - file: "pkg/api/merge_test_handlers.go"
     agent: "B"
     wave: 1
@@ -263,6 +268,10 @@ waves:
              - Remove `migrate` command registration in `Run()` function
              - Remove `runMigrate` function reference
 
+          7. `cmd/saw/main.go`:
+             - Remove `migrate` case from command switch (lines 78-82)
+             - Remove migrate help text (line 141)
+
           **Pattern to remove (example from impl.go handleGetImpl):**
           ```go
           // Before (dual-mode):
@@ -312,6 +321,7 @@ waves:
           - "pkg/api/merge_test_handlers.go"
           - "cmd/saw/migrate.go"
           - "cmd/saw/commands.go"
+          - "cmd/saw/main.go"
         model: "claude-sonnet-4"
 
   - number: 2
@@ -428,3 +438,41 @@ completion_reports:
 
       Build fails as expected because other packages (pkg/agent, tests) still call removed functions.
       Agent C will fix these in Wave 2. Verification gate passed for build+vet on modified files only.
+
+  B:
+    status: "partial"
+    failure_type: "needs_replan"
+    repo: "/Users/dayna.blackwell/code/scout-and-wave-web"
+    worktree: ".claude/worktrees/wave1-agent-B"
+    branch: "wave1-agent-B"
+    commit: "05ffd72"
+    files_changed:
+      - "pkg/api/impl.go"
+      - "pkg/api/wave_runner.go"
+      - "pkg/api/agent_context_handler.go"
+      - "pkg/api/merge_test_handlers.go"
+    files_created: []
+    interface_deviations: []
+    out_of_scope_deps:
+      - "cmd/saw/main.go needs migrate case removed (lines 78-82, 141) - not in file ownership"
+      - "cmd/saw/commands.go has pre-existing build failures (uses etypes.State from old markdown parser) - outside Agent B scope"
+    tests_added: []
+    verification: "PASS (build+vet on pkg/api only; tests fail as expected)"
+    notes: |
+      Successfully removed markdown IMPL handling from web API layer (pkg/api/).
+
+      Changes completed:
+      - impl.go: Removed .md extension checks from handleListImpls, handleGetImpl, handleDeleteImpl, handleArchiveImpl
+      - impl.go: Removed markdown-only helpers (inferComplete, injectScaffoldWave, isNotExistErr, suitabilityVerdict, mapFileOwnership, mapWaves, mapKnownIssues, mapScaffoldsDetail, extractAgentPrompts, mapPreMortem)
+      - wave_runner.go: Replaced engine.ParseIMPLDoc with protocol.Load
+      - agent_context_handler.go: Replaced markdown extraction with protocol.ExtractAgentContextFromManifest
+      - merge_test_handlers.go: Updated to use YAML manifests via protocol.Load
+      - Deleted cmd/saw/migrate.go (migration tool no longer needed)
+      - Removed unused engine import from modified files, kept protocol imports
+
+      pkg/api/ builds and passes vet successfully. Tests fail as expected (they reference markdown fixtures) - Agent C will fix in Wave 2.
+
+      Out-of-scope discovery:
+      The task specified "cmd/saw/commands.go: Remove migrate command registration" but the migrate command registration is actually in cmd/saw/main.go (lines 78-82, 141), which is not in the file ownership table. Additionally, cmd/saw/commands.go has pre-existing build failures unrelated to my changes (uses etypes.State which was part of the markdown parser type system). These failures exist before my changes and are outside Agent B's scope.
+
+      Recommendation: Add cmd/saw/main.go to Agent B or Agent C ownership to remove migrate command case and help text.
