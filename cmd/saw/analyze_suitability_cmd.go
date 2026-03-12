@@ -51,6 +51,13 @@ Output is JSON with status, test coverage, and time savings estimates.`,
 				return fmt.Errorf("no valid requirements found in %s", requirementsFlag)
 			}
 
+			// Verify repo root exists
+			if _, err := os.Stat(repoRootFlag); os.IsNotExist(err) {
+				return fmt.Errorf("repo root does not exist: %s", repoRootFlag)
+			} else if err != nil {
+				return fmt.Errorf("failed to stat repo root: %w", err)
+			}
+
 			// Scan pre-implementation status
 			result, err := suitability.ScanPreImplementation(repoRootFlag, requirements)
 			if err != nil {
