@@ -108,3 +108,7 @@ type BackendConfig struct {
   - IMPL doc: docs/IMPL/complete/IMPL-h7-build-failure-diagnosis.yaml
 - **dependency-graph-generation**: completed 2026-03-12, 3 waves, 6 agents
   - IMPL doc: docs/IMPL/complete/IMPL-dependency-graph-generation.yaml
+- **constraint-solver**: completed 2026-03-12, 3 waves, 4 agents
+  - IMPL doc: docs/IMPL/complete/IMPL-constraint-solver.yaml
+- **structured-output-parsing**: completed 2026-03-12, 3 waves, 4 agents
+  - IMPL doc: docs/IMPL/complete/IMPL-structured-output-parsing.yaml
