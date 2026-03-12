@@ -85,3 +85,5 @@ type BackendConfig struct {
   - IMPL doc: docs/IMPL/IMPL-structured-output-parsing.yaml
 - **constraint-solver**: completed 2026-03-10, 3 waves, 4 agents
   - IMPL doc: docs/IMPL/IMPL-constraint-solver.yaml
+- **dependency-graph-generation**: completed 2026-03-11, 3 waves, 6 agents
+  - IMPL doc: docs/IMPL/IMPL-dependency-graph-generation.yaml
