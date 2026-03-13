@@ -43,6 +43,7 @@ func main() {
 		newFinalizeWaveCmd(),
 		newDiagnoseBuildFailureCmd(),
 		newAssignAgentIDsCmd(),
+		newRunScoutCmd(), // I3: Phase 5 integration
 	)
 	if err := rootCmd.Execute(); err != nil {
 		fmt.Fprintln(os.Stderr, err)

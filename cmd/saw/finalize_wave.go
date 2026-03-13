@@ -3,7 +3,9 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"strings"
 
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/builddiag"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
 	"github.com/spf13/cobra"
 )
@@ -16,6 +18,7 @@ type FinalizeWaveResult struct {
 	GateResults       []protocol.GateResult         `json:"gate_results"`
 	MergeResult       *protocol.MergeAgentsResult   `json:"merge_result"`
 	VerifyBuildResult *protocol.VerifyBuildResult   `json:"verify_build"`
+	BuildDiagnosis    *builddiag.Diagnosis          `json:"build_diagnosis,omitempty"` // I1: Auto-diagnosis on build failure
 	CleanupResult     *protocol.CleanupResult       `json:"cleanup_result"`
 	Success           bool                          `json:"success"`
 }
@@ -35,7 +38,10 @@ Execution order:
 5. VerifyBuild - run test_command and lint_command
 6. Cleanup - remove worktrees and branches
 
-Stops on first failure and returns partial result.`,
+Stops on first failure and returns partial result.
+
+I1 Integration: When verify-build fails, automatically diagnoses the error using
+pattern matching (H7) and appends diagnosis to the output.`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			manifestPath := args[0]
@@ -117,6 +123,18 @@ Stops on first failure and returns partial result.`,
 			}
 			result.VerifyBuildResult = verifyBuildResult
 			if !verifyBuildResult.TestPassed || !verifyBuildResult.LintPassed {
+				// I1: Auto-diagnose build failure using H7
+				language := inferLanguageFromCommand(manifest.TestCommand)
+				if language != "" {
+					// Combine test and lint output for diagnosis
+					errorLog := verifyBuildResult.TestOutput + "\n" + verifyBuildResult.LintOutput
+					diagnosis, diagErr := builddiag.DiagnoseError(errorLog, language)
+					if diagErr == nil {
+						result.BuildDiagnosis = diagnosis
+					}
+					// Note: diagnosis errors are non-fatal - we still return the build failure
+				}
+
 				// Post-merge tests failed - stop before cleanup
 				out, _ := json.MarshalIndent(result, "", "  ")
 				fmt.Println(string(out))
@@ -143,4 +161,28 @@ Stops on first failure and returns partial result.`,
 	_ = cmd.MarkFlagRequired("wave")
 
 	return cmd
+}
+
+// inferLanguageFromCommand infers the language from test_command using simple heuristics.
+// Returns "go", "rust", "javascript", "python", or "" if unrecognized.
+func inferLanguageFromCommand(testCommand string) string {
+	lower := strings.ToLower(testCommand)
+
+	// Check for language-specific commands (order matters - check more specific patterns first)
+	// Rust must be checked before Go since "cargo" contains "go"
+	if strings.Contains(lower, "cargo test") || strings.Contains(lower, "cargo build") {
+		return "rust"
+	}
+	if strings.Contains(lower, "go test") || strings.Contains(lower, "go build") {
+		return "go"
+	}
+	if strings.Contains(lower, "npm test") || strings.Contains(lower, "jest") ||
+	   strings.Contains(lower, "vitest") || strings.Contains(lower, "mocha") {
+		return "javascript"
+	}
+	if strings.Contains(lower, "pytest") || strings.Contains(lower, "python -m unittest") {
+		return "python"
+	}
+
+	return "" // Unknown language
 }
