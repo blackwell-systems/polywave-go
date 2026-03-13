@@ -14,6 +14,7 @@ import (
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/agent/backend"
 	apiclient "github.com/blackwell-systems/scout-and-wave-go/pkg/agent/backend/api"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/agent/backend/cli"
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/hooks"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/journal"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/orchestrator"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
@@ -22,6 +23,7 @@ import (
 
 // RunScout executes a Scout agent, calling onChunk for each output fragment.
 // Returns when the agent finishes. Cancellable via ctx.
+// I6 enforcement: Post-execution validation checks that Scout only wrote to docs/IMPL/IMPL-*.yaml.
 func RunScout(ctx context.Context, opts RunScoutOpts, onChunk func(string)) error {
 	if opts.Feature == "" {
 		return fmt.Errorf("engine.RunScout: Feature is required")
@@ -32,6 +34,9 @@ func RunScout(ctx context.Context, opts RunScoutOpts, onChunk func(string)) erro
 	if opts.IMPLOutPath == "" {
 		return fmt.Errorf("engine.RunScout: IMPLOutPath is required")
 	}
+
+	// Record start time for I6 validation (detect files written during execution)
+	startTime := time.Now()
 
 	// Resolve SAW repo path.
 	sawRepo := opts.SAWRepoPath
@@ -68,14 +73,20 @@ func RunScout(ctx context.Context, opts RunScoutOpts, onChunk func(string)) erro
 
 	if opts.UseStructuredOutput {
 		_, execErr = runScoutStructured(ctx, opts, prompt, onChunk)
-		return execErr
+	} else {
+		b := cli.New("", backend.Config{Model: opts.ScoutModel})
+		runner := agent.NewRunner(b, nil)
+		spec := &types.AgentSpec{Letter: "scout", Prompt: prompt}
+		_, execErr = runner.ExecuteStreaming(ctx, spec, opts.RepoPath, onChunk)
 	}
 
-	b := cli.New("", backend.Config{Model: opts.ScoutModel})
-	runner := agent.NewRunner(b, nil)
-	spec := &types.AgentSpec{Letter: "scout", Prompt: prompt}
+	// I6 enforcement: Validate Scout only wrote to docs/IMPL/IMPL-*.yaml
+	if execErr == nil {
+		if err := hooks.ValidateScoutWrites(opts.RepoPath, opts.IMPLOutPath, startTime); err != nil {
+			return fmt.Errorf("engine.RunScout: %w", err)
+		}
+	}
 
-	_, execErr = runner.ExecuteStreaming(ctx, spec, opts.RepoPath, onChunk)
 	return execErr
 }
 
