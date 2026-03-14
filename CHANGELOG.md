@@ -8,6 +8,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 | Version | Date | Headline |
 |---------|------|----------|
+| [0.41.0] | 2025-03-14 | H10 pre-commit hook verification — verify-hook-installed command, integrated into prepare-wave Step 1.5 |
 | [0.40.0] | 2025-03-14 | E23A journal recovery + E9 merge idempotency — orchestrator journal integration, merge-log tracking, crash-resistant finalize-wave |
 | [0.39.0] | 2026-03-14 | Scout automation integration — runScoutAutomation() integrates H1a-H4 tools into engine.RunScout(), inject results into Scout prompts |
 | [0.38.0] | 2026-03-12 | H7 build failure diagnosis — pattern-matching engine with 27 error patterns across 4 languages (Go, Rust, JS/TS, Python) |
@@ -49,6 +50,34 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 | [0.2.0] | 2026-03-08 | Engine protocol parity — E17–E23 implemented (context memory, failure routing, stub scan, quality gates, scaffold build verify, per-agent context extraction) |
 
 | [0.39.0] | 2026-03-14 | Scout automation integration — runScoutAutomation() integrates H1a-H4 tools into engine.RunScout(), inject results into Scout prompts |
+
+---
+
+## [0.41.0] - 2025-03-14
+
+### Added
+
+- **H10: Pre-Commit Hook Verification** — Layer 0 isolation enforcement catches silent hook removal
+  - `cmd/saw/verify_hook_installed.go`: New command `sawtools verify-hook-installed <worktree-path>`
+    - Verifies hook file exists in worktree git directory (handles both regular repos and worktrees)
+    - Checks hook is executable (mode & 0111)
+    - Validates hook contains SAW isolation logic markers (`SAW_ALLOW_MAIN_COMMIT` or `SAW pre-commit guard`)
+    - Returns JSON with `valid`, `reason`, `hook_path`, `executable`, `has_logic` fields
+    - Exit code 0 if valid, 1 if missing/broken
+  - `cmd/saw/prepare_wave.go`: Integrated into Step 1.5 (after worktree creation, before agent launch)
+    - Verifies all hooks after `protocol.CreateWorktrees()` returns
+    - Blocks wave execution if any hook is missing or invalid
+    - Clear error message with fix instructions: "hook verification failed for agent X: pre-commit hook file does not exist"
+  - Prevents agents from launching in worktrees with broken isolation (Layer 0 protection lost)
+  - Completes H10 from protocol enhancement roadmap (Priority 3)
+
+### Implementation
+
+- Direct implementation (no SAW wave execution)
+- Files created: 1 (`verify_hook_installed.go`)
+- Files modified: 2 (`main.go`, `prepare_wave.go`)
+- Zero test overhead - verification happens once per wave during prepare-wave
+- Transparent to agents and orchestrator (no prompt updates needed)
 
 ---
 
