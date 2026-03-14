@@ -120,19 +120,10 @@ func VerifyCommits(manifestPath string, waveNum int, repoDir string) (*VerifyCom
 			Branch: branchName,
 		}
 
-		// Get the base commit for this repo
-		agentBaseCommit, err := git.RevParse(agentRepoDir, "HEAD")
-		if err != nil {
-			// Can't determine base commit for this repo - record as no commits
-			status.CommitCount = 0
-			status.HasCommits = false
-			result.AllValid = false
-			result.Agents = append(result.Agents, status)
-			continue
-		}
-
-		// Count commits on the branch relative to this repo's base
-		revListArg := agentBaseCommit + ".." + branchName
+		// Count commits on the branch relative to recorded base commit
+		// Use the wave's base commit (recorded at worktree creation) rather than
+		// current HEAD, so verification works even if branches were already merged
+		revListArg := baseCommit + ".." + branchName
 		output, err := git.Run(agentRepoDir, "rev-list", "--count", revListArg)
 
 		if err != nil {
