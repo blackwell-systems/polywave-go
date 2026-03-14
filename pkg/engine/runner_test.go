@@ -48,20 +48,16 @@ func TestParseIMPLDocDelegate(t *testing.T) {
 	dir := t.TempDir()
 	implPath := filepath.Join(dir, "IMPL-test.md")
 
-	content := `# IMPL: Test Feature
-
-## Feature Name
-Test Feature
-
-## Status
-| Agent | Status |
-|-------|--------|
-| A     | [ ]    |
-
-## Wave 1
-| Agent | Files Owned | Description |
-|-------|-------------|-------------|
-| A     | pkg/foo.go  | implement foo |
+	content := `title: Test Feature
+feature_slug: test-feature
+verdict: SUITABLE
+waves:
+    - number: 1
+      agents:
+          - id: A
+            task: implement foo
+            files:
+                - pkg/foo.go
 `
 	if err := os.WriteFile(implPath, []byte(content), 0644); err != nil {
 		t.Fatalf("failed to write test IMPL doc: %v", err)

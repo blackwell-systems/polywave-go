@@ -66,7 +66,18 @@ func runPreAgentDetection(manifest *protocol.IMPLManifest) error {
 }
 
 func runPostAgentDetection(manifest *protocol.IMPLManifest) error {
-	// Post-agent detection is implemented by Agent B
-	// For now, return a not-implemented error to make it clear this is a stub
-	return fmt.Errorf("post-agent detection not yet implemented (Agent B's responsibility)")
+	// Post-agent detection analyzes agent task fields for duplicate type definitions
+	result, err := scaffold.DetectScaffoldsPostAgent(manifest)
+	if err != nil {
+		return fmt.Errorf("post-agent detection failed: %w", err)
+	}
+
+	// Marshal to JSON and output
+	output, err := json.MarshalIndent(result, "", "  ")
+	if err != nil {
+		return fmt.Errorf("failed to marshal result: %w", err)
+	}
+
+	fmt.Println(string(output))
+	return nil
 }

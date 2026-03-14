@@ -46,7 +46,7 @@ func DetectScaffoldsPostAgent(manifest *protocol.IMPLManifest) (*PostAgentResult
 	}
 
 	// Find duplicates (types defined by ≥2 agents)
-	var conflicts []TypeConflict
+	conflicts := []TypeConflict{}
 	for typeName, agentMap := range typeDefinitions {
 		if len(agentMap) >= 2 {
 			// Collect agent IDs and files

@@ -57,7 +57,7 @@ func DetectScaffoldsPreAgent(contracts []protocol.InterfaceContract) (*PreAgentR
 	}
 
 	// Build the result - only types referenced by multiple locations (implying multiple agents)
-	var scaffolds []ScaffoldCandidate
+	scaffolds := []ScaffoldCandidate{}
 	for typeName, locations := range typeReferences {
 		if len(locations) >= 2 {
 			// Extract unique agent IDs from locations
