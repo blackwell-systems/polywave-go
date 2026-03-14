@@ -16,21 +16,31 @@ func TestFinalizeImplCmd_Success(t *testing.T) {
 	tmpDir := t.TempDir()
 	implPath := filepath.Join(tmpDir, "test-impl.yaml")
 
-	implContent := `impl: test-feature
-description: Test feature
+	implContent := `title: Test Feature
+feature_slug: test-feature
+verdict: SUITABLE
+state: SCOUT_PENDING
+file_ownership:
+  - file: pkg/feature/a.go
+    agent: A
+    wave: 1
+    action: new
+  - file: pkg/feature/b.go
+    agent: B
+    wave: 1
+    action: new
 waves:
-  - agents:
+  - number: 1
+    agents:
       - id: A
         task: |
           Implement feature A
-
-          ## Files Owned
+        files:
           - pkg/feature/a.go
       - id: B
         task: |
           Implement feature B
-
-          ## Files Owned
+        files:
           - pkg/feature/b.go
 `
 	if err := os.WriteFile(implPath, []byte(implContent), 0644); err != nil {

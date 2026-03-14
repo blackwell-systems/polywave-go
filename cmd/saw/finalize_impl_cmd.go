@@ -3,7 +3,6 @@ package main
 import (
 	"encoding/json"
 	"fmt"
-	"os"
 
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
 	"github.com/spf13/cobra"
@@ -47,9 +46,9 @@ Output: JSON with validation results and gate population stats.`,
 			// Write to stdout (testable via cmd.OutOrStdout())
 			fmt.Fprintln(cmd.OutOrStdout(), string(out))
 
-			// Exit code 1 if not successful
+			// Exit code 1 if not successful (return error instead of os.Exit for testability)
 			if !result.Success {
-				os.Exit(1)
+				return fmt.Errorf("finalize-impl failed: validation or gate population errors (see JSON output)")
 			}
 
 			return nil
