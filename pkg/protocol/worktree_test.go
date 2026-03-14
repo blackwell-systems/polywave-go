@@ -234,3 +234,88 @@ func TestCreateWorktrees_EmptyWave(t *testing.T) {
 		t.Errorf("expected 0 worktrees for empty wave, got %d", len(result.Worktrees))
 	}
 }
+
+func TestCreateWorktrees_InstallsHooks(t *testing.T) {
+	repoDir, cleanup := initTestRepo(t)
+	defer cleanup()
+
+	// Create pre-commit hook in main repo
+	hooksDir := filepath.Join(repoDir, ".git", "hooks")
+	if err := os.MkdirAll(hooksDir, 0755); err != nil {
+		t.Fatalf("failed to create hooks directory: %v", err)
+	}
+
+	hookContent := "#!/bin/sh\n# SAW isolation enforcement hook\necho 'test hook'\n"
+	hookPath := filepath.Join(hooksDir, "pre-commit")
+	if err := os.WriteFile(hookPath, []byte(hookContent), 0755); err != nil {
+		t.Fatalf("failed to create pre-commit hook: %v", err)
+	}
+
+	// Create manifest with 1 agent
+	agentIDs := []string{"A"}
+	manifestPath := createTestManifest(t, repoDir, 1, agentIDs)
+
+	// Create worktrees
+	result, err := CreateWorktrees(manifestPath, 1, repoDir)
+	if err != nil {
+		t.Fatalf("CreateWorktrees failed: %v", err)
+	}
+
+	// Verify hook exists in worktree
+	worktreeHookPath := filepath.Join(repoDir, ".git", "worktrees", "wave1-agent-A", "hooks", "pre-commit")
+	content, err := os.ReadFile(worktreeHookPath)
+	if err != nil {
+		t.Fatalf("hook not found in worktree: %v", err)
+	}
+
+	// Verify hook content matches
+	if string(content) != hookContent {
+		t.Errorf("hook content mismatch\nexpected: %s\ngot: %s", hookContent, string(content))
+	}
+
+	// Verify hook is executable
+	info, err := os.Stat(worktreeHookPath)
+	if err != nil {
+		t.Fatalf("failed to stat hook: %v", err)
+	}
+	if info.Mode()&0111 == 0 {
+		t.Errorf("hook is not executable, mode: %v", info.Mode())
+	}
+
+	// Verify worktree was created successfully
+	if len(result.Worktrees) != 1 {
+		t.Errorf("expected 1 worktree, got %d", len(result.Worktrees))
+	}
+}
+
+func TestCreateWorktrees_ContinuesOnHookInstallFailure(t *testing.T) {
+	repoDir, cleanup := initTestRepo(t)
+	defer cleanup()
+
+	// Create manifest with 1 agent but DON'T create hook in main repo
+	agentIDs := []string{"A"}
+	manifestPath := createTestManifest(t, repoDir, 1, agentIDs)
+
+	// Create worktrees (should succeed despite missing hook)
+	result, err := CreateWorktrees(manifestPath, 1, repoDir)
+	if err != nil {
+		t.Fatalf("CreateWorktrees should not fail when hook install fails: %v", err)
+	}
+
+	// Verify worktree was created
+	if len(result.Worktrees) != 1 {
+		t.Errorf("expected 1 worktree, got %d", len(result.Worktrees))
+	}
+
+	// Verify worktree exists
+	worktreePath := result.Worktrees[0].Path
+	if _, err := os.Stat(worktreePath); os.IsNotExist(err) {
+		t.Errorf("worktree path %s does not exist", worktreePath)
+	}
+
+	// Hook should not exist (install failed gracefully)
+	worktreeHookPath := filepath.Join(repoDir, ".git", "worktrees", "wave1-agent-A", "hooks", "pre-commit")
+	if _, err := os.Stat(worktreeHookPath); err == nil {
+		t.Errorf("hook should not exist when install fails, but found at %s", worktreeHookPath)
+	}
+}

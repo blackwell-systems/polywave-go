@@ -2,6 +2,7 @@ package protocol
 
 import (
 	"fmt"
+	"os"
 	"path/filepath"
 
 	"github.com/blackwell-systems/scout-and-wave-go/internal/git"
@@ -122,6 +123,13 @@ func CreateWorktrees(manifestPath string, waveNum int, repoDir string) (*CreateW
 		// Create the worktree
 		if err := git.WorktreeAdd(agentRepoDir, worktreePath, branchName); err != nil {
 			return nil, fmt.Errorf("failed to create worktree for agent %s in repo %s: %w", agent.ID, agentRepoDir, err)
+		}
+
+		// Install pre-commit hook (H10 isolation enforcement)
+		if err := git.InstallHooks(agentRepoDir, worktreePath); err != nil {
+			// Log warning but don't fail — hook verification in prepare-wave will catch this
+			// and provide actionable error message
+			fmt.Fprintf(os.Stderr, "Warning: failed to install hooks for agent %s: %v\n", agent.ID, err)
 		}
 
 		// Collect worktree info
