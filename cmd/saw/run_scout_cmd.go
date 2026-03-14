@@ -176,6 +176,32 @@ Output:
 			// Success!
 			fmt.Println("✅ IMPL doc validated successfully")
 			fmt.Println()
+
+			// Step 5: Finalize IMPL doc (M4: populate verification gates)
+			fmt.Printf("🔧 Finalizing IMPL doc (populating verification gates)...\n")
+			finalizeResult, finalizeErr := protocol.FinalizeIMPL(implPath, repoPath)
+			if finalizeErr != nil {
+				return fmt.Errorf("run-scout: finalize-impl failed: %w", finalizeErr)
+			}
+
+			if !finalizeResult.Success {
+				fmt.Println("⚠️  Finalize-impl completed with warnings")
+				if !finalizeResult.Validation.Passed {
+					fmt.Println("   Initial validation issues:")
+					for _, e := range finalizeResult.Validation.Errors {
+						fmt.Printf("      %s: %s\n", e.Code, e.Message)
+					}
+				}
+				if !finalizeResult.GatePopulation.H2DataAvailable {
+					fmt.Println("   H2 data unavailable - verification gates not populated")
+					fmt.Println("   (Gates can be manually written during review)")
+				}
+				// Non-fatal - IMPL doc still usable, gates just not auto-populated
+			} else {
+				fmt.Printf("✅ Verification gates populated for %d agents\n", finalizeResult.GatePopulation.AgentsUpdated)
+			}
+			fmt.Println()
+
 			fmt.Printf("📄 IMPL doc: %s\n", implPath)
 			fmt.Println()
 			fmt.Println("Next steps:")
