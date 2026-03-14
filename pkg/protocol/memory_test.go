@@ -41,7 +41,7 @@ func TestLoadProjectMemory_Valid(t *testing.T) {
 		FeaturesCompleted: []CompletedFeature{
 			{
 				Slug:      "protocol-parser",
-				IMPLDoc:   "docs/IMPL/IMPL-protocol-parser.md",
+				IMPLDoc:   "docs/IMPL/IMPL-protocol-parser.yaml",
 				WaveCount: 3,
 				AgentCount: 5,
 				Date:      "2026-03-08",
@@ -185,7 +185,7 @@ func TestSaveProjectMemory_Roundtrip(t *testing.T) {
 		FeaturesCompleted: []CompletedFeature{
 			{
 				Slug:      "user-auth",
-				IMPLDoc:   "docs/IMPL/IMPL-user-auth.md",
+				IMPLDoc:   "docs/IMPL/IMPL-user-auth.yaml",
 				WaveCount: 2,
 				AgentCount: 4,
 				Date:      "2026-03-07",
@@ -302,7 +302,7 @@ func TestAddCompletedFeature(t *testing.T) {
 		FeaturesCompleted: []CompletedFeature{
 			{
 				Slug:      "feature-1",
-				IMPLDoc:   "docs/IMPL/IMPL-feature-1.md",
+				IMPLDoc:   "docs/IMPL/IMPL-feature-1.yaml",
 				WaveCount: 1,
 				AgentCount: 2,
 				Date:      "2026-03-08",
@@ -312,7 +312,7 @@ func TestAddCompletedFeature(t *testing.T) {
 
 	newFeature := CompletedFeature{
 		Slug:      "feature-2",
-		IMPLDoc:   "docs/IMPL/IMPL-feature-2.md",
+		IMPLDoc:   "docs/IMPL/IMPL-feature-2.yaml",
 		WaveCount: 2,
 		AgentCount: 3,
 		Date:      "2026-03-09",
