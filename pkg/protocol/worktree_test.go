@@ -268,9 +268,12 @@ func TestCreateWorktrees_InstallsHooks(t *testing.T) {
 		t.Fatalf("hook not found in worktree: %v", err)
 	}
 
-	// Verify hook content matches
-	if string(content) != hookContent {
-		t.Errorf("hook content mismatch\nexpected: %s\ngot: %s", hookContent, string(content))
+	// Verify hook was generated from embedded template (not copied from test hook)
+	if !strings.Contains(string(content), "SAW_ALLOW_MAIN_COMMIT") {
+		t.Error("hook missing SAW_ALLOW_MAIN_COMMIT marker")
+	}
+	if !strings.Contains(string(content), "SAW pre-commit guard") {
+		t.Error("hook missing 'SAW pre-commit guard' comment")
 	}
 
 	// Verify hook is executable
@@ -299,7 +302,7 @@ func TestCreateWorktrees_ContinuesOnHookInstallFailure(t *testing.T) {
 	// Create worktrees (should succeed despite missing hook)
 	result, err := CreateWorktrees(manifestPath, 1, repoDir)
 	if err != nil {
-		t.Fatalf("CreateWorktrees should not fail when hook install fails: %v", err)
+		t.Fatalf("CreateWorktrees failed: %v", err)
 	}
 
 	// Verify worktree was created
@@ -313,9 +316,14 @@ func TestCreateWorktrees_ContinuesOnHookInstallFailure(t *testing.T) {
 		t.Errorf("worktree path %s does not exist", worktreePath)
 	}
 
-	// Hook should not exist (install failed gracefully)
+	// Hook should exist (installed from embedded template, no dependency on main repo hook)
 	worktreeHookPath := filepath.Join(repoDir, ".git", "worktrees", "wave1-agent-A", "hooks", "pre-commit")
-	if _, err := os.Stat(worktreeHookPath); err == nil {
-		t.Errorf("hook should not exist when install fails, but found at %s", worktreeHookPath)
+	hookContent, err := os.ReadFile(worktreeHookPath)
+	if err != nil {
+		t.Fatalf("hook not found at %s: %v", worktreeHookPath, err)
+	}
+	// Verify hook has SAW isolation markers
+	if !strings.Contains(string(hookContent), "SAW_ALLOW_MAIN_COMMIT") {
+		t.Error("hook missing SAW_ALLOW_MAIN_COMMIT marker")
 	}
 }

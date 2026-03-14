@@ -58,12 +58,10 @@ h1_analysis:
   complexity: standard
   dependencies: []
 file_ownership:
-  - repo: .
-    file: pkg/auth/handler.go
+  - file: pkg/auth/handler.go
     wave: 1
     agent: A
-  - repo: .
-    file: pkg/auth/handler_test.go
+  - file: pkg/auth/handler_test.go
     wave: 1
     agent: A
 waves:

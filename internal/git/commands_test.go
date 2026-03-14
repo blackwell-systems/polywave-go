@@ -213,13 +213,13 @@ func TestInstallHooks_Success(t *testing.T) {
 		t.Fatalf("hook not found at %s: %v", targetHookPath, err)
 	}
 
-	// Verify hook content matches source
+	// Verify hook content matches embedded template
 	installedContent, err := os.ReadFile(targetHookPath)
 	if err != nil {
 		t.Fatalf("failed to read installed hook: %v", err)
 	}
-	if string(installedContent) != hookContent {
-		t.Errorf("hook content mismatch:\nexpected: %q\ngot: %q", hookContent, string(installedContent))
+	if string(installedContent) != preCommitHookTemplate {
+		t.Errorf("hook content mismatch:\nexpected embedded template\ngot: %q", string(installedContent))
 	}
 
 	// Verify hook is executable
@@ -232,9 +232,9 @@ func TestInstallHooks_Success(t *testing.T) {
 	}
 }
 
-// TestInstallHooks_MissingSourceHook verifies that InstallHooks returns an error
-// when the source hook doesn't exist in the main repo.
-func TestInstallHooks_MissingSourceHook(t *testing.T) {
+// TestInstallHooks_GeneratesTemplate verifies that InstallHooks generates
+// the hook from embedded template (no dependency on main repo hook).
+func TestInstallHooks_GeneratesTemplate(t *testing.T) {
 	dir := t.TempDir()
 
 	// Initialize repo
@@ -255,20 +255,28 @@ func TestInstallHooks_MissingSourceHook(t *testing.T) {
 		t.Fatalf("git commit failed: %v: %s", err, out)
 	}
 
-	// Create worktree (no hook in main repo)
+	// Create worktree (no hook in main repo - should still work)
 	worktreePath := dir + "/worktree-test"
 	if err := WorktreeAdd(dir, worktreePath, "test-branch"); err != nil {
 		t.Fatalf("failed to create worktree: %v", err)
 	}
 
-	// Try to install hooks (should fail)
+	// Install hooks (should succeed using embedded template)
 	err := InstallHooks(dir, worktreePath)
-	if err == nil {
-		t.Fatal("expected error for missing source hook, got nil")
+	if err != nil {
+		t.Fatalf("InstallHooks failed: %v", err)
 	}
 
-	if !strings.Contains(err.Error(), "pre-commit hook not found") {
-		t.Errorf("expected error to contain 'pre-commit hook not found', got: %v", err)
+	// Verify hook was generated from template
+	gitDir, _ := os.ReadFile(worktreePath + "/.git")
+	worktreeGitDir := strings.TrimPrefix(strings.TrimSpace(string(gitDir)), "gitdir: ")
+	hookPath := worktreeGitDir + "/hooks/pre-commit"
+	hookContent, err := os.ReadFile(hookPath)
+	if err != nil {
+		t.Fatalf("hook not found: %v", err)
+	}
+	if string(hookContent) != preCommitHookTemplate {
+		t.Error("hook content does not match embedded template")
 	}
 }
 
