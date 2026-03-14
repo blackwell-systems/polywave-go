@@ -8,6 +8,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 | Version | Date | Headline |
 |---------|------|----------|
+| [0.42.0] | 2025-03-14 | Multi-repo finalize-impl — gate_populator extracts H2 data from all repos in file_ownership, applies repo-specific gates to each agent |
 | [0.41.0] | 2025-03-14 | H10 pre-commit hook verification — verify-hook-installed command, integrated into prepare-wave Step 1.5 |
 | [0.40.0] | 2025-03-14 | E23A journal recovery + E9 merge idempotency — orchestrator journal integration, merge-log tracking, crash-resistant finalize-wave |
 | [0.39.0] | 2026-03-14 | Scout automation integration — runScoutAutomation() integrates H1a-H4 tools into engine.RunScout(), inject results into Scout prompts |
@@ -50,6 +51,36 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 | [0.2.0] | 2026-03-08 | Engine protocol parity — E17–E23 implemented (context memory, failure routing, stub scan, quality gates, scaffold build verify, per-agent context extraction) |
 
 | [0.39.0] | 2026-03-14 | Scout automation integration — runScoutAutomation() integrates H1a-H4 tools into engine.RunScout(), inject results into Scout prompts |
+
+---
+
+## [0.42.0] - 2025-03-14
+
+### Added
+
+- **Multi-Repo finalize-impl** — Automatic verification gate population for cross-repo IMPLs
+  - `pkg/protocol/gate_populator.go`: Enhanced `PopulateVerificationGates()` to accept map of repo paths to command sets
+    - `buildAgentRepoMap()`: Creates agent ID → repo path mapping from file_ownership table
+    - `extractUniqueRepos()`: Extracts all unique repos from file_ownership, resolves relative paths to absolute
+    - Resolves relative repo names (e.g., `scout-and-wave-web`) to absolute paths by checking sibling directories
+    - Maps each agent to its repo using file_ownership, applies repo-specific H2 data (build/test/lint commands)
+  - `pkg/protocol/gate_populator.go`: Updated `FinalizeIMPL()` to extract H2 data from all repos
+    - Builds repo mapping: relative names → absolute paths for resolution
+    - Extracts command sets from each unique repo (parallel H2 extraction)
+    - Skips repos without valid toolchains (agents may have manually-specified gates)
+    - Reports comma-separated toolchains in JSON output for multi-repo cases
+  - `cmd/saw/finalize_impl_cmd.go`: Updated documentation to explain multi-repo usage
+    - Single-repo: `sawtools finalize-impl docs/IMPL/IMPL-*.yaml --repo-root /path/to/repo`
+    - Multi-repo: Specify `repo:` field in file_ownership, finalize-impl auto-detects and extracts from each
+  - Enables automated gate population for cross-repo refactors, library+consumer updates, monorepo work
+  - Zero breaking changes - single-repo IMPLs work identically (backward compatible)
+
+### Implementation
+
+- Direct implementation (no SAW wave execution)
+- Files modified: 2 (`gate_populator.go`, `finalize_impl_cmd.go`)
+- Agents updated: 0 (no verification gates existed before, all agents get gates now)
+- Multi-repo test case: IMPL-remove-markdown-impl-support (Agent A in scout-and-wave-web, Agent B in scout-and-wave-go)
 
 ---
 

@@ -23,8 +23,13 @@ func newFinalizeImplCmd() *cobra.Command {
 Transactional: rolls back manifest on failure (no partial writes).
 Idempotent: safe to run multiple times.
 
-Typical usage (orchestrator workflow after Scout completes):
-  sawtools finalize-impl docs/IMPL/IMPL-feature-x.yaml
+Single-repo IMPL:
+  sawtools finalize-impl docs/IMPL/IMPL-feature-x.yaml --repo-root /path/to/repo
+
+Multi-repo IMPL:
+  Specify absolute repo paths in the "repo:" field of file_ownership entries.
+  finalize-impl will extract H2 data from each unique repo and apply
+  repo-specific verification gates to each agent.
 
 Output: JSON with validation results and gate population stats.`,
 		Args: cobra.ExactArgs(1),

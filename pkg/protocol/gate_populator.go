@@ -9,12 +9,18 @@ import (
 )
 
 // PopulateVerificationGates populates verification gate blocks for all agents
-// in the manifest that don't already have them. Returns a new manifest copy
-// without modifying the input.
-func PopulateVerificationGates(m *IMPLManifest, commandSet *commands.CommandSet) (*IMPLManifest, error) {
-	if commandSet == nil {
+// in the manifest that don't already have them. Supports multi-repo IMPLs by
+// accepting a map of repo paths to command sets. The repoMap parameter provides
+// a mapping from relative repo names (as specified in file_ownership) to absolute
+// paths (as used in commandSets keys). Returns a new manifest copy without
+// modifying the input.
+func PopulateVerificationGates(m *IMPLManifest, commandSets map[string]*commands.CommandSet, repoMap map[string]string) (*IMPLManifest, error) {
+	if len(commandSets) == 0 {
 		return nil, fmt.Errorf("H2 data unavailable - run extract-commands first")
 	}
+
+	// Build agent-to-repo mapping from file_ownership
+	agentRepos := buildAgentRepoMap(m)
 
 	// Create deep copy of manifest
 	result := *m
@@ -32,6 +38,25 @@ func PopulateVerificationGates(m *IMPLManifest, commandSet *commands.CommandSet)
 
 			// Skip if agent already has verification gate
 			if strings.Contains(agent.Task, "## Verification Gate") {
+				continue
+			}
+
+			// Determine which repo this agent belongs to
+			repoKey := agentRepos[agent.ID]
+			if repoKey == "" {
+				repoKey = "." // Default to current directory for single-repo IMPLs
+			}
+
+			// Resolve relative repo path to absolute path
+			absRepoPath := repoMap[repoKey]
+			if absRepoPath == "" {
+				absRepoPath = repoKey // Fallback if not in map
+			}
+
+			// Look up command set for this repo
+			commandSet, ok := commandSets[absRepoPath]
+			if !ok {
+				// Skip this agent if we don't have H2 data for its repo
 				continue
 			}
 
@@ -54,6 +79,61 @@ func PopulateVerificationGates(m *IMPLManifest, commandSet *commands.CommandSet)
 	}
 
 	return &result, nil
+}
+
+// buildAgentRepoMap creates a mapping from agent ID to repository path.
+// Uses the file_ownership table to determine which repo each agent's files belong to.
+// Repository paths are stored as-is (may be relative or absolute).
+func buildAgentRepoMap(m *IMPLManifest) map[string]string {
+	agentRepos := make(map[string]string)
+
+	for _, ownership := range m.FileOwnership {
+		// If this file has a repo specified, map the agent to that repo
+		if ownership.Repo != "" {
+			agentRepos[ownership.Agent] = ownership.Repo
+		}
+	}
+
+	return agentRepos
+}
+
+// extractUniqueRepos returns a list of unique repository paths from the
+// file_ownership table. If no repos are specified (single-repo IMPL), returns
+// a list containing only the provided repoRoot. Resolves relative repo paths
+// to absolute paths by looking in the parent directory of defaultRepo.
+func extractUniqueRepos(m *IMPLManifest, defaultRepo string) []string {
+	repoSet := make(map[string]bool)
+
+	// Scan file_ownership for unique repo values
+	for _, ownership := range m.FileOwnership {
+		if ownership.Repo != "" {
+			repoSet[ownership.Repo] = true
+		}
+	}
+
+	// If no repos specified, use default (single-repo IMPL)
+	if len(repoSet) == 0 {
+		return []string{defaultRepo}
+	}
+
+	// Resolve relative paths to absolute paths
+	// For multi-repo IMPLs, repos are typically siblings in a common parent directory
+	parentDir := filepath.Dir(defaultRepo)
+
+	repos := make([]string, 0, len(repoSet))
+	for repo := range repoSet {
+		absPath := repo
+		if !filepath.IsAbs(repo) {
+			// Try to resolve relative path by checking sibling directory
+			candidatePath := filepath.Join(parentDir, repo)
+			if _, err := filepath.Abs(candidatePath); err == nil {
+				absPath = candidatePath
+			}
+		}
+		repos = append(repos, absPath)
+	}
+
+	return repos
 }
 
 // DetermineFocusedTestPattern infers a focused test command from the agent's
@@ -212,25 +292,64 @@ func FinalizeIMPL(implPath, repoRoot string) (*FinalizeIMPLResult, error) {
 		return result, nil
 	}
 
-	// Step 3: Extract H2 command data
+	// Step 3: Extract H2 command data from all repos
+	// Build list of unique repos from file_ownership
+	repos := extractUniqueRepos(manifest, repoRoot)
+
+	// Build repo mapping: relative name -> absolute path
+	// This allows PopulateVerificationGates to resolve agent repos
+	repoMap := make(map[string]string)
+	parentDir := filepath.Dir(repoRoot)
+
+	for _, ownership := range manifest.FileOwnership {
+		if ownership.Repo != "" && !filepath.IsAbs(ownership.Repo) {
+			// Map relative repo name to absolute path
+			absPath := filepath.Join(parentDir, ownership.Repo)
+			repoMap[ownership.Repo] = absPath
+		} else if filepath.IsAbs(ownership.Repo) {
+			// Already absolute - identity mapping
+			repoMap[ownership.Repo] = ownership.Repo
+		}
+	}
+	// Add default repo mapping for single-repo IMPLs
+	repoMap["."] = repoRoot
+
+	// Extract command set for each repo
+	commandSets := make(map[string]*commands.CommandSet)
+	toolchains := make(map[string]string)
+
 	extractor := commands.New()
 	// Register default parsers
 	extractor.RegisterCIParser(&commands.GithubActionsParser{})
 	extractor.RegisterBuildSystemParser(&commands.MakefileParser{})
 	extractor.RegisterBuildSystemParser(&commands.PackageJSONParser{})
 
-	commandSet, err := extractor.Extract(repoRoot)
-	if err != nil || commandSet == nil {
+	for _, repo := range repos {
+		commandSet, err := extractor.Extract(repo)
+		if err != nil || commandSet == nil {
+			// Skip repos without H2 data - agents may have manually-specified gates
+			continue
+		}
+		commandSets[repo] = commandSet
+		toolchains[repo] = commandSet.Toolchain
+	}
+
+	if len(commandSets) == 0 {
 		result.Success = false
 		result.GatePopulation.H2DataAvailable = false
-		return result, fmt.Errorf("H2 data unavailable - run extract-commands first: %w", err)
+		return result, fmt.Errorf("H2 data unavailable - run extract-commands first: no valid toolchains found in any repo")
 	}
 
 	result.GatePopulation.H2DataAvailable = true
-	result.GatePopulation.Toolchain = commandSet.Toolchain
+	// For multi-repo, report comma-separated toolchains
+	toolchainList := make([]string, 0, len(toolchains))
+	for _, tc := range toolchains {
+		toolchainList = append(toolchainList, tc)
+	}
+	result.GatePopulation.Toolchain = strings.Join(toolchainList, ", ")
 
 	// Step 4: Populate verification gates
-	updatedManifest, err := PopulateVerificationGates(manifest, commandSet)
+	updatedManifest, err := PopulateVerificationGates(manifest, commandSets, repoMap)
 	if err != nil {
 		result.Success = false
 		return result, fmt.Errorf("failed to populate verification gates: %w", err)
