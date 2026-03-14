@@ -179,8 +179,34 @@ func NormalizePackageName(pkg string) string {
 	return strings.ToLower(pkg)
 }
 
+// isStdLib checks if an import path is a Go standard library package
+func isStdLib(importPath string) bool {
+	// Standard library packages don't contain dots in the first path element
+	// Examples: fmt, os, encoding/json (no dot before first slash)
+	// Non-stdlib: github.com/..., golang.org/x/... (dot before first slash)
+
+	// Special case: golang.org/x/* are extended stdlib but in go.mod
+	if strings.HasPrefix(importPath, "golang.org/x/") {
+		return false
+	}
+
+	// If there's no slash, check if it contains a dot
+	if !strings.Contains(importPath, "/") {
+		return !strings.Contains(importPath, ".")
+	}
+
+	// If there's a slash, check the first component
+	firstComponent := importPath
+	if idx := strings.Index(importPath, "/"); idx != -1 {
+		firstComponent = importPath[:idx]
+	}
+
+	// Stdlib packages have no dot in first component
+	return !strings.Contains(firstComponent, ".")
+}
+
 // extractExternalImports parses Go files and extracts external package imports
-// (stdlib and third-party packages, not local relative imports)
+// (third-party packages only, not stdlib or local imports)
 func extractExternalImports(repoRoot string, ownedFiles map[string]string) (map[string][]string, error) {
 	result := make(map[string][]string) // file -> []external packages
 
@@ -219,6 +245,11 @@ func extractExternalImports(repoRoot string, ownedFiles map[string]string) (map[
 
 			// Skip "C" (cgo)
 			if importPath == "C" {
+				continue
+			}
+
+			// Skip standard library packages
+			if isStdLib(importPath) {
 				continue
 			}
 
