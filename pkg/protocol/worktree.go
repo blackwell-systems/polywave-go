@@ -71,8 +71,33 @@ func CreateWorktrees(manifestPath string, waveNum int, repoDir string) (*CreateW
 		return nil, fmt.Errorf("failed to save manifest with base commit: %w", err)
 	}
 
+	// Resolve absolute path for repoDir (handles "." case)
+	absRepoDir, err := filepath.Abs(repoDir)
+	if err != nil {
+		return nil, fmt.Errorf("failed to resolve repo path: %w", err)
+	}
+
 	// Determine parent directory for cross-repo resolution
-	repoParent := filepath.Dir(repoDir)
+	repoParent := filepath.Dir(absRepoDir)
+
+	// Detect same-repo case: all agents have identical repo value matching current repo basename
+	currentRepoName := filepath.Base(absRepoDir)
+	isSameRepo := true
+	var firstRepo string
+	for _, agent := range targetWave.Agents {
+		agentRepo := determineAgentRepo(doc.FileOwnership, agent.ID)
+		if agentRepo == "" {
+			// Empty repo field is always same-repo
+			continue
+		}
+		if firstRepo == "" {
+			firstRepo = agentRepo
+		}
+		if agentRepo != firstRepo || agentRepo != currentRepoName {
+			isSameRepo = false
+			break
+		}
+	}
 
 	// Create worktrees for each agent
 	var worktrees []WorktreeInfo
@@ -82,9 +107,9 @@ func CreateWorktrees(manifestPath string, waveNum int, repoDir string) (*CreateW
 
 		// Resolve repo directory (cross-repo or same-repo)
 		var agentRepoDir string
-		if agentRepo == "" {
-			// No repo specified - use repoDir (single-repo case)
-			agentRepoDir = repoDir
+		if agentRepo == "" || isSameRepo {
+			// No repo specified OR same-repo with unnecessary repo field - use absRepoDir
+			agentRepoDir = absRepoDir
 		} else {
 			// Cross-repo: resolve as sibling directory
 			agentRepoDir = filepath.Join(repoParent, agentRepo)
