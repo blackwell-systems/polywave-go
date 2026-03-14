@@ -8,6 +8,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 | Version | Date | Headline |
 |---------|------|----------|
+| [0.43.0] | 2025-03-14 | InstallHooks template embedding — hook generated from code instead of copied from main repo, eliminates manual setup |
 | [0.42.0] | 2025-03-14 | Multi-repo finalize-impl — gate_populator extracts H2 data from all repos in file_ownership, applies repo-specific gates to each agent |
 | [0.41.0] | 2025-03-14 | H10 pre-commit hook verification — verify-hook-installed command, integrated into prepare-wave Step 1.5 |
 | [0.40.0] | 2025-03-14 | E23A journal recovery + E9 merge idempotency — orchestrator journal integration, merge-log tracking, crash-resistant finalize-wave |
@@ -51,6 +52,28 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 | [0.2.0] | 2026-03-08 | Engine protocol parity — E17–E23 implemented (context memory, failure routing, stub scan, quality gates, scaffold build verify, per-agent context extraction) |
 
 | [0.39.0] | 2026-03-14 | Scout automation integration — runScoutAutomation() integrates H1a-H4 tools into engine.RunScout(), inject results into Scout prompts |
+
+---
+
+## [0.43.0] - 2025-03-14
+
+### Fixed
+
+- **InstallHooks dependency on main repo hook** — Hook is now embedded as template in code
+  - `internal/git/commands.go`: Added `preCommitHookTemplate` constant (31 lines)
+    - Worktree isolation logic: blocks commits to main/master unless `SAW_ALLOW_MAIN_COMMIT=1`
+    - Contains required markers for verify-hook-installed validation
+  - `InstallHooks()`: Removed `os.ReadFile(sourceHookPath)` — generates hook from template instead
+  - Root cause: Previous implementation copied hook from main repo `.git/hooks/pre-commit`, which may not exist or may contain wrong hook (I6 Scout boundaries instead of worktree isolation)
+  - Impact: prepare-wave now works without manual hook setup in target repos
+  - Tested: Cross-repo IMPL (scout-and-wave-web + scout-and-wave-go) worktree creation succeeded
+
+### Implementation
+
+- Direct fix (no SAW wave execution)
+- Files modified: 1 (`internal/git/commands.go`)
+- Lines added: 35, Lines removed: 11
+- Eliminates prepare-wave failure mode: "hook verification failed: hook does not contain SAW isolation logic"
 
 ---
 

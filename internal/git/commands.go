@@ -164,27 +164,51 @@ func CommitCount(repoPath, fromRef, toRef string) (int, error) {
 	return count, nil
 }
 
-// InstallHooks copies the SAW pre-commit hook from the main repository to a worktree.
-// It reads the hook from repoPath/.git/hooks/pre-commit and writes it to the worktree's
-// hooks directory, making it executable. Creates the hooks directory if it doesn't exist.
+// preCommitHookTemplate is the SAW worktree isolation hook that blocks commits
+// to main/master branches unless SAW_ALLOW_MAIN_COMMIT=1 is set.
+const preCommitHookTemplate = `#!/usr/bin/env bash
+# SAW pre-commit guard: Block commits to main/master in Wave agent worktrees
+# This hook prevents accidental commits to protected branches during parallel execution.
+# Wave agents should only commit to their dedicated wave{N}-agent-{ID} branches.
+
+set -euo pipefail
+
+# Allow bypass via environment variable (for SAW orchestrator merge operations)
+if [[ "${SAW_ALLOW_MAIN_COMMIT:-0}" == "1" ]]; then
+	exit 0
+fi
+
+# Get current branch name
+branch=$(git rev-parse --abbrev-ref HEAD)
+
+# Block commits to main/master branches
+if [[ "$branch" == "main" || "$branch" == "master" ]]; then
+	echo "❌ SAW isolation violation: Cannot commit to $branch from Wave agent worktree"
+	echo ""
+	echo "Wave agents must commit to their dedicated branches (wave{N}-agent-{ID})."
+	echo "If you are the orchestrator performing a merge operation, set:"
+	echo "  export SAW_ALLOW_MAIN_COMMIT=1"
+	echo ""
+	exit 1
+fi
+
+# Allow commits to wave branches
+exit 0
+`
+
+// InstallHooks generates and installs the SAW pre-commit hook in a worktree.
+// It writes the hook template to the worktree's hooks directory, making it executable.
+// Creates the hooks directory if it doesn't exist.
 //
 // For worktrees, the hook path is: .git/worktrees/<name>/hooks/pre-commit
 // For regular repos, the hook path is: .git/hooks/pre-commit
 //
 // Returns an error if:
-// - The source hook doesn't exist in the main repo
 // - The worktree path is invalid or doesn't exist
 // - File I/O operations fail
 func InstallHooks(repoPath, worktreePath string) error {
-	// Read source hook from main repo
-	sourceHookPath := filepath.Join(repoPath, ".git", "hooks", "pre-commit")
-	hookContent, err := os.ReadFile(sourceHookPath)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return fmt.Errorf("pre-commit hook not found in main repo at %s", sourceHookPath)
-		}
-		return fmt.Errorf("failed to read source hook: %w", err)
-	}
+	// Use embedded hook template (no dependency on main repo hook)
+	hookContent := []byte(preCommitHookTemplate)
 
 	// Read the .git file in the worktree to find the gitdir pointer
 	gitFilePath := filepath.Join(worktreePath, ".git")
