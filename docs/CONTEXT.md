@@ -116,3 +116,5 @@ type BackendConfig struct {
   - IMPL doc: docs/IMPL/complete/IMPL-m1-agent-id-assignment.yaml
 - **journal-recovery-merge-idempotency**: completed 2026-03-14, 1 waves, 4 agents
   - IMPL doc: docs/IMPL/complete/IMPL-journal-recovery-merge-idempotency.yaml
+- **m4-finalize-impl**: completed 2026-03-14, 2 waves, 3 agents
+  - IMPL doc: ../scout-and-wave/docs/IMPL/complete/IMPL-m4-finalize-impl.yaml
