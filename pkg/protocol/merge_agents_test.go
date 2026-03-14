@@ -5,6 +5,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"testing"
+	"time"
 )
 
 // setupTestRepo creates a temporary git repository for testing.
@@ -420,7 +421,7 @@ func TestMergeAgents_SkipsAlreadyMergedAgents(t *testing.T) {
 	mergeLog := &MergeLog{
 		Wave: 1,
 		Merges: []MergeEntry{
-			{Agent: "A", MergeSHA: "abc123", Timestamp: nil},
+			{Agent: "A", MergeSHA: "abc123", Timestamp: time.Time{}},
 		},
 	}
 	if err := SaveMergeLog(manifestPath, 1, mergeLog); err != nil {
@@ -558,23 +559,42 @@ func TestMergeAgents_IdempotentOnCrash(t *testing.T) {
 	}
 	manifestPath := createManifest(t, repoDir, waves)
 
-	// Simulate "crash" scenario: merge A and B, then simulate restart
-	// First merge (agents A and B)
-	result1, err := MergeAgents(manifestPath, 1, repoDir)
-	if err != nil {
-		t.Fatalf("first MergeAgents returned error: %v", err)
+	// Simulate "crash" scenario: merge A and B manually, then let MergeAgents resume
+	// Manually merge A and B and record in merge-log (simulating partial completion before crash)
+
+	// Merge agent A
+	cmd := exec.Command("git", "-C", repoDir, "merge", "--no-ff", "-m", "Merge wave1-agent-A", "wave1-agent-A")
+	if err := cmd.Run(); err != nil {
+		t.Fatalf("failed to merge agent A: %v", err)
 	}
 
-	// Verify A and B merged
-	if !result1.Success {
-		t.Errorf("expected first merge to succeed, got false")
-	}
-	if len(result1.Merges) != 3 {
-		t.Fatalf("expected 3 merge attempts, got %d", len(result1.Merges))
+	// Get merge SHA for A
+	output, _ := exec.Command("git", "-C", repoDir, "rev-parse", "HEAD").Output()
+	mergeSHAA := string(output[:len(output)-1])
+
+	// Merge agent B
+	cmd = exec.Command("git", "-C", repoDir, "merge", "--no-ff", "-m", "Merge wave1-agent-B", "wave1-agent-B")
+	if err := cmd.Run(); err != nil {
+		t.Fatalf("failed to merge agent B: %v", err)
 	}
 
-	// Now "crash" and restart - manually remove agent C from manifest to simulate partial completion
-	// Actually, just re-run merge - it should skip A and B and merge C
+	// Get merge SHA for B
+	output, _ = exec.Command("git", "-C", repoDir, "rev-parse", "HEAD").Output()
+	mergeSHAB := string(output[:len(output)-1])
+
+	// Record A and B in merge-log (C not recorded - simulating crash before C merged)
+	crashedLog := &MergeLog{
+		Wave: 1,
+		Merges: []MergeEntry{
+			{Agent: "A", MergeSHA: mergeSHAA, Timestamp: time.Now()},
+			{Agent: "B", MergeSHA: mergeSHAB, Timestamp: time.Now()},
+		},
+	}
+	if err := SaveMergeLog(manifestPath, 1, crashedLog); err != nil {
+		t.Fatalf("failed to save crashed merge-log: %v", err)
+	}
+
+	// Now "restart" - MergeAgents should skip A and B (already merged) and merge C
 	result2, err := MergeAgents(manifestPath, 1, repoDir)
 	if err != nil {
 		t.Fatalf("second MergeAgents returned error: %v", err)
