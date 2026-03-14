@@ -6,7 +6,9 @@ package git
 
 import (
 	"fmt"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"strconv"
 	"strings"
 )
@@ -110,10 +112,13 @@ func MergeNoFF(repoPath, branch, message string) error {
 }
 
 // DeleteBranch deletes the named branch from the repository at repoPath.
+// Uses -D (force delete) because this is only called during cleanup after
+// successful merge, where the branch may not be fast-forward mergeable but
+// is known to be safe to delete.
 func DeleteBranch(repoPath, branch string) error {
-	_, err := Run(repoPath, "branch", "-d", branch)
+	_, err := Run(repoPath, "branch", "-D", branch)
 	if err != nil {
-		return fmt.Errorf("git branch -d failed: %w", err)
+		return fmt.Errorf("git branch -D failed: %w", err)
 	}
 	return nil
 }
@@ -157,4 +162,55 @@ func CommitCount(repoPath, fromRef, toRef string) (int, error) {
 		return 0, fmt.Errorf("failed to parse commit count: %w", err)
 	}
 	return count, nil
+}
+
+// InstallHooks copies the SAW pre-commit hook from the main repository to a worktree.
+// It reads the hook from repoPath/.git/hooks/pre-commit and writes it to the worktree's
+// hooks directory, making it executable. Creates the hooks directory if it doesn't exist.
+//
+// For worktrees, the hook path is: .git/worktrees/<name>/hooks/pre-commit
+// For regular repos, the hook path is: .git/hooks/pre-commit
+//
+// Returns an error if:
+// - The source hook doesn't exist in the main repo
+// - The worktree path is invalid or doesn't exist
+// - File I/O operations fail
+func InstallHooks(repoPath, worktreePath string) error {
+	// Read source hook from main repo
+	sourceHookPath := filepath.Join(repoPath, ".git", "hooks", "pre-commit")
+	hookContent, err := os.ReadFile(sourceHookPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return fmt.Errorf("pre-commit hook not found in main repo at %s", sourceHookPath)
+		}
+		return fmt.Errorf("failed to read source hook: %w", err)
+	}
+
+	// Read the .git file in the worktree to find the gitdir pointer
+	gitFilePath := filepath.Join(worktreePath, ".git")
+	gitFileContent, err := os.ReadFile(gitFilePath)
+	if err != nil {
+		return fmt.Errorf("failed to read worktree .git file at %s: %w", gitFilePath, err)
+	}
+
+	// Parse "gitdir: /path/to/repo/.git/worktrees/<name>"
+	gitFileStr := strings.TrimSpace(string(gitFileContent))
+	if !strings.HasPrefix(gitFileStr, "gitdir: ") {
+		return fmt.Errorf("malformed .git file at %s: expected 'gitdir: ...' but got: %s", gitFilePath, gitFileStr)
+	}
+	worktreeGitDir := strings.TrimPrefix(gitFileStr, "gitdir: ")
+
+	// Create hooks directory if it doesn't exist
+	hooksDir := filepath.Join(worktreeGitDir, "hooks")
+	if err := os.MkdirAll(hooksDir, 0755); err != nil {
+		return fmt.Errorf("failed to create hooks directory at %s: %w", hooksDir, err)
+	}
+
+	// Write hook to target path with executable permissions
+	targetHookPath := filepath.Join(hooksDir, "pre-commit")
+	if err := os.WriteFile(targetHookPath, hookContent, 0755); err != nil {
+		return fmt.Errorf("failed to write hook to %s: %w", targetHookPath, err)
+	}
+
+	return nil
 }

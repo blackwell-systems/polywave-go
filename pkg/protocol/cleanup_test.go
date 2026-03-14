@@ -3,6 +3,7 @@ package protocol
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/blackwell-systems/scout-and-wave-go/internal/git"
@@ -386,5 +387,226 @@ func TestCleanup_PartialFailure(t *testing.T) {
 	}
 	if !statusE.BranchDeleted {
 		t.Errorf("agent E: expected BranchDeleted=true (idempotent), got false")
+	}
+}
+
+// TestCleanup_ForcesDeleteUnmergedBranches verifies that cleanup force-deletes
+// branches even when they haven't been fast-forward merged.
+func TestCleanup_ForcesDeleteUnmergedBranches(t *testing.T) {
+	// Create a temporary directory for test repository
+	tmpDir, err := os.MkdirTemp("", "cleanup-test-*")
+	if err != nil {
+		t.Fatalf("failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	// Initialize a git repository
+	if _, err := git.Run(tmpDir, "init"); err != nil {
+		t.Fatalf("failed to init git repo: %v", err)
+	}
+
+	// Configure git user
+	if _, err := git.Run(tmpDir, "config", "user.email", "test@example.com"); err != nil {
+		t.Fatalf("failed to configure git user.email: %v", err)
+	}
+	if _, err := git.Run(tmpDir, "config", "user.name", "Test User"); err != nil {
+		t.Fatalf("failed to configure git user.name: %v", err)
+	}
+
+	// Create an initial commit on main
+	readmePath := filepath.Join(tmpDir, "README.md")
+	if err := os.WriteFile(readmePath, []byte("# Test\n"), 0644); err != nil {
+		t.Fatalf("failed to create README: %v", err)
+	}
+	if _, err := git.Run(tmpDir, "add", "README.md"); err != nil {
+		t.Fatalf("failed to add README: %v", err)
+	}
+	if _, err := git.Run(tmpDir, "commit", "-m", "Initial commit"); err != nil {
+		t.Fatalf("failed to create initial commit: %v", err)
+	}
+
+	// Get current branch name (could be main or master)
+	out, err := git.Run(tmpDir, "branch", "--show-current")
+	if err != nil {
+		t.Fatalf("failed to get current branch: %v", err)
+	}
+	mainBranch := strings.TrimSpace(out)
+
+	// Create manifest
+	manifest := &IMPLManifest{
+		Title:       "test-cleanup",
+		FeatureSlug: "test-cleanup",
+		Waves: []Wave{
+			{
+				Number: 1,
+				Agents: []Agent{
+					{ID: "F", Task: "Task F", Files: []string{"f.go"}},
+				},
+			},
+		},
+	}
+
+	// Write manifest to file
+	manifestPath := filepath.Join(tmpDir, "IMPL.yaml")
+	manifestData, err := yaml.Marshal(manifest)
+	if err != nil {
+		t.Fatalf("failed to marshal manifest: %v", err)
+	}
+	if err := os.WriteFile(manifestPath, manifestData, 0644); err != nil {
+		t.Fatalf("failed to write manifest: %v", err)
+	}
+
+	// Create worktrees directory
+	worktreesDir := filepath.Join(tmpDir, ".claude", "worktrees")
+	if err := os.MkdirAll(worktreesDir, 0755); err != nil {
+		t.Fatalf("failed to create worktrees dir: %v", err)
+	}
+
+	// Create worktree and make a commit
+	worktreePathF := filepath.Join(worktreesDir, "wave1-agent-F")
+	if err := git.WorktreeAdd(tmpDir, worktreePathF, "wave1-agent-F"); err != nil {
+		t.Fatalf("failed to create worktree for agent F: %v", err)
+	}
+
+	// Make a commit in the worktree
+	testFilePath := filepath.Join(worktreePathF, "f.go")
+	if err := os.WriteFile(testFilePath, []byte("package main\n"), 0644); err != nil {
+		t.Fatalf("failed to create test file: %v", err)
+	}
+	if _, err := git.Run(worktreePathF, "add", "f.go"); err != nil {
+		t.Fatalf("failed to add file: %v", err)
+	}
+	if _, err := git.Run(worktreePathF, "commit", "-m", "Add f.go"); err != nil {
+		t.Fatalf("failed to commit: %v", err)
+	}
+
+	// Switch back to main branch and merge with --no-ff
+	if _, err := git.Run(tmpDir, "checkout", mainBranch); err != nil {
+		t.Fatalf("failed to checkout main: %v", err)
+	}
+	if _, err := git.Run(tmpDir, "merge", "--no-ff", "wave1-agent-F", "-m", "Merge wave1-agent-F"); err != nil {
+		t.Fatalf("failed to merge: %v", err)
+	}
+
+	// Run cleanup (should force-delete the branch)
+	result, err := Cleanup(manifestPath, 1, tmpDir)
+	if err != nil {
+		t.Fatalf("Cleanup failed: %v", err)
+	}
+
+	// Verify cleanup succeeded
+	if len(result.Agents) != 1 {
+		t.Fatalf("expected 1 agent status, got %d", len(result.Agents))
+	}
+	status := result.Agents[0]
+	if !status.BranchDeleted {
+		t.Errorf("expected BranchDeleted=true, got false")
+	}
+
+	// Verify branch is actually gone
+	branchList, err := git.Run(tmpDir, "branch", "--list", "wave1-agent-F")
+	if err != nil {
+		t.Fatalf("failed to list branches: %v", err)
+	}
+	if strings.TrimSpace(branchList) != "" {
+		t.Errorf("branch wave1-agent-F still exists after cleanup: %s", branchList)
+	}
+}
+
+// TestCleanup_IdempotentBranchDeletion verifies that cleanup is idempotent
+// when branches are already deleted.
+func TestCleanup_IdempotentBranchDeletion(t *testing.T) {
+	// Create a temporary directory for test repository
+	tmpDir, err := os.MkdirTemp("", "cleanup-test-*")
+	if err != nil {
+		t.Fatalf("failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	// Initialize a git repository
+	if _, err := git.Run(tmpDir, "init"); err != nil {
+		t.Fatalf("failed to init git repo: %v", err)
+	}
+
+	// Configure git user
+	if _, err := git.Run(tmpDir, "config", "user.email", "test@example.com"); err != nil {
+		t.Fatalf("failed to configure git user.email: %v", err)
+	}
+	if _, err := git.Run(tmpDir, "config", "user.name", "Test User"); err != nil {
+		t.Fatalf("failed to configure git user.name: %v", err)
+	}
+
+	// Create an initial commit
+	readmePath := filepath.Join(tmpDir, "README.md")
+	if err := os.WriteFile(readmePath, []byte("# Test\n"), 0644); err != nil {
+		t.Fatalf("failed to create README: %v", err)
+	}
+	if _, err := git.Run(tmpDir, "add", "README.md"); err != nil {
+		t.Fatalf("failed to add README: %v", err)
+	}
+	if _, err := git.Run(tmpDir, "commit", "-m", "Initial commit"); err != nil {
+		t.Fatalf("failed to create initial commit: %v", err)
+	}
+
+	// Create manifest
+	manifest := &IMPLManifest{
+		Title:       "test-cleanup",
+		FeatureSlug: "test-cleanup",
+		Waves: []Wave{
+			{
+				Number: 1,
+				Agents: []Agent{
+					{ID: "G", Task: "Task G", Files: []string{"g.go"}},
+				},
+			},
+		},
+	}
+
+	// Write manifest to file
+	manifestPath := filepath.Join(tmpDir, "IMPL.yaml")
+	manifestData, err := yaml.Marshal(manifest)
+	if err != nil {
+		t.Fatalf("failed to marshal manifest: %v", err)
+	}
+	if err := os.WriteFile(manifestPath, manifestData, 0644); err != nil {
+		t.Fatalf("failed to write manifest: %v", err)
+	}
+
+	// Create worktrees directory
+	worktreesDir := filepath.Join(tmpDir, ".claude", "worktrees")
+	if err := os.MkdirAll(worktreesDir, 0755); err != nil {
+		t.Fatalf("failed to create worktrees dir: %v", err)
+	}
+
+	// Create and then manually delete worktree and branch
+	worktreePathG := filepath.Join(worktreesDir, "wave1-agent-G")
+	if err := git.WorktreeAdd(tmpDir, worktreePathG, "wave1-agent-G"); err != nil {
+		t.Fatalf("failed to create worktree for agent G: %v", err)
+	}
+
+	// Manually clean up (simulating previous cleanup or manual deletion)
+	if _, err := git.Run(tmpDir, "worktree", "remove", "--force", worktreePathG); err != nil {
+		t.Fatalf("failed to remove worktree: %v", err)
+	}
+	if _, err := git.Run(tmpDir, "branch", "-D", "wave1-agent-G"); err != nil {
+		t.Fatalf("failed to delete branch: %v", err)
+	}
+
+	// Run cleanup (should be idempotent)
+	result, err := Cleanup(manifestPath, 1, tmpDir)
+	if err != nil {
+		t.Fatalf("Cleanup failed: %v", err)
+	}
+
+	// Verify cleanup reports success (idempotent)
+	if len(result.Agents) != 1 {
+		t.Fatalf("expected 1 agent status, got %d", len(result.Agents))
+	}
+	status := result.Agents[0]
+	if !status.WorktreeRemoved {
+		t.Errorf("expected WorktreeRemoved=true (idempotent), got false")
+	}
+	if !status.BranchDeleted {
+		t.Errorf("expected BranchDeleted=true (idempotent), got false")
 	}
 }
