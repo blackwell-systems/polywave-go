@@ -42,6 +42,7 @@ func main() {
 		newAnalyzeSuitabilityCmd(),
 		newExtractCommandsCmd(),
 		newFinalizeWaveCmd(),
+		newFinalizeImplCmd(),
 		newDiagnoseBuildFailureCmd(),
 		newAssignAgentIDsCmd(),
 		newRunScoutCmd(), // I3: Phase 5 integration
