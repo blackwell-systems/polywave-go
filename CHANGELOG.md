@@ -8,6 +8,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 | Version | Date | Headline |
 |---------|------|----------|
+| [0.39.0] | 2026-03-14 | Scout automation integration — runScoutAutomation() integrates H1a-H4 tools into engine.RunScout(), inject results into Scout prompts |
 | [0.38.0] | 2026-03-12 | H7 build failure diagnosis — pattern-matching engine with 27 error patterns across 4 languages (Go, Rust, JS/TS, Python) |
 | [0.37.0] | 2026-03-12 | Batch wave commands — prepare-wave and finalize-wave reduce orchestrator overhead from 11 commands to 3 (23% faster execution) |
 | [0.36.0] | 2026-03-12 | H6 dependency conflict detection + journal graceful degradation — check-deps CLI, 4 lock file parsers, empty session handling |
@@ -45,6 +46,49 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 | [0.4.0] | 2026-03-09 | Per-agent model routing — ScoutModel/WaveModel opts, `model:` field in IMPL doc agent sections, per-agent backend dispatch |
 | [0.3.0] | 2026-03-08 | Protocol audit fixes — P0: failure_type parsing, multi-gen agent IDs; P1: E22 2-pass scaffold build, cross-repo Repo column; P2: repo field in completion reports |
 | [0.2.0] | 2026-03-08 | Engine protocol parity — E17–E23 implemented (context memory, failure routing, stub scan, quality gates, scaffold build verify, per-agent context extraction) |
+
+| [0.39.0] | 2026-03-14 | Scout automation integration — runScoutAutomation() integrates H1a-H4 tools into engine.RunScout(), inject results into Scout prompts |
+
+---
+
+## [0.39.0] - 2026-03-14
+
+### Added
+
+- **Scout automation integration** — Scout agents now receive pre-execution automation analysis before launching
+  - `pkg/engine/runner.go`: New `runScoutAutomation()` function orchestrates H2, H1a, H3 tool execution
+  - H2 (extract-commands): Detects build/test/lint commands from CI configs/manifests
+  - H1a (analyze-suitability): Conditional requirements file analysis (triggers when .md/.txt path detected)
+  - H3 (analyze-deps): Dependency graph analysis using targetFiles from H1a or full repo scan
+  - Results injected as "Automation Analysis Results" markdown section in Scout prompt
+  - Best-effort execution model: tool failures logged but don't block Scout launch
+  - `pkg/suitability/wrapper.go`: Engine-compatible wrappers for suitability analysis
+    - `AnalyzeSuitability()`: Wrapper that calls internal `ScanPreImplementation()`
+    - `ParseRequirements()`: Markdown requirements parser supporting audit.md format
+  - `pkg/engine/runner_automation_test.go`: 4 comprehensive tests
+    - `TestRunScout_AutomationIntegration`: Verifies automation results in Scout prompt
+    - `TestRunScout_AutomationFailure`: Verifies Scout launches despite tool failures
+    - `TestDetectRequirementsFile`: Tests requirements file path detection heuristic
+    - `TestRunScoutAutomation_WithRequirementsFile`: Tests H1a conditional execution
+
+### Changed
+
+- **Scout prompt structure** — Automation results section now inserted after feature description, before scout.md contents
+- **Requirements detection** — Heuristic based on file extensions (.md, .txt) in feature description string
+
+### Fixed
+
+- **Test failures after Wave 1 merge** — Empty grouping array handling in idgen package
+  - `pkg/idgen/generator.go`: Removed `len(grouping) > 0` check in validation
+  - `cmd/saw/assign_agent_ids_cmd.go`: CLI converts `--grouping "[]"` to nil (sequential mode)
+  - Fixed `TestAssignAgentIDs_EmptyGrouping` expectations
+
+### Implementation
+
+- **Wave 2 Agent C** — SDK automation integration
+- **Files modified**: `pkg/engine/runner.go`
+- **Files created**: `pkg/engine/runner_automation_test.go`, `pkg/suitability/wrapper.go`
+- **Tests added**: 4 (all passing)
 
 ## [0.38.0] - 2026-03-12
 
