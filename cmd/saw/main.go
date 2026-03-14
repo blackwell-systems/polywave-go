@@ -45,6 +45,7 @@ func main() {
 		newDiagnoseBuildFailureCmd(),
 		newAssignAgentIDsCmd(),
 		newRunScoutCmd(), // I3: Phase 5 integration
+		newVerifyHookInstalledCmd(),
 	)
 	if err := rootCmd.Execute(); err != nil {
 		fmt.Fprintln(os.Stderr, err)

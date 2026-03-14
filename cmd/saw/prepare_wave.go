@@ -81,6 +81,17 @@ waves that execute on the main branch.`,
 				return fmt.Errorf("failed to create worktrees: %w", err)
 			}
 
+			// Step 1.5: Verify pre-commit hooks (H10 - Layer 0 isolation enforcement)
+			for _, wtInfo := range worktreeResult.Worktrees {
+				hookResult, err := verifyHookInstalled(wtInfo.Path, waveNum)
+				if err != nil {
+					return fmt.Errorf("hook verification failed for agent %s: %w", wtInfo.Agent, err)
+				}
+				if !hookResult.Valid {
+					return fmt.Errorf("hook verification failed for agent %s: %s", wtInfo.Agent, hookResult.Reason)
+				}
+			}
+
 			// Step 2: Load manifest for brief extraction
 			doc, err := protocol.Load(manifestPath)
 			if err != nil {
