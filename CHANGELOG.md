@@ -8,6 +8,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 | Version | Date | Headline |
 |---------|------|----------|
+| [0.44.0] | 2025-03-14 | Cross-repo finalize-wave — all 6 pipeline steps run per-repo, aggregates results from multiple repositories |
 | [0.43.0] | 2025-03-14 | InstallHooks template embedding — hook generated from code instead of copied from main repo, eliminates manual setup |
 | [0.42.0] | 2025-03-14 | Multi-repo finalize-impl — gate_populator extracts H2 data from all repos in file_ownership, applies repo-specific gates to each agent |
 | [0.41.0] | 2025-03-14 | H10 pre-commit hook verification — verify-hook-installed command, integrated into prepare-wave Step 1.5 |
@@ -52,6 +53,33 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 | [0.2.0] | 2026-03-08 | Engine protocol parity — E17–E23 implemented (context memory, failure routing, stub scan, quality gates, scaffold build verify, per-agent context extraction) |
 
 | [0.39.0] | 2026-03-14 | Scout automation integration — runScoutAutomation() integrates H1a-H4 tools into engine.RunScout(), inject results into Scout prompts |
+
+---
+
+## [0.44.0] - 2025-03-14
+
+### Added
+
+- **Cross-Repo finalize-wave** — Automated wave finalization for multi-repo IMPLs
+  - `cmd/saw/finalize_wave.go`: Enhanced to run all 6 steps per-repo
+    - `FinalizeWaveResult`: Changed from single values to maps (repo → result)
+    - `extractReposFromManifest()`: Extracts unique repos from file_ownership, resolves relative paths
+    - Step 1 (VerifyCommits): Runs per-repo, checks all agents in that repo have commits
+    - Step 2 (ScanStubs): Aggregated across all repos (stubs are file-level, not repo-specific)
+    - Step 3 (RunGates): Runs per-repo with repo-specific quality gates
+    - Step 4 (MergeAgents): Runs per-repo, merges agent branches in their home repo
+    - Step 5 (VerifyBuild): Runs per-repo, tests post-merge code in each repo
+    - Step 6 (Cleanup): Runs per-repo, removes worktrees and branches from each repo
+  - Backward compatible: Single-repo IMPLs work identically (one entry in result maps)
+  - Eliminates manual per-repo orchestration (previous workaround: separate merge commands per repo)
+  - Tested: IMPL-remove-markdown-impl-support (scout-and-wave-web + scout-and-wave-go)
+
+### Implementation
+
+- Direct implementation (no SAW wave execution)
+- Files modified: 1 (`finalize_wave.go`)
+- Lines changed: +156, -78 (total 234 lines modified)
+- Completes cross-repo automation trilogy: prepare-wave (v0.37.0), finalize-impl (v0.42.0), finalize-wave (v0.44.0)
 
 ---
 
