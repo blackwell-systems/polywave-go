@@ -32,6 +32,7 @@ func main() {
 		newUpdateAgentPromptCmd(),
 		newSolveCmd(),
 		newDebugJournalCmd(),
+		newDetectCascadesCmd(),
 		newJournalInitCmd(),
 		newPrepareAgentCmd(),
 		newPrepareWaveCmd(),
