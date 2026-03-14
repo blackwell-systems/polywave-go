@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/deps"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/journal"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
 	"github.com/spf13/cobra"
@@ -32,14 +33,18 @@ func newPrepareWaveCmd() *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use:   "prepare-wave <manifest-path>",
-		Short: "Prepare all agents in a wave (create worktrees + extract briefs + init journals)",
+		Short: "Prepare all agents in a wave (check deps + create worktrees + extract briefs + init journals)",
 		Long: `Prepares all agents in a wave for parallel execution by:
+0. Checking for dependency conflicts (missing packages, version conflicts)
 1. Creating git worktrees for all agents in the wave
 2. Extracting each agent's brief to their worktree root (.saw-agent-brief.md)
 3. Initializing journal observers for all agents
 
-This combines create-worktrees + prepare-agent into a single atomic operation,
-reducing wave setup from 5+ commands to 1 command.
+This combines check-deps + create-worktrees + prepare-agent into a single atomic operation,
+reducing wave setup from 6+ commands to 1 command.
+
+If dependency conflicts are detected (missing packages or version conflicts), the command
+exits with code 1 and prints a JSON report. Resolve conflicts in main branch and re-run.
 
 NOTE: For solo agents (1 agent in wave), use prepare-agent --no-worktree instead.
 prepare-wave always creates worktrees, which is unnecessary overhead for single-agent
@@ -56,6 +61,18 @@ waves that execute on the main branch.`,
 			projectRoot := filepath.Dir(filepath.Dir(filepath.Dir(manifestPath)))
 			if repoDir != "" {
 				projectRoot = repoDir
+			}
+
+			// Step 0: Check dependencies before creating worktrees
+			report, err := checkDependencies(manifestPath, waveNum, projectRoot)
+			if err != nil {
+				return fmt.Errorf("failed to check dependencies: %w", err)
+			}
+			if report != nil {
+				// Conflicts detected - print report and exit
+				reportJSON, _ := json.MarshalIndent(report, "", "  ")
+				fmt.Fprintln(cmd.OutOrStdout(), string(reportJSON))
+				return fmt.Errorf("dependency conflicts detected - resolve before creating worktrees")
 			}
 
 			// Step 1: Create worktrees (records base commit, must happen first)
@@ -196,4 +213,19 @@ waves that execute on the main branch.`,
 	_ = cmd.MarkFlagRequired("wave")
 
 	return cmd
+}
+
+// checkDependencies wraps deps.CheckDeps to return nil report if no conflicts detected
+func checkDependencies(implPath string, wave int, repoDir string) (*deps.ConflictReport, error) {
+	report, err := deps.CheckDeps(implPath, wave)
+	if err != nil {
+		return nil, err
+	}
+
+	// Return nil if no conflicts (makes caller logic cleaner)
+	if len(report.MissingDeps) == 0 && len(report.VersionConflicts) == 0 {
+		return nil, nil
+	}
+
+	return report, nil
 }
