@@ -422,9 +422,57 @@ func (o *JournalObserver) updateRecent(newEntries []ToolEntry) error {
 	return os.WriteFile(o.RecentPath, data, 0644)
 }
 
-// GenerateContext is a placeholder for the context generation interface.
-// Implementation will be provided by agent B.
+// LoadJournal reads all entries from index.jsonl.
+// Returns empty slice (not error) if index.jsonl doesn't exist.
+func (o *JournalObserver) LoadJournal() ([]ToolEntry, error) {
+	// Check if index file exists
+	data, err := os.ReadFile(o.IndexPath)
+	if os.IsNotExist(err) {
+		// No journal yet - return empty slice
+		return []ToolEntry{}, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("failed to read index: %w", err)
+	}
+
+	// Parse JSONL (one JSON object per line)
+	entries := []ToolEntry{}
+	lines := strings.Split(string(data), "\n")
+
+	for i, line := range lines {
+		// Skip empty lines
+		if strings.TrimSpace(line) == "" {
+			continue
+		}
+
+		var entry ToolEntry
+		if err := json.Unmarshal([]byte(line), &entry); err != nil {
+			// Skip malformed lines with warning, but don't fail
+			fmt.Fprintf(os.Stderr, "Warning: skipping malformed JSONL line %d in %s: %v\n", i+1, o.IndexPath, err)
+			continue
+		}
+
+		entries = append(entries, entry)
+	}
+
+	return entries, nil
+}
+
+// GenerateContext generates markdown context summary from journal entries.
+// Calls journal.GenerateContext() with loaded journal entries.
 func (o *JournalObserver) GenerateContext() (string, error) {
-	return "", fmt.Errorf("not implemented: GenerateContext will be provided by agent B")
+	// Load all journal entries
+	entries, err := o.LoadJournal()
+	if err != nil {
+		return "", fmt.Errorf("failed to load journal: %w", err)
+	}
+
+	// Call journal.GenerateContext with no limit (maxEntries=0 means all entries)
+	context, err := GenerateContext(entries, 0)
+	if err != nil {
+		return "", fmt.Errorf("failed to generate context: %w", err)
+	}
+
+	return context, nil
 }
 
