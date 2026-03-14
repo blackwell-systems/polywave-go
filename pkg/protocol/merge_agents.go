@@ -102,6 +102,12 @@ func MergeAgents(manifestPath string, waveNum int, repoDir string) (*MergeAgents
 
 // mergeAgentsSingleRepo handles merging when all agents belong to the same repository.
 func mergeAgentsSingleRepo(manifestPath string, waveNum int, repoDir string, manifest *IMPLManifest, targetWave *Wave) (*MergeAgentsResult, error) {
+	// Load merge-log for idempotency (E9)
+	mergeLog, err := LoadMergeLog(manifestPath, waveNum)
+	if err != nil {
+		return nil, fmt.Errorf("failed to load merge-log: %w", err)
+	}
+
 	// Initialize result
 	result := &MergeAgentsResult{
 		Wave:    waveNum,
@@ -111,6 +117,19 @@ func mergeAgentsSingleRepo(manifestPath string, waveNum int, repoDir string, man
 
 	// Merge each agent branch
 	for _, agent := range targetWave.Agents {
+		// Check if agent already merged (idempotency)
+		if mergeLog.IsMerged(agent.ID) {
+			// Agent already merged - skip
+			status := MergeStatus{
+				Agent:   agent.ID,
+				Branch:  fmt.Sprintf("wave%d-agent-%s", waveNum, agent.ID),
+				Success: true,
+				Error:   "already merged (skipped)",
+			}
+			result.Merges = append(result.Merges, status)
+			continue
+		}
+
 		branch := fmt.Sprintf("wave%d-agent-%s", waveNum, agent.ID)
 
 		// Build commit message prefix
@@ -140,6 +159,20 @@ func mergeAgentsSingleRepo(manifestPath string, waveNum int, repoDir string, man
 			return result, nil
 		}
 
+		// Get merge commit SHA
+		mergeSHA, err := git.RevParse(repoDir, "HEAD")
+		if err != nil {
+			// Non-fatal: log warning but continue
+			mergeSHA = "unknown"
+		}
+
+		// Record merge in log (E9)
+		mergeLog.AddMergeEntry(agent.ID, mergeSHA)
+		if saveErr := SaveMergeLog(manifestPath, waveNum, mergeLog); saveErr != nil {
+			// Non-fatal: log warning but continue (best-effort tracking)
+			fmt.Fprintf(os.Stderr, "warning: failed to save merge-log: %v\n", saveErr)
+		}
+
 		// Merge succeeded — auto-update completion status (best-effort)
 		status.Success = true
 		if _, err := UpdateStatus(manifestPath, waveNum, agent.ID, "complete"); err == nil {
@@ -159,6 +192,12 @@ func mergeAgentsSingleRepo(manifestPath string, waveNum int, repoDir string, man
 
 // mergeAgentsMultiRepo handles merging when agents span multiple repositories.
 func mergeAgentsMultiRepo(manifestPath string, waveNum int, manifest *IMPLManifest, targetWave *Wave, agentRepos map[string]string) (*MergeAgentsResult, error) {
+	// Load merge-log for idempotency (E9)
+	mergeLog, err := LoadMergeLog(manifestPath, waveNum)
+	if err != nil {
+		return nil, fmt.Errorf("failed to load merge-log: %w", err)
+	}
+
 	// Group agents by repository
 	repoGroups := make(map[string][]Agent)
 	for _, agent := range targetWave.Agents {
@@ -185,6 +224,19 @@ func mergeAgentsMultiRepo(manifestPath string, waveNum int, manifest *IMPLManife
 
 		// Merge agents in this repo
 		for _, agent := range agents {
+			// Check if agent already merged (idempotency)
+			if mergeLog.IsMerged(agent.ID) {
+				// Agent already merged - skip
+				status := MergeStatus{
+					Agent:   agent.ID,
+					Branch:  fmt.Sprintf("wave%d-agent-%s", waveNum, agent.ID),
+					Success: true,
+					Error:   "already merged (skipped)",
+				}
+				result.Merges = append(result.Merges, status)
+				continue
+			}
+
 			branch := fmt.Sprintf("wave%d-agent-%s", waveNum, agent.ID)
 
 			// Build commit message
@@ -209,6 +261,20 @@ func mergeAgentsMultiRepo(manifestPath string, waveNum int, manifest *IMPLManife
 				result.Merges = append(result.Merges, status)
 				result.Success = false
 				return result, nil
+			}
+
+			// Get merge commit SHA
+			mergeSHA, err := git.RevParse(absRepoDir, "HEAD")
+			if err != nil {
+				// Non-fatal: log warning but continue
+				mergeSHA = "unknown"
+			}
+
+			// Record merge in log (E9)
+			mergeLog.AddMergeEntry(agent.ID, mergeSHA)
+			if saveErr := SaveMergeLog(manifestPath, waveNum, mergeLog); saveErr != nil {
+				// Non-fatal: log warning but continue (best-effort tracking)
+				fmt.Fprintf(os.Stderr, "warning: failed to save merge-log: %v\n", saveErr)
 			}
 
 			// Merge succeeded

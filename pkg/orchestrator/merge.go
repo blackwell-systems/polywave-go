@@ -86,10 +86,22 @@ func executeMergeWave(o *Orchestrator, waveNum int) error {
 		return err
 	}
 
-	// Step 6 & 7: Merge each complete agent; clean up worktree afterward.
+	// Step 6: Load merge-log for idempotency (E9)
+	mergeLog, err := protocol.LoadMergeLog(o.implDocPath, waveNum)
+	if err != nil {
+		return fmt.Errorf("executeMergeWave: loading merge-log: %w", err)
+	}
+
+	// Step 7 & 8: Merge each complete agent; clean up worktree afterward.
 	for _, agent := range wave.Agents {
 		report, ok := reports[agent.Letter]
 		if !ok || report.Status != types.StatusComplete {
+			continue
+		}
+
+		// Check if agent already merged (idempotency)
+		if mergeLog.IsMerged(agent.Letter) {
+			fmt.Fprintf(os.Stderr, "executeMergeWave: agent %s already merged (skipping)\n", agent.Letter)
 			continue
 		}
 
@@ -98,6 +110,19 @@ func executeMergeWave(o *Orchestrator, waveNum int) error {
 
 		if err := git.MergeNoFF(o.repoPath, branch, mergeMsg); err != nil {
 			return fmt.Errorf("executeMergeWave: merging %s: %w", branch, err)
+		}
+
+		// Get merge commit SHA
+		mergeSHA, err := git.RevParse(o.repoPath, "HEAD")
+		if err != nil {
+			return fmt.Errorf("executeMergeWave: getting merge SHA for %s: %w", agent.Letter, err)
+		}
+
+		// Record merge in log (E9)
+		mergeLog.AddMergeEntry(agent.Letter, mergeSHA)
+		if saveErr := protocol.SaveMergeLog(o.implDocPath, waveNum, mergeLog); saveErr != nil {
+			// Non-fatal: log warning but continue (best-effort tracking)
+			fmt.Fprintf(os.Stderr, "executeMergeWave: warning: failed to save merge-log: %v\n", saveErr)
 		}
 
 		// Determine worktree path from report or convention.
