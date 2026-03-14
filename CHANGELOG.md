@@ -8,6 +8,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 | Version | Date | Headline |
 |---------|------|----------|
+| [0.40.0] | 2025-03-14 | E23A journal recovery + E9 merge idempotency — orchestrator journal integration, merge-log tracking, crash-resistant finalize-wave |
 | [0.39.0] | 2026-03-14 | Scout automation integration — runScoutAutomation() integrates H1a-H4 tools into engine.RunScout(), inject results into Scout prompts |
 | [0.38.0] | 2026-03-12 | H7 build failure diagnosis — pattern-matching engine with 27 error patterns across 4 languages (Go, Rust, JS/TS, Python) |
 | [0.37.0] | 2026-03-12 | Batch wave commands — prepare-wave and finalize-wave reduce orchestrator overhead from 11 commands to 3 (23% faster execution) |
@@ -48,6 +49,65 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 | [0.2.0] | 2026-03-08 | Engine protocol parity — E17–E23 implemented (context memory, failure routing, stub scan, quality gates, scaffold build verify, per-agent context extraction) |
 
 | [0.39.0] | 2026-03-14 | Scout automation integration — runScoutAutomation() integrates H1a-H4 tools into engine.RunScout(), inject results into Scout prompts |
+
+---
+
+## [0.40.0] - 2025-03-14
+
+### Added
+
+- **E23A: Tool Journal Recovery** — Agents can recover execution history across retries, context compaction, and process restarts
+  - `pkg/orchestrator/journal_integration.go`: New module with 2 functions
+    - `PrepareAgentContext()`: Loads journal history and generates context.md for agent recovery (defaults to last 50 entries per E23A spec)
+    - `WriteJournalEntry()`: Appends tool use/result entries to `.saw-state/journals/wave{N}/agent-{ID}/index.jsonl`
+  - `pkg/journal/observer.go`: Completed journal recovery implementation
+    - `LoadJournal()`: Reads all entries from index.jsonl with JSONL parsing, error handling for invalid lines
+    - `GenerateContext()`: Delegates to `journal.GenerateContext()` to produce markdown context summary
+  - Enables automatic failure remediation (E7a, E19) by preserving agent execution history
+  - 11 new tests (6 in orchestrator, 5 in journal observer)
+  - Completed by: Agent A (orchestrator integration), Agent B (observer wiring)
+
+- **E9: Merge Idempotency** — finalize-wave is now crash-resistant with merge-log tracking
+  - `pkg/protocol/merge_log.go`: New module with MergeLog persistence (117 lines)
+    - `MergeLog` type with Wave and Merges[] fields, persists to `.saw-state/wave{N}/merge-log.json`
+    - `LoadMergeLog()`: Reads merge-log.json, returns empty log if file doesn't exist (first merge attempt)
+    - `SaveMergeLog()`: Writes merge-log.json after successful agent merge, creates directories as needed
+    - `IsMerged()`: Case-insensitive agent merge status check
+    - `GetMergeSHA()`: Returns merge commit SHA for agent
+  - Idempotency checks integrated into merge pipeline:
+    - `cmd/saw/finalize_wave.go`: Updated comment to document E9 idempotency
+    - `pkg/protocol/merge_agents.go`: Load merge-log before merging, skip already-merged agents, save after each merge
+    - `pkg/orchestrator/merge.go`: Check merge-log in executeMergeWave(), record merge entries with SHA
+  - Crashed merges can resume without duplicate commits (running finalize-wave twice produces identical git history)
+  - 12 new tests (9 in merge_log, 3 in merge_agents) including TestMergeAgents_IdempotentOnCrash
+  - Completed by: Agent C (merge-log persistence), Agent D (finalize-wave integration)
+
+### Fixed
+
+- **Go stdlib false positives in dependency checker** — `sawtools check-deps` no longer reports stdlib packages as missing
+  - `pkg/deps/checker.go`: Added `isStdLib()` helper that identifies stdlib packages by checking if first path component contains a dot
+  - Stdlib packages like `fmt`, `os`, `encoding/json` have no dots before first slash, third-party packages like `github.com/...` do
+  - Fixes prepare-wave blocking on 30+ false positive "missing dependencies" (all stdlib packages)
+  - Commit: 7942790
+
+- **Test compilation error after merge** — Fixed `time.Time` zero value usage in merge_agents_test.go
+  - Added missing `time` import
+  - Changed `Timestamp: nil` to `Timestamp: time.Time{}` (structs can't be nil)
+  - Commit: 9af9ba9
+
+- **Test logic bug in TestMergeAgents_IdempotentOnCrash** — Test now correctly simulates crashed merge
+  - Previous version merged all 3 agents in first call, then expected C to not be skipped in second call
+  - Fixed to manually merge A+B and record in merge-log (simulating crash before C merged), then verify MergeAgents skips A+B and merges C
+  - Commit: 9af9ba9
+
+### Implementation
+
+- **Combined IMPL** — E23A and E9 implemented together (disjoint file ownership, fully parallel execution)
+- **Wave structure**: Single wave, 4 agents (A: orchestrator integration, B: observer wiring, C: merge-log persistence, D: finalize-wave integration)
+- **Files created**: 6 (journal_integration.go, journal_integration_test.go, merge_log.go, merge_log_test.go, 2 test files modified)
+- **Files modified**: 4 (observer.go, observer_test.go, finalize_wave.go, merge_agents.go, merge.go, merge_agents_test.go, checker.go)
+- **Tests added**: 28 total (11 E23A, 12 E9, 5 auxiliary)
+- **All tests passing**: Build ✅, Tests ✅, Lint ✅
 
 ---
 
