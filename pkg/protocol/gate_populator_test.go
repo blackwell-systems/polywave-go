@@ -48,8 +48,14 @@ func TestPopulateVerificationGates_GoProject(t *testing.T) {
 		},
 	}
 
-	// Execute
-	result, err := PopulateVerificationGates(manifest, commandSet)
+	// Execute with single-repo setup
+	commandSets := map[string]*commands.CommandSet{
+		".": commandSet,
+	}
+	repoMap := map[string]string{
+		".": ".",
+	}
+	result, err := PopulateVerificationGates(manifest, commandSets, repoMap)
 
 	// Verify no error
 	if err != nil {
@@ -121,8 +127,14 @@ func TestPopulateVerificationGates_Idempotent(t *testing.T) {
 
 	originalTaskA := manifest.Waves[0].Agents[0].Task
 
-	// Execute
-	result, err := PopulateVerificationGates(manifest, commandSet)
+	// Execute with single-repo setup
+	commandSets := map[string]*commands.CommandSet{
+		".": commandSet,
+	}
+	repoMap := map[string]string{
+		".": ".",
+	}
+	result, err := PopulateVerificationGates(manifest, commandSets, repoMap)
 	if err != nil {
 		t.Fatalf("PopulateVerificationGates failed: %v", err)
 	}
@@ -156,8 +168,8 @@ func TestPopulateVerificationGates_MissingH2Data(t *testing.T) {
 		},
 	}
 
-	// Execute with nil CommandSet
-	_, err := PopulateVerificationGates(manifest, nil)
+	// Execute with empty commandSets map
+	_, err := PopulateVerificationGates(manifest, nil, nil)
 
 	// Verify error returned
 	if err == nil {
