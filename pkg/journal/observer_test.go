@@ -735,3 +735,281 @@ func writeMockEntries(t *testing.T, f *os.File, entries []mockLogEntry) {
 		}
 	}
 }
+
+// Tests for Agent B implementation (LoadJournal, GenerateContext)
+
+func TestGenerateContext_CallsGenerateContextFunc(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	obs, err := NewObserver(tmpDir, "agent-A")
+	if err != nil {
+		t.Fatalf("NewObserver failed: %v", err)
+	}
+
+	// Create index.jsonl with sample entries
+	entries := []ToolEntry{
+		{
+			Timestamp: time.Now().Add(-10 * time.Minute),
+			Kind:      "tool_use",
+			ToolName:  "Bash",
+			ToolUseID: "toolu_001",
+			Input:     map[string]interface{}{"command": "go test ./..."},
+		},
+		{
+			Timestamp: time.Now().Add(-9 * time.Minute),
+			Kind:      "tool_result",
+			ToolUseID: "toolu_001",
+			Preview:   "PASS",
+		},
+	}
+	if err := obs.appendToIndex(entries); err != nil {
+		t.Fatalf("Failed to create index: %v", err)
+	}
+
+	// Call GenerateContext
+	context, err := obs.GenerateContext()
+	if err != nil {
+		t.Fatalf("GenerateContext failed: %v", err)
+	}
+
+	// Verify output has expected structure (from journal.GenerateContext)
+	if !strings.Contains(context, "## Session Context (Recovered from Tool Journal)") {
+		t.Errorf("Context missing expected header")
+	}
+	if !strings.Contains(context, "Total tool calls") {
+		t.Errorf("Context missing session stats")
+	}
+}
+
+func TestLoadJournal_EmptyJournal(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	obs, err := NewObserver(tmpDir, "agent-A")
+	if err != nil {
+		t.Fatalf("NewObserver failed: %v", err)
+	}
+
+	// No index.jsonl exists yet
+	entries, err := obs.LoadJournal()
+	if err != nil {
+		t.Fatalf("LoadJournal failed on non-existent file: %v", err)
+	}
+
+	// Should return empty slice, not error
+	if len(entries) != 0 {
+		t.Errorf("LoadJournal returned %d entries, want 0", len(entries))
+	}
+}
+
+func TestLoadJournal_ParsesJSONL(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	obs, err := NewObserver(tmpDir, "agent-A")
+	if err != nil {
+		t.Fatalf("NewObserver failed: %v", err)
+	}
+
+	// Create index.jsonl manually
+	testEntries := []ToolEntry{
+		{
+			Timestamp: time.Now().Add(-30 * time.Minute),
+			Kind:      "tool_use",
+			ToolName:  "Read",
+			ToolUseID: "toolu_001",
+			Input:     map[string]interface{}{"file_path": "/tmp/test.go"},
+		},
+		{
+			Timestamp: time.Now().Add(-29 * time.Minute),
+			Kind:      "tool_result",
+			ToolUseID: "toolu_001",
+			Preview:   "package main",
+		},
+		{
+			Timestamp: time.Now().Add(-25 * time.Minute),
+			Kind:      "tool_use",
+			ToolName:  "Edit",
+			ToolUseID: "toolu_002",
+			Input:     map[string]interface{}{"file_path": "/tmp/test.go"},
+		},
+	}
+
+	// Write entries as JSONL
+	f, err := os.Create(obs.IndexPath)
+	if err != nil {
+		t.Fatalf("Failed to create index: %v", err)
+	}
+	encoder := json.NewEncoder(f)
+	for _, entry := range testEntries {
+		if err := encoder.Encode(entry); err != nil {
+			t.Fatalf("Failed to write entry: %v", err)
+		}
+	}
+	f.Close()
+
+	// Load journal
+	loaded, err := obs.LoadJournal()
+	if err != nil {
+		t.Fatalf("LoadJournal failed: %v", err)
+	}
+
+	// Verify all entries loaded
+	if len(loaded) != len(testEntries) {
+		t.Errorf("LoadJournal returned %d entries, want %d", len(loaded), len(testEntries))
+	}
+
+	// Verify entries loaded in correct order
+	for i, entry := range loaded {
+		if entry.ToolUseID != testEntries[i].ToolUseID {
+			t.Errorf("Entry %d: ToolUseID = %s, want %s", i, entry.ToolUseID, testEntries[i].ToolUseID)
+		}
+		if entry.Kind != testEntries[i].Kind {
+			t.Errorf("Entry %d: Kind = %s, want %s", i, entry.Kind, testEntries[i].Kind)
+		}
+	}
+}
+
+func TestLoadJournal_IgnoresInvalidLines(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	obs, err := NewObserver(tmpDir, "agent-A")
+	if err != nil {
+		t.Fatalf("NewObserver failed: %v", err)
+	}
+
+	// Create index.jsonl with valid and invalid lines
+	validEntry := ToolEntry{
+		Timestamp: time.Now(),
+		Kind:      "tool_use",
+		ToolName:  "Bash",
+		ToolUseID: "toolu_valid",
+	}
+
+	// Write mixed content
+	var content bytes.Buffer
+	encoder := json.NewEncoder(&content)
+	encoder.Encode(validEntry)                           // Valid
+	content.WriteString("this is not json\n")            // Invalid
+	content.WriteString("\n")                            // Empty line
+	content.WriteString("{\"incomplete\": \n")           // Invalid
+	encoder.Encode(validEntry)                           // Valid
+	content.WriteString("   \n")                         // Whitespace-only line
+
+	if err := os.WriteFile(obs.IndexPath, content.Bytes(), 0644); err != nil {
+		t.Fatalf("Failed to write index: %v", err)
+	}
+
+	// LoadJournal should skip invalid lines and return valid ones
+	entries, err := obs.LoadJournal()
+	if err != nil {
+		t.Fatalf("LoadJournal failed: %v", err)
+	}
+
+	// Should have loaded 2 valid entries
+	if len(entries) != 2 {
+		t.Errorf("LoadJournal returned %d entries, want 2", len(entries))
+	}
+
+	// Both should be the valid entry
+	for i, entry := range entries {
+		if entry.ToolUseID != "toolu_valid" {
+			t.Errorf("Entry %d: ToolUseID = %s, want toolu_valid", i, entry.ToolUseID)
+		}
+	}
+}
+
+func TestGenerateContext_Integration(t *testing.T) {
+	obs, claudeDir := createTestObserver(t, "test-project-context")
+	sessionFile := "test-session-context.jsonl"
+
+	// Create session log with realistic entries
+	createMockSessionLog(t, claudeDir, sessionFile, []mockLogEntry{
+		{
+			Timestamp: time.Now().Add(-15 * time.Minute),
+			ToolUse: &mockToolUse{
+				ID:    "toolu_001",
+				Name:  "Edit",
+				Input: map[string]interface{}{
+					"file_path": "pkg/journal/observer.go",
+					"old_string": "not implemented",
+					"new_string": "actual implementation",
+				},
+			},
+		},
+		{
+			Timestamp: time.Now().Add(-14 * time.Minute),
+			ToolResult: &mockToolResult{
+				ToolUseID: "toolu_001",
+				Content:   "File updated successfully",
+			},
+		},
+		{
+			Timestamp: time.Now().Add(-10 * time.Minute),
+			ToolUse: &mockToolUse{
+				ID:    "toolu_002",
+				Name:  "Bash",
+				Input: map[string]interface{}{"command": "go test ./pkg/journal/..."},
+			},
+		},
+		{
+			Timestamp: time.Now().Add(-9 * time.Minute),
+			ToolResult: &mockToolResult{
+				ToolUseID: "toolu_002",
+				Content:   "PASS\nok   pkg/journal 0.123s",
+			},
+		},
+		{
+			Timestamp: time.Now().Add(-5 * time.Minute),
+			ToolUse: &mockToolUse{
+				ID:    "toolu_003",
+				Name:  "Bash",
+				Input: map[string]interface{}{"command": "git -C /worktree/path commit -m \"Implement LoadJournal and GenerateContext\""},
+			},
+		},
+		{
+			Timestamp: time.Now().Add(-4 * time.Minute),
+			ToolResult: &mockToolResult{
+				ToolUseID: "toolu_003",
+				Content:   "[wave1-agent-B abc1234] Implement LoadJournal and GenerateContext\n 2 files changed, 50 insertions(+), 2 deletions(-)",
+			},
+		},
+	})
+
+	// Sync to load entries into journal
+	result, err := obs.Sync()
+	if err != nil {
+		t.Fatalf("Sync failed: %v", err)
+	}
+	if result.NewToolUses != 3 {
+		t.Errorf("Sync found %d tool uses, want 3", result.NewToolUses)
+	}
+
+	// Now call GenerateContext (end-to-end)
+	context, err := obs.GenerateContext()
+	if err != nil {
+		t.Fatalf("GenerateContext failed: %v", err)
+	}
+
+	// Verify context has expected sections
+	expectedSections := []string{
+		"## Session Context (Recovered from Tool Journal)",
+		"Total tool calls",
+		"### Files Modified",
+		"pkg/journal/observer.go",
+		"### Tests Run",
+		"go test ./pkg/journal/...",
+		"### Git Commits",
+		"abc1234",
+		"Implement LoadJournal and GenerateContext",
+	}
+
+	for _, section := range expectedSections {
+		if !strings.Contains(context, section) {
+			t.Errorf("Context missing expected section: %s", section)
+		}
+	}
+
+	// Verify context is non-trivial (not just empty state message)
+	if strings.Contains(context, "No tool activity recorded yet") {
+		t.Errorf("Context should not indicate empty activity")
+	}
+}
