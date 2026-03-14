@@ -103,7 +103,8 @@ pattern matching (H7) and appends diagnosis to the output.`,
 				}
 			}
 
-			// Step 4: MergeAgents
+			// Step 4: MergeAgents (with E9 idempotency check)
+			// Note: LoadMergeLog and merge tracking happens inside MergeAgents
 			mergeResult, err := protocol.MergeAgents(manifestPath, waveNum, repoDir)
 			if err != nil {
 				return fmt.Errorf("finalize-wave: merge-agents failed: %w", err)
