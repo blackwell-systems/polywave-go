@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -14,11 +15,15 @@ import (
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/agent/backend"
 	apiclient "github.com/blackwell-systems/scout-and-wave-go/pkg/agent/backend/api"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/agent/backend/cli"
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/analyzer"
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/commands"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/hooks"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/journal"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/orchestrator"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/suitability"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/types"
+	"gopkg.in/yaml.v3"
 )
 
 // RunScout executes a Scout agent, calling onChunk for each output fragment.
@@ -58,15 +63,18 @@ func RunScout(ctx context.Context, opts RunScoutOpts, onChunk func(string)) erro
 		scoutMdBytes = []byte("You are a Scout agent. Analyze the codebase and produce an IMPL doc.")
 	}
 
+	// Run automation tools (H1a, H2, H3) before launching Scout.
+	automationContext := runScoutAutomation(opts.RepoPath, opts.Feature)
+
 	// E17: Prepend docs/CONTEXT.md if present, so Scout has project memory.
 	contextMD := readContextMD(opts.RepoPath)
 	var prompt string
 	if contextMD != "" {
-		prompt = fmt.Sprintf("## Project Memory (docs/CONTEXT.md)\n\n%s\n\n%s\n\n## Feature\n%s\n\n## IMPL Output Path\n%s\n",
-			contextMD, string(scoutMdBytes), opts.Feature, opts.IMPLOutPath)
+		prompt = fmt.Sprintf("## Project Memory (docs/CONTEXT.md)\n\n%s\n\n%s\n\n## Feature\n%s\n\n%s\n\n## IMPL Output Path\n%s\n",
+			contextMD, string(scoutMdBytes), opts.Feature, automationContext, opts.IMPLOutPath)
 	} else {
-		prompt = fmt.Sprintf("%s\n\n## Feature\n%s\n\n## IMPL Output Path\n%s\n",
-			string(scoutMdBytes), opts.Feature, opts.IMPLOutPath)
+		prompt = fmt.Sprintf("%s\n\n## Feature\n%s\n\n%s\n\n## IMPL Output Path\n%s\n",
+			string(scoutMdBytes), opts.Feature, automationContext, opts.IMPLOutPath)
 	}
 
 	var execErr error
@@ -773,6 +781,113 @@ func (ji *JournalIntegration) ArchiveJournal(observer *journal.JournalObserver) 
 
 	ji.logger("Journal archived")
 	return nil
+}
+
+// runScoutAutomation runs the 5 scout automation tools (H1a, H2, H3) and
+// returns a markdown section to inject into the Scout prompt. All tools are
+// best-effort: failures are logged but don't block Scout execution.
+func runScoutAutomation(repoPath string, featureDescription string) string {
+	var sections []string
+
+	// H2: Extract build/test/lint commands
+	commandsResult, commandsErr := commands.ExtractCommands(repoPath)
+	if commandsErr != nil {
+		sections = append(sections, "### Build/Test Commands (H2)\nNot detected")
+	} else {
+		commandsYAML, err := yaml.Marshal(commandsResult)
+		if err != nil {
+			sections = append(sections, "### Build/Test Commands (H2)\nNot detected")
+		} else {
+			sections = append(sections, fmt.Sprintf("### Build/Test Commands (H2)\n```yaml\n%s```", string(commandsYAML)))
+		}
+	}
+
+	// H1a: Analyze suitability (conditional: only if feature references a file)
+	var targetFiles []string
+	requirementsFile := detectRequirementsFile(repoPath, featureDescription)
+	if requirementsFile != "" {
+		suitResult, suitErr := suitability.AnalyzeSuitability(requirementsFile, repoPath)
+		if suitErr != nil {
+			sections = append(sections, "### Pre-Implementation Status (H1a)\nSkipped - no requirements file")
+		} else if suitResult == nil {
+			sections = append(sections, "### Pre-Implementation Status (H1a)\nSkipped - no requirements file")
+		} else {
+			suitYAML, err := yaml.Marshal(suitResult)
+			if err != nil {
+				sections = append(sections, "### Pre-Implementation Status (H1a)\nSkipped - no requirements file")
+			} else {
+				sections = append(sections, fmt.Sprintf("### Pre-Implementation Status (H1a)\n```yaml\n%s```", string(suitYAML)))
+				// Extract target files from suitability results
+				for _, item := range suitResult.PreImplementation.ItemStatus {
+					if item.File != "" {
+						targetFiles = append(targetFiles, item.File)
+					}
+				}
+			}
+		}
+	} else {
+		sections = append(sections, "### Pre-Implementation Status (H1a)\nSkipped - no requirements file")
+	}
+
+	// H3: Analyze dependencies
+	depsResult, depsErr := analyzer.AnalyzeDeps(repoPath, targetFiles)
+	if depsErr != nil {
+		sections = append(sections, fmt.Sprintf("### Dependency Analysis (H3)\nAnalysis failed: %v", depsErr))
+	} else {
+		depsYAML, err := yaml.Marshal(depsResult)
+		if err != nil {
+			sections = append(sections, fmt.Sprintf("### Dependency Analysis (H3)\nAnalysis failed: %v", err))
+		} else {
+			sections = append(sections, fmt.Sprintf("### Dependency Analysis (H3)\n```yaml\n%s```", string(depsYAML)))
+		}
+	}
+
+	// Build final automation section
+	header := `## Automation Analysis Results
+
+Use these results to:
+- Populate quality_gates and test_command from H2 output
+- Adjust agent prompts based on H1a status (DONE = add tests, TODO = implement)
+- Use H3 wave_candidate field to assign wave numbers
+- Document pre-implementation findings in suitability assessment
+
+`
+	return header + strings.Join(sections, "\n\n")
+}
+
+// detectRequirementsFile checks if the feature description references a
+// requirements file (heuristic: contains ".md" or ".txt" substring that looks
+// like a file path). Returns the full path if found, empty string otherwise.
+func detectRequirementsFile(repoPath string, featureDescription string) string {
+	// Heuristic: look for patterns like "audit.md", "requirements.txt", etc.
+	patterns := []string{
+		`.md`,
+		`.txt`,
+	}
+
+	for _, pattern := range patterns {
+		if strings.Contains(featureDescription, pattern) {
+			// Try to extract file path-like token
+			words := strings.Fields(featureDescription)
+			for _, word := range words {
+				if strings.Contains(word, pattern) {
+					// Clean up punctuation
+					word = strings.Trim(word, ".,;:\"'")
+					// Try absolute path first
+					if filepath.IsAbs(word) {
+						return word
+					}
+					// Try relative to repo
+					candidate := filepath.Join(repoPath, word)
+					if _, err := os.Stat(candidate); err == nil {
+						return candidate
+					}
+				}
+			}
+		}
+	}
+
+	return ""
 }
 
 // startWaveWithGate runs waves with an inter-wave gate. gateCh receives true to
