@@ -30,7 +30,7 @@ func AssignAgentIDs(count int, grouping [][]string) ([]string, error) {
 		return nil, fmt.Errorf("count must be > 0, got %d", count)
 	}
 
-	if grouping != nil && len(grouping) > 0 && len(grouping) != count {
+	if grouping != nil && len(grouping) != count {
 		return nil, fmt.Errorf("grouping length (%d) must match count (%d)", len(grouping), count)
 	}
 

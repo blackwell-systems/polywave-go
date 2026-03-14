@@ -35,10 +35,17 @@ Examples:
 		RunE: func(cmd *cobra.Command, args []string) error {
 			var grouping [][]string
 
-			// Parse grouping JSON if provided (check if flag was set, not just if value is non-empty)
+			// Parse grouping JSON if provided
 			if cmd.Flags().Changed("grouping") {
+				if groupingJSON == "" {
+					return fmt.Errorf("--grouping cannot be empty string")
+				}
 				if err := json.Unmarshal([]byte(groupingJSON), &grouping); err != nil {
 					return fmt.Errorf("invalid --grouping JSON: %w", err)
+				}
+				// Treat empty array as sequential mode (convert to nil)
+				if len(grouping) == 0 {
+					grouping = nil
 				}
 			}
 
