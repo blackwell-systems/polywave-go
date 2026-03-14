@@ -181,9 +181,10 @@ func TestAssignAgentIDsCmd_LargeCount(t *testing.T) {
 		t.Errorf("first ID: expected A, got %q", ids[0])
 	}
 
-	// 100th agent: 100 = 26*3 + 22, so generation 4, letter 22 (W) → W4
-	if ids[99] != "W4" {
-		t.Errorf("100th ID: expected W4, got %q", ids[99])
+	// 100th agent: index 99 = generation 3 (0-indexed), position 21 in generation (V) → V4
+	// Calculation: 99/26 = 3 (generation), 99%26 = 21 (V), output = V4
+	if ids[99] != "V4" {
+		t.Errorf("100th ID: expected V4, got %q", ids[99])
 	}
 
 	// Spot check: 27th agent (index 26) should be A2

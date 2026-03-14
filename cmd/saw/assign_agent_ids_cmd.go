@@ -35,8 +35,8 @@ Examples:
 		RunE: func(cmd *cobra.Command, args []string) error {
 			var grouping [][]string
 
-			// Parse grouping JSON if provided
-			if groupingJSON != "" {
+			// Parse grouping JSON if provided (check if flag was set, not just if value is non-empty)
+			if cmd.Flags().Changed("grouping") {
 				if err := json.Unmarshal([]byte(groupingJSON), &grouping); err != nil {
 					return fmt.Errorf("invalid --grouping JSON: %w", err)
 				}
