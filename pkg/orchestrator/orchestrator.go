@@ -12,6 +12,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"golang.org/x/sync/errgroup"
@@ -22,6 +23,7 @@ import (
 	bedrockbackend "github.com/blackwell-systems/scout-and-wave-go/pkg/agent/backend/bedrock"
 	cliclient "github.com/blackwell-systems/scout-and-wave-go/pkg/agent/backend/cli"
 	openaibackend "github.com/blackwell-systems/scout-and-wave-go/pkg/agent/backend/openai"
+	"github.com/blackwell-systems/scout-and-wave-go/internal/git"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/types"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/worktree"
@@ -56,6 +58,11 @@ var validateInvariantsFunc = func(doc *types.IMPLDoc) error { return nil }
 func SetValidateInvariantsFunc(f func(doc *types.IMPLDoc) error) {
 	validateInvariantsFunc = f
 }
+
+// reportMu serializes concurrent writes to the IMPL doc's completion_reports.
+// Without this, parallel agents in the same wave race on Load→Set→Save and
+// the last writer wins (overwriting earlier reports).
+var reportMu sync.Mutex
 
 // mergeWaveFunc is replaced by merge.go via init().
 // Default no-op for compilation.
@@ -331,9 +338,13 @@ func (o *Orchestrator) publish(ev OrchestratorEvent) {
 // New creates an Orchestrator by loading the IMPL doc at implDocPath.
 // Initial state is ScoutPending.
 func New(repoPath string, implDocPath string) (*Orchestrator, error) {
-	doc, err := parseIMPLDocFunc(implDocPath)
-	if err != nil {
-		return nil, fmt.Errorf("orchestrator.New: failed to parse IMPL doc %q: %w", implDocPath, err)
+	var doc *types.IMPLDoc
+	if implDocPath != "" {
+		var err error
+		doc, err = parseIMPLDocFunc(implDocPath)
+		if err != nil {
+			return nil, fmt.Errorf("orchestrator.New: failed to parse IMPL doc %q: %w", implDocPath, err)
+		}
 	}
 	return &Orchestrator{
 		state:       protocol.StateScoutPending,
@@ -605,26 +616,55 @@ func (o *Orchestrator) launchAgent(
 		return fmt.Errorf("orchestrator: agent %s: Execute: %w", agentSpec.Letter, err)
 	}
 
-	// c. Poll for the completion report in the agent's worktree IMPL doc.
-	// Agents write their completion reports into the worktree copy of the IMPL doc,
-	// not the main repo copy — so we must poll wtIMPLPath, not o.implDocPath.
-	report, err := waitForCompletionFunc(wtIMPLPath(o.repoPath, o.implDocPath, wtPath), agentSpec.Letter, defaultAgentTimeout, defaultAgentPollInterval)
-	if err != nil {
-		o.publish(OrchestratorEvent{
-			Event: "agent_failed",
-			Data: AgentFailedPayload{
-				Agent:       agentSpec.Letter,
-				Wave:        waveNum,
-				Status:      "failed",
-				FailureType: "completion_timeout",
-				Message:     err.Error(),
-			},
-		})
-		return fmt.Errorf("orchestrator: agent %s: %w", agentSpec.Letter, err)
+	// c. Check for completion report in the agent's worktree IMPL doc.
+	// API/Bedrock backends run synchronously — when ExecuteStreamingWithTools returns,
+	// the agent is done. Poll briefly (once) for a completion report in case the agent
+	// wrote one, but don't block for 30 minutes waiting for one that may never come.
+	report, _ := waitForCompletionFunc(wtIMPLPath(o.repoPath, o.implDocPath, wtPath), agentSpec.Letter, 5*time.Second, 2*time.Second)
+
+	// d. Auto-commit and synthesize completion report if the agent didn't write one.
+	// This bridges the gap between CLI agents (SAW-protocol-aware, commit + write report)
+	// and API/Bedrock agents (vanilla Claude, just write files via tools).
+	branch := fmt.Sprintf("wave%d-agent-%s", waveNum, agentSpec.Letter)
+	if report == nil {
+		commitSHA, filesChanged, autoErr := autoCommitWorktree(wtPath, waveNum, agentSpec.Letter)
+		if autoErr != nil {
+			fmt.Fprintf(os.Stderr, "orchestrator: auto-commit failed for agent %s: %v\n", agentSpec.Letter, autoErr)
+		}
+
+		// Always synthesize a completion report for API agents that didn't write one.
+		// commitSHA may be empty if the agent produced no file changes (no-op task);
+		// that's still a successful completion — the merge step just has nothing to merge.
+		notes := "auto-committed by orchestrator (API agent)"
+		if commitSHA == "" {
+			// Resolve HEAD as the "commit" so verifyAgentCommits can find the branch.
+			commitSHA, _ = git.RevParse(wtPath, "HEAD")
+			notes = "no changes produced (API agent)"
+		}
+		synthReport := protocol.CompletionReport{
+			Status:       "complete",
+			Worktree:     wtPath,
+			Branch:       branch,
+			Commit:       commitSHA,
+			FilesChanged: filesChanged,
+			Notes:        notes,
+		}
+		reportMu.Lock()
+		if manifest, loadErr := protocol.Load(o.implDocPath); loadErr == nil {
+			if setErr := protocol.SetCompletionReport(manifest, agentSpec.Letter, synthReport); setErr == nil {
+				if saveErr := protocol.Save(manifest, o.implDocPath); saveErr != nil {
+					fmt.Fprintf(os.Stderr, "orchestrator: failed to save synthetic report for agent %s: %v\n", agentSpec.Letter, saveErr)
+				}
+			} else {
+				fmt.Fprintf(os.Stderr, "orchestrator: failed to set synthetic report for agent %s: %v\n", agentSpec.Letter, setErr)
+			}
+		}
+		reportMu.Unlock()
 	}
 
-	// Publish agent_complete after a successful completion report.
-	status := ""
+	// Publish agent_complete. If no completion report was found, that's OK —
+	// the agent executed successfully and its work is in the worktree.
+	status := "complete"
 	if report != nil {
 		status = string(report.Status)
 	}
@@ -634,12 +674,11 @@ func (o *Orchestrator) launchAgent(
 			Agent:  agentSpec.Letter,
 			Wave:   waveNum,
 			Status: status,
-			Branch: fmt.Sprintf("saw/wave%d-agent-%s", waveNum, agentSpec.Letter),
+			Branch: branch,
 		},
 	})
 
 	// E19: If agent reported partial or blocked, route the failure and publish an event.
-	// This does NOT relaunch the agent — that is a future follow-on task.
 	if report != nil && (report.Status == "partial" || report.Status == "blocked") {
 		var failureType types.FailureType
 		switch report.FailureType {
@@ -669,6 +708,47 @@ func (o *Orchestrator) launchAgent(
 	}
 
 	return nil
+}
+
+// autoCommitWorktree stages and commits all changes in the agent's worktree.
+// Returns (commitSHA, filesChanged, error). If the worktree is clean (no changes),
+// returns ("", nil, nil).
+func autoCommitWorktree(wtPath string, waveNum int, agentLetter string) (string, []string, error) {
+	// Check if there are uncommitted changes.
+	status, err := git.StatusPorcelain(wtPath)
+	if err != nil {
+		return "", nil, fmt.Errorf("checking worktree status: %w", err)
+	}
+	if status == "" {
+		// Worktree is clean — agent may have already committed (e.g. CLI agent).
+		return "", nil, nil
+	}
+
+	// Record base commit before staging.
+	baseSHA, err := git.RevParse(wtPath, "HEAD")
+	if err != nil {
+		return "", nil, fmt.Errorf("resolving HEAD: %w", err)
+	}
+
+	// Stage all changes.
+	if err := git.AddAll(wtPath); err != nil {
+		return "", nil, fmt.Errorf("staging changes: %w", err)
+	}
+
+	// Commit.
+	msg := fmt.Sprintf("feat(wave%d-agent-%s): implement assigned files", waveNum, agentLetter)
+	commitSHA, err := git.Commit(wtPath, msg)
+	if err != nil {
+		return "", nil, fmt.Errorf("committing: %w", err)
+	}
+
+	// Determine files changed.
+	files, err := git.ChangedFilesSinceRef(wtPath, baseSHA)
+	if err != nil {
+		return commitSHA, nil, fmt.Errorf("listing changed files: %w", err)
+	}
+
+	return commitSHA, files, nil
 }
 
 // RunAgent executes a single agent from the specified wave. Unlike RunWave

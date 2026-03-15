@@ -196,6 +196,45 @@ fi
 exit 0
 `
 
+// StatusPorcelain returns the porcelain (machine-readable) status of the
+// working tree at repoPath. Returns empty string if clean.
+func StatusPorcelain(repoPath string) (string, error) {
+	out, err := Run(repoPath, "status", "--porcelain")
+	if err != nil {
+		return "", fmt.Errorf("git status --porcelain failed: %w", err)
+	}
+	return strings.TrimSpace(out), nil
+}
+
+// AddAll stages all changes (new, modified, deleted) in the repository at repoPath.
+func AddAll(repoPath string) error {
+	_, err := Run(repoPath, "add", "-A")
+	if err != nil {
+		return fmt.Errorf("git add -A failed: %w", err)
+	}
+	return nil
+}
+
+// Commit creates a commit with the given message in the repository at repoPath.
+// Uses --no-verify to skip hooks (the orchestrator is the authority here).
+func Commit(repoPath, message string) (string, error) {
+	_, err := Run(repoPath, "commit", "--no-verify", "-m", message)
+	if err != nil {
+		return "", fmt.Errorf("git commit failed: %w", err)
+	}
+	sha, err := RevParse(repoPath, "HEAD")
+	if err != nil {
+		return "", fmt.Errorf("git rev-parse HEAD after commit: %w", err)
+	}
+	return sha, nil
+}
+
+// ChangedFilesSinceRef returns the list of files changed between ref and HEAD
+// in the repository at repoPath.
+func ChangedFilesSinceRef(repoPath, ref string) ([]string, error) {
+	return DiffNameOnly(repoPath, ref, "HEAD")
+}
+
 // InstallHooks generates and installs the SAW pre-commit hook in a worktree.
 // It writes the hook template to the worktree's hooks directory, making it executable.
 // Creates the hooks directory if it doesn't exist.

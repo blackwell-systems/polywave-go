@@ -326,7 +326,30 @@ func (c *Client) RunStreamingWithTools(ctx context.Context, systemPrompt, userPr
 			return fullText.String(), nil
 		}
 
-		if stopReason != "tool_use" {
+		if stopReason == "max_tokens" {
+			// Treat max_tokens like end_turn for tool-use turns: the model ran out of
+			// output space. Continue the loop by sending what we have as an assistant
+			// message so the model can resume. If there are pending tool_use blocks,
+			// execute them; otherwise just continue the conversation.
+			if len(blockMap) == 0 {
+				// No tool calls in this turn — send accumulated text back and let
+				// the model continue from where it left off.
+				if fullText.Len() > 0 {
+					messages = append(messages, map[string]interface{}{
+						"role": "assistant",
+						"content": []interface{}{
+							map[string]interface{}{"type": "text", "text": fullText.String()},
+						},
+					})
+					messages = append(messages, map[string]interface{}{
+						"role":    "user",
+						"content": "Continue from where you left off.",
+					})
+				}
+				continue
+			}
+			// Fall through to tool execution — treat the pending tool_use blocks normally
+		} else if stopReason != "tool_use" {
 			return fullText.String(), fmt.Errorf("bedrock: unexpected stop reason (turn %d): %s", turn, stopReason)
 		}
 
@@ -432,7 +455,7 @@ func (c *Client) maxTokens() int {
 	if c.cfg.MaxTokens > 0 {
 		return c.cfg.MaxTokens
 	}
-	return 4096
+	return 16384
 }
 
 // Verify Client implements backend.Backend at compile time.
