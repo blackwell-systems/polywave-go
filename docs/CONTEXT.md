@@ -118,3 +118,5 @@ type BackendConfig struct {
   - IMPL doc: docs/IMPL/complete/IMPL-journal-recovery-merge-idempotency.yaml
 - **m4-finalize-impl**: completed 2026-03-14, 2 waves, 3 agents
   - IMPL doc: ../scout-and-wave/docs/IMPL/complete/IMPL-m4-finalize-impl.yaml
+- **bedrock-tool-loop**: completed 2026-03-14, 1 waves, 2 agents
+  - IMPL doc: docs/IMPL/complete/IMPL-bedrock-tool-loop.yaml
