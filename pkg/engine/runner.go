@@ -176,7 +176,7 @@ func StartWave(ctx context.Context, opts RunWaveOpts, onEvent func(Event)) error
 	})
 
 	// Run scaffold if needed.
-	if err := RunScaffold(ctx, opts.IMPLPath, opts.RepoPath, "", onEvent); err != nil {
+	if err := RunScaffold(ctx, opts.IMPLPath, opts.RepoPath, "", "", onEvent); err != nil {
 		publish("run_failed", map[string]string{"error": err.Error()})
 		return fmt.Errorf("engine.StartWave: scaffold: %w", err)
 	}
@@ -289,7 +289,8 @@ func StartWave(ctx context.Context, opts RunWaveOpts, onEvent func(Event)) error
 var gateChannels sync.Map
 
 // RunScaffold checks for pending scaffold files and runs a Scaffold agent if needed.
-func RunScaffold(ctx context.Context, implPath, repoPath, sawRepoPath string, onEvent func(Event)) error {
+// The model parameter is optional; if empty, the backend uses its default model.
+func RunScaffold(ctx context.Context, implPath, repoPath, sawRepoPath, model string, onEvent func(Event)) error {
 	publish := func(event string, data interface{}) {
 		onEvent(Event{Event: event, Data: data})
 	}
@@ -340,7 +341,7 @@ func RunScaffold(ctx context.Context, implPath, repoPath, sawRepoPath string, on
 
 	prompt := fmt.Sprintf("%s\n\n## IMPL Doc Path\n%s\n", string(scaffoldMdBytes), implPath)
 
-	b := cli.New("", backend.Config{})
+	b := cli.New(model, backend.Config{})
 	runner := agent.NewRunner(b, nil)
 	spec := &types.AgentSpec{Letter: "scaffold", Prompt: prompt}
 
