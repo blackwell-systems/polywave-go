@@ -423,6 +423,31 @@ func validateAgentIDs(m *IMPLManifest) []ValidationError {
 	return errs
 }
 
+// ValidGateTypes is the set of allowed quality gate type values.
+var ValidGateTypes = map[string]bool{
+	"build":     true,
+	"lint":      true,
+	"test":      true,
+	"typecheck": true,
+	"custom":    true,
+}
+
+// FixGateTypes rewrites any unrecognized gate type to "custom".
+// Returns the number of gates fixed.
+func FixGateTypes(m *IMPLManifest) int {
+	if m.QualityGates == nil {
+		return 0
+	}
+	fixed := 0
+	for i := range m.QualityGates.Gates {
+		if !ValidGateTypes[m.QualityGates.Gates[i].Type] {
+			m.QualityGates.Gates[i].Type = "custom"
+			fixed++
+		}
+	}
+	return fixed
+}
+
 // validateGateTypes checks that all quality gate types are valid.
 // Valid types: "build", "lint", "test", "typecheck", "custom"
 func validateGateTypes(m *IMPLManifest) []ValidationError {
@@ -433,16 +458,8 @@ func validateGateTypes(m *IMPLManifest) []ValidationError {
 		return errs
 	}
 
-	validTypes := map[string]bool{
-		"build":     true,
-		"lint":      true,
-		"test":      true,
-		"typecheck": true,
-		"custom":    true,
-	}
-
 	for i, gate := range m.QualityGates.Gates {
-		if !validTypes[gate.Type] {
+		if !ValidGateTypes[gate.Type] {
 			errs = append(errs, ValidationError{
 				Code:    "DC07_INVALID_GATE_TYPE",
 				Message: fmt.Sprintf("quality gate type %q is invalid — must be one of: build, lint, test, typecheck, custom", gate.Type),

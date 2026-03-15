@@ -106,6 +106,31 @@ func executeMergeWave(o *Orchestrator, waveNum int) error {
 		}
 
 		branch := fmt.Sprintf("wave%d-agent-%s", waveNum, agent.Letter)
+
+		// Skip merge for no-op agents (no file changes — nothing to merge).
+		if len(report.FilesChanged) == 0 && len(report.FilesCreated) == 0 {
+			fmt.Fprintf(os.Stderr, "executeMergeWave: agent %s produced no changes (skipping merge)\n", agent.Letter)
+			mergeLog.AddMergeEntry(agent.Letter, "no-op")
+			if saveErr := protocol.SaveMergeLog(o.implDocPath, waveNum, mergeLog); saveErr != nil {
+				fmt.Fprintf(os.Stderr, "executeMergeWave: warning: failed to save merge-log: %v\n", saveErr)
+			}
+			// Still clean up the worktree.
+			wtPath := report.Worktree
+			if wtPath == "" {
+				wtPath = protocol.ResolveWorktreePath(o.repoPath, branch)
+			}
+			if !strings.HasPrefix(wtPath, "/") {
+				wtPath = o.repoPath + "/" + wtPath
+			}
+			if err := git.WorktreeRemove(o.repoPath, wtPath); err != nil {
+				fmt.Fprintf(os.Stderr, "executeMergeWave: warning: could not remove worktree %q: %v\n", wtPath, err)
+			}
+			if err := git.DeleteBranch(o.repoPath, branch); err != nil {
+				fmt.Fprintf(os.Stderr, "executeMergeWave: warning: could not delete branch %q: %v\n", branch, err)
+			}
+			continue
+		}
+
 		mergeMsg := fmt.Sprintf("Merge wave%d-agent-%s: %s", waveNum, agent.Letter, branch)
 
 		if err := git.MergeNoFF(o.repoPath, branch, mergeMsg); err != nil {
@@ -128,7 +153,7 @@ func executeMergeWave(o *Orchestrator, waveNum int) error {
 		// Determine worktree path from report or convention.
 		wtPath := report.Worktree
 		if wtPath == "" {
-			wtPath = fmt.Sprintf(".claude/worktrees/%s", branch)
+			wtPath = protocol.ResolveWorktreePath(o.repoPath, branch)
 		}
 		// Make absolute if relative.
 		if !strings.HasPrefix(wtPath, "/") {
@@ -185,6 +210,11 @@ func verifyAgentCommits(repoPath, baseCommit string, reports map[string]*types.C
 			// Derive branch from agent letter if not set in report.
 			// We don't know the wave number here, but branch should be set.
 			return fmt.Errorf("verifyAgentCommits: agent %s report has empty branch field", letter)
+		}
+
+		// Skip diff check for no-op agents (auto-committed with no changes).
+		if len(report.FilesChanged) == 0 && len(report.FilesCreated) == 0 {
+			continue
 		}
 
 		files, err := git.DiffNameOnly(repoPath, baseCommit, branch)

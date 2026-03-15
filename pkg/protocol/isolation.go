@@ -36,12 +36,13 @@ func VerifyIsolation(repoDir, expectedBranch string) (*IsolationResult, error) {
 	}
 	absPath = strings.TrimSpace(absPath)
 
-	// Check if this is actually a worktree (not the main repo)
-	// Worktrees created by sawtools are always in .claude/worktrees/
-	if !strings.Contains(absPath, ".claude/worktrees/") {
+	// Check if this is actually a worktree (not the main repo).
+	// Worktrees are normally in .claude/worktrees/ but Claude sometimes
+	// creates them under .claire/worktrees/ instead.
+	if !IsWorktreePath(absPath) {
 		result.OK = false
 		result.Errors = append(result.Errors,
-			fmt.Sprintf("not in a worktree: %q does not contain '.claude/worktrees/' — agent may be running in main repo", absPath))
+			fmt.Sprintf("not in a worktree: %q does not contain a known worktree directory — agent may be running in main repo", absPath))
 	}
 
 	// Check current branch

@@ -976,6 +976,65 @@ func TestValidateGateTypes_EmptyType(t *testing.T) {
 	}
 }
 
+// TestFixGateTypes_FixesInvalid tests that invalid gate types are rewritten to "custom".
+func TestFixGateTypes_FixesInvalid(t *testing.T) {
+	m := &IMPLManifest{
+		QualityGates: &QualityGates{
+			Level: "standard",
+			Gates: []QualityGate{
+				{Type: "build", Command: "go build", Required: true},
+				{Type: "build-vite", Command: "npx vite build", Required: true},
+				{Type: "compile", Command: "make", Required: false},
+			},
+		},
+	}
+
+	fixed := FixGateTypes(m)
+	if fixed != 2 {
+		t.Errorf("Expected 2 fixes, got %d", fixed)
+	}
+	if m.QualityGates.Gates[0].Type != "build" {
+		t.Errorf("Expected gate 0 to remain 'build', got %q", m.QualityGates.Gates[0].Type)
+	}
+	if m.QualityGates.Gates[1].Type != "custom" {
+		t.Errorf("Expected gate 1 to be fixed to 'custom', got %q", m.QualityGates.Gates[1].Type)
+	}
+	if m.QualityGates.Gates[2].Type != "custom" {
+		t.Errorf("Expected gate 2 to be fixed to 'custom', got %q", m.QualityGates.Gates[2].Type)
+	}
+
+	// Validate should now pass for gate types
+	errs := validateGateTypes(m)
+	if len(errs) != 0 {
+		t.Errorf("Expected no errors after fix, got %d: %v", len(errs), errs)
+	}
+}
+
+// TestFixGateTypes_NilGates tests that nil QualityGates returns 0 fixes.
+func TestFixGateTypes_NilGates(t *testing.T) {
+	m := &IMPLManifest{QualityGates: nil}
+	fixed := FixGateTypes(m)
+	if fixed != 0 {
+		t.Errorf("Expected 0 fixes for nil gates, got %d", fixed)
+	}
+}
+
+// TestFixGateTypes_AllValid tests that valid gates are not modified.
+func TestFixGateTypes_AllValid(t *testing.T) {
+	m := &IMPLManifest{
+		QualityGates: &QualityGates{
+			Gates: []QualityGate{
+				{Type: "build", Command: "go build"},
+				{Type: "custom", Command: "./run.sh"},
+			},
+		},
+	}
+	fixed := FixGateTypes(m)
+	if fixed != 0 {
+		t.Errorf("Expected 0 fixes for all-valid gates, got %d", fixed)
+	}
+}
+
 // testContains is a helper function to check if a string contains a substring.
 func testContains(s, substr string) bool {
 	return len(s) > 0 && len(substr) > 0 && (s == substr || len(s) >= len(substr) && (s[:len(substr)] == substr || s[len(s)-len(substr):] == substr || testContainsMiddle(s, substr)))

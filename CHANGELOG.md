@@ -8,6 +8,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 | Version | Date | Headline |
 |---------|------|----------|
+| [0.46.0] | 2026-03-14 | Validate --fix + .claire worktree resolution — auto-correct invalid gate types, shared worktree resolver for .claude/.claire fallback |
+| [0.45.0] | 2026-03-14 | API agent parity — auto-commit, synthetic completion reports, mutex-serialized writes, no-op agent handling, wave-skip on re-run |
 | [0.44.0] | 2025-03-14 | Cross-repo finalize-wave — all 6 pipeline steps run per-repo, aggregates results from multiple repositories |
 | [0.43.0] | 2025-03-14 | InstallHooks template embedding — hook generated from code instead of copied from main repo, eliminates manual setup |
 | [0.42.0] | 2025-03-14 | Multi-repo finalize-impl — gate_populator extracts H2 data from all repos in file_ownership, applies repo-specific gates to each agent |
@@ -53,6 +55,46 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 | [0.2.0] | 2026-03-08 | Engine protocol parity — E17–E23 implemented (context memory, failure routing, stub scan, quality gates, scaffold build verify, per-agent context extraction) |
 
 | [0.39.0] | 2026-03-14 | Scout automation integration — runScoutAutomation() integrates H1a-H4 tools into engine.RunScout(), inject results into Scout prompts |
+
+---
+
+## [0.46.0] - 2026-03-14
+
+### Added
+
+- **`sawtools validate --fix`** — auto-corrects fixable validation errors before reporting. Currently fixes invalid gate types (e.g. `build-vite` → `custom`). Output JSON includes `"fixed": N` count. Eliminates retry cycles for mechanically correctable Scout output.
+- **`ValidGateTypes` exported map** — shared gate type allowlist used by both validator and fixer.
+- **`FixGateTypes(m)`** — rewrites unrecognized quality gate types to `"custom"`, returns count of corrections.
+- **`.claire` worktree resolution** — `ResolveWorktreePath()` and `IsWorktreePath()` in `pkg/protocol/worktree_resolve.go`. Checks `.claude` first, falls back to `.claire`, defaults to `.claude` if neither exists. Defense-in-depth for Claude's occasional `.claire` worktree creation bug.
+
+### Changed
+
+- **Isolation check** uses `IsWorktreePath()` instead of hardcoded `.claude/worktrees/` string.
+- **Cleanup** uses `ResolveWorktreePath()` to find worktrees in either `.claude` or `.claire`.
+- **Merge** uses `ResolveWorktreePath()` for worktree path resolution.
+
+---
+
+## [0.45.0] - 2026-03-14
+
+### Added
+
+- **Auto-commit for API agents** — `autoCommitWorktree()` in orchestrator detects uncommitted changes after agent execution, stages with `git add -A`, and commits with `--no-verify`. Bridges the gap between CLI agents (SAW-protocol-aware, self-commit) and API/Bedrock agents (vanilla Claude, write files but never commit).
+- **Synthetic completion reports** — When an API agent doesn't write a completion report, the orchestrator synthesizes one from the auto-commit results (SHA, branch, files changed) and writes it to the IMPL doc. The merge pipeline sees identical data regardless of agent backend.
+- **No-op agent handling** — Agents that produce no file changes (e.g. routes already registered) get a completion report with `notes: "no changes produced"`. Merge pipeline skips diff check and merge for these agents, but still cleans up worktrees.
+- **Git helpers** — `StatusPorcelain()`, `AddAll()`, `Commit()`, `ChangedFilesSinceRef()` added to `internal/git/commands.go`
+
+### Fixed
+
+- **Completion report race condition** — Parallel agents in the same wave could clobber each other's reports (concurrent Load→Set→Save on same IMPL doc file). Added `sync.Mutex` (`reportMu`) to serialize writes.
+- **Branch name mismatch** — Synthetic reports used `saw/wave{N}-agent-{ID}` prefix but worktree manager creates `wave{N}-agent-{ID}`. Fixed to match worktree convention.
+- **verifyAgentCommits false positive** — No-op agents with zero files changed were flagged as isolation failures. Now skips diff check when `FilesChanged` and `FilesCreated` are both empty.
+
+### Files
+
+- `internal/git/commands.go` — 4 new functions
+- `pkg/orchestrator/orchestrator.go` — `autoCommitWorktree()`, `reportMu`, updated `launchAgent` step (d)
+- `pkg/orchestrator/merge.go` — no-op agent skip in `verifyAgentCommits` and `executeMergeWave`
 
 ---
 
