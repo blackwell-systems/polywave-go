@@ -1,0 +1,711 @@
+completion_date: "2026-03-15"
+title: IMPL Manifest Schema Validation
+feature_slug: impl-schema-validation
+verdict: SUITABLE
+suitability_assessment: |
+    SUITABLE. Work decomposes into 5 independent validators (Wave 1) plus
+    CLI integration (Wave 2). All follow the established validator pattern:
+    func validate*(m *IMPLManifest) []ValidationError. No investigation needed.
+    Existing schema.go generates schema via reflection but does not perform
+    structural validation - the new work adds actual validation functions.
+    Cross-repo: JSON Schema file goes to scout-and-wave (protocol repo),
+    all Go code goes to scout-and-wave-go (SDK repo).
+test_command: go test ./...
+lint_command: go vet ./...
+file_ownership:
+    - file: protocol/impl-manifest.schema.json
+      agent: A
+      wave: 1
+      action: new
+      repo: scout-and-wave
+    - file: pkg/protocol/schema_errors.go
+      agent: Scaffold
+      wave: 0
+      action: new
+      repo: scout-and-wave-go
+    - file: pkg/protocol/schema_validation.go
+      agent: B
+      wave: 1
+      action: new
+      repo: scout-and-wave-go
+    - file: pkg/protocol/schema_validation_test.go
+      agent: B
+      wave: 1
+      action: new
+      repo: scout-and-wave-go
+    - file: pkg/protocol/schema_enum_validation.go
+      agent: C
+      wave: 1
+      action: new
+      repo: scout-and-wave-go
+    - file: pkg/protocol/schema_enum_validation_test.go
+      agent: C
+      wave: 1
+      action: new
+      repo: scout-and-wave-go
+    - file: pkg/protocol/schema_unknown_keys.go
+      agent: D
+      wave: 1
+      action: new
+      repo: scout-and-wave-go
+    - file: pkg/protocol/schema_unknown_keys_test.go
+      agent: D
+      wave: 1
+      action: new
+      repo: scout-and-wave-go
+    - file: pkg/protocol/schema_cross_field.go
+      agent: E
+      wave: 1
+      action: new
+      repo: scout-and-wave-go
+    - file: pkg/protocol/schema_cross_field_test.go
+      agent: E
+      wave: 1
+      action: new
+      repo: scout-and-wave-go
+    - file: pkg/protocol/validation.go
+      agent: F
+      wave: 2
+      action: modify
+      depends_on:
+        - B
+        - C
+        - D
+        - E
+      repo: scout-and-wave-go
+    - file: cmd/saw/validate_cmd.go
+      agent: F
+      wave: 2
+      action: modify
+      depends_on:
+        - D
+      repo: scout-and-wave-go
+interface_contracts:
+    - name: ValidateSchema
+      description: |
+        Top-level schema validation entry point. Runs all structural checks
+        (nested required fields, enum enforcement, path format, unknown keys,
+        cross-field consistency). Called by Validate() in validation.go alongside
+        existing semantic checks. Returns warnings by default (SV01 prefix).
+      definition: |
+        func ValidateSchema(m *IMPLManifest) []ValidationError
+      location: pkg/protocol/schema_validation.go
+    - name: validateNestedRequiredFields
+      description: |
+        Checks required fields on nested types: FileOwnership.File,
+        FileOwnership.Agent, FileOwnership.Wave > 0, Agent.ID, Agent.Task,
+        Wave.Number > 0, InterfaceContract.Name, InterfaceContract.Definition,
+        InterfaceContract.Location, QualityGate.Type, QualityGate.Command,
+        ScaffoldFile.FilePath.
+      definition: |
+        func validateNestedRequiredFields(m *IMPLManifest) []ValidationError
+      location: pkg/protocol/schema_validation.go
+    - name: validateAllEnums
+      description: |
+        Validates ALL enum fields in the manifest, complementing existing
+        enum validators. Covers: FileOwnership.Action (new|modify|delete),
+        QualityGates.Level (quick|standard|full), ScaffoldFile.Status
+        (pending|committed), PreMortemRow.Likelihood (low|medium|high),
+        PreMortemRow.Impact (low|medium|high). Empty values are allowed
+        for backward compatibility.
+      definition: |
+        func validateAllEnums(m *IMPLManifest) []ValidationError
+      location: pkg/protocol/schema_enum_validation.go
+    - name: validateFilePaths
+      description: |
+        Validates file path format in FileOwnership and Agent.Files:
+        no leading slash, no ".." traversal, no null bytes, no backslashes.
+        Also validates ScaffoldFile.FilePath.
+      definition: |
+        func validateFilePaths(m *IMPLManifest) []ValidationError
+      location: pkg/protocol/schema_validation.go
+    - name: DetectUnknownKeys
+      description: |
+        Detects unknown/typo YAML keys by unmarshaling raw YAML into
+        map[string]interface{} and comparing top-level and nested keys
+        against the known schema. Returns SV01_UNKNOWN_KEY warnings.
+        Operates on raw YAML bytes, not the parsed struct.
+      definition: |
+        func DetectUnknownKeys(yamlData []byte) []ValidationError
+      location: pkg/protocol/schema_unknown_keys.go
+    - name: validateCrossFieldConsistency
+      description: |
+        Cross-field validation rules:
+        1. FileOwnership agent IDs must all appear in some Wave.Agents
+        2. FileOwnership wave numbers must match existing Wave.Number values
+        3. Agent.Files entries must all appear in FileOwnership
+        4. Completion report agent IDs must match Wave agent IDs
+        5. If verdict is NOT_SUITABLE, waves/file_ownership/interface_contracts should be empty
+      definition: |
+        func validateCrossFieldConsistency(m *IMPLManifest) []ValidationError
+      location: pkg/protocol/schema_cross_field.go
+waves:
+    - number: 1
+      agents:
+        - id: A
+          task: |
+            ## What to Implement
+            Create the hand-written JSON Schema file for the IMPL manifest format at
+            `protocol/impl-manifest.schema.json` in the **scout-and-wave** repo
+            (at /Users/dayna.blackwell/code/scout-and-wave).
+
+            The schema must describe the full IMPL manifest YAML structure including:
+            - Top-level required fields: title, feature_slug, verdict
+            - All nested types: FileOwnership, Wave, Agent, InterfaceContract, QualityGates,
+              QualityGate, ScaffoldFile, PreMortem, PreMortemRow, KnownIssue, CompletionReport
+            - Enum constraints: verdict (SUITABLE|NOT_SUITABLE|SUITABLE_WITH_CAVEATS),
+              action (new|modify|delete), state (all ProtocolState values),
+              merge_state (idle|in_progress|completed|failed),
+              quality gate level (quick|standard|full),
+              quality gate type (build|lint|test|typecheck|custom),
+              scaffold status (pending|committed),
+              pre_mortem overall_risk (low|medium|high),
+              pre_mortem row likelihood/impact (low|medium|high),
+              completion report status (complete|partial|blocked),
+              failure_type (transient|fixable|needs_replan|escalate|timeout)
+            - Pattern constraints: agent IDs match ^[A-Z][2-9]?$
+            - additionalProperties: false at top level and on all object definitions
+
+            Reference the Go types in /Users/dayna.blackwell/code/scout-and-wave-go/pkg/protocol/types.go
+            as the source of truth for field names and types.
+
+            ## Interfaces to Implement
+            None (this is a standalone JSON Schema document).
+
+            ## Interfaces to Call
+            None.
+
+            ## Tests to Write
+            No Go tests (this is in the protocol repo). Validate the JSON Schema is valid
+            JSON by ensuring it parses without error.
+
+            ## Verification Gate
+            ```bash
+            python3 -c "import json; json.load(open('protocol/impl-manifest.schema.json'))"
+            ```
+
+            ## Constraints
+            - Schema must be human-readable (it will be referenced in Scout prompts)
+            - Use JSON Schema draft 2020-12 ($schema: "https://json-schema.org/draft/2020-12/schema")
+            - Keep descriptions concise but useful
+            - Do NOT generate from Go types - hand-write based on types.go as reference
+            - Include $id field: "https://github.com/blackwell-systems/scout-and-wave/protocol/impl-manifest.schema.json"
+          files:
+            - protocol/impl-manifest.schema.json
+        - id: B
+          task: |
+            ## What to Implement
+            Create `pkg/protocol/schema_validation.go` with the top-level `ValidateSchema`
+            function and nested required field + file path validation.
+
+            `ValidateSchema(m *IMPLManifest) []ValidationError` is the entry point that
+            calls all SV01 sub-validators and aggregates their results. It calls:
+            - validateNestedRequiredFields(m)
+            - validateAllEnums(m) (from schema_enum_validation.go, Agent C)
+            - validateFilePaths(m)
+            - validateCrossFieldConsistency(m) (from schema_cross_field.go, Agent E)
+
+            NOTE: Since Agents C and E are in the same wave, ValidateSchema cannot call
+            their functions at compile time in Wave 1. Instead, implement ValidateSchema
+            to call only the functions YOU define in this file (validateNestedRequiredFields
+            and validateFilePaths). Agent F in Wave 2 will wire all sub-validators together.
+
+            ### validateNestedRequiredFields
+            Check required fields on nested types:
+            - FileOwnership: File (non-empty), Agent (non-empty), Wave (> 0)
+            - Wave: Number (> 0), Agents (non-empty slice)
+            - Agent: ID (non-empty), Task (non-empty)
+            - InterfaceContract: Name (non-empty), Definition (non-empty), Location (non-empty)
+            - QualityGate: Type (non-empty), Command (non-empty)
+            - ScaffoldFile: FilePath (non-empty)
+            - PreMortemRow: Scenario (non-empty), Mitigation (non-empty)
+
+            Use error code SV01_REQUIRED_FIELD from the scaffold file schema_errors.go.
+            Field paths should be descriptive, e.g., "file_ownership[3].file",
+            "waves[0].agents[1].task".
+
+            ### validateFilePaths
+            Validate file paths in FileOwnership.File, Agent.Files, ScaffoldFile.FilePath:
+            - No leading "/" (relative paths only)
+            - No ".." path traversal segments
+            - No null bytes
+            - No backslash characters (use forward slash)
+            Use error code SV01_INVALID_PATH.
+
+            ## Interfaces to Implement
+            - func ValidateSchema(m *IMPLManifest) []ValidationError
+            - func validateNestedRequiredFields(m *IMPLManifest) []ValidationError
+            - func validateFilePaths(m *IMPLManifest) []ValidationError
+
+            ## Interfaces to Call
+            - SV01 error code constants from schema_errors.go (scaffold)
+
+            ## Tests to Write
+            In schema_validation_test.go:
+            1. TestValidateNestedRequiredFields_Valid - fully populated manifest passes
+            2. TestValidateNestedRequiredFields_EmptyFileOwnershipFile - catches empty File
+            3. TestValidateNestedRequiredFields_EmptyAgentID - catches empty agent ID
+            4. TestValidateNestedRequiredFields_EmptyAgentTask - catches empty task
+            5. TestValidateNestedRequiredFields_ZeroWaveNumber - catches Wave.Number == 0
+            6. TestValidateNestedRequiredFields_EmptyInterfaceContractName - catches empty Name
+            7. TestValidateNestedRequiredFields_EmptyScaffoldFilePath - catches empty FilePath
+            8. TestValidateFilePaths_Valid - normal relative paths pass
+            9. TestValidateFilePaths_LeadingSlash - catches leading /
+            10. TestValidateFilePaths_DotDot - catches .. traversal
+            11. TestValidateFilePaths_Backslash - catches backslash
+            12. TestValidateSchema_CombinesResults - validates aggregation
+
+            ## Verification Gate
+            ```bash
+            go build ./...
+            go vet ./...
+            go test ./pkg/protocol/... -run TestValidateNestedRequired -count=1
+            go test ./pkg/protocol/... -run TestValidateFilePaths -count=1
+            go test ./pkg/protocol/... -run TestValidateSchema -count=1
+            ```
+
+            ## Constraints
+            - All error codes use the SV01_ prefix constants from schema_errors.go
+            - Empty optional fields are NOT errors (backward compatibility)
+            - Only validate fields that are present (nil QualityGates = skip, nil PreMortem = skip)
+            - Follow existing validation.go patterns for field path formatting
+          files:
+            - pkg/protocol/schema_validation.go
+            - pkg/protocol/schema_validation_test.go
+        - id: C
+          task: |
+            ## What to Implement
+            Create `pkg/protocol/schema_enum_validation.go` with comprehensive enum
+            validation for ALL enum fields in the manifest.
+
+            This extends the existing enum validators in enumvalidation.go (which cover
+            completion statuses, failure types, pre-mortem overall risk) to also cover:
+            - FileOwnership.Action: "new" | "modify" | "delete" (empty allowed)
+            - QualityGates.Level: "quick" | "standard" | "full" (empty allowed)
+            - ScaffoldFile.Status: "pending" | "committed" (empty allowed, also allow
+              strings starting with "committed" or "FAILED" per scaffold_validation.go)
+            - PreMortemRow.Likelihood: "low" | "medium" | "high" (empty allowed)
+            - PreMortemRow.Impact: "low" | "medium" | "high" (empty allowed)
+
+            Use error code SV01_INVALID_ENUM from schema_errors.go. Include the field
+            path and the invalid value in the error message.
+
+            ## Interfaces to Implement
+            - func validateAllEnums(m *IMPLManifest) []ValidationError
+
+            ## Interfaces to Call
+            - SV01 error code constants from schema_errors.go (scaffold)
+
+            ## Tests to Write
+            In schema_enum_validation_test.go:
+            1. TestValidateAllEnums_Valid - all valid enum values pass
+            2. TestValidateAllEnums_InvalidAction - catches invalid FileOwnership.Action
+            3. TestValidateAllEnums_EmptyAction - empty action is allowed
+            4. TestValidateAllEnums_InvalidLevel - catches invalid QualityGates.Level
+            5. TestValidateAllEnums_EmptyLevel - empty level is allowed
+            6. TestValidateAllEnums_InvalidScaffoldStatus - catches invalid status
+            7. TestValidateAllEnums_ValidScaffoldCommitted - "committed (abc123)" is valid
+            8. TestValidateAllEnums_InvalidLikelihood - catches invalid PreMortemRow.Likelihood
+            9. TestValidateAllEnums_InvalidImpact - catches invalid PreMortemRow.Impact
+            10. TestValidateAllEnums_NilOptionals - nil QualityGates/PreMortem passes
+
+            ## Verification Gate
+            ```bash
+            go build ./...
+            go vet ./...
+            go test ./pkg/protocol/... -run TestValidateAllEnums -count=1
+            ```
+
+            ## Constraints
+            - Do NOT duplicate existing validators in enumvalidation.go (DC02, DC03, DC06)
+            - This validates the fields those validators DON'T cover
+            - All empty values must be allowed for backward compatibility
+            - Use SV01_INVALID_ENUM code, not DC0x codes (different validation layer)
+          files:
+            - pkg/protocol/schema_enum_validation.go
+            - pkg/protocol/schema_enum_validation_test.go
+        - id: D
+          task: |
+            ## What to Implement
+            Create `pkg/protocol/schema_unknown_keys.go` with unknown YAML key detection.
+
+            `DetectUnknownKeys(yamlData []byte) []ValidationError` works on raw YAML bytes
+            (not the parsed IMPLManifest struct) to detect typos and unknown fields.
+
+            Implementation approach:
+            1. Unmarshal yamlData into a yaml.Node (preserves key names)
+            2. Walk the YAML tree, comparing keys at each level against known field sets
+            3. For top-level keys, the known set is all yaml struct tags from IMPLManifest
+            4. For nested objects (file_ownership items, wave items, agent items, etc.),
+               define known key sets matching each type's yaml struct tags
+            5. Return SV01_UNKNOWN_KEY warnings for any unrecognized keys
+
+            Known key sets (from types.go yaml tags):
+            - Top-level: title, feature_slug, verdict, suitability_assessment, test_command,
+              lint_command, file_ownership, interface_contracts, waves, quality_gates,
+              post_merge_checklist, scaffolds, completion_reports, stub_reports, pre_mortem,
+              known_issues, state, merge_state, worktrees_created_at, frozen_contracts_hash,
+              frozen_scaffolds_hash, completion_date
+            - FileOwnership: file, agent, wave, action, depends_on, repo
+            - Wave: number, agents, agent_launch_order, base_commit
+            - Agent: id, task, files, dependencies, model
+            - InterfaceContract: name, description, definition, location
+            - QualityGates: level, gates
+            - QualityGate: type, command, required, description
+            - ScaffoldFile: file_path, contents, import_path, status, commit
+            - PreMortem: overall_risk, rows
+            - PreMortemRow: scenario, likelihood, impact, mitigation
+            - KnownIssue: title, description, status, workaround
+            - CompletionReport: status, worktree, branch, commit, files_changed,
+              files_created, interface_deviations, out_of_scope_deps, tests_added,
+              verification, failure_type, notes, repo
+
+            ## Interfaces to Implement
+            - func DetectUnknownKeys(yamlData []byte) []ValidationError
+
+            ## Interfaces to Call
+            - SV01 error code constants from schema_errors.go (scaffold)
+            - gopkg.in/yaml.v3 (yaml.Node for tree walking)
+
+            ## Tests to Write
+            In schema_unknown_keys_test.go:
+            1. TestDetectUnknownKeys_ValidManifest - known keys only, no errors
+            2. TestDetectUnknownKeys_TopLevelUnknown - catches "titl" typo
+            3. TestDetectUnknownKeys_FileOwnershipUnknown - catches "flie" in file_ownership item
+            4. TestDetectUnknownKeys_AgentUnknown - catches "taks" in agent item
+            5. TestDetectUnknownKeys_WaveUnknown - catches unknown key in wave
+            6. TestDetectUnknownKeys_MultipleUnknown - catches multiple unknown keys at once
+            7. TestDetectUnknownKeys_NestedDeep - catches unknown key in quality_gates.gates item
+            8. TestDetectUnknownKeys_EmptyManifest - empty YAML returns no errors
+
+            ## Verification Gate
+            ```bash
+            go build ./...
+            go vet ./...
+            go test ./pkg/protocol/... -run TestDetectUnknownKeys -count=1
+            ```
+
+            ## Constraints
+            - Must work on raw YAML bytes, not parsed struct (to catch keys the struct ignores)
+            - Use yaml.Node for traversal (not map[string]interface{})
+            - Report the key path in the error message (e.g., "unknown key 'taks' at waves[0].agents[0]")
+            - These are WARNINGS, not blocking errors - use SV01_UNKNOWN_KEY code
+          files:
+            - pkg/protocol/schema_unknown_keys.go
+            - pkg/protocol/schema_unknown_keys_test.go
+        - id: E
+          task: |
+            ## What to Implement
+            Create `pkg/protocol/schema_cross_field.go` with cross-field consistency checks.
+
+            These validate relationships between fields that single-field validators cannot catch.
+
+            ### validateCrossFieldConsistency
+            Checks:
+            1. **FileOwnership agents exist in waves**: Every FileOwnership.Agent must appear
+               as an Agent.ID in some Wave. Error if an agent ID in file_ownership does not
+               appear in any wave's agents list.
+            2. **FileOwnership wave numbers are valid**: Every FileOwnership.Wave must match
+               an existing Wave.Number. Error if wave number does not exist.
+            3. **Agent files in ownership table**: Every file in Agent.Files must appear in
+               FileOwnership with matching agent and wave. (This overlaps with I5 but uses
+               SV01 codes and checks agent+wave match, not just file existence.)
+            4. **NOT_SUITABLE verdict consistency**: If verdict is "NOT_SUITABLE", then
+               waves should be empty, file_ownership should be empty, and
+               interface_contracts should be empty. Warn if they are populated.
+            5. **Completion report agent validity**: Every key in completion_reports must
+               match an Agent.ID in some wave. (This overlaps with Load() check but uses
+               SV01 code for the schema layer.)
+
+            Use error code SV01_CROSS_FIELD from schema_errors.go.
+
+            ## Interfaces to Implement
+            - func validateCrossFieldConsistency(m *IMPLManifest) []ValidationError
+
+            ## Interfaces to Call
+            - SV01 error code constants from schema_errors.go (scaffold)
+
+            ## Tests to Write
+            In schema_cross_field_test.go:
+            1. TestCrossField_Valid - fully consistent manifest passes
+            2. TestCrossField_OrphanAgentInOwnership - agent in file_ownership not in any wave
+            3. TestCrossField_InvalidWaveInOwnership - wave number in file_ownership doesn't exist
+            4. TestCrossField_NotSuitableWithWaves - NOT_SUITABLE verdict but waves present
+            5. TestCrossField_NotSuitableClean - NOT_SUITABLE with empty waves/ownership passes
+            6. TestCrossField_CompletionReportUnknownAgent - report key not matching any agent
+            7. TestCrossField_AgentFileNotInOwnership - agent file missing from ownership with matching agent+wave
+            8. TestCrossField_EmptyManifest - empty manifest with valid required fields passes
+
+            ## Verification Gate
+            ```bash
+            go build ./...
+            go vet ./...
+            go test ./pkg/protocol/... -run TestCrossField -count=1
+            ```
+
+            ## Constraints
+            - Use SV01_CROSS_FIELD code for all errors from this validator
+            - Include descriptive field paths in error messages
+            - Do NOT duplicate I5 validation logic exactly - this layer uses SV01 codes
+              and checks agent+wave matching, not just file existence
+            - NOT_SUITABLE check should produce warnings, not errors (some older IMPL docs
+              may have partial content with NOT_SUITABLE)
+          files:
+            - pkg/protocol/schema_cross_field.go
+            - pkg/protocol/schema_cross_field_test.go
+      base_commit: 845daca69210485c4baab74befb0bf1805b2c1b5
+    - number: 2
+      agents:
+        - id: F
+          task: |
+            ## What to Implement
+            Wire all schema validators into the existing validation pipeline.
+
+            ### 1. Update pkg/protocol/validation.go
+            Add a call to `ValidateSchema(m)` in the `Validate()` function, after
+            the existing semantic checks. Add it near the end, after `validateMultiRepoConsistency`:
+
+            ```go
+            errs = append(errs, ValidateSchema(m)...)
+            ```
+
+            ### 2. Update ValidateSchema in schema_validation.go
+            Modify `ValidateSchema` to call ALL sub-validators:
+            - validateNestedRequiredFields(m) (already called by Agent B)
+            - validateAllEnums(m) (from Agent C's schema_enum_validation.go)
+            - validateFilePaths(m) (already called by Agent B)
+            - validateCrossFieldConsistency(m) (from Agent E's schema_cross_field.go)
+
+            ### 3. Update cmd/saw/validate_cmd.go
+            Add unknown key detection to the validate command. After loading the manifest,
+            read the raw YAML bytes and call DetectUnknownKeys:
+
+            ```go
+            // Read raw YAML for unknown key detection
+            rawData, readErr := os.ReadFile(manifestPath)
+            if readErr == nil {
+                ukErrs := protocol.DetectUnknownKeys(rawData)
+                for _, uke := range ukErrs {
+                    errs = append(errs, validateError{
+                        Code:    uke.Code,
+                        Message: uke.Message,
+                        Field:   uke.Field,
+                    })
+                }
+            }
+            ```
+
+            Note: DetectUnknownKeys operates on raw bytes (not the parsed struct) so it
+            must be called in the CLI command, not in Validate(). This is intentional -
+            the Validate() function works on parsed structs, while unknown key detection
+            needs raw YAML.
+
+            ## Interfaces to Implement
+            None new - modifying existing functions.
+
+            ## Interfaces to Call
+            - ValidateSchema(m *IMPLManifest) []ValidationError (from schema_validation.go)
+            - validateAllEnums(m *IMPLManifest) []ValidationError (from schema_enum_validation.go)
+            - validateCrossFieldConsistency(m *IMPLManifest) []ValidationError (from schema_cross_field.go)
+            - DetectUnknownKeys(yamlData []byte) []ValidationError (from schema_unknown_keys.go)
+
+            ## Tests to Write
+            No new test file - existing validation_test.go TestValidate_CompleteManifest
+            already exercises the Validate() pipeline. Verify that the new checks are
+            called by running the full test suite.
+
+            ## Verification Gate
+            ```bash
+            go build ./...
+            go vet ./...
+            go test ./pkg/protocol/... -count=1
+            go test ./cmd/saw/... -count=1
+            ```
+
+            ## Constraints
+            - Do NOT change signatures of existing functions
+            - Do NOT reorder existing validation calls in Validate()
+            - Append ValidateSchema call at the end of the existing chain
+            - The validate_cmd.go change must preserve the existing --fix and --solver flags
+            - Unknown key warnings should appear in the JSON output alongside other errors
+          files:
+            - pkg/protocol/validation.go
+            - cmd/saw/validate_cmd.go
+          dependencies:
+            - B
+            - C
+            - D
+            - E
+quality_gates:
+    level: standard
+    gates:
+        - type: build
+          command: go build ./...
+          required: true
+          repo: scout-and-wave-go
+        - type: lint
+          command: go vet ./...
+          required: true
+          repo: scout-and-wave-go
+        - type: test
+          command: go test ./pkg/protocol/... -count=1
+          required: true
+          repo: scout-and-wave-go
+scaffolds:
+    - file_path: pkg/protocol/schema_errors.go
+      contents: |
+        package protocol
+
+        // Schema validation error code constants (SV01 prefix).
+        const (
+          SV01RequiredField    = "SV01_REQUIRED_FIELD"
+          SV01InvalidEnum      = "SV01_INVALID_ENUM"
+          SV01InvalidPath      = "SV01_INVALID_PATH"
+          SV01UnknownKey       = "SV01_UNKNOWN_KEY"
+          SV01CrossFieldError  = "SV01_CROSS_FIELD"
+        )
+      import_path: github.com/blackwell-systems/scout-and-wave-go/pkg/protocol
+      status: committed (845daca)
+completion_reports:
+    A:
+        status: complete
+        branch: wave1-agent-A
+        commit: 37a0a13
+        files_changed:
+            - protocol/impl-manifest.schema.json
+        files_created:
+            - protocol/impl-manifest.schema.json
+        verification: PASS
+    B:
+        status: complete
+        branch: wave1-agent-B
+        commit: 1c16895
+        files_changed:
+            - pkg/protocol/schema_validation.go
+            - pkg/protocol/schema_validation_test.go
+        files_created:
+            - pkg/protocol/schema_validation.go
+            - pkg/protocol/schema_validation_test.go
+        tests_added:
+            - TestValidateNestedRequiredFields_Valid
+            - TestValidateNestedRequiredFields_EmptyFileOwnershipFile
+            - TestValidateNestedRequiredFields_EmptyAgentID
+            - TestValidateNestedRequiredFields_EmptyAgentTask
+            - TestValidateNestedRequiredFields_ZeroWaveNumber
+            - TestValidateNestedRequiredFields_EmptyInterfaceContractName
+            - TestValidateNestedRequiredFields_EmptyScaffoldFilePath
+            - TestValidateFilePaths_Valid
+            - TestValidateFilePaths_LeadingSlash
+            - TestValidateFilePaths_DotDot
+            - TestValidateFilePaths_Backslash
+            - TestValidateSchema_CombinesResults
+            - TestValidateNestedRequiredFields_NilOptionalFields
+            - TestValidateFilePaths_DotDotNotFalsePositive
+            - TestValidateFilePaths_AgentFiles
+            - TestValidateFilePaths_ScaffoldFiles
+        verification: PASS
+    C:
+        status: complete
+        branch: wave1-agent-C
+        commit: 7f3bed8
+        files_changed:
+            - pkg/protocol/schema_enum_validation.go
+            - pkg/protocol/schema_enum_validation_test.go
+        files_created:
+            - pkg/protocol/schema_enum_validation.go
+            - pkg/protocol/schema_enum_validation_test.go
+        tests_added:
+            - TestValidateAllEnums_Valid
+            - TestValidateAllEnums_InvalidAction
+            - TestValidateAllEnums_EmptyAction
+            - TestValidateAllEnums_InvalidLevel
+            - TestValidateAllEnums_EmptyLevel
+            - TestValidateAllEnums_InvalidScaffoldStatus
+            - TestValidateAllEnums_ValidScaffoldCommitted
+            - TestValidateAllEnums_InvalidLikelihood
+            - TestValidateAllEnums_InvalidImpact
+            - TestValidateAllEnums_NilOptionals
+        verification: PASS
+    D:
+        status: complete
+        branch: wave1-agent-D
+        commit: cb1ddf9
+        files_changed:
+            - pkg/protocol/schema_unknown_keys.go
+            - pkg/protocol/schema_unknown_keys_test.go
+        files_created:
+            - pkg/protocol/schema_unknown_keys.go
+            - pkg/protocol/schema_unknown_keys_test.go
+        tests_added:
+            - TestDetectUnknownKeys_ValidManifest
+            - TestDetectUnknownKeys_TopLevelUnknown
+            - TestDetectUnknownKeys_FileOwnershipUnknown
+            - TestDetectUnknownKeys_AgentUnknown
+            - TestDetectUnknownKeys_WaveUnknown
+            - TestDetectUnknownKeys_MultipleUnknown
+            - TestDetectUnknownKeys_NestedDeep
+            - TestDetectUnknownKeys_EmptyManifest
+        verification: PASS
+    E:
+        status: complete
+        branch: wave1-agent-E
+        commit: f3894ac
+        files_changed:
+            - pkg/protocol/schema_cross_field.go
+            - pkg/protocol/schema_cross_field_test.go
+        files_created:
+            - pkg/protocol/schema_cross_field.go
+            - pkg/protocol/schema_cross_field_test.go
+        tests_added:
+            - TestCrossField_Valid
+            - TestCrossField_OrphanAgentInOwnership
+            - TestCrossField_InvalidWaveInOwnership
+            - TestCrossField_NotSuitableWithWaves
+            - TestCrossField_NotSuitableClean
+            - TestCrossField_CompletionReportUnknownAgent
+            - TestCrossField_AgentFileNotInOwnership
+            - TestCrossField_EmptyManifest
+        verification: PASS
+    F:
+        status: complete
+        branch: develop
+        commit: 44e254b
+        files_changed:
+            - pkg/protocol/validation.go
+            - pkg/protocol/schema_validation.go
+            - cmd/saw/validate_cmd.go
+        verification: PASS
+pre_mortem:
+    overall_risk: medium
+    rows:
+        - scenario: Existing tests break due to new SV01 errors on test fixtures
+          likelihood: medium
+          impact: medium
+          mitigation: |
+            Schema validation runs as warnings, not blocking errors. Existing
+            Validate() callers will see additional errors but should not break
+            since they already handle variable error counts. Agent F must verify
+            all existing tests still pass after wiring.
+        - scenario: Unknown key detection false positives on YAML anchors/aliases
+          likelihood: low
+          impact: low
+          mitigation: |
+            Agent D should test with YAML anchors and ensure yaml.Node traversal
+            handles merge keys (<<) correctly. Skip merge keys in unknown key detection.
+        - scenario: Cross-field validator duplicates existing I5/I2 error messages
+          likelihood: medium
+          impact: low
+          mitigation: |
+            SV01 codes are distinct from I-series codes. Consumers can filter by
+            prefix. Document in the code that SV01 checks complement (not replace)
+            I-series semantic checks.
+known_issues:
+    - title: schema.go generates schema via reflection, not hand-written
+      description: |
+        The existing GenerateScoutSchema() in schema.go uses invopop/jsonschema
+        to reflect Go types into JSON Schema. This is a different approach from
+        the hand-written schema in deliverable 1. Both can coexist - the reflected
+        schema is for programmatic use, the hand-written one for documentation.
+      status: Pre-existing, intentional coexistence
+      workaround: None needed - different purposes
+state: WAVE_PENDING
