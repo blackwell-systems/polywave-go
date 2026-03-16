@@ -2,7 +2,6 @@ package bedrock
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"testing"
 
@@ -310,132 +309,66 @@ func TestRunStreamingWithTools_NilClient(t *testing.T) {
 	}
 }
 
-// TestStreamEventParsing tests JSON unmarshaling of each Bedrock stream event type.
-// These are the package-local struct types used in RunStreamingWithTools.
-func TestStreamEventParsing(t *testing.T) {
-	tests := []struct {
-		name     string
-		jsonData string
-		check    func(t *testing.T, ev streamEvent)
-	}{
-		{
-			name:     "content_block_start_text",
-			jsonData: `{"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}`,
-			check: func(t *testing.T, ev streamEvent) {
-				if ev.Type != "content_block_start" {
-					t.Errorf("expected type content_block_start, got %q", ev.Type)
-				}
-				if ev.Index != 0 {
-					t.Errorf("expected index 0, got %d", ev.Index)
-				}
-				if ev.ContentBlock == nil {
-					t.Fatal("expected content_block to be non-nil")
-				}
-				if ev.ContentBlock.Type != "text" {
-					t.Errorf("expected content_block.type=text, got %q", ev.ContentBlock.Type)
-				}
-			},
-		},
-		{
-			name:     "content_block_start_tool_use",
-			jsonData: `{"type":"content_block_start","index":1,"content_block":{"type":"tool_use","id":"toolu_abc123","name":"bash"}}`,
-			check: func(t *testing.T, ev streamEvent) {
-				if ev.Type != "content_block_start" {
-					t.Errorf("expected type content_block_start, got %q", ev.Type)
-				}
-				if ev.Index != 1 {
-					t.Errorf("expected index 1, got %d", ev.Index)
-				}
-				if ev.ContentBlock == nil {
-					t.Fatal("expected content_block to be non-nil")
-				}
-				if ev.ContentBlock.Type != "tool_use" {
-					t.Errorf("expected content_block.type=tool_use, got %q", ev.ContentBlock.Type)
-				}
-				if ev.ContentBlock.ID != "toolu_abc123" {
-					t.Errorf("expected id=toolu_abc123, got %q", ev.ContentBlock.ID)
-				}
-				if ev.ContentBlock.Name != "bash" {
-					t.Errorf("expected name=bash, got %q", ev.ContentBlock.Name)
-				}
-			},
-		},
-		{
-			name:     "content_block_delta_text",
-			jsonData: `{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"Hello"}}`,
-			check: func(t *testing.T, ev streamEvent) {
-				if ev.Type != "content_block_delta" {
-					t.Errorf("expected type content_block_delta, got %q", ev.Type)
-				}
-				if ev.Delta == nil {
-					t.Fatal("expected delta to be non-nil")
-				}
-				if ev.Delta.Type != "text_delta" {
-					t.Errorf("expected delta.type=text_delta, got %q", ev.Delta.Type)
-				}
-				if ev.Delta.Text != "Hello" {
-					t.Errorf("expected delta.text=Hello, got %q", ev.Delta.Text)
-				}
-			},
-		},
-		{
-			name:     "content_block_delta_input_json",
-			jsonData: `{"type":"content_block_delta","index":1,"delta":{"type":"input_json_delta","partial_json":"{\"command\":"}}`,
-			check: func(t *testing.T, ev streamEvent) {
-				if ev.Type != "content_block_delta" {
-					t.Errorf("expected type content_block_delta, got %q", ev.Type)
-				}
-				if ev.Delta == nil {
-					t.Fatal("expected delta to be non-nil")
-				}
-				if ev.Delta.Type != "input_json_delta" {
-					t.Errorf("expected delta.type=input_json_delta, got %q", ev.Delta.Type)
-				}
-				if ev.Delta.PartialJSON != `{"command":` {
-					t.Errorf("expected partial_json=%q, got %q", `{"command":`, ev.Delta.PartialJSON)
-				}
-			},
-		},
-		{
-			name:     "message_delta_end_turn",
-			jsonData: `{"type":"message_delta","delta":{"stop_reason":"end_turn"}}`,
-			check: func(t *testing.T, ev streamEvent) {
-				if ev.Type != "message_delta" {
-					t.Errorf("expected type message_delta, got %q", ev.Type)
-				}
-				if ev.Delta == nil {
-					t.Fatal("expected delta to be non-nil")
-				}
-				if ev.Delta.StopReason != "end_turn" {
-					t.Errorf("expected stop_reason=end_turn, got %q", ev.Delta.StopReason)
-				}
-			},
-		},
-		{
-			name:     "message_delta_tool_use",
-			jsonData: `{"type":"message_delta","delta":{"stop_reason":"tool_use"}}`,
-			check: func(t *testing.T, ev streamEvent) {
-				if ev.Type != "message_delta" {
-					t.Errorf("expected type message_delta, got %q", ev.Type)
-				}
-				if ev.Delta == nil {
-					t.Fatal("expected delta to be non-nil")
-				}
-				if ev.Delta.StopReason != "tool_use" {
-					t.Errorf("expected stop_reason=tool_use, got %q", ev.Delta.StopReason)
-				}
-			},
-		},
+// TestWithOutputConfig verifies that WithOutputConfig stores the schema
+// and returns the client for method chaining.
+func TestWithOutputConfig(t *testing.T) {
+	c := &Client{
+		cfg: backend.Config{Model: "anthropic.claude-3-sonnet-20240229-v1:0"},
 	}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			var ev streamEvent
-			if err := json.Unmarshal([]byte(tt.jsonData), &ev); err != nil {
-				t.Fatalf("failed to unmarshal: %v", err)
-			}
-			tt.check(t, ev)
-		})
+	schema := map[string]any{
+		"type": "object",
+		"properties": map[string]any{
+			"answer": map[string]any{"type": "string"},
+		},
+		"required": []string{"answer"},
+	}
+
+	result := c.WithOutputConfig(schema)
+
+	// Verify method chaining
+	if result != c {
+		t.Error("expected WithOutputConfig to return the same client instance")
+	}
+
+	// Verify schema is stored
+	if c.outputSchema == nil {
+		t.Fatal("expected outputSchema to be set")
+	}
+	if c.outputSchema["type"] != "object" {
+		t.Errorf("expected schema type 'object', got %v", c.outputSchema["type"])
+	}
+}
+
+// TestRun_NilClient verifies that Run returns an error when the AWS client is nil.
+func TestRun_NilClient(t *testing.T) {
+	c := &Client{
+		cfg: backend.Config{Model: "anthropic.claude-3-sonnet-20240229-v1:0"},
+		// client is nil - simulates failed AWS config load
+	}
+
+	_, err := c.Run(context.Background(), "system", "user message", "")
+	if err == nil {
+		t.Fatal("expected error for nil AWS client")
+	}
+	if !contains(err.Error(), "AWS") && !contains(err.Error(), "bedrock") {
+		t.Errorf("expected error to mention AWS/bedrock, got: %v", err)
+	}
+}
+
+// TestRunStreaming_NilClient verifies that RunStreaming returns an error when the AWS client is nil.
+func TestRunStreaming_NilClient(t *testing.T) {
+	c := &Client{
+		cfg: backend.Config{Model: "anthropic.claude-3-sonnet-20240229-v1:0"},
+		// client is nil - simulates failed AWS config load
+	}
+
+	_, err := c.RunStreaming(context.Background(), "system", "user message", "", nil)
+	if err == nil {
+		t.Fatal("expected error for nil AWS client")
+	}
+	if !contains(err.Error(), "AWS") && !contains(err.Error(), "bedrock") {
+		t.Errorf("expected error to mention AWS/bedrock, got: %v", err)
 	}
 }
 
