@@ -6,16 +6,16 @@ import (
 )
 
 // ValidateSchema is the top-level schema validation entry point.
-// It runs all structural checks (nested required fields, path format)
-// and aggregates their results. Called by Validate() in validation.go
-// alongside existing semantic checks. Returns warnings with SV01 prefix.
-//
-// NOTE: In Wave 1, this only calls sub-validators defined in this file.
-// Agent F (Wave 2) will wire in validateAllEnums and validateCrossFieldConsistency.
+// It runs all structural checks (nested required fields, enum enforcement,
+// path format, and cross-field consistency) and aggregates their results.
+// Called by Validate() in validation.go alongside existing semantic checks.
+// Returns warnings with SV01 prefix.
 func ValidateSchema(m *IMPLManifest) []ValidationError {
 	var errs []ValidationError
 	errs = append(errs, validateNestedRequiredFields(m)...)
+	errs = append(errs, validateAllEnums(m)...)
 	errs = append(errs, validateFilePaths(m)...)
+	errs = append(errs, validateCrossFieldConsistency(m)...)
 	return errs
 }
 

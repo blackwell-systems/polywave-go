@@ -61,6 +61,19 @@ func newValidateCmd() *cobra.Command {
 
 			var errs []validateError
 
+			// Read raw YAML for unknown key detection.
+			rawData, readErr := os.ReadFile(manifestPath)
+			if readErr == nil {
+				ukErrs := protocol.DetectUnknownKeys(rawData)
+				for _, uke := range ukErrs {
+					errs = append(errs, validateError{
+						Code:    uke.Code,
+						Message: uke.Message,
+						Field:   uke.Field,
+					})
+				}
+			}
+
 			// Run struct-level invariant checks (solver-based or standard).
 			var structErrs []protocol.ValidationError
 			if useSolver {
