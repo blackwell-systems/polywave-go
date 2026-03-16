@@ -14,6 +14,7 @@ import (
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/agent"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/agent/backend"
 	apiclient "github.com/blackwell-systems/scout-and-wave-go/pkg/agent/backend/api"
+	bedrockbackend "github.com/blackwell-systems/scout-and-wave-go/pkg/agent/backend/bedrock"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/analyzer"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/commands"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/hooks"
@@ -79,7 +80,11 @@ func RunScout(ctx context.Context, opts RunScoutOpts, onChunk func(string)) erro
 	var execErr error
 
 	if opts.UseStructuredOutput {
-		_, execErr = runScoutStructured(ctx, opts, prompt, onChunk)
+		if strings.HasPrefix(opts.ScoutModel, "bedrock:") {
+			_, execErr = runScoutStructuredBedrock(ctx, opts, prompt, onChunk)
+		} else {
+			_, execErr = runScoutStructured(ctx, opts, prompt, onChunk)
+		}
 	} else {
 		b, bErr := orchestrator.NewBackendFromModel(opts.ScoutModel)
 		if bErr != nil {
@@ -140,6 +145,72 @@ func runScoutStructured(ctx context.Context, opts RunScoutOpts, prompt string, o
 	// Persist to disk.
 	if err := protocol.Save(&manifest, opts.IMPLOutPath); err != nil {
 		return nil, fmt.Errorf("runScoutStructured: save manifest: %w", err)
+	}
+
+	return &manifest, nil
+}
+
+// runScoutStructuredBedrock runs the Scout agent via the Bedrock backend with
+// structured output enabled. It is the Bedrock-specific counterpart of
+// runScoutStructured (which uses the API backend). The function:
+//  1. Strips the "bedrock:" provider prefix from opts.ScoutModel to get the bare model ID.
+//  2. Builds a Bedrock client with WithOutputConfig set to the scout schema.
+//  3. Calls client.Run() (non-streaming Converse API) so the full JSON is returned at once.
+//  4. Unmarshals the JSON response into protocol.IMPLManifest and persists it via protocol.Save().
+//
+// If onChunk is non-nil the raw JSON response is forwarded as a single chunk so callers
+// (e.g. SSE streams) can surface progress without requiring a streaming call.
+func runScoutStructuredBedrock(ctx context.Context, opts RunScoutOpts, prompt string, onChunk func(string)) (*protocol.IMPLManifest, error) {
+	// Strip provider prefix "bedrock:" to get bare model ID.
+	bareModel := strings.TrimPrefix(opts.ScoutModel, "bedrock:")
+	if bareModel == "" {
+		return nil, fmt.Errorf("runScoutStructuredBedrock: model is required")
+	}
+
+	// Resolve schema: use override if provided, otherwise generate from protocol.
+	var schema map[string]any
+	if opts.OutputSchemaOverride != nil {
+		schema = opts.OutputSchemaOverride
+	} else {
+		var err error
+		schema, err = protocol.GenerateScoutSchema()
+		if err != nil {
+			return nil, fmt.Errorf("runScoutStructuredBedrock: generate schema: %w", err)
+		}
+	}
+
+	// Build Bedrock client with structured output config.
+	bedrockClient := bedrockbackend.New(backend.Config{Model: bareModel})
+	bedrockClient.WithOutputConfig(schema)
+
+	// Run non-streaming Converse request (structured output returns complete JSON).
+	jsonStr, err := bedrockClient.Run(ctx, "", prompt, opts.RepoPath)
+	if err != nil {
+		// Provide a helpful hint when AWS credentials are not configured.
+		if strings.Contains(err.Error(), "no EC2 IMDS role found") ||
+			strings.Contains(err.Error(), "failed to refresh cached credentials") ||
+			strings.Contains(err.Error(), "NoCredentialProviders") ||
+			strings.Contains(err.Error(), "AWS config failed to load") {
+			return nil, fmt.Errorf("runScoutStructuredBedrock: AWS credentials not configured: %w\n"+
+				"Hint: run `aws configure` or set AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY environment variables", err)
+		}
+		return nil, fmt.Errorf("runScoutStructuredBedrock: Bedrock run: %w", err)
+	}
+
+	// Forward full JSON response as a single chunk for SSE visibility.
+	if onChunk != nil {
+		onChunk(jsonStr)
+	}
+
+	// Unmarshal the structured JSON response into IMPLManifest.
+	var manifest protocol.IMPLManifest
+	if err := json.Unmarshal([]byte(jsonStr), &manifest); err != nil {
+		return nil, fmt.Errorf("runScoutStructuredBedrock: unmarshal manifest: %w", err)
+	}
+
+	// Persist to disk.
+	if err := protocol.Save(&manifest, opts.IMPLOutPath); err != nil {
+		return nil, fmt.Errorf("runScoutStructuredBedrock: save manifest: %w", err)
 	}
 
 	return &manifest, nil
