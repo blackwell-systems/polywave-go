@@ -60,16 +60,24 @@ func MergeAgents(manifestPath string, waveNum int, repoDir string) (*MergeAgents
 		return nil, fmt.Errorf("wave %d not found in manifest", waveNum)
 	}
 
+	// Resolve repoDir to absolute path; repo names in fo.Repo are resolved as
+	// siblings of this directory (same pattern as worktree.go line 116).
+	absRepoDir, err := filepath.Abs(repoDir)
+	if err != nil {
+		return nil, fmt.Errorf("failed to resolve repo dir: %w", err)
+	}
+	repoParent := filepath.Dir(absRepoDir)
+
 	// Group agents by repository using file ownership table
-	agentRepos := make(map[string]string) // agent ID -> repo path
+	agentRepos := make(map[string]string) // agent ID -> absolute repo path
 	for _, fo := range manifest.FileOwnership {
 		if fo.Wave == waveNum {
 			if fo.Repo != "" {
-				// Explicit repo specified in file ownership
-				agentRepos[fo.Agent] = fo.Repo
+				// fo.Repo is a repo name (e.g. "scout-and-wave-go"), not a path.
+				// Resolve it as a sibling of the provided repoDir.
+				agentRepos[fo.Agent] = filepath.Join(repoParent, fo.Repo)
 			} else {
-				// Default to provided repoDir
-				agentRepos[fo.Agent] = repoDir
+				agentRepos[fo.Agent] = absRepoDir
 			}
 		}
 	}
@@ -78,9 +86,9 @@ func MergeAgents(manifestPath string, waveNum int, repoDir string) (*MergeAgents
 	for _, agent := range targetWave.Agents {
 		if _, found := agentRepos[agent.ID]; !found {
 			if report, ok := manifest.CompletionReports[agent.ID]; ok && report.Repo != "" {
-				agentRepos[agent.ID] = report.Repo
+				agentRepos[agent.ID] = filepath.Join(repoParent, report.Repo)
 			} else {
-				agentRepos[agent.ID] = repoDir
+				agentRepos[agent.ID] = absRepoDir
 			}
 		}
 	}
@@ -93,7 +101,7 @@ func MergeAgents(manifestPath string, waveNum int, repoDir string) (*MergeAgents
 
 	// If single-repo wave, use optimized single-repo logic
 	if len(repoSet) == 1 {
-		return mergeAgentsSingleRepo(manifestPath, waveNum, repoDir, manifest, targetWave)
+		return mergeAgentsSingleRepo(manifestPath, waveNum, absRepoDir, manifest, targetWave)
 	}
 
 	// Multi-repo wave: merge each repo group separately

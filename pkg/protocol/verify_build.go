@@ -3,7 +3,10 @@ package protocol
 import (
 	"bytes"
 	"fmt"
+	"os"
 	"os/exec"
+	"path/filepath"
+	"strings"
 )
 
 // VerifyBuildResult captures the outcome of running test and lint commands
@@ -37,27 +40,38 @@ func VerifyBuild(manifestPath string, repoDir string) (*VerifyBuildResult, error
 		LintCommand: manifest.LintCommand,
 	}
 
-	// Run test command if present
-	if manifest.TestCommand != "" {
+	// Run test command if present and applicable to this repo
+	if manifest.TestCommand != "" && commandApplies(manifest.TestCommand, repoDir) {
 		testPassed, testOutput := runCommand(manifest.TestCommand, repoDir)
 		result.TestPassed = testPassed
 		result.TestOutput = testOutput
 	} else {
-		// Empty command: skip and mark as passed
+		// Empty command or not applicable to this repo: skip and mark as passed
 		result.TestPassed = true
 	}
 
-	// Run lint command if present
-	if manifest.LintCommand != "" {
+	// Run lint command if present and applicable to this repo
+	if manifest.LintCommand != "" && commandApplies(manifest.LintCommand, repoDir) {
 		lintPassed, lintOutput := runCommand(manifest.LintCommand, repoDir)
 		result.LintPassed = lintPassed
 		result.LintOutput = lintOutput
 	} else {
-		// Empty command: skip and mark as passed
+		// Empty command or not applicable to this repo: skip and mark as passed
 		result.LintPassed = true
 	}
 
 	return result, nil
+}
+
+// commandApplies returns false when a command is ecosystem-specific but the repo
+// doesn't support that ecosystem. Currently handles Go: if the command starts with
+// "go " and there is no go.mod in repoDir, the command is not applicable.
+func commandApplies(command, repoDir string) bool {
+	if strings.HasPrefix(command, "go ") {
+		_, err := os.Stat(filepath.Join(repoDir, "go.mod"))
+		return err == nil
+	}
+	return true
 }
 
 // runCommand executes a shell command and returns (passed, combinedOutput).

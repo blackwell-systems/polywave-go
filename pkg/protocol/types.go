@@ -116,6 +116,7 @@ type QualityGate struct {
 	Command     string `yaml:"command" json:"command"`
 	Required    bool   `yaml:"required" json:"required"`
 	Description string `yaml:"description,omitempty" json:"description,omitempty"`
+	Repo        string `yaml:"repo,omitempty" json:"repo,omitempty"` // if set, gate only runs in this repo
 }
 
 // ScaffoldFile represents a type scaffold file that is created before wave execution.

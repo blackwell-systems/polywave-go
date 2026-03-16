@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"fmt"
 	"os/exec"
+	"path/filepath"
 )
 
 // GateResult represents the outcome of executing a single quality gate.
@@ -31,8 +32,16 @@ func RunGates(manifest *IMPLManifest, waveNumber int, repoDir string) ([]GateRes
 		return []GateResult{}, nil
 	}
 
+	// Derive the repo name from the directory path for per-repo gate filtering.
+	repoName := filepath.Base(repoDir)
+
 	var results []GateResult
 	for _, gate := range manifest.QualityGates.Gates {
+		// Skip gates scoped to a different repo.
+		if gate.Repo != "" && gate.Repo != repoName {
+			continue
+		}
+
 		result := GateResult{
 			Type:     gate.Type,
 			Command:  gate.Command,
