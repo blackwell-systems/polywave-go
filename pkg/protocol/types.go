@@ -26,6 +26,10 @@ type IMPLManifest struct {
 	Scaffolds             []ScaffoldFile                 `yaml:"scaffolds,omitempty" json:"scaffolds,omitempty"`
 	CompletionReports     map[string]CompletionReport    `yaml:"completion_reports,omitempty" json:"completion_reports,omitempty"`
 	StubReports           map[string]*ScanStubsResult    `yaml:"stub_reports,omitempty" json:"stub_reports,omitempty"`
+	// E25: Integration validation reports per wave
+	IntegrationReports    map[string]*IntegrationReport  `yaml:"integration_reports,omitempty" json:"integration_reports,omitempty"`
+	// Integration connectors: files the integration agent is allowed to modify
+	IntegrationConnectors []IntegrationConnector         `yaml:"integration_connectors,omitempty" json:"integration_connectors,omitempty"`
 	PreMortem             *PreMortem                     `yaml:"pre_mortem,omitempty" json:"pre_mortem,omitempty"`
 	KnownIssues           []KnownIssue                   `yaml:"known_issues,omitempty" json:"known_issues,omitempty"`
 	State                 ProtocolState                  `yaml:"state,omitempty" json:"state,omitempty"`
