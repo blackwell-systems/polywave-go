@@ -108,6 +108,32 @@ func MergeAgents(manifestPath string, waveNum int, repoDir string) (*MergeAgents
 	return mergeAgentsMultiRepo(manifestPath, waveNum, manifest, targetWave, agentRepos)
 }
 
+// buildFileOwnerMap constructs a map of relative file path → agent ID for all
+// file ownership entries in the given wave. Used by MergeNoFFWithOwnership to
+// auto-resolve conflicts using I1 guarantees.
+func buildFileOwnerMap(manifest *IMPLManifest, waveNum int) map[string]string {
+	owners := make(map[string]string)
+	for _, fo := range manifest.FileOwnership {
+		if fo.Wave == waveNum {
+			owners[fo.File] = fo.Agent
+		}
+	}
+	// Also populate from agent.Files fields (some IMPL docs use both)
+	for _, wave := range manifest.Waves {
+		if wave.Number != waveNum {
+			continue
+		}
+		for _, agent := range wave.Agents {
+			for _, f := range agent.Files {
+				if _, exists := owners[f]; !exists {
+					owners[f] = agent.ID
+				}
+			}
+		}
+	}
+	return owners
+}
+
 // mergeAgentsSingleRepo handles merging when all agents belong to the same repository.
 func mergeAgentsSingleRepo(manifestPath string, waveNum int, repoDir string, manifest *IMPLManifest, targetWave *Wave) (*MergeAgentsResult, error) {
 	// Load merge-log for idempotency (E9)
@@ -115,6 +141,9 @@ func mergeAgentsSingleRepo(manifestPath string, waveNum int, repoDir string, man
 	if err != nil {
 		return nil, fmt.Errorf("failed to load merge-log: %w", err)
 	}
+
+	// Build file ownership map for conflict auto-resolution
+	fileOwners := buildFileOwnerMap(manifest, waveNum)
 
 	// Initialize result
 	result := &MergeAgentsResult{
@@ -151,13 +180,13 @@ func mergeAgentsSingleRepo(manifestPath string, waveNum int, repoDir string, man
 		}
 		message := prefix + taskSummary
 
-		// Perform merge
+		// Perform merge — auto-resolve conflicts using ownership table (I1)
 		status := MergeStatus{
 			Agent:  agent.ID,
 			Branch: branch,
 		}
 
-		err := git.MergeNoFF(repoDir, branch, message)
+		err := git.MergeNoFFWithOwnership(repoDir, branch, message, agent.ID, fileOwners)
 		if err != nil {
 			// Merge failed - record error and stop
 			status.Success = false
@@ -205,6 +234,9 @@ func mergeAgentsMultiRepo(manifestPath string, waveNum int, manifest *IMPLManife
 	if err != nil {
 		return nil, fmt.Errorf("failed to load merge-log: %w", err)
 	}
+
+	// Build file ownership map for conflict auto-resolution
+	fileOwners := buildFileOwnerMap(manifest, waveNum)
 
 	// Group agents by repository
 	repoGroups := make(map[string][]Agent)
@@ -259,7 +291,7 @@ func mergeAgentsMultiRepo(manifestPath string, waveNum int, manifest *IMPLManife
 				Branch: branch,
 			}
 
-			err := git.MergeNoFF(absRepoDir, branch, message)
+			err := git.MergeNoFFWithOwnership(absRepoDir, branch, message, agent.ID, fileOwners)
 			if err != nil {
 				// Merge failed - record error and stop
 				status.Success = false

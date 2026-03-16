@@ -111,6 +111,82 @@ func MergeNoFF(repoPath, branch, message string) error {
 	return nil
 }
 
+// MergeNoFFWithOwnership performs a non-fast-forward merge and automatically
+// resolves conflicts using the file ownership table.
+//
+// When a conflict occurs, each conflicting file is resolved deterministically:
+//   - File owned by currentAgent → checkout --theirs (agent's version wins)
+//   - File owned by any other agent  → checkout --ours  (develop's version wins)
+//   - File with no known owner       → abort and return a ConflictError
+//
+// This works because I1 (disjoint file ownership) guarantees each file belongs
+// to at most one agent. A conflict on a file owned by the current agent means
+// the agent diverged from develop; its version is authoritative. A conflict on
+// a file owned by another agent means the current agent touched something it
+// shouldn't have; develop's version (already containing the owner's work) wins.
+//
+// fileOwners maps relative file path → agent ID (e.g. "web/src/foo.ts" → "A").
+// If fileOwners is nil, no auto-resolution is attempted and conflicts are fatal.
+func MergeNoFFWithOwnership(repoPath, branch, message, currentAgent string, fileOwners map[string]string) error {
+	_, err := Run(repoPath, "merge", "--no-ff", branch, "-m", message)
+	if err == nil {
+		return nil
+	}
+
+	// Check if this is a merge conflict (exit code 1 with conflict markers)
+	conflicted, listErr := ConflictedFiles(repoPath)
+	if listErr != nil || len(conflicted) == 0 || fileOwners == nil {
+		// Not a conflict, or no ownership map — abort and surface original error
+		Run(repoPath, "merge", "--abort") //nolint:errcheck
+		return fmt.Errorf("git merge --no-ff failed: %w", err)
+	}
+
+	// Resolve each conflicting file using ownership
+	unresolvable := []string{}
+	for _, f := range conflicted {
+		owner, known := fileOwners[f]
+		if !known {
+			unresolvable = append(unresolvable, f)
+			continue
+		}
+		strategy := "--ours"
+		if owner == currentAgent {
+			strategy = "--theirs"
+		}
+		if _, checkoutErr := Run(repoPath, "checkout", strategy, "--", f); checkoutErr != nil {
+			unresolvable = append(unresolvable, f)
+			continue
+		}
+		Run(repoPath, "add", f) //nolint:errcheck
+	}
+
+	if len(unresolvable) > 0 {
+		Run(repoPath, "merge", "--abort") //nolint:errcheck
+		return fmt.Errorf("merge conflict on files with no known owner (cannot auto-resolve): %v", unresolvable)
+	}
+
+	// All conflicts resolved — complete the merge
+	if _, commitErr := Run(repoPath, "commit", "--no-edit"); commitErr != nil {
+		Run(repoPath, "merge", "--abort") //nolint:errcheck
+		return fmt.Errorf("failed to commit after conflict resolution: %w", commitErr)
+	}
+	return nil
+}
+
+// ConflictedFiles returns the list of files with unresolved merge conflicts
+// in the repository at repoPath.
+func ConflictedFiles(repoPath string) ([]string, error) {
+	out, err := Run(repoPath, "diff", "--name-only", "--diff-filter=U")
+	if err != nil {
+		return nil, err
+	}
+	trimmed := strings.TrimSpace(out)
+	if trimmed == "" {
+		return []string{}, nil
+	}
+	return strings.Split(trimmed, "\n"), nil
+}
+
 // DeleteBranch deletes the named branch from the repository at repoPath.
 // Uses -D (force delete) because this is only called during cleanup after
 // successful merge, where the branch may not be fast-forward mergeable but
