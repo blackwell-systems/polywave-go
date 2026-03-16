@@ -84,7 +84,11 @@ func (c *Client) Run(ctx context.Context, systemPrompt, userPrompt, _ string) (s
 
 	// Add structured output configuration if schema is set
 	if c.outputSchema != nil {
-		input.OutputConfig = buildOutputConfig(c.outputSchema)
+		outputConfig, err := buildOutputConfig(c.outputSchema)
+		if err != nil {
+			return "", fmt.Errorf("bedrock: buildOutputConfig: %w", err)
+		}
+		input.OutputConfig = outputConfig
 	}
 
 	resp, err := c.client.Converse(ctx, input)
@@ -132,7 +136,11 @@ func (c *Client) RunStreaming(ctx context.Context, systemPrompt, userPrompt, _ s
 
 	// Add structured output configuration if schema is set
 	if c.outputSchema != nil {
-		input.OutputConfig = buildOutputConfig(c.outputSchema)
+		outputConfig, err := buildOutputConfig(c.outputSchema)
+		if err != nil {
+			return "", fmt.Errorf("bedrock: buildOutputConfig: %w", err)
+		}
+		input.OutputConfig = outputConfig
 	}
 
 	resp, err := c.client.ConverseStream(ctx, input)
@@ -261,7 +269,11 @@ func (c *Client) RunStreamingWithTools(ctx context.Context, systemPrompt, userPr
 
 		// Add structured output configuration on final turn (when no tool use expected)
 		if c.outputSchema != nil && turn > 0 {
-			input.OutputConfig = buildOutputConfig(c.outputSchema)
+			outputConfig, err := buildOutputConfig(c.outputSchema)
+			if err != nil {
+				return "", fmt.Errorf("bedrock: buildOutputConfig (turn %d): %w", turn, err)
+			}
+			input.OutputConfig = outputConfig
 		}
 
 		resp, err := c.client.ConverseStream(ctx, input)
