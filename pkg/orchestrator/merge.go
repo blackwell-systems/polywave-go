@@ -76,20 +76,38 @@ func executeMergeWave(o *Orchestrator, waveNum int) error {
 		return fmt.Errorf("executeMergeWave: resolving HEAD: %w", err)
 	}
 
-	// Step 4: Verify each agent has commits beyond base.
-	if err := verifyAgentCommits(o.repoPath, baseCommit, reports); err != nil {
-		return err
-	}
-
-	// Step 5: Check for file conflicts across agents.
-	if err := predictConflicts(reports); err != nil {
-		return err
-	}
-
-	// Step 6: Load merge-log for idempotency (E9)
+	// Step 4: Load merge-log for idempotency (E9) — must happen BEFORE
+	// verifyAgentCommits so we can skip agents whose branches were already
+	// merged and deleted.
 	mergeLog, err := protocol.LoadMergeLog(o.implDocPath, waveNum)
 	if err != nil {
 		return fmt.Errorf("executeMergeWave: loading merge-log: %w", err)
+	}
+
+	// Filter out already-merged agents before verification.
+	pendingReports := make(map[string]*types.CompletionReport, len(reports))
+	for letter, report := range reports {
+		if !mergeLog.IsMerged(letter) {
+			pendingReports[letter] = report
+		} else {
+			fmt.Fprintf(os.Stderr, "executeMergeWave: agent %s already merged (skipping verification)\n", letter)
+		}
+	}
+
+	// If all agents already merged, we're done (full idempotency).
+	if len(pendingReports) == 0 {
+		fmt.Fprintf(os.Stderr, "executeMergeWave: all agents already merged for wave %d\n", waveNum)
+		return nil
+	}
+
+	// Step 5: Verify each pending agent has commits beyond base.
+	if err := verifyAgentCommits(o.repoPath, baseCommit, pendingReports); err != nil {
+		return err
+	}
+
+	// Step 6: Check for file conflicts across pending agents.
+	if err := predictConflicts(pendingReports); err != nil {
+		return err
 	}
 
 	// Step 7 & 8: Merge each complete agent; clean up worktree afterward.
