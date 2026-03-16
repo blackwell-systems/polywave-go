@@ -272,11 +272,11 @@ func TestBuildWorkshop_WithTimingCallback(t *testing.T) {
 	}
 }
 
-// TestMaxTurns_Default verifies that maxTurns returns 50 when cfg.MaxTurns is 0.
+// TestMaxTurns_Default verifies that maxTurns returns 200 when cfg.MaxTurns is 0.
 func TestMaxTurns_Default(t *testing.T) {
 	c := &Client{cfg: backend.Config{MaxTurns: 0}}
-	if got := c.maxTurns(); got != 50 {
-		t.Errorf("expected default maxTurns=50, got %d", got)
+	if got := c.maxTurns(); got != 200 {
+		t.Errorf("expected default maxTurns=200, got %d", got)
 	}
 }
 
