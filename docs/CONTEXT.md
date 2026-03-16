@@ -124,3 +124,5 @@ type BackendConfig struct {
   - IMPL doc: docs/IMPL/complete/IMPL-workshop-constraints.yaml
 - **impl-schema-validation**: completed 2026-03-15, 2 waves, 6 agents
   - IMPL doc: docs/IMPL/complete/IMPL-impl-schema-validation.yaml
+- **bedrock-structured-output**: completed 2026-03-15, 2 waves, 4 agents
+  - IMPL doc: docs/IMPL/complete/IMPL-bedrock-structured-output.yaml
