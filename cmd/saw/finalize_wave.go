@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"os"
 	"path/filepath"
 	"strings"
 
@@ -21,6 +22,7 @@ type FinalizeWaveResult struct {
 	GateResults       map[string][]protocol.GateResult `json:"gate_results"` // repo -> gates
 	MergeResult       map[string]*protocol.MergeAgentsResult `json:"merge_result"` // repo -> result
 	VerifyBuildResult map[string]*protocol.VerifyBuildResult `json:"verify_build"` // repo -> result
+	IntegrationReport *protocol.IntegrationReport       `json:"integration_report,omitempty"`
 	BuildDiagnosis    map[string]*builddiag.Diagnosis  `json:"build_diagnosis,omitempty"` // repo -> diagnosis
 	CleanupResult     map[string]*protocol.CleanupResult `json:"cleanup_result"` // repo -> result
 	Success           bool                             `json:"success"`
@@ -37,6 +39,7 @@ Execution order:
 1. VerifyCommits - check all agents have commits (I5 trip wire)
 2. ScanStubs - scan changed files for TODO/FIXME markers (E20)
 3. RunGates - execute quality gates if defined (E21)
+3.5. ValidateIntegration - detect unconnected exports (E25, informational)
 4. MergeAgents - merge all agent branches to main
 5. VerifyBuild - run test_command and lint_command
 6. Cleanup - remove worktrees and branches
@@ -120,6 +123,23 @@ pattern matching (H7) and appends diagnosis to the output.`,
 						return fmt.Errorf("finalize-wave: required gate '%s' failed in %s", gate.Type, repoKey)
 					}
 				}
+			}
+
+			// Step 3.5: ValidateIntegration (E25) — informational
+			// Uses the first repo path for single-repo; for cross-repo, uses first entry.
+			// Integration validation does NOT block merge — gaps are reported for the
+			// human orchestrator (CLI) or integration agent (engine/web) to address.
+			for _, repoPath := range repos {
+				integrationReport, intErr := protocol.ValidateIntegration(manifest, waveNum, repoPath)
+				if intErr != nil {
+					fmt.Fprintf(os.Stderr, "finalize-wave: validate-integration: %v\n", intErr)
+				} else if integrationReport != nil {
+					result.IntegrationReport = integrationReport
+					if !integrationReport.Valid {
+						fmt.Fprintf(os.Stderr, "finalize-wave: %d integration gap(s) detected\n", len(integrationReport.Gaps))
+					}
+				}
+				break // single-repo default; cross-repo would need aggregation
 			}
 
 			// Step 4: MergeAgents (with E9 idempotency check) - run per repo
