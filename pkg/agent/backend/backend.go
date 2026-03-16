@@ -1,6 +1,10 @@
 package backend
 
-import "context"
+import (
+	"context"
+
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/tools"
+)
 
 // Config carries backend-agnostic configuration.
 type Config struct {
@@ -35,6 +39,11 @@ type Config struct {
 	// ReadOnly, when true, applies permission middleware that blocks write_file
 	// and edit_file at execution time. Used for Scout agents.
 	ReadOnly bool
+
+	// Constraints, if non-nil, configures SAW protocol invariant enforcement
+	// (I1 file ownership, I2 interface freeze, I5 commit tracking, I6 role separation).
+	// When nil, no constraints are applied (backward compatible).
+	Constraints *tools.Constraints
 }
 
 // ChunkCallback is called with each text chunk as it arrives from the backend.
