@@ -25,6 +25,7 @@ import (
 	openaibackend "github.com/blackwell-systems/scout-and-wave-go/pkg/agent/backend/openai"
 	"github.com/blackwell-systems/scout-and-wave-go/internal/git"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/tools"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/types"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/worktree"
 )
@@ -133,6 +134,10 @@ type BackendConfig struct {
 	// BaseURL is an optional endpoint override used when Kind == "openai"
 	// or when the provider prefix is "openai".
 	BaseURL string
+
+	// Constraints, if non-nil, configures SAW protocol invariant enforcement
+	// (I1 ownership, I2 freeze, I5 commit tracking, I6 role restriction).
+	Constraints *tools.Constraints
 }
 
 // validateModelName ensures model name contains only safe characters and is
@@ -215,9 +220,10 @@ var newBackendFunc = func(cfg BackendConfig) (backend.Backend, error) {
 	}
 
 	bcfg := backend.Config{
-		Model:     bareModel,
-		MaxTokens: cfg.MaxTokens,
-		MaxTurns:  cfg.MaxTurns,
+		Model:       bareModel,
+		MaxTokens:   cfg.MaxTokens,
+		MaxTurns:    cfg.MaxTurns,
+		Constraints: cfg.Constraints,
 	}
 	switch effectiveKind {
 	case "openai":
@@ -478,10 +484,21 @@ func (o *Orchestrator) RunWave(waveNum int) error {
 		}
 
 		eg.Go(func() error {
+			// Build per-agent constraints from the IMPL manifest (I1/I2/I5/I6).
+			constraints := buildWaveConstraints(o.implDocPath, agentSpec.Letter)
+
 			runner := defaultRunner
-			// Per-agent model override: create a separate backend for this agent.
+			// Per-agent model override or constraints: create a separate backend.
+			model := o.defaultModel
 			if agentSpec.Model != "" && agentSpec.Model != o.defaultModel {
-				b2, err2 := newBackendFunc(BackendConfig{Kind: "auto", Model: agentSpec.Model})
+				model = agentSpec.Model
+			}
+			if constraints != nil || model != o.defaultModel {
+				b2, err2 := newBackendFunc(BackendConfig{
+					Kind:        "auto",
+					Model:       model,
+					Constraints: constraints,
+				})
 				if err2 != nil {
 					return fmt.Errorf("orchestrator: agent %s: create backend: %w", agentSpec.Letter, err2)
 				}
@@ -868,4 +885,46 @@ func (o *Orchestrator) UpdateIMPLStatus(waveNum int) error {
 
 	// 5. Call protocol.UpdateIMPLStatus to tick checkboxes.
 	return protocol.UpdateIMPLStatus(o.implDocPath, completedLetters)
+}
+
+// buildWaveConstraints loads the IMPL manifest and builds per-agent constraints
+// for wave-role enforcement (I1 ownership, I2 freeze, I5 commit tracking).
+// Returns nil if the manifest can't be loaded (backward compatible, no enforcement).
+func buildWaveConstraints(implPath string, agentID string) *tools.Constraints {
+	manifest, err := protocol.Load(implPath)
+	if err != nil || manifest == nil {
+		return nil
+	}
+
+	c := &tools.Constraints{
+		AgentRole:    "wave",
+		AgentID:      agentID,
+		TrackCommits: true,
+	}
+
+	// I1: Owned files for this agent
+	owned := make(map[string]bool)
+	for _, fo := range manifest.FileOwnership {
+		if fo.Agent == agentID {
+			owned[fo.File] = true
+		}
+	}
+	c.OwnedFiles = owned
+
+	// I2: Frozen paths = scaffold files + interface contract locations
+	frozen := make(map[string]bool)
+	for _, sf := range manifest.Scaffolds {
+		if sf.FilePath != "" {
+			frozen[sf.FilePath] = true
+		}
+	}
+	for _, ic := range manifest.InterfaceContracts {
+		if ic.Location != "" {
+			frozen[ic.Location] = true
+		}
+	}
+	c.FrozenPaths = frozen
+	c.FreezeTime = manifest.WorktreesCreatedAt
+
+	return c
 }

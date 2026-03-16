@@ -8,6 +8,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 | Version | Date | Headline |
 |---------|------|----------|
+| [0.47.0] | 2026-03-15 | Workshop constraints — tool-level SAW protocol enforcement (I1/I2/I5/I6 middleware), H6 dep checker prefix matching fix, orchestrator wiring |
 | [0.46.0] | 2026-03-14 | Validate --fix + .claire worktree resolution — auto-correct invalid gate types, shared worktree resolver for .claude/.claire fallback |
 | [0.45.0] | 2026-03-14 | API agent parity — auto-commit, synthetic completion reports, mutex-serialized writes, no-op agent handling, wave-skip on re-run |
 | [0.44.0] | 2025-03-14 | Cross-repo finalize-wave — all 6 pipeline steps run per-repo, aggregates results from multiple repositories |
