@@ -26,14 +26,16 @@ const (
 
 // Client is an Anthropic API backend. It implements backend.Backend.
 type Client struct {
-	apiKey       string
-	model        string
-	maxTokens    int
-	maxTurns     int
-	baseURL      string         // optional override for testing
-	outputSchema map[string]any // optional: structured output schema
-	onToolCall   backend.ToolCallCallback // optional: timing events for Observatory
-	readOnly     bool                     // if true, block write_file/edit_file
+	apiKey        string
+	model         string
+	maxTokens     int
+	maxTurns      int
+	baseURL       string         // optional override for testing
+	outputSchema  map[string]any // optional: structured output schema
+	onToolCall    backend.ToolCallCallback // optional: timing events for Observatory
+	readOnly      bool                     // if true, block write_file/edit_file
+	cfg           backend.Config           // full config for constraint access
+	commitTracker *tools.CommitTracker
 }
 
 // New creates a new Client configured from cfg.
@@ -64,6 +66,7 @@ func New(apiKey string, cfg backend.Config) *Client {
 		maxTurns:   maxTurns,
 		onToolCall: cfg.OnToolCall,
 		readOnly:   cfg.ReadOnly,
+		cfg:        cfg,
 	}
 }
 
@@ -74,6 +77,9 @@ func (c *Client) buildWorkshop(workDir string) tools.Workshop {
 		w = tools.ReadOnlyTools(workDir)
 	} else {
 		w = tools.StandardTools(workDir)
+	}
+	if c.cfg.Constraints != nil {
+		w, c.commitTracker = tools.WithConstraints(w, *c.cfg.Constraints)
 	}
 	if c.onToolCall != nil {
 		w = tools.WithTiming(w, func(ev tools.ToolCallEvent) {
@@ -86,6 +92,15 @@ func (c *Client) buildWorkshop(workDir string) tools.Workshop {
 		})
 	}
 	return w
+}
+
+// CommitCount returns the number of git commits tracked by the constraint
+// middleware. Returns 0 if constraints are not configured or no commits detected.
+func (c *Client) CommitCount() int {
+	if c.commitTracker == nil {
+		return 0
+	}
+	return c.commitTracker.Count
 }
 
 // WithBaseURL overrides the Anthropic API endpoint. Used in tests to point at

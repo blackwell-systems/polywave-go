@@ -20,10 +20,11 @@ import (
 
 // Client implements backend.Backend using AWS Bedrock.
 type Client struct {
-	client     *bedrockruntime.Client
-	cfg        backend.Config
-	onToolCall backend.ToolCallCallback
-	readOnly   bool
+	client        *bedrockruntime.Client
+	cfg           backend.Config
+	onToolCall    backend.ToolCallCallback
+	readOnly      bool
+	commitTracker *tools.CommitTracker
 }
 
 // New creates a Bedrock backend client using AWS credentials from the default chain.
@@ -169,6 +170,9 @@ func (c *Client) buildWorkshop(workDir string) tools.Workshop {
 	} else {
 		w = tools.StandardTools(workDir)
 	}
+	if c.cfg.Constraints != nil {
+		w, c.commitTracker = tools.WithConstraints(w, *c.cfg.Constraints)
+	}
 	if c.onToolCall != nil {
 		w = tools.WithTiming(w, func(ev tools.ToolCallEvent) {
 			c.onToolCall(backend.ToolCallEvent{
@@ -180,6 +184,15 @@ func (c *Client) buildWorkshop(workDir string) tools.Workshop {
 		})
 	}
 	return w
+}
+
+// CommitCount returns the number of git commits tracked by the constraint
+// middleware. Returns 0 if constraints are not configured or no commits detected.
+func (c *Client) CommitCount() int {
+	if c.commitTracker == nil {
+		return 0
+	}
+	return c.commitTracker.Count
 }
 
 // streamEvent represents a parsed chunk from Bedrock's streaming response.
