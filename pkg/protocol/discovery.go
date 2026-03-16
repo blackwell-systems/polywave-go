@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 )
 
 // IMPLSummary represents a lightweight summary of an IMPL document.
@@ -12,6 +13,7 @@ type IMPLSummary struct {
 	Path        string `json:"path"`
 	FeatureSlug string `json:"feature_slug"`
 	Verdict     string `json:"verdict"`
+	State       string `json:"state"`
 	CurrentWave int    `json:"current_wave"`
 	TotalWaves  int    `json:"total_waves"`
 }
@@ -39,7 +41,16 @@ type ListIMPLsResult struct {
 //   - ListIMPLsResult with all successfully loaded summaries
 //   - Empty list if dir is invalid or no IMPL files found (not an error)
 //   - Results are sorted by path for deterministic output
-func ListIMPLs(dir string) (*ListIMPLsResult, error) {
+// ListIMPLsOpts controls filtering behavior for ListIMPLs.
+type ListIMPLsOpts struct {
+	IncludeComplete bool // If false (default), exclude IMPLs with state COMPLETE or in complete/ directory
+}
+
+func ListIMPLs(dir string, opts ...ListIMPLsOpts) (*ListIMPLsResult, error) {
+	var o ListIMPLsOpts
+	if len(opts) > 0 {
+		o = opts[0]
+	}
 	result := &ListIMPLsResult{
 		IMPLs: []IMPLSummary{},
 	}
@@ -93,8 +104,16 @@ func ListIMPLs(dir string) (*ListIMPLsResult, error) {
 			Path:        path,
 			FeatureSlug: manifest.FeatureSlug,
 			Verdict:     manifest.Verdict,
+			State:       string(manifest.State),
 			CurrentWave: currentWaveNum,
 			TotalWaves:  len(manifest.Waves),
+		}
+
+		// Filter completed IMPLs unless requested
+		if !o.IncludeComplete {
+			if manifest.State == StateComplete || strings.Contains(path, "/complete/") {
+				continue
+			}
 		}
 
 		result.IMPLs = append(result.IMPLs, summary)
