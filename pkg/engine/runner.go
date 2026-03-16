@@ -341,7 +341,7 @@ func RunScaffold(ctx context.Context, implPath, repoPath, sawRepoPath, model str
 
 	prompt := fmt.Sprintf("%s\n\n## IMPL Doc Path\n%s\n", string(scaffoldMdBytes), implPath)
 
-	b := cli.New(model, backend.Config{})
+	b := cli.New("", backend.Config{Model: model})
 	runner := agent.NewRunner(b, nil)
 	spec := &types.AgentSpec{Letter: "scaffold", Prompt: prompt}
 
