@@ -404,7 +404,13 @@ func (c *Client) RunStreamingWithTools(ctx context.Context, systemPrompt, userPr
 				if inputStr == "" {
 					inputStr = "{}"
 				}
-				inputDoc := document.NewLazyDocument([]byte(inputStr))
+				// Parse JSON string into a Go value so the SDK serializes it as
+				// a JSON object, not as raw bytes (which Bedrock rejects).
+				var inputObj interface{}
+				if err := json.Unmarshal([]byte(inputStr), &inputObj); err != nil {
+					inputObj = map[string]interface{}{}
+				}
+				inputDoc := document.NewLazyDocument(inputObj)
 				assistantContent = append(assistantContent, &types.ContentBlockMemberToolUse{
 					Value: types.ToolUseBlock{
 						ToolUseId: aws.String(toolBlk.id),
@@ -480,7 +486,7 @@ func (c *Client) maxTurns() int {
 	if c.cfg.MaxTurns > 0 {
 		return c.cfg.MaxTurns
 	}
-	return 50
+	return 200
 }
 
 func (c *Client) maxTokens() int {
