@@ -253,3 +253,159 @@ func TestBuildWaveConstraints_Integration_BadPath(t *testing.T) {
 		t.Error("expected error for nonexistent path")
 	}
 }
+
+func TestBuildConstraints_IntegratorRole(t *testing.T) {
+	connectors := []protocol.IntegrationConnector{
+		{File: "pkg/engine/orchestrator.go", Reason: "wire NewRunner into orchestrator"},
+		{File: "cmd/saw/main.go", Reason: "register subcommand"},
+	}
+	manifest := &protocol.IMPLManifest{}
+
+	c := buildIntegratorConstraints(manifest, connectors)
+	if c == nil {
+		t.Fatal("expected non-nil constraints for integrator role")
+	}
+
+	// Integrator should have AllowedPathPrefixes from connectors
+	if len(c.AllowedPathPrefixes) != 2 {
+		t.Fatalf("expected 2 AllowedPathPrefixes, got %d: %v", len(c.AllowedPathPrefixes), c.AllowedPathPrefixes)
+	}
+
+	prefixSet := make(map[string]bool)
+	for _, p := range c.AllowedPathPrefixes {
+		prefixSet[p] = true
+	}
+	if !prefixSet["pkg/engine/orchestrator.go"] {
+		t.Error("expected pkg/engine/orchestrator.go in AllowedPathPrefixes")
+	}
+	if !prefixSet["cmd/saw/main.go"] {
+		t.Error("expected cmd/saw/main.go in AllowedPathPrefixes")
+	}
+
+	// Integrator should NOT have OwnedFiles or FrozenPaths
+	if len(c.OwnedFiles) != 0 {
+		t.Errorf("expected no OwnedFiles for integrator, got %v", c.OwnedFiles)
+	}
+	if len(c.FrozenPaths) != 0 {
+		t.Errorf("expected no FrozenPaths for integrator, got %v", c.FrozenPaths)
+	}
+
+	// Integrator should track commits for audit trail
+	if !c.TrackCommits {
+		t.Error("expected TrackCommits=true for integrator")
+	}
+	if c.AgentRole != "integrator" {
+		t.Errorf("expected AgentRole=integrator, got %s", c.AgentRole)
+	}
+}
+
+func TestBuildConstraints_IntegratorEmpty(t *testing.T) {
+	manifest := &protocol.IMPLManifest{}
+
+	// Empty connectors: no path prefixes
+	c := buildIntegratorConstraints(manifest, nil)
+	if c == nil {
+		t.Fatal("expected non-nil constraints for integrator role")
+	}
+
+	if len(c.AllowedPathPrefixes) != 0 {
+		t.Errorf("expected 0 AllowedPathPrefixes for empty connectors, got %d: %v",
+			len(c.AllowedPathPrefixes), c.AllowedPathPrefixes)
+	}
+
+	if !c.TrackCommits {
+		t.Error("expected TrackCommits=true for integrator even with no connectors")
+	}
+
+	// Also test via buildConstraints switch case (no connectors available on struct)
+	c2 := buildConstraints(manifest, "", "integrator")
+	if c2 == nil {
+		t.Fatal("expected non-nil constraints from buildConstraints integrator case")
+	}
+	if len(c2.AllowedPathPrefixes) != 0 {
+		t.Errorf("expected 0 AllowedPathPrefixes from switch case, got %d", len(c2.AllowedPathPrefixes))
+	}
+	if !c2.TrackCommits {
+		t.Error("expected TrackCommits=true from switch case")
+	}
+}
+
+func TestBuildIntegratorConstraints_LoadAndBuild(t *testing.T) {
+	// Create a temporary IMPL manifest with integration_connectors
+	tmpDir := t.TempDir()
+	implPath := filepath.Join(tmpDir, "IMPL-test.yaml")
+
+	yamlContent := `title: Test Feature
+feature_slug: test
+verdict: SUITABLE
+test_command: "go test ./..."
+file_ownership:
+  - file: pkg/engine/runner.go
+    agent: A
+    wave: 1
+scaffolds:
+  - file_path: pkg/tools/constraints.go
+    contents: "package tools"
+waves:
+  - number: 1
+    agents:
+      - id: A
+        task: Implement runner
+integration_connectors:
+  - file: pkg/engine/orchestrator.go
+    reason: wire NewRunner into orchestrator
+  - file: cmd/saw/main.go
+    reason: register subcommand
+`
+
+	if err := os.WriteFile(implPath, []byte(yamlContent), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	c, err := BuildIntegratorConstraints(implPath)
+	if err != nil {
+		t.Fatalf("BuildIntegratorConstraints failed: %v", err)
+	}
+	if c == nil {
+		t.Fatal("expected non-nil constraints")
+	}
+
+	// Verify integrator role properties
+	if c.AgentRole != "integrator" {
+		t.Errorf("expected role=integrator, got %s", c.AgentRole)
+	}
+	if len(c.AllowedPathPrefixes) != 2 {
+		t.Fatalf("expected 2 AllowedPathPrefixes, got %d: %v", len(c.AllowedPathPrefixes), c.AllowedPathPrefixes)
+	}
+
+	prefixSet := make(map[string]bool)
+	for _, p := range c.AllowedPathPrefixes {
+		prefixSet[p] = true
+	}
+	if !prefixSet["pkg/engine/orchestrator.go"] {
+		t.Error("expected pkg/engine/orchestrator.go in AllowedPathPrefixes")
+	}
+	if !prefixSet["cmd/saw/main.go"] {
+		t.Error("expected cmd/saw/main.go in AllowedPathPrefixes")
+	}
+
+	if !c.TrackCommits {
+		t.Error("expected TrackCommits=true")
+	}
+}
+
+func TestBuildIntegratorConstraints_NilManifest(t *testing.T) {
+	c := buildIntegratorConstraints(nil, []protocol.IntegrationConnector{
+		{File: "foo.go", Reason: "test"},
+	})
+	if c != nil {
+		t.Errorf("expected nil constraints for nil manifest, got %+v", c)
+	}
+}
+
+func TestBuildIntegratorConstraints_BadPath(t *testing.T) {
+	_, err := BuildIntegratorConstraints("/nonexistent/path/IMPL.yaml")
+	if err == nil {
+		t.Error("expected error for nonexistent path")
+	}
+}
