@@ -22,8 +22,9 @@ type FinalizeWaveResult struct {
 	Wave           int                        `json:"wave"`
 	VerifyCommits  *protocol.VerifyCommitsResult `json:"verify_commits,omitempty"`
 	StubReport     *protocol.ScanStubsResult  `json:"stub_report,omitempty"`
-	GateResults    []protocol.GateResult      `json:"gate_results,omitempty"`
-	MergeResult    *protocol.MergeAgentsResult `json:"merge_result,omitempty"`
+	GateResults       []protocol.GateResult         `json:"gate_results,omitempty"`
+	IntegrationReport *protocol.IntegrationReport   `json:"integration_report,omitempty"`
+	MergeResult       *protocol.MergeAgentsResult   `json:"merge_result,omitempty"`
 	VerifyBuild    *protocol.VerifyBuildResult `json:"verify_build,omitempty"`
 	BuildDiagnosis *builddiag.Diagnosis        `json:"build_diagnosis,omitempty"`
 	CleanupResult  *protocol.CleanupResult    `json:"cleanup_result,omitempty"`
@@ -38,6 +39,7 @@ type FinalizeWaveResult struct {
 //  1. VerifyCommits (I5) - ensure all agents committed work
 //  2. ScanStubs (E20) - scan changed files for TODO/FIXME markers
 //  3. RunGates (E21) - execute quality gates
+//  3.5. ValidateIntegration (E25) - scan for unconnected exports (informational)
 //  4. MergeAgents - merge agent branches into main
 //  5. VerifyBuild - run test_command and lint_command
 //  6. Cleanup - remove worktrees and branches
@@ -100,6 +102,18 @@ func FinalizeWave(ctx context.Context, opts FinalizeWaveOpts) (*FinalizeWaveResu
 		if gate.Required && !gate.Passed {
 			return result, fmt.Errorf("engine.FinalizeWave: required gate %q failed", gate.Type)
 		}
+	}
+
+	// Step 3.5: ValidateIntegration (E25) - informational, does not block
+	integrationReport, err := protocol.ValidateIntegration(manifest, opts.WaveNum, opts.RepoPath)
+	if err != nil {
+		// Non-fatal: integration validation errors don't block the pipeline
+		fmt.Fprintf(os.Stderr, "engine.FinalizeWave: validate-integration: %v\n", err)
+	} else {
+		result.IntegrationReport = integrationReport
+		// Persist to manifest
+		waveKey := fmt.Sprintf("wave%d", opts.WaveNum)
+		_ = protocol.AppendIntegrationReport(opts.IMPLPath, waveKey, integrationReport)
 	}
 
 	// Step 4: MergeAgents
