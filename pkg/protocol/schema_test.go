@@ -97,3 +97,86 @@ func mapKeys(m map[string]any) []string {
 	}
 	return keys
 }
+
+func TestGenerateCompletionReportSchema_Valid(t *testing.T) {
+	schema, err := GenerateCompletionReportSchema()
+	if err != nil {
+		t.Fatalf("GenerateCompletionReportSchema() returned error: %v", err)
+	}
+	if schema == nil {
+		t.Fatal("GenerateCompletionReportSchema() returned nil map")
+	}
+	if _, ok := schema["properties"]; !ok {
+		t.Fatalf("expected schema map to have 'properties' key, got keys: %v", mapKeys(schema))
+	}
+}
+
+func TestGenerateCompletionReportSchema_HasRequiredFields(t *testing.T) {
+	schema, err := GenerateCompletionReportSchema()
+	if err != nil {
+		t.Fatalf("GenerateCompletionReportSchema() returned error: %v", err)
+	}
+
+	properties := extractProperties(t, schema)
+
+	// Status is the primary required field for a completion report
+	if _, found := properties["status"]; !found {
+		t.Errorf("expected required field 'status' to be present in schema properties; got: %v", mapKeys(properties))
+	}
+}
+
+func TestGenerateCompletionReportSchema_RoundTrip(t *testing.T) {
+	schema, err := GenerateCompletionReportSchema()
+	if err != nil {
+		t.Fatalf("GenerateCompletionReportSchema() returned error: %v", err)
+	}
+
+	properties := extractProperties(t, schema)
+
+	// Verify all expected CompletionReport fields are present in the schema
+	expectedFields := []string{
+		"status",
+		"worktree",
+		"branch",
+		"commit",
+		"files_changed",
+		"files_created",
+		"interface_deviations",
+		"out_of_scope_deps",
+		"tests_added",
+		"verification",
+		"failure_type",
+		"notes",
+	}
+
+	for _, field := range expectedFields {
+		if _, found := properties[field]; !found {
+			t.Errorf("expected field %q to be present in schema properties; got: %v", field, mapKeys(properties))
+		}
+	}
+
+	// Verify that properties have correct types
+	if statusProp, ok := properties["status"]; ok {
+		if propMap, ok := statusProp.(map[string]any); ok {
+			if propType, ok := propMap["type"]; ok {
+				if propType != "string" {
+					t.Errorf("expected 'status' field to have type 'string', got: %v", propType)
+				}
+			}
+		}
+	}
+
+	// Verify array fields have correct type
+	arrayFields := []string{"files_changed", "files_created", "out_of_scope_deps", "tests_added"}
+	for _, field := range arrayFields {
+		if fieldProp, ok := properties[field]; ok {
+			if propMap, ok := fieldProp.(map[string]any); ok {
+				if propType, ok := propMap["type"]; ok {
+					if propType != "array" {
+						t.Errorf("expected %q field to have type 'array', got: %v", field, propType)
+					}
+				}
+			}
+		}
+	}
+}
