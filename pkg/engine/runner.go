@@ -322,6 +322,34 @@ func StartWave(ctx context.Context, opts RunWaveOpts, onEvent func(Event)) error
 			}
 		}
 
+		// E25: Post-wave integration validation
+		manifest, loadErr := protocol.Load(opts.IMPLPath)
+		if loadErr == nil {
+			integrationReport, intErr := protocol.ValidateIntegration(manifest, waveNum, opts.RepoPath)
+			if intErr == nil && integrationReport != nil && !integrationReport.Valid {
+				publish("integration_gaps_detected", map[string]interface{}{
+					"wave":   waveNum,
+					"gaps":   len(integrationReport.Gaps),
+					"report": integrationReport,
+				})
+
+				// E26: Launch integration agent to wire gaps
+				intAgentErr := RunIntegrationAgent(ctx, RunIntegrationAgentOpts{
+					IMPLPath: opts.IMPLPath,
+					RepoPath: opts.RepoPath,
+					WaveNum:  waveNum,
+					Report:   integrationReport,
+					Model:    opts.WaveModel,
+				}, func(ev Event) { onEvent(ev) })
+				if intAgentErr != nil {
+					// Non-fatal: log but don't abort wave
+					publish("integration_agent_warning", map[string]string{
+						"error": intAgentErr.Error(),
+					})
+				}
+			}
+		}
+
 		if err := orch.UpdateIMPLStatus(waveNum); err != nil {
 			// Non-fatal: log but don't abort.
 			publish("update_status_failed", map[string]string{
@@ -1006,6 +1034,35 @@ func startWaveWithGate(ctx context.Context, opts RunWaveOpts, onEvent func(Event
 				return err
 			}
 		}
+
+		// E25: Post-wave integration validation
+		manifest, loadErr := protocol.Load(opts.IMPLPath)
+		if loadErr == nil {
+			integrationReport, intErr := protocol.ValidateIntegration(manifest, waveNum, opts.RepoPath)
+			if intErr == nil && integrationReport != nil && !integrationReport.Valid {
+				publish("integration_gaps_detected", map[string]interface{}{
+					"wave":   waveNum,
+					"gaps":   len(integrationReport.Gaps),
+					"report": integrationReport,
+				})
+
+				// E26: Launch integration agent to wire gaps
+				intAgentErr := RunIntegrationAgent(ctx, RunIntegrationAgentOpts{
+					IMPLPath: opts.IMPLPath,
+					RepoPath: opts.RepoPath,
+					WaveNum:  waveNum,
+					Report:   integrationReport,
+					Model:    opts.WaveModel,
+				}, func(ev Event) { onEvent(ev) })
+				if intAgentErr != nil {
+					// Non-fatal: log but don't abort wave
+					publish("integration_agent_warning", map[string]string{
+						"error": intAgentErr.Error(),
+					})
+				}
+			}
+		}
+
 		_ = orch.UpdateIMPLStatus(waveNum)
 
 		if i < len(waves)-1 && gateCh != nil {
