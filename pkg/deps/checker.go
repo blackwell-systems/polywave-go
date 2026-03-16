@@ -93,7 +93,7 @@ func CheckDeps(implPath string, wave int) (*ConflictReport, error) {
 
 	// Check for missing deps and version conflicts
 	for pkg, agentFiles := range importsByPackage {
-		lockPkg, inLockFile := lockFilePackages[pkg]
+		lockPkg, inLockFile := findLockPackage(lockFilePackages, pkg)
 
 		if !inLockFile {
 			// Missing dependency
@@ -138,6 +138,29 @@ func CheckDeps(implPath string, wave int) (*ConflictReport, error) {
 	}
 
 	return report, nil
+}
+
+// findLockPackage resolves an import path against the lock file packages.
+// Go import paths like "github.com/aws/aws-sdk-go-v2/service/bedrockruntime/types"
+// are sub-packages of module "github.com/aws/aws-sdk-go-v2" — the lock file only
+// records the module root. This function finds the longest matching module prefix.
+func findLockPackage(lockFilePackages map[string]PackageInfo, importPath string) (PackageInfo, bool) {
+	// Try exact match first
+	if pkg, ok := lockFilePackages[importPath]; ok {
+		return pkg, true
+	}
+	// Try prefix matching: find the longest module path that is a prefix of the import
+	var bestMatch PackageInfo
+	bestLen := 0
+	for modPath, pkg := range lockFilePackages {
+		if strings.HasPrefix(importPath, modPath+"/") || importPath == modPath {
+			if len(modPath) > bestLen {
+				bestMatch = pkg
+				bestLen = len(modPath)
+			}
+		}
+	}
+	return bestMatch, bestLen > 0
 }
 
 // DetectLockFiles scans repo root for lock files

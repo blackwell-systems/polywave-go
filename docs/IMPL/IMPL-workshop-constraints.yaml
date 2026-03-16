@@ -1,718 +1,760 @@
-# IMPL: workshop-constraints
-title: "Workshop Constraints: Tool-Level SAW Protocol Enforcement"
+title: 'Workshop Constraints: Tool-Level SAW Protocol Enforcement'
 feature_slug: workshop-constraints
 verdict: SUITABLE
-test_command: "go test ./..."
-lint_command: "go vet ./..."
-state: SCOUT_PENDING
-
-# Suitability Assessment
-# ----------------------
-# Verdict: SUITABLE
-#
-# 1. File decomposition: YES - Work decomposes into 5+ disjoint file groups:
-#    constraints type definition (new), middleware implementations (new),
-#    workshop constructors (new), backend integration (modify 2 files),
-#    engine plumbing (modify), and tests (new). No conflicting modifications.
-#
-# 2. Investigation-first: NO - All invariants (I1, I2, I5, I6) are well-specified
-#    in the protocol. The Workshop/middleware architecture is clear from code analysis.
-#    No unknown behavior to reproduce.
-#
-# 3. Interface discoverability: YES - The Constraints struct, middleware signatures,
-#    and WithConstraints constructor can be fully defined upfront. The data flows
-#    linearly: IMPL manifest -> engine -> backend.Config -> buildWorkshop -> middleware.
-#
-# 4. Pre-implementation status check:
-#    Total items: 4 invariants to enforce
-#    Already implemented (DONE): 0 (ReadOnly mode exists but is boolean, not constraint-based)
-#    Partially implemented (PARTIAL): 1 (I6 scout boundary validation exists in hooks/ but
-#      is post-execution, not tool-level; ReadOnly permission middleware pattern exists)
-#    Not implemented (TO-DO): 4 (I1 ownership, I2 freeze, I5 commit tracking, I6 role-scoped tools)
-#
-# 5. Parallelization value: HIGH - Go build+test cycle >30s for this repo.
-#    4 agents in Wave 1 with 2-3 files each, fully independent (all implement
-#    against the shared Constraints type). Wave 2 has 2 agents for integration.
-#    Clear speedup from parallel middleware implementation.
-#
-# Estimated times:
-# - Scout phase: ~8 min (dependency mapping, interface contracts)
-# - Agent execution: ~15 min (4 parallel agents wave 1 x 10 min, 2 parallel wave 2 x 8 min)
-# - Merge & verification: ~5 min
-# Total SAW time: ~28 min
-#
-# Sequential baseline: ~55 min (6 agents x ~9 min avg)
-# Time savings: ~27 min (~49% faster)
-# Recommendation: Clear speedup. Proceed.
-
 suitability_assessment: |
-  SUITABLE. The feature decomposes cleanly into independent middleware implementations
-  (I1, I2, I5, I6) that all consume a shared Constraints config type. The existing
-  middleware pattern (PermissionMiddleware, TimingMiddleware, WithPermissions, WithTiming)
-  provides a proven architecture to follow. Each invariant enforcement is a separate
-  middleware function with its own test file, enabling full parallelism in Wave 1.
-  Wave 2 integrates constraints into the backend clients and engine runner.
+    SUITABLE. The feature decomposes cleanly into independent middleware implementations
+    (I1, I2, I5, I6) that all consume a shared Constraints config type. The existing
+    middleware pattern (PermissionMiddleware, TimingMiddleware, WithPermissions, WithTiming)
+    provides a proven architecture to follow. Each invariant enforcement is a separate
+    middleware function with its own test file, enabling full parallelism in Wave 1.
+    Wave 2 integrates constraints into the backend clients and engine runner.
 
-  Partial implementation exists: ReadOnly bool on backend.Config and the
-  PermissionMiddleware/ReadOnlyTools pattern provide the scaffolding. The new work
-  extends this with file-level granularity (ownership lists, frozen paths) rather
-  than simple boolean gating.
-
-quality_gates:
-  level: standard
-  gates:
-    - type: build
-      command: "go build ./..."
-      required: true
-    - type: lint
-      command: "go vet ./..."
-      required: true
-    - type: test
-      command: "go test ./..."
-      required: true
-
-scaffolds:
-  - file_path: "pkg/tools/constraints.go"
-    contents: |
-      package tools
-
-      import "time"
-
-      // Constraints configures SAW protocol invariant enforcement for a Workshop.
-      // Passed from IMPL manifest -> engine -> backend -> Workshop middleware.
-      type Constraints struct {
-          // I1: File ownership enforcement
-          // Map of relative file paths this agent is allowed to write.
-          // Empty means no restriction (backward compatible).
-          OwnedFiles map[string]bool
-
-          // I2: Interface freeze enforcement
-          // Paths that are frozen after worktree creation.
-          // Write/Edit to these paths is blocked with structured error.
-          FrozenPaths map[string]bool
-          FreezeTime  *time.Time
-
-          // I5: Commit tracking
-          // When true, the workshop tracks git commit commands via bash tool.
-          TrackCommits bool
-
-          // I6: Role-based path restriction
-          // If non-empty, Write/Edit is restricted to paths matching these prefixes.
-          // Scout: ["docs/IMPL/IMPL-"]  Scaffold: scaffold file paths  Wave: uses OwnedFiles
-          AllowedPathPrefixes []string
-
-          // AgentRole for error messages: "scout" | "wave" | "scaffold"
-          AgentRole string
-          // AgentID for error messages (e.g. "A", "B")
-          AgentID string
-      }
-
-      // CommitTracker tracks git commit invocations for I5 enforcement.
-      type CommitTracker struct {
-          Count int
-      }
-    import_path: "github.com/blackwell-systems/scout-and-wave-go/pkg/tools"
-    status: "committed (7e181b7)"
-
-interface_contracts:
-  - name: Constraints
-    description: |
-      Shared config struct consumed by all constraint middleware. Flows from
-      engine -> backend.Config -> buildWorkshop. Must be defined before Wave 1
-      agents implement middleware against it.
-    definition: |
-      type Constraints struct {
-          OwnedFiles          map[string]bool
-          FrozenPaths         map[string]bool
-          FreezeTime          *time.Time
-          TrackCommits        bool
-          AllowedPathPrefixes []string
-          AgentRole           string
-          AgentID             string
-      }
-      type CommitTracker struct {
-          Count int
-      }
-    location: "pkg/tools/constraints.go"
-
-  - name: WithConstraints
-    description: |
-      Workshop constructor that applies all constraint middleware based on
-      the Constraints config. Returns (Workshop, *CommitTracker) so the
-      caller can check commit count after execution.
-    definition: |
-      func WithConstraints(w Workshop, c Constraints) (Workshop, *CommitTracker)
-    location: "pkg/tools/constraint_middleware.go"
-
-  - name: OwnershipMiddleware
-    description: |
-      Middleware that blocks write_file/edit_file for files not in OwnedFiles.
-      Returns structured error string to model (not Go error).
-    definition: |
-      func OwnershipMiddleware(toolName string, c Constraints) Middleware
-    location: "pkg/tools/constraint_middleware.go"
-
-  - name: FreezeMiddleware
-    description: |
-      Middleware that blocks write_file/edit_file for frozen paths after freeze time.
-      Returns structured error string to model.
-    definition: |
-      func FreezeMiddleware(toolName string, c Constraints) Middleware
-    location: "pkg/tools/constraint_middleware.go"
-
-  - name: BashConstraintMiddleware
-    description: |
-      Middleware for bash tool that: (1) detects write-like commands targeting
-      non-owned files, (2) detects git commit commands and increments CommitTracker.
-    definition: |
-      func BashConstraintMiddleware(c Constraints, tracker *CommitTracker) Middleware
-    location: "pkg/tools/constraint_middleware.go"
-
-  - name: RolePathMiddleware
-    description: |
-      Middleware that restricts write_file/edit_file to paths matching
-      AllowedPathPrefixes. Used for I6 Scout and Scaffold role enforcement.
-    definition: |
-      func RolePathMiddleware(toolName string, c Constraints) Middleware
-    location: "pkg/tools/constraint_middleware.go"
-
-  - name: "backend.Config.Constraints"
-    description: |
-      New field on backend.Config to carry constraints from engine to backend.
-    definition: |
-      // In backend.Config struct, add:
-      Constraints *tools.Constraints
-    location: "pkg/agent/backend/backend.go"
-
+    Partial implementation exists: ReadOnly bool on backend.Config and the
+    PermissionMiddleware/ReadOnlyTools pattern provide the scaffolding. The new work
+    extends this with file-level granularity (ownership lists, frozen paths) rather
+    than simple boolean gating.
+test_command: go test ./...
+lint_command: go vet ./...
 file_ownership:
-  - file: "pkg/tools/constraint_middleware.go"
-    agent: A
-    wave: 1
-    action: new
-  - file: "pkg/tools/constraint_middleware_test.go"
-    agent: A
-    wave: 1
-    action: new
-  - file: "pkg/tools/bash_constraints.go"
-    agent: B
-    wave: 1
-    action: new
-  - file: "pkg/tools/bash_constraints_test.go"
-    agent: B
-    wave: 1
-    action: new
-  - file: "pkg/tools/role_middleware.go"
-    agent: C
-    wave: 1
-    action: new
-  - file: "pkg/tools/role_middleware_test.go"
-    agent: C
-    wave: 1
-    action: new
-  - file: "pkg/tools/workshop_constrained.go"
-    agent: D
-    wave: 1
-    action: new
-  - file: "pkg/tools/workshop_constrained_test.go"
-    agent: D
-    wave: 1
-    action: new
-  - file: "pkg/agent/backend/backend.go"
-    agent: E
-    wave: 2
-    action: modify
-  - file: "pkg/agent/backend/bedrock/client.go"
-    agent: E
-    wave: 2
-    action: modify
-  - file: "pkg/agent/backend/api/client.go"
-    agent: E
-    wave: 2
-    action: modify
-  - file: "pkg/agent/backend/integration_constraints_test.go"
-    agent: E
-    wave: 2
-    action: new
-  - file: "pkg/engine/runner.go"
-    agent: F
-    wave: 2
-    action: modify
-  - file: "pkg/engine/constraints_test.go"
-    agent: F
-    wave: 2
-    action: new
-
+    - file: pkg/tools/constraint_middleware.go
+      agent: A
+      wave: 1
+      action: new
+    - file: pkg/tools/constraint_middleware_test.go
+      agent: A
+      wave: 1
+      action: new
+    - file: pkg/tools/bash_constraints.go
+      agent: B
+      wave: 1
+      action: new
+    - file: pkg/tools/bash_constraints_test.go
+      agent: B
+      wave: 1
+      action: new
+    - file: pkg/tools/role_middleware.go
+      agent: C
+      wave: 1
+      action: new
+    - file: pkg/tools/role_middleware_test.go
+      agent: C
+      wave: 1
+      action: new
+    - file: pkg/tools/workshop_constrained.go
+      agent: D
+      wave: 1
+      action: new
+    - file: pkg/tools/workshop_constrained_test.go
+      agent: D
+      wave: 1
+      action: new
+    - file: pkg/agent/backend/backend.go
+      agent: E
+      wave: 2
+      action: modify
+    - file: pkg/agent/backend/bedrock/client.go
+      agent: E
+      wave: 2
+      action: modify
+    - file: pkg/agent/backend/api/client.go
+      agent: E
+      wave: 2
+      action: modify
+    - file: pkg/agent/backend/integration_constraints_test.go
+      agent: E
+      wave: 2
+      action: new
+    - file: pkg/engine/runner.go
+      agent: F
+      wave: 2
+      action: modify
+    - file: pkg/engine/constraints_test.go
+      agent: F
+      wave: 2
+      action: new
+interface_contracts:
+    - name: Constraints
+      description: |
+        Shared config struct consumed by all constraint middleware. Flows from
+        engine -> backend.Config -> buildWorkshop. Must be defined before Wave 1
+        agents implement middleware against it.
+      definition: |
+        type Constraints struct {
+            OwnedFiles          map[string]bool
+            FrozenPaths         map[string]bool
+            FreezeTime          *time.Time
+            TrackCommits        bool
+            AllowedPathPrefixes []string
+            AgentRole           string
+            AgentID             string
+        }
+        type CommitTracker struct {
+            Count int
+        }
+      location: pkg/tools/constraints.go
+    - name: WithConstraints
+      description: |
+        Workshop constructor that applies all constraint middleware based on
+        the Constraints config. Returns (Workshop, *CommitTracker) so the
+        caller can check commit count after execution.
+      definition: |
+        func WithConstraints(w Workshop, c Constraints) (Workshop, *CommitTracker)
+      location: pkg/tools/constraint_middleware.go
+    - name: OwnershipMiddleware
+      description: |
+        Middleware that blocks write_file/edit_file for files not in OwnedFiles.
+        Returns structured error string to model (not Go error).
+      definition: |
+        func OwnershipMiddleware(toolName string, c Constraints) Middleware
+      location: pkg/tools/constraint_middleware.go
+    - name: FreezeMiddleware
+      description: |
+        Middleware that blocks write_file/edit_file for frozen paths after freeze time.
+        Returns structured error string to model.
+      definition: |
+        func FreezeMiddleware(toolName string, c Constraints) Middleware
+      location: pkg/tools/constraint_middleware.go
+    - name: BashConstraintMiddleware
+      description: |
+        Middleware for bash tool that: (1) detects write-like commands targeting
+        non-owned files, (2) detects git commit commands and increments CommitTracker.
+      definition: |
+        func BashConstraintMiddleware(c Constraints, tracker *CommitTracker) Middleware
+      location: pkg/tools/constraint_middleware.go
+    - name: RolePathMiddleware
+      description: |
+        Middleware that restricts write_file/edit_file to paths matching
+        AllowedPathPrefixes. Used for I6 Scout and Scaffold role enforcement.
+      definition: |
+        func RolePathMiddleware(toolName string, c Constraints) Middleware
+      location: pkg/tools/constraint_middleware.go
+    - name: backend.Config.Constraints
+      description: |
+        New field on backend.Config to carry constraints from engine to backend.
+      definition: |
+        // In backend.Config struct, add:
+        Constraints *tools.Constraints
+      location: pkg/agent/backend/backend.go
 waves:
-  - number: 1
-    agents:
-      - id: A
-        task: |
-          ## What to Implement
-
-          Implement I1 (File Ownership) and I2 (Interface Freeze) constraint middleware
-          for the write_file and edit_file tools. These middleware intercept tool execution
-          and return structured BLOCKED error strings to the model when violations occur.
-
-          ## Interfaces to Implement
-
-          Two middleware constructors in `pkg/tools/constraint_middleware.go`:
-
-          ```go
-          // OwnershipMiddleware blocks write_file/edit_file for files not in the agent's
-          // ownership list. If OwnedFiles is empty/nil, the middleware is a passthrough
-          // (backward compatible).
-          func OwnershipMiddleware(toolName string, c Constraints) Middleware
-
-          // FreezeMiddleware blocks write_file/edit_file for paths in FrozenPaths when
-          // FreezeTime is set. If FrozenPaths is empty/nil, the middleware is a passthrough.
-          func FreezeMiddleware(toolName string, c Constraints) Middleware
-          ```
-
-          OwnershipMiddleware behavior:
-          - Extract file_path from input map
-          - Resolve relative paths against execCtx.WorkDir
-          - Check if the resolved path (or its relative form) is in c.OwnedFiles
-          - If NOT owned, return string (not Go error): "BLOCKED: file <path> is not in your
-            ownership list. You own: [file1, file2, ...]"
-          - If owned or OwnedFiles is empty, call next.Execute()
-
-          FreezeMiddleware behavior:
-          - Extract file_path from input map
-          - Check if path matches any entry in c.FrozenPaths
-          - If frozen and c.FreezeTime is non-nil, return string:
-            "BLOCKED: file <path> is frozen (interface contract). Frozen at: <time>"
-          - If not frozen or FrozenPaths is empty, call next.Execute()
-
-          ## Interfaces to Call
-
-          - `Constraints` struct from scaffold file `pkg/tools/constraints.go`
-          - `Middleware` type from `pkg/tools/types.go`
-          - `executorFunc` adapter from `pkg/tools/middleware.go`
-          - `resolvePath` helper from `pkg/tools/executors.go`
-
-          ## Tests to Write
-
-          In `pkg/tools/constraint_middleware_test.go`:
-          1. TestOwnershipMiddleware_AllowsOwnedFile - write to owned file passes through
-          2. TestOwnershipMiddleware_BlocksUnownedFile - returns BLOCKED string with ownership list
-          3. TestOwnershipMiddleware_EmptyOwnership_Passthrough - nil OwnedFiles allows all writes
-          4. TestOwnershipMiddleware_RelativePath - relative path resolved against WorkDir
-          5. TestFreezeMiddleware_BlocksFrozenPath - returns BLOCKED string with freeze time
-          6. TestFreezeMiddleware_AllowsNonFrozenPath - non-frozen paths pass through
-          7. TestFreezeMiddleware_NoFreezeTime_Passthrough - nil FreezeTime disables enforcement
-          8. TestFreezeMiddleware_EmptyFrozenPaths_Passthrough - empty map allows all writes
-
-          ## Verification Gate
-
-          ```bash
-          go build ./pkg/tools/...
-          go vet ./pkg/tools/...
-          go test ./pkg/tools/ -run "TestOwnership|TestFreeze" -v
-          ```
-
-          ## Constraints
-
-          - Return BLOCKED strings to the model (not Go errors) so the model can adjust
-          - Follow the existing PermissionMiddleware pattern in middleware.go
-          - Only apply to write_file and edit_file tools (toolName check)
-          - Must be backward compatible: empty Constraints = no enforcement
-        files:
-          - "pkg/tools/constraint_middleware.go"
-          - "pkg/tools/constraint_middleware_test.go"
-        dependencies: []
-
-      - id: B
-        task: |
-          ## What to Implement
-
-          Implement I5 (Commit Tracking) and bash-specific constraint enforcement.
-          The bash tool needs special handling: (1) detect write-like shell commands
-          targeting non-owned files, and (2) detect `git commit` commands to track
-          commit count for I5 enforcement.
-
-          ## Interfaces to Implement
-
-          In `pkg/tools/bash_constraints.go`:
-
-          ```go
-          // BashConstraintMiddleware returns middleware for the bash tool that:
-          // 1. Detects write-like commands (>, >>, tee, sed -i, mv, cp) targeting
-          //    non-owned files and returns BLOCKED string
-          // 2. Detects git commit commands and increments tracker.Count
-          // If Constraints has empty OwnedFiles, write detection is skipped.
-          func BashConstraintMiddleware(c Constraints, tracker *CommitTracker) Middleware
-          ```
-
-          Write-like command detection (regex-based, best-effort):
-          - Redirect operators: `> file`, `>> file`
-          - Commands: `tee file`, `sed -i ... file`, `mv ... dest`, `cp ... dest`
-          - Extract target file path, check against c.OwnedFiles
-          - If not owned: "BLOCKED: bash command writes to <file> which is not in your ownership list"
-
-          Git commit detection:
-          - Match `git commit` (with optional flags) in the command string
-          - Increment tracker.Count atomically (use sync/atomic or mutex)
-          - Allow the command to proceed (don't block commits)
-
-          ## Interfaces to Call
-
-          - `Constraints` and `CommitTracker` from scaffold `pkg/tools/constraints.go`
-          - `Middleware`, `executorFunc` from `pkg/tools/types.go` and `pkg/tools/middleware.go`
-
-          ## Tests to Write
-
-          In `pkg/tools/bash_constraints_test.go`:
-          1. TestBashConstraint_BlocksRedirectToUnownedFile - `echo x > unowned.go` blocked
-          2. TestBashConstraint_AllowsRedirectToOwnedFile - `echo x > owned.go` passes
-          3. TestBashConstraint_BlocksSedInPlace - `sed -i 's/x/y/' unowned.go` blocked
-          4. TestBashConstraint_BlocksTee - `cat x | tee unowned.go` blocked
-          5. TestBashConstraint_TracksGitCommit - `git commit -m "msg"` increments counter
-          6. TestBashConstraint_TracksGitCommitAll - `git commit -am "msg"` increments counter
-          7. TestBashConstraint_NoTrackingWhenDisabled - TrackCommits=false skips tracking
-          8. TestBashConstraint_EmptyOwnership_AllowsAll - nil OwnedFiles skips write detection
-          9. TestBashConstraint_ReadCommandsPassThrough - `cat`, `ls`, `grep` always allowed
-
-          ## Verification Gate
-
-          ```bash
-          go build ./pkg/tools/...
-          go vet ./pkg/tools/...
-          go test ./pkg/tools/ -run "TestBashConstraint" -v
-          ```
-
-          ## Constraints
-
-          - Write detection is best-effort regex, not shell parsing. Cover common patterns.
-          - Git commit detection should match: `git commit`, `git commit -m`, `git commit -am`,
-            `git commit --amend`. Do NOT block the command, only count it.
-          - Use sync/atomic for CommitTracker.Count to be goroutine-safe.
-          - Return BLOCKED strings (not Go errors) for write violations.
-        files:
-          - "pkg/tools/bash_constraints.go"
-          - "pkg/tools/bash_constraints_test.go"
-        dependencies: []
-
-      - id: C
-        task: |
-          ## What to Implement
-
-          Implement I6 (Role Separation) path restriction middleware. This enforces that
-          Scout agents can only write to `docs/IMPL/IMPL-*.yaml`, Scaffold agents can
-          only write to scaffold file paths, and Wave agents use file ownership (handled
-          by Agent A's OwnershipMiddleware).
-
-          ## Interfaces to Implement
-
-          In `pkg/tools/role_middleware.go`:
-
-          ```go
-          // RolePathMiddleware blocks write_file/edit_file for paths that don't match
-          // any of the AllowedPathPrefixes. If AllowedPathPrefixes is empty, the
-          // middleware is a passthrough (Wave agents use OwnershipMiddleware instead).
-          func RolePathMiddleware(toolName string, c Constraints) Middleware
-          ```
-
-          Behavior:
-          - Extract file_path from input map
-          - If c.AllowedPathPrefixes is empty, passthrough (call next.Execute)
-          - Check if file_path has any prefix in c.AllowedPathPrefixes
-          - For Scout role: prefix is "docs/IMPL/IMPL-" and suffix must be ".yaml"
-          - If no prefix matches: "BLOCKED: <role> agent cannot write to <path>.
-            Allowed paths: [prefix1, prefix2, ...]"
-          - If matches, call next.Execute()
-
-          ## Interfaces to Call
-
-          - `Constraints` from scaffold `pkg/tools/constraints.go`
-          - `Middleware`, `executorFunc` from `pkg/tools/types.go` and `pkg/tools/middleware.go`
-
-          ## Tests to Write
-
-          In `pkg/tools/role_middleware_test.go`:
-          1. TestRolePath_ScoutAllowsIMPLYaml - Scout can write docs/IMPL/IMPL-foo.yaml
-          2. TestRolePath_ScoutBlocksSourceCode - Scout cannot write pkg/foo.go
-          3. TestRolePath_ScoutBlocksNonIMPLYaml - Scout cannot write docs/other.yaml
-          4. TestRolePath_ScaffoldAllowsScaffoldPaths - Scaffold can write configured paths
-          5. TestRolePath_ScaffoldBlocksOtherPaths - Scaffold cannot write non-scaffold paths
-          6. TestRolePath_EmptyPrefixes_Passthrough - No prefixes = no restriction
-          7. TestRolePath_OnlyAppliesToWriteTools - read_file is never restricted
-
-          ## Verification Gate
-
-          ```bash
-          go build ./pkg/tools/...
-          go vet ./pkg/tools/...
-          go test ./pkg/tools/ -run "TestRolePath" -v
-          ```
-
-          ## Constraints
-
-          - Use strings.HasPrefix for path matching (not full glob)
-          - The toolName parameter determines if this middleware applies: only "write_file"
-            and "edit_file". For other tools, always passthrough.
-          - Must be compatible with the existing IsValidScoutPath in pkg/hooks/scout_boundaries.go
-            (same logic, different enforcement point)
-        files:
-          - "pkg/tools/role_middleware.go"
-          - "pkg/tools/role_middleware_test.go"
-        dependencies: []
-
-      - id: D
-        task: |
-          ## What to Implement
-
-          Implement the `WithConstraints` constructor that composes all constraint
-          middleware into a single Workshop. This is the primary entry point that
-          backends call instead of building middleware individually.
-
-          ## Interfaces to Implement
-
-          In `pkg/tools/workshop_constrained.go`:
-
-          ```go
-          // WithConstraints returns a new Workshop with all constraint middleware applied
-          // based on the Constraints config. Returns the wrapped Workshop and a
-          // CommitTracker (non-nil only when c.TrackCommits is true).
-          //
-          // Middleware application order (outermost to innermost):
-          // 1. RolePathMiddleware (I6) - broadest filter first
-          // 2. FreezeMiddleware (I2) - frozen paths before ownership
-          // 3. OwnershipMiddleware (I1) - file-level ownership
-          // 4. BashConstraintMiddleware (I5+I1) - bash-specific (only on bash tool)
-          //
-          // If Constraints is zero-value, returns the original Workshop unchanged
-          // (backward compatible).
-          func WithConstraints(w Workshop, c Constraints) (Workshop, *CommitTracker)
-
-          // ConstrainedTools creates a Workshop with StandardTools and all constraints applied.
-          // Convenience function combining StandardTools + WithConstraints.
-          func ConstrainedTools(workDir string, c Constraints) (Workshop, *CommitTracker)
-          ```
-
-          ## Interfaces to Call
-
-          - `OwnershipMiddleware`, `FreezeMiddleware` from Agent A (constraint_middleware.go)
-          - `BashConstraintMiddleware` from Agent B (bash_constraints.go)
-          - `RolePathMiddleware` from Agent C (role_middleware.go)
-          - `Constraints`, `CommitTracker` from scaffold (constraints.go)
-          - `NewWorkshop`, `StandardTools` from existing code
-          - `Tool`, `Workshop` interface from types.go
-
-          ## Tests to Write
-
-          In `pkg/tools/workshop_constrained_test.go`:
-          1. TestWithConstraints_ZeroValue_Passthrough - empty Constraints returns original workshop
-          2. TestWithConstraints_OwnershipApplied - write to unowned file is blocked
-          3. TestWithConstraints_FreezeApplied - write to frozen file is blocked
-          4. TestWithConstraints_RoleApplied - Scout path restriction active
-          5. TestWithConstraints_BashTracking - git commit increments tracker
-          6. TestWithConstraints_CommitTracker_NilWhenDisabled - TrackCommits=false returns nil tracker
-          7. TestConstrainedTools_Integration - full StandardTools + constraints integration
-          8. TestWithConstraints_MultipleMiddleware_Order - ownership + freeze both apply correctly
-
-          ## Verification Gate
-
-          ```bash
-          go build ./pkg/tools/...
-          go vet ./pkg/tools/...
-          go test ./pkg/tools/ -run "TestWithConstraints|TestConstrainedTools" -v
-          ```
-
-          ## Constraints
-
-          - Zero-value Constraints MUST be a no-op (backward compatibility is critical)
-          - The CommitTracker is shared across all bash tool calls in a single agent execution
-          - Iterate over workshop.All(), apply appropriate middleware per tool name, re-register
-          - For bash tool: apply BashConstraintMiddleware instead of Ownership/Freeze middleware
-          - For write_file/edit_file: apply RolePath, Freeze, Ownership in that order
-          - For all other tools (read_file, glob, grep, list_directory): no constraint middleware
-        files:
-          - "pkg/tools/workshop_constrained.go"
-          - "pkg/tools/workshop_constrained_test.go"
-        dependencies: []
-
-  - number: 2
-    agents:
-      - id: E
-        task: |
-          ## What to Implement
-
-          Wire Constraints through the backend layer: add a Constraints field to
-          backend.Config, and update both Bedrock and API client buildWorkshop methods
-          to use WithConstraints when Constraints is non-nil.
-
-          ## Interfaces to Implement
-
-          No new exported functions. Modify existing code:
-
-          1. In `pkg/agent/backend/backend.go`, add to Config struct:
-          ```go
-          // Constraints, if non-nil, configures SAW protocol invariant enforcement
-          // (I1 file ownership, I2 interface freeze, I5 commit tracking, I6 role separation).
-          // When nil, no constraints are applied (backward compatible).
-          Constraints *tools.Constraints
-          ```
-
-          2. In `pkg/agent/backend/bedrock/client.go`:
-          - Add `commitTracker *tools.CommitTracker` field to Client struct
-          - In buildWorkshop: if c.cfg.Constraints != nil, call tools.WithConstraints
-            instead of just StandardTools/ReadOnlyTools
-          - Add `CommitCount() int` method that returns tracker count (0 if nil)
-
-          3. In `pkg/agent/backend/api/client.go`:
-          - Same changes as bedrock: commitTracker field, buildWorkshop update, CommitCount method
-
-          ## Interfaces to Call
-
-          - `tools.WithConstraints(w, *c.cfg.Constraints)` from Agent D
-          - `tools.Constraints` from scaffold
-          - `tools.CommitTracker` from scaffold
-          - Existing `tools.StandardTools`, `tools.ReadOnlyTools`, `tools.WithTiming`
-
-          ## Tests to Write
-
-          In `pkg/agent/backend/integration_constraints_test.go`:
-          1. TestBedrockBuildWorkshop_WithConstraints - verify constrained workshop created
-          2. TestBedrockBuildWorkshop_NilConstraints_Unchanged - nil = no constraints
-          3. TestAPIBuildWorkshop_WithConstraints - verify constrained workshop created
-          4. TestAPIBuildWorkshop_NilConstraints_Unchanged - nil = backward compatible
-          5. TestConfigConstraints_PropagatedToWorkshop - Constraints on Config reaches tools
-
-          ## Verification Gate
-
-          ```bash
-          go build ./pkg/agent/...
-          go vet ./pkg/agent/...
-          go test ./pkg/agent/backend/... -v
-          ```
-
-          ## Constraints
-
-          - Do NOT change the Backend interface signature
-          - ReadOnly mode must still work: if both ReadOnly and Constraints are set,
-            apply ReadOnly first (broader restriction), then Constraints
-          - Import cycle prevention: backend.go imports tools package (already exists),
-            this is safe. Do NOT import backend from tools.
-          - Preserve all existing buildWorkshop behavior (timing middleware, onToolCall)
-          - The commitTracker must be accessible after execution for I5 post-run check
-        files:
-          - "pkg/agent/backend/backend.go"
-          - "pkg/agent/backend/bedrock/client.go"
-          - "pkg/agent/backend/api/client.go"
-          - "pkg/agent/backend/integration_constraints_test.go"
-        dependencies:
-          - A
-          - B
-          - C
-          - D
-
-      - id: F
-        task: |
-          ## What to Implement
-
-          Wire Constraints from the IMPL manifest through the engine layer into
-          backend.Config when constructing runners for Scout, Wave, and Scaffold agents.
-          This is the top of the data flow: IMPL doc -> Constraints -> backend.Config.
-
-          ## Interfaces to Implement
-
-          No new exported functions. Modify existing code in `pkg/engine/runner.go`:
-
-          1. Add a helper function:
-          ```go
-          // buildConstraints constructs a tools.Constraints from the IMPL manifest
-          // for a specific agent in a specific role.
-          func buildConstraints(manifest *protocol.IMPLManifest, agentID string, role string) *tools.Constraints
-          ```
-
-          Behavior by role:
-          - "scout": AllowedPathPrefixes=["docs/IMPL/IMPL-"], no OwnedFiles, no freeze
-          - "scaffold": AllowedPathPrefixes from manifest.Scaffolds file paths, no OwnedFiles
-          - "wave": OwnedFiles from manifest.FileOwnership where Agent==agentID,
-            FrozenPaths from manifest.Scaffolds file paths + interface contract locations,
-            FreezeTime from manifest.WorktreesCreatedAt, TrackCommits=true
-
-          2. In RunScout: build scout constraints, pass via backend.Config to the runner
-          3. In RunScaffold: build scaffold constraints, pass via backend.Config
-          4. In StartWave/launchAgent path: this is in orchestrator.go, NOT in engine/runner.go.
-             Instead, add constraints to the RunWaveOpts or provide a helper that the
-             orchestrator can call. Add a new exported function:
-          ```go
-          // BuildWaveConstraints builds constraints for a wave agent from the IMPL manifest.
-          func BuildWaveConstraints(implPath string, agentID string) (*tools.Constraints, error)
-          ```
-
-          ## Interfaces to Call
-
-          - `protocol.Load(implPath)` to get manifest
-          - `protocol.IMPLManifest` fields: FileOwnership, Scaffolds, InterfaceContracts, WorktreesCreatedAt
-          - `tools.Constraints` struct from scaffold
-          - Existing `backend.Config` with new Constraints field from Agent E
-
-          ## Tests to Write
-
-          In `pkg/engine/constraints_test.go`:
-          1. TestBuildConstraints_ScoutRole - returns scout path prefixes, no ownership
-          2. TestBuildConstraints_ScaffoldRole - returns scaffold file paths as prefixes
-          3. TestBuildConstraints_WaveRole - returns owned files, frozen paths, commit tracking
-          4. TestBuildConstraints_WaveRole_FreezeTime - freeze time propagated from manifest
-          5. TestBuildConstraints_NilManifest - returns nil (backward compatible)
-          6. TestBuildWaveConstraints_Integration - loads manifest and builds constraints
-
-          ## Verification Gate
-
-          ```bash
-          go build ./pkg/engine/...
-          go vet ./pkg/engine/...
-          go test ./pkg/engine/ -run "TestBuildConstraints|TestBuildWaveConstraints" -v
-          ```
-
-          ## Constraints
-
-          - Do NOT modify pkg/orchestrator/ files (those are outside this agent's ownership)
-          - The orchestrator integration (calling BuildWaveConstraints in RunWave) will be
-            documented as a post-merge manual step or follow-up PR
-          - buildConstraints is unexported (internal helper), BuildWaveConstraints is exported
-          - Must handle missing/nil manifest gracefully (return nil = no constraints)
-          - Import tools package for Constraints type (no import cycle: engine -> tools is fine)
-        files:
-          - "pkg/engine/runner.go"
-          - "pkg/engine/constraints_test.go"
-        dependencies:
-          - A
-          - B
-          - C
-          - D
-
+    - number: 1
+      agents:
+        - id: A
+          task: |
+            ## What to Implement
+
+            Implement I1 (File Ownership) and I2 (Interface Freeze) constraint middleware
+            for the write_file and edit_file tools. These middleware intercept tool execution
+            and return structured BLOCKED error strings to the model when violations occur.
+
+            ## Interfaces to Implement
+
+            Two middleware constructors in `pkg/tools/constraint_middleware.go`:
+
+            ```go
+            // OwnershipMiddleware blocks write_file/edit_file for files not in the agent's
+            // ownership list. If OwnedFiles is empty/nil, the middleware is a passthrough
+            // (backward compatible).
+            func OwnershipMiddleware(toolName string, c Constraints) Middleware
+
+            // FreezeMiddleware blocks write_file/edit_file for paths in FrozenPaths when
+            // FreezeTime is set. If FrozenPaths is empty/nil, the middleware is a passthrough.
+            func FreezeMiddleware(toolName string, c Constraints) Middleware
+            ```
+
+            OwnershipMiddleware behavior:
+            - Extract file_path from input map
+            - Resolve relative paths against execCtx.WorkDir
+            - Check if the resolved path (or its relative form) is in c.OwnedFiles
+            - If NOT owned, return string (not Go error): "BLOCKED: file <path> is not in your
+              ownership list. You own: [file1, file2, ...]"
+            - If owned or OwnedFiles is empty, call next.Execute()
+
+            FreezeMiddleware behavior:
+            - Extract file_path from input map
+            - Check if path matches any entry in c.FrozenPaths
+            - If frozen and c.FreezeTime is non-nil, return string:
+              "BLOCKED: file <path> is frozen (interface contract). Frozen at: <time>"
+            - If not frozen or FrozenPaths is empty, call next.Execute()
+
+            ## Interfaces to Call
+
+            - `Constraints` struct from scaffold file `pkg/tools/constraints.go`
+            - `Middleware` type from `pkg/tools/types.go`
+            - `executorFunc` adapter from `pkg/tools/middleware.go`
+            - `resolvePath` helper from `pkg/tools/executors.go`
+
+            ## Tests to Write
+
+            In `pkg/tools/constraint_middleware_test.go`:
+            1. TestOwnershipMiddleware_AllowsOwnedFile - write to owned file passes through
+            2. TestOwnershipMiddleware_BlocksUnownedFile - returns BLOCKED string with ownership list
+            3. TestOwnershipMiddleware_EmptyOwnership_Passthrough - nil OwnedFiles allows all writes
+            4. TestOwnershipMiddleware_RelativePath - relative path resolved against WorkDir
+            5. TestFreezeMiddleware_BlocksFrozenPath - returns BLOCKED string with freeze time
+            6. TestFreezeMiddleware_AllowsNonFrozenPath - non-frozen paths pass through
+            7. TestFreezeMiddleware_NoFreezeTime_Passthrough - nil FreezeTime disables enforcement
+            8. TestFreezeMiddleware_EmptyFrozenPaths_Passthrough - empty map allows all writes
+
+            ## Verification Gate
+
+            ```bash
+            go build ./pkg/tools/...
+            go vet ./pkg/tools/...
+            go test ./pkg/tools/ -run "TestOwnership|TestFreeze" -v
+            ```
+
+            ## Constraints
+
+            - Return BLOCKED strings to the model (not Go errors) so the model can adjust
+            - Follow the existing PermissionMiddleware pattern in middleware.go
+            - Only apply to write_file and edit_file tools (toolName check)
+            - Must be backward compatible: empty Constraints = no enforcement
+          files:
+            - pkg/tools/constraint_middleware.go
+            - pkg/tools/constraint_middleware_test.go
+        - id: B
+          task: |
+            ## What to Implement
+
+            Implement I5 (Commit Tracking) and bash-specific constraint enforcement.
+            The bash tool needs special handling: (1) detect write-like shell commands
+            targeting non-owned files, and (2) detect `git commit` commands to track
+            commit count for I5 enforcement.
+
+            ## Interfaces to Implement
+
+            In `pkg/tools/bash_constraints.go`:
+
+            ```go
+            // BashConstraintMiddleware returns middleware for the bash tool that:
+            // 1. Detects write-like commands (>, >>, tee, sed -i, mv, cp) targeting
+            //    non-owned files and returns BLOCKED string
+            // 2. Detects git commit commands and increments tracker.Count
+            // If Constraints has empty OwnedFiles, write detection is skipped.
+            func BashConstraintMiddleware(c Constraints, tracker *CommitTracker) Middleware
+            ```
+
+            Write-like command detection (regex-based, best-effort):
+            - Redirect operators: `> file`, `>> file`
+            - Commands: `tee file`, `sed -i ... file`, `mv ... dest`, `cp ... dest`
+            - Extract target file path, check against c.OwnedFiles
+            - If not owned: "BLOCKED: bash command writes to <file> which is not in your ownership list"
+
+            Git commit detection:
+            - Match `git commit` (with optional flags) in the command string
+            - Increment tracker.Count atomically (use sync/atomic or mutex)
+            - Allow the command to proceed (don't block commits)
+
+            ## Interfaces to Call
+
+            - `Constraints` and `CommitTracker` from scaffold `pkg/tools/constraints.go`
+            - `Middleware`, `executorFunc` from `pkg/tools/types.go` and `pkg/tools/middleware.go`
+
+            ## Tests to Write
+
+            In `pkg/tools/bash_constraints_test.go`:
+            1. TestBashConstraint_BlocksRedirectToUnownedFile - `echo x > unowned.go` blocked
+            2. TestBashConstraint_AllowsRedirectToOwnedFile - `echo x > owned.go` passes
+            3. TestBashConstraint_BlocksSedInPlace - `sed -i 's/x/y/' unowned.go` blocked
+            4. TestBashConstraint_BlocksTee - `cat x | tee unowned.go` blocked
+            5. TestBashConstraint_TracksGitCommit - `git commit -m "msg"` increments counter
+            6. TestBashConstraint_TracksGitCommitAll - `git commit -am "msg"` increments counter
+            7. TestBashConstraint_NoTrackingWhenDisabled - TrackCommits=false skips tracking
+            8. TestBashConstraint_EmptyOwnership_AllowsAll - nil OwnedFiles skips write detection
+            9. TestBashConstraint_ReadCommandsPassThrough - `cat`, `ls`, `grep` always allowed
+
+            ## Verification Gate
+
+            ```bash
+            go build ./pkg/tools/...
+            go vet ./pkg/tools/...
+            go test ./pkg/tools/ -run "TestBashConstraint" -v
+            ```
+
+            ## Constraints
+
+            - Write detection is best-effort regex, not shell parsing. Cover common patterns.
+            - Git commit detection should match: `git commit`, `git commit -m`, `git commit -am`,
+              `git commit --amend`. Do NOT block the command, only count it.
+            - Use sync/atomic for CommitTracker.Count to be goroutine-safe.
+            - Return BLOCKED strings (not Go errors) for write violations.
+          files:
+            - pkg/tools/bash_constraints.go
+            - pkg/tools/bash_constraints_test.go
+        - id: C
+          task: |
+            ## What to Implement
+
+            Implement I6 (Role Separation) path restriction middleware. This enforces that
+            Scout agents can only write to `docs/IMPL/IMPL-*.yaml`, Scaffold agents can
+            only write to scaffold file paths, and Wave agents use file ownership (handled
+            by Agent A's OwnershipMiddleware).
+
+            ## Interfaces to Implement
+
+            In `pkg/tools/role_middleware.go`:
+
+            ```go
+            // RolePathMiddleware blocks write_file/edit_file for paths that don't match
+            // any of the AllowedPathPrefixes. If AllowedPathPrefixes is empty, the
+            // middleware is a passthrough (Wave agents use OwnershipMiddleware instead).
+            func RolePathMiddleware(toolName string, c Constraints) Middleware
+            ```
+
+            Behavior:
+            - Extract file_path from input map
+            - If c.AllowedPathPrefixes is empty, passthrough (call next.Execute)
+            - Check if file_path has any prefix in c.AllowedPathPrefixes
+            - For Scout role: prefix is "docs/IMPL/IMPL-" and suffix must be ".yaml"
+            - If no prefix matches: "BLOCKED: <role> agent cannot write to <path>.
+              Allowed paths: [prefix1, prefix2, ...]"
+            - If matches, call next.Execute()
+
+            ## Interfaces to Call
+
+            - `Constraints` from scaffold `pkg/tools/constraints.go`
+            - `Middleware`, `executorFunc` from `pkg/tools/types.go` and `pkg/tools/middleware.go`
+
+            ## Tests to Write
+
+            In `pkg/tools/role_middleware_test.go`:
+            1. TestRolePath_ScoutAllowsIMPLYaml - Scout can write docs/IMPL/IMPL-foo.yaml
+            2. TestRolePath_ScoutBlocksSourceCode - Scout cannot write pkg/foo.go
+            3. TestRolePath_ScoutBlocksNonIMPLYaml - Scout cannot write docs/other.yaml
+            4. TestRolePath_ScaffoldAllowsScaffoldPaths - Scaffold can write configured paths
+            5. TestRolePath_ScaffoldBlocksOtherPaths - Scaffold cannot write non-scaffold paths
+            6. TestRolePath_EmptyPrefixes_Passthrough - No prefixes = no restriction
+            7. TestRolePath_OnlyAppliesToWriteTools - read_file is never restricted
+
+            ## Verification Gate
+
+            ```bash
+            go build ./pkg/tools/...
+            go vet ./pkg/tools/...
+            go test ./pkg/tools/ -run "TestRolePath" -v
+            ```
+
+            ## Constraints
+
+            - Use strings.HasPrefix for path matching (not full glob)
+            - The toolName parameter determines if this middleware applies: only "write_file"
+              and "edit_file". For other tools, always passthrough.
+            - Must be compatible with the existing IsValidScoutPath in pkg/hooks/scout_boundaries.go
+              (same logic, different enforcement point)
+          files:
+            - pkg/tools/role_middleware.go
+            - pkg/tools/role_middleware_test.go
+        - id: D
+          task: |
+            ## What to Implement
+
+            Implement the `WithConstraints` constructor that composes all constraint
+            middleware into a single Workshop. This is the primary entry point that
+            backends call instead of building middleware individually.
+
+            ## Interfaces to Implement
+
+            In `pkg/tools/workshop_constrained.go`:
+
+            ```go
+            // WithConstraints returns a new Workshop with all constraint middleware applied
+            // based on the Constraints config. Returns the wrapped Workshop and a
+            // CommitTracker (non-nil only when c.TrackCommits is true).
+            //
+            // Middleware application order (outermost to innermost):
+            // 1. RolePathMiddleware (I6) - broadest filter first
+            // 2. FreezeMiddleware (I2) - frozen paths before ownership
+            // 3. OwnershipMiddleware (I1) - file-level ownership
+            // 4. BashConstraintMiddleware (I5+I1) - bash-specific (only on bash tool)
+            //
+            // If Constraints is zero-value, returns the original Workshop unchanged
+            // (backward compatible).
+            func WithConstraints(w Workshop, c Constraints) (Workshop, *CommitTracker)
+
+            // ConstrainedTools creates a Workshop with StandardTools and all constraints applied.
+            // Convenience function combining StandardTools + WithConstraints.
+            func ConstrainedTools(workDir string, c Constraints) (Workshop, *CommitTracker)
+            ```
+
+            ## Interfaces to Call
+
+            - `OwnershipMiddleware`, `FreezeMiddleware` from Agent A (constraint_middleware.go)
+            - `BashConstraintMiddleware` from Agent B (bash_constraints.go)
+            - `RolePathMiddleware` from Agent C (role_middleware.go)
+            - `Constraints`, `CommitTracker` from scaffold (constraints.go)
+            - `NewWorkshop`, `StandardTools` from existing code
+            - `Tool`, `Workshop` interface from types.go
+
+            ## Tests to Write
+
+            In `pkg/tools/workshop_constrained_test.go`:
+            1. TestWithConstraints_ZeroValue_Passthrough - empty Constraints returns original workshop
+            2. TestWithConstraints_OwnershipApplied - write to unowned file is blocked
+            3. TestWithConstraints_FreezeApplied - write to frozen file is blocked
+            4. TestWithConstraints_RoleApplied - Scout path restriction active
+            5. TestWithConstraints_BashTracking - git commit increments tracker
+            6. TestWithConstraints_CommitTracker_NilWhenDisabled - TrackCommits=false returns nil tracker
+            7. TestConstrainedTools_Integration - full StandardTools + constraints integration
+            8. TestWithConstraints_MultipleMiddleware_Order - ownership + freeze both apply correctly
+
+            ## Verification Gate
+
+            ```bash
+            go build ./pkg/tools/...
+            go vet ./pkg/tools/...
+            go test ./pkg/tools/ -run "TestWithConstraints|TestConstrainedTools" -v
+            ```
+
+            ## Constraints
+
+            - Zero-value Constraints MUST be a no-op (backward compatibility is critical)
+            - The CommitTracker is shared across all bash tool calls in a single agent execution
+            - Iterate over workshop.All(), apply appropriate middleware per tool name, re-register
+            - For bash tool: apply BashConstraintMiddleware instead of Ownership/Freeze middleware
+            - For write_file/edit_file: apply RolePath, Freeze, Ownership in that order
+            - For all other tools (read_file, glob, grep, list_directory): no constraint middleware
+          files:
+            - pkg/tools/workshop_constrained.go
+            - pkg/tools/workshop_constrained_test.go
+      base_commit: 824aad853abcb0e6dd3f3adc1c230b031aa6722b
+    - number: 2
+      agents:
+        - id: E
+          task: |
+            ## What to Implement
+
+            Wire Constraints through the backend layer: add a Constraints field to
+            backend.Config, and update both Bedrock and API client buildWorkshop methods
+            to use WithConstraints when Constraints is non-nil.
+
+            ## Interfaces to Implement
+
+            No new exported functions. Modify existing code:
+
+            1. In `pkg/agent/backend/backend.go`, add to Config struct:
+            ```go
+            // Constraints, if non-nil, configures SAW protocol invariant enforcement
+            // (I1 file ownership, I2 interface freeze, I5 commit tracking, I6 role separation).
+            // When nil, no constraints are applied (backward compatible).
+            Constraints *tools.Constraints
+            ```
+
+            2. In `pkg/agent/backend/bedrock/client.go`:
+            - Add `commitTracker *tools.CommitTracker` field to Client struct
+            - In buildWorkshop: if c.cfg.Constraints != nil, call tools.WithConstraints
+              instead of just StandardTools/ReadOnlyTools
+            - Add `CommitCount() int` method that returns tracker count (0 if nil)
+
+            3. In `pkg/agent/backend/api/client.go`:
+            - Same changes as bedrock: commitTracker field, buildWorkshop update, CommitCount method
+
+            ## Interfaces to Call
+
+            - `tools.WithConstraints(w, *c.cfg.Constraints)` from Agent D
+            - `tools.Constraints` from scaffold
+            - `tools.CommitTracker` from scaffold
+            - Existing `tools.StandardTools`, `tools.ReadOnlyTools`, `tools.WithTiming`
+
+            ## Tests to Write
+
+            In `pkg/agent/backend/integration_constraints_test.go`:
+            1. TestBedrockBuildWorkshop_WithConstraints - verify constrained workshop created
+            2. TestBedrockBuildWorkshop_NilConstraints_Unchanged - nil = no constraints
+            3. TestAPIBuildWorkshop_WithConstraints - verify constrained workshop created
+            4. TestAPIBuildWorkshop_NilConstraints_Unchanged - nil = backward compatible
+            5. TestConfigConstraints_PropagatedToWorkshop - Constraints on Config reaches tools
+
+            ## Verification Gate
+
+            ```bash
+            go build ./pkg/agent/...
+            go vet ./pkg/agent/...
+            go test ./pkg/agent/backend/... -v
+            ```
+
+            ## Constraints
+
+            - Do NOT change the Backend interface signature
+            - ReadOnly mode must still work: if both ReadOnly and Constraints are set,
+              apply ReadOnly first (broader restriction), then Constraints
+            - Import cycle prevention: backend.go imports tools package (already exists),
+              this is safe. Do NOT import backend from tools.
+            - Preserve all existing buildWorkshop behavior (timing middleware, onToolCall)
+            - The commitTracker must be accessible after execution for I5 post-run check
+          files:
+            - pkg/agent/backend/backend.go
+            - pkg/agent/backend/bedrock/client.go
+            - pkg/agent/backend/api/client.go
+            - pkg/agent/backend/integration_constraints_test.go
+          dependencies:
+            - A
+            - B
+            - C
+            - D
+        - id: F
+          task: |
+            ## What to Implement
+
+            Wire Constraints from the IMPL manifest through the engine layer into
+            backend.Config when constructing runners for Scout, Wave, and Scaffold agents.
+            This is the top of the data flow: IMPL doc -> Constraints -> backend.Config.
+
+            ## Interfaces to Implement
+
+            No new exported functions. Modify existing code in `pkg/engine/runner.go`:
+
+            1. Add a helper function:
+            ```go
+            // buildConstraints constructs a tools.Constraints from the IMPL manifest
+            // for a specific agent in a specific role.
+            func buildConstraints(manifest *protocol.IMPLManifest, agentID string, role string) *tools.Constraints
+            ```
+
+            Behavior by role:
+            - "scout": AllowedPathPrefixes=["docs/IMPL/IMPL-"], no OwnedFiles, no freeze
+            - "scaffold": AllowedPathPrefixes from manifest.Scaffolds file paths, no OwnedFiles
+            - "wave": OwnedFiles from manifest.FileOwnership where Agent==agentID,
+              FrozenPaths from manifest.Scaffolds file paths + interface contract locations,
+              FreezeTime from manifest.WorktreesCreatedAt, TrackCommits=true
+
+            2. In RunScout: build scout constraints, pass via backend.Config to the runner
+            3. In RunScaffold: build scaffold constraints, pass via backend.Config
+            4. In StartWave/launchAgent path: this is in orchestrator.go, NOT in engine/runner.go.
+               Instead, add constraints to the RunWaveOpts or provide a helper that the
+               orchestrator can call. Add a new exported function:
+            ```go
+            // BuildWaveConstraints builds constraints for a wave agent from the IMPL manifest.
+            func BuildWaveConstraints(implPath string, agentID string) (*tools.Constraints, error)
+            ```
+
+            ## Interfaces to Call
+
+            - `protocol.Load(implPath)` to get manifest
+            - `protocol.IMPLManifest` fields: FileOwnership, Scaffolds, InterfaceContracts, WorktreesCreatedAt
+            - `tools.Constraints` struct from scaffold
+            - Existing `backend.Config` with new Constraints field from Agent E
+
+            ## Tests to Write
+
+            In `pkg/engine/constraints_test.go`:
+            1. TestBuildConstraints_ScoutRole - returns scout path prefixes, no ownership
+            2. TestBuildConstraints_ScaffoldRole - returns scaffold file paths as prefixes
+            3. TestBuildConstraints_WaveRole - returns owned files, frozen paths, commit tracking
+            4. TestBuildConstraints_WaveRole_FreezeTime - freeze time propagated from manifest
+            5. TestBuildConstraints_NilManifest - returns nil (backward compatible)
+            6. TestBuildWaveConstraints_Integration - loads manifest and builds constraints
+
+            ## Verification Gate
+
+            ```bash
+            go build ./pkg/engine/...
+            go vet ./pkg/engine/...
+            go test ./pkg/engine/ -run "TestBuildConstraints|TestBuildWaveConstraints" -v
+            ```
+
+            ## Constraints
+
+            - Do NOT modify pkg/orchestrator/ files (those are outside this agent's ownership)
+            - The orchestrator integration (calling BuildWaveConstraints in RunWave) will be
+              documented as a post-merge manual step or follow-up PR
+            - buildConstraints is unexported (internal helper), BuildWaveConstraints is exported
+            - Must handle missing/nil manifest gracefully (return nil = no constraints)
+            - Import tools package for Constraints type (no import cycle: engine -> tools is fine)
+          files:
+            - pkg/engine/runner.go
+            - pkg/engine/constraints_test.go
+          dependencies:
+            - A
+            - B
+            - C
+            - D
+      base_commit: 77da48205f91b4b1431cc53f71895146fdc10f82
+quality_gates:
+    level: standard
+    gates:
+        - type: build
+          command: go build ./...
+          required: true
+        - type: lint
+          command: go vet ./...
+          required: true
+        - type: test
+          command: go test ./...
+          required: true
+scaffolds:
+    - file_path: pkg/tools/constraints.go
+      contents: |
+        package tools
+
+        import "time"
+
+        // Constraints configures SAW protocol invariant enforcement for a Workshop.
+        // Passed from IMPL manifest -> engine -> backend -> Workshop middleware.
+        type Constraints struct {
+            // I1: File ownership enforcement
+            // Map of relative file paths this agent is allowed to write.
+            // Empty means no restriction (backward compatible).
+            OwnedFiles map[string]bool
+
+            // I2: Interface freeze enforcement
+            // Paths that are frozen after worktree creation.
+            // Write/Edit to these paths is blocked with structured error.
+            FrozenPaths map[string]bool
+            FreezeTime  *time.Time
+
+            // I5: Commit tracking
+            // When true, the workshop tracks git commit commands via bash tool.
+            TrackCommits bool
+
+            // I6: Role-based path restriction
+            // If non-empty, Write/Edit is restricted to paths matching these prefixes.
+            // Scout: ["docs/IMPL/IMPL-"]  Scaffold: scaffold file paths  Wave: uses OwnedFiles
+            AllowedPathPrefixes []string
+
+            // AgentRole for error messages: "scout" | "wave" | "scaffold"
+            AgentRole string
+            // AgentID for error messages (e.g. "A", "B")
+            AgentID string
+        }
+
+        // CommitTracker tracks git commit invocations for I5 enforcement.
+        type CommitTracker struct {
+            Count int
+        }
+      import_path: github.com/blackwell-systems/scout-and-wave-go/pkg/tools
+      status: committed (7e181b7)
+completion_reports:
+    A:
+        status: complete
+        branch: wave1-agent-A
+        commit: a8ff4f5
+        files_changed:
+            - pkg/tools/constraint_middleware.go
+            - pkg/tools/constraint_middleware_test.go
+        files_created:
+            - pkg/tools/constraint_middleware.go
+            - pkg/tools/constraint_middleware_test.go
+        tests_added:
+            - TestOwnershipMiddleware_AllowsOwnedFile
+            - TestOwnershipMiddleware_BlocksUnownedFile
+            - TestOwnershipMiddleware_EmptyOwnership_Passthrough
+            - TestOwnershipMiddleware_RelativePath
+            - TestFreezeMiddleware_BlocksFrozenPath
+            - TestFreezeMiddleware_AllowsNonFrozenPath
+            - TestFreezeMiddleware_NoFreezeTime_Passthrough
+            - TestFreezeMiddleware_EmptyFrozenPaths_Passthrough
+        verification: PASS
+    B:
+        status: complete
+        branch: wave1-agent-B
+        commit: 208ec45
+        files_changed:
+            - pkg/tools/bash_constraints.go
+            - pkg/tools/bash_constraints_test.go
+        files_created:
+            - pkg/tools/bash_constraints.go
+            - pkg/tools/bash_constraints_test.go
+        tests_added:
+            - TestBashConstraint_BlocksRedirectToUnownedFile
+            - TestBashConstraint_AllowsRedirectToOwnedFile
+            - TestBashConstraint_BlocksSedInPlace
+            - TestBashConstraint_BlocksTee
+            - TestBashConstraint_TracksGitCommit
+            - TestBashConstraint_TracksGitCommitAll
+            - TestBashConstraint_NoTrackingWhenDisabled
+            - TestBashConstraint_EmptyOwnership_AllowsAll
+            - TestBashConstraint_ReadCommandsPassThrough
+        verification: PASS
+    C:
+        status: complete
+        branch: wave1-agent-C
+        commit: d0fee63
+        files_changed:
+            - pkg/tools/role_middleware.go
+            - pkg/tools/role_middleware_test.go
+        files_created:
+            - pkg/tools/role_middleware.go
+            - pkg/tools/role_middleware_test.go
+        tests_added:
+            - TestRolePath_ScoutAllowsIMPLYaml
+            - TestRolePath_ScoutBlocksSourceCode
+            - TestRolePath_ScoutBlocksNonIMPLYaml
+            - TestRolePath_ScaffoldAllowsScaffoldPaths
+            - TestRolePath_ScaffoldBlocksOtherPaths
+            - TestRolePath_EmptyPrefixes_Passthrough
+            - TestRolePath_OnlyAppliesToWriteTools
+        verification: PASS
+    D:
+        status: complete
+        branch: wave1-agent-D
+        commit: bce458e
+        files_changed:
+            - pkg/tools/workshop_constrained.go
+            - pkg/tools/workshop_constrained_test.go
+        files_created:
+            - pkg/tools/workshop_constrained.go
+            - pkg/tools/workshop_constrained_test.go
+        tests_added:
+            - TestWithConstraints_ZeroValue_Passthrough
+            - TestWithConstraints_OwnershipApplied
+            - TestWithConstraints_FreezeApplied
+            - TestWithConstraints_RoleApplied
+            - TestWithConstraints_BashTracking
+            - TestWithConstraints_CommitTracker_NilWhenDisabled
+            - TestConstrainedTools_Integration
+            - TestWithConstraints_MultipleMiddleware_Order
+            - TestWithConstraints_ReadToolsUnconstrained
+            - TestWithConstraints_BashToolNotGetWriteMiddleware
+        verification: PASS
+    E:
+        status: complete
+    F:
+        status: complete
+        branch: wave2-agent-F
+        commit: b155f8a
+        files_changed:
+            - pkg/engine/constraints.go
+            - pkg/engine/constraints_test.go
+        files_created:
+            - pkg/engine/constraints.go
+            - pkg/engine/constraints_test.go
+        tests_added:
+            - TestBuildConstraints_ScoutRole
+            - TestBuildConstraints_ScaffoldRole
+            - TestBuildConstraints_WaveRole
+            - TestBuildConstraints_WaveRole_FreezeTime
+            - TestBuildConstraints_NilManifest
+            - TestBuildWaveConstraints_Integration
+            - TestBuildWaveConstraints_Integration_BadPath
+        verification: PASS
+        notes: buildConstraints unexported helper + BuildWaveConstraints exported. All 7 tests pass. backend.Config.Constraints wiring deferred to post-merge with Agent E.
 pre_mortem:
-  overall_risk: medium
-  rows:
-    - scenario: "Bash write detection regex misses edge cases (heredocs, subshells, pipes)"
-      likelihood: medium
-      impact: low
-      mitigation: "Bash constraint is best-effort by design. Document known limitations. The Workshop IS the executor, so even imperfect regex is better than no enforcement."
-    - scenario: "Backward compatibility regression - zero-value Constraints changes behavior"
-      likelihood: low
-      impact: high
-      mitigation: "Agent D tests zero-value passthrough explicitly. All existing tests must pass unchanged since no Constraints are set."
-    - scenario: "Import cycle between tools and backend packages"
-      likelihood: low
-      impact: high
-      mitigation: "Data flows one direction: backend imports tools (already established). Constraints is defined in tools package. No reverse dependency."
-    - scenario: "CommitTracker not accessible after RunStreamingWithTools returns"
-      likelihood: medium
-      impact: medium
-      mitigation: "Agent E adds CommitCount() method to both Client types. Engine layer checks this after execution completes."
-
+    overall_risk: medium
+    rows:
+        - scenario: Bash write detection regex misses edge cases (heredocs, subshells, pipes)
+          likelihood: medium
+          impact: low
+          mitigation: Bash constraint is best-effort by design. Document known limitations. The Workshop IS the executor, so even imperfect regex is better than no enforcement.
+        - scenario: Backward compatibility regression - zero-value Constraints changes behavior
+          likelihood: low
+          impact: high
+          mitigation: Agent D tests zero-value passthrough explicitly. All existing tests must pass unchanged since no Constraints are set.
+        - scenario: Import cycle between tools and backend packages
+          likelihood: low
+          impact: high
+          mitigation: 'Data flows one direction: backend imports tools (already established). Constraints is defined in tools package. No reverse dependency.'
+        - scenario: CommitTracker not accessible after RunStreamingWithTools returns
+          likelihood: medium
+          impact: medium
+          mitigation: Agent E adds CommitCount() method to both Client types. Engine layer checks this after execution completes.
 known_issues:
-  - title: "Orchestrator integration deferred"
-    description: |
-      The orchestrator's RunWave/launchAgent in pkg/orchestrator/orchestrator.go
-      needs to call BuildWaveConstraints and pass constraints through backend.Config.
-      This is NOT included in this IMPL because orchestrator.go is a high-traffic
-      file with complex concurrency. It should be a small follow-up change after
-      the constraint system is merged and tested.
-    status: "By design - follow-up PR"
-    workaround: "Agent F provides BuildWaveConstraints as an exported function ready for integration"
-
-completion_reports: {}
+    - title: Orchestrator integration deferred
+      description: |
+        The orchestrator's RunWave/launchAgent in pkg/orchestrator/orchestrator.go
+        needs to call BuildWaveConstraints and pass constraints through backend.Config.
+        This is NOT included in this IMPL because orchestrator.go is a high-traffic
+        file with complex concurrency. It should be a small follow-up change after
+        the constraint system is merged and tested.
+      status: By design - follow-up PR
+      workaround: Agent F provides BuildWaveConstraints as an exported function ready for integration
+state: WAVE_PENDING

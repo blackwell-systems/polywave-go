@@ -128,6 +128,42 @@ func TestNormalizePackageName(t *testing.T) {
 	}
 }
 
+func TestFindLockPackage_PrefixMatch(t *testing.T) {
+	lockPkgs := map[string]PackageInfo{
+		"github.com/aws/aws-sdk-go-v2":           {Name: "github.com/aws/aws-sdk-go-v2", Version: "v1.30.0"},
+		"github.com/anthropics/anthropic-sdk-go":  {Name: "github.com/anthropics/anthropic-sdk-go", Version: "v0.2.0"},
+		"github.com/blackwell-systems/scout-go":   {Name: "github.com/blackwell-systems/scout-go", Version: "v0.1.0"},
+	}
+
+	tests := []struct {
+		importPath string
+		wantFound  bool
+		wantModule string
+	}{
+		// Exact match
+		{"github.com/aws/aws-sdk-go-v2", true, "github.com/aws/aws-sdk-go-v2"},
+		// Sub-package match (the bug this fixes)
+		{"github.com/aws/aws-sdk-go-v2/service/bedrockruntime/types", true, "github.com/aws/aws-sdk-go-v2"},
+		{"github.com/aws/aws-sdk-go-v2/aws", true, "github.com/aws/aws-sdk-go-v2"},
+		{"github.com/anthropics/anthropic-sdk-go/option", true, "github.com/anthropics/anthropic-sdk-go"},
+		{"github.com/anthropics/anthropic-sdk-go/packages/param", true, "github.com/anthropics/anthropic-sdk-go"},
+		// No match
+		{"github.com/unknown/package", false, ""},
+		// Must not match partial module names (aws-sdk-go-v2-extra is not aws-sdk-go-v2)
+		{"github.com/aws/aws-sdk-go-v2-extra/foo", false, ""},
+	}
+
+	for _, tt := range tests {
+		pkg, found := findLockPackage(lockPkgs, tt.importPath)
+		if found != tt.wantFound {
+			t.Errorf("findLockPackage(%q) found=%v, want %v", tt.importPath, found, tt.wantFound)
+		}
+		if found && pkg.Name != tt.wantModule {
+			t.Errorf("findLockPackage(%q) module=%q, want %q", tt.importPath, pkg.Name, tt.wantModule)
+		}
+	}
+}
+
 func TestCheckDeps_MissingDeps(t *testing.T) {
 	// This would require mocking the analyzer package
 	// For now, we test the structure is correct
