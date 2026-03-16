@@ -137,6 +137,41 @@ This eliminates the ~10s latency of agents calling extract-context at startup.`,
 				return fmt.Errorf("failed to write brief: %w", err)
 			}
 
+			// Collect owned files from both agent.Files and file_ownership table.
+			// Many IMPL docs only populate file_ownership, so we merge both sources.
+			ownedSet := make(map[string]struct{})
+			for _, f := range agentFiles {
+				ownedSet[f] = struct{}{}
+			}
+			for _, fo := range doc.FileOwnership {
+				if fo.Agent == agentID && fo.Wave == waveNum {
+					ownedSet[fo.File] = struct{}{}
+				}
+			}
+			ownedFiles := make([]string, 0, len(ownedSet))
+			for f := range ownedSet {
+				ownedFiles = append(ownedFiles, f)
+			}
+
+			// Write .saw-ownership.json to the same directory as the brief.
+			// The check_wave_ownership PreToolUse hook reads this at write time.
+			type ownershipManifest struct {
+				Agent      string   `json:"agent"`
+				Wave       int      `json:"wave"`
+				ImplDoc    string   `json:"impl_doc"`
+				OwnedFiles []string `json:"owned_files"`
+			}
+			ownershipData, _ := json.MarshalIndent(ownershipManifest{
+				Agent:      agentID,
+				Wave:       waveNum,
+				ImplDoc:    manifestPath,
+				OwnedFiles: ownedFiles,
+			}, "", "  ")
+			ownershipPath := filepath.Join(filepath.Dir(briefPath), ".saw-ownership.json")
+			if err := os.WriteFile(ownershipPath, ownershipData, 0644); err != nil {
+				return fmt.Errorf("failed to write ownership manifest: %w", err)
+			}
+
 			// Initialize journal observer
 			fullAgentID := fmt.Sprintf("wave%d-agent-%s", waveNum, agentID)
 			observer, err := journal.NewObserver(projectRoot, fullAgentID)
