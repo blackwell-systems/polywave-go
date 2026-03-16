@@ -125,20 +125,20 @@ func mergeAgentsSingleRepo(manifestPath string, waveNum int, repoDir string, man
 
 	// Merge each agent branch
 	for _, agent := range targetWave.Agents {
-		// Check if agent already merged (idempotency)
-		if mergeLog.IsMerged(agent.ID) {
-			// Agent already merged - skip
+		branch := fmt.Sprintf("wave%d-agent-%s", waveNum, agent.ID)
+		// Check if agent already merged (idempotency): merge log AND git history agree.
+		// Trusting only the log caused data loss when the log had a stale entry and the
+		// branch was deleted during cleanup before the actual merge happened.
+		if mergeLog.IsMerged(agent.ID) && git.IsAncestor(repoDir, branch, "HEAD") {
 			status := MergeStatus{
 				Agent:   agent.ID,
-				Branch:  fmt.Sprintf("wave%d-agent-%s", waveNum, agent.ID),
+				Branch:  branch,
 				Success: true,
 				Error:   "already merged (skipped)",
 			}
 			result.Merges = append(result.Merges, status)
 			continue
 		}
-
-		branch := fmt.Sprintf("wave%d-agent-%s", waveNum, agent.ID)
 
 		// Build commit message prefix
 		prefix := fmt.Sprintf("Merge wave%d-agent-%s: ", waveNum, agent.ID)
@@ -232,20 +232,18 @@ func mergeAgentsMultiRepo(manifestPath string, waveNum int, manifest *IMPLManife
 
 		// Merge agents in this repo
 		for _, agent := range agents {
-			// Check if agent already merged (idempotency)
-			if mergeLog.IsMerged(agent.ID) {
-				// Agent already merged - skip
+			branch := fmt.Sprintf("wave%d-agent-%s", waveNum, agent.ID)
+			// Check if agent already merged (idempotency): merge log AND git history agree.
+			if mergeLog.IsMerged(agent.ID) && git.IsAncestor(absRepoDir, branch, "HEAD") {
 				status := MergeStatus{
 					Agent:   agent.ID,
-					Branch:  fmt.Sprintf("wave%d-agent-%s", waveNum, agent.ID),
+					Branch:  branch,
 					Success: true,
 					Error:   "already merged (skipped)",
 				}
 				result.Merges = append(result.Merges, status)
 				continue
 			}
-
-			branch := fmt.Sprintf("wave%d-agent-%s", waveNum, agent.ID)
 
 			// Build commit message
 			prefix := fmt.Sprintf("Merge wave%d-agent-%s: ", waveNum, agent.ID)

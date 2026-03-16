@@ -132,6 +132,13 @@ func RevParse(repoPath, ref string) (string, error) {
 	return strings.TrimSpace(out), nil
 }
 
+// IsAncestor returns true if commit is an ancestor of ref (i.e. already merged).
+// Uses git merge-base --is-ancestor which exits 0 if true, 1 if false.
+func IsAncestor(repoPath, commit, ref string) bool {
+	_, err := Run(repoPath, "merge-base", "--is-ancestor", commit, ref)
+	return err == nil
+}
+
 // DiffNameOnly returns a list of file paths that differ between fromRef and toRef
 // in the repository at repoPath.
 func DiffNameOnly(repoPath, fromRef, toRef string) ([]string, error) {

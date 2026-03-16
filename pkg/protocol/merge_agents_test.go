@@ -4,6 +4,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -417,11 +418,20 @@ func TestMergeAgents_SkipsAlreadyMergedAgents(t *testing.T) {
 	}
 	manifestPath := createManifest(t, repoDir, waves)
 
+	// Actually merge agent A so git confirms it's an ancestor of HEAD.
+	// The idempotency check requires BOTH the merge log AND git history to agree.
+	cmd := exec.Command("git", "-C", repoDir, "merge", "--no-ff", "-m", "Merge wave1-agent-A", "wave1-agent-A")
+	if err := cmd.Run(); err != nil {
+		t.Fatalf("failed to merge agent A: %v", err)
+	}
+	mergeSHAOutput, _ := exec.Command("git", "-C", repoDir, "rev-parse", "HEAD").Output()
+	mergeSHA := strings.TrimSpace(string(mergeSHAOutput))
+
 	// Pre-populate merge-log with agent A already merged
 	mergeLog := &MergeLog{
 		Wave: 1,
 		Merges: []MergeEntry{
-			{Agent: "A", MergeSHA: "abc123", Timestamp: time.Time{}},
+			{Agent: "A", MergeSHA: mergeSHA, Timestamp: time.Time{}},
 		},
 	}
 	if err := SaveMergeLog(manifestPath, 1, mergeLog); err != nil {
