@@ -1035,6 +1035,60 @@ func TestFixGateTypes_AllValid(t *testing.T) {
 	}
 }
 
+// TestValidateMultiRepoConsistency_AllExplicit tests that all entries having repo: passes.
+func TestValidateMultiRepoConsistency_AllExplicit(t *testing.T) {
+	m := &IMPLManifest{
+		FileOwnership: []FileOwnership{
+			{File: "file1.go", Agent: "A", Wave: 1, Repo: "repo-go"},
+			{File: "file2.go", Agent: "B", Wave: 1, Repo: "repo-protocol"},
+		},
+	}
+	errs := validateMultiRepoConsistency(m)
+	if len(errs) != 0 {
+		t.Errorf("Expected no errors, got %d: %v", len(errs), errs)
+	}
+}
+
+// TestValidateMultiRepoConsistency_AllImplicit tests that no entries having repo: passes (single repo).
+func TestValidateMultiRepoConsistency_AllImplicit(t *testing.T) {
+	m := &IMPLManifest{
+		FileOwnership: []FileOwnership{
+			{File: "file1.go", Agent: "A", Wave: 1},
+			{File: "file2.go", Agent: "B", Wave: 1},
+		},
+	}
+	errs := validateMultiRepoConsistency(m)
+	if len(errs) != 0 {
+		t.Errorf("Expected no errors for all-implicit repo, got %d: %v", len(errs), errs)
+	}
+}
+
+// TestValidateMultiRepoConsistency_Mixed tests that mixed repo tags are caught.
+func TestValidateMultiRepoConsistency_Mixed(t *testing.T) {
+	m := &IMPLManifest{
+		FileOwnership: []FileOwnership{
+			{File: "pkg/engine/foo.go", Agent: "A", Wave: 1},           // implicit
+			{File: "protocol/bar.md", Agent: "B", Wave: 2, Repo: "scout-and-wave"}, // explicit
+		},
+	}
+	errs := validateMultiRepoConsistency(m)
+	if len(errs) != 1 {
+		t.Fatalf("Expected 1 error, got %d: %v", len(errs), errs)
+	}
+	if errs[0].Code != "MR01_INCONSISTENT_REPO" {
+		t.Errorf("Expected MR01_INCONSISTENT_REPO, got %s", errs[0].Code)
+	}
+}
+
+// TestValidateMultiRepoConsistency_Empty tests that empty file ownership is fine.
+func TestValidateMultiRepoConsistency_Empty(t *testing.T) {
+	m := &IMPLManifest{}
+	errs := validateMultiRepoConsistency(m)
+	if len(errs) != 0 {
+		t.Errorf("Expected no errors for empty ownership, got %d: %v", len(errs), errs)
+	}
+}
+
 // testContains is a helper function to check if a string contains a substring.
 func testContains(s, substr string) bool {
 	return len(s) > 0 && len(substr) > 0 && (s == substr || len(s) >= len(substr) && (s[:len(substr)] == substr || s[len(s)-len(substr):] == substr || testContainsMiddle(s, substr)))

@@ -31,6 +31,7 @@ func Validate(m *IMPLManifest) []ValidationError {
 	errs = append(errs, ValidateCompletionStatuses(m)...)
 	errs = append(errs, ValidateFailureTypes(m)...)
 	errs = append(errs, ValidatePreMortemRisk(m)...)
+	errs = append(errs, validateMultiRepoConsistency(m)...)
 
 	return errs
 }
@@ -446,6 +447,51 @@ func FixGateTypes(m *IMPLManifest) int {
 		}
 	}
 	return fixed
+}
+
+// validateMultiRepoConsistency checks that when any file_ownership entry has a repo: field,
+// ALL entries have an explicit repo: field. Mixing explicit and implicit repo tags causes
+// the web GUI to misdetect multi-repo IMPLs.
+func validateMultiRepoConsistency(m *IMPLManifest) []ValidationError {
+	var errs []ValidationError
+
+	if len(m.FileOwnership) == 0 {
+		return errs
+	}
+
+	hasExplicit := false
+	hasImplicit := false
+	for _, fo := range m.FileOwnership {
+		if fo.Repo != "" {
+			hasExplicit = true
+		} else {
+			hasImplicit = true
+		}
+	}
+
+	if hasExplicit && hasImplicit {
+		// Collect the implicit entries for a helpful message
+		var missing []string
+		for _, fo := range m.FileOwnership {
+			if fo.Repo == "" {
+				missing = append(missing, fo.File)
+				if len(missing) >= 3 {
+					break
+				}
+			}
+		}
+		suffix := ""
+		if len(missing) >= 3 {
+			suffix = " ..."
+		}
+		errs = append(errs, ValidationError{
+			Code:    "MR01_INCONSISTENT_REPO",
+			Message: fmt.Sprintf("file_ownership has mixed repo tags: some entries have repo: and some don't — add explicit repo: to all entries (missing on: %s%s)", strings.Join(missing, ", "), suffix),
+			Field:   "file_ownership",
+		})
+	}
+
+	return errs
 }
 
 // validateGateTypes checks that all quality gate types are valid.
