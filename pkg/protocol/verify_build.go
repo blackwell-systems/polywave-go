@@ -74,10 +74,37 @@ func commandApplies(command, repoDir string) bool {
 	return true
 }
 
+// resolveCommandPaths rewrites "cd <relative-path> [&& ...]" to use an
+// absolute path. This ensures commands like "cd web && npx vitest run"
+// behave identically to quality gate commands that use absolute paths.
+// Commands that already use absolute paths, or don't start with "cd ", are
+// returned unchanged.
+func resolveCommandPaths(command, repoDir string) string {
+	if !strings.HasPrefix(command, "cd ") {
+		return command
+	}
+	rest := strings.TrimPrefix(command, "cd ")
+	// Split at first whitespace or shell operator to isolate the directory
+	idx := strings.IndexAny(rest, " \t&;|")
+	if idx == -1 {
+		dir := rest
+		if !filepath.IsAbs(dir) {
+			return "cd " + filepath.Join(repoDir, dir)
+		}
+		return command
+	}
+	dir := rest[:idx]
+	suffix := rest[idx:]
+	if filepath.IsAbs(dir) {
+		return command
+	}
+	return "cd " + filepath.Join(repoDir, dir) + suffix
+}
+
 // runCommand executes a shell command and returns (passed, combinedOutput).
 // Follows the exact pattern from gates.go: sh -c, combined stdout+stderr, exit code check.
 func runCommand(command string, repoDir string) (bool, string) {
-	cmd := exec.Command("sh", "-c", command)
+	cmd := exec.Command("sh", "-c", resolveCommandPaths(command, repoDir))
 	cmd.Dir = repoDir
 
 	// Capture stdout and stderr combined
