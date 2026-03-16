@@ -120,3 +120,5 @@ type BackendConfig struct {
   - IMPL doc: ../scout-and-wave/docs/IMPL/complete/IMPL-m4-finalize-impl.yaml
 - **bedrock-tool-loop**: completed 2026-03-14, 1 waves, 2 agents
   - IMPL doc: docs/IMPL/complete/IMPL-bedrock-tool-loop.yaml
+- **workshop-constraints**: completed 2026-03-15, 2 waves, 6 agents
+  - IMPL doc: docs/IMPL/complete/IMPL-workshop-constraints.yaml

@@ -1,3 +1,4 @@
+completion_date: "2026-03-15"
 title: 'Workshop Constraints: Tool-Level SAW Protocol Enforcement'
 feature_slug: workshop-constraints
 verdict: SUITABLE
@@ -708,8 +709,8 @@ completion_reports:
         verification: PASS
     E:
         status: complete
-        commit: 3e2c9cd
         branch: wave2-agent-E
+        commit: 3e2c9cd
         files_changed:
             - pkg/agent/backend/backend.go
             - pkg/agent/backend/bedrock/client.go
@@ -766,4 +767,4 @@ known_issues:
         the constraint system is merged and tested.
       status: By design - follow-up PR
       workaround: Agent F provides BuildWaveConstraints as an exported function ready for integration
-state: WAVE_PENDING
+state: "COMPLETE"
