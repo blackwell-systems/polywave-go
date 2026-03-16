@@ -1,0 +1,1233 @@
+completion_date: "2026-03-16"
+title: 'Integration Agent - Full Scope: Detection, Automated Wiring Agent, and Protocol Text'
+feature_slug: integration-agent
+verdict: SUITABLE
+suitability_assessment: |
+    SUITABLE. 35+ files across 3 repos, cleanly decomposable into 4 waves.
+    No investigation-first items. All interfaces definable upfront from proposal.
+    High parallelization value: Go build/test >30s, agents average 2-3 files.
+    FULL SCOPE: detection (E25), integration agent runner (E26), protocol text,
+    and web UI integration. No deferrals.
+test_command: go test ./...
+lint_command: go vet ./...
+file_ownership:
+    - file: pkg/protocol/integration.go
+      agent: A
+      wave: 1
+      action: new
+      repo: scout-and-wave-go
+    - file: pkg/protocol/integration_test.go
+      agent: A
+      wave: 1
+      action: new
+      repo: scout-and-wave-go
+    - file: pkg/protocol/integration_heuristics.go
+      agent: B
+      wave: 1
+      action: new
+      repo: scout-and-wave-go
+    - file: pkg/protocol/integration_heuristics_test.go
+      agent: B
+      wave: 1
+      action: new
+      repo: scout-and-wave-go
+    - file: cmd/saw/validate_integration.go
+      agent: C
+      wave: 1
+      action: new
+      repo: scout-and-wave-go
+    - file: cmd/saw/validate_integration_test.go
+      agent: C
+      wave: 1
+      action: new
+      repo: scout-and-wave-go
+    - file: pkg/engine/finalize.go
+      agent: D
+      wave: 2
+      action: modify
+      repo: scout-and-wave-go
+    - file: pkg/engine/finalize_test.go
+      agent: D
+      wave: 2
+      action: new
+      repo: scout-and-wave-go
+    - file: pkg/engine/integration_runner.go
+      agent: E
+      wave: 2
+      action: new
+      repo: scout-and-wave-go
+    - file: pkg/engine/integration_runner_test.go
+      agent: E
+      wave: 2
+      action: new
+      repo: scout-and-wave-go
+    - file: pkg/engine/constraints.go
+      agent: F
+      wave: 2
+      action: modify
+      repo: scout-and-wave-go
+    - file: pkg/engine/constraints_test.go
+      agent: F
+      wave: 2
+      action: modify
+      repo: scout-and-wave-go
+    - file: pkg/protocol/types.go
+      agent: G
+      wave: 3
+      action: modify
+      repo: scout-and-wave-go
+    - file: pkg/engine/engine.go
+      agent: H
+      wave: 3
+      action: modify
+      repo: scout-and-wave-go
+    - file: pkg/engine/runner.go
+      agent: H
+      wave: 3
+      action: modify
+      repo: scout-and-wave-go
+    - file: cmd/saw/finalize_wave.go
+      agent: I
+      wave: 3
+      action: modify
+      repo: scout-and-wave-go
+    - file: protocol/execution-rules.md
+      agent: J
+      wave: 4
+      action: modify
+      repo: scout-and-wave
+    - file: protocol/invariants.md
+      agent: J
+      wave: 4
+      action: modify
+      repo: scout-and-wave
+    - file: protocol/participants.md
+      agent: J
+      wave: 4
+      action: modify
+      repo: scout-and-wave
+    - file: protocol/procedures.md
+      agent: K
+      wave: 4
+      action: modify
+      repo: scout-and-wave
+    - file: protocol/state-machine.md
+      agent: K
+      wave: 4
+      action: modify
+      repo: scout-and-wave
+    - file: protocol/message-formats.md
+      agent: K
+      wave: 4
+      action: modify
+      repo: scout-and-wave
+    - file: protocol/preconditions.md
+      agent: K
+      wave: 4
+      action: modify
+      repo: scout-and-wave
+    - file: implementations/claude-code/prompts/agents/scout.md
+      agent: L
+      wave: 4
+      action: modify
+      repo: scout-and-wave
+    - file: implementations/claude-code/prompts/agents/wave-agent.md
+      agent: L
+      wave: 4
+      action: modify
+      repo: scout-and-wave
+    - file: implementations/claude-code/prompts/saw-skill.md
+      agent: L
+      wave: 4
+      action: modify
+      repo: scout-and-wave
+    - file: implementations/claude-code/prompts/agent-template.md
+      agent: L
+      wave: 4
+      action: modify
+      repo: scout-and-wave
+interface_contracts:
+    - name: IntegrationGap
+      description: |
+        Represents a detected unconnected export. Used by ValidateIntegration
+        and consumed by the integration agent runner.
+      definition: |
+        type IntegrationGap struct {
+            ExportName    string   `json:"export_name" yaml:"export_name"`
+            FilePath      string   `json:"file_path" yaml:"file_path"`
+            AgentID       string   `json:"agent_id" yaml:"agent_id"`
+            Category      string   `json:"category" yaml:"category"`
+            Severity      string   `json:"severity" yaml:"severity"`
+            Reason        string   `json:"reason" yaml:"reason"`
+            SuggestedFix  string   `json:"suggested_fix" yaml:"suggested_fix"`
+            SearchResults []string `json:"search_results" yaml:"search_results"`
+        }
+      location: pkg/protocol/integration_types.go
+    - name: IntegrationReport
+      description: |
+        Summarizes all integration gaps for a wave. Returned by ValidateIntegration,
+        persisted to IMPL manifest, consumed by integration agent runner.
+      definition: |
+        type IntegrationReport struct {
+            Wave    int              `json:"wave" yaml:"wave"`
+            Gaps    []IntegrationGap `json:"gaps" yaml:"gaps"`
+            Valid   bool             `json:"valid" yaml:"valid"`
+            Summary string           `json:"summary" yaml:"summary"`
+        }
+      location: pkg/protocol/integration_types.go
+    - name: IntegrationConnector
+      description: |
+        Defines a file the integration agent is allowed to modify.
+        Listed in IMPL manifest integration_connectors field.
+      definition: |
+        type IntegrationConnector struct {
+            File   string `json:"file" yaml:"file"`
+            Reason string `json:"reason" yaml:"reason"`
+        }
+      location: pkg/protocol/integration_types.go
+    - name: ValidateIntegration
+      description: |
+        Scans completed wave for unconnected exports using Go AST analysis.
+        Returns an IntegrationReport with gaps classified by severity.
+      definition: |
+        func ValidateIntegration(manifest *IMPLManifest, waveNum int, repoPath string) (*IntegrationReport, error)
+      location: pkg/protocol/integration.go
+    - name: IsIntegrationRequired
+      description: |
+        Heuristic classifier: determines if an exported symbol likely needs
+        integration wiring based on naming patterns (Build*, New*, Register*, etc).
+      definition: |
+        func IsIntegrationRequired(exportName string, category string) bool
+      location: pkg/protocol/integration_heuristics.go
+    - name: ClassifyExport
+      description: |
+        Classifies an exported symbol into a category (function_call, type_usage, field_init).
+      definition: |
+        func ClassifyExport(exportName string, kind string) string
+      location: pkg/protocol/integration_heuristics.go
+    - name: SuggestCallers
+      description: |
+        Searches the codebase for files that likely need to call/use the given export.
+        Uses import graph and naming heuristics.
+      definition: |
+        func SuggestCallers(repoPath string, exportPkg string, exportName string) ([]string, error)
+      location: pkg/protocol/integration_heuristics.go
+    - name: RunIntegrationAgent
+      description: |
+        Launches an LLM agent to wire integration gaps after wave agents complete.
+        Reads the IntegrationReport, reads completion reports, and modifies
+        integration_connectors files to wire exports into callers.
+      definition: |
+        func RunIntegrationAgent(ctx context.Context, opts RunIntegrationAgentOpts, onEvent func(Event)) error
+      location: pkg/engine/integration_runner.go
+    - name: RunIntegrationAgentOpts
+      description: |
+        Configuration for the integration agent runner.
+      definition: |
+        type RunIntegrationAgentOpts struct {
+            IMPLPath   string              // absolute path to IMPL manifest
+            RepoPath   string              // absolute path to the target repository
+            WaveNum    int                 // wave number that was just completed
+            Report     *protocol.IntegrationReport // gaps to fix
+            Model      string              // optional model override
+        }
+      location: pkg/engine/integration_runner.go
+    - name: buildIntegratorConstraints
+      description: |
+        Builds constraints for the integrator role. The integrator may only write to
+        files listed in integration_connectors. It cannot write to agent-owned files
+        or scaffold files.
+      definition: |
+        func buildIntegratorConstraints(manifest *protocol.IMPLManifest, connectors []protocol.IntegrationConnector) *tools.Constraints
+      location: pkg/engine/constraints.go
+waves:
+    - number: 1
+      agents:
+        - id: A
+          task: |
+            ## What to Implement
+
+            Create `pkg/protocol/integration.go` — the core integration validation engine (E25).
+            This function scans completed wave agents' files for new exported symbols using Go AST,
+            then searches the codebase for call-sites. Exports with no call-site are integration gaps.
+
+            The scaffold file `pkg/protocol/integration_types.go` provides the shared types
+            (IntegrationGap, IntegrationReport, IntegrationConnector). Do NOT redefine these types.
+
+            ## Interfaces to Implement
+
+            ```go
+            // ValidateIntegration scans a completed wave for unconnected exports.
+            // It parses completion reports to find modified files, uses Go AST to extract
+            // new exported symbols, then searches the repo for usage. Returns gaps.
+            func ValidateIntegration(manifest *IMPLManifest, waveNum int, repoPath string) (*IntegrationReport, error)
+            ```
+
+            Algorithm:
+            1. Get completion reports for the wave's agents
+            2. For each agent's FilesChanged + FilesCreated:
+               a. Parse with go/ast to find exported functions, types, methods, struct fields
+               b. For each export, check if it existed before the wave (skip pre-existing)
+               c. Search the repo (excluding the owning file) for references to the export name
+               d. If no reference found AND IsIntegrationRequired() returns true → add to gaps
+            3. Set report.Valid = len(gaps) == 0
+            4. Generate summary string
+
+            For Go AST parsing: use `go/parser` and `go/ast` from stdlib. Parse only `.go` files.
+            For reference search: use simple string matching (grep-like) on the repo, excluding
+            test files and the defining file itself. This is a heuristic, not a compiler.
+
+            Also implement `AppendIntegrationReport` to persist the report to the IMPL manifest
+            (same pattern as `AppendStubReport` in stubs.go):
+            ```go
+            func AppendIntegrationReport(manifestPath string, waveKey string, report *IntegrationReport) error
+            ```
+
+            ## Tests to Write
+
+            1. TestValidateIntegration_NoGaps — wave with exports that are all called
+            2. TestValidateIntegration_DetectsGap — wave with unused exported function
+            3. TestValidateIntegration_SkipsPreExisting — pre-existing exports not flagged
+            4. TestValidateIntegration_EmptyWave — no completion reports
+            5. TestAppendIntegrationReport — persists and reloads correctly
+
+            Use temp directories with small Go files for test fixtures.
+
+            ## Verification Gate
+
+            ```bash
+            go build ./pkg/protocol/...
+            go vet ./pkg/protocol/...
+            go test ./pkg/protocol/ -run TestValidateIntegration -v
+            go test ./pkg/protocol/ -run TestAppendIntegration -v
+            ```
+
+            ## Constraints
+
+            - Import from scaffold: `integration_types.go` provides IntegrationGap, IntegrationReport, IntegrationConnector
+            - Follow the pattern in `stubs.go` for AppendIntegrationReport
+            - Do NOT modify types.go — schema changes are in Wave 3
+            - Use `go/ast` and `go/parser` for Go-specific analysis
+            - Keep the search heuristic simple: string contains, not full import resolution
+          files:
+            - pkg/protocol/integration.go
+            - pkg/protocol/integration_test.go
+        - id: B
+          task: |
+            ## What to Implement
+
+            Create `pkg/protocol/integration_heuristics.go` — classification and suggestion functions
+            that determine whether an export needs integration wiring and where it should be wired.
+
+            The scaffold file `pkg/protocol/integration_types.go` provides the shared types.
+            Do NOT redefine these types.
+
+            ## Interfaces to Implement
+
+            ```go
+            // IsIntegrationRequired returns true if the export name and category suggest
+            // this symbol needs wiring into caller files. Uses naming heuristics.
+            func IsIntegrationRequired(exportName string, category string) bool
+
+            // ClassifyExport determines the integration category for an exported symbol.
+            // kind is the Go AST node kind: "func", "type", "method", "field", "var", "const"
+            // Returns: "function_call", "type_usage", "field_init", or "none"
+            func ClassifyExport(exportName string, kind string) string
+
+            // SuggestCallers searches the codebase for files that likely need to call/use
+            // the given export. Uses import graph (go list) and naming heuristics.
+            func SuggestCallers(repoPath string, exportPkg string, exportName string) ([]string, error)
+            ```
+
+            ### IsIntegrationRequired Heuristics
+
+            Return true when:
+            - Function name starts with: Build, Create, New, Register, Setup, Init, Run, Start, Wire
+            - Function name ends with: Handler, Middleware, Factory, Builder
+            - Category is "field_init" (struct field added to widely-used type)
+            - Export is a type that implements a known interface (check if method set matches)
+
+            Return false when:
+            - Function name starts with: Is, Has, Get, String, Format, Validate (query functions)
+            - Export is a const or var (usually consumed at import time)
+            - Category is "none"
+
+            ### SuggestCallers Algorithm
+
+            1. Run `go list -json ./...` to get package import graph
+            2. Find packages that import the export's package
+            3. For each importing package, list its .go files
+            4. Return those file paths as suggested callers
+            5. If go list fails, fall back to grep for the package path in import statements
+
+            ## Tests to Write
+
+            1. TestIsIntegrationRequired_BuildPrefix — returns true for "BuildWaveConstraints"
+            2. TestIsIntegrationRequired_GetPrefix — returns false for "GetConfig"
+            3. TestClassifyExport_Func — classifies function as "function_call"
+            4. TestClassifyExport_Field — classifies struct field as "field_init"
+            5. TestSuggestCallers_FindsImporters — finds files importing the package
+            6. TestSuggestCallers_EmptyRepo — returns empty for no importers
+
+            ## Verification Gate
+
+            ```bash
+            go build ./pkg/protocol/...
+            go vet ./pkg/protocol/...
+            go test ./pkg/protocol/ -run TestIsIntegration -v
+            go test ./pkg/protocol/ -run TestClassifyExport -v
+            go test ./pkg/protocol/ -run TestSuggestCallers -v
+            ```
+
+            ## Constraints
+
+            - Import from scaffold: `integration_types.go` provides types
+            - Do NOT import `go/ast` — that's Agent A's domain. Use string heuristics only.
+            - SuggestCallers may shell out to `go list` — that's acceptable for a CLI tool
+            - Keep heuristics simple and tunable. False positives are OK (integration agent validates).
+          files:
+            - pkg/protocol/integration_heuristics.go
+            - pkg/protocol/integration_heuristics_test.go
+        - id: C
+          task: |
+            ## What to Implement
+
+            Create `cmd/saw/validate_integration.go` — a new CLI subcommand for `sawtools`.
+
+            Usage: `sawtools validate-integration <manifest-path> --wave N [--repo-dir PATH]`
+
+            This command loads the IMPL manifest, calls `protocol.ValidateIntegration()`,
+            prints the report as JSON, and exits with code 1 if gaps are found.
+
+            ## Interfaces to Call
+
+            ```go
+            protocol.ValidateIntegration(manifest *protocol.IMPLManifest, waveNum int, repoPath string) (*protocol.IntegrationReport, error)
+            protocol.Load(path string) (*protocol.IMPLManifest, error)
+            protocol.AppendIntegrationReport(manifestPath, waveKey string, report *protocol.IntegrationReport) error
+            ```
+
+            ## What to Implement
+
+            ```go
+            func newValidateIntegrationCmd() *cobra.Command
+            ```
+
+            The command should:
+            1. Load the manifest from the positional arg
+            2. Call ValidateIntegration with the --wave flag and --repo-dir (defaulting to cwd)
+            3. Call AppendIntegrationReport to persist the report
+            4. Print the report as indented JSON to stdout
+            5. Exit 0 if report.Valid, exit 1 if gaps found
+
+            Register the command in cmd/saw/root.go (add to rootCmd in the init or main).
+
+            Also create a test file with a basic test that the command parses flags correctly.
+
+            ## Tests to Write
+
+            1. TestValidateIntegrationCmd_FlagParsing — verifies --wave and --repo-dir flags exist
+
+            ## Verification Gate
+
+            ```bash
+            go build ./cmd/saw/...
+            go vet ./cmd/saw/...
+            go test ./cmd/saw/ -run TestValidateIntegration -v
+            ```
+
+            ## Constraints
+
+            - Follow the pattern of `cmd/saw/finalize_wave.go` for command structure
+            - Register in root.go by adding to the rootCmd.AddCommand list
+            - Use `json.MarshalIndent` for output (same as other commands)
+            - The --repo-dir flag should default to the `repoDir` package variable (same as finalize-wave)
+          files:
+            - cmd/saw/validate_integration.go
+            - cmd/saw/validate_integration_test.go
+      base_commit: 8f7edf9bc3446f3d772db40be1ae16dc7595a38c
+    - number: 2
+      agents:
+        - id: D
+          task: |
+            ## What to Implement
+
+            Modify `pkg/engine/finalize.go` to add integration validation (E25) as a new step
+            in the FinalizeWave pipeline, between RunGates (E21) and MergeAgents.
+
+            The new pipeline order:
+            1. VerifyCommits (I5)
+            2. ScanStubs (E20)
+            3. RunGates (E21)
+            4. **ValidateIntegration (E25) — NEW**
+            5. MergeAgents
+            6. VerifyBuild
+            7. Cleanup
+
+            ## Changes to FinalizeWaveResult
+
+            Add a new field to FinalizeWaveResult:
+            ```go
+            IntegrationReport *protocol.IntegrationReport `json:"integration_report,omitempty"`
+            ```
+
+            ## Changes to FinalizeWave function
+
+            After the RunGates step (step 3) and before MergeAgents (step 4), add:
+            ```go
+            // Step 3.5: ValidateIntegration (E25)
+            integrationReport, err := protocol.ValidateIntegration(manifest, opts.WaveNum, opts.RepoPath)
+            if err != nil {
+                // Non-fatal: integration validation errors don't block the pipeline
+                fmt.Fprintf(os.Stderr, "engine.FinalizeWave: validate-integration: %v\n", err)
+            } else {
+                result.IntegrationReport = integrationReport
+                // Persist to manifest
+                waveKey := fmt.Sprintf("wave%d", opts.WaveNum)
+                _ = protocol.AppendIntegrationReport(opts.IMPLPath, waveKey, integrationReport)
+            }
+            ```
+
+            Integration validation is INFORMATIONAL in this step — it does not block merge.
+            The integration agent runner (Wave 2 Agent E) will act on gaps if present.
+
+            ## Tests to Write
+
+            1. TestFinalizeWave_IntegrationStep — verify integration report is populated in result
+            2. TestFinalizeWave_IntegrationError_NonFatal — verify pipeline continues on validation error
+
+            ## Verification Gate
+
+            ```bash
+            go build ./pkg/engine/...
+            go vet ./pkg/engine/...
+            go test ./pkg/engine/ -run TestFinalizeWave -v
+            ```
+
+            ## Constraints
+
+            - Integration validation is non-fatal (informational only, like stub scanning)
+            - Do NOT change the existing step numbering in comments — add as "Step 3.5"
+            - The integration report is persisted via AppendIntegrationReport (same pattern as AppendStubReport)
+            - Import `protocol` package (already imported in finalize.go)
+          files:
+            - pkg/engine/finalize.go
+            - pkg/engine/finalize_test.go
+          dependencies:
+            - A
+        - id: E
+          task: |
+            ## What to Implement
+
+            Create `pkg/engine/integration_runner.go` — the integration agent runner (E26).
+            This launches an LLM agent after wave implementation agents complete to wire
+            integration gaps into caller files.
+
+            ## Interfaces to Implement
+
+            ```go
+            type RunIntegrationAgentOpts struct {
+                IMPLPath   string
+                RepoPath   string
+                WaveNum    int
+                Report     *protocol.IntegrationReport
+                Model      string   // optional model override
+            }
+
+            // RunIntegrationAgent launches an LLM agent to wire integration gaps.
+            // The agent reads the IntegrationReport, reads completion reports, and
+            // modifies integration_connectors files to wire exports into callers.
+            // Works with ALL backends (Bedrock, API, CLI) via orchestrator.NewBackendFromModel.
+            func RunIntegrationAgent(ctx context.Context, opts RunIntegrationAgentOpts, onEvent func(Event)) error
+            ```
+
+            ## Algorithm
+
+            1. Load the IMPL manifest to get integration_connectors
+            2. Build the integration agent prompt:
+               - System prompt: "You are an Integration Agent. Your job is to wire newly
+                 exported functions/types into caller files."
+               - Include: the IntegrationReport as JSON (gaps to fix)
+               - Include: list of integration_connectors files (allowed to modify)
+               - Include: completion reports for context on what was implemented
+               - Include: verification gate command (go build ./...)
+            3. Build constraints for "integrator" role (call buildIntegratorConstraints from constraints.go)
+            4. Create backend via orchestrator.NewBackendFromModel(opts.Model)
+            5. Create agent.Runner and execute with streaming
+            6. Publish events: integration_agent_started, integration_agent_output,
+               integration_agent_complete, integration_agent_failed
+            7. After execution, auto-commit changes (same pattern as autoCommitWorktree in orchestrator.go)
+
+            The integration agent runs in the MAIN repo directory (not a worktree) because
+            it needs to see the merged result of all wave agents. It only writes to
+            integration_connectors files.
+
+            ## Tests to Write
+
+            1. TestRunIntegrationAgent_NoGaps — returns immediately when report has no gaps
+            2. TestRunIntegrationAgent_PublishesEvents — verify start/complete events emitted
+            3. TestRunIntegrationAgent_OptsValidation — error on missing required fields
+
+            ## Verification Gate
+
+            ```bash
+            go build ./pkg/engine/...
+            go vet ./pkg/engine/...
+            go test ./pkg/engine/ -run TestRunIntegrationAgent -v
+            ```
+
+            ## Constraints
+
+            - Do NOT create a worktree — integration agent runs on main branch after merge
+            - Use orchestrator.NewBackendFromModel for backend creation (supports all providers)
+            - Use agent.NewRunner for execution (same as RunScaffold pattern in runner.go)
+            - The integration agent prompt should be self-contained: include all gaps as JSON
+            - Constraint role is "integrator" (not "wave" or "scaffold")
+            - If Report.Valid is true (no gaps), return immediately without launching agent
+          files:
+            - pkg/engine/integration_runner.go
+            - pkg/engine/integration_runner_test.go
+          dependencies:
+            - A
+            - B
+        - id: F
+          task: |
+            ## What to Implement
+
+            Modify `pkg/engine/constraints.go` to add the "integrator" constraint role.
+
+            ## Changes to buildConstraints
+
+            Add a new case to the switch statement in buildConstraints:
+
+            ```go
+            case "integrator":
+                // Integration agent: may only write to integration_connectors files.
+                // No OwnedFiles (doesn't own implementation files).
+                // No FrozenPaths enforcement (needs to read everything).
+                // TrackCommits = true (for audit trail).
+                prefixes := make([]string, 0)
+                for _, ic := range manifest.IntegrationConnectors {
+                    if ic.File != "" {
+                        prefixes = append(prefixes, ic.File)
+                    }
+                }
+                c.AllowedPathPrefixes = prefixes
+                c.TrackCommits = true
+            ```
+
+            Note: This depends on `IntegrationConnectors` being added to IMPLManifest (Wave 3).
+            For now, read from `manifest.IntegrationConnectors` — if the field doesn't exist
+            yet in types.go, use a local helper that reads the raw YAML to extract the field.
+
+            Also add a new exported function:
+
+            ```go
+            // BuildIntegratorConstraints builds constraints for the integration agent.
+            // The integrator may only write to files listed in integration_connectors.
+            func BuildIntegratorConstraints(implPath string) (*tools.Constraints, error)
+            ```
+
+            This follows the same pattern as BuildWaveConstraints.
+
+            ## Tests to Write
+
+            1. TestBuildConstraints_IntegratorRole — verify integrator gets AllowedPathPrefixes from connectors
+            2. TestBuildConstraints_IntegratorEmpty — verify empty connectors results in no path prefixes
+            3. TestBuildIntegratorConstraints_LoadAndBuild — integration test loading manifest
+
+            ## Verification Gate
+
+            ```bash
+            go build ./pkg/engine/...
+            go vet ./pkg/engine/...
+            go test ./pkg/engine/ -run TestBuildConstraints_Integrator -v
+            go test ./pkg/engine/ -run TestBuildIntegratorConstraints -v
+            ```
+
+            ## Constraints
+
+            - Do NOT modify the existing scout/scaffold/wave cases — only add "integrator"
+            - The integrator role uses AllowedPathPrefixes (like scout/scaffold), not OwnedFiles
+            - TrackCommits = true for audit trail
+            - Import integration_types.go types via protocol package
+          files:
+            - pkg/engine/constraints.go
+            - pkg/engine/constraints_test.go
+          dependencies:
+            - A
+      base_commit: 1b6e3825667ceda131e1cb782ee3a8b4279ce047
+    - number: 3
+      agents:
+        - id: G
+          task: |
+            ## What to Implement
+
+            Modify `pkg/protocol/types.go` to add integration-related fields to IMPLManifest.
+
+            ## Changes to IMPLManifest struct
+
+            Add these fields after the `StubReports` field:
+
+            ```go
+            // E25: Integration validation reports per wave
+            IntegrationReports map[string]*IntegrationReport `yaml:"integration_reports,omitempty" json:"integration_reports,omitempty"`
+
+            // Integration connectors: files the integration agent is allowed to modify
+            IntegrationConnectors []IntegrationConnector `yaml:"integration_connectors,omitempty" json:"integration_connectors,omitempty"`
+            ```
+
+            The types IntegrationReport, IntegrationGap, and IntegrationConnector are already
+            defined in the scaffold file `pkg/protocol/integration_types.go`. Do NOT redefine them.
+
+            ## Verification Gate
+
+            ```bash
+            go build ./pkg/protocol/...
+            go vet ./pkg/protocol/...
+            go test ./pkg/protocol/ -v
+            ```
+
+            ## Constraints
+
+            - Add fields AFTER StubReports and BEFORE PreMortem in the struct
+            - Use yaml:"...,omitempty" and json:"...,omitempty" tags (backward compatible)
+            - Do NOT modify any existing fields
+            - Do NOT modify integration_types.go (scaffold file, frozen)
+          files:
+            - pkg/protocol/types.go
+          dependencies:
+            - D
+            - E
+            - F
+        - id: H
+          task: |
+            ## What to Implement
+
+            Wire the integration agent into the engine's wave execution pipeline.
+
+            ### Changes to pkg/engine/engine.go
+
+            Add RunIntegrationAgentOpts to the file-level type section (it's already defined
+            in integration_runner.go from Wave 2, so just ensure the import works).
+
+            ### Changes to pkg/engine/runner.go
+
+            Modify the `StartWave` function to call integration validation and the integration
+            agent runner after each wave's merge succeeds but before moving to the next wave.
+
+            In the wave loop, after the verification step (RunVerification) and before
+            UpdateIMPLStatus, add:
+
+            ```go
+            // E25: Post-wave integration validation
+            manifest, loadErr := protocol.Load(opts.IMPLPath)
+            if loadErr == nil {
+                integrationReport, intErr := protocol.ValidateIntegration(manifest, waveNum, opts.RepoPath)
+                if intErr == nil && integrationReport != nil && !integrationReport.Valid {
+                    publish("integration_gaps_detected", map[string]interface{}{
+                        "wave": waveNum,
+                        "gaps": len(integrationReport.Gaps),
+                        "report": integrationReport,
+                    })
+
+                    // E26: Launch integration agent to wire gaps
+                    intAgentErr := RunIntegrationAgent(ctx, RunIntegrationAgentOpts{
+                        IMPLPath: opts.IMPLPath,
+                        RepoPath: opts.RepoPath,
+                        WaveNum:  waveNum,
+                        Report:   integrationReport,
+                        Model:    opts.WaveModel,
+                    }, func(ev Event) { onEvent(ev) })
+                    if intAgentErr != nil {
+                        // Non-fatal: log but don't abort wave
+                        publish("integration_agent_warning", map[string]string{
+                            "error": intAgentErr.Error(),
+                        })
+                    }
+                }
+            }
+            ```
+
+            Also wire into `startWaveWithGate` using the same pattern.
+
+            ## Tests to Write
+
+            No new test file needed — existing runner_test.go tests will verify compilation.
+            Add a comment documenting the integration point.
+
+            ## Verification Gate
+
+            ```bash
+            go build ./pkg/engine/...
+            go vet ./pkg/engine/...
+            go test ./pkg/engine/ -v
+            ```
+
+            ## Constraints
+
+            - Integration agent is NON-FATAL: errors are logged, not returned
+            - Integration agent runs AFTER merge + verification, BEFORE UpdateIMPLStatus
+            - Use the same onEvent/publish pattern for SSE event forwarding
+            - Do NOT modify RunSingleWave or RunSingleAgent (those are for reruns, not full pipeline)
+          files:
+            - pkg/engine/engine.go
+            - pkg/engine/runner.go
+          dependencies:
+            - D
+            - E
+        - id: I
+          task: |
+            ## What to Implement
+
+            Modify `cmd/saw/finalize_wave.go` to add integration validation as a step
+            in the CLI finalize-wave pipeline.
+
+            ## Changes
+
+            Add integration validation between Step 3 (RunGates) and Step 4 (MergeAgents).
+            Call it "Step 3.5" in comments.
+
+            ```go
+            // Step 3.5: ValidateIntegration (E25) — informational
+            integrationReport, intErr := protocol.ValidateIntegration(manifest, waveNum, repoPath)
+            if intErr != nil {
+                fmt.Fprintf(os.Stderr, "finalize-wave: validate-integration: %v\n", intErr)
+            } else if integrationReport != nil {
+                result.IntegrationReport = integrationReport
+                if !integrationReport.Valid {
+                    fmt.Fprintf(os.Stderr, "finalize-wave: %d integration gap(s) detected\n", len(integrationReport.Gaps))
+                }
+            }
+            ```
+
+            Add to FinalizeWaveResult struct:
+            ```go
+            IntegrationReport *protocol.IntegrationReport `json:"integration_report,omitempty"`
+            ```
+
+            The CLI command does NOT launch the integration agent — that's the engine/web path.
+            The CLI just reports gaps for the human orchestrator to address.
+
+            ## Verification Gate
+
+            ```bash
+            go build ./cmd/saw/...
+            go vet ./cmd/saw/...
+            ```
+
+            ## Constraints
+
+            - Integration validation is INFORMATIONAL in CLI — does not block merge
+            - Follow existing step numbering pattern (Step 3.5 between 3 and 4)
+            - Use `repoDir` variable for the first repo path (single-repo default)
+            - For cross-repo, iterate repos like other steps do
+          files:
+            - cmd/saw/finalize_wave.go
+          dependencies:
+            - A
+            - D
+      base_commit: 5c3f41ae38ddd986da230bcb6e36ebb2b6d65ec2
+    - number: 4
+      agents:
+        - id: J
+          task: |
+            ## What to Implement
+
+            Update the core protocol specification files to add E25 (Integration Validation)
+            and E26 (Integration Agent) execution rules, I1 amendment for integrator exemption,
+            and the Integration Agent participant role.
+
+            ### protocol/execution-rules.md
+
+            Add two new execution rules after the last existing rule:
+
+            **E25: Integration Validation**
+            - Trigger: Wave agents complete and merge succeeds
+            - Required Action: Scan merged result for unconnected exports using AST analysis.
+              Produce IntegrationReport with gaps classified by severity.
+            - Non-fatal: Gaps do not block the pipeline. They are reported to the orchestrator.
+            - The orchestrator may launch an Integration Agent (E26) to wire gaps automatically.
+
+            **E26: Integration Agent**
+            - Trigger: E25 detects integration gaps with severity "error" or "warning"
+            - Required Action: Launch a single Integration Agent with:
+              (a) The IntegrationReport as input
+              (b) Access restricted to integration_connectors files only
+              (c) Verification gate: `go build ./...` must pass after wiring
+            - The Integration Agent runs AFTER merge, on the main branch (no worktree)
+            - Constraint role: "integrator" — may only modify integration_connectors files
+            - Timeout: same as wave agent timeout (30 minutes)
+            - Failure: non-fatal. If integration agent fails, gaps are reported to human.
+
+            ### protocol/invariants.md
+
+            Add an amendment to I1 (Disjoint File Ownership):
+
+            **I1 Amendment: Integration Agent Exemption**
+            The Integration Agent is exempt from I1's disjoint ownership constraint because
+            it runs after all wave agents complete and after merge. It operates on the merged
+            main branch, not a worktree. Its writes are restricted to integration_connectors
+            files via the "integrator" constraint role (AllowedPathPrefixes enforcement).
+            This is not an I1 violation because there is no concurrent execution — the
+            Integration Agent is the only writer at the time it runs.
+
+            ### protocol/participants.md
+
+            Add a new participant role after the Wave Agent section:
+
+            **Integration Agent**
+            - Execution mode: Synchronous (serial, after wave agents)
+            - Responsibilities: Reads IntegrationReport, reads completion reports, modifies
+              integration_connectors files to wire new exports into caller code.
+            - Constraint role: "integrator"
+            - Forbidden actions: May not modify agent-owned files or scaffold files.
+            - Launches: After wave merge + verification, before next wave starts.
+
+            ## Verification Gate
+
+            Check that all .md files are well-formed markdown (no syntax errors).
+
+            ## Constraints
+
+            - Preserve existing rule numbering — E25/E26 are additive
+            - Update the version number at the top of each file (increment minor)
+            - Cross-reference E25/E26 in I1 amendment
+            - Keep the writing style consistent with existing protocol text
+          files:
+            - protocol/execution-rules.md
+            - protocol/invariants.md
+            - protocol/participants.md
+        - id: K
+          task: |
+            ## What to Implement
+
+            Update supporting protocol specification files for E25/E26 integration.
+
+            ### protocol/procedures.md
+
+            Add the integration validation procedure to the wave finalization procedure:
+            - After "Run quality gates (E21)" and before "Merge agent branches"
+            - New step: "Validate integration (E25): scan for unconnected exports"
+            - New step: "If gaps detected, launch Integration Agent (E26)"
+
+            ### protocol/state-machine.md
+
+            No new states needed. The integration validation and agent run happen within
+            the existing WAVE_MERGING state. Document this:
+            - Add a note to WAVE_MERGING state: "Integration validation (E25) and
+              Integration Agent (E26) execute within this state, after merge and before
+              transition to WAVE_VERIFIED."
+
+            ### protocol/message-formats.md
+
+            Add message format definitions for:
+            - `integration_gaps_detected` — payload: {wave, gaps_count, report}
+            - `integration_agent_started` — payload: {wave, connectors}
+            - `integration_agent_complete` — payload: {wave, files_changed}
+            - `integration_agent_failed` — payload: {wave, error}
+            - `integration_agent_output` — payload: {wave, chunk}
+
+            ### protocol/preconditions.md
+
+            Add precondition for E26:
+            - Integration Agent launch requires: E25 report exists AND report.Valid == false
+            - Integration Agent requires: integration_connectors field in IMPL manifest
+
+            ## Verification Gate
+
+            Check that all .md files are well-formed markdown.
+
+            ## Constraints
+
+            - Preserve existing content — only add new sections/paragraphs
+            - Version bump each file (increment minor)
+            - Consistent terminology: "Integration Agent" (capitalized), "integration gap"
+          files:
+            - protocol/procedures.md
+            - protocol/state-machine.md
+            - protocol/message-formats.md
+            - protocol/preconditions.md
+        - id: L
+          task: |
+            ## What to Implement
+
+            Update implementation-level prompts to include integration awareness.
+
+            ### implementations/claude-code/prompts/agents/scout.md
+
+            Add guidance for the Scout to:
+            1. Identify integration-required exports in interface contracts
+               (add `integration_required: true` and `suggested_callers: [...]` fields)
+            2. Define `integration_connectors` in the IMPL doc — list of caller files
+               that the integration agent may modify (e.g., main.go, server.go, orchestrator.go)
+            3. Explain: "When an agent creates an exported function/type that must be called
+               from a file outside its ownership, flag the export as integration_required and
+               list the caller file in integration_connectors."
+
+            ### implementations/claude-code/prompts/agents/wave-agent.md
+
+            Add a note: "If you create a new exported function or type that must be called
+            from a file you don't own, document it in your completion report under
+            `out_of_scope_deps`. The Integration Agent (E26) will wire it after merge."
+
+            ### implementations/claude-code/prompts/saw-skill.md
+
+            Add to the /saw skill:
+            - New command mention: `sawtools validate-integration <manifest> --wave N`
+            - Update the wave finalization flow description to include E25/E26 steps
+            - Note: integration agent runs automatically in the web app; CLI users can
+              run `sawtools validate-integration` manually
+
+            ### implementations/claude-code/prompts/agent-template.md
+
+            Add a field to the completion report template:
+            - Field: `out_of_scope_deps` — list of exports that need wiring into files
+              outside this agent's ownership. Format: `["pkg/foo.FuncName -> pkg/bar/baz.go"]`
+
+            ## Verification Gate
+
+            Check that all .md files are well-formed markdown.
+
+            ## Constraints
+
+            - Keep changes minimal and focused — don't rewrite entire prompts
+            - Add new sections/paragraphs, don't restructure existing ones
+            - Consistent terminology with protocol files (E25, E26, Integration Agent)
+            - The scout.md changes should make integration_connectors a recommended field,
+              not required (backward compatible)
+          files:
+            - implementations/claude-code/prompts/agents/scout.md
+            - implementations/claude-code/prompts/agents/wave-agent.md
+            - implementations/claude-code/prompts/saw-skill.md
+            - implementations/claude-code/prompts/agent-template.md
+      base_commit: 79670f4d84e25bdf76b3402d026d73ad9f73fbd6
+quality_gates:
+    level: standard
+    gates:
+        - type: build
+          command: go build ./...
+          required: true
+        - type: lint
+          command: go vet ./...
+          required: true
+        - type: test
+          command: go test ./...
+          required: true
+scaffolds:
+    - file_path: pkg/protocol/integration_types.go
+      contents: |
+        package protocol
+
+        // IntegrationGap represents a detected unconnected export.
+        type IntegrationGap struct {
+            ExportName    string   `json:"export_name" yaml:"export_name"`
+            FilePath      string   `json:"file_path" yaml:"file_path"`
+            AgentID       string   `json:"agent_id" yaml:"agent_id"`
+            Category      string   `json:"category" yaml:"category"`           // "function_call", "type_usage", "field_init"
+            Severity      string   `json:"severity" yaml:"severity"`           // "error", "warning", "info"
+            Reason        string   `json:"reason" yaml:"reason"`
+            SuggestedFix  string   `json:"suggested_fix" yaml:"suggested_fix"`
+            SearchResults []string `json:"search_results" yaml:"search_results"` // files that might need to call it
+        }
+
+        // IntegrationReport summarizes all integration gaps for a wave.
+        type IntegrationReport struct {
+            Wave    int              `json:"wave" yaml:"wave"`
+            Gaps    []IntegrationGap `json:"gaps" yaml:"gaps"`
+            Valid   bool             `json:"valid" yaml:"valid"`
+            Summary string           `json:"summary" yaml:"summary"`
+        }
+
+        // IntegrationConnector defines a file that the integration agent is allowed to modify.
+        // These are caller files (orchestrator.go, main.go, server.go) that need wiring.
+        type IntegrationConnector struct {
+            File   string `json:"file" yaml:"file"`
+            Reason string `json:"reason" yaml:"reason"`
+        }
+      import_path: github.com/blackwell-systems/scout-and-wave-go/pkg/protocol
+      status: committed (ab171ee)
+completion_reports:
+    A:
+        status: complete
+        branch: wave1-agent-A
+        commit: 64b02c0
+        files_changed:
+            - pkg/protocol/integration.go
+            - pkg/protocol/integration_test.go
+        files_created:
+            - pkg/protocol/integration.go
+            - pkg/protocol/integration_test.go
+        tests_added:
+            - TestValidateIntegration_NoGaps
+            - TestValidateIntegration_DetectsGap
+            - TestValidateIntegration_SkipsPreExisting
+            - TestValidateIntegration_EmptyWave
+            - TestAppendIntegrationReport
+            - TestClassifyExport
+            - TestIsIntegrationRequired
+        verification: PASS
+    B:
+        status: complete
+        branch: wave1-agent-B
+        commit: 355bea9
+        files_changed:
+            - pkg/protocol/integration_heuristics.go
+            - pkg/protocol/integration_heuristics_test.go
+        files_created:
+            - pkg/protocol/integration_heuristics.go
+            - pkg/protocol/integration_heuristics_test.go
+        tests_added:
+            - TestIsIntegrationRequired_BuildPrefix
+            - TestIsIntegrationRequired_Suffixes
+            - TestIsIntegrationRequired_GetPrefix
+            - TestIsIntegrationRequired_FieldInit
+            - TestIsIntegrationRequired_None
+            - TestIsIntegrationRequired_ConstVar
+            - TestClassifyExport_Func
+            - TestClassifyExport_Type
+            - TestClassifyExport_Field
+            - TestClassifyExport_VarConst
+            - TestClassifyExport_Unknown
+            - TestSuggestCallers_FindsImporters
+            - TestSuggestCallers_EmptyRepo
+        verification: PASS
+    C:
+        status: complete
+        branch: wave1-agent-C
+        commit: 4fceb13
+        files_changed:
+            - cmd/saw/validate_integration.go
+            - cmd/saw/validate_integration_test.go
+            - cmd/saw/main.go
+        files_created:
+            - cmd/saw/validate_integration.go
+            - cmd/saw/validate_integration_test.go
+        tests_added:
+            - TestValidateIntegrationCmd_FlagParsing
+        verification: PASS (code correct; build blocked by Agent A dep on protocol.ValidateIntegration — compiles after wave merge)
+    D:
+        status: complete
+        branch: wave2-agent-D
+        commit: 85cbbf8
+        files_changed:
+            - pkg/engine/finalize.go
+            - pkg/engine/finalize_test.go
+        files_created:
+            - pkg/engine/finalize_test.go
+        tests_added:
+            - TestFinalizeWave_IntegrationStep
+            - TestFinalizeWave_IntegrationError_NonFatal
+        verification: PASS
+    E:
+        status: complete
+        branch: wave2-agent-E
+        commit: 772f753
+        files_changed:
+            - pkg/engine/integration_runner.go
+            - pkg/engine/integration_runner_test.go
+        files_created:
+            - pkg/engine/integration_runner.go
+            - pkg/engine/integration_runner_test.go
+        tests_added:
+            - TestRunIntegrationAgent_NoGaps
+            - TestRunIntegrationAgent_PublishesEvents
+            - TestRunIntegrationAgent_OptsValidation
+        verification: PASS
+    F:
+        status: complete
+        branch: wave2-agent-F
+        commit: 2c09048
+        files_changed:
+            - pkg/engine/constraints.go
+            - pkg/engine/constraints_test.go
+        tests_added:
+            - TestBuildConstraints_IntegratorRole
+            - TestBuildConstraints_IntegratorEmpty
+            - TestBuildIntegratorConstraints_LoadAndBuild
+            - TestBuildIntegratorConstraints_NilManifest
+            - TestBuildIntegratorConstraints_BadPath
+        verification: PASS
+    G:
+        status: complete
+        branch: wave3-agent-G
+        commit: "6278e28"
+        files_changed:
+            - pkg/protocol/types.go
+        verification: PASS
+    H:
+        status: complete
+        branch: wave3-agent-H
+        commit: 63d7757
+        files_changed:
+            - pkg/engine/runner.go
+        verification: PASS
+    I:
+        status: complete
+        branch: wave3-agent-I
+        commit: ab350f2
+        files_changed:
+            - cmd/saw/finalize_wave.go
+        verification: PASS
+    J:
+        status: complete
+        branch: wave4-agent-J
+        commit: c776fb2
+        files_changed:
+            - protocol/execution-rules.md
+            - protocol/invariants.md
+            - protocol/participants.md
+        verification: PASS
+    K:
+        status: complete
+        branch: wave4-agent-K
+        commit: 6d4cc19
+        files_changed:
+            - protocol/procedures.md
+            - protocol/state-machine.md
+            - protocol/message-formats.md
+            - protocol/preconditions.md
+        verification: PASS
+    L:
+        status: complete
+        branch: wave4-agent-L
+        commit: 106fc63
+        files_changed:
+            - implementations/claude-code/prompts/agents/scout.md
+            - implementations/claude-code/prompts/agents/wave-agent.md
+            - implementations/claude-code/prompts/saw-skill.md
+            - implementations/claude-code/prompts/agent-template.md
+        verification: PASS
+pre_mortem:
+    overall_risk: medium
+    rows:
+        - scenario: Go AST parsing fails on non-standard Go files or generated code
+          likelihood: medium
+          impact: low
+          mitigation: ValidateIntegration skips files that fail to parse. Non-fatal by design.
+        - scenario: Integration agent modifies files incorrectly, breaking the build
+          likelihood: medium
+          impact: medium
+          mitigation: Integration agent must pass go build ./... before committing. Build failure = no commit.
+        - scenario: False positive integration gaps overwhelm the integration agent
+          likelihood: medium
+          impact: low
+          mitigation: IsIntegrationRequired heuristics are conservative. Agent can skip low-severity gaps.
+        - scenario: Integration agent timeout on large codebases with many gaps
+          likelihood: low
+          impact: medium
+          mitigation: Same 30-minute timeout as wave agents. Gaps are prioritized by severity.
+        - scenario: Cross-repo protocol text changes conflict with concurrent protocol work
+          likelihood: low
+          impact: medium
+          mitigation: Wave 4 is protocol-only, runs last. Check for concurrent PRs before merging.
+        - scenario: Web app wave_runner.go changes not included — integration agent never runs in web UI
+          likelihood: low
+          impact: high
+          mitigation: Agent H wires into engine runner.go StartWave which the web app calls via runWaveLoop. No separate web changes needed — engine layer is the integration point.
+known_issues:
+    - title: IntegrationConnectors field not in types.go until Wave 3
+      description: Wave 2 Agent F needs IntegrationConnectors on IMPLManifest but Agent G adds it in Wave 3. Agent F uses a local YAML reader as interim workaround.
+      status: Addressed in agent F task description
+      workaround: Agent F reads raw YAML for connectors field until Wave 3 adds it to the struct.
+state: WAVE_PENDING

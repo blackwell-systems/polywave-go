@@ -126,3 +126,5 @@ type BackendConfig struct {
   - IMPL doc: docs/IMPL/complete/IMPL-impl-schema-validation.yaml
 - **bedrock-structured-output**: completed 2026-03-15, 2 waves, 4 agents
   - IMPL doc: docs/IMPL/complete/IMPL-bedrock-structured-output.yaml
+- **integration-agent**: completed 2026-03-16, 4 waves, 12 agents
+  - IMPL doc: docs/IMPL/complete/IMPL-integration-agent.yaml
