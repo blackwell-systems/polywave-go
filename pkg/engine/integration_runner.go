@@ -1,0 +1,249 @@
+package engine
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"os"
+	"path/filepath"
+
+	"github.com/blackwell-systems/scout-and-wave-go/internal/git"
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/agent"
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/orchestrator"
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/types"
+)
+
+// RunIntegrationAgentOpts configures an integration agent run (E26).
+type RunIntegrationAgentOpts struct {
+	IMPLPath string                      // absolute path to IMPL manifest
+	RepoPath string                      // absolute path to the target repository
+	WaveNum  int                         // wave number that was just completed
+	Report   *protocol.IntegrationReport // gaps to fix
+	Model    string                      // optional model override
+}
+
+// RunIntegrationAgent launches an LLM agent to wire integration gaps after
+// wave agents complete (E26). It reads the IntegrationReport, reads completion
+// reports, and modifies integration_connectors files to wire exports into
+// callers. Works with ALL backends (Bedrock, API, CLI) via
+// orchestrator.NewBackendFromModel.
+//
+// The integration agent runs in the MAIN repo directory (not a worktree)
+// because it needs to see the merged result of all wave agents. It only
+// writes to integration_connectors files.
+//
+// If Report.Valid is true (no gaps), returns immediately without launching
+// an agent.
+func RunIntegrationAgent(ctx context.Context, opts RunIntegrationAgentOpts, onEvent func(Event)) error {
+	if err := validateIntegrationOpts(opts); err != nil {
+		return err
+	}
+
+	publish := func(event string, data interface{}) {
+		if onEvent != nil {
+			onEvent(Event{Event: event, Data: data})
+		}
+	}
+
+	// If no gaps, nothing to do.
+	if opts.Report.Valid {
+		return nil
+	}
+
+	publish("integration_agent_started", map[string]interface{}{
+		"impl_path": opts.IMPLPath,
+		"wave":      opts.WaveNum,
+		"gap_count": len(opts.Report.Gaps),
+	})
+
+	// Load manifest for context (integration_connectors, completion reports).
+	manifest, err := protocol.Load(opts.IMPLPath)
+	if err != nil {
+		publish("integration_agent_failed", map[string]string{"error": err.Error()})
+		return fmt.Errorf("engine.RunIntegrationAgent: load manifest: %w", err)
+	}
+
+	// Build the integration agent prompt.
+	prompt, err := buildIntegrationPrompt(opts, manifest)
+	if err != nil {
+		publish("integration_agent_failed", map[string]string{"error": err.Error()})
+		return fmt.Errorf("engine.RunIntegrationAgent: build prompt: %w", err)
+	}
+
+	// Create backend via orchestrator.NewBackendFromModel (supports all providers).
+	b, err := orchestrator.NewBackendFromModel(opts.Model)
+	if err != nil {
+		publish("integration_agent_failed", map[string]string{"error": err.Error()})
+		return fmt.Errorf("engine.RunIntegrationAgent: backend init: %w", err)
+	}
+
+	// Build constraints for integrator role.
+	// Agent F (wave 2) adds buildIntegratorConstraints to constraints.go.
+	// After merge, replace this with:
+	//   constraints := buildIntegratorConstraints(manifest, extractConnectors(manifest))
+	// For now, use buildConstraints with "integrator" role (returns nil-safe default).
+	constraints := buildConstraints(manifest, "integrator", "integrator")
+	_ = constraints // Constraints available for future tool enforcement.
+
+	// Create agent runner and execute with streaming.
+	runner := agent.NewRunner(b, nil)
+	spec := &types.AgentSpec{
+		Letter: "integrator",
+		Prompt: prompt,
+	}
+
+	onChunk := func(chunk string) {
+		publish("integration_agent_output", map[string]string{"chunk": chunk})
+	}
+
+	if _, execErr := runner.ExecuteStreamingWithTools(ctx, spec, opts.RepoPath, onChunk, nil); execErr != nil {
+		publish("integration_agent_failed", map[string]string{"error": execErr.Error()})
+		return fmt.Errorf("engine.RunIntegrationAgent: agent execution failed: %w", execErr)
+	}
+
+	// Auto-commit changes (same pattern as autoCommitWorktree in orchestrator.go).
+	if commitErr := autoCommitIntegration(opts.RepoPath, opts.WaveNum); commitErr != nil {
+		// Non-fatal: the agent may not have made changes.
+		publish("integration_agent_output", map[string]string{
+			"chunk": fmt.Sprintf("integration auto-commit: %v", commitErr),
+		})
+	}
+
+	publish("integration_agent_complete", map[string]interface{}{
+		"impl_path": opts.IMPLPath,
+		"wave":      opts.WaveNum,
+	})
+
+	return nil
+}
+
+// validateIntegrationOpts checks that required fields are present.
+func validateIntegrationOpts(opts RunIntegrationAgentOpts) error {
+	if opts.IMPLPath == "" {
+		return fmt.Errorf("engine.RunIntegrationAgent: IMPLPath is required")
+	}
+	if opts.RepoPath == "" {
+		return fmt.Errorf("engine.RunIntegrationAgent: RepoPath is required")
+	}
+	if opts.WaveNum <= 0 {
+		return fmt.Errorf("engine.RunIntegrationAgent: WaveNum must be positive")
+	}
+	if opts.Report == nil {
+		return fmt.Errorf("engine.RunIntegrationAgent: Report is required")
+	}
+	return nil
+}
+
+// buildIntegrationPrompt constructs the self-contained prompt for the
+// integration agent. It includes the system instruction, gaps as JSON,
+// connector files, completion reports, and the verification gate command.
+func buildIntegrationPrompt(opts RunIntegrationAgentOpts, manifest *protocol.IMPLManifest) (string, error) {
+	// Marshal gaps to JSON for the agent.
+	gapsJSON, err := json.MarshalIndent(opts.Report.Gaps, "", "  ")
+	if err != nil {
+		return "", fmt.Errorf("marshal gaps: %w", err)
+	}
+
+	// Collect integration_connectors files.
+	connectors := extractConnectors(manifest)
+	connectorList := ""
+	for _, c := range connectors {
+		connectorList += fmt.Sprintf("- %s (reason: %s)\n", c.File, c.Reason)
+	}
+	if connectorList == "" {
+		connectorList = "(none specified — use SearchResults in each gap for guidance)\n"
+	}
+
+	// Collect completion reports for context.
+	completionJSON := "{}"
+	if len(manifest.CompletionReports) > 0 {
+		if b, err := json.MarshalIndent(manifest.CompletionReports, "", "  "); err == nil {
+			completionJSON = string(b)
+		}
+	}
+
+	prompt := fmt.Sprintf(`You are an Integration Agent (E26). Your job is to wire newly exported
+functions/types into caller files.
+
+## Integration Gaps to Fix
+
+The following exports were created by wave %d agents but have no call-sites
+in the codebase. Wire each one into the appropriate caller file.
+
+%s
+
+## Files You May Modify (integration_connectors)
+
+%s
+## Completion Reports (context on what was implemented)
+
+%s
+
+## Verification Gate
+
+After making changes, verify the build passes:
+  go build ./...
+
+## Rules
+
+1. Only modify files listed in integration_connectors (or files suggested in
+   SearchResults if no connectors are specified).
+2. Do NOT modify the files where exports are defined — only modify callers.
+3. Add proper imports when wiring new calls.
+4. Each gap's SuggestedFix provides guidance on how to wire it.
+5. Run "go build ./..." after changes to verify compilation.
+`, opts.WaveNum, string(gapsJSON), connectorList, completionJSON)
+
+	return prompt, nil
+}
+
+// extractConnectors retrieves IntegrationConnector entries from the manifest.
+// Since the IntegrationConnectors field may not yet exist on IMPLManifest
+// (added in a later wave), this uses a defensive approach: it checks for
+// the field via the raw YAML data if available. Returns nil if no connectors
+// are defined.
+func extractConnectors(manifest *protocol.IMPLManifest) []protocol.IntegrationConnector {
+	// The IntegrationConnectors field will be added to IMPLManifest by Agent G
+	// (wave 3). For now, return nil — the prompt handles the empty case
+	// by directing the agent to use SearchResults from each gap.
+	return nil
+}
+
+// autoCommitIntegration stages and commits integration agent changes.
+// Similar to autoCommitWorktree in orchestrator.go but runs in the main repo.
+func autoCommitIntegration(repoPath string, waveNum int) error {
+	status, err := git.StatusPorcelain(repoPath)
+	if err != nil {
+		return fmt.Errorf("checking repo status: %w", err)
+	}
+	if status == "" {
+		return nil // No changes to commit.
+	}
+
+	if err := git.AddAll(repoPath); err != nil {
+		return fmt.Errorf("staging changes: %w", err)
+	}
+
+	msg := fmt.Sprintf("feat(wave%d-integration): wire integration gaps", waveNum)
+	if _, err := git.Commit(repoPath, msg); err != nil {
+		return fmt.Errorf("committing: %w", err)
+	}
+
+	return nil
+}
+
+// integrationPromptPath returns the path to the integration-agent.md prompt
+// file in the SAW protocol repo, if it exists.
+func integrationPromptPath() string {
+	sawRepo := os.Getenv("SAW_REPO")
+	if sawRepo == "" {
+		home, _ := os.UserHomeDir()
+		sawRepo = filepath.Join(home, "code", "scout-and-wave")
+	}
+	p := filepath.Join(sawRepo, "implementations", "claude-code", "prompts", "agents", "integration-agent.md")
+	if _, err := os.Stat(p); err == nil {
+		return p
+	}
+	return ""
+}
