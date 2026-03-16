@@ -334,12 +334,16 @@ func StartWave(ctx context.Context, opts RunWaveOpts, onEvent func(Event)) error
 				})
 
 				// E26: Launch integration agent to wire gaps
+				intModel := opts.IntegrationModel
+				if intModel == "" {
+					intModel = opts.WaveModel
+				}
 				intAgentErr := RunIntegrationAgent(ctx, RunIntegrationAgentOpts{
 					IMPLPath: opts.IMPLPath,
 					RepoPath: opts.RepoPath,
 					WaveNum:  waveNum,
 					Report:   integrationReport,
-					Model:    opts.WaveModel,
+					Model:    intModel,
 				}, func(ev Event) { onEvent(ev) })
 				if intAgentErr != nil {
 					// Non-fatal: log but don't abort wave
@@ -1047,12 +1051,16 @@ func startWaveWithGate(ctx context.Context, opts RunWaveOpts, onEvent func(Event
 				})
 
 				// E26: Launch integration agent to wire gaps
+				intModel := opts.IntegrationModel
+				if intModel == "" {
+					intModel = opts.WaveModel
+				}
 				intAgentErr := RunIntegrationAgent(ctx, RunIntegrationAgentOpts{
 					IMPLPath: opts.IMPLPath,
 					RepoPath: opts.RepoPath,
 					WaveNum:  waveNum,
 					Report:   integrationReport,
-					Model:    opts.WaveModel,
+					Model:    intModel,
 				}, func(ev Event) { onEvent(ev) })
 				if intAgentErr != nil {
 					// Non-fatal: log but don't abort wave

@@ -68,10 +68,11 @@ type RunScoutOpts struct {
 
 // RunWaveOpts configures a wave execution run.
 type RunWaveOpts struct {
-	IMPLPath  string // absolute path to IMPL doc (required)
-	RepoPath  string // absolute path to the target repository (required)
-	Slug      string // IMPL slug for event routing (required)
-	WaveModel string // optional: default model for wave agents; per-agent model: field overrides this
+	IMPLPath         string // absolute path to IMPL doc (required)
+	RepoPath         string // absolute path to the target repository (required)
+	Slug             string // IMPL slug for event routing (required)
+	WaveModel        string // optional: default model for wave agents; per-agent model: field overrides this
+	IntegrationModel string // optional: model for integration agent (E26); falls back to WaveModel if empty
 }
 
 // RunMergeOpts configures a merge operation.

@@ -20,7 +20,8 @@
     "scout_model": "claude-opus-4-6",
     "wave_model": "bedrock:claude-sonnet-4-6",
     "chat_model": "bedrock:claude-haiku-4-5",
-    "scaffold_model": "bedrock:claude-sonnet-4-5"
+    "scaffold_model": "bedrock:claude-sonnet-4-5",
+    "integration_model": "bedrock:claude-sonnet-4-5"
   },
   "quality": {
     "require_tests": false,
