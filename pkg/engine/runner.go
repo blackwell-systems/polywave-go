@@ -87,7 +87,7 @@ func RunScout(ctx context.Context, opts RunScoutOpts, onChunk func(string)) erro
 		}
 		runner := agent.NewRunner(b, nil)
 		spec := &types.AgentSpec{Letter: "scout", Prompt: prompt}
-		_, execErr = runner.ExecuteStreaming(ctx, spec, opts.RepoPath, onChunk)
+		_, execErr = runner.ExecuteStreamingWithTools(ctx, spec, opts.RepoPath, onChunk, nil)
 	}
 
 	// I6 enforcement: Validate Scout only wrote to docs/IMPL/IMPL-*.yaml
@@ -355,7 +355,7 @@ func RunScaffold(ctx context.Context, implPath, repoPath, sawRepoPath, model str
 		publish("scaffold_output", map[string]string{"chunk": chunk})
 	}
 
-	if _, execErr := runner.ExecuteStreaming(ctx, spec, repoPath, onChunk); execErr != nil {
+	if _, execErr := runner.ExecuteStreamingWithTools(ctx, spec, repoPath, onChunk, nil); execErr != nil {
 		publish("scaffold_failed", map[string]string{"error": execErr.Error()})
 		return fmt.Errorf("engine.RunScaffold: scaffold agent failed: %w", execErr)
 	}
