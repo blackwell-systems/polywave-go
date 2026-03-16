@@ -53,3 +53,43 @@ func GenerateScoutSchema() (map[string]any, error) {
 
 	return result, nil
 }
+
+// completionReportOutputSchema is the schema definition for structured completion
+// report output. It matches the CompletionReport type defined in protocol/types.go.
+type completionReportOutputSchema struct {
+	Status              string                `json:"status"`
+	Worktree            string                `json:"worktree,omitempty"`
+	Branch              string                `json:"branch,omitempty"`
+	Commit              string                `json:"commit,omitempty"`
+	FilesChanged        []string              `json:"files_changed,omitempty"`
+	FilesCreated        []string              `json:"files_created,omitempty"`
+	InterfaceDeviations []InterfaceDeviation  `json:"interface_deviations,omitempty"`
+	OutOfScopeDeps      []string              `json:"out_of_scope_deps,omitempty"`
+	TestsAdded          []string              `json:"tests_added,omitempty"`
+	Verification        string                `json:"verification,omitempty"`
+	FailureType         string                `json:"failure_type,omitempty"`
+	Notes               string                `json:"notes,omitempty"`
+}
+
+// GenerateCompletionReportSchema returns a JSON Schema (as map[string]any)
+// describing the CompletionReport structure for structured output.
+// The schema is generated via reflection using github.com/invopop/jsonschema.
+func GenerateCompletionReportSchema() (map[string]any, error) {
+	r := &jsonschema.Reflector{
+		AllowAdditionalProperties: false,
+		DoNotReference:            true,
+	}
+	schema := r.Reflect(&completionReportOutputSchema{})
+
+	data, err := json.Marshal(schema)
+	if err != nil {
+		return nil, err
+	}
+
+	var result map[string]any
+	if err := json.Unmarshal(data, &result); err != nil {
+		return nil, err
+	}
+
+	return result, nil
+}
