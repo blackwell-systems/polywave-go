@@ -8,6 +8,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 | Version | Date | Headline |
 |---------|------|----------|
+| [0.49.0] | 2026-03-16 | Integration Agent engine (E25/E26) — 4-wave implementation: validation engine, heuristics, CLI, runner, constraints, manifest types, engine wiring |
 | [0.48.0] | 2026-03-15 | MR01 multi-repo consistency + list-impls state field — validator catches mixed repo: tags, list-impls adds state field, filters completed IMPLs by default (--include-complete to show) |
 | [0.47.0] | 2026-03-15 | Workshop constraints — tool-level SAW protocol enforcement (I1/I2/I5/I6 middleware), H6 dep checker prefix matching fix, orchestrator wiring |
 | [0.46.0] | 2026-03-14 | Validate --fix + .claire worktree resolution — auto-correct invalid gate types, shared worktree resolver for .claude/.claire fallback |
@@ -56,7 +57,22 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 | [0.3.0] | 2026-03-08 | Protocol audit fixes — P0: failure_type parsing, multi-gen agent IDs; P1: E22 2-pass scaffold build, cross-repo Repo column; P2: repo field in completion reports |
 | [0.2.0] | 2026-03-08 | Engine protocol parity — E17–E23 implemented (context memory, failure routing, stub scan, quality gates, scaffold build verify, per-agent context extraction) |
 
-| [0.39.0] | 2026-03-14 | Scout automation integration — runScoutAutomation() integrates H1a-H4 tools into engine.RunScout(), inject results into Scout prompts |
+---
+
+## [0.49.0] - 2026-03-16
+
+### Added
+
+- **E25 integration validation engine** — `pkg/protocol/integration.go` with `ValidateIntegration()` that performs AST-based scanning to detect unexported symbols, unregistered routes, missing wire-up, and unused scaffold types across Go source files.
+- **Integration heuristics** — `pkg/protocol/integration_heuristics.go` with `ClassifyExport()`, `IsIntegrationRequired()`, `SuggestCallers()` for intelligent classification of exports by action prefix/suffix patterns and context-aware caller suggestion.
+- **`sawtools check-integration` CLI** — `cmd/saw/check_integration.go` surfaces E25 validation results as structured JSON for orchestrator consumption.
+- **Integration agent runner** — `pkg/engine/runner.go` wired with `IntegrationModel` support; both E26 call sites use dedicated model with fallback to `WaveModel`.
+- **`IntegrationModel` in engine opts** — `pkg/engine/engine.go` `RunWaveOpts.IntegrationModel` field for per-role model configuration.
+- **Integration constraint types** — `pkg/protocol/manifest_types.go` extended with integration-specific constraint and validation result types.
+
+### Fixed
+
+- **Bedrock `maxTurns` default** — Changed from 50 to 200 to match Anthropic API behavior; prevents premature agent termination on complex tasks.
 
 ---
 
