@@ -22,9 +22,14 @@ type IMPLManifest struct {
 	InterfaceContracts    []InterfaceContract            `yaml:"interface_contracts" json:"interface_contracts"`
 	Waves                 []Wave                         `yaml:"waves" json:"waves"`
 	QualityGates          *QualityGates                  `yaml:"quality_gates,omitempty" json:"quality_gates,omitempty"`
+	PostMergeChecklist    *PostMergeChecklist            `yaml:"post_merge_checklist,omitempty" json:"post_merge_checklist,omitempty"`
 	Scaffolds             []ScaffoldFile                 `yaml:"scaffolds,omitempty" json:"scaffolds,omitempty"`
 	CompletionReports     map[string]CompletionReport    `yaml:"completion_reports,omitempty" json:"completion_reports,omitempty"`
 	StubReports           map[string]*ScanStubsResult    `yaml:"stub_reports,omitempty" json:"stub_reports,omitempty"`
+	// E25: Integration validation reports per wave
+	IntegrationReports    map[string]*IntegrationReport  `yaml:"integration_reports,omitempty" json:"integration_reports,omitempty"`
+	// Integration connectors: files the integration agent is allowed to modify
+	IntegrationConnectors []IntegrationConnector         `yaml:"integration_connectors,omitempty" json:"integration_connectors,omitempty"`
 	PreMortem             *PreMortem                     `yaml:"pre_mortem,omitempty" json:"pre_mortem,omitempty"`
 	KnownIssues           []KnownIssue                   `yaml:"known_issues,omitempty" json:"known_issues,omitempty"`
 	State                 ProtocolState                  `yaml:"state,omitempty" json:"state,omitempty"`
@@ -50,8 +55,10 @@ type FileOwnership struct {
 // Wave represents a concurrent execution phase with multiple agents.
 // Agents in the same wave run in parallel; waves execute sequentially.
 type Wave struct {
-	Number int     `yaml:"number" json:"number"`
-	Agents []Agent `yaml:"agents" json:"agents"`
+	Number           int      `yaml:"number" json:"number"`
+	Agents           []Agent  `yaml:"agents" json:"agents"`
+	AgentLaunchOrder []string `yaml:"agent_launch_order,omitempty" json:"agent_launch_order,omitempty"`
+	BaseCommit       string   `yaml:"base_commit,omitempty" json:"base_commit,omitempty"` // Recorded when worktrees created for post-merge verification
 }
 
 // Agent represents a single concurrent task within a wave.
@@ -113,6 +120,7 @@ type QualityGate struct {
 	Command     string `yaml:"command" json:"command"`
 	Required    bool   `yaml:"required" json:"required"`
 	Description string `yaml:"description,omitempty" json:"description,omitempty"`
+	Repo        string `yaml:"repo,omitempty" json:"repo,omitempty"` // if set, gate only runs in this repo
 }
 
 // ScaffoldFile represents a type scaffold file that is created before wave execution.
@@ -142,6 +150,7 @@ type PreMortemRow struct {
 
 // KnownIssue records an issue discovered during scout phase with status and workaround.
 type KnownIssue struct {
+	Title       string `yaml:"title,omitempty" json:"title,omitempty"`
 	Description string `yaml:"description" json:"description"`
 	Status      string `yaml:"status,omitempty" json:"status,omitempty"`
 	Workaround  string `yaml:"workaround,omitempty" json:"workaround,omitempty"`

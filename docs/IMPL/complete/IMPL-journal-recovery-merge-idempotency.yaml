@@ -1,0 +1,439 @@
+completion_date: "2025-03-14"
+title: E23A Tool Journal Recovery + E9 Merge Idempotency
+feature_slug: journal-recovery-merge-idempotency
+verdict: SUITABLE
+test_command: go test ./pkg/protocol/... ./pkg/journal/... ./pkg/orchestrator/...
+lint_command: go vet ./...
+file_ownership:
+    - file: pkg/orchestrator/journal_integration.go
+      agent: A
+      wave: 1
+      action: new
+    - file: pkg/orchestrator/journal_integration_test.go
+      agent: A
+      wave: 1
+      action: new
+    - file: pkg/journal/observer.go
+      agent: B
+      wave: 1
+      action: modify
+    - file: pkg/journal/observer_test.go
+      agent: B
+      wave: 1
+      action: modify
+    - file: pkg/protocol/merge_log.go
+      agent: C
+      wave: 1
+      action: new
+    - file: pkg/protocol/merge_log_test.go
+      agent: C
+      wave: 1
+      action: new
+    - file: cmd/saw/finalize_wave.go
+      agent: D
+      wave: 1
+      action: modify
+    - file: pkg/orchestrator/merge.go
+      agent: D
+      wave: 1
+      action: modify
+    - file: pkg/protocol/merge_agents.go
+      agent: D
+      wave: 1
+      action: modify
+interface_contracts:
+    - name: journal.GenerateContext
+      description: |
+        Generates markdown context summary from journal entries for agent recovery (E23A).
+        Already implemented in pkg/journal/context.go. Orchestrator calls this before
+        launching/resuming agents to prepend "Prior Work" section to agent prompt.
+      definition: |
+        func GenerateContext(entries []ToolEntry, maxEntries int) (string, error)
+      location: pkg/journal/context.go
+    - name: journal.NewObserver
+      description: |
+        Creates journal observer instance for an agent. Already implemented in
+        pkg/journal/observer.go. Used by orchestrator to initialize journal tracking
+        when launching agents.
+      definition: |
+        func NewObserver(projectRoot string, agentID string) (*JournalObserver, error)
+      location: pkg/journal/observer.go
+    - name: protocol.LoadMergeLog
+      description: |
+        Reads merge-log.json for a wave to determine which agents have already been merged.
+        Returns empty MergeLog if file doesn't exist (first merge attempt). Used by
+        finalize-wave to implement idempotency (E9).
+      definition: |
+        func LoadMergeLog(manifestPath string, waveNum int) (*MergeLog, error)
+      location: pkg/protocol/merge_log.go
+    - name: protocol.SaveMergeLog
+      description: |
+        Writes merge-log.json after successful agent merge. Appends merge entry with
+        agent ID, merge commit SHA, and timestamp. Used by finalize-wave to track
+        merge progress (E9).
+      definition: |
+        func SaveMergeLog(manifestPath string, waveNum int, log *MergeLog) error
+      location: pkg/protocol/merge_log.go
+    - name: protocol.MergeLog
+      description: |
+        Tracks per-agent merge state for wave merge idempotency. Contains wave number
+        and array of merge entries (agent ID, merge SHA, timestamp). Persisted to
+        .saw-state/wave{N}/merge-log.json.
+      definition: |
+        type MergeLog struct {
+          Wave    int          `json:"wave"`
+          Merges  []MergeEntry `json:"merges"`
+        }
+
+        type MergeEntry struct {
+          Agent     string    `json:"agent"`
+          MergeSHA  string    `json:"merge_sha"`
+          Timestamp time.Time `json:"timestamp"`
+        }
+      location: pkg/protocol/merge_log.go
+waves:
+    - number: 1
+      agents:
+        - id: A
+          task: |
+            ## What to Implement
+            Implement orchestrator-level integration for E23A tool journal recovery. When
+            launching or resuming agents, the orchestrator must check for existing journal
+            entries, generate context summary using journal.GenerateContext(), and prepend
+            the summary to the agent's prompt as a "Prior Work" section.
+
+            This enables agents to retain execution history across retries, context
+            compaction, and process restarts, supporting automatic failure remediation
+            (E7a, E19).
+
+            ## Interfaces to Implement
+            ```go
+            // In pkg/orchestrator/journal_integration.go:
+
+            // PrepareAgentContext loads journal history and generates context.md for agent recovery.
+            // Returns empty string if no journal exists (first launch).
+            func PrepareAgentContext(projectRoot string, waveNum int, agentID string, maxEntries int) (string, error)
+
+            // WriteJournalEntry appends a tool use/result entry to the agent's journal.
+            // Called by orchestrator after each agent tool invocation.
+            func WriteJournalEntry(projectRoot string, waveNum int, agentID string, entry journal.ToolEntry) error
+            ```
+
+            ## Interfaces to Call
+            - journal.NewObserver(projectRoot, agentID) — existing function in pkg/journal/observer.go
+            - journal.GenerateContext(entries []ToolEntry, maxEntries int) — existing function in pkg/journal/context.go
+            - observer.Sync() — existing method to sync journal from Claude Code session logs
+            - observer.LoadJournal() — existing method to read all journal entries
+
+            ## Tests to Write
+            1. TestPrepareAgentContext_NoJournal - verifies empty string returned when no journal exists
+            2. TestPrepareAgentContext_WithJournal - verifies context.md generated from journal entries
+            3. TestPrepareAgentContext_MaxEntriesLimit - verifies last N entries used when journal exceeds limit
+            4. TestWriteJournalEntry_CreatesJournalDir - verifies directory structure created on first write
+            5. TestWriteJournalEntry_AppendsEntry - verifies entry appended to index.jsonl
+
+            ## Verification Gate
+            ```bash
+            go build ./...
+            go vet ./pkg/orchestrator/...
+            go test ./pkg/orchestrator/journal_integration_test.go -v
+            ```
+
+            ## Constraints
+            - PrepareAgentContext must handle missing .saw-state directory (first wave)
+            - maxEntries parameter should default to 50 (per E23A spec) if 0 provided
+            - Journal directory structure: .saw-state/wave{N}/agent-{ID}/index.jsonl
+            - Do NOT modify pkg/journal/ package — it is owned by Agent B
+            - Do NOT modify cmd/saw/journal_context.go — CLI command already exists and works
+            - Context summary must start with "## Session Context (Recovered from Tool Journal)"
+              to match journal.GenerateContext() output format
+            - If journal.NewObserver returns error (e.g., filesystem issues), return error
+              rather than empty string — differentiate "no journal" from "journal read failure"
+          files:
+            - pkg/orchestrator/journal_integration.go
+            - pkg/orchestrator/journal_integration_test.go
+        - id: B
+          task: |
+            ## What to Implement
+            Complete E23A journal recovery implementation by wiring GenerateContext() into
+            JournalObserver. Currently, observer.GenerateContext() returns "not implemented"
+            error. Replace placeholder with actual call to journal.GenerateContext() using
+            loaded journal entries.
+
+            Also add LoadJournal() method to JournalObserver to read all entries from
+            index.jsonl (needed by Agent A's PrepareAgentContext).
+
+            ## Interfaces to Implement
+            ```go
+            // In pkg/journal/observer.go:
+
+            // GenerateContext generates markdown context summary from journal entries.
+            // Replaces the "not implemented" placeholder at line 427.
+            func (o *JournalObserver) GenerateContext() (string, error)
+
+            // LoadJournal reads all entries from index.jsonl.
+            func (o *JournalObserver) LoadJournal() ([]ToolEntry, error)
+            ```
+
+            ## Interfaces to Call
+            - journal.GenerateContext(entries []ToolEntry, maxEntries int) — already implemented
+              in pkg/journal/context.go. Call with entries from LoadJournal() and maxEntries=0
+              (no limit — full journal context).
+            - os.ReadFile() to read index.jsonl
+            - json.Unmarshal() to parse JSONL entries
+
+            ## Tests to Write
+            1. TestGenerateContext_CallsGenerateContextFunc - verifies observer delegates to journal.GenerateContext()
+            2. TestLoadJournal_EmptyJournal - verifies empty slice returned when index.jsonl doesn't exist
+            3. TestLoadJournal_ParsesJSONL - verifies all entries loaded from index.jsonl
+            4. TestLoadJournal_IgnoresInvalidLines - verifies malformed JSONL lines skipped with warning
+            5. TestGenerateContext_Integration - end-to-end test: Sync() → LoadJournal() → GenerateContext()
+
+            ## Verification Gate
+            ```bash
+            go build ./...
+            go vet ./pkg/journal/...
+            go test ./pkg/journal/observer_test.go -v
+            ```
+
+            ## Constraints
+            - LoadJournal() must parse JSONL format (one JSON object per line)
+            - Skip empty lines and lines that fail json.Unmarshal (log warning but don't fail)
+            - GenerateContext() must return exactly the output from journal.GenerateContext() — no
+              modification or wrapping
+            - Do NOT change journal.GenerateContext() signature or behavior (already tested and working)
+            - Do NOT modify pkg/orchestrator/ — that is owned by Agent A
+            - LoadJournal() should return entries in order they appear in file (chronological)
+            - If index.jsonl doesn't exist, LoadJournal() returns empty slice (not error)
+          files:
+            - pkg/journal/observer.go
+            - pkg/journal/observer_test.go
+        - id: C
+          task: |
+            ## What to Implement
+            Implement E9 merge-log persistence to support finalize-wave idempotency. Create
+            pkg/protocol/merge_log.go with MergeLog type and functions to read/write
+            .saw-state/wave{N}/merge-log.json. This enables finalize-wave to track which
+            agents have already been merged, preventing duplicate merge commits if the
+            process crashes mid-merge.
+
+            ## Interfaces to Implement
+            ```go
+            // In pkg/protocol/merge_log.go:
+
+            // MergeLog tracks per-agent merge state for wave merge idempotency.
+            type MergeLog struct {
+              Wave    int          `json:"wave"`
+              Merges  []MergeEntry `json:"merges"`
+            }
+
+            // MergeEntry records a single agent merge.
+            type MergeEntry struct {
+              Agent     string    `json:"agent"`
+              MergeSHA  string    `json:"merge_sha"`
+              Timestamp time.Time `json:"timestamp"`
+            }
+
+            // LoadMergeLog reads merge-log.json for a wave. Returns empty MergeLog if file doesn't exist.
+            func LoadMergeLog(manifestPath string, waveNum int) (*MergeLog, error)
+
+            // SaveMergeLog writes merge-log.json after successful agent merge.
+            func SaveMergeLog(manifestPath string, waveNum int, log *MergeLog) error
+
+            // AddMergeEntry appends a merge entry to the log.
+            func (ml *MergeLog) AddMergeEntry(agent string, mergeSHA string) error
+
+            // IsMerged checks if an agent has already been merged.
+            func (ml *MergeLog) IsMerged(agent string) bool
+
+            // GetMergeSHA returns the merge SHA for an agent, or empty string if not merged.
+            func (ml *MergeLog) GetMergeSHA(agent string) string
+            ```
+
+            ## Interfaces to Call
+            - os.ReadFile() / os.WriteFile() for file I/O
+            - json.Marshal() / json.Unmarshal() for JSON serialization
+            - filepath.Dir() to extract directory from manifest path
+            - os.MkdirAll() to create .saw-state/wave{N}/ directory if needed
+
+            ## Tests to Write
+            1. TestLoadMergeLog_NoFile - verifies empty MergeLog returned when file doesn't exist
+            2. TestLoadMergeLog_ValidFile - verifies log loaded from JSON file
+            3. TestSaveMergeLog_CreatesDirectory - verifies .saw-state/wave{N}/ created if missing
+            4. TestSaveMergeLog_WritesJSON - verifies log written to merge-log.json
+            5. TestAddMergeEntry_AppendsEntry - verifies entry appended to merges array
+            6. TestIsMerged_ReturnsTrueForMergedAgent - verifies IsMerged returns true for merged agent
+            7. TestIsMerged_ReturnsFalseForUnmergedAgent - verifies IsMerged returns false for unmerged agent
+            8. TestGetMergeSHA_ReturnsCorrectSHA - verifies GetMergeSHA returns correct SHA
+
+            ## Verification Gate
+            ```bash
+            go build ./...
+            go vet ./pkg/protocol/...
+            go test ./pkg/protocol/merge_log_test.go -v
+            ```
+
+            ## Constraints
+            - File path: {manifest_dir}/.saw-state/wave{N}/merge-log.json
+            - LoadMergeLog must return empty MergeLog (not error) if file doesn't exist
+            - SaveMergeLog must create parent directories with 0755 permissions
+            - SaveMergeLog must overwrite existing file (not append)
+            - IsMerged must handle case-insensitive agent ID comparison (e.g., "A" vs "a")
+            - Do NOT modify cmd/saw/finalize_wave.go — that is owned by Agent D
+            - Do NOT modify pkg/orchestrator/merge.go — that is owned by Agent D
+            - JSON format: pretty-printed with 2-space indent for readability
+          files:
+            - pkg/protocol/merge_log.go
+            - pkg/protocol/merge_log_test.go
+        - id: D
+          task: |
+            ## What to Implement
+            Integrate E9 merge-log tracking into finalize-wave and merge functions. Before
+            merging each agent branch, check merge-log.json to see if the agent has already
+            been merged. Skip agents already in the log (idempotency). After successful merge,
+            append the agent to the merge log with merge commit SHA.
+
+            This makes finalize-wave idempotent in WAVE_MERGING phase — crashed merges can
+            resume without creating duplicate commits.
+
+            ## Interfaces to Implement
+            No new public interfaces — this agent modifies existing functions to add
+            merge-log tracking.
+
+            ## Interfaces to Call
+            - protocol.LoadMergeLog(manifestPath, waveNum) — implemented by Agent C
+            - protocol.SaveMergeLog(manifestPath, waveNum, log) — implemented by Agent C
+            - log.IsMerged(agentID) — implemented by Agent C
+            - log.AddMergeEntry(agentID, mergeSHA) — implemented by Agent C
+            - git.RevParse(repoPath, "HEAD") — existing function in internal/git/ to get latest commit SHA
+
+            ## Tests to Write
+            1. TestFinalizeWave_SkipsAlreadyMergedAgents - verifies agents in merge-log are skipped
+            2. TestFinalizeWave_AppendsMergeLog - verifies merge-log updated after successful merge
+            3. TestFinalizeWave_IdempotentOnCrash - simulates crash mid-merge, verifies resume works
+            4. TestMergeAgents_LoadsMergeLog - verifies merge-log loaded before merging (in pkg/protocol/)
+            5. TestMergeAgents_SavesMergeLog - verifies merge-log saved after each merge (in pkg/protocol/)
+
+            ## Verification Gate
+            ```bash
+            go build ./...
+            go vet ./cmd/saw/... ./pkg/orchestrator/... ./pkg/protocol/...
+            go test ./cmd/saw/finalize_wave.go -v
+            go test ./pkg/orchestrator/merge_test.go -v
+            go test ./pkg/protocol/merge_agents_test.go -v
+            ```
+
+            ## Constraints
+            - Modify cmd/saw/finalize_wave.go to load merge-log before Step 4 (MergeAgents)
+            - Modify pkg/orchestrator/merge.go executeMergeWave() to check merge-log before each git.MergeNoFF
+            - Modify pkg/protocol/merge_agents.go mergeAgentsSingleRepo() and mergeAgentsMultiRepo()
+              to load/save merge-log
+            - Skip agents if log.IsMerged(agentID) returns true — do NOT merge again
+            - After successful merge, call log.AddMergeEntry(agentID, mergeSHA) where mergeSHA is
+              the HEAD commit SHA after git.MergeNoFF
+            - Do NOT modify pkg/protocol/merge_log.go — that is owned by Agent C
+            - If LoadMergeLog returns error (filesystem issues), propagate error — do NOT continue merge
+            - If SaveMergeLog returns error, log warning but continue (best-effort tracking)
+            - Update finalize-wave.go Step 4 comment to mention idempotency check
+          files:
+            - cmd/saw/finalize_wave.go
+            - pkg/orchestrator/merge.go
+            - pkg/protocol/merge_agents.go
+      base_commit: e21eb4565d32c1cf7e54244cff33eb4c350df0d2
+quality_gates:
+    level: standard
+    gates:
+        - type: build
+          command: go build ./...
+          required: true
+        - type: test
+          command: go test ./pkg/protocol/... ./pkg/journal/... ./pkg/orchestrator/...
+          required: true
+        - type: lint
+          command: go vet ./...
+          required: false
+          description: Check for common Go mistakes
+completion_reports:
+    A:
+        status: complete
+        branch: wave1-agent-A
+        commit: b2649da
+        files_changed:
+            - pkg/orchestrator/journal_integration.go
+            - pkg/orchestrator/journal_integration_test.go
+        files_created:
+            - pkg/orchestrator/journal_integration.go
+            - pkg/orchestrator/journal_integration_test.go
+        tests_added:
+            - TestPrepareAgentContext_NoJournal
+            - TestPrepareAgentContext_WithJournal
+            - TestPrepareAgentContext_MaxEntriesLimit
+            - TestPrepareAgentContext_DefaultMaxEntries
+            - TestWriteJournalEntry_CreatesJournalDir
+            - TestWriteJournalEntry_AppendsEntry
+        verification: PASS
+    B:
+        status: complete
+        branch: wave1-agent-B
+        commit: 5d16fb5
+        files_changed:
+            - pkg/journal/observer.go
+            - pkg/journal/observer_test.go
+        tests_added:
+            - TestGenerateContext_CallsGenerateContextFunc
+            - TestLoadJournal_EmptyJournal
+            - TestLoadJournal_ParsesJSONL
+            - TestLoadJournal_IgnoresInvalidLines
+            - TestGenerateContext_Integration
+        verification: PASS
+    C:
+        status: complete
+        branch: wave1-agent-C
+        commit: a982718
+        files_changed:
+            - pkg/protocol/merge_log.go
+            - pkg/protocol/merge_log_test.go
+        files_created:
+            - pkg/protocol/merge_log.go
+            - pkg/protocol/merge_log_test.go
+        tests_added:
+            - TestLoadMergeLog_NoFile
+            - TestLoadMergeLog_ValidFile
+            - TestSaveMergeLog_CreatesDirectory
+            - TestSaveMergeLog_WritesJSON
+            - TestAddMergeEntry_AppendsEntry
+            - TestAddMergeEntry_ValidatesInput
+            - TestIsMerged_ReturnsTrueForMergedAgent
+            - TestIsMerged_ReturnsFalseForUnmergedAgent
+            - TestGetMergeSHA_ReturnsCorrectSHA
+        verification: PASS
+    D:
+        status: complete
+        branch: wave1-agent-D
+        commit: 59d6915
+        files_changed:
+            - cmd/saw/finalize_wave.go
+            - pkg/orchestrator/merge.go
+            - pkg/protocol/merge_agents.go
+            - pkg/protocol/merge_agents_test.go
+        tests_added:
+            - TestMergeAgents_SkipsAlreadyMergedAgents
+            - TestMergeAgents_AppendsMergeLog
+            - TestMergeAgents_IdempotentOnCrash
+        verification: 'BLOCKED: Cannot build without Agent C''s merge_log.go implementation'
+pre_mortem:
+    overall_risk: low
+    rows:
+        - scenario: E23A context prepending breaks agent prompt formatting
+          likelihood: low
+          impact: medium
+          mitigation: journal.GenerateContext() already produces valid markdown (tested). Orchestrator prepends as-is with clear section header. Test with multi-agent IMPL doc before rollout.
+        - scenario: Merge-log tracking misses edge case (e.g., orphaned merge commit)
+          likelihood: low
+          impact: medium
+          mitigation: LoadMergeLog checks git history for merge commits matching 'Merge wave{N}-agent-{ID}' pattern. If log file is lost, operator can reconstruct by running check-merge-state (future enhancement). Document manual recovery in protocol/execution-rules.md.
+        - scenario: Journal observer fails silently (e.g., Claude Code session log missing)
+          likelihood: low
+          impact: low
+          mitigation: PrepareAgentContext returns error on journal read failure (differentiated from 'no journal'). Orchestrator logs error and proceeds with empty context (graceful degradation). Agent still functions, just without prior work context.
+state: "COMPLETE"

@@ -4,7 +4,9 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
+	"time"
 )
 
 // setupTestRepo creates a temporary git repository for testing.
@@ -392,5 +394,260 @@ func TestMergeAgents_TaskTruncation(t *testing.T) {
 	expectedMsg := "Merge wave1-agent-A: This is a very long task description that exceeds"
 	if commitMsg != expectedMsg {
 		t.Errorf("commit message not truncated correctly\ngot:  %q (len=%d)\nwant: %q (len=%d)", commitMsg, len(commitMsg), expectedMsg, len(expectedMsg))
+	}
+}
+
+// TestMergeAgents_SkipsAlreadyMergedAgents verifies that agents in merge-log are skipped during merge.
+func TestMergeAgents_SkipsAlreadyMergedAgents(t *testing.T) {
+	repoDir, cleanup := setupTestRepo(t)
+	defer cleanup()
+
+	// Create two agent branches
+	createAgentBranch(t, repoDir, "wave1-agent-A", "file-a.txt")
+	createAgentBranch(t, repoDir, "wave1-agent-B", "file-b.txt")
+
+	// Create manifest
+	waves := []Wave{
+		{
+			Number: 1,
+			Agents: []Agent{
+				{ID: "A", Task: "Implement feature A"},
+				{ID: "B", Task: "Implement feature B"},
+			},
+		},
+	}
+	manifestPath := createManifest(t, repoDir, waves)
+
+	// Actually merge agent A so git confirms it's an ancestor of HEAD.
+	// The idempotency check requires BOTH the merge log AND git history to agree.
+	cmd := exec.Command("git", "-C", repoDir, "merge", "--no-ff", "-m", "Merge wave1-agent-A", "wave1-agent-A")
+	if err := cmd.Run(); err != nil {
+		t.Fatalf("failed to merge agent A: %v", err)
+	}
+	mergeSHAOutput, _ := exec.Command("git", "-C", repoDir, "rev-parse", "HEAD").Output()
+	mergeSHA := strings.TrimSpace(string(mergeSHAOutput))
+
+	// Pre-populate merge-log with agent A already merged
+	mergeLog := &MergeLog{
+		Wave: 1,
+		Merges: []MergeEntry{
+			{Agent: "A", MergeSHA: mergeSHA, Timestamp: time.Time{}},
+		},
+	}
+	if err := SaveMergeLog(manifestPath, 1, mergeLog); err != nil {
+		t.Fatalf("failed to save initial merge-log: %v", err)
+	}
+
+	// Run merge
+	result, err := MergeAgents(manifestPath, 1, repoDir)
+	if err != nil {
+		t.Fatalf("MergeAgents returned error: %v", err)
+	}
+
+	// Verify result
+	if !result.Success {
+		t.Errorf("expected Success=true, got false")
+	}
+
+	if len(result.Merges) != 2 {
+		t.Fatalf("expected 2 merge statuses, got %d", len(result.Merges))
+	}
+
+	// Agent A should be skipped
+	if result.Merges[0].Agent != "A" {
+		t.Errorf("expected first merge agent=A, got %s", result.Merges[0].Agent)
+	}
+	if !result.Merges[0].Success {
+		t.Errorf("expected agent A to succeed (skipped), got error: %s", result.Merges[0].Error)
+	}
+	if result.Merges[0].Error != "already merged (skipped)" {
+		t.Errorf("expected skip message for agent A, got: %s", result.Merges[0].Error)
+	}
+
+	// Agent B should be merged normally
+	if result.Merges[1].Agent != "B" {
+		t.Errorf("expected second merge agent=B, got %s", result.Merges[1].Agent)
+	}
+	if !result.Merges[1].Success {
+		t.Errorf("expected agent B merge to succeed, got error: %s", result.Merges[1].Error)
+	}
+
+	// Verify merge-log was updated with agent B
+	updatedLog, err := LoadMergeLog(manifestPath, 1)
+	if err != nil {
+		t.Fatalf("failed to load updated merge-log: %v", err)
+	}
+	if len(updatedLog.Merges) != 2 {
+		t.Errorf("expected 2 entries in merge-log, got %d", len(updatedLog.Merges))
+	}
+	if !updatedLog.IsMerged("B") {
+		t.Errorf("expected agent B to be in merge-log after merge")
+	}
+}
+
+// TestMergeAgents_AppendsMergeLog verifies merge-log is updated after successful merge.
+func TestMergeAgents_AppendsMergeLog(t *testing.T) {
+	repoDir, cleanup := setupTestRepo(t)
+	defer cleanup()
+
+	// Create agent branch
+	createAgentBranch(t, repoDir, "wave1-agent-A", "file-a.txt")
+
+	// Create manifest
+	waves := []Wave{
+		{
+			Number: 1,
+			Agents: []Agent{
+				{ID: "A", Task: "Implement feature A"},
+			},
+		},
+	}
+	manifestPath := createManifest(t, repoDir, waves)
+
+	// Run merge
+	result, err := MergeAgents(manifestPath, 1, repoDir)
+	if err != nil {
+		t.Fatalf("MergeAgents returned error: %v", err)
+	}
+
+	if !result.Success {
+		t.Errorf("expected Success=true, got false: %v", result.Merges[0].Error)
+	}
+
+	// Load merge-log and verify agent A was recorded
+	mergeLog, err := LoadMergeLog(manifestPath, 1)
+	if err != nil {
+		t.Fatalf("failed to load merge-log: %v", err)
+	}
+
+	if len(mergeLog.Merges) != 1 {
+		t.Errorf("expected 1 entry in merge-log, got %d", len(mergeLog.Merges))
+	}
+
+	if !mergeLog.IsMerged("A") {
+		t.Errorf("expected agent A to be in merge-log")
+	}
+
+	mergeSHA := mergeLog.GetMergeSHA("A")
+	if mergeSHA == "" {
+		t.Errorf("expected non-empty merge SHA for agent A")
+	}
+
+	// Verify SHA matches current HEAD
+	cmd := exec.Command("git", "-C", repoDir, "rev-parse", "HEAD")
+	output, err := cmd.Output()
+	if err != nil {
+		t.Fatalf("failed to get HEAD SHA: %v", err)
+	}
+	headSHA := string(output[:len(output)-1]) // trim newline
+
+	if mergeSHA != headSHA {
+		t.Errorf("merge-log SHA does not match HEAD\ngot:  %s\nwant: %s", mergeSHA, headSHA)
+	}
+}
+
+// TestMergeAgents_IdempotentOnCrash simulates a crash mid-merge and verifies resume works.
+func TestMergeAgents_IdempotentOnCrash(t *testing.T) {
+	repoDir, cleanup := setupTestRepo(t)
+	defer cleanup()
+
+	// Create three agent branches
+	createAgentBranch(t, repoDir, "wave1-agent-A", "file-a.txt")
+	createAgentBranch(t, repoDir, "wave1-agent-B", "file-b.txt")
+	createAgentBranch(t, repoDir, "wave1-agent-C", "file-c.txt")
+
+	// Create manifest
+	waves := []Wave{
+		{
+			Number: 1,
+			Agents: []Agent{
+				{ID: "A", Task: "Implement feature A"},
+				{ID: "B", Task: "Implement feature B"},
+				{ID: "C", Task: "Implement feature C"},
+			},
+		},
+	}
+	manifestPath := createManifest(t, repoDir, waves)
+
+	// Simulate "crash" scenario: merge A and B manually, then let MergeAgents resume
+	// Manually merge A and B and record in merge-log (simulating partial completion before crash)
+
+	// Merge agent A
+	cmd := exec.Command("git", "-C", repoDir, "merge", "--no-ff", "-m", "Merge wave1-agent-A", "wave1-agent-A")
+	if err := cmd.Run(); err != nil {
+		t.Fatalf("failed to merge agent A: %v", err)
+	}
+
+	// Get merge SHA for A
+	output, _ := exec.Command("git", "-C", repoDir, "rev-parse", "HEAD").Output()
+	mergeSHAA := string(output[:len(output)-1])
+
+	// Merge agent B
+	cmd = exec.Command("git", "-C", repoDir, "merge", "--no-ff", "-m", "Merge wave1-agent-B", "wave1-agent-B")
+	if err := cmd.Run(); err != nil {
+		t.Fatalf("failed to merge agent B: %v", err)
+	}
+
+	// Get merge SHA for B
+	output, _ = exec.Command("git", "-C", repoDir, "rev-parse", "HEAD").Output()
+	mergeSHAB := string(output[:len(output)-1])
+
+	// Record A and B in merge-log (C not recorded - simulating crash before C merged)
+	crashedLog := &MergeLog{
+		Wave: 1,
+		Merges: []MergeEntry{
+			{Agent: "A", MergeSHA: mergeSHAA, Timestamp: time.Now()},
+			{Agent: "B", MergeSHA: mergeSHAB, Timestamp: time.Now()},
+		},
+	}
+	if err := SaveMergeLog(manifestPath, 1, crashedLog); err != nil {
+		t.Fatalf("failed to save crashed merge-log: %v", err)
+	}
+
+	// Now "restart" - MergeAgents should skip A and B (already merged) and merge C
+	result2, err := MergeAgents(manifestPath, 1, repoDir)
+	if err != nil {
+		t.Fatalf("second MergeAgents returned error: %v", err)
+	}
+
+	// Verify all three agents show in result
+	if !result2.Success {
+		t.Errorf("expected second merge to succeed, got false")
+	}
+	if len(result2.Merges) != 3 {
+		t.Fatalf("expected 3 merge statuses in second run, got %d", len(result2.Merges))
+	}
+
+	// Agents A and B should be skipped
+	if result2.Merges[0].Error != "already merged (skipped)" {
+		t.Errorf("expected agent A to be skipped in second run, got: %s", result2.Merges[0].Error)
+	}
+	if result2.Merges[1].Error != "already merged (skipped)" {
+		t.Errorf("expected agent B to be skipped in second run, got: %s", result2.Merges[1].Error)
+	}
+	if result2.Merges[2].Error == "already merged (skipped)" {
+		t.Errorf("expected agent C to be merged in second run, but it was skipped")
+	}
+
+	// Verify all files exist
+	for _, file := range []string{"file-a.txt", "file-b.txt", "file-c.txt"} {
+		filePath := filepath.Join(repoDir, file)
+		if _, err := os.Stat(filePath); os.IsNotExist(err) {
+			t.Errorf("%s does not exist after idempotent merge", file)
+		}
+	}
+
+	// Verify merge-log has all three agents
+	finalLog, err := LoadMergeLog(manifestPath, 1)
+	if err != nil {
+		t.Fatalf("failed to load final merge-log: %v", err)
+	}
+	if len(finalLog.Merges) != 3 {
+		t.Errorf("expected 3 entries in final merge-log, got %d", len(finalLog.Merges))
+	}
+	for _, agent := range []string{"A", "B", "C"} {
+		if !finalLog.IsMerged(agent) {
+			t.Errorf("expected agent %s to be in final merge-log", agent)
+		}
 	}
 }

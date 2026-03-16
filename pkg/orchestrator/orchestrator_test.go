@@ -12,6 +12,7 @@ import (
 
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/agent"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/agent/backend"
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/types"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/worktree"
 )
@@ -87,7 +88,7 @@ func TestOrchestratorNew(t *testing.T) {
 	if o == nil {
 		t.Fatal("New returned nil orchestrator")
 	}
-	if o.State() != types.ScoutPending {
+	if o.State() != protocol.StateScoutPending {
 		t.Errorf("initial state = %s, want ScoutPending", o.State())
 	}
 	if o.IMPLDoc().FeatureName != "test" {
@@ -125,7 +126,7 @@ func TestNew_LoadsDoc(t *testing.T) {
 	if o == nil {
 		t.Fatal("New returned nil orchestrator")
 	}
-	if o.State() != types.ScoutPending {
+	if o.State() != protocol.StateScoutPending {
 		t.Errorf("initial state = %s, want ScoutPending", o.State())
 	}
 	if o.IMPLDoc().FeatureName != "test" {
@@ -237,8 +238,8 @@ func TestRunWave_LaunchesAllAgents(t *testing.T) {
 		atomic.AddInt32(&worktreeCount, 1)
 		return "/tmp/fake-wt-" + letter, nil
 	}
-	waitForCompletionFunc = func(_, _ string, _, _ time.Duration) (*types.CompletionReport, error) {
-		return &types.CompletionReport{Status: types.StatusComplete}, nil
+	waitForCompletionFunc = func(_, _ string, _, _ time.Duration) (*protocol.CompletionReport, error) {
+		return &protocol.CompletionReport{Status: "complete"}, nil
 	}
 	newBackendFunc = func(_ BackendConfig) (backend.Backend, error) {
 		return fake, nil
@@ -294,8 +295,8 @@ func TestRunWave_ReturnsErrorOnAgentFailure(t *testing.T) {
 	worktreeCreatorFunc = func(_ *worktree.Manager, _ int, letter string) (string, error) {
 		return "/tmp/fake-wt-" + letter, nil
 	}
-	waitForCompletionFunc = func(_, _ string, _, _ time.Duration) (*types.CompletionReport, error) {
-		return &types.CompletionReport{Status: types.StatusComplete}, nil
+	waitForCompletionFunc = func(_, _ string, _, _ time.Duration) (*protocol.CompletionReport, error) {
+		return &protocol.CompletionReport{Status: "complete"}, nil
 	}
 	newBackendFunc = func(_ BackendConfig) (backend.Backend, error) {
 		return fake, nil
@@ -329,16 +330,17 @@ func TestRunWave_ReturnsErrorOnAgentFailure(t *testing.T) {
 // TestTransitionTo_ValidTransitions exercises every edge in the state graph.
 func TestTransitionTo_ValidTransitions(t *testing.T) {
 	cases := []struct {
-		from types.State
-		to   types.State
+		from protocol.ProtocolState
+		to   protocol.ProtocolState
 	}{
-		{types.ScoutPending, types.Reviewed},
-		{types.ScoutPending, types.NotSuitable},
-		{types.Reviewed, types.WavePending},
-		{types.WavePending, types.WaveExecuting},
-		{types.WaveExecuting, types.WaveVerified},
-		{types.WaveVerified, types.Complete},
-		{types.WaveVerified, types.WavePending},
+		{protocol.StateScoutPending, protocol.StateReviewed},
+		{protocol.StateScoutPending, protocol.StateNotSuitable},
+		{protocol.StateReviewed, protocol.StateWavePending},
+		{protocol.StateWavePending, protocol.StateWaveExecuting},
+		{protocol.StateWaveExecuting, protocol.StateWaveMerging},
+		{protocol.StateWaveMerging, protocol.StateWaveVerified},
+		{protocol.StateWaveVerified, protocol.StateComplete},
+		{protocol.StateWaveVerified, protocol.StateWavePending},
 	}
 
 	for _, tc := range cases {
@@ -358,32 +360,32 @@ func TestTransitionTo_ValidTransitions(t *testing.T) {
 // TestTransitionTo_InvalidTransition verifies that an illegal transition returns an error.
 func TestTransitionTo_InvalidTransition(t *testing.T) {
 	o := makeOrch()
-	err := o.TransitionTo(types.Complete)
+	err := o.TransitionTo(protocol.StateComplete)
 	if err == nil {
-		t.Fatal("expected error for ScoutPending -> Complete, got nil")
+		t.Fatal("expected error for SCOUT_PENDING -> COMPLETE, got nil")
 	}
-	if !strings.Contains(err.Error(), "ScoutPending") {
-		t.Errorf("error should mention source state ScoutPending, got: %v", err)
+	if !strings.Contains(err.Error(), "SCOUT_PENDING") {
+		t.Errorf("error should mention source state SCOUT_PENDING, got: %v", err)
 	}
-	if !strings.Contains(err.Error(), "Complete") {
-		t.Errorf("error should mention target state Complete, got: %v", err)
+	if !strings.Contains(err.Error(), "COMPLETE") {
+		t.Errorf("error should mention target state COMPLETE, got: %v", err)
 	}
-	if o.State() != types.ScoutPending {
+	if o.State() != protocol.StateScoutPending {
 		t.Errorf("state changed after invalid transition: got %s", o.State())
 	}
 }
 
 // TestTransitionTo_TerminalState verifies that NotSuitable and Complete cannot be exited.
 func TestTransitionTo_TerminalState(t *testing.T) {
-	terminalStates := []types.State{types.NotSuitable, types.Complete}
-	allStates := []types.State{
-		types.ScoutPending,
-		types.Reviewed,
-		types.WavePending,
-		types.WaveExecuting,
-		types.WaveVerified,
-		types.NotSuitable,
-		types.Complete,
+	terminalStates := []protocol.ProtocolState{protocol.StateNotSuitable, protocol.StateComplete}
+	allStates := []protocol.ProtocolState{
+		protocol.StateScoutPending,
+		protocol.StateReviewed,
+		protocol.StateWavePending,
+		protocol.StateWaveExecuting,
+		protocol.StateWaveVerified,
+		protocol.StateNotSuitable,
+		protocol.StateComplete,
 	}
 
 	for _, terminal := range terminalStates {
@@ -401,14 +403,15 @@ func TestTransitionTo_TerminalState(t *testing.T) {
 
 // TestIsValidTransition unit-tests the guard function directly.
 func TestIsValidTransition(t *testing.T) {
-	valid := []struct{ from, to types.State }{
-		{types.ScoutPending, types.Reviewed},
-		{types.ScoutPending, types.NotSuitable},
-		{types.Reviewed, types.WavePending},
-		{types.WavePending, types.WaveExecuting},
-		{types.WaveExecuting, types.WaveVerified},
-		{types.WaveVerified, types.Complete},
-		{types.WaveVerified, types.WavePending},
+	valid := []struct{ from, to protocol.ProtocolState }{
+		{protocol.StateScoutPending, protocol.StateReviewed},
+		{protocol.StateScoutPending, protocol.StateNotSuitable},
+		{protocol.StateReviewed, protocol.StateWavePending},
+		{protocol.StateWavePending, protocol.StateWaveExecuting},
+		{protocol.StateWaveExecuting, protocol.StateWaveMerging},
+		{protocol.StateWaveMerging, protocol.StateWaveVerified},
+		{protocol.StateWaveVerified, protocol.StateComplete},
+		{protocol.StateWaveVerified, protocol.StateWavePending},
 	}
 	for _, tc := range valid {
 		if !isValidTransition(tc.from, tc.to) {
@@ -416,13 +419,13 @@ func TestIsValidTransition(t *testing.T) {
 		}
 	}
 
-	invalid := []struct{ from, to types.State }{
-		{types.ScoutPending, types.Complete},
-		{types.ScoutPending, types.WaveExecuting},
-		{types.Reviewed, types.Complete},
-		{types.NotSuitable, types.Reviewed},
-		{types.Complete, types.WavePending},
-		{types.WaveExecuting, types.WavePending},
+	invalid := []struct{ from, to protocol.ProtocolState }{
+		{protocol.StateScoutPending, protocol.StateComplete},
+		{protocol.StateScoutPending, protocol.StateWaveExecuting},
+		{protocol.StateReviewed, protocol.StateComplete},
+		{protocol.StateNotSuitable, protocol.StateReviewed},
+		{protocol.StateComplete, protocol.StateWavePending},
+		{protocol.StateWaveExecuting, protocol.StateWavePending},
 	}
 	for _, tc := range invalid {
 		if isValidTransition(tc.from, tc.to) {
@@ -439,7 +442,7 @@ func TestNewFromDoc(t *testing.T) {
 	}
 	o := newFromDoc(doc, "/some/repo", "/some/repo/IMPL.md")
 
-	if o.State() != types.ScoutPending {
+	if o.State() != protocol.StateScoutPending {
 		t.Errorf("initial state: got %s, want ScoutPending", o.State())
 	}
 	if o.IMPLDoc() != doc {
@@ -470,8 +473,8 @@ func TestSetEventPublisher_NilPublisher_NoOp(t *testing.T) {
 	worktreeCreatorFunc = func(_ *worktree.Manager, _ int, letter string) (string, error) {
 		return "/tmp/fake-wt-" + letter, nil
 	}
-	waitForCompletionFunc = func(_, _ string, _, _ time.Duration) (*types.CompletionReport, error) {
-		return &types.CompletionReport{Status: types.StatusComplete}, nil
+	waitForCompletionFunc = func(_, _ string, _, _ time.Duration) (*protocol.CompletionReport, error) {
+		return &protocol.CompletionReport{Status: "complete"}, nil
 	}
 
 	fake := &fakeBackend{}
@@ -506,8 +509,8 @@ func TestPublish_EmitsAgentStarted(t *testing.T) {
 	worktreeCreatorFunc = func(_ *worktree.Manager, _ int, letter string) (string, error) {
 		return "/tmp/fake-wt-" + letter, nil
 	}
-	waitForCompletionFunc = func(_, _ string, _, _ time.Duration) (*types.CompletionReport, error) {
-		return &types.CompletionReport{Status: types.StatusComplete}, nil
+	waitForCompletionFunc = func(_, _ string, _, _ time.Duration) (*protocol.CompletionReport, error) {
+		return &protocol.CompletionReport{Status: "complete"}, nil
 	}
 
 	fake := &fakeBackend{}
@@ -649,9 +652,9 @@ func TestLaunchAgent_PollsWorktreeIMPLDoc(t *testing.T) {
 	}
 
 	var gotIMPLPath string
-	waitForCompletionFunc = func(implDoc, _ string, _, _ time.Duration) (*types.CompletionReport, error) {
+	waitForCompletionFunc = func(implDoc, _ string, _, _ time.Duration) (*protocol.CompletionReport, error) {
 		gotIMPLPath = implDoc
-		return &types.CompletionReport{Status: types.StatusComplete}, nil
+		return &protocol.CompletionReport{Status: "complete"}, nil
 	}
 
 	fake := &fakeBackend{}
@@ -705,8 +708,8 @@ func TestLaunchAgentE23FallbackOnExtractError(t *testing.T) {
 	worktreeCreatorFunc = func(_ *worktree.Manager, _ int, letter string) (string, error) {
 		return "/tmp/fake-wt-" + letter, nil
 	}
-	waitForCompletionFunc = func(_, _ string, _, _ time.Duration) (*types.CompletionReport, error) {
-		return &types.CompletionReport{Status: types.StatusComplete}, nil
+	waitForCompletionFunc = func(_, _ string, _, _ time.Duration) (*protocol.CompletionReport, error) {
+		return &protocol.CompletionReport{Status: "complete"}, nil
 	}
 
 	var capturedPrompt string
@@ -765,10 +768,10 @@ func TestLaunchAgentE19BlockedEvent(t *testing.T) {
 	worktreeCreatorFunc = func(_ *worktree.Manager, _ int, letter string) (string, error) {
 		return "/tmp/fake-wt-" + letter, nil
 	}
-	waitForCompletionFunc = func(_, _ string, _, _ time.Duration) (*types.CompletionReport, error) {
-		return &types.CompletionReport{
-			Status:      types.StatusBlocked,
-			FailureType: types.FailureTypeTransient,
+	waitForCompletionFunc = func(_, _ string, _, _ time.Duration) (*protocol.CompletionReport, error) {
+		return &protocol.CompletionReport{
+			Status:      "blocked",
+			FailureType: "transient",
 		}, nil
 	}
 
@@ -876,25 +879,214 @@ func TestNewBackendFunc_OpenAIPrefix(t *testing.T) {
 	}
 }
 
-// TestState_String verifies that each state produces a human-readable name.
+// TestState_String verifies that each state constant has the expected string value.
 func TestState_String(t *testing.T) {
 	cases := []struct {
-		state types.State
+		state protocol.ProtocolState
 		want  string
 	}{
-		{types.ScoutPending, "ScoutPending"},
-		{types.NotSuitable, "NotSuitable"},
-		{types.Reviewed, "Reviewed"},
-		{types.WavePending, "WavePending"},
-		{types.WaveExecuting, "WaveExecuting"},
-		{types.WaveVerified, "WaveVerified"},
-		{types.Complete, "Complete"},
+		{protocol.StateScoutPending, "SCOUT_PENDING"},
+		{protocol.StateNotSuitable, "NOT_SUITABLE"},
+		{protocol.StateReviewed, "REVIEWED"},
+		{protocol.StateWavePending, "WAVE_PENDING"},
+		{protocol.StateWaveExecuting, "WAVE_EXECUTING"},
+		{protocol.StateWaveVerified, "WAVE_VERIFIED"},
+		{protocol.StateComplete, "COMPLETE"},
 	}
 
 	for _, tc := range cases {
-		got := tc.state.String()
+		got := string(tc.state)
 		if got != tc.want {
-			t.Errorf("State(%d).String() = %q, want %q", int(tc.state), got, tc.want)
+			t.Errorf("State constant = %q, want %q", got, tc.want)
 		}
+	}
+}
+
+// TestRunWave_AgentPrioritization verifies that prioritizeAgentsFunc is called and used.
+func TestRunWave_AgentPrioritization(t *testing.T) {
+	origCreator := worktreeCreatorFunc
+	origWait := waitForCompletionFunc
+	origNewBackend := newBackendFunc
+	origNewRunner := newRunnerFunc
+	origPrioritize := prioritizeAgentsFunc
+	t.Cleanup(func() {
+		worktreeCreatorFunc = origCreator
+		waitForCompletionFunc = origWait
+		newBackendFunc = origNewBackend
+		newRunnerFunc = origNewRunner
+		prioritizeAgentsFunc = origPrioritize
+	})
+
+	// Track which agents were launched
+	var launchedAgents []string
+	var mu sync.Mutex
+
+	worktreeCreatorFunc = func(_ *worktree.Manager, _ int, letter string) (string, error) {
+		mu.Lock()
+		launchedAgents = append(launchedAgents, letter)
+		mu.Unlock()
+		return "/tmp/fake-wt-" + letter, nil
+	}
+	waitForCompletionFunc = func(_, _ string, _, _ time.Duration) (*protocol.CompletionReport, error) {
+		return &protocol.CompletionReport{Status: "complete"}, nil
+	}
+
+	fake := &fakeBackend{}
+	newBackendFunc = func(_ BackendConfig) (backend.Backend, error) {
+		return fake, nil
+	}
+	newRunnerFunc = func(b backend.Backend, wm *worktree.Manager) *agent.Runner {
+		return agent.NewRunner(b, wm)
+	}
+
+	// Track that prioritization was called with correct parameters
+	var prioritizeCalled atomic.Bool
+	var prioritizeWaveNum atomic.Int32
+
+	prioritizeAgentsFunc = func(manifest *types.IMPLDoc, waveNum int) []string {
+		prioritizeCalled.Store(true)
+		prioritizeWaveNum.Store(int32(waveNum))
+		// Return prioritized order (reversed for testing)
+		return []string{"C", "B", "A"}
+	}
+
+	o := makeOrchWithWave(1, "A", "B", "C")
+
+	if err := o.RunWave(1); err != nil {
+		t.Fatalf("RunWave returned error: %v", err)
+	}
+
+	// Verify prioritization function was called
+	if !prioritizeCalled.Load() {
+		t.Error("prioritizeAgentsFunc was not called")
+	}
+	if prioritizeWaveNum.Load() != 1 {
+		t.Errorf("prioritizeAgentsFunc called with wave %d, want 1", prioritizeWaveNum.Load())
+	}
+
+	// Verify all agents were launched (order may vary due to concurrency)
+	mu.Lock()
+	defer mu.Unlock()
+
+	if len(launchedAgents) != 3 {
+		t.Fatalf("expected 3 agents to launch, got %d", len(launchedAgents))
+	}
+
+	// Verify all expected agents are present (regardless of order)
+	expectedAgents := map[string]bool{"A": true, "B": true, "C": true}
+	for _, agent := range launchedAgents {
+		if !expectedAgents[agent] {
+			t.Errorf("unexpected agent launched: %q", agent)
+		}
+		delete(expectedAgents, agent)
+	}
+	if len(expectedAgents) > 0 {
+		t.Errorf("agents not launched: %v", expectedAgents)
+	}
+}
+
+// TestRunWave_AgentPrioritizedEvent verifies that the agent_prioritized SSE event is emitted.
+func TestRunWave_AgentPrioritizedEvent(t *testing.T) {
+	origCreator := worktreeCreatorFunc
+	origWait := waitForCompletionFunc
+	origNewBackend := newBackendFunc
+	origNewRunner := newRunnerFunc
+	origPrioritize := prioritizeAgentsFunc
+	t.Cleanup(func() {
+		worktreeCreatorFunc = origCreator
+		waitForCompletionFunc = origWait
+		newBackendFunc = origNewBackend
+		newRunnerFunc = origNewRunner
+		prioritizeAgentsFunc = origPrioritize
+	})
+
+	worktreeCreatorFunc = func(_ *worktree.Manager, _ int, letter string) (string, error) {
+		return "/tmp/fake-wt-" + letter, nil
+	}
+	waitForCompletionFunc = func(_, _ string, _, _ time.Duration) (*protocol.CompletionReport, error) {
+		return &protocol.CompletionReport{Status: "complete"}, nil
+	}
+
+	fake := &fakeBackend{}
+	newBackendFunc = func(_ BackendConfig) (backend.Backend, error) {
+		return fake, nil
+	}
+	newRunnerFunc = func(b backend.Backend, wm *worktree.Manager) *agent.Runner {
+		return agent.NewRunner(b, wm)
+	}
+
+	// Mock prioritization: reverse the agent order
+	prioritizeAgentsFunc = func(manifest *types.IMPLDoc, waveNum int) []string {
+		return []string{"C", "B", "A"}
+	}
+
+	// Capture published events
+	var events []OrchestratorEvent
+	var mu sync.Mutex
+
+	o := makeOrchWithWave(1, "A", "B", "C")
+	o.SetEventPublisher(func(ev OrchestratorEvent) {
+		mu.Lock()
+		events = append(events, ev)
+		mu.Unlock()
+	})
+
+	if err := o.RunWave(1); err != nil {
+		t.Fatalf("RunWave returned error: %v", err)
+	}
+
+	// Find the agent_prioritized event
+	mu.Lock()
+	defer mu.Unlock()
+
+	var foundEvent *OrchestratorEvent
+	for i := range events {
+		if events[i].Event == "agent_prioritized" {
+			foundEvent = &events[i]
+			break
+		}
+	}
+
+	if foundEvent == nil {
+		t.Fatal("agent_prioritized event was not published")
+	}
+
+	// Verify payload structure
+	payload, ok := foundEvent.Data.(AgentPrioritizedPayload)
+	if !ok {
+		t.Fatalf("agent_prioritized event Data is not AgentPrioritizedPayload, got %T", foundEvent.Data)
+	}
+
+	if payload.Wave != 1 {
+		t.Errorf("payload.Wave = %d, want 1", payload.Wave)
+	}
+	if len(payload.OriginalOrder) != 3 {
+		t.Errorf("payload.OriginalOrder length = %d, want 3", len(payload.OriginalOrder))
+	}
+	if len(payload.PrioritizedOrder) != 3 {
+		t.Errorf("payload.PrioritizedOrder length = %d, want 3", len(payload.PrioritizedOrder))
+	}
+
+	// Verify original order is A, B, C (declaration order)
+	expectedOriginal := []string{"A", "B", "C"}
+	for i, expected := range expectedOriginal {
+		if payload.OriginalOrder[i] != expected {
+			t.Errorf("payload.OriginalOrder[%d] = %q, want %q", i, payload.OriginalOrder[i], expected)
+		}
+	}
+
+	// Verify prioritized order is C, B, A (reversed)
+	expectedPrioritized := []string{"C", "B", "A"}
+	for i, expected := range expectedPrioritized {
+		if payload.PrioritizedOrder[i] != expected {
+			t.Errorf("payload.PrioritizedOrder[%d] = %q, want %q", i, payload.PrioritizedOrder[i], expected)
+		}
+	}
+
+	if !payload.Reordered {
+		t.Error("payload.Reordered = false, want true")
+	}
+	if payload.Reason != "critical_path_scheduling" {
+		t.Errorf("payload.Reason = %q, want %q", payload.Reason, "critical_path_scheduling")
 	}
 }

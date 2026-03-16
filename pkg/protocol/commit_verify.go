@@ -2,6 +2,7 @@ package protocol
 
 import (
 	"fmt"
+	"path/filepath"
 	"strconv"
 	"strings"
 
@@ -26,10 +27,10 @@ type VerifyCommitsResult struct {
 }
 
 // VerifyCommits checks that all agents in the specified wave have committed
-// their work to their respective branches. It returns a detailed status for
-// each agent and an overall validity flag.
+// their work to their respective branches. Automatically detects multi-repo
+// waves by reading the file ownership table and completion reports.
 //
-// The base commit is determined from HEAD of the repository. Each agent's
+// The base commit is determined from HEAD of each repository. Each agent's
 // branch is expected to follow the pattern "wave{N}-agent-{ID}". If a branch
 // does not exist or has no commits relative to the base, it is recorded with
 // HasCommits=false but does not cause an error - the AllValid flag will be false.
@@ -38,12 +39,6 @@ type VerifyCommitsResult struct {
 // cannot load manifest, wave not found). Missing or empty branches are recorded
 // in the result but do not cause errors.
 func VerifyCommits(manifestPath string, waveNum int, repoDir string) (*VerifyCommitsResult, error) {
-	// Get the base commit from HEAD
-	baseCommit, err := git.RevParse(repoDir, "HEAD")
-	if err != nil {
-		return nil, fmt.Errorf("failed to get base commit: %w", err)
-	}
-
 	// Load the manifest
 	manifest, err := Load(manifestPath)
 	if err != nil {
@@ -63,6 +58,51 @@ func VerifyCommits(manifestPath string, waveNum int, repoDir string) (*VerifyCom
 		return nil, fmt.Errorf("wave %d not found in manifest", waveNum)
 	}
 
+	// Resolve repoDir to absolute path; repo names in fo.Repo are resolved as
+	// siblings of this directory (same pattern as worktree.go line 116).
+	absRepoDir, err := filepath.Abs(repoDir)
+	if err != nil {
+		return nil, fmt.Errorf("failed to resolve repo dir: %w", err)
+	}
+	repoParent := filepath.Dir(absRepoDir)
+
+	// Group agents by repository using file ownership table
+	agentRepos := make(map[string]string) // agent ID -> absolute repo path
+	for _, fo := range manifest.FileOwnership {
+		if fo.Wave == waveNum {
+			if fo.Repo != "" {
+				// fo.Repo is a repo name (e.g. "scout-and-wave-go"), not a path.
+				// Resolve it as a sibling of the provided repoDir.
+				agentRepos[fo.Agent] = filepath.Join(repoParent, fo.Repo)
+			} else {
+				agentRepos[fo.Agent] = absRepoDir
+			}
+		}
+	}
+
+	// Fallback: if agent not in file ownership table, use completion report repo field
+	for _, agent := range targetWave.Agents {
+		if _, found := agentRepos[agent.ID]; !found {
+			if report, ok := manifest.CompletionReports[agent.ID]; ok && report.Repo != "" {
+				agentRepos[agent.ID] = filepath.Join(repoParent, report.Repo)
+			} else {
+				agentRepos[agent.ID] = absRepoDir
+			}
+		}
+	}
+
+	// Get base commit - use wave's recorded base commit if available (prevention fix),
+	// otherwise fall back to current HEAD for backward compatibility
+	baseCommit := targetWave.BaseCommit
+	if baseCommit == "" {
+		// Backward compatibility: wave created before base commit tracking
+		var err error
+		baseCommit, err = git.RevParse(absRepoDir, "HEAD")
+		if err != nil {
+			return nil, fmt.Errorf("failed to get base commit: %w", err)
+		}
+	}
+
 	// Build the result
 	result := &VerifyCommitsResult{
 		BaseCommit: baseCommit,
@@ -70,19 +110,30 @@ func VerifyCommits(manifestPath string, waveNum int, repoDir string) (*VerifyCom
 		AllValid:   true,
 	}
 
-	// Check each agent's branch
+	// Check each agent's branch in its respective repository
 	for _, agent := range targetWave.Agents {
 		branchName := fmt.Sprintf("wave%d-agent-%s", waveNum, agent.ID)
+
+		// Determine which repo this agent worked in (already an absolute path)
+		agentRepoDir := agentRepos[agent.ID]
 
 		status := CommitStatus{
 			Agent:  agent.ID,
 			Branch: branchName,
 		}
 
-		// Count commits on the branch relative to base
-		// Use rev-list to count commits between base and branch
+		// Count commits on the branch relative to recorded base commit.
+		// Use the wave's base commit (recorded at worktree creation) rather than
+		// current HEAD, so verification works even if branches were already merged.
 		revListArg := baseCommit + ".." + branchName
-		output, err := git.Run(repoDir, "rev-list", "--count", revListArg)
+		output, err := git.Run(agentRepoDir, "rev-list", "--count", revListArg)
+
+		if err != nil {
+			// The base commit may not exist in this repo (cross-repo wave: base commit
+			// was recorded from a different repo). Fall back to HEAD..branch in the
+			// agent's own repo, which counts commits not yet merged to the local HEAD.
+			output, err = git.Run(agentRepoDir, "rev-list", "--count", "HEAD.."+branchName)
+		}
 
 		if err != nil {
 			// Branch doesn't exist or rev-list failed - treat as 0 commits

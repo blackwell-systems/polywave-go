@@ -24,8 +24,17 @@ type validateError struct {
 	Line    int    `json:"line,omitempty"`
 }
 
+// validateFixOutput extends validateOutput with fix metadata.
+type validateFixOutput struct {
+	Valid      bool            `json:"valid"`
+	ErrorCount int            `json:"error_count"`
+	Errors     []validateError `json:"errors"`
+	Fixed      int            `json:"fixed,omitempty"`
+}
+
 func newValidateCmd() *cobra.Command {
 	var useSolver bool
+	var autoFix bool
 	cmd := &cobra.Command{
 		Use:   "validate <manifest-path>",
 		Short: "Validate a YAML IMPL manifest against protocol invariants",
@@ -39,7 +48,31 @@ func newValidateCmd() *cobra.Command {
 				return fmt.Errorf("validate: %w", err)
 			}
 
+			// Auto-fix correctable issues before validation.
+			totalFixed := 0
+			if autoFix {
+				totalFixed += protocol.FixGateTypes(m)
+				if totalFixed > 0 {
+					if err := protocol.Save(m, manifestPath); err != nil {
+						return fmt.Errorf("validate --fix: failed to write corrections: %w", err)
+					}
+				}
+			}
+
 			var errs []validateError
+
+			// Read raw YAML for unknown key detection.
+			rawData, readErr := os.ReadFile(manifestPath)
+			if readErr == nil {
+				ukErrs := protocol.DetectUnknownKeys(rawData)
+				for _, uke := range ukErrs {
+					errs = append(errs, validateError{
+						Code:    uke.Code,
+						Message: uke.Message,
+						Field:   uke.Field,
+					})
+				}
+			}
 
 			// Run struct-level invariant checks (solver-based or standard).
 			var structErrs []protocol.ValidationError
@@ -75,10 +108,11 @@ func newValidateCmd() *cobra.Command {
 				errs = []validateError{}
 			}
 
-			result := validateOutput{
+			result := validateFixOutput{
 				Valid:      len(errs) == 0,
 				ErrorCount: len(errs),
 				Errors:     errs,
+				Fixed:      totalFixed,
 			}
 
 			out, _ := json.MarshalIndent(result, "", "  ")
@@ -91,5 +125,6 @@ func newValidateCmd() *cobra.Command {
 		},
 	}
 	cmd.Flags().BoolVar(&useSolver, "solver", false, "use CSP solver for wave assignment validation")
+	cmd.Flags().BoolVar(&autoFix, "fix", false, "auto-correct fixable issues (e.g. invalid gate types → custom)")
 	return cmd
 }

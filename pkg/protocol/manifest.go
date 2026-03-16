@@ -13,6 +13,7 @@ var ErrAgentNotFound = errors.New("agent not found in manifest")
 
 // Load reads a YAML IMPL manifest from the specified path and parses it into an IMPLManifest.
 // Returns an error if the file cannot be read or the YAML is invalid.
+// Prevention fix: Detects duplicate completion report keys (agents writing reports twice).
 func Load(path string) (*IMPLManifest, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -21,6 +22,10 @@ func Load(path string) (*IMPLManifest, error) {
 
 	var manifest IMPLManifest
 	if err := yaml.Unmarshal(data, &manifest); err != nil {
+		// Enhanced error for duplicate keys (prevention fix for agent double-writes)
+		if isYAMLDuplicateKeyError(err) {
+			return nil, fmt.Errorf("duplicate key in YAML manifest (likely completion report written twice): %w", err)
+		}
 		return nil, fmt.Errorf("failed to parse manifest YAML: %w", err)
 	}
 
@@ -29,7 +34,50 @@ func Load(path string) (*IMPLManifest, error) {
 		manifest.CompletionReports = make(map[string]CompletionReport)
 	}
 
+	// Verify completion report keys match agents (prevention fix)
+	for agentID := range manifest.CompletionReports {
+		found := false
+		for _, wave := range manifest.Waves {
+			for _, agent := range wave.Agents {
+				if agent.ID == agentID {
+					found = true
+					break
+				}
+			}
+			if found {
+				break
+			}
+		}
+		if !found {
+			return nil, fmt.Errorf("completion report for unknown agent: %s (possible duplicate or orphaned report)", agentID)
+		}
+	}
+
 	return &manifest, nil
+}
+
+// isYAMLDuplicateKeyError detects if the error is from duplicate keys in YAML.
+// The yaml.v3 library returns a generic error, but we can check the message.
+func isYAMLDuplicateKeyError(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := err.Error()
+	return contains(msg, "already defined") || contains(msg, "duplicate key")
+}
+
+// contains checks if s contains substr (case-sensitive).
+func contains(s, substr string) bool {
+	return len(s) >= len(substr) && (s == substr || len(s) > len(substr) && (s[:len(substr)] == substr || s[len(s)-len(substr):] == substr || containsMiddle(s, substr)))
+}
+
+func containsMiddle(s, substr string) bool {
+	for i := 0; i <= len(s)-len(substr); i++ {
+		if s[i:i+len(substr)] == substr {
+			return true
+		}
+	}
+	return false
 }
 
 // Save writes an IMPLManifest to the specified path as YAML.
@@ -112,8 +160,8 @@ func ValidateSM02TransitionGuards(from, to ProtocolState, m *IMPLManifest) []Val
 
 	// Define valid transitions
 	validTransitions := map[ProtocolState][]ProtocolState{
-		StateScoutPending:    {StateScoutValidating, StateBlocked},
-		StateScoutValidating: {StateReviewed, StateNotSuitable, StateBlocked},
+		StateScoutPending:    {StateScoutValidating, StateReviewed, StateNotSuitable, StateBlocked},
+		StateScoutValidating: {StateReviewed, StateScoutValidating, StateBlocked},
 		StateReviewed:        {StateScaffoldPending, StateWavePending, StateBlocked},
 		StateScaffoldPending: {StateWavePending, StateBlocked},
 		StateWavePending:     {StateWaveExecuting, StateBlocked},

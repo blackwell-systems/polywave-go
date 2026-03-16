@@ -3,7 +3,10 @@ package protocol
 import (
 	"bytes"
 	"fmt"
+	"os"
 	"os/exec"
+	"path/filepath"
+	"strings"
 )
 
 // VerifyBuildResult captures the outcome of running test and lint commands
@@ -37,33 +40,71 @@ func VerifyBuild(manifestPath string, repoDir string) (*VerifyBuildResult, error
 		LintCommand: manifest.LintCommand,
 	}
 
-	// Run test command if present
-	if manifest.TestCommand != "" {
+	// Run test command if present and applicable to this repo
+	if manifest.TestCommand != "" && commandApplies(manifest.TestCommand, repoDir) {
 		testPassed, testOutput := runCommand(manifest.TestCommand, repoDir)
 		result.TestPassed = testPassed
 		result.TestOutput = testOutput
 	} else {
-		// Empty command: skip and mark as passed
+		// Empty command or not applicable to this repo: skip and mark as passed
 		result.TestPassed = true
 	}
 
-	// Run lint command if present
-	if manifest.LintCommand != "" {
+	// Run lint command if present and applicable to this repo
+	if manifest.LintCommand != "" && commandApplies(manifest.LintCommand, repoDir) {
 		lintPassed, lintOutput := runCommand(manifest.LintCommand, repoDir)
 		result.LintPassed = lintPassed
 		result.LintOutput = lintOutput
 	} else {
-		// Empty command: skip and mark as passed
+		// Empty command or not applicable to this repo: skip and mark as passed
 		result.LintPassed = true
 	}
 
 	return result, nil
 }
 
+// commandApplies returns false when a command is ecosystem-specific but the repo
+// doesn't support that ecosystem. Currently handles Go: if the command starts with
+// "go " and there is no go.mod in repoDir, the command is not applicable.
+func commandApplies(command, repoDir string) bool {
+	if strings.HasPrefix(command, "go ") {
+		_, err := os.Stat(filepath.Join(repoDir, "go.mod"))
+		return err == nil
+	}
+	return true
+}
+
+// resolveCommandPaths rewrites "cd <relative-path> [&& ...]" to use an
+// absolute path. This ensures commands like "cd web && npx vitest run"
+// behave identically to quality gate commands that use absolute paths.
+// Commands that already use absolute paths, or don't start with "cd ", are
+// returned unchanged.
+func resolveCommandPaths(command, repoDir string) string {
+	if !strings.HasPrefix(command, "cd ") {
+		return command
+	}
+	rest := strings.TrimPrefix(command, "cd ")
+	// Split at first whitespace or shell operator to isolate the directory
+	idx := strings.IndexAny(rest, " \t&;|")
+	if idx == -1 {
+		dir := rest
+		if !filepath.IsAbs(dir) {
+			return "cd " + filepath.Join(repoDir, dir)
+		}
+		return command
+	}
+	dir := rest[:idx]
+	suffix := rest[idx:]
+	if filepath.IsAbs(dir) {
+		return command
+	}
+	return "cd " + filepath.Join(repoDir, dir) + suffix
+}
+
 // runCommand executes a shell command and returns (passed, combinedOutput).
 // Follows the exact pattern from gates.go: sh -c, combined stdout+stderr, exit code check.
 func runCommand(command string, repoDir string) (bool, string) {
-	cmd := exec.Command("sh", "-c", command)
+	cmd := exec.Command("sh", "-c", resolveCommandPaths(command, repoDir))
 	cmd.Dir = repoDir
 
 	// Capture stdout and stderr combined

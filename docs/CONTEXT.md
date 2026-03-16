@@ -85,3 +85,46 @@ type BackendConfig struct {
   - IMPL doc: docs/IMPL/IMPL-structured-output-parsing.yaml
 - **constraint-solver**: completed 2026-03-10, 3 waves, 4 agents
   - IMPL doc: docs/IMPL/IMPL-constraint-solver.yaml
+- **dependency-graph-generation**: completed 2026-03-11, 3 waves, 6 agents
+  - IMPL doc: docs/IMPL/IMPL-dependency-graph-generation.yaml
+- **h3-phase2-multi-language**: completed 2026-03-11, 2 waves, 4 agents
+  - IMPL doc: docs/IMPL/IMPL-h3-phase2-multi-language.yaml
+- **scaffold-detection**: completed 2026-03-12, 1 waves, 3 agents
+  - IMPL doc: docs/IMPL/complete/IMPL-scaffold-detection.yaml
+- **phase2-determinism-final**: completed 2026-03-12, 1 waves, 4 agents
+  - IMPL doc: docs/IMPL/complete/IMPL-phase2-determinism-final.yaml
+  - Deliverables: H1a (analyze-suitability), M2 (detect-cascades)
+  - New packages: `pkg/suitability/` (pre-implementation scanning), `pkg/analyzer/` (cascade detection)
+  - New commands: `sawtools analyze-suitability`, `sawtools detect-cascades`
+- **h2-command-extraction**: completed 2026-03-12, 2 waves, 6 agents
+  - IMPL doc: docs/IMPL/complete/IMPL-h2-command-extraction.yaml
+- **h8-scaffold-validation**: completed 2026-03-12, 3 waves, 3 agents
+  - IMPL doc: docs/IMPL/complete/IMPL-h8-scaffold-validation.yaml
+- **h6-dependency-conflict-detection**: completed 2026-03-12, 3 waves, 6 agents
+  - IMPL doc: docs/IMPL/complete/IMPL-h6-dependency-conflict-detection.yaml
+- **batch-wave-commands**: completed 2026-03-12, 2 waves, 3 agents
+  - IMPL doc: docs/IMPL/complete/IMPL-batch-wave-commands.yaml
+- **h7-build-failure-diagnosis**: completed 2026-03-12, 3 waves, 6 agents
+  - IMPL doc: docs/IMPL/complete/IMPL-h7-build-failure-diagnosis.yaml
+- **dependency-graph-generation**: completed 2026-03-12, 3 waves, 6 agents
+  - IMPL doc: docs/IMPL/complete/IMPL-dependency-graph-generation.yaml
+- **constraint-solver**: completed 2026-03-12, 3 waves, 4 agents
+  - IMPL doc: docs/IMPL/complete/IMPL-constraint-solver.yaml
+- **structured-output-parsing**: completed 2026-03-12, 3 waves, 4 agents
+  - IMPL doc: docs/IMPL/complete/IMPL-structured-output-parsing.yaml
+- **m1-agent-id-assignment**: completed 2026-03-12, 3 waves, 3 agents
+  - IMPL doc: docs/IMPL/complete/IMPL-m1-agent-id-assignment.yaml
+- **journal-recovery-merge-idempotency**: completed 2026-03-14, 1 waves, 4 agents
+  - IMPL doc: docs/IMPL/complete/IMPL-journal-recovery-merge-idempotency.yaml
+- **m4-finalize-impl**: completed 2026-03-14, 2 waves, 3 agents
+  - IMPL doc: ../scout-and-wave/docs/IMPL/complete/IMPL-m4-finalize-impl.yaml
+- **bedrock-tool-loop**: completed 2026-03-14, 1 waves, 2 agents
+  - IMPL doc: docs/IMPL/complete/IMPL-bedrock-tool-loop.yaml
+- **workshop-constraints**: completed 2026-03-15, 2 waves, 6 agents
+  - IMPL doc: docs/IMPL/complete/IMPL-workshop-constraints.yaml
+- **impl-schema-validation**: completed 2026-03-15, 2 waves, 6 agents
+  - IMPL doc: docs/IMPL/complete/IMPL-impl-schema-validation.yaml
+- **bedrock-structured-output**: completed 2026-03-15, 2 waves, 4 agents
+  - IMPL doc: docs/IMPL/complete/IMPL-bedrock-structured-output.yaml
+- **integration-agent**: completed 2026-03-16, 4 waves, 12 agents
+  - IMPL doc: docs/IMPL/complete/IMPL-integration-agent.yaml

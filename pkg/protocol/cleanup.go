@@ -62,8 +62,9 @@ func Cleanup(manifestPath string, waveNum int, repoDir string) (*CleanupResult, 
 			BranchDeleted:   false,
 		}
 
-		// Construct worktree path: {repoDir}/.claude/worktrees/wave{N}-agent-{ID}
-		worktreePath := fmt.Sprintf("%s/.claude/worktrees/wave%d-agent-%s", repoDir, waveNum, agent.ID)
+		// Resolve worktree path: checks .claude/worktrees/ then .claire/worktrees/
+		branch := fmt.Sprintf("wave%d-agent-%s", waveNum, agent.ID)
+		worktreePath := ResolveWorktreePath(repoDir, branch)
 
 		// Attempt to remove worktree
 		err := git.WorktreeRemove(repoDir, worktreePath)

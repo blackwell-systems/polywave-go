@@ -14,7 +14,7 @@ func newMarkCompleteCmd() *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use:   "mark-complete <manifest-path>",
-		Short: "Write completion marker to IMPL manifest",
+		Short: "Write completion marker to IMPL manifest and archive to complete/ subdirectory",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			manifestPath := args[0]
@@ -28,10 +28,17 @@ func newMarkCompleteCmd() *cobra.Command {
 				return fmt.Errorf("mark-complete: %w", err)
 			}
 
+			// Always archive to docs/IMPL/complete/
+			archivedPath, err := protocol.ArchiveIMPL(manifestPath)
+			if err != nil {
+				return fmt.Errorf("mark-complete: archive failed: %w", err)
+			}
+
 			out, _ := json.Marshal(map[string]interface{}{
-				"marked": true,
-				"date":   date,
-				"path":   manifestPath,
+				"marked":   true,
+				"date":     date,
+				"path":     archivedPath,
+				"archived": true,
 			})
 			fmt.Println(string(out))
 			return nil

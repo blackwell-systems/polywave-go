@@ -1,0 +1,853 @@
+completion_date: "2026-03-12"
+title: 'H7: Build Failure Diagnosis'
+feature_slug: h7-build-failure-diagnosis
+verdict: SUITABLE
+test_command: go test ./pkg/builddiag/... ./cmd/saw/...
+lint_command: go vet ./pkg/builddiag/... ./cmd/saw/...
+file_ownership:
+    - file: pkg/builddiag/types.go
+      agent: A
+      wave: 1
+      action: new
+    - file: pkg/builddiag/types_test.go
+      agent: A
+      wave: 1
+      action: new
+    - file: pkg/builddiag/diagnose.go
+      agent: A
+      wave: 1
+      action: new
+    - file: pkg/builddiag/diagnose_test.go
+      agent: A
+      wave: 1
+      action: new
+    - file: pkg/builddiag/go_patterns.go
+      agent: B
+      wave: 2
+      action: new
+    - file: pkg/builddiag/go_patterns_test.go
+      agent: B
+      wave: 2
+      action: new
+    - file: pkg/builddiag/rust_patterns.go
+      agent: C
+      wave: 2
+      action: new
+    - file: pkg/builddiag/rust_patterns_test.go
+      agent: C
+      wave: 2
+      action: new
+    - file: pkg/builddiag/js_patterns.go
+      agent: D
+      wave: 2
+      action: new
+    - file: pkg/builddiag/js_patterns_test.go
+      agent: D
+      wave: 2
+      action: new
+    - file: pkg/builddiag/python_patterns.go
+      agent: E
+      wave: 2
+      action: new
+    - file: pkg/builddiag/python_patterns_test.go
+      agent: E
+      wave: 2
+      action: new
+    - file: cmd/saw/diagnose_build_failure_cmd.go
+      agent: F
+      wave: 3
+      action: new
+    - file: cmd/saw/diagnose_build_failure_cmd_test.go
+      agent: F
+      wave: 3
+      action: new
+interface_contracts:
+    - name: ErrorPattern
+      description: |
+        Represents a recognized build error pattern with its fix recommendation.
+        Each language catalog defines a list of these patterns.
+      definition: |
+        type ErrorPattern struct {
+          Name        string  // Human-readable name (e.g., "missing_import")
+          Regex       string  // Regex pattern to match error message
+          Fix         string  // Command or action to fix (e.g., "go mod tidy")
+          Rationale   string  // Why this fix works
+          AutoFixable bool    // Whether the fix can be automated
+          Confidence  float64 // Match confidence (0.0-1.0)
+        }
+      location: pkg/builddiag/types.go
+    - name: DiagnoseError
+      description: |
+        Main entrypoint for build failure diagnosis.
+        Matches error log against language-specific pattern catalogs.
+      definition: |
+        func DiagnoseError(errorLog string, language string) (*Diagnosis, error)
+
+        type Diagnosis struct {
+          Pattern     string  `yaml:"diagnosis"`
+          Confidence  float64 `yaml:"confidence"`
+          Fix         string  `yaml:"fix"`
+          Rationale   string  `yaml:"rationale"`
+          AutoFixable bool    `yaml:"auto_fixable"`
+        }
+      location: pkg/builddiag/diagnose.go
+waves:
+    - number: 1
+      agents:
+        - id: A
+          task: |
+            ## What to Implement
+
+            Create the core types and diagnosis engine for build failure pattern matching. This includes the `ErrorPattern` struct, `Diagnosis` result type, and the main `DiagnoseError` function that routes to language-specific pattern catalogs.
+
+            ## Interfaces to Implement
+
+            ```go
+            // pkg/builddiag/types.go
+            package builddiag
+
+            // ErrorPattern represents a recognized build error with fix recommendation
+            type ErrorPattern struct {
+              Name        string  // e.g., "missing_import", "type_mismatch"
+              Regex       string  // Regex pattern to match error message
+              Fix         string  // Command or action to fix
+              Rationale   string  // Why this fix works
+              AutoFixable bool    // Whether fix can be automated
+              Confidence  float64 // Match confidence (0.0-1.0)
+            }
+
+            // Diagnosis is the result of pattern matching
+            type Diagnosis struct {
+              Pattern     string  `yaml:"diagnosis"`
+              Confidence  float64 `yaml:"confidence"`
+              Fix         string  `yaml:"fix"`
+              Rationale   string  `yaml:"rationale"`
+              AutoFixable bool    `yaml:"auto_fixable"`
+            }
+            ```
+
+            ```go
+            // pkg/builddiag/diagnose.go
+            package builddiag
+
+            import (
+              "fmt"
+              "regexp"
+              "strings"
+            )
+
+            // Language-specific pattern catalogs (registered by language files)
+            var catalogs = make(map[string][]ErrorPattern)
+
+            // RegisterPatterns adds patterns for a language to the catalog
+            func RegisterPatterns(language string, patterns []ErrorPattern) {
+              catalogs[language] = patterns
+            }
+
+            // DiagnoseError matches error log against language patterns
+            func DiagnoseError(errorLog string, language string) (*Diagnosis, error) {
+              patterns, ok := catalogs[strings.ToLower(language)]
+              if !ok {
+                return nil, fmt.Errorf("unsupported language: %s", language)
+              }
+
+              // Try each pattern in order (highest confidence first)
+              for _, pattern := range patterns {
+                matched, err := regexp.MatchString(pattern.Regex, errorLog)
+                if err != nil {
+                  continue // Skip invalid regex
+                }
+
+                if matched {
+                  return &Diagnosis{
+                    Pattern:     pattern.Name,
+                    Confidence:  pattern.Confidence,
+                    Fix:         pattern.Fix,
+                    Rationale:   pattern.Rationale,
+                    AutoFixable: pattern.AutoFixable,
+                  }, nil
+                }
+              }
+
+              // No pattern matched
+              return &Diagnosis{
+                Pattern:     "unknown",
+                Confidence:  0.0,
+                Fix:         "Manual investigation required",
+                Rationale:   "No known pattern matched this error",
+                AutoFixable: false,
+              }, nil
+            }
+
+            // SupportedLanguages returns list of languages with pattern catalogs
+            func SupportedLanguages() []string {
+              langs := make([]string, 0, len(catalogs))
+              for lang := range catalogs {
+                langs = append(langs, lang)
+              }
+              return langs
+            }
+            ```
+
+            ## Interfaces to Call
+
+            None - this is the foundation layer.
+
+            ## Tests to Write
+
+            1. `TestRegisterPatterns` - pattern registration works
+            2. `TestDiagnoseError_KnownPattern` - matches known pattern
+            3. `TestDiagnoseError_NoMatch` - returns "unknown" for unmatched error
+            4. `TestDiagnoseError_UnsupportedLanguage` - returns error for invalid language
+            5. `TestDiagnoseError_InvalidRegex` - skips patterns with invalid regex
+            6. `TestSupportedLanguages` - returns registered languages
+
+            ## Verification Gate
+
+            ```bash
+            go build ./pkg/builddiag/...
+            go vet ./pkg/builddiag/...
+            go test ./pkg/builddiag/... -v
+            ```
+
+            ## Constraints
+
+            - Use global `catalogs` map (simple, init-time registration)
+            - Try patterns in order (assume higher-confidence patterns first)
+            - Return "unknown" diagnosis (not error) when no pattern matches
+            - Skip patterns with invalid regex (log but don't fail)
+            - Language names are case-insensitive
+          files:
+            - pkg/builddiag/types.go
+            - pkg/builddiag/types_test.go
+            - pkg/builddiag/diagnose.go
+            - pkg/builddiag/diagnose_test.go
+    - number: 2
+      agents:
+        - id: B
+          task: |
+            ## What to Implement
+
+            Create Go-specific error pattern catalog with common build/test errors and their fixes.
+
+            ## Interfaces to Implement
+
+            ```go
+            // pkg/builddiag/go_patterns.go
+            package builddiag
+
+            func init() {
+              RegisterPatterns("go", []ErrorPattern{
+                {
+                  Name:        "missing_package",
+                  Regex:       `cannot find package|package .* is not in GOROOT`,
+                  Fix:         "go mod tidy && go build ./...",
+                  Rationale:   "go.sum is stale or missing dependency",
+                  AutoFixable: true,
+                  Confidence:  0.95,
+                },
+                {
+                  Name:        "undefined_identifier",
+                  Regex:       `undefined: \w+`,
+                  Fix:         "Check imports and add missing import statement",
+                  Rationale:   "Symbol used without importing its package",
+                  AutoFixable: false,
+                  Confidence:  0.85,
+                },
+                {
+                  Name:        "type_mismatch",
+                  Regex:       `cannot use .* \(type .*\) as type`,
+                  Fix:         "Check interface contract and adjust type implementation",
+                  Rationale:   "Type does not satisfy interface or wrong type passed",
+                  AutoFixable: false,
+                  Confidence:  0.90,
+                },
+                {
+                  Name:        "import_cycle",
+                  Regex:       `import cycle not allowed`,
+                  Fix:         "Refactor to break import cycle (extract interface or move code)",
+                  Rationale:   "Circular dependency between packages",
+                  AutoFixable: false,
+                  Confidence:  0.95,
+                },
+                {
+                  Name:        "syntax_error",
+                  Regex:       `syntax error:`,
+                  Fix:         "Fix syntax error at reported line",
+                  Rationale:   "Go syntax violation",
+                  AutoFixable: false,
+                  Confidence:  0.85,
+                },
+                {
+                  Name:        "missing_go_sum_entry",
+                  Regex:       `missing go.sum entry`,
+                  Fix:         "go mod tidy",
+                  Rationale:   "go.sum does not have checksums for all dependencies",
+                  AutoFixable: true,
+                  Confidence:  0.95,
+                },
+              })
+            }
+            ```
+
+            ## Interfaces to Call
+
+            - `RegisterPatterns("go", patterns)` — register Go patterns in init()
+
+            ## Tests to Write
+
+            1. `TestGoPatterns_MissingPackage` - matches "cannot find package" error
+            2. `TestGoPatterns_UndefinedIdentifier` - matches "undefined:" error
+            3. `TestGoPatterns_TypeMismatch` - matches type mismatch error
+            4. `TestGoPatterns_ImportCycle` - matches import cycle error
+            5. `TestGoPatterns_SyntaxError` - matches syntax error
+            6. `TestGoPatterns_MissingGoSumEntry` - matches missing go.sum entry
+            7. `TestGoPatterns_ConfidenceLevels` - verifies confidence scores are reasonable
+
+            ## Verification Gate
+
+            ```bash
+            go build ./pkg/builddiag/...
+            go vet ./pkg/builddiag/...
+            go test ./pkg/builddiag/... -run TestGoPatterns -v
+            ```
+
+            ## Constraints
+
+            - Order patterns by confidence (highest first)
+            - Mark only deterministic fixes as `AutoFixable: true` (e.g., go mod tidy)
+            - Keep regex patterns simple (avoid overfitting to specific compiler versions)
+            - Use raw strings for regex (`` `pattern` `` not `"pattern"`)
+          files:
+            - pkg/builddiag/go_patterns.go
+            - pkg/builddiag/go_patterns_test.go
+          dependencies:
+            - A
+        - id: C
+          task: |
+            ## What to Implement
+
+            Create Rust-specific error pattern catalog with common cargo build/test errors and their fixes.
+
+            ## Interfaces to Implement
+
+            ```go
+            // pkg/builddiag/rust_patterns.go
+            package builddiag
+
+            func init() {
+              RegisterPatterns("rust", []ErrorPattern{
+                {
+                  Name:        "cannot_find_value",
+                  Regex:       `error\[E0425\]: cannot find value`,
+                  Fix:         "Add missing 'use' statement or check module visibility",
+                  Rationale:   "Symbol used without importing or not in scope",
+                  AutoFixable: false,
+                  Confidence:  0.90,
+                },
+                {
+                  Name:        "trait_bound_not_satisfied",
+                  Regex:       `error\[E0277\]: the trait bound .* is not satisfied`,
+                  Fix:         "Implement missing trait or add trait bound to generic",
+                  Rationale:   "Type does not implement required trait",
+                  AutoFixable: false,
+                  Confidence:  0.90,
+                },
+                {
+                  Name:        "mismatched_types",
+                  Regex:       `error\[E0308\]: mismatched types`,
+                  Fix:         "Check type annotations and return types",
+                  Rationale:   "Expected type does not match actual type",
+                  AutoFixable: false,
+                  Confidence:  0.85,
+                },
+                {
+                  Name:        "unresolved_import",
+                  Regex:       `error\[E0432\]: unresolved import`,
+                  Fix:         "Check Cargo.toml dependencies and module path",
+                  Rationale:   "Import path is invalid or dependency missing",
+                  AutoFixable: false,
+                  Confidence:  0.90,
+                },
+                {
+                  Name:        "macro_undefined",
+                  Regex:       `error: cannot find macro`,
+                  Fix:         "Add dependency providing macro to Cargo.toml",
+                  Rationale:   "Macro crate not in dependencies",
+                  AutoFixable: false,
+                  Confidence:  0.85,
+                },
+              })
+            }
+            ```
+
+            ## Interfaces to Call
+
+            - `RegisterPatterns("rust", patterns)` — register Rust patterns in init()
+
+            ## Tests to Write
+
+            1. `TestRustPatterns_CannotFindValue` - matches E0425 error
+            2. `TestRustPatterns_TraitBoundNotSatisfied` - matches E0277 error
+            3. `TestRustPatterns_MismatchedTypes` - matches E0308 error
+            4. `TestRustPatterns_UnresolvedImport` - matches E0432 error
+            5. `TestRustPatterns_MacroUndefined` - matches macro error
+            6. `TestRustPatterns_ErrorCodeMatching` - verifies regex captures error codes
+
+            ## Verification Gate
+
+            ```bash
+            go build ./pkg/builddiag/...
+            go vet ./pkg/builddiag/...
+            go test ./pkg/builddiag/... -run TestRustPatterns -v
+            ```
+
+            ## Constraints
+
+            - Match Rust error codes (E0XXX format)
+            - Order patterns by frequency (most common first)
+            - None are auto-fixable (Rust errors require code changes)
+            - Escape square brackets in regex: `\[E0425\]` not `[E0425]`
+          files:
+            - pkg/builddiag/rust_patterns.go
+            - pkg/builddiag/rust_patterns_test.go
+          dependencies:
+            - A
+        - id: D
+          task: |
+            ## What to Implement
+
+            Create JavaScript/TypeScript error pattern catalog with common build/test errors and their fixes.
+
+            ## Interfaces to Implement
+
+            ```go
+            // pkg/builddiag/js_patterns.go
+            package builddiag
+
+            func init() {
+              patterns := []ErrorPattern{
+                {
+                  Name:        "module_not_found",
+                  Regex:       `Cannot find module|Module not found`,
+                  Fix:         "npm install <module-name>",
+                  Rationale:   "Dependency not installed in node_modules",
+                  AutoFixable: true,
+                  Confidence:  0.95,
+                },
+                {
+                  Name:        "property_not_exist",
+                  Regex:       `Property .* does not exist on type`,
+                  Fix:         "Check interface contract and type definitions",
+                  Rationale:   "TypeScript type mismatch or missing property",
+                  AutoFixable: false,
+                  Confidence:  0.90,
+                },
+                {
+                  Name:        "syntax_error",
+                  Regex:       `SyntaxError: Unexpected token`,
+                  Fix:         "Check syntax at reported line (missing semicolon, brace, etc.)",
+                  Rationale:   "JavaScript syntax violation",
+                  AutoFixable: false,
+                  Confidence:  0.80,
+                },
+                {
+                  Name:        "type_any_implicit",
+                  Regex:       `Parameter .* implicitly has an 'any' type`,
+                  Fix:         "Add explicit type annotation to parameter",
+                  Rationale:   "TypeScript strict mode requires explicit types",
+                  AutoFixable: false,
+                  Confidence:  0.85,
+                },
+                {
+                  Name:        "import_path_invalid",
+                  Regex:       `Cannot resolve module|File .* is not a module`,
+                  Fix:         "Check import path and file extension (.js, .ts, .tsx)",
+                  Rationale:   "Import path does not match file structure",
+                  AutoFixable: false,
+                  Confidence:  0.85,
+                },
+              }
+
+              RegisterPatterns("javascript", patterns)
+              RegisterPatterns("typescript", patterns)
+              RegisterPatterns("js", patterns)
+              RegisterPatterns("ts", patterns)
+            }
+            ```
+
+            ## Interfaces to Call
+
+            - `RegisterPatterns(lang, patterns)` — register JS/TS patterns in init()
+
+            ## Tests to Write
+
+            1. `TestJSPatterns_ModuleNotFound` - matches module not found error
+            2. `TestJSPatterns_PropertyNotExist` - matches TypeScript property error
+            3. `TestJSPatterns_SyntaxError` - matches syntax error
+            4. `TestJSPatterns_TypeAnyImplicit` - matches implicit any error
+            5. `TestJSPatterns_ImportPathInvalid` - matches import path error
+            6. `TestJSPatterns_MultipleAliases` - verifies js/javascript/ts/typescript all work
+
+            ## Verification Gate
+
+            ```bash
+            go build ./pkg/builddiag/...
+            go vet ./pkg/builddiag/...
+            go test ./pkg/builddiag/... -run TestJSPatterns -v
+            ```
+
+            ## Constraints
+
+            - Register patterns for all aliases: js, javascript, ts, typescript
+            - Only "module_not_found" is auto-fixable (npm install)
+            - Keep patterns generic (work for both JS and TS)
+            - Match both tsc and webpack error formats
+          files:
+            - pkg/builddiag/js_patterns.go
+            - pkg/builddiag/js_patterns_test.go
+          dependencies:
+            - A
+        - id: E
+          task: |
+            ## What to Implement
+
+            Create Python error pattern catalog with common build/test errors and their fixes.
+
+            ## Interfaces to Implement
+
+            ```go
+            // pkg/builddiag/python_patterns.go
+            package builddiag
+
+            func init() {
+              patterns := []ErrorPattern{
+                {
+                  Name:        "module_not_found",
+                  Regex:       `ModuleNotFoundError: No module named`,
+                  Fix:         "pip install <module-name>",
+                  Rationale:   "Package not installed in Python environment",
+                  AutoFixable: true,
+                  Confidence:  0.95,
+                },
+                {
+                  Name:        "name_not_defined",
+                  Regex:       `NameError: name .* is not defined`,
+                  Fix:         "Check imports and variable definitions",
+                  Rationale:   "Variable or function used before definition or import",
+                  AutoFixable: false,
+                  Confidence:  0.85,
+                },
+                {
+                  Name:        "syntax_error",
+                  Regex:       `SyntaxError: invalid syntax`,
+                  Fix:         "Fix syntax error at reported line (indentation, colons, etc.)",
+                  Rationale:   "Python syntax violation",
+                  AutoFixable: false,
+                  Confidence:  0.80,
+                },
+                {
+                  Name:        "import_error",
+                  Regex:       `ImportError: cannot import name`,
+                  Fix:         "Check import statement and module structure",
+                  Rationale:   "Imported name does not exist in module",
+                  AutoFixable: false,
+                  Confidence:  0.85,
+                },
+                {
+                  Name:        "indentation_error",
+                  Regex:       `IndentationError: expected an indented block`,
+                  Fix:         "Fix indentation at reported line",
+                  Rationale:   "Python requires consistent indentation",
+                  AutoFixable: false,
+                  Confidence:  0.90,
+                },
+                {
+                  Name:        "type_error",
+                  Regex:       `TypeError:`,
+                  Fix:         "Check type annotations and function signatures",
+                  Rationale:   "Type mismatch in function call or operation",
+                  AutoFixable: false,
+                  Confidence:  0.75,
+                },
+              }
+
+              RegisterPatterns("python", patterns)
+              RegisterPatterns("py", patterns)
+            }
+            ```
+
+            ## Interfaces to Call
+
+            - `RegisterPatterns(lang, patterns)` — register Python patterns in init()
+
+            ## Tests to Write
+
+            1. `TestPythonPatterns_ModuleNotFound` - matches ModuleNotFoundError
+            2. `TestPythonPatterns_NameNotDefined` - matches NameError
+            3. `TestPythonPatterns_SyntaxError` - matches SyntaxError
+            4. `TestPythonPatterns_ImportError` - matches ImportError
+            5. `TestPythonPatterns_IndentationError` - matches IndentationError
+            6. `TestPythonPatterns_TypeError` - matches TypeError
+            7. `TestPythonPatterns_MultipleAliases` - verifies python/py both work
+
+            ## Verification Gate
+
+            ```bash
+            go build ./pkg/builddiag/...
+            go vet ./pkg/builddiag/...
+            go test ./pkg/builddiag/... -run TestPythonPatterns -v
+            ```
+
+            ## Constraints
+
+            - Register patterns for both aliases: python, py
+            - Only "module_not_found" is auto-fixable (pip install)
+            - Match Python 3.x error formats
+            - Order by confidence (most specific errors first)
+          files:
+            - pkg/builddiag/python_patterns.go
+            - pkg/builddiag/python_patterns_test.go
+          dependencies:
+            - A
+      base_commit: 63c2891466e113ecda6f06b6629679dd3bea2cb2
+    - number: 3
+      agents:
+        - id: F
+          task: |
+            ## What to Implement
+
+            Create the `sawtools diagnose-build-failure` CLI command that reads error logs and outputs YAML diagnosis.
+
+            ## Interfaces to Implement
+
+            ```go
+            // cmd/saw/diagnose_build_failure_cmd.go
+            package main
+
+            import (
+              "fmt"
+              "os"
+              "github.com/spf13/cobra"
+              "gopkg.in/yaml.v3"
+              "github.com/blackwell-systems/scout-and-wave-go/pkg/builddiag"
+            )
+
+            func newDiagnoseBuildFailureCmd() *cobra.Command {
+              var language string
+
+              cmd := &cobra.Command{
+                Use:   "diagnose-build-failure <error-log>",
+                Short: "Pattern-match build errors and suggest fixes",
+                Long: `Analyzes build error logs against known pattern catalogs.
+
+            Supported languages: go, rust, javascript, typescript, python
+
+            Outputs structured YAML with:
+            - diagnosis: Pattern name
+            - confidence: Match confidence (0.0-1.0)
+            - fix: Recommended action
+            - rationale: Why this fix works
+            - auto_fixable: Whether fix can be automated`,
+                Args: cobra.ExactArgs(1),
+                RunE: func(cmd *cobra.Command, args []string) error {
+                  errorLogPath := args[0]
+
+                  // Read error log
+                  content, err := os.ReadFile(errorLogPath)
+                  if err != nil {
+                    return fmt.Errorf("failed to read error log: %w", err)
+                  }
+
+                  // Diagnose error
+                  diagnosis, err := builddiag.DiagnoseError(string(content), language)
+                  if err != nil {
+                    return fmt.Errorf("failed to diagnose error: %w", err)
+                  }
+
+                  // Output YAML
+                  enc := yaml.NewEncoder(os.Stdout)
+                  if err := enc.Encode(diagnosis); err != nil {
+                    return fmt.Errorf("failed to encode diagnosis: %w", err)
+                  }
+
+                  return nil
+                },
+              }
+
+              cmd.Flags().StringVar(&language, "language", "", "Language (go, rust, js, ts, python) [required]")
+              cmd.MarkFlagRequired("language")
+
+              return cmd
+            }
+            ```
+
+            ## Interfaces to Call
+
+            - `builddiag.DiagnoseError(errorLog, language)` — run pattern matching
+            - `yaml.NewEncoder(os.Stdout).Encode(diagnosis)` — output YAML
+
+            ## Tests to Write
+
+            1. `TestDiagnoseBuildFailureCmd_GoError` - diagnoses Go error correctly
+            2. `TestDiagnoseBuildFailureCmd_RustError` - diagnoses Rust error correctly
+            3. `TestDiagnoseBuildFailureCmd_InvalidLanguage` - returns error for unsupported language
+            4. `TestDiagnoseBuildFailureCmd_FileNotFound` - returns error for missing log file
+            5. `TestDiagnoseBuildFailureCmd_YAMLOutput` - validates YAML format
+            6. `TestDiagnoseBuildFailureCmd_MissingLanguageFlag` - returns error when --language not provided
+
+            ## Verification Gate
+
+            ```bash
+            go build ./cmd/saw/...
+            go vet ./cmd/saw/...
+            go test ./cmd/saw/... -run TestDiagnoseBuildFailure -v
+
+            # Integration test with sample error log
+            echo 'cannot find package "foo"' > /tmp/error.log
+            ./sawtools diagnose-build-failure /tmp/error.log --language go
+            ```
+
+            ## Constraints
+
+            - Require --language flag (no auto-detection)
+            - Output YAML (not JSON) to match spec
+            - Exit code 0 even when no pattern matches (diagnosis with pattern="unknown")
+            - Add command to main.go's rootCmd.AddCommand() list
+          files:
+            - cmd/saw/diagnose_build_failure_cmd.go
+            - cmd/saw/diagnose_build_failure_cmd_test.go
+          dependencies:
+            - A
+            - B
+            - C
+            - D
+            - E
+      base_commit: 53ff827b3f7d4316c0435747bcf0e9454db7f091
+quality_gates:
+    level: standard
+    gates:
+        - type: build
+          command: go build ./pkg/builddiag/... ./cmd/saw/...
+          required: true
+        - type: lint
+          command: go vet ./pkg/builddiag/... ./cmd/saw/...
+          required: false
+          description: Check for common Go mistakes
+        - type: test
+          command: go test ./pkg/builddiag/... ./cmd/saw/...
+          required: true
+completion_reports:
+    A:
+        status: complete
+        branch: develop
+        commit: 63c2891
+        files_changed:
+            - pkg/builddiag/types.go
+            - pkg/builddiag/types_test.go
+            - pkg/builddiag/diagnose.go
+            - pkg/builddiag/diagnose_test.go
+        files_created:
+            - pkg/builddiag/types.go
+            - pkg/builddiag/types_test.go
+            - pkg/builddiag/diagnose.go
+            - pkg/builddiag/diagnose_test.go
+        tests_added:
+            - TestRegisterPatterns
+            - TestDiagnoseError_KnownPattern
+            - TestDiagnoseError_NoMatch
+            - TestDiagnoseError_UnsupportedLanguage
+            - TestDiagnoseError_InvalidRegex
+            - TestSupportedLanguages
+            - TestRegisterPatterns_CaseInsensitive
+            - TestErrorPattern_Structure
+            - TestDiagnosis_Structure
+        verification: PASS
+    B:
+        status: complete
+        branch: wave2-agent-B
+        commit: dfef37c
+        files_created:
+            - pkg/builddiag/go_patterns.go
+            - pkg/builddiag/go_patterns_test.go
+        tests_added:
+            - TestGoPatterns_MissingPackage
+            - TestGoPatterns_UndefinedIdentifier
+            - TestGoPatterns_TypeMismatch
+            - TestGoPatterns_ImportCycle
+            - TestGoPatterns_SyntaxError
+            - TestGoPatterns_MissingGoSumEntry
+            - TestGoPatterns_ConfidenceLevels
+            - TestGoPatterns_PackageNotInGOROOT
+        verification: PASS
+    C:
+        status: complete
+        branch: wave2-agent-C
+        commit: "4058881"
+        files_changed:
+            - pkg/builddiag/rust_patterns.go
+            - pkg/builddiag/rust_patterns_test.go
+        files_created:
+            - pkg/builddiag/rust_patterns.go
+            - pkg/builddiag/rust_patterns_test.go
+        tests_added:
+            - TestRustPatterns_CannotFindValue
+            - TestRustPatterns_TraitBoundNotSatisfied
+            - TestRustPatterns_MismatchedTypes
+            - TestRustPatterns_UnresolvedImport
+            - TestRustPatterns_MacroUndefined
+            - TestRustPatterns_ErrorCodeMatching
+        verification: PASS
+    D:
+        status: complete
+        branch: wave2-agent-D
+        commit: 2e6e47a
+        files_created:
+            - pkg/builddiag/js_patterns.go
+            - pkg/builddiag/js_patterns_test.go
+        tests_added:
+            - TestJSPatterns_ModuleNotFound
+            - TestJSPatterns_PropertyNotExist
+            - TestJSPatterns_SyntaxError
+            - TestJSPatterns_TypeAnyImplicit
+            - TestJSPatterns_ImportPathInvalid
+            - TestJSPatterns_MultipleAliases
+        verification: PASS
+    E:
+        status: complete
+        branch: wave2-agent-E
+        commit: 840f190
+        files_changed:
+            - pkg/builddiag/python_patterns.go
+            - pkg/builddiag/python_patterns_test.go
+        files_created:
+            - pkg/builddiag/python_patterns.go
+            - pkg/builddiag/python_patterns_test.go
+        tests_added:
+            - TestPythonPatterns_ModuleNotFound
+            - TestPythonPatterns_NameNotDefined
+            - TestPythonPatterns_SyntaxError
+            - TestPythonPatterns_ImportError
+            - TestPythonPatterns_IndentationError
+            - TestPythonPatterns_TypeError
+            - TestPythonPatterns_MultipleAliases
+        verification: PASS - Python error catalog complete. 6 patterns registered for both python/py aliases. Patterns ordered by confidence (0.95 to 0.75). Only ModuleNotFoundError is auto-fixable. All 7 tests passing.
+    F:
+        status: complete
+        branch: wave3-agent-F
+        commit: 716a75e
+        files_changed:
+            - cmd/saw/main.go
+        files_created:
+            - cmd/saw/diagnose_build_failure_cmd.go
+            - cmd/saw/diagnose_build_failure_cmd_test.go
+        tests_added:
+            - TestDiagnoseBuildFailureCmd_GoError
+            - TestDiagnoseBuildFailureCmd_RustError
+            - TestDiagnoseBuildFailureCmd_InvalidLanguage
+            - TestDiagnoseBuildFailureCmd_FileNotFound
+            - TestDiagnoseBuildFailureCmd_YAMLOutput
+            - TestDiagnoseBuildFailureCmd_MissingLanguageFlag
+            - TestDiagnoseBuildFailureCmd_NoPatternMatch
+        verification: PASS
+state: "COMPLETE"

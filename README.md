@@ -30,6 +30,17 @@ Go engine and Protocol SDK for the Scout-and-Wave parallel agent coordination sy
 └─────────────────────────────────────────────┘
 ```
 
+## Binary: sawtools
+
+This repo provides the **`sawtools` CLI** — the full protocol SDK toolkit for CI/CD, power users, and CLI orchestration (e.g., the `/saw` skill).
+
+```bash
+go build -o sawtools ./cmd/saw
+cp sawtools ~/.local/bin/sawtools
+```
+
+**Note:** There's also a separate `saw` binary in [scout-and-wave-web](https://github.com/blackwell-systems/scout-and-wave-web) that provides a web UI + HTTP API. See [docs/binaries.md](docs/binaries.md) for the complete explanation of why two binaries exist and when to use which.
+
 ## Installation
 
 ```bash
@@ -126,17 +137,9 @@ internal/
 
 ## CLI Commands
 
-The `sawtools` binary wraps SDK operations as shell commands. Each command is single-purpose with structured I/O:
+The `sawtools` binary wraps SDK operations as shell commands. Each command is single-purpose with structured I/O.
 
-| Command | Input | Output | Exit Code |
-|---------|-------|--------|-----------|
-| `sawtools validate <manifest>` | YAML path | Errors (JSON) | 0=valid, 1=invalid |
-| `sawtools extract-context <manifest> <agent>` | Manifest + agent ID | Agent context (JSON) | 0=ok, 1=not found |
-| `sawtools current-wave <manifest>` | YAML path | Wave number | 0=ok, 1=no pending |
-| `sawtools set-completion <manifest> <agent>` | Manifest + stdin (YAML) | Success | 0=ok, 1=failed |
-| `sawtools merge-wave <manifest> <wave>` | Manifest + wave number | Merge status | 0=ok, 1=conflicts |
-| `sawtools render <manifest>` | YAML path | Markdown | 0=ok, 1=failed |
-| `sawtools migrate <impl.md>` | Markdown path | YAML path | 0=ok, 1=failed |
+**See [docs/cli-reference.md](docs/cli-reference.md) for the complete command reference** (20+ commands including validation, context extraction, worktree management, merge operations, and more).
 
 ## Design Principles
 

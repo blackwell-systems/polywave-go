@@ -1,0 +1,720 @@
+completion_date: "2026-03-12"
+title: 'H2: Automated Lint/Test Command Extraction'
+feature_slug: h2-command-extraction
+verdict: SUITABLE_WITH_CAVEATS
+test_command: go test ./pkg/commands/... ./cmd/saw/...
+lint_command: go vet ./pkg/commands/... ./cmd/saw/...
+file_ownership:
+    - file: pkg/commands/extractor.go
+      agent: A
+      wave: 1
+      action: new
+    - file: pkg/commands/extractor_test.go
+      agent: A
+      wave: 1
+      action: new
+    - file: pkg/commands/github_actions.go
+      agent: B
+      wave: 1
+      action: new
+    - file: pkg/commands/github_actions_test.go
+      agent: B
+      wave: 1
+      action: new
+    - file: pkg/commands/makefile.go
+      agent: C
+      wave: 1
+      action: new
+    - file: pkg/commands/makefile_test.go
+      agent: C
+      wave: 1
+      action: new
+    - file: pkg/commands/package_json.go
+      agent: D
+      wave: 1
+      action: new
+    - file: pkg/commands/package_json_test.go
+      agent: D
+      wave: 1
+      action: new
+    - file: pkg/commands/defaults.go
+      agent: E
+      wave: 1
+      action: new
+    - file: pkg/commands/defaults_test.go
+      agent: E
+      wave: 1
+      action: new
+    - file: cmd/saw/extract_commands_cmd.go
+      agent: F
+      wave: 2
+      action: new
+    - file: cmd/saw/extract_commands_cmd_test.go
+      agent: F
+      wave: 2
+      action: new
+interface_contracts:
+    - name: Extractor.Extract
+      description: |
+        Main entry point for command extraction. Orchestrates priority-based
+        resolution across CI parsers and build system parsers. Returns the
+        highest-priority CommandSet found, or language defaults if no config
+        files are present.
+      definition: |
+        func (e *Extractor) Extract(repoRoot string) (*CommandSet, error)
+      location: pkg/commands/extractor.go
+    - name: CIParser interface
+      description: |
+        Interface for CI system parsers (GitHub Actions, GitLab CI, CircleCI).
+        Each parser returns a CommandSet and a priority indicating confidence.
+        Higher priority = more specific/explicit command definitions.
+      definition: |
+        type CIParser interface {
+          ParseCI(repoRoot string) (*CommandSet, error)
+          Priority() int
+        }
+      location: pkg/commands/types.go
+    - name: BuildSystemParser interface
+      description: |
+        Interface for build system parsers (Makefile, package.json, Cargo.toml,
+        pyproject.toml). Returns CommandSet and priority like CIParser.
+      definition: |
+        type BuildSystemParser interface {
+          ParseBuildSystem(repoRoot string) (*CommandSet, error)
+          Priority() int
+        }
+      location: pkg/commands/types.go
+    - name: GithubActionsParser.ParseCI
+      description: |
+        Parses .github/workflows/*.yml files to extract build/test/lint/format
+        commands. Handles matrix builds by detecting host platform. Priority: 100.
+      definition: |
+        func (p *GithubActionsParser) ParseCI(repoRoot string) (*CommandSet, error)
+        func (p *GithubActionsParser) Priority() int { return 100 }
+      location: pkg/commands/github_actions.go
+    - name: MakefileParser.ParseBuildSystem
+      description: |
+        Parses Makefile to extract commands from targets. Handles target chaining
+        by parsing dependency tree and selecting leaf targets. Priority: 50.
+      definition: |
+        func (p *MakefileParser) ParseBuildSystem(repoRoot string) (*CommandSet, error)
+        func (p *MakefileParser) Priority() int { return 50 }
+      location: pkg/commands/makefile.go
+    - name: PackageJSONParser.ParseBuildSystem
+      description: |
+        Parses package.json scripts section to extract build/test/lint/format
+        commands. Detects workspace structure for monorepos. Priority: 40.
+      definition: |
+        func (p *PackageJSONParser) ParseBuildSystem(repoRoot string) (*CommandSet, error)
+        func (p *PackageJSONParser) Priority() int { return 40 }
+      location: pkg/commands/package_json.go
+    - name: LanguageDefaults
+      description: |
+        Fallback defaults when no CI/build system configs are found. Detects
+        toolchain from marker files (go.mod, Cargo.toml, package.json, pyproject.toml)
+        and returns standard commands for that language.
+      definition: |
+        func LanguageDefaults(repoRoot string) (*CommandSet, error)
+      location: pkg/commands/defaults.go
+waves:
+    - number: 1
+      agents:
+        - id: A
+          task: |
+            Implement the core Extractor that orchestrates priority-based command
+            resolution across CI parsers and build system parsers.
+
+            ## What to Implement
+
+            Create `pkg/commands/extractor.go` with:
+            - `Extractor` struct (holds registered parsers)
+            - `New() *Extractor` constructor
+            - `Extract(repoRoot string) (*CommandSet, error)` main entry point
+            - Priority resolution logic: collect results from all parsers, sort by
+              priority descending, return first non-nil CommandSet
+
+            Priority ordering (per roadmap):
+            1. CI parsers (priority 100+): GitHub Actions, GitLab CI, CircleCI
+            2. Build system parsers (priority 50-): Makefile, package.json, Cargo.toml
+            3. Language defaults (priority 0): fallback when no configs found
+
+            The Extractor should:
+            - Accept parsers via constructor or Register methods
+            - Call each parser's Parse method and collect results
+            - Filter out nil results
+            - Sort by priority (descending)
+            - Return highest-priority CommandSet or language defaults
+
+            ## Interfaces to Implement
+
+            None - this agent consumes interfaces defined in types.go (scaffold).
+
+            ## Interfaces to Call
+
+            - `CIParser.ParseCI(repoRoot string) (*CommandSet, error)` - from types.go
+            - `CIParser.Priority() int` - from types.go
+            - `BuildSystemParser.ParseBuildSystem(repoRoot string) (*CommandSet, error)` - from types.go
+            - `BuildSystemParser.Priority() int` - from types.go
+            - `LanguageDefaults(repoRoot string) (*CommandSet, error)` - from defaults.go (Agent E)
+
+            ## Tests to Write
+
+            1. TestExtractor_PriorityResolution - verify CI parsers beat build system parsers
+            2. TestExtractor_FallbackToDefaults - verify defaults used when no parsers return results
+            3. TestExtractor_NilResults - verify nil results are filtered out
+            4. TestExtractor_EmptyParsers - verify fallback to defaults when no parsers registered
+
+            ## Verification Gate
+
+            ```bash
+            go build ./pkg/commands/...
+            go vet ./pkg/commands/...
+            go test ./pkg/commands/... -v -run TestExtractor
+            ```
+
+            ## Constraints
+
+            - Do not implement any parsers - those are owned by other agents
+            - Extractor must be agnostic to parser implementations
+            - If all parsers return nil, fall back to LanguageDefaults
+            - Priority ties: first parser wins (stable sort)
+          files:
+            - pkg/commands/extractor.go
+            - pkg/commands/extractor_test.go
+        - id: B
+          task: |
+            Implement GitHub Actions parser that extracts build/test/lint/format
+            commands from .github/workflows/*.yml files.
+
+            ## What to Implement
+
+            Create `pkg/commands/github_actions.go` with:
+            - `GithubActionsParser` struct (implements CIParser interface)
+            - `ParseCI(repoRoot string) (*CommandSet, error)` method
+            - `Priority() int` method (return 100)
+
+            Parsing logic:
+            1. Find all .github/workflows/*.yml files
+            2. Parse YAML (use gopkg.in/yaml.v3)
+            3. Extract `run:` commands from `steps:` sections
+            4. Classify commands by pattern matching:
+               - Build: "go build", "cargo build", "npm run build"
+               - Test: "go test", "cargo test", "npm test", "pytest"
+               - Lint: "go vet", "golangci-lint", "cargo clippy", "eslint", "ruff check"
+               - Format: "gofmt", "cargo fmt", "prettier", "black"
+            5. Distinguish check mode vs fix mode for lint/format:
+               - Check: "cargo clippy" (no --fix), "eslint ." (no --fix), "ruff check"
+               - Fix: "cargo clippy --fix", "eslint --fix", "ruff --fix"
+            6. Handle matrix builds: detect host platform from env vars, select matching matrix entry
+
+            ## Interfaces to Implement
+
+            - `CIParser.ParseCI(repoRoot string) (*CommandSet, error)` - from types.go
+            - `CIParser.Priority() int` - from types.go
+
+            ## Interfaces to Call
+
+            None - this parser is independent.
+
+            ## Tests to Write
+
+            1. TestGithubActionsParser_ValidWorkflow - parse real GitHub Actions file
+            2. TestGithubActionsParser_MatrixBuild - handle matrix with multiple OS/toolchain combos
+            3. TestGithubActionsParser_NoWorkflows - return nil when .github/workflows/ absent
+            4. TestGithubActionsParser_MalformedYAML - return error for syntax errors
+
+            ## Verification Gate
+
+            ```bash
+            go build ./pkg/commands/...
+            go vet ./pkg/commands/...
+            go test ./pkg/commands/... -v -run TestGithubActions
+            ```
+
+            ## Constraints
+
+            - Return nil (not error) when .github/workflows/ directory doesn't exist
+            - Priority must be 100 (higher than Makefile)
+            - Only extract commands from `run:` fields in steps
+            - Ignore commented-out commands
+          files:
+            - pkg/commands/github_actions.go
+            - pkg/commands/github_actions_test.go
+        - id: C
+          task: |
+            Implement Makefile parser that extracts build/test/lint/format commands
+            from Makefile targets.
+
+            ## What to Implement
+
+            Create `pkg/commands/makefile.go` with:
+            - `MakefileParser` struct (implements BuildSystemParser interface)
+            - `ParseBuildSystem(repoRoot string) (*CommandSet, error)` method
+            - `Priority() int` method (return 50)
+
+            Parsing logic:
+            1. Check if Makefile exists at repoRoot/Makefile
+            2. Parse Makefile to extract targets and dependencies
+            3. Handle target chaining per roadmap edge case #1:
+               - If target has dependencies (e.g., `test: build lint test-unit`),
+                 parse the dependency tree and select leaf targets
+               - Leaf targets are those with no further dependencies
+            4. Classify targets by name pattern:
+               - Build: "build", "compile", "all"
+               - Test: "test", "test-unit", "test-integration", "check"
+               - Lint: "lint", "vet", "check"
+               - Format: "fmt", "format"
+            5. Extract command from target body (lines following target declaration)
+
+            ## Interfaces to Implement
+
+            - `BuildSystemParser.ParseBuildSystem(repoRoot string) (*CommandSet, error)` - from types.go
+            - `BuildSystemParser.Priority() int` - from types.go
+
+            ## Interfaces to Call
+
+            None - this parser is independent.
+
+            ## Tests to Write
+
+            1. TestMakefileParser_SimpleTargets - parse Makefile with independent targets
+            2. TestMakefileParser_TargetChaining - handle "test: build lint test-unit"
+            3. TestMakefileParser_NoMakefile - return nil when Makefile absent
+            4. TestMakefileParser_EmptyTargets - handle Makefile with no targets
+
+            ## Verification Gate
+
+            ```bash
+            go build ./pkg/commands/...
+            go vet ./pkg/commands/...
+            go test ./pkg/commands/... -v -run TestMakefile
+            ```
+
+            ## Constraints
+
+            - Return nil (not error) when Makefile doesn't exist
+            - Priority must be 50 (lower than CI parsers, higher than package.json)
+            - Handle tab indentation (Makefile requirement)
+            - Target chaining: select leaf targets, not intermediate targets
+          files:
+            - pkg/commands/makefile.go
+            - pkg/commands/makefile_test.go
+        - id: D
+          task: |
+            Implement package.json parser that extracts build/test/lint/format
+            commands from npm/yarn scripts.
+
+            ## What to Implement
+
+            Create `pkg/commands/package_json.go` with:
+            - `PackageJSONParser` struct (implements BuildSystemParser interface)
+            - `ParseBuildSystem(repoRoot string) (*CommandSet, error)` method
+            - `Priority() int` method (return 40)
+
+            Parsing logic:
+            1. Check if package.json exists at repoRoot/package.json
+            2. Parse JSON (use encoding/json)
+            3. Extract commands from `scripts` section
+            4. Classify scripts by name:
+               - Build: "build", "compile"
+               - Test: "test", "test:unit", "test:e2e"
+               - Lint: "lint", "eslint"
+               - Format: "format", "prettier"
+            5. Handle monorepo workspaces per roadmap edge case #3:
+               - Detect workspace structure from package.json `workspaces` field
+               - Provide both full repo command ("npm test") and focused pattern
+                 ("npm test --workspace=packages/foo")
+
+            ## Interfaces to Implement
+
+            - `BuildSystemParser.ParseBuildSystem(repoRoot string) (*CommandSet, error)` - from types.go
+            - `BuildSystemParser.Priority() int` - from types.go
+
+            ## Interfaces to Call
+
+            None - this parser is independent.
+
+            ## Tests to Write
+
+            1. TestPackageJSONParser_SimpleScripts - parse package.json with standard scripts
+            2. TestPackageJSONParser_MonorepoWorkspaces - handle workspaces field
+            3. TestPackageJSONParser_NoPackageJSON - return nil when package.json absent
+            4. TestPackageJSONParser_MalformedJSON - return error for syntax errors
+
+            ## Verification Gate
+
+            ```bash
+            go build ./pkg/commands/...
+            go vet ./pkg/commands/...
+            go test ./pkg/commands/... -v -run TestPackageJSON
+            ```
+
+            ## Constraints
+
+            - Return nil (not error) when package.json doesn't exist
+            - Priority must be 40 (lower than Makefile)
+            - npm scripts use "npm run <script>", not just "<script>"
+            - Workspace commands require --workspace flag
+          files:
+            - pkg/commands/package_json.go
+            - pkg/commands/package_json_test.go
+        - id: E
+          task: |
+            Implement language defaults fallback that provides standard commands
+            when no CI/build system configs are found.
+
+            ## What to Implement
+
+            Create `pkg/commands/defaults.go` with:
+            - `LanguageDefaults(repoRoot string) (*CommandSet, error)` function
+
+            Detection logic:
+            1. Scan repoRoot for marker files:
+               - go.mod → Go toolchain
+               - Cargo.toml → Rust toolchain
+               - package.json → Node toolchain
+               - pyproject.toml → Python toolchain
+            2. Return standard commands for detected toolchain:
+
+            Go defaults:
+              build: "go build ./..."
+              test: "go test ./..."
+              lint.check: "go vet ./..."
+              format.fix: "gofmt -w ."
+
+            Rust defaults:
+              build: "cargo build"
+              test: "cargo test"
+              lint.check: "cargo clippy -- -D warnings"
+              format.check: "cargo fmt -- --check"
+              format.fix: "cargo fmt"
+
+            Node defaults:
+              build: "npm run build"
+              test: "npm test"
+              lint.check: "npm run lint"
+              format.check: "npm run format:check"
+
+            Python defaults:
+              build: null (interpreted language)
+              test: "pytest"
+              lint.check: "ruff check ."
+              format.fix: "black ."
+
+            ## Interfaces to Implement
+
+            - `LanguageDefaults(repoRoot string) (*CommandSet, error)` - standalone function
+
+            ## Interfaces to Call
+
+            None - this is a fallback, called only when all parsers return nil.
+
+            ## Tests to Write
+
+            1. TestLanguageDefaults_Go - detect go.mod and return Go defaults
+            2. TestLanguageDefaults_Rust - detect Cargo.toml and return Rust defaults
+            3. TestLanguageDefaults_Node - detect package.json and return Node defaults
+            4. TestLanguageDefaults_Python - detect pyproject.toml and return Python defaults
+            5. TestLanguageDefaults_NoMarkers - return error when no toolchain detected
+
+            ## Verification Gate
+
+            ```bash
+            go build ./pkg/commands/...
+            go vet ./pkg/commands/...
+            go test ./pkg/commands/... -v -run TestLanguageDefaults
+            ```
+
+            ## Constraints
+
+            - This is the lowest-priority fallback (priority 0)
+            - Return error if no marker files found
+            - Do not hardcode paths - use filepath.Join for portability
+          files:
+            - pkg/commands/defaults.go
+            - pkg/commands/defaults_test.go
+    - number: 2
+      agents:
+        - id: F
+          task: |
+            Implement CLI command `sawtools extract-commands` that invokes the
+            Extractor and outputs YAML results.
+
+            ## What to Implement
+
+            Create `cmd/saw/extract_commands_cmd.go` with:
+            - Cobra command definition for `extract-commands <repo-root>`
+            - Flag for output format (--format yaml|json, default yaml)
+            - Integration with pkg/commands/Extractor
+            - YAML/JSON serialization of CommandSet
+
+            Command behavior:
+            1. Accept repo root as positional argument
+            2. Create Extractor instance
+            3. Register all parsers (GithubActionsParser, MakefileParser, PackageJSONParser)
+            4. Call Extractor.Extract(repoRoot)
+            5. Serialize result to YAML or JSON
+            6. Print to stdout
+
+            Output format matches roadmap spec (lines 259-285):
+            ```yaml
+            toolchain: "go"
+            commands:
+              build: "go build ./..."
+              test:
+                full: "go test ./..."
+                focused_pattern: "go test ./{package} -run {test_name}"
+              lint:
+                check: "go vet ./..."
+                fix: null
+              format:
+                check: null
+                fix: "gofmt -w ."
+            detection_sources:
+              - ".github/workflows/ci.yml"
+              - "Makefile"
+            module_map:
+              - package: "./pkg/engine"
+                test_count: 67
+                focused_recommended: true
+            ```
+
+            ## Interfaces to Implement
+
+            None - this is a CLI wrapper.
+
+            ## Interfaces to Call
+
+            - `commands.New() *Extractor` - from pkg/commands/extractor.go (Agent A)
+            - `commands.Extractor.Extract(repoRoot string) (*CommandSet, error)` - from pkg/commands/extractor.go (Agent A)
+            - `yaml.Marshal` - from gopkg.in/yaml.v3
+            - `json.MarshalIndent` - from encoding/json
+
+            ## Tests to Write
+
+            1. TestExtractCommandsCmd_ValidRepo - run command on repo with Makefile
+            2. TestExtractCommandsCmd_NoConfigs - run command on repo with only go.mod (defaults)
+            3. TestExtractCommandsCmd_JSONOutput - verify --format json works
+            4. TestExtractCommandsCmd_InvalidRepoRoot - handle non-existent directory
+
+            ## Verification Gate
+
+            ```bash
+            go build ./cmd/saw/...
+            go vet ./cmd/saw/...
+            go test ./cmd/saw/... -v -run TestExtractCommands
+            ```
+
+            ## Constraints
+
+            - Command must be registered in cmd/saw/root.go (add to rootCmd)
+            - Output to stdout, errors to stderr
+            - Exit code 0 on success, 1 on error
+            - Follow existing command patterns (see analyze_deps_cmd.go for reference)
+          files:
+            - cmd/saw/extract_commands_cmd.go
+            - cmd/saw/extract_commands_cmd_test.go
+          dependencies:
+            - A
+            - B
+            - C
+            - D
+            - E
+quality_gates:
+    level: standard
+    gates:
+        - type: build
+          command: go build ./pkg/commands/... ./cmd/saw/...
+          required: true
+        - type: lint
+          command: go vet ./pkg/commands/... ./cmd/saw/...
+          required: false
+          description: Check for common Go mistakes
+        - type: test
+          command: go test ./pkg/commands/... ./cmd/saw/...
+          required: true
+scaffolds:
+    - file_path: pkg/commands/types.go
+      contents: |
+        package commands
+
+        // CommandSet represents extracted build/test/lint/format commands
+        type CommandSet struct {
+          Toolchain        string
+          Commands         Commands
+          DetectionSources []string
+          ModuleMap        []Module
+        }
+
+        // Commands holds the actual command strings
+        type Commands struct {
+          Build  string
+          Test   TestCommands
+          Lint   LintCommands
+          Format FormatCommands
+        }
+
+        // TestCommands separates full suite vs focused test patterns
+        type TestCommands struct {
+          Full           string
+          FocusedPattern string
+        }
+
+        // LintCommands separates check mode from auto-fix mode
+        type LintCommands struct {
+          Check string
+          Fix   string
+        }
+
+        // FormatCommands separates check mode from auto-fix mode
+        type FormatCommands struct {
+          Check string
+          Fix   string
+        }
+
+        // Module represents a package/module with test count metadata
+        type Module struct {
+          Package            string
+          TestCount          int
+          FocusedRecommended bool
+        }
+      import_path: github.com/blackwell-systems/scout-and-wave-go/pkg/commands
+      status: complete
+completion_reports:
+    A:
+        status: complete
+        branch: wave1-agent-A
+        commit: f1f6a9c
+        files_changed:
+            - pkg/commands/extractor.go
+            - pkg/commands/extractor_test.go
+            - pkg/commands/defaults.go
+        files_created:
+            - pkg/commands/extractor.go
+            - pkg/commands/extractor_test.go
+            - pkg/commands/defaults.go
+        tests_added:
+            - TestExtractor_PriorityResolution
+            - TestExtractor_FallbackToDefaults
+            - TestExtractor_NilResults
+            - TestExtractor_EmptyParsers
+            - TestExtractor_ErrorHandling
+            - TestExtractor_PriorityTies
+            - TestExtractor_LanguageDefaultsError
+        verification: PASS
+    B:
+        status: complete
+        branch: wave1-agent-B
+        commit: 2d8249b
+        files_changed:
+            - pkg/commands/github_actions.go
+            - pkg/commands/github_actions_test.go
+        files_created:
+            - pkg/commands/github_actions.go
+            - pkg/commands/github_actions_test.go
+        tests_added:
+            - TestGithubActionsParser_ValidWorkflow
+            - TestGithubActionsParser_MatrixBuild
+            - TestGithubActionsParser_NoWorkflows
+            - TestGithubActionsParser_MalformedYAML
+            - TestGithubActionsParser_Priority
+            - TestGithubActionsParser_LintFixMode
+            - TestGithubActionsParser_FormatCheckMode
+            - TestGithubActionsParser_MultilineCommands
+            - TestGithubActionsParser_ToolchainDetection
+        verification: PASS
+    C:
+        status: complete
+        branch: wave1-agent-C
+        commit: c9eb9c5
+        files_changed:
+            - pkg/commands/makefile.go
+            - pkg/commands/makefile_test.go
+        files_created:
+            - pkg/commands/makefile.go
+            - pkg/commands/makefile_test.go
+        tests_added:
+            - TestMakefileParser_SimpleTargets
+            - TestMakefileParser_TargetChaining
+            - TestMakefileParser_NoMakefile
+            - TestMakefileParser_EmptyTargets
+            - TestMakefileParser_Priority
+            - TestMakefileParser_TabIndentation
+            - TestMakefileParser_CommandPrefixes
+            - TestMakefileParser_MultipleTargetsOfSameType
+        verification: PASS
+    D:
+        status: complete
+        branch: wave1-agent-D
+        commit: 3f4823d
+        files_changed:
+            - pkg/commands/package_json.go
+            - pkg/commands/package_json_test.go
+        files_created:
+            - pkg/commands/package_json.go
+            - pkg/commands/package_json_test.go
+        tests_added:
+            - TestPackageJSONParser_SimpleScripts
+            - TestPackageJSONParser_MonorepoWorkspaces
+            - TestPackageJSONParser_NoPackageJSON
+            - TestPackageJSONParser_MalformedJSON
+            - TestPackageJSONParser_EmptyScripts
+            - TestPackageJSONParser_Priority
+            - TestPackageJSONParser_AlternativeScriptNames
+        verification: PASS
+    E:
+        status: complete
+        branch: wave1-agent-E
+        commit: dc1aba4
+        files_changed:
+            - pkg/commands/defaults.go
+            - pkg/commands/defaults_test.go
+        files_created:
+            - pkg/commands/defaults.go
+            - pkg/commands/defaults_test.go
+        tests_added:
+            - TestLanguageDefaults_Go
+            - TestLanguageDefaults_Rust
+            - TestLanguageDefaults_Node
+            - TestLanguageDefaults_Python
+            - TestLanguageDefaults_NoMarkers
+        verification: PASS
+    F:
+        status: complete
+        branch: develop
+        commit: 77a8153
+        files_changed:
+            - cmd/saw/extract_commands_cmd.go
+            - cmd/saw/extract_commands_cmd_test.go
+            - cmd/saw/main.go
+        files_created:
+            - cmd/saw/extract_commands_cmd.go
+            - cmd/saw/extract_commands_cmd_test.go
+        tests_added:
+            - TestExtractCommandsCmd_ValidRepo
+            - TestExtractCommandsCmd_NoConfigs
+            - TestExtractCommandsCmd_JSONOutput
+            - TestExtractCommandsCmd_InvalidRepoRoot
+            - TestExtractCommandsCmd_DefaultFormat
+            - TestExtractCommandsCmd_UnsupportedFormat
+        verification: PASS
+pre_mortem:
+    overall_risk: medium
+    rows:
+        - scenario: Makefile parser fails on complex target chaining (recursive dependencies, wildcards)
+          likelihood: medium
+          impact: low
+          mitigation: Start with simple target parsing, defer recursive dependency resolution if time-constrained. Document limitation and recommend manual override.
+        - scenario: GitHub Actions matrix builds have platform-specific commands that differ subtly (e.g., 'cargo clippy' on Linux, 'cargo clippy --all-features' on macOS)
+          likelihood: medium
+          impact: medium
+          mitigation: Detect host platform from Go runtime (runtime.GOOS), filter matrix entries by 'runs-on' or 'os' fields, select matching entry. If no match, fall back to first entry.
+        - scenario: CI workflow uses custom scripts or external tools not parseable from YAML alone (e.g., './scripts/run-tests.sh')
+          likelihood: high
+          impact: low
+          mitigation: 'Extract the script invocation as-is (e.g., ''run: ./scripts/run-tests.sh''). This is better than failing - Scout can use it verbatim.'
+        - scenario: Agent F cannot complete CLI integration until all parsers (B, C, D, E) are merged
+          likelihood: low
+          impact: medium
+          mitigation: Agent F is in Wave 2, blocked on Wave 1 completion. This is by design. If Wave 1 runs into issues, Agent F will adapt prompt based on available parsers.
+state: SCOUT_PENDING

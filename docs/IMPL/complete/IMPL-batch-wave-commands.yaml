@@ -1,0 +1,351 @@
+completion_date: "2025-01-12"
+title: Batch Wave Commands (prepare-wave and finalize-wave)
+feature_slug: batch-wave-commands
+verdict: SUITABLE
+suitability_assessment: |
+    Verdict: SUITABLE
+
+    1. File decomposition: YES — Two distinct command files with disjoint ownership.
+       prepare-wave owns prepare_wave.go, finalize-wave owns finalize_wave.go.
+       Both call existing protocol functions; no shared file modifications required.
+
+    2. Investigation-first: NO — All underlying functions (CreateWorktrees,
+       VerifyCommits, ScanStubs, RunGates, MergeAgents, VerifyBuild, Cleanup)
+       already exist and are well-tested. No unknowns to investigate.
+
+    3. Interface discoverability: YES — Both commands are independent CLI entry
+       points with no cross-agent interfaces. Both call existing pkg/protocol
+       functions with known signatures.
+
+    4. Pre-implementation status check:
+       Total items: 2 commands (prepare-wave, finalize-wave)
+       Already implemented (DONE): 0
+       Partially implemented (PARTIAL): 0
+       Not implemented (TO-DO): 2
+
+       All underlying protocol functions exist:
+       - protocol.CreateWorktrees (worktree.go)
+       - protocol.VerifyCommits (commit_verify.go)
+       - protocol.ScanStubs (stubs.go)
+       - protocol.RunGates (gates.go)
+       - protocol.MergeAgents (merge_agents.go)
+       - protocol.VerifyBuild (verify_build.go)
+       - protocol.Cleanup (cleanup.go)
+       - journal.NewObserver and extract-context logic (prepare_agent.go)
+
+    5. Parallelization value: HIGH — Both commands involve multi-step workflows
+       with I/O-heavy operations (git, file I/O, subprocess execution). Build/test
+       cycle is ~15s for protocol package. Clear parallelization benefit.
+
+    Estimated times:
+    - Scout phase: ~8 min (dependency analysis, interface review, IMPL doc)
+    - Agent execution: ~12 min (2 agents × 6 min avg, fully parallel)
+    - Merge & verification: ~3 min
+    Total SAW time: ~23 min
+
+    Sequential baseline: ~30 min (2 agents × 15 min each sequential)
+    Time savings: ~7 min (~23% faster)
+    Recommendation: Clear speedup. Proceed with parallel execution.
+test_command: go test ./pkg/protocol/... ./cmd/saw/...
+lint_command: go vet ./...
+file_ownership:
+    - file: cmd/saw/prepare_wave.go
+      agent: A
+      wave: 1
+      action: new
+    - file: cmd/saw/finalize_wave.go
+      agent: B
+      wave: 1
+      action: new
+    - file: cmd/saw/main.go
+      agent: C
+      wave: 2
+      action: modify
+      depends_on:
+        - A
+        - B
+interface_contracts:
+    - name: PrepareWaveResult
+      description: |
+        JSON output structure for prepare-wave command combining worktree
+        creation and per-agent preparation results.
+      definition: |
+        type PrepareWaveResult struct {
+          Wave         int                        `json:"wave"`
+          Worktrees    []WorktreeInfo            `json:"worktrees"`
+          AgentBriefs  []AgentBriefInfo          `json:"agent_briefs"`
+        }
+
+        type AgentBriefInfo struct {
+          Agent       string `json:"agent"`
+          BriefPath   string `json:"brief_path"`
+          BriefLength int    `json:"brief_length"`
+          JournalDir  string `json:"journal_dir"`
+          FilesOwned  int    `json:"files_owned"`
+        }
+      location: cmd/saw/prepare_wave.go
+    - name: FinalizeWaveResult
+      description: |
+        JSON output structure for finalize-wave command combining verification,
+        merge, and cleanup results.
+      definition: |
+        type FinalizeWaveResult struct {
+          Wave              int                      `json:"wave"`
+          VerifyCommits     *VerifyCommitsResult    `json:"verify_commits"`
+          StubReport        *ScanStubsResult        `json:"stub_report,omitempty"`
+          GateResults       []GateResult            `json:"gate_results"`
+          MergeResult       *MergeAgentsResult      `json:"merge_result"`
+          VerifyBuildResult *VerifyBuildResult      `json:"verify_build"`
+          CleanupResult     *CleanupResult          `json:"cleanup_result"`
+          Success           bool                    `json:"success"`
+        }
+      location: cmd/saw/finalize_wave.go
+waves:
+    - number: 1
+      agents:
+        - id: A
+          task: |
+            ## What to Implement
+            Create the prepare-wave command that combines worktree creation and
+            per-agent preparation into a single atomic operation. This command
+            reduces the wave setup flow from 5+ commands to 1 command.
+
+            ## Interfaces to Implement
+            Implement the PrepareWaveResult struct and newPrepareWaveCmd function:
+
+            ```go
+            type PrepareWaveResult struct {
+              Wave         int                        `json:"wave"`
+              Worktrees    []WorktreeInfo            `json:"worktrees"`  // from protocol.CreateWorktrees
+              AgentBriefs  []AgentBriefInfo          `json:"agent_briefs"`
+            }
+
+            type AgentBriefInfo struct {
+              Agent       string `json:"agent"`
+              BriefPath   string `json:"brief_path"`
+              BriefLength int    `json:"brief_length"`
+              JournalDir  string `json:"journal_dir"`
+              FilesOwned  int    `json:"files_owned"`
+            }
+
+            func newPrepareWaveCmd() *cobra.Command
+            ```
+
+            ## Interfaces to Call
+            - protocol.CreateWorktrees(manifestPath, waveNum, repoDir) — creates worktrees, records base commit
+            - protocol.Load(manifestPath) — parse IMPL manifest
+            - journal.NewObserver(projectRoot, fullAgentID) — init journal observer
+            - os.WriteFile(briefPath, []byte(brief), 0644) — write agent brief
+
+            Follow the pattern from prepare_agent.go for brief extraction and
+            journal initialization. Key differences:
+            - Loop over all agents in the wave (from CreateWorktrees result)
+            - Aggregate results into PrepareWaveResult JSON
+            - Write briefs to worktree roots (not .saw-state, no --no-worktree flag)
+
+            The brief extraction logic is in prepare_agent.go:48-118. For each agent:
+            1. Extract agent.Task from manifest.Waves[waveNum].Agents[agentID]
+            2. Extract agent.Files for the file ownership list
+            3. Extract manifest.InterfaceContracts and format as markdown (see prepare_agent.go:74-80)
+            4. Extract manifest.QualityGates and format as markdown (see prepare_agent.go:84-95)
+            5. Combine into brief using prepare_agent.go:98-118 template
+
+            Write brief to {worktreePath}/.saw-agent-brief.md (worktree root, not .saw-state).
+            For cross-repo waves, use determineAgentRepo pattern from worktree.go:115-125.
+
+            ## Tests to Write
+            No new tests required — this command orchestrates existing tested
+            functions. Integration testing via manual verification is sufficient.
+
+            ## Verification Gate
+            ```bash
+            cd /Users/dayna.blackwell/code/scout-and-wave-go
+            go build ./cmd/saw
+            go test ./pkg/protocol/... ./cmd/saw/...
+            go vet ./...
+            ```
+
+            ## Constraints
+            - Must call CreateWorktrees first to record base commit before brief extraction
+            - Brief path must be {worktreePath}/.saw-agent-brief.md (not .saw-state)
+            - Journal cursor must be initialized if it doesn't exist (empty SessionCursor)
+            - Command signature: `sawtools prepare-wave <manifest-path> --wave N --repo-dir <path>`
+            - Output JSON with all worktree paths and brief paths for orchestrator use
+            - Stop on first error; do not continue if CreateWorktrees fails
+            - Solo agents (1 agent in wave) should use prepare-agent --no-worktree instead
+              of prepare-wave (prepare-wave always creates worktrees, which is unnecessary overhead
+              for single-agent waves that execute on main branch)
+          files:
+            - cmd/saw/prepare_wave.go
+        - id: B
+          task: |
+            ## What to Implement
+            Create the finalize-wave command that combines post-agent verification,
+            merge, and cleanup into a single atomic operation. This command reduces
+            the post-wave flow from 6 commands to 1 command.
+
+            ## Interfaces to Implement
+            Implement the FinalizeWaveResult struct and newFinalizeWaveCmd function:
+
+            ```go
+            type FinalizeWaveResult struct {
+              Wave              int                      `json:"wave"`
+              VerifyCommits     *VerifyCommitsResult    `json:"verify_commits"`
+              StubReport        *ScanStubsResult        `json:"stub_report,omitempty"`
+              GateResults       []GateResult            `json:"gate_results"`
+              MergeResult       *MergeAgentsResult      `json:"merge_result"`
+              VerifyBuildResult *VerifyBuildResult      `json:"verify_build"`
+              CleanupResult     *CleanupResult          `json:"cleanup_result"`
+              Success           bool                    `json:"success"`
+            }
+
+            func newFinalizeWaveCmd() *cobra.Command
+            ```
+
+            ## Interfaces to Call
+            - protocol.VerifyCommits(manifestPath, waveNum, repoDir) — E7 check
+            - protocol.Load(manifestPath) — parse manifest for file ownership
+            - protocol.ScanStubs(files) — E20 stub detection on changed files
+            - protocol.RunGates(manifest, waveNum, repoDir) — E21 quality gates
+            - protocol.MergeAgents(manifestPath, waveNum, repoDir) — merge all agents
+            - protocol.VerifyBuild(manifestPath, repoDir) — post-merge tests
+            - protocol.Cleanup(manifestPath, waveNum, repoDir) — remove worktrees
+
+            ## Execution Order
+            1. VerifyCommits — stop if any agent has no commits (I5 trip wire)
+            2. ScanStubs — collect changed files from each agent's completion report
+               (files_changed + files_created from CompletionReport struct), scan for TODO/FIXME
+            3. RunGates — run quality gates if defined in manifest
+            4. MergeAgents — merge all agent branches to main (stop if conflict)
+            5. VerifyBuild — run test_command and lint_command from manifest
+            6. Cleanup — remove worktrees and branches
+
+            If any step fails:
+            - Set Success=false in result
+            - Stop execution (do not continue to next step)
+            - Return partial result with error details
+            - Exit with non-zero status code
+
+            ## Tests to Write
+            No new tests required — this command orchestrates existing tested
+            functions. Integration testing via manual verification is sufficient.
+
+            ## Verification Gate
+            ```bash
+            cd /Users/dayna.blackwell/code/scout-and-wave-go
+            go build ./cmd/saw
+            go test ./pkg/protocol/... ./cmd/saw/...
+            go vet ./...
+            ```
+
+            ## Constraints
+            - Must stop on first failure; do not continue pipeline if VerifyCommits fails
+            - ScanStubs input files must come from completion reports (files_changed + files_created),
+              NOT file ownership table (agents may create additional files or skip planned files)
+            - If merge fails, do NOT run VerifyBuild or Cleanup
+            - Command signature: `sawtools finalize-wave <manifest-path> --wave N --repo-dir <path>`
+            - Output comprehensive JSON result for orchestrator diagnostics
+            - Exit code 1 if Success=false
+          files:
+            - cmd/saw/finalize_wave.go
+      base_commit: 1382a13361dfa15681f31f097f151c32934039ca
+    - number: 2
+      agents:
+        - id: C
+          task: |
+            ## What to Implement
+            Register the two new commands (prepare-wave and finalize-wave) in
+            cmd/saw/main.go's root command initialization.
+
+            ## Interfaces to Implement
+            None — just call the existing newPrepareWaveCmd() and newFinalizeWaveCmd()
+            functions created by agents A and B.
+
+            ## Interfaces to Call
+            - newPrepareWaveCmd() — from cmd/saw/prepare_wave.go
+            - newFinalizeWaveCmd() — from cmd/saw/finalize_wave.go
+            - rootCmd.AddCommand(...) — register commands
+
+            ## Implementation Pattern
+            Add these lines in main.go's init() or main() function where other
+            commands are registered:
+
+            ```go
+            rootCmd.AddCommand(newPrepareWaveCmd())
+            rootCmd.AddCommand(newFinalizeWaveCmd())
+            ```
+
+            Follow the existing pattern from create-worktrees, merge-agents, etc.
+
+            ## Tests to Write
+            No tests required — trivial registration logic.
+
+            ## Verification Gate
+            ```bash
+            cd /Users/dayna.blackwell/code/scout-and-wave-go
+            go build ./cmd/saw
+            ./saw --help | grep -E "prepare-wave|finalize-wave"
+            go test ./cmd/saw/...
+            go vet ./...
+            ```
+
+            Verify that both commands appear in `sawtools --help` output.
+
+            ## Constraints
+            - Must come after agents A and B complete (Wave 2 dependency)
+            - Follow existing command registration pattern
+            - No changes to command implementation logic — pure registration
+          files:
+            - cmd/saw/main.go
+          dependencies:
+            - A
+            - B
+      base_commit: f5fbbcf544b2dd7dbb2ecdc8196f8f62f95f52f3
+quality_gates:
+    level: standard
+    gates:
+        - type: build
+          command: go build ./cmd/saw
+          required: true
+        - type: test
+          command: go test ./pkg/protocol/... ./cmd/saw/...
+          required: true
+        - type: lint
+          command: go vet ./...
+          required: false
+          description: Check for common Go mistakes
+completion_reports:
+    A:
+        status: complete
+        branch: wave1-agent-A
+        commit: c998715
+        files_changed:
+            - cmd/saw/main.go
+        files_created:
+            - cmd/saw/prepare_wave.go
+        verification: PASS (build and vet successful; pre-existing protocol test failures unrelated)
+    B:
+        status: complete
+        branch: wave1-agent-B
+        commit: "0395089"
+        files_changed:
+            - cmd/saw/main.go
+        files_created:
+            - cmd/saw/finalize_wave.go
+        verification: PASS (build + vet on cmd/saw)
+pre_mortem:
+    overall_risk: low
+    rows:
+        - scenario: prepare-wave fails mid-operation after creating some worktrees but before writing briefs
+          likelihood: low
+          impact: low
+          mitigation: CreateWorktrees creates worktrees sequentially and stops on first agent failure. If some worktrees were created before failure, orchestrator can re-run prepare-wave (worktree creation is idempotent) or run cleanup to remove stale worktrees.
+        - scenario: finalize-wave fails after merge but before cleanup, leaving stale worktrees
+          likelihood: low
+          impact: low
+          mitigation: Cleanup is idempotent. Orchestrator can run `sawtools cleanup` manually to remove stale worktrees.
+        - scenario: JSON output format changes break downstream tooling (web app, orchestrators)
+          likelihood: medium
+          impact: medium
+          mitigation: Add JSON schema validation tests. Document output format in command help text. Web app already handles errors gracefully via SSE error events.
+state: WAVE_PENDING

@@ -12,15 +12,21 @@ import (
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/bedrockruntime"
+	"github.com/aws/aws-sdk-go-v2/service/bedrockruntime/document"
 	"github.com/aws/aws-sdk-go-v2/service/bedrockruntime/types"
 
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/agent/backend"
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/tools"
 )
 
 // Client implements backend.Backend using AWS Bedrock.
 type Client struct {
-	client *bedrockruntime.Client
-	cfg    backend.Config
+	client        *bedrockruntime.Client
+	cfg           backend.Config
+	onToolCall    backend.ToolCallCallback
+	readOnly      bool
+	commitTracker *tools.CommitTracker
+	outputSchema  map[string]any // optional: structured output schema
 }
 
 // New creates a Bedrock backend client using AWS credentials from the default chain.
@@ -33,90 +39,113 @@ func New(cfg backend.Config) *Client {
 	}
 
 	return &Client{
-		client: bedrockruntime.NewFromConfig(awsCfg),
-		cfg:    cfg,
+		client:     bedrockruntime.NewFromConfig(awsCfg),
+		cfg:        cfg,
+		onToolCall: cfg.OnToolCall,
+		readOnly:   cfg.ReadOnly,
 	}
 }
 
-// Run sends a non-streaming request to Bedrock.
+// WithOutputConfig configures structured output by providing a JSON schema.
+// Returns the client for method chaining.
+func (c *Client) WithOutputConfig(schema map[string]any) *Client {
+	c.outputSchema = schema
+	return c
+}
+
+// Run sends a non-streaming request to Bedrock using the Converse API.
 func (c *Client) Run(ctx context.Context, systemPrompt, userPrompt, _ string) (string, error) {
 	if c.client == nil {
 		return "", fmt.Errorf("bedrock: AWS config failed to load")
 	}
 
-	// Build Anthropic Messages API request body
-	reqBody := map[string]interface{}{
-		"anthropic_version": "bedrock-2023-05-31",
-		"max_tokens":        c.maxTokens(),
-		"messages": []map[string]string{
-			{"role": "user", "content": userPrompt},
+	// Build Converse API request
+	input := &bedrockruntime.ConverseInput{
+		ModelId: aws.String(c.cfg.Model),
+		Messages: []types.Message{
+			{
+				Role: types.ConversationRoleUser,
+				Content: []types.ContentBlock{
+					&types.ContentBlockMemberText{
+						Value: userPrompt,
+					},
+				},
+			},
+		},
+		InferenceConfig: &types.InferenceConfiguration{
+			MaxTokens: aws.Int32(int32(c.maxTokens())),
 		},
 	}
+
+	// Add system prompt if provided
 	if systemPrompt != "" {
-		reqBody["system"] = systemPrompt
+		input.System = buildSystemBlocks(systemPrompt)
 	}
 
-	bodyBytes, err := json.Marshal(reqBody)
+	// Add structured output configuration if schema is set
+	if c.outputSchema != nil {
+		outputConfig, err := buildOutputConfig(c.outputSchema)
+		if err != nil {
+			return "", fmt.Errorf("bedrock: buildOutputConfig: %w", err)
+		}
+		input.OutputConfig = outputConfig
+	}
+
+	resp, err := c.client.Converse(ctx, input)
 	if err != nil {
-		return "", fmt.Errorf("bedrock: marshal request: %w", err)
+		return "", fmt.Errorf("bedrock: Converse: %w", err)
 	}
 
-	resp, err := c.client.InvokeModel(ctx, &bedrockruntime.InvokeModelInput{
-		ModelId:     aws.String(c.cfg.Model),
-		Body:        bodyBytes,
-		ContentType: aws.String("application/json"),
-		Accept:      aws.String("application/json"),
-	})
-	if err != nil {
-		return "", fmt.Errorf("bedrock: InvokeModel: %w", err)
-	}
-
-	var result struct {
-		Content []struct {
-			Text string `json:"text"`
-		} `json:"content"`
-	}
-	if err := json.Unmarshal(resp.Body, &result); err != nil {
-		return "", fmt.Errorf("bedrock: unmarshal response: %w", err)
-	}
-
-	if len(result.Content) == 0 {
+	// Extract text from response
+	text := extractTextFromOutput(resp.Output)
+	if text == "" {
 		return "", fmt.Errorf("bedrock: empty response content")
 	}
 
-	return result.Content[0].Text, nil
+	return text, nil
 }
 
-// RunStreaming sends a streaming request to Bedrock and calls onChunk for each text delta.
+// RunStreaming sends a streaming request to Bedrock using ConverseStream API.
 func (c *Client) RunStreaming(ctx context.Context, systemPrompt, userPrompt, _ string, onChunk backend.ChunkCallback) (string, error) {
 	if c.client == nil {
 		return "", fmt.Errorf("bedrock: AWS config failed to load")
 	}
 
-	reqBody := map[string]interface{}{
-		"anthropic_version": "bedrock-2023-05-31",
-		"max_tokens":        c.maxTokens(),
-		"messages": []map[string]string{
-			{"role": "user", "content": userPrompt},
+	// Build ConverseStream API request
+	input := &bedrockruntime.ConverseStreamInput{
+		ModelId: aws.String(c.cfg.Model),
+		Messages: []types.Message{
+			{
+				Role: types.ConversationRoleUser,
+				Content: []types.ContentBlock{
+					&types.ContentBlockMemberText{
+						Value: userPrompt,
+					},
+				},
+			},
+		},
+		InferenceConfig: &types.InferenceConfiguration{
+			MaxTokens: aws.Int32(int32(c.maxTokens())),
 		},
 	}
+
+	// Add system prompt if provided
 	if systemPrompt != "" {
-		reqBody["system"] = systemPrompt
+		input.System = buildSystemBlocks(systemPrompt)
 	}
 
-	bodyBytes, err := json.Marshal(reqBody)
-	if err != nil {
-		return "", fmt.Errorf("bedrock: marshal request: %w", err)
+	// Add structured output configuration if schema is set
+	if c.outputSchema != nil {
+		outputConfig, err := buildOutputConfig(c.outputSchema)
+		if err != nil {
+			return "", fmt.Errorf("bedrock: buildOutputConfig: %w", err)
+		}
+		input.OutputConfig = outputConfig
 	}
 
-	resp, err := c.client.InvokeModelWithResponseStream(ctx, &bedrockruntime.InvokeModelWithResponseStreamInput{
-		ModelId:     aws.String(c.cfg.Model),
-		Body:        bodyBytes,
-		ContentType: aws.String("application/json"),
-		Accept:      aws.String("application/json"),
-	})
+	resp, err := c.client.ConverseStream(ctx, input)
 	if err != nil {
-		return "", fmt.Errorf("bedrock: InvokeModelWithResponseStream: %w", err)
+		return "", fmt.Errorf("bedrock: ConverseStream: %w", err)
 	}
 
 	stream := resp.GetStream()
@@ -126,23 +155,25 @@ func (c *Client) RunStreaming(ctx context.Context, systemPrompt, userPrompt, _ s
 
 	for event := range stream.Events() {
 		switch v := event.(type) {
-		case *types.ResponseStreamMemberChunk:
-			var chunk struct {
-				Type  string `json:"type"`
-				Delta struct {
-					Text string `json:"text"`
-				} `json:"delta"`
-			}
-			if err := json.Unmarshal(v.Value.Bytes, &chunk); err != nil {
-				continue
-			}
-			if chunk.Type == "content_block_delta" && chunk.Delta.Text != "" {
-				fullText.WriteString(chunk.Delta.Text)
-				onChunk(chunk.Delta.Text)
+		case *types.ConverseStreamOutputMemberContentBlockStart:
+			// Content block started - no action needed for text blocks
+
+		case *types.ConverseStreamOutputMemberContentBlockDelta:
+			if v.Value.Delta != nil {
+				if textDelta, ok := v.Value.Delta.(*types.ContentBlockDeltaMemberText); ok {
+					text := textDelta.Value
+					fullText.WriteString(text)
+					if onChunk != nil {
+						onChunk(text)
+					}
+				}
 			}
 
-		case *types.UnknownUnionMember:
-			// Ignore unknown event types
+		case *types.ConverseStreamOutputMemberMessageStop:
+			// Message complete
+
+		case *types.ConverseStreamOutputMemberMetadata:
+			// Metadata event - ignore
 
 		default:
 			// Ignore other event types
@@ -156,18 +187,313 @@ func (c *Client) RunStreaming(ctx context.Context, systemPrompt, userPrompt, _ s
 	return fullText.String(), nil
 }
 
-// RunStreamingWithTools is not yet implemented for Bedrock.
-// Falls back to non-tool streaming for now.
-func (c *Client) RunStreamingWithTools(ctx context.Context, systemPrompt, userPrompt, _ string, onChunk backend.ChunkCallback, onToolCall backend.ToolCallCallback) (string, error) {
-	// TODO: Implement tool use for Bedrock
-	return c.RunStreaming(ctx, systemPrompt, userPrompt, "", onChunk)
+// buildWorkshop creates a Workshop with middleware applied based on client config.
+func (c *Client) buildWorkshop(workDir string) tools.Workshop {
+	var w tools.Workshop
+	if c.readOnly {
+		w = tools.ReadOnlyTools(workDir)
+	} else {
+		w = tools.StandardTools(workDir)
+	}
+	if c.cfg.Constraints != nil {
+		w, c.commitTracker = tools.WithConstraints(w, *c.cfg.Constraints)
+	}
+	if c.onToolCall != nil {
+		w = tools.WithTiming(w, func(ev tools.ToolCallEvent) {
+			c.onToolCall(backend.ToolCallEvent{
+				Name:       ev.ToolName,
+				DurationMs: ev.DurationMs,
+				IsError:    ev.IsError,
+				IsResult:   true,
+			})
+		})
+	}
+	return w
+}
+
+// CommitCount returns the number of git commits tracked by the constraint
+// middleware. Returns 0 if constraints are not configured or no commits detected.
+func (c *Client) CommitCount() int {
+	if c.commitTracker == nil {
+		return 0
+	}
+	return c.commitTracker.Count
+}
+
+// toolBlock tracks state for a tool_use content block being streamed.
+type toolBlock struct {
+	id        string
+	name      string
+	inputJSON strings.Builder
+}
+
+// RunStreamingWithTools implements backend.Backend with full multi-turn tool-use loop using ConverseStream API.
+// Streams text deltas via onChunk, emits tool call events via onToolCall.
+// Loops until stop_reason is "end_turn" or maxTurns exceeded.
+func (c *Client) RunStreamingWithTools(ctx context.Context, systemPrompt, userPrompt, workDir string, onChunk backend.ChunkCallback, onToolCall backend.ToolCallCallback) (string, error) {
+	if c.client == nil {
+		return "", fmt.Errorf("bedrock: AWS config failed to load")
+	}
+
+	workshop := c.buildWorkshop(workDir)
+
+	// Build typed message history
+	messages := []types.Message{
+		{
+			Role: types.ConversationRoleUser,
+			Content: []types.ContentBlock{
+				&types.ContentBlockMemberText{
+					Value: userPrompt,
+				},
+			},
+		},
+	}
+
+	maxT := c.maxTurns()
+
+	for turn := 0; turn < maxT; turn++ {
+		// Build ConverseStream request
+		input := &bedrockruntime.ConverseStreamInput{
+			ModelId:  aws.String(c.cfg.Model),
+			Messages: messages,
+			InferenceConfig: &types.InferenceConfiguration{
+				MaxTokens: aws.Int32(int32(c.maxTokens())),
+			},
+			ToolConfig: buildConverseTools(workshop),
+		}
+
+		// Add system prompt if provided
+		if systemPrompt != "" {
+			input.System = buildSystemBlocks(systemPrompt)
+		}
+
+		// Add structured output configuration on final turn (when no tool use expected)
+		if c.outputSchema != nil && turn > 0 {
+			outputConfig, err := buildOutputConfig(c.outputSchema)
+			if err != nil {
+				return "", fmt.Errorf("bedrock: buildOutputConfig (turn %d): %w", turn, err)
+			}
+			input.OutputConfig = outputConfig
+		}
+
+		resp, err := c.client.ConverseStream(ctx, input)
+		if err != nil {
+			return "", fmt.Errorf("bedrock: ConverseStream (turn %d): %w", turn, err)
+		}
+
+		stream := resp.GetStream()
+
+		var fullText strings.Builder
+		var stopReason types.StopReason
+		blockMap := make(map[int]*toolBlock)              // index -> tool block
+		textBlocks := make(map[int]*strings.Builder)      // index -> text accumulator
+		currentIndex := 0
+
+		for event := range stream.Events() {
+			switch v := event.(type) {
+			case *types.ConverseStreamOutputMemberContentBlockStart:
+				if v.Value.ContentBlockIndex != nil {
+					currentIndex = int(*v.Value.ContentBlockIndex)
+				}
+				if v.Value.Start != nil {
+					if toolUse, ok := v.Value.Start.(*types.ContentBlockStartMemberToolUse); ok {
+						blockMap[currentIndex] = &toolBlock{
+							id:   aws.ToString(toolUse.Value.ToolUseId),
+							name: aws.ToString(toolUse.Value.Name),
+						}
+					}
+				}
+				// Initialize text block accumulator
+				if _, exists := blockMap[currentIndex]; !exists {
+					textBlocks[currentIndex] = &strings.Builder{}
+				}
+
+			case *types.ConverseStreamOutputMemberContentBlockDelta:
+				if v.Value.ContentBlockIndex != nil {
+					currentIndex = int(*v.Value.ContentBlockIndex)
+				}
+				if v.Value.Delta != nil {
+					switch delta := v.Value.Delta.(type) {
+					case *types.ContentBlockDeltaMemberText:
+						text := delta.Value
+						fullText.WriteString(text)
+						if tb, ok := textBlocks[currentIndex]; ok {
+							tb.WriteString(text)
+						}
+						if onChunk != nil {
+							onChunk(text)
+						}
+					case *types.ContentBlockDeltaMemberToolUse:
+						if tb, ok := blockMap[currentIndex]; ok {
+							tb.inputJSON.WriteString(aws.ToString(delta.Value.Input))
+						}
+					}
+				}
+
+			case *types.ConverseStreamOutputMemberMessageStop:
+				if v.Value.StopReason != "" {
+					stopReason = v.Value.StopReason
+				}
+
+			case *types.ConverseStreamOutputMemberMetadata:
+				// Metadata event - ignore
+
+			default:
+				// Ignore other event types
+			}
+		}
+
+		if err := stream.Err(); err != nil {
+			stream.Close()
+			return fullText.String(), fmt.Errorf("bedrock: stream error (turn %d): %w", turn, err)
+		}
+		stream.Close()
+
+		if stopReason == types.StopReasonEndTurn {
+			return fullText.String(), nil
+		}
+
+		if stopReason == types.StopReasonMaxTokens {
+			// Treat max_tokens like end_turn for tool-use turns: the model ran out of
+			// output space. Continue the loop by sending what we have as an assistant
+			// message so the model can resume. If there are pending tool_use blocks,
+			// execute them; otherwise just continue the conversation.
+			if len(blockMap) == 0 {
+				// No tool calls in this turn — send accumulated text back and let
+				// the model continue from where it left off.
+				if fullText.Len() > 0 {
+					messages = append(messages, types.Message{
+						Role: types.ConversationRoleAssistant,
+						Content: []types.ContentBlock{
+							&types.ContentBlockMemberText{
+								Value: fullText.String(),
+							},
+						},
+					})
+					messages = append(messages, types.Message{
+						Role: types.ConversationRoleUser,
+						Content: []types.ContentBlock{
+							&types.ContentBlockMemberText{
+								Value: "Continue from where you left off.",
+							},
+						},
+					})
+				}
+				continue
+			}
+			// Fall through to tool execution — treat the pending tool_use blocks normally
+		} else if stopReason != types.StopReasonToolUse {
+			return fullText.String(), fmt.Errorf("bedrock: unexpected stop reason (turn %d): %s", turn, stopReason)
+		}
+
+		// Build assistant content blocks for the message history
+		assistantContent := make([]types.ContentBlock, 0)
+
+		// Add blocks in index order
+		for i := 0; i <= currentIndex; i++ {
+			if tb, ok := textBlocks[i]; ok {
+				text := tb.String()
+				if text != "" {
+					assistantContent = append(assistantContent, &types.ContentBlockMemberText{
+						Value: text,
+					})
+				}
+			}
+			if toolBlk, ok := blockMap[i]; ok {
+				inputStr := toolBlk.inputJSON.String()
+				if inputStr == "" {
+					inputStr = "{}"
+				}
+				// Parse JSON string into a Go value so the SDK serializes it as
+				// a JSON object, not as raw bytes (which Bedrock rejects).
+				var inputObj interface{}
+				if err := json.Unmarshal([]byte(inputStr), &inputObj); err != nil {
+					inputObj = map[string]interface{}{}
+				}
+				inputDoc := document.NewLazyDocument(inputObj)
+				assistantContent = append(assistantContent, &types.ContentBlockMemberToolUse{
+					Value: types.ToolUseBlock{
+						ToolUseId: aws.String(toolBlk.id),
+						Name:      aws.String(toolBlk.name),
+						Input:     inputDoc,
+					},
+				})
+			}
+		}
+
+		messages = append(messages, types.Message{
+			Role:    types.ConversationRoleAssistant,
+			Content: assistantContent,
+		})
+
+		// Execute tools and build tool_result blocks
+		toolResults := make([]types.ContentBlock, 0)
+		for _, toolBlk := range blockMap {
+			inputStr := toolBlk.inputJSON.String()
+			if inputStr == "" {
+				inputStr = "{}"
+			}
+			var inputMap map[string]interface{}
+			if err := json.Unmarshal([]byte(inputStr), &inputMap); err != nil {
+				inputMap = map[string]interface{}{}
+			}
+
+			// Emit tool call event
+			if onToolCall != nil {
+				onToolCall(backend.ToolCallEvent{
+					Name:  toolBlk.name,
+					Input: inputStr,
+				})
+			}
+
+			result, isError := executeTool(ctx, workshop, toolBlk.name, inputMap, workDir)
+
+			// Emit tool result event
+			if onToolCall != nil {
+				onToolCall(backend.ToolCallEvent{
+					Name:     toolBlk.name,
+					IsResult: true,
+					IsError:  isError,
+				})
+			}
+
+			toolResult := &types.ContentBlockMemberToolResult{
+				Value: types.ToolResultBlock{
+					ToolUseId: aws.String(toolBlk.id),
+					Content: []types.ToolResultContentBlock{
+						&types.ToolResultContentBlockMemberText{
+							Value: result,
+						},
+					},
+				},
+			}
+			if isError {
+				toolResult.Value.Status = types.ToolResultStatusError
+			}
+			toolResults = append(toolResults, toolResult)
+		}
+
+		messages = append(messages, types.Message{
+			Role:    types.ConversationRoleUser,
+			Content: toolResults,
+		})
+	}
+
+	return "", fmt.Errorf("bedrock: tool use loop exceeded maxTurns (%d)", maxT)
+}
+
+func (c *Client) maxTurns() int {
+	if c.cfg.MaxTurns > 0 {
+		return c.cfg.MaxTurns
+	}
+	return 200
 }
 
 func (c *Client) maxTokens() int {
 	if c.cfg.MaxTokens > 0 {
 		return c.cfg.MaxTokens
 	}
-	return 4096
+	return 16384
 }
 
 // Verify Client implements backend.Backend at compile time.

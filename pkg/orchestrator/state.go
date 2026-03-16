@@ -3,9 +3,9 @@
 package orchestrator
 
 import (
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/types"
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
 )
 
 // State is a re-export alias so callers can use orchestrator.State
-// in addition to types.State if they prefer.
-type State = types.State
+// in addition to protocol.ProtocolState if they prefer.
+type State = protocol.ProtocolState

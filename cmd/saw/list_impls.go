@@ -13,13 +13,16 @@ import (
 // Always exits 0 (empty list is valid).
 func newListIMPLsCmd() *cobra.Command {
 	var dir string
+	var includeComplete bool
 
 	cmd := &cobra.Command{
 		Use:   "list-impls",
-		Short: "List all IMPL manifests in a directory",
+		Short: "List IMPL manifests in a directory (excludes completed by default)",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			result, err := protocol.ListIMPLs(dir)
+			result, err := protocol.ListIMPLs(dir, protocol.ListIMPLsOpts{
+				IncludeComplete: includeComplete,
+			})
 			if err != nil {
 				return fmt.Errorf("list-impls: %w", err)
 			}
@@ -31,6 +34,7 @@ func newListIMPLsCmd() *cobra.Command {
 	}
 
 	cmd.Flags().StringVar(&dir, "dir", "docs/IMPL", "Directory to scan for IMPL manifests")
+	cmd.Flags().BoolVar(&includeComplete, "include-complete", false, "Include completed/archived IMPL docs")
 
 	return cmd
 }

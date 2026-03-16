@@ -1,8 +1,10 @@
 package protocol
 
 import (
+	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 )
 
 // IMPLSummary represents a lightweight summary of an IMPL document.
@@ -11,6 +13,7 @@ type IMPLSummary struct {
 	Path        string `json:"path"`
 	FeatureSlug string `json:"feature_slug"`
 	Verdict     string `json:"verdict"`
+	State       string `json:"state"`
 	CurrentWave int    `json:"current_wave"`
 	TotalWaves  int    `json:"total_waves"`
 }
@@ -38,29 +41,48 @@ type ListIMPLsResult struct {
 //   - ListIMPLsResult with all successfully loaded summaries
 //   - Empty list if dir is invalid or no IMPL files found (not an error)
 //   - Results are sorted by path for deterministic output
-func ListIMPLs(dir string) (*ListIMPLsResult, error) {
+// ListIMPLsOpts controls filtering behavior for ListIMPLs.
+type ListIMPLsOpts struct {
+	IncludeComplete bool // If false (default), exclude IMPLs with state COMPLETE or in complete/ directory
+}
+
+func ListIMPLs(dir string, opts ...ListIMPLsOpts) (*ListIMPLsResult, error) {
+	var o ListIMPLsOpts
+	if len(opts) > 0 {
+		o = opts[0]
+	}
 	result := &ListIMPLsResult{
 		IMPLs: []IMPLSummary{},
 	}
 
-	// Find all IMPL-*.yaml and IMPL-*.yml files
-	yamlPattern := filepath.Join(dir, "IMPL-*.yaml")
-	ymlPattern := filepath.Join(dir, "IMPL-*.yml")
-
-	yamlMatches, err := filepath.Glob(yamlPattern)
-	if err != nil {
-		// Invalid dir or glob pattern — return empty list
-		return result, nil
+	// Scan both active and complete directories
+	dirs := []string{
+		dir,
+		filepath.Join(dir, "complete"),
 	}
 
-	ymlMatches, err := filepath.Glob(ymlPattern)
-	if err != nil {
-		// Invalid dir or glob pattern — return empty list
-		return result, nil
-	}
+	var allMatches []string
+	for _, scanDir := range dirs {
+		// Find all IMPL-*.yaml and IMPL-*.yml files
+		yamlPattern := filepath.Join(scanDir, "IMPL-*.yaml")
+		ymlPattern := filepath.Join(scanDir, "IMPL-*.yml")
 
-	// Combine matches
-	allMatches := append(yamlMatches, ymlMatches...)
+		yamlMatches, err := filepath.Glob(yamlPattern)
+		if err != nil {
+			// Invalid dir or glob pattern — skip this directory
+			continue
+		}
+
+		ymlMatches, err := filepath.Glob(ymlPattern)
+		if err != nil {
+			// Invalid dir or glob pattern — skip this directory
+			continue
+		}
+
+		// Combine matches from this directory
+		allMatches = append(allMatches, yamlMatches...)
+		allMatches = append(allMatches, ymlMatches...)
+	}
 
 	// Process each manifest file
 	for _, path := range allMatches {
@@ -82,8 +104,16 @@ func ListIMPLs(dir string) (*ListIMPLsResult, error) {
 			Path:        path,
 			FeatureSlug: manifest.FeatureSlug,
 			Verdict:     manifest.Verdict,
+			State:       string(manifest.State),
 			CurrentWave: currentWaveNum,
 			TotalWaves:  len(manifest.Waves),
+		}
+
+		// Filter completed IMPLs unless requested
+		if !o.IncludeComplete {
+			if manifest.State == StateComplete || strings.Contains(path, "/complete/") {
+				continue
+			}
 		}
 
 		result.IMPLs = append(result.IMPLs, summary)
@@ -95,4 +125,31 @@ func ListIMPLs(dir string) (*ListIMPLsResult, error) {
 	})
 
 	return result, nil
+}
+
+// ArchiveIMPL moves an IMPL doc from docs/IMPL/ to docs/IMPL/complete/.
+// Returns the new path if successful.
+func ArchiveIMPL(manifestPath string) (string, error) {
+	// Get directory and filename
+	dir := filepath.Dir(manifestPath)
+	filename := filepath.Base(manifestPath)
+
+	// Check if already in complete directory
+	if filepath.Base(dir) == "complete" {
+		return manifestPath, nil // already archived
+	}
+
+	// Ensure complete directory exists
+	completeDir := filepath.Join(dir, "complete")
+	if err := os.MkdirAll(completeDir, 0755); err != nil {
+		return "", err
+	}
+
+	// Move file
+	destPath := filepath.Join(completeDir, filename)
+	if err := os.Rename(manifestPath, destPath); err != nil {
+		return "", err
+	}
+
+	return destPath, nil
 }

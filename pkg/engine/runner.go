@@ -3,25 +3,32 @@ package engine
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/agent"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/agent/backend"
 	apiclient "github.com/blackwell-systems/scout-and-wave-go/pkg/agent/backend/api"
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/agent/backend/cli"
+	bedrockbackend "github.com/blackwell-systems/scout-and-wave-go/pkg/agent/backend/bedrock"
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/analyzer"
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/commands"
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/hooks"
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/journal"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/orchestrator"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/suitability"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/types"
+	"gopkg.in/yaml.v3"
 )
 
 // RunScout executes a Scout agent, calling onChunk for each output fragment.
 // Returns when the agent finishes. Cancellable via ctx.
+// I6 enforcement: Post-execution validation checks that Scout only wrote to docs/IMPL/IMPL-*.yaml.
 func RunScout(ctx context.Context, opts RunScoutOpts, onChunk func(string)) error {
 	if opts.Feature == "" {
 		return fmt.Errorf("engine.RunScout: Feature is required")
@@ -32,6 +39,9 @@ func RunScout(ctx context.Context, opts RunScoutOpts, onChunk func(string)) erro
 	if opts.IMPLOutPath == "" {
 		return fmt.Errorf("engine.RunScout: IMPLOutPath is required")
 	}
+
+	// Record start time for I6 validation (detect files written during execution)
+	startTime := time.Now()
 
 	// Resolve SAW repo path.
 	sawRepo := opts.SAWRepoPath
@@ -53,29 +63,45 @@ func RunScout(ctx context.Context, opts RunScoutOpts, onChunk func(string)) erro
 		scoutMdBytes = []byte("You are a Scout agent. Analyze the codebase and produce an IMPL doc.")
 	}
 
+	// Run automation tools (H1a, H2, H3) before launching Scout.
+	automationContext := runScoutAutomation(opts.RepoPath, opts.Feature)
+
 	// E17: Prepend docs/CONTEXT.md if present, so Scout has project memory.
 	contextMD := readContextMD(opts.RepoPath)
 	var prompt string
 	if contextMD != "" {
-		prompt = fmt.Sprintf("## Project Memory (docs/CONTEXT.md)\n\n%s\n\n%s\n\n## Feature\n%s\n\n## IMPL Output Path\n%s\n",
-			contextMD, string(scoutMdBytes), opts.Feature, opts.IMPLOutPath)
+		prompt = fmt.Sprintf("## Project Memory (docs/CONTEXT.md)\n\n%s\n\n%s\n\n## Feature\n%s\n\n%s\n\n## IMPL Output Path\n%s\n",
+			contextMD, string(scoutMdBytes), opts.Feature, automationContext, opts.IMPLOutPath)
 	} else {
-		prompt = fmt.Sprintf("%s\n\n## Feature\n%s\n\n## IMPL Output Path\n%s\n",
-			string(scoutMdBytes), opts.Feature, opts.IMPLOutPath)
+		prompt = fmt.Sprintf("%s\n\n## Feature\n%s\n\n%s\n\n## IMPL Output Path\n%s\n",
+			string(scoutMdBytes), opts.Feature, automationContext, opts.IMPLOutPath)
 	}
 
 	var execErr error
 
 	if opts.UseStructuredOutput {
-		_, execErr = runScoutStructured(ctx, opts, prompt, onChunk)
-		return execErr
+		if strings.HasPrefix(opts.ScoutModel, "bedrock:") {
+			_, execErr = runScoutStructuredBedrock(ctx, opts, prompt, onChunk)
+		} else {
+			_, execErr = runScoutStructured(ctx, opts, prompt, onChunk)
+		}
+	} else {
+		b, bErr := orchestrator.NewBackendFromModel(opts.ScoutModel)
+		if bErr != nil {
+			return fmt.Errorf("engine.RunScout: backend init: %w", bErr)
+		}
+		runner := agent.NewRunner(b, nil)
+		spec := &types.AgentSpec{Letter: "scout", Prompt: prompt}
+		_, execErr = runner.ExecuteStreamingWithTools(ctx, spec, opts.RepoPath, onChunk, nil)
 	}
 
-	b := cli.New("", backend.Config{Model: opts.ScoutModel})
-	runner := agent.NewRunner(b, nil)
-	spec := &types.AgentSpec{Letter: "scout", Prompt: prompt}
+	// I6 enforcement: Validate Scout only wrote to docs/IMPL/IMPL-*.yaml
+	if execErr == nil {
+		if err := hooks.ValidateScoutWrites(opts.RepoPath, opts.IMPLOutPath, startTime); err != nil {
+			return fmt.Errorf("engine.RunScout: %w", err)
+		}
+	}
 
-	_, execErr = runner.ExecuteStreaming(ctx, spec, opts.RepoPath, onChunk)
 	return execErr
 }
 
@@ -124,6 +150,72 @@ func runScoutStructured(ctx context.Context, opts RunScoutOpts, prompt string, o
 	return &manifest, nil
 }
 
+// runScoutStructuredBedrock runs the Scout agent via the Bedrock backend with
+// structured output enabled. It is the Bedrock-specific counterpart of
+// runScoutStructured (which uses the API backend). The function:
+//  1. Strips the "bedrock:" provider prefix from opts.ScoutModel to get the bare model ID.
+//  2. Builds a Bedrock client with WithOutputConfig set to the scout schema.
+//  3. Calls client.Run() (non-streaming Converse API) so the full JSON is returned at once.
+//  4. Unmarshals the JSON response into protocol.IMPLManifest and persists it via protocol.Save().
+//
+// If onChunk is non-nil the raw JSON response is forwarded as a single chunk so callers
+// (e.g. SSE streams) can surface progress without requiring a streaming call.
+func runScoutStructuredBedrock(ctx context.Context, opts RunScoutOpts, prompt string, onChunk func(string)) (*protocol.IMPLManifest, error) {
+	// Strip provider prefix "bedrock:" to get bare model ID.
+	bareModel := strings.TrimPrefix(opts.ScoutModel, "bedrock:")
+	if bareModel == "" {
+		return nil, fmt.Errorf("runScoutStructuredBedrock: model is required")
+	}
+
+	// Resolve schema: use override if provided, otherwise generate from protocol.
+	var schema map[string]any
+	if opts.OutputSchemaOverride != nil {
+		schema = opts.OutputSchemaOverride
+	} else {
+		var err error
+		schema, err = protocol.GenerateScoutSchema()
+		if err != nil {
+			return nil, fmt.Errorf("runScoutStructuredBedrock: generate schema: %w", err)
+		}
+	}
+
+	// Build Bedrock client with structured output config.
+	bedrockClient := bedrockbackend.New(backend.Config{Model: bareModel})
+	bedrockClient.WithOutputConfig(schema)
+
+	// Run non-streaming Converse request (structured output returns complete JSON).
+	jsonStr, err := bedrockClient.Run(ctx, "", prompt, opts.RepoPath)
+	if err != nil {
+		// Provide a helpful hint when AWS credentials are not configured.
+		if strings.Contains(err.Error(), "no EC2 IMDS role found") ||
+			strings.Contains(err.Error(), "failed to refresh cached credentials") ||
+			strings.Contains(err.Error(), "NoCredentialProviders") ||
+			strings.Contains(err.Error(), "AWS config failed to load") {
+			return nil, fmt.Errorf("runScoutStructuredBedrock: AWS credentials not configured: %w\n"+
+				"Hint: run `aws configure` or set AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY environment variables", err)
+		}
+		return nil, fmt.Errorf("runScoutStructuredBedrock: Bedrock run: %w", err)
+	}
+
+	// Forward full JSON response as a single chunk for SSE visibility.
+	if onChunk != nil {
+		onChunk(jsonStr)
+	}
+
+	// Unmarshal the structured JSON response into IMPLManifest.
+	var manifest protocol.IMPLManifest
+	if err := json.Unmarshal([]byte(jsonStr), &manifest); err != nil {
+		return nil, fmt.Errorf("runScoutStructuredBedrock: unmarshal manifest: %w", err)
+	}
+
+	// Persist to disk.
+	if err := protocol.Save(&manifest, opts.IMPLOutPath); err != nil {
+		return nil, fmt.Errorf("runScoutStructuredBedrock: save manifest: %w", err)
+	}
+
+	return &manifest, nil
+}
+
 // StartWave executes a full wave run (all waves in the IMPL doc).
 // Publishes lifecycle events via onEvent. Blocks until all waves complete
 // or a fatal error occurs.
@@ -157,7 +249,7 @@ func StartWave(ctx context.Context, opts RunWaveOpts, onEvent func(Event)) error
 	})
 
 	// Run scaffold if needed.
-	if err := RunScaffold(ctx, opts.IMPLPath, opts.RepoPath, "", onEvent); err != nil {
+	if err := RunScaffold(ctx, opts.IMPLPath, opts.RepoPath, "", "", onEvent); err != nil {
 		publish("run_failed", map[string]string{"error": err.Error()})
 		return fmt.Errorf("engine.StartWave: scaffold: %w", err)
 	}
@@ -178,13 +270,32 @@ func StartWave(ctx context.Context, opts RunWaveOpts, onEvent func(Event)) error
 
 		// E20: Post-wave stub scan (informational only).
 		if doc := orch.IMPLDoc(); doc != nil {
-			stubReports := make(map[string]*types.CompletionReport)
-			for _, ag := range wave.Agents {
-				if r, err := protocol.ParseCompletionReport(opts.IMPLPath, ag.Letter); err == nil {
-					stubReports[ag.Letter] = r
+			manifest, err := protocol.Load(opts.IMPLPath)
+			if err == nil {
+				stubReports := make(map[string]*types.CompletionReport)
+				for _, ag := range wave.Agents {
+					if protoReport, ok := manifest.CompletionReports[ag.Letter]; ok {
+						// Convert protocol.CompletionReport to types.CompletionReport
+						var status types.CompletionStatus
+						switch protoReport.Status {
+						case "complete":
+							status = types.StatusComplete
+						case "partial":
+							status = types.StatusPartial
+						case "blocked":
+							status = types.StatusBlocked
+						default:
+							status = types.StatusPartial
+						}
+						stubReports[ag.Letter] = &types.CompletionReport{
+							Status:       status,
+							FilesChanged: protoReport.FilesChanged,
+							FilesCreated: protoReport.FilesCreated,
+						}
+					}
 				}
+				_ = orchestrator.RunStubScan(opts.IMPLPath, waveNum, stubReports, "")
 			}
-			_ = orchestrator.RunStubScan(opts.IMPLPath, waveNum, stubReports, "")
 		}
 
 		// E21: Post-wave quality gates before merge.
@@ -208,6 +319,38 @@ func StartWave(ctx context.Context, opts RunWaveOpts, onEvent func(Event)) error
 			if err := orch.RunVerification(testCmd); err != nil {
 				publish("run_failed", map[string]string{"error": err.Error()})
 				return fmt.Errorf("engine.StartWave: RunVerification %d: %w", waveNum, err)
+			}
+		}
+
+		// E25: Post-wave integration validation
+		manifest, loadErr := protocol.Load(opts.IMPLPath)
+		if loadErr == nil {
+			integrationReport, intErr := protocol.ValidateIntegration(manifest, waveNum, opts.RepoPath)
+			if intErr == nil && integrationReport != nil && !integrationReport.Valid {
+				publish("integration_gaps_detected", map[string]interface{}{
+					"wave":   waveNum,
+					"gaps":   len(integrationReport.Gaps),
+					"report": integrationReport,
+				})
+
+				// E26: Launch integration agent to wire gaps
+				intModel := opts.IntegrationModel
+				if intModel == "" {
+					intModel = opts.WaveModel
+				}
+				intAgentErr := RunIntegrationAgent(ctx, RunIntegrationAgentOpts{
+					IMPLPath: opts.IMPLPath,
+					RepoPath: opts.RepoPath,
+					WaveNum:  waveNum,
+					Report:   integrationReport,
+					Model:    intModel,
+				}, func(ev Event) { onEvent(ev) })
+				if intAgentErr != nil {
+					// Non-fatal: log but don't abort wave
+					publish("integration_agent_warning", map[string]string{
+						"error": intAgentErr.Error(),
+					})
+				}
 			}
 		}
 
@@ -251,18 +394,19 @@ func StartWave(ctx context.Context, opts RunWaveOpts, onEvent func(Event)) error
 var gateChannels sync.Map
 
 // RunScaffold checks for pending scaffold files and runs a Scaffold agent if needed.
-func RunScaffold(ctx context.Context, implPath, repoPath, sawRepoPath string, onEvent func(Event)) error {
+// The model parameter is optional; if empty, the backend uses its default model.
+func RunScaffold(ctx context.Context, implPath, repoPath, sawRepoPath, model string, onEvent func(Event)) error {
 	publish := func(event string, data interface{}) {
 		onEvent(Event{Event: event, Data: data})
 	}
 
-	// Parse IMPL doc to get scaffold files.
-	doc, err := protocol.ParseIMPLDoc(implPath)
+	// Load YAML manifest to get scaffold files.
+	manifest, err := protocol.Load(implPath)
 	if err != nil {
-		return fmt.Errorf("engine.RunScaffold: parse IMPL doc: %w", err)
+		return fmt.Errorf("engine.RunScaffold: load manifest: %w", err)
 	}
 
-	scaffolds := doc.ScaffoldsDetail
+	scaffolds := manifest.Scaffolds
 	if len(scaffolds) == 0 {
 		return nil
 	}
@@ -302,7 +446,11 @@ func RunScaffold(ctx context.Context, implPath, repoPath, sawRepoPath string, on
 
 	prompt := fmt.Sprintf("%s\n\n## IMPL Doc Path\n%s\n", string(scaffoldMdBytes), implPath)
 
-	b := cli.New("", backend.Config{})
+	b, err := orchestrator.NewBackendFromModel(model)
+	if err != nil {
+		publish("scaffold_failed", map[string]string{"error": err.Error()})
+		return fmt.Errorf("engine.RunScaffold: backend init: %w", err)
+	}
 	runner := agent.NewRunner(b, nil)
 	spec := &types.AgentSpec{Letter: "scaffold", Prompt: prompt}
 
@@ -310,7 +458,7 @@ func RunScaffold(ctx context.Context, implPath, repoPath, sawRepoPath string, on
 		publish("scaffold_output", map[string]string{"chunk": chunk})
 	}
 
-	if _, execErr := runner.ExecuteStreaming(ctx, spec, repoPath, onChunk); execErr != nil {
+	if _, execErr := runner.ExecuteStreamingWithTools(ctx, spec, repoPath, onChunk, nil); execErr != nil {
 		publish("scaffold_failed", map[string]string{"error": execErr.Error()})
 		return fmt.Errorf("engine.RunScaffold: scaffold agent failed: %w", execErr)
 	}
@@ -476,6 +624,7 @@ func RunSingleAgent(ctx context.Context, opts RunWaveOpts, waveNum int, agentLet
 }
 
 // MergeWave merges the agent branches for the given wave into the repo's main branch.
+// After successful merge, archives journals for all agents in the wave.
 func MergeWave(ctx context.Context, opts RunMergeOpts) error {
 	if opts.IMPLPath == "" {
 		return fmt.Errorf("engine.MergeWave: IMPLPath is required")
@@ -484,7 +633,33 @@ func MergeWave(ctx context.Context, opts RunMergeOpts) error {
 	if err != nil {
 		return fmt.Errorf("engine.MergeWave: %w", err)
 	}
-	return orch.MergeWave(opts.WaveNum)
+
+	// Merge the wave
+	if err := orch.MergeWave(opts.WaveNum); err != nil {
+		return err
+	}
+
+	// Archive journals for all agents in this wave (non-fatal)
+	doc := orch.IMPLDoc()
+	if doc != nil {
+		for _, wave := range doc.Waves {
+			if wave.Number == opts.WaveNum {
+				for _, agent := range wave.Agents {
+					agentPath := fmt.Sprintf("wave%d/agent-%s", opts.WaveNum, agent.Letter)
+					observer, obsErr := journal.NewObserver(opts.RepoPath, agentPath)
+					if obsErr == nil {
+						if archErr := observer.Archive(); archErr != nil {
+							// Log but don't fail the merge
+							fmt.Fprintf(os.Stderr, "engine: failed to archive journal for agent %s: %v\n", agent.Letter, archErr)
+						}
+					}
+				}
+				break
+			}
+		}
+	}
+
+	return nil
 }
 
 // RunVerification runs post-merge verification (go vet + test command).
@@ -500,22 +675,94 @@ func RunVerification(ctx context.Context, opts RunVerificationOpts) error {
 	return orch.RunVerification(testCmd)
 }
 
-// ParseIMPLDoc parses an IMPL doc and returns the structured representation.
-// Delegates to pkg/protocol.ParseIMPLDoc.
+// ParseIMPLDoc loads a YAML manifest and converts it to types.IMPLDoc.
+// This is a compatibility shim - new code should use protocol.Load() directly.
 func ParseIMPLDoc(path string) (*types.IMPLDoc, error) {
-	return protocol.ParseIMPLDoc(path)
+	manifest, err := protocol.Load(path)
+	if err != nil {
+		return nil, err
+	}
+
+	// Convert protocol.IMPLManifest to types.IMPLDoc
+	doc := &types.IMPLDoc{
+		FeatureName:     manifest.Title,
+		Status:          "SUITABLE", // Assume suitable if manifest loaded
+		TestCommand:     manifest.TestCommand,
+		Waves:           make([]types.Wave, len(manifest.Waves)),
+		FileOwnership:   make(map[string]types.FileOwnershipInfo),
+		ScaffoldsDetail: make([]types.ScaffoldFile, len(manifest.Scaffolds)),
+	}
+
+	// Convert scaffolds
+	for i, s := range manifest.Scaffolds {
+		doc.ScaffoldsDetail[i] = types.ScaffoldFile{
+			FilePath:   s.FilePath,
+			Contents:   s.Contents,
+			ImportPath: s.ImportPath,
+		}
+	}
+
+	// Convert waves
+	for i, w := range manifest.Waves {
+		agents := make([]types.AgentSpec, len(w.Agents))
+		for j, a := range w.Agents {
+			agents[j] = types.AgentSpec{
+				Letter: a.ID,
+				Prompt: a.Task,
+			}
+		}
+		doc.Waves[i] = types.Wave{
+			Number: w.Number,
+			Agents: agents,
+		}
+	}
+
+	// Convert file ownership
+	for _, fo := range manifest.FileOwnership {
+		doc.FileOwnership[fo.File] = types.FileOwnershipInfo{
+			Agent:  fo.Agent,
+			Wave:   fo.Wave,
+			Action: fo.Action,
+		}
+	}
+
+	return doc, nil
 }
 
-// ParseCompletionReport parses an agent's completion report from the IMPL doc.
-// Delegates to pkg/protocol.ParseCompletionReport.
-// Maps protocol.ErrReportNotFound to engine.ErrReportNotFound so callers can
-// use errors.Is(err, engine.ErrReportNotFound) without importing pkg/protocol.
+// ParseCompletionReport reads a completion report from the manifest.
+// Maps protocol.ErrAgentNotFound to engine.ErrReportNotFound for compatibility.
 func ParseCompletionReport(implDocPath, agentLetter string) (*types.CompletionReport, error) {
-	report, err := protocol.ParseCompletionReport(implDocPath, agentLetter)
-	if errors.Is(err, protocol.ErrReportNotFound) {
+	manifest, err := protocol.Load(implDocPath)
+	if err != nil {
+		return nil, err
+	}
+
+	protoReport, ok := manifest.CompletionReports[agentLetter]
+	if !ok {
 		return nil, ErrReportNotFound
 	}
-	return report, err
+
+	// Convert protocol.CompletionReport to types.CompletionReport
+	var status types.CompletionStatus
+	switch protoReport.Status {
+	case "complete":
+		status = types.StatusComplete
+	case "partial":
+		status = types.StatusPartial
+	case "blocked":
+		status = types.StatusBlocked
+	default:
+		status = types.StatusPartial
+	}
+
+	return &types.CompletionReport{
+		Status:       status,
+		Worktree:     protoReport.Worktree,
+		Branch:       protoReport.Branch,
+		Commit:       protoReport.Commit,
+		FilesChanged: protoReport.FilesChanged,
+		FilesCreated: protoReport.FilesCreated,
+	}, nil
 }
 
 // UpdateIMPLStatus ticks status checkboxes for completed agents.
@@ -528,6 +775,229 @@ func UpdateIMPLStatus(implDocPath string, completedLetters []string) error {
 // Delegates to pkg/protocol.ValidateInvariants.
 func ValidateInvariants(doc *types.IMPLDoc) error {
 	return protocol.ValidateInvariants(doc)
+}
+
+// JournalIntegration provides journal lifecycle hooks for wave execution.
+// It creates journal observers for agents, syncs session logs, injects context,
+// triggers checkpoints at milestones, and archives journals after merge.
+type JournalIntegration struct {
+	repoPath string
+	logger   func(msg string, args ...interface{})
+}
+
+// NewJournalIntegration creates a journal integration instance for the given repo.
+func NewJournalIntegration(repoPath string, logger func(string, ...interface{})) *JournalIntegration {
+	if logger == nil {
+		logger = func(string, ...interface{}) {} // no-op logger
+	}
+	return &JournalIntegration{
+		repoPath: repoPath,
+		logger:   logger,
+	}
+}
+
+// PrepareAgentContext creates a journal observer, syncs from session logs,
+// and generates context markdown to prepend to the agent prompt.
+// Returns the enriched prompt and the observer (for later checkpoint/archive calls).
+// Non-fatal: returns original prompt if journal operations fail.
+func (ji *JournalIntegration) PrepareAgentContext(waveNum int, agentID string, originalPrompt string) (enrichedPrompt string, observer *journal.JournalObserver, err error) {
+	// Create journal observer
+	agentPath := fmt.Sprintf("wave%d/agent-%s", waveNum, agentID)
+	observer, err = journal.NewObserver(ji.repoPath, agentPath)
+	if err != nil {
+		ji.logger("Failed to create journal observer", "agent", agentID, "error", err)
+		return originalPrompt, nil, fmt.Errorf("create journal observer: %w", err)
+	}
+
+	// Sync from Claude Code session logs (incremental tail)
+	result, err := observer.Sync()
+	if err != nil {
+		ji.logger("Failed to sync journal", "agent", agentID, "error", err)
+		// Non-fatal: continue without journal recovery
+		return originalPrompt, observer, nil
+	}
+
+	// If journal has events, generate context and prepend to prompt
+	if result != nil && result.NewToolUses > 0 {
+		contextMd, err := observer.GenerateContext()
+		if err != nil {
+			ji.logger("Failed to generate context", "agent", agentID, "error", err)
+			return originalPrompt, observer, nil
+		}
+
+		ji.logger("Recovered session context", "agent", agentID, "tool_calls", result.NewToolUses)
+		enrichedPrompt = contextMd + "\n\n---\n\n" + originalPrompt
+		return enrichedPrompt, observer, nil
+	}
+
+	return originalPrompt, observer, nil
+}
+
+// StartPeriodicSync launches a background goroutine that syncs the journal every 30 seconds.
+// Returns a cancel function to stop the sync goroutine.
+func (ji *JournalIntegration) StartPeriodicSync(ctx context.Context, observer *journal.JournalObserver) func() {
+	if observer == nil {
+		return func() {} // no-op if observer wasn't created
+	}
+
+	ctx, cancel := context.WithCancel(ctx)
+
+	go func() {
+		ticker := time.NewTicker(30 * time.Second)
+		defer ticker.Stop()
+
+		for {
+			select {
+			case <-ticker.C:
+				// Sync journal from Claude Code session logs
+				if _, err := observer.Sync(); err != nil {
+					ji.logger("Periodic sync failed", "error", err)
+				}
+			case <-ctx.Done():
+				return
+			}
+		}
+	}()
+
+	return cancel
+}
+
+// TriggerCheckpoint creates a named checkpoint snapshot of the journal.
+// Checkpoint names follow E23A protocol: 001-isolation, 002-first-edit, 003-tests, 004-pre-report.
+func (ji *JournalIntegration) TriggerCheckpoint(observer *journal.JournalObserver, name string) error {
+	if observer == nil {
+		return nil // no-op if observer wasn't created
+	}
+
+	if err := observer.Checkpoint(name); err != nil {
+		ji.logger("Checkpoint failed", "name", name, "error", err)
+		return fmt.Errorf("checkpoint %s: %w", name, err)
+	}
+
+	ji.logger("Checkpoint created", "name", name)
+	return nil
+}
+
+// ArchiveJournal compresses the journal directory to .tar.gz after wave merge succeeds.
+func (ji *JournalIntegration) ArchiveJournal(observer *journal.JournalObserver) error {
+	if observer == nil {
+		return nil // no-op if observer wasn't created
+	}
+
+	if err := observer.Archive(); err != nil {
+		ji.logger("Archive failed", "error", err)
+		return fmt.Errorf("archive journal: %w", err)
+	}
+
+	ji.logger("Journal archived")
+	return nil
+}
+
+// runScoutAutomation runs the 5 scout automation tools (H1a, H2, H3) and
+// returns a markdown section to inject into the Scout prompt. All tools are
+// best-effort: failures are logged but don't block Scout execution.
+func runScoutAutomation(repoPath string, featureDescription string) string {
+	var sections []string
+
+	// H2: Extract build/test/lint commands
+	commandsResult, commandsErr := commands.ExtractCommands(repoPath)
+	if commandsErr != nil {
+		sections = append(sections, "### Build/Test Commands (H2)\nNot detected")
+	} else {
+		commandsYAML, err := yaml.Marshal(commandsResult)
+		if err != nil {
+			sections = append(sections, "### Build/Test Commands (H2)\nNot detected")
+		} else {
+			sections = append(sections, fmt.Sprintf("### Build/Test Commands (H2)\n```yaml\n%s```", string(commandsYAML)))
+		}
+	}
+
+	// H1a: Analyze suitability (conditional: only if feature references a file)
+	var targetFiles []string
+	requirementsFile := detectRequirementsFile(repoPath, featureDescription)
+	if requirementsFile != "" {
+		suitResult, suitErr := suitability.AnalyzeSuitability(requirementsFile, repoPath)
+		if suitErr != nil {
+			sections = append(sections, "### Pre-Implementation Status (H1a)\nSkipped - no requirements file")
+		} else if suitResult == nil {
+			sections = append(sections, "### Pre-Implementation Status (H1a)\nSkipped - no requirements file")
+		} else {
+			suitYAML, err := yaml.Marshal(suitResult)
+			if err != nil {
+				sections = append(sections, "### Pre-Implementation Status (H1a)\nSkipped - no requirements file")
+			} else {
+				sections = append(sections, fmt.Sprintf("### Pre-Implementation Status (H1a)\n```yaml\n%s```", string(suitYAML)))
+				// Extract target files from suitability results
+				for _, item := range suitResult.PreImplementation.ItemStatus {
+					if item.File != "" {
+						targetFiles = append(targetFiles, item.File)
+					}
+				}
+			}
+		}
+	} else {
+		sections = append(sections, "### Pre-Implementation Status (H1a)\nSkipped - no requirements file")
+	}
+
+	// H3: Analyze dependencies
+	depsResult, depsErr := analyzer.AnalyzeDeps(repoPath, targetFiles)
+	if depsErr != nil {
+		sections = append(sections, fmt.Sprintf("### Dependency Analysis (H3)\nAnalysis failed: %v", depsErr))
+	} else {
+		depsYAML, err := yaml.Marshal(depsResult)
+		if err != nil {
+			sections = append(sections, fmt.Sprintf("### Dependency Analysis (H3)\nAnalysis failed: %v", err))
+		} else {
+			sections = append(sections, fmt.Sprintf("### Dependency Analysis (H3)\n```yaml\n%s```", string(depsYAML)))
+		}
+	}
+
+	// Build final automation section
+	header := `## Automation Analysis Results
+
+Use these results to:
+- Populate quality_gates and test_command from H2 output
+- Adjust agent prompts based on H1a status (DONE = add tests, TODO = implement)
+- Use H3 wave_candidate field to assign wave numbers
+- Document pre-implementation findings in suitability assessment
+
+`
+	return header + strings.Join(sections, "\n\n")
+}
+
+// detectRequirementsFile checks if the feature description references a
+// requirements file (heuristic: contains ".md" or ".txt" substring that looks
+// like a file path). Returns the full path if found, empty string otherwise.
+func detectRequirementsFile(repoPath string, featureDescription string) string {
+	// Heuristic: look for patterns like "audit.md", "requirements.txt", etc.
+	patterns := []string{
+		`.md`,
+		`.txt`,
+	}
+
+	for _, pattern := range patterns {
+		if strings.Contains(featureDescription, pattern) {
+			// Try to extract file path-like token
+			words := strings.Fields(featureDescription)
+			for _, word := range words {
+				if strings.Contains(word, pattern) {
+					// Clean up punctuation
+					word = strings.Trim(word, ".,;:\"'")
+					// Try absolute path first
+					if filepath.IsAbs(word) {
+						return word
+					}
+					// Try relative to repo
+					candidate := filepath.Join(repoPath, word)
+					if _, err := os.Stat(candidate); err == nil {
+						return candidate
+					}
+				}
+			}
+		}
+	}
+
+	return ""
 }
 
 // startWaveWithGate runs waves with an inter-wave gate. gateCh receives true to
@@ -568,6 +1038,39 @@ func startWaveWithGate(ctx context.Context, opts RunWaveOpts, onEvent func(Event
 				return err
 			}
 		}
+
+		// E25: Post-wave integration validation
+		manifest, loadErr := protocol.Load(opts.IMPLPath)
+		if loadErr == nil {
+			integrationReport, intErr := protocol.ValidateIntegration(manifest, waveNum, opts.RepoPath)
+			if intErr == nil && integrationReport != nil && !integrationReport.Valid {
+				publish("integration_gaps_detected", map[string]interface{}{
+					"wave":   waveNum,
+					"gaps":   len(integrationReport.Gaps),
+					"report": integrationReport,
+				})
+
+				// E26: Launch integration agent to wire gaps
+				intModel := opts.IntegrationModel
+				if intModel == "" {
+					intModel = opts.WaveModel
+				}
+				intAgentErr := RunIntegrationAgent(ctx, RunIntegrationAgentOpts{
+					IMPLPath: opts.IMPLPath,
+					RepoPath: opts.RepoPath,
+					WaveNum:  waveNum,
+					Report:   integrationReport,
+					Model:    intModel,
+				}, func(ev Event) { onEvent(ev) })
+				if intAgentErr != nil {
+					// Non-fatal: log but don't abort wave
+					publish("integration_agent_warning", map[string]string{
+						"error": intAgentErr.Error(),
+					})
+				}
+			}
+		}
+
 		_ = orch.UpdateIMPLStatus(waveNum)
 
 		if i < len(waves)-1 && gateCh != nil {

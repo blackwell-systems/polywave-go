@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/blackwell-systems/scout-and-wave-go/internal/git"
 )
@@ -72,7 +73,23 @@ fi
 // installPreCommitHook writes the SAW pre-commit guard into the worktree's
 // .git/hooks/pre-commit file and makes it executable.
 func installPreCommitHook(wtPath string) error {
-	hooksDir := filepath.Join(wtPath, ".git", "hooks")
+	// Git worktrees have .git as a file containing "gitdir: /path/.git/worktrees/name"
+	// We need to read this file to find the actual git directory where hooks live.
+	gitFilePath := filepath.Join(wtPath, ".git")
+	gitFileContent, err := os.ReadFile(gitFilePath)
+	if err != nil {
+		return fmt.Errorf("installPreCommitHook: read .git file: %w", err)
+	}
+
+	// Parse "gitdir: /path/.git/worktrees/name" to extract the path
+	gitdirLine := strings.TrimSpace(string(gitFileContent))
+	const prefix = "gitdir: "
+	if !strings.HasPrefix(gitdirLine, prefix) {
+		return fmt.Errorf("installPreCommitHook: .git file has unexpected format: %q", gitdirLine)
+	}
+	gitDir := strings.TrimSpace(strings.TrimPrefix(gitdirLine, prefix))
+
+	hooksDir := filepath.Join(gitDir, "hooks")
 	if err := os.MkdirAll(hooksDir, 0o755); err != nil {
 		return fmt.Errorf("installPreCommitHook: mkdir %q: %w", hooksDir, err)
 	}

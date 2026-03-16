@@ -7,11 +7,12 @@ package orchestrator
 
 import (
 	"context"
-	"errors"
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"golang.org/x/sync/errgroup"
@@ -22,13 +23,15 @@ import (
 	bedrockbackend "github.com/blackwell-systems/scout-and-wave-go/pkg/agent/backend/bedrock"
 	cliclient "github.com/blackwell-systems/scout-and-wave-go/pkg/agent/backend/cli"
 	openaibackend "github.com/blackwell-systems/scout-and-wave-go/pkg/agent/backend/openai"
+	"github.com/blackwell-systems/scout-and-wave-go/internal/git"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/tools"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/types"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/worktree"
 )
 
 func init() {
-	SetParseIMPLDocFunc(protocol.ParseIMPLDoc)
+	// ParseIMPLDoc removed in markdown system cleanup - now use protocol.Load() directly
 	SetValidateInvariantsFunc(protocol.ValidateInvariants)
 }
 
@@ -57,6 +60,11 @@ func SetValidateInvariantsFunc(f func(doc *types.IMPLDoc) error) {
 	validateInvariantsFunc = f
 }
 
+// reportMu serializes concurrent writes to the IMPL doc's completion_reports.
+// Without this, parallel agents in the same wave race on Load→Set→Save and
+// the last writer wins (overwriting earlier reports).
+var reportMu sync.Mutex
+
 // mergeWaveFunc is replaced by merge.go via init().
 // Default no-op for compilation.
 var mergeWaveFunc = func(o *Orchestrator, waveNum int) error { return nil }
@@ -72,8 +80,43 @@ var worktreeCreatorFunc = func(wm *worktree.Manager, waveNum int, agentLetter st
 }
 
 // waitForCompletionFunc is a seam for tests: wraps agent.WaitForCompletion.
-var waitForCompletionFunc = func(implDocPath, agentLetter string, timeout, pollInterval time.Duration) (*types.CompletionReport, error) {
+var waitForCompletionFunc = func(implDocPath, agentLetter string, timeout, pollInterval time.Duration) (*protocol.CompletionReport, error) {
 	return agent.WaitForCompletion(implDocPath, agentLetter, timeout, pollInterval)
+}
+
+// prioritizeAgentsFunc is replaced by pkg/engine/scheduler.go via SetPrioritizeAgentsFunc.
+// Default implementation returns agents in declaration order (no reordering).
+var prioritizeAgentsFunc = func(manifest *types.IMPLDoc, waveNum int) []string {
+	// Fallback: return agents in declaration order if scheduler not available yet
+	for _, wave := range manifest.Waves {
+		if wave.Number == waveNum {
+			order := make([]string, len(wave.Agents))
+			for i, a := range wave.Agents {
+				order[i] = a.Letter
+			}
+			return order
+		}
+	}
+	return []string{}
+}
+
+// SetPrioritizeAgentsFunc allows pkg/engine to inject the real scheduler implementation
+// without a direct import cycle.
+func SetPrioritizeAgentsFunc(f func(manifest *types.IMPLDoc, waveNum int) []string) {
+	prioritizeAgentsFunc = f
+}
+
+// slicesEqual compares two string slices for equality.
+func slicesEqual(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
 }
 
 // BackendConfig carries backend selection + credentials for newBackendFunc.
@@ -91,6 +134,10 @@ type BackendConfig struct {
 	// BaseURL is an optional endpoint override used when Kind == "openai"
 	// or when the provider prefix is "openai".
 	BaseURL string
+
+	// Constraints, if non-nil, configures SAW protocol invariant enforcement
+	// (I1 ownership, I2 freeze, I5 commit tracking, I6 role restriction).
+	Constraints *tools.Constraints
 }
 
 // validateModelName ensures model name contains only safe characters and is
@@ -173,9 +220,10 @@ var newBackendFunc = func(cfg BackendConfig) (backend.Backend, error) {
 	}
 
 	bcfg := backend.Config{
-		Model:     bareModel,
-		MaxTokens: cfg.MaxTokens,
-		MaxTurns:  cfg.MaxTurns,
+		Model:       bareModel,
+		MaxTokens:   cfg.MaxTokens,
+		MaxTurns:    cfg.MaxTurns,
+		Constraints: cfg.Constraints,
 	}
 	switch effectiveKind {
 	case "openai":
@@ -261,6 +309,14 @@ var newBackendFunc = func(cfg BackendConfig) (backend.Backend, error) {
 	}
 }
 
+// NewBackendFromModel creates a backend.Backend from a model string that may
+// contain a provider prefix (e.g. "bedrock:claude-sonnet-4-6", "openai:gpt-4o").
+// This is the exported entry point for engine code that needs provider routing
+// without constructing a full BackendConfig.
+func NewBackendFromModel(model string) (backend.Backend, error) {
+	return newBackendFunc(BackendConfig{Model: model})
+}
+
 // newRunnerFunc is a seam for tests: constructs the agent.Runner used by RunWave.
 // Tests can replace this to inject a fake Backend without real API calls.
 var newRunnerFunc = func(b backend.Backend, wm *worktree.Manager) *agent.Runner {
@@ -270,7 +326,7 @@ var newRunnerFunc = func(b backend.Backend, wm *worktree.Manager) *agent.Runner 
 // Orchestrator drives SAW protocol wave coordination.
 // State mutations must go through TransitionTo — never set o.state directly.
 type Orchestrator struct {
-	state          types.State
+	state          protocol.ProtocolState
 	implDoc        *types.IMPLDoc
 	repoPath       string
 	currentWave    int
@@ -296,12 +352,16 @@ func (o *Orchestrator) publish(ev OrchestratorEvent) {
 // New creates an Orchestrator by loading the IMPL doc at implDocPath.
 // Initial state is ScoutPending.
 func New(repoPath string, implDocPath string) (*Orchestrator, error) {
-	doc, err := parseIMPLDocFunc(implDocPath)
-	if err != nil {
-		return nil, fmt.Errorf("orchestrator.New: failed to parse IMPL doc %q: %w", implDocPath, err)
+	var doc *types.IMPLDoc
+	if implDocPath != "" {
+		var err error
+		doc, err = parseIMPLDocFunc(implDocPath)
+		if err != nil {
+			return nil, fmt.Errorf("orchestrator.New: failed to parse IMPL doc %q: %w", implDocPath, err)
+		}
 	}
 	return &Orchestrator{
-		state:       types.ScoutPending,
+		state:       protocol.StateScoutPending,
 		implDoc:     doc,
 		repoPath:    repoPath,
 		implDocPath: implDocPath,
@@ -312,7 +372,7 @@ func New(repoPath string, implDocPath string) (*Orchestrator, error) {
 // Used in tests to avoid the pkg/protocol dependency.
 func newFromDoc(doc *types.IMPLDoc, repoPath, implDocPath string) *Orchestrator {
 	return &Orchestrator{
-		state:       types.ScoutPending,
+		state:       protocol.StateScoutPending,
 		implDoc:     doc,
 		repoPath:    repoPath,
 		implDocPath: implDocPath,
@@ -320,7 +380,7 @@ func newFromDoc(doc *types.IMPLDoc, repoPath, implDocPath string) *Orchestrator 
 }
 
 // State returns the current protocol state.
-func (o *Orchestrator) State() types.State {
+func (o *Orchestrator) State() protocol.ProtocolState {
 	return o.state
 }
 
@@ -336,7 +396,7 @@ func (o *Orchestrator) RepoPath() string {
 
 // TransitionTo advances the state machine to newState.
 // It returns a descriptive error if the transition is not permitted.
-func (o *Orchestrator) TransitionTo(newState types.State) error {
+func (o *Orchestrator) TransitionTo(newState protocol.ProtocolState) error {
 	if !isValidTransition(o.state, newState) {
 		return fmt.Errorf(
 			"orchestrator: invalid state transition from %s to %s",
@@ -387,13 +447,58 @@ func (o *Orchestrator) RunWave(waveNum int) error {
 	// Launch all agents concurrently and collect the first error.
 	eg, ctx := errgroup.WithContext(context.Background())
 
-	for _, spec := range wave.Agents {
-		agentSpec := spec // capture loop variable
+	// Prioritize agent launch order based on dependency graph critical path depth.
+	agentOrder := prioritizeAgentsFunc(o.implDoc, waveNum)
+
+	// Emit SSE event showing reordering (observability).
+	originalOrder := make([]string, len(wave.Agents))
+	for i, a := range wave.Agents {
+		originalOrder[i] = a.Letter
+	}
+	reordered := !slicesEqual(originalOrder, agentOrder)
+	o.publish(OrchestratorEvent{
+		Event: "agent_prioritized",
+		Data: AgentPrioritizedPayload{
+			Wave:             waveNum,
+			OriginalOrder:    originalOrder,
+			PrioritizedOrder: agentOrder,
+			Reordered:        reordered,
+			Reason:           "critical_path_scheduling",
+		},
+	})
+
+	// Launch agents in prioritized order instead of declaration order.
+	for _, agentID := range agentOrder {
+		// Find the agent spec by ID
+		var agentSpec types.AgentSpec
+		found := false
+		for _, a := range wave.Agents {
+			if a.Letter == agentID {
+				agentSpec = a
+				found = true
+				break
+			}
+		}
+		if !found {
+			return fmt.Errorf("orchestrator.RunWave: prioritized agent %s not found in wave %d", agentID, waveNum)
+		}
+
 		eg.Go(func() error {
+			// Build per-agent constraints from the IMPL manifest (I1/I2/I5/I6).
+			constraints := buildWaveConstraints(o.implDocPath, agentSpec.Letter)
+
 			runner := defaultRunner
-			// Per-agent model override: create a separate backend for this agent.
+			// Per-agent model override or constraints: create a separate backend.
+			model := o.defaultModel
 			if agentSpec.Model != "" && agentSpec.Model != o.defaultModel {
-				b2, err2 := newBackendFunc(BackendConfig{Kind: "auto", Model: agentSpec.Model})
+				model = agentSpec.Model
+			}
+			if constraints != nil || model != o.defaultModel {
+				b2, err2 := newBackendFunc(BackendConfig{
+					Kind:        "auto",
+					Model:       model,
+					Constraints: constraints,
+				})
 				if err2 != nil {
 					return fmt.Errorf("orchestrator: agent %s: create backend: %w", agentSpec.Letter, err2)
 				}
@@ -477,11 +582,20 @@ func (o *Orchestrator) launchAgent(
 	})
 
 	// E23: Construct per-agent context payload instead of passing full IMPL doc prompt.
-	if payload, err := protocol.ExtractAgentContext(o.implDocPath, agentSpec.Letter); err == nil {
-		agentSpec.Prompt = protocol.FormatAgentContextPayload(payload)
+	manifest, err := protocol.Load(o.implDocPath)
+	if err == nil {
+		if contextPayload, extractErr := protocol.ExtractAgentContextFromManifest(manifest, agentSpec.Letter); extractErr == nil {
+			if jsonBytes, marshalErr := json.Marshal(contextPayload); marshalErr == nil {
+				agentSpec.Prompt = string(jsonBytes)
+			} else {
+				fmt.Fprintf(os.Stderr, "orchestrator: failed to marshal E23 context: %v\n", marshalErr)
+			}
+		} else {
+			// Fallback: use existing prompt from agentSpec (already set from IMPL doc parse).
+			fmt.Fprintf(os.Stderr, "orchestrator: E23 context extraction failed for agent %s: %v (falling back to full prompt)\n", agentSpec.Letter, extractErr)
+		}
 	} else {
-		// Fallback: use existing prompt from agentSpec (already set from IMPL doc parse).
-		fmt.Fprintf(os.Stderr, "orchestrator: E23 context extraction failed for agent %s: %v (falling back to full prompt)\n", agentSpec.Letter, err)
+		fmt.Fprintf(os.Stderr, "orchestrator: failed to load manifest for E23 extraction: %v\n", err)
 	}
 
 	// b. Execute the agent via the backend, streaming output chunks as SSE events.
@@ -527,26 +641,55 @@ func (o *Orchestrator) launchAgent(
 		return fmt.Errorf("orchestrator: agent %s: Execute: %w", agentSpec.Letter, err)
 	}
 
-	// c. Poll for the completion report in the agent's worktree IMPL doc.
-	// Agents write their completion reports into the worktree copy of the IMPL doc,
-	// not the main repo copy — so we must poll wtIMPLPath, not o.implDocPath.
-	report, err := waitForCompletionFunc(wtIMPLPath(o.repoPath, o.implDocPath, wtPath), agentSpec.Letter, defaultAgentTimeout, defaultAgentPollInterval)
-	if err != nil {
-		o.publish(OrchestratorEvent{
-			Event: "agent_failed",
-			Data: AgentFailedPayload{
-				Agent:       agentSpec.Letter,
-				Wave:        waveNum,
-				Status:      "failed",
-				FailureType: "completion_timeout",
-				Message:     err.Error(),
-			},
-		})
-		return fmt.Errorf("orchestrator: agent %s: %w", agentSpec.Letter, err)
+	// c. Check for completion report in the agent's worktree IMPL doc.
+	// API/Bedrock backends run synchronously — when ExecuteStreamingWithTools returns,
+	// the agent is done. Poll briefly (once) for a completion report in case the agent
+	// wrote one, but don't block for 30 minutes waiting for one that may never come.
+	report, _ := waitForCompletionFunc(wtIMPLPath(o.repoPath, o.implDocPath, wtPath), agentSpec.Letter, 5*time.Second, 2*time.Second)
+
+	// d. Auto-commit and synthesize completion report if the agent didn't write one.
+	// This bridges the gap between CLI agents (SAW-protocol-aware, commit + write report)
+	// and API/Bedrock agents (vanilla Claude, just write files via tools).
+	branch := fmt.Sprintf("wave%d-agent-%s", waveNum, agentSpec.Letter)
+	if report == nil {
+		commitSHA, filesChanged, autoErr := autoCommitWorktree(wtPath, waveNum, agentSpec.Letter)
+		if autoErr != nil {
+			fmt.Fprintf(os.Stderr, "orchestrator: auto-commit failed for agent %s: %v\n", agentSpec.Letter, autoErr)
+		}
+
+		// Always synthesize a completion report for API agents that didn't write one.
+		// commitSHA may be empty if the agent produced no file changes (no-op task);
+		// that's still a successful completion — the merge step just has nothing to merge.
+		notes := "auto-committed by orchestrator (API agent)"
+		if commitSHA == "" {
+			// Resolve HEAD as the "commit" so verifyAgentCommits can find the branch.
+			commitSHA, _ = git.RevParse(wtPath, "HEAD")
+			notes = "no changes produced (API agent)"
+		}
+		synthReport := protocol.CompletionReport{
+			Status:       "complete",
+			Worktree:     wtPath,
+			Branch:       branch,
+			Commit:       commitSHA,
+			FilesChanged: filesChanged,
+			Notes:        notes,
+		}
+		reportMu.Lock()
+		if manifest, loadErr := protocol.Load(o.implDocPath); loadErr == nil {
+			if setErr := protocol.SetCompletionReport(manifest, agentSpec.Letter, synthReport); setErr == nil {
+				if saveErr := protocol.Save(manifest, o.implDocPath); saveErr != nil {
+					fmt.Fprintf(os.Stderr, "orchestrator: failed to save synthetic report for agent %s: %v\n", agentSpec.Letter, saveErr)
+				}
+			} else {
+				fmt.Fprintf(os.Stderr, "orchestrator: failed to set synthetic report for agent %s: %v\n", agentSpec.Letter, setErr)
+			}
+		}
+		reportMu.Unlock()
 	}
 
-	// Publish agent_complete after a successful completion report.
-	status := ""
+	// Publish agent_complete. If no completion report was found, that's OK —
+	// the agent executed successfully and its work is in the worktree.
+	status := "complete"
 	if report != nil {
 		status = string(report.Status)
 	}
@@ -556,27 +699,81 @@ func (o *Orchestrator) launchAgent(
 			Agent:  agentSpec.Letter,
 			Wave:   waveNum,
 			Status: status,
-			Branch: fmt.Sprintf("saw/wave%d-agent-%s", waveNum, agentSpec.Letter),
+			Branch: branch,
 		},
 	})
 
 	// E19: If agent reported partial or blocked, route the failure and publish an event.
-	// This does NOT relaunch the agent — that is a future follow-on task.
-	if report != nil && (report.Status == types.StatusPartial || report.Status == types.StatusBlocked) {
-		action := RouteFailure(report.FailureType)
+	if report != nil && (report.Status == "partial" || report.Status == "blocked") {
+		var failureType types.FailureType
+		switch report.FailureType {
+		case "transient":
+			failureType = types.FailureTypeTransient
+		case "fixable":
+			failureType = types.FailureTypeFixable
+		case "needs_replan":
+			failureType = types.FailureTypeNeedsReplan
+		case "escalate":
+			failureType = types.FailureTypeEscalate
+		default:
+			failureType = types.FailureTypeEscalate
+		}
+
+		action := RouteFailure(failureType)
 		o.publish(OrchestratorEvent{
 			Event: "agent_blocked",
 			Data: AgentBlockedPayload{
 				Agent:       agentSpec.Letter,
 				Wave:        waveNum,
-				Status:      string(report.Status),
-				FailureType: string(report.FailureType),
+				Status:      report.Status,
+				FailureType: report.FailureType,
 				Action:      action,
 			},
 		})
 	}
 
 	return nil
+}
+
+// autoCommitWorktree stages and commits all changes in the agent's worktree.
+// Returns (commitSHA, filesChanged, error). If the worktree is clean (no changes),
+// returns ("", nil, nil).
+func autoCommitWorktree(wtPath string, waveNum int, agentLetter string) (string, []string, error) {
+	// Check if there are uncommitted changes.
+	status, err := git.StatusPorcelain(wtPath)
+	if err != nil {
+		return "", nil, fmt.Errorf("checking worktree status: %w", err)
+	}
+	if status == "" {
+		// Worktree is clean — agent may have already committed (e.g. CLI agent).
+		return "", nil, nil
+	}
+
+	// Record base commit before staging.
+	baseSHA, err := git.RevParse(wtPath, "HEAD")
+	if err != nil {
+		return "", nil, fmt.Errorf("resolving HEAD: %w", err)
+	}
+
+	// Stage all changes.
+	if err := git.AddAll(wtPath); err != nil {
+		return "", nil, fmt.Errorf("staging changes: %w", err)
+	}
+
+	// Commit.
+	msg := fmt.Sprintf("feat(wave%d-agent-%s): implement assigned files", waveNum, agentLetter)
+	commitSHA, err := git.Commit(wtPath, msg)
+	if err != nil {
+		return "", nil, fmt.Errorf("committing: %w", err)
+	}
+
+	// Determine files changed.
+	files, err := git.ChangedFilesSinceRef(wtPath, baseSHA)
+	if err != nil {
+		return commitSHA, nil, fmt.Errorf("listing changed files: %w", err)
+	}
+
+	return commitSHA, files, nil
 }
 
 // RunAgent executes a single agent from the specified wave. Unlike RunWave
@@ -662,19 +859,20 @@ func (o *Orchestrator) UpdateIMPLStatus(waveNum int) error {
 		return nil
 	}
 
-	// 2. For each agent in the wave, call protocol.ParseCompletionReport.
-	//    If ErrReportNotFound or status != StatusComplete, skip.
+	// 2. Load manifest and check completion reports.
+	//    If report not found or status != StatusComplete, skip.
+	manifest, err := protocol.Load(o.implDocPath)
+	if err != nil {
+		return nil // Cannot determine completed agents without manifest
+	}
+
 	var completedLetters []string
 	for _, agentSpec := range wave.Agents {
-		report, err := protocol.ParseCompletionReport(o.implDocPath, agentSpec.Letter)
-		if err != nil {
-			if errors.Is(err, protocol.ErrReportNotFound) {
-				continue
-			}
-			// Non-fatal: skip agents whose reports cannot be parsed.
-			continue
+		report, ok := manifest.CompletionReports[agentSpec.Letter]
+		if !ok {
+			continue // Report not found
 		}
-		if report.Status != types.StatusComplete {
+		if report.Status != "complete" {
 			continue
 		}
 		completedLetters = append(completedLetters, agentSpec.Letter)
@@ -687,4 +885,46 @@ func (o *Orchestrator) UpdateIMPLStatus(waveNum int) error {
 
 	// 5. Call protocol.UpdateIMPLStatus to tick checkboxes.
 	return protocol.UpdateIMPLStatus(o.implDocPath, completedLetters)
+}
+
+// buildWaveConstraints loads the IMPL manifest and builds per-agent constraints
+// for wave-role enforcement (I1 ownership, I2 freeze, I5 commit tracking).
+// Returns nil if the manifest can't be loaded (backward compatible, no enforcement).
+func buildWaveConstraints(implPath string, agentID string) *tools.Constraints {
+	manifest, err := protocol.Load(implPath)
+	if err != nil || manifest == nil {
+		return nil
+	}
+
+	c := &tools.Constraints{
+		AgentRole:    "wave",
+		AgentID:      agentID,
+		TrackCommits: true,
+	}
+
+	// I1: Owned files for this agent
+	owned := make(map[string]bool)
+	for _, fo := range manifest.FileOwnership {
+		if fo.Agent == agentID {
+			owned[fo.File] = true
+		}
+	}
+	c.OwnedFiles = owned
+
+	// I2: Frozen paths = scaffold files + interface contract locations
+	frozen := make(map[string]bool)
+	for _, sf := range manifest.Scaffolds {
+		if sf.FilePath != "" {
+			frozen[sf.FilePath] = true
+		}
+	}
+	for _, ic := range manifest.InterfaceContracts {
+		if ic.Location != "" {
+			frozen[ic.Location] = true
+		}
+	}
+	c.FrozenPaths = frozen
+	c.FreezeTime = manifest.WorktreesCreatedAt
+
+	return c
 }

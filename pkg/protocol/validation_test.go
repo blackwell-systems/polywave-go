@@ -878,7 +878,7 @@ func TestValidateAgentIDs_FileOwnership(t *testing.T) {
 	if errs[0].Code != "DC04_INVALID_AGENT_ID" {
 		t.Errorf("Expected DC04_INVALID_AGENT_ID, got %s", errs[0].Code)
 	}
-	if !contains(errs[0].Field, "file_ownership") {
+	if !testContains(errs[0].Field, "file_ownership") {
 		t.Errorf("Expected field to contain 'file_ownership', got %s", errs[0].Field)
 	}
 }
@@ -898,7 +898,7 @@ func TestValidateAgentIDs_CompletionReports(t *testing.T) {
 	if errs[0].Code != "DC04_INVALID_AGENT_ID" {
 		t.Errorf("Expected DC04_INVALID_AGENT_ID, got %s", errs[0].Code)
 	}
-	if !contains(errs[0].Field, "completion_reports") {
+	if !testContains(errs[0].Field, "completion_reports") {
 		t.Errorf("Expected field to contain 'completion_reports', got %s", errs[0].Field)
 	}
 }
@@ -976,12 +976,125 @@ func TestValidateGateTypes_EmptyType(t *testing.T) {
 	}
 }
 
-// contains is a helper function to check if a string contains a substring.
-func contains(s, substr string) bool {
-	return len(s) > 0 && len(substr) > 0 && (s == substr || len(s) >= len(substr) && (s[:len(substr)] == substr || s[len(s)-len(substr):] == substr || containsMiddle(s, substr)))
+// TestFixGateTypes_FixesInvalid tests that invalid gate types are rewritten to "custom".
+func TestFixGateTypes_FixesInvalid(t *testing.T) {
+	m := &IMPLManifest{
+		QualityGates: &QualityGates{
+			Level: "standard",
+			Gates: []QualityGate{
+				{Type: "build", Command: "go build", Required: true},
+				{Type: "build-vite", Command: "npx vite build", Required: true},
+				{Type: "compile", Command: "make", Required: false},
+			},
+		},
+	}
+
+	fixed := FixGateTypes(m)
+	if fixed != 2 {
+		t.Errorf("Expected 2 fixes, got %d", fixed)
+	}
+	if m.QualityGates.Gates[0].Type != "build" {
+		t.Errorf("Expected gate 0 to remain 'build', got %q", m.QualityGates.Gates[0].Type)
+	}
+	if m.QualityGates.Gates[1].Type != "custom" {
+		t.Errorf("Expected gate 1 to be fixed to 'custom', got %q", m.QualityGates.Gates[1].Type)
+	}
+	if m.QualityGates.Gates[2].Type != "custom" {
+		t.Errorf("Expected gate 2 to be fixed to 'custom', got %q", m.QualityGates.Gates[2].Type)
+	}
+
+	// Validate should now pass for gate types
+	errs := validateGateTypes(m)
+	if len(errs) != 0 {
+		t.Errorf("Expected no errors after fix, got %d: %v", len(errs), errs)
+	}
 }
 
-func containsMiddle(s, substr string) bool {
+// TestFixGateTypes_NilGates tests that nil QualityGates returns 0 fixes.
+func TestFixGateTypes_NilGates(t *testing.T) {
+	m := &IMPLManifest{QualityGates: nil}
+	fixed := FixGateTypes(m)
+	if fixed != 0 {
+		t.Errorf("Expected 0 fixes for nil gates, got %d", fixed)
+	}
+}
+
+// TestFixGateTypes_AllValid tests that valid gates are not modified.
+func TestFixGateTypes_AllValid(t *testing.T) {
+	m := &IMPLManifest{
+		QualityGates: &QualityGates{
+			Gates: []QualityGate{
+				{Type: "build", Command: "go build"},
+				{Type: "custom", Command: "./run.sh"},
+			},
+		},
+	}
+	fixed := FixGateTypes(m)
+	if fixed != 0 {
+		t.Errorf("Expected 0 fixes for all-valid gates, got %d", fixed)
+	}
+}
+
+// TestValidateMultiRepoConsistency_AllExplicit tests that all entries having repo: passes.
+func TestValidateMultiRepoConsistency_AllExplicit(t *testing.T) {
+	m := &IMPLManifest{
+		FileOwnership: []FileOwnership{
+			{File: "file1.go", Agent: "A", Wave: 1, Repo: "repo-go"},
+			{File: "file2.go", Agent: "B", Wave: 1, Repo: "repo-protocol"},
+		},
+	}
+	errs := validateMultiRepoConsistency(m)
+	if len(errs) != 0 {
+		t.Errorf("Expected no errors, got %d: %v", len(errs), errs)
+	}
+}
+
+// TestValidateMultiRepoConsistency_AllImplicit tests that no entries having repo: passes (single repo).
+func TestValidateMultiRepoConsistency_AllImplicit(t *testing.T) {
+	m := &IMPLManifest{
+		FileOwnership: []FileOwnership{
+			{File: "file1.go", Agent: "A", Wave: 1},
+			{File: "file2.go", Agent: "B", Wave: 1},
+		},
+	}
+	errs := validateMultiRepoConsistency(m)
+	if len(errs) != 0 {
+		t.Errorf("Expected no errors for all-implicit repo, got %d: %v", len(errs), errs)
+	}
+}
+
+// TestValidateMultiRepoConsistency_Mixed tests that mixed repo tags are caught.
+func TestValidateMultiRepoConsistency_Mixed(t *testing.T) {
+	m := &IMPLManifest{
+		FileOwnership: []FileOwnership{
+			{File: "pkg/engine/foo.go", Agent: "A", Wave: 1},           // implicit
+			{File: "protocol/bar.md", Agent: "B", Wave: 2, Repo: "scout-and-wave"}, // explicit
+		},
+	}
+	errs := validateMultiRepoConsistency(m)
+	if len(errs) != 1 {
+		t.Fatalf("Expected 1 error, got %d: %v", len(errs), errs)
+	}
+	if errs[0].Code != "MR01_INCONSISTENT_REPO" {
+		t.Errorf("Expected MR01_INCONSISTENT_REPO, got %s", errs[0].Code)
+	}
+}
+
+// TestValidateMultiRepoConsistency_Empty tests that empty file ownership is fine.
+func TestValidateMultiRepoConsistency_Empty(t *testing.T) {
+	m := &IMPLManifest{}
+	errs := validateMultiRepoConsistency(m)
+	if len(errs) != 0 {
+		t.Errorf("Expected no errors for empty ownership, got %d: %v", len(errs), errs)
+	}
+}
+
+// testContains is a helper function to check if a string contains a substring.
+func testContains(s, substr string) bool {
+	return len(s) > 0 && len(substr) > 0 && (s == substr || len(s) >= len(substr) && (s[:len(substr)] == substr || s[len(s)-len(substr):] == substr || testContainsMiddle(s, substr)))
+}
+
+func testContainsMiddle(s, substr string) bool {
 	for i := 0; i <= len(s)-len(substr); i++ {
 		if s[i:i+len(substr)] == substr {
 			return true

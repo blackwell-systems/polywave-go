@@ -1,0 +1,492 @@
+completion_date: "2026-03-11"
+title: 'H3 Phase 2: Multi-Language Dependency Analysis'
+feature_slug: h3-phase2-multi-language
+verdict: SUITABLE
+suitability_assessment: |
+    ## Suitability Assessment
+
+    **Verdict:** SUITABLE
+
+    **File decomposition:** YES - 3 language-specific parsers (Rust, JS/TS, Python) with disjoint file ownership
+
+    **Investigation-first items:** NO - All languages have stable AST parsing libraries
+
+    **Interface discoverability:** YES - Parser interface already exists in Go implementation
+
+    **Pre-implementation status:** TO-DO - 3 new parsers, 0 existing
+
+    **Parallelization value:** HIGH - Wave 1 has 3 fully independent agents
+
+    **Time estimate:** ~40 min total (8 min scout, 25-30 min Wave 1, 5 min Wave 2, 5 min merge)
+test_command: cd /Users/dayna.blackwell/code/scout-and-wave-go && go test ./pkg/analyzer/...
+lint_command: cd /Users/dayna.blackwell/code/scout-and-wave-go && go vet ./pkg/analyzer/...
+file_ownership:
+    - file: pkg/analyzer/rust.go
+      agent: A
+      wave: 1
+      action: new
+    - file: pkg/analyzer/rust_test.go
+      agent: A
+      wave: 1
+      action: new
+    - file: pkg/analyzer/testdata/rust/simple.rs
+      agent: A
+      wave: 1
+      action: new
+    - file: pkg/analyzer/testdata/rust/with_imports.rs
+      agent: A
+      wave: 1
+      action: new
+    - file: pkg/analyzer/testdata/rust/Cargo.toml
+      agent: A
+      wave: 1
+      action: new
+    - file: pkg/analyzer/javascript.go
+      agent: B
+      wave: 1
+      action: new
+    - file: pkg/analyzer/javascript_test.go
+      agent: B
+      wave: 1
+      action: new
+    - file: pkg/analyzer/testdata/javascript/es6.js
+      agent: B
+      wave: 1
+      action: new
+    - file: pkg/analyzer/testdata/javascript/commonjs.js
+      agent: B
+      wave: 1
+      action: new
+    - file: pkg/analyzer/testdata/javascript/typescript.ts
+      agent: B
+      wave: 1
+      action: new
+    - file: pkg/analyzer/testdata/javascript/package.json
+      agent: B
+      wave: 1
+      action: new
+    - file: pkg/analyzer/python.go
+      agent: C
+      wave: 1
+      action: new
+    - file: pkg/analyzer/python_test.go
+      agent: C
+      wave: 1
+      action: new
+    - file: pkg/analyzer/testdata/python/simple.py
+      agent: C
+      wave: 1
+      action: new
+    - file: pkg/analyzer/testdata/python/imports.py
+      agent: C
+      wave: 1
+      action: new
+    - file: pkg/analyzer/testdata/python/relative.py
+      agent: C
+      wave: 1
+      action: new
+    - file: pkg/analyzer/graph.go
+      agent: D
+      wave: 2
+      action: modify
+      depends_on:
+        - A
+        - B
+        - C
+    - file: pkg/analyzer/graph_test.go
+      agent: D
+      wave: 2
+      action: modify
+      depends_on:
+        - A
+        - B
+        - C
+interface_contracts:
+    - name: parseRustFiles
+      description: Rust file parser via external rust-parser binary
+      definition: |
+        func parseRustFiles(repoRoot string, files []string) (map[string][]string, error)
+
+        Exec rust-parser helper binary for each file, parse JSON output.
+        Returns map of file path -> list of absolute paths to local dependencies.
+        Filters stdlib (std::, core::, alloc::) and external crates.
+      location: pkg/analyzer/rust.go
+    - name: parseJavaScriptFiles
+      description: JavaScript/TypeScript parser via Node.js Babel script
+      definition: |
+        func parseJavaScriptFiles(repoRoot string, files []string) (map[string][]string, error)
+
+        Exec js-parser.js helper script for each file, parse JSON output.
+        Returns map of file path -> list of absolute paths to local dependencies.
+        Handles ES6 imports, CommonJS require(), TypeScript imports.
+      location: pkg/analyzer/javascript.go
+    - name: parsePythonFiles
+      description: Python parser via python-parser.py script
+      definition: |
+        func parsePythonFiles(repoRoot string, files []string) (map[string][]string, error)
+
+        Exec python-parser.py helper script for each file, parse JSON output.
+        Returns map of file path -> list of absolute paths to local dependencies.
+        Handles import statements and relative imports.
+      location: pkg/analyzer/python.go
+    - name: detectLanguage
+      description: Auto-detect language from file extensions
+      definition: |
+        func detectLanguage(files []string) (string, error)
+
+        Returns "go", "rust", "javascript", or "python" based on most common extension.
+        Returns error if unsupported extension or mixed languages detected.
+      location: pkg/analyzer/graph.go
+    - name: parseGoFiles
+      description: Refactored Go parser function
+      definition: |
+        func parseGoFiles(repoRoot string, files []string) (map[string][]string, error)
+
+        Extracted from BuildGraph Step 1 logic.
+        Uses existing Analyzer.ParseFile() and ExtractImports() methods.
+      location: pkg/analyzer/graph.go
+waves:
+    - number: 1
+      agents:
+        - id: A
+          task: |
+            ## What to Implement
+            Implement Rust AST parser via external rust-parser binary.
+
+            ## Interface to Implement
+            ```go
+            // pkg/analyzer/rust.go
+            func parseRustFiles(repoRoot string, files []string) (map[string][]string, error)
+            ```
+
+            ## Implementation Strategy
+            1. Check if `rust-parser` binary exists using exec.LookPath()
+            2. For each file, exec `rust-parser <file>` and capture JSON output
+            3. Parse JSON: `{"file": "path.rs", "imports": ["crate::foo", "std::vec"]}`
+            4. Filter stdlib imports (std::, core::, alloc::)
+            5. Resolve local imports (crate::, super::, self::) to absolute file paths
+            6. Return map[string][]string
+
+            ## Tests to Write
+            - TestParseRustFiles_Simple
+            - TestParseRustFiles_WithImports
+            - TestParseRustFiles_StdlibFiltering
+            - TestParseRustFiles_BinaryMissing (skip if rust-parser not found)
+
+            ## Test Fixtures
+            Create testdata/rust/:
+            - simple.rs (no imports)
+            - with_imports.rs (uses crate::simple)
+            - Cargo.toml (package metadata)
+
+            ## Verification
+            ```bash
+            cd /Users/dayna.blackwell/code/scout-and-wave-go
+            go build ./pkg/analyzer
+            go test ./pkg/analyzer -run TestParseRust -v
+            ```
+
+            ## Constraints
+            - rust-parser is external dependency (not built in this wave)
+            - Tests skip if rust-parser not found
+            - Workspace resolution deferred to Phase 3
+          files:
+            - pkg/analyzer/rust.go
+            - pkg/analyzer/rust_test.go
+            - pkg/analyzer/testdata/rust/simple.rs
+            - pkg/analyzer/testdata/rust/with_imports.rs
+            - pkg/analyzer/testdata/rust/Cargo.toml
+        - id: B
+          task: |
+            ## What to Implement
+            Implement JavaScript/TypeScript parser via Node.js Babel script.
+
+            ## Interface to Implement
+            ```go
+            // pkg/analyzer/javascript.go
+            func parseJavaScriptFiles(repoRoot string, files []string) (map[string][]string, error)
+            ```
+
+            ## Implementation Strategy
+            1. Check if `node` binary exists using exec.LookPath()
+            2. For each file, exec `node js-parser.js <file>` and capture JSON output
+            3. Parse JSON: `{"file": "path.js", "imports": ["./utils", "../types", "lodash"]}`
+            4. Filter npm packages (no ./ or ../ prefix)
+            5. Resolve relative imports (./, ../) to absolute file paths
+            6. Return map[string][]string
+
+            ## Tests to Write
+            - TestParseJavaScriptFiles_ES6
+            - TestParseJavaScriptFiles_CommonJS
+            - TestParseJavaScriptFiles_TypeScript
+            - TestParseJavaScriptFiles_BinaryMissing (skip if node not found)
+
+            ## Test Fixtures
+            Create testdata/javascript/:
+            - es6.js (import { foo } from './utils')
+            - commonjs.js (const bar = require('../types'))
+            - typescript.ts (import type { Baz } from './interfaces')
+            - package.json (package metadata)
+
+            ## Verification
+            ```bash
+            cd /Users/dayna.blackwell/code/scout-and-wave-go
+            go build ./pkg/analyzer
+            go test ./pkg/analyzer -run TestParseJavaScript -v
+            ```
+
+            ## Constraints
+            - js-parser.js is external dependency (not built in this wave)
+            - Tests skip if node or js-parser.js not found
+            - Dynamic imports cannot be detected statically
+          files:
+            - pkg/analyzer/javascript.go
+            - pkg/analyzer/javascript_test.go
+            - pkg/analyzer/testdata/javascript/es6.js
+            - pkg/analyzer/testdata/javascript/commonjs.js
+            - pkg/analyzer/testdata/javascript/typescript.ts
+            - pkg/analyzer/testdata/javascript/package.json
+        - id: C
+          task: |
+            ## What to Implement
+            Implement Python parser via python-parser.py script.
+
+            ## Interface to Implement
+            ```go
+            // pkg/analyzer/python.go
+            func parsePythonFiles(repoRoot string, files []string) (map[string][]string, error)
+            ```
+
+            ## Implementation Strategy
+            1. Check if `python3` binary exists using exec.LookPath()
+            2. For each file, exec `python3 python-parser.py <file>` and capture JSON output
+            3. Parse JSON: `{"file": "path.py", "imports": ["internal.types", ".utils", "json"]}`
+            4. Filter stdlib imports (hardcoded list: ast, json, os, sys, etc.)
+            5. Resolve relative imports (., ..) to absolute file paths
+            6. Return map[string][]string
+
+            ## Tests to Write
+            - TestParsePythonFiles_Simple
+            - TestParsePythonFiles_RelativeImports
+            - TestParsePythonFiles_AbsoluteImports
+            - TestParsePythonFiles_BinaryMissing (skip if python3 not found)
+
+            ## Test Fixtures
+            Create testdata/python/:
+            - simple.py (no imports)
+            - imports.py (import internal.utils)
+            - relative.py (from . import simple)
+
+            ## Verification
+            ```bash
+            cd /Users/dayna.blackwell/code/scout-and-wave-go
+            go build ./pkg/analyzer
+            go test ./pkg/analyzer -run TestParsePython -v
+            ```
+
+            ## Constraints
+            - python-parser.py is external dependency (not built in this wave)
+            - Tests skip if python3 or python-parser.py not found
+            - Dynamic imports (importlib) cannot be detected
+          files:
+            - pkg/analyzer/python.go
+            - pkg/analyzer/python_test.go
+            - pkg/analyzer/testdata/python/simple.py
+            - pkg/analyzer/testdata/python/imports.py
+            - pkg/analyzer/testdata/python/relative.py
+    - number: 2
+      agents:
+        - id: D
+          task: |
+            ## What to Implement
+            Integrate language parsers into BuildGraph with auto-detection.
+
+            ## Changes to Make
+            1. Add `detectLanguage(files []string) (string, error)` function
+            2. Refactor existing Go parser code into `parseGoFiles()` function
+            3. Modify BuildGraph to dispatch to correct parser based on language
+            4. Add error handling for unsupported languages and mixed files
+
+            ## Implementation
+            ```go
+            // pkg/analyzer/graph.go
+
+            func detectLanguage(files []string) (string, error) {
+                extCounts := make(map[string]int)
+                for _, f := range files {
+                    ext := filepath.Ext(f)
+                    extCounts[ext]++
+                }
+
+                var maxExt string
+                var maxCount int
+                for ext, count := range extCounts {
+                    if count > maxCount {
+                        maxExt = ext
+                        maxCount = count
+                    }
+                }
+
+                switch maxExt {
+                case ".go":
+                    return "go", nil
+                case ".rs":
+                    return "rust", nil
+                case ".js", ".jsx", ".ts", ".tsx", ".mjs":
+                    return "javascript", nil
+                case ".py":
+                    return "python", nil
+                default:
+                    return "", fmt.Errorf("unsupported file extension: %s", maxExt)
+                }
+            }
+
+            func parseGoFiles(repoRoot string, files []string) (map[string][]string, error) {
+                // Move existing BuildGraph Step 1 logic here
+                analyzer := New()
+                fileImports := make(map[string][]string)
+                for _, f := range files {
+                    ast, err := analyzer.ParseFile(f)
+                    if err != nil {
+                        return nil, err
+                    }
+                    imports, err := analyzer.ExtractImports(ast, repoRoot)
+                    if err != nil {
+                        return nil, err
+                    }
+                    fileImports[f] = imports
+                }
+                return fileImports, nil
+            }
+
+            func BuildGraph(repoRoot string, files []string) (*DepGraph, error) {
+                // Step 0: Detect language
+                lang, err := detectLanguage(files)
+                if err != nil {
+                    return nil, err
+                }
+
+                // Step 1: Parse files with language-specific parser
+                var fileImports map[string][]string
+                switch lang {
+                case "go":
+                    fileImports, err = parseGoFiles(repoRoot, files)
+                case "rust":
+                    fileImports, err = parseRustFiles(repoRoot, files)
+                case "javascript":
+                    fileImports, err = parseJavaScriptFiles(repoRoot, files)
+                case "python":
+                    fileImports, err = parsePythonFiles(repoRoot, files)
+                default:
+                    return nil, fmt.Errorf("unsupported language: %s", lang)
+                }
+                if err != nil {
+                    return nil, err
+                }
+
+                // Steps 2-7: Existing BuildGraph logic (unchanged)
+                // ...
+            }
+            ```
+
+            ## Tests to Write
+            - TestDetectLanguage_Go
+            - TestDetectLanguage_Rust
+            - TestDetectLanguage_JavaScript
+            - TestDetectLanguage_Python
+            - TestDetectLanguage_MixedError
+            - TestDetectLanguage_UnsupportedError
+            - TestBuildGraph_MultiLanguageIntegration
+
+            ## Verification
+            ```bash
+            cd /Users/dayna.blackwell/code/scout-and-wave-go
+            go build ./pkg/analyzer
+            go test ./pkg/analyzer/... -v
+            ```
+
+            ## Constraints
+            - Do not modify BuildGraph algorithm (Steps 2-7)
+            - Only add language detection and parser dispatch
+          files:
+            - pkg/analyzer/graph.go
+            - pkg/analyzer/graph_test.go
+          dependencies:
+            - A
+            - B
+            - C
+quality_gates:
+    level: standard
+    gates:
+        - type: build
+          command: cd /Users/dayna.blackwell/code/scout-and-wave-go && go build ./pkg/analyzer/...
+          required: true
+        - type: test
+          command: cd /Users/dayna.blackwell/code/scout-and-wave-go && go test ./pkg/analyzer/...
+          required: true
+        - type: lint
+          command: cd /Users/dayna.blackwell/code/scout-and-wave-go && go vet ./pkg/analyzer/...
+          required: false
+          description: Check for common Go mistakes
+completion_reports:
+    A:
+        status: complete
+    B:
+        status: complete
+    C:
+        status: complete
+    D:
+        status: complete
+        branch: develop
+        commit: 5ecfb906d0934f351a5cde89f78e567c6e174fd6
+        files_changed:
+            - pkg/analyzer/graph.go
+            - pkg/analyzer/graph_test.go
+            - pkg/analyzer/rust.go
+        files_created: []
+        interface_deviations: []
+        out_of_scope_deps: []
+        tests_added:
+            - TestDetectLanguage_Go
+            - TestDetectLanguage_Rust
+            - TestDetectLanguage_JavaScript
+            - TestDetectLanguage_Python
+            - TestDetectLanguage_MixedError
+            - TestDetectLanguage_UnsupportedError
+            - TestBuildGraph_MultiLanguageIntegration
+        verification: PASS
+        notes: |
+            Successfully integrated all language parsers into BuildGraph with auto-detection.
+
+            Key changes:
+            - Added detectLanguage() function that auto-detects language from file extensions
+            - Refactored existing Go parser logic into parseGoFiles() function
+            - Modified BuildGraph to dispatch to correct parser based on detected language
+            - Added comprehensive test coverage for language detection (7 new tests)
+            - All tests pass, including existing BuildGraph tests
+            - Build and lint checks pass
+
+            Minor fix: Renamed fileExists to containsFile in rust.go for consistency across parsers.
+
+            The implementation follows the interface contracts exactly and maintains backward
+            compatibility - all existing tests continue to pass.
+pre_mortem:
+    overall_risk: medium
+    rows:
+        - scenario: Helper binaries not available at runtime
+          likelihood: high
+          impact: high
+          mitigation: Skip tests if binaries missing, document as external dependency
+        - scenario: Helper binary output format changes
+          likelihood: low
+          impact: medium
+          mitigation: Version helper API, validate JSON schema in tests
+        - scenario: Import resolution edge cases
+          likelihood: medium
+          impact: medium
+          mitigation: Document Phase 2 limitations, defer advanced patterns to Phase 3
+        - scenario: Mixed-language projects
+          likelihood: medium
+          impact: low
+          mitigation: detectLanguage returns error if mixed, document as unsupported
+state: SCOUT_PENDING

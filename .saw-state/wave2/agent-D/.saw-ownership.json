@@ -1,0 +1,9 @@
+{
+  "agent": "D",
+  "wave": 2,
+  "impl_doc": "/Users/dayna.blackwell/code/scout-and-wave-go/docs/IMPL/IMPL-bedrock-structured-output.yaml",
+  "owned_files": [
+    "pkg/engine/runner.go",
+    "pkg/engine/runner_structured_test.go"
+  ]
+}

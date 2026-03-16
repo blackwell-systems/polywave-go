@@ -31,6 +31,8 @@ func Validate(m *IMPLManifest) []ValidationError {
 	errs = append(errs, ValidateCompletionStatuses(m)...)
 	errs = append(errs, ValidateFailureTypes(m)...)
 	errs = append(errs, ValidatePreMortemRisk(m)...)
+	errs = append(errs, validateMultiRepoConsistency(m)...)
+	errs = append(errs, ValidateSchema(m)...)
 
 	return errs
 }
@@ -396,6 +398,10 @@ func validateAgentIDs(m *IMPLManifest) []ValidationError {
 
 	// Check agent IDs in FileOwnership
 	for i, fo := range m.FileOwnership {
+		// Allow "Scaffold" for wave 0 entries (scaffold files created before Wave 1)
+		if fo.Agent == "Scaffold" && fo.Wave == 0 {
+			continue
+		}
 		if !agentIDRegex.MatchString(fo.Agent) {
 			errs = append(errs, ValidationError{
 				Code:    "DC04_INVALID_AGENT_ID",
@@ -419,6 +425,76 @@ func validateAgentIDs(m *IMPLManifest) []ValidationError {
 	return errs
 }
 
+// ValidGateTypes is the set of allowed quality gate type values.
+var ValidGateTypes = map[string]bool{
+	"build":     true,
+	"lint":      true,
+	"test":      true,
+	"typecheck": true,
+	"custom":    true,
+}
+
+// FixGateTypes rewrites any unrecognized gate type to "custom".
+// Returns the number of gates fixed.
+func FixGateTypes(m *IMPLManifest) int {
+	if m.QualityGates == nil {
+		return 0
+	}
+	fixed := 0
+	for i := range m.QualityGates.Gates {
+		if !ValidGateTypes[m.QualityGates.Gates[i].Type] {
+			m.QualityGates.Gates[i].Type = "custom"
+			fixed++
+		}
+	}
+	return fixed
+}
+
+// validateMultiRepoConsistency checks that when any file_ownership entry has a repo: field,
+// ALL entries have an explicit repo: field. Mixing explicit and implicit repo tags causes
+// the web GUI to misdetect multi-repo IMPLs.
+func validateMultiRepoConsistency(m *IMPLManifest) []ValidationError {
+	var errs []ValidationError
+
+	if len(m.FileOwnership) == 0 {
+		return errs
+	}
+
+	hasExplicit := false
+	hasImplicit := false
+	for _, fo := range m.FileOwnership {
+		if fo.Repo != "" {
+			hasExplicit = true
+		} else {
+			hasImplicit = true
+		}
+	}
+
+	if hasExplicit && hasImplicit {
+		// Collect the implicit entries for a helpful message
+		var missing []string
+		for _, fo := range m.FileOwnership {
+			if fo.Repo == "" {
+				missing = append(missing, fo.File)
+				if len(missing) >= 3 {
+					break
+				}
+			}
+		}
+		suffix := ""
+		if len(missing) >= 3 {
+			suffix = " ..."
+		}
+		errs = append(errs, ValidationError{
+			Code:    "MR01_INCONSISTENT_REPO",
+			Message: fmt.Sprintf("file_ownership has mixed repo tags: some entries have repo: and some don't — add explicit repo: to all entries (missing on: %s%s)", strings.Join(missing, ", "), suffix),
+			Field:   "file_ownership",
+		})
+	}
+
+	return errs
+}
+
 // validateGateTypes checks that all quality gate types are valid.
 // Valid types: "build", "lint", "test", "typecheck", "custom"
 func validateGateTypes(m *IMPLManifest) []ValidationError {
@@ -429,16 +505,8 @@ func validateGateTypes(m *IMPLManifest) []ValidationError {
 		return errs
 	}
 
-	validTypes := map[string]bool{
-		"build":     true,
-		"lint":      true,
-		"test":      true,
-		"typecheck": true,
-		"custom":    true,
-	}
-
 	for i, gate := range m.QualityGates.Gates {
-		if !validTypes[gate.Type] {
+		if !ValidGateTypes[gate.Type] {
 			errs = append(errs, ValidationError{
 				Code:    "DC07_INVALID_GATE_TYPE",
 				Message: fmt.Sprintf("quality gate type %q is invalid — must be one of: build, lint, test, typecheck, custom", gate.Type),

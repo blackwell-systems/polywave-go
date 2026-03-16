@@ -1,0 +1,443 @@
+completion_date: "2026-03-14"
+title: Implement agentic tool-use loop for the Bedrock backend
+feature_slug: bedrock-tool-loop
+verdict: SUITABLE
+test_command: go test ./...
+lint_command: go vet ./...
+file_ownership:
+    - file: pkg/agent/backend/bedrock/client.go
+      agent: A
+      wave: 1
+      action: modify
+    - file: pkg/agent/backend/bedrock/tools.go
+      agent: A
+      wave: 1
+      action: new
+    - file: pkg/agent/backend/bedrock/client_test.go
+      agent: B
+      wave: 1
+      action: new
+interface_contracts:
+    - name: buildWorkshop
+      description: |
+        Creates a Workshop with appropriate middleware based on client config.
+        Mirrors the identical method in api/client.go and openai/client.go.
+        Uses ReadOnlyTools for Scout agents, StandardTools for wave agents.
+        Wraps with WithTiming if onToolCall callback is configured.
+      definition: |
+        func (c *Client) buildWorkshop(workDir string) tools.Workshop
+      location: pkg/agent/backend/bedrock/client.go
+    - name: buildToolsJSON
+      description: |
+        Converts Workshop tools to the Bedrock/Anthropic Messages API JSON format.
+        Returns a []interface{} where each element is a map with name, description,
+        and input_schema fields. This is the same format as the direct Anthropic API
+        since Bedrock uses the Messages API wire format.
+      definition: |
+        func buildToolsJSON(workshop tools.Workshop) []interface{}
+        // Each tool becomes:
+        // map[string]interface{}{
+        //   "name":         tool.Name,
+        //   "description":  tool.Description,
+        //   "input_schema": tool.InputSchema,
+        // }
+      location: pkg/agent/backend/bedrock/tools.go
+    - name: executeTool
+      description: |
+        Looks up a tool by name in the Workshop and executes it.
+        Returns (resultString, isError). Mirrors the pattern from api/client.go.
+      definition: |
+        func executeTool(ctx context.Context, workshop tools.Workshop, name string, input map[string]interface{}, workDir string) (string, bool)
+      location: pkg/agent/backend/bedrock/client.go
+    - name: RunStreamingWithTools (updated)
+      description: |
+        Full multi-turn tool-use loop via InvokeModelWithResponseStream.
+        Streams text deltas via onChunk, emits tool call events via onToolCall.
+        Loops until stop_reason is "end_turn" or maxTurns exceeded.
+        Parses content_block_start (tool_use detection), content_block_delta
+        (text_delta + input_json_delta), and message_delta (stop_reason).
+      definition: |
+        func (c *Client) RunStreamingWithTools(
+          ctx context.Context,
+          systemPrompt, userMessage, workDir string,
+          onChunk backend.ChunkCallback,
+          onToolCall backend.ToolCallCallback,
+        ) (string, error)
+      location: pkg/agent/backend/bedrock/client.go
+waves:
+    - number: 1
+      agents:
+        - id: A
+          task: |
+            ## What to Implement
+
+            Implement the full multi-turn agentic tool-use loop in the Bedrock backend.
+            This makes `RunStreamingWithTools` functional instead of falling back to
+            single-turn `RunStreaming`.
+
+            ### File 1: `pkg/agent/backend/bedrock/tools.go` (NEW)
+
+            Create a new file with:
+
+            1. `buildToolsJSON(workshop tools.Workshop) []interface{}` — converts Workshop
+               tools to Bedrock/Anthropic Messages API JSON format. Each tool becomes a map
+               with `name`, `description`, and `input_schema` keys. The `input_schema` is
+               taken directly from `tool.InputSchema` (it is already JSON Schema format).
+
+            2. `executeTool(ctx context.Context, workshop tools.Workshop, name string, input map[string]interface{}, workDir string) (string, bool)` —
+               looks up a tool by name via `workshop.Get(name)`, executes it with
+               `tools.ExecutionContext{WorkDir: workDir}`, returns `(result, isError)`.
+               On unknown tool: return `("error: unknown tool \"name\"", true)`.
+               On execution error: return `(fmt.Sprintf("error: %v", err), true)`.
+               This mirrors `executeTool` in `pkg/agent/backend/api/client.go` lines 137-148.
+
+            ### File 2: `pkg/agent/backend/bedrock/client.go` (MODIFY)
+
+            1. Add `onToolCall` and `readOnly` fields to the `Client` struct:
+               ```go
+               type Client struct {
+                 client     *bedrockruntime.Client
+                 cfg        backend.Config
+                 onToolCall backend.ToolCallCallback
+                 readOnly   bool
+               }
+               ```
+
+            2. Update `New()` to store these from config:
+               ```go
+               return &Client{
+                 client:     bedrockruntime.NewFromConfig(awsCfg),
+                 cfg:        cfg,
+                 onToolCall: cfg.OnToolCall,
+                 readOnly:   cfg.ReadOnly,
+               }
+               ```
+
+            3. Add `buildWorkshop` method (same pattern as api/client.go lines 71-89):
+               ```go
+               func (c *Client) buildWorkshop(workDir string) tools.Workshop {
+                 var w tools.Workshop
+                 if c.readOnly {
+                   w = tools.ReadOnlyTools(workDir)
+                 } else {
+                   w = tools.StandardTools(workDir)
+                 }
+                 if c.onToolCall != nil {
+                   w = tools.WithTiming(w, func(ev tools.ToolCallEvent) {
+                     c.onToolCall(backend.ToolCallEvent{
+                       Name:       ev.ToolName,
+                       DurationMs: ev.DurationMs,
+                       IsError:    ev.IsError,
+                       IsResult:   true,
+                     })
+                   })
+                 }
+                 return w
+               }
+               ```
+
+            4. Add `maxTurns` helper method:
+               ```go
+               func (c *Client) maxTurns() int {
+                 if c.cfg.MaxTurns > 0 { return c.cfg.MaxTurns }
+                 return 50
+               }
+               ```
+
+            5. Rewrite `RunStreamingWithTools` to implement the full tool-use loop.
+               The method must:
+
+               a. Build workshop via `c.buildWorkshop(workDir)` and convert to JSON
+                  via `buildToolsJSON(workshop)`.
+
+               b. Construct initial messages array: `[{"role": "user", "content": userPrompt}]`.
+
+               c. For each turn (up to `c.maxTurns()`):
+                  - Build request body with `anthropic_version`, `max_tokens`, `system` (if non-empty),
+                    `tools`, and `messages`.
+                  - Call `c.client.InvokeModelWithResponseStream(ctx, ...)`.
+                  - Parse the stream using the EXISTING event loop pattern (lines 127-151 of
+                    current client.go) but EXTENDED to handle:
+                    - `content_block_start` with `content_block.type == "tool_use"`: extract
+                      `content_block.id` and `content_block.name`, track in a blockMap indexed
+                      by `index` field.
+                    - `content_block_delta` with `delta.type == "text_delta"`: append to text
+                      builder, call `onChunk` if non-nil.
+                    - `content_block_delta` with `delta.type == "input_json_delta"`: append
+                      `delta.partial_json` to the tool input builder for this block index.
+                    - `message_delta`: extract `delta.stop_reason`.
+
+                  - After stream completes, check stop_reason:
+                    - `"end_turn"`: return accumulated text.
+                    - `"tool_use"`: for each tool_use block in blockMap:
+                      1. Parse accumulated JSON input into `map[string]interface{}`.
+                      2. Emit onToolCall event with Name, Input (if callback non-nil).
+                      3. Call `executeTool(ctx, workshop, name, inputMap, workDir)`.
+                      4. Emit onToolCall result event with IsResult=true, DurationMs.
+                      5. Build tool_result content block.
+                    - Append assistant message (text blocks + tool_use blocks) to messages.
+                    - Append user message with tool_result blocks to messages.
+                    - Continue loop.
+
+               d. If maxTurns exceeded, return error.
+
+               **IMPORTANT streaming parse format.** Each chunk from Bedrock arrives as
+               `types.ResponseStreamMemberChunk` with `Value.Bytes` containing JSON.
+               The JSON has a `type` field. Parse into a generic struct:
+
+               ```go
+               type streamEvent struct {
+                 Type         string       `json:"type"`
+                 Index        int          `json:"index"`
+                 ContentBlock *contentBlock `json:"content_block,omitempty"`
+                 Delta        *deltaBlock  `json:"delta,omitempty"`
+               }
+               type contentBlock struct {
+                 Type string `json:"type"`
+                 ID   string `json:"id"`
+                 Name string `json:"name"`
+                 Text string `json:"text"`
+               }
+               type deltaBlock struct {
+                 Type        string `json:"type"`
+                 Text        string `json:"text"`
+                 PartialJSON string `json:"partial_json"`
+                 StopReason  string `json:"stop_reason"`
+               }
+               ```
+
+               **Messages format for multi-turn.** Messages are `[]interface{}` where each
+               message is `map[string]interface{}` with `role` and `content` fields. Content
+               for tool_use turns is an array of content blocks:
+               ```json
+               {"role": "assistant", "content": [
+                 {"type": "text", "text": "..."},
+                 {"type": "tool_use", "id": "toolu_xxx", "name": "bash", "input": {...}}
+               ]}
+               {"role": "user", "content": [
+                 {"type": "tool_result", "tool_use_id": "toolu_xxx", "content": "..."}
+               ]}
+               ```
+
+            6. Add import for `"github.com/blackwell-systems/scout-and-wave-go/pkg/tools"`.
+
+            ## Interfaces to Call
+            - `tools.StandardTools(workDir string) Workshop` (pkg/tools/standard.go)
+            - `tools.ReadOnlyTools(workDir string) Workshop` (pkg/tools/middleware.go)
+            - `tools.WithTiming(w Workshop, onCall func(ToolCallEvent)) Workshop` (pkg/tools/middleware.go)
+            - `workshop.All() []Tool` — to enumerate tools for JSON serialization
+            - `workshop.Get(name string) (Tool, bool)` — for tool lookup during execution
+            - `tool.Executor.Execute(ctx, execCtx, input) (string, error)` — tool execution
+            - `bedrockruntime.Client.InvokeModelWithResponseStream(ctx, input)` — AWS SDK streaming call
+
+            ## Tests to Write
+            None — Agent B owns all tests.
+
+            ## Verification Gate
+            ```bash
+            cd /Users/dayna.blackwell/code/scout-and-wave-go && go build ./...
+            cd /Users/dayna.blackwell/code/scout-and-wave-go && go vet ./...
+            ```
+
+            ## Constraints
+            - Do NOT modify `Run` or `RunStreaming` methods — they must continue working as-is.
+            - Do NOT import the anthropic Go SDK — Bedrock uses raw JSON via AWS SDK, not the anthropic SDK.
+            - Tool type structs are package-local (architectural decision from CONTEXT.md).
+            - The `workDir` parameter (4th arg, currently `_`) must be used as the working
+              directory for tool execution, not discarded.
+            - If `onChunk` is nil, still accumulate text but skip the callback.
+            - If `onToolCall` is nil, still execute tools but skip the callback.
+            - The initial user message content is a string, not an array. Only tool_result
+              messages use the array-of-content-blocks format.
+          files:
+            - pkg/agent/backend/bedrock/client.go
+            - pkg/agent/backend/bedrock/tools.go
+        - id: B
+          task: |
+            ## What to Implement
+
+            Comprehensive tests for the Bedrock backend tool-use loop in a new file
+            `pkg/agent/backend/bedrock/client_test.go`. Follow the test patterns from
+            `pkg/agent/backend/openai/client_test.go` which uses `httptest.NewServer`
+            to mock API responses.
+
+            **Challenge:** The Bedrock backend uses `bedrockruntime.Client` from AWS SDK,
+            not raw HTTP. To test without real AWS credentials, you must test at the
+            integration boundary. Use one of these strategies:
+
+            ### Strategy: Interface-based mock
+
+            The existing code creates `bedrockruntime.Client` in `New()`. For testability,
+            create a minimal internal interface and a mock:
+
+            ```go
+            // bedrockAPI is an internal interface for the subset of bedrockruntime.Client
+            // methods used by this package. Enables test mocking without AWS credentials.
+            type bedrockAPI interface {
+              InvokeModel(ctx context.Context, params *bedrockruntime.InvokeModelInput, optFns ...func(*bedrockruntime.Options)) (*bedrockruntime.InvokeModelOutput, error)
+              InvokeModelWithResponseStream(ctx context.Context, params *bedrockruntime.InvokeModelWithResponseStreamInput, optFns ...func(*bedrockruntime.Options)) (*bedrockruntime.InvokeModelWithResponseStreamOutput, error)
+            }
+            ```
+
+            Then change `Client.client` from `*bedrockruntime.Client` to `bedrockAPI`, and
+            add a `WithClient(api bedrockAPI) *Client` method for test injection.
+
+            **IMPORTANT:** Agent A is modifying client.go concurrently. Your interface
+            extraction must be compatible. The `bedrockAPI` interface and the `WithClient`
+            method should go in a new file `pkg/agent/backend/bedrock/mock_test.go` using
+            a test-only approach that does NOT require modifying client.go. Instead:
+
+            Use the exported `New()` constructor and then replace the internal client field
+            via an unexported test helper. Since tests are in the same package, you can
+            directly access `c.client`. Create a mock that satisfies the
+            `*bedrockruntime.Client` interface by implementing the required methods.
+
+            **Simplest approach:** Since `c.client` is `*bedrockruntime.Client` (a concrete
+            type, not an interface), the cleanest test strategy is:
+
+            1. Test `buildToolsJSON` and `executeTool` directly (they don't need AWS).
+            2. For the streaming loop, test the stream parsing logic by extracting it into
+               a testable helper, OR use build tags to skip integration tests.
+            3. Write unit tests for the helpers and parsing logic.
+
+            ### Tests to Write
+
+            1. **TestBuildToolsJSON** — Verify that `buildToolsJSON` converts a Workshop
+               with 2+ tools into the correct JSON structure. Check that each tool has
+               `name`, `description`, and `input_schema` keys.
+
+            2. **TestExecuteTool_KnownTool** — Create a Workshop with a mock tool, call
+               `executeTool`, verify result is returned and isError is false.
+
+            3. **TestExecuteTool_UnknownTool** — Call `executeTool` with a name not in the
+               workshop. Verify error message and isError is true.
+
+            4. **TestBuildWorkshop_StandardMode** — Create a Client with `readOnly: false`,
+               call `buildWorkshop`, verify all 7 tools are registered.
+
+            5. **TestBuildWorkshop_ReadOnlyMode** — Create a Client with `readOnly: true`,
+               call `buildWorkshop`, verify write_file and edit_file are blocked.
+
+            6. **TestMaxTurns_Default** — Verify `maxTurns()` returns 50 when cfg.MaxTurns is 0.
+
+            7. **TestMaxTurns_Custom** — Verify `maxTurns()` returns cfg value when set.
+
+            8. **TestRunStreamingWithTools_NilClient** — Call with nil AWS client, expect
+               error about AWS config.
+
+            9. **TestStreamEventParsing** — If the stream event struct types are exported
+               or accessible within the package, test JSON unmarshaling of each event type:
+               content_block_start (text), content_block_start (tool_use),
+               content_block_delta (text_delta), content_block_delta (input_json_delta),
+               message_delta with stop_reason.
+
+            ## Interfaces to Call
+            - `tools.StandardTools(workDir string) Workshop`
+            - `tools.NewWorkshop() Workshop`
+            - `workshop.Register(tool Tool) error`
+            - `workshop.All() []Tool`
+            - `workshop.Get(name string) (Tool, bool)`
+            - `buildToolsJSON(workshop tools.Workshop) []interface{}`
+            - `executeTool(ctx, workshop, name, input, workDir) (string, bool)`
+            - `Client.buildWorkshop(workDir string) tools.Workshop`
+
+            ## Verification Gate
+            ```bash
+            cd /Users/dayna.blackwell/code/scout-and-wave-go && go build ./...
+            cd /Users/dayna.blackwell/code/scout-and-wave-go && go vet ./...
+            cd /Users/dayna.blackwell/code/scout-and-wave-go && go test ./pkg/agent/backend/bedrock/...
+            ```
+
+            ## Constraints
+            - Tests are in package `bedrock` (same package, not `bedrock_test`) so you can
+              access unexported fields and functions.
+            - Do NOT require real AWS credentials — all tests must pass without network.
+            - Do NOT modify client.go or tools.go — those belong to Agent A.
+            - Follow the test naming patterns from openai/client_test.go.
+            - Use `t.TempDir()` for workDir in tests.
+            - Use `context.Background()` for test contexts.
+          files:
+            - pkg/agent/backend/bedrock/client_test.go
+      base_commit: 7b97aa28984cbfca5833ffba99a766c9e716d739
+quality_gates:
+    level: standard
+    gates:
+        - type: build
+          command: go build ./...
+          required: true
+        - type: lint
+          command: go vet ./...
+          required: true
+        - type: test
+          command: go test ./pkg/agent/backend/bedrock/...
+          required: true
+        - type: custom
+          command: go test ./...
+          required: true
+          description: Post-merge full suite verification
+completion_reports:
+    A:
+        status: complete
+        branch: wave1-agent-A
+        commit: 9684c87
+        files_changed:
+            - pkg/agent/backend/bedrock/client.go
+            - pkg/agent/backend/bedrock/tools.go
+        files_created:
+            - pkg/agent/backend/bedrock/tools.go
+        verification: PASS
+    B:
+        status: complete
+        branch: wave1-agent-B
+        commit: 099ea58
+        files_changed:
+            - pkg/agent/backend/bedrock/client_test.go
+        files_created:
+            - pkg/agent/backend/bedrock/client_test.go
+        tests_added:
+            - TestBuildToolsJSON
+            - TestBuildToolsJSON_Empty
+            - TestExecuteTool_KnownTool
+            - TestExecuteTool_UnknownTool
+            - TestExecuteTool_ExecutionError
+            - TestBuildWorkshop_StandardMode
+            - TestBuildWorkshop_ReadOnlyMode
+            - TestBuildWorkshop_WithTimingCallback
+            - TestMaxTurns_Default
+            - TestMaxTurns_Custom
+            - TestRunStreamingWithTools_NilClient
+            - TestStreamEventParsing
+        verification: PASS (go build passes; test/vet depend on Agent A symbols - will pass post-merge)
+pre_mortem:
+    overall_risk: medium
+    rows:
+        - scenario: Agent B tests reference functions that Agent A names differently
+          likelihood: medium
+          impact: low
+          mitigation: |
+            Interface contracts specify exact function names (buildToolsJSON, executeTool,
+            buildWorkshop, maxTurns). Both agents reference these contracts. Post-merge
+            build gate catches any mismatch immediately.
+        - scenario: Bedrock streaming event JSON structure differs from documented format
+          likelihood: low
+          impact: high
+          mitigation: |
+            The existing RunStreaming already parses content_block_delta with text_delta
+            successfully (lines 127-151 of current client.go), confirming the JSON structure.
+            Tool-use events use the same envelope format with different delta types.
+            docs/reference/bedrock-tool-use-api.md documents the exact format.
+        - scenario: Client struct field changes conflict between agents
+          likelihood: low
+          impact: medium
+          mitigation: |
+            Agent B does not modify client.go. Only Agent A adds fields to the Client struct.
+            Agent B accesses them read-only in tests via same-package access.
+        - scenario: bedrockruntime.Client is a concrete type, hard to mock in tests
+          likelihood: medium
+          impact: medium
+          mitigation: |
+            Agent B tests helper functions (buildToolsJSON, executeTool, buildWorkshop)
+            that don't require the AWS client. Stream parsing tests use JSON unmarshaling
+            directly. Only the full RunStreamingWithTools integration test is skipped
+            without AWS credentials.
+state: "COMPLETE"

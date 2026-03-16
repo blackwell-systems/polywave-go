@@ -1,38 +1,40 @@
 package agent
 
 import (
-	"errors"
 	"fmt"
 	"time"
 
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/types"
 )
 
-// WaitForCompletion polls the IMPL doc at implDocPath every pollInterval until
-// the completion report for agentLetter appears or the timeout is reached.
+// WaitForCompletion polls the IMPL manifest at implDocPath every pollInterval until
+// the completion report for agentID appears or the timeout is reached.
 //
-// On ErrReportNotFound the function sleeps pollInterval and retries.
-// On any other error from ParseCompletionReport it returns immediately.
-// When timeout elapses without a report it returns a descriptive error.
-func WaitForCompletion(implDocPath, agentLetter string, timeout, pollInterval time.Duration) (*types.CompletionReport, error) {
+// Returns the completion report on success, or an error if the timeout is reached
+// or the manifest cannot be loaded.
+//
+// Note: Returns protocol.CompletionReport which uses string types for status/failure_type.
+// Callers needing types.CompletionReport (with typed enums) should convert manually.
+func WaitForCompletion(implDocPath, agentID string, timeout, pollInterval time.Duration) (*protocol.CompletionReport, error) {
 	deadline := time.Now().Add(timeout)
 
 	for {
-		report, err := protocol.ParseCompletionReport(implDocPath, agentLetter)
-		if err == nil {
-			return report, nil
+		// Load the YAML manifest
+		manifest, err := protocol.Load(implDocPath)
+		if err != nil {
+			return nil, fmt.Errorf("WaitForCompletion agent %s: failed to load manifest: %w", agentID, err)
 		}
 
-		if !errors.Is(err, protocol.ErrReportNotFound) {
-			return nil, fmt.Errorf("WaitForCompletion agent %s: %w", agentLetter, err)
+		// Check if completion report exists in the map
+		if report, ok := manifest.CompletionReports[agentID]; ok {
+			return &report, nil
 		}
 
 		// Report not found yet — check whether we have time to retry.
 		remaining := time.Until(deadline)
 		if remaining <= 0 {
 			return nil, fmt.Errorf("WaitForCompletion agent %s: timed out after %s waiting for completion report in %q",
-				agentLetter, timeout, implDocPath)
+				agentID, timeout, implDocPath)
 		}
 
 		// Sleep at most the remaining time so we never overshoot the deadline.

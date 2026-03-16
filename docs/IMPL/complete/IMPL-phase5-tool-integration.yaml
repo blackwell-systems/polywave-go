@@ -1,0 +1,220 @@
+title: 'Phase 5: Tool Integration'
+feature_slug: phase5-tool-integration
+verdict: SUITABLE
+suitability_assessment: |
+  Three independent integrations combining existing tools (H7, M1) with
+  orchestration layer (finalize-wave, validate, run-scout). All tools already
+  shipped; integration is straightforward plumbing.
+test_command: go test ./...
+lint_command: go vet ./...
+state: COMPLETE
+
+completion_date: '2026-03-12'
+
+file_ownership:
+  - file: cmd/saw/finalize_wave.go
+    agent: A
+    wave: 1
+    action: modify
+  - file: cmd/saw/finalize_wave_test.go
+    agent: A
+    wave: 1
+    action: new
+  - file: pkg/protocol/validator.go
+    agent: B
+    wave: 1
+    action: modify
+  - file: pkg/protocol/validator_agent_id_test.go
+    agent: B
+    wave: 1
+    action: new
+  - file: cmd/saw/run_scout_cmd.go
+    agent: C
+    wave: 1
+    action: new
+  - file: cmd/saw/run_scout_cmd_test.go
+    agent: C
+    wave: 1
+    action: new
+  - file: cmd/saw/main.go
+    agent: C
+    wave: 1
+    action: modify
+
+interface_contracts:
+  - name: inferLanguageFromCommand
+    description: Infers language from test command for H7 diagnosis
+    definition: |
+      func inferLanguageFromCommand(testCommand string) string
+    location: cmd/saw/finalize_wave.go
+  - name: validAgentIDRe
+    description: Regex for valid agent IDs (^[A-Z][2-9]?$)
+    definition: |
+      var validAgentIDRe = regexp.MustCompile(`^[A-Z][2-9]?$`)
+    location: pkg/protocol/validator.go
+  - name: generateSlug
+    description: Creates URL-safe slug from feature description
+    definition: |
+      func generateSlug(feature string) string
+    location: cmd/saw/run_scout_cmd.go
+
+waves:
+  - number: 1
+    agents:
+      - id: A
+        task: |
+          ## I1: Integrate H7 into finalize-wave
+
+          Modify `cmd/saw/finalize_wave.go` to auto-diagnose build failures using
+          `builddiag.DiagnoseError()` when verify-build fails.
+
+          ### Changes:
+          1. Add `BuildDiagnosis *builddiag.Diagnosis` field to `FinalizeWaveResult`
+          2. After verify-build fails (lines 119-125), infer language from test_command
+          3. Call `builddiag.DiagnoseError(errorLog, language)` with combined test+lint output
+          4. Append diagnosis to JSON output
+
+          ### Language Inference:
+          Create `inferLanguageFromCommand()` helper that checks test_command for:
+          - "go test" / "go build" → "go"
+          - "cargo test" / "cargo build" → "rust" (check before "go" to avoid substring match)
+          - "npm test" / "jest" / "vitest" → "javascript"
+          - "pytest" / "python -m unittest" → "python"
+
+          ### Tests:
+          Write `finalize_wave_test.go` testing language inference for all supported languages.
+        files:
+          - cmd/saw/finalize_wave.go
+          - cmd/saw/finalize_wave_test.go
+      - id: B
+        task: |
+          ## I2: Integrate M1 into validate
+
+          Modify `pkg/protocol/validator.go` to validate agent IDs during E16 validation.
+
+          ### Changes:
+          1. Add `validAgentIDRe = regexp.MustCompile("^[A-Z][2-9]?$")` at package level
+          2. Modify all validate* functions to return `([]ValidationError, []string)` where
+             second return is list of agent IDs found
+          3. In `validateFileOwnership()`: extract agent from column 2, validate format
+          4. In `validateDepGraph()`: validate agent ID in each `[X]` block
+          5. In `validateWaveStructure()`: extract and validate all `[X]` references
+          6. In `ValidateIMPLDoc()`: collect all agent IDs, count unique IDs
+          7. If agent-id errors found, append suggestion: "Run: sawtools assign-agent-ids --count N"
+
+          ### Error Messages:
+          Invalid ID error: "invalid agent ID '[X]' — must match ^[A-Z][2-9]?$ (bare letter for generation 1)"
+
+          ### Tests:
+          Write `validator_agent_id_test.go` testing:
+          - Valid IDs (A, B, C2) pass
+          - Invalid generation 1 (A1, B1) fails
+          - Mixed valid/invalid detected
+          - Correct agent count suggestion
+        files:
+          - pkg/protocol/validator.go
+          - pkg/protocol/validator_agent_id_test.go
+      - id: C
+        task: |
+          ## I3: Create run-scout automation
+
+          Create new command `cmd/saw/run_scout_cmd.go` that fully automates Scout execution.
+
+          ### Command Flow:
+          1. Generate slug from feature description using `generateSlug()`
+          2. Create `docs/IMPL/IMPL-<slug>.yaml` path
+          3. Launch Scout via `engine.RunScout()` with streaming output
+          4. Wait for IMPL doc creation (retry with 10s timeout)
+          5. Validate IMPL doc via `protocol.ValidateIMPLDoc()`
+          6. If agent ID errors: extract count, generate correct IDs via `idgen.AssignAgentIDs()`
+          7. Report validation results with suggested fix
+
+          ### Slug Generation:
+          - Lowercase, replace non-alphanumeric with hyphens
+          - Collapse multiple hyphens
+          - Trim leading/trailing hyphens
+          - Truncate to 49 chars
+
+          ### Flags:
+          - `--repo-dir`: target repository (default: current directory)
+          - `--saw-repo`: protocol repo path (default: $SAW_REPO)
+          - `--scout-model`: model override (default: use backend config)
+          - `--timeout`: timeout in minutes (default: 10)
+
+          ### Registration:
+          Add `newRunScoutCmd()` to `cmd/saw/main.go`
+
+          ### Tests:
+          Write `run_scout_cmd_test.go` testing:
+          - Slug generation (special chars, length limits, case conversion)
+          - Agent count extraction from validation errors
+        files:
+          - cmd/saw/run_scout_cmd.go
+          - cmd/saw/run_scout_cmd_test.go
+          - cmd/saw/main.go
+
+completion_reports:
+  A:
+    status: complete
+    files_changed:
+      - cmd/saw/finalize_wave.go
+    files_created:
+      - cmd/saw/finalize_wave_test.go
+    verification: |
+      Tests pass:
+      - TestInferLanguageFromCommand: all languages detected correctly
+      - Rust patterns checked before Go to avoid substring match
+    notes: |
+      I1 complete. finalize-wave now auto-diagnoses build failures using H7.
+      Language inference uses simple string matching (sufficient for Phase 5).
+  B:
+    status: complete
+    files_changed:
+      - pkg/protocol/validator.go
+    files_created:
+      - pkg/protocol/validator_agent_id_test.go
+    verification: |
+      Tests pass:
+      - TestValidateAgentIDs_ValidIDs: A, B, C2 pass
+      - TestValidateAgentIDs_InvalidGeneration1: A1 rejected
+      - TestValidateAgentIDs_CountSuggestion: correct count suggested
+    notes: |
+      I2 complete. Validator now checks agent IDs and suggests assign-agent-ids command.
+      All three blocks (file-ownership, dep-graph, wave-structure) validated.
+  C:
+    status: complete
+    files_changed:
+      - cmd/saw/main.go
+    files_created:
+      - cmd/saw/run_scout_cmd.go
+      - cmd/saw/run_scout_cmd_test.go
+    verification: |
+      Tests pass:
+      - TestGenerateSlug: handles special chars, truncation, case conversion
+      - TestCountAgentsFromErrors: extracts count from validator suggestion
+      Binary builds successfully, command registered.
+    notes: |
+      I3 complete. run-scout command provides fully automated Scout workflow.
+      Auto-correction detects and suggests fix for agent ID errors.
+
+pre_mortem:
+  overall_risk: low
+  rows:
+    - scenario: Language inference misidentifies toolchain
+      likelihood: low
+      impact: medium
+      mitigation: |
+        Test coverage includes edge cases (Rust/Go substring match).
+        Worst case: diagnosis not appended, manual investigation required.
+    - scenario: Validator performance impact on large IMPL docs
+      likelihood: low
+      impact: low
+      mitigation: |
+        Agent ID validation is O(n) where n = agent count. Even 234 agents (max)
+        is trivially fast. E16 validation already scans entire doc.
+    - scenario: run-scout slug collision with existing IMPL doc
+      likelihood: low
+      impact: low
+      mitigation: |
+        User receives clear error when writing to existing path. Manual rename
+        or deletion required (expected behavior for duplicate features).

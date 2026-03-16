@@ -2,8 +2,49 @@ package engine
 
 import (
 	"errors"
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/orchestrator"
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/types"
 )
+
+func init() {
+	// Inject the real IMPL doc parser into the orchestrator package.
+	// This replaces the default no-op that returns an empty IMPLDoc,
+	// allowing orchestrator.New to load the full wave structure.
+	orchestrator.SetParseIMPLDocFunc(loadIMPLDoc)
+}
+
+// loadIMPLDoc wraps protocol.Load and converts protocol.IMPLManifest to types.IMPLDoc.
+func loadIMPLDoc(path string) (*types.IMPLDoc, error) {
+	manifest, err := protocol.Load(path)
+	if err != nil {
+		return nil, err
+	}
+	return manifestToIMPLDoc(manifest), nil
+}
+
+// manifestToIMPLDoc converts protocol.IMPLManifest to types.IMPLDoc.
+func manifestToIMPLDoc(m *protocol.IMPLManifest) *types.IMPLDoc {
+	waves := make([]types.Wave, 0, len(m.Waves))
+	for _, w := range m.Waves {
+		agents := make([]types.AgentSpec, 0, len(w.Agents))
+		for _, a := range w.Agents {
+			agents = append(agents, types.AgentSpec{
+				Letter: a.ID,
+				Prompt: a.Task,
+			})
+		}
+		waves = append(waves, types.Wave{
+			Number: w.Number,
+			Agents: agents,
+		})
+	}
+	return &types.IMPLDoc{
+		FeatureName: m.Title,
+		Status:      m.Verdict,
+		Waves:       waves,
+	}
+}
 
 // Event is emitted during wave execution (mirrors orchestrator.OrchestratorEvent).
 type Event struct {
@@ -27,10 +68,11 @@ type RunScoutOpts struct {
 
 // RunWaveOpts configures a wave execution run.
 type RunWaveOpts struct {
-	IMPLPath  string // absolute path to IMPL doc (required)
-	RepoPath  string // absolute path to the target repository (required)
-	Slug      string // IMPL slug for event routing (required)
-	WaveModel string // optional: default model for wave agents; per-agent model: field overrides this
+	IMPLPath         string // absolute path to IMPL doc (required)
+	RepoPath         string // absolute path to the target repository (required)
+	Slug             string // IMPL slug for event routing (required)
+	WaveModel        string // optional: default model for wave agents; per-agent model: field overrides this
+	IntegrationModel string // optional: model for integration agent (E26); falls back to WaveModel if empty
 }
 
 // RunMergeOpts configures a merge operation.
