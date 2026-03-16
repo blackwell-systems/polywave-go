@@ -378,8 +378,8 @@ func TestIsIntegrationRequired(t *testing.T) {
 		{"BuildBar", "function_call", true},
 		{"RegisterHandler", "function_call", true},
 		{"helperFunc", "function_call", false}, // lowercase, wouldn't be exported anyway
-		{"FooType", "type_usage", true},
-		{"Name", "field_init", false},
+		{"FooType", "type_usage", false},  // no action prefix/suffix
+		{"Name", "field_init", true},      // all field_init requires integration
 	}
 	for _, tt := range tests {
 		got := IsIntegrationRequired(tt.name, tt.category)
