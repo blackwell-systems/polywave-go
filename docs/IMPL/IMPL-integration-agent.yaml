@@ -94,7 +94,7 @@ scaffolds:
           Reason string `json:"reason" yaml:"reason"`
       }
     import_path: "github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
-    status: "pending"
+    status: "committed (ab171ee)"
 
 interface_contracts:
   - name: IntegrationGap
