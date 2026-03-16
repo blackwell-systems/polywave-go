@@ -715,4 +715,23 @@ known_issues:
     status: "By design - follow-up PR"
     workaround: "Agent F provides BuildWaveConstraints as an exported function ready for integration"
 
-completion_reports: {}
+completion_reports:
+  E:
+    status: complete
+    commit: 3e2c9cd
+    branch: wave2-agent-E
+    files_changed:
+      - pkg/agent/backend/backend.go
+      - pkg/agent/backend/bedrock/client.go
+      - pkg/agent/backend/api/client.go
+      - pkg/agent/backend/integration_constraints_test.go
+    files_created:
+      - pkg/agent/backend/integration_constraints_test.go
+    tests_added:
+      - TestBedrockBuildWorkshop_WithConstraints
+      - TestBedrockBuildWorkshop_NilConstraints_Unchanged
+      - TestAPIBuildWorkshop_WithConstraints
+      - TestAPIBuildWorkshop_NilConstraints_Unchanged
+      - TestConfigConstraints_PropagatedToWorkshop
+    verification: PASS
+    notes: "Constraints wired through both Bedrock and API backends. CommitTracker accessible via CommitCount() for I5 post-run check. All 5 new tests + all existing tests pass."
