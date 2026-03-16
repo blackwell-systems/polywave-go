@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"context"
 	"errors"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/orchestrator"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
@@ -12,6 +13,18 @@ func init() {
 	// This replaces the default no-op that returns an empty IMPLDoc,
 	// allowing orchestrator.New to load the full wave structure.
 	orchestrator.SetParseIMPLDocFunc(loadIMPLDoc)
+
+	// Inject the structured wave agent runner into the orchestrator package.
+	// This breaks the circular import (orchestrator → engine → orchestrator)
+	// by using a function-variable seam, analogous to SetParseIMPLDocFunc.
+	orchestrator.SetRunWaveAgentStructuredFunc(func(ctx context.Context, implPath, waveModel string, agentSpec types.AgentSpec, wtPath string, onChunk func(string)) error {
+		opts := RunWaveOpts{
+			IMPLPath:  implPath,
+			WaveModel: waveModel,
+		}
+		_, err := runWaveAgentStructured(ctx, opts, agentSpec, wtPath, onChunk)
+		return err
+	})
 }
 
 // loadIMPLDoc wraps protocol.Load and converts protocol.IMPLManifest to types.IMPLDoc.
@@ -68,11 +81,12 @@ type RunScoutOpts struct {
 
 // RunWaveOpts configures a wave execution run.
 type RunWaveOpts struct {
-	IMPLPath         string // absolute path to IMPL doc (required)
-	RepoPath         string // absolute path to the target repository (required)
-	Slug             string // IMPL slug for event routing (required)
-	WaveModel        string // optional: default model for wave agents; per-agent model: field overrides this
-	IntegrationModel string // optional: model for integration agent (E26); falls back to WaveModel if empty
+	IMPLPath             string // absolute path to IMPL doc (required)
+	RepoPath             string // absolute path to the target repository (required)
+	Slug                 string // IMPL slug for event routing (required)
+	WaveModel            string // optional: default model for wave agents; per-agent model: field overrides this
+	IntegrationModel     string // optional: model for integration agent (E26); falls back to WaveModel if empty
+	UseStructuredOutput  bool   // if true, use structured output for wave agent completion reports
 }
 
 // RunMergeOpts configures a merge operation.
