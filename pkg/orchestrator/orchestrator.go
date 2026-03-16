@@ -303,6 +303,14 @@ var newBackendFunc = func(cfg BackendConfig) (backend.Backend, error) {
 	}
 }
 
+// NewBackendFromModel creates a backend.Backend from a model string that may
+// contain a provider prefix (e.g. "bedrock:claude-sonnet-4-6", "openai:gpt-4o").
+// This is the exported entry point for engine code that needs provider routing
+// without constructing a full BackendConfig.
+func NewBackendFromModel(model string) (backend.Backend, error) {
+	return newBackendFunc(BackendConfig{Model: model})
+}
+
 // newRunnerFunc is a seam for tests: constructs the agent.Runner used by RunWave.
 // Tests can replace this to inject a fake Backend without real API calls.
 var newRunnerFunc = func(b backend.Backend, wm *worktree.Manager) *agent.Runner {

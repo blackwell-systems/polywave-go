@@ -14,7 +14,6 @@ import (
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/agent"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/agent/backend"
 	apiclient "github.com/blackwell-systems/scout-and-wave-go/pkg/agent/backend/api"
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/agent/backend/cli"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/analyzer"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/commands"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/hooks"
@@ -82,7 +81,10 @@ func RunScout(ctx context.Context, opts RunScoutOpts, onChunk func(string)) erro
 	if opts.UseStructuredOutput {
 		_, execErr = runScoutStructured(ctx, opts, prompt, onChunk)
 	} else {
-		b := cli.New("", backend.Config{Model: opts.ScoutModel})
+		b, bErr := orchestrator.NewBackendFromModel(opts.ScoutModel)
+		if bErr != nil {
+			return fmt.Errorf("engine.RunScout: backend init: %w", bErr)
+		}
 		runner := agent.NewRunner(b, nil)
 		spec := &types.AgentSpec{Letter: "scout", Prompt: prompt}
 		_, execErr = runner.ExecuteStreaming(ctx, spec, opts.RepoPath, onChunk)
@@ -341,7 +343,11 @@ func RunScaffold(ctx context.Context, implPath, repoPath, sawRepoPath, model str
 
 	prompt := fmt.Sprintf("%s\n\n## IMPL Doc Path\n%s\n", string(scaffoldMdBytes), implPath)
 
-	b := cli.New("", backend.Config{Model: model})
+	b, err := orchestrator.NewBackendFromModel(model)
+	if err != nil {
+		publish("scaffold_failed", map[string]string{"error": err.Error()})
+		return fmt.Errorf("engine.RunScaffold: backend init: %w", err)
+	}
 	runner := agent.NewRunner(b, nil)
 	spec := &types.AgentSpec{Letter: "scaffold", Prompt: prompt}
 
