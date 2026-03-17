@@ -134,6 +134,17 @@ func FinalizeWave(ctx context.Context, opts FinalizeWaveOpts) (*FinalizeWaveResu
 	result.VerifyBuild = verifyBuildResult
 	result.BuildPassed = verifyBuildResult.TestPassed && verifyBuildResult.LintPassed
 
+	// Step 6: Cleanup — runs after merge regardless of build result.
+	// Once branches are merged, worktrees serve no purpose. Cleaning up here
+	// prevents stale worktrees from accumulating when builds fail.
+	cleanupResult, err := protocol.Cleanup(opts.IMPLPath, opts.WaveNum, opts.RepoPath)
+	if err != nil {
+		// Non-fatal: cleanup failure shouldn't fail the wave
+		fmt.Fprintf(os.Stderr, "engine.FinalizeWave: cleanup: %v\n", err)
+	} else {
+		result.CleanupResult = cleanupResult
+	}
+
 	if !result.BuildPassed {
 		// Auto-diagnose build failure using H7 pattern matching
 		language := inferLanguageFromTestCommand(manifest.TestCommand)
@@ -146,15 +157,6 @@ func FinalizeWave(ctx context.Context, opts FinalizeWaveOpts) (*FinalizeWaveResu
 		}
 		return result, fmt.Errorf("engine.FinalizeWave: verify-build failed (test_passed=%v, lint_passed=%v)",
 			verifyBuildResult.TestPassed, verifyBuildResult.LintPassed)
-	}
-
-	// Step 6: Cleanup
-	cleanupResult, err := protocol.Cleanup(opts.IMPLPath, opts.WaveNum, opts.RepoPath)
-	if err != nil {
-		// Non-fatal: cleanup failure shouldn't fail the wave
-		fmt.Fprintf(os.Stderr, "engine.FinalizeWave: cleanup: %v\n", err)
-	} else {
-		result.CleanupResult = cleanupResult
 	}
 
 	result.Success = true
