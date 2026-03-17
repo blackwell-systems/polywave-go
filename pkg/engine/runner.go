@@ -21,6 +21,7 @@ import (
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/journal"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/orchestrator"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/retryctx"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/suitability"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/types"
 	"gopkg.in/yaml.v3"
@@ -620,6 +621,23 @@ func RunSingleAgent(ctx context.Context, opts RunWaveOpts, waveNum int, agentLet
 	orch.SetEventPublisher(func(ev orchestrator.OrchestratorEvent) {
 		onEvent(Event{Event: ev.Event, Data: ev.Data})
 	})
+
+	// Auto-inject retry context when no explicit promptPrefix is provided
+	// and the agent has a prior non-complete completion report.
+	if promptPrefix == "" {
+		manifest, loadErr := protocol.Load(opts.IMPLPath)
+		if loadErr == nil {
+			if report, ok := manifest.CompletionReports[agentLetter]; ok && report.Status != "complete" {
+				rc, rcErr := retryctx.BuildRetryContext(opts.IMPLPath, agentLetter, 1)
+				if rcErr != nil {
+					fmt.Fprintf(os.Stderr, "engine.RunSingleAgent: retry context (best-effort): %v\n", rcErr)
+				} else if rc != nil && rc.PromptText != "" {
+					promptPrefix = rc.PromptText
+				}
+			}
+		}
+	}
+
 	return orch.RunAgent(waveNum, agentLetter, promptPrefix)
 }
 

@@ -6,7 +6,10 @@ import (
 	"os"
 	"time"
 
+	"path/filepath"
+
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/builddiag"
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/gatecache"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
 )
 
@@ -92,8 +95,10 @@ func FinalizeWave(ctx context.Context, opts FinalizeWaveOpts) (*FinalizeWaveResu
 		}
 	}
 
-	// Step 3: RunGates (E21)
-	gateResults, err := protocol.RunGates(manifest, opts.WaveNum, opts.RepoPath)
+	// Step 3: RunGates (E21) — with caching support
+	stateDir := filepath.Join(opts.RepoPath, ".saw-state")
+	cache := gatecache.New(stateDir, 5*time.Minute)
+	gateResults, err := protocol.RunGatesWithCache(manifest, opts.WaveNum, opts.RepoPath, cache)
 	if err != nil {
 		return result, fmt.Errorf("engine.FinalizeWave: run-gates: %w", err)
 	}
