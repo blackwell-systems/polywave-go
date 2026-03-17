@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/retryctx"
 )
 
 // GenerateRetryIMPL creates a minimal single-wave, single-agent IMPL manifest
@@ -80,11 +81,24 @@ func buildRetryAgentTask(parentSlug string, attempt int, failedFiles []string, g
 		filesSection = "  (no specific files identified — review all changed files)\n"
 	}
 
+	// Classify the error and get fix suggestions
+	errorClass := retryctx.ClassifyError(gateOutput)
+	fixes := retryctx.SuggestFixes(errorClass)
+	fixesSection := ""
+	if len(fixes) > 0 {
+		fixesSection = "\n## Suggested Fixes\n"
+		for _, fix := range fixes {
+			fixesSection += fmt.Sprintf("- %s\n", fix)
+		}
+	}
+
 	return fmt.Sprintf(`Fix compilation/test errors in the files listed below.
 
 ## Context
 This is retry attempt %d for IMPL: %s
 
+## Error Classification: %s
+%s
 ## Failed Quality Gate
 Command: %s
 
@@ -102,6 +116,8 @@ Command: %s
 `,
 		attempt,
 		parentSlug,
+		string(errorClass),
+		fixesSection,
 		gateCommand,
 		gateOutput,
 		filesSection,

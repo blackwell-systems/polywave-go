@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/builddiag"
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/gatecache"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
 	"github.com/spf13/cobra"
 )
@@ -106,9 +107,11 @@ pattern matching (H7) and appends diagnosis to the output.`,
 				result.StubReport = stubResult
 			}
 
-			// Step 3: RunGates (E21 quality gates) - run per repo
+			// Step 3: RunGates (E21 quality gates) with caching - run per repo
 			for repoKey, repoPath := range repos {
-				gateResults, err := protocol.RunGates(manifest, waveNum, repoPath)
+				stateDir := filepath.Join(repoPath, ".saw-state")
+				cache := gatecache.New(stateDir, gatecache.DefaultTTL)
+				gateResults, err := protocol.RunGatesWithCache(manifest, waveNum, repoPath, cache)
 				if err != nil {
 					return fmt.Errorf("finalize-wave: run-gates failed in %s: %w", repoKey, err)
 				}

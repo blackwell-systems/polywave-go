@@ -8,6 +8,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 | Version | Date | Headline |
 |---------|------|----------|
+| [0.57.0] | 2026-03-16 | Batch command integration — gate caching in `finalize-wave`, resume detection in `prepare-wave`, error classification in `retry` agent task |
 | [0.56.0] | 2026-03-16 | Failure recovery UX — gate caching (`pkg/gatecache/`), classified retry context (`pkg/retryctx/`), resume detection (`pkg/resume/`), FixBuildFailure maxTurns 20→50 |
 | [0.55.0] | 2026-03-16 | E27: Wave.Type field + validator support — `type: "integration"` on Wave struct, schema_unknown_keys accepts `type` for wave objects |
 | [0.54.0] | 2026-03-16 | AI-powered build failure fixer — FixBuildFailure engine function uses SDK backend with full tool use (Read/Edit/Bash) to diagnose and fix test/gate failures post-merge, streams progress via OnOutput/OnToolCall callbacks |

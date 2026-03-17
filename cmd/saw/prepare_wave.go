@@ -9,6 +9,7 @@ import (
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/deps"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/journal"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/resume"
 	"github.com/spf13/cobra"
 )
 
@@ -63,7 +64,17 @@ waves that execute on the main branch.`,
 				projectRoot = repoDir
 			}
 
-			// Step 0: Check dependencies before creating worktrees
+			// Step 0a: Resume detection — warn if orphaned worktrees exist
+			if sessions, err := resume.Detect(projectRoot); err == nil {
+				for _, s := range sessions {
+					if len(s.OrphanedWorktrees) > 0 {
+						fmt.Fprintf(os.Stderr, "warning: %d orphaned worktree(s) detected for %s (wave %d). Run 'sawtools cleanup' first or use --force.\n",
+							len(s.OrphanedWorktrees), s.IMPLSlug, s.CurrentWave)
+					}
+				}
+			}
+
+			// Step 0b: Check dependencies before creating worktrees
 			report, err := checkDependencies(manifestPath, waveNum, projectRoot)
 			if err != nil {
 				return fmt.Errorf("failed to check dependencies: %w", err)
