@@ -1,0 +1,480 @@
+completion_date: "2026-03-17"
+title: Structured Error Parsing + Gate Cache
+feature_slug: structured-error-parsing-gate-cache
+verdict: SUITABLE_WITH_CAVEATS
+suitability_assessment: |
+    Gate Cache is ALREADY FULLY IMPLEMENTED in pkg/gatecache/. This IMPL covers
+    only Structured Error Parsing (new pkg/errparse/ package + integration).
+    See detailed analysis in YAML comments above.
+test_command: go test ./...
+lint_command: go vet ./...
+file_ownership:
+    - file: pkg/errparse/go_parsers.go
+      agent: A
+      wave: 1
+      action: new
+    - file: pkg/errparse/go_parsers_test.go
+      agent: A
+      wave: 1
+      action: new
+    - file: pkg/errparse/js_parsers.go
+      agent: B
+      wave: 1
+      action: new
+    - file: pkg/errparse/js_parsers_test.go
+      agent: B
+      wave: 1
+      action: new
+    - file: pkg/errparse/python_parsers.go
+      agent: C
+      wave: 1
+      action: new
+    - file: pkg/errparse/python_parsers_test.go
+      agent: C
+      wave: 1
+      action: new
+    - file: pkg/errparse/registry.go
+      agent: D
+      wave: 1
+      action: new
+    - file: pkg/errparse/registry_test.go
+      agent: D
+      wave: 1
+      action: new
+    - file: pkg/protocol/gates.go
+      agent: E
+      wave: 2
+      action: modify
+    - file: pkg/protocol/gates_test.go
+      agent: E
+      wave: 2
+      action: modify
+interface_contracts:
+    - name: StructuredError
+      description: |
+        Core error type produced by all parsers and consumed by gate runner,
+        retry agents, and CLI output. Defined in scaffold.
+      definition: |
+        type StructuredError struct {
+            File       string `json:"file"`
+            Line       int    `json:"line,omitempty"`
+            Column     int    `json:"column,omitempty"`
+            Severity   string `json:"severity"`
+            Message    string `json:"message"`
+            Rule       string `json:"rule,omitempty"`
+            Suggestion string `json:"suggestion,omitempty"`
+            Tool       string `json:"tool"`
+        }
+      location: pkg/errparse/types.go
+    - name: ParseResult
+      description: |
+        Container for parsed errors from a single tool invocation.
+      definition: |
+        type ParseResult struct {
+            Tool   string            `json:"tool"`
+            Errors []StructuredError `json:"errors"`
+            Raw    string            `json:"raw"`
+        }
+      location: pkg/errparse/types.go
+    - name: Parser
+      description: |
+        Interface that each tool-specific parser implements.
+      definition: |
+        type Parser interface {
+            Name() string
+            Parse(stdout, stderr string) *ParseResult
+        }
+      location: pkg/errparse/types.go
+    - name: ParseOutput
+      description: |
+        Registry function that auto-detects the tool from gate type/command
+        and dispatches to the correct parser.
+      definition: |
+        func ParseOutput(gateType string, command string, stdout string, stderr string) *ParseResult
+      location: pkg/errparse/registry.go
+    - name: GateResult.ParsedErrors
+      description: |
+        New field on the existing GateResult struct to carry structured errors.
+      definition: |
+        // Added to protocol.GateResult:
+        ParsedErrors []errparse.StructuredError `json:"parsed_errors,omitempty"`
+      location: pkg/protocol/gates.go
+waves:
+    - number: 1
+      agents:
+        - id: A
+          task: |
+            ## What to Implement
+            Go toolchain error parsers: go build, go test, go vet, golangci-lint.
+            Each parser implements the `Parser` interface from the scaffold types.go.
+
+            ## Interfaces to Implement
+            Four structs implementing `errparse.Parser`:
+            - `GoBuildParser` — parses `file.go:line:col: message` format
+            - `GoTestParser` — parses `--- FAIL: TestName` + `file_test.go:line:` patterns
+            - `GoVetParser` — parses `file.go:line:col: message` (same as build but tool="go-vet")
+            - `GolangciLintParser` — parses `file.go:line:col: message (linter-name)` format
+
+            ## Interfaces to Call
+            - `errparse.StructuredError` (from scaffold types.go)
+            - `errparse.ParseResult` (from scaffold types.go)
+            - `errparse.Parser` (from scaffold types.go)
+
+            ## Tests to Write
+            1. TestGoBuildParser_SingleError - parse single compile error
+            2. TestGoBuildParser_MultipleErrors - parse multiple errors from one build
+            3. TestGoBuildParser_NoErrors - empty output returns empty ParseResult
+            4. TestGoTestParser_FailingTests - parse FAIL lines with file/line references
+            5. TestGoTestParser_Panic - parse panic stack traces
+            6. TestGoVetParser_Warnings - parse vet warnings
+            7. TestGolangciLintParser_WithRules - parse errors with linter rule names
+            8. TestGolangciLintParser_Suggestions - extract auto-fix suggestions
+
+            ## Verification Gate
+            ```bash
+            go build ./pkg/errparse/...
+            go vet ./pkg/errparse/...
+            go test ./pkg/errparse/ -run TestGo -v
+            ```
+
+            ## Constraints
+            - Go build/vet output format: `file.go:line:col: message` or `file.go:line: message`
+            - Go test output: `--- FAIL: TestName (0.00s)` then indented file refs
+            - golangci-lint: `file.go:line:col: message (linter-name)` — extract rule from parens
+            - Use regexp for parsing; do not shell out to any tools
+            - Set Tool field to "go-build", "go-test", "go-vet", "golangci-lint" respectively
+            - Handle edge cases: no column number, multi-line errors, ANSI color codes (strip them)
+          files:
+            - pkg/errparse/go_parsers.go
+            - pkg/errparse/go_parsers_test.go
+        - id: B
+          task: |
+            ## What to Implement
+            JavaScript/TypeScript toolchain error parsers: tsc, eslint, npm test (Jest/Vitest output).
+            Each parser implements the `Parser` interface from the scaffold types.go.
+
+            ## Interfaces to Implement
+            Three structs implementing `errparse.Parser`:
+            - `TscParser` — parses `file.ts(line,col): error TSxxxx: message` format
+            - `EslintParser` — parses `file.ts:line:col: message [rule-name]` or JSON format
+            - `NpmTestParser` — parses Jest/Vitest FAIL output with file references
+
+            ## Interfaces to Call
+            - `errparse.StructuredError` (from scaffold types.go)
+            - `errparse.ParseResult` (from scaffold types.go)
+            - `errparse.Parser` (from scaffold types.go)
+
+            ## Tests to Write
+            1. TestTscParser_TypeError - parse TypeScript type error
+            2. TestTscParser_MultipleErrors - multiple TS errors in one output
+            3. TestEslintParser_WithRules - parse eslint output with rule names
+            4. TestEslintParser_Suggestions - extract --fix suggestions
+            5. TestNpmTestParser_JestFail - parse Jest failure output
+            6. TestNpmTestParser_VitestFail - parse Vitest failure output
+            7. TestTscParser_NoErrors - clean output returns empty result
+
+            ## Verification Gate
+            ```bash
+            go build ./pkg/errparse/...
+            go vet ./pkg/errparse/...
+            go test ./pkg/errparse/ -run "TestTsc|TestEslint|TestNpmTest" -v
+            ```
+
+            ## Constraints
+            - tsc format: `src/file.ts(10,5): error TS2322: Type 'X' is not assignable to type 'Y'`
+            - eslint format: `src/file.ts:10:5: 'x' is not defined [no-undef]`
+            - Jest format: `FAIL src/file.test.ts` then ` ● Test Suite > test name` then file refs
+            - Set Tool field to "tsc", "eslint", "npm-test" respectively
+            - Strip ANSI color codes before parsing
+            - Handle both stdout and stderr (tsc writes to stdout, eslint to either)
+          files:
+            - pkg/errparse/js_parsers.go
+            - pkg/errparse/js_parsers_test.go
+        - id: C
+          task: |
+            ## What to Implement
+            Python toolchain error parsers: pytest, mypy, ruff.
+            Each parser implements the `Parser` interface from the scaffold types.go.
+
+            ## Interfaces to Implement
+            Three structs implementing `errparse.Parser`:
+            - `PytestParser` — parses `FAILED file.py::TestClass::test_name` + traceback refs
+            - `MypyParser` — parses `file.py:line: error: message [error-code]` format
+            - `RuffParser` — parses `file.py:line:col: E501 message` format
+
+            ## Interfaces to Call
+            - `errparse.StructuredError` (from scaffold types.go)
+            - `errparse.ParseResult` (from scaffold types.go)
+            - `errparse.Parser` (from scaffold types.go)
+
+            ## Tests to Write
+            1. TestPytestParser_FailedTest - parse FAILED line with traceback
+            2. TestPytestParser_CollectionError - parse collection errors
+            3. TestMypyParser_TypeError - parse mypy type error with error code
+            4. TestMypyParser_MultipleErrors - multiple mypy errors
+            5. TestRuffParser_LintError - parse ruff lint error with code
+            6. TestRuffParser_Suggestions - extract fix suggestions from ruff
+            7. TestPytestParser_NoFailures - clean run returns empty result
+
+            ## Verification Gate
+            ```bash
+            go build ./pkg/errparse/...
+            go vet ./pkg/errparse/...
+            go test ./pkg/errparse/ -run "TestPytest|TestMypy|TestRuff" -v
+            ```
+
+            ## Constraints
+            - pytest format: `FAILED tests/test_foo.py::test_bar - AssertionError: ...`
+            - mypy format: `src/foo.py:42: error: Incompatible types [assignment]`
+            - ruff format: `src/foo.py:10:1: E501 Line too long (120 > 88 characters)`
+            - Set Tool field to "pytest", "mypy", "ruff" respectively
+            - Extract rule codes: mypy [error-code], ruff Exxx/Wxxx
+            - Handle traceback parsing for pytest: extract the deepest file reference
+          files:
+            - pkg/errparse/python_parsers.go
+            - pkg/errparse/python_parsers_test.go
+        - id: D
+          task: |
+            ## What to Implement
+            Parser registry and auto-detection. The registry maps gate types and
+            commands to the correct parser, and provides the main `ParseOutput`
+            entry point.
+
+            ## Interfaces to Implement
+            ```go
+            // Register adds a parser to the registry.
+            func Register(parser Parser)
+
+            // ParseOutput auto-detects the tool from gate type/command
+            // and dispatches to the correct parser.
+            func ParseOutput(gateType string, command string, stdout string, stderr string) *ParseResult
+
+            // GetParser returns the parser for a tool name, or nil.
+            func GetParser(toolName string) Parser
+
+            // DetectTool returns the tool name from a gate type + command string.
+            func DetectTool(gateType string, command string) string
+            ```
+
+            ## Interfaces to Call
+            - `errparse.Parser` interface (from scaffold types.go)
+            - `errparse.ParseResult` (from scaffold types.go)
+
+            ## Tests to Write
+            1. TestDetectTool_GoBuild - "go build ./..." -> "go-build"
+            2. TestDetectTool_GoTest - "go test ./..." -> "go-test"
+            3. TestDetectTool_Tsc - "tsc --noEmit" -> "tsc"
+            4. TestDetectTool_Eslint - "eslint ." -> "eslint"
+            5. TestDetectTool_Pytest - "pytest" -> "pytest"
+            6. TestDetectTool_Mypy - "mypy ." -> "mypy"
+            7. TestDetectTool_Ruff - "ruff check ." -> "ruff"
+            8. TestDetectTool_GolangciLint - "golangci-lint run" -> "golangci-lint"
+            9. TestDetectTool_Unknown - "unknown-tool" -> ""
+            10. TestParseOutput_Dispatches - verify dispatch to correct parser
+            11. TestParseOutput_UnknownTool - returns nil for unknown tools
+            12. TestRegister_CustomParser - register and retrieve custom parser
+
+            ## Verification Gate
+            ```bash
+            go build ./pkg/errparse/...
+            go vet ./pkg/errparse/...
+            go test ./pkg/errparse/ -run "TestDetect|TestParseOutput|TestRegister" -v
+            ```
+
+            ## Constraints
+            - Detection heuristics: check command string for tool names
+              - "go build" -> "go-build", "go test" -> "go-test", "go vet" -> "go-vet"
+              - "golangci-lint" -> "golangci-lint"
+              - "tsc" -> "tsc", "eslint" -> "eslint"
+              - "npm test" or "npx jest" or "npx vitest" -> "npm-test"
+              - "pytest" -> "pytest", "mypy" -> "mypy", "ruff" -> "ruff"
+            - Also use gateType as hint: gateType "build" + "go" in command -> "go-build"
+            - init() function in go_parsers.go, js_parsers.go, python_parsers.go
+              should call Register() to self-register parsers
+            - ParseOutput returns nil (not empty ParseResult) for unknown tools
+            - The registry is a package-level map, not a struct (simple global registry)
+            - Do NOT import go_parsers.go, js_parsers.go, python_parsers.go — they
+              self-register via init(). The registry only depends on types.go.
+          files:
+            - pkg/errparse/registry.go
+            - pkg/errparse/registry_test.go
+    - number: 2
+      agents:
+        - id: E
+          task: |
+            ## What to Implement
+            Integrate structured error parsing into the gate runner. After each gate
+            command executes, parse its output into structured errors and attach them
+            to the GateResult.
+
+            ## Interfaces to Implement
+            Add to existing `protocol.GateResult`:
+            ```go
+            ParsedErrors []errparse.StructuredError `json:"parsed_errors,omitempty"`
+            ```
+
+            ## Interfaces to Call
+            - `errparse.ParseOutput(gateType, command, stdout, stderr)` from pkg/errparse/registry.go
+            - `errparse.StructuredError` from pkg/errparse/types.go
+            - Existing `protocol.RunGates` and `protocol.RunGatesWithCache` in gates.go
+
+            ## Changes Required
+            1. Add `import "github.com/blackwell-systems/scout-and-wave-go/pkg/errparse"` to gates.go
+            2. Add `ParsedErrors` field to `GateResult` struct (BUT GateResult is in types.go,
+               which is NOT in your file ownership). Instead, use a separate approach:
+               - The GateResult struct is in types.go. You will need to add the ParsedErrors
+                 field there. Since you own gates.go and gates_test.go, and the GateResult
+                 struct definition is in gates.go (line 14-23), you CAN add the field there.
+            3. In `RunGates`, after capturing stdout/stderr, call `errparse.ParseOutput`
+               and set `result.ParsedErrors` from the returned ParseResult.Errors
+            4. In `RunGatesWithCache`, do the same for cache-miss path. For cache hits,
+               the ParsedErrors should already be in the cached result (update CachedResult
+               in gatecache if needed — but that's outside your scope; just handle the
+               gates.go side).
+            5. Update tests to verify ParsedErrors field is populated on failure.
+
+            ## Tests to Write
+            1. TestRunGates_ParsedErrors_Build - failing build gate populates ParsedErrors
+            2. TestRunGates_ParsedErrors_Passing - passing gate has empty ParsedErrors
+            3. TestRunGatesWithCache_ParsedErrors - cache-miss path populates ParsedErrors
+            4. TestGateResult_JSONWithParsedErrors - verify JSON marshaling includes parsed_errors
+
+            ## Verification Gate
+            ```bash
+            go build ./pkg/protocol/...
+            go vet ./pkg/protocol/...
+            go test ./pkg/protocol/ -run "TestRunGates" -v
+            ```
+
+            ## Constraints
+            - GateResult is defined in gates.go (this file), not types.go
+            - The import of errparse creates a new dependency: protocol -> errparse
+              This is acceptable since errparse has no dependencies on protocol (no cycle)
+            - ParseOutput may return nil if tool is unknown — handle gracefully (leave
+              ParsedErrors empty/nil)
+            - Do NOT modify types.go — all GateResult changes are in gates.go
+            - Do NOT modify gatecache/cache.go — gate cache already works; structured
+              errors in cache can be a follow-up
+            - For RunGatesWithCache cache-hit path: ParsedErrors will be empty for
+              cached results (acceptable; cache stores raw output, not parsed errors)
+          files:
+            - pkg/protocol/gates.go
+            - pkg/protocol/gates_test.go
+          dependencies:
+            - A
+            - B
+            - C
+            - D
+quality_gates:
+    level: standard
+    gates:
+        - type: build
+          command: go build ./...
+          required: true
+        - type: test
+          command: go test ./...
+          required: true
+        - type: lint
+          command: go vet ./...
+          required: false
+          description: Check for common Go mistakes
+scaffolds:
+    - file_path: pkg/errparse/types.go
+      contents: |
+        package errparse
+
+        // StructuredError represents a single parsed error from compiler/linter/test output.
+        type StructuredError struct {
+            File       string `json:"file"`
+            Line       int    `json:"line,omitempty"`
+            Column     int    `json:"column,omitempty"`
+            Severity   string `json:"severity"`   // "error" | "warning" | "info"
+            Message    string `json:"message"`
+            Rule       string `json:"rule,omitempty"`       // linter rule name if applicable
+            Suggestion string `json:"suggestion,omitempty"` // auto-fix suggestion if available
+            Tool       string `json:"tool"`                 // which tool produced this error
+        }
+
+        // ParseResult holds the output of parsing a tool's stdout/stderr.
+        type ParseResult struct {
+            Tool   string            `json:"tool"`
+            Errors []StructuredError `json:"errors"`
+            Raw    string            `json:"raw"` // original output preserved
+        }
+
+        // Parser is the interface that tool-specific parsers implement.
+        type Parser interface {
+            // Name returns the tool identifier (e.g., "go-build", "eslint").
+            Name() string
+            // Parse extracts structured errors from raw tool output.
+            Parse(stdout, stderr string) *ParseResult
+        }
+      import_path: github.com/blackwell-systems/scout-and-wave-go/pkg/errparse
+      status: committed (2774c1e7de1365d775556a23852d489b61422c1d)
+completion_reports:
+    A:
+        status: complete
+        worktree: /Users/dayna.blackwell/code/scout-and-wave-go/.claude/worktrees/wave1-agent-A
+        branch: wave1-agent-A
+        commit: bf7ec7bf377bacd7d6a257334042df9edca42ea8
+        notes: no changes produced (API agent)
+    B:
+        status: complete
+        worktree: /Users/dayna.blackwell/code/scout-and-wave-go/.claude/worktrees/wave1-agent-B
+        branch: wave1-agent-B
+        commit: 998d6ed6d5a2b0d21fe0f3925638501662b5f420
+        notes: no changes produced (API agent)
+    C:
+        status: complete
+        worktree: /Users/dayna.blackwell/code/scout-and-wave-go/.claude/worktrees/wave1-agent-C
+        branch: wave1-agent-C
+        commit: 97c472e5ade216e8f0d2061de246e685d5c0ca02
+        notes: no changes produced (API agent)
+    D:
+        status: complete
+        worktree: /Users/dayna.blackwell/code/scout-and-wave-go/.claude/worktrees/wave1-agent-D
+        branch: wave1-agent-D
+        commit: bcdd98e7b0b0d4a0b22a160620051a57cab324e6
+        notes: no changes produced (API agent)
+    E:
+        status: complete
+        worktree: /Users/dayna.blackwell/code/scout-and-wave-go/.claude/worktrees/wave2-agent-E
+        branch: wave2-agent-E
+        commit: f7f70d16cd294cc18083753dbc41b818bad2a698
+        notes: no changes produced (API agent)
+integration_reports:
+    wave1:
+        wave: 1
+        gaps: []
+        valid: true
+        summary: 'Wave 1: all exports are integrated (no gaps detected)'
+    wave2:
+        wave: 2
+        gaps: []
+        valid: true
+        summary: 'Wave 2: all exports are integrated (no gaps detected)'
+pre_mortem:
+    overall_risk: low
+    rows:
+        - scenario: Parser regex patterns fail on edge-case tool output formats
+          likelihood: medium
+          impact: low
+          mitigation: ParsedErrors is omitempty — if parsing fails, raw output is still available. Parsers degrade gracefully to empty results, never panic.
+        - scenario: init() registration order causes test flakiness
+          likelihood: low
+          impact: low
+          mitigation: Go init() is deterministic within a package. Registry uses map keyed by tool name — order doesn't matter.
+        - scenario: 'Import cycle: protocol -> errparse -> protocol'
+          likelihood: low
+          impact: high
+          mitigation: errparse has zero dependencies on protocol. Types.go scaffold has no imports. Verified no circular path exists.
+known_issues:
+    - title: Gate cache feature already implemented
+      description: |
+        The feature request included Gate Cache as a deliverable, but pkg/gatecache/
+        already exists with full implementation: CacheKey by tree hash, TTL expiry,
+        file-backed persistence, RunGatesWithCache integration, --no-cache CLI flag.
+        This IMPL covers only the Structured Error Parsing portion.
+      status: Pre-existing, no work needed
+      workaround: Gate cache works as-is. No changes required.
+state: WAVE_PENDING
