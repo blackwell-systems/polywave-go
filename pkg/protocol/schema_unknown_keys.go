@@ -44,6 +44,7 @@ var knownKeys = map[string]map[string]bool{
 	},
 	"wave": {
 		"number":             true,
+		"type":               true,
 		"agents":             true,
 		"agent_launch_order": true,
 		"base_commit":        true,

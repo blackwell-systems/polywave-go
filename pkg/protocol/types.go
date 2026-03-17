@@ -56,6 +56,7 @@ type FileOwnership struct {
 // Agents in the same wave run in parallel; waves execute sequentially.
 type Wave struct {
 	Number           int      `yaml:"number" json:"number"`
+	Type             string   `yaml:"type,omitempty" json:"type,omitempty"` // "standard" (default) | "integration" (E27: wiring-only, no worktree)
 	Agents           []Agent  `yaml:"agents" json:"agents"`
 	AgentLaunchOrder []string `yaml:"agent_launch_order,omitempty" json:"agent_launch_order,omitempty"`
 	BaseCommit       string   `yaml:"base_commit,omitempty" json:"base_commit,omitempty"` // Recorded when worktrees created for post-merge verification

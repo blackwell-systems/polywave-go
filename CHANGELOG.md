@@ -8,6 +8,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 | Version | Date | Headline |
 |---------|------|----------|
+| [0.55.0] | 2026-03-16 | E27: Wave.Type field + validator support — `type: "integration"` on Wave struct, schema_unknown_keys accepts `type` for wave objects |
 | [0.54.0] | 2026-03-16 | AI-powered build failure fixer — FixBuildFailure engine function uses SDK backend with full tool use (Read/Edit/Bash) to diagnose and fix test/gate failures post-merge, streams progress via OnOutput/OnToolCall callbacks |
 | [0.53.0] | 2026-03-16 | Streaming conflict resolution — RunStreaming replaces blocking Run in resolve_conflicts, enables real-time SSE output during AI merge conflict resolution |
 | [0.52.0] | 2026-03-16 | go.mod replace path enforcement — pre-commit hook blocks deep relative paths, post-merge auto-fixup in FinalizeWave |
