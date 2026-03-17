@@ -8,6 +8,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 | Version | Date | Headline |
 |---------|------|----------|
+| [0.53.0] | 2026-03-16 | Streaming conflict resolution — RunStreaming replaces blocking Run in resolve_conflicts, enables real-time SSE output during AI merge conflict resolution |
 | [0.52.0] | 2026-03-16 | go.mod replace path enforcement — pre-commit hook blocks deep relative paths, post-merge auto-fixup in FinalizeWave |
 | [0.51.0] | 2026-03-16 | Stale branch auto-cleanup + worktree lifecycle fixes — BranchExists/IsAncestor cleanup in CreateWorktrees, cleanup runs after merge regardless of build result, mark-complete in early-return path |
 | [0.50.0] | 2026-03-16 | Worktree reuse + timeout failure type — rerun agents reuse existing worktrees, maxTurns emits failure_type "timeout" |
@@ -59,6 +60,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 | [0.4.0] | 2026-03-09 | Per-agent model routing — ScoutModel/WaveModel opts, `model:` field in IMPL doc agent sections, per-agent backend dispatch |
 | [0.3.0] | 2026-03-08 | Protocol audit fixes — P0: failure_type parsing, multi-gen agent IDs; P1: E22 2-pass scaffold build, cross-repo Repo column; P2: repo field in completion reports |
 | [0.2.0] | 2026-03-08 | Engine protocol parity — E17–E23 implemented (context memory, failure routing, stub scan, quality gates, scaffold build verify, per-agent context extraction) |
+
+---
+
+## [0.53.0] - 2026-03-16
+
+### Changed
+
+- **Streaming conflict resolution** — `resolve_conflicts.go` switched from blocking `b.Run()` to `b.RunStreaming()` with an `OnOutput` chunk callback. AI conflict resolution now streams model output in real-time via SSE instead of returning a single response after completion.
+- **`ResolveConflictsOpts.OnOutput`** — New `func(chunk string)` callback field in `engine.go` for streaming text chunks during conflict resolution.
 
 ---
 
