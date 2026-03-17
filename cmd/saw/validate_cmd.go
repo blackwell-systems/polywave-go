@@ -57,6 +57,23 @@ func newValidateCmd() *cobra.Command {
 						return fmt.Errorf("validate --fix: failed to write corrections: %w", err)
 					}
 				}
+
+				// Strip unknown top-level keys from the raw YAML.
+				rawFix, readFixErr := os.ReadFile(manifestPath)
+				if readFixErr == nil {
+					cleaned, stripped, stripErr := protocol.StripUnknownKeys(rawFix)
+					if stripErr == nil && len(stripped) > 0 {
+						if writeErr := os.WriteFile(manifestPath, cleaned, 0644); writeErr != nil {
+							return fmt.Errorf("validate --fix: failed to write stripped YAML: %w", writeErr)
+						}
+						totalFixed += len(stripped)
+						// Re-load manifest after stripping keys.
+						m, err = protocol.Load(manifestPath)
+						if err != nil {
+							return fmt.Errorf("validate --fix: reload after strip: %w", err)
+						}
+					}
+				}
 			}
 
 			var errs []validateError
@@ -125,6 +142,6 @@ func newValidateCmd() *cobra.Command {
 		},
 	}
 	cmd.Flags().BoolVar(&useSolver, "solver", false, "use CSP solver for wave assignment validation")
-	cmd.Flags().BoolVar(&autoFix, "fix", false, "auto-correct fixable issues (e.g. invalid gate types → custom)")
+	cmd.Flags().BoolVar(&autoFix, "fix", false, "auto-correct fixable issues (e.g. invalid gate types -> custom, unknown keys -> stripped)")
 	return cmd
 }
