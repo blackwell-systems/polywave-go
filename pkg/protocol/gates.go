@@ -6,20 +6,22 @@ import (
 	"os/exec"
 	"path/filepath"
 
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/errparse"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/gatecache"
 )
 
 // GateResult represents the outcome of executing a single quality gate.
 // It captures all execution details including stdout/stderr and pass/fail status.
 type GateResult struct {
-	Type      string `json:"type"`
-	Command   string `json:"command"`
-	ExitCode  int    `json:"exit_code"`
-	Stdout    string `json:"stdout"`
-	Stderr    string `json:"stderr"`
-	Required  bool   `json:"required"`
-	Passed    bool   `json:"passed"`
-	FromCache bool   `json:"from_cache,omitempty"`
+	Type         string                   `json:"type"`
+	Command      string                   `json:"command"`
+	ExitCode     int                      `json:"exit_code"`
+	Stdout       string                   `json:"stdout"`
+	Stderr       string                   `json:"stderr"`
+	Required     bool                     `json:"required"`
+	Passed       bool                     `json:"passed"`
+	FromCache    bool                     `json:"from_cache,omitempty"`
+	ParsedErrors []errparse.StructuredError `json:"parsed_errors,omitempty"`
 }
 
 // RunGates executes quality gates for a specific wave from the manifest.
@@ -83,6 +85,11 @@ func RunGates(manifest *IMPLManifest, waveNumber int, repoDir string) ([]GateRes
 		} else {
 			result.ExitCode = 0
 			result.Passed = true
+		}
+
+		// Parse structured errors from output
+		if pr := errparse.ParseOutput(gate.Type, gate.Command, result.Stdout, result.Stderr); pr != nil {
+			result.ParsedErrors = pr.Errors
 		}
 
 		results = append(results, result)
@@ -168,6 +175,11 @@ func RunGatesWithCache(manifest *IMPLManifest, waveNumber int, repoDir string, c
 		} else {
 			result.ExitCode = 0
 			result.Passed = true
+		}
+
+		// Parse structured errors from output
+		if pr := errparse.ParseOutput(gate.Type, gate.Command, result.Stdout, result.Stderr); pr != nil {
+			result.ParsedErrors = pr.Errors
 		}
 
 		// Store in cache (ignore errors — cache is best-effort)

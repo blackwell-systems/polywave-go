@@ -7,13 +7,6 @@ import (
 	"strings"
 )
 
-// ansiEscape matches ANSI color/escape sequences so we can strip them before parsing.
-var ansiEscape = regexp.MustCompile(`\x1b\[[0-9;]*[a-zA-Z]`)
-
-func stripANSI(s string) string {
-	return ansiEscape.ReplaceAllString(s, "")
-}
-
 // ---------------------------------------------------------------------------
 // TscParser – parses TypeScript compiler output.
 // Format: src/file.ts(10,5): error TS2322: Type 'X' is not assignable to type 'Y'
