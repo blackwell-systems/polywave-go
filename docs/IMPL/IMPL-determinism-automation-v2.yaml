@@ -1,847 +1,799 @@
-# IMPL: determinism-automation-v2
-# Five determinism and automation improvements for scout-and-wave-go SDK
-title: "Determinism & Automation Improvements v2"
-feature_slug: "determinism-automation-v2"
-verdict: "SUITABLE"
-test_command: "go test ./..."
-lint_command: "go vet ./..."
-state: "SCOUT_PENDING"
-
-# Suitability Assessment
-# ----------------------
-# Verdict: SUITABLE
-#
-# 1. File decomposition: YES — 5 feature areas map to distinct packages:
-#    - Wave structured output: pkg/engine/runner_wave_structured.go, pkg/orchestrator/orchestrator.go (modify)
-#    - E24 verification loop: new pkg/retry/ package
-#    - JSON Schema validation: new pkg/protocol/jsonschema_validator.go (replaces parser.go logic)
-#    - Declarative workflow: new pkg/pipeline/ package
-#    - Typed error codes: pkg/protocol/error_codes.go, pkg/protocol/validation.go (modify)
-#    All 5 features touch disjoint file sets with clear boundaries.
-#
-# 2. Investigation-first: NO — All items are well-defined feature additions
-#    with clear specifications. No unknown root causes or reproduction needed.
-#
-# 3. Interface discoverability: YES — Each feature has discoverable interfaces:
-#    - Structured output: existing GenerateCompletionReportSchema() + WithOutputConfig()
-#    - E24: new RetryLoop type with GenerateRetryIMPL() + RunRetry()
-#    - JSON Schema: new ValidateManifestJSON() replacing text-based validation
-#    - Pipeline: new Pipeline type with Step registry
-#    - Error codes: new ErrorCode type replacing string messages
-#
-# 4. Pre-implementation status check:
-#    Total items: 5 features
-#    Already implemented (DONE): 0
-#    Partially implemented (PARTIAL): 2 (structured output for Scout exists,
-#      schema validation exists but is hand-coded not JSON Schema)
-#    Not implemented (TO-DO): 3 (E24 retry, pipeline engine, typed errors)
-#
-#    Agent adjustments:
-#    - Agent A (structured output): extend existing Scout pattern to Wave agents
-#    - Agent C (JSON Schema): replace existing hand-coded validation
-#    - Agents B, D, E: implement from scratch
-#
-# 5. Parallelization value: HIGH
-#    - Build/test cycle: go build + go test takes ~45s on this 242K LOC codebase
-#    - Files per agent: avg 3-4 files each (new pkg + tests + CLI command)
-#    - Agent independence: 4 of 5 features can run in Wave 1 (independent)
-#    - Task complexity: each feature involves non-trivial logic + tests
-#
-# Estimated times:
-# - Scout phase: ~8 min (dependency mapping, interface contracts)
-# - Agent execution: ~20 min (5 agents, ~15 min avg, 4 parallel in wave 1)
-# - Merge & verification: ~5 min
-# Total SAW time: ~33 min
-#
-# Sequential baseline: ~75 min (5 features x 15 min avg)
-# Time savings: ~42 min (~56% faster)
-# Recommendation: Clear speedup. Proceed.
-
+title: Determinism & Automation Improvements v2
+feature_slug: determinism-automation-v2
+verdict: SUITABLE
 suitability_assessment: |
-  5 feature areas with disjoint file ownership across new packages. 4 of 5 features
-  are fully independent (Wave 1 parallel). Feature 4 (pipeline engine) depends on
-  understanding the current StartWave flow but does not share files with other features.
-  Structured output for Scout already exists (v0.17.0) — extending to Wave agents
-  follows the same pattern. JSON Schema validation replaces hand-coded validation
-  but the new code lives in new files alongside existing code until migration is
-  verified. High parallelization value due to 45s build cycle and independent packages.
+    5 feature areas with disjoint file ownership across new packages. 4 of 5 features
+    are fully independent (Wave 1 parallel). Feature 4 (pipeline engine) depends on
+    understanding the current StartWave flow but does not share files with other features.
+    Structured output for Scout already exists (v0.17.0) — extending to Wave agents
+    follows the same pattern. JSON Schema validation replaces hand-coded validation
+    but the new code lives in new files alongside existing code until migration is
+    verified. High parallelization value due to 45s build cycle and independent packages.
 
-  Post-wave integration wiring (orchestrator/integration agent responsibility):
-  - pkg/engine/runner.go: wire runWaveAgentStructured into StartWave when UseStructuredOutput is set
-  - pkg/orchestrator/orchestrator.go: add UseStructuredOutput option to RunWave dispatch
-  - pkg/protocol/validation.go: optionally wire ValidateManifestJSON into Validate() chain
-  - cmd/saw/root.go: register retry command
-
-quality_gates:
-  level: "standard"
-  gates:
-    - type: "build"
-      command: "go build ./..."
-      required: true
-    - type: "test"
-      command: "go test ./..."
-      required: true
-    - type: "lint"
-      command: "go vet ./..."
-      required: false
-      description: "Check for common Go mistakes"
-
-scaffolds:
-  - file_path: "pkg/retry/types.go"
-    contents: |
-      package retry
-
-      // RetryConfig configures the E24 verification loop behavior.
-      type RetryConfig struct {
-        MaxRetries int    // Maximum retry attempts (default: 2, 3rd failure -> blocked)
-        IMPLPath   string // Path to the parent IMPL manifest
-        RepoPath   string // Repository root path
-      }
-
-      // RetryResult captures the outcome of a retry attempt.
-      type RetryResult struct {
-        Attempt     int      `json:"attempt"`
-        AgentID     string   `json:"agent_id"`
-        GatePassed  bool     `json:"gate_passed"`
-        GateOutput  string   `json:"gate_output"`
-        RetryIMPL   string   `json:"retry_impl,omitempty"`
-        FinalState  string   `json:"final_state"` // "passed" | "retrying" | "blocked"
-      }
-    import_path: "github.com/blackwell-systems/scout-and-wave-go/pkg/retry"
-    status: "committed (0b4d77b)"
-  - file_path: "pkg/pipeline/types.go"
-    contents: |
-      package pipeline
-
-      import "context"
-
-      // StepFunc is a single pipeline step. It receives the pipeline context
-      // and returns an error. Steps are executed in sequence within a stage;
-      // stages may run in parallel.
-      type StepFunc func(ctx context.Context, state *State) error
-
-      // ErrorStrategy defines how the pipeline handles a step failure.
-      type ErrorStrategy string
-
-      const (
-        ErrorFail     ErrorStrategy = "fail"     // Abort pipeline immediately
-        ErrorContinue ErrorStrategy = "continue" // Log error, continue to next step
-        ErrorRetry    ErrorStrategy = "retry"    // Retry step up to MaxRetries times
-      )
-
-      // Step is a named, executable unit in a pipeline.
-      type Step struct {
-        Name          string        `yaml:"name"`
-        Func          StepFunc      `yaml:"-"`
-        ErrorStrategy ErrorStrategy `yaml:"on_error"`
-        MaxRetries    int           `yaml:"max_retries,omitempty"`
-        Condition     string        `yaml:"condition,omitempty"` // "always" | "on_success" | "on_failure"
-      }
-
-      // State carries mutable data through the pipeline.
-      type State struct {
-        RepoPath     string
-        IMPLPath     string
-        WaveNum      int
-        Values       map[string]interface{}
-        Errors       []error
-      }
-    import_path: "github.com/blackwell-systems/scout-and-wave-go/pkg/pipeline"
-    status: "committed (56716a9)"
-
-interface_contracts:
-  - name: "RunWaveStructured"
-    description: |
-      Extends the orchestrator's launchAgent to use structured output for
-      wave agent completion reports via the existing WithOutputConfig pattern.
-      When the backend supports structured output (API/Bedrock), the completion
-      report is parsed directly from the JSON response instead of being
-      synthesized by the orchestrator.
-    definition: |
-      // In pkg/engine/runner_wave_structured.go:
-      func runWaveAgentStructured(ctx context.Context, opts RunWaveOpts, agentSpec types.AgentSpec, wtPath string, onChunk func(string)) (*protocol.CompletionReport, error)
-
-      // In pkg/orchestrator/structured_wave.go:
-      func (o *Orchestrator) launchAgentStructured(ctx context.Context, runner *agent.Runner, wm *worktree.Manager, waveNum int, agentSpec types.AgentSpec) error
-    location: "pkg/engine/runner_wave_structured.go"
-
-  - name: "RetryLoop"
-    description: |
-      E24 verification loop: when a quality gate fails after wave merge,
-      generates a single-agent retry IMPL doc targeting the failed files
-      and re-runs up to MaxRetries times before transitioning to blocked state.
-    definition: |
-      // In pkg/retry/loop.go:
-      func NewRetryLoop(cfg RetryConfig) *RetryLoop
-      func (rl *RetryLoop) Run(ctx context.Context, failedGate orchestrator.QualityGateResult, failedFiles []string, onEvent func(engine.Event)) (*RetryResult, error)
-      func (rl *RetryLoop) GenerateRetryIMPL(failedFiles []string, gateOutput string) (*protocol.IMPLManifest, error)
-    location: "pkg/retry/loop.go"
-
-  - name: "ValidateManifestJSON"
-    description: |
-      JSON Schema based validation that generates a schema from the
-      IMPLManifest struct via invopop/jsonschema and validates YAML-decoded
-      manifests against it. Replaces hand-coded field/enum/path checks
-      currently in schema_validation.go, schema_enum_validation.go,
-      schema_cross_field.go, and schema_unknown_keys.go.
-    definition: |
-      // In pkg/protocol/jsonschema_validator.go:
-      func GenerateManifestSchema() (map[string]any, error)
-      func ValidateManifestJSON(m *IMPLManifest) []ValidationError
-    location: "pkg/protocol/jsonschema_validator.go"
-
-  - name: "Pipeline"
-    description: |
-      Declarative workflow engine that replaces the imperative StartWave()
-      orchestration. Defines waves as a sequence of named steps with
-      configurable error handling. The engine package builds the pipeline
-      from an IMPL manifest and executes it.
-    definition: |
-      // In pkg/pipeline/pipeline.go:
-      func New(name string) *Pipeline
-      func (p *Pipeline) AddStep(step Step) *Pipeline
-      func (p *Pipeline) Run(ctx context.Context, state *State) error
-
-      // In pkg/pipeline/registry.go:
-      func NewRegistry() *Registry
-      func (r *Registry) Register(name string, fn StepFunc)
-      func (r *Registry) Get(name string) (StepFunc, bool)
-      func DefaultRegistry() *Registry  // pre-loaded with standard SAW steps
-    location: "pkg/pipeline/pipeline.go"
-
-  - name: "ErrorCode"
-    description: |
-      Typed error codes replacing string-based ValidationError.Message.
-      Each validation rule gets a unique code constant with structured
-      metadata for programmatic handling and analytics.
-    definition: |
-      // In pkg/protocol/error_codes.go:
-      type ErrorCode string
-      const (
-        ErrMissingTitle       ErrorCode = "E001_MISSING_TITLE"
-        ErrMissingSlug        ErrorCode = "E002_MISSING_SLUG"
-        ErrInvalidVerdict     ErrorCode = "E003_INVALID_VERDICT"
-        ErrInvalidAgentID     ErrorCode = "E004_INVALID_AGENT_ID"
-        ErrI1Violation        ErrorCode = "E005_I1_DISJOINT_OWNERSHIP"
-        ErrI2WaveOrder        ErrorCode = "E006_I2_WAVE_ORDER"
-        ErrI3WaveSequence     ErrorCode = "E007_I3_WAVE_SEQUENCE"
-        ErrI5OrphanFile       ErrorCode = "E008_I5_ORPHAN_FILE"
-        ErrI5Uncommitted      ErrorCode = "E009_I5_UNCOMMITTED"
-        ErrI6Cycle            ErrorCode = "E010_I6_CYCLE"
-        ErrInvalidGateType    ErrorCode = "E011_INVALID_GATE_TYPE"
-        ErrInvalidMergeState  ErrorCode = "E012_INVALID_MERGE_STATE"
-        ErrInvalidState       ErrorCode = "E013_INVALID_STATE"
-        ErrMultiRepoMixed     ErrorCode = "E014_MULTI_REPO_MIXED"
-        // Schema validation codes
-        ErrSVRequiredField    ErrorCode = "E015_SV_REQUIRED_FIELD"
-        ErrSVInvalidEnum      ErrorCode = "E016_SV_INVALID_ENUM"
-        ErrSVInvalidPath      ErrorCode = "E017_SV_INVALID_PATH"
-        ErrSVUnknownKey       ErrorCode = "E018_SV_UNKNOWN_KEY"
-        ErrSVCrossField       ErrorCode = "E019_SV_CROSS_FIELD"
-      )
-
-      // ErrorCodeInfo provides metadata for each error code.
-      type ErrorCodeInfo struct {
-        Code        ErrorCode
-        Category    string // "invariant" | "schema" | "state" | "field"
-        Severity    string // "error" | "warning"
-        Description string
-      }
-
-      func LookupErrorCode(code ErrorCode) ErrorCodeInfo
-      func AllErrorCodes() []ErrorCodeInfo
-    location: "pkg/protocol/error_codes.go"
-
+    Post-wave integration wiring (orchestrator/integration agent responsibility):
+    - pkg/engine/runner.go: wire runWaveAgentStructured into StartWave when UseStructuredOutput is set
+    - pkg/orchestrator/orchestrator.go: add UseStructuredOutput option to RunWave dispatch
+    - pkg/protocol/validation.go: optionally wire ValidateManifestJSON into Validate() chain
+    - cmd/saw/root.go: register retry command
+test_command: go test ./...
+lint_command: go vet ./...
 file_ownership:
-  # Wave 1 - Agent A: Wave Agent Structured Output
-  - file: "pkg/engine/runner_wave_structured.go"
-    agent: "A"
-    wave: 1
-    action: "new"
-  - file: "pkg/engine/runner_wave_structured_test.go"
-    agent: "A"
-    wave: 1
-    action: "new"
-  - file: "pkg/orchestrator/structured_wave.go"
-    agent: "A"
-    wave: 1
-    action: "new"
-  - file: "pkg/orchestrator/structured_wave_test.go"
-    agent: "A"
-    wave: 1
-    action: "new"
+    - file: pkg/engine/runner_wave_structured.go
+      agent: A
+      wave: 1
+      action: new
+    - file: pkg/engine/runner_wave_structured_test.go
+      agent: A
+      wave: 1
+      action: new
+    - file: pkg/orchestrator/structured_wave.go
+      agent: A
+      wave: 1
+      action: new
+    - file: pkg/orchestrator/structured_wave_test.go
+      agent: A
+      wave: 1
+      action: new
+    - file: pkg/retry/loop.go
+      agent: B
+      wave: 1
+      action: new
+    - file: pkg/retry/loop_test.go
+      agent: B
+      wave: 1
+      action: new
+    - file: pkg/retry/impl_generator.go
+      agent: B
+      wave: 1
+      action: new
+    - file: pkg/retry/impl_generator_test.go
+      agent: B
+      wave: 1
+      action: new
+    - file: pkg/protocol/jsonschema_validator.go
+      agent: C
+      wave: 1
+      action: new
+    - file: pkg/protocol/jsonschema_validator_test.go
+      agent: C
+      wave: 1
+      action: new
+    - file: pkg/protocol/error_codes.go
+      agent: D
+      wave: 1
+      action: new
+    - file: pkg/protocol/error_codes_test.go
+      agent: D
+      wave: 1
+      action: new
+    - file: pkg/pipeline/pipeline.go
+      agent: E
+      wave: 2
+      action: new
+    - file: pkg/pipeline/pipeline_test.go
+      agent: E
+      wave: 2
+      action: new
+    - file: pkg/pipeline/registry.go
+      agent: E
+      wave: 2
+      action: new
+    - file: pkg/pipeline/registry_test.go
+      agent: E
+      wave: 2
+      action: new
+    - file: pkg/pipeline/saw_steps.go
+      agent: E
+      wave: 2
+      action: new
+    - file: pkg/pipeline/saw_steps_test.go
+      agent: E
+      wave: 2
+      action: new
+    - file: cmd/saw/retry_cmd.go
+      agent: F
+      wave: 2
+      action: new
+    - file: cmd/saw/retry_cmd_test.go
+      agent: F
+      wave: 2
+      action: new
+interface_contracts:
+    - name: RunWaveStructured
+      description: |
+        Extends the orchestrator's launchAgent to use structured output for
+        wave agent completion reports via the existing WithOutputConfig pattern.
+        When the backend supports structured output (API/Bedrock), the completion
+        report is parsed directly from the JSON response instead of being
+        synthesized by the orchestrator.
+      definition: |
+        // In pkg/engine/runner_wave_structured.go:
+        func runWaveAgentStructured(ctx context.Context, opts RunWaveOpts, agentSpec types.AgentSpec, wtPath string, onChunk func(string)) (*protocol.CompletionReport, error)
 
-  # Wave 1 - Agent B: E24 Verification Loop
-  - file: "pkg/retry/loop.go"
-    agent: "B"
-    wave: 1
-    action: "new"
-  - file: "pkg/retry/loop_test.go"
-    agent: "B"
-    wave: 1
-    action: "new"
-  - file: "pkg/retry/impl_generator.go"
-    agent: "B"
-    wave: 1
-    action: "new"
-  - file: "pkg/retry/impl_generator_test.go"
-    agent: "B"
-    wave: 1
-    action: "new"
+        // In pkg/orchestrator/structured_wave.go:
+        func (o *Orchestrator) launchAgentStructured(ctx context.Context, runner *agent.Runner, wm *worktree.Manager, waveNum int, agentSpec types.AgentSpec) error
+      location: pkg/engine/runner_wave_structured.go
+    - name: RetryLoop
+      description: |
+        E24 verification loop: when a quality gate fails after wave merge,
+        generates a single-agent retry IMPL doc targeting the failed files
+        and re-runs up to MaxRetries times before transitioning to blocked state.
+      definition: |
+        // In pkg/retry/loop.go:
+        func NewRetryLoop(cfg RetryConfig) *RetryLoop
+        func (rl *RetryLoop) Run(ctx context.Context, failedGate orchestrator.QualityGateResult, failedFiles []string, onEvent func(engine.Event)) (*RetryResult, error)
+        func (rl *RetryLoop) GenerateRetryIMPL(failedFiles []string, gateOutput string) (*protocol.IMPLManifest, error)
+      location: pkg/retry/loop.go
+    - name: ValidateManifestJSON
+      description: |
+        JSON Schema based validation that generates a schema from the
+        IMPLManifest struct via invopop/jsonschema and validates YAML-decoded
+        manifests against it. Replaces hand-coded field/enum/path checks
+        currently in schema_validation.go, schema_enum_validation.go,
+        schema_cross_field.go, and schema_unknown_keys.go.
+      definition: |
+        // In pkg/protocol/jsonschema_validator.go:
+        func GenerateManifestSchema() (map[string]any, error)
+        func ValidateManifestJSON(m *IMPLManifest) []ValidationError
+      location: pkg/protocol/jsonschema_validator.go
+    - name: Pipeline
+      description: |
+        Declarative workflow engine that replaces the imperative StartWave()
+        orchestration. Defines waves as a sequence of named steps with
+        configurable error handling. The engine package builds the pipeline
+        from an IMPL manifest and executes it.
+      definition: |
+        // In pkg/pipeline/pipeline.go:
+        func New(name string) *Pipeline
+        func (p *Pipeline) AddStep(step Step) *Pipeline
+        func (p *Pipeline) Run(ctx context.Context, state *State) error
 
-  # Wave 1 - Agent C: JSON Schema Validation
-  - file: "pkg/protocol/jsonschema_validator.go"
-    agent: "C"
-    wave: 1
-    action: "new"
-  - file: "pkg/protocol/jsonschema_validator_test.go"
-    agent: "C"
-    wave: 1
-    action: "new"
+        // In pkg/pipeline/registry.go:
+        func NewRegistry() *Registry
+        func (r *Registry) Register(name string, fn StepFunc)
+        func (r *Registry) Get(name string) (StepFunc, bool)
+        func DefaultRegistry() *Registry  // pre-loaded with standard SAW steps
+      location: pkg/pipeline/pipeline.go
+    - name: ErrorCode
+      description: |
+        Typed error codes replacing string-based ValidationError.Message.
+        Each validation rule gets a unique code constant with structured
+        metadata for programmatic handling and analytics.
+      definition: |
+        // In pkg/protocol/error_codes.go:
+        type ErrorCode string
+        const (
+          ErrMissingTitle       ErrorCode = "E001_MISSING_TITLE"
+          ErrMissingSlug        ErrorCode = "E002_MISSING_SLUG"
+          ErrInvalidVerdict     ErrorCode = "E003_INVALID_VERDICT"
+          ErrInvalidAgentID     ErrorCode = "E004_INVALID_AGENT_ID"
+          ErrI1Violation        ErrorCode = "E005_I1_DISJOINT_OWNERSHIP"
+          ErrI2WaveOrder        ErrorCode = "E006_I2_WAVE_ORDER"
+          ErrI3WaveSequence     ErrorCode = "E007_I3_WAVE_SEQUENCE"
+          ErrI5OrphanFile       ErrorCode = "E008_I5_ORPHAN_FILE"
+          ErrI5Uncommitted      ErrorCode = "E009_I5_UNCOMMITTED"
+          ErrI6Cycle            ErrorCode = "E010_I6_CYCLE"
+          ErrInvalidGateType    ErrorCode = "E011_INVALID_GATE_TYPE"
+          ErrInvalidMergeState  ErrorCode = "E012_INVALID_MERGE_STATE"
+          ErrInvalidState       ErrorCode = "E013_INVALID_STATE"
+          ErrMultiRepoMixed     ErrorCode = "E014_MULTI_REPO_MIXED"
+          // Schema validation codes
+          ErrSVRequiredField    ErrorCode = "E015_SV_REQUIRED_FIELD"
+          ErrSVInvalidEnum      ErrorCode = "E016_SV_INVALID_ENUM"
+          ErrSVInvalidPath      ErrorCode = "E017_SV_INVALID_PATH"
+          ErrSVUnknownKey       ErrorCode = "E018_SV_UNKNOWN_KEY"
+          ErrSVCrossField       ErrorCode = "E019_SV_CROSS_FIELD"
+        )
 
-  # Wave 1 - Agent D: Typed Error Codes
-  - file: "pkg/protocol/error_codes.go"
-    agent: "D"
-    wave: 1
-    action: "new"
-  - file: "pkg/protocol/error_codes_test.go"
-    agent: "D"
-    wave: 1
-    action: "new"
+        // ErrorCodeInfo provides metadata for each error code.
+        type ErrorCodeInfo struct {
+          Code        ErrorCode
+          Category    string // "invariant" | "schema" | "state" | "field"
+          Severity    string // "error" | "warning"
+          Description string
+        }
 
-  # Wave 2 - Agent E: Declarative Pipeline Engine
-  - file: "pkg/pipeline/pipeline.go"
-    agent: "E"
-    wave: 2
-    action: "new"
-  - file: "pkg/pipeline/pipeline_test.go"
-    agent: "E"
-    wave: 2
-    action: "new"
-  - file: "pkg/pipeline/registry.go"
-    agent: "E"
-    wave: 2
-    action: "new"
-  - file: "pkg/pipeline/registry_test.go"
-    agent: "E"
-    wave: 2
-    action: "new"
-  - file: "pkg/pipeline/saw_steps.go"
-    agent: "E"
-    wave: 2
-    action: "new"
-  - file: "pkg/pipeline/saw_steps_test.go"
-    agent: "E"
-    wave: 2
-    action: "new"
-
-  # Wave 2 - Agent F: Integration wiring
-  - file: "cmd/saw/retry_cmd.go"
-    agent: "F"
-    wave: 2
-    action: "new"
-  - file: "cmd/saw/retry_cmd_test.go"
-    agent: "F"
-    wave: 2
-    action: "new"
-
+        func LookupErrorCode(code ErrorCode) ErrorCodeInfo
+        func AllErrorCodes() []ErrorCodeInfo
+      location: pkg/protocol/error_codes.go
 waves:
-  - number: 1
-    agents:
-      - id: "A"
-        task: |
-          ## What to Implement
-          Extend structured output (output_config.format) to Wave agents so completion
-          reports are parsed directly from JSON responses instead of being synthesized
-          by the orchestrator. The Scout agent already uses this pattern (see
-          runScoutStructured in pkg/engine/runner.go and WithOutputConfig in
-          pkg/agent/backend/api/client.go).
+    - number: 1
+      agents:
+        - id: A
+          task: |
+            ## What to Implement
+            Extend structured output (output_config.format) to Wave agents so completion
+            reports are parsed directly from JSON responses instead of being synthesized
+            by the orchestrator. The Scout agent already uses this pattern (see
+            runScoutStructured in pkg/engine/runner.go and WithOutputConfig in
+            pkg/agent/backend/api/client.go).
 
-          Create two new files:
-          1. pkg/engine/runner_wave_structured.go — runWaveAgentStructured() function
-          2. pkg/orchestrator/structured_wave.go — launchAgentStructured() method
+            Create two new files:
+            1. pkg/engine/runner_wave_structured.go — runWaveAgentStructured() function
+            2. pkg/orchestrator/structured_wave.go — launchAgentStructured() method
 
-          ## Interfaces to Implement
-          ```go
-          // pkg/engine/runner_wave_structured.go
-          func runWaveAgentStructured(ctx context.Context, opts RunWaveOpts, agentSpec types.AgentSpec, wtPath string, onChunk func(string)) (*protocol.CompletionReport, error)
-          ```
+            ## Interfaces to Implement
+            ```go
+            // pkg/engine/runner_wave_structured.go
+            func runWaveAgentStructured(ctx context.Context, opts RunWaveOpts, agentSpec types.AgentSpec, wtPath string, onChunk func(string)) (*protocol.CompletionReport, error)
+            ```
 
-          ```go
-          // pkg/orchestrator/structured_wave.go
-          func (o *Orchestrator) launchAgentStructured(ctx context.Context, runner *agent.Runner, wm *worktree.Manager, waveNum int, agentSpec types.AgentSpec) error
-          ```
+            ```go
+            // pkg/orchestrator/structured_wave.go
+            func (o *Orchestrator) launchAgentStructured(ctx context.Context, runner *agent.Runner, wm *worktree.Manager, waveNum int, agentSpec types.AgentSpec) error
+            ```
 
-          ## Interfaces to Call
-          - protocol.GenerateCompletionReportSchema() — already exists in pkg/protocol/schema.go
-          - apiclient.WithOutputConfig(schema) — already exists in API backend
-          - bedrockbackend.WithOutputConfig(schema) — already exists in Bedrock backend
-          - protocol.SetCompletionReport(manifest, agentID, report) — for saving parsed reports
-          - protocol.Load() / protocol.Save() — for manifest I/O
+            ## Interfaces to Call
+            - protocol.GenerateCompletionReportSchema() — already exists in pkg/protocol/schema.go
+            - apiclient.WithOutputConfig(schema) — already exists in API backend
+            - bedrockbackend.WithOutputConfig(schema) — already exists in Bedrock backend
+            - protocol.SetCompletionReport(manifest, agentID, report) — for saving parsed reports
+            - protocol.Load() / protocol.Save() — for manifest I/O
 
-          ## Implementation Details
-          1. runWaveAgentStructured: mirrors runScoutStructured pattern
-             - Calls protocol.GenerateCompletionReportSchema() to get the schema
-             - Creates API/Bedrock client with WithOutputConfig(schema)
-             - Runs agent, collects JSON response
-             - Unmarshals directly into protocol.CompletionReport
-             - Saves report via protocol.SetCompletionReport
-          2. launchAgentStructured: new method on Orchestrator
-             - Called instead of launchAgent when UseStructuredOutput is enabled
-             - Handles both API and Bedrock backends (check provider prefix)
-             - Falls back to existing launchAgent for CLI backends
-             - Still creates worktree, publishes events, handles E19 routing
-          3. Add UseStructuredOutput bool field to RunWaveOpts in pkg/engine/engine.go
+            ## Implementation Details
+            1. runWaveAgentStructured: mirrors runScoutStructured pattern
+               - Calls protocol.GenerateCompletionReportSchema() to get the schema
+               - Creates API/Bedrock client with WithOutputConfig(schema)
+               - Runs agent, collects JSON response
+               - Unmarshals directly into protocol.CompletionReport
+               - Saves report via protocol.SetCompletionReport
+            2. launchAgentStructured: new method on Orchestrator
+               - Called instead of launchAgent when UseStructuredOutput is enabled
+               - Handles both API and Bedrock backends (check provider prefix)
+               - Falls back to existing launchAgent for CLI backends
+               - Still creates worktree, publishes events, handles E19 routing
+            3. Add UseStructuredOutput bool field to RunWaveOpts in pkg/engine/engine.go
 
-          DO NOT modify existing launchAgent — create new method alongside it.
-          DO NOT modify orchestrator.go — create new file structured_wave.go.
+            DO NOT modify existing launchAgent — create new method alongside it.
+            DO NOT modify orchestrator.go — create new file structured_wave.go.
 
-          ## Tests to Write
-          1. TestRunWaveAgentStructured_APIBackend — mock API response with JSON completion report
-          2. TestRunWaveAgentStructured_BedrockBackend — mock Bedrock response
-          3. TestLaunchAgentStructured_FallbackToCLI — verify CLI backend falls back to non-structured
-          4. TestRunWaveAgentStructured_InvalidJSON — verify error handling for malformed responses
-          5. TestRunWaveAgentStructured_SchemaGeneration — verify schema matches CompletionReport struct
+            ## Tests to Write
+            1. TestRunWaveAgentStructured_APIBackend — mock API response with JSON completion report
+            2. TestRunWaveAgentStructured_BedrockBackend — mock Bedrock response
+            3. TestLaunchAgentStructured_FallbackToCLI — verify CLI backend falls back to non-structured
+            4. TestRunWaveAgentStructured_InvalidJSON — verify error handling for malformed responses
+            5. TestRunWaveAgentStructured_SchemaGeneration — verify schema matches CompletionReport struct
 
-          ## Verification Gate
-          ```bash
-          go build ./...
-          go vet ./...
-          go test ./pkg/engine/ -run TestRunWaveAgent
-          go test ./pkg/orchestrator/ -run TestLaunchAgentStructured
-          ```
+            ## Verification Gate
+            ```bash
+            go build ./...
+            go vet ./...
+            go test ./pkg/engine/ -run TestRunWaveAgent
+            go test ./pkg/orchestrator/ -run TestLaunchAgentStructured
+            ```
 
-          ## Constraints
-          - Do NOT modify pkg/engine/runner.go — all new code in runner_wave_structured.go
-          - Do NOT modify pkg/orchestrator/orchestrator.go — all new code in structured_wave.go
-          - Use the same test seam pattern (var functions) as existing orchestrator code
-          - Reuse existing WithOutputConfig — do not create new backend methods
-        files:
-          - "pkg/engine/runner_wave_structured.go"
-          - "pkg/engine/runner_wave_structured_test.go"
-          - "pkg/orchestrator/structured_wave.go"
-          - "pkg/orchestrator/structured_wave_test.go"
-        dependencies: []
+            ## Constraints
+            - Do NOT modify pkg/engine/runner.go — all new code in runner_wave_structured.go
+            - Do NOT modify pkg/orchestrator/orchestrator.go — all new code in structured_wave.go
+            - Use the same test seam pattern (var functions) as existing orchestrator code
+            - Reuse existing WithOutputConfig — do not create new backend methods
+          files:
+            - pkg/engine/runner_wave_structured.go
+            - pkg/engine/runner_wave_structured_test.go
+            - pkg/orchestrator/structured_wave.go
+            - pkg/orchestrator/structured_wave_test.go
+        - id: B
+          task: |
+            ## What to Implement
+            E24 Verification Loop: automated quality gate retry mechanism. When a quality
+            gate fails after wave merge, this system generates a single-agent retry IMPL
+            doc targeting the failed files and re-runs the agent. Implements a 2-retry
+            limit with 3rd failure transitioning to blocked state.
 
-      - id: "B"
-        task: |
-          ## What to Implement
-          E24 Verification Loop: automated quality gate retry mechanism. When a quality
-          gate fails after wave merge, this system generates a single-agent retry IMPL
-          doc targeting the failed files and re-runs the agent. Implements a 2-retry
-          limit with 3rd failure transitioning to blocked state.
+            Create a new pkg/retry/ package with:
+            1. loop.go — RetryLoop struct with Run() and GenerateRetryIMPL() methods
+            2. impl_generator.go — generates minimal single-wave, single-agent IMPL docs
 
-          Create a new pkg/retry/ package with:
-          1. loop.go — RetryLoop struct with Run() and GenerateRetryIMPL() methods
-          2. impl_generator.go — generates minimal single-wave, single-agent IMPL docs
+            ## Interfaces to Implement
+            ```go
+            // pkg/retry/loop.go
+            type RetryLoop struct { cfg RetryConfig }
+            func NewRetryLoop(cfg RetryConfig) *RetryLoop
+            func (rl *RetryLoop) Run(ctx context.Context, failedGate QualityGateFailure, onEvent func(Event)) (*RetryResult, error)
+            ```
 
-          ## Interfaces to Implement
-          ```go
-          // pkg/retry/loop.go
-          type RetryLoop struct { cfg RetryConfig }
-          func NewRetryLoop(cfg RetryConfig) *RetryLoop
-          func (rl *RetryLoop) Run(ctx context.Context, failedGate QualityGateFailure, onEvent func(Event)) (*RetryResult, error)
-          ```
+            ```go
+            // pkg/retry/impl_generator.go
+            func GenerateRetryIMPL(parentSlug string, attempt int, failedFiles []string, gateOutput string, gateCommand string) *protocol.IMPLManifest
+            ```
 
-          ```go
-          // pkg/retry/impl_generator.go
-          func GenerateRetryIMPL(parentSlug string, attempt int, failedFiles []string, gateOutput string, gateCommand string) *protocol.IMPLManifest
-          ```
+            Use the scaffold types in pkg/retry/types.go (RetryConfig, RetryResult).
 
-          Use the scaffold types in pkg/retry/types.go (RetryConfig, RetryResult).
+            ## Interfaces to Call
+            - protocol.IMPLManifest, protocol.Save() — for creating retry IMPL docs
+            - protocol.CompletionReport — for retry agent completion tracking
+            - orchestrator.QualityGateResult — to understand what failed
 
-          ## Interfaces to Call
-          - protocol.IMPLManifest, protocol.Save() — for creating retry IMPL docs
-          - protocol.CompletionReport — for retry agent completion tracking
-          - orchestrator.QualityGateResult — to understand what failed
+            ## Implementation Details
+            1. RetryLoop.Run():
+               a. Generate a retry IMPL doc via GenerateRetryIMPL()
+               b. Save it to docs/IMPL/IMPL-{parentSlug}-retry-{attempt}.yaml
+               c. The retry IMPL has 1 wave, 1 agent, targeting the failed files
+               d. Agent prompt includes: gate command, gate output, list of files to fix
+               e. Track attempt count; if attempt >= MaxRetries (default 2), set state to blocked
+               f. Return RetryResult with attempt number and final state
+            2. GenerateRetryIMPL():
+               a. Create minimal IMPLManifest with title "Retry: {parentSlug} attempt {N}"
+               b. Single wave, single agent "R" (for retry)
+               c. Agent task includes gate output and instructions to fix compilation/test errors
+               d. File ownership: only the failed files
+               e. Quality gates: same gate that failed (so retry is verified)
 
-          ## Implementation Details
-          1. RetryLoop.Run():
-             a. Generate a retry IMPL doc via GenerateRetryIMPL()
-             b. Save it to docs/IMPL/IMPL-{parentSlug}-retry-{attempt}.yaml
-             c. The retry IMPL has 1 wave, 1 agent, targeting the failed files
-             d. Agent prompt includes: gate command, gate output, list of files to fix
-             e. Track attempt count; if attempt >= MaxRetries (default 2), set state to blocked
-             f. Return RetryResult with attempt number and final state
-          2. GenerateRetryIMPL():
-             a. Create minimal IMPLManifest with title "Retry: {parentSlug} attempt {N}"
-             b. Single wave, single agent "R" (for retry)
-             c. Agent task includes gate output and instructions to fix compilation/test errors
-             d. File ownership: only the failed files
-             e. Quality gates: same gate that failed (so retry is verified)
+            ## Tests to Write
+            1. TestGenerateRetryIMPL_Structure — verify generated IMPL has correct structure
+            2. TestGenerateRetryIMPL_SingleAgent — verify exactly 1 wave, 1 agent
+            3. TestGenerateRetryIMPL_GatePreserved — verify failed gate is in quality_gates
+            4. TestRetryLoop_MaxRetries — verify blocked state after max retries
+            5. TestRetryLoop_PassOnFirstRetry — verify success path
+            6. TestRetryResult_States — verify state transitions
 
-          ## Tests to Write
-          1. TestGenerateRetryIMPL_Structure — verify generated IMPL has correct structure
-          2. TestGenerateRetryIMPL_SingleAgent — verify exactly 1 wave, 1 agent
-          3. TestGenerateRetryIMPL_GatePreserved — verify failed gate is in quality_gates
-          4. TestRetryLoop_MaxRetries — verify blocked state after max retries
-          5. TestRetryLoop_PassOnFirstRetry — verify success path
-          6. TestRetryResult_States — verify state transitions
+            ## Verification Gate
+            ```bash
+            go build ./...
+            go vet ./...
+            go test ./pkg/retry/...
+            ```
 
-          ## Verification Gate
-          ```bash
-          go build ./...
-          go vet ./...
-          go test ./pkg/retry/...
-          ```
+            ## Constraints
+            - The retry IMPL doc must pass protocol.Validate() — it's a real IMPL doc
+            - Agent ID for retry agents is always "R" (single-letter, valid per protocol)
+            - Do not import pkg/engine — keep pkg/retry independent of the engine layer
+            - RetryLoop.Run does NOT execute agents — it generates the IMPL doc and returns
+              The caller (engine layer, Wave 2 integration) is responsible for execution
+          files:
+            - pkg/retry/loop.go
+            - pkg/retry/loop_test.go
+            - pkg/retry/impl_generator.go
+            - pkg/retry/impl_generator_test.go
+        - id: C
+          task: |
+            ## What to Implement
+            JSON Schema based IMPL manifest validation. Generate a JSON Schema from the
+            protocol.IMPLManifest struct using invopop/jsonschema (already in go.mod) and
+            validate decoded manifests against it. This supplements the existing hand-coded
+            validation with a schema-derived structural check.
 
-          ## Constraints
-          - The retry IMPL doc must pass protocol.Validate() — it's a real IMPL doc
-          - Agent ID for retry agents is always "R" (single-letter, valid per protocol)
-          - Do not import pkg/engine — keep pkg/retry independent of the engine layer
-          - RetryLoop.Run does NOT execute agents — it generates the IMPL doc and returns
-            The caller (engine layer, Wave 2 integration) is responsible for execution
-        files:
-          - "pkg/retry/loop.go"
-          - "pkg/retry/loop_test.go"
-          - "pkg/retry/impl_generator.go"
-          - "pkg/retry/impl_generator_test.go"
-        dependencies: []
+            Create pkg/protocol/jsonschema_validator.go.
 
-      - id: "C"
-        task: |
-          ## What to Implement
-          JSON Schema based IMPL manifest validation. Generate a JSON Schema from the
-          protocol.IMPLManifest struct using invopop/jsonschema (already in go.mod) and
-          validate decoded manifests against it. This supplements the existing hand-coded
-          validation with a schema-derived structural check.
+            ## Interfaces to Implement
+            ```go
+            // pkg/protocol/jsonschema_validator.go
+            func GenerateManifestSchema() (map[string]any, error)
+            func ValidateManifestJSON(m *IMPLManifest) []ValidationError
+            ```
 
-          Create pkg/protocol/jsonschema_validator.go.
+            ## Interfaces to Call
+            - github.com/invopop/jsonschema — Reflector, same pattern as GenerateScoutSchema()
+            - encoding/json — for marshaling manifest to JSON for validation
+            - Existing ValidationError type — return errors in the same format
 
-          ## Interfaces to Implement
-          ```go
-          // pkg/protocol/jsonschema_validator.go
-          func GenerateManifestSchema() (map[string]any, error)
-          func ValidateManifestJSON(m *IMPLManifest) []ValidationError
-          ```
+            ## Implementation Details
+            1. GenerateManifestSchema():
+               - Use jsonschema.Reflector with AllowAdditionalProperties: false
+               - Reflect the full IMPLManifest struct (not the scout subset)
+               - Return the schema as map[string]any
+            2. ValidateManifestJSON():
+               - Generate schema via GenerateManifestSchema() (cache after first call)
+               - Marshal the manifest to JSON
+               - Walk the schema to validate:
+                 a. Required fields present (from json struct tags)
+                 b. Enum values match allowed sets (from ValidationError codes)
+                 c. Type correctness (string vs int vs array)
+               - Return ValidationErrors with code "JS01_*" prefix
+               - This is additive: existing ValidateSchema() in schema_validation.go
+                 continues to work. ValidateManifestJSON is called separately.
+            3. Do NOT modify validation.go or schema_validation.go — this is a new
+               parallel validation path that can be tested independently before
+               replacing the hand-coded checks.
 
-          ## Interfaces to Call
-          - github.com/invopop/jsonschema — Reflector, same pattern as GenerateScoutSchema()
-          - encoding/json — for marshaling manifest to JSON for validation
-          - Existing ValidationError type — return errors in the same format
+            ## Tests to Write
+            1. TestGenerateManifestSchema_Structure — verify schema has correct top-level keys
+            2. TestGenerateManifestSchema_RequiredFields — verify title, feature_slug are required
+            3. TestValidateManifestJSON_ValidManifest — verify no errors for valid manifest
+            4. TestValidateManifestJSON_MissingTitle — verify error for missing required field
+            5. TestValidateManifestJSON_InvalidVerdict — verify error for invalid enum value
+            6. TestValidateManifestJSON_NestedValidation — verify wave/agent field validation
+            7. TestValidateManifestJSON_ConsistentWithValidate — compare results with existing Validate()
 
-          ## Implementation Details
-          1. GenerateManifestSchema():
-             - Use jsonschema.Reflector with AllowAdditionalProperties: false
-             - Reflect the full IMPLManifest struct (not the scout subset)
-             - Return the schema as map[string]any
-          2. ValidateManifestJSON():
-             - Generate schema via GenerateManifestSchema() (cache after first call)
-             - Marshal the manifest to JSON
-             - Walk the schema to validate:
-               a. Required fields present (from json struct tags)
-               b. Enum values match allowed sets (from ValidationError codes)
-               c. Type correctness (string vs int vs array)
-             - Return ValidationErrors with code "JS01_*" prefix
-             - This is additive: existing ValidateSchema() in schema_validation.go
-               continues to work. ValidateManifestJSON is called separately.
-          3. Do NOT modify validation.go or schema_validation.go — this is a new
-             parallel validation path that can be tested independently before
-             replacing the hand-coded checks.
+            ## Verification Gate
+            ```bash
+            go build ./...
+            go vet ./...
+            go test ./pkg/protocol/ -run TestGenerateManifestSchema
+            go test ./pkg/protocol/ -run TestValidateManifestJSON
+            ```
 
-          ## Tests to Write
-          1. TestGenerateManifestSchema_Structure — verify schema has correct top-level keys
-          2. TestGenerateManifestSchema_RequiredFields — verify title, feature_slug are required
-          3. TestValidateManifestJSON_ValidManifest — verify no errors for valid manifest
-          4. TestValidateManifestJSON_MissingTitle — verify error for missing required field
-          5. TestValidateManifestJSON_InvalidVerdict — verify error for invalid enum value
-          6. TestValidateManifestJSON_NestedValidation — verify wave/agent field validation
-          7. TestValidateManifestJSON_ConsistentWithValidate — compare results with existing Validate()
+            ## Constraints
+            - Do NOT modify existing validation.go, schema_validation.go, or schema_errors.go
+            - Use error code prefix "JS01_" to distinguish from existing "SV01_" codes
+            - Cache the generated schema (sync.Once) to avoid regenerating on every call
+            - The schema must handle omitempty fields correctly (nullable/optional)
+          files:
+            - pkg/protocol/jsonschema_validator.go
+            - pkg/protocol/jsonschema_validator_test.go
+        - id: D
+          task: |
+            ## What to Implement
+            Typed error codes for all validation rules. Replace string-based error codes
+            (currently "I1_VIOLATION", "I2_MISSING_DEP", "SV01_REQUIRED_FIELD", etc.)
+            with a proper ErrorCode type and a lookup table providing metadata (category,
+            severity, description) for each code.
 
-          ## Verification Gate
-          ```bash
-          go build ./...
-          go vet ./...
-          go test ./pkg/protocol/ -run TestGenerateManifestSchema
-          go test ./pkg/protocol/ -run TestValidateManifestJSON
-          ```
+            Create pkg/protocol/error_codes.go.
 
-          ## Constraints
-          - Do NOT modify existing validation.go, schema_validation.go, or schema_errors.go
-          - Use error code prefix "JS01_" to distinguish from existing "SV01_" codes
-          - Cache the generated schema (sync.Once) to avoid regenerating on every call
-          - The schema must handle omitempty fields correctly (nullable/optional)
-        files:
-          - "pkg/protocol/jsonschema_validator.go"
-          - "pkg/protocol/jsonschema_validator_test.go"
-        dependencies: []
+            ## Interfaces to Implement
+            ```go
+            // pkg/protocol/error_codes.go
+            type ErrorCode string
 
-      - id: "D"
-        task: |
-          ## What to Implement
-          Typed error codes for all validation rules. Replace string-based error codes
-          (currently "I1_VIOLATION", "I2_MISSING_DEP", "SV01_REQUIRED_FIELD", etc.)
-          with a proper ErrorCode type and a lookup table providing metadata (category,
-          severity, description) for each code.
+            // All error code constants (E001-E019+)
+            const (
+              ErrMissingTitle       ErrorCode = "E001_MISSING_TITLE"
+              ErrMissingSlug        ErrorCode = "E002_MISSING_SLUG"
+              // ... (see interface contract for full list)
+            )
 
-          Create pkg/protocol/error_codes.go.
+            type ErrorCodeInfo struct {
+              Code        ErrorCode
+              Category    string // "invariant" | "schema" | "state" | "field"
+              Severity    string // "error" | "warning"
+              Description string
+            }
 
-          ## Interfaces to Implement
-          ```go
-          // pkg/protocol/error_codes.go
-          type ErrorCode string
+            func LookupErrorCode(code ErrorCode) ErrorCodeInfo
+            func AllErrorCodes() []ErrorCodeInfo
 
-          // All error code constants (E001-E019+)
-          const (
-            ErrMissingTitle       ErrorCode = "E001_MISSING_TITLE"
-            ErrMissingSlug        ErrorCode = "E002_MISSING_SLUG"
-            // ... (see interface contract for full list)
-          )
+            // Mapping from old string codes to new typed codes
+            func MigrateErrorCode(oldCode string) ErrorCode
+            ```
 
-          type ErrorCodeInfo struct {
-            Code        ErrorCode
-            Category    string // "invariant" | "schema" | "state" | "field"
-            Severity    string // "error" | "warning"
-            Description string
-          }
+            ## Interfaces to Call
+            - Existing ValidationError type in pkg/protocol/types.go — reference its Code field
+            - Existing error code strings in validation.go — map them to new typed codes
 
-          func LookupErrorCode(code ErrorCode) ErrorCodeInfo
-          func AllErrorCodes() []ErrorCodeInfo
+            ## Implementation Details
+            1. Define all error codes as typed constants:
+               - Map every existing string code to a new ErrorCode constant
+               - Current codes: I1_VIOLATION, I2_MISSING_DEP, I2_WAVE_ORDER, I3_WAVE_ORDER,
+                 I4_MISSING_FIELD, I4_INVALID_VALUE, I5_ORPHAN_FILE, I5_UNCOMMITTED,
+                 I6_CYCLE, DC04_INVALID_AGENT_ID, DC07_INVALID_GATE_TYPE,
+                 E9_INVALID_MERGE_STATE, SM01_INVALID_STATE, MR01_INCONSISTENT_REPO,
+                 SV01_REQUIRED_FIELD, SV01_INVALID_ENUM, SV01_INVALID_PATH,
+                 SV01_UNKNOWN_KEY, SV01_CROSS_FIELD
+            2. Build a registry map: ErrorCode -> ErrorCodeInfo with category and severity
+            3. LookupErrorCode: returns info for a given code (or zero value if unknown)
+            4. AllErrorCodes: returns all registered codes (for documentation/analytics)
+            5. MigrateErrorCode: maps old string codes to new typed codes for backward compat
 
-          // Mapping from old string codes to new typed codes
-          func MigrateErrorCode(oldCode string) ErrorCode
-          ```
+            ## Tests to Write
+            1. TestAllErrorCodes_Complete — verify all codes have registry entries
+            2. TestLookupErrorCode_Known — verify lookup returns correct info
+            3. TestLookupErrorCode_Unknown — verify zero value for unknown code
+            4. TestMigrateErrorCode_AllMapped — verify every old code maps to new code
+            5. TestErrorCodeInfo_Categories — verify valid category values
+            6. TestErrorCodeInfo_Severities — verify valid severity values
+            7. TestErrorCode_NoDuplicates — verify no duplicate code values
 
-          ## Interfaces to Call
-          - Existing ValidationError type in pkg/protocol/types.go — reference its Code field
-          - Existing error code strings in validation.go — map them to new typed codes
+            ## Verification Gate
+            ```bash
+            go build ./...
+            go vet ./...
+            go test ./pkg/protocol/ -run TestAllErrorCodes
+            go test ./pkg/protocol/ -run TestLookupErrorCode
+            go test ./pkg/protocol/ -run TestMigrateErrorCode
+            ```
 
-          ## Implementation Details
-          1. Define all error codes as typed constants:
-             - Map every existing string code to a new ErrorCode constant
-             - Current codes: I1_VIOLATION, I2_MISSING_DEP, I2_WAVE_ORDER, I3_WAVE_ORDER,
-               I4_MISSING_FIELD, I4_INVALID_VALUE, I5_ORPHAN_FILE, I5_UNCOMMITTED,
-               I6_CYCLE, DC04_INVALID_AGENT_ID, DC07_INVALID_GATE_TYPE,
-               E9_INVALID_MERGE_STATE, SM01_INVALID_STATE, MR01_INCONSISTENT_REPO,
-               SV01_REQUIRED_FIELD, SV01_INVALID_ENUM, SV01_INVALID_PATH,
-               SV01_UNKNOWN_KEY, SV01_CROSS_FIELD
-          2. Build a registry map: ErrorCode -> ErrorCodeInfo with category and severity
-          3. LookupErrorCode: returns info for a given code (or zero value if unknown)
-          4. AllErrorCodes: returns all registered codes (for documentation/analytics)
-          5. MigrateErrorCode: maps old string codes to new typed codes for backward compat
+            ## Constraints
+            - Do NOT modify existing validation.go — these are new additive types
+            - Do NOT modify existing schema_errors.go — keep SV01_ constants for backward compat
+            - The ErrorCode type must be string-based so it serializes cleanly to JSON
+            - Every existing error code string in validation.go must have a MigrateErrorCode mapping
+            - Error codes use E-prefix numbering (E001, E002...) distinct from protocol E-rules
+          files:
+            - pkg/protocol/error_codes.go
+            - pkg/protocol/error_codes_test.go
+    - number: 2
+      agents:
+        - id: E
+          task: |
+            ## What to Implement
+            Declarative workflow pipeline engine that models wave execution as a sequence
+            of named steps with configurable error handling. This is a new pkg/pipeline/
+            package that can eventually replace the imperative StartWave() orchestration.
 
-          ## Tests to Write
-          1. TestAllErrorCodes_Complete — verify all codes have registry entries
-          2. TestLookupErrorCode_Known — verify lookup returns correct info
-          3. TestLookupErrorCode_Unknown — verify zero value for unknown code
-          4. TestMigrateErrorCode_AllMapped — verify every old code maps to new code
-          5. TestErrorCodeInfo_Categories — verify valid category values
-          6. TestErrorCodeInfo_Severities — verify valid severity values
-          7. TestErrorCode_NoDuplicates — verify no duplicate code values
+            Create three files:
+            1. pkg/pipeline/pipeline.go — Pipeline type with step execution
+            2. pkg/pipeline/registry.go — Step function registry
+            3. pkg/pipeline/saw_steps.go — Pre-built SAW protocol steps
 
-          ## Verification Gate
-          ```bash
-          go build ./...
-          go vet ./...
-          go test ./pkg/protocol/ -run TestAllErrorCodes
-          go test ./pkg/protocol/ -run TestLookupErrorCode
-          go test ./pkg/protocol/ -run TestMigrateErrorCode
-          ```
+            Use the scaffold types in pkg/pipeline/types.go (StepFunc, Step, State, ErrorStrategy).
 
-          ## Constraints
-          - Do NOT modify existing validation.go — these are new additive types
-          - Do NOT modify existing schema_errors.go — keep SV01_ constants for backward compat
-          - The ErrorCode type must be string-based so it serializes cleanly to JSON
-          - Every existing error code string in validation.go must have a MigrateErrorCode mapping
-          - Error codes use E-prefix numbering (E001, E002...) distinct from protocol E-rules
-        files:
-          - "pkg/protocol/error_codes.go"
-          - "pkg/protocol/error_codes_test.go"
-        dependencies: []
+            ## Interfaces to Implement
+            ```go
+            // pkg/pipeline/pipeline.go
+            type Pipeline struct { name string; steps []Step }
+            func New(name string) *Pipeline
+            func (p *Pipeline) AddStep(step Step) *Pipeline
+            func (p *Pipeline) Run(ctx context.Context, state *State) error
 
-  - number: 2
-    agents:
-      - id: "E"
-        task: |
-          ## What to Implement
-          Declarative workflow pipeline engine that models wave execution as a sequence
-          of named steps with configurable error handling. This is a new pkg/pipeline/
-          package that can eventually replace the imperative StartWave() orchestration.
+            // pkg/pipeline/registry.go
+            type Registry struct { funcs map[string]StepFunc }
+            func NewRegistry() *Registry
+            func (r *Registry) Register(name string, fn StepFunc)
+            func (r *Registry) Get(name string) (StepFunc, bool)
+            func DefaultRegistry() *Registry
 
-          Create three files:
-          1. pkg/pipeline/pipeline.go — Pipeline type with step execution
-          2. pkg/pipeline/registry.go — Step function registry
-          3. pkg/pipeline/saw_steps.go — Pre-built SAW protocol steps
+            // pkg/pipeline/saw_steps.go
+            func StepValidateInvariants() Step
+            func StepCreateWorktrees() Step
+            func StepRunQualityGates() Step
+            func StepMergeAgents() Step
+            func StepVerifyBuild() Step
+            func StepCleanup() Step
+            func WavePipeline(waveNum int) *Pipeline  // builds full wave pipeline
+            ```
 
-          Use the scaffold types in pkg/pipeline/types.go (StepFunc, Step, State, ErrorStrategy).
+            ## Interfaces to Call
+            - Scaffold types from pkg/pipeline/types.go
+            - context.Context for cancellation
+            - fmt for error formatting
 
-          ## Interfaces to Implement
-          ```go
-          // pkg/pipeline/pipeline.go
-          type Pipeline struct { name string; steps []Step }
-          func New(name string) *Pipeline
-          func (p *Pipeline) AddStep(step Step) *Pipeline
-          func (p *Pipeline) Run(ctx context.Context, state *State) error
+            ## Implementation Details
+            1. Pipeline.Run():
+               - Execute steps sequentially
+               - For each step, check Condition ("always", "on_success", "on_failure")
+               - On error, apply ErrorStrategy:
+                 - "fail": return error immediately
+                 - "continue": append to state.Errors, continue
+                 - "retry": retry up to MaxRetries times, then fail or continue
+               - Context cancellation stops execution immediately
+            2. Registry: simple name->StepFunc map with Get/Register
+            3. DefaultRegistry: pre-populate with SAW steps by name
+            4. SAW steps: each returns a Step struct with appropriate ErrorStrategy
+               - validate_invariants: fail on error
+               - create_worktrees: fail on error
+               - run_quality_gates: fail on error (required gates)
+               - merge_agents: fail on error
+               - verify_build: fail on error
+               - cleanup: continue on error (cleanup is best-effort)
+            5. WavePipeline: chains all steps in order for a standard wave execution
 
-          // pkg/pipeline/registry.go
-          type Registry struct { funcs map[string]StepFunc }
-          func NewRegistry() *Registry
-          func (r *Registry) Register(name string, fn StepFunc)
-          func (r *Registry) Get(name string) (StepFunc, bool)
-          func DefaultRegistry() *Registry
+            ## Tests to Write
+            1. TestPipeline_SequentialExecution — verify steps run in order
+            2. TestPipeline_ErrorFail — verify pipeline stops on fail strategy
+            3. TestPipeline_ErrorContinue — verify pipeline continues on continue strategy
+            4. TestPipeline_ErrorRetry — verify retry behavior
+            5. TestPipeline_ContextCancellation — verify context cancellation stops pipeline
+            6. TestRegistry_RegisterAndGet — verify step registration and lookup
+            7. TestDefaultRegistry_AllSteps — verify all SAW steps registered
+            8. TestWavePipeline_Structure — verify correct step order
+            9. TestState_ValuesMap — verify state carries values between steps
+            10. TestPipeline_ConditionOnSuccess — verify condition filtering
+            11. TestPipeline_ConditionOnFailure — verify condition filtering after error
 
-          // pkg/pipeline/saw_steps.go
-          func StepValidateInvariants() Step
-          func StepCreateWorktrees() Step
-          func StepRunQualityGates() Step
-          func StepMergeAgents() Step
-          func StepVerifyBuild() Step
-          func StepCleanup() Step
-          func WavePipeline(waveNum int) *Pipeline  // builds full wave pipeline
-          ```
+            ## Verification Gate
+            ```bash
+            go build ./...
+            go vet ./...
+            go test ./pkg/pipeline/...
+            ```
 
-          ## Interfaces to Call
-          - Scaffold types from pkg/pipeline/types.go
-          - context.Context for cancellation
-          - fmt for error formatting
+            ## Constraints
+            - Do NOT import pkg/engine or pkg/orchestrator — keep pkg/pipeline independent
+            - SAW step functions in saw_steps.go should be stubs that check state.Values
+              for required keys (e.g. "repo_path", "impl_path") and return errors if missing.
+              They do NOT call real orchestrator functions — the engine layer will wire
+              real implementations via the registry in a future integration step.
+            - Pipeline must be safe for concurrent use (multiple pipelines can run simultaneously)
+            - Use the scaffold types.go — do not redefine StepFunc, Step, State, ErrorStrategy
+          files:
+            - pkg/pipeline/pipeline.go
+            - pkg/pipeline/pipeline_test.go
+            - pkg/pipeline/registry.go
+            - pkg/pipeline/registry_test.go
+            - pkg/pipeline/saw_steps.go
+            - pkg/pipeline/saw_steps_test.go
+          dependencies:
+            - B
+        - id: F
+          task: |
+            ## What to Implement
+            CLI command for the E24 retry loop: `sawtools retry <impl-doc> --wave N --gate-type <type>`.
+            This command wraps pkg/retry.NewRetryLoop and provides a CLI interface for
+            triggering quality gate retries.
 
-          ## Implementation Details
-          1. Pipeline.Run():
-             - Execute steps sequentially
-             - For each step, check Condition ("always", "on_success", "on_failure")
-             - On error, apply ErrorStrategy:
-               - "fail": return error immediately
-               - "continue": append to state.Errors, continue
-               - "retry": retry up to MaxRetries times, then fail or continue
-             - Context cancellation stops execution immediately
-          2. Registry: simple name->StepFunc map with Get/Register
-          3. DefaultRegistry: pre-populate with SAW steps by name
-          4. SAW steps: each returns a Step struct with appropriate ErrorStrategy
-             - validate_invariants: fail on error
-             - create_worktrees: fail on error
-             - run_quality_gates: fail on error (required gates)
-             - merge_agents: fail on error
-             - verify_build: fail on error
-             - cleanup: continue on error (cleanup is best-effort)
-          5. WavePipeline: chains all steps in order for a standard wave execution
+            Create cmd/saw/retry_cmd.go.
 
-          ## Tests to Write
-          1. TestPipeline_SequentialExecution — verify steps run in order
-          2. TestPipeline_ErrorFail — verify pipeline stops on fail strategy
-          3. TestPipeline_ErrorContinue — verify pipeline continues on continue strategy
-          4. TestPipeline_ErrorRetry — verify retry behavior
-          5. TestPipeline_ContextCancellation — verify context cancellation stops pipeline
-          6. TestRegistry_RegisterAndGet — verify step registration and lookup
-          7. TestDefaultRegistry_AllSteps — verify all SAW steps registered
-          8. TestWavePipeline_Structure — verify correct step order
-          9. TestState_ValuesMap — verify state carries values between steps
-          10. TestPipeline_ConditionOnSuccess — verify condition filtering
-          11. TestPipeline_ConditionOnFailure — verify condition filtering after error
+            ## Interfaces to Implement
+            ```go
+            // cmd/saw/retry_cmd.go
+            // Cobra command: sawtools retry <impl-doc> --wave <N> --gate-type <type> [--max-retries <N>]
+            ```
 
-          ## Verification Gate
-          ```bash
-          go build ./...
-          go vet ./...
-          go test ./pkg/pipeline/...
-          ```
+            ## Interfaces to Call
+            - pkg/retry.NewRetryLoop, RetryConfig, RetryResult
+            - pkg/retry.GenerateRetryIMPL
+            - pkg/protocol.Load, protocol.Save
+            - github.com/spf13/cobra — for command definition
 
-          ## Constraints
-          - Do NOT import pkg/engine or pkg/orchestrator — keep pkg/pipeline independent
-          - SAW step functions in saw_steps.go should be stubs that check state.Values
-            for required keys (e.g. "repo_path", "impl_path") and return errors if missing.
-            They do NOT call real orchestrator functions — the engine layer will wire
-            real implementations via the registry in a future integration step.
-          - Pipeline must be safe for concurrent use (multiple pipelines can run simultaneously)
-          - Use the scaffold types.go — do not redefine StepFunc, Step, State, ErrorStrategy
-        files:
-          - "pkg/pipeline/pipeline.go"
-          - "pkg/pipeline/pipeline_test.go"
-          - "pkg/pipeline/registry.go"
-          - "pkg/pipeline/registry_test.go"
-          - "pkg/pipeline/saw_steps.go"
-          - "pkg/pipeline/saw_steps_test.go"
-        dependencies:
-          - "B"
+            ## Implementation Details
+            1. Define retryCmd as a cobra.Command
+            2. Args: exactly 1 positional arg (IMPL doc path)
+            3. Flags:
+               - --wave (required): wave number that failed
+               - --gate-type (required): type of gate that failed ("build", "test", "lint")
+               - --max-retries (optional, default 2): maximum retry attempts
+            4. Run function:
+               a. Load the IMPL manifest
+               b. Create RetryConfig from flags
+               c. Call retry.NewRetryLoop(cfg)
+               d. Find the failed files from the manifest (files owned by agents in --wave)
+               e. Call GenerateRetryIMPL to create retry manifest
+               f. Save retry manifest to docs/IMPL/IMPL-{slug}-retry-{attempt}.yaml
+               g. Print JSON result to stdout
+            5. Register command in root.go init (add retryCmd to rootCmd)
 
-      - id: "F"
-        task: |
-          ## What to Implement
-          CLI command for the E24 retry loop: `sawtools retry <impl-doc> --wave N --gate-type <type>`.
-          This command wraps pkg/retry.NewRetryLoop and provides a CLI interface for
-          triggering quality gate retries.
+            ## Tests to Write
+            1. TestRetryCmdArgs — verify required args validation
+            2. TestRetryCmdFlags — verify flag parsing
+            3. TestRetryCmd_GeneratesIMPL — verify retry IMPL created on disk
+            4. TestRetryCmd_OutputJSON — verify structured JSON output
 
-          Create cmd/saw/retry_cmd.go.
+            ## Verification Gate
+            ```bash
+            go build ./...
+            go vet ./...
+            go test ./cmd/saw/ -run TestRetryCmd
+            ```
 
-          ## Interfaces to Implement
-          ```go
-          // cmd/saw/retry_cmd.go
-          // Cobra command: sawtools retry <impl-doc> --wave <N> --gate-type <type> [--max-retries <N>]
-          ```
+            ## Constraints
+            - Follow existing cmd/saw/ patterns (see finalize_wave.go, prepare_wave.go)
+            - Output must be valid JSON for programmatic consumption
+            - Do NOT actually run agents — just generate the retry IMPL doc
+            - Register the command in init() following the same pattern as other commands
+          files:
+            - cmd/saw/retry_cmd.go
+            - cmd/saw/retry_cmd_test.go
+          dependencies:
+            - B
+quality_gates:
+    level: standard
+    gates:
+        - type: build
+          command: go build ./...
+          required: true
+        - type: test
+          command: go test ./...
+          required: true
+        - type: lint
+          command: go vet ./...
+          required: false
+          description: Check for common Go mistakes
+scaffolds:
+    - file_path: pkg/retry/types.go
+      contents: |
+        package retry
 
-          ## Interfaces to Call
-          - pkg/retry.NewRetryLoop, RetryConfig, RetryResult
-          - pkg/retry.GenerateRetryIMPL
-          - pkg/protocol.Load, protocol.Save
-          - github.com/spf13/cobra — for command definition
+        // RetryConfig configures the E24 verification loop behavior.
+        type RetryConfig struct {
+          MaxRetries int    // Maximum retry attempts (default: 2, 3rd failure -> blocked)
+          IMPLPath   string // Path to the parent IMPL manifest
+          RepoPath   string // Repository root path
+        }
 
-          ## Implementation Details
-          1. Define retryCmd as a cobra.Command
-          2. Args: exactly 1 positional arg (IMPL doc path)
-          3. Flags:
-             - --wave (required): wave number that failed
-             - --gate-type (required): type of gate that failed ("build", "test", "lint")
-             - --max-retries (optional, default 2): maximum retry attempts
-          4. Run function:
-             a. Load the IMPL manifest
-             b. Create RetryConfig from flags
-             c. Call retry.NewRetryLoop(cfg)
-             d. Find the failed files from the manifest (files owned by agents in --wave)
-             e. Call GenerateRetryIMPL to create retry manifest
-             f. Save retry manifest to docs/IMPL/IMPL-{slug}-retry-{attempt}.yaml
-             g. Print JSON result to stdout
-          5. Register command in root.go init (add retryCmd to rootCmd)
+        // RetryResult captures the outcome of a retry attempt.
+        type RetryResult struct {
+          Attempt     int      `json:"attempt"`
+          AgentID     string   `json:"agent_id"`
+          GatePassed  bool     `json:"gate_passed"`
+          GateOutput  string   `json:"gate_output"`
+          RetryIMPL   string   `json:"retry_impl,omitempty"`
+          FinalState  string   `json:"final_state"` // "passed" | "retrying" | "blocked"
+        }
+      import_path: github.com/blackwell-systems/scout-and-wave-go/pkg/retry
+      status: committed (0b4d77b)
+    - file_path: pkg/pipeline/types.go
+      contents: |
+        package pipeline
 
-          ## Tests to Write
-          1. TestRetryCmdArgs — verify required args validation
-          2. TestRetryCmdFlags — verify flag parsing
-          3. TestRetryCmd_GeneratesIMPL — verify retry IMPL created on disk
-          4. TestRetryCmd_OutputJSON — verify structured JSON output
+        import "context"
 
-          ## Verification Gate
-          ```bash
-          go build ./...
-          go vet ./...
-          go test ./cmd/saw/ -run TestRetryCmd
-          ```
+        // StepFunc is a single pipeline step. It receives the pipeline context
+        // and returns an error. Steps are executed in sequence within a stage;
+        // stages may run in parallel.
+        type StepFunc func(ctx context.Context, state *State) error
 
-          ## Constraints
-          - Follow existing cmd/saw/ patterns (see finalize_wave.go, prepare_wave.go)
-          - Output must be valid JSON for programmatic consumption
-          - Do NOT actually run agents — just generate the retry IMPL doc
-          - Register the command in init() following the same pattern as other commands
-        files:
-          - "cmd/saw/retry_cmd.go"
-          - "cmd/saw/retry_cmd_test.go"
-        dependencies:
-          - "B"
+        // ErrorStrategy defines how the pipeline handles a step failure.
+        type ErrorStrategy string
+
+        const (
+          ErrorFail     ErrorStrategy = "fail"     // Abort pipeline immediately
+          ErrorContinue ErrorStrategy = "continue" // Log error, continue to next step
+          ErrorRetry    ErrorStrategy = "retry"    // Retry step up to MaxRetries times
+        )
+
+        // Step is a named, executable unit in a pipeline.
+        type Step struct {
+          Name          string        `yaml:"name"`
+          Func          StepFunc      `yaml:"-"`
+          ErrorStrategy ErrorStrategy `yaml:"on_error"`
+          MaxRetries    int           `yaml:"max_retries,omitempty"`
+          Condition     string        `yaml:"condition,omitempty"` // "always" | "on_success" | "on_failure"
+        }
+
+        // State carries mutable data through the pipeline.
+        type State struct {
+          RepoPath     string
+          IMPLPath     string
+          WaveNum      int
+          Values       map[string]interface{}
+          Errors       []error
+        }
+      import_path: github.com/blackwell-systems/scout-and-wave-go/pkg/pipeline
+      status: committed (56716a9)
+completion_reports:
+    A:
+        status: complete
+        worktree: /Users/dayna.blackwell/code/scout-and-wave-go/.claude/worktrees/wave1-agent-A
+        branch: wave1-agent-A
+        commit: 9e9fa05599e4fe4f7b0190a58a6c0f8a1db87833
+        notes: no changes produced (API agent)
+    C:
+        status: complete
+        worktree: /Users/dayna.blackwell/code/scout-and-wave-go/.claude/worktrees/wave1-agent-C
+        branch: wave1-agent-C
+        commit: b3e7df09c5d032e9fc1ae865a842fc40264f6a39
+        files_changed:
+            - pkg/protocol/jsonschema_validator.go
+            - pkg/protocol/jsonschema_validator_test.go
+        notes: auto-committed by orchestrator (API agent)
+    B:
+        status: complete
+        worktree: /Users/dayna.blackwell/code/scout-and-wave-go/.claude/worktrees/wave1-agent-B
+        branch: wave1-agent-B
+        commit: a433fbdd
+        files_changed:
+            - pkg/retry/loop.go
+            - pkg/retry/loop_test.go
+            - pkg/retry/impl_generator.go
+            - pkg/retry/impl_generator_test.go
+            - pkg/retry/types.go
+        notes: completed after continuation rerun (timeout on first attempt)
+    D:
+        status: complete
+        worktree: /Users/dayna.blackwell/code/scout-and-wave-go/.claude/worktrees/wave1-agent-D
+        branch: wave1-agent-D
+        commit: f5a867f578f34af1db4133c3787ee342e86dfeba
+        files_changed:
+            - pkg/protocol/error_codes.go
+            - pkg/protocol/error_codes_test.go
+        notes: auto-committed by orchestrator (API agent)
 pre_mortem:
-  overall_risk: "medium"
-  rows:
-    - scenario: "Structured output schema drift between CompletionReport and agent expectations"
-      likelihood: "medium"
-      impact: "medium"
-      mitigation: "Test schema generation matches CompletionReport struct fields; use same schema for both API and Bedrock"
-    - scenario: "JSON Schema validation produces different results than hand-coded validation"
-      likelihood: "high"
-      impact: "low"
-      mitigation: "Agent C runs both validators on same inputs and compares results in tests; new validator is additive, not replacing"
-    - scenario: "Pipeline engine step stubs diverge from actual orchestrator behavior"
-      likelihood: "medium"
-      impact: "low"
-      mitigation: "SAW steps are explicitly stubs; real wiring deferred to integration phase"
-    - scenario: "Retry IMPL doc fails validation due to minimal structure"
-      likelihood: "medium"
-      impact: "medium"
-      mitigation: "Agent B tests retry IMPL against protocol.Validate(); test ensures valid structure"
-    - scenario: "Error code migration breaks downstream code that pattern-matches on old strings"
-      likelihood: "low"
-      impact: "medium"
-      mitigation: "Agent D provides MigrateErrorCode() backward compat; old string constants preserved in schema_errors.go"
-
+    overall_risk: medium
+    rows:
+        - scenario: Structured output schema drift between CompletionReport and agent expectations
+          likelihood: medium
+          impact: medium
+          mitigation: Test schema generation matches CompletionReport struct fields; use same schema for both API and Bedrock
+        - scenario: JSON Schema validation produces different results than hand-coded validation
+          likelihood: high
+          impact: low
+          mitigation: Agent C runs both validators on same inputs and compares results in tests; new validator is additive, not replacing
+        - scenario: Pipeline engine step stubs diverge from actual orchestrator behavior
+          likelihood: medium
+          impact: low
+          mitigation: SAW steps are explicitly stubs; real wiring deferred to integration phase
+        - scenario: Retry IMPL doc fails validation due to minimal structure
+          likelihood: medium
+          impact: medium
+          mitigation: Agent B tests retry IMPL against protocol.Validate(); test ensures valid structure
+        - scenario: Error code migration breaks downstream code that pattern-matches on old strings
+          likelihood: low
+          impact: medium
+          mitigation: Agent D provides MigrateErrorCode() backward compat; old string constants preserved in schema_errors.go
 known_issues:
-  - title: "Dual type systems (types.IMPLDoc vs protocol.IMPLManifest)"
-    description: "The codebase has two parallel type systems for IMPL docs — types.IMPLDoc (used by orchestrator) and protocol.IMPLManifest (canonical). Conversion shims exist in pkg/engine/engine.go."
-    status: "Pre-existing technical debt"
-    workaround: "New code should use protocol.IMPLManifest; conversion via manifestToIMPLDoc when orchestrator interfaces require types.IMPLDoc"
-
-completion_reports: {}
+    - title: Dual type systems (types.IMPLDoc vs protocol.IMPLManifest)
+      description: The codebase has two parallel type systems for IMPL docs — types.IMPLDoc (used by orchestrator) and protocol.IMPLManifest (canonical). Conversion shims exist in pkg/engine/engine.go.
+      status: Pre-existing technical debt
+      workaround: New code should use protocol.IMPLManifest; conversion via manifestToIMPLDoc when orchestrator interfaces require types.IMPLDoc
+state: SCOUT_PENDING
