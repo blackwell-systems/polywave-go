@@ -49,6 +49,7 @@ func main() {
 		newVerifyHookInstalledCmd(),
 		newValidateIntegrationCmd(),
 		newRetryCmd(),
+		newResumeDetectCmd(),
 	)
 	if err := rootCmd.Execute(); err != nil {
 		fmt.Fprintln(os.Stderr, err)
