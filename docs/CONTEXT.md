@@ -130,3 +130,5 @@ type BackendConfig struct {
   - IMPL doc: docs/IMPL/complete/IMPL-integration-agent.yaml
 - **determinism-automation-v2**: completed 2026-03-16, 2 waves, 6 agents
   - IMPL doc: docs/IMPL/IMPL-determinism-automation-v2.yaml
+- **autonomy-layer**: completed 2026-03-17, 4 waves, 9 agents
+  - IMPL doc: docs/IMPL/complete/IMPL-autonomy-layer.yaml
