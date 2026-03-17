@@ -281,6 +281,20 @@ if [[ "$branch" == "main" || "$branch" == "master" ]]; then
 	exit 1
 fi
 
+# Block go.mod replace directives with deep relative paths (worktree artifact).
+# Paths like ../../../../sibling are relative to the worktree depth, not repo root.
+# They break after merge. Correct paths use at most ../ (one level up from repo root).
+if git diff --cached --name-only | grep -q '^go\.mod$'; then
+	if git diff --cached -- go.mod | grep -E '^\+.*=>.*\.\./\.\./\.\.' > /dev/null 2>&1; then
+		echo "❌ SAW go.mod guard: replace directive has deep relative path (../../../...)"
+		echo ""
+		echo "Replace paths in go.mod must be relative to the repo root, not the worktree."
+		echo "Do NOT modify replace directives — they are already correct for the repo root."
+		echo ""
+		exit 1
+	fi
+fi
+
 # Allow commits to wave branches
 exit 0
 `

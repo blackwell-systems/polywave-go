@@ -126,6 +126,13 @@ func FinalizeWave(ctx context.Context, opts FinalizeWaveOpts) (*FinalizeWaveResu
 		return result, fmt.Errorf("engine.FinalizeWave: merge-agents encountered conflicts")
 	}
 
+	// Step 4.5: Fix go.mod replace paths (worktree artifact defense-in-depth)
+	if fixed, err := protocol.FixGoModReplacePaths(opts.RepoPath); err != nil {
+		fmt.Fprintf(os.Stderr, "engine.FinalizeWave: go.mod fixup: %v\n", err)
+	} else if fixed {
+		fmt.Fprintf(os.Stderr, "engine.FinalizeWave: auto-corrected go.mod replace paths\n")
+	}
+
 	// Step 5: VerifyBuild
 	verifyBuildResult, err := protocol.VerifyBuild(opts.IMPLPath, opts.RepoPath)
 	if err != nil {
