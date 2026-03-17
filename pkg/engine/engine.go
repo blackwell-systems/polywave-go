@@ -103,6 +103,7 @@ type ResolveConflictsOpts struct {
 	WaveNum    int                             // which wave's merge is conflicted
 	ChatModel  string                          // optional model override
 	OnProgress func(file string, status string) // per-file progress callback
+	OnOutput   func(chunk string)              // streaming output callback (model text chunks)
 }
 
 // RunVerificationOpts configures post-merge verification.

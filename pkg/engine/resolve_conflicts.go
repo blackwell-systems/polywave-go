@@ -110,8 +110,12 @@ func resolveConflictedFile(ctx context.Context, file string, manifest *protocol.
 	systemPrompt := buildSystemPrompt()
 	userMessage := buildUserMessage(string(content), file, agentContext)
 
-	// Call Claude to resolve the conflict
-	resolved, err := b.Run(ctx, systemPrompt, userMessage, opts.RepoPath)
+	// Call Claude to resolve the conflict (streaming for live output)
+	resolved, err := b.RunStreaming(ctx, systemPrompt, userMessage, opts.RepoPath, func(chunk string) {
+		if opts.OnOutput != nil {
+			opts.OnOutput(chunk)
+		}
+	})
 	if err != nil {
 		return fmt.Errorf("backend call failed: %w", err)
 	}
