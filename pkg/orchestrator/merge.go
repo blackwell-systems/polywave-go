@@ -235,6 +235,15 @@ func verifyAgentCommits(repoPath, baseCommit string, reports map[string]*types.C
 			continue
 		}
 
+		// If branch no longer exists, check if the agent's commit was already
+		// merged into HEAD (idempotent retry after cleanup deleted the branch).
+		if !git.BranchExists(repoPath, branch) {
+			if report.Commit != "" && git.IsAncestor(repoPath, report.Commit, "HEAD") {
+				continue // already merged
+			}
+			return fmt.Errorf("verifyAgentCommits: agent %s branch %q does not exist and commit %q is not merged into HEAD", letter, branch, report.Commit)
+		}
+
 		files, err := git.DiffNameOnly(repoPath, baseCommit, branch)
 		if err != nil {
 			return fmt.Errorf("verifyAgentCommits: diffing agent %s branch %q: %w", letter, branch, err)

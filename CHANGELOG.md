@@ -8,6 +8,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 | Version | Date | Headline |
 |---------|------|----------|
+| [0.58.0] | 2026-03-17 | Autonomy layer (R0-R5) — 9-agent IMPL: `pkg/autonomy/` levels+config, `pkg/queue/` manager, auto-remediate, closed-loop gate retry, daemon run loop, daemon CLI, resume detect fix, agent prompt enforcement |
 | [0.57.0] | 2026-03-16 | Batch command integration — gate caching in `finalize-wave`, resume detection in `prepare-wave`, error classification in `retry` agent task |
 | [0.56.0] | 2026-03-16 | Failure recovery UX — gate caching (`pkg/gatecache/`), classified retry context (`pkg/retryctx/`), resume detection (`pkg/resume/`), FixBuildFailure maxTurns 20→50 |
 | [0.55.0] | 2026-03-16 | E27: Wave.Type field + validator support — `type: "integration"` on Wave struct, schema_unknown_keys accepts `type` for wave objects |
@@ -64,6 +65,27 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 | [0.4.0] | 2026-03-09 | Per-agent model routing — ScoutModel/WaveModel opts, `model:` field in IMPL doc agent sections, per-agent backend dispatch |
 | [0.3.0] | 2026-03-08 | Protocol audit fixes — P0: failure_type parsing, multi-gen agent IDs; P1: E22 2-pass scaffold build, cross-repo Repo column; P2: repo field in completion reports |
 | [0.2.0] | 2026-03-08 | Engine protocol parity — E17–E23 implemented (context memory, failure routing, stub scan, quality gates, scaffold build verify, per-agent context extraction) |
+
+---
+
+## [0.58.0] - 2026-03-17
+
+### Added
+
+- **Autonomy layer** — Full R0-R5 implementation via 4-wave, 9-agent IMPL
+  - `pkg/autonomy/` — `ShouldAutoApprove()` decision matrix (gated/supervised/autonomous), `LoadConfig`/`SaveConfig` from `saw.config.json`, `EffectiveLevel` per-IMPL override, `ParseLevel` validation
+  - `pkg/queue/` — IMPL queue manager with priority ordering, dependency-aware `Next()`, YAML file persistence in `docs/IMPL/queue/`
+  - `pkg/engine/auto_remediate.go` — post-merge auto-fix loop using `FixBuildFailure` + `VerifyBuild`, configurable retry count
+  - `pkg/engine/closed_loop_gate.go` — pre-merge per-agent gate retry, sends error context back to agent in worktree
+  - `pkg/engine/check_queue.go` — queue advance logic, polls queue manager and returns next eligible item
+  - `pkg/engine/daemon.go` — `RunDaemon()` poll loop: queue check → scout → wave execution → remediation → mark complete, with event emission and context cancellation
+  - `cmd/saw/daemon_cmd.go` — `sawtools daemon` CLI with `--autonomy`, `--model`, `--poll-interval` flags, SIGINT/SIGTERM handling, JSON line event streaming
+  - `cmd/saw/queue_cmd.go` — `sawtools queue add/list/next` CLI commands
+
+### Fixed
+
+- **Resume detection false positives** — `pkg/resume/detect.go` now skips IMPLs where no work has started (no completion reports, no orphaned worktrees), preventing freshly scouted IMPLs from appearing as interrupted sessions
+- **GUI agents completing without writing files** — `pkg/agent/runner.go` `ExecuteStreamingWithTools` user message now includes explicit 4-step completion criteria (read IMPL, implement, test, commit) instead of generic "Begin now"
 
 ---
 

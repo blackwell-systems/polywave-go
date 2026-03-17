@@ -291,10 +291,12 @@ func TestDetect_ProgressZeroAgents(t *testing.T) {
 	}
 }
 
-func TestDetect_SuggestedAction_NoAgentsStarted(t *testing.T) {
+func TestDetect_SkipsNoWorkStarted(t *testing.T) {
 	root := makeRepoWithIMPLDir(t)
 	implDir := filepath.Join(root, "docs", "IMPL")
 
+	// IMPL with no completion reports and no orphaned worktrees
+	// should NOT be detected as interrupted — it hasn't started yet.
 	m := simpleManifest()
 	m.State = protocol.StateWavePending
 	writeManifest(t, implDir, "IMPL-new.yaml", m)
@@ -303,12 +305,8 @@ func TestDetect_SuggestedAction_NoAgentsStarted(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if len(sessions) != 1 {
-		t.Fatalf("expected 1 session, got %d", len(sessions))
-	}
-	s := sessions[0]
-	if s.SuggestedAction != "Start wave 1" {
-		t.Errorf("SuggestedAction = %q, want %q", s.SuggestedAction, "Start wave 1")
+	if len(sessions) != 0 {
+		t.Fatalf("expected 0 sessions for not-yet-started IMPL, got %d", len(sessions))
 	}
 }
 
@@ -403,7 +401,9 @@ func TestDetect_ResumeCommand(t *testing.T) {
 	implDir := filepath.Join(root, "docs", "IMPL")
 
 	m := simpleManifest()
-	m.State = protocol.StateWavePending
+	m.State = protocol.StateWaveExecuting
+	// Need at least one completion report so the IMPL is detected as interrupted
+	m.CompletionReports["A"] = protocol.CompletionReport{Status: "complete"}
 	implPath := writeManifest(t, implDir, "IMPL-cmd.yaml", m)
 
 	sessions, err := Detect(root)
@@ -499,7 +499,8 @@ func TestDetect_MultipleIMPLs(t *testing.T) {
 
 	m1 := simpleManifest()
 	m1.FeatureSlug = "feature-one"
-	m1.State = protocol.StateWavePending
+	m1.State = protocol.StateWaveExecuting
+	m1.CompletionReports["A"] = protocol.CompletionReport{Status: "partial"}
 	writeManifest(t, implDir, "IMPL-one.yaml", m1)
 
 	m2 := simpleManifest()

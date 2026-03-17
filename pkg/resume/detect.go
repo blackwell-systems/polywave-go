@@ -84,6 +84,13 @@ func Detect(repoPath string) ([]SessionState, error) {
 			continue
 		}
 
+		// Skip manifests where no work has started (no completion reports,
+		// no orphaned worktrees). These are freshly scouted IMPLs awaiting
+		// their first wave — not interrupted sessions.
+		if len(state.CompletedAgents) == 0 && len(state.FailedAgents) == 0 && len(state.OrphanedWorktrees) == 0 {
+			continue
+		}
+
 		sessions = append(sessions, state)
 	}
 

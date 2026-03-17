@@ -51,6 +51,7 @@ func main() {
 		newRetryCmd(),
 		newBuildRetryContextCmd(),
 		newResumeDetectCmd(),
+		newDaemonCmd(),
 	)
 	if err := rootCmd.Execute(); err != nil {
 		fmt.Fprintln(os.Stderr, err)

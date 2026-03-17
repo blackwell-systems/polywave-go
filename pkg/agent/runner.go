@@ -89,7 +89,13 @@ func (r *Runner) ExecuteStreamingWithTools(
 	userMessage := fmt.Sprintf(
 		"You are operating in worktree: %s\n"+
 			"Navigate there first (cd %s) before any file operations.\n\n"+
-			"Your task is defined in Field 0 of your prompt above. Begin now.",
+			"Your task is defined in your prompt above. You MUST:\n"+
+			"1. Read the IMPL doc to understand your assigned files and task\n"+
+			"2. Implement the code changes by writing/editing files in the worktree\n"+
+			"3. Run tests to verify your changes compile and pass\n"+
+			"4. Commit your changes with: git add -A && git commit -m 'feat(<agent>): <summary>'\n\n"+
+			"You are NOT done until you have written files and committed. Reading and analyzing is not completion.\n"+
+			"Begin now.",
 		worktreePath,
 		worktreePath,
 	)
