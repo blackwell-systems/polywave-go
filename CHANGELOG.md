@@ -8,6 +8,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 | Version | Date | Headline |
 |---------|------|----------|
+| [0.52.0] | 2026-03-16 | go.mod replace path enforcement — pre-commit hook blocks deep relative paths, post-merge auto-fixup in FinalizeWave |
+| [0.51.0] | 2026-03-16 | Stale branch auto-cleanup + worktree lifecycle fixes — BranchExists/IsAncestor cleanup in CreateWorktrees, cleanup runs after merge regardless of build result, mark-complete in early-return path |
 | [0.50.0] | 2026-03-16 | Worktree reuse + timeout failure type — rerun agents reuse existing worktrees, maxTurns emits failure_type "timeout" |
 | [0.49.0] | 2026-03-16 | Integration Agent engine (E25/E26) — 4-wave implementation: validation engine, heuristics, CLI, runner, constraints, manifest types, engine wiring |
 | [0.48.0] | 2026-03-15 | MR01 multi-repo consistency + list-impls state field — validator catches mixed repo: tags, list-impls adds state field, filters completed IMPLs by default (--include-complete to show) |
