@@ -3,6 +3,8 @@ package engine
 import (
 	"context"
 	"errors"
+
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/agent/backend"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/orchestrator"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/types"
@@ -104,6 +106,18 @@ type ResolveConflictsOpts struct {
 	ChatModel  string                          // optional model override
 	OnProgress func(file string, status string) // per-file progress callback
 	OnOutput   func(chunk string)              // streaming output callback (model text chunks)
+}
+
+// FixBuildOpts configures the AI-powered build failure fixer.
+type FixBuildOpts struct {
+	IMPLPath   string                       // path to IMPL YAML manifest
+	RepoPath   string                       // repo root
+	WaveNum    int                          // which wave's build failed
+	ErrorLog   string                       // captured test/lint/gate output
+	GateType   string                       // "test", "typecheck", "lint", "build", or "custom"
+	ChatModel  string                       // optional model override (same format as conflict resolver)
+	OnOutput   func(chunk string)           // streaming text callback
+	OnToolCall func(ev backend.ToolCallEvent) // optional tool call observability
 }
 
 // RunVerificationOpts configures post-merge verification.
