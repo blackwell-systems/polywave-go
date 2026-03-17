@@ -738,6 +738,26 @@ completion_reports:
         branch: wave1-agent-A
         commit: 9e9fa05599e4fe4f7b0190a58a6c0f8a1db87833
         notes: no changes produced (API agent)
+    B:
+        status: complete
+        worktree: /Users/dayna.blackwell/code/scout-and-wave-go/.claude/worktrees/wave1-agent-B
+        branch: wave1-agent-B
+        commit: a433fbd52dfeb2e68c7d1577ca9bdf303c2a3532
+        files_changed:
+            - pkg/retry/loop.go
+            - pkg/retry/loop_test.go
+            - pkg/retry/impl_generator.go
+            - pkg/retry/impl_generator_test.go
+            - pkg/retry/types.go
+        tests_added:
+            - TestGenerateRetryIMPL_Structure
+            - TestGenerateRetryIMPL_SingleAgent
+            - TestGenerateRetryIMPL_GatePreserved
+            - TestRetryLoop_MaxRetries
+            - TestRetryLoop_PassOnFirstRetry
+            - TestRetryResult_States
+        verification: go build ./... && go vet ./... && go test ./pkg/retry/... — 17 tests PASS
+        notes: completed after continuation rerun (timeout on first attempt)
     C:
         status: complete
         worktree: /Users/dayna.blackwell/code/scout-and-wave-go/.claude/worktrees/wave1-agent-C
@@ -747,18 +767,6 @@ completion_reports:
             - pkg/protocol/jsonschema_validator.go
             - pkg/protocol/jsonschema_validator_test.go
         notes: auto-committed by orchestrator (API agent)
-    B:
-        status: complete
-        worktree: /Users/dayna.blackwell/code/scout-and-wave-go/.claude/worktrees/wave1-agent-B
-        branch: wave1-agent-B
-        commit: a433fbdd
-        files_changed:
-            - pkg/retry/loop.go
-            - pkg/retry/loop_test.go
-            - pkg/retry/impl_generator.go
-            - pkg/retry/impl_generator_test.go
-            - pkg/retry/types.go
-        notes: completed after continuation rerun (timeout on first attempt)
     D:
         status: complete
         worktree: /Users/dayna.blackwell/code/scout-and-wave-go/.claude/worktrees/wave1-agent-D
