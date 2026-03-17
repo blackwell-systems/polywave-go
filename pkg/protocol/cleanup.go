@@ -2,6 +2,7 @@ package protocol
 
 import (
 	"fmt"
+	"log"
 	"strings"
 
 	"github.com/blackwell-systems/scout-and-wave-go/internal/git"
@@ -101,6 +102,13 @@ func Cleanup(manifestPath string, waveNum int, repoDir string) (*CleanupResult, 
 		}
 
 		result.Agents = append(result.Agents, status)
+	}
+
+	// Best-effort: prune stale worktree entries from git metadata.
+	// This removes references to worktrees whose directories were already deleted
+	// but whose entries persist in .git/worktrees/, which can confuse LSP and other tools.
+	if err := git.WorktreePrune(repoDir); err != nil {
+		log.Printf("warning: git worktree prune failed (non-fatal): %v", err)
 	}
 
 	return result, nil

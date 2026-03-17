@@ -610,3 +610,99 @@ func TestCleanup_IdempotentBranchDeletion(t *testing.T) {
 		t.Errorf("expected BranchDeleted=true (idempotent), got false")
 	}
 }
+
+// TestCleanup_PrunesStaleWorktrees verifies that Cleanup calls git worktree prune
+// to clean up stale worktree entries after removing individual worktrees.
+func TestCleanup_PrunesStaleWorktrees(t *testing.T) {
+	// Create a temporary directory for test repository
+	tmpDir, err := os.MkdirTemp("", "cleanup-prune-test-*")
+	if err != nil {
+		t.Fatalf("failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	// Initialize a git repository
+	if _, err := git.Run(tmpDir, "init"); err != nil {
+		t.Fatalf("failed to init git repo: %v", err)
+	}
+	if _, err := git.Run(tmpDir, "config", "user.email", "test@example.com"); err != nil {
+		t.Fatalf("failed to configure git user.email: %v", err)
+	}
+	if _, err := git.Run(tmpDir, "config", "user.name", "Test User"); err != nil {
+		t.Fatalf("failed to configure git user.name: %v", err)
+	}
+
+	// Create an initial commit
+	readmePath := filepath.Join(tmpDir, "README.md")
+	if err := os.WriteFile(readmePath, []byte("# Test\n"), 0644); err != nil {
+		t.Fatalf("failed to create README: %v", err)
+	}
+	if _, err := git.Run(tmpDir, "add", "README.md"); err != nil {
+		t.Fatalf("failed to add README: %v", err)
+	}
+	if _, err := git.Run(tmpDir, "commit", "-m", "Initial commit"); err != nil {
+		t.Fatalf("failed to create initial commit: %v", err)
+	}
+
+	// Create a worktree, then delete its directory (but not via git worktree remove)
+	// to leave a stale entry
+	worktreesDir := filepath.Join(tmpDir, ".claude", "worktrees")
+	if err := os.MkdirAll(worktreesDir, 0755); err != nil {
+		t.Fatalf("failed to create worktrees dir: %v", err)
+	}
+	stalePath := filepath.Join(worktreesDir, "wave1-agent-H")
+	if err := git.WorktreeAdd(tmpDir, stalePath, "wave1-agent-H"); err != nil {
+		t.Fatalf("failed to create worktree: %v", err)
+	}
+
+	// Forcefully remove the directory without telling git (creates a stale entry)
+	if err := os.RemoveAll(stalePath); err != nil {
+		t.Fatalf("failed to remove worktree dir: %v", err)
+	}
+
+	// Verify the stale entry exists in git worktree list
+	worktreesBefore, err := git.Run(tmpDir, "worktree", "list", "--porcelain")
+	if err != nil {
+		t.Fatalf("failed to list worktrees: %v", err)
+	}
+	if !strings.Contains(worktreesBefore, "wave1-agent-H") {
+		t.Fatalf("expected stale worktree entry for wave1-agent-H, not found in: %s", worktreesBefore)
+	}
+
+	// Create manifest with a different agent (so cleanup processes something)
+	manifest := &IMPLManifest{
+		Title:       "test-cleanup-prune",
+		FeatureSlug: "test-cleanup-prune",
+		Waves: []Wave{
+			{
+				Number: 1,
+				Agents: []Agent{
+					{ID: "Z", Task: "Task Z", Files: []string{"z.go"}},
+				},
+			},
+		},
+	}
+	manifestPath := filepath.Join(tmpDir, "IMPL.yaml")
+	manifestData, err := yaml.Marshal(manifest)
+	if err != nil {
+		t.Fatalf("failed to marshal manifest: %v", err)
+	}
+	if err := os.WriteFile(manifestPath, manifestData, 0644); err != nil {
+		t.Fatalf("failed to write manifest: %v", err)
+	}
+
+	// Run cleanup — this should prune stale entries at the end
+	_, err = Cleanup(manifestPath, 1, tmpDir)
+	if err != nil {
+		t.Fatalf("Cleanup failed: %v", err)
+	}
+
+	// Verify the stale worktree entry was pruned
+	worktreesAfter, err := git.Run(tmpDir, "worktree", "list", "--porcelain")
+	if err != nil {
+		t.Fatalf("failed to list worktrees after cleanup: %v", err)
+	}
+	if strings.Contains(worktreesAfter, "wave1-agent-H") {
+		t.Errorf("stale worktree entry for wave1-agent-H should have been pruned, but still found in: %s", worktreesAfter)
+	}
+}

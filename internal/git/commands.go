@@ -36,6 +36,17 @@ func WorktreeAdd(repoPath, path, branch string) error {
 	return nil
 }
 
+// WorktreePrune removes stale worktree entries from the repository at repoPath.
+// This cleans up references to worktrees whose directories have been deleted
+// but whose metadata still exists in .git/worktrees/.
+func WorktreePrune(repoPath string) error {
+	_, err := Run(repoPath, "worktree", "prune")
+	if err != nil {
+		return fmt.Errorf("git worktree prune failed: %w", err)
+	}
+	return nil
+}
+
 // WorktreeRemove removes the worktree at path from the repository at repoPath.
 // --force is required because agent worktrees often contain untracked files
 // that git would otherwise refuse to delete.
