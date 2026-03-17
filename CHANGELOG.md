@@ -8,6 +8,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 | Version | Date | Headline |
 |---------|------|----------|
+| [0.60.0] | 2026-03-17 | Structured error parsing — 5-agent IMPL complete: Go/JS/Python parsers (`pkg/errparse/`), parser registry with auto-detection, gate runner integration (`ParsedErrors` in gate results) |
 | [0.59.0] | 2026-03-17 | Merge log IMPL namespace — fix cross-IMPL merge log collision (all IMPLs shared `docs/IMPL/.saw-state/`), merge logs now namespaced by slug |
 | [0.58.0] | 2026-03-17 | Autonomy layer (R0-R5) — 9-agent IMPL: `pkg/autonomy/` levels+config, `pkg/queue/` manager, auto-remediate, closed-loop gate retry, daemon run loop, daemon CLI, resume detect fix, agent prompt enforcement |
 | [0.57.0] | 2026-03-16 | Batch command integration — gate caching in `finalize-wave`, resume detection in `prepare-wave`, error classification in `retry` agent task |
