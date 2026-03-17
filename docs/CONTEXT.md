@@ -128,3 +128,5 @@ type BackendConfig struct {
   - IMPL doc: docs/IMPL/complete/IMPL-bedrock-structured-output.yaml
 - **integration-agent**: completed 2026-03-16, 4 waves, 12 agents
   - IMPL doc: docs/IMPL/complete/IMPL-integration-agent.yaml
+- **determinism-automation-v2**: completed 2026-03-16, 2 waves, 6 agents
+  - IMPL doc: docs/IMPL/IMPL-determinism-automation-v2.yaml

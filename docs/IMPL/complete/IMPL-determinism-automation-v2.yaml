@@ -1,3 +1,4 @@
+completion_date: "2026-03-16"
 title: Determinism & Automation Improvements v2
 feature_slug: determinism-automation-v2
 verdict: SUITABLE
@@ -776,6 +777,35 @@ completion_reports:
             - pkg/protocol/error_codes.go
             - pkg/protocol/error_codes_test.go
         notes: auto-committed by orchestrator (API agent)
+    E:
+        status: complete
+        worktree: /Users/dayna.blackwell/code/scout-and-wave-go/.claude/worktrees/wave2-agent-E
+        branch: wave2-agent-E
+        commit: 0d4929da2129edc0338555170f808e0c382eaf92
+        files_changed:
+            - pkg/pipeline/pipeline.go
+            - pkg/pipeline/pipeline_test.go
+            - pkg/pipeline/registry.go
+            - pkg/pipeline/registry_test.go
+            - pkg/pipeline/saw_steps.go
+            - pkg/pipeline/saw_steps_test.go
+        notes: auto-committed by orchestrator (API agent)
+    F:
+        status: complete
+        worktree: /Users/dayna.blackwell/code/scout-and-wave-go/.claude/worktrees/wave2-agent-F
+        branch: wave2-agent-F
+        commit: f1db8e9f47bf94fda1b41dc478540a5941af22c9
+        files_changed:
+            - cmd/saw/main.go
+            - cmd/saw/retry_cmd.go
+            - cmd/saw/retry_cmd_test.go
+        notes: auto-committed by orchestrator (API agent)
+integration_reports:
+    wave2:
+        wave: 2
+        gaps: []
+        valid: true
+        summary: 'Wave 2: all exports are integrated (no gaps detected)'
 pre_mortem:
     overall_risk: medium
     rows:
@@ -804,4 +834,4 @@ known_issues:
       description: The codebase has two parallel type systems for IMPL docs — types.IMPLDoc (used by orchestrator) and protocol.IMPLManifest (canonical). Conversion shims exist in pkg/engine/engine.go.
       status: Pre-existing technical debt
       workaround: New code should use protocol.IMPLManifest; conversion via manifestToIMPLDoc when orchestrator interfaces require types.IMPLDoc
-state: SCOUT_PENDING
+state: "COMPLETE"

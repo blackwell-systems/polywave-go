@@ -1,9 +1,10 @@
 {
   "agent": "D",
   "wave": 2,
-  "impl_doc": "/Users/dayna.blackwell/code/scout-and-wave-go/docs/IMPL/IMPL-bedrock-structured-output.yaml",
+  "impl_doc": "/Users/dayna.blackwell/code/scout-and-wave-go/docs/IMPL/IMPL-failure-recovery-ux.yaml",
   "owned_files": [
-    "pkg/engine/runner.go",
-    "pkg/engine/runner_structured_test.go"
+    "cmd/saw/main.go",
+    "pkg/engine/finalize.go",
+    "pkg/engine/runner.go"
   ]
 }
