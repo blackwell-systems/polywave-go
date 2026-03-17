@@ -5,18 +5,21 @@ import (
 	"fmt"
 	"os/exec"
 	"path/filepath"
+
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/gatecache"
 )
 
 // GateResult represents the outcome of executing a single quality gate.
 // It captures all execution details including stdout/stderr and pass/fail status.
 type GateResult struct {
-	Type     string `json:"type"`
-	Command  string `json:"command"`
-	ExitCode int    `json:"exit_code"`
-	Stdout   string `json:"stdout"`
-	Stderr   string `json:"stderr"`
-	Required bool   `json:"required"`
-	Passed   bool   `json:"passed"`
+	Type      string `json:"type"`
+	Command   string `json:"command"`
+	ExitCode  int    `json:"exit_code"`
+	Stdout    string `json:"stdout"`
+	Stderr    string `json:"stderr"`
+	Required  bool   `json:"required"`
+	Passed    bool   `json:"passed"`
+	FromCache bool   `json:"from_cache,omitempty"`
 }
 
 // RunGates executes quality gates for a specific wave from the manifest.
@@ -81,6 +84,101 @@ func RunGates(manifest *IMPLManifest, waveNumber int, repoDir string) ([]GateRes
 			result.ExitCode = 0
 			result.Passed = true
 		}
+
+		results = append(results, result)
+	}
+
+	return results, nil
+}
+
+// RunGatesWithCache executes quality gates with optional result caching.
+// If cache is nil, it behaves identically to RunGates.
+// For each gate, if a valid (non-expired) cached result exists, it is returned
+// directly without re-executing the gate command. Otherwise the gate is run
+// normally and the result is stored in the cache.
+func RunGatesWithCache(manifest *IMPLManifest, waveNumber int, repoDir string, cache *gatecache.Cache) ([]GateResult, error) {
+	if cache == nil {
+		return RunGates(manifest, waveNumber, repoDir)
+	}
+
+	// Return empty results if no quality gates defined
+	if manifest.QualityGates == nil || len(manifest.QualityGates.Gates) == 0 {
+		return []GateResult{}, nil
+	}
+
+	// Build a cache key from the current repository state
+	cacheKey, err := cache.BuildKey(repoDir)
+	if err != nil {
+		// If we can't build a key (e.g. not a git repo), fall back to no-cache
+		return RunGates(manifest, waveNumber, repoDir)
+	}
+
+	repoName := filepath.Base(repoDir)
+
+	var results []GateResult
+	for _, gate := range manifest.QualityGates.Gates {
+		// Skip gates scoped to a different repo.
+		if gate.Repo != "" && gate.Repo != repoName {
+			continue
+		}
+
+		// Check the cache first
+		if cached, ok := cache.Get(cacheKey, gate.Type); ok {
+			results = append(results, GateResult{
+				Type:      gate.Type,
+				Command:   gate.Command,
+				Required:  gate.Required,
+				Passed:    cached.Passed,
+				ExitCode:  cached.ExitCode,
+				Stdout:    cached.Stdout,
+				Stderr:    cached.Stderr,
+				FromCache: true,
+			})
+			continue
+		}
+
+		// Cache miss — run the gate
+		result := GateResult{
+			Type:     gate.Type,
+			Command:  gate.Command,
+			Required: gate.Required,
+		}
+
+		cmd := exec.Command("sh", "-c", gate.Command)
+		cmd.Dir = repoDir
+
+		var stdout, stderr bytes.Buffer
+		cmd.Stdout = &stdout
+		cmd.Stderr = &stderr
+
+		runErr := cmd.Run()
+		result.Stdout = stdout.String()
+		result.Stderr = stderr.String()
+
+		if runErr != nil {
+			if exitErr, ok := runErr.(*exec.ExitError); ok {
+				result.ExitCode = exitErr.ExitCode()
+			} else {
+				result.ExitCode = -1
+				if result.Stderr == "" {
+					result.Stderr = fmt.Sprintf("command failed to execute: %v", runErr)
+				}
+			}
+			result.Passed = false
+		} else {
+			result.ExitCode = 0
+			result.Passed = true
+		}
+
+		// Store in cache (ignore errors — cache is best-effort)
+		_ = cache.Put(cacheKey, gate.Type, gatecache.CachedResult{
+			GateType: gate.Type,
+			Command:  gate.Command,
+			Passed:   result.Passed,
+			ExitCode: result.ExitCode,
+			Stdout:   result.Stdout,
+			Stderr:   result.Stderr,
+		})
 
 		results = append(results, result)
 	}
