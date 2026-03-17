@@ -8,6 +8,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 | Version | Date | Headline |
 |---------|------|----------|
+| [0.50.0] | 2026-03-16 | Worktree reuse + timeout failure type — rerun agents reuse existing worktrees, maxTurns emits failure_type "timeout" |
 | [0.49.0] | 2026-03-16 | Integration Agent engine (E25/E26) — 4-wave implementation: validation engine, heuristics, CLI, runner, constraints, manifest types, engine wiring |
 | [0.48.0] | 2026-03-15 | MR01 multi-repo consistency + list-impls state field — validator catches mixed repo: tags, list-impls adds state field, filters completed IMPLs by default (--include-complete to show) |
 | [0.47.0] | 2026-03-15 | Workshop constraints — tool-level SAW protocol enforcement (I1/I2/I5/I6 middleware), H6 dep checker prefix matching fix, orchestrator wiring |
@@ -56,6 +57,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 | [0.4.0] | 2026-03-09 | Per-agent model routing — ScoutModel/WaveModel opts, `model:` field in IMPL doc agent sections, per-agent backend dispatch |
 | [0.3.0] | 2026-03-08 | Protocol audit fixes — P0: failure_type parsing, multi-gen agent IDs; P1: E22 2-pass scaffold build, cross-repo Repo column; P2: repo field in completion reports |
 | [0.2.0] | 2026-03-08 | Engine protocol parity — E17–E23 implemented (context memory, failure routing, stub scan, quality gates, scaffold build verify, per-agent context extraction) |
+
+---
+
+## [0.50.0] - 2026-03-16
+
+### Fixed
+
+- **Worktree reuse for agent reruns** — `launchAgent` in `pkg/orchestrator/orchestrator.go` now checks `os.Stat(wtPath)` before creating worktrees. Existing worktrees are reused instead of failing with "branch already exists" error. Enables rerunning individual failed agents after server restart.
+- **maxTurns failure type** — Agents exceeding the turn limit now emit `failure_type: "timeout"` instead of generic `"execute"`, enabling proper E19 failure routing (timeout → retry automatically vs execute → escalate).
 
 ---
 

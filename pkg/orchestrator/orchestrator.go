@@ -555,20 +555,29 @@ func (o *Orchestrator) launchAgent(
 	waveNum int,
 	agentSpec types.AgentSpec,
 ) error {
-	// a. Create the worktree.
-	wtPath, err := worktreeCreatorFunc(wm, waveNum, agentSpec.Letter)
-	if err != nil {
-		o.publish(OrchestratorEvent{
-			Event: "agent_failed",
-			Data: AgentFailedPayload{
-				Agent:       agentSpec.Letter,
-				Wave:        waveNum,
-				Status:      "failed",
-				FailureType: "worktree_creation",
-				Message:     err.Error(),
-			},
-		})
-		return fmt.Errorf("orchestrator: agent %s: create worktree: %w", agentSpec.Letter, err)
+	// a. Create the worktree (or reuse existing one for reruns).
+	branch := fmt.Sprintf("wave%d-agent-%s", waveNum, agentSpec.Letter)
+	wtPath := filepath.Join(o.repoPath, ".claude", "worktrees", branch)
+
+	if _, statErr := os.Stat(wtPath); statErr == nil {
+		// Worktree already exists — reuse it (rerun scenario).
+		fmt.Fprintf(os.Stderr, "orchestrator: reusing existing worktree for agent %s at %s\n", agentSpec.Letter, wtPath)
+	} else {
+		var createErr error
+		wtPath, createErr = worktreeCreatorFunc(wm, waveNum, agentSpec.Letter)
+		if createErr != nil {
+			o.publish(OrchestratorEvent{
+				Event: "agent_failed",
+				Data: AgentFailedPayload{
+					Agent:       agentSpec.Letter,
+					Wave:        waveNum,
+					Status:      "failed",
+					FailureType: "worktree_creation",
+					Message:     createErr.Error(),
+				},
+			})
+			return fmt.Errorf("orchestrator: agent %s: create worktree: %w", agentSpec.Letter, createErr)
+		}
 	}
 
 	// Publish agent_started after the worktree is ready.
@@ -628,13 +637,17 @@ func (o *Orchestrator) launchAgent(
 			})
 		},
 	); err != nil {
+		failureType := "execute"
+		if strings.Contains(err.Error(), "maxTurns") {
+			failureType = "timeout"
+		}
 		o.publish(OrchestratorEvent{
 			Event: "agent_failed",
 			Data: AgentFailedPayload{
 				Agent:       agentSpec.Letter,
 				Wave:        waveNum,
 				Status:      "failed",
-				FailureType: "execute",
+				FailureType: failureType,
 				Message:     err.Error(),
 			},
 		})
@@ -650,7 +663,6 @@ func (o *Orchestrator) launchAgent(
 	// d. Auto-commit and synthesize completion report if the agent didn't write one.
 	// This bridges the gap between CLI agents (SAW-protocol-aware, commit + write report)
 	// and API/Bedrock agents (vanilla Claude, just write files via tools).
-	branch := fmt.Sprintf("wave%d-agent-%s", waveNum, agentSpec.Letter)
 	if report == nil {
 		commitSHA, filesChanged, autoErr := autoCommitWorktree(wtPath, waveNum, agentSpec.Letter)
 		if autoErr != nil {
@@ -666,7 +678,7 @@ func (o *Orchestrator) launchAgent(
 			commitSHA, _ = git.RevParse(wtPath, "HEAD")
 			notes = "no changes produced (API agent)"
 		}
-		synthReport := protocol.CompletionReport{
+		report = &protocol.CompletionReport{
 			Status:       "complete",
 			Worktree:     wtPath,
 			Branch:       branch,
@@ -674,14 +686,20 @@ func (o *Orchestrator) launchAgent(
 			FilesChanged: filesChanged,
 			Notes:        notes,
 		}
+	}
+
+	// e. Always persist the completion report to the main branch IMPL doc.
+	// Whether the agent wrote it (found in worktree) or we synthesized it,
+	// the main branch IMPL doc must have it for merge to proceed.
+	if report != nil {
 		reportMu.Lock()
 		if manifest, loadErr := protocol.Load(o.implDocPath); loadErr == nil {
-			if setErr := protocol.SetCompletionReport(manifest, agentSpec.Letter, synthReport); setErr == nil {
+			if setErr := protocol.SetCompletionReport(manifest, agentSpec.Letter, *report); setErr == nil {
 				if saveErr := protocol.Save(manifest, o.implDocPath); saveErr != nil {
-					fmt.Fprintf(os.Stderr, "orchestrator: failed to save synthetic report for agent %s: %v\n", agentSpec.Letter, saveErr)
+					fmt.Fprintf(os.Stderr, "orchestrator: failed to save report for agent %s: %v\n", agentSpec.Letter, saveErr)
 				}
 			} else {
-				fmt.Fprintf(os.Stderr, "orchestrator: failed to set synthetic report for agent %s: %v\n", agentSpec.Letter, setErr)
+				fmt.Fprintf(os.Stderr, "orchestrator: failed to set report for agent %s: %v\n", agentSpec.Letter, setErr)
 			}
 		}
 		reportMu.Unlock()

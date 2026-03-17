@@ -120,6 +120,21 @@ func CreateWorktrees(manifestPath string, waveNum int, repoDir string) (*CreateW
 		worktreePath := filepath.Join(agentRepoDir, ".claude", "worktrees", fmt.Sprintf("wave%d-agent-%s", waveNum, agent.ID))
 		branchName := fmt.Sprintf("wave%d-agent-%s", waveNum, agent.ID)
 
+		// Auto-clean stale branches from previous IMPLs that reuse the same
+		// wave/agent naming scheme. A branch is "stale" if it already exists and
+		// its tip is an ancestor of HEAD (i.e., it was already merged).
+		if git.BranchExists(agentRepoDir, branchName) {
+			if git.IsAncestor(agentRepoDir, branchName, "HEAD") {
+				// Branch is merged — safe to delete. Also remove its worktree if present.
+				_ = git.WorktreeRemove(agentRepoDir, worktreePath)
+				_ = git.DeleteBranch(agentRepoDir, branchName)
+				fmt.Fprintf(os.Stderr, "Cleaned up stale merged branch %q in %s\n", branchName, agentRepoDir)
+			} else {
+				// Branch exists but is NOT merged — this is dangerous to delete.
+				return nil, fmt.Errorf("branch %q already exists in %s and is not merged into HEAD; delete it manually or merge first", branchName, agentRepoDir)
+			}
+		}
+
 		// Create the worktree
 		if err := git.WorktreeAdd(agentRepoDir, worktreePath, branchName); err != nil {
 			return nil, fmt.Errorf("failed to create worktree for agent %s in repo %s: %w", agent.ID, agentRepoDir, err)

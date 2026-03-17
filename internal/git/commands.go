@@ -199,6 +199,12 @@ func DeleteBranch(repoPath, branch string) error {
 	return nil
 }
 
+// BranchExists returns true if the named branch exists in the repository.
+func BranchExists(repoPath, branch string) bool {
+	_, err := Run(repoPath, "rev-parse", "--verify", "refs/heads/"+branch)
+	return err == nil
+}
+
 // RevParse resolves ref to a commit SHA in the repository at repoPath.
 func RevParse(repoPath, ref string) (string, error) {
 	out, err := Run(repoPath, "rev-parse", ref)

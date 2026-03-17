@@ -96,6 +96,15 @@ type RunMergeOpts struct {
 	WaveNum  int
 }
 
+// ResolveConflictsOpts configures the engine-level conflict resolution function.
+type ResolveConflictsOpts struct {
+	IMPLPath   string                          // path to IMPL YAML manifest
+	RepoPath   string                          // repo root (where git merge is in progress)
+	WaveNum    int                             // which wave's merge is conflicted
+	ChatModel  string                          // optional model override
+	OnProgress func(file string, status string) // per-file progress callback
+}
+
 // RunVerificationOpts configures post-merge verification.
 type RunVerificationOpts struct {
 	RepoPath    string
