@@ -144,7 +144,7 @@ func selectFixBuildBackend(chatModel string, onToolCall func(ev backend.ToolCall
 
 	config := backend.Config{
 		Model:      bareModel,
-		MaxTurns:   20,    // Enough for diagnosis + fix + verify
+		MaxTurns:   50,    // Diagnosis + multi-file reads + edits + verify + iterate
 		MaxTokens:  16384,
 		OnToolCall: onToolCall,
 	}
