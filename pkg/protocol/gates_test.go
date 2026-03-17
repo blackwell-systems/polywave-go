@@ -2,6 +2,9 @@ package protocol
 
 import (
 	"testing"
+	"time"
+
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/gatecache"
 )
 
 func TestRunGates_NoGates(t *testing.T) {
@@ -215,5 +218,115 @@ func TestRunGates_NonExistentCommand(t *testing.T) {
 	// Stderr should contain an error message
 	if result.Stderr == "" {
 		t.Errorf("expected Stderr to contain error message for non-existent command")
+	}
+}
+
+// ---- RunGatesWithCache tests ----
+
+func TestRunGatesWithCache_NilCache(t *testing.T) {
+	// With nil cache, RunGatesWithCache must behave identically to RunGates.
+	manifest := &IMPLManifest{
+		QualityGates: &QualityGates{
+			Level: "quick",
+			Gates: []QualityGate{
+				{Type: "build", Command: "echo build ok", Required: true},
+			},
+		},
+	}
+
+	results, err := RunGatesWithCache(manifest, 1, "/tmp", nil)
+	if err != nil {
+		t.Fatalf("expected no error, got: %v", err)
+	}
+	if len(results) != 1 {
+		t.Fatalf("expected 1 result, got %d", len(results))
+	}
+	if !results[0].Passed {
+		t.Error("expected gate to pass")
+	}
+	if results[0].FromCache {
+		t.Error("expected FromCache=false with nil cache")
+	}
+}
+
+func TestRunGatesWithCache_CacheHit(t *testing.T) {
+	dir := t.TempDir()
+	cache := gatecache.New(dir, 5*time.Minute)
+
+	// Manually seed the cache with a passing result.
+	// We need to use the same key that BuildKey would return.  Since /tmp is
+	// not a git repo, BuildKey will fail and RunGatesWithCache falls back to
+	// RunGates (no-cache path).  To test the true cache-hit path we seed a
+	// fake key directly and call Get/Put ourselves.
+
+	fakeKey := gatecache.CacheKey{
+		HeadCommit:   "cafebabe1234567890cafebabe1234567890cafe",
+		StagedStat:   "",
+		UnstagedStat: "",
+	}
+	seedResult := gatecache.CachedResult{
+		GateType: "build",
+		Command:  "exit 42",
+		Passed:   true,
+		ExitCode: 0,
+		Stdout:   "cached stdout",
+		Stderr:   "",
+	}
+	if err := cache.Put(fakeKey, "build", seedResult); err != nil {
+		t.Fatalf("seeding cache failed: %v", err)
+	}
+
+	// Verify the seeded value is retrievable
+	got, ok := cache.Get(fakeKey, "build")
+	if !ok {
+		t.Fatal("seeded cache entry not found")
+	}
+	if !got.Passed {
+		t.Fatal("seeded entry should be Passed=true")
+	}
+	if !got.FromCache {
+		t.Fatal("seeded entry should have FromCache=true")
+	}
+}
+
+func TestRunGatesWithCache_CacheMissRunsGate(t *testing.T) {
+	dir := t.TempDir()
+	cache := gatecache.New(dir, 5*time.Minute)
+
+	manifest := &IMPLManifest{
+		QualityGates: &QualityGates{
+			Level: "quick",
+			Gates: []QualityGate{
+				{Type: "build", Command: "echo run ok", Required: true},
+			},
+		},
+	}
+
+	// /tmp is almost certainly not a git repo; BuildKey should fail and we
+	// fall back to RunGates (cache miss path runs the gate normally).
+	results, err := RunGatesWithCache(manifest, 1, "/tmp", cache)
+	if err != nil {
+		t.Fatalf("expected no error, got: %v", err)
+	}
+	if len(results) != 1 {
+		t.Fatalf("expected 1 result, got %d", len(results))
+	}
+	if !results[0].Passed {
+		t.Error("expected gate to pass")
+	}
+}
+
+func TestRunGatesWithCache_EmptyManifest(t *testing.T) {
+	dir := t.TempDir()
+	cache := gatecache.New(dir, 5*time.Minute)
+
+	manifest := &IMPLManifest{}
+
+	results, err := RunGatesWithCache(manifest, 1, "/tmp", cache)
+	if err != nil {
+		t.Fatalf("expected no error, got: %v", err)
+	}
+	if len(results) != 0 {
+		t.Errorf("expected empty results, got %d", len(results))
 	}
 }
