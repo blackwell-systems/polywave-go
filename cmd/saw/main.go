@@ -50,6 +50,7 @@ func main() {
 		newValidateIntegrationCmd(),
 		newRetryCmd(),
 		newBuildRetryContextCmd(),
+		newResumeDetectCmd(),
 	)
 	if err := rootCmd.Execute(); err != nil {
 		fmt.Fprintln(os.Stderr, err)
