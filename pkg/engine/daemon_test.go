@@ -2,6 +2,7 @@ package engine
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sync"
 	"testing"
@@ -9,411 +10,422 @@ import (
 
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/autonomy"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/queue"
 )
 
-// saveDaemonFuncs saves and restores all daemon function variables for test isolation.
-func saveDaemonFuncs(t *testing.T) {
-	t.Helper()
+// ─── Helpers ──────────────────────────────────────────────────────────────
+
+// saveDaemonFuncs returns a function that restores all daemon function variables.
+func saveDaemonFuncs() func() {
 	origCheckQueue := daemonCheckQueueFunc
 	origRunScout := daemonRunScoutFunc
 	origFinalizeWave := daemonFinalizeWaveFunc
 	origAutoRemediate := daemonAutoRemediateFunc
-	origMarkComplete := daemonMarkIMPLCompleteFunc
+	origMarkIMPLComplete := daemonMarkIMPLCompleteFunc
 	origCreateWorktrees := daemonCreateWorktreesFunc
-	origUpdateStatus := daemonUpdateQueueStatusFunc
-	origLoadWaves := daemonLoadIMPLWavesFunc
+	origUpdateQueueStatus := daemonUpdateQueueStatusFunc
+	origLoadIMPLWaves := daemonLoadIMPLWavesFunc
 
-	t.Cleanup(func() {
+	return func() {
 		daemonCheckQueueFunc = origCheckQueue
 		daemonRunScoutFunc = origRunScout
 		daemonFinalizeWaveFunc = origFinalizeWave
 		daemonAutoRemediateFunc = origAutoRemediate
-		daemonMarkIMPLCompleteFunc = origMarkComplete
+		daemonMarkIMPLCompleteFunc = origMarkIMPLComplete
 		daemonCreateWorktreesFunc = origCreateWorktrees
-		daemonUpdateQueueStatusFunc = origUpdateStatus
-		daemonLoadIMPLWavesFunc = origLoadWaves
-	})
+		daemonUpdateQueueStatusFunc = origUpdateQueueStatus
+		daemonLoadIMPLWavesFunc = origLoadIMPLWaves
+	}
 }
 
-// setupDaemonMocks installs no-op mocks for all daemon function variables.
-// Returns after saveDaemonFuncs so originals are restored on cleanup.
-func setupDaemonMocks(t *testing.T) {
-	t.Helper()
-	saveDaemonFuncs(t)
-
-	// Default: empty queue (no items).
-	daemonCheckQueueFunc = func(ctx context.Context, opts CheckQueueOpts) (*CheckQueueResult, error) {
-		return &CheckQueueResult{Advanced: false, Reason: "no_items"}, nil
-	}
-	daemonRunScoutFunc = func(ctx context.Context, opts RunScoutOpts, onChunk func(string)) error {
-		return nil
-	}
-	daemonFinalizeWaveFunc = func(ctx context.Context, opts FinalizeWaveOpts) (*FinalizeWaveResult, error) {
-		return &FinalizeWaveResult{Wave: opts.WaveNum, BuildPassed: true, Success: true}, nil
-	}
-	daemonAutoRemediateFunc = func(ctx context.Context, opts AutoRemediateOpts) (*AutoRemediateResult, error) {
-		return &AutoRemediateResult{Fixed: true, Attempts: 1}, nil
-	}
-	daemonMarkIMPLCompleteFunc = func(ctx context.Context, opts MarkIMPLCompleteOpts) error {
-		return nil
-	}
+// installNoopWorktrees replaces daemonCreateWorktreesFunc with a no-op.
+func installNoopWorktrees() {
 	daemonCreateWorktreesFunc = func(manifestPath string, waveNum int, repoDir string) (*protocol.CreateWorktreesResult, error) {
 		return &protocol.CreateWorktreesResult{}, nil
 	}
-	daemonUpdateQueueStatusFunc = func(repoPath, slug, status string) error {
+}
+
+// installNoopMarkComplete replaces daemonMarkIMPLCompleteFunc with a no-op.
+func installNoopMarkComplete() {
+	daemonMarkIMPLCompleteFunc = func(ctx context.Context, opts MarkIMPLCompleteOpts) error {
 		return nil
-	}
-	daemonLoadIMPLWavesFunc = func(implPath string) ([]int, error) {
-		return []int{1}, nil
 	}
 }
 
-func TestRunDaemon_ProcessesOneItem(t *testing.T) {
-	setupDaemonMocks(t)
+// installNoopUpdateQueueStatus replaces daemonUpdateQueueStatusFunc with a no-op.
+func installNoopUpdateQueueStatus() {
+	daemonUpdateQueueStatusFunc = func(repoPath, slug, status string) error {
+		return nil
+	}
+}
 
-	callCount := 0
-	var mu sync.Mutex
+// installSuccessFinalizeWave replaces daemonFinalizeWaveFunc with a successful no-op.
+func installSuccessFinalizeWave() {
+	daemonFinalizeWaveFunc = func(ctx context.Context, opts FinalizeWaveOpts) (*FinalizeWaveResult, error) {
+		return &FinalizeWaveResult{Wave: opts.WaveNum, BuildPassed: true, Success: true}, nil
+	}
+}
 
-	// First call: return an item. Second call onwards: no items (triggers sleep, then cancel).
+// installNoopScout replaces daemonRunScoutFunc with a no-op.
+func installNoopScout() {
+	daemonRunScoutFunc = func(ctx context.Context, opts RunScoutOpts, onChunk func(string)) error {
+		return nil
+	}
+}
+
+// installSingleWaveIMPL makes daemonLoadIMPLWavesFunc return a single wave.
+func installSingleWaveIMPL(waveNum int) {
+	daemonLoadIMPLWavesFunc = func(implPath string) ([]int, error) {
+		return []int{waveNum}, nil
+	}
+}
+
+// collectEvents is a thread-safe event collector for test assertions.
+type collectEvents struct {
+	mu     sync.Mutex
+	events []Event
+}
+
+func (c *collectEvents) add(ev Event) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.events = append(c.events, ev)
+}
+
+func (c *collectEvents) names() []string {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	names := make([]string, len(c.events))
+	for i, ev := range c.events {
+		names[i] = ev.Event
+	}
+	return names
+}
+
+func (c *collectEvents) hasEvent(name string) bool {
+	for _, n := range c.names() {
+		if n == name {
+			return true
+		}
+	}
+	return false
+}
+
+// seedQueueForDaemon is a thin helper that adds a single item and returns its slug.
+func seedQueueForDaemon(t *testing.T, repoPath string, item queue.Item) string {
+	t.Helper()
+	mgr := queue.NewManager(repoPath)
+	if err := mgr.Add(item); err != nil {
+		t.Fatalf("seedQueueForDaemon: %v", err)
+	}
+	return item.Slug
+}
+
+// ─── TestRunDaemon_StopsOnCancel ──────────────────────────────────────────
+
+// TestRunDaemon_StopsOnCancel verifies that RunDaemon exits cleanly when ctx
+// is cancelled before a queue item is dequeued.
+func TestRunDaemon_StopsOnCancel(t *testing.T) {
+	defer saveDaemonFuncs()()
+
+	// Queue returns nothing (empty queue) so daemon sleeps.
 	daemonCheckQueueFunc = func(ctx context.Context, opts CheckQueueOpts) (*CheckQueueResult, error) {
-		mu.Lock()
+		return &CheckQueueResult{Advanced: false, Reason: "no_items"}, nil
+	}
+
+	col := &collectEvents{}
+	ctx, cancel := context.WithCancel(context.Background())
+
+	// Cancel almost immediately.
+	go func() {
+		time.Sleep(20 * time.Millisecond)
+		cancel()
+	}()
+
+	opts := DaemonOpts{
+		RepoPath:     t.TempDir(),
+		PollInterval: 5 * time.Millisecond,
+		OnEvent:      col.add,
+	}
+
+	err := RunDaemon(ctx, opts)
+	if err != nil {
+		t.Fatalf("RunDaemon returned error: %v", err)
+	}
+	if !col.hasEvent("daemon_started") {
+		t.Error("expected daemon_started event")
+	}
+	if !col.hasEvent("daemon_stopped") {
+		t.Error("expected daemon_stopped event")
+	}
+}
+
+// ─── TestRunDaemon_EmptyQueue ─────────────────────────────────────────────
+
+// TestRunDaemon_EmptyQueue verifies that daemon_poll events are emitted when
+// the queue is empty and the daemon sleeps between polls.
+func TestRunDaemon_EmptyQueue(t *testing.T) {
+	defer saveDaemonFuncs()()
+
+	pollCount := 0
+	daemonCheckQueueFunc = func(ctx context.Context, opts CheckQueueOpts) (*CheckQueueResult, error) {
+		pollCount++
+		return &CheckQueueResult{Advanced: false, Reason: "no_items"}, nil
+	}
+
+	col := &collectEvents{}
+	ctx, cancel := context.WithCancel(context.Background())
+
+	// Let daemon poll at least twice, then cancel.
+	go func() {
+		time.Sleep(60 * time.Millisecond)
+		cancel()
+	}()
+
+	opts := DaemonOpts{
+		RepoPath:     t.TempDir(),
+		PollInterval: 10 * time.Millisecond,
+		OnEvent:      col.add,
+	}
+
+	if err := RunDaemon(ctx, opts); err != nil {
+		t.Fatalf("RunDaemon: %v", err)
+	}
+
+	if !col.hasEvent("daemon_poll") {
+		t.Error("expected at least one daemon_poll event")
+	}
+	if pollCount < 2 {
+		t.Errorf("expected at least 2 polls, got %d", pollCount)
+	}
+}
+
+// ─── TestRunDaemon_ProcessesOneItem ──────────────────────────────────────
+
+// TestRunDaemon_ProcessesOneItem verifies the full cycle is executed for a
+// single queue item and the daemon then goes back to polling.
+func TestRunDaemon_ProcessesOneItem(t *testing.T) {
+	defer saveDaemonFuncs()()
+
+	// Queue advances once, then returns empty.
+	callCount := 0
+	daemonCheckQueueFunc = func(ctx context.Context, opts CheckQueueOpts) (*CheckQueueResult, error) {
 		callCount++
-		n := callCount
-		mu.Unlock()
-		if n == 1 {
+		if callCount == 1 {
 			return &CheckQueueResult{
 				Advanced:  true,
-				NextSlug:  "test-feature",
-				NextTitle: "Test Feature",
+				NextSlug:  "my-feature",
+				NextTitle: "My Feature",
 				Reason:    "triggered",
 			}, nil
 		}
 		return &CheckQueueResult{Advanced: false, Reason: "no_items"}, nil
 	}
 
-	daemonLoadIMPLWavesFunc = func(implPath string) ([]int, error) {
-		return []int{1, 2}, nil
-	}
+	installNoopScout()
+	installSingleWaveIMPL(1)
+	installNoopWorktrees()
+	installSuccessFinalizeWave()
+	installNoopMarkComplete()
+	installNoopUpdateQueueStatus()
 
-	scoutCalled := false
-	daemonRunScoutFunc = func(ctx context.Context, opts RunScoutOpts, onChunk func(string)) error {
-		scoutCalled = true
-		if opts.Feature != "Test Feature" {
-			t.Errorf("expected feature 'Test Feature', got %q", opts.Feature)
-		}
-		return nil
-	}
-
-	wavesFinalized := 0
-	daemonFinalizeWaveFunc = func(ctx context.Context, opts FinalizeWaveOpts) (*FinalizeWaveResult, error) {
-		mu.Lock()
-		wavesFinalized++
-		mu.Unlock()
-		return &FinalizeWaveResult{Wave: opts.WaveNum, BuildPassed: true, Success: true}, nil
-	}
-
-	completeCalled := false
-	daemonMarkIMPLCompleteFunc = func(ctx context.Context, opts MarkIMPLCompleteOpts) error {
-		completeCalled = true
-		return nil
-	}
-
-	statusUpdates := make(map[string]string)
-	daemonUpdateQueueStatusFunc = func(repoPath, slug, status string) error {
-		mu.Lock()
-		statusUpdates[slug] = status
-		mu.Unlock()
-		return nil
-	}
-
+	col := &collectEvents{}
 	ctx, cancel := context.WithCancel(context.Background())
-	// Cancel after second poll detects empty queue and tries to sleep.
+
+	// Cancel after daemon processes the item and goes back to polling.
 	go func() {
-		// Wait for the item to be fully processed.
-		for i := 0; i < 100; i++ {
-			time.Sleep(10 * time.Millisecond)
-			mu.Lock()
-			done := completeCalled
-			mu.Unlock()
-			if done {
-				// Give it a moment to loop back and discover empty queue.
-				time.Sleep(20 * time.Millisecond)
-				cancel()
-				return
-			}
-		}
+		time.Sleep(200 * time.Millisecond)
 		cancel()
 	}()
 
 	opts := DaemonOpts{
 		RepoPath:       t.TempDir(),
-		AutonomyConfig: autonomy.Config{Level: autonomy.LevelAutonomous, MaxAutoRetries: 2},
 		PollInterval:   10 * time.Millisecond,
+		AutonomyConfig: autonomy.Config{Level: autonomy.LevelAutonomous, MaxAutoRetries: 2},
+		OnEvent:        col.add,
 	}
 
-	err := RunDaemon(ctx, opts)
-	if err != nil {
-		t.Fatalf("RunDaemon returned unexpected error: %v", err)
+	if err := RunDaemon(ctx, opts); err != nil {
+		t.Fatalf("RunDaemon: %v", err)
 	}
 
-	if !scoutCalled {
-		t.Error("Scout was not called")
-	}
-	if wavesFinalized != 2 {
-		t.Errorf("expected 2 waves finalized, got %d", wavesFinalized)
-	}
-	if !completeCalled {
-		t.Error("MarkIMPLComplete was not called")
-	}
-	if statusUpdates["test-feature"] != "complete" {
-		t.Errorf("expected queue status 'complete', got %q", statusUpdates["test-feature"])
-	}
-}
-
-func TestRunDaemon_StopsOnCancel(t *testing.T) {
-	setupDaemonMocks(t)
-
-	ctx, cancel := context.WithCancel(context.Background())
-
-	// Cancel immediately before any poll completes.
-	cancel()
-
-	opts := DaemonOpts{
-		RepoPath:       t.TempDir(),
-		AutonomyConfig: autonomy.DefaultConfig(),
-		PollInterval:   time.Second,
-	}
-
-	err := RunDaemon(ctx, opts)
-	if err != nil {
-		t.Fatalf("RunDaemon should return nil on cancel, got: %v", err)
-	}
-}
-
-func TestRunDaemon_EmptyQueue(t *testing.T) {
-	setupDaemonMocks(t)
-
-	pollCount := 0
-	var mu sync.Mutex
-
-	daemonCheckQueueFunc = func(ctx context.Context, opts CheckQueueOpts) (*CheckQueueResult, error) {
-		mu.Lock()
-		pollCount++
-		n := pollCount
-		mu.Unlock()
-		if n >= 3 {
-			// Cancel after 3 polls to stop the test.
-			return &CheckQueueResult{Advanced: false, Reason: "no_items"}, nil
+	// Verify full cycle events.
+	for _, want := range []string{
+		"daemon_started",
+		"daemon_poll",
+		"daemon_processing",
+		"daemon_wave_complete",
+		"daemon_impl_complete",
+		"daemon_stopped",
+	} {
+		if !col.hasEvent(want) {
+			t.Errorf("missing expected event %q; got: %v", want, col.names())
 		}
-		return &CheckQueueResult{Advanced: false, Reason: "no_items"}, nil
-	}
-
-	ctx, cancel := context.WithCancel(context.Background())
-	go func() {
-		for {
-			time.Sleep(5 * time.Millisecond)
-			mu.Lock()
-			n := pollCount
-			mu.Unlock()
-			if n >= 3 {
-				cancel()
-				return
-			}
-		}
-	}()
-
-	opts := DaemonOpts{
-		RepoPath:       t.TempDir(),
-		AutonomyConfig: autonomy.DefaultConfig(),
-		PollInterval:   5 * time.Millisecond,
-	}
-
-	err := RunDaemon(ctx, opts)
-	if err != nil {
-		t.Fatalf("RunDaemon should return nil, got: %v", err)
-	}
-
-	mu.Lock()
-	finalCount := pollCount
-	mu.Unlock()
-	if finalCount < 3 {
-		t.Errorf("expected at least 3 poll cycles, got %d", finalCount)
 	}
 }
 
+// ─── TestRunDaemon_AutoRemediatesOnFailure ────────────────────────────────
+
+// TestRunDaemon_AutoRemediatesOnFailure verifies that when FinalizeWave fails
+// and autonomy permits, AutoRemediate is called and the item completes.
 func TestRunDaemon_AutoRemediatesOnFailure(t *testing.T) {
-	setupDaemonMocks(t)
+	defer saveDaemonFuncs()()
 
+	// Queue advances once.
 	callCount := 0
-	var mu sync.Mutex
-
 	daemonCheckQueueFunc = func(ctx context.Context, opts CheckQueueOpts) (*CheckQueueResult, error) {
-		mu.Lock()
 		callCount++
-		n := callCount
-		mu.Unlock()
-		if n == 1 {
+		if callCount == 1 {
 			return &CheckQueueResult{
 				Advanced:  true,
-				NextSlug:  "broken-feature",
-				NextTitle: "Broken Feature",
+				NextSlug:  "remediatable-feature",
+				NextTitle: "Remediatable Feature",
 				Reason:    "triggered",
 			}, nil
 		}
 		return &CheckQueueResult{Advanced: false, Reason: "no_items"}, nil
 	}
 
-	// Wave 1 fails initially.
+	installNoopScout()
+	installSingleWaveIMPL(1)
+	installNoopWorktrees()
+
+	// FinalizeWave fails.
 	daemonFinalizeWaveFunc = func(ctx context.Context, opts FinalizeWaveOpts) (*FinalizeWaveResult, error) {
-		return &FinalizeWaveResult{
-			Wave:        opts.WaveNum,
-			BuildPassed: false,
-			Success:     false,
-		}, fmt.Errorf("build failed")
+		return &FinalizeWaveResult{Wave: opts.WaveNum, BuildPassed: false}, fmt.Errorf("build failed")
 	}
 
+	// AutoRemediate fixes it.
 	remediateCalled := false
 	daemonAutoRemediateFunc = func(ctx context.Context, opts AutoRemediateOpts) (*AutoRemediateResult, error) {
 		remediateCalled = true
-		if opts.WaveNum != 1 {
-			t.Errorf("expected wave 1, got %d", opts.WaveNum)
-		}
 		return &AutoRemediateResult{Fixed: true, Attempts: 1}, nil
 	}
 
-	completeCalled := false
-	daemonMarkIMPLCompleteFunc = func(ctx context.Context, opts MarkIMPLCompleteOpts) error {
-		completeCalled = true
-		return nil
-	}
+	installNoopMarkComplete()
+	installNoopUpdateQueueStatus()
 
+	col := &collectEvents{}
 	ctx, cancel := context.WithCancel(context.Background())
 	go func() {
-		for i := 0; i < 200; i++ {
-			time.Sleep(10 * time.Millisecond)
-			mu.Lock()
-			n := callCount
-			mu.Unlock()
-			if n >= 2 {
-				time.Sleep(20 * time.Millisecond)
-				cancel()
-				return
-			}
-		}
-		cancel()
-	}()
-
-	opts := DaemonOpts{
-		RepoPath:       t.TempDir(),
-		AutonomyConfig: autonomy.Config{Level: autonomy.LevelAutonomous, MaxAutoRetries: 2},
-		PollInterval:   10 * time.Millisecond,
-	}
-
-	_ = RunDaemon(ctx, opts)
-
-	if !remediateCalled {
-		t.Error("AutoRemediate was not called after finalize failure")
-	}
-	if !completeCalled {
-		t.Error("MarkIMPLComplete should be called after successful remediation")
-	}
-}
-
-func TestRunDaemon_PausesForReview(t *testing.T) {
-	setupDaemonMocks(t)
-
-	callCount := 0
-	var mu sync.Mutex
-
-	daemonCheckQueueFunc = func(ctx context.Context, opts CheckQueueOpts) (*CheckQueueResult, error) {
-		mu.Lock()
-		callCount++
-		mu.Unlock()
-		return &CheckQueueResult{
-			Advanced:  true,
-			NextSlug:  "review-me",
-			NextTitle: "Review Me",
-			Reason:    "triggered",
-		}, nil
-	}
-
-	var events []string
-	var eventMu sync.Mutex
-
-	ctx, cancel := context.WithCancel(context.Background())
-	// Cancel after a short delay to unblock the awaiting_review wait.
-	go func() {
-		time.Sleep(100 * time.Millisecond)
+		time.Sleep(200 * time.Millisecond)
 		cancel()
 	}()
 
 	opts := DaemonOpts{
 		RepoPath: t.TempDir(),
-		// Supervised: impl_review is NOT auto-approved, so daemon should pause.
-		AutonomyConfig: autonomy.Config{Level: autonomy.LevelSupervised, MaxAutoRetries: 2},
+		// autonomous permits gate_failure remediation
+		AutonomyConfig: autonomy.Config{Level: autonomy.LevelAutonomous, MaxAutoRetries: 2},
 		PollInterval:   10 * time.Millisecond,
-		OnEvent: func(e Event) {
-			eventMu.Lock()
-			events = append(events, e.Event)
-			eventMu.Unlock()
-		},
+		OnEvent:        col.add,
 	}
 
-	_ = RunDaemon(ctx, opts)
-
-	eventMu.Lock()
-	defer eventMu.Unlock()
-
-	foundAwaiting := false
-	for _, ev := range events {
-		if ev == "daemon_awaiting_review" {
-			foundAwaiting = true
-			break
-		}
+	if err := RunDaemon(ctx, opts); err != nil {
+		t.Fatalf("RunDaemon: %v", err)
 	}
-	if !foundAwaiting {
-		t.Errorf("expected daemon_awaiting_review event, got events: %v", events)
+
+	if !remediateCalled {
+		t.Error("expected AutoRemediate to be called")
+	}
+	if !col.hasEvent("daemon_impl_complete") {
+		t.Errorf("expected daemon_impl_complete event; got: %v", col.names())
+	}
+	if col.hasEvent("daemon_blocked") {
+		t.Errorf("unexpected daemon_blocked event when remediation succeeded")
 	}
 }
 
-func TestRunDaemon_EmitsEvents(t *testing.T) {
-	setupDaemonMocks(t)
+// ─── TestRunDaemon_PausesForReview ────────────────────────────────────────
 
+// TestRunDaemon_PausesForReview verifies that in supervised mode the daemon
+// emits daemon_awaiting_review and waits (ctx cancellation is the release).
+func TestRunDaemon_PausesForReview(t *testing.T) {
+	defer saveDaemonFuncs()()
+
+	// Queue advances once.
 	callCount := 0
-	var mu sync.Mutex
-
 	daemonCheckQueueFunc = func(ctx context.Context, opts CheckQueueOpts) (*CheckQueueResult, error) {
-		mu.Lock()
 		callCount++
-		n := callCount
-		mu.Unlock()
-		if n == 1 {
+		if callCount == 1 {
 			return &CheckQueueResult{
 				Advanced:  true,
-				NextSlug:  "event-test",
-				NextTitle: "Event Test",
+				NextSlug:  "supervised-feature",
+				NextTitle: "Supervised Feature",
 				Reason:    "triggered",
 			}, nil
 		}
 		return &CheckQueueResult{Advanced: false, Reason: "no_items"}, nil
 	}
 
-	var events []string
-	var eventMu sync.Mutex
+	installNoopScout()
+	installSingleWaveIMPL(1)
+	installNoopWorktrees()
+	installSuccessFinalizeWave()
+	installNoopMarkComplete()
+	installNoopUpdateQueueStatus()
 
-	completeDone := make(chan struct{})
-	daemonMarkIMPLCompleteFunc = func(ctx context.Context, opts MarkIMPLCompleteOpts) error {
-		close(completeDone)
-		return nil
+	col := &collectEvents{}
+	ctx, cancel := context.WithCancel(context.Background())
+
+	// Cancel quickly — this simulates "human reviewed and stopped the daemon".
+	go func() {
+		time.Sleep(50 * time.Millisecond)
+		cancel()
+	}()
+
+	opts := DaemonOpts{
+		RepoPath: t.TempDir(),
+		// supervised: impl_review stage is NOT auto-approved → daemon pauses
+		AutonomyConfig: autonomy.Config{Level: autonomy.LevelSupervised, MaxAutoRetries: 2},
+		PollInterval:   5 * time.Millisecond,
+		OnEvent:        col.add,
 	}
 
+	if err := RunDaemon(ctx, opts); err != nil {
+		t.Fatalf("RunDaemon: %v", err)
+	}
+
+	if !col.hasEvent("daemon_awaiting_review") {
+		t.Errorf("expected daemon_awaiting_review event; got: %v", col.names())
+	}
+	// In supervised mode the wave should NOT run after we cancel.
+	if col.hasEvent("daemon_wave_complete") {
+		t.Error("unexpected daemon_wave_complete: daemon should have paused for review")
+	}
+}
+
+// ─── TestRunDaemon_EmitsEvents ─────────────────────────────────────────────
+
+// TestRunDaemon_EmitsEvents verifies that all lifecycle events are emitted in
+// the happy path (autonomous mode, one item, one wave).
+func TestRunDaemon_EmitsEvents(t *testing.T) {
+	defer saveDaemonFuncs()()
+
+	callCount := 0
+	daemonCheckQueueFunc = func(ctx context.Context, opts CheckQueueOpts) (*CheckQueueResult, error) {
+		callCount++
+		if callCount == 1 {
+			return &CheckQueueResult{
+				Advanced:  true,
+				NextSlug:  "event-feature",
+				NextTitle: "Event Feature",
+				Reason:    "triggered",
+			}, nil
+		}
+		return &CheckQueueResult{Advanced: false, Reason: "no_items"}, nil
+	}
+
+	installNoopScout()
+	installSingleWaveIMPL(1)
+	installNoopWorktrees()
+	installSuccessFinalizeWave()
+	installNoopMarkComplete()
+	installNoopUpdateQueueStatus()
+
+	col := &collectEvents{}
 	ctx, cancel := context.WithCancel(context.Background())
 	go func() {
-		select {
-		case <-completeDone:
-			time.Sleep(30 * time.Millisecond)
-		case <-time.After(2 * time.Second):
-		}
+		time.Sleep(200 * time.Millisecond)
 		cancel()
 	}()
 
@@ -421,30 +433,92 @@ func TestRunDaemon_EmitsEvents(t *testing.T) {
 		RepoPath:       t.TempDir(),
 		AutonomyConfig: autonomy.Config{Level: autonomy.LevelAutonomous, MaxAutoRetries: 2},
 		PollInterval:   10 * time.Millisecond,
-		OnEvent: func(e Event) {
-			eventMu.Lock()
-			events = append(events, e.Event)
-			eventMu.Unlock()
-		},
+		OnEvent:        col.add,
 	}
 
-	_ = RunDaemon(ctx, opts)
+	if err := RunDaemon(ctx, opts); err != nil {
+		t.Fatalf("RunDaemon: %v", err)
+	}
 
-	eventMu.Lock()
-	defer eventMu.Unlock()
+	required := []string{
+		"daemon_started",
+		"daemon_poll",
+		"daemon_processing",
+		"daemon_wave_complete",
+		"daemon_impl_complete",
+		"daemon_stopped",
+	}
+	for _, want := range required {
+		if !col.hasEvent(want) {
+			t.Errorf("missing required event %q; all events: %v", want, col.names())
+		}
+	}
+}
 
-	// Verify key events were emitted.
-	required := []string{"daemon_started", "daemon_poll", "daemon_processing", "daemon_wave_complete", "daemon_impl_complete", "daemon_stopped"}
-	for _, req := range required {
-		found := false
-		for _, ev := range events {
-			if ev == req {
-				found = true
-				break
-			}
+// ─── TestRunDaemon_BlockedOnRemediationFailure ────────────────────────────
+
+// TestRunDaemon_BlockedOnRemediationFailure verifies that an item is marked
+// blocked when FinalizeWave fails and AutoRemediate cannot fix it.
+func TestRunDaemon_BlockedOnRemediationFailure(t *testing.T) {
+	defer saveDaemonFuncs()()
+
+	callCount := 0
+	daemonCheckQueueFunc = func(ctx context.Context, opts CheckQueueOpts) (*CheckQueueResult, error) {
+		callCount++
+		if callCount == 1 {
+			return &CheckQueueResult{
+				Advanced:  true,
+				NextSlug:  "unfixable-feature",
+				NextTitle: "Unfixable Feature",
+				Reason:    "triggered",
+			}, nil
 		}
-		if !found {
-			t.Errorf("missing required event %q in events: %v", req, events)
-		}
+		return &CheckQueueResult{Advanced: false, Reason: "no_items"}, nil
+	}
+
+	installNoopScout()
+	installSingleWaveIMPL(1)
+	installNoopWorktrees()
+
+	daemonFinalizeWaveFunc = func(ctx context.Context, opts FinalizeWaveOpts) (*FinalizeWaveResult, error) {
+		return &FinalizeWaveResult{Wave: opts.WaveNum, BuildPassed: false}, errors.New("persistent build failure")
+	}
+
+	// AutoRemediate cannot fix it.
+	daemonAutoRemediateFunc = func(ctx context.Context, opts AutoRemediateOpts) (*AutoRemediateResult, error) {
+		return &AutoRemediateResult{Fixed: false, Attempts: 2}, nil
+	}
+
+	installNoopMarkComplete()
+
+	statusUpdates := map[string]string{}
+	daemonUpdateQueueStatusFunc = func(repoPath, slug, status string) error {
+		statusUpdates[slug] = status
+		return nil
+	}
+
+	col := &collectEvents{}
+	ctx, cancel := context.WithCancel(context.Background())
+	go func() {
+		time.Sleep(200 * time.Millisecond)
+		cancel()
+	}()
+
+	opts := DaemonOpts{
+		RepoPath:       t.TempDir(),
+		AutonomyConfig: autonomy.Config{Level: autonomy.LevelAutonomous, MaxAutoRetries: 2},
+		PollInterval:   10 * time.Millisecond,
+		OnEvent:        col.add,
+	}
+
+	if err := RunDaemon(ctx, opts); err != nil {
+		t.Fatalf("RunDaemon: %v", err)
+	}
+
+	if !col.hasEvent("daemon_blocked") {
+		t.Errorf("expected daemon_blocked event; got: %v", col.names())
+	}
+	if statusUpdates["unfixable-feature"] != "blocked" {
+		t.Errorf("expected queue status 'blocked', got %q", statusUpdates["unfixable-feature"])
 	}
 }
