@@ -1,5 +1,7 @@
 package autonomy
 
+import "fmt"
+
 // Level represents the autonomy level for orchestrator decision-making.
 type Level string
 
@@ -37,6 +39,50 @@ func DefaultConfig() Config {
 
 // ShouldAutoApprove returns true if the given stage should be auto-approved
 // at the given autonomy level.
+//
+// Behavior matrix:
+//   - gated:      all stages → false
+//   - supervised: impl_review → false; wave_advance, gate_failure, queue_advance → true
+//   - autonomous: all stages → true
 func ShouldAutoApprove(level Level, stage Stage) bool {
-	return false // placeholder
+	switch level {
+	case LevelGated:
+		return false
+	case LevelAutonomous:
+		return true
+	case LevelSupervised:
+		switch stage {
+		case StageIMPLReview:
+			return false
+		case StageWaveAdvance, StageGateFailure, StageQueueAdvance:
+			return true
+		default:
+			return false
+		}
+	default:
+		return false
+	}
+}
+
+// EffectiveLevel returns the effective autonomy level. If overrideLevel is a
+// non-empty, valid Level string it takes precedence over cfg.Level. Otherwise
+// cfg.Level is returned.
+func EffectiveLevel(cfg Config, overrideLevel string) Level {
+	if overrideLevel != "" {
+		if l, err := ParseLevel(overrideLevel); err == nil {
+			return l
+		}
+	}
+	return cfg.Level
+}
+
+// ParseLevel validates that s is a known autonomy level and returns it.
+// Returns an error for any unrecognised value.
+func ParseLevel(s string) (Level, error) {
+	switch Level(s) {
+	case LevelGated, LevelSupervised, LevelAutonomous:
+		return Level(s), nil
+	default:
+		return "", fmt.Errorf("autonomy: unknown level %q (valid: gated, supervised, autonomous)", s)
+	}
 }
