@@ -79,6 +79,19 @@ var worktreeCreatorFunc = func(wm *worktree.Manager, waveNum int, agentLetter st
 	return wm.Create(waveNum, agentLetter)
 }
 
+// implSlug loads the IMPL manifest and returns the feature slug.
+// Returns empty string if the manifest can't be loaded (backward compat).
+func (o *Orchestrator) implSlug() string {
+	if o.implDocPath == "" {
+		return ""
+	}
+	manifest, err := protocol.Load(o.implDocPath)
+	if err != nil {
+		return ""
+	}
+	return manifest.FeatureSlug
+}
+
 // waitForCompletionFunc is a seam for tests: wraps agent.WaitForCompletion.
 var waitForCompletionFunc = func(implDocPath, agentLetter string, timeout, pollInterval time.Duration) (*protocol.CompletionReport, error) {
 	return agent.WaitForCompletion(implDocPath, agentLetter, timeout, pollInterval)
@@ -437,7 +450,8 @@ func (o *Orchestrator) RunWave(waveNum int) error {
 	}
 
 	// Build the worktree manager and default agent runner.
-	wm := worktree.New(o.repoPath)
+	slug := o.implSlug()
+	wm := worktree.New(o.repoPath, slug)
 	defaultBackend, err := newBackendFunc(BackendConfig{Kind: "auto", Model: o.defaultModel})
 	if err != nil {
 		return fmt.Errorf("orchestrator.RunWave: failed to create backend: %w", err)
@@ -556,8 +570,9 @@ func (o *Orchestrator) launchAgent(
 	agentSpec types.AgentSpec,
 ) error {
 	// a. Create the worktree (or reuse existing one for reruns).
-	branch := fmt.Sprintf("wave%d-agent-%s", waveNum, agentSpec.Letter)
-	wtPath := filepath.Join(o.repoPath, ".claude", "worktrees", branch)
+	slug := o.implSlug()
+	branch := protocol.BranchName(slug, waveNum, agentSpec.Letter)
+	wtPath := protocol.WorktreeDir(o.repoPath, slug, waveNum, agentSpec.Letter)
 
 	if _, statErr := os.Stat(wtPath); statErr == nil {
 		// Worktree already exists — reuse it (rerun scenario).
@@ -778,8 +793,9 @@ func autoCommitWorktree(wtPath string, waveNum int, agentLetter string) (string,
 		return "", nil, fmt.Errorf("staging changes: %w", err)
 	}
 
-	// Commit.
+	// Commit. Use legacy format in commit message for readability.
 	msg := fmt.Sprintf("feat(wave%d-agent-%s): implement assigned files", waveNum, agentLetter)
+
 	commitSHA, err := git.Commit(wtPath, msg)
 	if err != nil {
 		return "", nil, fmt.Errorf("committing: %w", err)
@@ -833,7 +849,7 @@ func (o *Orchestrator) RunAgent(waveNum int, agentLetter string, promptPrefix st
 	}
 
 	// Build worktree manager and backend.
-	wm := worktree.New(o.repoPath)
+	wm := worktree.New(o.repoPath, o.implSlug())
 	b, err := newBackendFunc(BackendConfig{Kind: "auto", Model: o.defaultModel})
 	if err != nil {
 		return fmt.Errorf("orchestrator.RunAgent: create backend: %w", err)

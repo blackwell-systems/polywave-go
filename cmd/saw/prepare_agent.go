@@ -120,15 +120,15 @@ This eliminates the ~10s latency of agents calling extract-context at startup.`,
 			// Determine output path
 			var briefPath string
 			if noWorktree {
-				// Solo agent - write to .saw-state
+				// Solo agent - write to .saw-state (no slug scoping for .saw-state paths)
 				stateDir := filepath.Join(projectRoot, ".saw-state", fmt.Sprintf("wave%d", waveNum), fmt.Sprintf("agent-%s", agentID))
 				if err := os.MkdirAll(stateDir, 0755); err != nil {
 					return fmt.Errorf("failed to create state dir: %w", err)
 				}
 				briefPath = filepath.Join(stateDir, "brief.md")
 			} else {
-				// Worktree agent - write to worktree root
-				worktreePath := filepath.Join(projectRoot, ".claude", "worktrees", fmt.Sprintf("wave%d-agent-%s", waveNum, agentID))
+				// Worktree agent - write to worktree root (slug-scoped path)
+				worktreePath := protocol.WorktreeDir(projectRoot, doc.FeatureSlug, waveNum, agentID)
 				briefPath = filepath.Join(worktreePath, ".saw-agent-brief.md")
 			}
 

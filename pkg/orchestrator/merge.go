@@ -123,7 +123,7 @@ func executeMergeWave(o *Orchestrator, waveNum int) error {
 			continue
 		}
 
-		branch := fmt.Sprintf("wave%d-agent-%s", waveNum, agent.Letter)
+		branch := protocol.BranchName(manifest.FeatureSlug, waveNum, agent.Letter)
 
 		// Skip merge for no-op agents (no file changes — nothing to merge).
 		if len(report.FilesChanged) == 0 && len(report.FilesCreated) == 0 {
@@ -149,7 +149,7 @@ func executeMergeWave(o *Orchestrator, waveNum int) error {
 			continue
 		}
 
-		mergeMsg := fmt.Sprintf("Merge wave%d-agent-%s: %s", waveNum, agent.Letter, branch)
+		mergeMsg := fmt.Sprintf("Merge %s: %s", branch, agent.Letter)
 
 		if err := git.MergeNoFF(o.repoPath, branch, mergeMsg); err != nil {
 			return fmt.Errorf("executeMergeWave: merging %s: %w", branch, err)
