@@ -250,7 +250,11 @@ func StartWave(ctx context.Context, opts RunWaveOpts, onEvent func(Event)) error
 	})
 
 	// Run scaffold if needed.
-	if err := RunScaffold(ctx, opts.IMPLPath, opts.RepoPath, "", "", onEvent); err != nil {
+	scaffoldModel := opts.ScaffoldModel
+	if scaffoldModel == "" {
+		scaffoldModel = opts.WaveModel
+	}
+	if err := RunScaffold(ctx, opts.IMPLPath, opts.RepoPath, "", scaffoldModel, onEvent); err != nil {
 		publish("run_failed", map[string]string{"error": err.Error()})
 		return fmt.Errorf("engine.StartWave: scaffold: %w", err)
 	}

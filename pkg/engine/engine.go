@@ -87,6 +87,7 @@ type RunWaveOpts struct {
 	RepoPath             string // absolute path to the target repository (required)
 	Slug                 string // IMPL slug for event routing (required)
 	WaveModel            string // optional: default model for wave agents; per-agent model: field overrides this
+	ScaffoldModel        string // optional: model for scaffold agent; falls back to WaveModel if empty
 	IntegrationModel     string // optional: model for integration agent (E26); falls back to WaveModel if empty
 	UseStructuredOutput  bool   // if true, use structured output for wave agent completion reports
 }

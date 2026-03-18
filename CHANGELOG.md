@@ -8,6 +8,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 | Version | Date | Headline |
 |---------|------|----------|
+| [0.62.0] | 2026-03-17 | Scaffold model routing — add `ScaffoldModel` to `RunWaveOpts`, pass through to `RunScaffold` with `WaveModel` fallback; fixes scaffold agent falling back to CLI backend when Bedrock configured |
 | [0.61.0] | 2026-03-17 | SAW protocol gaps v1 — synced `knownKeys` map (`integration_connectors`, `integration_reports`, quality gate `repo`), `StripUnknownKeys` function (yaml.Node tree manipulation), wired into `validate --fix`, `git.WorktreePrune` + best-effort prune in `Cleanup()` |
 | [0.60.0] | 2026-03-17 | Structured error parsing — 5-agent IMPL complete: Go/JS/Python parsers (`pkg/errparse/`), parser registry with auto-detection, gate runner integration (`ParsedErrors` in gate results) |
 | [0.59.0] | 2026-03-17 | Merge log IMPL namespace — fix cross-IMPL merge log collision (all IMPLs shared `docs/IMPL/.saw-state/`), merge logs now namespaced by slug |
