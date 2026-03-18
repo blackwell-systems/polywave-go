@@ -623,6 +623,11 @@ func (o *Orchestrator) launchAgent(
 		}
 	}
 
+	// Capture the worktree HEAD before the agent runs. This is the commit the
+	// worktree was created from — we compare against it after execution to detect
+	// whether the agent committed its own work (Bedrock agents commit via bash).
+	baseSHA, _ := git.RevParse(wtPath, "HEAD")
+
 	// Publish agent_started after the worktree is ready.
 	o.publish(OrchestratorEvent{
 		Event: "agent_started",
@@ -707,7 +712,7 @@ func (o *Orchestrator) launchAgent(
 	// This bridges the gap between CLI agents (SAW-protocol-aware, commit + write report)
 	// and API/Bedrock agents (vanilla Claude, just write files via tools).
 	if report == nil {
-		commitSHA, filesChanged, autoErr := autoCommitWorktree(wtPath, waveNum, agentSpec.Letter)
+		commitSHA, filesChanged, autoErr := autoCommitWorktree(wtPath, waveNum, agentSpec.Letter, baseSHA)
 		if autoErr != nil {
 			fmt.Fprintf(os.Stderr, "orchestrator: auto-commit failed for agent %s: %v\n", agentSpec.Letter, autoErr)
 		}
@@ -797,23 +802,32 @@ func (o *Orchestrator) launchAgent(
 }
 
 // autoCommitWorktree stages and commits all changes in the agent's worktree.
-// Returns (commitSHA, filesChanged, error). If the worktree is clean (no changes),
+// baseSHA is the worktree HEAD captured before the agent ran — used to detect
+// agent-committed work when the worktree appears clean.
+// Returns (commitSHA, filesChanged, error). If no changes were made,
 // returns ("", nil, nil).
-func autoCommitWorktree(wtPath string, waveNum int, agentLetter string) (string, []string, error) {
+func autoCommitWorktree(wtPath string, waveNum int, agentLetter string, baseSHA string) (string, []string, error) {
 	// Check if there are uncommitted changes.
 	status, err := git.StatusPorcelain(wtPath)
 	if err != nil {
 		return "", nil, fmt.Errorf("checking worktree status: %w", err)
 	}
 	if status == "" {
-		// Worktree is clean — agent may have already committed (e.g. CLI agent).
+		// Worktree is clean — agent may have already committed (via bash tool).
+		// Compare current HEAD against the base SHA captured before execution.
+		headSHA, _ := git.RevParse(wtPath, "HEAD")
+		if baseSHA != "" && headSHA != baseSHA {
+			// HEAD moved — agent committed its own work. Get changed files.
+			files, _ := git.ChangedFilesSinceRef(wtPath, baseSHA)
+			return headSHA, files, nil
+		}
 		return "", nil, nil
 	}
 
-	// Record base commit before staging.
-	baseSHA, err := git.RevParse(wtPath, "HEAD")
-	if err != nil {
-		return "", nil, fmt.Errorf("resolving HEAD: %w", err)
+	// If baseSHA wasn't provided (e.g. solo-agent path), resolve HEAD now
+	// so we can diff after committing.
+	if baseSHA == "" {
+		baseSHA, _ = git.RevParse(wtPath, "HEAD")
 	}
 
 	// Stage all changes.

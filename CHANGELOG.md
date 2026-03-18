@@ -8,6 +8,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 | Version | Date | Headline |
 |---------|------|----------|
+| [0.63.0] | 2026-03-18 | Agent-committed work detection — `autoCommitWorktree` captures base SHA before agent execution, compares HEAD after; fixes Bedrock agents reporting "no changes produced" when they committed via bash tool |
 | [0.62.0] | 2026-03-17 | Scaffold model routing — add `ScaffoldModel` to `RunWaveOpts`, pass through to `RunScaffold` with `WaveModel` fallback; fixes scaffold agent falling back to CLI backend when Bedrock configured |
 | [0.61.0] | 2026-03-17 | SAW protocol gaps v1 — synced `knownKeys` map (`integration_connectors`, `integration_reports`, quality gate `repo`), `StripUnknownKeys` function (yaml.Node tree manipulation), wired into `validate --fix`, `git.WorktreePrune` + best-effort prune in `Cleanup()` |
 | [0.60.0] | 2026-03-17 | Structured error parsing — 5-agent IMPL complete: Go/JS/Python parsers (`pkg/errparse/`), parser registry with auto-detection, gate runner integration (`ParsedErrors` in gate results) |
@@ -69,6 +70,22 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 | [0.4.0] | 2026-03-09 | Per-agent model routing — ScoutModel/WaveModel opts, `model:` field in IMPL doc agent sections, per-agent backend dispatch |
 | [0.3.0] | 2026-03-08 | Protocol audit fixes — P0: failure_type parsing, multi-gen agent IDs; P1: E22 2-pass scaffold build, cross-repo Repo column; P2: repo field in completion reports |
 | [0.2.0] | 2026-03-08 | Engine protocol parity — E17–E23 implemented (context memory, failure routing, stub scan, quality gates, scaffold build verify, per-agent context extraction) |
+
+---
+
+## [0.63.0] - 2026-03-18
+
+### Fixed
+
+- **Agent-committed work detection** — `autoCommitWorktree` now accepts a `baseSHA` parameter captured before agent execution. When the worktree is clean (agent committed via bash tool), compares HEAD against base SHA to detect divergence. Previously, Bedrock agents that ran `git commit` through their bash tool left a clean worktree, causing the orchestrator to report "no changes produced" and skip the merge entirely.
+  - `launchAgent` captures `baseSHA` via `git.RevParse(wtPath, "HEAD")` before agent execution starts
+  - `autoCommitWorktree` signature: added `baseSHA string` parameter; clean-worktree path compares `headSHA != baseSHA` instead of unconditionally returning empty
+  - Fallback: if `baseSHA` is empty (solo-agent path), resolves HEAD at staging time as before
+  - Debug logging in Bedrock client (`bedrock/client.go`) for tool calls and end_turn events
+
+### Changed
+
+- `pkg/orchestrator/orchestrator.go` — `autoCommitWorktree()` signature (4th param), `launchAgent()` base SHA capture
 
 ---
 

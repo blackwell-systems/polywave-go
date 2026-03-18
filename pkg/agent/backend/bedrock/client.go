@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
 	"strings"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -350,6 +351,7 @@ func (c *Client) RunStreamingWithTools(ctx context.Context, systemPrompt, userPr
 		stream.Close()
 
 		if stopReason == types.StopReasonEndTurn {
+			fmt.Fprintf(os.Stderr, "bedrock: end_turn at turn %d, toolCalls=%d, textLen=%d\n", turn, len(blockMap), fullText.Len())
 			return fullText.String(), nil
 		}
 
@@ -447,6 +449,13 @@ func (c *Client) RunStreamingWithTools(ctx context.Context, systemPrompt, userPr
 			}
 
 			result, isError := executeTool(ctx, workshop, toolBlk.name, inputMap, workDir)
+
+			// Debug: log tool calls and results to stderr for diagnosis
+			truncResult := result
+			if len(truncResult) > 200 {
+				truncResult = truncResult[:200] + "...[truncated]"
+			}
+			fmt.Fprintf(os.Stderr, "bedrock tool [turn %d]: %s(%s) → error=%v result=%s\n", turn, toolBlk.name, inputStr[:min(len(inputStr), 100)], isError, truncResult)
 
 			// Emit tool result event
 			if onToolCall != nil {
