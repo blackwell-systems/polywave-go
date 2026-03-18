@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
@@ -478,6 +479,80 @@ branch refs/heads/wave1-agent-A
 	}
 	if entries[1].branch != "refs/heads/wave1-agent-A" {
 		t.Errorf("entries[1].branch = %q", entries[1].branch)
+	}
+}
+
+func TestDetectOrphanedWorktrees_ScopedBranch(t *testing.T) {
+	// Verify that slug-scoped branch names are detected in worktree list output.
+	fake := `worktree /repo
+HEAD abc123
+branch refs/heads/main
+
+worktree /repo/.claude/worktrees/saw/my-feature/wave1-agent-A
+HEAD def456
+branch refs/heads/saw/my-feature/wave1-agent-A
+
+`
+	entries := parseWorktreePorcelain([]byte(fake))
+	if len(entries) != 2 {
+		t.Fatalf("expected 2 entries, got %d", len(entries))
+	}
+	if entries[1].branch != "refs/heads/saw/my-feature/wave1-agent-A" {
+		t.Errorf("entries[1].branch = %q", entries[1].branch)
+	}
+
+	// Now test that detectOrphanedWorktrees matches the scoped branch name.
+	manifest := simpleManifest()
+	// Agent A not complete -> worktree is orphaned.
+
+	// We can't call detectOrphanedWorktrees directly with fake git output,
+	// but we can verify the pattern matches the scoped format.
+	candidate := "refs/heads/saw/my-feature/wave1-agent-A"
+	candidate = strings.TrimPrefix(candidate, "refs/heads/")
+
+	m := worktreePattern.FindStringSubmatch(candidate)
+	if m == nil {
+		t.Fatalf("worktreePattern did not match scoped branch %q", candidate)
+	}
+	if m[1] != "1" {
+		t.Errorf("wave number = %q, want %q", m[1], "1")
+	}
+	if m[2] != "A" {
+		t.Errorf("agent ID = %q, want %q", m[2], "A")
+	}
+
+	_ = manifest // used for context only
+}
+
+func TestDetectOrphanedWorktrees_LegacyAndScopedMixed(t *testing.T) {
+	// Verify the pattern matches both legacy and scoped formats.
+	tests := []struct {
+		input   string
+		wantW   string
+		wantA   string
+		wantOK  bool
+	}{
+		{"wave1-agent-A", "1", "A", true},
+		{"saw/slug/wave2-agent-B3", "2", "B3", true},
+		{"saw/my-feature/wave3-agent-C", "3", "C", true},
+		{"feature-branch", "", "", false},
+		{"main", "", "", false},
+	}
+	for _, tc := range tests {
+		m := worktreePattern.FindStringSubmatch(tc.input)
+		if tc.wantOK {
+			if m == nil {
+				t.Errorf("worktreePattern should match %q", tc.input)
+				continue
+			}
+			if m[1] != tc.wantW || m[2] != tc.wantA {
+				t.Errorf("for %q: wave=%q agent=%q, want wave=%q agent=%q", tc.input, m[1], m[2], tc.wantW, tc.wantA)
+			}
+		} else {
+			if m != nil {
+				t.Errorf("worktreePattern should NOT match %q", tc.input)
+			}
+		}
 	}
 }
 

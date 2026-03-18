@@ -6,9 +6,12 @@ import (
 	"strings"
 )
 
-// worktreeBranchRegex validates branch names: wave{N}-agent-{ID}
-// where N is a digit sequence and ID is an agent ID matching agentIDRegex pattern
-var worktreeBranchRegex = regexp.MustCompile(`^wave(\d+)-agent-([A-Z][2-9]?)$`)
+// worktreeBranchRegex validates branch names in both legacy and slug-scoped formats:
+//   - Legacy: wave{N}-agent-{ID}
+//   - New: saw/{slug}/wave{N}-agent-{ID}
+//
+// Uses ScopedBranchRegex from branchname.go which accepts both formats.
+var worktreeBranchRegex = ScopedBranchRegex
 
 // verificationRegex validates verification field: must contain "PASS" or "FAIL"
 // as a standalone word. Lenient: agents write varied formats like
@@ -60,7 +63,7 @@ func ValidateWorktreeNames(m *IMPLManifest) []ValidationError {
 			if matches == nil {
 				errs = append(errs, ValidationError{
 					Code:    "E5_INVALID_WORKTREE_NAME",
-					Message: fmt.Sprintf("agent %s branch %q does not match pattern wave{N}-agent-{ID}", agentID, report.Branch),
+					Message: fmt.Sprintf("agent %s branch %q does not match pattern wave{N}-agent-{ID} or saw/{slug}/wave{N}-agent-{ID}", agentID, report.Branch),
 					Field:   fmt.Sprintf("completion_reports[%s].branch", agentID),
 				})
 			} else {
@@ -92,8 +95,10 @@ func ValidateWorktreeNames(m *IMPLManifest) []ValidationError {
 		// Validate worktree path if present (skip for solo-wave agents)
 		if strings.TrimSpace(report.Worktree) != "" && !isSolo {
 			expectedSegment := fmt.Sprintf("wave%d-agent-%s", waveNum, agentID)
-			// Check if worktree path contains the expected segment
-			// Split by both '/' and '\' to handle Unix and Windows paths
+			// Check if worktree path contains the expected segment as a path component.
+			// Accepts both legacy (.claude/worktrees/wave1-agent-A) and slug-scoped
+			// (.claude/worktrees/saw/{slug}/wave1-agent-A) paths.
+			// Split by both '/' and '\' to handle Unix and Windows paths.
 			pathNormalized := strings.ReplaceAll(report.Worktree, "\\", "/")
 			pathSegments := strings.Split(pathNormalized, "/")
 			found := false

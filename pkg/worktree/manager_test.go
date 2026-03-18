@@ -7,14 +7,17 @@ import (
 	"testing"
 )
 
-// TestManagerNew verifies that New returns a non-nil Manager.
+// TestManagerNew verifies that New returns a non-nil Manager with slug.
 func TestManagerNew(t *testing.T) {
-	m := New("/some/repo/path")
+	m := New("/some/repo/path", "my-feature")
 	if m == nil {
 		t.Fatal("New returned nil")
 	}
 	if m.repoPath != "/some/repo/path" {
 		t.Errorf("repoPath = %q; want %q", m.repoPath, "/some/repo/path")
+	}
+	if m.slug != "my-feature" {
+		t.Errorf("slug = %q; want %q", m.slug, "my-feature")
 	}
 	if m.active == nil {
 		t.Fatal("active map is nil")
@@ -42,14 +45,14 @@ func TestManagerCreateRemoveRoundtrip(t *testing.T) {
 		}
 	}
 
-	m := New(repoDir)
+	m := New(repoDir, "test-feature")
 
 	wtPath, err := m.Create(1, "D")
 	if err != nil {
 		t.Fatalf("Create returned unexpected error: %v", err)
 	}
 
-	expectedPath := filepath.Join(repoDir, ".claude", "worktrees", "wave1-agent-D")
+	expectedPath := filepath.Join(repoDir, ".claude", "worktrees", "saw", "test-feature", "wave1-agent-D")
 	if wtPath != expectedPath {
 		t.Errorf("Create path = %q; want %q", wtPath, expectedPath)
 	}
