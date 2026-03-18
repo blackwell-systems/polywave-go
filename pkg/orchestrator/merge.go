@@ -3,6 +3,7 @@ package orchestrator
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/blackwell-systems/scout-and-wave-go/internal/git"
@@ -76,6 +77,16 @@ func executeMergeWave(o *Orchestrator, waveNum int) error {
 		return fmt.Errorf("executeMergeWave: resolving HEAD: %w", err)
 	}
 
+	// Build per-agent repo map for cross-repo support.
+	absRepoDir, _ := filepath.Abs(o.repoPath)
+	repoParent := filepath.Dir(absRepoDir)
+	agentRepoDir := make(map[string]string) // agent ID -> absolute repo path
+	for _, fo := range manifest.FileOwnership {
+		if fo.Wave == waveNum && fo.Repo != "" && fo.Repo != filepath.Base(absRepoDir) {
+			agentRepoDir[fo.Agent] = filepath.Join(repoParent, fo.Repo)
+		}
+	}
+
 	// Step 4: Load merge-log for idempotency (E9) — must happen BEFORE
 	// verifyAgentCommits so we can skip agents whose branches were already
 	// merged and deleted.
@@ -101,7 +112,7 @@ func executeMergeWave(o *Orchestrator, waveNum int) error {
 	}
 
 	// Step 5: Verify each pending agent has commits beyond base.
-	if err := verifyAgentCommits(o.repoPath, baseCommit, pendingReports); err != nil {
+	if err := verifyAgentCommits(o.repoPath, baseCommit, pendingReports, agentRepoDir); err != nil {
 		return err
 	}
 
@@ -111,6 +122,7 @@ func executeMergeWave(o *Orchestrator, waveNum int) error {
 	}
 
 	// Step 7 & 8: Merge each complete agent; clean up worktree afterward.
+	// Cross-repo agents are merged in their own repos.
 	for _, agent := range wave.Agents {
 		report, ok := reports[agent.Letter]
 		if !ok || report.Status != types.StatusComplete {
@@ -125,6 +137,12 @@ func executeMergeWave(o *Orchestrator, waveNum int) error {
 
 		branch := protocol.BranchName(manifest.FeatureSlug, waveNum, agent.Letter)
 
+		// Resolve the repo this agent works in (cross-repo support).
+		mergeRepo := o.repoPath
+		if r, ok := agentRepoDir[agent.Letter]; ok {
+			mergeRepo = r
+		}
+
 		// Skip merge for no-op agents (no file changes — nothing to merge).
 		if len(report.FilesChanged) == 0 && len(report.FilesCreated) == 0 {
 			fmt.Fprintf(os.Stderr, "executeMergeWave: agent %s produced no changes (skipping merge)\n", agent.Letter)
@@ -135,15 +153,15 @@ func executeMergeWave(o *Orchestrator, waveNum int) error {
 			// Still clean up the worktree.
 			wtPath := report.Worktree
 			if wtPath == "" {
-				wtPath = protocol.ResolveWorktreePath(o.repoPath, branch)
+				wtPath = protocol.ResolveWorktreePath(mergeRepo, branch)
 			}
 			if !strings.HasPrefix(wtPath, "/") {
-				wtPath = o.repoPath + "/" + wtPath
+				wtPath = mergeRepo + "/" + wtPath
 			}
-			if err := git.WorktreeRemove(o.repoPath, wtPath); err != nil {
+			if err := git.WorktreeRemove(mergeRepo, wtPath); err != nil {
 				fmt.Fprintf(os.Stderr, "executeMergeWave: warning: could not remove worktree %q: %v\n", wtPath, err)
 			}
-			if err := git.DeleteBranch(o.repoPath, branch); err != nil {
+			if err := git.DeleteBranch(mergeRepo, branch); err != nil {
 				fmt.Fprintf(os.Stderr, "executeMergeWave: warning: could not delete branch %q: %v\n", branch, err)
 			}
 			continue
@@ -151,12 +169,12 @@ func executeMergeWave(o *Orchestrator, waveNum int) error {
 
 		mergeMsg := fmt.Sprintf("Merge %s: %s", branch, agent.Letter)
 
-		if err := git.MergeNoFF(o.repoPath, branch, mergeMsg); err != nil {
-			return fmt.Errorf("executeMergeWave: merging %s: %w", branch, err)
+		if err := git.MergeNoFF(mergeRepo, branch, mergeMsg); err != nil {
+			return fmt.Errorf("executeMergeWave: merging %s in %s: %w", branch, mergeRepo, err)
 		}
 
 		// Get merge commit SHA
-		mergeSHA, err := git.RevParse(o.repoPath, "HEAD")
+		mergeSHA, err := git.RevParse(mergeRepo, "HEAD")
 		if err != nil {
 			return fmt.Errorf("executeMergeWave: getting merge SHA for %s: %w", agent.Letter, err)
 		}
@@ -164,24 +182,22 @@ func executeMergeWave(o *Orchestrator, waveNum int) error {
 		// Record merge in log (E9)
 		mergeLog.AddMergeEntry(agent.Letter, mergeSHA)
 		if saveErr := protocol.SaveMergeLog(o.implDocPath, waveNum, mergeLog); saveErr != nil {
-			// Non-fatal: log warning but continue (best-effort tracking)
 			fmt.Fprintf(os.Stderr, "executeMergeWave: warning: failed to save merge-log: %v\n", saveErr)
 		}
 
 		// Determine worktree path from report or convention.
 		wtPath := report.Worktree
 		if wtPath == "" {
-			wtPath = protocol.ResolveWorktreePath(o.repoPath, branch)
+			wtPath = protocol.ResolveWorktreePath(mergeRepo, branch)
 		}
-		// Make absolute if relative.
 		if !strings.HasPrefix(wtPath, "/") {
-			wtPath = o.repoPath + "/" + wtPath
+			wtPath = mergeRepo + "/" + wtPath
 		}
 
-		if err := git.WorktreeRemove(o.repoPath, wtPath); err != nil {
+		if err := git.WorktreeRemove(mergeRepo, wtPath); err != nil {
 			fmt.Fprintf(os.Stderr, "executeMergeWave: warning: could not remove worktree %q: %v\n", wtPath, err)
 		}
-		if err := git.DeleteBranch(o.repoPath, branch); err != nil {
+		if err := git.DeleteBranch(mergeRepo, branch); err != nil {
 			fmt.Fprintf(os.Stderr, "executeMergeWave: warning: could not delete branch %q: %v\n", branch, err)
 		}
 	}
@@ -216,8 +232,9 @@ func predictConflicts(reports map[string]*types.CompletionReport) error {
 }
 
 // verifyAgentCommits checks each agent with status:complete has at least 1 commit
-// on its branch beyond baseCommit.
-func verifyAgentCommits(repoPath, baseCommit string, reports map[string]*types.CompletionReport) error {
+// on its branch beyond baseCommit. agentRepoDir maps agent IDs to their repo
+// paths for cross-repo waves; agents not in the map use repoPath.
+func verifyAgentCommits(repoPath, baseCommit string, reports map[string]*types.CompletionReport, agentRepoDir map[string]string) error {
 	for letter, report := range reports {
 		if report.Status != types.StatusComplete {
 			continue
@@ -225,8 +242,6 @@ func verifyAgentCommits(repoPath, baseCommit string, reports map[string]*types.C
 
 		branch := report.Branch
 		if branch == "" {
-			// Derive branch from agent letter if not set in report.
-			// We don't know the wave number here, but branch should be set.
 			return fmt.Errorf("verifyAgentCommits: agent %s report has empty branch field", letter)
 		}
 
@@ -235,21 +250,34 @@ func verifyAgentCommits(repoPath, baseCommit string, reports map[string]*types.C
 			continue
 		}
 
-		// If branch no longer exists, check if the agent's commit was already
-		// merged into HEAD (idempotent retry after cleanup deleted the branch).
-		if !git.BranchExists(repoPath, branch) {
-			if report.Commit != "" && git.IsAncestor(repoPath, report.Commit, "HEAD") {
-				continue // already merged
-			}
-			return fmt.Errorf("verifyAgentCommits: agent %s branch %q does not exist and commit %q is not merged into HEAD", letter, branch, report.Commit)
+		// Resolve the repo this agent's branch lives in.
+		checkRepo := repoPath
+		if r, ok := agentRepoDir[letter]; ok {
+			checkRepo = r
 		}
 
-		files, err := git.DiffNameOnly(repoPath, baseCommit, branch)
+		// If branch no longer exists, check if the agent's commit was already
+		// merged into HEAD (idempotent retry after cleanup deleted the branch).
+		if !git.BranchExists(checkRepo, branch) {
+			if report.Commit != "" && git.IsAncestor(checkRepo, report.Commit, "HEAD") {
+				continue // already merged
+			}
+			return fmt.Errorf("verifyAgentCommits: agent %s branch %q does not exist in %s and commit %q is not merged into HEAD", letter, branch, checkRepo, report.Commit)
+		}
+
+		// Use HEAD..branch in the agent's own repo for cross-repo agents
+		// (baseCommit may be from a different repo).
+		diffBase := baseCommit
+		if checkRepo != repoPath {
+			diffBase = "HEAD"
+		}
+
+		files, err := git.DiffNameOnly(checkRepo, diffBase, branch)
 		if err != nil {
 			return fmt.Errorf("verifyAgentCommits: diffing agent %s branch %q: %w", letter, branch, err)
 		}
 		if len(files) == 0 {
-			return fmt.Errorf("verifyAgentCommits: ISOLATION FAILURE — agent %s branch %q has no commits beyond %s", letter, branch, baseCommit)
+			return fmt.Errorf("verifyAgentCommits: ISOLATION FAILURE — agent %s branch %q has no commits beyond %s", letter, branch, diffBase)
 		}
 	}
 

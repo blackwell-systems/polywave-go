@@ -8,6 +8,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 | Version | Date | Headline |
 |---------|------|----------|
+| [0.65.0] | 2026-03-18 | Cross-repo merge — `verifyAgentCommits` and `executeMergeWave` now resolve per-agent repos from file ownership; branches are checked, merged, and cleaned up in the correct sibling repo |
 | [0.64.0] | 2026-03-18 | Cross-repo worktree fix — `RunSingleWave` now calls `protocol.CreateWorktrees` (reads `repo:` field from file ownership) and feeds paths into `orch.SetWorktreePaths`; fixes agents E/F getting worktrees in the IMPL's repo instead of their target repo |
 | [0.63.0] | 2026-03-18 | Agent-committed work detection — `autoCommitWorktree` captures base SHA before agent execution, compares HEAD after; fixes Bedrock agents reporting "no changes produced" when they committed via bash tool |
 | [0.62.0] | 2026-03-17 | Scaffold model routing — add `ScaffoldModel` to `RunWaveOpts`, pass through to `RunScaffold` with `WaveModel` fallback; fixes scaffold agent falling back to CLI backend when Bedrock configured |
