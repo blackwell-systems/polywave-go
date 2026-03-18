@@ -67,15 +67,27 @@ func RunScout(ctx context.Context, opts RunScoutOpts, onChunk func(string)) erro
 	// Run automation tools (H1a, H2, H3) before launching Scout.
 	automationContext := runScoutAutomation(opts.RepoPath, opts.Feature)
 
+	// Load program contracts if ProgramManifestPath is set.
+	programContractsSection := ""
+	if opts.ProgramManifestPath != "" {
+		manifest, parseErr := protocol.ParseProgramManifest(opts.ProgramManifestPath)
+		if parseErr != nil {
+			// Non-fatal: log warning and continue without program contracts
+			fmt.Fprintf(os.Stderr, "engine.RunScout: failed to parse PROGRAM manifest (continuing without contracts): %v\n", parseErr)
+		} else {
+			programContractsSection = buildProgramContractsSection(manifest, opts.RepoPath)
+		}
+	}
+
 	// E17: Prepend docs/CONTEXT.md if present, so Scout has project memory.
 	contextMD := readContextMD(opts.RepoPath)
 	var prompt string
 	if contextMD != "" {
-		prompt = fmt.Sprintf("## Project Memory (docs/CONTEXT.md)\n\n%s\n\n%s\n\n## Feature\n%s\n\n%s\n\n## IMPL Output Path\n%s\n",
-			contextMD, string(scoutMdBytes), opts.Feature, automationContext, opts.IMPLOutPath)
+		prompt = fmt.Sprintf("## Project Memory (docs/CONTEXT.md)\n\n%s\n\n%s%s\n\n## Feature\n%s\n\n%s\n\n## IMPL Output Path\n%s\n",
+			contextMD, programContractsSection, string(scoutMdBytes), opts.Feature, automationContext, opts.IMPLOutPath)
 	} else {
-		prompt = fmt.Sprintf("%s\n\n## Feature\n%s\n\n%s\n\n## IMPL Output Path\n%s\n",
-			string(scoutMdBytes), opts.Feature, automationContext, opts.IMPLOutPath)
+		prompt = fmt.Sprintf("%s%s\n\n## Feature\n%s\n\n%s\n\n## IMPL Output Path\n%s\n",
+			programContractsSection, string(scoutMdBytes), opts.Feature, automationContext, opts.IMPLOutPath)
 	}
 
 	var execErr error
@@ -1051,6 +1063,75 @@ func detectRequirementsFile(repoPath string, featureDescription string) string {
 	}
 
 	return ""
+}
+
+// buildProgramContractsSection extracts frozen program contracts from a PROGRAM
+// manifest and formats them as a markdown section to prepend to the Scout prompt.
+// Only includes contracts whose FreezeAt references an IMPL in a completed tier.
+func buildProgramContractsSection(manifest *protocol.PROGRAMManifest, repoPath string) string {
+	if manifest == nil || len(manifest.ProgramContracts) == 0 {
+		return ""
+	}
+
+	// Build a set of completed IMPL slugs by checking each tier
+	completedImpls := make(map[string]bool)
+	for _, tier := range manifest.Tiers {
+		allComplete := true
+		for _, implSlug := range tier.Impls {
+			// Find the IMPL in manifest.Impls
+			var implStatus string
+			for _, impl := range manifest.Impls {
+				if impl.Slug == implSlug {
+					implStatus = impl.Status
+					break
+				}
+			}
+			if implStatus != "complete" {
+				allComplete = false
+				break
+			}
+		}
+		// If all IMPLs in this tier are complete, mark them
+		if allComplete {
+			for _, implSlug := range tier.Impls {
+				completedImpls[implSlug] = true
+			}
+		}
+	}
+
+	// Extract frozen contracts
+	var frozenContracts []protocol.ProgramContract
+	for _, contract := range manifest.ProgramContracts {
+		if contract.FreezeAt != "" {
+			// Parse freeze_at format: "impl:<slug>" or just "<slug>"
+			freezeSlug := strings.TrimPrefix(contract.FreezeAt, "impl:")
+			if completedImpls[freezeSlug] {
+				frozenContracts = append(frozenContracts, contract)
+			}
+		}
+	}
+
+	if len(frozenContracts) == 0 {
+		return ""
+	}
+
+	// Build markdown section
+	var sb strings.Builder
+	sb.WriteString("## Program Contracts (Frozen — Do Not Redefine)\n\n")
+	sb.WriteString("The following types/APIs are defined by the PROGRAM manifest and are frozen. Use them as-is. Do not redefine or modify them.\n\n")
+
+	for _, contract := range frozenContracts {
+		sb.WriteString(fmt.Sprintf("### %s\n", contract.Name))
+		if contract.Description != "" {
+			sb.WriteString(fmt.Sprintf("%s\n\n", contract.Description))
+		}
+		sb.WriteString(fmt.Sprintf("Location: %s\n", contract.Location))
+		sb.WriteString("```go\n")
+		sb.WriteString(contract.Definition)
+		sb.WriteString("\n```\n\n")
+	}
+
+	return sb.String()
 }
 
 // startWaveWithGate runs waves with an inter-wave gate. gateCh receives true to

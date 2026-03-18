@@ -77,6 +77,7 @@ type RunScoutOpts struct {
 	SAWRepoPath          string         // path to scout-and-wave protocol repo (optional; falls back to $SAW_REPO then ~/code/scout-and-wave)
 	IMPLOutPath          string         // where to write the IMPL doc (required)
 	ScoutModel           string         // optional: model override for the Scout agent (e.g. "claude-opus-4-6")
+	ProgramManifestPath  string         // optional: path to PROGRAM manifest; Scout receives frozen contracts as input
 	UseStructuredOutput  bool           // if true, invoke Scout via API backend with output_config.format
 	OutputSchemaOverride map[string]any // optional: overrides GenerateScoutSchema(); useful in tests
 }
