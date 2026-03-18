@@ -298,6 +298,16 @@ func detectOrphanedWorktrees(repoPath string, manifest *protocol.IMPLManifest) (
 			continue
 		}
 
+		// Filter by IMPL slug: only consider worktrees that belong to this manifest.
+		// Slug-scoped branches contain "saw/{slug}/" — if present, must match.
+		// Legacy branches (no slug prefix) are attributed to any manifest (backward compat).
+		if manifest.FeatureSlug != "" && strings.Contains(candidate, "saw/") {
+			expectedPrefix := "saw/" + manifest.FeatureSlug + "/"
+			if !strings.Contains(candidate, expectedPrefix) {
+				continue // belongs to a different IMPL
+			}
+		}
+
 		// Check if the wave is fully merged.
 		waveNum := 0
 		fmt.Sscanf(m[1], "%d", &waveNum)
