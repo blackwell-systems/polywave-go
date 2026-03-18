@@ -106,14 +106,14 @@ func TestCreateWorktrees_HappyPath(t *testing.T) {
 			t.Errorf("worktree %d: expected agent %s, got %s", i, agentID, info.Agent)
 		}
 
-		// Check path format
-		expectedPath := filepath.Join(repoDir, ".claude", "worktrees", "wave1-agent-"+agentID)
+		// Check path format (slug-scoped)
+		expectedPath := filepath.Join(repoDir, ".claude", "worktrees", "saw", "test-feature", "wave1-agent-"+agentID)
 		if info.Path != expectedPath {
 			t.Errorf("worktree %d: expected path %s, got %s", i, expectedPath, info.Path)
 		}
 
-		// Check branch name
-		expectedBranch := "wave1-agent-" + agentID
+		// Check branch name (slug-scoped)
+		expectedBranch := "saw/test-feature/wave1-agent-" + agentID
 		if info.Branch != expectedBranch {
 			t.Errorf("worktree %d: expected branch %s, got %s", i, expectedBranch, info.Branch)
 		}
@@ -123,14 +123,14 @@ func TestCreateWorktrees_HappyPath(t *testing.T) {
 			t.Errorf("worktree %d: path %s does not exist", i, info.Path)
 		}
 
-		// Verify branch exists
-		cmd := exec.Command("git", "-C", repoDir, "branch", "--list", info.Branch)
+		// Verify branch exists (slug-scoped branches contain slashes)
+		cmd := exec.Command("git", "-C", repoDir, "rev-parse", "--verify", info.Branch)
 		out, err := cmd.Output()
 		if err != nil {
-			t.Errorf("worktree %d: failed to check branch existence: %v", i, err)
+			t.Errorf("worktree %d: branch %s not found: %v", i, info.Branch, err)
 		}
-		if !strings.Contains(string(out), info.Branch) {
-			t.Errorf("worktree %d: branch %s not found in git branch list", i, info.Branch)
+		if len(strings.TrimSpace(string(out))) == 0 {
+			t.Errorf("worktree %d: branch %s not found in git", i, info.Branch)
 		}
 	}
 }
@@ -182,7 +182,7 @@ func TestCreateWorktrees_GitFailure(t *testing.T) {
 	manifestPath := createTestManifest(t, repoDir, 1, agentIDs)
 
 	// Create the worktree directory manually to cause a conflict
-	conflictPath := filepath.Join(repoDir, ".claude", "worktrees", "wave1-agent-A")
+	conflictPath := filepath.Join(repoDir, ".claude", "worktrees", "saw", "test-feature", "wave1-agent-A")
 	if err := os.MkdirAll(conflictPath, 0755); err != nil {
 		t.Fatalf("failed to create conflict directory: %v", err)
 	}
@@ -261,7 +261,8 @@ func TestCreateWorktrees_InstallsHooks(t *testing.T) {
 		t.Fatalf("CreateWorktrees failed: %v", err)
 	}
 
-	// Verify hook exists in worktree
+	// Verify hook exists in worktree (git stores worktree metadata by directory name)
+	// For slug-scoped worktrees, git uses the last path component as the worktree name
 	worktreeHookPath := filepath.Join(repoDir, ".git", "worktrees", "wave1-agent-A", "hooks", "pre-commit")
 	content, err := os.ReadFile(worktreeHookPath)
 	if err != nil {
@@ -317,6 +318,7 @@ func TestCreateWorktrees_ContinuesOnHookInstallFailure(t *testing.T) {
 	}
 
 	// Hook should exist (installed from embedded template, no dependency on main repo hook)
+	// Git stores worktree metadata by the directory basename
 	worktreeHookPath := filepath.Join(repoDir, ".git", "worktrees", "wave1-agent-A", "hooks", "pre-commit")
 	hookContent, err := os.ReadFile(worktreeHookPath)
 	if err != nil {

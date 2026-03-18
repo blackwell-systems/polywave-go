@@ -74,14 +74,19 @@ func TestCleanup_AllRemoved(t *testing.T) {
 		t.Fatalf("failed to create worktrees dir: %v", err)
 	}
 
-	// Create worktrees and branches for both agents
-	worktreePathA := filepath.Join(worktreesDir, "wave1-agent-A")
-	if err := git.WorktreeAdd(tmpDir, worktreePathA, "wave1-agent-A"); err != nil {
+	// Create worktrees and branches for both agents (slug-scoped)
+	sawDir := filepath.Join(worktreesDir, "saw", "test-cleanup")
+	if err := os.MkdirAll(sawDir, 0755); err != nil {
+		t.Fatalf("failed to create saw dir: %v", err)
+	}
+
+	worktreePathA := filepath.Join(sawDir, "wave1-agent-A")
+	if err := git.WorktreeAdd(tmpDir, worktreePathA, "saw/test-cleanup/wave1-agent-A"); err != nil {
 		t.Fatalf("failed to create worktree for agent A: %v", err)
 	}
 
-	worktreePathB := filepath.Join(worktreesDir, "wave1-agent-B")
-	if err := git.WorktreeAdd(tmpDir, worktreePathB, "wave1-agent-B"); err != nil {
+	worktreePathB := filepath.Join(sawDir, "wave1-agent-B")
+	if err := git.WorktreeAdd(tmpDir, worktreePathB, "saw/test-cleanup/wave1-agent-B"); err != nil {
 		t.Fatalf("failed to create worktree for agent B: %v", err)
 	}
 
@@ -339,9 +344,13 @@ func TestCleanup_PartialFailure(t *testing.T) {
 		t.Fatalf("failed to create worktrees dir: %v", err)
 	}
 
-	// Create worktree and branch for agent D only (agent E doesn't exist)
-	worktreePathD := filepath.Join(worktreesDir, "wave1-agent-D")
-	if err := git.WorktreeAdd(tmpDir, worktreePathD, "wave1-agent-D"); err != nil {
+	// Create worktree and branch for agent D only (agent E doesn't exist) — slug-scoped
+	sawDir := filepath.Join(worktreesDir, "saw", "test-cleanup")
+	if err := os.MkdirAll(sawDir, 0755); err != nil {
+		t.Fatalf("failed to create saw dir: %v", err)
+	}
+	worktreePathD := filepath.Join(sawDir, "wave1-agent-D")
+	if err := git.WorktreeAdd(tmpDir, worktreePathD, "saw/test-cleanup/wave1-agent-D"); err != nil {
 		t.Fatalf("failed to create worktree for agent D: %v", err)
 	}
 
@@ -462,9 +471,14 @@ func TestCleanup_ForcesDeleteUnmergedBranches(t *testing.T) {
 		t.Fatalf("failed to create worktrees dir: %v", err)
 	}
 
-	// Create worktree and make a commit
-	worktreePathF := filepath.Join(worktreesDir, "wave1-agent-F")
-	if err := git.WorktreeAdd(tmpDir, worktreePathF, "wave1-agent-F"); err != nil {
+	// Create worktree and make a commit (slug-scoped)
+	sawDir := filepath.Join(worktreesDir, "saw", "test-cleanup")
+	if err := os.MkdirAll(sawDir, 0755); err != nil {
+		t.Fatalf("failed to create saw dir: %v", err)
+	}
+	branchF := "saw/test-cleanup/wave1-agent-F"
+	worktreePathF := filepath.Join(sawDir, "wave1-agent-F")
+	if err := git.WorktreeAdd(tmpDir, worktreePathF, branchF); err != nil {
 		t.Fatalf("failed to create worktree for agent F: %v", err)
 	}
 
@@ -484,7 +498,7 @@ func TestCleanup_ForcesDeleteUnmergedBranches(t *testing.T) {
 	if _, err := git.Run(tmpDir, "checkout", mainBranch); err != nil {
 		t.Fatalf("failed to checkout main: %v", err)
 	}
-	if _, err := git.Run(tmpDir, "merge", "--no-ff", "wave1-agent-F", "-m", "Merge wave1-agent-F"); err != nil {
+	if _, err := git.Run(tmpDir, "merge", "--no-ff", branchF, "-m", "Merge "+branchF); err != nil {
 		t.Fatalf("failed to merge: %v", err)
 	}
 
@@ -504,12 +518,9 @@ func TestCleanup_ForcesDeleteUnmergedBranches(t *testing.T) {
 	}
 
 	// Verify branch is actually gone
-	branchList, err := git.Run(tmpDir, "branch", "--list", "wave1-agent-F")
-	if err != nil {
-		t.Fatalf("failed to list branches: %v", err)
-	}
-	if strings.TrimSpace(branchList) != "" {
-		t.Errorf("branch wave1-agent-F still exists after cleanup: %s", branchList)
+	_, err = git.Run(tmpDir, "rev-parse", "--verify", branchF)
+	if err == nil {
+		t.Errorf("branch %s still exists after cleanup", branchF)
 	}
 }
 
@@ -578,9 +589,14 @@ func TestCleanup_IdempotentBranchDeletion(t *testing.T) {
 		t.Fatalf("failed to create worktrees dir: %v", err)
 	}
 
-	// Create and then manually delete worktree and branch
-	worktreePathG := filepath.Join(worktreesDir, "wave1-agent-G")
-	if err := git.WorktreeAdd(tmpDir, worktreePathG, "wave1-agent-G"); err != nil {
+	// Create and then manually delete worktree and branch (slug-scoped)
+	sawDir := filepath.Join(worktreesDir, "saw", "test-cleanup")
+	if err := os.MkdirAll(sawDir, 0755); err != nil {
+		t.Fatalf("failed to create saw dir: %v", err)
+	}
+	branchG := "saw/test-cleanup/wave1-agent-G"
+	worktreePathG := filepath.Join(sawDir, "wave1-agent-G")
+	if err := git.WorktreeAdd(tmpDir, worktreePathG, branchG); err != nil {
 		t.Fatalf("failed to create worktree for agent G: %v", err)
 	}
 
@@ -588,7 +604,7 @@ func TestCleanup_IdempotentBranchDeletion(t *testing.T) {
 	if _, err := git.Run(tmpDir, "worktree", "remove", "--force", worktreePathG); err != nil {
 		t.Fatalf("failed to remove worktree: %v", err)
 	}
-	if _, err := git.Run(tmpDir, "branch", "-D", "wave1-agent-G"); err != nil {
+	if _, err := git.Run(tmpDir, "branch", "-D", branchG); err != nil {
 		t.Fatalf("failed to delete branch: %v", err)
 	}
 
@@ -650,8 +666,12 @@ func TestCleanup_PrunesStaleWorktrees(t *testing.T) {
 	if err := os.MkdirAll(worktreesDir, 0755); err != nil {
 		t.Fatalf("failed to create worktrees dir: %v", err)
 	}
-	stalePath := filepath.Join(worktreesDir, "wave1-agent-H")
-	if err := git.WorktreeAdd(tmpDir, stalePath, "wave1-agent-H"); err != nil {
+	sawDir := filepath.Join(worktreesDir, "saw", "test-cleanup-prune")
+	if err := os.MkdirAll(sawDir, 0755); err != nil {
+		t.Fatalf("failed to create saw dir: %v", err)
+	}
+	stalePath := filepath.Join(sawDir, "wave1-agent-H")
+	if err := git.WorktreeAdd(tmpDir, stalePath, "saw/test-cleanup-prune/wave1-agent-H"); err != nil {
 		t.Fatalf("failed to create worktree: %v", err)
 	}
 
@@ -704,5 +724,88 @@ func TestCleanup_PrunesStaleWorktrees(t *testing.T) {
 	}
 	if strings.Contains(worktreesAfter, "wave1-agent-H") {
 		t.Errorf("stale worktree entry for wave1-agent-H should have been pruned, but still found in: %s", worktreesAfter)
+	}
+}
+
+// TestCleanup_LegacyBranchFallback verifies that cleanup can remove worktrees
+// and branches that were created with the legacy (pre-slug) naming format.
+func TestCleanup_LegacyBranchFallback(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "cleanup-legacy-test-*")
+	if err != nil {
+		t.Fatalf("failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	if _, err := git.Run(tmpDir, "init"); err != nil {
+		t.Fatalf("failed to init git repo: %v", err)
+	}
+	if _, err := git.Run(tmpDir, "config", "user.email", "test@example.com"); err != nil {
+		t.Fatalf("failed to configure git user.email: %v", err)
+	}
+	if _, err := git.Run(tmpDir, "config", "user.name", "Test User"); err != nil {
+		t.Fatalf("failed to configure git user.name: %v", err)
+	}
+
+	readmePath := filepath.Join(tmpDir, "README.md")
+	if err := os.WriteFile(readmePath, []byte("# Test\n"), 0644); err != nil {
+		t.Fatalf("failed to create README: %v", err)
+	}
+	if _, err := git.Run(tmpDir, "add", "README.md"); err != nil {
+		t.Fatalf("failed to add README: %v", err)
+	}
+	if _, err := git.Run(tmpDir, "commit", "-m", "Initial commit"); err != nil {
+		t.Fatalf("failed to create initial commit: %v", err)
+	}
+
+	// Create manifest
+	manifest := &IMPLManifest{
+		Title:       "test-cleanup",
+		FeatureSlug: "test-cleanup",
+		Waves: []Wave{
+			{
+				Number: 1,
+				Agents: []Agent{
+					{ID: "A", Task: "Task A", Files: []string{"a.go"}},
+				},
+			},
+		},
+	}
+	manifestPath := filepath.Join(tmpDir, "IMPL.yaml")
+	manifestData, err := yaml.Marshal(manifest)
+	if err != nil {
+		t.Fatalf("failed to marshal manifest: %v", err)
+	}
+	if err := os.WriteFile(manifestPath, manifestData, 0644); err != nil {
+		t.Fatalf("failed to write manifest: %v", err)
+	}
+
+	// Create worktree with LEGACY naming (no slug)
+	worktreesDir := filepath.Join(tmpDir, ".claude", "worktrees")
+	if err := os.MkdirAll(worktreesDir, 0755); err != nil {
+		t.Fatalf("failed to create worktrees dir: %v", err)
+	}
+	legacyPath := filepath.Join(worktreesDir, "wave1-agent-A")
+	if err := git.WorktreeAdd(tmpDir, legacyPath, "wave1-agent-A"); err != nil {
+		t.Fatalf("failed to create legacy worktree: %v", err)
+	}
+
+	// Run cleanup — should find and clean up the legacy branch
+	result, err := Cleanup(manifestPath, 1, tmpDir)
+	if err != nil {
+		t.Fatalf("Cleanup failed: %v", err)
+	}
+
+	if len(result.Agents) != 1 {
+		t.Fatalf("expected 1 agent status, got %d", len(result.Agents))
+	}
+	status := result.Agents[0]
+	if !status.BranchDeleted {
+		t.Errorf("expected BranchDeleted=true for legacy branch, got false")
+	}
+
+	// Verify legacy branch is gone
+	_, err = git.Run(tmpDir, "rev-parse", "--verify", "wave1-agent-A")
+	if err == nil {
+		t.Errorf("legacy branch wave1-agent-A still exists after cleanup")
 	}
 }

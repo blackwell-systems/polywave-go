@@ -63,40 +63,44 @@ func Cleanup(manifestPath string, waveNum int, repoDir string) (*CleanupResult, 
 			BranchDeleted:   false,
 		}
 
-		// Resolve worktree path: checks .claude/worktrees/ then .claire/worktrees/
-		branch := fmt.Sprintf("wave%d-agent-%s", waveNum, agent.ID)
-		worktreePath := ResolveWorktreePath(repoDir, branch)
+		// Try new slug-scoped format first, then legacy format as fallback.
+		branchName := BranchName(manifest.FeatureSlug, waveNum, agent.ID)
+		legacyBranch := LegacyBranchName(waveNum, agent.ID)
 
-		// Attempt to remove worktree
+		// Resolve worktree paths for both formats
+		worktreePath := ResolveWorktreePathWithSlug(repoDir, manifest.FeatureSlug, waveNum, agent.ID)
+
+		// Attempt to remove worktree (tries slug-scoped path which may resolve to legacy)
 		err := git.WorktreeRemove(repoDir, worktreePath)
 		if err != nil {
-			// Check if the error indicates the worktree is already gone (idempotent)
 			errMsg := err.Error()
 			if strings.Contains(errMsg, "is not a working tree") ||
 				strings.Contains(errMsg, "not found") ||
 				strings.Contains(errMsg, "no such file") {
-				// Already gone - treat as success
 				status.WorktreeRemoved = true
 			}
-			// Otherwise, leave WorktreeRemoved as false and continue
 		} else {
 			status.WorktreeRemoved = true
 		}
 
-		// Construct branch name: wave{N}-agent-{ID}
-		branchName := fmt.Sprintf("wave%d-agent-%s", waveNum, agent.ID)
-
-		// Attempt to delete branch
+		// Attempt to delete branch: try new format first, then legacy
 		err = git.DeleteBranch(repoDir, branchName)
 		if err != nil {
-			// Check if the error indicates the branch is already gone (idempotent)
 			errMsg := err.Error()
 			if strings.Contains(errMsg, "not found") ||
 				strings.Contains(errMsg, "branch") && strings.Contains(errMsg, "not found") {
-				// Already gone - treat as success
-				status.BranchDeleted = true
+				// New-format branch not found — try legacy
+				err2 := git.DeleteBranch(repoDir, legacyBranch)
+				if err2 != nil {
+					errMsg2 := err2.Error()
+					if strings.Contains(errMsg2, "not found") ||
+						strings.Contains(errMsg2, "branch") && strings.Contains(errMsg2, "not found") {
+						status.BranchDeleted = true
+					}
+				} else {
+					status.BranchDeleted = true
+				}
 			}
-			// Otherwise, leave BranchDeleted as false and continue
 		} else {
 			status.BranchDeleted = true
 		}

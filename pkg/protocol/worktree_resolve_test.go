@@ -75,6 +75,8 @@ func TestIsWorktreePath(t *testing.T) {
 		{"/repo/.claude/worktrees/wave1-agent-A", true},
 		{"/repo/.claire/worktrees/wave1-agent-A", true},
 		{"/repo/.claude/worktrees/wave2-agent-B2", true},
+		{"/repo/.claude/worktrees/saw/my-slug/wave1-agent-A", true},
+		{"/repo/.claire/worktrees/saw/my-slug/wave2-agent-B2", true},
 		{"/repo/src/main.go", false},
 		{"/repo/.claudewatch/data", false},
 		{"", false},
@@ -83,5 +85,78 @@ func TestIsWorktreePath(t *testing.T) {
 		if got := IsWorktreePath(tt.path); got != tt.want {
 			t.Errorf("IsWorktreePath(%q) = %v, want %v", tt.path, got, tt.want)
 		}
+	}
+}
+
+func TestResolveWorktreePath_slugScoped(t *testing.T) {
+	tmp := t.TempDir()
+	branch := "saw/my-slug/wave1-agent-A"
+
+	// Create the slug-scoped path
+	scopedPath := filepath.Join(tmp, ".claude", "worktrees", "saw", "my-slug", "wave1-agent-A")
+	if err := os.MkdirAll(scopedPath, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	got := ResolveWorktreePath(tmp, branch)
+	if got != scopedPath {
+		t.Errorf("ResolveWorktreePath = %q, want %q", got, scopedPath)
+	}
+}
+
+func TestResolveWorktreePath_slugScoped_legacyFallback(t *testing.T) {
+	tmp := t.TempDir()
+	branch := "saw/my-slug/wave1-agent-A"
+
+	// Only create the legacy flat path (simulates pre-upgrade worktree)
+	legacyPath := filepath.Join(tmp, ".claude", "worktrees", "wave1-agent-A")
+	if err := os.MkdirAll(legacyPath, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	got := ResolveWorktreePath(tmp, branch)
+	if got != legacyPath {
+		t.Errorf("ResolveWorktreePath = %q, want legacy fallback %q", got, legacyPath)
+	}
+}
+
+func TestResolveWorktreePathWithSlug(t *testing.T) {
+	tmp := t.TempDir()
+
+	// Create the slug-scoped path
+	scopedPath := filepath.Join(tmp, ".claude", "worktrees", "saw", "my-slug", "wave1-agent-A")
+	if err := os.MkdirAll(scopedPath, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	got := ResolveWorktreePathWithSlug(tmp, "my-slug", 1, "A")
+	if got != scopedPath {
+		t.Errorf("ResolveWorktreePathWithSlug = %q, want %q", got, scopedPath)
+	}
+}
+
+func TestResolveWorktreePathWithSlug_legacyFallback(t *testing.T) {
+	tmp := t.TempDir()
+
+	// Only create the legacy path
+	legacyPath := filepath.Join(tmp, ".claude", "worktrees", "wave2-agent-B")
+	if err := os.MkdirAll(legacyPath, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	got := ResolveWorktreePathWithSlug(tmp, "my-slug", 2, "B")
+	if got != legacyPath {
+		t.Errorf("ResolveWorktreePathWithSlug = %q, want legacy fallback %q", got, legacyPath)
+	}
+}
+
+func TestResolveWorktreePathWithSlug_canonicalFallback(t *testing.T) {
+	tmp := t.TempDir()
+
+	// Neither path exists — should return slug-scoped canonical path
+	got := ResolveWorktreePathWithSlug(tmp, "my-slug", 1, "C")
+	want := filepath.Join(tmp, ".claude", "worktrees", "saw", "my-slug", "wave1-agent-C")
+	if got != want {
+		t.Errorf("ResolveWorktreePathWithSlug = %q, want canonical %q", got, want)
 	}
 }
