@@ -86,7 +86,7 @@ func createTestManifestForRunWaveFull(t *testing.T, repoDir string, waveNum int,
 func simulateAgentCommit(t *testing.T, repoDir, waveNum, agentID string) {
 	t.Helper()
 
-	worktreePath := filepath.Join(repoDir, ".claude", "worktrees", "wave"+waveNum+"-agent-"+agentID)
+	worktreePath := filepath.Join(repoDir, ".claude", "worktrees", "saw", "test-feature", "wave"+waveNum+"-agent-"+agentID)
 
 	// Write a file in the worktree
 	testFile := filepath.Join(worktreePath, "test-"+agentID+".txt")

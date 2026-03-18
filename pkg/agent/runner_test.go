@@ -9,7 +9,7 @@ import (
 
 // TestNewRunner verifies that NewRunner with a nil backend returns a non-nil Runner.
 func TestNewRunner(t *testing.T) {
-	wm := worktree.New("/tmp")
+	wm := worktree.New("/tmp", "test-slug")
 	r := NewRunner(nil, wm)
 	if r == nil {
 		t.Fatal("NewRunner returned nil")
