@@ -619,6 +619,23 @@ func RunSingleWave(ctx context.Context, opts RunWaveOpts, waveNum int, onEvent f
 	orch.SetEventPublisher(func(ev orchestrator.OrchestratorEvent) {
 		onEvent(Event{Event: ev.Event, Data: ev.Data})
 	})
+
+	// Use protocol.CreateWorktrees for cross-repo awareness. It reads the
+	// file_ownership repo: field and creates worktrees in sibling repos when
+	// needed. Feed the resulting paths into the orchestrator so launchAgent
+	// uses the correct worktree for each agent.
+	wtResult, err := protocol.CreateWorktrees(opts.IMPLPath, waveNum, opts.RepoPath)
+	if err != nil {
+		return fmt.Errorf("engine.RunSingleWave: create worktrees: %w", err)
+	}
+	if wtResult != nil && len(wtResult.Worktrees) > 0 {
+		paths := make(map[string]string, len(wtResult.Worktrees))
+		for _, wt := range wtResult.Worktrees {
+			paths[wt.Agent] = wt.Path
+		}
+		orch.SetWorktreePaths(paths)
+	}
+
 	return orch.RunWave(waveNum)
 }
 
