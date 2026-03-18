@@ -243,8 +243,14 @@ func buildActionAndCommand(
 	}
 }
 
-// worktreePattern matches SAW worktree branch names like wave1-agent-A or wave2-agent-INT.
-var worktreePattern = regexp.MustCompile(`wave(\d+)-agent-([A-Za-z0-9]+)`)
+// worktreePattern matches SAW worktree branch names in both legacy and slug-scoped formats:
+//   - Legacy: wave1-agent-A, wave2-agent-B3
+//   - New: saw/my-slug/wave1-agent-A, saw/my-slug/wave2-agent-B3
+//
+// Note: This is a search pattern (no anchors) because it's used to find branch names
+// within git worktree list output (which includes refs/heads/ prefixes and paths).
+// It intentionally allows lowercase for backward compat with existing worktrees.
+var worktreePattern = regexp.MustCompile(`(?:saw/[a-z0-9][-a-z0-9]*/)?wave(\d+)-agent-([A-Za-z0-9]+)`)
 
 // detectOrphanedWorktrees runs `git worktree list --porcelain` and returns paths of
 // worktrees whose wave is not fully merged (i.e., not all agents in that wave have a
