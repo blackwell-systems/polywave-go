@@ -13,7 +13,10 @@ import (
 	igit "github.com/blackwell-systems/scout-and-wave-go/internal/git"
 )
 
-var agentBranchRe = regexp.MustCompile(`^wave(\d+)-agent-([a-z])$`)
+// agentBranchRe matches both legacy (wave1-agent-A) and slug-scoped
+// (saw/my-slug/wave1-agent-A) branch name formats.
+// Group 1: wave number, Group 2: agent ID (uppercase, optional gen digit).
+var agentBranchRe = regexp.MustCompile(`^(?:saw/[a-z0-9][-a-z0-9]*/)?wave(\d+)-agent-([A-Za-z][2-9]?)$`)
 
 // Commit is a single git commit summary.
 type Commit struct {
@@ -93,7 +96,7 @@ func (p *Poller) Snapshot() (ActivitySnapshot, error) {
 			continue
 		}
 		wave, _ := strconv.Atoi(m[1])
-		agent := strings.ToUpper(m[2])
+		agent := strings.ToUpper(m[2]) // Normalize to uppercase for consistency
 
 		commits := p.logCommits([]string{branchName, "^main"})
 

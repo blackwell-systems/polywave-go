@@ -127,7 +127,7 @@ func (o *Orchestrator) launchAgentStructured(
 	}
 
 	// Re-load the manifest to get the saved completion report for status/E19 routing.
-	branch := fmt.Sprintf("wave%d-agent-%s", waveNum, agentSpec.Letter)
+	branch := protocol.BranchName(o.implSlug(), waveNum, agentSpec.Letter)
 	status := "complete"
 
 	var savedStatus string
