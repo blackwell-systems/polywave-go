@@ -114,7 +114,7 @@ Output:
 				return fmt.Errorf("run-scout: IMPL doc not found at %s after Scout completion", implPath)
 			}
 
-			// Step 3: Validate IMPL doc
+			// Step 3: Validate IMPL doc (defense-in-depth — Scout self-validates internally)
 			fmt.Printf("🔍 Validating IMPL doc...\n")
 			errs, err := protocol.ValidateIMPLDoc(implPath)
 			if err != nil {
