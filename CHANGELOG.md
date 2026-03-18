@@ -8,6 +8,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 | Version | Date | Headline |
 |---------|------|----------|
+| [0.67.0] | 2026-03-18 | Defense-in-depth comment — run-scout validation step clarified as defense-in-depth (Scout self-validates internally) |
 | [0.66.0] | 2026-03-18 | Resume detect slug filter — `detectOrphanedWorktrees` now filters slug-scoped worktree branches by IMPL slug, preventing false positive interrupted session detection when multiple IMPLs have active worktrees |
 | [0.65.0] | 2026-03-18 | Cross-repo merge — `verifyAgentCommits` and `executeMergeWave` now resolve per-agent repos from file ownership; branches are checked, merged, and cleaned up in the correct sibling repo |
 | [0.64.0] | 2026-03-18 | Cross-repo worktree fix — `RunSingleWave` now calls `protocol.CreateWorktrees` (reads `repo:` field from file ownership) and feeds paths into `orch.SetWorktreePaths`; fixes agents E/F getting worktrees in the IMPL's repo instead of their target repo |
