@@ -119,7 +119,7 @@ func TestLaunchAgentStructured_FallbackToCLI(t *testing.T) {
 	}
 	o := newFromDoc(doc, "/repo", "/repo/IMPL.md")
 
-	wm := worktree.New("/repo")
+	wm := worktree.New("/repo", "test-slug")
 	runner := agent.NewRunner(fake, wm)
 
 	// Use the CLI model on the agent spec.
@@ -186,7 +186,7 @@ func TestLaunchAgentStructured_APIPath(t *testing.T) {
 		mu.Unlock()
 	})
 
-	wm := worktree.New(dir)
+	wm := worktree.New(dir, "test-slug")
 	runner := agent.NewRunner(&fakeBackend{}, wm)
 	agentSpec := types.AgentSpec{Letter: "A", Prompt: "do work"}
 
@@ -259,7 +259,7 @@ func TestLaunchAgentStructured_PublishesBlockedEvent(t *testing.T) {
 		mu.Unlock()
 	})
 
-	wm := worktree.New(dir)
+	wm := worktree.New(dir, "test-slug")
 	runner := agent.NewRunner(&fakeBackend{}, wm)
 	agentSpec := types.AgentSpec{Letter: "A", Prompt: "do work"}
 
@@ -331,7 +331,7 @@ func TestLaunchAgentStructured_WorktreeCreationFailure(t *testing.T) {
 		mu.Unlock()
 	})
 
-	wm := worktree.New("/repo")
+	wm := worktree.New("/repo", "test-slug")
 	runner := agent.NewRunner(&fakeBackend{}, wm)
 	agentSpec := types.AgentSpec{Letter: "A", Prompt: "do work"}
 
@@ -393,7 +393,7 @@ func TestLaunchAgentStructured_StructuredFunctionError(t *testing.T) {
 		mu.Unlock()
 	})
 
-	wm := worktree.New("/repo")
+	wm := worktree.New("/repo", "test-slug")
 	runner := agent.NewRunner(&fakeBackend{}, wm)
 	agentSpec := types.AgentSpec{Letter: "A", Prompt: "do work"}
 
@@ -475,7 +475,7 @@ func TestLaunchAgentStructured_OnChunkForwarding(t *testing.T) {
 		}
 	})
 
-	wm := worktree.New(dir)
+	wm := worktree.New(dir, "test-slug")
 	runner := agent.NewRunner(&fakeBackend{}, wm)
 	agentSpec := types.AgentSpec{Letter: "A", Prompt: "do work"}
 
@@ -525,7 +525,7 @@ func TestSetRunWaveAgentStructuredFunc(t *testing.T) {
 		},
 	}
 	o := newFromDoc(doc, "/repo", "/repo/IMPL.md")
-	wm := worktree.New("/repo")
+	wm := worktree.New("/repo", "test-slug")
 	runner := agent.NewRunner(&fakeBackend{}, wm)
 
 	// The error is expected; we just want to verify it was called.
