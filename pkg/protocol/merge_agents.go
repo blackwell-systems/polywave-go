@@ -154,11 +154,13 @@ func mergeAgentsSingleRepo(manifestPath string, waveNum int, repoDir string, man
 
 	// Merge each agent branch
 	for _, agent := range targetWave.Agents {
-		branch := fmt.Sprintf("wave%d-agent-%s", waveNum, agent.ID)
+		branch := BranchName(manifest.FeatureSlug, waveNum, agent.ID)
+		legacyBranch := LegacyBranchName(waveNum, agent.ID)
 		// Check if agent already merged (idempotency): merge log AND git history agree.
 		// Trusting only the log caused data loss when the log had a stale entry and the
 		// branch was deleted during cleanup before the actual merge happened.
-		if mergeLog.IsMerged(agent.ID) && git.IsAncestor(repoDir, branch, "HEAD") {
+		// Check both slug-scoped and legacy branch names for backward compatibility.
+		if mergeLog.IsMerged(agent.ID) && (git.IsAncestor(repoDir, branch, "HEAD") || git.IsAncestor(repoDir, legacyBranch, "HEAD")) {
 			status := MergeStatus{
 				Agent:   agent.ID,
 				Branch:  branch,
@@ -170,7 +172,7 @@ func mergeAgentsSingleRepo(manifestPath string, waveNum int, repoDir string, man
 		}
 
 		// Build commit message prefix
-		prefix := fmt.Sprintf("Merge wave%d-agent-%s: ", waveNum, agent.ID)
+		prefix := fmt.Sprintf("Merge %s: ", branch)
 
 		// Truncate task to ensure total message fits in reasonable length
 		// Limit task portion to 50 chars
@@ -181,12 +183,20 @@ func mergeAgentsSingleRepo(manifestPath string, waveNum int, repoDir string, man
 		message := prefix + taskSummary
 
 		// Perform merge — auto-resolve conflicts using ownership table (I1)
+		// Try slug-scoped branch first, fall back to legacy branch name
 		status := MergeStatus{
 			Agent:  agent.ID,
 			Branch: branch,
 		}
 
 		err := git.MergeNoFFWithOwnership(repoDir, branch, message, agent.ID, fileOwners)
+		if err != nil {
+			// Try legacy branch name as fallback for backward compatibility
+			err = git.MergeNoFFWithOwnership(repoDir, legacyBranch, message, agent.ID, fileOwners)
+			if err == nil {
+				status.Branch = legacyBranch
+			}
+		}
 		if err != nil {
 			// Merge failed - record error and stop
 			status.Success = false
@@ -264,9 +274,11 @@ func mergeAgentsMultiRepo(manifestPath string, waveNum int, manifest *IMPLManife
 
 		// Merge agents in this repo
 		for _, agent := range agents {
-			branch := fmt.Sprintf("wave%d-agent-%s", waveNum, agent.ID)
+			branch := BranchName(manifest.FeatureSlug, waveNum, agent.ID)
+			legacyBranch := LegacyBranchName(waveNum, agent.ID)
 			// Check if agent already merged (idempotency): merge log AND git history agree.
-			if mergeLog.IsMerged(agent.ID) && git.IsAncestor(absRepoDir, branch, "HEAD") {
+			// Check both slug-scoped and legacy branch names for backward compatibility.
+			if mergeLog.IsMerged(agent.ID) && (git.IsAncestor(absRepoDir, branch, "HEAD") || git.IsAncestor(absRepoDir, legacyBranch, "HEAD")) {
 				status := MergeStatus{
 					Agent:   agent.ID,
 					Branch:  branch,
@@ -278,20 +290,27 @@ func mergeAgentsMultiRepo(manifestPath string, waveNum int, manifest *IMPLManife
 			}
 
 			// Build commit message
-			prefix := fmt.Sprintf("Merge wave%d-agent-%s: ", waveNum, agent.ID)
+			prefix := fmt.Sprintf("Merge %s: ", branch)
 			taskSummary := agent.Task
 			if len(taskSummary) > 50 {
 				taskSummary = taskSummary[:50]
 			}
 			message := prefix + taskSummary
 
-			// Perform merge
+			// Perform merge — try slug-scoped branch first, fall back to legacy
 			status := MergeStatus{
 				Agent:  agent.ID,
 				Branch: branch,
 			}
 
 			err := git.MergeNoFFWithOwnership(absRepoDir, branch, message, agent.ID, fileOwners)
+			if err != nil {
+				// Try legacy branch name as fallback for backward compatibility
+				err = git.MergeNoFFWithOwnership(absRepoDir, legacyBranch, message, agent.ID, fileOwners)
+				if err == nil {
+					status.Branch = legacyBranch
+				}
+			}
 			if err != nil {
 				// Merge failed - record error and stop
 				status.Success = false

@@ -80,9 +80,10 @@ func createBranchWithCommits(t *testing.T, repoDir, branchName string, commitCou
 		t.Fatalf("failed to create branch %s: %v", branchName, err)
 	}
 
-	// Create commits
+	// Create commits - use base name (last path segment) for file names to avoid subdirectories
+	baseName := filepath.Base(branchName)
 	for i := 0; i < commitCount; i++ {
-		filePath := filepath.Join(repoDir, branchName+"-file"+string(rune('a'+i))+".txt")
+		filePath := filepath.Join(repoDir, baseName+"-file"+string(rune('a'+i))+".txt")
 		content := []byte("content from " + branchName + "\n")
 		if err := os.WriteFile(filePath, content, 0644); err != nil {
 			t.Fatalf("failed to write file for commit %d: %v", i, err)
@@ -148,8 +149,8 @@ waves:
 	}
 
 	// Create branches with commits
-	createBranchWithCommits(t, repoDir, "wave1-agent-A", 2)
-	createBranchWithCommits(t, repoDir, "wave1-agent-B", 1)
+	createBranchWithCommits(t, repoDir, "saw/test-feature/wave1-agent-A", 2)
+	createBranchWithCommits(t, repoDir, "saw/test-feature/wave1-agent-B", 1)
 
 	// Verify commits
 	result, err := VerifyCommits(manifestPath, 1, repoDir)
@@ -171,8 +172,8 @@ waves:
 	if agentA.Agent != "A" {
 		t.Errorf("expected agent A, got %s", agentA.Agent)
 	}
-	if agentA.Branch != "wave1-agent-A" {
-		t.Errorf("expected branch wave1-agent-A, got %s", agentA.Branch)
+	if agentA.Branch != "saw/test-feature/wave1-agent-A" {
+		t.Errorf("expected branch saw/test-feature/wave1-agent-A, got %s", agentA.Branch)
 	}
 	if agentA.CommitCount != 2 {
 		t.Errorf("expected 2 commits for agent A, got %d", agentA.CommitCount)
@@ -186,8 +187,8 @@ waves:
 	if agentB.Agent != "B" {
 		t.Errorf("expected agent B, got %s", agentB.Agent)
 	}
-	if agentB.Branch != "wave1-agent-B" {
-		t.Errorf("expected branch wave1-agent-B, got %s", agentB.Branch)
+	if agentB.Branch != "saw/test-feature/wave1-agent-B" {
+		t.Errorf("expected branch saw/test-feature/wave1-agent-B, got %s", agentB.Branch)
 	}
 	if agentB.CommitCount != 1 {
 		t.Errorf("expected 1 commit for agent B, got %d", agentB.CommitCount)
@@ -237,10 +238,10 @@ waves:
 	}
 
 	// Create only one branch with commits
-	createBranchWithCommits(t, repoDir, "wave1-agent-A", 1)
+	createBranchWithCommits(t, repoDir, "saw/test-feature/wave1-agent-A", 1)
 
 	// Create the other branch but with no commits
-	_, err := git.Run(repoDir, "checkout", "-b", "wave1-agent-B")
+	_, err := git.Run(repoDir, "checkout", "-b", "saw/test-feature/wave1-agent-B")
 	if err != nil {
 		t.Fatalf("failed to create branch wave1-agent-B: %v", err)
 	}
