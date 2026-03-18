@@ -345,13 +345,21 @@ type Orchestrator struct {
 	currentWave    int
 	implDocPath    string
 	eventPublisher EventPublisher
-	defaultModel   string // optional default model for wave agents (e.g. "claude-haiku-4-5")
+	defaultModel   string            // optional default model for wave agents (e.g. "claude-haiku-4-5")
+	worktreePaths  map[string]string // agent letter -> pre-computed worktree abs path (for multi-repo)
 }
 
 // SetDefaultModel sets the fallback model used for wave agents that have no
 // per-agent model: field in the IMPL doc. Empty string means use the CLI/API default.
 func (o *Orchestrator) SetDefaultModel(model string) {
 	o.defaultModel = model
+}
+
+// SetWorktreePaths provides pre-computed worktree paths for multi-repo execution.
+// Keys are agent letters, values are absolute worktree paths. When set,
+// launchAgent uses these instead of computing paths from o.repoPath.
+func (o *Orchestrator) SetWorktreePaths(paths map[string]string) {
+	o.worktreePaths = paths
 }
 
 // publish sends ev to the registered EventPublisher, if any.
@@ -569,29 +577,49 @@ func (o *Orchestrator) launchAgent(
 	waveNum int,
 	agentSpec types.AgentSpec,
 ) error {
-	// a. Create the worktree (or reuse existing one for reruns).
+	// a. Determine worktree path: use pre-computed multi-repo path if available,
+	// otherwise fall back to single-repo creation.
 	slug := o.implSlug()
 	branch := protocol.BranchName(slug, waveNum, agentSpec.Letter)
-	wtPath := protocol.WorktreeDir(o.repoPath, slug, waveNum, agentSpec.Letter)
+	var wtPath string
 
-	if _, statErr := os.Stat(wtPath); statErr == nil {
-		// Worktree already exists — reuse it (rerun scenario).
-		fmt.Fprintf(os.Stderr, "orchestrator: reusing existing worktree for agent %s at %s\n", agentSpec.Letter, wtPath)
-	} else {
-		var createErr error
-		wtPath, createErr = worktreeCreatorFunc(wm, waveNum, agentSpec.Letter)
-		if createErr != nil {
+	if prePath, ok := o.worktreePaths[agentSpec.Letter]; ok {
+		// Multi-repo: worktree was pre-created by protocol.CreateWorktrees
+		wtPath = prePath
+		if _, statErr := os.Stat(wtPath); statErr != nil {
 			o.publish(OrchestratorEvent{
 				Event: "agent_failed",
 				Data: AgentFailedPayload{
 					Agent:       agentSpec.Letter,
 					Wave:        waveNum,
 					Status:      "failed",
-					FailureType: "worktree_creation",
-					Message:     createErr.Error(),
+					FailureType: "worktree_missing",
+					Message:     fmt.Sprintf("pre-created worktree not found at %s", wtPath),
 				},
 			})
-			return fmt.Errorf("orchestrator: agent %s: create worktree: %w", agentSpec.Letter, createErr)
+			return fmt.Errorf("orchestrator: agent %s: pre-created worktree not found at %s", agentSpec.Letter, wtPath)
+		}
+	} else {
+		// Single-repo fallback: create worktree on demand
+		wtPath = filepath.Join(o.repoPath, ".claude", "worktrees", branch)
+		if _, statErr := os.Stat(wtPath); statErr == nil {
+			fmt.Fprintf(os.Stderr, "orchestrator: reusing existing worktree for agent %s at %s\n", agentSpec.Letter, wtPath)
+		} else {
+			var createErr error
+			wtPath, createErr = worktreeCreatorFunc(wm, waveNum, agentSpec.Letter)
+			if createErr != nil {
+				o.publish(OrchestratorEvent{
+					Event: "agent_failed",
+					Data: AgentFailedPayload{
+						Agent:       agentSpec.Letter,
+						Wave:        waveNum,
+						Status:      "failed",
+						FailureType: "worktree_creation",
+						Message:     createErr.Error(),
+					},
+				})
+				return fmt.Errorf("orchestrator: agent %s: create worktree: %w", agentSpec.Letter, createErr)
+			}
 		}
 	}
 

@@ -268,6 +268,20 @@ func StartWave(ctx context.Context, opts RunWaveOpts, onEvent func(Event)) error
 	for i, wave := range waves {
 		waveNum := wave.Number
 
+		// Pre-create worktrees via protocol (handles multi-repo from file ownership).
+		wtResult, wtErr := protocol.CreateWorktrees(opts.IMPLPath, waveNum, opts.RepoPath)
+		if wtErr != nil {
+			publish("run_failed", map[string]string{"error": wtErr.Error()})
+			return fmt.Errorf("engine.StartWave: CreateWorktrees wave %d: %w", waveNum, wtErr)
+		}
+		// Pass pre-computed worktree paths to orchestrator so launchAgent
+		// uses the correct (potentially cross-repo) paths.
+		wtPaths := make(map[string]string, len(wtResult.Worktrees))
+		for _, wt := range wtResult.Worktrees {
+			wtPaths[wt.Agent] = wt.Path
+		}
+		orch.SetWorktreePaths(wtPaths)
+
 		if err := orch.RunWave(waveNum); err != nil {
 			publish("run_failed", map[string]string{"error": err.Error()})
 			return fmt.Errorf("engine.StartWave: RunWave %d: %w", waveNum, err)
