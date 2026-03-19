@@ -39,10 +39,11 @@ func newFinalizeWaveCmd() *cobra.Command {
 Execution order:
 1. VerifyCommits - check all agents have commits (I5 trip wire)
 2. ScanStubs - scan changed files for TODO/FIXME markers (E20)
-3. RunGates - execute quality gates if defined (E21)
+3. RunPreMergeGates - structural gates that don't require merged state (E21)
 3.5. ValidateIntegration - detect unconnected exports (E25, informational)
 4. MergeAgents - merge all agent branches to main
 5. VerifyBuild - run test_command and lint_command
+5.5. RunPostMergeGates - content/integration gates on merged state (E21)
 6. Cleanup - remove worktrees and branches
 
 Stops on first failure and returns partial result.
@@ -107,23 +108,21 @@ pattern matching (H7) and appends diagnosis to the output.`,
 				result.StubReport = stubResult
 			}
 
-			// Step 3: RunGates (E21 quality gates) with caching - run per repo
+			// Step 3: RunPreMergeGates (E21) — structural checks that don't require merged state
 			for repoKey, repoPath := range repos {
 				stateDir := filepath.Join(repoPath, ".saw-state")
 				cache := gatecache.New(stateDir, gatecache.DefaultTTL)
-				gateResults, err := protocol.RunGatesWithCache(manifest, waveNum, repoPath, cache)
+				gateResults, err := protocol.RunPreMergeGates(manifest, waveNum, repoPath, cache)
 				if err != nil {
-					return fmt.Errorf("finalize-wave: run-gates failed in %s: %w", repoKey, err)
+					return fmt.Errorf("finalize-wave: run-pre-merge-gates failed in %s: %w", repoKey, err)
 				}
 				result.GateResults[repoKey] = gateResults
 
-				// Check if any required gates failed
 				for _, gate := range gateResults {
 					if gate.Required && !gate.Passed {
-						// Stop if required gate failed
 						out, _ := json.MarshalIndent(result, "", "  ")
 						fmt.Println(string(out))
-						return fmt.Errorf("finalize-wave: required gate '%s' failed in %s", gate.Type, repoKey)
+						return fmt.Errorf("finalize-wave: required pre-merge gate '%s' failed in %s", gate.Type, repoKey)
 					}
 				}
 			}
@@ -185,6 +184,24 @@ pattern matching (H7) and appends diagnosis to the output.`,
 					fmt.Println(string(out))
 					return fmt.Errorf("finalize-wave: verify-build failed in %s (test_passed=%v, lint_passed=%v)",
 						repoKey, verifyBuildResult.TestPassed, verifyBuildResult.LintPassed)
+				}
+			}
+
+			// Step 5.5: RunPostMergeGates (E21) — content/integration checks on merged state
+			for repoKey, repoPath := range repos {
+				postGateResults, err := protocol.RunPostMergeGates(manifest, waveNum, repoPath)
+				if err != nil {
+					return fmt.Errorf("finalize-wave: run-post-merge-gates failed in %s: %w", repoKey, err)
+				}
+				// Merge post-merge results into GateResults for this repo
+				result.GateResults[repoKey] = append(result.GateResults[repoKey], postGateResults...)
+
+				for _, gate := range postGateResults {
+					if gate.Required && !gate.Passed {
+						out, _ := json.MarshalIndent(result, "", "  ")
+						fmt.Println(string(out))
+						return fmt.Errorf("finalize-wave: required post-merge gate '%s' failed in %s", gate.Type, repoKey)
+					}
 				}
 			}
 
