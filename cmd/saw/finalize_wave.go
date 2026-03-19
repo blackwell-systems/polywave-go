@@ -252,8 +252,15 @@ func extractReposFromManifest(m *protocol.IMPLManifest, waveNum int, defaultRepo
 		return repos, agentRepos
 	}
 
-	// Resolve relative paths to absolute paths
-	parentDir := filepath.Dir(defaultRepo)
+	// Resolve relative paths to absolute paths.
+	// defaultRepo may be relative (e.g. "." from --repo-dir flag) — resolve it first
+	// so parentDir is always an absolute path, preventing repo names like "scout-and-wave"
+	// from resolving to "./scout-and-wave" instead of "/abs/path/to/scout-and-wave".
+	absDefaultRepo, err := filepath.Abs(defaultRepo)
+	if err != nil {
+		absDefaultRepo = defaultRepo
+	}
+	parentDir := filepath.Dir(absDefaultRepo)
 	for repo := range repoSet {
 		absPath := repo
 		if !filepath.IsAbs(repo) {
