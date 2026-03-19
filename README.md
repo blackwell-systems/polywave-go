@@ -1,45 +1,261 @@
 # scout-and-wave-go
 
-Go engine and Protocol SDK for the Scout-and-Wave parallel agent coordination system.
+Go engine and Protocol SDK for Scout-and-Wave (SAW) — a coordination protocol for parallel AI agent development that guarantees merge-conflict-free execution by construction.
 
-## Overview
+---
 
-`scout-and-wave-go` provides two layers:
+## The Core Guarantee
 
-1. **Protocol SDK** (`pkg/protocol`) — Deterministic data operations for YAML manifests. Types, validation, invariant enforcement. Pure Go, no runtime dependencies. Importable by any tool that needs to read, write, or validate SAW protocol state.
+**No two agents in the same wave own the same file** (I1: Disjoint File Ownership).
 
-2. **Engine** (`pkg/engine`, `pkg/orchestrator`) — Agent execution runtime, backend abstraction, wave orchestration. Shells out to LLM providers (Anthropic, Bedrock, OpenAI-compatible) for the creative work; uses the Protocol SDK for all structural operations.
+This is not a convention or a preference. It is a hard constraint enforced before any worktree is created. The result: parallel agents can never produce a merge conflict on agent-owned files. The conflict is structurally impossible because the ownership partition is verified and locked before execution begins.
 
-**Architecture principle:** The SDK handles data deterministically. The engine handles execution. Validation happens at every boundary between the two.
+This is distinct from branch-based coordination. Branches prevent concurrent writes to the same commit, but do nothing to prevent two agents from independently modifying the same file on separate branches — which produces a merge conflict you must resolve manually. SAW prevents the conflict from being possible in the first place.
 
-```
-┌─────────────────────────────────────────────┐
-│  Orchestrator (Claude via skill, or CLI)    │
-│  Decides what to do, handles errors         │
-├─────────────────────────────────────────────┤
-│  CLI Binary (sawtools validate, sawtools extract...)  │
-│  Thin wrappers — deterministic I/O          │
-├─────────────────────────────────────────────┤
-│  Protocol SDK (pkg/protocol)                │
-│  Types, validation, invariants              │
-│  Pure Go — no LLM, no runtime dependency    │
-├─────────────────────────────────────────────┤
-│  Agent Execution (Runtime interface)        │
-│  LLM providers, tool dispatch, context      │
-│  Anthropic SDK / Bedrock / OpenAI           │
-└─────────────────────────────────────────────┘
-```
+---
 
-## Binary: sawtools
+## How It Works
 
-This repo provides the **`sawtools` CLI** — the full protocol SDK toolkit for CI/CD, power users, and CLI orchestration (e.g., the `/saw` skill).
+SAW decomposes feature work into three phases:
+
+**Scout** — An AI agent analyzes the codebase, runs a suitability gate, designs the file ownership partition, defines interface contracts across agent boundaries, and writes an IMPL doc (a YAML manifest that is the single source of truth for the entire feature).
+
+**Wave** — Parallel AI agents execute concurrently, each in its own git worktree, each owning a disjoint set of files. Agents implement against pre-committed scaffold files; they never coordinate directly. When the wave completes, merging is mechanical — no conflicts on agent-owned files by construction.
+
+**Merge + Verify** — `finalize-wave` runs the full post-wave pipeline: commit verification, stub detection, quality gates (concurrent), merge, build verification, and cleanup. Integration gaps are detected and optionally wired by an Integration Agent.
+
+The IMPL doc flows through the entire lifecycle: Scout writes it, agents append their completion reports to it, the orchestrator reads it to track state, and it becomes the audit trail when the feature closes.
+
+---
+
+## The IMPL Doc as Single Source of Truth
+
+Every piece of protocol state lives in one YAML file (I4):
+
+- Suitability verdict and pre-mortem risk assessment
+- File ownership table (per-agent, per-wave, per-repo for cross-repo waves)
+- Interface contracts and scaffold file status
+- Quality gate configuration
+- Agent prompts (9-field format)
+- Wave structure and dependency graph
+- Completion reports from every agent
+- Stub scan results and integration reports
+
+Chat output is not the record. If a completion report is written to chat only, it is a protocol violation — downstream agents and the orchestrator cannot see it.
+
+This makes the protocol observable and auditable. Every SAW session can be reconstructed from the IMPL doc and git history alone.
+
+---
+
+## Interface Contracts and the Freeze Point
+
+Before any worktree is created, the Scout defines all interfaces that cross agent boundaries. A Scaffold Agent materializes them as committed source files on HEAD. Then worktrees branch from that HEAD.
+
+When worktrees are created, interface contracts become immutable (I2, E2). This is the freeze point: wave agents implement against a committed spec, not against each other. An agent cannot discover at runtime that a type it expected does not exist — the type was committed before the agent launched.
+
+Wave N+1 does not launch until Wave N merges and post-merge verification passes (I3). This provides cross-wave coordination without special mechanisms: each successive wave branches from the fully merged codebase of all prior waves.
+
+---
+
+## Program Layer
+
+For multi-feature projects, SAW includes a program layer that coordinates multiple IMPL docs through tier-gated execution.
+
+A **PROGRAM manifest** decomposes a project into:
+- **Tiers** — groups of independent IMPLs that execute in parallel
+- **Program contracts** — shared types and interfaces consumed by multiple IMPLs, frozen at tier boundaries
+- **Tier gates** — quality checks that must pass before the next tier begins
+
+Execution rules:
+- **E28** — All IMPLs in a tier are scouted in parallel (one Scout per IMPL)
+- **E29** — Tier gate runs after all IMPLs in the tier complete; blocks advancement on failure
+- **E30** — Program contracts freeze at tier boundaries; downstream Scouts receive them as immutable inputs
+- **E33** — `--auto` mode advances tiers automatically after gate pass; human gate is never skipped on failure
+- **E34** — Tier gate failure re-engages the Planner to revise the PROGRAM manifest; human reviews the revised plan before any tier re-executes
+
+The DAG prioritization engine (`sawtools` integrates `PrioritizeIMPLs` / `ScoreTierIMPLs`) scores IMPL execution order within a tier based on dependency depth and downstream unlock count.
+
+---
+
+## Autonomy Layer
+
+Three autonomy levels control how much the orchestrator pauses for human review:
+
+| Level | Behavior |
+|-------|----------|
+| `gated` | Pauses at every decision point (default) |
+| `supervised` | Auto-approves wave advancement and gate retry; pauses for IMPL review |
+| `autonomous` | All stages auto-approved; only surfaces gate failures |
+
+The daemon run loop (`sawtools daemon`) enables fully unattended execution across multiple queued IMPLs. Failure classification (E19) routes correctable failures (`transient`, `fixable`) to automatic retry and non-correctable failures (`needs_replan`, `escalate`) to human review, regardless of autonomy level.
+
+The `build-retry-context` command produces structured failure context (error classification, targeted fix suggestions, retry prompt) for re-launching a failed agent with awareness of prior attempts.
+
+---
+
+## sawtools CLI
+
+The `sawtools` binary provides 60+ commands covering the full protocol lifecycle. Commands are single-purpose with structured JSON output.
+
+### Wave lifecycle
+
+| Command | What it does |
+|---------|-------------|
+| `prepare-wave` | Atomic: baseline gate (E21A) + worktree creation + per-agent brief extraction + journal init |
+| `finalize-wave` | Atomic: verify-commits + scan-stubs + run-gates + merge-agents + verify-build + cleanup |
+| `create-worktrees` | Create git worktrees for a wave's agents |
+| `merge-agents` | Merge wave worktree branches to main |
+| `verify-commits` | Verify each agent has commits before merge (I5) |
+| `verify-build` | Post-merge build verification |
+| `cleanup` | Remove worktrees after merge |
+
+### Validation and verification
+
+| Command | What it does |
+|---------|-------------|
+| `validate` | E16 manifest validation: required blocks, dep graph grammar, duplicate keys, action enums |
+| `check-conflicts` | I1 file ownership conflict detection across agents |
+| `validate-scaffolds` | Verify scaffold files are committed before worktree creation (I2) |
+| `freeze-check` | Interface contract freeze enforcement (E2) |
+| `scan-stubs` | E20 stub detection across agent-owned files |
+| `run-gates` | E21/E21A quality gate verification (concurrent, E21B) |
+| `validate-integration` | E25 integration gap detection; E35 wiring obligation verification |
+| `verify-isolation` | Verify agent is in correct worktree before execution begins |
+| `analyze-suitability` | Pre-implementation scanning gate (H1a) |
+| `detect-cascades` | Cross-package cascade detection (M2) |
+
+### Agent lifecycle
+
+| Command | What it does |
+|---------|-------------|
+| `run-scout` | Full Scout pipeline: launch + validate (E16) + auto-correct IDs (M1) + finalize gates (M4) |
+| `prepare-agent` | Extract brief + init journal for a single agent |
+| `extract-context` | E23 per-agent context extraction from IMPL doc |
+| `set-completion` | Register agent completion report |
+| `update-status` | Update agent/wave status in manifest |
+| `update-agent-prompt` | E8 downstream prompt update after contract revision |
+| `build-retry-context` | Structured failure context for agent retry (E19) |
+| `assign-agent-ids` | M1 auto-correct agent ID assignment |
+
+### Program layer
+
+| Command | What it does |
+|---------|-------------|
+| `validate-program` | PROGRAM manifest schema validation + P1 circular dependency check |
+| `tier-gate` | E29 tier quality gate verification |
+| `freeze-contracts` | E30 program contract freezing at tier boundary |
+| `program-status` | E32 full program status report (per-tier, per-IMPL, contract freeze states) |
+| `program-replan` | E34 re-engage Planner on tier gate failure |
+| `mark-program-complete` | Mark PROGRAM manifest complete + update CONTEXT.md |
+| `list-programs` | Discover PROGRAM manifests in repo |
+
+### Utilities
+
+| Command | What it does |
+|---------|-------------|
+| `amend-impl` | E36 IMPL amendment: add-wave, redirect-agent, extend-scope |
+| `mark-complete` | E15 write SAW:COMPLETE marker + archive to `docs/IMPL/complete/` |
+| `update-context` | E18 update `docs/CONTEXT.md` after feature completion |
+| `list-impls` | Discover IMPL docs (active and archived) |
+| `resume-detect` | Detect interrupted SAW sessions for recovery |
+| `journal-init` | Initialize agent tool journal |
+| `journal-context` | Generate context summary from tool journal (E23A) |
+| `daemon` | Run loop for autonomous multi-IMPL execution |
+| `run-review` | AI code review gate on merged diff |
+| `diagnose-build-failure` | AI-assisted build failure diagnosis |
+
+### Build
 
 ```bash
 go build -o sawtools ./cmd/saw
 cp sawtools ~/.local/bin/sawtools
 ```
 
-**Note:** There's also a separate `saw` binary in [scout-and-wave-web](https://github.com/blackwell-systems/scout-and-wave-web) that provides a web UI + HTTP API. See [docs/binaries.md](docs/binaries.md) for the complete explanation of why two binaries exist and when to use which.
+---
+
+## Protocol SDK
+
+The `pkg/protocol` package is the importable core: pure Go, no LLM dependencies, deterministic for all inputs.
+
+```go
+import "github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
+
+// Load and validate a manifest
+manifest, err := protocol.Load("docs/IMPL/IMPL-feature.yaml")
+errs := protocol.Validate(manifest)
+
+// I1 check: will any agents in wave 1 conflict?
+conflicts := protocol.CheckOwnershipConflicts(manifest, 1)
+
+// Query current wave
+wave := protocol.CurrentWave(manifest)
+
+// Register agent completion
+protocol.SetCompletionReport(manifest, "A", protocol.CompletionReport{
+    Status: "complete",
+    Commit: "abc123",
+    Branch: "saw/my-feature/wave1-agent-A",
+    FilesCreated: []string{"pkg/cache/cache.go"},
+})
+protocol.Save(manifest, "docs/IMPL/IMPL-feature.yaml")
+```
+
+### Invariant enforcement
+
+| Invariant | Rule | Enforcement |
+|-----------|------|-------------|
+| I1 | No two agents in the same wave own the same file | `Validate()` checks ownership table; `check-conflicts` at pre-launch |
+| I2 | Interface contracts defined before agents launch | Scaffold files committed before worktrees created; `freeze-check` enforces |
+| I3 | Wave N+1 waits for Wave N merge | `CurrentWave()` returns first incomplete wave; orchestrator controls transitions |
+| I4 | IMPL manifest is single source of truth | All state read/written via SDK operations; completion reports written to IMPL doc |
+| I5 | Agents commit before reporting | `SetCompletionReport()` requires commit hash; `verify-commits` gates merge |
+| I6 | Orchestrator does not perform agent work | Behavioral; enforced by role separation in agent type definitions |
+
+Validation errors are structured (`ValidationError` with code, message, field) — not line-number parse errors.
+
+### Package structure
+
+```
+pkg/
+├── protocol/       # Protocol SDK — types, validation, manifest I/O
+├── engine/         # High-level entrypoints: RunScout, RunWave, Chat
+├── orchestrator/   # Wave orchestration, SSE events, verification
+├── agent/          # Agent execution runtime, tool dispatch, LLM backends
+├── autonomy/       # Autonomy level config (gated / supervised / autonomous)
+├── codereview/     # AI code review gate (post-merge diff scoring)
+├── builddiag/      # AI-assisted build failure diagnosis
+├── journal/        # Tool journal: append-only execution trace, context recovery
+├── resume/         # Interrupted session detection and recovery
+├── retry/          # Retry loop with structured failure context
+├── pipeline/       # Atomic batching pipeline (prepare-wave, finalize-wave)
+├── suitability/    # Pre-implementation scanning gate
+├── analyzer/       # Cross-package cascade detection
+├── scaffoldval/    # Scaffold commit status verification
+├── solver/         # Constraint solver for file ownership optimization
+├── deps/           # Dependency conflict detection
+├── worktree/       # Git worktree management
+└── hooks/          # Pre-commit hook management
+
+internal/
+└── git/            # Git operations (commit, branch, merge)
+```
+
+---
+
+## LLM Backend
+
+The engine abstracts agent execution behind a `Runtime` interface. Provider routing uses model prefix notation:
+
+| Prefix | Backend |
+|--------|---------|
+| `anthropic:` | Anthropic API (direct) |
+| `openai:` | OpenAI-compatible endpoint |
+| `cli:` | Local CLI binary (Claude Code, `SAW_CLI_BINARY`) |
+| *(none)* | Auto-detect from environment |
+
+Per-agent model overrides: the `model:` field in each IMPL doc agent section routes individual agents to different providers within the same wave. A wave can run agent A on Haiku (fast, cheap) and agent B on Opus (complex task) with no orchestrator changes.
+
+---
 
 ## Installation
 
@@ -47,184 +263,68 @@ cp sawtools ~/.local/bin/sawtools
 go get github.com/blackwell-systems/scout-and-wave-go
 ```
 
-## Quick Start
+---
 
-### Protocol SDK (data operations)
+## Getting Started
 
-```go
-import "github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
+**Using the `/saw` skill (Claude Code):** See the [protocol repository](https://github.com/blackwell-systems/scout-and-wave) for the skill and agent prompts. The `/saw scout <feature>` → `/saw wave` → `/saw wave --auto` workflow is the primary path for Claude Code users.
 
-// Load YAML manifest
-manifest, err := protocol.Load("docs/IMPL/IMPL-feature.yaml")
+**Using sawtools directly:**
 
-// Validate invariants (I1-I6)
-errors := protocol.Validate(manifest)
-for _, e := range errors {
-    fmt.Printf("%s: %s (field: %s)\n", e.Code, e.Message, e.Field)
-}
+```bash
+# Build the CLI
+go build -o sawtools ./cmd/saw
 
-// Query protocol state
-wave := protocol.CurrentWave(manifest)
-fmt.Printf("Current wave: %d (%d agents)\n", wave.Number, len(wave.Agents))
+# Validate an IMPL doc
+sawtools validate docs/IMPL/IMPL-feature.yaml
 
-// Register agent completion
-report := protocol.CompletionReport{
-    Status:       "complete",
-    Branch:       "wave1-agent-A",
-    Commit:       "abc123",
-    FilesCreated: []string{"pkg/protocol/manifest.go"},
-}
-protocol.SetCompletionReport(manifest, "A", report)
-protocol.Save(manifest, "docs/IMPL/IMPL-feature.yaml")
+# Prepare wave 1 (baseline gate + worktrees + agent briefs)
+sawtools prepare-wave docs/IMPL/IMPL-feature.yaml --wave 1 --repo-dir /path/to/repo
+
+# After agents complete, finalize the wave (gates + merge + verify)
+sawtools finalize-wave /abs/path/to/IMPL-feature.yaml --wave 1 --repo-dir /path/to/repo
 ```
 
-### Engine (agent execution)
+**Using the engine programmatically:**
 
 ```go
-import (
-    "github.com/blackwell-systems/scout-and-wave-go/pkg/engine"
-    "github.com/blackwell-systems/scout-and-wave-go/pkg/orchestrator"
-)
+import "github.com/blackwell-systems/scout-and-wave-go/pkg/engine"
 
-// Run Scout to generate YAML manifest
 opts := engine.RunScoutOpts{
-    Prompt:     "Add user authentication to the API",
+    Prompt:     "Add rate limiting to the API",
     RepoPath:   "/path/to/repo",
     ScoutModel: "claude-sonnet-4-6",
 }
 manifestPath, err := engine.RunScout(ctx, opts)
-
-// Orchestrate wave execution
-orch := orchestrator.New(orchestrator.Config{
-    RepoPath:     "/path/to/repo",
-    ManifestPath: manifestPath,
-})
-err = orch.StartWave(ctx, 1)
 ```
 
-### Using the `saw` server
+---
 
-See [scout-and-wave-web](https://github.com/blackwell-systems/scout-and-wave-web) for the web UI and HTTP server.
+## Architecture
 
-## Package Structure
-
-```
-pkg/
-├── protocol/       # Protocol SDK — the importable core
-│   ├── types.go        # IMPLManifest, Wave, Agent, FileOwnership, etc.
-│   ├── manifest.go     # Load, Save, CurrentWave, SetCompletionReport
-│   └── validation.go   # I1-I6 invariant enforcement, structured errors
-├── agent/          # Agent execution runtime, tool system
-├── engine/         # High-level entrypoints (RunScout, RunWave, Chat)
-├── orchestrator/   # Wave orchestration, SSE events, verification
-└── worktree/       # Git worktree management
-
-internal/
-└── git/            # Git operations (commit, branch, merge)
-```
-
-### What lives where
-
-| Concern | Package | Deterministic? |
-|---------|---------|---------------|
-| Manifest types & YAML I/O | `pkg/protocol` | Yes |
-| Invariant validation (I1-I6) | `pkg/protocol` | Yes |
-| Agent context extraction | `pkg/protocol` | Yes |
-| LLM conversation loops | `pkg/agent` | No (LLM) |
-| Backend provider routing | `pkg/agent` | No (network) |
-| Worktree creation & merge | `pkg/worktree` | Yes (git ops) |
-| Wave lifecycle & SSE | `pkg/orchestrator` | Mixed |
-
-## CLI Commands
-
-The `sawtools` binary wraps SDK operations as shell commands. Each command is single-purpose with structured I/O.
-
-**See [docs/cli-reference.md](docs/cli-reference.md) for the complete command reference** (20+ commands including validation, context extraction, worktree management, merge operations, and more).
-
-## Design Principles
-
-### Structured data, interactive coordination
-
-The protocol has two halves:
-
-- **Structural work** (deterministic) — manifest parsing, invariant validation, file ownership, wave sequencing. This is Go code. It never calls an LLM. It always produces the same output for the same input.
-- **Creative work** (non-deterministic) — analyzing code, writing implementations, handling novel errors, deciding what to do next. This is LLM work. It requires conversation, judgment, and context.
-
-The SDK handles the first. The agent runtime handles the second. The CLI binary sits at the boundary, validating data on the way in and the way out.
-
-### Invariants enforced by code
-
-The SAW protocol defines six invariants. Before the SDK, these were enforced by bash regex and human review. Now they're Go functions:
-
-| Invariant | Rule | Enforcement |
-|-----------|------|-------------|
-| **I1** | No two agents own the same file in a wave | `Validate()` checks ownership table |
-| **I2** | Interface contracts defined before agents launch | Scaffold files committed before worktrees created |
-| **I3** | Wave N+1 waits for Wave N merge | `CurrentWave()` returns first incomplete wave |
-| **I4** | IMPL manifest is single source of truth | All state read/written via SDK operations |
-| **I5** | Agents commit before reporting | `SetCompletionReport()` requires commit hash |
-| **I6** | Orchestrator doesn't do agent work | Behavioral (not checkable by code) |
-
-### Validation at boundaries
-
-Every transition between layers validates:
-
-```
-Manifest loaded from disk       → Validate()
-Agent context extracted          → agent exists, wave is current
-Completion report registered     → required fields, status enum, files match ownership
-Wave merge requested             → all agents complete, no I1 violations
-```
-
-Errors are structured (`ValidationError` with code, message, field) — not "parse error on line 342."
-
-### Why not a framework?
-
-We evaluated Google ADK, Claude Agent SDK, GoAgents, and others (see [Framework Evaluation](docs/proposals/protocol-sdk-migration-v2.md#appendix-framework-evaluation)). The conclusion:
-
-**SAW's value is the coordination protocol** — wave sequencing, disjoint file ownership, interface contracts, merge verification. No framework provides these. Agent execution (LLM conversation loops, tool dispatch) is a commodity — delegated to whatever runtime fits the deployment context.
-
-The SDK defines a `Runtime` interface so the execution backend is swappable:
-- **Phase 1:** Claude Code subagents (current model)
-- **Future:** Claude Agent SDK, Google ADK, direct API, or any LLM provider
-
-## Documentation
-
-- **[Protocol SDK Migration](docs/proposals/protocol-sdk-migration-v2.md)** — Why YAML manifests replace markdown, architectural decisions, framework evaluation
-- **[Architecture Overview](docs/architecture.md)** — Engine flow, package relationships
-- **[Backends](docs/backends.md)** — Implementing custom LLM backends
-- **[Orchestration](docs/orchestration.md)** — Wave lifecycle, worktree management, merge procedure
-
-## Development
-
-### Build
-
-```bash
-go build ./...
-```
-
-### Test
-
-```bash
-go test ./...
-```
-
-### Lint
-
-```bash
-golangci-lint run
-```
-
-## Related Repositories
+Three repositories with separation of concerns:
 
 | Repository | Purpose |
 |-----------|---------|
-| [scout-and-wave](https://github.com/blackwell-systems/scout-and-wave) | Protocol specification, skills, prompts |
-| [scout-and-wave-web](https://github.com/blackwell-systems/scout-and-wave-web) | Web UI + HTTP server (imports this engine) |
+| [scout-and-wave](https://github.com/blackwell-systems/scout-and-wave) | Protocol specification: invariants (I1–I6), execution rules (E1–E36), agent prompts, `/saw` skill |
+| **scout-and-wave-go** (this repo) | Go engine + Protocol SDK + `sawtools` CLI |
+| [scout-and-wave-web](https://github.com/blackwell-systems/scout-and-wave-web) | Web UI + HTTP/SSE server (imports this engine) |
 
-## Protocol Specification
+The protocol repo is the source of truth for semantics. This repo implements them. The web repo provides the UI layer.
 
-The Scout-and-Wave protocol specification lives in the [scout-and-wave](https://github.com/blackwell-systems/scout-and-wave) repository.
+**Design principle:** The SDK handles data deterministically. The engine handles execution. Validation happens at every boundary between the two. Structural operations (manifest parsing, invariant validation, file ownership, wave sequencing) are Go code — pure functions, no LLM, same output for the same input. Creative operations (codebase analysis, implementation, novel error handling) are LLM work, delegated to the appropriate agent type.
+
+---
+
+## Development
+
+```bash
+go build ./...
+go test ./...
+golangci-lint run
+```
+
+---
 
 ## License
 
