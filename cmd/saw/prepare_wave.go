@@ -15,9 +15,10 @@ import (
 
 // PrepareWaveResult combines worktree creation and per-agent preparation results
 type PrepareWaveResult struct {
-	Wave        int              `json:"wave"`
+	Wave        int                     `json:"wave"`
 	Worktrees   []protocol.WorktreeInfo `json:"worktrees"`
-	AgentBriefs []AgentBriefInfo `json:"agent_briefs"`
+	AgentBriefs []AgentBriefInfo        `json:"agent_briefs"`
+	Repos       []string                `json:"repos,omitempty"` // distinct repo names used this wave
 }
 
 // AgentBriefInfo contains metadata about a prepared agent brief
@@ -27,6 +28,59 @@ type AgentBriefInfo struct {
 	BriefLength int    `json:"brief_length"`
 	JournalDir  string `json:"journal_dir"`
 	FilesOwned  int    `json:"files_owned"`
+	Repo        string `json:"repo,omitempty"` // repo name from file_ownership; empty = primary repo
+}
+
+// sawRepoEntry represents a single entry in the saw.config.json repos array.
+type sawRepoEntry struct {
+	Name string `json:"name"`
+	Path string `json:"path"`
+}
+
+// loadSAWConfigRepos reads saw.config.json at configPath and returns
+// the repos array. Returns nil slice if file absent or parse fails.
+func loadSAWConfigRepos(configPath string) []sawRepoEntry {
+	data, err := os.ReadFile(configPath)
+	if err != nil {
+		return nil
+	}
+	var cfg struct {
+		Repos []sawRepoEntry `json:"repos"`
+	}
+	if err := json.Unmarshal(data, &cfg); err != nil {
+		return nil
+	}
+	return cfg.Repos
+}
+
+// resolveAgentRepoRoot returns the absolute repo root for agentID.
+// It looks up the agent's repo name from fileOwnership, then resolves
+// the path from the repos registry. Falls back to projectRoot if the
+// agent has no repo field or the repo is not found in the registry.
+func resolveAgentRepoRoot(
+	fileOwnership []protocol.FileOwnership,
+	agentID string,
+	projectRoot string,
+	repos []sawRepoEntry,
+) string {
+	// Find the repo name for this agent from file ownership
+	repoName := ""
+	for _, fo := range fileOwnership {
+		if fo.Agent == agentID && fo.Repo != "" {
+			repoName = fo.Repo
+			break
+		}
+	}
+	if repoName == "" {
+		return projectRoot
+	}
+	// Look up the repo path in the registry
+	for _, r := range repos {
+		if r.Name == repoName {
+			return r.Path
+		}
+	}
+	return projectRoot
 }
 
 func newPrepareWaveCmd() *cobra.Command {
@@ -86,6 +140,9 @@ waves that execute on the main branch.`,
 				return fmt.Errorf("dependency conflicts detected - resolve before creating worktrees")
 			}
 
+			// Load repos config for multi-repo agent routing
+			repos := loadSAWConfigRepos(filepath.Join(projectRoot, "saw.config.json"))
+
 			// Step 1: Create worktrees (records base commit, must happen first)
 			worktreeResult, err := protocol.CreateWorktrees(manifestPath, waveNum, projectRoot)
 			if err != nil {
@@ -111,6 +168,7 @@ waves that execute on the main branch.`,
 
 			// Step 3: Prepare each agent (extract brief + init journal)
 			agentBriefs := make([]AgentBriefInfo, 0, len(worktreeResult.Worktrees))
+			repoSet := make(map[string]struct{})
 
 			for _, wtInfo := range worktreeResult.Worktrees {
 				agentID := wtInfo.Agent
@@ -188,9 +246,24 @@ waves that execute on the main branch.`,
 					return fmt.Errorf("failed to write brief for agent %s: %w", agentID, err)
 				}
 
+				// Resolve the repo root for this agent (supports multi-repo waves)
+				agentRoot := resolveAgentRepoRoot(doc.FileOwnership, agentID, projectRoot, repos)
+
+				// Determine agent's repo name for result metadata
+				agentRepoName := ""
+				for _, fo := range doc.FileOwnership {
+					if fo.Agent == agentID && fo.Repo != "" {
+						agentRepoName = fo.Repo
+						break
+					}
+				}
+				if agentRepoName != "" {
+					repoSet[agentRepoName] = struct{}{}
+				}
+
 				// Initialize journal observer
 				fullAgentID := fmt.Sprintf("wave%d-agent-%s", waveNum, agentID)
-				observer, err := journal.NewObserver(projectRoot, fullAgentID)
+				observer, err := journal.NewObserver(agentRoot, fullAgentID)
 				if err != nil {
 					return fmt.Errorf("failed to create journal observer for agent %s: %w", agentID, err)
 				}
@@ -214,7 +287,14 @@ waves that execute on the main branch.`,
 					BriefLength: len(brief),
 					JournalDir:  observer.JournalDir,
 					FilesOwned:  len(agentFiles),
+					Repo:        agentRepoName,
 				})
+			}
+
+			// Collect distinct repo names
+			var repoList []string
+			for name := range repoSet {
+				repoList = append(repoList, name)
 			}
 
 			// Output result
@@ -222,6 +302,7 @@ waves that execute on the main branch.`,
 				Wave:        waveNum,
 				Worktrees:   worktreeResult.Worktrees,
 				AgentBriefs: agentBriefs,
+				Repos:       repoList,
 			}
 
 			out, _ := json.MarshalIndent(result, "", "  ")
