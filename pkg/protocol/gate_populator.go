@@ -247,10 +247,17 @@ func FormatVerificationBlock(buildCmd, lintCmd, testCmd string) string {
 
 // FinalizeIMPLResult contains the results of the FinalizeIMPL operation.
 type FinalizeIMPLResult struct {
-	Success         bool                `json:"success"`
-	Validation      ValidateResult      `json:"validation"`
-	GatePopulation  GatePopulationStats `json:"gate_population"`
-	FinalValidation ValidateResult      `json:"final_validation"`
+	Success              bool                    `json:"success"`
+	Validation           ValidateResult          `json:"validation"`
+	GatePopulation       GatePopulationStats     `json:"gate_population"`
+	ChecklistPopulation  ChecklistPopulationStats `json:"checklist_population"`
+	FinalValidation      ValidateResult          `json:"final_validation"`
+}
+
+// ChecklistPopulationStats contains statistics about integration checklist population.
+type ChecklistPopulationStats struct {
+	GroupsAdded int `json:"groups_added"`
+	ItemsAdded  int `json:"items_added"`
 }
 
 // ValidateResult contains validation pass/fail status and error list.
@@ -366,6 +373,27 @@ func FinalizeIMPL(implPath, repoRoot string) (*FinalizeIMPLResult, error) {
 		}
 	}
 	result.GatePopulation.AgentsUpdated = agentsUpdated
+
+	// Step 4.5: Populate integration checklist (M5)
+	updatedManifest, err = PopulateIntegrationChecklist(updatedManifest)
+	if err != nil {
+		result.Success = false
+		return result, fmt.Errorf("failed to populate integration checklist: %w", err)
+	}
+
+	// Count groups and items added
+	groupsAdded := 0
+	itemsAdded := 0
+	if updatedManifest.PostMergeChecklist != nil {
+		groupsAdded = len(updatedManifest.PostMergeChecklist.Groups)
+		for _, group := range updatedManifest.PostMergeChecklist.Groups {
+			itemsAdded += len(group.Items)
+		}
+	}
+	result.ChecklistPopulation = ChecklistPopulationStats{
+		GroupsAdded: groupsAdded,
+		ItemsAdded:  itemsAdded,
+	}
 
 	// Step 5: Final validation
 	finalValidationErrors := Validate(updatedManifest)
