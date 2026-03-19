@@ -57,14 +57,17 @@ type ProgramIMPL struct {
 	EstimatedAgents int      `yaml:"estimated_agents,omitempty" json:"estimated_agents,omitempty"`
 	EstimatedWaves  int      `yaml:"estimated_waves,omitempty" json:"estimated_waves,omitempty"`
 	KeyOutputs      []string `yaml:"key_outputs,omitempty" json:"key_outputs,omitempty"`
-	Status          string   `yaml:"status" json:"status"`
+	Status            string `yaml:"status" json:"status"`
+	PriorityScore     int    `yaml:"priority_score,omitempty" json:"priority_score,omitempty"`
+	PriorityReasoning string `yaml:"priority_reasoning,omitempty" json:"priority_reasoning,omitempty"`
 }
 
 // ProgramTier groups IMPLs that can execute in parallel.
 type ProgramTier struct {
 	Number      int      `yaml:"number" json:"number"`
 	Impls       []string `yaml:"impls" json:"impls"`
-	Description string   `yaml:"description,omitempty" json:"description,omitempty"`
+	Description    string `yaml:"description,omitempty" json:"description,omitempty"`
+	ConcurrencyCap int    `yaml:"concurrency_cap,omitempty" json:"concurrency_cap,omitempty"`
 }
 
 // ProgramCompletion tracks overall program progress.
