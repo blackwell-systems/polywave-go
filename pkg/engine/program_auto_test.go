@@ -184,6 +184,195 @@ func TestAdvanceTierAutomatically_FreezeFails(t *testing.T) {
 	}
 }
 
+// TestScoreTierIMPLs_SinglePendingNoDownstream verifies that a single pending IMPL
+// with no downstream dependents gets score=0 and appears in the returned slice.
+func TestScoreTierIMPLs_SinglePendingNoDownstream(t *testing.T) {
+	manifest := &protocol.PROGRAMManifest{
+		Tiers: []protocol.ProgramTier{
+			{Number: 1, Impls: []string{"impl-a"}},
+		},
+		Impls: []protocol.ProgramIMPL{
+			{Slug: "impl-a", Tier: 1, Status: "pending"},
+		},
+	}
+
+	result := ScoreTierIMPLs(manifest, 1)
+	if len(result) != 1 {
+		t.Fatalf("expected 1 slug, got %d", len(result))
+	}
+	if result[0] != "impl-a" {
+		t.Errorf("expected 'impl-a', got %q", result[0])
+	}
+	// Score should be 0 — no downstream dependents
+	if manifest.Impls[0].PriorityScore != 0 {
+		t.Errorf("expected PriorityScore=0, got %d", manifest.Impls[0].PriorityScore)
+	}
+}
+
+// TestScoreTierIMPLs_UnblockingIMPLAppearsFirst verifies that when one IMPL
+// unblocks another, the unblocking IMPL appears first in the ordered result.
+func TestScoreTierIMPLs_UnblockingIMPLAppearsFirst(t *testing.T) {
+	// impl-a unblocks impl-c (impl-c depends on impl-a)
+	// impl-b has no downstream dependents
+	// Both impl-a and impl-b are pending in tier 1
+	manifest := &protocol.PROGRAMManifest{
+		Tiers: []protocol.ProgramTier{
+			{Number: 1, Impls: []string{"impl-a", "impl-b"}},
+		},
+		Impls: []protocol.ProgramIMPL{
+			{Slug: "impl-a", Tier: 1, Status: "pending"},
+			{Slug: "impl-b", Tier: 1, Status: "pending"},
+			{Slug: "impl-c", Tier: 2, Status: "pending", DependsOn: []string{"impl-a"}},
+		},
+	}
+
+	result := ScoreTierIMPLs(manifest, 1)
+	if len(result) != 2 {
+		t.Fatalf("expected 2 slugs, got %d", len(result))
+	}
+	if result[0] != "impl-a" {
+		t.Errorf("expected impl-a first (higher unblocking score), got %q", result[0])
+	}
+	if result[1] != "impl-b" {
+		t.Errorf("expected impl-b second, got %q", result[1])
+	}
+}
+
+// TestScoreTierIMPLs_MutatesManifestImplsPriorityScore verifies that ScoreTierIMPLs
+// writes PriorityScore back into manifest.Impls in place.
+func TestScoreTierIMPLs_MutatesManifestImplsPriorityScore(t *testing.T) {
+	manifest := &protocol.PROGRAMManifest{
+		Tiers: []protocol.ProgramTier{
+			{Number: 1, Impls: []string{"impl-a"}},
+		},
+		Impls: []protocol.ProgramIMPL{
+			{Slug: "impl-a", Tier: 1, Status: "pending"},
+			{Slug: "impl-b", Tier: 2, Status: "pending", DependsOn: []string{"impl-a"}},
+		},
+	}
+
+	_ = ScoreTierIMPLs(manifest, 1)
+
+	// impl-a should have PriorityScore > 0 because impl-b depends on it
+	var implA *protocol.ProgramIMPL
+	for i := range manifest.Impls {
+		if manifest.Impls[i].Slug == "impl-a" {
+			implA = &manifest.Impls[i]
+			break
+		}
+	}
+	if implA == nil {
+		t.Fatal("impl-a not found in manifest.Impls")
+	}
+	if implA.PriorityScore <= 0 {
+		t.Errorf("expected PriorityScore > 0, got %d", implA.PriorityScore)
+	}
+	if implA.PriorityReasoning == "" {
+		t.Error("expected PriorityReasoning to be set")
+	}
+}
+
+// TestScoreTierIMPLs_ExcludesNonPending verifies that non-pending IMPLs (e.g. "complete")
+// are not included in the scored output.
+func TestScoreTierIMPLs_ExcludesNonPending(t *testing.T) {
+	manifest := &protocol.PROGRAMManifest{
+		Tiers: []protocol.ProgramTier{
+			{Number: 1, Impls: []string{"impl-a", "impl-b"}},
+		},
+		Impls: []protocol.ProgramIMPL{
+			{Slug: "impl-a", Tier: 1, Status: "complete"},
+			{Slug: "impl-b", Tier: 1, Status: "pending"},
+		},
+	}
+
+	result := ScoreTierIMPLs(manifest, 1)
+	if len(result) != 1 {
+		t.Fatalf("expected 1 slug (only pending), got %d: %v", len(result), result)
+	}
+	if result[0] != "impl-b" {
+		t.Errorf("expected 'impl-b', got %q", result[0])
+	}
+}
+
+// TestScoreTierIMPLs_TierNotFound verifies that ScoreTierIMPLs returns nil (not panic)
+// when the requested tier does not exist.
+func TestScoreTierIMPLs_TierNotFound(t *testing.T) {
+	manifest := buildTestManifest(2)
+
+	result := ScoreTierIMPLs(manifest, 99)
+	if result != nil {
+		t.Errorf("expected nil for missing tier, got %v", result)
+	}
+}
+
+// TestAdvanceTierAutomatically_ScoredIMPLOrder_PopulatedOnAdvance verifies that
+// ScoredIMPLOrder is populated in the result when AdvancedToNext=true.
+func TestAdvanceTierAutomatically_ScoredIMPLOrder_PopulatedOnAdvance(t *testing.T) {
+	repoPath := t.TempDir()
+
+	// Build a 2-tier manifest where tier 2 has a pending IMPL
+	manifest := &protocol.PROGRAMManifest{
+		Title:       "Test Program",
+		ProgramSlug: "test-program",
+		State:       protocol.ProgramStateTierExecuting,
+		Tiers: []protocol.ProgramTier{
+			{Number: 1, Impls: []string{"impl-tier1"}},
+			{Number: 2, Impls: []string{"impl-tier2"}},
+		},
+		Impls: []protocol.ProgramIMPL{
+			{Slug: "impl-tier1", Title: "IMPL Tier 1", Tier: 1, Status: "complete"},
+			{Slug: "impl-tier2", Title: "IMPL Tier 2", Tier: 2, Status: "pending"},
+		},
+		Completion: protocol.ProgramCompletion{
+			TiersTotal: 2,
+			ImplsTotal: 2,
+		},
+	}
+
+	result, err := AdvanceTierAutomatically(manifest, 1, repoPath, true)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if !result.AdvancedToNext {
+		t.Fatalf("expected AdvancedToNext=true")
+	}
+	if len(result.ScoredIMPLOrder) == 0 {
+		t.Error("expected ScoredIMPLOrder to be populated when AdvancedToNext=true")
+	}
+	if result.ScoredIMPLOrder[0] != "impl-tier2" {
+		t.Errorf("expected 'impl-tier2' in ScoredIMPLOrder, got %v", result.ScoredIMPLOrder)
+	}
+}
+
+// TestAdvanceTierAutomatically_ScoredIMPLOrder_EmptyOnGateFail verifies that
+// ScoredIMPLOrder is empty when the gate fails (RequiresReview=true).
+func TestAdvanceTierAutomatically_ScoredIMPLOrder_EmptyOnGateFail(t *testing.T) {
+	repoPath := t.TempDir()
+	manifest := buildTestManifest(2)
+
+	// Add a required gate that will fail
+	manifest.TierGates = []protocol.QualityGate{
+		{
+			Type:     "test",
+			Command:  "exit 1",
+			Required: true,
+		},
+	}
+
+	result, err := AdvanceTierAutomatically(manifest, 1, repoPath, true)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if result.AdvancedToNext {
+		t.Error("expected AdvancedToNext=false when gate fails")
+	}
+	if len(result.ScoredIMPLOrder) != 0 {
+		t.Errorf("expected ScoredIMPLOrder to be empty when gate fails, got %v", result.ScoredIMPLOrder)
+	}
+}
+
 // TestReplanProgram_ValidRevision tests that ReplanProgram successfully launches
 // the Planner agent and returns a result with no error when given a valid manifest.
 func TestReplanProgram_ValidRevision(t *testing.T) {

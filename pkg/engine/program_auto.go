@@ -22,6 +22,10 @@ type TierAdvanceResult struct {
 	NextTier        int                            `json:"next_tier,omitempty"`
 	ProgramComplete bool                           `json:"program_complete"`
 	Errors          []string                       `json:"errors,omitempty"`
+	// ScoredIMPLOrder is the priority-ordered list of IMPL slugs for the next tier.
+	// Populated when AdvancedToNext=true so callers can display launch order
+	// before execution starts. The caller is responsible for honoring ConcurrencyCap.
+	ScoredIMPLOrder []string `json:"scored_impl_order,omitempty"`
 }
 
 // ReplanProgramOpts configures a Planner re-engagement to revise a PROGRAM manifest.
@@ -99,9 +103,67 @@ func AdvanceTierAutomatically(manifest *protocol.PROGRAMManifest, completedTier 
 	} else {
 		result.AdvancedToNext = true
 		result.NextTier = completedTier + 1
+		// Score the next tier's pending IMPLs so callers can display priority
+		// order before launching. The caller is responsible for honoring ConcurrencyCap.
+		result.ScoredIMPLOrder = ScoreTierIMPLs(manifest, result.NextTier)
 	}
 
 	return result, nil
+}
+
+// ScoreTierIMPLs scores all pending IMPLs in tierNumber and returns them sorted by
+// descending priority. Also updates PriorityScore and PriorityReasoning on each
+// matching ProgramIMPL entry in manifest.Impls (mutates in place).
+//
+// Returns nil if the tier is not found. Returns slugs in priority order (highest first).
+//
+// NOTE: The caller is responsible for honoring ConcurrencyCap on the tier.
+// ScoreTierIMPLs returns the full priority-ordered list; the caller should launch
+// only the first ConcurrencyCap slugs (or all if ConcurrencyCap == 0).
+func ScoreTierIMPLs(manifest *protocol.PROGRAMManifest, tierNumber int) []string {
+	// Find the tier
+	var tier *protocol.ProgramTier
+	for i := range manifest.Tiers {
+		if manifest.Tiers[i].Number == tierNumber {
+			tier = &manifest.Tiers[i]
+			break
+		}
+	}
+	if tier == nil {
+		return nil
+	}
+
+	// Collect pending IMPL slugs from the tier
+	var pendingSlugs []string
+	for _, slug := range tier.Impls {
+		for _, impl := range manifest.Impls {
+			if impl.Slug == slug && impl.Status == "pending" {
+				pendingSlugs = append(pendingSlugs, slug)
+				break
+			}
+		}
+	}
+
+	// Score each pending IMPL and write back into manifest.Impls
+	for i := range manifest.Impls {
+		impl := &manifest.Impls[i]
+		// Only update pending IMPLs in this tier
+		if impl.Tier != tierNumber || impl.Status != "pending" {
+			continue
+		}
+		score := protocol.UnblockingScore(manifest, impl.Slug)
+		impl.PriorityScore = score
+		if score > 0 {
+			// unblocking_potential = score / UnblockBonusPerIMPL (age_bonus is 0)
+			potential := score / protocol.UnblockBonusPerIMPL
+			impl.PriorityReasoning = fmt.Sprintf("unblocking(%dx+100=+%d), age(+0)", potential, score)
+		} else {
+			impl.PriorityReasoning = "unblocking(0), age(+0)"
+		}
+	}
+
+	// Return priority-ordered list
+	return protocol.PrioritizeIMPLs(manifest, pendingSlugs)
 }
 
 // isFinalTier returns true if completedTier is the highest-numbered tier in the manifest.
