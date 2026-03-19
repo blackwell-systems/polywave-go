@@ -1,0 +1,193 @@
+package protocol
+
+import (
+	"errors"
+	"fmt"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"strings"
+)
+
+// ErrAmendBlocked is returned when a hard protocol invariant prevents the amend.
+var ErrAmendBlocked = errors.New("amend blocked: protocol invariant violation")
+
+// AmendImplOpts controls which amend operation to perform.
+// Exactly one of AddWave, RedirectAgent, or ExtendScope must be true.
+type AmendImplOpts struct {
+	ManifestPath  string // absolute path to the IMPL YAML
+	AddWave       bool   // append a new empty wave skeleton to the manifest
+	RedirectAgent bool   // re-queue an agent (update task + clear completion report)
+	AgentID       string // required when RedirectAgent=true
+	WaveNum       int    // required when RedirectAgent=true; wave the agent belongs to
+	NewTask       string // required when RedirectAgent=true; replacement task text
+	ExtendScope   bool   // re-engage Scout with current IMPL as context (handled by CLI layer)
+}
+
+// AmendImplResult is the outcome of a successful AmendImpl call.
+type AmendImplResult struct {
+	ManifestPath  string   // absolute path (same as input)
+	Operation     string   // "add-wave" | "redirect-agent" | "extend-scope"
+	NewWaveNumber int      // only set when Operation=="add-wave"
+	AgentID       string   // only set when Operation=="redirect-agent"
+	Warnings      []string // non-fatal issues detected during amend
+}
+
+// AmendImpl performs the amend operation described by opts on the manifest at
+// opts.ManifestPath, saves the updated manifest, and returns the result.
+// Returns ErrAmendBlocked (sentinel) if a hard invariant would be violated.
+func AmendImpl(opts AmendImplOpts) (*AmendImplResult, error) {
+	// Step 1: Load manifest
+	m, err := Load(opts.ManifestPath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to load manifest: %w", err)
+	}
+
+	// Step 2: Check completion_date field
+	if m.CompletionDate != "" {
+		return nil, fmt.Errorf("%w: IMPL is complete (completion_date=%s); cannot amend", ErrAmendBlocked, m.CompletionDate)
+	}
+
+	// Step 3: Check raw file for SAW:COMPLETE marker
+	rawBytes, err := os.ReadFile(opts.ManifestPath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read manifest file: %w", err)
+	}
+	if strings.Contains(string(rawBytes), "SAW:COMPLETE") {
+		return nil, fmt.Errorf("%w: IMPL is complete (SAW:COMPLETE marker present); cannot amend", ErrAmendBlocked)
+	}
+
+	switch {
+	case opts.AddWave:
+		return amendAddWave(opts, m)
+	case opts.RedirectAgent:
+		return amendRedirectAgent(opts, m)
+	default:
+		// ExtendScope is handled by the CLI layer; nothing to do in the engine
+		return &AmendImplResult{
+			ManifestPath: opts.ManifestPath,
+			Operation:    "extend-scope",
+		}, nil
+	}
+}
+
+// amendAddWave appends a new empty wave to the manifest.
+func amendAddWave(opts AmendImplOpts, m *IMPLManifest) (*AmendImplResult, error) {
+	// Find highest wave number
+	maxWave := 0
+	for _, w := range m.Waves {
+		if w.Number > maxWave {
+			maxWave = w.Number
+		}
+	}
+
+	newWaveNum := maxWave + 1
+	newWave := Wave{Number: newWaveNum, Agents: []Agent{}}
+
+	// Validate-first using only ordering/invariant checks (not schema checks that reject
+	// empty agent lists, since an empty wave skeleton is the expected initial state).
+	// We check wave ordering specifically: the new wave must be maxWave+1 which is sequential.
+	mCopy := *m
+	wavesCopy := make([]Wave, len(m.Waves))
+	copy(wavesCopy, m.Waves)
+	wavesCopy = append(wavesCopy, newWave)
+	mCopy.Waves = wavesCopy
+
+	// Run only wave-ordering validation (I3) to catch structural issues.
+	// Full Validate() rejects empty agent lists by design, which is expected here.
+	if errs := validateI3WaveOrdering(&mCopy); len(errs) > 0 {
+		msgs := make([]string, len(errs))
+		for i, e := range errs {
+			msgs[i] = e.Message
+		}
+		return nil, fmt.Errorf("%w: validation failed after adding wave: %s", ErrAmendBlocked, strings.Join(msgs, "; "))
+	}
+
+	// Validation passed — mutate real manifest and save
+	m.Waves = append(m.Waves, newWave)
+	if err := Save(m, opts.ManifestPath); err != nil {
+		return nil, fmt.Errorf("failed to save manifest: %w", err)
+	}
+
+	return &AmendImplResult{
+		ManifestPath:  opts.ManifestPath,
+		Operation:     "add-wave",
+		NewWaveNumber: newWaveNum,
+	}, nil
+}
+
+// amendRedirectAgent updates an agent's task and clears any non-complete completion report.
+func amendRedirectAgent(opts AmendImplOpts, m *IMPLManifest) (*AmendImplResult, error) {
+	var warnings []string
+
+	// Step 1: Find the agent in the specified wave
+	waveIdx := -1
+	agentIdx := -1
+	for wi, w := range m.Waves {
+		if w.Number == opts.WaveNum {
+			waveIdx = wi
+			for ai, a := range w.Agents {
+				if a.ID == opts.AgentID {
+					agentIdx = ai
+					break
+				}
+			}
+			break
+		}
+	}
+
+	if waveIdx == -1 || agentIdx == -1 {
+		return nil, fmt.Errorf("%w: agent %s not found in wave %d", ErrAmendBlocked, opts.AgentID, opts.WaveNum)
+	}
+
+	// Step 2: Reject if agent has a complete completion report
+	if cr, ok := m.CompletionReports[opts.AgentID]; ok && cr.Status == "complete" {
+		return nil, fmt.Errorf("%w: agent %s has a complete completion report; cannot redirect a completed agent", ErrAmendBlocked, opts.AgentID)
+	}
+
+	// Step 3: Worktree commit check
+	branchName := BranchName(m.FeatureSlug, opts.WaveNum, opts.AgentID)
+	wave := m.Waves[waveIdx]
+
+	if wave.BaseCommit == "" {
+		warnings = append(warnings, "base_commit not set; skipping worktree commit check")
+	} else {
+		// Find repo root via git rev-parse
+		manifestDir := filepath.Dir(opts.ManifestPath)
+		repoRootBytes, err := exec.Command("git", "-C", manifestDir, "rev-parse", "--show-toplevel").Output()
+		if err != nil {
+			warnings = append(warnings, "could not find repo root; skipping worktree commit check")
+		} else {
+			repoRoot := strings.TrimSpace(string(repoRootBytes))
+			// Check for commits on the agent's branch since base commit
+			logOut, err := exec.Command("git", "-C", repoRoot, "log",
+				wave.BaseCommit+".."+branchName, "--oneline").Output()
+			if err != nil {
+				// Branch not found or other git error — no commits, proceed
+			} else if len(strings.TrimSpace(string(logOut))) > 0 {
+				return nil, fmt.Errorf("%w: agent %s has commits on branch %s; cannot redirect a committed agent",
+					ErrAmendBlocked, opts.AgentID, branchName)
+			}
+		}
+	}
+
+	// Step 4: Update agent task
+	m.Waves[waveIdx].Agents[agentIdx].Task = opts.NewTask
+
+	// Step 5: Delete partial completion report if present
+	if cr, ok := m.CompletionReports[opts.AgentID]; ok && cr.Status != "complete" {
+		delete(m.CompletionReports, opts.AgentID)
+	}
+
+	// Step 6: Save
+	if err := Save(m, opts.ManifestPath); err != nil {
+		return nil, fmt.Errorf("failed to save manifest: %w", err)
+	}
+
+	return &AmendImplResult{
+		ManifestPath: opts.ManifestPath,
+		Operation:    "redirect-agent",
+		AgentID:      opts.AgentID,
+		Warnings:     warnings,
+	}, nil
+}
