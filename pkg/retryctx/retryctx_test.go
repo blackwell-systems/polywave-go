@@ -240,6 +240,56 @@ func TestBuildRetryContext_ExcerptTruncation(t *testing.T) {
 	}
 }
 
+func TestBuildRetryContext_FixableFailureType(t *testing.T) {
+	dir := t.TempDir()
+	manifestPath := filepath.Join(dir, "impl.yaml")
+
+	notes := "install missing dep"
+	yaml := `title: "Test IMPL"
+feature_slug: "test-feature"
+verdict: "SUITABLE"
+test_command: "go test ./..."
+lint_command: "go vet ./..."
+file_ownership: []
+interface_contracts: []
+waves:
+  - number: 1
+    agents:
+      - id: "A"
+        task: "do stuff"
+        files: []
+completion_reports:
+  A:
+    status: "partial"
+    failure_type: "fixable"
+    notes: "install missing dep"
+    verification: "FAIL"
+`
+	if err := os.WriteFile(manifestPath, []byte(yaml), 0644); err != nil {
+		t.Fatalf("failed to write test manifest: %v", err)
+	}
+
+	rc, err := retryctx.BuildRetryContext(manifestPath, "A", 1)
+	if err != nil {
+		t.Fatalf("BuildRetryContext() returned error: %v", err)
+	}
+
+	// FailureType must be propagated from the completion report.
+	if rc.FailureType != "fixable" {
+		t.Errorf("FailureType = %q; want %q", rc.FailureType, "fixable")
+	}
+
+	// PromptText must contain a "Fix Required" section.
+	if !strings.Contains(rc.PromptText, "## Fix Required") {
+		t.Error("PromptText missing '## Fix Required' section for fixable failure")
+	}
+
+	// PromptText must include the agent's notes in the fix section.
+	if !strings.Contains(rc.PromptText, notes) {
+		t.Errorf("PromptText missing notes %q in Fix Required section", notes)
+	}
+}
+
 func TestBuildRetryContext_MissingReport(t *testing.T) {
 	dir := t.TempDir()
 	manifestPath := filepath.Join(dir, "impl.yaml")
