@@ -184,9 +184,8 @@ func TestAdvanceTierAutomatically_FreezeFails(t *testing.T) {
 	}
 }
 
-// TestReplanProgram_ValidRevision tests that ReplanProgram attempts to launch the Planner
-// agent. In test environments without API credentials it returns an error (backend
-// init or auth failure), which is still a non-nil error — the assertion holds.
+// TestReplanProgram_ValidRevision tests that ReplanProgram successfully launches
+// the Planner agent and returns a result with no error when given a valid manifest.
 func TestReplanProgram_ValidRevision(t *testing.T) {
 	// Write a minimal PROGRAM manifest file
 	dir := t.TempDir()
@@ -216,13 +215,15 @@ completion:
 		FailedTier:          1,
 	}
 
-	_, err := ReplanProgram(opts)
-	// Planner launch is stubbed — expect "not yet implemented" error
-	if err == nil {
-		t.Fatal("expected error (Planner not yet implemented), got nil")
+	result, err := ReplanProgram(opts)
+	if err != nil {
+		t.Fatalf("ReplanProgram returned unexpected error: %v", err)
 	}
-	if err.Error() == "" {
-		t.Errorf("expected non-empty error message")
+	if result == nil {
+		t.Fatal("expected non-nil result")
+	}
+	if result.RevisedManifestPath != manifestPath {
+		t.Errorf("expected manifest path %q, got %q", manifestPath, result.RevisedManifestPath)
 	}
 }
 
