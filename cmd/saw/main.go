@@ -54,6 +54,7 @@ func main() {
 		newDaemonCmd(),
 		newValidateProgramCmd(),
 		newListProgramsCmd(),
+		newPopulateIntegrationChecklistCmd(), // M5: integration checklist
 	)
 	if err := rootCmd.Execute(); err != nil {
 		fmt.Fprintln(os.Stderr, err)
