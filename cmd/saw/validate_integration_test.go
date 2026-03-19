@@ -42,6 +42,32 @@ func TestValidateIntegrationCmd_FlagParsing(t *testing.T) {
 		t.Error("expected error when 2 args provided")
 	}
 
+	// Verify --wiring flag exists with default true
+	wiringFlag := cmd.Flags().Lookup("wiring")
+	if wiringFlag == nil {
+		t.Fatal("expected --wiring flag to exist")
+	}
+	if wiringFlag.DefValue != "true" {
+		t.Errorf("expected --wiring default to be true, got %s", wiringFlag.DefValue)
+	}
+
+	// Verify --wiring can be disabled
+	if err := cmd.Flags().Set("wiring", "false"); err != nil {
+		t.Errorf("failed to set --wiring=false: %v", err)
+	}
+	wiringVal, err := cmd.Flags().GetBool("wiring")
+	if err != nil {
+		t.Errorf("failed to get --wiring flag value: %v", err)
+	}
+	if wiringVal != false {
+		t.Errorf("expected wiring=false, got %v", wiringVal)
+	}
+
+	// Reset and verify --wiring=true
+	if err := cmd.Flags().Set("wiring", "true"); err != nil {
+		t.Errorf("failed to set --wiring=true: %v", err)
+	}
+
 	// Verify --repo-dir is available (inherited from root)
 	// Note: --repo-dir is a persistent flag on the root command, so it won't
 	// appear on this subcommand directly unless we build the full command tree.
