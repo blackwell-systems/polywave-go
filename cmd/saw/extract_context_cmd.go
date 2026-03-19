@@ -31,7 +31,22 @@ func newExtractContextCmd() *cobra.Command {
 			// Set the impl_doc_path from the manifest path provided on the command line.
 			payload.IMPLDocPath = manifestPath
 
-			out, err := json.MarshalIndent(payload, "", "  ")
+			// Augment payload with wiring obligations if any exist (E35 Layer 3C)
+			wiringSection := protocol.FormatWiringBriefSection(m, agentID)
+			var out []byte
+			if wiringSection != "" {
+				type augmented struct {
+					*protocol.AgentContextJSONPayload
+					WiringObligations string `json:"wiring_obligations,omitempty"`
+				}
+				aug := augmented{
+					AgentContextJSONPayload: payload,
+					WiringObligations:       wiringSection,
+				}
+				out, err = json.MarshalIndent(aug, "", "  ")
+			} else {
+				out, err = json.MarshalIndent(payload, "", "  ")
+			}
 			if err != nil {
 				return fmt.Errorf("extract-context: marshal JSON: %w", err)
 			}

@@ -143,6 +143,23 @@ waves that execute on the main branch.`,
 			// Load repos config for multi-repo agent routing
 			repos := loadSAWConfigRepos(filepath.Join(projectRoot, "saw.config.json"))
 
+			// Load manifest early so we can run pre-flight checks before creating worktrees
+			doc, err := protocol.Load(manifestPath)
+			if err != nil {
+				return fmt.Errorf("failed to load IMPL doc: %w", err)
+			}
+
+			// Step 0c: Validate wiring ownership (E35 Layer 3A)
+			// For each wiring declaration in the current wave, the must_be_called_from
+			// file must be in the owning agent's file_ownership. Fail fast before
+			// creating worktrees so the human sees the error immediately.
+			if violations := protocol.CheckWiringOwnership(doc, waveNum); len(violations) > 0 {
+				for _, v := range violations {
+					fmt.Fprintf(os.Stderr, "prepare-wave: wiring ownership violation: %s\n", v)
+				}
+				return fmt.Errorf("prepare-wave: %d wiring ownership violation(s) — fix IMPL doc file_ownership before creating worktrees", len(violations))
+			}
+
 			// Step 1: Create worktrees (records base commit, must happen first)
 			worktreeResult, err := protocol.CreateWorktrees(manifestPath, waveNum, projectRoot)
 			if err != nil {
@@ -158,12 +175,6 @@ waves that execute on the main branch.`,
 				if !hookResult.Valid {
 					return fmt.Errorf("hook verification failed for agent %s: %s", wtInfo.Agent, hookResult.Reason)
 				}
-			}
-
-			// Step 2: Load manifest for brief extraction
-			doc, err := protocol.Load(manifestPath)
-			if err != nil {
-				return fmt.Errorf("failed to load IMPL doc: %w", err)
 			}
 
 			// Step 3: Prepare each agent (extract brief + init journal)
@@ -205,7 +216,7 @@ waves that execute on the main branch.`,
 
 				// Extract quality gates
 				gatesSection := ""
-				if doc.QualityGates.Level != "" {
+				if doc.QualityGates != nil && doc.QualityGates.Level != "" {
 					gatesSection = "\n\n## Quality Gates\n\n"
 					gatesSection += fmt.Sprintf("Level: %s\n\n", doc.QualityGates.Level)
 					for _, gate := range doc.QualityGates.Gates {
@@ -216,6 +227,9 @@ waves that execute on the main branch.`,
 						}
 					}
 				}
+
+				// Wiring obligations for this agent (E35 Layer 3C)
+				wiringSection := protocol.FormatWiringBriefSection(doc, agentID)
 
 				// Build the agent brief
 				brief := fmt.Sprintf(`# Agent %s Brief - Wave %d
@@ -229,7 +243,7 @@ waves that execute on the main branch.`,
 ## Task
 
 %s
-%s%s
+%s%s%s
 `,
 					agentID,
 					waveNum,
@@ -237,6 +251,7 @@ waves that execute on the main branch.`,
 					formatFileList(agentFiles),
 					agentTask,
 					contractsSection,
+					wiringSection,
 					gatesSection,
 				)
 
