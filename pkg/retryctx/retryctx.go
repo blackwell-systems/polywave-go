@@ -156,6 +156,7 @@ type RetryContext struct {
 	SuggestedFixes []string   `json:"suggested_fixes"`
 	PriorNotes     string     `json:"prior_notes"`
 	PromptText     string     `json:"prompt_text"`
+	FailureType    string     `json:"failure_type,omitempty"` // "transient"|"fixable"|"needs_replan"|"escalate"|"timeout"
 }
 
 const maxExcerptLen = 2000
@@ -198,7 +199,7 @@ func BuildRetryContext(manifestPath string, agentID string, attemptNum int) (*Re
 		}
 	}
 
-	promptText := buildPromptText(attemptNum, class, excerpt, fixes, report.Notes)
+	promptText := buildPromptText(attemptNum, class, excerpt, fixes, report.Notes, report.FailureType)
 
 	rc := &RetryContext{
 		AttemptNumber:  attemptNum,
@@ -209,13 +210,24 @@ func BuildRetryContext(manifestPath string, agentID string, attemptNum int) (*Re
 		SuggestedFixes: fixes,
 		PriorNotes:     report.Notes,
 		PromptText:     promptText,
+		FailureType:    report.FailureType,
 	}
 	return rc, nil
 }
 
 // buildPromptText formats a markdown retry prompt for the agent.
-func buildPromptText(attemptNum int, class ErrorClass, excerpt string, fixes []string, priorNotes string) string {
+// When failureType is "fixable" and priorNotes is non-empty, a "## Fix Required"
+// section is prepended to guide the agent to apply the identified fix first.
+func buildPromptText(attemptNum int, class ErrorClass, excerpt string, fixes []string, priorNotes string, failureType string) string {
 	var sb strings.Builder
+
+	// For fixable failures, surface the specific fix prominently at the top.
+	if failureType == "fixable" && priorNotes != "" {
+		sb.WriteString("## Fix Required\n\n")
+		sb.WriteString("The previous attempt identified a specific fix needed:\n\n")
+		sb.WriteString(priorNotes)
+		sb.WriteString("\n\nApply this fix before proceeding with your task.\n\n")
+	}
 
 	fmt.Fprintf(&sb, "## Retry Context (Attempt %d)\n\n", attemptNum)
 	fmt.Fprintf(&sb, "### Error Classification: %s\n\n", string(class))
