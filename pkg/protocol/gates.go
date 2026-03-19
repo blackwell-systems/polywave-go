@@ -20,8 +20,44 @@ type GateResult struct {
 	Stderr       string                   `json:"stderr"`
 	Required     bool                     `json:"required"`
 	Passed       bool                     `json:"passed"`
+	Skipped      bool                     `json:"skipped,omitempty"`
+	SkipReason   string                   `json:"skip_reason,omitempty"`
 	FromCache    bool                     `json:"from_cache,omitempty"`
 	ParsedErrors []errparse.StructuredError `json:"parsed_errors,omitempty"`
+}
+
+// isDocsOnlyWave returns true when every file owned by the given wave number
+// is a documentation or configuration file with no compilable source code.
+// Returns false if the wave has no files (conservative — run gates anyway).
+func isDocsOnlyWave(manifest *IMPLManifest, waveNumber int) bool {
+	docsExts := map[string]bool{
+		".md": true, ".yaml": true, ".yml": true, ".txt": true, ".rst": true,
+	}
+	total := 0
+	for _, wave := range manifest.Waves {
+		if wave.Number != waveNumber {
+			continue
+		}
+		for _, agent := range wave.Agents {
+			for _, f := range agent.Files {
+				total++
+				if !docsExts[filepath.Ext(f)] {
+					return false
+				}
+			}
+		}
+	}
+	return total > 0
+}
+
+// isSourceGateType returns true for gate types that require compiled or
+// tested source code and are not meaningful for docs-only changes.
+func isSourceGateType(t string) bool {
+	switch t {
+	case "build", "test", "tests", "lint":
+		return true
+	}
+	return false
 }
 
 // RunGates executes quality gates for a specific wave from the manifest.
@@ -40,10 +76,26 @@ func RunGates(manifest *IMPLManifest, waveNumber int, repoDir string) ([]GateRes
 	// Derive the repo name from the directory path for per-repo gate filtering.
 	repoName := filepath.Base(repoDir)
 
+	// Skip source-code gates when the wave only touches documentation files.
+	docsOnly := isDocsOnlyWave(manifest, waveNumber)
+
 	var results []GateResult
 	for _, gate := range manifest.QualityGates.Gates {
 		// Skip gates scoped to a different repo.
 		if gate.Repo != "" && gate.Repo != repoName {
+			continue
+		}
+
+		// Auto-skip build/test/lint gates for docs-only waves.
+		if docsOnly && isSourceGateType(gate.Type) {
+			results = append(results, GateResult{
+				Type:       gate.Type,
+				Command:    gate.Command,
+				Required:   gate.Required,
+				Passed:     true,
+				Skipped:    true,
+				SkipReason: "docs-only wave: no compilable source files changed",
+			})
 			continue
 		}
 
@@ -121,11 +173,25 @@ func RunGatesWithCache(manifest *IMPLManifest, waveNumber int, repoDir string, c
 	}
 
 	repoName := filepath.Base(repoDir)
+	docsOnly := isDocsOnlyWave(manifest, waveNumber)
 
 	var results []GateResult
 	for _, gate := range manifest.QualityGates.Gates {
 		// Skip gates scoped to a different repo.
 		if gate.Repo != "" && gate.Repo != repoName {
+			continue
+		}
+
+		// Auto-skip build/test/lint gates for docs-only waves.
+		if docsOnly && isSourceGateType(gate.Type) {
+			results = append(results, GateResult{
+				Type:       gate.Type,
+				Command:    gate.Command,
+				Required:   gate.Required,
+				Passed:     true,
+				Skipped:    true,
+				SkipReason: "docs-only wave: no compilable source files changed",
+			})
 			continue
 		}
 
