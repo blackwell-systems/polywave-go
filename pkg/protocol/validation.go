@@ -33,6 +33,9 @@ func Validate(m *IMPLManifest) []ValidationError {
 	errs = append(errs, ValidatePreMortemRisk(m)...)
 	errs = append(errs, validateMultiRepoConsistency(m)...)
 	errs = append(errs, ValidateSchema(m)...)
+	errs = append(errs, ValidateActionEnums(m)...)
+	errs = append(errs, ValidateIntegrationChecklist(m, "")...)
+	errs = append(errs, ValidateFileExistence(m, "")...)
 
 	return errs
 }
