@@ -82,6 +82,15 @@ type RunScoutOpts struct {
 	OutputSchemaOverride map[string]any // optional: overrides GenerateScoutSchema(); useful in tests
 }
 
+// RunPlannerOpts configures a Planner agent run.
+type RunPlannerOpts struct {
+	Description    string // human project description (required)
+	RepoPath       string // absolute path to the repository being planned (required)
+	SAWRepoPath    string // path to scout-and-wave protocol repo (optional; falls back to $SAW_REPO then ~/code/scout-and-wave)
+	ProgramOutPath string // where to write the PROGRAM manifest (required)
+	PlannerModel   string // optional: model override for the Planner agent
+}
+
 // RunWaveOpts configures a wave execution run.
 type RunWaveOpts struct {
 	IMPLPath             string // absolute path to IMPL doc (required)

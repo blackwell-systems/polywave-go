@@ -118,6 +118,64 @@ func RunScout(ctx context.Context, opts RunScoutOpts, onChunk func(string)) erro
 	return execErr
 }
 
+// RunPlanner executes a Planner agent to produce a PROGRAM manifest.
+// Mirrors RunScout but reads agents/planner.md and writes docs/PROGRAM-*.yaml.
+func RunPlanner(ctx context.Context, opts RunPlannerOpts, onChunk func(string)) error {
+	if opts.Description == "" {
+		return fmt.Errorf("engine.RunPlanner: Description is required")
+	}
+	if opts.RepoPath == "" {
+		return fmt.Errorf("engine.RunPlanner: RepoPath is required")
+	}
+	if opts.ProgramOutPath == "" {
+		return fmt.Errorf("engine.RunPlanner: ProgramOutPath is required")
+	}
+
+	sawRepo := opts.SAWRepoPath
+	if sawRepo == "" {
+		sawRepo = os.Getenv("SAW_REPO")
+	}
+	if sawRepo == "" {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return fmt.Errorf("engine.RunPlanner: cannot determine home directory: %w", err)
+		}
+		sawRepo = filepath.Join(home, "code", "scout-and-wave")
+	}
+
+	// Load planner.md prompt with fallback.
+	plannerMdPath := filepath.Join(sawRepo, "agents", "planner.md")
+	plannerMdBytes, err := os.ReadFile(plannerMdPath)
+	if err != nil {
+		plannerMdBytes = []byte("You are a Planner agent. Analyze the project requirements and produce a PROGRAM manifest at the specified output path. Decompose the project into features organized into dependency-ordered tiers. Define cross-feature program contracts for shared types/APIs.")
+	}
+
+	// E17: Prepend docs/CONTEXT.md if present.
+	contextMD := readContextMD(opts.RepoPath)
+	var prompt string
+	if contextMD != "" {
+		prompt = fmt.Sprintf("## Project Memory (docs/CONTEXT.md)\n\n%s\n\n%s\n\n## Project Description\n%s\n\n## PROGRAM Output Path\n%s\n",
+			contextMD, string(plannerMdBytes), opts.Description, opts.ProgramOutPath)
+	} else {
+		prompt = fmt.Sprintf("%s\n\n## Project Description\n%s\n\n## PROGRAM Output Path\n%s\n",
+			string(plannerMdBytes), opts.Description, opts.ProgramOutPath)
+	}
+
+	model := opts.PlannerModel
+	if model == "" {
+		model = "claude-sonnet-4-6"
+	}
+
+	b, bErr := orchestrator.NewBackendFromModel(model)
+	if bErr != nil {
+		return fmt.Errorf("engine.RunPlanner: backend init: %w", bErr)
+	}
+	runner := agent.NewRunner(b, nil)
+	spec := &types.AgentSpec{Letter: "planner", Prompt: prompt}
+	_, execErr := runner.ExecuteStreamingWithTools(ctx, spec, opts.RepoPath, onChunk, nil)
+	return execErr
+}
+
 // runScoutStructured runs the Scout agent via the API backend with structured
 // output enabled. It applies opts.OutputSchemaOverride if non-nil, otherwise
 // calls protocol.GenerateScoutSchema(). The API response JSON is unmarshalled
