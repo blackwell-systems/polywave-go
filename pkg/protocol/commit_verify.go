@@ -16,6 +16,7 @@ type CommitStatus struct {
 	Branch      string `json:"branch"`
 	CommitCount int    `json:"commit_count"`
 	HasCommits  bool   `json:"has_commits"`
+	CrossRepo   bool   `json:"cross_repo,omitempty"` // true when verified via completion report (cross-repo agent)
 }
 
 // VerifyCommitsResult represents the outcome of verifying that all agents
@@ -167,6 +168,17 @@ func VerifyCommits(manifestPath string, waveNum int, repoDir string) (*VerifyCom
 			} else {
 				status.CommitCount = count
 				status.HasCommits = count > 0
+			}
+		}
+
+		// Fallback: if no branch commits found, check if completion report has a commit SHA.
+		// Cross-repo agents (e.g. docs agents committing to a different repo's default branch)
+		// won't have a wave branch — their completion report commit is the I5 proof.
+		if !status.HasCommits {
+			if report, ok := manifest.CompletionReports[agent.ID]; ok && report.Commit != "" {
+				status.HasCommits = true
+				status.CommitCount = 1
+				status.CrossRepo = true
 			}
 		}
 
