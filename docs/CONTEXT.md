@@ -136,3 +136,5 @@ type BackendConfig struct {
   - IMPL doc: docs/IMPL/IMPL-integration-checklist-m5.yaml
 - **e16-validation-enhancements**: completed 2026-03-18, 2 waves, 6 agents
   - IMPL doc: docs/IMPL/complete/IMPL-e16-validation-enhancements.yaml
+- **multi-repo-prepare-wave**: completed 2026-03-19, 1 waves, 2 agents
+  - IMPL doc: ../scout-and-wave-web/docs/IMPL/complete/IMPL-multi-repo-prepare-wave.yaml
