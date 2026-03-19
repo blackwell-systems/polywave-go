@@ -173,6 +173,12 @@ pattern matching (H7) and appends diagnosis to the output.`,
 			}
 
 			// Step 4: MergeAgents (with E9 idempotency check) - run per repo
+			// Skip for integration waves (type: integration) — agents commit directly to main.
+			if manifest.Waves[waveNum-1].Type == "integration" {
+				// Integration wave agents commit directly to main; no branches to merge.
+				// Proceed to VerifyBuild.
+				goto postMerge
+			}
 			for repoKey, repoPath := range repos {
 				mergeResult, err := protocol.MergeAgents(manifestPath, waveNum, repoPath)
 				if err != nil {
@@ -186,6 +192,7 @@ pattern matching (H7) and appends diagnosis to the output.`,
 					return fmt.Errorf("finalize-wave: merge-agents encountered conflicts in %s", repoKey)
 				}
 			}
+			postMerge:
 
 			// Step 5: VerifyBuild (post-merge tests) - run per repo
 			for repoKey, repoPath := range repos {
