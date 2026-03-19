@@ -11,6 +11,10 @@ import (
 // agentIDRegex validates agent IDs: one uppercase letter, optionally followed by a digit 2-9
 var agentIDRegex = regexp.MustCompile(`^[A-Z][2-9]?$`)
 
+// featureSlugRegex validates feature_slug fields: kebab-case with lowercase letters, digits, and hyphens.
+// Must not start or end with a hyphen.
+var featureSlugRegex = regexp.MustCompile(`^[a-z0-9]+(-[a-z0-9]+)*$`)
+
 // Validate runs all I1-I6 invariant checks on an IMPLManifest.
 // Returns a slice of ValidationErrors (empty if valid).
 // Multiple violations may be returned together for comprehensive reporting.
@@ -179,6 +183,12 @@ func validateI4RequiredFields(m *IMPLManifest) []ValidationError {
 		errs = append(errs, ValidationError{
 			Code:    "I4_MISSING_FIELD",
 			Message: "feature_slug is required",
+			Field:   "feature_slug",
+		})
+	} else if !featureSlugRegex.MatchString(m.FeatureSlug) {
+		errs = append(errs, ValidationError{
+			Code:    "I4_INVALID_FORMAT",
+			Message: fmt.Sprintf("feature_slug %q must be kebab-case (lowercase letters, digits, hyphens; no leading/trailing hyphens)", m.FeatureSlug),
 			Field:   "feature_slug",
 		})
 	}

@@ -1239,3 +1239,55 @@ func testContainsMiddle(s, substr string) bool {
 	}
 	return false
 }
+
+// TestFeatureSlugKebabValidation tests that feature_slug must be kebab-case.
+func TestFeatureSlugKebabValidation(t *testing.T) {
+	validSlugs := []string{
+		"my-feature",
+		"tool-journaling",
+		"abc123",
+		"a",
+	}
+	for _, slug := range validSlugs {
+		t.Run("valid/"+slug, func(t *testing.T) {
+			m := &IMPLManifest{
+				Title:       "Test",
+				FeatureSlug: slug,
+				Verdict:     "SUITABLE",
+			}
+			errs := validateI4RequiredFields(m)
+			for _, e := range errs {
+				if e.Code == "I4_INVALID_FORMAT" {
+					t.Errorf("valid slug %q should not produce I4_INVALID_FORMAT, got: %v", slug, e.Message)
+				}
+			}
+		})
+	}
+
+	invalidSlugs := []string{
+		"MyFeature",
+		"my_feature",
+		"-starts-with-hyphen",
+		"ends-with-hyphen-",
+	}
+	for _, slug := range invalidSlugs {
+		t.Run("invalid/"+slug, func(t *testing.T) {
+			m := &IMPLManifest{
+				Title:       "Test",
+				FeatureSlug: slug,
+				Verdict:     "SUITABLE",
+			}
+			errs := validateI4RequiredFields(m)
+			found := false
+			for _, e := range errs {
+				if e.Code == "I4_INVALID_FORMAT" && e.Field == "feature_slug" {
+					found = true
+					break
+				}
+			}
+			if !found {
+				t.Errorf("invalid slug %q should produce I4_INVALID_FORMAT error, got: %v", slug, errs)
+			}
+		})
+	}
+}

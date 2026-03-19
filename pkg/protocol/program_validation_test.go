@@ -590,6 +590,92 @@ func TestValidateProgram_AllValidIMPLStatuses(t *testing.T) {
 	}
 }
 
+// TestImplsTotalExactMatch tests that impls_total must equal the actual number of impls entries.
+func TestImplsTotalExactMatch(t *testing.T) {
+	makeImpl := func(slug string, tier int) ProgramIMPL {
+		return ProgramIMPL{Slug: slug, Title: slug, Tier: tier, Status: "pending", DependsOn: []string{}}
+	}
+	makeTier := func(number int, slugs ...string) ProgramTier {
+		return ProgramTier{Number: number, Impls: slugs}
+	}
+
+	t.Run("exact match passes", func(t *testing.T) {
+		manifest := &PROGRAMManifest{
+			Title:       "Test Program",
+			ProgramSlug: "test-program",
+			State:       ProgramStatePlanning,
+			Impls:       []ProgramIMPL{makeImpl("impl-a", 1), makeImpl("impl-b", 1)},
+			Tiers:       []ProgramTier{makeTier(1, "impl-a", "impl-b")},
+			Completion:  ProgramCompletion{TiersTotal: 1, ImplsTotal: 2},
+		}
+		errs := ValidateProgram(manifest)
+		for _, e := range errs {
+			if e.Code == "IMPLS_TOTAL_MISMATCH" {
+				t.Errorf("exact match (impls_total=2, len(impls)=2) should not produce IMPLS_TOTAL_MISMATCH: %v", e.Message)
+			}
+		}
+	})
+
+	t.Run("impls_total too high fails", func(t *testing.T) {
+		manifest := &PROGRAMManifest{
+			Title:       "Test Program",
+			ProgramSlug: "test-program",
+			State:       ProgramStatePlanning,
+			Impls:       []ProgramIMPL{makeImpl("impl-a", 1)},
+			Tiers:       []ProgramTier{makeTier(1, "impl-a")},
+			Completion:  ProgramCompletion{TiersTotal: 1, ImplsTotal: 3},
+		}
+		errs := ValidateProgram(manifest)
+		found := false
+		for _, e := range errs {
+			if e.Code == "IMPLS_TOTAL_MISMATCH" {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Errorf("impls_total=3 with 1 impl entry should produce IMPLS_TOTAL_MISMATCH, got: %v", errs)
+		}
+	})
+
+	t.Run("impls_total too low fails", func(t *testing.T) {
+		manifest := &PROGRAMManifest{
+			Title:       "Test Program",
+			ProgramSlug: "test-program",
+			State:       ProgramStatePlanning,
+			Impls:       []ProgramIMPL{makeImpl("impl-a", 1), makeImpl("impl-b", 1), makeImpl("impl-c", 1)},
+			Tiers:       []ProgramTier{makeTier(1, "impl-a", "impl-b", "impl-c")},
+			Completion:  ProgramCompletion{TiersTotal: 1, ImplsTotal: 1},
+		}
+		errs := ValidateProgram(manifest)
+		found := false
+		for _, e := range errs {
+			if e.Code == "IMPLS_TOTAL_MISMATCH" {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Errorf("impls_total=1 with 3 impl entries should produce IMPLS_TOTAL_MISMATCH, got: %v", errs)
+		}
+	})
+
+	t.Run("zero impls with zero total passes", func(t *testing.T) {
+		manifest := &PROGRAMManifest{
+			Title:       "Test Program",
+			ProgramSlug: "test-program",
+			State:       ProgramStatePlanning,
+			Completion:  ProgramCompletion{TiersTotal: 0, ImplsTotal: 0},
+		}
+		errs := ValidateProgram(manifest)
+		for _, e := range errs {
+			if e.Code == "IMPLS_TOTAL_MISMATCH" {
+				t.Errorf("zero impls with impls_total=0 should not produce IMPLS_TOTAL_MISMATCH: %v", e.Message)
+			}
+		}
+	})
+}
+
 // TestValidateProgram_AllValidProgramStates tests all valid program states pass validation
 func TestValidateProgram_AllValidProgramStates(t *testing.T) {
 	validStates := []ProgramState{

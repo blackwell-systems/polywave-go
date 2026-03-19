@@ -322,5 +322,13 @@ func validateCompletionBounds(manifest *PROGRAMManifest) []ValidationError {
 		})
 	}
 
+	if manifest.Completion.ImplsTotal != len(manifest.Impls) {
+		errs = append(errs, ValidationError{
+			Code:    "IMPLS_TOTAL_MISMATCH",
+			Message: fmt.Sprintf("impls_total (%d) must equal the number of impls entries (%d)", manifest.Completion.ImplsTotal, len(manifest.Impls)),
+			Field:   "completion.impls_total",
+		})
+	}
+
 	return errs
 }
