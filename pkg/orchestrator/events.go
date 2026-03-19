@@ -81,6 +81,23 @@ type AgentPrioritizedPayload struct {
 	Reason           string   `json:"reason"`
 }
 
+// AutoRetryStartedPayload is published when the orchestrator auto-retries an agent (E19).
+type AutoRetryStartedPayload struct {
+	Agent       string `json:"agent"`
+	Wave        int    `json:"wave"`
+	FailureType string `json:"failure_type"`
+	Attempt     int    `json:"attempt"`
+	MaxAttempts int    `json:"max_attempts"`
+}
+
+// AutoRetryExhaustedPayload is published when auto-retries are exhausted (E19).
+type AutoRetryExhaustedPayload struct {
+	Agent       string `json:"agent"`
+	Wave        int    `json:"wave"`
+	FailureType string `json:"failure_type"`
+	Attempts    int    `json:"attempts"`
+}
+
 // SetEventPublisher injects a publisher function that will receive all
 // OrchestratorEvents emitted during wave execution.
 func (o *Orchestrator) SetEventPublisher(pub EventPublisher) {

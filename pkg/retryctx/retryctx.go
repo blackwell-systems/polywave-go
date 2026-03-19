@@ -156,6 +156,7 @@ type RetryContext struct {
 	SuggestedFixes []string   `json:"suggested_fixes"`
 	PriorNotes     string     `json:"prior_notes"`
 	PromptText     string     `json:"prompt_text"`
+	FailureType    string     `json:"failure_type,omitempty"` // "transient"|"fixable"|"needs_replan"|"escalate"|"timeout"
 }
 
 const maxExcerptLen = 2000
@@ -209,6 +210,7 @@ func BuildRetryContext(manifestPath string, agentID string, attemptNum int) (*Re
 		SuggestedFixes: fixes,
 		PriorNotes:     report.Notes,
 		PromptText:     promptText,
+		FailureType:    report.FailureType,
 	}
 	return rc, nil
 }

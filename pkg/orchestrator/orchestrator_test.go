@@ -752,7 +752,8 @@ func TestLaunchAgentE23FallbackOnExtractError(t *testing.T) {
 }
 
 // TestLaunchAgentE19BlockedEvent verifies that when an agent reports blocked status,
-// an "agent_blocked" event is published with the correct RouteFailure action.
+// an "agent_blocked" event is published with the correct RouteFailure action,
+// and that E19 auto-retry eventually succeeds (second call returns complete).
 func TestLaunchAgentE19BlockedEvent(t *testing.T) {
 	origCreator := worktreeCreatorFunc
 	origWait := waitForCompletionFunc
@@ -768,11 +769,18 @@ func TestLaunchAgentE19BlockedEvent(t *testing.T) {
 	worktreeCreatorFunc = func(_ *worktree.Manager, _ int, letter string) (string, error) {
 		return "/tmp/fake-wt-" + letter, nil
 	}
+
+	// First call returns blocked/transient; subsequent calls return complete (retry succeeds).
+	var waitCallCount int32
 	waitForCompletionFunc = func(_, _ string, _, _ time.Duration) (*protocol.CompletionReport, error) {
-		return &protocol.CompletionReport{
-			Status:      "blocked",
-			FailureType: "transient",
-		}, nil
+		n := atomic.AddInt32(&waitCallCount, 1)
+		if n == 1 {
+			return &protocol.CompletionReport{
+				Status:      "blocked",
+				FailureType: "transient",
+			}, nil
+		}
+		return &protocol.CompletionReport{Status: "complete"}, nil
 	}
 
 	fake := &fakeBackend{}
@@ -821,6 +829,104 @@ func TestLaunchAgentE19BlockedEvent(t *testing.T) {
 	}
 	if payload.Action != ActionRetry {
 		t.Errorf("agent_blocked payload.Action = %v, want ActionRetry (transient failure)", payload.Action)
+	}
+
+	// Verify auto_retry_started was also published.
+	var retryEv *OrchestratorEvent
+	for i := range received {
+		if received[i].Event == "auto_retry_started" {
+			retryEv = &received[i]
+			break
+		}
+	}
+	if retryEv == nil {
+		t.Fatal("expected auto_retry_started event, got none")
+	}
+}
+
+// TestExecuteRetryLoop_TransientRetries verifies that RunWave auto-retries
+// a transient failure and returns nil when the retry succeeds.
+func TestExecuteRetryLoop_TransientRetries(t *testing.T) {
+	origCreator := worktreeCreatorFunc
+	origWait := waitForCompletionFunc
+	origNewBackend := newBackendFunc
+	origNewRunner := newRunnerFunc
+	t.Cleanup(func() {
+		worktreeCreatorFunc = origCreator
+		waitForCompletionFunc = origWait
+		newBackendFunc = origNewBackend
+		newRunnerFunc = origNewRunner
+	})
+
+	worktreeCreatorFunc = func(_ *worktree.Manager, _ int, letter string) (string, error) {
+		return "/tmp/fake-wt-retry-" + letter, nil
+	}
+
+	// First call: partial/transient. Second call: complete.
+	var callCount int32
+	waitForCompletionFunc = func(_, _ string, _, _ time.Duration) (*protocol.CompletionReport, error) {
+		n := atomic.AddInt32(&callCount, 1)
+		if n == 1 {
+			return &protocol.CompletionReport{
+				Status:      "partial",
+				FailureType: "transient",
+				Notes:       "simulated transient failure",
+			}, nil
+		}
+		return &protocol.CompletionReport{Status: "complete"}, nil
+	}
+
+	fake := &fakeBackend{}
+	newBackendFunc = func(_ BackendConfig) (backend.Backend, error) {
+		return fake, nil
+	}
+	newRunnerFunc = func(b backend.Backend, wm *worktree.Manager) *agent.Runner {
+		return agent.NewRunner(b, wm)
+	}
+
+	var mu sync.Mutex
+	var received []OrchestratorEvent
+	o := makeOrchWithWave(1, "A")
+	o.SetEventPublisher(func(ev OrchestratorEvent) {
+		mu.Lock()
+		received = append(received, ev)
+		mu.Unlock()
+	})
+
+	// RunWave should return nil because the retry succeeds.
+	if err := o.RunWave(1); err != nil {
+		t.Fatalf("RunWave returned error, want nil: %v", err)
+	}
+
+	mu.Lock()
+	defer mu.Unlock()
+
+	// Verify auto_retry_started was published.
+	var retryEv *OrchestratorEvent
+	for i := range received {
+		if received[i].Event == "auto_retry_started" {
+			retryEv = &received[i]
+			break
+		}
+	}
+	if retryEv == nil {
+		t.Fatal("expected auto_retry_started event, got none")
+	}
+	retryPayload, ok := retryEv.Data.(AutoRetryStartedPayload)
+	if !ok {
+		t.Fatalf("auto_retry_started Data is %T, want AutoRetryStartedPayload", retryEv.Data)
+	}
+	if retryPayload.Agent != "A" {
+		t.Errorf("auto_retry_started.Agent = %q, want A", retryPayload.Agent)
+	}
+	if retryPayload.FailureType != "transient" {
+		t.Errorf("auto_retry_started.FailureType = %q, want transient", retryPayload.FailureType)
+	}
+	if retryPayload.Attempt != 1 {
+		t.Errorf("auto_retry_started.Attempt = %d, want 1", retryPayload.Attempt)
+	}
+	if retryPayload.MaxAttempts != MaxTransientRetries {
+		t.Errorf("auto_retry_started.MaxAttempts = %d, want %d", retryPayload.MaxAttempts, MaxTransientRetries)
 	}
 }
 
