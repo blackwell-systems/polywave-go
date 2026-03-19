@@ -23,6 +23,28 @@ func GetParser(toolName string) Parser {
 func DetectTool(gateType string, command string) string {
 	cmd := strings.TrimSpace(command)
 
+	// Format tools — must be checked before generic "go" and "ruff" heuristics
+	// to avoid misidentifying gofmt as go-build or ruff-format as ruff.
+	if strings.Contains(cmd, "gofmt") {
+		return "gofmt"
+	}
+	if strings.ToLower(gateType) == "format" {
+		if strings.Contains(cmd, "prettier") {
+			return "prettier-format"
+		}
+		if strings.Contains(cmd, "ruff") {
+			return "ruff-format"
+		}
+		if strings.Contains(cmd, "cargo fmt") {
+			return "cargo-fmt"
+		}
+		return "gofmt" // default for format gate type
+	}
+	// Also detect prettier by command content (outside format gate type)
+	if strings.Contains(cmd, "prettier") {
+		return "prettier-format"
+	}
+
 	// Check for golangci-lint before generic "go" checks
 	if strings.Contains(cmd, "golangci-lint") {
 		return "golangci-lint"
