@@ -73,6 +73,10 @@ func CheckDeps(implPath string, wave int) (*ConflictReport, error) {
 	}
 
 	// 6. Cross-reference imports against lock file contents
+	// Parse replace directives so locally-replaced modules are not
+	// reported as missing dependencies (false positives).
+	localReplace := ParseGoModReplace(filepath.Join(repoRoot, "go.mod"))
+
 	report := &ConflictReport{
 		MissingDeps:      []MissingDep{},
 		VersionConflicts: []VersionConflict{},
@@ -96,6 +100,13 @@ func CheckDeps(implPath string, wave int) (*ConflictReport, error) {
 		lockPkg, inLockFile := findLockPackage(lockFilePackages, pkg)
 
 		if !inLockFile {
+			// Check if satisfied by a local replace directive.
+			// Use longest-prefix match: if any replace key is a prefix of
+			// the import path (or an exact match), skip this import.
+			if isLocalReplace(localReplace, pkg) {
+				continue
+			}
+
 			// Missing dependency
 			for agent, files := range agentFiles {
 				for _, file := range files {
@@ -138,6 +149,22 @@ func CheckDeps(implPath string, wave int) (*ConflictReport, error) {
 	}
 
 	return report, nil
+}
+
+// isLocalReplace reports whether importPath is satisfied by a local replace
+// directive. It uses longest-prefix matching identical to findLockPackage: if
+// any key in localReplace is an exact match or a module-path prefix of
+// importPath, the import is considered locally replaced.
+func isLocalReplace(localReplace map[string]struct{}, importPath string) bool {
+	bestLen := 0
+	for mod := range localReplace {
+		if importPath == mod || strings.HasPrefix(importPath, mod+"/") {
+			if len(mod) > bestLen {
+				bestLen = len(mod)
+			}
+		}
+	}
+	return bestLen > 0
 }
 
 // findLockPackage resolves an import path against the lock file packages.

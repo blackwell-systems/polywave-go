@@ -3,6 +3,7 @@ package deps
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -174,4 +175,141 @@ func TestCheckDeps_VersionConflicts(t *testing.T) {
 	// This would require mocking the analyzer package
 	// For now, we test the structure is correct
 	t.Skip("Requires integration with analyzer package")
+}
+
+// TestCheckDeps_ReplaceDirective verifies that an import satisfied by a local
+// replace directive in go.mod is NOT reported as a MissingDep.
+func TestCheckDeps_ReplaceDirective(t *testing.T) {
+	// Build a temp directory tree that looks like a minimal Go repo:
+	//   <root>/
+	//     go.mod          — declares module and a local replace directive
+	//     go.sum          — empty (locally-replaced module has no checksum)
+	//     docs/IMPL/
+	//       test.yaml     — minimal IMPL doc pointing at the .go file below
+	//     pkg/myapp/
+	//       app.go        — imports the locally-replaced module
+	tmpDir := t.TempDir()
+
+	// Create directory structure
+	for _, dir := range []string{
+		filepath.Join(tmpDir, "docs", "IMPL"),
+		filepath.Join(tmpDir, "pkg", "myapp"),
+		filepath.Join(tmpDir, "local-lib"),
+	} {
+		if err := os.MkdirAll(dir, 0755); err != nil {
+			t.Fatalf("failed to create dir %s: %v", dir, err)
+		}
+	}
+
+	// go.mod with a replace directive pointing to a local path
+	goModContent := `module example.com/myapp
+
+go 1.21
+
+require (
+	github.com/example/local-lib v0.1.0
+	github.com/example/real-dep v1.2.3
+)
+
+replace github.com/example/local-lib => ./local-lib
+`
+	if err := os.WriteFile(filepath.Join(tmpDir, "go.mod"), []byte(goModContent), 0644); err != nil {
+		t.Fatalf("failed to write go.mod: %v", err)
+	}
+
+	// go.sum — contains real-dep but NOT local-lib (local replacements are absent from go.sum)
+	goSumContent := "github.com/example/real-dep v1.2.3 h1:abc123=\ngithub.com/example/real-dep v1.2.3/go.mod h1:def456=\n"
+	if err := os.WriteFile(filepath.Join(tmpDir, "go.sum"), []byte(goSumContent), 0644); err != nil {
+		t.Fatalf("failed to write go.sum: %v", err)
+	}
+
+	// The Go source file that imports the locally-replaced module
+	appGoContent := `package myapp
+
+import (
+	_ "github.com/example/local-lib/pkg"
+	_ "github.com/example/real-dep"
+)
+`
+	if err := os.WriteFile(filepath.Join(tmpDir, "pkg", "myapp", "app.go"), []byte(appGoContent), 0644); err != nil {
+		t.Fatalf("failed to write app.go: %v", err)
+	}
+
+	// Minimal IMPL doc. CheckDeps derives repoRoot from the IMPL path:
+	// docs/IMPL/test.yaml  ->  docs/IMPL/ -> docs/ -> <root>
+	implContent := `title: Test IMPL
+file_ownership:
+  - file: pkg/myapp/app.go
+    agent: A
+    wave: 1
+    action: modify
+waves:
+  - number: 1
+    agents:
+      - id: A
+        task: test task
+        files:
+          - pkg/myapp/app.go
+`
+	implPath := filepath.Join(tmpDir, "docs", "IMPL", "test.yaml")
+	if err := os.WriteFile(implPath, []byte(implContent), 0644); err != nil {
+		t.Fatalf("failed to write IMPL doc: %v", err)
+	}
+
+	// Register a go.sum parser so the real-dep is found in the lock file
+	originalParsers := parsers
+	defer func() { parsers = originalParsers }()
+	parsers = nil
+	RegisterParser(&goSumParser{})
+
+	report, err := CheckDeps(implPath, 1)
+	if err != nil {
+		t.Fatalf("CheckDeps returned error: %v", err)
+	}
+	if report == nil {
+		t.Fatal("CheckDeps returned nil report")
+	}
+
+	// The locally-replaced module must NOT appear in MissingDeps
+	for _, dep := range report.MissingDeps {
+		if dep.Package == "github.com/example/local-lib/pkg" || dep.Package == "github.com/example/local-lib" {
+			t.Errorf("locally-replaced module reported as MissingDep: %+v", dep)
+		}
+	}
+
+	if len(report.MissingDeps) != 0 {
+		t.Errorf("expected 0 MissingDeps, got %d: %+v", len(report.MissingDeps), report.MissingDeps)
+	}
+}
+
+// goSumParser is a minimal LockFileParser for go.sum files used in testing.
+// It reads "module version hash" lines and returns a PackageInfo per module.
+type goSumParser struct{}
+
+func (p *goSumParser) Detect(filePath string) bool {
+	return filepath.Base(filePath) == "go.sum"
+}
+
+func (p *goSumParser) Parse(filePath string) ([]PackageInfo, error) {
+	data, err := os.ReadFile(filePath)
+	if err != nil {
+		return nil, err
+	}
+	seen := make(map[string]struct{})
+	var packages []PackageInfo
+	for _, line := range strings.Split(string(data), "\n") {
+		fields := strings.Fields(line)
+		if len(fields) < 2 {
+			continue
+		}
+		modName := fields[0]
+		version := fields[1]
+		// go.sum lists both "vX.Y.Z" and "vX.Y.Z/go.mod" lines; deduplicate
+		if _, ok := seen[modName]; ok {
+			continue
+		}
+		seen[modName] = struct{}{}
+		packages = append(packages, PackageInfo{Name: modName, Version: version})
+	}
+	return packages, nil
 }
