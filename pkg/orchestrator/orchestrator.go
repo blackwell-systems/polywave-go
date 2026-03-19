@@ -79,7 +79,11 @@ var retryPrefixMap sync.Map
 const MaxTransientRetries = 2
 
 // MaxFixableRetries is the retry limit per E19 for fixable failures.
-const MaxFixableRetries = 1
+// Must match protocol.MaxRetries(FailureFixable) in pkg/protocol/failure.go.
+const MaxFixableRetries = 2
+
+// MaxTimeoutRetries is the retry limit per E19 for timeout failures (retry once with scope-reduction note).
+const MaxTimeoutRetries = 1
 
 // mergeWaveFunc is replaced by merge.go via init().
 // Default no-op for compilation.
@@ -891,7 +895,7 @@ func (o *Orchestrator) executeRetryLoop(
 	case "transient":
 		maxRetries = MaxTransientRetries
 	case "timeout":
-		maxRetries = MaxFixableRetries // E19: timeout retries once with scope-reduction note
+		maxRetries = MaxTimeoutRetries // E19: timeout retries once with scope-reduction note
 	case "fixable":
 		maxRetries = MaxFixableRetries
 	default:
