@@ -16,6 +16,7 @@ func ValidateSchema(m *IMPLManifest) []ValidationError {
 	errs = append(errs, validateAllEnums(m)...)
 	errs = append(errs, validateFilePaths(m)...)
 	errs = append(errs, validateCrossFieldConsistency(m)...)
+	errs = append(errs, ValidateReactions(m)...)
 	return errs
 }
 
