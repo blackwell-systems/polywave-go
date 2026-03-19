@@ -8,6 +8,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 | Version | Date | Headline |
 |---------|------|----------|
+| [0.69.0] | 2026-03-19 | E35 engine (integration-gap-solution) — `WiringDeclaration` + `WiringValidationResult` + `WiringGap` types in `pkg/protocol/`; `ValidateWiringDeclarations` (AST walk + grep fallback), `CheckWiringOwnership` (pre-flight), `FormatWiringBriefSection` (brief injection); `prepare-wave` Layer 3A ownership check + Layer 3C brief injection; `validate-integration --wiring` flag + `WiringReport` field in `FinalizeWaveResult`; `Wiring []WiringDeclaration` + `WiringValidationReports` added to `IMPLManifest` |
+| [0.68.0] | 2026-03-19 | Gate timing split — `QualityGate.Timing` field (`""` = pre-merge, `"post-merge"` = after merge); `RunPreMergeGates` and `RunPostMergeGates` functions in `pkg/protocol/gates.go`; `finalize-wave` step 3 calls `RunPreMergeGates`, new step 5.5 calls `RunPostMergeGates` after verify-build; fixes cross-repo custom gates that fail when run before merge |
 | [0.67.0] | 2026-03-18 | Defense-in-depth comment — run-scout validation step clarified as defense-in-depth (Scout self-validates internally) |
 | [0.66.0] | 2026-03-18 | Resume detect slug filter — `detectOrphanedWorktrees` now filters slug-scoped worktree branches by IMPL slug, preventing false positive interrupted session detection when multiple IMPLs have active worktrees |
 | [0.65.0] | 2026-03-18 | Cross-repo merge — `verifyAgentCommits` and `executeMergeWave` now resolve per-agent repos from file ownership; branches are checked, merged, and cleaned up in the correct sibling repo |
