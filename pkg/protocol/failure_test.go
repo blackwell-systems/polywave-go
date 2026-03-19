@@ -113,6 +113,55 @@ func TestValidFailureType(t *testing.T) {
 	}
 }
 
+// TestReactionEntryFor_AllFailureTypes verifies that all 5 failure types route
+// to the correct field in ReactionsConfig.
+func TestReactionEntryFor_AllFailureTypes(t *testing.T) {
+	transientEntry := &ReactionEntry{Action: "retry"}
+	timeoutEntry := &ReactionEntry{Action: "send-fix-prompt"}
+	fixableEntry := &ReactionEntry{Action: "pause"}
+	needsReplanEntry := &ReactionEntry{Action: "auto-scout"}
+	escalateEntry := &ReactionEntry{Action: "pause"}
+
+	reactions := &ReactionsConfig{
+		Transient:   transientEntry,
+		Timeout:     timeoutEntry,
+		Fixable:     fixableEntry,
+		NeedsReplan: needsReplanEntry,
+		Escalate:    escalateEntry,
+	}
+
+	tests := []struct {
+		ft       FailureTypeEnum
+		expected *ReactionEntry
+	}{
+		{FailureTransient, transientEntry},
+		{FailureTimeout, timeoutEntry},
+		{FailureFixable, fixableEntry},
+		{FailureNeedsReplan, needsReplanEntry},
+		{FailureEscalate, escalateEntry},
+		{FailureTypeEnum("unknown"), nil},
+	}
+
+	for _, tt := range tests {
+		t.Run(string(tt.ft), func(t *testing.T) {
+			got := reactionEntryFor(tt.ft, reactions)
+			if got != tt.expected {
+				t.Errorf("reactionEntryFor(%s) = %v, want %v", tt.ft, got, tt.expected)
+			}
+		})
+	}
+
+	// Also verify nil reactions returns nil for all types
+	for _, tt := range tests {
+		t.Run("nil_reactions_"+string(tt.ft), func(t *testing.T) {
+			got := reactionEntryFor(tt.ft, nil)
+			if got != nil {
+				t.Errorf("reactionEntryFor(%s, nil) = %v, want nil", tt.ft, got)
+			}
+		})
+	}
+}
+
 // TestFailureTypeDecisionTree validates the complete decision tree logic (E19).
 func TestFailureTypeDecisionTree(t *testing.T) {
 	tests := []struct {

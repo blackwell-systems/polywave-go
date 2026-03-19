@@ -33,6 +33,7 @@ var knownKeys = map[string]map[string]bool{
 		"integration_reports":    true,
 		"integration_connectors": true,
 		"pre_mortem":             true,
+		"reactions":              true,
 		"known_issues":           true,
 		"state":                  true,
 		"merge_state":            true,
@@ -103,6 +104,13 @@ var knownKeys = map[string]map[string]bool{
 		"description": true,
 		"status":      true,
 		"workaround":  true,
+	},
+	"reactions": {
+		"transient":   true, "timeout": true, "fixable": true,
+		"needs_replan": true, "escalate": true,
+	},
+	"reaction_entry": {
+		"action": true, "max_attempts": true,
 	},
 	"completion_report": {
 		"status":               true,
@@ -220,6 +228,17 @@ func checkTopLevelValue(key string, valNode *yaml.Node, errs *[]ValidationError)
 				agentVal := valNode.Content[i+1]
 				if agentVal.Kind == yaml.MappingNode {
 					checkMapping(agentVal, "completion_report", key+"."+agentKey, errs)
+				}
+			}
+		}
+	case "reactions":
+		if valNode.Kind == yaml.MappingNode {
+			checkMapping(valNode, "reactions", key, errs)
+			for i := 0; i+1 < len(valNode.Content); i += 2 {
+				ftKey := valNode.Content[i].Value
+				ftVal := valNode.Content[i+1]
+				if ftVal.Kind == yaml.MappingNode {
+					checkMapping(ftVal, "reaction_entry", key+"."+ftKey, errs)
 				}
 			}
 		}
