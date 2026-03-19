@@ -20,6 +20,7 @@ import (
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/agent"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/agent/backend"
 	apiclient "github.com/blackwell-systems/scout-and-wave-go/pkg/agent/backend/api"
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/retryctx"
 	bedrockbackend "github.com/blackwell-systems/scout-and-wave-go/pkg/agent/backend/bedrock"
 	cliclient "github.com/blackwell-systems/scout-and-wave-go/pkg/agent/backend/cli"
 	openaibackend "github.com/blackwell-systems/scout-and-wave-go/pkg/agent/backend/openai"
@@ -64,6 +65,21 @@ func SetValidateInvariantsFunc(f func(doc *types.IMPLDoc) error) {
 // Without this, parallel agents in the same wave race on Load→Set→Save and
 // the last writer wins (overwriting earlier reports).
 var reportMu sync.Mutex
+
+// retryCountMap tracks how many times each agent has been retried in this wave run.
+// Key format: "<slug>:<waveNum>:<agentLetter>" e.g. "my-feature:1:A". Transient state only.
+var retryCountMap sync.Map
+
+// retryPrefixMap stores the retry prompt prefix for injection AFTER E23 extraction.
+// Key format same as retryCountMap. Set by executeRetryLoop, read in launchAgent.
+// Using a sync.Map avoids needing to modify types.AgentSpec.
+var retryPrefixMap sync.Map
+
+// MaxTransientRetries is the retry limit per E19 for transient failures.
+const MaxTransientRetries = 2
+
+// MaxFixableRetries is the retry limit per E19 for fixable failures.
+const MaxFixableRetries = 1
 
 // mergeWaveFunc is replaced by merge.go via init().
 // Default no-op for compilation.
@@ -457,6 +473,12 @@ func (o *Orchestrator) RunWave(waveNum int) error {
 		return nil
 	}
 
+	// Reset per-agent retry counts for this wave run (transient state).
+	implSlug := o.implSlug()
+	for _, a := range wave.Agents {
+		retryCountMap.Delete(fmt.Sprintf("%s:%d:%s", implSlug, waveNum, a.Letter))
+	}
+
 	// Build the worktree manager and default agent runner.
 	slug := o.implSlug()
 	wm := worktree.New(o.repoPath, slug)
@@ -655,6 +677,17 @@ func (o *Orchestrator) launchAgent(
 		fmt.Fprintf(os.Stderr, "orchestrator: failed to load manifest for E23 extraction: %v\n", err)
 	}
 
+	// Inject retry prefix after E23 extraction (GAP-4 fix).
+	// retryPrefixMap is set by executeRetryLoop; read here after E23 so the prefix
+	// is preserved even though E23 overwrites the base prompt.
+	retryKey := fmt.Sprintf("%s:%d:%s", o.implSlug(), waveNum, agentSpec.Letter)
+	if prefix, ok := retryPrefixMap.Load(retryKey); ok {
+		if prefixStr, ok2 := prefix.(string); ok2 && prefixStr != "" {
+			agentSpec.Prompt = prefixStr + "\n\n" + agentSpec.Prompt
+			retryPrefixMap.Delete(retryKey) // consume once; recursive retries store fresh
+		}
+	}
+
 	// b. Execute the agent via the backend, streaming output chunks as SSE events.
 	if _, err := runner.ExecuteStreamingWithTools(ctx, &agentSpec, wtPath,
 		// onChunk — stream output chunks as SSE events
@@ -712,6 +745,18 @@ func (o *Orchestrator) launchAgent(
 	// This bridges the gap between CLI agents (SAW-protocol-aware, commit + write report)
 	// and API/Bedrock agents (vanilla Claude, just write files via tools).
 	if report == nil {
+		// BUG-4 fix: Before synthesizing "complete", check if a previous retry wrote
+		// a partial/blocked report to the main IMPL doc. If so, reuse it rather than
+		// masking the failure with a spurious "complete".
+		if savedManifest, checkErr := protocol.Load(o.implDocPath); checkErr == nil {
+			if cr, ok := savedManifest.CompletionReports[agentSpec.Letter]; ok &&
+				(cr.Status == "partial" || cr.Status == "blocked") {
+				report = &cr
+			}
+		}
+	}
+	if report == nil {
+		// Only auto-synthesize complete if no existing partial/blocked report was found.
 		commitSHA, filesChanged, autoErr := autoCommitWorktree(wtPath, waveNum, agentSpec.Letter, baseSHA)
 		if autoErr != nil {
 			fmt.Fprintf(os.Stderr, "orchestrator: auto-commit failed for agent %s: %v\n", agentSpec.Letter, autoErr)
@@ -753,23 +798,31 @@ func (o *Orchestrator) launchAgent(
 		reportMu.Unlock()
 	}
 
-	// Publish agent_complete. If no completion report was found, that's OK —
-	// the agent executed successfully and its work is in the worktree.
-	status := "complete"
-	if report != nil {
-		status = string(report.Status)
-	}
-	o.publish(OrchestratorEvent{
-		Event: "agent_complete",
-		Data: AgentCompletePayload{
-			Agent:  agentSpec.Letter,
-			Wave:   waveNum,
-			Status: status,
-			Branch: branch,
-		},
-	})
+	// BUG-5 fix: Determine whether E19 will trigger an automatic retry before
+	// publishing agent_complete. If retry is coming, suppress the publish here —
+	// the recursive launchAgent call (from executeRetryLoop) will publish
+	// agent_complete with the final settled status.
+	willAutoRetry := report != nil &&
+		(report.Status == "partial" || report.Status == "blocked") &&
+		(report.FailureType == "transient" || report.FailureType == "fixable" || report.FailureType == "timeout")
 
-	// E19: If agent reported partial or blocked, route the failure and publish an event.
+	if !willAutoRetry {
+		status := "complete"
+		if report != nil {
+			status = string(report.Status)
+		}
+		o.publish(OrchestratorEvent{
+			Event: "agent_complete",
+			Data: AgentCompletePayload{
+				Agent:  agentSpec.Letter,
+				Wave:   waveNum,
+				Status: status,
+				Branch: branch,
+			},
+		})
+	}
+
+	// E19: If agent reported partial or blocked, apply the decision tree.
 	if report != nil && (report.Status == "partial" || report.Status == "blocked") {
 		var failureType types.FailureType
 		switch report.FailureType {
@@ -781,6 +834,8 @@ func (o *Orchestrator) launchAgent(
 			failureType = types.FailureTypeNeedsReplan
 		case "escalate":
 			failureType = types.FailureTypeEscalate
+		case "timeout":
+			failureType = types.FailureTypeTimeout
 		default:
 			failureType = types.FailureTypeEscalate
 		}
@@ -796,9 +851,113 @@ func (o *Orchestrator) launchAgent(
 				Action:      action,
 			},
 		})
+
+		switch action {
+		case ActionRetry, ActionApplyAndRelaunch, ActionRetryWithScope:
+			// E19: transient/fixable/timeout — execute retry loop (no human gate).
+			if retryErr := o.executeRetryLoop(ctx, runner, wm, waveNum, agentSpec, report); retryErr != nil {
+				return retryErr
+			}
+		case ActionReplan, ActionEscalate:
+			// E19: needs_replan/escalate — return error to surface to human.
+			return fmt.Errorf("orchestrator: agent %s: %s failure (failure_type=%s): requires human intervention",
+				agentSpec.Letter, report.Status, report.FailureType)
+		}
 	}
 
 	return nil
+}
+
+// executeRetryLoop implements E19 automatic retry for transient and fixable failures.
+// It is called from launchAgent when a completion report has partial/blocked status
+// and a failure_type of "transient", "fixable", or "timeout". Returns nil if retry
+// eventually succeeds (report.Status == "complete"), or an error if retries are
+// exhausted or the failure_type does not warrant automatic retry.
+func (o *Orchestrator) executeRetryLoop(
+	ctx context.Context,
+	runner *agent.Runner,
+	wm *worktree.Manager,
+	waveNum int,
+	agentSpec types.AgentSpec,
+	report *protocol.CompletionReport,
+) error {
+	failureType := report.FailureType
+
+	// Determine max retries per E19.
+	// timeout uses MaxFixableRetries (1) not MaxTransientRetries (2):
+	// failure.go maps timeout → ActionRetryWithScope (retry once with scope-reduction note).
+	var maxRetries int
+	switch failureType {
+	case "transient":
+		maxRetries = MaxTransientRetries
+	case "timeout":
+		maxRetries = MaxFixableRetries // E19: timeout retries once with scope-reduction note
+	case "fixable":
+		maxRetries = MaxFixableRetries
+	default:
+		// needs_replan or escalate: do not retry automatically.
+		return fmt.Errorf("orchestrator: agent %s: failure_type=%q requires human intervention", agentSpec.Letter, failureType)
+	}
+
+	// Check and increment retry count.
+	// Use slug-scoped key to prevent cross-IMPL contamination in concurrent server runs.
+	implSlug := o.implSlug()
+	key := fmt.Sprintf("%s:%d:%s", implSlug, waveNum, agentSpec.Letter)
+	count := 0
+	if v, ok := retryCountMap.Load(key); ok {
+		if n, ok := v.(int); ok {
+			count = n
+		}
+	}
+	if count >= maxRetries {
+		o.publish(OrchestratorEvent{
+			Event: "auto_retry_exhausted",
+			Data: AutoRetryExhaustedPayload{
+				Agent:       agentSpec.Letter,
+				Wave:        waveNum,
+				FailureType: failureType,
+				Attempts:    count,
+			},
+		})
+		return fmt.Errorf("orchestrator: agent %s: auto-retry exhausted after %d attempts (failure_type=%s)", agentSpec.Letter, count, failureType)
+	}
+	count++
+	retryCountMap.Store(key, count)
+
+	// Build retry context using retryctx package (enriched prompt with fix guidance).
+	var promptPrefix string
+	if o.implDocPath != "" {
+		rc, rcErr := retryctx.BuildRetryContext(o.implDocPath, agentSpec.Letter, count)
+		if rcErr != nil {
+			fmt.Fprintf(os.Stderr, "orchestrator: retry context build (best-effort): %v\n", rcErr)
+		} else if rc != nil && rc.PromptText != "" {
+			promptPrefix = rc.PromptText
+		}
+	}
+
+	// Publish auto_retry_started event.
+	o.publish(OrchestratorEvent{
+		Event: "auto_retry_started",
+		Data: AutoRetryStartedPayload{
+			Agent:       agentSpec.Letter,
+			Wave:        waveNum,
+			FailureType: failureType,
+			Attempt:     count,
+			MaxAttempts: maxRetries,
+		},
+	})
+
+	// Store retry prefix in retryPrefixMap BEFORE calling launchAgent.
+	// DO NOT set retrySpec.Prompt here — E23 extraction in launchAgent will
+	// overwrite it (GAP-4 fix). Instead, launchAgent reads from retryPrefixMap
+	// after E23 extraction and injects the prefix there.
+	if promptPrefix != "" {
+		retryPrefixMap.Store(key, promptPrefix)
+	}
+	retrySpec := agentSpec // Prompt NOT modified here
+
+	// Re-launch agent (recursive call to launchAgent; retry count prevents infinite loop).
+	return o.launchAgent(ctx, runner, wm, waveNum, retrySpec)
 }
 
 // autoCommitWorktree stages and commits all changes in the agent's worktree.
