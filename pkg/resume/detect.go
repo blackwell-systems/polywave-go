@@ -18,18 +18,29 @@ import (
 
 // SessionState describes the state of an interrupted SAW session.
 type SessionState struct {
-	IMPLSlug          string   `json:"impl_slug"`
-	IMPLPath          string   `json:"impl_path"`
-	CurrentWave       int      `json:"current_wave"`
-	TotalWaves        int      `json:"total_waves"`
-	CompletedAgents   []string `json:"completed_agents"`
-	FailedAgents      []string `json:"failed_agents"`
-	PendingAgents     []string `json:"pending_agents"`
-	OrphanedWorktrees []string `json:"orphaned_worktrees"`
-	SuggestedAction   string   `json:"suggested_action"`
-	ProgressPct       float64  `json:"progress_pct"`
-	CanAutoResume     bool     `json:"can_auto_resume"`
-	ResumeCommand     string   `json:"resume_command"`
+	IMPLSlug          string                  `json:"impl_slug"`
+	IMPLPath          string                  `json:"impl_path"`
+	CurrentWave       int                     `json:"current_wave"`
+	TotalWaves        int                     `json:"total_waves"`
+	CompletedAgents   []string                `json:"completed_agents"`
+	FailedAgents      []string                `json:"failed_agents"`
+	PendingAgents     []string                `json:"pending_agents"`
+	OrphanedWorktrees []string                `json:"orphaned_worktrees"`
+	SuggestedAction   string                  `json:"suggested_action"`
+	ProgressPct       float64                 `json:"progress_pct"`
+	CanAutoResume     bool                    `json:"can_auto_resume"`
+	ResumeCommand     string                  `json:"resume_command"`
+	DirtyWorktrees    []DirtyWorktree         `json:"dirty_worktrees,omitempty"`
+	AgentSessions     map[string]AgentSession `json:"agent_sessions,omitempty"`
+}
+
+// AgentSession holds session tracking information for a launched agent.
+type AgentSession struct {
+	AgentID      string `json:"agent_id"`
+	SessionID    string `json:"session_id"`     // Claude Code session ID
+	WaveNum      int    `json:"wave_num"`
+	WorktreePath string `json:"worktree_path"`
+	LastActive   string `json:"last_active"` // RFC3339 timestamp
 }
 
 // worktreeEntry holds data parsed from `git worktree list --porcelain`.
@@ -42,56 +53,72 @@ type worktreeEntry struct {
 // It reads IMPL YAML files from docs/IMPL/ (excluding the complete/ subdirectory),
 // skips manifests with state COMPLETE or NOT_SUITABLE, and returns a SessionState
 // for each manifest that appears to be in progress.
+// Detect is backward-compatible: it delegates to DetectWithConfig with a single repo.
 func Detect(repoPath string) ([]SessionState, error) {
-	implDir := filepath.Join(repoPath, "docs", "IMPL")
+	return DetectWithConfig([]string{repoPath})
+}
 
-	entries, err := os.ReadDir(implDir)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return []SessionState{}, nil
-		}
-		return nil, fmt.Errorf("resume.Detect: reading %s: %w", implDir, err)
+// DetectWithConfig scans for interrupted SAW sessions across multiple repositories.
+// It reads IMPL YAML files from docs/IMPL/ in each repo (excluding complete/ subdirectory),
+// skips manifests with state COMPLETE or NOT_SUITABLE, and returns a SessionState
+// for each manifest that appears to be in progress.
+// Worktrees are scanned across ALL repos so that cross-repo worktrees are found.
+func DetectWithConfig(repoPaths []string) ([]SessionState, error) {
+	if len(repoPaths) == 0 {
+		return []SessionState{}, nil
 	}
 
 	var sessions []SessionState
 
-	for _, entry := range entries {
-		// Skip the complete/ subdirectory entirely.
-		if entry.IsDir() {
-			continue
-		}
+	for _, repoPath := range repoPaths {
+		implDir := filepath.Join(repoPath, "docs", "IMPL")
 
-		name := entry.Name()
-		if !strings.HasSuffix(name, ".yaml") && !strings.HasSuffix(name, ".yml") {
-			continue
-		}
-
-		implPath := filepath.Join(implDir, name)
-
-		manifest, err := protocol.Load(implPath)
+		entries, err := os.ReadDir(implDir)
 		if err != nil {
-			// Skip unreadable / malformed manifests.
-			continue
+			if os.IsNotExist(err) {
+				continue
+			}
+			return nil, fmt.Errorf("resume.DetectWithConfig: reading %s: %w", implDir, err)
 		}
 
-		// Skip finished or unsuitable manifests.
-		if manifest.State == protocol.StateComplete || manifest.State == protocol.StateNotSuitable {
-			continue
-		}
+		for _, entry := range entries {
+			// Skip the complete/ subdirectory entirely.
+			if entry.IsDir() {
+				continue
+			}
 
-		state, err := buildSessionState(repoPath, implPath, manifest)
-		if err != nil {
-			continue
-		}
+			name := entry.Name()
+			if !strings.HasSuffix(name, ".yaml") && !strings.HasSuffix(name, ".yml") {
+				continue
+			}
 
-		// Skip manifests where no work has started (no completion reports,
-		// no orphaned worktrees). These are freshly scouted IMPLs awaiting
-		// their first wave — not interrupted sessions.
-		if len(state.CompletedAgents) == 0 && len(state.FailedAgents) == 0 && len(state.OrphanedWorktrees) == 0 {
-			continue
-		}
+			implPath := filepath.Join(implDir, name)
 
-		sessions = append(sessions, state)
+			manifest, err := protocol.Load(implPath)
+			if err != nil {
+				// Skip unreadable / malformed manifests.
+				continue
+			}
+
+			// Skip finished or unsuitable manifests.
+			if manifest.State == protocol.StateComplete || manifest.State == protocol.StateNotSuitable {
+				continue
+			}
+
+			state, err := buildSessionState(repoPaths, implPath, manifest)
+			if err != nil {
+				continue
+			}
+
+			// Skip manifests where no work has started (no completion reports,
+			// no orphaned worktrees). These are freshly scouted IMPLs awaiting
+			// their first wave — not interrupted sessions.
+			if len(state.CompletedAgents) == 0 && len(state.FailedAgents) == 0 && len(state.OrphanedWorktrees) == 0 {
+				continue
+			}
+
+			sessions = append(sessions, state)
+		}
 	}
 
 	if sessions == nil {
@@ -102,7 +129,7 @@ func Detect(repoPath string) ([]SessionState, error) {
 }
 
 // buildSessionState constructs a SessionState from a loaded manifest.
-func buildSessionState(repoPath, implPath string, manifest *protocol.IMPLManifest) (SessionState, error) {
+func buildSessionState(repoPaths []string, implPath string, manifest *protocol.IMPLManifest) (SessionState, error) {
 	totalAgents := 0
 	for _, wave := range manifest.Waves {
 		totalAgents += len(wave.Agents)
@@ -128,11 +155,18 @@ func buildSessionState(repoPath, implPath string, manifest *protocol.IMPLManifes
 		}
 	}
 
-	// Current wave: highest wave number with any completion report.
-	currentWave := determineCurrentWave(manifest)
+	// Step 1: Collect orphaned worktrees from all repos.
+	orphaned, _ := detectOrphanedWorktrees(repoPaths, manifest)
 
-	// Orphaned worktrees.
-	orphaned, _ := detectOrphanedWorktrees(repoPath, manifest)
+	// Current wave: highest wave number with any completion report,
+	// or inferred from orphaned worktrees if no reports exist.
+	currentWave := determineCurrentWave(manifest, orphaned)
+
+	// Step 2: Classify worktrees as dirty/clean (Agent B provides ClassifyWorktrees).
+	dirty, _ := ClassifyWorktrees(orphaned, manifest)
+
+	// Step 3: Build suggested action and resume command using dirty classification.
+	suggestedAction, resumeCommand := buildActionAndCommandInternal(implPath, manifest, orphaned, dirty, completed)
 
 	// Progress percentage.
 	var progressPct float64
@@ -140,11 +174,18 @@ func buildSessionState(repoPath, implPath string, manifest *protocol.IMPLManifes
 		progressPct = float64(len(completed)) / float64(totalAgents) * 100.0
 	}
 
-	// Determine suggested action and resume command.
-	suggestedAction, resumeCommand := buildActionAndCommand(implPath, manifest, currentWave, completed, failed, pending, orphaned)
-
 	// CanAutoResume: true only if no failed agents and current wave is fully complete.
 	canAutoResume := len(failed) == 0 && isCurrentWaveFullyComplete(manifest, currentWave, completed)
+
+	// Step 4: Load agent sessions if available (Agent C provides LoadAgentSessions).
+	// Use the first repo path as the state dir base (where .saw-state/ lives).
+	var agentSessions map[string]AgentSession
+	if len(repoPaths) > 0 {
+		stateDir := filepath.Join(repoPaths[0], ".saw-state")
+		if loaded, err := LoadAgentSessions(stateDir, manifest.FeatureSlug); err == nil {
+			agentSessions = loaded
+		}
+	}
 
 	ss := SessionState{
 		IMPLSlug:          manifest.FeatureSlug,
@@ -159,14 +200,18 @@ func buildSessionState(repoPath, implPath string, manifest *protocol.IMPLManifes
 		ProgressPct:       progressPct,
 		CanAutoResume:     canAutoResume,
 		ResumeCommand:     resumeCommand,
+		DirtyWorktrees:    dirty,
+		AgentSessions:     agentSessions,
 	}
 
 	return ss, nil
 }
 
 // determineCurrentWave returns the highest wave number that has at least one
-// completion report. If no completion reports exist, returns 0 (none started).
-func determineCurrentWave(manifest *protocol.IMPLManifest) int {
+// completion report. If no completion reports exist but orphaned worktrees are
+// present, it falls back to the lowest wave number inferred from worktree branch
+// names (agents were launched but none completed yet). Returns 0 if nothing found.
+func determineCurrentWave(manifest *protocol.IMPLManifest, orphaned []string) int {
 	highest := 0
 	for _, wave := range manifest.Waves {
 		for _, agent := range wave.Agents {
@@ -177,7 +222,25 @@ func determineCurrentWave(manifest *protocol.IMPLManifest) int {
 			}
 		}
 	}
-	return highest
+	if highest > 0 {
+		return highest
+	}
+
+	// Fallback: infer from orphaned worktree paths using the lowest wave number found.
+	// If wave 1 and wave 2 both have orphaned worktrees, wave 1 is incomplete — return 1.
+	lowest := 0
+	for _, worktreePath := range orphaned {
+		m := worktreePattern.FindStringSubmatch(worktreePath)
+		if m == nil {
+			continue
+		}
+		waveNum := 0
+		fmt.Sscanf(m[1], "%d", &waveNum)
+		if waveNum > 0 && (lowest == 0 || waveNum < lowest) {
+			lowest = waveNum
+		}
+	}
+	return lowest
 }
 
 // isCurrentWaveFullyComplete returns true when every agent in the given wave
@@ -206,13 +269,52 @@ func isCurrentWaveFullyComplete(manifest *protocol.IMPLManifest, waveNum int, co
 
 // buildActionAndCommand returns the human-readable SuggestedAction and the
 // exact sawtools ResumeCommand for the given session state.
+// When orphaned worktrees exist, the action distinguishes dirty (uncommitted work)
+// from clean (safe to remove) worktrees.
+// NOTE: This exported-signature version is provided for interface contract compliance.
+// buildSessionState uses buildActionAndCommandInternal which also accepts implPath.
 func buildActionAndCommand(
+	manifest *protocol.IMPLManifest,
+	orphaned []string,
+	dirtyWorktrees []DirtyWorktree,
+) (string, string) {
+	// Reconstruct context needed for action/command strings.
+	// Without implPath we cannot produce full sawtools commands; callers that need
+	// full command strings should use buildActionAndCommandInternal.
+	var completed []string
+	for id, report := range manifest.CompletionReports {
+		if report.Status == "complete" {
+			completed = append(completed, id)
+		}
+	}
+	return buildActionAndCommandInternal("", manifest, orphaned, dirtyWorktrees, completed)
+}
+
+// buildActionAndCommandInternal is the full implementation used by buildSessionState.
+// It accepts implPath explicitly so resume commands include the correct IMPL doc path.
+func buildActionAndCommandInternal(
 	implPath string,
 	manifest *protocol.IMPLManifest,
-	currentWave int,
-	completed, failed, pending []string,
 	orphaned []string,
+	dirtyWorktrees []DirtyWorktree,
+	completed []string,
 ) (string, string) {
+	currentWave := determineCurrentWave(manifest, orphaned)
+
+	// Collect failed agents from completion reports.
+	var failed []string
+	for _, wave := range manifest.Waves {
+		for _, agent := range wave.Agents {
+			report, exists := manifest.CompletionReports[agent.ID]
+			if !exists {
+				continue
+			}
+			if report.Status == "partial" || report.Status == "blocked" {
+				failed = append(failed, agent.ID)
+			}
+		}
+	}
+
 	switch {
 	case len(failed) > 0:
 		ids := strings.Join(failed, ", ")
@@ -221,6 +323,19 @@ func buildActionAndCommand(
 		return action, cmd
 
 	case len(orphaned) > 0:
+		// Distinguish dirty from clean worktrees.
+		anyDirty := false
+		for _, dw := range dirtyWorktrees {
+			if dw.HasChanges {
+				anyDirty = true
+				break
+			}
+		}
+		if anyDirty {
+			action := fmt.Sprintf("Resume wave %d (agents have uncommitted work)", currentWave)
+			cmd := fmt.Sprintf("sawtools run-wave %s --wave %d", implPath, currentWave)
+			return action, cmd
+		}
 		action := fmt.Sprintf("Clean up orphaned worktrees, then resume wave %d", currentWave)
 		cmd := fmt.Sprintf("sawtools cleanup %s --wave %d", implPath, currentWave)
 		return action, cmd
@@ -252,21 +367,10 @@ func buildActionAndCommand(
 // It intentionally allows lowercase for backward compat with existing worktrees.
 var worktreePattern = regexp.MustCompile(`(?:saw/[a-z0-9][-a-z0-9]*/)?wave(\d+)-agent-([A-Za-z0-9]+)`)
 
-// detectOrphanedWorktrees runs `git worktree list --porcelain` and returns paths of
-// worktrees whose wave is not fully merged (i.e., not all agents in that wave have a
-// "complete" completion report).
-func detectOrphanedWorktrees(repoPath string, manifest *protocol.IMPLManifest) ([]string, error) {
-	cmd := exec.Command("git", "worktree", "list", "--porcelain")
-	cmd.Dir = repoPath
-
-	out, err := cmd.Output()
-	if err != nil {
-		// Git not available or no worktrees — treat as empty.
-		return nil, nil
-	}
-
-	entries := parseWorktreePorcelain(out)
-
+// detectOrphanedWorktrees runs `git worktree list --porcelain` in each of the given
+// repos and returns paths of worktrees whose wave is not fully merged (i.e., not all
+// agents in that wave have a "complete" completion report).
+func detectOrphanedWorktrees(repoPaths []string, manifest *protocol.IMPLManifest) ([]string, error) {
 	// Build a set of agents with "complete" status.
 	completedSet := make(map[string]bool)
 	for id, report := range manifest.CompletionReports {
@@ -284,49 +388,63 @@ func detectOrphanedWorktrees(repoPath string, manifest *protocol.IMPLManifest) (
 	}
 
 	var orphaned []string
-	for _, entry := range entries {
-		// Try to match on the path first, then on the branch.
-		candidate := entry.branch
-		if candidate == "" {
-			candidate = entry.path
-		}
-		// Strip refs/heads/ prefix if present.
-		candidate = strings.TrimPrefix(candidate, "refs/heads/")
 
-		m := worktreePattern.FindStringSubmatch(candidate)
-		if m == nil {
+	for _, repoPath := range repoPaths {
+		cmd := exec.Command("git", "worktree", "list", "--porcelain")
+		cmd.Dir = repoPath
+
+		out, err := cmd.Output()
+		if err != nil {
+			// Git not available or no worktrees — skip this repo.
 			continue
 		}
 
-		// Filter by IMPL slug: only consider worktrees that belong to this manifest.
-		// Slug-scoped branches contain "saw/{slug}/" — if present, must match.
-		// Legacy branches (no slug prefix) are attributed to any manifest (backward compat).
-		if manifest.FeatureSlug != "" && strings.Contains(candidate, "saw/") {
-			expectedPrefix := "saw/" + manifest.FeatureSlug + "/"
-			if !strings.Contains(candidate, expectedPrefix) {
-				continue // belongs to a different IMPL
-			}
-		}
+		entries := parseWorktreePorcelain(out)
 
-		// Check if the wave is fully merged.
-		waveNum := 0
-		fmt.Sscanf(m[1], "%d", &waveNum)
-		agents, known := waveAgents[waveNum]
-		if !known {
-			// Wave not in manifest — orphaned.
-			orphaned = append(orphaned, entry.path)
-			continue
-		}
-
-		allDone := true
-		for _, agentID := range agents {
-			if !completedSet[agentID] {
-				allDone = false
-				break
+		for _, entry := range entries {
+			// Try to match on the branch first, then on the path.
+			candidate := entry.branch
+			if candidate == "" {
+				candidate = entry.path
 			}
-		}
-		if !allDone {
-			orphaned = append(orphaned, entry.path)
+			// Strip refs/heads/ prefix if present.
+			candidate = strings.TrimPrefix(candidate, "refs/heads/")
+
+			m := worktreePattern.FindStringSubmatch(candidate)
+			if m == nil {
+				continue
+			}
+
+			// Filter by IMPL slug: only consider worktrees that belong to this manifest.
+			// Slug-scoped branches contain "saw/{slug}/" — if present, must match.
+			// Legacy branches (no slug prefix) are attributed to any manifest (backward compat).
+			if manifest.FeatureSlug != "" && strings.Contains(candidate, "saw/") {
+				expectedPrefix := "saw/" + manifest.FeatureSlug + "/"
+				if !strings.Contains(candidate, expectedPrefix) {
+					continue // belongs to a different IMPL
+				}
+			}
+
+			// Check if the wave is fully merged.
+			waveNum := 0
+			fmt.Sscanf(m[1], "%d", &waveNum)
+			agents, known := waveAgents[waveNum]
+			if !known {
+				// Wave not in manifest — orphaned.
+				orphaned = append(orphaned, entry.path)
+				continue
+			}
+
+			allDone := true
+			for _, agentID := range agents {
+				if !completedSet[agentID] {
+					allDone = false
+					break
+				}
+			}
+			if !allDone {
+				orphaned = append(orphaned, entry.path)
+			}
 		}
 	}
 

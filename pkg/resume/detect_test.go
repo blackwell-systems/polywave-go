@@ -447,7 +447,7 @@ func TestDetect_ResumeCommand_FailedAgent(t *testing.T) {
 func TestDetectOrphanedWorktrees_NoGit(t *testing.T) {
 	// Use a directory that is not a git repo so git fails gracefully.
 	manifest := simpleManifest()
-	orphaned, err := detectOrphanedWorktrees(t.TempDir(), manifest)
+	orphaned, err := detectOrphanedWorktrees([]string{t.TempDir()}, manifest)
 	if err != nil {
 		t.Fatalf("expected no error when git fails, got %v", err)
 	}
@@ -591,4 +591,121 @@ func TestDetect_MultipleIMPLs(t *testing.T) {
 	if len(sessions) != 2 {
 		t.Fatalf("expected 2 sessions, got %d", len(sessions))
 	}
+}
+
+// ---- New tests for DetectWithConfig, wave inference, and dirty worktree action ----
+
+// TestDetectWithConfig_EmptyRepoList verifies that an empty repo list returns
+// empty results with no error.
+func TestDetectWithConfig_EmptyRepoList(t *testing.T) {
+	sessions, err := DetectWithConfig([]string{})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(sessions) != 0 {
+		t.Fatalf("expected 0 sessions, got %d", len(sessions))
+	}
+}
+
+// TestDetectWithConfig_MultipleRepos verifies that DetectWithConfig scans IMPL docs
+// across multiple repo paths. Each repo contributes its own sessions independently.
+func TestDetectWithConfig_MultipleRepos(t *testing.T) {
+	// Create two independent repos, each with an in-progress IMPL.
+	repo1 := makeRepoWithIMPLDir(t)
+	repo2 := makeRepoWithIMPLDir(t)
+
+	m1 := simpleManifest()
+	m1.FeatureSlug = "repo1-feature"
+	m1.State = protocol.StateWaveExecuting
+	m1.CompletionReports["A"] = protocol.CompletionReport{Status: "complete"}
+	writeManifest(t, filepath.Join(repo1, "docs", "IMPL"), "IMPL-r1.yaml", m1)
+
+	m2 := simpleManifest()
+	m2.FeatureSlug = "repo2-feature"
+	m2.State = protocol.StateWaveExecuting
+	m2.CompletionReports["A"] = protocol.CompletionReport{Status: "partial"}
+	writeManifest(t, filepath.Join(repo2, "docs", "IMPL"), "IMPL-r2.yaml", m2)
+
+	sessions, err := DetectWithConfig([]string{repo1, repo2})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if len(sessions) != 2 {
+		t.Fatalf("expected 2 sessions (one per repo), got %d", len(sessions))
+	}
+
+	slugs := map[string]bool{}
+	for _, s := range sessions {
+		slugs[s.IMPLSlug] = true
+	}
+	if !slugs["repo1-feature"] {
+		t.Errorf("expected session for repo1-feature, got slugs: %v", slugs)
+	}
+	if !slugs["repo2-feature"] {
+		t.Errorf("expected session for repo2-feature, got slugs: %v", slugs)
+	}
+}
+
+// TestDetermineCurrentWave_FallbackToWorktrees verifies that when no completion
+// reports exist, determineCurrentWave falls back to orphaned worktree branch paths
+// and returns the lowest wave number found.
+func TestDetermineCurrentWave_FallbackToWorktrees(t *testing.T) {
+	manifest := simpleManifest()
+	// No completion reports at all.
+
+	// Simulate orphaned worktree paths that embed wave numbers in their path.
+	// SAW worktrees are stored at paths like .claude/worktrees/saw/{slug}/wave{N}-agent-{ID}.
+	orphaned := []string{
+		"/repo/.claude/worktrees/saw/test-feature/wave2-agent-A",
+		"/repo/.claude/worktrees/saw/test-feature/wave1-agent-B",
+	}
+
+	wave := determineCurrentWave(manifest, orphaned)
+
+	// Should return the lowest wave (1), not the highest (2).
+	if wave != 1 {
+		t.Errorf("determineCurrentWave fallback = %d, want 1 (lowest wave with orphaned worktrees)", wave)
+	}
+}
+
+// TestBuildAction_DirtyWorktrees verifies that buildActionAndCommand distinguishes
+// between dirty and clean orphaned worktrees.
+func TestBuildAction_DirtyWorktrees(t *testing.T) {
+	root := makeRepoWithIMPLDir(t)
+	implDir := filepath.Join(root, "docs", "IMPL")
+
+	manifest := simpleManifest()
+	manifest.State = protocol.StateWaveExecuting
+	implPath := writeManifest(t, implDir, "IMPL-dirty.yaml", manifest)
+
+	orphaned := []string{"/some/worktree/path/wave1-agent-A"}
+
+	// Case 1: dirty worktree (HasChanges: true) -> "Resume wave N (agents have uncommitted work)"
+	dirtyWorktrees := []DirtyWorktree{
+		{Path: "/some/worktree/path/wave1-agent-A", Branch: "saw/test-feature/wave1-agent-A", AgentID: "A", WaveNum: 1, HasChanges: true},
+	}
+	action, _ := buildActionAndCommandInternal(implPath, manifest, orphaned, dirtyWorktrees, nil)
+	wantDirty := "Resume wave 1 (agents have uncommitted work)"
+	if action != wantDirty {
+		t.Errorf("dirty action = %q, want %q", action, wantDirty)
+	}
+
+	// Case 2: clean worktree (HasChanges: false) -> "Clean up orphaned worktrees, then resume wave N"
+	cleanWorktrees := []DirtyWorktree{
+		{Path: "/some/worktree/path/wave1-agent-A", Branch: "saw/test-feature/wave1-agent-A", AgentID: "A", WaveNum: 1, HasChanges: false},
+	}
+	action, _ = buildActionAndCommandInternal(implPath, manifest, orphaned, cleanWorktrees, nil)
+	wantClean := "Clean up orphaned worktrees, then resume wave 1"
+	if action != wantClean {
+		t.Errorf("clean action = %q, want %q", action, wantClean)
+	}
+
+	// Case 3: no dirty worktrees slice at all -> still produces cleanup action
+	action, _ = buildActionAndCommandInternal(implPath, manifest, orphaned, nil, nil)
+	if action != wantClean {
+		t.Errorf("nil dirtyWorktrees action = %q, want %q", action, wantClean)
+	}
+
+	_ = implPath // referenced above
 }
