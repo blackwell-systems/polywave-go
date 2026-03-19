@@ -612,6 +612,160 @@ func TestRunGates_FormatGate_ExplicitCommandSucceeds(t *testing.T) {
 	}
 }
 
+// ---- Timing / pre-merge / post-merge gate tests ----
+
+// TestFilterGatesByTiming verifies gate routing logic for pre-merge and post-merge.
+func TestFilterGatesByTiming(t *testing.T) {
+	manifest := &IMPLManifest{
+		QualityGates: &QualityGates{
+			Level: "standard",
+			Gates: []QualityGate{
+				{Type: "build", Command: "echo build", Timing: ""},         // pre-merge (default)
+				{Type: "test", Command: "echo test", Timing: "pre-merge"},  // explicit pre-merge
+				{Type: "lint", Command: "echo lint", Timing: "post-merge"}, // post-merge
+			},
+		},
+	}
+
+	pre := filterGatesByTiming(manifest, "pre-merge")
+	if len(pre) != 2 {
+		t.Fatalf("expected 2 pre-merge gates, got %d", len(pre))
+	}
+	if pre[0].Type != "build" {
+		t.Errorf("expected first pre-merge gate type 'build', got %q", pre[0].Type)
+	}
+	if pre[1].Type != "test" {
+		t.Errorf("expected second pre-merge gate type 'test', got %q", pre[1].Type)
+	}
+
+	post := filterGatesByTiming(manifest, "post-merge")
+	if len(post) != 1 {
+		t.Fatalf("expected 1 post-merge gate, got %d", len(post))
+	}
+	if post[0].Type != "lint" {
+		t.Errorf("expected post-merge gate type 'lint', got %q", post[0].Type)
+	}
+}
+
+// TestRunPreMergeGates_OnlyRunsPreMerge verifies that RunPreMergeGates only executes
+// pre-merge gates and does not execute the post-merge exit-1 gate.
+func TestRunPreMergeGates_OnlyRunsPreMerge(t *testing.T) {
+	manifest := &IMPLManifest{
+		QualityGates: &QualityGates{
+			Level: "standard",
+			Gates: []QualityGate{
+				{Type: "build", Command: "echo ok", Required: true, Timing: "pre-merge"},
+				{Type: "test", Command: "exit 1", Required: true, Timing: "post-merge"},
+			},
+		},
+	}
+
+	results, err := RunPreMergeGates(manifest, 1, "/tmp", nil)
+	if err != nil {
+		t.Fatalf("expected no error, got: %v", err)
+	}
+	if len(results) != 1 {
+		t.Fatalf("expected 1 result (only pre-merge gate), got %d", len(results))
+	}
+	if !results[0].Passed {
+		t.Errorf("expected pre-merge gate to pass, got Passed=false")
+	}
+}
+
+// TestRunPostMergeGates_OnlyRunsPostMerge verifies that RunPostMergeGates only executes
+// post-merge gates and does not execute the pre-merge exit-1 gate.
+func TestRunPostMergeGates_OnlyRunsPostMerge(t *testing.T) {
+	manifest := &IMPLManifest{
+		QualityGates: &QualityGates{
+			Level: "standard",
+			Gates: []QualityGate{
+				{Type: "build", Command: "exit 1", Required: true, Timing: "pre-merge"},
+				{Type: "test", Command: "echo ok", Required: true, Timing: "post-merge"},
+			},
+		},
+	}
+
+	results, err := RunPostMergeGates(manifest, 1, "/tmp")
+	if err != nil {
+		t.Fatalf("expected no error, got: %v", err)
+	}
+	if len(results) != 1 {
+		t.Fatalf("expected 1 result (only post-merge gate), got %d", len(results))
+	}
+	if !results[0].Passed {
+		t.Errorf("expected post-merge gate to pass, got Passed=false")
+	}
+}
+
+// TestRunPreMergeGates_EmptyWhenNoneMatch verifies that RunPreMergeGates returns an
+// empty slice (not an error) when the manifest has only post-merge gates.
+func TestRunPreMergeGates_EmptyWhenNoneMatch(t *testing.T) {
+	manifest := &IMPLManifest{
+		QualityGates: &QualityGates{
+			Level: "standard",
+			Gates: []QualityGate{
+				{Type: "test", Command: "echo ok", Required: true, Timing: "post-merge"},
+			},
+		},
+	}
+
+	results, err := RunPreMergeGates(manifest, 1, "/tmp", nil)
+	if err != nil {
+		t.Fatalf("expected no error, got: %v", err)
+	}
+	if len(results) != 0 {
+		t.Errorf("expected empty results when no pre-merge gates match, got %d", len(results))
+	}
+}
+
+// TestRunPostMergeGates_EmptyWhenNoneMatch verifies that RunPostMergeGates returns an
+// empty slice (not an error) when the manifest has only pre-merge gates.
+func TestRunPostMergeGates_EmptyWhenNoneMatch(t *testing.T) {
+	manifest := &IMPLManifest{
+		QualityGates: &QualityGates{
+			Level: "standard",
+			Gates: []QualityGate{
+				{Type: "build", Command: "echo ok", Required: true, Timing: "pre-merge"},
+			},
+		},
+	}
+
+	results, err := RunPostMergeGates(manifest, 1, "/tmp")
+	if err != nil {
+		t.Fatalf("expected no error, got: %v", err)
+	}
+	if len(results) != 0 {
+		t.Errorf("expected empty results when no post-merge gates match, got %d", len(results))
+	}
+}
+
+// TestRunPreMergeGates_BackwardCompat verifies that gates without a Timing field
+// (empty string) are treated as pre-merge, preserving backward compatibility.
+func TestRunPreMergeGates_BackwardCompat(t *testing.T) {
+	manifest := &IMPLManifest{
+		QualityGates: &QualityGates{
+			Level: "standard",
+			Gates: []QualityGate{
+				{Type: "build", Command: "echo build ok", Required: true}, // Timing omitted
+				{Type: "test", Command: "echo test ok", Required: true},   // Timing omitted
+			},
+		},
+	}
+
+	results, err := RunPreMergeGates(manifest, 1, "/tmp", nil)
+	if err != nil {
+		t.Fatalf("expected no error, got: %v", err)
+	}
+	if len(results) != 2 {
+		t.Fatalf("expected 2 results (both backward-compat gates run as pre-merge), got %d", len(results))
+	}
+	for i, r := range results {
+		if !r.Passed {
+			t.Errorf("expected gate[%d] to pass, got Passed=false", i)
+		}
+	}
+}
+
 // TestGateResult_JSONWithParsedErrors verifies JSON marshaling includes parsed_errors.
 func TestGateResult_JSONWithParsedErrors(t *testing.T) {
 	gr := GateResult{

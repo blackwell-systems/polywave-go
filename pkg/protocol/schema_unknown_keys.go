@@ -81,6 +81,7 @@ var knownKeys = map[string]map[string]bool{
 		"description": true,
 		"repo":        true,
 		"fix":         true,
+		"timing":      true,
 	},
 	"scaffold": {
 		"file":        true,

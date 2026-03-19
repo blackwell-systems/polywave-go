@@ -133,6 +133,11 @@ type QualityGate struct {
 	Description string `yaml:"description,omitempty" json:"description,omitempty"`
 	Repo        string `yaml:"repo,omitempty" json:"repo,omitempty"` // if set, gate only runs in this repo
 	Fix         bool   `yaml:"fix,omitempty" json:"fix,omitempty"` // fix mode for format gates
+	// Timing controls when the gate executes during finalize-wave.
+	// "pre-merge"  — run at step 3, before MergeAgents (default when empty)
+	// "post-merge" — run at step 5, after MergeAgents completes
+	// Empty string is treated as "pre-merge" for backward compatibility.
+	Timing string `yaml:"timing,omitempty" json:"timing,omitempty"`
 }
 
 // ScaffoldFile represents a type scaffold file that is created before wave execution.

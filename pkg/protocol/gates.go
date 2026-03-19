@@ -229,6 +229,63 @@ func RunGates(manifest *IMPLManifest, waveNumber int, repoDir string) ([]GateRes
 	return results, nil
 }
 
+// filterGatesByTiming returns gates matching the given timing category.
+// timing="pre-merge" returns gates with Timing=="" or Timing=="pre-merge".
+// timing="post-merge" returns gates with Timing=="post-merge".
+func filterGatesByTiming(manifest *IMPLManifest, timing string) []QualityGate {
+	if manifest.QualityGates == nil {
+		return nil
+	}
+	var out []QualityGate
+	for _, g := range manifest.QualityGates.Gates {
+		switch timing {
+		case "pre-merge":
+			if g.Timing == "" || g.Timing == "pre-merge" {
+				out = append(out, g)
+			}
+		case "post-merge":
+			if g.Timing == "post-merge" {
+				out = append(out, g)
+			}
+		}
+	}
+	return out
+}
+
+// RunPreMergeGates executes only gates with timing="pre-merge" or timing="" (default).
+// It replaces the direct RunGatesWithCache call at finalize-wave step 3.
+// Signature mirrors RunGatesWithCache exactly; cache param may be nil.
+func RunPreMergeGates(manifest *IMPLManifest, waveNumber int, repoDir string, cache *gatecache.Cache) ([]GateResult, error) {
+	filtered := filterGatesByTiming(manifest, "pre-merge")
+	if len(filtered) == 0 {
+		return []GateResult{}, nil
+	}
+	// Build a temporary manifest with only pre-merge gates
+	tmp := *manifest
+	tmp.QualityGates = &QualityGates{
+		Level: manifest.QualityGates.Level,
+		Gates: filtered,
+	}
+	return RunGatesWithCache(&tmp, waveNumber, repoDir, cache)
+}
+
+// RunPostMergeGates executes only gates with timing="post-merge".
+// Called at finalize-wave step 5, after MergeAgents completes successfully.
+// Returns empty slice (not error) when no post-merge gates are defined.
+// Runs without cache (post-merge state is always fresh).
+func RunPostMergeGates(manifest *IMPLManifest, waveNumber int, repoDir string) ([]GateResult, error) {
+	filtered := filterGatesByTiming(manifest, "post-merge")
+	if len(filtered) == 0 {
+		return []GateResult{}, nil
+	}
+	tmp := *manifest
+	tmp.QualityGates = &QualityGates{
+		Level: manifest.QualityGates.Level,
+		Gates: filtered,
+	}
+	return RunGates(&tmp, waveNumber, repoDir)
+}
+
 // RunGatesWithCache executes quality gates with optional result caching.
 // If cache is nil, it behaves identically to RunGates.
 // For each gate, if a valid (non-expired) cached result exists, it is returned
