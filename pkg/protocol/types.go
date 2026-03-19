@@ -117,11 +117,12 @@ type QualityGates struct {
 // QualityGate represents a single quality check (build, lint, test, etc.).
 // Gates marked as Required must pass; others are advisory.
 type QualityGate struct {
-	Type        string `yaml:"type" json:"type"` // "build" | "lint" | "test"
+	Type        string `yaml:"type" json:"type"` // "build" | "lint" | "test" | "typecheck" | "format" | "custom"
 	Command     string `yaml:"command" json:"command"`
 	Required    bool   `yaml:"required" json:"required"`
 	Description string `yaml:"description,omitempty" json:"description,omitempty"`
 	Repo        string `yaml:"repo,omitempty" json:"repo,omitempty"` // if set, gate only runs in this repo
+	Fix         bool   `yaml:"fix,omitempty" json:"fix,omitempty"` // fix mode for format gates
 }
 
 // ScaffoldFile represents a type scaffold file that is created before wave execution.
