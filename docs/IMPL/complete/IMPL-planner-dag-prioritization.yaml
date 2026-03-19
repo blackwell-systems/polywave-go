@@ -1,0 +1,412 @@
+completion_date: "2026-03-19"
+title: Planner DAG Prioritization with Unblocking Potential Scoring
+feature_slug: planner-dag-prioritization
+verdict: SUITABLE
+suitability_assessment: |
+    File decomposition: 5 distinct files change across 3 clearly separable concerns —
+    (1) the scoring algorithm itself in pkg/protocol/, (2) the PROGRAMManifest schema
+    fields in pkg/protocol/program_types.go, and (3) the tier execution integration in
+    pkg/engine/program_auto.go. File ownership is cleanly disjoint across 3 agents.
+
+    Investigation status: No root cause analysis required. The gap is a missing feature
+    (unblocking potential scoring), not a bug. All call sites are known.
+
+    Interface discoverability: The UnblockingScore function signature and PriorityScore
+    struct fields can be fully specified before implementation. Agent B (schema) must
+    add fields; Agent A (scorer) must implement the function; Agent C (integration)
+    consumes both. All cross-agent interfaces are definable upfront.
+
+    Pre-implementation status: No prior attempt found. The existing scheduler.go has
+    PrioritizeAgents for IMPL-level agent ordering (critical path depth), but nothing
+    at the PROGRAM level for IMPL-to-IMPL unblocking potential scoring.
+
+    Parallelization value: 3 agents with independent files, build+test cycle ~10-15s
+    for go test ./pkg/protocol/... and go test ./pkg/engine/... separately. Clear
+    speedup: agents A and B can run in parallel (wave 1), then agent C integrates
+    (wave 2). Estimated 2x speedup vs sequential.
+
+    Estimated times:
+    - Scout phase: ~10 min (this doc)
+    - Agent execution: ~25 min (2 wave-1 agents x 10 min parallel + 1 wave-2 agent x 10 min)
+    - Merge and verification: ~5 min
+    Total SAW time: ~40 min
+
+    Sequential baseline: ~35 min (3 agents x ~12 min avg)
+    Time savings: marginal on speed, but coordination value is high — the interface
+    contract between the scorer and schema must be precise to avoid round-trip fixes.
+    Recommendation: Proceed. Interface precision justifies the parallel planning overhead.
+test_command: go test ./...
+lint_command: go vet ./...
+file_ownership:
+    - file: pkg/protocol/program_prioritizer.go
+      agent: A
+      wave: 1
+      action: new
+    - file: pkg/protocol/program_prioritizer_test.go
+      agent: A
+      wave: 1
+      action: new
+    - file: pkg/protocol/program_types.go
+      agent: B
+      wave: 1
+      action: modify
+    - file: pkg/engine/program_auto.go
+      agent: C
+      wave: 2
+      action: modify
+      depends_on:
+        - A
+        - B
+    - file: pkg/engine/program_auto_test.go
+      agent: C
+      wave: 2
+      action: modify
+      depends_on:
+        - A
+        - B
+interface_contracts:
+    - name: UnblockingScore
+      description: |
+        BFS over the reverse IMPL dependency graph starting from implSlug.
+        Returns the count of transitively unblocked IMPLs (those that would
+        become runnable once implSlug completes), weighted by UNBLOCK_BONUS.
+        Only considers IMPLs with status "pending" or "blocked" as unblockable.
+      definition: |
+        // UnblockingScore computes a priority score for implSlug based on how many
+        // downstream IMPLs it transitively unblocks in manifest.
+        //
+        // Score formula (mirrors Formic's prioritizer):
+        //   score = unblocking_potential * UnblockBonusPerIMPL + age_bonus
+        //
+        // where:
+        //   unblocking_potential = BFS count of transitively unblocked pending/blocked IMPLs
+        //   UnblockBonusPerIMPL  = 100 (constant)
+        //   age_bonus            = min(daysSinceQueued, 10)  — tie-breaker, 0 if no timestamp
+        //
+        // Returns 0 if implSlug has no downstream dependents or is not found.
+        func UnblockingScore(manifest *PROGRAMManifest, implSlug string) int
+      location: pkg/protocol/program_prioritizer.go
+    - name: PrioritizeIMPLs
+      description: |
+        Re-orders a slice of IMPL slugs by descending UnblockingScore.
+        Stable sort — equal scores preserve input order (FIFO tiebreak).
+        Used by the tier execution loop to sequence IMPL launches.
+      definition: |
+        // PrioritizeIMPLs returns implSlugs sorted by descending UnblockingScore.
+        // Stable: equal-scored IMPLs retain their original order.
+        func PrioritizeIMPLs(manifest *PROGRAMManifest, implSlugs []string) []string
+      location: pkg/protocol/program_prioritizer.go
+    - name: IMPLPriorityScore (struct field on ProgramIMPL)
+      description: |
+        Optional computed field added to ProgramIMPL. Written by the Planner
+        (or populated lazily by the engine) so the web UI can display priority
+        ordering without recomputing on every render.
+      definition: |
+        // In ProgramIMPL struct — add these two fields:
+        PriorityScore        int    `yaml:"priority_score,omitempty" json:"priority_score,omitempty"`
+        PriorityReasoning    string `yaml:"priority_reasoning,omitempty" json:"priority_reasoning,omitempty"`
+      location: pkg/protocol/program_types.go
+    - name: ConcurrencyCap (struct field on ProgramTier)
+      description: |
+        Optional cap on simultaneous IMPL launches within a tier. When 0 or
+        absent, all pending IMPLs in the tier launch concurrently (current
+        behavior). When set, the tier execution loop launches at most
+        ConcurrencyCap IMPLs at a time, in priority order.
+      definition: |
+        // In ProgramTier struct — add this field:
+        ConcurrencyCap int `yaml:"concurrency_cap,omitempty" json:"concurrency_cap,omitempty"`
+      location: pkg/protocol/program_types.go
+    - name: ScoreTierIMPLs
+      description: |
+        Computes UnblockingScore for all pending IMPLs in a tier and writes
+        PriorityScore + PriorityReasoning back into manifest.Impls in place.
+        Called by the tier execution loop before launching IMPLs.
+        Returns the ordered list of IMPL slugs (highest score first).
+      definition: |
+        // ScoreTierIMPLs scores all pending IMPLs in tierNumber and returns them
+        // sorted by descending priority. Also updates PriorityScore and
+        // PriorityReasoning on each ProgramIMPL entry in manifest.Impls.
+        func ScoreTierIMPLs(manifest *protocol.PROGRAMManifest, tierNumber int) []string
+      location: pkg/engine/program_auto.go
+waves:
+    - number: 1
+      agents:
+        - id: A
+          task: |
+            ## Role
+            Implement the UnblockingScore algorithm and PrioritizeIMPLs function
+            for the SAW Program layer in pkg/protocol/program_prioritizer.go.
+
+            ## What to implement
+
+            Create pkg/protocol/program_prioritizer.go with:
+
+            ### 1. buildReverseDepGraph
+            Private helper. Build a reverse dependency map from PROGRAMManifest.Impls:
+            for each ProgramIMPL, for each slug in DependsOn, add the IMPL to the
+            reverse graph entry for that dep slug. Returns map[string][]string
+            (depSlug -> []slugsThatDependOnIt).
+
+            ### 2. countTransitivelyUnblocked
+            Private helper. BFS from implSlug over the reverse dep graph.
+            Only count IMPLs whose Status is "pending" or "blocked" as unblockable
+            (completed/in_progress IMPLs do not count — they're already running or done).
+            Returns int (count of transitively reachable pending/blocked IMPLs).
+            Must handle cycles gracefully (visited set).
+
+            ### 3. UnblockingScore
+            Public function matching the interface contract exactly:
+              func UnblockingScore(manifest *PROGRAMManifest, implSlug string) int
+            Score = countTransitivelyUnblocked(implSlug, ...) * 100
+            Plus age_bonus: if no timestamp available, age_bonus = 0.
+            Note: ProgramIMPL does not currently have a QueuedAt field; age_bonus
+            is always 0 in this implementation (leave a TODO comment for future addition).
+
+            ### 4. PrioritizeIMPLs
+            Public function matching the interface contract exactly:
+              func PrioritizeIMPLs(manifest *PROGRAMManifest, implSlugs []string) []string
+            Uses sort.SliceStable with UnblockingScore as the key (descending).
+            Returns a new slice; does not mutate the input.
+
+            ## Tests (pkg/protocol/program_prioritizer_test.go)
+
+            Write table-driven tests in package protocol covering:
+            - Single IMPL with no deps: score = 0
+            - Linear chain A -> B -> C (A depends on nothing, B depends on A, C depends on B):
+              UnblockingScore(A) = 200 (B and C are unblocked), UnblockingScore(B) = 100,
+              UnblockingScore(C) = 0
+            - Diamond: A has no deps; B and C both depend on A; D depends on B and D depends on C:
+              UnblockingScore(A) = 300 (B, C, D all unblocked)
+            - Cycle detection: A depends on B, B depends on A — should not infinite loop, return 0
+            - PrioritizeIMPLs sorts correctly (highest score first, stable on ties)
+            - Only "pending" and "blocked" IMPLs count as unblockable (completed ones do not)
+
+            ## Verification gate
+            cd /Users/dayna.blackwell/code/scout-and-wave-go && go build ./pkg/protocol/... && go vet ./pkg/protocol/... && go test ./pkg/protocol/... -run TestUnblocking -v
+
+            ## Constraints
+            - Package: protocol (not engine)
+            - No external imports beyond standard library and existing protocol package imports
+            - Function signatures must match interface_contracts exactly — Agent C depends on them
+            - Do not modify program_types.go (that is Agent B's file)
+          files:
+            - pkg/protocol/program_prioritizer.go
+            - pkg/protocol/program_prioritizer_test.go
+        - id: B
+          task: |
+            ## Role
+            Add PriorityScore, PriorityReasoning, and ConcurrencyCap fields to the
+            PROGRAMManifest schema in pkg/protocol/program_types.go.
+
+            ## What to implement
+
+            Modify pkg/protocol/program_types.go with two additions:
+
+            ### 1. Add fields to ProgramIMPL struct
+            After the existing Status field, add:
+              PriorityScore     int    `yaml:"priority_score,omitempty" json:"priority_score,omitempty"`
+              PriorityReasoning string `yaml:"priority_reasoning,omitempty" json:"priority_reasoning,omitempty"`
+
+            PriorityScore is the computed unblocking potential score (populated by
+            ScoreTierIMPLs in the engine before tier execution). PriorityReasoning
+            is a human-readable explanation (e.g. "unblocking(3x+100=+300), age(+0.0)").
+
+            ### 2. Add field to ProgramTier struct
+            After the existing Description field, add:
+              ConcurrencyCap int `yaml:"concurrency_cap,omitempty" json:"concurrency_cap,omitempty"`
+
+            ConcurrencyCap limits simultaneous IMPL launches within the tier.
+            0 means unlimited (all pending IMPLs launch in parallel — current behavior).
+            When set to N, the tier execution loop launches at most N IMPLs at a time,
+            choosing the highest-scored IMPLs first.
+
+            ## Tests
+            No new test file needed. The existing program_parser_test.go and
+            program_validation_test.go will exercise these fields via round-trip
+            YAML marshal/unmarshal. Verify they still pass. If any existing test
+            fixtures need updating (e.g., golden YAML files that compare struct output),
+            update them to include the new omitempty fields (they should round-trip
+            cleanly since both fields are omitempty).
+
+            ## Verification gate
+            cd /Users/dayna.blackwell/code/scout-and-wave-go && go build ./pkg/protocol/... && go vet ./pkg/protocol/... && go test ./pkg/protocol/...
+
+            ## Constraints
+            - Only modify program_types.go — no other files
+            - Use omitempty on all new fields (backward-compatible with existing PROGRAM manifests)
+            - Field names must match interface_contracts exactly — Agent C reads PriorityScore
+              from ProgramIMPL and ConcurrencyCap from ProgramTier
+            - Do not change existing field names or yaml tags
+          files:
+            - pkg/protocol/program_types.go
+      base_commit: 11ed9fb64340fe103fcb16afa8d1590870f18ed8
+    - number: 2
+      agents:
+        - id: C
+          task: |
+            ## Role
+            Integrate the unblocking potential scorer into the tier execution loop in
+            pkg/engine/program_auto.go and add tests in pkg/engine/program_auto_test.go.
+
+            ## Context
+            Agent A added UnblockingScore and PrioritizeIMPLs to pkg/protocol/program_prioritizer.go.
+            Agent B added PriorityScore, PriorityReasoning on ProgramIMPL, and ConcurrencyCap
+            on ProgramTier to pkg/protocol/program_types.go.
+
+            ## What to implement
+
+            ### 1. Add ScoreTierIMPLs to pkg/engine/program_auto.go
+
+            Implement the function matching the interface contract:
+              func ScoreTierIMPLs(manifest *protocol.PROGRAMManifest, tierNumber int) []string
+
+            Logic:
+            1. Find the ProgramTier with Number == tierNumber. If not found, return nil.
+            2. Collect all IMPL slugs in the tier whose Status is "pending".
+            3. For each slug, call protocol.UnblockingScore(manifest, slug) to get the score.
+            4. Build the reasoning string: if score > 0, format as
+               "unblocking(%dx+100=+%d), age(+0)" else "unblocking(0), age(+0)".
+            5. Write PriorityScore and PriorityReasoning back into the matching
+               ProgramIMPL entry in manifest.Impls (mutate in place).
+            6. Call protocol.PrioritizeIMPLs(manifest, pendingSlugs) to get the ordered list.
+            7. Return the ordered list (highest score first).
+
+            ### 2. Update AdvanceTierAutomatically to call ScoreTierIMPLs
+            After the existing step 4 (freeze contracts) and before returning AdvancedToNext=true,
+            if AdvancedToNext will be true, call ScoreTierIMPLs for the NextTier so that
+            priority scores are populated in the manifest before the caller launches IMPLs.
+            Store the ordered slug list in result.ScoredIMPLOrder (new field — add it to
+            TierAdvanceResult):
+              ScoredIMPLOrder []string `json:"scored_impl_order,omitempty"`
+
+            This lets the web app and CLI display the launch order before execution starts.
+
+            ### 3. Update TierAdvanceResult struct
+            Add:
+              ScoredIMPLOrder []string `json:"scored_impl_order,omitempty"`
+
+            ### 4. Concurrency cap awareness (informational only in this IMPL)
+            ScoreTierIMPLs already returns slugs in priority order. The caller (web app
+            or CLI) reads ConcurrencyCap from the tier and launches only the first
+            ConcurrencyCap slugs (or all if cap == 0). This IMPL does NOT change the
+            web app launch logic — that is a follow-on task. ScoreTierIMPLs returns the
+            full priority-ordered list; the caller is responsible for honoring the cap.
+            Add a comment in ScoreTierIMPLs noting this contract.
+
+            ## Tests (pkg/engine/program_auto_test.go)
+
+            Add tests for ScoreTierIMPLs:
+            - Single pending IMPL with no downstream deps: score=0, returned slice has 1 element
+            - Two pending IMPLs where one unblocks the other: higher-unblocking IMPL appears first
+            - ScoreTierIMPLs mutates manifest.Impls PriorityScore in place (verify via assertion)
+            - Non-pending IMPLs (status "complete") are excluded from the scored output
+
+            Extend or add tests for AdvanceTierAutomatically to verify:
+            - ScoredIMPLOrder is populated in result when AdvancedToNext=true
+            - ScoredIMPLOrder is empty when gate fails (RequiresReview=true)
+
+            ## Verification gate
+            cd /Users/dayna.blackwell/code/scout-and-wave-go && go build ./... && go vet ./... && go test ./pkg/engine/... -run TestScoreTier -v && go test ./pkg/engine/... -run TestAdvanceTier -v
+
+            ## Constraints
+            - Import protocol package (already imported in program_auto.go)
+            - Do not modify scheduler.go or any other engine file — only program_auto.go and program_auto_test.go
+            - TierAdvanceResult is defined in program_auto.go — add ScoredIMPLOrder there
+            - Do not change existing function signatures (AdvanceTierAutomatically signature is unchanged)
+            - ScoreTierIMPLs must handle missing tier gracefully (return nil, not panic)
+          files:
+            - pkg/engine/program_auto.go
+            - pkg/engine/program_auto_test.go
+          dependencies:
+            - A
+            - B
+quality_gates:
+    level: standard
+    gates:
+        - type: build
+          command: go build ./...
+          required: true
+        - type: lint
+          command: go vet ./...
+          required: true
+        - type: test
+          command: go test ./...
+          required: true
+completion_reports:
+    A:
+        status: complete
+        branch: saw/planner-dag-prioritization/wave1-agent-A
+        commit: 58acb0e
+        files_changed:
+            - pkg/protocol/program_prioritizer.go
+            - pkg/protocol/program_prioritizer_test.go
+        files_created:
+            - pkg/protocol/program_prioritizer.go
+            - pkg/protocol/program_prioritizer_test.go
+        tests_added:
+            - TestUnblockingScore_SingleNoDeps
+            - TestUnblockingScore_LinearChain
+            - TestUnblockingScore_Diamond
+            - TestUnblockingScore_CycleNoInfiniteLoop
+            - TestUnblockingScore_CompletedNotCounted
+            - TestUnblockingScore_InProgressNotCounted
+            - TestPrioritizeIMPLs_SortsDescending
+            - TestPrioritizeIMPLs_StableOnTies
+            - TestPrioritizeIMPLs_DoesNotMutateInput
+        verification: PASS
+    B:
+        status: complete
+        branch: saw/planner-dag-prioritization/wave1-agent-B
+        commit: 56ee973
+        files_changed:
+            - pkg/protocol/program_types.go
+        verification: PASS
+    C:
+        status: complete
+        branch: main
+        commit: 4ab7d85
+        files_changed:
+            - pkg/engine/program_auto.go
+            - pkg/engine/program_auto_test.go
+        tests_added:
+            - TestScoreTierIMPLs_SinglePendingNoDownstream
+            - TestScoreTierIMPLs_UnblockingIMPLAppearsFirst
+            - TestScoreTierIMPLs_MutatesManifestImplsPriorityScore
+            - TestScoreTierIMPLs_ExcludesNonPending
+            - TestScoreTierIMPLs_TierNotFound
+            - TestAdvanceTierAutomatically_ScoredIMPLOrder_PopulatedOnAdvance
+            - TestAdvanceTierAutomatically_ScoredIMPLOrder_EmptyOnGateFail
+        verification: PASS
+pre_mortem:
+    overall_risk: low
+    rows:
+        - scenario: |
+            ProgramIMPL.Status values are inconsistent across the codebase (e.g., "in_progress"
+            vs "IN_PROGRESS" or undocumented values), causing the pending/blocked filter in
+            countTransitivelyUnblocked to miss eligible IMPLs and return score=0 for everything.
+          likelihood: low
+          impact: medium
+          mitigation: |
+            Agent A should grep for all Status values used in program_types.go, test fixtures,
+            and the web app before writing the filter. Document the canonical set in a comment.
+            The test suite covers "pending", "blocked", "complete", "in_progress" explicitly.
+        - scenario: |
+            Agent C's mutation of manifest.Impls in ScoreTierIMPLs causes unexpected side effects
+            if the manifest struct is shared by reference across goroutines in the web app's
+            concurrent tier execution. Score writes are not protected by a mutex.
+          likelihood: low
+          impact: medium
+          mitigation: |
+            ScoreTierIMPLs is called once before launch, not during concurrent execution.
+            Add a comment noting it must be called before goroutines are spawned. If the web
+            app later introduces concurrent access, a mutex or copy-on-write approach is needed.
+        - scenario: |
+            The DependsOn field on ProgramIMPL stores IMPL slugs, but if any manifest uses
+            IMPL titles or partial slugs, the reverse dep graph lookup fails silently and
+            all scores return 0.
+          likelihood: low
+          impact: low
+          mitigation: |
+            Tests use exact slug strings. Agent A should add a test that verifies a slug
+            mismatch (dep references a non-existent slug) returns 0 without panicking.
+state: WAVE_PENDING

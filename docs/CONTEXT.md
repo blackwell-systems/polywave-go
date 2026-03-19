@@ -140,3 +140,5 @@ type BackendConfig struct {
   - IMPL doc: ../scout-and-wave-web/docs/IMPL/complete/IMPL-multi-repo-prepare-wave.yaml
 - **gate-timing-fix**: completed 2026-03-19, 2 waves, 2 agents
   - IMPL doc: ../scout-and-wave-web/docs/IMPL/complete/IMPL-gate-timing-fix.yaml
+- **planner-dag-prioritization**: completed 2026-03-19, 2 waves, 3 agents
+  - IMPL doc: docs/IMPL/complete/IMPL-planner-dag-prioritization.yaml
