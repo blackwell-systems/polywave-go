@@ -119,8 +119,8 @@ func TestMergeAgents_AllSucceed(t *testing.T) {
 	defer cleanup()
 
 	// Create two agent branches with non-conflicting files
-	createAgentBranch(t, repoDir, "wave1-agent-A", "file-a.txt")
-	createAgentBranch(t, repoDir, "wave1-agent-B", "file-b.txt")
+	createAgentBranch(t, repoDir, "saw/test-feature/wave1-agent-A", "file-a.txt")
+	createAgentBranch(t, repoDir, "saw/test-feature/wave1-agent-B", "file-b.txt")
 
 	// Create manifest
 	waves := []Wave{
@@ -160,8 +160,8 @@ func TestMergeAgents_AllSucceed(t *testing.T) {
 	if !result.Merges[0].Success {
 		t.Errorf("expected agent A merge to succeed, got error: %s", result.Merges[0].Error)
 	}
-	if result.Merges[0].Branch != "wave1-agent-A" {
-		t.Errorf("expected branch=wave1-agent-A, got %s", result.Merges[0].Branch)
+	if result.Merges[0].Branch != "saw/test-feature/wave1-agent-A" {
+		t.Errorf("expected branch=saw/test-feature/wave1-agent-A, got %s", result.Merges[0].Branch)
 	}
 
 	// Check agent B merge
@@ -192,7 +192,7 @@ func TestMergeAgents_ConflictStops(t *testing.T) {
 	readmePath := filepath.Join(repoDir, "README.md")
 
 	// Agent A modifies README - changes line 1
-	cmd := exec.Command("git", "-C", repoDir, "checkout", "-b", "wave1-agent-A")
+	cmd := exec.Command("git", "-C", repoDir, "checkout", "-b", "saw/test-feature/wave1-agent-A")
 	if err := cmd.Run(); err != nil {
 		t.Fatalf("failed to create branch: %v", err)
 	}
@@ -217,7 +217,7 @@ func TestMergeAgents_ConflictStops(t *testing.T) {
 	}
 
 	// Agent B also modifies README - changes the same line (will conflict after A merges)
-	cmd = exec.Command("git", "-C", repoDir, "checkout", "-b", "wave1-agent-B")
+	cmd = exec.Command("git", "-C", repoDir, "checkout", "-b", "saw/test-feature/wave1-agent-B")
 	if err := cmd.Run(); err != nil {
 		t.Fatalf("failed to create branch B: %v", err)
 	}
@@ -358,7 +358,7 @@ func TestMergeAgents_TaskTruncation(t *testing.T) {
 	defer cleanup()
 
 	// Create agent branch
-	createAgentBranch(t, repoDir, "wave1-agent-A", "file-a.txt")
+	createAgentBranch(t, repoDir, "saw/test-feature/wave1-agent-A", "file-a.txt")
 
 	// Create manifest with long task description
 	longTask := "This is a very long task description that exceeds fifty characters and should be truncated in the commit message"
@@ -391,7 +391,7 @@ func TestMergeAgents_TaskTruncation(t *testing.T) {
 
 	commitMsg := string(output)
 	// Task should be truncated to 50 chars
-	expectedMsg := "Merge wave1-agent-A: This is a very long task description that exceeds"
+	expectedMsg := "Merge saw/test-feature/wave1-agent-A: This is a very long task description that exceeds"
 	if commitMsg != expectedMsg {
 		t.Errorf("commit message not truncated correctly\ngot:  %q (len=%d)\nwant: %q (len=%d)", commitMsg, len(commitMsg), expectedMsg, len(expectedMsg))
 	}
@@ -403,8 +403,8 @@ func TestMergeAgents_SkipsAlreadyMergedAgents(t *testing.T) {
 	defer cleanup()
 
 	// Create two agent branches
-	createAgentBranch(t, repoDir, "wave1-agent-A", "file-a.txt")
-	createAgentBranch(t, repoDir, "wave1-agent-B", "file-b.txt")
+	createAgentBranch(t, repoDir, "saw/test-feature/wave1-agent-A", "file-a.txt")
+	createAgentBranch(t, repoDir, "saw/test-feature/wave1-agent-B", "file-b.txt")
 
 	// Create manifest
 	waves := []Wave{
@@ -420,7 +420,7 @@ func TestMergeAgents_SkipsAlreadyMergedAgents(t *testing.T) {
 
 	// Actually merge agent A so git confirms it's an ancestor of HEAD.
 	// The idempotency check requires BOTH the merge log AND git history to agree.
-	cmd := exec.Command("git", "-C", repoDir, "merge", "--no-ff", "-m", "Merge wave1-agent-A", "wave1-agent-A")
+	cmd := exec.Command("git", "-C", repoDir, "merge", "--no-ff", "-m", "Merge saw/test-feature/wave1-agent-A", "saw/test-feature/wave1-agent-A")
 	if err := cmd.Run(); err != nil {
 		t.Fatalf("failed to merge agent A: %v", err)
 	}
@@ -491,7 +491,7 @@ func TestMergeAgents_AppendsMergeLog(t *testing.T) {
 	defer cleanup()
 
 	// Create agent branch
-	createAgentBranch(t, repoDir, "wave1-agent-A", "file-a.txt")
+	createAgentBranch(t, repoDir, "saw/test-feature/wave1-agent-A", "file-a.txt")
 
 	// Create manifest
 	waves := []Wave{
@@ -552,9 +552,9 @@ func TestMergeAgents_IdempotentOnCrash(t *testing.T) {
 	defer cleanup()
 
 	// Create three agent branches
-	createAgentBranch(t, repoDir, "wave1-agent-A", "file-a.txt")
-	createAgentBranch(t, repoDir, "wave1-agent-B", "file-b.txt")
-	createAgentBranch(t, repoDir, "wave1-agent-C", "file-c.txt")
+	createAgentBranch(t, repoDir, "saw/test-feature/wave1-agent-A", "file-a.txt")
+	createAgentBranch(t, repoDir, "saw/test-feature/wave1-agent-B", "file-b.txt")
+	createAgentBranch(t, repoDir, "saw/test-feature/wave1-agent-C", "file-c.txt")
 
 	// Create manifest
 	waves := []Wave{
@@ -573,7 +573,7 @@ func TestMergeAgents_IdempotentOnCrash(t *testing.T) {
 	// Manually merge A and B and record in merge-log (simulating partial completion before crash)
 
 	// Merge agent A
-	cmd := exec.Command("git", "-C", repoDir, "merge", "--no-ff", "-m", "Merge wave1-agent-A", "wave1-agent-A")
+	cmd := exec.Command("git", "-C", repoDir, "merge", "--no-ff", "-m", "Merge saw/test-feature/wave1-agent-A", "saw/test-feature/wave1-agent-A")
 	if err := cmd.Run(); err != nil {
 		t.Fatalf("failed to merge agent A: %v", err)
 	}
@@ -583,7 +583,7 @@ func TestMergeAgents_IdempotentOnCrash(t *testing.T) {
 	mergeSHAA := string(output[:len(output)-1])
 
 	// Merge agent B
-	cmd = exec.Command("git", "-C", repoDir, "merge", "--no-ff", "-m", "Merge wave1-agent-B", "wave1-agent-B")
+	cmd = exec.Command("git", "-C", repoDir, "merge", "--no-ff", "-m", "Merge saw/test-feature/wave1-agent-B", "saw/test-feature/wave1-agent-B")
 	if err := cmd.Run(); err != nil {
 		t.Fatalf("failed to merge agent B: %v", err)
 	}
@@ -649,5 +649,127 @@ func TestMergeAgents_IdempotentOnCrash(t *testing.T) {
 		if !finalLog.IsMerged(agent) {
 			t.Errorf("expected agent %s to be in final merge-log", agent)
 		}
+	}
+}
+
+// TestMergeAgents_LegacyBranchFallback verifies that MergeAgents can merge
+// branches using the legacy naming format (wave{N}-agent-{ID}) when the
+// slug-scoped branch does not exist. This ensures backward compatibility
+// with branches created before v0.39.0.
+func TestMergeAgents_LegacyBranchFallback(t *testing.T) {
+	repoDir, cleanup := setupTestRepo(t)
+	defer cleanup()
+
+	// Create branches using legacy naming (no slug prefix)
+	createAgentBranch(t, repoDir, "wave1-agent-A", "file-a.txt")
+	createAgentBranch(t, repoDir, "wave1-agent-B", "file-b.txt")
+
+	// Create manifest (FeatureSlug = "test-feature", so code will first
+	// try saw/test-feature/wave1-agent-A which won't exist, then fall back
+	// to wave1-agent-A)
+	waves := []Wave{
+		{
+			Number: 1,
+			Agents: []Agent{
+				{ID: "A", Task: "Implement feature A"},
+				{ID: "B", Task: "Implement feature B"},
+			},
+		},
+	}
+	manifestPath := createManifest(t, repoDir, waves)
+
+	// Run merge
+	result, err := MergeAgents(manifestPath, 1, repoDir)
+	if err != nil {
+		t.Fatalf("MergeAgents returned error: %v", err)
+	}
+
+	// Verify result
+	if !result.Success {
+		t.Errorf("expected Success=true with legacy branches, got false")
+		for _, m := range result.Merges {
+			if !m.Success {
+				t.Logf("  agent %s failed: %s", m.Agent, m.Error)
+			}
+		}
+	}
+
+	if len(result.Merges) != 2 {
+		t.Fatalf("expected 2 merge statuses, got %d", len(result.Merges))
+	}
+
+	// Both agents should succeed via legacy fallback
+	for _, m := range result.Merges {
+		if !m.Success {
+			t.Errorf("expected agent %s merge to succeed via legacy fallback, got error: %s", m.Agent, m.Error)
+		}
+		// Branch should be updated to legacy name since that's what was found
+		if m.Branch != "wave1-agent-"+m.Agent {
+			t.Errorf("expected legacy branch name for agent %s, got %s", m.Agent, m.Branch)
+		}
+	}
+
+	// Verify files exist
+	for _, file := range []string{"file-a.txt", "file-b.txt"} {
+		filePath := filepath.Join(repoDir, file)
+		if _, err := os.Stat(filePath); os.IsNotExist(err) {
+			t.Errorf("%s does not exist after legacy fallback merge", file)
+		}
+	}
+}
+
+// TestVerifyCommits_LegacyBranchFallback verifies that VerifyCommits can find
+// commits on legacy-named branches when slug-scoped branches don't exist.
+func TestVerifyCommits_LegacyBranchFallback(t *testing.T) {
+	repoDir, cleanup := createTestRepo(t)
+	defer cleanup()
+
+	// Create manifest
+	manifestPath := filepath.Join(repoDir, "manifest.yaml")
+	manifestContent := `title: Test Feature
+feature_slug: test-feature
+waves:
+  - number: 1
+    agents:
+      - id: A
+        task: Implement feature A
+        files:
+          - pkg/feature_a.go
+`
+	if err := os.WriteFile(manifestPath, []byte(manifestContent), 0644); err != nil {
+		t.Fatalf("failed to write manifest: %v", err)
+	}
+
+	// Commit manifest
+	cmd := exec.Command("git", "add", "manifest.yaml")
+	cmd.Dir = repoDir
+	cmd.Run()
+	cmd = exec.Command("git", "commit", "-m", "Add manifest")
+	cmd.Dir = repoDir
+	cmd.Run()
+
+	// Create branch with legacy name (no slug prefix)
+	createBranchWithCommits(t, repoDir, "wave1-agent-A", 1)
+
+	// Verify commits - should find via legacy fallback
+	result, err := VerifyCommits(manifestPath, 1, repoDir)
+	if err != nil {
+		t.Fatalf("VerifyCommits failed: %v", err)
+	}
+
+	if !result.AllValid {
+		t.Errorf("expected AllValid=true with legacy branch fallback, got false")
+	}
+
+	if len(result.Agents) != 1 {
+		t.Fatalf("expected 1 agent status, got %d", len(result.Agents))
+	}
+
+	agentA := result.Agents[0]
+	if !agentA.HasCommits {
+		t.Errorf("expected HasCommits=true for agent A via legacy fallback")
+	}
+	if agentA.CommitCount != 1 {
+		t.Errorf("expected 1 commit for agent A, got %d", agentA.CommitCount)
 	}
 }

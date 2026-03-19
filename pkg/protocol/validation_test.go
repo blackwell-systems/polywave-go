@@ -913,6 +913,7 @@ func TestValidateGateTypes_Valid(t *testing.T) {
 				{Type: "lint", Command: "golint", Required: true},
 				{Type: "test", Command: "go test", Required: true},
 				{Type: "typecheck", Command: "go vet", Required: false},
+				{Type: "format", Command: "gofmt -l .", Required: false},
 				{Type: "custom", Command: "./custom.sh", Required: false},
 			},
 		},
@@ -921,6 +922,44 @@ func TestValidateGateTypes_Valid(t *testing.T) {
 	errs := validateGateTypes(m)
 	if len(errs) != 0 {
 		t.Errorf("Expected no errors for valid gate types, got %d: %v", len(errs), errs)
+	}
+}
+
+// TestValidateGateTypes_FormatIsValid tests that "format" is now a valid gate type.
+func TestValidateGateTypes_FormatIsValid(t *testing.T) {
+	m := &IMPLManifest{
+		QualityGates: &QualityGates{
+			Level: "standard",
+			Gates: []QualityGate{
+				{Type: "format", Command: "gofmt -l .", Required: false},
+			},
+		},
+	}
+
+	errs := validateGateTypes(m)
+	if len(errs) != 0 {
+		t.Errorf("Expected no errors for format gate type, got %d: %v", len(errs), errs)
+	}
+}
+
+// TestFixGateTypes_FormatNotRewrittenToCustom tests that "format" is now a valid gate type
+// and FixGateTypes does NOT rewrite it to "custom".
+func TestFixGateTypes_FormatNotRewrittenToCustom(t *testing.T) {
+	m := &IMPLManifest{
+		QualityGates: &QualityGates{
+			Level: "standard",
+			Gates: []QualityGate{
+				{Type: "format", Command: "gofmt -l .", Required: false},
+			},
+		},
+	}
+
+	fixed := FixGateTypes(m)
+	if fixed != 0 {
+		t.Errorf("Expected 0 fixes (format is valid), got %d", fixed)
+	}
+	if m.QualityGates.Gates[0].Type != "format" {
+		t.Errorf("Expected gate type to remain 'format', got %q", m.QualityGates.Gates[0].Type)
 	}
 }
 
@@ -1086,6 +1125,104 @@ func TestValidateMultiRepoConsistency_Empty(t *testing.T) {
 	errs := validateMultiRepoConsistency(m)
 	if len(errs) != 0 {
 		t.Errorf("Expected no errors for empty ownership, got %d: %v", len(errs), errs)
+	}
+}
+
+// TestValidate_E16Enhancements_DuplicateKey tests that a manifest with a duplicate YAML key
+// causes ValidateDuplicateKeys to return E16_DUPLICATE_KEY.
+func TestValidate_E16Enhancements_DuplicateKey(t *testing.T) {
+	rawYAML := []byte(`title: Test Feature
+feature_slug: test-feature
+state: WAVE_PENDING
+state: COMPLETE
+verdict: SUITABLE
+`)
+	errs := ValidateDuplicateKeys(rawYAML)
+	if len(errs) != 1 {
+		t.Fatalf("Expected 1 error, got %d: %v", len(errs), errs)
+	}
+	if errs[0].Code != "E16_DUPLICATE_KEY" {
+		t.Errorf("Expected E16_DUPLICATE_KEY, got %s", errs[0].Code)
+	}
+	if errs[0].Field != "state" {
+		t.Errorf("Expected field 'state', got %s", errs[0].Field)
+	}
+}
+
+// TestValidate_E16Enhancements_InvalidAction tests that a file_ownership entry with
+// action="update" causes ValidateActionEnums to return E16_INVALID_ACTION.
+func TestValidate_E16Enhancements_InvalidAction(t *testing.T) {
+	m := &IMPLManifest{
+		Title:       "Test Feature",
+		FeatureSlug: "test-feature",
+		Verdict:     "SUITABLE",
+		FileOwnership: []FileOwnership{
+			{File: "pkg/foo.go", Agent: "A", Wave: 1, Action: "update"},
+		},
+	}
+	errs := ValidateActionEnums(m)
+	if len(errs) != 1 {
+		t.Fatalf("Expected 1 error, got %d: %v", len(errs), errs)
+	}
+	if errs[0].Code != "E16_INVALID_ACTION" {
+		t.Errorf("Expected E16_INVALID_ACTION, got %s", errs[0].Code)
+	}
+}
+
+// TestValidate_E16Enhancements_MissingChecklist tests that a new handler without a
+// post_merge_checklist causes ValidateIntegrationChecklist to return E16_MISSING_CHECKLIST.
+func TestValidate_E16Enhancements_MissingChecklist(t *testing.T) {
+	m := &IMPLManifest{
+		Title:       "Test Feature",
+		FeatureSlug: "test-feature",
+		Verdict:     "SUITABLE",
+		FileOwnership: []FileOwnership{
+			{File: "pkg/api/widget_handler.go", Agent: "A", Wave: 1, Action: "new"},
+		},
+		PostMergeChecklist: nil,
+	}
+	errs := ValidateIntegrationChecklist(m, "")
+	if len(errs) != 1 {
+		t.Fatalf("Expected 1 error, got %d: %v", len(errs), errs)
+	}
+	if errs[0].Code != "E16_MISSING_CHECKLIST" {
+		t.Errorf("Expected E16_MISSING_CHECKLIST, got %s", errs[0].Code)
+	}
+	if errs[0].Field != "post_merge_checklist" {
+		t.Errorf("Expected field 'post_merge_checklist', got %s", errs[0].Field)
+	}
+}
+
+// TestValidate_E16Enhancements_AllPass tests that a fully valid manifest passes all E16 checks.
+func TestValidate_E16Enhancements_AllPass(t *testing.T) {
+	m := &IMPLManifest{
+		Title:       "Valid Feature",
+		FeatureSlug: "valid-feature",
+		Verdict:     "SUITABLE",
+		FileOwnership: []FileOwnership{
+			{File: "pkg/foo.go", Agent: "A", Wave: 1, Action: "new"},
+			{File: "pkg/bar.go", Agent: "B", Wave: 1, Action: "modify"},
+		},
+	}
+
+	actionErrs := ValidateActionEnums(m)
+	if len(actionErrs) != 0 {
+		t.Errorf("Expected no action errors, got %d: %v", len(actionErrs), actionErrs)
+	}
+
+	checklistErrs := ValidateIntegrationChecklist(m, "")
+	if len(checklistErrs) != 0 {
+		t.Errorf("Expected no checklist errors, got %d: %v", len(checklistErrs), checklistErrs)
+	}
+
+	fileExistErrs := ValidateFileExistence(m, "")
+	if len(fileExistErrs) != 0 {
+		t.Errorf("Expected no file existence errors (repoPath empty), got %d: %v", len(fileExistErrs), fileExistErrs)
+	}
+
+	dupKeyErrs := ValidateDuplicateKeys([]byte("title: Valid Feature\nfeature_slug: valid-feature\nverdict: SUITABLE\n"))
+	if len(dupKeyErrs) != 0 {
+		t.Errorf("Expected no duplicate key errors, got %d: %v", len(dupKeyErrs), dupKeyErrs)
 	}
 }
 

@@ -189,6 +189,58 @@ func TestValidateWorktreeNames_InvalidPath(t *testing.T) {
 	}
 }
 
+func TestValidateWorktreeNames_ScopedBranch(t *testing.T) {
+	m := &IMPLManifest{
+		Waves: []Wave{
+			{
+				Number: 1,
+				Agents: []Agent{
+					{ID: "A", Task: "task a", Files: []string{"file1.go"}},
+				},
+			},
+		},
+		CompletionReports: map[string]CompletionReport{
+			"A": {
+				Status:   "complete",
+				Branch:   "saw/my-feature/wave1-agent-A",
+				Worktree: ".claude/worktrees/saw/my-feature/wave1-agent-A",
+				Commit:   "abc123",
+			},
+		},
+	}
+
+	errs := ValidateWorktreeNames(m)
+	if len(errs) != 0 {
+		t.Errorf("Expected no errors for scoped branch names, got %d: %v", len(errs), errs)
+	}
+}
+
+func TestValidateWorktreeNames_ScopedBranchAbsolutePath(t *testing.T) {
+	m := &IMPLManifest{
+		Waves: []Wave{
+			{
+				Number: 2,
+				Agents: []Agent{
+					{ID: "B", Task: "task b", Files: []string{"file1.go"}},
+				},
+			},
+		},
+		CompletionReports: map[string]CompletionReport{
+			"B": {
+				Status:   "complete",
+				Branch:   "saw/slug-scoped-branches/wave2-agent-B",
+				Worktree: "/home/user/repo/.claude/worktrees/saw/slug-scoped-branches/wave2-agent-B",
+				Commit:   "def456",
+			},
+		},
+	}
+
+	errs := ValidateWorktreeNames(m)
+	if len(errs) != 0 {
+		t.Errorf("Expected no errors for scoped branch with absolute path, got %d: %v", len(errs), errs)
+	}
+}
+
 func TestValidateWorktreeNames_MultiDigitAgentID(t *testing.T) {
 	m := &IMPLManifest{
 		Waves: []Wave{

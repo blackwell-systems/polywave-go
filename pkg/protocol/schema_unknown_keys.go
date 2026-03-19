@@ -2,6 +2,7 @@ package protocol
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 
 	"gopkg.in/yaml.v3"
@@ -25,6 +26,8 @@ var knownKeys = map[string]map[string]bool{
 		"scaffolds":              true,
 		"completion_reports":     true,
 		"stub_reports":           true,
+		"integration_reports":    true,
+		"integration_connectors": true,
 		"pre_mortem":             true,
 		"known_issues":           true,
 		"state":                  true,
@@ -44,6 +47,7 @@ var knownKeys = map[string]map[string]bool{
 	},
 	"wave": {
 		"number":             true,
+		"type":               true,
 		"agents":             true,
 		"agent_launch_order": true,
 		"base_commit":        true,
@@ -70,6 +74,7 @@ var knownKeys = map[string]map[string]bool{
 		"command":     true,
 		"required":    true,
 		"description": true,
+		"repo":        true,
 	},
 	"scaffold": {
 		"file_path":   true,
@@ -243,4 +248,54 @@ func checkSequenceOfMappings(node *yaml.Node, context, parentPath string, errs *
 // formatKeyPath builds a dot-separated path with array indices for error messages.
 func formatKeyPath(parts []string) string {
 	return strings.Join(parts, ".")
+}
+
+// StripUnknownKeys removes unknown top-level YAML keys from raw YAML bytes.
+// It parses into a yaml.Node tree, removes key-value pairs where the key is
+// not in knownKeys["top"], and re-marshals. This preserves YAML structure for
+// known keys. Returns the cleaned YAML bytes, the list of stripped key names,
+// and any error.
+func StripUnknownKeys(yamlData []byte) ([]byte, []string, error) {
+	var doc yaml.Node
+	if err := yaml.Unmarshal(yamlData, &doc); err != nil {
+		return nil, nil, fmt.Errorf("StripUnknownKeys: parse YAML: %w", err)
+	}
+
+	if doc.Kind != yaml.DocumentNode || len(doc.Content) == 0 {
+		return yamlData, nil, nil
+	}
+	root := doc.Content[0]
+	if root.Kind != yaml.MappingNode {
+		return yamlData, nil, nil
+	}
+
+	known := knownKeys["top"]
+	var stripped []string
+	var cleaned []*yaml.Node
+
+	// Walk key-value pairs, keeping only known keys
+	for i := 0; i+1 < len(root.Content); i += 2 {
+		keyNode := root.Content[i]
+		valNode := root.Content[i+1]
+
+		if known[keyNode.Value] {
+			cleaned = append(cleaned, keyNode, valNode)
+		} else {
+			stripped = append(stripped, keyNode.Value)
+		}
+	}
+
+	if len(stripped) == 0 {
+		return yamlData, nil, nil
+	}
+
+	sort.Strings(stripped)
+	root.Content = cleaned
+
+	out, err := yaml.Marshal(&doc)
+	if err != nil {
+		return nil, nil, fmt.Errorf("StripUnknownKeys: marshal YAML: %w", err)
+	}
+
+	return out, stripped, nil
 }

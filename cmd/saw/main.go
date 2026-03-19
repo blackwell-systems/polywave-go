@@ -48,6 +48,13 @@ func main() {
 		newRunScoutCmd(), // I3: Phase 5 integration
 		newVerifyHookInstalledCmd(),
 		newValidateIntegrationCmd(),
+		newRetryCmd(),
+		newBuildRetryContextCmd(),
+		newResumeDetectCmd(),
+		newDaemonCmd(),
+		newValidateProgramCmd(),
+		newListProgramsCmd(),
+		newPopulateIntegrationChecklistCmd(), // M5: integration checklist
 	)
 	if err := rootCmd.Execute(); err != nil {
 		fmt.Fprintln(os.Stderr, err)

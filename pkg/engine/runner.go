@@ -21,6 +21,7 @@ import (
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/journal"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/orchestrator"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/retryctx"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/suitability"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/types"
 	"gopkg.in/yaml.v3"
@@ -66,15 +67,27 @@ func RunScout(ctx context.Context, opts RunScoutOpts, onChunk func(string)) erro
 	// Run automation tools (H1a, H2, H3) before launching Scout.
 	automationContext := runScoutAutomation(opts.RepoPath, opts.Feature)
 
+	// Load program contracts if ProgramManifestPath is set.
+	programContractsSection := ""
+	if opts.ProgramManifestPath != "" {
+		manifest, parseErr := protocol.ParseProgramManifest(opts.ProgramManifestPath)
+		if parseErr != nil {
+			// Non-fatal: log warning and continue without program contracts
+			fmt.Fprintf(os.Stderr, "engine.RunScout: failed to parse PROGRAM manifest (continuing without contracts): %v\n", parseErr)
+		} else {
+			programContractsSection = buildProgramContractsSection(manifest, opts.RepoPath)
+		}
+	}
+
 	// E17: Prepend docs/CONTEXT.md if present, so Scout has project memory.
 	contextMD := readContextMD(opts.RepoPath)
 	var prompt string
 	if contextMD != "" {
-		prompt = fmt.Sprintf("## Project Memory (docs/CONTEXT.md)\n\n%s\n\n%s\n\n## Feature\n%s\n\n%s\n\n## IMPL Output Path\n%s\n",
-			contextMD, string(scoutMdBytes), opts.Feature, automationContext, opts.IMPLOutPath)
+		prompt = fmt.Sprintf("## Project Memory (docs/CONTEXT.md)\n\n%s\n\n%s%s\n\n## Feature\n%s\n\n%s\n\n## IMPL Output Path\n%s\n",
+			contextMD, programContractsSection, string(scoutMdBytes), opts.Feature, automationContext, opts.IMPLOutPath)
 	} else {
-		prompt = fmt.Sprintf("%s\n\n## Feature\n%s\n\n%s\n\n## IMPL Output Path\n%s\n",
-			string(scoutMdBytes), opts.Feature, automationContext, opts.IMPLOutPath)
+		prompt = fmt.Sprintf("%s%s\n\n## Feature\n%s\n\n%s\n\n## IMPL Output Path\n%s\n",
+			programContractsSection, string(scoutMdBytes), opts.Feature, automationContext, opts.IMPLOutPath)
 	}
 
 	var execErr error
@@ -102,6 +115,64 @@ func RunScout(ctx context.Context, opts RunScoutOpts, onChunk func(string)) erro
 		}
 	}
 
+	return execErr
+}
+
+// RunPlanner executes a Planner agent to produce a PROGRAM manifest.
+// Mirrors RunScout but reads agents/planner.md and writes docs/PROGRAM-*.yaml.
+func RunPlanner(ctx context.Context, opts RunPlannerOpts, onChunk func(string)) error {
+	if opts.Description == "" {
+		return fmt.Errorf("engine.RunPlanner: Description is required")
+	}
+	if opts.RepoPath == "" {
+		return fmt.Errorf("engine.RunPlanner: RepoPath is required")
+	}
+	if opts.ProgramOutPath == "" {
+		return fmt.Errorf("engine.RunPlanner: ProgramOutPath is required")
+	}
+
+	sawRepo := opts.SAWRepoPath
+	if sawRepo == "" {
+		sawRepo = os.Getenv("SAW_REPO")
+	}
+	if sawRepo == "" {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return fmt.Errorf("engine.RunPlanner: cannot determine home directory: %w", err)
+		}
+		sawRepo = filepath.Join(home, "code", "scout-and-wave")
+	}
+
+	// Load planner.md prompt with fallback.
+	plannerMdPath := filepath.Join(sawRepo, "agents", "planner.md")
+	plannerMdBytes, err := os.ReadFile(plannerMdPath)
+	if err != nil {
+		plannerMdBytes = []byte("You are a Planner agent. Analyze the project requirements and produce a PROGRAM manifest at the specified output path. Decompose the project into features organized into dependency-ordered tiers. Define cross-feature program contracts for shared types/APIs.")
+	}
+
+	// E17: Prepend docs/CONTEXT.md if present.
+	contextMD := readContextMD(opts.RepoPath)
+	var prompt string
+	if contextMD != "" {
+		prompt = fmt.Sprintf("## Project Memory (docs/CONTEXT.md)\n\n%s\n\n%s\n\n## Project Description\n%s\n\n## PROGRAM Output Path\n%s\n",
+			contextMD, string(plannerMdBytes), opts.Description, opts.ProgramOutPath)
+	} else {
+		prompt = fmt.Sprintf("%s\n\n## Project Description\n%s\n\n## PROGRAM Output Path\n%s\n",
+			string(plannerMdBytes), opts.Description, opts.ProgramOutPath)
+	}
+
+	model := opts.PlannerModel
+	if model == "" {
+		model = "claude-sonnet-4-6"
+	}
+
+	b, bErr := orchestrator.NewBackendFromModel(model)
+	if bErr != nil {
+		return fmt.Errorf("engine.RunPlanner: backend init: %w", bErr)
+	}
+	runner := agent.NewRunner(b, nil)
+	spec := &types.AgentSpec{Letter: "planner", Prompt: prompt}
+	_, execErr := runner.ExecuteStreamingWithTools(ctx, spec, opts.RepoPath, onChunk, nil)
 	return execErr
 }
 
@@ -249,7 +320,11 @@ func StartWave(ctx context.Context, opts RunWaveOpts, onEvent func(Event)) error
 	})
 
 	// Run scaffold if needed.
-	if err := RunScaffold(ctx, opts.IMPLPath, opts.RepoPath, "", "", onEvent); err != nil {
+	scaffoldModel := opts.ScaffoldModel
+	if scaffoldModel == "" {
+		scaffoldModel = opts.WaveModel
+	}
+	if err := RunScaffold(ctx, opts.IMPLPath, opts.RepoPath, "", scaffoldModel, onEvent); err != nil {
 		publish("run_failed", map[string]string{"error": err.Error()})
 		return fmt.Errorf("engine.StartWave: scaffold: %w", err)
 	}
@@ -262,6 +337,20 @@ func StartWave(ctx context.Context, opts RunWaveOpts, onEvent func(Event)) error
 
 	for i, wave := range waves {
 		waveNum := wave.Number
+
+		// Pre-create worktrees via protocol (handles multi-repo from file ownership).
+		wtResult, wtErr := protocol.CreateWorktrees(opts.IMPLPath, waveNum, opts.RepoPath)
+		if wtErr != nil {
+			publish("run_failed", map[string]string{"error": wtErr.Error()})
+			return fmt.Errorf("engine.StartWave: CreateWorktrees wave %d: %w", waveNum, wtErr)
+		}
+		// Pass pre-computed worktree paths to orchestrator so launchAgent
+		// uses the correct (potentially cross-repo) paths.
+		wtPaths := make(map[string]string, len(wtResult.Worktrees))
+		for _, wt := range wtResult.Worktrees {
+			wtPaths[wt.Agent] = wt.Path
+		}
+		orch.SetWorktreePaths(wtPaths)
 
 		if err := orch.RunWave(waveNum); err != nil {
 			publish("run_failed", map[string]string{"error": err.Error()})
@@ -600,6 +689,23 @@ func RunSingleWave(ctx context.Context, opts RunWaveOpts, waveNum int, onEvent f
 	orch.SetEventPublisher(func(ev orchestrator.OrchestratorEvent) {
 		onEvent(Event{Event: ev.Event, Data: ev.Data})
 	})
+
+	// Use protocol.CreateWorktrees for cross-repo awareness. It reads the
+	// file_ownership repo: field and creates worktrees in sibling repos when
+	// needed. Feed the resulting paths into the orchestrator so launchAgent
+	// uses the correct worktree for each agent.
+	wtResult, err := protocol.CreateWorktrees(opts.IMPLPath, waveNum, opts.RepoPath)
+	if err != nil {
+		return fmt.Errorf("engine.RunSingleWave: create worktrees: %w", err)
+	}
+	if wtResult != nil && len(wtResult.Worktrees) > 0 {
+		paths := make(map[string]string, len(wtResult.Worktrees))
+		for _, wt := range wtResult.Worktrees {
+			paths[wt.Agent] = wt.Path
+		}
+		orch.SetWorktreePaths(paths)
+	}
+
 	return orch.RunWave(waveNum)
 }
 
@@ -620,6 +726,23 @@ func RunSingleAgent(ctx context.Context, opts RunWaveOpts, waveNum int, agentLet
 	orch.SetEventPublisher(func(ev orchestrator.OrchestratorEvent) {
 		onEvent(Event{Event: ev.Event, Data: ev.Data})
 	})
+
+	// Auto-inject retry context when no explicit promptPrefix is provided
+	// and the agent has a prior non-complete completion report.
+	if promptPrefix == "" {
+		manifest, loadErr := protocol.Load(opts.IMPLPath)
+		if loadErr == nil {
+			if report, ok := manifest.CompletionReports[agentLetter]; ok && report.Status != "complete" {
+				rc, rcErr := retryctx.BuildRetryContext(opts.IMPLPath, agentLetter, 1)
+				if rcErr != nil {
+					fmt.Fprintf(os.Stderr, "engine.RunSingleAgent: retry context (best-effort): %v\n", rcErr)
+				} else if rc != nil && rc.PromptText != "" {
+					promptPrefix = rc.PromptText
+				}
+			}
+		}
+	}
+
 	return orch.RunAgent(waveNum, agentLetter, promptPrefix)
 }
 
@@ -998,6 +1121,75 @@ func detectRequirementsFile(repoPath string, featureDescription string) string {
 	}
 
 	return ""
+}
+
+// buildProgramContractsSection extracts frozen program contracts from a PROGRAM
+// manifest and formats them as a markdown section to prepend to the Scout prompt.
+// Only includes contracts whose FreezeAt references an IMPL in a completed tier.
+func buildProgramContractsSection(manifest *protocol.PROGRAMManifest, repoPath string) string {
+	if manifest == nil || len(manifest.ProgramContracts) == 0 {
+		return ""
+	}
+
+	// Build a set of completed IMPL slugs by checking each tier
+	completedImpls := make(map[string]bool)
+	for _, tier := range manifest.Tiers {
+		allComplete := true
+		for _, implSlug := range tier.Impls {
+			// Find the IMPL in manifest.Impls
+			var implStatus string
+			for _, impl := range manifest.Impls {
+				if impl.Slug == implSlug {
+					implStatus = impl.Status
+					break
+				}
+			}
+			if implStatus != "complete" {
+				allComplete = false
+				break
+			}
+		}
+		// If all IMPLs in this tier are complete, mark them
+		if allComplete {
+			for _, implSlug := range tier.Impls {
+				completedImpls[implSlug] = true
+			}
+		}
+	}
+
+	// Extract frozen contracts
+	var frozenContracts []protocol.ProgramContract
+	for _, contract := range manifest.ProgramContracts {
+		if contract.FreezeAt != "" {
+			// Parse freeze_at format: "impl:<slug>" or just "<slug>"
+			freezeSlug := strings.TrimPrefix(contract.FreezeAt, "impl:")
+			if completedImpls[freezeSlug] {
+				frozenContracts = append(frozenContracts, contract)
+			}
+		}
+	}
+
+	if len(frozenContracts) == 0 {
+		return ""
+	}
+
+	// Build markdown section
+	var sb strings.Builder
+	sb.WriteString("## Program Contracts (Frozen — Do Not Redefine)\n\n")
+	sb.WriteString("The following types/APIs are defined by the PROGRAM manifest and are frozen. Use them as-is. Do not redefine or modify them.\n\n")
+
+	for _, contract := range frozenContracts {
+		sb.WriteString(fmt.Sprintf("### %s\n", contract.Name))
+		if contract.Description != "" {
+			sb.WriteString(fmt.Sprintf("%s\n\n", contract.Description))
+		}
+		sb.WriteString(fmt.Sprintf("Location: %s\n", contract.Location))
+		sb.WriteString("```go\n")
+		sb.WriteString(contract.Definition)
+		sb.WriteString("\n```\n\n")
+	}
+
+	return sb.String()
 }
 
 // startWaveWithGate runs waves with an inter-wave gate. gateCh receives true to

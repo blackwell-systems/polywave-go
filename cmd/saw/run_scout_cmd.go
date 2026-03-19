@@ -17,10 +17,11 @@ import (
 
 func newRunScoutCmd() *cobra.Command {
 	var (
-		repoPath    string
-		sawRepoPath string
-		scoutModel  string
-		timeout     int // minutes
+		repoPath            string
+		sawRepoPath         string
+		scoutModel          string
+		timeout             int    // minutes
+		programManifestPath string // path to PROGRAM manifest
 	)
 
 	cmd := &cobra.Command{
@@ -88,11 +89,12 @@ Output:
 
 			// Configure Scout run
 			opts := engine.RunScoutOpts{
-				Feature:     featureDesc,
-				RepoPath:    repoPath,
-				SAWRepoPath: sawRepoPath,
-				IMPLOutPath: implPath,
-				ScoutModel:  scoutModel,
+				Feature:             featureDesc,
+				RepoPath:            repoPath,
+				SAWRepoPath:         sawRepoPath,
+				IMPLOutPath:         implPath,
+				ScoutModel:          scoutModel,
+				ProgramManifestPath: programManifestPath,
 			}
 
 			// Launch Scout agent (streaming output to stdout)
@@ -114,7 +116,7 @@ Output:
 				return fmt.Errorf("run-scout: IMPL doc not found at %s after Scout completion", implPath)
 			}
 
-			// Step 3: Validate IMPL doc
+			// Step 3: Validate IMPL doc (defense-in-depth — Scout self-validates internally)
 			fmt.Printf("🔍 Validating IMPL doc...\n")
 			errs, err := protocol.ValidateIMPLDoc(implPath)
 			if err != nil {
@@ -216,6 +218,7 @@ Output:
 	cmd.Flags().StringVar(&sawRepoPath, "saw-repo", "", "Scout-and-Wave protocol repo path (default: $SAW_REPO or ~/code/scout-and-wave)")
 	cmd.Flags().StringVar(&scoutModel, "scout-model", "", "Scout model override (e.g., claude-opus-4-6)")
 	cmd.Flags().IntVar(&timeout, "timeout", 10, "Timeout in minutes (default: 10)")
+	cmd.Flags().StringVar(&programManifestPath, "program", "", "Path to PROGRAM manifest (Scout receives frozen contracts as input)")
 
 	return cmd
 }

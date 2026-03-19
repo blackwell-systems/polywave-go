@@ -1,6 +1,7 @@
 package protocol
 
 import (
+	"strings"
 	"testing"
 )
 
@@ -185,5 +186,95 @@ func TestDetectUnknownKeys_EmptyManifest(t *testing.T) {
 	errs := DetectUnknownKeys(yaml)
 	if len(errs) != 0 {
 		t.Errorf("expected no errors for empty manifest, got %d: %v", len(errs), errs)
+	}
+}
+
+func TestDetectUnknownKeys_IntegrationConnectors(t *testing.T) {
+	yamlData := []byte(`
+title: "Test"
+integration_connectors:
+  - name: "wire A->B"
+integration_reports:
+  A:
+    status: complete
+`)
+	errs := DetectUnknownKeys(yamlData)
+	if len(errs) != 0 {
+		t.Errorf("integration_connectors and integration_reports should be valid, got %d errors: %v", len(errs), errs)
+	}
+}
+
+func TestDetectUnknownKeys_QualityGateRepo(t *testing.T) {
+	yamlData := []byte(`
+title: "Test"
+quality_gates:
+  level: standard
+  gates:
+    - type: build
+      command: "go build ./..."
+      required: true
+      repo: scout-and-wave-go
+`)
+	errs := DetectUnknownKeys(yamlData)
+	if len(errs) != 0 {
+		t.Errorf("quality_gate.repo should be valid, got %d errors: %v", len(errs), errs)
+	}
+}
+
+func TestStripUnknownKeys_RemovesUnknown(t *testing.T) {
+	input := []byte(`title: "Test Feature"
+verdict: SUITABLE
+dep_graph: "some graph text"
+cascade_candidates:
+  - foo
+  - bar
+state: SCOUT_PENDING
+`)
+	cleaned, stripped, err := StripUnknownKeys(input)
+	if err != nil {
+		t.Fatalf("StripUnknownKeys returned error: %v", err)
+	}
+	if len(stripped) != 2 {
+		t.Fatalf("expected 2 stripped keys, got %d: %v", len(stripped), stripped)
+	}
+	// stripped is sorted
+	if stripped[0] != "cascade_candidates" || stripped[1] != "dep_graph" {
+		t.Errorf("expected [cascade_candidates dep_graph], got %v", stripped)
+	}
+	// Verify known keys are preserved
+	cleanedStr := string(cleaned)
+	if !strings.Contains(cleanedStr, "title:") {
+		t.Error("cleaned YAML should contain 'title'")
+	}
+	if !strings.Contains(cleanedStr, "verdict:") {
+		t.Error("cleaned YAML should contain 'verdict'")
+	}
+	if !strings.Contains(cleanedStr, "state:") {
+		t.Error("cleaned YAML should contain 'state'")
+	}
+	// Verify unknown keys are gone
+	if strings.Contains(cleanedStr, "dep_graph") {
+		t.Error("cleaned YAML should not contain 'dep_graph'")
+	}
+	if strings.Contains(cleanedStr, "cascade_candidates") {
+		t.Error("cleaned YAML should not contain 'cascade_candidates'")
+	}
+}
+
+func TestStripUnknownKeys_NoUnknown(t *testing.T) {
+	input := []byte(`title: "Test Feature"
+verdict: SUITABLE
+state: SCOUT_PENDING
+`)
+	cleaned, stripped, err := StripUnknownKeys(input)
+	if err != nil {
+		t.Fatalf("StripUnknownKeys returned error: %v", err)
+	}
+	if len(stripped) != 0 {
+		t.Errorf("expected 0 stripped keys, got %d: %v", len(stripped), stripped)
+	}
+	// Should return original bytes unchanged
+	if string(cleaned) != string(input) {
+		t.Error("expected original bytes returned when no unknown keys")
 	}
 }

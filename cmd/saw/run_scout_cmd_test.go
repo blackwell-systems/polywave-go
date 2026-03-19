@@ -1,6 +1,7 @@
 package main
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/types"
@@ -61,6 +62,40 @@ func TestGenerateSlug(t *testing.T) {
 				t.Errorf("generateSlug(%q) = %q, want %q", tt.feature, got, tt.want)
 			}
 		})
+	}
+}
+
+// TestRunScoutCmd_ProgramFlag tests that the --program flag is parsed and accepted.
+func TestRunScoutCmd_ProgramFlag(t *testing.T) {
+	// Create command
+	cmd := newRunScoutCmd()
+
+	// Check that the flag exists
+	programFlag := cmd.Flags().Lookup("program")
+	if programFlag == nil {
+		t.Fatal("expected --program flag to be defined, got nil")
+	}
+
+	// Check flag properties
+	if programFlag.Usage == "" {
+		t.Error("expected --program flag to have usage documentation")
+	}
+
+	// Verify the flag accepts a string value
+	if programFlag.Value.Type() != "string" {
+		t.Errorf("expected --program flag type 'string', got '%s'", programFlag.Value.Type())
+	}
+
+	// Verify the flag description mentions PROGRAM manifest
+	usage := strings.ToLower(programFlag.Usage)
+	if !strings.Contains(usage, "program") || !strings.Contains(usage, "manifest") {
+		t.Errorf("expected --program flag usage to mention PROGRAM manifest, got: %s", programFlag.Usage)
+	}
+
+	// The flag should have a default value of empty string
+	defaultValue := programFlag.DefValue
+	if defaultValue != "" {
+		t.Errorf("expected default value '', got '%s'", defaultValue)
 	}
 }
 

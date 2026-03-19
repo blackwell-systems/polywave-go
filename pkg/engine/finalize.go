@@ -6,7 +6,10 @@ import (
 	"os"
 	"time"
 
+	"path/filepath"
+
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/builddiag"
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/gatecache"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
 )
 
@@ -92,8 +95,10 @@ func FinalizeWave(ctx context.Context, opts FinalizeWaveOpts) (*FinalizeWaveResu
 		}
 	}
 
-	// Step 3: RunGates (E21)
-	gateResults, err := protocol.RunGates(manifest, opts.WaveNum, opts.RepoPath)
+	// Step 3: RunGates (E21) — with caching support
+	stateDir := filepath.Join(opts.RepoPath, ".saw-state")
+	cache := gatecache.New(stateDir, 5*time.Minute)
+	gateResults, err := protocol.RunGatesWithCache(manifest, opts.WaveNum, opts.RepoPath, cache)
 	if err != nil {
 		return result, fmt.Errorf("engine.FinalizeWave: run-gates: %w", err)
 	}
@@ -126,6 +131,13 @@ func FinalizeWave(ctx context.Context, opts FinalizeWaveOpts) (*FinalizeWaveResu
 		return result, fmt.Errorf("engine.FinalizeWave: merge-agents encountered conflicts")
 	}
 
+	// Step 4.5: Fix go.mod replace paths (worktree artifact defense-in-depth)
+	if fixed, err := protocol.FixGoModReplacePaths(opts.RepoPath); err != nil {
+		fmt.Fprintf(os.Stderr, "engine.FinalizeWave: go.mod fixup: %v\n", err)
+	} else if fixed {
+		fmt.Fprintf(os.Stderr, "engine.FinalizeWave: auto-corrected go.mod replace paths\n")
+	}
+
 	// Step 5: VerifyBuild
 	verifyBuildResult, err := protocol.VerifyBuild(opts.IMPLPath, opts.RepoPath)
 	if err != nil {
@@ -133,6 +145,17 @@ func FinalizeWave(ctx context.Context, opts FinalizeWaveOpts) (*FinalizeWaveResu
 	}
 	result.VerifyBuild = verifyBuildResult
 	result.BuildPassed = verifyBuildResult.TestPassed && verifyBuildResult.LintPassed
+
+	// Step 6: Cleanup — runs after merge regardless of build result.
+	// Once branches are merged, worktrees serve no purpose. Cleaning up here
+	// prevents stale worktrees from accumulating when builds fail.
+	cleanupResult, err := protocol.Cleanup(opts.IMPLPath, opts.WaveNum, opts.RepoPath)
+	if err != nil {
+		// Non-fatal: cleanup failure shouldn't fail the wave
+		fmt.Fprintf(os.Stderr, "engine.FinalizeWave: cleanup: %v\n", err)
+	} else {
+		result.CleanupResult = cleanupResult
+	}
 
 	if !result.BuildPassed {
 		// Auto-diagnose build failure using H7 pattern matching
@@ -146,15 +169,6 @@ func FinalizeWave(ctx context.Context, opts FinalizeWaveOpts) (*FinalizeWaveResu
 		}
 		return result, fmt.Errorf("engine.FinalizeWave: verify-build failed (test_passed=%v, lint_passed=%v)",
 			verifyBuildResult.TestPassed, verifyBuildResult.LintPassed)
-	}
-
-	// Step 6: Cleanup
-	cleanupResult, err := protocol.Cleanup(opts.IMPLPath, opts.WaveNum, opts.RepoPath)
-	if err != nil {
-		// Non-fatal: cleanup failure shouldn't fail the wave
-		fmt.Fprintf(os.Stderr, "engine.FinalizeWave: cleanup: %v\n", err)
-	} else {
-		result.CleanupResult = cleanupResult
 	}
 
 	result.Success = true

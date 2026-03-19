@@ -79,6 +79,19 @@ var worktreeCreatorFunc = func(wm *worktree.Manager, waveNum int, agentLetter st
 	return wm.Create(waveNum, agentLetter)
 }
 
+// implSlug loads the IMPL manifest and returns the feature slug.
+// Returns empty string if the manifest can't be loaded (backward compat).
+func (o *Orchestrator) implSlug() string {
+	if o.implDocPath == "" {
+		return ""
+	}
+	manifest, err := protocol.Load(o.implDocPath)
+	if err != nil {
+		return ""
+	}
+	return manifest.FeatureSlug
+}
+
 // waitForCompletionFunc is a seam for tests: wraps agent.WaitForCompletion.
 var waitForCompletionFunc = func(implDocPath, agentLetter string, timeout, pollInterval time.Duration) (*protocol.CompletionReport, error) {
 	return agent.WaitForCompletion(implDocPath, agentLetter, timeout, pollInterval)
@@ -332,13 +345,21 @@ type Orchestrator struct {
 	currentWave    int
 	implDocPath    string
 	eventPublisher EventPublisher
-	defaultModel   string // optional default model for wave agents (e.g. "claude-haiku-4-5")
+	defaultModel   string            // optional default model for wave agents (e.g. "claude-haiku-4-5")
+	worktreePaths  map[string]string // agent letter -> pre-computed worktree abs path (for multi-repo)
 }
 
 // SetDefaultModel sets the fallback model used for wave agents that have no
 // per-agent model: field in the IMPL doc. Empty string means use the CLI/API default.
 func (o *Orchestrator) SetDefaultModel(model string) {
 	o.defaultModel = model
+}
+
+// SetWorktreePaths provides pre-computed worktree paths for multi-repo execution.
+// Keys are agent letters, values are absolute worktree paths. When set,
+// launchAgent uses these instead of computing paths from o.repoPath.
+func (o *Orchestrator) SetWorktreePaths(paths map[string]string) {
+	o.worktreePaths = paths
 }
 
 // publish sends ev to the registered EventPublisher, if any.
@@ -437,7 +458,8 @@ func (o *Orchestrator) RunWave(waveNum int) error {
 	}
 
 	// Build the worktree manager and default agent runner.
-	wm := worktree.New(o.repoPath)
+	slug := o.implSlug()
+	wm := worktree.New(o.repoPath, slug)
 	defaultBackend, err := newBackendFunc(BackendConfig{Kind: "auto", Model: o.defaultModel})
 	if err != nil {
 		return fmt.Errorf("orchestrator.RunWave: failed to create backend: %w", err)
@@ -555,21 +577,56 @@ func (o *Orchestrator) launchAgent(
 	waveNum int,
 	agentSpec types.AgentSpec,
 ) error {
-	// a. Create the worktree.
-	wtPath, err := worktreeCreatorFunc(wm, waveNum, agentSpec.Letter)
-	if err != nil {
-		o.publish(OrchestratorEvent{
-			Event: "agent_failed",
-			Data: AgentFailedPayload{
-				Agent:       agentSpec.Letter,
-				Wave:        waveNum,
-				Status:      "failed",
-				FailureType: "worktree_creation",
-				Message:     err.Error(),
-			},
-		})
-		return fmt.Errorf("orchestrator: agent %s: create worktree: %w", agentSpec.Letter, err)
+	// a. Determine worktree path: use pre-computed multi-repo path if available,
+	// otherwise fall back to single-repo creation.
+	slug := o.implSlug()
+	branch := protocol.BranchName(slug, waveNum, agentSpec.Letter)
+	var wtPath string
+
+	if prePath, ok := o.worktreePaths[agentSpec.Letter]; ok {
+		// Multi-repo: worktree was pre-created by protocol.CreateWorktrees
+		wtPath = prePath
+		if _, statErr := os.Stat(wtPath); statErr != nil {
+			o.publish(OrchestratorEvent{
+				Event: "agent_failed",
+				Data: AgentFailedPayload{
+					Agent:       agentSpec.Letter,
+					Wave:        waveNum,
+					Status:      "failed",
+					FailureType: "worktree_missing",
+					Message:     fmt.Sprintf("pre-created worktree not found at %s", wtPath),
+				},
+			})
+			return fmt.Errorf("orchestrator: agent %s: pre-created worktree not found at %s", agentSpec.Letter, wtPath)
+		}
+	} else {
+		// Single-repo fallback: create worktree on demand
+		wtPath = filepath.Join(o.repoPath, ".claude", "worktrees", branch)
+		if _, statErr := os.Stat(wtPath); statErr == nil {
+			fmt.Fprintf(os.Stderr, "orchestrator: reusing existing worktree for agent %s at %s\n", agentSpec.Letter, wtPath)
+		} else {
+			var createErr error
+			wtPath, createErr = worktreeCreatorFunc(wm, waveNum, agentSpec.Letter)
+			if createErr != nil {
+				o.publish(OrchestratorEvent{
+					Event: "agent_failed",
+					Data: AgentFailedPayload{
+						Agent:       agentSpec.Letter,
+						Wave:        waveNum,
+						Status:      "failed",
+						FailureType: "worktree_creation",
+						Message:     createErr.Error(),
+					},
+				})
+				return fmt.Errorf("orchestrator: agent %s: create worktree: %w", agentSpec.Letter, createErr)
+			}
+		}
 	}
+
+	// Capture the worktree HEAD before the agent runs. This is the commit the
+	// worktree was created from — we compare against it after execution to detect
+	// whether the agent committed its own work (Bedrock agents commit via bash).
+	baseSHA, _ := git.RevParse(wtPath, "HEAD")
 
 	// Publish agent_started after the worktree is ready.
 	o.publish(OrchestratorEvent{
@@ -628,13 +685,17 @@ func (o *Orchestrator) launchAgent(
 			})
 		},
 	); err != nil {
+		failureType := "execute"
+		if strings.Contains(err.Error(), "maxTurns") {
+			failureType = "timeout"
+		}
 		o.publish(OrchestratorEvent{
 			Event: "agent_failed",
 			Data: AgentFailedPayload{
 				Agent:       agentSpec.Letter,
 				Wave:        waveNum,
 				Status:      "failed",
-				FailureType: "execute",
+				FailureType: failureType,
 				Message:     err.Error(),
 			},
 		})
@@ -650,9 +711,8 @@ func (o *Orchestrator) launchAgent(
 	// d. Auto-commit and synthesize completion report if the agent didn't write one.
 	// This bridges the gap between CLI agents (SAW-protocol-aware, commit + write report)
 	// and API/Bedrock agents (vanilla Claude, just write files via tools).
-	branch := fmt.Sprintf("wave%d-agent-%s", waveNum, agentSpec.Letter)
 	if report == nil {
-		commitSHA, filesChanged, autoErr := autoCommitWorktree(wtPath, waveNum, agentSpec.Letter)
+		commitSHA, filesChanged, autoErr := autoCommitWorktree(wtPath, waveNum, agentSpec.Letter, baseSHA)
 		if autoErr != nil {
 			fmt.Fprintf(os.Stderr, "orchestrator: auto-commit failed for agent %s: %v\n", agentSpec.Letter, autoErr)
 		}
@@ -666,7 +726,7 @@ func (o *Orchestrator) launchAgent(
 			commitSHA, _ = git.RevParse(wtPath, "HEAD")
 			notes = "no changes produced (API agent)"
 		}
-		synthReport := protocol.CompletionReport{
+		report = &protocol.CompletionReport{
 			Status:       "complete",
 			Worktree:     wtPath,
 			Branch:       branch,
@@ -674,14 +734,20 @@ func (o *Orchestrator) launchAgent(
 			FilesChanged: filesChanged,
 			Notes:        notes,
 		}
+	}
+
+	// e. Always persist the completion report to the main branch IMPL doc.
+	// Whether the agent wrote it (found in worktree) or we synthesized it,
+	// the main branch IMPL doc must have it for merge to proceed.
+	if report != nil {
 		reportMu.Lock()
 		if manifest, loadErr := protocol.Load(o.implDocPath); loadErr == nil {
-			if setErr := protocol.SetCompletionReport(manifest, agentSpec.Letter, synthReport); setErr == nil {
+			if setErr := protocol.SetCompletionReport(manifest, agentSpec.Letter, *report); setErr == nil {
 				if saveErr := protocol.Save(manifest, o.implDocPath); saveErr != nil {
-					fmt.Fprintf(os.Stderr, "orchestrator: failed to save synthetic report for agent %s: %v\n", agentSpec.Letter, saveErr)
+					fmt.Fprintf(os.Stderr, "orchestrator: failed to save report for agent %s: %v\n", agentSpec.Letter, saveErr)
 				}
 			} else {
-				fmt.Fprintf(os.Stderr, "orchestrator: failed to set synthetic report for agent %s: %v\n", agentSpec.Letter, setErr)
+				fmt.Fprintf(os.Stderr, "orchestrator: failed to set report for agent %s: %v\n", agentSpec.Letter, setErr)
 			}
 		}
 		reportMu.Unlock()
@@ -736,23 +802,32 @@ func (o *Orchestrator) launchAgent(
 }
 
 // autoCommitWorktree stages and commits all changes in the agent's worktree.
-// Returns (commitSHA, filesChanged, error). If the worktree is clean (no changes),
+// baseSHA is the worktree HEAD captured before the agent ran — used to detect
+// agent-committed work when the worktree appears clean.
+// Returns (commitSHA, filesChanged, error). If no changes were made,
 // returns ("", nil, nil).
-func autoCommitWorktree(wtPath string, waveNum int, agentLetter string) (string, []string, error) {
+func autoCommitWorktree(wtPath string, waveNum int, agentLetter string, baseSHA string) (string, []string, error) {
 	// Check if there are uncommitted changes.
 	status, err := git.StatusPorcelain(wtPath)
 	if err != nil {
 		return "", nil, fmt.Errorf("checking worktree status: %w", err)
 	}
 	if status == "" {
-		// Worktree is clean — agent may have already committed (e.g. CLI agent).
+		// Worktree is clean — agent may have already committed (via bash tool).
+		// Compare current HEAD against the base SHA captured before execution.
+		headSHA, _ := git.RevParse(wtPath, "HEAD")
+		if baseSHA != "" && headSHA != baseSHA {
+			// HEAD moved — agent committed its own work. Get changed files.
+			files, _ := git.ChangedFilesSinceRef(wtPath, baseSHA)
+			return headSHA, files, nil
+		}
 		return "", nil, nil
 	}
 
-	// Record base commit before staging.
-	baseSHA, err := git.RevParse(wtPath, "HEAD")
-	if err != nil {
-		return "", nil, fmt.Errorf("resolving HEAD: %w", err)
+	// If baseSHA wasn't provided (e.g. solo-agent path), resolve HEAD now
+	// so we can diff after committing.
+	if baseSHA == "" {
+		baseSHA, _ = git.RevParse(wtPath, "HEAD")
 	}
 
 	// Stage all changes.
@@ -760,8 +835,9 @@ func autoCommitWorktree(wtPath string, waveNum int, agentLetter string) (string,
 		return "", nil, fmt.Errorf("staging changes: %w", err)
 	}
 
-	// Commit.
+	// Commit. Use legacy format in commit message for readability.
 	msg := fmt.Sprintf("feat(wave%d-agent-%s): implement assigned files", waveNum, agentLetter)
+
 	commitSHA, err := git.Commit(wtPath, msg)
 	if err != nil {
 		return "", nil, fmt.Errorf("committing: %w", err)
@@ -815,7 +891,7 @@ func (o *Orchestrator) RunAgent(waveNum int, agentLetter string, promptPrefix st
 	}
 
 	// Build worktree manager and backend.
-	wm := worktree.New(o.repoPath)
+	wm := worktree.New(o.repoPath, o.implSlug())
 	b, err := newBackendFunc(BackendConfig{Kind: "auto", Model: o.defaultModel})
 	if err != nil {
 		return fmt.Errorf("orchestrator.RunAgent: create backend: %w", err)

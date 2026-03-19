@@ -113,7 +113,23 @@ func (ml *MergeLog) GetMergeSHA(agent string) string {
 }
 
 // getMergeLogPath returns the path to merge-log.json for a wave.
+// Namespaced by IMPL slug to prevent cross-IMPL merge log collisions
+// (all active IMPLs share docs/IMPL/ as their directory).
 func getMergeLogPath(manifestPath string, waveNum int) string {
 	manifestDir := filepath.Dir(manifestPath)
-	return filepath.Join(manifestDir, ".saw-state", fmt.Sprintf("wave%d", waveNum), "merge-log.json")
+	slug := extractSlugFromPath(manifestPath)
+	return filepath.Join(manifestDir, ".saw-state", slug, fmt.Sprintf("wave%d", waveNum), "merge-log.json")
+}
+
+// extractSlugFromPath extracts the IMPL slug from a manifest filename.
+// e.g. "docs/IMPL/IMPL-structured-error-parsing.yaml" → "structured-error-parsing"
+func extractSlugFromPath(manifestPath string) string {
+	base := filepath.Base(manifestPath)
+	base = strings.TrimPrefix(base, "IMPL-")
+	base = strings.TrimSuffix(base, ".yaml")
+	base = strings.TrimSuffix(base, ".yml")
+	if base == "" {
+		return "unknown"
+	}
+	return base
 }

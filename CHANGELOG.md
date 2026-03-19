@@ -8,6 +8,24 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 | Version | Date | Headline |
 |---------|------|----------|
+| [0.67.0] | 2026-03-18 | Defense-in-depth comment — run-scout validation step clarified as defense-in-depth (Scout self-validates internally) |
+| [0.66.0] | 2026-03-18 | Resume detect slug filter — `detectOrphanedWorktrees` now filters slug-scoped worktree branches by IMPL slug, preventing false positive interrupted session detection when multiple IMPLs have active worktrees |
+| [0.65.0] | 2026-03-18 | Cross-repo merge — `verifyAgentCommits` and `executeMergeWave` now resolve per-agent repos from file ownership; branches are checked, merged, and cleaned up in the correct sibling repo |
+| [0.64.0] | 2026-03-18 | Cross-repo worktree fix — `RunSingleWave` now calls `protocol.CreateWorktrees` (reads `repo:` field from file ownership) and feeds paths into `orch.SetWorktreePaths`; fixes agents E/F getting worktrees in the IMPL's repo instead of their target repo |
+| [0.63.0] | 2026-03-18 | Agent-committed work detection — `autoCommitWorktree` captures base SHA before agent execution, compares HEAD after; fixes Bedrock agents reporting "no changes produced" when they committed via bash tool |
+| [0.62.0] | 2026-03-17 | Scaffold model routing — add `ScaffoldModel` to `RunWaveOpts`, pass through to `RunScaffold` with `WaveModel` fallback; fixes scaffold agent falling back to CLI backend when Bedrock configured |
+| [0.61.0] | 2026-03-17 | SAW protocol gaps v1 — synced `knownKeys` map (`integration_connectors`, `integration_reports`, quality gate `repo`), `StripUnknownKeys` function (yaml.Node tree manipulation), wired into `validate --fix`, `git.WorktreePrune` + best-effort prune in `Cleanup()` |
+| [0.60.0] | 2026-03-17 | Structured error parsing — 5-agent IMPL complete: Go/JS/Python parsers (`pkg/errparse/`), parser registry with auto-detection, gate runner integration (`ParsedErrors` in gate results) |
+| [0.59.0] | 2026-03-17 | Merge log IMPL namespace — fix cross-IMPL merge log collision (all IMPLs shared `docs/IMPL/.saw-state/`), merge logs now namespaced by slug |
+| [0.58.0] | 2026-03-17 | Autonomy layer (R0-R5) — 9-agent IMPL: `pkg/autonomy/` levels+config, `pkg/queue/` manager, auto-remediate, closed-loop gate retry, daemon run loop, daemon CLI, resume detect fix, agent prompt enforcement |
+| [0.57.0] | 2026-03-16 | Batch command integration — gate caching in `finalize-wave`, resume detection in `prepare-wave`, error classification in `retry` agent task |
+| [0.56.0] | 2026-03-16 | Failure recovery UX — gate caching (`pkg/gatecache/`), classified retry context (`pkg/retryctx/`), resume detection (`pkg/resume/`), FixBuildFailure maxTurns 20→50 |
+| [0.55.0] | 2026-03-16 | E27: Wave.Type field + validator support — `type: "integration"` on Wave struct, schema_unknown_keys accepts `type` for wave objects |
+| [0.54.0] | 2026-03-16 | AI-powered build failure fixer — FixBuildFailure engine function uses SDK backend with full tool use (Read/Edit/Bash) to diagnose and fix test/gate failures post-merge, streams progress via OnOutput/OnToolCall callbacks |
+| [0.53.0] | 2026-03-16 | Streaming conflict resolution — RunStreaming replaces blocking Run in resolve_conflicts, enables real-time SSE output during AI merge conflict resolution |
+| [0.52.0] | 2026-03-16 | go.mod replace path enforcement — pre-commit hook blocks deep relative paths, post-merge auto-fixup in FinalizeWave |
+| [0.51.0] | 2026-03-16 | Stale branch auto-cleanup + worktree lifecycle fixes — BranchExists/IsAncestor cleanup in CreateWorktrees, cleanup runs after merge regardless of build result, mark-complete in early-return path |
+| [0.50.0] | 2026-03-16 | Worktree reuse + timeout failure type — rerun agents reuse existing worktrees, maxTurns emits failure_type "timeout" |
 | [0.49.0] | 2026-03-16 | Integration Agent engine (E25/E26) — 4-wave implementation: validation engine, heuristics, CLI, runner, constraints, manifest types, engine wiring |
 | [0.48.0] | 2026-03-15 | MR01 multi-repo consistency + list-impls state field — validator catches mixed repo: tags, list-impls adds state field, filters completed IMPLs by default (--include-complete to show) |
 | [0.47.0] | 2026-03-15 | Workshop constraints — tool-level SAW protocol enforcement (I1/I2/I5/I6 middleware), H6 dep checker prefix matching fix, orchestrator wiring |
@@ -56,6 +74,61 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 | [0.4.0] | 2026-03-09 | Per-agent model routing — ScoutModel/WaveModel opts, `model:` field in IMPL doc agent sections, per-agent backend dispatch |
 | [0.3.0] | 2026-03-08 | Protocol audit fixes — P0: failure_type parsing, multi-gen agent IDs; P1: E22 2-pass scaffold build, cross-repo Repo column; P2: repo field in completion reports |
 | [0.2.0] | 2026-03-08 | Engine protocol parity — E17–E23 implemented (context memory, failure routing, stub scan, quality gates, scaffold build verify, per-agent context extraction) |
+
+---
+
+## [0.63.0] - 2026-03-18
+
+### Fixed
+
+- **Agent-committed work detection** — `autoCommitWorktree` now accepts a `baseSHA` parameter captured before agent execution. When the worktree is clean (agent committed via bash tool), compares HEAD against base SHA to detect divergence. Previously, Bedrock agents that ran `git commit` through their bash tool left a clean worktree, causing the orchestrator to report "no changes produced" and skip the merge entirely.
+  - `launchAgent` captures `baseSHA` via `git.RevParse(wtPath, "HEAD")` before agent execution starts
+  - `autoCommitWorktree` signature: added `baseSHA string` parameter; clean-worktree path compares `headSHA != baseSHA` instead of unconditionally returning empty
+  - Fallback: if `baseSHA` is empty (solo-agent path), resolves HEAD at staging time as before
+  - Debug logging in Bedrock client (`bedrock/client.go`) for tool calls and end_turn events
+
+### Changed
+
+- `pkg/orchestrator/orchestrator.go` — `autoCommitWorktree()` signature (4th param), `launchAgent()` base SHA capture
+
+---
+
+## [0.58.0] - 2026-03-17
+
+### Added
+
+- **Autonomy layer** — Full R0-R5 implementation via 4-wave, 9-agent IMPL
+  - `pkg/autonomy/` — `ShouldAutoApprove()` decision matrix (gated/supervised/autonomous), `LoadConfig`/`SaveConfig` from `saw.config.json`, `EffectiveLevel` per-IMPL override, `ParseLevel` validation
+  - `pkg/queue/` — IMPL queue manager with priority ordering, dependency-aware `Next()`, YAML file persistence in `docs/IMPL/queue/`
+  - `pkg/engine/auto_remediate.go` — post-merge auto-fix loop using `FixBuildFailure` + `VerifyBuild`, configurable retry count
+  - `pkg/engine/closed_loop_gate.go` — pre-merge per-agent gate retry, sends error context back to agent in worktree
+  - `pkg/engine/check_queue.go` — queue advance logic, polls queue manager and returns next eligible item
+  - `pkg/engine/daemon.go` — `RunDaemon()` poll loop: queue check → scout → wave execution → remediation → mark complete, with event emission and context cancellation
+  - `cmd/saw/daemon_cmd.go` — `sawtools daemon` CLI with `--autonomy`, `--model`, `--poll-interval` flags, SIGINT/SIGTERM handling, JSON line event streaming
+  - `cmd/saw/queue_cmd.go` — `sawtools queue add/list/next` CLI commands
+
+### Fixed
+
+- **Resume detection false positives** — `pkg/resume/detect.go` now skips IMPLs where no work has started (no completion reports, no orphaned worktrees), preventing freshly scouted IMPLs from appearing as interrupted sessions
+- **GUI agents completing without writing files** — `pkg/agent/runner.go` `ExecuteStreamingWithTools` user message now includes explicit 4-step completion criteria (read IMPL, implement, test, commit) instead of generic "Begin now"
+
+---
+
+## [0.53.0] - 2026-03-16
+
+### Changed
+
+- **Streaming conflict resolution** — `resolve_conflicts.go` switched from blocking `b.Run()` to `b.RunStreaming()` with an `OnOutput` chunk callback. AI conflict resolution now streams model output in real-time via SSE instead of returning a single response after completion.
+- **`ResolveConflictsOpts.OnOutput`** — New `func(chunk string)` callback field in `engine.go` for streaming text chunks during conflict resolution.
+
+---
+
+## [0.50.0] - 2026-03-16
+
+### Fixed
+
+- **Worktree reuse for agent reruns** — `launchAgent` in `pkg/orchestrator/orchestrator.go` now checks `os.Stat(wtPath)` before creating worktrees. Existing worktrees are reused instead of failing with "branch already exists" error. Enables rerunning individual failed agents after server restart.
+- **maxTurns failure type** — Agents exceeding the turn limit now emit `failure_type: "timeout"` instead of generic `"execute"`, enabling proper E19 failure routing (timeout → retry automatically vs execute → escalate).
 
 ---
 

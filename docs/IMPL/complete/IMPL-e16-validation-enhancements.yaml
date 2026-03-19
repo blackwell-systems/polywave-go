@@ -1,0 +1,585 @@
+completion_date: "2026-03-18"
+title: E16 Validation Enhancements
+feature_slug: e16-validation-enhancements
+verdict: SUITABLE
+suitability_assessment: |
+    SUITABLE — Work decomposes cleanly into 4 independent validation modules.
+
+    Suitability gate assessment:
+    1. File decomposition: Yes — 4 validation files (enum, duplicate key, required fields, integration warnings) + 1 test file per validator = 8 files total, cleanly assignable to 4 agents
+    2. Investigation-first: No blockers — all validation gaps are known from documented failures (program-web-integration, notification-system)
+    3. Interface discoverability: Yes — ValidationError struct already exists in types.go, all validators return []ValidationError
+    4. Pre-implementation status: Partial — Basic validation exists (state enum, verdict enum, agent ID format), but 5 critical gaps remain:
+       - Missing: Duplicate key detection (Scout wrote two `state:` fields in program-web-integration)
+       - Missing: Action enum validation (file_ownership.action must be new/modify/delete)
+       - Missing: Integration checklist warnings (new handlers without post_merge_checklist)
+       - Missing: File existence checks (action=modify files should exist)
+       - Missing: Cross-wave dependency validation enhancement (agents.dependencies)
+    5. Parallelization value: High — Independent validation modules with no shared state, Go test suite >5s (full protocol package tests), agents can validate in parallel
+
+    Time-to-value estimate:
+    - Scout phase: ~8 min (analyze existing validators, define new validation contracts)
+    - Agent execution: ~20 min (4 agents × 5 min avg, fully parallel)
+    - Merge & verification: ~3 min (run full test suite)
+    Total SAW time: ~31 min
+
+    Sequential baseline: ~35 min (4 agents × 8 min avg sequential + overhead)
+    Time savings: ~4 min (11% faster)
+
+    Recommendation: Proceed with SAW. Primary value is interface contracts (ValidationError consistency) and parallel test execution, not raw time savings.
+test_command: go test ./pkg/protocol/... -v
+lint_command: go vet ./pkg/protocol/...
+file_ownership:
+    - file: pkg/protocol/duplicate_key_validator.go
+      agent: A
+      wave: 1
+      action: new
+    - file: pkg/protocol/duplicate_key_validator_test.go
+      agent: A
+      wave: 1
+      action: new
+    - file: pkg/protocol/action_validator.go
+      agent: B
+      wave: 1
+      action: new
+    - file: pkg/protocol/action_validator_test.go
+      agent: B
+      wave: 1
+      action: new
+    - file: pkg/protocol/integration_checklist_validator.go
+      agent: C
+      wave: 1
+      action: new
+    - file: pkg/protocol/integration_checklist_validator_test.go
+      agent: C
+      wave: 1
+      action: new
+    - file: pkg/protocol/file_existence_validator.go
+      agent: D
+      wave: 1
+      action: new
+    - file: pkg/protocol/file_existence_validator_test.go
+      agent: D
+      wave: 1
+      action: new
+    - file: pkg/protocol/validation.go
+      agent: E
+      wave: 2
+      action: modify
+      depends_on:
+        - A
+        - B
+        - C
+        - D
+    - file: pkg/protocol/validation_test.go
+      agent: E
+      wave: 2
+      action: modify
+      depends_on:
+        - A
+        - B
+        - C
+        - D
+    - file: protocol/invariants.md
+      agent: F
+      wave: 2
+      action: modify
+interface_contracts:
+    - name: ValidateDuplicateKeys
+      description: Detects duplicate top-level YAML keys in raw manifest bytes
+      definition: |
+        func ValidateDuplicateKeys(rawYAML []byte) []ValidationError
+
+        Returns validation errors for duplicate keys found in YAML.
+        Uses yaml.v3 decoder to detect duplicate keys during parse.
+        Error format: code="E16_DUPLICATE_KEY", message="duplicate key 'state' at lines 4, 55", field="<key-name>"
+      location: pkg/protocol/duplicate_key_validator.go
+    - name: ValidateActionEnums
+      description: Validates file_ownership action field contains valid enum values
+      definition: |
+        func ValidateActionEnums(m *IMPLManifest) []ValidationError
+
+        Valid action values: "new", "modify", "delete"
+        Error format: code="E16_INVALID_ACTION", message="file_ownership[N].action has invalid value 'X' — must be new, modify, or delete", field="file_ownership[N].action"
+      location: pkg/protocol/action_validator.go
+    - name: ValidateIntegrationChecklist
+      description: Warns when new API handlers/components lack post_merge_checklist
+      definition: |
+        func ValidateIntegrationChecklist(m *IMPLManifest, repoPath string) []ValidationError
+
+        Pattern detection:
+        - Scans file_ownership for action=new entries matching pkg/api/*_handler.go or web/src/components/*.tsx
+        - If found AND post_merge_checklist is nil or empty, emit warning (not error)
+        - Warning format: code="E16_MISSING_CHECKLIST", message="new handlers detected but post_merge_checklist is empty — integration steps may be needed", field="post_merge_checklist"
+        - repoPath parameter used to verify file patterns against actual repository structure
+      location: pkg/protocol/integration_checklist_validator.go
+    - name: ValidateFileExistence
+      description: Warns when action=modify files do not exist in repository
+      definition: |
+        func ValidateFileExistence(m *IMPLManifest, repoPath string) []ValidationError
+
+        For each file_ownership entry with action=modify:
+        - Check if file exists at repoPath + "/" + file path
+        - If missing, emit warning (not error): code="E16_FILE_NOT_FOUND", message="file 'X' marked action=modify but does not exist", field="file_ownership[N]"
+        - Skip check if repoPath is empty (allows validation without filesystem access)
+      location: pkg/protocol/file_existence_validator.go
+waves:
+    - number: 1
+      agents:
+        - id: A
+          task: |
+            Implement duplicate key detection in pkg/protocol/duplicate_key_validator.go.
+
+            ## What to Implement
+            Create ValidateDuplicateKeys(rawYAML []byte) []ValidationError function that detects duplicate top-level YAML keys.
+
+            Use yaml.v3 Node-based parsing to detect duplicates:
+            1. Decode rawYAML into yaml.Node with yaml.Unmarshal
+            2. Walk the root document node's Content (top-level mapping)
+            3. Track keys seen in a map[string][]int (key -> line numbers)
+            4. If a key appears more than once, emit E16_DUPLICATE_KEY error with all line numbers
+
+            Error format:
+            - code: "E16_DUPLICATE_KEY"
+            - message: "duplicate key 'state' at lines 4, 55"
+            - field: "<key-name>"
+
+            Caught failure case: program-web-integration IMPL had two `state:` fields (lines 4 and 55), causing YAML parser to silently overwrite. This validator must catch that before Scout completes.
+
+            ## Interface Contracts
+            Function signature:
+            ```go
+            func ValidateDuplicateKeys(rawYAML []byte) []ValidationError
+            ```
+
+            Returns []ValidationError (empty slice if no duplicates found).
+
+            ## Tests
+            Write pkg/protocol/duplicate_key_validator_test.go with:
+            - TestValidateDuplicateKeys_NoDuplicates: Valid YAML with unique keys -> no errors
+            - TestValidateDuplicateKeys_SingleDuplicate: YAML with duplicate `state:` key -> E16_DUPLICATE_KEY error
+            - TestValidateDuplicateKeys_MultipleDuplicates: YAML with 3+ occurrences of same key -> error lists all line numbers
+            - TestValidateDuplicateKeys_NestedNotDetected: Duplicate keys in nested objects are NOT flagged (only top-level)
+
+            ## Verification Gate
+            ```bash
+            cd /Users/dayna.blackwell/code/scout-and-wave-go
+            go build ./pkg/protocol/...
+            go vet ./pkg/protocol/duplicate_key_validator.go
+            go test ./pkg/protocol -run TestValidateDuplicateKeys -v
+            ```
+
+            ## Constraints
+            - Do NOT modify validation.go (Wave 2 agent E will integrate)
+            - Use yaml.v3 Node API, not reflection-based parsing
+            - Only detect top-level duplicates (manifest root keys)
+            - Line numbers are 1-indexed (yaml.Node.Line is 1-based)
+          files:
+            - pkg/protocol/duplicate_key_validator.go
+            - pkg/protocol/duplicate_key_validator_test.go
+        - id: B
+          task: |
+            Implement action enum validation in pkg/protocol/action_validator.go.
+
+            ## What to Implement
+            Create ValidateActionEnums(m *IMPLManifest) []ValidationError function that validates file_ownership action field.
+
+            Valid action values: "new", "modify", "delete"
+            Empty/omitted action is also valid (backward compatibility).
+
+            For each entry in m.FileOwnership:
+            - If Action is non-empty and not in valid set, emit E16_INVALID_ACTION error
+            - Error message format: "file_ownership[N].action has invalid value 'X' — must be new, modify, or delete"
+            - Field: "file_ownership[N].action" (N is 0-indexed array position)
+
+            ## Interface Contracts
+            Function signature:
+            ```go
+            func ValidateActionEnums(m *IMPLManifest) []ValidationError
+            ```
+
+            Returns []ValidationError (empty slice if all actions are valid).
+
+            ## Tests
+            Write pkg/protocol/action_validator_test.go with:
+            - TestValidateActionEnums_AllValid: Manifest with new/modify/delete actions -> no errors
+            - TestValidateActionEnums_EmptyActionAllowed: FileOwnership entry with empty action -> no errors
+            - TestValidateActionEnums_InvalidAction: action="update" -> E16_INVALID_ACTION error
+            - TestValidateActionEnums_MultipleInvalid: 2+ invalid actions -> multiple errors returned
+
+            ## Verification Gate
+            ```bash
+            cd /Users/dayna.blackwell/code/scout-and-wave-go
+            go build ./pkg/protocol/...
+            go vet ./pkg/protocol/action_validator.go
+            go test ./pkg/protocol -run TestValidateActionEnums -v
+            ```
+
+            ## Constraints
+            - Do NOT modify validation.go (Wave 2 agent E will integrate)
+            - Follow existing enum validation pattern from enumvalidation.go (ValidateCompletionStatuses)
+            - Error codes use E16_ prefix (E16 validation enhancements)
+          files:
+            - pkg/protocol/action_validator.go
+            - pkg/protocol/action_validator_test.go
+        - id: C
+          task: |
+            Implement integration checklist warning in pkg/protocol/integration_checklist_validator.go.
+
+            ## What to Implement
+            Create ValidateIntegrationChecklist(m *IMPLManifest, repoPath string) []ValidationError function that warns when new handlers/components lack post_merge_checklist.
+
+            Detection heuristic:
+            1. Scan m.FileOwnership for entries with action="new"
+            2. Match file paths against patterns:
+               - pkg/api/*_handler.go (API handlers)
+               - web/src/components/*.tsx (React components)
+            3. If any matches found AND (m.PostMergeChecklist == nil OR len(m.PostMergeChecklist.Groups) == 0):
+               - Emit warning (not error): code="E16_MISSING_CHECKLIST"
+               - Message: "new handlers/components detected but post_merge_checklist is empty — integration steps may be needed"
+               - Field: "post_merge_checklist"
+
+            If repoPath is non-empty, verify matched files exist before warning (avoids false positives on typos).
+
+            ## Interface Contracts
+            Function signature:
+            ```go
+            func ValidateIntegrationChecklist(m *IMPLManifest, repoPath string) []ValidationError
+            ```
+
+            Returns []ValidationError (warnings use ValidationError struct with code prefix E16_).
+
+            ## Tests
+            Write pkg/protocol/integration_checklist_validator_test.go with:
+            - TestValidateIntegrationChecklist_NoHandlers: Manifest with no API/component files -> no warnings
+            - TestValidateIntegrationChecklist_HasChecklist: New handlers + non-empty checklist -> no warnings
+            - TestValidateIntegrationChecklist_MissingChecklist: New pkg/api/foo_handler.go + nil checklist -> E16_MISSING_CHECKLIST warning
+            - TestValidateIntegrationChecklist_ComponentsDetected: New web/src/components/Bar.tsx + empty checklist -> warning
+
+            ## Verification Gate
+            ```bash
+            cd /Users/dayna.blackwell/code/scout-and-wave-go
+            go build ./pkg/protocol/...
+            go vet ./pkg/protocol/integration_checklist_validator.go
+            go test ./pkg/protocol -run TestValidateIntegrationChecklist -v
+            ```
+
+            ## Constraints
+            - Do NOT modify validation.go (Wave 2 agent E will integrate)
+            - This is a warning, not a blocker — do not prevent IMPL from proceeding
+            - Pattern matching is substring-based (strings.Contains or filepath.Match)
+            - repoPath parameter is optional (empty string skips file existence check)
+          files:
+            - pkg/protocol/integration_checklist_validator.go
+            - pkg/protocol/integration_checklist_validator_test.go
+        - id: D
+          task: |
+            Implement file existence warning in pkg/protocol/file_existence_validator.go.
+
+            ## What to Implement
+            Create ValidateFileExistence(m *IMPLManifest, repoPath string) []ValidationError function that warns when action=modify files do not exist.
+
+            For each entry in m.FileOwnership with action="modify":
+            1. If repoPath is non-empty, construct full path: filepath.Join(repoPath, fo.File)
+            2. Check if file exists with os.Stat
+            3. If os.IsNotExist(err), emit warning:
+               - code: "E16_FILE_NOT_FOUND"
+               - message: "file 'X' marked action=modify but does not exist"
+               - field: "file_ownership[N]" (N is array index)
+
+            If repoPath is empty, skip all checks (allows validation without filesystem access).
+
+            ## Interface Contracts
+            Function signature:
+            ```go
+            func ValidateFileExistence(m *IMPLManifest, repoPath string) []ValidationError
+            ```
+
+            Returns []ValidationError (warnings for missing files).
+
+            ## Tests
+            Write pkg/protocol/file_existence_validator_test.go with:
+            - TestValidateFileExistence_EmptyRepoPath: repoPath="" -> no warnings (validation skipped)
+            - TestValidateFileExistence_FileExists: action=modify + file exists -> no warnings (use t.TempDir())
+            - TestValidateFileExistence_FileMissing: action=modify + file missing -> E16_FILE_NOT_FOUND warning
+            - TestValidateFileExistence_ActionNewIgnored: action=new + file missing -> no warnings (new files don't need to exist)
+
+            ## Verification Gate
+            ```bash
+            cd /Users/dayna.blackwell/code/scout-and-wave-go
+            go build ./pkg/protocol/...
+            go vet ./pkg/protocol/file_existence_validator.go
+            go test ./pkg/protocol -run TestValidateFileExistence -v
+            ```
+
+            ## Constraints
+            - Do NOT modify validation.go (Wave 2 agent E will integrate)
+            - Use os.Stat for file existence check (not os.Open)
+            - Warning only — do not block validation
+            - Handle cross-repo FileOwnership entries: if fo.Repo is non-empty and differs from repoPath basename, skip check (file is in different repo)
+          files:
+            - pkg/protocol/file_existence_validator.go
+            - pkg/protocol/file_existence_validator_test.go
+      base_commit: 1592866215cdb5fee6624dfae4233db2120e1f86
+    - number: 2
+      agents:
+        - id: E
+          task: |
+            Integrate new validators into pkg/protocol/validation.go and add integration tests.
+
+            ## What to Implement
+            1. Import the 4 new validator functions (A, B, C, D) in validation.go
+            2. Add calls to Validate() function in this order (after existing validators):
+               ```go
+               errs = append(errs, ValidateActionEnums(m)...)
+               errs = append(errs, ValidateIntegrationChecklist(m, "")...)  // repoPath="" in struct validation
+               errs = append(errs, ValidateFileExistence(m, "")...)         // repoPath="" in struct validation
+               // ValidateDuplicateKeys requires raw YAML, add to validate_cmd.go instead
+               ```
+
+            3. Update cmd/saw/validate_cmd.go to call ValidateDuplicateKeys:
+               - After reading raw YAML (line 82), before struct validation (line 95)
+               - Pass rawData to ValidateDuplicateKeys(rawData)
+               - Append results to errs slice
+
+            4. Write integration tests in pkg/protocol/validation_test.go:
+               - TestValidate_E16Enhancements_DuplicateKey: Full manifest with duplicate state key -> E16_DUPLICATE_KEY error
+               - TestValidate_E16Enhancements_InvalidAction: Manifest with action="update" -> E16_INVALID_ACTION error
+               - TestValidate_E16Enhancements_MissingChecklist: New handler without checklist -> E16_MISSING_CHECKLIST warning
+               - TestValidate_E16Enhancements_AllPass: Valid manifest passes all new checks
+
+            ## Interface Contracts
+            No new interfaces. Calls existing validator contracts from agents A, B, C, D.
+
+            ## Tests
+            Run full protocol test suite:
+            ```bash
+            cd /Users/dayna.blackwell/code/scout-and-wave-go
+            go test ./pkg/protocol/... -v
+            ```
+
+            Must pass all existing tests + 4 new integration tests.
+
+            ## Verification Gate
+            ```bash
+            cd /Users/dayna.blackwell/code/scout-and-wave-go
+            go build ./cmd/saw/...
+            go vet ./pkg/protocol/validation.go
+            go test ./pkg/protocol -run TestValidate_E16 -v
+            go test ./pkg/protocol/... -count=1
+            ```
+
+            ## Constraints
+            - Do NOT change existing validator signatures or behavior
+            - Maintain error slice ordering (append only)
+            - ValidateDuplicateKeys must run in validate_cmd.go (needs raw YAML), not validation.go (only has parsed struct)
+            - Update validation.go imports to include the 4 new validator files
+          files:
+            - pkg/protocol/validation.go
+            - pkg/protocol/validation_test.go
+          dependencies:
+            - A
+            - B
+            - C
+            - D
+        - id: F
+          task: |
+            Update protocol/invariants.md to document E16 validation enhancements.
+
+            ## What to Implement
+            Add a new subsection under "E16: Scout Output Validation" titled "### E16D: Enhanced Validation Checks".
+
+            Content to add (after existing E16A/B/C sections, before E17):
+
+            ```markdown
+            ### E16D: Enhanced Validation Checks
+
+            **Trigger:** Scout writes IMPL doc to disk OR human runs `sawtools validate`
+
+            **Required Action:** Run enhanced validation checks on the manifest:
+
+            **1. Duplicate Key Detection**
+            - Detects duplicate top-level YAML keys (e.g., two `state:` fields)
+            - Error code: E16_DUPLICATE_KEY
+            - Example: "duplicate key 'state' at lines 4, 55"
+            - Rationale: yaml.v3 silently overwrites duplicates, causing state corruption
+
+            **2. Action Enum Validation**
+            - Validates file_ownership action field: must be "new", "modify", or "delete"
+            - Empty/omitted action is allowed (backward compatibility)
+            - Error code: E16_INVALID_ACTION
+            - Example: "file_ownership[3].action has invalid value 'update' — must be new, modify, or delete"
+
+            **3. Integration Checklist Warning**
+            - Warns when new API handlers or React components lack post_merge_checklist
+            - Detection: action=new files matching pkg/api/*_handler.go or web/src/components/*.tsx
+            - Warning code: E16_MISSING_CHECKLIST (warning, not blocker)
+            - Example: "new handlers detected but post_merge_checklist is empty — integration steps may be needed"
+
+            **4. File Existence Warning**
+            - Warns when action=modify files do not exist in repository
+            - Only runs when repoPath is provided (CLI/web validation, not struct-only validation)
+            - Warning code: E16_FILE_NOT_FOUND (warning, not blocker)
+            - Example: "file 'pkg/foo/bar.go' marked action=modify but does not exist"
+
+            **Failure Handling:** Errors (duplicate keys, invalid action) block Scout completion. Warnings (missing checklist, file not found) are surfaced to human but do not block.
+
+            **Related Rules:** See E16A (required block presence), E16B (dep graph grammar), E16C (out-of-band detection)
+            ```
+
+            ## Interface Contracts
+            No code interfaces. This is documentation only.
+
+            ## Tests
+            No tests (documentation file). Human review will verify accuracy.
+
+            ## Verification Gate
+            ```bash
+            cd /Users/dayna.blackwell/code/scout-and-wave
+            # Visual inspection: verify E16D section is well-formed markdown
+            grep -A 30 "### E16D" protocol/invariants.md
+            ```
+
+            ## Constraints
+            - Insert E16D section AFTER E16C, BEFORE E17 (maintain sequential rule numbering)
+            - Follow existing markdown formatting (heading levels, code blocks, list structure)
+            - Do NOT modify E16A/B/C sections (they remain unchanged)
+            - Cross-reference existing E16 sections where appropriate
+          files:
+            - protocol/invariants.md
+      base_commit: b2e487f7c4c12d95917d4f1cad4b96f2eb57b834
+quality_gates:
+    level: standard
+    gates:
+        - type: build
+          command: go build ./pkg/protocol/... ./cmd/saw/...
+          required: true
+        - type: lint
+          command: go vet ./pkg/protocol/...
+          required: true
+        - type: test
+          command: go test ./pkg/protocol/... -v -count=1
+          required: true
+completion_reports:
+    A:
+        status: complete
+        branch: wave1-agent-A
+        commit: 7ac15cb
+        files_changed:
+            - pkg/protocol/duplicate_key_validator.go
+            - pkg/protocol/duplicate_key_validator_test.go
+        files_created:
+            - pkg/protocol/duplicate_key_validator.go
+            - pkg/protocol/duplicate_key_validator_test.go
+        tests_added:
+            - TestValidateDuplicateKeys_NoDuplicates
+            - TestValidateDuplicateKeys_SingleDuplicate
+            - TestValidateDuplicateKeys_MultipleDuplicates
+            - TestValidateDuplicateKeys_NestedNotDetected
+            - TestValidateDuplicateKeys_EmptyYAML
+            - TestValidateDuplicateKeys_TwoDifferentDuplicateKeys
+        verification: PASS
+    B:
+        status: complete
+        branch: wave1-agent-B
+        commit: 2a3c985
+        files_changed:
+            - pkg/protocol/action_validator.go
+            - pkg/protocol/action_validator_test.go
+        files_created:
+            - pkg/protocol/action_validator.go
+            - pkg/protocol/action_validator_test.go
+        tests_added:
+            - TestValidateActionEnums_AllValid
+            - TestValidateActionEnums_EmptyActionAllowed
+            - TestValidateActionEnums_InvalidAction
+            - TestValidateActionEnums_MultipleInvalid
+        verification: PASS
+    C:
+        status: complete
+        branch: wave1-agent-C
+        commit: 9fddc50
+        files_changed:
+            - pkg/protocol/integration_checklist_validator.go
+            - pkg/protocol/integration_checklist_validator_test.go
+        files_created:
+            - pkg/protocol/integration_checklist_validator.go
+            - pkg/protocol/integration_checklist_validator_test.go
+        tests_added:
+            - TestValidateIntegrationChecklist_NoHandlers
+            - TestValidateIntegrationChecklist_HasChecklist
+            - TestValidateIntegrationChecklist_MissingChecklist
+            - TestValidateIntegrationChecklist_ComponentsDetected
+            - TestValidateIntegrationChecklist_ActionModifyNotWarned
+            - TestValidateIntegrationChecklist_RepoPathSkipsMissing
+            - TestValidateIntegrationChecklist_RepoPathWarnsWhenPresent
+        verification: PASS
+    D:
+        status: complete
+        branch: wave1-agent-D
+        commit: e150ade
+        files_changed:
+            - pkg/protocol/file_existence_validator.go
+            - pkg/protocol/file_existence_validator_test.go
+        files_created:
+            - pkg/protocol/file_existence_validator.go
+            - pkg/protocol/file_existence_validator_test.go
+        tests_added:
+            - TestValidateFileExistence_EmptyRepoPath
+            - TestValidateFileExistence_FileExists
+            - TestValidateFileExistence_FileMissing
+            - TestValidateFileExistence_ActionNewIgnored
+            - TestValidateFileExistence_CrossRepoSkipped
+        verification: PASS
+    E:
+        status: complete
+        branch: wave2-agent-E
+        commit: b7c0a5c
+        files_changed:
+            - pkg/protocol/validation.go
+            - pkg/protocol/validation_test.go
+            - cmd/saw/validate_cmd.go
+        tests_added:
+            - TestValidate_E16Enhancements_DuplicateKey
+            - TestValidate_E16Enhancements_InvalidAction
+            - TestValidate_E16Enhancements_MissingChecklist
+            - TestValidate_E16Enhancements_AllPass
+        verification: PASS
+    F:
+        status: complete
+        branch: wave2-agent-F
+        commit: 34dc4dd
+        files_changed:
+            - protocol/execution-rules.md
+        verification: PASS
+integration_reports:
+    wave1:
+        wave: 1
+        gaps: []
+        valid: true
+        summary: 'Wave 1: all exports are integrated (no gaps detected)'
+    wave2:
+        wave: 2
+        gaps: []
+        valid: true
+        summary: 'Wave 2: all exports are integrated (no gaps detected)'
+pre_mortem:
+    overall_risk: low
+    rows:
+        - scenario: Wave 1 agents define incompatible ValidationError formats (different Code prefixes)
+          likelihood: low
+          impact: medium
+          mitigation: Interface contracts specify exact error code values (E16_DUPLICATE_KEY, E16_INVALID_ACTION, etc.). Agent E's integration tests will catch format mismatches.
+        - scenario: ValidateDuplicateKeys fails to detect nested duplicates (expected behavior, but unclear from spec)
+          likelihood: medium
+          impact: low
+          mitigation: Agent A's task explicitly states "only detect top-level duplicates" and test suite verifies nested keys are NOT flagged
+        - scenario: Integration checklist validator has false positives (warns on non-handler files)
+          likelihood: low
+          impact: low
+          mitigation: Pattern matching is conservative (exact patterns pkg/api/*_handler.go, web/src/components/*.tsx). Agent C's tests verify non-matching files don't trigger warnings.
+        - scenario: File existence validator breaks on cross-repo manifests (checks files in wrong repo)
+          likelihood: low
+          impact: medium
+          mitigation: Agent D's task includes constraint to skip check when fo.Repo differs from repoPath basename. Test suite includes cross-repo scenario.
+state: WAVE_PENDING

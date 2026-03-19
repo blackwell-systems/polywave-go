@@ -30,8 +30,8 @@ type CreateWorktreesResult struct {
 // /path/to/scout-and-wave and an agent has Repo=scout-and-wave-go, the worktree
 // is created at /path/to/scout-and-wave-go/.claude/worktrees/...).
 //
-// Each worktree is created at {agentRepoDir}/.claude/worktrees/wave{N}-agent-{Letter}
-// on a new branch named wave{N}-agent-{Letter}.
+// Each worktree is created at {agentRepoDir}/.claude/worktrees/saw/{slug}/wave{N}-agent-{Letter}
+// on a new branch named saw/{slug}/wave{N}-agent-{Letter}.
 //
 // If any worktree creation fails, returns an error immediately without
 // attempting to create remaining worktrees.
@@ -116,9 +116,38 @@ func CreateWorktrees(manifestPath string, waveNum int, repoDir string) (*CreateW
 			agentRepoDir = filepath.Join(repoParent, agentRepo)
 		}
 
-		// Construct worktree path and branch name
-		worktreePath := filepath.Join(agentRepoDir, ".claude", "worktrees", fmt.Sprintf("wave%d-agent-%s", waveNum, agent.ID))
-		branchName := fmt.Sprintf("wave%d-agent-%s", waveNum, agent.ID)
+		// Construct worktree path and branch name using slug-scoped helpers
+		worktreePath := WorktreeDir(agentRepoDir, doc.FeatureSlug, waveNum, agent.ID)
+		branchName := BranchName(doc.FeatureSlug, waveNum, agent.ID)
+
+		// Also compute legacy names for backward-compat stale branch cleanup
+		legacyBranch := LegacyBranchName(waveNum, agent.ID)
+		legacyWorktreePath := filepath.Join(agentRepoDir, ".claude", "worktrees", legacyBranch)
+
+		// Auto-clean stale branches from previous IMPLs that reuse the same
+		// wave/agent naming scheme. A branch is "stale" if it already exists and
+		// its tip is an ancestor of HEAD (i.e., it was already merged).
+		// Check both new-format and legacy branch names.
+		for _, candidate := range []struct {
+			branch       string
+			worktreePath string
+		}{
+			{branchName, worktreePath},
+			{legacyBranch, legacyWorktreePath},
+		} {
+			if git.BranchExists(agentRepoDir, candidate.branch) {
+				if git.IsAncestor(agentRepoDir, candidate.branch, "HEAD") {
+					// Branch is merged — safe to delete. Also remove its worktree if present.
+					_ = git.WorktreeRemove(agentRepoDir, candidate.worktreePath)
+					_ = git.DeleteBranch(agentRepoDir, candidate.branch)
+					fmt.Fprintf(os.Stderr, "Cleaned up stale merged branch %q in %s\n", candidate.branch, agentRepoDir)
+				} else if candidate.branch == branchName {
+					// Only error on the primary (new-format) branch; legacy branches
+					// that are unmerged are a soft warning.
+					return nil, fmt.Errorf("branch %q already exists in %s and is not merged into HEAD; delete it manually or merge first", candidate.branch, agentRepoDir)
+				}
+			}
+		}
 
 		// Create the worktree
 		if err := git.WorktreeAdd(agentRepoDir, worktreePath, branchName); err != nil {

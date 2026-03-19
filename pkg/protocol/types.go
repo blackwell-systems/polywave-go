@@ -56,6 +56,7 @@ type FileOwnership struct {
 // Agents in the same wave run in parallel; waves execute sequentially.
 type Wave struct {
 	Number           int      `yaml:"number" json:"number"`
+	Type             string   `yaml:"type,omitempty" json:"type,omitempty"` // "standard" (default) | "integration" (E27: wiring-only, no worktree)
 	Agents           []Agent  `yaml:"agents" json:"agents"`
 	AgentLaunchOrder []string `yaml:"agent_launch_order,omitempty" json:"agent_launch_order,omitempty"`
 	BaseCommit       string   `yaml:"base_commit,omitempty" json:"base_commit,omitempty"` // Recorded when worktrees created for post-merge verification
@@ -116,11 +117,12 @@ type QualityGates struct {
 // QualityGate represents a single quality check (build, lint, test, etc.).
 // Gates marked as Required must pass; others are advisory.
 type QualityGate struct {
-	Type        string `yaml:"type" json:"type"` // "build" | "lint" | "test"
+	Type        string `yaml:"type" json:"type"` // "build" | "lint" | "test" | "typecheck" | "format" | "custom"
 	Command     string `yaml:"command" json:"command"`
 	Required    bool   `yaml:"required" json:"required"`
 	Description string `yaml:"description,omitempty" json:"description,omitempty"`
 	Repo        string `yaml:"repo,omitempty" json:"repo,omitempty"` // if set, gate only runs in this repo
+	Fix         bool   `yaml:"fix,omitempty" json:"fix,omitempty"` // fix mode for format gates
 }
 
 // ScaffoldFile represents a type scaffold file that is created before wave execution.

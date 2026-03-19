@@ -1,0 +1,746 @@
+completion_date: "2026-03-18"
+title: M5 - Integration Checklist Population Tool
+feature_slug: integration-checklist-m5
+verdict: SUITABLE
+suitability_assessment: |
+    Verdict: SUITABLE
+
+    1. File decomposition: YES — 4 agents with disjoint file ownership:
+       - Agent A: Pattern detection library (pkg/protocol/checklist_populator.go)
+       - Agent B: CLI command (cmd/saw/populate_integration_checklist_cmd.go)
+       - Agent C: Integration into finalize-impl (pkg/protocol/gate_populator.go modify)
+       - Agent D: Tests (pkg/protocol/checklist_populator_test.go)
+       No conflicts - library, CLI, integration point, and tests are separate files.
+
+    2. Investigation-first: NO — All patterns are known from user description:
+       - API handlers: pkg/api/*_handler.go with action:new → register routes
+       - React components: web/src/components/*.tsx top-level → add to App.tsx
+       - CLI commands: cmd/saw/*_cmd.go → register in main.go
+       - Background services: goroutine spawn detection → init in Server
+       Detection patterns are deterministic (file path + action field checks).
+
+    3. Interface discoverability: YES — All interfaces defined upfront:
+       - PopulateIntegrationChecklist(impl *IMPLManifest) (*IMPLManifest, error)
+       - detectAPIHandlers(ownership []FileOwnership) []ChecklistItem
+       - detectReactComponents(ownership []FileOwnership) []ChecklistItem
+       - detectCLICommands(ownership []FileOwnership) []ChecklistItem
+       - detectBackgroundServices(ownership []FileOwnership, repoRoot string) []ChecklistItem
+       No cross-agent coordination needed - pure detection logic.
+
+    4. Pre-implementation status check:
+       Total items: 1 tool (M5 integration checklist populator)
+       Already implemented (DONE): 0
+       Partially implemented (PARTIAL): 0
+       Not implemented (TO-DO): 1
+
+       Existing infrastructure:
+       - PostMergeChecklist schema exists (types_sections.go)
+       - M4 gate_populator.go pattern established (modify manifest, return new copy)
+       - FinalizeIMPL batching command exists (ready for M5 integration)
+       - FileOwnership.Action field exists ("new"|"modify"|"delete")
+
+    5. Parallelization value: HIGH — 4 agents with independent work units:
+       - Build/test cycle: ~15s for protocol package (Go project)
+       - Files per agent: 1-2 files each (focused scope)
+       - Agent independence: Wave 1 has 3 parallel agents (A, B, D); Wave 2 is integration only
+       - Task complexity: Non-trivial pattern detection logic, file parsing, AST analysis
+
+       Estimated times:
+       - Scout phase: ~10 min (pattern definition, interface design, IMPL doc)
+       - Agent execution: ~18 min (3 agents × 6 min avg in Wave 1, parallel)
+       - Merge & verification: ~4 min
+       Total SAW time: ~32 min
+
+       Sequential baseline: ~45 min (4 agents × 11 min avg sequential)
+       Time savings: ~13 min (~29% faster)
+       Recommendation: Clear speedup. Proceed with parallel execution.
+test_command: go test ./pkg/protocol/... ./cmd/saw/...
+lint_command: go vet ./...
+file_ownership:
+    - file: pkg/protocol/checklist_populator.go
+      agent: A
+      wave: 1
+      action: new
+    - file: cmd/saw/populate_integration_checklist_cmd.go
+      agent: B
+      wave: 1
+      action: new
+    - file: pkg/protocol/checklist_populator_test.go
+      agent: D
+      wave: 1
+      action: new
+    - file: pkg/protocol/gate_populator.go
+      agent: C
+      wave: 2
+      action: modify
+      depends_on:
+        - A
+    - file: cmd/saw/finalize_impl_cmd.go
+      agent: C
+      wave: 2
+      action: modify
+      depends_on:
+        - B
+    - file: cmd/saw/main.go
+      agent: C
+      wave: 2
+      action: modify
+      depends_on:
+        - B
+interface_contracts:
+    - name: PopulateIntegrationChecklist
+      description: |
+        Main entry point for M5. Scans file_ownership for integration-requiring
+        patterns (new API handlers, React components, CLI commands, background
+        services) and populates post_merge_checklist groups. Returns a new
+        manifest copy without modifying the input. Idempotent - safe to run
+        multiple times (won't duplicate checklist items).
+      definition: |
+        // PopulateIntegrationChecklist analyzes file_ownership and populates
+        // post_merge_checklist with integration tasks. Returns a new manifest
+        // copy. If post_merge_checklist already has items, appends new groups.
+        func PopulateIntegrationChecklist(m *IMPLManifest) (*IMPLManifest, error)
+      location: pkg/protocol/checklist_populator.go
+    - name: detectAPIHandlers
+      description: |
+        Detects new API handler files (pkg/api/*_handler.go with action:new).
+        Parses each handler file to extract func (s *Server) handle* function
+        names and generates checklist items for route registration in server.go.
+      definition: |
+        // detectAPIHandlers scans file_ownership for new API handlers and
+        // returns checklist items for route registration.
+        func detectAPIHandlers(ownership []FileOwnership, repoRoot string) []ChecklistItem
+      location: pkg/protocol/checklist_populator.go
+    - name: detectReactComponents
+      description: |
+        Detects new top-level React components (web/src/components/*.tsx with
+        action:new that export main components, not just UI primitives). Generates
+        checklist items for navigation wiring in App.tsx. Filters out UI primitives
+        (components/ui/ directory) and test files (*test.tsx, *.spec.tsx).
+      definition: |
+        // detectReactComponents scans file_ownership for new React components
+        // and returns checklist items for App.tsx navigation wiring.
+        func detectReactComponents(ownership []FileOwnership, repoRoot string) []ChecklistItem
+      location: pkg/protocol/checklist_populator.go
+    - name: detectCLICommands
+      description: |
+        Detects new CLI command files (cmd/saw/*_cmd.go or cmd/*_cmd.go with
+        action:new). Parses each file to extract cobra command registration
+        patterns and generates checklist items for registration in main.go.
+      definition: |
+        // detectCLICommands scans file_ownership for new CLI commands and
+        // returns checklist items for main.go registration.
+        func detectCLICommands(ownership []FileOwnership, repoRoot string) []ChecklistItem
+      location: pkg/protocol/checklist_populator.go
+    - name: detectBackgroundServices
+      description: |
+        Detects new background services (files with goroutine spawning patterns:
+        "go func", "go s.", time.Ticker, context.Background()). Generates checklist
+        items for service initialization in Server constructor or main(). Note: This
+        may produce false positives (one-off goroutines vs long-running services).
+        Items are marked as "Verify if [service] needs initialization" rather than
+        asserting it must be wired.
+      definition: |
+        // detectBackgroundServices scans new files for goroutine patterns and
+        // returns checklist items for service initialization.
+        func detectBackgroundServices(ownership []FileOwnership, repoRoot string) []ChecklistItem
+      location: pkg/protocol/checklist_populator.go
+    - name: parseHandlerFunctions
+      description: |
+        Helper function to parse Go handler files and extract func (s *Server) handle*
+        function names using basic AST analysis (go/parser, go/ast). Returns list of
+        handler function names (e.g., "handleGetPipeline", "handleScoutRun").
+      definition: |
+        // parseHandlerFunctions extracts handler function names from a Go file.
+        // Returns empty slice if file cannot be parsed or has no handler functions.
+        func parseHandlerFunctions(filePath string) ([]string, error)
+      location: pkg/protocol/checklist_populator.go
+    - name: parseReactComponentName
+      description: |
+        Helper function to extract the main exported component name from a React
+        TSX file. Uses regex pattern matching for "export default function ComponentName"
+        and "export default ComponentName". Returns empty string if no default export.
+      definition: |
+        // parseReactComponentName extracts the default exported component name
+        // from a TSX file. Returns empty string if not found.
+        func parseReactComponentName(filePath string) (string, error)
+      location: pkg/protocol/checklist_populator.go
+    - name: parseCLICommandName
+      description: |
+        Helper function to extract cobra command name from a Go CLI command file.
+        Searches for newXCmd() function definition and Use: field in cobra.Command
+        struct. Returns command name (e.g., "populate-integration-checklist").
+      definition: |
+        // parseCLICommandName extracts the cobra command name from a Go file.
+        // Returns empty string if no command found.
+        func parseCLICommandName(filePath string) (string, error)
+      location: pkg/protocol/checklist_populator.go
+    - name: ChecklistItem
+      description: |
+        Existing schema type for post_merge_checklist items. No modifications needed.
+        M5 populates Description field with human-readable integration task and
+        optional Command field for testable commands (e.g., "grep 'handleX' server.go").
+      definition: |
+        type ChecklistItem struct {
+          Description string `yaml:"description" json:"description"`
+          Command     string `yaml:"command,omitempty" json:"command,omitempty"`
+        }
+      location: pkg/protocol/types_sections.go (existing)
+    - name: ChecklistGroup
+      description: |
+        Existing schema type for post_merge_checklist groups. M5 creates groups like
+        "API Route Registration", "React Navigation Wiring", "CLI Command Registration",
+        "Background Service Initialization". Each group contains related ChecklistItems.
+      definition: |
+        type ChecklistGroup struct {
+          Title string          `yaml:"title" json:"title"`
+          Items []ChecklistItem `yaml:"items" json:"items"`
+        }
+      location: pkg/protocol/types_sections.go (existing)
+waves:
+    - number: 1
+      agents:
+        - id: A
+          task: |
+            Implement the M5 integration checklist population library in pkg/protocol/checklist_populator.go.
+
+            ## What to Implement
+
+            Create the core M5 library that detects integration-requiring patterns from file_ownership
+            and populates post_merge_checklist. This is a determinism tool that runs automatically
+            after Scout completes, integrated into the finalize-impl batching command.
+
+            **Main function:**
+            ```go
+            func PopulateIntegrationChecklist(m *IMPLManifest) (*IMPLManifest, error)
+            ```
+
+            **Detection functions (4 patterns):**
+
+            1. **API handlers** (Go):
+               - Pattern: `pkg/api/*_handler.go` with `action: new`
+               - Parse each handler file using go/parser + go/ast
+               - Extract `func (s *Server) handle*` function names
+               - Generate checklist item: "Register routes in server.go for [handler functions list]"
+               - Command field: `grep 'handleX' pkg/api/server.go` (testable verification)
+
+            2. **React components** (TypeScript):
+               - Pattern: `web/src/components/*.tsx` with `action: new`
+               - Exclude: `components/ui/` directory (UI primitives)
+               - Exclude: `*test.tsx`, `*.spec.tsx` (test files)
+               - Parse TSX file for default export: `export default function ComponentName`
+               - Generate checklist item: "Add [ComponentName] to App.tsx navigation"
+               - Command field: `grep 'ComponentName' web/src/App.tsx`
+
+            3. **CLI commands** (Go):
+               - Pattern: `cmd/saw/*_cmd.go` or `cmd/*_cmd.go` with `action: new`
+               - Parse Go file for cobra command definition (newXCmd() function, Use: field)
+               - Generate checklist item: "Register [command-name] in cmd/saw/main.go"
+               - Command field: `grep 'newXCmd' cmd/saw/main.go`
+
+            4. **Background services** (Go):
+               - Pattern: Files with goroutine spawning (go func, go s., time.Ticker, context.Background())
+               - Use regex search (not full AST) to detect goroutine patterns
+               - Generate checklist item: "Verify if [filename] needs initialization in Server constructor"
+               - Note: Mark as "Verify" not "Must wire" - may produce false positives
+
+            **Grouping logic:**
+            - Create ChecklistGroup for each pattern type that has detected items
+            - Group titles: "API Route Registration", "React Navigation Wiring", "CLI Command Registration", "Background Service Initialization"
+            - Append groups to existing post_merge_checklist if present (idempotent - don't duplicate)
+
+            **Error handling:**
+            - If file parsing fails (file not found, syntax error), skip that file silently
+            - Return error only for manifest-level failures (e.g., cannot copy manifest)
+
+            **Implementation notes:**
+            - Follow M4 gate_populator.go pattern: copy manifest, modify copy, return new manifest
+            - Use go/parser and go/ast for Go file parsing (handlers, CLI commands)
+            - Use regex for TSX parsing (no TypeScript AST parser available in Go stdlib)
+            - Use regex for goroutine detection (simpler than AST, acceptable false positive rate)
+            - **Scope:** M5 operates on single-repo IMPLs. repoRoot parameter is the root of the repo containing files in file_ownership. Files without `repo:` field are assumed to be in repoRoot.
+
+            **Idempotency algorithm (CRITICAL):**
+            Before adding a checklist group, check if `PostMergeChecklist.Groups` already contains a group with the same Title (exact string match). If found, compare item Descriptions (exact string match). Only add items that don't already exist. This makes M5 safe to run multiple times without duplicating checklist entries.
+
+            **Regex patterns for TSX parsing:**
+            ```go
+            // Detect default exported function component
+            exportDefaultFuncPattern := regexp.MustCompile(`export\s+default\s+function\s+(\w+)`)
+            // Detect default exported const/var component (backup pattern)
+            exportDefaultConstPattern := regexp.MustCompile(`export\s+default\s+(\w+)`)
+            ```
+
+            **Regex patterns for goroutine detection:**
+            ```go
+            goFuncPattern := regexp.MustCompile(`\bgo\s+(func\(|[\w\.]+\()`)
+            tickerPattern := regexp.MustCompile(`time\.NewTicker|time\.Ticker`)
+            contextPattern := regexp.MustCompile(`context\.Background\(\)`)
+            ```
+
+            ## Interface Contracts
+
+            Implement all 8 functions from interface_contracts section:
+            - PopulateIntegrationChecklist (main entry point)
+            - detectAPIHandlers, detectReactComponents, detectCLICommands, detectBackgroundServices
+            - parseHandlerFunctions, parseReactComponentName, parseCLICommandName
+
+            ## Tests
+
+            No tests in this agent - Agent D owns checklist_populator_test.go.
+            Your implementation must be testable with these test cases:
+            - detectAPIHandlers: given file_ownership with pkg/api/pipeline_handler.go (action:new), returns checklist item for route registration
+            - detectReactComponents: given web/src/components/PipelineView.tsx (action:new), returns checklist item for App.tsx wiring
+            - detectCLICommands: given cmd/saw/populate_integration_checklist_cmd.go (action:new), returns checklist item for main.go registration
+            - detectBackgroundServices: given file with "go s.notificationBus.Start(ctx)", returns checklist item for service init
+            - PopulateIntegrationChecklist: full end-to-end test with multi-pattern file_ownership, verifies correct groups and items
+
+            ## Dependencies
+
+            Standard library only:
+            - go/parser, go/ast for Go file parsing
+            - regexp for TSX and goroutine pattern matching
+            - path/filepath for file path manipulation
+
+            Existing scout-and-wave-go imports:
+            - github.com/blackwell-systems/scout-and-wave-go/pkg/protocol (for IMPLManifest, FileOwnership, ChecklistItem, ChecklistGroup types)
+
+            ## Constraints
+
+            - Do NOT modify types_sections.go - PostMergeChecklist schema already exists
+            - Do NOT implement CLI command - Agent B owns that file
+            - Do NOT integrate into gate_populator.go - Agent C owns integration
+            - Follow existing protocol package conventions: unexported helpers, exported main functions
+            - Function signatures must match interface_contracts exactly (Agent C depends on them)
+          files:
+            - pkg/protocol/checklist_populator.go
+        - id: B
+          task: |
+            Implement the M5 CLI command in cmd/saw/populate_integration_checklist_cmd.go.
+
+            ## What to Implement
+
+            Create a new sawtools command that wraps the PopulateIntegrationChecklist library
+            function and provides JSON output for observability. This command is primarily
+            for debugging/manual testing - the main integration path is finalize-impl.
+
+            **Command signature:**
+            ```
+            sawtools populate-integration-checklist <impl-doc-path> [--repo-root <path>]
+            ```
+
+            **Implementation:**
+
+            1. **Cobra command setup:**
+               ```go
+               func newPopulateIntegrationChecklistCmd() *cobra.Command {
+                 var repoRoot string
+                 cmd := &cobra.Command{
+                   Use:   "populate-integration-checklist <manifest-path>",
+                   Short: "M5: Auto-generate post_merge_checklist from file_ownership patterns",
+                   Long: `Determinism tool that scans file_ownership for integration-requiring
+               patterns (new API handlers, React components, CLI commands, background services)
+               and populates post_merge_checklist groups.
+
+               Detection patterns:
+               - API handlers: pkg/api/*_handler.go (action:new) → register routes in server.go
+               - React components: web/src/components/*.tsx (action:new) → add to App.tsx navigation
+               - CLI commands: cmd/saw/*_cmd.go (action:new) → register in main.go
+               - Background services: goroutine spawn patterns → init in Server constructor
+
+               Output: Updated IMPL manifest with populated post_merge_checklist.
+               Idempotent: safe to run multiple times (won't duplicate items).`,
+                   Args: cobra.ExactArgs(1),
+                   RunE: func(cmd *cobra.Command, args []string) error {
+                     // Implementation here
+                   },
+                 }
+                 cmd.Flags().StringVar(&repoRoot, "repo-root", ".", "Repository root for file parsing")
+                 return cmd
+               }
+               ```
+
+            2. **Command logic:**
+               - Load manifest from args[0] using protocol.Load()
+               - Call protocol.PopulateIntegrationChecklist(manifest)
+               - Save updated manifest using protocol.Save()
+               - Print JSON result to stdout for observability
+
+            3. **JSON output format:**
+               ```json
+               {
+                 "success": true,
+                 "groups_added": 3,
+                 "items_added": 8,
+                 "groups": [
+                   {"title": "API Route Registration", "item_count": 2},
+                   {"title": "React Navigation Wiring", "item_count": 4},
+                   {"title": "CLI Command Registration", "item_count": 2}
+                 ]
+               }
+               ```
+
+            4. **Error handling:**
+               - If manifest load fails: return error with context
+               - If PopulateIntegrationChecklist fails: return error
+               - If manifest save fails: return error (atomic - no partial writes)
+               - Exit code 1 on any error (cobra automatic via return error)
+
+            ## Interface Contracts
+
+            Calls Agent A's PopulateIntegrationChecklist function:
+            ```go
+            updatedManifest, err := protocol.PopulateIntegrationChecklist(manifest)
+            ```
+
+            ## Tests
+
+            No tests required - CLI command testing is covered by Agent D's library tests.
+            Manual testing only (sawtools command invocation).
+
+            ## Dependencies
+
+            - github.com/spf13/cobra (CLI framework)
+            - github.com/blackwell-systems/scout-and-wave-go/pkg/protocol (for Load, Save, PopulateIntegrationChecklist)
+            - encoding/json (for JSON output)
+
+            ## Constraints
+
+            - Do NOT register this command in main.go yet - Agent C handles integration
+            - Follow existing cmd/saw command patterns (see finalize_impl_cmd.go for reference)
+            - Use JSON output (not plain text) for structured observability
+            - Command must be idempotent (safe to run multiple times on same manifest)
+          files:
+            - cmd/saw/populate_integration_checklist_cmd.go
+        - id: D
+          task: |
+            Implement comprehensive tests for M5 integration checklist population in
+            pkg/protocol/checklist_populator_test.go.
+
+            ## What to Implement
+
+            Test suite covering all 4 detection patterns and end-to-end PopulateIntegrationChecklist
+            function. Tests use real file_ownership structs and verify correct checklist generation.
+
+            **Test structure:**
+
+            1. **TestDetectAPIHandlers:**
+               ```go
+               func TestDetectAPIHandlers(t *testing.T) {
+                 // Given: file_ownership with pkg/api/pipeline_handler.go (action:new)
+                 ownership := []FileOwnership{
+                   {File: "pkg/api/pipeline_handler.go", Agent: "A", Wave: 1, Action: "new"},
+                 }
+                 // When: detectAPIHandlers runs
+                 items := detectAPIHandlers(ownership, "/fake/repo")
+                 // Then: returns checklist item for route registration
+                 require.Len(t, items, 1)
+                 assert.Contains(t, items[0].Description, "Register routes in server.go")
+                 assert.Contains(t, items[0].Command, "grep")
+               }
+               ```
+
+            2. **TestDetectReactComponents:**
+               - Test case 1: Top-level component (PipelineView.tsx) → generates checklist item
+               - Test case 2: UI primitive (components/ui/button.tsx) → filtered out (no item)
+               - Test case 3: Test file (PipelineView.test.tsx) → filtered out
+               - Test case 4: Non-default export → no item (only default exports are screens)
+
+            3. **TestDetectCLICommands:**
+               - Test case 1: cmd/saw/populate_integration_checklist_cmd.go → generates item
+               - Test case 2: cmd/saw/main.go (action:modify) → no item (only new files)
+
+            4. **TestDetectBackgroundServices:**
+               - Test case 1: File with "go s.notificationBus.Start(ctx)" → generates item
+               - Test case 2: File with "time.NewTicker" → generates item
+               - Test case 3: File with one-off "go func()" → generates item (acceptable false positive)
+               - Test case 4: File with no goroutines → no item
+
+            5. **TestPopulateIntegrationChecklist_MultiPattern:**
+               ```go
+               func TestPopulateIntegrationChecklist_MultiPattern(t *testing.T) {
+                 // Given: manifest with 3 new API handlers, 2 React components, 1 CLI command
+                 manifest := &IMPLManifest{
+                   FileOwnership: []FileOwnership{
+                     {File: "pkg/api/pipeline_handler.go", Agent: "A", Wave: 1, Action: "new"},
+                     {File: "pkg/api/queue_handler.go", Agent: "A", Wave: 1, Action: "new"},
+                     {File: "pkg/api/resume_handler.go", Agent: "B", Wave: 1, Action: "new"},
+                     {File: "web/src/components/PipelineView.tsx", Agent: "C", Wave: 1, Action: "new"},
+                     {File: "web/src/components/QueuePanel.tsx", Agent: "C", Wave: 1, Action: "new"},
+                     {File: "cmd/saw/populate_integration_checklist_cmd.go", Agent: "D", Wave: 1, Action: "new"},
+                   },
+                 }
+                 // When: PopulateIntegrationChecklist runs
+                 result, err := PopulateIntegrationChecklist(manifest)
+                 // Then: returns 3 groups (API, React, CLI) with correct item counts
+                 require.NoError(t, err)
+                 require.NotNil(t, result.PostMergeChecklist)
+                 require.Len(t, result.PostMergeChecklist.Groups, 3)
+                 // Verify group titles and item counts
+                 apiGroup := findGroup(result.PostMergeChecklist.Groups, "API Route Registration")
+                 require.NotNil(t, apiGroup)
+                 assert.Len(t, apiGroup.Items, 3) // 3 handlers
+                 reactGroup := findGroup(result.PostMergeChecklist.Groups, "React Navigation Wiring")
+                 require.NotNil(t, reactGroup)
+                 assert.Len(t, reactGroup.Items, 2) // 2 components
+                 cliGroup := findGroup(result.PostMergeChecklist.Groups, "CLI Command Registration")
+                 require.NotNil(t, cliGroup)
+                 assert.Len(t, cliGroup.Items, 1) // 1 command
+               }
+               ```
+
+            6. **TestPopulateIntegrationChecklist_Idempotent:**
+               - Run PopulateIntegrationChecklist twice on same manifest
+               - Verify no duplicate groups or items (second run is no-op)
+
+            7. **TestPopulateIntegrationChecklist_EmptyOwnership:**
+               - Given: manifest with empty file_ownership
+               - When: PopulateIntegrationChecklist runs
+               - Then: returns manifest unchanged (no groups added)
+
+            8. **TestPopulateIntegrationChecklist_NoNewFiles:**
+               - Given: manifest with only action:modify files
+               - When: PopulateIntegrationChecklist runs
+               - Then: returns manifest unchanged (only action:new files trigger detection)
+
+            **Test helpers:**
+            ```go
+            func findGroup(groups []ChecklistGroup, title string) *ChecklistGroup
+            func createTestManifest(ownership []FileOwnership) *IMPLManifest
+            ```
+
+            ## Interface Contracts
+
+            Tests Agent A's implementation of:
+            - PopulateIntegrationChecklist
+            - detectAPIHandlers
+            - detectReactComponents
+            - detectCLICommands
+            - detectBackgroundServices
+
+            ## Dependencies
+
+            - github.com/stretchr/testify/assert
+            - github.com/stretchr/testify/require
+            - github.com/blackwell-systems/scout-and-wave-go/pkg/protocol (types and functions under test)
+
+            ## Constraints
+
+            - Use table-driven tests for multiple test cases per function
+            - Use require for assertions that must pass before continuing (e.g., err == nil)
+            - Use assert for non-fatal checks (e.g., string contains)
+            - All tests must pass with Agent A's implementation (coordinate via interface contracts)
+          files:
+            - pkg/protocol/checklist_populator_test.go
+      base_commit: 5890c833c1ce0427d0451fd66efe45522ebd836b
+    - number: 2
+      agents:
+        - id: C
+          task: |
+            Integrate M5 into the finalize-impl batching command and register the new CLI command.
+
+            ## What to Implement
+
+            Two integration points:
+
+            1. **Add M5 to FinalizeIMPL workflow (pkg/protocol/gate_populator.go):**
+               - Modify FinalizeIMPL function to call PopulateIntegrationChecklist after M4 gate population
+               - Update FinalizeIMPLResult struct to include M5 statistics
+               - Preserve atomic transaction semantics (rollback on failure)
+
+            2. **Register populate-integration-checklist command (cmd/saw/finalize_impl_cmd.go):**
+               - Actually, this should be in main.go - will handle both files
+
+            **Integration workflow (FinalizeIMPL):**
+
+            Current steps:
+            1. Load manifest
+            2. Initial validation (E16)
+            3. Extract H2 command data
+            4. Populate verification gates (M4)
+            5. Final validation
+            6. Save manifest
+
+            New workflow (add step 4.5):
+            1. Load manifest
+            2. Initial validation (E16)
+            3. Extract H2 command data
+            4. Populate verification gates (M4)
+            **4.5. Populate integration checklist (M5)**
+            5. Final validation
+            6. Save manifest
+
+            **Code changes to gate_populator.go:**
+
+            ```go
+            // Update FinalizeIMPLResult struct
+            type FinalizeIMPLResult struct {
+              Success         bool                `json:"success"`
+              Validation      ValidateResult      `json:"validation"`
+              GatePopulation  GatePopulationStats `json:"gate_population"`
+              ChecklistPopulation ChecklistPopulationStats `json:"checklist_population"` // NEW
+              FinalValidation ValidateResult      `json:"final_validation"`
+            }
+
+            type ChecklistPopulationStats struct {
+              GroupsAdded int `json:"groups_added"`
+              ItemsAdded  int `json:"items_added"`
+            }
+
+            // In FinalizeIMPL function, after step 4 (PopulateVerificationGates):
+
+            // Step 4.5: Populate integration checklist (M5)
+            updatedManifest, err = PopulateIntegrationChecklist(updatedManifest)
+            if err != nil {
+              result.Success = false
+              return result, fmt.Errorf("failed to populate integration checklist: %w", err)
+            }
+
+            // Count groups and items added
+            groupsAdded := 0
+            itemsAdded := 0
+            if updatedManifest.PostMergeChecklist != nil {
+              groupsAdded = len(updatedManifest.PostMergeChecklist.Groups)
+              for _, group := range updatedManifest.PostMergeChecklist.Groups {
+                itemsAdded += len(group.Items)
+              }
+            }
+            result.ChecklistPopulation = ChecklistPopulationStats{
+              GroupsAdded: groupsAdded,
+              ItemsAdded:  itemsAdded,
+            }
+            ```
+
+            **Code changes to cmd/saw/main.go (if separate file needed):**
+
+            Add to rootCmd.AddCommand() list:
+            ```go
+            rootCmd.AddCommand(
+              // ... existing commands ...
+              newPopulateIntegrationChecklistCmd(), // NEW: M5 CLI command
+              // ... rest of commands ...
+            )
+            ```
+
+            **Note on file ownership:**
+            Agent C owns three files: gate_populator.go (M5 integration into FinalizeIMPL),
+            finalize_impl_cmd.go (result struct updates), and main.go (command registration).
+            All three changes are tightly coupled and must happen atomically.
+
+            ## Interface Contracts
+
+            Calls Agent A's PopulateIntegrationChecklist:
+            ```go
+            updatedManifest, err := PopulateIntegrationChecklist(updatedManifest)
+            ```
+
+            Imports Agent B's command:
+            ```go
+            import "github.com/blackwell-systems/scout-and-wave-go/cmd/saw"
+            // (command is already in same package, just needs registration)
+            ```
+
+            ## Tests
+
+            No new test files - modify existing finalize_impl_cmd_test.go if needed to verify
+            ChecklistPopulation field in FinalizeIMPLResult JSON output. Agent D's tests already
+            cover PopulateIntegrationChecklist library logic.
+
+            ## Dependencies
+
+            - github.com/blackwell-systems/scout-and-wave-go/pkg/protocol (PopulateIntegrationChecklist, types)
+            - No new external dependencies
+
+            ## Constraints
+
+            - Do NOT break existing FinalizeIMPL behavior (M4 gate population must still work)
+            - Do NOT skip final validation step (step 5) - M5 may introduce new validation errors
+            - Atomic transaction semantics: if M5 fails, rollback entire FinalizeIMPL operation
+            - JSON output change is backward-compatible (added field, existing fields unchanged)
+          files:
+            - pkg/protocol/gate_populator.go
+            - cmd/saw/finalize_impl_cmd.go
+      base_commit: dc39e86c8ad75f682e27da90d7d2409da8a14d46
+quality_gates:
+    level: standard
+    gates:
+        - type: build
+          command: go build ./...
+          required: true
+        - type: test
+          command: go test ./pkg/protocol/... ./cmd/saw/...
+          required: true
+        - type: lint
+          command: go vet ./...
+          required: true
+completion_reports:
+    A:
+        status: complete
+        worktree: /Users/dayna.blackwell/code/scout-and-wave-go/.claude/worktrees/saw/integration-checklist-m5/wave1-agent-A
+        branch: saw/integration-checklist-m5/wave1-agent-A
+        commit: 1756fd6615eea3297c8020f7e9a91d132f6cdf3b
+        files_changed:
+            - pkg/protocol/checklist_populator.go
+        notes: auto-committed by orchestrator (API agent)
+    B:
+        status: complete
+        worktree: /Users/dayna.blackwell/code/scout-and-wave-go/.claude/worktrees/saw/integration-checklist-m5/wave1-agent-B
+        branch: saw/integration-checklist-m5/wave1-agent-B
+        commit: 28dfc16398e075f71e7f809ac0faf9020b5e3f7f
+        files_changed:
+            - cmd/saw/populate_integration_checklist_cmd.go
+            - pkg/protocol/checklist_populator.go
+        notes: auto-committed by orchestrator (API agent)
+    C:
+        status: complete
+        worktree: /Users/dayna.blackwell/code/scout-and-wave-go/.claude/worktrees/saw/integration-checklist-m5/wave2-agent-C
+        branch: saw/integration-checklist-m5/wave2-agent-C
+        commit: e2eae4c258a81edbbe386d386266e443f20ace2a
+        files_changed:
+            - cmd/saw/main.go
+            - pkg/protocol/gate_populator.go
+        notes: auto-committed by orchestrator (API agent)
+    D:
+        status: complete
+        worktree: /Users/dayna.blackwell/code/scout-and-wave-go/.claude/worktrees/saw/integration-checklist-m5/wave1-agent-D
+        branch: saw/integration-checklist-m5/wave1-agent-D
+        commit: b746cc02c9035a0f92bdfb336884acad46c05469
+        files_changed:
+            - pkg/protocol/checklist_populator.go
+            - pkg/protocol/checklist_populator_test.go
+        notes: auto-committed by orchestrator (API agent)
+integration_reports:
+    wave1:
+        wave: 1
+        gaps: []
+        valid: true
+        summary: 'Wave 1: all exports are integrated (no gaps detected)'
+pre_mortem:
+    overall_risk: medium
+    rows:
+        - scenario: File parsing fails for unsupported file types (non-Go, non-TSX)
+          likelihood: medium
+          impact: low
+          mitigation: |
+            Silent skip with error logging. M5 is opportunistic - if file parsing fails,
+            checklist item is not generated. Integration agent can still wire manually.
+        - scenario: Goroutine detection produces false positives (one-off goroutines vs services)
+          likelihood: high
+          impact: low
+          mitigation: |
+            Mark checklist items as "Verify if X needs initialization" rather than "Must wire X".
+            Human review filters false positives during post-merge checklist execution.
+        - scenario: React component detection misses non-default exports
+          likelihood: medium
+          impact: low
+          mitigation: |
+            Document limitation: M5 only detects "export default" components. Non-default exports
+            (named exports) require manual checklist entry. Acceptable for v1 - most screens use
+            default exports.
+        - scenario: M5 runs before M4, causing verification gates to be missing
+          likelihood: low
+          impact: high
+          mitigation: |
+            Integration order enforced in FinalizeIMPL: M4 runs before M5 (step 4 before step 4.5).
+            Agent C must preserve this order when integrating.
+state: WAVE_PENDING

@@ -11,38 +11,41 @@ import (
 	"strings"
 
 	"github.com/blackwell-systems/scout-and-wave-go/internal/git"
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
 )
 
 // Manager tracks and manages git worktrees for SAW wave agents.
 type Manager struct {
 	repoPath string
+	slug     string            // IMPL feature slug for slug-scoped branch naming
 	active   map[string]string // absolute worktree path -> branch name
 }
 
 // New creates a new Manager for the git repository at repoPath.
-func New(repoPath string) *Manager {
+// The slug parameter is the IMPL feature slug used for slug-scoped branch naming.
+func New(repoPath, slug string) *Manager {
 	return &Manager{
 		repoPath: repoPath,
+		slug:     slug,
 		active:   make(map[string]string),
 	}
 }
 
 // Create creates a new worktree for the given wave number and agent letter.
-// The worktree path follows the convention:
+// The worktree path follows the slug-scoped convention:
 //
-//	{repoPath}/.claude/worktrees/wave{wave}-agent-{agent}
+//	{repoPath}/.claude/worktrees/saw/{slug}/wave{wave}-agent-{agent}
 //
-// A new branch with the same name is created from HEAD.
+// A new branch with the slug-scoped name is created from HEAD.
 // Returns the absolute path to the created worktree.
 func (m *Manager) Create(wave int, agent string) (string, error) {
-	branch := fmt.Sprintf("wave%d-agent-%s", wave, agent)
-	wtDir := filepath.Join(m.repoPath, ".claude", "worktrees")
+	branch := protocol.BranchName(m.slug, wave, agent)
+	wtPath := protocol.WorktreeDir(m.repoPath, m.slug, wave, agent)
+	wtDir := filepath.Dir(wtPath)
 
 	if err := os.MkdirAll(wtDir, 0o755); err != nil {
 		return "", fmt.Errorf("failed to create worktree base directory %q: %w", wtDir, err)
 	}
-
-	wtPath := filepath.Join(wtDir, branch)
 
 	if err := git.WorktreeAdd(m.repoPath, wtPath, branch); err != nil {
 		return "", fmt.Errorf("manager: create worktree for wave %d agent %s: %w", wave, agent, err)

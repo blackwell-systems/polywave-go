@@ -4,13 +4,16 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"path/filepath"
 
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/gatecache"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
 	"github.com/spf13/cobra"
 )
 
 func newRunGatesCmd() *cobra.Command {
 	var waveNum int
+	var noCache bool
 
 	cmd := &cobra.Command{
 		Use:   "run-gates <manifest-path>",
@@ -24,7 +27,14 @@ func newRunGatesCmd() *cobra.Command {
 				return fmt.Errorf("run-gates: %w", err)
 			}
 
-			results, err := protocol.RunGates(m, waveNum, repoDir)
+			var results []protocol.GateResult
+			if noCache {
+				results, err = protocol.RunGates(m, waveNum, repoDir)
+			} else {
+				stateDir := filepath.Join(repoDir, ".saw-state")
+				cache := gatecache.New(stateDir, gatecache.DefaultTTL)
+				results, err = protocol.RunGatesWithCache(m, waveNum, repoDir, cache)
+			}
 			if err != nil {
 				return fmt.Errorf("run-gates: %w", err)
 			}
@@ -42,6 +52,7 @@ func newRunGatesCmd() *cobra.Command {
 	}
 
 	cmd.Flags().IntVar(&waveNum, "wave", 0, "Wave number")
+	cmd.Flags().BoolVar(&noCache, "no-cache", false, "Disable gate result caching")
 
 	return cmd
 }

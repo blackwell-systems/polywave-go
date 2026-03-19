@@ -2,6 +2,8 @@ package protocol
 
 import (
 	"fmt"
+	"log"
+	"path/filepath"
 	"strings"
 
 	"github.com/blackwell-systems/scout-and-wave-go/internal/git"
@@ -54,6 +56,16 @@ func Cleanup(manifestPath string, waveNum int, repoDir string) (*CleanupResult, 
 		Agents: make([]CleanupStatus, 0, len(targetWave.Agents)),
 	}
 
+	// Resolve repoDir to absolute path for cross-repo resolution.
+	absRepoDir, err := filepath.Abs(repoDir)
+	if err != nil {
+		return nil, fmt.Errorf("failed to resolve repo dir: %w", err)
+	}
+	repoParent := filepath.Dir(absRepoDir)
+
+	// Track unique repos for pruning at the end.
+	prunedRepos := map[string]bool{absRepoDir: true}
+
 	// Clean up each agent in the wave
 	for _, agent := range targetWave.Agents {
 		status := CleanupStatus{
@@ -62,45 +74,64 @@ func Cleanup(manifestPath string, waveNum int, repoDir string) (*CleanupResult, 
 			BranchDeleted:   false,
 		}
 
-		// Resolve worktree path: checks .claude/worktrees/ then .claire/worktrees/
-		branch := fmt.Sprintf("wave%d-agent-%s", waveNum, agent.ID)
-		worktreePath := ResolveWorktreePath(repoDir, branch)
+		// Determine agent's repo (cross-repo support).
+		agentRepo := determineAgentRepo(manifest.FileOwnership, agent.ID)
+		agentRepoDir := absRepoDir
+		if agentRepo != "" && agentRepo != filepath.Base(absRepoDir) {
+			agentRepoDir = filepath.Join(repoParent, agentRepo)
+		}
+		prunedRepos[agentRepoDir] = true
 
-		// Attempt to remove worktree
-		err := git.WorktreeRemove(repoDir, worktreePath)
-		if err != nil {
-			// Check if the error indicates the worktree is already gone (idempotent)
-			errMsg := err.Error()
+		// Try new slug-scoped format first, then legacy format as fallback.
+		branchName := BranchName(manifest.FeatureSlug, waveNum, agent.ID)
+		legacyBranch := LegacyBranchName(waveNum, agent.ID)
+
+		// Resolve worktree paths for both formats
+		worktreePath := ResolveWorktreePathWithSlug(agentRepoDir, manifest.FeatureSlug, waveNum, agent.ID)
+
+		// Attempt to remove worktree (tries slug-scoped path which may resolve to legacy)
+		rmErr := git.WorktreeRemove(agentRepoDir, worktreePath)
+		if rmErr != nil {
+			errMsg := rmErr.Error()
 			if strings.Contains(errMsg, "is not a working tree") ||
 				strings.Contains(errMsg, "not found") ||
 				strings.Contains(errMsg, "no such file") {
-				// Already gone - treat as success
 				status.WorktreeRemoved = true
 			}
-			// Otherwise, leave WorktreeRemoved as false and continue
 		} else {
 			status.WorktreeRemoved = true
 		}
 
-		// Construct branch name: wave{N}-agent-{ID}
-		branchName := fmt.Sprintf("wave%d-agent-%s", waveNum, agent.ID)
-
-		// Attempt to delete branch
-		err = git.DeleteBranch(repoDir, branchName)
-		if err != nil {
-			// Check if the error indicates the branch is already gone (idempotent)
-			errMsg := err.Error()
+		// Attempt to delete branch: try new format first, then legacy
+		delErr := git.DeleteBranch(agentRepoDir, branchName)
+		if delErr != nil {
+			errMsg := delErr.Error()
 			if strings.Contains(errMsg, "not found") ||
 				strings.Contains(errMsg, "branch") && strings.Contains(errMsg, "not found") {
-				// Already gone - treat as success
-				status.BranchDeleted = true
+				// New-format branch not found — try legacy
+				err2 := git.DeleteBranch(agentRepoDir, legacyBranch)
+				if err2 != nil {
+					errMsg2 := err2.Error()
+					if strings.Contains(errMsg2, "not found") ||
+						strings.Contains(errMsg2, "branch") && strings.Contains(errMsg2, "not found") {
+						status.BranchDeleted = true
+					}
+				} else {
+					status.BranchDeleted = true
+				}
 			}
-			// Otherwise, leave BranchDeleted as false and continue
 		} else {
 			status.BranchDeleted = true
 		}
 
 		result.Agents = append(result.Agents, status)
+	}
+
+	// Best-effort: prune stale worktree entries from all involved repos.
+	for repo := range prunedRepos {
+		if err := git.WorktreePrune(repo); err != nil {
+			log.Printf("warning: git worktree prune failed for %s (non-fatal): %v", repo, err)
+		}
 	}
 
 	return result, nil

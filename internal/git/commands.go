@@ -36,6 +36,17 @@ func WorktreeAdd(repoPath, path, branch string) error {
 	return nil
 }
 
+// WorktreePrune removes stale worktree entries from the repository at repoPath.
+// This cleans up references to worktrees whose directories have been deleted
+// but whose metadata still exists in .git/worktrees/.
+func WorktreePrune(repoPath string) error {
+	_, err := Run(repoPath, "worktree", "prune")
+	if err != nil {
+		return fmt.Errorf("git worktree prune failed: %w", err)
+	}
+	return nil
+}
+
 // WorktreeRemove removes the worktree at path from the repository at repoPath.
 // --force is required because agent worktrees often contain untracked files
 // that git would otherwise refuse to delete.
@@ -199,6 +210,12 @@ func DeleteBranch(repoPath, branch string) error {
 	return nil
 }
 
+// BranchExists returns true if the named branch exists in the repository.
+func BranchExists(repoPath, branch string) bool {
+	_, err := Run(repoPath, "rev-parse", "--verify", "refs/heads/"+branch)
+	return err == nil
+}
+
 // RevParse resolves ref to a commit SHA in the repository at repoPath.
 func RevParse(repoPath, ref string) (string, error) {
 	out, err := Run(repoPath, "rev-parse", ref)
@@ -273,6 +290,20 @@ if [[ "$branch" == "main" || "$branch" == "master" ]]; then
 	echo "  export SAW_ALLOW_MAIN_COMMIT=1"
 	echo ""
 	exit 1
+fi
+
+# Block go.mod replace directives with deep relative paths (worktree artifact).
+# Paths like ../../../../sibling are relative to the worktree depth, not repo root.
+# They break after merge. Correct paths use at most ../ (one level up from repo root).
+if git diff --cached --name-only | grep -q '^go\.mod$'; then
+	if git diff --cached -- go.mod | grep -E '^\+.*=>.*\.\./\.\./\.\.' > /dev/null 2>&1; then
+		echo "❌ SAW go.mod guard: replace directive has deep relative path (../../../...)"
+		echo ""
+		echo "Replace paths in go.mod must be relative to the repo root, not the worktree."
+		echo "Do NOT modify replace directives — they are already correct for the repo root."
+		echo ""
+		exit 1
+	fi
 fi
 
 # Allow commits to wave branches

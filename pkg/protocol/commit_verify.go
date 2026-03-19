@@ -16,6 +16,7 @@ type CommitStatus struct {
 	Branch      string `json:"branch"`
 	CommitCount int    `json:"commit_count"`
 	HasCommits  bool   `json:"has_commits"`
+	CrossRepo   bool   `json:"cross_repo,omitempty"` // true when verified via completion report (cross-repo agent)
 }
 
 // VerifyCommitsResult represents the outcome of verifying that all agents
@@ -112,7 +113,8 @@ func VerifyCommits(manifestPath string, waveNum int, repoDir string) (*VerifyCom
 
 	// Check each agent's branch in its respective repository
 	for _, agent := range targetWave.Agents {
-		branchName := fmt.Sprintf("wave%d-agent-%s", waveNum, agent.ID)
+		branchName := BranchName(manifest.FeatureSlug, waveNum, agent.ID)
+		legacyBranch := LegacyBranchName(waveNum, agent.ID)
 
 		// Determine which repo this agent worked in (already an absolute path)
 		agentRepoDir := agentRepos[agent.ID]
@@ -125,6 +127,8 @@ func VerifyCommits(manifestPath string, waveNum int, repoDir string) (*VerifyCom
 		// Count commits on the branch relative to recorded base commit.
 		// Use the wave's base commit (recorded at worktree creation) rather than
 		// current HEAD, so verification works even if branches were already merged.
+		// Try slug-scoped branch first, then fall back to legacy branch name.
+		activeBranch := branchName
 		revListArg := baseCommit + ".." + branchName
 		output, err := git.Run(agentRepoDir, "rev-list", "--count", revListArg)
 
@@ -133,6 +137,20 @@ func VerifyCommits(manifestPath string, waveNum int, repoDir string) (*VerifyCom
 			// was recorded from a different repo). Fall back to HEAD..branch in the
 			// agent's own repo, which counts commits not yet merged to the local HEAD.
 			output, err = git.Run(agentRepoDir, "rev-list", "--count", "HEAD.."+branchName)
+		}
+
+		if err != nil {
+			// Try legacy branch name for backward compatibility
+			activeBranch = legacyBranch
+			revListArg = baseCommit + ".." + legacyBranch
+			output, err = git.Run(agentRepoDir, "rev-list", "--count", revListArg)
+			if err != nil {
+				output, err = git.Run(agentRepoDir, "rev-list", "--count", "HEAD.."+legacyBranch)
+			}
+		}
+
+		if err == nil {
+			status.Branch = activeBranch
 		}
 
 		if err != nil {
@@ -150,6 +168,17 @@ func VerifyCommits(manifestPath string, waveNum int, repoDir string) (*VerifyCom
 			} else {
 				status.CommitCount = count
 				status.HasCommits = count > 0
+			}
+		}
+
+		// Fallback: if no branch commits found, check if completion report has a commit SHA.
+		// Cross-repo agents (e.g. docs agents committing to a different repo's default branch)
+		// won't have a wave branch — their completion report commit is the I5 proof.
+		if !status.HasCommits {
+			if report, ok := manifest.CompletionReports[agent.ID]; ok && report.Commit != "" {
+				status.HasCommits = true
+				status.CommitCount = 1
+				status.CrossRepo = true
 			}
 		}
 
