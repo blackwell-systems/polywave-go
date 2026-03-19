@@ -434,6 +434,7 @@ var ValidGateTypes = map[string]bool{
 	"lint":      true,
 	"test":      true,
 	"typecheck": true,
+	"format":    true,
 	"custom":    true,
 }
 
@@ -512,7 +513,7 @@ func validateGateTypes(m *IMPLManifest) []ValidationError {
 		if !ValidGateTypes[gate.Type] {
 			errs = append(errs, ValidationError{
 				Code:    "DC07_INVALID_GATE_TYPE",
-				Message: fmt.Sprintf("quality gate type %q is invalid — must be one of: build, lint, test, typecheck, custom", gate.Type),
+				Message: fmt.Sprintf("quality gate type %q is invalid — must be one of: build, lint, test, typecheck, format, custom", gate.Type),
 				Field:   fmt.Sprintf("quality_gates.gates[%d].type", i),
 			})
 		}

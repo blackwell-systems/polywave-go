@@ -429,7 +429,7 @@ func validateJSQualityGates(raw map[string]any) []ValidationError {
 		return errs
 	}
 
-	validGateTypes := []string{"build", "lint", "test", "typecheck", "custom"}
+	validGateTypes := []string{"build", "lint", "test", "typecheck", "format", "custom"}
 	for i, gateVal := range gates {
 		gate, ok := gateVal.(map[string]any)
 		if !ok {

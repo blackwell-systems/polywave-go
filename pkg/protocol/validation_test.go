@@ -913,6 +913,7 @@ func TestValidateGateTypes_Valid(t *testing.T) {
 				{Type: "lint", Command: "golint", Required: true},
 				{Type: "test", Command: "go test", Required: true},
 				{Type: "typecheck", Command: "go vet", Required: false},
+				{Type: "format", Command: "gofmt -l .", Required: false},
 				{Type: "custom", Command: "./custom.sh", Required: false},
 			},
 		},
@@ -921,6 +922,44 @@ func TestValidateGateTypes_Valid(t *testing.T) {
 	errs := validateGateTypes(m)
 	if len(errs) != 0 {
 		t.Errorf("Expected no errors for valid gate types, got %d: %v", len(errs), errs)
+	}
+}
+
+// TestValidateGateTypes_FormatIsValid tests that "format" is now a valid gate type.
+func TestValidateGateTypes_FormatIsValid(t *testing.T) {
+	m := &IMPLManifest{
+		QualityGates: &QualityGates{
+			Level: "standard",
+			Gates: []QualityGate{
+				{Type: "format", Command: "gofmt -l .", Required: false},
+			},
+		},
+	}
+
+	errs := validateGateTypes(m)
+	if len(errs) != 0 {
+		t.Errorf("Expected no errors for format gate type, got %d: %v", len(errs), errs)
+	}
+}
+
+// TestFixGateTypes_FormatNotRewrittenToCustom tests that "format" is now a valid gate type
+// and FixGateTypes does NOT rewrite it to "custom".
+func TestFixGateTypes_FormatNotRewrittenToCustom(t *testing.T) {
+	m := &IMPLManifest{
+		QualityGates: &QualityGates{
+			Level: "standard",
+			Gates: []QualityGate{
+				{Type: "format", Command: "gofmt -l .", Required: false},
+			},
+		},
+	}
+
+	fixed := FixGateTypes(m)
+	if fixed != 0 {
+		t.Errorf("Expected 0 fixes (format is valid), got %d", fixed)
+	}
+	if m.QualityGates.Gates[0].Type != "format" {
+		t.Errorf("Expected gate type to remain 'format', got %q", m.QualityGates.Gates[0].Type)
 	}
 }
 

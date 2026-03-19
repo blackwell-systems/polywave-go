@@ -2,6 +2,7 @@ package protocol
 
 import (
 	"encoding/json"
+	"os"
 	"testing"
 	"time"
 
@@ -433,6 +434,182 @@ func TestRunGatesWithCache_ParsedErrors(t *testing.T) {
 
 	// ParsedErrors field should be accessible (nil/empty for non-matching commands)
 	_ = results[0].ParsedErrors
+}
+
+// ---- Format gate tests ----
+
+// TestIsSourceGateType_Format asserts that "format" is treated as a source gate type
+// and will be skipped on docs-only waves.
+func TestIsSourceGateType_Format(t *testing.T) {
+	if !isSourceGateType("format") {
+		t.Error("expected isSourceGateType(\"format\") == true")
+	}
+	// Verify other source types still work.
+	for _, typ := range []string{"build", "test", "tests", "lint"} {
+		if !isSourceGateType(typ) {
+			t.Errorf("expected isSourceGateType(%q) == true", typ)
+		}
+	}
+	// Non-source types.
+	for _, typ := range []string{"custom", "typecheck", "unknown"} {
+		if isSourceGateType(typ) {
+			t.Errorf("expected isSourceGateType(%q) == false", typ)
+		}
+	}
+}
+
+// TestRunGates_FormatGate_CheckMode tests that a format gate with an explicit command
+// runs in check mode (gate.Fix=false) and returns the correct type/pass status.
+func TestRunGates_FormatGate_CheckMode(t *testing.T) {
+	manifest := &IMPLManifest{
+		QualityGates: &QualityGates{
+			Level: "standard",
+			Gates: []QualityGate{
+				{
+					Type:     "format",
+					Command:  "echo formatted",
+					Required: true,
+					Fix:      false,
+				},
+			},
+		},
+	}
+
+	results, err := RunGates(manifest, 1, t.TempDir())
+	if err != nil {
+		t.Fatalf("expected no error, got: %v", err)
+	}
+	if len(results) != 1 {
+		t.Fatalf("expected 1 result, got %d", len(results))
+	}
+	result := results[0]
+	if result.Type != "format" {
+		t.Errorf("expected Type 'format', got %q", result.Type)
+	}
+	if !result.Passed {
+		t.Errorf("expected Passed=true, got false (stderr: %s)", result.Stderr)
+	}
+	if result.Skipped {
+		t.Error("expected Skipped=false for explicit command")
+	}
+}
+
+// TestRunGates_FormatGate_FixMode tests that a format gate with Fix=true runs
+// the command and, when a cache is provided, the cache is invalidated after execution.
+func TestRunGates_FormatGate_FixMode(t *testing.T) {
+	dir := t.TempDir()
+	cache := gatecache.New(dir, 5*time.Minute)
+
+	manifest := &IMPLManifest{
+		QualityGates: &QualityGates{
+			Level: "standard",
+			Gates: []QualityGate{
+				{
+					Type:     "format",
+					Command:  "echo fixed",
+					Required: true,
+					Fix:      true,
+				},
+			},
+		},
+	}
+
+	results, err := RunGatesWithCache(manifest, 1, t.TempDir(), cache)
+	if err != nil {
+		t.Fatalf("expected no error, got: %v", err)
+	}
+	if len(results) != 1 {
+		t.Fatalf("expected 1 result, got %d", len(results))
+	}
+	result := results[0]
+	if result.Type != "format" {
+		t.Errorf("expected Type 'format', got %q", result.Type)
+	}
+	if !result.Passed {
+		t.Errorf("expected Passed=true, got false (stderr: %s)", result.Stderr)
+	}
+	// After fix mode, cache should have been invalidated (no error expected).
+	// We can't directly assert the cache is empty without internals, but we
+	// verify runFormatGate returned a proper result.
+}
+
+// TestRunGates_FormatGate_SkipNoFormatter tests that a format gate with no explicit
+// command and no formatter-marker files in the temp dir returns Skipped=true, Passed=true.
+// The stub DetectFormatter always returns empty FormatConfig, so this exercises that path.
+func TestRunGates_FormatGate_SkipNoFormatter(t *testing.T) {
+	// Use a temp dir with no go.mod / package.json / etc.
+	emptyDir := t.TempDir()
+
+	manifest := &IMPLManifest{
+		QualityGates: &QualityGates{
+			Level: "standard",
+			Gates: []QualityGate{
+				{
+					Type:     "format",
+					Command:  "", // no explicit command — triggers auto-detection
+					Required: false,
+				},
+			},
+		},
+	}
+
+	results, err := RunGates(manifest, 1, emptyDir)
+	if err != nil {
+		t.Fatalf("expected no error, got: %v", err)
+	}
+	if len(results) != 1 {
+		t.Fatalf("expected 1 result, got %d", len(results))
+	}
+	result := results[0]
+	if result.Type != "format" {
+		t.Errorf("expected Type 'format', got %q", result.Type)
+	}
+	if !result.Skipped {
+		t.Errorf("expected Skipped=true when no formatter detected, got false")
+	}
+	if !result.Passed {
+		t.Errorf("expected Passed=true when skipped (no formatter), got false")
+	}
+}
+
+// TestRunGates_FormatGate_WithGoMod tests that a format gate with no explicit command
+// in a directory with go.mod triggers gofmt detection and runs a check command.
+// Since DetectFormatter is a stub in Agent B's worktree, this test verifies behavior
+// once Agent A's implementation is in place by using an explicit command instead.
+func TestRunGates_FormatGate_ExplicitCommandSucceeds(t *testing.T) {
+	// Write a go.mod to simulate a Go project (useful for integration after merge).
+	tmpDir := t.TempDir()
+	if err := os.WriteFile(tmpDir+"/go.mod", []byte("module example.com/test\n\ngo 1.21\n"), 0644); err != nil {
+		t.Fatalf("failed to write go.mod: %v", err)
+	}
+
+	manifest := &IMPLManifest{
+		QualityGates: &QualityGates{
+			Level: "standard",
+			Gates: []QualityGate{
+				{
+					Type:     "format",
+					Command:  "echo format-check-pass",
+					Required: true,
+					Fix:      false,
+				},
+			},
+		},
+	}
+
+	results, err := RunGates(manifest, 1, tmpDir)
+	if err != nil {
+		t.Fatalf("expected no error, got: %v", err)
+	}
+	if len(results) != 1 {
+		t.Fatalf("expected 1 result, got %d", len(results))
+	}
+	if !results[0].Passed {
+		t.Errorf("expected format gate to pass with explicit echo command")
+	}
+	if results[0].Type != "format" {
+		t.Errorf("expected Type 'format', got %q", results[0].Type)
+	}
 }
 
 // TestGateResult_JSONWithParsedErrors verifies JSON marshaling includes parsed_errors.
