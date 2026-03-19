@@ -86,6 +86,51 @@ func ActionRequired(failureType FailureTypeEnum) string {
 	}
 }
 
+// MaxRetriesWithReactions returns the max retry count for a failure type,
+// consulting the reactions block first, then falling back to MaxRetries.
+// reactions may be nil (reactions block absent) — returns MaxRetries in that case.
+func MaxRetriesWithReactions(failureType FailureTypeEnum, reactions *ReactionsConfig) int {
+	if reactions == nil {
+		return MaxRetries(failureType)
+	}
+	entry := reactionEntryFor(failureType, reactions)
+	if entry == nil || entry.MaxAttempts == 0 {
+		return MaxRetries(failureType)
+	}
+	return entry.MaxAttempts
+}
+
+// reactionEntryFor returns the ReactionEntry for a given FailureTypeEnum, or nil.
+func reactionEntryFor(failureType FailureTypeEnum, r *ReactionsConfig) *ReactionEntry {
+	if r == nil {
+		return nil
+	}
+	switch failureType {
+	case FailureTransient:
+		return r.Transient
+	case FailureTimeout:
+		return r.Timeout
+	case FailureFixable:
+		return r.Fixable
+	case FailureNeedsReplan:
+		return r.NeedsReplan
+	case FailureEscalate:
+		return r.Escalate
+	default:
+		return nil
+	}
+}
+
+// ShouldRetryWithReactions returns true if the reactions block (or E19 default)
+// calls for automatic retry of this failure type.
+func ShouldRetryWithReactions(failureType FailureTypeEnum, reactions *ReactionsConfig) bool {
+	entry := reactionEntryFor(failureType, reactions)
+	if entry == nil {
+		return ShouldRetry(failureType)
+	}
+	return entry.Action == "retry" || entry.Action == "send-fix-prompt"
+}
+
 // ValidFailureType returns true if the given string is a valid FailureTypeEnum value.
 func ValidFailureType(s string) bool {
 	switch FailureTypeEnum(s) {

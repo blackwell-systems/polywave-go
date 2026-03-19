@@ -40,6 +40,7 @@ type IMPLManifest struct {
 	// Integration connectors: files the integration agent is allowed to modify
 	IntegrationConnectors []IntegrationConnector         `yaml:"integration_connectors,omitempty" json:"integration_connectors,omitempty"`
 	PreMortem             *PreMortem                     `yaml:"pre_mortem,omitempty" json:"pre_mortem,omitempty"`
+	Reactions             *ReactionsConfig               `yaml:"reactions,omitempty"  json:"reactions,omitempty"`
 	KnownIssues           []KnownIssue                   `yaml:"known_issues,omitempty" json:"known_issues,omitempty"`
 	State                 ProtocolState                  `yaml:"state,omitempty" json:"state,omitempty"`
 	MergeState            MergeState                     `yaml:"merge_state,omitempty" json:"merge_state,omitempty"`
@@ -165,6 +166,27 @@ type KnownIssue struct {
 	Description string `yaml:"description" json:"description"`
 	Status      string `yaml:"status,omitempty" json:"status,omitempty"`
 	Workaround  string `yaml:"workaround,omitempty" json:"workaround,omitempty"`
+}
+
+// ReactionsConfig holds per-failure-type routing overrides for an IMPL manifest.
+// When present, the orchestrator reads this before falling back to E19 defaults.
+// All fields are optional; absent entries fall back to E19 hardcoded behavior.
+type ReactionsConfig struct {
+	Transient   *ReactionEntry `yaml:"transient,omitempty"    json:"transient,omitempty"`
+	Timeout     *ReactionEntry `yaml:"timeout,omitempty"      json:"timeout,omitempty"`
+	Fixable     *ReactionEntry `yaml:"fixable,omitempty"      json:"fixable,omitempty"`
+	NeedsReplan *ReactionEntry `yaml:"needs_replan,omitempty" json:"needs_replan,omitempty"`
+	Escalate    *ReactionEntry `yaml:"escalate,omitempty"     json:"escalate,omitempty"`
+}
+
+// ReactionEntry defines the action and retry cap for one failure type.
+type ReactionEntry struct {
+	// Action must be one of: "retry", "send-fix-prompt", "pause", "auto-scout"
+	Action string `yaml:"action"                 json:"action"`
+	// MaxAttempts is the maximum number of launch attempts (including the first).
+	// Only meaningful when Action is "retry" or "send-fix-prompt".
+	// Zero means use the E19 default for this failure type.
+	MaxAttempts int `yaml:"max_attempts,omitempty" json:"max_attempts,omitempty"`
 }
 
 // ValidationError represents a structured validation error from manifest validation.
