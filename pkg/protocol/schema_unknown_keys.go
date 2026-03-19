@@ -14,6 +14,10 @@ var knownKeys = map[string]map[string]bool{
 	"top": {
 		"title":                  true,
 		"feature_slug":           true,
+		"feature":                true,
+		"repository":             true,
+		"repositories":           true,
+		"plan_reference":         true,
 		"verdict":                true,
 		"suitability_assessment": true,
 		"test_command":           true,
@@ -75,9 +79,10 @@ var knownKeys = map[string]map[string]bool{
 		"required":    true,
 		"description": true,
 		"repo":        true,
+		"fix":         true,
 	},
 	"scaffold": {
-		"file_path":   true,
+		"file":        true,
 		"contents":    true,
 		"import_path": true,
 		"status":      true,

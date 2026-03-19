@@ -14,6 +14,15 @@ var ErrReportNotFound = errors.New("completion report not found")
 type IMPLManifest struct {
 	Title                 string                         `yaml:"title" json:"title"`
 	FeatureSlug           string                         `yaml:"feature_slug" json:"feature_slug"`
+	// Feature is a short one-line description of what this IMPL implements.
+	// Written by Scouts in the manifest header; informational only.
+	Feature              string                         `yaml:"feature,omitempty" json:"feature,omitempty"`
+	// Repository is the absolute path to the repository root (single-repo waves).
+	Repository            string                         `yaml:"repository,omitempty" json:"repository,omitempty"`
+	// Repositories lists absolute paths for multi-repo waves (omit if single-repo).
+	Repositories          []string                       `yaml:"repositories,omitempty" json:"repositories,omitempty"`
+	// PlanReference is an optional path to the original plan document.
+	PlanReference         string                         `yaml:"plan_reference,omitempty" json:"plan_reference,omitempty"`
 	Verdict               string                         `yaml:"verdict" json:"verdict"` // "SUITABLE" | "NOT_SUITABLE" | "SUITABLE_WITH_CAVEATS"
 	SuitabilityAssessment string                         `yaml:"suitability_assessment,omitempty" json:"suitability_assessment,omitempty"`
 	TestCommand           string                         `yaml:"test_command" json:"test_command"`
@@ -128,7 +137,7 @@ type QualityGate struct {
 // ScaffoldFile represents a type scaffold file that is created before wave execution.
 // Scaffolds allow parallel agents to reference shared types without race conditions.
 type ScaffoldFile struct {
-	FilePath   string `yaml:"file_path" json:"file_path"`
+	FilePath   string `yaml:"file" json:"file_path"`
 	Contents   string `yaml:"contents,omitempty" json:"contents,omitempty"`
 	ImportPath string `yaml:"import_path,omitempty" json:"import_path,omitempty"`
 	Status     string `yaml:"status,omitempty" json:"status,omitempty"` // "pending" | "committed"

@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"regexp"
 	"strings"
+
+	"gopkg.in/yaml.v3"
 )
 
 // agentIDRegex validates agent IDs: one uppercase letter, optionally followed by a digit 2-9
@@ -12,6 +14,8 @@ var agentIDRegex = regexp.MustCompile(`^[A-Z][2-9]?$`)
 // Validate runs all I1-I6 invariant checks on an IMPLManifest.
 // Returns a slice of ValidationErrors (empty if valid).
 // Multiple violations may be returned together for comprehensive reporting.
+// Note: unknown-key detection requires raw YAML bytes and cannot be performed here.
+// Use ValidateBytes to run both structural validation and unknown-key detection together.
 func Validate(m *IMPLManifest) []ValidationError {
 	var errs []ValidationError
 
@@ -497,6 +501,25 @@ func validateMultiRepoConsistency(m *IMPLManifest) []ValidationError {
 	}
 
 	return errs
+}
+
+// ValidateBytes unmarshals raw YAML into an IMPLManifest, runs Validate(), and
+// also runs DetectUnknownKeys() on the raw bytes to catch keys silently dropped
+// by Go's YAML unmarshaler. Returns the combined set of ValidationErrors.
+//
+// Use ValidateBytes when you have the raw YAML source (e.g., reading from disk).
+// Use Validate when you already have a parsed *IMPLManifest and only need
+// structural/invariant checks (unknown-key detection will not run).
+func ValidateBytes(yamlData []byte) ([]ValidationError, error) {
+	var m IMPLManifest
+	if err := yaml.Unmarshal(yamlData, &m); err != nil {
+		return nil, fmt.Errorf("ValidateBytes: unmarshal YAML: %w", err)
+	}
+
+	var errs []ValidationError
+	errs = append(errs, Validate(&m)...)
+	errs = append(errs, DetectUnknownKeys(yamlData)...)
+	return errs, nil
 }
 
 // validateGateTypes checks that all quality gate types are valid.
