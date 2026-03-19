@@ -36,7 +36,7 @@ quality_gates:
       command: "go build ./..."
       required: true
 scaffolds:
-  - file_path: pkg/types.go
+  - file: pkg/types.go
     contents: "package pkg"
     status: committed
 pre_mortem:
