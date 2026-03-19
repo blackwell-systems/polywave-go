@@ -24,6 +24,7 @@ func main() {
 		newSetCompletionCmd(),
 		newMarkCompleteCmd(),
 		newRunGatesCmd(),
+		newRunReviewCmd(),
 		newCheckConflictsCmd(),
 		newCheckDepsCmd(),
 		newValidateScaffoldsCmd(),
