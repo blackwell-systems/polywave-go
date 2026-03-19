@@ -33,6 +33,7 @@ type IMPLManifest struct {
 	QualityGates          *QualityGates                  `yaml:"quality_gates,omitempty" json:"quality_gates,omitempty"`
 	PostMergeChecklist    *PostMergeChecklist            `yaml:"post_merge_checklist,omitempty" json:"post_merge_checklist,omitempty"`
 	Scaffolds             []ScaffoldFile                 `yaml:"scaffolds,omitempty" json:"scaffolds,omitempty"`
+	Wiring                []WiringDeclaration            `yaml:"wiring,omitempty" json:"wiring,omitempty"`
 	CompletionReports     map[string]CompletionReport    `yaml:"completion_reports,omitempty" json:"completion_reports,omitempty"`
 	StubReports           map[string]*ScanStubsResult    `yaml:"stub_reports,omitempty" json:"stub_reports,omitempty"`
 	// E25: Integration validation reports per wave
