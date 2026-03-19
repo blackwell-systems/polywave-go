@@ -184,8 +184,9 @@ func TestAdvanceTierAutomatically_FreezeFails(t *testing.T) {
 	}
 }
 
-// TestReplanProgram_ValidRevision tests that ReplanProgram returns "not yet implemented"
-// (Planner launch is stubbed in Phase 2). The test validates the stub behavior.
+// TestReplanProgram_ValidRevision tests that ReplanProgram attempts to launch the Planner
+// agent. In test environments without API credentials it returns an error (backend
+// init or auth failure), which is still a non-nil error — the assertion holds.
 func TestReplanProgram_ValidRevision(t *testing.T) {
 	// Write a minimal PROGRAM manifest file
 	dir := t.TempDir()

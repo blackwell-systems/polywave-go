@@ -1,8 +1,11 @@
 package engine
 
 import (
+	"context"
 	"fmt"
 	"os"
+	"path/filepath"
+	"strings"
 
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
 )
@@ -114,10 +117,6 @@ func isFinalTier(manifest *protocol.PROGRAMManifest, tierNumber int) bool {
 
 // ReplanProgram launches the Planner agent to revise a PROGRAM manifest based on
 // execution feedback (tier gate failure, blocked IMPL, etc.).
-//
-// NOTE: Planner agent launch is not yet implemented. This function returns
-// "not yet implemented" until Wave 3 wires the saw-skill.md command.
-// Tests should mock Planner completion by writing a revised manifest file directly.
 func ReplanProgram(opts ReplanProgramOpts) (*ReplanResult, error) {
 	// Step 1: Read existing PROGRAM manifest
 	manifestData, err := os.ReadFile(opts.ProgramManifestPath)
@@ -126,14 +125,34 @@ func ReplanProgram(opts ReplanProgramOpts) (*ReplanResult, error) {
 	}
 
 	// Step 2: Construct revision prompt
-	prompt := buildRevisionPrompt(opts, string(manifestData))
-	_ = prompt // used by Planner agent launch (below)
+	revisionPrompt := buildRevisionPrompt(opts, string(manifestData))
 
-	// Step 3: Launch Planner agent
-	// TODO(Wave3): Launch Planner agent via Agent SDK with revision prompt.
-	// See saw-skill.md `/saw program replan` for integration details.
-	// Full implementation happens when the CLI command is wired in Wave 3.
-	return nil, fmt.Errorf("ReplanProgram: not yet implemented")
+	// Step 3: Derive repo path — manifest lives at <repo>/docs/PROGRAM-*.yaml
+	repoPath := filepath.Dir(filepath.Dir(opts.ProgramManifestPath))
+
+	// Step 4: Launch Planner agent with the revision prompt overwriting the manifest in place
+	var chunks []string
+	execErr := RunPlanner(context.Background(), RunPlannerOpts{
+		Description:    revisionPrompt,
+		RepoPath:       repoPath,
+		ProgramOutPath: opts.ProgramManifestPath,
+		PlannerModel:   opts.PlannerModel,
+	}, func(chunk string) { chunks = append(chunks, chunk) })
+	if execErr != nil {
+		return nil, fmt.Errorf("ReplanProgram: planner agent: %w", execErr)
+	}
+
+	// Step 5: Validate revised manifest
+	_, parseErr := protocol.ParseProgramManifest(opts.ProgramManifestPath)
+	result := &ReplanResult{
+		RevisedManifestPath: opts.ProgramManifestPath,
+		ValidationPassed:    parseErr == nil,
+		ChangesSummary:      strings.Join(chunks, ""),
+	}
+	if parseErr != nil {
+		result.Errors = append(result.Errors, parseErr.Error())
+	}
+	return result, nil
 }
 
 // buildRevisionPrompt constructs the revision prompt for the Planner agent.
