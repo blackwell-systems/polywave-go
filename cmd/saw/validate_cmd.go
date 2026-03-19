@@ -78,9 +78,18 @@ func newValidateCmd() *cobra.Command {
 
 			var errs []validateError
 
-			// Read raw YAML for unknown key detection.
+			// Read raw YAML for unknown key detection and duplicate key detection.
 			rawData, readErr := os.ReadFile(manifestPath)
 			if readErr == nil {
+				dkErrs := protocol.ValidateDuplicateKeys(rawData)
+				for _, dke := range dkErrs {
+					errs = append(errs, validateError{
+						Code:    dke.Code,
+						Message: dke.Message,
+						Field:   dke.Field,
+					})
+				}
+
 				ukErrs := protocol.DetectUnknownKeys(rawData)
 				for _, uke := range ukErrs {
 					errs = append(errs, validateError{
