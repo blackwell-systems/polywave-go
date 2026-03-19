@@ -38,6 +38,7 @@ func main() {
 		newPrepareAgentCmd(),
 		newPrepareWaveCmd(),
 		newJournalContextCmd(),
+		newAmendImplCmd(),
 		newAnalyzeDepsCmd(),
 		newDetectScaffoldsCmd(),
 		newAnalyzeSuitabilityCmd(),
