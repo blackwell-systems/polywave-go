@@ -55,6 +55,11 @@ func main() {
 		newValidateProgramCmd(),
 		newListProgramsCmd(),
 		newPopulateIntegrationChecklistCmd(), // M5: integration checklist
+		newTierGateCmd(),
+		newFreezeContractsCmd(),
+		newProgramStatusCmd(),
+		newProgramReplanCmd(),
+		newMarkProgramCompleteCmd(),
 	)
 	if err := rootCmd.Execute(); err != nil {
 		fmt.Fprintln(os.Stderr, err)
