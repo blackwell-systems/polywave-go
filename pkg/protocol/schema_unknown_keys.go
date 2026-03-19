@@ -28,6 +28,7 @@ var knownKeys = map[string]map[string]bool{
 		"quality_gates":          true,
 		"post_merge_checklist":   true,
 		"scaffolds":              true,
+		"wiring":                 true,
 		"completion_reports":     true,
 		"stub_reports":           true,
 		"integration_reports":    true,
@@ -112,6 +113,14 @@ var knownKeys = map[string]map[string]bool{
 	},
 	"reaction_entry": {
 		"action": true, "max_attempts": true,
+	},
+	"wiring_declaration": {
+		"symbol":              true,
+		"defined_in":          true,
+		"must_be_called_from": true,
+		"agent":               true,
+		"wave":                true,
+		"integration_pattern": true,
 	},
 	"completion_report": {
 		"status":               true,
@@ -200,6 +209,8 @@ func checkTopLevelValue(key string, valNode *yaml.Node, errs *[]ValidationError)
 		checkSequenceOfMappings(valNode, "interface_contract", key, errs)
 	case "scaffolds":
 		checkSequenceOfMappings(valNode, "scaffold", key, errs)
+	case "wiring":
+		checkSequenceOfMappings(valNode, "wiring_declaration", key, errs)
 	case "known_issues":
 		checkSequenceOfMappings(valNode, "known_issue", key, errs)
 	case "quality_gates":
