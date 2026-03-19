@@ -38,6 +38,12 @@ type IMPLManifest struct {
 	StubReports           map[string]*ScanStubsResult    `yaml:"stub_reports,omitempty" json:"stub_reports,omitempty"`
 	// E25: Integration validation reports per wave
 	IntegrationReports    map[string]*IntegrationReport  `yaml:"integration_reports,omitempty" json:"integration_reports,omitempty"`
+	// E35: Wiring declarations — symbol X defined in file A must be called from file B.
+	// Written by Scout in the IMPL doc wiring: block. Agent B owns the enforcement logic.
+	// Field added by Agent D shim to unblock compilation; Agent B takes ownership at merge.
+	Wiring                []WiringDeclaration            `yaml:"wiring,omitempty" json:"wiring,omitempty"`
+	// E35: Wiring validation reports per wave (persisted by validate-integration --wiring)
+	WiringValidationReports map[string]*WiringValidationResult `yaml:"wiring_validation_reports,omitempty" json:"wiring_validation_reports,omitempty"`
 	// Integration connectors: files the integration agent is allowed to modify
 	IntegrationConnectors []IntegrationConnector         `yaml:"integration_connectors,omitempty" json:"integration_connectors,omitempty"`
 	PreMortem             *PreMortem                     `yaml:"pre_mortem,omitempty" json:"pre_mortem,omitempty"`

@@ -24,6 +24,7 @@ type FinalizeWaveResult struct {
 	MergeResult       map[string]*protocol.MergeAgentsResult `json:"merge_result"` // repo -> result
 	VerifyBuildResult map[string]*protocol.VerifyBuildResult `json:"verify_build"` // repo -> result
 	IntegrationReport *protocol.IntegrationReport       `json:"integration_report,omitempty"`
+	WiringReport      *protocol.WiringValidationResult `json:"wiring_report,omitempty"`
 	BuildDiagnosis    map[string]*builddiag.Diagnosis  `json:"build_diagnosis,omitempty"` // repo -> diagnosis
 	CleanupResult     map[string]*protocol.CleanupResult `json:"cleanup_result"` // repo -> result
 	Success           bool                             `json:"success"`
@@ -127,7 +128,7 @@ pattern matching (H7) and appends diagnosis to the output.`,
 				}
 			}
 
-			// Step 3.5: ValidateIntegration (E25) — informational
+			// Step 3.5a: Heuristic integration scan (E25) — informational
 			// Uses the first repo path for single-repo; for cross-repo, uses first entry.
 			// Integration validation does NOT block merge — gaps are reported for the
 			// human orchestrator (CLI) or integration agent (engine/web) to address.
@@ -142,6 +143,33 @@ pattern matching (H7) and appends diagnosis to the output.`,
 					}
 				}
 				break // single-repo default; cross-repo would need aggregation
+			}
+
+			// Step 3.5b: Wiring declaration check (E35 Layer 3B) — blocking if gaps found
+			// Checks that each declared wiring symbol is actually called in must_be_called_from.
+			// Does NOT block merge — gaps are surfaced as structured errors for the human or
+			// integration agent to address via validate-integration post-merge.
+			if len(manifest.Wiring) > 0 {
+				for _, repoPath := range repos {
+					wiringResult, wiringErr := protocol.ValidateWiringDeclarations(manifest, repoPath)
+					if wiringErr != nil {
+						fmt.Fprintf(os.Stderr, "finalize-wave: wiring check error: %v\n", wiringErr)
+					} else {
+						result.WiringReport = wiringResult
+						if !wiringResult.Valid {
+							// Wiring gaps are errors — surface them clearly
+							for _, gap := range wiringResult.Gaps {
+								fmt.Fprintf(os.Stderr, "finalize-wave: WIRING GAP [error]: %s not called in %s\n",
+									gap.Declaration.Symbol, gap.Declaration.MustBeCalledFrom)
+							}
+							// Do NOT block merge here — the gap is surfaced as a structured
+							// error in the result and returned to the caller (web runner, CLI).
+							// Blocking at this stage would prevent cleanup. The human or
+							// integration agent addresses it via validate-integration.
+						}
+					}
+					break // single-repo default; cross-repo would need aggregation
+				}
 			}
 
 			// Step 4: MergeAgents (with E9 idempotency check) - run per repo
