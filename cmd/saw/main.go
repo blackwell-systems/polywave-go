@@ -68,6 +68,8 @@ func main() {
 		newProgramReplanCmd(),
 		newMarkProgramCompleteCmd(),
 		newVerifyInstallCmd(),
+		newMetricsCmd(),
+		newQueryCmd(),
 	)
 	if err := rootCmd.Execute(); err != nil {
 		fmt.Fprintln(os.Stderr, err)
