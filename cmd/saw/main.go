@@ -27,6 +27,7 @@ func main() {
 		newRunReviewCmd(),
 		newCheckConflictsCmd(),
 		newCheckDepsCmd(),
+		newCheckTypeCollisionsCmd(),
 		newValidateScaffoldsCmd(),
 		newValidateScaffoldCmd(),
 		newFreezeCheckCmd(),
