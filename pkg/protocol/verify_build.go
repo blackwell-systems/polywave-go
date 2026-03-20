@@ -41,7 +41,7 @@ func VerifyBuild(manifestPath string, repoDir string) (*VerifyBuildResult, error
 	}
 
 	// Run test command if present and applicable to this repo
-	if manifest.TestCommand != "" && commandApplies(manifest.TestCommand, repoDir) {
+	if isRealCommand(manifest.TestCommand) && commandApplies(manifest.TestCommand, repoDir) {
 		testPassed, testOutput := runCommand(manifest.TestCommand, repoDir)
 		result.TestPassed = testPassed
 		result.TestOutput = testOutput
@@ -51,7 +51,7 @@ func VerifyBuild(manifestPath string, repoDir string) (*VerifyBuildResult, error
 	}
 
 	// Run lint command if present and applicable to this repo
-	if manifest.LintCommand != "" && commandApplies(manifest.LintCommand, repoDir) {
+	if isRealCommand(manifest.LintCommand) && commandApplies(manifest.LintCommand, repoDir) {
 		lintPassed, lintOutput := runCommand(manifest.LintCommand, repoDir)
 		result.LintPassed = lintPassed
 		result.LintOutput = lintOutput
@@ -61,6 +61,16 @@ func VerifyBuild(manifestPath string, repoDir string) (*VerifyBuildResult, error
 	}
 
 	return result, nil
+}
+
+// isRealCommand returns false for empty strings and sentinel values like "none"
+// that indicate no command should be run.
+func isRealCommand(cmd string) bool {
+	if cmd == "" {
+		return false
+	}
+	lower := strings.ToLower(strings.TrimSpace(cmd))
+	return lower != "none" && lower != "n/a" && lower != "skip"
 }
 
 // commandApplies returns false when a command is ecosystem-specific but the repo
