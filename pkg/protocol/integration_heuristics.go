@@ -18,6 +18,18 @@ func IsIntegrationRequired(exportName string, category string) bool {
 		return true
 	}
 
+	// React props with callback/handler naming patterns need wiring
+	if category == "prop_pass" {
+		callbackPrefixes := []string{"on", "handle"}
+		lower := strings.ToLower(exportName[:1]) + exportName[1:]
+		for _, p := range callbackPrefixes {
+			if strings.HasPrefix(lower, p) {
+				return true
+			}
+		}
+		return false
+	}
+
 	// Query-like functions don't need integration wiring
 	queryPrefixes := []string{"Is", "Has", "Get", "String", "Format", "Validate"}
 	for _, p := range queryPrefixes {
@@ -52,7 +64,8 @@ func IsIntegrationRequired(exportName string, category string) bool {
 
 // ClassifyExport determines the integration category for an exported symbol.
 // kind is the Go AST node kind: "func", "type", "method", "field", "var", "const"
-// Returns: "function_call", "type_usage", "field_init", or "none"
+// For TSX: "prop" (React component prop)
+// Returns: "function_call", "type_usage", "field_init", "prop_pass", or "none"
 func ClassifyExport(exportName string, kind string) string {
 	switch kind {
 	case "func", "method":
@@ -61,6 +74,8 @@ func ClassifyExport(exportName string, kind string) string {
 		return "type_usage"
 	case "field":
 		return "field_init"
+	case "prop":
+		return "prop_pass"
 	case "var", "const":
 		return "none"
 	default:

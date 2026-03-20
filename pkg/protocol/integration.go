@@ -50,15 +50,20 @@ func ValidateIntegration(manifest *IMPLManifest, waveNum int, repoPath string) (
 		allFiles = append(allFiles, cr.FilesCreated...)
 
 		for _, relFile := range allFiles {
-			if !strings.HasSuffix(relFile, ".go") {
-				continue
-			}
-			if strings.HasSuffix(relFile, "_test.go") {
+			isGo := strings.HasSuffix(relFile, ".go") && !strings.HasSuffix(relFile, "_test.go")
+			isTSX := isTSXFile(relFile) && !strings.HasSuffix(relFile, ".test.tsx") && !strings.HasSuffix(relFile, ".spec.tsx")
+			if !isGo && !isTSX {
 				continue
 			}
 
 			absFile := filepath.Join(repoPath, relFile)
-			exports, err := extractExports(absFile)
+			var exports []exportInfo
+			var err error
+			if isTSX {
+				exports, err = extractTSXExports(absFile)
+			} else {
+				exports, err = extractExports(absFile)
+			}
 			if err != nil {
 				// Skip files that can't be parsed
 				continue
@@ -163,10 +168,9 @@ func searchReferences(repoPath, definingFile, exportName string) []string {
 			}
 			return nil
 		}
-		if !strings.HasSuffix(path, ".go") {
-			return nil
-		}
-		if strings.HasSuffix(path, "_test.go") {
+		isGoRef := strings.HasSuffix(path, ".go") && !strings.HasSuffix(path, "_test.go")
+		isTSXRef := isTSXFile(path) && !strings.HasSuffix(path, ".test.tsx") && !strings.HasSuffix(path, ".spec.tsx")
+		if !isGoRef && !isTSXRef {
 			return nil
 		}
 
@@ -215,6 +219,10 @@ func classifySeverity(exportName string, category string) string {
 		if strings.HasPrefix(exportName, prefix) {
 			return "error"
 		}
+	}
+	// React callback/handler props not wired = warning (likely cross-agent dep)
+	if category == "prop_pass" {
+		return "warning"
 	}
 	if category == "function_call" {
 		return "warning"

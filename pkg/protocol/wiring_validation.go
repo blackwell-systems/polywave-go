@@ -73,6 +73,11 @@ func symbolFoundInFile(absPath, symbol string) (bool, error) {
 		// AST parse failed — fall through to grep
 	}
 
+	// For TSX/TS files, use prop-aware detection that skips comments and type defs
+	if isTSXFile(absPath) {
+		return symbolFoundViaTSXProp(absPath, symbol)
+	}
+
 	return symbolFoundViaGrep(absPath, symbol)
 }
 
