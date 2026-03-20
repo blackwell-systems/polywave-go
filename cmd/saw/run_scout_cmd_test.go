@@ -4,6 +4,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/types"
 )
 
@@ -158,5 +159,164 @@ func TestCountAgentsFromErrors(t *testing.T) {
 				t.Errorf("countAgentsFromErrors() = %d, want %d", got, tt.want)
 			}
 		})
+	}
+}
+
+func TestCriticThresholdMet(t *testing.T) {
+	tests := []struct {
+		name     string
+		manifest *protocol.IMPLManifest
+		want     bool
+	}{
+		{
+			name: "Wave 1 with 3 agents triggers threshold",
+			manifest: &protocol.IMPLManifest{
+				Waves: []protocol.Wave{
+					{Number: 1, Agents: []protocol.Agent{
+						{ID: "A"}, {ID: "B"}, {ID: "C"},
+					}},
+				},
+			},
+			want: true,
+		},
+		{
+			name: "Wave 1 with 4 agents triggers threshold",
+			manifest: &protocol.IMPLManifest{
+				Waves: []protocol.Wave{
+					{Number: 1, Agents: []protocol.Agent{
+						{ID: "A"}, {ID: "B"}, {ID: "C"}, {ID: "D"},
+					}},
+				},
+			},
+			want: true,
+		},
+		{
+			name: "Wave 1 with 2 agents does not trigger threshold",
+			manifest: &protocol.IMPLManifest{
+				Waves: []protocol.Wave{
+					{Number: 1, Agents: []protocol.Agent{
+						{ID: "A"}, {ID: "B"},
+					}},
+				},
+			},
+			want: false,
+		},
+		{
+			name: "Wave 1 with 1 agent does not trigger threshold",
+			manifest: &protocol.IMPLManifest{
+				Waves: []protocol.Wave{
+					{Number: 1, Agents: []protocol.Agent{
+						{ID: "A"},
+					}},
+				},
+			},
+			want: false,
+		},
+		{
+			name: "No waves does not trigger threshold",
+			manifest: &protocol.IMPLManifest{
+				Waves: []protocol.Wave{},
+			},
+			want: false,
+		},
+		{
+			name: "File ownership spanning 2 repos triggers threshold",
+			manifest: &protocol.IMPLManifest{
+				Waves: []protocol.Wave{
+					{Number: 1, Agents: []protocol.Agent{
+						{ID: "A"}, {ID: "B"},
+					}},
+				},
+				FileOwnership: []protocol.FileOwnership{
+					{File: "pkg/foo.go", Agent: "A", Wave: 1, Repo: "/repo/alpha"},
+					{File: "pkg/bar.go", Agent: "B", Wave: 1, Repo: "/repo/beta"},
+				},
+			},
+			want: true,
+		},
+		{
+			name: "File ownership in single repo does not trigger repo threshold",
+			manifest: &protocol.IMPLManifest{
+				Waves: []protocol.Wave{
+					{Number: 1, Agents: []protocol.Agent{
+						{ID: "A"}, {ID: "B"},
+					}},
+				},
+				FileOwnership: []protocol.FileOwnership{
+					{File: "pkg/foo.go", Agent: "A", Wave: 1, Repo: "/repo/alpha"},
+					{File: "pkg/bar.go", Agent: "B", Wave: 1, Repo: "/repo/alpha"},
+				},
+			},
+			want: false,
+		},
+		{
+			name: "File ownership with no repo fields does not trigger repo threshold",
+			manifest: &protocol.IMPLManifest{
+				Waves: []protocol.Wave{
+					{Number: 1, Agents: []protocol.Agent{
+						{ID: "A"}, {ID: "B"},
+					}},
+				},
+				FileOwnership: []protocol.FileOwnership{
+					{File: "pkg/foo.go", Agent: "A", Wave: 1},
+					{File: "pkg/bar.go", Agent: "B", Wave: 1},
+				},
+			},
+			want: false,
+		},
+		{
+			name: "Wave 2 with 3 agents does not trigger threshold (only wave 1 counts)",
+			manifest: &protocol.IMPLManifest{
+				Waves: []protocol.Wave{
+					{Number: 1, Agents: []protocol.Agent{
+						{ID: "A"}, {ID: "B"},
+					}},
+					{Number: 2, Agents: []protocol.Agent{
+						{ID: "C"}, {ID: "D"}, {ID: "E"},
+					}},
+				},
+			},
+			want: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := criticThresholdMet(tt.manifest)
+			if got != tt.want {
+				t.Errorf("criticThresholdMet() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestRunScoutCmd_CriticFlags(t *testing.T) {
+	cmd := newRunScoutCmd()
+
+	// --no-critic flag
+	noCriticFlag := cmd.Flags().Lookup("no-critic")
+	if noCriticFlag == nil {
+		t.Fatal("expected --no-critic flag to be defined, got nil")
+	}
+	if noCriticFlag.Value.Type() != "bool" {
+		t.Errorf("expected --no-critic flag type 'bool', got '%s'", noCriticFlag.Value.Type())
+	}
+	if noCriticFlag.DefValue != "false" {
+		t.Errorf("expected --no-critic default 'false', got '%s'", noCriticFlag.DefValue)
+	}
+
+	// --critic-model flag
+	criticModelFlag := cmd.Flags().Lookup("critic-model")
+	if criticModelFlag == nil {
+		t.Fatal("expected --critic-model flag to be defined, got nil")
+	}
+	if criticModelFlag.Value.Type() != "string" {
+		t.Errorf("expected --critic-model flag type 'string', got '%s'", criticModelFlag.Value.Type())
+	}
+	if criticModelFlag.DefValue != "" {
+		t.Errorf("expected --critic-model default '', got '%s'", criticModelFlag.DefValue)
+	}
+	if !strings.Contains(strings.ToLower(criticModelFlag.Usage), "model") {
+		t.Errorf("expected --critic-model usage to mention model, got: %s", criticModelFlag.Usage)
 	}
 }

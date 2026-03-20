@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
@@ -22,6 +23,8 @@ func newRunScoutCmd() *cobra.Command {
 		scoutModel          string
 		timeout             int    // minutes
 		programManifestPath string // path to PROGRAM manifest
+		noCritic            bool   // --no-critic: skip critic gate even if threshold met
+		criticModel         string // --critic-model: override model for critic agent
 	)
 
 	cmd := &cobra.Command{
@@ -204,6 +207,38 @@ Output:
 			}
 			fmt.Println()
 
+			// Step 6 (optional): Run critic gate if agent count threshold is met
+			if !noCritic {
+				// Load the manifest to check threshold
+				manifest, loadErr := protocol.Load(implPath)
+				if loadErr != nil {
+					// Non-fatal: if we can't load the manifest, skip critic
+					fmt.Printf("⚠️  Could not load IMPL manifest for critic threshold check: %v\n", loadErr)
+					fmt.Println("   Skipping critic gate")
+				} else if criticThresholdMet(manifest) {
+					fmt.Printf("Step 6: Running critic gate (E37)...\n")
+					criticArgs := []string{"run-critic", implPath}
+					if criticModel != "" {
+						criticArgs = append(criticArgs, "--model", criticModel)
+					}
+					// Find the sawtools binary (use os.Executable for self-invocation)
+					sawBin, binErr := os.Executable()
+					if binErr != nil {
+						sawBin = "sawtools"
+					}
+					criticCmd := exec.Command(sawBin, criticArgs...) //nolint:gosec
+					criticCmd.Stdout = os.Stdout
+					criticCmd.Stderr = os.Stderr
+					if runErr := criticCmd.Run(); runErr != nil {
+						// Non-fatal: critic may not be installed yet; skip gracefully
+						fmt.Printf("⚠️  Critic gate skipped (run-critic not available or failed): %v\n", runErr)
+					} else {
+						fmt.Println("✅ Critic gate passed")
+					}
+					fmt.Println()
+				}
+			}
+
 			fmt.Printf("📄 IMPL doc: %s\n", implPath)
 			fmt.Println()
 			fmt.Println("Next steps:")
@@ -219,6 +254,8 @@ Output:
 	cmd.Flags().StringVar(&scoutModel, "scout-model", "", "Scout model override (e.g., claude-opus-4-6)")
 	cmd.Flags().IntVar(&timeout, "timeout", 10, "Timeout in minutes (default: 10)")
 	cmd.Flags().StringVar(&programManifestPath, "program", "", "Path to PROGRAM manifest (Scout receives frozen contracts as input)")
+	cmd.Flags().BoolVar(&noCritic, "no-critic", false, "Skip critic gate even if agent count threshold is met")
+	cmd.Flags().StringVar(&criticModel, "critic-model", "", "Model override for critic agent (e.g., claude-opus-4-6)")
 
 	return cmd
 }
@@ -263,6 +300,31 @@ func waitForFile(path string, maxWait time.Duration) bool {
 		}
 		time.Sleep(500 * time.Millisecond)
 	}
+	return false
+}
+
+// criticThresholdMet returns true if the IMPL doc meets the auto-trigger
+// threshold for the critic gate: wave 1 has 3+ agents OR file_ownership
+// spans 2+ distinct repos.
+func criticThresholdMet(manifest *protocol.IMPLManifest) bool {
+	// Check wave 1 agent count
+	for _, wave := range manifest.Waves {
+		if wave.Number == 1 && len(wave.Agents) >= 3 {
+			return true
+		}
+	}
+
+	// Check if file_ownership spans 2+ distinct repos
+	repos := make(map[string]struct{})
+	for _, fo := range manifest.FileOwnership {
+		if fo.Repo != "" {
+			repos[fo.Repo] = struct{}{}
+		}
+	}
+	if len(repos) >= 2 {
+		return true
+	}
+
 	return false
 }
 
