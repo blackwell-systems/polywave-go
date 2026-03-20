@@ -74,6 +74,28 @@ Output:
 			slug := generateSlug(featureDesc)
 			implPath := filepath.Join(repoPath, "docs", "IMPL", fmt.Sprintf("IMPL-%s.yaml", slug))
 
+			// Check if IMPL doc already exists; skip Scout if state is advanced
+			if existingDoc, loadErr := protocol.Load(implPath); loadErr == nil {
+				switch existingDoc.State {
+				case protocol.StateReviewed,
+					protocol.StateScaffoldPending,
+					protocol.StateWavePending,
+					protocol.StateWaveExecuting,
+					protocol.StateWaveMerging,
+					protocol.StateWaveVerified,
+					protocol.StateComplete:
+					fmt.Printf("Skipping Scout: IMPL doc already exists with state %s\n", existingDoc.State)
+					fmt.Printf("   Path: %s\n", implPath)
+					return nil
+				case protocol.StateScoutValidating:
+					// SCOUT_VALIDATING means Scout already ran; skip to avoid overwrite
+					fmt.Printf("Skipping Scout: IMPL doc already exists with state %s\n", existingDoc.State)
+					fmt.Printf("   Path: %s\n", implPath)
+					return nil
+				}
+				// For SCOUT_PENDING or unknown states, proceed with Scout
+			}
+
 			// Ensure docs/IMPL directory exists
 			implDir := filepath.Dir(implPath)
 			if err := os.MkdirAll(implDir, 0755); err != nil {

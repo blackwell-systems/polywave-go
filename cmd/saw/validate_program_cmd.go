@@ -23,6 +23,11 @@ type validateProgramError struct {
 }
 
 func newValidateProgramCmd() *cobra.Command {
+	var (
+		importMode bool
+		repoDir    string
+	)
+
 	cmd := &cobra.Command{
 		Use:   "validate-program <program-manifest>",
 		Short: "Validate a YAML PROGRAM manifest against schema rules",
@@ -40,6 +45,16 @@ func newValidateProgramCmd() *cobra.Command {
 
 			// Run validation
 			validationErrs := protocol.ValidateProgram(manifest)
+
+			// If --import-mode, also run import-mode validation
+			if importMode {
+				rd := repoDir
+				if rd == "" {
+					rd, _ = os.Getwd()
+				}
+				importErrs := protocol.ValidateProgramImportMode(manifest, rd)
+				validationErrs = append(validationErrs, importErrs...)
+			}
 
 			// Convert validation errors to output format
 			var errs []validateProgramError
@@ -71,5 +86,9 @@ func newValidateProgramCmd() *cobra.Command {
 			return nil
 		},
 	}
+
+	cmd.Flags().BoolVar(&importMode, "import-mode", false, "Also run import-mode validation (P1/P2 checks against on-disk IMPL docs)")
+	cmd.Flags().StringVar(&repoDir, "repo-dir", "", "Repository root directory for import-mode checks (default: cwd)")
+
 	return cmd
 }

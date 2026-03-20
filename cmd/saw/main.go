@@ -57,6 +57,7 @@ func main() {
 		newResumeDetectCmd(),
 		newDaemonCmd(),
 		newValidateProgramCmd(),
+		newImportImplsCmd(),
 		newListProgramsCmd(),
 		newPopulateIntegrationChecklistCmd(), // M5: integration checklist
 		newTierGateCmd(),
