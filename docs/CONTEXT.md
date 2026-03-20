@@ -150,3 +150,5 @@ type BackendConfig struct {
   - IMPL doc: ../scout-and-wave/docs/IMPL/complete/IMPL-type-collision-detection.yaml
 - **protocol-docs-gaps**: completed 2026-03-20, 1 waves, 3 agents
   - IMPL doc: /Users/dayna.blackwell/code/scout-and-wave/docs/IMPL/complete/IMPL-protocol-docs-gaps.yaml
+- **interview-improvements**: completed 2026-03-20, 2 waves, 3 agents
+  - IMPL doc: /Users/dayna.blackwell/code/scout-and-wave/docs/IMPL/complete/IMPL-interview-improvements.yaml
