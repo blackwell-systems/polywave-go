@@ -391,3 +391,81 @@ func InstallHooks(repoPath, worktreePath string) error {
 
 	return nil
 }
+// GetWorktreeBaseCommit returns the base commit SHA that a worktree was created from.
+// This is the commit that HEAD pointed to when the worktree was created.
+func GetWorktreeBaseCommit(repoPath, worktreePath string) (string, error) {
+	// Get current HEAD in the worktree
+	head, err := Run(worktreePath, "rev-parse", "HEAD")
+	if err != nil {
+		return "", fmt.Errorf("failed to get worktree HEAD: %w", err)
+	}
+	head = strings.TrimSpace(head)
+
+	// Try to get the root commit (first commit in the worktree's history)
+	root, err := Run(worktreePath, "rev-list", "--max-parents=0", "HEAD")
+	if err != nil {
+		// No commits yet in worktree, return current HEAD
+		return head, nil
+	}
+
+	return strings.TrimSpace(root), nil
+}
+
+// WorktreeExists checks if a worktree at the given path is registered in git's worktree list.
+func WorktreeExists(repoPath, worktreePath string) bool {
+	worktrees, err := WorktreeList(repoPath)
+	if err != nil {
+		return false
+	}
+
+	cleanPath := filepath.Clean(worktreePath)
+	for _, wt := range worktrees {
+		if filepath.Clean(wt[0]) == cleanPath {
+			return true
+		}
+	}
+	return false
+}
+
+// VerifyHookInWorktree checks if the pre-commit hook exists and is valid in a worktree.
+func VerifyHookInWorktree(worktreePath string) (bool, error) {
+	// Read .git file to find gitdir
+	gitFile := filepath.Join(worktreePath, ".git")
+	content, err := os.ReadFile(gitFile)
+	if err != nil {
+		return false, fmt.Errorf("failed to read .git file: %w", err)
+	}
+
+	gitdir := strings.TrimSpace(strings.TrimPrefix(string(content), "gitdir: "))
+	if gitdir == "" {
+		return false, fmt.Errorf(".git file malformed: %s", gitFile)
+	}
+
+	hookPath := filepath.Join(gitdir, "hooks", "pre-commit")
+
+	// Check if hook exists and is executable
+	info, err := os.Stat(hookPath)
+	if os.IsNotExist(err) {
+		return false, nil // Missing hook is not an error
+	}
+	if err != nil {
+		return false, fmt.Errorf("failed to stat hook: %w", err)
+	}
+
+	if info.Mode()&0111 == 0 {
+		return false, nil // Not executable
+	}
+
+	// Check hook content contains SAW isolation logic
+	hookContent, err := os.ReadFile(hookPath)
+	if err != nil {
+		return false, fmt.Errorf("failed to read hook: %w", err)
+	}
+
+	content_str := string(hookContent)
+	if !strings.Contains(content_str, "SAW_ALLOW_MAIN_COMMIT") && !strings.Contains(content_str, "SAW pre-commit guard") {
+		return false, nil // Hook doesn't contain SAW logic
+	}
+
+	return true, nil
+}

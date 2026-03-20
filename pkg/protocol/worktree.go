@@ -149,6 +149,50 @@ func CreateWorktrees(manifestPath string, waveNum int, repoDir string) (*CreateW
 			}
 		}
 
+		// Check if worktree already exists (defensive staleness detection)
+		if git.WorktreeExists(agentRepoDir, worktreePath) {
+			// Worktree exists - check if it's stale
+			currentHead, err := git.RevParse(agentRepoDir, "HEAD")
+			if err != nil {
+				return nil, fmt.Errorf("failed to get current HEAD: %w", err)
+			}
+
+			worktreeBase, err := git.GetWorktreeBaseCommit(agentRepoDir, worktreePath)
+			if err != nil {
+				// Can't determine base commit - treat as stale for safety
+				fmt.Fprintf(os.Stderr, "Warning: failed to get worktree base commit for agent %s, treating as stale: %v\n", agent.ID, err)
+				_ = git.WorktreeRemove(agentRepoDir, worktreePath)
+				_ = git.DeleteBranch(agentRepoDir, branchName)
+				fmt.Fprintf(os.Stderr, "Removed stale worktree for agent %s (reason: unable to verify base commit)\n", agent.ID)
+			} else if worktreeBase != currentHead {
+				// Base commit doesn't match - stale worktree
+				_ = git.WorktreeRemove(agentRepoDir, worktreePath)
+				_ = git.DeleteBranch(agentRepoDir, branchName)
+				fmt.Fprintf(os.Stderr, "Removed stale worktree for agent %s (reason: base commit mismatch)\n", agent.ID)
+			} else {
+				// Base is current - check hooks
+				hookValid, err := git.VerifyHookInWorktree(worktreePath)
+				if err != nil {
+					// Hook check I/O error - log warning but continue
+					fmt.Fprintf(os.Stderr, "Warning: failed to verify hook for agent %s: %v\n", agent.ID, err)
+				} else if !hookValid {
+					// Hooks missing or invalid - recreate
+					_ = git.WorktreeRemove(agentRepoDir, worktreePath)
+					_ = git.DeleteBranch(agentRepoDir, branchName)
+					fmt.Fprintf(os.Stderr, "Removed worktree with invalid hooks for agent %s\n", agent.ID)
+				} else {
+					// Worktree is valid - skip creation
+					fmt.Fprintf(os.Stderr, "Reusing valid worktree for agent %s\n", agent.ID)
+					worktrees = append(worktrees, WorktreeInfo{
+						Agent:  agent.ID,
+						Path:   worktreePath,
+						Branch: branchName,
+					})
+					continue
+				}
+			}
+		}
+
 		// Create the worktree
 		if err := git.WorktreeAdd(agentRepoDir, worktreePath, branchName); err != nil {
 			return nil, fmt.Errorf("failed to create worktree for agent %s in repo %s: %w", agent.ID, agentRepoDir, err)
