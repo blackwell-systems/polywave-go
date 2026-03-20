@@ -376,6 +376,8 @@ func TestAdvanceTierAutomatically_ScoredIMPLOrder_EmptyOnGateFail(t *testing.T) 
 // TestReplanProgram_ValidRevision tests that ReplanProgram successfully launches
 // the Planner agent and returns a result with no error when given a valid manifest.
 func TestReplanProgram_ValidRevision(t *testing.T) {
+	t.Skip("Skipping test that requires live Claude API - causes rate limit failures in CI")
+
 	// Write a minimal PROGRAM manifest file
 	dir := t.TempDir()
 	manifestPath := filepath.Join(dir, "PROGRAM.yaml")
