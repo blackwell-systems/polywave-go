@@ -149,6 +149,34 @@ waves that execute on the main branch.`,
 				return fmt.Errorf("failed to load IMPL doc: %w", err)
 			}
 
+			// Step 0b2: Run baseline quality gates (E21A)
+			// This prevents wasted agent work when the codebase is already broken.
+			// Quality gates run BEFORE worktree creation so failures surface immediately.
+			fmt.Fprintf(os.Stderr, "prepare-wave: running baseline quality gates (wave %d)...\n", waveNum)
+			baselineResults, err := protocol.RunPreMergeGates(doc, waveNum, projectRoot, nil)
+			if err != nil {
+				return fmt.Errorf("failed to run baseline quality gates: %w", err)
+			}
+			// Check if any REQUIRED gate failed
+			var baselineFailures []string
+			for _, result := range baselineResults {
+				if result.Required && !result.Passed {
+					baselineFailures = append(baselineFailures, fmt.Sprintf("%s: %s (exit %d)",
+						result.Type, result.Command, result.ExitCode))
+				}
+			}
+			if len(baselineFailures) > 0 {
+				fmt.Fprintf(os.Stderr, "\nprepare-wave: BASELINE VERIFICATION FAILED\n")
+				fmt.Fprintf(os.Stderr, "The codebase does not pass quality gates before wave %d starts.\n", waveNum)
+				fmt.Fprintf(os.Stderr, "Fix these failures before launching agents:\n\n")
+				for _, failure := range baselineFailures {
+					fmt.Fprintf(os.Stderr, "  - %s\n", failure)
+				}
+				fmt.Fprintf(os.Stderr, "\nBaseline failures prevent agent work from being wasted on a broken codebase.\n")
+				return fmt.Errorf("baseline verification failed: %d required gate(s) failing", len(baselineFailures))
+			}
+			fmt.Fprintf(os.Stderr, "prepare-wave: baseline quality gates passed ✓\n")
+
 			// Step 0c: Validate wiring ownership (E35 Layer 3A)
 			// For each wiring declaration in the current wave, the must_be_called_from
 			// file must be in the owning agent's file_ownership. Fail fast before
