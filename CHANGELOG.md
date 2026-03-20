@@ -8,6 +8,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 | Version | Date | Headline |
 |---------|------|----------|
+| [0.74.0] | 2026-03-20 | Defensive worktree staleness detection — `GetWorktreeBaseCommit`, `WorktreeExists`, `VerifyHookInWorktree` git helpers; `CreateWorktrees` auto-detects and removes stale worktrees (mismatched base commit or missing hooks) before creation; prevents isolation violations from reused hookless worktrees |
 | [0.73.0] | 2026-03-19 | fix: `finalize-wave` skips merge-agents for integration waves — `type: integration` wave agents commit directly to main (no worktree branch); `goto postMerge` guard at Step 4 skips the merge loop and proceeds to VerifyBuild |
 | [0.72.0] | 2026-03-19 | `AmendImpl` engine + `sawtools amend-impl` CLI (living-impl-docs) — `AmendImplOpts`, `AmendImplResult`, `ErrAmendBlocked` sentinel in `pkg/protocol/amend.go`; validate-first `AddWave` (I3 only, not full schema); git-based worktree commit check for `RedirectAgent`; 6 tests; `sawtools amend-impl --add-wave/--redirect-agent/--extend-scope` cobra command (JSON output, stdin for --new-task); registered in main.go |
 | [0.71.0] | 2026-03-19 | AI code review gate SDK (ai-code-review-gate) — `pkg/codereview/` package: `ReviewDiff`, `CodeReviewResult`, `RunCodeReview` with configurable model + system prompt, 8 tests; `sawtools run-review` CLI command |
