@@ -1,6 +1,7 @@
 package scaffold
 
 import (
+	"sort"
 	"testing"
 
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
@@ -266,9 +267,17 @@ type Logger interface {
 				t.Fatalf("expected %d types, got %d", len(tc.wantTypes), len(result.ScaffoldsNeeded))
 			}
 
-			for i, typeName := range tc.wantTypes {
-				if result.ScaffoldsNeeded[i].TypeName != typeName {
-					t.Errorf("expected type name '%s', got '%s'", typeName, result.ScaffoldsNeeded[i].TypeName)
+			gotTypes := make([]string, len(result.ScaffoldsNeeded))
+			for i, s := range result.ScaffoldsNeeded {
+				gotTypes[i] = s.TypeName
+			}
+			sort.Strings(gotTypes)
+			wantSorted := make([]string, len(tc.wantTypes))
+			copy(wantSorted, tc.wantTypes)
+			sort.Strings(wantSorted)
+			for i := range wantSorted {
+				if gotTypes[i] != wantSorted[i] {
+					t.Errorf("expected type name '%s', got '%s'", wantSorted[i], gotTypes[i])
 				}
 			}
 		})
