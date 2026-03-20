@@ -15,29 +15,29 @@ var phaseQuestions = []phaseQuestionDef{
 	// Overview
 	{PhaseOverview, "title", "What is the title of this project or feature?", true},
 	{PhaseOverview, "goal", "What is the primary goal? (one sentence)", true},
-	{PhaseOverview, "success_metrics", "What are the success metrics? (comma-separated, or 'skip')", false},
-	{PhaseOverview, "non_goals", "What is explicitly out of scope? (comma-separated, or 'skip')", false},
+	{PhaseOverview, "success_metrics", "What are the success metrics? (comma-separated) (or type 'skip' to skip)", false},
+	{PhaseOverview, "non_goals", "What is explicitly out of scope? (comma-separated) (or type 'skip' to skip)", false},
 
 	// Scope
 	{PhaseScope, "in_scope", "What is in scope? List the key deliverables (comma-separated)", true},
-	{PhaseScope, "out_of_scope", "What is out of scope? (comma-separated, or 'skip')", false},
-	{PhaseScope, "assumptions", "What assumptions are you making? (comma-separated, or 'skip')", false},
+	{PhaseScope, "out_of_scope", "What is out of scope? (comma-separated) (or type 'skip' to skip)", false},
+	{PhaseScope, "assumptions", "What assumptions are you making? (comma-separated) (or type 'skip' to skip)", false},
 
 	// Requirements
 	{PhaseRequirements, "functional", "List the functional requirements (one per line or comma-separated)", true},
-	{PhaseRequirements, "non_functional", "Any non-functional requirements? (e.g., performance, security — or 'skip')", false},
-	{PhaseRequirements, "constraints", "Any technical constraints? (e.g., Go 1.21+, no CGO — or 'skip')", false},
+	{PhaseRequirements, "non_functional", "Any non-functional requirements? (e.g., performance, security) (or type 'skip' to skip)", false},
+	{PhaseRequirements, "constraints", "Any technical constraints? (e.g., Go 1.21+, no CGO) (or type 'skip' to skip)", false},
 
 	// Interfaces
-	{PhaseInterfaces, "data_models", "What are the key data models or types? (or 'skip')", false},
-	{PhaseInterfaces, "apis", "What are the key APIs or command interfaces? (or 'skip')", false},
-	{PhaseInterfaces, "external", "Any external integrations? (or 'skip')", false},
+	{PhaseInterfaces, "data_models", "What are the key data models or types? (or type 'skip' to skip)", false},
+	{PhaseInterfaces, "apis", "What are the key APIs or command interfaces? (or type 'skip' to skip)", false},
+	{PhaseInterfaces, "external", "Any external integrations? (or type 'skip' to skip)", false},
 
 	// Stories
-	{PhaseStories, "stories", "List the key user stories or tasks (one per line, or 'skip')", false},
+	{PhaseStories, "stories", "List the key user stories or tasks (one per line) (or type 'skip' to skip)", false},
 
 	// Review
-	{PhaseReview, "open_questions", "Any open questions or unresolved decisions? (or 'skip')", false},
+	{PhaseReview, "open_questions", "Any open questions or unresolved decisions? (or type 'skip' to skip)", false},
 	{PhaseReview, "_confirm", "Review complete. Ready to generate REQUIREMENTS.md? (yes/no)", true},
 }
 
@@ -184,4 +184,64 @@ func allInterfacesQuestionsAsked(doc *InterviewDoc) bool {
 	return doc.SpecData.Interfaces.DataModels != nil &&
 		doc.SpecData.Interfaces.APIs != nil &&
 		doc.SpecData.Interfaces.External != nil
+}
+
+// FormatPhaseProgress generates phase-aware progress string like "[Overview: 2/4 | Next: Scope]".
+func FormatPhaseProgress(doc *InterviewDoc) string {
+	if doc.Phase == PhaseComplete {
+		return "[Complete]"
+	}
+
+	// Count questions in current phase.
+	totalInPhase := questionsInPhase(doc.Phase)
+
+	// Count answered questions in current phase.
+	answeredInPhase := 0
+	for _, q := range phaseQuestions {
+		if q.Phase != doc.Phase {
+			continue
+		}
+		if fieldIsPopulated(doc, q.Phase, q.Field) {
+			answeredInPhase++
+		}
+	}
+
+	// Get next phase name.
+	next := nextPhaseName(doc.Phase)
+
+	// Format: "[Overview: 2/4 | Next: Scope]"
+	return fmt.Sprintf("[%s: %d/%d | Next: %s]", doc.Phase, answeredInPhase, totalInPhase, next)
+}
+
+// questionsInPhase counts the number of questions for a given phase.
+func questionsInPhase(phase InterviewPhase) int {
+	count := 0
+	for _, q := range phaseQuestions {
+		if q.Phase == phase {
+			count++
+		}
+	}
+	return count
+}
+
+// nextPhaseName returns the display name of the next phase.
+func nextPhaseName(phase InterviewPhase) string {
+	switch phase {
+	case PhaseOverview:
+		return "Scope"
+	case PhaseScope:
+		return "Requirements"
+	case PhaseRequirements:
+		return "Interfaces"
+	case PhaseInterfaces:
+		return "Stories"
+	case PhaseStories:
+		return "Review"
+	case PhaseReview:
+		return "Done"
+	case PhaseComplete:
+		return "Done"
+	default:
+		return "Unknown"
+	}
 }

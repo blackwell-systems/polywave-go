@@ -78,10 +78,32 @@ func (m *DeterministicManager) Resume(docPath string) (*InterviewDoc, *Interview
 
 // Answer records a user response, advances the state machine, and returns the next question.
 func (m *DeterministicManager) Answer(doc *InterviewDoc, answer string) (*InterviewDoc, *InterviewQuestion, error) {
+	// Handle "back" command first.
+	if HandleBackCommand(doc, answer) {
+		// Back was processed — regenerate current question and return.
+		currentQ := generateQuestion(doc)
+		doc.UpdatedAt = time.Now()
+
+		// Save state after going back.
+		docPath := filepath.Join(m.docsDir, fmt.Sprintf("INTERVIEW-%s.yaml", doc.Slug))
+		if err := m.Save(doc, docPath); err != nil {
+			return doc, currentQ, fmt.Errorf("saving interview state: %w", err)
+		}
+
+		return doc, currentQ, nil
+	}
+
 	// Get current question to record it.
 	currentQ := generateQuestion(doc)
 	if currentQ == nil {
 		return doc, nil, nil
+	}
+
+	// Validate required fields.
+	if validationErr := ValidateRequiredField(currentQ, answer); validationErr != "" {
+		// Validation failed — return same question with error in Hint field.
+		currentQ.Hint = validationErr
+		return doc, currentQ, nil
 	}
 
 	// Record the turn.
@@ -126,6 +148,155 @@ func (m *DeterministicManager) Answer(doc *InterviewDoc, answer string) (*Interv
 	}
 
 	return doc, nextQ, nil
+}
+
+// ValidateRequiredField checks if a required field answer is valid.
+// Returns an error message string if invalid, empty string if valid.
+func ValidateRequiredField(q *InterviewQuestion, answer string) string {
+	if !q.Required {
+		return ""
+	}
+
+	trimmed := strings.TrimSpace(answer)
+	if trimmed == "" {
+		return "This field is required. Please provide an answer."
+	}
+
+	// "skip" is not allowed for required fields.
+	if strings.EqualFold(trimmed, "skip") {
+		return "This field is required and cannot be skipped. Please provide an answer."
+	}
+
+	return ""
+}
+
+// HandleBackCommand detects "back" answer and reverts to previous question.
+// Returns true if back was handled (caller should re-generate question).
+func HandleBackCommand(doc *InterviewDoc, answer string) bool {
+	trimmed := strings.TrimSpace(answer)
+	if !strings.EqualFold(trimmed, "back") {
+		return false
+	}
+
+	// Can't go back from first question.
+	if doc.QuestionCursor == 0 {
+		return false
+	}
+
+	// Remove last history entry.
+	if len(doc.History) > 0 {
+		lastTurn := doc.History[len(doc.History)-1]
+		doc.History = doc.History[:len(doc.History)-1]
+
+		// Clear the spec data field that was populated by this turn.
+		clearSpecField(doc, lastTurn.Phase, getFieldNameFromHistory(doc, lastTurn))
+	}
+
+	// Decrement cursor.
+	doc.QuestionCursor--
+
+	// Recalculate phase by replaying phase transitions from the beginning.
+	recalculatePhase(doc)
+
+	// Update progress.
+	doc.Progress = float64(doc.QuestionCursor) / float64(doc.MaxQuestions)
+	if doc.Progress < 0 {
+		doc.Progress = 0
+	}
+
+	return true
+}
+
+// getFieldNameFromHistory extracts the field name from a history turn.
+// We need to match the question text to the phaseQuestions list.
+func getFieldNameFromHistory(doc *InterviewDoc, turn InterviewTurn) string {
+	// Match question text to find field name.
+	for _, q := range phaseQuestions {
+		if q.Phase == turn.Phase && strings.Contains(turn.Question, q.Text[:min(len(q.Text), 20)]) {
+			return q.Field
+		}
+	}
+	return ""
+}
+
+// clearSpecField clears a specific field in the spec data.
+func clearSpecField(doc *InterviewDoc, phase InterviewPhase, fieldName string) {
+	switch phase {
+	case PhaseOverview:
+		switch fieldName {
+		case "title":
+			doc.SpecData.Overview.Title = ""
+		case "goal":
+			doc.SpecData.Overview.Goal = ""
+		case "success_metrics":
+			doc.SpecData.Overview.SuccessMetrics = nil
+		case "non_goals":
+			doc.SpecData.Overview.NonGoals = nil
+		}
+	case PhaseScope:
+		switch fieldName {
+		case "in_scope":
+			doc.SpecData.Scope.InScope = nil
+		case "out_of_scope":
+			doc.SpecData.Scope.OutOfScope = nil
+		case "assumptions":
+			doc.SpecData.Scope.Assumptions = nil
+		}
+	case PhaseRequirements:
+		switch fieldName {
+		case "functional":
+			doc.SpecData.Requirements.Functional = nil
+		case "non_functional":
+			doc.SpecData.Requirements.NonFunctional = nil
+		case "constraints":
+			doc.SpecData.Requirements.Constraints = nil
+		}
+	case PhaseInterfaces:
+		switch fieldName {
+		case "data_models":
+			doc.SpecData.Interfaces.DataModels = nil
+		case "apis":
+			doc.SpecData.Interfaces.APIs = nil
+		case "external":
+			doc.SpecData.Interfaces.External = nil
+		}
+	case PhaseStories:
+		if fieldName == "stories" {
+			doc.SpecData.Stories = nil
+		}
+	case PhaseReview:
+		if fieldName == "open_questions" {
+			doc.SpecData.OpenQuestions = nil
+		}
+	}
+}
+
+// recalculatePhase recalculates the current phase from scratch by checking transitions.
+func recalculatePhase(doc *InterviewDoc) {
+	// Start from Overview and apply transitions based on current spec data.
+	doc.Phase = PhaseOverview
+
+	// Keep checking transitions until we can't advance anymore.
+	for {
+		oldPhase := doc.Phase
+		checkPhaseTransition(doc)
+		if doc.Phase == oldPhase {
+			// No transition happened, we're at the correct phase.
+			break
+		}
+		// If we've reached the phase where there are unanswered questions, stop.
+		if doc.Phase == PhaseComplete {
+			break
+		}
+	}
+}
+
+// min returns the minimum of two integers.
+func min(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
 }
 
 // compileFunc is the function used to generate requirements markdown.
