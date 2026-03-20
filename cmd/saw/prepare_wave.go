@@ -257,7 +257,7 @@ waves that execute on the main branch.`,
 				}
 
 				// Wiring obligations for this agent (E35 Layer 3C)
-				wiringSection := protocol.FormatWiringBriefSection(doc, agentID)
+				wiringSection := protocol.InjectWiringInstructions(doc, agentID, waveNum)
 
 				// Build the agent brief
 				brief := fmt.Sprintf(`# Agent %s Brief - Wave %d
