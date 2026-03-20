@@ -27,6 +27,7 @@ func main() {
 		newRunReviewCmd(),
 		newCheckConflictsCmd(),
 		newCheckDepsCmd(),
+		// newCheckTypeCollisionsCmd(), // TODO: Uncomment after Agent B merge (created in parallel)
 		newValidateScaffoldsCmd(),
 		newValidateScaffoldCmd(),
 		newFreezeCheckCmd(),

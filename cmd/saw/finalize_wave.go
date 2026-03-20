@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/builddiag"
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/collision"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/gatecache"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
 	"github.com/spf13/cobra"
@@ -19,6 +20,7 @@ type FinalizeWaveResult struct {
 	Wave              int                              `json:"wave"`
 	CrossRepo         bool                             `json:"cross_repo"`
 	VerifyCommits     map[string]*protocol.VerifyCommitsResult `json:"verify_commits"` // repo -> result
+	CollisionReports  map[string]*collision.CollisionReport `json:"collision_reports,omitempty"` // repo -> collision report
 	StubReport        *protocol.ScanStubsResult        `json:"stub_report,omitempty"`
 	GateResults       map[string][]protocol.GateResult `json:"gate_results"` // repo -> gates
 	MergeResult       map[string]*protocol.MergeAgentsResult `json:"merge_result"` // repo -> result
@@ -39,6 +41,7 @@ func newFinalizeWaveCmd() *cobra.Command {
 		Long: `Combines the post-agent verification and merge workflow into a single atomic operation.
 Execution order:
 1. VerifyCommits - check all agents have commits (I5 trip wire)
+1.5. CheckTypeCollisions - detect type name collisions across agent branches (blocking)
 2. ScanStubs - scan changed files for TODO/FIXME markers (E20)
 3. RunPreMergeGates - structural gates that don't require merged state (E21)
 3.5. ValidateIntegration - detect unconnected exports (E25, informational)
@@ -69,6 +72,7 @@ pattern matching (H7) and appends diagnosis to the output.`,
 				CrossRepo:         len(repos) > 1,
 				Success:           false,
 				VerifyCommits:     make(map[string]*protocol.VerifyCommitsResult),
+				CollisionReports:  make(map[string]*collision.CollisionReport),
 				GateResults:       make(map[string][]protocol.GateResult),
 				MergeResult:       make(map[string]*protocol.MergeAgentsResult),
 				VerifyBuildResult: make(map[string]*protocol.VerifyBuildResult),
@@ -88,6 +92,21 @@ pattern matching (H7) and appends diagnosis to the output.`,
 					out, _ := json.MarshalIndent(result, "", "  ")
 					fmt.Println(string(out))
 					return fmt.Errorf("finalize-wave: verify-commits found agents with no commits in %s", repoKey)
+				}
+			}
+
+			// Step 1.5: Check type collisions (per repo)
+			for repoKey, repoPath := range repos {
+				collisionReport, err := collision.DetectCollisions(manifestPath, waveNum, repoPath)
+				if err != nil {
+					return fmt.Errorf("finalize-wave: check-type-collisions failed in %s: %w", repoKey, err)
+				}
+				result.CollisionReports[repoKey] = &collisionReport
+				if !collisionReport.Valid {
+					// Stop immediately - collision detected
+					out, _ := json.MarshalIndent(result, "", "  ")
+					fmt.Println(string(out))
+					return fmt.Errorf("finalize-wave: type collisions detected in %s", repoKey)
 				}
 			}
 
