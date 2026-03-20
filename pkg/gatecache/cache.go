@@ -20,10 +20,14 @@ const (
 )
 
 // CacheKey uniquely identifies a snapshot of the repository's working state.
+// HeadCommit + StagedStat + UnstagedStat capture repository state.
+// Command is the gate command string; it ensures that changing the command
+// (e.g. "go test ./..." -> "go test -count=1 ./...") invalidates the cache.
 type CacheKey struct {
 	HeadCommit   string `json:"head_commit"`
 	StagedStat   string `json:"staged_stat"`
 	UnstagedStat string `json:"unstaged_stat"`
+	Command      string `json:"command"`
 }
 
 // CachedResult mirrors protocol.GateResult fields plus cache metadata.
@@ -78,7 +82,8 @@ func New(stateDir string, ttl time.Duration) *Cache {
 // hashKey returns the md5 hex digest of the combined CacheKey fields.
 func hashKey(key CacheKey) string {
 	h := md5.New()
-	_, _ = fmt.Fprintf(h, "%s\x00%s\x00%s", key.HeadCommit, key.StagedStat, key.UnstagedStat)
+	_, _ = fmt.Fprintf(h, "%s\x00%s\x00%s\x00%s",
+		key.HeadCommit, key.StagedStat, key.UnstagedStat, key.Command)
 	return fmt.Sprintf("%x", h.Sum(nil))
 }
 
@@ -105,6 +110,18 @@ func (c *Cache) BuildKey(repoDir string) (CacheKey, error) {
 		StagedStat:   strings.TrimSpace(stagedStat),
 		UnstagedStat: strings.TrimSpace(unstagedStat),
 	}, nil
+}
+
+// BuildKeyForGate computes a CacheKey for the repository at repoDir
+// combined with the given gate command string. The command is included in the
+// key so that changing a gate's command (e.g. adding a flag) causes a cache miss.
+func (c *Cache) BuildKeyForGate(repoDir string, command string) (CacheKey, error) {
+	key, err := c.BuildKey(repoDir)
+	if err != nil {
+		return CacheKey{}, err
+	}
+	key.Command = command
+	return key, nil
 }
 
 // runGit executes a git subcommand in dir and returns the trimmed stdout.
