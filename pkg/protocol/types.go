@@ -45,6 +45,8 @@ type IMPLManifest struct {
 	PreMortem             *PreMortem                     `yaml:"pre_mortem,omitempty" json:"pre_mortem,omitempty"`
 	Reactions             *ReactionsConfig               `yaml:"reactions,omitempty"  json:"reactions,omitempty"`
 	KnownIssues           []KnownIssue                   `yaml:"known_issues,omitempty" json:"known_issues,omitempty"`
+	// CriticReport is the structured output of a critic-agent review run, if one has been performed.
+	CriticReport          *CriticResult                  `yaml:"critic_report,omitempty" json:"critic_report,omitempty"`
 	State                 ProtocolState                  `yaml:"state,omitempty" json:"state,omitempty"`
 	MergeState            MergeState                     `yaml:"merge_state,omitempty" json:"merge_state,omitempty"`
 	// Freeze enforcement fields (E2/I2-02)
