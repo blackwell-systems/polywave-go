@@ -231,7 +231,7 @@ func TestInterviewCmd_NonInteractive_ShortFlow(t *testing.T) {
 	}
 
 	// Verify question prompts appeared
-	if !strings.Contains(output, "[Phase: Overview") {
+	if !strings.Contains(output, "[overview:") {
 		t.Errorf("expected phase header in output, got: %s", output)
 	}
 	if !strings.Contains(output, "What is the project title?") {
