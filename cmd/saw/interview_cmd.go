@@ -11,6 +11,12 @@ import (
 	"github.com/spf13/cobra"
 )
 
+func init() {
+	newDeterministicManagerFunc = func(docsDir string) interview.Manager {
+		return interview.NewDeterministicManager(docsDir)
+	}
+}
+
 // newInterviewCmd creates the interview subcommand.
 // Usage: sawtools interview "<description>" [flags]
 //
@@ -101,17 +107,16 @@ Examples:
 			writer := cmd.OutOrStdout()
 
 			for question != nil {
-				// Print the question prompt
-				pct := 0
-				if doc.MaxQuestions > 0 {
-					pct = int(float64(doc.QuestionCursor) / float64(doc.MaxQuestions) * 100)
+				// Show preview before final confirmation
+				if question.FieldName == "_confirm" {
+					preview, previewErr := interview.PreviewRequirements(doc)
+					if previewErr == nil {
+						fmt.Fprintf(writer, "\n--- Preview of REQUIREMENTS.md ---\n%s\n", preview)
+					}
 				}
-				fmt.Fprintf(writer, "[Phase: %s | Q %d/%d | %d%%]\n",
-					capitalize(string(question.Phase)),
-					doc.QuestionCursor+1,
-					doc.MaxQuestions,
-					pct,
-				)
+
+				// Print the question prompt with phase-aware progress
+				fmt.Fprintf(writer, "%s\n", interview.FormatPhaseProgress(doc))
 				fmt.Fprintf(writer, "%s\n", question.Text)
 				if question.Hint != "" {
 					fmt.Fprintf(writer, "(%s)\n", question.Hint)
