@@ -1,6 +1,7 @@
 package collision
 
 import (
+	"sort"
 	"testing"
 )
 
@@ -270,6 +271,19 @@ func TestDetectCollisionsInTypes(t *testing.T) {
 				t.Errorf("detectCollisionsInTypes() got %d collisions, want %d", len(got), len(tt.want))
 				return
 			}
+			// Sort both slices by TypeName+Package for deterministic comparison
+			sort.Slice(got, func(i, j int) bool {
+				if got[i].Package != got[j].Package {
+					return got[i].Package < got[j].Package
+				}
+				return got[i].TypeName < got[j].TypeName
+			})
+			sort.Slice(tt.want, func(i, j int) bool {
+				if tt.want[i].Package != tt.want[j].Package {
+					return tt.want[i].Package < tt.want[j].Package
+				}
+				return tt.want[i].TypeName < tt.want[j].TypeName
+			})
 			for i := range got {
 				if got[i].TypeName != tt.want[i].TypeName {
 					t.Errorf("collision[%d].TypeName = %v, want %v", i, got[i].TypeName, tt.want[i].TypeName)
