@@ -304,6 +304,30 @@ func validateSlugFormats(manifest *PROGRAMManifest) []ValidationError {
 	return errs
 }
 
+// ValidateP1FileDisjointness checks that IMPLs in the same tier do not have
+// overlapping file_ownership entries (P1 invariant). Returns ValidationError
+// with Code "P1_FILE_OVERLAP" if the same file appears in multiple IMPLs.
+func ValidateP1FileDisjointness(tier int, impls []*IMPLManifest) []ValidationError {
+	var errs []ValidationError
+	fileToIMPL := make(map[string]string) // file path -> IMPL slug
+
+	for _, impl := range impls {
+		for _, fo := range impl.FileOwnership {
+			if existingIMPL, exists := fileToIMPL[fo.File]; exists {
+				errs = append(errs, ValidationError{
+					Code:    "P1_FILE_OVERLAP",
+					Message: fmt.Sprintf("File %s owned by both %s and %s in tier %d (violates P1 disjoint ownership)",
+						fo.File, existingIMPL, impl.FeatureSlug, tier),
+					Field: "file_ownership",
+				})
+			} else {
+				fileToIMPL[fo.File] = impl.FeatureSlug
+			}
+		}
+	}
+	return errs
+}
+
 // ValidateProgramImportMode performs extended validation for import mode.
 // It checks that referenced IMPL docs exist on disk, have valid states
 // (reviewed/complete), and don't violate P1 (file_ownership disjointness
@@ -355,9 +379,9 @@ func ValidateProgramImportMode(manifest *PROGRAMManifest, repoPath string) []Val
 		}
 	}
 
-	// Track file ownership per tier for P1 overlap detection.
-	// tier -> file -> owning IMPL slug
-	tierFileOwners := make(map[int]map[string]string)
+	// Collect IMPL docs per tier for P1 file ownership validation.
+	// tier -> []*IMPLManifest
+	tierIMPLDocs := make(map[int][]*IMPLManifest)
 
 	for _, impl := range manifest.Impls {
 		if impl.Status != "reviewed" && impl.Status != "complete" {
@@ -408,21 +432,8 @@ func ValidateProgramImportMode(manifest *PROGRAMManifest, repoPath string) []Val
 			})
 		}
 
-		// Collect file ownership for P1 checks.
-		if _, ok := tierFileOwners[impl.Tier]; !ok {
-			tierFileOwners[impl.Tier] = make(map[string]string)
-		}
-		for _, fo := range implDoc.FileOwnership {
-			if existing, exists := tierFileOwners[impl.Tier][fo.File]; exists && existing != impl.Slug {
-				errs = append(errs, ValidationError{
-					Code:    "P1_FILE_OVERLAP",
-					Message: fmt.Sprintf("file %q is owned by both IMPL %q and IMPL %q in tier %d", fo.File, existing, impl.Slug, impl.Tier),
-					Field:   "file_ownership",
-				})
-			} else {
-				tierFileOwners[impl.Tier][fo.File] = impl.Slug
-			}
-		}
+		// Collect IMPL doc for tier-level P1 validation.
+		tierIMPLDocs[impl.Tier] = append(tierIMPLDocs[impl.Tier], implDoc)
 
 		// Check P2: frozen contract redefinition.
 		for _, ic := range implDoc.InterfaceContracts {
@@ -434,6 +445,12 @@ func ValidateProgramImportMode(manifest *PROGRAMManifest, repoPath string) []Val
 				})
 			}
 		}
+	}
+
+	// Run P1 file disjointness check for each tier.
+	for tier, implsInTier := range tierIMPLDocs {
+		p1Errs := ValidateP1FileDisjointness(tier, implsInTier)
+		errs = append(errs, p1Errs...)
 	}
 
 	return errs
