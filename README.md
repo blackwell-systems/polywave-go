@@ -14,6 +14,37 @@ This is distinct from branch-based coordination. Branches prevent concurrent wri
 
 ---
 
+## Feature Highlights
+
+- **Merge-conflict-free by construction** — file ownership is partitioned and locked before execution begins; conflicts on agent-owned files are structurally impossible
+- **Runs on any LLM: Anthropic, OpenAI, Ollama, or any OpenAI-compatible endpoint. Mix providers per-agent within the same wave.**
+- **Full protocol SDK** — importable Go module, no LLM dependencies, deterministic for all inputs
+- **60+ CLI commands** — single-purpose with structured JSON output, covering the full wave lifecycle
+- **Program layer** — tier-gated execution of multiple IMPLs with shared contract freezing
+
+---
+
+## LLM Backend
+
+The engine abstracts agent execution behind a `Runtime` interface. Provider routing uses model prefix notation:
+
+| Prefix | Backend |
+|--------|---------|
+| `anthropic:` | Anthropic API (direct) |
+| `openai:` | OpenAI-compatible endpoint (OpenAI, Ollama, LM Studio, etc.) |
+| `cli:` | Local CLI binary (Claude Code, `SAW_CLI_BINARY`) |
+| *(none)* | Auto-detect from environment |
+
+### Per-agent provider routing
+
+Each agent in an IMPL doc carries an optional `model:` field. The orchestrator reads it at launch time and routes that agent to the appropriate backend — with zero changes to the orchestrator itself.
+
+This means a single wave can run heterogeneous workloads: route the broad-context analysis agent to a large-context model, route the mechanical code-generation agents to a fast, cheap model, and route the integration agent to whichever model has the strongest reasoning for your stack. The allocation lives in the IMPL doc, not in orchestrator code.
+
+Example: Agent A on `anthropic:claude-haiku-3` (fast, cheap, high-parallelism), Agent B on `anthropic:claude-opus-4` (complex reasoning, low-parallelism), Agent C on `openai:llama3` via a local Ollama endpoint — all executing concurrently in the same wave, all merging into the same branch when done.
+
+---
+
 ## How It Works
 
 SAW decomposes feature work into three phases:
@@ -239,21 +270,6 @@ pkg/
 internal/
 └── git/            # Git operations (commit, branch, merge)
 ```
-
----
-
-## LLM Backend
-
-The engine abstracts agent execution behind a `Runtime` interface. Provider routing uses model prefix notation:
-
-| Prefix | Backend |
-|--------|---------|
-| `anthropic:` | Anthropic API (direct) |
-| `openai:` | OpenAI-compatible endpoint |
-| `cli:` | Local CLI binary (Claude Code, `SAW_CLI_BINARY`) |
-| *(none)* | Auto-detect from environment |
-
-Per-agent model overrides: the `model:` field in each IMPL doc agent section routes individual agents to different providers within the same wave. A wave can run agent A on Haiku (fast, cheap) and agent B on Opus (complex task) with no orchestrator changes.
 
 ---
 
