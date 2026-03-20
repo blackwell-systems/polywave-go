@@ -2,6 +2,8 @@ package protocol
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
 	"regexp"
 	"strings"
 )
@@ -300,6 +302,176 @@ func validateSlugFormats(manifest *PROGRAMManifest) []ValidationError {
 	}
 
 	return errs
+}
+
+// ValidateProgramImportMode performs extended validation for import mode.
+// It checks that referenced IMPL docs exist on disk, have valid states
+// (reviewed/complete), and don't violate P1 (file_ownership disjointness
+// within a tier) or P2 (frozen contract redefinition).
+func ValidateProgramImportMode(manifest *PROGRAMManifest, repoPath string) []ValidationError {
+	var errs []ValidationError
+
+	// Collect states that qualify as "reviewed or later" for import-mode validation.
+	reviewedOrLater := map[ProtocolState]bool{
+		StateReviewed:        true,
+		StateScaffoldPending: true,
+		StateWavePending:     true,
+		StateWaveExecuting:   true,
+		StateWaveMerging:     true,
+		StateWaveVerified:    true,
+		StateComplete:        true,
+	}
+
+	// Build tier -> []slug mapping for P1 file overlap checks.
+	tierIMPLs := make(map[int][]string)
+	for _, impl := range manifest.Impls {
+		tierIMPLs[impl.Tier] = append(tierIMPLs[impl.Tier], impl.Slug)
+	}
+
+	// Build set of frozen contract names (freeze_at references a completed tier).
+	frozenContracts := make(map[string]bool)
+	completedTiers := make(map[string]bool)
+	for _, tier := range manifest.Tiers {
+		// A tier is "completed" if all its IMPLs have status "complete".
+		allComplete := true
+		for _, slug := range tier.Impls {
+			for _, impl := range manifest.Impls {
+				if impl.Slug == slug && impl.Status != "complete" {
+					allComplete = false
+					break
+				}
+			}
+			if !allComplete {
+				break
+			}
+		}
+		if allComplete && len(tier.Impls) > 0 {
+			completedTiers[fmt.Sprintf("tier-%d", tier.Number)] = true
+		}
+	}
+	for _, contract := range manifest.ProgramContracts {
+		if contract.FreezeAt != "" && completedTiers[contract.FreezeAt] {
+			frozenContracts[contract.Name] = true
+		}
+	}
+
+	// Track file ownership per tier for P1 overlap detection.
+	// tier -> file -> owning IMPL slug
+	tierFileOwners := make(map[int]map[string]string)
+
+	for _, impl := range manifest.Impls {
+		if impl.Status != "reviewed" && impl.Status != "complete" {
+			continue
+		}
+
+		// Check 1: IMPL file exists on disk.
+		implPath := filepath.Join(repoPath, "docs", "IMPL", fmt.Sprintf("IMPL-%s.yaml", impl.Slug))
+		completePath := filepath.Join(repoPath, "docs", "IMPL", "complete", fmt.Sprintf("IMPL-%s.yaml", impl.Slug))
+
+		var resolvedPath string
+		if _, err := os.Stat(implPath); err == nil {
+			resolvedPath = implPath
+		} else if _, err := os.Stat(completePath); err == nil {
+			resolvedPath = completePath
+		} else {
+			errs = append(errs, ValidationError{
+				Code:    "IMPL_FILE_MISSING",
+				Message: fmt.Sprintf("IMPL %q has status %q but IMPL-%s.yaml not found in docs/IMPL/ or docs/IMPL/complete/", impl.Slug, impl.Status, impl.Slug),
+				Field:   "impls",
+			})
+			continue
+		}
+
+		// Check 2: Parse IMPL doc and verify state consistency.
+		implDoc, err := Load(resolvedPath)
+		if err != nil {
+			errs = append(errs, ValidationError{
+				Code:    "IMPL_FILE_MISSING",
+				Message: fmt.Sprintf("IMPL %q: failed to parse %s: %v", impl.Slug, resolvedPath, err),
+				Field:   "impls",
+			})
+			continue
+		}
+
+		if impl.Status == "reviewed" && !reviewedOrLater[implDoc.State] {
+			errs = append(errs, ValidationError{
+				Code:    "IMPL_STATE_MISMATCH",
+				Message: fmt.Sprintf("IMPL %q has program status %q but IMPL doc state is %q (expected REVIEWED or later)", impl.Slug, impl.Status, implDoc.State),
+				Field:   "impls",
+			})
+		}
+		if impl.Status == "complete" && implDoc.State != StateComplete {
+			errs = append(errs, ValidationError{
+				Code:    "IMPL_STATE_MISMATCH",
+				Message: fmt.Sprintf("IMPL %q has program status %q but IMPL doc state is %q (expected COMPLETE)", impl.Slug, impl.Status, implDoc.State),
+				Field:   "impls",
+			})
+		}
+
+		// Collect file ownership for P1 checks.
+		if _, ok := tierFileOwners[impl.Tier]; !ok {
+			tierFileOwners[impl.Tier] = make(map[string]string)
+		}
+		for _, fo := range implDoc.FileOwnership {
+			if existing, exists := tierFileOwners[impl.Tier][fo.File]; exists && existing != impl.Slug {
+				errs = append(errs, ValidationError{
+					Code:    "P1_FILE_OVERLAP",
+					Message: fmt.Sprintf("file %q is owned by both IMPL %q and IMPL %q in tier %d", fo.File, existing, impl.Slug, impl.Tier),
+					Field:   "file_ownership",
+				})
+			} else {
+				tierFileOwners[impl.Tier][fo.File] = impl.Slug
+			}
+		}
+
+		// Check P2: frozen contract redefinition.
+		for _, ic := range implDoc.InterfaceContracts {
+			if frozenContracts[ic.Name] {
+				errs = append(errs, ValidationError{
+					Code:    "P2_CONTRACT_REDEFINITION",
+					Message: fmt.Sprintf("IMPL %q redefines frozen program contract %q", impl.Slug, ic.Name),
+					Field:   "interface_contracts",
+				})
+			}
+		}
+	}
+
+	return errs
+}
+
+// PartitionIMPLsByStatus splits a tier's IMPLs into two groups:
+//   - needsScout: IMPLs with status "pending" or "scouting"
+//   - preExisting: IMPLs with status "reviewed" or "complete"
+func PartitionIMPLsByStatus(manifest *PROGRAMManifest, tierNumber int) (needsScout []ProgramIMPL, preExisting []ProgramIMPL) {
+	// Build slug -> ProgramIMPL map.
+	implMap := make(map[string]ProgramIMPL)
+	for _, impl := range manifest.Impls {
+		implMap[impl.Slug] = impl
+	}
+
+	// Find the tier and partition its IMPLs.
+	for _, tier := range manifest.Tiers {
+		if tier.Number != tierNumber {
+			continue
+		}
+		for _, slug := range tier.Impls {
+			impl, ok := implMap[slug]
+			if !ok {
+				continue
+			}
+			switch impl.Status {
+			case "pending", "scouting":
+				needsScout = append(needsScout, impl)
+			case "reviewed", "complete":
+				preExisting = append(preExisting, impl)
+			default:
+				// Other statuses (e.g. "executing") go to needsScout as a safe default.
+				needsScout = append(needsScout, impl)
+			}
+		}
+		break
+	}
+	return needsScout, preExisting
 }
 
 // validateCompletionBounds checks that completion counts don't exceed totals.

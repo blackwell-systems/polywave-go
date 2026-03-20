@@ -79,3 +79,25 @@ type ProgramCompletion struct {
 	TotalAgents   int `yaml:"total_agents" json:"total_agents"`
 	TotalWaves    int `yaml:"total_waves" json:"total_waves"`
 }
+
+// ImportedIMPL describes a single IMPL that was imported into a PROGRAM manifest.
+type ImportedIMPL struct {
+	Slug         string `json:"slug"`
+	Title        string `json:"title"`
+	Status       string `json:"status"`
+	AssignedTier int    `json:"assigned_tier"`
+	AgentCount   int    `json:"agent_count"`
+	WaveCount    int    `json:"wave_count"`
+}
+
+// ImportIMPLsResult is the result struct returned by the import-impls command.
+type ImportIMPLsResult struct {
+	ManifestPath    string         `json:"manifest_path"`
+	ImplsImported   []ImportedIMPL `json:"impls_imported"`
+	ImplsDiscovered []string       `json:"impls_discovered,omitempty"`
+	TierAssignments map[string]int `json:"tier_assignments"`
+	P1Conflicts     []string       `json:"p1_conflicts,omitempty"`
+	P2Conflicts     []string       `json:"p2_conflicts,omitempty"`
+	Created         bool           `json:"created"`
+	Updated         bool           `json:"updated"`
+}

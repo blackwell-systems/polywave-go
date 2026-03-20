@@ -1,7 +1,11 @@
 package protocol
 
 import (
+	"os"
+	"path/filepath"
 	"testing"
+
+	"gopkg.in/yaml.v3"
 )
 
 // TestValidateProgram_ValidManifest verifies that a valid manifest returns no errors
@@ -674,6 +678,256 @@ func TestImplsTotalExactMatch(t *testing.T) {
 			}
 		}
 	})
+}
+
+// --- Import-mode validation tests ---
+
+// writeTestIMPL is a helper that writes a minimal IMPL YAML file to disk.
+func writeTestIMPL(t *testing.T, dir string, slug string, state ProtocolState, files []string, contracts []string) string {
+	t.Helper()
+
+	// Build file_ownership entries.
+	var foEntries []map[string]interface{}
+	for _, f := range files {
+		foEntries = append(foEntries, map[string]interface{}{
+			"file":  f,
+			"agent": "A",
+			"wave":  1,
+		})
+	}
+
+	// Build interface_contracts entries.
+	var icEntries []map[string]string
+	for _, c := range contracts {
+		icEntries = append(icEntries, map[string]string{
+			"name":       c,
+			"definition": "func " + c + "()",
+			"location":   "pkg/" + c + ".go",
+		})
+	}
+
+	doc := map[string]interface{}{
+		"title":        "IMPL " + slug,
+		"feature_slug": slug,
+		"verdict":      "SUITABLE",
+		"test_command":  "go test ./...",
+		"lint_command":  "go vet ./...",
+		"state":        string(state),
+		"file_ownership":     foEntries,
+		"interface_contracts": icEntries,
+		"waves": []map[string]interface{}{
+			{
+				"number": 1,
+				"agents": []map[string]string{
+					{"id": "A", "task": "implement"},
+				},
+			},
+		},
+	}
+
+	data, err := yaml.Marshal(doc)
+	if err != nil {
+		t.Fatalf("failed to marshal test IMPL: %v", err)
+	}
+
+	implDir := filepath.Join(dir, "docs", "IMPL")
+	if err := os.MkdirAll(implDir, 0755); err != nil {
+		t.Fatalf("failed to create IMPL dir: %v", err)
+	}
+
+	path := filepath.Join(implDir, "IMPL-"+slug+".yaml")
+	if err := os.WriteFile(path, data, 0644); err != nil {
+		t.Fatalf("failed to write test IMPL: %v", err)
+	}
+	return path
+}
+
+func TestValidateProgramImportMode_MissingIMPLFile(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	manifest := &PROGRAMManifest{
+		Title:       "Test",
+		ProgramSlug: "test",
+		State:       ProgramStatePlanning,
+		Impls: []ProgramIMPL{
+			{Slug: "missing-impl", Tier: 1, Status: "reviewed"},
+		},
+		Tiers: []ProgramTier{
+			{Number: 1, Impls: []string{"missing-impl"}},
+		},
+	}
+
+	errs := ValidateProgramImportMode(manifest, tmpDir)
+	found := false
+	for _, e := range errs {
+		if e.Code == "IMPL_FILE_MISSING" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Errorf("expected IMPL_FILE_MISSING error, got: %v", errs)
+	}
+}
+
+func TestValidateProgramImportMode_P1FileOverlap(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	// Two IMPLs in same tier both owning the same file.
+	writeTestIMPL(t, tmpDir, "impl-a", StateReviewed, []string{"pkg/shared.go"}, nil)
+	writeTestIMPL(t, tmpDir, "impl-b", StateReviewed, []string{"pkg/shared.go"}, nil)
+
+	manifest := &PROGRAMManifest{
+		Title:       "Test",
+		ProgramSlug: "test",
+		State:       ProgramStatePlanning,
+		Impls: []ProgramIMPL{
+			{Slug: "impl-a", Tier: 1, Status: "reviewed"},
+			{Slug: "impl-b", Tier: 1, Status: "reviewed"},
+		},
+		Tiers: []ProgramTier{
+			{Number: 1, Impls: []string{"impl-a", "impl-b"}},
+		},
+	}
+
+	errs := ValidateProgramImportMode(manifest, tmpDir)
+	found := false
+	for _, e := range errs {
+		if e.Code == "P1_FILE_OVERLAP" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Errorf("expected P1_FILE_OVERLAP error, got: %v", errs)
+	}
+}
+
+func TestValidateProgramImportMode_P2ContractRedefinition(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	// IMPL redefines a frozen contract.
+	writeTestIMPL(t, tmpDir, "impl-a", StateComplete, nil, nil)
+	writeTestIMPL(t, tmpDir, "impl-b", StateReviewed, nil, []string{"SharedAPI"})
+
+	manifest := &PROGRAMManifest{
+		Title:       "Test",
+		ProgramSlug: "test",
+		State:       ProgramStateTierExecuting,
+		Impls: []ProgramIMPL{
+			{Slug: "impl-a", Tier: 1, Status: "complete"},
+			{Slug: "impl-b", Tier: 2, Status: "reviewed"},
+		},
+		Tiers: []ProgramTier{
+			{Number: 1, Impls: []string{"impl-a"}},
+			{Number: 2, Impls: []string{"impl-b"}},
+		},
+		ProgramContracts: []ProgramContract{
+			{
+				Name:       "SharedAPI",
+				Definition: "func SharedAPI()",
+				Location:   "pkg/api.go",
+				FreezeAt:   "tier-1",
+			},
+		},
+	}
+
+	errs := ValidateProgramImportMode(manifest, tmpDir)
+	found := false
+	for _, e := range errs {
+		if e.Code == "P2_CONTRACT_REDEFINITION" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Errorf("expected P2_CONTRACT_REDEFINITION error, got: %v", errs)
+	}
+}
+
+func TestValidateProgramImportMode_ValidPreExisting(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	writeTestIMPL(t, tmpDir, "impl-a", StateReviewed, []string{"pkg/a.go"}, nil)
+	writeTestIMPL(t, tmpDir, "impl-b", StateReviewed, []string{"pkg/b.go"}, nil)
+
+	manifest := &PROGRAMManifest{
+		Title:       "Test",
+		ProgramSlug: "test",
+		State:       ProgramStatePlanning,
+		Impls: []ProgramIMPL{
+			{Slug: "impl-a", Tier: 1, Status: "reviewed"},
+			{Slug: "impl-b", Tier: 1, Status: "reviewed"},
+		},
+		Tiers: []ProgramTier{
+			{Number: 1, Impls: []string{"impl-a", "impl-b"}},
+		},
+	}
+
+	errs := ValidateProgramImportMode(manifest, tmpDir)
+	if len(errs) != 0 {
+		t.Errorf("expected no errors for valid pre-existing IMPLs, got: %v", errs)
+	}
+}
+
+func TestPartitionIMPLsByStatus(t *testing.T) {
+	manifest := &PROGRAMManifest{
+		Title:       "Test",
+		ProgramSlug: "test",
+		State:       ProgramStatePlanning,
+		Impls: []ProgramIMPL{
+			{Slug: "impl-a", Tier: 1, Status: "pending"},
+			{Slug: "impl-b", Tier: 1, Status: "reviewed"},
+			{Slug: "impl-c", Tier: 1, Status: "scouting"},
+			{Slug: "impl-d", Tier: 1, Status: "complete"},
+			{Slug: "impl-e", Tier: 2, Status: "pending"},
+		},
+		Tiers: []ProgramTier{
+			{Number: 1, Impls: []string{"impl-a", "impl-b", "impl-c", "impl-d"}},
+			{Number: 2, Impls: []string{"impl-e"}},
+		},
+	}
+
+	needsScout, preExisting := PartitionIMPLsByStatus(manifest, 1)
+
+	if len(needsScout) != 2 {
+		t.Errorf("expected 2 needsScout IMPLs, got %d: %v", len(needsScout), needsScout)
+	}
+	if len(preExisting) != 2 {
+		t.Errorf("expected 2 preExisting IMPLs, got %d: %v", len(preExisting), preExisting)
+	}
+
+	// Verify correct slugs in each group.
+	scoutSlugs := make(map[string]bool)
+	for _, impl := range needsScout {
+		scoutSlugs[impl.Slug] = true
+	}
+	if !scoutSlugs["impl-a"] || !scoutSlugs["impl-c"] {
+		t.Errorf("needsScout should contain impl-a and impl-c, got: %v", scoutSlugs)
+	}
+
+	preSlugs := make(map[string]bool)
+	for _, impl := range preExisting {
+		preSlugs[impl.Slug] = true
+	}
+	if !preSlugs["impl-b"] || !preSlugs["impl-d"] {
+		t.Errorf("preExisting should contain impl-b and impl-d, got: %v", preSlugs)
+	}
+
+	// Tier 2 should only have impl-e as needsScout.
+	ns2, pe2 := PartitionIMPLsByStatus(manifest, 2)
+	if len(ns2) != 1 || ns2[0].Slug != "impl-e" {
+		t.Errorf("tier 2 needsScout expected [impl-e], got: %v", ns2)
+	}
+	if len(pe2) != 0 {
+		t.Errorf("tier 2 preExisting expected empty, got: %v", pe2)
+	}
+
+	// Non-existent tier should return empty.
+	ns99, pe99 := PartitionIMPLsByStatus(manifest, 99)
+	if len(ns99) != 0 || len(pe99) != 0 {
+		t.Errorf("non-existent tier should return empty, got ns=%v pe=%v", ns99, pe99)
+	}
 }
 
 // TestValidateProgram_AllValidProgramStates tests all valid program states pass validation
