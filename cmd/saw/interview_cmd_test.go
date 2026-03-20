@@ -238,3 +238,65 @@ func TestInterviewCmd_NonInteractive_ShortFlow(t *testing.T) {
 		t.Errorf("expected question text in output, got: %s", output)
 	}
 }
+
+// Agent C tests for P0 and P1 changes.
+
+// TestInterviewCmd_InitWiring verifies that newDeterministicManagerFunc is non-nil after package init (confirms P0.1 fix).
+func TestInterviewCmd_InitWiring(t *testing.T) {
+	// Note: the test file uses installMockManager which overrides init(),
+	// so we test init separately by checking the variable before any mock install.
+	// Since init() runs automatically before tests, we just verify the function was set.
+	if newDeterministicManagerFunc == nil {
+		t.Error("expected newDeterministicManagerFunc to be non-nil after init(), got nil (P0.1 fix verification failed)")
+	}
+}
+
+// TestInterviewCmd_PhaseProgress verifies output contains phase-aware format like "[Overview:" instead of old "[Phase: Overview".
+func TestInterviewCmd_PhaseProgress(t *testing.T) {
+	installMockManager(t)
+
+	tmpDir := t.TempDir()
+
+	// Provide answer for first question only, then close stdin to pause.
+	input := "My Project\n"
+
+	cmd := newInterviewCmd()
+	outBuf := new(bytes.Buffer)
+	errBuf := new(bytes.Buffer)
+	cmd.SetOut(outBuf)
+	cmd.SetErr(errBuf)
+	cmd.SetIn(strings.NewReader(input))
+	cmd.SetArgs([]string{
+		"test feature",
+		"--docs-dir", tmpDir,
+	})
+
+	// This will exit(2) because stdin closes before completion.
+	// We can't catch that in tests, but we can at least verify the output format.
+	// Run with enough input to see the phase progress.
+	input = "My Project\nBuild something\nEverything\n"
+	cmd.SetIn(strings.NewReader(input))
+
+	err := cmd.Execute()
+	if err != nil {
+		// This is expected since mock only has 3 questions
+		t.Logf("expected error after mock completion: %v", err)
+	}
+
+	output := outBuf.String()
+
+	// Verify phase-aware format appears: "[Overview:" or "[overview:"
+	if !strings.Contains(output, "[overview:") && !strings.Contains(output, "[Overview:") {
+		t.Errorf("expected output to contain phase-aware format '[Overview:', got: %s", output)
+	}
+
+	// Verify old format does NOT appear: "[Phase: Overview"
+	if strings.Contains(output, "[Phase: Overview") || strings.Contains(output, "[Phase: overview") {
+		t.Errorf("expected output NOT to contain old format '[Phase: Overview', but it does: %s", output)
+	}
+
+	// Verify "Next:" appears in progress (new format includes "Next: Scope" etc.)
+	if !strings.Contains(output, "Next:") {
+		t.Errorf("expected output to contain 'Next:' in phase progress, got: %s", output)
+	}
+}
