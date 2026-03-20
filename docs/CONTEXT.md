@@ -144,3 +144,7 @@ type BackendConfig struct {
   - IMPL doc: docs/IMPL/complete/IMPL-planner-dag-prioritization.yaml
 - **gate-result-caching**: completed 2026-03-19, 1 waves, 3 agents
   - IMPL doc: ../scout-and-wave/docs/IMPL/complete/IMPL-gate-result-caching.yaml
+- **interview-mode**: completed 2026-03-20, 2 waves, 4 agents
+  - IMPL doc: ../scout-and-wave/docs/IMPL/complete/IMPL-interview-mode.yaml
+- **type-collision-detection**: completed 2026-03-20, 2 waves, 3 agents
+  - IMPL doc: ../scout-and-wave/docs/IMPL/complete/IMPL-type-collision-detection.yaml
