@@ -803,6 +803,85 @@ func TestValidateProgramImportMode_P1FileOverlap(t *testing.T) {
 	}
 }
 
+func TestValidateP1FileDisjointness_SameTier(t *testing.T) {
+	impl1 := &IMPLManifest{
+		FeatureSlug: "feature-a",
+		FileOwnership: []FileOwnership{{File: "pkg/shared.go", Agent: "A"}},
+	}
+	impl2 := &IMPLManifest{
+		FeatureSlug: "feature-b",
+		FileOwnership: []FileOwnership{{File: "pkg/shared.go", Agent: "B"}},
+	}
+
+	errs := ValidateP1FileDisjointness(1, []*IMPLManifest{impl1, impl2})
+
+	if len(errs) != 1 {
+		t.Fatalf("expected 1 error, got %d", len(errs))
+	}
+	if errs[0].Code != "P1_FILE_OVERLAP" {
+		t.Errorf("expected P1_FILE_OVERLAP, got %s", errs[0].Code)
+	}
+	if !contains(errs[0].Message, "pkg/shared.go") {
+		t.Errorf("error message should mention conflicting file, got: %s", errs[0].Message)
+	}
+	if !contains(errs[0].Message, "feature-a") || !contains(errs[0].Message, "feature-b") {
+		t.Errorf("error message should mention both IMPLs, got: %s", errs[0].Message)
+	}
+}
+
+func TestValidateP1FileDisjointness_DisjointFiles(t *testing.T) {
+	impl1 := &IMPLManifest{
+		FeatureSlug: "feature-a",
+		FileOwnership: []FileOwnership{{File: "pkg/a.go", Agent: "A"}},
+	}
+	impl2 := &IMPLManifest{
+		FeatureSlug: "feature-b",
+		FileOwnership: []FileOwnership{{File: "pkg/b.go", Agent: "B"}},
+	}
+
+	errs := ValidateP1FileDisjointness(1, []*IMPLManifest{impl1, impl2})
+
+	if len(errs) != 0 {
+		t.Errorf("expected no errors for disjoint files, got: %v", errs)
+	}
+}
+
+func TestValidateP1FileDisjointness_MultipleOverlaps(t *testing.T) {
+	impl1 := &IMPLManifest{
+		FeatureSlug: "feature-a",
+		FileOwnership: []FileOwnership{
+			{File: "pkg/shared1.go", Agent: "A"},
+			{File: "pkg/shared2.go", Agent: "A"},
+		},
+	}
+	impl2 := &IMPLManifest{
+		FeatureSlug: "feature-b",
+		FileOwnership: []FileOwnership{
+			{File: "pkg/shared1.go", Agent: "B"},
+			{File: "pkg/shared2.go", Agent: "B"},
+		},
+	}
+
+	errs := ValidateP1FileDisjointness(2, []*IMPLManifest{impl1, impl2})
+
+	if len(errs) != 2 {
+		t.Fatalf("expected 2 errors (one per overlapping file), got %d: %v", len(errs), errs)
+	}
+	for _, err := range errs {
+		if err.Code != "P1_FILE_OVERLAP" {
+			t.Errorf("expected all errors to be P1_FILE_OVERLAP, got: %s", err.Code)
+		}
+	}
+}
+
+func TestValidateP1FileDisjointness_EmptyIMPLs(t *testing.T) {
+	errs := ValidateP1FileDisjointness(1, []*IMPLManifest{})
+
+	if len(errs) != 0 {
+		t.Errorf("expected no errors for empty IMPL list, got: %v", errs)
+	}
+}
+
 func TestValidateProgramImportMode_P2ContractRedefinition(t *testing.T) {
 	tmpDir := t.TempDir()
 
