@@ -1,0 +1,8 @@
+{
+  "agent": "F",
+  "wave": 2,
+  "impl_doc": "/Users/dayna.blackwell/code/scout-and-wave-web/docs/IMPL/IMPL-protocol-engine-drift-fixes.yaml",
+  "owned_files": [
+    "pkg/protocol/validation.go"
+  ]
+}

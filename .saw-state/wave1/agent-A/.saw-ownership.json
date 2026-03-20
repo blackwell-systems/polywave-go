@@ -1,0 +1,11 @@
+{
+  "agent": "A",
+  "wave": 1,
+  "impl_doc": "/Users/dayna.blackwell/code/scout-and-wave-web/docs/IMPL/IMPL-gate-timing-fix.yaml",
+  "owned_files": [
+    "pkg/protocol/schema_unknown_keys.go",
+    "pkg/protocol/gates.go",
+    "pkg/protocol/gates_test.go",
+    "pkg/protocol/types.go"
+  ]
+}

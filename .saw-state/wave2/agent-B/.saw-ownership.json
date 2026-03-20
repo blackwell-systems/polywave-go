@@ -1,0 +1,8 @@
+{
+  "agent": "B",
+  "wave": 2,
+  "impl_doc": "/Users/dayna.blackwell/code/scout-and-wave-web/docs/IMPL/IMPL-gate-timing-fix.yaml",
+  "owned_files": [
+    "cmd/saw/finalize_wave.go"
+  ]
+}

@@ -142,3 +142,5 @@ type BackendConfig struct {
   - IMPL doc: ../scout-and-wave-web/docs/IMPL/complete/IMPL-gate-timing-fix.yaml
 - **planner-dag-prioritization**: completed 2026-03-19, 2 waves, 3 agents
   - IMPL doc: docs/IMPL/complete/IMPL-planner-dag-prioritization.yaml
+- **gate-result-caching**: completed 2026-03-19, 1 waves, 3 agents
+  - IMPL doc: ../scout-and-wave/docs/IMPL/complete/IMPL-gate-result-caching.yaml
