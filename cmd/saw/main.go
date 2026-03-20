@@ -47,7 +47,9 @@ func main() {
 		newFinalizeImplCmd(),
 		newDiagnoseBuildFailureCmd(),
 		newAssignAgentIDsCmd(),
-		newRunScoutCmd(), // I3: Phase 5 integration
+		newRunScoutCmd(),       // I3: Phase 5 integration
+		newRunCriticCmd(),      // E37: Pre-wave brief review
+		newSetCriticReviewCmd(), // E37: Used by critic agents to write results
 		newVerifyHookInstalledCmd(),
 		newValidateIntegrationCmd(),
 		newRetryCmd(),
