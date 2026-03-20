@@ -7,7 +7,17 @@ import (
 	"strings"
 )
 
+func init() {
+	RegisterCompiler(CompileToRequirements)
+}
+
 const placeholder = "<!-- placeholder — fill in before running /saw bootstrap -->"
+
+// PreviewRequirements generates a preview of the compiled REQUIREMENTS.md content
+// for display before the final confirmation question.
+func PreviewRequirements(doc *InterviewDoc) (string, error) {
+	return CompileToRequirements(doc)
+}
 
 // CompileToRequirements converts a completed InterviewDoc into the
 // REQUIREMENTS.md format expected by saw-bootstrap.md Phase 0.
