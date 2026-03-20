@@ -2,3 +2,4 @@
 /saw
 /sawtools
 .claude/worktrees/
+.saw-state/gate-cache.json

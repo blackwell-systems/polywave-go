@@ -16,6 +16,7 @@ func TestCache_PutGet(t *testing.T) {
 		HeadCommit:   "abc123",
 		StagedStat:   "",
 		UnstagedStat: "",
+		Command:      "",
 	}
 	result := CachedResult{
 		GateType: "build",
@@ -144,6 +145,7 @@ func TestCache_Persistence(t *testing.T) {
 		HeadCommit:   "persist123",
 		StagedStat:   "1 file changed",
 		UnstagedStat: "",
+		Command:      "",
 	}
 	result := CachedResult{
 		GateType: "vet",
@@ -268,5 +270,97 @@ func TestBuildKey(t *testing.T) {
 	}
 	if hashKey(key) == hashKey(key3) {
 		t.Error("different repo state should produce different hash")
+	}
+}
+
+func TestCache_CommandDifferentiation(t *testing.T) {
+	dir := t.TempDir()
+	c := New(dir, DefaultTTL)
+
+	// Two keys identical except for Command field
+	key1 := CacheKey{
+		HeadCommit:   "sha1abc",
+		StagedStat:   "",
+		UnstagedStat: "",
+		Command:      "go build ./...",
+	}
+	key2 := CacheKey{
+		HeadCommit:   "sha1abc",
+		StagedStat:   "",
+		UnstagedStat: "",
+		Command:      "go build -race ./...",
+	}
+
+	// The hash digests must differ
+	if hashKey(key1) == hashKey(key2) {
+		t.Error("different Command strings should produce different hash keys")
+	}
+
+	// Storing under key1 should not be retrievable via key2
+	result := CachedResult{GateType: "build", Passed: true}
+	if err := c.Put(key1, "build", result); err != nil {
+		t.Fatalf("Put failed: %v", err)
+	}
+
+	if _, ok := c.Get(key2, "build"); ok {
+		t.Error("expected cache miss for key2 (different Command), but got hit")
+	}
+	if _, ok := c.Get(key1, "build"); !ok {
+		t.Error("expected cache hit for key1, got miss")
+	}
+}
+
+func TestBuildKeyForGate(t *testing.T) {
+	// Initialize a temp git repo
+	dir := t.TempDir()
+
+	gitCmd := func(args ...string) {
+		cmd := exec.Command("git", args...)
+		cmd.Dir = dir
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v failed: %v\n%s", args, err, out)
+		}
+	}
+
+	gitCmd("init")
+	gitCmd("config", "user.email", "test@test.com")
+	gitCmd("config", "user.name", "Test")
+
+	if err := os.WriteFile(filepath.Join(dir, "README.md"), []byte("hello"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	gitCmd("add", ".")
+	gitCmd("commit", "-m", "initial")
+
+	c := New(dir, DefaultTTL)
+
+	key1, err := c.BuildKeyForGate(dir, "go test ./...")
+	if err != nil {
+		t.Fatalf("BuildKeyForGate failed: %v", err)
+	}
+	if key1.Command != "go test ./..." {
+		t.Errorf("Command field not set: got %q", key1.Command)
+	}
+
+	key2, err := c.BuildKeyForGate(dir, "go test -count=1 ./...")
+	if err != nil {
+		t.Fatalf("BuildKeyForGate (second) failed: %v", err)
+	}
+	if key2.Command != "go test -count=1 ./..." {
+		t.Errorf("Command field not set: got %q", key2.Command)
+	}
+
+	// Different commands must produce different hashes
+	if hashKey(key1) == hashKey(key2) {
+		t.Error("different gate commands should produce different hashes")
+	}
+
+	// Same command must produce the same hash
+	key3, err := c.BuildKeyForGate(dir, "go test ./...")
+	if err != nil {
+		t.Fatalf("BuildKeyForGate (third) failed: %v", err)
+	}
+	if hashKey(key1) != hashKey(key3) {
+		t.Error("same gate command should produce the same hash")
 	}
 }

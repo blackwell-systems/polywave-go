@@ -3,6 +3,7 @@ package protocol
 import (
 	"encoding/json"
 	"os"
+	"os/exec"
 	"testing"
 	"time"
 
@@ -763,6 +764,88 @@ func TestRunPreMergeGates_BackwardCompat(t *testing.T) {
 		if !r.Passed {
 			t.Errorf("expected gate[%d] to pass, got Passed=false", i)
 		}
+	}
+}
+
+// TestRunGatesWithCache_CommandChange verifies that changing a gate's command string
+// produces a cache miss even when repo state (HEAD, staged, unstaged) is identical.
+// It uses a real temporary git repo so BuildKeyForGate can succeed.
+func TestRunGatesWithCache_CommandChange(t *testing.T) {
+	// Set up a real git repo in a temp dir so BuildKeyForGate works.
+	repoDir := t.TempDir()
+	cacheDir := t.TempDir()
+
+	gitCmd := func(args ...string) {
+		cmd := exec.Command("git", args...)
+		cmd.Dir = repoDir
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v failed: %v\n%s", args, err, out)
+		}
+	}
+	gitCmd("init")
+	gitCmd("config", "user.email", "test@test.com")
+	gitCmd("config", "user.name", "Test")
+	if err := os.WriteFile(repoDir+"/README.md", []byte("hi"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	gitCmd("add", ".")
+	gitCmd("commit", "-m", "initial")
+
+	cache := gatecache.New(cacheDir, 5*time.Minute)
+
+	// First run with command "echo v1" — populates cache.
+	manifest1 := &IMPLManifest{
+		QualityGates: &QualityGates{
+			Level: "quick",
+			Gates: []QualityGate{
+				{Type: "build", Command: "echo v1", Required: true},
+			},
+		},
+	}
+	results1, err := RunGatesWithCache(manifest1, 1, repoDir, cache)
+	if err != nil {
+		t.Fatalf("first run error: %v", err)
+	}
+	if len(results1) != 1 {
+		t.Fatalf("expected 1 result, got %d", len(results1))
+	}
+	if results1[0].FromCache {
+		t.Error("first run should be a cache miss, not a hit")
+	}
+
+	// Second run with same command "echo v1" — should be a cache hit.
+	results2, err := RunGatesWithCache(manifest1, 1, repoDir, cache)
+	if err != nil {
+		t.Fatalf("second run error: %v", err)
+	}
+	if len(results2) != 1 {
+		t.Fatalf("expected 1 result, got %d", len(results2))
+	}
+	if !results2[0].FromCache {
+		t.Error("second run with same command should be a cache hit")
+	}
+	if results2[0].SkipReason == "" {
+		t.Error("expected SkipReason to be set on cache hit")
+	}
+
+	// Third run with changed command "echo v2" — must NOT be served from cache.
+	manifest2 := &IMPLManifest{
+		QualityGates: &QualityGates{
+			Level: "quick",
+			Gates: []QualityGate{
+				{Type: "build", Command: "echo v2", Required: true},
+			},
+		},
+	}
+	results3, err := RunGatesWithCache(manifest2, 1, repoDir, cache)
+	if err != nil {
+		t.Fatalf("third run error: %v", err)
+	}
+	if len(results3) != 1 {
+		t.Fatalf("expected 1 result, got %d", len(results3))
+	}
+	if results3[0].FromCache {
+		t.Error("third run with different command should be a cache miss, not a hit")
 	}
 }
 

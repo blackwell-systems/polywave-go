@@ -3,6 +3,7 @@ package protocol
 import (
 	"bytes"
 	"fmt"
+	"os"
 	"os/exec"
 	"path/filepath"
 
@@ -301,13 +302,6 @@ func RunGatesWithCache(manifest *IMPLManifest, waveNumber int, repoDir string, c
 		return []GateResult{}, nil
 	}
 
-	// Build a cache key from the current repository state
-	cacheKey, err := cache.BuildKey(repoDir)
-	if err != nil {
-		// If we can't build a key (e.g. not a git repo), fall back to no-cache
-		return RunGates(manifest, waveNumber, repoDir)
-	}
-
 	repoName := filepath.Base(repoDir)
 	docsOnly := isDocsOnlyWave(manifest, waveNumber)
 
@@ -331,19 +325,36 @@ func RunGatesWithCache(manifest *IMPLManifest, waveNumber int, repoDir string, c
 			continue
 		}
 
-		// Check the cache first
-		if cached, ok := cache.Get(cacheKey, gate.Type); ok {
-			results = append(results, GateResult{
-				Type:      gate.Type,
-				Command:   gate.Command,
-				Required:  gate.Required,
-				Passed:    cached.Passed,
-				ExitCode:  cached.ExitCode,
-				Stdout:    cached.Stdout,
-				Stderr:    cached.Stderr,
-				FromCache: true,
-			})
-			continue
+		// Build a per-gate cache key that includes the gate command string.
+		// This ensures that changing the command (e.g. adding a flag) causes
+		// a cache miss rather than returning a stale result.
+		cacheKey, err := cache.BuildKeyForGate(repoDir, gate.Command)
+		if err != nil {
+			// Cannot build key (e.g. not a git repo) — fall back to no-cache for
+			// this gate by running it below without checking or populating cache.
+			// We continue through the rest of the loop body.
+			cacheKey = gatecache.CacheKey{}
+		}
+
+		// Check the cache first (only when we successfully built a key)
+		if cacheKey.HeadCommit != "" {
+			if cached, ok := cache.Get(cacheKey, gate.Type); ok {
+				skipReason := fmt.Sprintf("cached at SHA %s", cacheKey.HeadCommit)
+				fmt.Fprintf(os.Stderr, "gate [%s]: skipped (cached at SHA %s)\n",
+					gate.Type, cacheKey.HeadCommit)
+				results = append(results, GateResult{
+					Type:       gate.Type,
+					Command:    gate.Command,
+					Required:   gate.Required,
+					Passed:     cached.Passed,
+					ExitCode:   cached.ExitCode,
+					Stdout:     cached.Stdout,
+					Stderr:     cached.Stderr,
+					FromCache:  true,
+					SkipReason: skipReason,
+				})
+				continue
+			}
 		}
 
 		// Format gates use the dedicated runner for auto-detection + fix mode.
@@ -393,15 +404,18 @@ func RunGatesWithCache(manifest *IMPLManifest, waveNumber int, repoDir string, c
 			result.ParsedErrors = pr.Errors
 		}
 
-		// Store in cache (ignore errors — cache is best-effort)
-		_ = cache.Put(cacheKey, gate.Type, gatecache.CachedResult{
-			GateType: gate.Type,
-			Command:  gate.Command,
-			Passed:   result.Passed,
-			ExitCode: result.ExitCode,
-			Stdout:   result.Stdout,
-			Stderr:   result.Stderr,
-		})
+		// Store in cache (ignore errors — cache is best-effort).
+		// Only store when we have a valid key (HeadCommit non-empty).
+		if cacheKey.HeadCommit != "" {
+			_ = cache.Put(cacheKey, gate.Type, gatecache.CachedResult{
+				GateType: gate.Type,
+				Command:  gate.Command,
+				Passed:   result.Passed,
+				ExitCode: result.ExitCode,
+				Stdout:   result.Stdout,
+				Stderr:   result.Stderr,
+			})
+		}
 
 		results = append(results, result)
 	}
