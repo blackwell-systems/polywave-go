@@ -72,6 +72,8 @@ func main() {
 		newQueryCmd(),
 		newCleanupStaleCmd(),
 		newProgramExecuteCmd(),
+		newCreateProgramCmd(),
+		newCheckIMPLConflictsCmd(),
 	)
 	if err := rootCmd.Execute(); err != nil {
 		fmt.Fprintln(os.Stderr, err)
