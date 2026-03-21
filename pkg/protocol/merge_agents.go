@@ -9,6 +9,64 @@ import (
 	"github.com/blackwell-systems/scout-and-wave-go/internal/git"
 )
 
+// WorktreesAbsent returns true if none of the expected worktree directories
+// for the given wave exist on disk. Uses WorktreeDir() to compute paths.
+// repoDir must be the absolute repo root.
+//
+// This detects the "solo wave" path where no worktrees were created
+// (e.g., a solo developer working directly on main). VerifyCommits would
+// otherwise fail because it looks for branches that don't exist.
+func WorktreesAbsent(manifest *IMPLManifest, waveNum int, repoDir string) bool {
+	// Find the target wave
+	var targetWave *Wave
+	for i := range manifest.Waves {
+		if manifest.Waves[i].Number == waveNum {
+			targetWave = &manifest.Waves[i]
+			break
+		}
+	}
+	if targetWave == nil {
+		return false
+	}
+	for _, agent := range targetWave.Agents {
+		path := WorktreeDir(repoDir, manifest.FeatureSlug, waveNum, agent.ID)
+		if _, err := os.Stat(path); err == nil {
+			return false // at least one worktree exists
+		}
+	}
+	return true
+}
+
+// AllBranchesAbsent returns true when every agent branch for the wave
+// is absent from the repository — both slug-scoped and legacy names.
+// Used by finalize-wave to detect the idempotent re-run path.
+//
+// NOTE: MergeAgents handles idempotency for the merge step (E9).
+// For the case where all branches have been deleted post-cleanup,
+// the finalize_wave.go caller must skip VerifyCommits and MergeAgents
+// when it detects that all expected branches are absent from the repo
+// (see AllBranchesAbsent check in finalize_wave.go).
+func AllBranchesAbsent(manifest *IMPLManifest, waveNum int, repoDir string) bool {
+	var targetWave *Wave
+	for i := range manifest.Waves {
+		if manifest.Waves[i].Number == waveNum {
+			targetWave = &manifest.Waves[i]
+			break
+		}
+	}
+	if targetWave == nil {
+		return true // no wave = no branches
+	}
+	for _, agent := range targetWave.Agents {
+		slugBranch := BranchName(manifest.FeatureSlug, waveNum, agent.ID)
+		legacyBranch := LegacyBranchName(waveNum, agent.ID)
+		if git.BranchExists(repoDir, slugBranch) || git.BranchExists(repoDir, legacyBranch) {
+			return false
+		}
+	}
+	return true
+}
+
 // MergeStatus represents the outcome of merging a single agent branch.
 type MergeStatus struct {
 	Agent         string `json:"agent"`
