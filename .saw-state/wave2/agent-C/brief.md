@@ -1,162 +1,124 @@
 # Agent C Brief - Wave 2
 
-**IMPL Doc:** /Users/dayna.blackwell/code/scout-and-wave/docs/IMPL/IMPL-interview-improvements.yaml
+**IMPL Doc:** /Users/dayna.blackwell/code/scout-and-wave-go/docs/IMPL/IMPL-repo-mismatch-hardening.yaml
 
 ## Files Owned
 
-- `pkg/interview/deterministic_test.go`
-- `cmd/saw/interview_cmd_test.go`
+- `cmd/saw/prepare_wave.go`
+- `cmd/saw/prepare_wave_test.go`
 
 
 ## Task
 
-## Tests for All P0 and P1 Changes
+## Wire Validation into prepare-wave CLI
 
-### What to implement
+Modify `cmd/saw/prepare_wave.go` to call the repo validation functions
+from Agent A before creating worktrees.
 
-**New file: pkg/interview/deterministic_test.go**
-Write comprehensive tests for the new functionality added by Agent B:
+### 1. Add pre-flight repo validation
 
-1. `TestValidateRequiredField_EmptyRejectsRequired` — empty answer on
-   required question returns error message
-2. `TestValidateRequiredField_WhitespaceRejectsRequired` — whitespace-only
-   answer on required question returns error message
-3. `TestValidateRequiredField_SkipOnOptionalAccepted` — "skip" on optional
-   question returns empty (valid)
-4. `TestValidateRequiredField_SkipOnRequiredRejected` — "skip" on required
-   question returns error message
-5. `TestValidateRequiredField_ValidAnswer` — non-empty answer returns empty
+After loading the manifest (line ~148) and before baseline quality gates,
+insert a new step "Step 0b1: Repo mismatch validation":
 
-6. `TestHandleBackCommand_FirstQuestion` — returns false at cursor 0
-7. `TestHandleBackCommand_Success` — returns true, decrements cursor,
-   removes last history entry, clears populated field
-8. `TestHandleBackCommand_CrossPhase` — going back across phase boundary
-   reverts doc.Phase correctly
-9. `TestHandleBackCommand_CaseInsensitive` — "BACK", "Back" all work
+```go
+// Step 0b1: Validate repo match
+configRepos := loadSAWConfigRepos(filepath.Join(projectRoot, "saw.config.json"))
+repoEntries := make([]protocol.RepoEntry, len(configRepos))
+for i, r := range configRepos {
+    repoEntries[i] = protocol.RepoEntry{Name: r.Name, Path: r.Path}
+}
 
-10. `TestAnswer_ValidationRejectsEmpty` — Answer() with empty string on
-    required field returns same question with hint
-11. `TestAnswer_BackIntegration` — Answer() with "back" reverts state
-
-12. `TestFormatPhaseProgress_Overview` — returns "[Overview: 1/4 | Next: Scope]"
-13. `TestFormatPhaseProgress_Review` — returns "[Review: 1/2 | Next: Done]"
-
-14. `TestPreviewRequirements` — returns non-empty markdown string
-
-**Modify: cmd/saw/interview_cmd_test.go**
-15. `TestInterviewCmd_InitWiring` — verify that newDeterministicManagerFunc
-    is non-nil after package init (confirms P0.1 fix). Note: the test file
-    uses installMockManager which overrides init(), so test init separately:
-    just assert `newDeterministicManagerFunc != nil` before any mock install.
-16. `TestInterviewCmd_PhaseProgress` — verify output contains phase-aware
-    format like "[Overview:" instead of old "[Phase: Overview"
-
-### Interfaces to consume
-- `ValidateRequiredField(q *InterviewQuestion, answer string) string`
-- `HandleBackCommand(doc *InterviewDoc, answer string) bool`
-- `FormatPhaseProgress(doc *InterviewDoc) string`
-- `PreviewRequirements(doc *InterviewDoc) (string, error)`
-- `NewDeterministicManager(docsDir string) *DeterministicManager`
-
-### Verification gate
-```bash
-go test ./pkg/interview/... -v && go test ./cmd/saw/... -v -run "TestInterviewCmd"
+if err := protocol.ValidateRepoMatch(doc, projectRoot, repoEntries); err != nil {
+    return fmt.Errorf("prepare-wave: repo mismatch: %w", err)
+}
 ```
 
+### 2. Add multi-repo file existence check
+
+Replace or augment the existing file existence spot-check (if any) with
+ValidateFileExistenceMultiRepo:
+
+```go
+fileWarnings := protocol.ValidateFileExistenceMultiRepo(doc, projectRoot, repoEntries)
+for _, w := range fileWarnings {
+    if w.Code == "E16_REPO_MISMATCH_SUSPECTED" {
+        return fmt.Errorf("prepare-wave: %s", w.Message)
+    }
+    fmt.Fprintf(os.Stderr, "prepare-wave: warning: %s\n", w.Message)
+}
+```
+
+### 3. Convert sawRepoEntry to use protocol.RepoEntry
+
+The existing `sawRepoEntry` type in prepare_wave.go duplicates what is now
+`protocol.RepoEntry`. Refactor:
+- Change `loadSAWConfigRepos` to return `[]protocol.RepoEntry`
+- Update `resolveAgentRepoRoot` to accept `[]protocol.RepoEntry`
+- Remove the `sawRepoEntry` type
+
+### Tests
+
+Add to `cmd/saw/prepare_wave_test.go`:
+- TestPrepareWave_RepoMismatchBlocksWorktreeCreation
+- TestPrepareWave_AllFilesMissingSuspectsRepoMismatch
+- TestPrepareWave_CrossRepoValidPasses
+
 ### Constraints
-- Do NOT modify any non-test files
-- Use testify/assert or standard testing — match project conventions
-  (existing tests use standard testing with t.Fatalf/t.Errorf)
-- Use t.TempDir() for any file I/O in tests
-- Test the actual functions, not mocks — these are unit tests of real logic
+- Repo mismatch must be a HARD blocker (return error, do not create worktrees)
+- File existence warnings for individual files are soft (stderr warning)
+- E16_REPO_MISMATCH_SUSPECTED (ALL modify files missing) is a hard blocker
+- Must run BEFORE baseline quality gates (gates run in the target repo)
 
 
 
 ## Interface Contracts
 
-### init() in interview_cmd.go
+### ResolveTargetRepos
 
-Package-level init function that wires newDeterministicManagerFunc
-to interview.NewDeterministicManager, fixing the P0 nil panic.
+Resolves the target repository paths from an IMPL manifest by analyzing
+file_ownership repo: fields, falling back to test_command/lint_command
+path inference. Returns a map of repo name -> absolute path.
 
 
 ```
-func init() {
-    newDeterministicManagerFunc = func(docsDir string) interview.Manager {
-        return interview.NewDeterministicManager(docsDir)
-    }
+func ResolveTargetRepos(manifest *IMPLManifest, fallbackRepoPath string, configRepos []RepoEntry) (map[string]string, error)
+
+type RepoEntry struct {
+    Name string
+    Path string
 }
 
-```
-
-### init() in compiler.go
-
-Package-level init function that registers CompileToRequirements
-with the deterministic manager's compileFunc variable.
-
-
-```
-func init() {
-    RegisterCompiler(CompileToRequirements)
-}
+Returns:
+- map[string]string: repo name -> absolute path (at least one entry)
+- error: if no repos can be resolved
 
 ```
 
-### ValidateRequiredField
+### ValidateRepoMatch
 
-Validates that a required field answer is not empty/whitespace.
-Returns an error message string if invalid, empty string if valid.
-Called by Answer() before recording the turn.
-
-
-```
-func ValidateRequiredField(q *InterviewQuestion, answer string) string
-// Returns "" if valid, or error message like
-// "This field is required. Please provide an answer."
-// Checks: q.Required && strings.TrimSpace(answer) == ""
-
-```
-
-### HandleBackCommand
-
-Detects "back" answer and reverts to previous question by
-removing the last history entry and decrementing cursor.
-Returns true if back was handled (caller should re-generate question).
+Pre-flight check that validates the resolved target repo(s) match the
+repo where worktrees would be created. Returns nil if valid, error with
+clear diagnostic message if mismatched.
 
 
 ```
-func HandleBackCommand(doc *InterviewDoc, answer string) bool
-// Returns true if answer is "back" (case-insensitive).
-// Reverts: remove last History entry, decrement QuestionCursor,
-// clear the SpecData field that was populated by that answer,
-// revert Phase if needed via checkPhaseTransition logic.
+func ValidateRepoMatch(manifest *IMPLManifest, worktreeRepoPath string, configRepos []RepoEntry) error
+
+Error format: "IMPL targets repo 'X' at /path/to/X but worktrees would be
+created in /path/to/Y - aborting. Set repo: field in file_ownership or
+configure repos in saw.config.json"
 
 ```
 
-### FormatPhaseProgress
+### ValidateFileExistenceMultiRepo
 
-Generates phase-aware progress string like "[Overview: 2/4 | Next: Scope]"
-instead of naive percentage.
-
-
-```
-func FormatPhaseProgress(doc *InterviewDoc) string
-// Returns string like "[Overview: 2/4 | Next: Scope]"
-// Counts questions in current phase, shows position within phase,
-// shows next phase name (or "Done" if in review).
-
-```
-
-### PreviewRequirements
-
-Generates a preview of the compiled REQUIREMENTS.md content
-for display before the final confirmation question.
+Enhanced version of ValidateFileExistence that resolves files across
+multiple repos using the configRepos registry. Spot-checks that at least
+some action=modify files exist in their target repos.
 
 
 ```
-func PreviewRequirements(doc *InterviewDoc) (string, error)
-// Calls CompileToRequirements and returns the content string.
-// Used by the CLI to show preview before "Ready to generate?" prompt.
+func ValidateFileExistenceMultiRepo(m *IMPLManifest, primaryRepoPath string, configRepos []RepoEntry) []ValidationError
 
 ```
 

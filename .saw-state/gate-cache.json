@@ -344,6 +344,18 @@
         "cached_at": "2026-03-18T21:19:00.152736-07:00"
       }
     },
+    "56fb84d12f57f52bdf9c35019f2d703b": {
+      "lint": {
+        "gate_type": "lint",
+        "command": "go vet ./...",
+        "passed": true,
+        "exit_code": 0,
+        "stdout": "",
+        "stderr": "",
+        "from_cache": true,
+        "cached_at": "2026-03-21T10:32:47.422908-07:00"
+      }
+    },
     "5870faca6da168df92746b5e7f403562": {
       "build": {
         "gate_type": "build",
@@ -454,6 +466,18 @@
         "cached_at": "2026-03-20T21:47:32.249319-07:00"
       }
     },
+    "6e751a03ca1091bd31d8e3d165a67c8d": {
+      "lint": {
+        "gate_type": "lint",
+        "command": "go vet ./...",
+        "passed": true,
+        "exit_code": 0,
+        "stdout": "",
+        "stderr": "",
+        "from_cache": true,
+        "cached_at": "2026-03-21T00:20:42.692973-07:00"
+      }
+    },
     "72df41c517bbed61649808888ca24bb6": {
       "build": {
         "gate_type": "build",
@@ -530,6 +554,18 @@
         "stderr": "",
         "from_cache": true,
         "cached_at": "2026-03-20T22:41:23.644324-07:00"
+      }
+    },
+    "80a412ce95480b3163cada107de4c90e": {
+      "test": {
+        "gate_type": "test",
+        "command": "go test ./...",
+        "passed": true,
+        "exit_code": 0,
+        "stdout": "ok  \tgithub.com/blackwell-systems/scout-and-wave-go/cmd/saw\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/internal/git\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/agent\t0.372s\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/agent/backend\t(cached)\n?   \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/agent/backend/api\t[no test files]\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/agent/backend/bedrock\t(cached)\n?   \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/agent/backend/cli\t[no test files]\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/agent/backend/openai\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/analyzer\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/autonomy\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/builddiag\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/codereview\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/collision\t0.463s\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/commands\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/deps\t0.606s\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/engine\t12.027s\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/errparse\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/format\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/gatecache\t(cached)\n?   \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/git\t[no test files]\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/hooks\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/idgen\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/interview\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/journal\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/observability\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/orchestrator\t1.337s\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/pipeline\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/protocol\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/queue\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/resume\t2.192s\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/retry\t0.846s\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/retryctx\t1.068s\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/scaffold\t1.158s\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/scaffoldval\t0.738s\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/solver\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/suitability\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/tools\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/types\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/worktree\t1.401s\n",
+        "stderr": "",
+        "from_cache": true,
+        "cached_at": "2026-03-21T10:33:00.842912-07:00"
       }
     },
     "85dbd6d6e65255017982a00f3d861e13": {
@@ -628,6 +664,18 @@
         "cached_at": "2026-03-18T20:43:54.961833-07:00"
       }
     },
+    "8d1ff662ed1f3669231348622989b780": {
+      "test": {
+        "gate_type": "test",
+        "command": "go test ./...",
+        "passed": true,
+        "exit_code": 0,
+        "stdout": "ok  \tgithub.com/blackwell-systems/scout-and-wave-go/cmd/saw\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/internal/git\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/agent\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/agent/backend\t(cached)\n?   \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/agent/backend/api\t[no test files]\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/agent/backend/bedrock\t(cached)\n?   \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/agent/backend/cli\t[no test files]\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/agent/backend/openai\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/analyzer\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/autonomy\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/builddiag\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/codereview\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/collision\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/commands\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/deps\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/engine\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/errparse\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/format\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/gatecache\t(cached)\n?   \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/git\t[no test files]\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/hooks\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/idgen\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/interview\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/journal\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/observability\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/orchestrator\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/pipeline\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/protocol\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/queue\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/resume\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/retry\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/retryctx\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/scaffold\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/scaffoldval\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/solver\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/suitability\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/tools\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/types\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/worktree\t(cached)\n",
+        "stderr": "",
+        "from_cache": true,
+        "cached_at": "2026-03-21T00:20:43.49922-07:00"
+      }
+    },
     "9051918000c5b2f43e73c98bdf770a11": {
       "build": {
         "gate_type": "build",
@@ -696,6 +744,18 @@
         "cached_at": "2026-03-20T10:05:25.042705-07:00"
       }
     },
+    "999a0e0df6d36b919ab4da60a7521602": {
+      "build": {
+        "gate_type": "build",
+        "command": "go build ./...",
+        "passed": true,
+        "exit_code": 0,
+        "stdout": "",
+        "stderr": "",
+        "from_cache": true,
+        "cached_at": "2026-03-21T10:32:46.893384-07:00"
+      }
+    },
     "9edbe6e7d394ea97b991ba951f4a51b4": {
       "custom": {
         "gate_type": "custom",
@@ -730,6 +790,18 @@
         "stderr": "",
         "from_cache": true,
         "cached_at": "2026-03-20T13:15:50.632325-07:00"
+      }
+    },
+    "a23a6caa38eadb07a4f52e4b5acef581": {
+      "build": {
+        "gate_type": "build",
+        "command": "go build ./...",
+        "passed": true,
+        "exit_code": 0,
+        "stdout": "",
+        "stderr": "",
+        "from_cache": true,
+        "cached_at": "2026-03-21T00:20:42.06344-07:00"
       }
     },
     "a3d26096baa47a1184773c438d1a34e6": {
