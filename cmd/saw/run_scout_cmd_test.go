@@ -1,6 +1,7 @@
 package main
 
 import (
+	"os"
 	"strings"
 	"testing"
 
@@ -287,6 +288,52 @@ func TestCriticThresholdMet(t *testing.T) {
 				t.Errorf("criticThresholdMet() = %v, want %v", got, tt.want)
 			}
 		})
+	}
+}
+
+// TestRunScoutCmd_SingleFinalizationEntryPoint verifies that run_scout_cmd.go
+// calls FinalizeIMPL exactly once and does not duplicate validation logic inline.
+// The single-entry-point contract ensures all post-Scout validation flows through
+// protocol.FinalizeIMPL, which owns the validate → populate-gates → validate pipeline.
+func TestRunScoutCmd_SingleFinalizationEntryPoint(t *testing.T) {
+	// Read the source file and count FinalizeIMPL call sites.
+	src, err := os.ReadFile("run_scout_cmd.go")
+	if err != nil {
+		t.Fatalf("failed to read run_scout_cmd.go: %v", err)
+	}
+	content := string(src)
+
+	// Exactly one call to protocol.FinalizeIMPL must exist.
+	callCount := strings.Count(content, "protocol.FinalizeIMPL(")
+	if callCount != 1 {
+		t.Errorf("expected exactly 1 call to protocol.FinalizeIMPL, found %d", callCount)
+	}
+
+	// There must be a comment marking it as the single entry point for post-Scout validation.
+	if !strings.Contains(content, "single entry point for post-Scout validation") {
+		t.Error("expected a comment at the FinalizeIMPL call site marking it as the single entry point for post-Scout validation")
+	}
+
+	// ValidateIMPLDoc must NOT be called after the FinalizeIMPL block — FinalizeIMPL owns
+	// post-finalization validation internally. Count all ValidateIMPLDoc calls; they
+	// should all appear in the pre-finalize validation step (Step 3) only.
+	validateCallCount := strings.Count(content, "protocol.ValidateIMPLDoc(")
+	if validateCallCount > 1 {
+		t.Errorf("expected at most 1 explicit call to protocol.ValidateIMPLDoc (Step 3 pre-check), found %d — post-finalize validation must not be duplicated here", validateCallCount)
+	}
+}
+
+// TestRunScoutCmd_FinalizeImplCmdWired verifies that the finalize-impl subcommand
+// is registered in main.go, confirming it is reachable as a standalone CLI command.
+func TestRunScoutCmd_FinalizeImplCmdWired(t *testing.T) {
+	src, err := os.ReadFile("main.go")
+	if err != nil {
+		t.Fatalf("failed to read main.go: %v", err)
+	}
+	content := string(src)
+
+	if !strings.Contains(content, "newFinalizeImplCmd()") {
+		t.Error("expected newFinalizeImplCmd() to be registered in main.go AddCommand block")
 	}
 }
 
