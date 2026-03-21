@@ -25,6 +25,7 @@ type IMPLManifest struct {
 	PlanReference         string                         `yaml:"plan_reference,omitempty" json:"plan_reference,omitempty"`
 	Verdict               string                         `yaml:"verdict" json:"verdict"` // "SUITABLE" | "NOT_SUITABLE" | "SUITABLE_WITH_CAVEATS"
 	SuitabilityAssessment string                         `yaml:"suitability_assessment,omitempty" json:"suitability_assessment,omitempty"`
+	SuitabilityReasoning  string                         `yaml:"suitability_reasoning,omitempty" json:"suitability_reasoning,omitempty"`
 	TestCommand           string                         `yaml:"test_command" json:"test_command"`
 	LintCommand           string                         `yaml:"lint_command" json:"lint_command"`
 	FileOwnership         []FileOwnership                `yaml:"file_ownership" json:"file_ownership"`
@@ -176,7 +177,7 @@ type PreMortemRow struct {
 
 // KnownIssue records an issue discovered during scout phase with status and workaround.
 type KnownIssue struct {
-	Title       string `yaml:"title,omitempty" json:"title,omitempty"`
+	Title       string `yaml:"title" json:"title"`
 	Description string `yaml:"description" json:"description"`
 	Status      string `yaml:"status,omitempty" json:"status,omitempty"`
 	Workaround  string `yaml:"workaround,omitempty" json:"workaround,omitempty"`

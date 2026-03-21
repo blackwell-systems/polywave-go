@@ -19,11 +19,20 @@ type ProjectMemory struct {
 	FeaturesCompleted    []CompletedFeature      `yaml:"features_completed,omitempty"`
 }
 
+// ArchitectureModule describes a single module within the architecture.
+type ArchitectureModule struct {
+	Name           string `yaml:"name" json:"name"`
+	Path           string `yaml:"path" json:"path"`
+	Responsibility string `yaml:"responsibility" json:"responsibility"`
+}
+
 // ArchitectureDescription captures the high-level architecture of the codebase.
 type ArchitectureDescription struct {
-	Language string   `yaml:"language"`
-	Stack    []string `yaml:"stack,omitempty"`
-	Summary  string   `yaml:"summary,omitempty"`
+	Language    string               `yaml:"language"`
+	Stack       []string             `yaml:"stack,omitempty"`
+	Summary     string               `yaml:"summary,omitempty"`
+	Description string               `yaml:"description,omitempty"`
+	Modules     []ArchitectureModule `yaml:"modules,omitempty"`
 }
 
 // Decision records an architectural or implementation decision.
@@ -37,7 +46,6 @@ type Decision struct {
 type Conventions struct {
 	TestFramework string `yaml:"test_framework,omitempty"`
 	LintTool      string `yaml:"lint_tool,omitempty"`
-	BuildTool     string `yaml:"build_tool,omitempty"`
 }
 
 // EstablishedInterface documents a stable interface that other code depends on.
