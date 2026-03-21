@@ -773,3 +773,138 @@ waves:
 		t.Errorf("expected 1 commit for agent A, got %d", agentA.CommitCount)
 	}
 }
+
+// TestPreMergeValidation_Valid verifies that a well-formed manifest returns no errors.
+func TestPreMergeValidation_Valid(t *testing.T) {
+	manifest := &IMPLManifest{
+		Waves: []Wave{
+			{
+				Number: 1,
+				Agents: []Agent{
+					{ID: "A"},
+					{ID: "B"},
+				},
+			},
+		},
+		FileOwnership: []FileOwnership{
+			{Wave: 1, Agent: "A", File: "pkg/foo/foo.go"},
+			{Wave: 1, Agent: "B", File: "pkg/bar/bar.go"},
+		},
+	}
+
+	errs := PreMergeValidation(manifest, 1)
+	if len(errs) != 0 {
+		t.Errorf("expected no validation errors, got %d: %v", len(errs), errs)
+	}
+}
+
+// TestPreMergeValidation_UnknownAgent verifies that an ownership entry referencing
+// an agent not in the wave's agent list produces a UNKNOWN_AGENT_IN_OWNERSHIP error.
+func TestPreMergeValidation_UnknownAgent(t *testing.T) {
+	manifest := &IMPLManifest{
+		Waves: []Wave{
+			{
+				Number: 1,
+				Agents: []Agent{
+					{ID: "A"},
+				},
+			},
+		},
+		FileOwnership: []FileOwnership{
+			{Wave: 1, Agent: "A", File: "pkg/foo/foo.go"},
+			{Wave: 1, Agent: "Z", File: "pkg/unknown/file.go"}, // Z not in wave
+		},
+	}
+
+	errs := PreMergeValidation(manifest, 1)
+	if len(errs) == 0 {
+		t.Fatal("expected validation error for unknown agent, got none")
+	}
+	found := false
+	for _, e := range errs {
+		if e.Code == "UNKNOWN_AGENT_IN_OWNERSHIP" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Errorf("expected UNKNOWN_AGENT_IN_OWNERSHIP error, got: %v", errs)
+	}
+}
+
+// TestPreMergeValidation_DuplicateFile verifies that duplicate file ownership
+// within a wave produces a DUPLICATE_FILE_OWNERSHIP error (I1 recheck).
+func TestPreMergeValidation_DuplicateFile(t *testing.T) {
+	manifest := &IMPLManifest{
+		Waves: []Wave{
+			{
+				Number: 1,
+				Agents: []Agent{
+					{ID: "A"},
+					{ID: "B"},
+				},
+			},
+		},
+		FileOwnership: []FileOwnership{
+			{Wave: 1, Agent: "A", File: "pkg/shared/file.go"},
+			{Wave: 1, Agent: "B", File: "pkg/shared/file.go"}, // duplicate
+		},
+	}
+
+	errs := PreMergeValidation(manifest, 1)
+	if len(errs) == 0 {
+		t.Fatal("expected validation error for duplicate file ownership, got none")
+	}
+	found := false
+	for _, e := range errs {
+		if e.Code == "DUPLICATE_FILE_OWNERSHIP" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Errorf("expected DUPLICATE_FILE_OWNERSHIP error, got: %v", errs)
+	}
+}
+
+// TestPreMergeValidation_WaveNotFound verifies that requesting validation for a
+// nonexistent wave returns a WAVE_NOT_FOUND error.
+func TestPreMergeValidation_WaveNotFound(t *testing.T) {
+	manifest := &IMPLManifest{
+		Waves: []Wave{
+			{Number: 1, Agents: []Agent{{ID: "A"}}},
+		},
+		FileOwnership: []FileOwnership{
+			{Wave: 1, Agent: "A", File: "pkg/foo/foo.go"},
+		},
+	}
+
+	errs := PreMergeValidation(manifest, 99)
+	if len(errs) == 0 {
+		t.Fatal("expected WAVE_NOT_FOUND error, got none")
+	}
+	if errs[0].Code != "WAVE_NOT_FOUND" {
+		t.Errorf("expected WAVE_NOT_FOUND, got %q", errs[0].Code)
+	}
+}
+
+// TestPreMergeValidation_OtherWaveOwnershipIgnored verifies that file_ownership
+// entries for other waves do not trigger false positives.
+func TestPreMergeValidation_OtherWaveOwnershipIgnored(t *testing.T) {
+	manifest := &IMPLManifest{
+		Waves: []Wave{
+			{Number: 1, Agents: []Agent{{ID: "A"}}},
+			{Number: 2, Agents: []Agent{{ID: "B"}}},
+		},
+		FileOwnership: []FileOwnership{
+			{Wave: 1, Agent: "A", File: "pkg/foo/foo.go"},
+			// Wave 2 entry with agent "B" — not in wave 1, but irrelevant
+			{Wave: 2, Agent: "B", File: "pkg/bar/bar.go"},
+		},
+	}
+
+	errs := PreMergeValidation(manifest, 1)
+	if len(errs) != 0 {
+		t.Errorf("expected no errors when other-wave ownership exists, got: %v", errs)
+	}
+}
