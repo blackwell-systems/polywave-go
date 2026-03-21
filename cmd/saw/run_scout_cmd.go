@@ -205,6 +205,9 @@ Output:
 			fmt.Println()
 
 			// Step 5: Finalize IMPL doc (M4: populate verification gates)
+			// NOTE: This is the single entry point for post-Scout validation (finalize-impl).
+			// Do not add additional validation calls here; FinalizeIMPL handles the full
+			// validate → populate-gates → validate pipeline internally.
 			fmt.Printf("🔧 Finalizing IMPL doc (populating verification gates)...\n")
 			finalizeResult, finalizeErr := protocol.FinalizeIMPL(implPath, repoPath)
 			if finalizeErr != nil {
