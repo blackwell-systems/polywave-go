@@ -3,7 +3,10 @@ package protocol
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
+
+	"gopkg.in/yaml.v3"
 )
 
 // TestLoadProjectMemory_Valid tests roundtrip: save then load.
@@ -29,7 +32,6 @@ func TestLoadProjectMemory_Valid(t *testing.T) {
 		Conventions: Conventions{
 			TestFramework: "go test",
 			LintTool:      "golangci-lint",
-			BuildTool:     "go build",
 		},
 		EstablishedInterfaces: []EstablishedInterface{
 			{
@@ -168,7 +170,6 @@ func TestSaveProjectMemory_Roundtrip(t *testing.T) {
 		Conventions: Conventions{
 			TestFramework: "jest",
 			LintTool:      "eslint",
-			BuildTool:     "tsc",
 		},
 		EstablishedInterfaces: []EstablishedInterface{
 			{
@@ -251,9 +252,7 @@ func TestSaveProjectMemory_Roundtrip(t *testing.T) {
 	if loaded.Conventions.LintTool != original.Conventions.LintTool {
 		t.Errorf("Conventions.LintTool: got %q, want %q", loaded.Conventions.LintTool, original.Conventions.LintTool)
 	}
-	if loaded.Conventions.BuildTool != original.Conventions.BuildTool {
-		t.Errorf("Conventions.BuildTool: got %q, want %q", loaded.Conventions.BuildTool, original.Conventions.BuildTool)
-	}
+
 
 	// EstablishedInterfaces
 	if len(loaded.EstablishedInterfaces) != len(original.EstablishedInterfaces) {
@@ -356,5 +355,148 @@ func TestAddCompletedFeature_Empty(t *testing.T) {
 
 	if pm.FeaturesCompleted[0].Slug != "first-feature" {
 		t.Errorf("Added feature slug: got %q, want %q", pm.FeaturesCompleted[0].Slug, "first-feature")
+	}
+}
+
+// TestArchitectureModule_Roundtrip tests that ArchitectureModule round-trips through YAML.
+func TestArchitectureModule_Roundtrip(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "context.yaml")
+
+	original := &ProjectMemory{
+		Created:         "2026-03-21",
+		ProtocolVersion: "0.1.0",
+		Architecture: ArchitectureDescription{
+			Language: "Go",
+			Summary:  "Multi-module Go project",
+			Description: "Detailed description of the architecture",
+			Modules: []ArchitectureModule{
+				{
+					Name:           "pkg/protocol",
+					Path:           "pkg/protocol",
+					Responsibility: "Core protocol types and validation",
+				},
+				{
+					Name:           "pkg/engine",
+					Path:           "pkg/engine",
+					Responsibility: "Orchestration engine",
+				},
+			},
+		},
+	}
+
+	if err := SaveProjectMemory(path, original); err != nil {
+		t.Fatalf("SaveProjectMemory failed: %v", err)
+	}
+
+	loaded, err := LoadProjectMemory(path)
+	if err != nil {
+		t.Fatalf("LoadProjectMemory failed: %v", err)
+	}
+
+	if loaded.Architecture.Description != original.Architecture.Description {
+		t.Errorf("Architecture.Description: got %q, want %q", loaded.Architecture.Description, original.Architecture.Description)
+	}
+
+	if len(loaded.Architecture.Modules) != len(original.Architecture.Modules) {
+		t.Fatalf("Architecture.Modules length: got %d, want %d", len(loaded.Architecture.Modules), len(original.Architecture.Modules))
+	}
+
+	for i, mod := range original.Architecture.Modules {
+		got := loaded.Architecture.Modules[i]
+		if got.Name != mod.Name {
+			t.Errorf("Modules[%d].Name: got %q, want %q", i, got.Name, mod.Name)
+		}
+		if got.Path != mod.Path {
+			t.Errorf("Modules[%d].Path: got %q, want %q", i, got.Path, mod.Path)
+		}
+		if got.Responsibility != mod.Responsibility {
+			t.Errorf("Modules[%d].Responsibility: got %q, want %q", i, got.Responsibility, mod.Responsibility)
+		}
+	}
+}
+
+// TestKnownIssue_ValidationRejectsEmptyTitle tests that KnownIssue entries without a title fail validation.
+func TestKnownIssue_ValidationRejectsEmptyTitle(t *testing.T) {
+	m := makeMinimalManifest()
+	m.KnownIssues = []KnownIssue{
+		{Title: "", Description: "Some issue without a title"},
+	}
+
+	errs := validateKnownIssueTitles(m)
+	if len(errs) != 1 {
+		t.Fatalf("Expected 1 error for empty title, got %d: %v", len(errs), errs)
+	}
+	if errs[0].Code != "KNOWN_ISSUE_MISSING_TITLE" {
+		t.Errorf("Expected KNOWN_ISSUE_MISSING_TITLE, got %s", errs[0].Code)
+	}
+	if !strings.Contains(errs[0].Field, "known_issues[0]") {
+		t.Errorf("Expected field to contain 'known_issues[0]', got %s", errs[0].Field)
+	}
+}
+
+// TestKnownIssue_ValidationAcceptsTitle tests that KnownIssue entries with a title pass validation.
+func TestKnownIssue_ValidationAcceptsTitle(t *testing.T) {
+	m := makeMinimalManifest()
+	m.KnownIssues = []KnownIssue{
+		{Title: "Known race condition", Description: "Under high load a race may occur"},
+	}
+
+	errs := validateKnownIssueTitles(m)
+	if len(errs) != 0 {
+		t.Errorf("Expected no errors for valid KnownIssue, got %d: %v", len(errs), errs)
+	}
+}
+
+// TestKnownIssue_MultipleEmptyTitles tests that multiple missing titles are all reported.
+func TestKnownIssue_MultipleEmptyTitles(t *testing.T) {
+	m := makeMinimalManifest()
+	m.KnownIssues = []KnownIssue{
+		{Title: "Has a title", Description: "OK"},
+		{Title: "", Description: "Missing title"},
+		{Title: "", Description: "Also missing title"},
+	}
+
+	errs := validateKnownIssueTitles(m)
+	if len(errs) != 2 {
+		t.Fatalf("Expected 2 errors for 2 missing titles, got %d: %v", len(errs), errs)
+	}
+}
+
+// TestSuitabilityReasoning_ParsesCorrectly tests that SuitabilityReasoning field parses from YAML.
+func TestSuitabilityReasoning_ParsesCorrectly(t *testing.T) {
+	yamlData := `
+title: Test IMPL
+feature_slug: test-feature
+verdict: SUITABLE
+suitability_assessment: This is a suitable feature.
+suitability_reasoning: The codebase is well-structured and ready for this change.
+test_command: go test ./...
+lint_command: go vet ./...
+file_ownership: []
+interface_contracts: []
+waves: []
+`
+	var m IMPLManifest
+	if err := yaml.Unmarshal([]byte(yamlData), &m); err != nil {
+		t.Fatalf("Failed to unmarshal YAML: %v", err)
+	}
+
+	if m.SuitabilityReasoning != "The codebase is well-structured and ready for this change." {
+		t.Errorf("SuitabilityReasoning: got %q, want expected value", m.SuitabilityReasoning)
+	}
+	if m.SuitabilityAssessment != "This is a suitable feature." {
+		t.Errorf("SuitabilityAssessment: got %q, want expected value", m.SuitabilityAssessment)
+	}
+}
+
+// makeMinimalManifest returns a minimal valid IMPLManifest for testing.
+func makeMinimalManifest() *IMPLManifest {
+	return &IMPLManifest{
+		Title:        "Test",
+		FeatureSlug:  "test-feature",
+		Verdict:      "SUITABLE",
+		TestCommand:  "go test ./...",
+		LintCommand:  "go vet ./...",
 	}
 }
