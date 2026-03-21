@@ -65,7 +65,9 @@ func FinalizeWave(ctx context.Context, opts FinalizeWaveOpts) (*FinalizeWaveResu
 		Wave: opts.WaveNum,
 	}
 
-	// Step 1: VerifyCommits (I5)
+	// Step 1: VerifyCommits (I5) — C4: VerifyCommits runs BEFORE MergeAgents and is fatal.
+	// Agents with no commits are a protocol violation and must block the merge entirely.
+	// MergeResult will be nil in FinalizeWaveResult whenever this step fails.
 	verifyResult, err := protocol.VerifyCommits(opts.IMPLPath, opts.WaveNum, opts.RepoPath)
 	if err != nil {
 		return result, fmt.Errorf("engine.FinalizeWave: verify-commits: %w", err)

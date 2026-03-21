@@ -9,6 +9,65 @@ import (
 	"github.com/blackwell-systems/scout-and-wave-go/internal/git"
 )
 
+// PreMergeValidation validates ownership table consistency before any merge operations.
+// It verifies:
+//  1. Every file_ownership entry for this wave references an agent that exists in the wave.
+//  2. No duplicate files appear in ownership entries for this wave (I1 recheck).
+//
+// Returns a slice of ValidationErrors if inconsistencies are found; nil slice means valid.
+func PreMergeValidation(manifest *IMPLManifest, waveNum int) []ValidationError {
+	// Find the target wave and build a set of valid agent IDs
+	var targetWave *Wave
+	for i := range manifest.Waves {
+		if manifest.Waves[i].Number == waveNum {
+			targetWave = &manifest.Waves[i]
+			break
+		}
+	}
+	if targetWave == nil {
+		return []ValidationError{{
+			Code:    "WAVE_NOT_FOUND",
+			Message: fmt.Sprintf("wave %d not found in manifest", waveNum),
+		}}
+	}
+
+	validAgents := make(map[string]bool, len(targetWave.Agents))
+	for _, agent := range targetWave.Agents {
+		validAgents[agent.ID] = true
+	}
+
+	var errs []ValidationError
+	seenFiles := make(map[string]string) // file path -> first agent that owns it
+
+	for _, fo := range manifest.FileOwnership {
+		if fo.Wave != waveNum {
+			continue
+		}
+
+		// Check 1: agent in ownership table must exist in the wave
+		if !validAgents[fo.Agent] {
+			errs = append(errs, ValidationError{
+				Code:    "UNKNOWN_AGENT_IN_OWNERSHIP",
+				Message: fmt.Sprintf("file_ownership entry for wave %d references unknown agent %q (file: %s)", waveNum, fo.Agent, fo.File),
+				Field:   "file_ownership",
+			})
+		}
+
+		// Check 2: no duplicate file ownership (I1 recheck)
+		if firstOwner, exists := seenFiles[fo.File]; exists {
+			errs = append(errs, ValidationError{
+				Code:    "DUPLICATE_FILE_OWNERSHIP",
+				Message: fmt.Sprintf("file %q is owned by both agent %q and agent %q in wave %d (I1 violation)", fo.File, firstOwner, fo.Agent, waveNum),
+				Field:   "file_ownership",
+			})
+		} else {
+			seenFiles[fo.File] = fo.Agent
+		}
+	}
+
+	return errs
+}
+
 // WorktreesAbsent returns true if none of the expected worktree directories
 // for the given wave exist on disk. Uses WorktreeDir() to compute paths.
 // repoDir must be the absolute repo root.
@@ -194,6 +253,15 @@ func buildFileOwnerMap(manifest *IMPLManifest, waveNum int) map[string]string {
 
 // mergeAgentsSingleRepo handles merging when all agents belong to the same repository.
 func mergeAgentsSingleRepo(manifestPath string, waveNum int, repoDir string, manifest *IMPLManifest, targetWave *Wave) (*MergeAgentsResult, error) {
+	// H4: PreMergeValidation — verify ownership table consistency before any git operations.
+	if validationErrs := PreMergeValidation(manifest, waveNum); len(validationErrs) > 0 {
+		return &MergeAgentsResult{
+			Wave:    waveNum,
+			Merges:  []MergeStatus{{Agent: "pre-merge", Success: false, Error: validationErrs[0].Message}},
+			Success: false,
+		}, nil
+	}
+
 	// Load merge-log for idempotency (E9)
 	mergeLog, err := LoadMergeLog(manifestPath, waveNum)
 	if err != nil {
@@ -297,6 +365,15 @@ func mergeAgentsSingleRepo(manifestPath string, waveNum int, repoDir string, man
 
 // mergeAgentsMultiRepo handles merging when agents span multiple repositories.
 func mergeAgentsMultiRepo(manifestPath string, waveNum int, manifest *IMPLManifest, targetWave *Wave, agentRepos map[string]string) (*MergeAgentsResult, error) {
+	// H4: PreMergeValidation — verify ownership table consistency before any git operations.
+	if validationErrs := PreMergeValidation(manifest, waveNum); len(validationErrs) > 0 {
+		return &MergeAgentsResult{
+			Wave:    waveNum,
+			Merges:  []MergeStatus{{Agent: "pre-merge", Success: false, Error: validationErrs[0].Message}},
+			Success: false,
+		}, nil
+	}
+
 	// Load merge-log for idempotency (E9)
 	mergeLog, err := LoadMergeLog(manifestPath, waveNum)
 	if err != nil {
