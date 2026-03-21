@@ -45,6 +45,10 @@ type IMPLManifest struct {
 	PreMortem             *PreMortem                     `yaml:"pre_mortem,omitempty" json:"pre_mortem,omitempty"`
 	Reactions             *ReactionsConfig               `yaml:"reactions,omitempty"  json:"reactions,omitempty"`
 	KnownIssues           []KnownIssue                   `yaml:"known_issues,omitempty" json:"known_issues,omitempty"`
+	// IntegrationGapSeverityThreshold configures the minimum severity level that
+	// ValidateIntegration treats as a gap requiring action.
+	// Valid values: "error", "warning", "info". Defaults to "warning" when empty.
+	IntegrationGapSeverityThreshold string `yaml:"integration_gap_severity_threshold,omitempty" json:"integration_gap_severity_threshold,omitempty"`
 	// CriticReport is the structured output of a critic-agent review run, if one has been performed.
 	CriticReport          *CriticResult                  `yaml:"critic_report,omitempty" json:"critic_report,omitempty"`
 	State                 ProtocolState                  `yaml:"state,omitempty" json:"state,omitempty"`
