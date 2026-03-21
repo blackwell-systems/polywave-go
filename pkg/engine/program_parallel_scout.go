@@ -9,30 +9,8 @@ import (
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
 )
 
-// TierLoopEvent represents an observable event during tier execution.
-// Shared between tier loop orchestration and parallel scout launching.
-type TierLoopEvent struct {
-	Type   string // "tier_started", "scout_launched", "scout_completed", "scout_failed", "impl_complete", "tier_gate", "contracts_frozen", "tier_advanced", "replan_triggered"
-	Tier   int
-	Detail string
-}
-
-// ParallelScoutOpts configures parallel Scout launching (E31).
-type ParallelScoutOpts struct {
-	ManifestPath string
-	RepoPath     string
-	TierNumber   int
-	Slugs        []string
-	Model        string
-	OnEvent      func(TierLoopEvent)
-}
-
-// ParallelScoutResult collects results from parallel Scout execution.
-type ParallelScoutResult struct {
-	Completed []string
-	Failed    []string
-	Errors    map[string]string
-}
+// Types TierLoopEvent, ParallelScoutOpts, and ParallelScoutResult are defined
+// in program_tier_loop.go (the canonical location per interface contracts).
 
 // runScoutFunc is the function used to launch a single Scout agent.
 // It defaults to RunScout but can be overridden in tests.
