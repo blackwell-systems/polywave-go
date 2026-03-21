@@ -156,3 +156,7 @@ type BackendConfig struct {
   - IMPL doc: docs/IMPL/complete/IMPL-auto-program-from-impls.yaml
 - **repo-mismatch-hardening**: completed 2026-03-21, 2 waves, 3 agents
   - IMPL doc: docs/IMPL/complete/IMPL-repo-mismatch-hardening.yaml
+- **sawtools-cli-gaps**: completed 2026-03-21, 3 waves, 7 agents
+  - IMPL doc: docs/IMPL/complete/IMPL-sawtools-cli-gaps.yaml
+- **baseline-gate-enforcement**: completed 2026-03-21, 1 waves, 3 agents
+  - IMPL doc: docs/IMPL/complete/IMPL-baseline-gate-enforcement.yaml
