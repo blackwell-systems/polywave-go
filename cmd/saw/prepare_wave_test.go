@@ -363,6 +363,102 @@ func TestPrepareWaveBaselineResult_JSONSerialization(t *testing.T) {
 	}
 }
 
+// TestVerifyDependenciesAvailable_Wave1Skipped verifies that wave 1 is
+// always considered valid (no prior wave to depend on).
+func TestVerifyDependenciesAvailable_Wave1Skipped(t *testing.T) {
+	doc := &protocol.IMPLManifest{
+		Waves: []protocol.Wave{
+			{
+				Number: 1,
+				Agents: []protocol.Agent{
+					{ID: "A", Task: "do A"},
+				},
+			},
+		},
+	}
+
+	// Wave 1 has no dependencies — should always return Valid=true
+	result, err := protocol.VerifyDependenciesAvailable(doc, 1)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !result.Valid {
+		t.Errorf("expected Valid=true for wave 1 (no deps), got false")
+	}
+}
+
+// TestVerifyDependenciesAvailable_Wave2MissingDep verifies that a wave 2 agent
+// with a missing dependency (no completion report) returns Valid=false.
+func TestVerifyDependenciesAvailable_Wave2MissingDep(t *testing.T) {
+	doc := &protocol.IMPLManifest{
+		Waves: []protocol.Wave{
+			{
+				Number: 1,
+				Agents: []protocol.Agent{
+					{ID: "A", Task: "do A"},
+				},
+			},
+			{
+				Number: 2,
+				Agents: []protocol.Agent{
+					{ID: "B", Task: "do B", Dependencies: []string{"A"}},
+				},
+			},
+		},
+		// CompletionReports deliberately empty — agent A has not completed
+	}
+
+	result, err := protocol.VerifyDependenciesAvailable(doc, 2)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result.Valid {
+		t.Errorf("expected Valid=false when dependency A has no completion report")
+	}
+	if len(result.Agents) != 1 {
+		t.Fatalf("expected 1 agent check, got %d", len(result.Agents))
+	}
+	check := result.Agents[0]
+	if check.Available {
+		t.Errorf("expected agent B Available=false")
+	}
+	if len(check.Missing) != 1 || check.Missing[0] != "A" {
+		t.Errorf("expected missing=[A], got %v", check.Missing)
+	}
+}
+
+// TestVerifyDependenciesAvailable_Wave2DepComplete verifies that when dependency
+// agent has a complete completion report, Valid=true.
+func TestVerifyDependenciesAvailable_Wave2DepComplete(t *testing.T) {
+	doc := &protocol.IMPLManifest{
+		Waves: []protocol.Wave{
+			{
+				Number: 1,
+				Agents: []protocol.Agent{
+					{ID: "A", Task: "do A"},
+				},
+			},
+			{
+				Number: 2,
+				Agents: []protocol.Agent{
+					{ID: "B", Task: "do B", Dependencies: []string{"A"}},
+				},
+			},
+		},
+		CompletionReports: map[string]protocol.CompletionReport{
+			"A": {Status: "complete"},
+		},
+	}
+
+	result, err := protocol.VerifyDependenciesAvailable(doc, 2)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !result.Valid {
+		t.Errorf("expected Valid=true when all dependencies are complete")
+	}
+}
+
 func TestAgentBriefInfo_OmitEmptyRepo(t *testing.T) {
 	info := AgentBriefInfo{
 		Agent:      "B",
