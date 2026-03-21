@@ -31,21 +31,16 @@ type AgentBriefInfo struct {
 	Repo        string `json:"repo,omitempty"` // repo name from file_ownership; empty = primary repo
 }
 
-// sawRepoEntry represents a single entry in the saw.config.json repos array.
-type sawRepoEntry struct {
-	Name string `json:"name"`
-	Path string `json:"path"`
-}
-
 // loadSAWConfigRepos reads saw.config.json at configPath and returns
-// the repos array. Returns nil slice if file absent or parse fails.
-func loadSAWConfigRepos(configPath string) []sawRepoEntry {
+// the repos array as protocol.RepoEntry values.
+// Returns nil slice if file absent or parse fails.
+func loadSAWConfigRepos(configPath string) []protocol.RepoEntry {
 	data, err := os.ReadFile(configPath)
 	if err != nil {
 		return nil
 	}
 	var cfg struct {
-		Repos []sawRepoEntry `json:"repos"`
+		Repos []protocol.RepoEntry `json:"repos"`
 	}
 	if err := json.Unmarshal(data, &cfg); err != nil {
 		return nil
@@ -61,7 +56,7 @@ func resolveAgentRepoRoot(
 	fileOwnership []protocol.FileOwnership,
 	agentID string,
 	projectRoot string,
-	repos []sawRepoEntry,
+	repos []protocol.RepoEntry,
 ) string {
 	// Find the repo name for this agent from file ownership
 	repoName := ""
@@ -164,6 +159,21 @@ waves that execute on the main branch.`,
 						fmt.Fprintf(os.Stderr, "prepare-wave: cleaned %d stale worktree(s) from previous runs\n", len(result.Cleaned))
 					}
 				}
+			}
+
+			// Step 0b1: Validate repo match — must run BEFORE baseline quality gates
+			// because gates run in the target repo and we need to verify it's correct first.
+			if err := protocol.ValidateRepoMatch(doc, projectRoot, repos); err != nil {
+				return fmt.Errorf("prepare-wave: repo mismatch: %w", err)
+			}
+
+			// Step 0b1.5: Validate file existence across repos
+			fileWarnings := protocol.ValidateFileExistenceMultiRepo(doc, projectRoot, repos)
+			for _, w := range fileWarnings {
+				if w.Code == "E16_REPO_MISMATCH_SUSPECTED" {
+					return fmt.Errorf("prepare-wave: %s", w.Message)
+				}
+				fmt.Fprintf(os.Stderr, "prepare-wave: warning: %s\n", w.Message)
 			}
 
 			// Step 0b2: Run baseline quality gates (E21A)

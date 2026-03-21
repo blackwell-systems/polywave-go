@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
@@ -76,7 +77,7 @@ func TestResolveAgentRepoRoot_WithMatchingRepo(t *testing.T) {
 		{File: "pkg/foo/foo.go", Agent: "A", Wave: 1, Repo: "scout-and-wave-go"},
 		{File: "pkg/api/handler.go", Agent: "B", Wave: 1, Repo: "scout-and-wave-web"},
 	}
-	repos := []sawRepoEntry{
+	repos := []protocol.RepoEntry{
 		{Name: "scout-and-wave-go", Path: "/abs/path/saw-go"},
 		{Name: "scout-and-wave-web", Path: "/abs/path/saw-web"},
 	}
@@ -96,7 +97,7 @@ func TestResolveAgentRepoRoot_FallbackWhenNoRepoField(t *testing.T) {
 	fileOwnership := []protocol.FileOwnership{
 		{File: "cmd/saw/prepare_wave.go", Agent: "B", Wave: 1},
 	}
-	repos := []sawRepoEntry{
+	repos := []protocol.RepoEntry{
 		{Name: "some-repo", Path: "/abs/path/some-repo"},
 	}
 
@@ -110,7 +111,7 @@ func TestResolveAgentRepoRoot_FallbackWhenRepoNotInRegistry(t *testing.T) {
 	fileOwnership := []protocol.FileOwnership{
 		{File: "pkg/foo/foo.go", Agent: "A", Wave: 1, Repo: "unknown-repo"},
 	}
-	repos := []sawRepoEntry{
+	repos := []protocol.RepoEntry{
 		{Name: "other-repo", Path: "/abs/path/other"},
 	}
 
@@ -132,7 +133,7 @@ func TestResolveAgentRepoRoot_FallbackWhenNilRepos(t *testing.T) {
 }
 
 func TestResolveAgentRepoRoot_FallbackWhenEmptyOwnership(t *testing.T) {
-	repos := []sawRepoEntry{
+	repos := []protocol.RepoEntry{
 		{Name: "scout-and-wave-go", Path: "/abs/path/saw-go"},
 	}
 
@@ -191,6 +192,95 @@ func TestPrepareWaveResult_JSONSerialization(t *testing.T) {
 	}
 	if len(decoded.Repos) != 1 || decoded.Repos[0] != "scout-and-wave-go" {
 		t.Errorf("unexpected Repos: %v", decoded.Repos)
+	}
+}
+
+// TestPrepareWave_RepoMismatchBlocksWorktreeCreation verifies that
+// ValidateRepoMatch returning an error prevents worktree creation.
+func TestPrepareWave_RepoMismatchBlocksWorktreeCreation(t *testing.T) {
+	// Build a manifest that targets a different repo than the project root
+	doc := &protocol.IMPLManifest{
+		FileOwnership: []protocol.FileOwnership{
+			{File: "pkg/api/handler.go", Agent: "A", Wave: 1, Repo: "scout-and-wave-web", Action: "modify"},
+		},
+	}
+
+	// configRepos points "scout-and-wave-web" to a different path
+	configRepos := []protocol.RepoEntry{
+		{Name: "scout-and-wave-web", Path: "/tmp/saw-web"},
+	}
+
+	// Project root is NOT /tmp/saw-web, so this should fail
+	err := protocol.ValidateRepoMatch(doc, "/tmp/saw-go", configRepos)
+	if err == nil {
+		t.Fatal("expected repo mismatch error, got nil")
+	}
+	if !strings.Contains(err.Error(), "repo") {
+		t.Errorf("expected error to mention 'repo', got: %s", err.Error())
+	}
+}
+
+// TestPrepareWave_AllFilesMissingSuspectsRepoMismatch verifies that when ALL
+// action=modify files are missing, ValidateFileExistenceMultiRepo returns
+// E16_REPO_MISMATCH_SUSPECTED which should be treated as a hard blocker.
+func TestPrepareWave_AllFilesMissingSuspectsRepoMismatch(t *testing.T) {
+	dir := t.TempDir()
+
+	// Create a manifest where all modify files reference paths that don't exist
+	doc := &protocol.IMPLManifest{
+		FileOwnership: []protocol.FileOwnership{
+			{File: "pkg/nonexistent/a.go", Agent: "A", Wave: 1, Action: "modify"},
+			{File: "pkg/nonexistent/b.go", Agent: "A", Wave: 1, Action: "modify"},
+		},
+	}
+
+	warnings := protocol.ValidateFileExistenceMultiRepo(doc, dir, nil)
+
+	// Should contain E16_REPO_MISMATCH_SUSPECTED
+	foundSuspected := false
+	for _, w := range warnings {
+		if w.Code == "E16_REPO_MISMATCH_SUSPECTED" {
+			foundSuspected = true
+			break
+		}
+	}
+	if !foundSuspected {
+		t.Errorf("expected E16_REPO_MISMATCH_SUSPECTED when all modify files missing, got warnings: %+v", warnings)
+	}
+}
+
+// TestPrepareWave_CrossRepoValidPasses verifies that a properly configured
+// cross-repo IMPL passes validation when the worktree repo is one of the targets.
+func TestPrepareWave_CrossRepoValidPasses(t *testing.T) {
+	projectRoot := t.TempDir()
+
+	// Create some files that exist
+	modFile := filepath.Join(projectRoot, "pkg/foo/foo.go")
+	if err := os.MkdirAll(filepath.Dir(modFile), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(modFile, []byte("package foo"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	doc := &protocol.IMPLManifest{
+		FileOwnership: []protocol.FileOwnership{
+			{File: "pkg/foo/foo.go", Agent: "A", Wave: 1, Action: "modify"},
+		},
+	}
+
+	// No repo fields means single-repo — should pass with projectRoot
+	err := protocol.ValidateRepoMatch(doc, projectRoot, nil)
+	if err != nil {
+		t.Errorf("expected no error for valid single-repo IMPL, got: %v", err)
+	}
+
+	// File existence should find at least one file
+	warnings := protocol.ValidateFileExistenceMultiRepo(doc, projectRoot, nil)
+	for _, w := range warnings {
+		if w.Code == "E16_REPO_MISMATCH_SUSPECTED" {
+			t.Errorf("should not suspect repo mismatch when files exist, got: %s", w.Message)
+		}
 	}
 }
 
