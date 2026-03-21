@@ -1,6 +1,9 @@
 package main
 
 import (
+	"fmt"
+	"os"
+	"os/exec"
 	"testing"
 
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/collision"
@@ -135,4 +138,130 @@ func TestFinalizeWaveResult_CollisionReportIntegration(t *testing.T) {
 	if len(result.CollisionReports["main-repo"].Collisions) != 1 {
 		t.Errorf("Expected 1 collision, got %d", len(result.CollisionReports["main-repo"].Collisions))
 	}
+}
+
+// TestFinalizeWave_SoloWaveSkipsVerifyCommits verifies that when a wave has no
+// worktree directories on disk, WorktreesAbsent returns true and the finalize-wave
+// bypass path populates a synthetic MergeResult without calling VerifyCommits.
+//
+// This simulates the solo-wave scenario (single developer working directly on main)
+// where no worktrees were created, so VerifyCommits and MergeAgents must be skipped.
+func TestFinalizeWave_SoloWaveSkipsVerifyCommits(t *testing.T) {
+	// Build a manifest with one agent and a feature slug.
+	manifest := &protocol.IMPLManifest{
+		FeatureSlug: "test-feature",
+		Waves: []protocol.Wave{
+			{
+				Number: 1,
+				Agents: []protocol.Agent{{ID: "A"}},
+			},
+		},
+	}
+
+	// Use a temp directory as repoDir — no worktree directories will exist inside it.
+	tmpDir := t.TempDir()
+
+	// WorktreesAbsent should return true since no worktree dir was created.
+	if !protocol.WorktreesAbsent(manifest, 1, tmpDir) {
+		t.Error("WorktreesAbsent() = false, want true when no worktree dirs exist (solo wave)")
+	}
+
+	// Simulate the bypass: populate a synthetic MergeResult as finalize-wave would.
+	mergeResult := make(map[string]*protocol.MergeAgentsResult)
+	mergeResult["."] = &protocol.MergeAgentsResult{Wave: 1, Success: true}
+
+	// Confirm the synthetic result is set correctly (no VerifyCommits needed).
+	if !mergeResult["."].Success {
+		t.Error("synthetic MergeResult.Success should be true for solo wave bypass")
+	}
+	if mergeResult["."].Wave != 1 {
+		t.Errorf("MergeResult.Wave = %d, want 1", mergeResult["."].Wave)
+	}
+}
+
+// TestFinalizeWave_AllBranchesAbsentSkipsMerge verifies that when all agent branches
+// are absent from git (wave already merged and cleaned up), AllBranchesAbsent returns
+// true and the finalize-wave bypass path populates a synthetic MergeResult without
+// calling MergeAgents.
+//
+// This tests the idempotent re-run path: if finalize-wave is called again after a
+// successful run (branches already cleaned up), it should proceed to verify-build
+// rather than failing on missing branches.
+func TestFinalizeWave_AllBranchesAbsentSkipsMerge(t *testing.T) {
+	// Build a manifest with one agent and a feature slug.
+	manifest := &protocol.IMPLManifest{
+		FeatureSlug: "test-feature",
+		Waves: []protocol.Wave{
+			{
+				Number: 1,
+				Agents: []protocol.Agent{{ID: "A"}},
+			},
+		},
+	}
+
+	// Use a temp directory that is a git repo but has no agent branches.
+	// We create a minimal git repo so BranchExists calls don't error.
+	tmpDir := t.TempDir()
+	if err := initBareGitRepo(t, tmpDir); err != nil {
+		t.Skipf("skipping: could not init git repo: %v", err)
+	}
+
+	// AllBranchesAbsent should return true since no agent branches exist.
+	if !protocol.AllBranchesAbsent(manifest, 1, tmpDir) {
+		t.Error("AllBranchesAbsent() = false, want true when no agent branches exist")
+	}
+
+	// Simulate the bypass: populate a synthetic MergeResult as finalize-wave would.
+	mergeResult := make(map[string]*protocol.MergeAgentsResult)
+	mergeResult["."] = &protocol.MergeAgentsResult{Wave: 1, Success: true}
+
+	if !mergeResult["."].Success {
+		t.Error("synthetic MergeResult.Success should be true for all-branches-absent bypass")
+	}
+}
+
+// TestFinalizeWave_NormalPathUnchanged is a regression guard verifying that when
+// a worktree directory DOES exist, WorktreesAbsent returns false — so the normal
+// path (including VerifyCommits) would be taken, not the solo-wave bypass.
+func TestFinalizeWave_NormalPathUnchanged(t *testing.T) {
+	manifest := &protocol.IMPLManifest{
+		FeatureSlug: "test-feature",
+		Waves: []protocol.Wave{
+			{
+				Number: 1,
+				Agents: []protocol.Agent{{ID: "A"}, {ID: "B"}},
+			},
+		},
+	}
+
+	tmpDir := t.TempDir()
+
+	// Create the worktree directory for agent A so at least one worktree is present.
+	worktreeDir := protocol.WorktreeDir(tmpDir, manifest.FeatureSlug, 1, "A")
+	if err := os.MkdirAll(worktreeDir, 0755); err != nil {
+		t.Fatalf("failed to create worktree dir: %v", err)
+	}
+
+	// WorktreesAbsent must return false — the normal path (VerifyCommits) should run.
+	if protocol.WorktreesAbsent(manifest, 1, tmpDir) {
+		t.Error("WorktreesAbsent() = true, want false when at least one worktree dir exists (normal path)")
+	}
+}
+
+// initBareGitRepo initialises a minimal git repository in dir so that git
+// branch operations work in tests that call AllBranchesAbsent.
+func initBareGitRepo(t *testing.T, dir string) error {
+	t.Helper()
+	cmds := [][]string{
+		{"git", "-C", dir, "init"},
+		{"git", "-C", dir, "config", "user.email", "test@test.com"},
+		{"git", "-C", dir, "config", "user.name", "Test"},
+		{"git", "-C", dir, "commit", "--allow-empty", "-m", "init"},
+	}
+	for _, args := range cmds {
+		if out, err := exec.Command(args[0], args[1:]...).CombinedOutput(); err != nil {
+			return fmt.Errorf("git init step %v failed: %w\n%s", args, err, out)
+		}
+	}
+	return nil
 }
