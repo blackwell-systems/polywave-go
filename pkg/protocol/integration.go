@@ -8,6 +8,7 @@ import (
 	"go/token"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 
 	"gopkg.in/yaml.v3"
@@ -69,6 +70,8 @@ func ValidateIntegration(manifest *IMPLManifest, waveNum int, repoPath string) (
 				continue
 			}
 
+				threshold := "" // defaults to "warning"; Agent E (Wave 2) will wire in the manifest field
+
 			for _, exp := range exports {
 				category := ClassifyExport(exp.Name, exp.Kind)
 				if !IsIntegrationRequired(exp.Name, category) {
@@ -79,12 +82,22 @@ func ValidateIntegration(manifest *IMPLManifest, waveNum int, repoPath string) (
 				refs := searchReferences(repoPath, relFile, exp.Name)
 				if len(refs) == 0 {
 					suggestedCallers, _ := SuggestCallers(repoPath, filepath.Dir(relFile), exp.Name)
+					severity := classifySeverity(exp.Name, category, relFile, threshold, exp.HasJSON)
+
+					// Only report gaps at or above the threshold severity.
+					// Threshold "" or "warning" means: report "error" and "warning", skip "info".
+					// Threshold "info"           means: report all.
+					// Threshold "error"          means: report "error" only.
+					if !aboveThreshold(severity, threshold) {
+						continue
+					}
+
 					gap := IntegrationGap{
 						ExportName:    exp.Name,
 						FilePath:      relFile,
 						AgentID:       agent.ID,
 						Category:      category,
-						Severity:      classifySeverity(exp.Name, category),
+						Severity:      severity,
 						Reason:        fmt.Sprintf("exported %s %q has no call-sites outside its defining file", exp.Kind, exp.Name),
 						SuggestedFix:  suggestFix(exp.Name, category, suggestedCallers),
 						SearchResults: suggestedCallers,
@@ -102,8 +115,9 @@ func ValidateIntegration(manifest *IMPLManifest, waveNum int, repoPath string) (
 
 // exportInfo holds information about an exported symbol found in Go source.
 type exportInfo struct {
-	Name string // e.g. "ValidateIntegration"
-	Kind string // "func", "type", "method", "field"
+	Name    string // e.g. "ValidateIntegration"
+	Kind    string // "func", "type", "method", "field"
+	HasJSON bool   // true if this is a struct field with a json:"..." tag
 }
 
 // extractExports parses a Go file and returns all exported symbols.
@@ -135,9 +149,16 @@ func extractExports(filePath string) ([]exportInfo, error) {
 						// Extract exported struct fields
 						if st, ok := s.Type.(*ast.StructType); ok {
 							for _, field := range st.Fields.List {
+								hasJSON := false
+								if field.Tag != nil {
+									tag := reflect.StructTag(strings.Trim(field.Tag.Value, "`"))
+									if tag.Get("json") != "" {
+										hasJSON = true
+									}
+								}
 								for _, name := range field.Names {
 									if name.IsExported() {
-										exports = append(exports, exportInfo{Name: name.Name, Kind: "field"})
+										exports = append(exports, exportInfo{Name: name.Name, Kind: "field", HasJSON: hasJSON})
 									}
 								}
 							}
@@ -212,7 +233,13 @@ func fileContains(filePath, needle string) bool {
 }
 
 // classifySeverity determines the severity of an integration gap.
-func classifySeverity(exportName string, category string) string {
+// filePath is reserved for future use. hasJSON indicates the export is a struct
+// field with a json:"..." tag. threshold gates the json-tag downgrade.
+func classifySeverity(exportName string, category string, filePath string, threshold string, hasJSON bool) string {
+	// Downgrade json-tagged struct fields to "info" unless threshold is "error"
+	if category == "field_init" && hasJSON && threshold != "error" {
+		return "info"
+	}
 	// Functions that build or create things are higher severity
 	highSeverityPrefixes := []string{"New", "Build", "Register", "Run", "Start", "Init"}
 	for _, prefix := range highSeverityPrefixes {
@@ -228,6 +255,17 @@ func classifySeverity(exportName string, category string) string {
 		return "warning"
 	}
 	return "info"
+}
+
+// aboveThreshold returns true if severity meets or exceeds the threshold.
+// Default threshold (empty string) is treated as "warning".
+func aboveThreshold(severity, threshold string) bool {
+	order := map[string]int{"error": 2, "warning": 1, "info": 0}
+	thresh := order["warning"] // default
+	if t, ok := order[threshold]; ok {
+		thresh = t
+	}
+	return order[severity] >= thresh
 }
 
 // suggestFix generates a human-readable suggestion for wiring the export.
