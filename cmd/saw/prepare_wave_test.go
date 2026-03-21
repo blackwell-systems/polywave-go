@@ -284,6 +284,85 @@ func TestPrepareWave_CrossRepoValidPasses(t *testing.T) {
 	}
 }
 
+// TestPrepareWaveBaselineResult_JSONSerialization verifies that a
+// protocol.BaselineResult round-trips through JSON correctly.
+func TestPrepareWaveBaselineResult_JSONSerialization(t *testing.T) {
+	result := protocol.BaselineResult{
+		Passed: false,
+		GateResults: []protocol.GateResult{
+			{
+				Type:     "build",
+				Command:  "go build ./...",
+				Passed:   true,
+				Required: true,
+			},
+			{
+				Type:     "test",
+				Command:  "go test ./...",
+				Passed:   false,
+				Required: true,
+				ExitCode: 1,
+				Stderr:   "FAIL pkg/foo",
+			},
+		},
+		Reason:    "baseline_verification_failed",
+		CommitSHA: "abc123",
+		FromCache: false,
+	}
+
+	data, err := json.Marshal(result)
+	if err != nil {
+		t.Fatalf("failed to marshal BaselineResult: %v", err)
+	}
+
+	var decoded protocol.BaselineResult
+	if err := json.Unmarshal(data, &decoded); err != nil {
+		t.Fatalf("failed to unmarshal BaselineResult: %v", err)
+	}
+
+	if decoded.Passed != false {
+		t.Errorf("expected Passed=false, got %v", decoded.Passed)
+	}
+	if decoded.Reason != "baseline_verification_failed" {
+		t.Errorf("expected Reason=baseline_verification_failed, got %q", decoded.Reason)
+	}
+	if decoded.CommitSHA != "abc123" {
+		t.Errorf("expected CommitSHA=abc123, got %q", decoded.CommitSHA)
+	}
+	if decoded.FromCache != false {
+		t.Errorf("expected FromCache=false, got %v", decoded.FromCache)
+	}
+	if len(decoded.GateResults) != 2 {
+		t.Fatalf("expected 2 gate results, got %d", len(decoded.GateResults))
+	}
+	if decoded.GateResults[0].Type != "build" || !decoded.GateResults[0].Passed {
+		t.Errorf("unexpected GateResults[0]: %+v", decoded.GateResults[0])
+	}
+	if decoded.GateResults[1].Type != "test" || decoded.GateResults[1].Passed {
+		t.Errorf("unexpected GateResults[1]: %+v", decoded.GateResults[1])
+	}
+	if decoded.GateResults[1].Stderr != "FAIL pkg/foo" {
+		t.Errorf("expected Stderr=%q, got %q", "FAIL pkg/foo", decoded.GateResults[1].Stderr)
+	}
+
+	// Verify that the Reason field is omitted when empty (omitempty)
+	passedResult := protocol.BaselineResult{
+		Passed:      true,
+		GateResults: []protocol.GateResult{},
+	}
+	passedData, err := json.Marshal(passedResult)
+	if err != nil {
+		t.Fatalf("failed to marshal passing BaselineResult: %v", err)
+	}
+	var passedMap map[string]interface{}
+	if err := json.Unmarshal(passedData, &passedMap); err != nil {
+		t.Fatalf("failed to unmarshal: %v", err)
+	}
+	if reason, ok := passedMap["reason"]; ok && reason != "" {
+		t.Errorf("expected 'reason' field to be omitted when empty, but got %v", reason)
+	}
+}
+
 func TestAgentBriefInfo_OmitEmptyRepo(t *testing.T) {
 	info := AgentBriefInfo{
 		Agent:      "B",
