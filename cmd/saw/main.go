@@ -70,6 +70,7 @@ func main() {
 		newVerifyInstallCmd(),
 		newMetricsCmd(),
 		newQueryCmd(),
+		newCleanupStaleCmd(),
 	)
 	if err := rootCmd.Execute(); err != nil {
 		fmt.Fprintln(os.Stderr, err)

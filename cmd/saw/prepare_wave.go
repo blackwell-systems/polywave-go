@@ -118,7 +118,7 @@ waves that execute on the main branch.`,
 				projectRoot = repoDir
 			}
 
-			// Step 0a: Resume detection — warn if orphaned worktrees exist
+			// Step 0a: Resume detection — warn if orphaned worktrees exist (legacy)
 			if sessions, err := resume.Detect(projectRoot); err == nil {
 				for _, s := range sessions {
 					if len(s.OrphanedWorktrees) > 0 {
@@ -147,6 +147,23 @@ waves that execute on the main branch.`,
 			doc, err := protocol.Load(manifestPath)
 			if err != nil {
 				return fmt.Errorf("failed to load IMPL doc: %w", err)
+			}
+
+			// Step 0a2: Clean stale worktrees from the SAME slug (previous failed run)
+			stale, staleErr := protocol.DetectStaleWorktrees(projectRoot)
+			if staleErr == nil {
+				var sameSlug []protocol.StaleWorktree
+				for _, s := range stale {
+					if s.Slug == doc.FeatureSlug {
+						sameSlug = append(sameSlug, s)
+					}
+				}
+				if len(sameSlug) > 0 {
+					result, cleanErr := protocol.CleanStaleWorktrees(sameSlug, true)
+					if cleanErr == nil {
+						fmt.Fprintf(os.Stderr, "prepare-wave: cleaned %d stale worktree(s) from previous runs\n", len(result.Cleaned))
+					}
+				}
 			}
 
 			// Step 0b2: Run baseline quality gates (E21A)
