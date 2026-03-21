@@ -6,17 +6,18 @@ import (
 	"time"
 )
 
-// mockStore is a simple in-memory Store for testing rollups.
-type mockStore struct {
+// rollupMockStore is a simple in-memory Store for testing rollups.
+// Named differently from query_test.go's mockStore to avoid redeclaration.
+type rollupMockStore struct {
 	events []Event
 }
 
-func (m *mockStore) RecordEvent(_ context.Context, event Event) error {
+func (m *rollupMockStore) RecordEvent(_ context.Context, event Event) error {
 	m.events = append(m.events, event)
 	return nil
 }
 
-func (m *mockStore) QueryEvents(_ context.Context, filters QueryFilters) ([]Event, error) {
+func (m *rollupMockStore) QueryEvents(_ context.Context, filters QueryFilters) ([]Event, error) {
 	var result []Event
 	for _, ev := range m.events {
 		if !matchFilters(ev, filters) {
@@ -30,11 +31,11 @@ func (m *mockStore) QueryEvents(_ context.Context, filters QueryFilters) ([]Even
 	return result, nil
 }
 
-func (m *mockStore) GetRollup(_ context.Context, _ RollupRequest) (*RollupResult, error) {
+func (m *rollupMockStore) GetRollup(_ context.Context, _ RollupRequest) (*RollupResult, error) {
 	return nil, nil
 }
 
-func (m *mockStore) Close() error { return nil }
+func (m *rollupMockStore) Close() error { return nil }
 
 func matchFilters(ev Event, f QueryFilters) bool {
 	if len(f.EventTypes) > 0 {
@@ -85,7 +86,7 @@ func implSlugOf(ev Event) string {
 
 func TestRollupCost(t *testing.T) {
 	ctx := context.Background()
-	store := &mockStore{}
+	store := &rollupMockStore{}
 	base := time.Date(2026, 3, 1, 0, 0, 0, 0, time.UTC)
 
 	// Insert 10 cost events across 3 agents.
@@ -139,7 +140,7 @@ func TestRollupCost(t *testing.T) {
 
 func TestRollupCostEmpty(t *testing.T) {
 	ctx := context.Background()
-	store := &mockStore{}
+	store := &rollupMockStore{}
 
 	result, err := ComputeCostRollup(ctx, store, RollupRequest{Type: "cost", GroupBy: []string{"agent"}})
 	if err != nil {
@@ -155,7 +156,7 @@ func TestRollupCostEmpty(t *testing.T) {
 
 func TestRollupSuccessRate(t *testing.T) {
 	ctx := context.Background()
-	store := &mockStore{}
+	store := &rollupMockStore{}
 	base := time.Date(2026, 3, 1, 0, 0, 0, 0, time.UTC)
 
 	// Agent A: 3 success, 1 failure = 75%
@@ -215,7 +216,7 @@ func TestRollupSuccessRate(t *testing.T) {
 
 func TestRollupRetry(t *testing.T) {
 	ctx := context.Background()
-	store := &mockStore{}
+	store := &rollupMockStore{}
 	base := time.Date(2026, 3, 1, 0, 0, 0, 0, time.UTC)
 
 	// Agent A: retries 0, 1, 5 → avg 2.0
@@ -273,7 +274,7 @@ func TestRollupRetry(t *testing.T) {
 
 func TestRollupTrend(t *testing.T) {
 	ctx := context.Background()
-	store := &mockStore{}
+	store := &rollupMockStore{}
 	now := time.Now().UTC()
 
 	// Insert cost events over 7 days.
@@ -314,7 +315,7 @@ func TestRollupTrend(t *testing.T) {
 
 func TestRollupTrendUnsupportedMetric(t *testing.T) {
 	ctx := context.Background()
-	store := &mockStore{}
+	store := &rollupMockStore{}
 	_, err := ComputeTrend(ctx, store, "unknown", time.Hour, 5)
 	if err == nil {
 		t.Fatal("expected error for unsupported metric")
@@ -323,7 +324,7 @@ func TestRollupTrendUnsupportedMetric(t *testing.T) {
 
 func TestRollupMultiDimensionGroupBy(t *testing.T) {
 	ctx := context.Background()
-	store := &mockStore{}
+	store := &rollupMockStore{}
 	base := time.Date(2026, 3, 1, 0, 0, 0, 0, time.UTC)
 
 	// 2 agents x 2 waves = 4 groups.
