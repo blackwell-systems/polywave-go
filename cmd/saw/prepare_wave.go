@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/collision"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/deps"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/gatecache"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/journal"
@@ -271,6 +272,35 @@ waves that execute on the main branch.`,
 					}
 					return fmt.Errorf("prepare-wave: %d freeze violation(s) — interface contracts were modified after worktree creation", len(violations))
 				}
+			}
+
+			// Step 0f: E3 — Pre-launch ownership verification (I1 disjoint check)
+			// protocol.Validate() calls validateI1DisjointOwnership() internally.
+			// Filter its output for I1_VIOLATION error codes.
+			if allErrs := protocol.Validate(doc); len(allErrs) > 0 {
+				var i1Errs []protocol.ValidationError
+				for _, e := range allErrs {
+					if e.Code == "I1_VIOLATION" {
+						i1Errs = append(i1Errs, e)
+					}
+				}
+				if len(i1Errs) > 0 {
+					for _, e := range i1Errs {
+						fmt.Fprintf(os.Stderr, "prepare-wave: I1 ownership violation: %s\n", e.Message)
+					}
+					return fmt.Errorf("prepare-wave: %d I1 disjoint ownership violation(s)", len(i1Errs))
+				}
+			}
+
+			// Step 0g: E41 — Pre-launch type collision check
+			// collision.DetectCollisions takes a manifest path string, wave number, and repo path.
+			collisionReport, err := collision.DetectCollisions(manifestPath, waveNum, projectRoot)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "prepare-wave: collision check: %v\n", err)
+			} else if !collisionReport.Valid {
+				out, _ := json.MarshalIndent(collisionReport, "", "  ")
+				fmt.Fprintln(cmd.OutOrStdout(), string(out))
+				return fmt.Errorf("prepare-wave: type collisions detected — resolve before creating worktrees")
 			}
 
 			// Step 1: Create worktrees (records base commit, must happen first)

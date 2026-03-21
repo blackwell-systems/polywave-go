@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/collision"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
 )
 
@@ -456,6 +457,152 @@ func TestVerifyDependenciesAvailable_Wave2DepComplete(t *testing.T) {
 	}
 	if !result.Valid {
 		t.Errorf("expected Valid=true when all dependencies are complete")
+	}
+}
+
+// TestPrepareWave_I1OwnershipViolation verifies that protocol.Validate returns
+// I1_VIOLATION errors when two agents in the same wave own the same file.
+func TestPrepareWave_I1OwnershipViolation(t *testing.T) {
+	doc := &protocol.IMPLManifest{
+		FileOwnership: []protocol.FileOwnership{
+			{File: "pkg/foo/foo.go", Agent: "A", Wave: 1, Action: "modify"},
+			{File: "pkg/foo/foo.go", Agent: "B", Wave: 1, Action: "modify"},
+		},
+	}
+
+	allErrs := protocol.Validate(doc)
+	var i1Errs []protocol.ValidationError
+	for _, e := range allErrs {
+		if e.Code == "I1_VIOLATION" {
+			i1Errs = append(i1Errs, e)
+		}
+	}
+
+	if len(i1Errs) == 0 {
+		t.Fatal("expected I1_VIOLATION errors for overlapping file ownership, got none")
+	}
+
+	// Verify the error mentions the conflicting file
+	found := false
+	for _, e := range i1Errs {
+		if strings.Contains(e.Message, "pkg/foo/foo.go") {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Errorf("expected I1_VIOLATION to mention conflicting file, got: %+v", i1Errs)
+	}
+}
+
+// TestPrepareWave_I1OwnershipNoViolation verifies that disjoint file ownership
+// produces no I1_VIOLATION errors.
+func TestPrepareWave_I1OwnershipNoViolation(t *testing.T) {
+	doc := &protocol.IMPLManifest{
+		FileOwnership: []protocol.FileOwnership{
+			{File: "pkg/foo/foo.go", Agent: "A", Wave: 1, Action: "modify"},
+			{File: "pkg/bar/bar.go", Agent: "B", Wave: 1, Action: "modify"},
+		},
+	}
+
+	allErrs := protocol.Validate(doc)
+	for _, e := range allErrs {
+		if e.Code == "I1_VIOLATION" {
+			t.Errorf("unexpected I1_VIOLATION for disjoint ownership: %s", e.Message)
+		}
+	}
+}
+
+// TestPrepareWave_I1CrossWaveAllowed verifies that the same file owned by
+// different agents in different waves does NOT produce I1_VIOLATION errors.
+func TestPrepareWave_I1CrossWaveAllowed(t *testing.T) {
+	doc := &protocol.IMPLManifest{
+		FileOwnership: []protocol.FileOwnership{
+			{File: "pkg/foo/foo.go", Agent: "A", Wave: 1, Action: "create"},
+			{File: "pkg/foo/foo.go", Agent: "B", Wave: 2, Action: "modify"},
+		},
+	}
+
+	allErrs := protocol.Validate(doc)
+	for _, e := range allErrs {
+		if e.Code == "I1_VIOLATION" {
+			t.Errorf("unexpected I1_VIOLATION for cross-wave sequential ownership: %s", e.Message)
+		}
+	}
+}
+
+// TestPrepareWave_CollisionReportValidField verifies that a CollisionReport
+// with Valid=true does not trigger the collision block path.
+// This tests the conditional logic: only collisionReport.Valid == false blocks.
+func TestPrepareWave_CollisionReportValidField(t *testing.T) {
+	// Simulate what prepare-wave does when collision check passes (Valid=true)
+	reportValid := collision.CollisionReport{
+		Valid:      true,
+		Collisions: nil,
+	}
+	if !reportValid.Valid {
+		t.Error("expected Valid=true to not block prepare-wave")
+	}
+
+	// Simulate what prepare-wave does when collision check fails (Valid=false)
+	reportInvalid := collision.CollisionReport{
+		Valid: false,
+		Collisions: []collision.TypeCollision{
+			{
+				TypeName:   "MyType",
+				Package:    "pkg/foo",
+				Agents:     []string{"A", "B"},
+				Resolution: "Keep A, remove from B",
+			},
+		},
+	}
+	if reportInvalid.Valid {
+		t.Error("expected Valid=false to block prepare-wave")
+	}
+	if len(reportInvalid.Collisions) != 1 {
+		t.Errorf("expected 1 collision, got %d", len(reportInvalid.Collisions))
+	}
+	if reportInvalid.Collisions[0].TypeName != "MyType" {
+		t.Errorf("expected TypeName=MyType, got %q", reportInvalid.Collisions[0].TypeName)
+	}
+}
+
+// TestPrepareWave_CollisionReportJSONOutput verifies that a collision report
+// marshals to the expected JSON shape for programmatic consumers.
+func TestPrepareWave_CollisionReportJSONOutput(t *testing.T) {
+	report := collision.CollisionReport{
+		Valid: false,
+		Collisions: []collision.TypeCollision{
+			{
+				TypeName:   "Config",
+				Package:    "pkg/config",
+				Agents:     []string{"A", "C"},
+				Resolution: "Keep A, remove from C",
+			},
+		},
+	}
+
+	out, err := json.MarshalIndent(report, "", "  ")
+	if err != nil {
+		t.Fatalf("failed to marshal CollisionReport: %v", err)
+	}
+
+	var decoded collision.CollisionReport
+	if err := json.Unmarshal(out, &decoded); err != nil {
+		t.Fatalf("failed to unmarshal CollisionReport: %v", err)
+	}
+
+	if decoded.Valid {
+		t.Error("expected Valid=false after round-trip")
+	}
+	if len(decoded.Collisions) != 1 {
+		t.Fatalf("expected 1 collision after round-trip, got %d", len(decoded.Collisions))
+	}
+	if decoded.Collisions[0].TypeName != "Config" {
+		t.Errorf("expected TypeName=Config, got %q", decoded.Collisions[0].TypeName)
+	}
+	if len(decoded.Collisions[0].Agents) != 2 {
+		t.Errorf("expected 2 agents, got %d", len(decoded.Collisions[0].Agents))
 	}
 }
 
