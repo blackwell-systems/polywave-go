@@ -1,0 +1,644 @@
+title: Intelligent Worktree Lifecycle Management
+feature_slug: intelligent-worktree-cleanup
+verdict: SUITABLE
+suitability_assessment: |
+    1. File decomposition: 12+ files across two repos (scout-and-wave-go and
+       scout-and-wave-web), cleanly decomposable into 6 agents across 3 waves.
+       Core detection logic (Go engine) is independent of web integration (server
+       startup, periodic cleanup, frontend). No single-file bottleneck.
+
+    2. Investigation-first items: None. The problem is well-understood — stale
+       worktrees accumulate after IMPL completion. Branch naming patterns are
+       known (saw/{slug}/wave{N}-agent-{X}). No root cause analysis needed.
+
+    3. Interface discoverability: Yes. The core interface is DetectStaleWorktrees
+       which returns []StaleWorktree. All downstream consumers (CLI command,
+       mark-complete integration, web server, resume-detect) depend on this
+       single function signature which can be defined upfront.
+
+    4. Pre-implementation status: prepare-wave already has partial stale cleanup
+       (lines 128-150 of worktree.go clean merged branches before creating new
+       ones). resume-detect already detects orphaned worktrees but does not
+       filter by completed IMPL status. The worktree_handler.go in web has
+       basic stale detection (24h threshold) but not IMPL-aware logic.
+       All requirements are TODO or PARTIAL.
+
+    5. Parallelization value: High. Go build+test cycle is >30s. 6 agents
+       across 3 waves with 2-4 files each. Wave 1 (3 agents) provides
+       significant parallelism for the core detection, CLI command, and
+       resume-detect filtering.
+
+    Estimated times:
+    - Scout phase: ~8 min
+    - Agent execution: ~15 min (6 agents, ~8 min avg, 3 waves)
+    - Merge & verification: ~5 min
+    Total SAW time: ~28 min
+
+    Sequential baseline: ~48 min (6 agents x 8 min avg)
+    Time savings: ~20 min (42% faster)
+
+    Recommendation: Clear speedup. Proceed.
+test_command: go test ./...
+lint_command: go vet ./...
+file_ownership:
+    - file: pkg/protocol/stale_worktree.go
+      agent: A
+      wave: 1
+      action: new
+      repo: scout-and-wave-go
+    - file: pkg/protocol/stale_worktree_test.go
+      agent: A
+      wave: 1
+      action: new
+      repo: scout-and-wave-go
+    - file: cmd/saw/cleanup_stale_cmd.go
+      agent: B
+      wave: 1
+      action: new
+      repo: scout-and-wave-go
+    - file: cmd/saw/cleanup_stale_cmd_test.go
+      agent: B
+      wave: 1
+      action: new
+      repo: scout-and-wave-go
+    - file: pkg/resume/detect.go
+      agent: C
+      wave: 1
+      action: modify
+      repo: scout-and-wave-go
+    - file: pkg/resume/detect_test.go
+      agent: C
+      wave: 1
+      action: modify
+      repo: scout-and-wave-go
+    - file: cmd/saw/mark_complete_cmd.go
+      agent: D
+      wave: 2
+      action: modify
+      repo: scout-and-wave-go
+    - file: cmd/saw/prepare_wave.go
+      agent: D
+      wave: 2
+      action: modify
+      repo: scout-and-wave-go
+    - file: cmd/saw/main.go
+      agent: D
+      wave: 2
+      action: modify
+      repo: scout-and-wave-go
+    - file: pkg/api/worktree_handler.go
+      agent: E
+      wave: 3
+      action: modify
+      repo: scout-and-wave-web
+    - file: pkg/api/worktree_handler_test.go
+      agent: E
+      wave: 3
+      action: modify
+      repo: scout-and-wave-web
+    - file: pkg/api/server.go
+      agent: F
+      wave: 3
+      action: modify
+      repo: scout-and-wave-web
+    - file: pkg/api/stale_cleanup.go
+      agent: F
+      wave: 3
+      action: new
+      repo: scout-and-wave-web
+interface_contracts:
+    - name: StaleWorktree
+      description: |
+        Represents a single stale worktree detected during scanning.
+        Defined in pkg/protocol/stale_worktree.go by Agent A (Wave 1).
+      definition: |
+        type StaleWorktree struct {
+            WorktreePath string `json:"worktree_path"`
+            BranchName   string `json:"branch_name"`
+            Slug         string `json:"slug"`
+            Reason       string `json:"reason"` // "completed_impl" | "orphaned" | "merged_but_not_cleaned"
+            RepoPath     string `json:"repo_path"`
+        }
+      location: pkg/protocol/stale_worktree.go
+    - name: DetectStaleWorktrees
+      description: |
+        Scans git worktrees in repoPath, parses branch names to extract IMPL
+        slugs, checks if slug matches a completed IMPL or no IMPL at all,
+        and returns the list of stale worktrees with reasons.
+      definition: |
+        func DetectStaleWorktrees(repoPath string) ([]StaleWorktree, error)
+      location: pkg/protocol/stale_worktree.go
+    - name: CleanStaleWorktrees
+      description: |
+        Removes the given stale worktrees (worktree remove + branch delete).
+        Skips worktrees with uncommitted changes unless force is true.
+        Returns structured cleanup results.
+      definition: |
+        type StaleCleanupResult struct {
+            Cleaned []StaleWorktree `json:"cleaned"`
+            Skipped []StaleWorktree `json:"skipped"`
+            Errors  []struct {
+                Worktree StaleWorktree `json:"worktree"`
+                Error    string        `json:"error"`
+            } `json:"errors"`
+        }
+
+        func CleanStaleWorktrees(stale []StaleWorktree, force bool) (*StaleCleanupResult, error)
+      location: pkg/protocol/stale_worktree.go
+    - name: sawtools cleanup-stale CLI
+      description: |
+        CLI command wrapping DetectStaleWorktrees + CleanStaleWorktrees.
+        Flags: --repo-dir, --dry-run, --force. JSON output.
+      definition: |
+        func newCleanupStaleCmd() *cobra.Command
+      location: cmd/saw/cleanup_stale_cmd.go
+waves:
+    - number: 1
+      agents:
+        - id: A
+          task: |
+            ## Core Stale Worktree Detection and Cleanup (pkg/protocol)
+
+            Create `pkg/protocol/stale_worktree.go` with the following:
+
+            **Types:**
+            - `StaleWorktree` struct: WorktreePath, BranchName, Slug, Reason ("completed_impl"|"orphaned"|"merged_but_not_cleaned"), RepoPath
+            - `StaleCleanupResult` struct: Cleaned, Skipped, Errors slices
+
+            **Functions:**
+            1. `DetectStaleWorktrees(repoPath string) ([]StaleWorktree, error)`:
+               - Run `git worktree list --porcelain` via `internal/git` package
+               - For each worktree, extract branch name, use `ExtractSlug()` from branchname.go
+                 to get the IMPL slug, and `ParseBranch()` for wave/agent info
+               - For legacy branches (no slug), skip — cannot determine IMPL association
+               - Check if `docs/IMPL/complete/IMPL-{slug}.yaml` exists → reason: "completed_impl"
+               - Check if neither `docs/IMPL/IMPL-{slug}.yaml` nor `docs/IMPL/complete/IMPL-{slug}.yaml`
+                 exists → reason: "orphaned"
+               - Check if branch HEAD is ancestor of main (use `git.IsAncestor`) → reason: "merged_but_not_cleaned"
+               - Return list of StaleWorktree
+
+            2. `CleanStaleWorktrees(stale []StaleWorktree, force bool) (*StaleCleanupResult, error)`:
+               - For each stale worktree:
+                 - Check for uncommitted changes (run `git -C <path> status --porcelain`)
+                 - If uncommitted changes and !force, add to Skipped
+                 - Otherwise: `git.WorktreeRemove()` then `git.DeleteBranch()`, then `git.WorktreePrune()`
+                 - Track results in Cleaned/Errors
+               - Return StaleCleanupResult
+
+            **Tests** in `pkg/protocol/stale_worktree_test.go`:
+            - Test slug extraction from various branch formats
+            - Test detection with completed IMPL (mock filesystem)
+            - Test cleanup skips uncommitted changes
+            - Test cleanup with force flag
+
+            **Existing code to reference:**
+            - `pkg/protocol/branchname.go` — `ExtractSlug()`, `ParseBranch()`, `BranchName()`
+            - `pkg/protocol/cleanup.go` — existing cleanup pattern (worktree remove + branch delete)
+            - `internal/git/commands.go` — `WorktreeRemove()`, `DeleteBranch()`, `WorktreePrune()`,
+              `IsAncestor()`, `BranchExists()`
+
+            **Verification gate:** `go test ./pkg/protocol/ -run TestStale -v`
+          files:
+            - pkg/protocol/stale_worktree.go
+            - pkg/protocol/stale_worktree_test.go
+        - id: B
+          task: |
+            ## CLI Command: sawtools cleanup-stale
+
+            Create `cmd/saw/cleanup_stale_cmd.go` with a new cobra command:
+
+            **Command:** `sawtools cleanup-stale`
+            **Flags:**
+            - `--repo-dir` (string): repository path (uses global `repoDir` flag from root.go)
+            - `--dry-run` (bool): report what would be cleaned without acting
+            - `--force` (bool): skip safety checks for uncommitted changes
+
+            **Implementation:**
+            1. Call `protocol.DetectStaleWorktrees(repoDir)` to find stale worktrees
+            2. If `--dry-run`: marshal the detection results as JSON and print
+            3. Otherwise: call `protocol.CleanStaleWorktrees(stale, force)` and print JSON result
+            4. JSON output shape: `{"detected": N, "cleaned": [...], "skipped": [...], "errors": [...]}`
+
+            **Important:** Do NOT register the command in main.go — that will be done
+            by Agent D in Wave 2. Just define `newCleanupStaleCmd() *cobra.Command`.
+
+            **Tests** in `cmd/saw/cleanup_stale_cmd_test.go`:
+            - Test flag parsing
+            - Test dry-run output format
+            - Test command construction (no integration test needed, protocol layer
+              is tested by Agent A)
+
+            **Reference:** Look at `cmd/saw/cleanup.go` for the pattern of an existing
+            cleanup command. Follow the same cobra command structure.
+
+            **Verification gate:** `go build ./cmd/saw/ && go vet ./cmd/saw/`
+
+            Note: This command cannot be fully tested in isolation because it depends
+            on Agent A's protocol functions. The build gate verifies compilation.
+            The command will use stub signatures matching the interface contract for
+            DetectStaleWorktrees and CleanStaleWorktrees.
+          files:
+            - cmd/saw/cleanup_stale_cmd.go
+            - cmd/saw/cleanup_stale_cmd_test.go
+        - id: C
+          task: |
+            ## Resume Detection: Filter Completed IMPL Worktrees
+
+            Modify `pkg/resume/detect.go` to filter out worktrees belonging to
+            completed IMPLs from the "orphaned worktrees" list.
+
+            **Changes to `detectOrphanedWorktrees()`:**
+            Currently this function only checks if a worktree's wave is fully merged
+            within its own manifest. It does NOT check whether the entire IMPL is
+            completed and archived. Add a pre-filter:
+
+            1. Before processing worktree entries, build a set of completed IMPL slugs
+               by scanning `docs/IMPL/complete/` directory for `IMPL-*.yaml` files
+               and extracting slugs from filenames.
+            2. When iterating worktree entries, extract the slug from the branch name
+               using the existing `worktreePattern` regex.
+            3. If the slug is in the completed set, skip this worktree — it's not an
+               interrupted session, it's a stale worktree from a finished IMPL.
+
+            **Changes to `Detect()` / `DetectWithConfig()`:**
+            No signature changes needed. The filtering happens inside
+            `detectOrphanedWorktrees()`.
+
+            **New helper function:**
+            ```go
+            func loadCompletedSlugs(repoPath string) map[string]bool
+            ```
+            Reads `docs/IMPL/complete/` directory, extracts slugs from filenames
+            matching `IMPL-*.yaml` pattern (strip "IMPL-" prefix and ".yaml" suffix).
+
+            **Tests** in `pkg/resume/detect_test.go`:
+            - Add test: worktree with branch `saw/completed-slug/wave1-agent-A` where
+              `docs/IMPL/complete/IMPL-completed-slug.yaml` exists should NOT appear
+              in orphaned worktrees
+            - Add test: worktree with branch `saw/active-slug/wave1-agent-A` where
+              `docs/IMPL/IMPL-active-slug.yaml` exists should still appear normally
+
+            **Verification gate:** `go test ./pkg/resume/ -v`
+          files:
+            - pkg/resume/detect.go
+            - pkg/resume/detect_test.go
+      base_commit: a369b5839015794b20b4b4ee1f3587cc14476008
+    - number: 2
+      agents:
+        - id: D
+          task: |
+            ## Integration: mark-complete, prepare-wave, and CLI registration
+
+            Three integration points in the Go engine:
+
+            **1. Register cleanup-stale command in main.go:**
+            Add `rootCmd.AddCommand(newCleanupStaleCmd())` in `cmd/saw/main.go`
+            alongside the other command registrations.
+
+            **2. Auto-cleanup on mark-complete (`cmd/saw/mark_complete_cmd.go`):**
+            After the existing `protocol.ArchiveIMPL(manifestPath)` call (line 32),
+            add stale worktree cleanup for the completed slug:
+
+            ```go
+            // Auto-clean worktrees for the completed IMPL
+            stale, err := protocol.DetectStaleWorktrees(repoDir)
+            if err == nil {
+                // Filter to only worktrees matching this slug
+                var matching []protocol.StaleWorktree
+                for _, s := range stale {
+                    if s.Slug == manifest.FeatureSlug {
+                        matching = append(matching, s)
+                    }
+                }
+                if len(matching) > 0 {
+                    result, _ := protocol.CleanStaleWorktrees(matching, true) // force=true, we just archived
+                    // Log what was cleaned
+                }
+            }
+            ```
+
+            Note: You'll need to load the manifest to get FeatureSlug before archiving,
+            or extract slug from the file path. The manifest is loaded by
+            `protocol.WriteCompletionMarker` but not returned — load it separately
+            with `protocol.Load(manifestPath)` before the WriteCompletionMarker call.
+
+            Also need to resolve repoDir: use the global `repoDir` variable from root.go.
+            If empty, derive from manifestPath (parent of parent of parent: the path
+            pattern is `{repo}/docs/IMPL/IMPL-{slug}.yaml`).
+
+            **3. Improve prepare-wave stale cleanup (`cmd/saw/prepare_wave.go`):**
+            The existing Step 0a (lines 122-129) warns about orphaned worktrees.
+            Replace with IMPL-aware detection:
+
+            ```go
+            // Step 0a: Clean stale worktrees from the SAME slug (previous failed run)
+            stale, err := protocol.DetectStaleWorktrees(projectRoot)
+            if err == nil {
+                var sameSlug []protocol.StaleWorktree
+                for _, s := range stale {
+                    if s.Slug == doc.FeatureSlug {
+                        sameSlug = append(sameSlug, s)
+                    }
+                }
+                if len(sameSlug) > 0 {
+                    result, _ := protocol.CleanStaleWorktrees(sameSlug, true)
+                    fmt.Fprintf(os.Stderr, "prepare-wave: cleaned %d stale worktrees from previous runs\n", len(result.Cleaned))
+                }
+            }
+            ```
+
+            **Verification gate:** `go build ./cmd/saw/ && go test ./cmd/saw/ -run TestMarkComplete -v`
+          files:
+            - cmd/saw/mark_complete_cmd.go
+            - cmd/saw/prepare_wave.go
+            - cmd/saw/main.go
+          dependencies:
+            - A
+            - B
+    - number: 3
+      agents:
+        - id: E
+          task: |
+            ## Web: IMPL-Aware Worktree Detection
+
+            Modify `pkg/api/worktree_handler.go` to use IMPL-aware stale detection
+            instead of the current time-based heuristic.
+
+            **Changes to `detectStaleBranches()`:**
+            Replace the current implementation (which just checks merged status)
+            with logic that calls `protocol.DetectStaleWorktrees()`:
+
+            ```go
+            func detectStaleBranches(repoPath string) []string {
+                stale, err := protocol.DetectStaleWorktrees(repoPath)
+                if err != nil {
+                    // Fall back to existing behavior
+                    return detectStaleBranchesLegacy(repoPath)
+                }
+                var branches []string
+                for _, s := range stale {
+                    branches = append(branches, s.BranchName)
+                }
+                return branches
+            }
+            ```
+
+            Rename the current `detectStaleBranches` to `detectStaleBranchesLegacy`
+            as a fallback.
+
+            **Changes to `enrichWorktreeEntries()`:**
+            Replace time-based stale detection (24h threshold) with IMPL-aware logic:
+            - Call `protocol.DetectStaleWorktrees()` once for the repo
+            - Build a set of stale branch names
+            - Mark entries as "stale" if their branch is in the stale set
+            - Keep the HasUnsaved and LastCommitAge enrichment as-is
+
+            **Note:** The `POST /api/worktrees/cleanup-stale` endpoint is owned by
+            Agent F (server.go + stale_cleanup.go). Do NOT define a handler for that
+            route in this file.
+
+            **Tests** in `pkg/api/worktree_handler_test.go`:
+            - Test that detectStaleBranches uses IMPL-aware logic
+            - Test fallback to legacy when protocol function fails
+
+            **Verification gate:** `go test ./pkg/api/ -run TestWorktree -v`
+          files:
+            - pkg/api/worktree_handler.go
+            - pkg/api/worktree_handler_test.go
+          dependencies:
+            - A
+            - D
+        - id: F
+          task: |
+            ## Web: Server Startup Cleanup and Periodic Background Cleanup
+
+            **1. Create `pkg/api/stale_cleanup.go`:**
+
+            Background stale worktree manager with two responsibilities:
+
+            ```go
+            // StartStaleCleanupLoop runs an initial cleanup on startup, then
+            // periodically every 30 minutes. Respects context cancellation.
+            func (s *Server) StartStaleCleanupLoop(ctx context.Context)
+            ```
+
+            Implementation:
+            - On startup: call `protocol.DetectStaleWorktrees()` for each configured
+              repo (use `s.getConfiguredRepos()`)
+            - Filter: auto-clean all three reasons ("completed_impl", "orphaned",
+              "merged_but_not_cleaned"). SAW worktrees use a known branch format
+              (saw/{slug}/wave{N}-agent-{X}) so orphaned SAW worktrees are definitively
+              stale debris, not from another tool
+            - Call `protocol.CleanStaleWorktrees(filtered, false)` (no force — skip
+              worktrees with uncommitted changes)
+            - If anything was cleaned, emit SSE event via `s.globalBroker.broadcast()`
+              with event type "stale_worktrees_cleaned" and data containing count
+            - Log cleanup summary to stderr
+            - Start a ticker for 30-minute intervals, repeat the same logic
+            - Stop on ctx.Done()
+
+            **2. Modify `pkg/api/server.go`:**
+
+            In the `New()` function, after all route registration, start the cleanup loop:
+            ```go
+            go s.StartStaleCleanupLoop(serverCtx)
+            ```
+
+            Add the global cleanup route:
+            ```go
+            s.mux.HandleFunc("POST /api/worktrees/cleanup-stale", s.handleGlobalStaleCleanup)
+            ```
+
+            The handler calls DetectStaleWorktrees for all configured repos and returns
+            JSON summary. This is the manual trigger for the auto-cleanup.
+
+            **SSE event format:**
+            ```json
+            {"event": "stale_worktrees_cleaned", "data": {"count": 3, "repos": ["scout-and-wave-go"]}}
+            ```
+
+            Note: The frontend already has a notification system (NotificationBus).
+            Emit through globalBroker — the frontend waveEventsReducer already handles
+            unknown events gracefully (ignores them). A future PR can add toast handling
+            for "stale_worktrees_cleaned" events.
+
+            **Verification gate:** `go build ./cmd/saw/ && go vet ./pkg/api/`
+          files:
+            - pkg/api/stale_cleanup.go
+            - pkg/api/server.go
+          dependencies:
+            - A
+            - D
+      base_commit: 9581867eb2551f11f51804535ef4fb7e22ed122e
+quality_gates:
+    level: standard
+    gates:
+        - type: build
+          command: go build ./...
+          required: true
+        - type: lint
+          command: go vet ./...
+          required: true
+        - type: test
+          command: go test ./...
+          required: true
+completion_reports:
+    A:
+        status: complete
+        branch: saw/intelligent-worktree-cleanup/wave1-agent-A
+        commit: af86828
+        files_changed:
+            - pkg/protocol/stale_worktree.go
+            - pkg/protocol/stale_worktree_test.go
+        files_created:
+            - pkg/protocol/stale_worktree.go
+            - pkg/protocol/stale_worktree_test.go
+        tests_added:
+            - TestStaleExtractSlugFromBranches
+            - TestStaleDetectionCompletedImpl
+            - TestStaleDetectionOrphaned
+            - TestStaleCleanupSkipsUncommittedChanges
+            - TestStaleCleanupResultStructure
+            - TestStaleWorktreeReasons
+        verification: PASS
+    B:
+        status: complete
+        branch: saw/intelligent-worktree-cleanup/wave1-agent-B
+        commit: 303f0a4
+        files_changed:
+            - cmd/saw/cleanup_stale_cmd.go
+            - cmd/saw/cleanup_stale_cmd_test.go
+        files_created:
+            - cmd/saw/cleanup_stale_cmd.go
+            - cmd/saw/cleanup_stale_cmd_test.go
+            - pkg/protocol/stale_worktree.go
+        tests_added:
+            - TestNewCleanupStaleCmd_Construction
+            - TestNewCleanupStaleCmd_Flags
+            - TestNewCleanupStaleCmd_DryRunFlag
+            - TestNewCleanupStaleCmd_ForceFlag
+        verification: PASS
+    C:
+        status: complete
+        branch: saw/intelligent-worktree-cleanup/wave1-agent-C
+        commit: b500f60
+        files_changed:
+            - pkg/resume/detect.go
+            - pkg/resume/detect_test.go
+        tests_added:
+            - TestLoadCompletedSlugs
+            - TestLoadCompletedSlugs_MissingDir
+            - TestExtractSlugFromBranch
+            - TestDetectOrphanedWorktrees_SkipsCompletedIMPLSlugs
+            - TestDetectOrphanedWorktrees_ActiveSlugStillAppears
+        verification: PASS
+    D:
+        status: complete
+        branch: main
+        commit: 4d823b1
+        files_changed:
+            - cmd/saw/main.go
+            - cmd/saw/mark_complete_cmd.go
+            - cmd/saw/prepare_wave.go
+        verification: PASS
+    E:
+        status: complete
+        branch: saw/intelligent-worktree-cleanup/wave3-agent-E
+        commit: 99aa41e
+        files_changed:
+            - pkg/api/worktree_handler.go
+            - pkg/api/worktree_handler_test.go
+        tests_added:
+            - TestDetectStaleBranches_IMPLAware
+            - TestDetectStaleBranchesLegacy_Fallback
+            - TestDetectStaleBranches_FallbackOnError
+            - TestEnrichWorktreeEntries_NoStaleOnEmptyEntries
+        verification: PASS
+    F:
+        status: complete
+        branch: saw/intelligent-worktree-cleanup/wave3-agent-F
+        commit: b6952a5
+        files_changed:
+            - pkg/api/stale_cleanup.go
+            - pkg/api/server.go
+        files_created:
+            - pkg/api/stale_cleanup.go
+        verification: PASS
+pre_mortem:
+    overall_risk: low
+    rows:
+        - scenario: DetectStaleWorktrees is slow on repos with many worktrees
+          likelihood: low
+          impact: low
+          mitigation: |
+            The function runs git worktree list (fast) and checks file existence
+            (fast). Even with 50+ worktrees, this completes in <1s. The periodic
+            background loop runs every 30 minutes so latency is not user-facing.
+        - scenario: Auto-cleanup on mark-complete removes worktrees that another tool is using
+          likelihood: low
+          impact: medium
+          mitigation: |
+            mark-complete only cleans worktrees whose branch slug matches the
+            completed IMPL. Cross-IMPL worktrees are never touched. The force
+            flag is used because the IMPL was just archived — those worktrees
+            are definitionally stale.
+        - scenario: Race condition between periodic cleanup and manual wave operations
+          likelihood: low
+          impact: medium
+          mitigation: |
+            CleanStaleWorktrees only targets branches from completed IMPLs or
+            merged branches. Active wave worktrees belong to active IMPLs and
+            are never in the stale set. The worst case is a cleanup runs during
+            prepare-wave for the same slug — but prepare-wave already handles
+            stale worktree cleanup itself.
+        - scenario: Legacy branches (no slug prefix) cannot be classified
+          likelihood: medium
+          impact: low
+          mitigation: |
+            DetectStaleWorktrees skips legacy format branches that have no slug.
+            These require manual cleanup via the existing UI. This is acceptable
+            because legacy branches are from pre-v0.39.0 and will eventually
+            disappear as old IMPLs are cleaned up.
+critic_report:
+    verdict: PASS
+    agent_reviews:
+        A:
+            agent_id: A
+            verdict: PASS
+        B:
+            agent_id: B
+            verdict: PASS
+        C:
+            agent_id: C
+            verdict: PASS
+            issues:
+                - check: pattern_accuracy
+                  severity: warning
+                  description: 'Brief describes changes to detectOrphanedWorktrees() without mentioning its actual signature: detectOrphanedWorktrees(repoPaths []string, manifest *protocol.IMPLManifest). The brief says to add a pre-filter inside the function but does not mention the repoPaths parameter, which the agent needs to use for scanning docs/IMPL/complete/ in each repo. Agent should iterate repoPaths to find complete/ directories.'
+                  file: pkg/resume/detect.go
+                  symbol: detectOrphanedWorktrees
+        D:
+            agent_id: D
+            verdict: PASS
+        E:
+            agent_id: E
+            verdict: PASS
+            issues:
+                - check: pattern_accuracy
+                  severity: warning
+                  description: Brief says to rename detectStaleBranches to detectStaleBranchesLegacy as fallback, but the existing detectStaleBranches function also calls detectStaleBranchesFromRefs internally (line 338-348) to pick up orphaned branches with no worktree. Agent needs to either preserve this call chain in the new implementation or incorporate detectStaleBranchesFromRefs logic into the legacy fallback.
+                  file: pkg/api/worktree_handler.go
+                  symbol: detectStaleBranches
+        F:
+            agent_id: F
+            verdict: PASS
+            issues:
+                - check: symbol_accuracy
+                  severity: warning
+                  description: Brief references s.globalBroker.broadcast() for emitting SSE events with JSON format. The actual globalBroker has broadcast(string) for plain text events and broadcastJSON(eventType string, data interface{}) for structured JSON events. Since the brief specifies JSON event format, agent should use broadcastJSON not broadcast.
+                  file: pkg/api/server.go
+                  symbol: globalBroker.broadcast
+    summary: 'Reviewed 6 agents (A-F) across 3 waves. Found 0 errors and 3 warnings. All file existence checks pass: 4 new files do not exist, 9 modify-target files exist. All symbol references verified against source. Warning 1: Agent C brief describes changes to detectOrphanedWorktrees() without mentioning its actual signature parameters (repoPaths []string, manifest *protocol.IMPLManifest); agent will need to use repoPaths to scan docs/IMPL/complete/ directories. Warning 2: Agent E brief says to rename detectStaleBranches to detectStaleBranchesLegacy as fallback, but the existing function also calls detectStaleBranchesFromRefs internally -- agent needs to preserve that call chain or incorporate it into the new implementation. Warning 3: Agent F brief references s.globalBroker.broadcast() for JSON events but should use broadcastJSON(eventType, data) for structured event emission. All interface contracts are syntactically valid and internally consistent. Import chains verified for all new files. No side-effect completeness issues -- command registration correctly deferred to Agent D, and the POST cleanup-stale route is correctly owned solely by Agent F with Agent E explicitly excluded.'
+    reviewed_at: "2026-03-21T04:09:50Z"
+    issue_count: 3
+state: "COMPLETE"
