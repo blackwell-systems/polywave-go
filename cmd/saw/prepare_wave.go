@@ -215,6 +215,30 @@ waves that execute on the main branch.`,
 				return fmt.Errorf("prepare-wave: %d wiring ownership violation(s) — fix IMPL doc file_ownership before creating worktrees", len(violations))
 			}
 
+			// Step 0d: Validate scaffolds are committed (I2 — contracts precede implementation)
+			if len(doc.Scaffolds) > 0 && !protocol.AllScaffoldsCommitted(doc) {
+				statuses := protocol.ValidateScaffolds(doc)
+				for _, s := range statuses {
+					if s.Status != "committed" {
+						fmt.Fprintf(os.Stderr, "prepare-wave: scaffold %s status=%s (expected committed)\n", s.FilePath, s.Status)
+					}
+				}
+				return fmt.Errorf("prepare-wave: scaffolds not committed — run Scaffold Agent before creating worktrees")
+			}
+
+			// Step 0e: Freeze check — interface contracts immutable at worktree creation (I2)
+			if doc.WorktreesCreatedAt != nil {
+				violations, freezeErr := protocol.CheckFreeze(doc)
+				if freezeErr != nil {
+					fmt.Fprintf(os.Stderr, "prepare-wave: freeze check error: %v\n", freezeErr)
+				} else if len(violations) > 0 {
+					for _, v := range violations {
+						fmt.Fprintf(os.Stderr, "prepare-wave: freeze violation: %s — %s\n", v.Section, v.Message)
+					}
+					return fmt.Errorf("prepare-wave: %d freeze violation(s) — interface contracts were modified after worktree creation", len(violations))
+				}
+			}
+
 			// Step 1: Create worktrees (records base commit, must happen first)
 			worktreeResult, err := protocol.CreateWorktrees(manifestPath, waveNum, projectRoot)
 			if err != nil {
