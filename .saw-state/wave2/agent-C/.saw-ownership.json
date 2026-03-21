@@ -1,9 +1,9 @@
 {
   "agent": "C",
   "wave": 2,
-  "impl_doc": "/Users/dayna.blackwell/code/scout-and-wave-go/docs/IMPL/IMPL-planner-dag-prioritization.yaml",
+  "impl_doc": "/Users/dayna.blackwell/code/scout-and-wave/docs/IMPL/IMPL-interview-improvements.yaml",
   "owned_files": [
-    "pkg/engine/program_auto.go",
-    "pkg/engine/program_auto_test.go"
+    "pkg/interview/deterministic_test.go",
+    "cmd/saw/interview_cmd_test.go"
   ]
 }

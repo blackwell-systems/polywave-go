@@ -1,0 +1,12 @@
+{
+  "agent": "D",
+  "wave": 3,
+  "impl_doc": "/Users/dayna.blackwell/code/scout-and-wave/docs/IMPL/IMPL-program-import.yaml",
+  "owned_files": [
+    "cmd/saw/import_impls_cmd.go",
+    "cmd/saw/import_impls_cmd_test.go",
+    "cmd/saw/validate_program_cmd.go",
+    "cmd/saw/run_scout_cmd.go",
+    "cmd/saw/main.go"
+  ]
+}

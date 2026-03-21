@@ -1,170 +1,162 @@
 # Agent C Brief - Wave 2
 
-**IMPL Doc:** /Users/dayna.blackwell/code/scout-and-wave-go/docs/IMPL/IMPL-planner-dag-prioritization.yaml
+**IMPL Doc:** /Users/dayna.blackwell/code/scout-and-wave/docs/IMPL/IMPL-interview-improvements.yaml
 
 ## Files Owned
 
-- `pkg/engine/program_auto.go`
-- `pkg/engine/program_auto_test.go`
+- `pkg/interview/deterministic_test.go`
+- `cmd/saw/interview_cmd_test.go`
 
 
 ## Task
 
-## Role
-Integrate the unblocking potential scorer into the tier execution loop in
-pkg/engine/program_auto.go and add tests in pkg/engine/program_auto_test.go.
+## Tests for All P0 and P1 Changes
 
-## Context
-Agent A added UnblockingScore and PrioritizeIMPLs to pkg/protocol/program_prioritizer.go.
-Agent B added PriorityScore, PriorityReasoning on ProgramIMPL, and ConcurrencyCap
-on ProgramTier to pkg/protocol/program_types.go.
+### What to implement
 
-## What to implement
+**New file: pkg/interview/deterministic_test.go**
+Write comprehensive tests for the new functionality added by Agent B:
 
-### 1. Add ScoreTierIMPLs to pkg/engine/program_auto.go
+1. `TestValidateRequiredField_EmptyRejectsRequired` — empty answer on
+   required question returns error message
+2. `TestValidateRequiredField_WhitespaceRejectsRequired` — whitespace-only
+   answer on required question returns error message
+3. `TestValidateRequiredField_SkipOnOptionalAccepted` — "skip" on optional
+   question returns empty (valid)
+4. `TestValidateRequiredField_SkipOnRequiredRejected` — "skip" on required
+   question returns error message
+5. `TestValidateRequiredField_ValidAnswer` — non-empty answer returns empty
 
-Implement the function matching the interface contract:
-  func ScoreTierIMPLs(manifest *protocol.PROGRAMManifest, tierNumber int) []string
+6. `TestHandleBackCommand_FirstQuestion` — returns false at cursor 0
+7. `TestHandleBackCommand_Success` — returns true, decrements cursor,
+   removes last history entry, clears populated field
+8. `TestHandleBackCommand_CrossPhase` — going back across phase boundary
+   reverts doc.Phase correctly
+9. `TestHandleBackCommand_CaseInsensitive` — "BACK", "Back" all work
 
-Logic:
-1. Find the ProgramTier with Number == tierNumber. If not found, return nil.
-2. Collect all IMPL slugs in the tier whose Status is "pending".
-3. For each slug, call protocol.UnblockingScore(manifest, slug) to get the score.
-4. Build the reasoning string: if score > 0, format as
-   "unblocking(%dx+100=+%d), age(+0)" else "unblocking(0), age(+0)".
-5. Write PriorityScore and PriorityReasoning back into the matching
-   ProgramIMPL entry in manifest.Impls (mutate in place).
-6. Call protocol.PrioritizeIMPLs(manifest, pendingSlugs) to get the ordered list.
-7. Return the ordered list (highest score first).
+10. `TestAnswer_ValidationRejectsEmpty` — Answer() with empty string on
+    required field returns same question with hint
+11. `TestAnswer_BackIntegration` — Answer() with "back" reverts state
 
-### 2. Update AdvanceTierAutomatically to call ScoreTierIMPLs
-After the existing step 4 (freeze contracts) and before returning AdvancedToNext=true,
-if AdvancedToNext will be true, call ScoreTierIMPLs for the NextTier so that
-priority scores are populated in the manifest before the caller launches IMPLs.
-Store the ordered slug list in result.ScoredIMPLOrder (new field — add it to
-TierAdvanceResult):
-  ScoredIMPLOrder []string `json:"scored_impl_order,omitempty"`
+12. `TestFormatPhaseProgress_Overview` — returns "[Overview: 1/4 | Next: Scope]"
+13. `TestFormatPhaseProgress_Review` — returns "[Review: 1/2 | Next: Done]"
 
-This lets the web app and CLI display the launch order before execution starts.
+14. `TestPreviewRequirements` — returns non-empty markdown string
 
-### 3. Update TierAdvanceResult struct
-Add:
-  ScoredIMPLOrder []string `json:"scored_impl_order,omitempty"`
+**Modify: cmd/saw/interview_cmd_test.go**
+15. `TestInterviewCmd_InitWiring` — verify that newDeterministicManagerFunc
+    is non-nil after package init (confirms P0.1 fix). Note: the test file
+    uses installMockManager which overrides init(), so test init separately:
+    just assert `newDeterministicManagerFunc != nil` before any mock install.
+16. `TestInterviewCmd_PhaseProgress` — verify output contains phase-aware
+    format like "[Overview:" instead of old "[Phase: Overview"
 
-### 4. Concurrency cap awareness (informational only in this IMPL)
-ScoreTierIMPLs already returns slugs in priority order. The caller (web app
-or CLI) reads ConcurrencyCap from the tier and launches only the first
-ConcurrencyCap slugs (or all if cap == 0). This IMPL does NOT change the
-web app launch logic — that is a follow-on task. ScoreTierIMPLs returns the
-full priority-ordered list; the caller is responsible for honoring the cap.
-Add a comment in ScoreTierIMPLs noting this contract.
+### Interfaces to consume
+- `ValidateRequiredField(q *InterviewQuestion, answer string) string`
+- `HandleBackCommand(doc *InterviewDoc, answer string) bool`
+- `FormatPhaseProgress(doc *InterviewDoc) string`
+- `PreviewRequirements(doc *InterviewDoc) (string, error)`
+- `NewDeterministicManager(docsDir string) *DeterministicManager`
 
-## Tests (pkg/engine/program_auto_test.go)
+### Verification gate
+```bash
+go test ./pkg/interview/... -v && go test ./cmd/saw/... -v -run "TestInterviewCmd"
+```
 
-Add tests for ScoreTierIMPLs:
-- Single pending IMPL with no downstream deps: score=0, returned slice has 1 element
-- Two pending IMPLs where one unblocks the other: higher-unblocking IMPL appears first
-- ScoreTierIMPLs mutates manifest.Impls PriorityScore in place (verify via assertion)
-- Non-pending IMPLs (status "complete") are excluded from the scored output
-
-Extend or add tests for AdvanceTierAutomatically to verify:
-- ScoredIMPLOrder is populated in result when AdvancedToNext=true
-- ScoredIMPLOrder is empty when gate fails (RequiresReview=true)
-
-## Verification gate
-cd /Users/dayna.blackwell/code/scout-and-wave-go && go build ./... && go vet ./... && go test ./pkg/engine/... -run TestScoreTier -v && go test ./pkg/engine/... -run TestAdvanceTier -v
-
-## Constraints
-- Import protocol package (already imported in program_auto.go)
-- Do not modify scheduler.go or any other engine file — only program_auto.go and program_auto_test.go
-- TierAdvanceResult is defined in program_auto.go — add ScoredIMPLOrder there
-- Do not change existing function signatures (AdvanceTierAutomatically signature is unchanged)
-- ScoreTierIMPLs must handle missing tier gracefully (return nil, not panic)
+### Constraints
+- Do NOT modify any non-test files
+- Use testify/assert or standard testing — match project conventions
+  (existing tests use standard testing with t.Fatalf/t.Errorf)
+- Use t.TempDir() for any file I/O in tests
+- Test the actual functions, not mocks — these are unit tests of real logic
 
 
 
 ## Interface Contracts
 
-### UnblockingScore
+### init() in interview_cmd.go
 
-BFS over the reverse IMPL dependency graph starting from implSlug.
-Returns the count of transitively unblocked IMPLs (those that would
-become runnable once implSlug completes), weighted by UNBLOCK_BONUS.
-Only considers IMPLs with status "pending" or "blocked" as unblockable.
+Package-level init function that wires newDeterministicManagerFunc
+to interview.NewDeterministicManager, fixing the P0 nil panic.
 
 
 ```
-// UnblockingScore computes a priority score for implSlug based on how many
-// downstream IMPLs it transitively unblocks in manifest.
-//
-// Score formula (mirrors Formic's prioritizer):
-//   score = unblocking_potential * UnblockBonusPerIMPL + age_bonus
-//
-// where:
-//   unblocking_potential = BFS count of transitively unblocked pending/blocked IMPLs
-//   UnblockBonusPerIMPL  = 100 (constant)
-//   age_bonus            = min(daysSinceQueued, 10)  — tie-breaker, 0 if no timestamp
-//
-// Returns 0 if implSlug has no downstream dependents or is not found.
-func UnblockingScore(manifest *PROGRAMManifest, implSlug string) int
+func init() {
+    newDeterministicManagerFunc = func(docsDir string) interview.Manager {
+        return interview.NewDeterministicManager(docsDir)
+    }
+}
 
 ```
 
-### PrioritizeIMPLs
+### init() in compiler.go
 
-Re-orders a slice of IMPL slugs by descending UnblockingScore.
-Stable sort — equal scores preserve input order (FIFO tiebreak).
-Used by the tier execution loop to sequence IMPL launches.
-
-
-```
-// PrioritizeIMPLs returns implSlugs sorted by descending UnblockingScore.
-// Stable: equal-scored IMPLs retain their original order.
-func PrioritizeIMPLs(manifest *PROGRAMManifest, implSlugs []string) []string
-
-```
-
-### IMPLPriorityScore (struct field on ProgramIMPL)
-
-Optional computed field added to ProgramIMPL. Written by the Planner
-(or populated lazily by the engine) so the web UI can display priority
-ordering without recomputing on every render.
+Package-level init function that registers CompileToRequirements
+with the deterministic manager's compileFunc variable.
 
 
 ```
-// In ProgramIMPL struct — add these two fields:
-PriorityScore        int    `yaml:"priority_score,omitempty" json:"priority_score,omitempty"`
-PriorityReasoning    string `yaml:"priority_reasoning,omitempty" json:"priority_reasoning,omitempty"`
+func init() {
+    RegisterCompiler(CompileToRequirements)
+}
 
 ```
 
-### ConcurrencyCap (struct field on ProgramTier)
+### ValidateRequiredField
 
-Optional cap on simultaneous IMPL launches within a tier. When 0 or
-absent, all pending IMPLs in the tier launch concurrently (current
-behavior). When set, the tier execution loop launches at most
-ConcurrencyCap IMPLs at a time, in priority order.
-
-
-```
-// In ProgramTier struct — add this field:
-ConcurrencyCap int `yaml:"concurrency_cap,omitempty" json:"concurrency_cap,omitempty"`
-
-```
-
-### ScoreTierIMPLs
-
-Computes UnblockingScore for all pending IMPLs in a tier and writes
-PriorityScore + PriorityReasoning back into manifest.Impls in place.
-Called by the tier execution loop before launching IMPLs.
-Returns the ordered list of IMPL slugs (highest score first).
+Validates that a required field answer is not empty/whitespace.
+Returns an error message string if invalid, empty string if valid.
+Called by Answer() before recording the turn.
 
 
 ```
-// ScoreTierIMPLs scores all pending IMPLs in tierNumber and returns them
-// sorted by descending priority. Also updates PriorityScore and
-// PriorityReasoning on each ProgramIMPL entry in manifest.Impls.
-func ScoreTierIMPLs(manifest *protocol.PROGRAMManifest, tierNumber int) []string
+func ValidateRequiredField(q *InterviewQuestion, answer string) string
+// Returns "" if valid, or error message like
+// "This field is required. Please provide an answer."
+// Checks: q.Required && strings.TrimSpace(answer) == ""
+
+```
+
+### HandleBackCommand
+
+Detects "back" answer and reverts to previous question by
+removing the last history entry and decrementing cursor.
+Returns true if back was handled (caller should re-generate question).
+
+
+```
+func HandleBackCommand(doc *InterviewDoc, answer string) bool
+// Returns true if answer is "back" (case-insensitive).
+// Reverts: remove last History entry, decrement QuestionCursor,
+// clear the SpecData field that was populated by that answer,
+// revert Phase if needed via checkPhaseTransition logic.
+
+```
+
+### FormatPhaseProgress
+
+Generates phase-aware progress string like "[Overview: 2/4 | Next: Scope]"
+instead of naive percentage.
+
+
+```
+func FormatPhaseProgress(doc *InterviewDoc) string
+// Returns string like "[Overview: 2/4 | Next: Scope]"
+// Counts questions in current phase, shows position within phase,
+// shows next phase name (or "Done" if in review).
+
+```
+
+### PreviewRequirements
+
+Generates a preview of the compiled REQUIREMENTS.md content
+for display before the final confirmation question.
+
+
+```
+func PreviewRequirements(doc *InterviewDoc) (string, error)
+// Calls CompileToRequirements and returns the content string.
+// Used by the CLI to show preview before "Ready to generate?" prompt.
 
 ```
 

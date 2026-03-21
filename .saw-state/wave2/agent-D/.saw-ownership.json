@@ -1,0 +1,9 @@
+{
+  "agent": "D",
+  "wave": 2,
+  "impl_doc": "/Users/dayna.blackwell/code/scout-and-wave/docs/IMPL/IMPL-interview-mode.yaml",
+  "owned_files": [
+    "cmd/saw/main.go",
+    "implementations/claude-code/prompts/saw-skill.md"
+  ]
+}

@@ -1,119 +1,182 @@
 # Server-Sent Events (SSE)
 
-The orchestrator publishes real-time events via Server-Sent Events for monitoring Scout runs, Wave progress, and agent execution.
+The web application publishes real-time events via Server-Sent Events for monitoring Scout runs, Wave progress, agent execution, merge operations, program orchestration, and more.
 
-## Endpoint
+## Endpoints
+
+### Per-Slug Wave Events
 
 ```
-GET /api/events?session_id=<session_id>
+GET /api/wave/{slug}/events
 ```
 
-**Query Parameters:**
-- `session_id` (optional) — Filter events for a specific session. If omitted, receives all events across all sessions.
+Streams all wave-related events for a specific IMPL slug: agent lifecycle, merge, test, pipeline steps, quality gates, etc. Late-connecting clients receive a snapshot of cached agent lifecycle events on connect.
 
-**Response Format:** SSE stream (`text/event-stream`)
+### Per-Run Scout Events
+
+```
+GET /api/scout/{runID}/events
+```
+
+Streams Scout agent output for a specific run (used for both standard Scout and Bootstrap).
+
+### Per-Run Chat Events
+
+```
+GET /api/impl/{slug}/chat/{runID}/events
+```
+
+Streams chat agent output for a specific chat session.
+
+### Per-Run Revise Events
+
+```
+GET /api/impl/{slug}/revise/{runID}/events
+```
+
+Streams IMPL revision agent output for a specific revise session.
+
+### Per-Run Planner Events
+
+```
+GET /api/planner/{runID}/events
+```
+
+Streams Planner agent output for a specific planner run.
+
+### Global Events
+
+```
+GET /api/events
+```
+
+Streams global state changes (sidebar refresh, notifications, critic reviews, program updates). All connected clients receive these. Sends an initial `connected` event as a heartbeat.
+
+### Program Events
+
+```
+GET /api/program/events
+```
+
+Filtered view of global events — only forwards events with the `program_` prefix. Sends an initial `connected` event as a heartbeat.
 
 ## Event Format
 
 ```
 event: <event_type>
 data: <JSON_payload>
-id: <event_id>
 
 ```
 
 **Fields:**
 - `event` — Event type (see Event Types below)
 - `data` — JSON payload (schema varies by event type)
-- `id` — Monotonically increasing event ID for replay
-
-## Event Types
-
-### Scout Events
-
-#### `scout_started`
-
-Scout agent begins IMPL doc generation.
-
-```json
-{
-  "session_id": "abc123",
-  "prompt": "Add user authentication",
-  "repo_path": "/path/to/repo",
-  "timestamp": "2026-03-09T10:00:00Z"
-}
-```
-
-#### `scout_output`
-
-Scout agent text output (streamed chunks).
-
-```json
-{
-  "session_id": "abc123",
-  "chunk": "Analyzing codebase structure...",
-  "timestamp": "2026-03-09T10:00:01Z"
-}
-```
-
-#### `scout_completed`
-
-Scout agent finished IMPL doc generation.
-
-```json
-{
-  "session_id": "abc123",
-  "impl_path": "/path/to/repo/docs/IMPL/IMPL-add-user-auth.md",
-  "status": "complete",
-  "verdict": "SUITABLE",
-  "wave_count": 2,
-  "agent_count": 5,
-  "timestamp": "2026-03-09T10:02:30Z"
-}
-```
 
 ---
 
-### Wave Events
+## Event Types
 
-#### `wave_started`
+### Run Lifecycle Events
 
-Wave execution begins (all agents launching).
+**Emitted by:** Web API (`wave_runner.go`)
+**SSE endpoint:** `/api/wave/{slug}/events`
+
+#### `run_started`
+
+Wave execution loop begins.
 
 ```json
 {
-  "session_id": "abc123",
-  "impl_path": "/path/to/repo/docs/IMPL/IMPL-feature.md",
-  "wave_number": 1,
-  "agents": ["A", "B", "C"],
-  "timestamp": "2026-03-09T10:05:00Z"
+  "slug": "my-feature",
+  "impl_path": "/path/to/repo/docs/IMPL/IMPL-my-feature.yaml"
 }
 ```
 
-#### `wave_completed`
+#### `run_complete`
 
-Wave execution finished (all agents completed, quality gates passed).
+All waves finished successfully.
 
 ```json
 {
-  "session_id": "abc123",
-  "wave_number": 1,
-  "status": "complete",
-  "completed_agents": ["A", "B", "C"],
-  "timestamp": "2026-03-09T10:15:00Z"
+  "status": "success",
+  "waves": 2,
+  "agents": 5
 }
 ```
 
-#### `wave_merged`
-
-Wave branches merged to main.
+When all waves were already complete:
 
 ```json
 {
-  "session_id": "abc123",
-  "wave_number": 1,
-  "status": "merged",
-  "timestamp": "2026-03-09T10:16:00Z"
+  "status": "success",
+  "waves": 2,
+  "agents": 5,
+  "note": "all waves already complete"
+}
+```
+
+#### `run_failed`
+
+Run aborted due to error.
+
+```json
+{
+  "error": "verify-commits: agents with no commits"
+}
+```
+
+#### `waves_skipped`
+
+Earlier waves skipped because completion reports indicate they already ran.
+
+```json
+{
+  "skipped": 1,
+  "reason": "already completed (completion reports present)"
+}
+```
+
+#### `wave_resumed`
+
+A wave's agents already have branch commits from a previous session; skipping straight to merge.
+
+```json
+{
+  "wave": 1,
+  "reason": "agent branches already have commits from previous session; skipping to merge"
+}
+```
+
+#### `mark_complete_warning`
+
+Non-fatal warning when marking IMPL as complete fails (e.g. already archived).
+
+```json
+{
+  "error": "file already in complete directory"
+}
+```
+
+#### `update_status_failed`
+
+Non-fatal warning when updating agent completion status in the IMPL doc fails.
+
+```json
+{
+  "wave": "my-feature",
+  "error": "write error"
+}
+```
+
+#### `stale_branches_detected`
+
+Advisory event when leftover branches from previous runs are detected.
+
+```json
+{
+  "slug": "my-feature",
+  "branches": ["saw/my-feature/wave1-agent-A", "saw/my-feature/wave1-agent-B"],
+  "count": 2
 }
 ```
 
@@ -121,20 +184,28 @@ Wave branches merged to main.
 
 ### Agent Events
 
+**Emitted by:** Engine orchestrator (`pkg/orchestrator/`)
+**SSE endpoint:** `/api/wave/{slug}/events`
+
 #### `agent_started`
 
 Agent execution begins in its worktree.
 
 ```json
 {
-  "session_id": "abc123",
-  "wave_number": 1,
-  "agent_id": "A",
-  "worktree_path": ".claude/worktrees/wave1-agent-A",
-  "branch": "wave1-agent-A",
-  "timestamp": "2026-03-09T10:05:01Z"
+  "agent": "A",
+  "wave": 1,
+  "files": ["src/auth.go", "src/middleware.go"]
 }
 ```
+
+Payload struct: `orchestrator.AgentStartedPayload`
+
+| Field   | Type     | JSON        |
+|---------|----------|-------------|
+| Agent   | string   | `agent`     |
+| Wave    | int      | `wave`      |
+| Files   | []string | `files`     |
 
 #### `agent_output`
 
@@ -142,155 +213,382 @@ Agent text output (streamed chunks during execution).
 
 ```json
 {
-  "session_id": "abc123",
-  "wave_number": 1,
-  "agent_id": "A",
-  "chunk": "Reading src/auth.go...",
-  "timestamp": "2026-03-09T10:05:02Z"
+  "agent": "A",
+  "wave": 1,
+  "chunk": "Reading src/auth.go..."
 }
 ```
+
+Payload struct: `orchestrator.AgentOutputPayload`
+
+| Field | Type   | JSON    |
+|-------|--------|---------|
+| Agent | string | `agent` |
+| Wave  | int    | `wave`  |
+| Chunk | string | `chunk` |
 
 #### `agent_tool_call`
 
-Agent invokes a tool (Read, Write, Edit, Bash, etc.).
+Agent invokes a tool or receives a tool result.
 
 ```json
 {
-  "session_id": "abc123",
-  "wave_number": 1,
-  "agent_id": "A",
+  "agent": "A",
+  "wave": 1,
+  "tool_id": "toolu_01abc",
   "tool_name": "Read",
-  "tool_input": {
-    "path": "src/auth.go"
-  },
-  "timestamp": "2026-03-09T10:05:03Z"
+  "input": "{\"file_path\":\"src/auth.go\"}",
+  "is_result": false,
+  "is_error": false,
+  "duration_ms": 0
 }
 ```
 
-> **Note:** Tool call events are published by the Agent Observatory (as of v0.9.0). Requires middleware integration (see ROADMAP.md Tool System Refactoring).
+Payload struct: `orchestrator.AgentToolCallPayload` (mirrored in `api.AgentToolCallPayload`)
 
-#### `agent_tool_result`
+| Field      | Type   | JSON          | Notes                                    |
+|------------|--------|---------------|------------------------------------------|
+| Agent      | string | `agent`       |                                          |
+| Wave       | int    | `wave`        |                                          |
+| ToolID     | string | `tool_id`     |                                          |
+| ToolName   | string | `tool_name`   |                                          |
+| Input      | string | `input`       | JSON-encoded tool input                  |
+| IsResult   | bool   | `is_result`   | `false` = invocation, `true` = result    |
+| IsError    | bool   | `is_error`    | `true` when tool returned an error       |
+| DurationMs | int64  | `duration_ms` | Only set when `is_result` is `true`      |
 
-Agent receives tool execution result.
+#### `agent_complete`
 
-```json
-{
-  "session_id": "abc123",
-  "wave_number": 1,
-  "agent_id": "A",
-  "tool_name": "Read",
-  "tool_result": "package auth\n\nfunc Authenticate(...) { ... }",
-  "duration_ms": 15,
-  "timestamp": "2026-03-09T10:05:03Z"
-}
-```
-
-#### `agent_completed`
-
-Agent finishes execution and writes completion report.
+Agent finished execution successfully.
 
 ```json
 {
-  "session_id": "abc123",
-  "wave_number": 1,
-  "agent_id": "A",
+  "agent": "A",
+  "wave": 1,
   "status": "complete",
-  "files_modified": ["src/auth.go", "src/middleware.go"],
-  "timestamp": "2026-03-09T10:10:00Z"
+  "branch": "saw/my-feature/wave1-agent-A"
 }
 ```
 
-**Status values:**
-- `complete` — Agent finished successfully
-- `partial` — Agent completed part of the work (see `failure_type`)
-- `blocked` — Agent cannot proceed (see `failure_type`)
+Payload struct: `orchestrator.AgentCompletePayload`
+
+| Field  | Type   | JSON     |
+|--------|--------|----------|
+| Agent  | string | `agent`  |
+| Wave   | int    | `wave`   |
+| Status | string | `status` |
+| Branch | string | `branch` |
+
+#### `agent_failed`
+
+Agent execution failed.
+
+```json
+{
+  "agent": "B",
+  "wave": 1,
+  "status": "failed",
+  "failure_type": "fixable",
+  "notes": "",
+  "message": "Missing dependency: crypto package not installed"
+}
+```
+
+Payload struct: `orchestrator.AgentFailedPayload`
+
+| Field       | Type   | JSON           |
+|-------------|--------|----------------|
+| Agent       | string | `agent`        |
+| Wave        | int    | `wave`         |
+| Status      | string | `status`       |
+| FailureType | string | `failure_type` |
+| Notes       | string | `notes`        |
+| Message     | string | `message`      |
+
+**Failure types (from E19):** `transient`, `fixable`, `needs_replan`, `escalate`, `timeout`
+
+Also emitted by the web API for rerun/resume failures with `failure_type` values `"rerun"` or `"resume"`.
 
 #### `agent_blocked`
 
-Agent failed with failure type routing decision.
+Agent encountered a blocking condition that requires routing (E19).
 
 ```json
 {
-  "session_id": "abc123",
-  "wave_number": 1,
-  "agent_id": "B",
+  "agent": "C",
+  "wave": 1,
   "status": "blocked",
-  "failure_type": "fixable",
-  "action": "retry",
-  "reason": "Missing dependency: crypto package not installed",
-  "timestamp": "2026-03-09T10:12:00Z"
+  "failure_type": "needs_replan",
+  "message": "Architecture issue detected"
 }
 ```
 
-**Failure types (from E19):**
-- `transient` — Temporary failure (network timeout, API rate limit) → action: `retry`
-- `fixable` — Agent can fix the issue itself → action: `relaunch`
-- `needs_replan` — Architecture issue, Scout must replan → action: `escalate_scout`
-- `escalate` — Human intervention required → action: `escalate_human`
-- `timeout` — Agent exceeded max turns → action: `escalate_human`
+Uses the same `AgentFailedPayload` struct.
 
-**Actions:**
-- `retry` — Re-run the same agent immediately
-- `relaunch` — Launch a new agent to fix the issue
-- `escalate_scout` — Re-run Scout to replan
-- `escalate_human` — Notify user, block wave
+#### `agent_progress`
+
+Derived progress event emitted by the web API's progress parser when an `agent_tool_call` event is processed.
+
+```json
+{
+  "agent": "A",
+  "wave": 1,
+  "current_file": "src/auth.go",
+  "current_action": "Writing src/auth.go",
+  "percent_done": 50
+}
+```
+
+Payload struct: `api.AgentProgressPayload`
+
+| Field         | Type   | JSON             |
+|---------------|--------|------------------|
+| Agent         | string | `agent`          |
+| Wave          | int    | `wave`           |
+| CurrentFile   | string | `current_file`   |
+| CurrentAction | string | `current_action` |
+| PercentDone   | int    | `percent_done`   |
+
+#### `agent_prioritized`
+
+Agents in a wave were reordered for optimal scheduling based on dependency graph analysis.
+
+```json
+{
+  "wave": 1,
+  "original_order": ["A", "B", "C"],
+  "prioritized_order": ["C", "A", "B"],
+  "reordered": true,
+  "reason": "critical path optimization"
+}
+```
+
+Payload struct: `orchestrator.AgentPrioritizedPayload`
+
+| Field             | Type     | JSON                |
+|-------------------|----------|---------------------|
+| Wave              | int      | `wave`              |
+| OriginalOrder     | []string | `original_order`    |
+| PrioritizedOrder  | []string | `prioritized_order` |
+| Reordered         | bool     | `reordered`         |
+| Reason            | string   | `reason`            |
+
+#### `agent_resumed`
+
+Agent re-launched during a resume operation.
+
+```json
+{
+  "slug": "my-feature",
+  "wave": 1,
+  "agent": "A",
+  "status": "launching"
+}
+```
 
 ---
 
-### Verification Events
+### Auto-Retry Events (E19)
 
-#### `verification_started`
+**Emitted by:** Engine orchestrator (`pkg/orchestrator/`)
+**SSE endpoint:** `/api/wave/{slug}/events`
 
-Verification suite begins (build, tests, invariants).
+#### `auto_retry_started`
+
+Orchestrator is auto-retrying a failed agent.
 
 ```json
 {
-  "session_id": "abc123",
-  "impl_path": "/path/to/repo/docs/IMPL/IMPL-feature.md",
-  "timestamp": "2026-03-09T10:16:30Z"
+  "agent": "B",
+  "wave": 1,
+  "failure_type": "transient",
+  "attempt": 2,
+  "max_attempts": 3
 }
 ```
 
-#### `verification_gate`
+Payload struct: `orchestrator.AutoRetryStartedPayload`
 
-A verification gate completes (build, test, invariant check).
+| Field       | Type   | JSON           |
+|-------------|--------|----------------|
+| Agent       | string | `agent`        |
+| Wave        | int    | `wave`         |
+| FailureType | string | `failure_type` |
+| Attempt     | int    | `attempt`      |
+| MaxAttempts | int    | `max_attempts` |
+
+#### `auto_retry_exhausted`
+
+All auto-retry attempts exhausted for an agent.
 
 ```json
 {
-  "session_id": "abc123",
-  "gate": "build",
-  "status": "passed",
-  "timestamp": "2026-03-09T10:16:45Z"
+  "agent": "B",
+  "wave": 1,
+  "failure_type": "transient",
+  "attempts": 3
 }
 ```
 
-**Failure example:**
+Payload struct: `orchestrator.AutoRetryExhaustedPayload`
+
+| Field       | Type   | JSON           |
+|-------------|--------|----------------|
+| Agent       | string | `agent`        |
+| Wave        | int    | `wave`         |
+| FailureType | string | `failure_type` |
+| Attempts    | int    | `attempts`     |
+
+---
+
+### Wave Events
+
+**Emitted by:** Engine orchestrator (`pkg/orchestrator/`)
+**SSE endpoint:** `/api/wave/{slug}/events`
+
+#### `wave_complete`
+
+All agents in a wave finished (pre-merge).
 
 ```json
 {
-  "session_id": "abc123",
-  "gate": "tests",
-  "status": "failed",
-  "output": "FAIL: TestAuthenticate (0.01s)\n    auth_test.go:42: expected nil, got error",
-  "timestamp": "2026-03-09T10:17:00Z"
+  "wave": 1,
+  "merge_status": "pending"
 }
 ```
 
-**Gate types:**
-- `build` — Compilation succeeds
-- `tests` — Test suite passes
-- `invariants` — Protocol invariants (I1–I6) hold
-- `quality_gates` — Custom gates from IMPL doc `## Quality Gates` section
+Payload struct: `orchestrator.WaveCompletePayload`
 
-#### `verification_completed`
+| Field       | Type   | JSON           |
+|-------------|--------|----------------|
+| Wave        | int    | `wave`         |
+| MergeStatus | string | `merge_status` |
 
-Verification suite finished.
+---
+
+### Wave Gate Events
+
+**Emitted by:** Web API (`wave_runner.go`)
+**SSE endpoint:** `/api/wave/{slug}/events`
+
+#### `wave_gate_pending`
+
+Paused between waves, awaiting user approval to proceed.
 
 ```json
 {
-  "session_id": "abc123",
-  "status": "passed",
-  "timestamp": "2026-03-09T10:17:30Z"
+  "wave": 1,
+  "next_wave": 2,
+  "slug": "my-feature"
+}
+```
+
+#### `wave_gate_resolved`
+
+Gate approved, proceeding to next wave.
+
+```json
+{
+  "wave": 1,
+  "action": "proceed",
+  "slug": "my-feature"
+}
+```
+
+---
+
+### Stage Transition Events
+
+**Emitted by:** Web API (`wave_runner.go`)
+**SSE endpoint:** `/api/wave/{slug}/events`
+
+#### `stage_transition`
+
+Execution moved to a new stage or changed status within a stage.
+
+```json
+{
+  "stage": "wave_execute",
+  "status": "running",
+  "wave_num": 1,
+  "message": ""
+}
+```
+
+**Stage values:** `scaffold`, `wave_execute`, `wave_merge`, `wave_verify`, `wave_gate`, `complete`
+
+**Status values:** `running`, `complete`, `failed`, `skipped`
+
+---
+
+### Pipeline Step Events
+
+**Emitted by:** Web API (`wave_runner.go`, `recovery_handlers.go`)
+**SSE endpoint:** `/api/wave/{slug}/events`
+
+#### `pipeline_step`
+
+A finalization pipeline step changed status.
+
+```json
+{
+  "slug": "my-feature",
+  "wave": 1,
+  "step": "verify_commits",
+  "status": "running",
+  "error": ""
+}
+```
+
+**Step values:** `verify_commits`, `scan_stubs`, `run_gates`, `validate_integration`, `merge_agents`, `fix_go_mod`, `verify_build`, `code_review`, `integration_agent`, `cleanup`
+
+**Status values:** `pending`, `running`, `complete`, `failed`, `skipped`
+
+#### `step_retry_started`
+
+A failed pipeline step is being retried manually.
+
+```json
+{
+  "slug": "my-feature",
+  "wave": 1,
+  "step": "run_gates"
+}
+```
+
+#### `step_retry_complete`
+
+Pipeline step retry succeeded.
+
+```json
+{
+  "slug": "my-feature",
+  "wave": 1,
+  "step": "run_gates"
+}
+```
+
+With non-fatal warning:
+
+```json
+{
+  "slug": "my-feature",
+  "wave": 1,
+  "step": "validate_integration",
+  "warning": "some non-fatal error"
+}
+```
+
+#### `step_retry_failed`
+
+Pipeline step retry failed.
+
+```json
+{
+  "slug": "my-feature",
+  "wave": 1,
+  "step": "run_gates",
+  "error": "required gate \"build\" failed"
 }
 ```
 
@@ -298,131 +596,1003 @@ Verification suite finished.
 
 ### Quality Gate Events
 
-#### `quality_gate_started`
+**Emitted by:** Engine orchestrator + Web API (`wave_runner.go`)
+**SSE endpoint:** `/api/wave/{slug}/events`
 
-Custom quality gate begins execution.
+#### `quality_gate_result`
+
+A quality gate completed. Data is `protocol.GateResult`.
 
 ```json
 {
-  "session_id": "abc123",
-  "gate_name": "lint",
-  "command": "golangci-lint run",
-  "timestamp": "2026-03-09T10:17:00Z"
+  "type": "build",
+  "command": "go build ./...",
+  "exit_code": 0,
+  "stdout": "",
+  "stderr": "",
+  "required": true,
+  "passed": true,
+  "skipped": false,
+  "skip_reason": "",
+  "from_cache": false,
+  "parsed_errors": []
 }
 ```
 
-#### `quality_gate_completed`
+Payload struct: `protocol.GateResult`
 
-Custom quality gate finishes.
+| Field        | Type                  | JSON             |
+|--------------|-----------------------|------------------|
+| Type         | string                | `type`           |
+| Command      | string                | `command`        |
+| ExitCode     | int                   | `exit_code`      |
+| Stdout       | string                | `stdout`         |
+| Stderr       | string                | `stderr`         |
+| Required     | bool                  | `required`       |
+| Passed       | bool                  | `passed`         |
+| Skipped      | bool                  | `skipped`        |
+| SkipReason   | string                | `skip_reason`    |
+| FromCache    | bool                  | `from_cache`     |
+| ParsedErrors | []StructuredError     | `parsed_errors`  |
+
+#### `gate_cache_hit`
+
+A quality gate result was served from cache (E38).
 
 ```json
 {
-  "session_id": "abc123",
-  "gate_name": "lint",
-  "status": "passed",
-  "duration_ms": 2300,
-  "timestamp": "2026-03-09T10:17:02Z"
+  "gate_type": "build",
+  "command": "go build ./...",
+  "wave": 1,
+  "sha": "abc123"
 }
 ```
 
-**Failure example:**
+#### `stub_report`
+
+Stub scan (E20) found placeholder patterns in agent-changed files. Data is `protocol.ScanStubsResult`.
 
 ```json
 {
-  "session_id": "abc123",
-  "gate_name": "security_scan",
-  "status": "failed",
-  "output": "gosec: G104: Unchecked error return in auth.go:45",
-  "duration_ms": 1500,
-  "timestamp": "2026-03-09T10:17:04Z"
+  "hits": [
+    {
+      "file": "src/auth.go",
+      "line": 42,
+      "pattern": "TODO",
+      "context": "// TODO: implement token refresh"
+    }
+  ]
+}
+```
+
+#### `code_review_result`
+
+AI code review gate completed (requires `codereview` build tag).
+
+```json
+{
+  "slug": "my-feature",
+  "wave": 1,
+  "dimensions": { ... },
+  "overall": 82,
+  "passed": true,
+  "summary": "Code quality is good...",
+  "model": "claude-sonnet-4-20250514",
+  "diff_bytes": 4200
 }
 ```
 
 ---
 
-## Event Lifecycle Example
+### Wiring Validation Events (E35)
 
-A complete Scout + Wave 1 run produces this event sequence:
+**Emitted by:** Web API (`wave_runner.go`)
+**SSE endpoint:** `/api/wave/{slug}/events`
 
+#### `wiring_gap`
+
+A single wiring declaration was not found in the codebase.
+
+```json
+{
+  "wave": 1,
+  "symbol": "HandleAuth",
+  "defined_in": "pkg/auth/handler.go",
+  "must_be_called_from": "pkg/api/router.go",
+  "agent": "A",
+  "reason": "call site not found",
+  "severity": "warning"
+}
 ```
-scout_started
-scout_output (multiple chunks)
-scout_completed
-↓
-wave_started (wave=1)
-  agent_started (agent=A)
-  agent_started (agent=B)
-  agent_started (agent=C)
-  ↓ (parallel)
-  agent_output (agent=A, multiple chunks)
-  agent_tool_call (agent=A, tool=Read)
-  agent_tool_result (agent=A, tool=Read)
-  agent_tool_call (agent=A, tool=Edit)
-  agent_tool_result (agent=A, tool=Edit)
-  agent_completed (agent=A, status=complete)
-  ↓
-  agent_output (agent=B, multiple chunks)
-  agent_tool_call (agent=B, tool=Write)
-  agent_tool_result (agent=B, tool=Write)
-  agent_completed (agent=B, status=complete)
-  ↓
-  agent_output (agent=C, multiple chunks)
-  agent_blocked (agent=C, failure_type=fixable, action=relaunch)
-  ↓
-wave_completed (wave=1, status=complete)
-quality_gate_started (gate=build)
-quality_gate_completed (gate=build, status=passed)
-wave_merged (wave=1)
-verification_started
-verification_gate (gate=build, status=passed)
-verification_gate (gate=tests, status=passed)
-verification_gate (gate=invariants, status=passed)
-verification_completed (status=passed)
+
+#### `wiring_gaps_summary`
+
+Summary after all wiring declarations have been checked.
+
+```json
+{
+  "wave": 1,
+  "gap_count": 2,
+  "summary": "2 wiring gaps detected"
+}
 ```
 
 ---
 
-## SSE Broker Implementation
+### Merge Events
 
-**Engine:** `pkg/orchestrator/sse.go` provides the `SSEBroker` type.
+**Emitted by:** Web API (`merge_test_handlers.go`, `wave_runner.go`)
+**SSE endpoint:** `/api/wave/{slug}/events`
 
-**Web Server:** `scout-and-wave-web/pkg/api/events_handler.go` wraps the broker and serves `/api/events`.
+#### `merge_started`
 
-**Publishing:**
+Merge/finalize operation begins.
+
+```json
+{
+  "slug": "my-feature",
+  "wave": 1
+}
+```
+
+#### `merge_output`
+
+Streaming text output during merge/cleanup/fixup operations.
+
+```json
+{
+  "slug": "my-feature",
+  "wave": 1,
+  "chunk": "Merging wave 1 agents...\n"
+}
+```
+
+#### `merge_complete`
+
+Merge/finalize succeeded.
+
+```json
+{
+  "slug": "my-feature",
+  "wave": 1,
+  "status": "success"
+}
+```
+
+#### `merge_failed`
+
+Merge/finalize failed.
+
+```json
+{
+  "slug": "my-feature",
+  "wave": 1,
+  "error": "CONFLICT (content): Merge conflict in src/auth.go",
+  "conflicting_files": ["src/auth.go"]
+}
+```
+
+Note: `conflicting_files` is only present when the failure is a merge conflict.
+
+---
+
+### Conflict Resolution Events
+
+**Emitted by:** Web API (`merge_test_handlers.go`)
+**SSE endpoint:** `/api/wave/{slug}/events`
+
+#### `conflict_resolving`
+
+AI is resolving a conflict in a specific file.
+
+```json
+{
+  "slug": "my-feature",
+  "wave": 1,
+  "file": "src/auth.go"
+}
+```
+
+#### `conflict_resolved`
+
+AI successfully resolved a conflict in a specific file.
+
+```json
+{
+  "slug": "my-feature",
+  "wave": 1,
+  "file": "src/auth.go"
+}
+```
+
+#### `conflict_resolution_failed`
+
+AI conflict resolution failed.
+
+```json
+{
+  "slug": "my-feature",
+  "wave": 1,
+  "error": "unable to resolve conflict in src/auth.go"
+}
+```
+
+---
+
+### Fix Build Events
+
+**Emitted by:** Web API (`merge_test_handlers.go`)
+**SSE endpoint:** `/api/wave/{slug}/events`
+
+#### `fix_build_started`
+
+AI build-fix agent launched.
+
+```json
+{
+  "slug": "my-feature",
+  "wave": 1,
+  "gate": "build"
+}
+```
+
+#### `fix_build_output`
+
+Streaming text output from the build-fix agent.
+
+```json
+{
+  "slug": "my-feature",
+  "wave": 1,
+  "chunk": "Analyzing build error..."
+}
+```
+
+#### `fix_build_tool_call`
+
+Tool call from the build-fix agent.
+
+```json
+{
+  "slug": "my-feature",
+  "wave": 1,
+  "tool_id": "toolu_01abc",
+  "tool_name": "Edit",
+  "input": "...",
+  "is_result": false,
+  "is_error": false,
+  "duration_ms": 0
+}
+```
+
+#### `fix_build_complete`
+
+Build-fix agent finished successfully.
+
+```json
+{
+  "slug": "my-feature",
+  "wave": 1
+}
+```
+
+#### `fix_build_failed`
+
+Build-fix agent failed.
+
+```json
+{
+  "slug": "my-feature",
+  "wave": 1,
+  "error": "unable to fix build failure"
+}
+```
+
+---
+
+### Test Events
+
+**Emitted by:** Web API (`merge_test_handlers.go`)
+**SSE endpoint:** `/api/wave/{slug}/events`
+
+#### `test_started`
+
+Test command execution begins.
+
+```json
+{
+  "slug": "my-feature",
+  "wave": 1
+}
+```
+
+#### `test_output`
+
+Streaming test output line-by-line.
+
+```json
+{
+  "slug": "my-feature",
+  "wave": 1,
+  "chunk": "--- PASS: TestAuthenticate (0.01s)\n"
+}
+```
+
+#### `test_complete`
+
+Test command passed.
+
+```json
+{
+  "slug": "my-feature",
+  "wave": 1,
+  "status": "pass"
+}
+```
+
+#### `test_failed`
+
+Test command failed.
+
+```json
+{
+  "slug": "my-feature",
+  "wave": 1,
+  "status": "fail",
+  "output": "FAIL: TestAuthenticate (0.01s)\n    auth_test.go:42: expected nil, got error"
+}
+```
+
+---
+
+### Resume Events
+
+**Emitted by:** Web API (`resume_action.go`)
+**SSE endpoint:** `/api/wave/{slug}/events`
+
+#### `resume_started`
+
+Interrupted session resume begins.
+
+```json
+{
+  "slug": "my-feature",
+  "wave": 1
+}
+```
+
+#### `resume_complete`
+
+Resume operation finished.
+
+```json
+{
+  "slug": "my-feature",
+  "wave": 1,
+  "status": "success"
+}
+```
+
+---
+
+### Scaffold Events
+
+**Emitted by:** Engine (`pkg/engine/runner.go`)
+**SSE endpoint:** `/api/wave/{slug}/events`
+
+#### `scaffold_started`
+
+Scaffold agent begins generating shared type definitions.
+
+```json
+{
+  "impl_path": "/path/to/repo/docs/IMPL/IMPL-my-feature.yaml"
+}
+```
+
+#### `scaffold_output`
+
+Scaffold agent text output (streamed chunks).
+
+```json
+{
+  "chunk": "Creating shared interface..."
+}
+```
+
+#### `scaffold_complete`
+
+Scaffold agent finished successfully.
+
+```json
+{
+  "impl_path": "/path/to/repo/docs/IMPL/IMPL-my-feature.yaml"
+}
+```
+
+#### `scaffold_failed`
+
+Scaffold agent failed.
+
+```json
+{
+  "error": "failed to create scaffold files"
+}
+```
+
+#### `scaffold_cancelled`
+
+Scaffold agent was cancelled by the user.
+
+```json
+{
+  "run_id": "1710900000000000000",
+  "slug": "my-feature"
+}
+```
+
+---
+
+### Scout Events
+
+**Emitted by:** Web API (`scout.go`, `bootstrap_handler.go`)
+**SSE endpoint:** `/api/scout/{runID}/events`
+
+#### `scout_output`
+
+Scout agent text output (streamed chunks).
+
+```json
+{
+  "run_id": "1710900000000000000",
+  "chunk": "Analyzing codebase structure..."
+}
+```
+
+#### `scout_finalize`
+
+IMPL doc post-processing (M4: populate verification gates).
+
+Running:
+```json
+{
+  "run_id": "1710900000000000000",
+  "status": "running"
+}
+```
+
+Complete:
+```json
+{
+  "run_id": "1710900000000000000",
+  "status": "complete",
+  "agents_updated": "5"
+}
+```
+
+Warning:
+```json
+{
+  "run_id": "1710900000000000000",
+  "status": "warning",
+  "message": "Verification gates not fully populated (H2 data unavailable or validation issues)"
+}
+```
+
+#### `scout_complete`
+
+Scout agent finished IMPL doc generation.
+
+```json
+{
+  "run_id": "1710900000000000000",
+  "slug": "my-feature",
+  "impl_path": "/path/to/repo/docs/IMPL/IMPL-my-feature.yaml"
+}
+```
+
+#### `scout_failed`
+
+Scout agent failed.
+
+```json
+{
+  "run_id": "1710900000000000000",
+  "error": "context deadline exceeded"
+}
+```
+
+#### `scout_cancelled`
+
+Scout agent was cancelled by the user.
+
+```json
+{
+  "run_id": "1710900000000000000"
+}
+```
+
+---
+
+### Chat Events
+
+**Emitted by:** Web API (`chat_handler.go`)
+**SSE endpoint:** `/api/impl/{slug}/chat/{runID}/events`
+
+#### `chat_output`
+
+Chat agent text output (streamed chunks).
+
+```json
+{
+  "run_id": "1710900000000000000",
+  "chunk": "Based on the IMPL doc..."
+}
+```
+
+#### `chat_complete`
+
+Chat agent finished.
+
+```json
+{
+  "run_id": "1710900000000000000",
+  "slug": "my-feature"
+}
+```
+
+#### `chat_failed`
+
+Chat agent failed.
+
+```json
+{
+  "run_id": "1710900000000000000",
+  "error": "cancelled"
+}
+```
+
+---
+
+### IMPL Revision Events
+
+**Emitted by:** Web API (`impl_edit.go`)
+**SSE endpoint:** `/api/impl/{slug}/revise/{runID}/events`
+
+#### `revise_output`
+
+Revision agent text output (streamed chunks).
+
+```json
+{
+  "run_id": "1710900000000000000",
+  "chunk": "Reading IMPL doc..."
+}
+```
+
+#### `revise_complete`
+
+Revision agent finished.
+
+```json
+{
+  "run_id": "1710900000000000000",
+  "slug": "my-feature"
+}
+```
+
+#### `revise_failed`
+
+Revision agent failed.
+
+```json
+{
+  "run_id": "1710900000000000000",
+  "error": "failed to write IMPL doc"
+}
+```
+
+#### `revise_cancelled`
+
+Revision agent was cancelled by the user.
+
+```json
+{
+  "run_id": "1710900000000000000"
+}
+```
+
+---
+
+### IMPL Approval Events
+
+**Emitted by:** Web API (`impl.go`)
+**SSE endpoint:** `/api/wave/{slug}/events`
+
+#### `plan_approved`
+
+User approved the IMPL plan.
+
+```json
+{
+  "slug": "my-feature"
+}
+```
+
+#### `plan_rejected`
+
+User rejected the IMPL plan.
+
+```json
+{
+  "slug": "my-feature"
+}
+```
+
+---
+
+### Planner Events
+
+**Emitted by:** Web API (`planner.go`)
+**SSE endpoint:** `/api/planner/{runID}/events`
+
+#### `planner_output`
+
+Planner agent text output (streamed chunks).
+
+```json
+{
+  "run_id": "1710900000000000000",
+  "chunk": "Analyzing project requirements..."
+}
+```
+
+#### `planner_complete`
+
+Planner agent finished.
+
+```json
+{
+  "run_id": "1710900000000000000",
+  "slug": "my-project",
+  "program_path": "/path/to/repo/docs/PROGRAM-my-project.yaml"
+}
+```
+
+#### `planner_failed`
+
+Planner agent failed.
+
+```json
+{
+  "run_id": "1710900000000000000",
+  "error": "context deadline exceeded"
+}
+```
+
+#### `planner_cancelled`
+
+Planner agent was cancelled by the user.
+
+```json
+{
+  "run_id": "1710900000000000000"
+}
+```
+
+---
+
+### Program Events
+
+**Emitted by:** Web API (`program_runner.go`, `program_handler.go`)
+**SSE endpoint:** `/api/wave/{slug}/events` and `/api/program/events` (global)
+
+#### `program_tier_started`
+
+A program tier begins execution.
+
+```json
+{
+  "program_slug": "my-project",
+  "tier": 1
+}
+```
+
+#### `program_impl_started`
+
+An IMPL within a tier begins execution.
+
+```json
+{
+  "program_slug": "my-project",
+  "impl_slug": "add-auth"
+}
+```
+
+#### `program_impl_wave_progress`
+
+Wave progress update for an IMPL within a tier.
+
+```json
+{
+  "program_slug": "my-project",
+  "impl_slug": "add-auth",
+  "current_wave": 1,
+  "total_waves": 2
+}
+```
+
+#### `program_impl_complete`
+
+An IMPL within a tier finished execution.
+
+```json
+{
+  "program_slug": "my-project",
+  "impl_slug": "add-auth"
+}
+```
+
+#### `program_contract_frozen`
+
+A contract was frozen at a tier boundary.
+
+```json
+{
+  "program_slug": "my-project",
+  "contract_name": "AuthService",
+  "tier": 1
+}
+```
+
+#### `program_tier_complete`
+
+A program tier finished execution.
+
+```json
+{
+  "program_slug": "my-project",
+  "tier": 1
+}
+```
+
+#### `program_tier_failed`
+
+A program tier failed.
+
+```json
+{
+  "program_slug": "my-project",
+  "tier": 1,
+  "error": "tier gates failed for tier 1"
+}
+```
+
+#### `program_blocked`
+
+Program execution is blocked (IMPL not found, gate failure, contract freeze failure, shutdown, etc.).
+
+```json
+{
+  "program_slug": "my-project",
+  "tier": 1,
+  "reason": "tier gates failed"
+}
+```
+
+With IMPL context:
+
+```json
+{
+  "program_slug": "my-project",
+  "impl_slug": "add-auth",
+  "reason": "IMPL doc not found: ..."
+}
+```
+
+#### `program_replan_complete`
+
+Program replan finished.
+
+```json
+{
+  "program_slug": "my-project",
+  "validation_passed": true,
+  "changes_summary": "Added tier 3 for monitoring"
+}
+```
+
+#### `program_replan_failed`
+
+Program replan failed.
+
+```json
+{
+  "program_slug": "my-project",
+  "error": "failed to parse revised manifest"
+}
+```
+
+---
+
+### Queue Events
+
+**Emitted by:** Engine (`pkg/engine/queue_advance.go`)
+
+#### `queue_advanced`
+
+The IMPL queue advanced to the next item.
+
+```json
+{
+  "advanced": true,
+  "next_slug": "add-auth",
+  "next_title": "Add user authentication",
+  "reason": "triggered"
+}
+```
+
+Payload struct: `engine.CheckQueueResult`
+
+| Field     | Type   | JSON         |
+|-----------|--------|--------------|
+| Advanced  | bool   | `advanced`   |
+| NextSlug  | string | `next_slug`  |
+| NextTitle | string | `next_title` |
+| Reason    | string | `reason`     |
+
+**Reason values:** `no_items`, `deps_unmet`, `autonomy_blocked`, `triggered`
+
+---
+
+### Global Broadcast Events
+
+**Emitted by:** Web API (various handlers)
+**SSE endpoint:** `/api/events`
+
+These events are broadcast to all connected clients, not per-slug.
+
+#### `connected`
+
+Sent on initial connection as a heartbeat.
+
+```json
+{}
+```
+
+#### `impl_list_updated`
+
+The IMPL document list changed (new IMPL created, archived, deleted, execution started/stopped). Frontend should re-fetch the IMPL list.
+
+```json
+{}
+```
+
+#### `program_list_updated`
+
+The program list changed (new program created, tier completed). Frontend should re-fetch the program list.
+
+With context:
+```json
+{
+  "slug": "my-project"
+}
+```
+
+#### `pipeline_updated`
+
+Pipeline state changed during program execution. Frontend should re-fetch pipeline status.
+
+```json
+{}
+```
+
+#### `notification`
+
+User-facing notification (toast/browser notification). Published by the `NotificationBus`.
+
+```json
+{
+  "type": "wave_complete",
+  "slug": "my-feature",
+  "title": "Wave 1 Complete",
+  "message": "Wave finalized successfully and merged to main",
+  "severity": "success"
+}
+```
+
+Payload struct: `api.NotificationEvent`
+
+| Field    | Type   | JSON       |
+|----------|--------|------------|
+| Type     | string | `type`     |
+| Slug     | string | `slug`     |
+| Title    | string | `title`    |
+| Message  | string | `message`  |
+| Severity | string | `severity` |
+
+**Notification types:** `wave_complete`, `agent_failed`, `merge_complete`, `merge_failed`, `scaffold_complete`, `build_verify_pass`, `build_verify_fail`, `impl_complete`, `run_failed`
+
+**Severity values:** `info`, `success`, `warning`, `error`
+
+#### `critic_review_complete`
+
+Critic review (E37) completed for an IMPL.
+
+```json
+{
+  "slug": "my-feature",
+  "result": { ... }
+}
+```
+
+---
+
+## SSE Broker Architecture
+
+### Per-Slug Broker
+
+**Implementation:** `pkg/api/wave.go` — `sseBroker` type
+
+The per-slug broker manages SSE subscriptions keyed by slug (or broker key like `"scout-{runID}"`, `"chat-{runID}"`, `"revise-{runID}"`, `"planner-{runID}"`). Each slug has a list of subscriber channels. Events are published with non-blocking sends; slow clients have events dropped.
+
+Agent lifecycle events (`agent_started`, `agent_complete`, `agent_failed`, `auto_retry_started`, `auto_retry_exhausted`) are cached in an `agentSnapshot` map so late-connecting clients (e.g. page reload mid-execution) receive a snapshot of current agent states on connect.
+
+### Global Broker
+
+**Implementation:** `pkg/api/global_events.go` — `globalBroker` type
+
+The global broker broadcasts events to all connected clients. Supports two formats:
+- `broadcast(event)` — simple event name with empty `{}` data
+- `broadcastJSON(eventType, data)` — event with JSON payload
+
+A filesystem watcher (`fsnotify`) monitors IMPL directories across all configured repos and broadcasts `impl_list_updated` when `.yaml` files are created, renamed, or removed.
+
+### Engine Event Bridge
+
+**Implementation:** `pkg/orchestrator/events.go` — `OrchestratorEvent` type
+
+The engine/orchestrator emits `OrchestratorEvent` structs. The web API maps these to `SSEEvent` structs via `makeEnginePublisher()` and `makePublisher()` in `wave_runner.go`.
+
+**Publishing (web API):**
 
 ```go
-broker.Publish(orchestrator.Event{
-    Type: "agent_completed",
-    Data: map[string]interface{}{
-        "session_id":  sessionID,
-        "wave_number": 1,
-        "agent_id":    "A",
-        "status":      "complete",
-    },
-})
+// Direct publish
+s.broker.Publish(slug, SSEEvent{Event: "plan_approved", Data: map[string]string{"slug": slug}})
+
+// Via publisher closure (wave execution)
+publish := s.makePublisher(slug)
+publish("run_started", map[string]string{"slug": slug, "impl_path": implPath})
+
+// Engine events bridged to SSE
+enginePublisher := s.makeEnginePublisher(slug)
+engine.RunSingleWave(ctx, opts, waveNum, enginePublisher)
 ```
 
 **Subscribing (web client):**
 
 ```javascript
-const eventSource = new EventSource('/api/events?session_id=abc123')
-
-eventSource.addEventListener('agent_output', (e) => {
+// Wave events for a specific IMPL
+const waveEvents = new EventSource('/api/wave/my-feature/events')
+waveEvents.addEventListener('agent_started', (e) => {
   const data = JSON.parse(e.data)
-  console.log(`Agent ${data.agent_id}: ${data.chunk}`)
+  console.log(`Agent ${data.agent} started wave ${data.wave}`)
 })
 
-eventSource.addEventListener('agent_completed', (e) => {
+// Scout events for a specific run
+const scoutEvents = new EventSource('/api/scout/1710900000000000000/events')
+scoutEvents.addEventListener('scout_output', (e) => {
   const data = JSON.parse(e.data)
-  console.log(`Agent ${data.agent_id} completed with status ${data.status}`)
+  console.log(data.chunk)
+})
+
+// Global events (all clients)
+const globalEvents = new EventSource('/api/events')
+globalEvents.addEventListener('impl_list_updated', () => {
+  refreshImplList()
+})
+globalEvents.addEventListener('notification', (e) => {
+  const data = JSON.parse(e.data)
+  showToast(data.title, data.message, data.severity)
 })
 ```
-
----
-
-## Future Enhancements
-
-- **Event replay** — Use `Last-Event-ID` header to resume from a specific event
-- **Event filtering** — Filter by wave number, agent ID, event type
-- **Retention** — Archive events to disk for post-run analysis
-- **Metrics aggregation** — Total tool calls, average agent duration, token usage per wave
