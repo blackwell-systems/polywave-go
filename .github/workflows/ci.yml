@@ -24,7 +24,9 @@ jobs:
         run: go build ./...
 
       - name: Install sawtools
-        run: go install ./cmd/saw/...
+        run: |
+          go build -o $(go env GOPATH)/bin/sawtools ./cmd/saw/
+          echo "$(go env GOPATH)/bin" >> $GITHUB_PATH
 
       - name: Test
         run: go test ./... -timeout 120s
