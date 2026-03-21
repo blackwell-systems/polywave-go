@@ -101,3 +101,76 @@ func TestValidateFileExistence_CrossRepoSkipped(t *testing.T) {
 		t.Errorf("expected no warnings for cross-repo entry, got %d: %v", len(errs), errs)
 	}
 }
+
+func TestValidateFileExistenceMultiRepo_CrossRepoResolved(t *testing.T) {
+	// Set up two repos
+	parent := t.TempDir()
+	repoA := filepath.Join(parent, "repo-a")
+	repoB := filepath.Join(parent, "repo-b")
+
+	// Create file in repo-a
+	dirA := filepath.Join(repoA, "pkg", "foo")
+	if err := os.MkdirAll(dirA, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dirA, "bar.go"), []byte("package foo\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Create file in repo-b
+	dirB := filepath.Join(repoB, "pkg", "baz")
+	if err := os.MkdirAll(dirB, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dirB, "qux.go"), []byte("package baz\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	m := &IMPLManifest{
+		FileOwnership: []FileOwnership{
+			{File: "pkg/foo/bar.go", Agent: "A", Action: "modify", Repo: "repo-a"},
+			{File: "pkg/baz/qux.go", Agent: "B", Action: "modify", Repo: "repo-b"},
+		},
+	}
+
+	configRepos := []RepoEntry{
+		{Name: "repo-a", Path: repoA},
+		{Name: "repo-b", Path: repoB},
+	}
+
+	errs := ValidateFileExistenceMultiRepo(m, repoA, configRepos)
+	if len(errs) != 0 {
+		t.Errorf("expected no errors when files exist in correct repos, got %d: %v", len(errs), errs)
+	}
+}
+
+func TestValidateFileExistenceMultiRepo_AllMissingSuspectsRepoMismatch(t *testing.T) {
+	dir := t.TempDir()
+
+	m := &IMPLManifest{
+		FileOwnership: []FileOwnership{
+			{File: "pkg/foo/missing1.go", Agent: "A", Action: "modify"},
+			{File: "pkg/bar/missing2.go", Agent: "B", Action: "modify"},
+			{File: "pkg/new/file.go", Agent: "C", Action: "new"}, // should be ignored
+		},
+	}
+
+	errs := ValidateFileExistenceMultiRepo(m, dir, nil)
+
+	// Should have 2 FILE_NOT_FOUND + 1 REPO_MISMATCH_SUSPECTED = 3 errors
+	if len(errs) != 3 {
+		t.Fatalf("expected 3 errors, got %d: %v", len(errs), errs)
+	}
+
+	// First two should be FILE_NOT_FOUND
+	for i := 0; i < 2; i++ {
+		if errs[i].Code != "E16_FILE_NOT_FOUND" {
+			t.Errorf("errs[%d]: expected E16_FILE_NOT_FOUND, got %q", i, errs[i].Code)
+		}
+	}
+
+	// Last should be REPO_MISMATCH_SUSPECTED
+	if errs[2].Code != "E16_REPO_MISMATCH_SUSPECTED" {
+		t.Errorf("expected E16_REPO_MISMATCH_SUSPECTED, got %q", errs[2].Code)
+	}
+}
