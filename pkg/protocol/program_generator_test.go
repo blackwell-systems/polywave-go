@@ -9,8 +9,8 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// writeTestIMPL writes a minimal IMPL YAML doc to the given directory.
-func writeTestIMPL(t *testing.T, repoPath, slug, title string, state ProtocolState, files []string, contracts []string) {
+// writeGeneratorTestIMPL writes a minimal IMPL YAML doc to the given directory.
+func writeGeneratorTestIMPL(t *testing.T, repoPath, slug, title string, state ProtocolState, files []string, contracts []string) {
 	t.Helper()
 	dir := filepath.Join(repoPath, "docs", "IMPL")
 	if err := os.MkdirAll(dir, 0755); err != nil {
@@ -54,9 +54,9 @@ func writeTestIMPL(t *testing.T, repoPath, slug, title string, state ProtocolSta
 func TestGenerateProgramFromIMPLs_Basic(t *testing.T) {
 	repoPath := t.TempDir()
 
-	writeTestIMPL(t, repoPath, "feature-a", "Feature A", StateReviewed,
+	writeGeneratorTestIMPL(t, repoPath, "feature-a", "Feature A", StateReviewed,
 		[]string{"pkg/a/file1.go", "pkg/a/file2.go"}, []string{"InterfaceA"})
-	writeTestIMPL(t, repoPath, "feature-b", "Feature B", StateReviewed,
+	writeGeneratorTestIMPL(t, repoPath, "feature-b", "Feature B", StateReviewed,
 		[]string{"pkg/b/file1.go"}, []string{"InterfaceB"})
 
 	result, err := GenerateProgramFromIMPLs(GenerateProgramOpts{
@@ -100,9 +100,9 @@ func TestGenerateProgramFromIMPLs_WithOverlap(t *testing.T) {
 	repoPath := t.TempDir()
 
 	// Both IMPLs share "pkg/shared/file.go"
-	writeTestIMPL(t, repoPath, "impl-x", "IMPL X", StateReviewed,
+	writeGeneratorTestIMPL(t, repoPath, "impl-x", "IMPL X", StateReviewed,
 		[]string{"pkg/shared/file.go", "pkg/x/own.go"}, nil)
-	writeTestIMPL(t, repoPath, "impl-y", "IMPL Y", StateReviewed,
+	writeGeneratorTestIMPL(t, repoPath, "impl-y", "IMPL Y", StateReviewed,
 		[]string{"pkg/shared/file.go", "pkg/y/own.go"}, nil)
 
 	result, err := GenerateProgramFromIMPLs(GenerateProgramOpts{
@@ -138,8 +138,8 @@ func TestGenerateProgramFromIMPLs_WithOverlap(t *testing.T) {
 func TestGenerateProgramFromIMPLs_AutoSlug(t *testing.T) {
 	repoPath := t.TempDir()
 
-	writeTestIMPL(t, repoPath, "alpha", "Alpha", StateReviewed, []string{"a.go"}, nil)
-	writeTestIMPL(t, repoPath, "beta", "Beta", StateReviewed, []string{"b.go"}, nil)
+	writeGeneratorTestIMPL(t, repoPath, "alpha", "Alpha", StateReviewed, []string{"a.go"}, nil)
+	writeGeneratorTestIMPL(t, repoPath, "beta", "Beta", StateReviewed, []string{"b.go"}, nil)
 
 	result, err := GenerateProgramFromIMPLs(GenerateProgramOpts{
 		ImplSlugs: []string{"alpha", "beta"},
@@ -160,8 +160,8 @@ func TestGenerateProgramFromIMPLs_AutoSlug(t *testing.T) {
 	}
 
 	// Test with >3 slugs
-	writeTestIMPL(t, repoPath, "gamma", "Gamma", StateReviewed, []string{"c.go"}, nil)
-	writeTestIMPL(t, repoPath, "delta", "Delta", StateReviewed, []string{"d.go"}, nil)
+	writeGeneratorTestIMPL(t, repoPath, "gamma", "Gamma", StateReviewed, []string{"c.go"}, nil)
+	writeGeneratorTestIMPL(t, repoPath, "delta", "Delta", StateReviewed, []string{"d.go"}, nil)
 
 	result2, err := GenerateProgramFromIMPLs(GenerateProgramOpts{
 		ImplSlugs: []string{"alpha", "beta", "gamma", "delta"},
@@ -180,7 +180,7 @@ func TestGenerateProgramFromIMPLs_AutoSlug(t *testing.T) {
 func TestGenerateProgramFromIMPLs_WritesToDisk(t *testing.T) {
 	repoPath := t.TempDir()
 
-	writeTestIMPL(t, repoPath, "disk-test", "Disk Test", StateReviewed, []string{"x.go"}, nil)
+	writeGeneratorTestIMPL(t, repoPath, "disk-test", "Disk Test", StateReviewed, []string{"x.go"}, nil)
 
 	result, err := GenerateProgramFromIMPLs(GenerateProgramOpts{
 		ImplSlugs:   []string{"disk-test"},

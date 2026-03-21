@@ -49,9 +49,9 @@ func GenerateProgramFromIMPLs(opts GenerateProgramOpts) (*GenerateProgramResult,
 	var titles []string
 
 	for _, slug := range opts.ImplSlugs {
-		implPath := resolveIMPLPath(slug, opts.RepoPath)
-		if implPath == "" {
-			return nil, fmt.Errorf("generate-program: IMPL doc not found for slug %q", slug)
+		implPath, resolveErr := resolveIMPLPath(opts.RepoPath, slug)
+		if resolveErr != nil {
+			return nil, fmt.Errorf("generate-program: %w", resolveErr)
 		}
 
 		implDoc, loadErr := Load(implPath)
@@ -212,20 +212,7 @@ func GenerateProgramFromIMPLs(opts GenerateProgramOpts) (*GenerateProgramResult,
 	}, nil
 }
 
-// resolveIMPLPath finds the IMPL doc for a given slug by checking standard locations.
-func resolveIMPLPath(slug, repoPath string) string {
-	filename := fmt.Sprintf("IMPL-%s.yaml", slug)
-	candidates := []string{
-		filepath.Join(repoPath, "docs", "IMPL", filename),
-		filepath.Join(repoPath, "docs", "IMPL", "complete", filename),
-	}
-	for _, p := range candidates {
-		if _, err := os.Stat(p); err == nil {
-			return p
-		}
-	}
-	return ""
-}
+// resolveIMPLPath is defined in program_conflict.go (canonical location).
 
 // implStateToStatus maps an IMPL doc ProtocolState to a program IMPL status string.
 // This mirrors the logic in cmd/saw/import_impls_cmd.go but lives in pkg/protocol
