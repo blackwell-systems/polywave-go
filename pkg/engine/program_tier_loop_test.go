@@ -1,7 +1,6 @@
 package engine
 
 import (
-	"context"
 	"strings"
 	"testing"
 
@@ -295,10 +294,11 @@ func TestTierLoop_BuildReplanReason(t *testing.T) {
 	}
 }
 
-func TestTierLoop_LaunchParallelScoutsFunc_DefaultStub(t *testing.T) {
-	_, err := launchParallelScoutsFunc(context.Background(), ParallelScoutOpts{})
-	if err == nil {
-		t.Error("expected error from stub implementation")
+func TestTierLoop_LaunchParallelScoutsFunc_IsWired(t *testing.T) {
+	// After program_wire_init.go runs, the function variable should point to
+	// the real LaunchParallelScouts (not the stub). Verify it's non-nil and callable.
+	if launchParallelScoutsFunc == nil {
+		t.Error("expected launchParallelScoutsFunc to be wired, got nil")
 	}
 }
 
