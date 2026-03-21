@@ -70,7 +70,7 @@ func ValidateIntegration(manifest *IMPLManifest, waveNum int, repoPath string) (
 				continue
 			}
 
-				threshold := "" // defaults to "warning"; Agent E (Wave 2) will wire in the manifest field
+				threshold := manifest.IntegrationGapSeverityThreshold
 
 			for _, exp := range exports {
 				category := ClassifyExport(exp.Name, exp.Kind)

@@ -44,6 +44,9 @@ Exits 0 if no gaps found (both reports valid), exits 1 if gaps are detected.`,
 			combined := &combinedReport{}
 
 			// Step 2: Run heuristic integration validation
+			// Severity threshold is read from manifest.IntegrationGapSeverityThreshold.
+			// Set integration_gap_severity_threshold: "error" in the IMPL doc to report only errors.
+			// Default ("") reports warnings and errors; "info" reports all gaps.
 			report, err := protocol.ValidateIntegration(manifest, waveNum, repoDir)
 			if err != nil {
 				return fmt.Errorf("validate-integration: validation failed: %w", err)

@@ -80,6 +80,46 @@ pattern matching (H7) and appends diagnosis to the output.`,
 				CleanupResult:     make(map[string]*protocol.CleanupResult),
 			}
 
+			// Declare variables here to avoid "goto jumps over variable declaration" compile errors.
+			var changedFiles []string
+			var isSolo, allGone bool
+
+			// Solo wave: if no worktrees were created, skip VerifyCommits and MergeAgents.
+			for _, repoPath := range repos {
+				if protocol.WorktreesAbsent(manifest, waveNum, repoPath) {
+					isSolo = true
+					break
+				}
+			}
+			if isSolo {
+				fmt.Fprintf(os.Stderr, "finalize-wave: solo wave detected (no worktrees), skipping VerifyCommits and MergeAgents\n")
+				for repoKey := range repos {
+					result.MergeResult[repoKey] = &protocol.MergeAgentsResult{
+						Wave: waveNum, Success: true,
+					}
+				}
+				goto postMerge
+			}
+
+			// If all agent branches are absent (wave already merged and cleaned up),
+			// skip VerifyCommits and MergeAgents entirely.
+			for _, repoPath := range repos {
+				if protocol.AllBranchesAbsent(manifest, waveNum, repoPath) {
+					allGone = true
+					break
+				}
+			}
+			if allGone {
+				fmt.Fprintf(os.Stderr,
+					"finalize-wave: all agent branches absent (already merged+cleaned), skipping to verify-build\n")
+				for repoKey := range repos {
+					result.MergeResult[repoKey] = &protocol.MergeAgentsResult{
+						Wave: waveNum, Success: true,
+					}
+				}
+				goto postMerge
+			}
+
 			// Step 1: VerifyCommits (E7 check) - run per repo
 			for repoKey, repoPath := range repos {
 				verifyResult, err := protocol.VerifyCommits(manifestPath, waveNum, repoPath)
@@ -112,7 +152,6 @@ pattern matching (H7) and appends diagnosis to the output.`,
 
 			// Step 2: ScanStubs (E20 stub detection)
 			// Collect changed files from completion reports (aggregated across all repos)
-			var changedFiles []string
 			for _, agent := range manifest.Waves[waveNum-1].Agents {
 				if report, ok := manifest.CompletionReports[agent.ID]; ok {
 					changedFiles = append(changedFiles, report.FilesChanged...)
