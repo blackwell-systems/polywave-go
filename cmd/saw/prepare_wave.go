@@ -169,7 +169,40 @@ waves that execute on the main branch.`,
 				return fmt.Errorf("prepare-wave: repo mismatch: %w", err)
 			}
 
-			// Step 0b1.5: Validate file existence across repos
+			// Step 0b1.5: Verify dependency outputs available (H2)
+			// Skip wave 1 — no prior wave outputs to verify.
+			if waveNum > 1 {
+				depResult, err := protocol.VerifyDependenciesAvailable(doc, waveNum)
+				if err != nil {
+					return fmt.Errorf("dependency verification failed: %w", err)
+				}
+				if !depResult.Valid {
+					for _, agent := range depResult.Agents {
+						if !agent.Available {
+							fmt.Fprintf(os.Stderr, "agent %s missing dependencies: %v\n",
+								agent.Agent, agent.Missing)
+						}
+					}
+					return fmt.Errorf("dependency outputs not available for wave %d", waveNum)
+				}
+				fmt.Fprintf(os.Stderr, "prepare-wave: dependency outputs verified ✓\n")
+			}
+
+			// Step 0b1.6: Validate prior wave ownership coverage (H1)
+			// Warning only, not fatal — agents may have legitimate reasons.
+			if waveNum > 1 {
+				coverageResult, err := protocol.ValidateFileOwnershipCoverage(doc, waveNum-1)
+				if err != nil {
+					fmt.Fprintf(os.Stderr, "prepare-wave: ownership coverage check: %v\n", err)
+				} else if !coverageResult.Valid {
+					for _, v := range coverageResult.Violations {
+						fmt.Fprintf(os.Stderr, "warning: agent %s modified unowned files: %v\n",
+							v.Agent, v.UnownedFiles)
+					}
+				}
+			}
+
+			// Step 0b2: Validate file existence across repos
 			fileWarnings := protocol.ValidateFileExistenceMultiRepo(doc, projectRoot, repos)
 			for _, w := range fileWarnings {
 				if w.Code == "E16_REPO_MISMATCH_SUSPECTED" {
