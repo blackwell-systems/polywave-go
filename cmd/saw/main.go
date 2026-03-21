@@ -71,6 +71,7 @@ func main() {
 		newMetricsCmd(),
 		newQueryCmd(),
 		newCleanupStaleCmd(),
+		newProgramExecuteCmd(),
 	)
 	if err := rootCmd.Execute(); err != nil {
 		fmt.Fprintln(os.Stderr, err)
