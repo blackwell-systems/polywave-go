@@ -160,3 +160,5 @@ type BackendConfig struct {
   - IMPL doc: docs/IMPL/complete/IMPL-sawtools-cli-gaps.yaml
 - **baseline-gate-enforcement**: completed 2026-03-21, 1 waves, 3 agents
   - IMPL doc: docs/IMPL/complete/IMPL-baseline-gate-enforcement.yaml
+- **determinism-enforcement**: completed 2026-03-21, 2 waves, 5 agents
+  - IMPL doc: docs/IMPL/complete/IMPL-determinism-enforcement.yaml

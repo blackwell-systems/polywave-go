@@ -1,0 +1,665 @@
+completion_date: "2026-03-21"
+title: Determinism Enforcement — Runtime Constraints, Completion Validation, Pre-Execution Verification
+feature_slug: determinism-enforcement
+verdict: SUITABLE
+suitability_assessment: |
+    File decomposition: 10 new files + 3 modified files across pkg/tools/, pkg/protocol/,
+    pkg/engine/, and cmd/saw/. Work decomposes cleanly into 5 agents across 2 waves.
+    No two agents share a file.
+
+    Investigation-first items: None. All items are clearly specified in the determinism
+    roadmap with exact file locations and fix descriptions.
+
+    Interface discoverability: Yes. The Constraints struct already exists in pkg/tools/constraints.go.
+    The new functions (ValidateCompletionReportClaims, VerifyDependenciesAvailable, etc.) have
+    well-defined inputs (IMPLManifest, repoDir, waveNum) and outputs (error or result struct).
+
+    Pre-implementation status: Constraints type and WithConstraints exist but middleware functions
+    are stubs (defaultOwnershipMiddleware etc. are passthroughs). C1/C2/C5 need real implementations.
+    C3/C4/H1/H2/H3/H4 are entirely new.
+
+    Parallelization value: High. Build+test cycle is >30s (Go project with 50+ test files).
+    Wave 1 has 3 independent agents each touching 2-4 files. Wave 2 has 2 agents touching
+    2-3 files each. All agents are non-trivial (logic + tests).
+
+    Estimated times:
+    - Scout phase: ~8 min
+    - Agent execution: ~15 min (5 agents, ~10 min avg, 2 waves with 3+2 parallelism)
+    - Merge and verification: ~5 min
+    Total SAW time: ~28 min
+    Sequential baseline: ~50 min (5 agents x 10 min)
+    Time savings: ~22 min (44% faster)
+    Recommendation: Clear speedup.
+test_command: go test ./...
+lint_command: go vet ./...
+file_ownership:
+    - file: pkg/tools/constraint_enforcer.go
+      agent: A
+      wave: 1
+      action: new
+    - file: pkg/tools/constraint_enforcer_test.go
+      agent: A
+      wave: 1
+      action: new
+    - file: pkg/protocol/completion_validator.go
+      agent: B
+      wave: 1
+      action: new
+    - file: pkg/protocol/completion_validator_test.go
+      agent: B
+      wave: 1
+      action: new
+    - file: pkg/protocol/ownership_coverage.go
+      agent: B
+      wave: 1
+      action: new
+    - file: pkg/protocol/ownership_coverage_test.go
+      agent: B
+      wave: 1
+      action: new
+    - file: pkg/protocol/dependency_verifier.go
+      agent: C
+      wave: 1
+      action: new
+    - file: pkg/protocol/dependency_verifier_test.go
+      agent: C
+      wave: 1
+      action: new
+    - file: pkg/protocol/gate_input_validator.go
+      agent: C
+      wave: 1
+      action: new
+    - file: pkg/protocol/gate_input_validator_test.go
+      agent: C
+      wave: 1
+      action: new
+    - file: pkg/engine/finalize.go
+      agent: D
+      wave: 2
+      action: modify
+    - file: pkg/engine/finalize_test.go
+      agent: D
+      wave: 2
+      action: new
+    - file: pkg/protocol/merge_agents.go
+      agent: D
+      wave: 2
+      action: modify
+    - file: cmd/saw/prepare_wave.go
+      agent: E
+      wave: 2
+      action: modify
+      depends_on:
+        - B
+        - C
+    - file: cmd/saw/prepare_wave_test.go
+      agent: E
+      wave: 2
+      action: modify
+      depends_on:
+        - B
+        - C
+interface_contracts:
+    - name: ConstraintEnforcer middleware functions
+      description: |
+        Real implementations of the ownership, freeze, and role-path middleware
+        that replace the passthrough stubs in workshop_constrained.go. These are
+        registered via init() into the package-level function variables.
+      definition: |
+        // pkg/tools/constraint_enforcer.go
+        // Replaces defaultOwnershipMiddleware, defaultFreezeMiddleware, defaultRolePathMiddleware
+        func newOwnershipMiddleware(toolName string, c Constraints) Middleware
+        func newFreezeMiddleware(toolName string, c Constraints) Middleware
+        func newRolePathMiddleware(toolName string, c Constraints) Middleware
+        // Each returns error if write target violates constraint.
+        // Error format: "I1_VIOLATION: agent %s cannot write to %s (not in owned files)"
+      location: pkg/tools/constraint_enforcer.go
+    - name: ValidateCompletionReportClaims
+      description: |
+        Cross-validates completion report fields against actual git state.
+        Called after agent completes, before accepting the report.
+      definition: |
+        // pkg/protocol/completion_validator.go
+        type CompletionValidationResult struct {
+            Valid    bool     `json:"valid"`
+            Errors   []string `json:"errors,omitempty"`
+            Warnings []string `json:"warnings,omitempty"`
+        }
+        func ValidateCompletionReportClaims(
+            manifest *IMPLManifest,
+            agentID string,
+            report CompletionReport,
+            repoDir string,
+        ) (*CompletionValidationResult, error)
+      location: pkg/protocol/completion_validator.go
+    - name: VerifyDependenciesAvailable
+      description: |
+        Verifies that all dependency outputs exist before launching a wave.
+        For each agent in wave N, checks that each dependency agent has a
+        completion report with status "complete".
+      definition: |
+        // pkg/protocol/dependency_verifier.go
+        type DependencyVerificationResult struct {
+            Wave     int                    `json:"wave"`
+            Valid    bool                   `json:"all_available"`
+            Agents   []AgentDependencyCheck `json:"agents"`
+        }
+        type AgentDependencyCheck struct {
+            Agent        string   `json:"agent"`
+            Dependencies []string `json:"dependencies"`
+            Missing      []string `json:"missing,omitempty"`
+            Available    bool     `json:"available"`
+        }
+        func VerifyDependenciesAvailable(manifest *IMPLManifest, waveNum int) (*DependencyVerificationResult, error)
+      location: pkg/protocol/dependency_verifier.go
+    - name: ValidateGateInputs
+      description: |
+        Validates that gate inputs (changed files) match actual git diff,
+        not just what the agent reported.
+      definition: |
+        // pkg/protocol/gate_input_validator.go
+        type GateInputValidationResult struct {
+            Valid           bool     `json:"valid"`
+            ReportedFiles   []string `json:"reported_files"`
+            ActualFiles     []string `json:"actual_files"`
+            MissingFromReport []string `json:"missing_from_report,omitempty"`
+            ExtraInReport   []string `json:"extra_in_report,omitempty"`
+        }
+        func ValidateGateInputs(
+            manifest *IMPLManifest,
+            waveNum int,
+            repoDir string,
+        ) (*GateInputValidationResult, error)
+      location: pkg/protocol/gate_input_validator.go
+    - name: PreMergeValidation
+      description: |
+        Validates ownership table consistency before merge.
+        Verifies every file_ownership entry references a valid agent in the wave.
+      definition: |
+        // Added to pkg/protocol/merge_agents.go
+        func PreMergeValidation(manifest *IMPLManifest, waveNum int) []ValidationError
+      location: pkg/protocol/merge_agents.go
+    - name: ValidateFileOwnershipCoverage
+      description: |
+        Verifies agent-changed files are subset of owned files.
+        Detects "bonus files" not in ownership table.
+      definition: |
+        // pkg/protocol/ownership_coverage.go
+        type OwnershipCoverageResult struct {
+            Valid       bool                    `json:"valid"`
+            Violations  []OwnershipViolation    `json:"violations,omitempty"`
+        }
+        type OwnershipViolation struct {
+            Agent       string   `json:"agent"`
+            UnownedFiles []string `json:"unowned_files"`
+        }
+        func ValidateFileOwnershipCoverage(
+            manifest *IMPLManifest,
+            waveNum int,
+        ) (*OwnershipCoverageResult, error)
+      location: pkg/protocol/ownership_coverage.go
+waves:
+    - number: 1
+      agents:
+        - id: A
+          task: |
+            ## What to implement
+
+            Implement runtime constraint enforcement for C1 (I1 file ownership), C2 (I2 freeze),
+            and C5 (I6 scout write boundaries) by creating real middleware implementations in
+            `pkg/tools/constraint_enforcer.go`.
+
+            The file `pkg/tools/workshop_constrained.go` already has package-level function variables
+            (`ownershipMiddlewareFn`, `freezeMiddlewareFn`, `rolePathMiddlewareFn`) that currently
+            point to passthrough stubs. You must create the real implementations and register them
+            via `init()`.
+
+            ### Files to create
+
+            **pkg/tools/constraint_enforcer.go:**
+            - `func newOwnershipMiddleware(toolName string, c Constraints) Middleware` — I1 enforcement.
+              Before executing write, check if file path is in `c.OwnedFiles`. If not, return
+              structured error: `"I1_VIOLATION: agent %s (%s) cannot write to %s (not in owned files)"`.
+              Extract file path from `input["file_path"]` or `input["path"]`.
+            - `func newFreezeMiddleware(toolName string, c Constraints) Middleware` — I2 enforcement.
+              Before executing write, check if file path is in `c.FrozenPaths` AND `c.FreezeTime != nil`.
+              Return error: `"I2_VIOLATION: agent %s cannot write to frozen path %s (frozen at %s)"`.
+            - `func newRolePathMiddleware(toolName string, c Constraints) Middleware` — I6 enforcement.
+              Before executing write, check if file path starts with any `c.AllowedPathPrefixes`.
+              Return error: `"I6_VIOLATION: %s agent cannot write outside allowed paths %v (attempted: %s)"`.
+            - `func init()` — Register all three functions into the package-level variables.
+
+            **pkg/tools/constraint_enforcer_test.go:**
+            - Test I1: write to owned file succeeds, write to unowned file returns I1_VIOLATION error.
+            - Test I2: write to frozen path returns I2_VIOLATION error, write to non-frozen path succeeds.
+            - Test I6: scout writing to docs/IMPL/IMPL-foo.yaml succeeds, writing to src/main.go fails.
+            - Test middleware composition: all three middlewares applied together work correctly.
+
+            ### Interfaces
+
+            Use the existing types from `pkg/tools/constraints.go` and `pkg/tools/types.go`.
+            The `Middleware` type is `func(next ToolExecutor) ToolExecutor`.
+            Extract the target file path from the tool input map key `"file_path"` (for write_file)
+            or `"path"` (for edit_file). Normalize paths to be relative to workdir.
+
+            ### Constraints
+            - Do NOT modify `workshop_constrained.go` — only create the new file.
+            - The init() function in your new file will automatically override the stub defaults.
+            - Return errors as `fmt.Errorf(...)`, not panics.
+            - Error strings must include the invariant code (I1, I2, I6) for grep-ability.
+
+            ### Verification gate
+            ```
+            go test ./pkg/tools/ -run TestConstraintEnforcer -v && go vet ./pkg/tools/
+            ```
+          files:
+            - pkg/tools/constraint_enforcer.go
+            - pkg/tools/constraint_enforcer_test.go
+        - id: B
+          task: |
+            ## What to implement
+
+            Implement completion report validation (C3/C6) and file ownership coverage validation (H1).
+
+            ### Files to create
+
+            **pkg/protocol/completion_validator.go:**
+            - `ValidateCompletionReportClaims(manifest *IMPLManifest, agentID string, report CompletionReport, repoDir string) (*CompletionValidationResult, error)`
+            - Verify commit SHA exists: `git rev-parse --verify <sha>` in repoDir.
+            - Verify commit is on agent's branch: `git branch --contains <sha>` should include the agent's branch.
+            - Verify FilesChanged are subset of (owned files union frozen paths).
+            - Verify FilesCreated actually exist on disk in the worktree.
+            - Verify worktree path exists (if non-empty).
+            - Return `CompletionValidationResult` with Valid bool, Errors []string, Warnings []string.
+            - Use `internal/git` package for git operations (`git.Run`).
+
+            **pkg/protocol/completion_validator_test.go:**
+            - Test with valid report (all fields match reality) — expect Valid=true.
+            - Test with fake commit SHA — expect Valid=false, error mentioning commit.
+            - Test with files outside ownership — expect error.
+            - Test with non-existent FilesCreated — expect error.
+            - Use temp directory with `git init` for test setup.
+
+            **pkg/protocol/ownership_coverage.go:**
+            - `ValidateFileOwnershipCoverage(manifest *IMPLManifest, waveNum int) (*OwnershipCoverageResult, error)`
+            - For each agent in the wave, collect FilesChanged + FilesCreated from completion report.
+            - Build owned-files set from FileOwnership table for that agent.
+            - Check: changed-files subset-of (owned-files union frozen-paths).
+            - Return violations with agent ID and list of unowned files.
+
+            **pkg/protocol/ownership_coverage_test.go:**
+            - Test agent with all files in ownership — Valid=true.
+            - Test agent with "bonus" file not in ownership — Valid=false, violation reported.
+            - Test frozen paths are allowed (not treated as violations).
+
+            ### Interfaces
+            Use `CompletionReport` and `IMPLManifest` from `pkg/protocol/types.go`.
+            Use `git.Run(repoDir, args...)` from `internal/git/commands.go`.
+
+            ### Constraints
+            - Do not modify any existing files. Only create new files.
+            - All functions must be exported (uppercase).
+
+            ### Verification gate
+            ```
+            go test ./pkg/protocol/ -run "TestValidateCompletion|TestOwnershipCoverage" -v && go vet ./pkg/protocol/
+            ```
+          files:
+            - pkg/protocol/completion_validator.go
+            - pkg/protocol/completion_validator_test.go
+            - pkg/protocol/ownership_coverage.go
+            - pkg/protocol/ownership_coverage_test.go
+        - id: C
+          task: |
+            ## What to implement
+
+            Implement dynamic dependency verification (H2) and gate input validation (H3).
+
+            ### Files to create
+
+            **pkg/protocol/dependency_verifier.go:**
+            - `VerifyDependenciesAvailable(manifest *IMPLManifest, waveNum int) (*DependencyVerificationResult, error)`
+            - For each agent in wave N, iterate its Dependencies list.
+            - For each dependency agent ID, check `manifest.CompletionReports[depID]` exists
+              and has Status == "complete".
+            - Return per-agent check results with Missing list.
+            - Wave 1 agents (no dependencies) should return Valid=true trivially.
+
+            **pkg/protocol/dependency_verifier_test.go:**
+            - Test wave 1 with no dependencies — Valid=true.
+            - Test wave 2 where all deps completed — Valid=true.
+            - Test wave 2 where dep is missing completion report — Valid=false, missing listed.
+            - Test wave 2 where dep has status "partial" — Valid=false.
+
+            **pkg/protocol/gate_input_validator.go:**
+            - `ValidateGateInputs(manifest *IMPLManifest, waveNum int, repoDir string) (*GateInputValidationResult, error)`
+            - Collect reported files from completion reports for all agents in wave.
+            - Get actual changed files via `git diff --name-only <base>..<branch>` for each agent.
+            - Compare reported vs actual, flag discrepancies.
+            - Use `wave.BaseCommit` if available, otherwise fall back to HEAD.
+            - Use `BranchName(manifest.FeatureSlug, waveNum, agentID)` for branch names.
+
+            **pkg/protocol/gate_input_validator_test.go:**
+            - Test matching reported and actual files — Valid=true.
+            - Test extra files in report (not in git diff) — flagged.
+            - Test missing files from report (in git diff but not reported) — flagged.
+
+            ### Interfaces
+            Use `IMPLManifest`, `Wave`, `Agent`, `CompletionReport` from `pkg/protocol/types.go`.
+            Use `git.Run(repoDir, args...)` from `internal/git/commands.go`.
+            Use `BranchName(slug, wave, agentID)` from `pkg/protocol/worktree.go`.
+
+            ### Constraints
+            - Do not modify any existing files. Only create new files.
+            - All functions must be exported.
+
+            ### Verification gate
+            ```
+            go test ./pkg/protocol/ -run "TestVerifyDependencies|TestValidateGateInputs" -v && go vet ./pkg/protocol/
+            ```
+          files:
+            - pkg/protocol/dependency_verifier.go
+            - pkg/protocol/dependency_verifier_test.go
+            - pkg/protocol/gate_input_validator.go
+            - pkg/protocol/gate_input_validator_test.go
+      base_commit: 270b04c56c5867b207e59a3af0e338fb6a03deac
+    - number: 2
+      agents:
+        - id: D
+          task: |
+            ## What to implement
+
+            Wire pre-merge verification gates C4 and H4 into the finalize pipeline
+            and merge logic.
+
+            ### C4: Move VerifyCommits before MergeAgents (make fatal)
+
+            In `pkg/engine/finalize.go`, VerifyCommits already runs at Step 1 and is fatal.
+            This is already correct positioning. The roadmap item C4 is partially done.
+            Verify the current behavior is correct and add a test to confirm it.
+
+            Create `pkg/engine/finalize_test.go` with a test that verifies:
+            - FinalizeWave returns error when VerifyCommits finds agents with no commits.
+            - The error occurs BEFORE MergeAgents is called (MergeResult should be nil).
+
+            ### H4: PreMergeValidation in merge_agents.go
+
+            Add `PreMergeValidation(manifest *IMPLManifest, waveNum int) []ValidationError` to
+            `pkg/protocol/merge_agents.go`. This function:
+            - Verifies every file_ownership entry for this wave references an agent that exists
+              in the wave's agent list.
+            - Verifies no duplicate files in ownership for this wave (I1 recheck).
+            - Returns ValidationErrors if inconsistencies found.
+
+            Wire `PreMergeValidation` into `mergeAgentsSingleRepo` and `mergeAgentsMultiRepo`:
+            call it at the start, before any merge operations. If it returns errors, return
+            a MergeAgentsResult with Success=false and the first error message.
+
+            ### Files to modify/create
+
+            **pkg/engine/finalize.go** — No logic changes needed (C4 already in place).
+            Add a comment at Step 1 noting this satisfies C4.
+
+            **pkg/engine/finalize_test.go** — New file. Test that:
+            - VerifyCommits failure prevents merge (MergeResult is nil in result).
+            - Successful pipeline produces MergeResult.
+
+            **pkg/protocol/merge_agents.go** — Add PreMergeValidation function. Wire into
+            both mergeAgentsSingleRepo and mergeAgentsMultiRepo at the start.
+
+            ### Interfaces
+            `PreMergeValidation(manifest *IMPLManifest, waveNum int) []ValidationError`
+            Uses existing `ValidationError` type from `pkg/protocol/types.go`.
+
+            ### Constraints
+            - Do NOT change the Step 1-6 order in finalize.go (it is already correct).
+            - PreMergeValidation must be called BEFORE any git merge operations.
+
+            ### Verification gate
+            ```
+            go test ./pkg/engine/ -run TestFinalize -v && go test ./pkg/protocol/ -run TestPreMerge -v && go vet ./...
+            ```
+          files:
+            - pkg/engine/finalize.go
+            - pkg/engine/finalize_test.go
+            - pkg/protocol/merge_agents.go
+          dependencies:
+            - A
+            - B
+            - C
+        - id: E
+          task: |
+            ## What to implement
+
+            Wire H2 (dependency verification) into prepare-wave pre-flight checks, and
+            wire completion report validation into the pipeline.
+
+            ### H2: Wire VerifyDependenciesAvailable into prepare-wave
+
+            In `cmd/saw/prepare_wave.go`, add a new pre-flight step after Step 0b (dependency
+            check) and before Step 0b2 (baseline gates):
+
+            ```go
+            // Step 0b1: Verify dependency outputs available (H2)
+            if waveNum > 1 {
+                depResult, err := protocol.VerifyDependenciesAvailable(doc, waveNum)
+                if err != nil {
+                    return fmt.Errorf("dependency verification failed: %w", err)
+                }
+                if !depResult.Valid {
+                    // Print missing dependencies
+                    for _, agent := range depResult.Agents {
+                        if !agent.Available {
+                            fmt.Fprintf(os.Stderr, "agent %s missing dependencies: %v\n",
+                                agent.Agent, agent.Missing)
+                        }
+                    }
+                    return fmt.Errorf("dependency outputs not available for wave %d", waveNum)
+                }
+                fmt.Fprintf(os.Stderr, "prepare-wave: dependency outputs verified ✓\n")
+            }
+            ```
+
+            Skip for wave 1 (no prior wave outputs to verify).
+
+            ### Wire completion validation
+
+            Add ownership coverage validation as a prepare-wave check for waves > 1.
+            After dependency verification:
+
+            ```go
+            // Step 0b1.5: Validate prior wave ownership coverage (H1)
+            if waveNum > 1 {
+                coverageResult, err := protocol.ValidateFileOwnershipCoverage(doc, waveNum-1)
+                if err != nil {
+                    fmt.Fprintf(os.Stderr, "prepare-wave: ownership coverage check: %v\n", err)
+                } else if !coverageResult.Valid {
+                    for _, v := range coverageResult.Violations {
+                        fmt.Fprintf(os.Stderr, "warning: agent %s modified unowned files: %v\n",
+                            v.Agent, v.UnownedFiles)
+                    }
+                    // Warning only, not fatal (agents may have legitimate reasons)
+                }
+            }
+            ```
+
+            ### Update prepare_wave_test.go
+
+            Add tests for the new pre-flight checks:
+            - Test that wave 2 with missing dependency fails prepare-wave.
+            - Test that wave 1 skips dependency check.
+
+            ### Constraints
+            - Import `protocol` package functions created by Agents B and C.
+            - Keep existing prepare-wave steps in their current order.
+            - H1 check is a warning, not fatal. H2 check is fatal.
+
+            ### Verification gate
+            ```
+            go test ./cmd/saw/ -run TestPrepareWave -v && go vet ./cmd/saw/
+            ```
+          files:
+            - cmd/saw/prepare_wave.go
+            - cmd/saw/prepare_wave_test.go
+          dependencies:
+            - B
+            - C
+      base_commit: 3e040d1d3d8d3058685d0e31312106a3f6e1a45a
+quality_gates:
+    level: standard
+    gates:
+        - type: build
+          command: go build ./...
+          required: true
+        - type: lint
+          command: go vet ./...
+          required: true
+        - type: test
+          command: go test ./...
+          required: true
+completion_reports:
+    A:
+        status: complete
+        branch: saw/determinism-enforcement/wave1-agent-A
+        commit: 81d868e
+        files_changed:
+            - pkg/tools/constraint_enforcer.go
+            - pkg/tools/constraint_enforcer_test.go
+        files_created:
+            - pkg/tools/constraint_enforcer.go
+            - pkg/tools/constraint_enforcer_test.go
+        tests_added:
+            - TestConstraintEnforcer_I1_OwnedFileSucceeds
+            - TestConstraintEnforcer_I1_UnownedFileReturnsViolation
+            - TestConstraintEnforcer_I1_PathKeyFallback
+            - TestConstraintEnforcer_I2_FrozenPathReturnsViolation
+            - TestConstraintEnforcer_I2_NonFrozenPathSucceeds
+            - TestConstraintEnforcer_I2_NilFreezeTimeDisablesFreeze
+            - TestConstraintEnforcer_I6_ScoutAllowedPathSucceeds
+            - TestConstraintEnforcer_I6_ScoutBlocksSourceCode
+            - TestConstraintEnforcer_I6_EmptyPrefixesPassthrough
+            - TestConstraintEnforcer_Composition
+            - TestConstraintEnforcer_InitRegistersRealImplementations
+        verification: PASS
+    B:
+        status: complete
+        branch: saw/determinism-enforcement/wave1-agent-B
+        commit: 174a5c9
+        files_changed:
+            - pkg/protocol/completion_validator.go
+            - pkg/protocol/completion_validator_test.go
+            - pkg/protocol/ownership_coverage.go
+            - pkg/protocol/ownership_coverage_test.go
+        files_created:
+            - pkg/protocol/completion_validator.go
+            - pkg/protocol/completion_validator_test.go
+            - pkg/protocol/ownership_coverage.go
+            - pkg/protocol/ownership_coverage_test.go
+        tests_added:
+            - TestValidateCompletionReportClaims_Valid
+            - TestValidateCompletionReportClaims_FakeCommit
+            - TestValidateCompletionReportClaims_FilesOutsideOwnership
+            - TestValidateCompletionReportClaims_NonExistentFilesCreated
+            - TestValidateCompletionReportClaims_FrozenPathAllowed
+            - TestOwnershipCoverage_AllOwned
+            - TestOwnershipCoverage_BonusFile
+            - TestOwnershipCoverage_FrozenPathAllowed
+            - TestOwnershipCoverage_WaveNotFound
+            - TestOwnershipCoverage_NoReport
+        verification: PASS
+    C:
+        status: complete
+        branch: saw/determinism-enforcement/wave1-agent-C
+        commit: 399201c
+        files_changed:
+            - pkg/protocol/dependency_verifier.go
+            - pkg/protocol/dependency_verifier_test.go
+            - pkg/protocol/gate_input_validator.go
+            - pkg/protocol/gate_input_validator_test.go
+        files_created:
+            - pkg/protocol/dependency_verifier.go
+            - pkg/protocol/dependency_verifier_test.go
+            - pkg/protocol/gate_input_validator.go
+            - pkg/protocol/gate_input_validator_test.go
+        tests_added:
+            - TestVerifyDependencies_Wave1NoDepsTriviallyValid
+            - TestVerifyDependencies_Wave2AllDepsCompleted
+            - TestVerifyDependencies_Wave2MissingCompletionReport
+            - TestVerifyDependencies_Wave2DepStatusPartial
+            - TestVerifyDependencies_WaveNotFound
+            - TestValidateGateInputs_MatchingReportedAndActual
+            - TestValidateGateInputs_ExtraFilesInReport
+            - TestValidateGateInputs_MissingFilesFromReport
+            - TestValidateGateInputs_WaveNotFound
+        verification: PASS
+    D:
+        status: complete
+        branch: saw/determinism-enforcement/wave2-agent-D
+        commit: 29aeb98
+        files_changed:
+            - pkg/engine/finalize.go
+            - pkg/engine/finalize_test.go
+            - pkg/protocol/merge_agents.go
+            - pkg/protocol/merge_agents_test.go
+        tests_added:
+            - TestFinalizeWave_VerifyCommitsFatal
+            - TestFinalizeWave_MergeResultNilOnEarlyExit
+            - TestPreMergeValidation_Valid
+            - TestPreMergeValidation_UnknownAgent
+            - TestPreMergeValidation_DuplicateFile
+            - TestPreMergeValidation_WaveNotFound
+            - TestPreMergeValidation_OtherWaveOwnershipIgnored
+        verification: PASS
+    E:
+        status: complete
+        branch: saw/determinism-enforcement/wave2-agent-E
+        commit: 34b6f75
+        files_changed:
+            - cmd/saw/prepare_wave.go
+            - cmd/saw/prepare_wave_test.go
+        tests_added:
+            - TestVerifyDependenciesAvailable_Wave1Skipped
+            - TestVerifyDependenciesAvailable_Wave2MissingDep
+            - TestVerifyDependenciesAvailable_Wave2DepComplete
+        verification: PASS
+pre_mortem:
+    overall_risk: medium
+    rows:
+        - scenario: Constraint middleware init() ordering — new init() in constraint_enforcer.go races with init() in workshop_constrained.go
+          likelihood: low
+          impact: high
+          mitigation: Go init() order is deterministic within a package (alphabetical by filename). constraint_enforcer.go sorts before workshop_constrained.go, so its init runs first, setting the function variables before workshop_constrained.go checks them.
+        - scenario: Git operations in tests require real repos — completion_validator_test.go and gate_input_validator_test.go need git repos with commits
+          likelihood: medium
+          impact: medium
+          mitigation: Use t.TempDir() with git init, git add, git commit in test setup. This is an established pattern in the codebase (see commit_verify_test.go).
+        - scenario: File path normalization — middleware receives absolute paths but OwnedFiles has relative paths
+          likelihood: medium
+          impact: high
+          mitigation: Agent A must normalize paths relative to workdir before checking constraints. Document in task that ExecutionContext.WorkDir is available for this.
+        - scenario: Wave 2 agents D and E touch existing files that may have changed between scout and execution
+          likelihood: low
+          impact: medium
+          mitigation: Both agents modify well-understood, stable files (finalize.go, merge_agents.go, prepare_wave.go). Changes are additive (new function + call site).
+critic_report:
+    verdict: PASS
+    agent_reviews:
+        A:
+            agent_id: A
+            verdict: PASS
+        B:
+            agent_id: B
+            verdict: PASS
+        C:
+            agent_id: C
+            verdict: PASS
+        D:
+            agent_id: D
+            verdict: PASS
+        E:
+            agent_id: E
+            verdict: PASS
+    summary: 'All five agent briefs verified against the scout-and-wave-go codebase. File existence checks: all ''modify'' targets exist (pkg/engine/finalize.go, pkg/protocol/merge_agents.go, cmd/saw/prepare_wave.go, cmd/saw/prepare_wave_test.go, pkg/engine/finalize_test.go); all ''new'' targets are absent. Symbol accuracy: pkg/tools/workshop_constrained.go confirms ownershipMiddlewareFn, freezeMiddlewareFn, and rolePathMiddlewareFn package-level variables and the passthrough stub pattern Agent A replaces via init(). The Constraints struct fields (OwnedFiles, FrozenPaths, FreezeTime, AllowedPathPrefixes, AgentRole, AgentID) and Middleware type match the interface contracts exactly. Agent B and C dependencies on git.Run, IMPLManifest, CompletionReport, and BranchName are all confirmed present. Agent D''s description of finalize.go Step 1 VerifyCommits as already fatal and pre-merge is accurate. Agent E''s insertion points in prepare_wave.go are confirmed by the file''s existing step labeling (Step 0b, 0b1, 0b1.5, 0b2). ValidationError type used by Agent D''s PreMergeValidation exists in pkg/protocol/types.go. Import chain for all packages (internal/git, pkg/protocol, pkg/tools) exists locally. One minor pre-mortem note: workshop_constrained.go init() sets stubs only when nil, so Agent A''s init() in constraint_enforcer.go must set the variables unconditionally to override them — the brief does not explicitly state this but the codebase pattern is clear enough for an experienced implementer.'
+    reviewed_at: "2026-03-21T22:32:40Z"
+    issue_count: 0
+state: "COMPLETE"
