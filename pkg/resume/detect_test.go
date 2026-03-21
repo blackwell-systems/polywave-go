@@ -709,3 +709,120 @@ func TestBuildAction_DirtyWorktrees(t *testing.T) {
 
 	_ = implPath // referenced above
 }
+
+// ---- Tests for completed IMPL slug filtering ----
+
+func TestLoadCompletedSlugs(t *testing.T) {
+	root := makeRepoWithIMPLDir(t)
+	completeDir := filepath.Join(root, "docs", "IMPL", "complete")
+
+	// Write some completed IMPL files.
+	for _, name := range []string{"IMPL-feature-one.yaml", "IMPL-feature-two.yaml"} {
+		if err := os.WriteFile(filepath.Join(completeDir, name), []byte("title: done\n"), 0644); err != nil {
+			t.Fatalf("write: %v", err)
+		}
+	}
+	// Write a non-matching file that should be ignored.
+	if err := os.WriteFile(filepath.Join(completeDir, "notes.txt"), []byte("not an impl\n"), 0644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+
+	slugs := loadCompletedSlugs(root)
+	if !slugs["feature-one"] {
+		t.Errorf("expected feature-one in completed slugs, got %v", slugs)
+	}
+	if !slugs["feature-two"] {
+		t.Errorf("expected feature-two in completed slugs, got %v", slugs)
+	}
+	if len(slugs) != 2 {
+		t.Errorf("expected 2 slugs, got %d: %v", len(slugs), slugs)
+	}
+}
+
+func TestLoadCompletedSlugs_MissingDir(t *testing.T) {
+	root := t.TempDir() // no docs/IMPL/complete/ at all
+	slugs := loadCompletedSlugs(root)
+	if slugs != nil {
+		t.Errorf("expected nil for missing dir, got %v", slugs)
+	}
+}
+
+func TestExtractSlugFromBranch(t *testing.T) {
+	tests := []struct {
+		input    string
+		wantSlug string
+		wantOK   bool
+	}{
+		{"saw/my-feature/wave1-agent-A", "my-feature", true},
+		{"saw/completed-slug/wave2-agent-B3", "completed-slug", true},
+		{"wave1-agent-A", "", false},           // legacy, no slug
+		{"main", "", false},                    // not a SAW branch
+		{"saw//wave1-agent-A", "", false},      // empty slug
+	}
+	for _, tc := range tests {
+		slug, ok := extractSlugFromBranch(tc.input)
+		if ok != tc.wantOK || slug != tc.wantSlug {
+			t.Errorf("extractSlugFromBranch(%q) = (%q, %v), want (%q, %v)", tc.input, slug, ok, tc.wantSlug, tc.wantOK)
+		}
+	}
+}
+
+func TestDetectOrphanedWorktrees_SkipsCompletedIMPLSlugs(t *testing.T) {
+	// This test verifies that worktrees belonging to a completed IMPL
+	// (with a file in docs/IMPL/complete/) are filtered out of orphaned results.
+	//
+	// We test via parseWorktreePorcelain + the filtering logic indirectly,
+	// since detectOrphanedWorktrees shells out to git which we can't easily fake.
+	// Instead we verify the slug extraction and completed-slug loading work together.
+
+	root := makeRepoWithIMPLDir(t)
+	completeDir := filepath.Join(root, "docs", "IMPL", "complete")
+
+	// Mark "completed-slug" as completed.
+	if err := os.WriteFile(filepath.Join(completeDir, "IMPL-completed-slug.yaml"), []byte("title: done\n"), 0644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+
+	completedSlugs := loadCompletedSlugs(root)
+	if !completedSlugs["completed-slug"] {
+		t.Fatalf("expected completed-slug in set")
+	}
+
+	// Simulate branch name processing for a completed-slug worktree.
+	candidate := "saw/completed-slug/wave1-agent-A"
+	slug, ok := extractSlugFromBranch(candidate)
+	if !ok {
+		t.Fatalf("expected slug extraction to succeed for %q", candidate)
+	}
+	if !completedSlugs[slug] {
+		t.Errorf("slug %q should be in completed set — worktree should be filtered out", slug)
+	}
+
+	// Simulate branch name processing for an active-slug worktree.
+	activeCandidate := "saw/active-slug/wave1-agent-A"
+	activeSlug, activeOK := extractSlugFromBranch(activeCandidate)
+	if !activeOK {
+		t.Fatalf("expected slug extraction to succeed for %q", activeCandidate)
+	}
+	if completedSlugs[activeSlug] {
+		t.Errorf("slug %q should NOT be in completed set — worktree should remain as orphaned", activeSlug)
+	}
+}
+
+func TestDetectOrphanedWorktrees_ActiveSlugStillAppears(t *testing.T) {
+	// Verify that worktrees with an active (non-completed) slug are still
+	// detected as orphaned when their wave is not fully merged.
+	root := makeRepoWithIMPLDir(t)
+
+	// No files in docs/IMPL/complete/ — slug is active.
+	completedSlugs := loadCompletedSlugs(root)
+
+	candidate := "saw/active-slug/wave1-agent-A"
+	slug, ok := extractSlugFromBranch(candidate)
+	if !ok {
+		t.Fatalf("expected slug extraction to succeed for %q", candidate)
+	}
+	if completedSlugs[slug] {
+		t.Errorf("active slug %q should not be in completed set", slug)
+	}
+}

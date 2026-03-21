@@ -367,9 +367,50 @@ func buildActionAndCommandInternal(
 // It intentionally allows lowercase for backward compat with existing worktrees.
 var worktreePattern = regexp.MustCompile(`(?:saw/[a-z0-9][-a-z0-9]*/)?wave(\d+)-agent-([A-Za-z0-9]+)`)
 
+// slugPattern extracts the IMPL slug from a slug-scoped SAW branch name.
+// Input should already have refs/heads/ stripped. Captures the slug portion.
+var slugPattern = regexp.MustCompile(`^saw/([a-z0-9][-a-z0-9]*)/wave\d+-agent-`)
+
+// loadCompletedSlugs scans the docs/IMPL/complete/ directory for IMPL-*.yaml files
+// and returns a set of slugs extracted from filenames (strip "IMPL-" prefix and ".yaml" suffix).
+// Worktrees belonging to completed IMPLs are stale artifacts, not interrupted sessions.
+func loadCompletedSlugs(repoPath string) map[string]bool {
+	completeDir := filepath.Join(repoPath, "docs", "IMPL", "complete")
+	entries, err := os.ReadDir(completeDir)
+	if err != nil {
+		return nil
+	}
+	slugs := make(map[string]bool)
+	for _, entry := range entries {
+		if entry.IsDir() {
+			continue
+		}
+		name := entry.Name()
+		if strings.HasPrefix(name, "IMPL-") && strings.HasSuffix(name, ".yaml") {
+			slug := strings.TrimSuffix(strings.TrimPrefix(name, "IMPL-"), ".yaml")
+			if slug != "" {
+				slugs[slug] = true
+			}
+		}
+	}
+	return slugs
+}
+
+// extractSlugFromBranch extracts the IMPL slug from a slug-scoped SAW branch name.
+// Returns the slug and true if found, or empty string and false for legacy branches.
+// The candidate should already have refs/heads/ stripped.
+func extractSlugFromBranch(candidate string) (string, bool) {
+	m := slugPattern.FindStringSubmatch(candidate)
+	if m == nil {
+		return "", false
+	}
+	return m[1], true
+}
+
 // detectOrphanedWorktrees runs `git worktree list --porcelain` in each of the given
 // repos and returns paths of worktrees whose wave is not fully merged (i.e., not all
 // agents in that wave have a "complete" completion report).
+// Worktrees whose slug matches a completed IMPL (in docs/IMPL/complete/) are excluded.
 func detectOrphanedWorktrees(repoPaths []string, manifest *protocol.IMPLManifest) ([]string, error) {
 	// Build a set of agents with "complete" status.
 	completedSet := make(map[string]bool)
@@ -384,6 +425,14 @@ func detectOrphanedWorktrees(repoPaths []string, manifest *protocol.IMPLManifest
 	for _, wave := range manifest.Waves {
 		for _, agent := range wave.Agents {
 			waveAgents[wave.Number] = append(waveAgents[wave.Number], agent.ID)
+		}
+	}
+
+	// Build a unified set of completed IMPL slugs across all repos.
+	completedSlugs := make(map[string]bool)
+	for _, repoPath := range repoPaths {
+		for slug := range loadCompletedSlugs(repoPath) {
+			completedSlugs[slug] = true
 		}
 	}
 
@@ -412,6 +461,12 @@ func detectOrphanedWorktrees(repoPaths []string, manifest *protocol.IMPLManifest
 
 			m := worktreePattern.FindStringSubmatch(candidate)
 			if m == nil {
+				continue
+			}
+
+			// Skip worktrees belonging to completed IMPLs — these are stale
+			// artifacts from finished work, not interrupted sessions.
+			if slug, ok := extractSlugFromBranch(candidate); ok && completedSlugs[slug] {
 				continue
 			}
 
