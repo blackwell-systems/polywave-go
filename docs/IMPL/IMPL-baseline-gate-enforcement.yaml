@@ -1,0 +1,382 @@
+title: "E21A Baseline Gate Enforcement in prepare-wave"
+feature_slug: baseline-gate-enforcement
+verdict: SUITABLE
+state: REVIEWED
+
+suitability_assessment: |
+  1. File decomposition: 6 files across 2 packages (cmd/saw, pkg/protocol).
+     Clean disjoint ownership possible with 3 agents.
+
+  2. Investigation-first items: None. The problem and solution are well-defined.
+     The baseline gate check already exists (prepare_wave.go:152-178) but lacks
+     caching, structured output, --no-cache flag, and tests.
+
+  3. Interface discoverability: Yes. The gate cache API (pkg/gatecache) and
+     RunPreMergeGates signature already exist. New functions follow established
+     patterns.
+
+  4. Pre-implementation status check:
+     - Baseline gate execution: PARTIAL (runs gates but no caching, no structured output)
+     - Gate caching integration: TODO (passes nil cache)
+     - --no-cache flag: TODO
+     - Structured JSON baseline result: TODO
+     - CLI output formatting (per-gate PASS/FAIL/SKIP): TODO
+     - Tests for baseline behavior: TODO
+     - Web app SSE integration: OUT OF SCOPE (scout-and-wave-web repo)
+
+  5. Parallelization value: High. Build+test cycle >30s (Go project with
+     extensive test suite). 3 agents with 2-3 files each. Single wave =
+     maximum parallelism.
+
+  Estimated times:
+  - Scout phase: ~8 min
+  - Agent execution: ~10 min (3 agents in parallel, ~10 min each)
+  - Merge and verification: ~3 min
+  Total SAW time: ~21 min
+
+  Sequential baseline: ~30 min (3 agents x 10 min avg)
+  Time savings: ~9 min (30% faster)
+
+  Recommendation: Clear speedup. Proceed.
+
+test_command: go test ./...
+lint_command: go vet ./...
+
+quality_gates:
+  level: standard
+  gates:
+    - type: build
+      command: go build ./...
+      required: true
+    - type: lint
+      command: go vet ./...
+      required: true
+    - type: test
+      command: go test ./cmd/saw/... ./pkg/protocol/...
+      required: true
+
+scaffolds: []
+
+interface_contracts:
+  - name: RunBaselineGates
+    description: |
+      Dedicated function for running baseline quality gates before worktree creation.
+      Wraps RunPreMergeGates with gate-cache integration and structured result output.
+      Returns a BaselineResult containing per-gate results and an overall pass/fail.
+    definition: |
+      // BaselineResult captures the outcome of baseline gate verification (E21A).
+      type BaselineResult struct {
+          Passed      bool           `json:"passed"`
+          GateResults []GateResult   `json:"gate_results"`
+          Reason      string         `json:"reason,omitempty"`      // "baseline_verification_failed" on failure
+          CommitSHA   string         `json:"commit_sha,omitempty"`  // HEAD at time of check
+          FromCache   bool           `json:"from_cache"`            // true if all results served from cache
+      }
+
+      // RunBaselineGates executes quality gates against the current codebase
+      // (before worktree creation) to verify the baseline is healthy.
+      // If cache is non-nil, results are cached keyed by HEAD commit.
+      // The waveNumber is used for docs-only wave detection (skip source gates).
+      func RunBaselineGates(manifest *IMPLManifest, waveNumber int, repoDir string, cache *gatecache.Cache) (*BaselineResult, error)
+    location: pkg/protocol/baseline_gates.go
+
+  - name: FormatBaselineOutput
+    description: |
+      Formats baseline gate results for human-readable CLI output matching the
+      E21A spec format with per-gate PASS/FAIL/SKIP lines.
+    definition: |
+      // FormatBaselineOutput produces human-readable CLI output for baseline results.
+      // Format:
+      //   Baseline verification (E21A):
+      //     build: PASS
+      //     lint: FAIL - pkg/foo/bar.go:10: error message
+      //     test: SKIP (lint failed)
+      //
+      //   Error: baseline verification failed. Fix the codebase before launching agents.
+      func FormatBaselineOutput(result *protocol.BaselineResult) string
+    location: cmd/saw/baseline_output.go
+
+file_ownership:
+  - file: pkg/protocol/baseline_gates.go
+    agent: A
+    wave: 1
+    action: new
+    depends_on: []
+  - file: pkg/protocol/baseline_gates_test.go
+    agent: A
+    wave: 1
+    action: new
+    depends_on: []
+  - file: cmd/saw/prepare_wave.go
+    agent: B
+    wave: 1
+    action: modify
+    depends_on: []
+  - file: cmd/saw/prepare_wave_test.go
+    agent: B
+    wave: 1
+    action: modify
+    depends_on: []
+  - file: cmd/saw/baseline_output.go
+    agent: C
+    wave: 1
+    action: new
+    depends_on: []
+  - file: cmd/saw/baseline_output_test.go
+    agent: C
+    wave: 1
+    action: new
+    depends_on: []
+
+waves:
+  - number: 1
+    agents:
+      - id: A
+        task: |
+          ## What to implement
+
+          Create `pkg/protocol/baseline_gates.go` with `RunBaselineGates` and
+          the `BaselineResult` struct. This function wraps the existing
+          `RunPreMergeGates` with gate-cache integration and structured result
+          packaging.
+
+          **BaselineResult struct:**
+          ```go
+          type BaselineResult struct {
+              Passed      bool         `json:"passed"`
+              GateResults []GateResult `json:"gate_results"`
+              Reason      string       `json:"reason,omitempty"`
+              CommitSHA   string       `json:"commit_sha,omitempty"`
+              FromCache   bool         `json:"from_cache"`
+          }
+          ```
+
+          **RunBaselineGates function:**
+          1. If cache is non-nil, use cache.BuildKey(repoDir) to get HEAD SHA
+             for the CommitSHA field. If BuildKey fails, leave CommitSHA empty
+             and continue (cache is best-effort).
+          2. Call RunPreMergeGates(manifest, waveNumber, repoDir, cache) — this
+             already handles cache lookup/store internally via RunGatesWithCache.
+          3. Check if any required gate failed. If so, set Passed=false and
+             Reason="baseline_verification_failed".
+          4. If all results have FromCache=true, set BaselineResult.FromCache=true.
+          5. Return the structured BaselineResult.
+
+          **Key constraint:** Do NOT duplicate gate execution logic. Delegate
+          entirely to the existing RunPreMergeGates / RunGatesWithCache functions.
+          This function is a thin wrapper that adds structured result packaging.
+
+          ## Tests (baseline_gates_test.go)
+
+          1. TestRunBaselineGates_AllPass — mock manifest with gates that pass,
+             verify Passed=true, Reason="".
+          2. TestRunBaselineGates_RequiredFails — mock manifest with a failing
+             required gate, verify Passed=false, Reason="baseline_verification_failed".
+          3. TestRunBaselineGates_OptionalFails — optional gate fails, verify
+             Passed=true (optional failures don't block).
+          4. TestRunBaselineGates_NoGates — manifest with no quality_gates,
+             verify Passed=true, empty GateResults.
+          5. TestRunBaselineGates_NilCache — verify works with nil cache (no panic).
+
+          Use real exec commands like `echo hello` (pass) and `false` (fail)
+          for gate commands in tests. Set repoDir to a temp git repo
+          (git init + git commit) so cache key building works.
+
+          ## Verification gate
+          ```
+          go build ./pkg/protocol/... && go test ./pkg/protocol/... -run TestRunBaselineGates -v
+          ```
+
+          ## Constraints
+          - Do NOT modify any existing files. Only create new files.
+          - Follow existing patterns in pkg/protocol/gates.go for error handling.
+          - Import gatecache only for the Cache type parameter and BuildKey call.
+        files:
+          - pkg/protocol/baseline_gates.go
+          - pkg/protocol/baseline_gates_test.go
+        dependencies: []
+
+      - id: B
+        task: |
+          ## What to implement
+
+          Modify `cmd/saw/prepare_wave.go` to:
+
+          1. **Add --no-cache flag** to the prepare-wave command, following the
+             same pattern as run_gates_cmd.go (line 55):
+             ```go
+             var noCache bool
+             cmd.Flags().BoolVar(&noCache, "no-cache", false, "Disable baseline gate result caching")
+             ```
+
+          2. **Replace the inline baseline gate logic** (lines 152-178) with a
+             call to `protocol.RunBaselineGates`. The current code:
+             - Calls RunPreMergeGates with nil cache
+             - Manually checks for failures
+             - Prints ad-hoc stderr messages
+
+             Replace with:
+             ```go
+             // Build gate cache (unless --no-cache)
+             var cache *gatecache.Cache
+             if !noCache {
+                 stateDir := filepath.Join(projectRoot, ".saw-state")
+                 cache = gatecache.New(stateDir, gatecache.DefaultTTL)
+             }
+
+             baselineResult, err := protocol.RunBaselineGates(doc, waveNum, projectRoot, cache)
+             if err != nil {
+                 return fmt.Errorf("failed to run baseline quality gates: %w", err)
+             }
+
+             // Print human-readable output to stderr
+             fmt.Fprint(os.Stderr, FormatBaselineOutput(baselineResult))
+
+             if !baselineResult.Passed {
+                 // Output structured JSON to stdout for programmatic consumers
+                 out, _ := json.MarshalIndent(baselineResult, "", "  ")
+                 fmt.Fprintln(cmd.OutOrStdout(), string(out))
+                 return fmt.Errorf("baseline verification failed: %s", baselineResult.Reason)
+             }
+             ```
+
+          3. **Add structured JSON output on failure.** When baseline fails,
+             print the BaselineResult as JSON to stdout (for programmatic
+             consumers like the web app) AND the human-readable format to
+             stderr.
+
+          4. **Add import** for `gatecache` package:
+             ```go
+             "github.com/blackwell-systems/scout-and-wave-go/pkg/gatecache"
+             ```
+
+          ## Tests (prepare_wave_test.go)
+
+          Add these tests to the existing test file:
+
+          1. TestPrepareWaveBaselineResult_JSONSerialization — verify that a
+             protocol.BaselineResult round-trips through JSON correctly (similar
+             to the existing TestPrepareWaveResult_JSONSerialization pattern).
+
+          Note: Full integration tests for baseline gate behavior require
+          git repos and are covered by Agent A's protocol-level tests.
+
+          ## Verification gate
+          ```
+          go build ./cmd/saw/... && go test ./cmd/saw/... -run TestPrepareWave -v
+          ```
+
+          ## Constraints
+          - The FormatBaselineOutput function is in baseline_output.go (Agent C's
+            file). Import it as a package-local function call (same package main).
+          - Keep the existing Step 0b (dependency checking) and Step 0c (wiring
+            ownership) untouched. Only replace Step 0b2 (lines 152-178).
+          - The --no-cache flag must be added to the cobra command flags, not as
+            a package-level var (follow the waveNum pattern using closure scope).
+        files:
+          - cmd/saw/prepare_wave.go
+          - cmd/saw/prepare_wave_test.go
+        dependencies: []
+
+      - id: C
+        task: |
+          ## What to implement
+
+          Create `cmd/saw/baseline_output.go` with the `FormatBaselineOutput`
+          function that formats BaselineResult for human-readable CLI output.
+
+          **FormatBaselineOutput function:**
+
+          ```go
+          func FormatBaselineOutput(result *protocol.BaselineResult) string
+          ```
+
+          Output format (matching E21A spec):
+          ```
+          Baseline verification (E21A):
+            build: PASS
+            lint: FAIL - <first line of stderr or parsed error>
+            test: SKIP (lint failed)
+
+          Error: baseline verification failed. Fix the codebase before launching agents.
+          ```
+
+          Rules:
+          1. Print each gate result as `  {type}: PASS`, `  {type}: FAIL - {detail}`,
+             or `  {type}: SKIP ({reason})`.
+          2. For FAIL, extract the first meaningful line from Stderr or Stdout.
+             If ParsedErrors is non-empty, use the first parsed error's message.
+          3. For SKIP (Skipped=true), show the SkipReason in parentheses.
+          4. If FromCache is true on the BaselineResult, append
+             " (cached at {commit_sha})" to the header line.
+          5. If result.Passed, end with: "Baseline verification passed."
+          6. If !result.Passed, end with:
+             "Error: baseline verification failed. Fix the codebase before launching agents."
+          7. Use a strings.Builder for efficient string construction.
+
+          **Package:** This file is in `package main` (cmd/saw/).
+
+          ## Tests (baseline_output_test.go)
+
+          1. TestFormatBaselineOutput_AllPass — all gates pass, verify output
+             contains "PASS" for each and ends with "passed".
+          2. TestFormatBaselineOutput_OneFails — one gate fails with stderr,
+             verify FAIL line includes error detail.
+          3. TestFormatBaselineOutput_WithSkipped — skipped gate shows reason.
+          4. TestFormatBaselineOutput_CachedResult — FromCache=true, verify
+             "(cached at ...)" appears in header.
+          5. TestFormatBaselineOutput_EmptyGates — no gate results, verify
+             clean output with "passed".
+          6. TestFormatBaselineOutput_ParsedErrors — gate with ParsedErrors,
+             verify first error message shown in FAIL line.
+
+          ## Verification gate
+          ```
+          go build ./cmd/saw/... && go test ./cmd/saw/... -run TestFormatBaselineOutput -v
+          ```
+
+          ## Constraints
+          - Do NOT modify prepare_wave.go (Agent B owns that file).
+          - Import protocol types: protocol.BaselineResult, protocol.GateResult.
+          - Follow existing cmd/saw/ patterns for package-level helper functions.
+        files:
+          - cmd/saw/baseline_output.go
+          - cmd/saw/baseline_output_test.go
+        dependencies: []
+
+pre_mortem:
+  overall_risk: low
+  rows:
+    - scenario: "Agent A's BaselineResult type not available when B and C compile"
+      likelihood: low
+      impact: medium
+      mitigation: |
+        All agents are in wave 1 (parallel). Agent B and C reference
+        protocol.BaselineResult which Agent A creates. Each agent works in an
+        isolated worktree. At merge time A's type definition lands first (or
+        alongside), so B and C's references resolve. If build fails at merge,
+        it is a straightforward import resolution.
+    - scenario: "Existing baseline gate code (lines 152-178) has been modified by another PR"
+      likelihood: low
+      impact: low
+      mitigation: |
+        Agent B's task specifies the exact line range to replace. If lines have
+        shifted, the agent should locate the Step 0b2 comment and replace the
+        block between it and the Step 0c comment.
+    - scenario: "Gate cache directory (.saw-state) does not exist on first run"
+      likelihood: medium
+      impact: low
+      mitigation: |
+        gatecache.New already handles missing directories (creates on first Put).
+        No additional handling needed.
+
+known_issues:
+  - description: |
+      Web app SSE integration (baseline_verification_failed event, WaveBoard error state)
+      is out of scope for this IMPL. It requires changes in scout-and-wave-web repo
+      (pkg/api/wave_runner.go, web/src/ components). Should be a follow-up IMPL targeting
+      the web repo.
+    workaround: |
+      The web app calls sawtools prepare-wave via CLI. The structured JSON output on
+      stdout and exit code 1 are sufficient for the web app to detect and surface baseline
+      failures. The SSE event enhancement can be added later.

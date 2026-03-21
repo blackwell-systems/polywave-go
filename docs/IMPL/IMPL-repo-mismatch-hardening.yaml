@@ -1,0 +1,392 @@
+title: Repo-Mismatch Hardening - Prevent Agents Running in Wrong Repository
+feature_slug: repo-mismatch-hardening
+verdict: SUITABLE
+suitability_assessment: |
+    Suitability gate analysis:
+
+    1. File decomposition: 8 files across 2 repos (scout-and-wave-go and scout-and-wave-web),
+       naturally splitting into SDK validation logic vs. web app integration. At least 3 agents
+       with disjoint file ownership are feasible.
+
+    2. Investigation-first items: None. The problem is well-understood (worktrees created in wrong
+       repo when IMPL targets a different repo). The fix is structural validation.
+
+    3. Interface discoverability: Yes. The key interface is ResolveTargetRepo() which returns
+       resolved repo paths. The existing protocol.IMPLManifest and FileOwnership types are stable.
+
+    4. Pre-implementation status check:
+       - ValidateFileExistence already exists in pkg/protocol/file_existence_validator.go but only
+         checks action=modify files within a single repo. Does NOT validate repo-level mismatch.
+       - resolveAgentRepoRoot exists in prepare_wave.go but only resolves per-agent, not pre-flight
+         validation of the overall IMPL target repo.
+       - CreateWorktrees in pkg/protocol/worktree.go has cross-repo support via determineAgentRepo
+         but no pre-flight validation that the target repo is correct.
+       - Web app wave_service.go passes repoPath from resolveIMPLPath but never validates it
+         matches the IMPL's target files.
+       Status: PARTIAL for cross-repo worktree creation, TODO for pre-flight validation and
+       web app integration.
+
+    5. Parallelization value check:
+       - Build/test cycle: go test + go build > 30s for both repos
+       - 3 agents across 2 waves, avg 2-3 files each
+       - Wave 1 agents are independent (different repos)
+       - Tasks involve non-trivial logic (repo resolution, validation, error propagation)
+       Verdict: High parallelization value.
+
+    Estimated times:
+    - Scout phase: ~8 min
+    - Agent execution: ~15 min (3 agents, 2 waves, ~10 min avg with parallelism)
+    - Merge & verification: ~5 min
+    Total SAW time: ~28 min
+
+    Sequential baseline: ~35 min (3 agents x ~12 min avg)
+    Time savings: ~7 min (20% faster)
+
+    Recommendation: Clear speedup plus coordination value for cross-repo changes.
+test_command: go test ./...
+lint_command: go vet ./...
+file_ownership:
+    - file: pkg/protocol/repo_resolve.go
+      agent: A
+      wave: 1
+      action: new
+      repo: scout-and-wave-go
+    - file: pkg/protocol/repo_resolve_test.go
+      agent: A
+      wave: 1
+      action: new
+      repo: scout-and-wave-go
+    - file: pkg/protocol/file_existence_validator.go
+      agent: A
+      wave: 1
+      action: modify
+      repo: scout-and-wave-go
+    - file: pkg/protocol/file_existence_validator_test.go
+      agent: A
+      wave: 1
+      action: modify
+      repo: scout-and-wave-go
+    - file: pkg/service/wave_service.go
+      agent: B
+      wave: 1
+      action: modify
+      repo: scout-and-wave-web
+    - file: pkg/service/wave_service_test.go
+      agent: B
+      wave: 1
+      action: modify
+      repo: scout-and-wave-web
+    - file: cmd/saw/prepare_wave.go
+      agent: C
+      wave: 2
+      action: modify
+      repo: scout-and-wave-go
+    - file: cmd/saw/prepare_wave_test.go
+      agent: C
+      wave: 2
+      action: modify
+      repo: scout-and-wave-go
+interface_contracts:
+    - name: ResolveTargetRepos
+      description: |
+        Resolves the target repository paths from an IMPL manifest by analyzing
+        file_ownership repo: fields, falling back to test_command/lint_command
+        path inference. Returns a map of repo name -> absolute path.
+      definition: |
+        func ResolveTargetRepos(manifest *IMPLManifest, fallbackRepoPath string, configRepos []RepoEntry) (map[string]string, error)
+
+        type RepoEntry struct {
+            Name string
+            Path string
+        }
+
+        Returns:
+        - map[string]string: repo name -> absolute path (at least one entry)
+        - error: if no repos can be resolved
+      location: pkg/protocol/repo_resolve.go
+    - name: ValidateRepoMatch
+      description: |
+        Pre-flight check that validates the resolved target repo(s) match the
+        repo where worktrees would be created. Returns nil if valid, error with
+        clear diagnostic message if mismatched.
+      definition: |
+        func ValidateRepoMatch(manifest *IMPLManifest, worktreeRepoPath string, configRepos []RepoEntry) error
+
+        Error format: "IMPL targets repo 'X' at /path/to/X but worktrees would be
+        created in /path/to/Y - aborting. Set repo: field in file_ownership or
+        configure repos in saw.config.json"
+      location: pkg/protocol/repo_resolve.go
+    - name: ValidateFileExistenceMultiRepo
+      description: |
+        Enhanced version of ValidateFileExistence that resolves files across
+        multiple repos using the configRepos registry. Spot-checks that at least
+        some action=modify files exist in their target repos.
+      definition: |
+        func ValidateFileExistenceMultiRepo(m *IMPLManifest, primaryRepoPath string, configRepos []RepoEntry) []ValidationError
+      location: pkg/protocol/file_existence_validator.go
+waves:
+    - number: 1
+      agents:
+        - id: A
+          task: |
+            ## Repo Resolution and Validation Library
+
+            Create `pkg/protocol/repo_resolve.go` with two functions:
+
+            ### 1. ResolveTargetRepos
+
+            ```go
+            type RepoEntry struct {
+                Name string
+                Path string
+            }
+
+            func ResolveTargetRepos(manifest *IMPLManifest, fallbackRepoPath string, configRepos []RepoEntry) (map[string]string, error)
+            ```
+
+            Logic:
+            - Scan `manifest.FileOwnership` for distinct `Repo` values
+            - For each repo name found, look up its absolute path in `configRepos`
+            - If no `Repo` fields are set, check `manifest.Repository` field
+            - If still empty, use `fallbackRepoPath` as the single target repo
+            - Return map of repo name -> absolute path (key is repo name or basename of fallback)
+            - Error if a repo name is referenced but not found in configRepos and cannot be
+              resolved as a sibling directory of fallbackRepoPath
+
+            ### 2. ValidateRepoMatch
+
+            ```go
+            func ValidateRepoMatch(manifest *IMPLManifest, worktreeRepoPath string, configRepos []RepoEntry) error
+            ```
+
+            Logic:
+            - Call ResolveTargetRepos to get target repos
+            - If worktreeRepoPath's basename matches one of the target repos, return nil
+            - If the IMPL has no repo: fields and all file_ownership entries match files
+              in worktreeRepoPath, return nil (single-repo case)
+            - Otherwise return error with format:
+              "IMPL targets repo '%s' at %s but worktrees would be created in %s - aborting"
+
+            ### 3. Enhance ValidateFileExistenceMultiRepo
+
+            Add to `pkg/protocol/file_existence_validator.go`:
+
+            ```go
+            func ValidateFileExistenceMultiRepo(m *IMPLManifest, primaryRepoPath string, configRepos []RepoEntry) []ValidationError
+            ```
+
+            - For each action=modify entry, resolve the correct repo path using the entry's
+              Repo field + configRepos lookup (fall back to primaryRepoPath)
+            - Check file existence in the resolved repo
+            - Return E16_FILE_NOT_FOUND errors for missing files
+            - If ALL action=modify entries are missing, also return a
+              E16_REPO_MISMATCH_SUSPECTED error
+
+            ### Tests
+
+            Write `pkg/protocol/repo_resolve_test.go`:
+            - TestResolveTargetRepos_SingleRepo (no repo: fields)
+            - TestResolveTargetRepos_MultiRepo (mixed repo: fields)
+            - TestResolveTargetRepos_FallbackToManifestRepository
+            - TestResolveTargetRepos_UnknownRepoSiblingResolution
+            - TestValidateRepoMatch_Match
+            - TestValidateRepoMatch_Mismatch
+            - TestValidateRepoMatch_SingleRepoNoField
+
+            Add to `pkg/protocol/file_existence_validator_test.go`:
+            - TestValidateFileExistenceMultiRepo_CrossRepoResolved
+            - TestValidateFileExistenceMultiRepo_AllMissingSuspectsRepoMismatch
+
+            ### Constraints
+            - Do not import any packages outside the standard library and existing protocol package deps
+            - RepoEntry type should be exported (used by cmd/saw and web app)
+            - Keep ValidateFileExistence unchanged for backward compatibility
+          files:
+            - pkg/protocol/repo_resolve.go
+            - pkg/protocol/repo_resolve_test.go
+            - pkg/protocol/file_existence_validator.go
+            - pkg/protocol/file_existence_validator_test.go
+        - id: B
+          task: |
+            ## Web App Repo Mismatch Integration
+
+            Modify `pkg/service/wave_service.go` to add repo mismatch detection and
+            cross-repo worktree support.
+
+            ### 1. Add target_repo to SSE events
+
+            In `runWaveLoop`, after loading the manifest, resolve the target repo(s) and
+            include them in SSE events:
+
+            - Add `target_repo` field to the `run_started` event data map
+            - Add `target_repos` (list) if multi-repo
+            - Add a new `repo_mismatch_warning` event if the IMPL targets a different repo
+              than `repoPath`
+
+            ### 2. Cross-repo repoPath override
+
+            In `runWaveLoop`, after loading the manifest:
+            - Check if the manifest's file_ownership entries all target a single repo
+              that differs from repoPath
+            - If so, resolve the correct repo path (check sibling directories or
+              saw.config.json repos list)
+            - Override `repoPath` for the remainder of the wave loop (worktree creation,
+              finalize, etc.)
+            - Publish a `repo_redirected` event: `{"from": oldPath, "to": newPath}`
+
+            ### 3. Error handling for unresolvable repos
+
+            If the target repo cannot be resolved (not a sibling, not in config):
+            - Publish `run_failed` with a clear error message
+            - Do NOT proceed with worktree creation
+
+            ### Implementation details
+
+            The resolution logic should be straightforward since wave_service.go already
+            has `resolveIMPLPath` which returns both implPath and repoPath. The fix is:
+            1. After resolveIMPLPath returns, load the manifest
+            2. Check file_ownership repo: fields
+            3. If they point to a different repo, look it up in saw.config.json
+            4. Override repoPath before passing to engine.RunSingleWave
+
+            Use existing `resolveModelsFromPath` pattern for reading saw.config.json.
+            Do NOT import from scout-and-wave-go/pkg/protocol directly for the repo
+            resolution — instead duplicate the minimal logic needed (scan file_ownership
+            for repo names, resolve paths from config) to avoid circular dependency issues.
+            The web app already imports scout-and-wave-go/pkg/engine which imports protocol.
+
+            Actually, since the web app already imports `protocol` transitively through
+            `engine`, you CAN use protocol.ResolveTargetRepos if Agent A's work is merged
+            first. However, since Wave 1 runs in parallel, implement the repo resolution
+            inline using the manifest's FileOwnership data and saw.config.json, matching
+            the pattern already used in `resolveIMPLPath` and `waveAgentsHaveCommitsWithManifest`.
+
+            ### Tests
+
+            Add to `pkg/service/wave_service_test.go`:
+            - TestRepoRedirect_SingleRepoDifferentFromServer
+            - TestRepoRedirect_NoRepoField_NoRedirect
+
+            ### Constraints
+            - Do not break existing single-repo wave execution
+            - The repo redirect should be logged to stderr for debugging
+            - Keep backward compatibility: if no repo: fields exist, behavior is unchanged
+          files:
+            - pkg/service/wave_service.go
+            - pkg/service/wave_service_test.go
+    - number: 2
+      agents:
+        - id: C
+          task: |
+            ## Wire Validation into prepare-wave CLI
+
+            Modify `cmd/saw/prepare_wave.go` to call the repo validation functions
+            from Agent A before creating worktrees.
+
+            ### 1. Add pre-flight repo validation
+
+            After loading the manifest (line ~148) and before baseline quality gates,
+            insert a new step "Step 0b1: Repo mismatch validation":
+
+            ```go
+            // Step 0b1: Validate repo match
+            configRepos := loadSAWConfigRepos(filepath.Join(projectRoot, "saw.config.json"))
+            repoEntries := make([]protocol.RepoEntry, len(configRepos))
+            for i, r := range configRepos {
+                repoEntries[i] = protocol.RepoEntry{Name: r.Name, Path: r.Path}
+            }
+
+            if err := protocol.ValidateRepoMatch(doc, projectRoot, repoEntries); err != nil {
+                return fmt.Errorf("prepare-wave: repo mismatch: %w", err)
+            }
+            ```
+
+            ### 2. Add multi-repo file existence check
+
+            Replace or augment the existing file existence spot-check (if any) with
+            ValidateFileExistenceMultiRepo:
+
+            ```go
+            fileWarnings := protocol.ValidateFileExistenceMultiRepo(doc, projectRoot, repoEntries)
+            for _, w := range fileWarnings {
+                if w.Code == "E16_REPO_MISMATCH_SUSPECTED" {
+                    return fmt.Errorf("prepare-wave: %s", w.Message)
+                }
+                fmt.Fprintf(os.Stderr, "prepare-wave: warning: %s\n", w.Message)
+            }
+            ```
+
+            ### 3. Convert sawRepoEntry to use protocol.RepoEntry
+
+            The existing `sawRepoEntry` type in prepare_wave.go duplicates what is now
+            `protocol.RepoEntry`. Refactor:
+            - Change `loadSAWConfigRepos` to return `[]protocol.RepoEntry`
+            - Update `resolveAgentRepoRoot` to accept `[]protocol.RepoEntry`
+            - Remove the `sawRepoEntry` type
+
+            ### Tests
+
+            Add to `cmd/saw/prepare_wave_test.go`:
+            - TestPrepareWave_RepoMismatchBlocksWorktreeCreation
+            - TestPrepareWave_AllFilesMissingSuspectsRepoMismatch
+            - TestPrepareWave_CrossRepoValidPasses
+
+            ### Constraints
+            - Repo mismatch must be a HARD blocker (return error, do not create worktrees)
+            - File existence warnings for individual files are soft (stderr warning)
+            - E16_REPO_MISMATCH_SUSPECTED (ALL modify files missing) is a hard blocker
+            - Must run BEFORE baseline quality gates (gates run in the target repo)
+          files:
+            - cmd/saw/prepare_wave.go
+            - cmd/saw/prepare_wave_test.go
+          dependencies:
+            - A
+quality_gates:
+    level: standard
+    gates:
+        - type: build
+          command: go build ./...
+          required: true
+        - type: lint
+          command: go vet ./...
+          required: true
+        - type: test
+          command: go test ./...
+          required: true
+pre_mortem:
+    overall_risk: low
+    rows:
+        - scenario: Agent B implements inline repo resolution that diverges from Agent A's protocol.ResolveTargetRepos
+          likelihood: medium
+          impact: low
+          mitigation: Agent B explicitly told to use inline pattern matching existing code. Post-merge, can refactor to call protocol.ResolveTargetRepos.
+        - scenario: saw.config.json repos array is empty or missing in test environments
+          likelihood: medium
+          impact: medium
+          mitigation: All resolution functions fall back to sibling directory resolution and then to the provided fallbackRepoPath. Tests cover the no-config case.
+        - scenario: Existing single-repo workflows break due to new validation
+          likelihood: low
+          impact: high
+          mitigation: 'All new validation skips when no repo: field is present and files exist in the primary repo. Tests explicitly cover the backward-compat case.'
+critic_report:
+    verdict: PASS
+    agent_reviews:
+        A:
+            agent_id: A
+            verdict: PASS
+        B:
+            agent_id: B
+            verdict: PASS
+            issues:
+                - check: pattern_accuracy
+                  severity: warning
+                  description: Brief contradicts itself about whether to import protocol.ResolveTargetRepos directly or implement inline. The web app already imports protocol (wave_service.go line 14), so the circular dependency concern stated in the brief is unfounded. However, the final instruction (implement inline since Wave 1 runs in parallel) is clear and correct.
+                  file: pkg/service/wave_service.go
+                  symbol: protocol.ResolveTargetRepos
+        C:
+            agent_id: C
+            verdict: PASS
+    summary: All three agent briefs verified against the codebase. Agent A creates new files (repo_resolve.go, repo_resolve_test.go) that do not conflict with existing symbols, and modifies existing files (file_existence_validator.go, file_existence_validator_test.go) that exist. Agent B modifies existing web app files (wave_service.go, wave_service_test.go) and references symbols that all exist. Agent B's brief has a minor inconsistency about whether to import protocol directly vs inline implementation, but the final instruction is clear. Agent C modifies existing CLI files (prepare_wave.go, prepare_wave_test.go) with accurate line-number references and correct symbol names for existing types (sawRepoEntry, loadSAWConfigRepos, resolveAgentRepoRoot). All interface contracts reference valid types and the dependency chain (C depends on A) is correctly declared.
+    reviewed_at: "2026-03-21T03:48:30Z"
+    issue_count: 1
+state: REVIEWED
