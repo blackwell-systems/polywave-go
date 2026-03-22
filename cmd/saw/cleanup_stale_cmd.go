@@ -24,6 +24,8 @@ type cleanupStaleError struct {
 func newCleanupStaleCmd() *cobra.Command {
 	var dryRun bool
 	var force bool
+	var slug string
+	var all bool
 
 	cmd := &cobra.Command{
 		Use:   "cleanup-stale",
@@ -31,19 +33,38 @@ func newCleanupStaleCmd() *cobra.Command {
 		Long: `Scans for stale SAW worktrees (completed IMPLs, orphaned branches,
 merged-but-not-cleaned) and optionally removes them.
 
+Use --slug <slug> to target a specific IMPL slug.
+Use --all to clean stale worktrees across all slugs.
 Use --dry-run to preview what would be cleaned without acting.
 Use --force to skip safety checks for uncommitted changes.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			stale, err := protocol.DetectStaleWorktrees(repoDir)
+			if slug != "" && all {
+				return fmt.Errorf("--slug and --all are mutually exclusive")
+			}
+			if slug == "" && !all {
+				return fmt.Errorf("specify --slug <slug> or --all to target cleanup")
+			}
+
+			var stale []protocol.StaleWorktree
+			var err error
+			if slug != "" {
+				stale, err = protocol.DetectStaleWorktreesForSlug(repoDir, slug)
+			} else {
+				stale, err = protocol.DetectStaleWorktrees(repoDir)
+			}
 			if err != nil {
 				return fmt.Errorf("detect stale worktrees: %w", err)
 			}
 
 			if dryRun {
+				skipped := stale
+				if skipped == nil {
+					skipped = []protocol.StaleWorktree{}
+				}
 				out := cleanupStaleOutput{
 					Detected: len(stale),
 					Cleaned:  []protocol.StaleWorktree{},
-					Skipped:  stale,
+					Skipped:  skipped,
 					Errors:   []cleanupStaleError{},
 				}
 				return printJSON(out)
@@ -66,6 +87,8 @@ Use --force to skip safety checks for uncommitted changes.`,
 
 	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "Report what would be cleaned without acting")
 	cmd.Flags().BoolVar(&force, "force", false, "Skip safety checks for uncommitted changes")
+	cmd.Flags().StringVar(&slug, "slug", "", "Only clean stale worktrees matching this IMPL slug")
+	cmd.Flags().BoolVar(&all, "all", false, "Clean stale worktrees across all slugs")
 
 	return cmd
 }

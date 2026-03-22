@@ -117,3 +117,19 @@ func TestStaleWorktreeReasons(t *testing.T) {
 		}
 	}
 }
+
+func TestStaleDetectWorktreesForSlug(t *testing.T) {
+	// Use a temp dir that has no git worktrees — expect empty result and no error.
+	tmpDir := t.TempDir()
+	result, err := DetectStaleWorktreesForSlug(tmpDir, "my-feature")
+	if err != nil {
+		// git.WorktreeList may return an error for a non-git dir; that is
+		// propagated as an error from DetectStaleWorktreesForSlug.
+		// Accept either empty-with-no-error or an error (not a panic).
+		t.Logf("DetectStaleWorktreesForSlug returned expected error for non-git dir: %v", err)
+		return
+	}
+	if len(result) != 0 {
+		t.Errorf("expected 0 stale worktrees, got %d", len(result))
+	}
+}

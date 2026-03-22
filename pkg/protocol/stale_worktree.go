@@ -147,6 +147,30 @@ func CleanStaleWorktrees(stale []StaleWorktree, force bool) (*StaleCleanupResult
 	return result, nil
 }
 
+// DetectStaleWorktreesForSlug returns stale worktrees filtered to a specific slug.
+func DetectStaleWorktreesForSlug(repoPath, slug string) ([]StaleWorktree, error) {
+	all, err := DetectStaleWorktrees(repoPath)
+	if err != nil {
+		return nil, err
+	}
+	var filtered []StaleWorktree
+	for _, sw := range all {
+		if sw.Slug == slug {
+			filtered = append(filtered, sw)
+		}
+	}
+	return filtered, nil
+}
+
+// CleanupBySlug detects and cleans stale worktrees for a specific IMPL slug.
+func CleanupBySlug(repoDir, slug string, force bool) (*StaleCleanupResult, error) {
+	stale, err := DetectStaleWorktreesForSlug(repoDir, slug)
+	if err != nil {
+		return nil, err
+	}
+	return CleanStaleWorktrees(stale, force)
+}
+
 // fileExists returns true if the path exists and is a regular file.
 func fileExists(path string) bool {
 	info, err := os.Stat(path)
