@@ -8,8 +8,6 @@ import (
 	"bufio"
 	"fmt"
 	"strings"
-
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/types"
 )
 
 
@@ -18,27 +16,34 @@ import (
 // is "repo:file" so files with the same name in different repos are not flagged.
 // Returns a descriptive error for the first violation found, or nil if the
 // document is clean.
-func ValidateInvariants(doc *types.IMPLDoc) error {
-	if doc == nil {
+func ValidateInvariants(manifest *IMPLManifest) error {
+	if manifest == nil {
 		return nil
 	}
-	for _, wave := range doc.Waves {
-		seen := make(map[string]string) // "repo:file" -> agent letter
+
+	// Build a lookup map from the FileOwnership slice.
+	ownershipByFile := make(map[string]FileOwnership, len(manifest.FileOwnership))
+	for _, fo := range manifest.FileOwnership {
+		ownershipByFile[fo.File] = fo
+	}
+
+	for _, wave := range manifest.Waves {
+		seen := make(map[string]string) // "repo:file" -> agent ID
 		for _, agent := range wave.Agents {
-			for _, file := range agent.FilesOwned {
+			for _, file := range agent.Files {
 				// Build composite key: use repo from ownership table if available.
 				repo := ""
-				if info, ok := doc.FileOwnership[file]; ok {
-					repo = info.Repo
+				if fo, ok := ownershipByFile[file]; ok {
+					repo = fo.Repo
 				}
 				key := repo + ":" + file
 				if prev, ok := seen[key]; ok {
 					return fmt.Errorf(
 						"I1 violation in Wave %d: file %q claimed by both Agent %s and Agent %s",
-						wave.Number, file, prev, agent.Letter,
+						wave.Number, file, prev, agent.ID,
 					)
 				}
-				seen[key] = agent.Letter
+				seen[key] = agent.ID
 			}
 		}
 	}
