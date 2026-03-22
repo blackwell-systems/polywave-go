@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/blackwell-systems/scout-and-wave-go/internal/git"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/observability"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
 )
@@ -156,6 +157,15 @@ func RunTierLoop(ctx context.Context, opts TierLoopOpts) (*TierLoopResult, error
 				continue
 			}
 
+			// Ensure IMPL branch exists before wave execution (E28)
+			implBranch := protocol.ProgramBranchName(manifest.ProgramSlug, currentTier, slug)
+			if !git.BranchExists(opts.RepoPath, implBranch) {
+				if _, err := git.Run(opts.RepoPath, "checkout", "-b", implBranch); err != nil {
+					result.Errors = append(result.Errors, fmt.Sprintf("failed to create IMPL branch %s: %s", implBranch, err))
+					continue
+				}
+			}
+
 			// Determine number of waves for this IMPL
 			waveCount := getIMPLWaveCount(manifest, slug)
 			for wave := 1; wave <= waveCount; wave++ {
@@ -163,6 +173,7 @@ func RunTierLoop(ctx context.Context, opts TierLoopOpts) (*TierLoopResult, error
 					ManifestPath: implPath,
 					RepoPath:     opts.RepoPath,
 					WaveNum:      wave,
+					MergeTarget:  implBranch,
 				})
 				if waveErr != nil {
 					result.Errors = append(result.Errors, fmt.Sprintf("wave %d for %s failed: %s", wave, slug, waveErr))
