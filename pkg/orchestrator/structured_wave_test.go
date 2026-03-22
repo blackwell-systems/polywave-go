@@ -107,12 +107,12 @@ func TestLaunchAgentStructured_FallbackToCLI(t *testing.T) {
 		return agent.NewRunner(b, wm)
 	}
 
-	doc := &types.IMPLDoc{
-		Waves: []types.Wave{
+	doc := &protocol.IMPLManifest{
+		Waves: []protocol.Wave{
 			{
 				Number: 1,
-				Agents: []types.AgentSpec{
-					{Letter: "A", Prompt: "do work", Model: "cli:kimi"},
+				Agents: []protocol.Agent{
+					{ID: "A", Task: "do work", Model: "cli:kimi"},
 				},
 			},
 		},
@@ -123,7 +123,7 @@ func TestLaunchAgentStructured_FallbackToCLI(t *testing.T) {
 	runner := agent.NewRunner(fake, wm)
 
 	// Use the CLI model on the agent spec.
-	agentSpec := types.AgentSpec{Letter: "A", Prompt: "do work", Model: "cli:kimi"}
+	agentSpec := protocol.Agent{ID: "A", Task: "do work", Model: "cli:kimi"}
 	err := o.launchAgentStructured(context.Background(), runner, wm, 1, agentSpec)
 	if err != nil {
 		t.Fatalf("launchAgentStructured returned unexpected error: %v", err)
@@ -170,9 +170,9 @@ func TestLaunchAgentStructured_APIPath(t *testing.T) {
 		return nil
 	}
 
-	doc := &types.IMPLDoc{
-		Waves: []types.Wave{
-			{Number: 1, Agents: []types.AgentSpec{{Letter: "A", Prompt: "do work"}}},
+	doc := &protocol.IMPLManifest{
+		Waves: []protocol.Wave{
+			{Number: 1, Agents: []protocol.Agent{{ID: "A", Task: "do work"}}},
 		},
 	}
 	o := newFromDoc(doc, dir, implPath)
@@ -188,7 +188,7 @@ func TestLaunchAgentStructured_APIPath(t *testing.T) {
 
 	wm := worktree.New(dir, "test-slug")
 	runner := agent.NewRunner(&fakeBackend{}, wm)
-	agentSpec := types.AgentSpec{Letter: "A", Prompt: "do work"}
+	agentSpec := protocol.Agent{ID: "A", Task: "do work"}
 
 	err := o.launchAgentStructured(context.Background(), runner, wm, 1, agentSpec)
 	if err != nil {
@@ -244,9 +244,9 @@ func TestLaunchAgentStructured_PublishesBlockedEvent(t *testing.T) {
 		return nil
 	}
 
-	doc := &types.IMPLDoc{
-		Waves: []types.Wave{
-			{Number: 1, Agents: []types.AgentSpec{{Letter: "A", Prompt: "do work"}}},
+	doc := &protocol.IMPLManifest{
+		Waves: []protocol.Wave{
+			{Number: 1, Agents: []protocol.Agent{{ID: "A", Task: "do work"}}},
 		},
 	}
 	o := newFromDoc(doc, dir, implPath)
@@ -261,7 +261,7 @@ func TestLaunchAgentStructured_PublishesBlockedEvent(t *testing.T) {
 
 	wm := worktree.New(dir, "test-slug")
 	runner := agent.NewRunner(&fakeBackend{}, wm)
-	agentSpec := types.AgentSpec{Letter: "A", Prompt: "do work"}
+	agentSpec := protocol.Agent{ID: "A", Task: "do work"}
 
 	err := o.launchAgentStructured(context.Background(), runner, wm, 1, agentSpec)
 	if err != nil {
@@ -316,9 +316,9 @@ func TestLaunchAgentStructured_WorktreeCreationFailure(t *testing.T) {
 		return "", fmt.Errorf("simulated worktree failure")
 	}
 
-	doc := &types.IMPLDoc{
-		Waves: []types.Wave{
-			{Number: 1, Agents: []types.AgentSpec{{Letter: "A", Prompt: "do work"}}},
+	doc := &protocol.IMPLManifest{
+		Waves: []protocol.Wave{
+			{Number: 1, Agents: []protocol.Agent{{ID: "A", Task: "do work"}}},
 		},
 	}
 	o := newFromDoc(doc, "/repo", "/repo/IMPL.md")
@@ -333,7 +333,7 @@ func TestLaunchAgentStructured_WorktreeCreationFailure(t *testing.T) {
 
 	wm := worktree.New("/repo", "test-slug")
 	runner := agent.NewRunner(&fakeBackend{}, wm)
-	agentSpec := types.AgentSpec{Letter: "A", Prompt: "do work"}
+	agentSpec := protocol.Agent{ID: "A", Task: "do work"}
 
 	err := o.launchAgentStructured(context.Background(), runner, wm, 1, agentSpec)
 	if err == nil {
@@ -378,9 +378,9 @@ func TestLaunchAgentStructured_StructuredFunctionError(t *testing.T) {
 		return fmt.Errorf("structured run failed: API timeout")
 	}
 
-	doc := &types.IMPLDoc{
-		Waves: []types.Wave{
-			{Number: 1, Agents: []types.AgentSpec{{Letter: "A", Prompt: "do work"}}},
+	doc := &protocol.IMPLManifest{
+		Waves: []protocol.Wave{
+			{Number: 1, Agents: []protocol.Agent{{ID: "A", Task: "do work"}}},
 		},
 	}
 	o := newFromDoc(doc, "/repo", "/repo/IMPL.md")
@@ -395,7 +395,7 @@ func TestLaunchAgentStructured_StructuredFunctionError(t *testing.T) {
 
 	wm := worktree.New("/repo", "test-slug")
 	runner := agent.NewRunner(&fakeBackend{}, wm)
-	agentSpec := types.AgentSpec{Letter: "A", Prompt: "do work"}
+	agentSpec := protocol.Agent{ID: "A", Task: "do work"}
 
 	err := o.launchAgentStructured(context.Background(), runner, wm, 1, agentSpec)
 	if err == nil {
@@ -456,9 +456,9 @@ func TestLaunchAgentStructured_OnChunkForwarding(t *testing.T) {
 		return nil
 	}
 
-	doc := &types.IMPLDoc{
-		Waves: []types.Wave{
-			{Number: 1, Agents: []types.AgentSpec{{Letter: "A", Prompt: "do work"}}},
+	doc := &protocol.IMPLManifest{
+		Waves: []protocol.Wave{
+			{Number: 1, Agents: []protocol.Agent{{ID: "A", Task: "do work"}}},
 		},
 	}
 	o := newFromDoc(doc, dir, implPath)
@@ -477,7 +477,7 @@ func TestLaunchAgentStructured_OnChunkForwarding(t *testing.T) {
 
 	wm := worktree.New(dir, "test-slug")
 	runner := agent.NewRunner(&fakeBackend{}, wm)
-	agentSpec := types.AgentSpec{Letter: "A", Prompt: "do work"}
+	agentSpec := protocol.Agent{ID: "A", Task: "do work"}
 
 	err := o.launchAgentStructured(context.Background(), runner, wm, 1, agentSpec)
 	if err != nil {
@@ -519,9 +519,9 @@ func TestSetRunWaveAgentStructuredFunc(t *testing.T) {
 		return "/tmp/fake-wt-" + letter, nil
 	}
 
-	doc := &types.IMPLDoc{
-		Waves: []types.Wave{
-			{Number: 1, Agents: []types.AgentSpec{{Letter: "A", Prompt: "do work"}}},
+	doc := &protocol.IMPLManifest{
+		Waves: []protocol.Wave{
+			{Number: 1, Agents: []protocol.Agent{{ID: "A", Task: "do work"}}},
 		},
 	}
 	o := newFromDoc(doc, "/repo", "/repo/IMPL.md")
@@ -529,7 +529,7 @@ func TestSetRunWaveAgentStructuredFunc(t *testing.T) {
 	runner := agent.NewRunner(&fakeBackend{}, wm)
 
 	// The error is expected; we just want to verify it was called.
-	_ = o.launchAgentStructured(context.Background(), runner, wm, 1, types.AgentSpec{Letter: "A", Prompt: "do work"})
+	_ = o.launchAgentStructured(context.Background(), runner, wm, 1, protocol.Agent{ID: "A", Task: "do work"})
 	if !called {
 		t.Error("SetRunWaveAgentStructuredFunc: injected function was not called")
 	}

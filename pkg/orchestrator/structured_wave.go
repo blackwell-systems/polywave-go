@@ -54,8 +54,10 @@ func (o *Orchestrator) launchAgentStructured(
 	runner *agent.Runner,
 	wm *worktree.Manager,
 	waveNum int,
-	agentSpec types.AgentSpec,
+	protoAgent protocol.Agent,
 ) error {
+	// Convert protocol.Agent to types.AgentSpec at the boundary.
+	agentSpec := agentToSpec(protoAgent)
 	// Resolve effective model for backend detection.
 	model := o.defaultModel
 	if agentSpec.Model != "" {

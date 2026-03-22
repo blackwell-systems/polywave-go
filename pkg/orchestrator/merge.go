@@ -8,7 +8,6 @@ import (
 
 	"github.com/blackwell-systems/scout-and-wave-go/internal/git"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/types"
 )
 
 func init() {
@@ -19,7 +18,7 @@ func init() {
 // Called by Orchestrator.MergeWave via the mergeWaveFunc variable (set in init()).
 func executeMergeWave(o *Orchestrator, waveNum int) error {
 	// Step 1: Find wave in IMPL doc.
-	var wave *types.Wave
+	var wave *protocol.Wave
 	for i := range o.IMPLDoc().Waves {
 		if o.IMPLDoc().Waves[i].Number == waveNum {
 			wave = &o.IMPLDoc().Waves[i]
@@ -36,39 +35,19 @@ func executeMergeWave(o *Orchestrator, waveNum int) error {
 		return fmt.Errorf("executeMergeWave: loading manifest: %w", err)
 	}
 
-	reports := make(map[string]*types.CompletionReport, len(wave.Agents))
+	reports := make(map[string]*protocol.CompletionReport, len(wave.Agents))
 	for _, agent := range wave.Agents {
-		protoReport, ok := manifest.CompletionReports[agent.Letter]
+		protoReport, ok := manifest.CompletionReports[agent.ID]
 		if !ok {
-			return fmt.Errorf("executeMergeWave: no completion report for agent %s", agent.Letter)
+			return fmt.Errorf("executeMergeWave: no completion report for agent %s", agent.ID)
 		}
 
-		// Convert protocol.CompletionReport to types.CompletionReport
-		var status types.CompletionStatus
-		switch protoReport.Status {
-		case "complete":
-			status = types.StatusComplete
-		case "partial":
-			status = types.StatusPartial
-		case "blocked":
-			status = types.StatusBlocked
-		default:
-			status = types.StatusPartial
-		}
+		report := &protoReport
 
-		report := &types.CompletionReport{
-			Status:       status,
-			Worktree:     protoReport.Worktree,
-			Branch:       protoReport.Branch,
-			Commit:       protoReport.Commit,
-			FilesChanged: protoReport.FilesChanged,
-			FilesCreated: protoReport.FilesCreated,
+		if report.Status == "partial" || report.Status == "blocked" {
+			return fmt.Errorf("executeMergeWave: agent %s has status %q — merge aborted", agent.ID, report.Status)
 		}
-
-		if report.Status == types.StatusPartial || report.Status == types.StatusBlocked {
-			return fmt.Errorf("executeMergeWave: agent %s has status %q — merge aborted", agent.Letter, report.Status)
-		}
-		reports[agent.Letter] = report
+		reports[agent.ID] = report
 	}
 
 	// Step 3: Record base commit before any merges.
@@ -96,7 +75,7 @@ func executeMergeWave(o *Orchestrator, waveNum int) error {
 	}
 
 	// Filter out already-merged agents before verification.
-	pendingReports := make(map[string]*types.CompletionReport, len(reports))
+	pendingReports := make(map[string]*protocol.CompletionReport, len(reports))
 	for letter, report := range reports {
 		if !mergeLog.IsMerged(letter) {
 			pendingReports[letter] = report
@@ -124,29 +103,29 @@ func executeMergeWave(o *Orchestrator, waveNum int) error {
 	// Step 7 & 8: Merge each complete agent; clean up worktree afterward.
 	// Cross-repo agents are merged in their own repos.
 	for _, agent := range wave.Agents {
-		report, ok := reports[agent.Letter]
-		if !ok || report.Status != types.StatusComplete {
+		report, ok := reports[agent.ID]
+		if !ok || report.Status != "complete" {
 			continue
 		}
 
 		// Check if agent already merged (idempotency)
-		if mergeLog.IsMerged(agent.Letter) {
-			fmt.Fprintf(os.Stderr, "executeMergeWave: agent %s already merged (skipping)\n", agent.Letter)
+		if mergeLog.IsMerged(agent.ID) {
+			fmt.Fprintf(os.Stderr, "executeMergeWave: agent %s already merged (skipping)\n", agent.ID)
 			continue
 		}
 
-		branch := protocol.BranchName(manifest.FeatureSlug, waveNum, agent.Letter)
+		branch := protocol.BranchName(manifest.FeatureSlug, waveNum, agent.ID)
 
 		// Resolve the repo this agent works in (cross-repo support).
 		mergeRepo := o.repoPath
-		if r, ok := agentRepoDir[agent.Letter]; ok {
+		if r, ok := agentRepoDir[agent.ID]; ok {
 			mergeRepo = r
 		}
 
 		// Skip merge for no-op agents (no file changes — nothing to merge).
 		if len(report.FilesChanged) == 0 && len(report.FilesCreated) == 0 {
-			fmt.Fprintf(os.Stderr, "executeMergeWave: agent %s produced no changes (skipping merge)\n", agent.Letter)
-			mergeLog.AddMergeEntry(agent.Letter, "no-op")
+			fmt.Fprintf(os.Stderr, "executeMergeWave: agent %s produced no changes (skipping merge)\n", agent.ID)
+			mergeLog.AddMergeEntry(agent.ID, "no-op")
 			if saveErr := protocol.SaveMergeLog(o.implDocPath, waveNum, mergeLog); saveErr != nil {
 				fmt.Fprintf(os.Stderr, "executeMergeWave: warning: failed to save merge-log: %v\n", saveErr)
 			}
@@ -167,7 +146,7 @@ func executeMergeWave(o *Orchestrator, waveNum int) error {
 			continue
 		}
 
-		mergeMsg := fmt.Sprintf("Merge %s: %s", branch, agent.Letter)
+		mergeMsg := fmt.Sprintf("Merge %s: %s", branch, agent.ID)
 
 		if err := git.MergeNoFF(mergeRepo, branch, mergeMsg); err != nil {
 			return fmt.Errorf("executeMergeWave: merging %s in %s: %w", branch, mergeRepo, err)
@@ -176,11 +155,11 @@ func executeMergeWave(o *Orchestrator, waveNum int) error {
 		// Get merge commit SHA
 		mergeSHA, err := git.RevParse(mergeRepo, "HEAD")
 		if err != nil {
-			return fmt.Errorf("executeMergeWave: getting merge SHA for %s: %w", agent.Letter, err)
+			return fmt.Errorf("executeMergeWave: getting merge SHA for %s: %w", agent.ID, err)
 		}
 
 		// Record merge in log (E9)
-		mergeLog.AddMergeEntry(agent.Letter, mergeSHA)
+		mergeLog.AddMergeEntry(agent.ID, mergeSHA)
 		if saveErr := protocol.SaveMergeLog(o.implDocPath, waveNum, mergeLog); saveErr != nil {
 			fmt.Fprintf(os.Stderr, "executeMergeWave: warning: failed to save merge-log: %v\n", saveErr)
 		}
@@ -208,7 +187,7 @@ func executeMergeWave(o *Orchestrator, waveNum int) error {
 // predictConflicts cross-references files_changed and files_created from all
 // completion reports. Returns error if any file appears in >1 agent's lists.
 // Excludes files matching "docs/IMPL/" prefix.
-func predictConflicts(reports map[string]*types.CompletionReport) error {
+func predictConflicts(reports map[string]*protocol.CompletionReport) error {
 	// map of filename -> first agent letter that claimed it
 	seen := make(map[string]string)
 
@@ -234,9 +213,9 @@ func predictConflicts(reports map[string]*types.CompletionReport) error {
 // verifyAgentCommits checks each agent with status:complete has at least 1 commit
 // on its branch beyond baseCommit. agentRepoDir maps agent IDs to their repo
 // paths for cross-repo waves; agents not in the map use repoPath.
-func verifyAgentCommits(repoPath, baseCommit string, reports map[string]*types.CompletionReport, agentRepoDir map[string]string) error {
+func verifyAgentCommits(repoPath, baseCommit string, reports map[string]*protocol.CompletionReport, agentRepoDir map[string]string) error {
 	for letter, report := range reports {
-		if report.Status != types.StatusComplete {
+		if report.Status != "complete" {
 			continue
 		}
 
