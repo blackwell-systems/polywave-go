@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/engine"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
 	"github.com/spf13/cobra"
 )
@@ -43,6 +44,11 @@ Exit codes:
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "program-status: failed to get current directory: %v\n", err)
 				os.Exit(2)
+			}
+
+			// Sync status from disk before displaying (non-fatal on error)
+			if syncErr := engine.SyncProgramStatusFromDisk(manifestPath, repoPath); syncErr != nil {
+				fmt.Fprintf(os.Stderr, "program-status: warning: sync from disk failed: %v\n", syncErr)
 			}
 
 			// Get program status
