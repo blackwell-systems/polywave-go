@@ -1,0 +1,551 @@
+title: Determinism Roadmap Remaining Items
+feature_slug: determinism-remaining
+verdict: SUITABLE
+suitability_assessment: |
+    7 items across 4 packages (pkg/engine, pkg/orchestrator, pkg/protocol, cmd/saw).
+    All items have well-defined scope with disjoint file ownership.
+
+    File decomposition: 10+ distinct files across 4 packages. No two agents need
+    conflicting modifications to the same file.
+
+    Investigation-first: None. All items have known root causes documented in
+    determinism-roadmap.md with specific file/line references.
+
+    Interface discoverability: Yes. M1 introduces a new wrapper type. M2/M3 add
+    boolean fields to an existing opts struct. L1-L4 are self-contained refactors
+    with no new cross-agent interfaces.
+
+    Pre-implementation status: All 7 items are TODO (verified against codebase).
+
+    Parallelization value: High. 5 agents across 2 waves. Build/test cycle is
+    non-trivial (Go compile + test suite). Agents are largely independent with
+    only L3 depending on Wave 1 (its consolidated function must exist before
+    callers can be updated).
+
+    Estimated times:
+    - Scout phase: ~8 min
+    - Agent execution: ~15 min (5 agents, ~5 min avg, 2 waves)
+    - Merge and verification: ~4 min
+    Total SAW time: ~27 min
+    Sequential baseline: ~35 min (5 agents x 7 min avg)
+    Time savings: ~8 min (23% faster)
+    Recommendation: Clear speedup with coordination value.
+test_command: go test ./...
+lint_command: go vet ./...
+file_ownership:
+    - file: pkg/engine/run_wave_atomic.go
+      agent: A
+      wave: 1
+      action: new
+    - file: pkg/engine/run_wave_atomic_test.go
+      agent: A
+      wave: 1
+      action: new
+    - file: pkg/engine/finalize.go
+      agent: B
+      wave: 1
+      action: modify
+    - file: pkg/engine/finalize_test.go
+      agent: B
+      wave: 1
+      action: modify
+    - file: pkg/engine/runner.go
+      agent: C
+      wave: 1
+      action: modify
+    - file: pkg/engine/constraints.go
+      agent: C
+      wave: 1
+      action: modify
+    - file: pkg/engine/constraints_test.go
+      agent: C
+      wave: 1
+      action: modify
+    - file: pkg/engine/runner_test.go
+      agent: C
+      wave: 1
+      action: modify
+    - file: pkg/protocol/types.go
+      agent: D
+      wave: 1
+      action: modify
+    - file: pkg/protocol/validation.go
+      agent: D
+      wave: 1
+      action: modify
+    - file: pkg/protocol/schema_validation.go
+      agent: D
+      wave: 1
+      action: modify
+    - file: pkg/protocol/fieldvalidation.go
+      agent: D
+      wave: 1
+      action: modify
+    - file: pkg/protocol/schema_cross_field.go
+      agent: D
+      wave: 1
+      action: modify
+    - file: pkg/protocol/validation_test.go
+      agent: D
+      wave: 1
+      action: modify
+    - file: pkg/protocol/multi_repo.go
+      agent: E
+      wave: 2
+      action: new
+    - file: pkg/protocol/multi_repo_test.go
+      agent: E
+      wave: 2
+      action: new
+    - file: pkg/protocol/worktree.go
+      agent: E
+      wave: 2
+      action: modify
+    - file: pkg/protocol/cleanup.go
+      agent: E
+      wave: 2
+      action: modify
+    - file: cmd/saw/prepare_wave.go
+      agent: E
+      wave: 2
+      action: modify
+    - file: cmd/saw/prepare_wave_test.go
+      agent: E
+      wave: 2
+      action: modify
+interface_contracts:
+    - name: RunWaveTransaction
+      description: |
+        Atomic wrapper around RunWaveFull that commits state only after all
+        steps succeed. On failure, rolls back IMPL doc state to pre-execution.
+      definition: |
+        // RunWaveTransactionOpts configures the atomic wave execution wrapper.
+        type RunWaveTransactionOpts struct {
+            IMPLPath    string
+            RepoPath    string
+            WaveNum     int
+            MergeTarget string
+            ObsEmitter  *observability.Emitter
+        }
+
+        // RunWaveTransaction executes FinalizeWave atomically: on any step failure,
+        // the IMPL doc state is rolled back to its value before execution began.
+        // Returns (*FinalizeWaveResult, error).
+        func RunWaveTransaction(ctx context.Context, opts RunWaveTransactionOpts) (*FinalizeWaveResult, error)
+      location: pkg/engine/run_wave_atomic.go
+    - name: FinalizeWaveOpts enforcement fields
+      description: |
+        Two new boolean fields on FinalizeWaveOpts that make stub detection (E20)
+        and integration validation (E25) fatal when enabled.
+      definition: |
+        // Added to existing FinalizeWaveOpts struct:
+        EnforceIntegrationValidation bool  // When true, unconnected exports block merge
+        RequireNoStubs               bool  // When true, TODO/FIXME in changed files block merge
+      location: pkg/engine/finalize.go
+    - name: ResolveAgentRepo
+      description: |
+        Unified function consolidating determineAgentRepo (pkg/protocol/worktree.go)
+        and resolveAgentRepoRoot (cmd/saw/prepare_wave.go) into a single entry point.
+      definition: |
+        // ResolveAgentRepo returns the absolute repo root path for an agent.
+        // It looks up the agent's repo name from fileOwnership, then resolves
+        // the path from the repos registry. Falls back to fallbackRoot if the
+        // agent has no repo field or the repo is not found in the registry.
+        func ResolveAgentRepo(
+            fileOwnership []FileOwnership,
+            agentID string,
+            fallbackRoot string,
+            repos []RepoEntry,
+        ) string
+      location: pkg/protocol/multi_repo.go
+    - name: ValidationError enhanced struct
+      description: |
+        Extended ValidationError with Slug, Wave, AgentID context fields for
+        consistent debugging output across all validators.
+      definition: |
+        type ValidationError struct {
+            Code    string `json:"code"`
+            Message string `json:"message"`
+            Field   string `json:"field,omitempty"`
+            Line    int    `json:"line,omitempty"`
+            Slug    string `json:"slug,omitempty"`
+            Wave    int    `json:"wave,omitempty"`
+            AgentID string `json:"agent_id,omitempty"`
+        }
+      location: pkg/protocol/types.go
+waves:
+    - number: 1
+      agents:
+        - id: A
+          task: |
+            ## M1: Atomic RunWave Transaction Wrapper
+
+            **What to implement:**
+            Create `pkg/engine/run_wave_atomic.go` with a `RunWaveTransaction` function
+            that wraps `FinalizeWave` with rollback semantics.
+
+            **Design:**
+            1. Define `RunWaveTransactionOpts` struct (same fields as `FinalizeWaveOpts`
+               plus any transaction-specific config).
+            2. Before calling `FinalizeWave`, snapshot the current IMPL doc state by
+               loading the manifest and saving key fields (state, merge_state,
+               completion_reports).
+            3. Call `FinalizeWave` with the opts.
+            4. If `FinalizeWave` returns an error, restore the IMPL doc to the
+               snapshotted state by reloading, resetting fields, and saving.
+            5. If `FinalizeWave` succeeds, no rollback needed.
+
+            **Key details:**
+            - The snapshot must capture: `manifest.State`, `manifest.MergeState`,
+              and the wave's completion reports.
+            - Rollback means: reload manifest from disk, reset state/merge_state to
+              snapshot values, save manifest back. This handles partial state written
+              by FinalizeWave substeps.
+            - Import `pkg/protocol` for Load/Save and `pkg/observability` for emitter.
+            - Follow existing patterns in `pkg/engine/finalize.go` and
+              `pkg/engine/run_wave_full.go`.
+
+            **Tests:** Create `pkg/engine/run_wave_atomic_test.go` with:
+            - Test that successful execution returns result with Success=true
+            - Test that failure mid-pipeline rolls back IMPL state
+            - Use a temp IMPL YAML file for testing (see finalize_test.go patterns)
+
+            **Verification gate:**
+            ```
+            go build ./pkg/engine/... && go test ./pkg/engine/ -run TestRunWaveTransaction -v
+            ```
+
+            **Constraints:**
+            - Only create/modify files in your ownership list
+            - Do not modify finalize.go (Agent B owns it)
+            - Follow existing error message patterns: "engine.FunctionName: description"
+          files:
+            - pkg/engine/run_wave_atomic.go
+            - pkg/engine/run_wave_atomic_test.go
+        - id: B
+          task: |
+            ## M2 + M3: Integration Validation and Stub Detection Enforcement
+
+            **What to implement:**
+            Modify `pkg/engine/finalize.go` to add two new boolean fields to
+            `FinalizeWaveOpts` and enforce them in the `FinalizeWave` pipeline.
+
+            **M2 — Integration validation enforcement (E25):**
+            1. Add `EnforceIntegrationValidation bool` to `FinalizeWaveOpts`.
+            2. In Step 3.5 of `FinalizeWave`, after `ValidateIntegration()` returns,
+               check: if `opts.EnforceIntegrationValidation` is true AND the
+               integration report has unconnected exports (gaps), return a fatal error
+               that blocks the pipeline before merge (Step 4).
+            3. Keep existing non-fatal behavior as default when the bool is false.
+
+            **M3 — Mandatory stub detection (E20):**
+            1. Add `RequireNoStubs bool` to `FinalizeWaveOpts`.
+            2. In Step 2 of `FinalizeWave`, after `ScanStubs()` returns, check:
+               if `opts.RequireNoStubs` is true AND `len(stubResult.Hits) > 0`,
+               return a fatal error that blocks
+               the pipeline before gates (Step 3).
+            3. Keep existing non-fatal behavior as default when the bool is false.
+
+            **Key details:**
+            - `FinalizeWaveResult` struct does NOT need changes — errors are returned
+              via the error return value, same as existing fatal failures.
+            - Check `protocol.IntegrationReport` for its fields to determine
+              how to detect unconnected exports (look for `Gaps` or similar field).
+            - `protocol.ScanStubsResult` has a `Hits` field (`[]StubHit`).
+              Check `len(stubResult.Hits) > 0` to detect stubs.
+
+            **Tests:** Add tests to `pkg/engine/finalize_test.go`:
+            - Test M2: FinalizeWave with EnforceIntegrationValidation=true and
+              unconnected exports returns error before merge
+            - Test M3: FinalizeWave with RequireNoStubs=true and stubs present
+              returns error before merge
+            - Test default behavior (both false) is unchanged
+
+            **Verification gate:**
+            ```
+            go build ./pkg/engine/... && go test ./pkg/engine/ -run TestFinalizeWave -v
+            ```
+
+            **Constraints:**
+            - Only modify files in your ownership list
+            - Do not change FinalizeWaveResult struct (result type stays the same)
+            - Preserve backward compatibility: default (false) = existing behavior
+          files:
+            - pkg/engine/finalize.go
+            - pkg/engine/finalize_test.go
+        - id: C
+          task: |
+            ## L1 + L4: Prompt Error Enforcement and YAML Fallback Removal
+
+            **What to implement:**
+
+            **L1 — Missing agent prompt files should error (runner.go):**
+            1. In `pkg/engine/runner.go`, find the `RunScout` function around lines
+               66-69 where `scoutMdBytes` is read with `os.ReadFile(scoutMdPath)`.
+            2. Currently on error it falls back to a hardcoded string. Change this to
+               return a proper error:
+               ```go
+               if err != nil {
+                   return fmt.Errorf("engine.RunScout: scout.md not found at %s: %w", scoutMdPath, err)
+               }
+               ```
+            3. Remove the hardcoded fallback string entirely.
+
+            **L4 — Remove raw YAML fallback for IntegrationConnectors (constraints.go):**
+            1. In `pkg/engine/constraints.go`, find `BuildIntegratorConstraints()`.
+            2. Replace the call to `loadIntegrationConnectors(implPath)` with direct
+               usage of `manifest.IntegrationConnectors`:
+               ```go
+               func BuildIntegratorConstraints(implPath string) (*tools.Constraints, error) {
+                   manifest, err := protocol.Load(implPath)
+                   if err != nil {
+                       return nil, fmt.Errorf("BuildIntegratorConstraints: load manifest: %w", err)
+                   }
+                   return buildIntegratorConstraints(manifest, manifest.IntegrationConnectors), nil
+               }
+               ```
+            3. Delete the entire `loadIntegrationConnectors()` function (lines 151-169).
+            4. Remove the stale comment at line 84 that says "manifest.IntegrationConnectors
+               is not yet on the typed struct".
+            5. Remove the `"gopkg.in/yaml.v3"` import if it becomes unused.
+
+            **Tests:**
+            - In `runner_test.go`: Add test that RunScout returns error when
+              scout.md path does not exist (set SAWRepoPath to a nonexistent dir).
+            - In `constraints_test.go`: Verify BuildIntegratorConstraints still works
+              correctly (existing tests should pass; add one confirming no YAML re-read).
+
+            **Verification gate:**
+            ```
+            go build ./pkg/engine/... && go test ./pkg/engine/ -run "TestRunScout|TestBuildIntegrator" -v
+            ```
+
+            **Constraints:**
+            - Only modify files in your ownership list
+            - Do not modify finalize.go (Agent B owns it)
+            - Removing `loadIntegrationConnectors` may require removing the `os` import
+              if unused — check and clean up imports
+          files:
+            - pkg/engine/runner.go
+            - pkg/engine/constraints.go
+            - pkg/engine/constraints_test.go
+            - pkg/engine/runner_test.go
+        - id: D
+          task: |
+            ## L2: Standardize ValidationError Context Fields
+
+            **What to implement:**
+            Enhance the `ValidationError` struct in `pkg/protocol/types.go` and
+            update key validators to populate the new fields consistently.
+
+            **Step 1 — Extend the struct (types.go):**
+            Add three new fields to `ValidationError`:
+            ```go
+            type ValidationError struct {
+                Code    string `json:"code"`
+                Message string `json:"message"`
+                Field   string `json:"field,omitempty"`
+                Line    int    `json:"line,omitempty"`
+                Slug    string `json:"slug,omitempty"`
+                Wave    int    `json:"wave,omitempty"`
+                AgentID string `json:"agent_id,omitempty"`
+            }
+            ```
+
+            **Step 2 — Update key validators:**
+            Audit and update these high-impact validator files to populate the new
+            fields where context is available:
+            - `validation.go`: Pass manifest slug to sub-validators where possible.
+              In `validateI1DisjointOwnership`, populate Wave and AgentID on errors.
+              In `validateI2AgentDependencies`, populate Wave and AgentID.
+            - `schema_validation.go`: Populate Slug from manifest when available.
+            - `fieldvalidation.go`: Populate Wave/AgentID where wave/agent context
+              is available in the validation loop.
+            - `schema_cross_field.go`: Populate AgentID where agent references appear.
+
+            **Step 3 — Add helper constructor:**
+            Add a helper function to reduce boilerplate:
+            ```go
+            func newValidationError(code, message string) ValidationError {
+                return ValidationError{Code: code, Message: message}
+            }
+            func (ve ValidationError) WithContext(slug string, wave int, agentID string) ValidationError {
+                ve.Slug = slug
+                ve.Wave = wave
+                ve.AgentID = agentID
+                return ve
+            }
+            ```
+
+            **Key constraints:**
+            - The new fields are `omitempty` so existing JSON output is unchanged
+              when fields are zero-valued. This is backward compatible.
+            - Do NOT attempt to update all 146 ValidationError construction sites.
+              Focus on the 5 files in your ownership. Other files can be updated
+              incrementally in future work.
+            - The Validate() function in validation.go has access to `m.FeatureSlug`
+              — thread it through to sub-validators where practical.
+
+            **Tests:** Update `validation_test.go`:
+            - Test that I1 violations include Wave and AgentID in the error
+            - Test that the new fields are omitted from JSON when zero
+            - Test the WithContext helper
+
+            **Verification gate:**
+            ```
+            go build ./pkg/protocol/... && go test ./pkg/protocol/ -run TestValidat -v
+            ```
+
+            **Constraints:**
+            - Only modify files in your ownership list
+            - Do not modify worktree.go, cleanup.go, or multi_repo.go (Agent E owns those)
+            - Preserve backward compatibility: zero-valued new fields must not
+              change existing JSON/YAML output
+          files:
+            - pkg/protocol/types.go
+            - pkg/protocol/validation.go
+            - pkg/protocol/schema_validation.go
+            - pkg/protocol/fieldvalidation.go
+            - pkg/protocol/schema_cross_field.go
+            - pkg/protocol/validation_test.go
+    - number: 2
+      agents:
+        - id: E
+          task: |
+            ## L3: Consolidate Multi-Repo Resolution Logic
+
+            **What to implement:**
+            Extract a unified `ResolveAgentRepo()` function into
+            `pkg/protocol/multi_repo.go` and update all callers to use it.
+
+            **Step 1 — Create pkg/protocol/multi_repo.go:**
+            ```go
+            package protocol
+
+            // ResolveAgentRepo returns the absolute repo root path for an agent.
+            // It looks up the agent's repo name from fileOwnership, then resolves
+            // the path from the repos registry. Falls back to fallbackRoot if the
+            // agent has no repo field or the repo is not found in the registry.
+            func ResolveAgentRepo(
+                fileOwnership []FileOwnership,
+                agentID string,
+                fallbackRoot string,
+                repos []RepoEntry,
+            ) string {
+                repoName := ""
+                for _, fo := range fileOwnership {
+                    if fo.Agent == agentID && fo.Repo != "" {
+                        repoName = fo.Repo
+                        break
+                    }
+                }
+                if repoName == "" {
+                    return fallbackRoot
+                }
+                for _, r := range repos {
+                    if r.Name == repoName {
+                        return r.Path
+                    }
+                }
+                return fallbackRoot
+            }
+            ```
+            This is the superset of `determineAgentRepo` (worktree.go) and
+            `resolveAgentRepoRoot` (cmd/saw/prepare_wave.go).
+
+            **Step 2 — Update callers in pkg/protocol/worktree.go:**
+            Replace calls to `determineAgentRepo(doc.FileOwnership, agent.ID)` with
+            `ResolveAgentRepo(doc.FileOwnership, agent.ID, repoRoot, nil)` where
+            `repoRoot` is the existing fallback parameter. Note: the worktree.go
+            callers currently only use the repo name (not path), so when repos is
+            nil, the function falls back to fallbackRoot which matches current behavior.
+
+            Actually, the existing callers in worktree.go use determineAgentRepo to
+            get a repo NAME (not path). The new function returns a PATH. So:
+            - Keep `determineAgentRepo` as a thin wrapper or inline its logic, but
+              have it call `ResolveAgentRepo` internally, OR
+            - Change the worktree.go callers to use the name differently.
+
+            Review the actual usage in worktree.go lines 89, 107 to understand whether
+            the caller needs a name or a path, and adapt accordingly.
+
+            **Step 3 — Update cmd/saw/prepare_wave.go:**
+            Replace the local `resolveAgentRepoRoot()` function with a call to
+            `protocol.ResolveAgentRepo()`. Remove the local function definition.
+            Update the call site at line 439.
+
+            **Step 4 — Update pkg/protocol/cleanup.go:**
+            Replace the call to `determineAgentRepo()` at line 98 similarly.
+
+            **Tests:** Create `pkg/protocol/multi_repo_test.go`:
+            - Test with agent that has repo field and matching registry entry
+            - Test with agent that has repo field but no registry match (fallback)
+            - Test with agent that has no repo field (fallback)
+            - Test with nil repos slice (fallback)
+            Update `cmd/saw/prepare_wave_test.go`:
+            - Update existing `resolveAgentRepoRoot` tests to call
+              `protocol.ResolveAgentRepo` instead
+
+            **Verification gate:**
+            ```
+            go build ./... && go test ./pkg/protocol/ -run TestResolveAgentRepo -v && go test ./cmd/saw/ -run TestResolveAgent -v
+            ```
+
+            **Constraints:**
+            - Only modify files in your ownership list
+            - Do not modify types.go or validation.go (Agent D owns those)
+            - RepoEntry type already exists in pkg/protocol/repo_resolve.go — reuse it
+            - The existing determineAgentRepo in worktree.go can be removed or kept
+              as a deprecated wrapper; prefer removal if all callers are updated
+          files:
+            - pkg/protocol/multi_repo.go
+            - pkg/protocol/multi_repo_test.go
+            - pkg/protocol/worktree.go
+            - pkg/protocol/cleanup.go
+            - cmd/saw/prepare_wave.go
+            - cmd/saw/prepare_wave_test.go
+          dependencies:
+            - D
+quality_gates:
+    level: standard
+    gates:
+        - type: build
+          command: go build ./...
+          required: true
+        - type: lint
+          command: go vet ./...
+          required: true
+        - type: test
+          command: go test ./...
+          required: true
+pre_mortem:
+    overall_risk: low
+    rows:
+        - scenario: Agent D's ValidationError struct change causes compilation errors in untouched validator files
+          likelihood: low
+          impact: low
+          mitigation: |
+            New fields are additive with omitempty tags. Existing ValidationError{...}
+            literal constructions remain valid because Go allows partial struct initialization.
+        - scenario: L1 prompt error change breaks existing RunScout integration tests
+          likelihood: medium
+          impact: low
+          mitigation: |
+            Agent C should check runner_test.go and runner_automation_test.go for tests
+            that rely on the fallback behavior and update them to provide a valid scout.md
+            path or mock the file read.
+        - scenario: L3 multi-repo consolidation changes break prepare-wave CLI behavior
+          likelihood: low
+          impact: medium
+          mitigation: |
+            Agent E has ownership of prepare_wave_test.go. Existing tests for
+            resolveAgentRepoRoot cover the edge cases; they should be migrated to test
+            protocol.ResolveAgentRepo with identical assertions.
+        - scenario: M1 transaction wrapper snapshot/restore logic has edge cases with concurrent manifest writes
+          likelihood: low
+          impact: medium
+          mitigation: |
+            RunWaveTransaction operates on a single IMPL doc path. The snapshot is a
+            deep copy of state fields. Concurrent writes from other processes are not
+            in scope (same as existing FinalizeWave).
+state: SCOUT_PENDING

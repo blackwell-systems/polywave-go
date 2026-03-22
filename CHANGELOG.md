@@ -8,6 +8,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 | Version | Date | Headline |
 |---------|------|----------|
+| [0.87.0] | 2026-03-22 | fix: WriteCompletionMarker sets state to COMPLETE — `close-impl` was archiving IMPLs without updating `state` field, causing program status to show completed IMPLs as "in-progress" |
 | [0.86.0] | 2026-03-22 | SQLite observability + engine hardening — SQLite observability Store (`pkg/observability/sqlite/`) wired into CLI `openStore()`; dead code removed (NewPoller, StopDaemon); `fmt.Fprintf` type mismatch fix in `close_impl_cmd.go`; determinism-roadmap.md updated (completed C1-C6/H1-H4/M4/L3 removed, M4 pre-commit gate added); web-wiring-gaps IMPL closed (NOT_SUITABLE); PROGRAM-engine-hardening.yaml manifest created; determinism-remaining IMPL scouted (7 items, 5 agents, 2 waves); `.gitignore` updated for SAW artifacts |
 | [0.85.0] | 2026-03-22 | Wiring gaps closed — 4 missing CLI commands registered (pre-wave-gate, queue, update-program-impl, update-program-state); ClosedLoopGateRetry wired into finalize-wave; ScoutCorrectionLoop wired into run-scout; AdvanceTierAutomatically wired into finalize-tier --auto; SyncProgramStatusFromDisk wired into program-status; PreWaveGate wired into prepare-wave |
 | [0.84.0] | 2026-03-22 | Type unification — orchestrator migrated from `types.IMPLDoc` to `protocol.IMPLManifest`; PrioritizeAgents DAG scheduler wired into engine init(); `loadIMPLDoc`/`manifestToIMPLDoc` adapters removed; `SetParseIMPLDocFunc` removed |

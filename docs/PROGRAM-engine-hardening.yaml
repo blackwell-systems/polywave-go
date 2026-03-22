@@ -1,0 +1,28 @@
+title: engine-hardening
+program_slug: engine-hardening
+state: PLANNING
+impls:
+    - slug: determinism-remaining
+      title: Determinism Roadmap Remaining Items
+      tier: 1
+      estimated_agents: 5
+      estimated_waves: 2
+      status: pending
+    - slug: wiring-audit-remaining
+      title: Wire remaining dead code gaps — SQLite observability store plus dead code cleanup
+      tier: 1
+      estimated_agents: 3
+      estimated_waves: 2
+      status: SAW:COMPLETE
+tiers:
+    - number: 1
+      impls:
+        - determinism-remaining
+        - wiring-audit-remaining
+completion:
+    tiers_complete: 0
+    tiers_total: 1
+    impls_complete: 0
+    impls_total: 2
+    total_agents: 0
+    total_waves: 0

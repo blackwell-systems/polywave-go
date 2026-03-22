@@ -1,103 +1,21 @@
 # Determinism Roadmap — Reducing AI Reliance in the Engine
 
-**Date**: 2026-03-20
+**Date**: 2026-03-20 (last audited: 2026-03-22)
 **Goal**: Move validation from post-execution to runtime/pre-execution. Every protocol invariant should be enforced by code, not by trusting agents to follow instructions.
 
 ---
 
-## CRITICAL — System correctness depends on AI behavior
+## Completed
 
-### ✅ C1: Runtime I1 constraint enforcement in tool layer
-**Files**: `pkg/engine/constraints.go`, `pkg/tools/workshop.go`
-**Issue**: File ownership constraints (I1) are built from the manifest and passed to agents, but tools don't reject writes to non-owned files. Violations only caught at finalize.
-**Risk**: Agent commits files outside ownership scope → entire wave rolled back.
-**Fix**: Add `ConstraintEnforcer` to `file.write` tool. Before executing write, check `constraint.OwnedFiles[filePath]`. Return error if not owned.
-**New file**: `pkg/tools/constraint_enforcer.go`
-**Effort**: Medium (2-3 days)
-**Status**: Implemented in `pkg/tools/constraint_enforcer.go` — ownership middleware rejects writes to non-owned files with I1_VIOLATION error.
-
-### ✅ C2: Runtime I2 freeze enforcement
-**Files**: `pkg/engine/constraints.go`, `pkg/protocol/freeze.go`
-**Issue**: Frozen paths (scaffolds, contracts) are tracked in constraints but tools don't reject writes to them. `ValidateFreeze()` only runs post-execution.
-**Risk**: Agent edits scaffold or interface contract → breaks I2 before detection → wave fails validation.
-**Fix**: In tool layer, before `file.write`: `if constraint.FrozenPaths[filePath] { return error }`.
-**Effort**: Low (same PR as C1)
-**Status**: Implemented in `pkg/tools/constraint_enforcer.go` — freeze middleware rejects writes to frozen paths with I2_VIOLATION error.
-
-### ✅ C3: Cross-validate completion reports against git state
-**Files**: `pkg/protocol/manifest.go` (SetCompletionReport), `pkg/orchestrator/orchestrator.go`
-**Issue**: `SetCompletionReport()` accepts agent-provided `Commit`, `FilesChanged`, `FilesCreated`, `Worktree`, `Branch` without checking they match reality.
-**Risk**: Agent reports fake SHA → CI gates reference wrong commit. Agent reports fake file changes → gate logic sees wrong changed-file set. Agent reports wrong worktree → cleanup removes wrong directory.
-**Fix**: New `ValidateCompletionReportClaims()` function:
-- Verify commit SHA exists and is on agent's branch
-- Verify `FilesChanged ⊆ (owned files ∪ frozen paths)`
-- Verify `FilesCreated` actually exist
-- Verify worktree path exists (cross-repo)
-- Call in `SetCompletionReport` or immediately after agent completes
-**New file**: `pkg/protocol/completion_validator.go`
-**Effort**: Medium (2 days)
-**Status**: Implemented in `pkg/protocol/completion_validator.go` — `ValidateCompletionReportClaims()` cross-validates commit SHA, file ownership, and file existence.
-
-### ✅ C4: Pre-merge commit verification gate (I5)
-**Files**: `pkg/protocol/commit_verify.go`, `pkg/engine/finalize.go`
-**Issue**: `VerifyCommits()` runs AFTER agents complete at finalize stage. If agent writes code but forgets `git commit`, verification fails too late (after merge attempt).
-**Risk**: Agent's work lost in worktree. Wave finalization fails. Manual intervention required.
-**Fix**: Move `VerifyCommits` before `MergeAgents()` as a mandatory pre-merge gate. Make it fatal — if any agent has no commits, stop before merge.
-**Effort**: Low (1 day)
-**Status**: Implemented in `pkg/engine/finalize.go` — `VerifyCommits` is Step 1 (fatal), `MergeAgents` is Step 4. Agents with no commits block the merge entirely.
-
-### ✅ C5: Scout write boundaries at runtime (I6)
-**Files**: `pkg/engine/runner.go`, `pkg/engine/constraints.go`
-**Issue**: I6 (Scout writes only to `docs/IMPL/`) validated AFTER Scout completes via hooks. If validation fails, Scout's work is already committed.
-**Risk**: Scout writes to `src/` or other files. Violation undetected until post-execution. Manifest corrupt.
-**Fix**: Add `AllowedPathPrefixes: ["docs/IMPL/IMPL-"]` constraint with `EnforceAtRuntime: true` flag for scout role. Tools reject writes outside prefix.
-**Effort**: Low (same constraint enforcer as C1/C2)
-**Status**: Implemented in `pkg/tools/constraint_enforcer.go` and `pkg/tools/role_middleware.go` — scout role gets `AllowedPathPrefixes: ["docs/IMPL/IMPL-"]` (set in `pkg/engine/constraints.go`), enforced at runtime with I6_VIOLATION error.
-
-### ✅ C6: Schema validation on agent output
-**Files**: `pkg/engine/runner_wave_structured.go`, `pkg/orchestrator/orchestrator.go`
-**Issue**: When agents write completion reports, minimal verification of reported file lists, commit counts, or other claims. Structure is validated but content claims are not.
-**Risk**: False `FilesChanged`/`FilesCreated` → false ScanStubs results → incorrect gate results → integration validation errors.
-**Fix**: Add deterministic post-execution validation layer. Verify every claim field against git state before accepting the report.
-**Effort**: Medium (included in C3 implementation)
-**Status**: Covered by C3 — `ValidateCompletionReportClaims()` in `pkg/protocol/completion_validator.go` validates all claim fields against git state.
-
----
-
-## HIGH — Missing validation that could cause silent failures
-
-### ✅ H1: File ownership coverage validation
-**Files**: `pkg/protocol/validation.go`
-**Issue**: `validateI1DisjointOwnership()` checks no file is owned by 2+ agents, but does NOT check: are all agent-changed files actually in the ownership table? Are there dead ownership entries for non-existent files?
-**Risk**: Agents leave unowned "bonus" files. Gates and integration validation can't interpret them. Silent correctness bug.
-**Fix**: New `ValidateFileOwnershipCoverage()` — for each agent, verify `created-files ⊆ owned-files ∪ frozen-paths`. Run in `validate-impl` or `prepare-wave`.
-**Effort**: Low (1 day)
-**Status**: Implemented in `pkg/protocol/ownership_coverage.go` — `ValidateFileOwnershipCoverage()` with tests. Integrated into `prepare-wave` pre-flight checks.
-
-### ✅ H2: Dynamic dependency availability verification
-**Files**: `pkg/protocol/validation.go`
-**Issue**: `validateI2AgentDependencies()` checks DAG statically but does NOT verify at wave execution time that dependency outputs actually exist and are available.
-**Risk**: Agent declares dependency on agent B, but B's wave hasn't produced outputs. Agent hallucinates or uses stale data. No error raised.
-**Fix**: New `VerifyDependenciesAvailable()` — for each agent in wave N, verify each dependency has completion report and produced output files. Call in `prepare-wave` pre-flight.
-**New file**: `pkg/protocol/dependency_verifier.go`
-**Effort**: Low-Medium (1-2 days)
-**Status**: Implemented in `pkg/protocol/dependency_verifier.go` — `VerifyDependenciesAvailable()` with tests. Integrated into `prepare-wave` pre-flight checks.
-
-### ✅ H3: Gate input validation against actual changes
-**Files**: Gate execution code, `pkg/engine/finalize.go`
-**Issue**: Gates (E21) execute post-merge but no validation that gate input (changed files) matches agent's actual changes. Gate may receive stale or fabricated file list.
-**Risk**: Gate passes when it shouldn't (or vice versa). Bad code merged because gate data was wrong.
-**Fix**: New `ValidateGateInputs()` — get reported `FilesChanged` from completion report, compare against actual `git diff base..merge-commit`. Pass actual file list to gate, not reported list.
-**Effort**: Low (1 day)
-**Status**: Implemented in `pkg/protocol/gate_input_validator.go` — `ValidateGateInputs()` compares reported files against actual `git diff` using `wave.BaseCommit`, with tests.
-
-### ✅ H4: Pre-merge file ownership consistency check
-**Files**: `pkg/protocol/merge_agents.go`
-**Issue**: When merging, if conflicts occur, system uses file ownership to auto-resolve. But does NOT verify ownership table is correct before using it. If ownership is wrong, auto-resolution accepts bad merges.
-**Risk**: Silent inconsistency between merge result and manifest.
-**Fix**: New `PreMergeValidation()` — verify every file_ownership entry references an existing agent in the current wave. Call at start of `MergeAgents()`.
-**Effort**: Low (1 day)
-**Status**: Implemented in `pkg/protocol/merge_agents.go` — `PreMergeValidation()` called at start of both single-repo and multi-repo `MergeAgents` paths, with tests.
+All CRITICAL (C1-C6) and HIGH (H1-H4) items have been implemented. See git history for details:
+- Runtime constraint enforcement: `pkg/tools/constraint_enforcer.go`, `pkg/tools/role_middleware.go`
+- Completion report validation: `pkg/protocol/completion_validator.go`
+- Pre-merge commit verification: `pkg/engine/finalize.go`
+- File ownership coverage: `pkg/protocol/ownership_coverage.go`
+- Dependency availability: `pkg/protocol/dependency_verifier.go`
+- Gate input validation: `pkg/protocol/gate_input_validator.go`
+- Pre-merge ownership check: `pkg/protocol/merge_agents.go`
+- **M4: Wave base commit validation** — Superseded by `RunBaselineGates()` (E21A) in `pkg/protocol/baseline_gates.go`, called by `prepare-wave` before worktree creation. Merge flow in `pkg/orchestrator/merge.go` also records base commit and verifies agent commits against it.
 
 ---
 
@@ -105,31 +23,24 @@
 
 ### M1: Atomic RunWave transaction wrapper
 **Files**: `pkg/orchestrator/orchestrator.go`, `pkg/engine/run_wave_full.go`
-**Issue**: `RunWave()` advances state manually at multiple points. If a step fails partway, IMPL doc state may be inconsistent with reality (e.g., merge completes but state transition fails).
+**Issue**: `RunWaveFull()` and `FinalizeWave()` advance state via sequential steps with early return on error but no rollback. If a step fails partway (e.g., merge completes but state transition fails), the IMPL doc state may be inconsistent with reality.
 **Risk**: Partial-failure state inconsistency. Manual recovery requires understanding state machine.
 **Fix**: Create `RunWaveTransaction` wrapper. All state mutations go through transaction. Only commit state after ALL steps succeed. On failure, roll back to start state.
 **New file**: `pkg/orchestrator/run_wave_atomic.go`
 **Effort**: Medium (2-3 days)
 
 ### M2: Integration validation enforcement (E25)
-**Files**: `pkg/protocol/integration.go`, `pkg/engine/finalize.go`
-**Issue**: `ValidateIntegration()` checks for unconnected exports but is non-fatal. Errors logged but don't block merge or build.
+**Files**: `pkg/engine/finalize.go` (lines 119-129)
+**Issue**: `ValidateIntegration()` in `FinalizeWave` Step 3.5 is explicitly non-fatal ("informational, does not block"). Errors are logged to stderr but never block merge or build.
 **Risk**: Integration breaks silently. Orphaned exports left by agents.
-**Fix**: Make integration validation a configurable gate: `FinalizeWaveOpts.EnforceIntegrationValidation bool`. When true, unconnected exports fail the wave.
+**Fix**: Add `EnforceIntegrationValidation bool` to `FinalizeWaveOpts`. When true, unconnected exports fail the wave before merge.
 **Effort**: Low (1 day)
 
 ### M3: Mandatory stub detection (E20)
-**Files**: `pkg/protocol/stubs.go`, `pkg/engine/finalize.go`
-**Issue**: `ScanStubs()` looks for TODO/FIXME but is non-fatal. Agents can ship incomplete code.
+**Files**: `pkg/engine/finalize.go` (lines 83-101)
+**Issue**: `ScanStubs()` in `FinalizeWave` Step 2 is explicitly non-fatal ("informational, does not block"). Stub scan errors are logged to stderr and results stored, but never block merge.
 **Risk**: Incomplete implementations merged. Later waves find stubs where they expect complete code.
-**Fix**: `FinalizeWaveOpts.RequireNoStubs bool`. When true, any TODO/FIXME fails the wave.
-**Effort**: Low (0.5 day)
-
-### M4: Wave base commit validation
-**Files**: `pkg/protocol/worktree.go`
-**Issue**: Base commit recorded when creating worktrees but no verification it's on main branch or that all worktrees use the same base. Fallback logic uses HEAD if base missing.
-**Risk**: Base commit detached or on wrong branch. Commit counts off. Verification uses wrong baseline.
-**Fix**: New `ValidateWaveBaseCommit()` — verify commit exists and is ancestor of main. Call in `prepare-wave` or `finalize-wave`.
+**Fix**: Add `RequireNoStubs bool` to `FinalizeWaveOpts`. When true, any TODO/FIXME in changed files fails the wave before merge.
 **Effort**: Low (0.5 day)
 
 ---
@@ -137,63 +48,62 @@
 ## LOW — Style/consistency improvements
 
 ### L1: Missing agent prompt files should error, not fallback
-**Files**: `pkg/engine/runner.go` (lines 60-91)
-**Issue**: If `scout.md` or `planner.md` are missing, hardcoded minimal fallback prompt used. No warning logged.
-**Risk**: Scout runs with degraded instructions. Output quality degrades silently.
+**Files**: `pkg/engine/runner.go` (line 68-69)
+**Issue**: If `scout.md` is missing, a hardcoded one-line fallback prompt is used silently (no warning, no error). The fallback is: `"You are a Scout agent. Analyze the codebase and produce an IMPL doc."`
+**Risk**: Scout runs with severely degraded instructions. Output quality degrades silently and is hard to diagnose.
 **Fix**: Make missing prompt files an error: `return fmt.Errorf("scout.md not found at %s", path)`.
 **Effort**: Low (0.5 day)
 
-### L2: Standardize validation error messages
+### L2: Standardize validation error context
 **Files**: All validation files in `pkg/protocol/`
-**Issue**: Inconsistent error context. Some say "agent X not found", others "agent X (wave Y) not found".
-**Fix**: Standardize `ValidationError` to always include IMPL slug, wave number, agent ID, and field name.
+**Issue**: `ValidationError` struct has `Code`, `Message`, `Field`, `Line` but no `Slug`, `Wave`, or `AgentID`. Usage is inconsistent — some callers populate `Field`, many don't. Messages vary between "agent X not found" and "agent X (wave Y) not found" with no standard format.
+**Risk**: Debugging validation failures requires manual cross-referencing of error messages with IMPL doc context.
+**Fix**: Add `Slug`, `Wave`, `AgentID` fields to `ValidationError`. Audit all call sites to populate consistently.
 **Effort**: Low-Medium (1-2 days)
 
-### L3: Consolidate constraint building
-**Files**: `pkg/engine/constraints.go`, `pkg/tools/constraints.go`
-**Issue**: Constraints built in engine but tools expect `tools.Constraints`. Mapping logic split.
-**Fix**: Single `BuildConstraints()` function in `pkg/protocol/constraints_builder.go`.
+### L3: Consolidate multi-repo resolution logic
+**Files**: `pkg/protocol/worktree.go`, `pkg/protocol/cleanup.go`, `cmd/saw/prepare_wave.go`
+**Issue**: Two separate functions resolve agent-to-repo mapping: `determineAgentRepo()` (pkg/protocol, returns repo name string from file_ownership) and `resolveAgentRepoRoot()` (cmd/saw, returns absolute path using repo registry + fallback). The CLI version has strictly more logic (registry lookup, fallback to projectRoot) that the protocol version lacks.
+**Fix**: Extract a unified `ResolveAgentRepo()` into `pkg/protocol/multi_repo.go` that handles both the name lookup and path resolution, so the CLI doesn't need its own copy.
 **Effort**: Low (1 day)
 
-### 🔶 L4: Consolidate multi-repo resolution logic
-**Files**: `pkg/protocol/commit_verify.go`, `pkg/protocol/merge_agents.go`, `pkg/protocol/worktree.go`
-**Issue**: Same "resolve agent repo from file_ownership" logic replicated in 3+ files.
-**Fix**: Extract `ResolveAgentRepo()` into `pkg/protocol/multi_repo.go`.
-**Effort**: Low (1 day)
-**Status**: Partially addressed — `determineAgentRepo()` is defined in `pkg/protocol/worktree.go` and reused from `pkg/protocol/cleanup.go`, but `cmd/saw/prepare_wave.go` has its own `ResolveAgentRepoRoot()` with different logic. Not yet fully consolidated.
-
-### 🔶 L5: Typed manifest vs raw YAML inconsistency
-**Files**: `pkg/engine/constraints.go` (lines 143-169)
-**Issue**: Integration connectors loaded separately via raw YAML because they're not yet on `IMPLManifest` struct. Two sources of truth.
-**Fix**: Add `IntegrationConnectors` to `IMPLManifest` and remove raw YAML load.
+### L4: Remove raw YAML fallback for IntegrationConnectors
+**Files**: `pkg/engine/constraints.go` (lines 84, 143-169)
+**Issue**: `IntegrationConnectors` field exists on `IMPLManifest` in `pkg/protocol/types.go:45`, but `BuildIntegratorConstraints()` still calls `loadIntegrationConnectors()` which re-reads and re-parses the YAML file to extract the same field. A stale comment at line 84 says "manifest.IntegrationConnectors is not yet on the typed struct" — but it is.
+**Fix**: Remove `loadIntegrationConnectors()`. Use `manifest.IntegrationConnectors` directly in `BuildIntegratorConstraints()`. Remove the stale comment.
 **Effort**: Low (0.5 day)
-**Status**: `IntegrationConnectors` field added to `IMPLManifest` in `pkg/protocol/types.go`, but `pkg/engine/constraints.go` still has `loadIntegrationConnectors()` reading raw YAML as a fallback. Raw loader not yet removed.
+
+### M4: Pre-commit quality gate (language-agnostic)
+**Files**: `cmd/saw/pre_commit_cmd.go` (new), `pkg/protocol/gate_discovery.go` (new)
+**Issue**: E21A baseline gates only run at `prepare-wave` time. Bad code committed directly to main (by agents or humans) passes unchecked until the next wave attempt. This was hit in practice: a `fmt.Fprintf` type mismatch in `close_impl_cmd.go` was committed to main and only caught when E21A blocked `prepare-wave`.
+**Risk**: High friction. Every direct commit is a potential baseline failure that wastes agent work.
+**Fix**: New `sawtools pre-commit-check --repo-dir .` command that:
+1. Discovers active IMPL doc(s) for the repo (or falls back to `saw.config.json`)
+2. Reads the `quality_gates` section and extracts the `lint` gate command
+3. Runs the lint command — blocks commit on failure
+4. If no active IMPL or config, passes silently (no config = no gate)
+Language-agnostic: whatever lint command the Scout wrote (`go vet`, `npm run lint`, `cargo clippy`, `ruff check`) is what runs. New `sawtools install-hooks` subcommand wires it into `.git/hooks/pre-commit`.
+**New files**: `cmd/saw/pre_commit_cmd.go`, `cmd/saw/install_hooks_cmd.go`, `pkg/protocol/gate_discovery.go`
+**Integration points**:
+- `sawtools install-hooks` subcommand wires `pre-commit-check` into `.git/hooks/pre-commit`
+- `prepare-wave` pre-flight: check if hooks installed, warn if not (non-blocking)
+- `/saw` skill: mention `install-hooks` during bootstrap flow
+- `close-impl`: no change (hooks persist across IMPLs)
+**Documentation** (protocol repo):
+- `docs/hooks.md`: document new `pre-commit-check` hook (trigger, behavior, fallback chain)
+- `docs/cli-reference.md`: add `pre-commit-check` and `install-hooks` commands
+- `/saw` skill prompt: add `install-hooks` to sawtools command list
+**Effort**: Medium (2-3 days)
 
 ---
 
 ## Implementation Priority
 
-### ✅ Phase 1: Runtime constraint enforcement (Week 1)
-- **C1 + C2 + C5**: Single PR — `constraint_enforcer.go` in tool layer
-- Covers I1, I2, I6 at runtime
-- Highest-impact change: prevents entire wave failures from agent writes
-
-### ✅ Phase 2: Completion report validation (Week 1-2)
-- **C3 + C6**: `completion_validator.go` — cross-validate all agent claims against git
-- **C4**: Move `VerifyCommits` to pre-merge gate
-- **H1**: File ownership coverage check
-
-### ✅ Phase 3: Pre-execution verification (Week 2)
-- **H2**: Dependency availability verification in `prepare-wave`
-- **H3**: Gate input validation against actual `git diff`
-- **H4**: Pre-merge ownership consistency check
-- **M4**: Base commit validation — NOT YET DONE (moved to Phase 4)
-
-### Phase 4: Transactional execution (Week 2-3)
+### Phase 4: Transactional execution & configurable gates
 - **M1**: Atomic `RunWaveTransaction` wrapper
 - **M2**: Configurable integration enforcement
 - **M3**: Configurable stub detection gate
-- **M4**: Base commit validation (carried from Phase 3)
+- **M4**: Pre-commit quality gate
 
-### Phase 5: Cleanup (Week 3)
-- **L1-L5**: Error standardization, deduplication, prompt enforcement
+### Phase 5: Cleanup
+- **L1-L4**: Prompt enforcement, error standardization, repo resolution consolidation, raw YAML removal

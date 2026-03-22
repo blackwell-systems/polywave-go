@@ -1,0 +1,377 @@
+completion_date: "2026-03-22"
+title: Wire remaining dead code gaps — SQLite observability store plus dead code cleanup
+feature_slug: wiring-audit-remaining
+verdict: SUITABLE_WITH_CAVEATS
+suitability_assessment: |
+    Suitability gate analysis:
+
+    1. File decomposition: Yes — work spans 5+ files across two packages (pkg/observability/,
+       pkg/git/, pkg/engine/, cmd/saw/). Agents can own disjoint files.
+
+    2. Investigation-first items: None. All gaps are clearly identified with known fixes.
+
+    3. Interface discoverability: Yes. The Store interface is already defined in
+       pkg/observability/store.go with exact method signatures. The SQLite implementation
+       just needs to satisfy this existing interface.
+
+    4. Pre-implementation status check:
+       - C3 (FinalizeIMPLEngine): ALREADY WIRED — web app calls it at
+         scout-and-wave-web/pkg/api/bootstrap_handler.go:160. Audit doc is stale. SKIP.
+       - C10 (RunSingleWave/RunSingleAgent): ALREADY WIRED — web app calls them at
+         wave_runner.go:236 and resume_action.go:206. Audit doc is stale. SKIP.
+       - C8 (Observability Store): TODO — openStore() in cmd/saw/observability_metrics.go
+         returns "SQLite store not yet available" error. Genuine gap.
+       - NewPoller: DEAD — 0 callers in both repos, 0 tests. Delete.
+       - StopDaemon: DEAD — 0 callers in both repos, 0 tests. Trivial wrapper. Delete.
+
+    5. Parallelization value check:
+       - 2 independent agents in wave 1 (SQLite store vs dead code cleanup)
+       - Build/test cycle ~45s for Go project
+       - SQLite store agent touches 3 files (good complexity)
+       - Cleanup agent touches 2 files (simple but disjoint)
+
+    Caveats:
+    - C8 (SQLite Store) requires adding a new dependency (mattn/go-sqlite3 or
+      modernc.org/sqlite for CGo-free). The go.mod change is orchestrator-owned
+      post-merge. Using modernc.org/sqlite (pure Go) avoids CGo build complexity.
+    - C3 and C10 are already wired in the web app — the audit doc is stale.
+      Wave 2 updates the audit doc to reflect resolved status.
+
+    Estimated times:
+    - Scout phase: ~8 min
+    - Agent execution: ~12 min (2 agents x 8 min avg, 1 wave parallel + 1 sequential)
+    - Merge and verification: ~3 min
+    - Total SAW time: ~23 min
+    - Sequential baseline: ~25 min
+    - Time savings: ~2 min (8% faster)
+    - Recommendation: Marginal speed gains but coordination value is high —
+      the IMPL doc serves as audit trail for what was genuinely dead vs already wired.
+test_command: go test ./...
+lint_command: go vet ./...
+file_ownership:
+    - file: pkg/observability/sqlite/sqlite.go
+      agent: A
+      wave: 1
+      action: new
+    - file: pkg/observability/sqlite/sqlite_test.go
+      agent: A
+      wave: 1
+      action: new
+    - file: cmd/saw/observability_metrics.go
+      agent: A
+      wave: 1
+      action: modify
+    - file: pkg/git/activity.go
+      agent: B
+      wave: 1
+      action: modify
+    - file: pkg/engine/daemon.go
+      agent: B
+      wave: 1
+      action: modify
+    - file: docs/wiring-audit.md
+      agent: C
+      wave: 2
+      action: modify
+interface_contracts:
+    - name: sqlite.Open
+      description: |
+        Constructor for SQLite-backed observability Store. Creates or opens the
+        database file at the given path, runs schema migrations, and returns a
+        Store implementation.
+      definition: |
+        // Package sqlite provides a SQLite-backed implementation of observability.Store.
+        package sqlite
+
+        import "github.com/blackwell-systems/scout-and-wave-go/pkg/observability"
+
+        // Open creates or opens a SQLite database at path and returns an
+        // observability.Store. The database schema is created automatically
+        // if it does not exist. Uses modernc.org/sqlite (pure Go, no CGo).
+        func Open(path string) (observability.Store, error)
+      location: pkg/observability/sqlite/sqlite.go
+    - name: openStore (CLI wiring)
+      description: |
+        The existing openStore function in cmd/saw/observability_metrics.go must
+        be updated to call sqlite.Open instead of returning an error.
+      definition: |
+        // openStore creates an observability.Store from the given DSN.
+        // Updated to use sqlite.Open for file-path DSNs.
+        func openStore(dsn string) (obs.Store, error)
+      location: cmd/saw/observability_metrics.go
+waves:
+    - number: 1
+      agents:
+        - id: A
+          task: |
+            ## SQLite Observability Store Implementation
+
+            ### What to implement
+            Create a SQLite-backed implementation of the `observability.Store` interface
+            defined in `pkg/observability/store.go`. This is the critical missing piece
+            that blocks the entire observability subsystem.
+
+            ### Files to create/modify
+
+            **1. NEW: `pkg/observability/sqlite/sqlite.go`**
+            - Implement `func Open(path string) (observability.Store, error)`
+            - Use `modernc.org/sqlite` (pure Go, no CGo) as the driver via `database/sql`
+            - Create schema on first open:
+              ```sql
+              CREATE TABLE IF NOT EXISTS events (
+                id TEXT PRIMARY KEY,
+                type TEXT NOT NULL,
+                time TEXT NOT NULL,
+                data TEXT NOT NULL
+              );
+              CREATE INDEX IF NOT EXISTS idx_events_type ON events(type);
+              CREATE INDEX IF NOT EXISTS idx_events_time ON events(time);
+              ```
+            - Store events as JSON in the `data` column (simple, flexible schema)
+            - Implement `RecordEvent`: INSERT event as JSON
+            - Implement `QueryEvents`: SELECT with WHERE clauses built from QueryFilters
+              (event types, impl slugs, program slugs, agent IDs, time range, limit, offset)
+            - Implement `GetRollup`: Delegate to in-Go aggregation — query events matching
+              the RollupRequest filters, then aggregate in Go code (reuse the same pattern
+              as the existing rollup functions in pkg/observability/rollups.go)
+            - Implement `Close`: close the *sql.DB
+
+            **2. NEW: `pkg/observability/sqlite/sqlite_test.go`**
+            - Test Open with temp file path
+            - Test RecordEvent + QueryEvents round-trip for each event type
+              (CostEvent, AgentPerformanceEvent, ActivityEvent)
+            - Test QueryFilters: by event type, by impl slug, by time range, limit
+            - Test GetRollup for cost type
+            - Test Close is idempotent
+            - Test Open with nonexistent parent directory (should error or create)
+
+            **3. MODIFY: `cmd/saw/observability_metrics.go`**
+            - Update `openStore()` function (line 113-135) to import and call
+              `sqlite.Open(dsn)` instead of returning the "not yet available" error
+            - Add import: `"github.com/blackwell-systems/scout-and-wave-go/pkg/observability/sqlite"`
+            - Keep the PostgreSQL "not yet implemented" error as-is
+            - Keep the directory creation logic as-is
+
+            ### Interface contract
+            The Store interface is already defined — implement it exactly:
+            ```go
+            RecordEvent(ctx context.Context, event Event) error
+            QueryEvents(ctx context.Context, filters QueryFilters) ([]Event, error)
+            GetRollup(ctx context.Context, rollup RollupRequest) (*RollupResult, error)
+            Close() error
+            ```
+
+            ### Verification gate
+            ```
+            go build ./pkg/observability/sqlite/... && go test ./pkg/observability/sqlite/... -v && go vet ./pkg/observability/...
+            ```
+
+            ### Constraints
+            - Use `modernc.org/sqlite` (pure Go) — NOT `mattn/go-sqlite3` (requires CGo)
+            - The go.mod dependency addition will be handled by `go mod tidy` after implementation
+            - Event JSON serialization must handle all three concrete types (CostEvent,
+              AgentPerformanceEvent, ActivityEvent) with proper type discrimination on read
+            - Store the `type` field as a top-level column for efficient filtering
+            - Use `time.RFC3339Nano` for timestamp storage
+          files:
+            - pkg/observability/sqlite/sqlite.go
+            - pkg/observability/sqlite/sqlite_test.go
+            - cmd/saw/observability_metrics.go
+        - id: B
+          task: |
+            ## Dead Code Cleanup
+
+            ### What to implement
+            Remove two genuinely dead code items identified by the wiring audit:
+            NewPoller (0 callers, 0 tests across both repos) and StopDaemon
+            (0 callers, 0 tests, trivial 3-line wrapper).
+
+            ### Files to modify
+
+            **1. MODIFY: `pkg/git/activity.go`**
+            - Delete the entire file. It contains only the Poller type, NewPoller,
+              Snapshot, and helper methods (mergedBranches, logCommits, parseCommits).
+              Also contains the Branch, Commit, and ActivitySnapshot types.
+            - IMPORTANT: Before deleting, verify no other file in the repo imports
+              these types. Run `grep -r "git.Poller\|git.NewPoller\|git.Commit\|git.Branch\|git.ActivitySnapshot" pkg/ cmd/`
+              to confirm zero references.
+            - If ANY references exist, do NOT delete — instead add a comment noting
+              the callers and skip this item.
+
+            **2. MODIFY: `pkg/engine/daemon.go`**
+            - Delete the `StopDaemon` function (lines 357-362). It is a trivial
+              wrapper that just calls `cancel()`.
+            - Verify no callers: `grep -r "StopDaemon" pkg/ cmd/` should return
+              only the definition itself.
+            - Do NOT modify any other functions in daemon.go.
+
+            ### Verification gate
+            ```
+            go build ./pkg/git/... ./pkg/engine/... && go test ./pkg/engine/... -v -run TestDaemon && go vet ./pkg/git/... ./pkg/engine/...
+            ```
+
+            ### Constraints
+            - Only delete code confirmed to have zero callers in BOTH repos
+              (scout-and-wave-go and scout-and-wave-web)
+            - Do not delete any types from the advisory section of the wiring audit
+              that are exported API surface (protocol helpers, tools package, etc.)
+            - If deleting activity.go leaves pkg/git/ with no .go files, that is fine —
+              check if other files exist in the package first
+          files:
+            - pkg/git/activity.go
+            - pkg/engine/daemon.go
+      base_commit: acae93b3d797cf3838d7d5147c8b4e98342c0be9
+    - number: 2
+      agents:
+        - id: C
+          task: |
+            ## Update Wiring Audit Documentation
+
+            ### What to implement
+            Update `docs/wiring-audit.md` to reflect the current state after this
+            IMPL's changes and the discovery that C3 and C10 were already wired.
+
+            ### Changes to make
+
+            **MODIFY: `docs/wiring-audit.md`**
+
+            1. Move C3 (FinalizeIMPLEngine) to the Resolved Items section. Add:
+               ```
+               - **C3** `FinalizeIMPLEngine` -- called from scout-and-wave-web
+                 pkg/api/bootstrap_handler.go:160 (verified 2026-03-22)
+               ```
+
+            2. Move C10 (RunSingleWave/RunSingleAgent) to the Resolved Items section. Add:
+               ```
+               - **C10** `RunSingleWave` -- called from scout-and-wave-web
+                 pkg/api/wave_runner.go:236 (verified 2026-03-22)
+               - **C10** `RunSingleAgent` -- called from scout-and-wave-web
+                 pkg/api/resume_action.go:206 (verified 2026-03-22)
+               ```
+
+            3. Move C8 (Observability Store) to Resolved Items. Add:
+               ```
+               - **C8** `Store` interface -- SQLite implementation added in
+                 pkg/observability/sqlite/sqlite.go, wired into CLI via
+                 openStore() in cmd/saw/observability_metrics.go (resolved 2026-03-22)
+               ```
+
+            4. In the Advisory section, remove NewPoller and StopDaemon entries
+               (they were deleted, not wired).
+
+            5. Update the Summary table at the top to reflect 0 remaining critical gaps.
+
+            6. Add a note at the top: "Last validated: 2026-03-22 — all critical gaps resolved."
+
+            ### Verification gate
+            ```
+            test -f docs/wiring-audit.md && echo "audit doc exists"
+            ```
+
+            ### Constraints
+            - Only modify docs/wiring-audit.md — no source code changes
+            - Preserve the existing document structure and formatting
+            - Keep all advisory items that are legitimate exported API surface
+          files:
+            - docs/wiring-audit.md
+          dependencies:
+            - A
+            - B
+quality_gates:
+    level: standard
+    gates:
+        - type: build
+          command: go build ./...
+          required: true
+        - type: lint
+          command: go vet ./...
+          required: true
+        - type: test
+          command: go test ./...
+          required: true
+completion_reports:
+    A:
+        status: complete
+        branch: saw/wiring-audit-remaining/wave1-agent-A
+        commit: 8b4af9f
+        files_changed:
+            - pkg/observability/sqlite/sqlite.go
+            - pkg/observability/sqlite/sqlite_test.go
+            - cmd/saw/observability_metrics.go
+            - go.mod
+            - go.sum
+        files_created:
+            - pkg/observability/sqlite/sqlite.go
+            - pkg/observability/sqlite/sqlite_test.go
+        tests_added:
+            - TestOpen
+            - TestOpen_NonexistentParentDir
+            - TestRecordAndQueryCostEvent
+            - TestRecordAndQueryAgentPerformanceEvent
+            - TestRecordAndQueryActivityEvent
+            - TestQueryFilters_ByIMPLSlug
+            - TestQueryFilters_ByTimeRange
+            - TestQueryFilters_Limit
+            - TestGetRollup_Cost
+            - TestClose_Idempotent
+            - TestQueryFilters_ByAgentID
+        verification: PASS
+    B:
+        status: complete
+        branch: saw/wiring-audit-remaining/wave1-agent-B
+        commit: 2dfeca2
+        files_changed:
+            - pkg/git/activity.go
+            - pkg/engine/daemon.go
+        verification: PASS
+    C:
+        status: complete
+        branch: main
+        commit: 706c324
+        files_changed:
+            - docs/wiring-audit.md
+        verification: PASS
+pre_mortem:
+    overall_risk: low
+    rows:
+        - scenario: modernc.org/sqlite adds significant binary size or build time
+          likelihood: medium
+          impact: low
+          mitigation: |
+            Pure Go SQLite adds ~10MB to binary and ~30s to first build.
+            This is acceptable for a CLI tool. If unacceptable, switch to
+            a simpler JSON-file-backed store as fallback.
+        - scenario: activity.go types (Commit, Branch) are imported by web app indirectly
+          likelihood: low
+          impact: high
+          mitigation: |
+            Agent B must verify zero references across both repos before deleting.
+            The grep check in the task is mandatory, not optional. If any reference
+            is found, skip the deletion and document the finding.
+        - scenario: Event JSON deserialization loses type information on QueryEvents
+          likelihood: medium
+          impact: medium
+          mitigation: |
+            Store the event type as a top-level column. On read, use the type column
+            to determine which concrete struct to unmarshal into. Test round-trip for
+            all three event types.
+        - scenario: go.mod conflict if modernc.org/sqlite has transitive dependency issues
+          likelihood: low
+          impact: medium
+          mitigation: |
+            Run go mod tidy after implementation. If dependency conflicts arise,
+            pin to a known-good version. The orchestrator handles go.mod as a
+            shared file post-merge.
+known_issues:
+    - title: C3 and C10 already resolved
+      description: |
+        The wiring audit document lists C3 (FinalizeIMPLEngine) and C10
+        (RunSingleWave/RunSingleAgent) as critical gaps, but both are already
+        called from scout-and-wave-web. The audit doc was not updated after the
+        web app wired these functions. Wave 2 Agent C updates the audit doc.
+    - title: PostgreSQL store not implemented
+      description: |
+        The openStore function has a PostgreSQL DSN check that returns "not yet
+        implemented". This IMPL only implements SQLite. PostgreSQL support is
+        future work and not in scope.
+state: "SAW:COMPLETE"

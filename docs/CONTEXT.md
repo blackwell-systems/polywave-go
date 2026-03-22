@@ -168,3 +168,5 @@ type BackendConfig struct {
   - IMPL doc: docs/IMPL/complete/IMPL-orchestrator-ergonomics.yaml
 - **program-disjoint-workflowing**: completed 2026-03-21, 3 waves, 5 agents
   - IMPL doc: docs/IMPL/complete/IMPL-program-disjoint-workflowing.yaml
+- **wiring-audit-remaining**: completed 2026-03-22, 2 waves, 3 agents
+  - IMPL doc: docs/IMPL/complete/IMPL-wiring-audit-remaining.yaml
