@@ -1,5 +1,10 @@
 # Build outputs
 /saw
 /sawtools
+
+# SAW ephemeral state (machine-specific, per-session)
 .claude/worktrees/
-.saw-state/gate-cache.json
+.saw-state/
+.saw-agent-brief.md
+docs/IMPL/.saw-state/
+*.bak
