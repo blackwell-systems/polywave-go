@@ -9,39 +9,6 @@ import (
 	"github.com/blackwell-systems/scout-and-wave-go/internal/git"
 )
 
-// CleanupBySlug removes all worktrees matching the given IMPL slug.
-// Unlike Cleanup(), this does not require a manifest file — it scans
-// git worktrees directly by branch name pattern.
-// Returns StaleCleanupResult with cleaned/skipped/errors breakdown.
-func CleanupBySlug(repoDir, slug string, force bool) (*StaleCleanupResult, error) {
-	// Get ALL stale worktrees
-	all, err := DetectStaleWorktrees(repoDir)
-	if err != nil {
-		return nil, fmt.Errorf("detect stale worktrees: %w", err)
-	}
-
-	// Filter to matching slug
-	var matched []StaleWorktree
-	for _, sw := range all {
-		if sw.Slug == slug {
-			matched = append(matched, sw)
-		}
-	}
-
-	if len(matched) == 0 {
-		return &StaleCleanupResult{
-			Cleaned: []StaleWorktree{},
-			Skipped: []StaleWorktree{},
-			Errors: []struct {
-				Worktree StaleWorktree `json:"worktree"`
-				Error    string        `json:"error"`
-			}{},
-		}, nil
-	}
-
-	return CleanStaleWorktrees(matched, force)
-}
-
 // CleanupAllStale removes all stale worktrees across all slugs.
 func CleanupAllStale(repoDir string, force bool) (*StaleCleanupResult, error) {
 	stale, err := DetectStaleWorktrees(repoDir)
