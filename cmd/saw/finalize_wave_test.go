@@ -390,6 +390,66 @@ func TestFinalizeWave_E11NoConflict(t *testing.T) {
 	}
 }
 
+// TestFinalizeWave_MergeTargetFlag verifies that the --merge-target flag is
+// registered on the finalize-wave command and parses correctly.
+func TestFinalizeWave_MergeTargetFlag(t *testing.T) {
+	cmd := newFinalizeWaveCmd()
+
+	// Verify the flag exists
+	flag := cmd.Flags().Lookup("merge-target")
+	if flag == nil {
+		t.Fatal("expected --merge-target flag to be registered on finalize-wave command")
+	}
+
+	// Verify default value is empty
+	if flag.DefValue != "" {
+		t.Errorf("expected --merge-target default to be empty, got %q", flag.DefValue)
+	}
+
+	// Verify flag can be set
+	if err := cmd.Flags().Set("merge-target", "impl/my-feature"); err != nil {
+		t.Errorf("failed to set --merge-target flag: %v", err)
+	}
+
+	val, err := cmd.Flags().GetString("merge-target")
+	if err != nil {
+		t.Fatalf("failed to get --merge-target value: %v", err)
+	}
+	if val != "impl/my-feature" {
+		t.Errorf("expected --merge-target=impl/my-feature, got %q", val)
+	}
+}
+
+// TestPrepareWave_MergeTargetFlag verifies that the --merge-target flag is
+// registered on the prepare-wave command and parses correctly.
+func TestPrepareWave_MergeTargetFlag(t *testing.T) {
+	cmd := newPrepareWaveCmd()
+
+	// Verify the flag exists
+	flag := cmd.Flags().Lookup("merge-target")
+	if flag == nil {
+		t.Fatal("expected --merge-target flag to be registered on prepare-wave command")
+	}
+
+	// Verify default value is empty
+	if flag.DefValue != "" {
+		t.Errorf("expected --merge-target default to be empty, got %q", flag.DefValue)
+	}
+
+	// Verify flag can be set
+	if err := cmd.Flags().Set("merge-target", "impl/another-feature"); err != nil {
+		t.Errorf("failed to set --merge-target flag: %v", err)
+	}
+
+	val, err := cmd.Flags().GetString("merge-target")
+	if err != nil {
+		t.Fatalf("failed to get --merge-target value: %v", err)
+	}
+	if val != "impl/another-feature" {
+		t.Errorf("expected --merge-target=impl/another-feature, got %q", val)
+	}
+}
+
 // initBareGitRepo initialises a minimal git repository in dir so that git
 // branch operations work in tests that call AllBranchesAbsent.
 func initBareGitRepo(t *testing.T, dir string) error {

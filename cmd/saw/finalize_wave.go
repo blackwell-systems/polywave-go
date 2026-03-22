@@ -34,6 +34,7 @@ type FinalizeWaveResult struct {
 
 func newFinalizeWaveCmd() *cobra.Command {
 	var waveNum int
+	var mergeTarget string
 
 	cmd := &cobra.Command{
 		Use:   "finalize-wave <manifest-path>",
@@ -258,7 +259,7 @@ pattern matching (H7) and appends diagnosis to the output.`,
 				goto postMerge
 			}
 			for repoKey, repoPath := range repos {
-				mergeResult, err := protocol.MergeAgents(manifestPath, waveNum, repoPath)
+				mergeResult, err := protocol.MergeAgents(manifestPath, waveNum, repoPath, mergeTarget)
 				if err != nil {
 					return fmt.Errorf("finalize-wave: merge-agents failed in %s: %w", repoKey, err)
 				}
@@ -337,6 +338,7 @@ pattern matching (H7) and appends diagnosis to the output.`,
 
 	cmd.Flags().IntVar(&waveNum, "wave", 0, "Wave number (required)")
 	_ = cmd.MarkFlagRequired("wave")
+	cmd.Flags().StringVar(&mergeTarget, "merge-target", "", "Target branch for merge (default: current HEAD)")
 
 	return cmd
 }

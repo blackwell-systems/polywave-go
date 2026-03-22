@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/blackwell-systems/scout-and-wave-go/internal/git"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/collision"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/deps"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/gatecache"
@@ -83,6 +84,7 @@ func resolveAgentRepoRoot(
 func newPrepareWaveCmd() *cobra.Command {
 	var waveNum int
 	var noCache bool
+	var mergeTarget string
 
 	cmd := &cobra.Command{
 		Use:   "prepare-wave <manifest-path>",
@@ -210,6 +212,16 @@ waves that execute on the main branch.`,
 					return fmt.Errorf("prepare-wave: %s", w.Message)
 				}
 				fmt.Fprintf(os.Stderr, "prepare-wave: warning: %s\n", w.Message)
+			}
+
+			// Step 0b2a: Checkout merge target before baseline gates (E28)
+			// When mergeTarget is set, run baseline quality gates against the IMPL branch
+			// rather than the current HEAD. This ensures worktrees branch from the correct base.
+			if mergeTarget != "" {
+				if _, err := git.Run(projectRoot, "checkout", mergeTarget); err != nil {
+					return fmt.Errorf("prepare-wave: failed to checkout merge target %s: %w", mergeTarget, err)
+				}
+				fmt.Fprintf(os.Stderr, "prepare-wave: checked out merge target %s for baseline verification\n", mergeTarget)
 			}
 
 			// Step 0b2: Run baseline quality gates (E21A)
@@ -473,6 +485,7 @@ waves that execute on the main branch.`,
 	cmd.Flags().IntVar(&waveNum, "wave", 0, "Wave number (required)")
 	_ = cmd.MarkFlagRequired("wave")
 	cmd.Flags().BoolVar(&noCache, "no-cache", false, "Disable baseline gate result caching")
+	cmd.Flags().StringVar(&mergeTarget, "merge-target", "", "Baseline branch for verification (default: current HEAD)")
 
 	return cmd
 }
