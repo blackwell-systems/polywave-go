@@ -1,0 +1,766 @@
+completion_date: "2026-03-21"
+title: Program-Level Disjoint Analysis and Workflowing
+feature_slug: program-disjoint-workflowing
+verdict: SUITABLE
+suitability_assessment: |
+    All five suitability checks pass cleanly.
+
+    1. File decomposition: Work spans 5+ distinct files across protocol/, cmd/saw/, and
+       protocol docs. The four deliverables (check-program-conflicts CLI integration,
+       program worktree lifecycle, finalize-tier command, and protocol docs) each own
+       disjoint files. Ownership can be cleanly split into 3 parallel agents.
+
+    2. No investigation-first items: All behaviors are well-specified by analogy to
+       existing wave-level equivalents (check-conflicts, prepare-wave, finalize-wave).
+       No unknown root causes.
+
+    3. Interface discoverability: The cross-agent interfaces are all derivable from
+       existing patterns. ProgramWorktreeInfo, FinalizeTierResult, and
+       CheckProgramConflictsResult can all be specified before implementation starts.
+
+    4. Pre-implementation status check:
+       - check-program-conflicts (CLI): `check-impl-conflicts` already exists in
+         cmd/saw/create_program_cmd.go with CheckIMPLConflicts in pkg/protocol/program_conflict.go.
+         The feature asks for a NEW `check-program-conflicts` command that takes a PROGRAM
+         manifest (not raw impl slugs) and checks conflicts for a specified tier. This is
+         a new command wrapping the existing CheckIMPLConflicts function.
+       - Program worktree isolation: No existing worktree lifecycle at program level.
+         CreateWorktrees operates at the IMPL/wave level. New pkg/protocol/program_worktree.go
+         needed with program-scoped branch naming (saw/program/{slug}/tier{N}-impl-{implSlug}).
+       - finalize-tier command: The existing `tier-gate` command only checks completion + runs
+         gates. A new `finalize-tier` command (analogous to finalize-wave) that sequences
+         merge, verify, and cleanup across all IMPL branches in a tier is needed.
+       - Protocol docs (P1+): protocol/program-invariants.md currently defines P1-P4. The
+         feature requests adding a P1+ constraint covering file-level disjointness (not just
+         dependency-graph independence). This is additive documentation.
+
+    5. Parallelization value: Go build+test cycle is ~30s+. Agents A and B both own 2-3
+       implementation files each. Agent C owns documentation only. Agents A and B can run
+       fully in parallel (completely independent file sets). Clear speedup.
+
+    Estimated times:
+    - Scout phase: ~10 min
+    - Agent execution: ~3 agents, avg 15 min each with 2 parallel = ~20 min wall time
+    - Merge and verification: ~5 min
+    Total SAW time: ~35 min
+
+    Sequential baseline: ~45 min (3 x 15 min)
+    Time savings: ~10 min (22% faster)
+
+    Recommendation: Clear speedup for A+B parallelism. Proceed as SUITABLE.
+test_command: go test ./...
+lint_command: go vet ./...
+file_ownership:
+    - file: pkg/protocol/program_worktree.go
+      agent: A
+      wave: 1
+      action: new
+      repo: scout-and-wave-go
+    - file: pkg/protocol/program_worktree_test.go
+      agent: A
+      wave: 1
+      action: new
+      repo: scout-and-wave-go
+    - file: cmd/saw/check_program_conflicts_cmd.go
+      agent: B
+      wave: 1
+      action: new
+      repo: scout-and-wave-go
+    - file: cmd/saw/check_program_conflicts_cmd_test.go
+      agent: B
+      wave: 1
+      action: new
+      repo: scout-and-wave-go
+    - file: cmd/saw/finalize_tier_cmd.go
+      agent: C
+      wave: 2
+      action: new
+      repo: scout-and-wave-go
+    - file: cmd/saw/finalize_tier_cmd_test.go
+      agent: C
+      wave: 2
+      action: new
+      repo: scout-and-wave-go
+    - file: pkg/protocol/program_tier_finalize.go
+      agent: C
+      wave: 2
+      action: new
+      repo: scout-and-wave-go
+    - file: pkg/protocol/program_tier_finalize_test.go
+      agent: C
+      wave: 2
+      action: new
+      repo: scout-and-wave-go
+    - file: cmd/saw/main.go
+      agent: D
+      wave: 3
+      action: modify
+      repo: scout-and-wave-go
+    - file: protocol/program-invariants.md
+      agent: E
+      wave: 1
+      action: modify
+      repo: scout-and-wave
+interface_contracts:
+    - name: ProgramWorktreeInfo
+      description: |-
+        Per-IMPL worktree created for a program tier. Branch naming follows
+        saw/program/{program-slug}/tier{N}-impl-{impl-slug}.
+      definition: |
+        type ProgramWorktreeInfo struct {
+            ImplSlug  string `json:"impl_slug"`
+            Path      string `json:"path"`
+            Branch    string `json:"branch"`
+        }
+      location: pkg/protocol/program_worktree.go
+    - name: CreateProgramWorktreesResult
+      description: Result returned by CreateProgramWorktrees after creating all IMPL worktrees for a tier.
+      definition: |
+        type CreateProgramWorktreesResult struct {
+            TierNumber int                    `json:"tier_number"`
+            Worktrees  []ProgramWorktreeInfo  `json:"worktrees"`
+        }
+      location: pkg/protocol/program_worktree.go
+    - name: CreateProgramWorktrees
+      description: |-
+        Creates git worktrees for all IMPLs in a program tier. Branch names follow
+        saw/program/{program-slug}/tier{N}-impl-{impl-slug}. Worktree paths follow
+        {repoDir}/.claude/worktrees/saw/program/{program-slug}/tier{N}-impl-{impl-slug}.
+        Returns an error if any worktree creation fails (no partial state).
+      definition: |
+        func CreateProgramWorktrees(
+            programManifestPath string,
+            tierNumber int,
+            repoDir string,
+        ) (*CreateProgramWorktreesResult, error)
+      location: pkg/protocol/program_worktree.go
+    - name: ProgramBranchName
+      description: |-
+        Returns the slug-scoped branch name for a program-tier IMPL.
+        Format: saw/program/{program-slug}/tier{N}-impl-{impl-slug}
+      definition: |
+        func ProgramBranchName(programSlug string, tierNumber int, implSlug string) string
+      location: pkg/protocol/program_worktree.go
+    - name: ProgramWorktreeDir
+      description: |-
+        Returns the worktree directory path for a program-tier IMPL.
+        Format: {repoDir}/.claude/worktrees/saw/program/{program-slug}/tier{N}-impl-{impl-slug}
+      definition: |
+        func ProgramWorktreeDir(repoDir, programSlug string, tierNumber int, implSlug string) string
+      location: pkg/protocol/program_worktree.go
+    - name: FinalizeTierResult
+      description: |-
+        Result of finalize-tier: per-IMPL merge outcomes plus tier gate result.
+        Success is true only if all IMPL merges succeeded and tier gate passed.
+      definition: |
+        type FinalizeTierResult struct {
+            TierNumber      int                          `json:"tier_number"`
+            ImplMergeResults map[string]*MergeAgentsResult `json:"impl_merge_results"` // impl_slug -> result
+            TierGateResult  *TierGateResult              `json:"tier_gate_result"`
+            Success         bool                         `json:"success"`
+            Errors          []string                     `json:"errors,omitempty"`
+        }
+      location: pkg/protocol/program_tier_finalize.go
+    - name: FinalizeTier
+      description: |-
+        Finalizes a program tier: merges all IMPL branches to main in sequence,
+        then runs the tier gate. Analogous to finalize-wave but at the program tier level.
+        Returns structured JSON with per-IMPL merge results and tier gate result.
+        Stops on first merge failure (does not run tier gate if any merge fails).
+      definition: |
+        func FinalizeTier(
+            programManifestPath string,
+            tierNumber int,
+            repoDir string,
+        ) (*FinalizeTierResult, error)
+      location: pkg/protocol/program_tier_finalize.go
+    - name: CheckProgramConflictsResult
+      description: |-
+        Result of check-program-conflicts: conflict details per file plus a
+        BLOCKED boolean for callers that need a simple pass/fail signal.
+      definition: |
+        // Note: CheckIMPLConflicts already returns *ConflictReport (program_conflict.go).
+        // check-program-conflicts CLI wraps it with tier-scoped slug extraction from
+        // the PROGRAM manifest and emits exit code 1 if conflicts found.
+        // No new Go type needed — the CLI command reuses protocol.ConflictReport.
+      location: cmd/saw/check_program_conflicts_cmd.go
+waves:
+    - number: 1
+      agents:
+        - id: A
+          task: |
+            Implement program-level worktree lifecycle in pkg/protocol/program_worktree.go.
+
+            ## What to implement
+
+            Create pkg/protocol/program_worktree.go with:
+
+            1. `ProgramBranchName(programSlug string, tierNumber int, implSlug string) string`
+               Returns: `saw/program/{program-slug}/tier{N}-impl-{impl-slug}`
+               Follows the same slug-scoped naming convention as BranchName() in branchname.go.
+
+            2. `ProgramWorktreeDir(repoDir, programSlug string, tierNumber int, implSlug string) string`
+               Returns: `{repoDir}/.claude/worktrees/saw/program/{program-slug}/tier{N}-impl-{impl-slug}`
+               Follows the same pattern as WorktreeDir() in branchname.go.
+
+            3. `ProgramWorktreeInfo` struct:
+               ```go
+               type ProgramWorktreeInfo struct {
+                   ImplSlug  string `json:"impl_slug"`
+                   Path      string `json:"path"`
+                   Branch    string `json:"branch"`
+               }
+               ```
+
+            4. `CreateProgramWorktreesResult` struct:
+               ```go
+               type CreateProgramWorktreesResult struct {
+                   TierNumber int                   `json:"tier_number"`
+                   Worktrees  []ProgramWorktreeInfo `json:"worktrees"`
+               }
+               ```
+
+            5. `CreateProgramWorktrees(programManifestPath string, tierNumber int, repoDir string) (*CreateProgramWorktreesResult, error)`
+
+               Implementation steps:
+               a. Parse program manifest with `protocol.ParseProgramManifest(programManifestPath)`
+               b. Find the tier by number in manifest.Tiers
+               c. For each impl slug in tier.Impls:
+                  - Compute branch name: ProgramBranchName(manifest.ProgramSlug, tierNumber, implSlug)
+                  - Compute worktree path: ProgramWorktreeDir(repoDir, manifest.ProgramSlug, tierNumber, implSlug)
+                  - Check if branch already exists (git.BranchExists); if merged (git.IsAncestor), clean up
+                  - Create worktree: git.WorktreeAdd(repoDir, worktreePath, branchName)
+                  - Install hooks: git.InstallHooks(repoDir, worktreePath) (log warning on error, don't fail)
+               d. Return CreateProgramWorktreesResult with all created worktrees
+               e. On any worktree creation failure, return error immediately (no partial state)
+
+            Look at pkg/protocol/worktree.go and pkg/protocol/branchname.go for exact
+            patterns to follow. Import from internal/git for all git operations.
+
+            ## Tests
+
+            Create pkg/protocol/program_worktree_test.go with:
+            - TestProgramBranchName: verifies format `saw/program/{slug}/tier{N}-impl-{implSlug}`
+            - TestProgramWorktreeDir: verifies path format
+            - TestCreateProgramWorktrees_TierNotFound: returns error when tier not found in manifest
+            - TestCreateProgramWorktrees_EmptyTier: returns empty result for tier with no IMPLs
+
+            Use t.TempDir() for any filesystem tests. Do not require real git operations
+            for unit tests — stub at the function boundary where needed, or test only the
+            naming/path functions directly and test CreateProgramWorktrees with a fake manifest
+            pointing to a non-existent tier.
+
+            ## Verification gate
+
+            ```
+            cd /Users/dayna.blackwell/code/scout-and-wave-go
+            go build ./...
+            go vet ./...
+            go test ./pkg/protocol/... -run TestProgramBranch -v
+            go test ./pkg/protocol/... -run TestCreateProgram -v
+            ```
+
+            ## Constraints
+
+            - Do NOT modify any existing files. Only create the two new files listed above.
+            - Follow the exact signatures in the interface contracts section.
+            - Import path: `github.com/blackwell-systems/scout-and-wave-go/internal/git`
+            - Package: `package protocol`
+          files:
+            - pkg/protocol/program_worktree.go
+            - pkg/protocol/program_worktree_test.go
+        - id: B
+          task: |
+            Implement the `check-program-conflicts` CLI command in cmd/saw/check_program_conflicts_cmd.go.
+
+            ## What to implement
+
+            Create cmd/saw/check_program_conflicts_cmd.go with `newCheckProgramConflictsCmd()`.
+
+            The command takes a PROGRAM manifest path and a --tier flag. It:
+            1. Parses the PROGRAM manifest with `protocol.ParseProgramManifest(manifestPath)`
+            2. Finds the specified tier in manifest.Tiers
+            3. Extracts all IMPL slugs from that tier (tier.Impls)
+            4. Calls `protocol.CheckIMPLConflicts(slugs, repoDir)` from pkg/protocol/program_conflict.go
+            5. Outputs the ConflictReport as JSON to stdout
+            6. If len(report.Conflicts) > 0: prints a clear BLOCKED message to stderr showing
+               which IMPLs conflict on which files, then exits with code 1
+            7. If no conflicts: exits 0
+
+            CLI signature:
+            ```
+            sawtools check-program-conflicts <program-manifest> --tier N [--repo-dir /path]
+            ```
+
+            Flags:
+            - `--tier int` (required): tier number to check
+            - Uses the global `repoDir` flag (already declared in root.go)
+
+            Error message format when blocked (write to stderr):
+            ```
+            check-program-conflicts: BLOCKED — 2 conflict(s) detected in tier 1
+            Conflicting IMPLs:
+              pkg/shared/types.go: [feature-a, feature-b]
+              pkg/api/handler.go: [feature-b, feature-c]
+            Resolve by moving conflicting IMPLs to different tiers.
+            ```
+
+            JSON output to stdout follows the existing `protocol.ConflictReport` struct (no new type needed).
+
+            ## Registration
+
+            Do NOT modify cmd/saw/main.go — that is Agent D's file. Instead, add a comment
+            at the top of the file:
+            ```go
+            // Registration: add newCheckProgramConflictsCmd() to main.go AddCommand list.
+            ```
+
+            ## Tests
+
+            Create cmd/saw/check_program_conflicts_cmd_test.go with:
+            - TestCheckProgramConflictsCmd_NoArgs: returns error without manifest path
+            - TestCheckProgramConflictsCmd_NoTierFlag: returns error when --tier not given
+            - TestCheckProgramConflictsCmd_TierNotFound: returns error when tier N not in manifest
+            - TestCheckProgramConflictsCmd_NoConflicts: exit 0, JSON has empty conflicts array
+            - TestCheckProgramConflictsCmd_WithConflicts: exit 1, JSON has conflicts, stderr has BLOCKED message
+
+            For integration tests, create temp directories with IMPL YAML files using
+            the same helper pattern as pkg/protocol/program_conflict_test.go
+            (see writeConflictTestIMPL there for reference only — do NOT import it,
+            as it is in package protocol). Write a local equivalent helper in this
+            test file (package main). Create a minimal PROGRAM YAML with a tiers
+            section pointing to the temp IMPLs.
+
+            ## Verification gate
+
+            ```
+            cd /Users/dayna.blackwell/code/scout-and-wave-go
+            go build ./...
+            go vet ./...
+            go test ./cmd/saw/... -run TestCheckProgramConflicts -v
+            ```
+
+            ## Constraints
+
+            - Do NOT modify any existing files. Only create the two new files listed.
+            - Use `protocol.CheckIMPLConflicts` directly — do not duplicate the conflict logic.
+            - The global `repoDir` variable is declared in cmd/saw/root.go; reference it directly.
+            - Package: `package main`
+          files:
+            - cmd/saw/check_program_conflicts_cmd.go
+            - cmd/saw/check_program_conflicts_cmd_test.go
+        - id: E
+          task: |
+            Add P1+ invariant to the protocol documentation at
+            /Users/dayna.blackwell/code/scout-and-wave/protocol/program-invariants.md.
+
+            ## What to implement
+
+            Add a new section P1+ after the existing P1 section (after line ~63, before P2).
+
+            P1+ extends P1 to cover file-level disjointness, not just dependency-graph
+            independence. The current P1 requires no same-tier IMPL dependency relationships.
+            P1+ adds: no two IMPLs in the same tier may own the same file in their
+            file_ownership table.
+
+            Insert the following section (adapt prose to match the existing document style):
+
+            ---
+
+            ## P1+: File Disjointness Within a Tier
+
+            **Formal Statement:** No two IMPLs in the same tier may list the same file
+            (qualified by repo if present) in their `file_ownership` tables. Ownership
+            of the same file by two co-tier IMPLs guarantees a merge conflict when both
+            IMPLs complete and their branches are merged to main.
+
+            **Relationship to P1:** P1 requires no same-tier *dependency relationships*
+            (logical independence). P1+ requires no same-tier *file ownership overlap*
+            (physical independence). Both must hold for parallel tier execution to be safe.
+            A pair of IMPLs can satisfy P1 (no explicit depends_on relationship) while
+            violating P1+ (both modify the same file). P1+ is the machine-enforceable
+            complement to P1's logical constraint.
+
+            **Enforcement:** Machine-enforced before launching any IMPL in a tier via
+            `sawtools check-program-conflicts <PROGRAM.yaml> --tier N`. This command:
+            1. Loads all IMPL docs for tier N
+            2. Intersects their `file_ownership` tables
+            3. If any file appears in two or more IMPL ownership tables: BLOCKED with
+               structured error output showing conflicting IMPLs and files
+            4. If all ownership sets are disjoint: exit 0 (proceed)
+
+            **When to run:**
+            - Before `prepare-wave` for any IMPL in the tier (pre-flight check)
+            - As part of `program-execute` auto-mode tier setup
+            - Any time an IMPL is added to or re-scoted within a tier
+
+            **Error message format:**
+            ```
+            check-program-conflicts: BLOCKED — 2 conflict(s) detected in tier 1
+            Conflicting IMPLs:
+              pkg/shared/types.go: [feature-a, feature-b]
+            Resolve by moving conflicting IMPLs to different tiers (sawtools tier-gate
+            suggestion: feature-b → tier 2).
+            ```
+
+            **Resolution:** When P1+ is violated:
+            1. Run `sawtools check-impl-conflicts --impls <slugs>` for tier suggestion
+            2. Move the conflicting IMPL to the suggested tier in the PROGRAM manifest
+            3. Re-run check-program-conflicts to confirm resolution
+            4. Alternatively, split the conflicting IMPL into sub-IMPLs with disjoint ownership
+
+            **Rationale:** P1 (dependency-graph) and P1+ (file-level) together provide the
+            complete safety guarantee for parallel tier execution. P1 prevents logical
+            dependency violations. P1+ prevents the physical merge failures that would occur
+            even if logical dependencies are respected. Without P1+, two IMPLs that logically
+            don't depend on each other may both modify the same infrastructure file (e.g.,
+            `cmd/saw/main.go` for command registration), causing merge conflicts that block
+            tier completion.
+
+            **Related Rules:**
+            - See P1 (IMPL Independence Within a Tier) above
+            - See I1 (Disjoint File Ownership) in `protocol/invariants.md`
+            - `sawtools check-program-conflicts` is the P1+ equivalent of `sawtools check-conflicts`
+              (which enforces I1 at the agent/wave level)
+
+            ---
+
+            Also update the Protocol Violations table (near the end of the file) to add a P1+ row:
+            | Two IMPLs in the same tier own the same file | P1+ | Guaranteed merge conflict when both IMPL branches complete |
+
+            Also update the Protocol Guarantees section to mention P1+ in the guarantee list.
+
+            ## Verification gate
+
+            Verify the file can be read without parse errors (it is Markdown, not code).
+            Confirm the P1+ section appears between P1 and P2 sections.
+            Confirm the Protocol Violations table has a P1+ row.
+
+            ## Constraints
+
+            - Only modify /Users/dayna.blackwell/code/scout-and-wave/protocol/program-invariants.md.
+            - Do not modify any other files.
+            - Use the same prose style and heading structure as the existing document.
+            - The P1+ section title must be exactly: `## P1+: File Disjointness Within a Tier`
+          files:
+            - protocol/program-invariants.md
+      base_commit: 64c16e3bee30cf59aafe48027d59704f327ed6b7
+    - number: 2
+      agents:
+        - id: C
+          task: |
+            Implement the `finalize-tier` command and its backing protocol function.
+
+            ## What to implement
+
+            ### pkg/protocol/program_tier_finalize.go
+
+            Add `FinalizeTierResult` struct and `FinalizeTier` function.
+
+            ```go
+            type FinalizeTierResult struct {
+                TierNumber       int                           `json:"tier_number"`
+                ImplMergeResults map[string]*MergeAgentsResult `json:"impl_merge_results"` // impl_slug -> result
+                TierGateResult   *TierGateResult               `json:"tier_gate_result"`
+                Success          bool                          `json:"success"`
+                Errors           []string                      `json:"errors,omitempty"`
+            }
+            ```
+
+            `FinalizeTier(programManifestPath string, tierNumber int, repoDir string) (*FinalizeTierResult, error)`:
+
+            Implementation steps:
+            1. Parse PROGRAM manifest: `protocol.ParseProgramManifest(programManifestPath)`
+            2. Find the tier by number
+            3. For each impl slug in tier.Impls (in order):
+               a. Compute branch: `ProgramBranchName(manifest.ProgramSlug, tierNumber, implSlug)`
+               b. Check if branch exists (git.BranchExists); if absent, log and skip (idempotent)
+               c. Merge the IMPL branch to main:
+                  - Use existing `MergeAgents` pattern from pkg/protocol/merge_agents.go
+                  - Specifically: `git merge --no-ff <branch>` in repoDir
+                  - If merge fails: stop immediately, set result.Success=false, return result with error
+               d. Record merge result in ImplMergeResults[implSlug]
+            4. After all merges succeed, run tier gate: `RunTierGate(manifest, tierNumber, repoDir)`
+            5. Set result.Success = true only if all merges succeeded AND tier gate passed
+            6. Return result
+
+            Look at pkg/protocol/merge_agents.go for the merge pattern to reuse.
+            Look at pkg/protocol/program_tier_gate.go for RunTierGate signature (already exists).
+
+            Note: MergeAgents takes (manifestPath, waveNum, repoDir). FinalizeTier works at the
+            program level, so it calls git operations directly rather than MergeAgents (which is
+            wave-scoped). Use internal/git package functions directly for the merge operation.
+            Specifically look at how merge_agents.go calls git.MergeNoFF (internal/git/commands.go:117).
+            Note: there is no git.Merge function — use git.MergeNoFF or git.MergeNoFFWithOwnership directly.
+
+            ### cmd/saw/finalize_tier_cmd.go
+
+            Create `newFinalizeTierCmd()`:
+
+            ```
+            sawtools finalize-tier <program-manifest> --tier N [--repo-dir /path]
+            ```
+
+            Flags:
+            - `--tier int` (required)
+            - Uses global `repoDir` from root.go
+
+            Implementation:
+            1. Call `protocol.FinalizeTier(manifestPath, tierNum, repoDir)`
+            2. JSON-marshal result to stdout
+            3. If !result.Success: exit 1
+            4. If err != nil: return error
+
+            Add this comment at top:
+            ```go
+            // Registration: add newFinalizeTierCmd() to main.go AddCommand list.
+            ```
+
+            ## Tests
+
+            ### pkg/protocol/program_tier_finalize_test.go
+
+            - TestFinalizeTier_TierNotFound: error when tier not in manifest
+            - TestFinalizeTierResult_JSONFields: verify JSON field names match expected output
+
+            Note: Full integration tests requiring real git merges should be kept minimal.
+            Focus on unit-testable logic (tier lookup, error propagation, struct field names).
+
+            ### cmd/saw/finalize_tier_cmd_test.go
+
+            - TestFinalizeTierCmd_NoArgs: error without manifest
+            - TestFinalizeTierCmd_NoTierFlag: error without --tier
+            - TestFinalizeTierCmd_MissingManifest: parse error on nonexistent file
+
+            ## Verification gate
+
+            ```
+            cd /Users/dayna.blackwell/code/scout-and-wave-go
+            go build ./...
+            go vet ./...
+            go test ./pkg/protocol/... -run TestFinalizeTier -v
+            go test ./cmd/saw/... -run TestFinalizeTierCmd -v
+            ```
+
+            ## Constraints
+
+            - Do NOT modify cmd/saw/main.go (that is Agent D's file in Wave 3).
+            - Only create the four new files listed in your file ownership.
+            - Package for protocol files: `package protocol`
+            - Package for cmd files: `package main`
+            - MergeAgentsResult is defined in pkg/protocol/merge_agents.go — import it directly.
+            - TierGateResult and RunTierGate are in pkg/protocol/program_tier_gate.go.
+          files:
+            - cmd/saw/finalize_tier_cmd.go
+            - cmd/saw/finalize_tier_cmd_test.go
+            - pkg/protocol/program_tier_finalize.go
+            - pkg/protocol/program_tier_finalize_test.go
+          dependencies:
+            - A
+      base_commit: e29f6a8e8751abc37e1d0291984e6c5d37c0ae9e
+    - number: 3
+      type: integration
+      agents:
+        - id: D
+          task: |
+            Wire the two new commands into cmd/saw/main.go.
+
+            ## What to implement
+
+            Open cmd/saw/main.go. Add two new command registrations to the
+            rootCmd.AddCommand(...) call:
+
+            1. `newCheckProgramConflictsCmd()` — add after `newCheckIMPLConflictsCmd()` (line ~77)
+            2. `newFinalizeTierCmd()` — add after `newTierGateCmd()` (line ~66)
+
+            The final additions should look like:
+            ```go
+            newTierGateCmd(),
+            newFinalizeTierCmd(),          // new: finalize tier (merge + gate)
+            ...
+            newCheckIMPLConflictsCmd(),
+            newCheckProgramConflictsCmd(), // new: P1+ pre-flight check
+            ```
+
+            ## Verification gate
+
+            ```
+            cd /Users/dayna.blackwell/code/scout-and-wave-go
+            go build ./...
+            go vet ./...
+            sawtools --help 2>&1 | grep -E "check-program-conflicts|finalize-tier"
+            ```
+
+            The grep must return both command names.
+
+            ## Constraints
+
+            - Only modify cmd/saw/main.go.
+            - Do not change any other line in the file beyond adding the two command registrations.
+          files:
+            - cmd/saw/main.go
+          dependencies:
+            - B
+            - C
+      base_commit: c1402937649ea364fff5cc1debd822b476259536
+quality_gates:
+    level: standard
+    gates:
+        - type: build
+          command: go build ./...
+          required: true
+          repo: scout-and-wave-go
+        - type: lint
+          command: go vet ./...
+          required: true
+          repo: scout-and-wave-go
+        - type: test
+          command: go test ./...
+          required: true
+          repo: scout-and-wave-go
+        - type: custom
+          command: test -f protocol/program-invariants.md
+          required: true
+          repo: scout-and-wave
+completion_reports:
+    A:
+        status: complete
+        branch: saw/program-disjoint-workflowing/wave1-agent-A
+        commit: fe9a5fe
+        files_changed:
+            - pkg/protocol/program_worktree.go
+            - pkg/protocol/program_worktree_test.go
+        files_created:
+            - pkg/protocol/program_worktree.go
+            - pkg/protocol/program_worktree_test.go
+        tests_added:
+            - TestProgramBranchName
+            - TestProgramWorktreeDir
+            - TestCreateProgramWorktrees_TierNotFound
+            - TestCreateProgramWorktrees_EmptyTier
+        verification: PASS
+    B:
+        status: complete
+        branch: saw/program-disjoint-workflowing/wave1-agent-B
+        commit: 270798e
+        files_changed:
+            - cmd/saw/check_program_conflicts_cmd.go
+            - cmd/saw/check_program_conflicts_cmd_test.go
+        files_created:
+            - cmd/saw/check_program_conflicts_cmd.go
+            - cmd/saw/check_program_conflicts_cmd_test.go
+        tests_added:
+            - TestCheckProgramConflictsCmd_NoArgs
+            - TestCheckProgramConflictsCmd_NoTierFlag
+            - TestCheckProgramConflictsCmd_TierNotFound
+            - TestCheckProgramConflictsCmd_NoConflicts
+            - TestCheckProgramConflictsCmd_WithConflicts
+        verification: PASS
+    C:
+        status: complete
+        branch: saw/program-disjoint-workflowing/wave2-agent-C
+        commit: c0bf38f
+        files_changed:
+            - cmd/saw/finalize_tier_cmd.go
+            - cmd/saw/finalize_tier_cmd_test.go
+            - pkg/protocol/program_tier_finalize.go
+            - pkg/protocol/program_tier_finalize_test.go
+        files_created:
+            - cmd/saw/finalize_tier_cmd.go
+            - cmd/saw/finalize_tier_cmd_test.go
+            - pkg/protocol/program_tier_finalize.go
+            - pkg/protocol/program_tier_finalize_test.go
+        tests_added:
+            - TestFinalizeTier_TierNotFound
+            - TestFinalizeTierResult_JSONFields
+            - TestFinalizeTierCmd_NoArgs
+            - TestFinalizeTierCmd_NoTierFlag
+            - TestFinalizeTierCmd_MissingManifest
+        verification: PASS
+    D:
+        status: complete
+        branch: saw/program-disjoint-workflowing/wave3-agent-D
+        commit: 67fc934
+        files_changed:
+            - cmd/saw/main.go
+        verification: PASS
+    E:
+        status: complete
+        branch: saw/program-disjoint-workflowing/wave1-agent-E
+        commit: c07a3ca
+        files_changed:
+            - protocol/program-invariants.md
+        verification: PASS
+pre_mortem:
+    overall_risk: low
+    rows:
+        - scenario: |-
+            MergeAgentsResult import in program_tier_finalize.go — the struct is defined in
+            pkg/protocol/merge_agents.go but Agent C may reach for a different merge result
+            type or try to reuse MergeAgents (wave-scoped) instead of calling git directly.
+          likelihood: medium
+          impact: medium
+          mitigation: |-
+            Interface contract explicitly states to use MergeAgentsResult from merge_agents.go
+            and call git operations directly (not MergeAgents). Agent C task prompt references
+            both files explicitly.
+        - scenario: |-
+            Agent D's wave 3 integration wave runs before Agent C's wave 2 compile error is
+            resolved. If C produces a file with a compile error, D's go build ./... check will
+            fail on the merged codebase.
+          likelihood: low
+          impact: medium
+          mitigation: |-
+            Wave 3 is type: integration and only runs after Wave 2 agents merge. If Wave 2
+            fails verify-build, the orchestrator stops before launching Wave 3. Agent C's
+            verification gate (go build ./...) catches compile errors before merge.
+        - scenario: |-
+            Agent E modifies the wrong file (e.g., invariants.md instead of program-invariants.md)
+            or adds P1+ in the wrong location within the document.
+          likelihood: low
+          impact: low
+          mitigation: |-
+            Agent E task explicitly states the full absolute path and insertion point (after P1,
+            before P2). Section title format is exact. The verify step checks section ordering.
+        - scenario: |-
+            The program-invariants.md file is in the scout-and-wave repo (different from the
+            scout-and-wave-go repo where the IMPL lives). Agent E needs to work across repos.
+            The file_ownership entry uses the absolute path which makes this explicit.
+          likelihood: low
+          impact: low
+          mitigation: |-
+            File ownership entry for Agent E uses absolute path including /Users/dayna.blackwell/
+            code/scout-and-wave/protocol/program-invariants.md. Agent E task also references this
+            full path. No confusion about which repo is targeted.
+        - scenario: |-
+            CreateProgramWorktrees requires real git operations, making unit tests brittle or
+            requiring a real git repo fixture.
+          likelihood: medium
+          impact: low
+          mitigation: |-
+            Agent A task instructs testing only the naming/path helper functions (ProgramBranchName,
+            ProgramWorktreeDir) as pure unit tests, and testing CreateProgramWorktrees error paths
+            (tier not found, empty tier) without real git ops. Full git integration is tested via
+            manual QA or a future integration test suite.
+critic_report:
+    verdict: PASS
+    agent_reviews:
+        A:
+            agent_id: A
+            verdict: PASS
+        B:
+            agent_id: B
+            verdict: PASS
+        C:
+            agent_id: C
+            verdict: PASS
+        D:
+            agent_id: D
+            verdict: PASS
+        E:
+            agent_id: E
+            verdict: PASS
+    summary: 'All five agent briefs verified against the codebase. Every referenced symbol exists under its exact name: ParseProgramManifest in pkg/protocol/program_parser.go, CheckIMPLConflicts in pkg/protocol/program_conflict.go, git.BranchExists/WorktreeAdd/InstallHooks/IsAncestor/MergeNoFF/MergeNoFFWithOwnership in internal/git/commands.go, MergeAgentsResult in pkg/protocol/merge_agents.go, TierGateResult and RunTierGate in pkg/protocol/program_tier_gate.go and program_tier_types.go. The global repoDir variable in root.go follows the same pattern used by the existing check_impl_conflicts_cmd.go. All new files are confirmed absent. Agent D line references (newTierGateCmd at line 66, newCheckIMPLConflictsCmd at line 77) match main.go exactly. The protocol/program-invariants.md target file exists with P1 and P2 sections in the expected locations. No errors found.'
+    reviewed_at: "2026-03-22T04:54:25Z"
+    issue_count: 0
+state: WAVE_PENDING

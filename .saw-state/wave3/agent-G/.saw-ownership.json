@@ -1,9 +1,8 @@
 {
   "agent": "G",
   "wave": 3,
-  "impl_doc": "/Users/dayna.blackwell/code/scout-and-wave/docs/IMPL/IMPL-protocol-conformity.yaml",
+  "impl_doc": "/Users/dayna.blackwell/code/scout-and-wave-go/docs/IMPL/IMPL-sawtools-cli-gaps.yaml",
   "owned_files": [
-    "cmd/saw/program_execute_cmd.go",
-    "cmd/saw/program_execute_cmd_test.go"
+    "cmd/saw/main.go"
   ]
 }

@@ -166,3 +166,5 @@ type BackendConfig struct {
   - IMPL doc: docs/IMPL/complete/IMPL-protocol-conformity-gaps.yaml
 - **orchestrator-ergonomics**: completed 2026-03-21, 2 waves, 4 agents
   - IMPL doc: docs/IMPL/complete/IMPL-orchestrator-ergonomics.yaml
+- **program-disjoint-workflowing**: completed 2026-03-21, 3 waves, 5 agents
+  - IMPL doc: docs/IMPL/complete/IMPL-program-disjoint-workflowing.yaml
