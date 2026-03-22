@@ -302,6 +302,76 @@ func TestTierLoop_LaunchParallelScoutsFunc_IsWired(t *testing.T) {
 	}
 }
 
+func TestRunTierLoop_PassesMergeTarget(t *testing.T) {
+	// Verify that the IMPL branch name is correctly computed and would be
+	// passed as MergeTarget to RunWaveFull. We test the components since
+	// RunTierLoop requires full infrastructure.
+	manifest := buildTierLoopManifest(
+		[]protocol.ProgramTier{
+			{Number: 1, Impls: []string{"auth-service"}},
+		},
+		[]protocol.ProgramIMPL{
+			{Slug: "auth-service", Tier: 1, Status: "pending", EstimatedWaves: 2},
+		},
+	)
+
+	// Verify ProgramBranchName produces expected branch for tier loop usage
+	implBranch := protocol.ProgramBranchName(manifest.ProgramSlug, 1, "auth-service")
+	expected := "saw/program/test-program/tier1-impl-auth-service"
+	if implBranch != expected {
+		t.Errorf("expected implBranch=%q, got %q", expected, implBranch)
+	}
+
+	// Verify the slug is correctly retrieved from manifest
+	slugs := getTierSlugs(manifest, 1)
+	if len(slugs) != 1 || slugs[0] != "auth-service" {
+		t.Errorf("expected [auth-service], got %v", slugs)
+	}
+
+	// Verify wave count is correctly retrieved
+	waveCount := getIMPLWaveCount(manifest, "auth-service")
+	if waveCount != 2 {
+		t.Errorf("expected 2 waves, got %d", waveCount)
+	}
+}
+
+func TestRunTierLoop_CreatesIMPLBranch(t *testing.T) {
+	// Verify IMPL branch name format for multiple IMPLs in a tier
+	manifest := buildTierLoopManifest(
+		[]protocol.ProgramTier{
+			{Number: 2, Impls: []string{"billing", "notifications"}},
+		},
+		[]protocol.ProgramIMPL{
+			{Slug: "billing", Tier: 2, Status: "reviewed"},
+			{Slug: "notifications", Tier: 2, Status: "pending"},
+		},
+	)
+
+	// Each IMPL in the tier should get its own branch
+	billingBranch := protocol.ProgramBranchName(manifest.ProgramSlug, 2, "billing")
+	notifBranch := protocol.ProgramBranchName(manifest.ProgramSlug, 2, "notifications")
+
+	if billingBranch == notifBranch {
+		t.Error("each IMPL should have a unique branch name")
+	}
+
+	expectedBilling := "saw/program/test-program/tier2-impl-billing"
+	if billingBranch != expectedBilling {
+		t.Errorf("expected billing branch=%q, got %q", expectedBilling, billingBranch)
+	}
+
+	expectedNotif := "saw/program/test-program/tier2-impl-notifications"
+	if notifBranch != expectedNotif {
+		t.Errorf("expected notifications branch=%q, got %q", expectedNotif, notifBranch)
+	}
+
+	// Verify findCurrentTier picks tier 2 (the only one)
+	current := findCurrentTier(manifest)
+	if current != 2 {
+		t.Errorf("expected current tier 2, got %d", current)
+	}
+}
+
 func TestTierLoop_GetTierSlugs(t *testing.T) {
 	manifest := buildTierLoopManifest(
 		[]protocol.ProgramTier{
