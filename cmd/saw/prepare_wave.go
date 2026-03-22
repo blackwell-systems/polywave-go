@@ -454,8 +454,15 @@ func checkDependencies(implPath string, wave int, repoDir string) (*deps.Conflic
 		return nil, err
 	}
 
-	// Return nil if no conflicts (makes caller logic cleaner)
-	if len(report.MissingDeps) == 0 && len(report.VersionConflicts) == 0 {
+	// Only block on real conflicts: missing deps or version conflicts requiring resolution.
+	// VersionConflicts with ResolutionNeeded: false are informational (same version, shared pkg).
+	realConflicts := 0
+	for _, vc := range report.VersionConflicts {
+		if vc.ResolutionNeeded {
+			realConflicts++
+		}
+	}
+	if len(report.MissingDeps) == 0 && realConflicts == 0 {
 		return nil, nil
 	}
 
