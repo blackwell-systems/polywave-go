@@ -3,6 +3,7 @@ package protocol
 import (
 	"fmt"
 	"log"
+	"os"
 	"path/filepath"
 	"strings"
 
@@ -150,6 +151,17 @@ func Cleanup(manifestPath string, waveNum int, repoDir string) (*CleanupResult, 
 	for repo := range prunedRepos {
 		if err := git.WorktreePrune(repo); err != nil {
 			log.Printf("warning: git worktree prune failed for %s (non-fatal): %v", repo, err)
+		}
+	}
+
+	// Remove empty slug parent directory if all agent worktrees were cleaned.
+	// Worktree paths are: .claude/worktrees/saw/{slug}/wave{N}-agent-{ID}
+	// After removing all agent dirs, the slug dir is left empty.
+	for repo := range prunedRepos {
+		slugDir := filepath.Join(repo, ".claude", "worktrees", "saw", manifest.FeatureSlug)
+		entries, err := os.ReadDir(slugDir)
+		if err == nil && len(entries) == 0 {
+			_ = os.Remove(slugDir)
 		}
 	}
 
