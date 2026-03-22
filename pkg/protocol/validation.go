@@ -44,6 +44,24 @@ func Validate(m *IMPLManifest) []ValidationError {
 	errs = append(errs, ValidateActionEnums(m)...)
 	errs = append(errs, ValidateIntegrationChecklist(m, "")...)
 	errs = append(errs, ValidateFileExistence(m, "")...)
+	errs = append(errs, validateKnownIssueTitles(m)...)
+
+	return errs
+}
+
+// validateKnownIssueTitles checks that all KnownIssue entries have a non-empty title.
+func validateKnownIssueTitles(m *IMPLManifest) []ValidationError {
+	var errs []ValidationError
+
+	for i, issue := range m.KnownIssues {
+		if issue.Title == "" {
+			errs = append(errs, ValidationError{
+				Code:    "KNOWN_ISSUE_MISSING_TITLE",
+				Message: fmt.Sprintf("known_issues[%d]: title is required", i),
+				Field:   fmt.Sprintf("known_issues[%d].title", i),
+			})
+		}
+	}
 
 	return errs
 }
