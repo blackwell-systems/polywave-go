@@ -826,7 +826,10 @@ func RunVerification(ctx context.Context, opts RunVerificationOpts) error {
 }
 
 // ParseIMPLDoc loads a YAML manifest and converts it to types.IMPLDoc.
-// This is a compatibility shim - new code should use protocol.Load() directly.
+//
+// Deprecated: Use protocol.Load() directly to obtain *protocol.IMPLManifest.
+// This function exists only for backward compatibility with callers that
+// still operate on *types.IMPLDoc.
 func ParseIMPLDoc(path string) (*types.IMPLDoc, error) {
 	manifest, err := protocol.Load(path)
 	if err != nil {

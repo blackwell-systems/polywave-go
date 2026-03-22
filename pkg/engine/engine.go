@@ -7,14 +7,13 @@ import (
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/agent/backend"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/observability"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/orchestrator"
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/types"
 )
 
 func init() {
 	// Inject the structured wave agent runner into the orchestrator package.
 	// This breaks the circular import (orchestrator → engine → orchestrator)
-	// by using a function-variable seam, analogous to SetParseIMPLDocFunc.
+	// by using a function-variable seam.
 	orchestrator.SetRunWaveAgentStructuredFunc(func(ctx context.Context, implPath, waveModel string, agentSpec types.AgentSpec, wtPath string, onChunk func(string)) error {
 		opts := RunWaveOpts{
 			IMPLPath:  implPath,
@@ -23,38 +22,11 @@ func init() {
 		_, err := runWaveAgentStructured(ctx, opts, agentSpec, wtPath, onChunk)
 		return err
 	})
-}
 
-// loadIMPLDoc wraps protocol.Load and converts protocol.IMPLManifest to types.IMPLDoc.
-func loadIMPLDoc(path string) (*types.IMPLDoc, error) {
-	manifest, err := protocol.Load(path)
-	if err != nil {
-		return nil, err
-	}
-	return manifestToIMPLDoc(manifest), nil
-}
-
-// manifestToIMPLDoc converts protocol.IMPLManifest to types.IMPLDoc.
-func manifestToIMPLDoc(m *protocol.IMPLManifest) *types.IMPLDoc {
-	waves := make([]types.Wave, 0, len(m.Waves))
-	for _, w := range m.Waves {
-		agents := make([]types.AgentSpec, 0, len(w.Agents))
-		for _, a := range w.Agents {
-			agents = append(agents, types.AgentSpec{
-				Letter: a.ID,
-				Prompt: a.Task,
-			})
-		}
-		waves = append(waves, types.Wave{
-			Number: w.Number,
-			Agents: agents,
-		})
-	}
-	return &types.IMPLDoc{
-		FeatureName: m.Title,
-		Status:      m.Verdict,
-		Waves:       waves,
-	}
+	// Inject the DAG-based agent scheduler into the orchestrator package.
+	// PrioritizeAgents (in scheduler.go) orders agents by dependency graph
+	// so independent agents can run in parallel.
+	orchestrator.SetPrioritizeAgentsFunc(PrioritizeAgents)
 }
 
 // Event is emitted during wave execution (mirrors orchestrator.OrchestratorEvent).
@@ -150,5 +122,3 @@ type RunChatOpts struct {
 	ChatModel   string        // model override (e.g. "ollama:qwen2.5-coder:32b"); empty = backend default
 }
 
-// Ensure types package is used (IMPLDoc referenced in function signatures).
-var _ *types.IMPLDoc
