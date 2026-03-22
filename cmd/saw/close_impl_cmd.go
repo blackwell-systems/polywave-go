@@ -89,6 +89,34 @@ Examples:
 				}
 			}
 
+			// Step 5: Clean .saw-state wave directories
+			stateCleanedCount := 0
+			sawStatePath := filepath.Join(projectRoot, ".saw-state")
+			if entries, err := os.ReadDir(sawStatePath); err == nil {
+				// Check if any active IMPLs exist in this repo
+				activeIMPLs := 0
+				implDir := filepath.Join(projectRoot, "docs", "IMPL")
+				if implEntries, err := os.ReadDir(implDir); err == nil {
+					for _, e := range implEntries {
+						if !e.IsDir() && filepath.Ext(e.Name()) == ".yaml" {
+							activeIMPLs++
+						}
+					}
+				}
+				// Only clean wave dirs if no active IMPLs remain
+				if activeIMPLs == 0 {
+					for _, e := range entries {
+						if e.IsDir() && (len(e.Name()) >= 4 && e.Name()[:4] == "wave" || e.Name() == "archive") {
+							_ = os.RemoveAll(filepath.Join(sawStatePath, e.Name()))
+							stateCleanedCount++
+						}
+					}
+					if stateCleanedCount > 0 {
+						fmt.Fprintf(os.Stderr, "close-impl: cleaned %d .saw-state dir(s) (no active IMPLs)\n", stateCleanedCount)
+					}
+				}
+			}
+
 			out, _ := json.Marshal(map[string]interface{}{
 				"marked":            true,
 				"date":              date,
@@ -96,6 +124,7 @@ Examples:
 				"context_updated":   contextErr == nil,
 				"context_path":      contextPath,
 				"worktrees_cleaned": cleanedCount,
+				"state_cleaned":     stateCleanedCount,
 			})
 			fmt.Println(string(out))
 			return nil
