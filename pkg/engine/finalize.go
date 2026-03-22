@@ -10,14 +10,16 @@ import (
 
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/builddiag"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/gatecache"
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/observability"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
 )
 
 // FinalizeWaveOpts configures a full post-agent finalization pipeline.
 type FinalizeWaveOpts struct {
-	IMPLPath string // absolute path to IMPL manifest
-	RepoPath string // absolute path to the target repository
-	WaveNum  int    // wave number to finalize
+	IMPLPath   string                 // absolute path to IMPL manifest
+	RepoPath   string                 // absolute path to the target repository
+	WaveNum    int                    // wave number to finalize
+	ObsEmitter *observability.Emitter // optional: non-blocking observability emitter
 }
 
 // FinalizeWaveResult combines all post-agent verification, merge, and cleanup results.
@@ -106,7 +108,9 @@ func FinalizeWave(ctx context.Context, opts FinalizeWaveOpts) (*FinalizeWaveResu
 	}
 	result.GateResults = gateResults
 	for _, gate := range gateResults {
+		opts.ObsEmitter.Emit(ctx, observability.NewGateExecutedEvent(manifest.FeatureSlug, opts.WaveNum, gate.Type, gate.Passed))
 		if gate.Required && !gate.Passed {
+			opts.ObsEmitter.Emit(ctx, observability.NewWaveFailedEvent(manifest.FeatureSlug, opts.WaveNum, fmt.Sprintf("required gate %q failed", gate.Type)))
 			return result, fmt.Errorf("engine.FinalizeWave: required gate %q failed", gate.Type)
 		}
 	}
@@ -130,8 +134,10 @@ func FinalizeWave(ctx context.Context, opts FinalizeWaveOpts) (*FinalizeWaveResu
 	}
 	result.MergeResult = mergeResult
 	if !mergeResult.Success {
+		opts.ObsEmitter.Emit(ctx, observability.NewWaveFailedEvent(manifest.FeatureSlug, opts.WaveNum, "merge-agents encountered conflicts"))
 		return result, fmt.Errorf("engine.FinalizeWave: merge-agents encountered conflicts")
 	}
+	opts.ObsEmitter.Emit(ctx, observability.NewWaveMergeEvent(manifest.FeatureSlug, opts.WaveNum))
 
 	// Step 4.5: Fix go.mod replace paths (worktree artifact defense-in-depth)
 	if fixed, err := protocol.FixGoModReplacePaths(opts.RepoPath); err != nil {
@@ -179,9 +185,10 @@ func FinalizeWave(ctx context.Context, opts FinalizeWaveOpts) (*FinalizeWaveResu
 
 // MarkIMPLCompleteOpts configures IMPL completion marking.
 type MarkIMPLCompleteOpts struct {
-	IMPLPath string // absolute path to IMPL manifest
-	RepoPath string // absolute path to the target repository
-	Date     string // completion date in YYYY-MM-DD format
+	IMPLPath   string                 // absolute path to IMPL manifest
+	RepoPath   string                 // absolute path to the target repository
+	Date       string                 // completion date in YYYY-MM-DD format
+	ObsEmitter *observability.Emitter // optional: non-blocking observability emitter
 }
 
 // MarkIMPLComplete writes the completion marker (E15), updates project context (E18),
@@ -214,7 +221,28 @@ func MarkIMPLComplete(ctx context.Context, opts MarkIMPLCompleteOpts) error {
 		return fmt.Errorf("engine.MarkIMPLComplete: archive: %w", err)
 	}
 
+	// Emit impl_complete after successful archival.
+	// Derive the slug from the IMPL path basename (e.g. IMPL-my-feature.yaml → my-feature).
+	implSlug := implSlugFromPath(opts.IMPLPath)
+	opts.ObsEmitter.Emit(ctx, observability.NewImplCompleteEvent(implSlug))
+
 	return nil
+}
+
+// implSlugFromPath derives an IMPL slug from a file path such as
+// /path/to/IMPL-my-feature.yaml → "my-feature".
+func implSlugFromPath(path string) string {
+	base := filepath.Base(path)
+	// Strip extension
+	if ext := filepath.Ext(base); ext != "" {
+		base = base[:len(base)-len(ext)]
+	}
+	// Strip "IMPL-" prefix if present
+	const prefix = "IMPL-"
+	if len(base) > len(prefix) && base[:len(prefix)] == prefix {
+		return base[len(prefix):]
+	}
+	return base
 }
 
 // inferLanguageFromTestCommand infers the programming language from a test command string.

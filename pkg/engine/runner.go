@@ -19,6 +19,7 @@ import (
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/commands"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/hooks"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/journal"
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/observability"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/orchestrator"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/retryctx"
@@ -43,6 +44,10 @@ func RunScout(ctx context.Context, opts RunScoutOpts, onChunk func(string)) erro
 
 	// Record start time for I6 validation (detect files written during execution)
 	startTime := time.Now()
+
+	// E40: Emit scout_launch after validation passes.
+	implSlug := implSlugFromIMPLPath(opts.IMPLOutPath)
+	opts.ObsEmitter.Emit(ctx, observability.NewScoutLaunchEvent(implSlug))
 
 	// Resolve SAW repo path.
 	sawRepo := opts.SAWRepoPath
@@ -113,9 +118,26 @@ func RunScout(ctx context.Context, opts RunScoutOpts, onChunk func(string)) erro
 		if err := hooks.ValidateScoutWrites(opts.RepoPath, opts.IMPLOutPath, startTime); err != nil {
 			return fmt.Errorf("engine.RunScout: %w", err)
 		}
+		// E40: Emit scout_complete on success.
+		opts.ObsEmitter.Emit(ctx, observability.NewScoutCompleteEvent(implSlug))
 	}
 
 	return execErr
+}
+
+// implSlugFromIMPLPath derives an IMPL slug from a file path such as
+// /path/to/IMPL-my-feature.yaml → "my-feature".
+// This is a runner-local helper mirroring implSlugFromPath in finalize.go.
+func implSlugFromIMPLPath(path string) string {
+	base := filepath.Base(path)
+	if ext := filepath.Ext(base); ext != "" {
+		base = base[:len(base)-len(ext)]
+	}
+	const prefix = "IMPL-"
+	if len(base) > len(prefix) && base[:len(prefix)] == prefix {
+		return base[len(prefix):]
+	}
+	return base
 }
 
 // RunPlanner executes a Planner agent to produce a PROGRAM manifest.

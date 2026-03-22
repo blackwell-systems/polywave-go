@@ -5,6 +5,7 @@ import (
 	"errors"
 
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/agent/backend"
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/observability"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/orchestrator"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/types"
@@ -72,14 +73,15 @@ var ErrReportNotFound = errors.New("completion report not found")
 
 // RunScoutOpts configures a Scout agent run.
 type RunScoutOpts struct {
-	Feature              string         // human feature description (required)
-	RepoPath             string         // absolute path to the repository being scouted (required)
-	SAWRepoPath          string         // path to scout-and-wave protocol repo (optional; falls back to $SAW_REPO then ~/code/scout-and-wave)
-	IMPLOutPath          string         // where to write the IMPL doc (required)
-	ScoutModel           string         // optional: model override for the Scout agent (e.g. "claude-opus-4-6")
-	ProgramManifestPath  string         // optional: path to PROGRAM manifest; Scout receives frozen contracts as input
-	UseStructuredOutput  bool           // if true, invoke Scout via API backend with output_config.format
-	OutputSchemaOverride map[string]any // optional: overrides GenerateScoutSchema(); useful in tests
+	Feature              string                  // human feature description (required)
+	RepoPath             string                  // absolute path to the repository being scouted (required)
+	SAWRepoPath          string                  // path to scout-and-wave protocol repo (optional; falls back to $SAW_REPO then ~/code/scout-and-wave)
+	IMPLOutPath          string                  // where to write the IMPL doc (required)
+	ScoutModel           string                  // optional: model override for the Scout agent (e.g. "claude-opus-4-6")
+	ProgramManifestPath  string                  // optional: path to PROGRAM manifest; Scout receives frozen contracts as input
+	UseStructuredOutput  bool                    // if true, invoke Scout via API backend with output_config.format
+	OutputSchemaOverride map[string]any          // optional: overrides GenerateScoutSchema(); useful in tests
+	ObsEmitter           *observability.Emitter  // optional: non-blocking observability emitter
 }
 
 // RunPlannerOpts configures a Planner agent run.
