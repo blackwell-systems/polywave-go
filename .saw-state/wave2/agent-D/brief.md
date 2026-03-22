@@ -1,231 +1,152 @@
 # Agent D Brief - Wave 2
 
-**IMPL Doc:** /Users/dayna.blackwell/code/scout-and-wave/docs/IMPL/IMPL-interview-mode.yaml
+**IMPL Doc:** /Users/dayna.blackwell/code/scout-and-wave-go/docs/IMPL/IMPL-type-unification.yaml
 
 ## Files Owned
 
-- `cmd/saw/main.go`
-- `implementations/claude-code/prompts/saw-skill.md`
+- `pkg/engine/engine.go`
+- `pkg/engine/runner.go`
 
 
 ## Task
 
-## Role
-Wire the interview command into sawtools and update the protocol.
+Remove the manifestToIMPLDoc adapter and wire engine.PrioritizeAgents into orchestrator.
 
-## What to Implement
+**What to implement:**
 
-### cmd/saw/main.go (scout-and-wave-go)
-Add `newInterviewCmd()` to the rootCmd.AddCommand(...) call.
-Pattern: find the existing AddCommand block and add one line:
-```go
-newInterviewCmd(),
+1. In `pkg/engine/engine.go`:
+   - Remove `loadIMPLDoc()` function entirely
+   - Remove `manifestToIMPLDoc()` function entirely
+   - Remove `orchestrator.SetParseIMPLDocFunc(loadIMPLDoc)` from init()
+   - In init(), ADD: `orchestrator.SetPrioritizeAgentsFunc(PrioritizeAgents)` — this wires the real DAG-based scheduler into the orchestrator (the whole reason for this migration)
+   - The `SetRunWaveAgentStructuredFunc` call in init() stays but the lambda's `agentSpec types.AgentSpec` parameter stays as-is (orchestrator still passes types.AgentSpec at this boundary)
+   - Remove `var _ *types.IMPLDoc` (the unused type anchor)
+   - Remove the `types` import if no longer needed
+   - Keep the `protocol` import (still needed for other engine functions)
+
+2. In `pkg/engine/runner.go`:
+   - Update `ParseIMPLDoc(path string) (*types.IMPLDoc, error)` — this is an exported function used externally. Either:
+     a. Keep it as a backward-compat wrapper that calls protocol.Load and converts, OR
+     b. Deprecate it with a comment pointing to protocol.Load()
+   - Update `ValidateInvariants(doc *types.IMPLDoc) error` to `ValidateInvariants(manifest *protocol.IMPLManifest) error` since protocol.ValidateInvariants now takes *IMPLManifest (from Agent B)
+   - Update `runScaffoldBuildVerificationWithDoc` if it takes *types.IMPLDoc — check if it can take *protocol.IMPLManifest instead, or keep the adapter
+
+**Interface contracts:**
+- `engine.PrioritizeAgents` already has the right signature: `func(manifest *protocol.IMPLManifest, waveNum int) []string`
+- `orchestrator.SetPrioritizeAgentsFunc` now takes `func(*protocol.IMPLManifest, int) []string` (from Agent A)
+
+**Verification gate:**
 ```
-Place it near other user-facing commands (e.g., after newRunScoutCmd()).
-
-### implementations/claude-code/prompts/saw-skill.md (scout-and-wave)
-Two changes:
-
-**1. Add to Invocation Modes table** (after the existing rows):
-```
-| `/saw interview "<description>"` | Conduct structured requirements interview, write docs/REQUIREMENTS.md |
-| `/saw interview --resume <path>`  | Resume an in-progress interview |
-```
-
-**2. Add interview command handling block** in the Arguments section or
-after the bootstrap argument description. Add a new block:
-
-```
-If the argument is `interview <description>` (or `interview --resume <path>`):
-1. Run the requirements interview by invoking:
-   ```bash
-   sawtools interview "<description>" --docs-dir "<project-docs-dir>" --output "<project-docs-dir>/REQUIREMENTS.md"
-   ```
-   OR conduct the interview inline using AskUserQuestion if sawtools interview is not available
-   in the current environment (fallback mode).
-2. After sawtools interview exits 0, docs/REQUIREMENTS.md exists.
-3. Inform the user: "Interview complete. REQUIREMENTS.md written to docs/REQUIREMENTS.md.
-   Run /saw bootstrap to design the architecture, or /saw scout <feature> to plan a feature."
-4. Do NOT automatically launch bootstrap or scout — wait for explicit user command.
-
-If the argument is `interview --resume <path>`:
-1. Run: sawtools interview --resume "<path>"
-2. Same completion handling as above.
+go build ./...
+go vet ./...
+go test ./pkg/engine/... -count=1
+go test ./pkg/orchestrator/... -count=1
 ```
 
-**Also update argument-hint** in the YAML frontmatter:
-Change from:
-```
-argument-hint: "[bootstrap <project-name> | scout [--model <m>] <feature> | wave ...]"
-```
-To include `| interview <description>`:
-```
-argument-hint: "[bootstrap <project-name> | interview <description> | scout [--model <m>] <feature> | wave ...]"
-```
-
-## Interfaces to Call
-- `newInterviewCmd()` from `cmd/saw/interview_cmd.go` (Agent C, Wave 1)
-
-## Tests to Write
-No new tests required for this wiring agent. Verify by:
-```bash
-cd /Users/dayna.blackwell/code/scout-and-wave-go && go build ./cmd/saw/... && ./saw interview --help
-```
-Confirm --help output shows the interview command.
-
-## Verification Gate
-cd /Users/dayna.blackwell/code/scout-and-wave-go && go build ./cmd/saw/... && go vet ./cmd/saw/...
-
-## Constraints
-- In cmd/saw/main.go: add ONLY the one AddCommand line. Do not restructure the file.
-- In saw-skill.md: add ONLY the interview blocks described above. Do not modify any
-  existing bootstrap, scout, wave, or program command handling.
-- The argument-hint change is a one-line edit to the YAML frontmatter.
-- Verify saw-skill.md version comment at top stays as-is (do not bump version).
-- Both repos have different working directories; use absolute paths in all bash commands.
+**Constraints:**
+- ParseIMPLDoc is exported and may have external callers — deprecate, don't delete
+- runScaffoldBuildVerificationWithDoc takes *types.IMPLDoc for scaffold package derivation — keep adapter if needed
+- Verify engine init() runs without import cycle (it won't — engine already imports orchestrator)
 
 
 
 ## Interface Contracts
 
-### Manager
+### Orchestrator.implDoc field type change
 
-Core interface for the interview state machine. Both deterministic and
-LLM-driven implementations satisfy this. The CLI command uses this interface;
-it never calls concrete implementations directly.
-
+Core struct field changes from *types.IMPLDoc to *protocol.IMPLManifest
 
 ```
-type Manager interface {
-    Start(cfg InterviewConfig) (*InterviewDoc, *InterviewQuestion, error)
-    Resume(docPath string) (*InterviewDoc, *InterviewQuestion, error)
-    Answer(doc *InterviewDoc, answer string) (*InterviewDoc, *InterviewQuestion, error)
-    Compile(doc *InterviewDoc, outputPath string) (string, error)
-    Save(doc *InterviewDoc, docPath string) error
+type Orchestrator struct {
+    state          protocol.ProtocolState
+    implDoc        *protocol.IMPLManifest  // was *types.IMPLDoc
+    repoPath       string
+    currentWave    int
+    implDocPath    string
+    eventPublisher EventPublisher
+    defaultModel   string
+    worktreePaths  map[string]string
 }
 
 ```
 
-### DeterministicManager
+### IMPLDoc() return type change
 
-Fixed question-set implementation. Covers all 6 phases with required fields
-checked before phase advance. Works without LLM; used for testing and offline use.
-Phase transition logic: advance when all required fields for the current phase
-are non-empty in SpecData.
-
+Public accessor returns *protocol.IMPLManifest instead of *types.IMPLDoc
 
 ```
-// pkg/interview/deterministic.go
-type DeterministicManager struct {
-    docsDir string // base dir for writing INTERVIEW-<slug>.yaml files
+func (o *Orchestrator) IMPLDoc() *protocol.IMPLManifest
+
+```
+
+### newFromDoc signature change
+
+Internal constructor takes *protocol.IMPLManifest
+
+```
+func newFromDoc(doc *protocol.IMPLManifest, repoPath, implDocPath string) *Orchestrator
+
+```
+
+### New() uses protocol.Load directly
+
+New() calls protocol.Load() instead of parseIMPLDocFunc
+
+```
+func New(repoPath string, implDocPath string) (*Orchestrator, error) {
+    var doc *protocol.IMPLManifest
+    if implDocPath != "" {
+        var err error
+        doc, err = protocol.Load(implDocPath)
+        if err != nil {
+            return nil, fmt.Errorf("orchestrator.New: %w", err)
+        }
+    }
+    return &Orchestrator{
+        state: protocol.StateScoutPending, implDoc: doc,
+        repoPath: repoPath, implDocPath: implDocPath,
+    }, nil
 }
 
-func NewDeterministicManager(docsDir string) *DeterministicManager
+```
 
-// Implements Manager interface.
+### validateInvariantsFunc signature
+
+Takes *protocol.IMPLManifest instead of *types.IMPLDoc
+
+```
+var validateInvariantsFunc = func(doc *protocol.IMPLManifest) error { return nil }
+func SetValidateInvariantsFunc(f func(doc *protocol.IMPLManifest) error)
 
 ```
 
-### InterviewDoc (YAML schema)
+### prioritizeAgentsFunc signature
 
-YAML file written to docs/INTERVIEW-<slug>.yaml. Persists the full interview
-state including history, spec_data being built, and output path.
-This file is git-trackable and survives process restarts.
-
+Takes *protocol.IMPLManifest to match engine.PrioritizeAgents
 
 ```
-# docs/INTERVIEW-<slug>.yaml schema
-id: <uuid>
-slug: <feature-slug>
-status: in_progress | complete
-mode: deterministic | llm
-description: "original description string"
-created_at: 2026-01-01T00:00:00Z
-updated_at: 2026-01-01T00:00:00Z
-phase: overview | scope | requirements | interfaces | stories | review | complete
-question_cursor: 0
-max_questions: 18
-progress: 0.0
-spec_data:
-  overview:
-    title: ""
-    goal: ""
-    success_metrics: []
-    non_goals: []
-  scope:
-    in_scope: []
-    out_of_scope: []
-    assumptions: []
-  requirements:
-    functional: []
-    non_functional: []
-    constraints: []
-  interfaces:
-    data_models: []
-    apis: []
-    external: []
-  stories: []
-  open_questions: []
-history:
-  - turn_number: 1
-    phase: overview
-    question: "What is the title of this project/feature?"
-    answer: "Interview Mode for SAW Bootstrap"
-    timestamp: 2026-01-01T00:00:00Z
-requirements_path: docs/REQUIREMENTS.md
+var prioritizeAgentsFunc = func(manifest *protocol.IMPLManifest, waveNum int) []string
+func SetPrioritizeAgentsFunc(f func(manifest *protocol.IMPLManifest, waveNum int) []string)
 
 ```
 
-### newInterviewCmd (sawtools CLI)
+### ValidateInvariants in protocol/parser.go
 
-CLI command: sawtools interview "<description>" [--mode deterministic|llm]
-[--max-questions N] [--project-path <path>] [--resume <interview-doc-path>]
-[--output <requirements-output-path>]
-
-Drives the AskUserQuestion interaction loop: prints each question to stdout,
-reads stdin for each answer, writes state to INTERVIEW-<slug>.yaml after each
-turn. On completion writes docs/REQUIREMENTS.md.
-
-Exit codes: 0 = interview complete and REQUIREMENTS.md written,
-1 = error, 2 = interview started but not yet complete (resumable).
-
+Takes *IMPLManifest instead of *types.IMPLDoc
 
 ```
-// cmd/saw/interview_cmd.go
-func newInterviewCmd() *cobra.Command
+func ValidateInvariants(manifest *IMPLManifest) error
 
 ```
 
-### CompileToRequirements
+### engine.ValidateInvariants adapter
 
-Converts a complete InterviewDoc into the REQUIREMENTS.md template format
-expected by saw-bootstrap.md Phase 0. This is the output contract linking
-/saw interview to /saw bootstrap.
-
+Updated to forward *protocol.IMPLManifest (was *types.IMPLDoc)
 
 ```
-// pkg/interview/compiler.go
-// CompileToRequirements generates a REQUIREMENTS.md-compatible markdown string
-// from a completed InterviewDoc. The output matches the template in saw-skill.md
-// bootstrap section exactly (Language, Project Type, Key Concerns, Storage,
-// External Integrations, Architectural Decisions Already Made sections).
-func CompileToRequirements(doc *InterviewDoc) (string, error)
-
-```
-
-### /saw interview (protocol command)
-
-Orchestrator command added to saw-skill.md. Invocation:
-  /saw interview "<description>"
-Launches sawtools interview command as a subprocess (or uses AskUserQuestion
-loop inline). On completion, the REQUIREMENTS.md is present and the orchestrator
-can immediately launch /saw bootstrap or /saw scout with that file as input.
-
-
-```
-# In saw-skill.md Invocation Modes table:
-| /saw interview "<description>" | Conduct structured requirements interview, write docs/REQUIREMENTS.md |
-| /saw interview --resume <path>  | Resume an in-progress interview from its YAML doc |
+func ValidateInvariants(manifest *protocol.IMPLManifest) error {
+    return protocol.ValidateInvariants(manifest)
+}
 
 ```
 
