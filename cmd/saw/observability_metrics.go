@@ -9,6 +9,7 @@ import (
 	"text/tabwriter"
 
 	obs "github.com/blackwell-systems/scout-and-wave-go/pkg/observability"
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/observability/sqlite"
 	"github.com/spf13/cobra"
 )
 
@@ -131,5 +132,5 @@ func openStore(dsn string) (obs.Store, error) {
 		}
 	}
 
-	return nil, fmt.Errorf("SQLite store not yet available (path: %s); concrete implementation pending", dsn)
+	return sqlite.Open(dsn)
 }
