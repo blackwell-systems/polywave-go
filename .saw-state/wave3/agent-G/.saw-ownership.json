@@ -1,8 +1,0 @@
-{
-  "agent": "G",
-  "wave": 3,
-  "impl_doc": "/Users/dayna.blackwell/code/scout-and-wave-go/docs/IMPL/IMPL-sawtools-cli-gaps.yaml",
-  "owned_files": [
-    "cmd/saw/main.go"
-  ]
-}

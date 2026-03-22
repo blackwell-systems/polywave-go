@@ -1,9 +1,0 @@
-{
-  "agent": "I",
-  "wave": 4,
-  "impl_doc": "docs/IMPL/IMPL-autonomy-layer.yaml",
-  "owned_files": [
-    "cmd/saw/daemon_cmd.go",
-    "cmd/saw/daemon_cmd_test.go"
-  ]
-}

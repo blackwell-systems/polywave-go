@@ -1,9 +1,0 @@
-{
-  "agent": "D",
-  "wave": 2,
-  "impl_doc": "/Users/dayna.blackwell/code/scout-and-wave-go/docs/IMPL/IMPL-type-unification.yaml",
-  "owned_files": [
-    "pkg/engine/engine.go",
-    "pkg/engine/runner.go"
-  ]
-}
