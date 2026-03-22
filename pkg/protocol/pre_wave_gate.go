@@ -1,0 +1,164 @@
+package protocol
+
+import (
+	"fmt"
+	"strings"
+)
+
+// PreWaveGateCheck is a single readiness check result.
+type PreWaveGateCheck struct {
+	Name    string `json:"name"`
+	Status  string `json:"status"`  // "pass", "fail", "warn"
+	Message string `json:"message"`
+}
+
+// PreWaveGateResult is the aggregate readiness result.
+type PreWaveGateResult struct {
+	Ready  bool               `json:"ready"`
+	Checks []PreWaveGateCheck `json:"checks"`
+}
+
+// PreWaveGate runs all pre-wave readiness checks on a manifest.
+// Returns structured result with per-check status. Does not modify the manifest.
+func PreWaveGate(m *IMPLManifest) *PreWaveGateResult {
+	result := &PreWaveGateResult{
+		Checks: make([]PreWaveGateCheck, 0, 4),
+	}
+
+	// 1. Validation check
+	result.Checks = append(result.Checks, checkValidation(m))
+
+	// 2. Critic review check
+	result.Checks = append(result.Checks, checkCriticReview(m))
+
+	// 3. Scaffolds check
+	result.Checks = append(result.Checks, checkScaffolds(m))
+
+	// 4. State check
+	result.Checks = append(result.Checks, checkState(m))
+
+	// Ready is true only if no check has status=fail
+	result.Ready = true
+	for _, check := range result.Checks {
+		if check.Status == "fail" {
+			result.Ready = false
+			break
+		}
+	}
+
+	return result
+}
+
+func checkValidation(m *IMPLManifest) PreWaveGateCheck {
+	errs := Validate(m)
+	if len(errs) == 0 {
+		return PreWaveGateCheck{
+			Name:    "validation",
+			Status:  "pass",
+			Message: "manifest is valid",
+		}
+	}
+
+	msgs := make([]string, 0, len(errs))
+	for _, e := range errs {
+		msgs = append(msgs, e.Message)
+	}
+	return PreWaveGateCheck{
+		Name:    "validation",
+		Status:  "fail",
+		Message: strings.Join(msgs, "; "),
+	}
+}
+
+func checkCriticReview(m *IMPLManifest) PreWaveGateCheck {
+	if m.CriticReport == nil {
+		// Count total agents across all waves
+		totalAgents := 0
+		for _, wave := range m.Waves {
+			totalAgents += len(wave.Agents)
+		}
+
+		isMultiRepo := len(m.Repositories) > 0
+
+		if totalAgents >= 3 || isMultiRepo {
+			return PreWaveGateCheck{
+				Name:    "critic_review",
+				Status:  "warn",
+				Message: "critic review recommended (E37 threshold met)",
+			}
+		}
+		return PreWaveGateCheck{
+			Name:    "critic_review",
+			Status:  "pass",
+			Message: "critic review not required",
+		}
+	}
+
+	if m.CriticReport.Verdict == CriticVerdictPass {
+		return PreWaveGateCheck{
+			Name:    "critic_review",
+			Status:  "pass",
+			Message: "critic review passed",
+		}
+	}
+
+	return PreWaveGateCheck{
+		Name:    "critic_review",
+		Status:  "fail",
+		Message: fmt.Sprintf("critic review failed with %d issue(s)", m.CriticReport.IssueCount),
+	}
+}
+
+func checkScaffolds(m *IMPLManifest) PreWaveGateCheck {
+	if len(m.Scaffolds) == 0 {
+		return PreWaveGateCheck{
+			Name:    "scaffolds",
+			Status:  "pass",
+			Message: "no scaffolds required",
+		}
+	}
+
+	if AllScaffoldsCommitted(m) {
+		return PreWaveGateCheck{
+			Name:    "scaffolds",
+			Status:  "pass",
+			Message: "all scaffolds committed",
+		}
+	}
+
+	// List uncommitted scaffolds
+	uncommitted := make([]string, 0)
+	for _, s := range m.Scaffolds {
+		if !strings.HasPrefix(s.Status, "committed") {
+			uncommitted = append(uncommitted, s.FilePath)
+		}
+	}
+	return PreWaveGateCheck{
+		Name:    "scaffolds",
+		Status:  "fail",
+		Message: fmt.Sprintf("uncommitted scaffolds: %s", strings.Join(uncommitted, ", ")),
+	}
+}
+
+func checkState(m *IMPLManifest) PreWaveGateCheck {
+	switch m.State {
+	case "", StateScoutPending, StateReviewed:
+		return PreWaveGateCheck{
+			Name:    "state",
+			Status:  "pass",
+			Message: "state is acceptable for wave execution",
+		}
+	case StateComplete, StateBlocked, StateNotSuitable:
+		return PreWaveGateCheck{
+			Name:    "state",
+			Status:  "fail",
+			Message: fmt.Sprintf("IMPL state is %s, cannot proceed", m.State),
+		}
+	default:
+		return PreWaveGateCheck{
+			Name:    "state",
+			Status:  "pass",
+			Message: "state is acceptable for wave execution",
+		}
+	}
+}
