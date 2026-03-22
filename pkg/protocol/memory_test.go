@@ -32,7 +32,6 @@ func TestLoadProjectMemory_Valid(t *testing.T) {
 		Conventions: Conventions{
 			TestFramework: "go test",
 			LintTool:      "golangci-lint",
-			BuildTool:     "go build",
 		},
 		EstablishedInterfaces: []EstablishedInterface{
 			{
@@ -171,7 +170,6 @@ func TestSaveProjectMemory_Roundtrip(t *testing.T) {
 		Conventions: Conventions{
 			TestFramework: "jest",
 			LintTool:      "eslint",
-			BuildTool:     "tsc",
 		},
 		EstablishedInterfaces: []EstablishedInterface{
 			{
@@ -254,9 +252,7 @@ func TestSaveProjectMemory_Roundtrip(t *testing.T) {
 	if loaded.Conventions.LintTool != original.Conventions.LintTool {
 		t.Errorf("Conventions.LintTool: got %q, want %q", loaded.Conventions.LintTool, original.Conventions.LintTool)
 	}
-	if loaded.Conventions.BuildTool != original.Conventions.BuildTool {
-		t.Errorf("Conventions.BuildTool: got %q, want %q", loaded.Conventions.BuildTool, original.Conventions.BuildTool)
-	}
+
 
 	// EstablishedInterfaces
 	if len(loaded.EstablishedInterfaces) != len(original.EstablishedInterfaces) {
