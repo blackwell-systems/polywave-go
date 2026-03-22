@@ -809,3 +809,181 @@ func TestCleanup_LegacyBranchFallback(t *testing.T) {
 		t.Errorf("legacy branch wave1-agent-A still exists after cleanup")
 	}
 }
+
+// TestCleanupBySlug_EmptyRepo verifies that CleanupBySlug on an empty repo
+// (no worktrees) returns an empty result without error.
+func TestCleanupBySlug_EmptyRepo(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "cleanup-by-slug-empty-*")
+	if err != nil {
+		t.Fatalf("failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	if _, err := git.Run(tmpDir, "init"); err != nil {
+		t.Fatalf("failed to init git repo: %v", err)
+	}
+	if _, err := git.Run(tmpDir, "config", "user.email", "test@example.com"); err != nil {
+		t.Fatalf("failed to configure git user.email: %v", err)
+	}
+	if _, err := git.Run(tmpDir, "config", "user.name", "Test User"); err != nil {
+		t.Fatalf("failed to configure git user.name: %v", err)
+	}
+
+	// Create an initial commit so the repo is valid
+	readmePath := filepath.Join(tmpDir, "README.md")
+	if err := os.WriteFile(readmePath, []byte("# Test\n"), 0644); err != nil {
+		t.Fatalf("failed to create README: %v", err)
+	}
+	if _, err := git.Run(tmpDir, "add", "README.md"); err != nil {
+		t.Fatalf("failed to add README: %v", err)
+	}
+	if _, err := git.Run(tmpDir, "commit", "-m", "Initial commit"); err != nil {
+		t.Fatalf("failed to create initial commit: %v", err)
+	}
+
+	result, err := CleanupBySlug(tmpDir, "some-slug", false)
+	if err != nil {
+		t.Fatalf("CleanupBySlug on empty repo failed: %v", err)
+	}
+	if result == nil {
+		t.Fatal("expected non-nil result")
+	}
+	if len(result.Cleaned) != 0 {
+		t.Errorf("expected 0 cleaned, got %d", len(result.Cleaned))
+	}
+	if len(result.Skipped) != 0 {
+		t.Errorf("expected 0 skipped, got %d", len(result.Skipped))
+	}
+	if len(result.Errors) != 0 {
+		t.Errorf("expected 0 errors, got %d", len(result.Errors))
+	}
+}
+
+// TestCleanupAllStale_EmptyRepo verifies that CleanupAllStale on an empty repo
+// (no worktrees) returns an empty result without error.
+func TestCleanupAllStale_EmptyRepo(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "cleanup-all-stale-empty-*")
+	if err != nil {
+		t.Fatalf("failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	if _, err := git.Run(tmpDir, "init"); err != nil {
+		t.Fatalf("failed to init git repo: %v", err)
+	}
+	if _, err := git.Run(tmpDir, "config", "user.email", "test@example.com"); err != nil {
+		t.Fatalf("failed to configure git user.email: %v", err)
+	}
+	if _, err := git.Run(tmpDir, "config", "user.name", "Test User"); err != nil {
+		t.Fatalf("failed to configure git user.name: %v", err)
+	}
+
+	// Create an initial commit so the repo is valid
+	readmePath := filepath.Join(tmpDir, "README.md")
+	if err := os.WriteFile(readmePath, []byte("# Test\n"), 0644); err != nil {
+		t.Fatalf("failed to create README: %v", err)
+	}
+	if _, err := git.Run(tmpDir, "add", "README.md"); err != nil {
+		t.Fatalf("failed to add README: %v", err)
+	}
+	if _, err := git.Run(tmpDir, "commit", "-m", "Initial commit"); err != nil {
+		t.Fatalf("failed to create initial commit: %v", err)
+	}
+
+	result, err := CleanupAllStale(tmpDir, false)
+	if err != nil {
+		t.Fatalf("CleanupAllStale on empty repo failed: %v", err)
+	}
+	if result == nil {
+		t.Fatal("expected non-nil result")
+	}
+	if len(result.Cleaned) != 0 {
+		t.Errorf("expected 0 cleaned, got %d", len(result.Cleaned))
+	}
+	if len(result.Skipped) != 0 {
+		t.Errorf("expected 0 skipped, got %d", len(result.Skipped))
+	}
+	if len(result.Errors) != 0 {
+		t.Errorf("expected 0 errors, got %d", len(result.Errors))
+	}
+}
+
+// TestCleanupBySlug_NoMatch verifies that CleanupBySlug returns an empty result
+// when the specified slug doesn't match any stale worktrees.
+func TestCleanupBySlug_NoMatch(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "cleanup-by-slug-nomatch-*")
+	if err != nil {
+		t.Fatalf("failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	if _, err := git.Run(tmpDir, "init"); err != nil {
+		t.Fatalf("failed to init git repo: %v", err)
+	}
+	if _, err := git.Run(tmpDir, "config", "user.email", "test@example.com"); err != nil {
+		t.Fatalf("failed to configure git user.email: %v", err)
+	}
+	if _, err := git.Run(tmpDir, "config", "user.name", "Test User"); err != nil {
+		t.Fatalf("failed to configure git user.name: %v", err)
+	}
+
+	// Create an initial commit
+	readmePath := filepath.Join(tmpDir, "README.md")
+	if err := os.WriteFile(readmePath, []byte("# Test\n"), 0644); err != nil {
+		t.Fatalf("failed to create README: %v", err)
+	}
+	if _, err := git.Run(tmpDir, "add", "README.md"); err != nil {
+		t.Fatalf("failed to add README: %v", err)
+	}
+	if _, err := git.Run(tmpDir, "commit", "-m", "Initial commit"); err != nil {
+		t.Fatalf("failed to create initial commit: %v", err)
+	}
+
+	// Create a stale worktree with a completed IMPL for slug "slug-alpha"
+	worktreesDir := filepath.Join(tmpDir, ".claude", "worktrees", "saw", "slug-alpha")
+	if err := os.MkdirAll(worktreesDir, 0755); err != nil {
+		t.Fatalf("failed to create worktrees dir: %v", err)
+	}
+	worktreePath := filepath.Join(worktreesDir, "wave1-agent-A")
+	if err := git.WorktreeAdd(tmpDir, worktreePath, "saw/slug-alpha/wave1-agent-A"); err != nil {
+		t.Fatalf("failed to create worktree: %v", err)
+	}
+
+	// Mark the IMPL as completed so DetectStaleWorktrees finds it as stale
+	completeDir := filepath.Join(tmpDir, "docs", "IMPL", "complete")
+	if err := os.MkdirAll(completeDir, 0755); err != nil {
+		t.Fatalf("failed to create complete dir: %v", err)
+	}
+	implPath := filepath.Join(completeDir, "IMPL-slug-alpha.yaml")
+	if err := os.WriteFile(implPath, []byte("title: slug-alpha\n"), 0644); err != nil {
+		t.Fatalf("failed to create IMPL file: %v", err)
+	}
+
+	// Request cleanup for a DIFFERENT slug — should return empty result
+	result, err := CleanupBySlug(tmpDir, "slug-beta", false)
+	if err != nil {
+		t.Fatalf("CleanupBySlug with non-matching slug failed: %v", err)
+	}
+	if result == nil {
+		t.Fatal("expected non-nil result")
+	}
+	if len(result.Cleaned) != 0 {
+		t.Errorf("expected 0 cleaned (no match), got %d", len(result.Cleaned))
+	}
+	if len(result.Skipped) != 0 {
+		t.Errorf("expected 0 skipped (no match), got %d", len(result.Skipped))
+	}
+	if len(result.Errors) != 0 {
+		t.Errorf("expected 0 errors (no match), got %d", len(result.Errors))
+	}
+
+	// Verify the non-matching worktree is still present
+	worktrees, err := git.WorktreeList(tmpDir)
+	if err != nil {
+		t.Fatalf("failed to list worktrees: %v", err)
+	}
+	// The main worktree + agent-A worktree = 2 total; WorktreeList returns non-main ones
+	if len(worktrees) != 1 {
+		t.Errorf("expected 1 worktree still present (slug-alpha untouched), got %d", len(worktrees))
+	}
+}
