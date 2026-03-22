@@ -64,6 +64,26 @@ func RunIntegrationAgent(ctx context.Context, opts RunIntegrationAgentOpts, onEv
 		return fmt.Errorf("engine.RunIntegrationAgent: load manifest: %w", err)
 	}
 
+	// E26-P1: Verify integration_reports exist and contain gaps for this wave.
+	// The caller already checked opts.Report.Valid above. Here we verify the
+	// manifest itself has integration_reports persisted (E25 must have run).
+	waveKey := fmt.Sprintf("wave%d", opts.WaveNum)
+	if manifest.IntegrationReports == nil || manifest.IntegrationReports[waveKey] == nil {
+		// No persisted integration report — the heuristic scan (E25) may not have run.
+		// This is recoverable: use the caller-supplied report and log a warning.
+		fmt.Fprintf(os.Stderr, "engine.RunIntegrationAgent: warning: no integration_report found in manifest for %s (E25 may not have run)\n", waveKey)
+	}
+
+	// E26-P2: integration_connectors must be defined (E26 precondition).
+	// Without connector files, the integration agent cannot safely scope its edits.
+	if len(manifest.IntegrationConnectors) == 0 {
+		publish("integration_agent_failed", map[string]string{
+			"error": "no integration_connectors defined in manifest (E26-P2)",
+		})
+		return fmt.Errorf("engine.RunIntegrationAgent: no integration_connectors defined in manifest — " +
+			"add integration_connectors entries listing files the agent may edit (E26-P2)")
+	}
+
 	// Build the integration agent prompt.
 	prompt, err := buildIntegrationPrompt(opts, manifest)
 	if err != nil {

@@ -135,6 +135,26 @@ pattern matching (H7) and appends diagnosis to the output.`,
 				}
 			}
 
+			// Step 1.1: E7 — Check completion report statuses before merge.
+			// Block merge if any agent in this wave reports partial or blocked.
+			for _, agent := range manifest.Waves[waveNum-1].Agents {
+				if report, ok := manifest.CompletionReports[agent.ID]; ok {
+					if report.Status == "partial" || report.Status == "blocked" {
+						out, _ := json.MarshalIndent(result, "", "  ")
+						fmt.Println(string(out))
+						return fmt.Errorf("finalize-wave: agent %s has status %q — cannot merge wave with partial/blocked agents (E7)",
+							agent.ID, report.Status)
+					}
+				}
+			}
+
+			// Step 1.2: E11 — Predict merge conflicts from completion reports.
+			if err := protocol.PredictConflictsFromReports(manifest, waveNum); err != nil {
+				out, _ := json.MarshalIndent(result, "", "  ")
+				fmt.Println(string(out))
+				return fmt.Errorf("finalize-wave: %w", err)
+			}
+
 			// Step 1.5: Check type collisions (per repo)
 			for repoKey, repoPath := range repos {
 				collisionReport, err := collision.DetectCollisions(manifestPath, waveNum, repoPath)
