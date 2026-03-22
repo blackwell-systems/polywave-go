@@ -1,0 +1,971 @@
+completion_date: "2026-03-21"
+title: Protocol Conformity Gaps — Fix audit findings across engine and protocol docs
+feature_slug: protocol-conformity-gaps
+verdict: SUITABLE
+suitability_assessment: |
+    20 audit findings across 2 repos (scout-and-wave-go engine, scout-and-wave protocol docs).
+    Files decompose cleanly into 6 agents across 2 waves with disjoint ownership.
+    No investigation-first items — the audit provides exact file locations and fixes.
+
+    Item 20 (E38 cache key completeness): ALREADY IMPLEMENTED. gatecache.BuildKey()
+    includes HeadCommit + StagedStat (git diff --cached --stat) + UnstagedStat
+    (git diff --stat) + Command. No fix needed.
+
+    Item 16 (E6 automated deviation propagation): Intentionally human-in-the-loop.
+    E6 requires human judgment to determine correct prompt updates when interface
+    deviations occur. Document this explicitly in execution-rules.md.
+
+    Item 17 (E8 needs_replan loop): ActionReplan is correctly a "pause" operation.
+    The orchestrator surfaces it to the human. Auto-replan would be risky without
+    human validation of contract changes. Document in execution-rules.md.
+
+    Item 18 (E26 precondition validation): Should be mechanically enforced. Add
+    E26-P1/P2 checks before integration agent launch. Assigned to Agent B.
+
+    Item 19 (E22 full-project build verification): Not feasible for large codebases
+    where go build ./... takes minutes. Current per-file validation is the right
+    tradeoff. Document rationale in execution-rules.md.
+
+    Estimated times:
+    - Scout phase: ~10 min (dependency mapping, interface contracts, IMPL doc)
+    - Agent execution: ~15 min (6 agents, ~8 min avg, 2 waves with parallelism)
+    - Merge and verification: ~5 min
+    Total SAW time: ~30 min
+
+    Sequential baseline: ~50 min (6 agents x ~8 min avg)
+    Time savings: ~20 min (40% faster)
+
+    Recommendation: Clear speedup. Proceed.
+test_command: go test ./...
+lint_command: go vet ./...
+file_ownership:
+    - file: cmd/saw/prepare_wave.go
+      agent: A
+      wave: 1
+      action: modify
+      repo: scout-and-wave-go
+    - file: cmd/saw/prepare_wave_test.go
+      agent: A
+      wave: 1
+      action: modify
+      repo: scout-and-wave-go
+    - file: cmd/saw/finalize_wave.go
+      agent: B
+      wave: 1
+      action: modify
+      repo: scout-and-wave-go
+    - file: cmd/saw/finalize_wave_test.go
+      agent: B
+      wave: 1
+      action: modify
+      repo: scout-and-wave-go
+    - file: pkg/protocol/conflict_predict.go
+      agent: B
+      wave: 1
+      action: new
+      repo: scout-and-wave-go
+    - file: pkg/protocol/conflict_predict_test.go
+      agent: B
+      wave: 1
+      action: new
+      repo: scout-and-wave-go
+    - file: pkg/engine/integration_runner.go
+      agent: B
+      wave: 1
+      action: modify
+      repo: scout-and-wave-go
+    - file: pkg/protocol/types.go
+      agent: C
+      wave: 1
+      action: modify
+      repo: scout-and-wave-go
+    - file: pkg/protocol/memory.go
+      agent: C
+      wave: 1
+      action: modify
+      repo: scout-and-wave-go
+    - file: pkg/protocol/validation.go
+      agent: C
+      wave: 1
+      action: modify
+      repo: scout-and-wave-go
+    - file: pkg/protocol/memory_test.go
+      agent: C
+      wave: 1
+      action: modify
+      repo: scout-and-wave-go
+    - file: protocol/execution-rules.md
+      agent: D
+      wave: 1
+      action: modify
+      repo: scout-and-wave
+    - file: protocol/message-formats.md
+      agent: D
+      wave: 1
+      action: modify
+      repo: scout-and-wave
+    - file: protocol/program-manifest.md
+      agent: D
+      wave: 1
+      action: modify
+      repo: scout-and-wave
+    - file: pkg/observability/emitter.go
+      agent: E
+      wave: 2
+      action: new
+      repo: scout-and-wave-go
+    - file: pkg/observability/emitter_test.go
+      agent: E
+      wave: 2
+      action: new
+      repo: scout-and-wave-go
+    - file: pkg/engine/engine.go
+      agent: E
+      wave: 2
+      action: modify
+      repo: scout-and-wave-go
+    - file: pkg/engine/runner.go
+      agent: E
+      wave: 2
+      action: modify
+      repo: scout-and-wave-go
+    - file: pkg/engine/finalize.go
+      agent: E
+      wave: 2
+      action: modify
+      repo: scout-and-wave-go
+    - file: pkg/engine/program_tier_loop.go
+      agent: E
+      wave: 2
+      action: modify
+      repo: scout-and-wave-go
+    - file: cmd/saw/prepare_wave_obs.go
+      agent: F
+      wave: 2
+      action: new
+      repo: scout-and-wave-go
+    - file: cmd/saw/finalize_wave_obs.go
+      agent: F
+      wave: 2
+      action: new
+      repo: scout-and-wave-go
+interface_contracts:
+    - name: EmitEvent
+      description: |
+        Non-blocking observability event emitter. Wraps Store.RecordEvent with
+        goroutine fire-and-forget semantics. nil store silently no-ops.
+      definition: |
+        // In pkg/observability/emitter.go
+        type Emitter struct {
+            store Store
+        }
+
+        func NewEmitter(store Store) *Emitter
+        func (e *Emitter) Emit(ctx context.Context, event Event)
+        // Emit is non-blocking: launches goroutine, logs errors to stderr.
+        // If e is nil or e.store is nil, Emit is a no-op.
+      location: pkg/observability/emitter.go
+    - name: PredictConflictsFromManifest
+      description: |
+        Protocol-package version of conflict prediction that works with
+        IMPLManifest and CompletionReport types (not orchestrator types).
+        Enables finalize-wave CLI to call E11 check without importing
+        pkg/orchestrator.
+      definition: |
+        // In pkg/protocol/conflict_predict.go
+        func PredictConflictsFromReports(manifest *IMPLManifest, waveNum int) error
+        // Cross-references files_changed and files_created from completion
+        // reports for all agents in the given wave. Returns error if any
+        // non-IMPL file appears in more than one agent's report.
+      location: pkg/protocol/conflict_predict.go
+    - name: SuitabilityAssessment structured fields
+      description: |
+        Add Reasoning field to support structured suitability data while
+        maintaining backward compatibility with string-only assessment.
+      definition: |
+        // In pkg/protocol/types.go — add field to IMPLManifest:
+        SuitabilityReasoning string `yaml:"suitability_reasoning,omitempty" json:"suitability_reasoning,omitempty"`
+        // Verdict already exists as top-level field.
+        // SuitabilityAssessment remains as prose string for backward compat.
+      location: pkg/protocol/types.go
+    - name: ArchitectureDescription with Modules
+      description: |
+        Add Modules field and Description alias to ArchitectureDescription
+        to align with protocol spec.
+      definition: |
+        // In pkg/protocol/memory.go
+        type ArchitectureModule struct {
+            Name           string `yaml:"name" json:"name"`
+            Path           string `yaml:"path" json:"path"`
+            Responsibility string `yaml:"responsibility" json:"responsibility"`
+        }
+
+        type ArchitectureDescription struct {
+            Language    string               `yaml:"language"`
+            Stack       []string             `yaml:"stack,omitempty"`
+            Summary     string               `yaml:"summary,omitempty"`
+            Description string               `yaml:"description,omitempty"`
+            Modules     []ArchitectureModule `yaml:"modules,omitempty"`
+        }
+      location: pkg/protocol/memory.go
+waves:
+    - number: 1
+      agents:
+        - id: A
+          task: |
+            ## Items 1 and 5: E3 and E41 gaps in prepare-wave
+
+            ### What to implement
+
+            **E3 — Add I1 disjoint ownership check to prepare-wave before worktree creation:**
+
+            In `cmd/saw/prepare_wave.go`, after step 0e (freeze check, ~line 274) and
+            before step 1 (Create worktrees, ~line 276), add a new step:
+
+            ```go
+            // Step 0f: E3 — Pre-launch ownership verification (I1 disjoint check)
+            // protocol.Validate() calls validateI1DisjointOwnership() internally.
+            // Filter its output for I1_VIOLATION error codes.
+            if allErrs := protocol.Validate(doc); len(allErrs) > 0 {
+                var i1Errs []protocol.ValidationError
+                for _, e := range allErrs {
+                    if e.Code == "I1_VIOLATION" {
+                        i1Errs = append(i1Errs, e)
+                    }
+                }
+                if len(i1Errs) > 0 {
+                    for _, e := range i1Errs {
+                        fmt.Fprintf(os.Stderr, "prepare-wave: I1 ownership violation: %s\n", e.Message)
+                    }
+                    return fmt.Errorf("prepare-wave: %d I1 disjoint ownership violation(s)", len(i1Errs))
+                }
+            }
+            ```
+
+            Use `protocol.Validate(doc)` and filter results for `Code == "I1_VIOLATION"`.
+            Do NOT use `protocol.ValidateI1ForWave()` — that function does not exist.
+
+            **E41 — Add type collision check to prepare-wave:**
+
+            After the I1 check and before worktree creation, add collision detection:
+
+            ```go
+            // Step 0g: E41 — Pre-launch type collision check
+            // collision.DetectCollisions takes a manifest path string, wave number, and repo path.
+            collisionReport, err := collision.DetectCollisions(manifestPath, waveNum, projectRoot)
+            if err != nil {
+                fmt.Fprintf(os.Stderr, "prepare-wave: collision check: %v\n", err)
+            } else if !collisionReport.Valid {
+                out, _ := json.MarshalIndent(collisionReport, "", "  ")
+                fmt.Fprintln(cmd.OutOrStdout(), string(out))
+                return fmt.Errorf("prepare-wave: type collisions detected — resolve before creating worktrees")
+            }
+            ```
+
+            Use `collision.DetectCollisions(manifestPath, waveNum, projectRoot)` — the
+            actual function signature from `pkg/collision/detector.go:30`. It takes the
+            manifest file path as a string, NOT a parsed `*IMPLManifest`. The `manifestPath`
+            variable is already available in `prepare_wave.go` as the CLI argument.
+            Keep the existing collision check in finalize-wave as a post-check.
+
+            ### Tests
+
+            Add tests to `cmd/saw/prepare_wave_test.go`:
+            - Test that prepare-wave fails when I1 ownership overlap exists
+            - Test that prepare-wave fails when type collisions exist
+            - Test that prepare-wave succeeds when both checks pass
+
+            ### Verification gate
+            ```
+            go test ./cmd/saw/ -run TestPrepareWave -count=1
+            ```
+
+            ### Constraints
+            - Do NOT modify finalize_wave.go (owned by Agent B)
+            - Do NOT modify pkg/protocol/validation.go (owned by Agent C)
+            - Import collision package; do not duplicate collision logic
+          files:
+            - cmd/saw/prepare_wave.go
+            - cmd/saw/prepare_wave_test.go
+        - id: B
+          task: |
+            ## Items 2, 3, and 18: E7/E11/E26 gaps in finalize-wave CLI
+
+            ### What to implement
+
+            **E7/E19 — Add completion report status check before merge:**
+
+            In `cmd/saw/finalize_wave.go`, after step 1 (VerifyCommits, ~line 136)
+            and before step 1.5 (collision check), add a pre-merge status check:
+
+            ```go
+            // Step 1.1: E7 — Check completion report statuses
+            // Block merge if any agent in this wave reports partial or blocked.
+            for _, agent := range manifest.Waves[waveNum-1].Agents {
+                if report, ok := manifest.CompletionReports[agent.ID]; ok {
+                    if report.Status == "partial" || report.Status == "blocked" {
+                        out, _ := json.MarshalIndent(result, "", "  ")
+                        fmt.Println(string(out))
+                        return fmt.Errorf("finalize-wave: agent %s has status %q — cannot merge wave with partial/blocked agents (E7)",
+                            agent.ID, report.Status)
+                    }
+                }
+            }
+            ```
+
+            **E11 — Add conflict prediction before merge:**
+
+            Create `pkg/protocol/conflict_predict.go` with a function that mirrors
+            `predictConflicts()` from `pkg/orchestrator/merge.go` but works with
+            `protocol.IMPLManifest` and `protocol.CompletionReport` types:
+
+            ```go
+            func PredictConflictsFromReports(manifest *IMPLManifest, waveNum int) error
+            ```
+
+            Then wire it into finalize-wave after step 1.1 and before step 1.5:
+
+            ```go
+            // Step 1.2: E11 — Predict merge conflicts from completion reports
+            if err := protocol.PredictConflictsFromReports(manifest, waveNum); err != nil {
+                out, _ := json.MarshalIndent(result, "", "  ")
+                fmt.Println(string(out))
+                return fmt.Errorf("finalize-wave: %w", err)
+            }
+            ```
+
+            **E26 — Add precondition validation before integration agent launch:**
+
+            In `pkg/engine/integration_runner.go`, before launching the integration
+            agent, add precondition checks:
+            - E26-P1: integration_reports must exist and have gaps (if no gaps, skip)
+            - E26-P2: integration_connectors must be defined (if absent, return error)
+
+            ### Tests
+
+            - `cmd/saw/finalize_wave_test.go`: Test E7 blocks merge on partial/blocked
+            - `pkg/protocol/conflict_predict_test.go`: Test conflict detection
+            - Test E11 blocks merge on file conflicts
+
+            ### Verification gate
+            ```
+            go test ./cmd/saw/ -run TestFinalizeWave -count=1 && go test ./pkg/protocol/ -run TestPredictConflicts -count=1
+            ```
+
+            ### Constraints
+            - Do NOT modify prepare_wave.go (owned by Agent A)
+            - Do NOT modify types.go or validation.go (owned by Agent C)
+            - The new conflict_predict.go must be in pkg/protocol/ package
+          files:
+            - cmd/saw/finalize_wave.go
+            - cmd/saw/finalize_wave_test.go
+            - pkg/protocol/conflict_predict.go
+            - pkg/protocol/conflict_predict_test.go
+            - pkg/engine/integration_runner.go
+        - id: C
+          task: |
+            ## Items 6, 7, and 8: Schema divergences
+
+            ### What to implement
+
+            **Item 6 — SuitabilityAssessment structured fields:**
+
+            In `pkg/protocol/types.go`, add a `SuitabilityReasoning` field to
+            `IMPLManifest` (after the existing `SuitabilityAssessment` field):
+
+            ```go
+            SuitabilityReasoning string `yaml:"suitability_reasoning,omitempty" json:"suitability_reasoning,omitempty"`
+            ```
+
+            The existing `SuitabilityAssessment string` and `Verdict string` fields
+            remain unchanged for backward compatibility. The new field provides the
+            structured `reasoning` subfield from the protocol spec. Scouts can now
+            write `verdict:` at root level and `suitability_reasoning:` for the
+            detailed assessment, or continue using `suitability_assessment:` as prose.
+
+            **Item 7 — ProjectMemory.Architecture with modules:**
+
+            In `pkg/protocol/memory.go`, add a new struct and update
+            `ArchitectureDescription`:
+
+            ```go
+            type ArchitectureModule struct {
+                Name           string `yaml:"name" json:"name"`
+                Path           string `yaml:"path" json:"path"`
+                Responsibility string `yaml:"responsibility" json:"responsibility"`
+            }
+
+            type ArchitectureDescription struct {
+                Language    string               `yaml:"language"`
+                Stack       []string             `yaml:"stack,omitempty"`
+                Summary     string               `yaml:"summary,omitempty"`
+                Description string               `yaml:"description,omitempty"`
+                Modules     []ArchitectureModule `yaml:"modules,omitempty"`
+            }
+            ```
+
+            Add `Description` as an alias/complement to `Summary` — both can coexist.
+            Add `Modules` array for structured module information.
+
+            **Item 8 — KnownIssue.Title remove omitempty:**
+
+            In `pkg/protocol/types.go`, change KnownIssue.Title tag:
+
+            FROM: `Title string yaml:"title,omitempty" json:"title,omitempty"`
+            TO:   `Title string yaml:"title" json:"title"`
+
+            Then in `pkg/protocol/validation.go`, add validation in the known issues
+            check (if one exists) or add a new check that flags KnownIssue entries
+            with empty Title fields:
+
+            ```go
+            // In Validate() or validateKnownIssues():
+            for i, issue := range manifest.KnownIssues {
+                if issue.Title == "" {
+                    errs = append(errs, ValidationError{
+                        Code:    "KNOWN_ISSUE_MISSING_TITLE",
+                        Message: fmt.Sprintf("known_issues[%d]: title is required", i),
+                        Field:   fmt.Sprintf("known_issues[%d].title", i),
+                    })
+                }
+            }
+            ```
+
+            ### Tests
+
+            - Test ArchitectureModule round-trip YAML marshal/unmarshal
+            - Test KnownIssue validation rejects empty title
+            - Test SuitabilityReasoning field parses correctly
+
+            ### Verification gate
+            ```
+            go test ./pkg/protocol/ -run "TestArchitecture|TestKnownIssue|TestSuitability" -count=1
+            ```
+
+            ### Constraints
+            - Do NOT modify cmd/saw/ files (owned by Agents A and B)
+            - Do NOT modify runner.go or finalize.go (owned by Agent E in wave 2)
+            - Maintain backward compatibility with existing YAML files
+          files:
+            - pkg/protocol/types.go
+            - pkg/protocol/memory.go
+            - pkg/protocol/validation.go
+            - pkg/protocol/memory_test.go
+        - id: D
+          task: |
+            ## Items 9-15: Protocol documentation updates
+
+            All files are in the scout-and-wave repo (protocol documentation).
+
+            ### What to implement
+
+            **Item 9 — ProgramIMPL priority fields (program-manifest.md):**
+
+            In section 5.1 of `protocol/program-manifest.md`, add to the ProgramIMPL
+            schema after the existing fields:
+
+            ```yaml
+            priority_score: 0        # optional, integer, scheduling priority (higher = sooner)
+            priority_reasoning: ""   # optional, string, explanation for priority assignment
+            ```
+
+            Add a brief note: "These optional scheduling fields enable priority-based
+            IMPL ordering within a tier. The engine uses them when multiple IMPLs in
+            the same tier compete for concurrent execution slots."
+
+            **Item 10 — QualityGate.Timing (message-formats.md):**
+
+            In the Quality Gates section of `protocol/message-formats.md`, add the
+            `timing` field to the gate schema:
+
+            ```yaml
+            - type: test
+              command: go test ./...
+              required: true
+              timing: post-merge    # optional: "pre-merge" (default) | "post-merge"
+            ```
+
+            Add documentation: "Gates with `timing: post-merge` execute after
+            MergeAgents completes (step 5 of finalize-wave). This enables content
+            and integration gates that require the merged state. When timing is
+            empty or absent, `pre-merge` is assumed for backward compatibility."
+
+            **Item 11 — ProgramTier.ConcurrencyCap (program-manifest.md):**
+
+            In section 6.1 of `protocol/program-manifest.md`, add to the ProgramTier
+            schema:
+
+            ```yaml
+            concurrency_cap: 3    # optional, integer, max IMPLs executing simultaneously in this tier
+            ```
+
+            **Item 12 — E4a stale worktree cleanup (execution-rules.md):**
+
+            Add a new subsection E4a after E4 in `protocol/execution-rules.md`:
+
+            "### E4a: Stale Worktree Cleanup
+
+            Before creating worktrees for a wave, the orchestrator SHOULD detect and
+            remove stale worktrees from previous failed runs of the same IMPL slug.
+            A worktree is stale if it references a branch that has been deleted or
+            if its parent IMPL is in a terminal state (COMPLETE or NOT_SUITABLE).
+
+            This prevents prepare-wave failures caused by leftover git worktrees
+            from crashed or interrupted previous runs."
+
+            **Item 13 — E37 set-critic-review (execution-rules.md):**
+
+            In the E37 section, add a note: "Critic agents write their results to the
+            IMPL manifest via `sawtools set-critic-review` (or equivalent SDK call),
+            not by direct file modification. This preserves the structured
+            `critic_report:` field format."
+
+            **Item 14 — H-series Scout helpers (execution-rules.md):**
+
+            Add a subsection to E16 or E31 documenting Scout pre-processing helpers:
+
+            "### Scout Pre-Processing Helpers (H-series)
+
+            Before launching the Scout agent, the engine runs automation tools that
+            produce context injected into the Scout prompt:
+
+            - **H1a (analyze-suitability):** Scans a requirements file against the
+              current codebase to classify each requirement as DONE, PARTIAL, or TODO.
+              Implemented by `sawtools analyze-suitability`.
+            - **H2 (extract-commands):** Detects project toolchain and extracts
+              build/test/lint/format commands from CI configs, Makefiles, and package
+              manifests. Implemented by `sawtools extract-commands`.
+            - **H3 (analyze-deps):** Traces import paths and type dependencies to
+              produce a dependency graph with wave candidate assignments.
+              Implemented by `sawtools analyze-deps`.
+
+            These helpers are best-effort: failures are logged but do not block Scout
+            execution. Their output appears in the Scout prompt under
+            '## Automation Analysis Results'."
+
+            **Item 15 — ProjectMemory.Architecture spec alignment (message-formats.md):**
+
+            Update the CONTEXT.md schema in `protocol/message-formats.md` to include
+            the `modules` array and align field names:
+
+            ```yaml
+            architecture:
+              language: go
+              stack: [cobra, yaml.v3]
+              summary: "CLI toolkit..."       # backward compat alias
+              description: "CLI toolkit..."   # protocol-canonical name
+              modules:
+                - name: protocol
+                  path: pkg/protocol/
+                  responsibility: "IMPL manifest parsing and validation"
+            ```
+
+            **Item 16 decision (E6 — document in execution-rules.md):**
+
+            Add to E6: "Note: Automated deviation propagation (reading
+            interface_deviations from completion reports and auto-updating downstream
+            agent prompts) is intentionally not automated. Interface deviation
+            resolution requires human judgment to determine the correct prompt updates.
+            The orchestrator surfaces deviations; the human applies them via
+            `sawtools update-agent-prompt`."
+
+            **Item 17 decision (E8 — document in execution-rules.md):**
+
+            Add to E8: "Note: The `needs_replan` failure type surfaces to the human
+            orchestrator as a pause point. Automatic Scout re-engagement for contract
+            revision is not implemented to prevent cascading contract changes without
+            human review. Use `sawtools update-agent-prompt` and manual wave restart."
+
+            **Item 19 decision (E22 — document in execution-rules.md):**
+
+            Add to E22: "Note: Scaffold build verification validates that each
+            scaffold file compiles within its package (`go build ./path/to/package`),
+            not the full project build (`go build ./...`). Full-project verification
+            after scaffold commits is deferred to the prepare-wave baseline gate
+            (E21A), which runs the quality gates against HEAD before worktree
+            creation."
+
+            ### Verification gate
+            ```
+            echo "Documentation-only changes — no build verification needed"
+            ```
+
+            ### Constraints
+            - Only modify files in the scout-and-wave repo (protocol documentation)
+            - Do NOT modify any Go source files
+            - Preserve existing content; add new sections, do not remove existing text
+          files:
+            - protocol/execution-rules.md
+            - protocol/message-formats.md
+            - protocol/program-manifest.md
+      base_commit: 6af13f59a1142f1def09eb16e31533486248e593
+    - number: 2
+      agents:
+        - id: E
+          task: |
+            ## Item 4: E40 observability wiring
+
+            ### What to implement
+
+            **Create non-blocking emitter wrapper:**
+
+            Create `pkg/observability/emitter.go` with a nil-safe, non-blocking
+            event emitter:
+
+            ```go
+            package observability
+
+            import (
+                "context"
+                "fmt"
+                "os"
+                "time"
+            )
+
+            type Emitter struct {
+                store Store
+            }
+
+            func NewEmitter(store Store) *Emitter {
+                if store == nil {
+                    return nil
+                }
+                return &Emitter{store: store}
+            }
+
+            func (e *Emitter) Emit(ctx context.Context, event Event) {
+                if e == nil || e.store == nil {
+                    return
+                }
+                go func() {
+                    if err := e.store.RecordEvent(ctx, event); err != nil {
+                        fmt.Fprintf(os.Stderr, "observability: emit %s: %v\n", event.EventType(), err)
+                    }
+                }()
+            }
+
+            // Helper constructors for common events:
+
+            func NewScoutLaunchEvent(implSlug string) *ActivityEvent {
+                return &ActivityEvent{
+                    ID: NewEventID(), Type: "activity", Time: time.Now(),
+                    ActivityType: "scout_launch", IMPLSlug: implSlug,
+                }
+            }
+
+            func NewScoutCompleteEvent(implSlug string) *ActivityEvent { ... }
+            func NewWaveStartEvent(implSlug string, wave int) *ActivityEvent { ... }
+            func NewWaveMergeEvent(implSlug string, wave int) *ActivityEvent { ... }
+            func NewWaveFailedEvent(implSlug string, wave int, details string) *ActivityEvent { ... }
+            func NewImplCompleteEvent(implSlug string) *ActivityEvent { ... }
+            func NewGateExecutedEvent(implSlug string, wave int, gateType string, passed bool) *ActivityEvent { ... }
+            func NewTierAdvancedEvent(programSlug string, tier int) *ActivityEvent { ... }
+            func NewTierGatePassedEvent(programSlug string, tier int) *ActivityEvent { ... }
+            func NewTierGateFailedEvent(programSlug string, tier int, details string) *ActivityEvent { ... }
+            ```
+
+            **Wire into engine lifecycle points:**
+
+            1. `pkg/engine/runner.go` — In `RunScout()`:
+               - After validation (~line 34), emit `scout_launch`
+               - Before return on success (~line 118), emit `scout_complete`
+               - Add `ObsEmitter *observability.Emitter` to `RunScoutOpts` in `pkg/engine/engine.go` (line ~74)
+
+            2. `pkg/engine/finalize.go` — In `FinalizeWave()`:
+               - After successful merge, emit `wave_merge`
+               - On failure paths, emit `wave_failed`
+               - For each gate result, emit `gate_executed` or `gate_failed`
+               - In `MarkIMPLComplete()`, emit `impl_complete`
+               - Add `ObsEmitter *observability.Emitter` to `FinalizeWaveOpts` and
+                 `MarkIMPLCompleteOpts`
+
+            3. `pkg/engine/program_tier_loop.go` — In `RunTierLoop()`:
+               - After tier gate passes, emit `tier_gate_passed`
+               - After tier gate fails, emit `tier_gate_failed`
+               - After tier advances, emit `tier_advanced`
+               - Add `ObsEmitter *observability.Emitter` to `TierLoopOpts`
+
+            All emissions MUST be non-blocking (goroutine in Emit()).
+            A nil Emitter MUST silently no-op (nil receiver check).
+
+            ### Tests
+
+            In `pkg/observability/emitter_test.go`:
+            - Test nil emitter does not panic
+            - Test emit calls store.RecordEvent
+            - Test emit is non-blocking (does not block caller)
+            - Test helper constructors produce correct event types
+
+            ### Verification gate
+            ```
+            go test ./pkg/observability/ -count=1 && go build ./pkg/engine/...
+            ```
+
+            ### Constraints
+            - Do NOT modify cmd/saw/ files (CLI observability is Agent F's scope)
+            - Do NOT modify pkg/protocol/ files (Agent C's scope in wave 1)
+            - Emitter must be nil-safe at every call site
+            - Never block the caller — all store writes happen in goroutines
+          files:
+            - pkg/observability/emitter.go
+            - pkg/observability/emitter_test.go
+            - pkg/engine/engine.go
+            - pkg/engine/runner.go
+            - pkg/engine/finalize.go
+            - pkg/engine/program_tier_loop.go
+          dependencies:
+            - C
+        - id: F
+          task: |
+            ## E40 CLI-level observability helpers
+
+            ### What to implement
+
+            Create helper files that CLI commands can use to emit observability events.
+            These are separate files from the main CLI commands (which were modified
+            in wave 1 by Agents A and B).
+
+            **cmd/saw/prepare_wave_obs.go:**
+
+            Create a helper function that emits a `wave_start` event. This will be
+            called from prepare_wave.go's success path. Since prepare_wave.go was
+            already modified by Agent A, this file provides the observability helper
+            without conflicting:
+
+            ```go
+            package main
+
+            import (
+                "context"
+                "github.com/blackwell-systems/scout-and-wave-go/pkg/observability"
+            )
+
+            // emitWaveStart emits a wave_start observability event.
+            // Safe to call with nil emitter.
+            func emitWaveStart(emitter *observability.Emitter, implSlug string, waveNum int) {
+                if emitter == nil {
+                    return
+                }
+                event := observability.NewWaveStartEvent(implSlug, waveNum)
+                emitter.Emit(context.Background(), event)
+            }
+            ```
+
+            **cmd/saw/finalize_wave_obs.go:**
+
+            Similar helpers for finalize-wave events:
+
+            ```go
+            func emitWaveMerge(emitter *observability.Emitter, implSlug string, waveNum int) { ... }
+            func emitWaveFailed(emitter *observability.Emitter, implSlug string, waveNum int, reason string) { ... }
+            func emitGateResult(emitter *observability.Emitter, implSlug string, waveNum int, gateType string, passed bool) { ... }
+            ```
+
+            Note: The actual call sites in prepare_wave.go and finalize_wave.go will
+            need to be wired in a post-merge integration step. These helper files
+            establish the API.
+
+            ### Tests
+
+            Tests can be minimal — these are thin wrappers around the Emitter.
+            Add a build verification test to ensure the helpers compile.
+
+            ### Verification gate
+            ```
+            go build ./cmd/saw/
+            ```
+
+            ### Constraints
+            - Do NOT modify prepare_wave.go or finalize_wave.go (modified by A/B in wave 1)
+            - Only create NEW files in cmd/saw/
+            - These are helper functions, not command definitions
+          files:
+            - cmd/saw/prepare_wave_obs.go
+            - cmd/saw/finalize_wave_obs.go
+          dependencies:
+            - A
+            - B
+      base_commit: 507694ca298ac7ec6c5318c2df3cfac895ccf019
+quality_gates:
+    level: standard
+    gates:
+        - type: build
+          command: go build ./...
+          required: true
+          repo: scout-and-wave-go
+        - type: lint
+          command: go vet ./...
+          required: true
+          repo: scout-and-wave-go
+        - type: test
+          command: go test ./...
+          required: true
+          repo: scout-and-wave-go
+post_merge_checklist:
+    groups: []
+completion_reports:
+    A:
+        status: complete
+        branch: saw/protocol-conformity-gaps/wave1-agent-A
+        commit: 515e74b
+        files_changed:
+            - cmd/saw/prepare_wave.go
+            - cmd/saw/prepare_wave_test.go
+        tests_added:
+            - TestPrepareWave_I1OwnershipViolation
+            - TestPrepareWave_I1OwnershipNoViolation
+            - TestPrepareWave_I1CrossWaveAllowed
+            - TestPrepareWave_CollisionReportValidField
+            - TestPrepareWave_CollisionReportJSONOutput
+        verification: PASS
+    B:
+        status: complete
+        branch: saw/protocol-conformity-gaps/wave1-agent-B
+        commit: 1bb5089
+        files_changed:
+            - cmd/saw/finalize_wave.go
+            - cmd/saw/finalize_wave_test.go
+            - pkg/protocol/conflict_predict.go
+            - pkg/protocol/conflict_predict_test.go
+            - pkg/engine/integration_runner.go
+        files_created:
+            - pkg/protocol/conflict_predict.go
+            - pkg/protocol/conflict_predict_test.go
+        tests_added:
+            - TestFinalizeWave_E7BlocksOnPartialStatus
+            - TestFinalizeWave_E7BlocksOnBlockedStatus
+            - TestFinalizeWave_E7AllCompleteAllowed
+            - TestFinalizeWave_E11BlocksOnFileConflict
+            - TestFinalizeWave_E11NoConflict
+            - TestPredictConflictsFromReports_NoConflicts
+            - TestPredictConflictsFromReports_ConflictDetected
+            - TestPredictConflictsFromReports_FilesCreatedConflict
+            - TestPredictConflictsFromReports_IMPLFilesIgnored
+            - TestPredictConflictsFromReports_SawStateFilesIgnored
+            - TestPredictConflictsFromReports_NilManifest
+            - TestPredictConflictsFromReports_WaveNotFound
+            - TestPredictConflictsFromReports_MissingReportSkipped
+        verification: PASS
+    C:
+        status: complete
+        branch: saw/protocol-conformity-gaps/wave1-agent-C
+        commit: 92c0429
+        files_changed:
+            - pkg/protocol/types.go
+            - pkg/protocol/memory.go
+            - pkg/protocol/validation.go
+            - pkg/protocol/memory_test.go
+        tests_added:
+            - TestArchitectureModule_Roundtrip
+            - TestKnownIssue_ValidationRejectsEmptyTitle
+            - TestKnownIssue_ValidationAcceptsTitle
+            - TestKnownIssue_MultipleEmptyTitles
+            - TestSuitabilityReasoning_ParsesCorrectly
+        verification: PASS
+    D:
+        status: complete
+        branch: saw/protocol-conformity-gaps/wave1-agent-D
+        commit: fac6ed3
+        files_changed:
+            - protocol/execution-rules.md
+            - protocol/message-formats.md
+            - protocol/program-manifest.md
+        verification: PASS
+    E:
+        status: complete
+        branch: saw/protocol-conformity-gaps/wave2-agent-E
+        commit: 7c39bba
+        files_changed:
+            - pkg/observability/emitter.go
+            - pkg/observability/emitter_test.go
+            - pkg/engine/engine.go
+            - pkg/engine/runner.go
+            - pkg/engine/finalize.go
+            - pkg/engine/program_tier_loop.go
+        files_created:
+            - pkg/observability/emitter.go
+            - pkg/observability/emitter_test.go
+        tests_added:
+            - TestNilEmitterDoesNotPanic
+            - TestNewEmitterWithNilStoreReturnsNil
+            - TestEmitCallsStoreRecordEvent
+            - TestEmitIsNonBlocking
+            - TestEmitStoreErrorLogsToStderr
+            - TestNewScoutLaunchEvent
+            - TestNewScoutCompleteEvent
+            - TestNewWaveStartEvent
+            - TestNewWaveMergeEvent
+            - TestNewWaveFailedEvent
+            - TestNewImplCompleteEvent
+            - TestNewGateExecutedEvent
+            - TestNewTierAdvancedEvent
+            - TestNewTierGatePassedEvent
+            - TestNewTierGateFailedEvent
+            - TestMultipleEmitsAreConcurrencySafe
+        verification: PASS
+    F:
+        status: complete
+        branch: saw/protocol-conformity-gaps/wave2-agent-F
+        commit: 9061dd1
+        files_changed:
+            - cmd/saw/prepare_wave_obs.go
+            - cmd/saw/finalize_wave_obs.go
+            - pkg/observability/emitter.go
+        files_created:
+            - cmd/saw/prepare_wave_obs.go
+            - cmd/saw/finalize_wave_obs.go
+            - pkg/observability/emitter.go
+        verification: PASS
+pre_mortem:
+    overall_risk: medium
+    rows:
+        - scenario: Schema changes in types.go cause cascading compilation failures
+          likelihood: medium
+          impact: high
+          mitigation: Agent C only adds fields (never removes/renames). New fields use omitempty for backward compat. Wave 2 agents depend on wave 1 completing.
+        - scenario: predictConflicts function signature mismatch between orchestrator and protocol packages
+          likelihood: low
+          impact: medium
+          mitigation: Agent B creates a new function in pkg/protocol/ rather than moving from pkg/orchestrator/. Both can coexist.
+        - scenario: Observability wiring adds import cycles
+          likelihood: low
+          impact: high
+          mitigation: observability package has no dependencies on engine or protocol. Emitter accepts Store interface. No circular imports possible.
+        - scenario: Protocol doc edits conflict with existing worktrees in scout-and-wave repo
+          likelihood: medium
+          impact: low
+          mitigation: Agent D works in separate worktree. Protocol docs are documentation-only, no build impact.
+known_issues:
+    - title: Existing worktrees in scout-and-wave repo
+      description: The scout-and-wave repo has existing worktrees from a previous protocol-conformity run. These may need cleanup before Agent D can create its worktree.
+      status: needs-attention
+      workaround: Run sawtools cleanup in scout-and-wave repo before launching wave 1
+    - title: E38 cache key already correct
+      description: Item 20 (E38 cache key completeness) was evaluated and found to be already correctly implemented. gatecache.BuildKey() includes HeadCommit + StagedStat + UnstagedStat + Command. No fix needed.
+      status: resolved
+      workaround: No action required
+critic_report:
+    verdict: PASS
+    agent_reviews:
+        A:
+            agent_id: A
+            verdict: PASS
+        B:
+            agent_id: B
+            verdict: PASS
+        C:
+            agent_id: C
+            verdict: PASS
+        D:
+            agent_id: D
+            verdict: PASS
+        E:
+            agent_id: E
+            verdict: PASS
+        F:
+            agent_id: F
+            verdict: PASS
+    summary: 'All 6 agent briefs verified against codebase. File existence checks pass for all 22 files (12 modify existing, 8 new non-conflicting, 2 new in existing packages). Symbol accuracy confirmed: protocol.Validate with I1_VIOLATION code, collision.DetectCollisions signature, CompletionReport.Status field, KnownIssue.Title tag, observability.Store/Event/ActivityEvent interfaces, RunScoutOpts/FinalizeWaveOpts/TierLoopOpts/MarkIMPLCompleteOpts structs all exist as described. Pattern accuracy verified: prepare_wave.go step ordering (0e freeze check at line 274, step 1 at line 276), finalize_wave.go VerifyCommits at line 136, predictConflicts in orchestrator/merge.go. Interface contracts consistent with existing types. Import chains valid (all packages in go.mod or local). No registration gaps detected.'
+    reviewed_at: "2026-03-21T23:44:34Z"
+    issue_count: 0
+state: "COMPLETE"
