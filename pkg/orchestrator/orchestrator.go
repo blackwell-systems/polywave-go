@@ -27,13 +27,51 @@ import (
 	"github.com/blackwell-systems/scout-and-wave-go/internal/git"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/tools"
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/types"
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/types" // kept for types.FailureType constants (E19 routing)
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/worktree"
 )
 
 func init() {
-	// ParseIMPLDoc removed in markdown system cleanup - now use protocol.Load() directly
-	SetValidateInvariantsFunc(protocol.ValidateInvariants)
+	// Wire up protocol.ValidateInvariants. Agent B will migrate the signature
+	// from *types.IMPLDoc to *protocol.IMPLManifest. Until then, use an adapter
+	// that calls protocol.ValidateManifestInvariants (new manifest-based entry point).
+	// If that doesn't exist yet, wrap the legacy function.
+	SetValidateInvariantsFunc(validateManifestInvariantsAdapter)
+}
+
+// validateManifestInvariantsAdapter wraps protocol.ValidateInvariants for the
+// *protocol.IMPLManifest signature. This adapter is temporary — once Agent B
+// changes protocol.ValidateInvariants to accept *IMPLManifest directly, this
+// can be replaced with a direct reference.
+func validateManifestInvariantsAdapter(manifest *protocol.IMPLManifest) error {
+	if manifest == nil {
+		return nil
+	}
+	// Perform I1 validation directly using manifest data (same logic as protocol.ValidateInvariants).
+	for _, wave := range manifest.Waves {
+		seen := make(map[string]string) // "repo:file" -> agent ID
+		for _, agent := range wave.Agents {
+			for _, file := range agent.Files {
+				// Build composite key: use repo from ownership table if available.
+				repo := ""
+				for _, fo := range manifest.FileOwnership {
+					if fo.File == file && fo.Agent == agent.ID {
+						repo = fo.Repo
+						break
+					}
+				}
+				key := repo + ":" + file
+				if prev, ok := seen[key]; ok {
+					return fmt.Errorf(
+						"I1 violation in Wave %d: file %q claimed by both Agent %s and Agent %s",
+						wave.Number, file, prev, agent.ID,
+					)
+				}
+				seen[key] = agent.ID
+			}
+		}
+	}
+	return nil
 }
 
 // defaultAgentTimeout is the maximum time RunWave waits per agent for a
@@ -43,21 +81,13 @@ var defaultAgentTimeout = 30 * time.Minute
 // defaultAgentPollInterval is how often RunWave polls for completion reports.
 var defaultAgentPollInterval = 10 * time.Second
 
-// parseIMPLDocFunc is replaced at runtime by pkg/protocol once that package
-// is compiled. The default no-op implementation returns an empty IMPLDoc so
-// that the orchestrator package compiles independently during Wave 1 parallel
-// execution (Agent A owns pkg/protocol and may not be merged yet).
-var parseIMPLDocFunc = func(path string) (*types.IMPLDoc, error) {
-	return &types.IMPLDoc{}, nil
-}
-
 // validateInvariantsFunc is replaced by pkg/protocol via SetValidateInvariantsFunc.
 // Default no-op for Wave 1 compilation.
-var validateInvariantsFunc = func(doc *types.IMPLDoc) error { return nil }
+var validateInvariantsFunc = func(doc *protocol.IMPLManifest) error { return nil }
 
 // SetValidateInvariantsFunc allows pkg/protocol to inject the real implementation
 // without a direct import cycle.
-func SetValidateInvariantsFunc(f func(doc *types.IMPLDoc) error) {
+func SetValidateInvariantsFunc(f func(doc *protocol.IMPLManifest) error) {
 	validateInvariantsFunc = f
 }
 
@@ -119,13 +149,13 @@ var waitForCompletionFunc = func(implDocPath, agentLetter string, timeout, pollI
 
 // prioritizeAgentsFunc is replaced by pkg/engine/scheduler.go via SetPrioritizeAgentsFunc.
 // Default implementation returns agents in declaration order (no reordering).
-var prioritizeAgentsFunc = func(manifest *types.IMPLDoc, waveNum int) []string {
+var prioritizeAgentsFunc = func(manifest *protocol.IMPLManifest, waveNum int) []string {
 	// Fallback: return agents in declaration order if scheduler not available yet
 	for _, wave := range manifest.Waves {
 		if wave.Number == waveNum {
 			order := make([]string, len(wave.Agents))
 			for i, a := range wave.Agents {
-				order[i] = a.Letter
+				order[i] = a.ID
 			}
 			return order
 		}
@@ -135,7 +165,7 @@ var prioritizeAgentsFunc = func(manifest *types.IMPLDoc, waveNum int) []string {
 
 // SetPrioritizeAgentsFunc allows pkg/engine to inject the real scheduler implementation
 // without a direct import cycle.
-func SetPrioritizeAgentsFunc(f func(manifest *types.IMPLDoc, waveNum int) []string) {
+func SetPrioritizeAgentsFunc(f func(manifest *protocol.IMPLManifest, waveNum int) []string) {
 	prioritizeAgentsFunc = f
 }
 
@@ -150,6 +180,18 @@ func slicesEqual(a, b []string) bool {
 		}
 	}
 	return true
+}
+
+// agentToSpec converts a protocol.Agent to a types.AgentSpec for the
+// agent.Runner boundary. This adapter prevents cascading changes into pkg/agent
+// which still consumes types.AgentSpec.
+func agentToSpec(a protocol.Agent) types.AgentSpec {
+	return types.AgentSpec{
+		Letter:     a.ID,
+		Prompt:     a.Task,
+		FilesOwned: a.Files,
+		Model:      a.Model,
+	}
 }
 
 // BackendConfig carries backend selection + credentials for newBackendFunc.
@@ -360,7 +402,7 @@ var newRunnerFunc = func(b backend.Backend, wm *worktree.Manager) *agent.Runner 
 // State mutations must go through TransitionTo — never set o.state directly.
 type Orchestrator struct {
 	state          protocol.ProtocolState
-	implDoc        *types.IMPLDoc
+	implDoc        *protocol.IMPLManifest
 	repoPath       string
 	currentWave    int
 	implDocPath    string
@@ -393,12 +435,12 @@ func (o *Orchestrator) publish(ev OrchestratorEvent) {
 // New creates an Orchestrator by loading the IMPL doc at implDocPath.
 // Initial state is ScoutPending.
 func New(repoPath string, implDocPath string) (*Orchestrator, error) {
-	var doc *types.IMPLDoc
+	var doc *protocol.IMPLManifest
 	if implDocPath != "" {
 		var err error
-		doc, err = parseIMPLDocFunc(implDocPath)
+		doc, err = protocol.Load(implDocPath)
 		if err != nil {
-			return nil, fmt.Errorf("orchestrator.New: failed to parse IMPL doc %q: %w", implDocPath, err)
+			return nil, fmt.Errorf("orchestrator.New: %w", err)
 		}
 	}
 	return &Orchestrator{
@@ -409,9 +451,9 @@ func New(repoPath string, implDocPath string) (*Orchestrator, error) {
 	}, nil
 }
 
-// newFromDoc creates an Orchestrator directly from a pre-parsed IMPLDoc.
-// Used in tests to avoid the pkg/protocol dependency.
-func newFromDoc(doc *types.IMPLDoc, repoPath, implDocPath string) *Orchestrator {
+// newFromDoc creates an Orchestrator directly from a pre-parsed IMPLManifest.
+// Used in tests to avoid file I/O.
+func newFromDoc(doc *protocol.IMPLManifest, repoPath, implDocPath string) *Orchestrator {
 	return &Orchestrator{
 		state:       protocol.StateScoutPending,
 		implDoc:     doc,
@@ -426,7 +468,7 @@ func (o *Orchestrator) State() protocol.ProtocolState {
 }
 
 // IMPLDoc returns the parsed IMPL document.
-func (o *Orchestrator) IMPLDoc() *types.IMPLDoc {
+func (o *Orchestrator) IMPLDoc() *protocol.IMPLManifest {
 	return o.implDoc
 }
 
@@ -460,7 +502,7 @@ func (o *Orchestrator) RunWave(waveNum int) error {
 		return fmt.Errorf("orchestrator.RunWave: invariant violation: %w", err)
 	}
 	// Find the wave in the doc.
-	var wave *types.Wave
+	var wave *protocol.Wave
 	for i := range o.implDoc.Waves {
 		if o.implDoc.Waves[i].Number == waveNum {
 			wave = &o.implDoc.Waves[i]
@@ -480,7 +522,7 @@ func (o *Orchestrator) RunWave(waveNum int) error {
 	// Reset per-agent retry counts for this wave run (transient state).
 	implSlug := o.implSlug()
 	for _, a := range wave.Agents {
-		retryCountMap.Delete(fmt.Sprintf("%s:%d:%s", implSlug, waveNum, a.Letter))
+		retryCountMap.Delete(fmt.Sprintf("%s:%d:%s", implSlug, waveNum, a.ID))
 	}
 
 	// Build the worktree manager and default agent runner.
@@ -501,7 +543,7 @@ func (o *Orchestrator) RunWave(waveNum int) error {
 	// Emit SSE event showing reordering (observability).
 	originalOrder := make([]string, len(wave.Agents))
 	for i, a := range wave.Agents {
-		originalOrder[i] = a.Letter
+		originalOrder[i] = a.ID
 	}
 	reordered := !slicesEqual(originalOrder, agentOrder)
 	o.publish(OrchestratorEvent{
@@ -517,12 +559,12 @@ func (o *Orchestrator) RunWave(waveNum int) error {
 
 	// Launch agents in prioritized order instead of declaration order.
 	for _, agentID := range agentOrder {
-		// Find the agent spec by ID
-		var agentSpec types.AgentSpec
+		// Find the protocol.Agent by ID
+		var protoAgent protocol.Agent
 		found := false
 		for _, a := range wave.Agents {
-			if a.Letter == agentID {
-				agentSpec = a
+			if a.ID == agentID {
+				protoAgent = a
 				found = true
 				break
 			}
@@ -530,6 +572,9 @@ func (o *Orchestrator) RunWave(waveNum int) error {
 		if !found {
 			return fmt.Errorf("orchestrator.RunWave: prioritized agent %s not found in wave %d", agentID, waveNum)
 		}
+
+		// Convert protocol.Agent to types.AgentSpec at the boundary
+		agentSpec := agentToSpec(protoAgent)
 
 		eg.Go(func() error {
 			// Build per-agent constraints from the IMPL manifest (I1/I2/I5/I6).
@@ -1025,7 +1070,7 @@ func (o *Orchestrator) RunAgent(waveNum int, agentLetter string, promptPrefix st
 		return fmt.Errorf("orchestrator.RunAgent: no IMPL doc loaded")
 	}
 	// Find the wave.
-	var wave *types.Wave
+	var wave *protocol.Wave
 	for i := range o.implDoc.Waves {
 		if o.implDoc.Waves[i].Number == waveNum {
 			wave = &o.implDoc.Waves[i]
@@ -1036,19 +1081,21 @@ func (o *Orchestrator) RunAgent(waveNum int, agentLetter string, promptPrefix st
 		return fmt.Errorf("orchestrator.RunAgent: wave %d not found", waveNum)
 	}
 	// Find the agent in the wave.
-	var agentSpec *types.AgentSpec
+	var protoAgent *protocol.Agent
 	for i := range wave.Agents {
-		if strings.EqualFold(wave.Agents[i].Letter, agentLetter) {
-			agentSpec = &wave.Agents[i]
+		if strings.EqualFold(wave.Agents[i].ID, agentLetter) {
+			protoAgent = &wave.Agents[i]
 			break
 		}
 	}
-	if agentSpec == nil {
+	if protoAgent == nil {
 		return fmt.Errorf("orchestrator.RunAgent: agent %s not found in wave %d", agentLetter, waveNum)
 	}
 
+	// Convert protocol.Agent to types.AgentSpec at the boundary.
+	spec := agentToSpec(*protoAgent)
+
 	// Apply prompt prefix if provided (e.g. scope hint for timeout reruns).
-	spec := *agentSpec
 	if promptPrefix != "" {
 		spec.Prompt = promptPrefix + "\n\n" + spec.Prompt
 	}
@@ -1087,7 +1134,7 @@ func (o *Orchestrator) RunVerification(testCommand string) error {
 // if no Status section found. Returns error only on file I/O failure.
 func (o *Orchestrator) UpdateIMPLStatus(waveNum int) error {
 	// 1. Find wave in o.implDoc.Waves by waveNum. If not found, return nil.
-	var wave *types.Wave
+	var wave *protocol.Wave
 	for i := range o.implDoc.Waves {
 		if o.implDoc.Waves[i].Number == waveNum {
 			wave = &o.implDoc.Waves[i]
@@ -1106,15 +1153,15 @@ func (o *Orchestrator) UpdateIMPLStatus(waveNum int) error {
 	}
 
 	var completedLetters []string
-	for _, agentSpec := range wave.Agents {
-		report, ok := manifest.CompletionReports[agentSpec.Letter]
+	for _, a := range wave.Agents {
+		report, ok := manifest.CompletionReports[a.ID]
 		if !ok {
 			continue // Report not found
 		}
 		if report.Status != "complete" {
 			continue
 		}
-		completedLetters = append(completedLetters, agentSpec.Letter)
+		completedLetters = append(completedLetters, a.ID)
 	}
 
 	// 4. If no complete agents, return nil.

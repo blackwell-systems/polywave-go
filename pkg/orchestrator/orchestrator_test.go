@@ -3,6 +3,7 @@ package orchestrator
 import (
 	"context"
 	"errors"
+	"os"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -13,25 +14,24 @@ import (
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/agent"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/agent/backend"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/types"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/worktree"
 )
 
 // makeOrch is a helper that returns a fresh Orchestrator backed by an
 // empty IMPLDoc so tests have no pkg/protocol dependency.
 func makeOrch() *Orchestrator {
-	return newFromDoc(&types.IMPLDoc{}, "/repo", "/repo/IMPL.md")
+	return newFromDoc(&protocol.IMPLManifest{}, "/repo", "/repo/IMPL.md")
 }
 
 // makeOrchWithWave returns an Orchestrator whose IMPLDoc contains one wave
 // with the provided agents.
 func makeOrchWithWave(waveNum int, letters ...string) *Orchestrator {
-	agents := make([]types.AgentSpec, len(letters))
+	agents := make([]protocol.Agent, len(letters))
 	for i, l := range letters {
-		agents[i] = types.AgentSpec{Letter: l, Prompt: "do work"}
+		agents[i] = protocol.Agent{ID: l, Task: "do work"}
 	}
-	doc := &types.IMPLDoc{
-		Waves: []types.Wave{
+	doc := &protocol.IMPLManifest{
+		Waves: []protocol.Wave{
 			{Number: waveNum, Agents: agents},
 		},
 	}
@@ -75,13 +75,14 @@ func (f *fakeBackend) Run(_ context.Context, systemPrompt, _, _ string) (string,
 
 // TestOrchestratorNew verifies that New returns a valid orchestrator in ScoutPending state.
 func TestOrchestratorNew(t *testing.T) {
-	orig := parseIMPLDocFunc
-	t.Cleanup(func() { parseIMPLDocFunc = orig })
-	parseIMPLDocFunc = func(_ string) (*types.IMPLDoc, error) {
-		return &types.IMPLDoc{FeatureName: "test"}, nil
+	// New() now calls protocol.Load() directly, so we need a real YAML file.
+	tmpDir := t.TempDir()
+	implPath := filepath.Join(tmpDir, "IMPL-test.yaml")
+	if err := os.WriteFile(implPath, []byte("title: test\nfeature_slug: test-slug\n"), 0644); err != nil {
+		t.Fatalf("failed to write test IMPL: %v", err)
 	}
 
-	o, err := New("/repo", "/repo/IMPL.md")
+	o, err := New("/repo", implPath)
 	if err != nil {
 		t.Fatalf("New returned error: %v", err)
 	}
@@ -91,8 +92,8 @@ func TestOrchestratorNew(t *testing.T) {
 	if o.State() != protocol.StateScoutPending {
 		t.Errorf("initial state = %s, want ScoutPending", o.State())
 	}
-	if o.IMPLDoc().FeatureName != "test" {
-		t.Errorf("FeatureName = %q, want %q", o.IMPLDoc().FeatureName, "test")
+	if o.IMPLDoc().Title != "test" {
+		t.Errorf("Title = %q, want %q", o.IMPLDoc().Title, "test")
 	}
 }
 
@@ -113,13 +114,13 @@ func TestRunWaveNilDoc(t *testing.T) {
 // TestNew_LoadsDoc verifies that New returns a non-nil Orchestrator in
 // ScoutPending state when parseIMPLDocFunc succeeds.
 func TestNew_LoadsDoc(t *testing.T) {
-	orig := parseIMPLDocFunc
-	t.Cleanup(func() { parseIMPLDocFunc = orig })
-	parseIMPLDocFunc = func(_ string) (*types.IMPLDoc, error) {
-		return &types.IMPLDoc{FeatureName: "test"}, nil
+	tmpDir := t.TempDir()
+	implPath := filepath.Join(tmpDir, "IMPL-test.yaml")
+	if err := os.WriteFile(implPath, []byte("title: test\nfeature_slug: test-slug\n"), 0644); err != nil {
+		t.Fatalf("failed to write test IMPL: %v", err)
 	}
 
-	o, err := New("/repo", "/repo/IMPL.md")
+	o, err := New("/repo", implPath)
 	if err != nil {
 		t.Fatalf("New returned error: %v", err)
 	}
@@ -129,8 +130,8 @@ func TestNew_LoadsDoc(t *testing.T) {
 	if o.State() != protocol.StateScoutPending {
 		t.Errorf("initial state = %s, want ScoutPending", o.State())
 	}
-	if o.IMPLDoc().FeatureName != "test" {
-		t.Errorf("FeatureName = %q, want %q", o.IMPLDoc().FeatureName, "test")
+	if o.IMPLDoc().Title != "test" {
+		t.Errorf("Title = %q, want %q", o.IMPLDoc().Title, "test")
 	}
 }
 
@@ -140,7 +141,7 @@ func TestSetValidateInvariantsFunc(t *testing.T) {
 	t.Cleanup(func() { validateInvariantsFunc = orig })
 
 	called := false
-	SetValidateInvariantsFunc(func(_ *types.IMPLDoc) error {
+	SetValidateInvariantsFunc(func(_ *protocol.IMPLManifest) error {
 		called = true
 		return nil
 	})
@@ -248,13 +249,13 @@ func TestRunWave_LaunchesAllAgents(t *testing.T) {
 		return agent.NewRunner(b, wm)
 	}
 
-	doc := &types.IMPLDoc{
-		Waves: []types.Wave{
+	doc := &protocol.IMPLManifest{
+		Waves: []protocol.Wave{
 			{
 				Number: 1,
-				Agents: []types.AgentSpec{
-					{Letter: "A", Prompt: "A"},
-					{Letter: "B", Prompt: "B"},
+				Agents: []protocol.Agent{
+					{ID: "A", Task: "A"},
+					{ID: "B", Task: "B"},
 				},
 			},
 		},
@@ -305,13 +306,13 @@ func TestRunWave_ReturnsErrorOnAgentFailure(t *testing.T) {
 		return agent.NewRunner(b, wm)
 	}
 
-	doc := &types.IMPLDoc{
-		Waves: []types.Wave{
+	doc := &protocol.IMPLManifest{
+		Waves: []protocol.Wave{
 			{
 				Number: 1,
-				Agents: []types.AgentSpec{
-					{Letter: "A", Prompt: "A"},
-					{Letter: "B", Prompt: "B"},
+				Agents: []protocol.Agent{
+					{ID: "A", Task: "A"},
+					{ID: "B", Task: "B"},
 				},
 			},
 		},
@@ -436,9 +437,9 @@ func TestIsValidTransition(t *testing.T) {
 
 // TestNewFromDoc verifies that newFromDoc sets the initial state correctly.
 func TestNewFromDoc(t *testing.T) {
-	doc := &types.IMPLDoc{
-		FeatureName: "test-feature",
-		Status:      "pending",
+	doc := &protocol.IMPLManifest{
+		Title:       "test-feature",
+		FeatureSlug: "test-feature",
 	}
 	o := newFromDoc(doc, "/some/repo", "/some/repo/IMPL.md")
 
@@ -665,12 +666,12 @@ func TestLaunchAgent_PollsWorktreeIMPLDoc(t *testing.T) {
 		return agent.NewRunner(b, wm)
 	}
 
-	doc := &types.IMPLDoc{
-		Waves: []types.Wave{
+	doc := &protocol.IMPLManifest{
+		Waves: []protocol.Wave{
 			{
 				Number: 1,
-				Agents: []types.AgentSpec{
-					{Letter: "A", Prompt: "do work"},
+				Agents: []protocol.Agent{
+					{ID: "A", Task: "do work"},
 				},
 			},
 		},
@@ -728,12 +729,12 @@ func TestLaunchAgentE23FallbackOnExtractError(t *testing.T) {
 	// IMPL doc path does not exist, so ExtractAgentContext will fail.
 	// The agent should still run with its original prompt (fallback).
 	const originalPrompt = "original agent prompt"
-	doc := &types.IMPLDoc{
-		Waves: []types.Wave{
+	doc := &protocol.IMPLManifest{
+		Waves: []protocol.Wave{
 			{
 				Number: 1,
-				Agents: []types.AgentSpec{
-					{Letter: "Z", Prompt: originalPrompt},
+				Agents: []protocol.Agent{
+					{ID: "Z", Task: originalPrompt},
 				},
 			},
 		},
@@ -1049,7 +1050,7 @@ func TestRunWave_AgentPrioritization(t *testing.T) {
 	var prioritizeCalled atomic.Bool
 	var prioritizeWaveNum atomic.Int32
 
-	prioritizeAgentsFunc = func(manifest *types.IMPLDoc, waveNum int) []string {
+	prioritizeAgentsFunc = func(_ *protocol.IMPLManifest, waveNum int) []string {
 		prioritizeCalled.Store(true)
 		prioritizeWaveNum.Store(int32(waveNum))
 		// Return prioritized order (reversed for testing)
@@ -1122,7 +1123,7 @@ func TestRunWave_AgentPrioritizedEvent(t *testing.T) {
 	}
 
 	// Mock prioritization: reverse the agent order
-	prioritizeAgentsFunc = func(manifest *types.IMPLDoc, waveNum int) []string {
+	prioritizeAgentsFunc = func(_ *protocol.IMPLManifest, _ int) []string {
 		return []string{"C", "B", "A"}
 	}
 
