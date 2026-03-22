@@ -10,12 +10,43 @@ import (
 
 func newCleanupCmd() *cobra.Command {
 	var waveNum int
+	var slugFlag string
+	var allStale bool
+	var force bool
 
 	cmd := &cobra.Command{
-		Use:   "cleanup <manifest-path>",
+		Use:   "cleanup [manifest-path]",
 		Short: "Remove worktrees and branches after merge",
-		Args:  cobra.ExactArgs(1),
+		Args:  cobra.RangeArgs(0, 1),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if slugFlag != "" && allStale {
+				return fmt.Errorf("--slug and --all-stale are mutually exclusive")
+			}
+
+			if slugFlag != "" {
+				result, err := protocol.CleanupBySlug(repoDir, slugFlag, force)
+				if err != nil {
+					return fmt.Errorf("cleanup-by-slug: %w", err)
+				}
+				out, _ := json.MarshalIndent(result, "", "  ")
+				fmt.Println(string(out))
+				return nil
+			}
+
+			if allStale {
+				result, err := protocol.CleanupAllStale(repoDir, force)
+				if err != nil {
+					return fmt.Errorf("cleanup-all-stale: %w", err)
+				}
+				out, _ := json.MarshalIndent(result, "", "  ")
+				fmt.Println(string(out))
+				return nil
+			}
+
+			// Default path: manifest-based cleanup
+			if len(args) == 0 {
+				return fmt.Errorf("manifest-path is required when --slug and --all-stale are not set")
+			}
 			manifestPath := args[0]
 
 			result, err := protocol.Cleanup(manifestPath, waveNum, repoDir)
@@ -29,8 +60,10 @@ func newCleanupCmd() *cobra.Command {
 		},
 	}
 
-	cmd.Flags().IntVar(&waveNum, "wave", 0, "Wave number (required)")
-	_ = cmd.MarkFlagRequired("wave")
+	cmd.Flags().IntVar(&waveNum, "wave", 0, "Wave number (required for manifest-based cleanup)")
+	cmd.Flags().StringVar(&slugFlag, "slug", "", "Clean up worktrees from a specific IMPL slug (no manifest required)")
+	cmd.Flags().BoolVar(&allStale, "all-stale", false, "Clean all stale worktrees across all slugs (no manifest required)")
+	cmd.Flags().BoolVar(&force, "force", false, "Skip safety checks for uncommitted changes")
 
 	return cmd
 }
