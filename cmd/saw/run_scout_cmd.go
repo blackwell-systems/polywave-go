@@ -122,8 +122,19 @@ Output:
 				ProgramManifestPath: programManifestPath,
 			}
 
-			// Launch Scout agent (streaming output to stdout)
-			scoutErr := engine.RunScout(ctx, opts, func(chunk string) {
+			// Launch Scout agent with correction loop (C9: self-healing validation)
+			correctionOpts := engine.ScoutCorrectionOpts{
+				ScoutOpts:  opts,
+				MaxRetries: 3,
+				OnRetry: func(attempt int, errors []string) {
+					fmt.Printf("\nIMPL validation failed (attempt %d), retrying with corrections...\n", attempt)
+					for _, e := range errors {
+						fmt.Printf("   - %s\n", e)
+					}
+					fmt.Println()
+				},
+			}
+			scoutErr := engine.ScoutCorrectionLoop(ctx, correctionOpts, func(chunk string) {
 				fmt.Print(chunk)
 			})
 
