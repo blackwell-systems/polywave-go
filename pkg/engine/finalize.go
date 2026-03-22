@@ -16,10 +16,11 @@ import (
 
 // FinalizeWaveOpts configures a full post-agent finalization pipeline.
 type FinalizeWaveOpts struct {
-	IMPLPath   string                 // absolute path to IMPL manifest
-	RepoPath   string                 // absolute path to the target repository
-	WaveNum    int                    // wave number to finalize
-	ObsEmitter *observability.Emitter // optional: non-blocking observability emitter
+	IMPLPath    string                 // absolute path to IMPL manifest
+	RepoPath    string                 // absolute path to the target repository
+	WaveNum     int                    // wave number to finalize
+	MergeTarget string                 // target branch for merge; empty = HEAD (default)
+	ObsEmitter  *observability.Emitter // optional: non-blocking observability emitter
 }
 
 // FinalizeWaveResult combines all post-agent verification, merge, and cleanup results.
@@ -128,7 +129,7 @@ func FinalizeWave(ctx context.Context, opts FinalizeWaveOpts) (*FinalizeWaveResu
 	}
 
 	// Step 4: MergeAgents
-	mergeResult, err := protocol.MergeAgents(opts.IMPLPath, opts.WaveNum, opts.RepoPath)
+	mergeResult, err := protocol.MergeAgents(opts.IMPLPath, opts.WaveNum, opts.RepoPath, opts.MergeTarget)
 	if err != nil {
 		return result, fmt.Errorf("engine.FinalizeWave: merge-agents: %w", err)
 	}
