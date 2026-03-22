@@ -77,6 +77,11 @@ func main() {
 		newCheckIMPLConflictsCmd(),
 		newFinalizeTierCmd(),
 		newCheckProgramConflictsCmd(),
+		// C7: Previously unregistered commands
+		newPreWaveGateCmd(),
+		newQueueCmd(),
+		newUpdateProgramImplCmd(),
+		newUpdateProgramStateCmd(),
 	)
 	if err := rootCmd.Execute(); err != nil {
 		fmt.Fprintln(os.Stderr, err)
