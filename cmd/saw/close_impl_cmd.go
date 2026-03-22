@@ -65,7 +65,7 @@ Examples:
 			if contextErr != nil {
 				fmt.Fprintf(os.Stderr, "close-impl: update-context warning: %v\n", contextErr)
 			} else {
-				fmt.Fprintf(os.Stderr, "close-impl: updated %s\n", contextPath)
+				fmt.Fprintf(os.Stderr, "close-impl: updated %s\n", contextPath.ContextPath)
 			}
 
 			// Step 4: Clean stale worktrees
