@@ -12,6 +12,7 @@ type RunWaveFullOpts struct {
 	ManifestPath string // path to IMPL manifest file
 	RepoPath     string // absolute path to the repository
 	WaveNum      int    // wave number to execute
+	MergeTarget  string // target branch for merge; empty = HEAD (default)
 }
 
 // RunWaveFullResult captures the results of all wave lifecycle steps.
@@ -61,7 +62,7 @@ func RunWaveFull(ctx context.Context, opts RunWaveFullOpts) (*RunWaveFullResult,
 	}
 
 	// Step 4: Merge agent branches into main
-	ma, err := protocol.MergeAgents(opts.ManifestPath, opts.WaveNum, opts.RepoPath)
+	ma, err := protocol.MergeAgents(opts.ManifestPath, opts.WaveNum, opts.RepoPath, opts.MergeTarget)
 	if err != nil {
 		return result, fmt.Errorf("merge agents: %w", err)
 	}
