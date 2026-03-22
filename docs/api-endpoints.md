@@ -1,6 +1,8 @@
 # API Endpoints
 
 > **Note:** The HTTP API is implemented in [scout-and-wave-web](https://github.com/blackwell-systems/scout-and-wave-web), which imports the engine (`scout-and-wave-go`) as a library. This document describes the full API surface.
+>
+> **Endpoint count:** 107 registered routes (verified 2026-03-22 against `scout-and-wave-web` source).
 
 ## Base URL
 
@@ -43,9 +45,16 @@ Global SSE stream for server-wide state changes (IMPL list updates, config chang
 **Events:**
 - `connected` — Initial heartbeat on connection (`data: {}`)
 - `impl_list_updated` — IMPL directory changed (file created/renamed/removed, execution started/stopped)
+- `impl_updated` — IMPL doc content changed (critic fix applied, amend, etc.)
 - `program_list_updated` — Program manifest created or updated (`data: {"slug":"..."}`)
 - `pipeline_updated` — Pipeline state changed
+- `critic_review_started` — Critic review kicked off (`data: {"slug":"..."}`)
 - `critic_review_complete` — Critic review written (`data: {"slug":"...","result":{...}}`)
+- `critic_review_failed` — Critic review failed (`data: {"slug":"...","error":"..."}`)
+- `critic_output` — Streaming critic subprocess output (`data: {"slug":"...","chunk":"..."}`)
+- `critic_autofix_started` — Auto-fix critic started (`data: {"slug":"..."}`)
+- `critic_autofix_complete` — Auto-fix critic finished (`data: {"slug":"...","dry_run":bool,"all_resolved":bool}`)
+- `stale_worktrees_cleaned` — Background stale cleanup ran (`data: {"count":N,"repos":[...]}`)
 - `program_*` — All program lifecycle events are also broadcast here
 
 **Keepalive:** `: ping` comment every 30 seconds.
@@ -164,6 +173,23 @@ SSE stream for daemon lifecycle events.
 - `daemon_stopped` — `{"running":false}`
 
 **Replay:** Recent events (up to 100) are replayed on connect.
+
+---
+
+### `GET /api/interview/{runID}/events`
+
+SSE stream for an interview session.
+
+**Path params:**
+- `runID` (string) — Run ID returned by `POST /api/interview/start`
+
+**Events:**
+- `question` — `{"phase":"...","question_num":N,"max_questions":N,"text":"...","hint":"..."}`
+- `answer_recorded` — `{"status":"recorded"}`
+- `complete` — `{"requirements_path":"...","slug":"..."}`
+- `error` — `{"message":"..."}`
+
+**Keepalive:** `: ping` every 30 seconds.
 
 ---
 
@@ -406,6 +432,145 @@ Trigger an async critic review via `sawtools run-critic`.
 **Response:** `202 Accepted`
 
 Publishes `critic_review_complete` via global SSE when done.
+
+---
+
+### `PATCH /api/impl/{slug}/fix-critic`
+
+Apply a single manual fix to an IMPL based on a critic issue. Re-validates after applying the fix.
+
+**Request:**
+```json
+{
+  "type": "add_file_ownership",
+  "agent_id": "A",
+  "wave": 1,
+  "file": "src/auth.go",
+  "action": "modify",
+  "contract_name": "",
+  "old_symbol": "",
+  "new_symbol": ""
+}
+```
+
+- `type` (string, required) — `"add_file_ownership"` | `"update_contract"` | `"add_integration_connector"`
+- `agent_id` (string) — Required for `add_file_ownership`
+- `wave` (int) — Wave number for file ownership
+- `file` (string) — Required for `add_file_ownership` and `add_integration_connector`
+- `action` (string) — File action (default: `"modify"`)
+- `contract_name` (string) — Required for `update_contract`
+- `old_symbol`, `new_symbol` (string) — Required for `update_contract`
+
+**Response:** `200 OK` — Updated `protocol.CriticResult` JSON (or `null` if no review exists)
+
+Emits `impl_updated` SSE event.
+
+**Errors:** `400` invalid fix type or missing required fields, `404` IMPL not found.
+
+---
+
+### `POST /api/impl/{slug}/auto-fix-critic`
+
+Automatically fix all auto-fixable critic issues, re-validate, and re-run the critic.
+
+**Request (optional):**
+```json
+{ "dry_run": false }
+```
+
+- `dry_run` (bool, optional) — If true, return planned fixes without applying them
+
+**Response:** `200 OK`
+```json
+{
+  "fixes_applied": [
+    { "check": "file_existence", "agent_id": "A", "description": "added file ownership for src/auth.go to agent A" }
+  ],
+  "fixes_failed": [
+    { "check": "interface_completeness", "agent_id": "B", "reason": "no auto-fix available" }
+  ],
+  "new_result": { "...critic result..." },
+  "all_resolved": false
+}
+```
+
+- `new_result` is `null` when `dry_run` is true
+
+Emits `critic_autofix_started` and `critic_autofix_complete` SSE events.
+
+**Errors:** `400` no critic report exists, `404` IMPL not found.
+
+---
+
+### `GET /api/impl/{slug}/validate-integration`
+
+Run E25 integration validation for a wave.
+
+**Query params:**
+- `wave` (int, required) — Wave number (>= 1)
+
+**Response:** `200 OK`
+```json
+{
+  "valid": true,
+  "wave": 1,
+  "gaps": []
+}
+```
+
+**Errors:** `400` missing or invalid wave, `404` IMPL not found, `500` on validation failure.
+
+---
+
+### `GET /api/impl/{slug}/validate-wiring`
+
+Run E35 wiring declaration validation.
+
+**Response:** `200 OK`
+```json
+{
+  "valid": true,
+  "gaps": []
+}
+```
+
+**Errors:** `404` IMPL not found, `500` on validation failure.
+
+---
+
+### `POST /api/impl/import`
+
+Bulk import IMPL docs into a PROGRAM manifest. Creates the manifest if it does not exist.
+
+**Request:**
+```json
+{
+  "program_slug": "ecommerce",
+  "impl_paths": ["/abs/path/docs/IMPL/IMPL-my-feature.yaml"],
+  "tier_map": { "my-feature": 1 },
+  "discover": false,
+  "repo_dir": ""
+}
+```
+
+- `program_slug` (string, required) — Target PROGRAM slug
+- `impl_paths` ([]string) — Absolute paths to IMPL YAML files
+- `tier_map` (map[string]int, optional) — Slug-to-tier assignments (default: tier 1)
+- `discover` (bool, optional) — Auto-discover IMPLs from `docs/IMPL/` and `docs/IMPL/complete/`
+- `repo_dir` (string, optional) — Override repo path
+
+**Response:** `200 OK`
+```json
+{
+  "program_path": "/abs/path/docs/PROGRAM-ecommerce.yaml",
+  "imported": ["my-feature"],
+  "skipped": ["already-present"]
+}
+```
+
+Emits `program_list_updated` SSE event.
+
+**Errors:** `400` missing program_slug or empty impl_paths (without discover).
 
 ---
 
@@ -981,6 +1146,29 @@ Batch delete worktrees and branches.
 
 ---
 
+### `POST /api/worktrees/cleanup-stale`
+
+Manually trigger stale worktree cleanup across all configured repos. Detects and removes worktrees for completed IMPLs, orphaned branches, and merged-but-not-cleaned branches.
+
+**Response:** `200 OK`
+```json
+{
+  "total_cleaned": 3,
+  "repos": [
+    {
+      "repo": "my-project",
+      "cleaned": [{ "worktree_path": "...", "branch": "...", "reason": "completed_impl" }],
+      "skipped": [],
+      "errors": []
+    }
+  ]
+}
+```
+
+Emits `stale_worktrees_cleaned` SSE event if any worktrees were cleaned.
+
+---
+
 ## Manifest
 
 ### `GET /api/manifest/{slug}`
@@ -1040,6 +1228,57 @@ Set the completion report for an agent and save the manifest.
 ```json
 { "status": "ok" }
 ```
+
+---
+
+## Interview
+
+### `POST /api/interview/start`
+
+Start a deterministic interview session to refine a feature description into structured requirements.
+
+**Request:**
+```json
+{
+  "description": "Add user authentication to the API",
+  "max_questions": 18,
+  "project_path": ""
+}
+```
+
+- `description` (string, required) — Feature description to interview about
+- `max_questions` (int, optional, default 18) — Maximum number of questions
+- `project_path` (string, optional) — Override project/docs directory
+
+**Response:** `202 Accepted`
+```json
+{ "run_id": "interview-1234567890" }
+```
+
+Subscribe to `GET /api/interview/{runID}/events` for questions and completion.
+
+---
+
+### `POST /api/interview/{runID}/answer`
+
+Submit an answer to the current interview question.
+
+**Request:**
+```json
+{ "answer": "We need JWT-based auth with refresh tokens" }
+```
+
+**Response:** `204 No Content`
+
+**Errors:** `400` empty answer, `404` interview not found, `409` interview not ready to accept answers.
+
+---
+
+### `POST /api/interview/{runID}/cancel`
+
+Cancel a running interview session.
+
+**Response:** `204 No Content` (idempotent — returns 204 even if already gone)
 
 ---
 
@@ -1391,6 +1630,54 @@ Launch the Planner agent to revise the PROGRAM manifest.
 
 ---
 
+### `POST /api/programs/analyze-impls`
+
+Analyze a set of IMPL docs for file ownership conflicts.
+
+**Request:**
+```json
+{
+  "slugs": ["feature-a", "feature-b"],
+  "repo_path": ""
+}
+```
+
+- `slugs` ([]string, required, min 2) — IMPL slugs to analyze
+- `repo_path` (string, optional) — Override repo path
+
+**Response:** `200 OK` — Conflict analysis report JSON.
+
+**Errors:** `400` fewer than 2 slugs.
+
+---
+
+### `POST /api/programs/create-from-impls`
+
+Generate a PROGRAM manifest from existing IMPL docs.
+
+**Request:**
+```json
+{
+  "slugs": ["feature-a", "feature-b"],
+  "name": "My Program",
+  "program_slug": "my-program",
+  "repo_path": ""
+}
+```
+
+- `slugs` ([]string, required, min 1) — IMPL slugs to include
+- `name` (string, optional) — Program display name
+- `program_slug` (string, optional) — Program slug (auto-generated if omitted)
+- `repo_path` (string, optional) — Override repo path
+
+**Response:** `200 OK` — Generated program result JSON.
+
+Emits `program_list_updated` SSE event.
+
+**Errors:** `400` empty slugs.
+
+---
+
 ## Autonomy / Pipeline
 
 ### `GET /api/pipeline`
@@ -1543,6 +1830,85 @@ Get current daemon state.
 ```json
 { "running": false }
 ```
+
+---
+
+## Observability
+
+### `GET /api/observability/metrics/{impl_slug}`
+
+Get aggregated metrics for an IMPL (cost, duration, success rates, retries).
+
+**Path params:**
+- `impl_slug` (string)
+
+**Response:** `200 OK` — `observability.IMPLMetrics` JSON.
+
+**Errors:** `400` missing slug, `500` if store not configured or query fails.
+
+---
+
+### `GET /api/observability/metrics/program/{program_slug}`
+
+Get aggregated metrics for a PROGRAM (rolled up across all its IMPLs).
+
+**Path params:**
+- `program_slug` (string)
+
+**Response:** `200 OK` — `observability.ProgramSummary` JSON.
+
+**Errors:** `400` missing slug, `500` if store not configured or query fails.
+
+---
+
+### `GET /api/observability/events`
+
+Query raw observability events with filtering and pagination.
+
+**Query params:**
+- `type` (string, optional) — Comma-separated event types
+- `impl` (string, optional) — Comma-separated IMPL slugs
+- `program` (string, optional) — Comma-separated program slugs
+- `agent` (string, optional) — Comma-separated agent IDs
+- `start_time` (string, optional) — RFC 3339 timestamp
+- `end_time` (string, optional) — RFC 3339 timestamp
+- `limit` (int, optional, default 100) — Max events to return
+- `offset` (int, optional) — Pagination offset
+
+**Response:** `200 OK` — `[]observability.Event` JSON array.
+
+**Errors:** `400` invalid filter params, `500` if store not configured.
+
+---
+
+### `GET /api/observability/rollup`
+
+Compute aggregated rollups (cost, success rate, retry count) with grouping.
+
+**Query params:**
+- `type` (string, required) — `"cost"` | `"success_rate"` | `"retry"`
+- `group_by` (string, optional) — Comma-separated grouping keys
+- `impl` (string, optional) — Filter by IMPL slug
+- `program` (string, optional) — Filter by program slug
+- `start_time` (string, optional) — RFC 3339 timestamp
+- `end_time` (string, optional) — RFC 3339 timestamp
+
+**Response:** `200 OK` — `observability.RollupResult` JSON.
+
+**Errors:** `400` missing or invalid type, `500` if store not configured.
+
+---
+
+### `GET /api/observability/cost-breakdown/{impl_slug}`
+
+Get per-agent and per-wave cost breakdown for an IMPL.
+
+**Path params:**
+- `impl_slug` (string)
+
+**Response:** `200 OK` — `observability.CostBreakdown` JSON.
+
+**Errors:** `400` missing slug, `500` if store not configured or query fails.
 
 ---
 

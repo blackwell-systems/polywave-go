@@ -44,6 +44,14 @@ GET /api/planner/{runID}/events
 
 Streams Planner agent output for a specific planner run.
 
+### Per-Run Interview Events
+
+```
+GET /api/interview/{runID}/events
+```
+
+Streams interview question/answer events for a specific interview session.
+
 ### Global Events
 
 ```
@@ -59,6 +67,14 @@ GET /api/program/events
 ```
 
 Filtered view of global events — only forwards events with the `program_` prefix. Sends an initial `connected` event as a heartbeat.
+
+### Daemon Events
+
+```
+GET /api/daemon/events
+```
+
+Streams daemon lifecycle events. Replays recent buffered events on connect. Sends an initial `connected` event as a heartbeat.
 
 ## Event Format
 
@@ -977,7 +993,7 @@ Resume operation finished.
 
 ### Scaffold Events
 
-**Emitted by:** Engine (`pkg/engine/runner.go`)
+**Emitted by:** Engine (`pkg/engine/runner.go`) and Web API (`scaffold_handler.go`)
 **SSE endpoint:** `/api/wave/{slug}/events`
 
 #### `scaffold_started`
@@ -1282,10 +1298,72 @@ Planner agent was cancelled by the user.
 
 ---
 
+### Interview Events
+
+**Emitted by:** Web API (`interview_handlers.go`)
+**SSE endpoint:** `/api/interview/{runID}/events`
+
+#### `question`
+
+A new interview question is ready for the user.
+
+```json
+{
+  "phase": "discovery",
+  "question_num": 1,
+  "max_questions": 10,
+  "text": "What problem does this feature solve?",
+  "hint": "Describe the user pain point"
+}
+```
+
+Payload struct: `api.InterviewQuestionEvent`
+
+| Field        | Type   | JSON             |
+|--------------|--------|------------------|
+| Phase        | string | `phase`          |
+| QuestionNum  | int    | `question_num`   |
+| MaxQuestions | int    | `max_questions`  |
+| Text         | string | `text`           |
+| Hint         | string | `hint`           |
+
+#### `answer_recorded`
+
+User's answer was successfully recorded.
+
+```json
+{
+  "status": "recorded"
+}
+```
+
+#### `complete`
+
+Interview finished. All questions answered.
+
+```json
+{
+  "requirements_path": "/path/to/requirements.md",
+  "slug": "my-feature"
+}
+```
+
+#### `error`
+
+Interview error or cancellation.
+
+```json
+{
+  "message": "interview cancelled"
+}
+```
+
+---
+
 ### Program Events
 
-**Emitted by:** Web API (`program_runner.go`, `program_handler.go`)
-**SSE endpoint:** `/api/wave/{slug}/events` and `/api/program/events` (global)
+**Emitted by:** Web API (`program_runner.go`, `program_handler.go`, `pkg/service/program_service.go`)
+**SSE endpoint:** `/api/wave/{slug}/events`, `/api/program/events` (global), and `/api/events` (global)
 
 #### `program_tier_started`
 
@@ -1368,6 +1446,26 @@ A program tier failed.
 }
 ```
 
+#### `program_complete`
+
+All tiers in the program completed successfully.
+
+```json
+{
+  "program_slug": "my-project"
+}
+```
+
+Engine-emitted variant (via `orchestrator.ProgramCompletePayload`):
+
+```json
+{
+  "total_tiers": 3,
+  "total_impls": 8,
+  "final_state": "complete"
+}
+```
+
 #### `program_blocked`
 
 Program execution is blocked (IMPL not found, gate failure, contract freeze failure, shutdown, etc.).
@@ -1415,6 +1513,43 @@ Program replan failed.
 
 ---
 
+### IMPL Branch Events (E28)
+
+**Emitted by:** Web API (`program_handler.go`)
+**SSE endpoint:** `/api/events` (global)
+
+These events track IMPL branch lifecycle during program-tier execution.
+Each IMPL in a tier runs on an isolated branch; waves merge to that branch
+instead of main. The branch is merged to main after all waves complete.
+
+#### `impl_branch_created`
+
+An IMPL branch was created for program-tier execution.
+
+```json
+{
+  "program_slug": "my-project",
+  "tier": 1,
+  "impl_slug": "add-auth",
+  "branch": "saw/program/my-project/tier1/add-auth"
+}
+```
+
+#### `impl_branch_merged`
+
+An IMPL branch was merged back to main after successful completion.
+
+```json
+{
+  "program_slug": "my-project",
+  "tier": 1,
+  "impl_slug": "add-auth",
+  "branch": "saw/program/my-project/tier1/add-auth"
+}
+```
+
+---
+
 ### Queue Events
 
 **Emitted by:** Engine (`pkg/engine/queue_advance.go`)
@@ -1442,6 +1577,86 @@ Payload struct: `engine.CheckQueueResult`
 | Reason    | string | `reason`     |
 
 **Reason values:** `no_items`, `deps_unmet`, `autonomy_blocked`, `triggered`
+
+---
+
+### Critic Events
+
+**Emitted by:** Web API (`critic_handler.go`)
+**SSE endpoint:** `/api/events` (global)
+
+#### `critic_review_started`
+
+Critic review process initiated for an IMPL.
+
+```json
+{
+  "slug": "my-feature"
+}
+```
+
+#### `critic_output`
+
+Streaming text output from the critic process.
+
+```json
+{
+  "slug": "my-feature",
+  "chunk": "Analyzing IMPL structure...\n"
+}
+```
+
+#### `critic_review_complete`
+
+Critic review (E37) completed for an IMPL.
+
+```json
+{
+  "slug": "my-feature",
+  "result": { ... }
+}
+```
+
+#### `critic_review_failed`
+
+Critic review failed.
+
+```json
+{
+  "slug": "my-feature",
+  "error": "critic timed out after 5 minutes"
+}
+```
+
+---
+
+### Daemon Events
+
+**Emitted by:** Web API (`daemon_handler.go`)
+**SSE endpoint:** `/api/daemon/events`
+
+#### `daemon_event`
+
+A daemon lifecycle event (IMPL started, completed, queue checked, etc.). Payload is `engine.Event`.
+
+```json
+{
+  "type": "impl_started",
+  "slug": "add-auth",
+  "timestamp": "2026-03-22T10:00:00Z",
+  "message": "Starting IMPL execution"
+}
+```
+
+#### `daemon_stopped`
+
+The daemon process stopped. Payload is `engine.DaemonState`.
+
+```json
+{
+  "running": false
+}
+```
 
 ---
 
@@ -1515,16 +1730,26 @@ Payload struct: `api.NotificationEvent`
 
 **Severity values:** `info`, `success`, `warning`, `error`
 
-#### `critic_review_complete`
+---
 
-Critic review (E37) completed for an IMPL.
+## Engine Event Types (Orchestrator)
 
-```json
-{
-  "slug": "my-feature",
-  "result": { ... }
-}
-```
+The engine/orchestrator defines additional event types in `pkg/orchestrator/events.go` that are emitted via `OrchestratorEvent` structs during program-level tier execution. These are consumed by the web API's engine event bridge and mapped to SSE events. The following are defined as constants but emitted by the engine tier loop (not the web API directly):
+
+| Constant                          | Event String                  | Payload Struct                        |
+|-----------------------------------|-------------------------------|---------------------------------------|
+| `EventProgramTierStarted`        | `program_tier_started`        | `ProgramTierStartedPayload`           |
+| `EventProgramScoutLaunched`      | `program_scout_launched`      | `ProgramScoutLaunchedPayload`         |
+| `EventProgramScoutComplete`      | `program_scout_complete`      | `ProgramScoutCompletePayload`         |
+| `EventProgramIMPLComplete`       | `program_impl_complete`       | `ProgramIMPLCompletePayload`          |
+| `EventProgramTierGateStarted`    | `program_tier_gate_started`   | `ProgramTierGateStartedPayload`       |
+| `EventProgramTierGateResult`     | `program_tier_gate_result`    | `ProgramTierGateResultPayload`        |
+| `EventProgramContractsFrozen`    | `program_contracts_frozen`    | `ProgramContractsFrozenPayload`       |
+| `EventProgramTierAdvanced`       | `program_tier_advanced`       | `ProgramTierAdvancedPayload`          |
+| `EventProgramReplanTriggered`    | `program_replan_triggered`    | `ProgramReplanTriggeredPayload`       |
+| `EventProgramComplete`           | `program_complete`            | `ProgramCompletePayload`              |
+
+Note: The web API emits its own versions of some program events (e.g. `program_tier_started`, `program_impl_complete`) with slightly different payloads. The engine versions include richer metadata (e.g. `ProgramTierStartedPayload` includes `total_tiers` and `impls` fields). Which version a client receives depends on whether the execution is driven by the web API's `program_runner.go` or the engine's `RunTierLoop`.
 
 ---
 
@@ -1534,7 +1759,7 @@ Critic review (E37) completed for an IMPL.
 
 **Implementation:** `pkg/api/wave.go` — `sseBroker` type
 
-The per-slug broker manages SSE subscriptions keyed by slug (or broker key like `"scout-{runID}"`, `"chat-{runID}"`, `"revise-{runID}"`, `"planner-{runID}"`). Each slug has a list of subscriber channels. Events are published with non-blocking sends; slow clients have events dropped.
+The per-slug broker manages SSE subscriptions keyed by slug (or broker key like `"scout-{runID}"`, `"chat-{runID}"`, `"revise-{runID}"`, `"planner-{runID}"`, `"interview-{runID}"`). Each slug has a list of subscriber channels. Events are published with non-blocking sends; slow clients have events dropped.
 
 Agent lifecycle events (`agent_started`, `agent_complete`, `agent_failed`, `auto_retry_started`, `auto_retry_exhausted`) are cached in an `agentSnapshot` map so late-connecting clients (e.g. page reload mid-execution) receive a snapshot of current agent states on connect.
 
@@ -1547,6 +1772,12 @@ The global broker broadcasts events to all connected clients. Supports two forma
 - `broadcastJSON(eventType, data)` — event with JSON payload
 
 A filesystem watcher (`fsnotify`) monitors IMPL directories across all configured repos and broadcasts `impl_list_updated` when `.yaml` files are created, renamed, or removed.
+
+### Daemon Event Broker
+
+**Implementation:** `pkg/api/daemon_handler.go` — `daemonEventBroker` type
+
+Separate broker for daemon events. Buffers the last 100 events and replays them to newly-connected clients.
 
 ### Engine Event Bridge
 
@@ -1594,5 +1825,19 @@ globalEvents.addEventListener('impl_list_updated', () => {
 globalEvents.addEventListener('notification', (e) => {
   const data = JSON.parse(e.data)
   showToast(data.title, data.message, data.severity)
+})
+
+// Daemon events
+const daemonEvents = new EventSource('/api/daemon/events')
+daemonEvents.addEventListener('daemon_event', (e) => {
+  const data = JSON.parse(e.data)
+  console.log(data.type, data.message)
+})
+
+// Interview events
+const interviewEvents = new EventSource('/api/interview/interview-123/events')
+interviewEvents.addEventListener('question', (e) => {
+  const data = JSON.parse(e.data)
+  showQuestion(data.text, data.hint)
 })
 ```
