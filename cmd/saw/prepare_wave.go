@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/blackwell-systems/scout-and-wave-go/internal/git"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/collision"
@@ -314,6 +315,24 @@ waves that execute on the main branch.`,
 				fmt.Fprintln(cmd.OutOrStdout(), string(out))
 				return fmt.Errorf("prepare-wave: type collisions detected — resolve before creating worktrees")
 			}
+
+			// Step 0h: Pre-wave readiness gate (C7 — manifest-level readiness checks)
+			// Runs protocol.PreWaveGate() inline so prepare-wave automatically validates
+			// manifest readiness before creating worktrees.
+			gateResult := protocol.PreWaveGate(doc)
+			if !gateResult.Ready {
+				out, _ := json.MarshalIndent(gateResult, "", "  ")
+				fmt.Fprintln(cmd.OutOrStdout(), string(out))
+				// Collect failed check names for error message
+				var failedChecks []string
+				for _, check := range gateResult.Checks {
+					if check.Status == "fail" {
+						failedChecks = append(failedChecks, check.Name)
+					}
+				}
+				return fmt.Errorf("pre-wave gate failed: checks failed: %s", strings.Join(failedChecks, ", "))
+			}
+			fmt.Fprintf(os.Stderr, "prepare-wave: pre-wave gate passed ✓\n")
 
 			// Step 1: Create worktrees (records base commit, must happen first)
 			worktreeResult, err := protocol.CreateWorktrees(manifestPath, waveNum, projectRoot)
