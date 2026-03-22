@@ -164,3 +164,5 @@ type BackendConfig struct {
   - IMPL doc: docs/IMPL/complete/IMPL-determinism-enforcement.yaml
 - **protocol-conformity-gaps**: completed 2026-03-21, 2 waves, 6 agents
   - IMPL doc: docs/IMPL/complete/IMPL-protocol-conformity-gaps.yaml
+- **orchestrator-ergonomics**: completed 2026-03-21, 2 waves, 4 agents
+  - IMPL doc: docs/IMPL/complete/IMPL-orchestrator-ergonomics.yaml

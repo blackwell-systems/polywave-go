@@ -1,0 +1,629 @@
+completion_date: "2026-03-21"
+title: Orchestrator Ergonomics Improvements
+feature_slug: orchestrator-ergonomics
+verdict: SUITABLE
+suitability_assessment: |
+    1. File decomposition: 3 distinct work items map to 3 agents with disjoint file
+       ownership. Item 1 (pre-wave-gate) creates new files. Items 2 and 3 modify
+       separate existing files (cleanup-stale vs cleanup commands and their protocol
+       functions). No file conflicts within a wave.
+
+    2. No investigation needed — all items are well-specified with clear acceptance
+       criteria and JSON output shapes.
+
+    3. Interface contracts are discoverable: pre-wave-gate returns structured JSON,
+       cleanup-stale gets new flags, cleanup gets new flags. All signatures can be
+       defined upfront.
+
+    4. Pre-implementation status:
+       - pre-wave-gate: TODO (no existing command)
+       - cleanup-stale --slug/--all: TODO (command exists but lacks these flags)
+       - cleanup --slug/--all-stale: TODO (command exists but lacks these flags)
+       - prepare_wave.go already has same-slug stale cleanup wired in (lines 149-164)
+
+    5. Parallelization value: High. 3 independent agents in wave 1 (Go build/test
+       cycle >30s), each touching 2-4 files. Single wave = maximum parallelism.
+
+    Estimated times:
+    - Scout phase: ~8 min
+    - Agent execution: ~10 min (3 agents x 8 min avg, parallel)
+    - Merge & verification: ~3 min
+    Total SAW time: ~21 min
+
+    Sequential baseline: ~30 min (3 agents x 10 min avg sequential)
+    Time savings: ~9 min (30% faster)
+
+    Recommendation: Clear speedup. Proceed.
+
+    NOTE: protocol-conformity-gaps IMPL owns prepare_wave.go. This IMPL does NOT
+    modify prepare_wave.go. The stale cleanup is already wired into prepare_wave.go
+    (lines 149-164). This IMPL improves the standalone commands only.
+test_command: go test ./...
+lint_command: go vet ./...
+file_ownership:
+    - file: pkg/protocol/pre_wave_gate.go
+      agent: A
+      wave: 1
+      action: new
+    - file: pkg/protocol/pre_wave_gate_test.go
+      agent: A
+      wave: 1
+      action: new
+    - file: cmd/saw/pre_wave_gate_cmd.go
+      agent: A
+      wave: 1
+      action: new
+    - file: cmd/saw/pre_wave_gate_cmd_test.go
+      agent: A
+      wave: 1
+      action: new
+    - file: pkg/protocol/stale_worktree.go
+      agent: B
+      wave: 1
+      action: modify
+    - file: pkg/protocol/stale_worktree_test.go
+      agent: B
+      wave: 1
+      action: modify
+    - file: cmd/saw/cleanup_stale_cmd.go
+      agent: B
+      wave: 1
+      action: modify
+    - file: cmd/saw/cleanup_stale_cmd_test.go
+      agent: B
+      wave: 1
+      action: modify
+    - file: pkg/protocol/cleanup.go
+      agent: C
+      wave: 1
+      action: modify
+    - file: pkg/protocol/cleanup_test.go
+      agent: C
+      wave: 1
+      action: modify
+    - file: cmd/saw/cleanup.go
+      agent: C
+      wave: 1
+      action: modify
+    - file: cmd/saw/main.go
+      agent: D
+      wave: 2
+      action: modify
+interface_contracts:
+    - name: PreWaveGateResult
+      description: |
+        Structured result from the pre-wave readiness gate. Returns whether the
+        IMPL is ready for wave execution, with per-check status details.
+      definition: |
+        type PreWaveGateCheck struct {
+            Name    string `json:"name"`    // "validation", "critic_review", "scaffolds", "state"
+            Status  string `json:"status"`  // "pass", "fail", "warn"
+            Message string `json:"message"`
+        }
+
+        type PreWaveGateResult struct {
+            Ready  bool               `json:"ready"`
+            Checks []PreWaveGateCheck `json:"checks"`
+        }
+      location: pkg/protocol/pre_wave_gate.go
+    - name: PreWaveGate
+      description: |
+        Runs all pre-wave readiness checks on a loaded manifest. Returns structured
+        result with per-check status. Does not modify the manifest.
+      definition: |
+        func PreWaveGate(m *IMPLManifest) *PreWaveGateResult
+      location: pkg/protocol/pre_wave_gate.go
+    - name: DetectStaleWorktreesForSlug
+      description: |
+        Filters stale worktree detection to a specific slug. Wraps DetectStaleWorktrees
+        with post-filtering by slug name.
+      definition: |
+        func DetectStaleWorktreesForSlug(repoPath, slug string) ([]StaleWorktree, error)
+      location: pkg/protocol/stale_worktree.go
+    - name: CleanupBySlug
+      description: |
+        Cleanup worktrees for a specific IMPL slug (not limited to current wave).
+        Used by the cleanup command's --slug flag.
+      definition: |
+        func CleanupBySlug(repoDir, slug string, force bool) (*StaleCleanupResult, error)
+      location: pkg/protocol/cleanup.go
+waves:
+    - number: 1
+      agents:
+        - id: A
+          task: |
+            ## What to implement
+
+            Create a new `sawtools pre-wave-gate <impl-path>` command that runs all
+            pre-wave readiness checks and returns structured JSON.
+
+            ### Protocol function: `pkg/protocol/pre_wave_gate.go`
+
+            Create new file with these types and function:
+
+            ```go
+            package protocol
+
+            // PreWaveGateCheck is a single readiness check result.
+            type PreWaveGateCheck struct {
+                Name    string `json:"name"`
+                Status  string `json:"status"`  // "pass", "fail", "warn"
+                Message string `json:"message"`
+            }
+
+            // PreWaveGateResult is the aggregate readiness result.
+            type PreWaveGateResult struct {
+                Ready  bool               `json:"ready"`
+                Checks []PreWaveGateCheck `json:"checks"`
+            }
+
+            // PreWaveGate runs all pre-wave readiness checks on a manifest.
+            func PreWaveGate(m *IMPLManifest) *PreWaveGateResult
+            ```
+
+            The function performs these checks in order:
+
+            1. **validation** — Call `Validate(m)`. If any errors, status=fail with
+               error messages joined. If clean, status=pass.
+
+            2. **critic_review** — Check `m.CriticReport`:
+               - If nil: count total agents across all waves. If >= 3 OR
+                 len(m.Repositories) > 0 (multi-repo), status=warn with message
+                 "critic review recommended (E37 threshold met)". Otherwise status=pass
+                 with "critic review not required".
+               - If present and Verdict == "PASS", status=pass.
+               - If present and Verdict != "PASS", status=fail with message including
+                 issue count from CriticReport.IssueCount.
+
+            3. **scaffolds** — If len(m.Scaffolds) > 0, call AllScaffoldsCommitted(m).
+               If false, status=fail listing uncommitted scaffolds. If true or no
+               scaffolds, status=pass.
+
+            4. **state** — Check m.State:
+               - If empty, SCOUT_PENDING, or REVIEWED: status=pass
+               - If COMPLETE or BLOCKED or NOT_SUITABLE: status=fail with
+                 "IMPL state is {state}, cannot proceed"
+               - Otherwise: status=pass (WAVE_PENDING, etc. are acceptable)
+
+            `Ready` is true only if no check has status=fail.
+
+            ### CLI command: `cmd/saw/pre_wave_gate_cmd.go`
+
+            ```go
+            func newPreWaveGateCmd() *cobra.Command
+            ```
+
+            - Use: `pre-wave-gate <manifest-path>`
+            - Args: ExactArgs(1)
+            - Load manifest with `protocol.Load(args[0])`
+            - Call `protocol.PreWaveGate(doc)`
+            - Marshal result as indented JSON to stdout
+            - Exit code 0 if Ready==true, exit code 1 if Ready==false
+            - For exit code 1, use `cmd.SilenceErrors = true` and `os.Exit(1)`
+              after printing JSON (don't return an error that cobra would print)
+
+            ### Tests: `pkg/protocol/pre_wave_gate_test.go`
+
+            Test cases:
+            - Valid manifest with no scaffolds, no critic report, < 3 agents: all pass, ready=true
+            - Manifest with 3+ agents and no critic report: critic_review=warn, ready=true (warn does not block)
+            - Manifest with critic report verdict=PASS: critic_review=pass
+            - Manifest with critic report verdict=ISSUES: critic_review=fail, ready=false
+            - Manifest with uncommitted scaffolds: scaffolds=fail, ready=false
+            - Manifest with state=COMPLETE: state=fail, ready=false
+            - Manifest with state=BLOCKED: state=fail, ready=false
+            - Manifest with validation errors (e.g., duplicate file ownership): validation=fail, ready=false
+
+            ### Tests: `cmd/saw/pre_wave_gate_cmd_test.go`
+
+            Test the CLI command integration:
+            - Write a valid IMPL YAML to a temp file, run command, verify JSON output
+              and exit code 0
+            - Write an invalid IMPL YAML (e.g., state=COMPLETE), verify exit code 1
+
+            ### Verification gate
+            ```
+            go build ./... && go vet ./... && go test ./pkg/protocol/ -run TestPreWaveGate && go test ./cmd/saw/ -run TestPreWaveGate
+            ```
+
+            ### Constraints
+            - Do NOT modify any existing files. All work is in new files.
+            - Use existing `Validate()`, `AllScaffoldsCommitted()`, and `Load()` functions.
+            - Follow existing patterns: see `cmd/saw/cleanup_stale_cmd.go` for JSON output pattern.
+          files:
+            - pkg/protocol/pre_wave_gate.go
+            - pkg/protocol/pre_wave_gate_test.go
+            - cmd/saw/pre_wave_gate_cmd.go
+            - cmd/saw/pre_wave_gate_cmd_test.go
+        - id: B
+          task: |
+            ## What to implement
+
+            Add `--slug` and `--all` flags to the `cleanup-stale` command for targeted
+            stale worktree cleanup. Also add a helper function to the protocol package.
+
+            ### Protocol function: `pkg/protocol/stale_worktree.go`
+
+            Add a new function after `DetectStaleWorktrees`:
+
+            ```go
+            // DetectStaleWorktreesForSlug returns stale worktrees filtered to a specific slug.
+            func DetectStaleWorktreesForSlug(repoPath, slug string) ([]StaleWorktree, error) {
+                all, err := DetectStaleWorktrees(repoPath)
+                if err != nil {
+                    return nil, err
+                }
+                var filtered []StaleWorktree
+                for _, sw := range all {
+                    if sw.Slug == slug {
+                        filtered = append(filtered, sw)
+                    }
+                }
+                return filtered, nil
+            }
+            ```
+
+            ### CLI command: `cmd/saw/cleanup_stale_cmd.go`
+
+            Modify `newCleanupStaleCmd()` to add two new flags:
+
+            1. `--slug <slug>` (string) — Only clean stale worktrees matching this IMPL slug.
+               When set, filter the detected stale worktrees to those whose Slug field
+               matches the flag value. Use `DetectStaleWorktreesForSlug` instead of
+               `DetectStaleWorktrees`.
+
+            2. `--all` (bool) — Clean ALL stale worktrees across all slugs. This is the
+               current default behavior, but making it explicit. When neither `--slug`
+               nor `--all` is set, print an error: "specify --slug <slug> or --all".
+               This is a BREAKING CHANGE from the current behavior where no flag means
+               clean all. The explicit flag prevents accidental cleanup of wrong slugs.
+
+            Flag validation in RunE:
+            ```go
+            if slug != "" && all {
+                return fmt.Errorf("--slug and --all are mutually exclusive")
+            }
+            if slug == "" && !all {
+                return fmt.Errorf("specify --slug <slug> or --all to target cleanup")
+            }
+            ```
+
+            When `--slug` is set, call `DetectStaleWorktreesForSlug(repoDir, slug)`.
+            When `--all` is set, call `DetectStaleWorktrees(repoDir)` (existing behavior).
+
+            ### Tests: `pkg/protocol/stale_worktree_test.go`
+
+            Add test `TestDetectStaleWorktreesForSlug` — this requires mocking git
+            operations, so write a unit test that calls the function with a temp dir
+            that has no worktrees (expect empty result, no error). The filtering logic
+            is simple enough that the real test coverage comes from the existing
+            `TestStaleExtractSlugFromBranches` and from the CLI integration test.
+
+            ### Tests: `cmd/saw/cleanup_stale_cmd_test.go`
+
+            Add/modify tests:
+            - Test that `--slug` and `--all` together returns error
+            - Test that neither flag returns error message
+            - Test that `--slug my-feature --dry-run` runs without error (may find 0 stale)
+            - Test that `--all --dry-run` runs without error
+
+            ### Verification gate
+            ```
+            go build ./... && go vet ./... && go test ./pkg/protocol/ -run TestStale && go test ./cmd/saw/ -run TestCleanupStale
+            ```
+
+            ### Constraints
+            - Only modify `stale_worktree.go`, `stale_worktree_test.go`, `cleanup_stale_cmd.go`,
+              and `cleanup_stale_cmd_test.go`.
+            - Preserve backward compatibility of `DetectStaleWorktrees` (no signature change).
+            - The `printJSON` helper is already defined in `cleanup_stale_cmd.go` — reuse it.
+          files:
+            - pkg/protocol/stale_worktree.go
+            - pkg/protocol/stale_worktree_test.go
+            - cmd/saw/cleanup_stale_cmd.go
+            - cmd/saw/cleanup_stale_cmd_test.go
+        - id: C
+          task: |
+            ## What to implement
+
+            Add `--slug` and `--all-stale` flags to the existing `cleanup` command to
+            handle cross-session worktree cleanup. Also add a `CleanupBySlug` protocol
+            function.
+
+            ### Protocol function: `pkg/protocol/cleanup.go`
+
+            Add a new function after `Cleanup`:
+
+            ```go
+            // CleanupBySlug removes all worktrees matching the given IMPL slug.
+            // Unlike Cleanup(), this does not require a manifest file — it scans
+            // git worktrees directly by branch name pattern.
+            // Returns StaleCleanupResult with cleaned/skipped/errors breakdown.
+            func CleanupBySlug(repoDir, slug string, force bool) (*StaleCleanupResult, error) {
+                stale, err := DetectStaleWorktreesForSlug(repoDir, slug)
+                // ... but we can't call DetectStaleWorktreesForSlug because Agent B
+                // is creating it. Instead, implement the filtering inline:
+                // 1. Call git.WorktreeList(repoDir)
+                // 2. For each worktree, extract slug via ExtractSlug(branch)
+                // 3. If slug matches, add to removal list
+                // 4. Call CleanStaleWorktrees with the filtered list
+            }
+            ```
+
+            IMPORTANT: Since Agent B is adding `DetectStaleWorktreesForSlug` to
+            `stale_worktree.go` in the same wave, you CANNOT call that function.
+            Instead, implement the slug-matching logic directly using the existing
+            `DetectStaleWorktrees` function and filter the results:
+
+            ```go
+            func CleanupBySlug(repoDir, slug string, force bool) (*StaleCleanupResult, error) {
+                // Get ALL stale worktrees
+                all, err := DetectStaleWorktrees(repoDir)
+                if err != nil {
+                    return nil, fmt.Errorf("detect stale worktrees: %w", err)
+                }
+
+                // Filter to matching slug
+                var matched []StaleWorktree
+                for _, sw := range all {
+                    if sw.Slug == slug {
+                        matched = append(matched, sw)
+                    }
+                }
+
+                if len(matched) == 0 {
+                    return &StaleCleanupResult{
+                        Cleaned: []StaleWorktree{},
+                        Skipped: []StaleWorktree{},
+                        Errors: []struct {
+                            Worktree StaleWorktree `json:"worktree"`
+                            Error    string        `json:"error"`
+                        }{},
+                    }, nil
+                }
+
+                return CleanStaleWorktrees(matched, force)
+            }
+            ```
+
+            Also add `CleanupAllStale`:
+
+            ```go
+            // CleanupAllStale removes all stale worktrees across all slugs.
+            func CleanupAllStale(repoDir string, force bool) (*StaleCleanupResult, error) {
+                stale, err := DetectStaleWorktrees(repoDir)
+                if err != nil {
+                    return nil, fmt.Errorf("detect stale worktrees: %w", err)
+                }
+                if len(stale) == 0 {
+                    return &StaleCleanupResult{
+                        Cleaned: []StaleWorktree{},
+                        Skipped: []StaleWorktree{},
+                        Errors: []struct {
+                            Worktree StaleWorktree `json:"worktree"`
+                            Error    string        `json:"error"`
+                        }{},
+                    }, nil
+                }
+                return CleanStaleWorktrees(stale, force)
+            }
+            ```
+
+            ### CLI command: `cmd/saw/cleanup.go`
+
+            Modify `newCleanupCmd()` to add two new flags and restructure the command:
+
+            Current behavior: `cleanup <manifest-path> --wave N` cleans a specific wave.
+            Keep this as the default path.
+
+            Add flags:
+            1. `--slug <old-slug>` (string) — Clean up worktrees from a specific IMPL slug
+               without needing a manifest file. When set, `<manifest-path>` is NOT required
+               (set Args to MinimumNArgs(0)). Call `protocol.CleanupBySlug(repoDir, slug, force)`.
+
+            2. `--all-stale` (bool) — Clean all stale worktrees across all slugs. When set,
+               `<manifest-path>` is NOT required. Call `protocol.CleanupAllStale(repoDir, force)`.
+
+            3. `--force` (bool) — Skip safety checks for uncommitted changes. Passed through
+               to `CleanupBySlug` and `CleanupAllStale`.
+
+            Flag validation in RunE:
+            ```go
+            if slugFlag != "" && allStale {
+                return fmt.Errorf("--slug and --all-stale are mutually exclusive")
+            }
+            ```
+
+            Command routing:
+            - If `--slug` set: call CleanupBySlug, output StaleCleanupResult as JSON
+            - If `--all-stale` set: call CleanupAllStale, output StaleCleanupResult as JSON
+            - Otherwise: require manifest-path arg and --wave (existing behavior), call Cleanup
+
+            Output for `--slug` and `--all-stale` modes uses the same JSON shape as
+            cleanup-stale (StaleCleanupResult fields). Marshal with json.MarshalIndent.
+
+            ### Tests: `pkg/protocol/cleanup_test.go`
+
+            Add tests:
+            - `TestCleanupBySlug_EmptyRepo` — call with temp dir, expect empty result, no error
+            - `TestCleanupAllStale_EmptyRepo` — call with temp dir, expect empty result, no error
+            - `TestCleanupBySlug_NoMatch` — verify returns empty result when slug doesn't match
+
+            ### Verification gate
+            ```
+            go build ./... && go vet ./... && go test ./pkg/protocol/ -run TestCleanup && go test ./cmd/saw/ -run TestCleanup
+            ```
+
+            ### Constraints
+            - Only modify `cleanup.go`, `cleanup_test.go`, and `cmd/saw/cleanup.go`.
+            - Do NOT import from `stale_worktree.go` functions that Agent B is adding.
+              Use only `DetectStaleWorktrees` and `CleanStaleWorktrees` (existing functions).
+            - Preserve existing `Cleanup()` function unchanged.
+            - The `--wave` flag must still work for the existing manifest-based cleanup path.
+          files:
+            - pkg/protocol/cleanup.go
+            - pkg/protocol/cleanup_test.go
+            - cmd/saw/cleanup.go
+      base_commit: 3597f0f24da431bfc772061bcc509ef7749140b8
+    - number: 2
+      type: integration
+      agents:
+        - id: D
+          task: |
+            ## What to implement
+
+            Register the new `pre-wave-gate` command in `cmd/saw/main.go`.
+
+            Add `newPreWaveGateCmd()` to the `rootCmd.AddCommand(...)` call list.
+            Place it near the other pre-wave commands (after `newPrepareWaveCmd()`).
+
+            ### Verification gate
+            ```
+            go build ./... && go test ./...
+            ```
+
+            ### Constraints
+            - Only modify `cmd/saw/main.go`.
+            - Add exactly one line: `newPreWaveGateCmd(),`
+            - Do NOT modify any other files.
+          files:
+            - cmd/saw/main.go
+          dependencies:
+            - A
+      base_commit: 59d63868342892bfbe70ddb0d7463acb19b89ecc
+quality_gates:
+    level: standard
+    gates:
+        - type: build
+          command: go build ./...
+          required: true
+        - type: lint
+          command: go vet ./...
+          required: true
+        - type: test
+          command: go test ./...
+          required: true
+completion_reports:
+    A:
+        status: complete
+        branch: saw/orchestrator-ergonomics/wave1-agent-A
+        commit: 9ce6785
+        files_changed:
+            - pkg/protocol/pre_wave_gate.go
+            - pkg/protocol/pre_wave_gate_test.go
+            - cmd/saw/pre_wave_gate_cmd.go
+            - cmd/saw/pre_wave_gate_cmd_test.go
+        files_created:
+            - pkg/protocol/pre_wave_gate.go
+            - pkg/protocol/pre_wave_gate_test.go
+            - cmd/saw/pre_wave_gate_cmd.go
+            - cmd/saw/pre_wave_gate_cmd_test.go
+        tests_added:
+            - TestPreWaveGate_ValidManifest
+            - TestPreWaveGate_ThreeAgentsNoCriticReport
+            - TestPreWaveGate_CriticReportPass
+            - TestPreWaveGate_CriticReportIssues
+            - TestPreWaveGate_UncommittedScaffolds
+            - TestPreWaveGate_StateComplete
+            - TestPreWaveGate_StateBlocked
+            - TestPreWaveGate_ValidationErrors
+            - TestPreWaveGate_MultiRepoNoCriticReport
+            - TestPreWaveGate_CheckNames
+            - TestPreWaveGate_WavePendingStateAllowed
+            - TestPreWaveGateCmd_ValidManifest
+            - TestPreWaveGateCmd_InvalidPath
+            - TestPreWaveGateCmd_Structure
+        verification: PASS
+    B:
+        status: complete
+        branch: saw/orchestrator-ergonomics/wave1-agent-B
+        commit: eb7c11e
+        files_changed:
+            - pkg/protocol/stale_worktree.go
+            - pkg/protocol/stale_worktree_test.go
+            - cmd/saw/cleanup_stale_cmd.go
+            - cmd/saw/cleanup_stale_cmd_test.go
+        tests_added:
+            - TestStaleDetectWorktreesForSlug
+            - TestNewCleanupStaleCmd_SlugAndAllFlags
+            - TestCleanupStaleCmd_SlugAndAllMutuallyExclusive
+            - TestCleanupStaleCmd_NeitherSlugNorAll
+            - TestCleanupStaleCmd_SlugDryRun
+            - TestCleanupStaleCmd_AllDryRun
+        verification: PASS
+    C:
+        status: complete
+        branch: saw/orchestrator-ergonomics/wave1-agent-C
+        commit: c874c37
+        files_changed:
+            - pkg/protocol/cleanup.go
+            - pkg/protocol/cleanup_test.go
+            - cmd/saw/cleanup.go
+        tests_added:
+            - TestCleanupBySlug_EmptyRepo
+            - TestCleanupAllStale_EmptyRepo
+            - TestCleanupBySlug_NoMatch
+        verification: PASS
+    D:
+        status: complete
+        branch: saw/orchestrator-ergonomics/wave2-agent-D
+        commit: cb6dedd
+        files_changed:
+            - cmd/saw/main.go
+        verification: PASS
+pre_mortem:
+    overall_risk: low
+    rows:
+        - scenario: |
+            Agent C calls DetectStaleWorktreesForSlug (added by Agent B) causing
+            compilation failure in isolated worktree
+          likelihood: low
+          impact: medium
+          mitigation: |
+            Agent C task explicitly instructs to use only existing functions
+            (DetectStaleWorktrees + manual filtering). The interface contract and
+            task description both emphasize this constraint.
+        - scenario: |
+            protocol-conformity-gaps IMPL not yet complete when this IMPL starts,
+            causing merge conflicts on prepare_wave.go
+          likelihood: low
+          impact: low
+          mitigation: |
+            This IMPL deliberately does NOT touch prepare_wave.go. The stale cleanup
+            is already wired into prepare_wave.go. Only standalone commands are modified.
+        - scenario: |
+            Breaking change in cleanup-stale (requiring --slug or --all) breaks
+            existing orchestrator scripts
+          likelihood: medium
+          impact: medium
+          mitigation: |
+            This is an intentional safety improvement. Document in commit message.
+            Existing scripts using cleanup-stale will get a clear error message
+            telling them to add --all flag.
+known_issues:
+    - title: prepare_wave.go not modified
+      description: |
+        This IMPL does not modify prepare_wave.go because it is owned by the
+        protocol-conformity-gaps IMPL. The existing same-slug stale cleanup
+        in prepare_wave.go (lines 149-164) continues to work. The new
+        --slug flag on cleanup-stale is for manual orchestrator use.
+      status: by_design
+critic_report:
+    verdict: PASS
+    agent_reviews:
+        A:
+            agent_id: A
+            verdict: PASS
+        B:
+            agent_id: B
+            verdict: PASS
+        C:
+            agent_id: C
+            verdict: PASS
+        D:
+            agent_id: D
+            verdict: PASS
+    summary: 'All four agent briefs verified against the codebase. File existence checks pass: Agent A''s 4 new files do not exist, Agents B/C/D''s modify targets all exist. All referenced symbols (Validate, AllScaffoldsCommitted, Load, DetectStaleWorktrees, CleanStaleWorktrees, StaleCleanupResult, StaleWorktree, CriticResult, ExtractSlug, printJSON) exist with correct signatures. Pattern accuracy confirmed for cobra command registration, flag patterns, and JSON output. Interface contracts reference valid types. No missing imports or unregistered side effects (Agent D handles pre-wave-gate registration in wave 2). Zero errors, zero warnings.'
+    reviewed_at: "2026-03-21T23:54:13Z"
+    issue_count: 0
+state: WAVE_PENDING
