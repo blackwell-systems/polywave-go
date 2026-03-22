@@ -135,7 +135,7 @@ func TestMergeAgents_AllSucceed(t *testing.T) {
 	manifestPath := createManifest(t, repoDir, waves)
 
 	// Run merge
-	result, err := MergeAgents(manifestPath, 1, repoDir)
+	result, err := MergeAgents(manifestPath, 1, repoDir, "")
 	if err != nil {
 		t.Fatalf("MergeAgents returned error: %v", err)
 	}
@@ -253,7 +253,7 @@ func TestMergeAgents_ConflictStops(t *testing.T) {
 	manifestPath := createManifest(t, repoDir, waves)
 
 	// Run merge
-	result, err := MergeAgents(manifestPath, 1, repoDir)
+	result, err := MergeAgents(manifestPath, 1, repoDir, "")
 	if err != nil {
 		t.Fatalf("MergeAgents returned error: %v", err)
 	}
@@ -302,7 +302,7 @@ func TestMergeAgents_WaveNotFound(t *testing.T) {
 	manifestPath := createManifest(t, repoDir, waves)
 
 	// Try to merge wave 2 (does not exist)
-	result, err := MergeAgents(manifestPath, 2, repoDir)
+	result, err := MergeAgents(manifestPath, 2, repoDir, "")
 
 	// Should return error
 	if err == nil {
@@ -330,7 +330,7 @@ func TestMergeAgents_BranchNotFound(t *testing.T) {
 	manifestPath := createManifest(t, repoDir, waves)
 
 	// Run merge (branch wave1-agent-A does not exist)
-	result, err := MergeAgents(manifestPath, 1, repoDir)
+	result, err := MergeAgents(manifestPath, 1, repoDir, "")
 	if err != nil {
 		t.Fatalf("MergeAgents returned error: %v", err)
 	}
@@ -373,7 +373,7 @@ func TestMergeAgents_TaskTruncation(t *testing.T) {
 	manifestPath := createManifest(t, repoDir, waves)
 
 	// Run merge
-	result, err := MergeAgents(manifestPath, 1, repoDir)
+	result, err := MergeAgents(manifestPath, 1, repoDir, "")
 	if err != nil {
 		t.Fatalf("MergeAgents returned error: %v", err)
 	}
@@ -439,7 +439,7 @@ func TestMergeAgents_SkipsAlreadyMergedAgents(t *testing.T) {
 	}
 
 	// Run merge
-	result, err := MergeAgents(manifestPath, 1, repoDir)
+	result, err := MergeAgents(manifestPath, 1, repoDir, "")
 	if err != nil {
 		t.Fatalf("MergeAgents returned error: %v", err)
 	}
@@ -505,7 +505,7 @@ func TestMergeAgents_AppendsMergeLog(t *testing.T) {
 	manifestPath := createManifest(t, repoDir, waves)
 
 	// Run merge
-	result, err := MergeAgents(manifestPath, 1, repoDir)
+	result, err := MergeAgents(manifestPath, 1, repoDir, "")
 	if err != nil {
 		t.Fatalf("MergeAgents returned error: %v", err)
 	}
@@ -605,7 +605,7 @@ func TestMergeAgents_IdempotentOnCrash(t *testing.T) {
 	}
 
 	// Now "restart" - MergeAgents should skip A and B (already merged) and merge C
-	result2, err := MergeAgents(manifestPath, 1, repoDir)
+	result2, err := MergeAgents(manifestPath, 1, repoDir, "")
 	if err != nil {
 		t.Fatalf("second MergeAgents returned error: %v", err)
 	}
@@ -679,7 +679,7 @@ func TestMergeAgents_LegacyBranchFallback(t *testing.T) {
 	manifestPath := createManifest(t, repoDir, waves)
 
 	// Run merge
-	result, err := MergeAgents(manifestPath, 1, repoDir)
+	result, err := MergeAgents(manifestPath, 1, repoDir, "")
 	if err != nil {
 		t.Fatalf("MergeAgents returned error: %v", err)
 	}
@@ -906,5 +906,106 @@ func TestPreMergeValidation_OtherWaveOwnershipIgnored(t *testing.T) {
 	errs := PreMergeValidation(manifest, 1)
 	if len(errs) != 0 {
 		t.Errorf("expected no errors when other-wave ownership exists, got: %v", errs)
+	}
+}
+
+// TestMergeAgents_WithMergeTarget verifies that when a mergeTarget is provided,
+// MergeAgents checks out the target branch before merging agent branches into it.
+func TestMergeAgents_WithMergeTarget(t *testing.T) {
+	repoDir, cleanup := setupTestRepo(t)
+	defer cleanup()
+
+	// Create the IMPL branch (merge target) from main
+	cmd := exec.Command("git", "-C", repoDir, "branch", "impl/test-feature")
+	if err := cmd.Run(); err != nil {
+		t.Fatalf("failed to create impl branch: %v", err)
+	}
+
+	// Create an agent branch with a commit
+	createAgentBranch(t, repoDir, "saw/test-feature/wave1-agent-A", "file-a.txt")
+
+	// Create manifest
+	waves := []Wave{
+		{
+			Number: 1,
+			Agents: []Agent{
+				{ID: "A", Task: "Implement feature A"},
+			},
+		},
+	}
+	manifestPath := createManifest(t, repoDir, waves)
+
+	// Run merge with mergeTarget = "impl/test-feature"
+	result, err := MergeAgents(manifestPath, 1, repoDir, "impl/test-feature")
+	if err != nil {
+		t.Fatalf("MergeAgents returned error: %v", err)
+	}
+
+	if !result.Success {
+		t.Errorf("expected Success=true, got false: %v", result.Merges)
+	}
+
+	// Verify we are on the merge target branch after merge
+	output, err := exec.Command("git", "-C", repoDir, "branch", "--show-current").Output()
+	if err != nil {
+		t.Fatalf("failed to get current branch: %v", err)
+	}
+	currentBranch := strings.TrimSpace(string(output))
+	if currentBranch != "impl/test-feature" {
+		t.Errorf("expected to be on impl/test-feature after merge, got %s", currentBranch)
+	}
+
+	// Verify the file from agent A exists on the impl branch
+	fileA := filepath.Join(repoDir, "file-a.txt")
+	if _, err := os.Stat(fileA); os.IsNotExist(err) {
+		t.Errorf("file-a.txt does not exist on merge target branch after merge")
+	}
+}
+
+// TestMergeAgents_EmptyMergeTarget verifies backward compatibility: when
+// mergeTarget is empty, no checkout occurs and merges happen on current HEAD.
+func TestMergeAgents_EmptyMergeTarget(t *testing.T) {
+	repoDir, cleanup := setupTestRepo(t)
+	defer cleanup()
+
+	// Get current branch name before merge
+	output, err := exec.Command("git", "-C", repoDir, "branch", "--show-current").Output()
+	if err != nil {
+		t.Fatalf("failed to get current branch: %v", err)
+	}
+	originalBranch := strings.TrimSpace(string(output))
+
+	// Create an agent branch with a commit
+	createAgentBranch(t, repoDir, "saw/test-feature/wave1-agent-A", "file-a.txt")
+
+	// Create manifest
+	waves := []Wave{
+		{
+			Number: 1,
+			Agents: []Agent{
+				{ID: "A", Task: "Implement feature A"},
+			},
+		},
+	}
+	manifestPath := createManifest(t, repoDir, waves)
+
+	// Run merge with empty mergeTarget (backward compatible)
+	result, err := MergeAgents(manifestPath, 1, repoDir, "")
+	if err != nil {
+		t.Fatalf("MergeAgents returned error: %v", err)
+	}
+
+	if !result.Success {
+		t.Errorf("expected Success=true, got false: %v", result.Merges)
+	}
+
+	// Verify we are still on the original branch
+	output, err = exec.Command("git", "-C", repoDir, "branch", "--show-current").Output()
+	if err != nil {
+		t.Fatalf("failed to get current branch: %v", err)
+	}
+	currentBranch := strings.TrimSpace(string(output))
+	if currentBranch != originalBranch {
+		t.Errorf("expected to stay on %s with empty mergeTarget, got %s", originalBranch, currentBranch)
 	}
 }

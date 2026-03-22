@@ -153,11 +153,12 @@ type MergeAgentsResult struct {
 //   - manifestPath: path to the IMPL manifest file
 //   - waveNum: wave number to merge
 //   - repoDir: default repository directory (used when agent repo is not explicitly specified)
+//   - mergeTarget: target branch for merge; empty string means merge to current HEAD (backward compatible)
 //
 // Returns:
 //   - MergeAgentsResult with wave number, merge statuses, and overall success flag
 //   - error if manifest cannot be loaded or wave is not found (not returned for merge conflicts)
-func MergeAgents(manifestPath string, waveNum int, repoDir string) (*MergeAgentsResult, error) {
+func MergeAgents(manifestPath string, waveNum int, repoDir string, mergeTarget string) (*MergeAgentsResult, error) {
 	// Load manifest to check if this is a multi-repo wave
 	manifest, err := Load(manifestPath)
 	if err != nil {
@@ -218,11 +219,11 @@ func MergeAgents(manifestPath string, waveNum int, repoDir string) (*MergeAgents
 
 	// If single-repo wave, use optimized single-repo logic
 	if len(repoSet) == 1 {
-		return mergeAgentsSingleRepo(manifestPath, waveNum, absRepoDir, manifest, targetWave)
+		return mergeAgentsSingleRepo(manifestPath, waveNum, absRepoDir, manifest, targetWave, mergeTarget)
 	}
 
 	// Multi-repo wave: merge each repo group separately
-	return mergeAgentsMultiRepo(manifestPath, waveNum, manifest, targetWave, agentRepos)
+	return mergeAgentsMultiRepo(manifestPath, waveNum, manifest, targetWave, agentRepos, mergeTarget)
 }
 
 // buildFileOwnerMap constructs a map of relative file path → agent ID for all
@@ -252,7 +253,8 @@ func buildFileOwnerMap(manifest *IMPLManifest, waveNum int) map[string]string {
 }
 
 // mergeAgentsSingleRepo handles merging when all agents belong to the same repository.
-func mergeAgentsSingleRepo(manifestPath string, waveNum int, repoDir string, manifest *IMPLManifest, targetWave *Wave) (*MergeAgentsResult, error) {
+// When mergeTarget is non-empty, checks out the target branch before the merge loop.
+func mergeAgentsSingleRepo(manifestPath string, waveNum int, repoDir string, manifest *IMPLManifest, targetWave *Wave, mergeTarget string) (*MergeAgentsResult, error) {
 	// H4: PreMergeValidation — verify ownership table consistency before any git operations.
 	if validationErrs := PreMergeValidation(manifest, waveNum); len(validationErrs) > 0 {
 		return &MergeAgentsResult{
@@ -260,6 +262,13 @@ func mergeAgentsSingleRepo(manifestPath string, waveNum int, repoDir string, man
 			Merges:  []MergeStatus{{Agent: "pre-merge", Success: false, Error: validationErrs[0].Message}},
 			Success: false,
 		}, nil
+	}
+
+	// Checkout merge target branch before merge loop (E28)
+	if mergeTarget != "" {
+		if _, err := git.Run(repoDir, "checkout", mergeTarget); err != nil {
+			return nil, fmt.Errorf("failed to checkout merge target %s: %w", mergeTarget, err)
+		}
 	}
 
 	// Load merge-log for idempotency (E9)
@@ -364,7 +373,8 @@ func mergeAgentsSingleRepo(manifestPath string, waveNum int, repoDir string, man
 }
 
 // mergeAgentsMultiRepo handles merging when agents span multiple repositories.
-func mergeAgentsMultiRepo(manifestPath string, waveNum int, manifest *IMPLManifest, targetWave *Wave, agentRepos map[string]string) (*MergeAgentsResult, error) {
+// When mergeTarget is non-empty, checks out the target branch in each repo before merging.
+func mergeAgentsMultiRepo(manifestPath string, waveNum int, manifest *IMPLManifest, targetWave *Wave, agentRepos map[string]string, mergeTarget string) (*MergeAgentsResult, error) {
 	// H4: PreMergeValidation — verify ownership table consistency before any git operations.
 	if validationErrs := PreMergeValidation(manifest, waveNum); len(validationErrs) > 0 {
 		return &MergeAgentsResult{
@@ -405,6 +415,13 @@ func mergeAgentsMultiRepo(manifestPath string, waveNum int, manifest *IMPLManife
 			// Assume relative to manifest dir
 			manifestDir := filepath.Dir(manifestPath)
 			absRepoDir = filepath.Join(manifestDir, repoDir)
+		}
+
+		// Checkout merge target branch before merge loop (E28)
+		if mergeTarget != "" {
+			if _, err := git.Run(absRepoDir, "checkout", mergeTarget); err != nil {
+				return nil, fmt.Errorf("failed to checkout merge target %s in %s: %w", mergeTarget, repoDir, err)
+			}
 		}
 
 		// Merge agents in this repo
