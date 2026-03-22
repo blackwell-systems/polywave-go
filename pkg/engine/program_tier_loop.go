@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/observability"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
 )
 
@@ -15,6 +16,7 @@ type TierLoopOpts struct {
 	AutoMode     bool
 	Model        string
 	OnEvent      func(TierLoopEvent)
+	ObsEmitter   *observability.Emitter // optional: non-blocking observability emitter
 }
 
 // TierLoopResult captures the outcome of the tier execution loop.
@@ -189,6 +191,9 @@ func RunTierLoop(ctx context.Context, opts TierLoopOpts) (*TierLoopResult, error
 		})
 
 		if !gateResult.Passed {
+			// E40: Emit tier_gate_failed.
+			opts.ObsEmitter.Emit(ctx, observability.NewTierGateFailedEvent(manifest.ProgramSlug, currentTier, fmt.Sprintf("tier %d gate failed: %d gate(s) did not pass", currentTier, len(gateResult.GateResults))))
+
 			// Step 11: Auto trigger replan (E34)
 			if opts.AutoMode {
 				emitEvent(opts.OnEvent, TierLoopEvent{
@@ -220,6 +225,9 @@ func RunTierLoop(ctx context.Context, opts TierLoopOpts) (*TierLoopResult, error
 			return result, nil
 		}
 
+		// E40: Emit tier_gate_passed.
+		opts.ObsEmitter.Emit(ctx, observability.NewTierGatePassedEvent(manifest.ProgramSlug, currentTier))
+
 		// Step 10: Freeze contracts (E30)
 		freezeResult, freezeErr := protocol.FreezeContracts(manifest, currentTier, opts.RepoPath)
 		if freezeErr != nil {
@@ -246,6 +254,9 @@ func RunTierLoop(ctx context.Context, opts TierLoopOpts) (*TierLoopResult, error
 			Tier:   currentTier,
 			Detail: fmt.Sprintf("Advancing from tier %d to %d", currentTier, currentTier+1),
 		})
+
+		// E40: Emit tier_advanced.
+		opts.ObsEmitter.Emit(ctx, observability.NewTierAdvancedEvent(manifest.ProgramSlug, currentTier))
 
 		result.TiersExecuted++
 
