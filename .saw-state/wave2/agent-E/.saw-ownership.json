@@ -1,0 +1,8 @@
+{
+  "agent": "E",
+  "wave": 2,
+  "impl_doc": "/Users/dayna.blackwell/code/scout-and-wave-go/docs/IMPL/IMPL-wiring-gaps.yaml",
+  "owned_files": [
+    "cmd/saw/prepare_wave.go"
+  ]
+}

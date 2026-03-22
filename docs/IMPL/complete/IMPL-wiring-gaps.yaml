@@ -1,3 +1,4 @@
+completion_date: "2026-03-22"
 title: Wire all dead code gaps from wiring audit
 feature_slug: wiring-gaps
 verdict: SUITABLE
@@ -396,6 +397,13 @@ completion_reports:
             - cmd/saw/finalize_tier_cmd.go
             - cmd/saw/program_status_cmd.go
         verification: PASS
+    E:
+        status: complete
+        branch: main
+        commit: 1381cea
+        files_changed:
+            - cmd/saw/prepare_wave.go
+        verification: PASS
 pre_mortem:
     overall_risk: low
     rows:
@@ -441,4 +449,4 @@ known_issues:
         AutoTriggerReplan is called from RunTierLoop line 216 when a tier gate fails
         in auto mode. The audit flagged it because there is no standalone CLI trigger,
         but program-replan already exists for manual use. No additional wiring needed.
-state: "WAVE_PENDING"
+state: WAVE_PENDING
