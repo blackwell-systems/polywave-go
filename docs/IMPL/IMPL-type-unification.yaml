@@ -1,0 +1,408 @@
+title: 'Type Unification: Migrate orchestrator from types.IMPLDoc to protocol.IMPLManifest'
+feature_slug: type-unification
+verdict: SUITABLE
+suitability_assessment: |
+    File decomposition: 10+ files change across orchestrator, engine, and protocol packages.
+    Files decompose cleanly into 3 agent scopes with disjoint ownership.
+
+    Investigation-first: No. The dual-type situation is fully understood. No import cycle
+    blocks unification — orchestrator already imports protocol and calls protocol.Load()
+    in 8 places. This is a mechanical migration.
+
+    Interface discoverability: Yes. The target type (protocol.IMPLManifest) already exists
+    with full field definitions. All function signatures can be specified exactly.
+
+    Pre-implementation status: The manifestToIMPLDoc conversion adapter in engine.go and
+    the loadIMPLDoc wrapper confirm this is purely legacy glue. engine.PrioritizeAgents
+    already takes *protocol.IMPLManifest but orchestrator.prioritizeAgentsFunc still
+    expects *types.IMPLDoc — a type mismatch preventing direct wiring.
+
+    Parallelization value: High. Build/test cycle is >30s (Go full test suite). Three
+    agents each touch 3-5 files. Wave 1 handles the core orchestrator migration; Wave 2
+    handles engine adapter removal and wiring that depends on Wave 1 signatures.
+
+    Estimated times:
+    - Scout phase: ~8 min
+    - Agent execution: ~12 min (3 agents, ~8 min avg, 2 waves)
+    - Merge and verification: ~4 min
+    Total SAW time: ~24 min
+    Sequential baseline: ~30 min (3 agents x 10 min avg)
+    Time savings: ~6 min (20% faster)
+    Recommendation: Clear speedup plus coordination value for a cross-package refactor.
+test_command: go test ./...
+lint_command: go vet ./...
+file_ownership:
+    - file: pkg/orchestrator/orchestrator.go
+      agent: A
+      wave: 1
+      action: modify
+    - file: pkg/orchestrator/setters.go
+      agent: A
+      wave: 1
+      action: modify
+    - file: pkg/orchestrator/structured_wave.go
+      agent: A
+      wave: 1
+      action: modify
+    - file: pkg/orchestrator/merge.go
+      agent: A
+      wave: 1
+      action: modify
+    - file: pkg/protocol/parser.go
+      agent: B
+      wave: 1
+      action: modify
+    - file: pkg/orchestrator/orchestrator_test.go
+      agent: C
+      wave: 1
+      action: modify
+    - file: pkg/orchestrator/structured_wave_test.go
+      agent: C
+      wave: 1
+      action: modify
+    - file: pkg/engine/engine.go
+      agent: D
+      wave: 2
+      action: modify
+      depends_on:
+        - A
+    - file: pkg/engine/runner.go
+      agent: D
+      wave: 2
+      action: modify
+      depends_on:
+        - A
+        - B
+interface_contracts:
+    - name: Orchestrator.implDoc field type change
+      description: Core struct field changes from *types.IMPLDoc to *protocol.IMPLManifest
+      definition: |
+        type Orchestrator struct {
+            state          protocol.ProtocolState
+            implDoc        *protocol.IMPLManifest  // was *types.IMPLDoc
+            repoPath       string
+            currentWave    int
+            implDocPath    string
+            eventPublisher EventPublisher
+            defaultModel   string
+            worktreePaths  map[string]string
+        }
+      location: pkg/orchestrator/orchestrator.go
+    - name: IMPLDoc() return type change
+      description: Public accessor returns *protocol.IMPLManifest instead of *types.IMPLDoc
+      definition: |
+        func (o *Orchestrator) IMPLDoc() *protocol.IMPLManifest
+      location: pkg/orchestrator/orchestrator.go
+    - name: newFromDoc signature change
+      description: Internal constructor takes *protocol.IMPLManifest
+      definition: |
+        func newFromDoc(doc *protocol.IMPLManifest, repoPath, implDocPath string) *Orchestrator
+      location: pkg/orchestrator/orchestrator.go
+    - name: New() uses protocol.Load directly
+      description: New() calls protocol.Load() instead of parseIMPLDocFunc
+      definition: |
+        func New(repoPath string, implDocPath string) (*Orchestrator, error) {
+            var doc *protocol.IMPLManifest
+            if implDocPath != "" {
+                var err error
+                doc, err = protocol.Load(implDocPath)
+                if err != nil {
+                    return nil, fmt.Errorf("orchestrator.New: %w", err)
+                }
+            }
+            return &Orchestrator{
+                state: protocol.StateScoutPending, implDoc: doc,
+                repoPath: repoPath, implDocPath: implDocPath,
+            }, nil
+        }
+      location: pkg/orchestrator/orchestrator.go
+    - name: validateInvariantsFunc signature
+      description: Takes *protocol.IMPLManifest instead of *types.IMPLDoc
+      definition: |
+        var validateInvariantsFunc = func(doc *protocol.IMPLManifest) error { return nil }
+        func SetValidateInvariantsFunc(f func(doc *protocol.IMPLManifest) error)
+      location: pkg/orchestrator/orchestrator.go
+    - name: prioritizeAgentsFunc signature
+      description: Takes *protocol.IMPLManifest to match engine.PrioritizeAgents
+      definition: |
+        var prioritizeAgentsFunc = func(manifest *protocol.IMPLManifest, waveNum int) []string
+        func SetPrioritizeAgentsFunc(f func(manifest *protocol.IMPLManifest, waveNum int) []string)
+      location: pkg/orchestrator/orchestrator.go
+    - name: ValidateInvariants in protocol/parser.go
+      description: Takes *IMPLManifest instead of *types.IMPLDoc
+      definition: |
+        func ValidateInvariants(manifest *IMPLManifest) error
+      location: pkg/protocol/parser.go
+    - name: engine.ValidateInvariants adapter
+      description: Updated to forward *protocol.IMPLManifest (was *types.IMPLDoc)
+      definition: |
+        func ValidateInvariants(manifest *protocol.IMPLManifest) error {
+            return protocol.ValidateInvariants(manifest)
+        }
+      location: pkg/engine/runner.go
+waves:
+    - number: 1
+      agents:
+        - id: A
+          task: |
+            Migrate the orchestrator package from types.IMPLDoc to protocol.IMPLManifest.
+
+            **What to implement:**
+
+            1. In `pkg/orchestrator/orchestrator.go`:
+               - Change `o.implDoc *types.IMPLDoc` to `*protocol.IMPLManifest`
+               - Change `IMPLDoc()` return type to `*protocol.IMPLManifest`
+               - Change `newFromDoc` to take `*protocol.IMPLManifest`
+               - In `New()`: replace `parseIMPLDocFunc(implDocPath)` with `protocol.Load(implDocPath)` directly
+               - Remove `parseIMPLDocFunc` variable entirely (no longer needed)
+               - Change `validateInvariantsFunc` signature: `func(doc *types.IMPLDoc) error` -> `func(doc *protocol.IMPLManifest) error`
+               - Change `SetValidateInvariantsFunc` signature accordingly
+               - Change `prioritizeAgentsFunc` signature: `func(manifest *types.IMPLDoc, waveNum int) []string` -> `func(manifest *protocol.IMPLManifest, waveNum int) []string`
+               - Change `SetPrioritizeAgentsFunc` signature accordingly
+               - Update the default `prioritizeAgentsFunc` implementation to use `protocol.Wave` and `protocol.Agent` types:
+                 - `wave.Agents[i].Letter` becomes `wave.Agents[i].ID`
+                 - `agent.Letter` becomes `agent.ID`
+               - Update `RunWave()`: change `var wave *types.Wave` to `var wave *protocol.Wave`, update agent iteration to use `protocol.Agent` fields (`.ID` instead of `.Letter`, `.Files` instead of `.FilesOwned`)
+               - Update `launchAgent()` signature and body: change `agentSpec types.AgentSpec` to use a local adapter that extracts Letter/Prompt/FilesOwned/Model from `protocol.Agent`, OR create a helper to convert protocol.Agent -> types.AgentSpec for the parts that still need it (agent.Runner.ExecuteStreamingWithTools takes *types.AgentSpec)
+               - IMPORTANT: `agent.Runner.ExecuteStreamingWithTools` and `agent.Runner.Execute` still take `*types.AgentSpec`. To avoid cascading into pkg/agent in this PR, create a small conversion helper `agentToSpec(a protocol.Agent) types.AgentSpec` that maps ID->Letter, Task->Prompt, Files->FilesOwned, Model->Model. Use this at the launchAgent boundary.
+               - Update `executeRetryLoop()` similarly
+               - Update `RunAgent()`: iterate using protocol types
+               - Update `UpdateIMPLStatus()`: iterate using protocol types
+               - In `init()`: update the `SetValidateInvariantsFunc(protocol.ValidateInvariants)` call (signature must match after Agent B updates parser.go)
+               - Remove the `"github.com/blackwell-systems/scout-and-wave-go/pkg/types"` import if no longer needed (it may still be needed for types.FailureType constants used in E19 routing)
+
+            2. In `pkg/orchestrator/setters.go`:
+               - Remove `SetParseIMPLDocFunc` entirely (no longer needed since New() calls protocol.Load directly)
+               - Remove the types import
+
+            3. In `pkg/orchestrator/structured_wave.go`:
+               - Change `runWaveAgentStructuredFunc` signature: `agentSpec types.AgentSpec` stays as-is since it crosses into engine which still uses types.AgentSpec for now
+               - Change `SetRunWaveAgentStructuredFunc` signature accordingly
+               - Change `launchAgentStructured` to accept `protocol.Agent` and convert to `types.AgentSpec` at the boundary using the same `agentToSpec` helper
+               - Update E19 routing to use types.FailureType (still needed from types package)
+
+            4. In `pkg/orchestrator/merge.go`:
+               - Change `var wave *types.Wave` to `var wave *protocol.Wave`
+               - Update agent iteration: `.Letter` -> `.ID`, and adjust CompletionReport handling
+               - Remove the now-unnecessary conversion from protocol.CompletionReport to types.CompletionReport (just use protocol.CompletionReport directly and compare Status as string)
+               - Remove `types.CompletionReport` usage entirely
+               - Update `predictConflicts` and `verifyAgentCommits` to take `map[string]*protocol.CompletionReport` instead of `map[string]*types.CompletionReport`
+
+            **Interface contracts:**
+            - `IMPLDoc() *protocol.IMPLManifest` (was `*types.IMPLDoc`)
+            - `newFromDoc(doc *protocol.IMPLManifest, ...)` (was `*types.IMPLDoc`)
+            - `validateInvariantsFunc func(*protocol.IMPLManifest) error`
+            - `prioritizeAgentsFunc func(*protocol.IMPLManifest, int) []string`
+            - `agentToSpec(a protocol.Agent) types.AgentSpec` — new helper
+
+            **Verification gate:**
+            ```
+            go build ./pkg/orchestrator/...
+            go vet ./pkg/orchestrator/...
+            go test ./pkg/orchestrator/... -count=1
+            ```
+
+            **Constraints:**
+            - Keep types.AgentSpec at the agent.Runner boundary (don't cascade into pkg/agent)
+            - Keep types.FailureType constants (used in E19 routing switch statements)
+            - The init() call to SetValidateInvariantsFunc(protocol.ValidateInvariants) must compile — coordinate with Agent B's parser.go change
+          files:
+            - pkg/orchestrator/orchestrator.go
+            - pkg/orchestrator/setters.go
+            - pkg/orchestrator/structured_wave.go
+            - pkg/orchestrator/merge.go
+        - id: B
+          task: |
+            Update ValidateInvariants in protocol/parser.go to take *IMPLManifest.
+
+            **What to implement:**
+
+            1. In `pkg/protocol/parser.go`:
+               - Change `ValidateInvariants(doc *types.IMPLDoc) error` to `ValidateInvariants(manifest *IMPLManifest) error`
+               - Update the function body to use IMPLManifest fields:
+                 - `doc.Waves` -> `manifest.Waves` (same field name, but type is now `[]protocol.Wave`)
+                 - `wave.Agents` iteration: `agent.Letter` -> `agent.ID`, `agent.FilesOwned` -> `agent.Files`
+                 - `doc.FileOwnership` is now `[]FileOwnership` (not `map[string]FileOwnershipInfo`). Build a lookup map from the slice: `for _, fo := range manifest.FileOwnership { ownershipByFile[fo.File] = fo }` then use `fo.Repo` instead of `info.Repo`
+               - Remove the `"github.com/blackwell-systems/scout-and-wave-go/pkg/types"` import
+               - Remove any unused imports (bufio, strings may still be needed for extractTypedBlock)
+
+            **Interface contract:**
+            ```go
+            func ValidateInvariants(manifest *IMPLManifest) error
+            ```
+
+            **Verification gate:**
+            ```
+            go build ./pkg/protocol/...
+            go vet ./pkg/protocol/...
+            go test ./pkg/protocol/... -count=1
+            ```
+
+            **Constraints:**
+            - The function is called from orchestrator init() as `protocol.ValidateInvariants` — signature must match what Agent A expects
+            - Preserve the exact I1 validation logic (disjoint file ownership per wave, cross-repo key)
+          files:
+            - pkg/protocol/parser.go
+        - id: C
+          task: |
+            Update all orchestrator tests to use protocol.IMPLManifest instead of types.IMPLDoc.
+
+            **What to implement:**
+
+            1. In `pkg/orchestrator/orchestrator_test.go`:
+               - Replace all `types.IMPLDoc{}` literals with `protocol.IMPLManifest{}` literals
+               - Replace all `types.Wave{}` with `protocol.Wave{}`
+               - Replace all `types.AgentSpec{}` with `protocol.Agent{}`
+               - Field name mappings:
+                 - `FeatureName` -> `Title`
+                 - `Status` -> `Verdict`
+                 - `Wave.Agents[].Letter` -> `Wave.Agents[].ID`
+                 - `Wave.Agents[].Prompt` -> `Wave.Agents[].Task`
+                 - `Wave.Agents[].FilesOwned` -> `Wave.Agents[].Files`
+               - Update `makeOrch()`: `newFromDoc(&protocol.IMPLManifest{}, ...)`
+               - Update `makeOrchWithWave()`: build `[]protocol.Agent` instead of `[]types.AgentSpec`
+               - Remove `parseIMPLDocFunc` references in TestOrchestratorNew and TestNew_LoadsDoc — these tests verified the old parseIMPLDocFunc injection. Replace with tests that verify protocol.Load is called (use a temp YAML file)
+               - Update `TestSetValidateInvariantsFunc`: change lambda signature to `func(_ *protocol.IMPLManifest) error`
+               - Update prioritize mock functions: `func(manifest *protocol.IMPLManifest, waveNum int) []string`
+               - Update `IMPLDoc()` assertions: `o.IMPLDoc().Title` instead of `o.IMPLDoc().FeatureName`
+               - Remove `"github.com/blackwell-systems/scout-and-wave-go/pkg/types"` import
+
+            2. In `pkg/orchestrator/structured_wave_test.go`:
+               - Same literal replacements: types.IMPLDoc -> protocol.IMPLManifest, types.Wave -> protocol.Wave, types.AgentSpec -> protocol.Agent
+               - Same field name mappings as above
+               - `runWaveAgentStructuredFunc` mock lambdas: if the signature still takes `types.AgentSpec` (per Agent A's decision to keep it at the boundary), keep those. Otherwise update.
+
+            **Verification gate:**
+            ```
+            go build ./pkg/orchestrator/...
+            go vet ./pkg/orchestrator/...
+            go test ./pkg/orchestrator/... -count=1
+            ```
+
+            **Constraints:**
+            - Tests must compile against Agent A's new signatures (same wave, so coordinate field names)
+            - Keep test behavior identical — only change types, not test logic
+            - The structured_wave_test.go runWaveAgentStructuredFunc still uses types.AgentSpec in its signature (Agent A keeps this at the engine boundary)
+          files:
+            - pkg/orchestrator/orchestrator_test.go
+            - pkg/orchestrator/structured_wave_test.go
+      base_commit: c95b328f47d5ae6bfc1b74eb0e833f13c209f9cc
+    - number: 2
+      agents:
+        - id: D
+          task: |
+            Remove the manifestToIMPLDoc adapter and wire engine.PrioritizeAgents into orchestrator.
+
+            **What to implement:**
+
+            1. In `pkg/engine/engine.go`:
+               - Remove `loadIMPLDoc()` function entirely
+               - Remove `manifestToIMPLDoc()` function entirely
+               - Remove `orchestrator.SetParseIMPLDocFunc(loadIMPLDoc)` from init()
+               - In init(), ADD: `orchestrator.SetPrioritizeAgentsFunc(PrioritizeAgents)` — this wires the real DAG-based scheduler into the orchestrator (the whole reason for this migration)
+               - The `SetRunWaveAgentStructuredFunc` call in init() stays but the lambda's `agentSpec types.AgentSpec` parameter stays as-is (orchestrator still passes types.AgentSpec at this boundary)
+               - Remove `var _ *types.IMPLDoc` (the unused type anchor)
+               - Remove the `types` import if no longer needed
+               - Keep the `protocol` import (still needed for other engine functions)
+
+            2. In `pkg/engine/runner.go`:
+               - Update `ParseIMPLDoc(path string) (*types.IMPLDoc, error)` — this is an exported function used externally. Either:
+                 a. Keep it as a backward-compat wrapper that calls protocol.Load and converts, OR
+                 b. Deprecate it with a comment pointing to protocol.Load()
+               - Update `ValidateInvariants(doc *types.IMPLDoc) error` to `ValidateInvariants(manifest *protocol.IMPLManifest) error` since protocol.ValidateInvariants now takes *IMPLManifest (from Agent B)
+               - Update `runScaffoldBuildVerificationWithDoc` if it takes *types.IMPLDoc — check if it can take *protocol.IMPLManifest instead, or keep the adapter
+
+            **Interface contracts:**
+            - `engine.PrioritizeAgents` already has the right signature: `func(manifest *protocol.IMPLManifest, waveNum int) []string`
+            - `orchestrator.SetPrioritizeAgentsFunc` now takes `func(*protocol.IMPLManifest, int) []string` (from Agent A)
+
+            **Verification gate:**
+            ```
+            go build ./...
+            go vet ./...
+            go test ./pkg/engine/... -count=1
+            go test ./pkg/orchestrator/... -count=1
+            ```
+
+            **Constraints:**
+            - ParseIMPLDoc is exported and may have external callers — deprecate, don't delete
+            - runScaffoldBuildVerificationWithDoc takes *types.IMPLDoc for scaffold package derivation — keep adapter if needed
+            - Verify engine init() runs without import cycle (it won't — engine already imports orchestrator)
+          files:
+            - pkg/engine/engine.go
+            - pkg/engine/runner.go
+          dependencies:
+            - A
+            - B
+quality_gates:
+    level: standard
+    gates:
+        - type: build
+          command: go build ./...
+          required: true
+        - type: lint
+          command: go vet ./...
+          required: true
+        - type: test
+          command: go test ./...
+          required: true
+completion_reports:
+    A:
+        status: complete
+        branch: saw/type-unification/wave1-agent-A
+        commit: ea83d1f
+        files_changed:
+            - pkg/orchestrator/orchestrator.go
+            - pkg/orchestrator/setters.go
+            - pkg/orchestrator/structured_wave.go
+            - pkg/orchestrator/merge.go
+            - pkg/orchestrator/orchestrator_test.go
+            - pkg/orchestrator/structured_wave_test.go
+        tests_added:
+            - TestOrchestratorNew
+            - TestNew_LoadsDoc
+        verification: PASS
+    B:
+        status: complete
+        branch: saw/type-unification/wave1-agent-B
+        commit: f08e050
+        files_changed:
+            - pkg/protocol/parser.go
+        verification: PASS
+    C:
+        status: complete
+        branch: saw/type-unification/wave1-agent-C
+        commit: c8dea0c
+        files_changed:
+            - pkg/orchestrator/orchestrator_test.go
+            - pkg/orchestrator/structured_wave_test.go
+        tests_added:
+            - TestOrchestratorNew
+            - TestNew_LoadsDoc
+            - TestSetValidateInvariantsFunc
+            - TestRunWave_LaunchesAllAgents
+            - TestRunWave_AgentPrioritization
+            - TestLaunchAgentStructured_FallbackToCLI
+            - TestLaunchAgentStructured_APIPath
+            - TestLaunchAgentStructured_PublishesBlockedEvent
+        verification: PASS (build passes; full test compilation requires Agent A production code merge)
+pre_mortem:
+    overall_risk: medium
+    rows:
+        - scenario: Agent A and C conflict on orchestrator type changes vs test expectations
+          likelihood: medium
+          impact: medium
+          mitigation: Both agents work from the same interface contracts. Field name mappings are explicit. Same-wave execution means they see the same base code.
+        - scenario: types.AgentSpec still needed at agent.Runner boundary causes incomplete migration
+          likelihood: low
+          impact: low
+          mitigation: 'Explicitly scoped: agentToSpec helper bridges the gap. Full pkg/agent migration is a follow-up.'
+        - scenario: External callers of engine.ParseIMPLDoc or orchestrator.SetParseIMPLDocFunc break
+          likelihood: medium
+          impact: medium
+          mitigation: Agent D deprecates ParseIMPLDoc rather than deleting. SetParseIMPLDocFunc removal is safe since only engine.init() calls it.
+        - scenario: merge.go types.CompletionReport to protocol.CompletionReport conversion missed
+          likelihood: low
+          impact: high
+          mitigation: Agent A explicitly handles this — removes the conversion layer and uses protocol.CompletionReport directly with string status comparison.
+state: SCOUT_PENDING

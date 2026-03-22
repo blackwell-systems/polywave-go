@@ -12,11 +12,6 @@ import (
 )
 
 func init() {
-	// Inject the real IMPL doc parser into the orchestrator package.
-	// This replaces the default no-op that returns an empty IMPLDoc,
-	// allowing orchestrator.New to load the full wave structure.
-	orchestrator.SetParseIMPLDocFunc(loadIMPLDoc)
-
 	// Inject the structured wave agent runner into the orchestrator package.
 	// This breaks the circular import (orchestrator → engine → orchestrator)
 	// by using a function-variable seam, analogous to SetParseIMPLDocFunc.

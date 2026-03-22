@@ -385,7 +385,7 @@ func StartWave(ctx context.Context, opts RunWaveOpts, onEvent func(Event)) error
 			if err == nil {
 				stubReports := make(map[string]*types.CompletionReport)
 				for _, ag := range wave.Agents {
-					if protoReport, ok := manifest.CompletionReports[ag.Letter]; ok {
+					if protoReport, ok := manifest.CompletionReports[ag.ID]; ok {
 						// Convert protocol.CompletionReport to types.CompletionReport
 						var status types.CompletionStatus
 						switch protoReport.Status {
@@ -398,7 +398,7 @@ func StartWave(ctx context.Context, opts RunWaveOpts, onEvent func(Event)) error
 						default:
 							status = types.StatusPartial
 						}
-						stubReports[ag.Letter] = &types.CompletionReport{
+						stubReports[ag.ID] = &types.CompletionReport{
 							Status:       status,
 							FilesChanged: protoReport.FilesChanged,
 							FilesCreated: protoReport.FilesCreated,
@@ -411,7 +411,12 @@ func StartWave(ctx context.Context, opts RunWaveOpts, onEvent func(Event)) error
 
 		// E21: Post-wave quality gates before merge.
 		if doc := orch.IMPLDoc(); doc != nil && doc.QualityGates != nil {
-			results, err := orchestrator.RunQualityGates(opts.RepoPath, doc.QualityGates)
+			// Bridge protocol.QualityGates to types.QualityGates for RunQualityGates
+			typesGates := &types.QualityGates{Level: doc.QualityGates.Level}
+			for _, g := range doc.QualityGates.Gates {
+				typesGates.Gates = append(typesGates.Gates, types.QualityGate{Type: g.Type, Command: g.Command, Required: g.Required})
+			}
+			results, err := orchestrator.RunQualityGates(opts.RepoPath, typesGates)
 			for _, r := range results {
 				onEvent(Event{Event: "quality_gate_result", Data: r})
 			}
@@ -790,12 +795,12 @@ func MergeWave(ctx context.Context, opts RunMergeOpts) error {
 		for _, wave := range doc.Waves {
 			if wave.Number == opts.WaveNum {
 				for _, agent := range wave.Agents {
-					agentPath := fmt.Sprintf("wave%d/agent-%s", opts.WaveNum, agent.Letter)
+					agentPath := fmt.Sprintf("wave%d/agent-%s", opts.WaveNum, agent.ID)
 					observer, obsErr := journal.NewObserver(opts.RepoPath, agentPath)
 					if obsErr == nil {
 						if archErr := observer.Archive(); archErr != nil {
 							// Log but don't fail the merge
-							fmt.Fprintf(os.Stderr, "engine: failed to archive journal for agent %s: %v\n", agent.Letter, archErr)
+							fmt.Fprintf(os.Stderr, "engine: failed to archive journal for agent %s: %v\n", agent.ID, archErr)
 						}
 					}
 				}
@@ -918,8 +923,8 @@ func UpdateIMPLStatus(implDocPath string, completedLetters []string) error {
 
 // ValidateInvariants validates disjoint file ownership invariants.
 // Delegates to pkg/protocol.ValidateInvariants.
-func ValidateInvariants(doc *types.IMPLDoc) error {
-	return protocol.ValidateInvariants(doc)
+func ValidateInvariants(manifest *protocol.IMPLManifest) error {
+	return protocol.ValidateInvariants(manifest)
 }
 
 // JournalIntegration provides journal lifecycle hooks for wave execution.
