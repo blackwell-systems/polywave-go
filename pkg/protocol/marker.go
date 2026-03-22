@@ -62,6 +62,18 @@ func writeCompletionMarkerYAML(implDocPath string, date string) error {
 		lines = append([]string{fmt.Sprintf("completion_date: %q", date)}, lines...)
 	}
 
+	// Also set state to COMPLETE
+	stateIdx := -1
+	for i, line := range lines {
+		if strings.HasPrefix(line, "state:") {
+			stateIdx = i
+			break
+		}
+	}
+	if stateIdx != -1 {
+		lines[stateIdx] = "state: COMPLETE"
+	}
+
 	// Write back
 	content := strings.Join(lines, "\n") + "\n"
 
