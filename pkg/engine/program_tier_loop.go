@@ -251,27 +251,48 @@ func RunTierLoop(ctx context.Context, opts TierLoopOpts) (*TierLoopResult, error
 			})
 		}
 
-		// Step 12: Advance tier (E33)
-		if isFinalTier(manifest, currentTier) {
-			result.ProgramComplete = true
-			result.FinalState = "complete"
-			result.TiersExecuted = len(manifest.Tiers)
-			result.TiersRemaining = 0
-			return result, nil
+		// Step 12: Advance tier (E33) — use AdvanceTierAutomatically in auto mode.
+		if opts.AutoMode {
+			advResult, advErr := AdvanceTierAutomatically(manifest, currentTier, opts.RepoPath, true)
+			if advErr != nil {
+				result.Errors = append(result.Errors, fmt.Sprintf("advance tier error: %s", advErr))
+				result.FinalState = "advance_error"
+				return result, fmt.Errorf("RunTierLoop: advance tier: %w", advErr)
+			}
+			if advResult.ProgramComplete {
+				result.ProgramComplete = true
+				result.FinalState = "complete"
+				result.TiersExecuted = len(manifest.Tiers)
+				result.TiersRemaining = 0
+				return result, nil
+			}
+			if advResult.AdvancedToNext {
+				emitEvent(opts.OnEvent, TierLoopEvent{
+					Type:   "tier_advanced",
+					Tier:   currentTier,
+					Detail: fmt.Sprintf("Advancing from tier %d to %d", currentTier, advResult.NextTier),
+				})
+				opts.ObsEmitter.Emit(ctx, observability.NewTierAdvancedEvent(manifest.ProgramSlug, currentTier))
+				result.TiersExecuted++
+			}
+		} else {
+			if isFinalTier(manifest, currentTier) {
+				result.ProgramComplete = true
+				result.FinalState = "complete"
+				result.TiersExecuted = len(manifest.Tiers)
+				result.TiersRemaining = 0
+				return result, nil
+			}
+
+			emitEvent(opts.OnEvent, TierLoopEvent{
+				Type:   "tier_advanced",
+				Tier:   currentTier,
+				Detail: fmt.Sprintf("Advancing from tier %d to %d", currentTier, currentTier+1),
+			})
+			opts.ObsEmitter.Emit(ctx, observability.NewTierAdvancedEvent(manifest.ProgramSlug, currentTier))
+			result.TiersExecuted++
 		}
 
-		emitEvent(opts.OnEvent, TierLoopEvent{
-			Type:   "tier_advanced",
-			Tier:   currentTier,
-			Detail: fmt.Sprintf("Advancing from tier %d to %d", currentTier, currentTier+1),
-		})
-
-		// E40: Emit tier_advanced.
-		opts.ObsEmitter.Emit(ctx, observability.NewTierAdvancedEvent(manifest.ProgramSlug, currentTier))
-
-		result.TiersExecuted++
-
-		// Step 13: Loop back (auto mode continues)
 		// Re-parse manifest to pick up any status changes
 		manifest, err = protocol.ParseProgramManifest(opts.ManifestPath)
 		if err != nil {
