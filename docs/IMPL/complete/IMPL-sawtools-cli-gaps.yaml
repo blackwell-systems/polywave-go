@@ -1,0 +1,968 @@
+completion_date: "2026-03-21"
+title: sawtools CLI Gaps
+feature_slug: sawtools-cli-gaps
+verdict: SUITABLE
+suitability_assessment: |-
+    Five improvements to sawtools, all parallelizable with disjoint file ownership.
+
+    File decomposition: 5 distinct work areas across pkg/protocol/ (integration
+    heuristics, merge_agents, types) and cmd/saw/ (new set-impl-state command,
+    finalize_wave, validate_integration, run_scout_cmd). Each area touches
+    non-overlapping files.
+
+    Interface discoverability: All cross-agent interfaces can be defined upfront:
+    - SetImplState(manifestPath, state string, commit bool) in pkg/protocol/
+    - JSON struct heuristic added to classifySeverity() — no new types needed
+    - Solo agent detection via os.Stat of worktree directory — no new types
+    - Idempotent merge: already handled by existing MergeAgents E9 idempotency
+      path; finalize_wave.go just needs the VerifyCommits skip logic adjusted
+    - IntegrationGapSeverityThreshold added to IMPLManifest types.go
+
+    Pre-implementation status:
+    - Item 1 (set-impl-state): TODO — no such command exists yet
+    - Item 2 (solo agent finalize-wave): TODO — finalize_wave.go Step 1 calls
+      VerifyCommits which will fail if 0 worktrees; no solo bypass exists
+    - Item 3 (idempotent merge re-run): PARTIAL — E9 idempotency exists via
+      merge-log, but only if branches still exist; the "branch deleted after
+      cleanup" path still errors on the VerifyCommits step, not the merge step
+    - Item 4 (JSON struct field heuristic): TODO — classifySeverity() in
+      integration.go has no json-tag awareness; extractExports() always emits
+      struct fields regardless of tags
+    - Item 5 (finalize-impl audit): PARTIAL — run_scout_cmd.go already calls
+      protocol.FinalizeIMPL directly; finalize_impl_cmd.go is the standalone
+      command. No duplicate validation logic found outside run-scout. The
+      audit is primarily confirming and documenting the single-path invariant
+      and adding a test to prevent regression.
+
+    Parallelization value: HIGH. Go build + test cycle is ~30s. Each agent
+    touches 2-4 files with non-trivial logic. Wave 1 has 3 independent agents.
+
+    Estimated times:
+    - Scout phase: ~10 min
+    - Agent execution: ~25 min (3 wave-1 agents parallel + 1 wave-2 agent)
+    - Merge and verification: ~5 min
+    Total SAW time: ~40 min
+    Sequential baseline: ~70 min (4 x ~17 min avg)
+    Time savings: ~30 min (43% faster)
+test_command: go test ./... -timeout 120s
+lint_command: go vet ./...
+file_ownership:
+    - file: pkg/protocol/types.go
+      agent: A
+      wave: 1
+      action: modify
+    - file: pkg/protocol/state_transition.go
+      agent: A
+      wave: 1
+      action: new
+    - file: pkg/protocol/state_transition_test.go
+      agent: A
+      wave: 1
+      action: new
+    - file: pkg/protocol/integration.go
+      agent: B
+      wave: 1
+      action: modify
+    - file: pkg/protocol/integration_heuristics_test.go
+      agent: B
+      wave: 1
+      action: modify
+    - file: pkg/protocol/merge_agents.go
+      agent: C
+      wave: 1
+      action: modify
+    - file: pkg/protocol/solo_wave_test.go
+      agent: C
+      wave: 1
+      action: new
+    - file: cmd/saw/set_impl_state_cmd.go
+      agent: D
+      wave: 2
+      action: new
+      depends_on:
+        - A
+    - file: cmd/saw/set_impl_state_cmd_test.go
+      agent: D
+      wave: 2
+      action: new
+      depends_on:
+        - A
+    - file: cmd/saw/finalize_wave.go
+      agent: E
+      wave: 2
+      action: modify
+      depends_on:
+        - C
+    - file: cmd/saw/validate_integration.go
+      agent: E
+      wave: 2
+      action: modify
+      depends_on:
+        - B
+    - file: cmd/saw/finalize_wave_test.go
+      agent: E
+      wave: 2
+      action: modify
+      depends_on:
+        - C
+    - file: pkg/protocol/integration.go
+      agent: E
+      wave: 2
+      action: modify
+      depends_on:
+        - A
+        - B
+    - file: cmd/saw/run_scout_cmd.go
+      agent: F
+      wave: 2
+      action: modify
+      depends_on:
+        - A
+    - file: cmd/saw/run_scout_cmd_test.go
+      agent: F
+      wave: 2
+      action: modify
+      depends_on:
+        - A
+    - file: cmd/saw/main.go
+      agent: G
+      wave: 3
+      action: modify
+      depends_on:
+        - D
+interface_contracts:
+    - name: SetImplState
+      description: |-
+        Atomic read-modify-write on an IMPL manifest's state field.
+        Validates the transition is allowed by the protocol state machine.
+        Optionally commits the change to git.
+      definition: |-
+        func SetImplState(manifestPath string, newState ProtocolState, opts SetImplStateOpts) (*SetImplStateResult, error)
+
+        type SetImplStateOpts struct {
+            Commit    bool
+            CommitMsg string
+        }
+
+        type SetImplStateResult struct {
+            PreviousState ProtocolState `json:"previous_state"`
+            NewState      ProtocolState `json:"new_state"`
+            Committed     bool          `json:"committed"`
+            CommitSHA     string        `json:"commit_sha,omitempty"`
+        }
+      location: pkg/protocol/state_transition.go
+    - name: IsSoloWave
+      description: Returns true if none of the expected worktree directories exist for the wave
+      definition: func IsSoloWave(manifest *IMPLManifest, waveNum int, repoDir string) bool
+      location: pkg/protocol/merge_agents.go
+    - name: AllBranchesAbsent
+      description: Returns true when every agent branch for a wave is absent from git (both slug-scoped and legacy names)
+      definition: func AllBranchesAbsent(manifest *IMPLManifest, waveNum int, repoDir string) bool
+      location: pkg/protocol/merge_agents.go
+    - name: classifySeverity_updated
+      description: Updated package-private classifySeverity with json-tag awareness and threshold parameter
+      definition: func classifySeverity(exportName string, category string, filePath string, threshold string) string
+      location: pkg/protocol/integration.go
+    - name: IntegrationGapSeverityThreshold
+      description: New IMPLManifest field for configuring severity threshold in ValidateIntegration
+      definition: IntegrationGapSeverityThreshold string `yaml:"integration_gap_severity_threshold,omitempty" json:"integration_gap_severity_threshold,omitempty"`
+      location: pkg/protocol/types.go
+waves:
+    - number: 1
+      agents:
+        - id: A
+          task: |-
+            ## Feature: types.go — IMPLManifest new field + state machine helpers
+
+            ### What to implement
+
+            **1. Add `IntegrationGapSeverityThreshold` to `IMPLManifest`**
+
+            In `pkg/protocol/types.go`, add a new field to `IMPLManifest`:
+
+            ```go
+            // IntegrationGapSeverityThreshold configures the minimum severity level that
+            // ValidateIntegration treats as a gap requiring action.
+            // Valid values: "error", "warning", "info". Defaults to "warning" when empty.
+            IntegrationGapSeverityThreshold string `yaml:"integration_gap_severity_threshold,omitempty" json:"integration_gap_severity_threshold,omitempty"`
+            ```
+
+            Place it after the `KnownIssues` field and before `CriticReport`.
+
+            **2. Create `pkg/protocol/state_transition.go` — new file**
+
+            Implement the following in a new file:
+
+            ```go
+            package protocol
+
+            // SetImplStateOpts contains options for the SetImplState operation.
+            type SetImplStateOpts struct {
+                Commit    bool   // if true, git commit after state write
+                CommitMsg string // optional commit message; default generated if empty
+            }
+
+            // SetImplStateResult contains the outcome of a SetImplState call.
+            type SetImplStateResult struct {
+                PreviousState ProtocolState `json:"previous_state"`
+                NewState      ProtocolState `json:"new_state"`
+                Committed     bool          `json:"committed"`
+                CommitSHA     string        `json:"commit_sha,omitempty"`
+            }
+
+            // allowedTransitions maps each state to the set of valid next states.
+            var allowedTransitions = map[ProtocolState][]ProtocolState{
+                StateScoutPending:    {StateReviewed, StateNotSuitable},
+                StateScoutValidating: {StateReviewed, StateNotSuitable},
+                StateReviewed:        {StateScaffoldPending, StateWavePending, StateWaveExecuting, StateBlocked},
+                StateScaffoldPending: {StateWavePending, StateWaveExecuting, StateBlocked},
+                StateWavePending:     {StateWaveExecuting, StateBlocked},
+                StateWaveExecuting:   {StateWaveMerging, StateWaveVerified, StateBlocked, StateComplete},
+                StateWaveMerging:     {StateWaveVerified, StateBlocked},
+                StateWaveVerified:    {StateWaveExecuting, StateComplete, StateBlocked},
+                StateBlocked:         {StateReviewed, StateWaveExecuting, StateWavePending},
+                StateComplete:        {},
+                StateNotSuitable:     {},
+            }
+
+            // SetImplState atomically reads the manifest, validates the state
+            // transition, writes the new state, and optionally commits to git.
+            func SetImplState(manifestPath string, newState ProtocolState, opts SetImplStateOpts) (*SetImplStateResult, error)
+            ```
+
+            Implement `SetImplState`:
+            - Load the manifest via `Load(manifestPath)`
+            - Read `manifest.State` as `previousState`
+            - Look up `allowedTransitions[previousState]` — if `newState` not in the
+              allowed list, return a descriptive error: "transition from X to Y is not
+              allowed; valid targets: [...]"
+            - Use `updateManifestState(manifestPath, newState)` (already in
+              `merge_agents.go`) to write the new state atomically
+            - If `opts.Commit` is true:
+              - Build commit message: if `opts.CommitMsg` is not empty use it, else
+                default to `"chore: set IMPL state to <newState>"`
+              - Run `git -C <manifestDir> add <manifestPath>` then
+                `git -C <manifestDir> commit -m <msg>`
+              - Capture the resulting commit SHA via `git rev-parse HEAD`
+              - Populate `result.CommitSHA`
+            - Return `*SetImplStateResult` with all fields populated
+
+            ### Tests
+
+            Create `pkg/protocol/state_transition_test.go` with:
+            - `TestSetImplState_ValidTransition` — SCOUT_PENDING -> REVIEWED succeeds
+            - `TestSetImplState_InvalidTransition` — COMPLETE -> SCOUT_PENDING returns error
+            - `TestSetImplState_AllowedTransitionsComplete` — verify COMPLETE has no allowed targets
+            - `TestSetImplState_BlockedCanGoBack` — BLOCKED -> REVIEWED succeeds
+
+            Use a temp directory with a minimal IMPL YAML fixture. Do not commit in tests.
+
+            ### Interface contracts to follow
+
+            Follow the `SetImplStateOpts` / `SetImplStateResult` signatures exactly as
+            specified in the interface_contracts section. Agent D depends on these types.
+
+            ### Verification gate
+
+            ```
+            go build ./...
+            go test ./pkg/protocol/... -run TestSetImplState -timeout 60s
+            ```
+
+            ### Constraints
+
+            - Do NOT modify any existing file except `pkg/protocol/types.go` (add field)
+            - New file is `pkg/protocol/state_transition.go` only
+            - Re-use `updateManifestState` from `merge_agents.go` — do not duplicate it
+            - Allowed transition table must include all existing `ProtocolState` constants
+          files:
+            - pkg/protocol/types.go
+            - pkg/protocol/state_transition.go
+            - pkg/protocol/state_transition_test.go
+        - id: B
+          task: |-
+            ## Feature: integration.go — JSON struct field heuristic for severity
+
+            ### What to implement
+
+            Modify `pkg/protocol/integration.go` to downgrade exported struct
+            fields that have `json:"..."` tags from "error"/"warning" to "info",
+            eliminating ~25 false-positive integration gaps per finalize run.
+
+            **Step 1: Extend `exportInfo` to carry tag information**
+
+            ```go
+            type exportInfo struct {
+                Name    string // e.g. "ValidateIntegration"
+                Kind    string // "func", "type", "method", "field"
+                HasJSON bool   // true if this is a struct field with a json:"..." tag
+            }
+            ```
+
+            **Step 2: Update `extractExports` to set `HasJSON`**
+
+            In the struct field extraction loop inside `extractExports`, detect
+            `json:"..."` tags on fields:
+
+            ```go
+            // Inside the struct field extraction (ast.StructType loop):
+            hasJSON := false
+            if field.Tag != nil {
+                tag := reflect.StructTag(strings.Trim(field.Tag.Value, "\`"))
+                if tag.Get("json") != "" {
+                    hasJSON = true
+                }
+            }
+            exports = append(exports, exportInfo{Name: name.Name, Kind: "field", HasJSON: hasJSON})
+            ```
+
+            Import `reflect` and `strings` (strings may already be imported).
+
+            **Step 3: Update `classifySeverity` signature**
+
+            Change the signature to:
+
+            ```go
+            func classifySeverity(exportName string, category string, filePath string, threshold string) string
+            ```
+
+            The `filePath` parameter is reserved for future use; currently unused.
+            The `threshold` parameter gates the json-tag downgrade:
+
+            - If `category == "field_init"` AND the export has a json tag AND
+              `threshold != "error"` — return "info"
+            - Otherwise: existing logic unchanged
+
+            Because `classifySeverity` is a package-private function, the call site
+            in `ValidateIntegration` needs updating. The `exportInfo` struct now carries
+            `HasJSON`, so pass it through.
+
+            **Step 4: Thread `threshold` in `ValidateIntegration`**
+
+            IMPORTANT: Do NOT read `manifest.IntegrationGapSeverityThreshold` — that field
+            is being added by Agent A in the same wave. Your worktree does not have it.
+            Instead, hardcode an empty string as the threshold:
+
+            ```go
+            threshold := "" // defaults to "warning"; Agent E (Wave 2) will wire in the manifest field
+            ```
+
+            Pass `threshold` and `exp.HasJSON` to the updated `classifySeverity`.
+
+            **Step 5: Update the `ValidateIntegration` gap-filtering logic**
+
+            After computing severity for a gap, filter gaps based on threshold:
+
+            ```go
+            // Only report gaps at or above the threshold severity.
+            // Threshold "" or "warning" means: report "error" and "warning", skip "info".
+            // Threshold "info"           means: report all.
+            // Threshold "error"          means: report "error" only.
+            if !aboveThreshold(severity, threshold) {
+                continue
+            }
+            ```
+
+            Implement `aboveThreshold(severity, threshold string) bool`:
+            ```go
+            func aboveThreshold(severity, threshold string) bool {
+                order := map[string]int{"error": 2, "warning": 1, "info": 0}
+                thresh := order["warning"] // default
+                if t, ok := order[threshold]; ok {
+                    thresh = t
+                }
+                return order[severity] >= thresh
+            }
+            ```
+
+            ### Tests
+
+            Add to `pkg/protocol/integration_heuristics_test.go` (or create
+            `pkg/protocol/integration_json_heuristic_test.go`):
+
+            - `TestClassifySeverity_JSONFieldDowngrade` — field with json tag + no
+              threshold returns "info"
+            - `TestClassifySeverity_JSONFieldNoDowngradeWhenThresholdError` — field
+              with json tag + threshold="error" still returns "error"
+            - `TestAboveThreshold` — table test covering all severity/threshold combos
+            - `TestValidateIntegration_JSONStructFields` — integration test: a Go file
+              with a struct with json-tagged exported fields produces zero gaps at
+              default threshold
+
+            ### Verification gate
+
+            ```
+            go build ./...
+            go test ./pkg/protocol/... -run "TestClassify|TestAbove|TestValidateIntegration_JSON" -timeout 60s
+            ```
+
+            ### Constraints
+
+            - Only modify `pkg/protocol/integration.go`
+            - Do NOT access `manifest.IntegrationGapSeverityThreshold` — that field is
+              added by Agent A in the same wave; your worktree cannot compile against it
+            - The `classifySeverity` function signature change is internal; no cmd/saw
+              changes needed (those are owned by Agent E in wave 2)
+            - Do not change `integration_types.go` — it has no json-tag logic
+            - `HasJSON bool` field on `exportInfo` is the ONLY struct change
+          files:
+            - pkg/protocol/integration.go
+            - pkg/protocol/integration_heuristics_test.go
+        - id: C
+          task: |-
+            ## Feature: merge_agents.go — solo wave support + AllBranchesAbsent helper
+
+            ### What to implement
+
+            Two related changes to `pkg/protocol/merge_agents.go` that make
+            `MergeAgents` behave correctly for solo-agent waves and fully-merged waves.
+
+            **Part 1: IsSoloWave helper**
+
+            A "solo wave" is one where no worktree directories exist on disk for any
+            agent. This happens when the human ran the wave without creating worktrees
+            (e.g., solo human developer working directly on main). Currently,
+            `VerifyCommits` fails because it looks for branches that don't exist.
+
+            Add an exported helper to `merge_agents.go`:
+
+            ```go
+            // IsSoloWave returns true if none of the expected worktree directories
+            // for the given wave exist on disk. Uses WorktreeDir() to compute paths.
+            // repoDir must be the absolute repo root.
+            func IsSoloWave(manifest *IMPLManifest, waveNum int, repoDir string) bool {
+                // Find the target wave
+                var targetWave *Wave
+                for i := range manifest.Waves {
+                    if manifest.Waves[i].Number == waveNum {
+                        targetWave = &manifest.Waves[i]
+                        break
+                    }
+                }
+                if targetWave == nil {
+                    return false
+                }
+                for _, agent := range targetWave.Agents {
+                    path := WorktreeDir(repoDir, manifest.FeatureSlug, waveNum, agent.ID)
+                    if _, err := os.Stat(path); err == nil {
+                        return false // at least one worktree exists
+                    }
+                }
+                return true
+            }
+            ```
+
+            **Part 2: AllBranchesAbsent helper**
+
+            Add an exported helper for detecting the "already merged and cleaned up" path:
+
+            ```go
+            // AllBranchesAbsent returns true when every agent branch for the wave
+            // is absent from the repository — both slug-scoped and legacy names.
+            // Used by finalize-wave to detect the idempotent re-run path.
+            func AllBranchesAbsent(manifest *IMPLManifest, waveNum int, repoDir string) bool {
+                var targetWave *Wave
+                for i := range manifest.Waves {
+                    if manifest.Waves[i].Number == waveNum {
+                        targetWave = &manifest.Waves[i]
+                        break
+                    }
+                }
+                if targetWave == nil {
+                    return true // no wave = no branches
+                }
+                for _, agent := range targetWave.Agents {
+                    slugBranch := BranchName(manifest.FeatureSlug, waveNum, agent.ID)
+                    legacyBranch := LegacyBranchName(waveNum, agent.ID)
+                    if git.BranchExists(repoDir, slugBranch) || git.BranchExists(repoDir, legacyBranch) {
+                        return false
+                    }
+                }
+                return true
+            }
+            ```
+
+            Check whether `git.BranchExists` already exists in `internal/git/`; if not,
+            implement it in a new file `internal/git/branch_exists.go` using
+            `git branch --list <name>` and checking for non-empty output.
+
+            **Part 3: Add idempotency comment to MergeAgents**
+
+            Add a comment to `MergeAgents` documenting the branch-absent path:
+
+            ```go
+            // NOTE: MergeAgents handles idempotency for the merge step (E9).
+            // For the case where all branches have been deleted post-cleanup,
+            // the finalize_wave.go caller must skip VerifyCommits and MergeAgents
+            // when it detects that all expected branches are absent from the repo
+            // (see AllBranchesAbsent check in finalize_wave.go).
+            ```
+
+            ### Tests
+
+            Create `pkg/protocol/solo_wave_test.go`:
+
+            - `TestIsSoloWave_AllAbsent` — temp dir with no worktree paths -> true
+            - `TestIsSoloWave_OneExists` — create one worktree dir -> false
+            - `TestAllBranchesAbsent_NoBranches` — git repo with no saw/ branches -> true
+            - `TestAllBranchesAbsent_OneBranchExists` — create one branch -> false
+
+            ### Verification gate
+
+            ```
+            go build ./...
+            go test ./pkg/protocol/... -run "TestIsSoloWave|TestAllBranches" -timeout 60s
+            go test ./internal/git/... -timeout 60s
+            ```
+
+            ### Constraints
+
+            - Do NOT modify `finalize_wave.go` — that is Agent E's file in wave 2
+            - `IsSoloWave` and `AllBranchesAbsent` must be exported (uppercase)
+            - If `git.BranchExists` doesn't exist in `internal/git/`, add it there too
+              (you own `internal/git/branch_exists.go` as a new file if needed)
+          files:
+            - pkg/protocol/merge_agents.go
+            - pkg/protocol/solo_wave_test.go
+      base_commit: 9a14054a2f2d967560137eea915a96c5418f4b9e
+    - number: 2
+      agents:
+        - id: D
+          task: |-
+            ## Feature: new sawtools set-impl-state subcommand
+
+            ### What to implement
+
+            Create `cmd/saw/set_impl_state_cmd.go` — a new sawtools subcommand that
+            exposes `protocol.SetImplState` from wave 1 (Agent A).
+
+            ```
+            sawtools set-impl-state <manifest-path> --state <STATE> [--commit] [--commit-msg "..."]
+            ```
+
+            **Command spec:**
+
+            ```go
+            func newSetImplStateCmd() *cobra.Command {
+                var (
+                    state     string
+                    commit    bool
+                    commitMsg string
+                )
+                cmd := &cobra.Command{
+                    Use:   "set-impl-state <manifest-path>",
+                    Short: "Atomically transition an IMPL manifest to a new protocol state",
+                    Long: `Validates the state transition against the protocol state machine,
+            then atomically writes the new state to the manifest. Optionally commits
+            the change to git with --commit.
+
+            Valid states: SCOUT_PENDING, SCOUT_VALIDATING, REVIEWED, SCAFFOLD_PENDING,
+            WAVE_PENDING, WAVE_EXECUTING, WAVE_MERGING, WAVE_VERIFIED, BLOCKED, COMPLETE,
+            NOT_SUITABLE
+
+            Output: JSON with previous_state, new_state, committed, commit_sha.`,
+                    Args: cobra.ExactArgs(1),
+                    RunE: func(cmd *cobra.Command, args []string) error {
+                        manifestPath := args[0]
+                        newState := protocol.ProtocolState(state)
+                        opts := protocol.SetImplStateOpts{
+                            Commit:    commit,
+                            CommitMsg: commitMsg,
+                        }
+                        result, err := protocol.SetImplState(manifestPath, newState, opts)
+                        if err != nil {
+                            return fmt.Errorf("set-impl-state: %w", err)
+                        }
+                        out, _ := json.MarshalIndent(result, "", "  ")
+                        fmt.Println(string(out))
+                        return nil
+                    },
+                }
+                cmd.Flags().StringVar(&state, "state", "", "Target state (required)")
+                _ = cmd.MarkFlagRequired("state")
+                cmd.Flags().BoolVar(&commit, "commit", false, "Git commit the state change")
+                cmd.Flags().StringVar(&commitMsg, "commit-msg", "", "Commit message override")
+                return cmd
+            }
+            ```
+
+            **Output** (structured JSON, same pattern as all sawtools commands):
+
+            ```json
+            {
+              "previous_state": "SCOUT_PENDING",
+              "new_state": "REVIEWED",
+              "committed": false,
+              "commit_sha": ""
+            }
+            ```
+
+            ### Tests
+
+            Create `cmd/saw/set_impl_state_cmd_test.go`:
+
+            - `TestSetImplStateCmd_ValidTransition` — write temp IMPL YAML with
+              state: SCOUT_PENDING, run command with --state REVIEWED, verify output JSON
+              and that the YAML file was updated
+            - `TestSetImplStateCmd_InvalidTransition` — COMPLETE -> SCOUT_PENDING, verify
+              non-zero exit and error message contains "not allowed"
+            - `TestSetImplStateCmd_MissingStateFlag` — omit --state, verify cobra error
+            - `TestSetImplStateCmd_Use` — verify Use field matches expected string
+
+            ### Interface contracts
+
+            Depends on `protocol.SetImplState`, `protocol.SetImplStateOpts`, and
+            `protocol.SetImplStateResult` from Agent A (wave 1, pkg/protocol/state_transition.go).
+
+            ### Verification gate
+
+            ```
+            go build ./...
+            go test ./cmd/saw/... -run TestSetImplStateCmd -timeout 60s
+            ```
+
+            ### Constraints
+
+            - DO NOT touch `cmd/saw/main.go` — that is Agent G's file in wave 3
+            - Only create `cmd/saw/set_impl_state_cmd.go` and its test file
+            - Follow the exact JSON output pattern of existing commands (MarshalIndent)
+            - Import: `github.com/blackwell-systems/scout-and-wave-go/pkg/protocol`
+          files:
+            - cmd/saw/set_impl_state_cmd.go
+            - cmd/saw/set_impl_state_cmd_test.go
+          dependencies:
+            - A
+        - id: E
+          task: |-
+            ## Feature: finalize_wave.go — solo wave bypass + idempotent re-run
+
+            ### What to implement
+
+            Three targeted changes to cmd/saw/finalize_wave.go, cmd/saw/validate_integration.go, and pkg/protocol/integration.go.
+
+            **IMPORTANT: Interface contract change from Wave 1**
+            Agent C renamed IsSoloWave to WorktreesAbsent because helpers.go already declares IsSoloWave(wave *Wave) bool with a different signature. Use protocol.WorktreesAbsent everywhere this brief previously said IsSoloWave.
+
+            **Part 1: Solo wave bypass in finalize_wave.go**
+
+            In finalize_wave.go, BEFORE Step 1 (VerifyCommits), add:
+
+            ```go
+            // Solo wave: if no worktrees were created, skip VerifyCommits and MergeAgents.
+            isSolo := false
+            for _, repoPath := range repos {
+                if protocol.WorktreesAbsent(manifest, waveNum, repoPath) {
+                    isSolo = true
+                    break
+                }
+            }
+            if isSolo {
+                fmt.Fprintf(os.Stderr, "finalize-wave: solo wave detected (no worktrees), skipping VerifyCommits and MergeAgents\n")
+                for repoKey := range repos {
+                    result.MergeResult[repoKey] = &protocol.MergeAgentsResult{
+                        Wave: waveNum, Success: true,
+                    }
+                }
+                goto postMerge
+            }
+            ```
+
+            (goto postMerge already exists for integration waves — this reuses it.)
+
+            **Part 2: Idempotent re-run when all branches deleted**
+
+            In finalize_wave.go, AFTER the solo wave check (still before Step 1), add:
+
+            ```go
+            // If all agent branches are absent (wave already merged and cleaned up),
+            // skip VerifyCommits and MergeAgents entirely.
+            allGone := false
+            for _, repoPath := range repos {
+                if protocol.AllBranchesAbsent(manifest, waveNum, repoPath) {
+                    allGone = true
+                    break
+                }
+            }
+            if allGone {
+                fmt.Fprintf(os.Stderr,
+                    "finalize-wave: all agent branches absent (already merged+cleaned), skipping to verify-build\n")
+                for repoKey := range repos {
+                    result.MergeResult[repoKey] = &protocol.MergeAgentsResult{
+                        Wave: waveNum, Success: true,
+                    }
+                }
+                goto postMerge
+            }
+            ```
+
+            **Part 3: Wire IntegrationGapSeverityThreshold in pkg/protocol/integration.go**
+
+            In pkg/protocol/integration.go, find the ValidateIntegration function where Agent B added:
+
+            ```go
+            threshold := "" // defaults to "warning"; Agent E (Wave 2) will wire in the manifest field
+            ```
+
+            Replace this hardcoded empty string with the actual manifest field read:
+
+            ```go
+            threshold := manifest.IntegrationGapSeverityThreshold
+            ```
+
+            This is safe in Wave 2 because Agent A's field addition to types.go is already merged. No other logic changes needed in integration.go — just this one line.
+
+            In cmd/saw/validate_integration.go, add a brief comment above the ValidateIntegration call:
+
+            ```go
+            // Severity threshold is read from manifest.IntegrationGapSeverityThreshold.
+            // Set integration_gap_severity_threshold: "error" in the IMPL doc to report only errors.
+            // Default ("") reports warnings and errors; "info" reports all gaps.
+            ```
+
+            ### Tests
+
+            In cmd/saw/finalize_wave_test.go (EXISTING file — action: modify, append new tests without touching existing ones):
+
+            - TestFinalizeWave_SoloWaveSkipsVerifyCommits — fixture manifest with one agent, no worktree directory -> confirm flow reaches verify-build step without error on VerifyCommits. Use protocol.WorktreesAbsent in assertions if needed.
+            - TestFinalizeWave_AllBranchesAbsentSkipsMerge — fixture with one agent, all branches absent from git -> confirm merge step skipped
+            - TestFinalizeWave_NormalPathUnchanged — confirm the normal multi-agent path still calls VerifyCommits (regression guard)
+
+            ### Verification gate
+
+            ```
+            go build ./...
+            go test ./cmd/saw/... -run "TestFinalizeWave" -timeout 60s
+            ```
+
+            ### Constraints
+
+            - Modify cmd/saw/finalize_wave.go (Parts 1 and 2), cmd/saw/validate_integration.go (comment only), and pkg/protocol/integration.go (one line change in Part 3)
+            - Use protocol.WorktreesAbsent (NOT IsSoloWave — renamed by Agent C) and protocol.AllBranchesAbsent from Agent C
+            - Do NOT add flags — the solo/allGone detection must be automatic
+            - The goto postMerge approach is acceptable; existing code already uses it for integration waves; ensure no variable declarations sit between the new goto calls and the postMerge: label to avoid Go compile errors
+            - finalize_wave_test.go already exists — APPEND tests, do not overwrite the file
+          files:
+            - cmd/saw/finalize_wave.go
+            - cmd/saw/validate_integration.go
+            - cmd/saw/finalize_wave_test.go
+            - pkg/protocol/integration.go
+          dependencies:
+            - B
+            - C
+        - id: F
+          task: 'Add regression tests to the EXISTING file cmd/saw/run_scout_cmd_test.go (action: modify, NOT new — the file already contains TestGenerateSlug, TestRunScoutCmd_ProgramFlag, TestCountAgentsFromErrors, TestCriticThresholdMet, TestRunScoutCmd_CriticFlags). Append two new tests without touching existing ones: (1) TestRunScoutCmd_SingleFinalizationEntryPoint — verifies that run_scout_cmd.go calls finalize-impl exactly once and does not duplicate validation logic; (2) TestRunScoutCmd_FinalizeImplCmdWired — verifies the finalize-impl subcommand is registered in main.go. Also add a comment to cmd/saw/run_scout_cmd.go at the finalize-impl call site noting it is the single entry point for post-Scout validation. All other brief requirements remain unchanged.'
+          files:
+            - cmd/saw/run_scout_cmd.go
+            - cmd/saw/run_scout_cmd_test.go
+          dependencies:
+            - A
+    - number: 3
+      type: integration
+      agents:
+        - id: G
+          task: |-
+            ## Integration: wire set-impl-state into main.go
+
+            ### What to implement
+
+            Add `newSetImplStateCmd()` to the `rootCmd.AddCommand(...)` list in
+            `cmd/saw/main.go`.
+
+            Find the place near `newSetCompletionCmd()` or `newMarkCompleteCmd()`
+            (both are state-setting commands) and add:
+
+            ```go
+            newSetImplStateCmd(),
+            ```
+
+            ### Verification gate
+
+            ```
+            go build ./...
+            sawtools set-impl-state --help
+            ```
+
+            The second command must exit 0 and print the set-impl-state help text.
+
+            ### Constraints
+
+            - Only modify `cmd/saw/main.go`
+            - One line addition only
+            - Do NOT reorder or restructure the existing AddCommand list
+          files:
+            - cmd/saw/main.go
+          dependencies:
+            - D
+quality_gates:
+    level: standard
+    gates:
+        - type: build
+          command: go build ./...
+          required: true
+        - type: test
+          command: go test ./... -timeout 120s
+          required: true
+completion_reports:
+    A:
+        status: complete
+        branch: saw/sawtools-cli-gaps/wave1-agent-A
+        commit: 70281ea
+        files_changed:
+            - pkg/protocol/types.go
+            - pkg/protocol/state_transition.go
+            - pkg/protocol/state_transition_test.go
+        files_created:
+            - pkg/protocol/state_transition.go
+            - pkg/protocol/state_transition_test.go
+        tests_added:
+            - TestSetImplState_ValidTransition
+            - TestSetImplState_InvalidTransition
+            - TestSetImplState_AllowedTransitionsComplete
+            - TestSetImplState_BlockedCanGoBack
+        verification: PASS
+    B:
+        status: complete
+        branch: saw/sawtools-cli-gaps/wave1-agent-B
+        commit: 64ecfbc61af39f9d02fdf3b0c61792dd36f5f514
+        files_changed:
+            - pkg/protocol/integration.go
+            - pkg/protocol/integration_heuristics_test.go
+        tests_added:
+            - TestClassifySeverity_JSONFieldDowngrade
+            - TestClassifySeverity_JSONFieldNoDowngradeWhenThresholdError
+            - TestAboveThreshold
+            - TestValidateIntegration_JSONStructFields
+        verification: PASS
+    C:
+        status: complete
+        branch: saw/sawtools-cli-gaps/wave1-agent-C
+        commit: 87f22fc
+        files_changed:
+            - pkg/protocol/merge_agents.go
+            - pkg/protocol/solo_wave_test.go
+        files_created:
+            - pkg/protocol/solo_wave_test.go
+        tests_added:
+            - TestIsSoloWave_AllAbsent
+            - TestIsSoloWave_OneExists
+            - TestIsSoloWave_WaveNotFound
+            - TestAllBranchesAbsent_NoBranches
+            - TestAllBranchesAbsent_OneBranchExists
+            - TestAllBranchesAbsent_LegacyBranchExists
+            - TestAllBranchesAbsent_WaveNotFound
+        verification: 'PASS: build+tests pass. IsSoloWave renamed to WorktreesAbsent (name collision with helpers.go). AllBranchesAbsent implemented as specified. git.BranchExists pre-existed.'
+    D:
+        status: complete
+        branch: saw/sawtools-cli-gaps/wave2-agent-D
+        commit: d52dd8b
+        files_changed:
+            - cmd/saw/set_impl_state_cmd.go
+            - cmd/saw/set_impl_state_cmd_test.go
+        files_created:
+            - cmd/saw/set_impl_state_cmd.go
+            - cmd/saw/set_impl_state_cmd_test.go
+        tests_added:
+            - TestSetImplStateCmd_ValidTransition
+            - TestSetImplStateCmd_InvalidTransition
+            - TestSetImplStateCmd_MissingStateFlag
+            - TestSetImplStateCmd_Use
+        verification: PASS
+    E:
+        status: complete
+        branch: saw/sawtools-cli-gaps/wave2-agent-E
+        commit: 1301a02
+        files_changed:
+            - cmd/saw/finalize_wave.go
+            - cmd/saw/validate_integration.go
+            - cmd/saw/finalize_wave_test.go
+            - pkg/protocol/integration.go
+        tests_added:
+            - TestFinalizeWave_SoloWaveSkipsVerifyCommits
+            - TestFinalizeWave_AllBranchesAbsentSkipsMerge
+            - TestFinalizeWave_NormalPathUnchanged
+        verification: PASS
+    F:
+        status: complete
+        branch: saw/sawtools-cli-gaps/wave2-agent-F
+        commit: e63cb82
+        files_changed:
+            - cmd/saw/run_scout_cmd.go
+            - cmd/saw/run_scout_cmd_test.go
+        tests_added:
+            - TestRunScoutCmd_SingleFinalizationEntryPoint
+            - TestRunScoutCmd_FinalizeImplCmdWired
+        verification: PASS
+    G:
+        status: complete
+        branch: main
+        commit: 5c83b26
+        files_changed:
+            - cmd/saw/main.go
+        verification: 'PASS: go build ./... and set-impl-state --help both exit 0'
+pre_mortem:
+    overall_risk: low
+    rows:
+        - scenario: |-
+            Agent C adds IsSoloWave/AllBranchesAbsent using an unexported name;
+            Agent E calls them from cmd/saw/finalize_wave.go and gets a compile error.
+          likelihood: medium
+          impact: high
+          mitigation: |-
+            Interface contracts specify exported names (IsSoloWave, AllBranchesAbsent).
+            Agent C's task says "must be exported (uppercase)". Wave 2 go build catches this.
+        - scenario: |-
+            git.BranchExists doesn't exist in internal/git/ and Agent C creates it,
+            but the function signature differs from what Agent E expects.
+          likelihood: low
+          impact: medium
+          mitigation: |-
+            Agent C owns both internal/git/branch_exists.go and AllBranchesAbsent.
+            Agent E only calls the protocol-level AllBranchesAbsent — no direct dependency
+            on the git-level helper. Signature mismatch is caught within Agent C's wave 1.
+        - scenario: |-
+            Agent A's allowedTransitions table is incomplete (missing some ProtocolState
+            constants), causing valid transitions to fail at runtime.
+          likelihood: medium
+          impact: medium
+          mitigation: |-
+            Agent A's test TestSetImplState_AllowedTransitionsComplete verifies COMPLETE
+            has no allowed targets. Task description says "must include all existing
+            ProtocolState constants". Cross-check against the constants block in types.go.
+        - scenario: |-
+            finalize_wave.go already uses goto postMerge for integration waves; adding
+            two more goto statements from different locations causes a Go compile error
+            if variable declarations appear between the jump points and the label.
+          likelihood: low
+          impact: high
+          mitigation: |-
+            Agent E must ensure no new variable declarations are introduced between the
+            new goto calls and the postMerge label. The existing integration-wave goto
+            serves as a template. Go compiler catches this at build time immediately.
+critic_report:
+    verdict: PASS
+    agent_reviews:
+        A:
+            agent_id: A
+            verdict: PASS
+        B:
+            agent_id: B
+            verdict: PASS
+        C:
+            agent_id: C
+            verdict: PASS
+        D:
+            agent_id: D
+            verdict: PASS
+        E:
+            agent_id: E
+            verdict: PASS
+        F:
+            agent_id: F
+            verdict: PASS
+        G:
+            agent_id: G
+            verdict: PASS
+    summary: 'All seven agent briefs verified against the codebase. Key symbols confirmed: updateManifestState exists in merge_agents.go (correct reuse target for Agent A), BranchName/LegacyBranchName/WorktreeDir exist in branchname.go (correct for Agent C), git.BranchExists already exists in internal/git/commands.go (Agent C brief correctly says to check first), classifySeverity exists with 2-param signature (Agent B''s extension to 4 params is accurate), protocol.FinalizeIMPL is called exactly once in run_scout_cmd.go at line 209 (Agent F''s audit target confirmed), goto postMerge label exists in finalize_wave.go for the integration-wave path (Agent E''s reuse claim is accurate), and all newXxxCmd registration targets exist in main.go. No new files have conflicts with existing files. All action:modify files exist. All action:new files are absent. Import paths are correct throughout.'
+    reviewed_at: "2026-03-21T21:46:15Z"
+    issue_count: 0
+state: WAVE_PENDING
