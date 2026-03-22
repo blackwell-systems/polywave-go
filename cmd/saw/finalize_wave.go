@@ -9,6 +9,7 @@ import (
 
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/builddiag"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/collision"
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/engine"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/gatecache"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
 	"github.com/spf13/cobra"
@@ -200,6 +201,57 @@ pattern matching (H7) and appends diagnosis to the output.`,
 
 				for _, gate := range gateResults {
 					if gate.Required && !gate.Passed {
+						// C2: Attempt closed-loop gate retry before giving up.
+						// Pre-merge gates run per-repo; pick the first agent in this
+						// wave (scoped to this repo) as the retry target.
+						retryFixed := false
+						agents := manifest.Waves[waveNum-1].Agents
+						for _, ag := range agents {
+							branch := protocol.BranchName(manifest.FeatureSlug, waveNum, ag.ID)
+							wtPath := protocol.ResolveWorktreePath(repoPath, branch)
+							retryOpts := engine.ClosedLoopRetryOpts{
+								IMPLPath:     manifestPath,
+								RepoPath:     repoPath,
+								WaveNum:      waveNum,
+								AgentID:      ag.ID,
+								GateType:     gate.Type,
+								GateCommand:  gate.Command,
+								GateOutput:   gate.Stdout + "\n" + gate.Stderr,
+								WorktreePath: wtPath,
+								MaxRetries:   2,
+							}
+							retryResult, retryErr := engine.ClosedLoopGateRetry(cmd.Context(), retryOpts)
+							if retryErr != nil {
+								fmt.Fprintf(os.Stderr, "finalize-wave: closed-loop retry error for agent %s: %v\n", ag.ID, retryErr)
+							} else if retryResult != nil && retryResult.Fixed {
+								fmt.Fprintf(os.Stderr, "finalize-wave: closed-loop retry fixed gate '%s' for agent %s after %d attempt(s)\n",
+									gate.Type, ag.ID, retryResult.Attempts)
+								retryFixed = true
+							}
+							// Only retry with the first agent — the gate is repo-scoped.
+							break
+						}
+						if retryFixed {
+							// Gate was fixed by the retry agent; re-run gates to confirm.
+							// Invalidate cache so re-run gets fresh results.
+							cache = gatecache.New(stateDir, gatecache.DefaultTTL)
+							rerunResults, rerunErr := protocol.RunPreMergeGates(manifest, waveNum, repoPath, cache)
+							if rerunErr == nil {
+								result.GateResults[repoKey] = rerunResults
+								// Check if the gate passes now.
+								stillFailing := false
+								for _, rg := range rerunResults {
+									if rg.Required && !rg.Passed {
+										stillFailing = true
+										break
+									}
+								}
+								if !stillFailing {
+									// All gates pass after retry — continue to next repo.
+									break
+								}
+							}
+						}
 						out, _ := json.MarshalIndent(result, "", "  ")
 						fmt.Println(string(out))
 						return fmt.Errorf("finalize-wave: required pre-merge gate '%s' failed in %s", gate.Type, repoKey)
