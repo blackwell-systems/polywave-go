@@ -1,444 +1,444 @@
-title: "Wire all dead code gaps from wiring audit"
+title: Wire all dead code gaps from wiring audit
 feature_slug: wiring-gaps
 verdict: SUITABLE
-state: SCOUT_PENDING
-
 suitability_assessment: |
-  Suitability gate analysis:
+    Suitability gate analysis:
 
-  1. File decomposition: 8 gaps (C1/C8 skipped) touching 7+ distinct files across
-     cmd/saw/ and pkg/engine/. Clear disjoint ownership possible — each gap maps to
-     a different set of files. C7 (main.go) is the only shared file, handled in its
-     own agent.
+    1. File decomposition: 8 gaps (C1/C8 skipped) touching 7+ distinct files across
+       cmd/saw/ and pkg/engine/. Clear disjoint ownership possible — each gap maps to
+       a different set of files. C7 (main.go) is the only shared file, handled in its
+       own agent.
 
-  2. Investigation-first items: None. Every gap has a known root cause (documented
-     in wiring-audit.md) with specific function names, file paths, and fix strategies.
-     No reproduction or debugging needed.
+    2. Investigation-first items: None. Every gap has a known root cause (documented
+       in wiring-audit.md) with specific function names, file paths, and fix strategies.
+       No reproduction or debugging needed.
 
-  3. Interface discoverability: Yes. All functions to wire already exist with stable
-     signatures. No new interfaces needed — this is purely about calling existing code.
+    3. Interface discoverability: Yes. All functions to wire already exist with stable
+       signatures. No new interfaces needed — this is purely about calling existing code.
 
-  4. Pre-implementation status: All 8 gaps confirmed as TODO per the audit. No partial
-     implementations. C5 (AutoTriggerReplan) is already called from RunTierLoop when
-     gate fails in auto mode — so C5 is DONE within the tier loop. However, standalone
-     CLI triggering is still unwired. C3 and C10 are web-app integration points — we
-     document the wiring need but actual web app changes are out of scope for this IMPL.
+    4. Pre-implementation status: All 8 gaps confirmed as TODO per the audit. No partial
+       implementations. C5 (AutoTriggerReplan) is already called from RunTierLoop when
+       gate fails in auto mode — so C5 is DONE within the tier loop. However, standalone
+       CLI triggering is still unwired. C3 and C10 are web-app integration points — we
+       document the wiring need but actual web app changes are out of scope for this IMPL.
 
-  5. Parallelization value: High. 8 independent wiring tasks across disjoint files.
-     Go build+test cycle is 30+ seconds. Each agent touches 1-3 files. Most work is
-     Wave 1 (independent). Clear speedup over sequential.
+    5. Parallelization value: High. 8 independent wiring tasks across disjoint files.
+       Go build+test cycle is 30+ seconds. Each agent touches 1-3 files. Most work is
+       Wave 1 (independent). Clear speedup over sequential.
 
-  Revised gap analysis after code review:
-  - C2 (ClosedLoopGateRetry): Wire into finalize-wave per-agent gate failure path.
-  - C3 (FinalizeIMPLEngine): Web-app only — note for follow-up, no code change here.
-  - C4 (AdvanceTierAutomatically): Wire into finalize-tier CLI command.
-  - C5 (AutoTriggerReplan): Already wired in RunTierLoop (line 216). Standalone CLI
-    not needed — program-replan exists. Mark as DONE.
-  - C6 (SyncProgramStatusFromDisk): Wire into program-status CLI command.
-  - C7 (4 missing CLI commands): Add to main.go AddCommand list. Also wire
-    pre-wave-gate into prepare-wave as a pre-flight check.
-  - C9 (ScoutCorrectionLoop): Wire into run-scout command replacing direct RunScout call.
-  - C10 (RunSingleWave/RunSingleAgent): Web-app integration — note for follow-up.
-  - NewPoller: 0 callers, 0 tests. Candidate for deletion but out of scope (not a
-    wiring gap, it's dead code cleanup). Note in known_issues.
+    Revised gap analysis after code review:
+    - C2 (ClosedLoopGateRetry): Wire into finalize-wave per-agent gate failure path.
+    - C3 (FinalizeIMPLEngine): Web-app only — note for follow-up, no code change here.
+    - C4 (AdvanceTierAutomatically): Wire into finalize-tier CLI command.
+    - C5 (AutoTriggerReplan): Already wired in RunTierLoop (line 216). Standalone CLI
+      not needed — program-replan exists. Mark as DONE.
+    - C6 (SyncProgramStatusFromDisk): Wire into program-status CLI command.
+    - C7 (4 missing CLI commands): Add to main.go AddCommand list. Also wire
+      pre-wave-gate into prepare-wave as a pre-flight check.
+    - C9 (ScoutCorrectionLoop): Wire into run-scout command replacing direct RunScout call.
+    - C10 (RunSingleWave/RunSingleAgent): Web-app integration — note for follow-up.
+    - NewPoller: 0 callers, 0 tests. Candidate for deletion but out of scope (not a
+      wiring gap, it's dead code cleanup). Note in known_issues.
 
-  Estimated times:
-  - Scout phase: ~8 min (dependency mapping, contract review)
-  - Agent execution: ~12 min (5 agents x 5 min avg, 2 waves, good parallelism)
-  - Merge and verification: ~4 min
-  Total SAW time: ~24 min
+    Estimated times:
+    - Scout phase: ~8 min (dependency mapping, contract review)
+    - Agent execution: ~12 min (5 agents x 5 min avg, 2 waves, good parallelism)
+    - Merge and verification: ~4 min
+    Total SAW time: ~24 min
 
-  Sequential baseline: ~35 min (5 agents x 7 min avg)
-  Time savings: ~11 min (31% faster)
+    Sequential baseline: ~35 min (5 agents x 7 min avg)
+    Time savings: ~11 min (31% faster)
 
-  Recommendation: Clear speedup. Proceed.
-
-test_command: "go test ./..."
-lint_command: "go vet ./..."
-
-quality_gates:
-  level: standard
-  gates:
-    - type: build
-      command: "go build ./..."
-      required: true
-    - type: lint
-      command: "go vet ./..."
-      required: true
-    - type: test
-      command: "go test ./..."
-      required: true
-
-scaffolds: []
-
-interface_contracts:
-  - name: ClosedLoopGateRetry
-    description: |
-      Already-exported function in pkg/engine. Agent B wires calls to it from
-      finalize-wave when per-agent gates fail. No signature change needed.
-    definition: |
-      func ClosedLoopGateRetry(ctx context.Context, opts ClosedLoopRetryOpts) (*ClosedLoopRetryResult, error)
-    location: pkg/engine/closed_loop_gate.go
-
-  - name: ScoutCorrectionLoop
-    description: |
-      Already-exported function in pkg/engine. Agent C replaces the direct
-      RunScout call in run-scout CLI with ScoutCorrectionLoop for self-healing.
-    definition: |
-      func ScoutCorrectionLoop(ctx context.Context, opts ScoutCorrectionOpts, onChunk func(string)) error
-    location: pkg/engine/scout_correction_loop.go
-
-  - name: AdvanceTierAutomatically
-    description: |
-      Already-exported function in pkg/engine. Agent D wires it into the
-      finalize-tier CLI command after tier gate passes.
-    definition: |
-      func AdvanceTierAutomatically(manifest *protocol.PROGRAMManifest, completedTier int, repoPath string, autoMode bool) (*TierAdvanceResult, error)
-    location: pkg/engine/program_auto.go
-
-  - name: SyncProgramStatusFromDisk
-    description: |
-      Already-exported function in pkg/engine. Agent D wires it into
-      program-status CLI command before displaying status.
-    definition: |
-      func SyncProgramStatusFromDisk(manifestPath string, repoPath string) error
-    location: pkg/engine/program_progress.go
-
+    Recommendation: Clear speedup. Proceed.
+test_command: go test ./...
+lint_command: go vet ./...
 file_ownership:
-  - file: cmd/saw/main.go
-    agent: A
-    wave: 1
-    action: modify
-    depends_on: []
-
-  - file: cmd/saw/finalize_wave.go
-    agent: B
-    wave: 1
-    action: modify
-    depends_on: []
-
-  - file: cmd/saw/run_scout_cmd.go
-    agent: C
-    wave: 1
-    action: modify
-    depends_on: []
-
-  - file: cmd/saw/finalize_tier_cmd.go
-    agent: D
-    wave: 1
-    action: modify
-    depends_on: []
-  - file: cmd/saw/program_status_cmd.go
-    agent: D
-    wave: 1
-    action: modify
-    depends_on: []
-
-  - file: cmd/saw/prepare_wave.go
-    agent: E
-    wave: 2
-    action: modify
-    depends_on: []
-
+    - file: cmd/saw/main.go
+      agent: A
+      wave: 1
+      action: modify
+    - file: cmd/saw/finalize_wave.go
+      agent: B
+      wave: 1
+      action: modify
+    - file: cmd/saw/run_scout_cmd.go
+      agent: C
+      wave: 1
+      action: modify
+    - file: cmd/saw/finalize_tier_cmd.go
+      agent: D
+      wave: 1
+      action: modify
+    - file: cmd/saw/program_status_cmd.go
+      agent: D
+      wave: 1
+      action: modify
+    - file: cmd/saw/prepare_wave.go
+      agent: E
+      wave: 2
+      action: modify
+interface_contracts:
+    - name: ClosedLoopGateRetry
+      description: |
+        Already-exported function in pkg/engine. Agent B wires calls to it from
+        finalize-wave when per-agent gates fail. No signature change needed.
+      definition: |
+        func ClosedLoopGateRetry(ctx context.Context, opts ClosedLoopRetryOpts) (*ClosedLoopRetryResult, error)
+      location: pkg/engine/closed_loop_gate.go
+    - name: ScoutCorrectionLoop
+      description: |
+        Already-exported function in pkg/engine. Agent C replaces the direct
+        RunScout call in run-scout CLI with ScoutCorrectionLoop for self-healing.
+      definition: |
+        func ScoutCorrectionLoop(ctx context.Context, opts ScoutCorrectionOpts, onChunk func(string)) error
+      location: pkg/engine/scout_correction_loop.go
+    - name: AdvanceTierAutomatically
+      description: |
+        Already-exported function in pkg/engine. Agent D wires it into the
+        finalize-tier CLI command after tier gate passes.
+      definition: |
+        func AdvanceTierAutomatically(manifest *protocol.PROGRAMManifest, completedTier int, repoPath string, autoMode bool) (*TierAdvanceResult, error)
+      location: pkg/engine/program_auto.go
+    - name: SyncProgramStatusFromDisk
+      description: |
+        Already-exported function in pkg/engine. Agent D wires it into
+        program-status CLI command before displaying status.
+      definition: |
+        func SyncProgramStatusFromDisk(manifestPath string, repoPath string) error
+      location: pkg/engine/program_progress.go
 waves:
-  - number: 1
-    agents:
-      - id: A
-        task: |
-          ## Agent A — Register missing CLI commands in main.go (C7)
+    - number: 1
+      agents:
+        - id: A
+          task: |
+            ## Agent A — Register missing CLI commands in main.go (C7)
 
-          **What to implement:**
-          Add 4 missing CLI commands to the rootCmd.AddCommand() block in cmd/saw/main.go:
-          1. `newUpdateProgramImplCmd()` — already defined in cmd/saw/update_program_impl_cmd.go
-          2. `newUpdateProgramStateCmd()` — already defined in cmd/saw/update_program_state_cmd.go
-          3. `newPreWaveGateCmd()` — already defined in cmd/saw/pre_wave_gate_cmd.go
-          4. `newQueueCmd()` — already defined in cmd/saw/queue_cmd.go (parent with add/list/next subcommands)
+            **What to implement:**
+            Add 4 missing CLI commands to the rootCmd.AddCommand() block in cmd/saw/main.go:
+            1. `newUpdateProgramImplCmd()` — already defined in cmd/saw/update_program_impl_cmd.go
+            2. `newUpdateProgramStateCmd()` — already defined in cmd/saw/update_program_state_cmd.go
+            3. `newPreWaveGateCmd()` — already defined in cmd/saw/pre_wave_gate_cmd.go
+            4. `newQueueCmd()` — already defined in cmd/saw/queue_cmd.go (parent with add/list/next subcommands)
 
-          **How to implement:**
-          Add these 4 function calls to the rootCmd.AddCommand(...) block in main.go, after the
-          existing commands. Group them with a comment like `// C7: Previously unregistered commands`.
+            **How to implement:**
+            Add these 4 function calls to the rootCmd.AddCommand(...) block in main.go, after the
+            existing commands. Group them with a comment like `// C7: Previously unregistered commands`.
 
-          **Interfaces:** No new interfaces. These functions already exist and compile.
+            **Interfaces:** No new interfaces. These functions already exist and compile.
 
-          **Tests:**
-          - Verify the binary compiles: `go build ./cmd/saw/`
-          - Verify each command is reachable: build the binary and run `./sawtools queue --help`,
-            `./sawtools update-program-impl --help`, `./sawtools update-program-state --help`,
-            `./sawtools pre-wave-gate --help`
-          - Run existing tests: `go test ./cmd/saw/ -run TestQueue` (if exists) or just
-            `go test ./cmd/saw/...`
+            **Tests:**
+            - Verify the binary compiles: `go build ./cmd/saw/`
+            - Verify each command is reachable: build the binary and run `./sawtools queue --help`,
+              `./sawtools update-program-impl --help`, `./sawtools update-program-state --help`,
+              `./sawtools pre-wave-gate --help`
+            - Run existing tests: `go test ./cmd/saw/ -run TestQueue` (if exists) or just
+              `go test ./cmd/saw/...`
 
-          **Verification gate:**
-          ```
-          go build ./cmd/saw/ && go vet ./cmd/saw/ && go test ./cmd/saw/...
-          ```
+            **Verification gate:**
+            ```
+            go build ./cmd/saw/ && go vet ./cmd/saw/ && go test ./cmd/saw/...
+            ```
 
-          **Constraints:**
-          - Only modify cmd/saw/main.go
-          - Do NOT modify any other file
-          - Add the 4 calls in alphabetical order or grouped logically
-        files:
-          - cmd/saw/main.go
-        dependencies: []
+            **Constraints:**
+            - Only modify cmd/saw/main.go
+            - Do NOT modify any other file
+            - Add the 4 calls in alphabetical order or grouped logically
+          files:
+            - cmd/saw/main.go
+        - id: B
+          task: |
+            ## Agent B — Wire ClosedLoopGateRetry into finalize-wave (C2)
 
-      - id: B
-        task: |
-          ## Agent B — Wire ClosedLoopGateRetry into finalize-wave (C2)
+            **What to implement:**
+            When per-agent pre-merge gates fail in finalize-wave, call `engine.ClosedLoopGateRetry()`
+            to auto-retry with a fix agent before giving up.
 
-          **What to implement:**
-          When per-agent pre-merge gates fail in finalize-wave, call `engine.ClosedLoopGateRetry()`
-          to auto-retry with a fix agent before giving up.
+            **Where to wire:**
+            In `cmd/saw/finalize_wave.go`, Step 3 (RunPreMergeGates), when a required gate fails
+            (around line 200-206), instead of immediately returning an error, attempt a closed-loop
+            retry first.
 
-          **Where to wire:**
-          In `cmd/saw/finalize_wave.go`, Step 3 (RunPreMergeGates), when a required gate fails
-          (around line 200-206), instead of immediately returning an error, attempt a closed-loop
-          retry first.
+            **How to implement:**
+            1. Add import for `"github.com/blackwell-systems/scout-and-wave-go/pkg/engine"`
+            2. When a required pre-merge gate fails for a specific agent, construct
+               `engine.ClosedLoopRetryOpts` with:
+               - IMPLPath from manifestPath
+               - RepoPath from repoPath
+               - WaveNum from waveNum
+               - AgentID from the wave's agent list
+               - GateType/GateCommand/GateOutput from the failed gate result
+               - WorktreePath derived from the agent's worktree
+               - MaxRetries: 2
+            3. Call `engine.ClosedLoopGateRetry(ctx, opts)` where ctx is `cmd.Context()`
+            4. If retry succeeds (result.Fixed == true), continue to next gate instead of failing
+            5. If retry fails, fall through to the existing error return
 
-          **How to implement:**
-          1. Add import for `"github.com/blackwell-systems/scout-and-wave-go/pkg/engine"`
-          2. When a required pre-merge gate fails for a specific agent, construct
-             `engine.ClosedLoopRetryOpts` with:
-             - IMPLPath from manifestPath
-             - RepoPath from repoPath
-             - WaveNum from waveNum
-             - AgentID from the wave's agent list
-             - GateType/GateCommand/GateOutput from the failed gate result
-             - WorktreePath derived from the agent's worktree
-             - MaxRetries: 2
-          3. Call `engine.ClosedLoopGateRetry(ctx, opts)` where ctx is `cmd.Context()`
-          4. If retry succeeds (result.Fixed == true), continue to next gate instead of failing
-          5. If retry fails, fall through to the existing error return
+            **Note:** The current gate loop iterates per-repo, not per-agent. Pre-merge gates
+            run against the repo, not individual agents. The retry is most useful when a specific
+            agent's worktree has a build/test failure. Wire the retry at the per-agent gate level
+            if per-agent gates exist, or at the repo level with the first failing agent as context.
 
-          **Note:** The current gate loop iterates per-repo, not per-agent. Pre-merge gates
-          run against the repo, not individual agents. The retry is most useful when a specific
-          agent's worktree has a build/test failure. Wire the retry at the per-agent gate level
-          if per-agent gates exist, or at the repo level with the first failing agent as context.
+            **Interfaces:**
+            - `engine.ClosedLoopGateRetry(ctx, opts)` — already exists, signature stable
+            - `engine.ClosedLoopRetryOpts` — already exists
 
-          **Interfaces:**
-          - `engine.ClosedLoopGateRetry(ctx, opts)` — already exists, signature stable
-          - `engine.ClosedLoopRetryOpts` — already exists
+            **Tests:**
+            - Verify compilation: `go build ./cmd/saw/`
+            - Run existing finalize-wave tests: `go test ./cmd/saw/ -run TestFinalize`
 
-          **Tests:**
-          - Verify compilation: `go build ./cmd/saw/`
-          - Run existing finalize-wave tests: `go test ./cmd/saw/ -run TestFinalize`
+            **Verification gate:**
+            ```
+            go build ./cmd/saw/ && go vet ./cmd/saw/ && go test ./cmd/saw/...
+            ```
 
-          **Verification gate:**
-          ```
-          go build ./cmd/saw/ && go vet ./cmd/saw/ && go test ./cmd/saw/...
-          ```
+            **Constraints:**
+            - Only modify cmd/saw/finalize_wave.go
+            - Do NOT change the happy path — only add retry on gate failure
+            - Keep retry non-blocking: if ClosedLoopGateRetry itself errors, log and continue
+              to the existing failure path
+          files:
+            - cmd/saw/finalize_wave.go
+        - id: C
+          task: |
+            ## Agent C — Wire ScoutCorrectionLoop into run-scout (C9)
 
-          **Constraints:**
-          - Only modify cmd/saw/finalize_wave.go
-          - Do NOT change the happy path — only add retry on gate failure
-          - Keep retry non-blocking: if ClosedLoopGateRetry itself errors, log and continue
-            to the existing failure path
-        files:
-          - cmd/saw/finalize_wave.go
-        dependencies: []
+            **What to implement:**
+            Replace the direct `engine.RunScout()` call in run-scout CLI with
+            `engine.ScoutCorrectionLoop()` so that Scout validation failures are automatically
+            retried with correction prompts.
 
-      - id: C
-        task: |
-          ## Agent C — Wire ScoutCorrectionLoop into run-scout (C9)
+            **Where to wire:**
+            In `cmd/saw/run_scout_cmd.go`, around line 126, replace:
+            ```go
+            scoutErr := engine.RunScout(ctx, opts, func(chunk string) {
+                fmt.Print(chunk)
+            })
+            ```
+            with:
+            ```go
+            correctionOpts := engine.ScoutCorrectionOpts{
+                ScoutOpts:  opts,
+                MaxRetries: 3,
+                OnRetry: func(attempt int, errors []string) {
+                    fmt.Printf("\nIMPL validation failed (attempt %d), retrying with corrections...\n", attempt)
+                    for _, e := range errors {
+                        fmt.Printf("   - %s\n", e)
+                    }
+                    fmt.Println()
+                },
+            }
+            scoutErr := engine.ScoutCorrectionLoop(ctx, correctionOpts, func(chunk string) {
+                fmt.Print(chunk)
+            })
+            ```
 
-          **What to implement:**
-          Replace the direct `engine.RunScout()` call in run-scout CLI with
-          `engine.ScoutCorrectionLoop()` so that Scout validation failures are automatically
-          retried with correction prompts.
+            **Important:** The ScoutCorrectionLoop already calls RunScout internally and validates
+            the output. After the correction loop succeeds, the existing Step 3 validation
+            (lines 146-200) becomes redundant but harmless — it will pass since the correction
+            loop already validated. Keep it as defense-in-depth.
 
-          **Where to wire:**
-          In `cmd/saw/run_scout_cmd.go`, around line 126, replace:
-          ```go
-          scoutErr := engine.RunScout(ctx, opts, func(chunk string) {
-              fmt.Print(chunk)
-          })
-          ```
-          with:
-          ```go
-          correctionOpts := engine.ScoutCorrectionOpts{
-              ScoutOpts:  opts,
-              MaxRetries: 3,
-              OnRetry: func(attempt int, errors []string) {
-                  fmt.Printf("\nIMPL validation failed (attempt %d), retrying with corrections...\n", attempt)
-                  for _, e := range errors {
-                      fmt.Printf("   - %s\n", e)
-                  }
-                  fmt.Println()
-              },
-          }
-          scoutErr := engine.ScoutCorrectionLoop(ctx, correctionOpts, func(chunk string) {
-              fmt.Print(chunk)
-          })
-          ```
+            **Interfaces:**
+            - `engine.ScoutCorrectionLoop(ctx, opts, onChunk)` — already exists
+            - `engine.ScoutCorrectionOpts` — already exists
 
-          **Important:** The ScoutCorrectionLoop already calls RunScout internally and validates
-          the output. After the correction loop succeeds, the existing Step 3 validation
-          (lines 146-200) becomes redundant but harmless — it will pass since the correction
-          loop already validated. Keep it as defense-in-depth.
+            **Tests:**
+            - Verify compilation: `go build ./cmd/saw/`
+            - Run existing run-scout tests: `go test ./cmd/saw/ -run TestRunScout`
 
-          **Interfaces:**
-          - `engine.ScoutCorrectionLoop(ctx, opts, onChunk)` — already exists
-          - `engine.ScoutCorrectionOpts` — already exists
+            **Verification gate:**
+            ```
+            go build ./cmd/saw/ && go vet ./cmd/saw/ && go test ./cmd/saw/...
+            ```
 
-          **Tests:**
-          - Verify compilation: `go build ./cmd/saw/`
-          - Run existing run-scout tests: `go test ./cmd/saw/ -run TestRunScout`
+            **Constraints:**
+            - Only modify cmd/saw/run_scout_cmd.go
+            - Keep the existing Step 3 validation as defense-in-depth
+            - Do NOT change the function signature or flags
+          files:
+            - cmd/saw/run_scout_cmd.go
+        - id: D
+          task: |
+            ## Agent D — Wire AdvanceTierAutomatically and SyncProgramStatusFromDisk (C4, C6)
 
-          **Verification gate:**
-          ```
-          go build ./cmd/saw/ && go vet ./cmd/saw/ && go test ./cmd/saw/...
-          ```
+            **What to implement (C4):**
+            Wire `engine.AdvanceTierAutomatically()` into the finalize-tier CLI command so that
+            after a tier gate passes, the system can automatically advance to the next tier.
 
-          **Constraints:**
-          - Only modify cmd/saw/run_scout_cmd.go
-          - Keep the existing Step 3 validation as defense-in-depth
-          - Do NOT change the function signature or flags
-        files:
-          - cmd/saw/run_scout_cmd.go
-        dependencies: []
+            In `cmd/saw/finalize_tier_cmd.go`:
+            1. Add an `--auto` bool flag to the command
+            2. After `protocol.FinalizeTier()` succeeds (result.Success == true), call
+               `engine.AdvanceTierAutomatically()` if `--auto` is set
+            3. To call it, parse the manifest with `protocol.ParseProgramManifest(manifestPath)`,
+               then call `engine.AdvanceTierAutomatically(manifest, tierNum, repoDir, autoMode)`
+            4. Print the TierAdvanceResult as JSON
+            5. If AdvancedToNext is true, print the next tier number
+            6. If ProgramComplete is true, print completion message
+            7. Add import for `"github.com/blackwell-systems/scout-and-wave-go/pkg/engine"`
 
-      - id: D
-        task: |
-          ## Agent D — Wire AdvanceTierAutomatically and SyncProgramStatusFromDisk (C4, C6)
+            **What to implement (C6):**
+            Wire `engine.SyncProgramStatusFromDisk()` into the program-status CLI command so that
+            status is refreshed from disk before displaying.
 
-          **What to implement (C4):**
-          Wire `engine.AdvanceTierAutomatically()` into the finalize-tier CLI command so that
-          after a tier gate passes, the system can automatically advance to the next tier.
+            In `cmd/saw/program_status_cmd.go`:
+            1. Add import for `"github.com/blackwell-systems/scout-and-wave-go/pkg/engine"`
+            2. Before calling `protocol.GetProgramStatus()`, call
+               `engine.SyncProgramStatusFromDisk(manifestPath, repoPath)`
+            3. If sync fails, log to stderr but continue (non-fatal — stale status is
+               better than no status)
 
-          In `cmd/saw/finalize_tier_cmd.go`:
-          1. Add an `--auto` bool flag to the command
-          2. After `protocol.FinalizeTier()` succeeds (result.Success == true), call
-             `engine.AdvanceTierAutomatically()` if `--auto` is set
-          3. To call it, parse the manifest with `protocol.ParseProgramManifest(manifestPath)`,
-             then call `engine.AdvanceTierAutomatically(manifest, tierNum, repoDir, autoMode)`
-          4. Print the TierAdvanceResult as JSON
-          5. If AdvancedToNext is true, print the next tier number
-          6. If ProgramComplete is true, print completion message
-          7. Add import for `"github.com/blackwell-systems/scout-and-wave-go/pkg/engine"`
+            **Interfaces:**
+            - `engine.AdvanceTierAutomatically(manifest, tier, repoPath, auto)` — already exists
+            - `engine.SyncProgramStatusFromDisk(manifestPath, repoPath)` — already exists
 
-          **What to implement (C6):**
-          Wire `engine.SyncProgramStatusFromDisk()` into the program-status CLI command so that
-          status is refreshed from disk before displaying.
+            **Tests:**
+            - Verify compilation: `go build ./cmd/saw/`
+            - Run existing tests: `go test ./cmd/saw/ -run "TestFinalizeTier|TestProgramStatus"`
 
-          In `cmd/saw/program_status_cmd.go`:
-          1. Add import for `"github.com/blackwell-systems/scout-and-wave-go/pkg/engine"`
-          2. Before calling `protocol.GetProgramStatus()`, call
-             `engine.SyncProgramStatusFromDisk(manifestPath, repoPath)`
-          3. If sync fails, log to stderr but continue (non-fatal — stale status is
-             better than no status)
+            **Verification gate:**
+            ```
+            go build ./cmd/saw/ && go vet ./cmd/saw/ && go test ./cmd/saw/...
+            ```
 
-          **Interfaces:**
-          - `engine.AdvanceTierAutomatically(manifest, tier, repoPath, auto)` — already exists
-          - `engine.SyncProgramStatusFromDisk(manifestPath, repoPath)` — already exists
+            **Constraints:**
+            - Only modify cmd/saw/finalize_tier_cmd.go and cmd/saw/program_status_cmd.go
+            - Make AdvanceTierAutomatically opt-in via --auto flag (not default behavior)
+            - SyncProgramStatusFromDisk failures are non-fatal (log, don't exit)
+          files:
+            - cmd/saw/finalize_tier_cmd.go
+            - cmd/saw/program_status_cmd.go
+      base_commit: 9e3fb81494ba2bd692098e910734a830754957f6
+    - number: 2
+      agents:
+        - id: E
+          task: |
+            ## Agent E — Wire pre-wave-gate into prepare-wave pre-flight (C7 integration)
 
-          **Tests:**
-          - Verify compilation: `go build ./cmd/saw/`
-          - Run existing tests: `go test ./cmd/saw/ -run "TestFinalizeTier|TestProgramStatus"`
+            **What to implement:**
+            After Wave 1 registers the pre-wave-gate command, wire it as a pre-flight
+            check in the prepare-wave batching command. This ensures manifests pass
+            readiness checks before worktrees are created.
 
-          **Verification gate:**
-          ```
-          go build ./cmd/saw/ && go vet ./cmd/saw/ && go test ./cmd/saw/...
-          ```
+            **Where to wire:**
+            In `cmd/saw/prepare_wave.go`, add a pre-flight readiness check early in the
+            RunE function, before worktree creation begins:
 
-          **Constraints:**
-          - Only modify cmd/saw/finalize_tier_cmd.go and cmd/saw/program_status_cmd.go
-          - Make AdvanceTierAutomatically opt-in via --auto flag (not default behavior)
-          - SyncProgramStatusFromDisk failures are non-fatal (log, don't exit)
-        files:
-          - cmd/saw/finalize_tier_cmd.go
-          - cmd/saw/program_status_cmd.go
-        dependencies: []
+            1. Load the manifest with `protocol.Load(manifestPath)`
+            2. Call `protocol.PreWaveGate(manifest)` to run readiness checks
+            3. If `!gateResult.Ready`, print the gate result as JSON and return an error
+               explaining which checks failed
+            4. If ready, proceed with existing worktree creation logic
 
-  - number: 2
-    agents:
-      - id: E
-        task: |
-          ## Agent E — Wire pre-wave-gate into prepare-wave pre-flight (C7 integration)
+            **Note:** The `protocol.PreWaveGate()` function already exists and is called by
+            the standalone `pre-wave-gate` CLI command. We are reusing the same function
+            inline in prepare-wave so that `sawtools prepare-wave` automatically includes
+            the readiness check.
 
-          **What to implement:**
-          After Wave 1 registers the pre-wave-gate command, wire it as a pre-flight
-          check in the prepare-wave batching command. This ensures manifests pass
-          readiness checks before worktrees are created.
+            **Interfaces:**
+            - `protocol.PreWaveGate(manifest)` — already exists, returns PreWaveGateResult
+            - `protocol.Load(path)` — already exists
 
-          **Where to wire:**
-          In `cmd/saw/prepare_wave.go`, add a pre-flight readiness check early in the
-          RunE function, before worktree creation begins:
+            **Tests:**
+            - Verify compilation: `go build ./cmd/saw/`
+            - Run existing prepare-wave tests: `go test ./cmd/saw/ -run TestPrepareWave`
 
-          1. Load the manifest with `protocol.Load(manifestPath)`
-          2. Call `protocol.PreWaveGate(manifest)` to run readiness checks
-          3. If `!gateResult.Ready`, print the gate result as JSON and return an error
-             explaining which checks failed
-          4. If ready, proceed with existing worktree creation logic
+            **Verification gate:**
+            ```
+            go build ./cmd/saw/ && go vet ./cmd/saw/ && go test ./cmd/saw/...
+            ```
 
-          **Note:** The `protocol.PreWaveGate()` function already exists and is called by
-          the standalone `pre-wave-gate` CLI command. We are reusing the same function
-          inline in prepare-wave so that `sawtools prepare-wave` automatically includes
-          the readiness check.
-
-          **Interfaces:**
-          - `protocol.PreWaveGate(manifest)` — already exists, returns PreWaveGateResult
-          - `protocol.Load(path)` — already exists
-
-          **Tests:**
-          - Verify compilation: `go build ./cmd/saw/`
-          - Run existing prepare-wave tests: `go test ./cmd/saw/ -run TestPrepareWave`
-
-          **Verification gate:**
-          ```
-          go build ./cmd/saw/ && go vet ./cmd/saw/ && go test ./cmd/saw/...
-          ```
-
-          **Constraints:**
-          - Only modify cmd/saw/prepare_wave.go
-          - Pre-wave gate failure should block worktree creation (return error)
-          - Print structured JSON output on failure for machine-readability
-        files:
-          - cmd/saw/prepare_wave.go
-        dependencies:
-          - A
-
+            **Constraints:**
+            - Only modify cmd/saw/prepare_wave.go
+            - Pre-wave gate failure should block worktree creation (return error)
+            - Print structured JSON output on failure for machine-readability
+          files:
+            - cmd/saw/prepare_wave.go
+          dependencies:
+            - A
+quality_gates:
+    level: standard
+    gates:
+        - type: build
+          command: go build ./...
+          required: true
+        - type: lint
+          command: go vet ./...
+          required: true
+        - type: test
+          command: go test ./...
+          required: true
+completion_reports:
+    A:
+        status: complete
+        branch: saw/wiring-gaps/wave1-agent-A
+        commit: 261174b
+        files_changed:
+            - cmd/saw/main.go
+        verification: PASS
+    B:
+        status: complete
+        branch: saw/wiring-gaps/wave1-agent-B
+        commit: "1602996"
+        files_changed:
+            - cmd/saw/finalize_wave.go
+        verification: PASS
+    C:
+        status: complete
+        branch: saw/wiring-gaps/wave1-agent-C
+        commit: 9b5796f
+        files_changed:
+            - cmd/saw/run_scout_cmd.go
+        verification: PASS
+    D:
+        status: complete
+        branch: saw/wiring-gaps/wave1-agent-D
+        commit: e7cba02
+        files_changed:
+            - cmd/saw/finalize_tier_cmd.go
+            - cmd/saw/program_status_cmd.go
+        verification: PASS
 pre_mortem:
-  overall_risk: low
-  rows:
-    - scenario: "C2 retry wiring adds latency to finalize-wave happy path"
-      likelihood: low
-      impact: low
-      mitigation: |
-        Retry only triggers on gate failure (not happy path). The retry loop has
-        a configurable max-retries cap (default 2). No impact on success cases.
-    - scenario: "C9 ScoutCorrectionLoop changes run-scout behavior for existing users"
-      likelihood: medium
-      impact: low
-      mitigation: |
-        ScoutCorrectionLoop wraps RunScout — if validation passes on first try,
-        behavior is identical. The OnRetry callback provides visibility into retries.
-        Existing Step 3 validation remains as defense-in-depth.
-    - scenario: "C4 auto-advance could advance tiers prematurely"
-      likelihood: low
-      impact: medium
-      mitigation: |
-        Auto-advance is opt-in via --auto flag. Default behavior unchanged.
-        AdvanceTierAutomatically checks gate results before advancing.
-    - scenario: "prepare-wave pre-flight gate rejects manifests that previously passed"
-      likelihood: low
-      impact: medium
-      mitigation: |
-        PreWaveGate checks are already implemented and tested. The only change is
-        running them automatically in prepare-wave instead of requiring a separate
-        command. Users who hit false positives can run prepare-wave after fixing.
-
+    overall_risk: low
+    rows:
+        - scenario: C2 retry wiring adds latency to finalize-wave happy path
+          likelihood: low
+          impact: low
+          mitigation: |
+            Retry only triggers on gate failure (not happy path). The retry loop has
+            a configurable max-retries cap (default 2). No impact on success cases.
+        - scenario: C9 ScoutCorrectionLoop changes run-scout behavior for existing users
+          likelihood: medium
+          impact: low
+          mitigation: |
+            ScoutCorrectionLoop wraps RunScout — if validation passes on first try,
+            behavior is identical. The OnRetry callback provides visibility into retries.
+            Existing Step 3 validation remains as defense-in-depth.
+        - scenario: C4 auto-advance could advance tiers prematurely
+          likelihood: low
+          impact: medium
+          mitigation: |
+            Auto-advance is opt-in via --auto flag. Default behavior unchanged.
+            AdvanceTierAutomatically checks gate results before advancing.
+        - scenario: prepare-wave pre-flight gate rejects manifests that previously passed
+          likelihood: low
+          impact: medium
+          mitigation: |
+            PreWaveGate checks are already implemented and tested. The only change is
+            running them automatically in prepare-wave instead of requiring a separate
+            command. Users who hit false positives can run prepare-wave after fixing.
 known_issues:
-  - title: "NewPoller is fully dead code (0 callers, 0 tests)"
-    description: |
-      pkg/git/activity.go defines NewPoller with no callers and no tests.
-      Candidate for deletion in a cleanup IMPL, not wired here since it has
-      no obvious call site. May have been designed for web app polling.
-  - title: "C3 and C10 require web app changes (out of scope)"
-    description: |
-      FinalizeIMPLEngine (C3) and RunSingleWave/RunSingleAgent (C10) are designed
-      for the web app (scout-and-wave-web). Wiring them requires changes in that
-      repo's API handlers. Documented here for follow-up IMPL.
-  - title: "C5 AutoTriggerReplan already wired in RunTierLoop"
-    description: |
-      AutoTriggerReplan is called from RunTierLoop line 216 when a tier gate fails
-      in auto mode. The audit flagged it because there is no standalone CLI trigger,
-      but program-replan already exists for manual use. No additional wiring needed.
+    - title: NewPoller is fully dead code (0 callers, 0 tests)
+      description: |
+        pkg/git/activity.go defines NewPoller with no callers and no tests.
+        Candidate for deletion in a cleanup IMPL, not wired here since it has
+        no obvious call site. May have been designed for web app polling.
+    - title: C3 and C10 require web app changes (out of scope)
+      description: |
+        FinalizeIMPLEngine (C3) and RunSingleWave/RunSingleAgent (C10) are designed
+        for the web app (scout-and-wave-web). Wiring them requires changes in that
+        repo's API handlers. Documented here for follow-up IMPL.
+    - title: C5 AutoTriggerReplan already wired in RunTierLoop
+      description: |
+        AutoTriggerReplan is called from RunTierLoop line 216 when a tier gate fails
+        in auto mode. The audit flagged it because there is no standalone CLI trigger,
+        but program-replan already exists for manual use. No additional wiring needed.
+state: "WAVE_PENDING"

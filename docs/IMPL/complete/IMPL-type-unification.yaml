@@ -1,3 +1,4 @@
+completion_date: "2026-03-22"
 title: 'Type Unification: Migrate orchestrator from types.IMPLDoc to protocol.IMPLManifest'
 feature_slug: type-unification
 verdict: SUITABLE
