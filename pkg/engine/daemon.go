@@ -353,10 +353,3 @@ func daemonProcessItem(
 
 	return nil
 }
-
-// StopDaemon returns a cancel function that can be used to stop a running daemon.
-// Typically you just cancel the context passed to RunDaemon, but this helper
-// is provided for callers that want a named stop handle.
-func StopDaemon(cancel context.CancelFunc) {
-	cancel()
-}
