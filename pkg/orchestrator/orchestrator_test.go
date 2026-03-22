@@ -18,17 +18,17 @@ import (
 )
 
 // makeOrch is a helper that returns a fresh Orchestrator backed by an
-// empty IMPLDoc so tests have no pkg/protocol dependency.
+// empty IMPLManifest so tests have no pkg/types dependency.
 func makeOrch() *Orchestrator {
 	return newFromDoc(&protocol.IMPLManifest{}, "/repo", "/repo/IMPL.md")
 }
 
-// makeOrchWithWave returns an Orchestrator whose IMPLDoc contains one wave
+// makeOrchWithWave returns an Orchestrator whose IMPLManifest contains one wave
 // with the provided agents.
-func makeOrchWithWave(waveNum int, letters ...string) *Orchestrator {
-	agents := make([]protocol.Agent, len(letters))
-	for i, l := range letters {
-		agents[i] = protocol.Agent{ID: l, Task: "do work"}
+func makeOrchWithWave(waveNum int, ids ...string) *Orchestrator {
+	agents := make([]protocol.Agent, len(ids))
+	for i, id := range ids {
+		agents[i] = protocol.Agent{ID: id, Task: "do work"}
 	}
 	doc := &protocol.IMPLManifest{
 		Waves: []protocol.Wave{
@@ -74,12 +74,24 @@ func (f *fakeBackend) Run(_ context.Context, systemPrompt, _, _ string) (string,
 }
 
 // TestOrchestratorNew verifies that New returns a valid orchestrator in ScoutPending state.
+// Uses a temp YAML file to verify protocol.Load is called.
 func TestOrchestratorNew(t *testing.T) {
-	// New() now calls protocol.Load() directly, so we need a real YAML file.
-	tmpDir := t.TempDir()
-	implPath := filepath.Join(tmpDir, "IMPL-test.yaml")
-	if err := os.WriteFile(implPath, []byte("title: test\nfeature_slug: test-slug\n"), 0644); err != nil {
-		t.Fatalf("failed to write test IMPL: %v", err)
+	dir := t.TempDir()
+	implPath := filepath.Join(dir, "IMPL.yaml")
+	content := `title: test
+feature_slug: test
+verdict: SUITABLE
+test_command: go test ./...
+lint_command: go vet ./...
+file_ownership: []
+interface_contracts: []
+waves: []
+quality_gates:
+  level: standard
+  gates: []
+`
+	if err := os.WriteFile(implPath, []byte(content), 0644); err != nil {
+		t.Fatalf("failed to write IMPL manifest: %v", err)
 	}
 
 	o, err := New("/repo", implPath)
@@ -112,12 +124,24 @@ func TestRunWaveNilDoc(t *testing.T) {
 }
 
 // TestNew_LoadsDoc verifies that New returns a non-nil Orchestrator in
-// ScoutPending state when parseIMPLDocFunc succeeds.
+// ScoutPending state when protocol.Load succeeds (using a temp YAML file).
 func TestNew_LoadsDoc(t *testing.T) {
-	tmpDir := t.TempDir()
-	implPath := filepath.Join(tmpDir, "IMPL-test.yaml")
-	if err := os.WriteFile(implPath, []byte("title: test\nfeature_slug: test-slug\n"), 0644); err != nil {
-		t.Fatalf("failed to write test IMPL: %v", err)
+	dir := t.TempDir()
+	implPath := filepath.Join(dir, "IMPL.yaml")
+	content := `title: test
+feature_slug: test
+verdict: SUITABLE
+test_command: go test ./...
+lint_command: go vet ./...
+file_ownership: []
+interface_contracts: []
+waves: []
+quality_gates:
+  level: standard
+  gates: []
+`
+	if err := os.WriteFile(implPath, []byte(content), 0644); err != nil {
+		t.Fatalf("failed to write IMPL manifest: %v", err)
 	}
 
 	o, err := New("/repo", implPath)
@@ -235,9 +259,9 @@ func TestRunWave_LaunchesAllAgents(t *testing.T) {
 		newBackendFunc = origNewBackend
 		newRunnerFunc = origNewRunner
 	})
-	worktreeCreatorFunc = func(_ *worktree.Manager, _ int, letter string) (string, error) {
+	worktreeCreatorFunc = func(_ *worktree.Manager, _ int, id string) (string, error) {
 		atomic.AddInt32(&worktreeCount, 1)
-		return "/tmp/fake-wt-" + letter, nil
+		return "/tmp/fake-wt-" + id, nil
 	}
 	waitForCompletionFunc = func(_, _ string, _, _ time.Duration) (*protocol.CompletionReport, error) {
 		return &protocol.CompletionReport{Status: "complete"}, nil
@@ -293,8 +317,8 @@ func TestRunWave_ReturnsErrorOnAgentFailure(t *testing.T) {
 		newBackendFunc = origNewBackend
 		newRunnerFunc = origNewRunner
 	})
-	worktreeCreatorFunc = func(_ *worktree.Manager, _ int, letter string) (string, error) {
-		return "/tmp/fake-wt-" + letter, nil
+	worktreeCreatorFunc = func(_ *worktree.Manager, _ int, id string) (string, error) {
+		return "/tmp/fake-wt-" + id, nil
 	}
 	waitForCompletionFunc = func(_, _ string, _, _ time.Duration) (*protocol.CompletionReport, error) {
 		return &protocol.CompletionReport{Status: "complete"}, nil
@@ -438,8 +462,8 @@ func TestIsValidTransition(t *testing.T) {
 // TestNewFromDoc verifies that newFromDoc sets the initial state correctly.
 func TestNewFromDoc(t *testing.T) {
 	doc := &protocol.IMPLManifest{
-		Title:       "test-feature",
-		FeatureSlug: "test-feature",
+		Title:   "test-feature",
+		Verdict: "pending",
 	}
 	o := newFromDoc(doc, "/some/repo", "/some/repo/IMPL.md")
 
@@ -471,8 +495,8 @@ func TestSetEventPublisher_NilPublisher_NoOp(t *testing.T) {
 		newRunnerFunc = origNewRunner
 	})
 
-	worktreeCreatorFunc = func(_ *worktree.Manager, _ int, letter string) (string, error) {
-		return "/tmp/fake-wt-" + letter, nil
+	worktreeCreatorFunc = func(_ *worktree.Manager, _ int, id string) (string, error) {
+		return "/tmp/fake-wt-" + id, nil
 	}
 	waitForCompletionFunc = func(_, _ string, _, _ time.Duration) (*protocol.CompletionReport, error) {
 		return &protocol.CompletionReport{Status: "complete"}, nil
@@ -507,8 +531,8 @@ func TestPublish_EmitsAgentStarted(t *testing.T) {
 		newRunnerFunc = origNewRunner
 	})
 
-	worktreeCreatorFunc = func(_ *worktree.Manager, _ int, letter string) (string, error) {
-		return "/tmp/fake-wt-" + letter, nil
+	worktreeCreatorFunc = func(_ *worktree.Manager, _ int, id string) (string, error) {
+		return "/tmp/fake-wt-" + id, nil
 	}
 	waitForCompletionFunc = func(_, _ string, _, _ time.Duration) (*protocol.CompletionReport, error) {
 		return &protocol.CompletionReport{Status: "complete"}, nil
@@ -706,8 +730,8 @@ func TestLaunchAgentE23FallbackOnExtractError(t *testing.T) {
 		newRunnerFunc = origNewRunner
 	})
 
-	worktreeCreatorFunc = func(_ *worktree.Manager, _ int, letter string) (string, error) {
-		return "/tmp/fake-wt-" + letter, nil
+	worktreeCreatorFunc = func(_ *worktree.Manager, _ int, id string) (string, error) {
+		return "/tmp/fake-wt-" + id, nil
 	}
 	waitForCompletionFunc = func(_, _ string, _, _ time.Duration) (*protocol.CompletionReport, error) {
 		return &protocol.CompletionReport{Status: "complete"}, nil
@@ -767,8 +791,8 @@ func TestLaunchAgentE19BlockedEvent(t *testing.T) {
 		newRunnerFunc = origNewRunner
 	})
 
-	worktreeCreatorFunc = func(_ *worktree.Manager, _ int, letter string) (string, error) {
-		return "/tmp/fake-wt-" + letter, nil
+	worktreeCreatorFunc = func(_ *worktree.Manager, _ int, id string) (string, error) {
+		return "/tmp/fake-wt-" + id, nil
 	}
 
 	// First call returns blocked/transient; subsequent calls return complete (retry succeeds).
@@ -859,8 +883,8 @@ func TestExecuteRetryLoop_TransientRetries(t *testing.T) {
 		newRunnerFunc = origNewRunner
 	})
 
-	worktreeCreatorFunc = func(_ *worktree.Manager, _ int, letter string) (string, error) {
-		return "/tmp/fake-wt-retry-" + letter, nil
+	worktreeCreatorFunc = func(_ *worktree.Manager, _ int, id string) (string, error) {
+		return "/tmp/fake-wt-retry-" + id, nil
 	}
 
 	// First call: partial/transient. Second call: complete.
@@ -1028,11 +1052,11 @@ func TestRunWave_AgentPrioritization(t *testing.T) {
 	var launchedAgents []string
 	var mu sync.Mutex
 
-	worktreeCreatorFunc = func(_ *worktree.Manager, _ int, letter string) (string, error) {
+	worktreeCreatorFunc = func(_ *worktree.Manager, _ int, id string) (string, error) {
 		mu.Lock()
-		launchedAgents = append(launchedAgents, letter)
+		launchedAgents = append(launchedAgents, id)
 		mu.Unlock()
-		return "/tmp/fake-wt-" + letter, nil
+		return "/tmp/fake-wt-" + id, nil
 	}
 	waitForCompletionFunc = func(_, _ string, _, _ time.Duration) (*protocol.CompletionReport, error) {
 		return &protocol.CompletionReport{Status: "complete"}, nil
@@ -1050,7 +1074,7 @@ func TestRunWave_AgentPrioritization(t *testing.T) {
 	var prioritizeCalled atomic.Bool
 	var prioritizeWaveNum atomic.Int32
 
-	prioritizeAgentsFunc = func(_ *protocol.IMPLManifest, waveNum int) []string {
+	prioritizeAgentsFunc = func(manifest *protocol.IMPLManifest, waveNum int) []string {
 		prioritizeCalled.Store(true)
 		prioritizeWaveNum.Store(int32(waveNum))
 		// Return prioritized order (reversed for testing)
@@ -1107,8 +1131,8 @@ func TestRunWave_AgentPrioritizedEvent(t *testing.T) {
 		prioritizeAgentsFunc = origPrioritize
 	})
 
-	worktreeCreatorFunc = func(_ *worktree.Manager, _ int, letter string) (string, error) {
-		return "/tmp/fake-wt-" + letter, nil
+	worktreeCreatorFunc = func(_ *worktree.Manager, _ int, id string) (string, error) {
+		return "/tmp/fake-wt-" + id, nil
 	}
 	waitForCompletionFunc = func(_, _ string, _, _ time.Duration) (*protocol.CompletionReport, error) {
 		return &protocol.CompletionReport{Status: "complete"}, nil
@@ -1123,7 +1147,7 @@ func TestRunWave_AgentPrioritizedEvent(t *testing.T) {
 	}
 
 	// Mock prioritization: reverse the agent order
-	prioritizeAgentsFunc = func(_ *protocol.IMPLManifest, _ int) []string {
+	prioritizeAgentsFunc = func(manifest *protocol.IMPLManifest, waveNum int) []string {
 		return []string{"C", "B", "A"}
 	}
 
