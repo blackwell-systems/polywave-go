@@ -85,9 +85,9 @@ func TestLaunchAgentStructured_FallbackToCLI(t *testing.T) {
 	})
 
 	var worktreeCreated bool
-	worktreeCreatorFunc = func(_ *worktree.Manager, _ int, letter string) (string, error) {
+	worktreeCreatorFunc = func(_ *worktree.Manager, _ int, id string) (string, error) {
 		worktreeCreated = true
-		return "/tmp/fake-wt-" + letter, nil
+		return "/tmp/fake-wt-" + id, nil
 	}
 	waitForCompletionFunc = func(_, _ string, _, _ time.Duration) (*protocol.CompletionReport, error) {
 		return &protocol.CompletionReport{Status: "complete"}, nil
@@ -107,12 +107,12 @@ func TestLaunchAgentStructured_FallbackToCLI(t *testing.T) {
 		return agent.NewRunner(b, wm)
 	}
 
-	doc := &types.IMPLDoc{
-		Waves: []types.Wave{
+	doc := &protocol.IMPLManifest{
+		Waves: []protocol.Wave{
 			{
 				Number: 1,
-				Agents: []types.AgentSpec{
-					{Letter: "A", Prompt: "do work", Model: "cli:kimi"},
+				Agents: []protocol.Agent{
+					{ID: "A", Task: "do work", Model: "cli:kimi"},
 				},
 			},
 		},
@@ -152,8 +152,8 @@ func TestLaunchAgentStructured_APIPath(t *testing.T) {
 		runWaveAgentStructuredFunc = origStructured
 	})
 
-	worktreeCreatorFunc = func(_ *worktree.Manager, _ int, letter string) (string, error) {
-		return "/tmp/fake-wt-" + letter, nil
+	worktreeCreatorFunc = func(_ *worktree.Manager, _ int, id string) (string, error) {
+		return "/tmp/fake-wt-" + id, nil
 	}
 
 	dir := t.TempDir()
@@ -170,9 +170,9 @@ func TestLaunchAgentStructured_APIPath(t *testing.T) {
 		return nil
 	}
 
-	doc := &types.IMPLDoc{
-		Waves: []types.Wave{
-			{Number: 1, Agents: []types.AgentSpec{{Letter: "A", Prompt: "do work"}}},
+	doc := &protocol.IMPLManifest{
+		Waves: []protocol.Wave{
+			{Number: 1, Agents: []protocol.Agent{{ID: "A", Task: "do work"}}},
 		},
 	}
 	o := newFromDoc(doc, dir, implPath)
@@ -228,8 +228,8 @@ func TestLaunchAgentStructured_PublishesBlockedEvent(t *testing.T) {
 		runWaveAgentStructuredFunc = origStructured
 	})
 
-	worktreeCreatorFunc = func(_ *worktree.Manager, _ int, letter string) (string, error) {
-		return "/tmp/fake-wt-" + letter, nil
+	worktreeCreatorFunc = func(_ *worktree.Manager, _ int, id string) (string, error) {
+		return "/tmp/fake-wt-" + id, nil
 	}
 
 	dir := t.TempDir()
@@ -244,9 +244,9 @@ func TestLaunchAgentStructured_PublishesBlockedEvent(t *testing.T) {
 		return nil
 	}
 
-	doc := &types.IMPLDoc{
-		Waves: []types.Wave{
-			{Number: 1, Agents: []types.AgentSpec{{Letter: "A", Prompt: "do work"}}},
+	doc := &protocol.IMPLManifest{
+		Waves: []protocol.Wave{
+			{Number: 1, Agents: []protocol.Agent{{ID: "A", Task: "do work"}}},
 		},
 	}
 	o := newFromDoc(doc, dir, implPath)
@@ -316,9 +316,9 @@ func TestLaunchAgentStructured_WorktreeCreationFailure(t *testing.T) {
 		return "", fmt.Errorf("simulated worktree failure")
 	}
 
-	doc := &types.IMPLDoc{
-		Waves: []types.Wave{
-			{Number: 1, Agents: []types.AgentSpec{{Letter: "A", Prompt: "do work"}}},
+	doc := &protocol.IMPLManifest{
+		Waves: []protocol.Wave{
+			{Number: 1, Agents: []protocol.Agent{{ID: "A", Task: "do work"}}},
 		},
 	}
 	o := newFromDoc(doc, "/repo", "/repo/IMPL.md")
@@ -371,16 +371,16 @@ func TestLaunchAgentStructured_StructuredFunctionError(t *testing.T) {
 		runWaveAgentStructuredFunc = origStructured
 	})
 
-	worktreeCreatorFunc = func(_ *worktree.Manager, _ int, letter string) (string, error) {
-		return "/tmp/fake-wt-" + letter, nil
+	worktreeCreatorFunc = func(_ *worktree.Manager, _ int, id string) (string, error) {
+		return "/tmp/fake-wt-" + id, nil
 	}
 	runWaveAgentStructuredFunc = func(_ context.Context, _, _ string, _ types.AgentSpec, _ string, _ func(string)) error {
 		return fmt.Errorf("structured run failed: API timeout")
 	}
 
-	doc := &types.IMPLDoc{
-		Waves: []types.Wave{
-			{Number: 1, Agents: []types.AgentSpec{{Letter: "A", Prompt: "do work"}}},
+	doc := &protocol.IMPLManifest{
+		Waves: []protocol.Wave{
+			{Number: 1, Agents: []protocol.Agent{{ID: "A", Task: "do work"}}},
 		},
 	}
 	o := newFromDoc(doc, "/repo", "/repo/IMPL.md")
@@ -438,8 +438,8 @@ func TestLaunchAgentStructured_OnChunkForwarding(t *testing.T) {
 		runWaveAgentStructuredFunc = origStructured
 	})
 
-	worktreeCreatorFunc = func(_ *worktree.Manager, _ int, letter string) (string, error) {
-		return "/tmp/fake-wt-" + letter, nil
+	worktreeCreatorFunc = func(_ *worktree.Manager, _ int, id string) (string, error) {
+		return "/tmp/fake-wt-" + id, nil
 	}
 
 	dir := t.TempDir()
@@ -456,9 +456,9 @@ func TestLaunchAgentStructured_OnChunkForwarding(t *testing.T) {
 		return nil
 	}
 
-	doc := &types.IMPLDoc{
-		Waves: []types.Wave{
-			{Number: 1, Agents: []types.AgentSpec{{Letter: "A", Prompt: "do work"}}},
+	doc := &protocol.IMPLManifest{
+		Waves: []protocol.Wave{
+			{Number: 1, Agents: []protocol.Agent{{ID: "A", Task: "do work"}}},
 		},
 	}
 	o := newFromDoc(doc, dir, implPath)
@@ -515,13 +515,13 @@ func TestSetRunWaveAgentStructuredFunc(t *testing.T) {
 
 	origCreator := worktreeCreatorFunc
 	t.Cleanup(func() { worktreeCreatorFunc = origCreator })
-	worktreeCreatorFunc = func(_ *worktree.Manager, _ int, letter string) (string, error) {
-		return "/tmp/fake-wt-" + letter, nil
+	worktreeCreatorFunc = func(_ *worktree.Manager, _ int, id string) (string, error) {
+		return "/tmp/fake-wt-" + id, nil
 	}
 
-	doc := &types.IMPLDoc{
-		Waves: []types.Wave{
-			{Number: 1, Agents: []types.AgentSpec{{Letter: "A", Prompt: "do work"}}},
+	doc := &protocol.IMPLManifest{
+		Waves: []protocol.Wave{
+			{Number: 1, Agents: []protocol.Agent{{ID: "A", Task: "do work"}}},
 		},
 	}
 	o := newFromDoc(doc, "/repo", "/repo/IMPL.md")
