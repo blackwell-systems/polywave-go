@@ -432,7 +432,8 @@ pattern matching (H7) and appends diagnosis to the output.`,
 				if err != nil {
 					return fmt.Errorf("finalize-wave: cleanup failed in %s: %w", repoKey, err)
 				}
-				result.CleanupResult[repoKey] = cleanupResult
+				cleanupData := cleanupResult.GetData()
+				result.CleanupResult[repoKey] = &cleanupData
 			}
 
 			// All steps succeeded

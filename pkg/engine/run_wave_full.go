@@ -100,7 +100,8 @@ func RunWaveFull(ctx context.Context, opts RunWaveFullOpts) (*RunWaveFullResult,
 	if err != nil {
 		return result, fmt.Errorf("cleanup: %w", err)
 	}
-	result.Cleaned = cl
+	clData := cl.GetData()
+	result.Cleaned = &clData
 
 	// Success is true only if both test and lint passed
 	result.Success = bv.TestPassed && bv.LintPassed

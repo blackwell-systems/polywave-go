@@ -216,7 +216,8 @@ func FinalizeWave(ctx context.Context, opts FinalizeWaveOpts) (*FinalizeWaveResu
 		// Non-fatal: cleanup failure shouldn't fail the wave
 		fmt.Fprintf(os.Stderr, "engine.FinalizeWave: cleanup: %v\n", err)
 	} else {
-		result.CleanupResult = cleanupResult
+		cleanupData := cleanupResult.GetData()
+		result.CleanupResult = &cleanupData
 	}
 
 	if !result.BuildPassed {

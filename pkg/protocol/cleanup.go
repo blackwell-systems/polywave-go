@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/blackwell-systems/scout-and-wave-go/internal/git"
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
 )
 
 // CleanupAllStale removes all stale worktrees across all slugs.
@@ -37,12 +38,19 @@ type CleanupStatus struct {
 	BranchDeleted   bool   `json:"branch_deleted"`
 }
 
-// CleanupResult represents the overall cleanup result for a wave.
+// CleanupData contains the cleanup outcome for a wave.
 // It contains the cleanup status for each agent in the wave.
-type CleanupResult struct {
+type CleanupData struct {
 	Wave   int             `json:"wave"`
 	Agents []CleanupStatus `json:"agents"`
 }
+
+// CleanupResult is a type alias retained for callers that have not yet migrated
+// to the result.Result[CleanupData] return type. New code should use CleanupData
+// directly via result.Result[CleanupData].
+//
+// Deprecated: Use CleanupData with result.Result[CleanupData] instead.
+type CleanupResult = CleanupData
 
 // Cleanup removes worktrees and branches for all agents in the specified wave.
 // It loads the manifest from manifestPath, finds the wave by waveNum, and attempts
@@ -50,12 +58,19 @@ type CleanupResult struct {
 // if a worktree or branch is already gone, it's treated as success. Individual agent
 // cleanup failures do not stop the overall cleanup process.
 //
-// Returns CleanupResult with status for each agent, or an error if the wave is not found.
-func Cleanup(manifestPath string, waveNum int, repoDir string) (*CleanupResult, error) {
+// Returns result.Result[CleanupData] with status for each agent, or an error if the
+// wave is not found.
+func Cleanup(manifestPath string, waveNum int, repoDir string) (result.Result[CleanupData], error) {
 	// Load manifest
 	manifest, err := Load(manifestPath)
 	if err != nil {
-		return nil, fmt.Errorf("failed to load manifest: %w", err)
+		return result.NewFailure[CleanupData]([]result.StructuredError{
+			{
+				Code:     "E001",
+				Message:  fmt.Sprintf("failed to load manifest: %v", err),
+				Severity: "fatal",
+			},
+		}), fmt.Errorf("failed to load manifest: %w", err)
 	}
 
 	// Find the specified wave
@@ -68,10 +83,16 @@ func Cleanup(manifestPath string, waveNum int, repoDir string) (*CleanupResult, 
 	}
 
 	if targetWave == nil {
-		return nil, fmt.Errorf("wave %d not found in manifest", waveNum)
+		return result.NewFailure[CleanupData]([]result.StructuredError{
+			{
+				Code:     "E002",
+				Message:  fmt.Sprintf("wave %d not found in manifest", waveNum),
+				Severity: "fatal",
+			},
+		}), fmt.Errorf("wave %d not found in manifest", waveNum)
 	}
 
-	result := &CleanupResult{
+	data := CleanupData{
 		Wave:   waveNum,
 		Agents: make([]CleanupStatus, 0, len(targetWave.Agents)),
 	}
@@ -79,7 +100,13 @@ func Cleanup(manifestPath string, waveNum int, repoDir string) (*CleanupResult, 
 	// Resolve repoDir to absolute path for cross-repo resolution.
 	absRepoDir, err := filepath.Abs(repoDir)
 	if err != nil {
-		return nil, fmt.Errorf("failed to resolve repo dir: %w", err)
+		return result.NewFailure[CleanupData]([]result.StructuredError{
+			{
+				Code:     "E003",
+				Message:  fmt.Sprintf("failed to resolve repo dir: %v", err),
+				Severity: "fatal",
+			},
+		}), fmt.Errorf("failed to resolve repo dir: %w", err)
 	}
 	repoParent := filepath.Dir(absRepoDir)
 
@@ -144,7 +171,7 @@ func Cleanup(manifestPath string, waveNum int, repoDir string) (*CleanupResult, 
 			status.BranchDeleted = true
 		}
 
-		result.Agents = append(result.Agents, status)
+		data.Agents = append(data.Agents, status)
 	}
 
 	// Best-effort: prune stale worktree entries from all involved repos.
@@ -165,5 +192,5 @@ func Cleanup(manifestPath string, waveNum int, repoDir string) (*CleanupResult, 
 		}
 	}
 
-	return result, nil
+	return result.NewSuccess(data), nil
 }

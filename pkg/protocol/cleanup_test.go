@@ -100,10 +100,11 @@ func TestCleanup_AllRemoved(t *testing.T) {
 	}
 
 	// Run cleanup
-	result, err := Cleanup(manifestPath, 1, tmpDir)
+	cleanupResult, err := Cleanup(manifestPath, 1, tmpDir)
 	if err != nil {
 		t.Fatalf("Cleanup failed: %v", err)
 	}
+	result := cleanupResult.GetData()
 
 	// Verify result structure
 	if result.Wave != 1 {
@@ -206,10 +207,11 @@ func TestCleanup_AlreadyGone(t *testing.T) {
 	}
 
 	// Run cleanup on nonexistent worktrees/branches (idempotent test)
-	result, err := Cleanup(manifestPath, 1, tmpDir)
+	cleanupResult, err := Cleanup(manifestPath, 1, tmpDir)
 	if err != nil {
 		t.Fatalf("Cleanup failed: %v", err)
 	}
+	result := cleanupResult.GetData()
 
 	// Verify result structure
 	if result.Wave != 1 {
@@ -265,12 +267,12 @@ func TestCleanup_WaveNotFound(t *testing.T) {
 	}
 
 	// Try to cleanup wave 2 (doesn't exist)
-	result, err := Cleanup(manifestPath, 2, tmpDir)
+	cleanupResult, err := Cleanup(manifestPath, 2, tmpDir)
 	if err == nil {
 		t.Fatalf("expected error for nonexistent wave, got nil")
 	}
-	if result != nil {
-		t.Errorf("expected nil result for nonexistent wave, got %+v", result)
+	if cleanupResult.IsSuccess() {
+		t.Errorf("expected non-success result for nonexistent wave, got success")
 	}
 
 	// Verify error message mentions the wave number
@@ -355,10 +357,11 @@ func TestCleanup_PartialFailure(t *testing.T) {
 	}
 
 	// Run cleanup (should handle both existing and nonexistent gracefully)
-	result, err := Cleanup(manifestPath, 1, tmpDir)
+	cleanupResult, err := Cleanup(manifestPath, 1, tmpDir)
 	if err != nil {
 		t.Fatalf("Cleanup failed: %v", err)
 	}
+	result := cleanupResult.GetData()
 
 	// Verify result structure
 	if len(result.Agents) != 2 {
@@ -503,10 +506,11 @@ func TestCleanup_ForcesDeleteUnmergedBranches(t *testing.T) {
 	}
 
 	// Run cleanup (should force-delete the branch)
-	result, err := Cleanup(manifestPath, 1, tmpDir)
+	cleanupResult, err := Cleanup(manifestPath, 1, tmpDir)
 	if err != nil {
 		t.Fatalf("Cleanup failed: %v", err)
 	}
+	result := cleanupResult.GetData()
 
 	// Verify cleanup succeeded
 	if len(result.Agents) != 1 {
@@ -609,10 +613,11 @@ func TestCleanup_IdempotentBranchDeletion(t *testing.T) {
 	}
 
 	// Run cleanup (should be idempotent)
-	result, err := Cleanup(manifestPath, 1, tmpDir)
+	cleanupResult, err := Cleanup(manifestPath, 1, tmpDir)
 	if err != nil {
 		t.Fatalf("Cleanup failed: %v", err)
 	}
+	result := cleanupResult.GetData()
 
 	// Verify cleanup reports success (idempotent)
 	if len(result.Agents) != 1 {
@@ -790,10 +795,11 @@ func TestCleanup_LegacyBranchFallback(t *testing.T) {
 	}
 
 	// Run cleanup — should find and clean up the legacy branch
-	result, err := Cleanup(manifestPath, 1, tmpDir)
+	cleanupResult, err := Cleanup(manifestPath, 1, tmpDir)
 	if err != nil {
 		t.Fatalf("Cleanup failed: %v", err)
 	}
+	result := cleanupResult.GetData()
 
 	if len(result.Agents) != 1 {
 		t.Fatalf("expected 1 agent status, got %d", len(result.Agents))
