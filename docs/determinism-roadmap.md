@@ -1,6 +1,7 @@
 # Determinism Roadmap — Reducing AI Reliance in the Engine
 
 **Date**: 2026-03-20 (last audited: 2026-03-22, L1-L4 confirmed complete)
+**Last Cleaned**: 2026-03-23 — removed all completed features
 **Goal**: Move validation from post-execution to runtime/pre-execution. Every protocol invariant should be enforced by code, not by trusting agents to follow instructions.
 
 ---
