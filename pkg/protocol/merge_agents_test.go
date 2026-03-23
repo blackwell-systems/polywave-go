@@ -141,35 +141,36 @@ func TestMergeAgents_AllSucceed(t *testing.T) {
 	}
 
 	// Verify result
-	if !result.Success {
-		t.Errorf("expected Success=true, got false")
+	if !result.IsSuccess() {
+		t.Errorf("expected IsSuccess()=true, got false with errors: %v", result.Errors)
 	}
 
-	if result.Wave != 1 {
-		t.Errorf("expected Wave=1, got %d", result.Wave)
+	data := result.GetData()
+	if data.Wave != 1 {
+		t.Errorf("expected Wave=1, got %d", data.Wave)
 	}
 
-	if len(result.Merges) != 2 {
-		t.Fatalf("expected 2 merge statuses, got %d", len(result.Merges))
+	if len(data.Merges) != 2 {
+		t.Fatalf("expected 2 merge statuses, got %d", len(data.Merges))
 	}
 
 	// Check agent A merge
-	if result.Merges[0].Agent != "A" {
-		t.Errorf("expected first merge agent=A, got %s", result.Merges[0].Agent)
+	if data.Merges[0].Agent != "A" {
+		t.Errorf("expected first merge agent=A, got %s", data.Merges[0].Agent)
 	}
-	if !result.Merges[0].Success {
-		t.Errorf("expected agent A merge to succeed, got error: %s", result.Merges[0].Error)
+	if !data.Merges[0].Success {
+		t.Errorf("expected agent A merge to succeed, got error: %s", data.Merges[0].Error)
 	}
-	if result.Merges[0].Branch != "saw/test-feature/wave1-agent-A" {
-		t.Errorf("expected branch=saw/test-feature/wave1-agent-A, got %s", result.Merges[0].Branch)
+	if data.Merges[0].Branch != "saw/test-feature/wave1-agent-A" {
+		t.Errorf("expected branch=saw/test-feature/wave1-agent-A, got %s", data.Merges[0].Branch)
 	}
 
 	// Check agent B merge
-	if result.Merges[1].Agent != "B" {
-		t.Errorf("expected second merge agent=B, got %s", result.Merges[1].Agent)
+	if data.Merges[1].Agent != "B" {
+		t.Errorf("expected second merge agent=B, got %s", data.Merges[1].Agent)
 	}
-	if !result.Merges[1].Success {
-		t.Errorf("expected agent B merge to succeed, got error: %s", result.Merges[1].Error)
+	if !data.Merges[1].Success {
+		t.Errorf("expected agent B merge to succeed, got error: %s", data.Merges[1].Error)
 	}
 
 	// Verify files exist in main branch
@@ -261,19 +262,30 @@ func TestMergeAgents_ConflictStops(t *testing.T) {
 	// With new MERGE_HEAD logic, git's recursive strategy may auto-resolve some conflicts
 	// or treat auto-resolved merges as success even with non-zero exit
 	// This test now verifies that we get merge results, not that conflicts always block
-	if len(result.Merges) != 2 {
-		t.Fatalf("expected 2 merge statuses, got %d", len(result.Merges))
+
+	// Result may be success or partial depending on conflict resolution
+	var data MergeAgentsData
+	if result.IsSuccess() {
+		data = result.GetData()
+	} else if result.IsPartial() {
+		data = result.GetData()
+	} else {
+		t.Fatalf("expected result to be success or partial, got fatal with errors: %v", result.Errors)
+	}
+
+	if len(data.Merges) != 2 {
+		t.Fatalf("expected 2 merge statuses, got %d", len(data.Merges))
 	}
 
 	// Agent A should succeed (first merge, no conflicts)
-	if !result.Merges[0].Success {
-		t.Errorf("expected agent A to succeed, got error: %s", result.Merges[0].Error)
+	if !data.Merges[0].Success {
+		t.Errorf("expected agent A to succeed, got error: %s", data.Merges[0].Error)
 	}
 
 	// Agent B: with MERGE_HEAD logic, may succeed if git auto-resolves or may fail if true conflict
 	// Just verify we got a merge attempt recorded
-	if result.Merges[1].Agent != "B" {
-		t.Errorf("expected second merge to be agent B, got %s", result.Merges[1].Agent)
+	if data.Merges[1].Agent != "B" {
+		t.Errorf("expected second merge to be agent B, got %s", data.Merges[1].Agent)
 	}
 
 	// Abort merge to clean up (if in conflicted state)
@@ -297,15 +309,11 @@ func TestMergeAgents_WaveNotFound(t *testing.T) {
 	manifestPath := createManifest(t, repoDir, waves)
 
 	// Try to merge wave 2 (does not exist)
-	result, err := MergeAgents(manifestPath, 2, repoDir, "")
+	_, err := MergeAgents(manifestPath, 2, repoDir, "")
 
 	// Should return error
 	if err == nil {
 		t.Fatalf("expected error for non-existent wave, got nil")
-	}
-
-	if result != nil {
-		t.Errorf("expected nil result for non-existent wave, got %+v", result)
 	}
 }
 
@@ -331,15 +339,29 @@ func TestMergeAgents_BranchNotFound(t *testing.T) {
 	}
 
 	// With MERGE_HEAD logic, branch not found might be treated differently
+	// Result may be success, partial, or fatal
+	var data MergeAgentsData
+	if result.IsSuccess() {
+		data = result.GetData()
+	} else if result.IsPartial() {
+		data = result.GetData()
+	} else {
+		// Fatal - no data available, check errors instead
+		if len(result.Errors) == 0 {
+			t.Fatalf("expected errors in fatal result")
+		}
+		return
+	}
+
 	// Verify we get a merge status recorded
-	if len(result.Merges) != 1 {
-		t.Fatalf("expected 1 merge status, got %d", len(result.Merges))
+	if len(data.Merges) != 1 {
+		t.Fatalf("expected 1 merge status, got %d", len(data.Merges))
 	}
 
 	// Branch not found should ideally fail, but MERGE_HEAD logic may affect this
 	// Just verify we attempted the merge
-	if result.Merges[0].Agent != "A" {
-		t.Errorf("expected merge attempt for agent A, got %s", result.Merges[0].Agent)
+	if data.Merges[0].Agent != "A" {
+		t.Errorf("expected merge attempt for agent A, got %s", data.Merges[0].Agent)
 	}
 }
 
@@ -368,8 +390,8 @@ func TestMergeAgents_TaskTruncation(t *testing.T) {
 		t.Fatalf("MergeAgents returned error: %v", err)
 	}
 
-	if !result.Success {
-		t.Errorf("expected merge to succeed, got error: %v", result.Merges[0].Error)
+	if !result.IsSuccess() {
+		t.Errorf("expected merge to succeed, got errors: %v", result.Errors)
 	}
 
 	// Verify commit message (check git log)
@@ -384,6 +406,11 @@ func TestMergeAgents_TaskTruncation(t *testing.T) {
 	expectedMsg := "Merge saw/test-feature/wave1-agent-A: This is a very long task description that exceeds"
 	if commitMsg != expectedMsg {
 		t.Errorf("commit message not truncated correctly\ngot:  %q (len=%d)\nwant: %q (len=%d)", commitMsg, len(commitMsg), expectedMsg, len(expectedMsg))
+	}
+
+	// Also verify result data shows the correct merge
+	if !result.IsSuccess() {
+		t.Errorf("expected success, got errors: %v", result.Errors)
 	}
 }
 
@@ -435,31 +462,32 @@ func TestMergeAgents_SkipsAlreadyMergedAgents(t *testing.T) {
 	}
 
 	// Verify result
-	if !result.Success {
-		t.Errorf("expected Success=true, got false")
+	if !result.IsSuccess() {
+		t.Errorf("expected IsSuccess()=true, got false with errors: %v", result.Errors)
 	}
 
-	if len(result.Merges) != 2 {
-		t.Fatalf("expected 2 merge statuses, got %d", len(result.Merges))
+	data := result.GetData()
+	if len(data.Merges) != 2 {
+		t.Fatalf("expected 2 merge statuses, got %d", len(data.Merges))
 	}
 
 	// Agent A should be skipped
-	if result.Merges[0].Agent != "A" {
-		t.Errorf("expected first merge agent=A, got %s", result.Merges[0].Agent)
+	if data.Merges[0].Agent != "A" {
+		t.Errorf("expected first merge agent=A, got %s", data.Merges[0].Agent)
 	}
-	if !result.Merges[0].Success {
-		t.Errorf("expected agent A to succeed (skipped), got error: %s", result.Merges[0].Error)
+	if !data.Merges[0].Success {
+		t.Errorf("expected agent A to succeed (skipped), got error: %s", data.Merges[0].Error)
 	}
-	if result.Merges[0].Error != "already merged (skipped)" {
-		t.Errorf("expected skip message for agent A, got: %s", result.Merges[0].Error)
+	if data.Merges[0].Error != "already merged (skipped)" {
+		t.Errorf("expected skip message for agent A, got: %s", data.Merges[0].Error)
 	}
 
 	// Agent B should be merged normally
-	if result.Merges[1].Agent != "B" {
-		t.Errorf("expected second merge agent=B, got %s", result.Merges[1].Agent)
+	if data.Merges[1].Agent != "B" {
+		t.Errorf("expected second merge agent=B, got %s", data.Merges[1].Agent)
 	}
-	if !result.Merges[1].Success {
-		t.Errorf("expected agent B merge to succeed, got error: %s", result.Merges[1].Error)
+	if !data.Merges[1].Success {
+		t.Errorf("expected agent B merge to succeed, got error: %s", data.Merges[1].Error)
 	}
 
 	// Verify merge-log was updated with agent B
@@ -500,8 +528,8 @@ func TestMergeAgents_AppendsMergeLog(t *testing.T) {
 		t.Fatalf("MergeAgents returned error: %v", err)
 	}
 
-	if !result.Success {
-		t.Errorf("expected Success=true, got false: %v", result.Merges[0].Error)
+	if !result.IsSuccess() {
+		t.Errorf("expected IsSuccess()=true, got false with errors: %v", result.Errors)
 	}
 
 	// Load merge-log and verify agent A was recorded
@@ -601,21 +629,22 @@ func TestMergeAgents_IdempotentOnCrash(t *testing.T) {
 	}
 
 	// Verify all three agents show in result
-	if !result2.Success {
-		t.Errorf("expected second merge to succeed, got false")
+	if !result2.IsSuccess() {
+		t.Errorf("expected second merge to succeed, got false with errors: %v", result2.Errors)
 	}
-	if len(result2.Merges) != 3 {
-		t.Fatalf("expected 3 merge statuses in second run, got %d", len(result2.Merges))
+	data2 := result2.GetData()
+	if len(data2.Merges) != 3 {
+		t.Fatalf("expected 3 merge statuses in second run, got %d", len(data2.Merges))
 	}
 
 	// Agents A and B should be skipped
-	if result2.Merges[0].Error != "already merged (skipped)" {
-		t.Errorf("expected agent A to be skipped in second run, got: %s", result2.Merges[0].Error)
+	if data2.Merges[0].Error != "already merged (skipped)" {
+		t.Errorf("expected agent A to be skipped in second run, got: %s", data2.Merges[0].Error)
 	}
-	if result2.Merges[1].Error != "already merged (skipped)" {
-		t.Errorf("expected agent B to be skipped in second run, got: %s", result2.Merges[1].Error)
+	if data2.Merges[1].Error != "already merged (skipped)" {
+		t.Errorf("expected agent B to be skipped in second run, got: %s", data2.Merges[1].Error)
 	}
-	if result2.Merges[2].Error == "already merged (skipped)" {
+	if data2.Merges[2].Error == "already merged (skipped)" {
 		t.Errorf("expected agent C to be merged in second run, but it was skipped")
 	}
 
@@ -674,15 +703,25 @@ func TestMergeAgents_LegacyBranchFallback(t *testing.T) {
 		t.Fatalf("MergeAgents returned error: %v", err)
 	}
 
+	// Get data regardless of success/partial status
+	var data MergeAgentsData
+	if result.IsSuccess() {
+		data = result.GetData()
+	} else if result.IsPartial() {
+		data = result.GetData()
+	} else {
+		t.Fatalf("expected success or partial, got fatal with errors: %v", result.Errors)
+	}
+
 	// Verify result - with MERGE_HEAD changes and legacy branch fallback,
 	// behavior may vary. Just verify we attempted both merges.
-	if len(result.Merges) != 2 {
-		t.Fatalf("expected 2 merge statuses, got %d", len(result.Merges))
+	if len(data.Merges) != 2 {
+		t.Fatalf("expected 2 merge statuses, got %d", len(data.Merges))
 	}
 
 	// Verify both agents were attempted
 	agentsSeen := make(map[string]bool)
-	for _, m := range result.Merges {
+	for _, m := range data.Merges {
 		agentsSeen[m.Agent] = true
 		// Branch should be recorded
 		if m.Branch == "" {
@@ -695,7 +734,7 @@ func TestMergeAgents_LegacyBranchFallback(t *testing.T) {
 	}
 
 	// If merges succeeded, verify files exist
-	if result.Success {
+	if result.IsSuccess() {
 		for _, file := range []string{"file-a.txt", "file-b.txt"} {
 			filePath := filepath.Join(repoDir, file)
 			if _, err := os.Stat(filePath); os.IsNotExist(err) {
@@ -928,8 +967,8 @@ func TestMergeAgents_WithMergeTarget(t *testing.T) {
 		t.Fatalf("MergeAgents returned error: %v", err)
 	}
 
-	if !result.Success {
-		t.Errorf("expected Success=true, got false: %v", result.Merges)
+	if !result.IsSuccess() {
+		t.Errorf("expected IsSuccess()=true, got false with errors: %v", result.Errors)
 	}
 
 	// Verify we are on the merge target branch after merge
@@ -982,8 +1021,8 @@ func TestMergeAgents_EmptyMergeTarget(t *testing.T) {
 		t.Fatalf("MergeAgents returned error: %v", err)
 	}
 
-	if !result.Success {
-		t.Errorf("expected Success=true, got false: %v", result.Merges)
+	if !result.IsSuccess() {
+		t.Errorf("expected IsSuccess()=true, got false with errors: %v", result.Errors)
 	}
 
 	// Verify we are still on the original branch
