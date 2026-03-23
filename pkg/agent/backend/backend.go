@@ -36,6 +36,24 @@ type Config struct {
 	// data. Backends use this to feed the Agent Observatory SSE pipeline.
 	OnToolCall ToolCallCallback
 
+	// AnthropicKey is the Anthropic API key. If empty, ANTHROPIC_API_KEY env var is used.
+	AnthropicKey string
+
+	// BedrockRegion is the AWS region for Bedrock (e.g. "us-east-1").
+	// If empty, uses AWS SDK default chain.
+	BedrockRegion string
+
+	// BedrockAccessKeyID is the AWS access key for Bedrock.
+	// If empty, uses AWS SDK default credential chain.
+	BedrockAccessKeyID string
+
+	// BedrockSecretAccessKey is the AWS secret key for Bedrock.
+	// If empty, uses AWS SDK default credential chain.
+	BedrockSecretAccessKey string
+
+	// BedrockSessionToken is an optional AWS session token for temporary credentials.
+	BedrockSessionToken string
+
 	// ReadOnly, when true, applies permission middleware that blocks write_file
 	// and edit_file at execution time. Used for Scout agents.
 	ReadOnly bool

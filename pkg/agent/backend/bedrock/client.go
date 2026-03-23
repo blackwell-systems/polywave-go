@@ -12,6 +12,7 @@ import (
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
+	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/service/bedrockruntime"
 	"github.com/aws/aws-sdk-go-v2/service/bedrockruntime/document"
 	"github.com/aws/aws-sdk-go-v2/service/bedrockruntime/types"
@@ -31,9 +32,31 @@ type Client struct {
 }
 
 // New creates a Bedrock backend client using AWS credentials from the default chain.
+// If cfg.BedrockAccessKeyID and cfg.BedrockSecretAccessKey are non-empty, static
+// credentials are used instead of the default chain. If cfg.BedrockRegion is
+// non-empty, it overrides the AWS region.
 func New(cfg backend.Config) *Client {
-	// Load AWS config from environment/credentials
-	awsCfg, err := config.LoadDefaultConfig(context.Background())
+	// Build config options for AWS SDK
+	var opts []func(*config.LoadOptions) error
+
+	// Use explicit region if provided
+	if cfg.BedrockRegion != "" {
+		opts = append(opts, config.WithRegion(cfg.BedrockRegion))
+	}
+
+	// Use static credentials if provided
+	if cfg.BedrockAccessKeyID != "" && cfg.BedrockSecretAccessKey != "" {
+		opts = append(opts, config.WithCredentialsProvider(
+			credentials.NewStaticCredentialsProvider(
+				cfg.BedrockAccessKeyID,
+				cfg.BedrockSecretAccessKey,
+				cfg.BedrockSessionToken,
+			),
+		))
+	}
+
+	// Load AWS config from environment/credentials (with optional overrides)
+	awsCfg, err := config.LoadDefaultConfig(context.Background(), opts...)
 	if err != nil {
 		// Fall back to creating client without config - will fail on invoke but allows construction
 		return &Client{cfg: cfg}
