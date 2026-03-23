@@ -54,6 +54,11 @@ type Config struct {
 	// BedrockSessionToken is an optional AWS session token for temporary credentials.
 	BedrockSessionToken string
 
+	// BedrockProfile is an AWS CLI named profile (e.g. "my-sso-profile").
+	// When set, uses config.WithSharedConfigProfile to load credentials
+	// from ~/.aws/config, supporting SSO, assume-role, and other profile types.
+	BedrockProfile string
+
 	// ReadOnly, when true, applies permission middleware that blocks write_file
 	// and edit_file at execution time. Used for Scout agents.
 	ReadOnly bool

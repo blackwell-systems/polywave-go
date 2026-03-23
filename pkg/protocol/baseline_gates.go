@@ -37,14 +37,14 @@ func RunBaselineGates(manifest *IMPLManifest, waveNumber int, repoDir string, ca
 	// Step 2: Delegate gate execution entirely to RunPreMergeGates.
 	// RunPreMergeGates internally calls RunGatesWithCache which handles
 	// cache lookup/store.
-	gateResults, err := RunPreMergeGates(manifest, waveNumber, repoDir, cache)
-	if err != nil {
-		return nil, err
+	res := RunPreMergeGates(manifest, waveNumber, repoDir, cache)
+	if !res.IsSuccess() {
+		return nil, fmt.Errorf("pre-merge gates failed: %v", res.Errors)
 	}
-	result.GateResults = gateResults
+	result.GateResults = res.GetData().Gates
 
 	// Step 3: Check if any required gate failed.
-	for _, gr := range gateResults {
+	for _, gr := range result.GateResults {
 		if gr.Required && !gr.Passed && !gr.Skipped {
 			result.Passed = false
 			result.Reason = "baseline_verification_failed"
@@ -54,9 +54,9 @@ func RunBaselineGates(manifest *IMPLManifest, waveNumber int, repoDir string, ca
 
 	// Step 4: If all results have FromCache=true (and there are results),
 	// set BaselineResult.FromCache=true.
-	if len(gateResults) > 0 {
+	if len(result.GateResults) > 0 {
 		allFromCache := true
-		for _, gr := range gateResults {
+		for _, gr := range result.GateResults {
 			if !gr.FromCache {
 				allFromCache = false
 				break

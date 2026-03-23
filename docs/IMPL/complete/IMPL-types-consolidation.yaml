@@ -1,0 +1,599 @@
+completion_date: "2026-03-22"
+title: Remove deprecated pkg/types package — consolidate all types into pkg/protocol
+feature_slug: types-consolidation
+verdict: SUITABLE
+suitability_assessment: |
+    File decomposition: 20 Go files import pkg/types across 4 packages (agent, engine,
+    orchestrator, protocol) plus 2 CLI commands. Files decompose cleanly into 5 agent
+    scopes with disjoint ownership across 3 waves.
+
+    Investigation-first: No. The dual-type hierarchy is fully understood. pkg/types
+    was built for the deprecated markdown-parsed IMPL format. pkg/protocol has YAML
+    equivalents for every type. This is a mechanical migration with known mappings:
+    - types.AgentSpec -> protocol.Agent (Letter->ID, Prompt->Task, FilesOwned->Files)
+    - types.FailureType -> protocol.FailureTypeEnum (already exists with different const names)
+    - types.CompletionReport -> protocol.CompletionReport (Status is string not enum)
+    - types.QualityGates/QualityGate -> protocol.QualityGates/QualityGate
+    - types.ValidationError (markdown) -> protocol.ValidationError (already exists, different schema)
+    - types.IMPLDoc -> protocol.IMPLManifest (callers already use manifest in many places)
+
+    Interface discoverability: Yes. All target types already exist in pkg/protocol/types.go.
+    The migration is changing import paths and adapting field name differences. No new
+    types need to be designed.
+
+    Pre-implementation status: A prior IMPL (type-unification, completed 2026-03-22)
+    migrated the orchestrator from types.IMPLDoc to protocol.IMPLManifest but left
+    the pkg/types import in place for FailureType constants and AgentSpec. This IMPL
+    finishes that work by eliminating ALL remaining references and deleting the package.
+
+    Parallelization value: High. Build/test cycle is >30s (full Go test suite). Four
+    agents each touch 3-6 files across distinct packages. Wave 1 handles the three
+    leaf packages (agent, orchestrator, protocol/validator) in parallel. Wave 2
+    handles engine (which depends on all three) plus CLI commands. Wave 3 deletes
+    the now-unused pkg/types package.
+
+    Estimated times:
+    - Scout phase: ~8 min
+    - Agent execution: ~15 min (5 agents, ~8 min avg, 3 waves with parallelism)
+    - Merge and verification: ~5 min
+    Total SAW time: ~28 min
+    Sequential baseline: ~35 min (5 agents x ~7 min avg)
+    Time savings: ~7 min (20% faster)
+    Recommendation: Clear speedup plus coordination value for cross-package refactor.
+test_command: go test ./...
+lint_command: go vet ./...
+file_ownership:
+    - file: pkg/orchestrator/failure.go
+      agent: A
+      wave: 1
+      action: modify
+    - file: pkg/orchestrator/failure_test.go
+      agent: A
+      wave: 1
+      action: modify
+    - file: pkg/orchestrator/quality_gates.go
+      agent: A
+      wave: 1
+      action: modify
+    - file: pkg/orchestrator/quality_gates_test.go
+      agent: A
+      wave: 1
+      action: modify
+    - file: pkg/orchestrator/stubs.go
+      agent: A
+      wave: 1
+      action: modify
+    - file: pkg/orchestrator/stubs_test.go
+      agent: A
+      wave: 1
+      action: modify
+    - file: pkg/agent/runner.go
+      agent: B
+      wave: 1
+      action: modify
+    - file: pkg/orchestrator/orchestrator.go
+      agent: B
+      wave: 1
+      action: modify
+    - file: pkg/orchestrator/structured_wave.go
+      agent: B
+      wave: 1
+      action: modify
+    - file: pkg/orchestrator/structured_wave_test.go
+      agent: B
+      wave: 1
+      action: modify
+    - file: pkg/protocol/validator.go
+      agent: C
+      wave: 1
+      action: modify
+    - file: pkg/engine/runner.go
+      agent: D
+      wave: 2
+      action: modify
+    - file: pkg/engine/engine.go
+      agent: D
+      wave: 2
+      action: modify
+    - file: pkg/engine/runner_wave_structured.go
+      agent: D
+      wave: 2
+      action: modify
+    - file: pkg/engine/runner_wave_structured_test.go
+      agent: D
+      wave: 2
+      action: modify
+    - file: pkg/engine/closed_loop_gate.go
+      agent: D
+      wave: 2
+      action: modify
+    - file: pkg/engine/integration_runner.go
+      agent: D
+      wave: 2
+      action: modify
+    - file: cmd/saw/run_scout_cmd.go
+      agent: D
+      wave: 2
+      action: modify
+    - file: cmd/saw/run_scout_cmd_test.go
+      agent: D
+      wave: 2
+      action: modify
+    - file: cmd/saw/run_critic_cmd.go
+      agent: D
+      wave: 2
+      action: modify
+    - file: pkg/types/types.go
+      agent: E
+      wave: 3
+      action: delete
+interface_contracts:
+    - name: protocol.Agent replaces types.AgentSpec
+      description: |
+        All callers that construct or consume types.AgentSpec must switch to
+        protocol.Agent. Field mapping: Letter->ID, Prompt->Task, FilesOwned->Files,
+        Model->Model (unchanged).
+      definition: |
+        // Already exists in pkg/protocol/types.go
+        type Agent struct {
+            ID           string   `yaml:"id" json:"id"`
+            Task         string   `yaml:"task" json:"task"`
+            Files        []string `yaml:"files" json:"files"`
+            Dependencies []string `yaml:"dependencies,omitempty" json:"dependencies,omitempty"`
+            Model        string   `yaml:"model,omitempty" json:"model,omitempty"`
+        }
+      location: pkg/protocol/types.go
+    - name: protocol.FailureTypeEnum replaces types.FailureType
+      description: |
+        All callers using types.FailureType constants must switch to
+        protocol.FailureTypeEnum constants. Mapping:
+        types.FailureTypeTransient -> protocol.FailureTransient
+        types.FailureTypeFixable -> protocol.FailureFixable
+        types.FailureTypeNeedsReplan -> protocol.FailureNeedsReplan
+        types.FailureTypeEscalate -> protocol.FailureEscalate
+        types.FailureTypeTimeout -> protocol.FailureTimeout
+      definition: |
+        // Already exists in pkg/protocol/failure.go
+        type FailureTypeEnum string
+        const (
+            FailureTransient   FailureTypeEnum = "transient"
+            FailureFixable     FailureTypeEnum = "fixable"
+            FailureNeedsReplan FailureTypeEnum = "needs_replan"
+            FailureEscalate    FailureTypeEnum = "escalate"
+            FailureTimeout     FailureTypeEnum = "timeout"
+        )
+      location: pkg/protocol/failure.go
+    - name: Runner.Execute signature change
+      description: |
+        pkg/agent/runner.go Execute method changes from types.AgentSpec to
+        protocol.Agent. All callers in engine and orchestrator must update.
+      definition: |
+        func (r *Runner) Execute(ctx context.Context, agent *protocol.Agent, worktreePath string) (string, error)
+      location: pkg/agent/runner.go
+    - name: orchestrator failure routing signature change
+      description: |
+        RouteFailure, RouteFailureWithReactions, MaxAttemptsFor, and
+        reactionEntryForOrchestrator change parameter type from
+        types.FailureType to protocol.FailureTypeEnum.
+      definition: |
+        func RouteFailure(failureType protocol.FailureTypeEnum) OrchestratorAction
+        func RouteFailureWithReactions(failureType protocol.FailureTypeEnum, reactions *protocol.ReactionsConfig) OrchestratorAction
+        func MaxAttemptsFor(failureType protocol.FailureTypeEnum, reactions *protocol.ReactionsConfig) int
+      location: pkg/orchestrator/failure.go
+    - name: orchestrator quality gates signature change
+      description: |
+        RunQualityGates and runGate change from types.QualityGates/QualityGate
+        to protocol.QualityGates/QualityGate.
+      definition: |
+        func RunQualityGates(repoPath string, gates *protocol.QualityGates) ([]QualityGateResult, error)
+        func runGate(repoPath string, gate protocol.QualityGate) QualityGateResult
+      location: pkg/orchestrator/quality_gates.go
+    - name: orchestrator stubs signature change
+      description: |
+        RunStubScan changes from map[string]*types.CompletionReport to
+        map[string]*protocol.CompletionReport.
+      definition: |
+        func RunStubScan(implDocPath string, waveNum int, reports map[string]*protocol.CompletionReport, sawRepoPath string) error
+      location: pkg/orchestrator/stubs.go
+    - name: protocol.ValidateIMPLDoc return type change
+      description: |
+        The markdown-era ValidateIMPLDoc in validator.go returns
+        []types.ValidationError. This must change to return
+        []protocol.ValidationError (the YAML schema version).
+        The types.ValidationError has fields BlockType/LineNumber/Message.
+        protocol.ValidationError has Code/Message/Field/Line/Slug/Wave/AgentID.
+        The validator must be updated to use protocol.ValidationError fields.
+      definition: |
+        func ValidateIMPLDoc(path string) ([]ValidationError, error)
+      location: pkg/protocol/validator.go
+    - name: engine.ParseIMPLDoc removal
+      description: |
+        The adapter function ParseIMPLDoc in engine/runner.go that converts
+        protocol.IMPLManifest to types.IMPLDoc will be removed. All callers
+        must switch to protocol.Load() directly. Similarly ParseCompletionReport
+        adapter will be removed.
+      definition: |
+        // REMOVED — callers use protocol.Load() and protocol.ParseCompletionReport() directly
+      location: pkg/engine/runner.go
+waves:
+    - number: 1
+      agents:
+        - id: A
+          task: |
+            **Migrate orchestrator helper files from types to protocol types.**
+
+            **What to implement:**
+
+            1. **pkg/orchestrator/failure.go** — Change all function signatures from
+               `types.FailureType` to `protocol.FailureTypeEnum`. Update constant
+               references:
+               - `types.FailureTypeTransient` -> `protocol.FailureTransient`
+               - `types.FailureTypeFixable` -> `protocol.FailureFixable`
+               - `types.FailureTypeNeedsReplan` -> `protocol.FailureNeedsReplan`
+               - `types.FailureTypeEscalate` -> `protocol.FailureEscalate`
+               - `types.FailureTypeTimeout` -> `protocol.FailureTimeout`
+               Remove the `pkg/types` import. Functions affected:
+               - `RouteFailure(failureType protocol.FailureTypeEnum) OrchestratorAction`
+               - `RouteFailureWithReactions(failureType protocol.FailureTypeEnum, ...)`
+               - `MaxAttemptsFor(failureType protocol.FailureTypeEnum, ...)`
+               - `reactionEntryForOrchestrator(failureType protocol.FailureTypeEnum, ...)`
+               - `defaultMaxAttempts(failureType protocol.FailureTypeEnum)`
+
+            2. **pkg/orchestrator/failure_test.go** — Update all test references from
+               `types.FailureType*` constants to `protocol.Failure*` constants. Remove
+               `pkg/types` import.
+
+            3. **pkg/orchestrator/quality_gates.go** — Change `RunQualityGates` signature
+               from `*types.QualityGates` to `*protocol.QualityGates`. Change `runGate`
+               from `types.QualityGate` to `protocol.QualityGate`. Remove `pkg/types` import.
+
+            4. **pkg/orchestrator/quality_gates_test.go** — Update test structs from
+               `types.QualityGates`/`types.QualityGate` to `protocol.QualityGates`/
+               `protocol.QualityGate`. Remove `pkg/types` import.
+
+            5. **pkg/orchestrator/stubs.go** — Change `RunStubScan` parameter from
+               `map[string]*types.CompletionReport` to `map[string]*protocol.CompletionReport`.
+               Remove `pkg/types` import. Note: protocol.CompletionReport uses `Status string`
+               not `Status CompletionStatus` — no enum conversion needed.
+
+            6. **pkg/orchestrator/stubs_test.go** — Update test structs to use
+               `protocol.CompletionReport`. Remove `pkg/types` import.
+
+            **Interface contracts:**
+            - `RouteFailure(failureType protocol.FailureTypeEnum) OrchestratorAction`
+            - `RunQualityGates(repoPath string, gates *protocol.QualityGates) ([]QualityGateResult, error)`
+            - `RunStubScan(implDocPath string, waveNum int, reports map[string]*protocol.CompletionReport, sawRepoPath string) error`
+
+            **Tests:** All existing tests must pass after migration. Run:
+            `go test ./pkg/orchestrator/...`
+
+            **Verification gate:**
+            `go build ./pkg/orchestrator/... && go vet ./pkg/orchestrator/... && go test ./pkg/orchestrator/...`
+
+            **Constraints:**
+            - Do NOT modify files outside your ownership
+            - Do NOT delete pkg/types — that happens in Wave 3
+            - The `pkg/types` import must be removed from every file you touch
+            - protocol package is already imported in most of these files; just add it if missing
+          files:
+            - pkg/orchestrator/failure.go
+            - pkg/orchestrator/failure_test.go
+            - pkg/orchestrator/quality_gates.go
+            - pkg/orchestrator/quality_gates_test.go
+            - pkg/orchestrator/stubs.go
+            - pkg/orchestrator/stubs_test.go
+        - id: B
+          task: |
+            **Migrate AgentSpec references from types.AgentSpec to protocol.Agent.**
+
+            **What to implement:**
+
+            1. **pkg/agent/runner.go** — Change `Execute` method signature and internal
+               `executeWithRetry`/`executeOnce` from `*types.AgentSpec` to `*protocol.Agent`.
+               Update field references:
+               - `agentSpec.Letter` -> `agent.ID`
+               - `agentSpec.Prompt` -> `agent.Task`
+               - `agentSpec.Model` -> `agent.Model` (unchanged)
+               Remove `pkg/types` import, add `protocol` import if not present.
+
+            2. **pkg/orchestrator/orchestrator.go** — This file has the `agentToSpec`
+               adapter function that converts `protocol.Agent` to `types.AgentSpec`.
+               Since agent/runner.go now accepts `protocol.Agent` directly, remove
+               the `agentToSpec` function entirely. Update all call sites that used
+               `agentToSpec(agent)` to pass `agent` (protocol.Agent) directly.
+               Update the `runWaveAgentFunc` and `runWaveAgentStructuredFunc` type
+               signatures from `types.AgentSpec` to `protocol.Agent`.
+               Remove the `pkg/types` import line (including the comment about FailureType).
+               Note: FailureType constants in this file are handled by the caller
+               converting to protocol.FailureTypeEnum — check if any remain; if so
+               use protocol.Failure* constants.
+
+            3. **pkg/orchestrator/structured_wave.go** — Update the
+               `runWaveAgentStructuredFuncType` and `SetRunWaveAgentStructuredFunc`
+               signatures from `types.AgentSpec` to `protocol.Agent`. Remove
+               `agentToSpec` conversions. Update FailureType references to use
+               `protocol.FailureTypeEnum` and `protocol.Failure*` constants.
+               Remove `pkg/types` import.
+
+            4. **pkg/orchestrator/structured_wave_test.go** — Update test code that
+               constructs `types.AgentSpec` to use `protocol.Agent` instead.
+               Field mapping: Letter->ID, Prompt->Task. Remove `pkg/types` import.
+
+            **Interface contracts:**
+            - `func (r *Runner) Execute(ctx context.Context, agent *protocol.Agent, worktreePath string) (string, error)`
+            - `runWaveAgentFunc` type changes to accept `protocol.Agent`
+            - `runWaveAgentStructuredFuncType` changes to accept `protocol.Agent`
+
+            **Tests:** Existing tests must pass:
+            `go test ./pkg/agent/... ./pkg/orchestrator/...`
+
+            **Verification gate:**
+            `go build ./pkg/agent/... ./pkg/orchestrator/... && go vet ./pkg/agent/... ./pkg/orchestrator/... && go test ./pkg/agent/... ./pkg/orchestrator/...`
+
+            **Constraints:**
+            - Do NOT modify files outside your ownership
+            - Do NOT delete pkg/types
+            - The `agentToSpec` adapter in orchestrator.go must be deleted, not just modified
+            - protocol.Agent uses ID/Task/Files fields, NOT Letter/Prompt/FilesOwned
+          files:
+            - pkg/agent/runner.go
+            - pkg/orchestrator/orchestrator.go
+            - pkg/orchestrator/structured_wave.go
+            - pkg/orchestrator/structured_wave_test.go
+        - id: C
+          task: |
+            **Migrate protocol/validator.go from types.ValidationError to protocol.ValidationError.**
+
+            **What to implement:**
+
+            1. **pkg/protocol/validator.go** — This file implements `ValidateIMPLDoc` which
+               returns `[]types.ValidationError`. The types.ValidationError has fields:
+               `BlockType string`, `LineNumber int`, `Message string`.
+               The protocol.ValidationError has fields:
+               `Code string`, `Message string`, `Field string`, `Line int`, `Slug string`,
+               `Wave int`, `AgentID string`.
+
+               Change the return type to `[]ValidationError` (same package, no prefix needed).
+               Map fields:
+               - `BlockType` -> `Code` (use the same block type string as the code)
+               - `LineNumber` -> `Line`
+               - `Message` -> `Message` (unchanged)
+
+               Update every `types.ValidationError{...}` literal to `ValidationError{...}`
+               with the new field names. There are ~30 such literals across the
+               `validateFileOwnership`, `validateDepGraph`, `validateWaveStructure`,
+               and `validateCompletionReport` helper functions.
+
+               Remove the `pkg/types` import entirely.
+
+            **Interface contracts:**
+            - `func ValidateIMPLDoc(path string) ([]ValidationError, error)` — returns protocol.ValidationError
+
+            **Tests:** The validator tests are in validator_test.go which does NOT import
+            pkg/types — it should work after the return type change. Verify:
+            `go test ./pkg/protocol/... -run TestValidateIMPLDoc`
+
+            **Verification gate:**
+            `go build ./pkg/protocol/... && go vet ./pkg/protocol/... && go test ./pkg/protocol/...`
+
+            **Constraints:**
+            - Do NOT modify files outside your ownership
+            - Do NOT delete pkg/types
+            - Since validator.go is inside the protocol package, use `ValidationError` not `protocol.ValidationError`
+            - Map BlockType to Code, LineNumber to Line — these are the semantic equivalents
+          files:
+            - pkg/protocol/validator.go
+      base_commit: 1b7b058af451d337f269d9946c41c59cc739273a
+    - number: 2
+      agents:
+        - id: D
+          task: |
+            **Remove engine adapter layer and migrate remaining callers to protocol types.**
+
+            This agent depends on Agents A, B, C completing. After Wave 1, the orchestrator
+            and agent packages no longer use types.AgentSpec, types.FailureType, etc. Now
+            the engine package (which calls into both) and CLI commands must be updated.
+
+            **What to implement:**
+
+            1. **pkg/engine/runner.go** — This is the largest change. Remove the adapter
+               functions:
+               - `ParseIMPLDoc(path string) (*types.IMPLDoc, error)` — DELETE entirely.
+                 Callers should use `protocol.Load(path)` to get `*protocol.IMPLManifest`.
+               - `ParseCompletionReport(implDocPath, agentLetter string) (*types.CompletionReport, error)` — DELETE entirely.
+                 Callers should use `protocol.ParseCompletionReport()` directly.
+               - `runScaffoldBuildVerificationWithDoc` — currently takes `*types.IMPLDoc`.
+                 Change to take `*protocol.IMPLManifest` and update internal field access.
+
+               Update all remaining code that constructs `types.AgentSpec` to use
+               `protocol.Agent` instead (field mapping: Letter->ID, Prompt->Task).
+               Update stub scan calls: the `map[string]*types.CompletionReport` bridge
+               code must now build `map[string]*protocol.CompletionReport` directly
+               (no more types.CompletionStatus enum conversion — just use string).
+               Update quality gate bridge: remove `types.QualityGates` construction,
+               pass `doc.QualityGates` (already `*protocol.QualityGates`) directly.
+               Remove the `pkg/types` import.
+
+            2. **pkg/engine/engine.go** — Update the `SetRunWaveAgentStructuredFunc`
+               call to use `protocol.Agent` instead of `types.AgentSpec`. Remove
+               `pkg/types` import.
+
+            3. **pkg/engine/runner_wave_structured.go** — Update `runWaveAgentStructured`
+               signature from `types.AgentSpec` to `protocol.Agent`. Update field
+               references (Letter->ID, Prompt->Task). Remove `pkg/types` import.
+
+            4. **pkg/engine/runner_wave_structured_test.go** — Update test literals
+               from `types.AgentSpec{Letter: ..., Prompt: ...}` to
+               `protocol.Agent{ID: ..., Task: ...}`. Remove `pkg/types` import.
+
+            5. **pkg/engine/closed_loop_gate.go** — Update `types.AgentSpec` to
+               `protocol.Agent`. Update field references. Remove `pkg/types` import.
+
+            6. **pkg/engine/integration_runner.go** — Update `types.AgentSpec` to
+               `protocol.Agent`. Update field references. Remove `pkg/types` import.
+
+            7. **cmd/saw/run_scout_cmd.go** — Update `countAgentsFromErrors` which
+               takes `[]types.ValidationError` to take `[]protocol.ValidationError`.
+               Update field references (BlockType->Code, LineNumber->Line).
+               Remove `pkg/types` import.
+
+            8. **cmd/saw/run_scout_cmd_test.go** — Update test code that uses
+               `types.ValidationError` to use `protocol.ValidationError`.
+               Remove `pkg/types` import.
+
+            9. **cmd/saw/run_critic_cmd.go** — Update `types.AgentSpec` construction
+               to `protocol.Agent`. Field mapping: Letter->ID, Prompt->Task.
+               Remove `pkg/types` import.
+
+            **Interface contracts:**
+            - `runScaffoldBuildVerificationWithDoc(ctx, repoPath, *protocol.IMPLManifest, onEvent)` — new signature
+            - `runWaveAgentStructured(ctx, opts, protocol.Agent, wtPath, onChunk)` — new signature
+            - `ParseIMPLDoc` and `ParseCompletionReport` adapters are DELETED
+            - All callers that called `ParseIMPLDoc` must call `protocol.Load()` instead
+
+            **Tests:**
+            `go test ./pkg/engine/... ./cmd/saw/...`
+
+            **Verification gate:**
+            `go build ./... && go vet ./... && go test ./pkg/engine/... ./cmd/saw/...`
+
+            **Constraints:**
+            - Do NOT modify pkg/orchestrator or pkg/agent files (already migrated in Wave 1)
+            - Do NOT delete pkg/types/types.go (Agent E handles that)
+            - After your changes, NO file in the codebase should import pkg/types
+            - The ParseIMPLDoc and ParseCompletionReport adapter functions must be deleted, not just modified
+          files:
+            - pkg/engine/runner.go
+            - pkg/engine/engine.go
+            - pkg/engine/runner_wave_structured.go
+            - pkg/engine/runner_wave_structured_test.go
+            - pkg/engine/closed_loop_gate.go
+            - pkg/engine/integration_runner.go
+            - cmd/saw/run_scout_cmd.go
+            - cmd/saw/run_scout_cmd_test.go
+            - cmd/saw/run_critic_cmd.go
+          dependencies:
+            - A
+            - B
+            - C
+      base_commit: b84f81e060610a20d6bc8e30cc766e9de4c14606
+    - number: 3
+      agents:
+        - id: E
+          task: |
+            **Delete the deprecated pkg/types package.**
+
+            **What to implement:**
+
+            1. Delete `pkg/types/types.go` entirely and remove the `pkg/types/` directory.
+
+            **Pre-condition check:** Before deleting, verify no file imports pkg/types:
+            ```
+            grep -r '"github.com/blackwell-systems/scout-and-wave-go/pkg/types"' --include='*.go' .
+            ```
+            If any imports remain, do NOT delete — report as blocked.
+
+            **Verification gate:**
+            `go build ./... && go test ./...`
+
+            **Constraints:**
+            - Only delete pkg/types/types.go (and the pkg/types/ directory)
+            - Do NOT modify any other file
+            - If the grep pre-check finds remaining imports, set status to blocked
+          files:
+            - pkg/types/types.go
+          dependencies:
+            - D
+      base_commit: 5e410aa276ba94d2f863dc0156009df759d508e6
+quality_gates:
+    level: standard
+    gates:
+        - type: build
+          command: go build ./...
+          required: true
+        - type: lint
+          command: go vet ./...
+          required: true
+        - type: test
+          command: go test ./...
+          required: true
+completion_reports:
+    A:
+        status: complete
+        branch: saw/types-consolidation/wave1-agent-A
+        commit: b6a9e2f
+        files_changed:
+            - pkg/orchestrator/failure.go
+            - pkg/orchestrator/failure_test.go
+            - pkg/orchestrator/quality_gates.go
+            - pkg/orchestrator/quality_gates_test.go
+            - pkg/orchestrator/stubs.go
+            - pkg/orchestrator/stubs_test.go
+        verification: PASS (individual files compile; package build blocked by callers in other-agent files)
+    B:
+        status: complete
+        branch: saw/types-consolidation/wave1-agent-B
+        commit: c4c3ce0
+        files_changed:
+            - pkg/agent/runner.go
+            - pkg/orchestrator/orchestrator.go
+            - pkg/orchestrator/structured_wave.go
+            - pkg/orchestrator/structured_wave_test.go
+        verification: PASS
+    C:
+        status: complete
+        branch: saw/types-consolidation/wave1-agent-C
+        commit: a068ef8
+        files_changed:
+            - pkg/protocol/validator.go
+            - pkg/protocol/validator_test.go
+            - pkg/protocol/validator_agent_id_test.go
+        tests_added:
+            - TestValidateIMPLDoc
+            - TestValidateAgentIDs_ValidIDs
+            - TestValidateAgentIDs_InvalidIDs
+        verification: PASS
+    D:
+        status: complete
+        branch: saw/types-consolidation/wave2-agent-D
+        commit: 054444d
+        files_changed:
+            - pkg/engine/runner.go
+        verification: PASS (go build passes; runner_test.go needs TestParseIMPLDocDelegate deleted by integration agent)
+    E:
+        status: complete
+        branch: saw/types-consolidation/wave3-agent-E
+        commit: accd0c3
+        files_changed:
+            - pkg/types/types.go
+            - pkg/types/types_test.go
+            - pkg/types/doc.go
+        verification: PASS
+pre_mortem:
+    overall_risk: low
+    rows:
+        - scenario: Agent B and A both touch orchestrator package files — potential merge conflict
+          likelihood: low
+          impact: medium
+          mitigation: |
+            File ownership is strictly disjoint: A owns failure.go, quality_gates.go, stubs.go
+            (and their tests). B owns orchestrator.go, structured_wave.go (and test). No overlap.
+        - scenario: Engine adapter removal in Wave 2 breaks callers not yet migrated
+          likelihood: low
+          impact: high
+          mitigation: |
+            Wave 2 Agent D owns ALL engine files and CLI files that call ParseIMPLDoc.
+            No caller is left unowned. Full build verification catches any missed reference.
+        - scenario: types.ValidationError field mapping (BlockType->Code) loses information
+          likelihood: medium
+          impact: low
+          mitigation: |
+            BlockType values like "impl-file-ownership" map cleanly to Code field.
+            LineNumber maps to Line. Message is identical. No semantic information is lost.
+        - scenario: Agent E deletes pkg/types while imports still exist
+          likelihood: low
+          impact: high
+          mitigation: |
+            Agent E has a mandatory grep pre-check and depends on Agent D completing.
+            The full build gate (go build ./...) will catch any missed import immediately.
+state: "COMPLETE"

@@ -175,3 +175,13 @@ type BackendConfig struct {
 
 ## Features Completed
 - Program: engine-hardening (engine-hardening) — 1 tiers, 2 IMPLs, 2026-03-22
+- **types-consolidation**: completed 2026-03-22, 3 waves, 5 agents
+  - IMPL doc: docs/IMPL/complete/IMPL-types-consolidation.yaml
+- **cross-wave-build-continuity**: completed 2026-03-22, 1 waves, 3 agents
+  - IMPL doc: docs/IMPL/complete/IMPL-cross-wave-build-continuity.yaml
+- **provider-credentials**: completed 2026-03-22, 2 waves, 5 agents
+  - IMPL doc: docs/IMPL/complete/IMPL-provider-credentials.yaml
+- **hooks-quick-wins**: completed 2026-03-23, 2 waves, 7 agents
+  - IMPL doc: docs/IMPL/complete/IMPL-hooks-quick-wins.yaml
+- **file-read-dedup**: completed 2026-03-23, 2 waves, 2 agents
+  - IMPL doc: docs/IMPL/IMPL-file-read-dedup.yaml

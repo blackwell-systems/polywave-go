@@ -1,0 +1,854 @@
+completion_date: "2026-03-23"
+title: Hooks Quick Wins — H2, H3, H4 determinism hooks (CLI + Go engine)
+feature_slug: hooks-quick-wins
+verdict: SUITABLE
+suitability_assessment: |
+    All five suitability checks pass:
+
+    1. File decomposition: 9+ distinct files across 2 repos. Each hook has two
+       independent implementations (CLI shell script + Go engine middleware/validation).
+       No two agents need the same file. Clear disjoint ownership.
+
+    2. Investigation-first: None. The roadmap specifies exact behavior, patterns,
+       and enforcement semantics for H2, H3, H4. No unknowns.
+
+    3. Interface discoverability: Yes. CLI hooks follow the established JSON stdin/stdout
+       contract (check_scout_boundaries, check_wave_ownership patterns). Go engine hooks
+       follow the existing Middleware type and Constraints struct patterns in pkg/tools/.
+
+    4. Pre-implementation status: All three hooks are TODO. No partial implementations
+       exist. The existing hooks (check_scout_boundaries, check_wave_ownership,
+       validate_impl_on_write, block_claire_paths) provide clear patterns to follow.
+
+    5. Parallelization value: High. 6 agents across 2 waves. Build/test cycle is
+       meaningful (go test, shellcheck). Each agent owns 1-2 files. Tasks involve
+       real logic (regex matching, git state inspection, file content scanning).
+
+    Estimated times:
+    - Scout phase: ~8 min (cross-repo analysis, interface contracts, IMPL doc)
+    - Agent execution: ~12 min (6 agents, ~4 min avg, 2 waves with 5 parallel in wave 1)
+    - Merge and verification: ~4 min
+    Total SAW time: ~24 min
+
+    Sequential baseline: ~30 min (6 agents x 5 min avg)
+    Time savings: ~6 min (20% faster)
+
+    Recommendation: Clear speedup from wave 1 parallelism (5 agents). Additional
+    coordination value from cross-repo interface contracts.
+test_command: go test ./...
+lint_command: go vet ./...
+file_ownership:
+    - file: implementations/claude-code/hooks/check_impl_path
+      agent: A
+      wave: 1
+      action: new
+      repo: scout-and-wave
+    - file: implementations/claude-code/hooks/warn_stubs
+      agent: B
+      wave: 1
+      action: new
+      repo: scout-and-wave
+    - file: implementations/claude-code/hooks/check_branch_drift
+      agent: C
+      wave: 1
+      action: new
+      repo: scout-and-wave
+    - file: pkg/hooks/impl_path.go
+      agent: D
+      wave: 1
+      action: new
+      repo: scout-and-wave-go
+    - file: pkg/hooks/impl_path_test.go
+      agent: D
+      wave: 1
+      action: new
+      repo: scout-and-wave-go
+    - file: pkg/hooks/stub_warning.go
+      agent: E
+      wave: 1
+      action: new
+      repo: scout-and-wave-go
+    - file: pkg/hooks/stub_warning_test.go
+      agent: E
+      wave: 1
+      action: new
+      repo: scout-and-wave-go
+    - file: pkg/hooks/branch_drift.go
+      agent: F
+      wave: 1
+      action: new
+      repo: scout-and-wave-go
+    - file: pkg/hooks/branch_drift_test.go
+      agent: F
+      wave: 1
+      action: new
+      repo: scout-and-wave-go
+    - file: implementations/claude-code/hooks/install.sh
+      agent: G
+      wave: 2
+      action: modify
+      depends_on:
+        - A
+        - B
+        - C
+      repo: scout-and-wave
+    - file: implementations/claude-code/hooks/README.md
+      agent: G
+      wave: 2
+      action: modify
+      depends_on:
+        - A
+        - B
+        - C
+      repo: scout-and-wave
+interface_contracts:
+    - name: CLI hook JSON stdin contract
+      description: |
+        All CLI hooks receive JSON on stdin from Claude Code. The shape depends
+        on hook type (PreToolUse vs PostToolUse vs SubagentStart).
+      definition: |
+        PreToolUse (Agent matcher - H2):
+          {"tool_name": "Agent", "tool_input": {"prompt": "...", "description": "..."}, "agent_type": "..."}
+
+        PostToolUse (Write|Edit matcher - H3):
+          {"tool_name": "Write", "tool_input": {"file_path": "...", "content": "..."}, "tool_output": "...", "agent_type": "..."}
+
+        PostToolUse (Bash matcher - H4):
+          {"tool_name": "Bash", "tool_input": {"command": "..."}, "tool_output": "...", "agent_type": "..."}
+
+        Exit codes:
+          0 = allow (no output or JSON with additionalContext for warnings)
+          2 = block (stderr message shown to agent)
+
+        Non-blocking warning output (H3):
+          {"additionalContext": "Warning: stub detected in {file} at line {N}. Complete the implementation before committing."}
+      location: implementations/claude-code/hooks/README.md
+    - name: StubWarningMiddleware
+      description: |
+        Post-write middleware that scans written content for stub patterns and
+        returns a warning string prepended to the result. Non-blocking.
+      definition: |
+        // StubWarningMiddleware returns middleware that scans write_file/edit_file
+        // output for stub patterns (TODO, FIXME, pass, raise NotImplementedError,
+        // unimplemented!(), throw new Error("not implemented")).
+        // Non-blocking: appends warning to result string, does not return error.
+        func StubWarningMiddleware(toolName string) Middleware
+      location: pkg/hooks/stub_warning.go
+    - name: ValidateIMPLPath
+      description: |
+        Pre-launch validation that extracts IMPL doc path from agent prompt
+        and verifies the file exists on disk.
+      definition: |
+        // ValidateIMPLPath extracts the IMPL doc path from the agent prompt text
+        // and verifies the file exists. Returns the extracted path and any error.
+        // Error is non-nil if path not found in prompt or file does not exist.
+        func ValidateIMPLPath(prompt string) (string, error)
+      location: pkg/hooks/impl_path.go
+    - name: ValidateBranchDrift
+      description: |
+        Post-bash validation that checks if a git commit command was run and
+        verifies the current branch matches the expected wave branch.
+      definition: |
+        // ValidateBranchDrift checks if the bash command was a git commit and,
+        // if so, verifies the current branch in workDir matches expectedBranch.
+        // Returns an error if on main/master or wrong branch. Returns nil if
+        // the command was not a git commit or branch matches.
+        func ValidateBranchDrift(command, workDir, expectedBranch string) error
+      location: pkg/hooks/branch_drift.go
+waves:
+    - number: 1
+      agents:
+        - id: A
+          task: |
+            ## Agent A — CLI hook: check_impl_path (H2)
+
+            **Repo:** scout-and-wave (protocol repo)
+            **Files:** implementations/claude-code/hooks/check_impl_path
+
+            ### What to implement
+
+            Create a PreToolUse hook script for the Agent tool matcher that:
+            1. Reads JSON from stdin (fields: tool_name, tool_input, agent_type)
+            2. Only activates when tool_name is "Agent" (skip otherwise, exit 0)
+            3. Only activates for SAW agent types: wave-agent, scout, integration-agent,
+               scaffold-agent, critic-agent (skip general-purpose, exit 0)
+            4. Extracts the IMPL doc path from tool_input.prompt using regex:
+               Look for paths matching `docs/IMPL/IMPL-[^\s"']+\.yaml` or absolute
+               paths containing `docs/IMPL/IMPL-*.yaml`
+            5. If no IMPL path found in the prompt, exit 0 (not all agent launches
+               reference IMPL docs — scouts create them)
+            6. If IMPL path found, verify the file exists on disk:
+               - If exists: exit 0 (allow)
+               - If not exists: print error to stderr and exit 2 (block)
+
+            Error message format:
+            "IMPL doc not found at {path}. Verify the path and try again."
+
+            ### Patterns to follow
+
+            Follow the exact pattern from check_scout_boundaries and check_wave_ownership:
+            - `#!/usr/bin/env bash` shebang
+            - `set -euo pipefail`
+            - `input=$(cat)` to read stdin
+            - `jq -r` for JSON field extraction
+            - Early exit 0 for non-matching cases
+            - Error message to stderr, exit 2 for blocks. Note: existing hooks
+              (check_scout_boundaries, check_wave_ownership) use exit 1 which also
+              works, but exit 2 is the correct Claude Code hook API code for
+              "intentional block". Use exit 2 for this new hook.
+
+            ### Verification gate
+
+            ```bash
+            # Test: non-Agent tool passes through
+            echo '{"tool_name":"Write","tool_input":{},"agent_type":"wave-agent"}' | bash implementations/claude-code/hooks/check_impl_path; echo $?
+            # Expected: 0
+
+            # Test: Agent tool with existing IMPL path passes
+            echo '{"tool_name":"Agent","tool_input":{"prompt":"Read docs/IMPL/IMPL-hooks-quick-wins.yaml"},"agent_type":"wave-agent"}' | bash implementations/claude-code/hooks/check_impl_path; echo $?
+            # Expected: 0 (if file exists) or 2 (if not)
+
+            # Test: Agent tool with nonexistent IMPL path blocks
+            echo '{"tool_name":"Agent","tool_input":{"prompt":"Read docs/IMPL/IMPL-nonexistent-feature.yaml"},"agent_type":"wave-agent"}' | bash implementations/claude-code/hooks/check_impl_path; echo $?
+            # Expected: 2
+            ```
+
+            ### Constraints
+            - Must be executable (chmod +x)
+            - No dependencies beyond bash and jq
+            - Must handle missing jq gracefully (exit 0)
+            - Keep under 50 lines
+          files:
+            - implementations/claude-code/hooks/check_impl_path
+        - id: B
+          task: |
+            ## Agent B — CLI hook: warn_stubs (H3)
+
+            **Repo:** scout-and-wave (protocol repo)
+            **Files:** implementations/claude-code/hooks/warn_stubs
+
+            ### What to implement
+
+            Create a PostToolUse hook script for the Write|Edit matcher that:
+            1. Reads JSON from stdin (fields: tool_name, tool_input, tool_output, agent_type)
+            2. Only activates for wave-agent, integration-agent, scaffold-agent
+               (skip scout and general-purpose, exit 0)
+            3. Extracts tool_input.content (for Write) or tool_input.new_string (for Edit)
+            4. Scans the content for stub patterns (case-insensitive where appropriate):
+               - `TODO` (case sensitive — common in comments)
+               - `FIXME` (case sensitive)
+               - `pass` alone on a line (Python stub — match `^\s*pass\s*$`)
+               - `raise NotImplementedError`
+               - `unimplemented!()`
+               - `throw new Error("not implemented")`
+               - `panic("not implemented")`
+               - `panic("TODO")`
+            5. If stubs found: output JSON to stdout with additionalContext warning.
+               Exit 0 (non-blocking).
+            6. If no stubs: exit 0 silently.
+
+            Output format when stubs detected:
+            ```json
+            {"additionalContext": "Warning: stub pattern detected in written content. Patterns found: TODO (line 15), FIXME (line 23). Complete the implementation before committing."}
+            ```
+
+            ### Patterns to follow
+
+            Same bash/jq patterns as other hooks. Key difference: this is PostToolUse
+            and NON-BLOCKING. Always exit 0. The warning goes to stdout as JSON, not stderr.
+
+            ### Line number detection
+
+            To find line numbers, split the content and grep with -n:
+            ```bash
+            echo "$content" | grep -n -E 'TODO|FIXME|raise NotImplementedError|...' | head -5
+            ```
+            Limit to first 5 matches to keep the warning concise.
+
+            ### Verification gate
+
+            ```bash
+            # Test: Write with TODO triggers warning
+            echo '{"tool_name":"Write","tool_input":{"file_path":"foo.go","content":"func foo() {\n  // TODO: implement\n}"},"agent_type":"wave-agent"}' | bash implementations/claude-code/hooks/warn_stubs
+            # Expected: JSON with additionalContext warning, exit 0
+
+            # Test: Clean write produces no output
+            echo '{"tool_name":"Write","tool_input":{"file_path":"foo.go","content":"func foo() { return 42 }"},"agent_type":"wave-agent"}' | bash implementations/claude-code/hooks/warn_stubs
+            # Expected: no output, exit 0
+
+            # Test: Scout agent skipped
+            echo '{"tool_name":"Write","tool_input":{"file_path":"foo.go","content":"// TODO"},"agent_type":"scout"}' | bash implementations/claude-code/hooks/warn_stubs
+            # Expected: no output, exit 0
+            ```
+
+            ### Constraints
+            - MUST be non-blocking (always exit 0)
+            - Output JSON to stdout only when stubs found
+            - Keep under 60 lines
+            - Handle missing content gracefully
+          files:
+            - implementations/claude-code/hooks/warn_stubs
+        - id: C
+          task: |
+            ## Agent C — CLI hook: check_branch_drift (H4)
+
+            **Repo:** scout-and-wave (protocol repo)
+            **Files:** implementations/claude-code/hooks/check_branch_drift
+
+            ### What to implement
+
+            Create a PostToolUse hook script for the Bash matcher that:
+            1. Reads JSON from stdin (fields: tool_name, tool_input, tool_output, agent_type)
+            2. Only activates for wave-agent (skip all other agent types, exit 0)
+            3. Extracts tool_input.command
+            4. Checks if the command contains a git commit pattern:
+               Match `git commit` or `git -c ... commit` (not git add, git push, etc.)
+               Use: `echo "$command" | grep -qE '(^|\s|&&|\|)git\s+(\-c\s+\S+\s+)?commit'`
+            5. If not a git commit command: exit 0
+            6. If git commit detected:
+               a. Get the current branch: `git -C "$PWD" rev-parse --abbrev-ref HEAD 2>/dev/null`
+               b. If branch is "main" or "master": print error to stderr, exit 2 (block)
+               c. Optionally check if branch matches SAW pattern `saw/*/wave*-agent-*`
+                  If it does NOT match the SAW pattern, emit a warning via additionalContext
+                  (non-blocking) but do NOT block. Only block on main/master.
+
+            Error message for main/master:
+            "Branch drift: committed to {branch} but SAW agents must not commit to main/master.
+            Expected branch pattern: saw/{slug}/wave{N}-agent-{ID}"
+
+            Warning for non-SAW branch (non-blocking):
+            ```json
+            {"additionalContext": "Warning: current branch '{branch}' does not match expected SAW pattern saw/{slug}/waveN-agent-ID. Verify you are on the correct worktree branch."}
+            ```
+
+            ### Patterns to follow
+
+            Same bash/jq patterns as other hooks. This is PostToolUse on Bash.
+            - Block (exit 2) ONLY for main/master. Note: existing hooks use exit 1
+              which also works, but exit 2 is the correct Claude Code API code for
+              "intentional block". Use exit 2 for this new hook.
+            - Warn (additionalContext JSON to stdout, exit 0) for unexpected non-SAW branches
+            - Silent pass (exit 0) for correct SAW branches and non-commit commands
+
+            ### Verification gate
+
+            ```bash
+            # Test: non-commit command passes
+            echo '{"tool_name":"Bash","tool_input":{"command":"go test ./..."},"agent_type":"wave-agent"}' | bash implementations/claude-code/hooks/check_branch_drift
+            # Expected: exit 0
+
+            # Test: non-wave-agent passes
+            echo '{"tool_name":"Bash","tool_input":{"command":"git commit -m test"},"agent_type":"scout"}' | bash implementations/claude-code/hooks/check_branch_drift
+            # Expected: exit 0
+            ```
+
+            ### Constraints
+            - Block (exit 2) ONLY on main/master after git commit
+            - Keep git operations fast (single rev-parse)
+            - Handle missing git gracefully (exit 0)
+            - Keep under 60 lines
+          files:
+            - implementations/claude-code/hooks/check_branch_drift
+        - id: D
+          task: |
+            ## Agent D — Go engine: IMPL path validation (H2)
+
+            **Repo:** scout-and-wave-go
+            **Files:** pkg/hooks/impl_path.go, pkg/hooks/impl_path_test.go
+
+            ### What to implement
+
+            Add to the existing `pkg/hooks` package (which already has scout_boundaries.go):
+
+            **impl_path.go:**
+
+            ```go
+            package hooks
+
+            // ValidateIMPLPath extracts the IMPL doc path from the agent prompt text
+            // and verifies the file exists. Returns the extracted path and any error.
+            func ValidateIMPLPath(prompt string) (string, error)
+            ```
+
+            Implementation:
+            1. Use regexp to find IMPL doc paths in the prompt text:
+               Pattern: `(?:^|\s|["'])(/[^\s"']*docs/IMPL/IMPL-[^\s"']+\.yaml|docs/IMPL/IMPL-[^\s"']+\.yaml)`
+               Try absolute paths first, then relative.
+            2. If no path found: return ("", nil) — not an error, just no IMPL reference
+            3. If path found: check os.Stat(path)
+               - If exists: return (path, nil)
+               - If not exists: return (path, fmt.Errorf("IMPL doc not found at %s", path))
+
+            **impl_path_test.go:**
+
+            Test cases:
+            - Prompt with no IMPL path returns ("", nil)
+            - Prompt with existing file path returns (path, nil) — use a temp file
+            - Prompt with nonexistent path returns (path, error)
+            - Prompt with multiple paths extracts the first one
+            - Absolute path extraction works
+            - Relative path extraction works
+
+            ### Existing code context
+
+            The pkg/hooks package already contains:
+            - scout_boundaries.go: ValidateScoutWrites(), IsValidScoutPath()
+            - scout_boundaries_test.go
+
+            Follow the same style: package-level functions, no structs needed.
+
+            ### Verification gate
+
+            ```bash
+            cd /Users/dayna.blackwell/code/scout-and-wave-go && go test ./pkg/hooks/ -run TestValidateIMPLPath -v
+            ```
+
+            ### Constraints
+            - No external dependencies (stdlib only: regexp, os, fmt)
+            - Function must be fast (<1ms) — just regex + stat
+            - Return ("", nil) when no path found (caller decides if that is an error)
+          files:
+            - pkg/hooks/impl_path.go
+            - pkg/hooks/impl_path_test.go
+        - id: E
+          task: |
+            ## Agent E — Go engine: stub warning middleware (H3)
+
+            **Repo:** scout-and-wave-go
+            **Files:** pkg/hooks/stub_warning.go, pkg/hooks/stub_warning_test.go
+
+            ### What to implement
+
+            Add to the existing `pkg/hooks` package:
+
+            **stub_warning.go:**
+
+            ```go
+            package hooks
+
+            // StubMatch represents a detected stub pattern in content.
+            type StubMatch struct {
+                Pattern string
+                Line    int
+            }
+
+            // ScanForStubs scans content for stub patterns and returns all matches.
+            // Returns nil if no stubs found.
+            func ScanForStubs(content string) []StubMatch
+
+            // FormatStubWarning formats stub matches into a human-readable warning string.
+            // Returns empty string if matches is nil or empty.
+            func FormatStubWarning(filePath string, matches []StubMatch) string
+            ```
+
+            Stub patterns to detect (from roadmap):
+            - `TODO` — case sensitive, match as word boundary: `\bTODO\b`
+            - `FIXME` — case sensitive: `\bFIXME\b`
+            - `^\s*pass\s*$` — Python stub (whole line)
+            - `raise NotImplementedError`
+            - `unimplemented!()` — Rust
+            - `throw new Error("not implemented")` — JS/TS (allow single or double quotes)
+            - `panic("not implemented")` — Go
+            - `panic("TODO")` — Go
+
+            Implementation:
+            1. Split content by newlines
+            2. For each line, check against each pattern
+            3. Collect StubMatch{Pattern, Line} for each hit
+            4. Return the slice (nil if empty)
+
+            FormatStubWarning output format:
+            "Warning: stub detected in {filePath}: TODO (line 5), FIXME (line 12)"
+
+            **stub_warning_test.go:**
+
+            Test cases:
+            - Clean code returns nil
+            - TODO in comment detected
+            - FIXME detected
+            - Python `pass` on its own line detected
+            - `pass` inside a word (e.g., "password") NOT detected
+            - `raise NotImplementedError` detected
+            - `unimplemented!()` detected
+            - Multiple stubs in one file returns all matches
+            - FormatStubWarning with empty matches returns ""
+            - FormatStubWarning with matches returns formatted string
+
+            ### Design note
+
+            This is intentionally NOT a tools.Middleware — it's a standalone detection
+            function in pkg/hooks. The caller (runner.go, orchestrator, or future
+            PostToolUse middleware) decides how to surface the warning. This keeps
+            the function testable and reusable.
+
+            ### Verification gate
+
+            ```bash
+            cd /Users/dayna.blackwell/code/scout-and-wave-go && go test ./pkg/hooks/ -run TestScanForStubs -v && go test ./pkg/hooks/ -run TestFormatStubWarning -v
+            ```
+
+            ### Constraints
+            - No external dependencies (stdlib only: strings, regexp, fmt)
+            - Must handle empty content gracefully
+            - Line numbers are 1-indexed
+          files:
+            - pkg/hooks/stub_warning.go
+            - pkg/hooks/stub_warning_test.go
+        - id: F
+          task: |
+            ## Agent F — Go engine: branch drift detection (H4)
+
+            **Repo:** scout-and-wave-go
+            **Files:** pkg/hooks/branch_drift.go, pkg/hooks/branch_drift_test.go
+
+            ### What to implement
+
+            Add to the existing `pkg/hooks` package:
+
+            **branch_drift.go:**
+
+            ```go
+            package hooks
+
+            // ValidateBranchDrift checks if the bash command was a git commit and,
+            // if so, verifies the current branch in workDir matches expectedBranch.
+            // Returns an error if on main/master or wrong branch.
+            // Returns nil if not a git commit command or branch is correct.
+            func ValidateBranchDrift(command, workDir, expectedBranch string) error
+
+            // IsGitCommitCommand returns true if the command string contains a
+            // git commit invocation (not git add, git push, etc).
+            func IsGitCommitCommand(command string) bool
+
+            // CurrentBranch returns the current git branch name for the given directory.
+            // Returns ("", error) if git is not available or directory is not a git repo.
+            func CurrentBranch(dir string) (string, error)
+            ```
+
+            IsGitCommitCommand detection:
+            - Match: `git commit`, `git -c ... commit`, `git -C ... commit`
+            - Do NOT match: `git add --all && echo "commit done"`, `# git commit`
+            - Use regexp: `(?:^|&&|\|\||;)\s*git\s+(?:-[cC]\s+\S+\s+)*commit\b`
+
+            CurrentBranch implementation:
+            - Run `git -C {dir} rev-parse --abbrev-ref HEAD`
+            - Use os/exec.Command
+
+            ValidateBranchDrift logic:
+            1. If !IsGitCommitCommand(command): return nil
+            2. branch, err := CurrentBranch(workDir)
+            3. If err: return nil (can't verify — don't block)
+            4. If branch == "main" || branch == "master":
+               return fmt.Errorf("branch drift: committed to %s but SAW agents must not commit to main/master", branch)
+            5. If expectedBranch != "" && branch != expectedBranch:
+               return fmt.Errorf("branch drift: on %s but expected %s", branch, expectedBranch)
+            6. return nil
+
+            **branch_drift_test.go:**
+
+            Test cases:
+            - IsGitCommitCommand("git commit -m test") returns true
+            - IsGitCommitCommand("git add .") returns false
+            - IsGitCommitCommand("go test && git commit -m ok") returns true
+            - IsGitCommitCommand("echo git commit") returns false (in string)
+            - IsGitCommitCommand("git -c user.name=x commit -m test") returns true
+            - ValidateBranchDrift with non-commit returns nil
+            - ValidateBranchDrift on main returns error (use git init + checkout in temp dir)
+            - ValidateBranchDrift on correct branch returns nil
+
+            ### Verification gate
+
+            ```bash
+            cd /Users/dayna.blackwell/code/scout-and-wave-go && go test ./pkg/hooks/ -run TestValidateBranchDrift -v && go test ./pkg/hooks/ -run TestIsGitCommitCommand -v
+            ```
+
+            ### Constraints
+            - os/exec for git calls — no external git libraries
+            - Do NOT block if git is unavailable (return nil)
+            - Keep git calls to single rev-parse (fast, <10ms)
+          files:
+            - pkg/hooks/branch_drift.go
+            - pkg/hooks/branch_drift_test.go
+      base_commit: e3dc88054926aaa2e2fc5eb7481fa38eda6f962b
+    - number: 2
+      agents:
+        - id: G
+          task: |
+            ## Agent G — install.sh update + README documentation
+
+            **Repo:** scout-and-wave (protocol repo)
+            **Files:** implementations/claude-code/hooks/install.sh, implementations/claude-code/hooks/README.md
+
+            ### What to implement
+
+            **IMPORTANT: install.sh was recently modified to add `check_git_ownership`.**
+            The current install.sh already has 6 hooks (check_scout_boundaries, validate_impl_on_write,
+            block_claire_paths, check_wave_ownership, check_git_ownership). Read the current file
+            carefully before making changes — do NOT duplicate existing blocks.
+
+            **install.sh updates:**
+
+            Add installation blocks for the three new hooks following the exact pattern
+            used for existing hooks. The current file already defines variables for 6 hooks
+            at the top — add these 3 after the existing ones:
+
+            1. Add variables at the top (after existing GIT_OWNERSHIP_SCRIPT/SYMLINK):
+               ```bash
+               CHECK_IMPL_PATH_SCRIPT="$SCRIPT_DIR/check_impl_path"
+               WARN_STUBS_SCRIPT="$SCRIPT_DIR/warn_stubs"
+               CHECK_BRANCH_DRIFT_SCRIPT="$SCRIPT_DIR/check_branch_drift"
+               CHECK_IMPL_PATH_SYMLINK="$HOME/.local/bin/check_impl_path"
+               WARN_STUBS_SYMLINK="$HOME/.local/bin/warn_stubs"
+               CHECK_BRANCH_DRIFT_SYMLINK="$HOME/.local/bin/check_branch_drift"
+               ```
+
+            2. Add symlink creation blocks for each (same pattern as existing hooks)
+
+            3. Add hook config blocks to settings.json:
+               - check_impl_path: PreToolUse, matcher "Agent"
+               - warn_stubs: PostToolUse, matcher "Write|Edit"
+               - check_branch_drift: PostToolUse, matcher "Bash"
+
+            4. Add verification checks for each new symlink
+
+            5. Update the final "Active hooks" summary to include all 9 hooks
+               (existing 6 + these 3 new ones)
+
+            6. Update uninstall instructions to list all 9 symlinks
+
+            **README.md updates:**
+
+            Add documentation sections for each new hook following the existing format:
+
+            - Hook: IMPL Path Validation (H2) — PreToolUse, Agent matcher
+            - Hook: Stub Warning (H3) — PostToolUse, Write|Edit matcher
+            - Hook: Branch Drift Detection (H4) — PostToolUse, Bash matcher
+
+            Each section needs: description, how it works, manual installation, testing examples.
+
+            Also add an entry for the existing check_git_ownership hook (I1 layer 2)
+            if not already documented.
+
+            Update the hook summary table at the top (if one exists) or add one.
+
+            ### Verification gate
+
+            ```bash
+            # Verify install.sh is syntactically valid
+            bash -n implementations/claude-code/hooks/install.sh
+
+            # Verify new hook scripts are referenced
+            grep -c "check_impl_path\|warn_stubs\|check_branch_drift" implementations/claude-code/hooks/install.sh
+            # Expected: >= 6 (each name appears multiple times)
+            ```
+
+            ### Constraints
+            - Follow EXACT pattern of existing hook installation blocks
+            - Do NOT remove or modify existing hook configurations (including check_git_ownership)
+            - Preserve backward compatibility (all existing hooks unchanged)
+            - install.sh must remain idempotent (re-running is safe)
+            - Read install.sh FIRST before editing — it has changed since this IMPL was scouted
+          files:
+            - implementations/claude-code/hooks/install.sh
+            - implementations/claude-code/hooks/README.md
+          dependencies:
+            - A
+            - B
+            - C
+quality_gates:
+    level: standard
+    gates:
+        - type: build
+          command: go build ./...
+          required: true
+        - type: lint
+          command: go vet ./...
+          required: true
+        - type: test
+          command: go test ./...
+          required: true
+completion_reports:
+    A:
+        status: complete
+        branch: saw/hooks-quick-wins/wave1-agent-A
+        commit: 0758f7c
+        files_changed:
+            - implementations/claude-code/hooks/check_impl_path
+        files_created:
+            - implementations/claude-code/hooks/check_impl_path
+        verification: PASS
+    B:
+        status: complete
+        branch: saw/hooks-quick-wins/wave1-agent-B
+        commit: 87ad50d
+        files_changed:
+            - implementations/claude-code/hooks/warn_stubs
+        files_created:
+            - implementations/claude-code/hooks/warn_stubs
+        verification: PASS
+    C:
+        status: complete
+        branch: saw/hooks-quick-wins/wave1-agent-C
+        commit: 6b1f960
+        files_changed:
+            - implementations/claude-code/hooks/check_branch_drift
+        files_created:
+            - implementations/claude-code/hooks/check_branch_drift
+        verification: PASS
+    D:
+        status: complete
+        branch: saw/hooks-quick-wins/wave1-agent-D
+        commit: 6846da9
+        files_changed:
+            - pkg/hooks/impl_path.go
+            - pkg/hooks/impl_path_test.go
+        files_created:
+            - pkg/hooks/impl_path.go
+            - pkg/hooks/impl_path_test.go
+        tests_added:
+            - TestValidateIMPLPath_NoPath
+            - TestValidateIMPLPath_ExistingFile
+            - TestValidateIMPLPath_NonexistentFile
+            - TestValidateIMPLPath_MultiplePaths
+            - TestValidateIMPLPath_AbsolutePath
+            - TestValidateIMPLPath_RelativePath
+        verification: PASS
+    E:
+        status: complete
+        branch: saw/hooks-quick-wins/wave1-agent-E
+        commit: a312094
+        files_changed:
+            - pkg/hooks/stub_warning.go
+            - pkg/hooks/stub_warning_test.go
+        files_created:
+            - pkg/hooks/stub_warning.go
+            - pkg/hooks/stub_warning_test.go
+        tests_added:
+            - TestScanForStubs_CleanCode
+            - TestScanForStubs_EmptyContent
+            - TestScanForStubs_TODO
+            - TestScanForStubs_FIXME
+            - TestScanForStubs_PythonPass
+            - TestScanForStubs_PassInsideWord
+            - TestScanForStubs_RaiseNotImplementedError
+            - TestScanForStubs_RustUnimplemented
+            - TestScanForStubs_JSThrowNotImplemented
+            - TestScanForStubs_JSThrowNotImplementedSingleQuotes
+            - TestScanForStubs_GoPanicNotImplemented
+            - TestScanForStubs_GoPanicTODO
+            - TestScanForStubs_MultipleStubs
+            - TestFormatStubWarning_Empty
+            - TestFormatStubWarning_WithMatches
+        verification: PASS
+    F:
+        status: complete
+        branch: saw/hooks-quick-wins/wave1-agent-F
+        commit: 5be9d4d
+        files_changed:
+            - pkg/hooks/branch_drift.go
+            - pkg/hooks/branch_drift_test.go
+        files_created:
+            - pkg/hooks/branch_drift.go
+            - pkg/hooks/branch_drift_test.go
+        tests_added:
+            - TestIsGitCommitCommand
+            - TestCurrentBranch
+            - TestCurrentBranch_InvalidDir
+            - TestValidateBranchDrift_NonCommit
+            - TestValidateBranchDrift_MainBranch
+            - TestValidateBranchDrift_CorrectBranch
+            - TestValidateBranchDrift_WrongBranch
+            - TestValidateBranchDrift_InvalidDir
+        verification: PASS
+    G:
+        status: complete
+        branch: develop
+        commit: b0a20eb
+        files_changed:
+            - implementations/claude-code/hooks/install.sh
+            - implementations/claude-code/hooks/README.md
+        tests_added:
+            - bash-n-syntax-check
+            - grep-reference-count
+        verification: PASS
+pre_mortem:
+    overall_risk: low
+    rows:
+        - scenario: CLI hooks fail on systems without jq installed
+          likelihood: low
+          impact: low
+          mitigation: |
+            All hooks check for jq availability and exit 0 (allow) if missing.
+            This follows the existing pattern in validate_impl_on_write.
+        - scenario: H4 branch drift check is slow due to git operations
+          likelihood: low
+          impact: medium
+          mitigation: |
+            Single git rev-parse call is <10ms. Only runs after git commit
+            commands, not every bash invocation.
+        - scenario: H3 stub patterns produce false positives (e.g., 'password' matching 'pass')
+          likelihood: medium
+          impact: low
+          mitigation: |
+            Python 'pass' uses whole-line regex (^\s*pass\s*$). TODO/FIXME use
+            word boundaries. Non-blocking warning only, so false positives are
+            informational, not blocking.
+        - scenario: H2 IMPL path regex misses unusual path formats
+          likelihood: medium
+          impact: low
+          mitigation: |
+            Returns ("", nil) when no path found — caller decides policy.
+            Not finding a path is not a block, only finding a nonexistent
+            path blocks. Conservative approach.
+critic_report:
+    verdict: PASS
+    agent_reviews:
+        A:
+            agent_id: A
+            verdict: ISSUES
+            issues:
+                - check: pattern_accuracy
+                  severity: error
+                  description: 'Brief instructs exit 2 for blocking, but all existing CLI hooks (check_scout_boundaries line 58, check_wave_ownership line 119, validate_impl_on_write line 64) use exit 1 for blocks. The pattern to follow contradicts itself: it says follow check_scout_boundaries pattern but also says use exit 2.'
+                  file: implementations/claude-code/hooks/check_impl_path
+                  symbol: exit 2
+        B:
+            agent_id: B
+            verdict: PASS
+        C:
+            agent_id: C
+            verdict: ISSUES
+            issues:
+                - check: pattern_accuracy
+                  severity: error
+                  description: 'Brief instructs exit 2 for blocking on main/master, but all existing CLI hooks use exit 1. Same contradiction as Agent A: says to follow existing patterns but specifies exit 2 instead of exit 1.'
+                  file: implementations/claude-code/hooks/check_branch_drift
+                  symbol: exit 2
+        D:
+            agent_id: D
+            verdict: PASS
+        E:
+            agent_id: E
+            verdict: ISSUES
+            issues:
+                - check: interface_consistency
+                  severity: warning
+                  description: Interface contract StubWarningMiddleware defines func StubWarningMiddleware(toolName string) Middleware, but agent brief implements ScanForStubs and FormatStubWarning instead. Brief explicitly states this is NOT a tools.Middleware. Contract name and signature do not match the actual implementation the agent is told to build.
+                  file: pkg/hooks/stub_warning.go
+                  symbol: StubWarningMiddleware
+        F:
+            agent_id: F
+            verdict: PASS
+        G:
+            agent_id: G
+            verdict: ISSUES
+            issues:
+                - check: pattern_accuracy
+                  severity: warning
+                  description: Brief states install.sh has 6 existing hooks and new total will be 9, but install.sh Active hooks summary at line 326-331 lists exactly 5 hooks (check_scout_boundaries, block_claire_paths, check_wave_ownership, validate_impl_on_write, check_git_ownership). The count is off by one.
+                  file: implementations/claude-code/hooks/install.sh
+                  symbol: Active hooks count
+    summary: 'Reviewed all 7 agents (A-G) across 2 waves. Found 2 errors and 2 warnings. Error 1: Agents A and C briefs instruct exit 2 for hook blocks, but all 4 existing CLI hooks in the codebase use exit 1 for blocks (check_scout_boundaries, check_wave_ownership, validate_impl_on_write, check_wave_ownership). The IMPL claims ''Claude Code uses exit 2 for hook blocks'' which contradicts the established codebase pattern of exit 1. Error 2: Interface contract ''StubWarningMiddleware'' defines func StubWarningMiddleware(toolName string) Middleware, but Agent E''s brief implements entirely different functions (ScanForStubs, FormatStubWarning) and explicitly states ''This is intentionally NOT a tools.Middleware''. The contract and brief are misaligned. Warning 1: The suitability assessment references ''existing Middleware type and Constraints struct patterns in pkg/tools/'' as patterns agents will follow, but none of the agent briefs (D, E, F) actually use these types -- they implement standalone functions in pkg/hooks. Warning 2: install.sh currently lists 5 hooks in its Active hooks summary (the brief says 6), and the IMPL says agents should add 3 more for a total of 9 -- but with only 5 currently listed (check_scout_boundaries, block_claire_paths, check_wave_ownership, validate_impl_on_write, check_git_ownership), the total would be 8 from Agent G''s perspective; the brief''s claim of ''existing 6'' is off by one.'
+    reviewed_at: "2026-03-23T08:30:22Z"
+    issue_count: 4
+state: REVIEWED

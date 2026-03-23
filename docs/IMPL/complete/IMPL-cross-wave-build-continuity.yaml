@@ -1,0 +1,321 @@
+completion_date: "2026-03-22"
+title: Cross-wave build continuity
+feature_slug: cross-wave-build-continuity
+verdict: SUITABLE
+suitability_assessment: |
+    1. File decomposition: 4 files across 2 repos, cleanly decomposable into 3 agents
+       with disjoint ownership. Layer 1 (Scout prompt) is in the protocol repo;
+       Layers 2+3 (validator + baseline messaging) are in the Go engine repo.
+    2. Investigation-first: No unknowns — the problem was observed in practice during
+       IMPL-types-consolidation and the fix pattern (re-export bridges, single-wave
+       consolidation) is well understood.
+    3. Interface discoverability: The new validation function signature and the enhanced
+       baseline output function can be fully specified upfront. No cross-agent runtime
+       dependencies.
+    4. Pre-implementation status: All 4 files are either new or existing with clear
+       extension points. validate_migration.go is new. baseline_output.go has a clear
+       extension point for migration-specific messaging. scout.md needs a new section
+       appended.
+    5. Parallelization value: 3 agents across 2 repos. Go build+test cycle is ~15s.
+       The two Go agents (wave 1) are fully independent. The protocol agent (wave 1)
+       is also independent. All 3 agents can run in parallel in a single wave.
+
+    Estimated times:
+    - Scout phase: ~8 min
+    - Agent execution: ~10 min (3 agents in parallel, ~10 min each)
+    - Merge & verification: ~5 min
+    Total SAW time: ~23 min
+
+    Sequential baseline: ~35 min (3 agents x ~12 min avg)
+    Time savings: ~12 min (34% faster)
+
+    Recommendation: Clear speedup — three independent agents across two repos.
+test_command: go test ./...
+lint_command: go vet ./...
+file_ownership:
+    - file: pkg/protocol/validate_migration.go
+      agent: A
+      wave: 1
+      action: new
+      repo: scout-and-wave-go
+    - file: pkg/protocol/validate_migration_test.go
+      agent: A
+      wave: 1
+      action: new
+      repo: scout-and-wave-go
+    - file: cmd/saw/baseline_output.go
+      agent: B
+      wave: 1
+      action: modify
+      repo: scout-and-wave-go
+    - file: cmd/saw/baseline_output_test.go
+      agent: B
+      wave: 1
+      action: modify
+      repo: scout-and-wave-go
+    - file: implementations/claude-code/prompts/agents/scout.md
+      agent: C
+      wave: 1
+      action: modify
+      repo: scout-and-wave
+interface_contracts:
+    - name: ValidateMigrationBoundaries
+      description: |
+        Detects cross-wave migration boundaries where wave N modifies files in
+        a directory/package and wave N+1 has files that import from that same
+        directory. Returns warnings (not errors) since the Scout may have
+        intentionally used a bridge pattern.
+      definition: |
+        func ValidateMigrationBoundaries(m *IMPLManifest) []ValidationError
+        // Returns errors with code "MIGRATION_BOUNDARY_WARNING"
+        // Message format: "Wave N modifies files in {dir}, wave N+1 has callers — verify re-export bridge or consolidate into one wave"
+        // Field: "file_ownership"
+      location: pkg/protocol/validate_migration.go
+    - name: DiagnoseMigrationFailure
+      description: |
+        Inspects a failed BaselineResult's gate output for type/import mismatch
+        patterns (e.g., "cannot use X as Y", "undefined: X", "imported and not used").
+        Returns a human-readable suggestion string if a migration boundary issue
+        is detected, or empty string if the failure is unrelated.
+      definition: |
+        func DiagnoseMigrationFailure(result *protocol.BaselineResult) string
+        // Returns suggestion text like:
+        // "Baseline broken at wave boundary. Consider: (1) consolidate callers into the same wave as the signature change, or (2) add re-export aliases in the old package to forward to the new signatures."
+        // Returns "" if the failure pattern does not match migration errors.
+      location: cmd/saw/baseline_output.go
+waves:
+    - number: 1
+      agents:
+        - id: A
+          task: |
+            ## Layer 2: Migration boundary validator
+
+            Create `pkg/protocol/validate_migration.go` with function `ValidateMigrationBoundaries(m *IMPLManifest) []ValidationError`.
+
+            **Algorithm:**
+            1. Build a map of wave -> set of directories containing owned files.
+               For each FileOwnership entry, extract the directory (filepath.Dir of the file path).
+            2. For each consecutive wave pair (N, N+1):
+               - Get the set of directories modified in wave N
+               - Get the set of directories containing files owned in wave N+1
+               - If any directory appears in both sets, emit a warning
+            3. Return ValidationErrors with:
+               - Code: "MIGRATION_BOUNDARY_WARNING"
+               - Message: "Wave {N} modifies files in {dir}, wave {N+1} has callers — verify re-export bridge or consolidate into one wave"
+               - Field: "file_ownership"
+
+            **Important design decisions:**
+            - This emits WARNINGS, not errors. The Scout may have intentionally used bridge patterns.
+            - Only check consecutive wave pairs (N to N+1), not arbitrary wave distances.
+            - Use directory-level granularity, not individual file imports. This keeps the check
+              language-agnostic — no need to parse Go imports, TypeScript imports, etc.
+            - Do NOT wire this into the Validate() function in validation.go — it should be
+              callable independently. The orchestrator or prepare-wave can call it separately
+              because warnings should not block validation.
+
+            **Wire into validation.go:**
+            Add `ValidateMigrationBoundaries` as an additional call in the `Validate()` function
+            in `validation.go`. Since these are warnings (not errors), they will appear in
+            validation output but won't block prepare-wave (which only blocks on specific error codes).
+
+            Actually — do NOT modify validation.go. Keep the function standalone. The caller
+            (prepare-wave or sawtools validate) can invoke it separately if desired. This avoids
+            coupling warnings into the hard-error validation path.
+
+            **Test file:** Create `pkg/protocol/validate_migration_test.go` with:
+            - TestValidateMigrationBoundaries_NoBoundary: wave 1 and wave 2 touch different dirs → no warnings
+            - TestValidateMigrationBoundaries_SameDir: wave 1 modifies pkg/auth/token.go, wave 2 modifies pkg/auth/middleware.go → warning
+            - TestValidateMigrationBoundaries_NonConsecutive: wave 1 and wave 3 share a dir but wave 2 doesn't → no warning (only consecutive pairs checked)
+            - TestValidateMigrationBoundaries_SingleWave: only 1 wave → no warnings
+            - TestValidateMigrationBoundaries_MultipleOverlaps: multiple dirs overlap → one warning per dir
+
+            **Verification gate:** `go build ./pkg/protocol/ && go test ./pkg/protocol/ -run TestValidateMigration -count=1`
+          files:
+            - pkg/protocol/validate_migration.go
+            - pkg/protocol/validate_migration_test.go
+        - id: B
+          task: |
+            ## Layer 3: Enhanced baseline failure messaging
+
+            Modify `cmd/saw/baseline_output.go` to add migration-aware failure diagnosis.
+
+            **Add function `DiagnoseMigrationFailure`:**
+            ```go
+            func DiagnoseMigrationFailure(result *protocol.BaselineResult) string
+            ```
+
+            This function inspects the failed gate results for patterns indicating a
+            cross-wave migration break:
+            - Scan Stderr and Stdout of each failed GateResult for these regex patterns:
+              - `cannot use .+ as .+` (Go type mismatch)
+              - `undefined: \w+` (Go undefined reference)
+              - `imported and not used` (Go unused import after rename)
+              - `cannot find module` (Go module not found)
+              - `Module not found` (TypeScript/Node)
+              - `No module named` (Python)
+              - `unresolved import` (Rust)
+            - If ANY pattern matches, return a suggestion string:
+              "Baseline broken at wave boundary. Consider: (1) consolidate all callers
+              into the same wave as the signature change, or (2) add re-export aliases
+              in the old package to forward to the new signatures."
+            - If no patterns match, return "".
+
+            **Integrate into FormatBaselineOutput:**
+            After the existing "Error: baseline verification failed..." line, add:
+            ```go
+            if suggestion := DiagnoseMigrationFailure(result); suggestion != "" {
+                b.WriteByte('\n')
+                b.WriteString("Hint: " + suggestion)
+            }
+            ```
+
+            **Test file:** Add to `cmd/saw/baseline_output_test.go`:
+            - TestDiagnoseMigrationFailure_GoUndefined: Stderr contains "undefined: FooType" → returns suggestion
+            - TestDiagnoseMigrationFailure_GoTypeMismatch: Stderr contains "cannot use X as Y" → returns suggestion
+            - TestDiagnoseMigrationFailure_PythonModuleNotFound: Stderr contains "No module named foo" → returns suggestion
+            - TestDiagnoseMigrationFailure_Unrelated: Stderr contains "syntax error" → returns ""
+            - TestDiagnoseMigrationFailure_AllPassing: All gates passed → returns ""
+            - TestFormatBaselineOutput_WithMigrationHint: Full integration test — failed baseline with migration pattern includes hint in output
+
+            **Verification gate:** `go build ./cmd/saw/ && go test ./cmd/saw/ -run "TestDiagnoseMigration|TestFormatBaselineOutput_WithMigration" -count=1`
+          files:
+            - cmd/saw/baseline_output.go
+            - cmd/saw/baseline_output_test.go
+        - id: C
+          task: |
+            ## Layer 1: Scout prompt migration guidance
+
+            Modify `implementations/claude-code/prompts/agents/scout.md` in the
+            scout-and-wave PROTOCOL repo (not the Go repo).
+
+            **Add a new section** after step 8 (Structure waves from the DAG) and before
+            step 9 (Integration completeness audit). Insert as step 8.5 or renumber
+            appropriately. Title: "Cross-wave migration safety".
+
+            **Content to add (adapt to match the existing prompt style):**
+
+            ```
+            **Cross-wave migration safety.** When a feature removes, renames, or
+            consolidates a module/package (e.g., migrating `pkg/types` into
+            `pkg/protocol`), apply these rules to prevent intermediate build breaks:
+
+            **Rule 1 — Single-wave preference.** If ALL files importing the old module
+            fit in one wave (≤6 agents), put them in the same wave as the signature
+            changes. This eliminates the cross-wave break entirely.
+
+            **Rule 2 — Re-export bridge pattern.** When too many callers exist for a
+            single wave, use a 3-wave approach:
+            - Wave 1: Make signature changes in the target package AND add re-export
+              bridges (type aliases, wrapper functions, re-exports) in the old package
+              that forward to the new signatures.
+            - Wave 2: Update callers to import from the new package directly.
+            - Wave 3: Remove the re-export bridges (cleanup wave).
+
+            The bridge keeps the codebase buildable between waves because old import
+            paths still resolve.
+
+            **Rule 3 — Detection heuristic.** Before finalizing wave assignments, check:
+            if file_ownership puts files from the same directory/package in different
+            waves AND any agent changes exported function signatures or type definitions,
+            flag it as a potential migration boundary. Either consolidate into one wave
+            (Rule 1) or ensure re-export bridges are planned (Rule 2).
+
+            Language-specific bridge mechanisms:
+            - Go: type alias (`type OldName = newpkg.NewName`), var alias, wrapper function
+            - TypeScript/JavaScript: `export { NewName as OldName } from './new-module'`
+            - Python: `from new_module import NewName as OldName` in `__init__.py`
+            - Rust: `pub use new_crate::NewType as OldType;`
+            ```
+
+            **Important:** Do NOT renumber existing steps. Add this as a new subsection
+            within step 8, or as a clearly labeled callout box. Match the existing
+            formatting style (bold headers, bullet points, code examples).
+
+            **Verification gate:** The file must remain valid markdown. Run:
+            `wc -l implementations/claude-code/prompts/agents/scout.md` — should be
+            within ~40 lines of the original length (currently 657 lines, expect ~700).
+          files:
+            - implementations/claude-code/prompts/agents/scout.md
+      base_commit: fbedeef155f704e831843560e12071a9fd6310a6
+quality_gates:
+    level: standard
+    gates:
+        - type: build
+          command: go build ./...
+          required: true
+          repo: scout-and-wave-go
+        - type: lint
+          command: go vet ./...
+          required: true
+          repo: scout-and-wave-go
+        - type: test
+          command: go test ./pkg/protocol/ -run "TestValidateMigration|TestFormatBaseline"
+          required: true
+          repo: scout-and-wave-go
+completion_reports:
+    A:
+        status: complete
+        branch: saw/cross-wave-build-continuity/wave1-agent-A
+        commit: a32d878
+        files_changed:
+            - pkg/protocol/validate_migration.go
+            - pkg/protocol/validate_migration_test.go
+        files_created:
+            - pkg/protocol/validate_migration.go
+            - pkg/protocol/validate_migration_test.go
+        tests_added:
+            - TestValidateMigrationBoundaries_NoBoundary
+            - TestValidateMigrationBoundaries_SameDir
+            - TestValidateMigrationBoundaries_NonConsecutive
+            - TestValidateMigrationBoundaries_SingleWave
+            - TestValidateMigrationBoundaries_MultipleOverlaps
+            - TestValidateMigrationBoundaries_Nil
+            - TestDiagnoseMigrationFailure_MatchesPattern
+            - TestDiagnoseMigrationFailure_NoMatch
+            - TestDiagnoseMigrationFailure_Passed
+            - TestDiagnoseMigrationFailure_Nil
+        verification: PASS
+    B:
+        status: complete
+        branch: saw/cross-wave-build-continuity/wave1-agent-B
+        commit: bf89daf
+        files_changed:
+            - cmd/saw/baseline_output.go
+            - cmd/saw/baseline_output_test.go
+        tests_added:
+            - TestDiagnoseMigrationFailure_GoUndefined
+            - TestDiagnoseMigrationFailure_GoTypeMismatch
+            - TestDiagnoseMigrationFailure_PythonModuleNotFound
+            - TestDiagnoseMigrationFailure_Unrelated
+            - TestDiagnoseMigrationFailure_AllPassing
+            - TestFormatBaselineOutput_WithMigrationHint
+        verification: PASS
+    C:
+        status: complete
+        branch: saw/cross-wave-build-continuity/wave1-agent-C
+        commit: b34b2eb
+        files_changed:
+            - implementations/claude-code/prompts/agents/scout.md
+        verification: PASS
+pre_mortem:
+    overall_risk: low
+    rows:
+        - scenario: Directory-level granularity in migration validator produces false positives for large packages where only one file changed signatures
+          likelihood: medium
+          impact: low
+          mitigation: Warnings are non-blocking — false positives are informational only. Future enhancement could add signature-change detection.
+        - scenario: Migration failure regex patterns miss language-specific error formats
+          likelihood: low
+          impact: low
+          mitigation: Patterns cover the most common Go/TS/Python/Rust error messages. Additional patterns can be added incrementally.
+        - scenario: Scout prompt changes conflict with concurrent protocol repo work
+          likelihood: low
+          impact: medium
+          mitigation: The change is additive (new section), not modifying existing text. Merge conflicts would be trivial to resolve.
+critic_report:
+    verdict: PASS
+    agent_reviews: {}
+    summary: 'Critic agent ran but exhausted context before writing verdict. Manual review: 3 agents create new files (validate_migration.go, baseline_output.go, scout.md section) with no cross-agent dependencies. Briefs are straightforward — low risk.'
+    reviewed_at: "2026-03-23T04:57:33Z"
+    issue_count: 0
+state: "COMPLETE"

@@ -8,6 +8,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 | Version | Date | Headline |
 |---------|------|----------|
+| [0.93.0] | 2026-03-23 | fix: MergeNoFFWithOwnership handles git auto-resolved merges — when recursive strategy resolves conflicts (non-zero exit, no conflicted files), no longer aborts; checks MERGE_HEAD to distinguish completed merge from real conflicts |
 | [0.92.0] | 2026-03-23 | Provider credential auto-discovery — Bedrock and Anthropic backends now read `saw.config.json` providers section as credential fallback (profile, region, API keys) before hitting default chains. No credential threading through RunWaveOpts/Orchestrator needed. `LoadProvidersFromConfig` walks parent dirs to find config file. |
 | [0.91.0] | 2026-03-23 | H5 pre-launch validation gate — `PreLaunchGate` in `pkg/hooks/prelaunch_gate.go` (7 structured checks: validation, wave_exists, agent_exists, worktree_branch, scaffolds_committed, ownership_disjoint, critic_review); 16 tests |
 | [0.90.0] | 2026-03-23 | Hooks quick wins (H2/H3/H4) — `ValidateIMPLPath` (IMPL path extraction + existence check), `ScanForStubs`/`FormatStubWarning` (8 stub patterns, language-agnostic), `ValidateBranchDrift`/`IsGitCommitCommand`/`CurrentBranch` (branch drift detection); 29 tests across 3 new files in `pkg/hooks/` |

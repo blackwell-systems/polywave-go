@@ -234,3 +234,6 @@ func VerifyCommits(manifestPath string, waveNum int, repoDir string) result.Resu
 	}
 	return result.NewPartial(data, warnings)
 }
+
+// Backward compatibility alias (will be removed after Wave 3 completes)
+type VerifyCommitsResult = VerifyCommitsData
