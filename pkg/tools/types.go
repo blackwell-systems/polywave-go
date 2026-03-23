@@ -44,6 +44,6 @@ type Tool struct {
 
 // ExecutionContext carries per-execution state for tool executors.
 type ExecutionContext struct {
-	WorkDir  string                 // Working directory for file operations
-	Metadata map[string]interface{} // Arbitrary metadata (e.g., agent ID, wave number)
+	WorkDir    string                 // Working directory for file operations
+	Metadata   map[string]interface{} // Arbitrary metadata (e.g., agent ID, wave number)
 }

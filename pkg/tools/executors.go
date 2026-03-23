@@ -3,6 +3,7 @@ package tools
 import (
 	"bufio"
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
@@ -87,7 +88,93 @@ func (e *BashExecutor) Execute(ctx context.Context, execCtx ExecutionContext, in
 	if cmd.ProcessState != nil && !cmd.ProcessState.Success() {
 		result += fmt.Sprintf("\n[exit status %d]", cmd.ProcessState.ExitCode())
 	}
+
+	// I1 layer 2: after git commands that can modify files, check for ownership violations.
+	// Reads .saw-ownership.json from working directory (same as CLI hook approach).
+	if isGitModifyCommand(command) {
+		if ownedFiles := loadOwnershipFromWorkDir(execCtx.WorkDir); len(ownedFiles) > 0 {
+			if warning := checkGitOwnershipViolations(execCtx.WorkDir, ownedFiles); warning != "" {
+				result += "\n" + warning
+			}
+		}
+	}
+
 	return result, nil
+}
+
+// isGitModifyCommand returns true if the command contains a git operation that can modify files.
+func isGitModifyCommand(command string) bool {
+	for _, pattern := range []string{"git checkout", "git merge", "git rebase", "git cherry-pick", "git stash", "git reset", "git restore"} {
+		if strings.Contains(command, pattern) {
+			return true
+		}
+	}
+	return false
+}
+
+// checkGitOwnershipViolations runs git diff to find files modified outside the ownership list.
+// Returns a warning string if violations found, empty string otherwise.
+func checkGitOwnershipViolations(workDir string, ownedFiles map[string]bool) string {
+	// Get modified files (staged + unstaged) relative to HEAD
+	cmd := exec.Command("git", "diff", "--name-only", "HEAD")
+	cmd.Dir = workDir
+	out, err := cmd.Output()
+	if err != nil {
+		return "" // Can't check — don't warn
+	}
+	staged := exec.Command("git", "diff", "--name-only", "--cached")
+	staged.Dir = workDir
+	stagedOut, _ := staged.Output()
+
+	allFiles := strings.TrimSpace(string(out) + "\n" + string(stagedOut))
+	if allFiles == "" {
+		return ""
+	}
+
+	var violations []string
+	for _, file := range strings.Split(allFiles, "\n") {
+		file = strings.TrimSpace(file)
+		if file == "" {
+			continue
+		}
+		if !ownedFiles[file] {
+			violations = append(violations, file)
+		}
+	}
+
+	if len(violations) == 0 {
+		return ""
+	}
+
+	return fmt.Sprintf(
+		"WARNING: Git operation modified files outside your ownership list:\n  - %s\n"+
+			"Do NOT commit these changes. Run: git checkout HEAD -- <file> for each.\n"+
+			"Committing unowned files can silently revert other agents' work.",
+		strings.Join(violations, "\n  - "),
+	)
+}
+
+// loadOwnershipFromWorkDir reads .saw-ownership.json from the working directory
+// and returns the owned files map. Returns nil if not in a SAW context.
+func loadOwnershipFromWorkDir(workDir string) map[string]bool {
+	data, err := os.ReadFile(filepath.Join(workDir, ".saw-ownership.json"))
+	if err != nil {
+		return nil // Not in a SAW worktree
+	}
+	var manifest struct {
+		OwnedFiles []string `json:"owned_files"`
+	}
+	if err := json.Unmarshal(data, &manifest); err != nil {
+		return nil
+	}
+	if len(manifest.OwnedFiles) == 0 {
+		return nil
+	}
+	owned := make(map[string]bool, len(manifest.OwnedFiles))
+	for _, f := range manifest.OwnedFiles {
+		owned[f] = true
+	}
+	return owned
 }
 
 // EditExecutor implements the ToolExecutor interface for search-and-replace edits.
