@@ -17,6 +17,16 @@ func ValidateSchema(m *IMPLManifest) []ValidationError {
 	errs = append(errs, validateFilePaths(m)...)
 	errs = append(errs, validateCrossFieldConsistency(m)...)
 	errs = append(errs, ValidateReactions(m)...)
+
+	// Populate Slug on all schema validation errors when available
+	if m.FeatureSlug != "" {
+		for i := range errs {
+			if errs[i].Slug == "" {
+				errs[i].Slug = m.FeatureSlug
+			}
+		}
+	}
+
 	return errs
 }
 

@@ -39,6 +39,8 @@ func validateCrossFieldConsistency(m *IMPLManifest) []ValidationError {
 				Code:    SV01CrossFieldError,
 				Message: fmt.Sprintf("file_ownership[%d]: agent %q does not appear in any wave's agents list", i, fo.Agent),
 				Field:   fmt.Sprintf("file_ownership[%d].agent", i),
+				AgentID: fo.Agent,
+				Wave:    fo.Wave,
 			})
 		}
 
@@ -47,6 +49,8 @@ func validateCrossFieldConsistency(m *IMPLManifest) []ValidationError {
 				Code:    SV01CrossFieldError,
 				Message: fmt.Sprintf("file_ownership[%d]: wave %d does not match any existing wave number", i, fo.Wave),
 				Field:   fmt.Sprintf("file_ownership[%d].wave", i),
+				AgentID: fo.Agent,
+				Wave:    fo.Wave,
 			})
 		}
 	}
@@ -72,6 +76,8 @@ func validateCrossFieldConsistency(m *IMPLManifest) []ValidationError {
 						Code:    SV01CrossFieldError,
 						Message: fmt.Sprintf("agent %s (wave %d) lists file %q but no matching file_ownership entry exists for agent=%s wave=%d", a.ID, w.Number, f, a.ID, w.Number),
 						Field:   fmt.Sprintf("waves[%d].agents[%s].files", w.Number-1, a.ID),
+						AgentID: a.ID,
+						Wave:    w.Number,
 					})
 				}
 			}
@@ -110,6 +116,7 @@ func validateCrossFieldConsistency(m *IMPLManifest) []ValidationError {
 				Code:    SV01CrossFieldError,
 				Message: fmt.Sprintf("completion_reports[%s]: agent %q does not appear in any wave's agents list", agentID, agentID),
 				Field:   fmt.Sprintf("completion_reports[%s]", agentID),
+				AgentID: agentID,
 			})
 		}
 	}

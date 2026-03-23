@@ -1,6 +1,7 @@
 package protocol
 
 import (
+	"encoding/json"
 	"testing"
 )
 
@@ -14,7 +15,7 @@ func TestValidateI1DisjointOwnership_Valid(t *testing.T) {
 		},
 	}
 
-	errs := validateI1DisjointOwnership(m)
+	errs := validateI1DisjointOwnership(m, "")
 	if len(errs) != 0 {
 		t.Errorf("Expected no errors, got %d: %v", len(errs), errs)
 	}
@@ -29,7 +30,7 @@ func TestValidateI1DisjointOwnership_Violation(t *testing.T) {
 		},
 	}
 
-	errs := validateI1DisjointOwnership(m)
+	errs := validateI1DisjointOwnership(m, "")
 	if len(errs) != 1 {
 		t.Fatalf("Expected 1 error, got %d: %v", len(errs), errs)
 	}
@@ -62,7 +63,7 @@ func TestValidateI2AgentDependencies_Valid(t *testing.T) {
 		},
 	}
 
-	errs := validateI2AgentDependencies(m)
+	errs := validateI2AgentDependencies(m, "")
 	if len(errs) != 0 {
 		t.Errorf("Expected no errors, got %d: %v", len(errs), errs)
 	}
@@ -81,7 +82,7 @@ func TestValidateI2AgentDependencies_MissingDep(t *testing.T) {
 		},
 	}
 
-	errs := validateI2AgentDependencies(m)
+	errs := validateI2AgentDependencies(m, "")
 	if len(errs) != 1 {
 		t.Fatalf("Expected 1 error, got %d: %v", len(errs), errs)
 	}
@@ -104,7 +105,7 @@ func TestValidateI2AgentDependencies_SameWave(t *testing.T) {
 		},
 	}
 
-	errs := validateI2AgentDependencies(m)
+	errs := validateI2AgentDependencies(m, "")
 	if len(errs) != 1 {
 		t.Fatalf("Expected 1 error, got %d: %v", len(errs), errs)
 	}
@@ -132,7 +133,7 @@ func TestValidateI2AgentDependencies_FutureWave(t *testing.T) {
 		},
 	}
 
-	errs := validateI2AgentDependencies(m)
+	errs := validateI2AgentDependencies(m, "")
 	if len(errs) != 1 {
 		t.Fatalf("Expected 1 error, got %d: %v", len(errs), errs)
 	}
@@ -154,7 +155,7 @@ func TestValidateI2AgentDependencies_FileOwnership(t *testing.T) {
 		},
 	}
 
-	errs := validateI2AgentDependencies(m)
+	errs := validateI2AgentDependencies(m, "")
 	if len(errs) != 1 {
 		t.Fatalf("Expected 1 error, got %d: %v", len(errs), errs)
 	}
@@ -1289,5 +1290,132 @@ func TestFeatureSlugKebabValidation(t *testing.T) {
 				t.Errorf("invalid slug %q should produce I4_INVALID_FORMAT error, got: %v", slug, errs)
 			}
 		})
+	}
+}
+
+// TestValidationError_WithContext tests the WithContext helper method.
+func TestValidationError_WithContext(t *testing.T) {
+	ve := newValidationError("TEST_CODE", "test message")
+	ve.Field = "test_field"
+
+	got := ve.WithContext("my-slug", 2, "B")
+
+	if got.Code != "TEST_CODE" {
+		t.Errorf("expected Code TEST_CODE, got %s", got.Code)
+	}
+	if got.Message != "test message" {
+		t.Errorf("expected Message 'test message', got %s", got.Message)
+	}
+	if got.Field != "test_field" {
+		t.Errorf("expected Field 'test_field', got %s", got.Field)
+	}
+	if got.Slug != "my-slug" {
+		t.Errorf("expected Slug 'my-slug', got %s", got.Slug)
+	}
+	if got.Wave != 2 {
+		t.Errorf("expected Wave 2, got %d", got.Wave)
+	}
+	if got.AgentID != "B" {
+		t.Errorf("expected AgentID 'B', got %s", got.AgentID)
+	}
+
+	// Original should be unchanged (value receiver)
+	if ve.Slug != "" {
+		t.Errorf("original should be unchanged, got Slug %s", ve.Slug)
+	}
+}
+
+// TestValidationError_JSONOmitEmpty tests that zero-valued new fields are omitted from JSON.
+func TestValidationError_JSONOmitEmpty(t *testing.T) {
+	ve := ValidationError{
+		Code:    "TEST",
+		Message: "msg",
+	}
+	data, err := json.Marshal(ve)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := string(data)
+
+	// Zero-valued fields should not appear
+	for _, field := range []string{"slug", "wave", "agent_id"} {
+		if containsSubstr(s, `"`+field+`"`) {
+			t.Errorf("expected %s to be omitted from JSON, got: %s", field, s)
+		}
+	}
+
+	// Now with values set
+	ve2 := ve.WithContext("feat", 1, "A")
+	data2, _ := json.Marshal(ve2)
+	s2 := string(data2)
+	for _, field := range []string{"slug", "wave", "agent_id"} {
+		if !containsSubstr(s2, `"`+field+`"`) {
+			t.Errorf("expected %s to be present in JSON, got: %s", field, s2)
+		}
+	}
+}
+
+func containsSubstr(s, substr string) bool {
+	for i := 0; i <= len(s)-len(substr); i++ {
+		if s[i:i+len(substr)] == substr {
+			return true
+		}
+	}
+	return false
+}
+
+// TestValidateI1_ContextFields tests that I1 violations include Wave and AgentID.
+func TestValidateI1_ContextFields(t *testing.T) {
+	m := &IMPLManifest{
+		FeatureSlug: "test-feature",
+		FileOwnership: []FileOwnership{
+			{File: "file1.go", Agent: "A", Wave: 1},
+			{File: "file1.go", Agent: "B", Wave: 1}, // violation
+		},
+	}
+
+	errs := validateI1DisjointOwnership(m, m.FeatureSlug)
+	if len(errs) != 1 {
+		t.Fatalf("expected 1 error, got %d: %v", len(errs), errs)
+	}
+	e := errs[0]
+	if e.Slug != "test-feature" {
+		t.Errorf("expected Slug 'test-feature', got %q", e.Slug)
+	}
+	if e.Wave != 1 {
+		t.Errorf("expected Wave 1, got %d", e.Wave)
+	}
+	if e.AgentID == "" {
+		t.Error("expected AgentID to be populated")
+	}
+}
+
+// TestValidateI2_ContextFields tests that I2 violations include Wave and AgentID.
+func TestValidateI2_ContextFields(t *testing.T) {
+	m := &IMPLManifest{
+		FeatureSlug: "dep-test",
+		Waves: []Wave{
+			{
+				Number: 1,
+				Agents: []Agent{
+					{ID: "A", Task: "task A", Dependencies: []string{"Z"}},
+				},
+			},
+		},
+	}
+
+	errs := validateI2AgentDependencies(m, m.FeatureSlug)
+	if len(errs) != 1 {
+		t.Fatalf("expected 1 error, got %d: %v", len(errs), errs)
+	}
+	e := errs[0]
+	if e.Slug != "dep-test" {
+		t.Errorf("expected Slug 'dep-test', got %q", e.Slug)
+	}
+	if e.Wave != 1 {
+		t.Errorf("expected Wave 1, got %d", e.Wave)
+	}
+	if e.AgentID != "A" {
+		t.Errorf("expected AgentID 'A', got %q", e.AgentID)
 	}
 }

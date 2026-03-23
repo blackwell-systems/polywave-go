@@ -23,8 +23,8 @@ var featureSlugRegex = regexp.MustCompile(`^[a-z0-9]+(-[a-z0-9]+)*$`)
 func Validate(m *IMPLManifest) []ValidationError {
 	var errs []ValidationError
 
-	errs = append(errs, validateI1DisjointOwnership(m)...)
-	errs = append(errs, validateI2AgentDependencies(m)...)
+	errs = append(errs, validateI1DisjointOwnership(m, m.FeatureSlug)...)
+	errs = append(errs, validateI2AgentDependencies(m, m.FeatureSlug)...)
 	errs = append(errs, validateI3WaveOrdering(m)...)
 	errs = append(errs, validateI4RequiredFields(m)...)
 	errs = append(errs, validateI5FileOwnershipComplete(m)...)
@@ -68,7 +68,7 @@ func validateKnownIssueTitles(m *IMPLManifest) []ValidationError {
 
 // validateI1DisjointOwnership checks that no file is owned by multiple agents within the same wave.
 // Files may be owned by different agents across different waves (sequential modification).
-func validateI1DisjointOwnership(m *IMPLManifest) []ValidationError {
+func validateI1DisjointOwnership(m *IMPLManifest, slug string) []ValidationError {
 	var errs []ValidationError
 
 	// Build map of (wave, file) -> agents
@@ -86,11 +86,11 @@ func validateI1DisjointOwnership(m *IMPLManifest) []ValidationError {
 	// Check for multiple owners in same wave
 	for key, agents := range ownership {
 		if len(agents) > 1 {
-			errs = append(errs, ValidationError{
-				Code:    "I1_VIOLATION",
-				Message: fmt.Sprintf("file %q owned by multiple agents in wave %d: %v", key.file, key.wave, agents),
-				Field:   "file_ownership",
-			})
+			errs = append(errs, newValidationError(
+				"I1_VIOLATION",
+				fmt.Sprintf("file %q owned by multiple agents in wave %d: %v", key.file, key.wave, agents),
+			).WithContext(slug, key.wave, strings.Join(agents, ",")))
+			errs[len(errs)-1].Field = "file_ownership"
 		}
 	}
 
@@ -99,7 +99,7 @@ func validateI1DisjointOwnership(m *IMPLManifest) []ValidationError {
 
 // validateI2AgentDependencies checks that all agent dependencies reference agents in prior waves only.
 // An agent in wave N may only depend on agents in waves 1..(N-1).
-func validateI2AgentDependencies(m *IMPLManifest) []ValidationError {
+func validateI2AgentDependencies(m *IMPLManifest, slug string) []ValidationError {
 	var errs []ValidationError
 
 	// Build map of agent -> wave
@@ -116,17 +116,19 @@ func validateI2AgentDependencies(m *IMPLManifest) []ValidationError {
 			for _, dep := range agent.Dependencies {
 				depWave, exists := agentWave[dep]
 				if !exists {
-					errs = append(errs, ValidationError{
-						Code:    "I2_MISSING_DEP",
-						Message: fmt.Sprintf("agent %s (wave %d) depends on unknown agent %q", agent.ID, wave.Number, dep),
-						Field:   fmt.Sprintf("waves[%d].agents[%s].dependencies", wave.Number-1, agent.ID),
-					})
+					ve := newValidationError(
+						"I2_MISSING_DEP",
+						fmt.Sprintf("agent %s (wave %d) depends on unknown agent %q", agent.ID, wave.Number, dep),
+					).WithContext(slug, wave.Number, agent.ID)
+					ve.Field = fmt.Sprintf("waves[%d].agents[%s].dependencies", wave.Number-1, agent.ID)
+					errs = append(errs, ve)
 				} else if depWave >= wave.Number {
-					errs = append(errs, ValidationError{
-						Code:    "I2_WAVE_ORDER",
-						Message: fmt.Sprintf("agent %s (wave %d) depends on %s (wave %d) — dependencies must be in prior waves", agent.ID, wave.Number, dep, depWave),
-						Field:   fmt.Sprintf("waves[%d].agents[%s].dependencies", wave.Number-1, agent.ID),
-					})
+					ve := newValidationError(
+						"I2_WAVE_ORDER",
+						fmt.Sprintf("agent %s (wave %d) depends on %s (wave %d) — dependencies must be in prior waves", agent.ID, wave.Number, dep, depWave),
+					).WithContext(slug, wave.Number, agent.ID)
+					ve.Field = fmt.Sprintf("waves[%d].agents[%s].dependencies", wave.Number-1, agent.ID)
+					errs = append(errs, ve)
 				}
 			}
 		}
@@ -144,17 +146,19 @@ func validateI2AgentDependencies(m *IMPLManifest) []ValidationError {
 
 			depWave, exists := agentWave[depAgent]
 			if !exists {
-				errs = append(errs, ValidationError{
-					Code:    "I2_MISSING_DEP",
-					Message: fmt.Sprintf("file %q (agent %s, wave %d) depends on unknown agent %q", fo.File, fo.Agent, fo.Wave, depAgent),
-					Field:   "file_ownership",
-				})
+				ve := newValidationError(
+					"I2_MISSING_DEP",
+					fmt.Sprintf("file %q (agent %s, wave %d) depends on unknown agent %q", fo.File, fo.Agent, fo.Wave, depAgent),
+				).WithContext(slug, fo.Wave, fo.Agent)
+				ve.Field = "file_ownership"
+				errs = append(errs, ve)
 			} else if depWave >= fo.Wave {
-				errs = append(errs, ValidationError{
-					Code:    "I2_WAVE_ORDER",
-					Message: fmt.Sprintf("file %q (agent %s, wave %d) depends on agent %s (wave %d) — dependencies must be in prior waves", fo.File, fo.Agent, fo.Wave, depAgent, depWave),
-					Field:   "file_ownership",
-				})
+				ve := newValidationError(
+					"I2_WAVE_ORDER",
+					fmt.Sprintf("file %q (agent %s, wave %d) depends on agent %s (wave %d) — dependencies must be in prior waves", fo.File, fo.Agent, fo.Wave, depAgent, depWave),
+				).WithContext(slug, fo.Wave, fo.Agent)
+				ve.Field = "file_ownership"
+				errs = append(errs, ve)
 			}
 		}
 	}
