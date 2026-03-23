@@ -21,6 +21,7 @@ type MarkProgramCompleteResult struct {
 	ManifestPath   string `json:"manifest_path"`
 	ContextUpdated bool   `json:"context_updated"`
 	ContextPath    string `json:"context_path,omitempty"`
+	ArchivedPath   string `json:"archived_path,omitempty"`
 	CommitSHA      string `json:"commit_sha,omitempty"`
 	TiersComplete  int    `json:"tiers_complete"`
 	ImplsComplete  int    `json:"impls_complete"`
@@ -87,15 +88,25 @@ Exit codes:
 				os.Exit(2)
 			}
 
-			// Update CONTEXT.md in repoDir/docs/
+			// Step 2: Archive to docs/PROGRAM/complete/
+			archivedPath, archiveErr := protocol.ArchiveProgram(manifestPath)
+			if archiveErr != nil {
+				fmt.Fprintf(os.Stderr, "mark-program-complete: archive warning: %v\n", archiveErr)
+				archivedPath = manifestPath // fall back to original path
+			} else {
+				fmt.Fprintf(os.Stderr, "mark-program-complete: archived to %s\n", archivedPath)
+			}
+
+			// Step 3: Update CONTEXT.md in repoDir/docs/
 			contextPath, err := updateContextForProgram(manifest, repoDir, date, tiersCount, implsCount)
 			if err != nil {
 				// Non-fatal: log but continue
 				fmt.Fprintf(os.Stderr, "mark-program-complete: warning: failed to update CONTEXT.md: %v\n", err)
 			}
 
-			// Commit both files
-			commitSHA, err := commitProgramComplete(repoDir, manifestPath, contextPath, manifest.ProgramSlug)
+			// Commit files (use archived path if available)
+			commitManifestPath := archivedPath
+			commitSHA, err := commitProgramComplete(repoDir, commitManifestPath, contextPath, manifest.ProgramSlug)
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "mark-program-complete: warning: failed to commit: %v\n", err)
 			}
@@ -105,6 +116,7 @@ Exit codes:
 				ProgramSlug:    manifest.ProgramSlug,
 				Date:           date,
 				ManifestPath:   manifestPath,
+				ArchivedPath:   archivedPath,
 				ContextUpdated: contextPath != "",
 				ContextPath:    contextPath,
 				CommitSHA:      commitSHA,
@@ -270,10 +282,19 @@ func updateContextForProgram(manifest *protocol.PROGRAMManifest, repoDir, date s
 // commitProgramComplete stages and commits the manifest and context files.
 // Returns the commit SHA on success.
 func commitProgramComplete(repoDir, manifestPath, contextPath, programSlug string) (string, error) {
-	// Stage manifest
+	// Stage the archived manifest (new location) and any deletion of old location
+	// Use "git add -A docs/PROGRAM" to catch both the new file and the removal
 	addArgs := []string{"-C", repoDir, "add", manifestPath}
 	if out, err := exec.Command("git", addArgs...).CombinedOutput(); err != nil {
 		return "", fmt.Errorf("git add manifest failed: %w: %s", err, string(out))
+	}
+
+	// Stage the deletion of the original location (if it was moved)
+	// git add -u stages deletions of tracked files
+	addUArgs := []string{"-C", repoDir, "add", "-u", "docs/"}
+	if out, err := exec.Command("git", addUArgs...).CombinedOutput(); err != nil {
+		// Non-fatal — the original may not have been tracked yet
+		_ = out
 	}
 
 	// Stage context if it was updated

@@ -35,13 +35,18 @@ type ProgramDiscovery struct {
 func ListPrograms(dir string) ([]ProgramDiscovery, error) {
 	result := []ProgramDiscovery{}
 
-	// Find all PROGRAM-*.yaml files
+	// Find all PROGRAM-*.yaml files in dir and dir/PROGRAM/complete/
 	pattern := filepath.Join(dir, "PROGRAM-*.yaml")
 	matches, err := filepath.Glob(pattern)
 	if err != nil {
 		// Invalid dir or glob pattern — return empty slice
 		return result, nil
 	}
+
+	// Also scan the archive directory (docs/PROGRAM/complete/)
+	archivePattern := filepath.Join(dir, "PROGRAM", "complete", "PROGRAM-*.yaml")
+	archiveMatches, _ := filepath.Glob(archivePattern)
+	matches = append(matches, archiveMatches...)
 
 	// Process each manifest file
 	for _, path := range matches {

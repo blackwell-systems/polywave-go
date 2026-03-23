@@ -1,6 +1,6 @@
 # Determinism Roadmap — Reducing AI Reliance in the Engine
 
-**Date**: 2026-03-20 (last audited: 2026-03-22)
+**Date**: 2026-03-20 (last audited: 2026-03-22, L1-L4 confirmed complete)
 **Goal**: Move validation from post-execution to runtime/pre-execution. Every protocol invariant should be enforced by code, not by trusting agents to follow instructions.
 
 ---
@@ -16,6 +16,10 @@ All CRITICAL (C1-C6) and HIGH (H1-H4) items have been implemented. See git histo
 - Gate input validation: `pkg/protocol/gate_input_validator.go`
 - Pre-merge ownership check: `pkg/protocol/merge_agents.go`
 - **M4: Wave base commit validation** — Superseded by `RunBaselineGates()` (E21A) in `pkg/protocol/baseline_gates.go`, called by `prepare-wave` before worktree creation. Merge flow in `pkg/orchestrator/merge.go` also records base commit and verifies agent commits against it.
+- **L1: Missing agent prompt files error** — `pkg/engine/runner.go:65-69` now returns fatal error with `L1: no fallback` comment.
+- **L2: Standardize validation error context** — `ValidationError` in `pkg/protocol/types.go:208-229` has `Slug`, `Wave`, `AgentID` fields + `WithContext()` helper. Call sites audited.
+- **L3: Consolidate multi-repo resolution** — Unified `ResolveAgentRepo()` in `pkg/protocol/multi_repo.go`. Old `determineAgentRepo()` and `resolveAgentRepoRoot()` removed.
+- **L4: Remove raw YAML fallback** — `loadIntegrationConnectors()` removed from `pkg/engine/constraints.go`. Uses `manifest.IntegrationConnectors` directly.
 
 ---
 
@@ -45,33 +49,7 @@ All CRITICAL (C1-C6) and HIGH (H1-H4) items have been implemented. See git histo
 
 ---
 
-## LOW — Style/consistency improvements
-
-### L1: Missing agent prompt files should error, not fallback
-**Files**: `pkg/engine/runner.go` (line 68-69)
-**Issue**: If `scout.md` is missing, a hardcoded one-line fallback prompt is used silently (no warning, no error). The fallback is: `"You are a Scout agent. Analyze the codebase and produce an IMPL doc."`
-**Risk**: Scout runs with severely degraded instructions. Output quality degrades silently and is hard to diagnose.
-**Fix**: Make missing prompt files an error: `return fmt.Errorf("scout.md not found at %s", path)`.
-**Effort**: Low (0.5 day)
-
-### L2: Standardize validation error context
-**Files**: All validation files in `pkg/protocol/`
-**Issue**: `ValidationError` struct has `Code`, `Message`, `Field`, `Line` but no `Slug`, `Wave`, or `AgentID`. Usage is inconsistent — some callers populate `Field`, many don't. Messages vary between "agent X not found" and "agent X (wave Y) not found" with no standard format.
-**Risk**: Debugging validation failures requires manual cross-referencing of error messages with IMPL doc context.
-**Fix**: Add `Slug`, `Wave`, `AgentID` fields to `ValidationError`. Audit all call sites to populate consistently.
-**Effort**: Low-Medium (1-2 days)
-
-### L3: Consolidate multi-repo resolution logic
-**Files**: `pkg/protocol/worktree.go`, `pkg/protocol/cleanup.go`, `cmd/saw/prepare_wave.go`
-**Issue**: Two separate functions resolve agent-to-repo mapping: `determineAgentRepo()` (pkg/protocol, returns repo name string from file_ownership) and `resolveAgentRepoRoot()` (cmd/saw, returns absolute path using repo registry + fallback). The CLI version has strictly more logic (registry lookup, fallback to projectRoot) that the protocol version lacks.
-**Fix**: Extract a unified `ResolveAgentRepo()` into `pkg/protocol/multi_repo.go` that handles both the name lookup and path resolution, so the CLI doesn't need its own copy.
-**Effort**: Low (1 day)
-
-### L4: Remove raw YAML fallback for IntegrationConnectors
-**Files**: `pkg/engine/constraints.go` (lines 84, 143-169)
-**Issue**: `IntegrationConnectors` field exists on `IMPLManifest` in `pkg/protocol/types.go:45`, but `BuildIntegratorConstraints()` still calls `loadIntegrationConnectors()` which re-reads and re-parses the YAML file to extract the same field. A stale comment at line 84 says "manifest.IntegrationConnectors is not yet on the typed struct" — but it is.
-**Fix**: Remove `loadIntegrationConnectors()`. Use `manifest.IntegrationConnectors` directly in `BuildIntegratorConstraints()`. Remove the stale comment.
-**Effort**: Low (0.5 day)
+## LOW — Remaining items
 
 ### M4: Pre-commit quality gate (language-agnostic)
 **Files**: `cmd/saw/pre_commit_cmd.go` (new), `pkg/protocol/gate_discovery.go` (new)
@@ -105,5 +83,5 @@ Language-agnostic: whatever lint command the Scout wrote (`go vet`, `npm run lin
 - **M3**: Configurable stub detection gate
 - **M4**: Pre-commit quality gate
 
-### Phase 5: Cleanup
-- **L1-L4**: Prompt enforcement, error standardization, repo resolution consolidation, raw YAML removal
+### Phase 5: ~~Cleanup~~ COMPLETE
+- ~~**L1-L4**~~: All implemented. See Completed section.

@@ -153,3 +153,28 @@ func ArchiveIMPL(manifestPath string) (string, error) {
 
 	return destPath, nil
 }
+
+// ArchiveProgram moves a PROGRAM manifest from docs/ to docs/PROGRAM/complete/.
+// Returns the new path. Idempotent — returns the existing path if already archived.
+func ArchiveProgram(manifestPath string) (string, error) {
+	dir := filepath.Dir(manifestPath)
+	filename := filepath.Base(manifestPath)
+
+	// Check if already in complete directory
+	if filepath.Base(dir) == "complete" {
+		return manifestPath, nil
+	}
+
+	// Archive to docs/PROGRAM/complete/ (not docs/complete/)
+	completeDir := filepath.Join(dir, "PROGRAM", "complete")
+	if err := os.MkdirAll(completeDir, 0755); err != nil {
+		return "", err
+	}
+
+	destPath := filepath.Join(completeDir, filename)
+	if err := os.Rename(manifestPath, destPath); err != nil {
+		return "", err
+	}
+
+	return destPath, nil
+}
