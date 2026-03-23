@@ -12,6 +12,25 @@ import (
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
 )
 
+// TestRunScout_MissingScoutMd verifies that RunScout returns an error when scout.md is missing (L1).
+func TestRunScout_MissingScoutMd(t *testing.T) {
+	dir := t.TempDir()
+	nonexistentSAWRepo := filepath.Join(dir, "nonexistent-saw-repo")
+
+	err := RunScout(context.Background(), RunScoutOpts{
+		Feature:     "test feature",
+		RepoPath:    dir,
+		IMPLOutPath: filepath.Join(dir, "IMPL-test.yaml"),
+		SAWRepoPath: nonexistentSAWRepo,
+	}, func(string) {})
+	if err == nil {
+		t.Fatal("expected error when scout.md is missing, got nil")
+	}
+	if !strings.Contains(err.Error(), "scout.md not found") {
+		t.Errorf("expected error to mention 'scout.md not found', got: %v", err)
+	}
+}
+
 // TestRunScoutMissingFeature verifies that RunScout returns an error when Feature is empty.
 func TestRunScoutMissingFeature(t *testing.T) {
 	err := RunScout(context.Background(), RunScoutOpts{

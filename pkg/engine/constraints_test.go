@@ -409,3 +409,43 @@ func TestBuildIntegratorConstraints_BadPath(t *testing.T) {
 		t.Error("expected error for nonexistent path")
 	}
 }
+
+// TestBuildIntegratorConstraints_UsesManifestField verifies that
+// BuildIntegratorConstraints uses manifest.IntegrationConnectors directly
+// (L4: no raw YAML re-read fallback).
+func TestBuildIntegratorConstraints_UsesManifestField(t *testing.T) {
+	tmpDir := t.TempDir()
+	implPath := filepath.Join(tmpDir, "IMPL-test.yaml")
+
+	// Write IMPL with integration_connectors in the typed field
+	yamlContent := `title: Test L4
+feature_slug: test-l4
+verdict: SUITABLE
+test_command: "go test ./..."
+waves:
+  - number: 1
+    agents:
+      - id: A
+        task: Implement foo
+integration_connectors:
+  - file: pkg/wire/connector.go
+    reason: wire up new function
+`
+	if err := os.WriteFile(implPath, []byte(yamlContent), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	c, err := BuildIntegratorConstraints(implPath)
+	if err != nil {
+		t.Fatalf("BuildIntegratorConstraints failed: %v", err)
+	}
+	if c == nil {
+		t.Fatal("expected non-nil constraints")
+	}
+	if len(c.AllowedPathPrefixes) != 1 {
+		t.Fatalf("expected 1 AllowedPathPrefixes, got %d: %v", len(c.AllowedPathPrefixes), c.AllowedPathPrefixes)
+	}
+	if c.AllowedPathPrefixes[0] != "pkg/wire/connector.go" {
+		t.Errorf("expected pkg/wire/connector.go, got %s", c.AllowedPathPrefixes[0])
+	}
+}
