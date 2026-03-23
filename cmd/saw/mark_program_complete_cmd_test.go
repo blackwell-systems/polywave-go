@@ -112,10 +112,19 @@ func TestMarkProgramComplete_AllComplete(t *testing.T) {
 		t.Errorf("expected impls_complete: 2, got %d", result.ImplsComplete)
 	}
 
-	// Verify manifest was updated with SAW:PROGRAM:COMPLETE marker
-	data, err := os.ReadFile(manifestPath)
+	// Verify archived path is set
+	if result.ArchivedPath == "" {
+		t.Errorf("expected archived_path to be set")
+	}
+
+	// Verify manifest was archived and updated with SAW:PROGRAM:COMPLETE marker
+	archivedPath := result.ArchivedPath
+	if archivedPath == "" {
+		archivedPath = manifestPath // fallback for test
+	}
+	data, err := os.ReadFile(archivedPath)
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("failed to read archived manifest at %s: %v", archivedPath, err)
 	}
 	content := string(data)
 	if !strings.Contains(content, "SAW:PROGRAM:COMPLETE") {
