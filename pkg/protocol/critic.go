@@ -56,10 +56,6 @@ type CriticData struct {
 	IssueCount int `yaml:"issue_count" json:"issue_count"`
 }
 
-// CriticResult is a backward-compatible alias for CriticData.
-// Existing callers using CriticResult continue to compile unchanged.
-type CriticResult = CriticData
-
 // AgentCriticReview is the per-agent verdict from the critic.
 type AgentCriticReview struct {
 	// AgentID is the agent identifier (e.g. "A", "B2")

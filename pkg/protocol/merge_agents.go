@@ -147,11 +147,6 @@ type MergeAgentsData struct {
 	Success bool `json:"success"`
 }
 
-// MergeAgentsResult is deprecated: use result.Result[MergeAgentsData] instead.
-// This type alias is maintained for backward compatibility during the migration.
-// TODO: Remove this alias once all consumers are migrated (Wave 4, Agent O).
-type MergeAgentsResult = MergeAgentsData
-
 // MergeAgents merges all agent branches from a specified wave into their respective repositories.
 // It automatically detects multi-repo waves by reading the file ownership table and completion reports.
 //

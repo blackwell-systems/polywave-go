@@ -36,9 +36,9 @@ type IMPLManifest struct {
 	Scaffolds             []ScaffoldFile                 `yaml:"scaffolds,omitempty" json:"scaffolds,omitempty"`
 	Wiring                []WiringDeclaration            `yaml:"wiring,omitempty" json:"wiring,omitempty"`
 	// E35: Wiring validation reports per wave (persisted by validate-integration --wiring)
-	WiringValidationReports map[string]*WiringValidationResult `yaml:"wiring_validation_reports,omitempty" json:"wiring_validation_reports,omitempty"`
+	WiringValidationReports map[string]*WiringValidationData `yaml:"wiring_validation_reports,omitempty" json:"wiring_validation_reports,omitempty"`
 	CompletionReports     map[string]CompletionReport    `yaml:"completion_reports,omitempty" json:"completion_reports,omitempty"`
-	StubReports           map[string]*ScanStubsResult    `yaml:"stub_reports,omitempty" json:"stub_reports,omitempty"`
+	StubReports           map[string]*ScanStubsData      `yaml:"stub_reports,omitempty" json:"stub_reports,omitempty"`
 	// E25: Integration validation reports per wave
 	IntegrationReports    map[string]*IntegrationReport  `yaml:"integration_reports,omitempty" json:"integration_reports,omitempty"`
 	// Integration connectors: files the integration agent is allowed to modify
@@ -51,7 +51,7 @@ type IMPLManifest struct {
 	// Valid values: "error", "warning", "info". Defaults to "warning" when empty.
 	IntegrationGapSeverityThreshold string `yaml:"integration_gap_severity_threshold,omitempty" json:"integration_gap_severity_threshold,omitempty"`
 	// CriticReport is the structured output of a critic-agent review run, if one has been performed.
-	CriticReport          *CriticResult                  `yaml:"critic_report,omitempty" json:"critic_report,omitempty"`
+	CriticReport          *CriticData                    `yaml:"critic_report,omitempty" json:"critic_report,omitempty"`
 	State                 ProtocolState                  `yaml:"state,omitempty" json:"state,omitempty"`
 	MergeState            MergeState                     `yaml:"merge_state,omitempty" json:"merge_state,omitempty"`
 	// Freeze enforcement fields (E2/I2-02)

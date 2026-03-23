@@ -12,10 +12,6 @@ type TierGateData struct {
 	AllImplsDone bool             `json:"all_impls_done"`
 }
 
-// TierGateResult is a backward-compatible alias for TierGateData.
-// Deprecated: Use result.Result[TierGateData] for new code.
-type TierGateResult = TierGateData
-
 // ImplTierStatus captures the status of a single IMPL within a tier.
 type ImplTierStatus struct {
 	Slug   string `json:"slug"`
@@ -30,10 +26,6 @@ type FreezeContractsData struct {
 	Success          bool             `json:"success"`
 	Errors           []string         `json:"errors,omitempty"`
 }
-
-// FreezeContractsResult is a backward-compatible alias for FreezeContractsData.
-// Deprecated: Use result.Result[FreezeContractsData] for new code.
-type FreezeContractsResult = FreezeContractsData
 
 // FrozenContract captures details about a single frozen contract.
 type FrozenContract struct {
@@ -55,10 +47,6 @@ type ProgramStatusData struct {
 	ContractStatuses []ContractStatus   `json:"contract_statuses"`
 	Completion       ProgramCompletion  `json:"completion"`
 }
-
-// ProgramStatusResult is a backward-compatible alias for ProgramStatusData.
-// Deprecated: Use result.Result[ProgramStatusData] for new code.
-type ProgramStatusResult = ProgramStatusData
 
 // TierStatusDetail provides detailed status for a single tier.
 type TierStatusDetail struct {

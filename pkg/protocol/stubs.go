@@ -22,10 +22,6 @@ type ScanStubsData struct {
 	Hits []StubHit `json:"hits"`
 }
 
-// ScanStubsResult is deprecated. Use ScanStubsData instead.
-// This alias maintains backward compatibility with types.go manifest struct.
-type ScanStubsResult = ScanStubsData
-
 // ScanStubs scans the provided files for common stub patterns.
 // It looks for markers like TODO, FIXME, HACK, XXX, panic("not implemented"),
 // and other placeholder indicators.

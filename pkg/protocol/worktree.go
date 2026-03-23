@@ -266,6 +266,3 @@ func CreateWorktrees(manifestPath string, waveNum int, repoDir string) result.Re
 		Worktrees: worktrees,
 	})
 }
-
-// Backward compatibility aliases (will be removed after Wave 3 completes)
-type CreateWorktreesResult = CreateWorktreesData
