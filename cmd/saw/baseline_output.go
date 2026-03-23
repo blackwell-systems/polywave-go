@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"regexp"
 	"strings"
 
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
@@ -49,6 +50,10 @@ func FormatBaselineOutput(result *protocol.BaselineResult) string {
 		b.WriteString("Baseline verification passed.")
 	} else {
 		b.WriteString("Error: baseline verification failed. Fix the codebase before launching agents.")
+		if suggestion := DiagnoseMigrationFailure(result); suggestion != "" {
+			b.WriteByte('\n')
+			b.WriteString("Hint: " + suggestion)
+		}
 	}
 
 	return b.String()
@@ -72,6 +77,38 @@ func firstMeaningfulLine(s string) string {
 		trimmed := strings.TrimSpace(line)
 		if trimmed != "" {
 			return trimmed
+		}
+	}
+	return ""
+}
+
+// migrationPatterns are regex patterns that indicate cross-wave migration breaks.
+var migrationPatterns = []*regexp.Regexp{
+	regexp.MustCompile(`cannot use .+ as .+`),
+	regexp.MustCompile(`undefined: \w+`),
+	regexp.MustCompile(`imported and not used`),
+	regexp.MustCompile(`cannot find module`),
+	regexp.MustCompile(`Module not found`),
+	regexp.MustCompile(`No module named`),
+	regexp.MustCompile(`unresolved import`),
+}
+
+const migrationSuggestion = "Baseline broken at wave boundary. Consider: " +
+	"(1) consolidate all callers into the same wave as the signature change, " +
+	"or (2) add re-export aliases in the old package to forward to the new signatures."
+
+// DiagnoseMigrationFailure inspects a failed BaselineResult's gate output for
+// type/import mismatch patterns that indicate a cross-wave migration break.
+// Returns a human-readable suggestion string if detected, or "" if unrelated.
+func DiagnoseMigrationFailure(result *protocol.BaselineResult) string {
+	for _, gr := range result.GateResults {
+		if gr.Passed || gr.Skipped {
+			continue
+		}
+		for _, pat := range migrationPatterns {
+			if pat.MatchString(gr.Stderr) || pat.MatchString(gr.Stdout) {
+				return migrationSuggestion
+			}
 		}
 	}
 	return ""

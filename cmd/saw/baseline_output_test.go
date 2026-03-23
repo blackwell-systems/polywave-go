@@ -150,3 +150,92 @@ func TestFormatBaselineOutput_ParsedErrors(t *testing.T) {
 		t.Errorf("expected raw stderr suppressed when parsed errors present, got:\n%s", out)
 	}
 }
+
+func TestDiagnoseMigrationFailure_GoUndefined(t *testing.T) {
+	result := &protocol.BaselineResult{
+		Passed: false,
+		GateResults: []protocol.GateResult{
+			{Type: "build", Passed: false, Stderr: "pkg/foo/bar.go:10: undefined: FooType"},
+		},
+	}
+	got := DiagnoseMigrationFailure(result)
+	if got == "" {
+		t.Fatal("expected suggestion for 'undefined: FooType', got empty string")
+	}
+	if !strings.Contains(got, "wave boundary") {
+		t.Errorf("expected 'wave boundary' in suggestion, got: %s", got)
+	}
+}
+
+func TestDiagnoseMigrationFailure_GoTypeMismatch(t *testing.T) {
+	result := &protocol.BaselineResult{
+		Passed: false,
+		GateResults: []protocol.GateResult{
+			{Type: "build", Passed: false, Stderr: "cannot use X as Y in argument"},
+		},
+	}
+	got := DiagnoseMigrationFailure(result)
+	if got == "" {
+		t.Fatal("expected suggestion for type mismatch, got empty string")
+	}
+}
+
+func TestDiagnoseMigrationFailure_PythonModuleNotFound(t *testing.T) {
+	result := &protocol.BaselineResult{
+		Passed: false,
+		GateResults: []protocol.GateResult{
+			{Type: "test", Passed: false, Stderr: "ModuleNotFoundError: No module named foo"},
+		},
+	}
+	got := DiagnoseMigrationFailure(result)
+	if got == "" {
+		t.Fatal("expected suggestion for Python module not found, got empty string")
+	}
+}
+
+func TestDiagnoseMigrationFailure_Unrelated(t *testing.T) {
+	result := &protocol.BaselineResult{
+		Passed: false,
+		GateResults: []protocol.GateResult{
+			{Type: "build", Passed: false, Stderr: "syntax error: unexpected token"},
+		},
+	}
+	got := DiagnoseMigrationFailure(result)
+	if got != "" {
+		t.Errorf("expected empty string for unrelated error, got: %s", got)
+	}
+}
+
+func TestDiagnoseMigrationFailure_AllPassing(t *testing.T) {
+	result := &protocol.BaselineResult{
+		Passed: true,
+		GateResults: []protocol.GateResult{
+			{Type: "build", Passed: true},
+			{Type: "test", Passed: true},
+		},
+	}
+	got := DiagnoseMigrationFailure(result)
+	if got != "" {
+		t.Errorf("expected empty string when all gates pass, got: %s", got)
+	}
+}
+
+func TestFormatBaselineOutput_WithMigrationHint(t *testing.T) {
+	result := &protocol.BaselineResult{
+		Passed: false,
+		Reason: "baseline_verification_failed",
+		GateResults: []protocol.GateResult{
+			{Type: "build", Passed: false, Required: true, Stderr: "pkg/foo/bar.go:5: undefined: OldFunc"},
+		},
+	}
+	out := FormatBaselineOutput(result)
+	if !strings.Contains(out, "Error: baseline verification failed.") {
+		t.Errorf("expected error line, got:\n%s", out)
+	}
+	if !strings.Contains(out, "Hint: Baseline broken at wave boundary.") {
+		t.Errorf("expected migration hint in output, got:\n%s", out)
+	}
+	if !strings.Contains(out, "re-export aliases") {
+		t.Errorf("expected re-export suggestion in hint, got:\n%s", out)
+	}
+}
