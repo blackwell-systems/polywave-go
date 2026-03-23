@@ -1,10 +1,14 @@
 package protocol
 
-import "fmt"
+import (
+	"fmt"
 
-// OwnershipCoverageResult is the outcome of checking that every file an agent
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
+)
+
+// OwnershipCoverageData is the outcome of checking that every file an agent
 // reported changing is contained within its declared file ownership table.
-type OwnershipCoverageResult struct {
+type OwnershipCoverageData struct {
 	Valid      bool                 `json:"valid"`
 	Violations []OwnershipViolation `json:"violations,omitempty"`
 }
@@ -27,7 +31,7 @@ type OwnershipViolation struct {
 func ValidateFileOwnershipCoverage(
 	manifest *IMPLManifest,
 	waveNum int,
-) (*OwnershipCoverageResult, error) {
+) (result.Result[OwnershipCoverageData], error) {
 	// Find the target wave.
 	var targetWave *Wave
 	for i := range manifest.Waves {
@@ -37,7 +41,7 @@ func ValidateFileOwnershipCoverage(
 		}
 	}
 	if targetWave == nil {
-		return nil, fmt.Errorf("wave %d not found in manifest", waveNum)
+		return result.Result[OwnershipCoverageData]{}, fmt.Errorf("wave %d not found in manifest", waveNum)
 	}
 
 	// Build owned-files set per agent.
@@ -59,7 +63,7 @@ func ValidateFileOwnershipCoverage(
 		}
 	}
 
-	result := &OwnershipCoverageResult{Valid: true}
+	data := OwnershipCoverageData{Valid: true}
 
 	for _, agent := range targetWave.Agents {
 		report, hasReport := manifest.CompletionReports[agent.ID]
@@ -87,13 +91,13 @@ func ValidateFileOwnershipCoverage(
 		check(report.FilesCreated)
 
 		if len(unowned) > 0 {
-			result.Valid = false
-			result.Violations = append(result.Violations, OwnershipViolation{
+			data.Valid = false
+			data.Violations = append(data.Violations, OwnershipViolation{
 				Agent:        agent.ID,
 				UnownedFiles: unowned,
 			})
 		}
 	}
 
-	return result, nil
+	return result.NewSuccess(data), nil
 }
