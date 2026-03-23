@@ -112,7 +112,7 @@ func TestValidateIMPLDoc_E16C_WarnOnPlainFencedDepGraph(t *testing.T) {
 	}
 	warnCount := 0
 	for _, e := range errs {
-		if e.BlockType == "warning" {
+		if e.Code == "warning" {
 			warnCount++
 		}
 	}
@@ -142,7 +142,7 @@ func TestValidateIMPLDoc_E16C_NoWarnOnTypedDepGraph(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	for _, e := range errs {
-		if e.BlockType == "warning" {
+		if e.Code == "warning" {
 			t.Errorf("unexpected E16C warning on typed block: %s", e.Message)
 		}
 	}
