@@ -15,6 +15,7 @@ import (
 	"github.com/anthropics/anthropic-sdk-go/packages/param"
 
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/agent/backend"
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/agent/dedup"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/tools"
 )
 
@@ -36,6 +37,7 @@ type Client struct {
 	readOnly      bool                     // if true, block write_file/edit_file
 	cfg           backend.Config           // full config for constraint access
 	commitTracker *tools.CommitTracker
+	dedupCache    *dedup.Cache
 }
 
 // New creates a new Client configured from cfg.
@@ -86,6 +88,7 @@ func (c *Client) buildWorkshop(workDir string) tools.Workshop {
 	} else {
 		w = tools.StandardTools(workDir)
 	}
+	w, c.dedupCache = dedup.WithDedup(w)
 	if c.cfg.Constraints != nil {
 		w, c.commitTracker = tools.WithConstraints(w, *c.cfg.Constraints)
 	}
@@ -109,6 +112,16 @@ func (c *Client) CommitCount() int {
 		return 0
 	}
 	return c.commitTracker.Count
+}
+
+// DedupStats returns dedup metrics from the most recent Run call.
+// Returns nil if no run has been made yet.
+func (c *Client) DedupStats() *dedup.Stats {
+	if c.dedupCache == nil {
+		return nil
+	}
+	stats := c.dedupCache.Stats()
+	return &stats
 }
 
 // WithBaseURL overrides the Anthropic API endpoint. Used in tests to point at

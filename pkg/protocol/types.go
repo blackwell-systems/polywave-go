@@ -107,6 +107,7 @@ type CompletionReport struct {
 	Verification        string                `yaml:"verification,omitempty" json:"verification,omitempty"`
 	FailureType         string                `yaml:"failure_type,omitempty" json:"failure_type,omitempty"`
 	Notes               string                `yaml:"notes,omitempty" json:"notes,omitempty"`
+	DedupStats          *DedupStats           `yaml:"dedup_stats,omitempty" json:"dedup_stats,omitempty"`
 	Repo                string                `yaml:"repo,omitempty" json:"repo,omitempty"`
 }
 
@@ -116,6 +117,13 @@ type InterfaceDeviation struct {
 	Description              string   `yaml:"description" json:"description"`
 	DownstreamActionRequired bool     `yaml:"downstream_action_required" json:"downstream_action_required"`
 	Affects                  []string `yaml:"affects,omitempty" json:"affects,omitempty"`
+}
+
+// DedupStats records file-read dedup metrics for an agent's session.
+type DedupStats struct {
+	Hits                int `yaml:"hits" json:"hits"`
+	Misses              int `yaml:"misses" json:"misses"`
+	TokensSavedEstimate int `yaml:"tokens_saved_estimate" json:"tokens_saved_estimate"`
 }
 
 // InterfaceContract defines an expected interface or API between agents or systems.
