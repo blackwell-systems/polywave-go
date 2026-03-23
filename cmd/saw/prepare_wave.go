@@ -121,6 +121,50 @@ waves that execute on the main branch.`,
 				return fmt.Errorf("failed to load IMPL doc: %w", err)
 			}
 
+			// Step 0a3: E37 critic verdict enforcement
+			// Check if critic review has been run and found issues.
+			// This prevents launching agents with inaccurate briefs.
+			if doc.CriticReport != nil {
+				switch doc.CriticReport.Verdict {
+				case protocol.CriticVerdictIssues:
+					// BLOCK: critic found blocking errors
+					fmt.Fprintf(os.Stderr, "prepare-wave: E37 blocking - Critic found errors in agent briefs\n")
+
+					// List agents with issues for transparency
+					for agentID, review := range doc.CriticReport.AgentReviews {
+						if review.Verdict == protocol.CriticVerdictIssues {
+							fmt.Fprintf(os.Stderr, "  Agent %s: %d issue(s)\n", agentID, len(review.Issues))
+							for _, issue := range review.Issues {
+								fmt.Fprintf(os.Stderr, "    - [%s] %s\n", issue.Severity, issue.Description)
+								if issue.File != "" {
+									fmt.Fprintf(os.Stderr, "      File: %s\n", issue.File)
+								}
+								if issue.Symbol != "" {
+									fmt.Fprintf(os.Stderr, "      Symbol: %s\n", issue.Symbol)
+								}
+							}
+						}
+					}
+
+					return fmt.Errorf("E37: critic verdict is ISSUES - fix briefs via 'sawtools amend-impl --redirect-agent' before launching wave")
+
+				case protocol.CriticVerdictSkipped:
+					// ALLOW: operator explicitly skipped critic review (--no-review flag)
+					fmt.Fprintf(os.Stderr, "prepare-wave: critic review was skipped (--no-review flag)\n")
+
+				case protocol.CriticVerdictPass:
+					// ALLOW: critic verified all briefs
+					fmt.Fprintf(os.Stderr, "prepare-wave: critic review passed ✓\n")
+
+				default:
+					// ALLOW: unknown verdict (future-proof)
+					fmt.Fprintf(os.Stderr, "prepare-wave: critic verdict: %s (proceeding)\n", doc.CriticReport.Verdict)
+				}
+			} else {
+				// ALLOW: no critic report present (older IMPL docs, or critic not yet run)
+				// This is not an error - critic is optional for backwards compatibility
+			}
+
 			// Step 0a2: Clean stale worktrees from the SAME slug (previous failed run)
 			stale, staleErr := protocol.DetectStaleWorktrees(projectRoot)
 			if staleErr == nil {
