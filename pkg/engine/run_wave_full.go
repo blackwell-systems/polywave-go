@@ -54,11 +54,13 @@ func RunWaveFull(ctx context.Context, opts RunWaveFullOpts) (*RunWaveFullResult,
 
 	// Step 3: Verify commits from all agents
 	vcRes := protocol.VerifyCommits(opts.ManifestPath, opts.WaveNum, opts.RepoPath)
+	vc := vcRes.GetData()
+	result.CommitsVerified = &vc
+
 	if !vcRes.IsSuccess() {
 		return result, fmt.Errorf("verify commits: %v", vcRes.Errors)
 	}
-	vc := vcRes.GetData()
-	result.CommitsVerified = &vc
+
 	// Check if all agents have commits
 	allValid := true
 	for _, agent := range vc.Agents {
