@@ -10,22 +10,28 @@ import (
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/errparse"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/format"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/gatecache"
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
 )
 
 // GateResult represents the outcome of executing a single quality gate.
 // It captures all execution details including stdout/stderr and pass/fail status.
 type GateResult struct {
-	Type         string                   `json:"type"`
-	Command      string                   `json:"command"`
-	ExitCode     int                      `json:"exit_code"`
-	Stdout       string                   `json:"stdout"`
-	Stderr       string                   `json:"stderr"`
-	Required     bool                     `json:"required"`
-	Passed       bool                     `json:"passed"`
-	Skipped      bool                     `json:"skipped,omitempty"`
-	SkipReason   string                   `json:"skip_reason,omitempty"`
-	FromCache    bool                     `json:"from_cache,omitempty"`
+	Type         string                     `json:"type"`
+	Command      string                     `json:"command"`
+	ExitCode     int                        `json:"exit_code"`
+	Stdout       string                     `json:"stdout"`
+	Stderr       string                     `json:"stderr"`
+	Required     bool                       `json:"required"`
+	Passed       bool                       `json:"passed"`
+	Skipped      bool                       `json:"skipped,omitempty"`
+	SkipReason   string                     `json:"skip_reason,omitempty"`
+	FromCache    bool                       `json:"from_cache,omitempty"`
 	ParsedErrors []errparse.StructuredError `json:"parsed_errors,omitempty"`
+}
+
+// GatesData wraps gate execution results for use with result.Result[T].
+type GatesData struct {
+	Gates []GateResult `json:"gates"`
 }
 
 // isDocsOnlyWave returns true when every file owned by the given wave number
@@ -138,13 +144,12 @@ func runFormatGate(gate QualityGate, repoDir string, cache *gatecache.Cache) Gat
 // It runs each gate command and collects results.
 // The repoDir parameter is the working directory for command execution.
 //
-// Returns an empty slice if manifest has no QualityGates or Gates is empty.
-// Returns an error only for system-level failures (e.g., cannot create command).
+// Returns a successful Result with empty Gates slice if manifest has no QualityGates or Gates is empty.
 // Gate failures are recorded in GateResult.Passed; the caller decides how to handle them.
-func RunGates(manifest *IMPLManifest, waveNumber int, repoDir string) ([]GateResult, error) {
+func RunGates(manifest *IMPLManifest, waveNumber int, repoDir string) result.Result[GatesData] {
 	// Return empty results if no quality gates defined
 	if manifest.QualityGates == nil || len(manifest.QualityGates.Gates) == 0 {
-		return []GateResult{}, nil
+		return result.NewSuccess(GatesData{Gates: []GateResult{}})
 	}
 
 	// Derive the repo name from the directory path for per-repo gate filtering.
@@ -153,7 +158,7 @@ func RunGates(manifest *IMPLManifest, waveNumber int, repoDir string) ([]GateRes
 	// Skip source-code gates when the wave only touches documentation files.
 	docsOnly := isDocsOnlyWave(manifest, waveNumber)
 
-	var results []GateResult
+	var gates []GateResult
 	for _, gate := range manifest.QualityGates.Gates {
 		// Skip gates scoped to a different repo.
 		if gate.Repo != "" && gate.Repo != repoName {
@@ -162,7 +167,7 @@ func RunGates(manifest *IMPLManifest, waveNumber int, repoDir string) ([]GateRes
 
 		// Auto-skip build/test/lint gates for docs-only waves.
 		if docsOnly && isSourceGateType(gate.Type) {
-			results = append(results, GateResult{
+			gates = append(gates, GateResult{
 				Type:       gate.Type,
 				Command:    gate.Command,
 				Required:   gate.Required,
@@ -175,7 +180,7 @@ func RunGates(manifest *IMPLManifest, waveNumber int, repoDir string) ([]GateRes
 
 		// Format gates use the dedicated runner for auto-detection + fix mode.
 		if gate.Type == "format" {
-			results = append(results, runFormatGate(gate, repoDir, nil))
+			gates = append(gates, runFormatGate(gate, repoDir, nil))
 			continue
 		}
 
@@ -224,10 +229,10 @@ func RunGates(manifest *IMPLManifest, waveNumber int, repoDir string) ([]GateRes
 			result.ParsedErrors = pr.Errors
 		}
 
-		results = append(results, result)
+		gates = append(gates, result)
 	}
 
-	return results, nil
+	return result.NewSuccess(GatesData{Gates: gates})
 }
 
 // filterGatesByTiming returns gates matching the given timing category.
@@ -256,10 +261,10 @@ func filterGatesByTiming(manifest *IMPLManifest, timing string) []QualityGate {
 // RunPreMergeGates executes only gates with timing="pre-merge" or timing="" (default).
 // It replaces the direct RunGatesWithCache call at finalize-wave step 3.
 // Signature mirrors RunGatesWithCache exactly; cache param may be nil.
-func RunPreMergeGates(manifest *IMPLManifest, waveNumber int, repoDir string, cache *gatecache.Cache) ([]GateResult, error) {
+func RunPreMergeGates(manifest *IMPLManifest, waveNumber int, repoDir string, cache *gatecache.Cache) result.Result[GatesData] {
 	filtered := filterGatesByTiming(manifest, "pre-merge")
 	if len(filtered) == 0 {
-		return []GateResult{}, nil
+		return result.NewSuccess(GatesData{Gates: []GateResult{}})
 	}
 	// Build a temporary manifest with only pre-merge gates
 	tmp := *manifest
@@ -272,12 +277,12 @@ func RunPreMergeGates(manifest *IMPLManifest, waveNumber int, repoDir string, ca
 
 // RunPostMergeGates executes only gates with timing="post-merge".
 // Called at finalize-wave step 5, after MergeAgents completes successfully.
-// Returns empty slice (not error) when no post-merge gates are defined.
+// Returns empty GatesData (not error) when no post-merge gates are defined.
 // Runs without cache (post-merge state is always fresh).
-func RunPostMergeGates(manifest *IMPLManifest, waveNumber int, repoDir string) ([]GateResult, error) {
+func RunPostMergeGates(manifest *IMPLManifest, waveNumber int, repoDir string) result.Result[GatesData] {
 	filtered := filterGatesByTiming(manifest, "post-merge")
 	if len(filtered) == 0 {
-		return []GateResult{}, nil
+		return result.NewSuccess(GatesData{Gates: []GateResult{}})
 	}
 	tmp := *manifest
 	tmp.QualityGates = &QualityGates{
@@ -292,20 +297,20 @@ func RunPostMergeGates(manifest *IMPLManifest, waveNumber int, repoDir string) (
 // For each gate, if a valid (non-expired) cached result exists, it is returned
 // directly without re-executing the gate command. Otherwise the gate is run
 // normally and the result is stored in the cache.
-func RunGatesWithCache(manifest *IMPLManifest, waveNumber int, repoDir string, cache *gatecache.Cache) ([]GateResult, error) {
+func RunGatesWithCache(manifest *IMPLManifest, waveNumber int, repoDir string, cache *gatecache.Cache) result.Result[GatesData] {
 	if cache == nil {
 		return RunGates(manifest, waveNumber, repoDir)
 	}
 
 	// Return empty results if no quality gates defined
 	if manifest.QualityGates == nil || len(manifest.QualityGates.Gates) == 0 {
-		return []GateResult{}, nil
+		return result.NewSuccess(GatesData{Gates: []GateResult{}})
 	}
 
 	repoName := filepath.Base(repoDir)
 	docsOnly := isDocsOnlyWave(manifest, waveNumber)
 
-	var results []GateResult
+	var gates []GateResult
 	for _, gate := range manifest.QualityGates.Gates {
 		// Skip gates scoped to a different repo.
 		if gate.Repo != "" && gate.Repo != repoName {
@@ -314,7 +319,7 @@ func RunGatesWithCache(manifest *IMPLManifest, waveNumber int, repoDir string, c
 
 		// Auto-skip build/test/lint gates for docs-only waves.
 		if docsOnly && isSourceGateType(gate.Type) {
-			results = append(results, GateResult{
+			gates = append(gates, GateResult{
 				Type:       gate.Type,
 				Command:    gate.Command,
 				Required:   gate.Required,
@@ -342,7 +347,7 @@ func RunGatesWithCache(manifest *IMPLManifest, waveNumber int, repoDir string, c
 				skipReason := fmt.Sprintf("cached at SHA %s", cacheKey.HeadCommit)
 				fmt.Fprintf(os.Stderr, "gate [%s]: skipped (cached at SHA %s)\n",
 					gate.Type, cacheKey.HeadCommit)
-				results = append(results, GateResult{
+				gates = append(gates, GateResult{
 					Type:       gate.Type,
 					Command:    gate.Command,
 					Required:   gate.Required,
@@ -362,7 +367,7 @@ func RunGatesWithCache(manifest *IMPLManifest, waveNumber int, repoDir string, c
 		// but before the generic exec block. Fix mode always bypasses cache anyway
 		// since we invalidate after running.
 		if gate.Type == "format" {
-			results = append(results, runFormatGate(gate, repoDir, cache))
+			gates = append(gates, runFormatGate(gate, repoDir, cache))
 			continue
 		}
 
@@ -417,8 +422,8 @@ func RunGatesWithCache(manifest *IMPLManifest, waveNumber int, repoDir string, c
 			})
 		}
 
-		results = append(results, result)
+		gates = append(gates, result)
 	}
 
-	return results, nil
+	return result.NewSuccess(GatesData{Gates: gates})
 }

@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"os"
 	"strings"
+
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
 )
 
 // StubHit represents a single stub pattern match in source code.
@@ -15,10 +17,14 @@ type StubHit struct {
 	Context string `json:"context"`
 }
 
-// ScanStubsResult contains all stub hits found during scanning.
-type ScanStubsResult struct {
+// ScanStubsData contains all stub hits found during scanning.
+type ScanStubsData struct {
 	Hits []StubHit `json:"hits"`
 }
+
+// ScanStubsResult is deprecated. Use ScanStubsData instead.
+// This alias maintains backward compatibility with types.go manifest struct.
+type ScanStubsResult = ScanStubsData
 
 // ScanStubs scans the provided files for common stub patterns.
 // It looks for markers like TODO, FIXME, HACK, XXX, panic("not implemented"),
@@ -26,8 +32,8 @@ type ScanStubsResult struct {
 //
 // Files that cannot be read are silently skipped (E20: informational only).
 // Returns an empty Hits slice if no stubs are found or files list is empty.
-func ScanStubs(files []string) (*ScanStubsResult, error) {
-	result := &ScanStubsResult{
+func ScanStubs(files []string) result.Result[ScanStubsData] {
+	data := ScanStubsData{
 		Hits: []StubHit{},
 	}
 
@@ -71,7 +77,7 @@ func ScanStubs(files []string) (*ScanStubsResult, error) {
 						Pattern: pattern,
 						Context: strings.TrimSpace(line),
 					}
-					result.Hits = append(result.Hits, hit)
+					data.Hits = append(data.Hits, hit)
 					// Only record one hit per line (first pattern match wins)
 					break
 				}
@@ -81,20 +87,21 @@ func ScanStubs(files []string) (*ScanStubsResult, error) {
 		f.Close()
 	}
 
-	return result, nil
+	return result.NewSuccess(data)
 }
 
 // AppendStubReport loads the manifest at manifestPath, stores result under
 // waveKey (e.g. "wave1"), and saves the manifest back to disk.
-func AppendStubReport(manifestPath, waveKey string, result *ScanStubsResult) error {
+func AppendStubReport(manifestPath, waveKey string, scanResult result.Result[ScanStubsData]) error {
 	manifest, err := Load(manifestPath)
 	if err != nil {
 		return fmt.Errorf("AppendStubReport: failed to load manifest: %w", err)
 	}
 	if manifest.StubReports == nil {
-		manifest.StubReports = make(map[string]*ScanStubsResult)
+		manifest.StubReports = make(map[string]*ScanStubsData)
 	}
-	manifest.StubReports[waveKey] = result
+	data := scanResult.GetData()
+	manifest.StubReports[waveKey] = &data
 	if err := Save(manifest, manifestPath); err != nil {
 		return fmt.Errorf("AppendStubReport: failed to save manifest: %w", err)
 	}

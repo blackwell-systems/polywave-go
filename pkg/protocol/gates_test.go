@@ -14,12 +14,13 @@ import (
 func TestRunGates_NoGates(t *testing.T) {
 	// Test with nil QualityGates
 	manifest := &IMPLManifest{}
-	results, err := RunGates(manifest, 1, "/tmp")
-	if err != nil {
-		t.Fatalf("expected no error, got: %v", err)
+	result := RunGates(manifest, 1, "/tmp")
+	if !result.IsSuccess() {
+		t.Fatalf("expected success, got: %v", result.Errors)
 	}
-	if len(results) != 0 {
-		t.Errorf("expected empty results, got %d results", len(results))
+	data := result.GetData()
+	if len(data.Gates) != 0 {
+		t.Errorf("expected empty gates, got %d gates", len(data.Gates))
 	}
 
 	// Test with empty Gates slice
@@ -27,12 +28,13 @@ func TestRunGates_NoGates(t *testing.T) {
 		Level: "quick",
 		Gates: []QualityGate{},
 	}
-	results, err = RunGates(manifest, 1, "/tmp")
-	if err != nil {
-		t.Fatalf("expected no error, got: %v", err)
+	result = RunGates(manifest, 1, "/tmp")
+	if !result.IsSuccess() {
+		t.Fatalf("expected success, got: %v", result.Errors)
 	}
-	if len(results) != 0 {
-		t.Errorf("expected empty results, got %d results", len(results))
+	data = result.GetData()
+	if len(data.Gates) != 0 {
+		t.Errorf("expected empty gates, got %d gates", len(data.Gates))
 	}
 }
 
@@ -50,32 +52,33 @@ func TestRunGates_PassingGate(t *testing.T) {
 		},
 	}
 
-	results, err := RunGates(manifest, 1, "/tmp")
-	if err != nil {
-		t.Fatalf("expected no error, got: %v", err)
+	res := RunGates(manifest, 1, "/tmp")
+	if !res.IsSuccess() {
+		t.Fatalf("expected success, got: %v", res.Errors)
 	}
 
-	if len(results) != 1 {
-		t.Fatalf("expected 1 result, got %d", len(results))
+	data := res.GetData()
+	if len(data.Gates) != 1 {
+		t.Fatalf("expected 1 gate result, got %d", len(data.Gates))
 	}
 
-	result := results[0]
-	if result.Type != "test" {
-		t.Errorf("expected Type 'test', got '%s'", result.Type)
+	gate := data.Gates[0]
+	if gate.Type != "test" {
+		t.Errorf("expected Type 'test', got '%s'", gate.Type)
 	}
-	if result.Command != "echo ok" {
-		t.Errorf("expected Command 'echo ok', got '%s'", result.Command)
+	if gate.Command != "echo ok" {
+		t.Errorf("expected Command 'echo ok', got '%s'", gate.Command)
 	}
-	if result.ExitCode != 0 {
-		t.Errorf("expected ExitCode 0, got %d", result.ExitCode)
+	if gate.ExitCode != 0 {
+		t.Errorf("expected ExitCode 0, got %d", gate.ExitCode)
 	}
-	if !result.Passed {
+	if !gate.Passed {
 		t.Errorf("expected Passed=true, got false")
 	}
-	if result.Stdout != "ok\n" {
-		t.Errorf("expected Stdout 'ok\\n', got '%s'", result.Stdout)
+	if gate.Stdout != "ok\n" {
+		t.Errorf("expected Stdout 'ok\\n', got '%s'", gate.Stdout)
 	}
-	if !result.Required {
+	if !gate.Required {
 		t.Errorf("expected Required=true, got false")
 	}
 }
@@ -94,20 +97,21 @@ func TestRunGates_FailingGate(t *testing.T) {
 		},
 	}
 
-	results, err := RunGates(manifest, 1, "/tmp")
-	if err != nil {
-		t.Fatalf("expected no error, got: %v", err)
+	res := RunGates(manifest, 1, "/tmp")
+	if !res.IsSuccess() {
+		t.Fatalf("expected success (gate failures don't fail Result), got: %v", res.Errors)
 	}
 
-	if len(results) != 1 {
-		t.Fatalf("expected 1 result, got %d", len(results))
+	data := res.GetData()
+	if len(data.Gates) != 1 {
+		t.Fatalf("expected 1 gate result, got %d", len(data.Gates))
 	}
 
-	result := results[0]
-	if result.ExitCode != 1 {
-		t.Errorf("expected ExitCode 1, got %d", result.ExitCode)
+	gate := data.Gates[0]
+	if gate.ExitCode != 1 {
+		t.Errorf("expected ExitCode 1, got %d", gate.ExitCode)
 	}
-	if result.Passed {
+	if gate.Passed {
 		t.Errorf("expected Passed=false, got true")
 	}
 }
@@ -131,28 +135,29 @@ func TestRunGates_MixedGates(t *testing.T) {
 		},
 	}
 
-	results, err := RunGates(manifest, 1, "/tmp")
-	if err != nil {
-		t.Fatalf("expected no error, got: %v", err)
+	res := RunGates(manifest, 1, "/tmp")
+	if !res.IsSuccess() {
+		t.Fatalf("expected success, got: %v", res.Errors)
 	}
 
-	if len(results) != 2 {
-		t.Fatalf("expected 2 results, got %d", len(results))
+	data := res.GetData()
+	if len(data.Gates) != 2 {
+		t.Fatalf("expected 2 gate results, got %d", len(data.Gates))
 	}
 
 	// First gate should pass
-	if !results[0].Passed {
+	if !data.Gates[0].Passed {
 		t.Errorf("expected first gate to pass")
 	}
-	if results[0].ExitCode != 0 {
-		t.Errorf("expected first gate ExitCode 0, got %d", results[0].ExitCode)
+	if data.Gates[0].ExitCode != 0 {
+		t.Errorf("expected first gate ExitCode 0, got %d", data.Gates[0].ExitCode)
 	}
 
 	// Second gate should fail
-	if results[1].Passed {
+	if data.Gates[1].Passed {
 		t.Errorf("expected second gate to fail")
 	}
-	if results[1].ExitCode == 0 {
+	if data.Gates[1].ExitCode == 0 {
 		t.Errorf("expected second gate ExitCode != 0, got 0")
 	}
 }
@@ -171,21 +176,22 @@ func TestRunGates_CapturesOutput(t *testing.T) {
 		},
 	}
 
-	results, err := RunGates(manifest, 1, "/tmp")
-	if err != nil {
-		t.Fatalf("expected no error, got: %v", err)
+	res := RunGates(manifest, 1, "/tmp")
+	if !res.IsSuccess() {
+		t.Fatalf("expected success, got: %v", res.Errors)
 	}
 
-	if len(results) != 1 {
-		t.Fatalf("expected 1 result, got %d", len(results))
+	data := res.GetData()
+	if len(data.Gates) != 1 {
+		t.Fatalf("expected 1 gate result, got %d", len(data.Gates))
 	}
 
-	result := results[0]
-	if result.Stdout != "stdout message\n" {
-		t.Errorf("expected Stdout 'stdout message\\n', got '%s'", result.Stdout)
+	gate := data.Gates[0]
+	if gate.Stdout != "stdout message\n" {
+		t.Errorf("expected Stdout 'stdout message\\n', got '%s'", gate.Stdout)
 	}
-	if result.Stderr != "stderr message\n" {
-		t.Errorf("expected Stderr 'stderr message\\n', got '%s'", result.Stderr)
+	if gate.Stderr != "stderr message\n" {
+		t.Errorf("expected Stderr 'stderr message\\n', got '%s'", gate.Stderr)
 	}
 }
 
@@ -203,24 +209,25 @@ func TestRunGates_NonExistentCommand(t *testing.T) {
 		},
 	}
 
-	results, err := RunGates(manifest, 1, "/tmp")
-	if err != nil {
-		t.Fatalf("expected no error (gate failures should not return errors), got: %v", err)
+	res := RunGates(manifest, 1, "/tmp")
+	if !res.IsSuccess() {
+		t.Fatalf("expected success (gate failures don't fail Result), got: %v", res.Errors)
 	}
 
-	if len(results) != 1 {
-		t.Fatalf("expected 1 result, got %d", len(results))
+	data := res.GetData()
+	if len(data.Gates) != 1 {
+		t.Fatalf("expected 1 gate result, got %d", len(data.Gates))
 	}
 
-	result := results[0]
-	if result.Passed {
+	gate := data.Gates[0]
+	if gate.Passed {
 		t.Errorf("expected non-existent command to fail")
 	}
-	if result.ExitCode == 0 {
+	if gate.ExitCode == 0 {
 		t.Errorf("expected non-zero exit code for non-existent command")
 	}
 	// Stderr should contain an error message
-	if result.Stderr == "" {
+	if gate.Stderr == "" {
 		t.Errorf("expected Stderr to contain error message for non-existent command")
 	}
 }
@@ -238,17 +245,18 @@ func TestRunGatesWithCache_NilCache(t *testing.T) {
 		},
 	}
 
-	results, err := RunGatesWithCache(manifest, 1, "/tmp", nil)
-	if err != nil {
-		t.Fatalf("expected no error, got: %v", err)
+	res := RunGatesWithCache(manifest, 1, "/tmp", nil)
+	if !res.IsSuccess() {
+		t.Fatalf("expected success, got: %v", res.Errors)
 	}
-	if len(results) != 1 {
-		t.Fatalf("expected 1 result, got %d", len(results))
+	data := res.GetData()
+	if len(data.Gates) != 1 {
+		t.Fatalf("expected 1 gate result, got %d", len(data.Gates))
 	}
-	if !results[0].Passed {
+	if !data.Gates[0].Passed {
 		t.Error("expected gate to pass")
 	}
-	if results[0].FromCache {
+	if data.Gates[0].FromCache {
 		t.Error("expected FromCache=false with nil cache")
 	}
 }
@@ -308,14 +316,15 @@ func TestRunGatesWithCache_CacheMissRunsGate(t *testing.T) {
 
 	// /tmp is almost certainly not a git repo; BuildKey should fail and we
 	// fall back to RunGates (cache miss path runs the gate normally).
-	results, err := RunGatesWithCache(manifest, 1, "/tmp", cache)
-	if err != nil {
-		t.Fatalf("expected no error, got: %v", err)
+	res := RunGatesWithCache(manifest, 1, "/tmp", cache)
+	if !res.IsSuccess() {
+		t.Fatalf("expected success, got: %v", res.Errors)
 	}
-	if len(results) != 1 {
-		t.Fatalf("expected 1 result, got %d", len(results))
+	data := res.GetData()
+	if len(data.Gates) != 1 {
+		t.Fatalf("expected 1 gate result, got %d", len(data.Gates))
 	}
-	if !results[0].Passed {
+	if !data.Gates[0].Passed {
 		t.Error("expected gate to pass")
 	}
 }
@@ -326,12 +335,13 @@ func TestRunGatesWithCache_EmptyManifest(t *testing.T) {
 
 	manifest := &IMPLManifest{}
 
-	results, err := RunGatesWithCache(manifest, 1, "/tmp", cache)
-	if err != nil {
-		t.Fatalf("expected no error, got: %v", err)
+	res := RunGatesWithCache(manifest, 1, "/tmp", cache)
+	if !res.IsSuccess() {
+		t.Fatalf("expected success, got: %v", res.Errors)
 	}
-	if len(results) != 0 {
-		t.Errorf("expected empty results, got %d", len(results))
+	data := res.GetData()
+	if len(data.Gates) != 0 {
+		t.Errorf("expected empty gates, got %d", len(data.Gates))
 	}
 }
 
@@ -355,23 +365,24 @@ func TestRunGates_ParsedErrors_Build(t *testing.T) {
 		},
 	}
 
-	results, err := RunGates(manifest, 1, "/tmp")
-	if err != nil {
-		t.Fatalf("expected no error, got: %v", err)
+	res := RunGates(manifest, 1, "/tmp")
+	if !res.IsSuccess() {
+		t.Fatalf("expected success, got: %v", res.Errors)
 	}
-	if len(results) != 1 {
-		t.Fatalf("expected 1 result, got %d", len(results))
+	data := res.GetData()
+	if len(data.Gates) != 1 {
+		t.Fatalf("expected 1 gate result, got %d", len(data.Gates))
 	}
 
-	result := results[0]
-	if result.Passed {
+	gate := data.Gates[0]
+	if gate.Passed {
 		t.Error("expected gate to fail")
 	}
 	// ParsedErrors may be empty if command doesn't match go tool pattern,
 	// but the field must exist (nil or empty slice is fine for non-Go commands).
 	// For a gate type "build" with no "go" in command, errparse returns nil.
 	// That's acceptable — we just verify the field is accessible.
-	_ = result.ParsedErrors
+	_ = gate.ParsedErrors
 }
 
 // TestRunGates_ParsedErrors_Passing verifies that a passing gate has empty ParsedErrors.
@@ -389,20 +400,21 @@ func TestRunGates_ParsedErrors_Passing(t *testing.T) {
 		},
 	}
 
-	results, err := RunGates(manifest, 1, "/tmp")
-	if err != nil {
-		t.Fatalf("expected no error, got: %v", err)
+	res := RunGates(manifest, 1, "/tmp")
+	if !res.IsSuccess() {
+		t.Fatalf("expected success, got: %v", res.Errors)
 	}
-	if len(results) != 1 {
-		t.Fatalf("expected 1 result, got %d", len(results))
+	data := res.GetData()
+	if len(data.Gates) != 1 {
+		t.Fatalf("expected 1 gate result, got %d", len(data.Gates))
 	}
 
-	result := results[0]
-	if !result.Passed {
+	gate := data.Gates[0]
+	if !gate.Passed {
 		t.Error("expected gate to pass")
 	}
-	if len(result.ParsedErrors) != 0 {
-		t.Errorf("expected empty ParsedErrors for passing gate, got %d", len(result.ParsedErrors))
+	if len(gate.ParsedErrors) != 0 {
+		t.Errorf("expected empty ParsedErrors for passing gate, got %d", len(gate.ParsedErrors))
 	}
 }
 
@@ -425,16 +437,17 @@ func TestRunGatesWithCache_ParsedErrors(t *testing.T) {
 		},
 	}
 
-	results, err := RunGatesWithCache(manifest, 1, "/tmp", cache)
-	if err != nil {
-		t.Fatalf("expected no error, got: %v", err)
+	res := RunGatesWithCache(manifest, 1, "/tmp", cache)
+	if !res.IsSuccess() {
+		t.Fatalf("expected success, got: %v", res.Errors)
 	}
-	if len(results) != 1 {
-		t.Fatalf("expected 1 result, got %d", len(results))
+	data := res.GetData()
+	if len(data.Gates) != 1 {
+		t.Fatalf("expected 1 gate result, got %d", len(data.Gates))
 	}
 
 	// ParsedErrors field should be accessible (nil/empty for non-matching commands)
-	_ = results[0].ParsedErrors
+	_ = data.Gates[0].ParsedErrors
 }
 
 // ---- Format gate tests ----
@@ -476,21 +489,22 @@ func TestRunGates_FormatGate_CheckMode(t *testing.T) {
 		},
 	}
 
-	results, err := RunGates(manifest, 1, t.TempDir())
-	if err != nil {
-		t.Fatalf("expected no error, got: %v", err)
+	res := RunGates(manifest, 1, t.TempDir())
+	if !res.IsSuccess() {
+		t.Fatalf("expected success, got: %v", res.Errors)
 	}
-	if len(results) != 1 {
-		t.Fatalf("expected 1 result, got %d", len(results))
+	data := res.GetData()
+	if len(data.Gates) != 1 {
+		t.Fatalf("expected 1 gate result, got %d", len(data.Gates))
 	}
-	result := results[0]
-	if result.Type != "format" {
-		t.Errorf("expected Type 'format', got %q", result.Type)
+	gate := data.Gates[0]
+	if gate.Type != "format" {
+		t.Errorf("expected Type 'format', got %q", gate.Type)
 	}
-	if !result.Passed {
-		t.Errorf("expected Passed=true, got false (stderr: %s)", result.Stderr)
+	if !gate.Passed {
+		t.Errorf("expected Passed=true, got false (stderr: %s)", gate.Stderr)
 	}
-	if result.Skipped {
+	if gate.Skipped {
 		t.Error("expected Skipped=false for explicit command")
 	}
 }
@@ -515,19 +529,20 @@ func TestRunGates_FormatGate_FixMode(t *testing.T) {
 		},
 	}
 
-	results, err := RunGatesWithCache(manifest, 1, t.TempDir(), cache)
-	if err != nil {
-		t.Fatalf("expected no error, got: %v", err)
+	res := RunGatesWithCache(manifest, 1, t.TempDir(), cache)
+	if !res.IsSuccess() {
+		t.Fatalf("expected success, got: %v", res.Errors)
 	}
-	if len(results) != 1 {
-		t.Fatalf("expected 1 result, got %d", len(results))
+	data := res.GetData()
+	if len(data.Gates) != 1 {
+		t.Fatalf("expected 1 gate result, got %d", len(data.Gates))
 	}
-	result := results[0]
-	if result.Type != "format" {
-		t.Errorf("expected Type 'format', got %q", result.Type)
+	gate := data.Gates[0]
+	if gate.Type != "format" {
+		t.Errorf("expected Type 'format', got %q", gate.Type)
 	}
-	if !result.Passed {
-		t.Errorf("expected Passed=true, got false (stderr: %s)", result.Stderr)
+	if !gate.Passed {
+		t.Errorf("expected Passed=true, got false (stderr: %s)", gate.Stderr)
 	}
 	// After fix mode, cache should have been invalidated (no error expected).
 	// We can't directly assert the cache is empty without internals, but we
@@ -554,21 +569,22 @@ func TestRunGates_FormatGate_SkipNoFormatter(t *testing.T) {
 		},
 	}
 
-	results, err := RunGates(manifest, 1, emptyDir)
-	if err != nil {
-		t.Fatalf("expected no error, got: %v", err)
+	res := RunGates(manifest, 1, emptyDir)
+	if !res.IsSuccess() {
+		t.Fatalf("expected success, got: %v", res.Errors)
 	}
-	if len(results) != 1 {
-		t.Fatalf("expected 1 result, got %d", len(results))
+	data := res.GetData()
+	if len(data.Gates) != 1 {
+		t.Fatalf("expected 1 gate result, got %d", len(data.Gates))
 	}
-	result := results[0]
-	if result.Type != "format" {
-		t.Errorf("expected Type 'format', got %q", result.Type)
+	gate := data.Gates[0]
+	if gate.Type != "format" {
+		t.Errorf("expected Type 'format', got %q", gate.Type)
 	}
-	if !result.Skipped {
+	if !gate.Skipped {
 		t.Errorf("expected Skipped=true when no formatter detected, got false")
 	}
-	if !result.Passed {
+	if !gate.Passed {
 		t.Errorf("expected Passed=true when skipped (no formatter), got false")
 	}
 }
@@ -598,18 +614,19 @@ func TestRunGates_FormatGate_ExplicitCommandSucceeds(t *testing.T) {
 		},
 	}
 
-	results, err := RunGates(manifest, 1, tmpDir)
-	if err != nil {
-		t.Fatalf("expected no error, got: %v", err)
+	res := RunGates(manifest, 1, tmpDir)
+	if !res.IsSuccess() {
+		t.Fatalf("expected success, got: %v", res.Errors)
 	}
-	if len(results) != 1 {
-		t.Fatalf("expected 1 result, got %d", len(results))
+	data := res.GetData()
+	if len(data.Gates) != 1 {
+		t.Fatalf("expected 1 gate result, got %d", len(data.Gates))
 	}
-	if !results[0].Passed {
+	if !data.Gates[0].Passed {
 		t.Errorf("expected format gate to pass with explicit echo command")
 	}
-	if results[0].Type != "format" {
-		t.Errorf("expected Type 'format', got %q", results[0].Type)
+	if data.Gates[0].Type != "format" {
+		t.Errorf("expected Type 'format', got %q", data.Gates[0].Type)
 	}
 }
 
@@ -661,14 +678,15 @@ func TestRunPreMergeGates_OnlyRunsPreMerge(t *testing.T) {
 		},
 	}
 
-	results, err := RunPreMergeGates(manifest, 1, "/tmp", nil)
-	if err != nil {
-		t.Fatalf("expected no error, got: %v", err)
+	res := RunPreMergeGates(manifest, 1, "/tmp", nil)
+	if !res.IsSuccess() {
+		t.Fatalf("expected success, got: %v", res.Errors)
 	}
-	if len(results) != 1 {
-		t.Fatalf("expected 1 result (only pre-merge gate), got %d", len(results))
+	data := res.GetData()
+	if len(data.Gates) != 1 {
+		t.Fatalf("expected 1 gate result (only pre-merge gate), got %d", len(data.Gates))
 	}
-	if !results[0].Passed {
+	if !data.Gates[0].Passed {
 		t.Errorf("expected pre-merge gate to pass, got Passed=false")
 	}
 }
@@ -686,14 +704,15 @@ func TestRunPostMergeGates_OnlyRunsPostMerge(t *testing.T) {
 		},
 	}
 
-	results, err := RunPostMergeGates(manifest, 1, "/tmp")
-	if err != nil {
-		t.Fatalf("expected no error, got: %v", err)
+	res := RunPostMergeGates(manifest, 1, "/tmp")
+	if !res.IsSuccess() {
+		t.Fatalf("expected success, got: %v", res.Errors)
 	}
-	if len(results) != 1 {
-		t.Fatalf("expected 1 result (only post-merge gate), got %d", len(results))
+	data := res.GetData()
+	if len(data.Gates) != 1 {
+		t.Fatalf("expected 1 gate result (only post-merge gate), got %d", len(data.Gates))
 	}
-	if !results[0].Passed {
+	if !data.Gates[0].Passed {
 		t.Errorf("expected post-merge gate to pass, got Passed=false")
 	}
 }
@@ -710,17 +729,18 @@ func TestRunPreMergeGates_EmptyWhenNoneMatch(t *testing.T) {
 		},
 	}
 
-	results, err := RunPreMergeGates(manifest, 1, "/tmp", nil)
-	if err != nil {
-		t.Fatalf("expected no error, got: %v", err)
+	res := RunPreMergeGates(manifest, 1, "/tmp", nil)
+	if !res.IsSuccess() {
+		t.Fatalf("expected success, got: %v", res.Errors)
 	}
-	if len(results) != 0 {
-		t.Errorf("expected empty results when no pre-merge gates match, got %d", len(results))
+	data := res.GetData()
+	if len(data.Gates) != 0 {
+		t.Errorf("expected empty gates when no pre-merge gates match, got %d", len(data.Gates))
 	}
 }
 
 // TestRunPostMergeGates_EmptyWhenNoneMatch verifies that RunPostMergeGates returns an
-// empty slice (not an error) when the manifest has only pre-merge gates.
+// empty GatesData (not an error) when the manifest has only pre-merge gates.
 func TestRunPostMergeGates_EmptyWhenNoneMatch(t *testing.T) {
 	manifest := &IMPLManifest{
 		QualityGates: &QualityGates{
@@ -731,12 +751,13 @@ func TestRunPostMergeGates_EmptyWhenNoneMatch(t *testing.T) {
 		},
 	}
 
-	results, err := RunPostMergeGates(manifest, 1, "/tmp")
-	if err != nil {
-		t.Fatalf("expected no error, got: %v", err)
+	res := RunPostMergeGates(manifest, 1, "/tmp")
+	if !res.IsSuccess() {
+		t.Fatalf("expected success, got: %v", res.Errors)
 	}
-	if len(results) != 0 {
-		t.Errorf("expected empty results when no post-merge gates match, got %d", len(results))
+	data := res.GetData()
+	if len(data.Gates) != 0 {
+		t.Errorf("expected empty gates when no post-merge gates match, got %d", len(data.Gates))
 	}
 }
 
@@ -753,15 +774,16 @@ func TestRunPreMergeGates_BackwardCompat(t *testing.T) {
 		},
 	}
 
-	results, err := RunPreMergeGates(manifest, 1, "/tmp", nil)
-	if err != nil {
-		t.Fatalf("expected no error, got: %v", err)
+	res := RunPreMergeGates(manifest, 1, "/tmp", nil)
+	if !res.IsSuccess() {
+		t.Fatalf("expected success, got: %v", res.Errors)
 	}
-	if len(results) != 2 {
-		t.Fatalf("expected 2 results (both backward-compat gates run as pre-merge), got %d", len(results))
+	data := res.GetData()
+	if len(data.Gates) != 2 {
+		t.Fatalf("expected 2 gate results (both backward-compat gates run as pre-merge), got %d", len(data.Gates))
 	}
-	for i, r := range results {
-		if !r.Passed {
+	for i, g := range data.Gates {
+		if !g.Passed {
 			t.Errorf("expected gate[%d] to pass, got Passed=false", i)
 		}
 	}
@@ -802,29 +824,31 @@ func TestRunGatesWithCache_CommandChange(t *testing.T) {
 			},
 		},
 	}
-	results1, err := RunGatesWithCache(manifest1, 1, repoDir, cache)
-	if err != nil {
-		t.Fatalf("first run error: %v", err)
+	res1 := RunGatesWithCache(manifest1, 1, repoDir, cache)
+	if !res1.IsSuccess() {
+		t.Fatalf("first run error: %v", res1.Errors)
 	}
-	if len(results1) != 1 {
-		t.Fatalf("expected 1 result, got %d", len(results1))
+	data1 := res1.GetData()
+	if len(data1.Gates) != 1 {
+		t.Fatalf("expected 1 gate result, got %d", len(data1.Gates))
 	}
-	if results1[0].FromCache {
+	if data1.Gates[0].FromCache {
 		t.Error("first run should be a cache miss, not a hit")
 	}
 
 	// Second run with same command "echo v1" — should be a cache hit.
-	results2, err := RunGatesWithCache(manifest1, 1, repoDir, cache)
-	if err != nil {
-		t.Fatalf("second run error: %v", err)
+	res2 := RunGatesWithCache(manifest1, 1, repoDir, cache)
+	if !res2.IsSuccess() {
+		t.Fatalf("second run error: %v", res2.Errors)
 	}
-	if len(results2) != 1 {
-		t.Fatalf("expected 1 result, got %d", len(results2))
+	data2 := res2.GetData()
+	if len(data2.Gates) != 1 {
+		t.Fatalf("expected 1 gate result, got %d", len(data2.Gates))
 	}
-	if !results2[0].FromCache {
+	if !data2.Gates[0].FromCache {
 		t.Error("second run with same command should be a cache hit")
 	}
-	if results2[0].SkipReason == "" {
+	if data2.Gates[0].SkipReason == "" {
 		t.Error("expected SkipReason to be set on cache hit")
 	}
 
@@ -837,14 +861,15 @@ func TestRunGatesWithCache_CommandChange(t *testing.T) {
 			},
 		},
 	}
-	results3, err := RunGatesWithCache(manifest2, 1, repoDir, cache)
-	if err != nil {
-		t.Fatalf("third run error: %v", err)
+	res3 := RunGatesWithCache(manifest2, 1, repoDir, cache)
+	if !res3.IsSuccess() {
+		t.Fatalf("third run error: %v", res3.Errors)
 	}
-	if len(results3) != 1 {
-		t.Fatalf("expected 1 result, got %d", len(results3))
+	data3 := res3.GetData()
+	if len(data3.Gates) != 1 {
+		t.Fatalf("expected 1 gate result, got %d", len(data3.Gates))
 	}
-	if results3[0].FromCache {
+	if data3.Gates[0].FromCache {
 		t.Error("third run with different command should be a cache miss, not a hit")
 	}
 }

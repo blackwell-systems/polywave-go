@@ -26,25 +26,27 @@ waves: []
 	}
 
 	// Run VerifyBuild
-	result, err := VerifyBuild(manifestPath, tmpDir)
-	if err != nil {
-		t.Fatalf("VerifyBuild failed: %v", err)
+	res := VerifyBuild(manifestPath, tmpDir)
+	if !res.IsSuccess() {
+		t.Fatalf("VerifyBuild failed: %v", res.Errors)
 	}
 
+	data := res.GetData()
+
 	// Verify both commands passed
-	if !result.TestPassed {
-		t.Errorf("expected TestPassed=true, got false. Output: %s", result.TestOutput)
+	if !data.TestPassed {
+		t.Errorf("expected TestPassed=true, got false. Output: %s", data.TestOutput)
 	}
-	if !result.LintPassed {
-		t.Errorf("expected LintPassed=true, got false. Output: %s", result.LintOutput)
+	if !data.LintPassed {
+		t.Errorf("expected LintPassed=true, got false. Output: %s", data.LintOutput)
 	}
 
 	// Verify commands are captured
-	if result.TestCommand != "true" {
-		t.Errorf("expected TestCommand='true', got %q", result.TestCommand)
+	if data.TestCommand != "true" {
+		t.Errorf("expected TestCommand='true', got %q", data.TestCommand)
 	}
-	if result.LintCommand != "true" {
-		t.Errorf("expected LintCommand='true', got %q", result.LintCommand)
+	if data.LintCommand != "true" {
+		t.Errorf("expected LintCommand='true', got %q", data.LintCommand)
 	}
 }
 
@@ -67,23 +69,25 @@ waves: []
 	}
 
 	// Run VerifyBuild
-	result, err := VerifyBuild(manifestPath, tmpDir)
-	if err != nil {
-		t.Fatalf("VerifyBuild failed: %v", err)
+	res := VerifyBuild(manifestPath, tmpDir)
+	if !res.IsSuccess() {
+		t.Fatalf("VerifyBuild failed: %v", res.Errors)
 	}
 
+	data := res.GetData()
+
 	// Verify test failed
-	if result.TestPassed {
+	if data.TestPassed {
 		t.Errorf("expected TestPassed=false, got true")
 	}
 
 	// Verify lint passed
-	if !result.LintPassed {
-		t.Errorf("expected LintPassed=true, got false. Output: %s", result.LintOutput)
+	if !data.LintPassed {
+		t.Errorf("expected LintPassed=true, got false. Output: %s", data.LintOutput)
 	}
 
 	// Verify output is captured (even if empty)
-	if result.TestOutput == "" && result.TestPassed == false {
+	if data.TestOutput == "" && data.TestPassed == false {
 		// This is acceptable: "false" command exits 1 with no output
 		t.Logf("TestOutput is empty (expected for 'false' command)")
 	}
@@ -108,36 +112,38 @@ waves: []
 	}
 
 	// Run VerifyBuild
-	result, err := VerifyBuild(manifestPath, tmpDir)
-	if err != nil {
-		t.Fatalf("VerifyBuild failed: %v", err)
+	res := VerifyBuild(manifestPath, tmpDir)
+	if !res.IsSuccess() {
+		t.Fatalf("VerifyBuild failed: %v", res.Errors)
 	}
 
+	data := res.GetData()
+
 	// Verify test passed
-	if !result.TestPassed {
-		t.Errorf("expected TestPassed=true, got false. Output: %s", result.TestOutput)
+	if !data.TestPassed {
+		t.Errorf("expected TestPassed=true, got false. Output: %s", data.TestOutput)
 	}
 
 	// Verify empty lint command was skipped and marked as passed
-	if !result.LintPassed {
+	if !data.LintPassed {
 		t.Errorf("expected LintPassed=true (skipped), got false")
 	}
 
 	// Verify lint output is empty (command was skipped)
-	if result.LintOutput != "" {
-		t.Errorf("expected empty LintOutput (skipped), got %q", result.LintOutput)
+	if data.LintOutput != "" {
+		t.Errorf("expected empty LintOutput (skipped), got %q", data.LintOutput)
 	}
 
 	// Verify test output contains "test output"
-	if !strings.Contains(result.TestOutput, "test output") {
-		t.Errorf("expected TestOutput to contain 'test output', got %q", result.TestOutput)
+	if !strings.Contains(data.TestOutput, "test output") {
+		t.Errorf("expected TestOutput to contain 'test output', got %q", data.TestOutput)
 	}
 
 	// Verify commands are captured
-	if result.TestCommand != "echo test output" {
-		t.Errorf("expected TestCommand='echo test output', got %q", result.TestCommand)
+	if data.TestCommand != "echo test output" {
+		t.Errorf("expected TestCommand='echo test output', got %q", data.TestCommand)
 	}
-	if result.LintCommand != "" {
-		t.Errorf("expected empty LintCommand, got %q", result.LintCommand)
+	if data.LintCommand != "" {
+		t.Errorf("expected empty LintCommand, got %q", data.LintCommand)
 	}
 }

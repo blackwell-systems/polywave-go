@@ -153,22 +153,22 @@ waves:
 	createBranchWithCommits(t, repoDir, "saw/test-feature/wave1-agent-B", 1)
 
 	// Verify commits
-	result, err := VerifyCommits(manifestPath, 1, repoDir)
-	if err != nil {
-		t.Fatalf("VerifyCommits failed: %v", err)
+	res := VerifyCommits(manifestPath, 1, repoDir)
+
+	// Check result is successful
+	if !res.IsSuccess() {
+		t.Fatalf("expected IsSuccess()=true, got false. Errors: %v", res.Errors)
 	}
 
-	// Check result
-	if !result.AllValid {
-		t.Errorf("expected AllValid=true, got false")
-	}
+	// Get data
+	data := res.GetData()
 
-	if len(result.Agents) != 2 {
-		t.Fatalf("expected 2 agent statuses, got %d", len(result.Agents))
+	if len(data.Agents) != 2 {
+		t.Fatalf("expected 2 agent statuses, got %d", len(data.Agents))
 	}
 
 	// Check agent A
-	agentA := result.Agents[0]
+	agentA := data.Agents[0]
 	if agentA.Agent != "A" {
 		t.Errorf("expected agent A, got %s", agentA.Agent)
 	}
@@ -183,7 +183,7 @@ waves:
 	}
 
 	// Check agent B
-	agentB := result.Agents[1]
+	agentB := data.Agents[1]
 	if agentB.Agent != "B" {
 		t.Errorf("expected agent B, got %s", agentB.Agent)
 	}
@@ -251,28 +251,32 @@ waves:
 	}
 
 	// Verify commits
-	result, err := VerifyCommits(manifestPath, 1, repoDir)
-	if err != nil {
-		t.Fatalf("VerifyCommits failed: %v", err)
+	res := VerifyCommits(manifestPath, 1, repoDir)
+
+	// Check result is partial (success with warnings)
+	if !res.IsPartial() {
+		t.Fatalf("expected IsPartial()=true when some agents have no commits, got Code=%s", res.Code)
 	}
 
-	// Check result
-	if result.AllValid {
-		t.Errorf("expected AllValid=false, got true")
+	if len(res.Errors) == 0 {
+		t.Errorf("expected warnings in Errors for missing commits")
 	}
 
-	if len(result.Agents) != 2 {
-		t.Fatalf("expected 2 agent statuses, got %d", len(result.Agents))
+	// Get data
+	data := res.GetData()
+
+	if len(data.Agents) != 2 {
+		t.Fatalf("expected 2 agent statuses, got %d", len(data.Agents))
 	}
 
 	// Check agent A (has commits)
-	agentA := result.Agents[0]
+	agentA := data.Agents[0]
 	if !agentA.HasCommits {
 		t.Errorf("expected HasCommits=true for agent A")
 	}
 
 	// Check agent B (no commits)
-	agentB := result.Agents[1]
+	agentB := data.Agents[1]
 	if agentB.HasCommits {
 		t.Errorf("expected HasCommits=false for agent B")
 	}
@@ -306,22 +310,26 @@ waves:
 	// Don't create the branch at all
 
 	// Verify commits
-	result, err := VerifyCommits(manifestPath, 1, repoDir)
-	if err != nil {
-		t.Fatalf("VerifyCommits failed: %v", err)
+	res := VerifyCommits(manifestPath, 1, repoDir)
+
+	// Check result is partial (success with warnings)
+	if !res.IsPartial() {
+		t.Fatalf("expected IsPartial()=true when branch doesn't exist, got Code=%s", res.Code)
 	}
 
-	// Check result
-	if result.AllValid {
-		t.Errorf("expected AllValid=false when branch doesn't exist, got true")
+	if len(res.Errors) == 0 {
+		t.Errorf("expected warnings in Errors for missing branch")
 	}
 
-	if len(result.Agents) != 1 {
-		t.Fatalf("expected 1 agent status, got %d", len(result.Agents))
+	// Get data
+	data := res.GetData()
+
+	if len(data.Agents) != 1 {
+		t.Fatalf("expected 1 agent status, got %d", len(data.Agents))
 	}
 
 	// Check agent A (branch doesn't exist)
-	agentA := result.Agents[0]
+	agentA := data.Agents[0]
 	if agentA.HasCommits {
 		t.Errorf("expected HasCommits=false for nonexistent branch")
 	}

@@ -7,11 +7,13 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
 )
 
-// VerifyBuildResult captures the outcome of running test and lint commands
+// VerifyBuildData captures the outcome of running test and lint commands
 // from the IMPL manifest's top-level test_command and lint_command fields.
-type VerifyBuildResult struct {
+type VerifyBuildData struct {
 	TestCommand string `json:"test_command"`
 	LintCommand string `json:"lint_command"`
 	TestPassed  bool   `json:"test_passed"`
@@ -26,16 +28,23 @@ type VerifyBuildResult struct {
 // If a command is an empty string, it is skipped and marked as passed.
 // The repoDir parameter is the working directory for command execution.
 //
-// Returns VerifyBuildResult with all execution details.
-// Returns an error only for system-level failures (e.g., cannot load manifest).
-func VerifyBuild(manifestPath string, repoDir string) (*VerifyBuildResult, error) {
+// Returns Result[VerifyBuildData] with all execution details.
+// Returns FATAL result for system-level failures (e.g., cannot load manifest).
+func VerifyBuild(manifestPath string, repoDir string) result.Result[VerifyBuildData] {
 	// Load the manifest
 	manifest, err := Load(manifestPath)
 	if err != nil {
-		return nil, fmt.Errorf("failed to load manifest: %w", err)
+		return result.NewFailure[VerifyBuildData]([]result.StructuredError{
+			{
+				Code:     "E001",
+				Message:  fmt.Sprintf("failed to load manifest: %v", err),
+				Severity: "fatal",
+				File:     manifestPath,
+			},
+		})
 	}
 
-	result := &VerifyBuildResult{
+	data := VerifyBuildData{
 		TestCommand: manifest.TestCommand,
 		LintCommand: manifest.LintCommand,
 	}
@@ -43,24 +52,24 @@ func VerifyBuild(manifestPath string, repoDir string) (*VerifyBuildResult, error
 	// Run test command if present and applicable to this repo
 	if isRealCommand(manifest.TestCommand) && commandApplies(manifest.TestCommand, repoDir) {
 		testPassed, testOutput := runCommand(manifest.TestCommand, repoDir)
-		result.TestPassed = testPassed
-		result.TestOutput = testOutput
+		data.TestPassed = testPassed
+		data.TestOutput = testOutput
 	} else {
 		// Empty command or not applicable to this repo: skip and mark as passed
-		result.TestPassed = true
+		data.TestPassed = true
 	}
 
 	// Run lint command if present and applicable to this repo
 	if isRealCommand(manifest.LintCommand) && commandApplies(manifest.LintCommand, repoDir) {
 		lintPassed, lintOutput := runCommand(manifest.LintCommand, repoDir)
-		result.LintPassed = lintPassed
-		result.LintOutput = lintOutput
+		data.LintPassed = lintPassed
+		data.LintOutput = lintOutput
 	} else {
 		// Empty command or not applicable to this repo: skip and mark as passed
-		result.LintPassed = true
+		data.LintPassed = true
 	}
 
-	return result, nil
+	return result.NewSuccess(data)
 }
 
 // isRealCommand returns false for empty strings and sentinel values like "none"

@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/blackwell-systems/scout-and-wave-go/internal/git"
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
 )
 
 // CommitStatus represents the commit status of a single agent in a wave.
@@ -19,12 +20,11 @@ type CommitStatus struct {
 	CrossRepo   bool   `json:"cross_repo,omitempty"` // true when verified via completion report (cross-repo agent)
 }
 
-// VerifyCommitsResult represents the outcome of verifying that all agents
+// VerifyCommitsData represents the outcome of verifying that all agents
 // in a wave have committed their work.
-type VerifyCommitsResult struct {
+type VerifyCommitsData struct {
 	BaseCommit string         `json:"base_commit"`
 	Agents     []CommitStatus `json:"agents"`
-	AllValid   bool           `json:"all_valid"`
 }
 
 // VerifyCommits checks that all agents in the specified wave have committed
@@ -34,16 +34,23 @@ type VerifyCommitsResult struct {
 // The base commit is determined from HEAD of each repository. Each agent's
 // branch is expected to follow the pattern "wave{N}-agent-{ID}". If a branch
 // does not exist or has no commits relative to the base, it is recorded with
-// HasCommits=false but does not cause an error - the AllValid flag will be false.
+// HasCommits=false.
 //
-// Returns an error only for system-level failures (e.g., cannot determine base commit,
-// cannot load manifest, wave not found). Missing or empty branches are recorded
-// in the result but do not cause errors.
-func VerifyCommits(manifestPath string, waveNum int, repoDir string) (*VerifyCommitsResult, error) {
+// Returns result.Result[VerifyCommitsData]:
+//   - SUCCESS (Code="SUCCESS"): All agents have commits
+//   - PARTIAL (Code="PARTIAL"): Some agents missing commits (warnings in Errors)
+//   - FATAL (Code="FATAL"): System-level failure (cannot load manifest, wave not found, etc.)
+func VerifyCommits(manifestPath string, waveNum int, repoDir string) result.Result[VerifyCommitsData] {
 	// Load the manifest
 	manifest, err := Load(manifestPath)
 	if err != nil {
-		return nil, fmt.Errorf("failed to load manifest: %w", err)
+		return result.NewFailure[VerifyCommitsData]([]result.StructuredError{
+			{
+				Code:     "E101",
+				Message:  fmt.Sprintf("failed to load manifest: %v", err),
+				Severity: "fatal",
+			},
+		})
 	}
 
 	// Find the specified wave
@@ -56,14 +63,26 @@ func VerifyCommits(manifestPath string, waveNum int, repoDir string) (*VerifyCom
 	}
 
 	if targetWave == nil {
-		return nil, fmt.Errorf("wave %d not found in manifest", waveNum)
+		return result.NewFailure[VerifyCommitsData]([]result.StructuredError{
+			{
+				Code:     "E102",
+				Message:  fmt.Sprintf("wave %d not found in manifest", waveNum),
+				Severity: "fatal",
+			},
+		})
 	}
 
 	// Resolve repoDir to absolute path; repo names in fo.Repo are resolved as
 	// siblings of this directory (same pattern as worktree.go line 116).
 	absRepoDir, err := filepath.Abs(repoDir)
 	if err != nil {
-		return nil, fmt.Errorf("failed to resolve repo dir: %w", err)
+		return result.NewFailure[VerifyCommitsData]([]result.StructuredError{
+			{
+				Code:     "E103",
+				Message:  fmt.Sprintf("failed to resolve repo dir: %v", err),
+				Severity: "fatal",
+			},
+		})
 	}
 	repoParent := filepath.Dir(absRepoDir)
 
@@ -100,16 +119,25 @@ func VerifyCommits(manifestPath string, waveNum int, repoDir string) (*VerifyCom
 		var err error
 		baseCommit, err = git.RevParse(absRepoDir, "HEAD")
 		if err != nil {
-			return nil, fmt.Errorf("failed to get base commit: %w", err)
+			return result.NewFailure[VerifyCommitsData]([]result.StructuredError{
+				{
+					Code:     "E104",
+					Message:  fmt.Sprintf("failed to get base commit: %v", err),
+					Severity: "fatal",
+				},
+			})
 		}
 	}
 
-	// Build the result
-	result := &VerifyCommitsResult{
+	// Build the data
+	data := VerifyCommitsData{
 		BaseCommit: baseCommit,
 		Agents:     make([]CommitStatus, 0, len(targetWave.Agents)),
-		AllValid:   true,
 	}
+
+	// Track validation status
+	allValid := true
+	var warnings []result.StructuredError
 
 	// Check each agent's branch in its respective repository
 	for _, agent := range targetWave.Agents {
@@ -182,13 +210,27 @@ func VerifyCommits(manifestPath string, waveNum int, repoDir string) (*VerifyCom
 			}
 		}
 
-		// Update overall validity
+		// Update overall validity and collect warnings
 		if !status.HasCommits {
-			result.AllValid = false
+			allValid = false
+			warnings = append(warnings, result.StructuredError{
+				Code:     "W101",
+				Message:  fmt.Sprintf("agent %s has no commits on branch %s", status.Agent, status.Branch),
+				Severity: "warning",
+				Field:    "agent",
+				Context: map[string]string{
+					"agent":  status.Agent,
+					"branch": status.Branch,
+				},
+			})
 		}
 
-		result.Agents = append(result.Agents, status)
+		data.Agents = append(data.Agents, status)
 	}
 
-	return result, nil
+	// Return appropriate result based on validation status
+	if allValid {
+		return result.NewSuccess(data)
+	}
+	return result.NewPartial(data, warnings)
 }

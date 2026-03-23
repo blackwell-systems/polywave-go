@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/blackwell-systems/scout-and-wave-go/internal/git"
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
 )
 
 // PreMergeValidation validates ownership table consistency before any merge operations.
@@ -135,18 +136,26 @@ type MergeStatus struct {
 	Error         string `json:"error,omitempty"`
 }
 
-// MergeAgentsResult represents the outcome of merging all agents in a wave.
-type MergeAgentsResult struct {
+// MergeAgentsData represents the outcome of merging all agents in a wave.
+// Wrapped in result.Result[MergeAgentsData] for consistent error handling.
+type MergeAgentsData struct {
 	Wave      int           `json:"wave"`
 	Merges    []MergeStatus `json:"merges"`
-	Success   bool          `json:"success"`
 	NextState ProtocolState `json:"next_state,omitempty"` // State after successful merge
+	// Success field maintained for backward compatibility with legacy code
+	// TODO: Remove once all consumers migrated to result.Result[T].IsSuccess()
+	Success bool `json:"success"`
 }
+
+// MergeAgentsResult is deprecated: use result.Result[MergeAgentsData] instead.
+// This type alias is maintained for backward compatibility during the migration.
+// TODO: Remove this alias once all consumers are migrated (Wave 4, Agent O).
+type MergeAgentsResult = MergeAgentsData
 
 // MergeAgents merges all agent branches from a specified wave into their respective repositories.
 // It automatically detects multi-repo waves by reading the file ownership table and completion reports.
 //
-// The function stops on the first merge conflict and returns a partial result with Success=false.
+// The function stops on the first merge conflict and returns a partial result.
 // All merges are recorded in the result, including both successful and failed attempts.
 //
 // Parameters:
@@ -156,13 +165,13 @@ type MergeAgentsResult struct {
 //   - mergeTarget: target branch for merge; empty string means merge to current HEAD (backward compatible)
 //
 // Returns:
-//   - MergeAgentsResult with wave number, merge statuses, and overall success flag
+//   - result.Result[MergeAgentsData] with wave number, merge statuses
 //   - error if manifest cannot be loaded or wave is not found (not returned for merge conflicts)
-func MergeAgents(manifestPath string, waveNum int, repoDir string, mergeTarget string) (*MergeAgentsResult, error) {
+func MergeAgents(manifestPath string, waveNum int, repoDir string, mergeTarget string) (result.Result[MergeAgentsData], error) {
 	// Load manifest to check if this is a multi-repo wave
 	manifest, err := Load(manifestPath)
 	if err != nil {
-		return nil, fmt.Errorf("failed to load manifest: %w", err)
+		return result.Result[MergeAgentsData]{}, fmt.Errorf("failed to load manifest: %w", err)
 	}
 
 	// Find the specified wave
@@ -175,14 +184,14 @@ func MergeAgents(manifestPath string, waveNum int, repoDir string, mergeTarget s
 	}
 
 	if targetWave == nil {
-		return nil, fmt.Errorf("wave %d not found in manifest", waveNum)
+		return result.Result[MergeAgentsData]{}, fmt.Errorf("wave %d not found in manifest", waveNum)
 	}
 
 	// Resolve repoDir to absolute path; repo names in fo.Repo are resolved as
 	// siblings of this directory (same pattern as worktree.go line 116).
 	absRepoDir, err := filepath.Abs(repoDir)
 	if err != nil {
-		return nil, fmt.Errorf("failed to resolve repo dir: %w", err)
+		return result.Result[MergeAgentsData]{}, fmt.Errorf("failed to resolve repo dir: %w", err)
 	}
 	repoParent := filepath.Dir(absRepoDir)
 
@@ -254,37 +263,38 @@ func buildFileOwnerMap(manifest *IMPLManifest, waveNum int) map[string]string {
 
 // mergeAgentsSingleRepo handles merging when all agents belong to the same repository.
 // When mergeTarget is non-empty, checks out the target branch before the merge loop.
-func mergeAgentsSingleRepo(manifestPath string, waveNum int, repoDir string, manifest *IMPLManifest, targetWave *Wave, mergeTarget string) (*MergeAgentsResult, error) {
+func mergeAgentsSingleRepo(manifestPath string, waveNum int, repoDir string, manifest *IMPLManifest, targetWave *Wave, mergeTarget string) (result.Result[MergeAgentsData], error) {
 	// H4: PreMergeValidation — verify ownership table consistency before any git operations.
 	if validationErrs := PreMergeValidation(manifest, waveNum); len(validationErrs) > 0 {
-		return &MergeAgentsResult{
-			Wave:    waveNum,
-			Merges:  []MergeStatus{{Agent: "pre-merge", Success: false, Error: validationErrs[0].Message}},
-			Success: false,
-		}, nil
+		return result.NewFailure[MergeAgentsData]([]result.StructuredError{{
+			Code:     "PRE_MERGE_VALIDATION_FAILED",
+			Message:  validationErrs[0].Message,
+			Severity: "fatal",
+			Field:    "file_ownership",
+		}}), nil
 	}
 
 	// Checkout merge target branch before merge loop (E28)
 	if mergeTarget != "" {
 		if _, err := git.Run(repoDir, "checkout", mergeTarget); err != nil {
-			return nil, fmt.Errorf("failed to checkout merge target %s: %w", mergeTarget, err)
+			return result.Result[MergeAgentsData]{}, fmt.Errorf("failed to checkout merge target %s: %w", mergeTarget, err)
 		}
 	}
 
 	// Load merge-log for idempotency (E9)
 	mergeLog, err := LoadMergeLog(manifestPath, waveNum)
 	if err != nil {
-		return nil, fmt.Errorf("failed to load merge-log: %w", err)
+		return result.Result[MergeAgentsData]{}, fmt.Errorf("failed to load merge-log: %w", err)
 	}
 
 	// Build file ownership map for conflict auto-resolution
 	fileOwners := buildFileOwnerMap(manifest, waveNum)
 
-	// Initialize result
-	result := &MergeAgentsResult{
+	// Initialize result data
+	data := MergeAgentsData{
 		Wave:    waveNum,
 		Merges:  make([]MergeStatus, 0, len(targetWave.Agents)),
-		Success: true,
+		Success: true, // Set to false on merge failure for backward compat
 	}
 
 	// Merge each agent branch
@@ -302,7 +312,7 @@ func mergeAgentsSingleRepo(manifestPath string, waveNum int, repoDir string, man
 				Success: true,
 				Error:   "already merged (skipped)",
 			}
-			result.Merges = append(result.Merges, status)
+			data.Merges = append(data.Merges, status)
 			continue
 		}
 
@@ -336,9 +346,16 @@ func mergeAgentsSingleRepo(manifestPath string, waveNum int, repoDir string, man
 			// Merge failed - record error and stop
 			status.Success = false
 			status.Error = err.Error()
-			result.Merges = append(result.Merges, status)
-			result.Success = false
-			return result, nil
+			data.Merges = append(data.Merges, status)
+			data.Success = false // Set for backward compat
+			// Return partial result with failures
+			return result.NewPartial(data, []result.StructuredError{{
+				Code:     "MERGE_CONFLICT",
+				Message:  fmt.Sprintf("merge failed for agent %s: %s", agent.ID, err.Error()),
+				Severity: "error",
+				Field:    "agent",
+				Context:  map[string]string{"agent": agent.ID, "branch": status.Branch},
+			}}), nil
 		}
 
 		// Get merge commit SHA
@@ -360,34 +377,35 @@ func mergeAgentsSingleRepo(manifestPath string, waveNum int, repoDir string, man
 		if _, err := UpdateStatus(manifestPath, waveNum, agent.ID, "complete"); err == nil {
 			status.StatusUpdated = true
 		}
-		result.Merges = append(result.Merges, status)
+		data.Merges = append(data.Merges, status)
 	}
 
 	// All merges succeeded - update state to next wave or COMPLETE
 	nextState := determineNextState(manifest, waveNum)
 	if err := updateManifestState(manifestPath, nextState); err == nil {
-		result.NextState = nextState
+		data.NextState = nextState
 	}
 
-	return result, nil
+	return result.NewSuccess(data), nil
 }
 
 // mergeAgentsMultiRepo handles merging when agents span multiple repositories.
 // When mergeTarget is non-empty, checks out the target branch in each repo before merging.
-func mergeAgentsMultiRepo(manifestPath string, waveNum int, manifest *IMPLManifest, targetWave *Wave, agentRepos map[string]string, mergeTarget string) (*MergeAgentsResult, error) {
+func mergeAgentsMultiRepo(manifestPath string, waveNum int, manifest *IMPLManifest, targetWave *Wave, agentRepos map[string]string, mergeTarget string) (result.Result[MergeAgentsData], error) {
 	// H4: PreMergeValidation — verify ownership table consistency before any git operations.
 	if validationErrs := PreMergeValidation(manifest, waveNum); len(validationErrs) > 0 {
-		return &MergeAgentsResult{
-			Wave:    waveNum,
-			Merges:  []MergeStatus{{Agent: "pre-merge", Success: false, Error: validationErrs[0].Message}},
-			Success: false,
-		}, nil
+		return result.NewFailure[MergeAgentsData]([]result.StructuredError{{
+			Code:     "PRE_MERGE_VALIDATION_FAILED",
+			Message:  validationErrs[0].Message,
+			Severity: "fatal",
+			Field:    "file_ownership",
+		}}), nil
 	}
 
 	// Load merge-log for idempotency (E9)
 	mergeLog, err := LoadMergeLog(manifestPath, waveNum)
 	if err != nil {
-		return nil, fmt.Errorf("failed to load merge-log: %w", err)
+		return result.Result[MergeAgentsData]{}, fmt.Errorf("failed to load merge-log: %w", err)
 	}
 
 	// Build file ownership map for conflict auto-resolution
@@ -400,11 +418,11 @@ func mergeAgentsMultiRepo(manifestPath string, waveNum int, manifest *IMPLManife
 		repoGroups[repo] = append(repoGroups[repo], agent)
 	}
 
-	// Initialize combined result
-	result := &MergeAgentsResult{
+	// Initialize combined result data
+	data := MergeAgentsData{
 		Wave:    waveNum,
 		Merges:  make([]MergeStatus, 0, len(targetWave.Agents)),
-		Success: true,
+		Success: true, // Set to false on merge failure for backward compat
 	}
 
 	// Merge each repository group
@@ -420,7 +438,7 @@ func mergeAgentsMultiRepo(manifestPath string, waveNum int, manifest *IMPLManife
 		// Checkout merge target branch before merge loop (E28)
 		if mergeTarget != "" {
 			if _, err := git.Run(absRepoDir, "checkout", mergeTarget); err != nil {
-				return nil, fmt.Errorf("failed to checkout merge target %s in %s: %w", mergeTarget, repoDir, err)
+				return result.Result[MergeAgentsData]{}, fmt.Errorf("failed to checkout merge target %s in %s: %w", mergeTarget, repoDir, err)
 			}
 		}
 
@@ -437,7 +455,7 @@ func mergeAgentsMultiRepo(manifestPath string, waveNum int, manifest *IMPLManife
 					Success: true,
 					Error:   "already merged (skipped)",
 				}
-				result.Merges = append(result.Merges, status)
+				data.Merges = append(data.Merges, status)
 				continue
 			}
 
@@ -467,9 +485,16 @@ func mergeAgentsMultiRepo(manifestPath string, waveNum int, manifest *IMPLManife
 				// Merge failed - record error and stop
 				status.Success = false
 				status.Error = fmt.Sprintf("%s (repo: %s)", err.Error(), repoDir)
-				result.Merges = append(result.Merges, status)
-				result.Success = false
-				return result, nil
+				data.Merges = append(data.Merges, status)
+				data.Success = false // Set for backward compat
+				// Return partial result with failures
+				return result.NewPartial(data, []result.StructuredError{{
+					Code:     "MERGE_CONFLICT",
+					Message:  fmt.Sprintf("merge failed for agent %s in repo %s: %s", agent.ID, repoDir, err.Error()),
+					Severity: "error",
+					Field:    "agent",
+					Context:  map[string]string{"agent": agent.ID, "branch": status.Branch, "repo": repoDir},
+				}}), nil
 			}
 
 			// Get merge commit SHA
@@ -491,17 +516,17 @@ func mergeAgentsMultiRepo(manifestPath string, waveNum int, manifest *IMPLManife
 			if _, err := UpdateStatus(manifestPath, waveNum, agent.ID, "complete"); err == nil {
 				status.StatusUpdated = true
 			}
-			result.Merges = append(result.Merges, status)
+			data.Merges = append(data.Merges, status)
 		}
 	}
 
 	// All merges succeeded - update state
 	nextState := determineNextState(manifest, waveNum)
 	if err := updateManifestState(manifestPath, nextState); err == nil {
-		result.NextState = nextState
+		data.NextState = nextState
 	}
 
-	return result, nil
+	return result.NewSuccess(data), nil
 }
 
 // determineNextState calculates the next protocol state after a successful wave merge.
