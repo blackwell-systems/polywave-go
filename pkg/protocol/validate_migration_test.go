@@ -91,7 +91,7 @@ func TestValidateMigrationBoundaries_Nil(t *testing.T) {
 }
 
 func TestDiagnoseMigrationFailure_MatchesPattern(t *testing.T) {
-	result := &BaselineResult{
+	result := &BaselineData{
 		Passed: false,
 		GateResults: []GateResult{
 			{
@@ -107,7 +107,7 @@ func TestDiagnoseMigrationFailure_MatchesPattern(t *testing.T) {
 }
 
 func TestDiagnoseMigrationFailure_NoMatch(t *testing.T) {
-	result := &BaselineResult{
+	result := &BaselineData{
 		Passed: false,
 		GateResults: []GateResult{
 			{
@@ -123,7 +123,7 @@ func TestDiagnoseMigrationFailure_NoMatch(t *testing.T) {
 }
 
 func TestDiagnoseMigrationFailure_Passed(t *testing.T) {
-	result := &BaselineResult{Passed: true}
+	result := &BaselineData{Passed: true}
 	suggestion := DiagnoseMigrationFailure(result)
 	if suggestion != "" {
 		t.Errorf("expected empty string for passed result, got %q", suggestion)

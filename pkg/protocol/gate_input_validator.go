@@ -1,21 +1,27 @@
 package protocol
 
 import (
+	"fmt"
 	"sort"
 	"strings"
 
 	"github.com/blackwell-systems/scout-and-wave-go/internal/git"
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
 )
 
-// GateInputValidationResult captures whether the reported files in completion
+// GateInputValidationData captures whether the reported files in completion
 // reports match the actual git-diff files for each agent in the wave.
-type GateInputValidationResult struct {
+type GateInputValidationData struct {
 	Valid             bool     `json:"valid"`
 	ReportedFiles     []string `json:"reported_files"`
 	ActualFiles       []string `json:"actual_files"`
 	MissingFromReport []string `json:"missing_from_report,omitempty"`
 	ExtraInReport     []string `json:"extra_in_report,omitempty"`
 }
+
+// GateInputValidationResult is a backward-compatible alias for GateInputValidationData.
+// Deprecated: Use GateInputValidationData directly.
+type GateInputValidationResult = GateInputValidationData
 
 // ValidateGateInputs verifies that the set of files reported by each agent's
 // completion report matches the files actually changed in their worktree branch
@@ -27,8 +33,8 @@ type GateInputValidationResult struct {
 //   - Actual files are obtained via `git diff --name-only <baseCommit>..<branch>`.
 //   - If wave.BaseCommit is set it is used as the base; otherwise HEAD is used.
 //
-// Returns an error if waveNum is not found in the manifest.
-func ValidateGateInputs(manifest *IMPLManifest, waveNum int, repoDir string) (*GateInputValidationResult, error) {
+// Returns a fatal result if waveNum is not found in the manifest.
+func ValidateGateInputs(manifest *IMPLManifest, waveNum int, repoDir string) result.Result[*GateInputValidationData] {
 	// Find target wave
 	var targetWave *Wave
 	for i := range manifest.Waves {
@@ -38,7 +44,11 @@ func ValidateGateInputs(manifest *IMPLManifest, waveNum int, repoDir string) (*G
 		}
 	}
 	if targetWave == nil {
-		return nil, &waveNotFoundError{waveNum: waveNum}
+		return result.NewFailure[*GateInputValidationData]([]result.StructuredError{{
+			Code:     "E_GATE_INPUT",
+			Message:  fmt.Sprintf("wave %d not found in manifest", waveNum),
+			Severity: "fatal",
+		}})
 	}
 
 	reportedSet := map[string]struct{}{}
@@ -104,19 +114,19 @@ func ValidateGateInputs(manifest *IMPLManifest, waveNum int, repoDir string) (*G
 
 	valid := len(missingFromReport) == 0 && len(extraInReport) == 0
 
-	result := &GateInputValidationResult{
+	data := &GateInputValidationData{
 		Valid:         valid,
 		ReportedFiles: reported,
 		ActualFiles:   actual,
 	}
 	if len(missingFromReport) > 0 {
-		result.MissingFromReport = missingFromReport
+		data.MissingFromReport = missingFromReport
 	}
 	if len(extraInReport) > 0 {
-		result.ExtraInReport = extraInReport
+		data.ExtraInReport = extraInReport
 	}
 
-	return result, nil
+	return result.NewSuccess(data)
 }
 
 // setToSortedSlice converts a string set (map[string]struct{}) to a sorted
