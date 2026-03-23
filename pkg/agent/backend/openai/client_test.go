@@ -140,6 +140,26 @@ func TestRunStreaming_CallsOnChunk(t *testing.T) {
 	}
 }
 
+// TestNew_CfgAPIKey verifies that New() uses cfg.APIKey when provided.
+func TestNew_CfgAPIKey(t *testing.T) {
+	var gotAuth string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotAuth = r.Header.Get("Authorization")
+		w.Header().Set("Content-Type", "application/json")
+		w.Write(mockChatResponse("stop", "ok", nil))
+	}))
+	defer srv.Close()
+
+	client := New(backend.Config{APIKey: "cfg-key"}).WithBaseURL(srv.URL)
+	_, err := client.Run(context.Background(), "", "ping", t.TempDir())
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if gotAuth != "Bearer cfg-key" {
+		t.Errorf("expected Authorization %q, got %q", "Bearer cfg-key", gotAuth)
+	}
+}
+
 // TestNew_APIKeyFromEnv verifies that OPENAI_API_KEY is used when cfg.APIKey is not set.
 func TestNew_APIKeyFromEnv(t *testing.T) {
 	t.Setenv("OPENAI_API_KEY", "env-test-key")

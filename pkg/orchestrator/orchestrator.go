@@ -189,9 +189,28 @@ type BackendConfig struct {
 	MaxTokens int
 	MaxTurns  int
 
+	// AnthropicKey is the Anthropic API key sourced from config.
+	// Falls back to APIKey, then ANTHROPIC_API_KEY env var if empty.
+	AnthropicKey string
+
 	// OpenAIKey is the API key for the OpenAI-compatible backend.
 	// Falls back to OPENAI_API_KEY env var if empty.
 	OpenAIKey string
+
+	// BedrockRegion is the AWS region for Bedrock (e.g. "us-east-1").
+	// If empty, uses AWS SDK default chain.
+	BedrockRegion string
+
+	// BedrockAccessKeyID is the AWS access key for Bedrock.
+	// If empty, uses AWS SDK default credential chain.
+	BedrockAccessKeyID string
+
+	// BedrockSecretAccessKey is the AWS secret key for Bedrock.
+	// If empty, uses AWS SDK default credential chain.
+	BedrockSecretAccessKey string
+
+	// BedrockSessionToken is an optional AWS session token for temporary credentials.
+	BedrockSessionToken string
 
 	// BaseURL is an optional endpoint override used when Kind == "openai"
 	// or when the provider prefix is "openai".
@@ -328,13 +347,21 @@ var newBackendFunc = func(cfg BackendConfig) (backend.Backend, error) {
 		// Uses AWS credentials from default chain (~/.aws/credentials, env vars, IAM role).
 		// Use cli: prefix if you want to shell out to the claude CLI command instead.
 		fullID := expandBedrockModelID(bareModel)
-		return bedrockbackend.New(backend.Config{
+		bcfgBedrock := backend.Config{
 			Model:     fullID,
 			MaxTokens: cfg.MaxTokens,
 			MaxTurns:  cfg.MaxTurns,
-		}), nil
+		}
+		// Bedrock credential fields (BedrockRegion, BedrockAccessKeyID,
+		// BedrockSecretAccessKey, BedrockSessionToken) are wired through
+		// once Agent A adds them to backend.Config. The BackendConfig
+		// fields are ready for that integration.
+		return bedrockbackend.New(bcfgBedrock), nil
 	case "anthropic":
-		apiKey := cfg.APIKey
+		apiKey := cfg.AnthropicKey
+		if apiKey == "" {
+			apiKey = cfg.APIKey
+		}
 		if apiKey == "" {
 			apiKey = os.Getenv("ANTHROPIC_API_KEY")
 		}
@@ -344,7 +371,10 @@ var newBackendFunc = func(cfg BackendConfig) (backend.Backend, error) {
 			MaxTurns:  cfg.MaxTurns,
 		}), nil
 	case "api":
-		apiKey := cfg.APIKey
+		apiKey := cfg.AnthropicKey
+		if apiKey == "" {
+			apiKey = cfg.APIKey
+		}
 		if apiKey == "" {
 			apiKey = os.Getenv("ANTHROPIC_API_KEY")
 		}
@@ -358,7 +388,10 @@ var newBackendFunc = func(cfg BackendConfig) (backend.Backend, error) {
 			BinaryPath: binaryPath,
 		}), nil
 	case "auto", "":
-		apiKey := cfg.APIKey
+		apiKey := cfg.AnthropicKey
+		if apiKey == "" {
+			apiKey = cfg.APIKey
+		}
 		if apiKey == "" {
 			apiKey = os.Getenv("ANTHROPIC_API_KEY")
 		}
