@@ -120,9 +120,9 @@ func TestRunWaveFull_Success(t *testing.T) {
 	)
 
 	// Create worktrees manually before calling RunWaveFull (simulating Step 1)
-	_, err := protocol.CreateWorktrees(manifestPath, 1, repoDir)
-	if err != nil {
-		t.Fatalf("failed to create worktrees: %v", err)
+	wtRes := protocol.CreateWorktrees(manifestPath, 1, repoDir)
+	if !wtRes.IsSuccess() {
+		t.Fatalf("failed to create worktrees: %v", wtRes.Errors)
 	}
 
 	// Simulate agent work by creating commits on each agent's branch
@@ -135,18 +135,18 @@ func TestRunWaveFull_Success(t *testing.T) {
 	// but will fail on first call because it tries to create worktrees that exist.
 	// For this test, we verify the failure path when worktrees already exist.
 
-	_, err = RunWaveFull(ctx, RunWaveFullOpts{
+	_, runErr := RunWaveFull(ctx, RunWaveFullOpts{
 		ManifestPath: manifestPath,
 		RepoPath:     repoDir,
 		WaveNum:      1,
 	})
 
 	// Expected: function will fail because worktrees already exist
-	if err == nil {
+	if runErr == nil {
 		t.Fatal("expected error when worktrees already exist, got nil")
 	}
 
-	t.Logf("Got expected error when worktrees exist: %v", err)
+	t.Logf("Got expected error when worktrees exist: %v", runErr)
 
 	// Clean up for testing error paths below
 	protocol.Cleanup(manifestPath, 1, repoDir)
@@ -223,7 +223,16 @@ func TestRunWaveFull_MergeFailure(t *testing.T) {
 	if result.CommitsVerified == nil {
 		t.Error("expected CommitsVerified to be populated")
 	}
-	if result.CommitsVerified != nil && result.CommitsVerified.AllValid {
-		t.Error("expected AllValid to be false")
+	if result.CommitsVerified != nil {
+		allValid := true
+		for _, agent := range result.CommitsVerified.Agents {
+			if !agent.HasCommits {
+				allValid = false
+				break
+			}
+		}
+		if allValid {
+			t.Error("expected some agents to have no commits")
+		}
 	}
 }

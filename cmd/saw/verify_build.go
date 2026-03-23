@@ -16,10 +16,11 @@ func newVerifyBuildCmd() *cobra.Command {
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			manifestPath := args[0]
-			result, err := protocol.VerifyBuild(manifestPath, repoDir)
-			if err != nil {
-				return fmt.Errorf("verify-build: %w", err)
+			res := protocol.VerifyBuild(manifestPath, repoDir)
+			if !res.IsSuccess() {
+				return fmt.Errorf("verify-build: %v", res.Errors)
 			}
+			result := res.GetData()
 
 			out, _ := json.MarshalIndent(result, "", "  ")
 			fmt.Println(string(out))

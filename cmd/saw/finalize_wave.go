@@ -124,12 +124,21 @@ pattern matching (H7) and appends diagnosis to the output.`,
 
 			// Step 1: VerifyCommits (E7 check) - run per repo
 			for repoKey, repoPath := range repos {
-				verifyResult, err := protocol.VerifyCommits(manifestPath, waveNum, repoPath)
-				if err != nil {
-					return fmt.Errorf("finalize-wave: verify-commits failed in %s: %w", repoKey, err)
+				verifyRes := protocol.VerifyCommits(manifestPath, waveNum, repoPath)
+				if !verifyRes.IsSuccess() {
+					return fmt.Errorf("finalize-wave: verify-commits failed in %s: %v", repoKey, verifyRes.Errors)
 				}
-				result.VerifyCommits[repoKey] = verifyResult
-				if !verifyResult.AllValid {
+				verifyResult := verifyRes.GetData()
+				result.VerifyCommits[repoKey] = &verifyResult
+				// Check if all agents have commits
+				allValid := true
+				for _, agent := range verifyResult.Agents {
+					if !agent.HasCommits {
+						allValid = false
+						break
+					}
+				}
+				if !allValid {
 					// Stop immediately if any agent has no commits (I5 violation)
 					out, _ := json.MarshalIndent(result, "", "  ")
 					fmt.Println(string(out))
@@ -199,21 +208,23 @@ pattern matching (H7) and appends diagnosis to the output.`,
 			}
 
 			if len(changedFiles) > 0 {
-				stubResult, err := protocol.ScanStubs(changedFiles)
-				if err != nil {
-					return fmt.Errorf("finalize-wave: scan-stubs failed: %w", err)
+				stubRes := protocol.ScanStubs(changedFiles)
+				if !stubRes.IsSuccess() {
+					return fmt.Errorf("finalize-wave: scan-stubs failed: %v", stubRes.Errors)
 				}
-				result.StubReport = stubResult
+				stubResult := stubRes.GetData()
+				result.StubReport = &stubResult
 			}
 
 			// Step 3: RunPreMergeGates (E21) — structural checks that don't require merged state
 			for repoKey, repoPath := range repos {
 				stateDir := filepath.Join(repoPath, ".saw-state")
 				cache := gatecache.New(stateDir, gatecache.DefaultTTL)
-				gateResults, err := protocol.RunPreMergeGates(manifest, waveNum, repoPath, cache)
-				if err != nil {
-					return fmt.Errorf("finalize-wave: run-pre-merge-gates failed in %s: %w", repoKey, err)
+				gateRes := protocol.RunPreMergeGates(manifest, waveNum, repoPath, cache)
+				if !gateRes.IsSuccess() {
+					return fmt.Errorf("finalize-wave: run-pre-merge-gates failed in %s: %v", repoKey, gateRes.Errors)
 				}
+				gateResults := gateRes.GetData().Gates
 				result.GateResults[repoKey] = gateResults
 
 				for _, gate := range gateResults {
@@ -252,8 +263,9 @@ pattern matching (H7) and appends diagnosis to the output.`,
 							// Gate was fixed by the retry agent; re-run gates to confirm.
 							// Invalidate cache so re-run gets fresh results.
 							cache = gatecache.New(stateDir, gatecache.DefaultTTL)
-							rerunResults, rerunErr := protocol.RunPreMergeGates(manifest, waveNum, repoPath, cache)
-							if rerunErr == nil {
+							rerunRes := protocol.RunPreMergeGates(manifest, waveNum, repoPath, cache)
+							if rerunRes.IsSuccess() {
+								rerunResults := rerunRes.GetData().Gates
 								result.GateResults[repoKey] = rerunResults
 								// Check if the gate passes now.
 								stillFailing := false
@@ -328,11 +340,15 @@ pattern matching (H7) and appends diagnosis to the output.`,
 				goto postMerge
 			}
 			for repoKey, repoPath := range repos {
-				mergeResult, err := protocol.MergeAgents(manifestPath, waveNum, repoPath, mergeTarget)
+				mergeRes, err := protocol.MergeAgents(manifestPath, waveNum, repoPath, mergeTarget)
 				if err != nil {
 					return fmt.Errorf("finalize-wave: merge-agents failed in %s: %w", repoKey, err)
 				}
-				result.MergeResult[repoKey] = mergeResult
+				if !mergeRes.IsSuccess() {
+					return fmt.Errorf("finalize-wave: merge-agents failed in %s: %v", repoKey, mergeRes.Errors)
+				}
+				mergeResult := mergeRes.GetData()
+				result.MergeResult[repoKey] = &mergeResult
 				if !mergeResult.Success {
 					// Merge conflict - stop here, do NOT run VerifyBuild or Cleanup
 					out, _ := json.MarshalIndent(result, "", "  ")
@@ -344,11 +360,12 @@ pattern matching (H7) and appends diagnosis to the output.`,
 
 			// Step 5: VerifyBuild (post-merge tests) - run per repo
 			for repoKey, repoPath := range repos {
-				verifyBuildResult, err := protocol.VerifyBuild(manifestPath, repoPath)
-				if err != nil {
-					return fmt.Errorf("finalize-wave: verify-build failed in %s: %w", repoKey, err)
+				verifyBuildRes := protocol.VerifyBuild(manifestPath, repoPath)
+				if !verifyBuildRes.IsSuccess() {
+					return fmt.Errorf("finalize-wave: verify-build failed in %s: %v", repoKey, verifyBuildRes.Errors)
 				}
-				result.VerifyBuildResult[repoKey] = verifyBuildResult
+				verifyBuildResult := verifyBuildRes.GetData()
+				result.VerifyBuildResult[repoKey] = &verifyBuildResult
 				if !verifyBuildResult.TestPassed || !verifyBuildResult.LintPassed {
 					// I1: Auto-diagnose build failure using H7
 					language := inferLanguageFromCommand(manifest.TestCommand)
@@ -372,10 +389,11 @@ pattern matching (H7) and appends diagnosis to the output.`,
 
 			// Step 5.5: RunPostMergeGates (E21) — content/integration checks on merged state
 			for repoKey, repoPath := range repos {
-				postGateResults, err := protocol.RunPostMergeGates(manifest, waveNum, repoPath)
-				if err != nil {
-					return fmt.Errorf("finalize-wave: run-post-merge-gates failed in %s: %w", repoKey, err)
+				postGateRes := protocol.RunPostMergeGates(manifest, waveNum, repoPath)
+				if !postGateRes.IsSuccess() {
+					return fmt.Errorf("finalize-wave: run-post-merge-gates failed in %s: %v", repoKey, postGateRes.Errors)
 				}
+				postGateResults := postGateRes.GetData().Gates
 				// Merge post-merge results into GateResults for this repo
 				result.GateResults[repoKey] = append(result.GateResults[repoKey], postGateResults...)
 

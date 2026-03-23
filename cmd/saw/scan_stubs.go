@@ -17,17 +17,19 @@ func newScanStubsCmd() *cobra.Command {
 		Short: "Scan files for stub/TODO patterns (E20)",
 		Args:  cobra.MinimumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			result, err := protocol.ScanStubs(args)
-			if err != nil {
-				return fmt.Errorf("scan-stubs: %w", err)
+			res := protocol.ScanStubs(args)
+			if !res.IsSuccess() {
+				return fmt.Errorf("scan-stubs: %v", res.Errors)
 			}
 
 			if appendImpl != "" {
 				waveKey := fmt.Sprintf("wave%d", waveNum)
-				if err := protocol.AppendStubReport(appendImpl, waveKey, result); err != nil {
+				if err := protocol.AppendStubReport(appendImpl, waveKey, res); err != nil {
 					return fmt.Errorf("scan-stubs: %w", err)
 				}
 			}
+
+			result := res.GetData()
 
 			out, _ := json.MarshalIndent(result, "", "  ")
 			fmt.Println(string(out))

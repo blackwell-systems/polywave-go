@@ -309,10 +309,11 @@ completion_reports:
 	// are found, then verify the FinalizeWaveOpts field is respected.
 
 	// First confirm stubs are actually detected in our file
-	stubResult, err := protocol.ScanStubs([]string{filepath.Join(pkgDir, "foo.go")})
-	if err != nil {
-		t.Fatalf("ScanStubs returned error: %v", err)
+	stubRes := protocol.ScanStubs([]string{filepath.Join(pkgDir, "foo.go")})
+	if !stubRes.IsSuccess() {
+		t.Fatalf("ScanStubs returned error: %v", stubRes.Errors)
 	}
+	stubResult := stubRes.GetData()
 	if len(stubResult.Hits) == 0 {
 		t.Fatal("expected stubs to be detected in foo.go (has TODO marker)")
 	}

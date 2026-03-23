@@ -81,12 +81,21 @@ func FinalizeWave(ctx context.Context, opts FinalizeWaveOpts) (*FinalizeWaveResu
 	// Step 1: VerifyCommits (I5) — C4: VerifyCommits runs BEFORE MergeAgents and is fatal.
 	// Agents with no commits are a protocol violation and must block the merge entirely.
 	// MergeResult will be nil in FinalizeWaveResult whenever this step fails.
-	verifyResult, err := protocol.VerifyCommits(opts.IMPLPath, opts.WaveNum, opts.RepoPath)
-	if err != nil {
-		return result, fmt.Errorf("engine.FinalizeWave: verify-commits: %w", err)
+	verifyRes := protocol.VerifyCommits(opts.IMPLPath, opts.WaveNum, opts.RepoPath)
+	if !verifyRes.IsSuccess() {
+		return result, fmt.Errorf("engine.FinalizeWave: verify-commits: %v", verifyRes.Errors)
 	}
-	result.VerifyCommits = verifyResult
-	if !verifyResult.AllValid {
+	verifyResult := verifyRes.GetData()
+	result.VerifyCommits = &verifyResult
+	// Check if all agents have commits
+	allValid := true
+	for _, agent := range verifyResult.Agents {
+		if !agent.HasCommits {
+			allValid = false
+			break
+		}
+	}
+	if !allValid {
 		return result, fmt.Errorf("engine.FinalizeWave: verify-commits found agents with no commits")
 	}
 
@@ -101,15 +110,16 @@ func FinalizeWave(ctx context.Context, opts FinalizeWaveOpts) (*FinalizeWaveResu
 		}
 	}
 	if len(changedFiles) > 0 {
-		stubResult, err := protocol.ScanStubs(changedFiles)
-		if err != nil {
+		stubRes := protocol.ScanStubs(changedFiles)
+		if !stubRes.IsSuccess() {
 			// Non-fatal: log but continue
-			fmt.Fprintf(os.Stderr, "engine.FinalizeWave: scan-stubs: %v\n", err)
+			fmt.Fprintf(os.Stderr, "engine.FinalizeWave: scan-stubs: %v\n", stubRes.Errors)
 		} else {
-			result.StubReport = stubResult
+			stubData := stubRes.GetData()
+			result.StubReport = &stubData
 			// M3 (E20): When RequireNoStubs is true, any stubs block the pipeline.
-			if opts.RequireNoStubs && len(stubResult.Hits) > 0 {
-				return result, fmt.Errorf("engine.FinalizeWave: %d stub(s) detected in changed files (RequireNoStubs=true)", len(stubResult.Hits))
+			if opts.RequireNoStubs && len(stubData.Hits) > 0 {
+				return result, fmt.Errorf("engine.FinalizeWave: %d stub(s) detected in changed files (RequireNoStubs=true)", len(stubData.Hits))
 			}
 		}
 	}
@@ -117,10 +127,11 @@ func FinalizeWave(ctx context.Context, opts FinalizeWaveOpts) (*FinalizeWaveResu
 	// Step 3: RunGates (E21) — with caching support
 	stateDir := filepath.Join(opts.RepoPath, ".saw-state")
 	cache := gatecache.New(stateDir, 5*time.Minute)
-	gateResults, err := protocol.RunGatesWithCache(manifest, opts.WaveNum, opts.RepoPath, cache)
-	if err != nil {
-		return result, fmt.Errorf("engine.FinalizeWave: run-gates: %w", err)
+	gateRes := protocol.RunGatesWithCache(manifest, opts.WaveNum, opts.RepoPath, cache)
+	if !gateRes.IsSuccess() {
+		return result, fmt.Errorf("engine.FinalizeWave: run-gates: %v", gateRes.Errors)
 	}
+	gateResults := gateRes.GetData().Gates
 	result.GateResults = gateResults
 	for _, gate := range gateResults {
 		opts.ObsEmitter.Emit(ctx, observability.NewGateExecutedEvent(manifest.FeatureSlug, opts.WaveNum, gate.Type, gate.Passed))
@@ -147,11 +158,15 @@ func FinalizeWave(ctx context.Context, opts FinalizeWaveOpts) (*FinalizeWaveResu
 	}
 
 	// Step 4: MergeAgents
-	mergeResult, err := protocol.MergeAgents(opts.IMPLPath, opts.WaveNum, opts.RepoPath, opts.MergeTarget)
+	mergeRes, err := protocol.MergeAgents(opts.IMPLPath, opts.WaveNum, opts.RepoPath, opts.MergeTarget)
 	if err != nil {
 		return result, fmt.Errorf("engine.FinalizeWave: merge-agents: %w", err)
 	}
-	result.MergeResult = mergeResult
+	if !mergeRes.IsSuccess() {
+		return result, fmt.Errorf("engine.FinalizeWave: merge-agents: %v", mergeRes.Errors)
+	}
+	mergeResult := mergeRes.GetData()
+	result.MergeResult = &mergeResult
 	if !mergeResult.Success {
 		opts.ObsEmitter.Emit(ctx, observability.NewWaveFailedEvent(manifest.FeatureSlug, opts.WaveNum, "merge-agents encountered conflicts"))
 		return result, fmt.Errorf("engine.FinalizeWave: merge-agents encountered conflicts")
@@ -166,11 +181,12 @@ func FinalizeWave(ctx context.Context, opts FinalizeWaveOpts) (*FinalizeWaveResu
 	}
 
 	// Step 5: VerifyBuild
-	verifyBuildResult, err := protocol.VerifyBuild(opts.IMPLPath, opts.RepoPath)
-	if err != nil {
-		return result, fmt.Errorf("engine.FinalizeWave: verify-build: %w", err)
+	verifyBuildRes := protocol.VerifyBuild(opts.IMPLPath, opts.RepoPath)
+	if !verifyBuildRes.IsSuccess() {
+		return result, fmt.Errorf("engine.FinalizeWave: verify-build: %v", verifyBuildRes.Errors)
 	}
-	result.VerifyBuild = verifyBuildResult
+	verifyBuildResult := verifyBuildRes.GetData()
+	result.VerifyBuild = &verifyBuildResult
 	result.BuildPassed = verifyBuildResult.TestPassed && verifyBuildResult.LintPassed
 
 	// Step 6: Cleanup — runs after merge regardless of build result.

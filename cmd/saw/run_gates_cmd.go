@@ -29,14 +29,19 @@ func newRunGatesCmd() *cobra.Command {
 
 			var results []protocol.GateResult
 			if noCache {
-				results, err = protocol.RunGates(m, waveNum, repoDir)
+				res := protocol.RunGates(m, waveNum, repoDir)
+				if !res.IsSuccess() {
+					return fmt.Errorf("run-gates: %v", res.Errors)
+				}
+				results = res.GetData().Gates
 			} else {
 				stateDir := filepath.Join(repoDir, ".saw-state")
 				cache := gatecache.New(stateDir, gatecache.DefaultTTL)
-				results, err = protocol.RunGatesWithCache(m, waveNum, repoDir, cache)
-			}
-			if err != nil {
-				return fmt.Errorf("run-gates: %w", err)
+				res := protocol.RunGatesWithCache(m, waveNum, repoDir, cache)
+				if !res.IsSuccess() {
+					return fmt.Errorf("run-gates: %v", res.Errors)
+				}
+				results = res.GetData().Gates
 			}
 
 			out, _ := json.MarshalIndent(results, "", "  ")

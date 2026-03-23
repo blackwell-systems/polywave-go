@@ -18,15 +18,24 @@ func newVerifyCommitsCmd() *cobra.Command {
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			manifestPath := args[0]
-			result, err := protocol.VerifyCommits(manifestPath, waveNum, repoDir)
-			if err != nil {
-				return fmt.Errorf("verify-commits: %w", err)
+			res := protocol.VerifyCommits(manifestPath, waveNum, repoDir)
+			if !res.IsSuccess() {
+				return fmt.Errorf("verify-commits: %v", res.Errors)
 			}
+			result := res.GetData()
 
 			out, _ := json.MarshalIndent(result, "", "  ")
 			fmt.Println(string(out))
 
-			if !result.AllValid {
+			// Check if all agents have commits
+			allValid := true
+			for _, agent := range result.Agents {
+				if !agent.HasCommits {
+					allValid = false
+					break
+				}
+			}
+			if !allValid {
 				os.Exit(1)
 			}
 			return nil

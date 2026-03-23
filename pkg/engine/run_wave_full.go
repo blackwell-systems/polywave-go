@@ -41,42 +41,57 @@ func RunWaveFull(ctx context.Context, opts RunWaveFullOpts) (*RunWaveFullResult,
 	result := &RunWaveFullResult{Wave: opts.WaveNum}
 
 	// Step 1: Create worktrees for all agents in the wave
-	wt, err := protocol.CreateWorktrees(opts.ManifestPath, opts.WaveNum, opts.RepoPath)
-	if err != nil {
-		return result, fmt.Errorf("create worktrees: %w", err)
+	wtRes := protocol.CreateWorktrees(opts.ManifestPath, opts.WaveNum, opts.RepoPath)
+	if !wtRes.IsSuccess() {
+		return result, fmt.Errorf("create worktrees: %v", wtRes.Errors)
 	}
-	result.WorktreesCreated = wt
+	wt := wtRes.GetData()
+	result.WorktreesCreated = &wt
 
 	// Step 2: Agent execution happens externally (orchestrator launches agents)
 	// This function handles pre/post agent work only.
 	// The caller is responsible for launching agents between CreateWorktrees and VerifyCommits.
 
 	// Step 3: Verify commits from all agents
-	vc, err := protocol.VerifyCommits(opts.ManifestPath, opts.WaveNum, opts.RepoPath)
-	if err != nil {
-		return result, fmt.Errorf("verify commits: %w", err)
+	vcRes := protocol.VerifyCommits(opts.ManifestPath, opts.WaveNum, opts.RepoPath)
+	if !vcRes.IsSuccess() {
+		return result, fmt.Errorf("verify commits: %v", vcRes.Errors)
 	}
-	result.CommitsVerified = vc
-	if !vc.AllValid {
+	vc := vcRes.GetData()
+	result.CommitsVerified = &vc
+	// Check if all agents have commits
+	allValid := true
+	for _, agent := range vc.Agents {
+		if !agent.HasCommits {
+			allValid = false
+			break
+		}
+	}
+	if !allValid {
 		return result, fmt.Errorf("commit verification failed: not all agents have commits")
 	}
 
 	// Step 4: Merge agent branches into main
-	ma, err := protocol.MergeAgents(opts.ManifestPath, opts.WaveNum, opts.RepoPath, opts.MergeTarget)
+	maRes, err := protocol.MergeAgents(opts.ManifestPath, opts.WaveNum, opts.RepoPath, opts.MergeTarget)
 	if err != nil {
 		return result, fmt.Errorf("merge agents: %w", err)
 	}
-	result.Merged = ma
+	if !maRes.IsSuccess() {
+		return result, fmt.Errorf("merge agents: %v", maRes.Errors)
+	}
+	ma := maRes.GetData()
+	result.Merged = &ma
 	if !ma.Success {
 		return result, fmt.Errorf("merge failed")
 	}
 
 	// Step 5: Verify build (run test and lint commands)
-	bv, err := protocol.VerifyBuild(opts.ManifestPath, opts.RepoPath)
-	if err != nil {
-		return result, fmt.Errorf("verify build: %w", err)
+	bvRes := protocol.VerifyBuild(opts.ManifestPath, opts.RepoPath)
+	if !bvRes.IsSuccess() {
+		return result, fmt.Errorf("verify build: %v", bvRes.Errors)
 	}
-	result.BuildVerified = bv
+	bv := bvRes.GetData()
+	result.BuildVerified = &bv
 
 	// Step 6: Cleanup worktrees and branches
 	cl, err := protocol.Cleanup(opts.ManifestPath, opts.WaveNum, opts.RepoPath)

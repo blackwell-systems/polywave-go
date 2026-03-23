@@ -328,10 +328,11 @@ waves that execute on the main branch.`,
 			fmt.Fprintf(os.Stderr, "prepare-wave: pre-wave gate passed ✓\n")
 
 			// Step 1: Create worktrees (records base commit, must happen first)
-			worktreeResult, err := protocol.CreateWorktrees(manifestPath, waveNum, projectRoot)
-			if err != nil {
-				return fmt.Errorf("failed to create worktrees: %w", err)
+			wtRes := protocol.CreateWorktrees(manifestPath, waveNum, projectRoot)
+			if !wtRes.IsSuccess() {
+				return fmt.Errorf("failed to create worktrees: %v", wtRes.Errors)
 			}
+			worktreeResult := wtRes.GetData()
 
 			// Step 1.5: Verify pre-commit hooks (H10 - Layer 0 isolation enforcement)
 			for _, wtInfo := range worktreeResult.Worktrees {

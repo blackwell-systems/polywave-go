@@ -18,11 +18,15 @@ func newMergeAgentsCmd() *cobra.Command {
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			manifestPath := args[0]
-			result, err := protocol.MergeAgents(manifestPath, waveNum, repoDir, "")
+			res, err := protocol.MergeAgents(manifestPath, waveNum, repoDir, "")
 			if err != nil {
 				return fmt.Errorf("merge-agents: %w", err)
 			}
+			if !res.IsSuccess() {
+				return fmt.Errorf("merge-agents: %v", res.Errors)
+			}
 
+			result := res.GetData()
 			out, _ := json.MarshalIndent(result, "", "  ")
 			fmt.Println(string(out))
 

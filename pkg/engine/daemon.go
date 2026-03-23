@@ -60,7 +60,12 @@ var daemonMarkIMPLCompleteFunc = func(ctx context.Context, opts MarkIMPLComplete
 
 // daemonCreateWorktreesFunc is the function called to create worktrees before a wave.
 var daemonCreateWorktreesFunc = func(manifestPath string, waveNum int, repoDir string) (*protocol.CreateWorktreesResult, error) {
-	return protocol.CreateWorktrees(manifestPath, waveNum, repoDir)
+	res := protocol.CreateWorktrees(manifestPath, waveNum, repoDir)
+	if !res.IsSuccess() {
+		return nil, fmt.Errorf("create worktrees failed: %v", res.Errors)
+	}
+	data := res.GetData()
+	return &data, nil
 }
 
 // daemonUpdateQueueStatusFunc is the function called to update a queue item status.

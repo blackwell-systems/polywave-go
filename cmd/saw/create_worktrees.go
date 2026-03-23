@@ -17,10 +17,11 @@ func newCreateWorktreesCmd() *cobra.Command {
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			manifestPath := args[0]
-			result, err := protocol.CreateWorktrees(manifestPath, waveNum, repoDir)
-			if err != nil {
-				return fmt.Errorf("create-worktrees: %w", err)
+			res := protocol.CreateWorktrees(manifestPath, waveNum, repoDir)
+			if !res.IsSuccess() {
+				return fmt.Errorf("create-worktrees: %v", res.Errors)
 			}
+			result := res.GetData()
 			out, _ := json.MarshalIndent(result, "", "  ")
 			fmt.Println(string(out))
 			return nil

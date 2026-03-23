@@ -360,11 +360,13 @@ func StartWave(ctx context.Context, opts RunWaveOpts, onEvent func(Event)) error
 		waveNum := wave.Number
 
 		// Pre-create worktrees via protocol (handles multi-repo from file ownership).
-		wtResult, wtErr := protocol.CreateWorktrees(opts.IMPLPath, waveNum, opts.RepoPath)
-		if wtErr != nil {
-			publish("run_failed", map[string]string{"error": wtErr.Error()})
-			return fmt.Errorf("engine.StartWave: CreateWorktrees wave %d: %w", waveNum, wtErr)
+		wtRes := protocol.CreateWorktrees(opts.IMPLPath, waveNum, opts.RepoPath)
+		if !wtRes.IsSuccess() {
+			errMsg := fmt.Sprintf("%v", wtRes.Errors)
+			publish("run_failed", map[string]string{"error": errMsg})
+			return fmt.Errorf("engine.StartWave: CreateWorktrees wave %d: %v", waveNum, wtRes.Errors)
 		}
+		wtResult := wtRes.GetData()
 		// Pass pre-computed worktree paths to orchestrator so launchAgent
 		// uses the correct (potentially cross-repo) paths.
 		wtPaths := make(map[string]string, len(wtResult.Worktrees))
@@ -700,11 +702,12 @@ func RunSingleWave(ctx context.Context, opts RunWaveOpts, waveNum int, onEvent f
 	// file_ownership repo: field and creates worktrees in sibling repos when
 	// needed. Feed the resulting paths into the orchestrator so launchAgent
 	// uses the correct worktree for each agent.
-	wtResult, err := protocol.CreateWorktrees(opts.IMPLPath, waveNum, opts.RepoPath)
-	if err != nil {
-		return fmt.Errorf("engine.RunSingleWave: create worktrees: %w", err)
+	wtRes := protocol.CreateWorktrees(opts.IMPLPath, waveNum, opts.RepoPath)
+	if !wtRes.IsSuccess() {
+		return fmt.Errorf("engine.RunSingleWave: create worktrees: %v", wtRes.Errors)
 	}
-	if wtResult != nil && len(wtResult.Worktrees) > 0 {
+	wtResult := wtRes.GetData()
+	if len(wtResult.Worktrees) > 0 {
 		paths := make(map[string]string, len(wtResult.Worktrees))
 		for _, wt := range wtResult.Worktrees {
 			paths[wt.Agent] = wt.Path
