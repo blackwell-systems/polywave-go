@@ -52,35 +52,6 @@ func loadSAWConfigRepos(configPath string) []protocol.RepoEntry {
 	return cfg.Repos
 }
 
-// resolveAgentRepoRoot returns the absolute repo root for agentID.
-// It looks up the agent's repo name from fileOwnership, then resolves
-// the path from the repos registry. Falls back to projectRoot if the
-// agent has no repo field or the repo is not found in the registry.
-func resolveAgentRepoRoot(
-	fileOwnership []protocol.FileOwnership,
-	agentID string,
-	projectRoot string,
-	repos []protocol.RepoEntry,
-) string {
-	// Find the repo name for this agent from file ownership
-	repoName := ""
-	for _, fo := range fileOwnership {
-		if fo.Agent == agentID && fo.Repo != "" {
-			repoName = fo.Repo
-			break
-		}
-	}
-	if repoName == "" {
-		return projectRoot
-	}
-	// Look up the repo path in the registry
-	for _, r := range repos {
-		if r.Name == repoName {
-			return r.Path
-		}
-	}
-	return projectRoot
-}
 
 func newPrepareWaveCmd() *cobra.Command {
 	var waveNum int
@@ -436,7 +407,7 @@ waves that execute on the main branch.`,
 				}
 
 				// Resolve the repo root for this agent (supports multi-repo waves)
-				agentRoot := resolveAgentRepoRoot(doc.FileOwnership, agentID, projectRoot, repos)
+				agentRoot := protocol.ResolveAgentRepo(doc.FileOwnership, agentID, projectRoot, repos)
 
 				// Determine agent's repo name for result metadata
 				agentRepoName := ""

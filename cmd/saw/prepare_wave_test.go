@@ -73,7 +73,7 @@ func TestLoadSAWConfigRepos_NoReposKey(t *testing.T) {
 	}
 }
 
-func TestResolveAgentRepoRoot_WithMatchingRepo(t *testing.T) {
+func TestResolveAgentRepo_WithMatchingRepo(t *testing.T) {
 	fileOwnership := []protocol.FileOwnership{
 		{File: "pkg/foo/foo.go", Agent: "A", Wave: 1, Repo: "scout-and-wave-go"},
 		{File: "pkg/api/handler.go", Agent: "B", Wave: 1, Repo: "scout-and-wave-web"},
@@ -83,18 +83,18 @@ func TestResolveAgentRepoRoot_WithMatchingRepo(t *testing.T) {
 		{Name: "scout-and-wave-web", Path: "/abs/path/saw-web"},
 	}
 
-	got := resolveAgentRepoRoot(fileOwnership, "A", "/fallback", repos)
+	got := protocol.ResolveAgentRepo(fileOwnership, "A", "/fallback", repos)
 	if got != "/abs/path/saw-go" {
 		t.Errorf("expected /abs/path/saw-go, got %s", got)
 	}
 
-	got = resolveAgentRepoRoot(fileOwnership, "B", "/fallback", repos)
+	got = protocol.ResolveAgentRepo(fileOwnership, "B", "/fallback", repos)
 	if got != "/abs/path/saw-web" {
 		t.Errorf("expected /abs/path/saw-web, got %s", got)
 	}
 }
 
-func TestResolveAgentRepoRoot_FallbackWhenNoRepoField(t *testing.T) {
+func TestResolveAgentRepo_FallbackWhenNoRepoField(t *testing.T) {
 	fileOwnership := []protocol.FileOwnership{
 		{File: "cmd/saw/prepare_wave.go", Agent: "B", Wave: 1},
 	}
@@ -102,13 +102,13 @@ func TestResolveAgentRepoRoot_FallbackWhenNoRepoField(t *testing.T) {
 		{Name: "some-repo", Path: "/abs/path/some-repo"},
 	}
 
-	got := resolveAgentRepoRoot(fileOwnership, "B", "/project/root", repos)
+	got := protocol.ResolveAgentRepo(fileOwnership, "B", "/project/root", repos)
 	if got != "/project/root" {
 		t.Errorf("expected fallback /project/root, got %s", got)
 	}
 }
 
-func TestResolveAgentRepoRoot_FallbackWhenRepoNotInRegistry(t *testing.T) {
+func TestResolveAgentRepo_FallbackWhenRepoNotInRegistry(t *testing.T) {
 	fileOwnership := []protocol.FileOwnership{
 		{File: "pkg/foo/foo.go", Agent: "A", Wave: 1, Repo: "unknown-repo"},
 	}
@@ -116,29 +116,29 @@ func TestResolveAgentRepoRoot_FallbackWhenRepoNotInRegistry(t *testing.T) {
 		{Name: "other-repo", Path: "/abs/path/other"},
 	}
 
-	got := resolveAgentRepoRoot(fileOwnership, "A", "/project/root", repos)
+	got := protocol.ResolveAgentRepo(fileOwnership, "A", "/project/root", repos)
 	if got != "/project/root" {
 		t.Errorf("expected fallback /project/root, got %s", got)
 	}
 }
 
-func TestResolveAgentRepoRoot_FallbackWhenNilRepos(t *testing.T) {
+func TestResolveAgentRepo_FallbackWhenNilRepos(t *testing.T) {
 	fileOwnership := []protocol.FileOwnership{
 		{File: "pkg/foo/foo.go", Agent: "A", Wave: 1, Repo: "scout-and-wave-go"},
 	}
 
-	got := resolveAgentRepoRoot(fileOwnership, "A", "/project/root", nil)
+	got := protocol.ResolveAgentRepo(fileOwnership, "A", "/project/root", nil)
 	if got != "/project/root" {
 		t.Errorf("expected fallback /project/root with nil repos, got %s", got)
 	}
 }
 
-func TestResolveAgentRepoRoot_FallbackWhenEmptyOwnership(t *testing.T) {
+func TestResolveAgentRepo_FallbackWhenEmptyOwnership(t *testing.T) {
 	repos := []protocol.RepoEntry{
 		{Name: "scout-and-wave-go", Path: "/abs/path/saw-go"},
 	}
 
-	got := resolveAgentRepoRoot(nil, "A", "/project/root", repos)
+	got := protocol.ResolveAgentRepo(nil, "A", "/project/root", repos)
 	if got != "/project/root" {
 		t.Errorf("expected fallback /project/root for empty ownership, got %s", got)
 	}

@@ -86,7 +86,7 @@ func CreateWorktrees(manifestPath string, waveNum int, repoDir string) (*CreateW
 	isSameRepo := true
 	var firstRepo string
 	for _, agent := range targetWave.Agents {
-		agentRepo := determineAgentRepo(doc.FileOwnership, agent.ID)
+		agentRepo := AgentRepoName(doc.FileOwnership, agent.ID)
 		if agentRepo == "" {
 			// Empty repo field is always same-repo
 			continue
@@ -104,7 +104,7 @@ func CreateWorktrees(manifestPath string, waveNum int, repoDir string) (*CreateW
 	var worktrees []WorktreeInfo
 	for _, agent := range targetWave.Agents {
 		// Determine agent's repo by looking up their files in FileOwnership
-		agentRepo := determineAgentRepo(doc.FileOwnership, agent.ID)
+		agentRepo := AgentRepoName(doc.FileOwnership, agent.ID)
 
 		// Resolve repo directory (cross-repo or same-repo)
 		var agentRepoDir string
@@ -218,14 +218,3 @@ func CreateWorktrees(manifestPath string, waveNum int, repoDir string) (*CreateW
 	}, nil
 }
 
-// determineAgentRepo looks up the agent's owned files in the file ownership table
-// and returns the Repo field from the first match. Returns empty string if no repo
-// is specified (single-repo case).
-func determineAgentRepo(fileOwnership []FileOwnership, agentID string) string {
-	for _, fo := range fileOwnership {
-		if fo.Agent == agentID && fo.Repo != "" {
-			return fo.Repo
-		}
-	}
-	return ""
-}

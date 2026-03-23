@@ -95,7 +95,7 @@ func Cleanup(manifestPath string, waveNum int, repoDir string) (*CleanupResult, 
 		}
 
 		// Determine agent's repo (cross-repo support).
-		agentRepo := determineAgentRepo(manifest.FileOwnership, agent.ID)
+		agentRepo := AgentRepoName(manifest.FileOwnership, agent.ID)
 		agentRepoDir := absRepoDir
 		if agentRepo != "" && agentRepo != filepath.Base(absRepoDir) {
 			agentRepoDir = filepath.Join(repoParent, agentRepo)
