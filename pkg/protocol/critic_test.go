@@ -239,3 +239,40 @@ func TestCriticResult_YAMLRoundtrip(t *testing.T) {
 		}
 	}
 }
+
+func TestIsNewFile(t *testing.T) {
+	manifest := &IMPLManifest{
+		FileOwnership: []FileOwnership{
+			{File: "pkg/new.go", Agent: "A", Action: "new"},
+			{File: "pkg/existing.go", Agent: "B", Action: "modify"},
+		},
+	}
+
+	if !IsNewFile(manifest, "pkg/new.go") {
+		t.Error("expected pkg/new.go to be marked as new")
+	}
+
+	if IsNewFile(manifest, "pkg/existing.go") {
+		t.Error("expected pkg/existing.go to NOT be marked as new")
+	}
+
+	if IsNewFile(manifest, "pkg/missing.go") {
+		t.Error("expected missing file to NOT be marked as new")
+	}
+}
+
+func TestGetAgentNewFiles(t *testing.T) {
+	manifest := &IMPLManifest{
+		FileOwnership: []FileOwnership{
+			{File: "pkg/new1.go", Agent: "A", Action: "new"},
+			{File: "pkg/new2.go", Agent: "A", Action: "new"},
+			{File: "pkg/existing.go", Agent: "A", Action: "modify"},
+			{File: "pkg/other.go", Agent: "B", Action: "new"},
+		},
+	}
+
+	newFiles := GetAgentNewFiles(manifest, "A")
+	if len(newFiles) != 2 {
+		t.Errorf("expected 2 new files for agent A, got %d", len(newFiles))
+	}
+}

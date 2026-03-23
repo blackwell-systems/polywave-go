@@ -1,3 +1,22 @@
+// Package protocol provides critic validation types and helpers.
+//
+// Critic Validation Rules (for future critic agent implementations):
+//
+// 1. File Existence Checks:
+//    - If file is in file_ownership with action:new, skip "file does not exist" error
+//    - If file is in file_ownership with action:modify, enforce existence check
+//    - If file is NOT in file_ownership (external), enforce existence check
+//
+// 2. Symbol/Function Existence Checks:
+//    - If symbol is defined in a file with action:new, skip "symbol does not exist" error
+//    - If symbol is in existing file (action:modify or external), enforce existence check
+//    - Use GetAgentNewFiles() to determine which symbols agent will create
+//
+// 3. Cross-File References:
+//    - If reference is to external file (not in file_ownership), enforce existence
+//    - If reference is to same-wave agent's file, defer (coordination, not verification)
+//
+// Use IsNewFile() and IsSymbolInNewFile() helpers to implement these rules.
 package protocol
 
 // Verdict values for CriticResult and AgentCriticReview.
@@ -76,4 +95,33 @@ func WriteCriticReview(implPath string, result CriticResult) error {
 // the manifest first using protocol.Load.
 func GetCriticReview(manifest *IMPLManifest) *CriticResult {
 	return manifest.CriticReport
+}
+
+// IsNewFile returns true if the file is marked action:new in file_ownership.
+// Used by critic validation to skip existence checks for files that will be created.
+func IsNewFile(manifest *IMPLManifest, filePath string) bool {
+	for _, fo := range manifest.FileOwnership {
+		if fo.File == filePath {
+			return fo.Action == "new"
+		}
+	}
+	return false
+}
+
+// IsSymbolInNewFile returns true if the symbol's defining file is marked action:new.
+// Used by critic validation to skip existence checks for symbols that will be created.
+func IsSymbolInNewFile(manifest *IMPLManifest, symbolFile string) bool {
+	return IsNewFile(manifest, symbolFile)
+}
+
+// GetAgentNewFiles returns all files owned by an agent marked action:new.
+// Used by critic validation to understand which files/symbols agent will create.
+func GetAgentNewFiles(manifest *IMPLManifest, agentID string) []string {
+	var newFiles []string
+	for _, fo := range manifest.FileOwnership {
+		if fo.Agent == agentID && fo.Action == "new" {
+			newFiles = append(newFiles, fo.File)
+		}
+	}
+	return newFiles
 }
