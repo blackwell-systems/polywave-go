@@ -7,7 +7,6 @@ import (
 
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/agent"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/types" // kept for types.FailureType until failure.go is migrated (Agent A)
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/worktree"
 )
 
@@ -155,18 +154,18 @@ func (o *Orchestrator) launchAgentStructured(
 
 	// E19: Route partial/blocked reports.
 	if savedStatus == "partial" || savedStatus == "blocked" {
-		var failureType types.FailureType
+		var failureType protocol.FailureTypeEnum
 		switch savedFailureType {
 		case "transient":
-			failureType = types.FailureTypeTransient
+			failureType = protocol.FailureTransient
 		case "fixable":
-			failureType = types.FailureTypeFixable
+			failureType = protocol.FailureFixable
 		case "needs_replan":
-			failureType = types.FailureTypeNeedsReplan
+			failureType = protocol.FailureNeedsReplan
 		case "escalate":
-			failureType = types.FailureTypeEscalate
+			failureType = protocol.FailureEscalate
 		default:
-			failureType = types.FailureTypeEscalate
+			failureType = protocol.FailureEscalate
 		}
 
 		action := RouteFailure(failureType)

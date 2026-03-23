@@ -27,7 +27,6 @@ import (
 	"github.com/blackwell-systems/scout-and-wave-go/internal/git"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/tools"
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/types" // kept for types.FailureType constants (E19 routing)
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/worktree"
 )
 
@@ -858,20 +857,20 @@ func (o *Orchestrator) launchAgent(
 
 	// E19: If agent reported partial or blocked, apply the decision tree.
 	if report != nil && (report.Status == "partial" || report.Status == "blocked") {
-		var failureType types.FailureType
+		var failureType protocol.FailureTypeEnum
 		switch report.FailureType {
 		case "transient":
-			failureType = types.FailureTypeTransient
+			failureType = protocol.FailureTransient
 		case "fixable":
-			failureType = types.FailureTypeFixable
+			failureType = protocol.FailureFixable
 		case "needs_replan":
-			failureType = types.FailureTypeNeedsReplan
+			failureType = protocol.FailureNeedsReplan
 		case "escalate":
-			failureType = types.FailureTypeEscalate
+			failureType = protocol.FailureEscalate
 		case "timeout":
-			failureType = types.FailureTypeTimeout
+			failureType = protocol.FailureTimeout
 		default:
-			failureType = types.FailureTypeEscalate
+			failureType = protocol.FailureEscalate
 		}
 
 		action := RouteFailure(failureType)
