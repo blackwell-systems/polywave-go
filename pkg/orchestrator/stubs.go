@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/types"
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
 )
 
 // RunStubScan implements E20: collects all files_changed and files_created from
@@ -18,7 +18,7 @@ import (
 // ~/code/scout-and-wave (same fallback as RunScout).
 //
 // Always returns nil — stub detection is informational only (E20).
-func RunStubScan(implDocPath string, waveNum int, reports map[string]*types.CompletionReport, sawRepoPath string) error {
+func RunStubScan(implDocPath string, waveNum int, reports map[string]*protocol.CompletionReport, sawRepoPath string) error {
 	// 1. Collect the union of all FilesChanged and FilesCreated, deduplicated,
 	//    skipping any files under docs/IMPL/.
 	seen := make(map[string]struct{})

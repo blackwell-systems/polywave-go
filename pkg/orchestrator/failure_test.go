@@ -4,7 +4,6 @@ import (
 	"testing"
 
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/types"
 )
 
 // TestRouteFailureAllTypes verifies that all five known failure types route
@@ -12,32 +11,32 @@ import (
 func TestRouteFailureAllTypes(t *testing.T) {
 	tests := []struct {
 		name        string
-		failureType types.FailureType
+		failureType protocol.FailureTypeEnum
 		want        OrchestratorAction
 	}{
 		{
 			name:        "transient routes to ActionRetry",
-			failureType: types.FailureTypeTransient,
+			failureType: protocol.FailureTransient,
 			want:        ActionRetry,
 		},
 		{
 			name:        "fixable routes to ActionApplyAndRelaunch",
-			failureType: types.FailureTypeFixable,
+			failureType: protocol.FailureFixable,
 			want:        ActionApplyAndRelaunch,
 		},
 		{
 			name:        "needs_replan routes to ActionReplan",
-			failureType: types.FailureTypeNeedsReplan,
+			failureType: protocol.FailureNeedsReplan,
 			want:        ActionReplan,
 		},
 		{
 			name:        "escalate routes to ActionEscalate",
-			failureType: types.FailureTypeEscalate,
+			failureType: protocol.FailureEscalate,
 			want:        ActionEscalate,
 		},
 		{
 			name:        "timeout routes to ActionRetryWithScope",
-			failureType: types.FailureTypeTimeout,
+			failureType: protocol.FailureTimeout,
 			want:        ActionRetryWithScope,
 		},
 		{
@@ -74,7 +73,7 @@ func TestRouteFailureEmptyIsEscalate(t *testing.T) {
 // TestRouteFailureUnknownIsEscalate verifies that any unrecognized failure type
 // defaults to ActionEscalate rather than silently picking an incorrect action.
 func TestRouteFailureUnknownIsEscalate(t *testing.T) {
-	unknownValues := []types.FailureType{
+	unknownValues := []protocol.FailureTypeEnum{
 		"TRANSIENT",        // case-sensitive check
 		"Fixable",          // mixed case
 		"partial",          // completion status, not failure type
@@ -94,12 +93,12 @@ func TestRouteFailureUnknownIsEscalate(t *testing.T) {
 // TestRouteFailureWithReactions_NilReactions verifies that nil reactions falls
 // back to the same result as RouteFailure for all failure types.
 func TestRouteFailureWithReactions_NilReactions(t *testing.T) {
-	failureTypes := []types.FailureType{
-		types.FailureTypeTransient,
-		types.FailureTypeFixable,
-		types.FailureTypeNeedsReplan,
-		types.FailureTypeEscalate,
-		types.FailureTypeTimeout,
+	failureTypes := []protocol.FailureTypeEnum{
+		protocol.FailureTransient,
+		protocol.FailureFixable,
+		protocol.FailureNeedsReplan,
+		protocol.FailureEscalate,
+		protocol.FailureTimeout,
 		"",
 	}
 	for _, ft := range failureTypes {
@@ -117,7 +116,7 @@ func TestRouteFailureWithReactions_RetryOverride(t *testing.T) {
 	reactions := &protocol.ReactionsConfig{
 		Transient: &protocol.ReactionEntry{Action: "retry", MaxAttempts: 3},
 	}
-	got := RouteFailureWithReactions(types.FailureTypeTransient, reactions)
+	got := RouteFailureWithReactions(protocol.FailureTransient, reactions)
 	if got != ActionRetry {
 		t.Errorf("RouteFailureWithReactions(transient, retry) = %d, want ActionRetry (%d)", got, ActionRetry)
 	}
@@ -129,7 +128,7 @@ func TestRouteFailureWithReactions_PauseOverride(t *testing.T) {
 	reactions := &protocol.ReactionsConfig{
 		Escalate: &protocol.ReactionEntry{Action: "pause"},
 	}
-	got := RouteFailureWithReactions(types.FailureTypeEscalate, reactions)
+	got := RouteFailureWithReactions(protocol.FailureEscalate, reactions)
 	if got != ActionEscalate {
 		t.Errorf("RouteFailureWithReactions(escalate, pause) = %d, want ActionEscalate (%d)", got, ActionEscalate)
 	}
@@ -141,7 +140,7 @@ func TestRouteFailureWithReactions_AutoScoutOverride(t *testing.T) {
 	reactions := &protocol.ReactionsConfig{
 		NeedsReplan: &protocol.ReactionEntry{Action: "auto-scout"},
 	}
-	got := RouteFailureWithReactions(types.FailureTypeNeedsReplan, reactions)
+	got := RouteFailureWithReactions(protocol.FailureNeedsReplan, reactions)
 	if got != ActionReplan {
 		t.Errorf("RouteFailureWithReactions(needs_replan, auto-scout) = %d, want ActionReplan (%d)", got, ActionReplan)
 	}
@@ -153,7 +152,7 @@ func TestRouteFailureWithReactions_SendFixPrompt(t *testing.T) {
 	reactions := &protocol.ReactionsConfig{
 		Fixable: &protocol.ReactionEntry{Action: "send-fix-prompt", MaxAttempts: 1},
 	}
-	got := RouteFailureWithReactions(types.FailureTypeFixable, reactions)
+	got := RouteFailureWithReactions(protocol.FailureFixable, reactions)
 	if got != ActionApplyAndRelaunch {
 		t.Errorf("RouteFailureWithReactions(fixable, send-fix-prompt) = %d, want ActionApplyAndRelaunch (%d)", got, ActionApplyAndRelaunch)
 	}
@@ -166,7 +165,7 @@ func TestRouteFailureWithReactions_UnsetEntryFallsThrough(t *testing.T) {
 	reactions := &protocol.ReactionsConfig{
 		Transient: &protocol.ReactionEntry{Action: "retry"},
 	}
-	got := RouteFailureWithReactions(types.FailureTypeTimeout, reactions)
+	got := RouteFailureWithReactions(protocol.FailureTimeout, reactions)
 	if got != ActionRetryWithScope {
 		t.Errorf("RouteFailureWithReactions(timeout, reactions without timeout entry) = %d, want ActionRetryWithScope (%d)", got, ActionRetryWithScope)
 	}
@@ -176,14 +175,14 @@ func TestRouteFailureWithReactions_UnsetEntryFallsThrough(t *testing.T) {
 // defaultMaxAttempts for all retryable types.
 func TestMaxAttemptsFor_NilReactions(t *testing.T) {
 	tests := []struct {
-		ft   types.FailureType
+		ft   protocol.FailureTypeEnum
 		want int
 	}{
-		{types.FailureTypeTransient, 2},
-		{types.FailureTypeFixable, 2},
-		{types.FailureTypeTimeout, 1},
-		{types.FailureTypeNeedsReplan, 0},
-		{types.FailureTypeEscalate, 0},
+		{protocol.FailureTransient, 2},
+		{protocol.FailureFixable, 2},
+		{protocol.FailureTimeout, 1},
+		{protocol.FailureNeedsReplan, 0},
+		{protocol.FailureEscalate, 0},
 	}
 	for _, tt := range tests {
 		got := MaxAttemptsFor(tt.ft, nil)
@@ -199,7 +198,7 @@ func TestMaxAttemptsFor_Override(t *testing.T) {
 	reactions := &protocol.ReactionsConfig{
 		Transient: &protocol.ReactionEntry{Action: "retry", MaxAttempts: 5},
 	}
-	got := MaxAttemptsFor(types.FailureTypeTransient, reactions)
+	got := MaxAttemptsFor(protocol.FailureTransient, reactions)
 	if got != 5 {
 		t.Errorf("MaxAttemptsFor(transient, reactions{max:5}) = %d, want 5", got)
 	}
@@ -211,8 +210,8 @@ func TestMaxAttemptsFor_ZeroMaxAttempts(t *testing.T) {
 	reactions := &protocol.ReactionsConfig{
 		Transient: &protocol.ReactionEntry{Action: "retry", MaxAttempts: 0},
 	}
-	got := MaxAttemptsFor(types.FailureTypeTransient, reactions)
-	want := defaultMaxAttempts(types.FailureTypeTransient) // 2
+	got := MaxAttemptsFor(protocol.FailureTransient, reactions)
+	want := defaultMaxAttempts(protocol.FailureTransient) // 2
 	if got != want {
 		t.Errorf("MaxAttemptsFor(transient, reactions{max:0}) = %d, want %d (E19 default)", got, want)
 	}
@@ -221,7 +220,7 @@ func TestMaxAttemptsFor_ZeroMaxAttempts(t *testing.T) {
 // TestMaxAttemptsFor_TransientDefault verifies that transient with nil reactions
 // returns 2.
 func TestMaxAttemptsFor_TransientDefault(t *testing.T) {
-	got := MaxAttemptsFor(types.FailureTypeTransient, nil)
+	got := MaxAttemptsFor(protocol.FailureTransient, nil)
 	if got != 2 {
 		t.Errorf("MaxAttemptsFor(transient, nil) = %d, want 2", got)
 	}

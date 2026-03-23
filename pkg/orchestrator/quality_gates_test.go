@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/types"
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
 )
 
 // TestRunQualityGatesNil verifies that nil gates returns nil results and nil error.
@@ -20,9 +20,9 @@ func TestRunQualityGatesNil(t *testing.T) {
 
 // TestRunQualityGatesQuick verifies that level="quick" skips all gates.
 func TestRunQualityGatesQuick(t *testing.T) {
-	gates := &types.QualityGates{
+	gates := &protocol.QualityGates{
 		Level: "quick",
-		Gates: []types.QualityGate{
+		Gates: []protocol.QualityGate{
 			{Type: "build", Command: "go build ./...", Required: true},
 		},
 	}
@@ -38,9 +38,9 @@ func TestRunQualityGatesQuick(t *testing.T) {
 // TestRunQualityGatesRequiredFail verifies that a required gate with a failing
 // command produces a non-nil error.
 func TestRunQualityGatesRequiredFail(t *testing.T) {
-	gates := &types.QualityGates{
+	gates := &protocol.QualityGates{
 		Level: "standard",
-		Gates: []types.QualityGate{
+		Gates: []protocol.QualityGate{
 			{
 				Type:     "build",
 				Command:  "false", // always exits non-zero
@@ -67,9 +67,9 @@ func TestRunQualityGatesRequiredFail(t *testing.T) {
 // TestRunQualityGatesOptionalFail verifies that an optional gate failing does
 // not produce a blocking error, but result shows Passed=false.
 func TestRunQualityGatesOptionalFail(t *testing.T) {
-	gates := &types.QualityGates{
+	gates := &protocol.QualityGates{
 		Level: "standard",
-		Gates: []types.QualityGate{
+		Gates: []protocol.QualityGate{
 			{
 				Type:     "lint",
 				Command:  "false", // always exits non-zero

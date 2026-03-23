@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/types"
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
 )
 
 // TestRunStubScanNoFiles verifies that an empty reports map causes
@@ -20,7 +20,7 @@ func TestRunStubScanNoFiles(t *testing.T) {
 	}
 
 	// sawRepoPath points to nonexistent dir — script won't be found.
-	err := RunStubScan(implDocPath, 1, map[string]*types.CompletionReport{}, filepath.Join(tmpDir, "nonexistent-saw-repo"))
+	err := RunStubScan(implDocPath, 1, map[string]*protocol.CompletionReport{}, filepath.Join(tmpDir, "nonexistent-saw-repo"))
 	if err != nil {
 		t.Errorf("RunStubScan returned non-nil error: %v", err)
 	}
@@ -47,7 +47,7 @@ func TestRunStubScanMissingScript(t *testing.T) {
 		t.Fatalf("failed to create temp IMPL doc: %v", err)
 	}
 
-	reports := map[string]*types.CompletionReport{
+	reports := map[string]*protocol.CompletionReport{
 		"A": {
 			FilesCreated: []string{"pkg/foo/foo.go"},
 			FilesChanged: []string{"pkg/bar/bar.go"},
@@ -85,7 +85,7 @@ func TestRunStubScanAppendsSection(t *testing.T) {
 		t.Fatalf("failed to create temp IMPL doc: %v", err)
 	}
 
-	reports := map[string]*types.CompletionReport{
+	reports := map[string]*protocol.CompletionReport{
 		"A": {
 			FilesCreated: []string{"pkg/orchestrator/stubs.go"},
 			FilesChanged: []string{"docs/IMPL/IMPL-engine-protocol-gap.md"}, // should be skipped
