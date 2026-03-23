@@ -36,6 +36,7 @@ type FinalizeWaveResult struct {
 func newFinalizeWaveCmd() *cobra.Command {
 	var waveNum int
 	var mergeTarget string
+	var skipMerge bool
 
 	cmd := &cobra.Command{
 		Use:   "finalize-wave <manifest-path>",
@@ -67,7 +68,9 @@ pattern matching (H7) and appends diagnosis to the output.`,
 			}
 
 			// Extract unique repos from file_ownership
-			repos, _ := extractReposFromManifest(manifest, waveNum, repoDir)
+			// Use current directory as default repo for single-repo IMPLs
+			defaultRepoPath, _ := os.Getwd()
+			repos, _ := extractReposFromManifest(manifest, waveNum, defaultRepoPath)
 
 			result := &FinalizeWaveResult{
 				Wave:              waveNum,
@@ -85,6 +88,23 @@ pattern matching (H7) and appends diagnosis to the output.`,
 			// Declare variables here to avoid "goto jumps over variable declaration" compile errors.
 			var changedFiles []string
 			var isSolo, allGone bool
+
+			// If --skip-merge flag is set, skip VerifyCommits and MergeAgents (merge already done manually)
+			if skipMerge {
+				fmt.Fprintf(os.Stderr, "finalize-wave: --skip-merge flag set, skipping to verify-build\n")
+				for repoKey := range repos {
+					result.MergeResult[repoKey] = &protocol.MergeAgentsResult{
+						Wave: waveNum, Success: true,
+					}
+				}
+				// Warning if worktrees still exist
+				for _, repoPath := range repos {
+					if !protocol.WorktreesAbsent(manifest, waveNum, repoPath) {
+						fmt.Fprintf(os.Stderr, "finalize-wave: warning: --skip-merge used but worktrees detected; cleanup will remove them\n")
+					}
+				}
+				goto postMerge
+			}
 
 			// Solo wave: if no worktrees were created, skip VerifyCommits and MergeAgents.
 			for _, repoPath := range repos {
@@ -426,6 +446,7 @@ pattern matching (H7) and appends diagnosis to the output.`,
 	cmd.Flags().IntVar(&waveNum, "wave", 0, "Wave number (required)")
 	_ = cmd.MarkFlagRequired("wave")
 	cmd.Flags().StringVar(&mergeTarget, "merge-target", "", "Target branch for merge (default: current HEAD)")
+	cmd.Flags().BoolVar(&skipMerge, "skip-merge", false, "Skip merge step (merge already done manually); start from verify-build")
 
 	return cmd
 }
