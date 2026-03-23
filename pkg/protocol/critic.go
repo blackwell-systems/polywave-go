@@ -19,7 +19,11 @@
 // Use IsNewFile() and IsSymbolInNewFile() helpers to implement these rules.
 package protocol
 
-// Verdict values for CriticResult and AgentCriticReview.
+import (
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
+)
+
+// Verdict values for CriticData and AgentCriticReview.
 const (
 	// CriticVerdictPass indicates no blocking issues were found.
 	CriticVerdictPass = "PASS"
@@ -37,9 +41,9 @@ const (
 	CriticSeverityWarning = "warning"
 )
 
-// CriticResult is the structured output of a critic-agent review run.
+// CriticData is the structured output of a critic-agent review run.
 // Written to the IMPL doc by WriteCriticReview after the critic agent completes.
-type CriticResult struct {
+type CriticData struct {
 	// Verdict is the overall decision: "PASS" or "ISSUES"
 	Verdict string `yaml:"verdict" json:"verdict"`
 	// AgentReviews contains per-agent verdicts indexed by agent ID
@@ -51,6 +55,10 @@ type CriticResult struct {
 	// IssueCount is the total number of issues found across all agents
 	IssueCount int `yaml:"issue_count" json:"issue_count"`
 }
+
+// CriticResult is a backward-compatible alias for CriticData.
+// Existing callers using CriticResult continue to compile unchanged.
+type CriticResult = CriticData
 
 // AgentCriticReview is the per-agent verdict from the critic.
 type AgentCriticReview struct {
@@ -79,22 +87,73 @@ type CriticIssue struct {
 // WriteCriticReview writes the critic result to the IMPL manifest at implPath.
 // It loads the existing manifest, sets the CriticReport field, and saves.
 // Returns an error if the manifest cannot be loaded or saved.
-func WriteCriticReview(implPath string, result CriticResult) error {
+//
+// Deprecated: prefer WriteCriticReviewResult which returns result.Result[CriticData].
+func WriteCriticReview(implPath string, data CriticData) error {
 	manifest, err := Load(implPath)
 	if err != nil {
 		return err
 	}
 
-	manifest.CriticReport = &result
+	manifest.CriticReport = &data
 
 	return Save(manifest, implPath)
+}
+
+// WriteCriticReviewResult writes the critic result to the IMPL manifest at implPath.
+// It loads the existing manifest, sets the CriticReport field, and saves.
+// Returns a result.Result[CriticData] indicating success or failure.
+func WriteCriticReviewResult(implPath string, data CriticData) result.Result[CriticData] {
+	manifest, err := Load(implPath)
+	if err != nil {
+		return result.NewFailure[CriticData]([]result.StructuredError{
+			{
+				Code:     "E001",
+				Message:  err.Error(),
+				Severity: "fatal",
+			},
+		})
+	}
+
+	manifest.CriticReport = &data
+
+	if err := Save(manifest, implPath); err != nil {
+		return result.NewFailure[CriticData]([]result.StructuredError{
+			{
+				Code:     "E002",
+				Message:  err.Error(),
+				Severity: "fatal",
+			},
+		})
+	}
+
+	return result.NewSuccess(data)
 }
 
 // GetCriticReview returns the critic review from a loaded manifest, or nil
 // if no review has been written. Does not load from disk; caller must load
 // the manifest first using protocol.Load.
-func GetCriticReview(manifest *IMPLManifest) *CriticResult {
+//
+// Deprecated: prefer GetCriticReviewResult which returns result.Result[CriticData].
+func GetCriticReview(manifest *IMPLManifest) *CriticData {
 	return manifest.CriticReport
+}
+
+// GetCriticReviewResult returns the critic review from a loaded manifest wrapped in
+// a result.Result[CriticData]. Returns a FATAL result if no review has been
+// written. Does not load from disk; caller must load the manifest first using
+// protocol.Load.
+func GetCriticReviewResult(manifest *IMPLManifest) result.Result[CriticData] {
+	if manifest.CriticReport == nil {
+		return result.NewFailure[CriticData]([]result.StructuredError{
+			{
+				Code:     "E003",
+				Message:  "no critic review found in manifest",
+				Severity: "fatal",
+			},
+		})
+	}
+	return result.NewSuccess(*manifest.CriticReport)
 }
 
 // IsNewFile returns true if the file is marked action:new in file_ownership.
