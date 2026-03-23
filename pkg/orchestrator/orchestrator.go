@@ -851,6 +851,17 @@ func (o *Orchestrator) launchAgent(
 		}
 	}
 
+	// Populate dedup stats if available
+	if report != nil && runner != nil {
+		if stats := runner.DedupStats(); stats != nil {
+			report.DedupStats = &protocol.DedupStats{
+				Hits:                stats.Hits,
+				Misses:              stats.Misses,
+				TokensSavedEstimate: stats.TokensSavedEstimate,
+			}
+		}
+	}
+
 	// e. Always persist the completion report to the main branch IMPL doc.
 	// Whether the agent wrote it (found in worktree) or we synthesized it,
 	// the main branch IMPL doc must have it for merge to proceed.
