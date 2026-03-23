@@ -9,8 +9,10 @@ import (
 // RepoEntry maps a repository name to its absolute path on disk.
 // Used by cmd/saw and web app to pass configured repository locations.
 type RepoEntry struct {
-	Name string
-	Path string
+	Name         string `json:"name"`
+	Path         string `json:"path"`
+	BuildCommand string `json:"build_command,omitempty"` // E21B: per-repo build gate (e.g. "go build ./...")
+	TestCommand  string `json:"test_command,omitempty"`  // E21B: per-repo test gate (e.g. "go test ./...")
 }
 
 // ResolveTargetRepos determines which repositories an IMPL manifest targets.

@@ -223,6 +223,28 @@ waves that execute on the main branch.`,
 				return fmt.Errorf("baseline verification failed: %s", baselineResult.Reason)
 			}
 
+			// Step 0b3: Cross-repo baseline verification (E21B)
+			// For multi-repo IMPLs, verify ALL target repos build — not just the primary.
+			targetRepos, resolveErr := protocol.ResolveTargetRepos(doc, projectRoot, repos)
+			if resolveErr == nil && len(targetRepos) > 1 {
+				fmt.Fprintf(os.Stderr, "prepare-wave: running cross-repo baseline gates (E21B) on %d repos...\n", len(targetRepos))
+				crossResult, crossErr := protocol.RunCrossRepoBaselineGates(doc, waveNum, targetRepos, repos)
+				if crossErr != nil {
+					return fmt.Errorf("E21B cross-repo baseline check failed: %w", crossErr)
+				}
+				if !crossResult.Passed {
+					out, _ := json.MarshalIndent(crossResult, "", "  ")
+					fmt.Fprintln(cmd.OutOrStdout(), string(out))
+					for repoName, repoResult := range crossResult.Results {
+						if !repoResult.Passed {
+							fmt.Fprintf(os.Stderr, "prepare-wave: E21B baseline FAILED in repo %s — fix before launching agents\n", repoName)
+						}
+					}
+					return fmt.Errorf("E21B: cross-repo baseline verification failed — one or more repos do not build")
+				}
+				fmt.Fprintf(os.Stderr, "prepare-wave: cross-repo baseline gates passed (%d repos)\n", len(targetRepos))
+			}
+
 			// Step 0c: Validate wiring ownership (E35 Layer 3A)
 			// For each wiring declaration in the current wave, the must_be_called_from
 			// file must be in the owning agent's file_ownership. Fail fast before
