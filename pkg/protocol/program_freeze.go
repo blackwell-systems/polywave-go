@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
 )
 
 // FreezeContracts identifies and freezes program contracts at a tier boundary.
@@ -15,13 +17,13 @@ import (
 //   - The file at contract.Location exists in repoPath
 //   - The file is committed to HEAD (git status --porcelain returns empty)
 //
-// Returns a FreezeContractsResult with:
+// Returns a result.Result[*FreezeContractsData] with:
 //   - ContractsFrozen: contracts successfully frozen (file exists and committed)
 //   - ContractsSkipped: contracts whose FreezeAt does not match this tier
 //   - Errors: contracts where file is missing or uncommitted
 //   - Success: true only if all matching contracts are successfully frozen
-func FreezeContracts(manifest *PROGRAMManifest, tierNumber int, repoPath string) (*FreezeContractsResult, error) {
-	result := &FreezeContractsResult{
+func FreezeContracts(manifest *PROGRAMManifest, tierNumber int, repoPath string) result.Result[*FreezeContractsData] {
+	data := &FreezeContractsData{
 		TierNumber:       tierNumber,
 		ContractsFrozen:  []FrozenContract{},
 		ContractsSkipped: []string{},
@@ -39,7 +41,9 @@ func FreezeContracts(manifest *PROGRAMManifest, tierNumber int, repoPath string)
 	}
 
 	if tier == nil {
-		return result, fmt.Errorf("tier %d not found in manifest", tierNumber)
+		return result.NewFailure[*FreezeContractsData]([]result.StructuredError{{
+			Code: "E_FREEZE", Message: fmt.Sprintf("tier %d not found in manifest", tierNumber), Severity: "fatal",
+		}})
 	}
 
 	// Build a set of IMPL slugs in this tier
@@ -52,7 +56,7 @@ func FreezeContracts(manifest *PROGRAMManifest, tierNumber int, repoPath string)
 	for _, contract := range manifest.ProgramContracts {
 		// Skip contracts with empty FreezeAt
 		if strings.TrimSpace(contract.FreezeAt) == "" {
-			result.ContractsSkipped = append(result.ContractsSkipped, contract.Name)
+			data.ContractsSkipped = append(data.ContractsSkipped, contract.Name)
 			continue
 		}
 
@@ -68,7 +72,7 @@ func FreezeContracts(manifest *PROGRAMManifest, tierNumber int, repoPath string)
 		}
 
 		if !shouldFreeze {
-			result.ContractsSkipped = append(result.ContractsSkipped, contract.Name)
+			data.ContractsSkipped = append(data.ContractsSkipped, contract.Name)
 			continue
 		}
 
@@ -98,21 +102,26 @@ func FreezeContracts(manifest *PROGRAMManifest, tierNumber int, repoPath string)
 
 		// Record result
 		if frozen.FileExists && frozen.Committed {
-			result.ContractsFrozen = append(result.ContractsFrozen, frozen)
+			data.ContractsFrozen = append(data.ContractsFrozen, frozen)
 		} else {
-			result.ContractsFrozen = append(result.ContractsFrozen, frozen)
+			data.ContractsFrozen = append(data.ContractsFrozen, frozen)
 			if !frozen.FileExists {
-				result.Errors = append(result.Errors, fmt.Sprintf("contract %s: file not found at %s", contract.Name, contract.Location))
+				data.Errors = append(data.Errors, fmt.Sprintf("contract %s: file not found at %s", contract.Name, contract.Location))
 			} else if !frozen.Committed {
-				result.Errors = append(result.Errors, fmt.Sprintf("contract %s: file not committed at %s", contract.Name, contract.Location))
+				data.Errors = append(data.Errors, fmt.Sprintf("contract %s: file not committed at %s", contract.Name, contract.Location))
 			}
 		}
 	}
 
 	// Success is true only if all matching contracts are successfully frozen
-	result.Success = len(result.Errors) == 0
+	data.Success = len(data.Errors) == 0
 
-	return result, nil
+	if !data.Success {
+		return result.NewPartial(data, []result.StructuredError{{
+			Code: "E_FREEZE", Message: fmt.Sprintf("%d freeze error(s)", len(data.Errors)), Severity: "error",
+		}})
+	}
+	return result.NewSuccess(data)
 }
 
 // matchesSlugInFreezeAt checks if the given IMPL slug appears as a whole word

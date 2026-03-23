@@ -14,8 +14,8 @@ type WiringDeclaration struct {
 	IntegrationPattern string `yaml:"integration_pattern,omitempty" json:"integration_pattern,omitempty"`
 }
 
-// WiringValidationResult is returned by ValidateWiringDeclarations.
-type WiringValidationResult struct {
+// WiringValidationData is returned by ValidateWiringDeclarations.
+type WiringValidationData struct {
 	Gaps    []WiringGap `json:"gaps" yaml:"gaps"`
 	Valid   bool        `json:"valid" yaml:"valid"`
 	Summary string      `json:"summary" yaml:"summary"`
