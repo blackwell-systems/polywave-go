@@ -81,28 +81,30 @@ func TestStaleCleanupSkipsUncommittedChanges(t *testing.T) {
 	// the code path falls through to removal (error on status != dirty).
 	// This test validates the Skipped path logic by checking the result
 	// structure is properly initialized.
-	result, err := CleanStaleWorktrees(nil, false)
-	if err != nil {
-		t.Fatalf("unexpected error on empty input: %v", err)
+	r := CleanStaleWorktrees(nil, false)
+	if !r.IsSuccess() {
+		t.Fatalf("unexpected failure on empty input: %v", r.Errors)
 	}
-	if len(result.Cleaned) != 0 || len(result.Skipped) != 0 || len(result.Errors) != 0 {
+	data := r.GetData()
+	if len(data.Cleaned) != 0 || len(data.Skipped) != 0 || len(data.Errors) != 0 {
 		t.Error("expected empty result for nil input")
 	}
 }
 
-func TestStaleCleanupResultStructure(t *testing.T) {
+func TestStaleCleanupDataStructure(t *testing.T) {
 	// Verify that CleanStaleWorktrees returns non-nil slices even with no input.
-	result, err := CleanStaleWorktrees([]StaleWorktree{}, false)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+	r := CleanStaleWorktrees([]StaleWorktree{}, false)
+	if !r.IsSuccess() {
+		t.Fatalf("unexpected failure: %v", r.Errors)
 	}
-	if result.Cleaned == nil {
+	data := r.GetData()
+	if data.Cleaned == nil {
 		t.Error("Cleaned should be non-nil empty slice")
 	}
-	if result.Skipped == nil {
+	if data.Skipped == nil {
 		t.Error("Skipped should be non-nil empty slice")
 	}
-	if result.Errors == nil {
+	if data.Errors == nil {
 		t.Error("Errors should be non-nil empty slice")
 	}
 }

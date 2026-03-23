@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
 )
 
 // IMPLSummary represents a lightweight summary of an IMPL document.
@@ -18,8 +20,8 @@ type IMPLSummary struct {
 	TotalWaves  int    `json:"total_waves"`
 }
 
-// ListIMPLsResult contains the results of scanning a directory for IMPL documents.
-type ListIMPLsResult struct {
+// ListIMPLsData contains the data of scanning a directory for IMPL documents.
+type ListIMPLsData struct {
 	IMPLs []IMPLSummary `json:"impls"`
 }
 
@@ -38,7 +40,7 @@ type ListIMPLsResult struct {
 //   - Builds IMPLSummary with path, feature_slug, verdict, current_wave, total_waves
 //
 // Returns:
-//   - ListIMPLsResult with all successfully loaded summaries
+//   - ListIMPLsData with all successfully loaded summaries
 //   - Empty list if dir is invalid or no IMPL files found (not an error)
 //   - Results are sorted by path for deterministic output
 // ListIMPLsOpts controls filtering behavior for ListIMPLs.
@@ -46,12 +48,12 @@ type ListIMPLsOpts struct {
 	IncludeComplete bool // If false (default), exclude IMPLs with state COMPLETE or in complete/ directory
 }
 
-func ListIMPLs(dir string, opts ...ListIMPLsOpts) (*ListIMPLsResult, error) {
+func ListIMPLs(dir string, opts ...ListIMPLsOpts) result.Result[*ListIMPLsData] {
 	var o ListIMPLsOpts
 	if len(opts) > 0 {
 		o = opts[0]
 	}
-	result := &ListIMPLsResult{
+	data := &ListIMPLsData{
 		IMPLs: []IMPLSummary{},
 	}
 
@@ -116,15 +118,15 @@ func ListIMPLs(dir string, opts ...ListIMPLsOpts) (*ListIMPLsResult, error) {
 			}
 		}
 
-		result.IMPLs = append(result.IMPLs, summary)
+		data.IMPLs = append(data.IMPLs, summary)
 	}
 
 	// Sort by path for deterministic output
-	sort.Slice(result.IMPLs, func(i, j int) bool {
-		return result.IMPLs[i].Path < result.IMPLs[j].Path
+	sort.Slice(data.IMPLs, func(i, j int) bool {
+		return data.IMPLs[i].Path < data.IMPLs[j].Path
 	})
 
-	return result, nil
+	return result.NewSuccess(data)
 }
 
 // ArchiveIMPL moves an IMPL doc from docs/IMPL/ to docs/IMPL/complete/.
