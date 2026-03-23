@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
 	"gopkg.in/yaml.v3"
 )
 
@@ -16,13 +17,15 @@ import (
 // status updates. If an IMPL doc cannot be found or read, the status from the manifest
 // is used as a fallback.
 //
-// Returns a ProgramStatusResult containing all computed status information.
-func GetProgramStatus(manifest *PROGRAMManifest, repoPath string) (*ProgramStatusResult, error) {
+// Returns a result.Result[*ProgramStatusData] containing all computed status information.
+func GetProgramStatus(manifest *PROGRAMManifest, repoPath string) result.Result[*ProgramStatusData] {
 	if manifest == nil {
-		return nil, fmt.Errorf("manifest cannot be nil")
+		return result.NewFailure[*ProgramStatusData]([]result.StructuredError{{
+			Code: "E_PROGRAM_STATUS", Message: "manifest cannot be nil", Severity: "fatal",
+		}})
 	}
 
-	result := &ProgramStatusResult{
+	data := &ProgramStatusData{
 		ProgramSlug: manifest.ProgramSlug,
 		Title:       manifest.Title,
 		State:       manifest.State,
@@ -78,25 +81,25 @@ func GetProgramStatus(manifest *PROGRAMManifest, repoPath string) (*ProgramStatu
 		tierStatuses = append(tierStatuses, tierDetail)
 	}
 
-	result.TierStatuses = tierStatuses
+	data.TierStatuses = tierStatuses
 
 	// Update completion counts from actual statuses
-	result.Completion.TiersComplete = tiersComplete
-	result.Completion.ImplsComplete = implsComplete
+	data.Completion.TiersComplete = tiersComplete
+	data.Completion.ImplsComplete = implsComplete
 
 	// Determine current tier: the lowest-numbered tier with at least one incomplete IMPL
-	result.CurrentTier = result.Completion.TiersTotal
+	data.CurrentTier = data.Completion.TiersTotal
 	for _, tierDetail := range tierStatuses {
 		if !tierDetail.Complete {
-			result.CurrentTier = tierDetail.Number
+			data.CurrentTier = tierDetail.Number
 			break
 		}
 	}
 
 	// Build contract statuses
-	result.ContractStatuses = buildContractStatuses(manifest, tierStatuses)
+	data.ContractStatuses = buildContractStatuses(manifest, tierStatuses)
 
-	return result, nil
+	return result.NewSuccess(data)
 }
 
 // enrichIMPLStatusesFromDisk attempts to read IMPL docs from disk to get real-time status.

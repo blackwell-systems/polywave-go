@@ -6,12 +6,14 @@ import (
 	"fmt"
 	"os/exec"
 	"time"
+
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
 )
 
 // RunTierGate verifies that all IMPLs in a tier are complete and runs the tier-level
 // quality gates defined in the PROGRAM manifest. Returns structured result with
 // per-gate and per-IMPL status.
-func RunTierGate(manifest *PROGRAMManifest, tierNumber int, repoPath string) (*TierGateResult, error) {
+func RunTierGate(manifest *PROGRAMManifest, tierNumber int, repoPath string) result.Result[*TierGateData] {
 	// Find the tier in the manifest
 	var tier *ProgramTier
 	for i := range manifest.Tiers {
@@ -22,10 +24,12 @@ func RunTierGate(manifest *PROGRAMManifest, tierNumber int, repoPath string) (*T
 	}
 
 	if tier == nil {
-		return nil, fmt.Errorf("tier %d not found in manifest", tierNumber)
+		return result.NewFailure[*TierGateData]([]result.StructuredError{{
+			Code: "E_TIER_GATE", Message: fmt.Sprintf("tier %d not found in manifest", tierNumber), Severity: "fatal",
+		}})
 	}
 
-	result := &TierGateResult{
+	data := &TierGateData{
 		TierNumber:   tierNumber,
 		ImplStatuses: make([]ImplTierStatus, 0, len(tier.Impls)),
 		GateResults:  make([]GateResult, 0),
@@ -49,39 +53,46 @@ func RunTierGate(manifest *PROGRAMManifest, tierNumber int, repoPath string) (*T
 		if !found {
 			// IMPL referenced in tier but not defined in impls list
 			implStatus = "not_found"
-			result.AllImplsDone = false
+			data.AllImplsDone = false
 		}
 
 		status := ImplTierStatus{
 			Slug:   implSlug,
 			Status: implStatus,
 		}
-		result.ImplStatuses = append(result.ImplStatuses, status)
+		data.ImplStatuses = append(data.ImplStatuses, status)
 
 		// Check if this IMPL is complete
 		if implStatus != "complete" {
-			result.AllImplsDone = false
+			data.AllImplsDone = false
 		}
 	}
 
 	// If not all IMPLs are done, the tier cannot pass
-	if !result.AllImplsDone {
-		result.Passed = false
-		return result, nil
+	if !data.AllImplsDone {
+		data.Passed = false
+		return result.NewPartial(data, []result.StructuredError{{
+			Code: "E_TIER_GATE", Message: "not all IMPLs in tier are complete", Severity: "error",
+		}})
 	}
 
 	// All IMPLs are done, now run the tier gates
 	for _, gate := range manifest.TierGates {
 		gateResult := runTierGateCommand(gate, repoPath)
-		result.GateResults = append(result.GateResults, gateResult)
+		data.GateResults = append(data.GateResults, gateResult)
 
 		// If a required gate fails, the tier fails
 		if gate.Required && !gateResult.Passed {
-			result.Passed = false
+			data.Passed = false
 		}
 	}
 
-	return result, nil
+	if !data.Passed {
+		return result.NewPartial(data, []result.StructuredError{{
+			Code: "E_TIER_GATE", Message: "one or more required gates failed", Severity: "error",
+		}})
+	}
+	return result.NewSuccess(data)
 }
 
 // runTierGateCommand executes a single tier gate command with a 5-minute timeout.

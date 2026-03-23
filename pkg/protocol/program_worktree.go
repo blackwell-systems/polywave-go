@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 
 	"github.com/blackwell-systems/scout-and-wave-go/internal/git"
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
 )
 
 // ProgramBranchName returns the slug-scoped branch name for a program-tier IMPL.
@@ -28,8 +29,8 @@ type ProgramWorktreeInfo struct {
 	Branch   string `json:"branch"`
 }
 
-// CreateProgramWorktreesResult contains the list of worktrees created for a program tier.
-type CreateProgramWorktreesResult struct {
+// CreateProgramWorktreesData contains the list of worktrees created for a program tier.
+type CreateProgramWorktreesData struct {
 	TierNumber int                   `json:"tier_number"`
 	Worktrees  []ProgramWorktreeInfo `json:"worktrees"`
 }
@@ -41,11 +42,13 @@ type CreateProgramWorktreesResult struct {
 // Branch names follow: saw/program/{program-slug}/tier{N}-impl-{impl-slug}
 // Worktree paths follow: {repoDir}/.claude/worktrees/saw/program/{program-slug}/tier{N}-impl-{impl-slug}
 //
-// If any worktree creation fails, returns an error immediately (no partial state).
-func CreateProgramWorktrees(programManifestPath string, tierNumber int, repoDir string) (*CreateProgramWorktreesResult, error) {
+// If any worktree creation fails, returns a failure result immediately (no partial state).
+func CreateProgramWorktrees(programManifestPath string, tierNumber int, repoDir string) result.Result[*CreateProgramWorktreesData] {
 	manifest, err := ParseProgramManifest(programManifestPath)
 	if err != nil {
-		return nil, fmt.Errorf("failed to parse program manifest: %w", err)
+		return result.NewFailure[*CreateProgramWorktreesData]([]result.StructuredError{{
+			Code: "E_PROGRAM_WORKTREE", Message: fmt.Sprintf("failed to parse program manifest: %v", err), Severity: "fatal",
+		}})
 	}
 
 	// Find the tier by number
@@ -58,13 +61,17 @@ func CreateProgramWorktrees(programManifestPath string, tierNumber int, repoDir 
 	}
 
 	if targetTier == nil {
-		return nil, fmt.Errorf("tier %d not found in program manifest", tierNumber)
+		return result.NewFailure[*CreateProgramWorktreesData]([]result.StructuredError{{
+			Code: "E_PROGRAM_WORKTREE", Message: fmt.Sprintf("tier %d not found in program manifest", tierNumber), Severity: "fatal",
+		}})
 	}
 
 	// Resolve absolute path for repoDir
 	absRepoDir, err := filepath.Abs(repoDir)
 	if err != nil {
-		return nil, fmt.Errorf("failed to resolve repo path: %w", err)
+		return result.NewFailure[*CreateProgramWorktreesData]([]result.StructuredError{{
+			Code: "E_PROGRAM_WORKTREE", Message: fmt.Sprintf("failed to resolve repo path: %v", err), Severity: "fatal",
+		}})
 	}
 
 	var worktrees []ProgramWorktreeInfo
@@ -80,13 +87,17 @@ func CreateProgramWorktrees(programManifestPath string, tierNumber int, repoDir 
 				_ = git.DeleteBranch(absRepoDir, branchName)
 				fmt.Fprintf(os.Stderr, "Cleaned up stale merged branch %q\n", branchName)
 			} else {
-				return nil, fmt.Errorf("branch %q already exists and is not merged into HEAD; delete it manually or merge first", branchName)
+				return result.NewFailure[*CreateProgramWorktreesData]([]result.StructuredError{{
+					Code: "E_PROGRAM_WORKTREE", Message: fmt.Sprintf("branch %q already exists and is not merged into HEAD; delete it manually or merge first", branchName), Severity: "fatal",
+				}})
 			}
 		}
 
 		// Create the worktree
 		if err := git.WorktreeAdd(absRepoDir, worktreePath, branchName); err != nil {
-			return nil, fmt.Errorf("failed to create worktree for impl %s: %w", implSlug, err)
+			return result.NewFailure[*CreateProgramWorktreesData]([]result.StructuredError{{
+				Code: "E_PROGRAM_WORKTREE", Message: fmt.Sprintf("failed to create worktree for impl %s: %v", implSlug, err), Severity: "fatal",
+			}})
 		}
 
 		// Install pre-commit hook (log warning on error, don't fail)
@@ -101,8 +112,8 @@ func CreateProgramWorktrees(programManifestPath string, tierNumber int, repoDir 
 		})
 	}
 
-	return &CreateProgramWorktreesResult{
+	return result.NewSuccess(&CreateProgramWorktreesData{
 		TierNumber: tierNumber,
 		Worktrees:  worktrees,
-	}, nil
+	})
 }

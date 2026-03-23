@@ -9,15 +9,17 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
 )
 
 // ValidateWiringDeclarations checks each WiringDeclaration in the manifest:
 // for each entry, it opens entry.MustBeCalledFrom (resolved against repoPath),
 // attempts Go AST parsing to find the symbol as a call expression, and falls
 // back to a bufio line scan for non-Go files or parse failures.
-// Returns a WiringValidationResult with any gaps (severity: "error").
-func ValidateWiringDeclarations(manifest *IMPLManifest, repoPath string) (*WiringValidationResult, error) {
-	result := &WiringValidationResult{
+// Returns a result.Result[*WiringValidationData] with any gaps (severity: "error").
+func ValidateWiringDeclarations(manifest *IMPLManifest, repoPath string) result.Result[*WiringValidationData] {
+	data := &WiringValidationData{
 		Gaps: []WiringGap{},
 	}
 
@@ -27,7 +29,7 @@ func ValidateWiringDeclarations(manifest *IMPLManifest, repoPath string) (*Wirin
 		found, err := symbolFoundInFile(absPath, entry.Symbol)
 		if err != nil {
 			// File not found or unreadable — report as a gap
-			result.Gaps = append(result.Gaps, WiringGap{
+			data.Gaps = append(data.Gaps, WiringGap{
 				Declaration: entry,
 				Reason:      fmt.Sprintf("could not read file %s: %v", entry.MustBeCalledFrom, err),
 				Severity:    "error",
@@ -36,7 +38,7 @@ func ValidateWiringDeclarations(manifest *IMPLManifest, repoPath string) (*Wirin
 		}
 
 		if !found {
-			result.Gaps = append(result.Gaps, WiringGap{
+			data.Gaps = append(data.Gaps, WiringGap{
 				Declaration: entry,
 				Reason:      fmt.Sprintf("symbol %q not found as a call in %s", entry.Symbol, entry.MustBeCalledFrom),
 				Severity:    "error",
@@ -44,14 +46,19 @@ func ValidateWiringDeclarations(manifest *IMPLManifest, repoPath string) (*Wirin
 		}
 	}
 
-	result.Valid = len(result.Gaps) == 0
-	if result.Valid {
-		result.Summary = fmt.Sprintf("all %d wiring declarations satisfied", len(manifest.Wiring))
+	data.Valid = len(data.Gaps) == 0
+	if data.Valid {
+		data.Summary = fmt.Sprintf("all %d wiring declarations satisfied", len(manifest.Wiring))
 	} else {
-		result.Summary = fmt.Sprintf("%d wiring gap(s) found in %d declarations", len(result.Gaps), len(manifest.Wiring))
+		data.Summary = fmt.Sprintf("%d wiring gap(s) found in %d declarations", len(data.Gaps), len(manifest.Wiring))
 	}
 
-	return result, nil
+	if !data.Valid {
+		return result.NewPartial(data, []result.StructuredError{{
+			Code: "E_WIRING", Message: data.Summary, Severity: "error",
+		}})
+	}
+	return result.NewSuccess(data)
 }
 
 // symbolFoundInFile returns true if symbol appears as a call expression in
