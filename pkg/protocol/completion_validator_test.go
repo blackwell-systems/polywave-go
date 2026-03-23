@@ -85,12 +85,14 @@ func TestValidateCompletionReportClaims_Valid(t *testing.T) {
 		FilesCreated: []string{ownedFile},
 	}
 
-	result, err := ValidateCompletionReportClaims(manifest, "B", report, repoDir)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+	res := ValidateCompletionReportClaims(manifest, "B", report, repoDir)
+	if !res.IsSuccess() && !res.IsPartial() {
+		t.Errorf("expected success or partial result, got code=%s errors=%v", res.Code, res.Errors)
+		return
 	}
-	if !result.Valid {
-		t.Errorf("expected Valid=true, got false. Errors: %v", result.Errors)
+	data := res.GetData()
+	if !data.Valid {
+		t.Errorf("expected Valid=true, got false. Errors: %v", res.Errors)
 	}
 }
 
@@ -106,22 +108,19 @@ func TestValidateCompletionReportClaims_FakeCommit(t *testing.T) {
 		Commit: "deadbeefdeadbeefdeadbeefdeadbeefdeadbeef",
 	}
 
-	result, err := ValidateCompletionReportClaims(manifest, "B", report, repoDir)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if result.Valid {
-		t.Error("expected Valid=false for fake commit SHA")
+	res := ValidateCompletionReportClaims(manifest, "B", report, repoDir)
+	if res.IsSuccess() {
+		t.Error("expected non-success result for fake commit SHA")
 	}
 	found := false
-	for _, e := range result.Errors {
-		if strContains(e,"deadbeef") || strContains(e,"commit") {
+	for _, e := range res.Errors {
+		if strContains(e.Message, "deadbeef") || strContains(e.Message, "commit") {
 			found = true
 			break
 		}
 	}
 	if !found {
-		t.Errorf("expected error mentioning commit SHA, got: %v", result.Errors)
+		t.Errorf("expected error mentioning commit SHA, got: %v", res.Errors)
 	}
 }
 
@@ -138,22 +137,19 @@ func TestValidateCompletionReportClaims_FilesOutsideOwnership(t *testing.T) {
 		FilesChanged: []string{"pkg/owned/file.go", "pkg/OTHER/secret.go"},
 	}
 
-	result, err := ValidateCompletionReportClaims(manifest, "B", report, repoDir)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if result.Valid {
-		t.Error("expected Valid=false for files outside ownership")
+	res := ValidateCompletionReportClaims(manifest, "B", report, repoDir)
+	if res.IsSuccess() {
+		t.Error("expected non-success result for files outside ownership")
 	}
 	found := false
-	for _, e := range result.Errors {
-		if strContains(e,"pkg/OTHER/secret.go") {
+	for _, e := range res.Errors {
+		if strContains(e.Message, "pkg/OTHER/secret.go") {
 			found = true
 			break
 		}
 	}
 	if !found {
-		t.Errorf("expected error mentioning unowned file, got: %v", result.Errors)
+		t.Errorf("expected error mentioning unowned file, got: %v", res.Errors)
 	}
 }
 
@@ -172,22 +168,19 @@ func TestValidateCompletionReportClaims_NonExistentFilesCreated(t *testing.T) {
 		FilesCreated: []string{ownedFile}, // file does NOT exist on disk
 	}
 
-	result, err := ValidateCompletionReportClaims(manifest, "B", report, repoDir)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if result.Valid {
-		t.Error("expected Valid=false for non-existent FilesCreated entry")
+	res := ValidateCompletionReportClaims(manifest, "B", report, repoDir)
+	if res.IsSuccess() {
+		t.Error("expected non-success result for non-existent FilesCreated entry")
 	}
 	found := false
-	for _, e := range result.Errors {
-		if strContains(e,"ghost.go") || strContains(e,"does not exist") {
+	for _, e := range res.Errors {
+		if strContains(e.Message, "ghost.go") || strContains(e.Message, "does not exist") {
 			found = true
 			break
 		}
 	}
 	if !found {
-		t.Errorf("expected error mentioning missing file, got: %v", result.Errors)
+		t.Errorf("expected error mentioning missing file, got: %v", res.Errors)
 	}
 }
 
@@ -215,12 +208,14 @@ func TestValidateCompletionReportClaims_FrozenPathAllowed(t *testing.T) {
 		FilesCreated: []string{scaffoldFile},
 	}
 
-	result, err := ValidateCompletionReportClaims(manifest, "B", report, repoDir)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+	res := ValidateCompletionReportClaims(manifest, "B", report, repoDir)
+	if !res.IsSuccess() && !res.IsPartial() {
+		t.Errorf("expected success or partial result for scaffold path, got code=%s errors=%v", res.Code, res.Errors)
+		return
 	}
-	if !result.Valid {
-		t.Errorf("expected Valid=true for scaffold path, got false. Errors: %v", result.Errors)
+	data := res.GetData()
+	if !data.Valid {
+		t.Errorf("expected Valid=true for scaffold path, got false. Errors: %v", res.Errors)
 	}
 }
 
