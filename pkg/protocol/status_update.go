@@ -2,10 +2,12 @@ package protocol
 
 import (
 	"fmt"
+
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
 )
 
-// UpdateStatusResult contains the result of a status update operation.
-type UpdateStatusResult struct {
+// UpdateStatusData contains the data of a status update operation.
+type UpdateStatusData struct {
 	Wave      int    `json:"wave"`
 	Agent     string `json:"agent"`
 	OldStatus string `json:"old_status"`
@@ -15,12 +17,16 @@ type UpdateStatusResult struct {
 
 // UpdateStatus loads the manifest, finds the specified agent, updates its completion report status,
 // and saves the manifest back to disk. Returns the old and new status values.
-// Returns an error if the agent is not found in the specified wave.
-func UpdateStatus(manifestPath string, waveNum int, agentID string, status string) (*UpdateStatusResult, error) {
+// Returns a failure if the agent is not found in the specified wave.
+func UpdateStatus(manifestPath string, waveNum int, agentID string, status string) result.Result[*UpdateStatusData] {
 	// Load manifest
 	manifest, err := Load(manifestPath)
 	if err != nil {
-		return nil, fmt.Errorf("failed to load manifest: %w", err)
+		return result.NewFailure[*UpdateStatusData]([]result.StructuredError{{
+			Code:     "E_STATUS",
+			Message:  fmt.Sprintf("failed to load manifest: %v", err),
+			Severity: "fatal",
+		}})
 	}
 
 	// Find the specified wave
@@ -33,7 +39,11 @@ func UpdateStatus(manifestPath string, waveNum int, agentID string, status strin
 	}
 
 	if targetWave == nil {
-		return nil, fmt.Errorf("wave %d not found in manifest", waveNum)
+		return result.NewFailure[*UpdateStatusData]([]result.StructuredError{{
+			Code:     "E_STATUS",
+			Message:  fmt.Sprintf("wave %d not found in manifest", waveNum),
+			Severity: "fatal",
+		}})
 	}
 
 	// Find the agent in that wave
@@ -46,7 +56,11 @@ func UpdateStatus(manifestPath string, waveNum int, agentID string, status strin
 	}
 
 	if !found {
-		return nil, fmt.Errorf("agent %s not found in wave %d", agentID, waveNum)
+		return result.NewFailure[*UpdateStatusData]([]result.StructuredError{{
+			Code:     "E_STATUS",
+			Message:  fmt.Sprintf("agent %s not found in wave %d", agentID, waveNum),
+			Severity: "fatal",
+		}})
 	}
 
 	// Initialize CompletionReports map if nil
@@ -67,14 +81,18 @@ func UpdateStatus(manifestPath string, waveNum int, agentID string, status strin
 
 	// Save manifest
 	if err := Save(manifest, manifestPath); err != nil {
-		return nil, fmt.Errorf("failed to save manifest: %w", err)
+		return result.NewFailure[*UpdateStatusData]([]result.StructuredError{{
+			Code:     "E_STATUS",
+			Message:  fmt.Sprintf("failed to save manifest: %v", err),
+			Severity: "fatal",
+		}})
 	}
 
-	return &UpdateStatusResult{
+	return result.NewSuccess(&UpdateStatusData{
 		Wave:      waveNum,
 		Agent:     agentID,
 		OldStatus: oldStatus,
 		NewStatus: status,
 		Updated:   true,
-	}, nil
+	})
 }

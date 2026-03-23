@@ -5,6 +5,8 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
 )
 
 // SetImplStateOpts contains options for the SetImplState operation.
@@ -13,8 +15,8 @@ type SetImplStateOpts struct {
 	CommitMsg string // optional commit message; default generated if empty
 }
 
-// SetImplStateResult contains the outcome of a SetImplState call.
-type SetImplStateResult struct {
+// SetImplStateData contains the outcome of a SetImplState call.
+type SetImplStateData struct {
 	PreviousState ProtocolState `json:"previous_state"`
 	NewState      ProtocolState `json:"new_state"`
 	Committed     bool          `json:"committed"`
@@ -38,10 +40,14 @@ var allowedTransitions = map[ProtocolState][]ProtocolState{
 
 // SetImplState atomically reads the manifest, validates the state transition,
 // writes the new state, and optionally commits to git.
-func SetImplState(manifestPath string, newState ProtocolState, opts SetImplStateOpts) (*SetImplStateResult, error) {
+func SetImplState(manifestPath string, newState ProtocolState, opts SetImplStateOpts) result.Result[*SetImplStateData] {
 	manifest, err := Load(manifestPath)
 	if err != nil {
-		return nil, fmt.Errorf("failed to load manifest: %w", err)
+		return result.NewFailure[*SetImplStateData]([]result.StructuredError{{
+			Code:     "E_STATE",
+			Message:  fmt.Sprintf("failed to load manifest: %v", err),
+			Severity: "fatal",
+		}})
 	}
 
 	previousState := manifest.State
@@ -49,7 +55,11 @@ func SetImplState(manifestPath string, newState ProtocolState, opts SetImplState
 	// Validate transition
 	allowed, ok := allowedTransitions[previousState]
 	if !ok {
-		return nil, fmt.Errorf("unknown state %q; cannot determine valid transitions", previousState)
+		return result.NewFailure[*SetImplStateData]([]result.StructuredError{{
+			Code:     "E_STATE",
+			Message:  fmt.Sprintf("unknown state %q; cannot determine valid transitions", previousState),
+			Severity: "fatal",
+		}})
 	}
 
 	found := false
@@ -65,16 +75,23 @@ func SetImplState(manifestPath string, newState ProtocolState, opts SetImplState
 		for i, s := range allowed {
 			validTargets[i] = string(s)
 		}
-		return nil, fmt.Errorf("transition from %s to %s is not allowed; valid targets: [%s]",
-			previousState, newState, strings.Join(validTargets, ", "))
+		return result.NewFailure[*SetImplStateData]([]result.StructuredError{{
+			Code:     "E_STATE",
+			Message:  fmt.Sprintf("transition from %s to %s is not allowed; valid targets: [%s]", previousState, newState, strings.Join(validTargets, ", ")),
+			Severity: "fatal",
+		}})
 	}
 
 	// Write the new state atomically
 	if err := updateManifestState(manifestPath, newState); err != nil {
-		return nil, fmt.Errorf("failed to update manifest state: %w", err)
+		return result.NewFailure[*SetImplStateData]([]result.StructuredError{{
+			Code:     "E_STATE",
+			Message:  fmt.Sprintf("failed to update manifest state: %v", err),
+			Severity: "fatal",
+		}})
 	}
 
-	result := &SetImplStateResult{
+	data := &SetImplStateData{
 		PreviousState: previousState,
 		NewState:      newState,
 	}
@@ -90,23 +107,35 @@ func SetImplState(manifestPath string, newState ProtocolState, opts SetImplState
 
 		addCmd := exec.Command("git", "-C", manifestDir, "add", manifestPath)
 		if out, err := addCmd.CombinedOutput(); err != nil {
-			return nil, fmt.Errorf("git add failed: %w\n%s", err, out)
+			return result.NewFailure[*SetImplStateData]([]result.StructuredError{{
+				Code:     "E_STATE",
+				Message:  fmt.Sprintf("git add failed: %v\n%s", err, out),
+				Severity: "fatal",
+			}})
 		}
 
 		commitCmd := exec.Command("git", "-C", manifestDir, "commit", "-m", commitMsg)
 		if out, err := commitCmd.CombinedOutput(); err != nil {
-			return nil, fmt.Errorf("git commit failed: %w\n%s", err, out)
+			return result.NewFailure[*SetImplStateData]([]result.StructuredError{{
+				Code:     "E_STATE",
+				Message:  fmt.Sprintf("git commit failed: %v\n%s", err, out),
+				Severity: "fatal",
+			}})
 		}
 
 		shaCmd := exec.Command("git", "-C", manifestDir, "rev-parse", "HEAD")
 		shaOut, err := shaCmd.Output()
 		if err != nil {
-			return nil, fmt.Errorf("git rev-parse HEAD failed: %w", err)
+			return result.NewFailure[*SetImplStateData]([]result.StructuredError{{
+				Code:     "E_STATE",
+				Message:  fmt.Sprintf("git rev-parse HEAD failed: %v", err),
+				Severity: "fatal",
+			}})
 		}
 
-		result.Committed = true
-		result.CommitSHA = strings.TrimSpace(string(shaOut))
+		data.Committed = true
+		data.CommitSHA = strings.TrimSpace(string(shaOut))
 	}
 
-	return result, nil
+	return result.NewSuccess(data)
 }

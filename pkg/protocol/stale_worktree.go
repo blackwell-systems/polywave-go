@@ -1,10 +1,12 @@
 package protocol
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 
 	"github.com/blackwell-systems/scout-and-wave-go/internal/git"
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
 )
 
 // StaleWorktree represents a single stale worktree detected during scanning.
@@ -16,14 +18,17 @@ type StaleWorktree struct {
 	RepoPath     string `json:"repo_path"`
 }
 
-// StaleCleanupResult represents the overall cleanup result for stale worktrees.
-type StaleCleanupResult struct {
-	Cleaned []StaleWorktree `json:"cleaned"`
-	Skipped []StaleWorktree `json:"skipped"`
-	Errors  []struct {
-		Worktree StaleWorktree `json:"worktree"`
-		Error    string        `json:"error"`
-	} `json:"errors"`
+// StaleCleanupFailure represents a single worktree cleanup failure.
+type StaleCleanupFailure struct {
+	Worktree StaleWorktree `json:"worktree"`
+	Error    string        `json:"error"`
+}
+
+// StaleCleanupData represents the overall cleanup data for stale worktrees.
+type StaleCleanupData struct {
+	Cleaned []StaleWorktree       `json:"cleaned"`
+	Skipped []StaleWorktree       `json:"skipped"`
+	Errors  []StaleCleanupFailure `json:"errors"`
 }
 
 // DetectStaleWorktrees scans git worktrees in repoPath, parses branch names to
@@ -101,50 +106,57 @@ func DetectStaleWorktrees(repoPath string) ([]StaleWorktree, error) {
 
 // CleanStaleWorktrees removes the given stale worktrees. It skips worktrees
 // with uncommitted changes unless force is true. Returns structured results.
-func CleanStaleWorktrees(stale []StaleWorktree, force bool) (*StaleCleanupResult, error) {
-	result := &StaleCleanupResult{
+func CleanStaleWorktrees(stale []StaleWorktree, force bool) result.Result[*StaleCleanupData] {
+	data := &StaleCleanupData{
 		Cleaned: []StaleWorktree{},
 		Skipped: []StaleWorktree{},
-		Errors: []struct {
-			Worktree StaleWorktree `json:"worktree"`
-			Error    string        `json:"error"`
-		}{},
+		Errors:  []StaleCleanupFailure{},
 	}
 
 	for _, sw := range stale {
 		// Check for uncommitted changes.
 		status, err := git.StatusPorcelain(sw.WorktreePath)
 		if err == nil && status != "" && !force {
-			result.Skipped = append(result.Skipped, sw)
+			data.Skipped = append(data.Skipped, sw)
 			continue
 		}
 
 		// Remove worktree.
 		if err := git.WorktreeRemove(sw.RepoPath, sw.WorktreePath); err != nil {
-			result.Errors = append(result.Errors, struct {
-				Worktree StaleWorktree `json:"worktree"`
-				Error    string        `json:"error"`
-			}{Worktree: sw, Error: err.Error()})
+			data.Errors = append(data.Errors, StaleCleanupFailure{
+				Worktree: sw, Error: err.Error(),
+			})
 			continue
 		}
 
 		// Delete branch.
 		if err := git.DeleteBranch(sw.RepoPath, sw.BranchName); err != nil {
 			// Worktree removed but branch delete failed — still report as error.
-			result.Errors = append(result.Errors, struct {
-				Worktree StaleWorktree `json:"worktree"`
-				Error    string        `json:"error"`
-			}{Worktree: sw, Error: "worktree removed but branch delete failed: " + err.Error()})
+			data.Errors = append(data.Errors, StaleCleanupFailure{
+				Worktree: sw, Error: "worktree removed but branch delete failed: " + err.Error(),
+			})
 			continue
 		}
 
 		// Prune stale worktree metadata.
 		_ = git.WorktreePrune(sw.RepoPath)
 
-		result.Cleaned = append(result.Cleaned, sw)
+		data.Cleaned = append(data.Cleaned, sw)
 	}
 
-	return result, nil
+	if len(data.Errors) > 0 {
+		warnings := make([]result.StructuredError, len(data.Errors))
+		for i, e := range data.Errors {
+			warnings[i] = result.StructuredError{
+				Code:     "E_STALE",
+				Message:  fmt.Sprintf("cleanup failed for %s: %s", e.Worktree.BranchName, e.Error),
+				Severity: "warning",
+			}
+		}
+		return result.NewPartial(data, warnings)
+	}
+
+	return result.NewSuccess(data)
 }
 
 // DetectStaleWorktreesForSlug returns stale worktrees filtered to a specific slug.
@@ -163,10 +175,14 @@ func DetectStaleWorktreesForSlug(repoPath, slug string) ([]StaleWorktree, error)
 }
 
 // CleanupBySlug detects and cleans stale worktrees for a specific IMPL slug.
-func CleanupBySlug(repoDir, slug string, force bool) (*StaleCleanupResult, error) {
+func CleanupBySlug(repoDir, slug string, force bool) result.Result[*StaleCleanupData] {
 	stale, err := DetectStaleWorktreesForSlug(repoDir, slug)
 	if err != nil {
-		return nil, err
+		return result.NewFailure[*StaleCleanupData]([]result.StructuredError{{
+			Code:     "E_STALE",
+			Message:  fmt.Sprintf("failed to detect stale worktrees for slug %s: %v", slug, err),
+			Severity: "fatal",
+		}})
 	}
 	return CleanStaleWorktrees(stale, force)
 }
