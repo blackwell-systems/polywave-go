@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/agent/backend"
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/agent/dedup"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/tools"
 )
 
@@ -31,6 +32,7 @@ type Client struct {
 	maxTurns   int
 	onToolCall backend.ToolCallCallback
 	readOnly   bool
+	dedupCache *dedup.Cache
 }
 
 // New creates a new Client configured from cfg.
@@ -78,6 +80,7 @@ func (c *Client) buildWorkshop(workDir string) tools.Workshop {
 	} else {
 		w = tools.StandardTools(workDir)
 	}
+	w, c.dedupCache = dedup.WithDedup(w)
 	if c.onToolCall != nil {
 		w = tools.WithTiming(w, func(ev tools.ToolCallEvent) {
 			c.onToolCall(backend.ToolCallEvent{
@@ -101,6 +104,16 @@ func (c *Client) WithAPIKey(key string) *Client {
 func (c *Client) WithBaseURL(url string) *Client {
 	c.baseURL = url
 	return c
+}
+
+// DedupStats returns dedup metrics from the most recent Run call.
+// Returns nil if no run has been made yet.
+func (c *Client) DedupStats() *dedup.Stats {
+	if c.dedupCache == nil {
+		return nil
+	}
+	stats := c.dedupCache.Stats()
+	return &stats
 }
 
 // execTool looks up and executes a tool from the Workshop, returning a string result.
