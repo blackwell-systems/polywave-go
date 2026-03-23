@@ -11,7 +11,6 @@ import (
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/agent"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/orchestrator"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/types"
 	"github.com/spf13/cobra"
 )
 
@@ -154,7 +153,7 @@ Examples:
 				return fmt.Errorf("run-critic: backend init: %w", bErr)
 			}
 			runner := agent.NewRunner(b, nil)
-			spec := &types.AgentSpec{Letter: "critic", Prompt: prompt}
+			spec := &protocol.Agent{ID: "critic", Task: prompt}
 			_, execErr := runner.ExecuteStreamingWithTools(ctx, spec, workDir, func(chunk string) {
 				fmt.Print(chunk)
 			}, nil)

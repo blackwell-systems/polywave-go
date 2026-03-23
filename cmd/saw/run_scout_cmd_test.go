@@ -6,7 +6,6 @@ import (
 	"testing"
 
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/types"
 )
 
 func TestGenerateSlug(t *testing.T) {
@@ -104,50 +103,50 @@ func TestRunScoutCmd_ProgramFlag(t *testing.T) {
 func TestCountAgentsFromErrors(t *testing.T) {
 	tests := []struct {
 		name string
-		errs []types.ValidationError
+		errs []protocol.ValidationError
 		want int
 	}{
 		{
 			name: "No errors",
-			errs: []types.ValidationError{},
+			errs: []protocol.ValidationError{},
 			want: 0,
 		},
 		{
 			name: "Non-agent-id errors",
-			errs: []types.ValidationError{
-				{BlockType: "impl-file-ownership", LineNumber: 10, Message: "missing header"},
+			errs: []protocol.ValidationError{
+				{Code: "impl-file-ownership", Line: 10, Message: "missing header"},
 			},
 			want: 0,
 		},
 		{
 			name: "Agent ID errors without suggestion",
-			errs: []types.ValidationError{
-				{BlockType: "agent-id", LineNumber: 10, Message: "invalid agent ID 'A1'"},
+			errs: []protocol.ValidationError{
+				{Code: "agent-id", Line: 10, Message: "invalid agent ID 'A1'"},
 			},
 			want: 0,
 		},
 		{
 			name: "Agent ID errors with suggestion",
-			errs: []types.ValidationError{
-				{BlockType: "agent-id", LineNumber: 10, Message: "invalid agent ID 'A1'"},
-				{BlockType: "agent-id", LineNumber: 0, Message: "Run: sawtools assign-agent-ids --count 5"},
+			errs: []protocol.ValidationError{
+				{Code: "agent-id", Line: 10, Message: "invalid agent ID 'A1'"},
+				{Code: "agent-id", Line: 0, Message: "Run: sawtools assign-agent-ids --count 5"},
 			},
 			want: 5,
 		},
 		{
 			name: "Multiple errors with suggestion",
-			errs: []types.ValidationError{
-				{BlockType: "agent-id", LineNumber: 10, Message: "invalid agent ID 'A1'"},
-				{BlockType: "agent-id", LineNumber: 15, Message: "invalid agent ID 'B1'"},
-				{BlockType: "agent-id", LineNumber: 20, Message: "invalid agent ID 'C1'"},
-				{BlockType: "agent-id", LineNumber: 0, Message: "Run: sawtools assign-agent-ids --count 12"},
+			errs: []protocol.ValidationError{
+				{Code: "agent-id", Line: 10, Message: "invalid agent ID 'A1'"},
+				{Code: "agent-id", Line: 15, Message: "invalid agent ID 'B1'"},
+				{Code: "agent-id", Line: 20, Message: "invalid agent ID 'C1'"},
+				{Code: "agent-id", Line: 0, Message: "Run: sawtools assign-agent-ids --count 12"},
 			},
 			want: 12,
 		},
 		{
 			name: "Suggestion with large count",
-			errs: []types.ValidationError{
-				{BlockType: "agent-id", LineNumber: 0, Message: "Run: sawtools assign-agent-ids --count 234"},
+			errs: []protocol.ValidationError{
+				{Code: "agent-id", Line: 0, Message: "Run: sawtools assign-agent-ids --count 234"},
 			},
 			want: 234,
 		},

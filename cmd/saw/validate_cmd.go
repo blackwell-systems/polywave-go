@@ -123,9 +123,9 @@ func newValidateCmd() *cobra.Command {
 			}
 			for _, de := range docErrs {
 				errs = append(errs, validateError{
-					Code:    de.BlockType,
+					Code:    de.Code,
 					Message: de.Message,
-					Line:    de.LineNumber,
+					Line:    de.Line,
 				})
 			}
 
