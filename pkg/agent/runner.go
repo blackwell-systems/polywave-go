@@ -7,7 +7,7 @@ import (
 	"fmt"
 
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/agent/backend"
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/types"
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/worktree"
 )
 
@@ -25,11 +25,11 @@ func NewRunner(b backend.Backend, worktrees *worktree.Manager) *Runner {
 	}
 }
 
-// Execute sends agentSpec.Prompt as the system prompt to the backend, paired
+// Execute sends agent.Task as the system prompt to the backend, paired
 // with a user message that provides the worktreePath for context. It returns
 // the raw response text. Errors are returned immediately without retry.
-func (r *Runner) Execute(ctx context.Context, agentSpec *types.AgentSpec, worktreePath string) (string, error) {
-	systemPrompt := agentSpec.Prompt
+func (r *Runner) Execute(ctx context.Context, agent *protocol.Agent, worktreePath string) (string, error) {
+	systemPrompt := agent.Task
 
 	userMessage := fmt.Sprintf(
 		"You are operating in worktree: %s\n"+
@@ -41,7 +41,7 @@ func (r *Runner) Execute(ctx context.Context, agentSpec *types.AgentSpec, worktr
 
 	response, err := r.client.Run(ctx, systemPrompt, userMessage, worktreePath)
 	if err != nil {
-		return "", fmt.Errorf("runner: Execute agent %s: %w", agentSpec.Letter, err)
+		return "", fmt.Errorf("runner: Execute agent %s: %w", agent.ID, err)
 	}
 
 	return response, nil
@@ -52,11 +52,11 @@ func (r *Runner) Execute(ctx context.Context, agentSpec *types.AgentSpec, worktr
 // Returns the full response text and any error, identical to Execute.
 func (r *Runner) ExecuteStreaming(
 	ctx context.Context,
-	agentSpec *types.AgentSpec,
+	agent *protocol.Agent,
 	worktreePath string,
 	onChunk backend.ChunkCallback,
 ) (string, error) {
-	systemPrompt := agentSpec.Prompt
+	systemPrompt := agent.Task
 
 	userMessage := fmt.Sprintf(
 		"You are operating in worktree: %s\n"+
@@ -68,7 +68,7 @@ func (r *Runner) ExecuteStreaming(
 
 	response, err := r.client.RunStreaming(ctx, systemPrompt, userMessage, worktreePath, onChunk)
 	if err != nil {
-		return "", fmt.Errorf("runner: ExecuteStreaming agent %s: %w", agentSpec.Letter, err)
+		return "", fmt.Errorf("runner: ExecuteStreaming agent %s: %w", agent.ID, err)
 	}
 
 	return response, nil
@@ -79,12 +79,12 @@ func (r *Runner) ExecuteStreaming(
 // Returns the full response and any error, identical to ExecuteStreaming.
 func (r *Runner) ExecuteStreamingWithTools(
 	ctx context.Context,
-	agentSpec *types.AgentSpec,
+	agent *protocol.Agent,
 	worktreePath string,
 	onChunk backend.ChunkCallback,
 	onToolCall backend.ToolCallCallback,
 ) (string, error) {
-	systemPrompt := agentSpec.Prompt
+	systemPrompt := agent.Task
 
 	userMessage := fmt.Sprintf(
 		"You are operating in worktree: %s\n"+
@@ -102,7 +102,7 @@ func (r *Runner) ExecuteStreamingWithTools(
 
 	response, err := r.client.RunStreamingWithTools(ctx, systemPrompt, userMessage, worktreePath, onChunk, onToolCall)
 	if err != nil {
-		return "", fmt.Errorf("runner: ExecuteStreamingWithTools agent %s: %w", agentSpec.Letter, err)
+		return "", fmt.Errorf("runner: ExecuteStreamingWithTools agent %s: %w", agent.ID, err)
 	}
 
 	return response, nil

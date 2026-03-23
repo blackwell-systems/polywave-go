@@ -182,18 +182,6 @@ func slicesEqual(a, b []string) bool {
 	return true
 }
 
-// agentToSpec converts a protocol.Agent to a types.AgentSpec for the
-// agent.Runner boundary. This adapter prevents cascading changes into pkg/agent
-// which still consumes types.AgentSpec.
-func agentToSpec(a protocol.Agent) types.AgentSpec {
-	return types.AgentSpec{
-		Letter:     a.ID,
-		Prompt:     a.Task,
-		FilesOwned: a.Files,
-		Model:      a.Model,
-	}
-}
-
 // BackendConfig carries backend selection + credentials for newBackendFunc.
 type BackendConfig struct {
 	Kind      string // "api" | "cli" | "auto" | "openai" | "anthropic" | "bedrock" | "ollama" | "lmstudio"
@@ -573,18 +561,15 @@ func (o *Orchestrator) RunWave(waveNum int) error {
 			return fmt.Errorf("orchestrator.RunWave: prioritized agent %s not found in wave %d", agentID, waveNum)
 		}
 
-		// Convert protocol.Agent to types.AgentSpec at the boundary
-		agentSpec := agentToSpec(protoAgent)
-
 		eg.Go(func() error {
 			// Build per-agent constraints from the IMPL manifest (I1/I2/I5/I6).
-			constraints := buildWaveConstraints(o.implDocPath, agentSpec.Letter)
+			constraints := buildWaveConstraints(o.implDocPath, protoAgent.ID)
 
 			runner := defaultRunner
 			// Per-agent model override or constraints: create a separate backend.
 			model := o.defaultModel
-			if agentSpec.Model != "" && agentSpec.Model != o.defaultModel {
-				model = agentSpec.Model
+			if protoAgent.Model != "" && protoAgent.Model != o.defaultModel {
+				model = protoAgent.Model
 			}
 			if constraints != nil || model != o.defaultModel {
 				b2, err2 := newBackendFunc(BackendConfig{
@@ -593,11 +578,11 @@ func (o *Orchestrator) RunWave(waveNum int) error {
 					Constraints: constraints,
 				})
 				if err2 != nil {
-					return fmt.Errorf("orchestrator: agent %s: create backend: %w", agentSpec.Letter, err2)
+					return fmt.Errorf("orchestrator: agent %s: create backend: %w", protoAgent.ID, err2)
 				}
 				runner = newRunnerFunc(b2, wm)
 			}
-			return o.launchAgent(ctx, runner, wm, waveNum, agentSpec)
+			return o.launchAgent(ctx, runner, wm, waveNum, protoAgent)
 		})
 	}
 
@@ -646,50 +631,50 @@ func (o *Orchestrator) launchAgent(
 	runner *agent.Runner,
 	wm *worktree.Manager,
 	waveNum int,
-	agentSpec types.AgentSpec,
+	agentSpec protocol.Agent,
 ) error {
 	// a. Determine worktree path: use pre-computed multi-repo path if available,
 	// otherwise fall back to single-repo creation.
 	slug := o.implSlug()
-	branch := protocol.BranchName(slug, waveNum, agentSpec.Letter)
+	branch := protocol.BranchName(slug, waveNum, agentSpec.ID)
 	var wtPath string
 
-	if prePath, ok := o.worktreePaths[agentSpec.Letter]; ok {
+	if prePath, ok := o.worktreePaths[agentSpec.ID]; ok {
 		// Multi-repo: worktree was pre-created by protocol.CreateWorktrees
 		wtPath = prePath
 		if _, statErr := os.Stat(wtPath); statErr != nil {
 			o.publish(OrchestratorEvent{
 				Event: "agent_failed",
 				Data: AgentFailedPayload{
-					Agent:       agentSpec.Letter,
+					Agent:       agentSpec.ID,
 					Wave:        waveNum,
 					Status:      "failed",
 					FailureType: "worktree_missing",
 					Message:     fmt.Sprintf("pre-created worktree not found at %s", wtPath),
 				},
 			})
-			return fmt.Errorf("orchestrator: agent %s: pre-created worktree not found at %s", agentSpec.Letter, wtPath)
+			return fmt.Errorf("orchestrator: agent %s: pre-created worktree not found at %s", agentSpec.ID, wtPath)
 		}
 	} else {
 		// Single-repo fallback: create worktree on demand
 		wtPath = filepath.Join(o.repoPath, ".claude", "worktrees", branch)
 		if _, statErr := os.Stat(wtPath); statErr == nil {
-			fmt.Fprintf(os.Stderr, "orchestrator: reusing existing worktree for agent %s at %s\n", agentSpec.Letter, wtPath)
+			fmt.Fprintf(os.Stderr, "orchestrator: reusing existing worktree for agent %s at %s\n", agentSpec.ID, wtPath)
 		} else {
 			var createErr error
-			wtPath, createErr = worktreeCreatorFunc(wm, waveNum, agentSpec.Letter)
+			wtPath, createErr = worktreeCreatorFunc(wm, waveNum, agentSpec.ID)
 			if createErr != nil {
 				o.publish(OrchestratorEvent{
 					Event: "agent_failed",
 					Data: AgentFailedPayload{
-						Agent:       agentSpec.Letter,
+						Agent:       agentSpec.ID,
 						Wave:        waveNum,
 						Status:      "failed",
 						FailureType: "worktree_creation",
 						Message:     createErr.Error(),
 					},
 				})
-				return fmt.Errorf("orchestrator: agent %s: create worktree: %w", agentSpec.Letter, createErr)
+				return fmt.Errorf("orchestrator: agent %s: create worktree: %w", agentSpec.ID, createErr)
 			}
 		}
 	}
@@ -703,24 +688,24 @@ func (o *Orchestrator) launchAgent(
 	o.publish(OrchestratorEvent{
 		Event: "agent_started",
 		Data: AgentStartedPayload{
-			Agent: agentSpec.Letter,
+			Agent: agentSpec.ID,
 			Wave:  waveNum,
-			Files: agentSpec.FilesOwned,
+			Files: agentSpec.Files,
 		},
 	})
 
 	// E23: Construct per-agent context payload instead of passing full IMPL doc prompt.
 	manifest, err := protocol.Load(o.implDocPath)
 	if err == nil {
-		if contextPayload, extractErr := protocol.ExtractAgentContextFromManifest(manifest, agentSpec.Letter); extractErr == nil {
+		if contextPayload, extractErr := protocol.ExtractAgentContextFromManifest(manifest, agentSpec.ID); extractErr == nil {
 			if jsonBytes, marshalErr := json.Marshal(contextPayload); marshalErr == nil {
-				agentSpec.Prompt = string(jsonBytes)
+				agentSpec.Task = string(jsonBytes)
 			} else {
 				fmt.Fprintf(os.Stderr, "orchestrator: failed to marshal E23 context: %v\n", marshalErr)
 			}
 		} else {
 			// Fallback: use existing prompt from agentSpec (already set from IMPL doc parse).
-			fmt.Fprintf(os.Stderr, "orchestrator: E23 context extraction failed for agent %s: %v (falling back to full prompt)\n", agentSpec.Letter, extractErr)
+			fmt.Fprintf(os.Stderr, "orchestrator: E23 context extraction failed for agent %s: %v (falling back to full prompt)\n", agentSpec.ID, extractErr)
 		}
 	} else {
 		fmt.Fprintf(os.Stderr, "orchestrator: failed to load manifest for E23 extraction: %v\n", err)
@@ -729,10 +714,10 @@ func (o *Orchestrator) launchAgent(
 	// Inject retry prefix after E23 extraction (GAP-4 fix).
 	// retryPrefixMap is set by executeRetryLoop; read here after E23 so the prefix
 	// is preserved even though E23 overwrites the base prompt.
-	retryKey := fmt.Sprintf("%s:%d:%s", o.implSlug(), waveNum, agentSpec.Letter)
+	retryKey := fmt.Sprintf("%s:%d:%s", o.implSlug(), waveNum, agentSpec.ID)
 	if prefix, ok := retryPrefixMap.Load(retryKey); ok {
 		if prefixStr, ok2 := prefix.(string); ok2 && prefixStr != "" {
-			agentSpec.Prompt = prefixStr + "\n\n" + agentSpec.Prompt
+			agentSpec.Task = prefixStr + "\n\n" + agentSpec.Task
 			retryPrefixMap.Delete(retryKey) // consume once; recursive retries store fresh
 		}
 	}
@@ -744,7 +729,7 @@ func (o *Orchestrator) launchAgent(
 			o.publish(OrchestratorEvent{
 				Event: "agent_output",
 				Data: AgentOutputPayload{
-					Agent: agentSpec.Letter,
+					Agent: agentSpec.ID,
 					Wave:  waveNum,
 					Chunk: chunk,
 				},
@@ -755,7 +740,7 @@ func (o *Orchestrator) launchAgent(
 			o.publish(OrchestratorEvent{
 				Event: "agent_tool_call",
 				Data: AgentToolCallPayload{
-					Agent:      agentSpec.Letter,
+					Agent:      agentSpec.ID,
 					Wave:       waveNum,
 					ToolID:     ev.ID,
 					ToolName:   ev.Name,
@@ -774,21 +759,21 @@ func (o *Orchestrator) launchAgent(
 		o.publish(OrchestratorEvent{
 			Event: "agent_failed",
 			Data: AgentFailedPayload{
-				Agent:       agentSpec.Letter,
+				Agent:       agentSpec.ID,
 				Wave:        waveNum,
 				Status:      "failed",
 				FailureType: failureType,
 				Message:     err.Error(),
 			},
 		})
-		return fmt.Errorf("orchestrator: agent %s: Execute: %w", agentSpec.Letter, err)
+		return fmt.Errorf("orchestrator: agent %s: Execute: %w", agentSpec.ID, err)
 	}
 
 	// c. Check for completion report in the agent's worktree IMPL doc.
 	// API/Bedrock backends run synchronously — when ExecuteStreamingWithTools returns,
 	// the agent is done. Poll briefly (once) for a completion report in case the agent
 	// wrote one, but don't block for 30 minutes waiting for one that may never come.
-	report, _ := waitForCompletionFunc(wtIMPLPath(o.repoPath, o.implDocPath, wtPath), agentSpec.Letter, 5*time.Second, 2*time.Second)
+	report, _ := waitForCompletionFunc(wtIMPLPath(o.repoPath, o.implDocPath, wtPath), agentSpec.ID, 5*time.Second, 2*time.Second)
 
 	// d. Auto-commit and synthesize completion report if the agent didn't write one.
 	// This bridges the gap between CLI agents (SAW-protocol-aware, commit + write report)
@@ -798,7 +783,7 @@ func (o *Orchestrator) launchAgent(
 		// a partial/blocked report to the main IMPL doc. If so, reuse it rather than
 		// masking the failure with a spurious "complete".
 		if savedManifest, checkErr := protocol.Load(o.implDocPath); checkErr == nil {
-			if cr, ok := savedManifest.CompletionReports[agentSpec.Letter]; ok &&
+			if cr, ok := savedManifest.CompletionReports[agentSpec.ID]; ok &&
 				(cr.Status == "partial" || cr.Status == "blocked") {
 				report = &cr
 			}
@@ -806,9 +791,9 @@ func (o *Orchestrator) launchAgent(
 	}
 	if report == nil {
 		// Only auto-synthesize complete if no existing partial/blocked report was found.
-		commitSHA, filesChanged, autoErr := autoCommitWorktree(wtPath, waveNum, agentSpec.Letter, baseSHA)
+		commitSHA, filesChanged, autoErr := autoCommitWorktree(wtPath, waveNum, agentSpec.ID, baseSHA)
 		if autoErr != nil {
-			fmt.Fprintf(os.Stderr, "orchestrator: auto-commit failed for agent %s: %v\n", agentSpec.Letter, autoErr)
+			fmt.Fprintf(os.Stderr, "orchestrator: auto-commit failed for agent %s: %v\n", agentSpec.ID, autoErr)
 		}
 
 		// Always synthesize a completion report for API agents that didn't write one.
@@ -836,12 +821,12 @@ func (o *Orchestrator) launchAgent(
 	if report != nil {
 		reportMu.Lock()
 		if manifest, loadErr := protocol.Load(o.implDocPath); loadErr == nil {
-			if setErr := protocol.SetCompletionReport(manifest, agentSpec.Letter, *report); setErr == nil {
+			if setErr := protocol.SetCompletionReport(manifest, agentSpec.ID, *report); setErr == nil {
 				if saveErr := protocol.Save(manifest, o.implDocPath); saveErr != nil {
-					fmt.Fprintf(os.Stderr, "orchestrator: failed to save report for agent %s: %v\n", agentSpec.Letter, saveErr)
+					fmt.Fprintf(os.Stderr, "orchestrator: failed to save report for agent %s: %v\n", agentSpec.ID, saveErr)
 				}
 			} else {
-				fmt.Fprintf(os.Stderr, "orchestrator: failed to set report for agent %s: %v\n", agentSpec.Letter, setErr)
+				fmt.Fprintf(os.Stderr, "orchestrator: failed to set report for agent %s: %v\n", agentSpec.ID, setErr)
 			}
 		}
 		reportMu.Unlock()
@@ -863,7 +848,7 @@ func (o *Orchestrator) launchAgent(
 		o.publish(OrchestratorEvent{
 			Event: "agent_complete",
 			Data: AgentCompletePayload{
-				Agent:  agentSpec.Letter,
+				Agent:  agentSpec.ID,
 				Wave:   waveNum,
 				Status: status,
 				Branch: branch,
@@ -893,7 +878,7 @@ func (o *Orchestrator) launchAgent(
 		o.publish(OrchestratorEvent{
 			Event: "agent_blocked",
 			Data: AgentBlockedPayload{
-				Agent:       agentSpec.Letter,
+				Agent:       agentSpec.ID,
 				Wave:        waveNum,
 				Status:      report.Status,
 				FailureType: report.FailureType,
@@ -910,7 +895,7 @@ func (o *Orchestrator) launchAgent(
 		case ActionReplan, ActionEscalate:
 			// E19: needs_replan/escalate — return error to surface to human.
 			return fmt.Errorf("orchestrator: agent %s: %s failure (failure_type=%s): requires human intervention",
-				agentSpec.Letter, report.Status, report.FailureType)
+				agentSpec.ID, report.Status, report.FailureType)
 		}
 	}
 
@@ -927,7 +912,7 @@ func (o *Orchestrator) executeRetryLoop(
 	runner *agent.Runner,
 	wm *worktree.Manager,
 	waveNum int,
-	agentSpec types.AgentSpec,
+	agentSpec protocol.Agent,
 	report *protocol.CompletionReport,
 ) error {
 	failureType := report.FailureType
@@ -945,13 +930,13 @@ func (o *Orchestrator) executeRetryLoop(
 		maxRetries = MaxFixableRetries
 	default:
 		// needs_replan or escalate: do not retry automatically.
-		return fmt.Errorf("orchestrator: agent %s: failure_type=%q requires human intervention", agentSpec.Letter, failureType)
+		return fmt.Errorf("orchestrator: agent %s: failure_type=%q requires human intervention", agentSpec.ID, failureType)
 	}
 
 	// Check and increment retry count.
 	// Use slug-scoped key to prevent cross-IMPL contamination in concurrent server runs.
 	implSlug := o.implSlug()
-	key := fmt.Sprintf("%s:%d:%s", implSlug, waveNum, agentSpec.Letter)
+	key := fmt.Sprintf("%s:%d:%s", implSlug, waveNum, agentSpec.ID)
 	count := 0
 	if v, ok := retryCountMap.Load(key); ok {
 		if n, ok := v.(int); ok {
@@ -962,13 +947,13 @@ func (o *Orchestrator) executeRetryLoop(
 		o.publish(OrchestratorEvent{
 			Event: "auto_retry_exhausted",
 			Data: AutoRetryExhaustedPayload{
-				Agent:       agentSpec.Letter,
+				Agent:       agentSpec.ID,
 				Wave:        waveNum,
 				FailureType: failureType,
 				Attempts:    count,
 			},
 		})
-		return fmt.Errorf("orchestrator: agent %s: auto-retry exhausted after %d attempts (failure_type=%s)", agentSpec.Letter, count, failureType)
+		return fmt.Errorf("orchestrator: agent %s: auto-retry exhausted after %d attempts (failure_type=%s)", agentSpec.ID, count, failureType)
 	}
 	count++
 	retryCountMap.Store(key, count)
@@ -976,7 +961,7 @@ func (o *Orchestrator) executeRetryLoop(
 	// Build retry context using retryctx package (enriched prompt with fix guidance).
 	var promptPrefix string
 	if o.implDocPath != "" {
-		rc, rcErr := retryctx.BuildRetryContext(o.implDocPath, agentSpec.Letter, count)
+		rc, rcErr := retryctx.BuildRetryContext(o.implDocPath, agentSpec.ID, count)
 		if rcErr != nil {
 			fmt.Fprintf(os.Stderr, "orchestrator: retry context build (best-effort): %v\n", rcErr)
 		} else if rc != nil && rc.PromptText != "" {
@@ -988,7 +973,7 @@ func (o *Orchestrator) executeRetryLoop(
 	o.publish(OrchestratorEvent{
 		Event: "auto_retry_started",
 		Data: AutoRetryStartedPayload{
-			Agent:       agentSpec.Letter,
+			Agent:       agentSpec.ID,
 			Wave:        waveNum,
 			FailureType: failureType,
 			Attempt:     count,
@@ -1092,12 +1077,12 @@ func (o *Orchestrator) RunAgent(waveNum int, agentLetter string, promptPrefix st
 		return fmt.Errorf("orchestrator.RunAgent: agent %s not found in wave %d", agentLetter, waveNum)
 	}
 
-	// Convert protocol.Agent to types.AgentSpec at the boundary.
-	spec := agentToSpec(*protoAgent)
+	// Use protocol.Agent directly (no agentToSpec adapter needed).
+	spec := *protoAgent
 
 	// Apply prompt prefix if provided (e.g. scope hint for timeout reruns).
 	if promptPrefix != "" {
-		spec.Prompt = promptPrefix + "\n\n" + spec.Prompt
+		spec.Task = promptPrefix + "\n\n" + spec.Task
 	}
 
 	// Build worktree manager and backend.

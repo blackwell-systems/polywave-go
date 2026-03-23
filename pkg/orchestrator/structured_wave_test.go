@@ -14,7 +14,6 @@ import (
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/agent"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/agent/backend"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/types"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/worktree"
 )
 
@@ -94,7 +93,7 @@ func TestLaunchAgentStructured_FallbackToCLI(t *testing.T) {
 	}
 
 	var structuredCalled bool
-	runWaveAgentStructuredFunc = func(_ context.Context, _, _ string, _ types.AgentSpec, _ string, _ func(string)) error {
+	runWaveAgentStructuredFunc = func(_ context.Context, _, _ string, _ protocol.Agent, _ string, _ func(string)) error {
 		structuredCalled = true
 		return nil
 	}
@@ -160,10 +159,10 @@ func TestLaunchAgentStructured_APIPath(t *testing.T) {
 	implPath := buildMinimalManifestForOrchestratorTest(t, dir, "A")
 
 	var structuredCalledForAgent string
-	runWaveAgentStructuredFunc = func(_ context.Context, gotImplPath, _ string, agentSpec types.AgentSpec, _ string, _ func(string)) error {
-		structuredCalledForAgent = agentSpec.Letter
+	runWaveAgentStructuredFunc = func(_ context.Context, gotImplPath, _ string, agentSpec protocol.Agent, _ string, _ func(string)) error {
+		structuredCalledForAgent = agentSpec.ID
 		// Simulate saving a completion report.
-		saveCompletionReportToManifest(t, gotImplPath, agentSpec.Letter, protocol.CompletionReport{
+		saveCompletionReportToManifest(t, gotImplPath, agentSpec.ID, protocol.CompletionReport{
 			Status: "complete",
 			Notes:  "structured done",
 		})
@@ -235,8 +234,8 @@ func TestLaunchAgentStructured_PublishesBlockedEvent(t *testing.T) {
 	dir := t.TempDir()
 	implPath := buildMinimalManifestForOrchestratorTest(t, dir, "A")
 
-	runWaveAgentStructuredFunc = func(_ context.Context, gotImplPath, _ string, agentSpec types.AgentSpec, _ string, _ func(string)) error {
-		saveCompletionReportToManifest(t, gotImplPath, agentSpec.Letter, protocol.CompletionReport{
+	runWaveAgentStructuredFunc = func(_ context.Context, gotImplPath, _ string, agentSpec protocol.Agent, _ string, _ func(string)) error {
+		saveCompletionReportToManifest(t, gotImplPath, agentSpec.ID, protocol.CompletionReport{
 			Status:      "blocked",
 			FailureType: "transient",
 			Notes:       "dependency unavailable",
@@ -374,7 +373,7 @@ func TestLaunchAgentStructured_StructuredFunctionError(t *testing.T) {
 	worktreeCreatorFunc = func(_ *worktree.Manager, _ int, id string) (string, error) {
 		return "/tmp/fake-wt-" + id, nil
 	}
-	runWaveAgentStructuredFunc = func(_ context.Context, _, _ string, _ types.AgentSpec, _ string, _ func(string)) error {
+	runWaveAgentStructuredFunc = func(_ context.Context, _, _ string, _ protocol.Agent, _ string, _ func(string)) error {
 		return fmt.Errorf("structured run failed: API timeout")
 	}
 
@@ -446,13 +445,13 @@ func TestLaunchAgentStructured_OnChunkForwarding(t *testing.T) {
 	implPath := buildMinimalManifestForOrchestratorTest(t, dir, "A")
 
 	var capturedOnChunk func(string)
-	runWaveAgentStructuredFunc = func(_ context.Context, gotImplPath, _ string, agentSpec types.AgentSpec, _ string, onChunk func(string)) error {
+	runWaveAgentStructuredFunc = func(_ context.Context, gotImplPath, _ string, agentSpec protocol.Agent, _ string, onChunk func(string)) error {
 		capturedOnChunk = onChunk
 		// Call the onChunk callback to simulate streaming output.
 		if onChunk != nil {
 			onChunk("hello from structured agent")
 		}
-		saveCompletionReportToManifest(t, gotImplPath, agentSpec.Letter, protocol.CompletionReport{Status: "complete"})
+		saveCompletionReportToManifest(t, gotImplPath, agentSpec.ID, protocol.CompletionReport{Status: "complete"})
 		return nil
 	}
 
@@ -508,7 +507,7 @@ func TestSetRunWaveAgentStructuredFunc(t *testing.T) {
 	t.Cleanup(func() { runWaveAgentStructuredFunc = origFn })
 
 	var called bool
-	SetRunWaveAgentStructuredFunc(func(_ context.Context, _, _ string, _ types.AgentSpec, _ string, _ func(string)) error {
+	SetRunWaveAgentStructuredFunc(func(_ context.Context, _, _ string, _ protocol.Agent, _ string, _ func(string)) error {
 		called = true
 		return fmt.Errorf("sentinel error to stop processing")
 	})

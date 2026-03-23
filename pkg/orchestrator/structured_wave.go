@@ -7,7 +7,7 @@ import (
 
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/agent"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/types"
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/types" // kept for types.FailureType until failure.go is migrated (Agent A)
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/worktree"
 )
 
@@ -23,7 +23,7 @@ var runWaveAgentStructuredFunc = func(
 	ctx context.Context,
 	implPath string,
 	waveModel string,
-	agentSpec types.AgentSpec,
+	agentSpec protocol.Agent,
 	wtPath string,
 	onChunk func(string),
 ) error {
@@ -33,7 +33,7 @@ var runWaveAgentStructuredFunc = func(
 // SetRunWaveAgentStructuredFunc injects the real runWaveAgentStructured
 // implementation from pkg/engine, breaking the circular import.
 // Must be called from pkg/engine's init() before any wave execution.
-func SetRunWaveAgentStructuredFunc(f func(ctx context.Context, implPath, waveModel string, agentSpec types.AgentSpec, wtPath string, onChunk func(string)) error) {
+func SetRunWaveAgentStructuredFunc(f func(ctx context.Context, implPath, waveModel string, agentSpec protocol.Agent, wtPath string, onChunk func(string)) error) {
 	runWaveAgentStructuredFunc = f
 }
 
@@ -56,42 +56,40 @@ func (o *Orchestrator) launchAgentStructured(
 	waveNum int,
 	protoAgent protocol.Agent,
 ) error {
-	// Convert protocol.Agent to types.AgentSpec at the boundary.
-	agentSpec := agentToSpec(protoAgent)
 	// Resolve effective model for backend detection.
 	model := o.defaultModel
-	if agentSpec.Model != "" {
-		model = agentSpec.Model
+	if protoAgent.Model != "" {
+		model = protoAgent.Model
 	}
 
 	// CLI backends write their own completion reports; fall back to the standard path.
 	if strings.HasPrefix(model, "cli:") || model == "cli" {
-		return o.launchAgent(ctx, runner, wm, waveNum, agentSpec)
+		return o.launchAgent(ctx, runner, wm, waveNum, protoAgent)
 	}
 
 	// Create the worktree.
-	wtPath, err := worktreeCreatorFunc(wm, waveNum, agentSpec.Letter)
+	wtPath, err := worktreeCreatorFunc(wm, waveNum, protoAgent.ID)
 	if err != nil {
 		o.publish(OrchestratorEvent{
 			Event: "agent_failed",
 			Data: AgentFailedPayload{
-				Agent:       agentSpec.Letter,
+				Agent:       protoAgent.ID,
 				Wave:        waveNum,
 				Status:      "failed",
 				FailureType: "worktree_creation",
 				Message:     err.Error(),
 			},
 		})
-		return fmt.Errorf("orchestrator: agent %s: create worktree: %w", agentSpec.Letter, err)
+		return fmt.Errorf("orchestrator: agent %s: create worktree: %w", protoAgent.ID, err)
 	}
 
 	// Publish agent_started.
 	o.publish(OrchestratorEvent{
 		Event: "agent_started",
 		Data: AgentStartedPayload{
-			Agent: agentSpec.Letter,
+			Agent: protoAgent.ID,
 			Wave:  waveNum,
-			Files: agentSpec.FilesOwned,
+			Files: protoAgent.Files,
 		},
 	})
 
@@ -101,13 +99,13 @@ func (o *Orchestrator) launchAgentStructured(
 		ctx,
 		o.implDocPath,
 		o.defaultModel,
-		agentSpec,
+		protoAgent,
 		wtPath,
 		func(chunk string) {
 			o.publish(OrchestratorEvent{
 				Event: "agent_output",
 				Data: AgentOutputPayload{
-					Agent: agentSpec.Letter,
+					Agent: protoAgent.ID,
 					Wave:  waveNum,
 					Chunk: chunk,
 				},
@@ -118,18 +116,18 @@ func (o *Orchestrator) launchAgentStructured(
 		o.publish(OrchestratorEvent{
 			Event: "agent_failed",
 			Data: AgentFailedPayload{
-				Agent:       agentSpec.Letter,
+				Agent:       protoAgent.ID,
 				Wave:        waveNum,
 				Status:      "failed",
 				FailureType: "execute",
 				Message:     runErr.Error(),
 			},
 		})
-		return fmt.Errorf("orchestrator: agent %s: structured execute: %w", agentSpec.Letter, runErr)
+		return fmt.Errorf("orchestrator: agent %s: structured execute: %w", protoAgent.ID, runErr)
 	}
 
 	// Re-load the manifest to get the saved completion report for status/E19 routing.
-	branch := protocol.BranchName(o.implSlug(), waveNum, agentSpec.Letter)
+	branch := protocol.BranchName(o.implSlug(), waveNum, protoAgent.ID)
 	status := "complete"
 
 	var savedStatus string
@@ -137,7 +135,7 @@ func (o *Orchestrator) launchAgentStructured(
 
 	reportMu.Lock()
 	if manifest, loadErr := protocol.Load(o.implDocPath); loadErr == nil {
-		if r, ok := manifest.CompletionReports[agentSpec.Letter]; ok {
+		if r, ok := manifest.CompletionReports[protoAgent.ID]; ok {
 			savedStatus = r.Status
 			savedFailureType = r.FailureType
 			status = r.Status
@@ -148,7 +146,7 @@ func (o *Orchestrator) launchAgentStructured(
 	o.publish(OrchestratorEvent{
 		Event: "agent_complete",
 		Data: AgentCompletePayload{
-			Agent:  agentSpec.Letter,
+			Agent:  protoAgent.ID,
 			Wave:   waveNum,
 			Status: status,
 			Branch: branch,
@@ -175,7 +173,7 @@ func (o *Orchestrator) launchAgentStructured(
 		o.publish(OrchestratorEvent{
 			Event: "agent_blocked",
 			Data: AgentBlockedPayload{
-				Agent:       agentSpec.Letter,
+				Agent:       protoAgent.ID,
 				Wave:        waveNum,
 				Status:      savedStatus,
 				FailureType: savedFailureType,
