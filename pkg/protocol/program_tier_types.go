@@ -1,8 +1,10 @@
 package protocol
 
-// TierGateResult is the output of running tier-level quality gates.
-// It reuses the existing GateResult type from gates.go.
-type TierGateResult struct {
+import "github.com/blackwell-systems/scout-and-wave-go/pkg/result"
+
+// TierGateData is the data payload returned by RunTierGate.
+// It contains per-IMPL statuses and per-gate results for a program tier.
+type TierGateData struct {
 	TierNumber   int              `json:"tier_number"`
 	Passed       bool             `json:"passed"`
 	GateResults  []GateResult     `json:"gate_results"`
@@ -10,20 +12,28 @@ type TierGateResult struct {
 	AllImplsDone bool             `json:"all_impls_done"`
 }
 
+// TierGateResult is a backward-compatible alias for TierGateData.
+// Deprecated: Use result.Result[TierGateData] for new code.
+type TierGateResult = TierGateData
+
 // ImplTierStatus captures the status of a single IMPL within a tier.
 type ImplTierStatus struct {
 	Slug   string `json:"slug"`
 	Status string `json:"status"`
 }
 
-// FreezeContractsResult is the output of freezing program contracts at a tier boundary.
-type FreezeContractsResult struct {
+// FreezeContractsData is the data payload returned by FreezeContracts.
+type FreezeContractsData struct {
 	TierNumber       int              `json:"tier_number"`
 	ContractsFrozen  []FrozenContract `json:"contracts_frozen"`
 	ContractsSkipped []string         `json:"contracts_skipped"`
 	Success          bool             `json:"success"`
 	Errors           []string         `json:"errors,omitempty"`
 }
+
+// FreezeContractsResult is a backward-compatible alias for FreezeContractsData.
+// Deprecated: Use result.Result[FreezeContractsData] for new code.
+type FreezeContractsResult = FreezeContractsData
 
 // FrozenContract captures details about a single frozen contract.
 type FrozenContract struct {
@@ -34,16 +44,21 @@ type FrozenContract struct {
 	Committed  bool   `json:"committed"`
 }
 
-// ProgramStatusResult is the full status report for a PROGRAM manifest.
-type ProgramStatusResult struct {
-	ProgramSlug      string               `json:"program_slug"`
-	Title            string               `json:"title"`
-	State            ProgramState         `json:"state"`
-	CurrentTier      int                  `json:"current_tier"`
-	TierStatuses     []TierStatusDetail   `json:"tier_statuses"`
-	ContractStatuses []ContractStatus     `json:"contract_statuses"`
-	Completion       ProgramCompletion    `json:"completion"`
+// ProgramStatusData is the data payload returned by GetProgramStatus.
+// It contains the full status report for a PROGRAM manifest.
+type ProgramStatusData struct {
+	ProgramSlug      string             `json:"program_slug"`
+	Title            string             `json:"title"`
+	State            ProgramState       `json:"state"`
+	CurrentTier      int                `json:"current_tier"`
+	TierStatuses     []TierStatusDetail `json:"tier_statuses"`
+	ContractStatuses []ContractStatus   `json:"contract_statuses"`
+	Completion       ProgramCompletion  `json:"completion"`
 }
+
+// ProgramStatusResult is a backward-compatible alias for ProgramStatusData.
+// Deprecated: Use result.Result[ProgramStatusData] for new code.
+type ProgramStatusResult = ProgramStatusData
 
 // TierStatusDetail provides detailed status for a single tier.
 type TierStatusDetail struct {
@@ -60,4 +75,19 @@ type ContractStatus struct {
 	FreezeAt     string `json:"freeze_at"`
 	Frozen       bool   `json:"frozen"`
 	FrozenAtTier int    `json:"frozen_at_tier,omitempty"`
+}
+
+// NewTierGateSuccess creates a successful Result wrapping TierGateData.
+func NewTierGateSuccess(data TierGateData) result.Result[TierGateData] {
+	return result.NewSuccess(data)
+}
+
+// NewFreezeContractsSuccess creates a successful Result wrapping FreezeContractsData.
+func NewFreezeContractsSuccess(data FreezeContractsData) result.Result[FreezeContractsData] {
+	return result.NewSuccess(data)
+}
+
+// NewProgramStatusSuccess creates a successful Result wrapping ProgramStatusData.
+func NewProgramStatusSuccess(data ProgramStatusData) result.Result[ProgramStatusData] {
+	return result.NewSuccess(data)
 }
