@@ -40,10 +40,10 @@ completion:
 	}
 }
 
-// TestFinalizeTierResult_JSONFields verifies that FinalizeTierResult serializes
+// TestFinalizeTierData_JSONFields verifies that FinalizeTierData serializes
 // with the expected JSON field names as documented in the interface contract.
-func TestFinalizeTierResult_JSONFields(t *testing.T) {
-	result := &FinalizeTierResult{
+func TestFinalizeTierData_JSONFields(t *testing.T) {
+	d := &FinalizeTierData{
 		TierNumber: 1,
 		ImplMergeResults: map[string]*MergeAgentsResult{
 			"my-impl": {
@@ -59,13 +59,12 @@ func TestFinalizeTierResult_JSONFields(t *testing.T) {
 			ImplStatuses: []ImplTierStatus{},
 			AllImplsDone: true,
 		},
-		Success: true,
-		Errors:  nil,
+		Errors: nil,
 	}
 
-	data, err := json.Marshal(result)
+	data, err := json.Marshal(d)
 	if err != nil {
-		t.Fatalf("failed to marshal FinalizeTierResult: %v", err)
+		t.Fatalf("failed to marshal FinalizeTierData: %v", err)
 	}
 
 	var decoded map[string]interface{}
@@ -73,7 +72,7 @@ func TestFinalizeTierResult_JSONFields(t *testing.T) {
 		t.Fatalf("failed to unmarshal JSON: %v", err)
 	}
 
-	expectedFields := []string{"tier_number", "impl_merge_results", "tier_gate_result", "success"}
+	expectedFields := []string{"tier_number", "impl_merge_results", "tier_gate_result"}
 	for _, field := range expectedFields {
 		if _, ok := decoded[field]; !ok {
 			t.Errorf("expected JSON field %q to be present, but it was missing", field)
@@ -90,8 +89,8 @@ func TestFinalizeTierResult_JSONFields(t *testing.T) {
 		t.Errorf("expected tier_number=1, got %v", decoded["tier_number"])
 	}
 
-	// Verify success value.
-	if success, ok := decoded["success"].(bool); !ok || !success {
-		t.Errorf("expected success=true, got %v", decoded["success"])
+	// Verify success field is absent (moved to result.Result wrapper).
+	if _, ok := decoded["success"]; ok {
+		t.Error("expected 'success' field to be absent from FinalizeTierData (moved to result.Result wrapper), but it was present")
 	}
 }

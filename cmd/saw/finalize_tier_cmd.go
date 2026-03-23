@@ -47,7 +47,7 @@ Exit codes:
 			out, _ := json.MarshalIndent(result, "", "  ")
 			fmt.Fprintln(cmd.OutOrStdout(), string(out))
 
-			if !result.Success {
+			if !result.IsSuccess() {
 				os.Exit(1)
 			}
 
