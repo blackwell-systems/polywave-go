@@ -6,23 +6,28 @@ import (
 	"os/exec"
 
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/gatecache"
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
 )
 
-// BaselineResult captures the outcome of baseline gate verification (E21A).
-type BaselineResult struct {
-	Passed      bool        `json:"passed"`
+// BaselineData captures the outcome of baseline gate verification (E21A).
+type BaselineData struct {
+	Passed      bool         `json:"passed"`
 	GateResults []GateResult `json:"gate_results"`
-	Reason      string      `json:"reason,omitempty"`     // "baseline_verification_failed" on failure
-	CommitSHA   string      `json:"commit_sha,omitempty"` // HEAD at time of check
-	FromCache   bool        `json:"from_cache"`           // true if all results served from cache
+	Reason      string       `json:"reason,omitempty"`     // "baseline_verification_failed" on failure
+	CommitSHA   string       `json:"commit_sha,omitempty"` // HEAD at time of check
+	FromCache   bool         `json:"from_cache"`           // true if all results served from cache
 }
+
+// BaselineResult is a backward-compatible alias for BaselineData.
+// Deprecated: Use BaselineData directly.
+type BaselineResult = BaselineData
 
 // RunBaselineGates executes quality gates against the current codebase
 // (before worktree creation) to verify the baseline is healthy.
 // If cache is non-nil, results are cached keyed by HEAD commit.
 // The waveNumber is used for docs-only wave detection (skip source gates).
-func RunBaselineGates(manifest *IMPLManifest, waveNumber int, repoDir string, cache *gatecache.Cache) (*BaselineResult, error) {
-	result := &BaselineResult{
+func RunBaselineGates(manifest *IMPLManifest, waveNumber int, repoDir string, cache *gatecache.Cache) result.Result[*BaselineData] {
+	data := &BaselineData{
 		Passed: true,
 	}
 
@@ -30,7 +35,7 @@ func RunBaselineGates(manifest *IMPLManifest, waveNumber int, repoDir string, ca
 	// BuildKey failure is non-fatal — cache is best-effort.
 	if cache != nil {
 		if key, err := cache.BuildKey(repoDir); err == nil {
-			result.CommitSHA = key.HeadCommit
+			data.CommitSHA = key.HeadCommit
 		}
 	}
 
@@ -39,55 +44,63 @@ func RunBaselineGates(manifest *IMPLManifest, waveNumber int, repoDir string, ca
 	// cache lookup/store.
 	res := RunPreMergeGates(manifest, waveNumber, repoDir, cache)
 	if !res.IsSuccess() {
-		return nil, fmt.Errorf("pre-merge gates failed: %v", res.Errors)
+		return result.NewFailure[*BaselineData]([]result.StructuredError{{
+			Code:     "E_BASELINE",
+			Message:  fmt.Sprintf("pre-merge gates failed: %v", res.Errors),
+			Severity: "fatal",
+		}})
 	}
-	result.GateResults = res.GetData().Gates
+	data.GateResults = res.GetData().Gates
 
 	// Step 3: Check if any required gate failed.
-	for _, gr := range result.GateResults {
+	for _, gr := range data.GateResults {
 		if gr.Required && !gr.Passed && !gr.Skipped {
-			result.Passed = false
-			result.Reason = "baseline_verification_failed"
+			data.Passed = false
+			data.Reason = "baseline_verification_failed"
 			break
 		}
 	}
 
 	// Step 4: If all results have FromCache=true (and there are results),
-	// set BaselineResult.FromCache=true.
-	if len(result.GateResults) > 0 {
+	// set BaselineData.FromCache=true.
+	if len(data.GateResults) > 0 {
 		allFromCache := true
-		for _, gr := range result.GateResults {
+		for _, gr := range data.GateResults {
 			if !gr.FromCache {
 				allFromCache = false
 				break
 			}
 		}
-		result.FromCache = allFromCache
+		data.FromCache = allFromCache
 	}
 
-	return result, nil
+	return result.NewSuccess(data)
 }
 
-// CrossRepoBaselineResult captures per-repo baseline gate results for E21B.
-type CrossRepoBaselineResult struct {
+// CrossRepoBaselineData captures per-repo baseline gate results for E21B.
+type CrossRepoBaselineData struct {
 	Passed  bool                       `json:"passed"`
-	Results map[string]*BaselineResult `json:"results"` // repo name → result
+	Results map[string]*BaselineData `json:"results"` // repo name → result
 }
+
+// CrossRepoBaselineResult is a backward-compatible alias for CrossRepoBaselineData.
+// Deprecated: Use CrossRepoBaselineData directly.
+type CrossRepoBaselineResult = CrossRepoBaselineData
 
 // RunCrossRepoBaselineGates runs baseline gates on all repos targeted by a
 // cross-repo IMPL manifest (E21B). For each repo, it uses per-repo gate
 // commands from configRepos if available, falling back to the IMPL's
 // quality_gates. Returns early on first failure for fast feedback.
-func RunCrossRepoBaselineGates(manifest *IMPLManifest, waveNumber int, targetRepos map[string]string, configRepos []RepoEntry) (*CrossRepoBaselineResult, error) {
+func RunCrossRepoBaselineGates(manifest *IMPLManifest, waveNumber int, targetRepos map[string]string, configRepos []RepoEntry) result.Result[*CrossRepoBaselineData] {
 	// Build config lookup for per-repo commands
 	configLookup := make(map[string]RepoEntry, len(configRepos))
 	for _, r := range configRepos {
 		configLookup[r.Name] = r
 	}
 
-	result := &CrossRepoBaselineResult{
+	data := &CrossRepoBaselineData{
 		Passed:  true,
-		Results: make(map[string]*BaselineResult),
+		Results: make(map[string]*BaselineData),
 	}
 
 	for repoName, repoPath := range targetRepos {
@@ -95,44 +108,49 @@ func RunCrossRepoBaselineGates(manifest *IMPLManifest, waveNumber int, targetRep
 
 		// If repo has explicit build/test commands, run those directly
 		if entry.BuildCommand != "" || entry.TestCommand != "" {
-			repoResult := &BaselineResult{Passed: true}
+			repoData := &BaselineData{Passed: true}
 			if entry.BuildCommand != "" {
 				gr := runSimpleGate("build", entry.BuildCommand, repoPath)
-				repoResult.GateResults = append(repoResult.GateResults, gr)
+				repoData.GateResults = append(repoData.GateResults, gr)
 				if !gr.Passed {
-					repoResult.Passed = false
-					repoResult.Reason = fmt.Sprintf("cross_repo_baseline_failed: %s", repoName)
+					repoData.Passed = false
+					repoData.Reason = fmt.Sprintf("cross_repo_baseline_failed: %s", repoName)
 				}
 			}
-			if entry.TestCommand != "" && repoResult.Passed {
+			if entry.TestCommand != "" && repoData.Passed {
 				gr := runSimpleGate("test", entry.TestCommand, repoPath)
-				repoResult.GateResults = append(repoResult.GateResults, gr)
+				repoData.GateResults = append(repoData.GateResults, gr)
 				if !gr.Passed {
-					repoResult.Passed = false
-					repoResult.Reason = fmt.Sprintf("cross_repo_baseline_failed: %s", repoName)
+					repoData.Passed = false
+					repoData.Reason = fmt.Sprintf("cross_repo_baseline_failed: %s", repoName)
 				}
 			}
-			result.Results[repoName] = repoResult
-			if !repoResult.Passed {
-				result.Passed = false
-				return result, nil
+			data.Results[repoName] = repoData
+			if !repoData.Passed {
+				data.Passed = false
+				return result.NewSuccess(data)
 			}
 			continue
 		}
 
 		// Fall back to IMPL quality_gates run in this repo's directory
-		repoResult, err := RunBaselineGates(manifest, waveNumber, repoPath, nil)
-		if err != nil {
-			return nil, fmt.Errorf("E21B: baseline gates for repo %s: %w", repoName, err)
+		repoRes := RunBaselineGates(manifest, waveNumber, repoPath, nil)
+		if repoRes.IsFatal() {
+			return result.NewFailure[*CrossRepoBaselineData]([]result.StructuredError{{
+				Code:     "E_BASELINE",
+				Message:  fmt.Sprintf("E21B: baseline gates for repo %s failed: %v", repoName, repoRes.Errors),
+				Severity: "fatal",
+			}})
 		}
-		result.Results[repoName] = repoResult
-		if !repoResult.Passed {
-			result.Passed = false
-			return result, nil
+		repoData := repoRes.GetData()
+		data.Results[repoName] = repoData
+		if !repoData.Passed {
+			data.Passed = false
+			return result.NewSuccess(data)
 		}
 	}
 
-	return result, nil
+	return result.NewSuccess(data)
 }
 
 // runSimpleGate executes a single shell command as a gate check.

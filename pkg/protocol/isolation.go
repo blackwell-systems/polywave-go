@@ -5,14 +5,19 @@ import (
 	"strings"
 
 	"github.com/blackwell-systems/scout-and-wave-go/internal/git"
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
 )
 
-// IsolationResult reports whether an agent is running in the correct worktree.
-type IsolationResult struct {
+// IsolationData reports whether an agent is running in the correct worktree.
+type IsolationData struct {
 	OK     bool     `json:"ok"`
 	Branch string   `json:"branch"`
 	Errors []string `json:"errors,omitempty"`
 }
+
+// IsolationResult is a backward-compatible alias for IsolationData.
+// Deprecated: Use IsolationData directly.
+type IsolationResult = IsolationData
 
 // VerifyIsolation checks that the agent is on the expected branch, that the
 // worktree is registered with git, and that repoDir actually points to the
@@ -26,13 +31,17 @@ type IsolationResult struct {
 // CRITICAL: repoDir must be the absolute path to the worktree. If the agent
 // passes "." or a relative path, this function resolves it to an absolute path
 // and verifies it contains ".claude/worktrees/" to ensure it's not the main repo.
-func VerifyIsolation(repoDir, expectedBranch string) (*IsolationResult, error) {
-	result := &IsolationResult{OK: true}
+func VerifyIsolation(repoDir, expectedBranch string) result.Result[*IsolationData] {
+	data := &IsolationData{OK: true}
 
 	// Get absolute path of repoDir (resolves "." and relative paths)
 	absPath, err := git.Run(repoDir, "rev-parse", "--show-toplevel")
 	if err != nil {
-		return nil, fmt.Errorf("VerifyIsolation: could not determine repository path: %w", err)
+		return result.NewFailure[*IsolationData]([]result.StructuredError{{
+			Code:     "E_ISOLATION",
+			Message:  fmt.Sprintf("could not determine repository path: %v", err),
+			Severity: "fatal",
+		}})
 	}
 	absPath = strings.TrimSpace(absPath)
 
@@ -40,35 +49,43 @@ func VerifyIsolation(repoDir, expectedBranch string) (*IsolationResult, error) {
 	// Worktrees are normally in .claude/worktrees/ but Claude sometimes
 	// creates them under .claire/worktrees/ instead.
 	if !IsWorktreePath(absPath) {
-		result.OK = false
-		result.Errors = append(result.Errors,
+		data.OK = false
+		data.Errors = append(data.Errors,
 			fmt.Sprintf("not in a worktree: %q does not contain a known worktree directory — agent may be running in main repo", absPath))
 	}
 
 	// Check current branch
 	out, err := git.Run(repoDir, "rev-parse", "--abbrev-ref", "HEAD")
 	if err != nil {
-		return nil, fmt.Errorf("VerifyIsolation: could not determine current branch: %w", err)
+		return result.NewFailure[*IsolationData]([]result.StructuredError{{
+			Code:     "E_ISOLATION",
+			Message:  fmt.Sprintf("could not determine current branch: %v", err),
+			Severity: "fatal",
+		}})
 	}
 	currentBranch := strings.TrimSpace(out)
-	result.Branch = currentBranch
+	data.Branch = currentBranch
 
 	if currentBranch != expectedBranch {
-		result.OK = false
-		result.Errors = append(result.Errors,
+		data.OK = false
+		data.Errors = append(data.Errors,
 			fmt.Sprintf("branch mismatch: expected %q, got %q", expectedBranch, currentBranch))
 	}
 
 	// Verify this worktree is registered (not running on main by accident)
 	worktrees, err := git.WorktreeList(repoDir)
 	if err != nil {
-		return nil, fmt.Errorf("VerifyIsolation: could not list worktrees: %w", err)
+		return result.NewFailure[*IsolationData]([]result.StructuredError{{
+			Code:     "E_ISOLATION",
+			Message:  fmt.Sprintf("could not list worktrees: %v", err),
+			Severity: "fatal",
+		}})
 	}
 	if len(worktrees) == 0 {
-		result.OK = false
-		result.Errors = append(result.Errors,
+		data.OK = false
+		data.Errors = append(data.Errors,
 			"no registered worktrees found — agent may be running on main branch")
 	}
 
-	return result, nil
+	return result.NewSuccess(data)
 }
