@@ -1,10 +1,14 @@
 package protocol
 
-// DependencyVerificationResult is the result of checking that all dependency
+import (
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
+)
+
+// DependencyVerificationData holds the outcome of checking that all dependency
 // agents for a given wave have completed successfully.
-type DependencyVerificationResult struct {
-	Wave   int                   `json:"wave"`
-	Valid  bool                  `json:"all_available"`
+type DependencyVerificationData struct {
+	Wave   int                    `json:"wave"`
+	Valid  bool                   `json:"all_available"`
 	Agents []AgentDependencyCheck `json:"agents"`
 }
 
@@ -22,8 +26,8 @@ type AgentDependencyCheck struct {
 //
 // Wave 1 agents (which have no dependencies) will always return Valid=true.
 //
-// Returns an error if waveNum is not found in the manifest.
-func VerifyDependenciesAvailable(manifest *IMPLManifest, waveNum int) (*DependencyVerificationResult, error) {
+// Returns a FATAL result if waveNum is not found in the manifest.
+func VerifyDependenciesAvailable(manifest *IMPLManifest, waveNum int) result.Result[DependencyVerificationData] {
 	// Find the target wave
 	var targetWave *Wave
 	for i := range manifest.Waves {
@@ -33,10 +37,16 @@ func VerifyDependenciesAvailable(manifest *IMPLManifest, waveNum int) (*Dependen
 		}
 	}
 	if targetWave == nil {
-		return nil, &waveNotFoundError{waveNum: waveNum}
+		return result.NewFailure[DependencyVerificationData]([]result.StructuredError{
+			{
+				Code:     "E_WAVE_NOT_FOUND",
+				Message:  formatWaveNotFound(waveNum),
+				Severity: "fatal",
+			},
+		})
 	}
 
-	result := &DependencyVerificationResult{
+	data := DependencyVerificationData{
 		Wave:   waveNum,
 		Valid:  true,
 		Agents: make([]AgentDependencyCheck, 0, len(targetWave.Agents)),
@@ -58,13 +68,13 @@ func VerifyDependenciesAvailable(manifest *IMPLManifest, waveNum int) (*Dependen
 		}
 
 		if !check.Available {
-			result.Valid = false
+			data.Valid = false
 		}
 
-		result.Agents = append(result.Agents, check)
+		data.Agents = append(data.Agents, check)
 	}
 
-	return result, nil
+	return result.NewSuccess(data)
 }
 
 // waveNotFoundError is returned when a wave number is not found in the manifest.

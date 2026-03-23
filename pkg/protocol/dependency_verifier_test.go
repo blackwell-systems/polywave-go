@@ -19,20 +19,21 @@ func TestVerifyDependencies_Wave1NoDepsTriviallyValid(t *testing.T) {
 		CompletionReports: map[string]CompletionReport{},
 	}
 
-	result, err := VerifyDependenciesAvailable(manifest, 1)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+	res := VerifyDependenciesAvailable(manifest, 1)
+	if !res.IsSuccess() {
+		t.Fatalf("unexpected failure: %+v", res.Errors)
 	}
-	if !result.Valid {
+	data := res.GetData()
+	if !data.Valid {
 		t.Errorf("expected Valid=true for wave 1 with no dependencies, got false")
 	}
-	if result.Wave != 1 {
-		t.Errorf("expected Wave=1, got %d", result.Wave)
+	if data.Wave != 1 {
+		t.Errorf("expected Wave=1, got %d", data.Wave)
 	}
-	if len(result.Agents) != 2 {
-		t.Fatalf("expected 2 agent checks, got %d", len(result.Agents))
+	if len(data.Agents) != 2 {
+		t.Fatalf("expected 2 agent checks, got %d", len(data.Agents))
 	}
-	for _, ac := range result.Agents {
+	for _, ac := range data.Agents {
 		if !ac.Available {
 			t.Errorf("agent %s: expected Available=true, got false", ac.Agent)
 		}
@@ -60,17 +61,18 @@ func TestVerifyDependencies_Wave2AllDepsCompleted(t *testing.T) {
 		},
 	}
 
-	result, err := VerifyDependenciesAvailable(manifest, 2)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+	res := VerifyDependenciesAvailable(manifest, 2)
+	if !res.IsSuccess() {
+		t.Fatalf("unexpected failure: %+v", res.Errors)
 	}
-	if !result.Valid {
+	data := res.GetData()
+	if !data.Valid {
 		t.Errorf("expected Valid=true when all deps completed")
 	}
-	if len(result.Agents) != 1 {
-		t.Fatalf("expected 1 agent check, got %d", len(result.Agents))
+	if len(data.Agents) != 1 {
+		t.Fatalf("expected 1 agent check, got %d", len(data.Agents))
 	}
-	ac := result.Agents[0]
+	ac := data.Agents[0]
 	if !ac.Available {
 		t.Errorf("expected agent C Available=true")
 	}
@@ -97,17 +99,18 @@ func TestVerifyDependencies_Wave2MissingCompletionReport(t *testing.T) {
 		},
 	}
 
-	result, err := VerifyDependenciesAvailable(manifest, 2)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+	res := VerifyDependenciesAvailable(manifest, 2)
+	if !res.IsSuccess() {
+		t.Fatalf("unexpected failure: %+v", res.Errors)
 	}
-	if result.Valid {
+	data := res.GetData()
+	if data.Valid {
 		t.Errorf("expected Valid=false when dep B has no completion report")
 	}
-	if len(result.Agents) != 1 {
-		t.Fatalf("expected 1 agent check, got %d", len(result.Agents))
+	if len(data.Agents) != 1 {
+		t.Fatalf("expected 1 agent check, got %d", len(data.Agents))
 	}
-	ac := result.Agents[0]
+	ac := data.Agents[0]
 	if ac.Available {
 		t.Errorf("expected agent C Available=false")
 	}
@@ -133,14 +136,15 @@ func TestVerifyDependencies_Wave2DepStatusPartial(t *testing.T) {
 		},
 	}
 
-	result, err := VerifyDependenciesAvailable(manifest, 2)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+	res := VerifyDependenciesAvailable(manifest, 2)
+	if !res.IsSuccess() {
+		t.Fatalf("unexpected failure: %+v", res.Errors)
 	}
-	if result.Valid {
+	data := res.GetData()
+	if data.Valid {
 		t.Errorf("expected Valid=false when dep A has status 'partial'")
 	}
-	ac := result.Agents[0]
+	ac := data.Agents[0]
 	if ac.Available {
 		t.Errorf("expected agent B Available=false")
 	}
@@ -157,8 +161,11 @@ func TestVerifyDependencies_WaveNotFound(t *testing.T) {
 		},
 	}
 
-	_, err := VerifyDependenciesAvailable(manifest, 99)
-	if err == nil {
-		t.Fatal("expected error for missing wave, got nil")
+	res := VerifyDependenciesAvailable(manifest, 99)
+	if !res.IsFatal() {
+		t.Fatal("expected FATAL result for missing wave")
+	}
+	if len(res.Errors) == 0 {
+		t.Fatal("expected at least one error in FATAL result")
 	}
 }
