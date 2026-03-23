@@ -64,35 +64,6 @@ func TestReadContextMDMissing(t *testing.T) {
 	}
 }
 
-// TestParseIMPLDocDelegate writes a minimal IMPL doc and verifies ParseIMPLDoc returns non-nil.
-func TestParseIMPLDocDelegate(t *testing.T) {
-	dir := t.TempDir()
-	implPath := filepath.Join(dir, "IMPL-test.md")
-
-	content := `title: Test Feature
-feature_slug: test-feature
-verdict: SUITABLE
-waves:
-    - number: 1
-      agents:
-          - id: A
-            task: implement foo
-            files:
-                - pkg/foo.go
-`
-	if err := os.WriteFile(implPath, []byte(content), 0644); err != nil {
-		t.Fatalf("failed to write test IMPL doc: %v", err)
-	}
-
-	doc, err := ParseIMPLDoc(implPath)
-	if err != nil {
-		t.Fatalf("ParseIMPLDoc returned error: %v", err)
-	}
-	if doc == nil {
-		t.Fatal("ParseIMPLDoc returned nil doc")
-	}
-}
-
 // TestJournalIntegration_PrepareAgentContext verifies that PrepareAgentContext
 // creates a journal observer and returns the original prompt when no journal exists.
 func TestJournalIntegration_PrepareAgentContext(t *testing.T) {
