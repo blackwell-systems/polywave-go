@@ -211,7 +211,7 @@ func TestRunWaveFull_MergeFailure(t *testing.T) {
 		t.Fatal("expected error for missing commits, got nil")
 	}
 
-	expectedMsg := "commit verification failed"
+	expectedMsg := "verify commits"
 	if !strings.Contains(err.Error(), expectedMsg) {
 		t.Errorf("expected error to contain %q, got: %v", expectedMsg, err)
 	}
