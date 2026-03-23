@@ -24,7 +24,6 @@ import (
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/retryctx"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/suitability"
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/types"
 	"gopkg.in/yaml.v3"
 )
 
@@ -583,7 +582,7 @@ func readContextMD(repoPath string) string {
 // For Go projects it runs dependency resolution then a 2-pass build
 // (scaffold packages first, then full project). For other project types it
 // attempts basic detection and runs the appropriate install/build command.
-// Signature accepts *types.IMPLDoc so the caller can pass doc for Pass 1 package
+// Signature accepts *protocol.IMPLManifest so the caller can pass doc for Pass 1 package
 // derivation; passing nil skips Pass 1 and only runs Pass 2.
 func runScaffoldBuildVerification(repoPath string, onEvent func(Event)) error {
 	return runScaffoldBuildVerificationWithDoc(context.Background(), repoPath, nil, onEvent)
@@ -591,8 +590,8 @@ func runScaffoldBuildVerification(repoPath string, onEvent func(Event)) error {
 
 // runScaffoldBuildVerificationWithDoc is the full implementation of E22 scaffold
 // build verification. It is separated from runScaffoldBuildVerification so that
-// the engine layer can pass an *types.IMPLDoc for scaffold-package derivation.
-func runScaffoldBuildVerificationWithDoc(ctx context.Context, repoPath string, doc *types.IMPLDoc, onEvent func(Event)) error {
+// the engine layer can pass an *protocol.IMPLManifest for scaffold-package derivation.
+func runScaffoldBuildVerificationWithDoc(ctx context.Context, repoPath string, doc *protocol.IMPLManifest, onEvent func(Event)) error {
 	// ── Go project ────────────────────────────────────────────────────────────
 	if _, err := os.Stat(filepath.Join(repoPath, "go.mod")); err == nil {
 		// Dependency resolution: go get ./...
@@ -612,9 +611,9 @@ func runScaffoldBuildVerificationWithDoc(ctx context.Context, repoPath string, d
 		}
 
 		// Pass 1 (scaffold-only): build only the packages containing scaffold files.
-		if doc != nil && len(doc.ScaffoldsDetail) > 0 {
+		if doc != nil && len(doc.Scaffolds) > 0 {
 			pkgSet := make(map[string]bool)
-			for _, sf := range doc.ScaffoldsDetail {
+			for _, sf := range doc.Scaffolds {
 				dir := filepath.Dir(sf.FilePath)
 				if dir == "." || dir == "" {
 					pkgSet["./"] = true
@@ -803,99 +802,6 @@ func RunVerification(ctx context.Context, opts RunVerificationOpts) error {
 		return fmt.Errorf("engine.RunVerification: %w", err)
 	}
 	return orch.RunVerification(testCmd)
-}
-
-// ParseIMPLDoc loads a YAML manifest and converts it to types.IMPLDoc.
-//
-// Deprecated: Use protocol.Load() directly to obtain *protocol.IMPLManifest.
-// This function exists only for backward compatibility with callers that
-// still operate on *types.IMPLDoc.
-func ParseIMPLDoc(path string) (*types.IMPLDoc, error) {
-	manifest, err := protocol.Load(path)
-	if err != nil {
-		return nil, err
-	}
-
-	// Convert protocol.IMPLManifest to types.IMPLDoc
-	doc := &types.IMPLDoc{
-		FeatureName:     manifest.Title,
-		Status:          "SUITABLE", // Assume suitable if manifest loaded
-		TestCommand:     manifest.TestCommand,
-		Waves:           make([]types.Wave, len(manifest.Waves)),
-		FileOwnership:   make(map[string]types.FileOwnershipInfo),
-		ScaffoldsDetail: make([]types.ScaffoldFile, len(manifest.Scaffolds)),
-	}
-
-	// Convert scaffolds
-	for i, s := range manifest.Scaffolds {
-		doc.ScaffoldsDetail[i] = types.ScaffoldFile{
-			FilePath:   s.FilePath,
-			Contents:   s.Contents,
-			ImportPath: s.ImportPath,
-		}
-	}
-
-	// Convert waves
-	for i, w := range manifest.Waves {
-		agents := make([]types.AgentSpec, len(w.Agents))
-		for j, a := range w.Agents {
-			agents[j] = types.AgentSpec{
-				Letter: a.ID,
-				Prompt: a.Task,
-			}
-		}
-		doc.Waves[i] = types.Wave{
-			Number: w.Number,
-			Agents: agents,
-		}
-	}
-
-	// Convert file ownership
-	for _, fo := range manifest.FileOwnership {
-		doc.FileOwnership[fo.File] = types.FileOwnershipInfo{
-			Agent:  fo.Agent,
-			Wave:   fo.Wave,
-			Action: fo.Action,
-		}
-	}
-
-	return doc, nil
-}
-
-// ParseCompletionReport reads a completion report from the manifest.
-// Maps protocol.ErrAgentNotFound to engine.ErrReportNotFound for compatibility.
-func ParseCompletionReport(implDocPath, agentLetter string) (*types.CompletionReport, error) {
-	manifest, err := protocol.Load(implDocPath)
-	if err != nil {
-		return nil, err
-	}
-
-	protoReport, ok := manifest.CompletionReports[agentLetter]
-	if !ok {
-		return nil, ErrReportNotFound
-	}
-
-	// Convert protocol.CompletionReport to types.CompletionReport
-	var status types.CompletionStatus
-	switch protoReport.Status {
-	case "complete":
-		status = types.StatusComplete
-	case "partial":
-		status = types.StatusPartial
-	case "blocked":
-		status = types.StatusBlocked
-	default:
-		status = types.StatusPartial
-	}
-
-	return &types.CompletionReport{
-		Status:       status,
-		Worktree:     protoReport.Worktree,
-		Branch:       protoReport.Branch,
-		Commit:       protoReport.Commit,
-		FilesChanged: protoReport.FilesChanged,
-		FilesCreated: protoReport.FilesCreated,
-	}, nil
 }
 
 // UpdateIMPLStatus ticks status checkboxes for completed agents.
