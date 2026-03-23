@@ -1,16 +1,14 @@
 package protocol
 
 import (
-	"errors"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
-)
 
-// ErrAmendBlocked is returned when a hard protocol invariant prevents the amend.
-var ErrAmendBlocked = errors.New("amend blocked: protocol invariant violation")
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
+)
 
 // AmendImplOpts controls which amend operation to perform.
 // Exactly one of AddWave, RedirectAgent, or ExtendScope must be true.
@@ -24,8 +22,8 @@ type AmendImplOpts struct {
 	ExtendScope   bool   // re-engage Scout with current IMPL as context (handled by CLI layer)
 }
 
-// AmendImplResult is the outcome of a successful AmendImpl call.
-type AmendImplResult struct {
+// AmendImplData is the outcome of a successful AmendImpl call.
+type AmendImplData struct {
 	ManifestPath  string   // absolute path (same as input)
 	Operation     string   // "add-wave" | "redirect-agent" | "extend-scope"
 	NewWaveNumber int      // only set when Operation=="add-wave"
@@ -33,28 +31,58 @@ type AmendImplResult struct {
 	Warnings      []string // non-fatal issues detected during amend
 }
 
+// amendBlocked is an internal error code used in StructuredError when a hard
+// protocol invariant prevents the amend. Callers can check for this code via
+// result.Errors[0].Code when result.IsFatal() is true.
+const amendBlocked = "AMEND_BLOCKED"
+
 // AmendImpl performs the amend operation described by opts on the manifest at
 // opts.ManifestPath, saves the updated manifest, and returns the result.
-// Returns ErrAmendBlocked (sentinel) if a hard invariant would be violated.
-func AmendImpl(opts AmendImplOpts) (*AmendImplResult, error) {
+// Returns a fatal Result with Code "AMEND_BLOCKED" if a hard invariant would
+// be violated.
+func AmendImpl(opts AmendImplOpts) result.Result[AmendImplData] {
 	// Step 1: Load manifest
 	m, err := Load(opts.ManifestPath)
 	if err != nil {
-		return nil, fmt.Errorf("failed to load manifest: %w", err)
+		return result.NewFailure[AmendImplData]([]result.StructuredError{
+			{
+				Code:     "LOAD_FAILED",
+				Message:  fmt.Sprintf("failed to load manifest: %v", err),
+				Severity: "fatal",
+			},
+		})
 	}
 
 	// Step 2: Check completion_date field
 	if m.CompletionDate != "" {
-		return nil, fmt.Errorf("%w: IMPL is complete (completion_date=%s); cannot amend", ErrAmendBlocked, m.CompletionDate)
+		return result.NewFailure[AmendImplData]([]result.StructuredError{
+			{
+				Code:     amendBlocked,
+				Message:  fmt.Sprintf("IMPL is complete (completion_date=%s); cannot amend", m.CompletionDate),
+				Severity: "fatal",
+			},
+		})
 	}
 
 	// Step 3: Check raw file for SAW:COMPLETE marker
 	rawBytes, err := os.ReadFile(opts.ManifestPath)
 	if err != nil {
-		return nil, fmt.Errorf("failed to read manifest file: %w", err)
+		return result.NewFailure[AmendImplData]([]result.StructuredError{
+			{
+				Code:     "READ_FAILED",
+				Message:  fmt.Sprintf("failed to read manifest file: %v", err),
+				Severity: "fatal",
+			},
+		})
 	}
 	if strings.Contains(string(rawBytes), "SAW:COMPLETE") {
-		return nil, fmt.Errorf("%w: IMPL is complete (SAW:COMPLETE marker present); cannot amend", ErrAmendBlocked)
+		return result.NewFailure[AmendImplData]([]result.StructuredError{
+			{
+				Code:     amendBlocked,
+				Message:  "IMPL is complete (SAW:COMPLETE marker present); cannot amend",
+				Severity: "fatal",
+			},
+		})
 	}
 
 	switch {
@@ -64,15 +92,15 @@ func AmendImpl(opts AmendImplOpts) (*AmendImplResult, error) {
 		return amendRedirectAgent(opts, m)
 	default:
 		// ExtendScope is handled by the CLI layer; nothing to do in the engine
-		return &AmendImplResult{
+		return result.NewSuccess(AmendImplData{
 			ManifestPath: opts.ManifestPath,
 			Operation:    "extend-scope",
-		}, nil
+		})
 	}
 }
 
 // amendAddWave appends a new empty wave to the manifest.
-func amendAddWave(opts AmendImplOpts, m *IMPLManifest) (*AmendImplResult, error) {
+func amendAddWave(opts AmendImplOpts, m *IMPLManifest) result.Result[AmendImplData] {
 	// Find highest wave number
 	maxWave := 0
 	for _, w := range m.Waves {
@@ -100,24 +128,36 @@ func amendAddWave(opts AmendImplOpts, m *IMPLManifest) (*AmendImplResult, error)
 		for i, e := range errs {
 			msgs[i] = e.Message
 		}
-		return nil, fmt.Errorf("%w: validation failed after adding wave: %s", ErrAmendBlocked, strings.Join(msgs, "; "))
+		return result.NewFailure[AmendImplData]([]result.StructuredError{
+			{
+				Code:     amendBlocked,
+				Message:  fmt.Sprintf("validation failed after adding wave: %s", strings.Join(msgs, "; ")),
+				Severity: "fatal",
+			},
+		})
 	}
 
 	// Validation passed — mutate real manifest and save
 	m.Waves = append(m.Waves, newWave)
 	if err := Save(m, opts.ManifestPath); err != nil {
-		return nil, fmt.Errorf("failed to save manifest: %w", err)
+		return result.NewFailure[AmendImplData]([]result.StructuredError{
+			{
+				Code:     "SAVE_FAILED",
+				Message:  fmt.Sprintf("failed to save manifest: %v", err),
+				Severity: "fatal",
+			},
+		})
 	}
 
-	return &AmendImplResult{
+	return result.NewSuccess(AmendImplData{
 		ManifestPath:  opts.ManifestPath,
 		Operation:     "add-wave",
 		NewWaveNumber: newWaveNum,
-	}, nil
+	})
 }
 
 // amendRedirectAgent updates an agent's task and clears any non-complete completion report.
-func amendRedirectAgent(opts AmendImplOpts, m *IMPLManifest) (*AmendImplResult, error) {
+func amendRedirectAgent(opts AmendImplOpts, m *IMPLManifest) result.Result[AmendImplData] {
 	var warnings []string
 
 	// Step 1: Find the agent in the specified wave
@@ -137,12 +177,24 @@ func amendRedirectAgent(opts AmendImplOpts, m *IMPLManifest) (*AmendImplResult, 
 	}
 
 	if waveIdx == -1 || agentIdx == -1 {
-		return nil, fmt.Errorf("%w: agent %s not found in wave %d", ErrAmendBlocked, opts.AgentID, opts.WaveNum)
+		return result.NewFailure[AmendImplData]([]result.StructuredError{
+			{
+				Code:     amendBlocked,
+				Message:  fmt.Sprintf("agent %s not found in wave %d", opts.AgentID, opts.WaveNum),
+				Severity: "fatal",
+			},
+		})
 	}
 
 	// Step 2: Reject if agent has a complete completion report
 	if cr, ok := m.CompletionReports[opts.AgentID]; ok && cr.Status == "complete" {
-		return nil, fmt.Errorf("%w: agent %s has a complete completion report; cannot redirect a completed agent", ErrAmendBlocked, opts.AgentID)
+		return result.NewFailure[AmendImplData]([]result.StructuredError{
+			{
+				Code:     amendBlocked,
+				Message:  fmt.Sprintf("agent %s has a complete completion report; cannot redirect a completed agent", opts.AgentID),
+				Severity: "fatal",
+			},
+		})
 	}
 
 	// Step 3: Worktree commit check
@@ -165,8 +217,13 @@ func amendRedirectAgent(opts AmendImplOpts, m *IMPLManifest) (*AmendImplResult, 
 			if err != nil {
 				// Branch not found or other git error — no commits, proceed
 			} else if len(strings.TrimSpace(string(logOut))) > 0 {
-				return nil, fmt.Errorf("%w: agent %s has commits on branch %s; cannot redirect a committed agent",
-					ErrAmendBlocked, opts.AgentID, branchName)
+				return result.NewFailure[AmendImplData]([]result.StructuredError{
+					{
+						Code:     amendBlocked,
+						Message:  fmt.Sprintf("agent %s has commits on branch %s; cannot redirect a committed agent", opts.AgentID, branchName),
+						Severity: "fatal",
+					},
+				})
 			}
 		}
 	}
@@ -181,13 +238,19 @@ func amendRedirectAgent(opts AmendImplOpts, m *IMPLManifest) (*AmendImplResult, 
 
 	// Step 6: Save
 	if err := Save(m, opts.ManifestPath); err != nil {
-		return nil, fmt.Errorf("failed to save manifest: %w", err)
+		return result.NewFailure[AmendImplData]([]result.StructuredError{
+			{
+				Code:     "SAVE_FAILED",
+				Message:  fmt.Sprintf("failed to save manifest: %v", err),
+				Severity: "fatal",
+			},
+		})
 	}
 
-	return &AmendImplResult{
+	return result.NewSuccess(AmendImplData{
 		ManifestPath: opts.ManifestPath,
 		Operation:    "redirect-agent",
 		AgentID:      opts.AgentID,
 		Warnings:     warnings,
-	}, nil
+	})
 }

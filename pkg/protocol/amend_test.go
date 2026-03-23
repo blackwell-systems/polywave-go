@@ -1,7 +1,6 @@
 package protocol
 
 import (
-	"errors"
 	"os"
 	"path/filepath"
 	"testing"
@@ -53,15 +52,15 @@ func TestAmendImpl_RejectsComplete(t *testing.T) {
 	m.CompletionDate = "2026-01-01"
 	path := saveAmendTestManifest(t, m)
 
-	_, err := AmendImpl(AmendImplOpts{
+	res := AmendImpl(AmendImplOpts{
 		ManifestPath: path,
 		AddWave:      true,
 	})
-	if err == nil {
-		t.Fatal("expected error for complete manifest, got nil")
+	if !res.IsFatal() {
+		t.Fatal("expected fatal result for complete manifest")
 	}
-	if !errors.Is(err, ErrAmendBlocked) {
-		t.Errorf("expected ErrAmendBlocked, got: %v", err)
+	if len(res.Errors) == 0 || res.Errors[0].Code != amendBlocked {
+		t.Errorf("expected AMEND_BLOCKED error code, got: %v", res.Errors)
 	}
 }
 
@@ -81,15 +80,15 @@ func TestAmendImpl_RejectsComplete_SAWMarker(t *testing.T) {
 		t.Fatalf("failed to write manifest: %v", err)
 	}
 
-	_, err = AmendImpl(AmendImplOpts{
+	res := AmendImpl(AmendImplOpts{
 		ManifestPath: path,
 		AddWave:      true,
 	})
-	if err == nil {
-		t.Fatal("expected error for SAW:COMPLETE manifest, got nil")
+	if !res.IsFatal() {
+		t.Fatal("expected fatal result for SAW:COMPLETE manifest")
 	}
-	if !errors.Is(err, ErrAmendBlocked) {
-		t.Errorf("expected ErrAmendBlocked, got: %v", err)
+	if len(res.Errors) == 0 || res.Errors[0].Code != amendBlocked {
+		t.Errorf("expected AMEND_BLOCKED error code, got: %v", res.Errors)
 	}
 }
 
@@ -98,19 +97,20 @@ func TestAmendImpl_AddWave(t *testing.T) {
 	m := amendTestManifest("test-feature")
 	path := saveAmendTestManifest(t, m)
 
-	result, err := AmendImpl(AmendImplOpts{
+	res := AmendImpl(AmendImplOpts{
 		ManifestPath: path,
 		AddWave:      true,
 	})
-	if err != nil {
-		t.Fatalf("AmendImpl AddWave failed: %v", err)
+	if !res.IsSuccess() {
+		t.Fatalf("AmendImpl AddWave failed: %v", res.Errors)
 	}
 
-	if result.Operation != "add-wave" {
-		t.Errorf("Operation = %q, want %q", result.Operation, "add-wave")
+	data := res.GetData()
+	if data.Operation != "add-wave" {
+		t.Errorf("Operation = %q, want %q", data.Operation, "add-wave")
 	}
-	if result.NewWaveNumber != 2 {
-		t.Errorf("NewWaveNumber = %d, want 2", result.NewWaveNumber)
+	if data.NewWaveNumber != 2 {
+		t.Errorf("NewWaveNumber = %d, want 2", data.NewWaveNumber)
 	}
 
 	// Verify manifest on disk was updated
@@ -139,16 +139,17 @@ func TestAmendImpl_AddWave_EmptyWaves(t *testing.T) {
 	}
 	path := saveAmendTestManifest(t, m)
 
-	result, err := AmendImpl(AmendImplOpts{
+	res := AmendImpl(AmendImplOpts{
 		ManifestPath: path,
 		AddWave:      true,
 	})
-	if err != nil {
-		t.Fatalf("AmendImpl AddWave on empty waves failed: %v", err)
+	if !res.IsSuccess() {
+		t.Fatalf("AmendImpl AddWave on empty waves failed: %v", res.Errors)
 	}
 
-	if result.NewWaveNumber != 1 {
-		t.Errorf("NewWaveNumber = %d, want 1", result.NewWaveNumber)
+	data := res.GetData()
+	if data.NewWaveNumber != 1 {
+		t.Errorf("NewWaveNumber = %d, want 1", data.NewWaveNumber)
 	}
 
 	loaded, err := Load(path)
@@ -172,18 +173,18 @@ func TestAmendImpl_RedirectAgent_RejectsComplete(t *testing.T) {
 	}
 	path := saveAmendTestManifest(t, m)
 
-	_, err := AmendImpl(AmendImplOpts{
+	res := AmendImpl(AmendImplOpts{
 		ManifestPath:  path,
 		RedirectAgent: true,
 		AgentID:       "A",
 		WaveNum:       1,
 		NewTask:       "New task",
 	})
-	if err == nil {
-		t.Fatal("expected error for complete agent, got nil")
+	if !res.IsFatal() {
+		t.Fatal("expected fatal result for complete agent")
 	}
-	if !errors.Is(err, ErrAmendBlocked) {
-		t.Errorf("expected ErrAmendBlocked, got: %v", err)
+	if len(res.Errors) == 0 || res.Errors[0].Code != amendBlocked {
+		t.Errorf("expected AMEND_BLOCKED error code, got: %v", res.Errors)
 	}
 }
 
@@ -192,18 +193,18 @@ func TestAmendImpl_RedirectAgent_NotFound(t *testing.T) {
 	m := amendTestManifest("test-feature")
 	path := saveAmendTestManifest(t, m)
 
-	_, err := AmendImpl(AmendImplOpts{
+	res := AmendImpl(AmendImplOpts{
 		ManifestPath:  path,
 		RedirectAgent: true,
 		AgentID:       "Z",
 		WaveNum:       1,
 		NewTask:       "New task",
 	})
-	if err == nil {
-		t.Fatal("expected error for nonexistent agent, got nil")
+	if !res.IsFatal() {
+		t.Fatal("expected fatal result for nonexistent agent")
 	}
-	if !errors.Is(err, ErrAmendBlocked) {
-		t.Errorf("expected ErrAmendBlocked, got: %v", err)
+	if len(res.Errors) == 0 || res.Errors[0].Code != amendBlocked {
+		t.Errorf("expected AMEND_BLOCKED error code, got: %v", res.Errors)
 	}
 }
 
@@ -214,22 +215,23 @@ func TestAmendImpl_RedirectAgent_Success(t *testing.T) {
 	path := saveAmendTestManifest(t, m)
 
 	newTask := "Updated task description"
-	result, err := AmendImpl(AmendImplOpts{
+	res := AmendImpl(AmendImplOpts{
 		ManifestPath:  path,
 		RedirectAgent: true,
 		AgentID:       "A",
 		WaveNum:       1,
 		NewTask:       newTask,
 	})
-	if err != nil {
-		t.Fatalf("AmendImpl RedirectAgent failed: %v", err)
+	if !res.IsSuccess() {
+		t.Fatalf("AmendImpl RedirectAgent failed: %v", res.Errors)
 	}
 
-	if result.Operation != "redirect-agent" {
-		t.Errorf("Operation = %q, want %q", result.Operation, "redirect-agent")
+	data := res.GetData()
+	if data.Operation != "redirect-agent" {
+		t.Errorf("Operation = %q, want %q", data.Operation, "redirect-agent")
 	}
-	if result.AgentID != "A" {
-		t.Errorf("AgentID = %q, want %q", result.AgentID, "A")
+	if data.AgentID != "A" {
+		t.Errorf("AgentID = %q, want %q", data.AgentID, "A")
 	}
 
 	// Verify task was updated on disk
@@ -251,15 +253,15 @@ func TestAmendImpl_RedirectAgent_ClearsPartialReport(t *testing.T) {
 	}
 	path := saveAmendTestManifest(t, m)
 
-	_, err := AmendImpl(AmendImplOpts{
+	res := AmendImpl(AmendImplOpts{
 		ManifestPath:  path,
 		RedirectAgent: true,
 		AgentID:       "A",
 		WaveNum:       1,
 		NewTask:       "New task",
 	})
-	if err != nil {
-		t.Fatalf("AmendImpl RedirectAgent failed: %v", err)
+	if !res.IsSuccess() {
+		t.Fatalf("AmendImpl RedirectAgent failed: %v", res.Errors)
 	}
 
 	// Verify partial report was cleared
@@ -278,29 +280,30 @@ func TestAmendImpl_RedirectAgent_NoBaseCommit(t *testing.T) {
 	// Wave has no base_commit (default)
 	path := saveAmendTestManifest(t, m)
 
-	result, err := AmendImpl(AmendImplOpts{
+	res := AmendImpl(AmendImplOpts{
 		ManifestPath:  path,
 		RedirectAgent: true,
 		AgentID:       "A",
 		WaveNum:       1,
 		NewTask:       "Updated task",
 	})
-	if err != nil {
-		t.Fatalf("AmendImpl RedirectAgent (no base_commit) failed: %v", err)
+	if !res.IsSuccess() {
+		t.Fatalf("AmendImpl RedirectAgent (no base_commit) failed: %v", res.Errors)
 	}
 
+	data := res.GetData()
 	// Should contain a warning about skipped commit check
-	if len(result.Warnings) == 0 {
+	if len(data.Warnings) == 0 {
 		t.Error("expected warning about skipped worktree commit check, got none")
 	}
 	found := false
-	for _, w := range result.Warnings {
+	for _, w := range data.Warnings {
 		if contains(w, "base_commit not set") {
 			found = true
 			break
 		}
 	}
 	if !found {
-		t.Errorf("expected warning containing 'base_commit not set', got: %v", result.Warnings)
+		t.Errorf("expected warning containing 'base_commit not set', got: %v", data.Warnings)
 	}
 }
