@@ -143,6 +143,3 @@ func runCommand(command string, repoDir string) (bool, string) {
 	// Command succeeded
 	return true, output.String()
 }
-
-// Backward compatibility alias (will be removed after Wave 3 completes)
-type VerifyBuildResult = VerifyBuildData

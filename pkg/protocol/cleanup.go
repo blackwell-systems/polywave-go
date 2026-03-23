@@ -12,13 +12,13 @@ import (
 )
 
 // CleanupAllStale removes all stale worktrees across all slugs.
-func CleanupAllStale(repoDir string, force bool) (*StaleCleanupResult, error) {
+func CleanupAllStale(repoDir string, force bool) (*StaleCleanupData, error) {
 	stale, err := DetectStaleWorktrees(repoDir)
 	if err != nil {
 		return nil, fmt.Errorf("detect stale worktrees: %w", err)
 	}
 	if len(stale) == 0 {
-		return &StaleCleanupResult{
+		return &StaleCleanupData{
 			Cleaned: []StaleWorktree{},
 			Skipped: []StaleWorktree{},
 			Errors: []struct {
@@ -44,13 +44,6 @@ type CleanupData struct {
 	Wave   int             `json:"wave"`
 	Agents []CleanupStatus `json:"agents"`
 }
-
-// CleanupResult is a type alias retained for callers that have not yet migrated
-// to the result.Result[CleanupData] return type. New code should use CleanupData
-// directly via result.Result[CleanupData].
-//
-// Deprecated: Use CleanupData with result.Result[CleanupData] instead.
-type CleanupResult = CleanupData
 
 // Cleanup removes worktrees and branches for all agents in the specified wave.
 // It loads the manifest from manifestPath, finds the wave by waveNum, and attempts

@@ -106,10 +106,6 @@ type ImportIMPLsData struct {
 	Updated         bool           `json:"updated"`
 }
 
-// ImportIMPLsResult is a backward-compatible alias for ImportIMPLsData.
-// Deprecated: use result.Result[ImportIMPLsData] for new call sites.
-type ImportIMPLsResult = ImportIMPLsData
-
 // NewImportIMPLsResult creates a successful result.Result wrapping ImportIMPLsData.
 func NewImportIMPLsResult(data ImportIMPLsData) result.Result[ImportIMPLsData] {
 	return result.NewSuccess(data)
