@@ -137,7 +137,24 @@ pattern matching (H7) and appends diagnosis to the output.`,
 				}
 			}
 
-			// Step 1.1: E7 — Check completion report statuses before merge.
+			// Step 1.1: I4 — Verify completion reports exist for every agent.
+			// The IMPL doc is the single source of truth. If an agent didn't call
+			// sawtools set-completion, it has not completed the protocol.
+			{
+				var missing []string
+				for _, agent := range manifest.Waves[waveNum-1].Agents {
+					if _, ok := manifest.CompletionReports[agent.ID]; !ok {
+						missing = append(missing, agent.ID)
+					}
+				}
+				if len(missing) > 0 {
+					out, _ := json.MarshalIndent(result, "", "  ")
+					fmt.Println(string(out))
+					return fmt.Errorf("finalize-wave: missing completion reports for agents: %v — agents must call sawtools set-completion before merge (I4)", missing)
+				}
+			}
+
+			// Step 1.2: E7 — Check completion report statuses before merge.
 			// Block merge if any agent in this wave reports partial or blocked.
 			for _, agent := range manifest.Waves[waveNum-1].Agents {
 				if report, ok := manifest.CompletionReports[agent.ID]; ok {
