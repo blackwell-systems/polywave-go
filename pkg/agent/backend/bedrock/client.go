@@ -18,6 +18,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/bedrockruntime/types"
 
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/agent/backend"
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/agent/dedup"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/tools"
 )
 
@@ -28,6 +29,7 @@ type Client struct {
 	onToolCall    backend.ToolCallCallback
 	readOnly      bool
 	commitTracker *tools.CommitTracker
+	dedupCache    *dedup.Cache
 	outputSchema  map[string]any // optional: structured output schema
 }
 
@@ -241,6 +243,7 @@ func (c *Client) buildWorkshop(workDir string) tools.Workshop {
 	} else {
 		w = tools.StandardTools(workDir)
 	}
+	w, c.dedupCache = dedup.WithDedup(w)
 	if c.cfg.Constraints != nil {
 		w, c.commitTracker = tools.WithConstraints(w, *c.cfg.Constraints)
 	}
@@ -264,6 +267,16 @@ func (c *Client) CommitCount() int {
 		return 0
 	}
 	return c.commitTracker.Count
+}
+
+// DedupStats returns dedup metrics from the most recent Run call.
+// Returns nil if no run has been made yet or dedup is not configured.
+func (c *Client) DedupStats() *dedup.Stats {
+	if c.dedupCache == nil {
+		return nil
+	}
+	stats := c.dedupCache.Stats()
+	return &stats
 }
 
 // toolBlock tracks state for a tool_use content block being streamed.
