@@ -3,7 +3,6 @@ package orchestrator
 
 import (
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/types"
 )
 
 // OrchestratorAction is the action to take after a partial/blocked completion report.
@@ -19,17 +18,17 @@ const (
 
 // RouteFailure maps a FailureType to an OrchestratorAction per E19.
 // Empty failureType (absent from report) returns ActionEscalate (conservative fallback).
-func RouteFailure(failureType types.FailureType) OrchestratorAction {
+func RouteFailure(failureType protocol.FailureTypeEnum) OrchestratorAction {
 	switch failureType {
-	case types.FailureTypeTransient:
+	case protocol.FailureTransient:
 		return ActionRetry
-	case types.FailureTypeFixable:
+	case protocol.FailureFixable:
 		return ActionApplyAndRelaunch
-	case types.FailureTypeNeedsReplan:
+	case protocol.FailureNeedsReplan:
 		return ActionReplan
-	case types.FailureTypeEscalate:
+	case protocol.FailureEscalate:
 		return ActionEscalate
-	case types.FailureTypeTimeout:
+	case protocol.FailureTimeout:
 		return ActionRetryWithScope
 	default:
 		// Covers both empty string (absent from report) and any unknown value.
@@ -51,7 +50,7 @@ func RouteFailure(failureType types.FailureType) OrchestratorAction {
 //       var reactions *protocol.ReactionsConfig
 //       if manifest != nil { reactions = manifest.Reactions }
 //       action := RouteFailureWithReactions(failureType, reactions)
-func RouteFailureWithReactions(failureType types.FailureType, reactions *protocol.ReactionsConfig) OrchestratorAction {
+func RouteFailureWithReactions(failureType protocol.FailureTypeEnum, reactions *protocol.ReactionsConfig) OrchestratorAction {
 	if reactions != nil {
 		entry := reactionEntryForOrchestrator(failureType, reactions)
 		if entry != nil {
@@ -64,7 +63,7 @@ func RouteFailureWithReactions(failureType types.FailureType, reactions *protoco
 // MaxAttemptsFor returns the max launch attempts for a failure type,
 // consulting reactions first, then falling back to the E19 default.
 // reactions may be nil.
-func MaxAttemptsFor(failureType types.FailureType, reactions *protocol.ReactionsConfig) int {
+func MaxAttemptsFor(failureType protocol.FailureTypeEnum, reactions *protocol.ReactionsConfig) int {
 	if reactions == nil {
 		return defaultMaxAttempts(failureType)
 	}
@@ -78,13 +77,13 @@ func MaxAttemptsFor(failureType types.FailureType, reactions *protocol.Reactions
 // defaultMaxAttempts returns the E19 hardcoded max attempts for a FailureType.
 // IMPORTANT: these values must match protocol.MaxRetries exactly.
 // Verify against pkg/protocol/failure.go before committing.
-func defaultMaxAttempts(failureType types.FailureType) int {
+func defaultMaxAttempts(failureType protocol.FailureTypeEnum) int {
 	switch failureType {
-	case types.FailureTypeTransient:
+	case protocol.FailureTransient:
 		return 2
-	case types.FailureTypeFixable:
+	case protocol.FailureFixable:
 		return 2 // matches protocol.MaxRetries(FailureFixable)
-	case types.FailureTypeTimeout:
+	case protocol.FailureTimeout:
 		return 1
 	default:
 		return 0
@@ -93,20 +92,20 @@ func defaultMaxAttempts(failureType types.FailureType) int {
 
 // reactionEntryForOrchestrator maps an orchestrator FailureType to the
 // corresponding protocol.ReactionEntry, or nil if not set.
-func reactionEntryForOrchestrator(failureType types.FailureType, r *protocol.ReactionsConfig) *protocol.ReactionEntry {
+func reactionEntryForOrchestrator(failureType protocol.FailureTypeEnum, r *protocol.ReactionsConfig) *protocol.ReactionEntry {
 	if r == nil {
 		return nil
 	}
 	switch failureType {
-	case types.FailureTypeTransient:
+	case protocol.FailureTransient:
 		return r.Transient
-	case types.FailureTypeTimeout:
+	case protocol.FailureTimeout:
 		return r.Timeout
-	case types.FailureTypeFixable:
+	case protocol.FailureFixable:
 		return r.Fixable
-	case types.FailureTypeNeedsReplan:
+	case protocol.FailureNeedsReplan:
 		return r.NeedsReplan
-	case types.FailureTypeEscalate:
+	case protocol.FailureEscalate:
 		return r.Escalate
 	default:
 		return nil

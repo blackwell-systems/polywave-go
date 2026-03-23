@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/types"
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
 )
 
 // QualityGateResult is one gate's execution outcome.
@@ -29,7 +29,7 @@ const (
 // If gates is nil or gates.Level == "quick", returns empty slice and nil error.
 // For each gate: runs command; if Required and exit != 0, collects a blocking error.
 // Returns all gate results plus the first blocking error (if any).
-func RunQualityGates(repoPath string, gates *types.QualityGates) ([]QualityGateResult, error) {
+func RunQualityGates(repoPath string, gates *protocol.QualityGates) ([]QualityGateResult, error) {
 	if gates == nil || strings.EqualFold(gates.Level, "quick") {
 		return nil, nil
 	}
@@ -53,7 +53,7 @@ func RunQualityGates(repoPath string, gates *types.QualityGates) ([]QualityGateR
 }
 
 // runGate executes a single gate and returns its result.
-func runGate(repoPath string, gate types.QualityGate) QualityGateResult {
+func runGate(repoPath string, gate protocol.QualityGate) QualityGateResult {
 	result := QualityGateResult{
 		Type:     gate.Type,
 		Command:  gate.Command,
