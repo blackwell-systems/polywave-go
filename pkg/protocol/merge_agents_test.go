@@ -739,20 +739,18 @@ waves:
 	createBranchWithCommits(t, repoDir, "wave1-agent-A", 1)
 
 	// Verify commits - should find via legacy fallback
-	result, err := VerifyCommits(manifestPath, 1, repoDir)
-	if err != nil {
-		t.Fatalf("VerifyCommits failed: %v", err)
+	res := VerifyCommits(manifestPath, 1, repoDir)
+	if !res.IsSuccess() {
+		t.Fatalf("VerifyCommits failed. Errors: %v", res.Errors)
 	}
 
-	if !result.AllValid {
-		t.Errorf("expected AllValid=true with legacy branch fallback, got false")
+	data := res.GetData()
+
+	if len(data.Agents) != 1 {
+		t.Fatalf("expected 1 agent status, got %d", len(data.Agents))
 	}
 
-	if len(result.Agents) != 1 {
-		t.Fatalf("expected 1 agent status, got %d", len(result.Agents))
-	}
-
-	agentA := result.Agents[0]
+	agentA := data.Agents[0]
 	if !agentA.HasCommits {
 		t.Errorf("expected HasCommits=true for agent A via legacy fallback")
 	}
