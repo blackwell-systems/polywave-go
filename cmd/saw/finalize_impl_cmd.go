@@ -50,7 +50,7 @@ Output: JSON with validation results and gate population stats.`,
 
 			// Exit code 1 if not successful (return error instead of os.Exit for testability)
 			if !res.IsSuccess() {
-				return fmt.Errorf("finalize-impl failed: validation or gate population errors (see JSON output)")
+				return fmt.Errorf("finalize-impl: validation or gate population errors (see JSON output)")
 			}
 
 			return nil

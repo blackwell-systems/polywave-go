@@ -87,29 +87,24 @@ waves:
 	}
 
 	// Verify: result matches protocol.FinalizeIMPL output
-	if result == nil {
-		t.Fatal("result is nil")
+	if !result.IsSuccess() {
+		t.Fatalf("expected success, got failure. Errors: %+v", result.Errors)
 	}
-
-	// Should succeed (validation passes, gates populated)
-	if !result.Success {
-		t.Errorf("expected Success=true, got false. Validation errors: %+v, Final validation errors: %+v",
-			result.Validation.Errors, result.FinalValidation.Errors)
-	}
+	data := result.GetData()
 
 	// Should have H2 data available
-	if !result.GatePopulation.H2DataAvailable {
+	if !data.GatePopulation.H2DataAvailable {
 		t.Error("expected H2DataAvailable=true")
 	}
 
 	// Should detect Make toolchain (Makefile takes precedence)
-	if result.GatePopulation.Toolchain != "make" {
-		t.Errorf("expected toolchain=make, got %s", result.GatePopulation.Toolchain)
+	if data.GatePopulation.Toolchain != "make" {
+		t.Errorf("expected toolchain=make, got %s", data.GatePopulation.Toolchain)
 	}
 
 	// Should update 1 agent (added verification gate)
-	if result.GatePopulation.AgentsUpdated != 1 {
-		t.Errorf("expected 1 agent updated, got %d", result.GatePopulation.AgentsUpdated)
+	if data.GatePopulation.AgentsUpdated != 1 {
+		t.Errorf("expected 1 agent updated, got %d", data.GatePopulation.AgentsUpdated)
 	}
 
 	// Verify: IMPL file was updated on disk
@@ -177,9 +172,9 @@ waves:
 		t.Errorf("expected context.Canceled error, got: %v", err)
 	}
 
-	// Result should be nil when context cancelled before execution
-	if result != nil {
-		t.Errorf("expected nil result when context cancelled, got: %+v", result)
+	// Result should be zero-value when context cancelled before execution
+	if result.IsSuccess() {
+		t.Errorf("expected non-success result when context cancelled, got: %+v", result)
 	}
 }
 
@@ -225,7 +220,7 @@ waves:
 
 	// Verify: should return error (either context.Canceled or context.DeadlineExceeded)
 	// Note: timing-dependent - might complete before timeout, so we allow both outcomes
-	if err == nil && result != nil {
+	if err == nil && result.IsSuccess() {
 		// Operation completed before timeout - this is OK
 		t.Logf("operation completed before context timeout (timing-dependent)")
 	} else if err != nil {
@@ -270,8 +265,8 @@ func TestFinalizeIMPLEngine_ValidationParameters(t *testing.T) {
 				t.Errorf("expected error containing %q, got: %v", tt.wantErr, err)
 			}
 
-			if result != nil {
-				t.Errorf("expected nil result on parameter validation error, got: %+v", result)
+			if result.IsSuccess() {
+				t.Errorf("expected non-success result on parameter validation error, got: %+v", result)
 			}
 		})
 	}

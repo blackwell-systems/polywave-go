@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
 )
 
 func TestFinalizeImplCmd_Success(t *testing.T) {
@@ -72,19 +73,19 @@ go 1.21
 		t.Errorf("Expected no error, got: %v\nOutput: %s", err, buf.String())
 	}
 
-	// Verify: JSON output has Success=true
-	var result protocol.FinalizeIMPLResult
-	if err := json.Unmarshal(buf.Bytes(), &result); err != nil {
+	// Verify: JSON output has success code
+	var res result.Result[protocol.FinalizeIMPLData]
+	if err := json.Unmarshal(buf.Bytes(), &res); err != nil {
 		t.Fatalf("Failed to parse JSON output: %v\nOutput: %s", err, buf.String())
 	}
 
-	if !result.Success {
-		t.Errorf("Expected Success=true, got false. Validation errors: %v", result.Validation.Errors)
+	if !res.IsSuccess() {
+		t.Errorf("Expected success, got failure. Errors: %v", res.Errors)
 	}
 
 	// Verify: AgentsUpdated=2
-	if result.GatePopulation.AgentsUpdated != 2 {
-		t.Errorf("Expected AgentsUpdated=2, got %d", result.GatePopulation.AgentsUpdated)
+	if res.GetData().GatePopulation.AgentsUpdated != 2 {
+		t.Errorf("Expected AgentsUpdated=2, got %d", res.GetData().GatePopulation.AgentsUpdated)
 	}
 
 	// Verify: IMPL file updated with verification blocks
@@ -140,13 +141,10 @@ waves:
 	// In tests, we check that Success=false in JSON
 	if err == nil {
 		// Check JSON output
-		var result protocol.FinalizeIMPLResult
-		if err := json.Unmarshal(buf.Bytes(), &result); err == nil {
-			if result.Success {
-				t.Error("Expected Success=false for validation failure")
-			}
-			if result.Validation.Passed {
-				t.Error("Expected Validation.Passed=false for I1 violation")
+		var res result.Result[protocol.FinalizeIMPLData]
+		if err := json.Unmarshal(buf.Bytes(), &res); err == nil {
+			if res.IsSuccess() {
+				t.Error("Expected failure for validation failure, got success")
 			}
 		}
 	}
