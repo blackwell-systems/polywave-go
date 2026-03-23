@@ -1,18 +1,32 @@
+// Package result provides a unified Result[T] type for consistent error handling
+// and success/failure signaling across the scout-and-wave engine.
+//
+// This package replaces 68 distinct *Result types found throughout the codebase
+// with a single generic Result[T] wrapper that supports:
+//   - Full success (Code: "SUCCESS", Data present, no errors)
+//   - Partial success (Code: "PARTIAL", Data present, warnings in Errors)
+//   - Total failure (Code: "FATAL", no Data, fatal errors in Errors)
+//
+// The unified interface eliminates inconsistent success checking patterns
+// (IsSuccess vs Success vs Ok vs Error==nil) and provides structured error
+// reporting with severity, context, and suggestions for remediation.
 package result
+
+import "encoding/json"
 
 // Result wraps operation results with structured error handling and
 // consistent success/failure signaling. Replaces 68 distinct *Result types.
 type Result[T any] struct {
-	Data   *T               `json:"data,omitempty"`
+	Data   *T                `json:"data,omitempty"`
 	Errors []StructuredError `json:"errors,omitempty"`
-	Code   string           `json:"code"` // "SUCCESS" | "PARTIAL" | "FATAL"
+	Code   string            `json:"code"` // "SUCCESS" | "PARTIAL" | "FATAL"
 }
 
 // StructuredError provides consistent error reporting across all operations.
 type StructuredError struct {
-	Code       string            `json:"code"`        // Error code (E001-E999)
-	Message    string            `json:"message"`     // Human-readable message
-	Severity   string            `json:"severity"`    // "fatal" | "error" | "warning" | "info"
+	Code       string            `json:"code"`     // Error code (E001-E999)
+	Message    string            `json:"message"`  // Human-readable message
+	Severity   string            `json:"severity"` // "fatal" | "error" | "warning" | "info"
 	File       string            `json:"file,omitempty"`
 	Line       int               `json:"line,omitempty"`
 	Field      string            `json:"field,omitempty"`
@@ -77,4 +91,16 @@ func NewFailure[T any](errors []StructuredError) Result[T] {
 		Errors: errors,
 		Code:   code,
 	}
+}
+
+// MarshalJSON implements json.Marshaler for Result[T].
+func (r Result[T]) MarshalJSON() ([]byte, error) {
+	type Alias Result[T]
+	return json.Marshal((Alias)(r))
+}
+
+// UnmarshalJSON implements json.Unmarshaler for Result[T].
+func (r *Result[T]) UnmarshalJSON(data []byte) error {
+	type Alias Result[T]
+	return json.Unmarshal(data, (*Alias)(r))
 }
