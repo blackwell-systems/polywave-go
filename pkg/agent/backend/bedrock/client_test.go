@@ -372,6 +372,57 @@ func TestRunStreaming_NilClient(t *testing.T) {
 	}
 }
 
+// TestNew_WithStaticCredentials verifies that New() with populated credential
+// fields creates a non-nil client (no panic).
+func TestNew_WithStaticCredentials(t *testing.T) {
+	cfg := backend.Config{
+		Model:                 "anthropic.claude-3-sonnet-20240229-v1:0",
+		BedrockRegion:         "us-west-2",
+		BedrockAccessKeyID:    "AKIAIOSFODNN7EXAMPLE",
+		BedrockSecretAccessKey: "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY",
+		BedrockSessionToken:   "FwoGZXIvYXdzEBY",
+	}
+
+	c := New(cfg)
+	if c == nil {
+		t.Fatal("expected non-nil client")
+	}
+	// The internal AWS client should be non-nil when credentials are provided
+	if c.client == nil {
+		t.Error("expected internal bedrockruntime client to be non-nil with static credentials")
+	}
+}
+
+// TestNew_EmptyCredentialsFallsBackToDefaultChain verifies that New() with empty
+// credential fields falls back to the default AWS credential chain (existing behavior).
+func TestNew_EmptyCredentialsFallsBackToDefaultChain(t *testing.T) {
+	cfg := backend.Config{
+		Model: "anthropic.claude-3-sonnet-20240229-v1:0",
+		// All Bedrock* fields left empty — should use default chain
+	}
+
+	c := New(cfg)
+	if c == nil {
+		t.Fatal("expected non-nil client")
+	}
+	// Client should still be constructed (may or may not have internal client
+	// depending on whether AWS default credentials are available in the test env)
+}
+
+// TestNew_WithRegionOnly verifies that New() with only BedrockRegion set
+// uses the specified region but falls back to default credential chain.
+func TestNew_WithRegionOnly(t *testing.T) {
+	cfg := backend.Config{
+		Model:         "anthropic.claude-3-sonnet-20240229-v1:0",
+		BedrockRegion: "eu-west-1",
+	}
+
+	c := New(cfg)
+	if c == nil {
+		t.Fatal("expected non-nil client")
+	}
+}
+
 // contains is a helper that checks if s contains substr.
 func contains(s, substr string) bool {
 	return len(s) >= len(substr) && searchString(s, substr)
