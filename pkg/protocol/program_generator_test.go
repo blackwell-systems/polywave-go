@@ -59,40 +59,42 @@ func TestGenerateProgramFromIMPLs_Basic(t *testing.T) {
 	writeGeneratorTestIMPL(t, repoPath, "feature-b", "Feature B", StateReviewed,
 		[]string{"pkg/b/file1.go"}, []string{"InterfaceB"})
 
-	result, err := GenerateProgramFromIMPLs(GenerateProgramOpts{
+	res := GenerateProgramFromIMPLs(GenerateProgramOpts{
 		ImplSlugs:   []string{"feature-a", "feature-b"},
 		RepoPath:    repoPath,
 		ProgramSlug: "test-program",
 		Title:       "Test Program",
 	})
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+	if !res.IsSuccess() && !res.IsPartial() {
+		t.Fatalf("unexpected failure: %v", res.Errors)
 	}
 
-	if result.Manifest.State != ProgramStateReviewed {
-		t.Errorf("expected state REVIEWED, got %s", result.Manifest.State)
+	d := res.GetData()
+
+	if d.Manifest.State != ProgramStateReviewed {
+		t.Errorf("expected state REVIEWED, got %s", d.Manifest.State)
 	}
 
-	if len(result.Manifest.Impls) != 2 {
-		t.Fatalf("expected 2 IMPLs, got %d", len(result.Manifest.Impls))
+	if len(d.Manifest.Impls) != 2 {
+		t.Fatalf("expected 2 IMPLs, got %d", len(d.Manifest.Impls))
 	}
 
 	// No overlapping files -> all tier 1 -> 1 tier
-	if len(result.Manifest.Tiers) != 1 {
-		t.Errorf("expected 1 tier (no overlap), got %d", len(result.Manifest.Tiers))
+	if len(d.Manifest.Tiers) != 1 {
+		t.Errorf("expected 1 tier (no overlap), got %d", len(d.Manifest.Tiers))
 	}
 
-	if result.Manifest.Completion.ImplsTotal != 2 {
-		t.Errorf("expected ImplsTotal=2, got %d", result.Manifest.Completion.ImplsTotal)
+	if d.Manifest.Completion.ImplsTotal != 2 {
+		t.Errorf("expected ImplsTotal=2, got %d", d.Manifest.Completion.ImplsTotal)
 	}
-	if result.Manifest.Completion.TiersTotal != 1 {
-		t.Errorf("expected TiersTotal=1, got %d", result.Manifest.Completion.TiersTotal)
+	if d.Manifest.Completion.TiersTotal != 1 {
+		t.Errorf("expected TiersTotal=1, got %d", d.Manifest.Completion.TiersTotal)
 	}
-	if result.Manifest.Completion.TotalAgents != 4 {
-		t.Errorf("expected TotalAgents=4 (2 per IMPL), got %d", result.Manifest.Completion.TotalAgents)
+	if d.Manifest.Completion.TotalAgents != 4 {
+		t.Errorf("expected TotalAgents=4 (2 per IMPL), got %d", d.Manifest.Completion.TotalAgents)
 	}
-	if result.Manifest.Completion.TotalWaves != 2 {
-		t.Errorf("expected TotalWaves=2 (1 per IMPL), got %d", result.Manifest.Completion.TotalWaves)
+	if d.Manifest.Completion.TotalWaves != 2 {
+		t.Errorf("expected TotalWaves=2 (1 per IMPL), got %d", d.Manifest.Completion.TotalWaves)
 	}
 }
 
@@ -105,23 +107,25 @@ func TestGenerateProgramFromIMPLs_WithOverlap(t *testing.T) {
 	writeGeneratorTestIMPL(t, repoPath, "impl-y", "IMPL Y", StateReviewed,
 		[]string{"pkg/shared/file.go", "pkg/y/own.go"}, nil)
 
-	result, err := GenerateProgramFromIMPLs(GenerateProgramOpts{
+	res := GenerateProgramFromIMPLs(GenerateProgramOpts{
 		ImplSlugs:   []string{"impl-x", "impl-y"},
 		RepoPath:    repoPath,
 		ProgramSlug: "overlap-test",
 		Title:       "Overlap Test",
 	})
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+	if !res.IsSuccess() && !res.IsPartial() {
+		t.Fatalf("unexpected failure: %v", res.Errors)
 	}
 
+	d := res.GetData()
+
 	// Overlapping files should result in 2 tiers
-	if len(result.Manifest.Tiers) != 2 {
-		t.Errorf("expected 2 tiers (overlap), got %d", len(result.Manifest.Tiers))
+	if len(d.Manifest.Tiers) != 2 {
+		t.Errorf("expected 2 tiers (overlap), got %d", len(d.Manifest.Tiers))
 	}
 
 	// The second-tier IMPL should have DependsOn set
-	for _, impl := range result.Manifest.Impls {
+	for _, impl := range d.Manifest.Impls {
 		if impl.Tier == 2 {
 			if len(impl.DependsOn) == 0 {
 				t.Errorf("tier-2 IMPL %q should have DependsOn set", impl.Slug)
@@ -130,7 +134,7 @@ func TestGenerateProgramFromIMPLs_WithOverlap(t *testing.T) {
 	}
 
 	// Conflict report should contain the shared file
-	if len(result.ConflictReport.Conflicts) == 0 {
+	if len(d.ConflictReport.Conflicts) == 0 {
 		t.Error("expected at least one conflict for shared file")
 	}
 }
@@ -141,39 +145,43 @@ func TestGenerateProgramFromIMPLs_AutoSlug(t *testing.T) {
 	writeGeneratorTestIMPL(t, repoPath, "alpha", "Alpha", StateReviewed, []string{"a.go"}, nil)
 	writeGeneratorTestIMPL(t, repoPath, "beta", "Beta", StateReviewed, []string{"b.go"}, nil)
 
-	result, err := GenerateProgramFromIMPLs(GenerateProgramOpts{
+	res := GenerateProgramFromIMPLs(GenerateProgramOpts{
 		ImplSlugs: []string{"alpha", "beta"},
 		RepoPath:  repoPath,
 		// ProgramSlug and Title intentionally empty
 	})
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+	if !res.IsSuccess() && !res.IsPartial() {
+		t.Fatalf("unexpected failure: %v", res.Errors)
 	}
+
+	d := res.GetData()
 
 	expectedSlug := "alpha-and-beta"
-	if result.Manifest.ProgramSlug != expectedSlug {
-		t.Errorf("expected auto-derived slug %q, got %q", expectedSlug, result.Manifest.ProgramSlug)
+	if d.Manifest.ProgramSlug != expectedSlug {
+		t.Errorf("expected auto-derived slug %q, got %q", expectedSlug, d.Manifest.ProgramSlug)
 	}
 
-	if !strings.HasPrefix(result.Manifest.Title, "Auto-generated PROGRAM: ") {
-		t.Errorf("expected auto-derived title prefix, got %q", result.Manifest.Title)
+	if !strings.HasPrefix(d.Manifest.Title, "Auto-generated PROGRAM: ") {
+		t.Errorf("expected auto-derived title prefix, got %q", d.Manifest.Title)
 	}
 
 	// Test with >3 slugs
 	writeGeneratorTestIMPL(t, repoPath, "gamma", "Gamma", StateReviewed, []string{"c.go"}, nil)
 	writeGeneratorTestIMPL(t, repoPath, "delta", "Delta", StateReviewed, []string{"d.go"}, nil)
 
-	result2, err := GenerateProgramFromIMPLs(GenerateProgramOpts{
+	res2 := GenerateProgramFromIMPLs(GenerateProgramOpts{
 		ImplSlugs: []string{"alpha", "beta", "gamma", "delta"},
 		RepoPath:  repoPath,
 	})
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+	if !res2.IsSuccess() && !res2.IsPartial() {
+		t.Fatalf("unexpected failure: %v", res2.Errors)
 	}
 
+	d2 := res2.GetData()
+
 	expectedSlug2 := "auto-program-alpha"
-	if result2.Manifest.ProgramSlug != expectedSlug2 {
-		t.Errorf("expected auto-derived slug %q for >3 slugs, got %q", expectedSlug2, result2.Manifest.ProgramSlug)
+	if d2.Manifest.ProgramSlug != expectedSlug2 {
+		t.Errorf("expected auto-derived slug %q for >3 slugs, got %q", expectedSlug2, d2.Manifest.ProgramSlug)
 	}
 }
 
@@ -182,23 +190,25 @@ func TestGenerateProgramFromIMPLs_WritesToDisk(t *testing.T) {
 
 	writeGeneratorTestIMPL(t, repoPath, "disk-test", "Disk Test", StateReviewed, []string{"x.go"}, nil)
 
-	result, err := GenerateProgramFromIMPLs(GenerateProgramOpts{
+	res := GenerateProgramFromIMPLs(GenerateProgramOpts{
 		ImplSlugs:   []string{"disk-test"},
 		RepoPath:    repoPath,
 		ProgramSlug: "disk-test-program",
 		Title:       "Disk Test Program",
 	})
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+	if !res.IsSuccess() && !res.IsPartial() {
+		t.Fatalf("unexpected failure: %v", res.Errors)
 	}
 
+	d := res.GetData()
+
 	expectedPath := filepath.Join(repoPath, "docs", "PROGRAM-disk-test-program.yaml")
-	if result.ManifestPath != expectedPath {
-		t.Errorf("expected manifest path %q, got %q", expectedPath, result.ManifestPath)
+	if d.ManifestPath != expectedPath {
+		t.Errorf("expected manifest path %q, got %q", expectedPath, d.ManifestPath)
 	}
 
 	// Verify file exists and is valid YAML
-	data, err := os.ReadFile(result.ManifestPath)
+	data, err := os.ReadFile(d.ManifestPath)
 	if err != nil {
 		t.Fatalf("failed to read written manifest: %v", err)
 	}
@@ -224,15 +234,26 @@ func TestGenerateProgramFromIMPLs_MissingIMPL(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	_, err := GenerateProgramFromIMPLs(GenerateProgramOpts{
+	res := GenerateProgramFromIMPLs(GenerateProgramOpts{
 		ImplSlugs:   []string{"nonexistent-slug"},
 		RepoPath:    repoPath,
 		ProgramSlug: "test",
 	})
-	if err == nil {
-		t.Fatal("expected error for missing IMPL, got nil")
+	if res.IsSuccess() || res.IsPartial() {
+		t.Fatal("expected failure for missing IMPL, got success")
 	}
-	if !strings.Contains(err.Error(), "nonexistent-slug") {
-		t.Errorf("error should mention the missing slug, got: %v", err)
+	if !res.IsFatal() {
+		t.Fatal("expected fatal result for missing IMPL")
+	}
+	// Error message should mention the missing slug
+	found := false
+	for _, e := range res.Errors {
+		if strings.Contains(e.Message, "nonexistent-slug") {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Errorf("error should mention the missing slug, got: %v", res.Errors)
 	}
 }
