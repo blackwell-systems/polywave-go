@@ -62,11 +62,11 @@ func RunScout(ctx context.Context, opts RunScoutOpts, onChunk func(string)) erro
 		sawRepo = filepath.Join(home, "code", "scout-and-wave")
 	}
 
-	// Load scout.md prompt with fallback.
+	// Load scout.md prompt (L1: no fallback — missing file is a fatal error).
 	scoutMdPath := filepath.Join(sawRepo, "implementations", "claude-code", "prompts", "scout.md")
 	scoutMdBytes, err := os.ReadFile(scoutMdPath)
 	if err != nil {
-		scoutMdBytes = []byte("You are a Scout agent. Analyze the codebase and produce an IMPL doc.")
+		return fmt.Errorf("engine.RunScout: scout.md not found at %s: %w", scoutMdPath, err)
 	}
 
 	// Run automation tools (H1a, H2, H3) before launching Scout.

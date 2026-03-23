@@ -2,11 +2,9 @@ package engine
 
 import (
 	"fmt"
-	"os"
 
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/tools"
-	"gopkg.in/yaml.v3"
 )
 
 // buildConstraints constructs a tools.Constraints from the IMPL manifest
@@ -80,11 +78,7 @@ func buildConstraints(manifest *protocol.IMPLManifest, agentID string, role stri
 		// No OwnedFiles (doesn't own implementation files).
 		// No FrozenPaths enforcement (needs to read everything).
 		// TrackCommits = true (for audit trail).
-		//
-		// NOTE: manifest.IntegrationConnectors is not yet on the typed struct
-		// (Wave 3 will add it). For now, AllowedPathPrefixes will be empty
-		// when called via buildConstraints. Use BuildIntegratorConstraints()
-		// for the full path that loads connectors from raw YAML.
+		// Prefer BuildIntegratorConstraints() for full connector loading.
 		c.AllowedPathPrefixes = []string{}
 		c.TrackCommits = true
 	}
@@ -132,38 +126,12 @@ func buildIntegratorConstraints(manifest *protocol.IMPLManifest, connectors []pr
 
 // BuildIntegratorConstraints builds constraints for the integration agent.
 // The integrator may only write to files listed in integration_connectors.
-// It loads the manifest from implPath and extracts the integration_connectors
-// field (which may not yet be part of the typed IMPLManifest struct).
+// It loads the manifest from implPath and uses manifest.IntegrationConnectors directly.
 func BuildIntegratorConstraints(implPath string) (*tools.Constraints, error) {
 	manifest, err := protocol.Load(implPath)
 	if err != nil {
 		return nil, fmt.Errorf("BuildIntegratorConstraints: load manifest: %w", err)
 	}
 
-	connectors, err := loadIntegrationConnectors(implPath)
-	if err != nil {
-		return nil, fmt.Errorf("BuildIntegratorConstraints: load connectors: %w", err)
-	}
-
-	return buildIntegratorConstraints(manifest, connectors), nil
-}
-
-// loadIntegrationConnectors reads the integration_connectors field from the
-// raw YAML file. This is needed because IMPLManifest may not yet have the
-// IntegrationConnectors field (added in Wave 3). Once the field is added to
-// the struct, this helper can be replaced with manifest.IntegrationConnectors.
-func loadIntegrationConnectors(implPath string) ([]protocol.IntegrationConnector, error) {
-	data, err := os.ReadFile(implPath)
-	if err != nil {
-		return nil, fmt.Errorf("read file: %w", err)
-	}
-
-	var raw struct {
-		IntegrationConnectors []protocol.IntegrationConnector `yaml:"integration_connectors"`
-	}
-	if err := yaml.Unmarshal(data, &raw); err != nil {
-		return nil, fmt.Errorf("parse YAML: %w", err)
-	}
-
-	return raw.IntegrationConnectors, nil
+	return buildIntegratorConstraints(manifest, manifest.IntegrationConnectors), nil
 }
