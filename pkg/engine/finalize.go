@@ -21,6 +21,16 @@ type FinalizeWaveOpts struct {
 	WaveNum     int                    // wave number to finalize
 	MergeTarget string                 // target branch for merge; empty = HEAD (default)
 	ObsEmitter  *observability.Emitter // optional: non-blocking observability emitter
+
+	// M2 (E25): When true, unconnected exports in the integration report
+	// block the merge with a fatal error. Default (false) preserves the
+	// existing informational-only behavior.
+	EnforceIntegrationValidation bool
+
+	// M3 (E20): When true, TODO/FIXME stubs detected in changed files
+	// block the merge with a fatal error. Default (false) preserves the
+	// existing informational-only behavior.
+	RequireNoStubs bool
 }
 
 // FinalizeWaveResult combines all post-agent verification, merge, and cleanup results.
@@ -97,6 +107,10 @@ func FinalizeWave(ctx context.Context, opts FinalizeWaveOpts) (*FinalizeWaveResu
 			fmt.Fprintf(os.Stderr, "engine.FinalizeWave: scan-stubs: %v\n", err)
 		} else {
 			result.StubReport = stubResult
+			// M3 (E20): When RequireNoStubs is true, any stubs block the pipeline.
+			if opts.RequireNoStubs && len(stubResult.Hits) > 0 {
+				return result, fmt.Errorf("engine.FinalizeWave: %d stub(s) detected in changed files (RequireNoStubs=true)", len(stubResult.Hits))
+			}
 		}
 	}
 
@@ -116,7 +130,7 @@ func FinalizeWave(ctx context.Context, opts FinalizeWaveOpts) (*FinalizeWaveResu
 		}
 	}
 
-	// Step 3.5: ValidateIntegration (E25) - informational, does not block
+	// Step 3.5: ValidateIntegration (E25) - informational by default, fatal when enforced
 	integrationReport, err := protocol.ValidateIntegration(manifest, opts.WaveNum, opts.RepoPath)
 	if err != nil {
 		// Non-fatal: integration validation errors don't block the pipeline
@@ -126,6 +140,10 @@ func FinalizeWave(ctx context.Context, opts FinalizeWaveOpts) (*FinalizeWaveResu
 		// Persist to manifest
 		waveKey := fmt.Sprintf("wave%d", opts.WaveNum)
 		_ = protocol.AppendIntegrationReport(opts.IMPLPath, waveKey, integrationReport)
+		// M2 (E25): When EnforceIntegrationValidation is true, unconnected exports block the pipeline.
+		if opts.EnforceIntegrationValidation && len(integrationReport.Gaps) > 0 {
+			return result, fmt.Errorf("engine.FinalizeWave: %d unconnected export(s) detected (EnforceIntegrationValidation=true)", len(integrationReport.Gaps))
+		}
 	}
 
 	// Step 4: MergeAgents
