@@ -6,6 +6,8 @@ const (
 	CriticVerdictPass = "PASS"
 	// CriticVerdictIssues indicates one or more issues were found.
 	CriticVerdictIssues = "ISSUES"
+	// CriticVerdictSkipped indicates the operator explicitly skipped critic review.
+	CriticVerdictSkipped = "SKIPPED"
 )
 
 // Severity values for CriticIssue.

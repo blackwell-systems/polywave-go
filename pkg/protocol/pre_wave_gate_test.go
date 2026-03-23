@@ -76,14 +76,14 @@ func TestPreWaveGate_ThreeAgentsNoCriticReport(t *testing.T) {
 
 	result := PreWaveGate(m)
 
-	// warn does not block — ready should still be true
-	if !result.Ready {
-		t.Error("expected Ready=true even with critic_review=warn (warn does not block)")
+	// E37 enforcement: missing critic review now blocks when threshold met
+	if result.Ready {
+		t.Error("expected Ready=false for >=3 agents without critic review (E37 enforcement)")
 	}
 
 	checkMap := checksToMap(result.Checks)
-	if checkMap["critic_review"] != "warn" {
-		t.Errorf("expected critic_review=warn for >=3 agents, got %q", checkMap["critic_review"])
+	if checkMap["critic_review"] != "fail" {
+		t.Errorf("expected critic_review=fail for >=3 agents without critic, got %q", checkMap["critic_review"])
 	}
 }
 
@@ -214,21 +214,21 @@ func TestPreWaveGate_ValidationErrors(t *testing.T) {
 	}
 }
 
-// TestPreWaveGate_MultiRepoNoCriticReport tests that multi-repo without critic report produces warn.
+// TestPreWaveGate_MultiRepoNoCriticReport tests that multi-repo without critic report blocks (E37 enforcement).
 func TestPreWaveGate_MultiRepoNoCriticReport(t *testing.T) {
 	m := makeMinimalValidManifest()
 	m.Repositories = []string{"/repo/a", "/repo/b"}
 
 	result := PreWaveGate(m)
 
-	// warn does not block
-	if !result.Ready {
-		t.Error("expected Ready=true for multi-repo with critic_review=warn (warn does not block)")
+	// E37: missing critic review now blocks
+	if result.Ready {
+		t.Error("expected Ready=false for multi-repo without critic review (E37 enforcement)")
 	}
 
 	checkMap := checksToMap(result.Checks)
-	if checkMap["critic_review"] != "warn" {
-		t.Errorf("expected critic_review=warn for multi-repo, got %q", checkMap["critic_review"])
+	if checkMap["critic_review"] != "fail" {
+		t.Errorf("expected critic_review=fail for multi-repo without critic, got %q", checkMap["critic_review"])
 	}
 }
 

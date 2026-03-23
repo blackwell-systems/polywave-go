@@ -83,8 +83,8 @@ func checkCriticReview(m *IMPLManifest) PreWaveGateCheck {
 		if totalAgents >= 3 || isMultiRepo {
 			return PreWaveGateCheck{
 				Name:    "critic_review",
-				Status:  "warn",
-				Message: "critic review recommended (E37 threshold met)",
+				Status:  "fail",
+				Message: fmt.Sprintf("E37: critic review required (%d agents, multi-repo=%v) but not run. Run critic or use --no-review to skip.", totalAgents, isMultiRepo),
 			}
 		}
 		return PreWaveGateCheck{
@@ -99,6 +99,14 @@ func checkCriticReview(m *IMPLManifest) PreWaveGateCheck {
 			Name:    "critic_review",
 			Status:  "pass",
 			Message: "critic review passed",
+		}
+	}
+
+	if m.CriticReport.Verdict == CriticVerdictSkipped {
+		return PreWaveGateCheck{
+			Name:    "critic_review",
+			Status:  "pass",
+			Message: "critic review explicitly skipped by operator",
 		}
 	}
 
