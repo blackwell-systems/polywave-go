@@ -50,7 +50,7 @@ Wave 2: [C2]
 	if len(errs) > 0 {
 		t.Errorf("Expected no validation errors, got %d:", len(errs))
 		for _, e := range errs {
-			t.Logf("  Line %d [%s]: %s", e.LineNumber, e.BlockType, e.Message)
+			t.Logf("  Line %d [%s]: %s", e.Line, e.Code, e.Message)
 		}
 	}
 }
@@ -95,7 +95,7 @@ lint_command: go vet ./...
 	agentIDErrors := 0
 	hasSuggestion := false
 	for _, e := range errs {
-		if e.BlockType == "agent-id" {
+		if e.Code == "agent-id" {
 			agentIDErrors++
 			if strings.Contains(e.Message, "assign-agent-ids --count") {
 				hasSuggestion = true
@@ -106,7 +106,7 @@ lint_command: go vet ./...
 	if agentIDErrors < 2 {
 		t.Errorf("Expected at least 2 agent-id errors, got %d", agentIDErrors)
 		for _, e := range errs {
-			t.Logf("  Line %d [%s]: %s", e.LineNumber, e.BlockType, e.Message)
+			t.Logf("  Line %d [%s]: %s", e.Line, e.Code, e.Message)
 		}
 	}
 
@@ -162,7 +162,7 @@ Wave 2: [C2]
 	// Check that [B1] errors are reported
 	foundB1Error := false
 	for _, e := range errs {
-		if e.BlockType == "agent-id" && strings.Contains(e.Message, "B1") {
+		if e.Code == "agent-id" && strings.Contains(e.Message, "B1") {
 			foundB1Error = true
 			break
 		}
@@ -171,7 +171,7 @@ Wave 2: [C2]
 	if !foundB1Error {
 		t.Error("Expected agent-id error for [B1], but none found")
 		for _, e := range errs {
-			t.Logf("  Line %d [%s]: %s", e.LineNumber, e.BlockType, e.Message)
+			t.Logf("  Line %d [%s]: %s", e.Line, e.Code, e.Message)
 		}
 	}
 }
@@ -216,7 +216,7 @@ lint_command: go vet ./...
 	// Find the suggestion error
 	var suggestionMsg string
 	for _, e := range errs {
-		if e.BlockType == "agent-id" && e.LineNumber == 0 {
+		if e.Code == "agent-id" && e.Line == 0 {
 			suggestionMsg = e.Message
 			break
 		}
@@ -269,7 +269,7 @@ lint_command: go vet ./...
 
 	// No agent-id errors should be present
 	for _, e := range errs {
-		if e.BlockType == "agent-id" {
+		if e.Code == "agent-id" {
 			t.Errorf("Unexpected agent-id error: %s", e.Message)
 		}
 	}
