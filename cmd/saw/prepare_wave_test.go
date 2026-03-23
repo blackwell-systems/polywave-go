@@ -379,11 +379,8 @@ func TestVerifyDependenciesAvailable_Wave1Skipped(t *testing.T) {
 	}
 
 	// Wave 1 has no dependencies — should always return Valid=true
-	result, err := protocol.VerifyDependenciesAvailable(doc, 1)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if !result.Valid {
+	res := protocol.VerifyDependenciesAvailable(doc, 1)
+	if !res.GetData().Valid {
 		t.Errorf("expected Valid=true for wave 1 (no deps), got false")
 	}
 }
@@ -409,17 +406,15 @@ func TestVerifyDependenciesAvailable_Wave2MissingDep(t *testing.T) {
 		// CompletionReports deliberately empty — agent A has not completed
 	}
 
-	result, err := protocol.VerifyDependenciesAvailable(doc, 2)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if result.Valid {
+	res := protocol.VerifyDependenciesAvailable(doc, 2)
+	if res.GetData().Valid {
 		t.Errorf("expected Valid=false when dependency A has no completion report")
 	}
-	if len(result.Agents) != 1 {
-		t.Fatalf("expected 1 agent check, got %d", len(result.Agents))
+	data := res.GetData()
+	if len(data.Agents) != 1 {
+		t.Fatalf("expected 1 agent check, got %d", len(data.Agents))
 	}
-	check := result.Agents[0]
+	check := data.Agents[0]
 	if check.Available {
 		t.Errorf("expected agent B Available=false")
 	}
@@ -451,11 +446,8 @@ func TestVerifyDependenciesAvailable_Wave2DepComplete(t *testing.T) {
 		},
 	}
 
-	result, err := protocol.VerifyDependenciesAvailable(doc, 2)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if !result.Valid {
+	res := protocol.VerifyDependenciesAvailable(doc, 2)
+	if !res.GetData().Valid {
 		t.Errorf("expected Valid=true when all dependencies are complete")
 	}
 }

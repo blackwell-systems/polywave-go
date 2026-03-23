@@ -192,7 +192,7 @@ waves that execute on the main branch.`,
 			// Skip wave 1 — no prior wave outputs to verify.
 			if waveNum > 1 {
 				depResult := protocol.VerifyDependenciesAvailable(doc, waveNum)
-				if !depResult.IsSuccess() {
+				if depResult.IsFatal() || !depResult.GetData().Valid {
 					for _, agent := range depResult.GetData().Agents {
 						if !agent.Available {
 							fmt.Fprintf(os.Stderr, "agent %s missing dependencies: %v\n",
