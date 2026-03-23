@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/commands"
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
 )
 
 // PopulateVerificationGates populates verification gate blocks for all agents
@@ -245,13 +246,12 @@ func FormatVerificationBlock(buildCmd, lintCmd, testCmd string) string {
 	return sb.String()
 }
 
-// FinalizeIMPLResult contains the results of the FinalizeIMPL operation.
-type FinalizeIMPLResult struct {
-	Success              bool                    `json:"success"`
-	Validation           ValidateResult          `json:"validation"`
-	GatePopulation       GatePopulationStats     `json:"gate_population"`
-	ChecklistPopulation  ChecklistPopulationStats `json:"checklist_population"`
-	FinalValidation      ValidateResult          `json:"final_validation"`
+// FinalizeIMPLData contains the results of the FinalizeIMPL operation.
+type FinalizeIMPLData struct {
+	Validation          ValidateResult           `json:"validation"`
+	GatePopulation      GatePopulationStats      `json:"gate_population"`
+	ChecklistPopulation ChecklistPopulationStats `json:"checklist_population"`
+	FinalValidation     ValidateResult           `json:"final_validation"`
 }
 
 // ChecklistPopulationStats contains statistics about integration checklist population.
@@ -278,25 +278,36 @@ type GatePopulationStats struct {
 // 2. Populate verification gates (M4 gate generation)
 // 3. Validate again (confirm gates valid)
 // Atomic operation with rollback on failure.
-func FinalizeIMPL(implPath, repoRoot string) (*FinalizeIMPLResult, error) {
-	result := &FinalizeIMPLResult{}
+func FinalizeIMPL(implPath, repoRoot string) result.Result[FinalizeIMPLData] {
+	data := FinalizeIMPLData{}
 
 	// Step 1: Load manifest
 	manifest, err := Load(implPath)
 	if err != nil {
-		return nil, fmt.Errorf("failed to load IMPL manifest: %w", err)
+		return result.NewFailure[FinalizeIMPLData]([]result.StructuredError{
+			{
+				Code:     "E001",
+				Message:  fmt.Sprintf("failed to load IMPL manifest: %v", err),
+				Severity: "fatal",
+			},
+		})
 	}
 
 	// Step 2: Initial validation (E16)
 	validationErrors := Validate(manifest)
-	result.Validation = ValidateResult{
+	data.Validation = ValidateResult{
 		Passed: len(validationErrors) == 0,
 		Errors: validationErrors,
 	}
 
-	if !result.Validation.Passed {
-		result.Success = false
-		return result, nil
+	if !data.Validation.Passed {
+		return result.NewFailure[FinalizeIMPLData]([]result.StructuredError{
+			{
+				Code:     "E016",
+				Message:  "initial validation failed",
+				Severity: "fatal",
+			},
+		})
 	}
 
 	// Step 3: Extract H2 command data from all repos
@@ -342,24 +353,34 @@ func FinalizeIMPL(implPath, repoRoot string) (*FinalizeIMPLResult, error) {
 	}
 
 	if len(commandSets) == 0 {
-		result.Success = false
-		result.GatePopulation.H2DataAvailable = false
-		return result, fmt.Errorf("H2 data unavailable - run extract-commands first: no valid toolchains found in any repo")
+		data.GatePopulation.H2DataAvailable = false
+		return result.NewFailure[FinalizeIMPLData]([]result.StructuredError{
+			{
+				Code:     "E002",
+				Message:  "H2 data unavailable - run extract-commands first: no valid toolchains found in any repo",
+				Severity: "fatal",
+			},
+		})
 	}
 
-	result.GatePopulation.H2DataAvailable = true
+	data.GatePopulation.H2DataAvailable = true
 	// For multi-repo, report comma-separated toolchains
 	toolchainList := make([]string, 0, len(toolchains))
 	for _, tc := range toolchains {
 		toolchainList = append(toolchainList, tc)
 	}
-	result.GatePopulation.Toolchain = strings.Join(toolchainList, ", ")
+	data.GatePopulation.Toolchain = strings.Join(toolchainList, ", ")
 
 	// Step 4: Populate verification gates
 	updatedManifest, err := PopulateVerificationGates(manifest, commandSets, repoMap)
 	if err != nil {
-		result.Success = false
-		return result, fmt.Errorf("failed to populate verification gates: %w", err)
+		return result.NewFailure[FinalizeIMPLData]([]result.StructuredError{
+			{
+				Code:     "E003",
+				Message:  fmt.Sprintf("failed to populate verification gates: %v", err),
+				Severity: "fatal",
+			},
+		})
 	}
 
 	// Count how many agents were updated
@@ -372,13 +393,18 @@ func FinalizeIMPL(implPath, repoRoot string) (*FinalizeIMPLResult, error) {
 			}
 		}
 	}
-	result.GatePopulation.AgentsUpdated = agentsUpdated
+	data.GatePopulation.AgentsUpdated = agentsUpdated
 
 	// Step 4.5: Populate integration checklist (M5)
 	updatedManifest, err = PopulateIntegrationChecklist(updatedManifest)
 	if err != nil {
-		result.Success = false
-		return result, fmt.Errorf("failed to populate integration checklist: %w", err)
+		return result.NewFailure[FinalizeIMPLData]([]result.StructuredError{
+			{
+				Code:     "E004",
+				Message:  fmt.Sprintf("failed to populate integration checklist: %v", err),
+				Severity: "fatal",
+			},
+		})
 	}
 
 	// Count groups and items added
@@ -390,29 +416,38 @@ func FinalizeIMPL(implPath, repoRoot string) (*FinalizeIMPLResult, error) {
 			itemsAdded += len(group.Items)
 		}
 	}
-	result.ChecklistPopulation = ChecklistPopulationStats{
+	data.ChecklistPopulation = ChecklistPopulationStats{
 		GroupsAdded: groupsAdded,
 		ItemsAdded:  itemsAdded,
 	}
 
 	// Step 5: Final validation
 	finalValidationErrors := Validate(updatedManifest)
-	result.FinalValidation = ValidateResult{
+	data.FinalValidation = ValidateResult{
 		Passed: len(finalValidationErrors) == 0,
 		Errors: finalValidationErrors,
 	}
 
-	if !result.FinalValidation.Passed {
-		result.Success = false
-		return result, nil
+	if !data.FinalValidation.Passed {
+		return result.NewFailure[FinalizeIMPLData]([]result.StructuredError{
+			{
+				Code:     "E016",
+				Message:  "final validation failed after gate population",
+				Severity: "fatal",
+			},
+		})
 	}
 
 	// Step 6: Save updated manifest (atomic write)
 	if err := Save(updatedManifest, implPath); err != nil {
-		result.Success = false
-		return result, fmt.Errorf("failed to save updated manifest: %w", err)
+		return result.NewFailure[FinalizeIMPLData]([]result.StructuredError{
+			{
+				Code:     "E005",
+				Message:  fmt.Sprintf("failed to save updated manifest: %v", err),
+				Severity: "fatal",
+			},
+		})
 	}
 
-	result.Success = true
-	return result, nil
+	return result.NewSuccess(data)
 }
