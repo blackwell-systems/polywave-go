@@ -109,7 +109,7 @@ func RunScout(ctx context.Context, opts RunScoutOpts, onChunk func(string)) erro
 			return fmt.Errorf("engine.RunScout: backend init: %w", bErr)
 		}
 		runner := agent.NewRunner(b, nil)
-		spec := &types.AgentSpec{Letter: "scout", Prompt: prompt}
+		spec := &protocol.Agent{ID: "scout", Task: prompt}
 		_, execErr = runner.ExecuteStreamingWithTools(ctx, spec, opts.RepoPath, onChunk, nil)
 	}
 
@@ -193,7 +193,7 @@ func RunPlanner(ctx context.Context, opts RunPlannerOpts, onChunk func(string)) 
 		return fmt.Errorf("engine.RunPlanner: backend init: %w", bErr)
 	}
 	runner := agent.NewRunner(b, nil)
-	spec := &types.AgentSpec{Letter: "planner", Prompt: prompt}
+	spec := &protocol.Agent{ID: "planner", Task: prompt}
 	_, execErr := runner.ExecuteStreamingWithTools(ctx, spec, opts.RepoPath, onChunk, nil)
 	return execErr
 }
@@ -383,26 +383,11 @@ func StartWave(ctx context.Context, opts RunWaveOpts, onEvent func(Event)) error
 		if doc := orch.IMPLDoc(); doc != nil {
 			manifest, err := protocol.Load(opts.IMPLPath)
 			if err == nil {
-				stubReports := make(map[string]*types.CompletionReport)
+				stubReports := make(map[string]*protocol.CompletionReport)
 				for _, ag := range wave.Agents {
 					if protoReport, ok := manifest.CompletionReports[ag.ID]; ok {
-						// Convert protocol.CompletionReport to types.CompletionReport
-						var status types.CompletionStatus
-						switch protoReport.Status {
-						case "complete":
-							status = types.StatusComplete
-						case "partial":
-							status = types.StatusPartial
-						case "blocked":
-							status = types.StatusBlocked
-						default:
-							status = types.StatusPartial
-						}
-						stubReports[ag.ID] = &types.CompletionReport{
-							Status:       status,
-							FilesChanged: protoReport.FilesChanged,
-							FilesCreated: protoReport.FilesCreated,
-						}
+						cr := protoReport // copy to take address
+						stubReports[ag.ID] = &cr
 					}
 				}
 				_ = orchestrator.RunStubScan(opts.IMPLPath, waveNum, stubReports, "")
@@ -411,12 +396,7 @@ func StartWave(ctx context.Context, opts RunWaveOpts, onEvent func(Event)) error
 
 		// E21: Post-wave quality gates before merge.
 		if doc := orch.IMPLDoc(); doc != nil && doc.QualityGates != nil {
-			// Bridge protocol.QualityGates to types.QualityGates for RunQualityGates
-			typesGates := &types.QualityGates{Level: doc.QualityGates.Level}
-			for _, g := range doc.QualityGates.Gates {
-				typesGates.Gates = append(typesGates.Gates, types.QualityGate{Type: g.Type, Command: g.Command, Required: g.Required})
-			}
-			results, err := orchestrator.RunQualityGates(opts.RepoPath, typesGates)
+			results, err := orchestrator.RunQualityGates(opts.RepoPath, doc.QualityGates)
 			for _, r := range results {
 				onEvent(Event{Event: "quality_gate_result", Data: r})
 			}
@@ -568,7 +548,7 @@ func RunScaffold(ctx context.Context, implPath, repoPath, sawRepoPath, model str
 		return fmt.Errorf("engine.RunScaffold: backend init: %w", err)
 	}
 	runner := agent.NewRunner(b, nil)
-	spec := &types.AgentSpec{Letter: "scaffold", Prompt: prompt}
+	spec := &protocol.Agent{ID: "scaffold", Task: prompt}
 
 	onChunk := func(chunk string) {
 		publish("scaffold_output", map[string]string{"chunk": chunk})

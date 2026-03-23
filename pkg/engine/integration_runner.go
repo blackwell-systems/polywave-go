@@ -11,7 +11,6 @@ import (
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/agent"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/orchestrator"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/types"
 )
 
 // RunIntegrationAgentOpts configures an integration agent run (E26).
@@ -108,9 +107,9 @@ func RunIntegrationAgent(ctx context.Context, opts RunIntegrationAgentOpts, onEv
 
 	// Create agent runner and execute with streaming.
 	runner := agent.NewRunner(b, nil)
-	spec := &types.AgentSpec{
-		Letter: "integrator",
-		Prompt: prompt,
+	spec := &protocol.Agent{
+		ID:   "integrator",
+		Task: prompt,
 	}
 
 	onChunk := func(chunk string) {

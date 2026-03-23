@@ -11,7 +11,6 @@ import (
 	apiclient "github.com/blackwell-systems/scout-and-wave-go/pkg/agent/backend/api"
 	bedrockbackend "github.com/blackwell-systems/scout-and-wave-go/pkg/agent/backend/bedrock"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/types"
 )
 
 // reportWaveMu serializes concurrent writes to the IMPL doc's completion_reports
@@ -80,7 +79,7 @@ var runWaveAgentStructuredBedrock = func(ctx context.Context, model, prompt, wtP
 //
 // wtPath is the worktree path where the agent should operate.
 // onChunk, if non-nil, receives streaming output chunks.
-func runWaveAgentStructured(ctx context.Context, opts RunWaveOpts, agentSpec types.AgentSpec, wtPath string, onChunk func(string)) (*protocol.CompletionReport, error) {
+func runWaveAgentStructured(ctx context.Context, opts RunWaveOpts, agentSpec protocol.Agent, wtPath string, onChunk func(string)) (*protocol.CompletionReport, error) {
 	// Generate completion report schema.
 	schema, err := protocol.GenerateCompletionReportSchema()
 	if err != nil {
@@ -96,18 +95,18 @@ func runWaveAgentStructured(ctx context.Context, opts RunWaveOpts, agentSpec typ
 	// Route to Bedrock or API backend based on provider prefix.
 	var jsonStr string
 	if strings.HasPrefix(model, "bedrock:") {
-		jsonStr, err = runWaveAgentStructuredBedrock(ctx, model, agentSpec.Prompt, wtPath, schema, onChunk)
+		jsonStr, err = runWaveAgentStructuredBedrock(ctx, model, agentSpec.Task, wtPath, schema, onChunk)
 	} else {
-		jsonStr, err = runWaveAgentStructuredAPI(ctx, model, agentSpec.Prompt, wtPath, schema, onChunk)
+		jsonStr, err = runWaveAgentStructuredAPI(ctx, model, agentSpec.Task, wtPath, schema, onChunk)
 	}
 	if err != nil {
-		return nil, fmt.Errorf("runWaveAgentStructured: agent %s: %w", agentSpec.Letter, err)
+		return nil, fmt.Errorf("runWaveAgentStructured: agent %s: %w", agentSpec.ID, err)
 	}
 
 	// Unmarshal the structured JSON response into CompletionReport.
 	var report protocol.CompletionReport
 	if err := json.Unmarshal([]byte(jsonStr), &report); err != nil {
-		return nil, fmt.Errorf("runWaveAgentStructured: unmarshal report for agent %s: %w", agentSpec.Letter, err)
+		return nil, fmt.Errorf("runWaveAgentStructured: unmarshal report for agent %s: %w", agentSpec.ID, err)
 	}
 
 	// Validate that the status field is populated; fall back to "complete".
@@ -121,13 +120,13 @@ func runWaveAgentStructured(ctx context.Context, opts RunWaveOpts, agentSpec typ
 
 	manifest, loadErr := protocol.Load(opts.IMPLPath)
 	if loadErr != nil {
-		return nil, fmt.Errorf("runWaveAgentStructured: load manifest for agent %s: %w", agentSpec.Letter, loadErr)
+		return nil, fmt.Errorf("runWaveAgentStructured: load manifest for agent %s: %w", agentSpec.ID, loadErr)
 	}
-	if setErr := protocol.SetCompletionReport(manifest, agentSpec.Letter, report); setErr != nil {
-		return nil, fmt.Errorf("runWaveAgentStructured: set completion report for agent %s: %w", agentSpec.Letter, setErr)
+	if setErr := protocol.SetCompletionReport(manifest, agentSpec.ID, report); setErr != nil {
+		return nil, fmt.Errorf("runWaveAgentStructured: set completion report for agent %s: %w", agentSpec.ID, setErr)
 	}
 	if saveErr := protocol.Save(manifest, opts.IMPLPath); saveErr != nil {
-		return nil, fmt.Errorf("runWaveAgentStructured: save manifest for agent %s: %w", agentSpec.Letter, saveErr)
+		return nil, fmt.Errorf("runWaveAgentStructured: save manifest for agent %s: %w", agentSpec.ID, saveErr)
 	}
 
 	return &report, nil

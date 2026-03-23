@@ -8,8 +8,8 @@ import (
 
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/agent"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/orchestrator"
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/retryctx"
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/types"
 )
 
 // ClosedLoopRetryOpts configures a pre-merge per-agent gate retry (R3).
@@ -57,9 +57,9 @@ var closedLoopRunAgentFunc = func(ctx context.Context, model string, prompt stri
 		return fmt.Errorf("closed_loop_gate: backend init: %w", err)
 	}
 	runner := agent.NewRunner(b, nil)
-	spec := &types.AgentSpec{
-		Letter: "fix",
-		Prompt: prompt,
+	spec := &protocol.Agent{
+		ID:   "fix",
+		Task: prompt,
 	}
 	_, execErr := runner.ExecuteStreamingWithTools(ctx, spec, worktreePath, nil, nil)
 	return execErr

@@ -7,14 +7,14 @@ import (
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/agent/backend"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/observability"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/orchestrator"
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/types"
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
 )
 
 func init() {
 	// Inject the structured wave agent runner into the orchestrator package.
 	// This breaks the circular import (orchestrator → engine → orchestrator)
 	// by using a function-variable seam.
-	orchestrator.SetRunWaveAgentStructuredFunc(func(ctx context.Context, implPath, waveModel string, agentSpec types.AgentSpec, wtPath string, onChunk func(string)) error {
+	orchestrator.SetRunWaveAgentStructuredFunc(func(ctx context.Context, implPath, waveModel string, agentSpec protocol.Agent, wtPath string, onChunk func(string)) error {
 		opts := RunWaveOpts{
 			IMPLPath:  implPath,
 			WaveModel: waveModel,

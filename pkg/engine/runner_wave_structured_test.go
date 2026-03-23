@@ -10,7 +10,6 @@ import (
 	"testing"
 
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/types"
 )
 
 // buildMinimalIMPLManifest creates a minimal IMPL manifest YAML with one wave and one agent,
@@ -80,7 +79,7 @@ func TestRunWaveAgentStructured_APIBackend(t *testing.T) {
 		IMPLPath:  implPath,
 		WaveModel: "claude-sonnet-4-5", // non-bedrock model → API path
 	}
-	agentSpec := types.AgentSpec{Letter: "A", Prompt: "do work"}
+	agentSpec := protocol.Agent{ID: "A", Task: "do work"}
 
 	got, err := runWaveAgentStructured(context.Background(), opts, agentSpec, dir, nil)
 	if err != nil {
@@ -152,7 +151,7 @@ func TestRunWaveAgentStructured_BedrockBackend(t *testing.T) {
 		IMPLPath:  implPath,
 		WaveModel: "bedrock:claude-sonnet-4-5",
 	}
-	agentSpec := types.AgentSpec{Letter: "A", Prompt: "do work"}
+	agentSpec := protocol.Agent{ID: "A", Task: "do work"}
 
 	got, err := runWaveAgentStructured(context.Background(), opts, agentSpec, dir, nil)
 	if err != nil {
@@ -194,7 +193,7 @@ func TestRunWaveAgentStructured_InvalidJSON(t *testing.T) {
 		IMPLPath:  implPath,
 		WaveModel: "claude-sonnet-4-5",
 	}
-	agentSpec := types.AgentSpec{Letter: "A", Prompt: "do work"}
+	agentSpec := protocol.Agent{ID: "A", Task: "do work"}
 
 	_, err := runWaveAgentStructured(context.Background(), opts, agentSpec, dir, nil)
 	if err == nil {
@@ -260,10 +259,10 @@ func TestRunWaveAgentStructured_PerAgentModelOverride(t *testing.T) {
 		IMPLPath:  implPath,
 		WaveModel: "claude-haiku-4-5", // default model
 	}
-	agentSpec := types.AgentSpec{
-		Letter: "A",
-		Prompt: "do work",
-		Model:  "claude-opus-4-6", // per-agent override
+	agentSpec := protocol.Agent{
+		ID:    "A",
+		Task:  "do work",
+		Model: "claude-opus-4-6", // per-agent override
 	}
 
 	_, err := runWaveAgentStructured(context.Background(), opts, agentSpec, dir, nil)
@@ -291,7 +290,7 @@ func TestRunWaveAgentStructured_EmptyStatusDefaultsToComplete(t *testing.T) {
 	implPath := buildMinimalIMPLManifest(t, dir, "A")
 
 	opts := RunWaveOpts{IMPLPath: implPath, WaveModel: "claude-sonnet-4-5"}
-	agentSpec := types.AgentSpec{Letter: "A", Prompt: "do work"}
+	agentSpec := protocol.Agent{ID: "A", Task: "do work"}
 
 	got, err := runWaveAgentStructured(context.Background(), opts, agentSpec, dir, nil)
 	if err != nil {
