@@ -1,6 +1,9 @@
 package protocol
 
 import (
+	"os"
+	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -203,5 +206,172 @@ func TestPredictConflictsFromReports_MissingReportSkipped(t *testing.T) {
 
 	if err := PredictConflictsFromReports(manifest, 1); err != nil {
 		t.Errorf("expected nil when B has no report, got: %v", err)
+	}
+}
+
+func TestPredictConflictsFromReports_IdenticalEditsAllowed(t *testing.T) {
+	// Create a temporary git repo with two branches having identical file content
+	tmpDir := t.TempDir()
+	repoPath := filepath.Join(tmpDir, "test-repo")
+
+	// Initialize git repo
+	if err := os.MkdirAll(repoPath, 0755); err != nil {
+		t.Fatal(err)
+	}
+	runGit := func(args ...string) {
+		cmd := exec.Command("git", args...)
+		cmd.Dir = repoPath
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v failed: %v\n%s", args, err, out)
+		}
+	}
+
+	runGit("init")
+	runGit("config", "user.email", "test@example.com")
+	runGit("config", "user.name", "Test User")
+	runGit("config", "init.defaultBranch", "main")
+
+	// Create initial commit on main branch
+	testFile := filepath.Join(repoPath, "shared.go")
+	if err := os.WriteFile(testFile, []byte("package shared\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	runGit("add", ".")
+	runGit("commit", "-m", "initial")
+	runGit("branch", "-M", "main")
+
+	// Create branch D with edited file
+	runGit("checkout", "-b", "saw/test-feature/wave1-agent-D")
+	if err := os.WriteFile(testFile, []byte("package shared\n\nfunc Foo() {}\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	runGit("add", ".")
+	runGit("commit", "-m", "agent D changes")
+
+	// Create branch F with IDENTICAL edit
+	runGit("checkout", "main")
+	runGit("checkout", "-b", "saw/test-feature/wave1-agent-F")
+	if err := os.WriteFile(testFile, []byte("package shared\n\nfunc Foo() {}\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	runGit("add", ".")
+	runGit("commit", "-m", "agent F changes")
+
+	// Test that identical edits are allowed
+	manifest := &IMPLManifest{
+		Repository:  repoPath,
+		FeatureSlug: "test-feature",
+		Waves: []Wave{
+			{
+				Number: 1,
+				Agents: []Agent{
+					{ID: "D"},
+					{ID: "F"},
+				},
+			},
+		},
+		CompletionReports: map[string]CompletionReport{
+			"D": {
+				Status:       "complete",
+				FilesChanged: []string{"shared.go"},
+			},
+			"F": {
+				Status:       "complete",
+				FilesChanged: []string{"shared.go"},
+			},
+		},
+	}
+
+	err := PredictConflictsFromReports(manifest, 1)
+	if err != nil {
+		t.Errorf("expected nil error for identical edits, got: %v", err)
+	}
+}
+
+func TestPredictConflictsFromReports_DifferingEditsBlocked(t *testing.T) {
+	// Create a temporary git repo with two branches having DIFFERENT file content
+	tmpDir := t.TempDir()
+	repoPath := filepath.Join(tmpDir, "test-repo")
+
+	// Initialize git repo
+	if err := os.MkdirAll(repoPath, 0755); err != nil {
+		t.Fatal(err)
+	}
+	runGit := func(args ...string) {
+		cmd := exec.Command("git", args...)
+		cmd.Dir = repoPath
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v failed: %v\n%s", args, err, out)
+		}
+	}
+
+	runGit("init")
+	runGit("config", "user.email", "test@example.com")
+	runGit("config", "user.name", "Test User")
+	runGit("config", "init.defaultBranch", "main")
+
+	// Create initial commit on main branch
+	testFile := filepath.Join(repoPath, "shared.go")
+	if err := os.WriteFile(testFile, []byte("package shared\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	runGit("add", ".")
+	runGit("commit", "-m", "initial")
+	runGit("branch", "-M", "main")
+
+	// Create branch D with one edit
+	runGit("checkout", "-b", "saw/test-feature/wave1-agent-D")
+	if err := os.WriteFile(testFile, []byte("package shared\n\nfunc Foo() {}\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	runGit("add", ".")
+	runGit("commit", "-m", "agent D changes")
+
+	// Create branch F with DIFFERENT edit
+	runGit("checkout", "main")
+	runGit("checkout", "-b", "saw/test-feature/wave1-agent-F")
+	if err := os.WriteFile(testFile, []byte("package shared\n\nfunc Bar() {}\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	runGit("add", ".")
+	runGit("commit", "-m", "agent F changes")
+
+	// Test that differing edits are blocked
+	manifest := &IMPLManifest{
+		Repository:  repoPath,
+		FeatureSlug: "test-feature",
+		Waves: []Wave{
+			{
+				Number: 1,
+				Agents: []Agent{
+					{ID: "D"},
+					{ID: "F"},
+				},
+			},
+		},
+		CompletionReports: map[string]CompletionReport{
+			"D": {
+				Status:       "complete",
+				FilesChanged: []string{"shared.go"},
+			},
+			"F": {
+				Status:       "complete",
+				FilesChanged: []string{"shared.go"},
+			},
+		},
+	}
+
+	err := PredictConflictsFromReports(manifest, 1)
+	if err == nil {
+		t.Fatal("expected error for differing edits, got nil")
+	}
+	if !strings.Contains(err.Error(), "E11") {
+		t.Errorf("error should mention E11, got: %v", err)
+	}
+	if !strings.Contains(err.Error(), "has differing edits") {
+		t.Errorf("error should mention 'has differing edits', got: %v", err)
+	}
+	if !strings.Contains(err.Error(), "shared.go") {
+		t.Errorf("error should mention the conflicting file, got: %v", err)
 	}
 }
