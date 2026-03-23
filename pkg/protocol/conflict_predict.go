@@ -1,6 +1,11 @@
 package protocol
 
-import "fmt"
+import (
+	"crypto/sha256"
+	"fmt"
+
+	"github.com/blackwell-systems/scout-and-wave-go/internal/git"
+)
 
 // PredictConflictsFromReports cross-references completion reports for all agents
 // in the given wave to detect files that appear in more than one agent's report.
@@ -49,10 +54,16 @@ func PredictConflictsFromReports(manifest *IMPLManifest, waveNum int) error {
 	}
 
 	// Collect conflicts: any file touched by 2+ agents.
+	// Enhancement: Compare file content hashes - identical edits are allowed.
 	var conflicts []string
 	for file, agents := range fileAgents {
 		if len(agents) > 1 {
-			conflicts = append(conflicts, fmt.Sprintf("  %s (agents: %v)", file, agents))
+			// Check if all agents produced identical content
+			if manifest.FeatureSlug != "" && allAgentsHaveSameContent(manifest, file, agents, waveNum) {
+				// Identical edits - safe to merge, skip conflict
+				continue
+			}
+			conflicts = append(conflicts, fmt.Sprintf("  %s has differing edits (agents: %v)", file, agents))
 		}
 	}
 
@@ -95,4 +106,47 @@ func joinLines(lines []string) string {
 		result += l
 	}
 	return result
+}
+
+// allAgentsHaveSameContent checks if all agents produced identical file content.
+// Returns true if all hashes match (safe to merge), false if any differ or on error.
+func allAgentsHaveSameContent(manifest *IMPLManifest, file string, agents []string, waveNum int) bool {
+	if len(agents) <= 1 {
+		return true // No conflict with single agent
+	}
+
+	var hashes []string
+	for _, agentID := range agents {
+		branchName := fmt.Sprintf("saw/%s/wave%d-agent-%s", manifest.FeatureSlug, waveNum, agentID)
+		hash, err := computeFileHashInBranch(manifest.Repository, branchName, file)
+		if err != nil {
+			// Hash computation failed - fall back to blocking (safe default)
+			return false
+		}
+		hashes = append(hashes, hash)
+	}
+
+	// Check if all hashes are identical
+	firstHash := hashes[0]
+	for _, h := range hashes[1:] {
+		if h != firstHash {
+			return false // Differing content
+		}
+	}
+
+	return true // All hashes match - identical edits
+}
+
+// computeFileHashInBranch reads file content from a git branch and returns SHA256 hash.
+// Uses "git show branch:file" to read content without checking out the branch.
+func computeFileHashInBranch(repoPath, branchName, relFile string) (string, error) {
+	// Use git show to read file content from branch
+	content, err := git.Run(repoPath, "show", fmt.Sprintf("%s:%s", branchName, relFile))
+	if err != nil {
+		return "", fmt.Errorf("failed to read %s from branch %s: %w", relFile, branchName, err)
+	}
+
+	// Compute SHA256 hash
+	hash := sha256.Sum256([]byte(content))
+	return fmt.Sprintf("%x", hash), nil
 }
