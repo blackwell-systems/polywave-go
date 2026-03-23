@@ -1,19 +1,20 @@
 title: engine-hardening
 program_slug: engine-hardening
-state: PLANNING
+state: COMPLETE
+completion_date: "2026-03-22"
 impls:
     - slug: determinism-remaining
       title: Determinism Roadmap Remaining Items
       tier: 1
       estimated_agents: 5
       estimated_waves: 2
-      status: pending
+      status: complete
     - slug: wiring-audit-remaining
       title: Wire remaining dead code gaps — SQLite observability store plus dead code cleanup
       tier: 1
       estimated_agents: 3
       estimated_waves: 2
-      status: SAW:COMPLETE
+      status: complete
 tiers:
     - number: 1
       impls:
@@ -26,3 +27,5 @@ completion:
     impls_total: 2
     total_agents: 0
     total_waves: 0
+
+SAW:PROGRAM:COMPLETE

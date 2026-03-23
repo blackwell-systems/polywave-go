@@ -1,3 +1,4 @@
+completion_date: "2026-03-22"
 title: Determinism Roadmap Remaining Items
 feature_slug: determinism-remaining
 verdict: SUITABLE
@@ -408,6 +409,7 @@ waves:
             - pkg/protocol/fieldvalidation.go
             - pkg/protocol/schema_cross_field.go
             - pkg/protocol/validation_test.go
+      base_commit: babca2dc218c286297c5bdf584369619813712f8
     - number: 2
       agents:
         - id: E
@@ -518,6 +520,85 @@ quality_gates:
         - type: test
           command: go test ./...
           required: true
+completion_reports:
+    A:
+        status: complete
+        branch: saw/determinism-remaining/wave1-agent-A
+        commit: 553e934
+        files_changed:
+            - pkg/engine/run_wave_atomic.go
+            - pkg/engine/run_wave_atomic_test.go
+        files_created:
+            - pkg/engine/run_wave_atomic.go
+            - pkg/engine/run_wave_atomic_test.go
+        tests_added:
+            - TestRunWaveTransaction_SuccessPathStructure
+            - TestRunWaveTransaction_FailureRollsBackState
+            - TestRunWaveTransaction_ValidationErrors
+        verification: PASS
+    B:
+        status: complete
+        branch: saw/determinism-remaining/wave1-agent-B
+        commit: 83abb1c
+        files_changed:
+            - pkg/engine/finalize.go
+            - pkg/engine/finalize_test.go
+        tests_added:
+            - TestFinalizeWave_RequireNoStubs_BlocksOnStubs
+            - TestFinalizeWave_EnforceIntegrationValidation_BlocksOnGaps
+            - TestFinalizeWave_DefaultBehavior_Unchanged
+        verification: PASS
+    C:
+        status: complete
+        branch: saw/determinism-remaining/wave1-agent-C
+        commit: cf7af2e
+        files_changed:
+            - pkg/engine/runner.go
+            - pkg/engine/constraints.go
+            - pkg/engine/runner_test.go
+            - pkg/engine/constraints_test.go
+        tests_added:
+            - TestRunScout_MissingScoutMd
+            - TestBuildIntegratorConstraints_UsesManifestField
+        verification: PASS
+    D:
+        status: complete
+        branch: saw/determinism-remaining/wave1-agent-D
+        commit: 0c14782
+        files_changed:
+            - pkg/protocol/types.go
+            - pkg/protocol/validation.go
+            - pkg/protocol/schema_validation.go
+            - pkg/protocol/fieldvalidation.go
+            - pkg/protocol/schema_cross_field.go
+            - pkg/protocol/validation_test.go
+        tests_added:
+            - TestValidationError_WithContext
+            - TestValidationError_JSONOmitEmpty
+            - TestValidateI1_ContextFields
+            - TestValidateI2_ContextFields
+        verification: PASS
+    E:
+        status: complete
+        branch: main
+        commit: 5504e5c
+        files_changed:
+            - pkg/protocol/worktree.go
+            - pkg/protocol/cleanup.go
+            - cmd/saw/prepare_wave.go
+            - cmd/saw/prepare_wave_test.go
+        files_created:
+            - pkg/protocol/multi_repo.go
+            - pkg/protocol/multi_repo_test.go
+        tests_added:
+            - TestResolveAgentRepo_WithMatchingRegistry
+            - TestResolveAgentRepo_FallbackWhenRepoNotInRegistry
+            - TestResolveAgentRepo_FallbackWhenNoRepoField
+            - TestResolveAgentRepo_FallbackWhenNilRepos
+            - TestResolveAgentRepo_FallbackWhenNilOwnership
+            - TestAgentRepoName_ReturnsName
+            - TestAgentRepoName_EmptyWhenNoRepoField
+        verification: PASS
 pre_mortem:
     overall_risk: low
     rows:
@@ -548,4 +629,4 @@ pre_mortem:
             RunWaveTransaction operates on a single IMPL doc path. The snapshot is a
             deep copy of state fields. Concurrent writes from other processes are not
             in scope (same as existing FinalizeWave).
-state: SCOUT_PENDING
+state: COMPLETE

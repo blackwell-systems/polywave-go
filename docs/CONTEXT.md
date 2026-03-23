@@ -170,3 +170,8 @@ type BackendConfig struct {
   - IMPL doc: docs/IMPL/complete/IMPL-program-disjoint-workflowing.yaml
 - **wiring-audit-remaining**: completed 2026-03-22, 2 waves, 3 agents
   - IMPL doc: docs/IMPL/complete/IMPL-wiring-audit-remaining.yaml
+- **determinism-remaining**: completed 2026-03-22, 2 waves, 5 agents
+  - IMPL doc: docs/IMPL/complete/IMPL-determinism-remaining.yaml
+
+## Features Completed
+- Program: engine-hardening (engine-hardening) — 1 tiers, 2 IMPLs, 2026-03-22
