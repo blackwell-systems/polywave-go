@@ -22,13 +22,14 @@ func main() {
 		t.Fatalf("failed to write test file: %v", err)
 	}
 
-	result, err := ScanStubs([]string{cleanFile})
-	if err != nil {
-		t.Fatalf("ScanStubs failed: %v", err)
+	result := ScanStubs([]string{cleanFile})
+	if !result.IsSuccess() {
+		t.Fatalf("ScanStubs failed: %v", result.Errors)
 	}
 
-	if len(result.Hits) != 0 {
-		t.Errorf("expected 0 hits, got %d", len(result.Hits))
+	data := result.GetData()
+	if len(data.Hits) != 0 {
+		t.Errorf("expected 0 hits, got %d", len(data.Hits))
 	}
 }
 
@@ -59,19 +60,20 @@ func DoThird() {
 		t.Fatalf("failed to write test file: %v", err)
 	}
 
-	result, err := ScanStubs([]string{stubFile})
-	if err != nil {
-		t.Fatalf("ScanStubs failed: %v", err)
+	result := ScanStubs([]string{stubFile})
+	if !result.IsSuccess() {
+		t.Fatalf("ScanStubs failed: %v", result.Errors)
 	}
 
+	data := result.GetData()
 	// We expect multiple hits
 	expectedPatterns := []string{"TODO", "panic(\"not implemented\")", "FIXME", "// stub", "XXX", "HACK", "// placeholder"}
-	if len(result.Hits) < len(expectedPatterns) {
-		t.Errorf("expected at least %d hits, got %d", len(expectedPatterns), len(result.Hits))
+	if len(data.Hits) < len(expectedPatterns) {
+		t.Errorf("expected at least %d hits, got %d", len(expectedPatterns), len(data.Hits))
 	}
 
 	// Verify that line numbers are correct (should be positive)
-	for _, hit := range result.Hits {
+	for _, hit := range data.Hits {
 		if hit.Line <= 0 {
 			t.Errorf("invalid line number: %d", hit.Line)
 		}
@@ -88,7 +90,7 @@ func DoThird() {
 
 	// Verify TODO is found
 	found := false
-	for _, hit := range result.Hits {
+	for _, hit := range data.Hits {
 		if hit.Pattern == "TODO" && hit.Line == 3 {
 			found = true
 			break
@@ -101,25 +103,27 @@ func DoThird() {
 
 func TestScanStubs_FileNotFound(t *testing.T) {
 	// Non-existent file should be skipped without error
-	result, err := ScanStubs([]string{"/nonexistent/file.go"})
-	if err != nil {
-		t.Fatalf("ScanStubs should not error on missing file: %v", err)
+	result := ScanStubs([]string{"/nonexistent/file.go"})
+	if !result.IsSuccess() {
+		t.Fatalf("ScanStubs should not error on missing file: %v", result.Errors)
 	}
 
-	if len(result.Hits) != 0 {
-		t.Errorf("expected 0 hits for missing file, got %d", len(result.Hits))
+	data := result.GetData()
+	if len(data.Hits) != 0 {
+		t.Errorf("expected 0 hits for missing file, got %d", len(data.Hits))
 	}
 }
 
 func TestScanStubs_EmptyFiles(t *testing.T) {
 	// Empty file list should return empty hits
-	result, err := ScanStubs([]string{})
-	if err != nil {
-		t.Fatalf("ScanStubs failed: %v", err)
+	result := ScanStubs([]string{})
+	if !result.IsSuccess() {
+		t.Fatalf("ScanStubs failed: %v", result.Errors)
 	}
 
-	if len(result.Hits) != 0 {
-		t.Errorf("expected 0 hits for empty file list, got %d", len(result.Hits))
+	data := result.GetData()
+	if len(data.Hits) != 0 {
+		t.Errorf("expected 0 hits for empty file list, got %d", len(data.Hits))
 	}
 }
 
@@ -137,14 +141,15 @@ func TestScanStubs_CaseInsensitive(t *testing.T) {
 		t.Fatalf("failed to write test file: %v", err)
 	}
 
-	result, err := ScanStubs([]string{caseFile})
-	if err != nil {
-		t.Fatalf("ScanStubs failed: %v", err)
+	result := ScanStubs([]string{caseFile})
+	if !result.IsSuccess() {
+		t.Fatalf("ScanStubs failed: %v", result.Errors)
 	}
 
+	data := result.GetData()
 	// Should find all 3 todo variants
-	if len(result.Hits) != 3 {
-		t.Errorf("expected 3 hits (case-insensitive), got %d", len(result.Hits))
+	if len(data.Hits) != 3 {
+		t.Errorf("expected 3 hits (case-insensitive), got %d", len(data.Hits))
 	}
 }
 
@@ -169,20 +174,21 @@ func TestScanStubs_MultipleFiles(t *testing.T) {
 		t.Fatalf("failed to write test file: %v", err)
 	}
 
-	result, err := ScanStubs([]string{file1, file2, file3})
-	if err != nil {
-		t.Fatalf("ScanStubs failed: %v", err)
+	result := ScanStubs([]string{file1, file2, file3})
+	if !result.IsSuccess() {
+		t.Fatalf("ScanStubs failed: %v", result.Errors)
 	}
 
+	data := result.GetData()
 	// Should find 2 hits (file1 TODO, file3 FIXME)
-	if len(result.Hits) != 2 {
-		t.Errorf("expected 2 hits, got %d", len(result.Hits))
+	if len(data.Hits) != 2 {
+		t.Errorf("expected 2 hits, got %d", len(data.Hits))
 	}
 
 	// Verify file paths are correct
 	foundFile1 := false
 	foundFile3 := false
-	for _, hit := range result.Hits {
+	for _, hit := range data.Hits {
 		if hit.File == file1 {
 			foundFile1 = true
 		}
@@ -208,13 +214,14 @@ func TestScanStubs_RustPatterns(t *testing.T) {
 		t.Fatalf("failed to write test file: %v", err)
 	}
 
-	result, err := ScanStubs([]string{rustFile})
-	if err != nil {
-		t.Fatalf("ScanStubs failed: %v", err)
+	result := ScanStubs([]string{rustFile})
+	if !result.IsSuccess() {
+		t.Fatalf("ScanStubs failed: %v", result.Errors)
 	}
 
+	data := result.GetData()
 	// Should find both Rust patterns
-	if len(result.Hits) != 2 {
-		t.Errorf("expected 2 hits for Rust patterns, got %d", len(result.Hits))
+	if len(data.Hits) != 2 {
+		t.Errorf("expected 2 hits for Rust patterns, got %d", len(data.Hits))
 	}
 }
