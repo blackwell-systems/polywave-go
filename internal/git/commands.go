@@ -146,8 +146,25 @@ func MergeNoFFWithOwnership(repoPath, branch, message, currentAgent string, file
 
 	// Check if this is a merge conflict (exit code 1 with conflict markers)
 	conflicted, listErr := ConflictedFiles(repoPath)
-	if listErr != nil || len(conflicted) == 0 || fileOwners == nil {
-		// Not a conflict, or no ownership map — abort and surface original error
+	if listErr != nil || len(conflicted) == 0 {
+		// No conflicted files — git may have auto-resolved via recursive strategy.
+		// Check if merge is still in progress or if it completed cleanly.
+		if _, inProgress := Run(repoPath, "rev-parse", "MERGE_HEAD"); inProgress != nil {
+			// No MERGE_HEAD means git completed the merge successfully despite non-zero exit.
+			return nil
+		}
+		if fileOwners == nil {
+			Run(repoPath, "merge", "--abort") //nolint:errcheck
+			return fmt.Errorf("git merge --no-ff failed: %w", err)
+		}
+		// MERGE_HEAD exists but no conflicted files — commit to finish
+		if _, commitErr := Run(repoPath, "commit", "--no-edit"); commitErr != nil {
+			Run(repoPath, "merge", "--abort") //nolint:errcheck
+			return fmt.Errorf("git merge --no-ff failed: %w", err)
+		}
+		return nil
+	}
+	if fileOwners == nil {
 		Run(repoPath, "merge", "--abort") //nolint:errcheck
 		return fmt.Errorf("git merge --no-ff failed: %w", err)
 	}
