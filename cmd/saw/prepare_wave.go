@@ -191,12 +191,9 @@ waves that execute on the main branch.`,
 			// Step 0b1.5: Verify dependency outputs available (H2)
 			// Skip wave 1 — no prior wave outputs to verify.
 			if waveNum > 1 {
-				depResult, err := protocol.VerifyDependenciesAvailable(doc, waveNum)
-				if err != nil {
-					return fmt.Errorf("dependency verification failed: %w", err)
-				}
-				if !depResult.Valid {
-					for _, agent := range depResult.Agents {
+				depResult := protocol.VerifyDependenciesAvailable(doc, waveNum)
+				if !depResult.IsSuccess() {
+					for _, agent := range depResult.GetData().Agents {
 						if !agent.Available {
 							fmt.Fprintf(os.Stderr, "agent %s missing dependencies: %v\n",
 								agent.Agent, agent.Missing)
@@ -213,8 +210,8 @@ waves that execute on the main branch.`,
 				coverageResult, err := protocol.ValidateFileOwnershipCoverage(doc, waveNum-1)
 				if err != nil {
 					fmt.Fprintf(os.Stderr, "prepare-wave: ownership coverage check: %v\n", err)
-				} else if !coverageResult.Valid {
-					for _, v := range coverageResult.Violations {
+				} else if coverageResult.IsSuccess() && !coverageResult.GetData().Valid {
+					for _, v := range coverageResult.GetData().Violations {
 						fmt.Fprintf(os.Stderr, "warning: agent %s modified unowned files: %v\n",
 							v.Agent, v.UnownedFiles)
 					}
