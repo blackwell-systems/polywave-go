@@ -7,6 +7,7 @@ import (
 	"fmt"
 
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/agent/backend"
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/agent/dedup"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/worktree"
 )
@@ -106,4 +107,16 @@ func (r *Runner) ExecuteStreamingWithTools(
 	}
 
 	return response, nil
+}
+
+// DedupStats returns dedup metrics from the most recent agent execution.
+// Returns nil if the backend does not implement DedupStats or no execution occurred.
+func (r *Runner) DedupStats() *dedup.Stats {
+	type dedupStatsProvider interface {
+		DedupStats() *dedup.Stats
+	}
+	if provider, ok := r.client.(dedupStatsProvider); ok {
+		return provider.DedupStats()
+	}
+	return nil
 }
