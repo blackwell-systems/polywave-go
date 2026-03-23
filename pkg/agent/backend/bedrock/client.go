@@ -39,9 +39,31 @@ func New(cfg backend.Config) *Client {
 	// Build config options for AWS SDK
 	var opts []func(*config.LoadOptions) error
 
+	// Fall back to saw.config.json when no explicit credentials provided
+	if cfg.BedrockProfile == "" && cfg.BedrockRegion == "" && cfg.BedrockAccessKeyID == "" {
+		cwd, _ := os.Getwd()
+		providers := backend.LoadProvidersFromConfig(cwd)
+		if providers.Bedrock.Profile != "" {
+			cfg.BedrockProfile = providers.Bedrock.Profile
+		}
+		if providers.Bedrock.Region != "" && cfg.BedrockRegion == "" {
+			cfg.BedrockRegion = providers.Bedrock.Region
+		}
+		if providers.Bedrock.AccessKeyID != "" {
+			cfg.BedrockAccessKeyID = providers.Bedrock.AccessKeyID
+			cfg.BedrockSecretAccessKey = providers.Bedrock.SecretAccessKey
+			cfg.BedrockSessionToken = providers.Bedrock.SessionToken
+		}
+	}
+
 	// Use explicit region if provided
 	if cfg.BedrockRegion != "" {
 		opts = append(opts, config.WithRegion(cfg.BedrockRegion))
+	}
+
+	// Use named profile if provided (supports SSO, assume-role, etc.)
+	if cfg.BedrockProfile != "" {
+		opts = append(opts, config.WithSharedConfigProfile(cfg.BedrockProfile))
 	}
 
 	// Use static credentials if provided

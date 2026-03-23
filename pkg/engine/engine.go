@@ -69,6 +69,7 @@ type RunWaveOpts struct {
 	ScaffoldModel        string // optional: model for scaffold agent; falls back to WaveModel if empty
 	IntegrationModel     string // optional: model for integration agent (E26); falls back to WaveModel if empty
 	UseStructuredOutput  bool   // if true, use structured output for wave agent completion reports
+
 }
 
 // RunMergeOpts configures a merge operation.

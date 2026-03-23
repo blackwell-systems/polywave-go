@@ -212,6 +212,9 @@ type BackendConfig struct {
 	// BedrockSessionToken is an optional AWS session token for temporary credentials.
 	BedrockSessionToken string
 
+	// BedrockProfile is an AWS CLI named profile (supports SSO, assume-role).
+	BedrockProfile string
+
 	// BaseURL is an optional endpoint override used when Kind == "openai"
 	// or when the provider prefix is "openai".
 	BaseURL string
@@ -348,14 +351,15 @@ var newBackendFunc = func(cfg BackendConfig) (backend.Backend, error) {
 		// Use cli: prefix if you want to shell out to the claude CLI command instead.
 		fullID := expandBedrockModelID(bareModel)
 		bcfgBedrock := backend.Config{
-			Model:     fullID,
-			MaxTokens: cfg.MaxTokens,
-			MaxTurns:  cfg.MaxTurns,
+			Model:                 fullID,
+			MaxTokens:             cfg.MaxTokens,
+			MaxTurns:              cfg.MaxTurns,
+			BedrockRegion:         cfg.BedrockRegion,
+			BedrockAccessKeyID:    cfg.BedrockAccessKeyID,
+			BedrockSecretAccessKey: cfg.BedrockSecretAccessKey,
+			BedrockSessionToken:   cfg.BedrockSessionToken,
+			BedrockProfile:        cfg.BedrockProfile,
 		}
-		// Bedrock credential fields (BedrockRegion, BedrockAccessKeyID,
-		// BedrockSecretAccessKey, BedrockSessionToken) are wired through
-		// once Agent A adds them to backend.Config. The BackendConfig
-		// fields are ready for that integration.
 		return bedrockbackend.New(bcfgBedrock), nil
 	case "anthropic":
 		apiKey := cfg.AnthropicKey

@@ -47,6 +47,14 @@ func New(apiKey string, cfg backend.Config) *Client {
 	if apiKey == "" {
 		apiKey = os.Getenv("ANTHROPIC_API_KEY")
 	}
+	// Fall back to saw.config.json
+	if apiKey == "" {
+		cwd, _ := os.Getwd()
+		providers := backend.LoadProvidersFromConfig(cwd)
+		if providers.Anthropic.APIKey != "" {
+			apiKey = providers.Anthropic.APIKey
+		}
+	}
 	model := cfg.Model
 	if model == "" {
 		model = defaultModel
