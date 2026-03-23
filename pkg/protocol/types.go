@@ -210,6 +210,22 @@ type ValidationError struct {
 	Message string `json:"message"`
 	Field   string `json:"field,omitempty"`
 	Line    int    `json:"line,omitempty"`
+	Slug    string `json:"slug,omitempty"`
+	Wave    int    `json:"wave,omitempty"`
+	AgentID string `json:"agent_id,omitempty"`
+}
+
+// newValidationError creates a ValidationError with the given code and message.
+func newValidationError(code, message string) ValidationError {
+	return ValidationError{Code: code, Message: message}
+}
+
+// WithContext returns a copy of the ValidationError with Slug, Wave, and AgentID populated.
+func (ve ValidationError) WithContext(slug string, wave int, agentID string) ValidationError {
+	ve.Slug = slug
+	ve.Wave = wave
+	ve.AgentID = agentID
+	return ve
 }
 
 // ProtocolState represents the current state of the IMPL manifest in the SAW protocol state machine.

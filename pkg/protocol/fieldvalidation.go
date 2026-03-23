@@ -65,6 +65,9 @@ func ValidateWorktreeNames(m *IMPLManifest) []ValidationError {
 					Code:    "E5_INVALID_WORKTREE_NAME",
 					Message: fmt.Sprintf("agent %s branch %q does not match pattern wave{N}-agent-{ID} or saw/{slug}/wave{N}-agent-{ID}", agentID, report.Branch),
 					Field:   fmt.Sprintf("completion_reports[%s].branch", agentID),
+					Slug:    m.FeatureSlug,
+					Wave:    waveNum,
+					AgentID: agentID,
 				})
 			} else {
 				// Extract wave number and agent ID from branch name
@@ -78,6 +81,9 @@ func ValidateWorktreeNames(m *IMPLManifest) []ValidationError {
 						Code:    "E5_INVALID_WORKTREE_NAME",
 						Message: fmt.Sprintf("agent %s (wave %d) branch %q has wrong wave number (expected wave%s-agent-%s)", agentID, waveNum, report.Branch, expectedWave, agentID),
 						Field:   fmt.Sprintf("completion_reports[%s].branch", agentID),
+						Slug:    m.FeatureSlug,
+						Wave:    waveNum,
+						AgentID: agentID,
 					})
 				}
 
@@ -87,6 +93,9 @@ func ValidateWorktreeNames(m *IMPLManifest) []ValidationError {
 						Code:    "E5_INVALID_WORKTREE_NAME",
 						Message: fmt.Sprintf("agent %s branch %q has wrong agent ID (expected wave%s-agent-%s)", agentID, report.Branch, expectedWave, agentID),
 						Field:   fmt.Sprintf("completion_reports[%s].branch", agentID),
+						Slug:    m.FeatureSlug,
+						Wave:    waveNum,
+						AgentID: agentID,
 					})
 				}
 			}
@@ -114,6 +123,9 @@ func ValidateWorktreeNames(m *IMPLManifest) []ValidationError {
 					Code:    "E5_INVALID_WORKTREE_PATH",
 					Message: fmt.Sprintf("agent %s worktree path %q does not contain expected segment %q", agentID, report.Worktree, expectedSegment),
 					Field:   fmt.Sprintf("completion_reports[%s].worktree", agentID),
+					Slug:    m.FeatureSlug,
+					Wave:    waveNum,
+					AgentID: agentID,
 				})
 			}
 		}
@@ -134,6 +146,14 @@ func ValidateWorktreeNames(m *IMPLManifest) []ValidationError {
 func ValidateVerificationField(m *IMPLManifest) []ValidationError {
 	var errs []ValidationError
 
+	// Build agent -> wave lookup for context
+	agentWave := make(map[string]int)
+	for _, wave := range m.Waves {
+		for _, agent := range wave.Agents {
+			agentWave[agent.ID] = wave.Number
+		}
+	}
+
 	for agentID, report := range m.CompletionReports {
 		// Empty is valid (backward compatibility)
 		if strings.TrimSpace(report.Verification) == "" {
@@ -146,6 +166,9 @@ func ValidateVerificationField(m *IMPLManifest) []ValidationError {
 				Code:    "E10_INVALID_VERIFICATION",
 				Message: fmt.Sprintf("agent %s verification field %q does not match format 'PASS' or 'FAIL (details)'", agentID, report.Verification),
 				Field:   fmt.Sprintf("completion_reports[%s].verification", agentID),
+				Slug:    m.FeatureSlug,
+				Wave:    agentWave[agentID],
+				AgentID: agentID,
 			})
 		}
 	}
