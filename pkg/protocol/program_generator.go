@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
 	"gopkg.in/yaml.v3"
 )
 
@@ -18,8 +19,8 @@ type GenerateProgramOpts struct {
 	Title       string   // title for the generated PROGRAM (auto-derived if empty)
 }
 
-// GenerateProgramResult is the output of automatic PROGRAM generation.
-type GenerateProgramResult struct {
+// GenerateProgramData is the output of automatic PROGRAM generation.
+type GenerateProgramData struct {
 	ManifestPath     string            `json:"manifest_path"`
 	ConflictReport   *ConflictReport   `json:"conflict_report"`
 	TierAssignments  map[string]int    `json:"tier_assignments"`
@@ -30,18 +31,30 @@ type GenerateProgramResult struct {
 // GenerateProgramFromIMPLs creates a PROGRAM manifest from existing IMPL docs.
 // It loads each IMPL by slug, runs conflict detection for tier assignment,
 // and writes a complete PROGRAMManifest YAML file to disk.
-func GenerateProgramFromIMPLs(opts GenerateProgramOpts) (*GenerateProgramResult, error) {
+func GenerateProgramFromIMPLs(opts GenerateProgramOpts) result.Result[GenerateProgramData] {
 	if len(opts.ImplSlugs) == 0 {
-		return nil, fmt.Errorf("generate-program: at least one IMPL slug is required")
+		return result.NewFailure[GenerateProgramData]([]result.StructuredError{{
+			Code:     "E001",
+			Message:  "generate-program: at least one IMPL slug is required",
+			Severity: "fatal",
+		}})
 	}
 	if opts.RepoPath == "" {
-		return nil, fmt.Errorf("generate-program: RepoPath is required")
+		return result.NewFailure[GenerateProgramData]([]result.StructuredError{{
+			Code:     "E002",
+			Message:  "generate-program: RepoPath is required",
+			Severity: "fatal",
+		}})
 	}
 
 	// Step 1: Run conflict detection for tier assignments.
 	conflictReport, err := CheckIMPLConflicts(opts.ImplSlugs, opts.RepoPath)
 	if err != nil {
-		return nil, fmt.Errorf("generate-program: conflict check failed: %w", err)
+		return result.NewFailure[GenerateProgramData]([]result.StructuredError{{
+			Code:     "E003",
+			Message:  fmt.Sprintf("generate-program: conflict check failed: %v", err),
+			Severity: "fatal",
+		}})
 	}
 
 	// Step 2: Load each IMPL doc and build ProgramIMPL entries.
@@ -51,12 +64,20 @@ func GenerateProgramFromIMPLs(opts GenerateProgramOpts) (*GenerateProgramResult,
 	for _, slug := range opts.ImplSlugs {
 		implPath, resolveErr := resolveIMPLPath(opts.RepoPath, slug)
 		if resolveErr != nil {
-			return nil, fmt.Errorf("generate-program: %w", resolveErr)
+			return result.NewFailure[GenerateProgramData]([]result.StructuredError{{
+				Code:     "E004",
+				Message:  fmt.Sprintf("generate-program: %v", resolveErr),
+				Severity: "fatal",
+			}})
 		}
 
 		implDoc, loadErr := Load(implPath)
 		if loadErr != nil {
-			return nil, fmt.Errorf("generate-program: failed to load IMPL %q: %w", slug, loadErr)
+			return result.NewFailure[GenerateProgramData]([]result.StructuredError{{
+				Code:     "E005",
+				Message:  fmt.Sprintf("generate-program: failed to load IMPL %q: %v", slug, loadErr),
+				Severity: "fatal",
+			}})
 		}
 
 		status := implStateToStatus(implDoc.State)
@@ -188,28 +209,55 @@ func GenerateProgramFromIMPLs(opts GenerateProgramOpts) (*GenerateProgramResult,
 	outputPath := filepath.Join(opts.RepoPath, "docs", fmt.Sprintf("PROGRAM-%s.yaml", manifest.ProgramSlug))
 
 	if err := os.MkdirAll(filepath.Dir(outputPath), 0755); err != nil {
-		return nil, fmt.Errorf("generate-program: failed to create output directory: %w", err)
+		return result.NewFailure[GenerateProgramData]([]result.StructuredError{{
+			Code:     "E006",
+			Message:  fmt.Sprintf("generate-program: failed to create output directory: %v", err),
+			Severity: "fatal",
+		}})
 	}
 
 	data, err := yaml.Marshal(manifest)
 	if err != nil {
-		return nil, fmt.Errorf("generate-program: failed to marshal manifest: %w", err)
+		return result.NewFailure[GenerateProgramData]([]result.StructuredError{{
+			Code:     "E007",
+			Message:  fmt.Sprintf("generate-program: failed to marshal manifest: %v", err),
+			Severity: "fatal",
+		}})
 	}
 
 	if err := os.WriteFile(outputPath, data, 0644); err != nil {
-		return nil, fmt.Errorf("generate-program: failed to write manifest: %w", err)
+		return result.NewFailure[GenerateProgramData]([]result.StructuredError{{
+			Code:     "E008",
+			Message:  fmt.Sprintf("generate-program: failed to write manifest: %v", err),
+			Severity: "fatal",
+		}})
 	}
 
 	// Step 9: Validate (non-fatal).
 	validationErrors := ValidateProgram(manifest)
 
-	return &GenerateProgramResult{
+	data_ := GenerateProgramData{
 		ManifestPath:     outputPath,
 		ConflictReport:   conflictReport,
 		TierAssignments:  tierAssignments,
 		Manifest:         manifest,
 		ValidationErrors: validationErrors,
-	}, nil
+	}
+
+	if len(validationErrors) > 0 {
+		var warnings []result.StructuredError
+		for _, ve := range validationErrors {
+			warnings = append(warnings, result.StructuredError{
+				Code:     "E009",
+				Message:  ve.Message,
+				Severity: "warning",
+				Field:    ve.Field,
+			})
+		}
+		return result.NewPartial(data_, warnings)
+	}
+
+	return result.NewSuccess(data_)
 }
 
 // resolveIMPLPath is defined in program_conflict.go (canonical location).
