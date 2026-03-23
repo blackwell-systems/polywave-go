@@ -37,13 +37,10 @@ Output: JSON with validation results and gate population stats.`,
 			manifestPath := args[0]
 
 			// Call FinalizeIMPL from pkg/protocol
-			result, err := protocol.FinalizeIMPL(manifestPath, repoRoot)
-			if err != nil {
-				return fmt.Errorf("finalize-impl: %w", err)
-			}
+			res := protocol.FinalizeIMPL(manifestPath, repoRoot)
 
 			// Marshal to pretty JSON
-			out, err := json.MarshalIndent(result, "", "  ")
+			out, err := json.MarshalIndent(res, "", "  ")
 			if err != nil {
 				return fmt.Errorf("finalize-impl: failed to marshal result: %w", err)
 			}
@@ -52,7 +49,7 @@ Output: JSON with validation results and gate population stats.`,
 			fmt.Fprintln(cmd.OutOrStdout(), string(out))
 
 			// Exit code 1 if not successful (return error instead of os.Exit for testability)
-			if !result.Success {
+			if !res.IsSuccess() {
 				return fmt.Errorf("finalize-impl failed: validation or gate population errors (see JSON output)")
 			}
 

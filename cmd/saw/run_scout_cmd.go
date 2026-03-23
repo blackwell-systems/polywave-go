@@ -219,26 +219,17 @@ Output:
 			// Do not add additional validation calls here; FinalizeIMPL handles the full
 			// validate → populate-gates → validate pipeline internally.
 			fmt.Printf("🔧 Finalizing IMPL doc (populating verification gates)...\n")
-			finalizeResult, finalizeErr := protocol.FinalizeIMPL(implPath, repoPath)
-			if finalizeErr != nil {
-				return fmt.Errorf("run-scout: finalize-impl failed: %w", finalizeErr)
-			}
+			finalizeRes := protocol.FinalizeIMPL(implPath, repoPath)
 
-			if !finalizeResult.Success {
+			if !finalizeRes.IsSuccess() {
 				fmt.Println("⚠️  Finalize-impl completed with warnings")
-				if !finalizeResult.Validation.Passed {
-					fmt.Println("   Initial validation issues:")
-					for _, e := range finalizeResult.Validation.Errors {
-						fmt.Printf("      %s: %s\n", e.Code, e.Message)
-					}
+				for _, e := range finalizeRes.Errors {
+					fmt.Printf("      %s: %s\n", e.Code, e.Message)
 				}
-				if !finalizeResult.GatePopulation.H2DataAvailable {
-					fmt.Println("   H2 data unavailable - verification gates not populated")
-					fmt.Println("   (Gates can be manually written during review)")
-				}
+				fmt.Println("   (Gates can be manually written during review)")
 				// Non-fatal - IMPL doc still usable, gates just not auto-populated
 			} else {
-				fmt.Printf("✅ Verification gates populated for %d agents\n", finalizeResult.GatePopulation.AgentsUpdated)
+				fmt.Printf("✅ Verification gates populated for %d agents\n", finalizeRes.GetData().GatePopulation.AgentsUpdated)
 			}
 			fmt.Println()
 

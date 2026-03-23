@@ -397,36 +397,32 @@ waves:
 	}
 
 	// Execute
-	result, err := FinalizeIMPL(implPath, repoRoot)
-	if err != nil {
-		t.Fatalf("FinalizeIMPL failed: %v", err)
+	res := FinalizeIMPL(implPath, repoRoot)
+	if !res.IsSuccess() {
+		t.Fatalf("FinalizeIMPL failed. Errors: %v", res.Errors)
 	}
-
-	// Verify success
-	if !result.Success {
-		t.Errorf("Expected success=true, got false. Validation errors: %v", result.Validation.Errors)
-	}
+	data := res.GetData()
 
 	// Verify initial validation passed
-	if !result.Validation.Passed {
+	if !data.Validation.Passed {
 		t.Errorf("Initial validation should pass")
 	}
 
 	// Verify gate population stats
-	if result.GatePopulation.AgentsUpdated != 1 {
-		t.Errorf("Expected 1 agent updated, got %d", result.GatePopulation.AgentsUpdated)
+	if data.GatePopulation.AgentsUpdated != 1 {
+		t.Errorf("Expected 1 agent updated, got %d", data.GatePopulation.AgentsUpdated)
 	}
 
-	if result.GatePopulation.Toolchain != "go" {
-		t.Errorf("Expected toolchain=go, got %s", result.GatePopulation.Toolchain)
+	if data.GatePopulation.Toolchain != "go" {
+		t.Errorf("Expected toolchain=go, got %s", data.GatePopulation.Toolchain)
 	}
 
-	if !result.GatePopulation.H2DataAvailable {
+	if !data.GatePopulation.H2DataAvailable {
 		t.Errorf("Expected H2DataAvailable=true")
 	}
 
 	// Verify final validation passed
-	if !result.FinalValidation.Passed {
+	if !data.FinalValidation.Passed {
 		t.Errorf("Final validation should pass")
 	}
 
@@ -477,23 +473,15 @@ waves:
 	repoRoot := tmpDir
 
 	// Execute
-	result, err := FinalizeIMPL(implPath, repoRoot)
-	if err != nil {
-		t.Fatalf("FinalizeIMPL should return result with error info, not error: %v", err)
-	}
+	res := FinalizeIMPL(implPath, repoRoot)
 
 	// Verify failure
-	if result.Success {
-		t.Errorf("Expected success=false for validation failure")
+	if res.IsSuccess() {
+		t.Errorf("Expected failure for validation failure, got success")
 	}
 
-	// Verify initial validation failed
-	if result.Validation.Passed {
-		t.Errorf("Initial validation should fail")
-	}
-
-	if len(result.Validation.Errors) == 0 {
-		t.Errorf("Expected validation errors")
+	if len(res.Errors) == 0 {
+		t.Errorf("Expected structured errors for validation failure")
 	}
 
 	// Verify file unchanged (rollback)
@@ -538,19 +526,15 @@ waves:
 	repoRoot := tmpDir // No go.mod, H2 extraction should fail
 
 	// Execute
-	result, err := FinalizeIMPL(implPath, repoRoot)
+	res := FinalizeIMPL(implPath, repoRoot)
 
 	// Verify failure (H2 data unavailable)
-	if err == nil {
-		t.Error("Expected error for missing H2 data")
+	if res.IsSuccess() {
+		t.Errorf("Expected failure when H2 data unavailable, got success")
 	}
 
-	if result.Success {
-		t.Errorf("Expected success=false for H2 failure")
-	}
-
-	if result.GatePopulation.H2DataAvailable {
-		t.Errorf("Expected H2DataAvailable=false")
+	if len(res.Errors) == 0 {
+		t.Errorf("Expected structured errors for H2 failure")
 	}
 
 	// Verify file unchanged

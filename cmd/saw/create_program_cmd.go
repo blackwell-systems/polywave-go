@@ -38,28 +38,33 @@ Examples:
 				return fmt.Errorf("create-program: need at least 2 IMPL slugs (single IMPL doesn't need a PROGRAM)")
 			}
 
-			result, err := protocol.GenerateProgramFromIMPLs(protocol.GenerateProgramOpts{
+			res := protocol.GenerateProgramFromIMPLs(protocol.GenerateProgramOpts{
 				ImplSlugs:   fromImpls,
 				RepoPath:    repoDir,
 				ProgramSlug: slug,
 				Title:       title,
 			})
-			if err != nil {
-				return fmt.Errorf("create-program: %w", err)
+			if !res.IsSuccess() {
+				msg := "create-program failed"
+				if len(res.Errors) > 0 {
+					msg = res.Errors[0].Message
+				}
+				return fmt.Errorf("create-program: %s", msg)
 			}
+			data := res.GetData()
 
 			// Print validation errors to stderr (non-fatal)
-			for _, ve := range result.ValidationErrors {
+			for _, ve := range data.ValidationErrors {
 				fmt.Fprintf(os.Stderr, "Warning: %s\n", ve.Message)
 			}
 
 			// Print conflict summary to stderr if conflicts found
-			if result.ConflictReport != nil && len(result.ConflictReport.Conflicts) > 0 {
+			if data.ConflictReport != nil && len(data.ConflictReport.Conflicts) > 0 {
 				fmt.Fprintf(os.Stderr, "Note: %d file conflicts detected across IMPLs. IMPLs assigned to separate tiers.\n",
-					len(result.ConflictReport.Conflicts))
+					len(data.ConflictReport.Conflicts))
 			}
 
-			out, _ := json.MarshalIndent(result, "", "  ")
+			out, _ := json.MarshalIndent(data, "", "  ")
 			fmt.Fprintln(cmd.OutOrStdout(), string(out))
 
 			return nil

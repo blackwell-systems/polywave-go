@@ -3,7 +3,6 @@ package main
 import (
 	"bufio"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"os"
 
@@ -90,7 +89,7 @@ Output is always JSON.`,
 			}
 
 			// Call protocol engine for --add-wave and --redirect-agent
-			result, err := protocol.AmendImpl(protocol.AmendImplOpts{
+			res := protocol.AmendImpl(protocol.AmendImplOpts{
 				ManifestPath:  manifestPath,
 				AddWave:       addWave,
 				RedirectAgent: redirectAgent != "",
@@ -98,30 +97,35 @@ Output is always JSON.`,
 				WaveNum:       waveNum,
 				NewTask:       newTask,
 			})
-			if err != nil {
+			if !res.IsSuccess() {
 				op := "add-wave"
 				if redirectAgent != "" {
 					op = "redirect-agent"
 				}
+				msg := "amend-impl failed"
+				if len(res.Errors) > 0 {
+					msg = res.Errors[0].Message
+				}
 				errResp := map[string]interface{}{
 					"success":   false,
 					"operation": op,
-					"error":     err.Error(),
+					"error":     msg,
 				}
-				if errors.Is(err, protocol.ErrAmendBlocked) {
+				if len(res.Errors) > 0 && res.Errors[0].Code == "AMEND_BLOCKED" {
 					out, _ := json.MarshalIndent(errResp, "", "  ")
 					fmt.Println(string(out))
 					os.Exit(1)
 				}
-				return err
+				return fmt.Errorf("amend-impl: %s", msg)
 			}
+			data := res.GetData()
 
 			out, _ := json.MarshalIndent(map[string]interface{}{
-				"success":        true,
-				"operation":      result.Operation,
-				"new_wave_number": result.NewWaveNumber,
-				"agent_id":       result.AgentID,
-				"warnings":       result.Warnings,
+				"success":         true,
+				"operation":       data.Operation,
+				"new_wave_number": data.NewWaveNumber,
+				"agent_id":        data.AgentID,
+				"warnings":        data.Warnings,
 			}, "", "  ")
 			fmt.Println(string(out))
 			return nil
