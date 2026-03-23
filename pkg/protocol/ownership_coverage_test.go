@@ -25,15 +25,19 @@ func TestOwnershipCoverage_AllOwned(t *testing.T) {
 		},
 	}
 
-	result, err := ValidateFileOwnershipCoverage(manifest, 1)
+	res, err := ValidateFileOwnershipCoverage(manifest, 1)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if !result.Valid {
-		t.Errorf("expected Valid=true, got false. Violations: %v", result.Violations)
+	if !res.IsSuccess() {
+		t.Fatalf("expected SUCCESS result, got: %s", res.Code)
 	}
-	if len(result.Violations) != 0 {
-		t.Errorf("expected 0 violations, got %d", len(result.Violations))
+	data := res.GetData()
+	if !data.Valid {
+		t.Errorf("expected Valid=true, got false. Violations: %v", data.Violations)
+	}
+	if len(data.Violations) != 0 {
+		t.Errorf("expected 0 violations, got %d", len(data.Violations))
 	}
 }
 
@@ -56,17 +60,21 @@ func TestOwnershipCoverage_BonusFile(t *testing.T) {
 		},
 	}
 
-	result, err := ValidateFileOwnershipCoverage(manifest, 1)
+	res, err := ValidateFileOwnershipCoverage(manifest, 1)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if result.Valid {
+	if !res.IsSuccess() {
+		t.Fatalf("expected SUCCESS result, got: %s", res.Code)
+	}
+	data := res.GetData()
+	if data.Valid {
 		t.Error("expected Valid=false for bonus file outside ownership")
 	}
-	if len(result.Violations) == 0 {
+	if len(data.Violations) == 0 {
 		t.Fatal("expected at least one violation")
 	}
-	v := result.Violations[0]
+	v := data.Violations[0]
 	if v.Agent != "B" {
 		t.Errorf("expected violation for agent B, got %s", v.Agent)
 	}
@@ -105,12 +113,16 @@ func TestOwnershipCoverage_FrozenPathAllowed(t *testing.T) {
 		},
 	}
 
-	result, err := ValidateFileOwnershipCoverage(manifest, 1)
+	res, err := ValidateFileOwnershipCoverage(manifest, 1)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if !result.Valid {
-		t.Errorf("expected Valid=true (scaffold path allowed), got false. Violations: %v", result.Violations)
+	if !res.IsSuccess() {
+		t.Fatalf("expected SUCCESS result, got: %s", res.Code)
+	}
+	data := res.GetData()
+	if !data.Valid {
+		t.Errorf("expected Valid=true (scaffold path allowed), got false. Violations: %v", data.Violations)
 	}
 }
 
@@ -144,11 +156,15 @@ func TestOwnershipCoverage_NoReport(t *testing.T) {
 		// No CompletionReports
 	}
 
-	result, err := ValidateFileOwnershipCoverage(manifest, 1)
+	res, err := ValidateFileOwnershipCoverage(manifest, 1)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if !result.Valid {
+	if !res.IsSuccess() {
+		t.Fatalf("expected SUCCESS result, got: %s", res.Code)
+	}
+	data := res.GetData()
+	if !data.Valid {
 		t.Errorf("expected Valid=true when no report exists, got false")
 	}
 }
