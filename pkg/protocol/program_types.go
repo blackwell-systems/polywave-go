@@ -1,5 +1,7 @@
 package protocol
 
+import "github.com/blackwell-systems/scout-and-wave-go/pkg/result"
+
 // PROGRAMManifest is the structured representation of a SAW PROGRAM document.
 // It coordinates multiple IMPL docs into tiered execution.
 type PROGRAMManifest struct {
@@ -90,8 +92,10 @@ type ImportedIMPL struct {
 	WaveCount    int    `json:"wave_count"`
 }
 
-// ImportIMPLsResult is the result struct returned by the import-impls command.
-type ImportIMPLsResult struct {
+// ImportIMPLsData is the data payload for the import-impls operation.
+// Use result.Result[ImportIMPLsData] as the return type for functions
+// that perform IMPL imports.
+type ImportIMPLsData struct {
 	ManifestPath    string         `json:"manifest_path"`
 	ImplsImported   []ImportedIMPL `json:"impls_imported"`
 	ImplsDiscovered []string       `json:"impls_discovered,omitempty"`
@@ -100,4 +104,13 @@ type ImportIMPLsResult struct {
 	P2Conflicts     []string       `json:"p2_conflicts,omitempty"`
 	Created         bool           `json:"created"`
 	Updated         bool           `json:"updated"`
+}
+
+// ImportIMPLsResult is a backward-compatible alias for ImportIMPLsData.
+// Deprecated: use result.Result[ImportIMPLsData] for new call sites.
+type ImportIMPLsResult = ImportIMPLsData
+
+// NewImportIMPLsResult creates a successful result.Result wrapping ImportIMPLsData.
+func NewImportIMPLsResult(data ImportIMPLsData) result.Result[ImportIMPLsData] {
+	return result.NewSuccess(data)
 }
