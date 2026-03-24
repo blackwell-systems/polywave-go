@@ -3,6 +3,8 @@ package protocol
 import (
 	"fmt"
 	"strings"
+
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
 )
 
 // validateAllEnums validates ALL enum fields in the manifest, complementing
@@ -10,8 +12,8 @@ import (
 // This covers: FileOwnership.Action, QualityGates.Level, ScaffoldFile.Status,
 // PreMortemRow.Likelihood, PreMortemRow.Impact.
 // Empty values are allowed for backward compatibility.
-func validateAllEnums(m *IMPLManifest) []ValidationError {
-	var errs []ValidationError
+func validateAllEnums(m *IMPLManifest) []result.SAWError {
+	var errs []result.SAWError
 
 	errs = append(errs, validateFileOwnershipActions(m)...)
 	errs = append(errs, validateQualityGatesLevel(m)...)
@@ -23,8 +25,8 @@ func validateAllEnums(m *IMPLManifest) []ValidationError {
 
 // validateFileOwnershipActions checks FileOwnership.Action values.
 // Valid: "new", "modify", "delete", or empty.
-func validateFileOwnershipActions(m *IMPLManifest) []ValidationError {
-	var errs []ValidationError
+func validateFileOwnershipActions(m *IMPLManifest) []result.SAWError {
+	var errs []result.SAWError
 
 	validActions := map[string]bool{
 		"new":    true,
@@ -37,10 +39,11 @@ func validateFileOwnershipActions(m *IMPLManifest) []ValidationError {
 			continue
 		}
 		if !validActions[fo.Action] {
-			errs = append(errs, ValidationError{
-				Code:    SV01InvalidEnum,
-				Message: fmt.Sprintf("file_ownership[%d].action has invalid value %q — must be one of: new, modify, delete", i, fo.Action),
-				Field:   fmt.Sprintf("file_ownership[%d].action", i),
+			errs = append(errs, result.SAWError{
+				Code:     SV01InvalidEnum,
+				Message:  fmt.Sprintf("file_ownership[%d].action has invalid value %q — must be one of: new, modify, delete", i, fo.Action),
+				Severity: "error",
+				Field:    fmt.Sprintf("file_ownership[%d].action", i),
 			})
 		}
 	}
@@ -50,8 +53,8 @@ func validateFileOwnershipActions(m *IMPLManifest) []ValidationError {
 
 // validateQualityGatesLevel checks QualityGates.Level value.
 // Valid: "quick", "standard", "full", or empty.
-func validateQualityGatesLevel(m *IMPLManifest) []ValidationError {
-	var errs []ValidationError
+func validateQualityGatesLevel(m *IMPLManifest) []result.SAWError {
+	var errs []result.SAWError
 
 	if m.QualityGates == nil {
 		return errs
@@ -68,10 +71,11 @@ func validateQualityGatesLevel(m *IMPLManifest) []ValidationError {
 	}
 
 	if !validLevels[m.QualityGates.Level] {
-		errs = append(errs, ValidationError{
-			Code:    SV01InvalidEnum,
-			Message: fmt.Sprintf("quality_gates.level has invalid value %q — must be one of: quick, standard, full", m.QualityGates.Level),
-			Field:   "quality_gates.level",
+		errs = append(errs, result.SAWError{
+			Code:     SV01InvalidEnum,
+			Message:  fmt.Sprintf("quality_gates.level has invalid value %q — must be one of: quick, standard, full", m.QualityGates.Level),
+			Severity: "error",
+			Field:    "quality_gates.level",
 		})
 	}
 
@@ -81,8 +85,8 @@ func validateQualityGatesLevel(m *IMPLManifest) []ValidationError {
 // validateScaffoldStatuses checks ScaffoldFile.Status values.
 // Valid: "pending", "committed", strings starting with "committed" (e.g. "committed (abc123)"),
 // strings starting with "FAILED", or empty.
-func validateScaffoldStatuses(m *IMPLManifest) []ValidationError {
-	var errs []ValidationError
+func validateScaffoldStatuses(m *IMPLManifest) []result.SAWError {
+	var errs []result.SAWError
 
 	for i, sf := range m.Scaffolds {
 		if sf.Status == "" {
@@ -97,10 +101,11 @@ func validateScaffoldStatuses(m *IMPLManifest) []ValidationError {
 		if strings.HasPrefix(sf.Status, "FAILED") {
 			continue
 		}
-		errs = append(errs, ValidationError{
-			Code:    SV01InvalidEnum,
-			Message: fmt.Sprintf("scaffolds[%d].status has invalid value %q — must be one of: pending, committed, or start with \"committed\" or \"FAILED\"", i, sf.Status),
-			Field:   fmt.Sprintf("scaffolds[%d].status", i),
+		errs = append(errs, result.SAWError{
+			Code:     SV01InvalidEnum,
+			Message:  fmt.Sprintf("scaffolds[%d].status has invalid value %q — must be one of: pending, committed, or start with \"committed\" or \"FAILED\"", i, sf.Status),
+			Severity: "error",
+			Field:    fmt.Sprintf("scaffolds[%d].status", i),
 		})
 	}
 
@@ -109,8 +114,8 @@ func validateScaffoldStatuses(m *IMPLManifest) []ValidationError {
 
 // validatePreMortemRowEnums checks PreMortemRow.Likelihood and Impact values.
 // Valid: "low", "medium", "high", or empty.
-func validatePreMortemRowEnums(m *IMPLManifest) []ValidationError {
-	var errs []ValidationError
+func validatePreMortemRowEnums(m *IMPLManifest) []result.SAWError {
+	var errs []result.SAWError
 
 	if m.PreMortem == nil {
 		return errs
@@ -124,17 +129,19 @@ func validatePreMortemRowEnums(m *IMPLManifest) []ValidationError {
 
 	for i, row := range m.PreMortem.Rows {
 		if row.Likelihood != "" && !validValues[row.Likelihood] {
-			errs = append(errs, ValidationError{
-				Code:    SV01InvalidEnum,
-				Message: fmt.Sprintf("pre_mortem.rows[%d].likelihood has invalid value %q — must be one of: low, medium, high", i, row.Likelihood),
-				Field:   fmt.Sprintf("pre_mortem.rows[%d].likelihood", i),
+			errs = append(errs, result.SAWError{
+				Code:     SV01InvalidEnum,
+				Message:  fmt.Sprintf("pre_mortem.rows[%d].likelihood has invalid value %q — must be one of: low, medium, high", i, row.Likelihood),
+				Severity: "error",
+				Field:    fmt.Sprintf("pre_mortem.rows[%d].likelihood", i),
 			})
 		}
 		if row.Impact != "" && !validValues[row.Impact] {
-			errs = append(errs, ValidationError{
-				Code:    SV01InvalidEnum,
-				Message: fmt.Sprintf("pre_mortem.rows[%d].impact has invalid value %q — must be one of: low, medium, high", i, row.Impact),
-				Field:   fmt.Sprintf("pre_mortem.rows[%d].impact", i),
+			errs = append(errs, result.SAWError{
+				Code:     SV01InvalidEnum,
+				Message:  fmt.Sprintf("pre_mortem.rows[%d].impact has invalid value %q — must be one of: low, medium, high", i, row.Impact),
+				Severity: "error",
+				Field:    fmt.Sprintf("pre_mortem.rows[%d].impact", i),
 			})
 		}
 	}

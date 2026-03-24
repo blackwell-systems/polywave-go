@@ -6,6 +6,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
 	"github.com/invopop/jsonschema"
 )
 
@@ -19,9 +20,9 @@ const (
 
 // manifestSchemaCache caches the generated manifest schema after the first call.
 var (
-	manifestSchemaOnce  sync.Once
+	manifestSchemaOnce   sync.Once
 	manifestSchemaCached map[string]any
-	manifestSchemaErr   error
+	manifestSchemaErr    error
 )
 
 // GenerateManifestSchema generates a JSON Schema for the full IMPLManifest struct
@@ -43,13 +44,13 @@ func GenerateManifestSchema() (map[string]any, error) {
 			return
 		}
 
-		var result map[string]any
-		if err := json.Unmarshal(data, &result); err != nil {
+		var resultMap map[string]any
+		if err := json.Unmarshal(data, &resultMap); err != nil {
 			manifestSchemaErr = fmt.Errorf("failed to unmarshal manifest schema: %w", err)
 			return
 		}
 
-		manifestSchemaCached = result
+		manifestSchemaCached = resultMap
 	})
 
 	return manifestSchemaCached, manifestSchemaErr
@@ -64,17 +65,17 @@ func GenerateManifestSchema() (map[string]any, error) {
 // This is an additive validation path that complements existing ValidateSchema()
 // checks. Error codes use the "JS01_" prefix.
 //
-// Returns a (possibly empty) slice of ValidationErrors.
-func ValidateManifestJSON(m *IMPLManifest) []ValidationError {
-	var errs []ValidationError
+// Returns a (possibly empty) slice of SAWErrors.
+func ValidateManifestJSON(m *IMPLManifest) []result.SAWError {
+	var errs []result.SAWError
 
 	// Marshal to JSON for schema-based field inspection.
 	data, err := json.Marshal(m)
 	if err != nil {
-		errs = append(errs, ValidationError{
-			Code:    JS01RequiredField,
-			Message: fmt.Sprintf("failed to marshal manifest to JSON: %v", err),
-			Field:   "",
+		errs = append(errs, result.SAWError{
+			Code:     JS01RequiredField,
+			Message:  fmt.Sprintf("failed to marshal manifest to JSON: %v", err),
+			Severity: "error",
 		})
 		return errs
 	}
@@ -82,10 +83,10 @@ func ValidateManifestJSON(m *IMPLManifest) []ValidationError {
 	// Decode into a generic map for inspection.
 	var raw map[string]any
 	if err := json.Unmarshal(data, &raw); err != nil {
-		errs = append(errs, ValidationError{
-			Code:    JS01RequiredField,
-			Message: fmt.Sprintf("failed to decode manifest JSON: %v", err),
-			Field:   "",
+		errs = append(errs, result.SAWError{
+			Code:     JS01RequiredField,
+			Message:  fmt.Sprintf("failed to decode manifest JSON: %v", err),
+			Severity: "error",
 		})
 		return errs
 	}
@@ -100,27 +101,30 @@ func ValidateManifestJSON(m *IMPLManifest) []ValidationError {
 	for _, field := range requiredStringFields {
 		val, exists := raw[field]
 		if !exists || val == nil {
-			errs = append(errs, ValidationError{
-				Code:    JS01RequiredField,
-				Message: fmt.Sprintf("required field %q is missing", field),
-				Field:   field,
+			errs = append(errs, result.SAWError{
+				Code:     JS01RequiredField,
+				Message:  fmt.Sprintf("required field %q is missing", field),
+				Severity: "error",
+				Field:    field,
 			})
 			continue
 		}
 		str, ok := val.(string)
 		if !ok {
-			errs = append(errs, ValidationError{
-				Code:    JS01InvalidType,
-				Message: fmt.Sprintf("field %q must be a string, got %T", field, val),
-				Field:   field,
+			errs = append(errs, result.SAWError{
+				Code:     JS01InvalidType,
+				Message:  fmt.Sprintf("field %q must be a string, got %T", field, val),
+				Severity: "error",
+				Field:    field,
 			})
 			continue
 		}
 		if strings.TrimSpace(str) == "" {
-			errs = append(errs, ValidationError{
-				Code:    JS01RequiredField,
-				Message: fmt.Sprintf("required field %q must not be empty", field),
-				Field:   field,
+			errs = append(errs, result.SAWError{
+				Code:     JS01RequiredField,
+				Message:  fmt.Sprintf("required field %q must not be empty", field),
+				Severity: "error",
+				Field:    field,
 			})
 		}
 	}
@@ -134,18 +138,20 @@ func ValidateManifestJSON(m *IMPLManifest) []ValidationError {
 	for _, field := range requiredArrayFields {
 		val, exists := raw[field]
 		if !exists || val == nil {
-			errs = append(errs, ValidationError{
-				Code:    JS01RequiredField,
-				Message: fmt.Sprintf("required field %q is missing", field),
-				Field:   field,
+			errs = append(errs, result.SAWError{
+				Code:     JS01RequiredField,
+				Message:  fmt.Sprintf("required field %q is missing", field),
+				Severity: "error",
+				Field:    field,
 			})
 			continue
 		}
 		if _, ok := val.([]any); !ok {
-			errs = append(errs, ValidationError{
-				Code:    JS01InvalidType,
-				Message: fmt.Sprintf("field %q must be an array, got %T", field, val),
-				Field:   field,
+			errs = append(errs, result.SAWError{
+				Code:     JS01InvalidType,
+				Message:  fmt.Sprintf("field %q must be an array, got %T", field, val),
+				Severity: "error",
+				Field:    field,
 			})
 		}
 	}
@@ -194,16 +200,17 @@ func ValidateManifestJSON(m *IMPLManifest) []ValidationError {
 
 // validateJSEnum checks that a field (if present and non-empty) is one of the allowed enum values.
 // If optional=true, absent or empty string values are skipped.
-func validateJSEnum(raw map[string]any, field string, allowed []string, optional bool) []ValidationError {
-	var errs []ValidationError
+func validateJSEnum(raw map[string]any, field string, allowed []string, optional bool) []result.SAWError {
+	var errs []result.SAWError
 
 	val, exists := raw[field]
 	if !exists || val == nil {
 		if !optional {
-			errs = append(errs, ValidationError{
-				Code:    JS01RequiredField,
-				Message: fmt.Sprintf("required field %q is missing", field),
-				Field:   field,
+			errs = append(errs, result.SAWError{
+				Code:     JS01RequiredField,
+				Message:  fmt.Sprintf("required field %q is missing", field),
+				Severity: "error",
+				Field:    field,
 			})
 		}
 		return errs
@@ -211,10 +218,11 @@ func validateJSEnum(raw map[string]any, field string, allowed []string, optional
 
 	str, ok := val.(string)
 	if !ok {
-		errs = append(errs, ValidationError{
-			Code:    JS01InvalidType,
-			Message: fmt.Sprintf("field %q must be a string, got %T", field, val),
-			Field:   field,
+		errs = append(errs, result.SAWError{
+			Code:     JS01InvalidType,
+			Message:  fmt.Sprintf("field %q must be a string, got %T", field, val),
+			Severity: "error",
+			Field:    field,
 		})
 		return errs
 	}
@@ -226,10 +234,11 @@ func validateJSEnum(raw map[string]any, field string, allowed []string, optional
 
 	// Empty string for required enum fields is a missing value.
 	if str == "" && !optional {
-		errs = append(errs, ValidationError{
-			Code:    JS01RequiredField,
-			Message: fmt.Sprintf("required field %q must not be empty", field),
-			Field:   field,
+		errs = append(errs, result.SAWError{
+			Code:     JS01RequiredField,
+			Message:  fmt.Sprintf("required field %q must not be empty", field),
+			Severity: "error",
+			Field:    field,
 		})
 		return errs
 	}
@@ -240,10 +249,11 @@ func validateJSEnum(raw map[string]any, field string, allowed []string, optional
 	}
 
 	if !allowedSet[str] {
-		errs = append(errs, ValidationError{
-			Code:    JS01InvalidEnum,
-			Message: fmt.Sprintf("field %q has invalid value %q — must be one of: %s", field, str, strings.Join(allowed, ", ")),
-			Field:   field,
+		errs = append(errs, result.SAWError{
+			Code:     JS01InvalidEnum,
+			Message:  fmt.Sprintf("field %q has invalid value %q — must be one of: %s", field, str, strings.Join(allowed, ", ")),
+			Severity: "error",
+			Field:    field,
 		})
 	}
 
@@ -251,8 +261,8 @@ func validateJSEnum(raw map[string]any, field string, allowed []string, optional
 }
 
 // validateJSWaves validates the structure of each wave and agent within the waves array.
-func validateJSWaves(raw map[string]any) []ValidationError {
-	var errs []ValidationError
+func validateJSWaves(raw map[string]any) []result.SAWError {
+	var errs []result.SAWError
 
 	wavesVal, ok := raw["waves"]
 	if !ok || wavesVal == nil {
@@ -267,10 +277,11 @@ func validateJSWaves(raw map[string]any) []ValidationError {
 	for i, waveVal := range waves {
 		wave, ok := waveVal.(map[string]any)
 		if !ok {
-			errs = append(errs, ValidationError{
-				Code:    JS01InvalidType,
-				Message: fmt.Sprintf("waves[%d] must be an object", i),
-				Field:   fmt.Sprintf("waves[%d]", i),
+			errs = append(errs, result.SAWError{
+				Code:     JS01InvalidType,
+				Message:  fmt.Sprintf("waves[%d] must be an object", i),
+				Severity: "error",
+				Field:    fmt.Sprintf("waves[%d]", i),
 			})
 			continue
 		}
@@ -280,17 +291,19 @@ func validateJSWaves(raw map[string]any) []ValidationError {
 			switch n := numVal.(type) {
 			case float64:
 				if n <= 0 {
-					errs = append(errs, ValidationError{
-						Code:    JS01RequiredField,
-						Message: fmt.Sprintf("waves[%d].number must be > 0, got %v", i, n),
-						Field:   fmt.Sprintf("waves[%d].number", i),
+					errs = append(errs, result.SAWError{
+						Code:     JS01RequiredField,
+						Message:  fmt.Sprintf("waves[%d].number must be > 0, got %v", i, n),
+						Severity: "error",
+						Field:    fmt.Sprintf("waves[%d].number", i),
 					})
 				}
 			default:
-				errs = append(errs, ValidationError{
-					Code:    JS01InvalidType,
-					Message: fmt.Sprintf("waves[%d].number must be a number, got %T", i, numVal),
-					Field:   fmt.Sprintf("waves[%d].number", i),
+				errs = append(errs, result.SAWError{
+					Code:     JS01InvalidType,
+					Message:  fmt.Sprintf("waves[%d].number must be a number, got %T", i, numVal),
+					Severity: "error",
+					Field:    fmt.Sprintf("waves[%d].number", i),
 				})
 			}
 		}
@@ -298,20 +311,22 @@ func validateJSWaves(raw map[string]any) []ValidationError {
 		// waves[i].agents must be a non-empty array
 		agentsVal, agentsExist := wave["agents"]
 		if !agentsExist || agentsVal == nil {
-			errs = append(errs, ValidationError{
-				Code:    JS01RequiredField,
-				Message: fmt.Sprintf("waves[%d].agents is required", i),
-				Field:   fmt.Sprintf("waves[%d].agents", i),
+			errs = append(errs, result.SAWError{
+				Code:     JS01RequiredField,
+				Message:  fmt.Sprintf("waves[%d].agents is required", i),
+				Severity: "error",
+				Field:    fmt.Sprintf("waves[%d].agents", i),
 			})
 			continue
 		}
 
 		agents, ok := agentsVal.([]any)
 		if !ok {
-			errs = append(errs, ValidationError{
-				Code:    JS01InvalidType,
-				Message: fmt.Sprintf("waves[%d].agents must be an array, got %T", i, agentsVal),
-				Field:   fmt.Sprintf("waves[%d].agents", i),
+			errs = append(errs, result.SAWError{
+				Code:     JS01InvalidType,
+				Message:  fmt.Sprintf("waves[%d].agents must be an array, got %T", i, agentsVal),
+				Severity: "error",
+				Field:    fmt.Sprintf("waves[%d].agents", i),
 			})
 			continue
 		}
@@ -320,10 +335,11 @@ func validateJSWaves(raw map[string]any) []ValidationError {
 		for j, agentVal := range agents {
 			agent, ok := agentVal.(map[string]any)
 			if !ok {
-				errs = append(errs, ValidationError{
-					Code:    JS01InvalidType,
-					Message: fmt.Sprintf("waves[%d].agents[%d] must be an object", i, j),
-					Field:   fmt.Sprintf("waves[%d].agents[%d]", i, j),
+				errs = append(errs, result.SAWError{
+					Code:     JS01InvalidType,
+					Message:  fmt.Sprintf("waves[%d].agents[%d] must be an object", i, j),
+					Severity: "error",
+					Field:    fmt.Sprintf("waves[%d].agents[%d]", i, j),
 				})
 				continue
 			}
@@ -342,8 +358,8 @@ func validateJSWaves(raw map[string]any) []ValidationError {
 }
 
 // validateJSFileOwnership validates the structure of each file_ownership entry.
-func validateJSFileOwnership(raw map[string]any) []ValidationError {
-	var errs []ValidationError
+func validateJSFileOwnership(raw map[string]any) []result.SAWError {
+	var errs []result.SAWError
 
 	foVal, ok := raw["file_ownership"]
 	if !ok || foVal == nil {
@@ -358,10 +374,11 @@ func validateJSFileOwnership(raw map[string]any) []ValidationError {
 	for i, entryVal := range foArr {
 		entry, ok := entryVal.(map[string]any)
 		if !ok {
-			errs = append(errs, ValidationError{
-				Code:    JS01InvalidType,
-				Message: fmt.Sprintf("file_ownership[%d] must be an object", i),
-				Field:   fmt.Sprintf("file_ownership[%d]", i),
+			errs = append(errs, result.SAWError{
+				Code:     JS01InvalidType,
+				Message:  fmt.Sprintf("file_ownership[%d] must be an object", i),
+				Severity: "error",
+				Field:    fmt.Sprintf("file_ownership[%d]", i),
 			})
 			continue
 		}
@@ -375,17 +392,19 @@ func validateJSFileOwnership(raw map[string]any) []ValidationError {
 			switch w := waveVal.(type) {
 			case float64:
 				if w <= 0 {
-					errs = append(errs, ValidationError{
-						Code:    JS01RequiredField,
-						Message: fmt.Sprintf("%s.wave must be > 0, got %v", prefix, w),
-						Field:   fmt.Sprintf("%s.wave", prefix),
+					errs = append(errs, result.SAWError{
+						Code:     JS01RequiredField,
+						Message:  fmt.Sprintf("%s.wave must be > 0, got %v", prefix, w),
+						Severity: "error",
+						Field:    fmt.Sprintf("%s.wave", prefix),
 					})
 				}
 			default:
-				errs = append(errs, ValidationError{
-					Code:    JS01InvalidType,
-					Message: fmt.Sprintf("%s.wave must be a number, got %T", prefix, waveVal),
-					Field:   fmt.Sprintf("%s.wave", prefix),
+				errs = append(errs, result.SAWError{
+					Code:     JS01InvalidType,
+					Message:  fmt.Sprintf("%s.wave must be a number, got %T", prefix, waveVal),
+					Severity: "error",
+					Field:    fmt.Sprintf("%s.wave", prefix),
 				})
 			}
 		}
@@ -395,8 +414,8 @@ func validateJSFileOwnership(raw map[string]any) []ValidationError {
 }
 
 // validateJSQualityGates validates the quality_gates object if present.
-func validateJSQualityGates(raw map[string]any) []ValidationError {
-	var errs []ValidationError
+func validateJSQualityGates(raw map[string]any) []result.SAWError {
+	var errs []result.SAWError
 
 	qgVal, exists := raw["quality_gates"]
 	if !exists || qgVal == nil {
@@ -405,10 +424,11 @@ func validateJSQualityGates(raw map[string]any) []ValidationError {
 
 	qg, ok := qgVal.(map[string]any)
 	if !ok {
-		errs = append(errs, ValidationError{
-			Code:    JS01InvalidType,
-			Message: fmt.Sprintf("quality_gates must be an object, got %T", qgVal),
-			Field:   "quality_gates",
+		errs = append(errs, result.SAWError{
+			Code:     JS01InvalidType,
+			Message:  fmt.Sprintf("quality_gates must be an object, got %T", qgVal),
+			Severity: "error",
+			Field:    "quality_gates",
 		})
 		return errs
 	}
@@ -421,10 +441,11 @@ func validateJSQualityGates(raw map[string]any) []ValidationError {
 
 	gates, ok := gatesVal.([]any)
 	if !ok {
-		errs = append(errs, ValidationError{
-			Code:    JS01InvalidType,
-			Message: fmt.Sprintf("quality_gates.gates must be an array, got %T", gatesVal),
-			Field:   "quality_gates.gates",
+		errs = append(errs, result.SAWError{
+			Code:     JS01InvalidType,
+			Message:  fmt.Sprintf("quality_gates.gates must be an array, got %T", gatesVal),
+			Severity: "error",
+			Field:    "quality_gates.gates",
 		})
 		return errs
 	}
@@ -433,10 +454,11 @@ func validateJSQualityGates(raw map[string]any) []ValidationError {
 	for i, gateVal := range gates {
 		gate, ok := gateVal.(map[string]any)
 		if !ok {
-			errs = append(errs, ValidationError{
-				Code:    JS01InvalidType,
-				Message: fmt.Sprintf("quality_gates.gates[%d] must be an object", i),
-				Field:   fmt.Sprintf("quality_gates.gates[%d]", i),
+			errs = append(errs, result.SAWError{
+				Code:     JS01InvalidType,
+				Message:  fmt.Sprintf("quality_gates.gates[%d] must be an object", i),
+				Severity: "error",
+				Field:    fmt.Sprintf("quality_gates.gates[%d]", i),
 			})
 			continue
 		}
@@ -458,18 +480,19 @@ func validateJSQualityGates(raw map[string]any) []ValidationError {
 
 // validateJSStringField checks that a named string field within an object map
 // is present (if required) and is a non-empty string.
-func validateJSStringField(obj map[string]any, prefix, field string, required bool) []ValidationError {
-	var errs []ValidationError
+func validateJSStringField(obj map[string]any, prefix, field string, required bool) []result.SAWError {
+	var errs []result.SAWError
 
 	fullField := fmt.Sprintf("%s.%s", prefix, field)
 	val, exists := obj[field]
 
 	if !exists || val == nil {
 		if required {
-			errs = append(errs, ValidationError{
-				Code:    JS01RequiredField,
-				Message: fmt.Sprintf("%s is required", fullField),
-				Field:   fullField,
+			errs = append(errs, result.SAWError{
+				Code:     JS01RequiredField,
+				Message:  fmt.Sprintf("%s is required", fullField),
+				Severity: "error",
+				Field:    fullField,
 			})
 		}
 		return errs
@@ -477,19 +500,21 @@ func validateJSStringField(obj map[string]any, prefix, field string, required bo
 
 	str, ok := val.(string)
 	if !ok {
-		errs = append(errs, ValidationError{
-			Code:    JS01InvalidType,
-			Message: fmt.Sprintf("%s must be a string, got %T", fullField, val),
-			Field:   fullField,
+		errs = append(errs, result.SAWError{
+			Code:     JS01InvalidType,
+			Message:  fmt.Sprintf("%s must be a string, got %T", fullField, val),
+			Severity: "error",
+			Field:    fullField,
 		})
 		return errs
 	}
 
 	if required && strings.TrimSpace(str) == "" {
-		errs = append(errs, ValidationError{
-			Code:    JS01RequiredField,
-			Message: fmt.Sprintf("%s must not be empty", fullField),
-			Field:   fullField,
+		errs = append(errs, result.SAWError{
+			Code:     JS01RequiredField,
+			Message:  fmt.Sprintf("%s must not be empty", fullField),
+			Severity: "error",
+			Field:    fullField,
 		})
 	}
 

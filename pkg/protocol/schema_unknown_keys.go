@@ -5,6 +5,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
 	"gopkg.in/yaml.v3"
 )
 
@@ -35,7 +36,7 @@ var knownKeys = map[string]map[string]bool{
 		"integration_connectors": true,
 		"pre_mortem":             true,
 		"reactions":              true,
-		"known_issues":           true,
+		"known_issues":          true,
 		"state":                  true,
 		"merge_state":            true,
 		"worktrees_created_at":   true,
@@ -108,11 +109,15 @@ var knownKeys = map[string]map[string]bool{
 		"workaround":  true,
 	},
 	"reactions": {
-		"transient":   true, "timeout": true, "fixable": true,
-		"needs_replan": true, "escalate": true,
+		"transient":    true,
+		"timeout":      true,
+		"fixable":      true,
+		"needs_replan": true,
+		"escalate":     true,
 	},
 	"reaction_entry": {
-		"action": true, "max_attempts": true,
+		"action":       true,
+		"max_attempts": true,
 	},
 	"wiring_declaration": {
 		"symbol":              true,
@@ -144,7 +149,7 @@ var knownKeys = map[string]map[string]bool{
 // It returns SV01_UNKNOWN_KEY warnings for any unrecognized keys.
 // This operates on raw YAML bytes (not the parsed struct) to catch keys that
 // Go's YAML unmarshaling silently ignores.
-func DetectUnknownKeys(yamlData []byte) []ValidationError {
+func DetectUnknownKeys(yamlData []byte) []result.SAWError {
 	var doc yaml.Node
 	if err := yaml.Unmarshal(yamlData, &doc); err != nil {
 		return nil
@@ -159,14 +164,14 @@ func DetectUnknownKeys(yamlData []byte) []ValidationError {
 		return nil
 	}
 
-	var errs []ValidationError
+	var errs []result.SAWError
 	checkMapping(root, "top", "", &errs)
 	return errs
 }
 
 // checkMapping validates all keys in a MappingNode against the known key set
 // for the given context, and recursively checks nested structures.
-func checkMapping(node *yaml.Node, context, pathPrefix string, errs *[]ValidationError) {
+func checkMapping(node *yaml.Node, context, pathPrefix string, errs *[]result.SAWError) {
 	known := knownKeys[context]
 	if known == nil {
 		return
@@ -182,11 +187,12 @@ func checkMapping(node *yaml.Node, context, pathPrefix string, errs *[]Validatio
 			if pathPrefix != "" {
 				path = pathPrefix + "." + key
 			}
-			*errs = append(*errs, ValidationError{
-				Code:    SV01UnknownKey,
-				Message: fmt.Sprintf("unknown key '%s' at %s", key, path),
-				Field:   path,
-				Line:    keyNode.Line,
+			*errs = append(*errs, result.SAWError{
+				Code:     SV01UnknownKey,
+				Message:  fmt.Sprintf("unknown key '%s' at %s", key, path),
+				Severity: "error",
+				Field:    path,
+				Line:     keyNode.Line,
 			})
 			continue
 		}
@@ -199,7 +205,7 @@ func checkMapping(node *yaml.Node, context, pathPrefix string, errs *[]Validatio
 }
 
 // checkTopLevelValue handles recursion into nested YAML structures under top-level keys.
-func checkTopLevelValue(key string, valNode *yaml.Node, errs *[]ValidationError) {
+func checkTopLevelValue(key string, valNode *yaml.Node, errs *[]result.SAWError) {
 	switch key {
 	case "file_ownership":
 		checkSequenceOfMappings(valNode, "file_ownership", key, errs)
@@ -258,7 +264,7 @@ func checkTopLevelValue(key string, valNode *yaml.Node, errs *[]ValidationError)
 }
 
 // checkSequenceOfMappings checks each item in a YAML sequence against the given context.
-func checkSequenceOfMappings(node *yaml.Node, context, parentPath string, errs *[]ValidationError) {
+func checkSequenceOfMappings(node *yaml.Node, context, parentPath string, errs *[]result.SAWError) {
 	if node.Kind != yaml.SequenceNode {
 		return
 	}
