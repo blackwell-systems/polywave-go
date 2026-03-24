@@ -26,7 +26,7 @@ type GateResult struct {
 	Skipped      bool                       `json:"skipped,omitempty"`
 	SkipReason   string                     `json:"skip_reason,omitempty"`
 	FromCache    bool                       `json:"from_cache,omitempty"`
-	ParsedErrors []errparse.StructuredError `json:"parsed_errors,omitempty"`
+	ParsedErrors []result.SAWError `json:"parsed_errors,omitempty"`
 }
 
 // GatesData wraps gate execution results for use with result.Result[T].
