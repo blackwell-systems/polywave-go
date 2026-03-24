@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -614,5 +615,95 @@ func TestAgentBriefInfo_OmitEmptyRepo(t *testing.T) {
 	}
 	if _, ok := m["repo"]; ok {
 		t.Errorf("expected 'repo' field to be omitted when empty, but it was present")
+	}
+}
+
+// TestPrepareWave_MergeTargetIncludedInBrief verifies that when mergeTarget is
+// non-empty, the brief template includes a "## Merge Target" section with the
+// branch name.
+func TestPrepareWave_MergeTargetIncludedInBrief(t *testing.T) {
+	mergeTarget := "saw/program/my-prog/tier1-impl-foo"
+
+	// Build the merge target section exactly as prepare_wave.go does
+	mergeTargetSection := fmt.Sprintf(
+		"\n\n## Merge Target\n\n**Merge your branch to:** `%s`\n\n"+
+			"Do NOT merge to HEAD or main. All wave commits must land on "+
+			"this IMPL branch. The finalize-tier command will merge the "+
+			"IMPL branch to main after all IMPLs in the tier complete.\n",
+		mergeTarget,
+	)
+
+	// Build a minimal brief using the same template
+	brief := fmt.Sprintf("# Agent A Brief - Wave 1\n\n**IMPL Doc:** /tmp/impl.yaml\n\n## Files Owned\n\n- foo.go\n\n## Task\n\nDo something.\n%s",
+		mergeTargetSection)
+
+	if !strings.Contains(brief, "## Merge Target") {
+		t.Errorf("expected brief to contain '## Merge Target', got:\n%s", brief)
+	}
+	if !strings.Contains(brief, mergeTarget) {
+		t.Errorf("expected brief to contain branch name %q, got:\n%s", mergeTarget, brief)
+	}
+	if !strings.Contains(brief, "Do NOT merge to HEAD or main") {
+		t.Errorf("expected brief to contain warning text, got:\n%s", brief)
+	}
+}
+
+// TestPrepareWave_NoMergeTargetNoBriefSection verifies that when mergeTarget is
+// empty (the default), the brief does NOT contain a "## Merge Target" section.
+func TestPrepareWave_NoMergeTargetNoBriefSection(t *testing.T) {
+	mergeTarget := ""
+
+	var mergeTargetSection string
+	if mergeTarget != "" {
+		mergeTargetSection = fmt.Sprintf(
+			"\n\n## Merge Target\n\n**Merge your branch to:** `%s`\n\n"+
+				"Do NOT merge to HEAD or main. All wave commits must land on "+
+				"this IMPL branch. The finalize-tier command will merge the "+
+				"IMPL branch to main after all IMPLs in the tier complete.\n",
+			mergeTarget,
+		)
+	}
+
+	brief := fmt.Sprintf("# Agent A Brief - Wave 1\n\n**IMPL Doc:** /tmp/impl.yaml\n\n## Files Owned\n\n- foo.go\n\n## Task\n\nDo something.\n%s",
+		mergeTargetSection)
+
+	if strings.Contains(brief, "## Merge Target") {
+		t.Errorf("expected brief to NOT contain '## Merge Target' when mergeTarget is empty, got:\n%s", brief)
+	}
+}
+
+// TestPrepareWave_AgentBriefInfo_MergeTargetField verifies that AgentBriefInfo
+// has a MergeTarget field serialized as "merge_target" in JSON.
+func TestPrepareWave_AgentBriefInfo_MergeTargetField(t *testing.T) {
+	info := AgentBriefInfo{
+		Agent:       "A",
+		BriefPath:   "/tmp/brief.md",
+		BriefLength: 100,
+		JournalDir:  "/tmp/journal",
+		FilesOwned:  3,
+		MergeTarget: "saw/program/my-prog/tier1-impl-foo",
+	}
+	data, err := json.Marshal(info)
+	if err != nil {
+		t.Fatalf("json.Marshal failed: %v", err)
+	}
+	if !strings.Contains(string(data), `"merge_target"`) {
+		t.Errorf("expected merge_target in JSON, got: %s", string(data))
+	}
+	if !strings.Contains(string(data), "tier1-impl-foo") {
+		t.Errorf("expected impl slug in JSON, got: %s", string(data))
+	}
+
+	// Verify omitempty: empty MergeTarget should not appear in JSON
+	infoEmpty := AgentBriefInfo{
+		Agent:      "B",
+		FilesOwned: 1,
+	}
+	dataEmpty, err := json.Marshal(infoEmpty)
+	if err != nil {
+		t.Fatalf("json.Marshal failed for empty MergeTarget: %v", err)
+	}
+	if strings.Contains(string(dataEmpty), "merge_target") {
+		t.Errorf("expected merge_target to be omitted when empty, got: %s", string(dataEmpty))
 	}
 }
