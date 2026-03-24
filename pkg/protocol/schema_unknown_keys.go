@@ -31,6 +31,7 @@ var knownKeys = map[string]map[string]bool{
 		"scaffolds":              true,
 		"wiring":                 true,
 		"completion_reports":     true,
+		"critic_report":          true,
 		"stub_reports":           true,
 		"integration_reports":    true,
 		"integration_connectors": true,

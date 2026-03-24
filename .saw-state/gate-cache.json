@@ -1,39 +1,692 @@
 {
   "entries": {
+<<<<<<< Updated upstream
     "276d11e222ea2f04b477e8ba0972553b": {
+=======
+    "03b8b4f562e74aab3b60a65882b0dcca": {
+      "build": {
+        "gate_type": "build",
+        "command": "cd /Users/dayna.blackwell/code/scout-and-wave-go \u0026\u0026 go build ./...",
+        "passed": true,
+        "exit_code": 0,
+        "stdout": "",
+        "stderr": "",
+        "from_cache": true,
+        "cached_at": "2026-03-23T18:08:26.349634-07:00"
+      }
+    },
+    "0751d1e8ce6aec1fd208fecee469da5c": {
+      "lint": {
+        "gate_type": "lint",
+        "command": "go vet ./...",
+        "passed": true,
+        "exit_code": 0,
+        "stdout": "",
+        "stderr": "",
+        "from_cache": true,
+        "cached_at": "2026-03-24T00:17:56.411137-07:00"
+      }
+    },
+    "081f7d1daa721c69dd27862ad657e4a4": {
+      "test": {
+        "gate_type": "test",
+        "command": "go test ./...",
+        "passed": true,
+        "exit_code": 0,
+        "stdout": "ok  \tgithub.com/blackwell-systems/scout-and-wave-go/cmd/saw\t2.393s\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/internal/git\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/agent\t0.368s\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/agent/backend\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/agent/backend/api\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/agent/backend/bedrock\t(cached)\n?   \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/agent/backend/cli\t[no test files]\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/agent/backend/openai\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/agent/dedup\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/analyzer\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/autonomy\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/builddiag\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/codereview\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/collision\t1.146s\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/commands\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/config\t0.527s\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/deps\t0.792s\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/engine\t3.763s\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/errparse\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/format\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/gatecache\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/hooks\t1.216s\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/idgen\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/interview\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/journal\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/observability\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/observability/sqlite\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/orchestrator\t2.324s\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/pipeline\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/protocol\t18.766s\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/queue\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/result\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/resume\t3.363s\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/retry\t1.701s\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/retryctx\t1.787s\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/scaffold\t2.212s\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/scaffoldval\t2.045s\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/solver\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/suitability\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/tools\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/worktree\t2.087s\n",
+        "stderr": "",
+        "from_cache": true,
+        "cached_at": "2026-03-24T00:18:17.055739-07:00"
+      }
+    },
+    "09f365da60b6e31ad3f5c87bdaf87114": {
+      "test": {
+        "gate_type": "test",
+        "command": "cd /Users/dayna.blackwell/code/scout-and-wave-web \u0026\u0026 go test ./pkg/api/...",
+        "passed": true,
+        "exit_code": 0,
+        "stdout": "ok  \tgithub.com/blackwell-systems/scout-and-wave-web/pkg/api\t(cached)\n",
+        "stderr": "",
+        "from_cache": true,
+        "cached_at": "2026-03-23T18:08:31.970172-07:00"
+      }
+    },
+    "0c0e27781d596a58c200ac3d4adc9487": {
+      "test": {
+        "gate_type": "test",
+        "command": "go test ./...",
+        "passed": true,
+        "exit_code": 0,
+        "stdout": "ok  \tgithub.com/blackwell-systems/scout-and-wave-go/cmd/saw\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/internal/git\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/agent\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/agent/backend\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/agent/backend/api\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/agent/backend/bedrock\t(cached)\n?   \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/agent/backend/cli\t[no test files]\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/agent/backend/openai\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/agent/dedup\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/analyzer\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/autonomy\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/builddiag\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/codereview\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/collision\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/commands\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/deps\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/engine\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/errparse\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/format\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/gatecache\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/hooks\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/idgen\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/interview\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/journal\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/observability\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/observability/sqlite\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/orchestrator\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/pipeline\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/protocol\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/queue\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/result\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/resume\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/retry\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/retryctx\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/scaffold\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/scaffoldval\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/solver\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/suitability\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/tools\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/worktree\t(cached)\n",
+        "stderr": "",
+        "from_cache": true,
+        "cached_at": "2026-03-24T00:01:22.26479-07:00"
+      }
+    },
+    "1064bc45d5a088e18e0fdb8f3506d0fb": {
       "build": {
         "gate_type": "build",
         "command": "go build ./...",
-        "passed": false,
-        "exit_code": 1,
+        "passed": true,
+        "exit_code": 0,
         "stdout": "",
-        "stderr": "# github.com/blackwell-systems/scout-and-wave-go/pkg/engine\npkg/engine/finalize.go:39:27: undefined: protocol.VerifyCommitsResult\npkg/engine/finalize.go:44:27: undefined: protocol.VerifyBuildResult\npkg/engine/finalize.go:84:23: assignment mismatch: 2 variables but protocol.VerifyCommits returns 1 value\npkg/engine/run_wave_full.go:21:29: undefined: protocol.CreateWorktreesResult\npkg/engine/run_wave_full.go:22:29: undefined: protocol.VerifyCommitsResult\npkg/engine/run_wave_full.go:24:29: undefined: protocol.VerifyBuildResult\npkg/engine/auto_remediate.go:19:79: undefined: protocol.VerifyBuildResult\npkg/engine/auto_remediate.go:20:9: not enough return values\n\thave (result.Result[protocol.VerifyBuildData])\n\twant (unknown type, error)\npkg/engine/daemon.go:62:99: undefined: protocol.CreateWorktreesResult\npkg/engine/daemon.go:63:9: not enough return values\n\thave (result.Result[protocol.CreateWorktreesData])\n\twant (unknown type, error)\npkg/engine/finalize.go:84:23: too many errors\n",
+        "stderr": "",
         "from_cache": true,
-        "cached_at": "2026-03-23T11:00:30.400608-07:00"
+        "cached_at": "2026-03-24T00:05:55.477917-07:00"
       }
     },
-    "7c4645b96b1c9c6cddf21b350e64fba8": {
+    "10afaa4fb4099cd76874bdeaefee2716": {
+      "lint": {
+        "gate_type": "lint",
+        "command": "go vet ./...",
+        "passed": true,
+        "exit_code": 0,
+        "stdout": "",
+        "stderr": "",
+        "from_cache": true,
+        "cached_at": "2026-03-23T16:53:23.113141-07:00"
+      }
+    },
+    "12b892f42f2d56a64d6d092516f4397c": {
+      "test": {
+        "gate_type": "test",
+        "command": "go test ./...",
+        "passed": false,
+        "exit_code": 1,
+        "stdout": "FAIL\tgithub.com/blackwell-systems/scout-and-wave-go/cmd/saw [build failed]\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/internal/git\t(cached)\nFAIL\tgithub.com/blackwell-systems/scout-and-wave-go/pkg/agent [build failed]\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/agent/backend\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/agent/backend/api\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/agent/backend/bedrock\t(cached)\n?   \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/agent/backend/cli\t[no test files]\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/agent/backend/openai\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/agent/dedup\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/analyzer\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/autonomy\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/builddiag\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/codereview\t(cached)\nFAIL\tgithub.com/blackwell-systems/scout-and-wave-go/pkg/collision [build failed]\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/commands\t(cached)\nFAIL\tgithub.com/blackwell-systems/scout-and-wave-go/pkg/deps [build failed]\nFAIL\tgithub.com/blackwell-systems/scout-and-wave-go/pkg/engine [build failed]\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/errparse\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/format\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/gatecache\t(cached)\nFAIL\tgithub.com/blackwell-systems/scout-and-wave-go/pkg/hooks [build failed]\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/idgen\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/interview\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/journal\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/observability\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/observability/sqlite\t(cached)\nFAIL\tgithub.com/blackwell-systems/scout-and-wave-go/pkg/orchestrator [build failed]\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/pipeline\t(cached)\nFAIL\tgithub.com/blackwell-systems/scout-and-wave-go/pkg/protocol [build failed]\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/queue\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/result\t(cached)\nFAIL\tgithub.com/blackwell-systems/scout-and-wave-go/pkg/resume [build failed]\nFAIL\tgithub.com/blackwell-systems/scout-and-wave-go/pkg/retry [build failed]\nFAIL\tgithub.com/blackwell-systems/scout-and-wave-go/pkg/retryctx [build failed]\nFAIL\tgithub.com/blackwell-systems/scout-and-wave-go/pkg/scaffold [build failed]\nFAIL\tgithub.com/blackwell-systems/scout-and-wave-go/pkg/scaffoldval [build failed]\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/solver\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/suitability\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/tools\t(cached)\nFAIL\tgithub.com/blackwell-systems/scout-and-wave-go/pkg/worktree [build failed]\nFAIL\n",
+        "stderr": "# github.com/blackwell-systems/scout-and-wave-go/pkg/protocol\npkg/protocol/program_tier_finalize.go:15:31: undefined: MergeAgentsResult\npkg/protocol/program_tier_finalize.go:16:20: undefined: TierGateResult\npkg/protocol/program_tier_finalize.go:57:38: undefined: MergeAgentsResult\npkg/protocol/program_tier_finalize.go:67:39: undefined: MergeAgentsResult\npkg/protocol/program_tier_finalize.go:78:19: undefined: MergeAgentsResult\npkg/protocol/program_tier_finalize.go:109:21: assignment mismatch: 2 variables but RunTierGate returns 1 value\npkg/protocol/cleanup.go:24:12: cannot use []struct{Worktree StaleWorktree `json:\"worktree\"`; Error string `json:\"error\"`}{} (value of type []struct{Worktree StaleWorktree \"json:\\\"worktree\\\"\"; Error string \"json:\\\"error\\\"\"}) as []StaleCleanupFailure value in struct literal\npkg/protocol/cleanup.go:30:9: not enough return values\n\thave (result.Result[*StaleCleanupData])\n\twant (*StaleCleanupData, error)\npkg/protocol/merge_agents.go:372:16: assignment mismatch: 2 variables but UpdateStatus returns 1 value\npkg/protocol/merge_agents.go:511:17: assignment mismatch: 2 variables but UpdateStatus returns 1 value\npkg/protocol/program_tier_finalize.go:109:21: too many errors\n",
+        "from_cache": true,
+        "cached_at": "2026-03-23T16:54:43.41612-07:00"
+      }
+    },
+    "1931b75ff3ca9ecd5426ab5dc3e21911": {
+      "build": {
+        "gate_type": "build",
+        "command": "go build ./...",
+        "passed": true,
+        "exit_code": 0,
+        "stdout": "",
+        "stderr": "",
+        "from_cache": true,
+        "cached_at": "2026-03-24T00:17:55.752677-07:00"
+      }
+    },
+    "25a8dc8dafdef7ca2251a0d4302c051f": {
+      "build": {
+        "gate_type": "build",
+        "command": "cd /Users/dayna.blackwell/code/scout-and-wave-web \u0026\u0026 go build ./...",
+        "passed": true,
+        "exit_code": 0,
+        "stdout": "",
+        "stderr": "",
+        "from_cache": true,
+        "cached_at": "2026-03-23T18:08:31.332713-07:00"
+      }
+    },
+    "270d903b9ebeaa2f1f7c25aa9048c728": {
+      "test": {
+        "gate_type": "test",
+        "command": "go test ./...",
+        "passed": true,
+        "exit_code": 0,
+        "stdout": "ok  \tgithub.com/blackwell-systems/scout-and-wave-go/cmd/saw\t2.264s\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/internal/git\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/agent\t0.512s\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/agent/backend\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/agent/backend/api\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/agent/backend/bedrock\t(cached)\n?   \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/agent/backend/cli\t[no test files]\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/agent/backend/openai\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/agent/dedup\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/analyzer\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/autonomy\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/builddiag\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/codereview\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/collision\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/commands\t(cached)\n?   \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/config\t[no test files]\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/deps\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/engine\t3.549s\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/errparse\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/format\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/gatecache\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/hooks\t0.945s\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/idgen\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/interview\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/journal\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/observability\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/observability/sqlite\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/orchestrator\t1.963s\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/pipeline\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/protocol\t19.224s\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/queue\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/result\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/resume\t3.244s\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/retry\t1.037s\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/retryctx\t1.287s\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/scaffold\t1.840s\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/scaffoldval\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/solver\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/suitability\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/tools\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/worktree\t1.953s\n",
+        "stderr": "",
+        "from_cache": true,
+        "cached_at": "2026-03-24T00:24:21.290395-07:00"
+      }
+    },
+    "33aad6c64d398d2a7404e048f528b640": {
+      "build": {
+        "gate_type": "build",
+        "command": "go build ./...",
+        "passed": true,
+        "exit_code": 0,
+        "stdout": "",
+        "stderr": "",
+        "from_cache": true,
+        "cached_at": "2026-03-24T00:23:59.175817-07:00"
+      }
+    },
+    "38587ef0ddf357d8ea364f2421f66d11": {
+      "test": {
+        "gate_type": "test",
+        "command": "cd /Users/dayna.blackwell/code/scout-and-wave-go \u0026\u0026 go test ./...",
+        "passed": true,
+        "exit_code": 0,
+        "stdout": "ok  \tgithub.com/blackwell-systems/scout-and-wave-go/cmd/saw\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/internal/git\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/agent\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/agent/backend\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/agent/backend/api\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/agent/backend/bedrock\t(cached)\n?   \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/agent/backend/cli\t[no test files]\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/agent/backend/openai\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/agent/dedup\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/analyzer\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/autonomy\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/builddiag\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/codereview\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/collision\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/commands\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/deps\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/engine\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/errparse\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/format\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/gatecache\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/hooks\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/idgen\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/interview\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/journal\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/observability\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/observability/sqlite\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/orchestrator\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/pipeline\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/protocol\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/queue\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/result\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/resume\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/retry\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/retryctx\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/scaffold\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/scaffoldval\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/solver\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/suitability\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/tools\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/worktree\t(cached)\n",
+        "stderr": "",
+        "from_cache": true,
+        "cached_at": "2026-03-23T18:44:48.22319-07:00"
+      }
+    },
+    "3ac79fb5db6bf7fbddefd910448c3cb1": {
+      "test": {
+        "gate_type": "test",
+        "command": "go test ./...",
+        "passed": true,
+        "exit_code": 0,
+        "stdout": "ok  \tgithub.com/blackwell-systems/scout-and-wave-go/cmd/saw\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/internal/git\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/agent\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/agent/backend\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/agent/backend/api\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/agent/backend/bedrock\t(cached)\n?   \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/agent/backend/cli\t[no test files]\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/agent/backend/openai\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/agent/dedup\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/analyzer\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/autonomy\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/builddiag\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/codereview\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/collision\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/commands\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/deps\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/engine\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/errparse\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/format\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/gatecache\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/hooks\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/idgen\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/interview\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/journal\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/observability\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/observability/sqlite\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/orchestrator\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/pipeline\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/protocol\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/queue\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/result\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/resume\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/retry\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/retryctx\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/scaffold\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/scaffoldval\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/solver\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/suitability\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/tools\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/worktree\t(cached)\n",
+        "stderr": "",
+        "from_cache": true,
+        "cached_at": "2026-03-23T15:48:52.874152-07:00"
+      }
+    },
+    "40ef1ea265a31b699addd8ee062bd6e6": {
+      "lint": {
+        "gate_type": "lint",
+        "command": "go vet ./...",
+        "passed": true,
+        "exit_code": 0,
+        "stdout": "",
+        "stderr": "",
+        "from_cache": true,
+        "cached_at": "2026-03-23T23:47:49.16987-07:00"
+      }
+    },
+    "4255ecacbc6911d545175569e8f917d8": {
+      "test": {
+        "gate_type": "test",
+        "command": "go test ./...",
+        "passed": false,
+        "exit_code": 1,
+        "stdout": "FAIL\tgithub.com/blackwell-systems/scout-and-wave-go/cmd/saw [build failed]\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/internal/git\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/agent\t0.363s\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/agent/backend\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/agent/backend/api\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/agent/backend/bedrock\t(cached)\n?   \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/agent/backend/cli\t[no test files]\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/agent/backend/openai\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/agent/dedup\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/analyzer\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/autonomy\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/builddiag\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/codereview\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/collision\t0.632s\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/commands\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/deps\t0.549s\nFAIL\tgithub.com/blackwell-systems/scout-and-wave-go/pkg/engine [build failed]\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/errparse\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/format\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/gatecache\t(cached)\nFAIL\tgithub.com/blackwell-systems/scout-and-wave-go/pkg/hooks [build failed]\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/idgen\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/interview\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/journal\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/observability\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/observability/sqlite\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/orchestrator\t1.254s\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/pipeline\t(cached)\nFAIL\tgithub.com/blackwell-systems/scout-and-wave-go/pkg/protocol [build failed]\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/queue\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/result\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/resume\t1.994s\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/retry\t1.025s\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/retryctx\t0.774s\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/scaffold\t0.929s\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/scaffoldval\t0.909s\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/solver\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/suitability\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/tools\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/worktree\t1.332s\nFAIL\n",
+        "stderr": "# github.com/blackwell-systems/scout-and-wave-go/pkg/hooks [github.com/blackwell-systems/scout-and-wave-go/pkg/hooks.test]\npkg/hooks/prelaunch_gate_test.go:198:29: undefined: protocol.CriticResult\n# github.com/blackwell-systems/scout-and-wave-go/pkg/protocol [github.com/blackwell-systems/scout-and-wave-go/pkg/protocol.test]\npkg/protocol/critic_test.go:39:27: undefined: CriticResult\npkg/protocol/baseline_gates_test.go:58:17: assignment mismatch: 2 variables but RunBaselineGates returns 1 value\npkg/protocol/baseline_gates_test.go:84:17: assignment mismatch: 2 variables but RunBaselineGates returns 1 value\npkg/protocol/baseline_gates_test.go:109:17: assignment mismatch: 2 variables but RunBaselineGates returns 1 value\npkg/protocol/baseline_gates_test.go:125:17: assignment mismatch: 2 variables but RunBaselineGates returns 1 value\npkg/protocol/baseline_gates_test.go:142:17: assignment mismatch: 2 variables but RunBaselineGates returns 1 value\npkg/protocol/baseline_gates_test.go:165:17: assignment mismatch: 2 variables but RunBaselineGates returns 1 value\npkg/protocol/baseline_gates_test.go:188:17: assignment mismatch: 2 variables but RunCrossRepoBaselineGates returns 1 value\npkg/protocol/baseline_gates_test.go:212:17: assignment mismatch: 2 variables but RunCrossRepoBaselineGates returns 1 value\npkg/protocol/baseline_gates_test.go:232:17: assignment mismatch: 2 variables but RunCrossRepoBaselineGates returns 1 value\npkg/protocol/baseline_gates_test.go:232:17: too many errors\n# github.com/blackwell-systems/scout-and-wave-go/pkg/engine\npkg/engine/finalize.go:44:27: undefined: protocol.VerifyCommitsResult\npkg/engine/finalize.go:45:27: undefined: protocol.ScanStubsResult\npkg/engine/finalize.go:48:30: undefined: protocol.MergeAgentsResult\npkg/engine/finalize.go:49:27: undefined: protocol.VerifyBuildResult\npkg/engine/finalize.go:51:27: undefined: protocol.CleanupResult\npkg/engine/program_auto.go:18:28: undefined: protocol.TierGateResult\npkg/engine/program_auto.go:19:28: undefined: protocol.FreezeContractsResult\npkg/engine/run_wave_full.go:21:29: undefined: protocol.CreateWorktreesResult\npkg/engine/run_wave_full.go:22:29: undefined: protocol.VerifyCommitsResult\npkg/engine/run_wave_full.go:23:29: undefined: protocol.MergeAgentsResult\npkg/engine/run_wave_full.go:23:29: too many errors\n",
+        "from_cache": true,
+        "cached_at": "2026-03-23T17:22:51.776741-07:00"
+      }
+    },
+    "43e2990f41e60b341e012e5c8db97f88": {
+      "test": {
+        "gate_type": "test",
+        "command": "cd /Users/dayna.blackwell/code/scout-and-wave-go \u0026\u0026 go test ./...",
+        "passed": true,
+        "exit_code": 0,
+        "stdout": "ok  \tgithub.com/blackwell-systems/scout-and-wave-go/cmd/saw\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/internal/git\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/agent\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/agent/backend\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/agent/backend/api\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/agent/backend/bedrock\t(cached)\n?   \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/agent/backend/cli\t[no test files]\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/agent/backend/openai\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/agent/dedup\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/analyzer\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/autonomy\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/builddiag\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/codereview\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/collision\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/commands\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/deps\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/engine\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/errparse\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/format\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/gatecache\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/hooks\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/idgen\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/interview\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/journal\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/observability\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/observability/sqlite\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/orchestrator\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/pipeline\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/protocol\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/queue\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/result\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/resume\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/retry\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/retryctx\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/scaffold\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/scaffoldval\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/solver\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/suitability\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/tools\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/worktree\t(cached)\n",
+        "stderr": "",
+        "from_cache": true,
+        "cached_at": "2026-03-23T18:08:29.652608-07:00"
+      }
+    },
+    "45cb37430b7812e2d21d8f03f2e99d01": {
+      "build": {
+        "gate_type": "build",
+        "command": "go build ./...",
+        "passed": true,
+        "exit_code": 0,
+        "stdout": "",
+        "stderr": "",
+        "from_cache": true,
+        "cached_at": "2026-03-23T23:31:35.109242-07:00"
+      }
+    },
+    "4ab05d51f5bc3e40bcca42e4dbaefb0c": {
       "lint": {
         "gate_type": "lint",
         "command": "go vet ./...",
         "passed": false,
         "exit_code": 1,
         "stdout": "",
+        "stderr": "# github.com/blackwell-systems/scout-and-wave-go/pkg/hooks\n# [github.com/blackwell-systems/scout-and-wave-go/pkg/hooks]\nvet: pkg/hooks/prelaunch_gate_test.go:198:29: undefined: protocol.CriticResult\n# github.com/blackwell-systems/scout-and-wave-go/pkg/engine\npkg/engine/finalize.go:44:27: undefined: protocol.VerifyCommitsResult\npkg/engine/finalize.go:45:27: undefined: protocol.ScanStubsResult\npkg/engine/finalize.go:48:30: undefined: protocol.MergeAgentsResult\npkg/engine/finalize.go:49:27: undefined: protocol.VerifyBuildResult\npkg/engine/finalize.go:51:27: undefined: protocol.CleanupResult\npkg/engine/program_auto.go:18:28: undefined: protocol.TierGateResult\npkg/engine/program_auto.go:19:28: undefined: protocol.FreezeContractsResult\npkg/engine/run_wave_full.go:21:29: undefined: protocol.CreateWorktreesResult\npkg/engine/run_wave_full.go:22:29: undefined: protocol.VerifyCommitsResult\npkg/engine/run_wave_full.go:23:29: undefined: protocol.MergeAgentsResult\npkg/engine/run_wave_full.go:23:29: too many errors\n# github.com/blackwell-systems/scout-and-wave-go/pkg/protocol\n# [github.com/blackwell-systems/scout-and-wave-go/pkg/protocol]\nvet: pkg/protocol/critic_test.go:39:27: undefined: CriticResult\n# github.com/blackwell-systems/scout-and-wave-go/pkg/engine\n# [github.com/blackwell-systems/scout-and-wave-go/pkg/engine]\nvet: pkg/engine/finalize.go:44:27: undefined: protocol.VerifyCommitsResult\n",
+        "from_cache": true,
+        "cached_at": "2026-03-23T17:22:48.317437-07:00"
+      }
+    },
+    "4c53ca1932a6bc29c5905da77c5d924f": {
+      "lint": {
+        "gate_type": "lint",
+        "command": "go vet ./...",
+        "passed": false,
+        "exit_code": 1,
+        "stdout": "",
+        "stderr": "# github.com/blackwell-systems/scout-and-wave-go/pkg/protocol\npkg/protocol/program_tier_finalize.go:15:31: undefined: MergeAgentsResult\npkg/protocol/program_tier_finalize.go:16:20: undefined: TierGateResult\npkg/protocol/program_tier_finalize.go:57:38: undefined: MergeAgentsResult\npkg/protocol/program_tier_finalize.go:67:39: undefined: MergeAgentsResult\npkg/protocol/program_tier_finalize.go:78:19: undefined: MergeAgentsResult\npkg/protocol/program_tier_finalize.go:109:21: assignment mismatch: 2 variables but RunTierGate returns 1 value\npkg/protocol/cleanup.go:24:12: cannot use []struct{Worktree StaleWorktree `json:\"worktree\"`; Error string `json:\"error\"`}{} (value of type []struct{Worktree StaleWorktree \"json:\\\"worktree\\\"\"; Error string \"json:\\\"error\\\"\"}) as []StaleCleanupFailure value in struct literal\npkg/protocol/cleanup.go:30:9: not enough return values\n\thave (result.Result[*StaleCleanupData])\n\twant (*StaleCleanupData, error)\npkg/protocol/merge_agents.go:372:16: assignment mismatch: 2 variables but UpdateStatus returns 1 value\npkg/protocol/merge_agents.go:511:17: assignment mismatch: 2 variables but UpdateStatus returns 1 value\npkg/protocol/program_tier_finalize.go:109:21: too many errors\n# github.com/blackwell-systems/scout-and-wave-go/pkg/protocol\n# [github.com/blackwell-systems/scout-and-wave-go/pkg/protocol]\nvet: pkg/protocol/program_tier_finalize.go:15:31: undefined: MergeAgentsResult\n",
+        "from_cache": true,
+        "cached_at": "2026-03-23T16:54:42.750579-07:00"
+      }
+    },
+    "52a88ac45ac766c50840a51d25fefcca": {
+>>>>>>> Stashed changes
+      "build": {
+        "gate_type": "build",
+        "command": "go build ./...",
+        "passed": false,
+        "exit_code": 1,
+        "stdout": "",
+<<<<<<< Updated upstream
+        "stderr": "# github.com/blackwell-systems/scout-and-wave-go/pkg/engine\npkg/engine/finalize.go:39:27: undefined: protocol.VerifyCommitsResult\npkg/engine/finalize.go:44:27: undefined: protocol.VerifyBuildResult\npkg/engine/finalize.go:84:23: assignment mismatch: 2 variables but protocol.VerifyCommits returns 1 value\npkg/engine/run_wave_full.go:21:29: undefined: protocol.CreateWorktreesResult\npkg/engine/run_wave_full.go:22:29: undefined: protocol.VerifyCommitsResult\npkg/engine/run_wave_full.go:24:29: undefined: protocol.VerifyBuildResult\npkg/engine/auto_remediate.go:19:79: undefined: protocol.VerifyBuildResult\npkg/engine/auto_remediate.go:20:9: not enough return values\n\thave (result.Result[protocol.VerifyBuildData])\n\twant (unknown type, error)\npkg/engine/daemon.go:62:99: undefined: protocol.CreateWorktreesResult\npkg/engine/daemon.go:63:9: not enough return values\n\thave (result.Result[protocol.CreateWorktreesData])\n\twant (unknown type, error)\npkg/engine/finalize.go:84:23: too many errors\n",
+        "from_cache": true,
+        "cached_at": "2026-03-23T11:00:30.400608-07:00"
+      }
+    },
+    "7c4645b96b1c9c6cddf21b350e64fba8": {
+=======
+        "stderr": "# github.com/blackwell-systems/scout-and-wave-go/pkg/engine\npkg/engine/finalize.go:44:27: undefined: protocol.VerifyCommitsResult\npkg/engine/finalize.go:45:27: undefined: protocol.ScanStubsResult\npkg/engine/finalize.go:48:30: undefined: protocol.MergeAgentsResult\npkg/engine/finalize.go:49:27: undefined: protocol.VerifyBuildResult\npkg/engine/finalize.go:51:27: undefined: protocol.CleanupResult\npkg/engine/program_auto.go:18:28: undefined: protocol.TierGateResult\npkg/engine/program_auto.go:19:28: undefined: protocol.FreezeContractsResult\npkg/engine/run_wave_full.go:21:29: undefined: protocol.CreateWorktreesResult\npkg/engine/run_wave_full.go:22:29: undefined: protocol.VerifyCommitsResult\npkg/engine/run_wave_full.go:23:29: undefined: protocol.MergeAgentsResult\npkg/engine/run_wave_full.go:23:29: too many errors\n",
+        "from_cache": true,
+        "cached_at": "2026-03-23T17:22:47.587162-07:00"
+      }
+    },
+    "5a714860a34b0325c22d43836b159879": {
+      "build": {
+        "gate_type": "build",
+        "command": "go build ./...",
+        "passed": true,
+        "exit_code": 0,
+        "stdout": "",
+        "stderr": "",
+        "from_cache": true,
+        "cached_at": "2026-03-24T00:01:20.742399-07:00"
+      }
+    },
+    "5c92d585a04926c3093fed60341ea28c": {
+      "build": {
+        "gate_type": "build",
+        "command": "go build ./...",
+        "passed": true,
+        "exit_code": 0,
+        "stdout": "",
+        "stderr": "",
+        "from_cache": true,
+        "cached_at": "2026-03-23T16:53:22.546177-07:00"
+      }
+    },
+    "63c42393e1f15be6aeb8e4e264be5d33": {
+      "lint": {
+        "gate_type": "lint",
+        "command": "go vet ./...",
+        "passed": true,
+        "exit_code": 0,
+        "stdout": "",
+        "stderr": "",
+        "from_cache": true,
+        "cached_at": "2026-03-24T00:23:24.992249-07:00"
+      }
+    },
+    "65b5221f0d059188b595050ab68bbe0f": {
+      "build": {
+        "gate_type": "build",
+        "command": "cd /Users/dayna.blackwell/code/scout-and-wave-go \u0026\u0026 go build ./...",
+        "passed": true,
+        "exit_code": 0,
+        "stdout": "",
+        "stderr": "",
+        "from_cache": true,
+        "cached_at": "2026-03-23T18:44:46.729405-07:00"
+      }
+    },
+    "66ee847db2769d577803076d5ef00b27": {
+      "lint": {
+        "gate_type": "lint",
+        "command": "cd /Users/dayna.blackwell/code/scout-and-wave-go \u0026\u0026 go vet ./...",
+        "passed": true,
+        "exit_code": 0,
+        "stdout": "",
+        "stderr": "",
+        "from_cache": true,
+        "cached_at": "2026-03-23T18:08:28.744145-07:00"
+      }
+    },
+    "6b6616204e90e0809ec3cb4734359a39": {
+>>>>>>> Stashed changes
+      "lint": {
+        "gate_type": "lint",
+        "command": "go vet ./...",
+        "passed": false,
+        "exit_code": 1,
+        "stdout": "",
+<<<<<<< Updated upstream
         "stderr": "# github.com/blackwell-systems/scout-and-wave-go/pkg/engine\npkg/engine/finalize.go:39:27: undefined: protocol.VerifyCommitsResult\npkg/engine/finalize.go:44:27: undefined: protocol.VerifyBuildResult\npkg/engine/finalize.go:84:23: assignment mismatch: 2 variables but protocol.VerifyCommits returns 1 value\npkg/engine/run_wave_full.go:21:29: undefined: protocol.CreateWorktreesResult\npkg/engine/run_wave_full.go:22:29: undefined: protocol.VerifyCommitsResult\npkg/engine/run_wave_full.go:24:29: undefined: protocol.VerifyBuildResult\npkg/engine/auto_remediate.go:19:79: undefined: protocol.VerifyBuildResult\npkg/engine/auto_remediate.go:20:9: not enough return values\n\thave (result.Result[protocol.VerifyBuildData])\n\twant (unknown type, error)\npkg/engine/daemon.go:62:99: undefined: protocol.CreateWorktreesResult\npkg/engine/daemon.go:63:9: not enough return values\n\thave (result.Result[protocol.CreateWorktreesData])\n\twant (unknown type, error)\npkg/engine/finalize.go:84:23: too many errors\n# github.com/blackwell-systems/scout-and-wave-go/pkg/protocol\n# [github.com/blackwell-systems/scout-and-wave-go/pkg/protocol]\nvet: pkg/protocol/worktree_test.go:92:42: undefined: err\n# github.com/blackwell-systems/scout-and-wave-go/pkg/engine\n# [github.com/blackwell-systems/scout-and-wave-go/pkg/engine]\nvet: pkg/engine/finalize.go:39:27: undefined: protocol.VerifyCommitsResult\n",
         "from_cache": true,
         "cached_at": "2026-03-23T11:00:31.253321-07:00"
       }
     },
     "c8798049224fbef89e6720eb30be90f2": {
+=======
+        "stderr": "# github.com/blackwell-systems/scout-and-wave-go/pkg/hooks\n# [github.com/blackwell-systems/scout-and-wave-go/pkg/hooks]\nvet: pkg/hooks/prelaunch_gate_test.go:198:29: undefined: protocol.CriticResult\n# github.com/blackwell-systems/scout-and-wave-go/pkg/engine\n# [github.com/blackwell-systems/scout-and-wave-go/pkg/engine]\nvet: pkg/engine/auto_remediate_test.go:25:76: undefined: protocol.VerifyBuildResult\n# github.com/blackwell-systems/scout-and-wave-go/pkg/protocol\n# [github.com/blackwell-systems/scout-and-wave-go/pkg/protocol]\nvet: pkg/protocol/baseline_gates_test.go:58:17: assignment mismatch: 2 variables but RunBaselineGates returns 1 value\n",
+        "from_cache": true,
+        "cached_at": "2026-03-23T17:31:43.830157-07:00"
+      }
+    },
+    "6bdbb5b871dd415c9fbd90a72d046153": {
+      "lint": {
+        "gate_type": "lint",
+        "command": "go vet ./...",
+        "passed": true,
+        "exit_code": 0,
+        "stdout": "",
+        "stderr": "",
+        "from_cache": true,
+        "cached_at": "2026-03-23T23:31:36.162709-07:00"
+      }
+    },
+    "7b4a29f8834763decf57a1ca4680b55f": {
+      "test": {
+        "gate_type": "test",
+        "command": "go test ./...",
+        "passed": true,
+        "exit_code": 0,
+        "stdout": "ok  \tgithub.com/blackwell-systems/scout-and-wave-go/cmd/saw\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/internal/git\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/agent\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/agent/backend\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/agent/backend/api\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/agent/backend/bedrock\t(cached)\n?   \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/agent/backend/cli\t[no test files]\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/agent/backend/openai\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/agent/dedup\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/analyzer\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/autonomy\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/builddiag\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/codereview\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/collision\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/commands\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/deps\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/engine\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/errparse\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/format\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/gatecache\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/hooks\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/idgen\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/interview\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/journal\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/observability\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/observability/sqlite\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/orchestrator\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/pipeline\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/protocol\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/queue\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/result\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/resume\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/retry\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/retryctx\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/scaffold\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/scaffoldval\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/solver\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/suitability\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/tools\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/worktree\t(cached)\n",
+        "stderr": "",
+        "from_cache": true,
+        "cached_at": "2026-03-23T16:53:24.209945-07:00"
+      }
+    },
+    "8168bc7a9cc6610f52391d4cfb0aa1dc": {
+      "build": {
+        "gate_type": "build",
+        "command": "go build ./...",
+        "passed": true,
+        "exit_code": 0,
+        "stdout": "",
+        "stderr": "",
+        "from_cache": true,
+        "cached_at": "2026-03-24T00:00:02.170893-07:00"
+      }
+    },
+    "81b82a7868d1fc830ab1c6dc31031df5": {
+      "lint": {
+        "gate_type": "lint",
+        "command": "go vet ./...",
+        "passed": true,
+        "exit_code": 0,
+        "stdout": "",
+        "stderr": "",
+        "from_cache": true,
+        "cached_at": "2026-03-23T15:48:51.956624-07:00"
+      }
+    },
+    "84978bc7454c54e21f6dfc3bcb622058": {
+      "test": {
+        "gate_type": "test",
+        "command": "go test ./...",
+        "passed": true,
+        "exit_code": 0,
+        "stdout": "ok  \tgithub.com/blackwell-systems/scout-and-wave-go/cmd/saw\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/internal/git\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/agent\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/agent/backend\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/agent/backend/api\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/agent/backend/bedrock\t(cached)\n?   \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/agent/backend/cli\t[no test files]\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/agent/backend/openai\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/agent/dedup\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/analyzer\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/autonomy\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/builddiag\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/codereview\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/collision\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/commands\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/deps\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/engine\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/errparse\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/format\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/gatecache\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/hooks\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/idgen\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/interview\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/journal\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/observability\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/observability/sqlite\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/orchestrator\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/pipeline\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/protocol\t17.850s\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/queue\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/result\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/resume\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/retry\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/retryctx\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/scaffold\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/scaffoldval\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/solver\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/suitability\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/tools\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/worktree\t(cached)\n",
+        "stderr": "",
+        "from_cache": true,
+        "cached_at": "2026-03-24T00:06:16.351536-07:00"
+      }
+    },
+    "87a2ee14b2a31370cef02e4ceae69290": {
+      "build": {
+        "gate_type": "build",
+        "command": "go build ./...",
+        "passed": true,
+        "exit_code": 0,
+        "stdout": "",
+        "stderr": "",
+        "from_cache": true,
+        "cached_at": "2026-03-23T16:44:12.025359-07:00"
+      }
+    },
+    "8d24608407e21bf7058598d136c92663": {
+      "lint": {
+        "gate_type": "lint",
+        "command": "go vet ./...",
+        "passed": true,
+        "exit_code": 0,
+        "stdout": "",
+        "stderr": "",
+        "from_cache": true,
+        "cached_at": "2026-03-24T00:05:56.48996-07:00"
+      }
+    },
+    "a08e3d3910f1d594dd5c17293a0753ef": {
+      "lint": {
+        "gate_type": "lint",
+        "command": "go vet ./...",
+        "passed": true,
+        "exit_code": 0,
+        "stdout": "",
+        "stderr": "",
+        "from_cache": true,
+        "cached_at": "2026-03-23T16:44:12.952961-07:00"
+      }
+    },
+    "a8786b4bbde9579a9bb13af42978a15d": {
+      "lint": {
+        "gate_type": "lint",
+        "command": "cd /Users/dayna.blackwell/code/scout-and-wave-go \u0026\u0026 go vet ./...",
+        "passed": true,
+        "exit_code": 0,
+        "stdout": "",
+        "stderr": "",
+        "from_cache": true,
+        "cached_at": "2026-03-23T18:44:47.305708-07:00"
+      }
+    },
+    "a981d8aceb4597475c2530242c5d9e19": {
+      "lint": {
+        "gate_type": "lint",
+        "command": "go vet ./...",
+        "passed": true,
+        "exit_code": 0,
+        "stdout": "",
+        "stderr": "",
+        "from_cache": true,
+        "cached_at": "2026-03-24T00:01:21.347426-07:00"
+      }
+    },
+    "aa139bbaa9a15ddb3cbb1e39d1246d66": {
+      "test": {
+        "gate_type": "test",
+        "command": "cd /Users/dayna.blackwell/code/scout-and-wave-web \u0026\u0026 go test ./pkg/api/...",
+        "passed": false,
+        "exit_code": 1,
+        "stdout": "FAIL\tgithub.com/blackwell-systems/scout-and-wave-web/pkg/api [build failed]\nFAIL\n",
+        "stderr": "# github.com/blackwell-systems/scout-and-wave-web/pkg/api [github.com/blackwell-systems/scout-and-wave-web/pkg/api.test]\npkg/api/types.go:26:24: undefined: result.StructuredError\npkg/api/impl_handlers.go:22:52: undefined: protocol.ValidationError\npkg/api/manifest_routes.go:56:35: undefined: protocol.ValidationError\npkg/api/pipeline_handler.go:294:60: undefined: result.StructuredError\npkg/api/scout.go:45:52: undefined: result.StructuredError\npkg/api/scout.go:140:52: undefined: result.StructuredError\npkg/api/validation_handlers.go:31:65: undefined: result.StructuredError\npkg/api/types_test.go:28:51: undefined: result.StructuredError\npkg/api/types_test.go:51:23: undefined: result.StructuredError\npkg/api/types_test.go:87:21: undefined: result.StructuredError\npkg/api/types_test.go:87:21: too many errors\n",
+        "from_cache": true,
+        "cached_at": "2026-03-23T18:44:50.351391-07:00"
+      }
+    },
+    "ab1664d8ba35cfc3beee02fea1dbc327": {
+      "build": {
+        "gate_type": "build",
+        "command": "go build ./...",
+        "passed": false,
+        "exit_code": 1,
+        "stdout": "",
+        "stderr": "# github.com/blackwell-systems/scout-and-wave-go/pkg/protocol\npkg/protocol/validate_migration.go:80:39: undefined: BaselineResult\n",
+        "from_cache": true,
+        "cached_at": "2026-03-23T17:08:41.857253-07:00"
+      }
+    },
+    "ac977003ecb0898ac43051fd0f4a2cf9": {
+      "test": {
+        "gate_type": "test",
+        "command": "go test ./...",
+        "passed": true,
+        "exit_code": 0,
+        "stdout": "ok  \tgithub.com/blackwell-systems/scout-and-wave-go/cmd/saw\t2.335s\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/internal/git\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/agent\t0.491s\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/agent/backend\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/agent/backend/api\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/agent/backend/bedrock\t(cached)\n?   \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/agent/backend/cli\t[no test files]\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/agent/backend/openai\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/agent/dedup\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/analyzer\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/autonomy\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/builddiag\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/codereview\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/collision\t0.456s\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/commands\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/deps\t0.733s\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/engine\t3.578s\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/errparse\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/format\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/gatecache\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/hooks\t1.706s\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/idgen\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/interview\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/journal\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/observability\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/observability/sqlite\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/orchestrator\t2.238s\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/pipeline\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/protocol\t18.254s\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/queue\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/result\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/resume\t3.236s\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/retry\t1.863s\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/retryctx\t1.733s\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/scaffold\t1.916s\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/scaffoldval\t1.505s\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/solver\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/suitability\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/tools\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/worktree\t2.241s\n",
+        "stderr": "",
+        "from_cache": true,
+        "cached_at": "2026-03-24T00:00:23.2575-07:00"
+      }
+    },
+    "b35b76adac3b1d4acf71f9c12e36893e": {
+>>>>>>> Stashed changes
       "test": {
         "gate_type": "test",
         "command": "go test ./...",
         "passed": false,
         "exit_code": 1,
+<<<<<<< Updated upstream
         "stdout": "FAIL\tgithub.com/blackwell-systems/scout-and-wave-go/cmd/saw [build failed]\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/internal/git\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/agent\t0.392s\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/agent/backend\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/agent/backend/api\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/agent/backend/bedrock\t(cached)\n?   \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/agent/backend/cli\t[no test files]\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/agent/backend/openai\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/agent/dedup\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/analyzer\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/autonomy\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/builddiag\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/codereview\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/collision\t0.488s\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/commands\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/deps\t0.645s\nFAIL\tgithub.com/blackwell-systems/scout-and-wave-go/pkg/engine [build failed]\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/errparse\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/format\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/gatecache\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/hooks\t1.075s\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/idgen\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/interview\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/journal\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/observability\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/observability/sqlite\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/orchestrator\t1.555s\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/pipeline\t(cached)\nFAIL\tgithub.com/blackwell-systems/scout-and-wave-go/pkg/protocol [build failed]\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/queue\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/result\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/resume\t2.206s\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/retry\t0.401s\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/retryctx\t0.946s\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/scaffold\t1.040s\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/scaffoldval\t1.090s\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/solver\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/suitability\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/tools\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/worktree\t1.435s\nFAIL\n",
         "stderr": "# github.com/blackwell-systems/scout-and-wave-go/pkg/engine\npkg/engine/finalize.go:39:27: undefined: protocol.VerifyCommitsResult\npkg/engine/finalize.go:44:27: undefined: protocol.VerifyBuildResult\npkg/engine/finalize.go:84:23: assignment mismatch: 2 variables but protocol.VerifyCommits returns 1 value\npkg/engine/run_wave_full.go:21:29: undefined: protocol.CreateWorktreesResult\npkg/engine/run_wave_full.go:22:29: undefined: protocol.VerifyCommitsResult\npkg/engine/run_wave_full.go:24:29: undefined: protocol.VerifyBuildResult\npkg/engine/auto_remediate.go:19:79: undefined: protocol.VerifyBuildResult\npkg/engine/auto_remediate.go:20:9: not enough return values\n\thave (result.Result[protocol.VerifyBuildData])\n\twant (unknown type, error)\npkg/engine/daemon.go:62:99: undefined: protocol.CreateWorktreesResult\npkg/engine/daemon.go:63:9: not enough return values\n\thave (result.Result[protocol.CreateWorktreesData])\n\twant (unknown type, error)\npkg/engine/finalize.go:84:23: too many errors\n# github.com/blackwell-systems/scout-and-wave-go/pkg/protocol [github.com/blackwell-systems/scout-and-wave-go/pkg/protocol.test]\npkg/protocol/worktree_test.go:92:42: undefined: err\npkg/protocol/worktree_test.go:147:12: assignment mismatch: 2 variables but CreateWorktrees returns 1 value\npkg/protocol/worktree_test.go:165:12: assignment mismatch: 2 variables but CreateWorktrees returns 1 value\npkg/protocol/worktree_test.go:194:12: assignment mismatch: 2 variables but CreateWorktrees returns 1 value\npkg/protocol/worktree_test.go:229:57: undefined: err\npkg/protocol/worktree_test.go:261:42: undefined: err\npkg/protocol/worktree_test.go:306:42: undefined: err\n",
         "from_cache": true,
         "cached_at": "2026-03-23T11:00:34.958539-07:00"
+=======
+        "stdout": "FAIL\tgithub.com/blackwell-systems/scout-and-wave-go/cmd/saw [build failed]\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/internal/git\t(cached)\nFAIL\tgithub.com/blackwell-systems/scout-and-wave-go/pkg/agent [build failed]\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/agent/backend\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/agent/backend/api\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/agent/backend/bedrock\t(cached)\n?   \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/agent/backend/cli\t[no test files]\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/agent/backend/openai\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/agent/dedup\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/analyzer\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/autonomy\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/builddiag\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/codereview\t(cached)\nFAIL\tgithub.com/blackwell-systems/scout-and-wave-go/pkg/collision [build failed]\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/commands\t(cached)\nFAIL\tgithub.com/blackwell-systems/scout-and-wave-go/pkg/deps [build failed]\nFAIL\tgithub.com/blackwell-systems/scout-and-wave-go/pkg/engine [build failed]\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/errparse\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/format\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/gatecache\t(cached)\nFAIL\tgithub.com/blackwell-systems/scout-and-wave-go/pkg/hooks [build failed]\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/idgen\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/interview\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/journal\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/observability\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/observability/sqlite\t(cached)\nFAIL\tgithub.com/blackwell-systems/scout-and-wave-go/pkg/orchestrator [build failed]\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/pipeline\t(cached)\nFAIL\tgithub.com/blackwell-systems/scout-and-wave-go/pkg/protocol [build failed]\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/queue\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/result\t(cached)\nFAIL\tgithub.com/blackwell-systems/scout-and-wave-go/pkg/resume [build failed]\nFAIL\tgithub.com/blackwell-systems/scout-and-wave-go/pkg/retry [build failed]\nFAIL\tgithub.com/blackwell-systems/scout-and-wave-go/pkg/retryctx [build failed]\nFAIL\tgithub.com/blackwell-systems/scout-and-wave-go/pkg/scaffold [build failed]\nFAIL\tgithub.com/blackwell-systems/scout-and-wave-go/pkg/scaffoldval [build failed]\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/solver\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/suitability\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/tools\t(cached)\nFAIL\tgithub.com/blackwell-systems/scout-and-wave-go/pkg/worktree [build failed]\nFAIL\n",
+        "stderr": "# github.com/blackwell-systems/scout-and-wave-go/pkg/protocol\npkg/protocol/validate_migration.go:80:39: undefined: BaselineResult\n",
+        "from_cache": true,
+        "cached_at": "2026-03-23T17:08:43.10908-07:00"
+      }
+    },
+    "b95a7920649034b654a232be033698b1": {
+      "build": {
+        "gate_type": "build",
+        "command": "cd /Users/dayna.blackwell/code/scout-and-wave-web \u0026\u0026 go build ./...",
+        "passed": false,
+        "exit_code": 1,
+        "stdout": "",
+        "stderr": "# github.com/blackwell-systems/scout-and-wave-web/pkg/api\npkg/api/types.go:26:24: undefined: result.StructuredError\npkg/api/impl_handlers.go:22:52: undefined: protocol.ValidationError\npkg/api/manifest_routes.go:56:35: undefined: protocol.ValidationError\npkg/api/pipeline_handler.go:294:60: undefined: result.StructuredError\npkg/api/scout.go:45:52: undefined: result.StructuredError\npkg/api/scout.go:140:52: undefined: result.StructuredError\npkg/api/validation_handlers.go:31:65: undefined: result.StructuredError\n",
+        "from_cache": true,
+        "cached_at": "2026-03-23T18:44:49.802668-07:00"
+      }
+    },
+    "bbf9eaca6593f457251ac341495ce83e": {
+      "test": {
+        "gate_type": "test",
+        "command": "go test ./...",
+        "passed": false,
+        "exit_code": 1,
+        "stdout": "ok  \tgithub.com/blackwell-systems/scout-and-wave-go/cmd/saw\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/internal/git\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/agent\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/agent/backend\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/agent/backend/api\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/agent/backend/bedrock\t(cached)\n?   \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/agent/backend/cli\t[no test files]\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/agent/backend/openai\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/agent/dedup\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/analyzer\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/autonomy\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/builddiag\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/codereview\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/collision\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/commands\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/deps\t(cached)\nFAIL\tgithub.com/blackwell-systems/scout-and-wave-go/pkg/engine [build failed]\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/errparse\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/format\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/gatecache\t(cached)\nFAIL\tgithub.com/blackwell-systems/scout-and-wave-go/pkg/hooks [build failed]\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/idgen\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/interview\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/journal\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/observability\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/observability/sqlite\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/orchestrator\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/pipeline\t(cached)\nFAIL\tgithub.com/blackwell-systems/scout-and-wave-go/pkg/protocol [build failed]\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/queue\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/result\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/resume\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/retry\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/retryctx\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/scaffold\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/scaffoldval\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/solver\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/suitability\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/tools\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/worktree\t(cached)\nFAIL\n",
+        "stderr": "# github.com/blackwell-systems/scout-and-wave-go/pkg/hooks [github.com/blackwell-systems/scout-and-wave-go/pkg/hooks.test]\npkg/hooks/prelaunch_gate_test.go:198:29: undefined: protocol.CriticResult\n# github.com/blackwell-systems/scout-and-wave-go/pkg/engine [github.com/blackwell-systems/scout-and-wave-go/pkg/engine.test]\npkg/engine/auto_remediate_test.go:25:76: undefined: protocol.VerifyBuildResult\npkg/engine/auto_remediate_test.go:26:20: undefined: protocol.VerifyBuildResult\npkg/engine/auto_remediate_test.go:35:26: undefined: protocol.VerifyBuildResult\npkg/engine/auto_remediate_test.go:83:76: undefined: protocol.VerifyBuildResult\npkg/engine/auto_remediate_test.go:87:21: undefined: protocol.VerifyBuildResult\npkg/engine/auto_remediate_test.go:94:20: undefined: protocol.VerifyBuildResult\npkg/engine/auto_remediate_test.go:103:26: undefined: protocol.VerifyBuildResult\npkg/engine/auto_remediate_test.go:150:76: undefined: protocol.VerifyBuildResult\npkg/engine/auto_remediate_test.go:153:20: undefined: protocol.VerifyBuildResult\npkg/engine/auto_remediate_test.go:164:26: undefined: protocol.VerifyBuildResult\npkg/engine/auto_remediate_test.go:164:26: too many errors\n# github.com/blackwell-systems/scout-and-wave-go/pkg/protocol [github.com/blackwell-systems/scout-and-wave-go/pkg/protocol.test]\npkg/protocol/baseline_gates_test.go:58:17: assignment mismatch: 2 variables but RunBaselineGates returns 1 value\npkg/protocol/baseline_gates_test.go:84:17: assignment mismatch: 2 variables but RunBaselineGates returns 1 value\npkg/protocol/baseline_gates_test.go:109:17: assignment mismatch: 2 variables but RunBaselineGates returns 1 value\npkg/protocol/baseline_gates_test.go:125:17: assignment mismatch: 2 variables but RunBaselineGates returns 1 value\npkg/protocol/baseline_gates_test.go:142:17: assignment mismatch: 2 variables but RunBaselineGates returns 1 value\npkg/protocol/baseline_gates_test.go:165:17: assignment mismatch: 2 variables but RunBaselineGates returns 1 value\npkg/protocol/baseline_gates_test.go:188:17: assignment mismatch: 2 variables but RunCrossRepoBaselineGates returns 1 value\npkg/protocol/baseline_gates_test.go:212:17: assignment mismatch: 2 variables but RunCrossRepoBaselineGates returns 1 value\npkg/protocol/baseline_gates_test.go:232:17: assignment mismatch: 2 variables but RunCrossRepoBaselineGates returns 1 value\npkg/protocol/baseline_gates_test.go:248:17: assignment mismatch: 2 variables but RunCrossRepoBaselineGates returns 1 value\npkg/protocol/baseline_gates_test.go:248:17: too many errors\n",
+        "from_cache": true,
+        "cached_at": "2026-03-23T17:31:44.549735-07:00"
+      }
+    },
+    "bf5d44de8780a396aef223c11cf0c8a3": {
+      "lint": {
+        "gate_type": "lint",
+        "command": "go vet ./...",
+        "passed": true,
+        "exit_code": 0,
+        "stdout": "",
+        "stderr": "",
+        "from_cache": true,
+        "cached_at": "2026-03-24T00:00:03.160458-07:00"
+      }
+    },
+    "c4c60d18eb4ebb09cfefb8594ab812cb": {
+      "test": {
+        "gate_type": "test",
+        "command": "go test ./...",
+        "passed": true,
+        "exit_code": 0,
+        "stdout": "ok  \tgithub.com/blackwell-systems/scout-and-wave-go/cmd/saw\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/internal/git\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/agent\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/agent/backend\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/agent/backend/api\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/agent/backend/bedrock\t(cached)\n?   \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/agent/backend/cli\t[no test files]\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/agent/backend/openai\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/agent/dedup\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/analyzer\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/autonomy\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/builddiag\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/codereview\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/collision\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/commands\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/deps\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/engine\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/errparse\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/format\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/gatecache\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/hooks\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/idgen\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/interview\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/journal\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/observability\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/observability/sqlite\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/orchestrator\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/pipeline\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/protocol\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/queue\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/result\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/resume\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/retry\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/retryctx\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/scaffold\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/scaffoldval\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/solver\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/suitability\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/tools\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/worktree\t(cached)\n",
+        "stderr": "",
+        "from_cache": true,
+        "cached_at": "2026-03-23T23:31:37.43054-07:00"
+      }
+    },
+    "d10760623bd56067c8283f61b4e91f67": {
+      "test": {
+        "gate_type": "test",
+        "command": "go test ./...",
+        "passed": true,
+        "exit_code": 0,
+        "stdout": "ok  \tgithub.com/blackwell-systems/scout-and-wave-go/cmd/saw\t2.019s\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/internal/git\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/agent\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/agent/backend\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/agent/backend/api\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/agent/backend/bedrock\t(cached)\n?   \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/agent/backend/cli\t[no test files]\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/agent/backend/openai\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/agent/dedup\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/analyzer\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/autonomy\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/builddiag\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/codereview\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/collision\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/commands\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/deps\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/engine\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/errparse\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/format\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/gatecache\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/hooks\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/idgen\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/interview\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/journal\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/observability\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/observability/sqlite\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/orchestrator\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/pipeline\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/protocol\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/queue\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/result\t0.435s\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/resume\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/retry\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/retryctx\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/scaffold\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/scaffoldval\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/solver\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/suitability\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/tools\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/worktree\t(cached)\n",
+        "stderr": "",
+        "from_cache": true,
+        "cached_at": "2026-03-23T16:44:16.842691-07:00"
+      }
+    },
+    "d3e6e80fc35ab55fbea8c32180d21408": {
+      "build": {
+        "gate_type": "build",
+        "command": "go build ./...",
+        "passed": true,
+        "exit_code": 0,
+        "stdout": "",
+        "stderr": "",
+        "from_cache": true,
+        "cached_at": "2026-03-23T17:31:43.062687-07:00"
+      }
+    },
+    "d5980170c3188cfaf77411a6bcd46781": {
+      "build": {
+        "gate_type": "build",
+        "command": "go build ./cmd/saw/...",
+        "passed": true,
+        "exit_code": 0,
+        "stdout": "",
+        "stderr": "",
+        "from_cache": true,
+        "cached_at": "2026-03-23T23:47:48.475554-07:00"
+      }
+    },
+    "df6f1abe091cd67cd914405b8d39f6e5": {
+      "lint": {
+        "gate_type": "lint",
+        "command": "go vet ./...",
+        "passed": true,
+        "exit_code": 0,
+        "stdout": "",
+        "stderr": "",
+        "from_cache": true,
+        "cached_at": "2026-03-24T00:24:00.125444-07:00"
+      }
+    },
+    "e0d7715fda4a096185f0f781fcccb645": {
+      "lint": {
+        "gate_type": "lint",
+        "command": "go vet ./...",
+        "passed": false,
+        "exit_code": 1,
+        "stdout": "",
+        "stderr": "# github.com/blackwell-systems/scout-and-wave-go/pkg/protocol\npkg/protocol/validate_migration.go:80:39: undefined: BaselineResult\n# github.com/blackwell-systems/scout-and-wave-go/pkg/protocol\n# [github.com/blackwell-systems/scout-and-wave-go/pkg/protocol]\nvet: pkg/protocol/validate_migration.go:80:39: undefined: BaselineResult\n",
+        "from_cache": true,
+        "cached_at": "2026-03-23T17:08:42.445447-07:00"
+      }
+    },
+    "e8032bd7d720eda2d42896c2ca2cd3bf": {
+      "build": {
+        "gate_type": "build",
+        "command": "go build ./...",
+        "passed": true,
+        "exit_code": 0,
+        "stdout": "",
+        "stderr": "",
+        "from_cache": true,
+        "cached_at": "2026-03-24T00:23:24.33926-07:00"
+      }
+    },
+    "f07271b0b6119cfa38d1f91f81b5e001": {
+      "build": {
+        "gate_type": "build",
+        "command": "go build ./...",
+        "passed": false,
+        "exit_code": 1,
+        "stdout": "",
+        "stderr": "# github.com/blackwell-systems/scout-and-wave-go/pkg/protocol\npkg/protocol/program_tier_finalize.go:15:31: undefined: MergeAgentsResult\npkg/protocol/program_tier_finalize.go:16:20: undefined: TierGateResult\npkg/protocol/program_tier_finalize.go:57:38: undefined: MergeAgentsResult\npkg/protocol/program_tier_finalize.go:67:39: undefined: MergeAgentsResult\npkg/protocol/program_tier_finalize.go:78:19: undefined: MergeAgentsResult\npkg/protocol/program_tier_finalize.go:109:21: assignment mismatch: 2 variables but RunTierGate returns 1 value\npkg/protocol/cleanup.go:24:12: cannot use []struct{Worktree StaleWorktree `json:\"worktree\"`; Error string `json:\"error\"`}{} (value of type []struct{Worktree StaleWorktree \"json:\\\"worktree\\\"\"; Error string \"json:\\\"error\\\"\"}) as []StaleCleanupFailure value in struct literal\npkg/protocol/cleanup.go:30:9: not enough return values\n\thave (result.Result[*StaleCleanupData])\n\twant (*StaleCleanupData, error)\npkg/protocol/merge_agents.go:372:16: assignment mismatch: 2 variables but UpdateStatus returns 1 value\npkg/protocol/merge_agents.go:511:17: assignment mismatch: 2 variables but UpdateStatus returns 1 value\npkg/protocol/program_tier_finalize.go:109:21: too many errors\n",
+        "from_cache": true,
+        "cached_at": "2026-03-23T16:54:42.140266-07:00"
+      }
+    },
+    "f925502aa07926bcdc477467141b14cb": {
+      "test": {
+        "gate_type": "test",
+        "command": "go test ./...",
+        "passed": true,
+        "exit_code": 0,
+        "stdout": "ok  \tgithub.com/blackwell-systems/scout-and-wave-go/cmd/saw\t1.884s\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/internal/git\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/agent\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/agent/backend\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/agent/backend/api\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/agent/backend/bedrock\t(cached)\n?   \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/agent/backend/cli\t[no test files]\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/agent/backend/openai\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/agent/dedup\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/analyzer\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/autonomy\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/builddiag\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/codereview\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/collision\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/commands\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/deps\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/engine\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/errparse\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/format\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/gatecache\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/hooks\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/idgen\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/interview\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/journal\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/observability\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/observability/sqlite\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/orchestrator\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/pipeline\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/protocol\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/queue\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/result\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/resume\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/retry\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/retryctx\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/scaffold\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/scaffoldval\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/solver\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/suitability\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/tools\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/worktree\t(cached)\n",
+        "stderr": "",
+        "from_cache": true,
+        "cached_at": "2026-03-23T23:47:52.426621-07:00"
+      }
+    },
+    "fd4526eca0668b393805b3ada3450f4f": {
+      "build": {
+        "gate_type": "build",
+        "command": "go build ./...",
+        "passed": true,
+        "exit_code": 0,
+        "stdout": "",
+        "stderr": "",
+        "from_cache": true,
+        "cached_at": "2026-03-23T15:48:51.397445-07:00"
+      }
+    },
+    "fe787c81082cbc7822bd6a6e3912fc24": {
+      "test": {
+        "gate_type": "test",
+        "command": "go test ./...",
+        "passed": true,
+        "exit_code": 0,
+        "stdout": "ok  \tgithub.com/blackwell-systems/scout-and-wave-go/cmd/saw\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/internal/git\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/agent\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/agent/backend\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/agent/backend/api\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/agent/backend/bedrock\t(cached)\n?   \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/agent/backend/cli\t[no test files]\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/agent/backend/openai\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/agent/dedup\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/analyzer\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/autonomy\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/builddiag\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/codereview\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/collision\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/commands\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/config\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/deps\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/engine\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/errparse\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/format\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/gatecache\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/hooks\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/idgen\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/interview\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/journal\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/observability\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/observability/sqlite\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/orchestrator\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/pipeline\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/protocol\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/queue\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/result\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/resume\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/retry\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/retryctx\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/scaffold\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/scaffoldval\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/solver\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/suitability\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/tools\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/worktree\t(cached)\n",
+        "stderr": "",
+        "from_cache": true,
+        "cached_at": "2026-03-24T00:23:25.900951-07:00"
+>>>>>>> Stashed changes
       }
     }
   }
