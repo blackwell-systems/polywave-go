@@ -116,3 +116,10 @@ const (
 	CodeToolNotFound = "T003_TOOL_NOT_FOUND"
 	CodeToolTimeout  = "T004_TOOL_TIMEOUT"
 )
+
+// Config error codes (C001-C099)
+const (
+	CodeConfigNotFound   = "C001_CONFIG_NOT_FOUND"
+	CodeConfigParseFailed = "C002_CONFIG_PARSE_FAILED"
+	CodeConfigSaveFailed = "C003_CONFIG_SAVE_FAILED"
+)
