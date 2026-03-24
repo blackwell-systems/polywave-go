@@ -32,7 +32,7 @@ var allowedTransitions = map[ProtocolState][]ProtocolState{
 	StateWavePending:     {StateWaveExecuting, StateBlocked},
 	StateWaveExecuting:   {StateWaveMerging, StateWaveVerified, StateBlocked, StateComplete},
 	StateWaveMerging:     {StateWaveVerified, StateBlocked},
-	StateWaveVerified:    {StateWaveExecuting, StateComplete, StateBlocked},
+	StateWaveVerified:    {StateWavePending, StateWaveExecuting, StateComplete, StateBlocked},
 	StateBlocked:         {StateReviewed, StateWaveExecuting, StateWavePending},
 	StateComplete:        {},
 	StateNotSuitable:     {},
