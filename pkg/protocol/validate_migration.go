@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
 )
 
 // ValidateMigrationBoundaries detects cross-wave migration boundaries where
@@ -14,7 +16,7 @@ import (
 //
 // Only consecutive wave pairs are checked. Directory-level granularity is used
 // to keep the check language-agnostic (no import parsing).
-func ValidateMigrationBoundaries(m *IMPLManifest) []ValidationError {
+func ValidateMigrationBoundaries(m *IMPLManifest) []result.SAWError {
 	if m == nil {
 		return nil
 	}
@@ -36,7 +38,7 @@ func ValidateMigrationBoundaries(m *IMPLManifest) []ValidationError {
 	}
 	sort.Ints(waves)
 
-	var warnings []ValidationError
+	var warnings []result.SAWError
 
 	// Check consecutive wave pairs
 	for i := 0; i < len(waves)-1; i++ {
@@ -61,10 +63,11 @@ func ValidateMigrationBoundaries(m *IMPLManifest) []ValidationError {
 		sort.Strings(overlapping)
 
 		for _, dir := range overlapping {
-			warnings = append(warnings, ValidationError{
-				Code:    "MIGRATION_BOUNDARY_WARNING",
-				Message: fmt.Sprintf("Wave %d modifies files in %s, wave %d has callers — verify re-export bridge or consolidate into one wave", waveN, dir, waveN1),
-				Field:   "file_ownership",
+			warnings = append(warnings, result.SAWError{
+				Code:     "MIGRATION_BOUNDARY_WARNING",
+				Message:  fmt.Sprintf("Wave %d modifies files in %s, wave %d has callers — verify re-export bridge or consolidate into one wave", waveN, dir, waveN1),
+				Severity: "warning",
+				Field:    "file_ownership",
 			})
 		}
 	}

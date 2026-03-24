@@ -5,6 +5,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/solver"
 	"gopkg.in/yaml.v3"
 )
@@ -20,16 +21,16 @@ type waveMismatch struct {
 // ValidateWithSolver runs solver-based validation on the manifest, then
 // appends the results of the standard Validate() checks. Solver errors
 // use SOLVER_* code prefixes to distinguish them from invariant errors.
-func ValidateWithSolver(m *IMPLManifest) []ValidationError {
-	var errs []ValidationError
+func ValidateWithSolver(m *IMPLManifest) []result.SAWError {
+	var errs []result.SAWError
 
 	// Convert manifest to solver nodes and run the solver.
 	nodes := manifestToNodes(m)
-	result := solver.Solve(nodes)
+	solveResult := solver.Solve(nodes)
 
-	if !result.Valid {
-		// Map solver errors to ValidationErrors by inspecting the message.
-		for _, errStr := range result.Errors {
+	if !solveResult.Valid {
+		// Map solver errors to SAWErrors by inspecting the message.
+		for _, errStr := range solveResult.Errors {
 			code := "SOLVER_ERROR"
 			lower := strings.ToLower(errStr)
 			if strings.Contains(lower, "cycle") {
@@ -37,10 +38,11 @@ func ValidateWithSolver(m *IMPLManifest) []ValidationError {
 			} else if strings.Contains(lower, "missing") || strings.Contains(lower, "unknown") {
 				code = "SOLVER_MISSING_DEP"
 			}
-			errs = append(errs, ValidationError{
-				Code:    code,
-				Message: errStr,
-				Field:   "waves",
+			errs = append(errs, result.SAWError{
+				Code:     code,
+				Message:  errStr,
+				Severity: "error",
+				Field:    "waves",
 			})
 		}
 		// Do not run further solver checks on an invalid graph,
@@ -50,12 +52,13 @@ func ValidateWithSolver(m *IMPLManifest) []ValidationError {
 	}
 
 	// Solver succeeded — compare assignments.
-	mismatches := compareAssignments(m, result)
+	mismatches := compareAssignments(m, solveResult)
 	for _, mm := range mismatches {
-		errs = append(errs, ValidationError{
-			Code:    "SOLVER_WAVE_MISMATCH",
-			Message: fmt.Sprintf("agent %s is in wave %d but solver computed wave %d", mm.agentID, mm.manifestWave, mm.solverWave),
-			Field:   fmt.Sprintf("waves[%d]", mm.manifestWave-1),
+		errs = append(errs, result.SAWError{
+			Code:     "SOLVER_WAVE_MISMATCH",
+			Message:  fmt.Sprintf("agent %s is in wave %d but solver computed wave %d", mm.agentID, mm.manifestWave, mm.solverWave),
+			Severity: "error",
+			Field:    fmt.Sprintf("waves[%d]", mm.manifestWave-1),
 		})
 	}
 
@@ -70,18 +73,18 @@ func ValidateWithSolver(m *IMPLManifest) []ValidationError {
 // descriptions of each reassignment.
 func SolveManifest(m *IMPLManifest) (*IMPLManifest, []string, error) {
 	nodes := manifestToNodes(m)
-	result := solver.Solve(nodes)
+	solveResult := solver.Solve(nodes)
 
-	if !result.Valid {
-		return nil, nil, fmt.Errorf("solver failed: %s", strings.Join(result.Errors, "; "))
+	if !solveResult.Valid {
+		return nil, nil, fmt.Errorf("solver failed: %s", strings.Join(solveResult.Errors, "; "))
 	}
 
-	mismatches := compareAssignments(m, result)
+	mismatches := compareAssignments(m, solveResult)
 	if len(mismatches) == 0 {
 		return m, nil, nil
 	}
 
-	fixed, err := applyResult(result, m)
+	fixed, err := applyResult(solveResult, m)
 	if err != nil {
 		return nil, nil, fmt.Errorf("applying solver result: %w", err)
 	}
@@ -137,14 +140,14 @@ func manifestToNodes(m *IMPLManifest) []solver.DepNode {
 // applyResult creates a deep copy of the manifest and rebuilds its Waves
 // and FileOwnership based on the solver's computed assignments. The input
 // manifest is never mutated.
-func applyResult(result solver.SolveResult, m *IMPLManifest) (*IMPLManifest, error) {
-	if !result.Valid {
+func applyResult(solveResult solver.SolveResult, m *IMPLManifest) (*IMPLManifest, error) {
+	if !solveResult.Valid {
 		return nil, fmt.Errorf("cannot apply invalid solver result")
 	}
 
 	// Build agentID -> computed wave map.
-	agentWave := make(map[string]int, len(result.Assignments))
-	for _, a := range result.Assignments {
+	agentWave := make(map[string]int, len(solveResult.Assignments))
+	for _, a := range solveResult.Assignments {
 		agentWave[a.AgentID] = a.Wave
 	}
 
@@ -208,7 +211,7 @@ func applyResult(result solver.SolveResult, m *IMPLManifest) (*IMPLManifest, err
 // compareAssignments checks the manifest's current wave assignments against the
 // solver's computed assignments and returns any mismatches. Returns nil if all
 // assignments match.
-func compareAssignments(m *IMPLManifest, result solver.SolveResult) []waveMismatch {
+func compareAssignments(m *IMPLManifest, solveResult solver.SolveResult) []waveMismatch {
 	// Build agent -> manifest wave map.
 	manifestWave := make(map[string]int)
 	for _, wave := range m.Waves {
@@ -218,7 +221,7 @@ func compareAssignments(m *IMPLManifest, result solver.SolveResult) []waveMismat
 	}
 
 	var mismatches []waveMismatch
-	for _, a := range result.Assignments {
+	for _, a := range solveResult.Assignments {
 		mw, ok := manifestWave[a.AgentID]
 		if !ok {
 			continue

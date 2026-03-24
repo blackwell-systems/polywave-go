@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
 	"gopkg.in/yaml.v3"
 )
 
@@ -155,8 +156,8 @@ func SetCompletionReport(m *IMPLManifest, agentID string, report CompletionRepor
 // ValidateSM02TransitionGuards validates that a state transition from 'from' to 'to' is legal
 // according to the SAW protocol state machine (SM-02).
 // Returns validation errors if the transition is not allowed.
-func ValidateSM02TransitionGuards(from, to ProtocolState, m *IMPLManifest) []ValidationError {
-	var errs []ValidationError
+func ValidateSM02TransitionGuards(from, to ProtocolState, m *IMPLManifest) []result.SAWError {
+	var errs []result.SAWError
 
 	// Define valid transitions
 	validTransitions := map[ProtocolState][]ProtocolState{
@@ -187,10 +188,11 @@ func ValidateSM02TransitionGuards(from, to ProtocolState, m *IMPLManifest) []Val
 	}
 
 	if !allowed {
-		errs = append(errs, ValidationError{
-			Code:    "SM02_INVALID_TRANSITION",
-			Message: fmt.Sprintf("invalid state transition from %q to %q", from, to),
-			Field:   "state",
+		errs = append(errs, result.SAWError{
+			Code:     "SM02_INVALID_TRANSITION",
+			Message:  fmt.Sprintf("invalid state transition from %q to %q", from, to),
+			Severity: "error",
+			Field:    "state",
 		})
 		return errs
 	}
@@ -204,10 +206,11 @@ func ValidateSM02TransitionGuards(from, to ProtocolState, m *IMPLManifest) []Val
 			for _, agent := range currentWave.Agents {
 				report, exists := m.CompletionReports[agent.ID]
 				if !exists || report.Status != "complete" {
-					errs = append(errs, ValidationError{
-						Code:    "SM02_INVALID_TRANSITION",
-						Message: fmt.Sprintf("cannot transition from WAVE_EXECUTING to WAVE_MERGING: agent %s is not complete (status=%s)", agent.ID, report.Status),
-						Field:   "state",
+					errs = append(errs, result.SAWError{
+						Code:     "SM02_INVALID_TRANSITION",
+						Message:  fmt.Sprintf("cannot transition from WAVE_EXECUTING to WAVE_MERGING: agent %s is not complete (status=%s)", agent.ID, report.Status),
+						Severity: "error",
+						Field:    "state",
 					})
 				}
 			}
@@ -216,10 +219,11 @@ func ValidateSM02TransitionGuards(from, to ProtocolState, m *IMPLManifest) []Val
 	case from == StateWaveMerging && to == StateWaveVerified:
 		// Require merge_state == completed
 		if m.MergeState != MergeStateCompleted {
-			errs = append(errs, ValidationError{
-				Code:    "SM02_INVALID_TRANSITION",
-				Message: fmt.Sprintf("cannot transition from WAVE_MERGING to WAVE_VERIFIED: merge_state must be 'completed' (got %q)", m.MergeState),
-				Field:   "state",
+			errs = append(errs, result.SAWError{
+				Code:     "SM02_INVALID_TRANSITION",
+				Message:  fmt.Sprintf("cannot transition from WAVE_MERGING to WAVE_VERIFIED: merge_state must be 'completed' (got %q)", m.MergeState),
+				Severity: "error",
+				Field:    "state",
 			})
 		}
 	}
@@ -230,7 +234,7 @@ func ValidateSM02TransitionGuards(from, to ProtocolState, m *IMPLManifest) []Val
 // TransitionTo attempts to transition the manifest from its current state to the target state.
 // Returns validation errors if the transition is invalid per SM-02 guards.
 // On success, updates m.State to the target state and returns nil.
-func TransitionTo(m *IMPLManifest, target ProtocolState) []ValidationError {
+func TransitionTo(m *IMPLManifest, target ProtocolState) []result.SAWError {
 	from := m.State
 	if from == "" {
 		from = StateScoutPending // default initial state
