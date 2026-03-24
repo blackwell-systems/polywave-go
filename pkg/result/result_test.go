@@ -2,6 +2,8 @@ package result
 
 import (
 	"encoding/json"
+	"errors"
+	"fmt"
 	"testing"
 )
 
@@ -30,7 +32,7 @@ func TestNewSuccess(t *testing.T) {
 // TestNewPartial verifies NewPartial constructor creates a partial success Result.
 func TestNewPartial(t *testing.T) {
 	data := 42
-	warnings := []StructuredError{
+	warnings := []SAWError{
 		{
 			Code:     "W001",
 			Message:  "Non-critical warning",
@@ -61,7 +63,7 @@ func TestNewPartial(t *testing.T) {
 
 // TestNewFailure verifies NewFailure constructor creates a failed Result.
 func TestNewFailure(t *testing.T) {
-	errors := []StructuredError{
+	errors := []SAWError{
 		{
 			Code:     "E001",
 			Message:  "Fatal error occurred",
@@ -98,14 +100,14 @@ func TestIsSuccess(t *testing.T) {
 		},
 		{
 			name: "partial success",
-			r: NewPartial("data", []StructuredError{
+			r: NewPartial("data", []SAWError{
 				{Code: "W001", Message: "warning", Severity: "warning"},
 			}),
 			want: false,
 		},
 		{
 			name: "failure",
-			r: NewFailure[string]([]StructuredError{
+			r: NewFailure[string]([]SAWError{
 				{Code: "E001", Message: "error", Severity: "fatal"},
 			}),
 			want: false,
@@ -115,7 +117,7 @@ func TestIsSuccess(t *testing.T) {
 			r: Result[string]{
 				Data:   ptr("data"),
 				Code:   "SUCCESS",
-				Errors: []StructuredError{{Code: "E001"}},
+				Errors: []SAWError{{Code: "E001"}},
 			},
 			want: false,
 		},
@@ -139,7 +141,7 @@ func TestIsFatal(t *testing.T) {
 	}{
 		{
 			name: "fatal result",
-			r: NewFailure[string]([]StructuredError{
+			r: NewFailure[string]([]SAWError{
 				{Code: "E001", Message: "fatal", Severity: "fatal"},
 			}),
 			want: true,
@@ -151,7 +153,7 @@ func TestIsFatal(t *testing.T) {
 		},
 		{
 			name: "partial result",
-			r: NewPartial("data", []StructuredError{
+			r: NewPartial("data", []SAWError{
 				{Code: "W001", Message: "warning", Severity: "warning"},
 			}),
 			want: false,
@@ -176,7 +178,7 @@ func TestIsPartial(t *testing.T) {
 	}{
 		{
 			name: "partial result",
-			r: NewPartial(123, []StructuredError{
+			r: NewPartial(123, []SAWError{
 				{Code: "W001", Message: "warning", Severity: "warning"},
 			}),
 			want: true,
@@ -188,7 +190,7 @@ func TestIsPartial(t *testing.T) {
 		},
 		{
 			name: "fatal result",
-			r: NewFailure[int]([]StructuredError{
+			r: NewFailure[int]([]SAWError{
 				{Code: "E001", Message: "error", Severity: "fatal"},
 			}),
 			want: false,
@@ -218,14 +220,14 @@ func TestHasErrors(t *testing.T) {
 		},
 		{
 			name: "has warnings",
-			r: NewPartial("data", []StructuredError{
+			r: NewPartial("data", []SAWError{
 				{Code: "W001", Message: "warning", Severity: "warning"},
 			}),
 			want: true,
 		},
 		{
 			name: "has fatal errors",
-			r: NewFailure[string]([]StructuredError{
+			r: NewFailure[string]([]SAWError{
 				{Code: "E001", Message: "error", Severity: "fatal"},
 			}),
 			want: true,
@@ -235,7 +237,7 @@ func TestHasErrors(t *testing.T) {
 			r: Result[string]{
 				Data:   ptr("data"),
 				Code:   "SUCCESS",
-				Errors: []StructuredError{},
+				Errors: []SAWError{},
 			},
 			want: false,
 		},
@@ -262,7 +264,7 @@ func TestGetData(t *testing.T) {
 	})
 
 	t.Run("panics when data is nil", func(t *testing.T) {
-		r := NewFailure[string]([]StructuredError{
+		r := NewFailure[string]([]SAWError{
 			{Code: "E001", Message: "error", Severity: "fatal"},
 		})
 
@@ -290,7 +292,7 @@ func TestJSONMarshalUnmarshal(t *testing.T) {
 		},
 		{
 			name: "partial result with warnings",
-			r: NewPartial("partial data", []StructuredError{
+			r: NewPartial("partial data", []SAWError{
 				{
 					Code:       "W001",
 					Message:    "Warning message",
@@ -303,7 +305,7 @@ func TestJSONMarshalUnmarshal(t *testing.T) {
 		},
 		{
 			name: "failure result with errors",
-			r: NewFailure[string]([]StructuredError{
+			r: NewFailure[string]([]SAWError{
 				{
 					Code:     "E001",
 					Message:  "Fatal error",
@@ -404,9 +406,9 @@ func TestGenericTypeInstantiation(t *testing.T) {
 	})
 }
 
-// TestStructuredErrorFields verifies StructuredError fields serialize correctly.
-func TestStructuredErrorFields(t *testing.T) {
-	err := StructuredError{
+// TestSAWErrorFields verifies SAWError fields serialize correctly.
+func TestSAWErrorFields(t *testing.T) {
+	err := SAWError{
 		Code:       "E042",
 		Message:    "Test error",
 		Severity:   "error",
@@ -421,7 +423,7 @@ func TestStructuredErrorFields(t *testing.T) {
 		},
 	}
 
-	r := NewFailure[string]([]StructuredError{err})
+	r := NewFailure[string]([]SAWError{err})
 
 	// Marshal and unmarshal
 	jsonData, marshalErr := json.Marshal(r)
@@ -467,6 +469,178 @@ func TestStructuredErrorFields(t *testing.T) {
 	if len(got.Context) != len(err.Context) {
 		t.Errorf("Context length = %d, want %d", len(got.Context), len(err.Context))
 	}
+}
+
+// TestSAWErrorInterface verifies SAWError implements the error interface.
+func TestSAWErrorInterface(t *testing.T) {
+	var _ error = SAWError{} // compile-time check
+
+	tests := []struct {
+		name string
+		err  SAWError
+		want string
+	}{
+		{
+			name: "with severity",
+			err:  SAWError{Code: "E001", Message: "something broke", Severity: "fatal"},
+			want: "[fatal] E001: something broke",
+		},
+		{
+			name: "without severity",
+			err:  SAWError{Code: "E002", Message: "unknown issue"},
+			want: "[E002] unknown issue",
+		},
+		{
+			name: "warning severity",
+			err:  NewWarning("W001", "heads up"),
+			want: "[warning] W001: heads up",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := tt.err.Error()
+			if got != tt.want {
+				t.Errorf("Error() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+// TestSAWErrorUnwrap verifies Unwrap returns the wrapped cause.
+func TestSAWErrorUnwrap(t *testing.T) {
+	t.Run("nil cause", func(t *testing.T) {
+		e := NewError("E001", "test")
+		if e.Unwrap() != nil {
+			t.Error("Unwrap() should return nil when no cause")
+		}
+	})
+
+	t.Run("with cause", func(t *testing.T) {
+		cause := fmt.Errorf("root cause")
+		e := NewError("E001", "test").WithCause(cause)
+		if e.Unwrap() != cause {
+			t.Error("Unwrap() should return the cause")
+		}
+	})
+
+	t.Run("errors.Is chain", func(t *testing.T) {
+		sentinel := fmt.Errorf("sentinel")
+		e := NewError("E001", "wrapper").WithCause(sentinel)
+		if !errors.Is(e, sentinel) {
+			t.Error("errors.Is should find sentinel through Unwrap chain")
+		}
+	})
+}
+
+// TestSAWErrorIsFatal verifies IsFatal method on SAWError.
+func TestSAWErrorIsFatal(t *testing.T) {
+	if !NewFatal("E001", "fatal").IsFatal() {
+		t.Error("NewFatal should create a fatal error")
+	}
+	if NewError("E001", "error").IsFatal() {
+		t.Error("NewError should not be fatal")
+	}
+	if NewWarning("W001", "warning").IsFatal() {
+		t.Error("NewWarning should not be fatal")
+	}
+}
+
+// TestSAWErrorWithContext verifies WithContext adds context.
+func TestSAWErrorWithContext(t *testing.T) {
+	t.Run("adds to nil context", func(t *testing.T) {
+		e := NewError("E001", "test").WithContext("key", "value")
+		if e.Context == nil {
+			t.Fatal("Context should not be nil")
+		}
+		if e.Context["key"] != "value" {
+			t.Errorf("Context[key] = %q, want %q", e.Context["key"], "value")
+		}
+	})
+
+	t.Run("adds to existing context", func(t *testing.T) {
+		e := NewError("E001", "test").
+			WithContext("k1", "v1").
+			WithContext("k2", "v2")
+		if len(e.Context) != 2 {
+			t.Errorf("Context length = %d, want 2", len(e.Context))
+		}
+		if e.Context["k1"] != "v1" || e.Context["k2"] != "v2" {
+			t.Error("Context values mismatch")
+		}
+	})
+
+	t.Run("does not mutate original", func(t *testing.T) {
+		original := NewError("E001", "test")
+		_ = original.WithContext("key", "value")
+		if original.Context != nil {
+			t.Error("WithContext should not mutate the original error")
+		}
+	})
+}
+
+// TestSAWErrorWithCause verifies WithCause attaches a cause.
+func TestSAWErrorWithCause(t *testing.T) {
+	cause := fmt.Errorf("underlying error")
+	e := NewError("E001", "test").WithCause(cause)
+	if e.Cause != cause {
+		t.Error("WithCause should set the Cause field")
+	}
+
+	// Original should not be mutated
+	original := NewError("E001", "test")
+	_ = original.WithCause(cause)
+	if original.Cause != nil {
+		t.Error("WithCause should not mutate the original error")
+	}
+}
+
+// TestNewErrorConstructors verifies the convenience constructors.
+func TestNewErrorConstructors(t *testing.T) {
+	e := NewError("E001", "error msg")
+	if e.Code != "E001" || e.Message != "error msg" || e.Severity != "error" {
+		t.Errorf("NewError = %+v", e)
+	}
+
+	f := NewFatal("F001", "fatal msg")
+	if f.Code != "F001" || f.Message != "fatal msg" || f.Severity != "fatal" {
+		t.Errorf("NewFatal = %+v", f)
+	}
+
+	w := NewWarning("W001", "warning msg")
+	if w.Code != "W001" || w.Message != "warning msg" || w.Severity != "warning" {
+		t.Errorf("NewWarning = %+v", w)
+	}
+}
+
+// TestSAWErrorCauseNotSerialized verifies Cause is excluded from JSON.
+func TestSAWErrorCauseNotSerialized(t *testing.T) {
+	e := NewError("E001", "test").WithCause(fmt.Errorf("secret cause"))
+	data, err := json.Marshal(e)
+	if err != nil {
+		t.Fatalf("Marshal error: %v", err)
+	}
+	// Cause should not appear in JSON
+	jsonStr := string(data)
+	if contains(jsonStr, "secret cause") {
+		t.Error("Cause should not be serialized to JSON")
+	}
+	if contains(jsonStr, "cause") {
+		t.Error("Cause field should not appear in JSON")
+	}
+}
+
+func contains(s, substr string) bool {
+	return len(s) >= len(substr) && searchString(s, substr)
+}
+
+func searchString(s, substr string) bool {
+	for i := 0; i <= len(s)-len(substr); i++ {
+		if s[i:i+len(substr)] == substr {
+			return true
+		}
+	}
+	return false
 }
 
 // ptr is a helper function to create a pointer to a value.
