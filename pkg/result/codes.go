@@ -97,6 +97,8 @@ const (
 	CodeBaselineError         = "N010_BASELINE_ERROR"
 	CodeStaleWorktree         = "N011_STALE_WORKTREE"
 	CodeFreezeError           = "N012_FREEZE_ERROR"
+	CodeConfigNotFound        = "N013_CONFIG_NOT_FOUND"
+	CodeConfigInvalid         = "N014_CONFIG_INVALID"
 )
 
 // Protocol error codes (P001-P099)
