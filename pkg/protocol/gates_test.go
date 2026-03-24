@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/errparse"
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/gatecache"
 )
 
@@ -901,7 +901,7 @@ func TestGateResult_JSONWithParsedErrors(t *testing.T) {
 	}
 
 	// Now add a parsed error and verify it appears
-	gr.ParsedErrors = []errparse.StructuredError{
+	gr.ParsedErrors = []result.SAWError{
 		{
 			File:     "main.go",
 			Line:     5,

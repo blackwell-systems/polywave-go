@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/errparse"
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
 )
 
@@ -131,7 +131,7 @@ func TestFormatBaselineOutput_ParsedErrors(t *testing.T) {
 				Passed:   false,
 				Required: true,
 				Stderr:   "some raw stderr output",
-				ParsedErrors: []errparse.StructuredError{
+				ParsedErrors: []result.SAWError{
 					{Message: "pkg/foo/bar.go:5: cannot use x (type int) as type string"},
 					{Message: "pkg/foo/bar.go:10: undefined: Baz"},
 				},
