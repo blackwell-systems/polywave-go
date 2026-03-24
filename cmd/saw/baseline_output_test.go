@@ -9,7 +9,7 @@ import (
 )
 
 func TestFormatBaselineOutput_AllPass(t *testing.T) {
-	result := &protocol.BaselineResult{
+	result := &protocol.BaselineData{
 		Passed: true,
 		GateResults: []protocol.GateResult{
 			{Type: "build", Passed: true, Required: true},
@@ -34,7 +34,7 @@ func TestFormatBaselineOutput_AllPass(t *testing.T) {
 }
 
 func TestFormatBaselineOutput_OneFails(t *testing.T) {
-	result := &protocol.BaselineResult{
+	result := &protocol.BaselineData{
 		Passed: false,
 		Reason: "baseline_verification_failed",
 		GateResults: []protocol.GateResult{
@@ -62,7 +62,7 @@ func TestFormatBaselineOutput_OneFails(t *testing.T) {
 }
 
 func TestFormatBaselineOutput_WithSkipped(t *testing.T) {
-	result := &protocol.BaselineResult{
+	result := &protocol.BaselineData{
 		Passed: true,
 		GateResults: []protocol.GateResult{
 			{Type: "build", Passed: true, Required: true},
@@ -86,7 +86,7 @@ func TestFormatBaselineOutput_WithSkipped(t *testing.T) {
 }
 
 func TestFormatBaselineOutput_CachedResult(t *testing.T) {
-	result := &protocol.BaselineResult{
+	result := &protocol.BaselineData{
 		Passed:    true,
 		FromCache: true,
 		CommitSHA: "abc1234",
@@ -106,7 +106,7 @@ func TestFormatBaselineOutput_CachedResult(t *testing.T) {
 }
 
 func TestFormatBaselineOutput_EmptyGates(t *testing.T) {
-	result := &protocol.BaselineResult{
+	result := &protocol.BaselineData{
 		Passed:      true,
 		GateResults: []protocol.GateResult{},
 	}
@@ -122,7 +122,7 @@ func TestFormatBaselineOutput_EmptyGates(t *testing.T) {
 }
 
 func TestFormatBaselineOutput_ParsedErrors(t *testing.T) {
-	result := &protocol.BaselineResult{
+	result := &protocol.BaselineData{
 		Passed: false,
 		Reason: "baseline_verification_failed",
 		GateResults: []protocol.GateResult{
@@ -152,7 +152,7 @@ func TestFormatBaselineOutput_ParsedErrors(t *testing.T) {
 }
 
 func TestDiagnoseMigrationFailure_GoUndefined(t *testing.T) {
-	result := &protocol.BaselineResult{
+	result := &protocol.BaselineData{
 		Passed: false,
 		GateResults: []protocol.GateResult{
 			{Type: "build", Passed: false, Stderr: "pkg/foo/bar.go:10: undefined: FooType"},
@@ -168,7 +168,7 @@ func TestDiagnoseMigrationFailure_GoUndefined(t *testing.T) {
 }
 
 func TestDiagnoseMigrationFailure_GoTypeMismatch(t *testing.T) {
-	result := &protocol.BaselineResult{
+	result := &protocol.BaselineData{
 		Passed: false,
 		GateResults: []protocol.GateResult{
 			{Type: "build", Passed: false, Stderr: "cannot use X as Y in argument"},
@@ -181,7 +181,7 @@ func TestDiagnoseMigrationFailure_GoTypeMismatch(t *testing.T) {
 }
 
 func TestDiagnoseMigrationFailure_PythonModuleNotFound(t *testing.T) {
-	result := &protocol.BaselineResult{
+	result := &protocol.BaselineData{
 		Passed: false,
 		GateResults: []protocol.GateResult{
 			{Type: "test", Passed: false, Stderr: "ModuleNotFoundError: No module named foo"},
@@ -194,7 +194,7 @@ func TestDiagnoseMigrationFailure_PythonModuleNotFound(t *testing.T) {
 }
 
 func TestDiagnoseMigrationFailure_Unrelated(t *testing.T) {
-	result := &protocol.BaselineResult{
+	result := &protocol.BaselineData{
 		Passed: false,
 		GateResults: []protocol.GateResult{
 			{Type: "build", Passed: false, Stderr: "syntax error: unexpected token"},
@@ -207,7 +207,7 @@ func TestDiagnoseMigrationFailure_Unrelated(t *testing.T) {
 }
 
 func TestDiagnoseMigrationFailure_AllPassing(t *testing.T) {
-	result := &protocol.BaselineResult{
+	result := &protocol.BaselineData{
 		Passed: true,
 		GateResults: []protocol.GateResult{
 			{Type: "build", Passed: true},
@@ -221,7 +221,7 @@ func TestDiagnoseMigrationFailure_AllPassing(t *testing.T) {
 }
 
 func TestFormatBaselineOutput_WithMigrationHint(t *testing.T) {
-	result := &protocol.BaselineResult{
+	result := &protocol.BaselineData{
 		Passed: false,
 		Reason: "baseline_verification_failed",
 		GateResults: []protocol.GateResult{

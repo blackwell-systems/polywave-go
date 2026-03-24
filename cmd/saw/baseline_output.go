@@ -17,7 +17,7 @@ import (
 //	  test: SKIP (lint failed)
 //
 //	Error: baseline verification failed. Fix the codebase before launching agents.
-func FormatBaselineOutput(result *protocol.BaselineResult) string {
+func FormatBaselineOutput(result *protocol.BaselineData) string {
 	var b strings.Builder
 
 	header := "Baseline verification (E21A):"
@@ -100,7 +100,7 @@ const migrationSuggestion = "Baseline broken at wave boundary. Consider: " +
 // DiagnoseMigrationFailure inspects a failed BaselineResult's gate output for
 // type/import mismatch patterns that indicate a cross-wave migration break.
 // Returns a human-readable suggestion string if detected, or "" if unrelated.
-func DiagnoseMigrationFailure(result *protocol.BaselineResult) string {
+func DiagnoseMigrationFailure(result *protocol.BaselineData) string {
 	for _, gr := range result.GateResults {
 		if gr.Passed || gr.Skipped {
 			continue

@@ -175,9 +175,9 @@ waves that execute on the main branch.`,
 					}
 				}
 				if len(sameSlug) > 0 {
-					result, cleanErr := protocol.CleanStaleWorktrees(sameSlug, true)
-					if cleanErr == nil {
-						fmt.Fprintf(os.Stderr, "prepare-wave: cleaned %d stale worktree(s) from previous runs\n", len(result.Cleaned))
+					cleanRes := protocol.CleanStaleWorktrees(sameSlug, true)
+					if cleanRes.IsSuccess() || cleanRes.IsPartial() {
+						fmt.Fprintf(os.Stderr, "prepare-wave: cleaned %d stale worktree(s) from previous runs\n", len(cleanRes.GetData().Cleaned))
 					}
 				}
 			}
@@ -249,10 +249,11 @@ waves that execute on the main branch.`,
 				cache = gatecache.New(stateDir, gatecache.DefaultTTL)
 			}
 
-			baselineResult, err := protocol.RunBaselineGates(doc, waveNum, projectRoot, cache)
-			if err != nil {
-				return fmt.Errorf("failed to run baseline quality gates: %w", err)
+			baselineRes := protocol.RunBaselineGates(doc, waveNum, projectRoot, cache)
+			if baselineRes.IsFatal() {
+				return fmt.Errorf("failed to run baseline quality gates: %v", baselineRes.Errors)
 			}
+			baselineResult := baselineRes.GetData()
 
 			// Print human-readable output to stderr
 			fmt.Fprint(os.Stderr, FormatBaselineOutput(baselineResult))
@@ -269,10 +270,11 @@ waves that execute on the main branch.`,
 			targetRepos, resolveErr := protocol.ResolveTargetRepos(doc, projectRoot, repos)
 			if resolveErr == nil && len(targetRepos) > 1 {
 				fmt.Fprintf(os.Stderr, "prepare-wave: running cross-repo baseline gates (E21B) on %d repos...\n", len(targetRepos))
-				crossResult, crossErr := protocol.RunCrossRepoBaselineGates(doc, waveNum, targetRepos, repos)
-				if crossErr != nil {
-					return fmt.Errorf("E21B cross-repo baseline check failed: %w", crossErr)
+				crossRes := protocol.RunCrossRepoBaselineGates(doc, waveNum, targetRepos, repos)
+				if crossRes.IsFatal() {
+					return fmt.Errorf("E21B cross-repo baseline check failed: %v", crossRes.Errors)
 				}
+				crossResult := crossRes.GetData()
 				if !crossResult.Passed {
 					out, _ := json.MarshalIndent(crossResult, "", "  ")
 					fmt.Fprintln(cmd.OutOrStdout(), string(out))
