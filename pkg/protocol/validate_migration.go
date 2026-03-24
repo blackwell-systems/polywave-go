@@ -72,12 +72,12 @@ func ValidateMigrationBoundaries(m *IMPLManifest) []ValidationError {
 	return warnings
 }
 
-// DiagnoseMigrationFailure inspects a failed BaselineResult's gate output for
+// DiagnoseMigrationFailure inspects a failed BaselineData's gate output for
 // type/import mismatch patterns (e.g., "cannot use X as Y", "undefined: X",
 // "imported and not used"). Returns a human-readable suggestion string if a
 // migration boundary issue is detected, or empty string if the failure is
 // unrelated.
-func DiagnoseMigrationFailure(result *BaselineResult) string {
+func DiagnoseMigrationFailure(result *BaselineData) string {
 	if result == nil || result.Passed {
 		return ""
 	}
