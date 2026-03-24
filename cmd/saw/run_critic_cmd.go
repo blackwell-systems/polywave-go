@@ -18,7 +18,7 @@ import (
 // Usage: sawtools run-critic <impl-path> [--no-review] [--skip] [--model <model>]
 //
 // Launches a critic agent that reviews agent briefs in the IMPL doc against
-// the actual codebase. Writes CriticResult to impl doc critic_report field.
+// the actual codebase. Writes CriticData to impl doc critic_report field.
 // Exits 0 if verdict is PASS, exits 1 if verdict is ISSUES.
 func newRunCriticCmd() *cobra.Command {
 	var (
@@ -42,7 +42,7 @@ The critic verifies:
   - import_chains: all required packages are importable from the target module
   - side_effect_completeness: registration files are included in file_ownership
 
-Writes a structured CriticResult to the IMPL doc critic_report field.
+Writes a structured CriticData to the IMPL doc critic_report field.
 Exits 0 if overall verdict is PASS. Exits 1 if verdict is ISSUES.
 
 Examples:
@@ -71,7 +71,7 @@ Examples:
 			// Handle --no-review / --skip: write PASS result immediately
 			if noReview {
 				fmt.Println("Skipping critic review (operator flag)")
-				result := protocol.CriticResult{
+				result := protocol.CriticData{
 					Verdict:      "PASS",
 					AgentReviews: map[string]protocol.AgentCriticReview{},
 					Summary:      "Skipped by operator",
@@ -223,7 +223,7 @@ Examples:
 //
 //	--summary <string> --issue-count <N> --agent-reviews <JSON>
 //
-// Parses the JSON agent reviews, constructs a CriticResult, and calls
+// Parses the JSON agent reviews, constructs a CriticData, and calls
 // protocol.WriteCriticReview. Used by critic agents to write their output.
 func newSetCriticReviewCmd() *cobra.Command {
 	var (
@@ -236,7 +236,7 @@ func newSetCriticReviewCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "set-critic-review <impl-path>",
 		Short: "Write critic review result to IMPL doc (used by critic agents)",
-		Long: `Parse the JSON agent reviews, construct a CriticResult, and write it to
+		Long: `Parse the JSON agent reviews, construct a CriticData, and write it to
 the IMPL doc's critic_report field. Called by critic agents after completing
 their review. Not intended for direct human use.
 
@@ -289,8 +289,8 @@ The --agent-reviews flag accepts a JSON array of AgentCriticReview objects:
 				reviewMap[r.AgentID] = r
 			}
 
-			// Build CriticResult
-			result := protocol.CriticResult{
+			// Build CriticData
+			result := protocol.CriticData{
 				Verdict:      verdict,
 				AgentReviews: reviewMap,
 				Summary:      summary,

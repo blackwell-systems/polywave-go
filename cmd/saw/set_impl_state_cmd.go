@@ -34,11 +34,12 @@ Output: JSON with previous_state, new_state, committed, commit_sha.`,
 				Commit:    commit,
 				CommitMsg: commitMsg,
 			}
-			result, err := protocol.SetImplState(manifestPath, newState, opts)
-			if err != nil {
-				return fmt.Errorf("set-impl-state: %w", err)
+			res := protocol.SetImplState(manifestPath, newState, opts)
+			if res.IsFatal() {
+				return fmt.Errorf("set-impl-state: %s", res.Errors[0].Message)
 			}
-			out, _ := json.MarshalIndent(result, "", "  ")
+			data := res.GetData()
+			out, _ := json.MarshalIndent(data, "", "  ")
 			fmt.Fprintln(cmd.OutOrStdout(), string(out))
 			return nil
 		},

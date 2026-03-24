@@ -53,18 +53,19 @@ Exit codes:
 			}
 
 			// Freeze contracts
-			result, err := protocol.FreezeContracts(manifest, tier, repoDir)
-			if err != nil {
-				fmt.Fprintf(os.Stderr, "freeze-contracts: %v\n", err)
+			res := protocol.FreezeContracts(manifest, tier, repoDir)
+			if res.IsFatal() {
+				fmt.Fprintf(os.Stderr, "freeze-contracts: %s\n", res.Errors[0].Message)
 				os.Exit(2)
 			}
+			data := res.GetData()
 
 			// Output JSON result
-			out, _ := json.MarshalIndent(result, "", "  ")
+			out, _ := json.MarshalIndent(data, "", "  ")
 			fmt.Fprintln(cmd.OutOrStdout(), string(out))
 
 			// Exit code based on success/errors
-			if !result.Success {
+			if !data.Success {
 				os.Exit(1)
 			}
 

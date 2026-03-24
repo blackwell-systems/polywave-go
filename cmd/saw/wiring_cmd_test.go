@@ -14,7 +14,7 @@ import (
 func TestCombinedReportJSON(t *testing.T) {
 	r := &combinedReport{
 		HeuristicReport: &protocol.IntegrationReport{Wave: 1, Valid: true, Gaps: []protocol.IntegrationGap{}},
-		WiringReport:    &protocol.WiringValidationResult{Valid: true, Gaps: []protocol.WiringGap{}},
+		WiringReport:    &protocol.WiringValidationData{Valid: true, Gaps: []protocol.WiringGap{}},
 		Valid:           true,
 	}
 
@@ -75,7 +75,7 @@ waves: []
 		t.Fatalf("failed to write manifest: %v", err)
 	}
 
-	result := &protocol.WiringValidationResult{
+	result := &protocol.WiringValidationData{
 		Valid:   true,
 		Gaps:    []protocol.WiringGap{},
 		Summary: "no gaps",
@@ -122,7 +122,7 @@ wiring_validation_reports:
 		t.Fatalf("failed to write manifest: %v", err)
 	}
 
-	updated := &protocol.WiringValidationResult{
+	updated := &protocol.WiringValidationData{
 		Valid:   true,
 		Gaps:    []protocol.WiringGap{},
 		Summary: "updated result",
@@ -152,7 +152,7 @@ func TestFinalizeWaveResultHasWiringReport(t *testing.T) {
 	result := &FinalizeWaveResult{
 		Wave:    1,
 		Success: true,
-		WiringReport: &protocol.WiringValidationResult{
+		WiringReport: &protocol.WiringValidationData{
 			Valid:   false,
 			Summary: "1 wiring gap",
 			Gaps: []protocol.WiringGap{

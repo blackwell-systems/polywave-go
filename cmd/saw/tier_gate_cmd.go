@@ -54,18 +54,19 @@ Exit codes:
 			}
 
 			// Run tier gate verification
-			result, err := protocol.RunTierGate(manifest, tier, repoDir)
-			if err != nil {
-				fmt.Fprintf(os.Stderr, "tier-gate: %v\n", err)
+			res := protocol.RunTierGate(manifest, tier, repoDir)
+			if res.IsFatal() {
+				fmt.Fprintf(os.Stderr, "tier-gate: %s\n", res.Errors[0].Message)
 				os.Exit(2)
 			}
+			data := res.GetData()
 
 			// Output JSON result
-			out, _ := json.MarshalIndent(result, "", "  ")
+			out, _ := json.MarshalIndent(data, "", "  ")
 			fmt.Fprintln(cmd.OutOrStdout(), string(out))
 
 			// Exit code based on pass/fail
-			if !result.Passed {
+			if !data.Passed {
 				os.Exit(1)
 			}
 

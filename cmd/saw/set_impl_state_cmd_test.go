@@ -65,7 +65,7 @@ func TestSetImplStateCmd_ValidTransition(t *testing.T) {
 		t.Fatalf("command failed: %v\nstderr: %s\nstdout: %s", err, stderr.String(), stdout.String())
 	}
 
-	var result protocol.SetImplStateResult
+	var result protocol.SetImplStateData
 	if err := json.Unmarshal(stdout.Bytes(), &result); err != nil {
 		t.Fatalf("failed to parse JSON output: %v\noutput: %s", err, stdout.String())
 	}

@@ -64,7 +64,7 @@ func TestImportImplsDiscover(t *testing.T) {
 	}
 
 	// Parse output
-	var result protocol.ImportIMPLsResult
+	var result protocol.ImportIMPLsData
 	if err := json.Unmarshal([]byte(outBuf.String()), &result); err != nil {
 		t.Fatalf("failed to parse output JSON: %v\nOutput: %s", err, outBuf.String())
 	}
@@ -117,7 +117,7 @@ func TestImportImplsFromFiles(t *testing.T) {
 		t.Fatalf("import-impls --from-impls failed: %v", err)
 	}
 
-	var result protocol.ImportIMPLsResult
+	var result protocol.ImportIMPLsData
 	if err := json.Unmarshal([]byte(outBuf.String()), &result); err != nil {
 		t.Fatalf("failed to parse output JSON: %v", err)
 	}
@@ -173,7 +173,7 @@ func TestImportImplsP1Conflict(t *testing.T) {
 		t.Fatalf("import-impls failed: %v", err)
 	}
 
-	var result protocol.ImportIMPLsResult
+	var result protocol.ImportIMPLsData
 	if err := json.Unmarshal([]byte(outBuf.String()), &result); err != nil {
 		t.Fatalf("failed to parse output JSON: %v", err)
 	}

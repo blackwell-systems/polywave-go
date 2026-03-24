@@ -19,12 +19,13 @@ func newUpdateStatusCmd() *cobra.Command {
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			manifestPath := args[0]
-			result, err := protocol.UpdateStatus(manifestPath, waveNum, agentID, status)
-			if err != nil {
-				return fmt.Errorf("update-status: %w", err)
+			res := protocol.UpdateStatus(manifestPath, waveNum, agentID, status)
+			if res.IsFatal() {
+				return fmt.Errorf("update-status: %s", res.Errors[0].Message)
 			}
+			data := res.GetData()
 
-			out, _ := json.MarshalIndent(result, "", "  ")
+			out, _ := json.MarshalIndent(data, "", "  ")
 			fmt.Println(string(out))
 			return nil
 		},
