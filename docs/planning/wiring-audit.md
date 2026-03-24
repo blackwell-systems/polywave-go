@@ -2,7 +2,7 @@
 
 Last reviewed: 2026-03-24
 
-**Scope:** All exported functions, types, and patterns in `pkg/` and `cmd/saw/`
+**Scope:** All exported functions, types, and patterns in `pkg/` and `cmd/sawtools/`
 
 ## Summary
 

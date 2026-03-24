@@ -27,7 +27,7 @@ All CRITICAL (C1-C6), HIGH (H1-H4), and MEDIUM (M1-M3) items have been implement
 ## Remaining
 
 ### M4: Pre-commit quality gate (language-agnostic)
-**Files**: `cmd/saw/pre_commit_cmd.go` (new), `pkg/protocol/gate_discovery.go` (new)
+**Files**: `cmd/sawtools/pre_commit_cmd.go` (new), `pkg/protocol/gate_discovery.go` (new)
 **Issue**: E21A baseline gates only run at `prepare-wave` time. Bad code committed directly to main (by agents or humans) passes unchecked until the next wave attempt. This was hit in practice: a `fmt.Fprintf` type mismatch in `close_impl_cmd.go` was committed to main and only caught when E21A blocked `prepare-wave`.
 **Risk**: High friction. Every direct commit is a potential baseline failure that wastes agent work.
 **Fix**: New `sawtools pre-commit-check --repo-dir .` command that:
@@ -36,7 +36,7 @@ All CRITICAL (C1-C6), HIGH (H1-H4), and MEDIUM (M1-M3) items have been implement
 3. Runs the lint command — blocks commit on failure
 4. If no active IMPL or config, passes silently (no config = no gate)
 Language-agnostic: whatever lint command the Scout wrote (`go vet`, `npm run lint`, `cargo clippy`, `ruff check`) is what runs. New `sawtools install-hooks` subcommand wires it into `.git/hooks/pre-commit`.
-**New files**: `cmd/saw/pre_commit_cmd.go`, `cmd/saw/install_hooks_cmd.go`, `pkg/protocol/gate_discovery.go`
+**New files**: `cmd/sawtools/pre_commit_cmd.go`, `cmd/sawtools/install_hooks_cmd.go`, `pkg/protocol/gate_discovery.go`
 **Integration points**:
 - `sawtools install-hooks` subcommand wires `pre-commit-check` into `.git/hooks/pre-commit`
 - `prepare-wave` pre-flight: check if hooks installed, warn if not (non-blocking)

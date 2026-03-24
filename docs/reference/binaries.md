@@ -27,12 +27,12 @@ Merging them would mean: every `/saw` skill invocation and CI pipeline embeds an
 
 ## sawtools (Protocol Engine CLI)
 
-**Source:** `scout-and-wave-go/cmd/saw` (binary renamed to `sawtools` at install time)
+**Source:** `scout-and-wave-go/cmd/sawtools`
 
 **Installation:**
 ```bash
 cd scout-and-wave-go
-go build -o sawtools ./cmd/saw
+go build -o sawtools ./cmd/sawtools
 cp sawtools ~/.local/bin/sawtools
 ```
 
@@ -210,7 +210,7 @@ make build  # or: cd web && npm run build && cd .. && go build -o saw ./cmd/saw
 │  pkg/agent/       ◄──┤  Claude API client, backends          │
 │  internal/git/    ◄──┤  Git helpers                          │
 │                       │                                       │
-│  cmd/saw/  ────► sawtools (77 commands)                      │
+│  cmd/sawtools/  ────► sawtools (77 commands)                      │
 │                   Protocol engine CLI                         │
 └───────────────────────┬──────────────────────────────────────┘
                         │
@@ -313,7 +313,7 @@ make build
 ```bash
 git clone https://github.com/blackwell-systems/scout-and-wave-go.git
 cd scout-and-wave-go
-go build -o sawtools ./cmd/saw
+go build -o sawtools ./cmd/sawtools
 cp sawtools ~/.local/bin/sawtools
 ```
 

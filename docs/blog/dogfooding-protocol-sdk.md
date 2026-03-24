@@ -135,7 +135,7 @@ The isolation leak rate was 30% (3/10 agents). But the 4-layer defense model —
 
 ### Wave 2: Nine CLI Wrappers
 
-With SDK functions proven, Wave 2 wrapped each as a `cmd/saw/` subcommand. Nine agents, each creating a single file:
+With SDK functions proven, Wave 2 wrapped each as a `cmd/sawtools/` subcommand. Nine agents, each creating a single file:
 
 ```
 sawtools create-worktrees <manifest> --wave <N> [--repo-dir <path>]
@@ -180,7 +180,7 @@ The markdown IMPL format was deprecated by Phase 1. The ad-hoc bash commands are
 
 With SDK functions proven (Wave 1) and CLI wrappers built (Wave 2), the remaining waves assembled the pieces into a working system.
 
-**Wave 3** (2 agents, parallel): Agent U wired all 9 CLI commands into `cmd/saw/main.go` — the central switch statement that routes `sawtools <command>` invocations. Agent V built the capstone: `RunWaveFull()` in `pkg/engine/`, a single function that orchestrates the entire wave lifecycle — create worktrees, verify commits, merge agents, verify build, clean up. The capstone function is what turns 5 sequential CLI calls into one: `sawtools run-wave`. Two agents, two files each, zero conflicts. Post-merge `go test ./...` passed on the first try.
+**Wave 3** (2 agents, parallel): Agent U wired all 9 CLI commands into `cmd/sawtools/main.go` — the central switch statement that routes `sawtools <command>` invocations. Agent V built the capstone: `RunWaveFull()` in `pkg/engine/`, a single function that orchestrates the entire wave lifecycle — create worktrees, verify commits, merge agents, verify build, clean up. The capstone function is what turns 5 sequential CLI calls into one: `sawtools run-wave`. Two agents, two files each, zero conflicts. Post-merge `go test ./...` passed on the first try.
 
 **Wave 4** (1 agent, solo): Agent W wrapped `RunWaveFull` as the `saw run-wave` CLI command. Solo agent wave — no worktree needed, worked directly on the develop branch. The CLI now has 10 commands covering every orchestrator responsibility that was previously ad-hoc bash:
 
@@ -250,7 +250,7 @@ The next time someone runs `/saw wave`, the orchestrator will call `sawtools cre
 
 The ink wasn't dry on Wave 5 before we ran the new system for real.
 
-The Cobra CLI migration — replacing `cmd/saw/`'s hand-rolled `flag.NewFlagSet` switch with cobra commands — became the first feature executed entirely under the new Protocol SDK tooling. Scout produced a YAML manifest (not markdown). The orchestrator called `sawtools create-worktrees` to set up 11 worktrees. Wave 1 launched 11 agents in parallel.
+The Cobra CLI migration — replacing `cmd/sawtools/`'s hand-rolled `flag.NewFlagSet` switch with cobra commands — became the first feature executed entirely under the new Protocol SDK tooling. Scout produced a YAML manifest (not markdown). The orchestrator called `sawtools create-worktrees` to set up 11 worktrees. Wave 1 launched 11 agents in parallel.
 
 The very first `sawtools` command of that run failed:
 

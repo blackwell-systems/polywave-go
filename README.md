@@ -198,7 +198,7 @@ The `sawtools` binary provides 60+ commands covering the full protocol lifecycle
 ### Build
 
 ```bash
-go build -o sawtools ./cmd/saw
+go build -o sawtools ./cmd/sawtools
 cp sawtools ~/.local/bin/sawtools
 ```
 
@@ -289,7 +289,7 @@ go get github.com/blackwell-systems/scout-and-wave-go
 
 ```bash
 # Build the CLI
-go build -o sawtools ./cmd/saw
+go build -o sawtools ./cmd/sawtools
 
 # Validate an IMPL doc
 sawtools validate docs/IMPL/IMPL-feature.yaml

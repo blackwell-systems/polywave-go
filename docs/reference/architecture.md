@@ -493,7 +493,7 @@ detection), diff, status, and log parsing. Not importable outside this module.
 
 ### CLI Binary
 
-#### `cmd/saw` (sawtools)
+#### `cmd/sawtools` (sawtools)
 
 Cobra-based CLI binary with 80 commands (including `help` and `completion`).
 Each command wraps one or more engine/protocol functions. Commands are organized
