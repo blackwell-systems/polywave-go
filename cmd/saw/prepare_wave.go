@@ -33,7 +33,8 @@ type AgentBriefInfo struct {
 	BriefLength int    `json:"brief_length"`
 	JournalDir  string `json:"journal_dir"`
 	FilesOwned  int    `json:"files_owned"`
-	Repo        string `json:"repo,omitempty"` // repo name from file_ownership; empty = primary repo
+	Repo        string `json:"repo,omitempty"`          // repo name from file_ownership; empty = primary repo
+	MergeTarget string `json:"merge_target,omitempty"` // target IMPL branch for merge
 }
 
 // loadSAWConfigRepos reads saw.config.json at configPath and returns
@@ -443,6 +444,15 @@ waves that execute on the main branch.`,
 				// Wiring obligations for this agent (E35 Layer 3C)
 				wiringSection := protocol.InjectWiringInstructions(doc, agentID, waveNum)
 
+				// Merge target section â included when running under /saw program execute
+				var mergeTargetSection string
+				if mergeTarget != "" {
+					mergeTargetSection = "\n\n## Merge Target\n\n**Merge your branch to:** `" + mergeTarget + "`\n\n" +
+						"Do NOT merge to HEAD or main. All wave commits must land on " +
+						"this IMPL branch. The finalize-tier command will merge the " +
+						"IMPL branch to main after all IMPLs in the tier complete.\n"
+				}
+
 				// Build the agent brief
 				brief := fmt.Sprintf(`# Agent %s Brief - Wave %d
 
@@ -455,13 +465,14 @@ waves that execute on the main branch.`,
 ## Task
 
 %s
-%s%s%s
+%s%s%s%s
 `,
 					agentID,
 					waveNum,
 					manifestPath,
 					formatFileList(agentFiles),
 					agentTask,
+					mergeTargetSection,
 					contractsSection,
 					wiringSection,
 					gatesSection,
@@ -515,6 +526,7 @@ waves that execute on the main branch.`,
 					JournalDir:  observer.JournalDir,
 					FilesOwned:  len(agentFiles),
 					Repo:        agentRepoName,
+					MergeTarget: mergeTarget,
 				})
 			}
 
