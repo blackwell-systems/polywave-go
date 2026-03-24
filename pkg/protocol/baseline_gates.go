@@ -18,9 +18,6 @@ type BaselineData struct {
 	FromCache   bool         `json:"from_cache"`           // true if all results served from cache
 }
 
-// BaselineResult is a backward-compatible alias for BaselineData.
-// Deprecated: Use BaselineData directly.
-type BaselineResult = BaselineData
 
 // RunBaselineGates executes quality gates against the current codebase
 // (before worktree creation) to verify the baseline is healthy.
@@ -85,7 +82,6 @@ type CrossRepoBaselineData struct {
 
 // CrossRepoBaselineResult is a backward-compatible alias for CrossRepoBaselineData.
 // Deprecated: Use CrossRepoBaselineData directly.
-type CrossRepoBaselineResult = CrossRepoBaselineData
 
 // RunCrossRepoBaselineGates runs baseline gates on all repos targeted by a
 // cross-repo IMPL manifest (E21B). For each repo, it uses per-repo gate

@@ -19,9 +19,6 @@ type GateInputValidationData struct {
 	ExtraInReport     []string `json:"extra_in_report,omitempty"`
 }
 
-// GateInputValidationResult is a backward-compatible alias for GateInputValidationData.
-// Deprecated: Use GateInputValidationData directly.
-type GateInputValidationResult = GateInputValidationData
 
 // ValidateGateInputs verifies that the set of files reported by each agent's
 // completion report matches the files actually changed in their worktree branch

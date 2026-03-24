@@ -15,9 +15,6 @@ type IsolationData struct {
 	Errors []string `json:"errors,omitempty"`
 }
 
-// IsolationResult is a backward-compatible alias for IsolationData.
-// Deprecated: Use IsolationData directly.
-type IsolationResult = IsolationData
 
 // VerifyIsolation checks that the agent is on the expected branch, that the
 // worktree is registered with git, and that repoDir actually points to the
