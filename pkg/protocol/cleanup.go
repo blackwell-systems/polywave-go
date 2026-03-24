@@ -21,13 +21,23 @@ func CleanupAllStale(repoDir string, force bool) (*StaleCleanupData, error) {
 		return &StaleCleanupData{
 			Cleaned: []StaleWorktree{},
 			Skipped: []StaleWorktree{},
-			Errors: []struct {
-				Worktree StaleWorktree `json:"worktree"`
-				Error    string        `json:"error"`
-			}{},
+			Errors:  []StaleCleanupFailure{},
 		}, nil
 	}
-	return CleanStaleWorktrees(stale, force)
+	res := CleanStaleWorktrees(stale, force)
+	if !res.IsSuccess() {
+		errMsg := "clean stale worktrees failed"
+		if len(res.Errors) > 0 {
+			errMsg = res.Errors[0].Message
+		}
+		// Return partial data if available
+		if res.Data != nil {
+			return *res.Data, fmt.Errorf("%s", errMsg)
+		}
+		return nil, fmt.Errorf("%s", errMsg)
+	}
+	data := res.GetData()
+	return data, nil
 }
 
 // CleanupStatus represents the cleanup result for a single agent.

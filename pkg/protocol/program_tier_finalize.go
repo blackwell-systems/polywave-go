@@ -12,8 +12,8 @@ import (
 // Use result.Result[FinalizeTierData] to check success and access errors.
 type FinalizeTierData struct {
 	TierNumber       int                           `json:"tier_number"`
-	ImplMergeResults map[string]*MergeAgentsResult `json:"impl_merge_results"` // impl_slug -> result
-	TierGateResult   *TierGateResult               `json:"tier_gate_result,omitempty"`
+	ImplMergeResults map[string]*MergeAgentsData `json:"impl_merge_results"` // impl_slug -> result
+	TierGateResult   *TierGateData              `json:"tier_gate_result,omitempty"`
 	Errors           []string                      `json:"errors,omitempty"`
 }
 
@@ -54,7 +54,7 @@ func FinalizeTier(programManifestPath string, tierNumber int, repoDir string) (r
 
 	data := FinalizeTierData{
 		TierNumber:       tierNumber,
-		ImplMergeResults: make(map[string]*MergeAgentsResult),
+		ImplMergeResults: make(map[string]*MergeAgentsData),
 	}
 
 	// Merge each IMPL branch in order.
@@ -64,7 +64,7 @@ func FinalizeTier(programManifestPath string, tierNumber int, repoDir string) (r
 		// Idempotent: skip if branch doesn't exist (already merged and cleaned up).
 		if !git.BranchExists(repoDir, branch) {
 			fmt.Printf("branch %q not found, skipping (already merged or not yet created)\n", branch)
-			data.ImplMergeResults[implSlug] = &MergeAgentsResult{
+			data.ImplMergeResults[implSlug] = &MergeAgentsData{
 				Wave:    tierNumber,
 				Merges:  []MergeStatus{{Agent: implSlug, Branch: branch, Success: true, Error: "branch absent (skipped)"}},
 				Success: true,
@@ -75,7 +75,7 @@ func FinalizeTier(programManifestPath string, tierNumber int, repoDir string) (r
 		message := fmt.Sprintf("Merge program tier %d impl %s: %s", tierNumber, implSlug, branch)
 		mergeErr := git.MergeNoFF(repoDir, branch, message)
 
-		mergeResult := &MergeAgentsResult{
+		mergeResult := &MergeAgentsData{
 			Wave: tierNumber,
 		}
 
@@ -106,18 +106,23 @@ func FinalizeTier(programManifestPath string, tierNumber int, repoDir string) (r
 	}
 
 	// All merges succeeded; run the tier gate.
-	gateResult, err := RunTierGate(manifest, tierNumber, repoDir)
-	if err != nil {
-		data.Errors = append(data.Errors, fmt.Sprintf("tier gate error: %v", err))
+	gateRes := RunTierGate(manifest, tierNumber, repoDir)
+	if !gateRes.IsSuccess() {
+		errMsg := fmt.Sprintf("tier gate error for tier %d", tierNumber)
+		if len(gateRes.Errors) > 0 {
+			errMsg = gateRes.Errors[0].Message
+		}
+		data.Errors = append(data.Errors, errMsg)
 		return result.NewFailure[FinalizeTierData]([]result.StructuredError{{
 			Code:     "E002",
-			Message:  fmt.Sprintf("tier gate error: %v", err),
+			Message:  errMsg,
 			Severity: "fatal",
 		}}), nil
 	}
-	data.TierGateResult = gateResult
+	gateData := gateRes.GetData()
+	data.TierGateResult = gateData
 
-	if !gateResult.Passed {
+	if !gateData.Passed {
 		data.Errors = append(data.Errors, fmt.Sprintf("tier gate failed for tier %d", tierNumber))
 		return result.NewFailure[FinalizeTierData]([]result.StructuredError{{
 			Code:     "E003",
