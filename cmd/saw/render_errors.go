@@ -15,7 +15,7 @@ import (
 
 // PrintSAWErrors writes a formatted list of SAWErrors to stderr.
 // Groups errors by severity (fatal first, then error, warning, info).
-func PrintSAWErrors(errs []result.StructuredError) {
+func PrintSAWErrors(errs []result.SAWError) {
 	// TODO: implement in Wave 3 (Agent I)
 	for _, e := range errs {
 		fmt.Println(FormatSAWError(e))
@@ -24,7 +24,7 @@ func PrintSAWErrors(errs []result.StructuredError) {
 
 // FormatSAWError returns a single-line human-readable representation of a SAWError.
 // Format: "[SEVERITY] CODE: message (file:line)"
-func FormatSAWError(e result.StructuredError) string {
+func FormatSAWError(e result.SAWError) string {
 	// TODO: implement full formatting in Wave 3 (Agent I)
 	var parts []string
 	if e.Severity != "" {

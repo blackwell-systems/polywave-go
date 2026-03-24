@@ -26,7 +26,7 @@ type Result[T any] struct {
 }
 
 // SAWError is the unified structured error type for all SAW operations.
-// Replaces: protocol.ValidationError, errparse.StructuredError, result.StructuredError.
+// Replaces: protocol.ValidationError, errparse.StructuredError, result.SAWError.
 // Implements the error interface. Supports errors.Is/As chains via Unwrap.
 type SAWError struct {
 	Code       string            `json:"code"`                // e.g. "V001_MANIFEST_INVALID"

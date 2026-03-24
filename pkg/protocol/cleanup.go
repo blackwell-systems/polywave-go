@@ -67,7 +67,7 @@ func Cleanup(manifestPath string, waveNum int, repoDir string) (result.Result[Cl
 	// Load manifest
 	manifest, err := Load(manifestPath)
 	if err != nil {
-		return result.NewFailure[CleanupData]([]result.StructuredError{
+		return result.NewFailure[CleanupData]([]result.SAWError{
 			{
 				Code:     "E001",
 				Message:  fmt.Sprintf("failed to load manifest: %v", err),
@@ -86,7 +86,7 @@ func Cleanup(manifestPath string, waveNum int, repoDir string) (result.Result[Cl
 	}
 
 	if targetWave == nil {
-		return result.NewFailure[CleanupData]([]result.StructuredError{
+		return result.NewFailure[CleanupData]([]result.SAWError{
 			{
 				Code:     "E002",
 				Message:  fmt.Sprintf("wave %d not found in manifest", waveNum),
@@ -103,7 +103,7 @@ func Cleanup(manifestPath string, waveNum int, repoDir string) (result.Result[Cl
 	// Resolve repoDir to absolute path for cross-repo resolution.
 	absRepoDir, err := filepath.Abs(repoDir)
 	if err != nil {
-		return result.NewFailure[CleanupData]([]result.StructuredError{
+		return result.NewFailure[CleanupData]([]result.SAWError{
 			{
 				Code:     "E003",
 				Message:  fmt.Sprintf("failed to resolve repo dir: %v", err),

@@ -41,7 +41,7 @@ func ValidateGateInputs(manifest *IMPLManifest, waveNum int, repoDir string) res
 		}
 	}
 	if targetWave == nil {
-		return result.NewFailure[*GateInputValidationData]([]result.StructuredError{{
+		return result.NewFailure[*GateInputValidationData]([]result.SAWError{{
 			Code:     "E_GATE_INPUT",
 			Message:  fmt.Sprintf("wave %d not found in manifest", waveNum),
 			Severity: "fatal",

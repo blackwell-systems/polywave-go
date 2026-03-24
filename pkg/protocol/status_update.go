@@ -22,7 +22,7 @@ func UpdateStatus(manifestPath string, waveNum int, agentID string, status strin
 	// Load manifest
 	manifest, err := Load(manifestPath)
 	if err != nil {
-		return result.NewFailure[*UpdateStatusData]([]result.StructuredError{{
+		return result.NewFailure[*UpdateStatusData]([]result.SAWError{{
 			Code:     "E_STATUS",
 			Message:  fmt.Sprintf("failed to load manifest: %v", err),
 			Severity: "fatal",
@@ -39,7 +39,7 @@ func UpdateStatus(manifestPath string, waveNum int, agentID string, status strin
 	}
 
 	if targetWave == nil {
-		return result.NewFailure[*UpdateStatusData]([]result.StructuredError{{
+		return result.NewFailure[*UpdateStatusData]([]result.SAWError{{
 			Code:     "E_STATUS",
 			Message:  fmt.Sprintf("wave %d not found in manifest", waveNum),
 			Severity: "fatal",
@@ -56,7 +56,7 @@ func UpdateStatus(manifestPath string, waveNum int, agentID string, status strin
 	}
 
 	if !found {
-		return result.NewFailure[*UpdateStatusData]([]result.StructuredError{{
+		return result.NewFailure[*UpdateStatusData]([]result.SAWError{{
 			Code:     "E_STATUS",
 			Message:  fmt.Sprintf("agent %s not found in wave %d", agentID, waveNum),
 			Severity: "fatal",
@@ -81,7 +81,7 @@ func UpdateStatus(manifestPath string, waveNum int, agentID string, status strin
 
 	// Save manifest
 	if err := Save(manifest, manifestPath); err != nil {
-		return result.NewFailure[*UpdateStatusData]([]result.StructuredError{{
+		return result.NewFailure[*UpdateStatusData]([]result.SAWError{{
 			Code:     "E_STATUS",
 			Message:  fmt.Sprintf("failed to save manifest: %v", err),
 			Severity: "fatal",

@@ -34,7 +34,7 @@ func VerifyBuild(manifestPath string, repoDir string) result.Result[VerifyBuildD
 	// Load the manifest
 	manifest, err := Load(manifestPath)
 	if err != nil {
-		return result.NewFailure[VerifyBuildData]([]result.StructuredError{
+		return result.NewFailure[VerifyBuildData]([]result.SAWError{
 			{
 				Code:     "E001",
 				Message:  fmt.Sprintf("failed to load manifest: %v", err),

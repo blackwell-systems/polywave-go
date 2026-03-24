@@ -24,7 +24,7 @@ func RunTierGate(manifest *PROGRAMManifest, tierNumber int, repoPath string) res
 	}
 
 	if tier == nil {
-		return result.NewFailure[*TierGateData]([]result.StructuredError{{
+		return result.NewFailure[*TierGateData]([]result.SAWError{{
 			Code: "E_TIER_GATE", Message: fmt.Sprintf("tier %d not found in manifest", tierNumber), Severity: "fatal",
 		}})
 	}
@@ -71,7 +71,7 @@ func RunTierGate(manifest *PROGRAMManifest, tierNumber int, repoPath string) res
 	// If not all IMPLs are done, the tier cannot pass
 	if !data.AllImplsDone {
 		data.Passed = false
-		return result.NewPartial(data, []result.StructuredError{{
+		return result.NewPartial(data, []result.SAWError{{
 			Code: "E_TIER_GATE", Message: "not all IMPLs in tier are complete", Severity: "error",
 		}})
 	}
@@ -88,7 +88,7 @@ func RunTierGate(manifest *PROGRAMManifest, tierNumber int, repoPath string) res
 	}
 
 	if !data.Passed {
-		return result.NewPartial(data, []result.StructuredError{{
+		return result.NewPartial(data, []result.SAWError{{
 			Code: "E_TIER_GATE", Message: "one or more required gates failed", Severity: "error",
 		}})
 	}

@@ -37,7 +37,7 @@ func VerifyDependenciesAvailable(manifest *IMPLManifest, waveNum int) result.Res
 		}
 	}
 	if targetWave == nil {
-		return result.NewFailure[DependencyVerificationData]([]result.StructuredError{
+		return result.NewFailure[DependencyVerificationData]([]result.SAWError{
 			{
 				Code:     "E_WAVE_NOT_FOUND",
 				Message:  formatWaveNotFound(waveNum),

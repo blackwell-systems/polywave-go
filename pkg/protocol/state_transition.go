@@ -43,7 +43,7 @@ var allowedTransitions = map[ProtocolState][]ProtocolState{
 func SetImplState(manifestPath string, newState ProtocolState, opts SetImplStateOpts) result.Result[*SetImplStateData] {
 	manifest, err := Load(manifestPath)
 	if err != nil {
-		return result.NewFailure[*SetImplStateData]([]result.StructuredError{{
+		return result.NewFailure[*SetImplStateData]([]result.SAWError{{
 			Code:     "E_STATE",
 			Message:  fmt.Sprintf("failed to load manifest: %v", err),
 			Severity: "fatal",
@@ -55,7 +55,7 @@ func SetImplState(manifestPath string, newState ProtocolState, opts SetImplState
 	// Validate transition
 	allowed, ok := allowedTransitions[previousState]
 	if !ok {
-		return result.NewFailure[*SetImplStateData]([]result.StructuredError{{
+		return result.NewFailure[*SetImplStateData]([]result.SAWError{{
 			Code:     "E_STATE",
 			Message:  fmt.Sprintf("unknown state %q; cannot determine valid transitions", previousState),
 			Severity: "fatal",
@@ -75,7 +75,7 @@ func SetImplState(manifestPath string, newState ProtocolState, opts SetImplState
 		for i, s := range allowed {
 			validTargets[i] = string(s)
 		}
-		return result.NewFailure[*SetImplStateData]([]result.StructuredError{{
+		return result.NewFailure[*SetImplStateData]([]result.SAWError{{
 			Code:     "E_STATE",
 			Message:  fmt.Sprintf("transition from %s to %s is not allowed; valid targets: [%s]", previousState, newState, strings.Join(validTargets, ", ")),
 			Severity: "fatal",
@@ -84,7 +84,7 @@ func SetImplState(manifestPath string, newState ProtocolState, opts SetImplState
 
 	// Write the new state atomically
 	if err := updateManifestState(manifestPath, newState); err != nil {
-		return result.NewFailure[*SetImplStateData]([]result.StructuredError{{
+		return result.NewFailure[*SetImplStateData]([]result.SAWError{{
 			Code:     "E_STATE",
 			Message:  fmt.Sprintf("failed to update manifest state: %v", err),
 			Severity: "fatal",
@@ -107,7 +107,7 @@ func SetImplState(manifestPath string, newState ProtocolState, opts SetImplState
 
 		addCmd := exec.Command("git", "-C", manifestDir, "add", manifestPath)
 		if out, err := addCmd.CombinedOutput(); err != nil {
-			return result.NewFailure[*SetImplStateData]([]result.StructuredError{{
+			return result.NewFailure[*SetImplStateData]([]result.SAWError{{
 				Code:     "E_STATE",
 				Message:  fmt.Sprintf("git add failed: %v\n%s", err, out),
 				Severity: "fatal",
@@ -116,7 +116,7 @@ func SetImplState(manifestPath string, newState ProtocolState, opts SetImplState
 
 		commitCmd := exec.Command("git", "-C", manifestDir, "commit", "-m", commitMsg)
 		if out, err := commitCmd.CombinedOutput(); err != nil {
-			return result.NewFailure[*SetImplStateData]([]result.StructuredError{{
+			return result.NewFailure[*SetImplStateData]([]result.SAWError{{
 				Code:     "E_STATE",
 				Message:  fmt.Sprintf("git commit failed: %v\n%s", err, out),
 				Severity: "fatal",
@@ -126,7 +126,7 @@ func SetImplState(manifestPath string, newState ProtocolState, opts SetImplState
 		shaCmd := exec.Command("git", "-C", manifestDir, "rev-parse", "HEAD")
 		shaOut, err := shaCmd.Output()
 		if err != nil {
-			return result.NewFailure[*SetImplStateData]([]result.StructuredError{{
+			return result.NewFailure[*SetImplStateData]([]result.SAWError{{
 				Code:     "E_STATE",
 				Message:  fmt.Sprintf("git rev-parse HEAD failed: %v", err),
 				Severity: "fatal",

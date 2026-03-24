@@ -6,6 +6,7 @@ import (
 	"os"
 
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
 	"github.com/spf13/cobra"
 )
 
@@ -101,7 +102,7 @@ func newValidateCmd() *cobra.Command {
 			}
 
 			// Run struct-level invariant checks (solver-based or standard).
-			var structErrs []protocol.ValidationError
+			var structErrs []result.SAWError
 			if useSolver {
 				structErrs = protocol.ValidateWithSolver(m)
 			} else {

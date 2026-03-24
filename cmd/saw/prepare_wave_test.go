@@ -9,6 +9,7 @@ import (
 
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/collision"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
 )
 
 func TestLoadSAWConfigRepos_ValidFile(t *testing.T) {
@@ -463,7 +464,7 @@ func TestPrepareWave_I1OwnershipViolation(t *testing.T) {
 	}
 
 	allErrs := protocol.Validate(doc)
-	var i1Errs []protocol.ValidationError
+	var i1Errs []result.SAWError
 	for _, e := range allErrs {
 		if e.Code == "I1_VIOLATION" {
 			i1Errs = append(i1Errs, e)

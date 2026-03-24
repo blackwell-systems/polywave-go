@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
 )
 
 // MaxScoutCorrectionRetries is the default number of correction retries before giving up.
@@ -20,7 +21,7 @@ type ScoutCorrectionOpts struct {
 	// runScoutFn overrides RunScout for testing. If nil, uses the real RunScout.
 	runScoutFn func(ctx context.Context, opts RunScoutOpts, onChunk func(string)) error
 	// validateFn overrides IMPL doc validation for testing. If nil, uses validateIMPLDoc.
-	validateFn func(implPath string) ([]protocol.ValidationError, error)
+	validateFn func(implPath string) ([]result.SAWError, error)
 	// setStateFn overrides state-setting for testing. If nil, uses setIMPLStateBlocked.
 	setStateFn func(implPath string) error
 }
@@ -51,7 +52,7 @@ func ScoutCorrectionLoop(ctx context.Context, opts ScoutCorrectionOpts, onChunk 
 		setState = setIMPLStateBlocked
 	}
 
-	var lastErrors []protocol.ValidationError
+	var lastErrors []result.SAWError
 
 	for attempt := 0; attempt <= maxRetries; attempt++ {
 		// Check context before each attempt.
@@ -112,7 +113,7 @@ func ScoutCorrectionLoop(ctx context.Context, opts ScoutCorrectionOpts, onChunk 
 
 // buildCorrectionPrompt constructs a prompt describing validation errors for
 // the Scout agent to fix on retry.
-func buildCorrectionPrompt(errors []protocol.ValidationError) string {
+func buildCorrectionPrompt(errors []result.SAWError) string {
 	var sb strings.Builder
 	sb.WriteString("The IMPL doc you produced has validation errors. Fix the following issues:\n")
 	for i, e := range errors {
@@ -126,7 +127,7 @@ func buildCorrectionPrompt(errors []protocol.ValidationError) string {
 }
 
 // validateIMPLDoc loads an IMPL doc and runs E16 validation, returning any errors.
-func validateIMPLDoc(implPath string) ([]protocol.ValidationError, error) {
+func validateIMPLDoc(implPath string) ([]result.SAWError, error) {
 	manifest, err := protocol.Load(implPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to load IMPL doc: %w", err)

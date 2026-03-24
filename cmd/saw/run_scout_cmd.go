@@ -12,6 +12,7 @@ import (
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/engine"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/idgen"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
 	"github.com/spf13/cobra"
 )
 
@@ -356,7 +357,7 @@ func criticThresholdMet(manifest *protocol.IMPLManifest) bool {
 
 // countAgentsFromErrors extracts the agent count from validation error messages.
 // The validator appends "Run: sawtools assign-agent-ids --count N" as the last error.
-func countAgentsFromErrors(errs []protocol.ValidationError) int {
+func countAgentsFromErrors(errs []result.SAWError) int {
 	for _, e := range errs {
 		if e.Code == "agent-id" && e.Line == 0 {
 			// This is the suggestion message: "Run: sawtools assign-agent-ids --count N"

@@ -20,7 +20,7 @@ import (
 // Returns a result.Result[*ProgramStatusData] containing all computed status information.
 func GetProgramStatus(manifest *PROGRAMManifest, repoPath string) result.Result[*ProgramStatusData] {
 	if manifest == nil {
-		return result.NewFailure[*ProgramStatusData]([]result.StructuredError{{
+		return result.NewFailure[*ProgramStatusData]([]result.SAWError{{
 			Code: "E_PROGRAM_STATUS", Message: "manifest cannot be nil", Severity: "fatal",
 		}})
 	}

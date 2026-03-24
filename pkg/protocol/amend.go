@@ -31,7 +31,7 @@ type AmendImplData struct {
 	Warnings      []string // non-fatal issues detected during amend
 }
 
-// amendBlocked is an internal error code used in StructuredError when a hard
+// amendBlocked is an internal error code used in SAWError when a hard
 // protocol invariant prevents the amend. Callers can check for this code via
 // result.Errors[0].Code when result.IsFatal() is true.
 const amendBlocked = "AMEND_BLOCKED"
@@ -44,7 +44,7 @@ func AmendImpl(opts AmendImplOpts) result.Result[AmendImplData] {
 	// Step 1: Load manifest
 	m, err := Load(opts.ManifestPath)
 	if err != nil {
-		return result.NewFailure[AmendImplData]([]result.StructuredError{
+		return result.NewFailure[AmendImplData]([]result.SAWError{
 			{
 				Code:     "LOAD_FAILED",
 				Message:  fmt.Sprintf("failed to load manifest: %v", err),
@@ -55,7 +55,7 @@ func AmendImpl(opts AmendImplOpts) result.Result[AmendImplData] {
 
 	// Step 2: Check completion_date field
 	if m.CompletionDate != "" {
-		return result.NewFailure[AmendImplData]([]result.StructuredError{
+		return result.NewFailure[AmendImplData]([]result.SAWError{
 			{
 				Code:     amendBlocked,
 				Message:  fmt.Sprintf("IMPL is complete (completion_date=%s); cannot amend", m.CompletionDate),
@@ -67,7 +67,7 @@ func AmendImpl(opts AmendImplOpts) result.Result[AmendImplData] {
 	// Step 3: Check raw file for SAW:COMPLETE marker
 	rawBytes, err := os.ReadFile(opts.ManifestPath)
 	if err != nil {
-		return result.NewFailure[AmendImplData]([]result.StructuredError{
+		return result.NewFailure[AmendImplData]([]result.SAWError{
 			{
 				Code:     "READ_FAILED",
 				Message:  fmt.Sprintf("failed to read manifest file: %v", err),
@@ -76,7 +76,7 @@ func AmendImpl(opts AmendImplOpts) result.Result[AmendImplData] {
 		})
 	}
 	if strings.Contains(string(rawBytes), "SAW:COMPLETE") {
-		return result.NewFailure[AmendImplData]([]result.StructuredError{
+		return result.NewFailure[AmendImplData]([]result.SAWError{
 			{
 				Code:     amendBlocked,
 				Message:  "IMPL is complete (SAW:COMPLETE marker present); cannot amend",
@@ -128,7 +128,7 @@ func amendAddWave(opts AmendImplOpts, m *IMPLManifest) result.Result[AmendImplDa
 		for i, e := range errs {
 			msgs[i] = e.Message
 		}
-		return result.NewFailure[AmendImplData]([]result.StructuredError{
+		return result.NewFailure[AmendImplData]([]result.SAWError{
 			{
 				Code:     amendBlocked,
 				Message:  fmt.Sprintf("validation failed after adding wave: %s", strings.Join(msgs, "; ")),
@@ -140,7 +140,7 @@ func amendAddWave(opts AmendImplOpts, m *IMPLManifest) result.Result[AmendImplDa
 	// Validation passed — mutate real manifest and save
 	m.Waves = append(m.Waves, newWave)
 	if err := Save(m, opts.ManifestPath); err != nil {
-		return result.NewFailure[AmendImplData]([]result.StructuredError{
+		return result.NewFailure[AmendImplData]([]result.SAWError{
 			{
 				Code:     "SAVE_FAILED",
 				Message:  fmt.Sprintf("failed to save manifest: %v", err),
@@ -177,7 +177,7 @@ func amendRedirectAgent(opts AmendImplOpts, m *IMPLManifest) result.Result[Amend
 	}
 
 	if waveIdx == -1 || agentIdx == -1 {
-		return result.NewFailure[AmendImplData]([]result.StructuredError{
+		return result.NewFailure[AmendImplData]([]result.SAWError{
 			{
 				Code:     amendBlocked,
 				Message:  fmt.Sprintf("agent %s not found in wave %d", opts.AgentID, opts.WaveNum),
@@ -188,7 +188,7 @@ func amendRedirectAgent(opts AmendImplOpts, m *IMPLManifest) result.Result[Amend
 
 	// Step 2: Reject if agent has a complete completion report
 	if cr, ok := m.CompletionReports[opts.AgentID]; ok && cr.Status == "complete" {
-		return result.NewFailure[AmendImplData]([]result.StructuredError{
+		return result.NewFailure[AmendImplData]([]result.SAWError{
 			{
 				Code:     amendBlocked,
 				Message:  fmt.Sprintf("agent %s has a complete completion report; cannot redirect a completed agent", opts.AgentID),
@@ -217,7 +217,7 @@ func amendRedirectAgent(opts AmendImplOpts, m *IMPLManifest) result.Result[Amend
 			if err != nil {
 				// Branch not found or other git error — no commits, proceed
 			} else if len(strings.TrimSpace(string(logOut))) > 0 {
-				return result.NewFailure[AmendImplData]([]result.StructuredError{
+				return result.NewFailure[AmendImplData]([]result.SAWError{
 					{
 						Code:     amendBlocked,
 						Message:  fmt.Sprintf("agent %s has commits on branch %s; cannot redirect a committed agent", opts.AgentID, branchName),
@@ -238,7 +238,7 @@ func amendRedirectAgent(opts AmendImplOpts, m *IMPLManifest) result.Result[Amend
 
 	// Step 6: Save
 	if err := Save(m, opts.ManifestPath); err != nil {
-		return result.NewFailure[AmendImplData]([]result.StructuredError{
+		return result.NewFailure[AmendImplData]([]result.SAWError{
 			{
 				Code:     "SAVE_FAILED",
 				Message:  fmt.Sprintf("failed to save manifest: %v", err),

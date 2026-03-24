@@ -45,7 +45,7 @@ func CreateWorktrees(manifestPath string, waveNum int, repoDir string) result.Re
 	// Load IMPL doc (pure YAML format)
 	doc, err := Load(manifestPath)
 	if err != nil {
-		return result.NewFailure[CreateWorktreesData]([]result.StructuredError{
+		return result.NewFailure[CreateWorktreesData]([]result.SAWError{
 			{
 				Code:     "E001",
 				Message:  fmt.Sprintf("failed to load manifest: %v", err),
@@ -64,7 +64,7 @@ func CreateWorktrees(manifestPath string, waveNum int, repoDir string) result.Re
 	}
 
 	if targetWave == nil {
-		return result.NewFailure[CreateWorktreesData]([]result.StructuredError{
+		return result.NewFailure[CreateWorktreesData]([]result.SAWError{
 			{
 				Code:     "E002",
 				Message:  fmt.Sprintf("wave %d not found in manifest", waveNum),
@@ -76,7 +76,7 @@ func CreateWorktrees(manifestPath string, waveNum int, repoDir string) result.Re
 	// Record base commit for post-merge verification (prevention fix for verify-commits bug)
 	baseCommit, err := git.RevParse(repoDir, "HEAD")
 	if err != nil {
-		return result.NewFailure[CreateWorktreesData]([]result.StructuredError{
+		return result.NewFailure[CreateWorktreesData]([]result.SAWError{
 			{
 				Code:     "E003",
 				Message:  fmt.Sprintf("failed to get base commit: %v", err),
@@ -88,7 +88,7 @@ func CreateWorktrees(manifestPath string, waveNum int, repoDir string) result.Re
 
 	// Save manifest with base commit recorded
 	if err := Save(doc, manifestPath); err != nil {
-		return result.NewFailure[CreateWorktreesData]([]result.StructuredError{
+		return result.NewFailure[CreateWorktreesData]([]result.SAWError{
 			{
 				Code:     "E004",
 				Message:  fmt.Sprintf("failed to save manifest with base commit: %v", err),
@@ -100,7 +100,7 @@ func CreateWorktrees(manifestPath string, waveNum int, repoDir string) result.Re
 	// Resolve absolute path for repoDir (handles "." case)
 	absRepoDir, err := filepath.Abs(repoDir)
 	if err != nil {
-		return result.NewFailure[CreateWorktreesData]([]result.StructuredError{
+		return result.NewFailure[CreateWorktreesData]([]result.SAWError{
 			{
 				Code:     "E005",
 				Message:  fmt.Sprintf("failed to resolve repo path: %v", err),
@@ -175,7 +175,7 @@ func CreateWorktrees(manifestPath string, waveNum int, repoDir string) result.Re
 				} else if candidate.branch == branchName {
 					// Only error on the primary (new-format) branch; legacy branches
 					// that are unmerged are a soft warning.
-					return result.NewFailure[CreateWorktreesData]([]result.StructuredError{
+					return result.NewFailure[CreateWorktreesData]([]result.SAWError{
 						{
 							Code:     "E006",
 							Message:  fmt.Sprintf("branch %q already exists in %s and is not merged into HEAD; delete it manually or merge first", candidate.branch, agentRepoDir),
@@ -191,7 +191,7 @@ func CreateWorktrees(manifestPath string, waveNum int, repoDir string) result.Re
 			// Worktree exists - check if it's stale
 			currentHead, err := git.RevParse(agentRepoDir, "HEAD")
 			if err != nil {
-				return result.NewFailure[CreateWorktreesData]([]result.StructuredError{
+				return result.NewFailure[CreateWorktreesData]([]result.SAWError{
 					{
 						Code:     "E007",
 						Message:  fmt.Sprintf("failed to get current HEAD: %v", err),
@@ -238,7 +238,7 @@ func CreateWorktrees(manifestPath string, waveNum int, repoDir string) result.Re
 
 		// Create the worktree
 		if err := git.WorktreeAdd(agentRepoDir, worktreePath, branchName); err != nil {
-			return result.NewFailure[CreateWorktreesData]([]result.StructuredError{
+			return result.NewFailure[CreateWorktreesData]([]result.SAWError{
 				{
 					Code:     "E008",
 					Message:  fmt.Sprintf("failed to create worktree for agent %s in repo %s: %v", agent.ID, agentRepoDir, err),

@@ -54,7 +54,7 @@ func ValidateWiringDeclarations(manifest *IMPLManifest, repoPath string) result.
 	}
 
 	if !data.Valid {
-		return result.NewPartial(data, []result.StructuredError{{
+		return result.NewPartial(data, []result.SAWError{{
 			Code: "E_WIRING", Message: data.Summary, Severity: "error",
 		}})
 	}

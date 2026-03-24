@@ -44,7 +44,7 @@ func VerifyCommits(manifestPath string, waveNum int, repoDir string) result.Resu
 	// Load the manifest
 	manifest, err := Load(manifestPath)
 	if err != nil {
-		return result.NewFailure[VerifyCommitsData]([]result.StructuredError{
+		return result.NewFailure[VerifyCommitsData]([]result.SAWError{
 			{
 				Code:     "E101",
 				Message:  fmt.Sprintf("failed to load manifest: %v", err),
@@ -63,7 +63,7 @@ func VerifyCommits(manifestPath string, waveNum int, repoDir string) result.Resu
 	}
 
 	if targetWave == nil {
-		return result.NewFailure[VerifyCommitsData]([]result.StructuredError{
+		return result.NewFailure[VerifyCommitsData]([]result.SAWError{
 			{
 				Code:     "E102",
 				Message:  fmt.Sprintf("wave %d not found in manifest", waveNum),
@@ -76,7 +76,7 @@ func VerifyCommits(manifestPath string, waveNum int, repoDir string) result.Resu
 	// siblings of this directory (same pattern as worktree.go line 116).
 	absRepoDir, err := filepath.Abs(repoDir)
 	if err != nil {
-		return result.NewFailure[VerifyCommitsData]([]result.StructuredError{
+		return result.NewFailure[VerifyCommitsData]([]result.SAWError{
 			{
 				Code:     "E103",
 				Message:  fmt.Sprintf("failed to resolve repo dir: %v", err),
@@ -119,7 +119,7 @@ func VerifyCommits(manifestPath string, waveNum int, repoDir string) result.Resu
 		var err error
 		baseCommit, err = git.RevParse(absRepoDir, "HEAD")
 		if err != nil {
-			return result.NewFailure[VerifyCommitsData]([]result.StructuredError{
+			return result.NewFailure[VerifyCommitsData]([]result.SAWError{
 				{
 					Code:     "E104",
 					Message:  fmt.Sprintf("failed to get base commit: %v", err),
@@ -137,7 +137,7 @@ func VerifyCommits(manifestPath string, waveNum int, repoDir string) result.Resu
 
 	// Track validation status
 	allValid := true
-	var warnings []result.StructuredError
+	var warnings []result.SAWError
 
 	// Check each agent's branch in its respective repository
 	for _, agent := range targetWave.Agents {
@@ -213,7 +213,7 @@ func VerifyCommits(manifestPath string, waveNum int, repoDir string) result.Resu
 		// Update overall validity and collect warnings
 		if !status.HasCommits {
 			allValid = false
-			warnings = append(warnings, result.StructuredError{
+			warnings = append(warnings, result.SAWError{
 				Code:     "W101",
 				Message:  fmt.Sprintf("agent %s has no commits on branch %s", status.Agent, status.Branch),
 				Severity: "warning",

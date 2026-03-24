@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
 )
 
 func TestScoutCorrectionLoop_SucceedsFirstTry(t *testing.T) {
@@ -21,7 +21,7 @@ func TestScoutCorrectionLoop_SucceedsFirstTry(t *testing.T) {
 			scoutCalls++
 			return nil
 		},
-		validateFn: func(implPath string) ([]protocol.ValidationError, error) {
+		validateFn: func(implPath string) ([]result.SAWError, error) {
 			// Passes on first try.
 			return nil, nil
 		},
@@ -64,10 +64,10 @@ func TestScoutCorrectionLoop_RetriesAndSucceeds(t *testing.T) {
 			}
 			return nil
 		},
-		validateFn: func(implPath string) ([]protocol.ValidationError, error) {
+		validateFn: func(implPath string) ([]result.SAWError, error) {
 			// Fail first time, pass second time.
 			if scoutCalls == 1 {
-				return []protocol.ValidationError{
+				return []result.SAWError{
 					{Code: "E16_001", Message: "missing slug field"},
 				}, nil
 			}
@@ -106,9 +106,9 @@ func TestScoutCorrectionLoop_ExhaustsRetriesAndSetsState(t *testing.T) {
 			scoutCalls++
 			return nil
 		},
-		validateFn: func(implPath string) ([]protocol.ValidationError, error) {
+		validateFn: func(implPath string) ([]result.SAWError, error) {
 			// Always fail.
-			return []protocol.ValidationError{
+			return []result.SAWError{
 				{Code: "E16_001", Message: "missing slug field"},
 				{Code: "E16_002", Message: "no waves defined"},
 			}, nil
@@ -161,7 +161,7 @@ func TestScoutCorrectionLoop_ContextCancelled(t *testing.T) {
 }
 
 func TestBuildCorrectionPrompt(t *testing.T) {
-	errors := []protocol.ValidationError{
+	errors := []result.SAWError{
 		{Code: "E16_001", Message: "missing slug", Field: "slug"},
 		{Code: "E16_002", Message: "no waves defined"},
 	}

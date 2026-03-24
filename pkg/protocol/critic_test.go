@@ -308,7 +308,7 @@ func TestWriteCriticReviewResult_FileNotFound(t *testing.T) {
 		t.Errorf("WriteCriticReviewResult() Code = %q, want FATAL", res.Code)
 	}
 	if len(res.Errors) == 0 {
-		t.Error("WriteCriticReviewResult() Errors empty, want at least one StructuredError")
+		t.Error("WriteCriticReviewResult() Errors empty, want at least one SAWError")
 	}
 }
 
@@ -353,11 +353,11 @@ func TestGetCriticReviewResult_NoCriticReport(t *testing.T) {
 		t.Errorf("GetCriticReviewResult() Code = %q, want FATAL", res.Code)
 	}
 	if len(res.Errors) == 0 {
-		t.Error("GetCriticReviewResult() Errors empty, want at least one StructuredError")
+		t.Error("GetCriticReviewResult() Errors empty, want at least one SAWError")
 	}
 }
 
-// TestGetCriticReviewResult_ErrorCode verifies that the StructuredError returned
+// TestGetCriticReviewResult_ErrorCode verifies that the SAWError returned
 // for a missing critic report has the expected error code.
 func TestGetCriticReviewResult_ErrorCode(t *testing.T) {
 	manifest := &IMPLManifest{}

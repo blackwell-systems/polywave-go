@@ -24,7 +24,7 @@ func UpdateContext(manifestPath string, projectRoot string) result.Result[*Updat
 	// Load manifest to get feature metadata
 	manifest, err := Load(manifestPath)
 	if err != nil {
-		return result.NewFailure[*UpdateContextData]([]result.StructuredError{{
+		return result.NewFailure[*UpdateContextData]([]result.SAWError{{
 			Code:     "E_CONTEXT",
 			Message:  fmt.Sprintf("failed to load manifest: %v", err),
 			Severity: "fatal",
@@ -44,7 +44,7 @@ func UpdateContext(manifestPath string, projectRoot string) result.Result[*Updat
 	// Ensure docs directory exists
 	docsDir := filepath.Dir(contextPath)
 	if err := os.MkdirAll(docsDir, 0755); err != nil {
-		return result.NewFailure[*UpdateContextData]([]result.StructuredError{{
+		return result.NewFailure[*UpdateContextData]([]result.SAWError{{
 			Code:     "E_CONTEXT",
 			Message:  fmt.Sprintf("failed to create docs directory: %v", err),
 			Severity: "fatal",
@@ -56,7 +56,7 @@ func UpdateContext(manifestPath string, projectRoot string) result.Result[*Updat
 	data, err := os.ReadFile(contextPath)
 	if err != nil {
 		if !os.IsNotExist(err) {
-			return result.NewFailure[*UpdateContextData]([]result.StructuredError{{
+			return result.NewFailure[*UpdateContextData]([]result.SAWError{{
 				Code:     "E_CONTEXT",
 				Message:  fmt.Sprintf("failed to read context file: %v", err),
 				Severity: "fatal",
@@ -94,7 +94,7 @@ func UpdateContext(manifestPath string, projectRoot string) result.Result[*Updat
 
 	// Write updated content
 	if err := os.WriteFile(contextPath, []byte(content), 0644); err != nil {
-		return result.NewFailure[*UpdateContextData]([]result.StructuredError{{
+		return result.NewFailure[*UpdateContextData]([]result.SAWError{{
 			Code:     "E_CONTEXT",
 			Message:  fmt.Sprintf("failed to write context file: %v", err),
 			Severity: "fatal",

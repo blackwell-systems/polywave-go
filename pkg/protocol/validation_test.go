@@ -3,6 +3,8 @@ package protocol
 import (
 	"encoding/json"
 	"testing"
+
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
 )
 
 // TestValidateI1DisjointOwnership_Valid tests that disjoint ownership passes validation.
@@ -1293,12 +1295,12 @@ func TestFeatureSlugKebabValidation(t *testing.T) {
 	}
 }
 
-// TestValidationError_WithContext tests the WithContext helper method.
-func TestValidationError_WithContext(t *testing.T) {
-	ve := newValidationError("TEST_CODE", "test message")
+// TestSAWError_WithContext tests the WithContext helper method.
+func TestSAWError_WithContext(t *testing.T) {
+	ve := result.NewError("TEST_CODE", "test message")
 	ve.Field = "test_field"
 
-	got := ve.WithContext("my-slug", 2, "B")
+	got := ve.WithContext("slug", "my-slug").WithContext("wave", "2").WithContext("agent_id", "B")
 
 	if got.Code != "TEST_CODE" {
 		t.Errorf("expected Code TEST_CODE, got %s", got.Code)
@@ -1309,27 +1311,28 @@ func TestValidationError_WithContext(t *testing.T) {
 	if got.Field != "test_field" {
 		t.Errorf("expected Field 'test_field', got %s", got.Field)
 	}
-	if got.Slug != "my-slug" {
-		t.Errorf("expected Slug 'my-slug', got %s", got.Slug)
+	if got.Context["slug"] != "my-slug" {
+		t.Errorf("expected Context[slug] 'my-slug', got %s", got.Context["slug"])
 	}
-	if got.Wave != 2 {
-		t.Errorf("expected Wave 2, got %d", got.Wave)
+	if got.Context["wave"] != "2" {
+		t.Errorf("expected Context[wave] '2', got %s", got.Context["wave"])
 	}
-	if got.AgentID != "B" {
-		t.Errorf("expected AgentID 'B', got %s", got.AgentID)
+	if got.Context["agent_id"] != "B" {
+		t.Errorf("expected Context[agent_id] 'B', got %s", got.Context["agent_id"])
 	}
 
 	// Original should be unchanged (value receiver)
-	if ve.Slug != "" {
-		t.Errorf("original should be unchanged, got Slug %s", ve.Slug)
+	if ve.Context != nil && ve.Context["slug"] != "" {
+		t.Errorf("original should be unchanged, got Context[slug] %s", ve.Context["slug"])
 	}
 }
 
-// TestValidationError_JSONOmitEmpty tests that zero-valued new fields are omitted from JSON.
-func TestValidationError_JSONOmitEmpty(t *testing.T) {
-	ve := ValidationError{
-		Code:    "TEST",
-		Message: "msg",
+// TestSAWError_JSONOmitEmpty tests that zero-valued context fields are omitted from JSON.
+func TestSAWError_JSONOmitEmpty(t *testing.T) {
+	ve := result.SAWError{
+		Code:     "TEST",
+		Message:  "msg",
+		Severity: "error",
 	}
 	data, err := json.Marshal(ve)
 	if err != nil {
@@ -1337,20 +1340,18 @@ func TestValidationError_JSONOmitEmpty(t *testing.T) {
 	}
 	s := string(data)
 
-	// Zero-valued fields should not appear
-	for _, field := range []string{"slug", "wave", "agent_id"} {
-		if containsSubstr(s, `"`+field+`"`) {
-			t.Errorf("expected %s to be omitted from JSON, got: %s", field, s)
-		}
+	// Context should not appear when nil
+	if containsSubstr(s, `"context"`) {
+		t.Errorf("expected context to be omitted from JSON, got: %s", s)
 	}
 
-	// Now with values set
-	ve2 := ve.WithContext("feat", 1, "A")
+	// Now with context values set
+	ve2 := ve.WithContext("slug", "feat").WithContext("wave", "1").WithContext("agent_id", "A")
 	data2, _ := json.Marshal(ve2)
 	s2 := string(data2)
 	for _, field := range []string{"slug", "wave", "agent_id"} {
 		if !containsSubstr(s2, `"`+field+`"`) {
-			t.Errorf("expected %s to be present in JSON, got: %s", field, s2)
+			t.Errorf("expected %s to be present in JSON context, got: %s", field, s2)
 		}
 	}
 }
@@ -1379,14 +1380,14 @@ func TestValidateI1_ContextFields(t *testing.T) {
 		t.Fatalf("expected 1 error, got %d: %v", len(errs), errs)
 	}
 	e := errs[0]
-	if e.Slug != "test-feature" {
-		t.Errorf("expected Slug 'test-feature', got %q", e.Slug)
+	if e.Context["slug"] != "test-feature" {
+		t.Errorf("expected Context[slug] 'test-feature', got %q", e.Context["slug"])
 	}
-	if e.Wave != 1 {
-		t.Errorf("expected Wave 1, got %d", e.Wave)
+	if e.Context["wave"] != "1" {
+		t.Errorf("expected Context[wave] '1', got %q", e.Context["wave"])
 	}
-	if e.AgentID == "" {
-		t.Error("expected AgentID to be populated")
+	if e.Context["agent_id"] == "" {
+		t.Error("expected Context[agent_id] to be populated")
 	}
 }
 
@@ -1409,13 +1410,13 @@ func TestValidateI2_ContextFields(t *testing.T) {
 		t.Fatalf("expected 1 error, got %d: %v", len(errs), errs)
 	}
 	e := errs[0]
-	if e.Slug != "dep-test" {
-		t.Errorf("expected Slug 'dep-test', got %q", e.Slug)
+	if e.Context["slug"] != "dep-test" {
+		t.Errorf("expected Context[slug] 'dep-test', got %q", e.Context["slug"])
 	}
-	if e.Wave != 1 {
-		t.Errorf("expected Wave 1, got %d", e.Wave)
+	if e.Context["wave"] != "1" {
+		t.Errorf("expected Context[wave] '1', got %q", e.Context["wave"])
 	}
-	if e.AgentID != "A" {
-		t.Errorf("expected AgentID 'A', got %q", e.AgentID)
+	if e.Context["agent_id"] != "A" {
+		t.Errorf("expected Context[agent_id] 'A', got %q", e.Context["agent_id"])
 	}
 }

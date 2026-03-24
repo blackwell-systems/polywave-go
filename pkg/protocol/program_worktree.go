@@ -46,7 +46,7 @@ type CreateProgramWorktreesData struct {
 func CreateProgramWorktrees(programManifestPath string, tierNumber int, repoDir string) result.Result[*CreateProgramWorktreesData] {
 	manifest, err := ParseProgramManifest(programManifestPath)
 	if err != nil {
-		return result.NewFailure[*CreateProgramWorktreesData]([]result.StructuredError{{
+		return result.NewFailure[*CreateProgramWorktreesData]([]result.SAWError{{
 			Code: "E_PROGRAM_WORKTREE", Message: fmt.Sprintf("failed to parse program manifest: %v", err), Severity: "fatal",
 		}})
 	}
@@ -61,7 +61,7 @@ func CreateProgramWorktrees(programManifestPath string, tierNumber int, repoDir 
 	}
 
 	if targetTier == nil {
-		return result.NewFailure[*CreateProgramWorktreesData]([]result.StructuredError{{
+		return result.NewFailure[*CreateProgramWorktreesData]([]result.SAWError{{
 			Code: "E_PROGRAM_WORKTREE", Message: fmt.Sprintf("tier %d not found in program manifest", tierNumber), Severity: "fatal",
 		}})
 	}
@@ -69,7 +69,7 @@ func CreateProgramWorktrees(programManifestPath string, tierNumber int, repoDir 
 	// Resolve absolute path for repoDir
 	absRepoDir, err := filepath.Abs(repoDir)
 	if err != nil {
-		return result.NewFailure[*CreateProgramWorktreesData]([]result.StructuredError{{
+		return result.NewFailure[*CreateProgramWorktreesData]([]result.SAWError{{
 			Code: "E_PROGRAM_WORKTREE", Message: fmt.Sprintf("failed to resolve repo path: %v", err), Severity: "fatal",
 		}})
 	}
@@ -87,7 +87,7 @@ func CreateProgramWorktrees(programManifestPath string, tierNumber int, repoDir 
 				_ = git.DeleteBranch(absRepoDir, branchName)
 				fmt.Fprintf(os.Stderr, "Cleaned up stale merged branch %q\n", branchName)
 			} else {
-				return result.NewFailure[*CreateProgramWorktreesData]([]result.StructuredError{{
+				return result.NewFailure[*CreateProgramWorktreesData]([]result.SAWError{{
 					Code: "E_PROGRAM_WORKTREE", Message: fmt.Sprintf("branch %q already exists and is not merged into HEAD; delete it manually or merge first", branchName), Severity: "fatal",
 				}})
 			}
@@ -95,7 +95,7 @@ func CreateProgramWorktrees(programManifestPath string, tierNumber int, repoDir 
 
 		// Create the worktree
 		if err := git.WorktreeAdd(absRepoDir, worktreePath, branchName); err != nil {
-			return result.NewFailure[*CreateProgramWorktreesData]([]result.StructuredError{{
+			return result.NewFailure[*CreateProgramWorktreesData]([]result.SAWError{{
 				Code: "E_PROGRAM_WORKTREE", Message: fmt.Sprintf("failed to create worktree for impl %s: %v", implSlug, err), Severity: "fatal",
 			}})
 		}

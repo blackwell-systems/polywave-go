@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
 )
 
 func TestGenerateSlug(t *testing.T) {
@@ -103,31 +104,31 @@ func TestRunScoutCmd_ProgramFlag(t *testing.T) {
 func TestCountAgentsFromErrors(t *testing.T) {
 	tests := []struct {
 		name string
-		errs []protocol.ValidationError
+		errs []result.SAWError
 		want int
 	}{
 		{
 			name: "No errors",
-			errs: []protocol.ValidationError{},
+			errs: []result.SAWError{},
 			want: 0,
 		},
 		{
 			name: "Non-agent-id errors",
-			errs: []protocol.ValidationError{
+			errs: []result.SAWError{
 				{Code: "impl-file-ownership", Line: 10, Message: "missing header"},
 			},
 			want: 0,
 		},
 		{
 			name: "Agent ID errors without suggestion",
-			errs: []protocol.ValidationError{
+			errs: []result.SAWError{
 				{Code: "agent-id", Line: 10, Message: "invalid agent ID 'A1'"},
 			},
 			want: 0,
 		},
 		{
 			name: "Agent ID errors with suggestion",
-			errs: []protocol.ValidationError{
+			errs: []result.SAWError{
 				{Code: "agent-id", Line: 10, Message: "invalid agent ID 'A1'"},
 				{Code: "agent-id", Line: 0, Message: "Run: sawtools assign-agent-ids --count 5"},
 			},
@@ -135,7 +136,7 @@ func TestCountAgentsFromErrors(t *testing.T) {
 		},
 		{
 			name: "Multiple errors with suggestion",
-			errs: []protocol.ValidationError{
+			errs: []result.SAWError{
 				{Code: "agent-id", Line: 10, Message: "invalid agent ID 'A1'"},
 				{Code: "agent-id", Line: 15, Message: "invalid agent ID 'B1'"},
 				{Code: "agent-id", Line: 20, Message: "invalid agent ID 'C1'"},
@@ -145,7 +146,7 @@ func TestCountAgentsFromErrors(t *testing.T) {
 		},
 		{
 			name: "Suggestion with large count",
-			errs: []protocol.ValidationError{
+			errs: []result.SAWError{
 				{Code: "agent-id", Line: 0, Message: "Run: sawtools assign-agent-ids --count 234"},
 			},
 			want: 234,

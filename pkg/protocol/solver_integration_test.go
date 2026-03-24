@@ -3,6 +3,7 @@ package protocol
 import (
 	"testing"
 
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/solver"
 )
 
@@ -47,7 +48,7 @@ func makeFO(file, agent string, wave int, deps ...string) FileOwnership {
 	}
 }
 
-func hasErrorCode(errs []ValidationError, code string) bool {
+func hasErrorCode(errs []result.SAWError, code string) bool {
 	for _, e := range errs {
 		if e.Code == code {
 			return true
@@ -56,7 +57,7 @@ func hasErrorCode(errs []ValidationError, code string) bool {
 	return false
 }
 
-func countErrorCode(errs []ValidationError, code string) int {
+func countErrorCode(errs []result.SAWError, code string) int {
 	n := 0
 	for _, e := range errs {
 		if e.Code == code {

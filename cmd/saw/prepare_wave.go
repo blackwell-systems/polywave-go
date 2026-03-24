@@ -13,6 +13,7 @@ import (
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/gatecache"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/journal"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/resume"
 	"github.com/spf13/cobra"
 )
@@ -327,7 +328,7 @@ waves that execute on the main branch.`,
 			// protocol.Validate() calls validateI1DisjointOwnership() internally.
 			// Filter its output for I1_VIOLATION error codes.
 			if allErrs := protocol.Validate(doc); len(allErrs) > 0 {
-				var i1Errs []protocol.ValidationError
+				var i1Errs []result.SAWError
 				for _, e := range allErrs {
 					if e.Code == "I1_VIOLATION" {
 						i1Errs = append(i1Errs, e)

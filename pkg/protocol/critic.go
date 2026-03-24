@@ -102,7 +102,7 @@ func WriteCriticReview(implPath string, data CriticData) error {
 func WriteCriticReviewResult(implPath string, data CriticData) result.Result[CriticData] {
 	manifest, err := Load(implPath)
 	if err != nil {
-		return result.NewFailure[CriticData]([]result.StructuredError{
+		return result.NewFailure[CriticData]([]result.SAWError{
 			{
 				Code:     "E001",
 				Message:  err.Error(),
@@ -114,7 +114,7 @@ func WriteCriticReviewResult(implPath string, data CriticData) result.Result[Cri
 	manifest.CriticReport = &data
 
 	if err := Save(manifest, implPath); err != nil {
-		return result.NewFailure[CriticData]([]result.StructuredError{
+		return result.NewFailure[CriticData]([]result.SAWError{
 			{
 				Code:     "E002",
 				Message:  err.Error(),
@@ -141,7 +141,7 @@ func GetCriticReview(manifest *IMPLManifest) *CriticData {
 // protocol.Load.
 func GetCriticReviewResult(manifest *IMPLManifest) result.Result[CriticData] {
 	if manifest.CriticReport == nil {
-		return result.NewFailure[CriticData]([]result.StructuredError{
+		return result.NewFailure[CriticData]([]result.SAWError{
 			{
 				Code:     "E003",
 				Message:  "no critic review found in manifest",

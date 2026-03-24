@@ -36,7 +36,7 @@ func ValidateCompletionReportClaims(
 	repoDir string,
 ) result.Result[CompletionValidationData] {
 	data := CompletionValidationData{Valid: true}
-	var errs []result.StructuredError
+	var errs []result.SAWError
 	var warnings []string
 
 	// --- Commit SHA verification ---
@@ -46,7 +46,7 @@ func ValidateCompletionReportClaims(
 		_, err := git.Run(repoDir, "cat-file", "-e", report.Commit)
 		if err != nil {
 			data.Valid = false
-			errs = append(errs, result.StructuredError{
+			errs = append(errs, result.SAWError{
 				Code:     "E001",
 				Message:  fmt.Sprintf("commit %s does not exist in repository: %v", report.Commit, err),
 				Severity: "fatal",
@@ -109,7 +109,7 @@ func ValidateCompletionReportClaims(
 	for _, f := range report.FilesChanged {
 		if !ownedFiles[f] && !frozenPaths[f] {
 			data.Valid = false
-			errs = append(errs, result.StructuredError{
+			errs = append(errs, result.SAWError{
 				Code:     "E002",
 				Message:  fmt.Sprintf("file %s in files_changed is not in agent %s owned files or frozen scaffold paths", f, agentID),
 				Severity: "fatal",
@@ -124,7 +124,7 @@ func ValidateCompletionReportClaims(
 		fullPath := repoDir + "/" + f
 		if _, err := os.Stat(fullPath); os.IsNotExist(err) {
 			data.Valid = false
-			errs = append(errs, result.StructuredError{
+			errs = append(errs, result.SAWError{
 				Code:     "E003",
 				Message:  fmt.Sprintf("file %s in files_created does not exist on disk at %s", f, fullPath),
 				Severity: "fatal",
