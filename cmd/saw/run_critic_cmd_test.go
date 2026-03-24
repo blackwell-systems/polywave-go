@@ -137,7 +137,7 @@ func TestRunCriticCmd_MissingImplPath(t *testing.T) {
 }
 
 // TestSetCriticReviewCmd_ValidInput verifies that set-critic-review with valid
-// JSON input writes the correct CriticResult to the IMPL doc.
+// JSON input writes the correct CriticData to the IMPL doc.
 func TestSetCriticReviewCmd_ValidInput(t *testing.T) {
 	implPath := writeTestIMPL(t, minimalIMPLContent)
 

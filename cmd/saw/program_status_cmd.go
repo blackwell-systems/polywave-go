@@ -52,14 +52,15 @@ Exit codes:
 			}
 
 			// Get program status
-			result, err := protocol.GetProgramStatus(manifest, repoPath)
-			if err != nil {
-				fmt.Fprintf(os.Stderr, "program-status: %v\n", err)
+			res := protocol.GetProgramStatus(manifest, repoPath)
+			if res.IsFatal() {
+				fmt.Fprintf(os.Stderr, "program-status: %s\n", res.Errors[0].Message)
 				os.Exit(2)
 			}
+			data := res.GetData()
 
 			// Output JSON result
-			out, _ := json.MarshalIndent(result, "", "  ")
+			out, _ := json.MarshalIndent(data, "", "  ")
 			fmt.Fprintln(cmd.OutOrStdout(), string(out))
 
 			return nil

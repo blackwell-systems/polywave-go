@@ -61,11 +61,15 @@ Examples:
 			if projectRoot == "" || projectRoot == "." {
 				projectRoot = filepath.Dir(filepath.Dir(filepath.Dir(manifestPath)))
 			}
-			contextPath, contextErr := protocol.UpdateContext(archivedPath, projectRoot)
-			if contextErr != nil {
-				fmt.Fprintf(os.Stderr, "close-impl: update-context warning: %v\n", contextErr)
+			contextRes := protocol.UpdateContext(archivedPath, projectRoot)
+			contextFailed := contextRes.IsFatal()
+			var contextData *protocol.UpdateContextData
+			if contextFailed {
+				fmt.Fprintf(os.Stderr, "close-impl: update-context warning: %s\n", contextRes.Errors[0].Message)
 			} else {
-				fmt.Fprintf(os.Stderr, "close-impl: updated %s\n", contextPath.ContextPath)
+				d := contextRes.GetData()
+				contextData = d
+				fmt.Fprintf(os.Stderr, "close-impl: updated %s\n", contextData.ContextPath)
 			}
 
 			// Step 4: Clean stale worktrees
@@ -79,9 +83,9 @@ Examples:
 					}
 				}
 				if len(matching) > 0 {
-					result, cleanErr := protocol.CleanStaleWorktrees(matching, true)
-					if cleanErr == nil {
-						cleanedCount = len(result.Cleaned)
+					cleanRes := protocol.CleanStaleWorktrees(matching, true)
+					if !cleanRes.IsFatal() {
+						cleanedCount = len(cleanRes.GetData().Cleaned)
 					}
 					if cleanedCount > 0 {
 						fmt.Fprintf(os.Stderr, "close-impl: cleaned %d stale worktree(s)\n", cleanedCount)
@@ -121,8 +125,8 @@ Examples:
 				"marked":            true,
 				"date":              date,
 				"archived_path":     archivedPath,
-				"context_updated":   contextErr == nil,
-				"context_path":      contextPath,
+				"context_updated":   !contextFailed,
+				"context_path":      contextData,
 				"worktrees_cleaned": cleanedCount,
 				"state_cleaned":     stateCleanedCount,
 			})

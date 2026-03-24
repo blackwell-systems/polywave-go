@@ -74,7 +74,7 @@ completion:
 	}
 
 	// Parse JSON output
-	var result protocol.FreezeContractsResult
+	var result protocol.FreezeContractsData
 	if err := json.Unmarshal(stdout.Bytes(), &result); err != nil {
 		t.Fatalf("failed to parse JSON output: %v\noutput: %s", err, stdout.String())
 	}

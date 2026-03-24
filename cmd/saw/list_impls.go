@@ -20,14 +20,15 @@ func newListIMPLsCmd() *cobra.Command {
 		Short: "List IMPL manifests in a directory (excludes completed by default)",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			result, err := protocol.ListIMPLs(dir, protocol.ListIMPLsOpts{
+			res := protocol.ListIMPLs(dir, protocol.ListIMPLsOpts{
 				IncludeComplete: includeComplete,
 			})
-			if err != nil {
-				return fmt.Errorf("list-impls: %w", err)
+			if res.IsFatal() {
+				return fmt.Errorf("list-impls: %s", res.Errors[0].Message)
 			}
+			data := res.GetData()
 
-			out, _ := json.MarshalIndent(result, "", "  ")
+			out, _ := json.MarshalIndent(data, "", "  ")
 			fmt.Println(string(out))
 			return nil
 		},

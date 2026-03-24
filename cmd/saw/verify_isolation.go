@@ -16,15 +16,16 @@ func newVerifyIsolationCmd() *cobra.Command {
 		Use:   "verify-isolation",
 		Short: "Verify agent is running in the correct isolated worktree (Field 0 / E12)",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			result, err := protocol.VerifyIsolation(repoDir, expectedBranch)
-			if err != nil {
-				return fmt.Errorf("verify-isolation: %w", err)
+			res := protocol.VerifyIsolation(repoDir, expectedBranch)
+			if res.IsFatal() {
+				return fmt.Errorf("verify-isolation: %s", res.Errors[0].Message)
 			}
+			data := res.GetData()
 
-			out, _ := json.MarshalIndent(result, "", "  ")
+			out, _ := json.MarshalIndent(data, "", "  ")
 			fmt.Println(string(out))
 
-			if !result.OK {
+			if !data.OK {
 				os.Exit(1)
 			}
 			return nil

@@ -214,7 +214,7 @@ Examples:
 			}
 
 			// Build result
-			result := protocol.ImportIMPLsResult{
+			result := protocol.ImportIMPLsData{
 				ManifestPath:    programPath,
 				ImplsImported:   imported,
 				TierAssignments: tierAssignments,

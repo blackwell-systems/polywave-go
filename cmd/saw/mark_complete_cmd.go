@@ -57,9 +57,9 @@ func newMarkCompleteCmd() *cobra.Command {
 					}
 				}
 				if len(matching) > 0 {
-					result, cleanErr := protocol.CleanStaleWorktrees(matching, true) // force=true, we just archived
-					if cleanErr == nil {
-						cleanedCount = len(result.Cleaned)
+					cleanRes := protocol.CleanStaleWorktrees(matching, true) // force=true, we just archived
+					if !cleanRes.IsFatal() {
+						cleanedCount = len(cleanRes.GetData().Cleaned)
 					}
 					if cleanedCount > 0 {
 						fmt.Fprintf(os.Stderr, "mark-complete: cleaned %d stale worktree(s) for %s\n", cleanedCount, manifest.FeatureSlug)

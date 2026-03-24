@@ -14,7 +14,7 @@ import (
 // It includes both the heuristic scan report and the wiring declaration check report.
 type combinedReport struct {
 	HeuristicReport *protocol.IntegrationReport      `json:"heuristic_report,omitempty"`
-	WiringReport    *protocol.WiringValidationResult `json:"wiring_report,omitempty"`
+	WiringReport    *protocol.WiringValidationData `json:"wiring_report,omitempty"`
 	Valid           bool                             `json:"valid"`
 }
 
@@ -62,12 +62,13 @@ Exits 0 if no gaps found (both reports valid), exits 1 if gaps are detected.`,
 			// Step 3.5: Wiring declaration check (E35 Layer 3B)
 			// For each wiring: entry, verify the symbol is actually called in
 			// must_be_called_from. This is severity: error (not info).
-			var wiringResult *protocol.WiringValidationResult
+			var wiringResult *protocol.WiringValidationData
 			if wiringEnabled {
-				wiringResult, err = protocol.ValidateWiringDeclarations(manifest, repoDir)
-				if err != nil {
-					return fmt.Errorf("validate-integration: wiring check failed: %w", err)
+				wiringRes := protocol.ValidateWiringDeclarations(manifest, repoDir)
+				if wiringRes.IsFatal() {
+					return fmt.Errorf("validate-integration: wiring check failed: %s", wiringRes.Errors[0].Message)
 				}
+				wiringResult = wiringRes.Data
 				combined.WiringReport = wiringResult
 
 				// Persist wiring report to manifest
@@ -112,11 +113,11 @@ Exits 0 if no gaps found (both reports valid), exits 1 if gaps are detected.`,
 	return cmd
 }
 
-// appendWiringReport persists a WiringValidationResult to the manifest
+// appendWiringReport persists a WiringValidationData to the manifest
 // under wiring_validation_reports.{waveKey}. Uses raw YAML manipulation
 // to avoid re-marshaling the entire manifest. Creates the
 // wiring_validation_reports key if it does not yet exist.
-func appendWiringReport(manifestPath, waveKey string, result *protocol.WiringValidationResult) error {
+func appendWiringReport(manifestPath, waveKey string, result *protocol.WiringValidationData) error {
 	data, err := os.ReadFile(manifestPath)
 	if err != nil {
 		return fmt.Errorf("appendWiringReport: failed to read manifest: %w", err)
