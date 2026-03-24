@@ -23,23 +23,30 @@ sawtools --repo-dir /path/to/repo [command] ...
 | `analyze-suitability` | Context | Scan codebase for pre-implemented requirements |
 | `detect-scaffolds` | Context | Detect shared types that should be scaffold files |
 | `detect-cascades` | Context | Detect files affected by type renames |
+| `interview` | Context | Conduct a structured requirements interview |
 | `create-worktrees` | Execution | Create git worktrees for agents in a wave |
 | `prepare-agent` | Execution | Prepare agent environment (extract brief, init journal) |
 | `prepare-wave` | Execution | Prepare all agents in a wave (atomic batch operation) |
+| `pre-wave-gate` | Execution | Run pre-wave readiness checks on an IMPL manifest |
 | `run-wave` | Execution | Execute full wave lifecycle end-to-end |
 | `run-scout` | Execution | Automated Scout execution with validation (I3) |
 | `run-critic` | Execution | Run critic agent to review briefs against codebase (E37) |
 | `finalize-wave` | Execution | Finalize wave: verify, scan, gate, merge, build, cleanup |
 | `finalize-impl` | Execution | Finalize IMPL doc: validate, populate gates, validate again |
+| `close-impl` | Execution | Close an IMPL: mark complete, archive, update context, clean worktrees |
 | `verify-commits` | Execution | Verify agent branches have commits (I5) |
 | `merge-agents` | Execution | Merge all agent branches for a wave |
 | `verify-build` | Execution | Run test and lint commands from manifest |
 | `cleanup` | Execution | Remove worktrees and branches after merge |
+| `cleanup-stale` | Execution | Detect and remove stale SAW worktrees |
 | `verify-isolation` | Execution | Verify agent is in correct isolated worktree (E12) |
 | `verify-hook-installed` | Execution | Verify pre-commit hook is installed in worktree (E4) |
+| `verify-install` | Execution | Check that all SAW prerequisites are met |
 | `update-status` | Status | Update agent status in manifest |
 | `update-context` | Status | Update project CONTEXT.md (E18) |
 | `set-completion` | Status | Set completion report for an agent |
+| `check-completion` | Status | Check if an agent has a completion report |
+| `set-impl-state` | Status | Atomically transition an IMPL manifest to a new protocol state |
 | `set-critic-review` | Status | Write critic review result to IMPL doc (E37) |
 | `mark-complete` | Status | Write completion marker and archive IMPL manifest |
 | `program-status` | Status | Display full program status report |
@@ -49,6 +56,7 @@ sawtools --repo-dir /path/to/repo [command] ...
 | `run-review` | Quality | Run AI code review on the current diff |
 | `check-conflicts` | Quality | Detect file ownership conflicts |
 | `check-deps` | Quality | Detect dependency conflicts before wave execution |
+| `check-type-collisions` | Quality | Detect type name collisions across agent branches |
 | `validate-scaffolds` | Quality | Validate scaffold files are committed |
 | `validate-scaffold` | Quality | Validate a single scaffold file before committing |
 | `freeze-check` | Quality | Check manifest for freeze violations |
@@ -65,9 +73,21 @@ sawtools --repo-dir /path/to/repo [command] ...
 | `debug-journal` | Journal | Inspect journal contents for debugging failed agents |
 | `daemon` | Automation | Run the SAW daemon loop (process queue items continuously) |
 | `queue` | Automation | Manage the IMPL execution queue (add, list, next) |
+| `metrics` | Observability | Show metrics for an IMPL (cost, duration, success rate) |
+| `query events` | Observability | Query observability events with filters |
 | `tier-gate` | Program | Verify tier gate for a PROGRAM manifest |
 | `freeze-contracts` | Program | Freeze program contracts at a tier boundary |
 | `program-replan` | Program | Re-engage Planner agent to revise a PROGRAM manifest |
+| `program-execute` | Program | Execute a PROGRAM manifest through the tier loop |
+| `create-program` | Program | Auto-generate a PROGRAM manifest from existing IMPL docs |
+| `check-impl-conflicts` | Program | Check file ownership conflicts across IMPL docs |
+| `check-program-conflicts` | Program | Detect file conflicts across IMPLs in a program tier |
+| `import-impls` | Program | Import existing IMPL docs into a PROGRAM manifest |
+| `update-program-impl` | Program | Update IMPL status in a PROGRAM manifest |
+| `update-program-state` | Program | Update state field of a PROGRAM manifest |
+| `create-program-worktrees` | Program | Create branches/worktrees for all IMPLs in a program tier |
+| `prepare-tier` | Program | Prepare a program tier: check conflicts, validate, create branches |
+| `finalize-tier` | Program | Finalize a program tier: merge IMPL branches and run tier gate |
 
 ---
 
@@ -379,6 +399,40 @@ sawtools detect-cascades . --renames '[{"old":"AuthToken","new":"SessionToken","
 
 ---
 
+### interview
+
+Conduct a structured requirements interview that produces a REQUIREMENTS.md file suitable for `/saw bootstrap` or `/saw scout`. Walks through 6 phases: overview, scope, requirements, interfaces, stories, and review.
+
+```
+sawtools interview "<description>" [flags]
+```
+
+**Arguments:**
+- `description` -- description of the feature/project (required unless `--resume` is used)
+
+**Flags:**
+- `--mode` -- question mode: `deterministic` or `llm` (default: `deterministic`)
+- `--max-questions` -- soft cap on total questions (default: 18)
+- `--project-path` -- optional path to existing project for context
+- `--resume` -- path to an existing `INTERVIEW-<slug>.yaml` to resume
+- `--output` -- path for output REQUIREMENTS.md (default: `docs/REQUIREMENTS.md`)
+- `--docs-dir` -- directory to write INTERVIEW doc (default: `docs`)
+- `--non-interactive` -- read answers from stdin without prompts, for testing/piping (default: false)
+
+**Output:** Interactive question-answer loop. On completion, writes `REQUIREMENTS.md` and saves interview state as `INTERVIEW-<slug>.yaml`.
+
+**Exit codes:** 0 on completion, 1 on error, 2 if stdin closes before interview is complete (state is saved for resume).
+
+**Example:**
+```bash
+sawtools interview "Build a REST API for user management"
+sawtools interview "Add OAuth2 support" --max-questions 12
+sawtools interview --resume docs/INTERVIEW-my-feature.yaml
+echo "answers..." | sawtools interview "test" --non-interactive
+```
+
+---
+
 ## Wave Execution
 
 ### create-worktrees
@@ -457,6 +511,28 @@ sawtools prepare-wave <manifest-path> --wave <n>
 **Example:**
 ```bash
 sawtools prepare-wave docs/IMPL/my-feature.yaml --wave 1
+```
+
+---
+
+### pre-wave-gate
+
+Run pre-wave readiness checks on an IMPL manifest. Checks validation, critic review status (E37), scaffold commits, and IMPL state.
+
+```
+sawtools pre-wave-gate <manifest-path>
+```
+
+**Arguments:**
+- `manifest-path` -- path to YAML IMPL manifest (required)
+
+**Output:** JSON object with `ready` (bool) and per-check results.
+
+**Exit codes:** 0 if all checks pass (ready=true), 1 if any check fails (ready=false).
+
+**Example:**
+```bash
+sawtools pre-wave-gate docs/IMPL/my-feature.yaml
 ```
 
 ---
@@ -612,6 +688,32 @@ sawtools finalize-impl docs/IMPL/IMPL-feature-x.yaml --repo-root /path/to/repo
 
 ---
 
+### close-impl
+
+Batch command that combines the full IMPL close lifecycle into one operation: write completion marker, archive to `complete/`, update CONTEXT.md, and clean stale worktrees for this IMPL.
+
+```
+sawtools close-impl <manifest-path> [flags]
+```
+
+**Arguments:**
+- `manifest-path` -- path to YAML IMPL manifest (required)
+
+**Flags:**
+- `--date` -- completion date in `YYYY-MM-DD` format (default: today)
+
+**Output:** JSON object with `marked` (bool), `date`, `archived_path`, `context_updated` (bool), `worktrees_cleaned` (int), and `state_cleaned` (int).
+
+**Exit codes:** 0 on success, 1 on error.
+
+**Example:**
+```bash
+sawtools close-impl docs/IMPL/IMPL-feature.yaml
+sawtools close-impl docs/IMPL/IMPL-feature.yaml --date 2026-03-22
+```
+
+---
+
 ### verify-commits
 
 Verify that each agent branch in a wave has at least one commit. Implements the I5 trip wire check.
@@ -705,6 +807,58 @@ sawtools cleanup <manifest-path> --wave <n>
 **Example:**
 ```bash
 sawtools cleanup docs/IMPL/my-feature.yaml --wave 1
+```
+
+---
+
+### cleanup-stale
+
+Detect and remove stale SAW worktrees (completed IMPLs, orphaned branches, merged-but-not-cleaned).
+
+```
+sawtools cleanup-stale [flags]
+```
+
+**Flags:**
+- `--slug` -- only clean stale worktrees matching this IMPL slug
+- `--all` -- clean stale worktrees across all slugs
+- `--dry-run` -- report what would be cleaned without acting (default: false)
+- `--force` -- skip safety checks for uncommitted changes (default: false)
+
+**Note:** Exactly one of `--slug` or `--all` must be provided.
+
+**Output:** JSON object with `detected` (int), `cleaned` (array), `skipped` (array), and `errors` (array).
+
+**Exit codes:** 0 on success, 1 on error.
+
+**Example:**
+```bash
+sawtools cleanup-stale --all --dry-run
+sawtools cleanup-stale --slug my-feature
+sawtools cleanup-stale --all --force
+```
+
+---
+
+### verify-install
+
+Check that all SAW prerequisites are met: sawtools binary on PATH, Git version >= 2.20, skill directory and files, config file, and configured repo paths.
+
+```
+sawtools verify-install [flags]
+```
+
+**Flags:**
+- `--human` -- print human-readable output instead of JSON (default: false)
+
+**Output:** JSON object with `checks` (array of per-check results), `verdict` (`PASS`, `PARTIAL`, or `FAIL`), and `summary`.
+
+**Exit codes:** 0 always (verdict is informational).
+
+**Example:**
+```bash
+sawtools verify-install
+sawtools verify-install --human
 ```
 
 ---
@@ -807,6 +961,59 @@ sawtools update-context <manifest-path> [--project-root <path>]
 **Example:**
 ```bash
 sawtools update-context docs/IMPL/my-feature.yaml --project-root /path/to/project
+```
+
+---
+
+### check-completion
+
+Check if an agent has a completion report in the manifest. Used by the SubagentStop hook for wave agent validation.
+
+```
+sawtools check-completion <manifest-path> --agent <id>
+```
+
+**Arguments:**
+- `manifest-path` -- path to YAML IMPL manifest (required)
+
+**Flags:**
+- `--agent` -- agent ID to check (required)
+
+**Output:** JSON object with `found` (bool), `agent_id`, `status`, `has_commit` (bool), and `files_changed` (array).
+
+**Exit codes:** 0 if completion report found, 1 if not found or status is empty.
+
+**Example:**
+```bash
+sawtools check-completion docs/IMPL/my-feature.yaml --agent A
+```
+
+---
+
+### set-impl-state
+
+Atomically transition an IMPL manifest to a new protocol state. Validates the transition against the protocol state machine before writing.
+
+```
+sawtools set-impl-state <manifest-path> --state <state> [flags]
+```
+
+**Arguments:**
+- `manifest-path` -- path to YAML IMPL manifest (required)
+
+**Flags:**
+- `--state` -- target state (required). Valid states: `SCOUT_PENDING`, `SCOUT_VALIDATING`, `REVIEWED`, `SCAFFOLD_PENDING`, `WAVE_PENDING`, `WAVE_EXECUTING`, `WAVE_MERGING`, `WAVE_VERIFIED`, `BLOCKED`, `COMPLETE`, `NOT_SUITABLE`
+- `--commit` -- git commit the state change (default: false)
+- `--commit-msg` -- commit message override
+
+**Output:** JSON with `previous_state`, `new_state`, `committed`, `commit_sha`.
+
+**Exit codes:** 0 on success, 1 on invalid transition or error.
+
+**Example:**
+```bash
+sawtools set-impl-state docs/IMPL/my-feature.yaml --state REVIEWED
+sawtools set-impl-state docs/IMPL/my-feature.yaml --state WAVE_PENDING --commit
 ```
 
 ---
@@ -1078,6 +1285,32 @@ sawtools check-deps <impl-doc> [flags]
 ```bash
 sawtools check-deps docs/IMPL/my-feature.yaml
 sawtools check-deps docs/IMPL/my-feature.yaml --wave 1
+```
+
+---
+
+### check-type-collisions
+
+Detect type name collisions across agent branches in a wave. Uses AST parsing to extract type names from git diffs (base..branch) and reports duplicate declarations in the same package.
+
+```
+sawtools check-type-collisions <manifest-path> --wave <n> [flags]
+```
+
+**Arguments:**
+- `manifest-path` -- path to YAML IMPL manifest (required)
+
+**Flags:**
+- `--wave` -- wave number (required)
+- `--repo-dir` -- repository root directory (default: `.`)
+
+**Output:** JSON collision report with `valid` (bool) and collision details.
+
+**Exit codes:** 0 if no collisions, 1 if collisions found.
+
+**Example:**
+```bash
+sawtools check-type-collisions docs/IMPL/my-feature.yaml --wave 1
 ```
 
 ---
@@ -1496,27 +1729,100 @@ Add an item to the execution queue.
 sawtools queue add [flags]
 ```
 
+**Flags:**
+- `--title` -- item title (required)
+- `--priority` -- item priority, lower = higher priority (default: 50)
+- `--description` -- feature description
+
+**Output:** JSON with `added` (bool), `slug`, and `path`.
+
 #### queue list
 
-List all items in the execution queue.
+List all items in the execution queue, sorted by priority.
 
 ```
-sawtools queue list [flags]
+sawtools queue list
 ```
+
+**Output:** JSON array of queue items with `slug`, `title`, `priority`, and `status`.
 
 #### queue next
 
-Get the next item from the execution queue.
+Get the next eligible item from the execution queue.
 
 ```
-sawtools queue next [flags]
+sawtools queue next
 ```
+
+**Output:** JSON with next item's `slug`, `title`, `priority`, or `{"next": null}` if queue is empty.
 
 **Example:**
 ```bash
-sawtools queue add
+sawtools queue add --title "Add audit logging" --priority 10 --description "Add logging to auth module"
 sawtools queue list
 sawtools queue next
+```
+
+---
+
+## Observability
+
+### metrics
+
+Show cost and performance metrics for an IMPL from the observability store.
+
+```
+sawtools metrics <impl-slug> [flags]
+```
+
+**Arguments:**
+- `impl-slug` -- IMPL slug to query metrics for (required)
+
+**Flags:**
+- `--program` -- show program-level summary instead of IMPL metrics
+- `--breakdown` -- show per-agent cost breakdown (default: false)
+- `--store` -- store DSN (default: `~/.saw/observability.db`)
+
+**Output:** Human-readable table with cost, duration, success rate, and agent stats. With `--breakdown`, includes per-agent cost table.
+
+**Exit codes:** 0 on success, 1 on error.
+
+**Example:**
+```bash
+sawtools metrics my-feature
+sawtools metrics my-feature --breakdown
+sawtools metrics --program my-program
+```
+
+---
+
+### query events
+
+Query observability events with various filters and output formats.
+
+```
+sawtools query events [flags]
+```
+
+**Flags:**
+- `--type` -- event type filter (`cost`, `agent_performance`, `activity`)
+- `--impl` -- IMPL slug filter
+- `--program` -- program slug filter
+- `--agent` -- agent ID filter
+- `--since` -- time range (e.g., `24h`, `7d`, `30d`)
+- `--format` -- output format: `table`, `json`, or `csv` (default: `table`)
+- `--limit` -- max results to return (default: 100)
+- `--store` -- store DSN (default: `~/.saw/observability.db`)
+
+**Output:** Events in the selected format (table, JSON, or CSV).
+
+**Exit codes:** 0 on success, 1 on error.
+
+**Example:**
+```bash
+sawtools query events --type cost --since 7d
+sawtools query events --impl my-feature --format json
+sawtools query events --agent A --since 24h --limit 50
 ```
 
 ---
@@ -1606,8 +1912,272 @@ sawtools program-replan docs/PROGRAM.yaml --reason "Blocked IMPL" --tier 3 --mod
 
 ---
 
+### program-execute
+
+Execute a PROGRAM manifest through the tier loop (E28-E34). Launches parallel Scouts for pending IMPLs, executes waves, runs tier gates, freezes contracts, and advances through tiers. Events are streamed as JSON lines for observability.
+
+```
+sawtools program-execute <program-manifest> [flags]
+```
+
+**Arguments:**
+- `program-manifest` -- path to YAML PROGRAM manifest (required)
+
+**Flags:**
+- `--auto` -- enable auto-advancement through tiers (default: false)
+- `--model` -- model override for Scout/Planner agents
+
+**Output:** JSON lines streamed to stdout during execution, then a final JSON result object.
+
+**Exit codes:** 0 if program complete or paused awaiting review, 1 on execution failure, 2 on parse error.
+
+**Example:**
+```bash
+sawtools program-execute docs/PROGRAM.yaml
+sawtools program-execute docs/PROGRAM.yaml --auto
+sawtools program-execute docs/PROGRAM.yaml --auto --model claude-opus-4-6
+```
+
+---
+
+### create-program
+
+Auto-generate a PROGRAM manifest from existing IMPL docs. Uses cross-IMPL conflict detection to automatically assign tiers so that IMPLs with overlapping file ownership are placed in separate tiers.
+
+```
+sawtools create-program [flags]
+```
+
+**Flags:**
+- `--from-impls` -- IMPL slugs to include (required, at least 2; repeatable)
+- `--slug` -- override program slug (auto-derived if empty)
+- `--title` -- override program title (auto-derived if empty)
+
+**Output:** JSON with generated program details and conflict report.
+
+**Exit codes:** 0 on success, 1 on error.
+
+**Example:**
+```bash
+sawtools create-program --from-impls feature-a --from-impls feature-b
+sawtools create-program --from-impls feature-a --from-impls feature-b --slug my-program --title "My Program"
+```
+
+---
+
+### check-impl-conflicts
+
+Check for file ownership conflicts across IMPL docs. Loads IMPL docs by slug, extracts `file_ownership` entries, and detects overlapping files.
+
+```
+sawtools check-impl-conflicts [flags]
+```
+
+**Flags:**
+- `--impls` -- IMPL slugs to check for conflicts (required; repeatable)
+
+**Output:** JSON conflict report.
+
+**Exit codes:** 0 if all disjoint, 1 if conflicts found.
+
+**Example:**
+```bash
+sawtools check-impl-conflicts --impls feature-a --impls feature-b
+```
+
+---
+
+### check-program-conflicts
+
+Detect file ownership conflicts across IMPLs in a specific program tier.
+
+```
+sawtools check-program-conflicts <program-manifest> --tier <n>
+```
+
+**Arguments:**
+- `program-manifest` -- path to YAML PROGRAM manifest (required)
+
+**Flags:**
+- `--tier` -- tier number to check (required)
+
+**Output:** JSON conflict report.
+
+**Exit codes:** 0 if no conflicts, 1 if conflicts found.
+
+**Example:**
+```bash
+sawtools check-program-conflicts docs/PROGRAM.yaml --tier 1
+```
+
+---
+
+### import-impls
+
+Import existing IMPL documents into a PROGRAM manifest for tiered execution. Supports both explicit import and auto-discovery. Computes tier assignments based on file ownership overlap.
+
+```
+sawtools import-impls [flags]
+```
+
+**Flags:**
+- `--program` -- path to PROGRAM manifest; created if missing (required)
+- `--from-impls` -- explicit IMPL doc paths to import (repeatable)
+- `--discover` -- auto-discover IMPL docs in `docs/IMPL/` (default: false)
+- `--repo-dir` -- repository root directory (default: cwd)
+
+**Note:** Either `--from-impls` or `--discover` must be specified.
+
+**Output:** JSON with imported IMPLs, tier assignments, and P1/P2 conflict detection.
+
+**Exit codes:** 0 on success, 1 on error.
+
+**Example:**
+```bash
+sawtools import-impls --program PROGRAM-my-feature.yaml --discover
+sawtools import-impls --program PROGRAM-my-feature.yaml --from-impls IMPL-a.yaml --from-impls IMPL-b.yaml
+```
+
+---
+
+### update-program-impl
+
+Update the status of a specific IMPL entry in a PROGRAM manifest. The IMPL is identified by its slug field.
+
+```
+sawtools update-program-impl <program-manifest> --impl <slug> --status <status>
+```
+
+**Arguments:**
+- `program-manifest` -- path to YAML PROGRAM manifest (required)
+
+**Flags:**
+- `--impl` -- IMPL slug to update (required)
+- `--status` -- new status value, e.g. `complete`, `in_progress`, `blocked` (required)
+
+**Output:** JSON with `updated` (bool), `manifest_path`, `impl_slug`, `previous_status`, `new_status`.
+
+**Exit codes:** 0 on success, 1 if IMPL not found or write error, 2 on parse error.
+
+**Example:**
+```bash
+sawtools update-program-impl docs/PROGRAM.yaml --impl my-feature --status complete
+```
+
+---
+
+### update-program-state
+
+Update the state field of a PROGRAM manifest.
+
+```
+sawtools update-program-state <program-manifest> --state <state>
+```
+
+**Arguments:**
+- `program-manifest` -- path to YAML PROGRAM manifest (required)
+
+**Flags:**
+- `--state` -- new state value, e.g. `REVIEWED`, `TIER_EXECUTING` (required)
+
+**Output:** JSON with `updated` (bool), `manifest_path`, `previous_state`, `new_state`.
+
+**Exit codes:** 0 on success, 1 on update or write error, 2 on parse error.
+
+**Example:**
+```bash
+sawtools update-program-state docs/PROGRAM.yaml --state REVIEWED
+sawtools update-program-state docs/PROGRAM.yaml --state TIER_EXECUTING
+```
+
+---
+
+### create-program-worktrees
+
+Create IMPL branches and worktrees for all IMPLs in a program tier. Branch naming follows `saw/program/{program-slug}/tier{N}-impl-{impl-slug}`. These branches serve as merge targets for all wave executions within each IMPL.
+
+```
+sawtools create-program-worktrees <program-manifest> --tier <n>
+```
+
+**Arguments:**
+- `program-manifest` -- path to YAML PROGRAM manifest (required)
+
+**Flags:**
+- `--tier` -- tier number (required)
+
+**Output:** JSON with created worktree paths and branch details.
+
+**Exit codes:** 0 if all worktrees created, 1 if one or more failed, 2 on parse error or tier not found.
+
+**Example:**
+```bash
+sawtools create-program-worktrees docs/PROGRAM.yaml --tier 1
+sawtools create-program-worktrees program.yaml --tier 2 --repo-dir /path/to/repo
+```
+
+---
+
+### prepare-tier
+
+Prepare a program tier for execution. Checks for file ownership conflicts across IMPLs, validates each IMPL doc (with auto-corrections), and creates IMPL branches for all IMPLs in the tier. Counterpart to `finalize-tier`.
+
+```
+sawtools prepare-tier <program-manifest> --tier <n>
+```
+
+**Arguments:**
+- `program-manifest` -- path to YAML PROGRAM manifest (required)
+
+**Flags:**
+- `--tier` -- tier number to prepare (required)
+
+**Output:** JSON with per-step results and overall `success` (bool).
+
+**Exit codes:** 0 if all steps succeeded, 1 on step failure, 2 on fatal error (manifest/tier not found).
+
+**Example:**
+```bash
+sawtools prepare-tier docs/PROGRAM.yaml --tier 1
+sawtools prepare-tier program.yaml --tier 2 --repo-dir /path/to/repo
+```
+
+---
+
+### finalize-tier
+
+Finalize a program tier by merging all IMPL branches into main in sequence, then running tier-level quality gates. Stops on the first merge failure. With `--auto`, automatically advances to the next tier after the gate passes.
+
+```
+sawtools finalize-tier <program-manifest> --tier <n> [flags]
+```
+
+**Arguments:**
+- `program-manifest` -- path to YAML PROGRAM manifest (required)
+
+**Flags:**
+- `--tier` -- tier number to finalize (required)
+- `--auto` -- automatically advance to next tier after gate passes (default: false)
+
+**Output:** JSON with merge results and tier gate outcome.
+
+**Exit codes:** 0 if all merges succeeded and tier gate passed, 1 on merge or gate failure, 2 on parse error or tier not found.
+
+**Example:**
+```bash
+sawtools finalize-tier docs/PROGRAM.yaml --tier 1
+sawtools finalize-tier program.yaml --tier 2 --repo-dir /path/to/repo
+sawtools finalize-tier program.yaml --tier 1 --auto
+```
+
+---
+
 ## Global Flags
 
 | Flag | Default | Description |
 |------|---------|-------------|
 | `--repo-dir` | `.` | Repository root directory. Inherited by all subcommands that perform git operations. |
+
+---
+
+Last reviewed: 2026-03-24
