@@ -140,7 +140,7 @@ func implSlugFromIMPLPath(path string) string {
 }
 
 // RunPlanner executes a Planner agent to produce a PROGRAM manifest.
-// Mirrors RunScout but reads agents/planner.md and writes docs/PROGRAM-*.yaml.
+// Mirrors RunScout but reads agents/planner.md and writes docs/PROGRAM/PROGRAM-*.yaml.
 func RunPlanner(ctx context.Context, opts RunPlannerOpts, onChunk func(string)) error {
 	if opts.Description == "" {
 		return fmt.Errorf("engine.RunPlanner: Description is required")

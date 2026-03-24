@@ -191,8 +191,8 @@ func ReplanProgram(opts ReplanProgramOpts) (*ReplanResult, error) {
 	// Step 2: Construct revision prompt
 	revisionPrompt := buildRevisionPrompt(opts, string(manifestData))
 
-	// Step 3: Derive repo path — manifest lives at <repo>/docs/PROGRAM-*.yaml
-	repoPath := filepath.Dir(filepath.Dir(opts.ProgramManifestPath))
+	// Step 3: Derive repo path — manifest lives at <repo>/docs/PROGRAM/PROGRAM-*.yaml
+	repoPath := filepath.Dir(filepath.Dir(filepath.Dir(opts.ProgramManifestPath)))
 
 	// Step 4: Launch Planner agent with the revision prompt overwriting the manifest in place
 	var chunks []string

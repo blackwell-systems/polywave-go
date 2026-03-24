@@ -22,7 +22,7 @@ These branches serve as merge targets for all wave executions within each IMPL.
 Waves merge to the IMPL branch, not to main.
 
 Examples:
-  sawtools create-program-worktrees docs/PROGRAM.yaml --tier 1
+  sawtools create-program-worktrees docs/PROGRAM/PROGRAM.yaml --tier 1
   sawtools create-program-worktrees program.yaml --tier 2 --repo-dir /path/to/repo
 
 Exit codes:

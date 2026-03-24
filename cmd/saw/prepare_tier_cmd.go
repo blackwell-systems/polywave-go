@@ -25,7 +25,7 @@ This is the counterpart to finalize-tier. Together they bookend tier execution:
   prepare-tier -> orchestrator launches scouts/agents -> finalize-tier
 
 Examples:
-  sawtools prepare-tier docs/PROGRAM.yaml --tier 1
+  sawtools prepare-tier docs/PROGRAM/PROGRAM.yaml --tier 1
   sawtools prepare-tier program.yaml --tier 2 --repo-dir /path/to/repo
 
 Exit codes:

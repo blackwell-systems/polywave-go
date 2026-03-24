@@ -12,6 +12,18 @@
         "cached_at": "2026-03-23T11:00:30.400608-07:00"
       }
     },
+    "3df9f805ea242b81b8e304b1415167c5": {
+      "test": {
+        "gate_type": "test",
+        "command": "go test ./...",
+        "passed": true,
+        "exit_code": 0,
+        "stdout": "ok  \tgithub.com/blackwell-systems/scout-and-wave-go/cmd/saw\t1.894s\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/internal/git\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/agent\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/agent/backend\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/agent/backend/api\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/agent/backend/bedrock\t(cached)\n?   \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/agent/backend/cli\t[no test files]\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/agent/backend/openai\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/agent/dedup\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/analyzer\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/autonomy\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/builddiag\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/codereview\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/collision\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/commands\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/deps\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/engine\t3.099s\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/errparse\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/format\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/gatecache\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/hooks\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/idgen\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/interview\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/journal\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/observability\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/observability/sqlite\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/orchestrator\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/pipeline\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/protocol\t17.972s\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/queue\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/result\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/resume\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/retry\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/retryctx\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/scaffold\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/scaffoldval\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/solver\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/suitability\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/tools\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/worktree\t(cached)\n",
+        "stderr": "",
+        "from_cache": true,
+        "cached_at": "2026-03-24T14:25:35.604423-07:00"
+      }
+    },
     "7c4645b96b1c9c6cddf21b350e64fba8": {
       "lint": {
         "gate_type": "lint",
@@ -24,6 +36,18 @@
         "cached_at": "2026-03-23T11:00:31.253321-07:00"
       }
     },
+    "9468af05ca99c327744ff1d4f4f5223a": {
+      "lint": {
+        "gate_type": "lint",
+        "command": "go vet ./...",
+        "passed": true,
+        "exit_code": 0,
+        "stdout": "",
+        "stderr": "",
+        "from_cache": true,
+        "cached_at": "2026-03-24T14:25:15.304576-07:00"
+      }
+    },
     "c8798049224fbef89e6720eb30be90f2": {
       "test": {
         "gate_type": "test",
@@ -34,6 +58,18 @@
         "stderr": "# github.com/blackwell-systems/scout-and-wave-go/pkg/engine\npkg/engine/finalize.go:39:27: undefined: protocol.VerifyCommitsResult\npkg/engine/finalize.go:44:27: undefined: protocol.VerifyBuildResult\npkg/engine/finalize.go:84:23: assignment mismatch: 2 variables but protocol.VerifyCommits returns 1 value\npkg/engine/run_wave_full.go:21:29: undefined: protocol.CreateWorktreesResult\npkg/engine/run_wave_full.go:22:29: undefined: protocol.VerifyCommitsResult\npkg/engine/run_wave_full.go:24:29: undefined: protocol.VerifyBuildResult\npkg/engine/auto_remediate.go:19:79: undefined: protocol.VerifyBuildResult\npkg/engine/auto_remediate.go:20:9: not enough return values\n\thave (result.Result[protocol.VerifyBuildData])\n\twant (unknown type, error)\npkg/engine/daemon.go:62:99: undefined: protocol.CreateWorktreesResult\npkg/engine/daemon.go:63:9: not enough return values\n\thave (result.Result[protocol.CreateWorktreesData])\n\twant (unknown type, error)\npkg/engine/finalize.go:84:23: too many errors\n# github.com/blackwell-systems/scout-and-wave-go/pkg/protocol [github.com/blackwell-systems/scout-and-wave-go/pkg/protocol.test]\npkg/protocol/worktree_test.go:92:42: undefined: err\npkg/protocol/worktree_test.go:147:12: assignment mismatch: 2 variables but CreateWorktrees returns 1 value\npkg/protocol/worktree_test.go:165:12: assignment mismatch: 2 variables but CreateWorktrees returns 1 value\npkg/protocol/worktree_test.go:194:12: assignment mismatch: 2 variables but CreateWorktrees returns 1 value\npkg/protocol/worktree_test.go:229:57: undefined: err\npkg/protocol/worktree_test.go:261:42: undefined: err\npkg/protocol/worktree_test.go:306:42: undefined: err\n",
         "from_cache": true,
         "cached_at": "2026-03-23T11:00:34.958539-07:00"
+      }
+    },
+    "d9ad78e79fe2329813b5a56fcd413915": {
+      "build": {
+        "gate_type": "build",
+        "command": "go build ./...",
+        "passed": true,
+        "exit_code": 0,
+        "stdout": "",
+        "stderr": "",
+        "from_cache": true,
+        "cached_at": "2026-03-24T14:25:14.32904-07:00"
       }
     }
   }

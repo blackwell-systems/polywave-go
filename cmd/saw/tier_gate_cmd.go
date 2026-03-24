@@ -25,7 +25,7 @@ Checks that:
 2. All required quality gates pass
 
 Examples:
-  sawtools tier-gate docs/PROGRAM.yaml --tier 1
+  sawtools tier-gate docs/PROGRAM/PROGRAM.yaml --tier 1
   sawtools tier-gate program.yaml --tier 2 --repo-dir /path/to/repo
 
 Exit codes:

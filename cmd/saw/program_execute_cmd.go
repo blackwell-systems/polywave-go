@@ -32,9 +32,9 @@ and advances through tiers.
 Events are streamed to stdout as JSON lines for observability.
 
 Examples:
-  sawtools program-execute docs/PROGRAM.yaml
-  sawtools program-execute docs/PROGRAM.yaml --auto
-  sawtools program-execute docs/PROGRAM.yaml --auto --model claude-opus-4-6
+  sawtools program-execute docs/PROGRAM/PROGRAM.yaml
+  sawtools program-execute docs/PROGRAM/PROGRAM.yaml --auto
+  sawtools program-execute docs/PROGRAM/PROGRAM.yaml --auto --model claude-opus-4-6
 
 Exit codes:
   0 - Program complete or paused awaiting review

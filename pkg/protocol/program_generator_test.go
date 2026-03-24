@@ -202,7 +202,7 @@ func TestGenerateProgramFromIMPLs_WritesToDisk(t *testing.T) {
 
 	d := res.GetData()
 
-	expectedPath := filepath.Join(repoPath, "docs", "PROGRAM-disk-test-program.yaml")
+	expectedPath := filepath.Join(repoPath, "docs", "PROGRAM", "PROGRAM-disk-test-program.yaml")
 	if d.ManifestPath != expectedPath {
 		t.Errorf("expected manifest path %q, got %q", expectedPath, d.ManifestPath)
 	}

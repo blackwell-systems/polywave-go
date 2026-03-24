@@ -41,8 +41,13 @@ completion:
   total_waves: 4
 `
 
-	path1 := filepath.Join(tmpDir, "PROGRAM-one.yaml")
-	path2 := filepath.Join(tmpDir, "PROGRAM-two.yaml")
+	programDir := filepath.Join(tmpDir, "PROGRAM")
+	if err := os.MkdirAll(programDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	path1 := filepath.Join(programDir, "PROGRAM-one.yaml")
+	path2 := filepath.Join(programDir, "PROGRAM-two.yaml")
 
 	if err := os.WriteFile(path1, []byte(manifest1), 0644); err != nil {
 		t.Fatal(err)
@@ -155,8 +160,13 @@ completion:
 `
 	invalidManifest := `this is not valid YAML: [unclosed bracket`
 
-	validPath := filepath.Join(tmpDir, "PROGRAM-valid.yaml")
-	invalidPath := filepath.Join(tmpDir, "PROGRAM-invalid.yaml")
+	programDir := filepath.Join(tmpDir, "PROGRAM")
+	if err := os.MkdirAll(programDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	validPath := filepath.Join(programDir, "PROGRAM-valid.yaml")
+	invalidPath := filepath.Join(programDir, "PROGRAM-invalid.yaml")
 
 	if err := os.WriteFile(validPath, []byte(validManifest), 0644); err != nil {
 		t.Fatal(err)
@@ -214,7 +224,11 @@ completion:
   total_agents: 0
   total_waves: 0
 `
-	manifestPath := filepath.Join(tmpDir, "PROGRAM-test.yaml")
+	programDir := filepath.Join(tmpDir, "PROGRAM")
+	if err := os.MkdirAll(programDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	manifestPath := filepath.Join(programDir, "PROGRAM-test.yaml")
 	if err := os.WriteFile(manifestPath, []byte(manifestContent), 0644); err != nil {
 		t.Fatal(err)
 	}

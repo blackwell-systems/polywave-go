@@ -30,7 +30,7 @@ func newListProgramsCmd() *cobra.Command {
 		},
 	}
 
-	cmd.Flags().StringVar(&dir, "dir", "docs/", "Directory to scan for PROGRAM manifests")
+	cmd.Flags().StringVar(&dir, "dir", "docs/", "Base directory to scan for PROGRAM manifests (scans dir/PROGRAM/)")
 
 	return cmd
 }

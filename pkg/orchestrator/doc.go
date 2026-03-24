@@ -51,7 +51,7 @@
 // agent_completed, agent_blocked, wave_completed, wave_merged, quality_gate_started,
 // quality_gate_completed, verification_started, verification_gate, verification_completed.
 //
-// See docs/sse-events.md for full event schema.
+// See docs/reference/sse-events.md for full event schema.
 //
 // # Per-Agent Backend Routing
 //
@@ -72,5 +72,5 @@
 //   - needs_replan → ActionEscalateScout (architecture issue)
 //   - escalate, timeout → ActionEscalateHuman
 //
-// See docs/orchestration.md for detailed orchestration flow and examples/library-usage/ for usage examples.
+// See docs/reference/orchestration.md for detailed orchestration flow and examples/library-usage/ for usage examples.
 package orchestrator

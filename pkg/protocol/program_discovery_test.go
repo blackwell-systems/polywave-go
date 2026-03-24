@@ -49,8 +49,13 @@ completion:
   total_waves: 0
 `
 
-	path1 := filepath.Join(tmpDir, "PROGRAM-alpha.yaml")
-	path2 := filepath.Join(tmpDir, "PROGRAM-beta.yaml")
+	programDir := filepath.Join(tmpDir, "PROGRAM")
+	if err := os.MkdirAll(programDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	path1 := filepath.Join(programDir, "PROGRAM-alpha.yaml")
+	path2 := filepath.Join(programDir, "PROGRAM-beta.yaml")
 
 	if err := os.WriteFile(path1, []byte(manifest1), 0644); err != nil {
 		t.Fatal(err)
@@ -158,7 +163,12 @@ waves:
 not a manifest
 `
 
-	programPath := filepath.Join(tmpDir, "PROGRAM-valid.yaml")
+	programDir := filepath.Join(tmpDir, "PROGRAM")
+	if err := os.MkdirAll(programDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	programPath := filepath.Join(programDir, "PROGRAM-valid.yaml")
 	implPath := filepath.Join(tmpDir, "IMPL-feature.yaml")
 	otherPath := filepath.Join(tmpDir, "README.md")
 
@@ -220,8 +230,13 @@ completion:
 {{{{ broken syntax
 `
 
-	validPath := filepath.Join(tmpDir, "PROGRAM-valid.yaml")
-	invalidPath := filepath.Join(tmpDir, "PROGRAM-invalid.yaml")
+	programDir := filepath.Join(tmpDir, "PROGRAM")
+	if err := os.MkdirAll(programDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	validPath := filepath.Join(programDir, "PROGRAM-valid.yaml")
+	invalidPath := filepath.Join(programDir, "PROGRAM-invalid.yaml")
 
 	if err := os.WriteFile(validPath, []byte(validManifest), 0644); err != nil {
 		t.Fatal(err)
@@ -275,9 +290,14 @@ completion:
 `
 
 	// Create files with names that would sort differently
-	path1 := filepath.Join(tmpDir, "PROGRAM-zebra.yaml")
-	path2 := filepath.Join(tmpDir, "PROGRAM-alpha.yaml")
-	path3 := filepath.Join(tmpDir, "PROGRAM-beta.yaml")
+	programDir := filepath.Join(tmpDir, "PROGRAM")
+	if err := os.MkdirAll(programDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	path1 := filepath.Join(programDir, "PROGRAM-zebra.yaml")
+	path2 := filepath.Join(programDir, "PROGRAM-alpha.yaml")
+	path3 := filepath.Join(programDir, "PROGRAM-beta.yaml")
 
 	for _, path := range []string{path1, path2, path3} {
 		if err := os.WriteFile(path, []byte(manifest), 0644); err != nil {

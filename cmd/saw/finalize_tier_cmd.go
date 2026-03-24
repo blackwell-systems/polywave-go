@@ -27,7 +27,7 @@ Stops on the first merge failure and does not run the tier gate if any merge fai
 When --auto is set, automatically advances to the next tier after the gate passes.
 
 Examples:
-  sawtools finalize-tier docs/PROGRAM.yaml --tier 1
+  sawtools finalize-tier docs/PROGRAM/PROGRAM.yaml --tier 1
   sawtools finalize-tier program.yaml --tier 2 --repo-dir /path/to/repo
   sawtools finalize-tier program.yaml --tier 1 --auto
 

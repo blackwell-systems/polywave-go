@@ -35,6 +35,5 @@
 //   - openai (pkg/agent/backend/openai) — OpenAI-compatible (OpenAI, Groq, Ollama, LM Studio)
 //   - cli (pkg/agent/backend/cli) — Claude Code CLI subprocess
 //
-// See docs/tools.md for tool system architecture and examples/custom-tool/ for registration examples.
-// See docs/backends.md for backend implementation guide and examples/custom-backend/ for examples.
+// See docs/reference/backends.md for backend implementation guide and examples/custom-backend/ for examples.
 package agent

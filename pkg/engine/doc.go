@@ -77,5 +77,5 @@
 //	    err = orch.RunVerification(ctx)
 //	}
 //
-// See docs/architecture.md for engine flow and examples/library-usage/ for complete examples.
+// See docs/reference/architecture.md for engine flow and examples/library-usage/ for complete examples.
 package engine

@@ -8,11 +8,11 @@ Scout-and-Wave ships **two separate binaries** from **two separate repositories*
 
 1. **sawtools** is a protocol engine CLI. It exposes every low-level protocol operation as a command. Its consumers are the `/saw` skill (Claude Code orchestrator), CI/CD pipelines, and the Go SDK. It has zero web dependencies -- no embedded assets, no HTTP server, no React. Adding a web dependency would bloat every CI job and skill invocation with 4+ MB of unused React bundle.
 
-2. **saw** is a web application binary. It embeds a full React UI via `//go:embed` and runs an HTTP server with 107 API endpoints. Its consumers are developers using the web UI to run Scout/Wave/Merge workflows interactively. It imports `pkg/engine` and `pkg/protocol` from scout-and-wave-go as Go libraries -- it never shells out to sawtools.
+2. **saw** is a web application binary. It embeds a full React UI via `//go:embed` and runs an HTTP server with ~112 API endpoints. Its consumers are developers using the web UI to run Scout/Wave/Merge workflows interactively. It imports `pkg/engine` and `pkg/protocol` from scout-and-wave-go as Go libraries -- it never shells out to sawtools.
 
 3. **They share the Go engine, not each other.** Both binaries depend on `scout-and-wave-go/pkg/` packages. Neither binary depends on the other. The web app does not call sawtools. sawtools does not know the web app exists.
 
-Merging them would mean: every `/saw` skill invocation and CI pipeline embeds an unused React bundle; every web app user gets 69 CLI commands they never run; the web app repo loses independent deployability. There is no benefit.
+Merging them would mean: every `/saw` skill invocation and CI pipeline embeds an unused React bundle; every web app user gets 77 CLI commands they never run; the web app repo loses independent deployability. There is no benefit.
 
 ---
 
@@ -20,7 +20,7 @@ Merging them would mean: every `/saw` skill invocation and CI pipeline embeds an
 
 | Binary | Source Repo | Commands | Size | Purpose |
 |--------|-------------|----------|------|---------|
-| **sawtools** | scout-and-wave-go | 69 | ~20 MB | Protocol engine CLI for skill/CI/SDK consumers |
+| **sawtools** | scout-and-wave-go | 77 | ~26 MB | Protocol engine CLI for skill/CI/SDK consumers |
 | **saw** | scout-and-wave-web | 23 | ~24 MB (includes embedded React) | Web application with HTTP API |
 
 ---
@@ -42,7 +42,7 @@ cp sawtools ~/.local/bin/sawtools
 - **Power Users** -- dependency solver, journal debugging, protocol-level operations
 - **Program Execution** -- multi-IMPL orchestration via `program-execute`, `finalize-tier`, `tier-gate`
 
-### Commands (69)
+### Commands (77)
 
 **Worktree & Isolation:**
 - `create-worktrees` -- create git worktrees for all agents in a wave
@@ -77,6 +77,7 @@ cp sawtools ~/.local/bin/sawtools
 - `run-critic` -- run critic agent to review agent briefs (E37)
 - `scan-stubs` -- scan files for stub/TODO patterns (E20)
 - `tier-gate` -- verify tier gate: all IMPLs complete + quality gates
+- `pre-wave-gate` -- run pre-wave readiness checks on an IMPL manifest
 
 **Batching / Lifecycle:**
 - `run-scout` -- automated Scout execution with validation and ID correction (I3)
@@ -86,9 +87,11 @@ cp sawtools ~/.local/bin/sawtools
 - `finalize-impl` -- finalize IMPL doc: validate, populate gates, validate again
 - `finalize-tier` -- finalize program tier: merge all IMPL branches and run tier gate
 - `run-wave` -- execute full wave lifecycle (create, verify, merge, build, cleanup)
+- `close-impl` -- close IMPL: mark complete, update CONTEXT.md, archive, and clean worktrees
 
 **Manifest Operations:**
 - `set-completion` -- set completion report for an agent
+- `check-completion` -- check if an agent has a completion report in the manifest
 - `mark-complete` -- write completion marker and archive to `complete/`
 - `update-agent-prompt` -- update an agent's prompt/task in manifest
 - `update-status` -- update agent status in manifest
@@ -118,6 +121,7 @@ cp sawtools ~/.local/bin/sawtools
 
 **Program Operations:**
 - `create-program` -- auto-generate PROGRAM manifest from existing IMPL docs
+- `create-program-worktrees` -- create IMPL branches and worktrees for all IMPLs in a program tier
 - `import-impls` -- import existing IMPL docs into a PROGRAM manifest
 - `program-execute` -- execute PROGRAM manifest through the tier loop
 - `program-replan` -- re-engage Planner agent to revise a PROGRAM manifest
@@ -125,11 +129,21 @@ cp sawtools ~/.local/bin/sawtools
 - `validate-program` -- validate PROGRAM manifest against schema rules
 - `list-programs` -- list PROGRAM manifests in a directory
 - `mark-program-complete` -- mark PROGRAM as complete and update CONTEXT.md
+- `prepare-tier` -- prepare a program tier: check conflicts, validate IMPLs, create branches
+- `update-program-impl` -- update the status of a specific IMPL entry in a PROGRAM manifest
+- `update-program-state` -- update the state field of a PROGRAM manifest
+
+**Queue Operations:**
+- `queue` -- manage IMPL queue (parent command)
+  - `queue add` -- add an item to the IMPL queue
+  - `queue list` -- list all IMPL queue items
+  - `queue next` -- return the next eligible IMPL queue item
 
 **Discovery & Observability:**
 - `list-impls` -- list IMPL manifests in a directory
 - `metrics` -- show metrics for an IMPL (cost, duration, success rate)
 - `query` -- query observability data
+  - `query events` -- query observability events
 - `resume-detect` -- detect interrupted SAW sessions in the repository
 
 **Recovery:**
@@ -151,7 +165,7 @@ cp sawtools ~/.local/bin/sawtools
 **Installation:**
 ```bash
 cd scout-and-wave-web
-make build  # or: go build -o saw ./cmd/saw
+make build  # or: cd web && npm run build && cd .. && go build -o saw ./cmd/saw
 ./saw serve
 ```
 
@@ -163,7 +177,7 @@ make build  # or: go build -o saw ./cmd/saw
 ### Commands (23)
 
 **Web Server:**
-- `serve` -- start HTTP server on port 7432 (the primary command; 107 API endpoints + embedded React UI)
+- `serve` -- start HTTP server on port 7432 (the primary command; ~112 API endpoints + embedded React UI)
 
 **High-Level Orchestration:**
 - `scout` -- run a Scout agent to generate an IMPL doc
@@ -196,7 +210,7 @@ make build  # or: go build -o saw ./cmd/saw
 │  pkg/agent/       ◄──┤  Claude API client, backends          │
 │  internal/git/    ◄──┤  Git helpers                          │
 │                       │                                       │
-│  cmd/saw/  ────► sawtools (69 commands)                      │
+│  cmd/saw/  ────► sawtools (77 commands)                      │
 │                   Protocol engine CLI                         │
 └───────────────────────┬──────────────────────────────────────┘
                         │
@@ -210,8 +224,12 @@ make build  # or: go build -o saw ./cmd/saw
 │    │                                                          │
 │    ├─► Imports: scout-and-wave-go/pkg/engine                 │
 │    ├─► Imports: scout-and-wave-go/pkg/protocol               │
+│    ├─► Imports: scout-and-wave-go/pkg/{agent,analyzer,       │
+│    │       autonomy,codereview,commands,config,gatecache,     │
+│    │       interview,journal,observability,queue,result,      │
+│    │       resume,retryctx,scaffold,suitability}             │
 │    │                                                          │
-│    └─► 107 API endpoints (direct Go function calls)          │
+│    └─► ~112 API endpoints (direct Go function calls)         │
 │                                                               │
 │  web/             React UI (embedded in binary via go:embed) │
 │                                                               │
@@ -232,7 +250,7 @@ make build  # or: go build -o saw ./cmd/saw
 
 **Why the overlap?** Both tools need these operations. sawtools exposes them for CI/CD and CLI orchestration. saw exposes them as convenience commands for users who also have the web UI. Both implementations call the same underlying `pkg/` functions.
 
-**55 commands are sawtools-only** (protocol engine, worktree management, program execution, journals, daemon, recovery). These are the operations that CLI orchestrators and CI pipelines need but web UI users do not run manually.
+**63 commands are sawtools-only** (protocol engine, worktree management, program execution, journals, daemon, recovery, queue). These are the operations that CLI orchestrators and CI pipelines need but web UI users do not run manually.
 
 **9 commands are saw-only** (serve, scout, scaffold, wave, merge, merge-wave, current-wave, status, render). These are high-level orchestration commands and the web server itself.
 
@@ -256,7 +274,7 @@ make build  # or: go build -o saw ./cmd/saw
 1. User clicks "Run Scout" in web UI
 2. Web app calls `engine.RunScout()` (direct Go function call)
 3. Web app calls `engine.RunWave()` to execute agents
-4. Results streamed to UI via SSE (107 API endpoints)
+4. Results streamed to UI via SSE (~112 API endpoints)
 
 **Why saw?** The web app is a Go application. It imports the engine as a library. No CLI shelling-out needed.
 
@@ -306,16 +324,20 @@ cp sawtools ~/.local/bin/sawtools
 ## FAQ
 
 **Q: Why not merge them into one binary?**
-A: Because they serve different execution models with different dependency profiles. sawtools has zero web dependencies (no embedded React, no HTTP server). Merging would add ~4 MB of unused web assets to every CI job and skill invocation, bloat the command list for web users with 55 commands they never run, and couple the web app's release cycle to the protocol engine's. The shared code lives in `pkg/` -- that is the integration point, not a combined binary.
+A: Because they serve different execution models with different dependency profiles. sawtools has zero web dependencies (no embedded React, no HTTP server). Merging would add ~4 MB of unused web assets to every CI job and skill invocation, bloat the command list for web users with 63 commands they never run, and couple the web app's release cycle to the protocol engine's. The shared code lives in `pkg/` -- that is the integration point, not a combined binary.
 
 **Q: Does the web app shell out to sawtools?**
 A: No. The web app imports `pkg/engine` and `pkg/protocol` as Go packages. It calls Go functions directly. The only external commands it runs are git and user-specified test/lint commands.
 
 **Q: Why is saw larger than sawtools?**
-A: saw embeds the entire React UI via `//go:embed all:dist`, adding ~4 MB of web assets to the binary.
+A: Despite having fewer commands, saw embeds the entire React UI via `//go:embed all:dist`, adding ~4 MB of web assets to the binary.
 
 **Q: Which binary should I use for the `/saw` skill?**
 A: sawtools. The skill orchestrates from CLI and needs commands like `prepare-wave`, `finalize-wave`, and `merge-agents`.
 
 **Q: Can I use saw for CI/CD?**
-A: You would be missing 55 commands including `prepare-wave`, `finalize-wave`, `solve`, `verify-commits`, `verify-build`, `scan-stubs`, and all program execution commands. Use sawtools.
+A: You would be missing 63 commands including `prepare-wave`, `finalize-wave`, `solve`, `verify-commits`, `verify-build`, `scan-stubs`, and all program execution commands. Use sawtools.
+
+---
+
+*Last reviewed: 2026-03-24*

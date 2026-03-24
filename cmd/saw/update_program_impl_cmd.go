@@ -31,8 +31,8 @@ func newUpdateProgramImplCmd() *cobra.Command {
 The impl is identified by its slug field.
 
 Examples:
-  sawtools update-program-impl docs/PROGRAM.yaml --impl my-feature --status complete
-  sawtools update-program-impl docs/PROGRAM.yaml --impl my-feature --status in_progress
+  sawtools update-program-impl docs/PROGRAM/PROGRAM.yaml --impl my-feature --status complete
+  sawtools update-program-impl docs/PROGRAM/PROGRAM.yaml --impl my-feature --status in_progress
 
 Exit codes:
   0 - Success

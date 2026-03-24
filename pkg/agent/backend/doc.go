@@ -41,5 +41,5 @@
 //  3. If tool_use: execute tool via onToolCall, append result, loop
 //  4. If text (finish_reason: "stop"): return final answer
 //
-// See docs/backends.md for implementation guide and examples/custom-backend/ for examples.
+// See docs/reference/backends.md for implementation guide and examples/custom-backend/ for examples.
 package backend

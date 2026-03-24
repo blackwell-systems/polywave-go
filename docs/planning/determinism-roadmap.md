@@ -44,6 +44,6 @@ Language-agnostic: whatever lint command the Scout wrote (`go vet`, `npm run lin
 - `close-impl`: no change (hooks persist across IMPLs)
 **Documentation** (protocol repo):
 - `docs/hooks.md`: document new `pre-commit-check` hook (trigger, behavior, fallback chain)
-- `docs/cli-reference.md`: add `pre-commit-check` and `install-hooks` commands
+- `docs/reference/cli-reference.md`: add `pre-commit-check` and `install-hooks` commands
 - `/saw` skill prompt: add `install-hooks` to sawtools command list
 **Effort**: Medium (2-3 days)

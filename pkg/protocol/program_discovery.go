@@ -35,8 +35,8 @@ type ProgramDiscovery struct {
 func ListPrograms(dir string) ([]ProgramDiscovery, error) {
 	result := []ProgramDiscovery{}
 
-	// Find all PROGRAM-*.yaml files in dir and dir/PROGRAM/complete/
-	pattern := filepath.Join(dir, "PROGRAM-*.yaml")
+	// Find all PROGRAM-*.yaml files in dir/PROGRAM/ and dir/PROGRAM/complete/
+	pattern := filepath.Join(dir, "PROGRAM", "PROGRAM-*.yaml")
 	matches, err := filepath.Glob(pattern)
 	if err != nil {
 		// Invalid dir or glob pattern — return empty slice

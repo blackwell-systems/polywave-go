@@ -206,7 +206,7 @@ func GenerateProgramFromIMPLs(opts GenerateProgramOpts) result.Result[GeneratePr
 	}
 
 	// Step 8: Marshal and write to disk.
-	outputPath := filepath.Join(opts.RepoPath, "docs", fmt.Sprintf("PROGRAM-%s.yaml", manifest.ProgramSlug))
+	outputPath := filepath.Join(opts.RepoPath, "docs", "PROGRAM", fmt.Sprintf("PROGRAM-%s.yaml", manifest.ProgramSlug))
 
 	if err := os.MkdirAll(filepath.Dir(outputPath), 0755); err != nil {
 		return result.NewFailure[GenerateProgramData]([]result.SAWError{{

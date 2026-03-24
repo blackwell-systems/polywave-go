@@ -23,7 +23,7 @@ Reports include:
 - Completion tracking
 
 Examples:
-  sawtools program-status docs/PROGRAM.yaml
+  sawtools program-status docs/PROGRAM/PROGRAM.yaml
 
 Exit codes:
   0 - Always (status is informational)

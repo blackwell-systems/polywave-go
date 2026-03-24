@@ -378,9 +378,13 @@ func TestAdvanceTierAutomatically_ScoredIMPLOrder_EmptyOnGateFail(t *testing.T) 
 func TestReplanProgram_ValidRevision(t *testing.T) {
 	t.Skip("Skipping test that requires live Claude API - causes rate limit failures in CI")
 
-	// Write a minimal PROGRAM manifest file
+	// Write a minimal PROGRAM manifest file at <repo>/docs/PROGRAM/PROGRAM.yaml
 	dir := t.TempDir()
-	manifestPath := filepath.Join(dir, "PROGRAM.yaml")
+	programDir := filepath.Join(dir, "docs", "PROGRAM")
+	if err := os.MkdirAll(programDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	manifestPath := filepath.Join(programDir, "PROGRAM.yaml")
 	content := `title: Test Program
 program_slug: test-program
 state: TIER_EXECUTING
