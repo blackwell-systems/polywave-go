@@ -25,7 +25,7 @@ type GenerateProgramData struct {
 	ConflictReport   *ConflictReport   `json:"conflict_report"`
 	TierAssignments  map[string]int    `json:"tier_assignments"`
 	Manifest         *PROGRAMManifest  `json:"manifest"`
-	ValidationErrors []ValidationError `json:"validation_errors,omitempty"`
+	ValidationErrors []result.SAWError `json:"validation_errors,omitempty"`
 }
 
 // GenerateProgramFromIMPLs creates a PROGRAM manifest from existing IMPL docs.
@@ -33,14 +33,14 @@ type GenerateProgramData struct {
 // and writes a complete PROGRAMManifest YAML file to disk.
 func GenerateProgramFromIMPLs(opts GenerateProgramOpts) result.Result[GenerateProgramData] {
 	if len(opts.ImplSlugs) == 0 {
-		return result.NewFailure[GenerateProgramData]([]result.StructuredError{{
+		return result.NewFailure[GenerateProgramData]([]result.SAWError{{
 			Code:     "E001",
 			Message:  "generate-program: at least one IMPL slug is required",
 			Severity: "fatal",
 		}})
 	}
 	if opts.RepoPath == "" {
-		return result.NewFailure[GenerateProgramData]([]result.StructuredError{{
+		return result.NewFailure[GenerateProgramData]([]result.SAWError{{
 			Code:     "E002",
 			Message:  "generate-program: RepoPath is required",
 			Severity: "fatal",
@@ -50,7 +50,7 @@ func GenerateProgramFromIMPLs(opts GenerateProgramOpts) result.Result[GeneratePr
 	// Step 1: Run conflict detection for tier assignments.
 	conflictReport, err := CheckIMPLConflicts(opts.ImplSlugs, opts.RepoPath)
 	if err != nil {
-		return result.NewFailure[GenerateProgramData]([]result.StructuredError{{
+		return result.NewFailure[GenerateProgramData]([]result.SAWError{{
 			Code:     "E003",
 			Message:  fmt.Sprintf("generate-program: conflict check failed: %v", err),
 			Severity: "fatal",
@@ -64,7 +64,7 @@ func GenerateProgramFromIMPLs(opts GenerateProgramOpts) result.Result[GeneratePr
 	for _, slug := range opts.ImplSlugs {
 		implPath, resolveErr := resolveIMPLPath(opts.RepoPath, slug)
 		if resolveErr != nil {
-			return result.NewFailure[GenerateProgramData]([]result.StructuredError{{
+			return result.NewFailure[GenerateProgramData]([]result.SAWError{{
 				Code:     "E004",
 				Message:  fmt.Sprintf("generate-program: %v", resolveErr),
 				Severity: "fatal",
@@ -73,7 +73,7 @@ func GenerateProgramFromIMPLs(opts GenerateProgramOpts) result.Result[GeneratePr
 
 		implDoc, loadErr := Load(implPath)
 		if loadErr != nil {
-			return result.NewFailure[GenerateProgramData]([]result.StructuredError{{
+			return result.NewFailure[GenerateProgramData]([]result.SAWError{{
 				Code:     "E005",
 				Message:  fmt.Sprintf("generate-program: failed to load IMPL %q: %v", slug, loadErr),
 				Severity: "fatal",
@@ -209,7 +209,7 @@ func GenerateProgramFromIMPLs(opts GenerateProgramOpts) result.Result[GeneratePr
 	outputPath := filepath.Join(opts.RepoPath, "docs", fmt.Sprintf("PROGRAM-%s.yaml", manifest.ProgramSlug))
 
 	if err := os.MkdirAll(filepath.Dir(outputPath), 0755); err != nil {
-		return result.NewFailure[GenerateProgramData]([]result.StructuredError{{
+		return result.NewFailure[GenerateProgramData]([]result.SAWError{{
 			Code:     "E006",
 			Message:  fmt.Sprintf("generate-program: failed to create output directory: %v", err),
 			Severity: "fatal",
@@ -218,7 +218,7 @@ func GenerateProgramFromIMPLs(opts GenerateProgramOpts) result.Result[GeneratePr
 
 	data, err := yaml.Marshal(manifest)
 	if err != nil {
-		return result.NewFailure[GenerateProgramData]([]result.StructuredError{{
+		return result.NewFailure[GenerateProgramData]([]result.SAWError{{
 			Code:     "E007",
 			Message:  fmt.Sprintf("generate-program: failed to marshal manifest: %v", err),
 			Severity: "fatal",
@@ -226,7 +226,7 @@ func GenerateProgramFromIMPLs(opts GenerateProgramOpts) result.Result[GeneratePr
 	}
 
 	if err := os.WriteFile(outputPath, data, 0644); err != nil {
-		return result.NewFailure[GenerateProgramData]([]result.StructuredError{{
+		return result.NewFailure[GenerateProgramData]([]result.SAWError{{
 			Code:     "E008",
 			Message:  fmt.Sprintf("generate-program: failed to write manifest: %v", err),
 			Severity: "fatal",
@@ -245,9 +245,9 @@ func GenerateProgramFromIMPLs(opts GenerateProgramOpts) result.Result[GeneratePr
 	}
 
 	if len(validationErrors) > 0 {
-		var warnings []result.StructuredError
+		var warnings []result.SAWError
 		for _, ve := range validationErrors {
-			warnings = append(warnings, result.StructuredError{
+			warnings = append(warnings, result.SAWError{
 				Code:     "E009",
 				Message:  ve.Message,
 				Severity: "warning",

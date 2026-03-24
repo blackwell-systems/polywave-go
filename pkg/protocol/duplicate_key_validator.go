@@ -5,6 +5,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
 	"gopkg.in/yaml.v3"
 )
 
@@ -15,16 +16,16 @@ import (
 // Only top-level (manifest root) keys are checked — nested duplicates are not flagged.
 // Line numbers in errors are 1-indexed (yaml.Node.Line is 1-based).
 //
-// Returns a slice of ValidationError, empty if no duplicates found.
-func ValidateDuplicateKeys(rawYAML []byte) []ValidationError {
+// Returns a slice of result.SAWError, empty if no duplicates found.
+func ValidateDuplicateKeys(rawYAML []byte) []result.SAWError {
 	var root yaml.Node
 	if err := yaml.Unmarshal(rawYAML, &root); err != nil {
 		// If YAML is unparseable, return a single parse error
-		return []ValidationError{
+		return []result.SAWError{
 			{
-				Code:    "E16_PARSE_ERROR",
-				Message: fmt.Sprintf("failed to parse YAML: %v", err),
-				Field:   "",
+				Code:     "E16_PARSE_ERROR",
+				Message:  fmt.Sprintf("failed to parse YAML: %v", err),
+				Severity: "error",
 			},
 		}
 	}
@@ -54,7 +55,7 @@ func ValidateDuplicateKeys(rawYAML []byte) []ValidationError {
 		keyLines[key] = append(keyLines[key], keyNode.Line)
 	}
 
-	var errs []ValidationError
+	var errs []result.SAWError
 	// Collect duplicate keys in deterministic order
 	keys := make([]string, 0, len(keyLines))
 	for k := range keyLines {
@@ -70,10 +71,11 @@ func ValidateDuplicateKeys(rawYAML []byte) []ValidationError {
 		for i, l := range lines {
 			lineStrs[i] = fmt.Sprintf("%d", l)
 		}
-		errs = append(errs, ValidationError{
-			Code:    "E16_DUPLICATE_KEY",
-			Message: fmt.Sprintf("duplicate key %q at lines %s", key, strings.Join(lineStrs, ", ")),
-			Field:   key,
+		errs = append(errs, result.SAWError{
+			Code:     "E16_DUPLICATE_KEY",
+			Message:  fmt.Sprintf("duplicate key %q at lines %s", key, strings.Join(lineStrs, ", ")),
+			Severity: "error",
+			Field:    key,
 		})
 	}
 

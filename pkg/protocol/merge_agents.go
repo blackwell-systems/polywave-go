@@ -15,8 +15,8 @@ import (
 //  1. Every file_ownership entry for this wave references an agent that exists in the wave.
 //  2. No duplicate files appear in ownership entries for this wave (I1 recheck).
 //
-// Returns a slice of ValidationErrors if inconsistencies are found; nil slice means valid.
-func PreMergeValidation(manifest *IMPLManifest, waveNum int) []ValidationError {
+// Returns a slice of result.SAWError if inconsistencies are found; nil slice means valid.
+func PreMergeValidation(manifest *IMPLManifest, waveNum int) []result.SAWError {
 	// Find the target wave and build a set of valid agent IDs
 	var targetWave *Wave
 	for i := range manifest.Waves {
@@ -26,9 +26,10 @@ func PreMergeValidation(manifest *IMPLManifest, waveNum int) []ValidationError {
 		}
 	}
 	if targetWave == nil {
-		return []ValidationError{{
-			Code:    "WAVE_NOT_FOUND",
-			Message: fmt.Sprintf("wave %d not found in manifest", waveNum),
+		return []result.SAWError{{
+			Code:     "WAVE_NOT_FOUND",
+			Message:  fmt.Sprintf("wave %d not found in manifest", waveNum),
+			Severity: "error",
 		}}
 	}
 
@@ -37,7 +38,7 @@ func PreMergeValidation(manifest *IMPLManifest, waveNum int) []ValidationError {
 		validAgents[agent.ID] = true
 	}
 
-	var errs []ValidationError
+	var errs []result.SAWError
 	seenFiles := make(map[string]string) // file path -> first agent that owns it
 
 	for _, fo := range manifest.FileOwnership {
@@ -47,19 +48,21 @@ func PreMergeValidation(manifest *IMPLManifest, waveNum int) []ValidationError {
 
 		// Check 1: agent in ownership table must exist in the wave
 		if !validAgents[fo.Agent] {
-			errs = append(errs, ValidationError{
-				Code:    "UNKNOWN_AGENT_IN_OWNERSHIP",
-				Message: fmt.Sprintf("file_ownership entry for wave %d references unknown agent %q (file: %s)", waveNum, fo.Agent, fo.File),
-				Field:   "file_ownership",
+			errs = append(errs, result.SAWError{
+				Code:     "UNKNOWN_AGENT_IN_OWNERSHIP",
+				Message:  fmt.Sprintf("file_ownership entry for wave %d references unknown agent %q (file: %s)", waveNum, fo.Agent, fo.File),
+				Severity: "error",
+				Field:    "file_ownership",
 			})
 		}
 
 		// Check 2: no duplicate file ownership (I1 recheck)
 		if firstOwner, exists := seenFiles[fo.File]; exists {
-			errs = append(errs, ValidationError{
-				Code:    "DUPLICATE_FILE_OWNERSHIP",
-				Message: fmt.Sprintf("file %q is owned by both agent %q and agent %q in wave %d (I1 violation)", fo.File, firstOwner, fo.Agent, waveNum),
-				Field:   "file_ownership",
+			errs = append(errs, result.SAWError{
+				Code:     "DUPLICATE_FILE_OWNERSHIP",
+				Message:  fmt.Sprintf("file %q is owned by both agent %q and agent %q in wave %d (I1 violation)", fo.File, firstOwner, fo.Agent, waveNum),
+				Severity: "error",
+				Field:    "file_ownership",
 			})
 		} else {
 			seenFiles[fo.File] = fo.Agent
@@ -261,7 +264,7 @@ func buildFileOwnerMap(manifest *IMPLManifest, waveNum int) map[string]string {
 func mergeAgentsSingleRepo(manifestPath string, waveNum int, repoDir string, manifest *IMPLManifest, targetWave *Wave, mergeTarget string) (result.Result[MergeAgentsData], error) {
 	// H4: PreMergeValidation — verify ownership table consistency before any git operations.
 	if validationErrs := PreMergeValidation(manifest, waveNum); len(validationErrs) > 0 {
-		return result.NewFailure[MergeAgentsData]([]result.StructuredError{{
+		return result.NewFailure[MergeAgentsData]([]result.SAWError{{
 			Code:     "PRE_MERGE_VALIDATION_FAILED",
 			Message:  validationErrs[0].Message,
 			Severity: "fatal",
@@ -344,7 +347,7 @@ func mergeAgentsSingleRepo(manifestPath string, waveNum int, repoDir string, man
 			data.Merges = append(data.Merges, status)
 			data.Success = false // Set for backward compat
 			// Return partial result with failures
-			return result.NewPartial(data, []result.StructuredError{{
+			return result.NewPartial(data, []result.SAWError{{
 				Code:     "MERGE_CONFLICT",
 				Message:  fmt.Sprintf("merge failed for agent %s: %s", agent.ID, err.Error()),
 				Severity: "error",
@@ -389,7 +392,7 @@ func mergeAgentsSingleRepo(manifestPath string, waveNum int, repoDir string, man
 func mergeAgentsMultiRepo(manifestPath string, waveNum int, manifest *IMPLManifest, targetWave *Wave, agentRepos map[string]string, mergeTarget string) (result.Result[MergeAgentsData], error) {
 	// H4: PreMergeValidation — verify ownership table consistency before any git operations.
 	if validationErrs := PreMergeValidation(manifest, waveNum); len(validationErrs) > 0 {
-		return result.NewFailure[MergeAgentsData]([]result.StructuredError{{
+		return result.NewFailure[MergeAgentsData]([]result.SAWError{{
 			Code:     "PRE_MERGE_VALIDATION_FAILED",
 			Message:  validationErrs[0].Message,
 			Severity: "fatal",
@@ -483,7 +486,7 @@ func mergeAgentsMultiRepo(manifestPath string, waveNum int, manifest *IMPLManife
 				data.Merges = append(data.Merges, status)
 				data.Success = false // Set for backward compat
 				// Return partial result with failures
-				return result.NewPartial(data, []result.StructuredError{{
+				return result.NewPartial(data, []result.SAWError{{
 					Code:     "MERGE_CONFLICT",
 					Message:  fmt.Sprintf("merge failed for agent %s in repo %s: %s", agent.ID, repoDir, err.Error()),
 					Severity: "error",

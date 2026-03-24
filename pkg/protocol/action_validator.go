@@ -1,12 +1,16 @@
 package protocol
 
-import "fmt"
+import (
+	"fmt"
+
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
+)
 
 // ValidateActionEnums checks that all file_ownership action fields contain valid enum values.
 // Valid action values: "new", "modify", "delete".
 // Empty/omitted action is also valid (backward compatibility).
-func ValidateActionEnums(m *IMPLManifest) []ValidationError {
-	var errs []ValidationError
+func ValidateActionEnums(m *IMPLManifest) []result.SAWError {
+	var errs []result.SAWError
 
 	validActions := map[string]bool{
 		"new":    true,
@@ -21,10 +25,11 @@ func ValidateActionEnums(m *IMPLManifest) []ValidationError {
 		}
 
 		if !validActions[fo.Action] {
-			errs = append(errs, ValidationError{
-				Code:    "E16_INVALID_ACTION",
-				Message: fmt.Sprintf("file_ownership[%d].action has invalid value %q — must be new, modify, or delete", i, fo.Action),
-				Field:   fmt.Sprintf("file_ownership[%d].action", i),
+			errs = append(errs, result.SAWError{
+				Code:     "E16_INVALID_ACTION",
+				Message:  fmt.Sprintf("file_ownership[%d].action has invalid value %q — must be new, modify, or delete", i, fo.Action),
+				Severity: "error",
+				Field:    fmt.Sprintf("file_ownership[%d].action", i),
 			})
 		}
 	}
