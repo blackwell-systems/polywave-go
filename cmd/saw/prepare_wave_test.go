@@ -285,10 +285,10 @@ func TestPrepareWave_CrossRepoValidPasses(t *testing.T) {
 	}
 }
 
-// TestPrepareWaveBaselineResult_JSONSerialization verifies that a
-// protocol.BaselineResult round-trips through JSON correctly.
-func TestPrepareWaveBaselineResult_JSONSerialization(t *testing.T) {
-	result := protocol.BaselineResult{
+// TestPrepareWaveBaselineData_JSONSerialization verifies that a
+// protocol.BaselineData round-trips through JSON correctly.
+func TestPrepareWaveBaselineData_JSONSerialization(t *testing.T) {
+	result := protocol.BaselineData{
 		Passed: false,
 		GateResults: []protocol.GateResult{
 			{
@@ -313,12 +313,12 @@ func TestPrepareWaveBaselineResult_JSONSerialization(t *testing.T) {
 
 	data, err := json.Marshal(result)
 	if err != nil {
-		t.Fatalf("failed to marshal BaselineResult: %v", err)
+		t.Fatalf("failed to marshal BaselineData: %v", err)
 	}
 
-	var decoded protocol.BaselineResult
+	var decoded protocol.BaselineData
 	if err := json.Unmarshal(data, &decoded); err != nil {
-		t.Fatalf("failed to unmarshal BaselineResult: %v", err)
+		t.Fatalf("failed to unmarshal BaselineData: %v", err)
 	}
 
 	if decoded.Passed != false {
@@ -347,13 +347,13 @@ func TestPrepareWaveBaselineResult_JSONSerialization(t *testing.T) {
 	}
 
 	// Verify that the Reason field is omitted when empty (omitempty)
-	passedResult := protocol.BaselineResult{
+	passedResult := protocol.BaselineData{
 		Passed:      true,
 		GateResults: []protocol.GateResult{},
 	}
 	passedData, err := json.Marshal(passedResult)
 	if err != nil {
-		t.Fatalf("failed to marshal passing BaselineResult: %v", err)
+		t.Fatalf("failed to marshal passing BaselineData: %v", err)
 	}
 	var passedMap map[string]interface{}
 	if err := json.Unmarshal(passedData, &passedMap); err != nil {

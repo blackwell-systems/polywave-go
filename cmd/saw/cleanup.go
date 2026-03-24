@@ -24,11 +24,11 @@ func newCleanupCmd() *cobra.Command {
 			}
 
 			if slugFlag != "" {
-				result, err := protocol.CleanupBySlug(repoDir, slugFlag, force)
-				if err != nil {
-					return fmt.Errorf("cleanup-by-slug: %w", err)
+				res := protocol.CleanupBySlug(repoDir, slugFlag, force)
+				if res.IsFatal() {
+					return fmt.Errorf("cleanup-by-slug: %v", res.Errors)
 				}
-				out, _ := json.MarshalIndent(result, "", "  ")
+				out, _ := json.MarshalIndent(res.GetData(), "", "  ")
 				fmt.Println(string(out))
 				return nil
 			}

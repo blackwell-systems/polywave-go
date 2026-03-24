@@ -20,16 +20,16 @@ import (
 type FinalizeWaveResult struct {
 	Wave              int                              `json:"wave"`
 	CrossRepo         bool                             `json:"cross_repo"`
-	VerifyCommits     map[string]*protocol.VerifyCommitsResult `json:"verify_commits"` // repo -> result
+	VerifyCommits     map[string]*protocol.VerifyCommitsData `json:"verify_commits"` // repo -> result
 	CollisionReports  map[string]*collision.CollisionReport `json:"collision_reports,omitempty"` // repo -> collision report
-	StubReport        *protocol.ScanStubsResult        `json:"stub_report,omitempty"`
+	StubReport        *protocol.ScanStubsData          `json:"stub_report,omitempty"`
 	GateResults       map[string][]protocol.GateResult `json:"gate_results"` // repo -> gates
-	MergeResult       map[string]*protocol.MergeAgentsResult `json:"merge_result"` // repo -> result
-	VerifyBuildResult map[string]*protocol.VerifyBuildResult `json:"verify_build"` // repo -> result
+	MergeResult       map[string]*protocol.MergeAgentsData `json:"merge_result"` // repo -> result
+	VerifyBuildResult map[string]*protocol.VerifyBuildData `json:"verify_build"` // repo -> result
 	IntegrationReport *protocol.IntegrationReport       `json:"integration_report,omitempty"`
-	WiringReport      *protocol.WiringValidationResult `json:"wiring_report,omitempty"`
+	WiringReport      *protocol.WiringValidationData   `json:"wiring_report,omitempty"`
 	BuildDiagnosis    map[string]*builddiag.Diagnosis  `json:"build_diagnosis,omitempty"` // repo -> diagnosis
-	CleanupResult     map[string]*protocol.CleanupResult `json:"cleanup_result"` // repo -> result
+	CleanupResult     map[string]*protocol.CleanupData `json:"cleanup_result"` // repo -> result
 	Success           bool                             `json:"success"`
 }
 
@@ -76,13 +76,13 @@ pattern matching (H7) and appends diagnosis to the output.`,
 				Wave:              waveNum,
 				CrossRepo:         len(repos) > 1,
 				Success:           false,
-				VerifyCommits:     make(map[string]*protocol.VerifyCommitsResult),
+				VerifyCommits:     make(map[string]*protocol.VerifyCommitsData),
 				CollisionReports:  make(map[string]*collision.CollisionReport),
 				GateResults:       make(map[string][]protocol.GateResult),
-				MergeResult:       make(map[string]*protocol.MergeAgentsResult),
-				VerifyBuildResult: make(map[string]*protocol.VerifyBuildResult),
+				MergeResult:       make(map[string]*protocol.MergeAgentsData),
+				VerifyBuildResult: make(map[string]*protocol.VerifyBuildData),
 				BuildDiagnosis:    make(map[string]*builddiag.Diagnosis),
-				CleanupResult:     make(map[string]*protocol.CleanupResult),
+				CleanupResult:     make(map[string]*protocol.CleanupData),
 			}
 
 			// Declare variables here to avoid "goto jumps over variable declaration" compile errors.
@@ -93,7 +93,7 @@ pattern matching (H7) and appends diagnosis to the output.`,
 			if skipMerge {
 				fmt.Fprintf(os.Stderr, "finalize-wave: --skip-merge flag set, skipping to verify-build\n")
 				for repoKey := range repos {
-					result.MergeResult[repoKey] = &protocol.MergeAgentsResult{
+					result.MergeResult[repoKey] = &protocol.MergeAgentsData{
 						Wave: waveNum, Success: true,
 					}
 				}
@@ -116,7 +116,7 @@ pattern matching (H7) and appends diagnosis to the output.`,
 			if isSolo {
 				fmt.Fprintf(os.Stderr, "finalize-wave: solo wave detected (no worktrees), skipping VerifyCommits and MergeAgents\n")
 				for repoKey := range repos {
-					result.MergeResult[repoKey] = &protocol.MergeAgentsResult{
+					result.MergeResult[repoKey] = &protocol.MergeAgentsData{
 						Wave: waveNum, Success: true,
 					}
 				}
@@ -135,7 +135,7 @@ pattern matching (H7) and appends diagnosis to the output.`,
 				fmt.Fprintf(os.Stderr,
 					"finalize-wave: all agent branches absent (already merged+cleaned), skipping to verify-build\n")
 				for repoKey := range repos {
-					result.MergeResult[repoKey] = &protocol.MergeAgentsResult{
+					result.MergeResult[repoKey] = &protocol.MergeAgentsData{
 						Wave: waveNum, Success: true,
 					}
 				}
@@ -331,14 +331,15 @@ pattern matching (H7) and appends diagnosis to the output.`,
 			// integration agent to address via validate-integration post-merge.
 			if len(manifest.Wiring) > 0 {
 				for _, repoPath := range repos {
-					wiringResult, wiringErr := protocol.ValidateWiringDeclarations(manifest, repoPath)
-					if wiringErr != nil {
-						fmt.Fprintf(os.Stderr, "finalize-wave: wiring check error: %v\n", wiringErr)
+					wiringRes := protocol.ValidateWiringDeclarations(manifest, repoPath)
+					if wiringRes.IsFatal() {
+						fmt.Fprintf(os.Stderr, "finalize-wave: wiring check error: %v\n", wiringRes.Errors)
 					} else {
-						result.WiringReport = wiringResult
-						if !wiringResult.Valid {
+						wiringData := wiringRes.GetData()
+						result.WiringReport = wiringData
+						if !wiringData.Valid {
 							// Wiring gaps are errors — surface them clearly
-							for _, gap := range wiringResult.Gaps {
+							for _, gap := range wiringData.Gaps {
 								fmt.Fprintf(os.Stderr, "finalize-wave: WIRING GAP [error]: %s not called in %s\n",
 									gap.Declaration.Symbol, gap.Declaration.MustBeCalledFrom)
 							}
@@ -428,11 +429,11 @@ pattern matching (H7) and appends diagnosis to the output.`,
 
 			// Step 6: Cleanup (remove worktrees and branches) - run per repo
 			for repoKey, repoPath := range repos {
-				cleanupResult, err := protocol.Cleanup(manifestPath, waveNum, repoPath)
+				cleanupRes, err := protocol.Cleanup(manifestPath, waveNum, repoPath)
 				if err != nil {
 					return fmt.Errorf("finalize-wave: cleanup failed in %s: %w", repoKey, err)
 				}
-				cleanupData := cleanupResult.GetData()
+				cleanupData := cleanupRes.GetData()
 				result.CleanupResult[repoKey] = &cleanupData
 			}
 

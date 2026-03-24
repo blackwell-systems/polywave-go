@@ -70,16 +70,17 @@ Use --force to skip safety checks for uncommitted changes.`,
 				return printJSON(out)
 			}
 
-			result, err := protocol.CleanStaleWorktrees(stale, force)
-			if err != nil {
-				return fmt.Errorf("clean stale worktrees: %w", err)
+			cleanRes := protocol.CleanStaleWorktrees(stale, force)
+			if cleanRes.IsFatal() {
+				return fmt.Errorf("clean stale worktrees: %v", cleanRes.Errors)
 			}
+			cleanData := cleanRes.GetData()
 
 			out := cleanupStaleOutput{
 				Detected: len(stale),
-				Cleaned:  result.Cleaned,
-				Skipped:  result.Skipped,
-				Errors:   convertErrors(result.Errors),
+				Cleaned:  cleanData.Cleaned,
+				Skipped:  cleanData.Skipped,
+				Errors:   convertStaleErrors(cleanData.Errors),
 			}
 			return printJSON(out)
 		},
@@ -93,10 +94,7 @@ Use --force to skip safety checks for uncommitted changes.`,
 	return cmd
 }
 
-func convertErrors(errs []struct {
-	Worktree protocol.StaleWorktree `json:"worktree"`
-	Error    string                 `json:"error"`
-}) []cleanupStaleError {
+func convertStaleErrors(errs []protocol.StaleCleanupFailure) []cleanupStaleError {
 	out := make([]cleanupStaleError, len(errs))
 	for i, e := range errs {
 		out[i] = cleanupStaleError{
