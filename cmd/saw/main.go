@@ -77,6 +77,7 @@ func main() {
 		newCreateProgramCmd(),
 		newCreateProgramWorktreesCmd(),
 		newCheckIMPLConflictsCmd(),
+		newPrepareTierCmd(),
 		newFinalizeTierCmd(),
 		newCheckProgramConflictsCmd(),
 		// C7: Previously unregistered commands
