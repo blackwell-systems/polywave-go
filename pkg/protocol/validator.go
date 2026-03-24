@@ -6,6 +6,8 @@ import (
 	"os"
 	"regexp"
 	"strings"
+
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
 )
 
 // typedBlockRe matches the opening fence of a typed block, e.g.:
@@ -52,8 +54,8 @@ var invalidAgentIDRe = regexp.MustCompile(`\[([A-Z]1|[A-Z]0|[A-Z][0-9]{2,}|[A-Z]
 // ValidateIMPLDoc runs E16 typed-block validation on the IMPL doc at path.
 // It reads the file directly (not via ParseIMPLDoc) to preserve line numbers.
 // Returns nil slice if all blocks are valid or no typed blocks exist.
-// Returns one ValidationError per violation; multiple errors may be returned.
-func ValidateIMPLDoc(path string) ([]ValidationError, error) {
+// Returns one result.SAWError per violation; multiple errors may be returned.
+func ValidateIMPLDoc(path string) ([]result.SAWError, error) {
 	f, err := os.Open(path)
 	if err != nil {
 		return nil, fmt.Errorf("ValidateIMPLDoc: cannot open %q: %w", path, err)
@@ -71,7 +73,7 @@ func ValidateIMPLDoc(path string) ([]ValidationError, error) {
 		return nil, fmt.Errorf("ValidateIMPLDoc: scanner error reading %q: %w", path, err2)
 	}
 
-	var errs []ValidationError
+	var errs []result.SAWError
 	seenBlocks := map[string]bool{}
 	blockCount := 0
 
@@ -98,7 +100,7 @@ func ValidateIMPLDoc(path string) ([]ValidationError, error) {
 		seenBlocks[blockType] = true
 		blockCount++
 
-		var blockErrs []ValidationError
+		var blockErrs []result.SAWError
 		var blockAgentIDs []string
 		switch blockType {
 		case "impl-file-ownership":
@@ -127,10 +129,11 @@ func ValidateIMPLDoc(path string) ([]ValidationError, error) {
 		}
 	}
 	if hasAgentIDErrors && len(allAgentIDs) > 0 {
-		errs = append(errs, ValidationError{
-			Code:  "agent-id",
-			Line: 0,
-			Message:    fmt.Sprintf("Run: sawtools assign-agent-ids --count %d", len(allAgentIDs)),
+		errs = append(errs, result.SAWError{
+			Code:     "agent-id",
+			Severity: "error",
+			Line:     0,
+			Message:  fmt.Sprintf("Run: sawtools assign-agent-ids --count %d", len(allAgentIDs)),
 		})
 	}
 
@@ -138,10 +141,11 @@ func ValidateIMPLDoc(path string) ([]ValidationError, error) {
 	if blockCount > 0 {
 		for _, req := range e16aRequiredBlocks {
 			if !seenBlocks[req] {
-				errs = append(errs, ValidationError{
-					Code:  "e16a",
-					Line: 0,
-					Message:    fmt.Sprintf("missing required block: %s", req),
+				errs = append(errs, result.SAWError{
+					Code:     "e16a",
+					Severity: "error",
+					Line:     0,
+					Message:  fmt.Sprintf("missing required block: %s", req),
 				})
 			}
 		}
@@ -181,10 +185,11 @@ func ValidateIMPLDoc(path string) ([]ValidationError, error) {
 				if closingFence {
 					content := strings.Join(plainBlockLines, "\n")
 					if e16cAgentRe.MatchString(content) && e16cWaveRe.MatchString(content) {
-						errs = append(errs, ValidationError{
-							Code:  "warning",
-							Line: plainBlockStart,
-							Message:    fmt.Sprintf("WARNING: possible dep-graph content found outside typed block at line %d — use ```yaml type=impl-dep-graph```", plainBlockStart),
+						errs = append(errs, result.SAWError{
+							Code:     "warning",
+							Severity: "warning",
+							Line:     plainBlockStart,
+							Message:  fmt.Sprintf("WARNING: possible dep-graph content found outside typed block at line %d — use ```yaml type=impl-dep-graph```", plainBlockStart),
 						})
 					}
 					inPlainBlock = false
@@ -204,17 +209,18 @@ func ValidateIMPLDoc(path string) ([]ValidationError, error) {
 
 // validateFileOwnership validates an impl-file-ownership block.
 // I2: Returns (errors, agentIDs) where agentIDs are all agent IDs found in this block.
-func validateFileOwnership(lines []string, lineNumber int) ([]ValidationError, []string) {
-	var errs []ValidationError
+func validateFileOwnership(lines []string, lineNumber int) ([]result.SAWError, []string) {
+	var errs []result.SAWError
 	var agentIDs []string
 	content := strings.Join(lines, "\n")
 
 	// Must have a header row containing "| File "
 	if !strings.Contains(content, "| File ") {
-		errs = append(errs, ValidationError{
-			Code:  "impl-file-ownership",
-			Line: lineNumber,
-			Message:    fmt.Sprintf("impl-file-ownership block (line %d): missing header row — expected '| File | Agent | Wave | Depends On |'", lineNumber),
+		errs = append(errs, result.SAWError{
+			Code:     "impl-file-ownership",
+			Severity: "error",
+			Line:     lineNumber,
+			Message:  fmt.Sprintf("impl-file-ownership block (line %d): missing header row — expected '| File | Agent | Wave | Depends On |'", lineNumber),
 		})
 		return errs, agentIDs
 	}
@@ -237,10 +243,11 @@ func validateFileOwnership(lines []string, lineNumber int) ([]ValidationError, [
 		dataRows++
 	}
 	if dataRows == 0 {
-		errs = append(errs, ValidationError{
-			Code:  "impl-file-ownership",
-			Line: lineNumber,
-			Message:    fmt.Sprintf("impl-file-ownership block (line %d): no data rows found — table must have at least one file entry", lineNumber),
+		errs = append(errs, result.SAWError{
+			Code:     "impl-file-ownership",
+			Severity: "error",
+			Line:     lineNumber,
+			Message:  fmt.Sprintf("impl-file-ownership block (line %d): no data rows found — table must have at least one file entry", lineNumber),
 		})
 	}
 
@@ -257,10 +264,11 @@ func validateFileOwnership(lines []string, lineNumber int) ([]ValidationError, [
 		}
 		pipeCount := strings.Count(row, "|")
 		if pipeCount < 4 {
-			errs = append(errs, ValidationError{
-				Code:  "impl-file-ownership",
-				Line: lineNumber,
-				Message:    fmt.Sprintf("impl-file-ownership block (line %d): row has fewer than 4 columns: %s", lineNumber, row),
+			errs = append(errs, result.SAWError{
+				Code:     "impl-file-ownership",
+				Severity: "error",
+				Line:     lineNumber,
+				Message:  fmt.Sprintf("impl-file-ownership block (line %d): row has fewer than 4 columns: %s", lineNumber, row),
 			})
 		}
 
@@ -271,10 +279,11 @@ func validateFileOwnership(lines []string, lineNumber int) ([]ValidationError, [
 			if agentCell != "" && agentCell != "Agent" && agentCell != "---" {
 				agentIDs = append(agentIDs, agentCell)
 				if !validAgentIDRe.MatchString(agentCell) {
-					errs = append(errs, ValidationError{
-						Code:  "agent-id",
-						Line: lineNumber,
-						Message:    fmt.Sprintf("impl-file-ownership block (line %d): invalid agent ID '%s' — must match ^[A-Z][2-9]?$ (bare letter for generation 1, e.g., A, B, C; multi-gen like A2, B3 for generation 2+)", lineNumber, agentCell),
+					errs = append(errs, result.SAWError{
+						Code:     "agent-id",
+						Severity: "error",
+						Line:     lineNumber,
+						Message:  fmt.Sprintf("impl-file-ownership block (line %d): invalid agent ID '%s' — must match ^[A-Z][2-9]?$ (bare letter for generation 1, e.g., A, B, C; multi-gen like A2, B3 for generation 2+)", lineNumber, agentCell),
 					})
 				}
 			}
@@ -286,27 +295,29 @@ func validateFileOwnership(lines []string, lineNumber int) ([]ValidationError, [
 
 // validateDepGraph validates an impl-dep-graph block.
 // I2: Returns (errors, agentIDs) where agentIDs are all agent IDs found in this block.
-func validateDepGraph(lines []string, lineNumber int) ([]ValidationError, []string) {
-	var errs []ValidationError
+func validateDepGraph(lines []string, lineNumber int) ([]result.SAWError, []string) {
+	var errs []result.SAWError
 	var agentIDs []string
 	content := strings.Join(lines, "\n")
 
 	// Must have at least one line matching "^Wave [0-9]+"
 	if !waveHeaderRe.MatchString(content) {
-		errs = append(errs, ValidationError{
-			Code:  "impl-dep-graph",
-			Line: lineNumber,
-			Message:    fmt.Sprintf("impl-dep-graph block (line %d): missing 'Wave N (...):' header — each wave must start with 'Wave N'", lineNumber),
+		errs = append(errs, result.SAWError{
+			Code:     "impl-dep-graph",
+			Severity: "error",
+			Line:     lineNumber,
+			Message:  fmt.Sprintf("impl-dep-graph block (line %d): missing 'Wave N (...):' header — each wave must start with 'Wave N'", lineNumber),
 		})
 		return errs, agentIDs
 	}
 
 	// Must have at least one line matching "[A-Z]"
 	if !agentRefRe.MatchString(content) {
-		errs = append(errs, ValidationError{
-			Code:  "impl-dep-graph",
-			Line: lineNumber,
-			Message:    fmt.Sprintf("impl-dep-graph block (line %d): no agent lines found — expected lines like '    [A] path/to/file'", lineNumber),
+		errs = append(errs, result.SAWError{
+			Code:     "impl-dep-graph",
+			Severity: "error",
+			Line:     lineNumber,
+			Message:  fmt.Sprintf("impl-dep-graph block (line %d): no agent lines found — expected lines like '    [A] path/to/file'", lineNumber),
 		})
 		return errs, agentIDs
 	}
@@ -340,19 +351,21 @@ func validateDepGraph(lines []string, lineNumber int) ([]ValidationError, []stri
 	for _, block := range blocks {
 		blockContent := strings.Join(block.lines, "\n")
 		if !rootOrDependsRe.MatchString(blockContent) {
-			errs = append(errs, ValidationError{
-				Code:  "impl-dep-graph",
-				Line: lineNumber,
-				Message:    fmt.Sprintf("impl-dep-graph block (line %d): agent [%s] has neither '✓ root' nor 'depends on:' — one is required", lineNumber, block.letter),
+			errs = append(errs, result.SAWError{
+				Code:     "impl-dep-graph",
+				Severity: "error",
+				Line:     lineNumber,
+				Message:  fmt.Sprintf("impl-dep-graph block (line %d): agent [%s] has neither '✓ root' nor 'depends on:' — one is required", lineNumber, block.letter),
 			})
 		}
 
 		// I2: Validate agent ID format
 		if !validAgentIDRe.MatchString(block.letter) {
-			errs = append(errs, ValidationError{
-				Code:  "agent-id",
-				Line: lineNumber,
-				Message:    fmt.Sprintf("impl-dep-graph block (line %d): invalid agent ID '[%s]' — must match ^[A-Z][2-9]?$ (bare letter for generation 1, e.g., A, B, C; multi-gen like A2, B3 for generation 2+)", lineNumber, block.letter),
+			errs = append(errs, result.SAWError{
+				Code:     "agent-id",
+				Severity: "error",
+				Line:     lineNumber,
+				Message:  fmt.Sprintf("impl-dep-graph block (line %d): invalid agent ID '[%s]' — must match ^[A-Z][2-9]?$ (bare letter for generation 1, e.g., A, B, C; multi-gen like A2, B3 for generation 2+)", lineNumber, block.letter),
 			})
 		}
 	}
@@ -362,27 +375,29 @@ func validateDepGraph(lines []string, lineNumber int) ([]ValidationError, []stri
 
 // validateWaveStructure validates an impl-wave-structure block.
 // I2: Returns (errors, agentIDs) where agentIDs are all agent IDs found in this block.
-func validateWaveStructure(lines []string, lineNumber int) ([]ValidationError, []string) {
-	var errs []ValidationError
+func validateWaveStructure(lines []string, lineNumber int) ([]result.SAWError, []string) {
+	var errs []result.SAWError
 	var agentIDs []string
 	content := strings.Join(lines, "\n")
 
 	// Must have at least one line matching "^Wave [0-9]+:"
 	if !waveStructureRe.MatchString(content) {
-		errs = append(errs, ValidationError{
-			Code:  "impl-wave-structure",
-			Line: lineNumber,
-			Message:    fmt.Sprintf("impl-wave-structure block (line %d): missing 'Wave N:' lines — each wave must appear as 'Wave N: [A] [B]'", lineNumber),
+		errs = append(errs, result.SAWError{
+			Code:     "impl-wave-structure",
+			Severity: "error",
+			Line:     lineNumber,
+			Message:  fmt.Sprintf("impl-wave-structure block (line %d): missing 'Wave N:' lines — each wave must appear as 'Wave N: [A] [B]'", lineNumber),
 		})
 		return errs, agentIDs
 	}
 
 	// Must reference at least one agent letter [A-Z]
 	if !agentRefRe.MatchString(content) {
-		errs = append(errs, ValidationError{
-			Code:  "impl-wave-structure",
-			Line: lineNumber,
-			Message:    fmt.Sprintf("impl-wave-structure block (line %d): no agent letters found — expected [A], [B], etc.", lineNumber),
+		errs = append(errs, result.SAWError{
+			Code:     "impl-wave-structure",
+			Severity: "error",
+			Line:     lineNumber,
+			Message:  fmt.Sprintf("impl-wave-structure block (line %d): no agent letters found — expected [A], [B], etc.", lineNumber),
 		})
 		return errs, agentIDs
 	}
@@ -399,10 +414,11 @@ func validateWaveStructure(lines []string, lineNumber int) ([]ValidationError, [
 
 				// Validate format
 				if !validAgentIDRe.MatchString(id) {
-					errs = append(errs, ValidationError{
-						Code:  "agent-id",
-						Line: lineNumber,
-						Message:    fmt.Sprintf("impl-wave-structure block (line %d): invalid agent ID '[%s]' — must match ^[A-Z][2-9]?$ (bare letter for generation 1, e.g., A, B, C; multi-gen like A2, B3 for generation 2+)", lineNumber, id),
+					errs = append(errs, result.SAWError{
+						Code:     "agent-id",
+						Severity: "error",
+						Line:     lineNumber,
+						Message:  fmt.Sprintf("impl-wave-structure block (line %d): invalid agent ID '[%s]' — must match ^[A-Z][2-9]?$ (bare letter for generation 1, e.g., A, B, C; multi-gen like A2, B3 for generation 2+)", lineNumber, id),
 					})
 				}
 			}
@@ -425,8 +441,8 @@ var completionReportRequiredFields = []string{
 
 // validateCompletionReport validates an impl-completion-report block.
 // I2: Returns (errors, agentIDs) where agentIDs is empty (completion reports don't define new agent IDs).
-func validateCompletionReport(lines []string, lineNumber int) ([]ValidationError, []string) {
-	var errs []ValidationError
+func validateCompletionReport(lines []string, lineNumber int) ([]result.SAWError, []string) {
+	var errs []result.SAWError
 
 	// Check required fields
 	for _, field := range completionReportRequiredFields {
@@ -438,10 +454,11 @@ func validateCompletionReport(lines []string, lineNumber int) ([]ValidationError
 			}
 		}
 		if !found {
-			errs = append(errs, ValidationError{
-				Code:  "impl-completion-report",
-				Line: lineNumber,
-				Message:    fmt.Sprintf("impl-completion-report block (line %d): missing required field '%s'", lineNumber, field),
+			errs = append(errs, result.SAWError{
+				Code:     "impl-completion-report",
+				Severity: "error",
+				Line:     lineNumber,
+				Message:  fmt.Sprintf("impl-completion-report block (line %d): missing required field '%s'", lineNumber, field),
 			})
 		}
 	}
@@ -458,20 +475,22 @@ func validateCompletionReport(lines []string, lineNumber int) ([]ValidationError
 		// The bash script's tr -d '[:space:]' + cut -d'|' -f1 would silently pass this,
 		// but we explicitly reject multi-value placeholders.
 		if strings.Contains(rawVal, "|") {
-			errs = append(errs, ValidationError{
-				Code:  "impl-completion-report",
-				Line: lineNumber,
-				Message:    fmt.Sprintf("impl-completion-report block (line %d): status must be 'complete', 'partial', or 'blocked' — got: '%s'", lineNumber, rawVal),
+			errs = append(errs, result.SAWError{
+				Code:     "impl-completion-report",
+				Severity: "error",
+				Line:     lineNumber,
+				Message:  fmt.Sprintf("impl-completion-report block (line %d): status must be 'complete', 'partial', or 'blocked' — got: '%s'", lineNumber, rawVal),
 			})
 			break
 		}
 
 		val := rawVal
 		if val != "complete" && val != "partial" && val != "blocked" {
-			errs = append(errs, ValidationError{
-				Code:  "impl-completion-report",
-				Line: lineNumber,
-				Message:    fmt.Sprintf("impl-completion-report block (line %d): status must be 'complete', 'partial', or 'blocked' — got: '%s'", lineNumber, val),
+			errs = append(errs, result.SAWError{
+				Code:     "impl-completion-report",
+				Severity: "error",
+				Line:     lineNumber,
+				Message:  fmt.Sprintf("impl-completion-report block (line %d): status must be 'complete', 'partial', or 'blocked' — got: '%s'", lineNumber, val),
 			})
 		}
 		break

@@ -3,6 +3,8 @@ package protocol
 import (
 	"fmt"
 	"strings"
+
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
 )
 
 // ValidateSchema is the top-level schema validation entry point.
@@ -10,19 +12,19 @@ import (
 // path format, and cross-field consistency) and aggregates their results.
 // Called by Validate() in validation.go alongside existing semantic checks.
 // Returns warnings with SV01 prefix.
-func ValidateSchema(m *IMPLManifest) []ValidationError {
-	var errs []ValidationError
+func ValidateSchema(m *IMPLManifest) []result.SAWError {
+	var errs []result.SAWError
 	errs = append(errs, validateNestedRequiredFields(m)...)
 	errs = append(errs, validateAllEnums(m)...)
 	errs = append(errs, validateFilePaths(m)...)
 	errs = append(errs, validateCrossFieldConsistency(m)...)
 	errs = append(errs, ValidateReactions(m)...)
 
-	// Populate Slug on all schema validation errors when available
+	// Populate slug context on all schema validation errors when available
 	if m.FeatureSlug != "" {
 		for i := range errs {
-			if errs[i].Slug == "" {
-				errs[i].Slug = m.FeatureSlug
+			if errs[i].Context == nil || errs[i].Context["slug"] == "" {
+				errs[i] = errs[i].WithContext("slug", m.FeatureSlug)
 			}
 		}
 	}
@@ -32,30 +34,33 @@ func ValidateSchema(m *IMPLManifest) []ValidationError {
 
 // validateNestedRequiredFields checks required fields on nested types:
 // FileOwnership, Wave, Agent, InterfaceContract, QualityGate, ScaffoldFile, PreMortemRow.
-func validateNestedRequiredFields(m *IMPLManifest) []ValidationError {
-	var errs []ValidationError
+func validateNestedRequiredFields(m *IMPLManifest) []result.SAWError {
+	var errs []result.SAWError
 
 	// FileOwnership: File (non-empty), Agent (non-empty), Wave (> 0)
 	for i, fo := range m.FileOwnership {
 		if strings.TrimSpace(fo.File) == "" {
-			errs = append(errs, ValidationError{
-				Code:    SV01RequiredField,
-				Message: fmt.Sprintf("file_ownership[%d].file is required and must be non-empty", i),
-				Field:   fmt.Sprintf("file_ownership[%d].file", i),
+			errs = append(errs, result.SAWError{
+				Code:     SV01RequiredField,
+				Severity: "error",
+				Message:  fmt.Sprintf("file_ownership[%d].file is required and must be non-empty", i),
+				Field:    fmt.Sprintf("file_ownership[%d].file", i),
 			})
 		}
 		if strings.TrimSpace(fo.Agent) == "" {
-			errs = append(errs, ValidationError{
-				Code:    SV01RequiredField,
-				Message: fmt.Sprintf("file_ownership[%d].agent is required and must be non-empty", i),
-				Field:   fmt.Sprintf("file_ownership[%d].agent", i),
+			errs = append(errs, result.SAWError{
+				Code:     SV01RequiredField,
+				Severity: "error",
+				Message:  fmt.Sprintf("file_ownership[%d].agent is required and must be non-empty", i),
+				Field:    fmt.Sprintf("file_ownership[%d].agent", i),
 			})
 		}
 		if fo.Wave <= 0 {
-			errs = append(errs, ValidationError{
-				Code:    SV01RequiredField,
-				Message: fmt.Sprintf("file_ownership[%d].wave must be > 0, got %d", i, fo.Wave),
-				Field:   fmt.Sprintf("file_ownership[%d].wave", i),
+			errs = append(errs, result.SAWError{
+				Code:     SV01RequiredField,
+				Severity: "error",
+				Message:  fmt.Sprintf("file_ownership[%d].wave must be > 0, got %d", i, fo.Wave),
+				Field:    fmt.Sprintf("file_ownership[%d].wave", i),
 			})
 		}
 	}
@@ -63,34 +68,38 @@ func validateNestedRequiredFields(m *IMPLManifest) []ValidationError {
 	// Waves: Number (> 0), Agents (non-empty slice)
 	for i, w := range m.Waves {
 		if w.Number <= 0 {
-			errs = append(errs, ValidationError{
-				Code:    SV01RequiredField,
-				Message: fmt.Sprintf("waves[%d].number must be > 0, got %d", i, w.Number),
-				Field:   fmt.Sprintf("waves[%d].number", i),
+			errs = append(errs, result.SAWError{
+				Code:     SV01RequiredField,
+				Severity: "error",
+				Message:  fmt.Sprintf("waves[%d].number must be > 0, got %d", i, w.Number),
+				Field:    fmt.Sprintf("waves[%d].number", i),
 			})
 		}
 		if len(w.Agents) == 0 {
-			errs = append(errs, ValidationError{
-				Code:    SV01RequiredField,
-				Message: fmt.Sprintf("waves[%d].agents must be non-empty", i),
-				Field:   fmt.Sprintf("waves[%d].agents", i),
+			errs = append(errs, result.SAWError{
+				Code:     SV01RequiredField,
+				Severity: "error",
+				Message:  fmt.Sprintf("waves[%d].agents must be non-empty", i),
+				Field:    fmt.Sprintf("waves[%d].agents", i),
 			})
 		}
 
 		// Agent: ID (non-empty), Task (non-empty)
 		for j, agent := range w.Agents {
 			if strings.TrimSpace(agent.ID) == "" {
-				errs = append(errs, ValidationError{
-					Code:    SV01RequiredField,
-					Message: fmt.Sprintf("waves[%d].agents[%d].id is required and must be non-empty", i, j),
-					Field:   fmt.Sprintf("waves[%d].agents[%d].id", i, j),
+				errs = append(errs, result.SAWError{
+					Code:     SV01RequiredField,
+					Severity: "error",
+					Message:  fmt.Sprintf("waves[%d].agents[%d].id is required and must be non-empty", i, j),
+					Field:    fmt.Sprintf("waves[%d].agents[%d].id", i, j),
 				})
 			}
 			if strings.TrimSpace(agent.Task) == "" {
-				errs = append(errs, ValidationError{
-					Code:    SV01RequiredField,
-					Message: fmt.Sprintf("waves[%d].agents[%d].task is required and must be non-empty", i, j),
-					Field:   fmt.Sprintf("waves[%d].agents[%d].task", i, j),
+				errs = append(errs, result.SAWError{
+					Code:     SV01RequiredField,
+					Severity: "error",
+					Message:  fmt.Sprintf("waves[%d].agents[%d].task is required and must be non-empty", i, j),
+					Field:    fmt.Sprintf("waves[%d].agents[%d].task", i, j),
 				})
 			}
 		}
@@ -99,24 +108,27 @@ func validateNestedRequiredFields(m *IMPLManifest) []ValidationError {
 	// InterfaceContracts: Name (non-empty), Definition (non-empty), Location (non-empty)
 	for i, ic := range m.InterfaceContracts {
 		if strings.TrimSpace(ic.Name) == "" {
-			errs = append(errs, ValidationError{
-				Code:    SV01RequiredField,
-				Message: fmt.Sprintf("interface_contracts[%d].name is required and must be non-empty", i),
-				Field:   fmt.Sprintf("interface_contracts[%d].name", i),
+			errs = append(errs, result.SAWError{
+				Code:     SV01RequiredField,
+				Severity: "error",
+				Message:  fmt.Sprintf("interface_contracts[%d].name is required and must be non-empty", i),
+				Field:    fmt.Sprintf("interface_contracts[%d].name", i),
 			})
 		}
 		if strings.TrimSpace(ic.Definition) == "" {
-			errs = append(errs, ValidationError{
-				Code:    SV01RequiredField,
-				Message: fmt.Sprintf("interface_contracts[%d].definition is required and must be non-empty", i),
-				Field:   fmt.Sprintf("interface_contracts[%d].definition", i),
+			errs = append(errs, result.SAWError{
+				Code:     SV01RequiredField,
+				Severity: "error",
+				Message:  fmt.Sprintf("interface_contracts[%d].definition is required and must be non-empty", i),
+				Field:    fmt.Sprintf("interface_contracts[%d].definition", i),
 			})
 		}
 		if strings.TrimSpace(ic.Location) == "" {
-			errs = append(errs, ValidationError{
-				Code:    SV01RequiredField,
-				Message: fmt.Sprintf("interface_contracts[%d].location is required and must be non-empty", i),
-				Field:   fmt.Sprintf("interface_contracts[%d].location", i),
+			errs = append(errs, result.SAWError{
+				Code:     SV01RequiredField,
+				Severity: "error",
+				Message:  fmt.Sprintf("interface_contracts[%d].location is required and must be non-empty", i),
+				Field:    fmt.Sprintf("interface_contracts[%d].location", i),
 			})
 		}
 	}
@@ -125,17 +137,19 @@ func validateNestedRequiredFields(m *IMPLManifest) []ValidationError {
 	if m.QualityGates != nil {
 		for i, gate := range m.QualityGates.Gates {
 			if strings.TrimSpace(gate.Type) == "" {
-				errs = append(errs, ValidationError{
-					Code:    SV01RequiredField,
-					Message: fmt.Sprintf("quality_gates.gates[%d].type is required and must be non-empty", i),
-					Field:   fmt.Sprintf("quality_gates.gates[%d].type", i),
+				errs = append(errs, result.SAWError{
+					Code:     SV01RequiredField,
+					Severity: "error",
+					Message:  fmt.Sprintf("quality_gates.gates[%d].type is required and must be non-empty", i),
+					Field:    fmt.Sprintf("quality_gates.gates[%d].type", i),
 				})
 			}
 			if strings.TrimSpace(gate.Command) == "" {
-				errs = append(errs, ValidationError{
-					Code:    SV01RequiredField,
-					Message: fmt.Sprintf("quality_gates.gates[%d].command is required and must be non-empty", i),
-					Field:   fmt.Sprintf("quality_gates.gates[%d].command", i),
+				errs = append(errs, result.SAWError{
+					Code:     SV01RequiredField,
+					Severity: "error",
+					Message:  fmt.Sprintf("quality_gates.gates[%d].command is required and must be non-empty", i),
+					Field:    fmt.Sprintf("quality_gates.gates[%d].command", i),
 				})
 			}
 		}
@@ -144,10 +158,11 @@ func validateNestedRequiredFields(m *IMPLManifest) []ValidationError {
 	// ScaffoldFiles: FilePath (non-empty)
 	for i, sf := range m.Scaffolds {
 		if strings.TrimSpace(sf.FilePath) == "" {
-			errs = append(errs, ValidationError{
-				Code:    SV01RequiredField,
-				Message: fmt.Sprintf("scaffolds[%d].file_path is required and must be non-empty", i),
-				Field:   fmt.Sprintf("scaffolds[%d].file_path", i),
+			errs = append(errs, result.SAWError{
+				Code:     SV01RequiredField,
+				Severity: "error",
+				Message:  fmt.Sprintf("scaffolds[%d].file_path is required and must be non-empty", i),
+				Field:    fmt.Sprintf("scaffolds[%d].file_path", i),
 			})
 		}
 	}
@@ -156,17 +171,19 @@ func validateNestedRequiredFields(m *IMPLManifest) []ValidationError {
 	if m.PreMortem != nil {
 		for i, row := range m.PreMortem.Rows {
 			if strings.TrimSpace(row.Scenario) == "" {
-				errs = append(errs, ValidationError{
-					Code:    SV01RequiredField,
-					Message: fmt.Sprintf("pre_mortem.rows[%d].scenario is required and must be non-empty", i),
-					Field:   fmt.Sprintf("pre_mortem.rows[%d].scenario", i),
+				errs = append(errs, result.SAWError{
+					Code:     SV01RequiredField,
+					Severity: "error",
+					Message:  fmt.Sprintf("pre_mortem.rows[%d].scenario is required and must be non-empty", i),
+					Field:    fmt.Sprintf("pre_mortem.rows[%d].scenario", i),
 				})
 			}
 			if strings.TrimSpace(row.Mitigation) == "" {
-				errs = append(errs, ValidationError{
-					Code:    SV01RequiredField,
-					Message: fmt.Sprintf("pre_mortem.rows[%d].mitigation is required and must be non-empty", i),
-					Field:   fmt.Sprintf("pre_mortem.rows[%d].mitigation", i),
+				errs = append(errs, result.SAWError{
+					Code:     SV01RequiredField,
+					Severity: "error",
+					Message:  fmt.Sprintf("pre_mortem.rows[%d].mitigation is required and must be non-empty", i),
+					Field:    fmt.Sprintf("pre_mortem.rows[%d].mitigation", i),
 				})
 			}
 		}
@@ -181,8 +198,8 @@ func validateNestedRequiredFields(m *IMPLManifest) []ValidationError {
 // - No ".." path traversal segments
 // - No null bytes
 // - No backslash characters (use forward slash)
-func validateFilePaths(m *IMPLManifest) []ValidationError {
-	var errs []ValidationError
+func validateFilePaths(m *IMPLManifest) []result.SAWError {
+	var errs []result.SAWError
 
 	// Helper to check a single path
 	checkPath := func(path, fieldPath string) {
@@ -190,31 +207,35 @@ func validateFilePaths(m *IMPLManifest) []ValidationError {
 			return // Empty paths are caught by required field validation
 		}
 		if strings.HasPrefix(path, "/") {
-			errs = append(errs, ValidationError{
-				Code:    SV01InvalidPath,
-				Message: fmt.Sprintf("%s: path %q must not start with '/' (use relative paths)", fieldPath, path),
-				Field:   fieldPath,
+			errs = append(errs, result.SAWError{
+				Code:     SV01InvalidPath,
+				Severity: "error",
+				Message:  fmt.Sprintf("%s: path %q must not start with '/' (use relative paths)", fieldPath, path),
+				Field:    fieldPath,
 			})
 		}
 		if containsDotDot(path) {
-			errs = append(errs, ValidationError{
-				Code:    SV01InvalidPath,
-				Message: fmt.Sprintf("%s: path %q must not contain '..' traversal segments", fieldPath, path),
-				Field:   fieldPath,
+			errs = append(errs, result.SAWError{
+				Code:     SV01InvalidPath,
+				Severity: "error",
+				Message:  fmt.Sprintf("%s: path %q must not contain '..' traversal segments", fieldPath, path),
+				Field:    fieldPath,
 			})
 		}
 		if strings.ContainsRune(path, 0) {
-			errs = append(errs, ValidationError{
-				Code:    SV01InvalidPath,
-				Message: fmt.Sprintf("%s: path must not contain null bytes", fieldPath),
-				Field:   fieldPath,
+			errs = append(errs, result.SAWError{
+				Code:     SV01InvalidPath,
+				Severity: "error",
+				Message:  fmt.Sprintf("%s: path must not contain null bytes", fieldPath),
+				Field:    fieldPath,
 			})
 		}
 		if strings.Contains(path, "\\") {
-			errs = append(errs, ValidationError{
-				Code:    SV01InvalidPath,
-				Message: fmt.Sprintf("%s: path %q must not contain backslashes (use forward slashes)", fieldPath, path),
-				Field:   fieldPath,
+			errs = append(errs, result.SAWError{
+				Code:     SV01InvalidPath,
+				Severity: "error",
+				Message:  fmt.Sprintf("%s: path %q must not contain backslashes (use forward slashes)", fieldPath, path),
+				Field:    fieldPath,
 			})
 		}
 	}

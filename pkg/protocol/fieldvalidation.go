@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"regexp"
 	"strings"
+
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
 )
 
 // worktreeBranchRegex validates branch names in both legacy and slug-scoped formats:
@@ -31,8 +33,8 @@ var verificationRegex = regexp.MustCompile(`\b(PASS|FAIL)\b`)
 // Returns:
 //   - E5_INVALID_WORKTREE_NAME for branch violations
 //   - E5_INVALID_WORKTREE_PATH for worktree path violations
-func ValidateWorktreeNames(m *IMPLManifest) []ValidationError {
-	var errs []ValidationError
+func ValidateWorktreeNames(m *IMPLManifest) []result.SAWError {
+	var errs []result.SAWError
 
 	// Build map of agent -> wave number and wave -> agent count
 	agentWave := make(map[string]int)
@@ -61,13 +63,12 @@ func ValidateWorktreeNames(m *IMPLManifest) []ValidationError {
 		if strings.TrimSpace(report.Branch) != "" && !isSolo {
 			matches := worktreeBranchRegex.FindStringSubmatch(report.Branch)
 			if matches == nil {
-				errs = append(errs, ValidationError{
-					Code:    "E5_INVALID_WORKTREE_NAME",
-					Message: fmt.Sprintf("agent %s branch %q does not match pattern wave{N}-agent-{ID} or saw/{slug}/wave{N}-agent-{ID}", agentID, report.Branch),
-					Field:   fmt.Sprintf("completion_reports[%s].branch", agentID),
-					Slug:    m.FeatureSlug,
-					Wave:    waveNum,
-					AgentID: agentID,
+				errs = append(errs, result.SAWError{
+					Code:     "E5_INVALID_WORKTREE_NAME",
+					Severity: "error",
+					Message:  fmt.Sprintf("agent %s branch %q does not match pattern wave{N}-agent-{ID} or saw/{slug}/wave{N}-agent-{ID}", agentID, report.Branch),
+					Field:    fmt.Sprintf("completion_reports[%s].branch", agentID),
+					Context:  map[string]string{"slug": m.FeatureSlug, "wave": fmt.Sprintf("%d", waveNum), "agent_id": agentID},
 				})
 			} else {
 				// Extract wave number and agent ID from branch name
@@ -77,25 +78,23 @@ func ValidateWorktreeNames(m *IMPLManifest) []ValidationError {
 				// Validate wave number matches
 				expectedWave := fmt.Sprintf("%d", waveNum)
 				if branchWave != expectedWave {
-					errs = append(errs, ValidationError{
-						Code:    "E5_INVALID_WORKTREE_NAME",
-						Message: fmt.Sprintf("agent %s (wave %d) branch %q has wrong wave number (expected wave%s-agent-%s)", agentID, waveNum, report.Branch, expectedWave, agentID),
-						Field:   fmt.Sprintf("completion_reports[%s].branch", agentID),
-						Slug:    m.FeatureSlug,
-						Wave:    waveNum,
-						AgentID: agentID,
+					errs = append(errs, result.SAWError{
+						Code:     "E5_INVALID_WORKTREE_NAME",
+						Severity: "error",
+						Message:  fmt.Sprintf("agent %s (wave %d) branch %q has wrong wave number (expected wave%s-agent-%s)", agentID, waveNum, report.Branch, expectedWave, agentID),
+						Field:    fmt.Sprintf("completion_reports[%s].branch", agentID),
+						Context:  map[string]string{"slug": m.FeatureSlug, "wave": fmt.Sprintf("%d", waveNum), "agent_id": agentID},
 					})
 				}
 
 				// Validate agent ID matches
 				if branchAgent != agentID {
-					errs = append(errs, ValidationError{
-						Code:    "E5_INVALID_WORKTREE_NAME",
-						Message: fmt.Sprintf("agent %s branch %q has wrong agent ID (expected wave%s-agent-%s)", agentID, report.Branch, expectedWave, agentID),
-						Field:   fmt.Sprintf("completion_reports[%s].branch", agentID),
-						Slug:    m.FeatureSlug,
-						Wave:    waveNum,
-						AgentID: agentID,
+					errs = append(errs, result.SAWError{
+						Code:     "E5_INVALID_WORKTREE_NAME",
+						Severity: "error",
+						Message:  fmt.Sprintf("agent %s branch %q has wrong agent ID (expected wave%s-agent-%s)", agentID, report.Branch, expectedWave, agentID),
+						Field:    fmt.Sprintf("completion_reports[%s].branch", agentID),
+						Context:  map[string]string{"slug": m.FeatureSlug, "wave": fmt.Sprintf("%d", waveNum), "agent_id": agentID},
 					})
 				}
 			}
@@ -119,13 +118,12 @@ func ValidateWorktreeNames(m *IMPLManifest) []ValidationError {
 			}
 
 			if !found {
-				errs = append(errs, ValidationError{
-					Code:    "E5_INVALID_WORKTREE_PATH",
-					Message: fmt.Sprintf("agent %s worktree path %q does not contain expected segment %q", agentID, report.Worktree, expectedSegment),
-					Field:   fmt.Sprintf("completion_reports[%s].worktree", agentID),
-					Slug:    m.FeatureSlug,
-					Wave:    waveNum,
-					AgentID: agentID,
+				errs = append(errs, result.SAWError{
+					Code:     "E5_INVALID_WORKTREE_PATH",
+					Severity: "error",
+					Message:  fmt.Sprintf("agent %s worktree path %q does not contain expected segment %q", agentID, report.Worktree, expectedSegment),
+					Field:    fmt.Sprintf("completion_reports[%s].worktree", agentID),
+					Context:  map[string]string{"slug": m.FeatureSlug, "wave": fmt.Sprintf("%d", waveNum), "agent_id": agentID},
 				})
 			}
 		}
@@ -143,8 +141,8 @@ func ValidateWorktreeNames(m *IMPLManifest) []ValidationError {
 //
 // Returns:
 //   - E10_INVALID_VERIFICATION for format violations
-func ValidateVerificationField(m *IMPLManifest) []ValidationError {
-	var errs []ValidationError
+func ValidateVerificationField(m *IMPLManifest) []result.SAWError {
+	var errs []result.SAWError
 
 	// Build agent -> wave lookup for context
 	agentWave := make(map[string]int)
@@ -162,13 +160,12 @@ func ValidateVerificationField(m *IMPLManifest) []ValidationError {
 
 		// Validate format
 		if !verificationRegex.MatchString(report.Verification) {
-			errs = append(errs, ValidationError{
-				Code:    "E10_INVALID_VERIFICATION",
-				Message: fmt.Sprintf("agent %s verification field %q does not match format 'PASS' or 'FAIL (details)'", agentID, report.Verification),
-				Field:   fmt.Sprintf("completion_reports[%s].verification", agentID),
-				Slug:    m.FeatureSlug,
-				Wave:    agentWave[agentID],
-				AgentID: agentID,
+			errs = append(errs, result.SAWError{
+				Code:     "E10_INVALID_VERIFICATION",
+				Severity: "error",
+				Message:  fmt.Sprintf("agent %s verification field %q does not match format 'PASS' or 'FAIL (details)'", agentID, report.Verification),
+				Field:    fmt.Sprintf("completion_reports[%s].verification", agentID),
+				Context:  map[string]string{"slug": m.FeatureSlug, "wave": fmt.Sprintf("%d", agentWave[agentID]), "agent_id": agentID},
 			})
 		}
 	}
