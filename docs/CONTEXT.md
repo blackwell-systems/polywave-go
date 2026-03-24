@@ -185,3 +185,5 @@ type BackendConfig struct {
   - IMPL doc: docs/IMPL/complete/IMPL-hooks-quick-wins.yaml
 - **file-read-dedup**: completed 2026-03-23, 2 waves, 2 agents
   - IMPL doc: docs/IMPL/IMPL-file-read-dedup.yaml
+- **unified-state-management**: completed 2026-03-24, 2 waves, 4 agents
+  - IMPL doc: docs/IMPL/complete/IMPL-unified-state-management.yaml

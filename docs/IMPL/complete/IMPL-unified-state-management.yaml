@@ -1,0 +1,540 @@
+completion_date: "2026-03-24"
+title: Unified IMPL State Management
+feature_slug: unified-state-management
+verdict: SUITABLE
+suitability_assessment: |
+    File decomposition: 9 files across 2 repos will change, assignable to 4 agents
+    with disjoint ownership. No single-file bottleneck.
+
+    Investigation-first: No. The problem is well-understood — SetImplState exists but
+    is not called from engine functions. The transition map is complete and tested.
+
+    Interface discoverability: Yes. SetImplState already has a stable signature:
+    SetImplState(manifestPath string, newState ProtocolState, opts SetImplStateOpts) result.Result[*SetImplStateData]
+    All agents consume this existing interface — no new contracts needed.
+
+    Pre-implementation status: SetImplState exists with full transition map and tests.
+    Engine functions (FinalizeWave, RunSingleWave, StartWave, RunDaemon) and CLI commands
+    (close-impl, run-scout, finalize-wave) do not call it. Web app wave_service.go calls
+    engine.FinalizeWave and engine.RunSingleWave — gets state updates for free once engine
+    is wired.
+
+    Parallelization value: Go build+test cycle is ~30s. 3 agents in wave 1 touching
+    distinct files with non-trivial logic changes. Clear speedup over sequential.
+
+    Estimated times:
+    - Scout phase: ~8 min
+    - Agent execution: ~12 min (3 parallel agents wave 1 + 1 agent wave 2)
+    - Merge and verification: ~5 min
+    Total SAW time: ~25 min
+    Sequential baseline: ~40 min (4 agents x 10 min avg)
+    Time savings: ~15 min (38% faster)
+    Recommendation: Clear speedup.
+test_command: go test ./...
+lint_command: go vet ./...
+file_ownership:
+    - file: pkg/engine/state_helpers.go
+      agent: A
+      wave: 1
+      action: new
+    - file: pkg/engine/finalize.go
+      agent: A
+      wave: 1
+      action: modify
+    - file: pkg/engine/finalize_state_test.go
+      agent: A
+      wave: 1
+      action: new
+    - file: pkg/engine/runner.go
+      agent: B
+      wave: 1
+      action: modify
+    - file: pkg/engine/runner_state_test.go
+      agent: B
+      wave: 1
+      action: new
+    - file: pkg/engine/daemon.go
+      agent: C
+      wave: 1
+      action: modify
+    - file: pkg/engine/daemon_state_test.go
+      agent: C
+      wave: 1
+      action: new
+    - file: cmd/saw/close_impl_cmd.go
+      agent: D
+      wave: 2
+      action: modify
+    - file: cmd/saw/close_impl_cmd_test.go
+      agent: D
+      wave: 2
+      action: new
+interface_contracts:
+    - name: SetImplState
+      description: |
+        Existing function in pkg/protocol/state_transition.go. All agents MUST use this
+        as the single code path for state changes. Do NOT write state fields directly.
+        Do NOT use updateManifestState directly. Call SetImplState with Commit: false
+        (engine manages its own commits).
+      definition: |
+        func SetImplState(manifestPath string, newState ProtocolState, opts SetImplStateOpts) result.Result[*SetImplStateData]
+
+        type SetImplStateOpts struct {
+            Commit    bool
+            CommitMsg string
+        }
+      location: pkg/protocol/state_transition.go
+    - name: advanceState helper
+      description: |
+        New unexported helper function in pkg/engine/state_helpers.go — a thin wrapper
+        around protocol.SetImplState that logs failures to stderr but does NOT return
+        errors (state advancement is best-effort; engine operations must not fail due to
+        state tracking). All engine functions call this instead of SetImplState directly.
+        NOTE: This file is shared infrastructure. Agent A creates it; Agents B and C
+        import and use it. Since it is created in wave 1, Agents B and C will have it
+        available in their worktrees (branched from the same base commit).
+      definition: |
+        // advanceState is a best-effort state transition wrapper.
+        // Logs to stderr on failure but never returns an error.
+        func advanceState(implPath string, newState protocol.ProtocolState) {
+            res := protocol.SetImplState(implPath, newState, protocol.SetImplStateOpts{})
+            if !res.IsSuccess() {
+                fmt.Fprintf(os.Stderr, "engine: state advance to %s failed: %v\n", newState, res.Errors)
+            }
+        }
+      location: pkg/engine/state_helpers.go
+waves:
+    - number: 1
+      agents:
+        - id: A
+          task: |
+            ## Feature: Wire SetImplState into engine.FinalizeWave and create advanceState helper
+
+            ### What to implement
+
+            **1. Create `pkg/engine/state_helpers.go`** with an unexported `advanceState` helper:
+
+            ```go
+            package engine
+
+            import (
+                "fmt"
+                "os"
+                "github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
+            )
+
+            // advanceState is a best-effort state transition wrapper.
+            // Logs to stderr on failure but never returns an error.
+            // This is the ONLY way engine functions should change IMPL state.
+            func advanceState(implPath string, newState protocol.ProtocolState) {
+                res := protocol.SetImplState(implPath, newState, protocol.SetImplStateOpts{})
+                if !res.IsSuccess() {
+                    fmt.Fprintf(os.Stderr, "engine: state advance to %s failed: %v\n", newState, res.Errors)
+                }
+            }
+            ```
+
+            **2. Modify `pkg/engine/finalize.go`** — add state transitions to `FinalizeWave`:
+
+            - At the START of FinalizeWave (after manifest load, before step 1):
+              `advanceState(opts.IMPLPath, protocol.StateWaveMerging)`
+
+            - On SUCCESS (after `result.Success = true`, before return):
+              `advanceState(opts.IMPLPath, protocol.StateWaveVerified)`
+
+            - Also wire `MarkIMPLComplete`: before calling `protocol.WriteCompletionMarker`,
+              call `advanceState(opts.IMPLPath, protocol.StateComplete)`
+
+            **3. Create `pkg/engine/finalize_state_test.go`** with tests:
+
+            - `TestFinalizeWave_SetsWaveMergingState` — create a minimal IMPL with
+              state=WAVE_EXECUTING, verify that after FinalizeWave starts, state becomes
+              WAVE_MERGING (use a test that loads the manifest mid-execution or checks
+              final state). Since FinalizeWave requires real git worktrees which is complex
+              to set up, test `advanceState` directly instead:
+              - Write temp IMPL YAML with state: WAVE_EXECUTING
+              - Call advanceState(path, protocol.StateWaveMerging)
+              - Load manifest, assert state == WAVE_MERGING
+
+            - `TestAdvanceState_InvalidTransition_NoError` — verify advanceState does not
+              panic or return error on invalid transition (best-effort).
+
+            - `TestAdvanceState_ValidTransition` — verify advanceState updates state on disk.
+
+            ### Interface contracts
+            Use `protocol.SetImplState` from pkg/protocol/state_transition.go.
+            Use `protocol.ProtocolState` constants from pkg/protocol/types.go.
+
+            ### Files owned
+            - pkg/engine/state_helpers.go (new)
+            - pkg/engine/finalize.go (modify)
+            - pkg/engine/finalize_state_test.go (new)
+
+            ### Constraints
+            - advanceState MUST be unexported (lowercase) — engine-internal only
+            - advanceState MUST NOT return errors — log to stderr only
+            - SetImplStateOpts.Commit MUST be false — no git commits from engine state changes
+            - Do NOT modify any other files
+            - Do NOT change FinalizeWave's function signature
+            - Do NOT change MarkIMPLComplete's function signature
+
+            ### Verification gate
+            ```
+            go test ./pkg/engine/... -run "TestAdvanceState|TestFinalizeWave_Sets" -timeout 60s && go vet ./pkg/engine/...
+            ```
+          files:
+            - pkg/engine/state_helpers.go
+            - pkg/engine/finalize.go
+            - pkg/engine/finalize_state_test.go
+        - id: B
+          task: |
+            ## Feature: Wire SetImplState into engine.StartWave and RunSingleWave
+
+            ### What to implement
+
+            **1. Modify `pkg/engine/runner.go`** — add state transitions:
+
+            **In `StartWave` function (the full wave loop starting at line 314):**
+            - At the START of each wave iteration (after `waveNum := wave.Number`):
+              `advanceState(opts.IMPLPath, protocol.StateWaveExecuting)`
+            - After successful merge+verification of each wave (after `orch.UpdateIMPLStatus`):
+              `advanceState(opts.IMPLPath, protocol.StateWaveVerified)`
+            - Between waves (before the next iteration), if there are more waves:
+              `advanceState(opts.IMPLPath, protocol.StateWavePending)`
+
+            **In `RunSingleWave` function (line 686):**
+            - At entry (after opts validation):
+              `advanceState(opts.IMPLPath, protocol.StateWaveExecuting)`
+
+            **In `RunScout` function (line 33):**
+            - At entry (after opts validation, before scout execution):
+              No state change needed — Scout creates the IMPL doc, so there is no
+              manifest to update yet. The run-scout CLI command handles post-Scout state.
+
+            **2. Create `pkg/engine/runner_state_test.go`** with tests:
+
+            - `TestRunSingleWave_SetsExecutingState` — write temp IMPL with
+              state: WAVE_PENDING, call advanceState with WAVE_EXECUTING, verify state
+              on disk. (Direct advanceState test since RunSingleWave needs full orchestrator.)
+
+            - `TestStartWave_StateTransitions` — verify advanceState calls with correct
+              states for a simulated wave loop. Test advanceState directly with a temp IMPL.
+
+            ### Interface contracts
+            Use the `advanceState` helper from pkg/engine/state_helpers.go (created by Agent A).
+            This helper is in the same package (`engine`) so it is directly accessible.
+            Use `protocol.ProtocolState` constants from pkg/protocol/types.go.
+
+            NOTE: Agent A creates state_helpers.go in the same wave. Since all wave 1
+            agents branch from the same base commit, you will NOT have state_helpers.go
+            in your worktree. You must create your own copy of the advanceState function
+            OR (preferred) create the file yourself if it doesn't exist. The merge will
+            handle deduplication — if both files are identical, git merges cleanly.
+
+            IMPORTANT: To avoid merge conflicts, do NOT create state_helpers.go yourself.
+            Instead, define advanceState as a file-local function at the bottom of runner.go:
+            ```go
+            // advanceState is duplicated from state_helpers.go for build isolation.
+            // The canonical definition lives in state_helpers.go (Agent A).
+            // This duplicate will be removed during wave merge cleanup.
+            ```
+            Actually, the simplest approach: just add the advanceState calls directly
+            using protocol.SetImplState inline. Use this pattern everywhere:
+            ```go
+            protocol.SetImplState(opts.IMPLPath, protocol.StateWaveExecuting, protocol.SetImplStateOpts{})
+            ```
+            This avoids any cross-agent file dependency. After wave merge, we can
+            optionally refactor to use the helper.
+
+            ### Files owned
+            - pkg/engine/runner.go (modify)
+            - pkg/engine/runner_state_test.go (new)
+
+            ### Constraints
+            - Do NOT modify any other files
+            - Do NOT change any function signatures
+            - State transitions are best-effort: log failures, do not propagate errors
+            - Use protocol.SetImplState directly (not advanceState helper) to avoid
+              cross-agent file dependency
+            - SetImplStateOpts.Commit must be false
+
+            ### Verification gate
+            ```
+            go test ./pkg/engine/... -run "TestRunSingleWave_Sets|TestStartWave_State" -timeout 60s && go vet ./pkg/engine/...
+            ```
+          files:
+            - pkg/engine/runner.go
+            - pkg/engine/runner_state_test.go
+        - id: C
+          task: |
+            ## Feature: Wire SetImplState into engine.RunDaemon wave loop
+
+            ### What to implement
+
+            **1. Modify `pkg/engine/daemon.go`** — add state transitions in `daemonProcessItem`:
+
+            - After Scout completes successfully (after `daemonRunScoutFunc` returns nil, ~line 250):
+              ```go
+              protocol.SetImplState(implPath, protocol.StateReviewed, protocol.SetImplStateOpts{})
+              ```
+              Note: Scout creates the IMPL with state SCOUT_PENDING. After Scout completes
+              and validation passes, transition to REVIEWED.
+
+            - Before each wave iteration in the wave loop (~line 272, after `state.CurrentWave = waveNum`):
+              ```go
+              protocol.SetImplState(implPath, protocol.StateWaveExecuting, protocol.SetImplStateOpts{})
+              ```
+
+            - After successful finalize of each wave (after `daemonFinalizeWaveFunc` returns success):
+              ```go
+              protocol.SetImplState(implPath, protocol.StateWaveVerified, protocol.SetImplStateOpts{})
+              ```
+
+            - Between waves (before next iteration):
+              ```go
+              protocol.SetImplState(implPath, protocol.StateWavePending, protocol.SetImplStateOpts{})
+              ```
+
+            - After all waves complete (before marking queue item complete):
+              ```go
+              protocol.SetImplState(implPath, protocol.StateComplete, protocol.SetImplStateOpts{})
+              ```
+
+            All SetImplState calls must be best-effort — log failures to stderr, do NOT
+            return errors or abort the daemon loop.
+
+            **2. Create `pkg/engine/daemon_state_test.go`** with tests:
+
+            - `TestDaemonProcessItem_AdvancesState` — use the existing test infrastructure
+              with daemonRunScoutFunc/daemonFinalizeWaveFunc test doubles. Write a temp IMPL,
+              verify state transitions occur by checking manifest state after each mock step.
+              If the existing mock infrastructure is too complex, test the state transitions
+              in isolation: write temp IMPL at each starting state, call SetImplState, verify.
+
+            - `TestDaemonWaveLoop_StateProgression` — verify the sequence:
+              REVIEWED -> WAVE_EXECUTING -> WAVE_VERIFIED -> WAVE_PENDING -> WAVE_EXECUTING ...
+
+            ### Interface contracts
+            Use `protocol.SetImplState` directly from pkg/protocol/state_transition.go.
+            Use `protocol.ProtocolState` constants from pkg/protocol/types.go.
+            Import path: "github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
+
+            ### Files owned
+            - pkg/engine/daemon.go (modify)
+            - pkg/engine/daemon_state_test.go (new)
+
+            ### Constraints
+            - Do NOT modify any other files
+            - State transitions are best-effort: wrap each call, log on failure, continue
+            - Do NOT change function signatures
+            - SetImplStateOpts.Commit must be false
+            - protocol package is already imported in daemon.go
+
+            ### Verification gate
+            ```
+            go test ./pkg/engine/... -run "TestDaemon.*State" -timeout 60s && go vet ./pkg/engine/...
+            ```
+          files:
+            - pkg/engine/daemon.go
+            - pkg/engine/daemon_state_test.go
+      base_commit: 5f34e38d8195012c7a1037229e3113006185bc9f
+    - number: 2
+      agents:
+        - id: D
+          task: |
+            ## Feature: Wire SetImplState into close-impl CLI command
+
+            ### What to implement
+
+            **1. Modify `cmd/saw/close_impl_cmd.go`**:
+
+            Currently `close_impl_cmd.go` calls `protocol.WriteCompletionMarker` directly
+            to set state. It never calls `SetImplState`. Fix this:
+
+            - BEFORE calling `protocol.WriteCompletionMarker` (line 47), add:
+              ```go
+              stateRes := protocol.SetImplState(manifestPath, protocol.StateComplete, protocol.SetImplStateOpts{})
+              if !stateRes.IsSuccess() {
+                  fmt.Fprintf(os.Stderr, "close-impl: state transition to COMPLETE failed: %v (continuing)\n", stateRes.Errors)
+              }
+              ```
+              This validates the transition is legal (e.g., you can't close an IMPL that's
+              in SCOUT_PENDING state). If it fails, log warning and continue — WriteCompletionMarker
+              will still write the completion_date which is the critical field.
+
+            - The existing WriteCompletionMarker call remains unchanged — it writes
+              completion_date, which is separate from state.
+
+            **2. Create `cmd/saw/close_impl_cmd_test.go`** with tests:
+
+            - `TestCloseImplCmd_SetsCompleteState` — create a temp IMPL doc with
+              state: WAVE_VERIFIED, run the close-impl logic (or call SetImplState directly
+              to test the transition), verify state becomes COMPLETE.
+
+            - `TestCloseImplCmd_InvalidState_ContinuesGracefully` — create a temp IMPL
+              with state: SCOUT_PENDING (invalid transition to COMPLETE), verify the command
+              still completes (logs warning but does not abort).
+
+            NOTE: close_impl_cmd_test.go may already exist. If it does, add tests to it.
+            If not, create it.
+
+            ### Interface contracts
+            Use `protocol.SetImplState` from pkg/protocol/state_transition.go.
+            Import: "github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
+
+            ### Files owned
+            - cmd/saw/close_impl_cmd.go (modify)
+            - cmd/saw/close_impl_cmd_test.go (new)
+
+            ### Constraints
+            - Do NOT modify any other files
+            - State transition failure must NOT abort close-impl — it is best-effort
+            - Do NOT change the WriteCompletionMarker call or ArchiveIMPL call
+            - SetImplStateOpts.Commit must be false
+            - The existing close-impl workflow must remain intact
+
+            ### Verification gate
+            ```
+            go test ./cmd/saw/... -run "TestCloseImpl" -timeout 60s && go vet ./cmd/saw/...
+            ```
+          files:
+            - cmd/saw/close_impl_cmd.go
+            - cmd/saw/close_impl_cmd_test.go
+          dependencies:
+            - A
+            - B
+            - C
+quality_gates:
+    level: standard
+    gates:
+        - type: build
+          command: go build ./...
+          required: true
+        - type: lint
+          command: go vet ./...
+          required: true
+        - type: test
+          command: go test ./...
+          required: true
+completion_reports:
+    A:
+        status: complete
+        branch: saw/unified-state-management/wave1-agent-A
+        commit: 9f0555c
+        files_changed:
+            - pkg/engine/state_helpers.go
+            - pkg/engine/finalize.go
+            - pkg/engine/finalize_state_test.go
+        files_created:
+            - pkg/engine/state_helpers.go
+            - pkg/engine/finalize_state_test.go
+        tests_added:
+            - TestAdvanceState_ValidTransition
+            - TestAdvanceState_InvalidTransition_NoError
+            - TestFinalizeWave_SetsWaveMergingState
+        verification: PASS
+    B:
+        status: complete
+        branch: saw/unified-state-management/wave1-agent-B
+        commit: 4171c8b
+        files_changed:
+            - pkg/engine/runner.go
+            - pkg/engine/runner_state_test.go
+        files_created:
+            - pkg/engine/runner_state_test.go
+        tests_added:
+            - TestRunSingleWave_SetsExecutingState
+            - TestStartWave_StateTransitions
+        verification: PASS
+    C:
+        status: complete
+        branch: saw/unified-state-management/wave1-agent-C
+        commit: d2575c3
+        files_changed:
+            - pkg/engine/daemon.go
+            - pkg/engine/daemon_state_test.go
+        files_created:
+            - pkg/engine/daemon_state_test.go
+        tests_added:
+            - TestDaemonProcessItem_AdvancesState
+            - TestDaemonWaveLoop_StateProgression
+        verification: PASS
+    D:
+        status: complete
+        branch: main
+        commit: b16821e
+        files_changed:
+            - cmd/saw/close_impl_cmd.go
+            - cmd/saw/close_impl_cmd_test.go
+        files_created:
+            - cmd/saw/close_impl_cmd_test.go
+        tests_added:
+            - TestCloseImplCmd_SetsCompleteState
+            - TestCloseImplCmd_InvalidState_ContinuesGracefully
+        verification: PASS
+pre_mortem:
+    overall_risk: low
+    rows:
+        - scenario: advanceState helper in state_helpers.go causes merge conflict with Agent B/C inline calls
+          likelihood: low
+          impact: low
+          mitigation: |
+            Agents B and C use protocol.SetImplState directly instead of the advanceState
+            helper. No cross-agent file dependency. Post-merge refactor can consolidate
+            to use the helper if desired.
+        - scenario: State transition fails mid-FinalizeWave because manifest is at unexpected state
+          likelihood: medium
+          impact: low
+          mitigation: |
+            All state transitions are best-effort (log and continue). Engine operations
+            never fail due to state tracking failures. The transition map already allows
+            WAVE_EXECUTING -> WAVE_MERGING -> WAVE_VERIFIED path.
+        - scenario: Concurrent state writes from web app and CLI on same IMPL
+          likelihood: low
+          impact: medium
+          mitigation: |
+            SetImplState uses atomic read-validate-write pattern. Web app calls engine
+            functions which do the same transitions. Single-writer pattern (one active
+            orchestrator per IMPL) is enforced by ActiveWaves sync.Map.
+        - scenario: close-impl test file already exists, agent overwrites it
+          likelihood: low
+          impact: low
+          mitigation: |
+            Agent D task explicitly says to add tests to existing file if it exists.
+            Glob shows no close_impl_cmd_test.go currently exists.
+known_issues:
+    - title: run-scout CLI does not set SCOUT_VALIDATING or REVIEWED state
+      description: |
+        The run_scout_cmd.go CLI command does not call SetImplState at any point.
+        After Scout completes, the IMPL state remains whatever the Scout agent wrote.
+        This is out of scope for this IMPL — the Scout agent writes the IMPL doc
+        fresh, so there is no pre-existing state to transition from. A follow-up
+        IMPL could wire SCOUT_PENDING -> SCOUT_VALIDATING -> REVIEWED in run-scout.
+      status: deferred
+      workaround: Use sawtools set-impl-state manually after run-scout
+    - title: Web app wave_service.go does not need changes
+      description: |
+        wave_service.go in scout-and-wave-web calls engine.FinalizeWave and
+        engine.RunSingleWave. Once those engine functions call SetImplState
+        (wave 1 of this IMPL), the web app gets state updates automatically.
+        Verified by reading wave_service.go — it does not write state directly.
+      status: confirmed-no-action
+critic_report:
+    verdict: PASS
+    agent_reviews:
+        A:
+            agent_id: A
+            verdict: PASS
+        B:
+            agent_id: B
+            verdict: PASS
+        C:
+            agent_id: C
+            verdict: PASS
+        D:
+            agent_id: D
+            verdict: PASS
+    summary: 'All 4 agent briefs verified against codebase. File existence checks pass: 3 new files do not exist, 4 modify files exist. All referenced symbols (SetImplState, SetImplStateOpts, ProtocolState constants, WriteCompletionMarker, FinalizeWave, StartWave, RunSingleWave, RunDaemon/daemonProcessItem, MarkIMPLComplete) exist with matching signatures. State transition map permits all transitions described in briefs. Line number references in briefs are accurate or approximately correct. Import paths match go.mod module. The protocol package is already imported in all modify-target files. No cross-agent file conflicts expected since Agents B and C use protocol.SetImplState directly rather than the advanceState helper. No missing registrations detected.'
+    reviewed_at: "2026-03-24T21:24:28Z"
+    issue_count: 0
+state: COMPLETE
