@@ -75,6 +75,7 @@ func main() {
 		newCleanupStaleCmd(),
 		newProgramExecuteCmd(),
 		newCreateProgramCmd(),
+		newCreateProgramWorktreesCmd(),
 		newCheckIMPLConflictsCmd(),
 		newFinalizeTierCmd(),
 		newCheckProgramConflictsCmd(),
