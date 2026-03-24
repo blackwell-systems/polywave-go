@@ -35,9 +35,9 @@ waves:
 	return path
 }
 
-// sampleCriticResult returns a fully populated CriticResult for use in tests.
-func sampleCriticResult() CriticResult {
-	return CriticResult{
+// sampleCriticData returns a fully populated CriticData for use in tests.
+func sampleCriticData() CriticData {
+	return CriticData{
 		Verdict: CriticVerdictIssues,
 		AgentReviews: map[string]AgentCriticReview{
 			"A": {
@@ -71,10 +71,10 @@ func sampleCriticResult() CriticResult {
 }
 
 // TestWriteCriticReview_WritesAndReads verifies that WriteCriticReview persists the
-// CriticResult and GetCriticReview returns the same data after a Load.
+// CriticData and GetCriticReview returns the same data after a Load.
 func TestWriteCriticReview_WritesAndReads(t *testing.T) {
 	path := buildTestManifestWithCritic(t)
-	result := sampleCriticResult()
+	result := sampleCriticData()
 
 	if err := WriteCriticReview(path, result); err != nil {
 		t.Fatalf("WriteCriticReview() error = %v", err)
@@ -148,7 +148,7 @@ func TestWriteCriticReview_WritesAndReads(t *testing.T) {
 
 // TestWriteCriticReview_FileNotFound verifies that a nonexistent path returns an error.
 func TestWriteCriticReview_FileNotFound(t *testing.T) {
-	result := sampleCriticResult()
+	result := sampleCriticData()
 	err := WriteCriticReview("/nonexistent/path/to/impl.yaml", result)
 	if err == nil {
 		t.Error("WriteCriticReview() with nonexistent path should return error, got nil")
@@ -165,17 +165,17 @@ func TestGetCriticReview_Nil(t *testing.T) {
 	}
 }
 
-// TestCriticResult_YAMLRoundtrip verifies that CriticResult marshals and unmarshals
+// TestCriticData_YAMLRoundtrip verifies that CriticData marshals and unmarshals
 // through YAML with all fields preserved, including nested AgentReviews map.
-func TestCriticResult_YAMLRoundtrip(t *testing.T) {
-	original := sampleCriticResult()
+func TestCriticData_YAMLRoundtrip(t *testing.T) {
+	original := sampleCriticData()
 
 	data, err := yaml.Marshal(&original)
 	if err != nil {
 		t.Fatalf("yaml.Marshal() error = %v", err)
 	}
 
-	var decoded CriticResult
+	var decoded CriticData
 	if err := yaml.Unmarshal(data, &decoded); err != nil {
 		t.Fatalf("yaml.Unmarshal() error = %v", err)
 	}
@@ -279,23 +279,11 @@ func TestGetAgentNewFiles(t *testing.T) {
 	}
 }
 
-// TestCriticResult_IsAlias verifies that CriticResult is a backward-compatible
-// alias for CriticData so existing callers compile without changes.
-func TestCriticResult_IsAlias(t *testing.T) {
-	// If CriticResult is an alias for CriticData, assignment must be direct (no conversion).
-	var d CriticData
-	d.Verdict = CriticVerdictPass
-	var r CriticResult = d // alias: no conversion needed
-	if r.Verdict != CriticVerdictPass {
-		t.Errorf("CriticResult.Verdict = %q, want %q", r.Verdict, CriticVerdictPass)
-	}
-}
-
 // TestWriteCriticReviewResult_Success verifies that WriteCriticReviewResult persists
 // the CriticData and returns a SUCCESS result.
 func TestWriteCriticReviewResult_Success(t *testing.T) {
 	path := buildTestManifestWithCritic(t)
-	data := sampleCriticResult()
+	data := sampleCriticData()
 
 	res := WriteCriticReviewResult(path, data)
 	if !res.IsSuccess() {
@@ -314,7 +302,7 @@ func TestWriteCriticReviewResult_Success(t *testing.T) {
 // TestWriteCriticReviewResult_FileNotFound verifies that WriteCriticReviewResult
 // returns a FATAL result when the IMPL path does not exist.
 func TestWriteCriticReviewResult_FileNotFound(t *testing.T) {
-	data := sampleCriticResult()
+	data := sampleCriticData()
 	res := WriteCriticReviewResult("/nonexistent/path/to/impl.yaml", data)
 	if !res.IsFatal() {
 		t.Errorf("WriteCriticReviewResult() Code = %q, want FATAL", res.Code)
@@ -328,7 +316,7 @@ func TestWriteCriticReviewResult_FileNotFound(t *testing.T) {
 // a SUCCESS result when a critic review is present in the manifest.
 func TestGetCriticReviewResult_Success(t *testing.T) {
 	path := buildTestManifestWithCritic(t)
-	data := sampleCriticResult()
+	data := sampleCriticData()
 
 	if err := WriteCriticReview(path, data); err != nil {
 		t.Fatalf("WriteCriticReview() error = %v", err)
@@ -390,7 +378,7 @@ func TestGetCriticReviewResult_ErrorCode(t *testing.T) {
 // fields preserved.
 func TestWriteCriticReviewResult_DataRoundtrip(t *testing.T) {
 	path := buildTestManifestWithCritic(t)
-	original := sampleCriticResult()
+	original := sampleCriticData()
 
 	writeRes := WriteCriticReviewResult(path, original)
 	if !writeRes.IsSuccess() {
@@ -427,7 +415,7 @@ func TestWriteCriticReviewResult_DataRoundtrip(t *testing.T) {
 // HasErrors, IsPartial, and IsFatal helpers.
 func TestCriticWriteResult_ResultInterface(t *testing.T) {
 	path := buildTestManifestWithCritic(t)
-	data := sampleCriticResult()
+	data := sampleCriticData()
 
 	res := WriteCriticReviewResult(path, data)
 

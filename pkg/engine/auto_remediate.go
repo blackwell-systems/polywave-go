@@ -16,7 +16,7 @@ var autoRemediateFixBuildFailureFunc = func(ctx context.Context, opts FixBuildOp
 
 // autoRemediateVerifyBuildFunc is the function variable used to call protocol.VerifyBuild.
 // Override in tests to avoid real build execution.
-var autoRemediateVerifyBuildFunc = func(implPath, repoPath string) (*protocol.VerifyBuildResult, error) {
+var autoRemediateVerifyBuildFunc = func(implPath, repoPath string) (*protocol.VerifyBuildData, error) {
 	res := protocol.VerifyBuild(implPath, repoPath)
 	if !res.IsSuccess() {
 		return nil, fmt.Errorf("verify build failed: %v", res.Errors)

@@ -15,8 +15,8 @@ import (
 // on whether to advance to the next tier or enter human review.
 type TierAdvanceResult struct {
 	TierNumber      int                            `json:"tier_number"`
-	GateResult      *protocol.TierGateResult       `json:"gate_result"`
-	FreezeResult    *protocol.FreezeContractsResult `json:"freeze_result,omitempty"`
+	GateResult      *protocol.TierGateData          `json:"gate_result"`
+	FreezeResult    *protocol.FreezeContractsData   `json:"freeze_result,omitempty"`
 	AdvancedToNext  bool                           `json:"advanced_to_next"`
 	RequiresReview  bool                           `json:"requires_review"`
 	NextTier        int                            `json:"next_tier,omitempty"`
@@ -61,10 +61,11 @@ func AdvanceTierAutomatically(manifest *protocol.PROGRAMManifest, completedTier 
 	}
 
 	// Step 1: Run tier gate
-	gateResult, err := protocol.RunTierGate(manifest, completedTier, repoPath)
-	if err != nil {
-		return nil, fmt.Errorf("AdvanceTierAutomatically: run tier gate: %w", err)
+	gateRes := protocol.RunTierGate(manifest, completedTier, repoPath)
+	if gateRes.IsFatal() {
+		return nil, fmt.Errorf("AdvanceTierAutomatically: run tier gate: %s", gateRes.Errors[0].Message)
 	}
+	gateResult := gateRes.GetData()
 	result.GateResult = gateResult
 
 	// Step 2: Gate failed — requires human review
@@ -82,10 +83,11 @@ func AdvanceTierAutomatically(manifest *protocol.PROGRAMManifest, completedTier 
 	}
 
 	// Step 4: Auto mode — freeze contracts
-	freezeResult, err := protocol.FreezeContracts(manifest, completedTier, repoPath)
-	if err != nil {
-		return nil, fmt.Errorf("AdvanceTierAutomatically: freeze contracts: %w", err)
+	freezeRes := protocol.FreezeContracts(manifest, completedTier, repoPath)
+	if freezeRes.IsFatal() {
+		return nil, fmt.Errorf("AdvanceTierAutomatically: freeze contracts: %s", freezeRes.Errors[0].Message)
 	}
+	freezeResult := freezeRes.GetData()
 	result.FreezeResult = freezeResult
 
 	if !freezeResult.Success {

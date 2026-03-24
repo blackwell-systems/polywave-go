@@ -46,10 +46,11 @@ func SyncProgramStatusFromDisk(manifestPath string, repoPath string) error {
 	}
 
 	// Use GetProgramStatus to get enriched statuses from disk
-	statusResult, err := protocol.GetProgramStatus(manifest, repoPath)
-	if err != nil {
-		return fmt.Errorf("SyncProgramStatusFromDisk: failed to get program status: %w", err)
+	statusRes := protocol.GetProgramStatus(manifest, repoPath)
+	if statusRes.IsFatal() {
+		return fmt.Errorf("SyncProgramStatusFromDisk: failed to get program status: %s", statusRes.Errors[0].Message)
 	}
+	statusResult := statusRes.GetData()
 
 	// Build a map of slug -> disk status from the tier statuses
 	diskStatus := make(map[string]string)

@@ -45,14 +45,14 @@ completion:
 func TestFinalizeTierData_JSONFields(t *testing.T) {
 	d := &FinalizeTierData{
 		TierNumber: 1,
-		ImplMergeResults: map[string]*MergeAgentsResult{
+		ImplMergeResults: map[string]*MergeAgentsData{
 			"my-impl": {
 				Wave:    1,
 				Merges:  []MergeStatus{{Agent: "my-impl", Branch: "saw/program/p/tier1-impl-my-impl", Success: true}},
 				Success: true,
 			},
 		},
-		TierGateResult: &TierGateResult{
+		TierGateData: &TierGateData{
 			TierNumber:   1,
 			Passed:       true,
 			GateResults:  []GateResult{},
