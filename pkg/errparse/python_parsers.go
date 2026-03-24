@@ -4,6 +4,8 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
 )
 
 // ──────────────────────────────────────────────
@@ -33,22 +35,22 @@ func (p *PytestParser) Name() string { return "pytest" }
 
 // Parse extracts structured errors from pytest stdout/stderr.
 func (p *PytestParser) Parse(stdout, stderr string) *ParseResult {
-	combined := stdout
+	combinedStr := stdout
 	if stderr != "" {
-		if combined != "" {
-			combined += "\n" + stderr
+		if combinedStr != "" {
+			combinedStr += "\n" + stderr
 		} else {
-			combined = stderr
+			combinedStr = stderr
 		}
 	}
 
-	result := &ParseResult{
+	pr := &ParseResult{
 		Tool:   "pytest",
-		Errors: []StructuredError{},
-		Raw:    combined,
+		Errors: []result.SAWError{},
+		Raw:    combinedStr,
 	}
 
-	lines := strings.Split(combined, "\n")
+	lines := strings.Split(combinedStr, "\n")
 
 	// We do two passes:
 	// 1. Collect traceback file references so we can attach the deepest one.
@@ -61,7 +63,7 @@ func (p *PytestParser) Parse(stdout, stderr string) *ParseResult {
 	}
 
 	var currentTracebacks []traceRef
-	var pendingFailed *StructuredError // the FAILED line we last saw (by position)
+	var pendingFailed *result.SAWError // the FAILED line we last saw (by position)
 
 	for i, raw := range lines {
 		line := strings.TrimRight(raw, "\r")
@@ -107,12 +109,13 @@ func (p *PytestParser) Parse(stdout, stderr string) *ParseResult {
 			// Extract file from the test node id (before ::)
 			file := extractPytestFile(testID)
 
-			se := StructuredError{
+			se := result.SAWError{
+				Code:     "TOOL_ERROR",
 				File:     file,
 				Severity: "error",
 				Message:  msg,
 				Tool:     "pytest",
-				Rule:     testID,
+				Context:  makeContext(0, testID),
 			}
 
 			// Attach deepest traceback reference collected so far
@@ -122,8 +125,8 @@ func (p *PytestParser) Parse(stdout, stderr string) *ParseResult {
 				se.Line = deepest.line
 			}
 
-			result.Errors = append(result.Errors, se)
-			pendingFailed = &result.Errors[len(result.Errors)-1]
+			pr.Errors = append(pr.Errors, se)
+			pendingFailed = &pr.Errors[len(pr.Errors)-1]
 			currentTracebacks = nil
 			continue
 		}
@@ -140,14 +143,15 @@ func (p *PytestParser) Parse(stdout, stderr string) *ParseResult {
 			}
 
 			file := m[1]
-			se := StructuredError{
+			se := result.SAWError{
+				Code:     "TOOL_ERROR",
 				File:     file,
 				Severity: "error",
 				Message:  "collection error: " + file,
 				Tool:     "pytest",
 			}
-			result.Errors = append(result.Errors, se)
-			pendingFailed = &result.Errors[len(result.Errors)-1]
+			pr.Errors = append(pr.Errors, se)
+			pendingFailed = &pr.Errors[len(pr.Errors)-1]
 			currentTracebacks = nil
 			continue
 		}
@@ -162,7 +166,7 @@ func (p *PytestParser) Parse(stdout, stderr string) *ParseResult {
 		}
 	}
 
-	return result
+	return pr
 }
 
 // extractPytestFile pulls the file path from a pytest node-id like
@@ -187,22 +191,22 @@ func (m *MypyParser) Name() string { return "mypy" }
 
 // Parse extracts structured errors from mypy stdout/stderr.
 func (m *MypyParser) Parse(stdout, stderr string) *ParseResult {
-	combined := stdout
+	combinedStr := stdout
 	if stderr != "" {
-		if combined != "" {
-			combined += "\n" + stderr
+		if combinedStr != "" {
+			combinedStr += "\n" + stderr
 		} else {
-			combined = stderr
+			combinedStr = stderr
 		}
 	}
 
-	result := &ParseResult{
+	pr := &ParseResult{
 		Tool:   "mypy",
-		Errors: []StructuredError{},
-		Raw:    combined,
+		Errors: []result.SAWError{},
+		Raw:    combinedStr,
 	}
 
-	for _, raw := range strings.Split(combined, "\n") {
+	for _, raw := range strings.Split(combinedStr, "\n") {
 		line := strings.TrimRight(raw, "\r")
 		match := mypyLineRe.FindStringSubmatch(line)
 		if match == nil {
@@ -220,18 +224,19 @@ func (m *MypyParser) Parse(stdout, stderr string) *ParseResult {
 			severity = "info"
 		}
 
-		se := StructuredError{
+		se := result.SAWError{
+			Code:     "TOOL_ERROR",
 			File:     file,
 			Line:     lineNum,
 			Severity: severity,
 			Message:  msg,
-			Rule:     rule,
 			Tool:     "mypy",
+			Context:  makeContext(0, rule),
 		}
-		result.Errors = append(result.Errors, se)
+		pr.Errors = append(pr.Errors, se)
 	}
 
-	return result
+	return pr
 }
 
 // ──────────────────────────────────────────────
@@ -254,22 +259,22 @@ func (r *RuffParser) Name() string { return "ruff" }
 
 // Parse extracts structured errors from ruff stdout/stderr.
 func (r *RuffParser) Parse(stdout, stderr string) *ParseResult {
-	combined := stdout
+	combinedStr := stdout
 	if stderr != "" {
-		if combined != "" {
-			combined += "\n" + stderr
+		if combinedStr != "" {
+			combinedStr += "\n" + stderr
 		} else {
-			combined = stderr
+			combinedStr = stderr
 		}
 	}
 
-	result := &ParseResult{
+	pr := &ParseResult{
 		Tool:   "ruff",
-		Errors: []StructuredError{},
-		Raw:    combined,
+		Errors: []result.SAWError{},
+		Raw:    combinedStr,
 	}
 
-	lines := strings.Split(combined, "\n")
+	lines := strings.Split(combinedStr, "\n")
 	var lastIdx int = -1
 
 	for _, raw := range lines {
@@ -278,7 +283,7 @@ func (r *RuffParser) Parse(stdout, stderr string) *ParseResult {
 		// Try to match a help/suggestion line and attach to the previous error
 		if lastIdx >= 0 {
 			if m := ruffHelpRe.FindStringSubmatch(line); m != nil {
-				result.Errors[lastIdx].Suggestion = m[1]
+				pr.Errors[lastIdx].Suggestion = m[1]
 				continue
 			}
 		}
@@ -299,18 +304,18 @@ func (r *RuffParser) Parse(stdout, stderr string) *ParseResult {
 			severity = "error"
 		}
 
-		se := StructuredError{
+		se := result.SAWError{
+			Code:     "TOOL_ERROR",
 			File:     file,
 			Line:     lineNum,
-			Column:   col,
 			Severity: severity,
 			Message:  msg,
-			Rule:     rule,
 			Tool:     "ruff",
+			Context:  makeContext(col, rule),
 		}
-		result.Errors = append(result.Errors, se)
-		lastIdx = len(result.Errors) - 1
+		pr.Errors = append(pr.Errors, se)
+		lastIdx = len(pr.Errors) - 1
 	}
 
-	return result
+	return pr
 }

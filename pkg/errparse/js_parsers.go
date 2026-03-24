@@ -5,6 +5,8 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
 )
 
 // ---------------------------------------------------------------------------
@@ -24,13 +26,13 @@ func (p *TscParser) Name() string { return "tsc" }
 
 // Parse extracts structured errors from tsc stdout/stderr.
 func (p *TscParser) Parse(stdout, stderr string) *ParseResult {
-	combined := stripANSI(stdout + "\n" + stderr)
-	result := &ParseResult{
+	combinedStr := stripANSI(stdout + "\n" + stderr)
+	pr := &ParseResult{
 		Tool: "tsc",
 		Raw:  stdout + "\n" + stderr,
 	}
 
-	for _, line := range strings.Split(combined, "\n") {
+	for _, line := range strings.Split(combinedStr, "\n") {
 		line = strings.TrimRight(line, "\r")
 		m := tscLineRe.FindStringSubmatch(line)
 		if m == nil {
@@ -38,16 +40,17 @@ func (p *TscParser) Parse(stdout, stderr string) *ParseResult {
 		}
 		lineNum, _ := strconv.Atoi(m[2])
 		colNum, _ := strconv.Atoi(m[3])
-		result.Errors = append(result.Errors, StructuredError{
+		pr.Errors = append(pr.Errors, result.SAWError{
+			Code:     "TOOL_ERROR",
 			File:     m[1],
 			Line:     lineNum,
-			Column:   colNum,
 			Severity: m[4],
 			Message:  strings.TrimSpace(m[5]),
 			Tool:     "tsc",
+			Context:  makeContext(colNum, ""),
 		})
 	}
-	return result
+	return pr
 }
 
 // ---------------------------------------------------------------------------
@@ -83,10 +86,10 @@ func (p *EslintParser) Name() string { return "eslint" }
 
 // Parse extracts structured errors from eslint stdout/stderr.
 func (p *EslintParser) Parse(stdout, stderr string) *ParseResult {
-	combined := stdout + "\n" + stderr
-	result := &ParseResult{
+	combinedStr := stdout + "\n" + stderr
+	pr := &ParseResult{
 		Tool: "eslint",
-		Raw:  combined,
+		Raw:  combinedStr,
 	}
 
 	// Try JSON format first (eslint --format json writes to stdout).
@@ -104,24 +107,24 @@ func (p *EslintParser) Parse(stdout, stderr string) *ParseResult {
 					if msg.Fix != nil {
 						suggestion = "--fix available: " + msg.Fix.Text
 					}
-					result.Errors = append(result.Errors, StructuredError{
+					pr.Errors = append(pr.Errors, result.SAWError{
+						Code:       "TOOL_ERROR",
 						File:       file.FilePath,
 						Line:       msg.Line,
-						Column:     msg.Column,
 						Severity:   severity,
 						Message:    msg.Message,
-						Rule:       msg.RuleID,
 						Suggestion: suggestion,
 						Tool:       "eslint",
+						Context:    makeContext(msg.Column, msg.RuleID),
 					})
 				}
 			}
-			return result
+			return pr
 		}
 	}
 
 	// Fall back to text format.
-	cleanedText := stripANSI(combined)
+	cleanedText := stripANSI(combinedStr)
 	for _, line := range strings.Split(cleanedText, "\n") {
 		line = strings.TrimRight(line, "\r")
 		m := eslintTextRe.FindStringSubmatch(line)
@@ -150,26 +153,28 @@ func (p *EslintParser) Parse(stdout, stderr string) *ParseResult {
 			suggestion = "Run eslint --fix to apply automatic fixes for rule " + m[5]
 		}
 
-		result.Errors = append(result.Errors, StructuredError{
+		pr.Errors = append(pr.Errors, result.SAWError{
+			Code:       "TOOL_ERROR",
 			File:       m[1],
 			Line:       lineNum,
-			Column:     colNum,
 			Severity:   severity,
 			Message:    message,
-			Rule:       m[5],
 			Suggestion: suggestion,
 			Tool:       "eslint",
+			Context:    makeContext(colNum, m[5]),
 		})
 	}
-	return result
+	return pr
 }
 
 // ---------------------------------------------------------------------------
 // NpmTestParser – parses Jest / Vitest output.
 // Recognises:
-//   FAIL src/file.test.ts
-//   ● Test Suite › test name
-//   and file:line references in stack traces.
+//
+//	FAIL src/file.test.ts
+//	● Test Suite › test name
+//	and file:line references in stack traces.
+//
 // ---------------------------------------------------------------------------
 
 // failFileRe matches "FAIL <file>" lines (Jest / Vitest).
@@ -192,13 +197,13 @@ func (p *NpmTestParser) Name() string { return "npm-test" }
 
 // Parse extracts structured errors from Jest / Vitest output.
 func (p *NpmTestParser) Parse(stdout, stderr string) *ParseResult {
-	combined := stripANSI(stdout + "\n" + stderr)
-	result := &ParseResult{
+	combinedStr := stripANSI(stdout + "\n" + stderr)
+	pr := &ParseResult{
 		Tool: "npm-test",
 		Raw:  stdout + "\n" + stderr,
 	}
 
-	lines := strings.Split(combined, "\n")
+	lines := strings.Split(combinedStr, "\n")
 
 	var currentFile string
 	var currentTest string
@@ -239,13 +244,14 @@ func (p *NpmTestParser) Parse(stdout, stderr string) *ParseResult {
 			if f == "" {
 				f = "unknown"
 			}
-			result.Errors = append(result.Errors, StructuredError{
+			pr.Errors = append(pr.Errors, result.SAWError{
+				Code:     "TOOL_ERROR",
 				File:     f,
 				Line:     refLine,
-				Column:   refCol,
 				Severity: "error",
 				Message:  currentTest,
 				Tool:     "npm-test",
+				Context:  makeContext(refCol, ""),
 			})
 			continue
 		}
@@ -274,18 +280,19 @@ func (p *NpmTestParser) Parse(stdout, stderr string) *ParseResult {
 			if f == "" {
 				f = "unknown"
 			}
-			result.Errors = append(result.Errors, StructuredError{
+			pr.Errors = append(pr.Errors, result.SAWError{
+				Code:     "TOOL_ERROR",
 				File:     f,
 				Line:     refLine,
-				Column:   refCol,
 				Severity: "error",
 				Message:  currentTest,
 				Tool:     "npm-test",
+				Context:  makeContext(refCol, ""),
 			})
 			continue
 		}
 
 		_ = currentTest // avoid unused-variable lint error
 	}
-	return result
+	return pr
 }
