@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
+	"gopkg.in/yaml.v3"
 )
 
 // ValidateWiringDeclarations checks each WiringDeclaration in the manifest:
@@ -199,4 +200,85 @@ func FormatWiringBriefSection(manifest *IMPLManifest, agentID string) string {
 	}
 
 	return sb.String()
+}
+
+// AppendWiringReport persists a WiringValidationData report to the manifest
+// file under wiring_validation_reports.{waveKey}. Uses raw YAML manipulation
+// to avoid re-marshaling the entire manifest.
+func AppendWiringReport(manifestPath, waveKey string, data *WiringValidationData) error {
+	raw, err := os.ReadFile(manifestPath)
+	if err != nil {
+		return fmt.Errorf("AppendWiringReport: failed to read manifest: %w", err)
+	}
+
+	// Parse into raw YAML node tree
+	var doc yaml.Node
+	if err := yaml.Unmarshal(raw, &doc); err != nil {
+		return fmt.Errorf("AppendWiringReport: failed to parse YAML: %w", err)
+	}
+
+	if doc.Kind != yaml.DocumentNode || len(doc.Content) == 0 {
+		return fmt.Errorf("AppendWiringReport: unexpected YAML structure")
+	}
+
+	root := doc.Content[0]
+	if root.Kind != yaml.MappingNode {
+		return fmt.Errorf("AppendWiringReport: root is not a mapping")
+	}
+
+	// Marshal the result to a YAML node
+	resultBytes, err := yaml.Marshal(data)
+	if err != nil {
+		return fmt.Errorf("AppendWiringReport: failed to marshal result: %w", err)
+	}
+	var resultNode yaml.Node
+	if err := yaml.Unmarshal(resultBytes, &resultNode); err != nil {
+		return fmt.Errorf("AppendWiringReport: failed to unmarshal result node: %w", err)
+	}
+
+	// Find or create wiring_validation_reports mapping
+	var reportsValue *yaml.Node
+	for i := 0; i < len(root.Content)-1; i += 2 {
+		if root.Content[i].Value == "wiring_validation_reports" {
+			reportsValue = root.Content[i+1]
+			break
+		}
+	}
+
+	if reportsValue == nil {
+		// Create the wiring_validation_reports key
+		keyNode := &yaml.Node{Kind: yaml.ScalarNode, Value: "wiring_validation_reports", Tag: "!!str"}
+		valueNode := &yaml.Node{Kind: yaml.MappingNode, Tag: "!!map"}
+		root.Content = append(root.Content, keyNode, valueNode)
+		reportsValue = valueNode
+	}
+
+	if reportsValue.Kind != yaml.MappingNode {
+		return fmt.Errorf("AppendWiringReport: wiring_validation_reports is not a mapping")
+	}
+
+	// Add or replace the wave key
+	found := false
+	for i := 0; i < len(reportsValue.Content)-1; i += 2 {
+		if reportsValue.Content[i].Value == waveKey {
+			reportsValue.Content[i+1] = resultNode.Content[0]
+			found = true
+			break
+		}
+	}
+	if !found {
+		waveKeyNode := &yaml.Node{Kind: yaml.ScalarNode, Value: waveKey, Tag: "!!str"}
+		reportsValue.Content = append(reportsValue.Content, waveKeyNode, resultNode.Content[0])
+	}
+
+	// Write back
+	out, err := yaml.Marshal(&doc)
+	if err != nil {
+		return fmt.Errorf("AppendWiringReport: failed to marshal output: %w", err)
+	}
+	if err := os.WriteFile(manifestPath, out, 0644); err != nil {
+		return fmt.Errorf("AppendWiringReport: failed to write file: %w", err)
+	}
+
+	return nil
 }

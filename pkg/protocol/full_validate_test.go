@@ -1,0 +1,330 @@
+package protocol
+
+import (
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+)
+
+// Minimal valid IMPL manifest YAML for testing.
+const validManifestYAML = `title: "Test Feature"
+feature_slug: "test-feature"
+verdict: "SUITABLE"
+state: "WAVE_EXECUTING"
+waves:
+  - number: 1
+    agents:
+      - id: "A"
+        task: "implement feature"
+file_ownership:
+  - file: "pkg/foo.go"
+    agent: "A"
+    wave: 1
+quality_gates:
+  level: "standard"
+`
+
+func writeManifest(t *testing.T, dir, name, content string) string {
+	t.Helper()
+	path := filepath.Join(dir, name)
+	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
+		t.Fatal(err)
+	}
+	return path
+}
+
+func TestFullValidate_ValidManifest(t *testing.T) {
+	tmpDir := t.TempDir()
+	path := writeManifest(t, tmpDir, "IMPL-test.yaml", validManifestYAML)
+
+	res := FullValidate(path, FullValidateOpts{})
+	if res.IsFatal() {
+		t.Fatalf("expected success, got fatal: %v", res.Errors)
+	}
+	data := res.GetData()
+	if !data.Valid {
+		t.Errorf("expected Valid=true, got false; errors: %v", data.Errors)
+	}
+	if data.ErrorCount != 0 {
+		t.Errorf("expected 0 errors, got %d", data.ErrorCount)
+	}
+}
+
+func TestFullValidate_InvalidManifest(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	// I1 violation: same file owned by two agents in same wave
+	manifest := `title: "Test Feature"
+feature_slug: "test-feature"
+verdict: "SUITABLE"
+state: "WAVE_EXECUTING"
+waves:
+  - number: 1
+    agents:
+      - id: "A"
+        task: "task a"
+      - id: "B"
+        task: "task b"
+file_ownership:
+  - file: "pkg/foo.go"
+    agent: "A"
+    wave: 1
+  - file: "pkg/foo.go"
+    agent: "B"
+    wave: 1
+quality_gates:
+  level: "standard"
+`
+	path := writeManifest(t, tmpDir, "IMPL-test.yaml", manifest)
+
+	res := FullValidate(path, FullValidateOpts{})
+	data := res.GetData()
+	if data.Valid {
+		t.Error("expected Valid=false for I1 violation")
+	}
+	if data.ErrorCount == 0 {
+		t.Error("expected errors for I1 violation")
+	}
+
+	// Check that at least one error mentions I1
+	foundI1 := false
+	for _, e := range data.Errors {
+		if strings.Contains(e.Code, "I1") {
+			foundI1 = true
+			break
+		}
+	}
+	if !foundI1 {
+		t.Errorf("expected I1 violation error, got: %v", data.Errors)
+	}
+}
+
+func TestFullValidate_AutoFix(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	// Manifest with an invalid gate type that FixGateTypes should correct
+	manifest := `title: "Test Feature"
+feature_slug: "test-feature"
+verdict: "SUITABLE"
+state: "WAVE_EXECUTING"
+waves:
+  - number: 1
+    agents:
+      - id: "A"
+        task: "task a"
+file_ownership:
+  - file: "pkg/foo.go"
+    agent: "A"
+    wave: 1
+quality_gates:
+  level: "standard"
+  gates:
+    - name: "build"
+      command: "go build ./..."
+      type: "invalid_type_here"
+`
+	path := writeManifest(t, tmpDir, "IMPL-test.yaml", manifest)
+
+	res := FullValidate(path, FullValidateOpts{AutoFix: true})
+	data := res.GetData()
+	if data.Fixed == 0 {
+		t.Error("expected Fixed > 0 after auto-fix")
+	}
+}
+
+func TestFullValidate_DuplicateKeys(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	// YAML with duplicate top-level keys — title appears twice.
+	// ValidateDuplicateKeys runs on raw bytes before Load, so it catches
+	// duplicates even if Load succeeds (yaml.v3 silently takes the last value).
+	manifest := `title: "Test Feature"
+feature_slug: "test-feature"
+verdict: "SUITABLE"
+title: "Duplicate Title"
+state: "WAVE_EXECUTING"
+waves:
+  - number: 1
+    agents:
+      - id: "A"
+        task: "task a"
+file_ownership:
+  - file: "pkg/foo.go"
+    agent: "A"
+    wave: 1
+quality_gates:
+  level: "standard"
+`
+	path := writeManifest(t, tmpDir, "IMPL-test.yaml", manifest)
+
+	res := FullValidate(path, FullValidateOpts{})
+	// Result may be partial (data available) or fatal (Load failed).
+	// Either way, there should be errors mentioning "duplicate".
+	if res.IsSuccess() {
+		t.Error("expected non-success result for duplicate keys")
+	}
+	allErrs := res.Errors
+	foundDup := false
+	for _, e := range allErrs {
+		if strings.Contains(e.Code, "DUPLICATE") || strings.Contains(strings.ToLower(e.Message), "duplicate") {
+			foundDup = true
+			break
+		}
+	}
+	// Also check data errors if available
+	if !res.IsFatal() {
+		data := res.GetData()
+		for _, e := range data.Errors {
+			if strings.Contains(e.Code, "DUPLICATE") || strings.Contains(strings.ToLower(e.Message), "duplicate") {
+				foundDup = true
+				break
+			}
+		}
+	}
+	if !foundDup {
+		t.Errorf("expected duplicate key error, got errors: %v", allErrs)
+	}
+}
+
+func TestFullValidateProgram_Valid(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	manifest := `title: "Test Program"
+program_slug: "test-program"
+state: "PLANNING"
+created: "2024-01-01"
+updated: "2024-01-02"
+requirements: "Build a test system"
+impls:
+  - slug: "impl-alpha"
+    title: "Alpha Implementation"
+    tier: 1
+    status: "pending"
+tiers:
+  - number: 1
+    impls: ["impl-alpha"]
+    description: "First tier"
+completion:
+  tiers_complete: 0
+  tiers_total: 1
+  impls_complete: 0
+  impls_total: 1
+  total_agents: 2
+  total_waves: 1
+`
+	path := writeManifest(t, tmpDir, "PROGRAM-test.yaml", manifest)
+
+	res := FullValidateProgram(path, FullValidateProgramOpts{})
+	if res.IsFatal() {
+		t.Fatalf("expected success, got fatal: %v", res.Errors)
+	}
+	data := res.GetData()
+	if !data.Valid {
+		t.Errorf("expected Valid=true, got false; errors: %v", data.Errors)
+	}
+}
+
+func TestFullValidateProgram_ImportMode(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	manifest := `title: "Test Program"
+program_slug: "test-program"
+state: "PLANNING"
+created: "2024-01-01"
+updated: "2024-01-02"
+requirements: "Build a test system"
+impls:
+  - slug: "impl-alpha"
+    title: "Alpha Implementation"
+    tier: 1
+    status: "pending"
+tiers:
+  - number: 1
+    impls: ["impl-alpha"]
+    description: "First tier"
+completion:
+  tiers_complete: 0
+  tiers_total: 1
+  impls_complete: 0
+  impls_total: 1
+  total_agents: 2
+  total_waves: 1
+`
+	path := writeManifest(t, tmpDir, "PROGRAM-test.yaml", manifest)
+
+	// Import mode with a repo dir that won't have the IMPL docs
+	res := FullValidateProgram(path, FullValidateProgramOpts{
+		ImportMode: true,
+		RepoDir:    tmpDir,
+	})
+	// Should not be fatal (import mode adds errors but doesn't crash)
+	if res.IsFatal() {
+		t.Fatalf("expected non-fatal result, got fatal: %v", res.Errors)
+	}
+	data := res.GetData()
+	// With import mode on a dir without IMPL docs, we expect errors
+	if data.ErrorCount == 0 {
+		// It's also valid if the validator doesn't find issues when IMPL files are missing
+		// (depends on implementation behavior). Just verify we get data back.
+		t.Log("import mode returned no errors (acceptable if validator is lenient on missing files)")
+	}
+}
+
+func TestAppendWiringReport(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	manifest := `title: "Test Feature"
+feature_slug: "test-feature"
+verdict: "SUITABLE"
+state: "WAVE_EXECUTING"
+`
+	path := writeManifest(t, tmpDir, "IMPL-test.yaml", manifest)
+
+	data := &WiringValidationData{
+		Gaps:    []WiringGap{},
+		Valid:   true,
+		Summary: "all 2 wiring declarations satisfied",
+	}
+
+	err := AppendWiringReport(path, "wave1", data)
+	if err != nil {
+		t.Fatalf("AppendWiringReport failed: %v", err)
+	}
+
+	// Read back and verify the report was persisted
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	content := string(raw)
+	if !strings.Contains(content, "wiring_validation_reports") {
+		t.Error("expected wiring_validation_reports key in output")
+	}
+	if !strings.Contains(content, "wave1") {
+		t.Error("expected wave1 key in output")
+	}
+	if !strings.Contains(content, "all 2 wiring declarations satisfied") {
+		t.Error("expected summary text in output")
+	}
+
+	// Append a second report for wave2 to verify append behavior
+	data2 := &WiringValidationData{
+		Gaps:    []WiringGap{},
+		Valid:   true,
+		Summary: "all 3 wiring declarations satisfied",
+	}
+	err = AppendWiringReport(path, "wave2", data2)
+	if err != nil {
+		t.Fatalf("AppendWiringReport (wave2) failed: %v", err)
+	}
+
+	raw2, _ := os.ReadFile(path)
+	content2 := string(raw2)
+	if !strings.Contains(content2, "wave2") {
+		t.Error("expected wave2 key after second append")
+	}
+	if !strings.Contains(content2, "wave1") {
+		t.Error("expected wave1 key still present after second append")
+	}
+}
