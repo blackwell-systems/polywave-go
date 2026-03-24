@@ -1,5 +1,7 @@
 # Server-Sent Events (SSE)
 
+Last reviewed: 2026-03-24
+
 The web application publishes real-time events via Server-Sent Events for monitoring Scout runs, Wave progress, agent execution, merge operations, program orchestration, and more.
 
 ## Endpoints
@@ -66,7 +68,7 @@ Streams global state changes (sidebar refresh, notifications, critic reviews, pr
 GET /api/program/events
 ```
 
-Filtered view of global events — only forwards events with the `program_` prefix. Sends an initial `connected` event as a heartbeat.
+Filtered view of global events -- only forwards events with the `program_` prefix. Sends an initial `connected` event as a heartbeat.
 
 ### Daemon Events
 
@@ -85,8 +87,8 @@ data: <JSON_payload>
 ```
 
 **Fields:**
-- `event` — Event type (see Event Types below)
-- `data` — JSON payload (schema varies by event type)
+- `event` -- Event type (see Event Types below)
+- `data` -- JSON payload (schema varies by event type)
 
 ---
 
@@ -94,7 +96,7 @@ data: <JSON_payload>
 
 ### Run Lifecycle Events
 
-**Emitted by:** Web API (`wave_runner.go`)
+**Emitted by:** Web API (`wave_runner.go`, `pkg/service/wave_service.go`)
 **SSE endpoint:** `/api/wave/{slug}/events`
 
 #### `run_started`
@@ -105,6 +107,17 @@ Wave execution loop begins.
 {
   "slug": "my-feature",
   "impl_path": "/path/to/repo/docs/IMPL/IMPL-my-feature.yaml"
+}
+```
+
+When cross-repo targeting is detected:
+
+```json
+{
+  "slug": "my-feature",
+  "impl_path": "/path/to/IMPL-my-feature.yaml",
+  "target_repos": ["other-repo"],
+  "target_repo": "other-repo"
 }
 ```
 
@@ -138,6 +151,15 @@ Run aborted due to error.
 ```json
 {
   "error": "verify-commits: agents with no commits"
+}
+```
+
+With pre-wave gate failure details:
+
+```json
+{
+  "error": "pre-wave gate failed",
+  "failed_checks": ["check_name: failure message"]
 }
 ```
 
@@ -194,6 +216,47 @@ Advisory event when leftover branches from previous runs are detected.
   "branches": ["saw/my-feature/wave1-agent-A", "saw/my-feature/wave1-agent-B"],
   "count": 2
 }
+```
+
+---
+
+### Cross-Repo Events
+
+**Emitted by:** Service layer (`pkg/service/wave_service.go`)
+**SSE endpoint:** `/api/wave/{slug}/events`
+
+#### `repo_redirected`
+
+IMPL targets a different repo than the server's startup repo. Wave execution is redirected.
+
+```json
+{
+  "from": "/path/to/server-repo",
+  "to": "/path/to/target-repo",
+  "target_repo": "other-repo"
+}
+```
+
+#### `repo_mismatch_warning`
+
+Advisory warning about cross-repo targeting with details.
+
+```json
+{
+  "slug": "my-feature",
+  "server_repo": "/path/to/server-repo",
+  "target_repo": "other-repo",
+  "target_repo_path": "/path/to/target-repo",
+  "message": "IMPL targets repo \"other-repo\" at /path/to/target-repo but server is running from /path/to/server-repo. Redirecting worktree operations."
+}
+```
+
+#### `stage_scaffold_running`
+
+Scaffold stage is starting (service layer variant, emitted before engine scaffold events).
+
+```json
+null
 ```
 
 ---
@@ -484,7 +547,7 @@ Payload struct: `orchestrator.WaveCompletePayload`
 
 ### Wave Gate Events
 
-**Emitted by:** Web API (`wave_runner.go`)
+**Emitted by:** Web API (`wave_runner.go`, `pkg/service/wave_service.go`)
 **SSE endpoint:** `/api/wave/{slug}/events`
 
 #### `wave_gate_pending`
@@ -737,7 +800,7 @@ Summary after all wiring declarations have been checked.
 
 ### Merge Events
 
-**Emitted by:** Web API (`merge_test_handlers.go`, `wave_runner.go`)
+**Emitted by:** Web API (`merge_test_handlers.go`, `wave_runner.go`, `pkg/service/wave_service.go`)
 **SSE endpoint:** `/api/wave/{slug}/events`
 
 #### `merge_started`
@@ -1222,8 +1285,8 @@ Revision agent was cancelled by the user.
 
 ### IMPL Approval Events
 
-**Emitted by:** Web API (`impl.go`)
-**SSE endpoint:** `/api/wave/{slug}/events`
+**Emitted by:** Service layer (`pkg/service/impl_service.go`)
+**SSE endpoint:** `/api/wave/{slug}/events` (published to the slug channel)
 
 #### `plan_approved`
 
@@ -1363,7 +1426,7 @@ Interview error or cancellation.
 ### Program Events
 
 **Emitted by:** Web API (`program_runner.go`, `program_handler.go`, `pkg/service/program_service.go`)
-**SSE endpoint:** `/api/wave/{slug}/events`, `/api/program/events` (global), and `/api/events` (global)
+**SSE endpoint:** `/api/program/events` (global, filtered), `/api/events` (global)
 
 #### `program_tier_started`
 
@@ -1628,6 +1691,37 @@ Critic review failed.
 }
 ```
 
+#### `critic_autofix_started`
+
+Critic autofix process initiated for an IMPL (applies critic suggestions automatically).
+
+```json
+{
+  "slug": "my-feature"
+}
+```
+
+#### `critic_autofix_complete`
+
+Critic autofix finished.
+
+```json
+{
+  "slug": "my-feature",
+  ...
+}
+```
+
+#### `impl_updated`
+
+An IMPL doc was updated (e.g. by critic autofix applying changes).
+
+```json
+{
+  "slug": "my-feature"
+}
+```
+
 ---
 
 ### Daemon Events
@@ -1677,7 +1771,7 @@ Sent on initial connection as a heartbeat.
 
 #### `impl_list_updated`
 
-The IMPL document list changed (new IMPL created, archived, deleted, execution started/stopped). Frontend should re-fetch the IMPL list.
+The IMPL document list changed (new IMPL created, archived, deleted, execution started/stopped). Frontend should re-fetch the IMPL list. Also triggered by filesystem watcher (fsnotify) on IMPL directory changes.
 
 ```json
 {}
@@ -1694,10 +1788,7 @@ With context:
 }
 ```
 
-#### `pipeline_updated`
-
-Pipeline state changed during program execution. Frontend should re-fetch pipeline status.
-
+Without context (simple broadcast):
 ```json
 {}
 ```
@@ -1757,7 +1848,7 @@ Note: The web API emits its own versions of some program events (e.g. `program_t
 
 ### Per-Slug Broker
 
-**Implementation:** `pkg/api/wave.go` — `sseBroker` type
+**Implementation:** `pkg/api/wave.go` -- `sseBroker` type
 
 The per-slug broker manages SSE subscriptions keyed by slug (or broker key like `"scout-{runID}"`, `"chat-{runID}"`, `"revise-{runID}"`, `"planner-{runID}"`, `"interview-{runID}"`). Each slug has a list of subscriber channels. Events are published with non-blocking sends; slow clients have events dropped.
 
@@ -1765,23 +1856,39 @@ Agent lifecycle events (`agent_started`, `agent_complete`, `agent_failed`, `auto
 
 ### Global Broker
 
-**Implementation:** `pkg/api/global_events.go` — `globalBroker` type
+**Implementation:** `pkg/api/global_events.go` -- `globalBroker` type
 
 The global broker broadcasts events to all connected clients. Supports two formats:
-- `broadcast(event)` — simple event name with empty `{}` data
-- `broadcastJSON(eventType, data)` — event with JSON payload
+- `broadcast(event)` -- simple event name with empty `{}` data
+- `broadcastJSON(eventType, data)` -- event with JSON payload
 
 A filesystem watcher (`fsnotify`) monitors IMPL directories across all configured repos and broadcasts `impl_list_updated` when `.yaml` files are created, renamed, or removed.
 
+### SSE Publisher (Service Bridge)
+
+**Implementation:** `pkg/api/sse_publisher.go` -- `SSEPublisher` type
+
+Bridges the service layer's `EventPublisher` interface to the concrete SSE brokers. Routes events by channel name:
+- `"global"` or `"global:*"` channels use `globalBroker.broadcastJSON`
+- `"wave:{slug}"` channels use `sseBroker.Publish` with the slug as key
+- `"scout:{runID}"` channels use `sseBroker.Publish` with `"scout-"+runID` as key
+- All other channels use `sseBroker.Publish` with the channel name as key
+
 ### Daemon Event Broker
 
-**Implementation:** `pkg/api/daemon_handler.go` — `daemonEventBroker` type
+**Implementation:** `pkg/api/daemon_handler.go` -- `daemonEventBroker` type
 
 Separate broker for daemon events. Buffers the last 100 events and replays them to newly-connected clients.
 
+### Notification Bus
+
+**Implementation:** `pkg/api/notification_bus.go` -- `NotificationBus` type
+
+Central hub for user-facing notifications. Handlers call `Notify()` with a `NotificationEvent`, which is broadcast to all SSE clients as a `"notification"` event via `globalBroker.broadcastJSON`. Thread-safe.
+
 ### Engine Event Bridge
 
-**Implementation:** `pkg/orchestrator/events.go` — `OrchestratorEvent` type
+**Implementation:** `pkg/orchestrator/events.go` -- `OrchestratorEvent` type
 
 The engine/orchestrator emits `OrchestratorEvent` structs. The web API maps these to `SSEEvent` structs via `makeEnginePublisher()` and `makePublisher()` in `wave_runner.go`.
 
