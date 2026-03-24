@@ -2,6 +2,8 @@ package errparse
 
 import (
 	"strings"
+
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
 )
 
 func init() {
@@ -25,9 +27,9 @@ func (p *GofmtParser) Name() string { return "gofmt" }
 
 func (p *GofmtParser) Parse(stdout, stderr string) *ParseResult {
 	raw := combined(stdout, stderr)
-	result := &ParseResult{
+	pr := &ParseResult{
 		Tool:   p.Name(),
-		Errors: []StructuredError{},
+		Errors: []result.SAWError{},
 		Raw:    raw,
 	}
 
@@ -37,14 +39,15 @@ func (p *GofmtParser) Parse(stdout, stderr string) *ParseResult {
 		if line == "" {
 			continue
 		}
-		result.Errors = append(result.Errors, StructuredError{
+		pr.Errors = append(pr.Errors, result.SAWError{
+			Code:     "TOOL_ERROR",
 			File:     line,
 			Severity: "warning",
 			Message:  "file is not gofmt-formatted",
 			Tool:     p.Name(),
 		})
 	}
-	return result
+	return pr
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -59,9 +62,10 @@ func (p *GofmtParser) Parse(stdout, stderr string) *ParseResult {
 // (newer prettier) or bare filenames after a warning summary.
 //
 // Prettier v2/v3 --check output formats:
-//   [warn] src/index.ts
-//   [warn] src/utils.ts
-//   [warn] Code style issues found in 2 files. Forgot to run Prettier?
+//
+//	[warn] src/index.ts
+//	[warn] src/utils.ts
+//	[warn] Code style issues found in 2 files. Forgot to run Prettier?
 //
 // Older format may just list filenames.
 type PrettierFormatParser struct{}
@@ -72,9 +76,9 @@ func (p *PrettierFormatParser) Name() string { return "prettier-format" }
 
 func (p *PrettierFormatParser) Parse(stdout, stderr string) *ParseResult {
 	raw := combined(stdout, stderr)
-	result := &ParseResult{
+	pr := &ParseResult{
 		Tool:   p.Name(),
-		Errors: []StructuredError{},
+		Errors: []result.SAWError{},
 		Raw:    raw,
 	}
 
@@ -92,7 +96,8 @@ func (p *PrettierFormatParser) Parse(stdout, stderr string) *ParseResult {
 			if file == "" || strings.HasPrefix(file, "Code style issues") || strings.HasPrefix(file, "Forgot to run") {
 				continue
 			}
-			result.Errors = append(result.Errors, StructuredError{
+			pr.Errors = append(pr.Errors, result.SAWError{
+				Code:     "TOOL_ERROR",
 				File:     file,
 				Severity: "warning",
 				Message:  "file is not prettier-formatted",
@@ -111,7 +116,7 @@ func (p *PrettierFormatParser) Parse(stdout, stderr string) *ParseResult {
 			_ = file
 		}
 	}
-	return result
+	return pr
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -128,9 +133,9 @@ func (p *RuffFormatParser) Name() string { return "ruff-format" }
 
 func (p *RuffFormatParser) Parse(stdout, stderr string) *ParseResult {
 	raw := combined(stdout, stderr)
-	result := &ParseResult{
+	pr := &ParseResult{
 		Tool:   p.Name(),
-		Errors: []StructuredError{},
+		Errors: []result.SAWError{},
 		Raw:    raw,
 	}
 
@@ -144,7 +149,8 @@ func (p *RuffFormatParser) Parse(stdout, stderr string) *ParseResult {
 			if file == "" {
 				continue
 			}
-			result.Errors = append(result.Errors, StructuredError{
+			pr.Errors = append(pr.Errors, result.SAWError{
+				Code:     "TOOL_ERROR",
 				File:     file,
 				Severity: "warning",
 				Message:  "file needs ruff format",
@@ -152,7 +158,7 @@ func (p *RuffFormatParser) Parse(stdout, stderr string) *ParseResult {
 			})
 		}
 	}
-	return result
+	return pr
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -169,9 +175,9 @@ func (p *CargoFmtParser) Name() string { return "cargo-fmt" }
 
 func (p *CargoFmtParser) Parse(stdout, stderr string) *ParseResult {
 	raw := combined(stdout, stderr)
-	result := &ParseResult{
+	pr := &ParseResult{
 		Tool:   p.Name(),
-		Errors: []StructuredError{},
+		Errors: []result.SAWError{},
 		Raw:    raw,
 	}
 
@@ -189,7 +195,8 @@ func (p *CargoFmtParser) Parse(stdout, stderr string) *ParseResult {
 				if file == "" {
 					continue
 				}
-				result.Errors = append(result.Errors, StructuredError{
+				pr.Errors = append(pr.Errors, result.SAWError{
+					Code:     "TOOL_ERROR",
 					File:     file,
 					Severity: "warning",
 					Message:  "file needs cargo fmt",
@@ -198,5 +205,5 @@ func (p *CargoFmtParser) Parse(stdout, stderr string) *ParseResult {
 			}
 		}
 	}
-	return result
+	return pr
 }

@@ -4,6 +4,8 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
 )
 
 // ansiEscape matches ANSI color/control escape sequences.
@@ -31,6 +33,21 @@ func combined(stdout, stderr string) string {
 	return strings.Join(parts, "\n")
 }
 
+// makeContext creates a context map with optional column and rule entries.
+func makeContext(col int, rule string) map[string]string {
+	ctx := map[string]string{}
+	if col > 0 {
+		ctx["column"] = strconv.Itoa(col)
+	}
+	if rule != "" {
+		ctx["rule"] = rule
+	}
+	if len(ctx) == 0 {
+		return nil
+	}
+	return ctx
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // GoBuildParser
 // ─────────────────────────────────────────────────────────────────────────────
@@ -42,16 +59,17 @@ type GoBuildParser struct{}
 var _ Parser = (*GoBuildParser)(nil)
 
 // goBuildRe matches:  <file>:<line>:<col>: <message>
-//                 or  <file>:<line>: <message>
+//
+//	or  <file>:<line>: <message>
 var goBuildRe = regexp.MustCompile(`^(.+?):(\d+):(?:(\d+):)?\s+(.+)$`)
 
 func (p *GoBuildParser) Name() string { return "go-build" }
 
 func (p *GoBuildParser) Parse(stdout, stderr string) *ParseResult {
 	raw := combined(stdout, stderr)
-	result := &ParseResult{
+	pr := &ParseResult{
 		Tool:   p.Name(),
-		Errors: []StructuredError{},
+		Errors: []result.SAWError{},
 		Raw:    raw,
 	}
 
@@ -67,16 +85,17 @@ func (p *GoBuildParser) Parse(stdout, stderr string) *ParseResult {
 		col, _ := strconv.Atoi(m[3]) // 0 if not present
 		message := strings.TrimSpace(m[4])
 
-		result.Errors = append(result.Errors, StructuredError{
+		pr.Errors = append(pr.Errors, result.SAWError{
+			Code:     "TOOL_ERROR",
 			File:     file,
 			Line:     lineNum,
-			Column:   col,
 			Severity: "error",
 			Message:  message,
 			Tool:     p.Name(),
+			Context:  makeContext(col, ""),
 		})
 	}
-	return result
+	return pr
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -108,9 +127,9 @@ func (p *GoTestParser) Name() string { return "go-test" }
 
 func (p *GoTestParser) Parse(stdout, stderr string) *ParseResult {
 	raw := combined(stdout, stderr)
-	result := &ParseResult{
+	pr := &ParseResult{
 		Tool:   p.Name(),
-		Errors: []StructuredError{},
+		Errors: []result.SAWError{},
 		Raw:    raw,
 	}
 
@@ -127,11 +146,12 @@ func (p *GoTestParser) Parse(stdout, stderr string) *ParseResult {
 		// Detect FAIL lines
 		if m := failRe.FindStringSubmatch(line); m != nil {
 			currentTest = m[1]
-			result.Errors = append(result.Errors, StructuredError{
+			pr.Errors = append(pr.Errors, result.SAWError{
+				Code:     "TOOL_ERROR",
 				Severity: "error",
 				Message:  "FAIL: " + currentTest,
-				Rule:     currentTest,
 				Tool:     p.Name(),
+				Context:  makeContext(0, currentTest),
 			})
 			continue
 		}
@@ -140,9 +160,9 @@ func (p *GoTestParser) Parse(stdout, stderr string) *ParseResult {
 		if m := panicRe.FindStringSubmatch(line); m != nil {
 			inPanic = true
 			panicMsg = m[1]
-			// Look ahead for file reference in stack
 			_ = i
-			result.Errors = append(result.Errors, StructuredError{
+			pr.Errors = append(pr.Errors, result.SAWError{
+				Code:     "TOOL_ERROR",
 				Severity: "error",
 				Message:  "panic: " + panicMsg,
 				Tool:     p.Name(),
@@ -156,8 +176,8 @@ func (p *GoTestParser) Parse(stdout, stderr string) *ParseResult {
 				file := m[1]
 				lineNum, _ := strconv.Atoi(m[2])
 				// Update the last error entry with file/line info
-				if len(result.Errors) > 0 {
-					last := &result.Errors[len(result.Errors)-1]
+				if len(pr.Errors) > 0 {
+					last := &pr.Errors[len(pr.Errors)-1]
 					if last.File == "" && strings.HasPrefix(last.Message, "panic:") {
 						last.File = file
 						last.Line = lineNum
@@ -177,18 +197,19 @@ func (p *GoTestParser) Parse(stdout, stderr string) *ParseResult {
 				message = "test failure"
 			}
 			rule := currentTest
-			result.Errors = append(result.Errors, StructuredError{
+			pr.Errors = append(pr.Errors, result.SAWError{
+				Code:     "TOOL_ERROR",
 				File:     file,
 				Line:     lineNum,
 				Severity: "error",
 				Message:  message,
-				Rule:     rule,
 				Tool:     p.Name(),
+				Context:  makeContext(0, rule),
 			})
 		}
 	}
 
-	return result
+	return pr
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -205,9 +226,9 @@ func (p *GoVetParser) Name() string { return "go-vet" }
 
 func (p *GoVetParser) Parse(stdout, stderr string) *ParseResult {
 	raw := combined(stdout, stderr)
-	result := &ParseResult{
+	pr := &ParseResult{
 		Tool:   p.Name(),
-		Errors: []StructuredError{},
+		Errors: []result.SAWError{},
 		Raw:    raw,
 	}
 
@@ -223,16 +244,17 @@ func (p *GoVetParser) Parse(stdout, stderr string) *ParseResult {
 		col, _ := strconv.Atoi(m[3])
 		message := strings.TrimSpace(m[4])
 
-		result.Errors = append(result.Errors, StructuredError{
+		pr.Errors = append(pr.Errors, result.SAWError{
+			Code:     "TOOL_ERROR",
 			File:     file,
 			Line:     lineNum,
-			Column:   col,
 			Severity: "warning",
 			Message:  message,
 			Tool:     p.Name(),
+			Context:  makeContext(col, ""),
 		})
 	}
-	return result
+	return pr
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -241,8 +263,9 @@ func (p *GoVetParser) Parse(stdout, stderr string) *ParseResult {
 
 // GolangciLintParser parses output from golangci-lint.
 // Format: file.go:line:col: message (linter-name)
-//      or file.go:line:col: message [linter-name]
-//      or file.go:line: message (linter-name)
+//
+//	or file.go:line:col: message [linter-name]
+//	or file.go:line: message (linter-name)
 //
 // Suggestions may appear as lines starting with "Fix:" or "suggestion:" after
 // the main error line.
@@ -267,9 +290,9 @@ func (p *GolangciLintParser) Name() string { return "golangci-lint" }
 
 func (p *GolangciLintParser) Parse(stdout, stderr string) *ParseResult {
 	raw := combined(stdout, stderr)
-	result := &ParseResult{
+	pr := &ParseResult{
 		Tool:   p.Name(),
-		Errors: []StructuredError{},
+		Errors: []result.SAWError{},
 		Raw:    raw,
 	}
 
@@ -281,8 +304,8 @@ func (p *GolangciLintParser) Parse(stdout, stderr string) *ParseResult {
 
 		// Check for suggestion lines and attach to last error
 		if m := suggestionRe.FindStringSubmatch(line); m != nil {
-			if len(result.Errors) > 0 {
-				result.Errors[len(result.Errors)-1].Suggestion = strings.TrimSpace(m[1])
+			if len(pr.Errors) > 0 {
+				pr.Errors[len(pr.Errors)-1].Suggestion = strings.TrimSpace(m[1])
 			}
 			continue
 		}
@@ -307,15 +330,16 @@ func (p *GolangciLintParser) Parse(stdout, stderr string) *ParseResult {
 			rule = rm[2]
 		}
 
-		result.Errors = append(result.Errors, StructuredError{
-			File:     file,
-			Line:     lineNum,
-			Column:   col,
-			Severity: "warning",
-			Message:  message,
-			Rule:     rule,
-			Tool:     p.Name(),
+		pr.Errors = append(pr.Errors, result.SAWError{
+			Code:       "TOOL_ERROR",
+			File:       file,
+			Line:       lineNum,
+			Severity:   "warning",
+			Message:    message,
+			Suggestion: "",
+			Tool:       p.Name(),
+			Context:    makeContext(col, rule),
 		})
 	}
-	return result
+	return pr
 }
