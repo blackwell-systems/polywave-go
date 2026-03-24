@@ -12,27 +12,77 @@
 // reporting with severity, context, and suggestions for remediation.
 package result
 
-import "encoding/json"
+import (
+	"encoding/json"
+	"fmt"
+)
 
 // Result wraps operation results with structured error handling and
 // consistent success/failure signaling. Replaces 68 distinct *Result types.
 type Result[T any] struct {
-	Data   *T                `json:"data,omitempty"`
-	Errors []StructuredError `json:"errors,omitempty"`
-	Code   string            `json:"code"` // "SUCCESS" | "PARTIAL" | "FATAL"
+	Data   *T         `json:"data,omitempty"`
+	Errors []SAWError `json:"errors,omitempty"`
+	Code   string     `json:"code"` // "SUCCESS" | "PARTIAL" | "FATAL"
 }
 
-// StructuredError provides consistent error reporting across all operations.
-type StructuredError struct {
-	Code       string            `json:"code"`     // Error code (E001-E999)
-	Message    string            `json:"message"`  // Human-readable message
-	Severity   string            `json:"severity"` // "fatal" | "error" | "warning" | "info"
+// SAWError is the unified structured error type for all SAW operations.
+// Replaces: protocol.ValidationError, errparse.StructuredError, result.StructuredError.
+// Implements the error interface. Supports errors.Is/As chains via Unwrap.
+type SAWError struct {
+	Code       string            `json:"code"`                // e.g. "V001_MANIFEST_INVALID"
+	Message    string            `json:"message"`             // human-readable
+	Severity   string            `json:"severity"`            // "fatal"|"error"|"warning"|"info"
 	File       string            `json:"file,omitempty"`
 	Line       int               `json:"line,omitempty"`
-	Field      string            `json:"field,omitempty"`
-	Tool       string            `json:"tool,omitempty"`
+	Field      string            `json:"field,omitempty"`     // for validation errors
+	Tool       string            `json:"tool,omitempty"`      // for tool/parse errors
 	Suggestion string            `json:"suggestion,omitempty"`
-	Context    map[string]string `json:"context,omitempty"`
+	Context    map[string]string `json:"context,omitempty"`   // slug, wave, agent_id, rule, column
+	Cause      error             `json:"-"`                   // wrapped error for errors.Is/As
+}
+
+// Error implements the error interface for SAWError.
+func (e SAWError) Error() string {
+	if e.Severity != "" {
+		return fmt.Sprintf("[%s] %s: %s", e.Severity, e.Code, e.Message)
+	}
+	return fmt.Sprintf("[%s] %s", e.Code, e.Message)
+}
+
+// Unwrap returns the wrapped cause error for errors.Is/As chain support.
+func (e SAWError) Unwrap() error { return e.Cause }
+
+// IsFatal returns true when the error severity is "fatal".
+func (e SAWError) IsFatal() bool { return e.Severity == "fatal" }
+
+// WithContext returns a copy of the error with an additional context key-value pair.
+func (e SAWError) WithContext(key, value string) SAWError {
+	if e.Context == nil {
+		e.Context = make(map[string]string)
+	}
+	e.Context[key] = value
+	return e
+}
+
+// WithCause returns a copy of the error with the given cause attached.
+func (e SAWError) WithCause(cause error) SAWError {
+	e.Cause = cause
+	return e
+}
+
+// NewError creates a SAWError with severity "error".
+func NewError(code, message string) SAWError {
+	return SAWError{Code: code, Message: message, Severity: "error"}
+}
+
+// NewFatal creates a SAWError with severity "fatal".
+func NewFatal(code, message string) SAWError {
+	return SAWError{Code: code, Message: message, Severity: "fatal"}
+}
+
+// NewWarning creates a SAWError with severity "warning".
+func NewWarning(code, message string) SAWError {
+	return SAWError{Code: code, Message: message, Severity: "warning"}
 }
 
 // IsSuccess returns true when Code is "SUCCESS" and no errors exist.
@@ -73,7 +123,7 @@ func NewSuccess[T any](data T) Result[T] {
 }
 
 // NewPartial creates a partially successful Result with data and warnings.
-func NewPartial[T any](data T, warnings []StructuredError) Result[T] {
+func NewPartial[T any](data T, warnings []SAWError) Result[T] {
 	return Result[T]{
 		Data:   &data,
 		Errors: warnings,
@@ -82,7 +132,7 @@ func NewPartial[T any](data T, warnings []StructuredError) Result[T] {
 }
 
 // NewFailure creates a failed Result with structured errors.
-func NewFailure[T any](errors []StructuredError) Result[T] {
+func NewFailure[T any](errors []SAWError) Result[T] {
 	code := "FATAL"
 	if len(errors) > 0 && errors[0].Severity != "fatal" {
 		code = "FATAL" // Still fatal if operation failed
