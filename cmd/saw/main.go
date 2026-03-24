@@ -22,6 +22,7 @@ func main() {
 		newValidateCmd(),
 		newExtractContextCmd(),
 		newSetCompletionCmd(),
+		newCheckCompletionCmd(),
 		newMarkCompleteCmd(),
 		newSetImplStateCmd(),
 		newRunGatesCmd(),
