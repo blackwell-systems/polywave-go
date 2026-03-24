@@ -2,7 +2,7 @@
 
 > **Note:** The HTTP API is implemented in [scout-and-wave-web](https://github.com/blackwell-systems/scout-and-wave-web), which imports the engine (`scout-and-wave-go`) as a library. This document describes the full API surface.
 >
-> **Endpoint count:** 107 registered routes (verified 2026-03-22 against `scout-and-wave-web` source).
+> **Endpoint count:** 110 registered routes (verified 2026-03-24 against `scout-and-wave-web` source).
 
 ## Base URL
 
@@ -1354,6 +1354,105 @@ Error codes: `"not_found"`, `"not_git"`, `"no_commits"`.
 
 ---
 
+### `POST /api/config/providers/{provider}/validate`
+
+Validate credentials for a specific AI provider.
+
+**Path params:**
+- `provider` (string) — `"anthropic"` | `"openai"` | `"bedrock"`
+
+**Request (varies by provider):**
+
+Anthropic / OpenAI:
+```json
+{ "api_key": "sk-..." }
+```
+
+Bedrock:
+```json
+{
+  "region": "us-east-1",
+  "access_key_id": "AKIA...",
+  "secret_access_key": "...",
+  "session_token": "",
+  "profile": ""
+}
+```
+
+**Response:** `200 OK`
+```json
+{
+  "valid": true,
+  "error": "",
+  "identity": ""
+}
+```
+
+- `identity` is populated only for Bedrock (returns the AWS caller identity ARN)
+- On validation failure, `valid` is `false` and `error` describes the issue
+
+**Errors:** `400` unknown provider or invalid request body.
+
+---
+
+### `POST /api/config/providers/bedrock/sso/start`
+
+Start an AWS SSO device authorization flow for Bedrock credentials.
+
+**Request:**
+```json
+{
+  "profile": "my-sso-profile",
+  "region": "us-east-1"
+}
+```
+
+- `profile` (string, required) — AWS SSO profile name
+- `region` (string, optional) — AWS region override
+
+**Response:** `200 OK`
+```json
+{
+  "verification_uri": "https://device.sso.us-east-1.amazonaws.com/",
+  "verification_uri_complete": "https://device.sso.us-east-1.amazonaws.com/?user_code=ABCD-EFGH",
+  "user_code": "ABCD-EFGH",
+  "poll_id": "...",
+  "expires_in": 600,
+  "interval": 5
+}
+```
+
+Sensitive fields (`device_code`, `client_id`, `client_secret`) are intentionally excluded from the HTTP response.
+
+**Errors:** `400` missing profile, `503` SSO service not configured.
+
+---
+
+### `POST /api/config/providers/bedrock/sso/poll`
+
+Poll the status of an in-progress SSO device authorization flow.
+
+**Request:**
+```json
+{ "poll_id": "..." }
+```
+
+**Response:** `200 OK`
+```json
+{
+  "status": "pending",
+  "identity": "",
+  "error": ""
+}
+```
+
+- `status` — `"pending"` | `"authorized"` | `"expired"` | `"error"`
+- `identity` — AWS caller identity ARN (populated when `status` is `"authorized"`)
+
+**Errors:** `400` missing poll_id, `503` SSO service not configured.
+
+---
+
 ### `GET /api/browse`
 
 Browse filesystem directories (server-side directory listing for repo picker).
@@ -1925,3 +2024,7 @@ Model names support provider-prefix routing:
 | `lmstudio:` | LM Studio (local) | `lmstudio:phi-4` |
 | `cli:` | Claude Code CLI | `cli:claude-sonnet-4-6` |
 | (none) | Default (Anthropic API) | `claude-sonnet-4-6` |
+
+---
+
+Last reviewed: 2026-03-24
