@@ -2,6 +2,7 @@ package errparse
 
 import (
 	"strings"
+	"strconv"
 	"testing"
 )
 
@@ -27,8 +28,8 @@ func TestTscParser_TypeError(t *testing.T) {
 	if e.Line != 10 {
 		t.Errorf("Line = %d, want 10", e.Line)
 	}
-	if e.Column != 5 {
-		t.Errorf("Column = %d, want 5", e.Column)
+	if e.Context["column"] != strconv.Itoa(5) {
+		t.Errorf("Column = %s, want 5", e.Context["column"])
 	}
 	if e.Severity != "error" {
 		t.Errorf("Severity = %q, want 'error'", e.Severity)
@@ -71,8 +72,8 @@ src/c.ts(5,10): error TS2339: Property 'bar' does not exist on type 'never'
 		if e.Line != c.line {
 			t.Errorf("[%d] Line = %d, want %d", i, e.Line, c.line)
 		}
-		if e.Column != c.col {
-			t.Errorf("[%d] Column = %d, want %d", i, e.Column, c.col)
+		if e.Context["column"] != strconv.Itoa(c.col) {
+			t.Errorf("[%d] Column = %s, want %d", i, e.Context["column"], c.col)
 		}
 		if e.Severity != c.severity {
 			t.Errorf("[%d] Severity = %q, want %q", i, e.Severity, c.severity)
@@ -129,11 +130,11 @@ func TestEslintParser_WithRules(t *testing.T) {
 	if e.Line != 10 {
 		t.Errorf("Line = %d", e.Line)
 	}
-	if e.Column != 5 {
-		t.Errorf("Column = %d", e.Column)
+	if e.Context["column"] != strconv.Itoa(5) {
+		t.Errorf("Column = %s", e.Context["column"])
 	}
-	if e.Rule != "no-undef" {
-		t.Errorf("Rule = %q, want 'no-undef'", e.Rule)
+	if e.Context["rule"] != "no-undef" {
+		t.Errorf("Rule = %q, want 'no-undef'", e.Context["rule"])
 	}
 	if e.Tool != "eslint" {
 		t.Errorf("Tool = %q", e.Tool)
@@ -150,8 +151,8 @@ func TestEslintParser_Suggestions(t *testing.T) {
 		t.Fatalf("expected 1 error, got %d", len(result.Errors))
 	}
 	e := result.Errors[0]
-	if e.Rule != "no-var" {
-		t.Errorf("Rule = %q", e.Rule)
+	if e.Context["rule"] != "no-var" {
+		t.Errorf("Rule = %q", e.Context["rule"])
 	}
 	if e.Suggestion == "" {
 		t.Error("expected non-empty Suggestion")
@@ -173,8 +174,8 @@ func TestEslintParser_JSONFormat(t *testing.T) {
 	if e.File != "/project/src/index.ts" {
 		t.Errorf("File = %q", e.File)
 	}
-	if e.Rule != "no-console" {
-		t.Errorf("Rule = %q", e.Rule)
+	if e.Context["rule"] != "no-console" {
+		t.Errorf("Rule = %q", e.Context["rule"])
 	}
 	if e.Severity != "warning" {
 		t.Errorf("Severity = %q (severity 1 should be warning)", e.Severity)

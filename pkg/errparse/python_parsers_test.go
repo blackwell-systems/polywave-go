@@ -1,6 +1,7 @@
 package errparse
 
 import (
+	"strconv"
 	"testing"
 )
 
@@ -40,7 +41,7 @@ FAILED tests/test_foo.py::TestMath::test_subtract - AssertionError: assert 0 == 
 	// Find the FAILED error
 	var found bool
 	for _, e := range result.Errors {
-		if e.Rule == "tests/test_foo.py::TestMath::test_subtract" {
+		if e.Context["rule"] == "tests/test_foo.py::TestMath::test_subtract" {
 			found = true
 			if e.File != "tests/test_foo.py" {
 				t.Errorf("expected file=tests/test_foo.py, got %q", e.File)
@@ -139,8 +140,8 @@ Found 1 error in 1 file (checked 3 source files)
 	if e.Severity != "error" {
 		t.Errorf("expected severity=error, got %q", e.Severity)
 	}
-	if e.Rule != "assignment" {
-		t.Errorf("expected rule=assignment, got %q", e.Rule)
+	if e.Context["rule"] != "assignment" {
+		t.Errorf("expected rule=assignment, got %q", e.Context["rule"])
 	}
 	if e.Tool != "mypy" {
 		t.Errorf("expected tool=mypy, got %q", e.Tool)
@@ -167,8 +168,8 @@ Found 3 errors in 2 files (checked 5 source files)
 	if result.Errors[0].File != "src/foo.py" || result.Errors[0].Line != 10 {
 		t.Errorf("first error: expected src/foo.py:10, got %s:%d", result.Errors[0].File, result.Errors[0].Line)
 	}
-	if result.Errors[0].Rule != "name-defined" {
-		t.Errorf("first error: expected rule=name-defined, got %q", result.Errors[0].Rule)
+	if result.Errors[0].Context["rule"] != "name-defined" {
+		t.Errorf("first error: expected rule=name-defined, got %q", result.Errors[0].Context["rule"])
 	}
 
 	// Second error (warning)
@@ -180,8 +181,8 @@ Found 3 errors in 2 files (checked 5 source files)
 	if result.Errors[2].File != "src/bar.py" || result.Errors[2].Line != 5 {
 		t.Errorf("third error: expected src/bar.py:5, got %s:%d", result.Errors[2].File, result.Errors[2].Line)
 	}
-	if result.Errors[2].Rule != "arg-type" {
-		t.Errorf("third error: expected rule=arg-type, got %q", result.Errors[2].Rule)
+	if result.Errors[2].Context["rule"] != "arg-type" {
+		t.Errorf("third error: expected rule=arg-type, got %q", result.Errors[2].Context["rule"])
 	}
 }
 
@@ -210,11 +211,11 @@ src/foo.py:25:5: W291 Trailing whitespace
 	if e.Line != 10 {
 		t.Errorf("expected line=10, got %d", e.Line)
 	}
-	if e.Column != 1 {
-		t.Errorf("expected col=1, got %d", e.Column)
+	if e.Context["column"] != strconv.Itoa(1) {
+		t.Errorf("expected col=1, got %s", e.Context["column"])
 	}
-	if e.Rule != "E501" {
-		t.Errorf("expected rule=E501, got %q", e.Rule)
+	if e.Context["rule"] != "E501" {
+		t.Errorf("expected rule=E501, got %q", e.Context["rule"])
 	}
 	if e.Severity != "error" {
 		t.Errorf("expected severity=error for E-code, got %q", e.Severity)
@@ -225,8 +226,8 @@ src/foo.py:25:5: W291 Trailing whitespace
 
 	// W291 should be a warning
 	w := result.Errors[1]
-	if w.Rule != "W291" {
-		t.Errorf("expected rule=W291, got %q", w.Rule)
+	if w.Context["rule"] != "W291" {
+		t.Errorf("expected rule=W291, got %q", w.Context["rule"])
 	}
 	if w.Severity != "warning" {
 		t.Errorf("expected severity=warning for W-code, got %q", w.Severity)
@@ -250,8 +251,8 @@ src/foo.py:7:5: E711 Comparison to None (use "is" or "is not")
 
 	// First error should have a suggestion attached
 	e := result.Errors[0]
-	if e.Rule != "F401" {
-		t.Errorf("expected rule=F401, got %q", e.Rule)
+	if e.Context["rule"] != "F401" {
+		t.Errorf("expected rule=F401, got %q", e.Context["rule"])
 	}
 	if e.Suggestion == "" {
 		t.Error("expected suggestion to be populated from '= help:' line")
