@@ -218,15 +218,9 @@ After making changes, verify the build passes:
 }
 
 // extractConnectors retrieves IntegrationConnector entries from the manifest.
-// Since the IntegrationConnectors field may not yet exist on IMPLManifest
-// (added in a later wave), this uses a defensive approach: it checks for
-// the field via the raw YAML data if available. Returns nil if no connectors
-// are defined.
+// Returns nil if no connectors are defined.
 func extractConnectors(manifest *protocol.IMPLManifest) []protocol.IntegrationConnector {
-	// The IntegrationConnectors field will be added to IMPLManifest by Agent G
-	// (wave 3). For now, return nil — the prompt handles the empty case
-	// by directing the agent to use SearchResults from each gap.
-	return nil
+	return manifest.IntegrationConnectors
 }
 
 // autoCommitIntegration stages and commits integration agent changes.
