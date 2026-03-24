@@ -90,7 +90,7 @@ func TestPreWaveGate_ThreeAgentsNoCriticReport(t *testing.T) {
 // TestPreWaveGate_CriticReportPass tests that a passing critic report sets critic_review=pass.
 func TestPreWaveGate_CriticReportPass(t *testing.T) {
 	m := makeMinimalValidManifest()
-	m.CriticReport = &CriticResult{
+	m.CriticReport = &CriticData{
 		Verdict:    CriticVerdictPass,
 		IssueCount: 0,
 	}
@@ -110,7 +110,7 @@ func TestPreWaveGate_CriticReportPass(t *testing.T) {
 // TestPreWaveGate_CriticReportIssues tests that a failing critic report sets critic_review=fail.
 func TestPreWaveGate_CriticReportIssues(t *testing.T) {
 	m := makeMinimalValidManifest()
-	m.CriticReport = &CriticResult{
+	m.CriticReport = &CriticData{
 		Verdict:    CriticVerdictIssues,
 		IssueCount: 3,
 	}

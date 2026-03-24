@@ -40,17 +40,17 @@ type FinalizeWaveOpts struct {
 
 // FinalizeWaveResult combines all post-agent verification, merge, and cleanup results.
 type FinalizeWaveResult struct {
-	Wave           int                        `json:"wave"`
-	VerifyCommits  *protocol.VerifyCommitsResult `json:"verify_commits,omitempty"`
-	StubReport     *protocol.ScanStubsResult  `json:"stub_report,omitempty"`
+	Wave           int                          `json:"wave"`
+	VerifyCommits  *protocol.VerifyCommitsData  `json:"verify_commits,omitempty"`
+	StubReport     *protocol.ScanStubsData      `json:"stub_report,omitempty"`
 	GateResults       []protocol.GateResult         `json:"gate_results,omitempty"`
 	IntegrationReport *protocol.IntegrationReport   `json:"integration_report,omitempty"`
-	MergeResult       *protocol.MergeAgentsResult   `json:"merge_result,omitempty"`
-	VerifyBuild    *protocol.VerifyBuildResult `json:"verify_build,omitempty"`
-	BuildDiagnosis *builddiag.Diagnosis        `json:"build_diagnosis,omitempty"`
-	CleanupResult  *protocol.CleanupResult    `json:"cleanup_result,omitempty"`
-	BuildPassed    bool                       `json:"build_passed"`
-	Success        bool                       `json:"success"`
+	MergeResult       *protocol.MergeAgentsData     `json:"merge_result,omitempty"`
+	VerifyBuild    *protocol.VerifyBuildData    `json:"verify_build,omitempty"`
+	BuildDiagnosis *builddiag.Diagnosis         `json:"build_diagnosis,omitempty"`
+	CleanupResult  *protocol.CleanupData        `json:"cleanup_result,omitempty"`
+	BuildPassed    bool                         `json:"build_passed"`
+	Success        bool                         `json:"success"`
 }
 
 // FinalizeWave runs the full post-agent finalization pipeline for a single wave.
@@ -182,7 +182,7 @@ func FinalizeWave(ctx context.Context, opts FinalizeWaveOpts) (*FinalizeWaveResu
 		opts.ObsEmitter.Emit(ctx, observability.NewWaveMergeEvent(manifest.FeatureSlug, opts.WaveNum))
 	} else {
 		// SkipMerge mode: populate synthetic MergeResult
-		result.MergeResult = &protocol.MergeAgentsResult{
+		result.MergeResult = &protocol.MergeAgentsData{
 			Wave:    opts.WaveNum,
 			Success: true,
 		}
@@ -265,9 +265,10 @@ func MarkIMPLComplete(ctx context.Context, opts MarkIMPLCompleteOpts) error {
 
 	// E18: Update project context
 	if opts.RepoPath != "" {
-		if _, err := protocol.UpdateContext(opts.IMPLPath, opts.RepoPath); err != nil {
+		res := protocol.UpdateContext(opts.IMPLPath, opts.RepoPath)
+		if res.IsFatal() {
 			// Non-fatal: log but continue to archive
-			fmt.Fprintf(os.Stderr, "engine.MarkIMPLComplete: update-context: %v\n", err)
+			fmt.Fprintf(os.Stderr, "engine.MarkIMPLComplete: update-context: %s\n", res.Errors[0].Message)
 		}
 	}
 

@@ -188,12 +188,13 @@ func RunTierLoop(ctx context.Context, opts TierLoopOpts) (*TierLoopResult, error
 		}
 
 		// Step 9: Run tier gate (E29)
-		gateResult, gateErr := protocol.RunTierGate(manifest, currentTier, opts.RepoPath)
-		if gateErr != nil {
-			result.Errors = append(result.Errors, fmt.Sprintf("tier gate error: %s", gateErr))
+		gateRes := protocol.RunTierGate(manifest, currentTier, opts.RepoPath)
+		if gateRes.IsFatal() {
+			result.Errors = append(result.Errors, fmt.Sprintf("tier gate error: %s", gateRes.Errors[0].Message))
 			result.FinalState = "gate_error"
-			return result, fmt.Errorf("RunTierLoop: tier gate: %w", gateErr)
+			return result, fmt.Errorf("RunTierLoop: tier gate: %s", gateRes.Errors[0].Message)
 		}
+		gateResult := gateRes.GetData()
 
 		emitEvent(opts.OnEvent, TierLoopEvent{
 			Type:   "tier_gate",
@@ -240,15 +241,18 @@ func RunTierLoop(ctx context.Context, opts TierLoopOpts) (*TierLoopResult, error
 		opts.ObsEmitter.Emit(ctx, observability.NewTierGatePassedEvent(manifest.ProgramSlug, currentTier))
 
 		// Step 10: Freeze contracts (E30)
-		freezeResult, freezeErr := protocol.FreezeContracts(manifest, currentTier, opts.RepoPath)
-		if freezeErr != nil {
-			result.Errors = append(result.Errors, fmt.Sprintf("freeze contracts error: %s", freezeErr))
-		} else if freezeResult.Success {
-			emitEvent(opts.OnEvent, TierLoopEvent{
-				Type:   "contracts_frozen",
-				Tier:   currentTier,
-				Detail: fmt.Sprintf("Froze %d contracts", len(freezeResult.ContractsFrozen)),
-			})
+		freezeRes := protocol.FreezeContracts(manifest, currentTier, opts.RepoPath)
+		if freezeRes.IsFatal() {
+			result.Errors = append(result.Errors, fmt.Sprintf("freeze contracts error: %s", freezeRes.Errors[0].Message))
+		} else {
+			freezeResult := freezeRes.GetData()
+			if freezeResult.Success {
+				emitEvent(opts.OnEvent, TierLoopEvent{
+					Type:   "contracts_frozen",
+					Tier:   currentTier,
+					Detail: fmt.Sprintf("Froze %d contracts", len(freezeResult.ContractsFrozen)),
+				})
+			}
 		}
 
 		// Step 12: Advance tier (E33) — use AdvanceTierAutomatically in auto mode.
@@ -345,7 +349,7 @@ var replanProgramFunc = ReplanProgram
 // AutoTriggerReplan automatically triggers Planner re-engagement when a tier
 // gate fails (E34). It constructs a reason string from gate failure details
 // and calls ReplanProgram.
-func AutoTriggerReplan(manifestPath string, tierNumber int, gateResult *protocol.TierGateResult, model string) (*ReplanResult, error) {
+func AutoTriggerReplan(manifestPath string, tierNumber int, gateResult *protocol.TierGateData, model string) (*ReplanResult, error) {
 	reason := buildReplanReason(tierNumber, gateResult)
 
 	return replanProgramFunc(ReplanProgramOpts{
@@ -357,7 +361,7 @@ func AutoTriggerReplan(manifestPath string, tierNumber int, gateResult *protocol
 }
 
 // buildReplanReason constructs a human-readable reason string from gate failure details.
-func buildReplanReason(tierNumber int, gateResult *protocol.TierGateResult) string {
+func buildReplanReason(tierNumber int, gateResult *protocol.TierGateData) string {
 	var parts []string
 	parts = append(parts, fmt.Sprintf("Tier %d gate failed.", tierNumber))
 
