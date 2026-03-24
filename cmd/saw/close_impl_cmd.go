@@ -43,7 +43,13 @@ Examples:
 				return fmt.Errorf("close-impl: failed to load manifest: %w", err)
 			}
 
-			// Step 1: Write completion marker
+			// Step 1a: Transition state to COMPLETE (best-effort; failure does not abort)
+			stateRes := protocol.SetImplState(manifestPath, protocol.StateComplete, protocol.SetImplStateOpts{})
+			if !stateRes.IsSuccess() {
+				fmt.Fprintf(os.Stderr, "close-impl: state transition to COMPLETE failed: %v (continuing)\n", stateRes.Errors)
+			}
+
+			// Step 1b: Write completion marker
 			if err := protocol.WriteCompletionMarker(manifestPath, date); err != nil {
 				return fmt.Errorf("close-impl: mark-complete failed: %w", err)
 			}
