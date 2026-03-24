@@ -1,5 +1,7 @@
 # Architecture Overview
 
+Last reviewed: 2026-03-24
+
 ## Module
 
 ```
@@ -8,7 +10,7 @@ module github.com/blackwell-systems/scout-and-wave-go
 
 Go engine and SDK for the Scout-and-Wave protocol. Consumed as a library by
 `scout-and-wave-web` (HTTP/SSE web application) and directly via the `sawtools`
-CLI binary (73 commands as of March 2026).
+CLI binary (80 commands as of March 2026, including `help` and `completion`).
 
 ## High-Level Flow
 
@@ -63,7 +65,7 @@ Daemon (pkg/engine/daemon.go)
 
 ## Package Map
 
-The module contains 33 packages under `pkg/`, 1 under `internal/`, and 1 binary
+The module contains 31 packages under `pkg/`, 1 under `internal/`, and 1 binary
 under `cmd/`. Listed below by functional layer.
 
 ### Core Engine Layer
@@ -93,7 +95,7 @@ Key files:
 - `integration_runner.go` -- integration validation runner
 - `constraints.go` -- engine-level constraint enforcement
 
-**Imports:** `pkg/agent`, `pkg/orchestrator`, `pkg/protocol`, `pkg/types`,
+**Imports:** `pkg/agent`, `pkg/orchestrator`, `pkg/protocol`, `pkg/result`,
 `pkg/analyzer`, `pkg/commands`, `pkg/hooks`, `pkg/journal`, `pkg/observability`,
 `pkg/retryctx`, `pkg/suitability`, `pkg/autonomy`, `pkg/queue`
 
@@ -193,22 +195,15 @@ Key areas:
 - **Freeze:** `freeze.go` -- contract/scaffold freeze with SHA-256 checksums after worktree creation
 - **Misc:** `branchname.go` -- branch naming conventions; `cleanup.go` -- post-merge cleanup; `context_update.go` -- CONTEXT.md updates; `critic.go` -- critic agent review storage; `dependency_verifier.go` -- dependency verification (H6); `discovery.go` -- IMPL discovery; `error_codes.go` -- structured error codes; `failure.go` -- failure type definitions; `gomod_fixup.go` -- go.mod repair; `helpers.go` -- shared utilities; `isolation.go` -- worktree isolation verification (E12); `memory.go` -- agent memory; `ownership_coverage.go` -- ownership coverage checks; `repo_resolve.go` -- repo path resolution; `solver_integration.go` -- solver integration; `types_sections.go` -- section type definitions
 
-#### `pkg/types`
+#### `pkg/result`
 
-Shared protocol types used across packages. Contains the **legacy** `IMPLDoc`
-struct (parsed from the old markdown format) alongside status constants.
+Unified `Result[T]` generic type for consistent error handling across the
+engine. Replaces ad-hoc result types with a single wrapper supporting full
+success, partial success, and total failure signaling.
 
-Key types:
-- `IMPLDoc` -- legacy parsed IMPL document structure (markdown-era)
-- `Wave`, `Agent` -- wave/agent specifications
-- `CompletionReport` -- agent completion report
-- `FileOwnershipInfo` -- file ownership table row
-- `QualityGates` -- quality gate definitions
-
-**Dual-type situation:** `types.IMPLDoc` is the legacy markdown-parsed type.
-`protocol.IMPLManifest` is the current YAML-native type. Both exist in the
-codebase; migration to `IMPLManifest` everywhere is planned. New code should
-use `protocol.IMPLManifest`.
+Key files:
+- `result.go` -- `Result[T]` generic wrapper with `SUCCESS`, `PARTIAL`, `FATAL` codes
+- `codes.go` -- structured error code constants by domain (V=validation, B=build, G=git, A=agent, N=engine, P=protocol, T=tool)
 
 #### `pkg/tools`
 
@@ -446,13 +441,6 @@ Query/rollup support: `QueryFilters` (by event type, IMPL slug, program slug,
 agent ID, time range) and `RollupRequest` (cost, success_rate, retry_count
 grouped by agent/wave/impl/program/model).
 
-#### `pkg/git`
-
-Git polling utilities for the web UI. Snapshots branch and commit activity
-across active agent worktrees.
-
-- `activity.go` -- `Poller`, `Branch`, `Commit` types
-
 ### Orchestration Infrastructure
 
 #### `pkg/pipeline`
@@ -507,8 +495,9 @@ detection), diff, status, and log parsing. Not importable outside this module.
 
 #### `cmd/saw` (sawtools)
 
-Cobra-based CLI binary with 73 commands. Each command wraps one or more
-engine/protocol functions. Commands are organized by workflow phase:
+Cobra-based CLI binary with 80 commands (including `help` and `completion`).
+Each command wraps one or more engine/protocol functions. Commands are organized
+by workflow phase:
 
 **Scout phase:**
 `run-scout`, `finalize-impl`, `validate`, `analyze-suitability`, `interview`
@@ -517,50 +506,46 @@ engine/protocol functions. Commands are organized by workflow phase:
 `prepare-wave`, `create-worktrees`, `extract-context`, `prepare-agent`,
 `journal-init`, `check-deps`, `check-type-collisions`, `detect-scaffolds`,
 `validate-scaffold`, `validate-scaffolds`, `verify-hook-installed`,
-`verify-isolation`, `freeze-contracts`, `freeze-check`
+`verify-isolation`, `freeze-contracts`, `freeze-check`, `pre-wave-gate`
 
 **Wave execution:**
 `run-wave`, `run-critic`, `build-retry-context`, `retry`
 
 **Wave finalization:**
 `finalize-wave`, `merge-agents`, `run-gates`, `scan-stubs`, `verify-commits`,
-`verify-build`, `cleanup`, `cleanup-stale`, `mark-complete`
+`verify-build`, `cleanup`, `cleanup-stale`, `mark-complete`, `close-impl`
 
 **Program layer:**
 `create-program`, `validate-program`, `import-impls`, `list-programs`,
 `program-execute`, `program-replan`, `program-status`, `finalize-tier`,
-`tier-gate`, `check-program-conflicts`, `mark-program-complete`
+`tier-gate`, `check-program-conflicts`, `mark-program-complete`,
+`create-program-worktrees`, `prepare-tier`, `update-program-impl`,
+`update-program-state`
 
 **Daemon / queue:**
-`daemon`, `list-impls`
+`daemon`, `list-impls`, `queue`
 
 **Analysis / diagnostics:**
 `analyze-deps`, `detect-cascades`, `check-conflicts`, `check-impl-conflicts`,
 `diagnose-build-failure`, `solve`, `debug-journal`, `journal-context`,
-`validate-integration`, `resume-detect`, `extract-commands`, `metrics`, `query`
+`validate-integration`, `resume-detect`, `extract-commands`, `metrics`, `query`,
+`check-completion`
 
 **Mutation:**
 `amend-impl`, `assign-agent-ids`, `set-completion`, `set-critic-review`,
 `set-impl-state`, `update-agent-prompt`, `update-context`, `update-status`,
-`populate-integration-checklist`
+`populate-integration-checklist`, `baseline-output`
 
 **Misc:**
 `run-review`, `verify-install`
 
-## Dual-Type Migration: `types.IMPLDoc` vs `protocol.IMPLManifest`
+## IMPL Document Type
 
-Two representations of an IMPL document coexist:
-
-| Type | Package | Format | Status |
-|---|---|---|---|
-| `IMPLDoc` | `pkg/types` | Legacy markdown-parsed struct | Deprecated |
-| `IMPLManifest` | `pkg/protocol` | YAML-native struct with tags | Current |
-
-`IMPLManifest` is the authoritative type. It supports YAML round-tripping
-(`Load`/`Save`), protocol state transitions, program-layer fields, freeze
-checksums, and structured completion reports. `IMPLDoc` persists in some
-engine and orchestrator paths that predate the YAML migration. New code must
-use `IMPLManifest`.
+`protocol.IMPLManifest` is the single authoritative type for IMPL documents.
+It is a YAML-native struct with tags supporting round-trip `Load`/`Save`,
+protocol state transitions, program-layer fields, freeze checksums, and
+structured completion reports. The legacy `types.IMPLDoc` (markdown-era) has
+been fully removed.
 
 ## Protocol State Machine
 
