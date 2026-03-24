@@ -60,10 +60,11 @@ func TestFreezeContracts_AllFrozen(t *testing.T) {
 		},
 	}
 
-	result, err := FreezeContracts(manifest, 1, tmpDir)
-	if err != nil {
-		t.Fatalf("FreezeContracts failed: %v", err)
+	res := FreezeContracts(manifest, 1, tmpDir)
+	if res.IsFatal() {
+		t.Fatalf("FreezeContracts failed: %+v", res.Errors)
 	}
+	result := res.GetData()
 
 	if !result.Success {
 		t.Errorf("Expected Success=true, got false. Errors: %v", result.Errors)
@@ -110,10 +111,11 @@ func TestFreezeContracts_FileNotFound(t *testing.T) {
 		},
 	}
 
-	result, err := FreezeContracts(manifest, 1, tmpDir)
-	if err != nil {
-		t.Fatalf("FreezeContracts failed: %v", err)
+	res := FreezeContracts(manifest, 1, tmpDir)
+	if res.IsFatal() {
+		t.Fatalf("FreezeContracts failed: %+v", res.Errors)
 	}
+	result := res.GetData()
 
 	if result.Success {
 		t.Error("Expected Success=false when file not found")
@@ -166,10 +168,11 @@ func TestFreezeContracts_NotCommitted(t *testing.T) {
 		},
 	}
 
-	result, err := FreezeContracts(manifest, 1, tmpDir)
-	if err != nil {
-		t.Fatalf("FreezeContracts failed: %v", err)
+	res := FreezeContracts(manifest, 1, tmpDir)
+	if res.IsFatal() {
+		t.Fatalf("FreezeContracts failed: %+v", res.Errors)
 	}
+	result := res.GetData()
 
 	if result.Success {
 		t.Error("Expected Success=false when file not committed")
@@ -217,10 +220,11 @@ func TestFreezeContracts_NoMatchingContracts(t *testing.T) {
 		},
 	}
 
-	result, err := FreezeContracts(manifest, 1, tmpDir)
-	if err != nil {
-		t.Fatalf("FreezeContracts failed: %v", err)
+	res := FreezeContracts(manifest, 1, tmpDir)
+	if res.IsFatal() {
+		t.Fatalf("FreezeContracts failed: %+v", res.Errors)
 	}
+	result := res.GetData()
 
 	if !result.Success {
 		t.Errorf("Expected Success=true when no contracts match, got false. Errors: %v", result.Errors)
@@ -280,10 +284,11 @@ func TestFreezeContracts_PartialMatch(t *testing.T) {
 		},
 	}
 
-	result, err := FreezeContracts(manifest, 1, tmpDir)
-	if err != nil {
-		t.Fatalf("FreezeContracts failed: %v", err)
+	res := FreezeContracts(manifest, 1, tmpDir)
+	if res.IsFatal() {
+		t.Fatalf("FreezeContracts failed: %+v", res.Errors)
 	}
+	result := res.GetData()
 
 	if !result.Success {
 		t.Errorf("Expected Success=true, got false. Errors: %v", result.Errors)
@@ -332,10 +337,11 @@ func TestFreezeContracts_EmptyFreezeAt(t *testing.T) {
 		},
 	}
 
-	result, err := FreezeContracts(manifest, 1, tmpDir)
-	if err != nil {
-		t.Fatalf("FreezeContracts failed: %v", err)
+	res := FreezeContracts(manifest, 1, tmpDir)
+	if res.IsFatal() {
+		t.Fatalf("FreezeContracts failed: %+v", res.Errors)
 	}
+	result := res.GetData()
 
 	if !result.Success {
 		t.Errorf("Expected Success=true when no contracts to freeze, got false. Errors: %v", result.Errors)
@@ -390,10 +396,11 @@ func TestFreezeContracts_WholeWordMatching(t *testing.T) {
 	}
 
 	// Test tier 1 - should match
-	result, err := FreezeContracts(manifest, 1, tmpDir)
-	if err != nil {
-		t.Fatalf("FreezeContracts tier 1 failed: %v", err)
+	res := FreezeContracts(manifest, 1, tmpDir)
+	if res.IsFatal() {
+		t.Fatalf("FreezeContracts tier 1 failed: %+v", res.Errors)
 	}
+	result := res.GetData()
 
 	if !result.Success {
 		t.Errorf("Tier 1: Expected Success=true, got false. Errors: %v", result.Errors)
@@ -404,10 +411,11 @@ func TestFreezeContracts_WholeWordMatching(t *testing.T) {
 	}
 
 	// Test tier 2 - should NOT match (authorization vs auth)
-	result2, err := FreezeContracts(manifest, 2, tmpDir)
-	if err != nil {
-		t.Fatalf("FreezeContracts tier 2 failed: %v", err)
+	res2 := FreezeContracts(manifest, 2, tmpDir)
+	if res2.IsFatal() {
+		t.Fatalf("FreezeContracts tier 2 failed: %+v", res2.Errors)
 	}
+	result2 := res2.GetData()
 
 	if len(result2.ContractsFrozen) != 0 {
 		t.Errorf("Tier 2: Expected 0 contracts frozen, got %d", len(result2.ContractsFrozen))
@@ -433,9 +441,9 @@ func TestFreezeContracts_InvalidTier(t *testing.T) {
 		},
 	}
 
-	_, err := FreezeContracts(manifest, 99, tmpDir)
-	if err == nil {
-		t.Error("Expected error for invalid tier number, got nil")
+	res := FreezeContracts(manifest, 99, tmpDir)
+	if !res.IsFatal() {
+		t.Error("Expected fatal result for invalid tier number")
 	}
 }
 
@@ -476,10 +484,11 @@ func TestFreezeContracts_ModifiedFile(t *testing.T) {
 		},
 	}
 
-	result, err := FreezeContracts(manifest, 1, tmpDir)
-	if err != nil {
-		t.Fatalf("FreezeContracts failed: %v", err)
+	res := FreezeContracts(manifest, 1, tmpDir)
+	if res.IsFatal() {
+		t.Fatalf("FreezeContracts failed: %+v", res.Errors)
 	}
+	result := res.GetData()
 
 	if result.Success {
 		t.Error("Expected Success=false when file is modified")

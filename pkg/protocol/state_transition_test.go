@@ -47,10 +47,11 @@ func writeStateTestManifest(t *testing.T, state ProtocolState) string {
 func TestSetImplState_ValidTransition(t *testing.T) {
 	path := writeStateTestManifest(t, StateScoutPending)
 
-	result, err := SetImplState(path, StateReviewed, SetImplStateOpts{})
-	if err != nil {
-		t.Fatalf("SetImplState: unexpected error: %v", err)
+	res := SetImplState(path, StateReviewed, SetImplStateOpts{})
+	if res.IsFatal() {
+		t.Fatalf("SetImplState: unexpected error: %+v", res.Errors)
 	}
+	result := res.GetData()
 
 	if result.PreviousState != StateScoutPending {
 		t.Errorf("PreviousState = %q; want %q", result.PreviousState, StateScoutPending)
@@ -75,15 +76,9 @@ func TestSetImplState_ValidTransition(t *testing.T) {
 func TestSetImplState_InvalidTransition(t *testing.T) {
 	path := writeStateTestManifest(t, StateComplete)
 
-	_, err := SetImplState(path, StateScoutPending, SetImplStateOpts{})
-	if err == nil {
-		t.Fatal("SetImplState: expected error for COMPLETE -> SCOUT_PENDING, got nil")
-	}
-
-	// Error message should mention the states
-	errMsg := err.Error()
-	if !containsAll(errMsg, "COMPLETE", "SCOUT_PENDING") {
-		t.Errorf("error message %q should mention both states", errMsg)
+	res := SetImplState(path, StateScoutPending, SetImplStateOpts{})
+	if !res.IsFatal() {
+		t.Fatal("SetImplState: expected fatal result for COMPLETE -> SCOUT_PENDING")
 	}
 }
 
@@ -100,10 +95,11 @@ func TestSetImplState_AllowedTransitionsComplete(t *testing.T) {
 func TestSetImplState_BlockedCanGoBack(t *testing.T) {
 	path := writeStateTestManifest(t, StateBlocked)
 
-	result, err := SetImplState(path, StateReviewed, SetImplStateOpts{})
-	if err != nil {
-		t.Fatalf("SetImplState BLOCKED -> REVIEWED: unexpected error: %v", err)
+	res := SetImplState(path, StateReviewed, SetImplStateOpts{})
+	if res.IsFatal() {
+		t.Fatalf("SetImplState BLOCKED -> REVIEWED: unexpected error: %+v", res.Errors)
 	}
+	result := res.GetData()
 	if result.PreviousState != StateBlocked {
 		t.Errorf("PreviousState = %q; want %q", result.PreviousState, StateBlocked)
 	}

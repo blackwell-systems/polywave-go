@@ -22,8 +22,8 @@ func TestAutoRemediate_FixesOnFirstAttempt(t *testing.T) {
 	autoRemediateFixBuildFailureFunc = func(ctx context.Context, opts FixBuildOpts) error {
 		return nil // fix succeeds
 	}
-	autoRemediateVerifyBuildFunc = func(implPath, repoPath string) (*protocol.VerifyBuildResult, error) {
-		return &protocol.VerifyBuildResult{
+	autoRemediateVerifyBuildFunc = func(implPath, repoPath string) (*protocol.VerifyBuildData, error) {
+		return &protocol.VerifyBuildData{
 			TestPassed: true,
 			LintPassed: true,
 		}, nil
@@ -32,7 +32,7 @@ func TestAutoRemediate_FixesOnFirstAttempt(t *testing.T) {
 	failedResult := &FinalizeWaveResult{
 		Wave:        1,
 		BuildPassed: false,
-		VerifyBuild: &protocol.VerifyBuildResult{
+		VerifyBuild: &protocol.VerifyBuildData{
 			TestPassed:  false,
 			LintPassed:  true,
 			TestOutput:  "FAIL: some test error",
@@ -80,18 +80,18 @@ func TestAutoRemediate_FixesOnSecondAttempt(t *testing.T) {
 	autoRemediateFixBuildFailureFunc = func(ctx context.Context, opts FixBuildOpts) error {
 		return nil // always "succeeds" from the fix agent perspective
 	}
-	autoRemediateVerifyBuildFunc = func(implPath, repoPath string) (*protocol.VerifyBuildResult, error) {
+	autoRemediateVerifyBuildFunc = func(implPath, repoPath string) (*protocol.VerifyBuildData, error) {
 		verifyCallCount++
 		if verifyCallCount == 1 {
 			// First verify: still failing
-			return &protocol.VerifyBuildResult{
+			return &protocol.VerifyBuildData{
 				TestPassed: false,
 				LintPassed: true,
 				TestOutput: "FAIL: still broken",
 			}, nil
 		}
 		// Second verify: passing
-		return &protocol.VerifyBuildResult{
+		return &protocol.VerifyBuildData{
 			TestPassed: true,
 			LintPassed: true,
 		}, nil
@@ -100,7 +100,7 @@ func TestAutoRemediate_FixesOnSecondAttempt(t *testing.T) {
 	failedResult := &FinalizeWaveResult{
 		Wave:        1,
 		BuildPassed: false,
-		VerifyBuild: &protocol.VerifyBuildResult{
+		VerifyBuild: &protocol.VerifyBuildData{
 			TestPassed: false,
 			LintPassed: true,
 			TestOutput: "FAIL: original error",
@@ -147,10 +147,10 @@ func TestAutoRemediate_ExhaustsRetries(t *testing.T) {
 		fixCallCount++
 		return nil
 	}
-	autoRemediateVerifyBuildFunc = func(implPath, repoPath string) (*protocol.VerifyBuildResult, error) {
+	autoRemediateVerifyBuildFunc = func(implPath, repoPath string) (*protocol.VerifyBuildData, error) {
 		verifyCallCount++
 		// Always still failing
-		return &protocol.VerifyBuildResult{
+		return &protocol.VerifyBuildData{
 			TestPassed: false,
 			LintPassed: false,
 			TestOutput: "FAIL: persistent error",
@@ -161,7 +161,7 @@ func TestAutoRemediate_ExhaustsRetries(t *testing.T) {
 	failedResult := &FinalizeWaveResult{
 		Wave:        2,
 		BuildPassed: false,
-		VerifyBuild: &protocol.VerifyBuildResult{
+		VerifyBuild: &protocol.VerifyBuildData{
 			TestPassed: false,
 			LintPassed: false,
 			TestOutput: "initial failure",
@@ -212,15 +212,15 @@ func TestAutoRemediate_ZeroRetries(t *testing.T) {
 		fixCalled = true
 		return nil
 	}
-	autoRemediateVerifyBuildFunc = func(implPath, repoPath string) (*protocol.VerifyBuildResult, error) {
+	autoRemediateVerifyBuildFunc = func(implPath, repoPath string) (*protocol.VerifyBuildData, error) {
 		verifyCalled = true
-		return &protocol.VerifyBuildResult{TestPassed: true, LintPassed: true}, nil
+		return &protocol.VerifyBuildData{TestPassed: true, LintPassed: true}, nil
 	}
 
 	failedResult := &FinalizeWaveResult{
 		Wave:        1,
 		BuildPassed: false,
-		VerifyBuild: &protocol.VerifyBuildResult{TestPassed: false},
+		VerifyBuild: &protocol.VerifyBuildData{TestPassed: false},
 	}
 
 	result, err := AutoRemediate(context.Background(), AutoRemediateOpts{
@@ -262,12 +262,12 @@ func TestAutoRemediate_EmitsEvents(t *testing.T) {
 	autoRemediateFixBuildFailureFunc = func(ctx context.Context, opts FixBuildOpts) error {
 		return nil
 	}
-	autoRemediateVerifyBuildFunc = func(implPath, repoPath string) (*protocol.VerifyBuildResult, error) {
+	autoRemediateVerifyBuildFunc = func(implPath, repoPath string) (*protocol.VerifyBuildData, error) {
 		verifyCallCount++
 		if verifyCallCount == 1 {
-			return &protocol.VerifyBuildResult{TestPassed: false, LintPassed: true}, nil
+			return &protocol.VerifyBuildData{TestPassed: false, LintPassed: true}, nil
 		}
-		return &protocol.VerifyBuildResult{TestPassed: true, LintPassed: true}, nil
+		return &protocol.VerifyBuildData{TestPassed: true, LintPassed: true}, nil
 	}
 
 	var emittedEvents []string
@@ -278,7 +278,7 @@ func TestAutoRemediate_EmitsEvents(t *testing.T) {
 	failedResult := &FinalizeWaveResult{
 		Wave:        1,
 		BuildPassed: false,
-		VerifyBuild: &protocol.VerifyBuildResult{TestPassed: false},
+		VerifyBuild: &protocol.VerifyBuildData{TestPassed: false},
 	}
 
 	result, err := AutoRemediate(context.Background(), AutoRemediateOpts{
@@ -330,8 +330,8 @@ func TestAutoRemediate_EmitsExhaustedEvent(t *testing.T) {
 	autoRemediateFixBuildFailureFunc = func(ctx context.Context, opts FixBuildOpts) error {
 		return nil
 	}
-	autoRemediateVerifyBuildFunc = func(implPath, repoPath string) (*protocol.VerifyBuildResult, error) {
-		return &protocol.VerifyBuildResult{TestPassed: false, LintPassed: true}, nil
+	autoRemediateVerifyBuildFunc = func(implPath, repoPath string) (*protocol.VerifyBuildData, error) {
+		return &protocol.VerifyBuildData{TestPassed: false, LintPassed: true}, nil
 	}
 
 	var emittedEvents []string
@@ -342,7 +342,7 @@ func TestAutoRemediate_EmitsExhaustedEvent(t *testing.T) {
 	failedResult := &FinalizeWaveResult{
 		Wave:        1,
 		BuildPassed: false,
-		VerifyBuild: &protocol.VerifyBuildResult{TestPassed: false},
+		VerifyBuild: &protocol.VerifyBuildData{TestPassed: false},
 	}
 
 	result, err := AutoRemediate(context.Background(), AutoRemediateOpts{
@@ -385,14 +385,14 @@ func TestAutoRemediate_VerifyBuildSystemError(t *testing.T) {
 		return nil
 	}
 	verifyErr := errors.New("cannot read manifest: file not found")
-	autoRemediateVerifyBuildFunc = func(implPath, repoPath string) (*protocol.VerifyBuildResult, error) {
+	autoRemediateVerifyBuildFunc = func(implPath, repoPath string) (*protocol.VerifyBuildData, error) {
 		return nil, verifyErr
 	}
 
 	failedResult := &FinalizeWaveResult{
 		Wave:        1,
 		BuildPassed: false,
-		VerifyBuild: &protocol.VerifyBuildResult{TestPassed: false},
+		VerifyBuild: &protocol.VerifyBuildData{TestPassed: false},
 	}
 
 	_, err := AutoRemediate(context.Background(), AutoRemediateOpts{
@@ -431,18 +431,18 @@ func TestAutoRemediate_FixAgentErrorContinues(t *testing.T) {
 	}
 
 	verifyCallCount := 0
-	autoRemediateVerifyBuildFunc = func(implPath, repoPath string) (*protocol.VerifyBuildResult, error) {
+	autoRemediateVerifyBuildFunc = func(implPath, repoPath string) (*protocol.VerifyBuildData, error) {
 		verifyCallCount++
 		if verifyCallCount >= 2 {
-			return &protocol.VerifyBuildResult{TestPassed: true, LintPassed: true}, nil
+			return &protocol.VerifyBuildData{TestPassed: true, LintPassed: true}, nil
 		}
-		return &protocol.VerifyBuildResult{TestPassed: false}, nil
+		return &protocol.VerifyBuildData{TestPassed: false}, nil
 	}
 
 	failedResult := &FinalizeWaveResult{
 		Wave:        1,
 		BuildPassed: false,
-		VerifyBuild: &protocol.VerifyBuildResult{TestPassed: false},
+		VerifyBuild: &protocol.VerifyBuildData{TestPassed: false},
 	}
 
 	result, err := AutoRemediate(context.Background(), AutoRemediateOpts{
@@ -476,21 +476,21 @@ func TestAutoRemediate_GateTypeDetection(t *testing.T) {
 		{
 			name: "test fails first",
 			result: &FinalizeWaveResult{
-				VerifyBuild: &protocol.VerifyBuildResult{TestPassed: false, LintPassed: false},
+				VerifyBuild: &protocol.VerifyBuildData{TestPassed: false, LintPassed: false},
 			},
 			expected: "test",
 		},
 		{
 			name: "only lint fails",
 			result: &FinalizeWaveResult{
-				VerifyBuild: &protocol.VerifyBuildResult{TestPassed: true, LintPassed: false},
+				VerifyBuild: &protocol.VerifyBuildData{TestPassed: true, LintPassed: false},
 			},
 			expected: "lint",
 		},
 		{
 			name: "gate result fails",
 			result: &FinalizeWaveResult{
-				VerifyBuild: &protocol.VerifyBuildResult{TestPassed: true, LintPassed: true},
+				VerifyBuild: &protocol.VerifyBuildData{TestPassed: true, LintPassed: true},
 				GateResults: []protocol.GateResult{
 					{Type: "typecheck", Required: true, Passed: false},
 				},
@@ -518,7 +518,7 @@ func TestAutoRemediate_GateTypeDetection(t *testing.T) {
 // combined log correctly from test and lint outputs.
 func TestAutoRemediate_ExtractErrorLog(t *testing.T) {
 	result := &FinalizeWaveResult{
-		VerifyBuild: &protocol.VerifyBuildResult{
+		VerifyBuild: &protocol.VerifyBuildData{
 			TestOutput: "FAIL: test error",
 			LintOutput: "lint: some warning",
 		},

@@ -217,10 +217,11 @@ func TestWiringValidation_TSX(t *testing.T) {
 				},
 			}
 
-			result, err := ValidateWiringDeclarations(manifest, dir)
-			if err != nil {
-				t.Fatalf("ValidateWiringDeclarations: %v", err)
+			res := ValidateWiringDeclarations(manifest, dir)
+			if res.IsFatal() {
+				t.Fatalf("ValidateWiringDeclarations: %+v", res.Errors)
 			}
+			result := res.GetData()
 			if result.Valid != tc.wantValid {
 				t.Errorf("Valid: got %v, want %v; gaps: %+v", result.Valid, tc.wantValid, result.Gaps)
 			}

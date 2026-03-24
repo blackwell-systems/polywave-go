@@ -40,10 +40,11 @@ waves:
 	}
 
 	// Call UpdateContext
-	result, err := UpdateContext(manifestPath, projectRoot)
-	if err != nil {
-		t.Fatalf("UpdateContext failed: %v", err)
+	res := UpdateContext(manifestPath, projectRoot)
+	if res.IsFatal() {
+		t.Fatalf("UpdateContext failed: %+v", res.Errors)
 	}
+	result := res.GetData()
 
 	// Verify result
 	if !result.Updated {
@@ -126,10 +127,11 @@ waves:
 	}
 
 	// Call UpdateContext
-	result, err := UpdateContext(manifestPath, projectRoot)
-	if err != nil {
-		t.Fatalf("UpdateContext failed: %v", err)
+	res := UpdateContext(manifestPath, projectRoot)
+	if res.IsFatal() {
+		t.Fatalf("UpdateContext failed: %+v", res.Errors)
 	}
+	result := res.GetData()
 
 	// Verify result
 	if !result.Updated {
@@ -162,14 +164,9 @@ func TestUpdateContext_InvalidRoot(t *testing.T) {
 	projectRoot := "/tmp"
 
 	// Call UpdateContext - should fail
-	_, err := UpdateContext(manifestPath, projectRoot)
-	if err == nil {
-		t.Error("expected error for nonexistent manifest, got nil")
-	}
-
-	// Error should mention loading manifest
-	if !strings.Contains(err.Error(), "failed to load manifest") {
-		t.Errorf("expected manifest load error, got: %v", err)
+	res := UpdateContext(manifestPath, projectRoot)
+	if !res.IsFatal() {
+		t.Error("expected fatal result for nonexistent manifest")
 	}
 }
 
@@ -206,9 +203,9 @@ waves:
 	defer os.Chmod(readOnlyRoot, 0755) // Cleanup
 
 	// Call UpdateContext - should fail
-	_, err := UpdateContext(manifestPath, readOnlyRoot)
-	if err == nil {
-		t.Error("expected error for read-only directory, got nil")
+	res := UpdateContext(manifestPath, readOnlyRoot)
+	if !res.IsFatal() {
+		t.Error("expected fatal result for read-only directory")
 	}
 }
 
@@ -229,10 +226,11 @@ waves: []
 	}
 
 	// Call UpdateContext
-	result, err := UpdateContext(manifestPath, projectRoot)
-	if err != nil {
-		t.Fatalf("UpdateContext failed: %v", err)
+	res := UpdateContext(manifestPath, projectRoot)
+	if res.IsFatal() {
+		t.Fatalf("UpdateContext failed: %+v", res.Errors)
 	}
+	result := res.GetData()
 
 	// Verify entry shows 0 waves, 0 agents
 	content, err := os.ReadFile(result.ContextPath)

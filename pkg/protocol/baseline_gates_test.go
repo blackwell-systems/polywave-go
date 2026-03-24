@@ -55,18 +55,19 @@ func TestRunBaselineGates_AllPass(t *testing.T) {
 		},
 	}
 
-	result, err := RunBaselineGates(manifest, 1, repoDir, nil)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+	res := RunBaselineGates(manifest, 1, repoDir, nil)
+	if !res.IsSuccess() {
+		t.Fatalf("unexpected failure: %+v", res.Errors)
 	}
-	if !result.Passed {
+	data := res.GetData()
+	if !data.Passed {
 		t.Errorf("expected Passed=true, got false")
 	}
-	if result.Reason != "" {
-		t.Errorf("expected Reason='', got %q", result.Reason)
+	if data.Reason != "" {
+		t.Errorf("expected Reason='', got %q", data.Reason)
 	}
-	if len(result.GateResults) != 2 {
-		t.Errorf("expected 2 gate results, got %d", len(result.GateResults))
+	if len(data.GateResults) != 2 {
+		t.Errorf("expected 2 gate results, got %d", len(data.GateResults))
 	}
 }
 
@@ -81,15 +82,13 @@ func TestRunBaselineGates_RequiredFails(t *testing.T) {
 		},
 	}
 
-	result, err := RunBaselineGates(manifest, 1, repoDir, nil)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if result.Passed {
+	res := RunBaselineGates(manifest, 1, repoDir, nil)
+	data := res.GetData()
+	if data.Passed {
 		t.Errorf("expected Passed=false, got true")
 	}
-	if result.Reason != "baseline_verification_failed" {
-		t.Errorf("expected Reason='baseline_verification_failed', got %q", result.Reason)
+	if data.Reason != "baseline_verification_failed" {
+		t.Errorf("expected Reason='baseline_verification_failed', got %q", data.Reason)
 	}
 }
 
@@ -106,15 +105,13 @@ func TestRunBaselineGates_OptionalFails(t *testing.T) {
 		},
 	}
 
-	result, err := RunBaselineGates(manifest, 1, repoDir, nil)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if !result.Passed {
+	res := RunBaselineGates(manifest, 1, repoDir, nil)
+	data := res.GetData()
+	if !data.Passed {
 		t.Errorf("expected Passed=true (optional failure should not block), got false")
 	}
-	if result.Reason != "" {
-		t.Errorf("expected Reason='', got %q", result.Reason)
+	if data.Reason != "" {
+		t.Errorf("expected Reason='', got %q", data.Reason)
 	}
 }
 
@@ -122,15 +119,13 @@ func TestRunBaselineGates_NoGates(t *testing.T) {
 	repoDir := makeTempGitRepo(t)
 	manifest := &IMPLManifest{} // No quality_gates defined
 
-	result, err := RunBaselineGates(manifest, 1, repoDir, nil)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if !result.Passed {
+	res := RunBaselineGates(manifest, 1, repoDir, nil)
+	data := res.GetData()
+	if !data.Passed {
 		t.Errorf("expected Passed=true for empty manifest, got false")
 	}
-	if len(result.GateResults) != 0 {
-		t.Errorf("expected empty GateResults, got %d", len(result.GateResults))
+	if len(data.GateResults) != 0 {
+		t.Errorf("expected empty GateResults, got %d", len(data.GateResults))
 	}
 }
 
@@ -139,16 +134,17 @@ func TestRunBaselineGates_NilCache(t *testing.T) {
 	manifest := makePassingManifest()
 
 	// Must not panic with nil cache
-	result, err := RunBaselineGates(manifest, 1, repoDir, nil)
-	if err != nil {
-		t.Fatalf("unexpected error with nil cache: %v", err)
+	res := RunBaselineGates(manifest, 1, repoDir, nil)
+	if !res.IsSuccess() {
+		t.Fatalf("unexpected failure with nil cache: %+v", res.Errors)
 	}
-	if !result.Passed {
+	data := res.GetData()
+	if !data.Passed {
 		t.Errorf("expected Passed=true, got false")
 	}
 	// CommitSHA should be empty when cache is nil
-	if result.CommitSHA != "" {
-		t.Errorf("expected CommitSHA='', got %q (cache is nil)", result.CommitSHA)
+	if data.CommitSHA != "" {
+		t.Errorf("expected CommitSHA='', got %q (cache is nil)", data.CommitSHA)
 	}
 }
 
@@ -162,11 +158,12 @@ func TestRunBaselineGates_CommitSHAPopulated(t *testing.T) {
 	}
 	cache := gatecache.New(stateDir, time.Minute)
 
-	result, err := RunBaselineGates(manifest, 1, repoDir, cache)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+	res := RunBaselineGates(manifest, 1, repoDir, cache)
+	if !res.IsSuccess() {
+		t.Fatalf("unexpected failure: %+v", res.Errors)
 	}
-	if result.CommitSHA == "" {
+	data := res.GetData()
+	if data.CommitSHA == "" {
 		t.Errorf("expected CommitSHA to be populated when cache is non-nil and repo is valid")
 	}
 }
@@ -185,15 +182,13 @@ func TestRunCrossRepoBaselineGates_AllPass(t *testing.T) {
 		{Name: "repo-b", Path: dir2, BuildCommand: "echo build-b"},
 	}
 
-	result, err := RunCrossRepoBaselineGates(&IMPLManifest{}, 1, targetRepos, configRepos)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if !result.Passed {
+	res := RunCrossRepoBaselineGates(&IMPLManifest{}, 1, targetRepos, configRepos)
+	data := res.GetData()
+	if !data.Passed {
 		t.Error("expected all repos to pass")
 	}
-	if len(result.Results) != 2 {
-		t.Errorf("expected 2 repo results, got %d", len(result.Results))
+	if len(data.Results) != 2 {
+		t.Errorf("expected 2 repo results, got %d", len(data.Results))
 	}
 }
 
@@ -209,11 +204,9 @@ func TestRunCrossRepoBaselineGates_OneFails(t *testing.T) {
 		{Name: "repo-b", Path: dir2, BuildCommand: "exit 1"},
 	}
 
-	result, err := RunCrossRepoBaselineGates(&IMPLManifest{}, 1, targetRepos, configRepos)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if result.Passed {
+	res := RunCrossRepoBaselineGates(&IMPLManifest{}, 1, targetRepos, configRepos)
+	data := res.GetData()
+	if data.Passed {
 		t.Error("expected failure when one repo fails")
 	}
 }
@@ -229,11 +222,9 @@ func TestRunCrossRepoBaselineGates_FallbackToManifestGates(t *testing.T) {
 		{Name: "repo-a", Path: repoDir},
 	}
 
-	result, err := RunCrossRepoBaselineGates(manifest, 1, targetRepos, configRepos)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if !result.Passed {
+	res := RunCrossRepoBaselineGates(manifest, 1, targetRepos, configRepos)
+	data := res.GetData()
+	if !data.Passed {
 		t.Error("expected pass with manifest gate fallback")
 	}
 }
@@ -245,15 +236,13 @@ func TestRunCrossRepoBaselineGates_WithTestCommand(t *testing.T) {
 		{Name: "repo-a", Path: dir, BuildCommand: "echo build", TestCommand: "echo test"},
 	}
 
-	result, err := RunCrossRepoBaselineGates(&IMPLManifest{}, 1, targetRepos, configRepos)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if !result.Passed {
+	res := RunCrossRepoBaselineGates(&IMPLManifest{}, 1, targetRepos, configRepos)
+	data := res.GetData()
+	if !data.Passed {
 		t.Error("expected pass")
 	}
 	// Should have 2 gate results (build + test)
-	if r, ok := result.Results["repo-a"]; ok {
+	if r, ok := data.Results["repo-a"]; ok {
 		if len(r.GateResults) != 2 {
 			t.Errorf("expected 2 gate results (build+test), got %d", len(r.GateResults))
 		}

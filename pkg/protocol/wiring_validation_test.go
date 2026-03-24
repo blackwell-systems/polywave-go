@@ -149,16 +149,17 @@ func main() {
 				manifest.Wiring = []WiringDeclaration{decl}
 			}
 
-			result, err := ValidateWiringDeclarations(manifest, repoPath)
+			res := ValidateWiringDeclarations(manifest, repoPath)
 			if tc.wantErr {
-				if err == nil {
-					t.Fatal("expected error, got nil")
+				if !res.IsFatal() {
+					t.Fatal("expected fatal result, got success")
 				}
 				return
 			}
-			if err != nil {
-				t.Fatalf("unexpected error: %v", err)
+			if res.IsFatal() {
+				t.Fatalf("unexpected error: %+v", res.Errors)
 			}
+			result := res.GetData()
 			if result.Valid != tc.wantValid {
 				t.Errorf("Valid: got %v, want %v", result.Valid, tc.wantValid)
 			}

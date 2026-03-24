@@ -52,7 +52,7 @@ func TestFinalizeTierData_JSONFields(t *testing.T) {
 				Success: true,
 			},
 		},
-		TierGateData: &TierGateData{
+		TierGateResult: &TierGateData{
 			TierNumber:   1,
 			Passed:       true,
 			GateResults:  []GateResult{},

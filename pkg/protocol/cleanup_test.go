@@ -847,10 +847,11 @@ func TestCleanupBySlug_EmptyRepo(t *testing.T) {
 		t.Fatalf("failed to create initial commit: %v", err)
 	}
 
-	result, err := CleanupBySlug(tmpDir, "some-slug", false)
-	if err != nil {
-		t.Fatalf("CleanupBySlug on empty repo failed: %v", err)
+	res := CleanupBySlug(tmpDir, "some-slug", false)
+	if res.IsFatal() {
+		t.Fatalf("CleanupBySlug on empty repo failed: %+v", res.Errors)
 	}
+	result := res.GetData()
 	if result == nil {
 		t.Fatal("expected non-nil result")
 	}
@@ -966,10 +967,11 @@ func TestCleanupBySlug_NoMatch(t *testing.T) {
 	}
 
 	// Request cleanup for a DIFFERENT slug — should return empty result
-	result, err := CleanupBySlug(tmpDir, "slug-beta", false)
-	if err != nil {
-		t.Fatalf("CleanupBySlug with non-matching slug failed: %v", err)
+	res := CleanupBySlug(tmpDir, "slug-beta", false)
+	if res.IsFatal() {
+		t.Fatalf("CleanupBySlug with non-matching slug failed: %+v", res.Errors)
 	}
+	result := res.GetData()
 	if result == nil {
 		t.Fatal("expected non-nil result")
 	}

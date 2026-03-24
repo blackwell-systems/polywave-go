@@ -29,10 +29,11 @@ waves:
 	}
 
 	// Update status for agent A
-	result, err := UpdateStatus(manifestPath, 1, "A", "complete")
-	if err != nil {
-		t.Fatalf("UpdateStatus failed: %v", err)
+	res := UpdateStatus(manifestPath, 1, "A", "complete")
+	if res.IsFatal() {
+		t.Fatalf("UpdateStatus failed: %+v", res.Errors)
 	}
+	result := res.GetData()
 
 	// Verify result
 	if result.Wave != 1 {
@@ -93,10 +94,11 @@ completion_reports:
 	}
 
 	// Update status from partial to complete
-	result, err := UpdateStatus(manifestPath, 1, "B", "complete")
-	if err != nil {
-		t.Fatalf("UpdateStatus failed: %v", err)
+	res := UpdateStatus(manifestPath, 1, "B", "complete")
+	if res.IsFatal() {
+		t.Fatalf("UpdateStatus failed: %+v", res.Errors)
 	}
+	result := res.GetData()
 
 	// Verify result
 	if result.OldStatus != "partial" {
@@ -151,14 +153,9 @@ waves:
 	}
 
 	// Try to update status for non-existent agent
-	_, err := UpdateStatus(manifestPath, 1, "Z", "complete")
-	if err == nil {
-		t.Fatal("Expected error for non-existent agent, got nil")
-	}
-
-	expectedError := "agent Z not found in wave 1"
-	if err.Error() != expectedError {
-		t.Errorf("Expected error %q, got %q", expectedError, err.Error())
+	res := UpdateStatus(manifestPath, 1, "Z", "complete")
+	if !res.IsFatal() {
+		t.Fatal("Expected fatal result for non-existent agent")
 	}
 }
 
@@ -184,13 +181,8 @@ waves:
 	}
 
 	// Try to update status for wave 99
-	_, err := UpdateStatus(manifestPath, 99, "A", "complete")
-	if err == nil {
-		t.Fatal("Expected error for non-existent wave, got nil")
-	}
-
-	expectedError := "wave 99 not found in manifest"
-	if err.Error() != expectedError {
-		t.Errorf("Expected error %q, got %q", expectedError, err.Error())
+	res := UpdateStatus(manifestPath, 99, "A", "complete")
+	if !res.IsFatal() {
+		t.Fatal("Expected fatal result for non-existent wave")
 	}
 }

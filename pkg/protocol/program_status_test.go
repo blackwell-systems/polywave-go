@@ -30,10 +30,11 @@ func TestGetProgramStatus_AllPending(t *testing.T) {
 		},
 	}
 
-	status, err := GetProgramStatus(manifest, ".")
-	if err != nil {
-		t.Fatalf("GetProgramStatus failed: %v", err)
+	res := GetProgramStatus(manifest, ".")
+	if res.IsFatal() {
+		t.Fatalf("GetProgramStatus failed: %+v", res.Errors)
 	}
+	status := res.GetData()
 
 	if status.ProgramSlug != "test-program" {
 		t.Errorf("expected program_slug=test-program, got %s", status.ProgramSlug)
@@ -90,10 +91,11 @@ func TestGetProgramStatus_Tier1InProgress(t *testing.T) {
 		},
 	}
 
-	status, err := GetProgramStatus(manifest, ".")
-	if err != nil {
-		t.Fatalf("GetProgramStatus failed: %v", err)
+	res := GetProgramStatus(manifest, ".")
+	if res.IsFatal() {
+		t.Fatalf("GetProgramStatus failed: %+v", res.Errors)
 	}
+	status := res.GetData()
 
 	if status.CurrentTier != 1 {
 		t.Errorf("expected current_tier=1, got %d", status.CurrentTier)
@@ -130,10 +132,11 @@ func TestGetProgramStatus_Tier1Complete(t *testing.T) {
 		},
 	}
 
-	status, err := GetProgramStatus(manifest, ".")
-	if err != nil {
-		t.Fatalf("GetProgramStatus failed: %v", err)
+	res := GetProgramStatus(manifest, ".")
+	if res.IsFatal() {
+		t.Fatalf("GetProgramStatus failed: %+v", res.Errors)
 	}
+	status := res.GetData()
 
 	if status.CurrentTier != 2 {
 		t.Errorf("expected current_tier=2, got %d", status.CurrentTier)
@@ -179,10 +182,11 @@ func TestGetProgramStatus_AllComplete(t *testing.T) {
 		},
 	}
 
-	status, err := GetProgramStatus(manifest, ".")
-	if err != nil {
-		t.Fatalf("GetProgramStatus failed: %v", err)
+	res := GetProgramStatus(manifest, ".")
+	if res.IsFatal() {
+		t.Fatalf("GetProgramStatus failed: %+v", res.Errors)
 	}
+	status := res.GetData()
 
 	if status.CurrentTier != 2 {
 		t.Errorf("expected current_tier=2 (all complete), got %d", status.CurrentTier)
@@ -236,10 +240,11 @@ func TestGetProgramStatus_ContractFreezing(t *testing.T) {
 		},
 	}
 
-	status, err := GetProgramStatus(manifest, ".")
-	if err != nil {
-		t.Fatalf("GetProgramStatus failed: %v", err)
+	res := GetProgramStatus(manifest, ".")
+	if res.IsFatal() {
+		t.Fatalf("GetProgramStatus failed: %+v", res.Errors)
 	}
+	status := res.GetData()
 
 	if len(status.ContractStatuses) != 2 {
 		t.Fatalf("expected 2 contract statuses, got %d", len(status.ContractStatuses))
@@ -291,10 +296,11 @@ func TestGetProgramStatus_CompletionCounts(t *testing.T) {
 		},
 	}
 
-	status, err := GetProgramStatus(manifest, ".")
-	if err != nil {
-		t.Fatalf("GetProgramStatus failed: %v", err)
+	res := GetProgramStatus(manifest, ".")
+	if res.IsFatal() {
+		t.Fatalf("GetProgramStatus failed: %+v", res.Errors)
 	}
+	status := res.GetData()
 
 	// Should compute correct counts from actual statuses
 	if status.Completion.TiersComplete != 1 {
@@ -317,9 +323,9 @@ func TestGetProgramStatus_CompletionCounts(t *testing.T) {
 
 // TestGetProgramStatus_NilManifest verifies error handling for nil manifest.
 func TestGetProgramStatus_NilManifest(t *testing.T) {
-	_, err := GetProgramStatus(nil, ".")
-	if err == nil {
-		t.Fatal("expected error for nil manifest, got nil")
+	res := GetProgramStatus(nil, ".")
+	if !res.IsFatal() {
+		t.Fatal("expected fatal result for nil manifest")
 	}
 }
 
@@ -342,10 +348,11 @@ func TestGetProgramStatus_MissingIMPLInTier(t *testing.T) {
 		},
 	}
 
-	status, err := GetProgramStatus(manifest, ".")
-	if err != nil {
-		t.Fatalf("GetProgramStatus should handle missing IMPL gracefully, got error: %v", err)
+	res := GetProgramStatus(manifest, ".")
+	if res.IsFatal() {
+		t.Fatalf("GetProgramStatus should handle missing IMPL gracefully, got error: %+v", res.Errors)
 	}
+	status := res.GetData()
 
 	tier1 := status.TierStatuses[0]
 	if len(tier1.ImplStatuses) != 2 {
@@ -404,10 +411,11 @@ func TestGetProgramStatus_ReadFromDisk(t *testing.T) {
 		},
 	}
 
-	status, err := GetProgramStatus(manifest, tmpDir)
-	if err != nil {
-		t.Fatalf("GetProgramStatus failed: %v", err)
+	res := GetProgramStatus(manifest, tmpDir)
+	if res.IsFatal() {
+		t.Fatalf("GetProgramStatus failed: %+v", res.Errors)
 	}
+	status := res.GetData()
 
 	// impl-a should be updated to "complete" from disk
 	tier1 := status.TierStatuses[0]
@@ -453,10 +461,11 @@ func TestGetProgramStatus_ContractNoFreezeAt(t *testing.T) {
 		},
 	}
 
-	status, err := GetProgramStatus(manifest, ".")
-	if err != nil {
-		t.Fatalf("GetProgramStatus failed: %v", err)
+	res := GetProgramStatus(manifest, ".")
+	if res.IsFatal() {
+		t.Fatalf("GetProgramStatus failed: %+v", res.Errors)
 	}
+	status := res.GetData()
 
 	if len(status.ContractStatuses) != 1 {
 		t.Fatalf("expected 1 contract status, got %d", len(status.ContractStatuses))

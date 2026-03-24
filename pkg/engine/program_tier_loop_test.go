@@ -85,7 +85,7 @@ func TestTierLoop_AutoTriggerReplan_ConstructsCorrectReason(t *testing.T) {
 		return &ReplanResult{ValidationPassed: true}, nil
 	}
 
-	gateResult := &protocol.TierGateResult{
+	gateResult := &protocol.TierGateData{
 		TierNumber:   2,
 		Passed:       false,
 		AllImplsDone: false,
@@ -254,13 +254,13 @@ func TestTierLoop_BuildReplanReason(t *testing.T) {
 	tests := []struct {
 		name      string
 		tier      int
-		gate      *protocol.TierGateResult
+		gate      *protocol.TierGateData
 		wantParts []string
 	}{
 		{
 			name: "incomplete IMPLs",
 			tier: 1,
-			gate: &protocol.TierGateResult{
+			gate: &protocol.TierGateData{
 				AllImplsDone: false,
 				ImplStatuses: []protocol.ImplTierStatus{
 					{Slug: "auth", Status: "complete"},
@@ -272,7 +272,7 @@ func TestTierLoop_BuildReplanReason(t *testing.T) {
 		{
 			name: "gate command failure",
 			tier: 2,
-			gate: &protocol.TierGateResult{
+			gate: &protocol.TierGateData{
 				AllImplsDone: true,
 				GateResults: []protocol.GateResult{
 					{Type: "build", Passed: false, Stderr: "compilation error"},

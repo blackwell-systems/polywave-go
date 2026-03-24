@@ -105,9 +105,9 @@ completion:
 	}
 
 	// Request tier 99 which doesn't exist
-	_, err := CreateProgramWorktrees(manifestPath, 99, dir)
-	if err == nil {
-		t.Fatal("expected error for missing tier, got nil")
+	res := CreateProgramWorktrees(manifestPath, 99, dir)
+	if !res.IsFatal() {
+		t.Fatal("expected fatal result for missing tier")
 	}
 }
 
@@ -136,10 +136,11 @@ completion:
 	}
 
 	// Tier 2 exists but has no IMPLs — should return empty result, no error
-	result, err := CreateProgramWorktrees(manifestPath, 2, dir)
-	if err != nil {
-		t.Fatalf("unexpected error for empty tier: %v", err)
+	res := CreateProgramWorktrees(manifestPath, 2, dir)
+	if res.IsFatal() {
+		t.Fatalf("unexpected error for empty tier: %+v", res.Errors)
 	}
+	result := res.GetData()
 	if result == nil {
 		t.Fatal("expected non-nil result")
 	}

@@ -39,8 +39,9 @@ func TestRunTierGate_AllComplete_GatesPass(t *testing.T) {
 	require.NoError(t, err)
 	defer os.RemoveAll(tmpDir)
 
-	result, err := RunTierGate(manifest, 1, tmpDir)
-	require.NoError(t, err)
+	res := RunTierGate(manifest, 1, tmpDir)
+	require.False(t, res.IsFatal(), "unexpected fatal: %+v", res.Errors)
+	result := res.GetData()
 	assert.NotNil(t, result)
 
 	// All IMPLs should be done
@@ -86,8 +87,9 @@ func TestRunTierGate_NotAllComplete(t *testing.T) {
 	require.NoError(t, err)
 	defer os.RemoveAll(tmpDir)
 
-	result, err := RunTierGate(manifest, 1, tmpDir)
-	require.NoError(t, err)
+	res := RunTierGate(manifest, 1, tmpDir)
+	require.False(t, res.IsFatal(), "unexpected fatal: %+v", res.Errors)
+	result := res.GetData()
 	assert.NotNil(t, result)
 
 	// Not all IMPLs should be done
@@ -140,8 +142,9 @@ func TestRunTierGate_GateFails_Required(t *testing.T) {
 	require.NoError(t, err)
 	defer os.RemoveAll(tmpDir)
 
-	result, err := RunTierGate(manifest, 1, tmpDir)
-	require.NoError(t, err)
+	res := RunTierGate(manifest, 1, tmpDir)
+	require.False(t, res.IsFatal(), "unexpected fatal: %+v", res.Errors)
+	result := res.GetData()
 	assert.NotNil(t, result)
 
 	// All IMPLs should be done
@@ -196,8 +199,9 @@ func TestRunTierGate_GateFails_NotRequired(t *testing.T) {
 	require.NoError(t, err)
 	defer os.RemoveAll(tmpDir)
 
-	result, err := RunTierGate(manifest, 1, tmpDir)
-	require.NoError(t, err)
+	res := RunTierGate(manifest, 1, tmpDir)
+	require.False(t, res.IsFatal(), "unexpected fatal: %+v", res.Errors)
+	result := res.GetData()
 	assert.NotNil(t, result)
 
 	// All IMPLs should be done
@@ -235,10 +239,8 @@ func TestRunTierGate_InvalidTier(t *testing.T) {
 	defer os.RemoveAll(tmpDir)
 
 	// Request a tier that doesn't exist
-	result, err := RunTierGate(manifest, 99, tmpDir)
-	assert.Error(t, err)
-	assert.Nil(t, result)
-	assert.Contains(t, err.Error(), "tier 99 not found")
+	res := RunTierGate(manifest, 99, tmpDir)
+	assert.True(t, res.IsFatal(), "expected fatal result for invalid tier")
 }
 
 func TestRunTierGate_NoGates(t *testing.T) {
@@ -260,8 +262,9 @@ func TestRunTierGate_NoGates(t *testing.T) {
 	require.NoError(t, err)
 	defer os.RemoveAll(tmpDir)
 
-	result, err := RunTierGate(manifest, 2, tmpDir)
-	require.NoError(t, err)
+	res := RunTierGate(manifest, 2, tmpDir)
+	require.False(t, res.IsFatal(), "unexpected fatal: %+v", res.Errors)
+	result := res.GetData()
 	assert.NotNil(t, result)
 
 	// All IMPLs should be done
@@ -292,8 +295,9 @@ func TestRunTierGate_ImplNotFoundInManifest(t *testing.T) {
 	require.NoError(t, err)
 	defer os.RemoveAll(tmpDir)
 
-	result, err := RunTierGate(manifest, 1, tmpDir)
-	require.NoError(t, err)
+	res := RunTierGate(manifest, 1, tmpDir)
+	require.False(t, res.IsFatal(), "unexpected fatal: %+v", res.Errors)
+	result := res.GetData()
 	assert.NotNil(t, result)
 
 	// Not all IMPLs should be done (impl-b is not found)
@@ -334,8 +338,9 @@ func TestRunTierGate_GateCommandWithWorkingDirectory(t *testing.T) {
 	require.NoError(t, err)
 	defer os.RemoveAll(tmpDir)
 
-	result, err := RunTierGate(manifest, 1, tmpDir)
-	require.NoError(t, err)
+	res := RunTierGate(manifest, 1, tmpDir)
+	require.False(t, res.IsFatal(), "unexpected fatal: %+v", res.Errors)
+	result := res.GetData()
 	assert.NotNil(t, result)
 
 	// Gate should pass
@@ -365,8 +370,9 @@ func TestRunTierGate_MixedStatuses(t *testing.T) {
 	require.NoError(t, err)
 	defer os.RemoveAll(tmpDir)
 
-	result, err := RunTierGate(manifest, 1, tmpDir)
-	require.NoError(t, err)
+	res := RunTierGate(manifest, 1, tmpDir)
+	require.False(t, res.IsFatal(), "unexpected fatal: %+v", res.Errors)
+	result := res.GetData()
 	assert.NotNil(t, result)
 
 	// Not all IMPLs are done

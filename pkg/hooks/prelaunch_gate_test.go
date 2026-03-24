@@ -195,7 +195,7 @@ func TestPreLaunchGate_CriticPassed(t *testing.T) {
 	m.FileOwnership = append(m.FileOwnership, protocol.FileOwnership{
 		File: "pkg/foo/qux.go", Agent: "C", Wave: 1,
 	})
-	m.CriticReport = &protocol.CriticResult{
+	m.CriticReport = &protocol.CriticData{
 		Verdict: protocol.CriticVerdictPass,
 	}
 

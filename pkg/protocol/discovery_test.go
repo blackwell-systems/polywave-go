@@ -63,10 +63,11 @@ waves:
 	}
 
 	// List IMPLs
-	result, err := ListIMPLs(tmpDir)
-	if err != nil {
-		t.Fatalf("ListIMPLs failed: %v", err)
+	res := ListIMPLs(tmpDir)
+	if res.IsFatal() {
+		t.Fatalf("ListIMPLs failed: %+v", res.Errors)
 	}
+	result := res.GetData()
 
 	// Verify two summaries returned
 	if len(result.IMPLs) != 2 {
@@ -115,10 +116,11 @@ func TestListIMPLs_EmptyDir(t *testing.T) {
 	tmpDir := t.TempDir()
 
 	// List IMPLs
-	result, err := ListIMPLs(tmpDir)
-	if err != nil {
-		t.Fatalf("ListIMPLs failed: %v", err)
+	res := ListIMPLs(tmpDir)
+	if res.IsFatal() {
+		t.Fatalf("ListIMPLs failed: %+v", res.Errors)
 	}
+	result := res.GetData()
 
 	// Verify empty list returned
 	if len(result.IMPLs) != 0 {
@@ -131,10 +133,11 @@ func TestListIMPLs_InvalidDir(t *testing.T) {
 	invalidDir := "/nonexistent/path/to/dir"
 
 	// List IMPLs
-	result, err := ListIMPLs(invalidDir)
-	if err != nil {
-		t.Fatalf("ListIMPLs failed: %v", err)
+	res := ListIMPLs(invalidDir)
+	if res.IsFatal() {
+		t.Fatalf("ListIMPLs failed: %+v", res.Errors)
 	}
+	result := res.GetData()
 
 	// Verify empty list returned (not an error)
 	if len(result.IMPLs) != 0 {
@@ -176,10 +179,11 @@ waves:
 	}
 
 	// List IMPLs
-	result, err := ListIMPLs(tmpDir)
-	if err != nil {
-		t.Fatalf("ListIMPLs failed: %v", err)
+	res := ListIMPLs(tmpDir)
+	if res.IsFatal() {
+		t.Fatalf("ListIMPLs failed: %+v", res.Errors)
 	}
+	result := res.GetData()
 
 	// Verify only one summary (invalid file should be skipped)
 	if len(result.IMPLs) != 1 {
@@ -233,10 +237,11 @@ completion_reports:
 	}
 
 	// List IMPLs
-	result, err := ListIMPLs(tmpDir)
-	if err != nil {
-		t.Fatalf("ListIMPLs failed: %v", err)
+	res := ListIMPLs(tmpDir)
+	if res.IsFatal() {
+		t.Fatalf("ListIMPLs failed: %+v", res.Errors)
 	}
+	result := res.GetData()
 
 	// Verify one summary returned
 	if len(result.IMPLs) != 1 {
@@ -284,10 +289,11 @@ waves:
 	}
 
 	// List IMPLs
-	result, err := ListIMPLs(tmpDir)
-	if err != nil {
-		t.Fatalf("ListIMPLs failed: %v", err)
+	res := ListIMPLs(tmpDir)
+	if res.IsFatal() {
+		t.Fatalf("ListIMPLs failed: %+v", res.Errors)
 	}
+	result := res.GetData()
 
 	// Verify sorted order
 	if len(result.IMPLs) != 3 {

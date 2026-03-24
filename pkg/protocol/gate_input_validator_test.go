@@ -103,10 +103,11 @@ func TestValidateGateInputs_MatchingReportedAndActual(t *testing.T) {
 		},
 	}
 
-	result, err := ValidateGateInputs(manifest, 1, dir)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+	res := ValidateGateInputs(manifest, 1, dir)
+	if res.IsFatal() {
+		t.Fatalf("unexpected error: %+v", res.Errors)
 	}
+	result := res.GetData()
 	if !result.Valid {
 		t.Errorf("expected Valid=true; MissingFromReport=%v ExtraInReport=%v",
 			result.MissingFromReport, result.ExtraInReport)
@@ -144,10 +145,11 @@ func TestValidateGateInputs_ExtraFilesInReport(t *testing.T) {
 		},
 	}
 
-	result, err := ValidateGateInputs(manifest, 1, dir)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+	res := ValidateGateInputs(manifest, 1, dir)
+	if res.IsFatal() {
+		t.Fatalf("unexpected error: %+v", res.Errors)
 	}
+	result := res.GetData()
 	if result.Valid {
 		t.Errorf("expected Valid=false when report contains extra file not in git diff")
 	}
@@ -188,10 +190,11 @@ func TestValidateGateInputs_MissingFilesFromReport(t *testing.T) {
 		},
 	}
 
-	result, err := ValidateGateInputs(manifest, 1, dir)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+	res := ValidateGateInputs(manifest, 1, dir)
+	if res.IsFatal() {
+		t.Fatalf("unexpected error: %+v", res.Errors)
 	}
+	result := res.GetData()
 	if result.Valid {
 		t.Errorf("expected Valid=false when git diff has file missing from report")
 	}
@@ -212,8 +215,8 @@ func TestValidateGateInputs_WaveNotFound(t *testing.T) {
 		Waves:       []Wave{{Number: 1, Agents: []Agent{{ID: "A"}}}},
 	}
 
-	_, err := ValidateGateInputs(manifest, 99, dir)
-	if err == nil {
-		t.Fatal("expected error for missing wave, got nil")
+	res := ValidateGateInputs(manifest, 99, dir)
+	if !res.IsFatal() {
+		t.Fatal("expected fatal result for missing wave")
 	}
 }
