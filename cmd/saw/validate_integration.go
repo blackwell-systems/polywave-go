@@ -68,7 +68,7 @@ Exits 0 if no gaps found (both reports valid), exits 1 if gaps are detected.`,
 				if wiringRes.IsFatal() {
 					return fmt.Errorf("validate-integration: wiring check failed: %s", wiringRes.Errors[0].Message)
 				}
-				wiringResult = wiringRes.Data
+				wiringResult = wiringRes.GetData()
 				combined.WiringReport = wiringResult
 
 				// Persist wiring report to manifest

@@ -18,11 +18,11 @@ type RunWaveFullOpts struct {
 // RunWaveFullResult captures the results of all wave lifecycle steps.
 type RunWaveFullResult struct {
 	Wave             int                              `json:"wave"`
-	WorktreesCreated *protocol.CreateWorktreesResult  `json:"worktrees_created"`
-	CommitsVerified  *protocol.VerifyCommitsResult    `json:"commits_verified"`
-	Merged           *protocol.MergeAgentsResult      `json:"merged"`
-	BuildVerified    *protocol.VerifyBuildResult      `json:"build_verified"`
-	Cleaned          *protocol.CleanupResult          `json:"cleaned"`
+	WorktreesCreated *protocol.CreateWorktreesData  `json:"worktrees_created"`
+	CommitsVerified  *protocol.VerifyCommitsData    `json:"commits_verified"`
+	Merged           *protocol.MergeAgentsData      `json:"merged"`
+	BuildVerified    *protocol.VerifyBuildData      `json:"build_verified"`
+	Cleaned          *protocol.CleanupData          `json:"cleaned"`
 	Success          bool                             `json:"success"`
 }
 
