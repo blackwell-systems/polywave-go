@@ -55,6 +55,7 @@ waves that execute on the main branch.`,
 				WaveNum:     waveNum,
 				MergeTarget: mergeTarget,
 				NoCache:     noCache,
+				Logger:      newSawLogger(),
 				OnEvent: func(step string, status string, detail string) {
 					fmt.Fprintf(os.Stderr, "prepare-wave: [%s] %s — %s\n", step, status, detail)
 				},

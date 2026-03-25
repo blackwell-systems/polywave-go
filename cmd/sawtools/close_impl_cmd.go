@@ -32,6 +32,7 @@ Examples:
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			manifestPath := args[0]
+			logger := newSawLogger()
 
 			if date == "" {
 				date = time.Now().Format("2006-01-02")
@@ -46,7 +47,7 @@ Examples:
 			// Step 1a: Transition state to COMPLETE (best-effort; failure does not abort)
 			stateRes := protocol.SetImplState(manifestPath, protocol.StateComplete, protocol.SetImplStateOpts{})
 			if !stateRes.IsSuccess() {
-				fmt.Fprintf(os.Stderr, "close-impl: state transition to COMPLETE failed: %v (continuing)\n", stateRes.Errors)
+				logger.Warn("close-impl: state transition to COMPLETE failed", "errs", stateRes.Errors)
 			}
 
 			// Step 1b: Write completion marker

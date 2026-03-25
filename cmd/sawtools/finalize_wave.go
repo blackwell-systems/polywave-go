@@ -206,6 +206,7 @@ pattern matching (H7) and appends diagnosis to the output.`,
 					IMPLPath: manifestPath,
 					RepoPath: repoPath,
 					WaveNum:  waveNum,
+					Logger:   newSawLogger(),
 				}
 				stepResult, stepErr := engine.StepVerifyCommits(cmd.Context(), stepOpts, onEvent)
 				if stepErr != nil {
@@ -282,6 +283,7 @@ pattern matching (H7) and appends diagnosis to the output.`,
 					IMPLPath: manifestPath,
 					RepoPath: firstRepoPath,
 					WaveNum:  waveNum,
+					Logger:   newSawLogger(),
 				}
 				stepResult, stepErr := engine.StepScanStubs(cmd.Context(), stepOpts, manifest, onEvent)
 				if stepErr != nil {
@@ -368,6 +370,7 @@ pattern matching (H7) and appends diagnosis to the output.`,
 					IMPLPath: manifestPath,
 					RepoPath: repoPath,
 					WaveNum:  waveNum,
+					Logger:   newSawLogger(),
 				}
 				_, integrationReport, _ := engine.StepValidateIntegration(cmd.Context(), stepOpts, manifest, onEvent)
 				if integrationReport != nil {
@@ -448,6 +451,7 @@ pattern matching (H7) and appends diagnosis to the output.`,
 					IMPLPath: manifestPath,
 					RepoPath: repoPath,
 					WaveNum:  waveNum,
+					Logger:   newSawLogger(),
 				}
 				stepResult, stepErr := engine.StepVerifyBuild(cmd.Context(), stepOpts, onEvent)
 				if stepErr != nil {
@@ -503,6 +507,7 @@ pattern matching (H7) and appends diagnosis to the output.`,
 					IMPLPath: manifestPath,
 					RepoPath: repoPath,
 					WaveNum:  waveNum,
+					Logger:   newSawLogger(),
 				}
 				stepResult, _ := engine.StepCleanup(cmd.Context(), stepOpts, onEvent)
 				if stepResult != nil && stepResult.Data != nil {
