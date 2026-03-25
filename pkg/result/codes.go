@@ -3,6 +3,7 @@
 // Code ranges by domain:
 //
 //	V001-V099: Validation errors (IMPL doc structure, schema, fields)
+//	W001-W099: Warning codes (advisory only, never block execution)
 //	B001-B099: Build and gate errors (compilation, test, lint failures)
 //	G001-G099: Git errors (merge conflicts, worktree, commit issues)
 //	A001-A099: Agent errors (launch, timeout, brief extraction)
@@ -48,6 +49,13 @@ const (
 	CodeCompletionBounds        = "V033_COMPLETION_BOUNDS"
 	CodeImplsTotalMismatch      = "V034_IMPLS_TOTAL_MISMATCH"
 	CodeP1Violation             = "V035_P1_VIOLATION"
+)
+
+// Warning codes (W001-W099) — advisory only, never block execution
+const (
+	// CodeAgentScopeLarge is emitted when an agent owns more than 8 files
+	// or creates more than 5 new files. Severity is always "warning".
+	CodeAgentScopeLarge = "W001_AGENT_SCOPE_LARGE"
 )
 
 // Build and gate error codes (B001-B099)
