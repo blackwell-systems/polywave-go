@@ -27,8 +27,7 @@ func CheckAgentComplexity(m *IMPLManifest) []result.SAWError {
 	for agentID, count := range totalFiles {
 		if count > 8 {
 			warnings = append(warnings, result.SAWError{
-				// TODO: replace with result.CodeAgentScopeLarge after wave merge
-				Code:     "W001_AGENT_SCOPE_LARGE",
+				Code:     result.CodeAgentScopeLarge,
 				Message:  fmt.Sprintf("agent %s owns %d files (threshold: 8) — consider splitting into two agents", agentID, count),
 				Severity: "warning",
 				Field:    "file_ownership",
@@ -40,8 +39,7 @@ func CheckAgentComplexity(m *IMPLManifest) []result.SAWError {
 	for agentID, newCount := range newFiles {
 		if newCount > 5 {
 			warnings = append(warnings, result.SAWError{
-				// TODO: replace with result.CodeAgentScopeLarge after wave merge
-				Code:     "W001_AGENT_SCOPE_LARGE",
+				Code:     result.CodeAgentScopeLarge,
 				Message:  fmt.Sprintf("agent %s creates %d new files (threshold: 5) — consider splitting into two agents", agentID, newCount),
 				Severity: "warning",
 				Field:    "file_ownership",
