@@ -90,6 +90,7 @@ func main() {
 		newProgramReplanCmd(),
 		newMarkProgramCompleteCmd(),
 		newVerifyInstallCmd(),
+		newInitCmd(),           // zero-config project initialization
 		newMetricsCmd(),
 		newQueryCmd(),
 		newCleanupStaleCmd(),
