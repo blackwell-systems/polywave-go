@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/builddiag"
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/collision"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/observability"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
 )
@@ -32,6 +33,15 @@ type FinalizeWaveOpts struct {
 	// existing informational-only behavior.
 	RequireNoStubs bool
 
+	// CollisionDetectionEnabled: When true, StepCheckTypeCollisions runs before
+	// StepMergeAgents. The CLI sets this to true; web app leaves false (default).
+	CollisionDetectionEnabled bool
+
+	// ClosedLoopRetryEnabled: When true, after a required gate fails in
+	// StepRunGates, engine.ClosedLoopGateRetry is invoked per-agent.
+	// The CLI sets this to true; web app leaves false (default).
+	ClosedLoopRetryEnabled bool
+
 	// SkipMerge: When true, skip steps 1-4 (VerifyCommits, ScanStubs, RunGates, MergeAgents)
 	// and start from verify-build. Used for manual merge escape hatch when E11
 	// blocks merge with false positive.
@@ -54,6 +64,8 @@ type FinalizeWaveResult struct {
 	VerifyBuild    *protocol.VerifyBuildData    `json:"verify_build,omitempty"`
 	BuildDiagnosis *builddiag.Diagnosis         `json:"build_diagnosis,omitempty"`
 	CleanupResult  *protocol.CleanupData        `json:"cleanup_result,omitempty"`
+	CollisionReport  *collision.CollisionReport     `json:"collision_report,omitempty"`
+	WiringReport     *protocol.WiringValidationData `json:"wiring_report,omitempty"`
 	BuildPassed    bool                         `json:"build_passed"`
 	Success        bool                         `json:"success"`
 }

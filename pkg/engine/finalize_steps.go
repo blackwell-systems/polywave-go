@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/builddiag"
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/collision"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/gatecache"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/observability"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
@@ -360,4 +361,209 @@ func StepCleanup(ctx context.Context, opts FinalizeWaveOpts, onEvent EventCallba
 		Status: "success",
 		Data:   cleanupData,
 	}, nil
+}
+
+// StepVerifyCompletionReports checks that every agent in the wave has a
+// completion report (I4). Fatal: returns error listing missing agent IDs.
+func StepVerifyCompletionReports(ctx context.Context, opts FinalizeWaveOpts, manifest *protocol.IMPLManifest, onEvent EventCallback) (*StepResult, error) {
+	const stepName = "verify-completion-reports"
+	emitStepEvent(onEvent, stepName, "running", "")
+
+	var missing []string
+	if opts.WaveNum > 0 && opts.WaveNum <= len(manifest.Waves) {
+		for _, agent := range manifest.Waves[opts.WaveNum-1].Agents {
+			if _, ok := manifest.CompletionReports[agent.ID]; !ok {
+				missing = append(missing, agent.ID)
+			}
+		}
+	}
+
+	if len(missing) > 0 {
+		detail := fmt.Sprintf("missing for agents: %v", missing)
+		emitStepEvent(onEvent, stepName, "failed", detail)
+		return &StepResult{
+			Step:   stepName,
+			Status: "failed",
+			Detail: detail,
+		}, fmt.Errorf("verify-completion-reports: missing for agents: %v (I4)", missing)
+	}
+
+	emitStepEvent(onEvent, stepName, "complete", "")
+	return &StepResult{
+		Step:   stepName,
+		Status: "success",
+	}, nil
+}
+
+// StepCheckAgentStatuses blocks merge if any agent in the wave has status
+// "partial" or "blocked" (E7). Fatal on first violation.
+func StepCheckAgentStatuses(ctx context.Context, opts FinalizeWaveOpts, manifest *protocol.IMPLManifest, onEvent EventCallback) (*StepResult, error) {
+	const stepName = "check-agent-statuses"
+	emitStepEvent(onEvent, stepName, "running", "")
+
+	if opts.WaveNum > 0 && opts.WaveNum <= len(manifest.Waves) {
+		for _, agent := range manifest.Waves[opts.WaveNum-1].Agents {
+			report, ok := manifest.CompletionReports[agent.ID]
+			if !ok {
+				continue
+			}
+			if report.Status == "partial" || report.Status == "blocked" {
+				detail := fmt.Sprintf("agent %s has status %q — cannot merge (E7)", agent.ID, report.Status)
+				emitStepEvent(onEvent, stepName, "failed", detail)
+				return &StepResult{
+					Step:   stepName,
+					Status: "failed",
+					Detail: detail,
+				}, fmt.Errorf("check-agent-statuses: agent %s has status %q — cannot merge (E7)", agent.ID, report.Status)
+			}
+		}
+	}
+
+	emitStepEvent(onEvent, stepName, "complete", "")
+	return &StepResult{
+		Step:   stepName,
+		Status: "success",
+	}, nil
+}
+
+// StepPredictConflicts calls protocol.PredictConflictsFromReports to detect
+// file-level conflicts before merge (E11). Fatal on conflict.
+func StepPredictConflicts(ctx context.Context, opts FinalizeWaveOpts, manifest *protocol.IMPLManifest, onEvent EventCallback) (*StepResult, error) {
+	const stepName = "predict-conflicts"
+	emitStepEvent(onEvent, stepName, "running", "")
+
+	if err := protocol.PredictConflictsFromReports(manifest, opts.WaveNum); err != nil {
+		emitStepEvent(onEvent, stepName, "failed", err.Error())
+		return &StepResult{
+			Step:   stepName,
+			Status: "failed",
+			Detail: err.Error(),
+		}, fmt.Errorf("predict-conflicts: %w", err)
+	}
+
+	emitStepEvent(onEvent, stepName, "complete", "")
+	return &StepResult{
+		Step:   stepName,
+		Status: "success",
+	}, nil
+}
+
+// StepCheckTypeCollisions runs opt-in type collision detection using
+// pkg/collision.DetectCollisions. Skips when CollisionDetectionEnabled is
+// false. Fatal when CollisionReport.Valid == false.
+func StepCheckTypeCollisions(ctx context.Context, opts FinalizeWaveOpts, onEvent EventCallback) (*StepResult, *collision.CollisionReport, error) {
+	const stepName = "check-type-collisions"
+	emitStepEvent(onEvent, stepName, "running", "")
+
+	if !opts.CollisionDetectionEnabled {
+		emitStepEvent(onEvent, stepName, "skipped", "CollisionDetectionEnabled=false")
+		return &StepResult{
+			Step:   stepName,
+			Status: "skipped",
+			Detail: "CollisionDetectionEnabled=false",
+		}, nil, nil
+	}
+
+	report, err := collision.DetectCollisions(opts.IMPLPath, opts.WaveNum, opts.RepoPath)
+	if err != nil {
+		detail := fmt.Sprintf("collision detection error: %v", err)
+		emitStepEvent(onEvent, stepName, "failed", detail)
+		return &StepResult{
+			Step:   stepName,
+			Status: "failed",
+			Detail: detail,
+		}, nil, fmt.Errorf("check-type-collisions: %w", err)
+	}
+
+	if !report.Valid {
+		emitStepEvent(onEvent, stepName, "failed", "collisions detected")
+		return &StepResult{
+			Step:   stepName,
+			Status: "failed",
+			Detail: "collisions detected",
+			Data:   &report,
+		}, &report, fmt.Errorf("check-type-collisions: collisions detected")
+	}
+
+	emitStepEvent(onEvent, stepName, "complete", "")
+	return &StepResult{
+		Step:   stepName,
+		Status: "success",
+		Data:   &report,
+	}, &report, nil
+}
+
+// StepCheckWiringDeclarations validates wiring declarations in the manifest
+// (E35). Non-fatal: gaps are surfaced but do not block merge. Returns
+// (success, nil, nil) when manifest.Wiring is empty.
+func StepCheckWiringDeclarations(ctx context.Context, opts FinalizeWaveOpts, manifest *protocol.IMPLManifest, onEvent EventCallback) (*StepResult, *protocol.WiringValidationData, error) {
+	const stepName = "check-wiring-declarations"
+	emitStepEvent(onEvent, stepName, "running", "")
+
+	if len(manifest.Wiring) == 0 {
+		emitStepEvent(onEvent, stepName, "complete", "no wiring declarations")
+		return &StepResult{
+			Step:   stepName,
+			Status: "success",
+			Detail: "no wiring declarations",
+		}, nil, nil
+	}
+
+	wiringRes := protocol.ValidateWiringDeclarations(manifest, opts.RepoPath)
+	if wiringRes.IsFatal() {
+		// Non-fatal: log warning but do not block
+		detail := fmt.Sprintf("wiring validation error (non-fatal): %v", wiringRes.Errors)
+		loggerFrom(opts.Logger).Warn("engine.StepCheckWiringDeclarations", "errors", wiringRes.Errors)
+		emitStepEvent(onEvent, stepName, "complete", detail)
+		return &StepResult{
+			Step:   stepName,
+			Status: "success",
+			Detail: detail,
+		}, nil, nil
+	}
+
+	wiringData := wiringRes.GetData()
+	emitStepEvent(onEvent, stepName, "complete", wiringData.Summary)
+	return &StepResult{
+		Step:   stepName,
+		Status: "success",
+		Detail: wiringData.Summary,
+		Data:   wiringData,
+	}, wiringData, nil
+}
+
+// StepPopulateIntegrationChecklist calls protocol.PopulateIntegrationChecklist
+// and saves the updated manifest (M5). Non-fatal: errors are logged but do not
+// block merge.
+func StepPopulateIntegrationChecklist(ctx context.Context, opts FinalizeWaveOpts, manifest *protocol.IMPLManifest, onEvent EventCallback) (*StepResult, *protocol.IMPLManifest, error) {
+	const stepName = "populate-integration-checklist"
+	emitStepEvent(onEvent, stepName, "running", "")
+
+	updated, err := protocol.PopulateIntegrationChecklist(manifest)
+	if err != nil {
+		loggerFrom(opts.Logger).Warn("engine.StepPopulateIntegrationChecklist", "err", err)
+		emitStepEvent(onEvent, stepName, "complete", fmt.Sprintf("error (non-fatal): %v", err))
+		return &StepResult{
+			Step:   stepName,
+			Status: "success",
+			Detail: fmt.Sprintf("checklist population error (non-fatal): %v", err),
+		}, nil, nil
+	}
+
+	if saveErr := protocol.Save(updated, opts.IMPLPath); saveErr != nil {
+		loggerFrom(opts.Logger).Warn("engine.StepPopulateIntegrationChecklist", "save_err", saveErr)
+		emitStepEvent(onEvent, stepName, "complete", fmt.Sprintf("save error (non-fatal): %v", saveErr))
+		return &StepResult{
+			Step:   stepName,
+			Status: "success",
+			Detail: fmt.Sprintf("save error (non-fatal): %v", saveErr),
+		}, nil, nil
+	}
+
+	emitStepEvent(onEvent, stepName, "complete", "")
+	return &StepResult{
+		Step:   stepName,
+		Status: "success",
+		Data:   updated,
+	}, updated, nil
 }
