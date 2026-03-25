@@ -69,6 +69,11 @@ func PrepareWave(ctx context.Context, opts PrepareWaveOpts) (*PrepareWaveResult,
 
 	projectRoot := opts.RepoPath
 
+	// Write active-impl marker so SubagentStop hooks can find the IMPL doc.
+	sawStateDir := filepath.Join(projectRoot, ".saw-state")
+	_ = os.MkdirAll(sawStateDir, 0o755)
+	_ = os.WriteFile(filepath.Join(sawStateDir, "active-impl"), []byte(opts.IMPLPath), 0o644)
+
 	// Step: Resume detection — warn on orphaned worktrees
 	if sessions, err := resume.Detect(projectRoot); err == nil {
 		for _, s := range sessions {
