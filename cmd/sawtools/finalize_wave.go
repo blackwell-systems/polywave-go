@@ -116,15 +116,31 @@ pattern matching (H7) and appends diagnosis to the output.`,
 				goto postMerge
 			}
 
-			// Solo wave: if no worktrees were created, skip VerifyCommits and MergeAgents.
-			for _, repoPath := range repos {
-				if protocol.WorktreesAbsent(manifest, waveNum, repoPath) {
-					isSolo = true
-					break
+			// Solo wave: if the manifest declares exactly 1 agent in this wave AND
+			// no worktrees exist, this was a solo-agent wave (no isolation needed).
+			// Skip VerifyCommits and MergeAgents.
+			// CRITICAL: Do NOT use worktree absence alone — worktrees may have been
+			// cleaned up by agents or a prior failed finalize while branches still
+			// need merging.
+			{
+				var waveAgentCount int
+				for _, w := range manifest.Waves {
+					if w.Number == waveNum {
+						waveAgentCount = len(w.Agents)
+						break
+					}
+				}
+				if waveAgentCount <= 1 {
+					for _, repoPath := range repos {
+						if protocol.WorktreesAbsent(manifest, waveNum, repoPath) {
+							isSolo = true
+							break
+						}
+					}
 				}
 			}
 			if isSolo {
-				fmt.Fprintf(os.Stderr, "finalize-wave: solo wave detected (no worktrees), skipping VerifyCommits and MergeAgents\n")
+				fmt.Fprintf(os.Stderr, "finalize-wave: solo wave detected (1 agent, no worktrees), skipping VerifyCommits and MergeAgents\n")
 				for repoKey := range repos {
 					result.MergeResult[repoKey] = &protocol.MergeAgentsData{
 						Wave: waveNum, Success: true,
