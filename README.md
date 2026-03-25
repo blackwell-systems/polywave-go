@@ -1,5 +1,9 @@
 # scout-and-wave-go
 
+[![Blackwell Systems™](https://raw.githubusercontent.com/blackwell-systems/blackwell-docs-theme/main/badge-trademark.svg)](https://github.com/blackwell-systems)
+[![CI](https://github.com/blackwell-systems/scout-and-wave-go/actions/workflows/ci.yml/badge.svg)](https://github.com/blackwell-systems/scout-and-wave-go/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/blackwell-systems/scout-and-wave-go)](https://github.com/blackwell-systems/scout-and-wave-go/releases)
+
 Go engine and Protocol SDK for Scout-and-Wave (SAW) — a coordination protocol for parallel AI agent development that guarantees merge-conflict-free execution by construction.
 
 ---
