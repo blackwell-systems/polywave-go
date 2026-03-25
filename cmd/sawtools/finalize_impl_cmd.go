@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/engine"
 	"github.com/spf13/cobra"
 )
 
@@ -36,8 +36,8 @@ Output: JSON with validation results and gate population stats.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			manifestPath := args[0]
 
-			// Call FinalizeIMPL from pkg/protocol
-			res := protocol.FinalizeIMPL(manifestPath, repoRoot)
+			// Call engine wrapper (context-aware, consistent with web app path)
+			res, _ := engine.FinalizeIMPLEngine(cmd.Context(), manifestPath, repoRoot)
 
 			// Marshal to pretty JSON
 			out, err := json.MarshalIndent(res, "", "  ")

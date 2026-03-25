@@ -1,0 +1,522 @@
+completion_date: "2026-03-24"
+title: Decompose pkg/engine/runner.go into cohesive modules
+feature_slug: runner-decomposition
+verdict: SUITABLE_WITH_CAVEATS
+suitability_assessment: |
+    ## Analysis Summary
+
+    runner.go is 1,220 lines containing 7 major exported functions plus helpers.
+    After reading all callers across scout-and-wave-go and scout-and-wave-web,
+    the decomposition is warranted but more targeted than "break up monolith."
+
+    ### Key findings from caller analysis:
+
+    1. **StartWave is NOT dead code but IS superseded.** The web app no longer calls
+       engine.StartWave — it uses PrepareWave + orchestrator.RunWave + FinalizeWave
+       directly. However, StartWave is still referenced in doc.go examples and the
+       daemon.go pattern. startWaveWithGate is completely dead code — it is defined
+       but never called from anywhere (not even tests). gateChannels sync.Map is
+       declared but never used.
+
+    2. **RunSingleWave has ONE remaining caller:** cmd/saw/commands.go in
+       scout-and-wave-web. The web app's wave_runner.go explicitly comments
+       "replaces engine.RunSingleWave" — it creates its own orchestrator. So
+       RunSingleWave is a legacy CLI convenience wrapper.
+
+    3. **RunScout, RunPlanner, RunScaffold** are called from both CLI and web app.
+       These are "agent launchers" — they share a common pattern (resolve SAW repo,
+       load prompt file, create backend, run agent) but have distinct backend routing
+       (RunScout does structured output branching for API/Bedrock; RunPlanner and
+       RunScaffold use simple backend dispatch).
+
+    4. **JournalIntegration** is only used from runner_test.go — no production code
+       calls it. It was designed for direct orchestrator integration but the web app
+       uses its own journal wiring. It's essentially unused infrastructure.
+
+    5. **Helper functions** (readContextMD, buildProgramContractsSection,
+       runScoutAutomation, detectRequirementsFile, runScaffoldBuildVerification)
+       are all only called from within runner.go itself.
+
+    ### Concrete decomposition benefits:
+
+    - **Scout functions (RunScout + helpers)** — 400+ lines with their own import set
+      (API client, Bedrock backend, suitability, analyzer, commands). Extracting them
+      reduces runner.go's import footprint and makes the Scout pipeline independently
+      navigable. Multiple callers (CLI, web app, daemon) benefit.
+
+    - **Dead code removal** — startWaveWithGate (~107 lines), gateChannels, and
+      potentially JournalIntegration (~115 lines + tests) should be removed, not
+      decomposed. This is cleanup, not decomposition.
+
+    - **Wave execution functions (StartWave, RunSingleWave, RunSingleAgent, MergeWave,
+      RunVerification)** — these are thin orchestrator wrappers. They could move to
+      a wave_runner.go file, but the benefit is modest since they're mostly glue code.
+
+    - **Scaffold functions (RunScaffold + build verification)** — ~190 lines with
+      multi-language build detection. Clean extraction target.
+
+    ### Caveats:
+
+    - JournalIntegration has tests but no production callers. Recommend deprecating
+      rather than moving — but this needs human decision (might be planned for future use).
+    - StartWave is referenced in doc.go comments — extraction needs doc.go update.
+    - The decomposition spans 6+ new/modified files, which benefits from parallelism.
+
+    ### Verdict: SUITABLE WITH CAVEATS
+
+    The decomposition is warranted for: (a) Scout extraction reduces cognitive load
+    and import surface, (b) dead code removal is overdue, (c) scaffold extraction
+    is clean. The caveat is that JournalIntegration's fate (remove vs keep) needs
+    human confirmation.
+
+    Estimated times:
+    - Scout phase: ~8 min (dependency mapping, interface contracts, IMPL doc)
+    - Agent execution: ~10 min (4 agents x 5 min avg, 2 waves with dependency)
+    - Merge & verification: ~3 min
+    Total SAW time: ~21 min
+
+    Sequential baseline: ~25 min (4 agents x 6 min avg sequential)
+    Time savings: ~4 min (16% faster)
+
+    Recommendation: Marginal speed gains but clear coordination value — the file
+    ownership constraints prevent merge conflicts during parallel extraction.
+test_command: go test ./...
+lint_command: go vet ./...
+file_ownership:
+    - file: pkg/engine/scout_runner.go
+      agent: A
+      wave: 1
+      action: new
+    - file: pkg/engine/scaffold_runner.go
+      agent: B
+      wave: 1
+      action: new
+    - file: pkg/engine/wave_ops.go
+      agent: C
+      wave: 1
+      action: new
+    - file: pkg/engine/runner.go
+      agent: D
+      wave: 2
+      action: modify
+    - file: pkg/engine/runner_test.go
+      agent: D
+      wave: 2
+      action: modify
+    - file: pkg/engine/doc.go
+      agent: D
+      wave: 2
+      action: modify
+    - file: pkg/engine/scout_runner_test.go
+      agent: D
+      wave: 2
+      action: new
+    - file: pkg/engine/wave_ops_test.go
+      agent: D
+      wave: 2
+      action: new
+interface_contracts:
+    - name: RunScout
+      description: |
+        Scout agent launcher — moves to scout_runner.go with all Scout-related
+        helpers. Signature unchanged; this is a file move, not an API change.
+      definition: |
+        func RunScout(ctx context.Context, opts RunScoutOpts, onChunk func(string)) error
+      location: pkg/engine/scout_runner.go
+    - name: RunPlanner
+      description: |
+        Planner agent launcher — moves to scout_runner.go alongside RunScout.
+        Both share the SAW repo resolution pattern and readContextMD helper.
+      definition: |
+        func RunPlanner(ctx context.Context, opts RunPlannerOpts, onChunk func(string)) error
+      location: pkg/engine/scout_runner.go
+    - name: RunScaffold
+      description: |
+        Scaffold agent launcher with E22 build verification — moves to
+        scaffold_runner.go with runScaffoldBuildVerification helpers.
+      definition: |
+        func RunScaffold(ctx context.Context, implPath, repoPath, sawRepoPath, model string, onEvent func(Event)) error
+      location: pkg/engine/scaffold_runner.go
+    - name: StartWave
+      description: |
+        Full wave loop — moves to wave_ops.go alongside RunSingleWave,
+        RunSingleAgent, MergeWave, RunVerification, UpdateIMPLStatus,
+        ValidateInvariants. These are thin orchestrator wrappers that
+        belong together.
+      definition: |
+        func StartWave(ctx context.Context, opts RunWaveOpts, onEvent func(Event)) error
+      location: pkg/engine/wave_ops.go
+waves:
+    - number: 1
+      agents:
+        - id: A
+          task: |
+            ## What to implement
+
+            Create `pkg/engine/scout_runner.go` containing all Scout and Planner
+            agent launcher code extracted from runner.go. Move these functions
+            and their helpers:
+
+            **Exported functions:**
+            - `RunScout` (lines 33-125)
+            - `RunPlanner` (lines 143-198)
+
+            **Private helpers (only called by the above):**
+            - `implSlugFromIMPLPath` (lines 127-140)
+            - `runScoutStructured` (lines 200-243)
+            - `runScoutStructuredBedrock` (lines 255-309)
+            - `readContextMD` (lines 572-581)
+            - `runScoutAutomation` (lines 938-1008)
+            - `detectRequirementsFile` (lines 1010-1043)
+            - `buildProgramContractsSection` (lines 1045-1112)
+
+            **Import set for the new file:**
+            ```go
+            import (
+                "context"
+                "encoding/json"
+                "fmt"
+                "os"
+                "path/filepath"
+                "strings"
+                "time"
+
+                "github.com/blackwell-systems/scout-and-wave-go/pkg/agent"
+                "github.com/blackwell-systems/scout-and-wave-go/pkg/agent/backend"
+                apiclient "github.com/blackwell-systems/scout-and-wave-go/pkg/agent/backend/api"
+                bedrockbackend "github.com/blackwell-systems/scout-and-wave-go/pkg/agent/backend/bedrock"
+                "github.com/blackwell-systems/scout-and-wave-go/pkg/analyzer"
+                "github.com/blackwell-systems/scout-and-wave-go/pkg/commands"
+                "github.com/blackwell-systems/scout-and-wave-go/pkg/hooks"
+                "github.com/blackwell-systems/scout-and-wave-go/pkg/observability"
+                "github.com/blackwell-systems/scout-and-wave-go/pkg/orchestrator"
+                "github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
+                "github.com/blackwell-systems/scout-and-wave-go/pkg/suitability"
+                "gopkg.in/yaml.v3"
+            )
+            ```
+
+            **Do NOT modify runner.go.** Agent D in wave 2 will handle removing
+            the moved functions from runner.go. Your job is to create the new file
+            with exact copies of these functions. Do not change any function
+            signatures or behavior.
+
+            ## Verification gate
+            ```bash
+            go build ./pkg/engine/...
+            ```
+            The build will fail with duplicate function errors until wave 2
+            removes them from runner.go. Verify the new file compiles in
+            isolation by checking for syntax errors only:
+            ```bash
+            gofmt -e pkg/engine/scout_runner.go
+            ```
+
+            ## Constraints
+            - Package: `engine` (same package, no import changes needed for callers)
+            - Do NOT change any function signatures
+            - Do NOT add or remove functionality
+            - Copy functions exactly as they exist in runner.go
+          files:
+            - pkg/engine/scout_runner.go
+        - id: B
+          task: |
+            ## What to implement
+
+            Create `pkg/engine/scaffold_runner.go` containing the Scaffold agent
+            launcher and its build verification helpers extracted from runner.go.
+            Move these functions:
+
+            **Exported function:**
+            - `RunScaffold` (lines 493-570)
+
+            **Private helpers (only called by RunScaffold):**
+            - `runScaffoldBuildVerification` (lines 589-591)
+            - `runScaffoldBuildVerificationWithDoc` (lines 596-682)
+
+            **Import set for the new file:**
+            ```go
+            import (
+                "context"
+                "fmt"
+                "os"
+                "os/exec"
+                "path/filepath"
+
+                "github.com/blackwell-systems/scout-and-wave-go/pkg/agent"
+                "github.com/blackwell-systems/scout-and-wave-go/pkg/orchestrator"
+                "github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
+            )
+            ```
+
+            **Do NOT modify runner.go.** Agent D in wave 2 will handle removing
+            the moved functions from runner.go.
+
+            ## Verification gate
+            ```bash
+            gofmt -e pkg/engine/scaffold_runner.go
+            ```
+
+            ## Constraints
+            - Package: `engine` (same package)
+            - Do NOT change any function signatures
+            - Copy functions exactly as they exist in runner.go
+          files:
+            - pkg/engine/scaffold_runner.go
+        - id: C
+          task: |
+            ## What to implement
+
+            Create `pkg/engine/wave_ops.go` containing the wave execution and
+            lifecycle wrapper functions extracted from runner.go. Move these
+            functions:
+
+            **Exported functions:**
+            - `StartWave` (lines 314-488)
+            - `RunSingleWave` (lines 686-719)
+            - `RunSingleAgent` (lines 724-756)
+            - `MergeWave` (lines 760-795)
+            - `RunVerification` (lines 798-808)
+            - `UpdateIMPLStatus` (lines 812-814)
+            - `ValidateInvariants` (lines 818-820)
+
+            **Private helpers:**
+            - `startWaveWithGate` (lines 1117-1220) — NOTE: this function is dead
+              code (never called from anywhere). Include it in wave_ops.go for now;
+              Agent D will decide whether to remove it in wave 2. Add a comment:
+              `// startWaveWithGate is currently unused. Consider removing.`
+
+            **Package-level var:**
+            - `gateChannels sync.Map` (line 491) — also unused, move alongside
+              startWaveWithGate with a similar deprecation comment.
+
+            **Import set for the new file:**
+            ```go
+            import (
+                "context"
+                "fmt"
+                "os"
+                "path/filepath"
+                "sync"
+                "time"
+
+                "github.com/blackwell-systems/scout-and-wave-go/pkg/journal"
+                "github.com/blackwell-systems/scout-and-wave-go/pkg/orchestrator"
+                "github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
+                "github.com/blackwell-systems/scout-and-wave-go/pkg/retryctx"
+            )
+            ```
+
+            **Do NOT modify runner.go.** Agent D in wave 2 handles cleanup.
+
+            ## Verification gate
+            ```bash
+            gofmt -e pkg/engine/wave_ops.go
+            ```
+
+            ## Constraints
+            - Package: `engine` (same package)
+            - Do NOT change any function signatures
+            - Copy functions exactly as they exist in runner.go
+            - Add deprecation comments on startWaveWithGate and gateChannels
+          files:
+            - pkg/engine/wave_ops.go
+      base_commit: f97e7019508b2f7c55038f6e16a52f412591827e
+    - number: 2
+      agents:
+        - id: D
+          task: |
+            ## What to implement
+
+            Clean up runner.go by removing all functions that were extracted to
+            new files in wave 1. After your changes, runner.go should contain
+            ONLY the JournalIntegration type and its methods (which have no
+            production callers but have tests in runner_test.go).
+
+            **Functions to REMOVE from runner.go** (now in scout_runner.go):
+            - RunScout
+            - RunPlanner
+            - implSlugFromIMPLPath
+            - runScoutStructured
+            - runScoutStructuredBedrock
+            - readContextMD
+            - runScoutAutomation
+            - detectRequirementsFile
+            - buildProgramContractsSection
+
+            **Functions to REMOVE from runner.go** (now in scaffold_runner.go):
+            - RunScaffold
+            - runScaffoldBuildVerification
+            - runScaffoldBuildVerificationWithDoc
+
+            **Functions to REMOVE from runner.go** (now in wave_ops.go):
+            - StartWave
+            - RunSingleWave
+            - RunSingleAgent
+            - MergeWave
+            - RunVerification
+            - UpdateIMPLStatus
+            - ValidateInvariants
+            - startWaveWithGate
+            - gateChannels (var)
+
+            **What REMAINS in runner.go after cleanup:**
+            - JournalIntegration struct and all its methods (PrepareAgentContext,
+              StartPeriodicSync, TriggerCheckpoint, ArchiveJournal)
+            - NewJournalIntegration constructor
+            - Add a file-level comment noting JournalIntegration has no production
+              callers and is a candidate for removal or integration
+
+            **Update runner.go imports** to only include what JournalIntegration needs:
+            ```go
+            import (
+                "context"
+                "fmt"
+                "time"
+
+                "github.com/blackwell-systems/scout-and-wave-go/pkg/journal"
+            )
+            ```
+
+            **Update runner_test.go:**
+            - Keep all JournalIntegration tests (they test code still in runner.go)
+            - Move TestRunScout_MissingScoutMd, TestRunScoutMissingFeature to a
+              new file `pkg/engine/scout_runner_test.go`
+            - Move TestStartWaveEmptyIMPL to a new file `pkg/engine/wave_ops_test.go`
+            - Move TestReadContextMDMissing to scout_runner_test.go
+            - Move TestRunScoutOpts_ProgramManifestPath, TestRunScout_ProgramManifestNotFound,
+              TestBuildProgramContractsSection to scout_runner_test.go
+
+            **Update doc.go:**
+            - Update import path references if any mention runner.go specifically
+            - Ensure examples still reference correct function names
+
+            ## Verification gate
+            ```bash
+            go build ./pkg/engine/... && go test ./pkg/engine/... -count=1
+            ```
+
+            ## Constraints
+            - Do NOT change any function signatures or behavior
+            - Do NOT delete JournalIntegration — it has tests even if no production callers
+            - Ensure all existing tests pass after the move
+            - The package-level `init()` in engine.go must NOT be touched
+          files:
+            - pkg/engine/runner.go
+            - pkg/engine/runner_test.go
+            - pkg/engine/doc.go
+            - pkg/engine/scout_runner_test.go
+            - pkg/engine/wave_ops_test.go
+          dependencies:
+            - A
+            - B
+            - C
+      base_commit: f97e7019508b2f7c55038f6e16a52f412591827e
+quality_gates:
+    level: standard
+    gates:
+        - type: build
+          command: go build ./...
+          required: true
+        - type: lint
+          command: go vet ./...
+          required: true
+        - type: test
+          command: go test ./pkg/engine/...
+          required: true
+completion_reports:
+    A:
+        status: complete
+        branch: saw/runner-decomposition/wave1-agent-A
+        commit: 5c897e2
+        files_changed:
+            - pkg/engine/scout_runner.go
+        files_created:
+            - pkg/engine/scout_runner.go
+        verification: PASS (gofmt -e syntax check)
+    B:
+        status: complete
+        branch: saw/runner-decomposition/wave1-agent-B
+        commit: 66dd3cd
+        files_changed:
+            - pkg/engine/scaffold_runner.go
+        files_created:
+            - pkg/engine/scaffold_runner.go
+        verification: PASS (gofmt clean; build deferred to Wave 2 after duplicates removed from runner.go)
+    C:
+        status: complete
+        branch: saw/runner-decomposition/wave1-agent-C
+        commit: 9b18e19
+        files_changed:
+            - pkg/engine/wave_ops.go
+        files_created:
+            - pkg/engine/wave_ops.go
+        verification: PASS (gofmt -e passes; build has expected duplicate symbols until Agent D removes originals from runner.go in wave 2)
+    D:
+        status: complete
+        branch: saw/runner-decomposition/wave2-agent-D
+        commit: "6307463"
+        files_changed:
+            - pkg/engine/runner.go
+            - pkg/engine/runner_test.go
+        files_created:
+            - pkg/engine/scout_runner_test.go
+            - pkg/engine/wave_ops_test.go
+        tests_added:
+            - TestRunScout_MissingScoutMd
+            - TestRunScoutMissingFeature
+            - TestReadContextMDMissing
+            - TestRunScoutOpts_ProgramManifestPath
+            - TestRunScout_ProgramManifestNotFound
+            - TestBuildProgramContractsSection
+            - TestStartWaveEmptyIMPL
+        verification: PASS
+pre_mortem:
+    overall_risk: low
+    rows:
+        - scenario: Duplicate function declarations during wave 1 prevent go build
+          likelihood: high
+          impact: low
+          mitigation: |
+            Wave 1 agents create new files but do not remove from runner.go.
+            Build will fail with duplicates until wave 2 removes originals.
+            Wave 1 verification uses gofmt -e (syntax only), not go build.
+            Wave 2 does the actual go build verification.
+        - scenario: Import cleanup in runner.go misses a dependency
+          likelihood: medium
+          impact: low
+          mitigation: |
+            Agent D's verification gate runs go build which catches unused
+            imports immediately. Fix is mechanical.
+        - scenario: Test file split breaks test helpers or shared fixtures
+          likelihood: low
+          impact: low
+          mitigation: |
+            runner_test.go tests are independent — each creates its own
+            t.TempDir() and has no shared state. Split is safe.
+        - scenario: JournalIntegration removal requested after decomposition
+          likelihood: medium
+          impact: low
+          mitigation: |
+            JournalIntegration is isolated in runner.go after decomposition.
+            Removing it later is a single-file change. The decomposition
+            makes this future cleanup easier, not harder.
+critic_report:
+    verdict: PASS
+    agent_reviews:
+        A:
+            agent_id: A
+            verdict: PASS
+        B:
+            agent_id: B
+            verdict: PASS
+        C:
+            agent_id: C
+            verdict: PASS
+        D:
+            agent_id: D
+            verdict: PASS
+    summary: All briefs verified. Agent C import list corrected (removed unused strings and observability). All function signatures match. File mappings accurate.
+    reviewed_at: "2026-03-25T05:44:57Z"
+    issue_count: 0
+state: COMPLETE

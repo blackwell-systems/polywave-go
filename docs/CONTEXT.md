@@ -189,3 +189,7 @@ type BackendConfig struct {
   - IMPL doc: docs/IMPL/complete/IMPL-unified-state-management.yaml
 - **engine-decomposition**: completed 2026-03-24, 2 waves, 5 agents
   - IMPL doc: docs/IMPL/complete/IMPL-engine-decomposition.yaml
+- **unify-config-management**: completed 2026-03-24, 1 waves, 2 agents
+  - IMPL doc: docs/IMPL/complete/IMPL-unify-config-management.yaml
+- **runner-decomposition**: completed 2026-03-24, 2 waves, 4 agents
+  - IMPL doc: docs/IMPL/complete/IMPL-runner-decomposition.yaml

@@ -292,21 +292,21 @@ func TestCriticThresholdMet(t *testing.T) {
 }
 
 // TestRunScoutCmd_SingleFinalizationEntryPoint verifies that run_scout_cmd.go
-// calls FinalizeIMPL exactly once and does not duplicate validation logic inline.
+// calls FinalizeIMPLEngine exactly once and does not duplicate validation logic inline.
 // The single-entry-point contract ensures all post-Scout validation flows through
-// protocol.FinalizeIMPL, which owns the validate → populate-gates → validate pipeline.
+// engine.FinalizeIMPLEngine, which owns the validate → populate-gates → validate pipeline.
 func TestRunScoutCmd_SingleFinalizationEntryPoint(t *testing.T) {
-	// Read the source file and count FinalizeIMPL call sites.
+	// Read the source file and count FinalizeIMPLEngine call sites.
 	src, err := os.ReadFile("run_scout_cmd.go")
 	if err != nil {
 		t.Fatalf("failed to read run_scout_cmd.go: %v", err)
 	}
 	content := string(src)
 
-	// Exactly one call to protocol.FinalizeIMPL must exist.
-	callCount := strings.Count(content, "protocol.FinalizeIMPL(")
+	// Exactly one call to engine.FinalizeIMPLEngine must exist.
+	callCount := strings.Count(content, "engine.FinalizeIMPLEngine(")
 	if callCount != 1 {
-		t.Errorf("expected exactly 1 call to protocol.FinalizeIMPL, found %d", callCount)
+		t.Errorf("expected exactly 1 call to engine.FinalizeIMPLEngine, found %d", callCount)
 	}
 
 	// There must be a comment marking it as the single entry point for post-Scout validation.

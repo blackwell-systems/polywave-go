@@ -1,0 +1,389 @@
+title: M4 Pre-commit Quality Gate
+feature_slug: m4-pre-commit-gate
+verdict: SUITABLE
+suitability_assessment: 'File decomposition: 5 distinct files to create/modify across 2 repos, cleanly
+
+  disjoint. Wave 1 has 3 agents with no shared file ownership. Wave 2 is a
+
+  docs-only integration wave for the protocol repo update.
+
+
+  Interface discoverability: gate_discovery.go exports DiscoverLintGate() which
+
+  both cmd files consume. Signature is fully specifiable before implementation.
+
+
+  Parallelization value: Go build/test cycle is ~10-15s. Wave 1 has 3 independent
+
+  agents (core lib, pre-commit-check cmd, install-hooks cmd). Clear speedup over
+
+  sequential implementation.
+
+
+  Estimated times:
+
+  - Scout phase: ~10 min
+
+  - Agent execution: ~3 agents x ~15 min avg + 1 integration agent x ~10 min = ~35 min with parallelism
+
+  - Merge and verification: ~5 min
+
+  Total SAW time: ~50 min
+
+  Sequential baseline: ~4 tasks x 20 min = ~80 min
+
+  Time savings: ~30 min (~38% faster)
+
+
+  Recommendation: Clear speedup. Proceed.
+
+  '
+test_command: go test ./pkg/protocol/... ./cmd/sawtools/...
+lint_command: go vet ./...
+file_ownership:
+- file: pkg/protocol/gate_discovery.go
+  agent: A
+  wave: 1
+  action: new
+  repo: scout-and-wave-go
+- file: cmd/sawtools/pre_commit_cmd.go
+  agent: B
+  wave: 1
+  action: new
+  repo: scout-and-wave-go
+- file: cmd/sawtools/install_hooks_cmd.go
+  agent: C
+  wave: 1
+  action: new
+  repo: scout-and-wave-go
+- file: cmd/sawtools/main.go
+  agent: D
+  wave: 2
+  action: modify
+  depends_on:
+  - A
+  - B
+  - C
+  repo: scout-and-wave-go
+- file: cmd/sawtools/prepare_wave.go
+  agent: D
+  wave: 2
+  action: modify
+  depends_on:
+  - A
+  repo: scout-and-wave-go
+- file: implementations/claude-code/prompts/saw-skill.md
+  agent: E
+  wave: 2
+  action: modify
+  repo: scout-and-wave
+interface_contracts:
+- name: DiscoverLintGate
+  description: 'Discovers the active IMPL doc for the given repo directory and returns
+
+    the lint gate command string. Falls back to saw.config.json if no active
+
+    IMPL is found. Returns empty string and nil error if neither is present
+
+    (silent pass).
+
+    '
+  definition: '// DiscoverLintGate searches for an active IMPL doc under repoDir/docs/IMPL/
+
+    // and extracts the first gate of type "lint". If no IMPL doc is found or
+
+    // none defines a lint gate, it falls back to saw.config.json''s lint_command
+
+    // field. Returns ("", nil) if nothing is configured (silent pass).
+
+    func DiscoverLintGate(repoDir string) (command string, err error)
+
+    '
+  location: pkg/protocol/gate_discovery.go
+- name: RunPreCommitCheck
+  description: 'Core logic for the pre-commit-check command. Calls DiscoverLintGate,
+
+    runs the lint command if non-empty, and returns exit code 0 on pass
+
+    or 1 on failure. Silent pass (exit 0) if no gate discovered.
+
+    '
+  definition: '// RunPreCommitCheck discovers and executes the lint gate for the repo.
+
+    // Returns nil on pass (including silent pass with no gate configured).
+
+    // Returns error with lint output on failure.
+
+    func RunPreCommitCheck(repoDir string) error
+
+    '
+  location: cmd/sawtools/pre_commit_cmd.go
+- name: newPreCommitCheckCmd
+  description: cobra.Command constructor for sawtools pre-commit-check
+  definition: 'func newPreCommitCheckCmd() *cobra.Command
+
+    '
+  location: cmd/sawtools/pre_commit_cmd.go
+- name: newInstallHooksCmd
+  description: cobra.Command constructor for sawtools install-hooks
+  definition: 'func newInstallHooksCmd() *cobra.Command
+
+    '
+  location: cmd/sawtools/install_hooks_cmd.go
+waves:
+- number: 1
+  agents:
+  - id: A
+    task: "Implement `pkg/protocol/gate_discovery.go` in the scout-and-wave-go repo\n(`/Users/dayna.blackwell/code/scout-and-wave-go`).\n\
+      \n## What to implement\n\nCreate `pkg/protocol/gate_discovery.go` with package `protocol`.\n\nExport one function:\n\
+      \n```go\nfunc DiscoverLintGate(repoDir string) (string, error)\n```\n\nDiscovery logic (in order):\n1. Look for YAML\
+      \ files in `<repoDir>/docs/IMPL/` matching `IMPL-*.yaml`.\n   For each file found, parse it as an `IMPLManifest` (use\
+      \ the existing\n   `protocol.Load(path)` function already present in the package).\n   Check `manifest.State` — only\
+      \ consider manifests whose state is NOT\n   \"COMPLETE\" and NOT \"NOT_SUITABLE\" (i.e., active IMPLs).\n   For each\
+      \ active manifest, scan `manifest.QualityGates.Gates` for a gate\n   with `Type == \"lint\"`. Return `gate.Command`\
+      \ for the first lint gate found.\n2. If no active IMPL with a lint gate is found, look for `<repoDir>/saw.config.json`.\n\
+      \   Parse it as a struct with a top-level `lint_command` string field. Return\n   that value if non-empty.\n3. If neither\
+      \ source provides a command, return `(\"\", nil)` — silent pass.\n\nReturn an error only for unexpected I/O failures\
+      \ (malformed YAML is\nnon-fatal: skip that file and continue).\n\n## Imports to use\n- `os`, `path/filepath`, `strings`\n\
+      - `encoding/json` (for saw.config.json parsing)\n- `gopkg.in/yaml.v3` (already a project dependency)\n- Do NOT import\
+      \ cmd packages from pkg/protocol\n\n## Tests\nCreate `pkg/protocol/gate_discovery_test.go`. Write table-driven tests:\n\
+      - No docs/IMPL/ directory: returns (\"\", nil)\n- IMPL present but state=COMPLETE: skips it, returns (\"\", nil)\n-\
+      \ Active IMPL with lint gate: returns the command\n- Active IMPL without lint gate, but saw.config.json present: returns\
+      \ config value\n- Both absent: returns (\"\", nil)\nUse `os.MkdirTemp` for test fixtures.\n\n## Verification gate\n\
+      ```\ngo build ./pkg/protocol/...\ngo vet ./pkg/protocol/...\ngo test ./pkg/protocol/... -run TestDiscoverLintGate\n\
+      ```\n\n## Constraints\n- Language-agnostic: do not hardcode any lint command strings\n- Must not modify any existing\
+      \ files\n- Reuse `IMPLManifest`, `QualityGates`, `QualityGate` types from `pkg/protocol/types.go`\n"
+    files:
+    - pkg/protocol/gate_discovery.go
+  - id: B
+    task: "Implement `cmd/sawtools/pre_commit_cmd.go` in the scout-and-wave-go repo\n(`/Users/dayna.blackwell/code/scout-and-wave-go`).\n\
+      \n## What to implement\n\nCreate `cmd/sawtools/pre_commit_cmd.go` with package `main`.\n\nThis file provides the `sawtools\
+      \ pre-commit-check` CLI command. It calls\n`protocol.DiscoverLintGate` and runs the result.\n\n### Interface contract\
+      \ to implement against\n\nAgent A (wave 1, parallel) is implementing `protocol.DiscoverLintGate(repoDir string) (string,\
+      \ error)`.\nUse it exactly as specified. The import path is:\n`github.com/blackwell-systems/scout-and-wave-go/pkg/protocol`\n\
+      \n### cobra command\n\n```go\nfunc newPreCommitCheckCmd() *cobra.Command\n```\n\nUse: `pre-commit-check`\nShort: `Run\
+      \ lint gate from active IMPL doc (pre-commit hook entry point)`\nFlags: `--repo-dir string` (default: `.`)\n\nRunE logic:\n\
+      1. Call `protocol.DiscoverLintGate(repoDir)`\n2. If err != nil: print error, return err\n3. If command == \"\": print\
+      \ nothing, return nil (silent pass)\n4. Print `[pre-commit] running lint gate: <command>` to stderr\n5. Execute the\
+      \ command via `exec.Command(\"sh\", \"-c\", command)` with\n   Dir=repoDir, Stdout=os.Stdout, Stderr=os.Stderr\n6. If\
+      \ exit code != 0: return fmt.Errorf(\"lint gate failed: exit %d\", code)\n7. Return nil on success\n\nAlso export a\
+      \ helper used by tests:\n```go\nfunc RunPreCommitCheck(repoDir string) error\n```\n(Same logic as RunE body, minus cobra\
+      \ boilerplate.)\n\n## Tests\nCreate `cmd/sawtools/pre_commit_cmd_test.go`. Test:\n- Silent pass when DiscoverLintGate\
+      \ would return \"\" (use a temp dir with no IMPL)\n- Command runs successfully when a valid lint gate is discovered\n\
+      Test against `go vet ./...` on the repo itself for the success case.\n\n## Verification gate\n```\ngo build ./cmd/sawtools/...\n\
+      go vet ./cmd/sawtools/...\ngo test ./cmd/sawtools/... -run TestPreCommitCheck\n```\n\n## Constraints\n- Do NOT register\
+      \ the command in main.go (Agent D does that in wave 2)\n- Do NOT modify any existing files\n- Use `github.com/spf13/cobra`\
+      \ (already a project dependency)\n"
+    files:
+    - cmd/sawtools/pre_commit_cmd.go
+  - id: C
+    task: "Implement `cmd/sawtools/install_hooks_cmd.go` in the scout-and-wave-go repo\n(`/Users/dayna.blackwell/code/scout-and-wave-go`).\n\
+      \n## What to implement\n\nCreate `cmd/sawtools/install_hooks_cmd.go` with package `main`.\n\nThis file provides the\
+      \ `sawtools install-hooks` CLI command. It installs\na pre-commit hook that calls `sawtools pre-commit-check`.\n\n###\
+      \ cobra command\n\n```go\nfunc newInstallHooksCmd() *cobra.Command\n```\n\nUse: `install-hooks`\nShort: `Install SAW\
+      \ pre-commit quality gate hook into .git/hooks/pre-commit`\nFlags: `--repo-dir string` (default: `.`)\n\nRunE logic:\n\
+      1. Resolve the .git directory (handle both regular repos and worktrees,\n   same pattern as `verifyHookInstalled` in\
+      \ `verify_hook_installed.go`).\n2. Compute hookPath = `<gitDir>/hooks/pre-commit`\n3. Read existing hook content (empty\
+      \ string if file doesn't exist).\n4. Define the snippet to inject:\n   ```\n   # SAW pre-commit quality gate (M4)\n\
+      \   sawtools pre-commit-check --repo-dir \"$(git rev-parse --show-toplevel)\"\n   ```\n5. If existing content already\
+      \ contains `sawtools pre-commit-check`: print\n   \"[install-hooks] already installed\" and return nil (idempotent).\n\
+      6. If file is empty/missing: write a new hook file:\n   ```\n   #!/bin/sh\n   set -e\n   # SAW pre-commit quality gate\
+      \ (M4)\n   sawtools pre-commit-check --repo-dir \"$(git rev-parse --show-toplevel)\"\n   ```\n7. If file exists and\
+      \ doesn't already contain the snippet: append the\n   snippet to the end of the existing content (preserve existing\
+      \ hooks).\n8. Set file permissions to 0755 (executable).\n9. Print \"[install-hooks] pre-commit hook installed at <hookPath>\"\
+      \n\n## Tests\nCreate `cmd/sawtools/install_hooks_cmd_test.go`. Test:\n- Fresh install (no existing hook): creates executable\
+      \ hook with correct content\n- Idempotent: running twice does not duplicate the snippet\n- Append mode: existing hook\
+      \ content is preserved, snippet is appended\nUse `os.MkdirTemp` and a synthetic `.git/hooks/` directory for fixtures.\n\
+      \n## Verification gate\n```\ngo build ./cmd/sawtools/...\ngo vet ./cmd/sawtools/...\ngo test ./cmd/sawtools/... -run\
+      \ TestInstallHooks\n```\n\n## Constraints\n- Do NOT register the command in main.go (Agent D does that in wave 2)\n\
+      - Do NOT modify any existing files\n- Reuse the .git resolution pattern from verify_hook_installed.go for\n  consistency\
+      \ (read and follow the same gitdir pointer logic)\n"
+    files:
+    - cmd/sawtools/install_hooks_cmd.go
+- number: 2
+  type: integration
+  agents:
+  - id: D
+    task: 'Wire the new M4 commands into `cmd/sawtools/main.go` and add a hooks
+
+      check warning to `cmd/sawtools/prepare_wave.go` in the scout-and-wave-go
+
+      repo (`/Users/dayna.blackwell/code/scout-and-wave-go`).
+
+
+      ## Wave 1 agents completed
+
+      - Agent A: `pkg/protocol/gate_discovery.go` — exports `DiscoverLintGate`
+
+      - Agent B: `cmd/sawtools/pre_commit_cmd.go` — exports `newPreCommitCheckCmd`
+
+      - Agent C: `cmd/sawtools/install_hooks_cmd.go` — exports `newInstallHooksCmd`
+
+
+      ## Task 1: Register commands in main.go
+
+
+      In `cmd/sawtools/main.go`, add two entries to the `rootCmd.AddCommand(...)` call:
+
+      ```go
+
+      newPreCommitCheckCmd(),
+
+      newInstallHooksCmd(),
+
+      ```
+
+      Add them after `newVerifyHookInstalledCmd()` to keep hook-related commands grouped.
+
+
+      ## Task 2: Add hooks check warning to prepare-wave
+
+
+      In `cmd/sawtools/prepare_wave.go`, find the pre-flight check section (before
+
+      worktree creation). Add a non-blocking check: look for a `.git/hooks/pre-commit`
+
+      file in the repo root and check if it contains the string `sawtools pre-commit-check`.
+
+      If the hook is missing or doesn''t contain the M4 lint gate call, print a
+
+      warning to stderr:
+
+      ```
+
+      [prepare-wave] WARNING: M4 lint gate hook not installed. Run ''sawtools install-hooks'' to enable pre-commit lint checking.
+
+      ```
+
+      This warning must be non-blocking — prepare-wave continues regardless.
+
+      Do NOT call `verifyHookInstalled` — that function checks for SAW isolation
+
+      hooks, not M4 lint gate hooks.
+
+
+      ## Verification gate
+
+      ```
+
+      go build ./cmd/sawtools/...
+
+      go vet ./cmd/sawtools/...
+
+      go test ./cmd/sawtools/... -run TestPrepareWave
+
+      ```
+
+
+      ## Constraints
+
+      - Only modify main.go and prepare_wave.go
+
+      - The hooks warning must be non-blocking (never return an error for missing hook)
+
+      '
+    files:
+    - cmd/sawtools/main.go
+    - cmd/sawtools/prepare_wave.go
+    dependencies:
+    - A
+    - B
+    - C
+  - id: E
+    task: "Update the /saw skill prompt in the protocol repo to mention `install-hooks`.\nThis is in a DIFFERENT repo from\
+      \ the Go engine work:\nRepo: `/Users/dayna.blackwell/code/scout-and-wave`\nFile: `implementations/claude-code/prompts/saw-skill.md`\n\
+      \n## What to add\n\n1. Find the section that lists sawtools commands (search for `install-hooks`\n   or the sawtools\
+      \ command list near the bootstrap flow). Add a mention of\n   `sawtools install-hooks` as a bootstrap step.\n\n2. In\
+      \ the bootstrap flow or project setup section, add:\n   - `sawtools install-hooks` — installs the M4 pre-commit lint\
+      \ gate hook\n\n3. In any sawtools command reference list, add:\n   - `install-hooks` — wires `pre-commit-check` into\
+      \ `.git/hooks/pre-commit`\n   - `pre-commit-check` — runs IMPL lint gate (called by hook automatically)\n\nKeep additions\
+      \ minimal and consistent with existing style. Do not reformat\nor restructure existing content.\n\n## Verification gate\n\
+      ```\ngrep -n \"install-hooks\" /Users/dayna.blackwell/code/scout-and-wave/implementations/claude-code/prompts/saw-skill.md\n\
+      ```\n(Should return at least one match.)\n\n## Constraints\n- Only modify saw-skill.md in the scout-and-wave repo\n\
+      - Do not modify any files in scout-and-wave-go\n"
+    files:
+    - implementations/claude-code/prompts/saw-skill.md
+quality_gates:
+  level: standard
+  gates:
+  - type: build
+    command: go build ./...
+    required: true
+  - type: lint
+    command: go vet ./...
+    required: true
+  - type: test
+    command: go test ./pkg/protocol/... ./cmd/sawtools/...
+    required: true
+pre_mortem:
+  overall_risk: low
+  rows:
+  - scenario: Agent A and Agent B compile independently but gate_discovery import path is wrong at link time
+    likelihood: low
+    impact: medium
+    mitigation: 'Agent B''s prompt explicitly states the import path:
+
+      github.com/blackwell-systems/scout-and-wave-go/pkg/protocol.
+
+      Agent D''s build gate catches any import errors before merge.
+
+      '
+  - scenario: prepare_wave.go hooks check introduces a nil pointer if verifyHookInstalled returns unexpected error
+    likelihood: low
+    impact: low
+    mitigation: 'Agent D''s prompt specifies the check must be non-blocking. Wrap the call
+
+      in a guard that only prints the warning on non-nil result with Valid==false.
+
+      '
+  - scenario: install-hooks appends duplicate snippets if hook content detection is case-sensitive or whitespace-sensitive
+    likelihood: medium
+    impact: low
+    mitigation: 'Agent C''s prompt specifies using strings.Contains on the literal
+
+      "sawtools pre-commit-check" as the idempotency check. This is
+
+      robust to surrounding whitespace.
+
+      '
+  - scenario: saw-skill.md update (Agent E) conflicts with concurrent changes on develop branch
+    likelihood: low
+    impact: low
+    mitigation: 'Agent E works in a different repo (scout-and-wave). No other agents
+
+      touch that file. Low merge conflict risk.
+
+      '
+  - scenario: Active IMPL detection in gate_discovery.go incorrectly treats a closed IMPL as active
+    likelihood: low
+    impact: low
+    mitigation: 'Agent A''s prompt explicitly lists the state values to exclude (COMPLETE, CLOSED).
+
+      Test coverage for the state-filtering logic is required.
+
+      '
+critic_report:
+  verdict: PASS
+  agent_reviews:
+    A:
+      agent_id: A
+      verdict: PASS
+      issues: []
+    B:
+      agent_id: B
+      verdict: PASS
+    C:
+      agent_id: C
+      verdict: PASS
+    D:
+      agent_id: D
+      verdict: PASS
+      issues: []
+    E:
+      agent_id: E
+      verdict: PASS
+  summary: 'All briefs verified after corrections. Agent A: LoadManifest->protocol.Load, CLOSED->NOT_SUITABLE. Agent D: verifyHookInstalled
+    replaced with direct file check for M4 lint gate.'
+  reviewed_at: '2026-03-25T05:55:08Z'
+  issue_count: 0
+state: SCOUT_PENDING

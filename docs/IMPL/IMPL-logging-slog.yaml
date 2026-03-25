@@ -1,0 +1,795 @@
+title: 'Structured Logging via slog.Logger Injection'
+feature_slug: logging-slog
+verdict: SUITABLE
+suitability_assessment: |
+  The feature is well-scoped for parallel execution. The architecture doc is authoritative
+  and complete, specifying exact migration priorities and which ~150 calls to convert.
+  File decomposition is clean: engine opts structs, orchestrator struct, protocol package,
+  and secondary packages (worktree, journal, resume, bedrock) are all disjoint. The
+  Orchestrator struct adds a Logger field via its constructor/setter — no opts overlap
+  with engine files. cmd/sawtools wiring is a separate layer. Migration is incremental
+  by design (architecture doc explicitly says all 282 calls need not be converted at once).
+
+  Wave structure: 3 waves.
+  - Wave 1: Add Logger field to engine opts structs (engine.go, finalize.go,
+    run_wave_atomic.go, runner.go, finalize.go, integration_runner.go) and add
+    Logger field + setter to Orchestrator struct (orchestrator.go). These are
+    parallel because engine opts and orchestrator struct are in different files/packages.
+  - Wave 2: Migrate fmt.Fprintf calls to slog in pkg/orchestrator/ (merge.go,
+    stubs.go, journal_integration.go, orchestrator.go) and pkg/protocol/
+    (worktree.go, merge_agents.go, program_worktree.go, gates.go) — these packages
+    receive Logger via the fields added in Wave 1.
+  - Wave 3: Migrate secondary packages (pkg/engine/runner.go category-3/4 calls,
+    pkg/worktree/manager.go, pkg/journal/observer.go, pkg/resume/worktree_status.go,
+    pkg/agent/backend/bedrock/client.go) and wire the logger construction in
+    cmd/sawtools/ entry points.
+
+  Parallelization value: High. Build+test cycle is `go test ./...` which takes 30s+
+  on a full suite. Wave 1 has 2 parallel agents with 3-5 files each. Wave 2 has 2
+  parallel agents covering ~38 calls. Wave 3 has 2 parallel agents.
+
+  Estimated times:
+  - Scout phase: ~15 min
+  - Agent execution: ~6 agents x ~10 min avg with Wave 1+2 parallel = ~30 min total
+  - Merge and verification: ~5 min
+  Total SAW time: ~50 min
+  Sequential baseline: ~60 min
+  Recommendation: Clear speedup with clean parallelism boundaries.
+test_command: go test ./...
+lint_command: go vet ./...
+state: SCOUT_PENDING
+
+quality_gates:
+  level: standard
+  gates:
+    - type: build
+      command: go build ./...
+      required: true
+    - type: lint
+      command: go vet ./...
+      required: true
+    - type: test
+      command: go test ./...
+      required: true
+
+scaffolds: []
+
+file_ownership:
+  # Wave 1 — Logger field additions (infrastructure layer)
+  - file: pkg/engine/engine.go
+    agent: A
+    wave: 1
+    action: modify
+    depends_on: []
+  - file: pkg/engine/finalize.go
+    agent: A
+    wave: 1
+    action: modify
+    depends_on: []
+  - file: pkg/engine/run_wave_atomic.go
+    agent: A
+    wave: 1
+    action: modify
+    depends_on: []
+  - file: pkg/engine/runner.go
+    agent: A
+    wave: 1
+    action: modify
+    depends_on: []
+  - file: pkg/engine/integration_runner.go
+    agent: A
+    wave: 1
+    action: modify
+    depends_on: []
+  - file: pkg/orchestrator/orchestrator.go
+    agent: B
+    wave: 1
+    action: modify
+    depends_on: []
+  - file: pkg/orchestrator/setters.go
+    agent: B
+    wave: 1
+    action: modify
+    depends_on: []
+
+  # Wave 2 — slog migration in orchestrator and protocol packages
+  - file: pkg/orchestrator/merge.go
+    agent: C
+    wave: 2
+    action: modify
+    depends_on: [B]
+  - file: pkg/orchestrator/stubs.go
+    agent: C
+    wave: 2
+    action: modify
+    depends_on: [B]
+  - file: pkg/orchestrator/journal_integration.go
+    agent: C
+    wave: 2
+    action: modify
+    depends_on: [B]
+  - file: pkg/protocol/worktree.go
+    agent: D
+    wave: 2
+    action: modify
+    depends_on: [A]
+  - file: pkg/protocol/merge_agents.go
+    agent: D
+    wave: 2
+    action: modify
+    depends_on: [A]
+  - file: pkg/protocol/program_worktree.go
+    agent: D
+    wave: 2
+    action: modify
+    depends_on: [A]
+  - file: pkg/protocol/gates.go
+    agent: D
+    wave: 2
+    action: modify
+    depends_on: [A]
+
+  # Wave 3 — secondary packages and cmd/sawtools wiring
+  - file: pkg/engine/run_wave_full.go
+    agent: E
+    wave: 3
+    action: modify
+    depends_on: [A]
+  - file: pkg/worktree/manager.go
+    agent: E
+    wave: 3
+    action: modify
+    depends_on: [A]
+  - file: pkg/journal/observer.go
+    agent: E
+    wave: 3
+    action: modify
+    depends_on: [A]
+  - file: pkg/resume/worktree_status.go
+    agent: E
+    wave: 3
+    action: modify
+    depends_on: [A]
+  - file: pkg/agent/backend/bedrock/client.go
+    agent: E
+    wave: 3
+    action: modify
+    depends_on: []
+  - file: cmd/sawtools/prepare_wave.go
+    agent: F
+    wave: 3
+    action: modify
+    depends_on: [A, B]
+  - file: cmd/sawtools/finalize_wave.go
+    agent: F
+    wave: 3
+    action: modify
+    depends_on: [A, B]
+  - file: cmd/sawtools/close_impl_cmd.go
+    agent: F
+    wave: 3
+    action: modify
+    depends_on: [A, B]
+  - file: cmd/sawtools/solve_cmd.go
+    agent: F
+    wave: 3
+    action: modify
+    depends_on: [A, B]
+  - file: cmd/sawtools/run_scout_cmd.go
+    agent: F
+    wave: 3
+    action: modify
+    depends_on: [A, B]
+
+interface_contracts:
+  - name: RunScoutOpts.Logger
+    description: |
+      Logger field added to RunScoutOpts. Callers in cmd/sawtools set this;
+      pkg/engine/runner.go reads it and passes down.
+    definition: |
+      // In pkg/engine/engine.go
+      type RunScoutOpts struct {
+          // ... existing fields unchanged ...
+          ObsEmitter *observability.Emitter  // already present
+          Logger     *slog.Logger            // NEW: nil falls back to slog.Default()
+      }
+    location: pkg/engine/engine.go
+
+  - name: FinalizeWaveOpts.Logger
+    description: Logger field added to FinalizeWaveOpts.
+    definition: |
+      // In pkg/engine/finalize.go
+      type FinalizeWaveOpts struct {
+          // ... existing fields unchanged ...
+          ObsEmitter *observability.Emitter  // already present
+          Logger     *slog.Logger            // NEW
+      }
+    location: pkg/engine/finalize.go
+
+  - name: RunWaveTransactionOpts.Logger
+    description: Logger field added to RunWaveTransactionOpts.
+    definition: |
+      // In pkg/engine/run_wave_atomic.go
+      type RunWaveTransactionOpts struct {
+          // ... existing fields unchanged ...
+          ObsEmitter *observability.Emitter  // already present
+          Logger     *slog.Logger            // NEW
+      }
+    location: pkg/engine/run_wave_atomic.go
+
+  - name: RunIntegrationAgentOpts.Logger
+    description: Logger field added to RunIntegrationAgentOpts.
+    definition: |
+      // In pkg/engine/integration_runner.go
+      type RunIntegrationAgentOpts struct {
+          // ... existing fields unchanged ...
+          Logger *slog.Logger  // NEW
+      }
+    location: pkg/engine/integration_runner.go
+
+  - name: Orchestrator.SetLogger
+    description: |
+      New setter method on Orchestrator that stores a *slog.Logger for use by
+      all orchestrator methods. Mirrors SetDefaultModel and SetWorktreePaths patterns.
+    definition: |
+      // In pkg/orchestrator/orchestrator.go — add field to struct:
+      type Orchestrator struct {
+          // ... existing fields unchanged ...
+          logger *slog.Logger  // NEW: set via SetLogger; nil = slog.Default()
+      }
+
+      // In pkg/orchestrator/setters.go (or orchestrator.go):
+      func (o *Orchestrator) SetLogger(logger *slog.Logger) {
+          o.logger = logger
+      }
+
+      // Helper used internally — resolves nil to slog.Default():
+      func (o *Orchestrator) log() *slog.Logger {
+          if o.logger == nil {
+              return slog.Default()
+          }
+          return o.logger
+      }
+    location: pkg/orchestrator/orchestrator.go
+
+  - name: loggerFromOpts
+    description: |
+      Package-internal helper for engine packages that receive Logger via opts struct.
+      Returns slog.Default() when Logger field is nil. Used by runner.go, finalize.go, etc.
+    definition: |
+      // In each pkg/engine/*.go file that needs it (not a shared helper — inline pattern):
+      func loggerFrom(l *slog.Logger) *slog.Logger {
+          if l == nil {
+              return slog.Default()
+          }
+          return l
+      }
+    location: pkg/engine/runner.go
+
+  - name: newSawLogger
+    description: |
+      Constructor for the slog.Logger used in cmd/sawtools entry points.
+      Reads SAW_LOG_LEVEL env var; defaults to WARN level to keep CLI output clean.
+    definition: |
+      // In cmd/sawtools/ (e.g. root command setup or shared logger.go helper):
+      func newSawLogger() *slog.Logger {
+          level := slog.LevelWarn
+          if v := os.Getenv("SAW_LOG_LEVEL"); v != "" {
+              var l slog.Level
+              if err := l.UnmarshalText([]byte(v)); err == nil {
+                  level = l
+              }
+          }
+          return slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{
+              Level: level,
+          }))
+      }
+    location: cmd/sawtools/
+
+waves:
+  - number: 1
+    agents:
+      - id: A
+        task: |
+          ## Agent A — Add Logger field to engine opts structs
+
+          ### Context
+          Read `/Users/dayna.blackwell/code/scout-and-wave-go/docs/planning/logging-architecture.md`
+          in full before starting. This is the authoritative design document.
+
+          ### What to implement
+          Add `Logger *slog.Logger` to the following opts structs in `pkg/engine/`:
+
+          **pkg/engine/engine.go** — add to these structs:
+          - `RunScoutOpts` (already has `ObsEmitter *observability.Emitter` — add Logger after it)
+          - `RunWaveOpts`
+          - `RunMergeOpts`
+          - `FinalizeWaveOpts` (in finalize.go — see below)
+          - `MarkIMPLCompleteOpts` (in finalize.go)
+          - `ResolveConflictsOpts`
+          - `FixBuildOpts`
+
+          **pkg/engine/finalize.go** — add to:
+          - `FinalizeWaveOpts`
+          - `MarkIMPLCompleteOpts`
+
+          **pkg/engine/run_wave_atomic.go** — add to:
+          - `RunWaveTransactionOpts` (already has `ObsEmitter`)
+
+          **pkg/engine/runner.go** — in the runner functions that use `RunScoutOpts`,
+          `RunWaveOpts`, etc., add a local `logger := loggerFrom(opts.Logger)` pattern
+          and replace the Category 3/4 `fmt.Fprintf(os.Stderr, ...)` calls (8 calls)
+          with `logger.Warn(...)` or `logger.Debug(...)` as appropriate:
+          - scaffold build non-fatal errors → `logger.Warn(...)`
+          - `scaffold build verification: unrecognized project type` → `logger.Debug(...)`
+          - `engine.RunSingleAgent: retry context (best-effort)` → `logger.Debug(...)`
+          - `engine: E18 UpdateContextMD failed` → `logger.Warn(...)`
+          - `engine: failed to archive journal for agent` → `logger.Warn(...)`
+          - `engine.RunScout: failed to parse PROGRAM manifest` → `logger.Warn(...)`
+
+          **pkg/engine/integration_runner.go** — add `Logger *slog.Logger` to
+          `RunIntegrationAgentOpts` and replace the 1 Fprintf call.
+
+          ### Logger nil-safety pattern
+          Add this inline helper to each file that needs it (NOT a shared file —
+          avoids cross-agent conflict):
+          ```go
+          func loggerFrom(l *slog.Logger) *slog.Logger {
+              if l == nil {
+                  return slog.Default()
+              }
+              return l
+          }
+          ```
+
+          ### Import to add
+          ```go
+          "log/slog"
+          ```
+          No third-party packages. stdlib only.
+
+          ### Do NOT touch
+          - `pkg/observability/emitter.go` — leave its one Fprintf call alone
+          - `cmd/sawtools/` files — Agent F handles those
+          - Any `_test.go` file unless tests directly reference the opts struct fields
+
+          ### Verification gate
+          ```
+          go build ./pkg/engine/...
+          go vet ./pkg/engine/...
+          go test ./pkg/engine/...
+          ```
+
+        files:
+          - pkg/engine/engine.go
+          - pkg/engine/finalize.go
+          - pkg/engine/run_wave_atomic.go
+          - pkg/engine/runner.go
+          - pkg/engine/integration_runner.go
+        dependencies: []
+
+      - id: B
+        task: |
+          ## Agent B — Add Logger field to Orchestrator struct
+
+          ### Context
+          Read `/Users/dayna.blackwell/code/scout-and-wave-go/docs/planning/logging-architecture.md`
+          in full before starting. This is the authoritative design document.
+
+          ### What to implement
+          The `Orchestrator` struct in `pkg/orchestrator/orchestrator.go` uses a constructor
+          pattern (`New(repoPath, implDocPath)`) and setter methods (`SetDefaultModel`,
+          `SetWorktreePaths`). Add a `logger` field and `SetLogger` setter following the
+          same pattern.
+
+          **pkg/orchestrator/orchestrator.go** — add to `Orchestrator` struct:
+          ```go
+          type Orchestrator struct {
+              // ... existing fields ...
+              logger *slog.Logger  // nil = use slog.Default()
+          }
+          ```
+
+          Add a private helper method:
+          ```go
+          func (o *Orchestrator) log() *slog.Logger {
+              if o.logger == nil {
+                  return slog.Default()
+              }
+              return o.logger
+          }
+          ```
+
+          Replace the 8 `fmt.Fprintf(os.Stderr, ...)` calls in `orchestrator.go` with
+          `o.log().Warn(...)` or `o.log().Debug(...)`:
+          - `orchestrator: reusing existing worktree for agent %s` → `o.log().Debug("orchestrator: reusing existing worktree", "agent", agentSpec.ID, "path", wtPath)`
+          - `orchestrator: failed to marshal E23 context` → `o.log().Warn(...)`
+          - `orchestrator: E23 context extraction failed` → `o.log().Warn(...)`
+          - `orchestrator: failed to load manifest for E23 extraction` → `o.log().Warn(...)`
+          - `orchestrator: auto-commit failed` → `o.log().Warn(...)`
+          - `orchestrator: failed to save report for agent` → `o.log().Warn(...)`
+          - `orchestrator: failed to set report for agent` → `o.log().Warn(...)`
+          - `orchestrator: retry context build (best-effort)` → `o.log().Debug(...)`
+
+          **pkg/orchestrator/setters.go** — add the public setter:
+          ```go
+          func (o *Orchestrator) SetLogger(logger *slog.Logger) {
+              o.logger = logger
+          }
+          ```
+          (Check whether setters.go already exists or if SetDefaultModel is in orchestrator.go —
+          add SetLogger wherever SetDefaultModel lives.)
+
+          ### Import to add
+          ```go
+          "log/slog"
+          ```
+
+          ### Do NOT touch
+          - `pkg/orchestrator/merge.go` — Agent C handles that
+          - `pkg/orchestrator/stubs.go` — Agent C handles that
+          - `pkg/orchestrator/journal_integration.go` — Agent C handles that
+          - Any engine files — Agent A handles those
+
+          ### Verification gate
+          ```
+          go build ./pkg/orchestrator/...
+          go vet ./pkg/orchestrator/...
+          go test ./pkg/orchestrator/...
+          ```
+
+        files:
+          - pkg/orchestrator/orchestrator.go
+          - pkg/orchestrator/setters.go
+        dependencies: []
+
+  - number: 2
+    agents:
+      - id: C
+        task: |
+          ## Agent C — Migrate fmt.Fprintf calls in pkg/orchestrator merge/stubs/journal files
+
+          ### Context
+          Read `/Users/dayna.blackwell/code/scout-and-wave-go/docs/planning/logging-architecture.md`
+          in full before starting.
+
+          Wave 1 Agent B added `o.logger` field and `o.log()` helper to the `Orchestrator`
+          struct. However, `merge.go`, `stubs.go`, and `journal_integration.go` contain
+          **package-level functions** (not methods on Orchestrator) — you need to check
+          their signatures. If they are standalone functions, add a `*slog.Logger` parameter
+          or use `slog.Default()` directly for this wave (since they are not yet plumbed
+          through the Orchestrator). Prefer adding a logger parameter to any function that
+          has more than 1 Fprintf call.
+
+          ### Files and call counts
+          - `pkg/orchestrator/merge.go` — 10 calls, all warnings about merge state
+          - `pkg/orchestrator/stubs.go` — 4 calls
+          - `pkg/orchestrator/journal_integration.go` — 1 call
+
+          ### Migration rules (from architecture doc)
+          - Category 3 internal warnings → `logger.Warn("msg", "key", val, ...)`
+          - Category 4 debug traces → `logger.Debug("msg", "key", val, ...)`
+          - Category 1 (already covered by Emitter) → simply remove the Fprintf
+          - Category 2 CLI progress → leave as `fmt.Fprintf(os.Stderr, ...)` — DO NOT migrate
+
+          ### Key calls to classify:
+          - `executeMergeWave: agent %s already merged (skipping verification)` → Debug
+          - `executeMergeWave: all agents already merged for wave %d` → Debug
+          - `executeMergeWave: agent %s already merged (skipping)` → Debug
+          - `executeMergeWave: agent %s produced no changes (skipping merge)` → Debug
+          - `executeMergeWave: warning: failed to save merge-log` → Warn
+          - `executeMergeWave: warning: could not remove worktree` → Warn
+          - `executeMergeWave: warning: could not delete branch` → Warn
+
+          ### slog call style
+          Use structured key-value pairs, not format strings:
+          ```go
+          // Before:
+          fmt.Fprintf(os.Stderr, "executeMergeWave: warning: failed to save merge-log: %v\n", saveErr)
+          // After:
+          logger.Warn("executeMergeWave: failed to save merge-log", "err", saveErr)
+          ```
+
+          ### Import changes
+          Remove `"os"` if it is no longer used after migration (check — os may still be
+          used for other things). Add `"log/slog"` if not already present.
+
+          ### Do NOT touch
+          - `pkg/orchestrator/orchestrator.go` — owned by Agent B (Wave 1)
+          - Any engine or protocol files
+
+          ### Verification gate
+          ```
+          go build ./pkg/orchestrator/...
+          go vet ./pkg/orchestrator/...
+          go test ./pkg/orchestrator/...
+          ```
+
+        files:
+          - pkg/orchestrator/merge.go
+          - pkg/orchestrator/stubs.go
+          - pkg/orchestrator/journal_integration.go
+        dependencies: [B]
+
+      - id: D
+        task: |
+          ## Agent D — Migrate fmt.Fprintf calls in pkg/protocol (Priority 3)
+
+          ### Context
+          Read `/Users/dayna.blackwell/code/scout-and-wave-go/docs/planning/logging-architecture.md`
+          in full before starting.
+
+          The architecture doc identifies `pkg/protocol` as the clearest layering violations
+          — protocol is a pure library that should never write to stderr. These 13 calls are
+          the highest-harm category.
+
+          ### Files and call counts
+          - `pkg/protocol/worktree.go` — 8 calls
+          - `pkg/protocol/merge_agents.go` — 2 calls
+          - `pkg/protocol/program_worktree.go` — 2 calls
+          - `pkg/protocol/gates.go` — 1 call
+
+          ### How to inject the logger
+          **IMPORTANT: Prefer slog.Default() over signature changes.** Protocol functions
+          are called from many places including files not assigned to any agent in this
+          IMPL (e.g., pkg/engine/daemon.go, cmd/sawtools/create_worktrees.go). Adding a
+          logger parameter to a function signature will break all unassigned callers.
+
+          For each function with Fprintf calls:
+          - **First choice:** Call `slog.Default()` directly inside the function body.
+            No signature change, no caller updates needed. Example:
+            `slog.Default().Warn("protocol: failed to install hooks", "agent", agentID)`
+          - **Second choice (only if the function already has an opts struct):** Add
+            `Logger *slog.Logger` to that opts struct. Callers passing nil get the
+            fallback via: `if logger == nil { logger = slog.Default() }`
+          - **Do NOT** add logger parameters to plain function signatures.
+
+          Also check `pkg/protocol/cleanup.go` line 183 for `log.Printf(...)` — the
+          architecture doc says to convert this to `slog.Warn(...)` in the Priority 3 pass.
+
+          ### Classification
+          - `Warning: failed to install hooks for agent %s` → `logger.Warn("protocol: failed to install hooks", "agent", agentID, "err", err)`
+          - `warning: failed to save merge-log` → `logger.Warn(...)`
+          - Gate skipped/cached messages → `logger.Debug(...)`
+          - All "Warning:" prefixed lines → Warn level
+
+          ### Do NOT touch
+          - `pkg/protocol/cleanup.go` `log.Printf` if it is not the one mentioned — only
+            convert the one at line 183
+          - Any engine or orchestrator files
+
+          ### Verification gate
+          ```
+          go build ./pkg/protocol/...
+          go vet ./pkg/protocol/...
+          go test ./pkg/protocol/...
+          ```
+
+        files:
+          - pkg/protocol/worktree.go
+          - pkg/protocol/merge_agents.go
+          - pkg/protocol/program_worktree.go
+          - pkg/protocol/gates.go
+        dependencies: [A]
+
+  - number: 3
+    agents:
+      - id: E
+        task: |
+          ## Agent E — Migrate secondary packages (worktree, journal, resume, bedrock)
+
+          ### Context
+          Read `/Users/dayna.blackwell/code/scout-and-wave-go/docs/planning/logging-architecture.md`
+          in full before starting. This is Priority 4 in the architecture doc.
+
+          ### Files and call counts
+          - `pkg/worktree/manager.go` — 3 calls
+          - `pkg/journal/observer.go` — 1 call
+          - `pkg/resume/worktree_status.go` — 1 call
+          - `pkg/agent/backend/bedrock/client.go` — 2 calls (debug traces — most valuable to make level-gated)
+          - `pkg/engine/run_wave_full.go` — no Fprintf calls, but add Logger field to
+            `RunWaveFullOpts` struct to complete the engine opts coverage
+
+          ### Injection patterns per package
+
+          **pkg/worktree/manager.go** — `Manager` struct already has fields; add:
+          ```go
+          type Manager struct {
+              // existing fields...
+              logger *slog.Logger
+          }
+          ```
+          Update `New(repoPath, slug string) *Manager` to accept a logger option,
+          or add a `SetLogger(*slog.Logger)` method. Use whichever pattern is least
+          disruptive to callers.
+
+          **pkg/journal/observer.go** — check how the observer is constructed;
+          add logger parameter or field.
+
+          **pkg/resume/worktree_status.go** — check if this is a package-level function
+          or method; add logger parameter as last non-error arg.
+
+          **pkg/agent/backend/bedrock/client.go** — 2 debug traces. These are Category 4
+          (most valuable to make level-gated). Add `Logger *slog.Logger` to the bedrock
+          client config struct or constructor, and replace:
+          - `bedrock: end_turn at turn %d` → `logger.Debug("bedrock: end_turn", "turn", turn)`
+          - Tool result traces → `logger.Debug("bedrock: tool", "turn", turn, ...)`
+
+          **pkg/engine/run_wave_full.go** — `RunWaveFullOpts` struct has no Logger yet.
+          Add `Logger *slog.Logger` field. This struct is in the engine package but was not
+          owned by Agent A to avoid too many files per agent.
+
+          ### slog style for debug traces
+          ```go
+          // Before:
+          fmt.Fprintf(os.Stderr, "bedrock tool [turn %d]: %s(%s) → error=%v result=%s\n", turn, name, input, errStr, result)
+          // After:
+          logger.Debug("bedrock: tool call", "turn", turn, "name", name, "input", input, "err", errStr, "result", result)
+          ```
+
+          ### Do NOT touch
+          - `pkg/observability/emitter.go` — explicitly excluded by architecture doc
+          - `cmd/sawtools/` — owned by Agent F
+          - Any orchestrator or protocol files
+
+          ### Verification gate
+          ```
+          go build ./pkg/worktree/... ./pkg/journal/... ./pkg/resume/... ./pkg/agent/... ./pkg/engine/...
+          go vet ./pkg/worktree/... ./pkg/journal/... ./pkg/resume/... ./pkg/agent/... ./pkg/engine/...
+          go test ./pkg/worktree/... ./pkg/journal/... ./pkg/resume/... ./pkg/agent/... ./pkg/engine/...
+          ```
+
+        files:
+          - pkg/engine/run_wave_full.go
+          - pkg/worktree/manager.go
+          - pkg/journal/observer.go
+          - pkg/resume/worktree_status.go
+          - pkg/agent/backend/bedrock/client.go
+        dependencies: [A]
+
+      - id: F
+        task: |
+          ## Agent F — Wire slog.Logger in cmd/sawtools entry points
+
+          ### Context
+          Read `/Users/dayna.blackwell/code/scout-and-wave-go/docs/planning/logging-architecture.md`
+          in full before starting.
+
+          The architecture doc states: "Call sites in cmd/sawtools construct the logger once
+          at startup and pass it down." This agent wires the logger into the 4 highest-traffic
+          cmd/sawtools commands. Do not add logger wiring to every cmd file — focus on the
+          commands that call FinalizeWave, RunWaveTransaction, and Orchestrator.
+
+          ### What to implement
+
+          **Step 1 — Create logger constructor.**
+          In `cmd/sawtools/` create a small helper (inline in an existing root/shared file, or
+          add to `cmd/sawtools/logger.go` as a new file):
+          ```go
+          // newSawLogger constructs the slog.Logger for CLI commands.
+          // Level is controlled by SAW_LOG_LEVEL env var (default: WARN).
+          func newSawLogger() *slog.Logger {
+              level := slog.LevelWarn
+              if v := os.Getenv("SAW_LOG_LEVEL"); v != "" {
+                  var l slog.Level
+                  if err := l.UnmarshalText([]byte(v)); err == nil {
+                      level = l
+                  }
+              }
+              return slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{
+                  Level: level,
+              }))
+          }
+          ```
+
+          **Step 2 — Wire into prepare_wave.go.**
+          Find where `FinalizeWaveOpts` or `RunWaveTransactionOpts` are constructed.
+          Add `Logger: newSawLogger()` to the opts struct literal.
+
+          **Step 3 — Wire into finalize_wave.go.**
+          Same pattern — find opts struct construction, add `Logger: newSawLogger()`.
+
+          **Step 4 — Wire into close_impl_cmd.go.**
+          Find `MarkIMPLCompleteOpts` construction, add `Logger: newSawLogger()`.
+
+          **Step 5 — Wire into run_scout_cmd.go.**
+          Find `RunScoutOpts` construction (~line 116), add `Logger: newSawLogger()`.
+
+          **Step 6 — Wire into solve_cmd.go.**
+          Find where Orchestrator is constructed (`orchestrator.New(...)`), then call
+          `orch.SetLogger(newSawLogger())` before the first method call on it.
+
+          ### Classification of cmd/sawtools Fprintf calls
+          Per the architecture doc, Category 2 (CLI progress messages) MUST stay as
+          `fmt.Fprintf(os.Stderr, ...)`. Do NOT migrate those. Only migrate calls that
+          are clearly internal errors (e.g., "validate-integration: failed to persist
+          wiring report"). When in doubt, leave it as Fprintf.
+
+          ### Do NOT touch
+          - Any `pkg/` files — those are owned by other agents
+          - `cmd/sawtools/` files not listed in your ownership
+
+          ### Verification gate
+          ```
+          go build ./cmd/sawtools/...
+          go vet ./cmd/sawtools/...
+          go test ./cmd/sawtools/...
+          ```
+
+        files:
+          - cmd/sawtools/prepare_wave.go
+          - cmd/sawtools/finalize_wave.go
+          - cmd/sawtools/close_impl_cmd.go
+          - cmd/sawtools/solve_cmd.go
+          - cmd/sawtools/run_scout_cmd.go
+        dependencies: [A, B]
+
+pre_mortem:
+  overall_risk: medium
+  rows:
+    - scenario: >
+        Protocol package functions (pkg/protocol/) have complex signatures without opts structs.
+        Agent D may need to add logger parameters to many function signatures, which cascades
+        to all callers in pkg/engine/ (already merged by Wave 1). This could cause compile
+        errors in Wave 2.
+      likelihood: medium
+      impact: high
+      mitigation: >
+        Agent D should prefer adding a logger to existing opts structs where they exist, and
+        use slog.Default() directly (without injection) for standalone functions with many
+        callers. The architecture doc explicitly allows incremental migration — Agent D does
+        not need to plumb the logger all the way through on first pass.
+
+    - scenario: >
+        pkg/orchestrator/merge.go, stubs.go functions are package-level (not Orchestrator
+        methods) so Agent C cannot use o.log(). Agent C may use slog.Default() directly,
+        which partially defeats injection.
+      likelihood: high
+      impact: low
+      mitigation: >
+        This is acceptable per the architecture doc. The primary goal is leveled/filterable
+        logging. slog.Default() is controllable at the binary level via slog.SetDefault().
+        Full injection into these functions is a follow-up task.
+
+    - scenario: >
+        Wave 3 agents E and F modify different files but both touch pkg/engine/ (E touches
+        run_wave_full.go, F does not touch engine). No ownership conflict — but if Agent E's
+        changes to run_wave_full.go break the build, Agent F's cmd/sawtools changes that
+        import engine will also fail.
+      likelihood: low
+      impact: medium
+      mitigation: >
+        Agent E's task in run_wave_full.go is minimal (add one Logger field to opts struct).
+        This cannot break callers since new fields default to nil and the nil-safe pattern
+        falls back to slog.Default().
+
+    - scenario: >
+        cmd/sawtools has many more commands than the 4 assigned to Agent F. The other
+        commands will still pass nil Logger to engine opts structs, which is safe (nil
+        fallback to slog.Default()) but means those commands don't benefit from
+        SAW_LOG_LEVEL filtering.
+      likelihood: high
+      impact: low
+      mitigation: >
+        This is intentional incremental migration. The architecture doc does not require
+        all 282 calls converted in one wave. Remaining cmd/sawtools wiring is a follow-up.
+
+    - scenario: >
+        scout-and-wave-web constructs engine opts structs in 8+ locations
+        (cmd/saw/commands.go, pkg/api/wave_runner.go, pkg/service/scout_service.go,
+        pkg/service/wave_service.go, etc.). These will pass nil Logger after Wave 1.
+      likelihood: high
+      impact: low
+      mitigation: >
+        Out of scope for this IMPL. Nil Logger falls back to slog.Default() safely.
+        Web app logger wiring is a follow-up task after this IMPL merges.
+
+    - scenario: >
+        go vet may flag unused import of "os" in pkg files after Fprintf calls are removed
+        if "os" was only used for os.Stderr.
+      likelihood: medium
+      impact: low
+      mitigation: >
+        Each agent should check whether "os" is still used for other purposes after
+        removing Fprintf calls, and remove the import if not. go vet and go build will
+        catch this immediately.

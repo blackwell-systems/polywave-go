@@ -220,7 +220,7 @@ Output:
 			// Do not add additional validation calls here; FinalizeIMPL handles the full
 			// validate → populate-gates → validate pipeline internally.
 			fmt.Printf("🔧 Finalizing IMPL doc (populating verification gates)...\n")
-			finalizeRes := protocol.FinalizeIMPL(implPath, repoPath)
+			finalizeRes, _ := engine.FinalizeIMPLEngine(cmd.Context(), implPath, repoPath)
 
 			if !finalizeRes.IsSuccess() {
 				fmt.Println("⚠️  Finalize-impl completed with warnings")

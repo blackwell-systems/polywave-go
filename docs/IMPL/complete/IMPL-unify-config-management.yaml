@@ -1,0 +1,397 @@
+completion_date: "2026-03-24"
+title: Unify Configuration Management
+feature_slug: unify-config-management
+verdict: SUITABLE
+suitability_assessment: |
+    Parallel-systems-audit Finding #2: Three separate config loading implementations
+    exist in scout-and-wave-go. The canonical pkg/config/ package already has Load()
+    with parent-directory walking and full schema support. Two legacy callers bypass it:
+
+    1. pkg/agent/backend/configfile.go: LoadProvidersFromConfig() — duplicate parent-dir
+       walker, parses only providers section. Called by api/client.go and bedrock/client.go.
+    2. pkg/autonomy/config.go: LoadConfig() — loads only autonomy section from a fixed
+       path (no parent walking). Called by cmd/sawtools/daemon_cmd.go.
+
+    Suitability:
+    - File decomposition: 5 files change across 3 packages, cleanly split into 2 agents.
+    - No investigation needed — the fix is well-defined migration to existing API.
+    - Interface discoverability: config.Load() already exists with the right signature.
+    - Pre-implementation: All 3 implementations verified in current codebase — none
+      already consolidated.
+    - Parallelization value: 2 independent agents (backend callers vs autonomy caller)
+      can run simultaneously. Build/test cycle ~15s for Go. Marginal speedup but
+      coordination value is high — the IMPL doc tracks which callers were migrated.
+
+    Estimated times:
+    - Scout phase: ~5 min
+    - Agent execution: ~5 min (2 agents x 3 min avg, single wave)
+    - Merge and verification: ~3 min
+    Total SAW time: ~13 min
+    Sequential baseline: ~10 min (2 tasks x 5 min)
+    Time savings: Marginal (~3 min slower due to overhead)
+    Recommendation: Coordination value — IMPL doc serves as audit trail for finding #2.
+test_command: go test ./...
+lint_command: go vet ./...
+file_ownership:
+    - file: pkg/agent/backend/configfile.go
+      agent: A
+      wave: 1
+      action: delete
+    - file: pkg/agent/backend/api/client.go
+      agent: A
+      wave: 1
+      action: modify
+    - file: pkg/agent/backend/bedrock/client.go
+      agent: A
+      wave: 1
+      action: modify
+    - file: pkg/agent/backend/configfile_migration_test.go
+      agent: A
+      wave: 1
+      action: new
+    - file: pkg/autonomy/config.go
+      agent: B
+      wave: 1
+      action: modify
+    - file: cmd/sawtools/daemon_cmd.go
+      agent: B
+      wave: 1
+      action: modify
+    - file: pkg/autonomy/config_migration_test.go
+      agent: B
+      wave: 1
+      action: new
+interface_contracts:
+    - name: config.Load
+      description: |
+        Existing function — no changes needed. Callers will use this instead of
+        their package-local config loading. Returns Result[*SAWConfig] with
+        parent-directory walking (up to 10 levels).
+      definition: |
+        func Load(startDir string) result.Result[*SAWConfig]
+      location: pkg/config/config.go
+    - name: config.LoadOrDefault
+      description: |
+        Existing convenience function — returns default config if Load fails.
+        daemon_cmd.go will use this to replace autonomy.LoadConfig() which had
+        similar default-on-missing behavior.
+      definition: |
+        func LoadOrDefault(startDir string) *SAWConfig
+      location: pkg/config/config.go
+waves:
+    - number: 1
+      agents:
+        - id: A
+          task: |
+            ## What to implement
+
+            Migrate backend provider credential loading from the duplicate
+            `backend.LoadProvidersFromConfig()` to the canonical `config.Load()`.
+
+            ### Step 1: Modify pkg/agent/backend/api/client.go
+
+            In the `New()` function (line ~48-80), replace the credential fallback block:
+
+            **Current code (lines 52-58):**
+            ```go
+            if apiKey == "" {
+                cwd, _ := os.Getwd()
+                providers := backend.LoadProvidersFromConfig(cwd)
+                if providers.Anthropic.APIKey != "" {
+                    apiKey = providers.Anthropic.APIKey
+                }
+            }
+            ```
+
+            **Replace with:**
+            ```go
+            if apiKey == "" {
+                cwd, _ := os.Getwd()
+                r := config.Load(cwd)
+                if r.IsSuccess() {
+                    if key := r.GetData().Providers.Anthropic.APIKey; key != "" {
+                        apiKey = key
+                    }
+                }
+            }
+            ```
+
+            Add import: `"github.com/blackwell-systems/scout-and-wave-go/pkg/config"`
+            Remove the `backend` import if it was only used for LoadProvidersFromConfig
+            (it is still used for `backend.Config`, `backend.ToolCallCallback`, etc.,
+            so keep it).
+
+            ### Step 2: Modify pkg/agent/backend/bedrock/client.go
+
+            In the `New()` function (line ~40-80), replace the credential fallback block:
+
+            **Current code (lines 45-59):**
+            ```go
+            if cfg.BedrockProfile == "" && cfg.BedrockRegion == "" && cfg.BedrockAccessKeyID == "" {
+                cwd, _ := os.Getwd()
+                providers := backend.LoadProvidersFromConfig(cwd)
+                if providers.Bedrock.Profile != "" {
+                    cfg.BedrockProfile = providers.Bedrock.Profile
+                }
+                if providers.Bedrock.Region != "" && cfg.BedrockRegion == "" {
+                    cfg.BedrockRegion = providers.Bedrock.Region
+                }
+                if providers.Bedrock.AccessKeyID != "" {
+                    cfg.BedrockAccessKeyID = providers.Bedrock.AccessKeyID
+                    cfg.BedrockSecretAccessKey = providers.Bedrock.SecretAccessKey
+                    cfg.BedrockSessionToken = providers.Bedrock.SessionToken
+                }
+            }
+            ```
+
+            **Replace with:**
+            ```go
+            if cfg.BedrockProfile == "" && cfg.BedrockRegion == "" && cfg.BedrockAccessKeyID == "" {
+                cwd, _ := os.Getwd()
+                r := config.Load(cwd)
+                if r.IsSuccess() {
+                    p := r.GetData().Providers.Bedrock
+                    if p.Profile != "" {
+                        cfg.BedrockProfile = p.Profile
+                    }
+                    if p.Region != "" && cfg.BedrockRegion == "" {
+                        cfg.BedrockRegion = p.Region
+                    }
+                    if p.AccessKeyID != "" {
+                        cfg.BedrockAccessKeyID = p.AccessKeyID
+                        cfg.BedrockSecretAccessKey = p.SecretAccessKey
+                        cfg.BedrockSessionToken = p.SessionToken
+                    }
+                }
+            }
+            ```
+
+            Add import: `"github.com/blackwell-systems/scout-and-wave-go/pkg/config"`
+            Note: This file already imports `"github.com/aws/aws-sdk-go-v2/config"` —
+            use an alias for the SAW config: `sawconfig "github.com/blackwell-systems/scout-and-wave-go/pkg/config"`
+            and reference `sawconfig.Load(cwd)`.
+
+            ### Step 3: Delete pkg/agent/backend/configfile.go
+
+            Delete the entire file. It contains:
+            - `SAWProviders` struct (duplicates `config.ProvidersConfig`)
+            - `LoadProvidersFromConfig()` (replaced by `config.Load().Providers`)
+            - `findConfigFile()` (replaced by `config.FindConfigPath()`)
+
+            After deletion, verify no other files in pkg/agent/backend/ reference
+            SAWProviders or LoadProvidersFromConfig.
+
+            ### Step 4: Write migration test
+
+            Create `pkg/agent/backend/configfile_migration_test.go` that verifies:
+            - `config.Load()` returns provider credentials when saw.config.json exists
+            - The providers section fields match the old SAWProviders struct layout
+            - Parent-directory walking works (create config in parent, load from child)
+
+            Use `t.TempDir()` and write a test saw.config.json with known provider values.
+
+            ## Interface contracts
+
+            Use existing `config.Load(startDir string) result.Result[*SAWConfig]` from
+            pkg/config/config.go. Access providers via `.GetData().Providers`.
+
+            Field mapping (old -> new):
+            - `SAWProviders.Anthropic.APIKey` -> `SAWConfig.Providers.Anthropic.APIKey`
+            - `SAWProviders.Bedrock.Region` -> `SAWConfig.Providers.Bedrock.Region`
+            - `SAWProviders.Bedrock.AccessKeyID` -> `SAWConfig.Providers.Bedrock.AccessKeyID`
+            - `SAWProviders.Bedrock.SecretAccessKey` -> `SAWConfig.Providers.Bedrock.SecretAccessKey`
+            - `SAWProviders.Bedrock.SessionToken` -> `SAWConfig.Providers.Bedrock.SessionToken`
+            - `SAWProviders.Bedrock.Profile` -> `SAWConfig.Providers.Bedrock.Profile`
+            - `SAWProviders.OpenAI.APIKey` -> `SAWConfig.Providers.OpenAI.APIKey`
+
+            ## Verification gate
+
+            ```bash
+            go build ./pkg/agent/backend/... && go build ./pkg/agent/backend/api/... && go build ./pkg/agent/backend/bedrock/... && go vet ./pkg/agent/backend/... && go test ./pkg/agent/backend/...
+            ```
+
+            ## Constraints
+
+            - Do NOT modify pkg/config/config.go — it is correct as-is.
+            - The bedrock client.go imports `"github.com/aws/aws-sdk-go-v2/config"` which
+              conflicts with `"github.com/blackwell-systems/scout-and-wave-go/pkg/config"`.
+              Use import alias `sawconfig` for the SAW config package.
+            - Preserve all existing credential fallback behavior exactly (env vars checked
+              first, then config file).
+          files:
+            - pkg/agent/backend/configfile.go
+            - pkg/agent/backend/api/client.go
+            - pkg/agent/backend/bedrock/client.go
+            - pkg/agent/backend/configfile_migration_test.go
+        - id: B
+          task: |
+            ## What to implement
+
+            Migrate autonomy config loading from the duplicate `autonomy.LoadConfig()`
+            to the canonical `config.Load()`, and update the daemon command caller.
+
+            ### Step 1: Modify pkg/autonomy/config.go
+
+            Remove `LoadConfig()` and `SaveConfig()` functions entirely. Also remove the
+            `configFileName` constant. Keep all other code in the file (it only contains
+            these config IO functions — the `Config` struct, `DefaultConfig()`, and
+            decision logic are in autonomy.go).
+
+            After removal, the file should be empty or contain only the package declaration.
+            If empty, delete the file entirely.
+
+            **Important:** The `autonomy.Config` type in autonomy.go must remain unchanged.
+            It is referenced by `engine.DaemonOpts.AutonomyConfig` and other packages.
+            Only the config IO functions are being removed.
+
+            ### Step 2: Modify cmd/sawtools/daemon_cmd.go
+
+            Replace the autonomy.LoadConfig call with config.Load:
+
+            **Current code (lines 31-35):**
+            ```go
+            // Load autonomy config from saw.config.json.
+            cfg, err := autonomy.LoadConfig(repoDir)
+            if err != nil {
+                return fmt.Errorf("daemon: load config: %w", err)
+            }
+            ```
+
+            **Replace with:**
+            ```go
+            // Load config from saw.config.json (walks parent dirs).
+            sawCfg := config.LoadOrDefault(repoDir)
+            cfg := autonomy.Config{
+                Level:          autonomy.Level(sawCfg.Autonomy.Level),
+                MaxAutoRetries: sawCfg.Autonomy.MaxAutoRetries,
+                MaxQueueDepth:  sawCfg.Autonomy.MaxQueueDepth,
+            }
+            if cfg.Level == "" {
+                cfg = autonomy.DefaultConfig()
+            }
+            ```
+
+            Add import: `"github.com/blackwell-systems/scout-and-wave-go/pkg/config"`
+            The `autonomy` import is still needed for `autonomy.Config`, `autonomy.ParseLevel`,
+            `autonomy.DefaultConfig`.
+
+            Note the mapping from config types:
+            - `config.AutonomyConfig.Level` is `string`, `autonomy.Config.Level` is `autonomy.Level` (also string type)
+            - `config.AutonomyConfig.MaxAutoRetries` -> `autonomy.Config.MaxAutoRetries`
+            - `config.AutonomyConfig.MaxQueueDepth` -> `autonomy.Config.MaxQueueDepth`
+
+            Also remove the now-unused `"errors"` import if present (it was used by
+            LoadConfig's error handling), and the `"encoding/json"` import is still needed
+            for the OnEvent handler.
+
+            ### Step 3: Write migration test
+
+            Create `pkg/autonomy/config_migration_test.go` that verifies:
+            - `config.Load()` returns autonomy config when saw.config.json has autonomy section
+            - The autonomy section fields map correctly to `autonomy.Config` struct
+            - Default values work when autonomy section is missing
+            - `config.LoadOrDefault()` returns sensible defaults when no config file exists
+
+            Use `t.TempDir()` and write test saw.config.json files.
+
+            ## Interface contracts
+
+            Use existing `config.LoadOrDefault(startDir string) *SAWConfig` from
+            pkg/config/config.go. Access autonomy via `.Autonomy`.
+
+            Field mapping (old -> new):
+            - `autonomy.Config.Level` <- `config.SAWConfig.Autonomy.Level` (cast string to autonomy.Level)
+            - `autonomy.Config.MaxAutoRetries` <- `config.SAWConfig.Autonomy.MaxAutoRetries`
+            - `autonomy.Config.MaxQueueDepth` <- `config.SAWConfig.Autonomy.MaxQueueDepth`
+
+            ## Verification gate
+
+            ```bash
+            go build ./pkg/autonomy/... && go build ./cmd/sawtools/... && go vet ./pkg/autonomy/... && go vet ./cmd/sawtools/... && go test ./pkg/autonomy/... && go test ./cmd/sawtools/...
+            ```
+
+            ## Constraints
+
+            - Do NOT modify pkg/config/config.go — it is correct as-is.
+            - Do NOT modify pkg/autonomy/autonomy.go — keep the Config struct,
+              DefaultConfig(), ShouldAutoApprove(), and all decision logic intact.
+            - Only remove the config IO functions (LoadConfig, SaveConfig) and the
+              configFileName constant from pkg/autonomy/config.go.
+            - The daemon_cmd.go still needs the `autonomy` import for Config type,
+              ParseLevel, and DefaultConfig — do not remove it.
+          files:
+            - pkg/autonomy/config.go
+            - cmd/sawtools/daemon_cmd.go
+            - pkg/autonomy/config_migration_test.go
+      base_commit: f97e7019508b2f7c55038f6e16a52f412591827e
+quality_gates:
+    level: standard
+    gates:
+        - type: build
+          command: go build ./...
+          required: true
+        - type: format
+          command: gofmt -l .
+          required: false
+        - type: lint
+          command: go vet ./...
+          required: true
+        - type: test
+          command: go test ./...
+          required: true
+completion_reports:
+    A:
+        status: complete
+        branch: saw/unify-config-management/wave1-agent-A
+        commit: 30d96b8
+        files_changed:
+            - pkg/agent/backend/api/client.go
+            - pkg/agent/backend/bedrock/client.go
+            - pkg/agent/backend/configfile.go
+        files_created:
+            - pkg/agent/backend/configfile_migration_test.go
+        tests_added:
+            - TestConfigLoad_ReturnsProviderCredentials
+            - TestConfigLoad_ParentDirectoryWalking
+            - TestConfigLoad_NoConfigReturnsFailure
+        verification: PASS
+    B:
+        status: complete
+        branch: saw/unify-config-management/wave1-agent-B
+        commit: 5a77575
+        files_changed:
+            - pkg/autonomy/config.go
+            - cmd/sawtools/daemon_cmd.go
+        files_created:
+            - pkg/autonomy/config_migration_test.go
+        tests_added:
+            - TestConfigLoad_WithAutonomySection
+            - TestConfigLoad_FieldMappingToAutonomyConfig
+            - TestConfigLoad_MissingAutonomySection
+            - TestLoadOrDefault_NoConfigFile
+        verification: PASS
+pre_mortem:
+    overall_risk: low
+    rows:
+        - scenario: Import alias collision in bedrock/client.go
+          likelihood: medium
+          impact: low
+          mitigation: |
+            Agent A instructions explicitly call out the aws config vs saw config
+            import conflict and specify using sawconfig alias.
+        - scenario: autonomy.Config field type mismatch after migration
+          likelihood: low
+          impact: medium
+          mitigation: |
+            config.AutonomyConfig.Level is string, autonomy.Level is a string typedef.
+            Agent B instructions include explicit cast. If MaxAutoRetries/MaxQueueDepth
+            are zero in config (missing section), DefaultConfig() is used as fallback.
+        - scenario: Removal of autonomy.SaveConfig breaks unknown caller
+          likelihood: low
+          impact: medium
+          mitigation: |
+            Grep shows SaveConfig is only defined, never called outside the package.
+            config.Save() in pkg/config already handles autonomy section persistence.
+            If a caller exists in scout-and-wave-web, it would use the web app's own
+            config handling, not this Go SDK function directly.
+state: COMPLETE
