@@ -13,8 +13,8 @@ import (
 
 func TestNewTelegramAdapter_Success(t *testing.T) {
 	a, err := NewTelegramAdapter(map[string]string{
-		"bot_token": "123:ABC",
-		"chat_id":   "-100123",
+		"token":       "123:ABC",
+		"destination": "-100123",
 	})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -24,17 +24,17 @@ func TestNewTelegramAdapter_Success(t *testing.T) {
 	}
 }
 
-func TestNewTelegramAdapter_MissingBotToken(t *testing.T) {
-	_, err := NewTelegramAdapter(map[string]string{"chat_id": "-100123"})
+func TestNewTelegramAdapter_MissingToken(t *testing.T) {
+	_, err := NewTelegramAdapter(map[string]string{"destination": "-100123"})
 	if err == nil {
-		t.Fatal("expected error for missing bot_token")
+		t.Fatal("expected error for missing token")
 	}
 }
 
-func TestNewTelegramAdapter_MissingChatID(t *testing.T) {
-	_, err := NewTelegramAdapter(map[string]string{"bot_token": "123:ABC"})
+func TestNewTelegramAdapter_MissingDestination(t *testing.T) {
+	_, err := NewTelegramAdapter(map[string]string{"token": "123:ABC"})
 	if err == nil {
-		t.Fatal("expected error for missing chat_id")
+		t.Fatal("expected error for missing destination")
 	}
 }
 
@@ -58,10 +58,10 @@ func TestTelegramAdapter_SendSuccess(t *testing.T) {
 	defer srv.Close()
 
 	adapter := &TelegramAdapter{
-		botToken: "123:ABC",
-		chatID:   "-100123",
-		client:   srv.Client(),
-		baseURL:  srv.URL,
+		token:       "123:ABC",
+		destination: "-100123",
+		client:      srv.Client(),
+		baseURL:     srv.URL,
 	}
 
 	err := adapter.Send(context.Background(), Message{Text: "*Hello*\nWorld"})
@@ -83,15 +83,28 @@ func TestTelegramAdapter_SendHTTPError(t *testing.T) {
 	defer srv.Close()
 
 	adapter := &TelegramAdapter{
-		botToken: "bad-token",
-		chatID:   "-100123",
-		client:   srv.Client(),
-		baseURL:  srv.URL,
+		token:       "bad-token",
+		destination: "-100123",
+		client:      srv.Client(),
+		baseURL:     srv.URL,
 	}
 
 	err := adapter.Send(context.Background(), Message{Text: "test"})
 	if err == nil {
 		t.Fatal("expected error for 401 response")
+	}
+}
+
+func TestNewTelegramAdapter_BackwardCompat(t *testing.T) {
+	a, err := NewTelegramAdapter(map[string]string{
+		"bot_token": "123:ABC",
+		"chat_id":   "-100123",
+	})
+	if err != nil {
+		t.Fatalf("expected backward-compat fields to work, got error: %v", err)
+	}
+	if a.Name() != "telegram" {
+		t.Errorf("expected name 'telegram', got %q", a.Name())
 	}
 }
 

@@ -12,29 +12,29 @@ import (
 
 // TelegramAdapter sends notifications via the Telegram Bot API.
 type TelegramAdapter struct {
-	botToken string
-	chatID   string
-	client   *http.Client
+	token       string
+	destination string
+	client      *http.Client
 	// baseURL allows overriding the API endpoint for testing.
 	baseURL string
 }
 
 // NewTelegramAdapter creates a Telegram Bot API adapter.
-// Required cfg keys: "bot_token", "chat_id".
+// Required cfg keys: "token" and "destination" (with fallback to "bot_token" and "chat_id").
 func NewTelegramAdapter(cfg map[string]string) (Adapter, error) {
-	token, ok := cfg["bot_token"]
-	if !ok || token == "" {
-		return nil, fmt.Errorf("telegram: missing required config key \"bot_token\"")
+	token := readWithFallback(cfg, "token", "bot_token")
+	if token == "" {
+		return nil, fmt.Errorf("telegram: missing required config key \"token\"")
 	}
-	chatID, ok := cfg["chat_id"]
-	if !ok || chatID == "" {
-		return nil, fmt.Errorf("telegram: missing required config key \"chat_id\"")
+	destination := readWithFallback(cfg, "destination", "chat_id")
+	if destination == "" {
+		return nil, fmt.Errorf("telegram: missing required config key \"destination\"")
 	}
 	return &TelegramAdapter{
-		botToken: token,
-		chatID:   chatID,
-		client:   &http.Client{},
-		baseURL:  "https://api.telegram.org",
+		token:       token,
+		destination: destination,
+		client:      &http.Client{},
+		baseURL:     "https://api.telegram.org",
 	}, nil
 }
 
@@ -43,10 +43,10 @@ func (a *TelegramAdapter) Name() string { return "telegram" }
 
 // Send delivers a formatted message via the Telegram sendMessage API.
 func (a *TelegramAdapter) Send(ctx context.Context, msg Message) error {
-	url := fmt.Sprintf("%s/bot%s/sendMessage", a.baseURL, a.botToken)
+	url := fmt.Sprintf("%s/bot%s/sendMessage", a.baseURL, a.token)
 
 	payload := map[string]string{
-		"chat_id":    a.chatID,
+		"chat_id":    a.destination,
 		"text":       msg.Text,
 		"parse_mode": "Markdown",
 	}
