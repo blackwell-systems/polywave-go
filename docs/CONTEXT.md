@@ -199,3 +199,5 @@ type BackendConfig struct {
   - IMPL doc: docs/IMPL/complete/IMPL-agent-complexity-enforcement.yaml
 - **logging-slog**: completed 2026-03-25, 3 waves, 6 agents
   - IMPL doc: docs/IMPL/complete/IMPL-logging-slog.yaml
+- **logging-injection**: completed 2026-03-25, 3 waves, 6 agents
+  - IMPL doc: docs/IMPL/complete/IMPL-logging-injection.yaml

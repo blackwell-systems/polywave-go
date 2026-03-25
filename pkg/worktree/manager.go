@@ -9,7 +9,6 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
-	"strings"
 
 	"github.com/blackwell-systems/scout-and-wave-go/internal/git"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
@@ -67,56 +66,13 @@ func (m *Manager) Create(wave int, agent string) (string, error) {
 		return "", fmt.Errorf("manager: create worktree for wave %d agent %s: %w", wave, agent, err)
 	}
 
-	if err := installPreCommitHook(wtPath); err != nil {
+	if err := git.InstallHooks(m.repoPath, wtPath); err != nil {
 		// Non-fatal: log but do not abort worktree creation.
 		m.log().Warn("manager: could not install pre-commit hook", "path", wtPath, "err", err)
 	}
 
 	m.active[wtPath] = branch
 	return wtPath, nil
-}
-
-// preCommitHookScript is the shell script installed into each agent worktree.
-// It prevents accidental commits to main/master without SAW_ALLOW_MAIN_COMMIT=1.
-const preCommitHookScript = `#!/bin/sh
-branch=$(git symbolic-ref --short HEAD 2>/dev/null)
-if [ "$branch" = "main" ] || [ "$branch" = "master" ]; then
-  if [ -z "$SAW_ALLOW_MAIN_COMMIT" ]; then
-    echo "SAW pre-commit guard: commits to '$branch' are blocked in agent worktrees." >&2
-    echo "Set SAW_ALLOW_MAIN_COMMIT=1 to override." >&2
-    exit 1
-  fi
-fi
-`
-
-// installPreCommitHook writes the SAW pre-commit guard into the worktree's
-// .git/hooks/pre-commit file and makes it executable.
-func installPreCommitHook(wtPath string) error {
-	// Git worktrees have .git as a file containing "gitdir: /path/.git/worktrees/name"
-	// We need to read this file to find the actual git directory where hooks live.
-	gitFilePath := filepath.Join(wtPath, ".git")
-	gitFileContent, err := os.ReadFile(gitFilePath)
-	if err != nil {
-		return fmt.Errorf("installPreCommitHook: read .git file: %w", err)
-	}
-
-	// Parse "gitdir: /path/.git/worktrees/name" to extract the path
-	gitdirLine := strings.TrimSpace(string(gitFileContent))
-	const prefix = "gitdir: "
-	if !strings.HasPrefix(gitdirLine, prefix) {
-		return fmt.Errorf("installPreCommitHook: .git file has unexpected format: %q", gitdirLine)
-	}
-	gitDir := strings.TrimSpace(strings.TrimPrefix(gitdirLine, prefix))
-
-	hooksDir := filepath.Join(gitDir, "hooks")
-	if err := os.MkdirAll(hooksDir, 0o755); err != nil {
-		return fmt.Errorf("installPreCommitHook: mkdir %q: %w", hooksDir, err)
-	}
-	hookPath := filepath.Join(hooksDir, "pre-commit")
-	if err := os.WriteFile(hookPath, []byte(preCommitHookScript), 0o755); err != nil {
-		return fmt.Errorf("installPreCommitHook: write %q: %w", hookPath, err)
-	}
-	return nil
 }
 
 // Remove removes the worktree at the given absolute path and deletes its branch.

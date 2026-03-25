@@ -111,6 +111,17 @@ func PrepareWave(ctx context.Context, opts PrepareWaveOpts) (*PrepareWaveResult,
 	}
 	recordStep(res, opts.OnEvent, "load_manifest", "success", "manifest loaded")
 
+	// Step: I3 wave sequencing gate — Wave N-1 must be verified before Wave N launches.
+	// Prevents Wave N from launching while Wave N-1 is still executing, blocked, or unmerged.
+	if opts.WaveNum > 1 {
+		if err := checkPreviousWaveVerified(doc, opts.WaveNum-1); err != nil {
+			recordStep(res, opts.OnEvent, "wave_sequencing", "failed", err.Error())
+			return res, fmt.Errorf("I3 wave sequencing violation: %w", err)
+		}
+		recordStep(res, opts.OnEvent, "wave_sequencing", "success",
+			fmt.Sprintf("wave %d verified — launching wave %d", opts.WaveNum-1, opts.WaveNum))
+	}
+
 	// Step: E37 critic verdict enforcement
 	if doc.CriticReport != nil {
 		switch doc.CriticReport.Verdict {
@@ -401,6 +412,37 @@ func PrepareWave(ctx context.Context, opts PrepareWaveOpts) (*PrepareWaveResult,
 
 	res.Success = true
 	return res, nil
+}
+
+// checkPreviousWaveVerified enforces I3 (wave sequencing): all agents in prevWaveNum
+// must have completion reports with status "complete" before the next wave can launch.
+// This is the execution-time gate that prevents Wave N from launching while Wave N-1
+// is still executing, has blocked agents, or has not been finalized and merged.
+func checkPreviousWaveVerified(doc *protocol.IMPLManifest, prevWaveNum int) error {
+	var prevWave *protocol.Wave
+	for i := range doc.Waves {
+		if doc.Waves[i].Number == prevWaveNum {
+			prevWave = &doc.Waves[i]
+			break
+		}
+	}
+	if prevWave == nil {
+		return fmt.Errorf("wave %d not found in manifest — cannot verify sequencing", prevWaveNum)
+	}
+
+	for _, agent := range prevWave.Agents {
+		report, exists := doc.CompletionReports[agent.ID]
+		if !exists {
+			return fmt.Errorf("wave %d agent %s has no completion report — wave must be merged and verified before wave %d launches",
+				prevWaveNum, agent.ID, prevWaveNum+1)
+		}
+		if report.Status != "complete" {
+			return fmt.Errorf("wave %d agent %s status is %q (expected \"complete\") — wave must be fully merged and verified before wave %d launches",
+				prevWaveNum, agent.ID, report.Status, prevWaveNum+1)
+		}
+	}
+
+	return nil
 }
 
 // checkDependencies wraps deps.CheckDeps to return nil report if no conflicts detected.

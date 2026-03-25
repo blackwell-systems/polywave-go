@@ -1,6 +1,6 @@
 # Wiring Audit: Unwired Code in scout-and-wave-go
 
-Last reviewed: 2026-03-24
+Last reviewed: 2026-03-25
 
 **Scope:** All exported functions, types, and patterns in `pkg/` and `cmd/sawtools/`
 
@@ -22,6 +22,9 @@ intentionally exported as SDK surface for future consumers.
 
 > `ComputeCostRollup`, `ComputeSuccessRateRollup`, and `ComputeRetryRollup`
 > are now wired via `scout-and-wave-web/pkg/api/observability.go` (resolved 2026-03-24).
+> `cmd/sawtools/observability_query.go` exposes `query events` but uses
+> `store.QueryEvents` directly; the higher-level rollup functions above remain
+> uncalled in production.
 
 ### Protocol helper functions (exported API surface)
 - `ValidateCompletionReportClaims` -- completion report cross-validation (tests only)
@@ -29,9 +32,9 @@ intentionally exported as SDK surface for future consumers.
 - `LoadProjectMemory` / `SaveProjectMemory` / `AddCompletedFeature` -- project memory CRUD (tests only)
 - `GenerateManifestSchema` / `ValidateManifestJSON` -- JSON Schema validation (tests only)
 - `SetFreezeTimestamp` -- freeze timestamp setter (tests only)
-- `IsSoloWave` / `IsWaveComplete` / `IsFinalWave` -- wave helper predicates (tests only)
+- `IsSoloWave` / `IsWaveComplete` / `IsFinalWave` -- wave helper predicates (tests only; defined in `pkg/protocol/helpers.go`, no caller in engine or cmd)
 - `LookupErrorCode` / `AllErrorCodes` / `MigrateErrorCode` -- error code utilities (tests only)
-- `ShouldRetry` / `MaxRetriesWithReactions` / `ShouldRetryWithReactions` / `ValidFailureType` -- failure routing (tests only)
+- `ShouldRetry` / `MaxRetriesWithReactions` / `ShouldRetryWithReactions` / `ValidFailureType` -- failure routing (tests only; no caller in engine or cmd)
 - `ValidateBytes` -- raw YAML validation entry point (tests only)
 
 ### Orchestrator functions
@@ -47,10 +50,10 @@ intentionally exported as SDK surface for future consumers.
 - `DefaultRegistry` / `WavePipeline` -- pipeline registry and wave pipeline definition (tests only)
 
 ### Other
-- `NewGateResultCache` -- gate result cache (tests only)
-- `NewJournalIntegration` -- journal integration (tests only)
+- `NewGateResultCache` -- gate result cache (defined in `pkg/engine/gate_cache.go`, tests only; no production caller in engine, cmd, or web)
+- `NewJournalIntegration` -- journal integration (defined in `pkg/engine/runner.go`, tests only; no caller in cmd or web)
 - `CleanupExpired` / `ListArchives` -- journal archive management (tests only)
-- `WriteRequirementsFile` -- interview requirements writer (tests only)
-- `ValidateRequiredField` / `HandleBackCommand` -- interview helpers (tests only)
-- `SupportedLanguages` -- build diagnostics language list (tests only)
-- `BuildWaveConstraints` / `BuildIntegratorConstraints` -- constraint builders (tests only)
+- `WriteRequirementsFile` -- interview requirements writer (exported from `pkg/interview/compiler.go`; the `interview` cmd uses `mgr.Compile` which internally delegates via `CompileToRequirements`; `WriteRequirementsFile` itself has no production caller)
+- `ValidateRequiredField` / `HandleBackCommand` -- interview helpers (called within `pkg/interview/deterministic.go` production code, not test-only; exported but no external caller outside the package)
+- `SupportedLanguages` -- build diagnostics language list (`pkg/builddiag/diagnose.go`; no caller in cmd or web)
+- `BuildWaveConstraints` / `BuildIntegratorConstraints` -- constraint builders (defined in `pkg/engine/constraints.go`; no caller in cmd or web)

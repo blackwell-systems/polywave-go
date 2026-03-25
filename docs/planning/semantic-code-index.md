@@ -1,5 +1,9 @@
 # Semantic Code Index — Design Seed
 
+**Status**: Entirely unimplemented as of 2026-03-25. No `pkg/codeindex/` package exists. No tree-sitter dependency. No `index-codebase` or `query-symbols` CLI commands. E25/wiring validation still uses heuristic pattern matching.
+
+**Note**: `modernc.org/sqlite` is already in `go.mod` (used by `pkg/observability/sqlite/`), so the SQLite dependency is already paid — no extra module cost for storage.
+
 **Purpose**: Tree-sitter-based symbol extraction and indexing for SAW agents. Replaces keyword grep with structured queries: "all exported functions in src/api/" → structured results with file, line, signature, callers.
 
 **Package**: `pkg/codeindex/`
@@ -81,9 +85,9 @@ sawtools query-symbols --repo-dir . --unused-exports --format json
 - `--incremental` flag for fast updates
 
 ### Dependencies
-- `github.com/smacker/go-tree-sitter` — Go bindings for tree-sitter
-- Language grammars: `tree-sitter-go`, `tree-sitter-typescript`, `tree-sitter-python`, `tree-sitter-rust`
-- `modernc.org/sqlite` — Pure Go SQLite (no CGO dependency)
+- `github.com/smacker/go-tree-sitter` — Go bindings for tree-sitter (not yet in go.mod)
+- Language grammars: `tree-sitter-go`, `tree-sitter-typescript`, `tree-sitter-python`, `tree-sitter-rust` (not yet in go.mod)
+- `modernc.org/sqlite` — Pure Go SQLite (already in go.mod, used by `pkg/observability/sqlite/`)
 
 ### Non-Goals
 - No embedding/vector search (that's a separate RAG feature)

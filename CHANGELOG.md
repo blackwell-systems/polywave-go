@@ -8,6 +8,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 | Version | Date | Headline |
 |---------|------|----------|
+| [0.95.0] | 2026-03-25 | Interview mode fixes (G5/G6/G7/G11) — `newID()` now produces UUID-formatted strings; `checkPhaseTransition` panics on phase skips (G5); `CompileToRequirements` adds `## Warnings` section on truncation (G6); `--non-interactive` flag now suppresses prompts (G7) |
+| [0.94.0] | 2026-03-25 | Engine finalization enforcement — 6 new `Step*` functions in `finalize_steps.go`: `StepVerifyCompletionReports` (I4), `StepCheckAgentStatuses` (E7), `StepPredictConflicts` (E11), `StepCheckTypeCollisions`, `StepCheckWiringDeclarations` (E35), `StepPopulateIntegrationChecklist` (M5); wired into `engine.FinalizeWave()` so web app enforces same rules as CLI; CLI `finalize_wave.go` cleaned to delegate to engine; 10 new tests |
 | [0.93.0] | 2026-03-23 | fix: MergeNoFFWithOwnership handles git auto-resolved merges — when recursive strategy resolves conflicts (non-zero exit, no conflicted files), no longer aborts; checks MERGE_HEAD to distinguish completed merge from real conflicts |
 | [0.92.0] | 2026-03-23 | Provider credential auto-discovery — Bedrock and Anthropic backends now read `saw.config.json` providers section as credential fallback (profile, region, API keys) before hitting default chains. No credential threading through RunWaveOpts/Orchestrator needed. `LoadProvidersFromConfig` walks parent dirs to find config file. |
 | [0.91.0] | 2026-03-23 | H5 pre-launch validation gate — `PreLaunchGate` in `pkg/hooks/prelaunch_gate.go` (7 structured checks: validation, wave_exists, agent_exists, worktree_branch, scaffolds_committed, ownership_disjoint, critic_review); 16 tests |
