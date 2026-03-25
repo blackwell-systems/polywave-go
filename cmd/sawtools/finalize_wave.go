@@ -70,9 +70,12 @@ pattern matching (H7) and appends diagnosis to the output.`,
 				return fmt.Errorf("finalize-wave: failed to load manifest: %w", err)
 			}
 
-			// Extract unique repos from file_ownership
-			// Use current directory as default repo for single-repo IMPLs
-			defaultRepoPath, _ := os.Getwd()
+			// Extract unique repos from file_ownership.
+			// Prefer --repo-dir flag; fall back to current directory for single-repo IMPLs.
+			defaultRepoPath := repoDir
+			if defaultRepoPath == "" {
+				defaultRepoPath, _ = os.Getwd()
+			}
 			repos, _ := extractReposFromManifest(manifest, waveNum, defaultRepoPath)
 
 			result := &FinalizeWaveResult{
