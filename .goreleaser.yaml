@@ -20,10 +20,6 @@ archives:
     builds: [sawtools]
     format: tar.gz
     name_template: "sawtools_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
-    format_overrides:
-      - goos: windows
-        format: zip
-
 checksum:
   name_template: "checksums.txt"
 
@@ -35,16 +31,16 @@ changelog:
       - "^test:"
       - "^ci:"
 
-brews:
-  - name: sawtools
-    ids: [sawtools]
-    repository:
-      owner: blackwell-systems
-      name: homebrew-tap
-    homepage: https://github.com/blackwell-systems/scout-and-wave
-    description: "CLI tools for the Scout-and-Wave parallel agent coordination protocol"
-    license: "MIT"
-    install: |
-      bin.install "sawtools"
-    test: |
-      system "#{bin}/sawtools", "version"
+# brews:
+#   - name: sawtools
+#     ids: [sawtools]
+#     repository:
+#       owner: blackwell-systems
+#       name: homebrew-tap
+#     homepage: https://github.com/blackwell-systems/scout-and-wave
+#     description: "CLI tools for the Scout-and-Wave parallel agent coordination protocol"
+#     license: "MIT"
+#     install: |
+#       bin.install "sawtools"
+#     test: |
+#       system "#{bin}/sawtools", "version"
