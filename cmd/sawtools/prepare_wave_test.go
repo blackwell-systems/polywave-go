@@ -672,6 +672,42 @@ func TestPrepareWave_NoMergeTargetNoBriefSection(t *testing.T) {
 	}
 }
 
+// TestPrepareWaveResult_StaleCleanupWarningsField verifies that
+// StaleCleanupWarnings serializes correctly and is omitted when empty.
+func TestPrepareWaveResult_StaleCleanupWarningsField(t *testing.T) {
+	// With warnings present: field should appear in JSON
+	r := PrepareWaveResult{
+		Wave:                 1,
+		Worktrees:            []protocol.WorktreeInfo{},
+		AgentBriefs:          []AgentBriefInfo{},
+		StaleCleanupWarnings: []string{"stale cleanup failed for saw/foo/wave1-agent-A: branch not found"},
+	}
+	out, err := json.Marshal(r)
+	if err != nil {
+		t.Fatalf("json.Marshal failed: %v", err)
+	}
+	if !strings.Contains(string(out), "stale_cleanup_warnings") {
+		t.Errorf("expected stale_cleanup_warnings in JSON when warnings present, got: %s", string(out))
+	}
+	if !strings.Contains(string(out), "branch not found") {
+		t.Errorf("expected warning message in JSON output, got: %s", string(out))
+	}
+
+	// Without warnings: field should be omitted (omitempty)
+	rClean := PrepareWaveResult{
+		Wave:        1,
+		Worktrees:   []protocol.WorktreeInfo{},
+		AgentBriefs: []AgentBriefInfo{},
+	}
+	outClean, err := json.Marshal(rClean)
+	if err != nil {
+		t.Fatalf("json.Marshal failed for clean result: %v", err)
+	}
+	if strings.Contains(string(outClean), "stale_cleanup_warnings") {
+		t.Errorf("expected stale_cleanup_warnings to be omitted when nil, got: %s", string(outClean))
+	}
+}
+
 // TestPrepareWave_AgentBriefInfo_MergeTargetField verifies that AgentBriefInfo
 // has a MergeTarget field serialized as "merge_target" in JSON.
 func TestPrepareWave_AgentBriefInfo_MergeTargetField(t *testing.T) {
