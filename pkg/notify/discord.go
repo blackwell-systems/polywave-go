@@ -117,5 +117,6 @@ func (f *DiscordFormatter) Format(event Event) Message {
 	}
 }
 
-// NOTE: After merge with registry.go (Agent B), add init() to register:
-//   func init() { Register("discord", NewDiscordAdapter) }
+func init() {
+	Register("discord", NewDiscordAdapter)
+}

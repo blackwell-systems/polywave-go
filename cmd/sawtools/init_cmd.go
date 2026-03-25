@@ -26,8 +26,12 @@ func newInitCmd() *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use:   "init",
-		Short: "Initialize a project for SAW (zero-config)",
-		Long:  "Detects project language, generates saw.config.json, and verifies prerequisites.",
+		Short: "Initialize a project for SAW (auto-detects language, build, and test commands)",
+		Long: `Auto-detect project language (Go, Rust, Node, Python, Ruby, Makefile) and
+generate a saw.config.json with sensible defaults. No manual configuration
+needed for most projects.
+
+After running init, use /saw scout "feature" in Claude Code or saw serve for the web UI.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			// 1. Resolve the target directory.
 			repoDir := repoFlag
@@ -83,11 +87,13 @@ func newInitCmd() *cobra.Command {
 
 			// 7. Print next steps.
 			fmt.Fprintf(cmd.OutOrStdout(), "\nSAW initialized for %s (%s).\n", project.Name, project.Language)
-			fmt.Fprintf(cmd.OutOrStdout(), "\nQuick start:\n")
-			fmt.Fprintf(cmd.OutOrStdout(), "  saw plan \"describe your feature\"     Create an implementation plan\n")
+			fmt.Fprintf(cmd.OutOrStdout(), "  Config written to: %s\n", configPath)
+			fmt.Fprintf(cmd.OutOrStdout(), "\nNext steps:\n")
+			fmt.Fprintf(cmd.OutOrStdout(), "  /saw scout \"describe your feature\"   Plan a feature (Claude Code skill)\n")
 			fmt.Fprintf(cmd.OutOrStdout(), "  saw serve                            Open the web dashboard\n")
 			fmt.Fprintf(cmd.OutOrStdout(), "\nLearn more:\n")
-			fmt.Fprintf(cmd.OutOrStdout(), "  saw help                             All commands\n")
+			fmt.Fprintf(cmd.OutOrStdout(), "  sawtools --help                      All CLI commands\n")
+			fmt.Fprintf(cmd.OutOrStdout(), "  https://github.com/blackwell-systems/scout-and-wave#quick-start\n")
 
 			return nil
 		},

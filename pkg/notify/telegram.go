@@ -106,5 +106,6 @@ func (f *TelegramFormatter) Format(event Event) Message {
 	}
 }
 
-// NOTE: After merge with registry.go (Agent B), add init() to register:
-//   func init() { Register("telegram", NewTelegramAdapter) }
+func init() {
+	Register("telegram", NewTelegramAdapter)
+}

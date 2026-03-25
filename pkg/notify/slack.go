@@ -9,23 +9,36 @@ import (
 	"sort"
 )
 
-// SlackAdapter sends notifications via Slack incoming webhooks.
+// SlackAdapter sends notifications via Slack incoming webhooks or Bot API.
+// Supports two modes:
+//   - Webhook mode: set "webhook_url" — posts to the channel configured in the webhook
+//   - Bot token mode: set "bot_token" + "channel" — posts to any channel via chat.postMessage
 type SlackAdapter struct {
 	webhookURL string
-	channel    string // optional override
+	botToken   string
+	channel    string
 	client     *http.Client
 }
 
 // NewSlackAdapter creates a new Slack adapter from configuration.
-// Required cfg keys: "webhook_url". Optional: "channel".
+// Requires either "webhook_url" OR ("bot_token" + "channel").
+// Optional in webhook mode: "channel" (override, only works with legacy webhooks).
 func NewSlackAdapter(cfg map[string]string) (Adapter, error) {
 	url := cfg["webhook_url"]
-	if url == "" {
-		return nil, fmt.Errorf("slack: missing required config key \"webhook_url\"")
+	token := cfg["bot_token"]
+	channel := cfg["channel"]
+
+	if url == "" && token == "" {
+		return nil, fmt.Errorf("slack: requires either \"webhook_url\" or \"bot_token\"")
 	}
+	if token != "" && channel == "" {
+		return nil, fmt.Errorf("slack: \"channel\" is required when using \"bot_token\"")
+	}
+
 	return &SlackAdapter{
 		webhookURL: url,
-		channel:    cfg["channel"],
+		botToken:   token,
+		channel:    channel,
 		client:     &http.Client{},
 	}, nil
 }
@@ -33,7 +46,7 @@ func NewSlackAdapter(cfg map[string]string) (Adapter, error) {
 // Name returns the adapter name.
 func (s *SlackAdapter) Name() string { return "slack" }
 
-// Send delivers a formatted message to the Slack webhook.
+// Send delivers a formatted message via webhook or Bot API.
 func (s *SlackAdapter) Send(ctx context.Context, msg Message) error {
 	payload := make(map[string]interface{})
 
@@ -43,7 +56,6 @@ func (s *SlackAdapter) Send(ctx context.Context, msg Message) error {
 		}
 	}
 
-	// Fallback text is required by Slack for notifications
 	if msg.Text != "" {
 		payload["text"] = msg.Text
 	}
@@ -57,11 +69,23 @@ func (s *SlackAdapter) Send(ctx context.Context, msg Message) error {
 		return fmt.Errorf("slack: marshal payload: %w", err)
 	}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, s.webhookURL, bytes.NewReader(body))
+	// Bot token mode: POST to chat.postMessage API
+	var targetURL string
+	if s.botToken != "" {
+		targetURL = "https://slack.com/api/chat.postMessage"
+	} else {
+		targetURL = s.webhookURL
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, targetURL, bytes.NewReader(body))
 	if err != nil {
 		return fmt.Errorf("slack: create request: %w", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
+
+	if s.botToken != "" {
+		req.Header.Set("Authorization", "Bearer "+s.botToken)
+	}
 
 	resp, err := s.client.Do(req)
 	if err != nil {
@@ -71,6 +95,17 @@ func (s *SlackAdapter) Send(ctx context.Context, msg Message) error {
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return fmt.Errorf("slack: unexpected status %d", resp.StatusCode)
+	}
+
+	// Bot API returns {"ok": false, "error": "..."} on failure even with 200
+	if s.botToken != "" {
+		var apiResp struct {
+			OK    bool   `json:"ok"`
+			Error string `json:"error"`
+		}
+		if err := json.NewDecoder(resp.Body).Decode(&apiResp); err == nil && !apiResp.OK {
+			return fmt.Errorf("slack: API error: %s", apiResp.Error)
+		}
 	}
 
 	return nil
@@ -160,11 +195,7 @@ func (f *SlackFormatter) Format(event Event) Message {
 	}
 }
 
-// RegisterSlack registers the Slack adapter factory with the global registry.
-// Call this from an init() function once the registry package is available,
-// or invoke it explicitly during application startup:
-//
-//	notify.Register("slack", func(cfg map[string]string) (notify.Adapter, error) {
-//	    return notify.NewSlackAdapter(cfg)
-//	})
+func init() {
+	Register("slack", NewSlackAdapter)
+}
 

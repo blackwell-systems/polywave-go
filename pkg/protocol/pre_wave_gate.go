@@ -72,25 +72,38 @@ func checkValidation(m *IMPLManifest) PreWaveGateCheck {
 
 func checkCriticReview(m *IMPLManifest) PreWaveGateCheck {
 	if m.CriticReport == nil {
-		// Count total agents across all waves
-		totalAgents := 0
+		// E37 trigger: wave 1 has 3+ agents OR file_ownership spans 2+ repos
+		wave1Agents := 0
 		for _, wave := range m.Waves {
-			totalAgents += len(wave.Agents)
+			if wave.Number == 1 {
+				wave1Agents = len(wave.Agents)
+				break
+			}
 		}
 
-		isMultiRepo := len(m.Repositories) > 0
+		// Check multi-repo: top-level Repositories field OR unique repo: values in file_ownership
+		repoSet := make(map[string]bool)
+		for _, r := range m.Repositories {
+			repoSet[r] = true
+		}
+		for _, fo := range m.FileOwnership {
+			if fo.Repo != "" {
+				repoSet[fo.Repo] = true
+			}
+		}
+		isMultiRepo := len(repoSet) >= 2
 
-		if totalAgents >= 3 || isMultiRepo {
+		if wave1Agents >= 3 || isMultiRepo {
 			return PreWaveGateCheck{
 				Name:    "critic_review",
 				Status:  "fail",
-				Message: fmt.Sprintf("E37: critic review required (%d agents, multi-repo=%v) but not run. Run critic or use --no-review to skip.", totalAgents, isMultiRepo),
+				Message: fmt.Sprintf("E37: critic review required (wave 1 has %d agents, %d repos) but not run. Run critic or use --no-critic to skip.", wave1Agents, len(repoSet)),
 			}
 		}
 		return PreWaveGateCheck{
 			Name:    "critic_review",
 			Status:  "pass",
-			Message: "critic review not required",
+			Message: "critic review not required (threshold not met)",
 		}
 	}
 

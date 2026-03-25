@@ -184,6 +184,13 @@ The `sawtools` binary provides 60+ commands covering the full protocol lifecycle
 | `mark-program-complete` | Mark PROGRAM manifest complete + update CONTEXT.md |
 | `list-programs` | Discover PROGRAM manifests in repo |
 
+### Setup
+
+| Command | What it does |
+|---------|-------------|
+| `init` | Auto-detect project language, build/test commands; generate `saw.config.json` |
+| `verify-install` | Check prerequisites: sawtools on PATH, skill files, Git version, repo paths |
+
 ### Utilities
 
 | Command | What it does |
@@ -306,6 +313,10 @@ go get github.com/blackwell-systems/scout-and-wave-go
 ```bash
 # Install the CLI
 go install github.com/blackwell-systems/scout-and-wave-go/cmd/sawtools@latest
+
+# Initialize your project (auto-detects language, build, and test commands)
+cd your-project
+sawtools init
 
 # Validate an IMPL doc
 sawtools validate docs/IMPL/IMPL-feature.yaml

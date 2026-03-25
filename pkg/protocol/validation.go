@@ -567,6 +567,30 @@ func validateMultiRepoConsistency(m *IMPLManifest) []result.SAWError {
 		})
 	}
 
+	// MR02: If file_ownership spans 2+ repos, quality gates must have repo: scoping.
+	// Without repo:, gates run in every repo — a docs-only repo has no Go module
+	// and `go build ./...` will fail.
+	if hasExplicit {
+		repoSet := make(map[string]bool)
+		for _, fo := range m.FileOwnership {
+			if fo.Repo != "" {
+				repoSet[fo.Repo] = true
+			}
+		}
+		if len(repoSet) >= 2 && m.QualityGates != nil {
+			for i, gate := range m.QualityGates.Gates {
+				if gate.Repo == "" {
+					errs = append(errs, result.SAWError{
+						Code:     "MR02_UNSCOPED_GATE",
+						Message:  fmt.Sprintf("quality_gates.gates[%d] (%s): multi-repo IMPL requires repo: on every gate — without it, '%s' runs in all repos including docs-only repos with no build system", i, gate.Type, gate.Command),
+						Severity: "error",
+						Field:    fmt.Sprintf("quality_gates.gates[%d].repo", i),
+					})
+				}
+			}
+		}
+	}
+
 	return errs
 }
 
