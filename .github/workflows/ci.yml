@@ -25,7 +25,7 @@ jobs:
 
       - name: Install sawtools
         run: |
-          go build -o $(go env GOPATH)/bin/sawtools ./cmd/saw/
+          go build -o $(go env GOPATH)/bin/sawtools ./cmd/sawtools/
           echo "$(go env GOPATH)/bin" >> $GITHUB_PATH
 
       - name: Test
