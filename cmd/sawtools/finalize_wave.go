@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 
@@ -158,6 +159,34 @@ pattern matching (H7) and appends diagnosis to the output.`,
 				}
 			}
 			if allGone {
+				// Safety check: absent branches do NOT prove the work was merged.
+				// Branches can be deleted without their commits ever reaching main.
+				// Verify each agent's commit SHA (from completion reports) is reachable
+				// from HEAD before accepting the "already merged" shortcut.
+				for _, w := range manifest.Waves {
+					if w.Number != waveNum {
+						continue
+					}
+					for _, agent := range w.Agents {
+						report, hasReport := manifest.CompletionReports[agent.ID]
+						if !hasReport || report.Commit == "" {
+							continue
+						}
+						for _, repoPath := range repos {
+							checkCmd := exec.Command("git", "-C", repoPath, "merge-base", "--is-ancestor", report.Commit, "HEAD")
+							if err := checkCmd.Run(); err != nil {
+								out, _ := json.MarshalIndent(result, "", "  ")
+								fmt.Println(string(out))
+								return fmt.Errorf(
+									"finalize-wave: agent %s commit %s is NOT reachable from main in %s — "+
+										"branches deleted without merging (data loss). "+
+										"Recover with: git branch recover-%s %s",
+									agent.ID, report.Commit, repoPath, agent.ID, report.Commit)
+							}
+						}
+					}
+					break
+				}
 				fmt.Fprintf(os.Stderr,
 					"finalize-wave: all agent branches absent (already merged+cleaned), skipping to verify-build\n")
 				for repoKey := range repos {
