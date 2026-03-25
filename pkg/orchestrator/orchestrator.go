@@ -9,6 +9,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
@@ -433,6 +434,7 @@ type Orchestrator struct {
 	eventPublisher EventPublisher
 	defaultModel   string            // optional default model for wave agents (e.g. "claude-haiku-4-5")
 	worktreePaths  map[string]string // agent letter -> pre-computed worktree abs path (for multi-repo)
+	logger         *slog.Logger     // nil = use slog.Default()
 }
 
 // SetDefaultModel sets the fallback model used for wave agents that have no
@@ -446,6 +448,14 @@ func (o *Orchestrator) SetDefaultModel(model string) {
 // launchAgent uses these instead of computing paths from o.repoPath.
 func (o *Orchestrator) SetWorktreePaths(paths map[string]string) {
 	o.worktreePaths = paths
+}
+
+// log returns the configured logger, falling back to slog.Default() if nil.
+func (o *Orchestrator) log() *slog.Logger {
+	if o.logger == nil {
+		return slog.Default()
+	}
+	return o.logger
 }
 
 // publish sends ev to the registered EventPublisher, if any.
@@ -695,7 +705,7 @@ func (o *Orchestrator) launchAgent(
 		// Single-repo fallback: create worktree on demand
 		wtPath = filepath.Join(o.repoPath, ".claude", "worktrees", branch)
 		if _, statErr := os.Stat(wtPath); statErr == nil {
-			fmt.Fprintf(os.Stderr, "orchestrator: reusing existing worktree for agent %s at %s\n", agentSpec.ID, wtPath)
+			o.log().Debug("orchestrator: reusing existing worktree", "agent", agentSpec.ID, "path", wtPath)
 		} else {
 			var createErr error
 			wtPath, createErr = worktreeCreatorFunc(wm, waveNum, agentSpec.ID)
@@ -737,14 +747,14 @@ func (o *Orchestrator) launchAgent(
 			if jsonBytes, marshalErr := json.Marshal(contextPayload); marshalErr == nil {
 				agentSpec.Task = string(jsonBytes)
 			} else {
-				fmt.Fprintf(os.Stderr, "orchestrator: failed to marshal E23 context: %v\n", marshalErr)
+				o.log().Warn("orchestrator: failed to marshal E23 context", "err", marshalErr)
 			}
 		} else {
 			// Fallback: use existing prompt from agentSpec (already set from IMPL doc parse).
-			fmt.Fprintf(os.Stderr, "orchestrator: E23 context extraction failed for agent %s: %v (falling back to full prompt)\n", agentSpec.ID, extractErr)
+			o.log().Warn("orchestrator: E23 context extraction failed", "agent", agentSpec.ID, "err", extractErr)
 		}
 	} else {
-		fmt.Fprintf(os.Stderr, "orchestrator: failed to load manifest for E23 extraction: %v\n", err)
+		o.log().Warn("orchestrator: failed to load manifest for E23 extraction", "err", err)
 	}
 
 	// Inject retry prefix after E23 extraction (GAP-4 fix).
@@ -829,7 +839,7 @@ func (o *Orchestrator) launchAgent(
 		// Only auto-synthesize complete if no existing partial/blocked report was found.
 		commitSHA, filesChanged, autoErr := autoCommitWorktree(wtPath, waveNum, agentSpec.ID, baseSHA)
 		if autoErr != nil {
-			fmt.Fprintf(os.Stderr, "orchestrator: auto-commit failed for agent %s: %v\n", agentSpec.ID, autoErr)
+			o.log().Warn("orchestrator: auto-commit failed", "agent", agentSpec.ID, "err", autoErr)
 		}
 
 		// Always synthesize a completion report for API agents that didn't write one.
@@ -870,10 +880,10 @@ func (o *Orchestrator) launchAgent(
 		if manifest, loadErr := protocol.Load(o.implDocPath); loadErr == nil {
 			if setErr := protocol.SetCompletionReport(manifest, agentSpec.ID, *report); setErr == nil {
 				if saveErr := protocol.Save(manifest, o.implDocPath); saveErr != nil {
-					fmt.Fprintf(os.Stderr, "orchestrator: failed to save report for agent %s: %v\n", agentSpec.ID, saveErr)
+					o.log().Warn("orchestrator: failed to save report", "agent", agentSpec.ID, "err", saveErr)
 				}
 			} else {
-				fmt.Fprintf(os.Stderr, "orchestrator: failed to set report for agent %s: %v\n", agentSpec.ID, setErr)
+				o.log().Warn("orchestrator: failed to set report", "agent", agentSpec.ID, "err", setErr)
 			}
 		}
 		reportMu.Unlock()
@@ -1010,7 +1020,7 @@ func (o *Orchestrator) executeRetryLoop(
 	if o.implDocPath != "" {
 		rc, rcErr := retryctx.BuildRetryContext(o.implDocPath, agentSpec.ID, count)
 		if rcErr != nil {
-			fmt.Fprintf(os.Stderr, "orchestrator: retry context build (best-effort): %v\n", rcErr)
+			o.log().Debug("orchestrator: retry context build (best-effort)", "err", rcErr)
 		} else if rc != nil && rc.PromptText != "" {
 			promptPrefix = rc.PromptText
 		}
