@@ -114,6 +114,24 @@ func FinalizeWave(ctx context.Context, opts FinalizeWaveOpts) (*FinalizeWaveResu
 			result.VerifyCommits = &verifyData
 		}
 
+		// Step 1.1: VerifyCompletionReports (I4)
+		_, stepErr = StepVerifyCompletionReports(ctx, opts, manifest, onEvent)
+		if stepErr != nil {
+			return result, fmt.Errorf("engine.FinalizeWave: %w", stepErr)
+		}
+
+		// Step 1.2: CheckAgentStatuses (E7)
+		_, stepErr = StepCheckAgentStatuses(ctx, opts, manifest, onEvent)
+		if stepErr != nil {
+			return result, fmt.Errorf("engine.FinalizeWave: %w", stepErr)
+		}
+
+		// Step 1.3: PredictConflicts (E11)
+		_, stepErr = StepPredictConflicts(ctx, opts, manifest, onEvent)
+		if stepErr != nil {
+			return result, fmt.Errorf("engine.FinalizeWave: %w", stepErr)
+		}
+
 		// Step 2: ScanStubs (E20)
 		stubStepResult, stepErr := StepScanStubs(ctx, opts, manifest, onEvent)
 		if stepErr != nil {
@@ -132,12 +150,28 @@ func FinalizeWave(ctx context.Context, opts FinalizeWaveOpts) (*FinalizeWaveResu
 			result.GateResults = gatesData.Gates
 		}
 
+		// Step 3.3: CheckTypeCollisions (E27, opt-in)
+		collisionResult, collisionReport, stepErr := StepCheckTypeCollisions(ctx, opts, onEvent)
+		_ = collisionResult
+		if collisionReport != nil {
+			result.CollisionReport = collisionReport
+		}
+		if stepErr != nil {
+			return result, fmt.Errorf("engine.FinalizeWave: %w", stepErr)
+		}
+
 		// Step 3.5: ValidateIntegration (E25)
 		_, integrationReport, stepErr := StepValidateIntegration(ctx, opts, manifest, onEvent)
 		if stepErr != nil {
 			return result, fmt.Errorf("engine.FinalizeWave: %w", stepErr)
 		}
 		result.IntegrationReport = integrationReport
+
+		// Step 3.6: CheckWiringDeclarations (E35, non-fatal)
+		_, wiringData, _ := StepCheckWiringDeclarations(ctx, opts, manifest, onEvent)
+		if wiringData != nil {
+			result.WiringReport = wiringData
+		}
 
 		// Step 4: MergeAgents
 		mergeStepResult, stepErr := StepMergeAgents(ctx, opts, onEvent)
@@ -146,6 +180,12 @@ func FinalizeWave(ctx context.Context, opts FinalizeWaveOpts) (*FinalizeWaveResu
 		}
 		if mergeData, ok := mergeStepResult.Data.(protocol.MergeAgentsData); ok {
 			result.MergeResult = &mergeData
+		}
+
+		// Step 4.2: PopulateIntegrationChecklist (M5, non-fatal)
+		_, updatedManifest, _ := StepPopulateIntegrationChecklist(ctx, opts, manifest, onEvent)
+		if updatedManifest != nil {
+			manifest = updatedManifest
 		}
 	} else {
 		// SkipMerge mode: populate synthetic MergeResult
