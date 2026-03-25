@@ -8,7 +8,11 @@ import (
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
 )
 
-// FinalizeIMPLEngine is an engine wrapper around protocol.FinalizeIMPL for webapp automation.
+// FinalizeIMPLEngine is the canonical engine wrapper around protocol.FinalizeIMPL.
+// Both CLI (`sawtools finalize-impl`) and web app automation should use this
+// function to ensure consistent behavior: context cancellation support,
+// parameter validation, and SSE-compatible result types.
+//
 // It respects context cancellation and returns results compatible with SSE streaming.
 //
 // Usage (typical webapp flow after Scout completes):

@@ -500,6 +500,33 @@ func TestFinalizeWaveResult_IntegrationActionRequiredField(t *testing.T) {
 	}
 }
 
+// TestFinalizeWave_SkipMergeFlag verifies that the --skip-merge flag is
+// registered on the finalize-wave command and parses correctly.
+func TestFinalizeWave_SkipMergeFlag(t *testing.T) {
+	cmd := newFinalizeWaveCmd()
+
+	flag := cmd.Flags().Lookup("skip-merge")
+	if flag == nil {
+		t.Fatal("expected --skip-merge flag to be registered on finalize-wave command")
+	}
+
+	if flag.DefValue != "false" {
+		t.Errorf("expected --skip-merge default to be false, got %q", flag.DefValue)
+	}
+
+	if err := cmd.Flags().Set("skip-merge", "true"); err != nil {
+		t.Errorf("failed to set --skip-merge flag: %v", err)
+	}
+
+	val, err := cmd.Flags().GetBool("skip-merge")
+	if err != nil {
+		t.Fatalf("failed to get --skip-merge value: %v", err)
+	}
+	if !val {
+		t.Error("expected --skip-merge=true after setting flag")
+	}
+}
+
 // TestFinalizeWaveResult_WiringGapsPopulated verifies that when wiring gaps
 // exist, IntegrationActionRequired is true and WiringGaps is serialized correctly.
 func TestFinalizeWaveResult_WiringGapsPopulated(t *testing.T) {
