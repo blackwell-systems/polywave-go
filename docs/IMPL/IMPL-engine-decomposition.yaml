@@ -1,0 +1,620 @@
+title: 'Engine Decomposition: Composable Step Functions with Event Callbacks'
+feature_slug: engine-decomposition
+verdict: SUITABLE
+suitability_assessment: |
+    Suitability gate — all five checks pass:
+
+    1. File decomposition: 14+ files in scout-and-wave-go will change. Work decomposes
+       cleanly into 5 audit items mapping to disjoint file groups. No two agents need
+       conflicting modifications to the same file.
+
+    2. Investigation-first items: None. Root cause is fully identified in the parallel
+       systems audit. The three copies of finalization logic, the missing PrepareWave
+       engine function, and the duplicate merge post-processing are all documented with
+       file paths and line numbers.
+
+    3. Interface discoverability: Yes. The EventCallback type and step function signatures
+       can be defined upfront. The web app's runFinalizeSteps() already demonstrates the
+       correct decomposition — we are pulling it down into the engine.
+
+    4. Pre-implementation status: All 5 items are TODO (unaddressed per audit 2026-03-24).
+
+    5. Parallelization value: High. Build+test cycle is >30s (Go compile + test suite).
+       Wave 1 has 3 independent agents each touching 2-4 files. Wave 2 has 2 agents
+       updating CLI callers. Clear speedup over sequential.
+
+    Scope: Engine repo only (scout-and-wave-go). Web app caller updates
+    (scout-and-wave-web) are deferred to a follow-up IMPL after the engine
+    step functions stabilize. This avoids cross-repo coordination complexity
+    and lets us validate the engine API before updating consumers.
+
+    Estimated times:
+    - Scout phase: ~10 min (dependency mapping)
+    - Agent execution: ~15 min (Wave 1: 3 agents x 8 min parallel, Wave 2: 2 agents x 8 min parallel)
+    - Merge and verification: ~5 min per wave
+    Total SAW time: ~30 min
+
+    Sequential baseline: ~50 min (5 agents x 10 min avg)
+    Time savings: ~20 min (40% faster)
+
+    Recommendation: Clear speedup. Proceed.
+test_command: go test ./...
+lint_command: go vet ./...
+file_ownership:
+    - file: pkg/engine/step_types.go
+      agent: A
+      wave: 1
+      action: new
+    - file: pkg/engine/prepare.go
+      agent: A
+      wave: 1
+      action: new
+    - file: pkg/engine/prepare_test.go
+      agent: A
+      wave: 1
+      action: new
+    - file: pkg/engine/finalize_steps.go
+      agent: B
+      wave: 1
+      action: new
+    - file: pkg/engine/finalize_steps_test.go
+      agent: B
+      wave: 1
+      action: new
+    - file: pkg/engine/finalize.go
+      agent: B
+      wave: 1
+      action: modify
+    - file: pkg/engine/finalize_test.go
+      agent: B
+      wave: 1
+      action: modify
+    - file: pkg/engine/test_runner.go
+      agent: C
+      wave: 1
+      action: new
+    - file: pkg/engine/test_runner_test.go
+      agent: C
+      wave: 1
+      action: new
+    - file: pkg/engine/merge_cleanup.go
+      agent: C
+      wave: 1
+      action: new
+    - file: pkg/engine/merge_cleanup_test.go
+      agent: C
+      wave: 1
+      action: new
+    - file: cmd/sawtools/prepare_wave.go
+      agent: D
+      wave: 2
+      action: modify
+      depends_on:
+        - A
+    - file: cmd/sawtools/prepare_wave_test.go
+      agent: D
+      wave: 2
+      action: modify
+      depends_on:
+        - A
+    - file: cmd/sawtools/finalize_wave.go
+      agent: E
+      wave: 2
+      action: modify
+      depends_on:
+        - B
+    - file: cmd/sawtools/finalize_wave_test.go
+      agent: E
+      wave: 2
+      action: modify
+      depends_on:
+        - B
+    - file: pkg/engine/run_wave_full.go
+      agent: E
+      wave: 2
+      action: modify
+      depends_on:
+        - B
+    - file: pkg/engine/finalize_impl.go
+      agent: E
+      wave: 2
+      action: modify
+      depends_on:
+        - B
+interface_contracts:
+    - name: EventCallback
+      description: |
+        Composable event hook for engine step functions. CLI prints to stdout;
+        web app publishes SSE events. nil-safe — step functions must check for nil
+        before calling.
+      definition: |
+        type EventCallback func(step string, status string, detail string)
+      location: pkg/engine/step_types.go
+    - name: StepResult
+      description: |
+        Common return type for individual step functions. Each finalization step
+        returns one of these, and FinalizeWave aggregates them.
+      definition: |
+        type StepResult struct {
+            Step    string      `json:"step"`
+            Status  string      `json:"status"`
+            Detail  string      `json:"detail,omitempty"`
+            Data    interface{} `json:"data,omitempty"`
+        }
+      location: pkg/engine/step_types.go
+    - name: PrepareWave
+      description: |
+        Engine-level wave preparation: dep checking, baseline gates, worktree creation,
+        brief extraction, journal init. Replaces 500+ lines in CLI prepare_wave.go.
+        Both CLI and web app call this single function.
+      definition: |
+        func PrepareWave(ctx context.Context, opts PrepareWaveOpts) (*PrepareWaveResult, error)
+      location: pkg/engine/prepare.go
+    - name: FinalizeWaveStepFunctions
+      description: |
+        Decomposed finalization steps. Each accepts FinalizeWaveOpts and an EventCallback.
+        FinalizeWave() becomes a thin orchestrator that calls these in sequence.
+      definition: |
+        func StepVerifyCommits(ctx context.Context, opts FinalizeWaveOpts, onEvent EventCallback) (*StepResult, error)
+        func StepScanStubs(ctx context.Context, opts FinalizeWaveOpts, manifest *protocol.IMPLManifest, onEvent EventCallback) (*StepResult, error)
+        func StepRunGates(ctx context.Context, opts FinalizeWaveOpts, manifest *protocol.IMPLManifest, onEvent EventCallback) (*StepResult, *protocol.GatesData, error)
+        func StepValidateIntegration(ctx context.Context, opts FinalizeWaveOpts, manifest *protocol.IMPLManifest, onEvent EventCallback) (*StepResult, *protocol.IntegrationReport, error)
+        func StepMergeAgents(ctx context.Context, opts FinalizeWaveOpts, onEvent EventCallback) (*StepResult, error)
+        func StepFixGoMod(ctx context.Context, opts FinalizeWaveOpts, onEvent EventCallback) (*StepResult, error)
+        func StepVerifyBuild(ctx context.Context, opts FinalizeWaveOpts, onEvent EventCallback) (*StepResult, error)
+        func StepCleanup(ctx context.Context, opts FinalizeWaveOpts, onEvent EventCallback) (*StepResult, error)
+      location: pkg/engine/finalize_steps.go
+    - name: RunTestCommand
+      description: |
+        Consolidated test runner. Loads IMPL manifest, extracts test_command,
+        runs via sh -c, streams output line-by-line through a callback.
+        Replaces duplicate implementations in service.RunTests and api.handleWaveTest.
+      definition: |
+        func RunTestCommand(ctx context.Context, implPath string, repoPath string, onOutput func(line string)) error
+      location: pkg/engine/test_runner.go
+    - name: PostMergeCleanup
+      description: |
+        Consolidated post-merge processing: go.mod fixup + worktree cleanup.
+        Replaces character-for-character duplicate code in service.MergeWave,
+        api.handleWaveMerge, and api.handleResolveConflicts.
+      definition: |
+        func PostMergeCleanup(ctx context.Context, implPath string, waveNum int, repoPath string, onEvent EventCallback) error
+      location: pkg/engine/merge_cleanup.go
+waves:
+    - number: 1
+      agents:
+        - id: A
+          task: |
+            ## Create engine.PrepareWave() and shared types — Audit Item #1
+
+            **Goal:** Create `pkg/engine/step_types.go` with shared types AND
+            `pkg/engine/prepare.go` with an `engine.PrepareWave()` function that
+            encapsulates the full wave preparation pipeline currently spread across
+            `cmd/sawtools/prepare_wave.go` (593 lines).
+
+            **Part 1: Create `pkg/engine/step_types.go`** (shared types scaffold)
+
+            This file defines types used by ALL engine step functions (your code
+            and Agents B and C in this wave). Create it FIRST. Contents:
+
+            ```go
+            package engine
+
+            import "github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
+
+            // EventCallback is the composable event hook for engine step functions.
+            type EventCallback func(step string, status string, detail string)
+
+            // StepResult is the common return type for individual step functions.
+            type StepResult struct {
+                Step    string      `json:"step"`
+                Status  string      `json:"status"` // "success", "failed", "skipped"
+                Detail  string      `json:"detail,omitempty"`
+                Data    interface{} `json:"data,omitempty"`
+            }
+
+            // PrepareWaveOpts configures the engine-level wave preparation pipeline.
+            type PrepareWaveOpts struct {
+                IMPLPath    string
+                RepoPath    string
+                WaveNum     int
+                MergeTarget string
+                NoCache     bool
+                OnEvent     EventCallback
+            }
+
+            // PrepareWaveResult captures results of all preparation steps.
+            type PrepareWaveResult struct {
+                Wave        int                          `json:"wave"`
+                Worktrees   []protocol.WorktreeInfo      `json:"worktrees"`
+                AgentBriefs []AgentBriefInfo             `json:"agent_briefs"`
+                Steps       []StepResult                 `json:"steps"`
+                Success     bool                         `json:"success"`
+            }
+
+            // AgentBriefInfo contains metadata about a prepared agent brief.
+            type AgentBriefInfo struct {
+                Agent       string `json:"agent"`
+                BriefPath   string `json:"brief_path"`
+                BriefLength int    `json:"brief_length"`
+                JournalDir  string `json:"journal_dir"`
+                FilesOwned  int    `json:"files_owned"`
+                Repo        string `json:"repo,omitempty"`
+                MergeTarget string `json:"merge_target,omitempty"`
+            }
+            ```
+
+            **CRITICAL:** Agents B and C in this same wave will import these types.
+            The scaffold file must compile on its own before the other agents' code
+            can build. Create step_types.go as the first thing you do.
+
+            **Part 2: Create `pkg/engine/prepare.go`**
+
+            `func PrepareWave(ctx context.Context, opts PrepareWaveOpts) (*PrepareWaveResult, error)`
+
+            The function must perform these steps in order, calling `opts.OnEvent` at each:
+            - Resume detection (warn on orphaned worktrees)
+            - Dependency checking via `deps.CheckDeps()`
+            - Load and validate manifest (`protocol.Load`, `protocol.Validate`)
+            - Critic verdict enforcement (E37)
+            - Stale worktree cleanup for same slug
+            - Repo match validation (`protocol.ValidateRepoMatch`)
+            - Dependency output verification (H2, wave > 1 only)
+            - File ownership coverage check (H1, wave > 1, warning only)
+            - File existence validation across repos
+            - Merge target checkout (when set)
+            - Baseline quality gates (E21A) with gate cache
+            - Cross-repo baseline gates (E21B, multi-repo only)
+            - Wiring ownership validation (E35 Layer 3A)
+            - Scaffold commit validation (I2)
+            - Freeze check (I2, when WorktreesCreatedAt set)
+            - I1 disjoint ownership verification (E3)
+            - Type collision check (E41)
+            - Pre-wave readiness gate (C7)
+            - Create worktrees
+            - Verify pre-commit hooks (H10)
+            - Extract agent briefs + init journals
+
+            **Reference:** Read `cmd/sawtools/prepare_wave.go` carefully. Every step in
+            `newPrepareWaveCmd()` must be replicated in the engine function. The CLI
+            command will become a thin wrapper in Wave 2.
+
+            **Constraints:**
+            - nil-check `opts.OnEvent` before calling
+            - Return partial `PrepareWaveResult` on failure (include completed steps)
+            - Do NOT modify `cmd/sawtools/prepare_wave.go` — that happens in Wave 2
+
+            **Tests:** Create `pkg/engine/prepare_test.go` with:
+            - Test that OnEvent callback is invoked for each step
+            - Test that missing IMPLPath/RepoPath returns error
+            - Test that dep conflict returns error with partial result
+
+            **Verification gate:** `go build ./pkg/engine/... && go test ./pkg/engine/ -run TestPrepare -count=1`
+          files:
+            - pkg/engine/step_types.go
+            - pkg/engine/prepare.go
+            - pkg/engine/prepare_test.go
+        - id: B
+          task: |
+            ## Decompose engine.FinalizeWave() into Step Functions — Audit Item #2
+
+            **Goal:** Create `pkg/engine/finalize_steps.go` with individual step functions
+            that FinalizeWave() delegates to. This is the core decomposition work.
+
+            **IMPORTANT:** Agent A (same wave) creates `pkg/engine/step_types.go` with
+            the `EventCallback` and `StepResult` types. Your code imports these types.
+            If step_types.go is not yet present when you start, define the types yourself
+            in finalize_steps.go — but prefer importing from step_types.go.
+
+            **What to implement:**
+
+            Create these functions in `pkg/engine/finalize_steps.go`:
+            1. `StepVerifyCommits(ctx, opts, onEvent) (*StepResult, error)`
+            2. `StepScanStubs(ctx, opts, manifest, onEvent) (*StepResult, error)`
+            3. `StepRunGates(ctx, opts, manifest, onEvent) (*StepResult, *protocol.GatesData, error)`
+            4. `StepValidateIntegration(ctx, opts, manifest, onEvent) (*StepResult, *protocol.IntegrationReport, error)`
+            5. `StepMergeAgents(ctx, opts, onEvent) (*StepResult, error)`
+            6. `StepFixGoMod(ctx, opts, onEvent) (*StepResult, error)`
+            7. `StepVerifyBuild(ctx, opts, onEvent) (*StepResult, error)`
+            8. `StepCleanup(ctx, opts, onEvent) (*StepResult, error)`
+
+            Each step function:
+            - Takes `FinalizeWaveOpts` (existing type in finalize.go) + `EventCallback`
+            - Calls `onEvent(stepName, "running", "")` at start, `onEvent(stepName, "complete", "")` at end
+            - nil-checks onEvent before calling
+            - Returns a `StepResult` plus any typed data the caller needs
+            - Extracts logic from the current monolithic `FinalizeWave()` in finalize.go
+
+            **Then modify `pkg/engine/finalize.go`:**
+            - Refactor `FinalizeWave()` to call the step functions in sequence
+            - Keep the same `FinalizeWaveOpts` and `FinalizeWaveResult` types
+            - Add `OnEvent EventCallback` field to `FinalizeWaveOpts`
+            - Keep backward compatibility: existing callers that pass no OnEvent still work
+
+            **IMPORTANT:** The web app's `runFinalizeSteps()` in `wave_runner.go` lines 400-720
+            already demonstrates the correct decomposition with resume support and SSE events.
+            Study that function as the reference architecture, then implement the equivalent
+            in the engine. The web app will be updated to call your step functions in a
+            follow-up IMPL.
+
+            **Constraints:**
+            - Use `StepResult` and `EventCallback` from step_types.go (Agent A creates this)
+            - Do NOT modify any files outside pkg/engine/
+            - Preserve all existing FinalizeWaveResult fields and behavior
+            - The existing FinalizeWave signature must still work (OnEvent defaults to nil)
+
+            **Tests:** Create `pkg/engine/finalize_steps_test.go` with:
+            - Test each step function individually with a mock EventCallback
+            - Test that FinalizeWave still works end-to-end (backward compat)
+
+            **Verification gate:** `go build ./pkg/engine/... && go test ./pkg/engine/ -run TestStep -count=1`
+          files:
+            - pkg/engine/finalize_steps.go
+            - pkg/engine/finalize_steps_test.go
+            - pkg/engine/finalize.go
+            - pkg/engine/finalize_test.go
+        - id: C
+          task: |
+            ## Consolidate Test Runner and Merge Post-Processing — Audit Items #3 and #4
+
+            **Goal:** Create two new engine functions that eliminate duplicate implementations
+            in the web layer.
+
+            **IMPORTANT:** Agent A (same wave) creates `pkg/engine/step_types.go` with
+            the `EventCallback` type. Your `PostMergeCleanup` function uses this type.
+            If step_types.go is not yet present when you start, define EventCallback
+            yourself — but prefer importing from step_types.go.
+
+            **Part 1: Consolidated test runner** (`pkg/engine/test_runner.go`)
+
+            Create `func RunTestCommand(ctx context.Context, implPath, repoPath string, onOutput func(line string)) error`
+
+            This function:
+            - Loads the IMPL manifest to get test_command
+            - Returns error if test_command is empty
+            - Runs test_command via `exec.CommandContext(ctx, "sh", "-c", testCommand)`
+            - Sets cmd.Dir = repoPath
+            - Sets Setpgid for process group management
+            - Streams stdout+stderr line-by-line through onOutput callback
+            - Kills process group on context cancellation
+            - Returns nil on success, error on failure (includes accumulated output)
+
+            Reference implementations to replace:
+            - `service.runTestCommand()` in scout-and-wave-web/pkg/service/merge_service.go (simple CombinedOutput)
+            - `api.handleWaveTest()` inline test execution in scout-and-wave-web/pkg/api/merge_test_handlers.go (streaming)
+
+            **Part 2: Consolidated post-merge cleanup** (`pkg/engine/merge_cleanup.go`)
+
+            Create `func PostMergeCleanup(ctx context.Context, implPath string, waveNum int, repoPath string, onEvent EventCallback) error`
+
+            This function:
+            - Calls `protocol.FixGoModReplacePaths(repoPath)` with event reporting
+            - Calls `protocol.Cleanup(implPath, waveNum, repoPath)` with event reporting
+            - Reports step progress through onEvent callback
+            - Returns nil (errors are non-fatal, reported through onEvent)
+
+            This replaces the identical go.mod fixup + cleanup code blocks in:
+            - `service.MergeWave()` lines 103-114 (scout-and-wave-web)
+            - `api.handleWaveMerge()` lines 99-110 (scout-and-wave-web)
+            - `api.handleResolveConflicts()` lines 394-404 (scout-and-wave-web)
+            - `service.ResolveConflicts()` lines 325-336 (scout-and-wave-web)
+
+            **Constraints:**
+            - Use `EventCallback` from step_types.go (Agent A creates this)
+            - Both functions must be backend-agnostic (no CLI/web assumptions)
+            - onOutput and onEvent must be nil-safe
+
+            **Tests:**
+            - `test_runner_test.go`: test with empty test_command, test callback invocation
+            - `merge_cleanup_test.go`: test callback invocation, test non-fatal error handling
+
+            **Verification gate:** `go build ./pkg/engine/... && go test ./pkg/engine/ -run "TestRunTest|TestPostMerge" -count=1`
+          files:
+            - pkg/engine/test_runner.go
+            - pkg/engine/test_runner_test.go
+            - pkg/engine/merge_cleanup.go
+            - pkg/engine/merge_cleanup_test.go
+    - number: 2
+      agents:
+        - id: D
+          task: |
+            ## Update CLI prepare-wave to use engine.PrepareWave() — Audit Item #1 caller update
+
+            **Goal:** Refactor `cmd/sawtools/prepare_wave.go` to be a thin CLI wrapper
+            around `engine.PrepareWave()`.
+
+            **What to implement:**
+
+            Replace the 500+ lines of inline orchestration in `newPrepareWaveCmd()` with:
+            1. Parse CLI flags (--wave, --no-cache, --merge-target, --repo-dir)
+            2. Resolve project root from manifest path or --repo-dir flag
+            3. Build `engine.PrepareWaveOpts` from flags and resolved paths
+            4. Set `OnEvent` to a callback that prints step progress to stderr
+            5. Call `engine.PrepareWave(ctx, opts)`
+            6. Format and output the result as JSON to stdout
+
+            **Keep:**
+            - The cobra command definition (Use, Short, Long, Args, Flags)
+            - JSON output format (backward compat for programmatic consumers)
+
+            **Remove:**
+            - All inline step logic (dep checking, worktree creation, brief extraction, etc.)
+            - Direct calls to protocol.*, deps.*, collision.*, journal.*, etc.
+            - The `PrepareWaveResult` and `AgentBriefInfo` types (use engine.PrepareWaveResult
+              and engine.AgentBriefInfo from step_types.go instead)
+            - The `checkDependencies` helper (now lives in engine.PrepareWave)
+            - The `loadSAWConfigRepos` helper (now lives in engine.PrepareWave)
+            - Unused import statements
+
+            **Constraints:**
+            - The CLI output JSON structure must not change
+            - Error messages should be similar to current output
+            - `--repo-dir` flag resolution stays in the CLI (it's a CLI concern)
+
+            **Tests:** Update `cmd/sawtools/prepare_wave_test.go` to verify the thin wrapper.
+
+            **Verification gate:** `go build ./cmd/sawtools/ && go test ./cmd/sawtools/ -run TestPrepareWave -count=1`
+          files:
+            - cmd/sawtools/prepare_wave.go
+            - cmd/sawtools/prepare_wave_test.go
+          dependencies:
+            - A
+        - id: E
+          task: |
+            ## Update CLI finalize-wave and run_wave_full to use step functions — Audit Items #2 and #5
+
+            **Goal:** Refactor CLI finalize-wave and engine.RunWaveFull to use the new step
+            functions, and clean up FinalizeIMPLEngine.
+
+            **Part 1: cmd/sawtools/finalize_wave.go**
+
+            The CLI finalize-wave has features the engine FinalizeWave lacks:
+            - Cross-repo per-repo iteration
+            - Closed-loop gate retry (C2)
+            - Completion report checking (I4, E7)
+            - Type collision detection pre-merge
+            - Post-merge gates (E21 post-merge phase)
+
+            For this refactor, focus on removing duplicated step implementations by
+            delegating to engine step functions where the logic is identical:
+            - Replace inline VerifyCommits with `engine.StepVerifyCommits()`
+            - Replace inline ScanStubs with `engine.StepScanStubs()`
+            - Replace inline ValidateIntegration with `engine.StepValidateIntegration()`
+            - Replace inline VerifyBuild with `engine.StepVerifyBuild()`
+            - Replace inline Cleanup with `engine.StepCleanup()`
+
+            Keep CLI-only features inline:
+            - Cross-repo per-repo iteration (engine is single-repo for now)
+            - Closed-loop gate retry logic
+            - Collision detection
+            - I4/E7 completion report checks
+
+            Set `OnEvent` on `FinalizeWaveOpts` to a callback that prints to stderr.
+
+            **Part 2: pkg/engine/run_wave_full.go**
+
+            Refactor `RunWaveFull()` to call `engine.FinalizeWave()` for steps 3-6
+            instead of directly calling protocol.* functions. This eliminates the
+            third copy of the finalization sequence.
+
+            **Part 3: pkg/engine/finalize_impl.go**
+
+            Add a comment documenting that both CLI (`sawtools finalize-impl`) and web
+            (`engine.FinalizeIMPLEngine`) should use this engine wrapper. No functional
+            changes needed — the current implementation is correct.
+
+            **Constraints:**
+            - CLI JSON output format must not change
+            - Cross-repo support in finalize_wave.go must be preserved
+            - `inferLanguageFromCommand` helper can stay in finalize_wave.go
+            - `extractReposFromManifest` helper stays in finalize_wave.go
+
+            **Tests:** Update existing tests to verify the refactored code.
+
+            **Verification gate:** `go build ./cmd/sawtools/ && go build ./pkg/engine/... && go test ./cmd/sawtools/ -run TestFinalizeWave -count=1`
+          files:
+            - cmd/sawtools/finalize_wave.go
+            - cmd/sawtools/finalize_wave_test.go
+            - pkg/engine/run_wave_full.go
+            - pkg/engine/finalize_impl.go
+          dependencies:
+            - B
+quality_gates:
+    level: standard
+    gates:
+        - type: build
+          command: go build ./...
+          required: true
+        - type: lint
+          command: go vet ./...
+          required: true
+        - type: test
+          command: go test ./...
+          required: true
+scaffolds:
+    - file: pkg/engine/step_types.go
+      contents: |
+        package engine
+
+        import "github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
+
+        // EventCallback is the composable event hook for engine step functions.
+        // CLI prints to stdout; web app publishes SSE events. nil-safe — callers
+        // must check for nil before calling.
+        type EventCallback func(step string, status string, detail string)
+
+        // StepResult is the common return type for individual step functions.
+        type StepResult struct {
+            Step    string      `json:"step"`
+            Status  string      `json:"status"` // "success", "failed", "skipped"
+            Detail  string      `json:"detail,omitempty"`
+            Data    interface{} `json:"data,omitempty"`
+        }
+
+        // PrepareWaveOpts configures the engine-level wave preparation pipeline.
+        type PrepareWaveOpts struct {
+            IMPLPath    string
+            RepoPath    string
+            WaveNum     int
+            MergeTarget string
+            NoCache     bool
+            OnEvent     EventCallback
+        }
+
+        // PrepareWaveResult captures results of all preparation steps.
+        type PrepareWaveResult struct {
+            Wave        int                          `json:"wave"`
+            Worktrees   []protocol.WorktreeInfo      `json:"worktrees"`
+            AgentBriefs []AgentBriefInfo             `json:"agent_briefs"`
+            Steps       []StepResult                 `json:"steps"`
+            Success     bool                         `json:"success"`
+        }
+
+        // AgentBriefInfo contains metadata about a prepared agent brief.
+        type AgentBriefInfo struct {
+            Agent       string `json:"agent"`
+            BriefPath   string `json:"brief_path"`
+            BriefLength int    `json:"brief_length"`
+            JournalDir  string `json:"journal_dir"`
+            FilesOwned  int    `json:"files_owned"`
+            Repo        string `json:"repo,omitempty"`
+            MergeTarget string `json:"merge_target,omitempty"`
+        }
+      import_path: github.com/blackwell-systems/scout-and-wave-go/pkg/engine
+      status: committed (416f5bc)
+pre_mortem:
+    overall_risk: medium
+    rows:
+        - scenario: Engine PrepareWave omits a pre-flight check from CLI version
+          likelihood: medium
+          impact: high
+          mitigation: |
+            Agent A prompt lists all 20+ pre-flight steps from the CLI. Code review
+            verifies completeness by diffing against cmd/sawtools/prepare_wave.go.
+        - scenario: FinalizeWave step functions change return types, breaking callers
+          likelihood: low
+          impact: medium
+          mitigation: |
+            Step functions use new StepResult type alongside existing FinalizeWaveResult.
+            Existing FinalizeWave() signature preserved with nil-safe OnEvent.
+        - scenario: Cross-repo features in CLI finalize-wave lost during refactor
+          likelihood: medium
+          impact: high
+          mitigation: |
+            Agent E prompt explicitly calls out cross-repo per-repo iteration and
+            instructs to keep CLI-only features inline rather than force them into
+            the engine prematurely.
+        - scenario: Wave 1 agents create conflicting type definitions in step_types.go
+          likelihood: medium
+          impact: high
+          mitigation: |
+            Agent A owns step_types.go exclusively. Agents B and C import from it.
+            If step_types.go is not present in their worktree, agents define types
+            locally — merge will reconcile since Agent A's file is authoritative.
+        - scenario: Web app follow-up IMPL is never created, leaving duplication
+          likelihood: medium
+          impact: medium
+          mitigation: |
+            The audit finding remains open until web caller updates are complete.
+            The suitability_assessment documents that web changes are deferred.
+state: REVIEWED
