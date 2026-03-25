@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
 
@@ -101,7 +102,7 @@ func loadJournalEntries(indexPath string) ([]journal.ToolEntry, error) {
 		var entry journal.ToolEntry
 		if err := json.Unmarshal(line, &entry); err != nil {
 			// Skip malformed lines with warning (don't fail entire load)
-			fmt.Fprintf(os.Stderr, "Warning: skipping malformed journal entry at line %d: %v\n", lineNum, err)
+			slog.Default().Warn("skipping malformed journal entry", "line", lineNum, "err", err)
 			continue
 		}
 
