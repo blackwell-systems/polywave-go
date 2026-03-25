@@ -6,6 +6,7 @@ package worktree
 
 import (
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
@@ -19,6 +20,7 @@ type Manager struct {
 	repoPath string
 	slug     string            // IMPL feature slug for slug-scoped branch naming
 	active   map[string]string // absolute worktree path -> branch name
+	logger   *slog.Logger
 }
 
 // New creates a new Manager for the git repository at repoPath.
@@ -29,6 +31,20 @@ func New(repoPath, slug string) *Manager {
 		slug:     slug,
 		active:   make(map[string]string),
 	}
+}
+
+// SetLogger configures the logger used for non-fatal diagnostic messages.
+// If never called, the manager falls back to slog.Default().
+func (m *Manager) SetLogger(logger *slog.Logger) {
+	m.logger = logger
+}
+
+// log returns the configured logger, falling back to slog.Default() if nil.
+func (m *Manager) log() *slog.Logger {
+	if m.logger == nil {
+		return slog.Default()
+	}
+	return m.logger
 }
 
 // Create creates a new worktree for the given wave number and agent letter.
@@ -53,7 +69,7 @@ func (m *Manager) Create(wave int, agent string) (string, error) {
 
 	if err := installPreCommitHook(wtPath); err != nil {
 		// Non-fatal: log but do not abort worktree creation.
-		fmt.Fprintf(os.Stderr, "manager: warning: could not install pre-commit hook in %q: %v\n", wtPath, err)
+		m.log().Warn("manager: could not install pre-commit hook", "path", wtPath, "err", err)
 	}
 
 	m.active[wtPath] = branch
@@ -116,7 +132,7 @@ func (m *Manager) Remove(path string) error {
 
 	if err := git.DeleteBranch(m.repoPath, branch); err != nil {
 		// Log but don't fail — the worktree itself is already removed.
-		fmt.Fprintf(os.Stderr, "manager: warning: could not delete branch %q: %v\n", branch, err)
+		m.log().Warn("manager: could not delete branch", "branch", branch, "err", err)
 	}
 
 	delete(m.active, path)
@@ -135,7 +151,7 @@ func (m *Manager) CleanupAll() error {
 
 	for _, path := range paths {
 		if err := m.Remove(path); err != nil {
-			fmt.Fprintf(os.Stderr, "manager: cleanup error for %q: %v\n", path, err)
+			m.log().Warn("manager: cleanup error", "path", path, "err", err)
 			lastErr = err
 		}
 	}

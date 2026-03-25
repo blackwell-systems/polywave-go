@@ -3,16 +3,18 @@ package engine
 import (
 	"context"
 	"fmt"
+	"log/slog"
 
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
 )
 
 // RunWaveFullOpts configures a full wave lifecycle execution.
 type RunWaveFullOpts struct {
-	ManifestPath string // path to IMPL manifest file
-	RepoPath     string // absolute path to the repository
-	WaveNum      int    // wave number to execute
-	MergeTarget  string // target branch for merge; empty = HEAD (default)
+	ManifestPath string       // path to IMPL manifest file
+	RepoPath     string       // absolute path to the repository
+	WaveNum      int          // wave number to execute
+	MergeTarget  string       // target branch for merge; empty = HEAD (default)
+	Logger       *slog.Logger // optional: nil falls back to slog.Default()
 }
 
 // RunWaveFullResult captures the results of all wave lifecycle steps.
@@ -66,6 +68,7 @@ func RunWaveFull(ctx context.Context, opts RunWaveFullOpts) (*RunWaveFullResult,
 		RepoPath:    opts.RepoPath,
 		WaveNum:     opts.WaveNum,
 		MergeTarget: opts.MergeTarget,
+		Logger:      opts.Logger,
 	}
 	finalizeResult, err := FinalizeWave(ctx, finalizeOpts)
 	result.FinalizeResult = finalizeResult

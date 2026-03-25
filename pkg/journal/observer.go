@@ -5,6 +5,7 @@ import (
 	"crypto/md5"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"sort"
@@ -21,6 +22,21 @@ type JournalObserver struct {
 	IndexPath   string
 	RecentPath  string
 	ResultsDir  string
+	logger      *slog.Logger
+}
+
+// SetLogger configures the logger used for non-fatal diagnostic messages.
+// If never called, the observer falls back to slog.Default().
+func (o *JournalObserver) SetLogger(logger *slog.Logger) {
+	o.logger = logger
+}
+
+// log returns the configured logger, falling back to slog.Default() if nil.
+func (o *JournalObserver) log() *slog.Logger {
+	if o.logger == nil {
+		return slog.Default()
+	}
+	return o.logger
 }
 
 // NewObserver creates a journal observer instance for an agent.
@@ -448,7 +464,7 @@ func (o *JournalObserver) LoadJournal() ([]ToolEntry, error) {
 		var entry ToolEntry
 		if err := json.Unmarshal([]byte(line), &entry); err != nil {
 			// Skip malformed lines with warning, but don't fail
-			fmt.Fprintf(os.Stderr, "Warning: skipping malformed JSONL line %d in %s: %v\n", i+1, o.IndexPath, err)
+			o.log().Warn("skipping malformed JSONL line", "line", i+1, "path", o.IndexPath, "err", err)
 			continue
 		}
 

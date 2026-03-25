@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"fmt"
+	"log/slog"
 	"os"
 	"os/exec"
 	"strings"
@@ -109,7 +110,7 @@ func isWorktreeDirty(path string, lockedPaths map[string]bool) bool {
 	out, err := cmd.Output()
 	if err != nil {
 		// Git command failed — treat as clean and log a warning.
-		fmt.Fprintf(os.Stderr, "resume: ClassifyWorktrees: git status failed for %s: %v\n", path, err)
+		slog.Default().Warn("resume: ClassifyWorktrees: git status failed", "path", path, "err", err)
 		return false
 	}
 
