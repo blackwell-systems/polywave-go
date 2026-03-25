@@ -3,7 +3,7 @@ package engine
 import (
 	"context"
 	"fmt"
-	"os"
+	"log/slog"
 	"time"
 
 	"path/filepath"
@@ -20,6 +20,7 @@ type FinalizeWaveOpts struct {
 	WaveNum     int                    // wave number to finalize
 	MergeTarget string                 // target branch for merge; empty = HEAD (default)
 	ObsEmitter  *observability.Emitter // optional: non-blocking observability emitter
+	Logger      *slog.Logger          // optional: nil falls back to slog.Default()
 
 	// M2 (E25): When true, unconnected exports in the integration report
 	// block the merge with a fatal error. Default (false) preserves the
@@ -142,7 +143,7 @@ func FinalizeWave(ctx context.Context, opts FinalizeWaveOpts) (*FinalizeWaveResu
 		}
 		// Warning if worktrees still exist
 		if !protocol.WorktreesAbsent(manifest, opts.WaveNum, opts.RepoPath) {
-			fmt.Fprintf(os.Stderr, "engine.FinalizeWave: --skip-merge used but worktrees detected; cleanup will remove them\n")
+			loggerFrom(opts.Logger).Warn("engine.FinalizeWave: --skip-merge used but worktrees detected; cleanup will remove them")
 		}
 	}
 
@@ -201,6 +202,7 @@ type MarkIMPLCompleteOpts struct {
 	RepoPath   string                 // absolute path to the target repository
 	Date       string                 // completion date in YYYY-MM-DD format
 	ObsEmitter *observability.Emitter // optional: non-blocking observability emitter
+	Logger     *slog.Logger           // optional: nil falls back to slog.Default()
 }
 
 // MarkIMPLComplete writes the completion marker (E15), updates project context (E18),
@@ -225,7 +227,7 @@ func MarkIMPLComplete(ctx context.Context, opts MarkIMPLCompleteOpts) error {
 		res := protocol.UpdateContext(opts.IMPLPath, opts.RepoPath)
 		if res.IsFatal() {
 			// Non-fatal: log but continue to archive
-			fmt.Fprintf(os.Stderr, "engine.MarkIMPLComplete: update-context: %s\n", res.Errors[0].Message)
+			loggerFrom(opts.Logger).Warn("engine.MarkIMPLComplete: update-context", "msg", res.Errors[0].Message)
 		}
 	}
 

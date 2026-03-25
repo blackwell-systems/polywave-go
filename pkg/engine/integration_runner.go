@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
 
@@ -20,6 +21,7 @@ type RunIntegrationAgentOpts struct {
 	WaveNum  int                         // wave number that was just completed
 	Report   *protocol.IntegrationReport // gaps to fix
 	Model    string                      // optional model override
+	Logger   *slog.Logger                // optional: nil falls back to slog.Default()
 }
 
 // RunIntegrationAgent launches an LLM agent to wire integration gaps after
@@ -70,7 +72,8 @@ func RunIntegrationAgent(ctx context.Context, opts RunIntegrationAgentOpts, onEv
 	if manifest.IntegrationReports == nil || manifest.IntegrationReports[waveKey] == nil {
 		// No persisted integration report — the heuristic scan (E25) may not have run.
 		// This is recoverable: use the caller-supplied report and log a warning.
-		fmt.Fprintf(os.Stderr, "engine.RunIntegrationAgent: warning: no integration_report found in manifest for %s (E25 may not have run)\n", waveKey)
+		loggerFrom(opts.Logger).Warn("engine.RunIntegrationAgent: no integration_report found",
+			"wave_key", waveKey)
 	}
 
 	// E26-P2: integration_connectors must be defined (E26 precondition).

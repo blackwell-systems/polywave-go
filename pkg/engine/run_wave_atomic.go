@@ -3,6 +3,7 @@ package engine
 import (
 	"context"
 	"fmt"
+	"log/slog"
 
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/observability"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
@@ -15,6 +16,7 @@ type RunWaveTransactionOpts struct {
 	WaveNum     int
 	MergeTarget string
 	ObsEmitter  *observability.Emitter
+	Logger      *slog.Logger // optional: nil falls back to slog.Default()
 }
 
 // implSnapshot captures the IMPL doc state fields that may be mutated by
@@ -88,6 +90,7 @@ func RunWaveTransaction(ctx context.Context, opts RunWaveTransactionOpts) (*Fina
 		WaveNum:     opts.WaveNum,
 		MergeTarget: opts.MergeTarget,
 		ObsEmitter:  opts.ObsEmitter,
+		Logger:      opts.Logger,
 	})
 
 	if finalizeErr != nil {
