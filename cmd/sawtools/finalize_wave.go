@@ -87,8 +87,16 @@ pattern matching (H7) and appends diagnosis to the output.`,
 				CleanupResult:     make(map[string]*protocol.CleanupData),
 			}
 
+			// CLI event callback: print step progress to stderr.
+			onEvent := engine.EventCallback(func(step, status, detail string) {
+				if detail != "" {
+					fmt.Fprintf(os.Stderr, "finalize-wave: [%s] %s — %s\n", step, status, detail)
+				} else {
+					fmt.Fprintf(os.Stderr, "finalize-wave: [%s] %s\n", step, status)
+				}
+			})
+
 			// Declare variables here to avoid "goto jumps over variable declaration" compile errors.
-			var changedFiles []string
 			var isSolo, allGone bool
 
 			// If --skip-merge flag is set, skip VerifyCommits and MergeAgents (merge already done manually)
@@ -144,33 +152,26 @@ pattern matching (H7) and appends diagnosis to the output.`,
 				goto postMerge
 			}
 
-			// Step 1: VerifyCommits (E7 check) - run per repo
+			// Step 1: VerifyCommits (I5) — delegates to engine.StepVerifyCommits per repo
 			for repoKey, repoPath := range repos {
-				verifyRes := protocol.VerifyCommits(manifestPath, waveNum, repoPath)
-				if !verifyRes.IsSuccess() {
-					return fmt.Errorf("finalize-wave: verify-commits failed in %s: %v", repoKey, verifyRes.Errors)
+				stepOpts := engine.FinalizeWaveOpts{
+					IMPLPath: manifestPath,
+					RepoPath: repoPath,
+					WaveNum:  waveNum,
 				}
-				verifyResult := verifyRes.GetData()
-				result.VerifyCommits[repoKey] = &verifyResult
-				// Check if all agents have commits
-				allValid := true
-				for _, agent := range verifyResult.Agents {
-					if !agent.HasCommits {
-						allValid = false
-						break
-					}
-				}
-				if !allValid {
-					// Stop immediately if any agent has no commits (I5 violation)
+				stepResult, stepErr := engine.StepVerifyCommits(cmd.Context(), stepOpts, onEvent)
+				if stepErr != nil {
 					out, _ := json.MarshalIndent(result, "", "  ")
 					fmt.Println(string(out))
-					return fmt.Errorf("finalize-wave: verify-commits found agents with no commits in %s", repoKey)
+					return fmt.Errorf("finalize-wave: verify-commits failed in %s: %v", repoKey, stepErr)
+				}
+				if verifyData, ok := stepResult.Data.(protocol.VerifyCommitsData); ok {
+					result.VerifyCommits[repoKey] = &verifyData
 				}
 			}
 
 			// Step 1.1: I4 — Verify completion reports exist for every agent.
-			// The IMPL doc is the single source of truth. If an agent didn't call
-			// sawtools set-completion, it has not completed the protocol.
+			// CLI-only: the engine step functions don't check completion reports.
 			{
 				var missing []string
 				for _, agent := range manifest.Waves[waveNum-1].Agents {
@@ -186,7 +187,7 @@ pattern matching (H7) and appends diagnosis to the output.`,
 			}
 
 			// Step 1.2: E7 — Check completion report statuses before merge.
-			// Block merge if any agent in this wave reports partial or blocked.
+			// CLI-only: block merge if any agent in this wave reports partial or blocked.
 			for _, agent := range manifest.Waves[waveNum-1].Agents {
 				if report, ok := manifest.CompletionReports[agent.ID]; ok {
 					if report.Status == "partial" || report.Status == "blocked" {
@@ -206,6 +207,7 @@ pattern matching (H7) and appends diagnosis to the output.`,
 			}
 
 			// Step 1.5: Check type collisions (per repo)
+			// CLI-only: collision detection is not in the engine step functions.
 			for repoKey, repoPath := range repos {
 				collisionReport, err := collision.DetectCollisions(manifestPath, waveNum, repoPath)
 				if err != nil {
@@ -220,25 +222,32 @@ pattern matching (H7) and appends diagnosis to the output.`,
 				}
 			}
 
-			// Step 2: ScanStubs (E20 stub detection)
-			// Collect changed files from completion reports (aggregated across all repos)
-			for _, agent := range manifest.Waves[waveNum-1].Agents {
-				if report, ok := manifest.CompletionReports[agent.ID]; ok {
-					changedFiles = append(changedFiles, report.FilesChanged...)
-					changedFiles = append(changedFiles, report.FilesCreated...)
+			// Step 2: ScanStubs (E20) — delegates to engine.StepScanStubs
+			{
+				// Use first repo for scan stubs (aggregated across all repos via manifest)
+				var firstRepoPath string
+				for _, rp := range repos {
+					firstRepoPath = rp
+					break
 				}
-			}
-
-			if len(changedFiles) > 0 {
-				stubRes := protocol.ScanStubs(changedFiles)
-				if !stubRes.IsSuccess() {
-					return fmt.Errorf("finalize-wave: scan-stubs failed: %v", stubRes.Errors)
+				stepOpts := engine.FinalizeWaveOpts{
+					IMPLPath: manifestPath,
+					RepoPath: firstRepoPath,
+					WaveNum:  waveNum,
 				}
-				stubResult := stubRes.GetData()
-				result.StubReport = &stubResult
+				stepResult, stepErr := engine.StepScanStubs(cmd.Context(), stepOpts, manifest, onEvent)
+				if stepErr != nil {
+					return fmt.Errorf("finalize-wave: scan-stubs failed: %v", stepErr)
+				}
+				if stubData, ok := stepResult.Data.(*protocol.ScanStubsData); ok {
+					result.StubReport = stubData
+				} else if stubData, ok := stepResult.Data.(protocol.ScanStubsData); ok {
+					result.StubReport = &stubData
+				}
 			}
 
 			// Step 3: RunPreMergeGates (E21) — structural checks that don't require merged state
+			// CLI-only: uses RunPreMergeGates (not RunGatesWithCache), has C2 closed-loop retry
 			for repoKey, repoPath := range repos {
 				stateDir := filepath.Join(repoPath, ".saw-state")
 				cache := gatecache.New(stateDir, gatecache.DefaultTTL)
@@ -252,8 +261,6 @@ pattern matching (H7) and appends diagnosis to the output.`,
 				for _, gate := range gateResults {
 					if gate.Required && !gate.Passed {
 						// C2: Attempt closed-loop gate retry before giving up.
-						// Pre-merge gates run per-repo; pick the first agent in this
-						// wave (scoped to this repo) as the retry target.
 						retryFixed := false
 						agents := manifest.Waves[waveNum-1].Agents
 						for _, ag := range agents {
@@ -283,13 +290,11 @@ pattern matching (H7) and appends diagnosis to the output.`,
 						}
 						if retryFixed {
 							// Gate was fixed by the retry agent; re-run gates to confirm.
-							// Invalidate cache so re-run gets fresh results.
 							cache = gatecache.New(stateDir, gatecache.DefaultTTL)
 							rerunRes := protocol.RunPreMergeGates(manifest, waveNum, repoPath, cache)
 							if rerunRes.IsSuccess() {
 								rerunResults := rerunRes.GetData().Gates
 								result.GateResults[repoKey] = rerunResults
-								// Check if the gate passes now.
 								stillFailing := false
 								for _, rg := range rerunResults {
 									if rg.Required && !rg.Passed {
@@ -298,7 +303,6 @@ pattern matching (H7) and appends diagnosis to the output.`,
 									}
 								}
 								if !stillFailing {
-									// All gates pass after retry — continue to next repo.
 									break
 								}
 							}
@@ -310,15 +314,15 @@ pattern matching (H7) and appends diagnosis to the output.`,
 				}
 			}
 
-			// Step 3.5a: Heuristic integration scan (E25) — informational
-			// Uses the first repo path for single-repo; for cross-repo, uses first entry.
-			// Integration validation does NOT block merge — gaps are reported for the
-			// human orchestrator (CLI) or integration agent (engine/web) to address.
+			// Step 3.5a: ValidateIntegration (E25) — delegates to engine.StepValidateIntegration
 			for _, repoPath := range repos {
-				integrationReport, intErr := protocol.ValidateIntegration(manifest, waveNum, repoPath)
-				if intErr != nil {
-					fmt.Fprintf(os.Stderr, "finalize-wave: validate-integration: %v\n", intErr)
-				} else if integrationReport != nil {
+				stepOpts := engine.FinalizeWaveOpts{
+					IMPLPath: manifestPath,
+					RepoPath: repoPath,
+					WaveNum:  waveNum,
+				}
+				_, integrationReport, _ := engine.StepValidateIntegration(cmd.Context(), stepOpts, manifest, onEvent)
+				if integrationReport != nil {
 					result.IntegrationReport = integrationReport
 					if !integrationReport.Valid {
 						fmt.Fprintf(os.Stderr, "finalize-wave: %d integration gap(s) detected\n", len(integrationReport.Gaps))
@@ -327,10 +331,8 @@ pattern matching (H7) and appends diagnosis to the output.`,
 				break // single-repo default; cross-repo would need aggregation
 			}
 
-			// Step 3.5b: Wiring declaration check (E35 Layer 3B) — blocking if gaps found
-			// Checks that each declared wiring symbol is actually called in must_be_called_from.
-			// Does NOT block merge — gaps are surfaced as structured errors for the human or
-			// integration agent to address via validate-integration post-merge.
+			// Step 3.5b: Wiring declaration check (E35 Layer 3B)
+			// CLI-only: wiring checks are not in the engine step functions.
 			if len(manifest.Wiring) > 0 {
 				for _, repoPath := range repos {
 					wiringRes := protocol.ValidateWiringDeclarations(manifest, repoPath)
@@ -340,15 +342,10 @@ pattern matching (H7) and appends diagnosis to the output.`,
 						wiringData := wiringRes.GetData()
 						result.WiringReport = wiringData
 						if !wiringData.Valid {
-							// Wiring gaps are errors — surface them clearly
 							for _, gap := range wiringData.Gaps {
 								fmt.Fprintf(os.Stderr, "finalize-wave: WIRING GAP [error]: %s not called in %s\n",
 									gap.Declaration.Symbol, gap.Declaration.MustBeCalledFrom)
 							}
-							// Do NOT block merge here — the gap is surfaced as a structured
-							// error in the result and returned to the caller (web runner, CLI).
-							// Blocking at this stage would prevent cleanup. The human or
-							// integration agent addresses it via validate-integration.
 							result.IntegrationActionRequired = true
 							for _, gap := range wiringData.Gaps {
 								result.WiringGaps = append(result.WiringGaps,
@@ -364,8 +361,6 @@ pattern matching (H7) and appends diagnosis to the output.`,
 			// Step 4: MergeAgents (with E9 idempotency check) - run per repo
 			// Skip for integration waves (type: integration) — agents commit directly to main.
 			if manifest.Waves[waveNum-1].Type == "integration" {
-				// Integration wave agents commit directly to main; no branches to merge.
-				// Proceed to VerifyBuild.
 				goto postMerge
 			}
 			for repoKey, repoPath := range repos {
@@ -379,7 +374,6 @@ pattern matching (H7) and appends diagnosis to the output.`,
 				mergeResult := mergeRes.GetData()
 				result.MergeResult[repoKey] = &mergeResult
 				if !mergeResult.Success {
-					// Merge conflict - stop here, do NOT run VerifyBuild or Cleanup
 					out, _ := json.MarshalIndent(result, "", "  ")
 					fmt.Println(string(out))
 					return fmt.Errorf("finalize-wave: merge-agents encountered conflicts in %s", repoKey)
@@ -400,32 +394,40 @@ pattern matching (H7) and appends diagnosis to the output.`,
 				}
 			}
 
-			// Step 5: VerifyBuild (post-merge tests) - run per repo
+			// Step 5: VerifyBuild (post-merge tests) — delegates to engine.StepVerifyBuild per repo
 			for repoKey, repoPath := range repos {
-				verifyBuildRes := protocol.VerifyBuild(manifestPath, repoPath)
-				if !verifyBuildRes.IsSuccess() {
-					return fmt.Errorf("finalize-wave: verify-build failed in %s: %v", repoKey, verifyBuildRes.Errors)
+				stepOpts := engine.FinalizeWaveOpts{
+					IMPLPath: manifestPath,
+					RepoPath: repoPath,
+					WaveNum:  waveNum,
 				}
-				verifyBuildResult := verifyBuildRes.GetData()
-				result.VerifyBuildResult[repoKey] = &verifyBuildResult
-				if !verifyBuildResult.TestPassed || !verifyBuildResult.LintPassed {
-					// I1: Auto-diagnose build failure using H7
-					language := inferLanguageFromCommand(manifest.TestCommand)
-					if language != "" {
-						// Combine test and lint output for diagnosis
-						errorLog := verifyBuildResult.TestOutput + "\n" + verifyBuildResult.LintOutput
-						diagnosis, diagErr := builddiag.DiagnoseError(errorLog, language)
-						if diagErr == nil {
-							result.BuildDiagnosis[repoKey] = diagnosis
+				stepResult, stepErr := engine.StepVerifyBuild(cmd.Context(), stepOpts, onEvent)
+				if stepErr != nil {
+					// Extract build data from step result for the CLI result struct
+					if stepResult != nil && stepResult.Data != nil {
+						if verifyData, ok := stepResult.Data.(protocol.VerifyBuildData); ok {
+							result.VerifyBuildResult[repoKey] = &verifyData
+						} else if dataMap, ok := stepResult.Data.(map[string]interface{}); ok {
+							if vb, ok := dataMap["verify_build"]; ok {
+								if verifyData, ok := vb.(protocol.VerifyBuildData); ok {
+									result.VerifyBuildResult[repoKey] = &verifyData
+								}
+							}
+							if d, ok := dataMap["diagnosis"]; ok {
+								if diagnosis, ok := d.(*builddiag.Diagnosis); ok {
+									result.BuildDiagnosis[repoKey] = diagnosis
+								}
+							}
 						}
-						// Note: diagnosis errors are non-fatal - we still return the build failure
 					}
-
-					// Post-merge tests failed - stop before cleanup
 					out, _ := json.MarshalIndent(result, "", "  ")
 					fmt.Println(string(out))
-					return fmt.Errorf("finalize-wave: verify-build failed in %s (test_passed=%v, lint_passed=%v)",
-						repoKey, verifyBuildResult.TestPassed, verifyBuildResult.LintPassed)
+					return fmt.Errorf("finalize-wave: verify-build failed in %s: %v", repoKey, stepErr)
+				}
+				if stepResult != nil && stepResult.Data != nil {
+					if verifyData, ok := stepResult.Data.(protocol.VerifyBuildData); ok {
+						result.VerifyBuildResult[repoKey] = &verifyData
+					}
 				}
 			}
 
@@ -436,7 +438,6 @@ pattern matching (H7) and appends diagnosis to the output.`,
 					return fmt.Errorf("finalize-wave: run-post-merge-gates failed in %s: %v", repoKey, postGateRes.Errors)
 				}
 				postGateResults := postGateRes.GetData().Gates
-				// Merge post-merge results into GateResults for this repo
 				result.GateResults[repoKey] = append(result.GateResults[repoKey], postGateResults...)
 
 				for _, gate := range postGateResults {
@@ -448,14 +449,19 @@ pattern matching (H7) and appends diagnosis to the output.`,
 				}
 			}
 
-			// Step 6: Cleanup (remove worktrees and branches) - run per repo
+			// Step 6: Cleanup — delegates to engine.StepCleanup per repo
 			for repoKey, repoPath := range repos {
-				cleanupRes, err := protocol.Cleanup(manifestPath, waveNum, repoPath)
-				if err != nil {
-					return fmt.Errorf("finalize-wave: cleanup failed in %s: %w", repoKey, err)
+				stepOpts := engine.FinalizeWaveOpts{
+					IMPLPath: manifestPath,
+					RepoPath: repoPath,
+					WaveNum:  waveNum,
 				}
-				cleanupData := cleanupRes.GetData()
-				result.CleanupResult[repoKey] = &cleanupData
+				stepResult, _ := engine.StepCleanup(cmd.Context(), stepOpts, onEvent)
+				if stepResult != nil && stepResult.Data != nil {
+					if cleanupData, ok := stepResult.Data.(protocol.CleanupData); ok {
+						result.CleanupResult[repoKey] = &cleanupData
+					}
+				}
 			}
 
 			// State transition: WAVE_VERIFIED (non-fatal)

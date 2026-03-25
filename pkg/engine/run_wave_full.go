@@ -17,13 +17,10 @@ type RunWaveFullOpts struct {
 
 // RunWaveFullResult captures the results of all wave lifecycle steps.
 type RunWaveFullResult struct {
-	Wave             int                              `json:"wave"`
+	Wave             int                            `json:"wave"`
 	WorktreesCreated *protocol.CreateWorktreesData  `json:"worktrees_created"`
-	CommitsVerified  *protocol.VerifyCommitsData    `json:"commits_verified"`
-	Merged           *protocol.MergeAgentsData      `json:"merged"`
-	BuildVerified    *protocol.VerifyBuildData      `json:"build_verified"`
-	Cleaned          *protocol.CleanupData          `json:"cleaned"`
-	Success          bool                             `json:"success"`
+	FinalizeResult   *FinalizeWaveResult            `json:"finalize_result,omitempty"`
+	Success          bool                           `json:"success"`
 }
 
 // RunWaveFull orchestrates a complete wave lifecycle: worktree creation,
@@ -34,9 +31,12 @@ type RunWaveFullResult struct {
 // The caller is responsible for launching agents between worktree creation
 // and commit verification.
 //
+// Steps 3-6 (verify commits, merge, verify build, cleanup) are delegated to
+// engine.FinalizeWave(), eliminating a third copy of the finalization sequence.
+//
 // Returns a RunWaveFullResult with detailed status for each step, and an
-// error if any critical step fails. Success is true only if both test and
-// lint commands pass during build verification.
+// error if any critical step fails. Success is true only if FinalizeWave
+// reports success (both test and lint commands pass during build verification).
 func RunWaveFull(ctx context.Context, opts RunWaveFullOpts) (*RunWaveFullResult, error) {
 	result := &RunWaveFullResult{Wave: opts.WaveNum}
 
@@ -52,58 +52,27 @@ func RunWaveFull(ctx context.Context, opts RunWaveFullOpts) (*RunWaveFullResult,
 	// This function handles pre/post agent work only.
 	// The caller is responsible for launching agents between CreateWorktrees and VerifyCommits.
 
-	// Step 3: Verify commits from all agents
-	vcRes := protocol.VerifyCommits(opts.ManifestPath, opts.WaveNum, opts.RepoPath)
-	vc := vcRes.GetData()
-	result.CommitsVerified = &vc
-
-	if !vcRes.IsSuccess() {
-		return result, fmt.Errorf("verify commits: %v", vcRes.Errors)
+	// Steps 3-6: Delegate to engine.FinalizeWave() which handles:
+	//   3. VerifyCommits (I5)
+	//   3.5. ScanStubs (E20)
+	//   3.75. RunGates (E21)
+	//   3.9. ValidateIntegration (E25)
+	//   4. MergeAgents
+	//   4.5. FixGoMod
+	//   5. VerifyBuild
+	//   6. Cleanup
+	finalizeOpts := FinalizeWaveOpts{
+		IMPLPath:    opts.ManifestPath,
+		RepoPath:    opts.RepoPath,
+		WaveNum:     opts.WaveNum,
+		MergeTarget: opts.MergeTarget,
 	}
-
-	// Check if all agents have commits
-	allValid := true
-	for _, agent := range vc.Agents {
-		if !agent.HasCommits {
-			allValid = false
-			break
-		}
-	}
-	if !allValid {
-		return result, fmt.Errorf("commit verification failed: not all agents have commits")
-	}
-
-	// Step 4: Merge agent branches into main
-	maRes, err := protocol.MergeAgents(opts.ManifestPath, opts.WaveNum, opts.RepoPath, opts.MergeTarget)
+	finalizeResult, err := FinalizeWave(ctx, finalizeOpts)
+	result.FinalizeResult = finalizeResult
 	if err != nil {
-		return result, fmt.Errorf("merge agents: %w", err)
-	}
-	if !maRes.IsSuccess() {
-		return result, fmt.Errorf("merge agents: %v", maRes.Errors)
-	}
-	ma := maRes.GetData()
-	result.Merged = &ma
-	if !ma.Success {
-		return result, fmt.Errorf("merge failed")
+		return result, fmt.Errorf("finalize wave: %w", err)
 	}
 
-	// Step 5: Verify build (run test and lint commands)
-	bvRes := protocol.VerifyBuild(opts.ManifestPath, opts.RepoPath)
-	if !bvRes.IsSuccess() {
-		return result, fmt.Errorf("verify build: %v", bvRes.Errors)
-	}
-	bv := bvRes.GetData()
-	result.BuildVerified = &bv
-
-	// Step 6: Cleanup worktrees and branches
-	cl, err := protocol.Cleanup(opts.ManifestPath, opts.WaveNum, opts.RepoPath)
-	if err != nil {
-		return result, fmt.Errorf("cleanup: %w", err)
-	}
-	clData := cl.GetData()
-	result.Cleaned = &clData
-
-	// Success is true only if both test and lint passed
-	result.Success = bv.TestPassed && bv.LintPassed
+	result.Success = finalizeResult.Success
 	return result, nil
 }
