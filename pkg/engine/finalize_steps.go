@@ -3,7 +3,6 @@ package engine
 import (
 	"context"
 	"fmt"
-	"os"
 	"path/filepath"
 	"time"
 
@@ -91,7 +90,7 @@ func StepScanStubs(ctx context.Context, opts FinalizeWaveOpts, manifest *protoco
 	stubRes := protocol.ScanStubs(changedFiles)
 	if !stubRes.IsSuccess() {
 		// Non-fatal scan errors
-		fmt.Fprintf(os.Stderr, "engine.StepScanStubs: %v\n", stubRes.Errors)
+		loggerFrom(opts.Logger).Warn("engine.StepScanStubs", "errors", stubRes.Errors)
 		emitStepEvent(onEvent, stepName, "complete", fmt.Sprintf("scan error: %v", stubRes.Errors))
 		return &StepResult{
 			Step:   stepName,
@@ -172,7 +171,7 @@ func StepValidateIntegration(ctx context.Context, opts FinalizeWaveOpts, manifes
 	integrationReport, err := protocol.ValidateIntegration(manifest, opts.WaveNum, opts.RepoPath)
 	if err != nil {
 		// Non-fatal: integration validation errors don't block the pipeline
-		fmt.Fprintf(os.Stderr, "engine.StepValidateIntegration: %v\n", err)
+		loggerFrom(opts.Logger).Warn("engine.StepValidateIntegration", "err", err)
 		emitStepEvent(onEvent, stepName, "complete", fmt.Sprintf("error (non-fatal): %v", err))
 		return &StepResult{
 			Step:   stepName,
@@ -255,7 +254,7 @@ func StepFixGoMod(ctx context.Context, opts FinalizeWaveOpts, onEvent EventCallb
 
 	fixed, err := protocol.FixGoModReplacePaths(opts.RepoPath)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "engine.StepFixGoMod: %v\n", err)
+		loggerFrom(opts.Logger).Warn("engine.StepFixGoMod", "err", err)
 		emitStepEvent(onEvent, stepName, "complete", fmt.Sprintf("error (non-fatal): %v", err))
 		return &StepResult{
 			Step:   stepName,
@@ -267,7 +266,7 @@ func StepFixGoMod(ctx context.Context, opts FinalizeWaveOpts, onEvent EventCallb
 	detail := "no changes needed"
 	if fixed {
 		detail = "auto-corrected go.mod replace paths"
-		fmt.Fprintf(os.Stderr, "engine.StepFixGoMod: %s\n", detail)
+		loggerFrom(opts.Logger).Warn("engine.StepFixGoMod", "detail", detail)
 	}
 
 	emitStepEvent(onEvent, stepName, "complete", detail)
@@ -345,7 +344,7 @@ func StepCleanup(ctx context.Context, opts FinalizeWaveOpts, onEvent EventCallba
 	cleanupResult, err := protocol.Cleanup(opts.IMPLPath, opts.WaveNum, opts.RepoPath)
 	if err != nil {
 		// Non-fatal
-		fmt.Fprintf(os.Stderr, "engine.StepCleanup: %v\n", err)
+		loggerFrom(opts.Logger).Warn("engine.StepCleanup", "err", err)
 		emitStepEvent(onEvent, stepName, "complete", fmt.Sprintf("error (non-fatal): %v", err))
 		return &StepResult{
 			Step:   stepName,

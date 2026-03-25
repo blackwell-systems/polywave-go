@@ -3,6 +3,7 @@ package engine
 import (
 	"context"
 	"errors"
+	"log/slog"
 
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/agent/backend"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/observability"
@@ -49,6 +50,7 @@ type RunScoutOpts struct {
 	UseStructuredOutput  bool                    // if true, invoke Scout via API backend with output_config.format
 	OutputSchemaOverride map[string]any          // optional: overrides GenerateScoutSchema(); useful in tests
 	ObsEmitter           *observability.Emitter  // optional: non-blocking observability emitter
+	Logger               *slog.Logger            // optional: nil falls back to slog.Default()
 }
 
 // RunPlannerOpts configures a Planner agent run.
@@ -68,8 +70,8 @@ type RunWaveOpts struct {
 	WaveModel            string // optional: default model for wave agents; per-agent model: field overrides this
 	ScaffoldModel        string // optional: model for scaffold agent; falls back to WaveModel if empty
 	IntegrationModel     string // optional: model for integration agent (E26); falls back to WaveModel if empty
-	UseStructuredOutput  bool   // if true, use structured output for wave agent completion reports
-
+	UseStructuredOutput  bool         // if true, use structured output for wave agent completion reports
+	Logger               *slog.Logger // optional: nil falls back to slog.Default()
 }
 
 // RunMergeOpts configures a merge operation.
@@ -77,6 +79,7 @@ type RunMergeOpts struct {
 	IMPLPath string
 	RepoPath string
 	WaveNum  int
+	Logger   *slog.Logger // optional: nil falls back to slog.Default()
 }
 
 // ResolveConflictsOpts configures the engine-level conflict resolution function.
@@ -99,6 +102,7 @@ type FixBuildOpts struct {
 	ChatModel  string                       // optional model override (same format as conflict resolver)
 	OnOutput   func(chunk string)           // streaming text callback
 	OnToolCall func(ev backend.ToolCallEvent) // optional tool call observability
+	Logger     *slog.Logger                  // optional: nil falls back to slog.Default()
 }
 
 // RunVerificationOpts configures post-merge verification.

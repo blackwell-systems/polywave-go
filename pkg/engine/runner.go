@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -26,6 +27,16 @@ import (
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/suitability"
 	"gopkg.in/yaml.v3"
 )
+
+// loggerFrom is a nil-safe helper that returns slog.Default() when l is nil.
+// Defined once here for the entire engine package; all other engine files
+// (finalize.go, finalize_steps.go, integration_runner.go) call it directly.
+func loggerFrom(l *slog.Logger) *slog.Logger {
+	if l == nil {
+		return slog.Default()
+	}
+	return l
+}
 
 // RunScout executes a Scout agent, calling onChunk for each output fragment.
 // Returns when the agent finishes. Cancellable via ctx.
@@ -77,7 +88,7 @@ func RunScout(ctx context.Context, opts RunScoutOpts, onChunk func(string)) erro
 		manifest, parseErr := protocol.ParseProgramManifest(opts.ProgramManifestPath)
 		if parseErr != nil {
 			// Non-fatal: log warning and continue without program contracts
-			fmt.Fprintf(os.Stderr, "engine.RunScout: failed to parse PROGRAM manifest (continuing without contracts): %v\n", parseErr)
+			loggerFrom(opts.Logger).Warn("engine.RunScout: failed to parse PROGRAM manifest", "err", parseErr)
 		} else {
 			programContractsSection = buildProgramContractsSection(manifest, opts.RepoPath)
 		}
@@ -476,7 +487,7 @@ func StartWave(ctx context.Context, opts RunWaveOpts, onEvent func(Event)) error
 	}
 	if err := orchestrator.UpdateContextMD(opts.RepoPath, entry); err != nil {
 		// Non-fatal: log but don't abort.
-		fmt.Fprintf(os.Stderr, "engine: E18 UpdateContextMD failed: %v\n", err)
+		loggerFrom(opts.Logger).Warn("engine: E18 UpdateContextMD failed", "err", err)
 	}
 
 	publish("run_complete", orchestrator.RunCompletePayload{
@@ -601,7 +612,7 @@ func runScaffoldBuildVerificationWithDoc(ctx context.Context, repoPath string, d
 		getCmd.Dir = repoPath
 		if out, err := getCmd.CombinedOutput(); err != nil {
 			// Log but don't fail — some projects don't need go get.
-			fmt.Fprintf(os.Stderr, "scaffold build: go get ./... (non-fatal): %v\n%s", err, string(out))
+			loggerFrom(nil).Warn("scaffold build: go get ./... (non-fatal)", "err", err, "output", string(out))
 		}
 
 		// go mod tidy
@@ -609,7 +620,7 @@ func runScaffoldBuildVerificationWithDoc(ctx context.Context, repoPath string, d
 		tidyCmd.Dir = repoPath
 		if out, err := tidyCmd.CombinedOutput(); err != nil {
 			// Log but don't fail.
-			fmt.Fprintf(os.Stderr, "scaffold build: go mod tidy (non-fatal): %v\n%s", err, string(out))
+			loggerFrom(nil).Warn("scaffold build: go mod tidy (non-fatal)", "err", err, "output", string(out))
 		}
 
 		// Pass 1 (scaffold-only): build only the packages containing scaffold files.
@@ -649,7 +660,7 @@ func runScaffoldBuildVerificationWithDoc(ctx context.Context, repoPath string, d
 		fetchCmd := exec.CommandContext(ctx, "cargo", "fetch")
 		fetchCmd.Dir = repoPath
 		if out, err := fetchCmd.CombinedOutput(); err != nil {
-			fmt.Fprintf(os.Stderr, "scaffold build: cargo fetch (non-fatal): %v\n%s", err, string(out))
+			loggerFrom(nil).Warn("scaffold build: cargo fetch (non-fatal)", "err", err, "output", string(out))
 		}
 		buildCmd := exec.CommandContext(ctx, "cargo", "build")
 		buildCmd.Dir = repoPath
@@ -677,7 +688,7 @@ func runScaffoldBuildVerificationWithDoc(ctx context.Context, repoPath string, d
 	}
 
 	// Unrecognized project type — skip silently.
-	fmt.Fprintf(os.Stderr, "scaffold build verification: unrecognized project type, skipping\n")
+	loggerFrom(nil).Debug("scaffold build verification: unrecognized project type, skipping")
 	return nil
 }
 
@@ -744,7 +755,7 @@ func RunSingleAgent(ctx context.Context, opts RunWaveOpts, waveNum int, agentLet
 			if report, ok := manifest.CompletionReports[agentLetter]; ok && report.Status != "complete" {
 				rc, rcErr := retryctx.BuildRetryContext(opts.IMPLPath, agentLetter, 1)
 				if rcErr != nil {
-					fmt.Fprintf(os.Stderr, "engine.RunSingleAgent: retry context (best-effort): %v\n", rcErr)
+					loggerFrom(opts.Logger).Debug("engine.RunSingleAgent: retry context (best-effort)", "err", rcErr)
 				} else if rc != nil && rc.PromptText != "" {
 					promptPrefix = rc.PromptText
 				}
@@ -782,7 +793,7 @@ func MergeWave(ctx context.Context, opts RunMergeOpts) error {
 					if obsErr == nil {
 						if archErr := observer.Archive(); archErr != nil {
 							// Log but don't fail the merge
-							fmt.Fprintf(os.Stderr, "engine: failed to archive journal for agent %s: %v\n", agent.ID, archErr)
+							loggerFrom(opts.Logger).Warn("engine: failed to archive journal for agent", "agent", agent.ID, "err", archErr)
 						}
 					}
 				}
