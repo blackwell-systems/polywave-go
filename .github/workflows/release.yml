@@ -20,6 +20,11 @@ jobs:
         with:
           go-version-file: go.mod
 
+      - name: Install sawtools
+        run: |
+          go build -o $(go env GOPATH)/bin/sawtools ./cmd/sawtools/
+          echo "$(go env GOPATH)/bin" >> $GITHUB_PATH
+
       - name: Run tests before release
         run: go test ./...
 
