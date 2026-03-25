@@ -354,11 +354,12 @@ func (m *DeterministicManager) Save(doc *InterviewDoc, docPath string) error {
 	return nil
 }
 
-// newID generates a random hex ID (not a full UUID, but sufficient for interview docs).
+// newID generates a random UUID-formatted ID (xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx).
 func newID() string {
 	b := make([]byte, 16)
 	_, _ = rand.Read(b)
-	return fmt.Sprintf("%x", b)
+	return fmt.Sprintf("%08x-%04x-%04x-%04x-%012x",
+		b[0:4], b[4:6], b[6:8], b[8:10], b[10:16])
 }
 
 // generateSlug creates a URL-friendly slug from a description.

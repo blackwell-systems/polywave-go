@@ -107,21 +107,23 @@ Examples:
 			writer := cmd.OutOrStdout()
 
 			for question != nil {
-				// Show preview before final confirmation
-				if question.FieldName == "_confirm" {
-					preview, previewErr := interview.PreviewRequirements(doc)
-					if previewErr == nil {
-						fmt.Fprintf(writer, "\n--- Preview of REQUIREMENTS.md ---\n%s\n", preview)
+				if !nonInteractive {
+					// Show preview before final confirmation
+					if question.FieldName == "_confirm" {
+						preview, previewErr := interview.PreviewRequirements(doc)
+						if previewErr == nil {
+							fmt.Fprintf(writer, "\n--- Preview of REQUIREMENTS.md ---\n%s\n", preview)
+						}
 					}
-				}
 
-				// Print the question prompt with phase-aware progress
-				fmt.Fprintf(writer, "%s\n", interview.FormatPhaseProgress(doc))
-				fmt.Fprintf(writer, "%s\n", question.Text)
-				if question.Hint != "" {
-					fmt.Fprintf(writer, "(%s)\n", question.Hint)
+					// Print the question prompt with phase-aware progress
+					fmt.Fprintf(writer, "%s\n", interview.FormatPhaseProgress(doc))
+					fmt.Fprintf(writer, "%s\n", question.Text)
+					if question.Hint != "" {
+						fmt.Fprintf(writer, "(%s)\n", question.Hint)
+					}
+					fmt.Fprint(writer, "> ")
 				}
-				fmt.Fprint(writer, "> ")
 
 				// Read the answer from stdin
 				if !reader.Scan() {

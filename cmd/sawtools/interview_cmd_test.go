@@ -230,12 +230,12 @@ func TestInterviewCmd_NonInteractive_ShortFlow(t *testing.T) {
 		t.Errorf("Interview doc not saved at %s", interviewPath)
 	}
 
-	// Verify question prompts appeared
-	if !strings.Contains(output, "[overview:") {
-		t.Errorf("expected phase header in output, got: %s", output)
+	// Verify question prompts are NOT shown in non-interactive mode (G7 fix).
+	if strings.Contains(output, "[overview:") {
+		t.Errorf("expected phase header to be suppressed in --non-interactive mode, but found it in output: %s", output)
 	}
-	if !strings.Contains(output, "What is the project title?") {
-		t.Errorf("expected question text in output, got: %s", output)
+	if strings.Contains(output, "What is the project title?") {
+		t.Errorf("expected question text to be suppressed in --non-interactive mode, but found it in output: %s", output)
 	}
 }
 

@@ -108,6 +108,17 @@ func CompileToRequirements(doc *InterviewDoc) (string, error) {
 		b.WriteString("\n")
 	}
 
+	// Truncation detection: if max_questions was hit and required fields are missing
+	truncated := doc.QuestionCursor >= doc.MaxQuestions
+	missingRequired := doc.SpecData.Overview.Title == "" ||
+		doc.SpecData.Overview.Goal == "" ||
+		doc.SpecData.Scope.InScope == nil ||
+		len(doc.SpecData.Requirements.Functional) == 0
+	if truncated && missingRequired {
+		b.WriteString("## Warnings\n")
+		b.WriteString("- Interview truncated at max_questions limit. Some phases incomplete.\n")
+	}
+
 	return b.String(), nil
 }
 
