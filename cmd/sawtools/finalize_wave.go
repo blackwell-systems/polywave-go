@@ -203,10 +203,12 @@ pattern matching (H7) and appends diagnosis to the output.`,
 			// Step 1: VerifyCommits (I5) — delegates to engine.StepVerifyCommits per repo
 			for repoKey, repoPath := range repos {
 				stepOpts := engine.FinalizeWaveOpts{
-					IMPLPath: manifestPath,
-					RepoPath: repoPath,
-					WaveNum:  waveNum,
-					Logger:   newSawLogger(),
+					IMPLPath:                  manifestPath,
+					RepoPath:                  repoPath,
+					WaveNum:                   waveNum,
+					Logger:                    newSawLogger(),
+					CollisionDetectionEnabled: true,
+					ClosedLoopRetryEnabled:    true,
 				}
 				stepResult, stepErr := engine.StepVerifyCommits(cmd.Context(), stepOpts, onEvent)
 				if stepErr != nil {
@@ -219,55 +221,69 @@ pattern matching (H7) and appends diagnosis to the output.`,
 				}
 			}
 
-			// Step 1.1: I4 — Verify completion reports exist for every agent.
-			// CLI-only: the engine step functions don't check completion reports.
-			{
-				var missing []string
-				for _, agent := range manifest.Waves[waveNum-1].Agents {
-					if _, ok := manifest.CompletionReports[agent.ID]; !ok {
-						missing = append(missing, agent.ID)
-					}
+			// Step 1.1: I4 — delegate to engine (now engine-enforced)
+			for _, repoPath := range repos {
+				stepOpts := engine.FinalizeWaveOpts{
+					IMPLPath:                  manifestPath,
+					RepoPath:                  repoPath,
+					WaveNum:                   waveNum,
+					Logger:                    newSawLogger(),
+					CollisionDetectionEnabled: true,
+					ClosedLoopRetryEnabled:    true,
 				}
-				if len(missing) > 0 {
+				_, stepErr := engine.StepVerifyCompletionReports(cmd.Context(), stepOpts, manifest, onEvent)
+				if stepErr != nil {
 					out, _ := json.MarshalIndent(result, "", "  ")
 					fmt.Println(string(out))
-					return fmt.Errorf("finalize-wave: missing completion reports for agents: %v — agents must call sawtools set-completion before merge (I4)", missing)
+					return fmt.Errorf("finalize-wave: %v", stepErr)
 				}
+				break // manifest-level check, only run once
 			}
 
-			// Step 1.2: E7 — Check completion report statuses before merge.
-			// CLI-only: block merge if any agent in this wave reports partial or blocked.
-			for _, agent := range manifest.Waves[waveNum-1].Agents {
-				if report, ok := manifest.CompletionReports[agent.ID]; ok {
-					if report.Status == "partial" || report.Status == "blocked" {
-						out, _ := json.MarshalIndent(result, "", "  ")
-						fmt.Println(string(out))
-						return fmt.Errorf("finalize-wave: agent %s has status %q — cannot merge wave with partial/blocked agents (E7)",
-							agent.ID, report.Status)
-					}
+			// Step 1.2: E7 — delegate to engine
+			for _, repoPath := range repos {
+				stepOpts := engine.FinalizeWaveOpts{
+					IMPLPath: manifestPath, RepoPath: repoPath, WaveNum: waveNum,
+					Logger: newSawLogger(), CollisionDetectionEnabled: true, ClosedLoopRetryEnabled: true,
 				}
+				_, stepErr := engine.StepCheckAgentStatuses(cmd.Context(), stepOpts, manifest, onEvent)
+				if stepErr != nil {
+					out, _ := json.MarshalIndent(result, "", "  ")
+					fmt.Println(string(out))
+					return fmt.Errorf("finalize-wave: %v", stepErr)
+				}
+				break
 			}
 
-			// Step 1.2: E11 — Predict merge conflicts from completion reports.
-			if err := protocol.PredictConflictsFromReports(manifest, waveNum); err != nil {
-				out, _ := json.MarshalIndent(result, "", "  ")
-				fmt.Println(string(out))
-				return fmt.Errorf("finalize-wave: %w", err)
+			// Step 1.3: E11 — delegate to engine
+			for _, repoPath := range repos {
+				stepOpts := engine.FinalizeWaveOpts{
+					IMPLPath: manifestPath, RepoPath: repoPath, WaveNum: waveNum,
+					Logger: newSawLogger(), CollisionDetectionEnabled: true, ClosedLoopRetryEnabled: true,
+				}
+				_, stepErr := engine.StepPredictConflicts(cmd.Context(), stepOpts, manifest, onEvent)
+				if stepErr != nil {
+					out, _ := json.MarshalIndent(result, "", "  ")
+					fmt.Println(string(out))
+					return fmt.Errorf("finalize-wave: %v", stepErr)
+				}
+				break
 			}
 
-			// Step 1.5: Check type collisions (per repo)
-			// CLI-only: collision detection is not in the engine step functions.
+			// Step 1.5: Check type collisions — delegate to engine
 			for repoKey, repoPath := range repos {
-				collisionReport, err := collision.DetectCollisions(manifestPath, waveNum, repoPath)
-				if err != nil {
-					return fmt.Errorf("finalize-wave: check-type-collisions failed in %s: %w", repoKey, err)
+				stepOpts := engine.FinalizeWaveOpts{
+					IMPLPath: manifestPath, RepoPath: repoPath, WaveNum: waveNum,
+					Logger: newSawLogger(), CollisionDetectionEnabled: true, ClosedLoopRetryEnabled: true,
 				}
-				result.CollisionReports[repoKey] = &collisionReport
-				if !collisionReport.Valid {
-					// Stop immediately - collision detected
+				_, collisionReport, stepErr := engine.StepCheckTypeCollisions(cmd.Context(), stepOpts, onEvent)
+				if collisionReport != nil {
+					result.CollisionReports[repoKey] = collisionReport
+				}
+				if stepErr != nil {
 					out, _ := json.MarshalIndent(result, "", "  ")
 					fmt.Println(string(out))
-					return fmt.Errorf("finalize-wave: type collisions detected in %s", repoKey)
+					return fmt.Errorf("finalize-wave: %v", stepErr)
 				}
 			}
 
@@ -382,31 +398,28 @@ pattern matching (H7) and appends diagnosis to the output.`,
 				break // single-repo default; cross-repo would need aggregation
 			}
 
-			// Step 3.5b: Wiring declaration check (E35 Layer 3B)
-			// CLI-only: wiring checks are not in the engine step functions.
-			if len(manifest.Wiring) > 0 {
-				for _, repoPath := range repos {
-					wiringRes := protocol.ValidateWiringDeclarations(manifest, repoPath)
-					if wiringRes.IsFatal() {
-						fmt.Fprintf(os.Stderr, "finalize-wave: wiring check error: %v\n", wiringRes.Errors)
-					} else {
-						wiringData := wiringRes.GetData()
-						result.WiringReport = wiringData
-						if !wiringData.Valid {
-							for _, gap := range wiringData.Gaps {
-								fmt.Fprintf(os.Stderr, "finalize-wave: WIRING GAP [error]: %s not called in %s\n",
-									gap.Declaration.Symbol, gap.Declaration.MustBeCalledFrom)
-							}
-							result.IntegrationActionRequired = true
-							for _, gap := range wiringData.Gaps {
-								result.WiringGaps = append(result.WiringGaps,
-									fmt.Sprintf("%s not called in %s",
-										gap.Declaration.Symbol, gap.Declaration.MustBeCalledFrom))
-							}
+			// Step 3.5b: Wiring declaration check — delegate to engine
+			for _, repoPath := range repos {
+				stepOpts := engine.FinalizeWaveOpts{
+					IMPLPath: manifestPath, RepoPath: repoPath, WaveNum: waveNum,
+					Logger: newSawLogger(), CollisionDetectionEnabled: true, ClosedLoopRetryEnabled: true,
+				}
+				_, wiringData, _ := engine.StepCheckWiringDeclarations(cmd.Context(), stepOpts, manifest, onEvent)
+				if wiringData != nil {
+					result.WiringReport = wiringData
+					if !wiringData.Valid {
+						for _, gap := range wiringData.Gaps {
+							fmt.Fprintf(os.Stderr, "finalize-wave: WIRING GAP [error]: %s not called in %s\n",
+								gap.Declaration.Symbol, gap.Declaration.MustBeCalledFrom)
+						}
+						result.IntegrationActionRequired = true
+						for _, gap := range wiringData.Gaps {
+							result.WiringGaps = append(result.WiringGaps,
+								fmt.Sprintf("%s not called in %s", gap.Declaration.Symbol, gap.Declaration.MustBeCalledFrom))
 						}
 					}
-					break // single-repo default; cross-repo would need aggregation
 				}
+				break
 			}
 
 			// Step 4: MergeAgents (with E9 idempotency check) - run per repo
@@ -432,17 +445,17 @@ pattern matching (H7) and appends diagnosis to the output.`,
 			}
 			postMerge:
 
-			// Step 4.5: M5 populate-integration-checklist (non-blocking)
-			m5Updated, m5Err := protocol.PopulateIntegrationChecklist(manifest)
-			if m5Err != nil {
-				fmt.Fprintf(os.Stderr, "finalize-wave: M5 populate-integration-checklist: %v\n", m5Err)
-			} else {
-				manifest = m5Updated
-				if saveErr := protocol.Save(manifest, manifestPath); saveErr != nil {
-					fmt.Fprintf(os.Stderr, "finalize-wave: M5 save: %v\n", saveErr)
-				} else {
-					fmt.Fprintf(os.Stderr, "finalize-wave: M5 integration checklist populated\n")
+			// Step 4.5: M5 populate-integration-checklist — delegate to engine
+			for _, repoPath := range repos {
+				stepOpts := engine.FinalizeWaveOpts{
+					IMPLPath: manifestPath, RepoPath: repoPath, WaveNum: waveNum,
+					Logger: newSawLogger(), CollisionDetectionEnabled: true, ClosedLoopRetryEnabled: true,
 				}
+				_, updatedManifest, _ := engine.StepPopulateIntegrationChecklist(cmd.Context(), stepOpts, manifest, onEvent)
+				if updatedManifest != nil {
+					manifest = updatedManifest
+				}
+				break
 			}
 
 			// Step 5: VerifyBuild (post-merge tests) — delegates to engine.StepVerifyBuild per repo
