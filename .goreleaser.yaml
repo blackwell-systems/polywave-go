@@ -31,16 +31,5 @@ changelog:
       - "^test:"
       - "^ci:"
 
-# brews:
-#   - name: sawtools
-#     ids: [sawtools]
-#     repository:
-#       owner: blackwell-systems
-#       name: homebrew-tap
-#     homepage: https://github.com/blackwell-systems/scout-and-wave
-#     description: "CLI tools for the Scout-and-Wave parallel agent coordination protocol"
-#     license: "MIT"
-#     install: |
-#       bin.install "sawtools"
-#     test: |
-#       system "#{bin}/sawtools", "version"
+# Homebrew formula is maintained manually in blackwell-systems/homebrew-tap
+# Do not enable brews: section — it conflicts with manual formula updates
