@@ -2,7 +2,6 @@ package orchestrator
 
 import (
 	"fmt"
-	"os"
 	"path/filepath"
 	"strings"
 
@@ -80,13 +79,13 @@ func executeMergeWave(o *Orchestrator, waveNum int) error {
 		if !mergeLog.IsMerged(letter) {
 			pendingReports[letter] = report
 		} else {
-			fmt.Fprintf(os.Stderr, "executeMergeWave: agent %s already merged (skipping verification)\n", letter)
+			o.log().Debug("executeMergeWave: agent already merged (skipping verification)", "agent", letter)
 		}
 	}
 
 	// If all agents already merged, we're done (full idempotency).
 	if len(pendingReports) == 0 {
-		fmt.Fprintf(os.Stderr, "executeMergeWave: all agents already merged for wave %d\n", waveNum)
+		o.log().Debug("executeMergeWave: all agents already merged", "wave", waveNum)
 		return nil
 	}
 
@@ -110,7 +109,7 @@ func executeMergeWave(o *Orchestrator, waveNum int) error {
 
 		// Check if agent already merged (idempotency)
 		if mergeLog.IsMerged(agent.ID) {
-			fmt.Fprintf(os.Stderr, "executeMergeWave: agent %s already merged (skipping)\n", agent.ID)
+			o.log().Debug("executeMergeWave: agent already merged (skipping)", "agent", agent.ID)
 			continue
 		}
 
@@ -124,10 +123,10 @@ func executeMergeWave(o *Orchestrator, waveNum int) error {
 
 		// Skip merge for no-op agents (no file changes — nothing to merge).
 		if len(report.FilesChanged) == 0 && len(report.FilesCreated) == 0 {
-			fmt.Fprintf(os.Stderr, "executeMergeWave: agent %s produced no changes (skipping merge)\n", agent.ID)
+			o.log().Debug("executeMergeWave: agent produced no changes (skipping merge)", "agent", agent.ID)
 			mergeLog.AddMergeEntry(agent.ID, "no-op")
 			if saveErr := protocol.SaveMergeLog(o.implDocPath, waveNum, mergeLog); saveErr != nil {
-				fmt.Fprintf(os.Stderr, "executeMergeWave: warning: failed to save merge-log: %v\n", saveErr)
+				o.log().Warn("executeMergeWave: failed to save merge-log", "err", saveErr)
 			}
 			// Still clean up the worktree.
 			wtPath := report.Worktree
@@ -138,10 +137,10 @@ func executeMergeWave(o *Orchestrator, waveNum int) error {
 				wtPath = mergeRepo + "/" + wtPath
 			}
 			if err := git.WorktreeRemove(mergeRepo, wtPath); err != nil {
-				fmt.Fprintf(os.Stderr, "executeMergeWave: warning: could not remove worktree %q: %v\n", wtPath, err)
+				o.log().Warn("executeMergeWave: could not remove worktree", "path", wtPath, "err", err)
 			}
 			if err := git.DeleteBranch(mergeRepo, branch); err != nil {
-				fmt.Fprintf(os.Stderr, "executeMergeWave: warning: could not delete branch %q: %v\n", branch, err)
+				o.log().Warn("executeMergeWave: could not delete branch", "branch", branch, "err", err)
 			}
 			continue
 		}
@@ -161,7 +160,7 @@ func executeMergeWave(o *Orchestrator, waveNum int) error {
 		// Record merge in log (E9)
 		mergeLog.AddMergeEntry(agent.ID, mergeSHA)
 		if saveErr := protocol.SaveMergeLog(o.implDocPath, waveNum, mergeLog); saveErr != nil {
-			fmt.Fprintf(os.Stderr, "executeMergeWave: warning: failed to save merge-log: %v\n", saveErr)
+			o.log().Warn("executeMergeWave: failed to save merge-log", "err", saveErr)
 		}
 
 		// Determine worktree path from report or convention.
@@ -174,10 +173,10 @@ func executeMergeWave(o *Orchestrator, waveNum int) error {
 		}
 
 		if err := git.WorktreeRemove(mergeRepo, wtPath); err != nil {
-			fmt.Fprintf(os.Stderr, "executeMergeWave: warning: could not remove worktree %q: %v\n", wtPath, err)
+			o.log().Warn("executeMergeWave: could not remove worktree", "path", wtPath, "err", err)
 		}
 		if err := git.DeleteBranch(mergeRepo, branch); err != nil {
-			fmt.Fprintf(os.Stderr, "executeMergeWave: warning: could not delete branch %q: %v\n", branch, err)
+			o.log().Warn("executeMergeWave: could not delete branch", "branch", branch, "err", err)
 		}
 	}
 

@@ -2,6 +2,7 @@ package orchestrator
 
 import (
 	"fmt"
+	"log/slog"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -51,7 +52,7 @@ func RunStubScan(implDocPath string, waveNum int, reports map[string]*protocol.C
 	if sawRepoPath == "" {
 		homeDir, err := os.UserHomeDir()
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "RunStubScan: could not determine home dir: %v\n", err)
+			slog.Default().Warn("RunStubScan: could not determine home dir", "err", err)
 			homeDir = "~"
 		}
 		sawRepoPath = filepath.Join(homeDir, "code", "scout-and-wave")
@@ -64,7 +65,7 @@ func RunStubScan(implDocPath string, waveNum int, reports map[string]*protocol.C
 	if _, err := os.Stat(scriptPath); os.IsNotExist(err) {
 		section := fmt.Sprintf("\n## Stub Report — Wave %d\n\nscan-stubs.sh not found at %s\n", waveNum, scriptPath)
 		if appendErr := appendToFile(implDocPath, section); appendErr != nil {
-			fmt.Fprintf(os.Stderr, "RunStubScan: failed to append stub report: %v\n", appendErr)
+			slog.Default().Warn("RunStubScan: failed to append stub report", "err", appendErr)
 		}
 		return nil
 	}
@@ -80,7 +81,7 @@ func RunStubScan(implDocPath string, waveNum int, reports map[string]*protocol.C
 		out, err := cmd.CombinedOutput()
 		if err != nil {
 			// E20: exit code is always treated as 0 (informational only)
-			fmt.Fprintf(os.Stderr, "RunStubScan: scan-stubs.sh exited with error (ignored): %v\n", err)
+			slog.Default().Warn("RunStubScan: scan-stubs.sh exited with error (ignored)", "err", err)
 		}
 		output = strings.TrimSpace(string(out))
 	}
@@ -94,7 +95,7 @@ func RunStubScan(implDocPath string, waveNum int, reports map[string]*protocol.C
 	}
 	section := fmt.Sprintf("\n## Stub Report — Wave %d\n\n%s\n", waveNum, body)
 	if appendErr := appendToFile(implDocPath, section); appendErr != nil {
-		fmt.Fprintf(os.Stderr, "RunStubScan: failed to append stub report: %v\n", appendErr)
+		slog.Default().Warn("RunStubScan: failed to append stub report", "err", appendErr)
 	}
 
 	// 7. Always return nil — stub detection is informational only.
