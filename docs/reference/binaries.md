@@ -31,10 +31,18 @@ Merging them would mean: every `/saw` skill invocation and CI pipeline embeds an
 
 **Installation:**
 ```bash
+go install github.com/blackwell-systems/scout-and-wave-go/cmd/sawtools@latest
+```
+
+<details>
+<summary>Build from source</summary>
+
+```bash
 cd scout-and-wave-go
 go build -o sawtools ./cmd/sawtools
 cp sawtools ~/.local/bin/sawtools
 ```
+</details>
 
 **Target audience:**
 - **CLI Orchestrators** (the `/saw` skill in Claude Code) -- need `create-worktrees`, `merge-agents`, `prepare-wave`, `finalize-wave` because they cannot import Go packages

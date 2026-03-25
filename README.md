@@ -195,12 +195,20 @@ The `sawtools` binary provides 60+ commands covering the full protocol lifecycle
 | `run-review` | AI code review gate on merged diff |
 | `diagnose-build-failure` | AI-assisted build failure diagnosis |
 
-### Build
+### Install
+
+```bash
+go install github.com/blackwell-systems/scout-and-wave-go/cmd/sawtools@latest
+```
+
+<details>
+<summary>Build from source (for contributors)</summary>
 
 ```bash
 go build -o sawtools ./cmd/sawtools
 cp sawtools ~/.local/bin/sawtools
 ```
+</details>
 
 ---
 
@@ -288,8 +296,8 @@ go get github.com/blackwell-systems/scout-and-wave-go
 **Using sawtools directly:**
 
 ```bash
-# Build the CLI
-go build -o sawtools ./cmd/sawtools
+# Install the CLI
+go install github.com/blackwell-systems/scout-and-wave-go/cmd/sawtools@latest
 
 # Validate an IMPL doc
 sawtools validate docs/IMPL/IMPL-feature.yaml
