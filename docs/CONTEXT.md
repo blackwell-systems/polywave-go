@@ -193,3 +193,5 @@ type BackendConfig struct {
   - IMPL doc: docs/IMPL/complete/IMPL-unify-config-management.yaml
 - **runner-decomposition**: completed 2026-03-24, 2 waves, 4 agents
   - IMPL doc: docs/IMPL/complete/IMPL-runner-decomposition.yaml
+- **m4-pre-commit-gate**: completed 2026-03-24, 2 waves, 4 agents
+  - IMPL doc: docs/IMPL/complete/IMPL-m4-pre-commit-gate.yaml
