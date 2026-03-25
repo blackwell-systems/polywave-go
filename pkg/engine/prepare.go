@@ -115,9 +115,24 @@ func PrepareWave(ctx context.Context, opts PrepareWaveOpts) (*PrepareWaveResult,
 	if doc.CriticReport != nil {
 		switch doc.CriticReport.Verdict {
 		case protocol.CriticVerdictIssues:
-			detail := fmt.Sprintf("critic found errors in agent briefs")
-			recordStep(res, opts.OnEvent, "critic_verdict", "failed", detail)
-			return res, fmt.Errorf("E37: critic verdict is ISSUES - fix briefs before launching wave")
+			// Distinguish error-severity issues (blocking) from warning-only (advisory).
+			errorCount := 0
+			for _, review := range doc.CriticReport.AgentReviews {
+				for _, issue := range review.Issues {
+					if issue.Severity == protocol.CriticSeverityError {
+						errorCount++
+					}
+				}
+			}
+			if errorCount > 0 {
+				detail := fmt.Sprintf("critic found %d error(s) in agent briefs", errorCount)
+				recordStep(res, opts.OnEvent, "critic_verdict", "failed", detail)
+				return res, fmt.Errorf("E37: critic found %d error(s) in agent briefs — fix before launching wave", errorCount)
+			}
+			// Warnings only: advisory, proceed with notification.
+			warningCount := doc.CriticReport.IssueCount
+			recordStep(res, opts.OnEvent, "critic_verdict", "success",
+				fmt.Sprintf("critic found %d warning(s) only — proceeding (advisory)", warningCount))
 		case protocol.CriticVerdictSkipped:
 			recordStep(res, opts.OnEvent, "critic_verdict", "skipped", "critic review was skipped")
 		case protocol.CriticVerdictPass:
