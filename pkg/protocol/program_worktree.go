@@ -2,7 +2,7 @@ package protocol
 
 import (
 	"fmt"
-	"os"
+	"log/slog"
 	"path/filepath"
 
 	"github.com/blackwell-systems/scout-and-wave-go/internal/git"
@@ -85,7 +85,7 @@ func CreateProgramWorktrees(programManifestPath string, tierNumber int, repoDir 
 			if git.IsAncestor(absRepoDir, branchName, "HEAD") {
 				_ = git.WorktreeRemove(absRepoDir, worktreePath)
 				_ = git.DeleteBranch(absRepoDir, branchName)
-				fmt.Fprintf(os.Stderr, "Cleaned up stale merged branch %q\n", branchName)
+				slog.Default().Debug("protocol: cleaned up stale merged branch", "branch", branchName)
 			} else {
 				return result.NewFailure[*CreateProgramWorktreesData]([]result.SAWError{{
 					Code: "E_PROGRAM_WORKTREE", Message: fmt.Sprintf("branch %q already exists and is not merged into HEAD; delete it manually or merge first", branchName), Severity: "fatal",
@@ -102,7 +102,7 @@ func CreateProgramWorktrees(programManifestPath string, tierNumber int, repoDir 
 
 		// Install pre-commit hook (log warning on error, don't fail)
 		if err := git.InstallHooks(absRepoDir, worktreePath); err != nil {
-			fmt.Fprintf(os.Stderr, "Warning: failed to install hooks for impl %s: %v\n", implSlug, err)
+			slog.Default().Warn("protocol: failed to install hooks for impl", "impl", implSlug, "err", err)
 		}
 
 		worktrees = append(worktrees, ProgramWorktreeInfo{

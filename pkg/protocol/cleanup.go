@@ -2,7 +2,7 @@ package protocol
 
 import (
 	"fmt"
-	"log"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
@@ -180,7 +180,7 @@ func Cleanup(manifestPath string, waveNum int, repoDir string) (result.Result[Cl
 	// Best-effort: prune stale worktree entries from all involved repos.
 	for repo := range prunedRepos {
 		if err := git.WorktreePrune(repo); err != nil {
-			log.Printf("warning: git worktree prune failed for %s (non-fatal): %v", repo, err)
+			slog.Default().Warn("protocol: git worktree prune failed", "repo", repo, "err", err)
 		}
 	}
 

@@ -2,7 +2,7 @@ package protocol
 
 import (
 	"fmt"
-	"os"
+	"log/slog"
 	"path/filepath"
 
 	"github.com/blackwell-systems/scout-and-wave-go/internal/git"
@@ -171,7 +171,7 @@ func CreateWorktrees(manifestPath string, waveNum int, repoDir string) result.Re
 					// Branch is merged — safe to delete. Also remove its worktree if present.
 					_ = git.WorktreeRemove(agentRepoDir, candidate.worktreePath)
 					_ = git.DeleteBranch(agentRepoDir, candidate.branch)
-					fmt.Fprintf(os.Stderr, "Cleaned up stale merged branch %q in %s\n", candidate.branch, agentRepoDir)
+					slog.Default().Debug("protocol: cleaned up stale merged branch", "branch", candidate.branch, "repo", agentRepoDir)
 				} else if candidate.branch == branchName {
 					// Only error on the primary (new-format) branch; legacy branches
 					// that are unmerged are a soft warning.
@@ -203,29 +203,29 @@ func CreateWorktrees(manifestPath string, waveNum int, repoDir string) result.Re
 			worktreeBase, err := git.GetWorktreeBaseCommit(agentRepoDir, worktreePath)
 			if err != nil {
 				// Can't determine base commit - treat as stale for safety
-				fmt.Fprintf(os.Stderr, "Warning: failed to get worktree base commit for agent %s, treating as stale: %v\n", agent.ID, err)
+				slog.Default().Warn("protocol: failed to get worktree base commit, treating as stale", "agent", agent.ID, "err", err)
 				_ = git.WorktreeRemove(agentRepoDir, worktreePath)
 				_ = git.DeleteBranch(agentRepoDir, branchName)
-				fmt.Fprintf(os.Stderr, "Removed stale worktree for agent %s (reason: unable to verify base commit)\n", agent.ID)
+				slog.Default().Debug("protocol: removed stale worktree", "agent", agent.ID, "reason", "unable to verify base commit")
 			} else if worktreeBase != currentHead {
 				// Base commit doesn't match - stale worktree
 				_ = git.WorktreeRemove(agentRepoDir, worktreePath)
 				_ = git.DeleteBranch(agentRepoDir, branchName)
-				fmt.Fprintf(os.Stderr, "Removed stale worktree for agent %s (reason: base commit mismatch)\n", agent.ID)
+				slog.Default().Debug("protocol: removed stale worktree", "agent", agent.ID, "reason", "base commit mismatch")
 			} else {
 				// Base is current - check hooks
 				hookValid, err := git.VerifyHookInWorktree(worktreePath)
 				if err != nil {
 					// Hook check I/O error - log warning but continue
-					fmt.Fprintf(os.Stderr, "Warning: failed to verify hook for agent %s: %v\n", agent.ID, err)
+					slog.Default().Warn("protocol: failed to verify hook", "agent", agent.ID, "err", err)
 				} else if !hookValid {
 					// Hooks missing or invalid - recreate
 					_ = git.WorktreeRemove(agentRepoDir, worktreePath)
 					_ = git.DeleteBranch(agentRepoDir, branchName)
-					fmt.Fprintf(os.Stderr, "Removed worktree with invalid hooks for agent %s\n", agent.ID)
+					slog.Default().Debug("protocol: removed worktree with invalid hooks", "agent", agent.ID)
 				} else {
 					// Worktree is valid - skip creation
-					fmt.Fprintf(os.Stderr, "Reusing valid worktree for agent %s\n", agent.ID)
+					slog.Default().Debug("protocol: reusing valid worktree", "agent", agent.ID)
 					worktrees = append(worktrees, WorktreeInfo{
 						Agent:  agent.ID,
 						Path:   worktreePath,
@@ -251,7 +251,7 @@ func CreateWorktrees(manifestPath string, waveNum int, repoDir string) result.Re
 		if err := git.InstallHooks(agentRepoDir, worktreePath); err != nil {
 			// Log warning but don't fail — hook verification in prepare-wave will catch this
 			// and provide actionable error message
-			fmt.Fprintf(os.Stderr, "Warning: failed to install hooks for agent %s: %v\n", agent.ID, err)
+			slog.Default().Warn("protocol: failed to install hooks", "agent", agent.ID, "err", err)
 		}
 
 		// Collect worktree info
