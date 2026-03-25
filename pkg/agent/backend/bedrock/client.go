@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"os"
 	"strings"
 
@@ -31,6 +32,21 @@ type Client struct {
 	commitTracker *tools.CommitTracker
 	dedupCache    *dedup.Cache
 	outputSchema  map[string]any // optional: structured output schema
+	logger        *slog.Logger
+}
+
+// SetLogger configures the logger used for debug traces and diagnostics.
+// If never called, the client falls back to slog.Default().
+func (c *Client) SetLogger(logger *slog.Logger) {
+	c.logger = logger
+}
+
+// log returns the configured logger, falling back to slog.Default() if nil.
+func (c *Client) log() *slog.Logger {
+	if c.logger == nil {
+		return slog.Default()
+	}
+	return c.logger
 }
 
 // New creates a Bedrock backend client using AWS credentials from the default chain.
@@ -409,7 +425,7 @@ func (c *Client) RunStreamingWithTools(ctx context.Context, systemPrompt, userPr
 		stream.Close()
 
 		if stopReason == types.StopReasonEndTurn {
-			fmt.Fprintf(os.Stderr, "bedrock: end_turn at turn %d, toolCalls=%d, textLen=%d\n", turn, len(blockMap), fullText.Len())
+			c.log().Debug("bedrock: end_turn", "turn", turn, "tool_calls", len(blockMap), "text_len", fullText.Len())
 			return fullText.String(), nil
 		}
 
@@ -508,12 +524,12 @@ func (c *Client) RunStreamingWithTools(ctx context.Context, systemPrompt, userPr
 
 			result, isError := executeTool(ctx, workshop, toolBlk.name, inputMap, workDir)
 
-			// Debug: log tool calls and results to stderr for diagnosis
+			// Debug: log tool calls and results for diagnosis (off by default, opt-in via SAW_LOG_LEVEL=DEBUG)
 			truncResult := result
 			if len(truncResult) > 200 {
 				truncResult = truncResult[:200] + "...[truncated]"
 			}
-			fmt.Fprintf(os.Stderr, "bedrock tool [turn %d]: %s(%s) → error=%v result=%s\n", turn, toolBlk.name, inputStr[:min(len(inputStr), 100)], isError, truncResult)
+			c.log().Debug("bedrock tool", "turn", turn, "tool", toolBlk.name, "input", inputStr[:min(len(inputStr), 100)], "error", isError, "result", truncResult)
 
 			// Emit tool result event
 			if onToolCall != nil {
