@@ -47,6 +47,7 @@ func Validate(m *IMPLManifest) []result.SAWError {
 	errs = append(errs, ValidateIntegrationChecklist(m, "")...)
 	errs = append(errs, ValidateFileExistence(m, "")...)
 	errs = append(errs, validateKnownIssueTitles(m)...)
+	errs = append(errs, CheckAgentComplexity(m)...)
 
 	return errs
 }
