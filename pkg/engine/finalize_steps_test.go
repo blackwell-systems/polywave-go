@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 
@@ -435,6 +436,434 @@ waves:
 	if !foundRunning {
 		t.Error("expected a (verify-commits, running) event")
 	}
+}
+
+func TestStepVerifyCompletionReports_MissingReports(t *testing.T) {
+	implPath, repoRoot := makeTestIMPL(t, `feature: test-verify-completion-missing
+repo: /tmp/fake
+test_command: "echo ok"
+lint_command: "echo ok"
+waves:
+  - number: 1
+    agents:
+      - id: A
+        branch: wave1-agent-A
+        files:
+          - pkg/foo/foo.go
+      - id: B
+        branch: wave1-agent-B
+        files:
+          - pkg/bar/bar.go
+`)
+
+	manifest, err := protocol.Load(implPath)
+	if err != nil {
+		t.Fatalf("failed to load manifest: %v", err)
+	}
+
+	onEvent, _ := collectStepEvents()
+
+	result, err := StepVerifyCompletionReports(context.Background(), FinalizeWaveOpts{
+		IMPLPath: implPath,
+		RepoPath: repoRoot,
+		WaveNum:  1,
+	}, manifest, onEvent)
+
+	if err == nil {
+		t.Fatal("expected non-nil error for missing completion reports")
+	}
+	errMsg := err.Error()
+	if !strings.Contains(errMsg, "A") || !strings.Contains(errMsg, "B") {
+		t.Errorf("expected error to mention agent IDs A and B, got: %q", errMsg)
+	}
+	if result == nil {
+		t.Fatal("expected non-nil StepResult")
+	}
+	if result.Step != "verify-completion-reports" {
+		t.Errorf("expected step='verify-completion-reports', got %q", result.Step)
+	}
+	if result.Status != "failed" {
+		t.Errorf("expected status='failed', got %q", result.Status)
+	}
+}
+
+func TestStepVerifyCompletionReports_AllPresent(t *testing.T) {
+	implPath, repoRoot := makeTestIMPL(t, `feature: test-verify-completion-present
+repo: /tmp/fake
+test_command: "echo ok"
+lint_command: "echo ok"
+waves:
+  - number: 1
+    agents:
+      - id: A
+        branch: wave1-agent-A
+        files:
+          - pkg/foo/foo.go
+completion_reports:
+  A:
+    status: complete
+    commit: abc123
+    branch: wave1-agent-A
+    files_changed: []
+    files_created: []
+`)
+
+	manifest, err := protocol.Load(implPath)
+	if err != nil {
+		t.Fatalf("failed to load manifest: %v", err)
+	}
+
+	onEvent, _ := collectStepEvents()
+
+	result, err := StepVerifyCompletionReports(context.Background(), FinalizeWaveOpts{
+		IMPLPath: implPath,
+		RepoPath: repoRoot,
+		WaveNum:  1,
+	}, manifest, onEvent)
+
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result == nil {
+		t.Fatal("expected non-nil StepResult")
+	}
+	if result.Status != "success" {
+		t.Errorf("expected status='success', got %q", result.Status)
+	}
+}
+
+func TestStepVerifyCompletionReports_NilCallback(t *testing.T) {
+	implPath, repoRoot := makeTestIMPL(t, `feature: test-verify-completion-nil-cb
+repo: /tmp/fake
+test_command: "echo ok"
+lint_command: "echo ok"
+waves:
+  - number: 1
+    agents:
+      - id: A
+        branch: wave1-agent-A
+        files:
+          - pkg/foo/foo.go
+`)
+
+	manifest, err := protocol.Load(implPath)
+	if err != nil {
+		t.Fatalf("failed to load manifest: %v", err)
+	}
+
+	// nil onEvent should not panic
+	result, _ := StepVerifyCompletionReports(context.Background(), FinalizeWaveOpts{
+		IMPLPath: implPath,
+		RepoPath: repoRoot,
+		WaveNum:  1,
+	}, manifest, nil)
+
+	if result == nil {
+		t.Fatal("expected non-nil StepResult even with nil callback")
+	}
+}
+
+func TestStepCheckAgentStatuses_BlockedAgent(t *testing.T) {
+	implPath, repoRoot := makeTestIMPL(t, `feature: test-check-status-blocked
+repo: /tmp/fake
+test_command: "echo ok"
+lint_command: "echo ok"
+waves:
+  - number: 1
+    agents:
+      - id: A
+        branch: wave1-agent-A
+        files:
+          - pkg/foo/foo.go
+completion_reports:
+  A:
+    status: blocked
+    commit: abc123
+    branch: wave1-agent-A
+    files_changed: []
+    files_created: []
+`)
+
+	manifest, err := protocol.Load(implPath)
+	if err != nil {
+		t.Fatalf("failed to load manifest: %v", err)
+	}
+
+	onEvent, _ := collectStepEvents()
+
+	result, err := StepCheckAgentStatuses(context.Background(), FinalizeWaveOpts{
+		IMPLPath: implPath,
+		RepoPath: repoRoot,
+		WaveNum:  1,
+	}, manifest, onEvent)
+
+	if err == nil {
+		t.Fatal("expected non-nil error for blocked agent")
+	}
+	if !strings.Contains(err.Error(), "blocked") {
+		t.Errorf("expected error to contain 'blocked', got: %q", err.Error())
+	}
+	if result == nil {
+		t.Fatal("expected non-nil StepResult")
+	}
+	if result.Status != "failed" {
+		t.Errorf("expected status='failed', got %q", result.Status)
+	}
+}
+
+func TestStepCheckAgentStatuses_PartialAgent(t *testing.T) {
+	implPath, repoRoot := makeTestIMPL(t, `feature: test-check-status-partial
+repo: /tmp/fake
+test_command: "echo ok"
+lint_command: "echo ok"
+waves:
+  - number: 1
+    agents:
+      - id: A
+        branch: wave1-agent-A
+        files:
+          - pkg/foo/foo.go
+completion_reports:
+  A:
+    status: partial
+    commit: abc123
+    branch: wave1-agent-A
+    files_changed: []
+    files_created: []
+`)
+
+	manifest, err := protocol.Load(implPath)
+	if err != nil {
+		t.Fatalf("failed to load manifest: %v", err)
+	}
+
+	onEvent, _ := collectStepEvents()
+
+	result, err := StepCheckAgentStatuses(context.Background(), FinalizeWaveOpts{
+		IMPLPath: implPath,
+		RepoPath: repoRoot,
+		WaveNum:  1,
+	}, manifest, onEvent)
+
+	if err == nil {
+		t.Fatal("expected non-nil error for partial agent")
+	}
+	if !strings.Contains(err.Error(), "partial") {
+		t.Errorf("expected error to contain 'partial', got: %q", err.Error())
+	}
+	if result == nil {
+		t.Fatal("expected non-nil StepResult")
+	}
+	if result.Status != "failed" {
+		t.Errorf("expected status='failed', got %q", result.Status)
+	}
+}
+
+func TestStepCheckAgentStatuses_CompleteAgent(t *testing.T) {
+	implPath, repoRoot := makeTestIMPL(t, `feature: test-check-status-complete
+repo: /tmp/fake
+test_command: "echo ok"
+lint_command: "echo ok"
+waves:
+  - number: 1
+    agents:
+      - id: A
+        branch: wave1-agent-A
+        files:
+          - pkg/foo/foo.go
+completion_reports:
+  A:
+    status: complete
+    commit: abc123
+    branch: wave1-agent-A
+    files_changed: []
+    files_created: []
+`)
+
+	manifest, err := protocol.Load(implPath)
+	if err != nil {
+		t.Fatalf("failed to load manifest: %v", err)
+	}
+
+	onEvent, _ := collectStepEvents()
+
+	result, err := StepCheckAgentStatuses(context.Background(), FinalizeWaveOpts{
+		IMPLPath: implPath,
+		RepoPath: repoRoot,
+		WaveNum:  1,
+	}, manifest, onEvent)
+
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result == nil {
+		t.Fatal("expected non-nil StepResult")
+	}
+	if result.Status != "success" {
+		t.Errorf("expected status='success', got %q", result.Status)
+	}
+}
+
+func TestStepPredictConflicts_NoConflicts(t *testing.T) {
+	implPath, repoRoot := makeTestIMPL(t, `feature: test-predict-conflicts-none
+repo: /tmp/fake
+test_command: "echo ok"
+lint_command: "echo ok"
+waves:
+  - number: 1
+    agents:
+      - id: A
+        branch: wave1-agent-A
+        files:
+          - pkg/foo/foo.go
+completion_reports:
+  A:
+    status: complete
+    commit: abc123
+    branch: wave1-agent-A
+    files_changed:
+      - pkg/foo/foo.go
+    files_created:
+      - pkg/foo/foo.go
+`)
+
+	manifest, err := protocol.Load(implPath)
+	if err != nil {
+		t.Fatalf("failed to load manifest: %v", err)
+	}
+
+	onEvent, _ := collectStepEvents()
+
+	result, err := StepPredictConflicts(context.Background(), FinalizeWaveOpts{
+		IMPLPath: implPath,
+		RepoPath: repoRoot,
+		WaveNum:  1,
+	}, manifest, onEvent)
+
+	if err != nil {
+		t.Fatalf("unexpected error for single-agent IMPL: %v", err)
+	}
+	if result == nil {
+		t.Fatal("expected non-nil StepResult")
+	}
+	if result.Status != "success" {
+		t.Errorf("expected status='success', got %q", result.Status)
+	}
+}
+
+func TestStepCheckTypeCollisions_Disabled(t *testing.T) {
+	implPath, repoRoot := makeTestIMPL(t, `feature: test-type-collisions-disabled
+repo: /tmp/fake
+test_command: "echo ok"
+lint_command: "echo ok"
+waves:
+  - number: 1
+    agents:
+      - id: A
+        branch: wave1-agent-A
+        files:
+          - pkg/foo/foo.go
+`)
+
+	onEvent, _ := collectStepEvents()
+
+	result, report, err := StepCheckTypeCollisions(context.Background(), FinalizeWaveOpts{
+		IMPLPath:                  implPath,
+		RepoPath:                  repoRoot,
+		WaveNum:                   1,
+		CollisionDetectionEnabled: false,
+	}, onEvent)
+
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result == nil {
+		t.Fatal("expected non-nil StepResult")
+	}
+	if result.Status != "skipped" {
+		t.Errorf("expected status='skipped', got %q", result.Status)
+	}
+	if report != nil {
+		t.Errorf("expected nil CollisionReport when disabled, got non-nil")
+	}
+}
+
+func TestStepCheckWiringDeclarations_EmptyWiring(t *testing.T) {
+	implPath, repoRoot := makeTestIMPL(t, `feature: test-wiring-empty
+repo: /tmp/fake
+test_command: "echo ok"
+lint_command: "echo ok"
+waves:
+  - number: 1
+    agents:
+      - id: A
+        branch: wave1-agent-A
+        files:
+          - pkg/foo/foo.go
+`)
+
+	manifest, err := protocol.Load(implPath)
+	if err != nil {
+		t.Fatalf("failed to load manifest: %v", err)
+	}
+
+	onEvent, _ := collectStepEvents()
+
+	result, wiringData, err := StepCheckWiringDeclarations(context.Background(), FinalizeWaveOpts{
+		IMPLPath: implPath,
+		RepoPath: repoRoot,
+		WaveNum:  1,
+	}, manifest, onEvent)
+
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result == nil {
+		t.Fatal("expected non-nil StepResult")
+	}
+	if result.Status != "success" {
+		t.Errorf("expected status='success' for empty wiring, got %q", result.Status)
+	}
+	if wiringData != nil {
+		t.Errorf("expected nil WiringValidationData for empty wiring, got non-nil")
+	}
+}
+
+func TestStepPopulateIntegrationChecklist_NoChecklist(t *testing.T) {
+	implPath, repoRoot := makeTestIMPL(t, `feature: test-populate-checklist-none
+repo: /tmp/fake
+test_command: "echo ok"
+lint_command: "echo ok"
+waves:
+  - number: 1
+    agents:
+      - id: A
+        branch: wave1-agent-A
+        files:
+          - pkg/foo/foo.go
+`)
+
+	manifest, err := protocol.Load(implPath)
+	if err != nil {
+		t.Fatalf("failed to load manifest: %v", err)
+	}
+
+	onEvent, _ := collectStepEvents()
+
+	result, _, err := StepPopulateIntegrationChecklist(context.Background(), FinalizeWaveOpts{
+		IMPLPath: implPath,
+		RepoPath: repoRoot,
+		WaveNum:  1,
+	}, manifest, onEvent)
+
+	// Non-fatal: any error from PopulateIntegrationChecklist is swallowed
+	if result == nil {
+		t.Fatal("expected non-nil StepResult")
+	}
+	if result.Status != "success" {
+		t.Errorf("expected status='success' (non-fatal), got %q", result.Status)
+	}
+	_ = err // non-fatal step: err is always nil from StepPopulateIntegrationChecklist
 }
 
 // TestFinalizeWave_BackwardCompat_NoOnEvent verifies that FinalizeWave still works
