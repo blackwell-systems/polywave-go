@@ -202,6 +202,10 @@ The `sawtools` binary provides 60+ commands covering the full protocol lifecycle
 ### Install
 
 ```bash
+# Homebrew (macOS/Linux)
+brew install blackwell-systems/tap/sawtools
+
+# Or via Go install
 go install github.com/blackwell-systems/scout-and-wave-go/cmd/sawtools@latest
 ```
 

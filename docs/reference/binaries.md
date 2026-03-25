@@ -31,6 +31,10 @@ Merging them would mean: every `/saw` skill invocation and CI pipeline embeds an
 
 **Installation:**
 ```bash
+# Homebrew (macOS/Linux)
+brew install blackwell-systems/tap/sawtools
+
+# Or via Go install
 go install github.com/blackwell-systems/scout-and-wave-go/cmd/sawtools@latest
 ```
 
