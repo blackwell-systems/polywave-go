@@ -20,10 +20,11 @@ import (
 
 // PrepareWaveResult combines worktree creation and per-agent preparation results
 type PrepareWaveResult struct {
-	Wave        int                     `json:"wave"`
-	Worktrees   []protocol.WorktreeInfo `json:"worktrees"`
-	AgentBriefs []AgentBriefInfo        `json:"agent_briefs"`
-	Repos       []string                `json:"repos,omitempty"` // distinct repo names used this wave
+	Wave                 int                     `json:"wave"`
+	Worktrees            []protocol.WorktreeInfo `json:"worktrees"`
+	AgentBriefs          []AgentBriefInfo        `json:"agent_briefs"`
+	Repos                []string                `json:"repos,omitempty"`                  // distinct repo names used this wave
+	StaleCleanupWarnings []string                `json:"stale_cleanup_warnings,omitempty"` // warnings from stale worktree cleanup
 }
 
 // AgentBriefInfo contains metadata about a prepared agent brief
@@ -168,6 +169,7 @@ waves that execute on the main branch.`,
 			}
 
 			// Step 0a2: Clean stale worktrees from the SAME slug (previous failed run)
+			var staleCleanupWarnings []string
 			stale, staleErr := protocol.DetectStaleWorktrees(projectRoot)
 			if staleErr == nil {
 				var sameSlug []protocol.StaleWorktree
@@ -178,8 +180,16 @@ waves that execute on the main branch.`,
 				}
 				if len(sameSlug) > 0 {
 					cleanRes := protocol.CleanStaleWorktrees(sameSlug, true)
-					if cleanRes.IsSuccess() || cleanRes.IsPartial() {
-						fmt.Fprintf(os.Stderr, "prepare-wave: cleaned %d stale worktree(s) from previous runs\n", len(cleanRes.GetData().Cleaned))
+					cleanData := cleanRes.GetData()
+					if cleanData != nil {
+						if cleanRes.IsSuccess() || cleanRes.IsPartial() {
+							fmt.Fprintf(os.Stderr, "prepare-wave: cleaned %d stale worktree(s) from previous runs\n", len(cleanData.Cleaned))
+						}
+						for _, e := range cleanData.Errors {
+							msg := fmt.Sprintf("stale cleanup failed for %s: %s", e.Worktree.BranchName, e.Error)
+							fmt.Fprintf(os.Stderr, "prepare-wave: warning: %s\n", msg)
+							staleCleanupWarnings = append(staleCleanupWarnings, msg)
+						}
 					}
 				}
 			}
@@ -538,10 +548,11 @@ waves that execute on the main branch.`,
 
 			// Output result
 			result := PrepareWaveResult{
-				Wave:        waveNum,
-				Worktrees:   worktreeResult.Worktrees,
-				AgentBriefs: agentBriefs,
-				Repos:       repoList,
+				Wave:                 waveNum,
+				Worktrees:            worktreeResult.Worktrees,
+				AgentBriefs:          agentBriefs,
+				Repos:                repoList,
+				StaleCleanupWarnings: staleCleanupWarnings,
 			}
 
 			out, _ := json.MarshalIndent(result, "", "  ")
