@@ -1,3 +1,4 @@
+completion_date: "2026-03-24"
 title: 'Engine Decomposition: Composable Step Functions with Event Callbacks'
 feature_slug: engine-decomposition
 verdict: SUITABLE
@@ -414,6 +415,7 @@ waves:
             - pkg/engine/test_runner_test.go
             - pkg/engine/merge_cleanup.go
             - pkg/engine/merge_cleanup_test.go
+      base_commit: f627cebb843cb2f9b1450ed58288a39b5298031a
     - number: 2
       agents:
         - id: D
@@ -519,6 +521,7 @@ waves:
             - pkg/engine/finalize_impl.go
           dependencies:
             - B
+      base_commit: f627cebb843cb2f9b1450ed58288a39b5298031a
 quality_gates:
     level: standard
     gates:
@@ -582,6 +585,95 @@ scaffolds:
         }
       import_path: github.com/blackwell-systems/scout-and-wave-go/pkg/engine
       status: committed (416f5bc)
+completion_reports:
+    A:
+        status: complete
+        branch: saw/engine-decomposition/wave1-agent-A
+        commit: 67f057e
+        files_changed:
+            - pkg/engine/prepare.go
+            - pkg/engine/prepare_test.go
+        files_created:
+            - pkg/engine/prepare.go
+            - pkg/engine/prepare_test.go
+        tests_added:
+            - TestPrepareWave_MissingIMPLPath
+            - TestPrepareWave_MissingRepoPath
+            - TestPrepareWave_MissingWaveNum
+            - TestPrepareWave_OnEventCallback
+            - TestPrepareWave_DepConflictReturnsPartialResult
+            - TestPrepareWave_NilOnEvent
+        verification: PASS
+    B:
+        status: complete
+        branch: saw/engine-decomposition/wave1-agent-B
+        commit: e41838f
+        files_changed:
+            - pkg/engine/finalize.go
+        files_created:
+            - pkg/engine/finalize_steps.go
+            - pkg/engine/finalize_steps_test.go
+        tests_added:
+            - TestStepVerifyCommits_EmitsEvents
+            - TestStepVerifyCommits_NilCallback
+            - TestStepScanStubs_NoChangedFiles
+            - TestStepScanStubs_DetectsStubs
+            - TestStepFixGoMod_NoGoMod
+            - TestStepCleanup_NoWorktrees
+            - TestStepMergeAgents_EmitsEvents
+            - TestStepVerifyBuild_EmitsEvents
+            - TestFinalizeWave_OnEventCallback
+            - TestFinalizeWave_BackwardCompat_NoOnEvent
+        verification: PASS
+    C:
+        status: complete
+        branch: saw/engine-decomposition/wave1-agent-C
+        commit: 10eaee1
+        files_changed:
+            - pkg/engine/test_runner.go
+            - pkg/engine/test_runner_test.go
+            - pkg/engine/merge_cleanup.go
+            - pkg/engine/merge_cleanup_test.go
+        files_created:
+            - pkg/engine/test_runner.go
+            - pkg/engine/test_runner_test.go
+            - pkg/engine/merge_cleanup.go
+            - pkg/engine/merge_cleanup_test.go
+        tests_added:
+            - TestRunTestCommand_EmptyTestCommand
+            - TestRunTestCommand_CallbackInvoked
+            - TestRunTestCommand_NilCallback
+            - TestRunTestCommand_FailingCommand
+            - TestPostMergeCleanup_CallbackInvoked
+            - TestPostMergeCleanup_NilCallback
+            - TestPostMergeCleanup_NonFatalErrors
+        verification: PASS
+    D:
+        status: complete
+        branch: saw/engine-decomposition/wave2-agent-D
+        commit: f30ee52
+        files_changed:
+            - cmd/sawtools/prepare_wave.go
+            - cmd/sawtools/prepare_wave_test.go
+        tests_added:
+            - TestPrepareWaveCmd_RequiresWaveFlag
+            - TestPrepareWaveCmd_UsesEnginePrepareWaveResult
+            - TestPrepareWaveCmd_AgentBriefInfoJSON
+            - TestPrepareWaveCmd_AgentBriefInfoOmitEmpty
+        verification: PASS
+    E:
+        status: complete
+        branch: saw/engine-decomposition/wave2-agent-E
+        commit: 37f56c4
+        files_changed:
+            - cmd/sawtools/finalize_wave.go
+            - cmd/sawtools/finalize_wave_test.go
+            - pkg/engine/run_wave_full.go
+            - pkg/engine/finalize_impl.go
+            - pkg/engine/run_wave_full_test.go
+        tests_added:
+            - TestFinalizeWave_SkipMergeFlag
+        verification: PASS
 pre_mortem:
     overall_risk: medium
     rows:
@@ -617,4 +709,10 @@ pre_mortem:
           mitigation: |
             The audit finding remains open until web caller updates are complete.
             The suitability_assessment documents that web changes are deferred.
-state: REVIEWED
+critic_report:
+    verdict: PASS
+    agent_reviews: {}
+    summary: 5 agents reviewed. 1 symbol accuracy error corrected (RunGatesData to GatesData). All checks pass.
+    reviewed_at: ""
+    issue_count: 0
+state: COMPLETE
