@@ -2,6 +2,7 @@ package protocol
 
 import (
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
@@ -367,7 +368,7 @@ func mergeAgentsSingleRepo(manifestPath string, waveNum int, repoDir string, man
 		mergeLog.AddMergeEntry(agent.ID, mergeSHA)
 		if saveErr := SaveMergeLog(manifestPath, waveNum, mergeLog); saveErr != nil {
 			// Non-fatal: log warning but continue (best-effort tracking)
-			fmt.Fprintf(os.Stderr, "warning: failed to save merge-log: %v\n", saveErr)
+			slog.Default().Warn("protocol: failed to save merge-log", "err", saveErr)
 		}
 
 		// Merge succeeded — auto-update completion status (best-effort)
@@ -506,7 +507,7 @@ func mergeAgentsMultiRepo(manifestPath string, waveNum int, manifest *IMPLManife
 			mergeLog.AddMergeEntry(agent.ID, mergeSHA)
 			if saveErr := SaveMergeLog(manifestPath, waveNum, mergeLog); saveErr != nil {
 				// Non-fatal: log warning but continue (best-effort tracking)
-				fmt.Fprintf(os.Stderr, "warning: failed to save merge-log: %v\n", saveErr)
+				slog.Default().Warn("protocol: failed to save merge-log", "err", saveErr)
 			}
 
 			// Merge succeeded

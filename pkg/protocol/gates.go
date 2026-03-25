@@ -3,6 +3,7 @@ package protocol
 import (
 	"bytes"
 	"fmt"
+	"log/slog"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -363,8 +364,7 @@ func RunGatesWithCache(manifest *IMPLManifest, waveNumber int, repoDir string, c
 		if cacheKey.HeadCommit != "" {
 			if cached, ok := cache.Get(cacheKey, gate.Type); ok {
 				skipReason := fmt.Sprintf("cached at SHA %s", cacheKey.HeadCommit)
-				fmt.Fprintf(os.Stderr, "gate [%s]: skipped (cached at SHA %s)\n",
-					gate.Type, cacheKey.HeadCommit)
+				slog.Default().Debug("protocol: gate skipped (cached)", "gate", gate.Type, "sha", cacheKey.HeadCommit)
 				gates = append(gates, GateResult{
 					Type:       gate.Type,
 					Command:    gate.Command,
