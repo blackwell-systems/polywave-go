@@ -107,7 +107,7 @@ scaffolds:
           Format(event Event) Message
       }
     import_path: "github.com/blackwell-systems/scout-and-wave-go/pkg/notify"
-    status: pending
+    status: committed (7f296ff)
 
 interface_contracts:
   - name: "Event type"
