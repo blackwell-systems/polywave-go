@@ -26,11 +26,13 @@ type FinalizeWaveResult struct {
 	GateResults       map[string][]protocol.GateResult `json:"gate_results"` // repo -> gates
 	MergeResult       map[string]*protocol.MergeAgentsData `json:"merge_result"` // repo -> result
 	VerifyBuildResult map[string]*protocol.VerifyBuildData `json:"verify_build"` // repo -> result
-	IntegrationReport *protocol.IntegrationReport       `json:"integration_report,omitempty"`
-	WiringReport      *protocol.WiringValidationData   `json:"wiring_report,omitempty"`
-	BuildDiagnosis    map[string]*builddiag.Diagnosis  `json:"build_diagnosis,omitempty"` // repo -> diagnosis
-	CleanupResult     map[string]*protocol.CleanupData `json:"cleanup_result"` // repo -> result
-	Success           bool                             `json:"success"`
+	IntegrationReport        *protocol.IntegrationReport       `json:"integration_report,omitempty"`
+	WiringReport             *protocol.WiringValidationData    `json:"wiring_report,omitempty"`
+	BuildDiagnosis           map[string]*builddiag.Diagnosis   `json:"build_diagnosis,omitempty"` // repo -> diagnosis
+	CleanupResult            map[string]*protocol.CleanupData  `json:"cleanup_result"` // repo -> result
+	IntegrationActionRequired bool                             `json:"integration_action_required"`
+	WiringGaps               []string                          `json:"wiring_gaps,omitempty"`
+	Success                  bool                             `json:"success"`
 }
 
 func newFinalizeWaveCmd() *cobra.Command {
@@ -347,6 +349,12 @@ pattern matching (H7) and appends diagnosis to the output.`,
 							// error in the result and returned to the caller (web runner, CLI).
 							// Blocking at this stage would prevent cleanup. The human or
 							// integration agent addresses it via validate-integration.
+							result.IntegrationActionRequired = true
+							for _, gap := range wiringData.Gaps {
+								result.WiringGaps = append(result.WiringGaps,
+									fmt.Sprintf("%s not called in %s",
+										gap.Declaration.Symbol, gap.Declaration.MustBeCalledFrom))
+							}
 						}
 					}
 					break // single-repo default; cross-repo would need aggregation
@@ -378,6 +386,19 @@ pattern matching (H7) and appends diagnosis to the output.`,
 				}
 			}
 			postMerge:
+
+			// Step 4.5: M5 populate-integration-checklist (non-blocking)
+			m5Updated, m5Err := protocol.PopulateIntegrationChecklist(manifest)
+			if m5Err != nil {
+				fmt.Fprintf(os.Stderr, "finalize-wave: M5 populate-integration-checklist: %v\n", m5Err)
+			} else {
+				manifest = m5Updated
+				if saveErr := protocol.Save(manifest, manifestPath); saveErr != nil {
+					fmt.Fprintf(os.Stderr, "finalize-wave: M5 save: %v\n", saveErr)
+				} else {
+					fmt.Fprintf(os.Stderr, "finalize-wave: M5 integration checklist populated\n")
+				}
+			}
 
 			// Step 5: VerifyBuild (post-merge tests) - run per repo
 			for repoKey, repoPath := range repos {
@@ -435,6 +456,23 @@ pattern matching (H7) and appends diagnosis to the output.`,
 				}
 				cleanupData := cleanupRes.GetData()
 				result.CleanupResult[repoKey] = &cleanupData
+			}
+
+			// State transition: WAVE_VERIFIED (non-fatal)
+			stateRes := protocol.SetImplState(manifestPath, protocol.StateWaveVerified, protocol.SetImplStateOpts{})
+			if stateRes.IsFatal() {
+				fmt.Fprintf(os.Stderr, "finalize-wave: warning: SetImplState(WAVE_VERIFIED) failed: %v\n", stateRes.Errors)
+			} else {
+				fmt.Fprintf(os.Stderr, "finalize-wave: IMPL state -> WAVE_VERIFIED\n")
+			}
+
+			// Per-agent update-status: complete (non-fatal)
+			for _, agent := range manifest.Waves[waveNum-1].Agents {
+				updateRes := protocol.UpdateStatus(manifestPath, waveNum, agent.ID, "complete")
+				if updateRes.IsFatal() {
+					fmt.Fprintf(os.Stderr, "finalize-wave: warning: update-status for agent %s failed: %v\n",
+						agent.ID, updateRes.Errors)
+				}
 			}
 
 			// All steps succeeded
