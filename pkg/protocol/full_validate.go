@@ -1,58 +1,183 @@
 package protocol
 
 import (
+	"fmt"
+	"os"
+
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
 )
 
-// FullValidateOpts controls optional behaviour of FullValidate.
+// FullValidateData holds the result of a complete manifest validation.
+type FullValidateData struct {
+	Valid      bool              `json:"valid"`
+	ErrorCount int              `json:"error_count"`
+	Errors     []result.SAWError `json:"errors"`
+	Fixed      int              `json:"fixed,omitempty"`
+}
+
+// FullValidateOpts controls validation behavior.
 type FullValidateOpts struct {
-	// Reserved for future options (e.g. strict mode, skip checks).
+	AutoFix   bool // auto-correct fixable issues (gate types, unknown keys)
+	UseSolver bool // use CSP solver for wave assignment validation
 }
 
-// ValidationResult is the data payload returned by FullValidate.
-type ValidationResult struct {
-	Valid  bool             `json:"valid"`
-	Errors []result.SAWError `json:"errors,omitempty"`
-}
-
-// FullValidate runs all validation checks on the IMPL doc at yamlPath:
-//  1. Load the manifest (parse + struct validation via Validate)
-//  2. E16 typed-block validation (ValidateIMPLDoc)
-//
-// Returns a fatal Result if the file cannot be loaded at all.
-// Returns a non-fatal Result with Valid=false if validation errors exist.
-// Returns a non-fatal Result with Valid=true if all checks pass.
-func FullValidate(yamlPath string, _ FullValidateOpts) result.Result[*ValidationResult] {
-	// Step 1: parse + struct validation
-	m, err := Load(yamlPath)
+// FullValidate runs all validation checks on an IMPL manifest file.
+// This is the single entry point for CLI, web, and programmatic validation.
+// When AutoFix is true, correctable issues are fixed in-place before validation.
+func FullValidate(manifestPath string, opts FullValidateOpts) result.Result[FullValidateData] {
+	// Step 1: Load manifest
+	m, err := Load(manifestPath)
 	if err != nil {
-		return result.NewFailure[*ValidationResult]([]result.SAWError{{
-			Code:     result.CodeIMPLParseFailed,
-			Message:  "failed to load manifest: " + err.Error(),
+		return result.NewFailure[FullValidateData]([]result.SAWError{{
+			Code:     "V001_MANIFEST_INVALID",
+			Message:  fmt.Sprintf("failed to load manifest: %v", err),
 			Severity: "fatal",
-			File:     yamlPath,
 		}})
+	}
+
+	totalFixed := 0
+
+	// Step 2: Auto-fix correctable issues
+	if opts.AutoFix {
+		totalFixed += FixGateTypes(m)
+		if totalFixed > 0 {
+			if err := Save(m, manifestPath); err != nil {
+				return result.NewFailure[FullValidateData]([]result.SAWError{{
+					Code:     "V001_MANIFEST_INVALID",
+					Message:  fmt.Sprintf("failed to write corrections: %v", err),
+					Severity: "fatal",
+				}})
+			}
+		}
+
+		// Strip unknown top-level keys from the raw YAML.
+		rawFix, readFixErr := os.ReadFile(manifestPath)
+		if readFixErr == nil {
+			cleaned, stripped, stripErr := StripUnknownKeys(rawFix)
+			if stripErr == nil && len(stripped) > 0 {
+				if writeErr := os.WriteFile(manifestPath, cleaned, 0644); writeErr != nil {
+					return result.NewFailure[FullValidateData]([]result.SAWError{{
+						Code:     "V001_MANIFEST_INVALID",
+						Message:  fmt.Sprintf("failed to write stripped YAML: %v", writeErr),
+						Severity: "fatal",
+					}})
+				}
+				totalFixed += len(stripped)
+				// Re-load manifest after stripping keys.
+				m, err = Load(manifestPath)
+				if err != nil {
+					return result.NewFailure[FullValidateData]([]result.SAWError{{
+						Code:     "V001_MANIFEST_INVALID",
+						Message:  fmt.Sprintf("reload after strip: %v", err),
+						Severity: "fatal",
+					}})
+				}
+			}
+		}
 	}
 
 	var errs []result.SAWError
 
-	// Struct validation (required fields, disjoint ownership, etc.)
-	errs = append(errs, Validate(m)...)
+	// Step 3: Read raw YAML for byte-level checks
+	rawData, readErr := os.ReadFile(manifestPath)
+	if readErr == nil {
+		// Step 4: Duplicate key detection
+		dkErrs := ValidateDuplicateKeys(rawData)
+		errs = append(errs, dkErrs...)
 
-	// Step 2: E16 typed-block validation
-	blockErrs, blockErr := ValidateIMPLDoc(yamlPath)
-	if blockErr != nil {
-		return result.NewFailure[*ValidationResult]([]result.SAWError{{
-			Code:     result.CodeIMPLParseFailed,
-			Message:  "typed-block validation failed: " + blockErr.Error(),
+		// Step 5: Unknown key detection
+		ukErrs := DetectUnknownKeys(rawData)
+		errs = append(errs, ukErrs...)
+	}
+
+	// Step 6: Struct-level invariant checks
+	if opts.UseSolver {
+		errs = append(errs, ValidateWithSolver(m)...)
+	} else {
+		errs = append(errs, Validate(m)...)
+	}
+
+	// Step 7: E16 typed-block validation
+	docErrs, docErr := ValidateIMPLDoc(manifestPath)
+	if docErr != nil {
+		errs = append(errs, result.SAWError{
+			Code:     "V001_MANIFEST_INVALID",
+			Message:  fmt.Sprintf("typed-block validation error: %v", docErr),
+			Severity: "error",
+		})
+	} else {
+		errs = append(errs, docErrs...)
+	}
+
+	// Ensure errors is never nil
+	if errs == nil {
+		errs = []result.SAWError{}
+	}
+
+	data := FullValidateData{
+		Valid:      len(errs) == 0,
+		ErrorCount: len(errs),
+		Errors:     errs,
+		Fixed:      totalFixed,
+	}
+
+	if data.Valid {
+		return result.NewSuccess(data)
+	}
+	return result.NewPartial(data, errs)
+}
+
+// FullValidateProgramData holds the result of program manifest validation.
+type FullValidateProgramData struct {
+	Valid      bool              `json:"valid"`
+	ErrorCount int              `json:"error_count"`
+	Errors     []result.SAWError `json:"errors"`
+}
+
+// FullValidateProgramOpts controls program validation behavior.
+type FullValidateProgramOpts struct {
+	ImportMode bool   // run import-mode checks (P1/P2 against on-disk IMPLs)
+	RepoDir    string // repo root for import-mode (default: cwd)
+}
+
+// FullValidateProgram runs all validation checks on a PROGRAM manifest file.
+func FullValidateProgram(manifestPath string, opts FullValidateProgramOpts) result.Result[FullValidateProgramData] {
+	// Step 1: Parse manifest
+	manifest, err := ParseProgramManifest(manifestPath)
+	if err != nil {
+		return result.NewFailure[FullValidateProgramData]([]result.SAWError{{
+			Code:     "P000_PARSE_ERROR",
+			Message:  fmt.Sprintf("failed to parse program manifest: %v", err),
 			Severity: "fatal",
-			File:     yamlPath,
 		}})
 	}
-	errs = append(errs, blockErrs...)
 
-	return result.NewSuccess(&ValidationResult{
-		Valid:  len(errs) == 0,
-		Errors: errs,
-	})
+	// Step 2: Run validation
+	validationErrs := ValidateProgram(manifest)
+
+	// Step 3: Optional import-mode checks
+	if opts.ImportMode {
+		rd := opts.RepoDir
+		if rd == "" {
+			rd, _ = os.Getwd()
+		}
+		importErrs := ValidateProgramImportMode(manifest, rd)
+		validationErrs = append(validationErrs, importErrs...)
+	}
+
+	// Ensure errors is never nil
+	if validationErrs == nil {
+		validationErrs = []result.SAWError{}
+	}
+
+	data := FullValidateProgramData{
+		Valid:      len(validationErrs) == 0,
+		ErrorCount: len(validationErrs),
+		Errors:     validationErrs,
+	}
+
+	if data.Valid {
+		return result.NewSuccess(data)
+	}
+	return result.NewPartial(data, validationErrs)
 }

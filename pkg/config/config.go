@@ -1,49 +1,82 @@
-// Package config provides the canonical SAWConfig type and saw.config.json
-// loader/saver for use by both the engine and web app.
+// Package config provides unified configuration loading and saving for
+// scout-and-wave. It replaces the scattered config handling previously split
+// across backend.SAWProviders, autonomy.Config, and the web app's
+// service.SAWConfig with a single SAWConfig type and Load/Save API.
 package config
 
 import (
 	"encoding/json"
-	"errors"
 	"os"
 	"path/filepath"
 
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
 )
 
-const configFileName = "saw.config.json"
-
-// RepoEntry represents a single repository tracked by SAW.
-type RepoEntry struct {
-	Name string `json:"name"`
-	Path string `json:"path"`
+// SAWConfig is the unified configuration type for all SAW operations.
+// It is the superset of fields from backend.SAWProviders, autonomy.Config,
+// and the web application's service.SAWConfig.
+type SAWConfig struct {
+	Providers     ProvidersConfig `json:"providers,omitempty"`
+	Autonomy      AutonomyConfig  `json:"autonomy,omitempty"`
+	Repos         []RepoEntry     `json:"repos,omitempty"`
+	Agent         AgentConfig     `json:"agent,omitempty"`
+	Quality       QualityConfig   `json:"quality,omitempty"`
+	Appear        AppearConfig    `json:"appearance,omitempty"`
+	Notifications any             `json:"notifications,omitempty"`
+	CodeReview    any             `json:"code_review,omitempty"`
 }
 
-// RepoConfig is kept for backward-compat JSON deserialization of old configs.
-type RepoConfig struct {
-	Path string `json:"path"`
+// ProvidersConfig holds API credentials for supported LLM providers.
+type ProvidersConfig struct {
+	Anthropic AnthropicProvider `json:"anthropic,omitempty"`
+	Bedrock   BedrockProvider   `json:"bedrock,omitempty"`
+	OpenAI    OpenAIProvider    `json:"openai,omitempty"`
 }
 
-// AutonomyConfig holds autonomy-level settings.
+// AnthropicProvider holds Anthropic API configuration.
+type AnthropicProvider struct {
+	APIKey string `json:"api_key,omitempty"`
+}
+
+// BedrockProvider holds AWS Bedrock configuration.
+type BedrockProvider struct {
+	Region         string `json:"region,omitempty"`
+	AccessKeyID    string `json:"access_key_id,omitempty"`
+	SecretAccessKey string `json:"secret_access_key,omitempty"`
+	SessionToken   string `json:"session_token,omitempty"`
+	Profile        string `json:"profile,omitempty"`
+}
+
+// OpenAIProvider holds OpenAI API configuration.
+type OpenAIProvider struct {
+	APIKey string `json:"api_key,omitempty"`
+}
+
+// AutonomyConfig controls agent autonomy behavior.
 type AutonomyConfig struct {
 	Level          string `json:"level,omitempty"`
 	MaxAutoRetries int    `json:"max_auto_retries,omitempty"`
 	MaxQueueDepth  int    `json:"max_queue_depth,omitempty"`
 }
 
-// AgentConfig holds per-role model overrides.
+// RepoEntry identifies a repository by name and filesystem path.
+type RepoEntry struct {
+	Name string `json:"name"`
+	Path string `json:"path"`
+}
+
+// AgentConfig specifies which model to use for each agent role.
 type AgentConfig struct {
 	ScoutModel       string `json:"scout_model,omitempty"`
 	WaveModel        string `json:"wave_model,omitempty"`
 	ChatModel        string `json:"chat_model,omitempty"`
-	IntegrationModel string `json:"integration_model,omitempty"`
 	ScaffoldModel    string `json:"scaffold_model,omitempty"`
+	IntegrationModel string `json:"integration_model,omitempty"`
 	PlannerModel     string `json:"planner_model,omitempty"`
-	CriticModel      string `json:"critic_model,omitempty"`
 	ReviewModel      string `json:"review_model,omitempty"`
 }
 
-// QualityConfig holds quality gate settings.
+// QualityConfig controls quality gate enforcement.
 type QualityConfig struct {
 	RequireTests   bool          `json:"require_tests,omitempty"`
 	RequireLint    bool          `json:"require_lint,omitempty"`
@@ -51,7 +84,7 @@ type QualityConfig struct {
 	CodeReview     CodeReviewCfg `json:"code_review,omitempty"`
 }
 
-// CodeReviewCfg holds settings for the AI code review post-merge gate.
+// CodeReviewCfg controls automated code review settings.
 type CodeReviewCfg struct {
 	Enabled   bool   `json:"enabled,omitempty"`
 	Blocking  bool   `json:"blocking,omitempty"`
@@ -59,9 +92,10 @@ type CodeReviewCfg struct {
 	Threshold int    `json:"threshold,omitempty"`
 }
 
-// AppearConfig holds UI appearance settings.
+// AppearConfig controls UI appearance settings.
 type AppearConfig struct {
 	Theme               string   `json:"theme,omitempty"`
+	Contrast            string   `json:"contrast,omitempty"`
 	ColorTheme          string   `json:"color_theme,omitempty"`
 	ColorThemeDark      string   `json:"color_theme_dark,omitempty"`
 	ColorThemeLight     string   `json:"color_theme_light,omitempty"`
@@ -69,138 +103,166 @@ type AppearConfig struct {
 	FavoriteThemesLight []string `json:"favorite_themes_light,omitempty"`
 }
 
-// ProvidersConfig holds credential configuration for all supported LLM providers.
-type ProvidersConfig struct {
-	Anthropic AnthropicProviderConfig `json:"anthropic,omitempty"`
-	OpenAI    OpenAIProviderConfig    `json:"openai,omitempty"`
-	Bedrock   BedrockProviderConfig   `json:"bedrock,omitempty"`
+const configFileName = "saw.config.json"
+
+// maxWalkDepth is the maximum number of parent directories to traverse.
+const maxWalkDepth = 10
+
+// FindConfigPath walks up from startDir looking for saw.config.json.
+// Returns the absolute path if found, empty string if not.
+func FindConfigPath(startDir string) string {
+	dir, err := filepath.Abs(startDir)
+	if err != nil {
+		return ""
+	}
+	for i := 0; i < maxWalkDepth; i++ {
+		candidate := filepath.Join(dir, configFileName)
+		if _, err := os.Stat(candidate); err == nil {
+			return candidate
+		}
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			break // reached filesystem root
+		}
+		dir = parent
+	}
+	return ""
 }
 
-// AnthropicProviderConfig holds Anthropic API credentials.
-type AnthropicProviderConfig struct {
-	APIKey string `json:"api_key,omitempty"`
-}
+// Load finds saw.config.json starting from startDir, walking up to 10
+// parent directories. Parses the full config into SAWConfig.
+// Returns N013_CONFIG_NOT_FOUND if no config file exists.
+// Returns N014_CONFIG_INVALID if JSON parsing fails.
+func Load(startDir string) result.Result[*SAWConfig] {
+	path := FindConfigPath(startDir)
+	if path == "" {
+		return result.NewFailure[*SAWConfig]([]result.SAWError{
+			result.NewError("N013_CONFIG_NOT_FOUND", "no saw.config.json found walking up from "+startDir),
+		})
+	}
 
-// OpenAIProviderConfig holds OpenAI API credentials.
-type OpenAIProviderConfig struct {
-	APIKey string `json:"api_key,omitempty"`
-}
-
-// BedrockProviderConfig holds AWS Bedrock credentials.
-type BedrockProviderConfig struct {
-	Region          string `json:"region,omitempty"`
-	AccessKeyID     string `json:"access_key_id,omitempty"`
-	SecretAccessKey string `json:"secret_access_key,omitempty"`
-	SessionToken    string `json:"session_token,omitempty"`
-	Profile         string `json:"profile,omitempty"`
-}
-
-// SAWConfig is the canonical shape of saw.config.json.
-type SAWConfig struct {
-	Repos     []RepoEntry    `json:"repos,omitempty"`
-	Repo      RepoConfig     `json:"repo,omitempty"`      // legacy, read-only for migration
-	Autonomy  AutonomyConfig `json:"autonomy,omitempty"`
-	Agent     AgentConfig    `json:"agent,omitempty"`
-	Quality   QualityConfig  `json:"quality,omitempty"`
-	Appear    AppearConfig   `json:"appearance,omitempty"`
-	Providers ProvidersConfig `json:"providers,omitempty"`
-}
-
-// Load reads saw.config.json from repoPath and returns a Result wrapping the
-// parsed config. Returns CodeConfigNotFound if the file does not exist, or
-// CodeConfigParseFailed if the JSON is invalid.
-func Load(repoPath string) result.Result[*SAWConfig] {
-	path := filepath.Join(repoPath, configFileName)
 	data, err := os.ReadFile(path)
 	if err != nil {
-		if errors.Is(err, os.ErrNotExist) {
-			return result.NewFailure[*SAWConfig]([]result.SAWError{{
-				Code:     result.CodeConfigNotFound,
-				Message:  "saw.config.json not found at " + path,
-				Severity: "warning",
-			}})
-		}
-		return result.NewFailure[*SAWConfig]([]result.SAWError{{
-			Code:     result.CodeConfigParseFailed,
-			Message:  "failed to read config: " + err.Error(),
-			Severity: "fatal",
-		}})
+		return result.NewFailure[*SAWConfig]([]result.SAWError{
+			result.NewError("N014_CONFIG_INVALID", "failed to read config: "+err.Error()),
+		})
 	}
+
 	var cfg SAWConfig
 	if err := json.Unmarshal(data, &cfg); err != nil {
-		return result.NewFailure[*SAWConfig]([]result.SAWError{{
-			Code:     result.CodeConfigParseFailed,
-			Message:  "failed to parse config: " + err.Error(),
-			Severity: "fatal",
-		}})
+		return result.NewFailure[*SAWConfig]([]result.SAWError{
+			result.NewError("N014_CONFIG_INVALID", "invalid JSON in "+path+": "+err.Error()),
+		})
 	}
+
+	// Backward compatibility: migrate legacy repo.path to repos array.
+	if len(cfg.Repos) == 0 {
+		var raw map[string]json.RawMessage
+		if err := json.Unmarshal(data, &raw); err == nil {
+			if repoRaw, ok := raw["repo"]; ok {
+				var legacy struct {
+					Path string `json:"path"`
+					Name string `json:"name"`
+				}
+				if err := json.Unmarshal(repoRaw, &legacy); err == nil && legacy.Path != "" {
+					name := legacy.Name
+					if name == "" {
+						name = filepath.Base(legacy.Path)
+					}
+					cfg.Repos = []RepoEntry{{Name: name, Path: legacy.Path}}
+				}
+			}
+		}
+	}
+
 	return result.NewSuccess(&cfg)
 }
 
-// LoadOrDefault reads saw.config.json from repoPath and returns a pointer to
-// the parsed config. If the file does not exist or cannot be parsed, a default
-// config (empty, non-nil) is returned. Never returns nil.
-func LoadOrDefault(repoPath string) *SAWConfig {
-	r := Load(repoPath)
+// Save atomically writes cfg to saw.config.json at repoPath.
+// Uses temp-file + rename pattern. Preserves unknown top-level keys
+// that may exist in the current config file.
+func Save(repoPath string, cfg *SAWConfig) result.Result[bool] {
+	configPath := filepath.Join(repoPath, configFileName)
+
+	// Read existing file to preserve unknown keys.
+	existing := make(map[string]json.RawMessage)
+	if data, err := os.ReadFile(configPath); err == nil {
+		_ = json.Unmarshal(data, &existing) // ignore errors; we'll overwrite
+	}
+
+	// Marshal the cfg struct to get known keys.
+	cfgBytes, err := json.Marshal(cfg)
+	if err != nil {
+		return result.NewFailure[bool]([]result.SAWError{
+			result.NewError("N014_CONFIG_INVALID", "failed to marshal config: "+err.Error()),
+		})
+	}
+	var cfgMap map[string]json.RawMessage
+	if err := json.Unmarshal(cfgBytes, &cfgMap); err != nil {
+		return result.NewFailure[bool]([]result.SAWError{
+			result.NewError("N014_CONFIG_INVALID", "failed to re-parse config: "+err.Error()),
+		})
+	}
+
+	// Merge: known keys from cfg overwrite existing; unknown keys preserved.
+	for k, v := range cfgMap {
+		existing[k] = v
+	}
+
+	output, err := json.MarshalIndent(existing, "", "  ")
+	if err != nil {
+		return result.NewFailure[bool]([]result.SAWError{
+			result.NewError("N014_CONFIG_INVALID", "failed to marshal merged config: "+err.Error()),
+		})
+	}
+	output = append(output, '\n')
+
+	// Atomic write: temp file + rename.
+	tmpFile, err := os.CreateTemp(repoPath, ".saw-config-*.tmp")
+	if err != nil {
+		return result.NewFailure[bool]([]result.SAWError{
+			result.NewError("N014_CONFIG_INVALID", "failed to create temp file: "+err.Error()),
+		})
+	}
+	tmpPath := tmpFile.Name()
+
+	if _, err := tmpFile.Write(output); err != nil {
+		tmpFile.Close()
+		os.Remove(tmpPath)
+		return result.NewFailure[bool]([]result.SAWError{
+			result.NewError("N014_CONFIG_INVALID", "failed to write temp file: "+err.Error()),
+		})
+	}
+	if err := tmpFile.Close(); err != nil {
+		os.Remove(tmpPath)
+		return result.NewFailure[bool]([]result.SAWError{
+			result.NewError("N014_CONFIG_INVALID", "failed to close temp file: "+err.Error()),
+		})
+	}
+
+	if err := os.Rename(tmpPath, configPath); err != nil {
+		os.Remove(tmpPath)
+		return result.NewFailure[bool]([]result.SAWError{
+			result.NewError("N014_CONFIG_INVALID", "failed to rename temp file: "+err.Error()),
+		})
+	}
+
+	return result.NewSuccess(true)
+}
+
+// LoadOrDefault is a convenience function that returns a default config
+// if Load fails. The default config uses "gated" autonomy level,
+// max_auto_retries 2, and max_queue_depth 10.
+func LoadOrDefault(startDir string) *SAWConfig {
+	r := Load(startDir)
 	if r.IsSuccess() {
 		return r.GetData()
 	}
-	return &SAWConfig{}
-}
-
-// Save writes cfg to saw.config.json in repoPath, preserving any top-level
-// keys not present in SAWConfig. Returns a Result indicating success/failure.
-func Save(repoPath string, cfg *SAWConfig) result.Result[struct{}] {
-	path := filepath.Join(repoPath, configFileName)
-
-	// Preserve unknown top-level keys from existing file.
-	raw := make(map[string]json.RawMessage)
-	if data, err := os.ReadFile(path); err == nil {
-		_ = json.Unmarshal(data, &raw)
-	} else if !errors.Is(err, os.ErrNotExist) {
-		return result.NewFailure[struct{}]([]result.SAWError{{
-			Code:     result.CodeConfigSaveFailed,
-			Message:  "failed to read existing config: " + err.Error(),
-			Severity: "fatal",
-		}})
+	return &SAWConfig{
+		Autonomy: AutonomyConfig{
+			Level:          "gated",
+			MaxAutoRetries: 2,
+			MaxQueueDepth:  10,
+		},
 	}
-
-	// Marshal each known field and store.
-	sections := map[string]any{
-		"repos":      cfg.Repos,
-		"repo":       cfg.Repo,
-		"autonomy":   cfg.Autonomy,
-		"agent":      cfg.Agent,
-		"quality":    cfg.Quality,
-		"appearance": cfg.Appear,
-		"providers":  cfg.Providers,
-	}
-	for key, val := range sections {
-		b, err := json.Marshal(val)
-		if err != nil {
-			return result.NewFailure[struct{}]([]result.SAWError{{
-				Code:     result.CodeConfigSaveFailed,
-				Message:  "failed to marshal " + key + ": " + err.Error(),
-				Severity: "fatal",
-			}})
-		}
-		raw[key] = b
-	}
-
-	out, err := json.MarshalIndent(raw, "", "  ")
-	if err != nil {
-		return result.NewFailure[struct{}]([]result.SAWError{{
-			Code:     result.CodeConfigSaveFailed,
-			Message:  "failed to marshal config: " + err.Error(),
-			Severity: "fatal",
-		}})
-	}
-	if err := os.WriteFile(path, out, 0644); err != nil {
-		return result.NewFailure[struct{}]([]result.SAWError{{
-			Code:     result.CodeConfigSaveFailed,
-			Message:  "failed to write config: " + err.Error(),
-			Severity: "fatal",
-		}})
-	}
-	return result.NewSuccess(struct{}{})
 }

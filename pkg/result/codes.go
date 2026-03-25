@@ -97,6 +97,8 @@ const (
 	CodeBaselineError         = "N010_BASELINE_ERROR"
 	CodeStaleWorktree         = "N011_STALE_WORKTREE"
 	CodeFreezeError           = "N012_FREEZE_ERROR"
+	CodeConfigNotFound        = "N013_CONFIG_NOT_FOUND"
+	CodeConfigInvalid         = "N014_CONFIG_INVALID"
 )
 
 // Protocol error codes (P001-P099)
@@ -117,9 +119,3 @@ const (
 	CodeToolTimeout  = "T004_TOOL_TIMEOUT"
 )
 
-// Config error codes (C001-C099)
-const (
-	CodeConfigNotFound   = "C001_CONFIG_NOT_FOUND"
-	CodeConfigParseFailed = "C002_CONFIG_PARSE_FAILED"
-	CodeConfigSaveFailed = "C003_CONFIG_SAVE_FAILED"
-)
