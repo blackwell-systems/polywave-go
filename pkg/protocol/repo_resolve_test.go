@@ -121,7 +121,7 @@ func TestResolveTargetRepos_UnknownRepoError(t *testing.T) {
 		},
 	}
 
-	_, err := ResolveTargetRepos(m, "/tmp/some-repo", nil)
+	_, err := ResolveTargetRepos(m, t.TempDir(), nil)
 	if err == nil {
 		t.Fatal("expected error for unknown repo, got nil")
 	}
