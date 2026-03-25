@@ -110,8 +110,8 @@ func TestSlackAdapter_Send_ChannelOverride(t *testing.T) {
 	defer server.Close()
 
 	adapter, err := NewSlackAdapter(map[string]string{
-		"webhook_url": server.URL,
-		"channel":     "#deployments",
+		"webhook_url":  server.URL,
+		"destination": "#deployments",
 	})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -146,6 +146,19 @@ func TestSlackAdapter_Send_HTTPError(t *testing.T) {
 	err = adapter.Send(context.Background(), msg)
 	if err == nil {
 		t.Fatal("expected error for 500 response, got nil")
+	}
+}
+
+func TestNewSlackAdapter_BackwardCompat(t *testing.T) {
+	adapter, err := NewSlackAdapter(map[string]string{
+		"bot_token": "xoxb-legacy-token",
+		"channel":   "#legacy-channel",
+	})
+	if err != nil {
+		t.Fatalf("expected backward-compat fields to work, got error: %v", err)
+	}
+	if adapter.Name() != "slack" {
+		t.Errorf("expected name \"slack\", got %q", adapter.Name())
 	}
 }
 

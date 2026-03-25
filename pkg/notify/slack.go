@@ -9,37 +9,46 @@ import (
 	"sort"
 )
 
+// readWithFallback reads key from cfg, falling back to fallbackKey.
+func readWithFallback(cfg map[string]string, key, fallbackKey string) string {
+	if v := cfg[key]; v != "" {
+		return v
+	}
+	return cfg[fallbackKey]
+}
+
 // SlackAdapter sends notifications via Slack incoming webhooks or Bot API.
 // Supports two modes:
 //   - Webhook mode: set "webhook_url" — posts to the channel configured in the webhook
-//   - Bot token mode: set "bot_token" + "channel" — posts to any channel via chat.postMessage
+//   - Bot token mode: set "token" + "destination" — posts to any channel via chat.postMessage
 type SlackAdapter struct {
-	webhookURL string
-	botToken   string
-	channel    string
-	client     *http.Client
+	webhookURL  string
+	token       string
+	destination string
+	client      *http.Client
 }
 
 // NewSlackAdapter creates a new Slack adapter from configuration.
-// Requires either "webhook_url" OR ("bot_token" + "channel").
-// Optional in webhook mode: "channel" (override, only works with legacy webhooks).
+// Requires either "webhook_url" OR ("token" + "destination").
+// Accepts legacy field names "bot_token" and "channel" as fallbacks.
+// Optional in webhook mode: "destination" (override, only works with legacy webhooks).
 func NewSlackAdapter(cfg map[string]string) (Adapter, error) {
 	url := cfg["webhook_url"]
-	token := cfg["bot_token"]
-	channel := cfg["channel"]
+	token := readWithFallback(cfg, "token", "bot_token")
+	destination := readWithFallback(cfg, "destination", "channel")
 
 	if url == "" && token == "" {
-		return nil, fmt.Errorf("slack: requires either \"webhook_url\" or \"bot_token\"")
+		return nil, fmt.Errorf("slack: requires either \"webhook_url\" or \"token\"")
 	}
-	if token != "" && channel == "" {
-		return nil, fmt.Errorf("slack: \"channel\" is required when using \"bot_token\"")
+	if token != "" && destination == "" {
+		return nil, fmt.Errorf("slack: \"destination\" is required when using \"token\"")
 	}
 
 	return &SlackAdapter{
-		webhookURL: url,
-		botToken:   token,
-		channel:    channel,
-		client:     &http.Client{},
+		webhookURL:  url,
+		token:       token,
+		destination: destination,
+		client:      &http.Client{},
 	}, nil
 }
 
@@ -60,8 +69,8 @@ func (s *SlackAdapter) Send(ctx context.Context, msg Message) error {
 		payload["text"] = msg.Text
 	}
 
-	if s.channel != "" {
-		payload["channel"] = s.channel
+	if s.destination != "" {
+		payload["channel"] = s.destination
 	}
 
 	body, err := json.Marshal(payload)
@@ -71,7 +80,7 @@ func (s *SlackAdapter) Send(ctx context.Context, msg Message) error {
 
 	// Bot token mode: POST to chat.postMessage API
 	var targetURL string
-	if s.botToken != "" {
+	if s.token != "" {
 		targetURL = "https://slack.com/api/chat.postMessage"
 	} else {
 		targetURL = s.webhookURL
@@ -83,8 +92,8 @@ func (s *SlackAdapter) Send(ctx context.Context, msg Message) error {
 	}
 	req.Header.Set("Content-Type", "application/json")
 
-	if s.botToken != "" {
-		req.Header.Set("Authorization", "Bearer "+s.botToken)
+	if s.token != "" {
+		req.Header.Set("Authorization", "Bearer "+s.token)
 	}
 
 	resp, err := s.client.Do(req)
@@ -98,7 +107,7 @@ func (s *SlackAdapter) Send(ctx context.Context, msg Message) error {
 	}
 
 	// Bot API returns {"ok": false, "error": "..."} on failure even with 200
-	if s.botToken != "" {
+	if s.token != "" {
 		var apiResp struct {
 			OK    bool   `json:"ok"`
 			Error string `json:"error"`
