@@ -1,6 +1,8 @@
 package main
 
 import (
+	"encoding/json"
+	"strings"
 	"fmt"
 	"os"
 	"os/exec"
@@ -466,4 +468,62 @@ func initBareGitRepo(t *testing.T, dir string) error {
 		}
 	}
 	return nil
+}
+
+// TestFinalizeWaveResult_IntegrationActionRequiredField verifies that
+// FinalizeWaveResult serializes the new integration_action_required and
+// wiring_gaps fields correctly, and that they are zero-valued when clean.
+func TestFinalizeWaveResult_IntegrationActionRequiredField(t *testing.T) {
+	// Zero-valued case: wiring is clean
+	r := &FinalizeWaveResult{
+		Wave:    1,
+		Success: true,
+	}
+	if r.IntegrationActionRequired {
+		t.Error("IntegrationActionRequired should be false when wiring is clean")
+	}
+	if r.WiringGaps != nil {
+		t.Errorf("WiringGaps should be nil when clean, got %v", r.WiringGaps)
+	}
+
+	// JSON serialization: false/nil should not emit wiring_gaps
+	out, err := json.Marshal(r)
+	if err != nil {
+		t.Fatalf("json.Marshal failed: %v", err)
+	}
+	s := string(out)
+	if !strings.Contains(s, `"integration_action_required":false`) {
+		t.Errorf("expected integration_action_required:false in JSON, got: %s", s)
+	}
+	if strings.Contains(s, `"wiring_gaps"`) {
+		t.Errorf("wiring_gaps should be omitted when nil, got: %s", s)
+	}
+}
+
+// TestFinalizeWaveResult_WiringGapsPopulated verifies that when wiring gaps
+// exist, IntegrationActionRequired is true and WiringGaps is serialized correctly.
+func TestFinalizeWaveResult_WiringGapsPopulated(t *testing.T) {
+	r := &FinalizeWaveResult{
+		Wave:                     1,
+		IntegrationActionRequired: true,
+		WiringGaps: []string{
+			"MyFunc not called in cmd/main.go",
+			"Setup not called in cmd/server.go",
+		},
+	}
+
+	out, err := json.Marshal(r)
+	if err != nil {
+		t.Fatalf("json.Marshal failed: %v", err)
+	}
+	s := string(out)
+	if !strings.Contains(s, `"integration_action_required":true`) {
+		t.Errorf("expected integration_action_required:true in JSON, got: %s", s)
+	}
+	if !strings.Contains(s, `"wiring_gaps"`) {
+		t.Errorf("expected wiring_gaps in JSON, got: %s", s)
+	}
+	if !strings.Contains(s, "MyFunc not called in cmd/main.go") {
+		t.Errorf("expected gap text in wiring_gaps, got: %s", s)
+	}
 }
