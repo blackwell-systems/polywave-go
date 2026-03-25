@@ -197,3 +197,5 @@ type BackendConfig struct {
   - IMPL doc: docs/IMPL/complete/IMPL-m4-pre-commit-gate.yaml
 - **agent-complexity-enforcement**: completed 2026-03-25, 2 waves, 4 agents
   - IMPL doc: docs/IMPL/complete/IMPL-agent-complexity-enforcement.yaml
+- **logging-slog**: completed 2026-03-25, 3 waves, 6 agents
+  - IMPL doc: docs/IMPL/complete/IMPL-logging-slog.yaml
