@@ -120,6 +120,7 @@ Output:
 				IMPLOutPath:         implPath,
 				ScoutModel:          scoutModel,
 				ProgramManifestPath: programManifestPath,
+				Logger:              newSawLogger(),
 			}
 
 			// Launch Scout agent with correction loop (C9: self-healing validation)

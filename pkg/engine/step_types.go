@@ -1,6 +1,10 @@
 package engine
 
-import "github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
+import (
+	"log/slog"
+
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
+)
 
 // EventCallback is the composable event hook for engine step functions.
 // CLI prints to stdout; web app publishes SSE events. nil-safe — callers
@@ -23,6 +27,7 @@ type PrepareWaveOpts struct {
 	MergeTarget string
 	NoCache     bool
 	OnEvent     EventCallback
+	Logger      *slog.Logger // optional: nil falls back to slog.Default()
 }
 
 // PrepareWaveResult captures results of all preparation steps.
