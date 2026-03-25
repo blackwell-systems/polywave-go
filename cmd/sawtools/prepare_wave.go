@@ -60,6 +60,11 @@ waves that execute on the main branch.`,
 				},
 			}
 
+			// Auto-install M4 pre-commit lint gate hook if missing
+			if err := runInstallHooks(projectRoot); err != nil {
+				fmt.Fprintf(os.Stderr, "prepare-wave: could not auto-install M4 hook: %v\n", err)
+			}
+
 			// Call engine
 			result, err := engine.PrepareWave(context.Background(), opts)
 			if err != nil {
