@@ -9,7 +9,6 @@ import (
 	"path/filepath"
 
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/builddiag"
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/gatecache"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/observability"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
 )
@@ -36,6 +35,11 @@ type FinalizeWaveOpts struct {
 	// and start from verify-build. Used for manual merge escape hatch when E11
 	// blocks merge with false positive.
 	SkipMerge bool
+
+	// OnEvent is an optional callback invoked at the start and end of each
+	// finalization step. CLI callers can print progress; web callers can emit
+	// SSE events. nil is safe — step functions check before calling.
+	OnEvent EventCallback
 }
 
 // FinalizeWaveResult combines all post-agent verification, merge, and cleanup results.
@@ -83,103 +87,53 @@ func FinalizeWave(ctx context.Context, opts FinalizeWaveOpts) (*FinalizeWaveResu
 		Wave: opts.WaveNum,
 	}
 
+	onEvent := opts.OnEvent
+
 	// If SkipMerge is true, skip steps 1-4 and jump directly to verify-build.
 	// Populate MergeResult with synthetic entry indicating merge already done.
 	if !opts.SkipMerge {
-		// Step 1: VerifyCommits (I5) — C4: VerifyCommits runs BEFORE MergeAgents and is fatal.
-		// Agents with no commits are a protocol violation and must block the merge entirely.
-		// MergeResult will be nil in FinalizeWaveResult whenever this step fails.
-		verifyRes := protocol.VerifyCommits(opts.IMPLPath, opts.WaveNum, opts.RepoPath)
-		if !verifyRes.IsSuccess() {
-			return result, fmt.Errorf("engine.FinalizeWave: verify-commits: %v", verifyRes.Errors)
+		// Step 1: VerifyCommits (I5)
+		verifyStepResult, stepErr := StepVerifyCommits(ctx, opts, onEvent)
+		if stepErr != nil {
+			return result, fmt.Errorf("engine.FinalizeWave: %w", stepErr)
 		}
-		verifyResult := verifyRes.GetData()
-		result.VerifyCommits = &verifyResult
-		// Check if all agents have commits
-		allValid := true
-		for _, agent := range verifyResult.Agents {
-			if !agent.HasCommits {
-				allValid = false
-				break
-			}
-		}
-		if !allValid {
-			return result, fmt.Errorf("engine.FinalizeWave: verify-commits found agents with no commits")
+		if verifyData, ok := verifyStepResult.Data.(protocol.VerifyCommitsData); ok {
+			result.VerifyCommits = &verifyData
 		}
 
-		// Step 2: ScanStubs (E20) - informational, does not block
-		var changedFiles []string
-		if opts.WaveNum > 0 && opts.WaveNum <= len(manifest.Waves) {
-			for _, agent := range manifest.Waves[opts.WaveNum-1].Agents {
-				if report, ok := manifest.CompletionReports[agent.ID]; ok {
-					changedFiles = append(changedFiles, report.FilesChanged...)
-					changedFiles = append(changedFiles, report.FilesCreated...)
-				}
-			}
+		// Step 2: ScanStubs (E20)
+		stubStepResult, stepErr := StepScanStubs(ctx, opts, manifest, onEvent)
+		if stepErr != nil {
+			return result, fmt.Errorf("engine.FinalizeWave: %w", stepErr)
 		}
-		if len(changedFiles) > 0 {
-			stubRes := protocol.ScanStubs(changedFiles)
-			if !stubRes.IsSuccess() {
-				// Non-fatal: log but continue
-				fmt.Fprintf(os.Stderr, "engine.FinalizeWave: scan-stubs: %v\n", stubRes.Errors)
-			} else {
-				stubData := stubRes.GetData()
-				result.StubReport = &stubData
-				// M3 (E20): When RequireNoStubs is true, any stubs block the pipeline.
-				if opts.RequireNoStubs && len(stubData.Hits) > 0 {
-					return result, fmt.Errorf("engine.FinalizeWave: %d stub(s) detected in changed files (RequireNoStubs=true)", len(stubData.Hits))
-				}
-			}
+		if stubData, ok := stubStepResult.Data.(protocol.ScanStubsData); ok {
+			result.StubReport = &stubData
 		}
 
-		// Step 3: RunGates (E21) — with caching support
-		stateDir := filepath.Join(opts.RepoPath, ".saw-state")
-		cache := gatecache.New(stateDir, 5*time.Minute)
-		gateRes := protocol.RunGatesWithCache(manifest, opts.WaveNum, opts.RepoPath, cache)
-		if !gateRes.IsSuccess() {
-			return result, fmt.Errorf("engine.FinalizeWave: run-gates: %v", gateRes.Errors)
+		// Step 3: RunGates (E21)
+		_, gatesData, stepErr := StepRunGates(ctx, opts, manifest, onEvent)
+		if stepErr != nil {
+			return result, fmt.Errorf("engine.FinalizeWave: %w", stepErr)
 		}
-		gateResults := gateRes.GetData().Gates
-		result.GateResults = gateResults
-		for _, gate := range gateResults {
-			opts.ObsEmitter.Emit(ctx, observability.NewGateExecutedEvent(manifest.FeatureSlug, opts.WaveNum, gate.Type, gate.Passed))
-			if gate.Required && !gate.Passed {
-				opts.ObsEmitter.Emit(ctx, observability.NewWaveFailedEvent(manifest.FeatureSlug, opts.WaveNum, fmt.Sprintf("required gate %q failed", gate.Type)))
-				return result, fmt.Errorf("engine.FinalizeWave: required gate %q failed", gate.Type)
-			}
+		if gatesData != nil {
+			result.GateResults = gatesData.Gates
 		}
 
-		// Step 3.5: ValidateIntegration (E25) - informational by default, fatal when enforced
-		integrationReport, err := protocol.ValidateIntegration(manifest, opts.WaveNum, opts.RepoPath)
-		if err != nil {
-			// Non-fatal: integration validation errors don't block the pipeline
-			fmt.Fprintf(os.Stderr, "engine.FinalizeWave: validate-integration: %v\n", err)
-		} else {
-			result.IntegrationReport = integrationReport
-			// Persist to manifest
-			waveKey := fmt.Sprintf("wave%d", opts.WaveNum)
-			_ = protocol.AppendIntegrationReport(opts.IMPLPath, waveKey, integrationReport)
-			// M2 (E25): When EnforceIntegrationValidation is true, unconnected exports block the pipeline.
-			if opts.EnforceIntegrationValidation && len(integrationReport.Gaps) > 0 {
-				return result, fmt.Errorf("engine.FinalizeWave: %d unconnected export(s) detected (EnforceIntegrationValidation=true)", len(integrationReport.Gaps))
-			}
+		// Step 3.5: ValidateIntegration (E25)
+		_, integrationReport, stepErr := StepValidateIntegration(ctx, opts, manifest, onEvent)
+		if stepErr != nil {
+			return result, fmt.Errorf("engine.FinalizeWave: %w", stepErr)
 		}
+		result.IntegrationReport = integrationReport
 
 		// Step 4: MergeAgents
-		mergeRes, err := protocol.MergeAgents(opts.IMPLPath, opts.WaveNum, opts.RepoPath, opts.MergeTarget)
-		if err != nil {
-			return result, fmt.Errorf("engine.FinalizeWave: merge-agents: %w", err)
+		mergeStepResult, stepErr := StepMergeAgents(ctx, opts, onEvent)
+		if stepErr != nil {
+			return result, fmt.Errorf("engine.FinalizeWave: %w", stepErr)
 		}
-		if !mergeRes.IsSuccess() {
-			return result, fmt.Errorf("engine.FinalizeWave: merge-agents: %v", mergeRes.Errors)
+		if mergeData, ok := mergeStepResult.Data.(protocol.MergeAgentsData); ok {
+			result.MergeResult = &mergeData
 		}
-		mergeResult := mergeRes.GetData()
-		result.MergeResult = &mergeResult
-		if !mergeResult.Success {
-			opts.ObsEmitter.Emit(ctx, observability.NewWaveFailedEvent(manifest.FeatureSlug, opts.WaveNum, "merge-agents encountered conflicts"))
-			return result, fmt.Errorf("engine.FinalizeWave: merge-agents encountered conflicts")
-		}
-		opts.ObsEmitter.Emit(ctx, observability.NewWaveMergeEvent(manifest.FeatureSlug, opts.WaveNum))
 	} else {
 		// SkipMerge mode: populate synthetic MergeResult
 		result.MergeResult = &protocol.MergeAgentsData{
@@ -192,46 +146,49 @@ func FinalizeWave(ctx context.Context, opts FinalizeWaveOpts) (*FinalizeWaveResu
 		}
 	}
 
-	// Step 4.5: Fix go.mod replace paths (worktree artifact defense-in-depth)
-	if fixed, err := protocol.FixGoModReplacePaths(opts.RepoPath); err != nil {
-		fmt.Fprintf(os.Stderr, "engine.FinalizeWave: go.mod fixup: %v\n", err)
-	} else if fixed {
-		fmt.Fprintf(os.Stderr, "engine.FinalizeWave: auto-corrected go.mod replace paths\n")
-	}
+	// Step 4.5: Fix go.mod replace paths
+	_, _ = StepFixGoMod(ctx, opts, onEvent)
 
 	// Step 5: VerifyBuild
-	verifyBuildRes := protocol.VerifyBuild(opts.IMPLPath, opts.RepoPath)
-	if !verifyBuildRes.IsSuccess() {
-		return result, fmt.Errorf("engine.FinalizeWave: verify-build: %v", verifyBuildRes.Errors)
-	}
-	verifyBuildResult := verifyBuildRes.GetData()
-	result.VerifyBuild = &verifyBuildResult
-	result.BuildPassed = verifyBuildResult.TestPassed && verifyBuildResult.LintPassed
-
-	// Step 6: Cleanup — runs after merge regardless of build result.
-	// Once branches are merged, worktrees serve no purpose. Cleaning up here
-	// prevents stale worktrees from accumulating when builds fail.
-	cleanupResult, err := protocol.Cleanup(opts.IMPLPath, opts.WaveNum, opts.RepoPath)
-	if err != nil {
-		// Non-fatal: cleanup failure shouldn't fail the wave
-		fmt.Fprintf(os.Stderr, "engine.FinalizeWave: cleanup: %v\n", err)
-	} else {
-		cleanupData := cleanupResult.GetData()
-		result.CleanupResult = &cleanupData
-	}
-
-	if !result.BuildPassed {
-		// Auto-diagnose build failure using H7 pattern matching
-		language := inferLanguageFromTestCommand(manifest.TestCommand)
-		if language != "" {
-			errorLog := verifyBuildResult.TestOutput + "\n" + verifyBuildResult.LintOutput
-			diagnosis, diagErr := builddiag.DiagnoseError(errorLog, language)
-			if diagErr == nil {
-				result.BuildDiagnosis = diagnosis
+	verifyBuildStepResult, stepErr := StepVerifyBuild(ctx, opts, onEvent)
+	if stepErr != nil {
+		// Extract verify build data for the result
+		if verifyData, ok := verifyBuildStepResult.Data.(protocol.VerifyBuildData); ok {
+			result.VerifyBuild = &verifyData
+			result.BuildPassed = false
+		} else if dataMap, ok := verifyBuildStepResult.Data.(map[string]interface{}); ok {
+			// Data contains both verify_build and diagnosis
+			if vb, ok := dataMap["verify_build"]; ok {
+				if verifyData, ok := vb.(protocol.VerifyBuildData); ok {
+					result.VerifyBuild = &verifyData
+				}
 			}
+			if d, ok := dataMap["diagnosis"]; ok {
+				if diagnosis, ok := d.(*builddiag.Diagnosis); ok {
+					result.BuildDiagnosis = diagnosis
+				}
+			}
+			result.BuildPassed = false
 		}
-		return result, fmt.Errorf("engine.FinalizeWave: verify-build failed (test_passed=%v, lint_passed=%v)",
-			verifyBuildResult.TestPassed, verifyBuildResult.LintPassed)
+
+		// Still run cleanup before returning
+		cleanupStepResult, _ := StepCleanup(ctx, opts, onEvent)
+		if cleanupData, ok := cleanupStepResult.Data.(protocol.CleanupData); ok {
+			result.CleanupResult = &cleanupData
+		}
+		return result, fmt.Errorf("engine.FinalizeWave: %w", stepErr)
+	}
+	if verifyData, ok := verifyBuildStepResult.Data.(protocol.VerifyBuildData); ok {
+		result.VerifyBuild = &verifyData
+		result.BuildPassed = verifyData.TestPassed && verifyData.LintPassed
+	}
+
+	// Step 6: Cleanup
+	cleanupStepResult, _ := StepCleanup(ctx, opts, onEvent)
+	if cleanupStepResult != nil {
+		if cleanupData, ok := cleanupStepResult.Data.(protocol.CleanupData); ok {
+			result.CleanupResult = &cleanupData
+		}
 	}
 
 	result.Success = true
