@@ -173,6 +173,84 @@ func TestCompileToRequirements_ArchDecisionsFromConstraints(t *testing.T) {
 	}
 }
 
+// TestCompileToRequirements_Warnings verifies that the Warnings section appears
+// when the interview is truncated (QuestionCursor >= MaxQuestions) and required fields are missing.
+func TestCompileToRequirements_Warnings(t *testing.T) {
+	doc := &InterviewDoc{
+		Slug:           "truncated",
+		QuestionCursor: 18,
+		MaxQuestions:   18,
+		SpecData: SpecData{
+			// Missing Title, Goal, InScope, and Functional — all required fields
+		},
+	}
+
+	result, err := CompileToRequirements(doc)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if !strings.Contains(result, "## Warnings") {
+		t.Error("expected '## Warnings' section when truncated with missing required fields")
+	}
+	if !strings.Contains(result, "truncated at max_questions limit") {
+		t.Error("expected truncation warning message in output")
+	}
+}
+
+// TestCompileToRequirements_NoWarnings_NotTruncated verifies no Warnings section
+// when max_questions limit is NOT reached, even if required fields are missing.
+func TestCompileToRequirements_NoWarnings_NotTruncated(t *testing.T) {
+	doc := &InterviewDoc{
+		Slug:           "not-truncated",
+		QuestionCursor: 5,
+		MaxQuestions:   18,
+		SpecData: SpecData{
+			// Missing required fields, but not truncated
+		},
+	}
+
+	result, err := CompileToRequirements(doc)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if strings.Contains(result, "## Warnings") {
+		t.Error("expected NO Warnings section when not truncated")
+	}
+}
+
+// TestCompileToRequirements_NoWarnings_Complete verifies no Warnings section
+// when all required fields are populated, even at max_questions.
+func TestCompileToRequirements_NoWarnings_Complete(t *testing.T) {
+	doc := &InterviewDoc{
+		Slug:           "complete",
+		QuestionCursor: 18,
+		MaxQuestions:   18,
+		SpecData: SpecData{
+			Overview: OverviewSpec{
+				Title: "My Project",
+				Goal:  "Build something",
+			},
+			Scope: ScopeSpec{
+				InScope: []string{"feature A"},
+			},
+			Requirements: RequirementsSpec{
+				Functional: []string{"req1"},
+			},
+		},
+	}
+
+	result, err := CompileToRequirements(doc)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if strings.Contains(result, "## Warnings") {
+		t.Error("expected NO Warnings section when required fields are all populated")
+	}
+}
+
 func TestWriteRequirementsFile(t *testing.T) {
 	doc := &InterviewDoc{
 		Slug: "write-test",

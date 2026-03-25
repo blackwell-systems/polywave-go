@@ -2,6 +2,18 @@ package interview
 
 import "fmt"
 
+// phaseOrder maps each InterviewPhase to its sequential position (0-indexed).
+// Used to detect invalid skip-phase transitions in checkPhaseTransition.
+var phaseOrder = map[InterviewPhase]int{
+	PhaseOverview:     0,
+	PhaseScope:        1,
+	PhaseRequirements: 2,
+	PhaseInterfaces:   3,
+	PhaseStories:      4,
+	PhaseReview:       5,
+	PhaseComplete:     6,
+}
+
 // phaseQuestionDef defines a fixed question for a given phase/field.
 type phaseQuestionDef struct {
 	Phase    InterviewPhase
@@ -131,7 +143,12 @@ func fieldIsPopulated(doc *InterviewDoc, phase InterviewPhase, field string) boo
 
 // checkPhaseTransition checks if all required fields for the current phase
 // are filled and advances to the next phase if so.
+// Guard: if the transition would skip more than one phase forward, panic.
+// Backward transitions are NOT guarded here — they are handled by
+// recalculatePhase (which resets to PhaseOverview and replays forward-only).
 func checkPhaseTransition(doc *InterviewDoc) {
+	prevPhase := doc.Phase
+
 	switch doc.Phase {
 	case PhaseOverview:
 		if doc.SpecData.Overview.Title != "" && doc.SpecData.Overview.Goal != "" {
@@ -159,6 +176,17 @@ func checkPhaseTransition(doc *InterviewDoc) {
 	case PhaseReview:
 		// Review advances to complete only via _confirm answer
 		// handled directly in applyAnswerToSpec
+	}
+
+	// Guard: detect skip-phase transitions (jumping 2+ phases forward).
+	// Single-step forward transitions are normal and allowed.
+	// Backward transitions are handled by recalculatePhase — not guarded here.
+	if doc.Phase != prevPhase {
+		newOrder, newOk := phaseOrder[doc.Phase]
+		prevOrder, prevOk := phaseOrder[prevPhase]
+		if newOk && prevOk && newOrder > prevOrder+1 {
+			panic(fmt.Sprintf("interview: invalid phase skip: %s → %s", prevPhase, doc.Phase))
+		}
 	}
 }
 
