@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/errparse"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/format"
@@ -176,6 +177,23 @@ func RunGates(manifest *IMPLManifest, waveNumber int, repoDir string) result.Res
 				SkipReason: "docs-only wave: no compilable source files changed",
 			})
 			continue
+		}
+
+		// Skip gates whose build system is absent in repoDir (e.g. go gates in a
+		// docs-only repo that has no go.mod). Skipped gates count as passed so they
+		// never block execution in repos that simply don't use that toolchain.
+		if bs := gateBuildSystem(gate); bs != "" {
+			if !detectBuildSystems(repoDir)[bs] {
+				gates = append(gates, GateResult{
+					Type:       gate.Type,
+					Command:    gate.Command,
+					Required:   gate.Required,
+					Passed:     true,
+					Skipped:    true,
+					SkipReason: fmt.Sprintf("no %s project detected in repo (missing marker file)", bs),
+				})
+				continue
+			}
 		}
 
 		// Format gates use the dedicated runner for auto-detection + fix mode.
@@ -426,4 +444,55 @@ func RunGatesWithCache(manifest *IMPLManifest, waveNumber int, repoDir string, c
 	}
 
 	return result.NewSuccess(GatesData{Gates: gates})
+}
+
+// detectBuildSystems returns the set of build systems present in repoDir by
+// checking for well-known marker files. Only systems with a detected marker
+// are included; the map value is always true.
+func detectBuildSystems(repoDir string) map[string]bool {
+	markers := map[string]string{
+		"go.mod":           "go",
+		"package.json":     "node",
+		"Cargo.toml":       "rust",
+		"pyproject.toml":   "python",
+		"setup.py":         "python",
+		"pom.xml":          "maven",
+		"build.gradle":     "gradle",
+		"build.gradle.kts": "gradle",
+	}
+	found := map[string]bool{}
+	for file, system := range markers {
+		if _, err := os.Stat(filepath.Join(repoDir, file)); err == nil {
+			found[system] = true
+		}
+	}
+	return found
+}
+
+// gateBuildSystem returns the build system required to run the gate, inferred
+// from the first token of the gate command. Returns "" for custom or unknown
+// gates so they are never skipped by the build-system check.
+func gateBuildSystem(gate QualityGate) string {
+	if gate.Type == "custom" || gate.Command == "" {
+		return ""
+	}
+	fields := strings.Fields(gate.Command)
+	if len(fields) == 0 {
+		return ""
+	}
+	switch fields[0] {
+	case "go", "golangci-lint", "staticcheck":
+		return "go"
+	case "npm", "yarn", "pnpm", "npx", "node":
+		return "node"
+	case "cargo":
+		return "rust"
+	case "python", "python3", "pip", "pip3", "pytest", "ruff", "mypy", "uv":
+		return "python"
+	case "mvn":
+		return "maven"
+	case "gradle", "gradlew", "./gradlew":
+		return "gradle"
+	}
+	return ""
 }
