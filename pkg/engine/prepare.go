@@ -453,7 +453,7 @@ func checkPreviousWaveVerified(doc *protocol.IMPLManifest, prevWaveNum int) erro
 			return fmt.Errorf("wave %d agent %s has no completion report — wave must be merged and verified before wave %d launches",
 				prevWaveNum, agent.ID, prevWaveNum+1)
 		}
-		if report.Status != "complete" {
+		if report.Status != protocol.StatusComplete {
 			return fmt.Errorf("wave %d agent %s status is %q (expected \"complete\") — wave must be fully merged and verified before wave %d launches",
 				prevWaveNum, agent.ID, report.Status, prevWaveNum+1)
 		}

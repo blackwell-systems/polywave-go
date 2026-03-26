@@ -106,7 +106,7 @@ func runWaveAgentStructured(ctx context.Context, opts RunWaveOpts, agentSpec pro
 
 	// Fall back to "complete" if model omitted status.
 	if rawReport.Status == "" {
-		rawReport.Status = "complete"
+		rawReport.Status = protocol.StatusComplete
 	}
 
 	// Build and validate the report using the canonical builder.
