@@ -873,20 +873,36 @@ func (o *Orchestrator) launchAgent(
 	}
 
 	// e. Always persist the completion report to the main branch IMPL doc.
-	// Whether the agent wrote it (found in worktree) or we synthesized it,
-	// the main branch IMPL doc must have it for merge to proceed.
 	if report != nil {
-		reportMu.Lock()
-		if manifest, loadErr := protocol.Load(o.implDocPath); loadErr == nil {
-			if setErr := protocol.SetCompletionReport(manifest, agentSpec.ID, *report); setErr == nil {
-				if saveErr := protocol.Save(manifest, o.implDocPath); saveErr != nil {
-					o.log().Warn("orchestrator: failed to save report", "agent", agentSpec.ID, "err", saveErr)
-				}
-			} else {
-				o.log().Warn("orchestrator: failed to set report", "agent", agentSpec.ID, "err", setErr)
-			}
+		builder := protocol.NewCompletionReport(agentSpec.ID).
+			WithStatus(report.Status).
+			WithCommit(report.Commit).
+			WithFiles(report.FilesChanged, report.FilesCreated).
+			WithVerification(report.Verification).
+			WithWorktree(report.Worktree).
+			WithBranch(report.Branch).
+			WithTestsAdded(report.TestsAdded).
+			WithNotes(report.Notes).
+			WithDedupStats(report.DedupStats).
+			WithInterfaceDeviations(report.InterfaceDeviations).
+			WithRepo(report.Repo)
+
+		if report.FailureType != "" {
+			builder = builder.WithFailureType(report.FailureType)
 		}
-		reportMu.Unlock()
+
+		if saveErr := protocol.WithCompletionReportLock(func() error {
+			manifest, loadErr := protocol.Load(o.implDocPath)
+			if loadErr != nil {
+				return loadErr
+			}
+			if appendErr := builder.AppendToManifest(manifest); appendErr != nil {
+				return appendErr
+			}
+			return protocol.Save(manifest, o.implDocPath)
+		}); saveErr != nil {
+			o.log().Warn("orchestrator: failed to save report", "agent", agentSpec.ID, "err", saveErr)
+		}
 	}
 
 	// BUG-5 fix: Determine whether E19 will trigger an automatic retry before
