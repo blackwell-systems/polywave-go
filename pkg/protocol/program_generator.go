@@ -89,7 +89,14 @@ func GenerateProgramFromIMPLs(opts GenerateProgramOpts) result.Result[GeneratePr
 		// Extract canonical slug from the loaded doc.
 		slug := implDoc.FeatureSlug
 		if slug == "" {
-			slug = filepath.Base(implPath) // fallback for malformed docs
+			// Derive slug from filename: strip "IMPL-" prefix and ".yaml" suffix.
+			// filepath.Base alone gives "IMPL-feature-a.yaml" which fails kebab-case validation.
+			base := strings.TrimSuffix(strings.TrimPrefix(filepath.Base(implPath), "IMPL-"), ".yaml")
+			if base != "" {
+				slug = base
+			} else {
+				slug = ref
+			}
 		}
 
 		// Record absolute path for cross-repo refs.
