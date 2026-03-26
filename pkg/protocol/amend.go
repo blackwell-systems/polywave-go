@@ -3,10 +3,10 @@ package protocol
 import (
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 
+	"github.com/blackwell-systems/scout-and-wave-go/internal/git"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
 )
 
@@ -206,17 +206,14 @@ func amendRedirectAgent(opts AmendImplOpts, m *IMPLManifest) result.Result[Amend
 	} else {
 		// Find repo root via git rev-parse
 		manifestDir := filepath.Dir(opts.ManifestPath)
-		repoRootBytes, err := exec.Command("git", "-C", manifestDir, "rev-parse", "--show-toplevel").Output()
+		repoRoot, err := git.Run(manifestDir, "rev-parse", "--show-toplevel")
 		if err != nil {
 			warnings = append(warnings, "could not find repo root; skipping worktree commit check")
 		} else {
-			repoRoot := strings.TrimSpace(string(repoRootBytes))
+			repoRoot = strings.TrimSpace(repoRoot)
 			// Check for commits on the agent's branch since base commit
-			logOut, err := exec.Command("git", "-C", repoRoot, "log",
-				wave.BaseCommit+".."+branchName, "--oneline").Output()
-			if err != nil {
-				// Branch not found or other git error — no commits, proceed
-			} else if len(strings.TrimSpace(string(logOut))) > 0 {
+			lines, _ := git.LogOneline(repoRoot, wave.BaseCommit+".."+branchName)
+			if len(lines) > 0 {
 				return result.NewFailure[AmendImplData]([]result.SAWError{
 					{
 						Code:     amendBlocked,
