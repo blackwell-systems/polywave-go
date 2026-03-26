@@ -558,3 +558,74 @@ func LogOneline(repoPath string, args ...string) ([]string, error) {
 	}
 	return strings.Split(trimmed, "\n"), nil
 }
+
+// SymbolicRef returns the full ref that HEAD points to in the repository
+// at repoPath (e.g., "refs/heads/main"). Returns an error for detached HEAD
+// or when the git command fails.
+func SymbolicRef(repoPath string) (string, error) {
+	out, err := RunOutput(repoPath, "symbolic-ref", "HEAD")
+	if err != nil {
+		return "", fmt.Errorf("git symbolic-ref failed: %w", err)
+	}
+	return strings.TrimSpace(out), nil
+}
+
+// WorktreeListRaw executes git worktree list --porcelain in repoPath and
+// returns the raw stdout bytes for callers that parse the porcelain format directly.
+func WorktreeListRaw(repoPath string) ([]byte, error) {
+	cmd := exec.Command("git", "-C", repoPath, "worktree", "list", "--porcelain")
+	out, err := cmd.Output()
+	if err != nil {
+		return nil, fmt.Errorf("git worktree list --porcelain failed: %w", err)
+	}
+	return out, nil
+}
+
+// DiffNameOnlyHEAD returns file paths that differ between HEAD and the working
+// tree (unstaged changes) in the repository at repoPath. Returns nil and no
+// error when there are no differences.
+func DiffNameOnlyHEAD(repoPath string) ([]string, error) {
+	out, err := RunOutput(repoPath, "diff", "--name-only", "HEAD")
+	if err != nil {
+		return nil, fmt.Errorf("git diff --name-only HEAD failed: %w", err)
+	}
+	trimmed := strings.TrimSpace(out)
+	if trimmed == "" {
+		return nil, nil
+	}
+	return strings.Split(trimmed, "\n"), nil
+}
+
+// DiffNameOnlyStaged returns file paths that are staged for commit (index vs HEAD)
+// in the repository at repoPath. Returns nil and no error when nothing is staged.
+func DiffNameOnlyStaged(repoPath string) ([]string, error) {
+	out, err := RunOutput(repoPath, "diff", "--name-only", "--cached")
+	if err != nil {
+		return nil, fmt.Errorf("git diff --name-only --cached failed: %w", err)
+	}
+	trimmed := strings.TrimSpace(out)
+	if trimmed == "" {
+		return nil, nil
+	}
+	return strings.Split(trimmed, "\n"), nil
+}
+
+// AddUpdate stages updates (modifications and deletions, not new files) for all
+// tracked files under path in the repository at repoPath. Equivalent to git add -u <path>.
+func AddUpdate(repoPath, path string) error {
+	_, err := Run(repoPath, "add", "-u", path)
+	if err != nil {
+		return fmt.Errorf("git add -u failed: %w", err)
+	}
+	return nil
+}
+
+// Version returns the raw output of git --version (e.g., "git version 2.39.2").
+// Does not require a repository path. Returns an error if git is not found on PATH.
+func Version() (string, error) {
+	out, err := exec.Command("git", "--version").Output()
+	if err != nil {
+		return "", fmt.Errorf("git --version failed: %w", err)
+	}
+	return strings.TrimSpace(string(out)), nil
+}
