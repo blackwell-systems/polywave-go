@@ -286,7 +286,7 @@ func FinalizeIMPL(implPath, repoRoot string) result.Result[FinalizeIMPLData] {
 	if err != nil {
 		return result.NewFailure[FinalizeIMPLData]([]result.SAWError{
 			{
-				Code:     "E001",
+				Code:     result.CodeIMPLParseFailed,
 				Message:  fmt.Sprintf("failed to load IMPL manifest: %v", err),
 				Severity: "fatal",
 			},
@@ -303,7 +303,7 @@ func FinalizeIMPL(implPath, repoRoot string) result.Result[FinalizeIMPLData] {
 	if !data.Validation.Passed {
 		return result.NewFailure[FinalizeIMPLData]([]result.SAWError{
 			{
-				Code:     "E016",
+				Code:     result.CodeManifestInvalid,
 				Message:  "initial validation failed",
 				Severity: "fatal",
 			},
@@ -356,7 +356,7 @@ func FinalizeIMPL(implPath, repoRoot string) result.Result[FinalizeIMPLData] {
 		data.GatePopulation.H2DataAvailable = false
 		return result.NewFailure[FinalizeIMPLData]([]result.SAWError{
 			{
-				Code:     "E002",
+				Code:     result.CodeToolNotFound,
 				Message:  "H2 data unavailable - run extract-commands first: no valid toolchains found in any repo",
 				Severity: "fatal",
 			},
@@ -376,7 +376,7 @@ func FinalizeIMPL(implPath, repoRoot string) result.Result[FinalizeIMPLData] {
 	if err != nil {
 		return result.NewFailure[FinalizeIMPLData]([]result.SAWError{
 			{
-				Code:     "E003",
+				Code:     result.CodeFinalizeWaveFailed,
 				Message:  fmt.Sprintf("failed to populate verification gates: %v", err),
 				Severity: "fatal",
 			},
@@ -400,7 +400,7 @@ func FinalizeIMPL(implPath, repoRoot string) result.Result[FinalizeIMPLData] {
 	if err != nil {
 		return result.NewFailure[FinalizeIMPLData]([]result.SAWError{
 			{
-				Code:     "E004",
+				Code:     result.CodeFinalizeWaveFailed,
 				Message:  fmt.Sprintf("failed to populate integration checklist: %v", err),
 				Severity: "fatal",
 			},
@@ -431,7 +431,7 @@ func FinalizeIMPL(implPath, repoRoot string) result.Result[FinalizeIMPLData] {
 	if !data.FinalValidation.Passed {
 		return result.NewFailure[FinalizeIMPLData]([]result.SAWError{
 			{
-				Code:     "E016",
+				Code:     result.CodeManifestInvalid,
 				Message:  "final validation failed after gate population",
 				Severity: "fatal",
 			},
@@ -442,7 +442,7 @@ func FinalizeIMPL(implPath, repoRoot string) result.Result[FinalizeIMPLData] {
 	if err := Save(updatedManifest, implPath); err != nil {
 		return result.NewFailure[FinalizeIMPLData]([]result.SAWError{
 			{
-				Code:     "E005",
+				Code:     result.CodeFinalizeWaveFailed,
 				Message:  fmt.Sprintf("failed to save updated manifest: %v", err),
 				Severity: "fatal",
 			},

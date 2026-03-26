@@ -104,7 +104,7 @@ func WriteCriticReviewResult(implPath string, data CriticData) result.Result[Cri
 	if err != nil {
 		return result.NewFailure[CriticData]([]result.SAWError{
 			{
-				Code:     "E001",
+				Code:     result.CodeIMPLParseFailed,
 				Message:  err.Error(),
 				Severity: "fatal",
 			},
@@ -116,7 +116,7 @@ func WriteCriticReviewResult(implPath string, data CriticData) result.Result[Cri
 	if err := Save(manifest, implPath); err != nil {
 		return result.NewFailure[CriticData]([]result.SAWError{
 			{
-				Code:     "E002",
+				Code:     result.CodeIMPLParseFailed,
 				Message:  err.Error(),
 				Severity: "fatal",
 			},
@@ -143,7 +143,7 @@ func GetCriticReviewResult(manifest *IMPLManifest) result.Result[CriticData] {
 	if manifest.CriticReport == nil {
 		return result.NewFailure[CriticData]([]result.SAWError{
 			{
-				Code:     "E003",
+				Code:     result.CodeCompletionReportMissing,
 				Message:  "no critic review found in manifest",
 				Severity: "fatal",
 			},

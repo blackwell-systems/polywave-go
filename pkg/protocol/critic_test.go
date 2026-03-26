@@ -365,8 +365,8 @@ func TestGetCriticReviewResult_ErrorCode(t *testing.T) {
 	if len(res.Errors) == 0 {
 		t.Fatal("expected at least one error")
 	}
-	if res.Errors[0].Code != "E003" {
-		t.Errorf("Errors[0].Code = %q, want E003", res.Errors[0].Code)
+	if res.Errors[0].Code != result.CodeCompletionReportMissing {
+		t.Errorf("Errors[0].Code = %q, want %s", res.Errors[0].Code, result.CodeCompletionReportMissing)
 	}
 	if res.Errors[0].Severity != "fatal" {
 		t.Errorf("Errors[0].Severity = %q, want fatal", res.Errors[0].Severity)
