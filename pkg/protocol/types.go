@@ -98,10 +98,21 @@ type Agent struct {
 	ContextSource ContextSource `yaml:"context_source,omitempty" json:"context_source,omitempty"`
 }
 
+// CompletionStatus is the typed outcome of a wave agent's work.
+// Valid values: StatusComplete, StatusPartial, StatusBlocked.
+// Serializes as "complete", "partial", "blocked" in YAML and JSON.
+type CompletionStatus string
+
+const (
+	StatusComplete CompletionStatus = "complete"
+	StatusPartial  CompletionStatus = "partial"
+	StatusBlocked  CompletionStatus = "blocked"
+)
+
 // CompletionReport records the outcome of an agent's work.
 // It tracks status, files changed, interface deviations, and test coverage.
 type CompletionReport struct {
-	Status              string                `yaml:"status" json:"status"` // "complete" | "partial" | "blocked"
+	Status              CompletionStatus      `yaml:"status" json:"status"` // "complete" | "partial" | "blocked"
 	Worktree            string                `yaml:"worktree,omitempty" json:"worktree,omitempty"`
 	Branch              string                `yaml:"branch,omitempty" json:"branch,omitempty"`
 	Commit              string                `yaml:"commit,omitempty" json:"commit,omitempty"`

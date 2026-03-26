@@ -187,7 +187,7 @@ func amendRedirectAgent(opts AmendImplOpts, m *IMPLManifest) result.Result[Amend
 	}
 
 	// Step 2: Reject if agent has a complete completion report
-	if cr, ok := m.CompletionReports[opts.AgentID]; ok && cr.Status == "complete" {
+	if cr, ok := m.CompletionReports[opts.AgentID]; ok && cr.Status == StatusComplete {
 		return result.NewFailure[AmendImplData]([]result.SAWError{
 			{
 				Code:     amendBlocked,
@@ -229,7 +229,7 @@ func amendRedirectAgent(opts AmendImplOpts, m *IMPLManifest) result.Result[Amend
 	m.Waves[waveIdx].Agents[agentIdx].Task = opts.NewTask
 
 	// Step 5: Delete partial completion report if present
-	if cr, ok := m.CompletionReports[opts.AgentID]; ok && cr.Status != "complete" {
+	if cr, ok := m.CompletionReports[opts.AgentID]; ok && cr.Status != StatusComplete {
 		delete(m.CompletionReports, opts.AgentID)
 	}
 

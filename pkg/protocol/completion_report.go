@@ -20,7 +20,7 @@ func NewCompletionReport(agentID string) *CompletionReportBuilder {
 	return &CompletionReportBuilder{agentID: agentID}
 }
 
-func (b *CompletionReportBuilder) WithStatus(status string) *CompletionReportBuilder {
+func (b *CompletionReportBuilder) WithStatus(status CompletionStatus) *CompletionReportBuilder {
 	b.report.Status = status
 	return b
 }
@@ -92,7 +92,7 @@ func (b *CompletionReportBuilder) Validate() error {
 	var errs []string
 
 	switch b.report.Status {
-	case "complete", "partial", "blocked":
+	case StatusComplete, StatusPartial, StatusBlocked:
 		// valid
 	case "":
 		errs = append(errs, "status is required")
@@ -100,15 +100,15 @@ func (b *CompletionReportBuilder) Validate() error {
 		errs = append(errs, fmt.Sprintf("status %q is invalid: must be complete, partial, or blocked", b.report.Status))
 	}
 
-	if b.report.Status == "complete" && b.report.Commit == "" {
+	if b.report.Status == StatusComplete && b.report.Commit == "" {
 		errs = append(errs, "commit is required when status is complete")
 	}
 
-	if (b.report.Status == "blocked" || b.report.Status == "partial") && b.report.FailureType == "" {
+	if (b.report.Status == StatusBlocked || b.report.Status == StatusPartial) && b.report.FailureType == "" {
 		errs = append(errs, fmt.Sprintf("failure_type is required when status is %q", b.report.Status))
 	}
 
-	if b.report.Status == "complete" && b.report.FailureType != "" {
+	if b.report.Status == StatusComplete && b.report.FailureType != "" {
 		errs = append(errs, "failure_type must not be set when status is complete")
 	}
 

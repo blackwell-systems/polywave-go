@@ -13,17 +13,17 @@ const codeStatusUpdateFailed = "N015_STATUS_UPDATE_FAILED"
 
 // UpdateStatusData contains the data of a status update operation.
 type UpdateStatusData struct {
-	Wave      int    `json:"wave"`
-	Agent     string `json:"agent"`
-	OldStatus string `json:"old_status"`
-	NewStatus string `json:"new_status"`
-	Updated   bool   `json:"updated"`
+	Wave      int              `json:"wave"`
+	Agent     string           `json:"agent"`
+	OldStatus CompletionStatus `json:"old_status"`
+	NewStatus CompletionStatus `json:"new_status"`
+	Updated   bool             `json:"updated"`
 }
 
 // UpdateStatus loads the manifest, finds the specified agent, updates its completion report status,
 // and saves the manifest back to disk. Returns the old and new status values.
 // Returns a failure if the agent is not found in the specified wave.
-func UpdateStatus(manifestPath string, waveNum int, agentID string, status string) result.Result[*UpdateStatusData] {
+func UpdateStatus(manifestPath string, waveNum int, agentID string, status CompletionStatus) result.Result[*UpdateStatusData] {
 	// Load manifest
 	manifest, err := Load(manifestPath)
 	if err != nil {
@@ -74,7 +74,7 @@ func UpdateStatus(manifestPath string, waveNum int, agentID string, status strin
 	}
 
 	// Get old status (empty string if no report exists yet)
-	oldStatus := ""
+	oldStatus := CompletionStatus("")
 	if existingReport, exists := manifest.CompletionReports[agentID]; exists {
 		oldStatus = existingReport.Status
 	}

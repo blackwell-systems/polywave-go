@@ -11,10 +11,10 @@ import (
 func ValidateCompletionStatuses(m *IMPLManifest) []result.SAWError {
 	var errs []result.SAWError
 
-	validStatuses := map[string]bool{
-		"complete": true,
-		"partial":  true,
-		"blocked":  true,
+	validStatuses := map[CompletionStatus]bool{
+		StatusComplete: true,
+		StatusPartial:  true,
+		StatusBlocked:  true,
 	}
 
 	for agentID, report := range m.CompletionReports {
