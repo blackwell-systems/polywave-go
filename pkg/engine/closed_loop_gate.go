@@ -9,7 +9,7 @@ import (
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/agent"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/orchestrator"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/retryctx"
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/retry"
 )
 
 // ClosedLoopRetryOpts configures a pre-merge per-agent gate retry (R3).
@@ -120,8 +120,8 @@ func ClosedLoopGateRetry(ctx context.Context, opts ClosedLoopRetryOpts) (*Closed
 		})
 
 		// a. Build fix prompt with gate output + error classification
-		errClass := retryctx.ClassifyError(currentOutput)
-		suggestions := retryctx.SuggestFixes(errClass)
+		errClass := retry.ClassifyError(currentOutput)
+		suggestions := retry.SuggestFixes(errClass)
 
 		prompt := buildClosedLoopFixPrompt(opts, currentOutput, errClass, suggestions, attempt)
 
@@ -166,7 +166,7 @@ func ClosedLoopGateRetry(ctx context.Context, opts ClosedLoopRetryOpts) (*Closed
 func buildClosedLoopFixPrompt(
 	opts ClosedLoopRetryOpts,
 	gateOutput string,
-	errClass retryctx.ErrorClass,
+	errClass retry.ErrorClass,
 	suggestions []string,
 	attempt int,
 ) string {
