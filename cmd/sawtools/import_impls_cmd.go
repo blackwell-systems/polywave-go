@@ -115,13 +115,7 @@ Examples:
 					continue
 				}
 
-				slug := implDoc.FeatureSlug
-				if slug == "" {
-					// Derive slug from filename: IMPL-<slug>.yaml
-					base := filepath.Base(implPath)
-					slug = strings.TrimPrefix(base, "IMPL-")
-					slug = strings.TrimSuffix(slug, ".yaml")
-				}
+				slug := protocol.ExtractIMPLSlug(implPath, implDoc)
 
 				// Skip if already in manifest
 				if existingSlugs[slug] {
@@ -129,7 +123,7 @@ Examples:
 				}
 
 				// Map IMPL state to program status
-				status := mapIMPLStateToStatus(implDoc.State)
+				status := protocol.IMPLStateToStatus(implDoc.State)
 
 				// Count agents and waves
 				agentCount := 0
@@ -157,7 +151,27 @@ Examples:
 
 			// Compute tier assignments based on file ownership overlap
 			// IMPLs that share files with other IMPLs get assigned to later tiers
-			tierAssignments := computeTierAssignments(imported, fileOwners)
+			var slugList []string
+			for _, imp := range imported {
+				slugList = append(slugList, imp.Slug)
+			}
+			overlaps := make(map[string]map[string]bool)
+			for _, owners := range fileOwners {
+				if len(owners) <= 1 {
+					continue
+				}
+				for _, a := range owners {
+					for _, b := range owners {
+						if a != b {
+							if overlaps[a] == nil {
+								overlaps[a] = make(map[string]bool)
+							}
+							overlaps[a][b] = true
+						}
+					}
+				}
+			}
+			tierAssignments := protocol.ComputeTierAssignments(slugList, overlaps)
 
 			// Apply tier assignments and add to manifest
 			for i := range imported {
@@ -240,78 +254,6 @@ Examples:
 	cmd.Flags().StringVar(&repoDir, "repo-dir", "", "Repository root directory (default: cwd)")
 
 	return cmd
-}
-
-// mapIMPLStateToStatus maps an IMPL doc ProtocolState to a program IMPL status.
-func mapIMPLStateToStatus(state protocol.ProtocolState) string {
-	switch state {
-	case protocol.StateComplete:
-		return "complete"
-	case protocol.StateReviewed, protocol.StateScaffoldPending,
-		protocol.StateWavePending, protocol.StateWaveExecuting,
-		protocol.StateWaveMerging, protocol.StateWaveVerified:
-		return "reviewed"
-	case protocol.StateScoutPending, protocol.StateScoutValidating:
-		return "pending"
-	default:
-		return "pending"
-	}
-}
-
-// computeTierAssignments analyzes file ownership overlap to suggest tier assignments.
-// IMPLs with no overlap go to tier 1. IMPLs that overlap with tier-1 IMPLs go to tier 2, etc.
-func computeTierAssignments(imported []protocol.ImportedIMPL, fileOwners map[string][]string) map[string]int {
-	assignments := make(map[string]int)
-
-	// Build overlap graph: slug -> set of slugs it overlaps with
-	overlaps := make(map[string]map[string]bool)
-	for _, owners := range fileOwners {
-		if len(owners) <= 1 {
-			continue
-		}
-		for _, a := range owners {
-			for _, b := range owners {
-				if a != b {
-					if overlaps[a] == nil {
-						overlaps[a] = make(map[string]bool)
-					}
-					overlaps[a][b] = true
-				}
-			}
-		}
-	}
-
-	// Simple greedy tier assignment: assign each IMPL to the earliest tier
-	// where it doesn't overlap with any already-assigned IMPL in that tier.
-	tierMembers := make(map[int][]string) // tier -> slugs assigned to it
-
-	for _, imp := range imported {
-		slug := imp.Slug
-		assigned := false
-		for tier := 1; tier <= len(imported); tier++ {
-			conflict := false
-			for _, member := range tierMembers[tier] {
-				if overlaps[slug] != nil && overlaps[slug][member] {
-					conflict = true
-					break
-				}
-			}
-			if !conflict {
-				assignments[slug] = tier
-				tierMembers[tier] = append(tierMembers[tier], slug)
-				assigned = true
-				break
-			}
-		}
-		if !assigned {
-			// Fallback: assign to new tier
-			tier := len(tierMembers) + 1
-			assignments[slug] = tier
-			tierMembers[tier] = append(tierMembers[tier], slug)
-		}
-	}
-
-	return assignments
 }
 
 // rebuildTiers rebuilds the Tiers slice from IMPL tier assignments.

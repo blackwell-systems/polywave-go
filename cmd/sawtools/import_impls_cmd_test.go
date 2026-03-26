@@ -131,13 +131,14 @@ func TestImportImplsFromFiles(t *testing.T) {
 		t.Errorf("expected 0 discovered paths for --from-impls, got %d", len(result.ImplsDiscovered))
 	}
 
-	// Verify statuses mapped correctly
+	// Verify statuses mapped correctly using canonical IMPLStateToStatus.
+	// StateReviewed maps to "pending"; StateComplete maps to "complete".
 	statusMap := make(map[string]string)
 	for _, imp := range result.ImplsImported {
 		statusMap[imp.Slug] = imp.Status
 	}
-	if statusMap["explicit-a"] != "reviewed" {
-		t.Errorf("expected explicit-a status=reviewed, got %s", statusMap["explicit-a"])
+	if statusMap["explicit-a"] != "pending" {
+		t.Errorf("expected explicit-a status=pending, got %s", statusMap["explicit-a"])
 	}
 	if statusMap["explicit-b"] != "complete" {
 		t.Errorf("expected explicit-b status=complete, got %s", statusMap["explicit-b"])
