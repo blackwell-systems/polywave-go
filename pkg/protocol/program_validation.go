@@ -39,7 +39,7 @@ func validateProgramRequiredFields(manifest *PROGRAMManifest) []result.SAWError 
 
 	if strings.TrimSpace(manifest.Title) == "" {
 		errs = append(errs, result.SAWError{
-			Code:     "MISSING_FIELD",
+			Code:     result.CodeRequiredFieldsMissing,
 			Message:  "title is required",
 			Severity: "error",
 			Field:    "title",
@@ -48,7 +48,7 @@ func validateProgramRequiredFields(manifest *PROGRAMManifest) []result.SAWError 
 
 	if strings.TrimSpace(manifest.ProgramSlug) == "" {
 		errs = append(errs, result.SAWError{
-			Code:     "MISSING_FIELD",
+			Code:     result.CodeRequiredFieldsMissing,
 			Message:  "program_slug is required",
 			Severity: "error",
 			Field:    "program_slug",
@@ -57,7 +57,7 @@ func validateProgramRequiredFields(manifest *PROGRAMManifest) []result.SAWError 
 
 	if strings.TrimSpace(string(manifest.State)) == "" {
 		errs = append(errs, result.SAWError{
-			Code:     "MISSING_FIELD",
+			Code:     result.CodeRequiredFieldsMissing,
 			Message:  "state is required",
 			Severity: "error",
 			Field:    "state",
@@ -90,7 +90,7 @@ func validateProgramState(manifest *PROGRAMManifest) []result.SAWError {
 
 	if !validStates[manifest.State] {
 		errs = append(errs, result.SAWError{
-			Code:     "INVALID_STATE",
+			Code:     result.CodeInvalidState,
 			Message:  fmt.Sprintf("state %q is invalid — must be one of: PLANNING, VALIDATING, REVIEWED, SCAFFOLD, TIER_EXECUTING, TIER_VERIFIED, COMPLETE, BLOCKED, NOT_SUITABLE", manifest.State),
 			Severity: "error",
 			Field:    "state",
@@ -115,7 +115,7 @@ func validateIMPLStatuses(manifest *PROGRAMManifest) []result.SAWError {
 	for i, impl := range manifest.Impls {
 		if !validStatuses[impl.Status] {
 			errs = append(errs, result.SAWError{
-				Code:     "INVALID_STATUS",
+				Code:     result.CodeInvalidEnum,
 				Message:  fmt.Sprintf("IMPL %q has invalid status %q — must be one of: pending, scouting, reviewed, executing, complete", impl.Slug, impl.Status),
 				Severity: "error",
 				Field:    fmt.Sprintf("impls[%d].status", i),
@@ -142,7 +142,7 @@ func validateP1Independence(manifest *PROGRAMManifest) []result.SAWError {
 			depTier, exists := implTier[dep]
 			if exists && depTier == impl.Tier {
 				errs = append(errs, result.SAWError{
-					Code:     "P1_VIOLATION",
+					Code:     result.CodeP1Violation,
 					Message:  fmt.Sprintf("IMPL %q (tier %d) depends on %q (tier %d) — IMPLs within the same tier must be independent", impl.Slug, impl.Tier, dep, depTier),
 					Severity: "error",
 					Field:    "impls",
@@ -175,7 +175,7 @@ func validateTierIMPLConsistency(manifest *PROGRAMManifest) []result.SAWError {
 			// Check if IMPL is defined
 			if !definedImpls[implSlug] {
 				errs = append(errs, result.SAWError{
-					Code:     "TIER_MISMATCH",
+					Code:     result.CodeTierMismatch,
 					Message:  fmt.Sprintf("tier %d references IMPL %q which is not defined in impls section", tier.Number, implSlug),
 					Severity: "error",
 					Field:    fmt.Sprintf("tiers[%d].impls", tier.Number-1),
@@ -191,14 +191,14 @@ func validateTierIMPLConsistency(manifest *PROGRAMManifest) []result.SAWError {
 		count := implTierCount[implSlug]
 		if count == 0 {
 			errs = append(errs, result.SAWError{
-				Code:     "TIER_MISMATCH",
+				Code:     result.CodeTierMismatch,
 				Message:  fmt.Sprintf("IMPL %q is not assigned to any tier", implSlug),
 				Severity: "error",
 				Field:    "tiers",
 			})
 		} else if count > 1 {
 			errs = append(errs, result.SAWError{
-				Code:     "TIER_MISMATCH",
+				Code:     result.CodeTierMismatch,
 				Message:  fmt.Sprintf("IMPL %q appears in multiple tiers: %v", implSlug, implTierNumbers[implSlug]),
 				Severity: "error",
 				Field:    "tiers",
@@ -224,7 +224,7 @@ func validateDependencyValidity(manifest *PROGRAMManifest) []result.SAWError {
 		for _, dep := range impl.DependsOn {
 			if !definedImpls[dep] {
 				errs = append(errs, result.SAWError{
-					Code:     "INVALID_DEPENDENCY",
+					Code:     result.CodeInvalidDependency,
 					Message:  fmt.Sprintf("IMPL %q depends on %q which does not exist", impl.Slug, dep),
 					Severity: "error",
 					Field:    fmt.Sprintf("impls[%d].depends_on", i),
@@ -252,7 +252,7 @@ func validateTierOrdering(manifest *PROGRAMManifest) []result.SAWError {
 			depTier, exists := implTier[dep]
 			if exists && impl.Tier <= depTier {
 				errs = append(errs, result.SAWError{
-					Code:     "TIER_ORDER_VIOLATION",
+					Code:     result.CodeTierOrderViolation,
 					Message:  fmt.Sprintf("IMPL %q (tier %d) depends on %q (tier %d) — dependent IMPLs must be in strictly later tiers", impl.Slug, impl.Tier, dep, depTier),
 					Severity: "error",
 					Field:    "impls",
@@ -279,7 +279,7 @@ func validateProgramContractConsumers(manifest *PROGRAMManifest) []result.SAWErr
 		for j, consumer := range contract.Consumers {
 			if !definedImpls[consumer.Impl] {
 				errs = append(errs, result.SAWError{
-					Code:     "INVALID_CONSUMER",
+					Code:     result.CodeInvalidConsumer,
 					Message:  fmt.Sprintf("program contract %q references consumer IMPL %q which does not exist", contract.Name, consumer.Impl),
 					Severity: "error",
 					Field:    fmt.Sprintf("program_contracts[%d].consumers[%d].impl", i, j),
@@ -298,7 +298,7 @@ func validateSlugFormats(manifest *PROGRAMManifest) []result.SAWError {
 	// Validate program_slug
 	if manifest.ProgramSlug != "" && !kebabCaseRegex.MatchString(manifest.ProgramSlug) {
 		errs = append(errs, result.SAWError{
-			Code:     "INVALID_SLUG_FORMAT",
+			Code:     result.CodeInvalidSlugFormat,
 			Message:  fmt.Sprintf("program_slug %q is not kebab-case (lowercase letters, digits, hyphens only)", manifest.ProgramSlug),
 			Severity: "error",
 			Field:    "program_slug",
@@ -309,7 +309,7 @@ func validateSlugFormats(manifest *PROGRAMManifest) []result.SAWError {
 	for i, impl := range manifest.Impls {
 		if impl.Slug != "" && !kebabCaseRegex.MatchString(impl.Slug) {
 			errs = append(errs, result.SAWError{
-				Code:     "INVALID_SLUG_FORMAT",
+				Code:     result.CodeInvalidSlugFormat,
 				Message:  fmt.Sprintf("IMPL slug %q is not kebab-case (lowercase letters, digits, hyphens only)", impl.Slug),
 				Severity: "error",
 				Field:    fmt.Sprintf("impls[%d].slug", i),
@@ -331,7 +331,7 @@ func ValidateP1FileDisjointness(tier int, impls []*IMPLManifest) []result.SAWErr
 		for _, fo := range impl.FileOwnership {
 			if existingIMPL, exists := fileToIMPL[fo.File]; exists {
 				errs = append(errs, result.SAWError{
-					Code:     "P1_FILE_OVERLAP",
+					Code:     result.CodeP1FileOverlap,
 					Message:  fmt.Sprintf("File %s owned by both %s and %s in tier %d (violates P1 disjoint ownership)", fo.File, existingIMPL, impl.FeatureSlug, tier),
 					Severity: "error",
 					Field:    "file_ownership",
@@ -415,7 +415,7 @@ func ValidateProgramImportMode(manifest *PROGRAMManifest, repoPath string) []res
 			resolvedPath = completePath
 		} else {
 			errs = append(errs, result.SAWError{
-				Code:     "IMPL_FILE_MISSING",
+				Code:     result.CodeIMPLFileMissing,
 				Message:  fmt.Sprintf("IMPL %q has status %q but IMPL-%s.yaml not found in docs/IMPL/ or docs/IMPL/complete/", impl.Slug, impl.Status, impl.Slug),
 				Severity: "error",
 				Field:    "impls",
@@ -427,7 +427,7 @@ func ValidateProgramImportMode(manifest *PROGRAMManifest, repoPath string) []res
 		implDoc, err := Load(resolvedPath)
 		if err != nil {
 			errs = append(errs, result.SAWError{
-				Code:     "IMPL_FILE_MISSING",
+				Code:     result.CodeIMPLFileMissing,
 				Message:  fmt.Sprintf("IMPL %q: failed to parse %s: %v", impl.Slug, resolvedPath, err),
 				Severity: "error",
 				Field:    "impls",
@@ -437,7 +437,7 @@ func ValidateProgramImportMode(manifest *PROGRAMManifest, repoPath string) []res
 
 		if impl.Status == "reviewed" && !reviewedOrLater[implDoc.State] {
 			errs = append(errs, result.SAWError{
-				Code:     "IMPL_STATE_MISMATCH",
+				Code:     result.CodeIMPLStateMismatch,
 				Message:  fmt.Sprintf("IMPL %q has program status %q but IMPL doc state is %q (expected REVIEWED or later)", impl.Slug, impl.Status, implDoc.State),
 				Severity: "error",
 				Field:    "impls",
@@ -445,7 +445,7 @@ func ValidateProgramImportMode(manifest *PROGRAMManifest, repoPath string) []res
 		}
 		if impl.Status == "complete" && implDoc.State != StateComplete {
 			errs = append(errs, result.SAWError{
-				Code:     "IMPL_STATE_MISMATCH",
+				Code:     result.CodeIMPLStateMismatch,
 				Message:  fmt.Sprintf("IMPL %q has program status %q but IMPL doc state is %q (expected COMPLETE)", impl.Slug, impl.Status, implDoc.State),
 				Severity: "error",
 				Field:    "impls",
@@ -459,7 +459,7 @@ func ValidateProgramImportMode(manifest *PROGRAMManifest, repoPath string) []res
 		for _, ic := range implDoc.InterfaceContracts {
 			if frozenContracts[ic.Name] {
 				errs = append(errs, result.SAWError{
-					Code:     "P2_CONTRACT_REDEFINITION",
+					Code:     result.CodeP2ContractRedefinition,
 					Message:  fmt.Sprintf("IMPL %q redefines frozen program contract %q", impl.Slug, ic.Name),
 					Severity: "error",
 					Field:    "interface_contracts",
@@ -518,7 +518,7 @@ func validateCompletionBounds(manifest *PROGRAMManifest) []result.SAWError {
 
 	if manifest.Completion.TiersComplete > manifest.Completion.TiersTotal {
 		errs = append(errs, result.SAWError{
-			Code:     "COMPLETION_BOUNDS",
+			Code:     result.CodeCompletionBounds,
 			Message:  fmt.Sprintf("tiers_complete (%d) exceeds tiers_total (%d)", manifest.Completion.TiersComplete, manifest.Completion.TiersTotal),
 			Severity: "error",
 			Field:    "completion.tiers_complete",
@@ -527,7 +527,7 @@ func validateCompletionBounds(manifest *PROGRAMManifest) []result.SAWError {
 
 	if manifest.Completion.ImplsComplete > manifest.Completion.ImplsTotal {
 		errs = append(errs, result.SAWError{
-			Code:     "COMPLETION_BOUNDS",
+			Code:     result.CodeCompletionBounds,
 			Message:  fmt.Sprintf("impls_complete (%d) exceeds impls_total (%d)", manifest.Completion.ImplsComplete, manifest.Completion.ImplsTotal),
 			Severity: "error",
 			Field:    "completion.impls_complete",
@@ -536,7 +536,7 @@ func validateCompletionBounds(manifest *PROGRAMManifest) []result.SAWError {
 
 	if manifest.Completion.ImplsTotal != len(manifest.Impls) {
 		errs = append(errs, result.SAWError{
-			Code:     "IMPLS_TOTAL_MISMATCH",
+			Code:     result.CodeImplsTotalMismatch,
 			Message:  fmt.Sprintf("impls_total (%d) must equal the number of impls entries (%d)", manifest.Completion.ImplsTotal, len(manifest.Impls)),
 			Severity: "error",
 			Field:    "completion.impls_total",

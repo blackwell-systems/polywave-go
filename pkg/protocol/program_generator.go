@@ -35,14 +35,14 @@ type GenerateProgramData struct {
 func GenerateProgramFromIMPLs(opts GenerateProgramOpts) result.Result[GenerateProgramData] {
 	if len(opts.ImplRefs) == 0 {
 		return result.NewFailure[GenerateProgramData]([]result.SAWError{{
-			Code:     "E001",
+			Code:     result.CodeRequiredFieldsMissing,
 			Message:  "generate-program: at least one IMPL slug is required",
 			Severity: "fatal",
 		}})
 	}
 	if opts.RepoPath == "" {
 		return result.NewFailure[GenerateProgramData]([]result.SAWError{{
-			Code:     "E002",
+			Code:     result.CodeInvalidSlugFormat,
 			Message:  "generate-program: RepoPath is required",
 			Severity: "fatal",
 		}})
@@ -54,7 +54,7 @@ func GenerateProgramFromIMPLs(opts GenerateProgramOpts) result.Result[GeneratePr
 	waveConflictReport, err := CheckIMPLConflictsWaveLevel(opts.ImplRefs, opts.RepoPath)
 	if err != nil {
 		return result.NewFailure[GenerateProgramData]([]result.SAWError{{
-			Code:     "E003",
+			Code:     result.CodeManifestInvalid,
 			Message:  fmt.Sprintf("generate-program: conflict check failed: %v", err),
 			Severity: "fatal",
 		}})
@@ -71,7 +71,7 @@ func GenerateProgramFromIMPLs(opts GenerateProgramOpts) result.Result[GeneratePr
 		implPath, resolveErr := resolveIMPLPathOrAbs(opts.RepoPath, ref)
 		if resolveErr != nil {
 			return result.NewFailure[GenerateProgramData]([]result.SAWError{{
-				Code:     "E004",
+				Code:     result.CodeInvalidAgentID,
 				Message:  fmt.Sprintf("generate-program: %v", resolveErr),
 				Severity: "fatal",
 			}})
@@ -80,7 +80,7 @@ func GenerateProgramFromIMPLs(opts GenerateProgramOpts) result.Result[GeneratePr
 		implDoc, loadErr := Load(implPath)
 		if loadErr != nil {
 			return result.NewFailure[GenerateProgramData]([]result.SAWError{{
-				Code:     "E005",
+				Code:     result.CodeDisjointOwnership,
 				Message:  fmt.Sprintf("generate-program: failed to load IMPL %q: %v", ref, loadErr),
 				Severity: "fatal",
 			}})
@@ -248,7 +248,7 @@ func GenerateProgramFromIMPLs(opts GenerateProgramOpts) result.Result[GeneratePr
 
 	if err := os.MkdirAll(filepath.Dir(outputPath), 0755); err != nil {
 		return result.NewFailure[GenerateProgramData]([]result.SAWError{{
-			Code:     "E006",
+			Code:     result.CodeDependencyCycle,
 			Message:  fmt.Sprintf("generate-program: failed to create output directory: %v", err),
 			Severity: "fatal",
 		}})
@@ -257,7 +257,7 @@ func GenerateProgramFromIMPLs(opts GenerateProgramOpts) result.Result[GeneratePr
 	data, err := yaml.Marshal(manifest)
 	if err != nil {
 		return result.NewFailure[GenerateProgramData]([]result.SAWError{{
-			Code:     "E007",
+			Code:     result.CodeWaveNotOneIndexed,
 			Message:  fmt.Sprintf("generate-program: failed to marshal manifest: %v", err),
 			Severity: "fatal",
 		}})
@@ -265,7 +265,7 @@ func GenerateProgramFromIMPLs(opts GenerateProgramOpts) result.Result[GeneratePr
 
 	if err := os.WriteFile(outputPath, data, 0644); err != nil {
 		return result.NewFailure[GenerateProgramData]([]result.SAWError{{
-			Code:     "E008",
+			Code:     result.CodeOrphanFile,
 			Message:  fmt.Sprintf("generate-program: failed to write manifest: %v", err),
 			Severity: "fatal",
 		}})
@@ -287,7 +287,7 @@ func GenerateProgramFromIMPLs(opts GenerateProgramOpts) result.Result[GeneratePr
 		var warnings []result.SAWError
 		for _, ve := range validationErrors {
 			warnings = append(warnings, result.SAWError{
-				Code:     "E009",
+				Code:     result.CodeOrphanFile,
 				Message:  ve.Message,
 				Severity: "warning",
 				Field:    ve.Field,
