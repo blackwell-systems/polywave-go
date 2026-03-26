@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
-	"gopkg.in/yaml.v3"
 )
 
 // GenerateProgramOpts configures automatic PROGRAM generation.
@@ -254,16 +253,7 @@ func GenerateProgramFromIMPLs(opts GenerateProgramOpts) result.Result[GeneratePr
 		}})
 	}
 
-	data, err := yaml.Marshal(manifest)
-	if err != nil {
-		return result.NewFailure[GenerateProgramData]([]result.SAWError{{
-			Code:     result.CodeWaveNotOneIndexed,
-			Message:  fmt.Sprintf("generate-program: failed to marshal manifest: %v", err),
-			Severity: "fatal",
-		}})
-	}
-
-	if err := os.WriteFile(outputPath, data, 0644); err != nil {
+	if err := SaveYAML(outputPath, manifest); err != nil {
 		return result.NewFailure[GenerateProgramData]([]result.SAWError{{
 			Code:     result.CodeOrphanFile,
 			Message:  fmt.Sprintf("generate-program: failed to write manifest: %v", err),
