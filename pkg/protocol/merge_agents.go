@@ -358,7 +358,7 @@ func mergeAgentsSingleRepo(manifestPath string, waveNum int, repoDir string, man
 
 		// Merge succeeded — auto-update completion status (best-effort)
 		status.Success = true
-		if res := UpdateStatus(manifestPath, waveNum, agent.ID, "complete"); res.IsSuccess() {
+		if res := UpdateStatus(manifestPath, waveNum, agent.ID, StatusComplete); res.IsSuccess() {
 			status.StatusUpdated = true
 		}
 		data.Merges = append(data.Merges, status)
@@ -497,7 +497,7 @@ func mergeAgentsMultiRepo(manifestPath string, waveNum int, manifest *IMPLManife
 
 			// Merge succeeded
 			status.Success = true
-			if res := UpdateStatus(manifestPath, waveNum, agent.ID, "complete"); res.IsSuccess() {
+			if res := UpdateStatus(manifestPath, waveNum, agent.ID, StatusComplete); res.IsSuccess() {
 				status.StatusUpdated = true
 			}
 			data.Merges = append(data.Merges, status)

@@ -145,9 +145,9 @@ func buildSessionState(repoPaths []string, implPath string, manifest *protocol.I
 				continue
 			}
 			switch report.Status {
-			case "complete":
+			case protocol.StatusComplete:
 				completed = append(completed, agent.ID)
-			case "partial", "blocked":
+			case protocol.StatusPartial, protocol.StatusBlocked:
 				failed = append(failed, agent.ID)
 			default:
 				pending = append(pending, agent.ID)
@@ -283,7 +283,7 @@ func buildActionAndCommand(
 	// full command strings should use buildActionAndCommandInternal.
 	var completed []string
 	for id, report := range manifest.CompletionReports {
-		if report.Status == "complete" {
+		if report.Status == protocol.StatusComplete {
 			completed = append(completed, id)
 		}
 	}
@@ -309,7 +309,7 @@ func buildActionAndCommandInternal(
 			if !exists {
 				continue
 			}
-			if report.Status == "partial" || report.Status == "blocked" {
+			if report.Status == protocol.StatusPartial || report.Status == protocol.StatusBlocked {
 				failed = append(failed, agent.ID)
 			}
 		}
@@ -415,7 +415,7 @@ func detectOrphanedWorktrees(repoPaths []string, manifest *protocol.IMPLManifest
 	// Build a set of agents with "complete" status.
 	completedSet := make(map[string]bool)
 	for id, report := range manifest.CompletionReports {
-		if report.Status == "complete" {
+		if report.Status == protocol.StatusComplete {
 			completedSet[id] = true
 		}
 	}

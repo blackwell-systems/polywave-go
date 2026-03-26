@@ -126,7 +126,7 @@ func CurrentWave(m *IMPLManifest) *Wave {
 		wave := &m.Waves[i]
 		for _, agent := range wave.Agents {
 			report, exists := m.CompletionReports[agent.ID]
-			if !exists || report.Status != "complete" {
+			if !exists || report.Status != StatusComplete {
 				return wave
 			}
 		}
