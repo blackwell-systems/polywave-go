@@ -49,6 +49,28 @@ const (
 	CodeCompletionBounds        = "V033_COMPLETION_BOUNDS"
 	CodeImplsTotalMismatch      = "V034_IMPLS_TOTAL_MISMATCH"
 	CodeP1Violation             = "V035_P1_VIOLATION"
+	// CodeInvalidEnum is emitted for invalid enum field values (replaces SV01_INVALID_ENUM, DC02_INVALID_STATUS)
+	CodeInvalidEnum = "V036_INVALID_ENUM"
+	// CodeInvalidPath is emitted for invalid path format (replaces SV01_INVALID_PATH)
+	CodeInvalidPath = "V037_INVALID_PATH"
+	// CodeCrossField is emitted for cross-field consistency violations (replaces SV01_CROSS_FIELD)
+	CodeCrossField = "V038_CROSS_FIELD"
+	// CodeInvalidFieldValue is emitted for invalid field values (replaces I4_INVALID_VALUE, I4_INVALID_FORMAT)
+	CodeInvalidFieldValue = "V039_INVALID_FIELD_VALUE"
+	// CodeUnscopedGate is emitted for multi-repo gates missing a repo: scope (replaces MR02_UNSCOPED_GATE)
+	CodeUnscopedGate = "V040_UNSCOPED_GATE"
+	// CodeFileMissing is emitted when an action=modify file does not exist (replaces E16_FILE_NOT_FOUND)
+	CodeFileMissing = "V041_FILE_MISSING"
+	// CodeInvalidWorktreeName is emitted for invalid worktree branch or path naming (replaces E5_INVALID_WORKTREE_*)
+	CodeInvalidWorktreeName = "V042_INVALID_WORKTREE_NAME"
+	// CodeInvalidVerification is emitted for invalid verification field format (replaces E10_INVALID_VERIFICATION)
+	CodeInvalidVerification = "V043_INVALID_VERIFICATION"
+	// CodeMissingChecklist is emitted when new handlers lack a post_merge_checklist (replaces E16_MISSING_CHECKLIST)
+	CodeMissingChecklist = "V044_MISSING_CHECKLIST"
+	// CodeRepoMismatch is emitted when all action=modify files are missing, indicating wrong repo (replaces E16_REPO_MISMATCH_SUSPECTED)
+	CodeRepoMismatch = "V045_REPO_MISMATCH"
+	// CodeParseError is emitted for YAML parse failures (replaces E16_PARSE_ERROR, P000_PARSE_ERROR)
+	CodeParseError = "V046_PARSE_ERROR"
 )
 
 // Warning codes (W001-W099) — advisory only, never block execution
@@ -56,6 +78,8 @@ const (
 	// CodeAgentScopeLarge is emitted when an agent owns more than 8 files
 	// or creates more than 5 new files. Severity is always "warning".
 	CodeAgentScopeLarge = "W001_AGENT_SCOPE_LARGE"
+	// CodeCompletionVerificationWarning is emitted when an agent has no commits on its wave branch (replaces W101)
+	CodeCompletionVerificationWarning = "W002_COMPLETION_VERIFY"
 )
 
 // Build and gate error codes (B001-B099)
