@@ -13,8 +13,8 @@ import (
 
 // GenerateProgramOpts configures automatic PROGRAM generation.
 type GenerateProgramOpts struct {
-	ImplSlugs   []string // IMPL slugs to include
-	RepoPath    string   // repository root
+	ImplRefs    []string // IMPL slugs or absolute paths to include
+	RepoPath    string   // repository root (used for slug resolution only)
 	ProgramSlug string   // slug for the generated PROGRAM (auto-derived if empty)
 	Title       string   // title for the generated PROGRAM (auto-derived if empty)
 }
@@ -29,10 +29,10 @@ type GenerateProgramData struct {
 }
 
 // GenerateProgramFromIMPLs creates a PROGRAM manifest from existing IMPL docs.
-// It loads each IMPL by slug, runs conflict detection for tier assignment,
-// and writes a complete PROGRAMManifest YAML file to disk.
+// It loads each IMPL by slug or absolute path, runs conflict detection for tier
+// assignment, and writes a complete PROGRAMManifest YAML file to disk.
 func GenerateProgramFromIMPLs(opts GenerateProgramOpts) result.Result[GenerateProgramData] {
-	if len(opts.ImplSlugs) == 0 {
+	if len(opts.ImplRefs) == 0 {
 		return result.NewFailure[GenerateProgramData]([]result.SAWError{{
 			Code:     "E001",
 			Message:  "generate-program: at least one IMPL slug is required",
@@ -48,7 +48,9 @@ func GenerateProgramFromIMPLs(opts GenerateProgramOpts) result.Result[GeneratePr
 	}
 
 	// Step 1: Run conflict detection for tier assignments.
-	conflictReport, err := CheckIMPLConflicts(opts.ImplSlugs, opts.RepoPath)
+	// TierSuggestion keys are IMPL feature slugs (extracted from loaded docs),
+	// not raw refs. This ensures compatibility with both slug and path refs.
+	conflictReport, err := CheckIMPLConflicts(opts.ImplRefs, opts.RepoPath)
 	if err != nil {
 		return result.NewFailure[GenerateProgramData]([]result.SAWError{{
 			Code:     "E003",
@@ -60,9 +62,10 @@ func GenerateProgramFromIMPLs(opts GenerateProgramOpts) result.Result[GeneratePr
 	// Step 2: Load each IMPL doc and build ProgramIMPL entries.
 	var impls []ProgramIMPL
 	var titles []string
+	var slugList []string // feature slugs extracted from loaded docs (for auto-derivation)
 
-	for _, slug := range opts.ImplSlugs {
-		implPath, resolveErr := resolveIMPLPath(opts.RepoPath, slug)
+	for _, ref := range opts.ImplRefs {
+		implPath, resolveErr := resolveIMPLPathOrAbs(opts.RepoPath, ref)
 		if resolveErr != nil {
 			return result.NewFailure[GenerateProgramData]([]result.SAWError{{
 				Code:     "E004",
@@ -75,9 +78,21 @@ func GenerateProgramFromIMPLs(opts GenerateProgramOpts) result.Result[GeneratePr
 		if loadErr != nil {
 			return result.NewFailure[GenerateProgramData]([]result.SAWError{{
 				Code:     "E005",
-				Message:  fmt.Sprintf("generate-program: failed to load IMPL %q: %v", slug, loadErr),
+				Message:  fmt.Sprintf("generate-program: failed to load IMPL %q: %v", ref, loadErr),
 				Severity: "fatal",
 			}})
+		}
+
+		// Extract canonical slug from the loaded doc.
+		slug := implDoc.FeatureSlug
+		if slug == "" {
+			slug = filepath.Base(implPath) // fallback for malformed docs
+		}
+
+		// Record absolute path for cross-repo refs.
+		var absPath string
+		if strings.HasPrefix(ref, "/") || strings.ContainsRune(ref, os.PathSeparator) {
+			absPath = implPath
 		}
 
 		status := implStateToStatus(implDoc.State)
@@ -95,6 +110,8 @@ func GenerateProgramFromIMPLs(opts GenerateProgramOpts) result.Result[GeneratePr
 			keyOutputs = append(keyOutputs, ic.Name)
 		}
 
+		// TierSuggestion keys are IMPL feature slugs (extracted from loaded docs),
+		// not raw refs. This ensures compatibility with both slug and path refs.
 		tier := 1
 		if t, ok := conflictReport.TierSuggestion[slug]; ok {
 			tier = t
@@ -119,9 +136,11 @@ func GenerateProgramFromIMPLs(opts GenerateProgramOpts) result.Result[GeneratePr
 			title = slug
 		}
 		titles = append(titles, title)
+		slugList = append(slugList, slug)
 
 		impls = append(impls, ProgramIMPL{
 			Slug:            slug,
+			AbsPath:         absPath,
 			Title:           title,
 			Tier:            tier,
 			DependsOn:       dependsOn,
@@ -133,12 +152,14 @@ func GenerateProgramFromIMPLs(opts GenerateProgramOpts) result.Result[GeneratePr
 	}
 
 	// Step 3: Auto-derive ProgramSlug if empty.
+	// Use slugList (feature slugs from loaded docs) instead of raw refs,
+	// so path-based refs produce meaningful slugs.
 	programSlug := opts.ProgramSlug
 	if programSlug == "" {
-		if len(opts.ImplSlugs) <= 3 {
-			programSlug = strings.Join(opts.ImplSlugs, "-and-")
+		if len(slugList) <= 3 {
+			programSlug = strings.Join(slugList, "-and-")
 		} else {
-			programSlug = "auto-program-" + opts.ImplSlugs[0]
+			programSlug = "auto-program-" + slugList[0]
 		}
 	}
 
