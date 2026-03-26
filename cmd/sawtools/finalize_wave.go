@@ -4,7 +4,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"os/exec"
+
+	"github.com/blackwell-systems/scout-and-wave-go/internal/git"
 	"path/filepath"
 	"strings"
 
@@ -176,8 +177,7 @@ pattern matching (H7) and appends diagnosis to the output.`,
 							continue
 						}
 						for _, repoPath := range repos {
-							checkCmd := exec.Command("git", "-C", repoPath, "merge-base", "--is-ancestor", report.Commit, "HEAD")
-							if err := checkCmd.Run(); err != nil {
+							if !git.IsAncestor(repoPath, report.Commit, "HEAD") {
 								out, _ := json.MarshalIndent(result, "", "  ")
 								fmt.Println(string(out))
 								return fmt.Errorf(

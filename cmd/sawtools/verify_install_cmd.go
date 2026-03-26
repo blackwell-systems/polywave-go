@@ -4,11 +4,12 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
+
+	"github.com/blackwell-systems/scout-and-wave-go/internal/git"
 
 	"github.com/spf13/cobra"
 )
@@ -173,7 +174,7 @@ func checkSawtoolsBinary() installCheck {
 }
 
 func checkGitVersion() installCheck {
-	out, err := exec.Command("git", "--version").Output()
+	versionStr, err := git.Version()
 	if err != nil {
 		return installCheck{
 			Name:   "git_version",
@@ -181,8 +182,6 @@ func checkGitVersion() installCheck {
 			Detail: "git not found on PATH",
 		}
 	}
-
-	versionStr := strings.TrimSpace(string(out))
 	// Parse "git version X.Y.Z ..." format
 	re := regexp.MustCompile(`(\d+)\.(\d+)`)
 	matches := re.FindStringSubmatch(versionStr)
