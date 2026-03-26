@@ -115,6 +115,7 @@ type CompletionReport struct {
 	Notes               string                `yaml:"notes,omitempty" json:"notes,omitempty"`
 	DedupStats          *DedupStats           `yaml:"dedup_stats,omitempty" json:"dedup_stats,omitempty"`
 	Repo                string                `yaml:"repo,omitempty" json:"repo,omitempty"`
+	WrittenAt           *time.Time            `yaml:"written_at,omitempty" json:"written_at,omitempty"`
 }
 
 // InterfaceDeviation records a deviation from the planned interface contract.
