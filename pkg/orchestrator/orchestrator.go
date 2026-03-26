@@ -953,7 +953,7 @@ func (o *Orchestrator) launchAgent(
 			Data: AgentBlockedPayload{
 				Agent:       agentSpec.ID,
 				Wave:        waveNum,
-				Status:      report.Status,
+				Status:      string(report.Status),
 				FailureType: report.FailureType,
 				Action:      action,
 			},

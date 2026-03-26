@@ -46,7 +46,7 @@ func newCheckCompletionCmd() *cobra.Command {
 			if m.CompletionReports != nil {
 				if report, ok := m.CompletionReports[agentID]; ok && report.Status != "" {
 					result.Found = true
-					result.Status = report.Status
+					result.Status = string(report.Status)
 					result.HasCommit = report.Commit != ""
 					result.FilesChanged = report.FilesChanged
 					if result.FilesChanged == nil {

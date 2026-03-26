@@ -138,9 +138,9 @@ func (o *Orchestrator) launchAgentStructured(
 			return loadErr
 		}
 		if r, ok := manifest.CompletionReports[protoAgent.ID]; ok {
-			savedStatus = r.Status
+			savedStatus = string(r.Status)
 			savedFailureType = r.FailureType
-			status = r.Status
+			status = string(r.Status)
 		}
 		return nil
 	})

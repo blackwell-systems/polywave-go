@@ -47,7 +47,7 @@ func newSetCompletionCmd() *cobra.Command {
 
 			// Build completion report using the canonical builder.
 			builder := protocol.NewCompletionReport(agentID).
-				WithStatus(status).
+				WithStatus(protocol.CompletionStatus(status)).
 				WithCommit(commit).
 				WithWorktree(worktree).
 				WithBranch(branch).
