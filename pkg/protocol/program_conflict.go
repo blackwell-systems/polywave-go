@@ -89,7 +89,7 @@ func CheckIMPLConflictsWaveLevel(implSlugs []string, repoPath string) (*WaveConf
 	// Step 2: Load all IMPL docs
 	implDocs := make(map[string]*IMPLManifest)
 	for _, slug := range implSlugs {
-		implPath, err := resolveIMPLPath(repoPath, slug)
+		implPath, err := resolveIMPLPathOrAbs(repoPath, slug)
 		if err != nil {
 			return nil, fmt.Errorf("cannot resolve IMPL %q: %w", slug, err)
 		}
