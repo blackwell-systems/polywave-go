@@ -149,7 +149,7 @@ func TestRetryCmd_GeneratesIMPL(t *testing.T) {
 	}
 
 	// Parse output as RetryResult
-	var result retry.RetryResult
+	var result retry.RetryAttempt
 	if err := json.Unmarshal([]byte(strings.TrimSpace(stdout.String())), &result); err != nil {
 		t.Fatalf("output is not valid JSON: %v\noutput: %s", err, stdout.String())
 	}
@@ -204,7 +204,7 @@ func TestRetryCmd_GeneratesIMPL_Wave2(t *testing.T) {
 		t.Fatalf("retry command failed: %v", err)
 	}
 
-	var result retry.RetryResult
+	var result retry.RetryAttempt
 	if err := json.Unmarshal([]byte(strings.TrimSpace(stdout.String())), &result); err != nil {
 		t.Fatalf("output is not valid JSON: %v", err)
 	}
@@ -260,16 +260,16 @@ func TestRetryCmd_OutputJSON(t *testing.T) {
 	}
 
 	// Check required fields.
-	for _, field := range []string{"attempt", "agent_id", "gate_passed", "gate_output", "final_state"} {
+	for _, field := range []string{"attempt_number", "agent_id", "gate_passed", "gate_output", "final_state"} {
 		if _, ok := raw[field]; !ok {
 			t.Errorf("output JSON missing field %q", field)
 		}
 	}
 
 	// attempt should be a number
-	attempt, ok := raw["attempt"].(float64)
+	attempt, ok := raw["attempt_number"].(float64)
 	if !ok || attempt < 1 {
-		t.Errorf("attempt field should be a positive number, got %v", raw["attempt"])
+		t.Errorf("attempt_number field should be a positive number, got %v", raw["attempt_number"])
 	}
 
 	// agent_id should be "R"
