@@ -1,0 +1,755 @@
+completion_date: "2026-03-25"
+title: Eliminate Functional Duplication Across Go Engine Packages
+feature_slug: go-engine-deduplication
+verdict: SUITABLE
+suitability_assessment: |
+    All five suitability questions resolve cleanly.
+
+    1. File decomposition: Changes span 10+ files across 5 packages. The four
+       consolidation areas map to disjoint file ownership. Agent A owns helpers.go
+       plus all validation caller files including merge_agents.go; Agent B owns
+       git-wrapper callers (gatecache/cache.go, engine/resolve_conflicts.go); Agent C
+       owns YAML I/O (memory.go, yaml_io.go new); Agent D owns only
+       pkg/orchestrator/merge.go. No file is touched by two agents in the same wave.
+
+    2. No investigation required. All four duplication targets are confirmed by
+       direct code inspection. The patterns are mechanical: "find wave by number"
+       loops repeat verbatim 13+ times; getConflictedFiles reimplements
+       git.ConflictedFiles; runGit reimplements a subset of git.Run;
+       Load/Save YAML patterns repeat across memory.go.
+
+    3. Interface contracts are fully discoverable. FindWave, FindAgent,
+       FindWaveWithAgent, RunOutput, LoadYAML, SaveYAML, isAgentAlreadyMerged
+       signatures can all be defined before implementation begins.
+
+    4. Pre-implementation status: All four consolidation areas are TODO. helpers.go
+       exists but only contains IsSoloWave, IsWaveComplete, IsFinalWave. The
+       FindWave/FindAgent helpers do not yet exist.
+
+    5. Parallelization value: HIGH. Four independent areas with fully disjoint
+       file ownership enables 4 agents in parallel in Wave 1. Go build/test cycle
+       ~15-30 seconds. SAW savings estimated at 50%+ over sequential.
+
+    Estimated times:
+    - Scout phase: ~20 min
+    - Agent execution: ~20 min (4 Wave 1 agents in parallel, ~20 min each)
+    - Merge and verification: ~5 min
+    Total SAW time: ~45 min
+
+    Sequential baseline: ~80 min (4 areas x 20 min avg)
+    Time savings: ~35 min (~44% faster)
+
+    Recommendation: Clear speedup. Proceed.
+test_command: go test ./...
+lint_command: go vet ./...
+file_ownership:
+    - file: pkg/protocol/helpers.go
+      agent: A
+      wave: 1
+      action: modify
+    - file: pkg/protocol/helpers_test.go
+      agent: A
+      wave: 1
+      action: modify
+    - file: pkg/protocol/completion_validator.go
+      agent: A
+      wave: 1
+      action: modify
+    - file: pkg/protocol/gate_input_validator.go
+      agent: A
+      wave: 1
+      action: modify
+    - file: pkg/protocol/validation.go
+      agent: A
+      wave: 1
+      action: modify
+    - file: pkg/protocol/merge_agents.go
+      agent: A
+      wave: 1
+      action: modify
+    - file: pkg/gatecache/cache.go
+      agent: B
+      wave: 1
+      action: modify
+    - file: pkg/engine/resolve_conflicts.go
+      agent: B
+      wave: 1
+      action: modify
+    - file: internal/git/commands.go
+      agent: B
+      wave: 1
+      action: modify
+    - file: pkg/protocol/memory.go
+      agent: C
+      wave: 1
+      action: modify
+    - file: pkg/protocol/yaml_io.go
+      agent: C
+      wave: 1
+      action: new
+    - file: pkg/orchestrator/merge.go
+      agent: D
+      wave: 1
+      action: modify
+interface_contracts:
+    - name: FindWave
+      description: |
+        Returns a pointer to the Wave with the given number, or nil if not found.
+        Replaces the verbatim "find wave by number" loop repeated 13+ times across
+        pkg/protocol and pkg/orchestrator.
+      definition: |
+        // FindWave returns a pointer to the Wave whose Number equals waveNum,
+        // or nil if no such wave exists in the manifest.
+        func (m *IMPLManifest) FindWave(waveNum int) *Wave
+      location: pkg/protocol/helpers.go
+    - name: FindAgent
+      description: |
+        Returns a pointer to the Agent with the given ID within the wave,
+        or nil if not found. Replaces the "find agent by ID" loop repeated 8+ times.
+      definition: |
+        // FindAgent returns a pointer to the Agent whose ID equals agentID
+        // within the wave, or nil if no such agent exists.
+        func (w *Wave) FindAgent(agentID string) *Agent
+      location: pkg/protocol/helpers.go
+    - name: FindWaveWithAgent
+      description: |
+        Returns the Wave containing the agent with the given ID, plus the agent
+        pointer. Returns (nil, nil) if not found.
+      definition: |
+        // FindWaveWithAgent returns the Wave containing agentID and a pointer to
+        // the Agent, or (nil, nil) if not found.
+        func (m *IMPLManifest) FindWaveWithAgent(agentID string) (*Wave, *Agent)
+      location: pkg/protocol/helpers.go
+    - name: isAgentAlreadyMerged
+      description: |
+        Package-private helper in pkg/protocol that encapsulates the dual-check
+        idempotency pattern: merge log entry AND git ancestry. Replaces two
+        identical inline checks in mergeAgentsSingleRepo and mergeAgentsMultiRepo.
+      definition: |
+        // isAgentAlreadyMerged returns true if agentID is recorded in the merge log
+        // AND its branch (slug or legacy name) is an ancestor of HEAD in repoDir.
+        func isAgentAlreadyMerged(repoDir string, mergeLog *MergeLog, agentID, slugBranch, legacyBranch string) bool
+      location: pkg/protocol/merge_agents.go
+    - name: RunOutput
+      description: |
+        Executes a git command in repoPath and returns stdout-only output (not
+        combined stdout+stderr). Needed by gatecache.BuildKey which uses
+        machine-parseable git output that must not be contaminated by stderr warnings.
+      definition: |
+        // RunOutput executes a git command in repoPath with the given args.
+        // It returns stdout-only output and any error encountered.
+        // Use Run for combined output (debugging); use RunOutput for machine-parseable output.
+        func RunOutput(repoPath string, args ...string) (string, error)
+      location: internal/git/commands.go
+    - name: LoadYAML
+      description: |
+        Generic YAML load helper. Reduces the repeated os.ReadFile + yaml.Unmarshal
+        + error-wrapping pattern. manifest.Load() keeps its special duplicate-key
+        detection and does NOT use this helper.
+      definition: |
+        // LoadYAML reads the file at path and unmarshals YAML into a value of type T.
+        // Returns a wrapped error if reading or parsing fails.
+        func LoadYAML[T any](path string) (T, error)
+      location: pkg/protocol/yaml_io.go
+    - name: SaveYAML
+      description: |
+        Generic YAML save helper. Reduces the repeated yaml.Marshal + os.WriteFile
+        + error-wrapping pattern.
+      definition: |
+        // SaveYAML marshals v to YAML and writes it to path with permissions 0644.
+        // Returns a wrapped error if marshaling or writing fails.
+        func SaveYAML[T any](path string, v T) error
+      location: pkg/protocol/yaml_io.go
+waves:
+    - number: 1
+      agents:
+        - id: A
+          task: |
+            ## Context
+
+            You are implementing consolidation areas 1 and 4 (validation helpers
+            + merge idempotency helper) in pkg/protocol. This is a pure refactor —
+            no behavior changes. All existing tests must continue to pass.
+
+            ## What to implement
+
+            ### Step 1: Add FindWave, FindAgent, FindWaveWithAgent to pkg/protocol/helpers.go
+
+            Open `pkg/protocol/helpers.go`. It currently contains IsSoloWave,
+            IsWaveComplete, IsFinalWave. Add the following three methods at the end:
+
+            ```go
+            // FindWave returns a pointer to the Wave whose Number equals waveNum,
+            // or nil if no such wave exists.
+            func (m *IMPLManifest) FindWave(waveNum int) *Wave {
+                for i := range m.Waves {
+                    if m.Waves[i].Number == waveNum {
+                        return &m.Waves[i]
+                    }
+                }
+                return nil
+            }
+
+            // FindAgent returns a pointer to the Agent whose ID equals agentID
+            // within the wave, or nil if not found.
+            func (w *Wave) FindAgent(agentID string) *Agent {
+                for i := range w.Agents {
+                    if w.Agents[i].ID == agentID {
+                        return &w.Agents[i]
+                    }
+                }
+                return nil
+            }
+
+            // FindWaveWithAgent returns the Wave containing agentID and a pointer
+            // to the Agent, or (nil, nil) if not found.
+            func (m *IMPLManifest) FindWaveWithAgent(agentID string) (*Wave, *Agent) {
+                for i := range m.Waves {
+                    for j := range m.Waves[i].Agents {
+                        if m.Waves[i].Agents[j].ID == agentID {
+                            return &m.Waves[i], &m.Waves[i].Agents[j]
+                        }
+                    }
+                }
+                return nil, nil
+            }
+            ```
+
+            ### Step 2: Replace "find wave by number" loops in target files
+
+            In each file below, replace the verbatim loop pattern:
+
+            ```go
+            var targetWave *Wave
+            for i := range manifest.Waves {
+                if manifest.Waves[i].Number == waveNum {
+                    targetWave = &manifest.Waves[i]
+                    break
+                }
+            }
+            if targetWave == nil {
+                // error handling
+            }
+            ```
+
+            with:
+
+            ```go
+            targetWave := manifest.FindWave(waveNum)
+            if targetWave == nil {
+                // same error handling
+            }
+            ```
+
+            Files to update:
+            - `pkg/protocol/gate_input_validator.go`: lines 44-50 (find targetWave)
+            - `pkg/protocol/validation.go`: search for any explicit wave-number
+              loops that match the pattern above (there may be none — read carefully)
+            - `pkg/protocol/merge_agents.go`: four separate find-wave patterns at
+              approximately lines 23-29 (MergeAgents), 86-92 (WorktreesAbsent),
+              115-121 (AllBranchesAbsent), 178-184 (mergeAgentsSingleRepo start).
+              Replace each with manifest.FindWave(waveNum).
+
+            Note on completion_validator.go: that file loops over FileOwnership to
+            find waveNum (different pattern). Do not change it.
+
+            ### Step 3: Extract isAgentAlreadyMerged helper in pkg/protocol/merge_agents.go
+
+            In `pkg/protocol/merge_agents.go`, the idempotency check:
+            ```go
+            if mergeLog.IsMerged(agent.ID) && (git.IsAncestor(repoDir, branch, "HEAD") || git.IsAncestor(repoDir, legacyBranch, "HEAD")) {
+            ```
+            appears twice — once in mergeAgentsSingleRepo (~line 307) and once in
+            mergeAgentsMultiRepo (~line 450). Extract both into a package-private
+            helper function. Add this function to merge_agents.go (near the top,
+            after the imports section):
+
+            ```go
+            // isAgentAlreadyMerged returns true if the agent's branch (slug or legacy)
+            // is recorded in the merge log AND is an ancestor of HEAD in repoDir.
+            // This dual-check prevents false positives when the log has a stale entry
+            // but the branch was deleted before the actual merge completed.
+            func isAgentAlreadyMerged(repoDir string, mergeLog *MergeLog, agentID, slugBranch, legacyBranch string) bool {
+                return mergeLog.IsMerged(agentID) &&
+                    (git.IsAncestor(repoDir, slugBranch, "HEAD") ||
+                        git.IsAncestor(repoDir, legacyBranch, "HEAD"))
+            }
+            ```
+
+            Replace both call sites:
+            ```go
+            // Before:
+            if mergeLog.IsMerged(agent.ID) && (git.IsAncestor(repoDir, branch, "HEAD") || git.IsAncestor(repoDir, legacyBranch, "HEAD")) {
+            // After:
+            if isAgentAlreadyMerged(repoDir, mergeLog, agent.ID, branch, legacyBranch) {
+            ```
+
+            In mergeAgentsMultiRepo the variable name is `absRepoDir` not `repoDir` —
+            adjust accordingly.
+
+            ### Step 4: Update pkg/protocol/helpers_test.go
+
+            Add tests for FindWave, FindAgent, FindWaveWithAgent following the
+            existing test pattern in the file.
+
+            Test cases:
+            - FindWave: found case (waveNum matches), not-found case (returns nil)
+            - FindAgent: found case, not-found case (returns nil)
+            - FindWaveWithAgent: found case (returns both non-nil), not-found case
+              (both nil)
+
+            ## Verification gate
+
+            ```
+            go build ./pkg/protocol/... && go vet ./pkg/protocol/... && go test ./pkg/protocol/...
+            ```
+
+            ## Constraints
+
+            - No behavior changes. Zero test failures.
+            - Do not modify manifest.Load() — it has special duplicate-key detection.
+            - Do not touch files owned by other agents: pkg/gatecache/cache.go,
+              pkg/engine/resolve_conflicts.go, internal/git/commands.go,
+              pkg/protocol/memory.go, pkg/protocol/yaml_io.go, pkg/orchestrator/merge.go.
+            - FindWave/FindAgent/FindWaveWithAgent must be methods on *IMPLManifest
+              and *Wave (not standalone functions).
+            - isAgentAlreadyMerged is package-private (lowercase) and lives in
+              merge_agents.go (not helpers.go), keeping merge-related logic together.
+          files:
+            - pkg/protocol/helpers.go
+            - pkg/protocol/helpers_test.go
+            - pkg/protocol/completion_validator.go
+            - pkg/protocol/gate_input_validator.go
+            - pkg/protocol/validation.go
+            - pkg/protocol/merge_agents.go
+        - id: B
+          task: |
+            ## Context
+
+            You are implementing consolidation area 2: git wrapper deduplication.
+            This is a pure refactor — no behavior changes. All existing tests must
+            continue to pass.
+
+            ## What to implement
+
+            ### Step 1: Add RunOutput to internal/git/commands.go
+
+            Open `internal/git/commands.go`. The existing `Run` function returns
+            CombinedOutput (stdout + stderr merged). Add `RunOutput` which returns
+            stdout only (via `cmd.Output()`). This is needed by gatecache which uses
+            machine-parseable git output that must not contain stderr warnings.
+
+            Add after the existing `Run` function:
+
+            ```go
+            // RunOutput executes a git command in repoPath with the given args.
+            // It returns stdout-only output (not combined with stderr) and any error.
+            // Use this for machine-parseable output (e.g., rev-parse, diff --stat).
+            // Use Run when you want combined stdout+stderr for error messages.
+            func RunOutput(repoPath string, args ...string) (string, error) {
+                cmdArgs := append([]string{"-C", repoPath}, args...)
+                cmd := exec.Command("git", cmdArgs...)
+                out, err := cmd.Output()
+                output := string(out)
+                if err != nil {
+                    return output, fmt.Errorf("%w: %s", err, strings.TrimSpace(output))
+                }
+                return output, nil
+            }
+            ```
+
+            ### Step 2: Replace runGit in pkg/gatecache/cache.go
+
+            Open `pkg/gatecache/cache.go`. Find the local `runGit` function
+            (lines 128-136). Replace all three call sites in `BuildKey` (lines
+            93, 98, 103) with `git.RunOutput(...)`:
+
+            ```go
+            // Before:
+            headCommit, err := runGit(repoDir, "rev-parse", "HEAD")
+            stagedStat, err := runGit(repoDir, "diff", "--cached", "--stat")
+            unstagedStat, err := runGit(repoDir, "diff", "--stat")
+            // After:
+            headCommit, err := git.RunOutput(repoDir, "rev-parse", "HEAD")
+            stagedStat, err := git.RunOutput(repoDir, "diff", "--cached", "--stat")
+            unstagedStat, err := git.RunOutput(repoDir, "diff", "--stat")
+            ```
+
+            Then delete the local `runGit` function entirely.
+
+            Add the import:
+            ```go
+            "github.com/blackwell-systems/scout-and-wave-go/internal/git"
+            ```
+
+            ### Step 3: Replace inline git calls in pkg/engine/resolve_conflicts.go
+
+            Open `pkg/engine/resolve_conflicts.go`.
+
+            **getConflictedFiles**: Find the local function at lines 77-95.
+            Replace the call site in `ResolveConflicts` (~line 38):
+            ```go
+            // Before:
+            conflictedFiles, err := getConflictedFiles(opts.RepoPath)
+            // After:
+            conflictedFiles, err := git.ConflictedFiles(opts.RepoPath)
+            ```
+            Then delete `getConflictedFiles` entirely. `git.ConflictedFiles` already
+            exists at internal/git/commands.go line 206 and is identical.
+
+            **commitMerge**: Find the function at lines 302-308. Replace the call
+            site in `ResolveConflicts`:
+            ```go
+            // Before:
+            if err := commitMerge(opts.RepoPath); err != nil {
+            // After:
+            if _, err := git.Run(opts.RepoPath, "commit", "--no-edit"); err != nil {
+            ```
+            Then delete the `commitMerge` function.
+
+            **git add**: Line ~129 calls `exec.Command("git", "add", file)` inside
+            `resolveConflictedFile`. Replace with:
+            ```go
+            // Before:
+            cmd := exec.Command("git", "add", file)
+            cmd.Dir = opts.RepoPath
+            if output, err := cmd.CombinedOutput(); err != nil {
+                return fmt.Errorf("git add failed: %w: %s", err, output)
+            }
+            // After:
+            if _, err := git.Run(opts.RepoPath, "add", file); err != nil {
+                return fmt.Errorf("git add failed: %w", err)
+            }
+            ```
+
+            After all changes, check if `os/exec` is still imported. If not used
+            elsewhere, remove it from the import list.
+
+            ## Verification gate
+
+            ```
+            go build ./internal/git/... ./pkg/gatecache/... ./pkg/engine/... && go vet ./internal/git/... ./pkg/gatecache/... ./pkg/engine/... && go test ./internal/git/... ./pkg/gatecache/... ./pkg/engine/...
+            ```
+
+            ## Constraints
+
+            - No behavior changes. Zero test failures.
+            - Do not modify any file owned by Agent A, C, or D.
+            - The local `runGit` and `getConflictedFiles` and `commitMerge` functions
+              must be deleted — not left as dead code.
+            - internal/git/commands_test.go: adding a test for RunOutput is optional
+              but welcome if you have time.
+          files:
+            - internal/git/commands.go
+            - pkg/gatecache/cache.go
+            - pkg/engine/resolve_conflicts.go
+        - id: C
+          task: |
+            ## Context
+
+            You are implementing consolidation area 3: YAML I/O boilerplate
+            deduplication. This is a pure refactor — no behavior changes. All
+            existing tests must continue to pass.
+
+            ## What to implement
+
+            ### Step 1: Create pkg/protocol/yaml_io.go
+
+            Create the new file `pkg/protocol/yaml_io.go`:
+
+            ```go
+            package protocol
+
+            import (
+                "fmt"
+                "os"
+
+                "gopkg.in/yaml.v3"
+            )
+
+            // LoadYAML reads the file at path and unmarshals YAML into a value of type T.
+            // Returns a wrapped error if reading or parsing fails.
+            //
+            // Do not use this for IMPLManifest — use Load() instead, which has special
+            // duplicate-key detection logic that this helper omits.
+            func LoadYAML[T any](path string) (T, error) {
+                var zero T
+                data, err := os.ReadFile(path)
+                if err != nil {
+                    return zero, fmt.Errorf("LoadYAML: read %s: %w", path, err)
+                }
+                var v T
+                if err := yaml.Unmarshal(data, &v); err != nil {
+                    return zero, fmt.Errorf("LoadYAML: parse %s: %w", path, err)
+                }
+                return v, nil
+            }
+
+            // SaveYAML marshals v to YAML and writes it to path with permissions 0644.
+            // Returns a wrapped error if marshaling or writing fails.
+            func SaveYAML[T any](path string, v T) error {
+                data, err := yaml.Marshal(v)
+                if err != nil {
+                    return fmt.Errorf("SaveYAML: marshal: %w", err)
+                }
+                if err := os.WriteFile(path, data, 0644); err != nil {
+                    return fmt.Errorf("SaveYAML: write %s: %w", path, err)
+                }
+                return nil
+            }
+            ```
+
+            ### Step 2: Refactor pkg/protocol/memory.go to use LoadYAML/SaveYAML
+
+            Open `pkg/protocol/memory.go`. Replace the bodies of `LoadProjectMemory`
+            and `SaveProjectMemory`:
+
+            ```go
+            func LoadProjectMemory(path string) (*ProjectMemory, error) {
+                pm, err := LoadYAML[ProjectMemory](path)
+                if err != nil {
+                    return nil, fmt.Errorf("failed to read project memory file: %w", err)
+                }
+                return &pm, nil
+            }
+
+            func SaveProjectMemory(path string, pm *ProjectMemory) error {
+                if err := SaveYAML(path, pm); err != nil {
+                    return fmt.Errorf("failed to write project memory file: %w", err)
+                }
+                return nil
+            }
+            ```
+
+            After the change, check whether `os` and `gopkg.in/yaml.v3` are still
+            imported in memory.go. Remove them if no longer referenced by other
+            functions in the file.
+
+            ### Scope clarification
+
+            pkg/protocol/merge_log.go uses JSON (encoding/json), not YAML.
+            Do NOT apply LoadYAML/SaveYAML to it — leave it unchanged.
+
+            pkg/resume/sessions.go also uses JSON (encoding/json), not YAML.
+            Do NOT apply LoadYAML/SaveYAML to it — leave it unchanged.
+
+            Only memory.go and the new yaml_io.go require changes.
+
+            ## Verification gate
+
+            ```
+            go build ./pkg/protocol/... && go vet ./pkg/protocol/... && go test ./pkg/protocol/...
+            ```
+
+            ## Constraints
+
+            - No behavior changes. Zero test failures.
+            - Do not touch manifest.Load() or manifest.Save() in manifest.go —
+              they have special duplicate-key detection that must not be replaced.
+            - Do not modify files owned by Agent A, B, or D.
+            - Go generics require go 1.18+. go.mod shows go 1.25.0, so the syntax
+              `func LoadYAML[T any](...)` is supported.
+            - merge_log.go and sessions.go use JSON; do not touch them.
+          files:
+            - pkg/protocol/yaml_io.go
+            - pkg/protocol/memory.go
+        - id: D
+          task: |
+            ## Context
+
+            You are implementing consolidation area 4 (partial): update
+            pkg/orchestrator/merge.go to use the FindWave helper being added by
+            Agent A, and use the isAgentAlreadyMerged helper also being added by
+            Agent A to merge_agents.go.
+
+            This is a pure refactor — no behavior changes. All existing tests must
+            continue to pass.
+
+            ## What to implement
+
+            ### Step 1: Replace wave-finding loop in executeMergeWave
+
+            Open `pkg/orchestrator/merge.go`. In `executeMergeWave` (line 18),
+            find the wave lookup loop (approximately lines 20-29):
+
+            ```go
+            var wave *protocol.Wave
+            for i := range o.IMPLDoc().Waves {
+                if o.IMPLDoc().Waves[i].Number == waveNum {
+                    wave = &o.IMPLDoc().Waves[i]
+                    break
+                }
+            }
+            if wave == nil {
+                return fmt.Errorf("executeMergeWave: wave %d not found in IMPL doc", waveNum)
+            }
+            ```
+
+            Replace with:
+
+            ```go
+            wave := o.IMPLDoc().FindWave(waveNum)
+            if wave == nil {
+                return fmt.Errorf("executeMergeWave: wave %d not found in IMPL doc", waveNum)
+            }
+            ```
+
+            Note: `FindWave` is being added to *protocol.IMPLManifest by Agent A in
+            the same wave. Your worktree will not build in isolation (FindWave does
+            not yet exist on the base branch). This is expected — commit your changes
+            anyway. The build gate runs post-merge after all agent branches are merged,
+            at which point FindWave will be present from Agent A's branch.
+
+            ### Step 2: No other changes needed
+
+            The isAgentAlreadyMerged helper extraction is handled entirely by Agent A
+            in merge_agents.go. You do not need to call it from orchestrator/merge.go
+            — the orchestrator uses its own slightly different idempotency pattern
+            (merge log only, without the git.IsAncestor check) that is intentionally
+            different.
+
+            Verify that no other loops in orchestrator/merge.go duplicate patterns
+            already handled by the protocol package. If you find any, document them
+            in your completion report for future refactoring, but do not change them
+            in this PR (out of scope).
+
+            ## Verification gate
+
+            ```
+            go build ./pkg/orchestrator/... && go vet ./pkg/orchestrator/... && go test ./pkg/orchestrator/...
+            ```
+
+            Note: `go build ./pkg/orchestrator/...` will fail in your isolated
+            worktree because FindWave does not exist yet. Commit your change anyway.
+            The post-merge build gate will verify everything compiles after all
+            agents are merged.
+
+            ## Constraints
+
+            - No behavior changes. Zero test failures.
+            - Only modify pkg/orchestrator/merge.go. Do not touch any files owned
+              by Agent A, B, or C.
+            - This is a single-change agent: one wave-finding loop replacement.
+          files:
+            - pkg/orchestrator/merge.go
+      base_commit: 0d867e6bcb648d217fe4fb9b89c7aa4500f43297
+quality_gates:
+    level: standard
+    gates:
+        - type: build
+          command: go build ./...
+          required: true
+        - type: lint
+          command: go vet ./...
+          required: true
+        - type: test
+          command: go test ./...
+          required: true
+completion_reports:
+    A:
+        status: complete
+        branch: saw/go-engine-deduplication/wave1-agent-A
+        commit: 4e819e7
+        files_changed:
+            - pkg/protocol/helpers.go
+            - pkg/protocol/helpers_test.go
+            - pkg/protocol/gate_input_validator.go
+            - pkg/protocol/merge_agents.go
+        tests_added:
+            - TestFindWave_Found
+            - TestFindWave_NotFound
+            - TestFindAgent_Found
+            - TestFindAgent_NotFound
+            - TestFindWaveWithAgent_Found
+            - TestFindWaveWithAgent_NotFound
+        verification: PASS
+    B:
+        status: complete
+        branch: saw/go-engine-deduplication/wave1-agent-B
+        commit: 41353fd
+        files_changed:
+            - internal/git/commands.go
+            - pkg/gatecache/cache.go
+            - pkg/engine/resolve_conflicts.go
+        verification: PASS
+    C:
+        status: complete
+        branch: saw/go-engine-deduplication/wave1-agent-C
+        commit: a40517d
+        files_changed:
+            - pkg/protocol/yaml_io.go
+            - pkg/protocol/memory.go
+        files_created:
+            - pkg/protocol/yaml_io.go
+        verification: PASS
+    D:
+        status: complete
+        branch: saw/go-engine-deduplication/wave1-agent-D
+        commit: fbf8b92
+        files_changed:
+            - pkg/orchestrator/merge.go
+        verification: PASS (build fails in isolation due to missing FindWave from Agent A — expected per brief; post-merge build gate will verify)
+pre_mortem:
+    overall_risk: low
+    rows:
+        - scenario: |
+            Agent D calls o.IMPLDoc().FindWave(waveNum) in orchestrator/merge.go but
+            FindWave does not exist in the protocol package on the base branch. Agent
+            D's isolated worktree build will fail.
+          likelihood: high
+          impact: low
+          mitigation: |
+            This is expected and documented in Agent D's brief. Isolated worktrees
+            only need to compile post-merge, not individually. The finalize-wave step
+            merges all branches before running the build gate. Agent D commits the
+            change; the gate passes once Agent A's FindWave is merged.
+        - scenario: |
+            Agent C discovers that memory.go callers depend on exact error message
+            strings. Using LoadYAML changes the wrapping format from
+            "failed to read project memory file: ..." to "LoadYAML: read ...: ...".
+          likelihood: low
+          impact: low
+          mitigation: |
+            Agent C's brief wraps the LoadYAML error with the original prefix
+            ("failed to read project memory file: %w") so the externally-visible
+            error message format is unchanged. Tests asserting on error strings pass.
+        - scenario: |
+            Agent C applies LoadYAML/SaveYAML to merge_log.go or sessions.go, which
+            use JSON not YAML, breaking their parsers.
+          likelihood: low
+          impact: medium
+          mitigation: |
+            Agent C's brief explicitly states merge_log.go and sessions.go use JSON
+            and must not be touched. The scope clarification section is prominent.
+        - scenario: |
+            Agent A's edits to merge_agents.go (FindWave replacements + isAgentAlreadyMerged
+            extraction) produce a compile error if the function signature or variable
+            names for the idempotency replacement do not match exactly (e.g., using
+            repoDir vs absRepoDir in the multi-repo path).
+          likelihood: low
+          impact: low
+          mitigation: |
+            Agent A's brief explicitly notes that mergeAgentsMultiRepo uses absRepoDir
+            and instructs Agent A to adjust the call accordingly. The verification
+            gate (go build + go test ./pkg/protocol/...) catches this in the worktree
+            before commit.
+critic_report:
+    verdict: PASS
+    agent_reviews:
+        A:
+            agent_id: A
+            verdict: PASS
+        B:
+            agent_id: B
+            verdict: PASS
+        C:
+            agent_id: C
+            verdict: PASS
+        D:
+            agent_id: D
+            verdict: PASS
+    summary: 'All four agent briefs verified against the codebase. Every file claimed for modification exists. All referenced symbols (runGit, getConflictedFiles, commitMerge, git.ConflictedFiles, git.IsAncestor, git.Run, IsMerged, IMPLDoc, LoadProjectMemory, SaveProjectMemory) exist at the described locations with matching signatures. All four wave-finding loops in merge_agents.go confirmed at approximately the stated line numbers. The cross-dependency between Agent D (calling FindWave) and Agent A (defining FindWave) is correctly documented in both briefs and the pre_mortem. Go generics syntax is valid for go 1.25.0 per go.mod. The import path for the internal/git package is confirmed via module name. No errors found; two minor advisory notes: Agent A''s brief cites gate_input_validator.go line 44 but the loop starts at line 43, and Agent B''s brief cites commitMerge at lines 302-308 but the function ends at line 309 — both patterns are unambiguously present and the line-number discrepancies do not affect correctness.'
+    reviewed_at: "2026-03-26T06:16:44Z"
+    issue_count: 0
+state: COMPLETE
+injection_method: hook
