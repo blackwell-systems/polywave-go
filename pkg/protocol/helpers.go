@@ -15,7 +15,7 @@ func IsWaveComplete(wave *Wave, reports map[string]CompletionReport) bool {
 
 	for _, agent := range wave.Agents {
 		report, exists := reports[agent.ID]
-		if !exists || report.Status != "complete" {
+		if !exists || report.Status != StatusComplete {
 			return false
 		}
 	}

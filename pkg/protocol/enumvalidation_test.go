@@ -9,11 +9,11 @@ import (
 func TestValidateCompletionStatuses_Valid(t *testing.T) {
 	tests := []struct {
 		name   string
-		status string
+		status CompletionStatus
 	}{
-		{"complete", "complete"},
-		{"partial", "partial"},
-		{"blocked", "blocked"},
+		{"complete", StatusComplete},
+		{"partial", StatusPartial},
+		{"blocked", StatusBlocked},
 	}
 
 	for _, tt := range tests {
@@ -35,7 +35,7 @@ func TestValidateCompletionStatuses_Valid(t *testing.T) {
 func TestValidateCompletionStatuses_Invalid(t *testing.T) {
 	m := &IMPLManifest{
 		CompletionReports: map[string]CompletionReport{
-			"A": {Status: "done"},
+			"A": {Status: CompletionStatus("done")},
 		},
 	}
 
@@ -80,7 +80,7 @@ func TestValidateFailureTypes_Valid(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			m := &IMPLManifest{
 				CompletionReports: map[string]CompletionReport{
-					"A": {Status: "partial", FailureType: tt.failureType},
+					"A": {Status: StatusPartial, FailureType: tt.failureType},
 				},
 			}
 
@@ -95,7 +95,7 @@ func TestValidateFailureTypes_Valid(t *testing.T) {
 func TestValidateFailureTypes_Invalid(t *testing.T) {
 	m := &IMPLManifest{
 		CompletionReports: map[string]CompletionReport{
-			"A": {Status: "partial", FailureType: "retry"},
+			"A": {Status: StatusPartial, FailureType: "retry"},
 		},
 	}
 
@@ -116,7 +116,7 @@ func TestValidateFailureTypes_Invalid(t *testing.T) {
 func TestValidateFailureTypes_EmptyOK(t *testing.T) {
 	m := &IMPLManifest{
 		CompletionReports: map[string]CompletionReport{
-			"A": {Status: "complete", FailureType: ""},
+			"A": {Status: StatusComplete, FailureType: ""},
 		},
 	}
 

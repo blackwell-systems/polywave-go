@@ -61,7 +61,7 @@ func VerifyDependenciesAvailable(manifest *IMPLManifest, waveNum int) result.Res
 
 		for _, depID := range agent.Dependencies {
 			report, exists := manifest.CompletionReports[depID]
-			if !exists || report.Status != "complete" {
+			if !exists || report.Status != StatusComplete {
 				check.Missing = append(check.Missing, depID)
 				check.Available = false
 			}

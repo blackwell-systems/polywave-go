@@ -7,7 +7,7 @@ import (
 
 func TestCompletionReportBuilder_ValidComplete(t *testing.T) {
 	err := NewCompletionReport("A").
-		WithStatus("complete").
+		WithStatus(StatusComplete).
 		WithCommit("abc123").
 		Validate()
 	if err != nil {
@@ -17,7 +17,7 @@ func TestCompletionReportBuilder_ValidComplete(t *testing.T) {
 
 func TestCompletionReportBuilder_BlockedWithoutFailureType(t *testing.T) {
 	err := NewCompletionReport("A").
-		WithStatus("blocked").
+		WithStatus(StatusBlocked).
 		Validate()
 	if err == nil {
 		t.Error("expected error for blocked without failure_type")
@@ -26,7 +26,7 @@ func TestCompletionReportBuilder_BlockedWithoutFailureType(t *testing.T) {
 
 func TestCompletionReportBuilder_PartialRequiresFailureType(t *testing.T) {
 	err := NewCompletionReport("A").
-		WithStatus("partial").
+		WithStatus(StatusPartial).
 		WithCommit("abc123").
 		Validate()
 	if err == nil {
@@ -36,7 +36,7 @@ func TestCompletionReportBuilder_PartialRequiresFailureType(t *testing.T) {
 
 func TestCompletionReportBuilder_CompleteWithFailureType(t *testing.T) {
 	err := NewCompletionReport("A").
-		WithStatus("complete").
+		WithStatus(StatusComplete).
 		WithCommit("abc123").
 		WithFailureType("transient").
 		Validate()
@@ -47,7 +47,7 @@ func TestCompletionReportBuilder_CompleteWithFailureType(t *testing.T) {
 
 func TestCompletionReportBuilder_EmptyCommitOnComplete(t *testing.T) {
 	err := NewCompletionReport("A").
-		WithStatus("complete").
+		WithStatus(StatusComplete).
 		Validate()
 	if err == nil {
 		t.Error("expected error for complete with empty commit")
@@ -56,7 +56,7 @@ func TestCompletionReportBuilder_EmptyCommitOnComplete(t *testing.T) {
 
 func TestCompletionReportBuilder_InvalidStatus(t *testing.T) {
 	err := NewCompletionReport("A").
-		WithStatus("done").
+		WithStatus(CompletionStatus("done")).
 		Validate()
 	if err == nil {
 		t.Error("expected error for invalid status")
@@ -65,7 +65,7 @@ func TestCompletionReportBuilder_InvalidStatus(t *testing.T) {
 
 func TestCompletionReportBuilder_InvalidFailureType(t *testing.T) {
 	err := NewCompletionReport("A").
-		WithStatus("blocked").
+		WithStatus(StatusBlocked).
 		WithFailureType("bad").
 		Validate()
 	if err == nil {
@@ -82,7 +82,7 @@ func TestCompletionReportBuilder_AppendToManifest(t *testing.T) {
 	}
 
 	err := NewCompletionReport("X").
-		WithStatus("complete").
+		WithStatus(StatusComplete).
 		WithCommit("deadbeef").
 		AppendToManifest(manifest)
 	if err != nil {
@@ -93,8 +93,8 @@ func TestCompletionReportBuilder_AppendToManifest(t *testing.T) {
 	if !ok {
 		t.Fatal("report not stored in manifest")
 	}
-	if report.Status != "complete" {
-		t.Errorf("status = %q, want %q", report.Status, "complete")
+	if report.Status != StatusComplete {
+		t.Errorf("status = %q, want %q", report.Status, StatusComplete)
 	}
 	if report.Commit != "deadbeef" {
 		t.Errorf("commit = %q, want %q", report.Commit, "deadbeef")
