@@ -22,6 +22,175 @@ type IMPLFileConflict struct {
 	Repos []string `json:"repos,omitempty"`
 }
 
+// WaveConflict describes a file owned by multiple IMPLs in the same wave number.
+type WaveConflict struct {
+	File    string   `json:"file"              yaml:"file"`
+	WaveNum int      `json:"wave_num"          yaml:"wave_num"`
+	Impls   []string `json:"impls"             yaml:"impls"`
+	Repos   []string `json:"repos,omitempty"   yaml:"repos,omitempty"`
+}
+
+// WaveConflictReport extends ConflictReport with per-wave analysis.
+// ConflictReport fields are still populated for backwards compatibility.
+// WaveConflicts contains only concurrent-wave-level conflicts.
+// SerialWaves maps each IMPL slug to the wave numbers that must serialize.
+type WaveConflictReport struct {
+	ConflictReport
+	WaveConflicts []WaveConflict   `json:"wave_conflicts" yaml:"wave_conflicts"`
+	SerialWaves   map[string][]int `json:"serial_waves"   yaml:"serial_waves"`
+}
+
+// buildWaveFileOwnershipMap builds a per-wave file ownership index.
+// implDocs maps slug -> *IMPLManifest.
+// Returns: map[waveNum]map[qualifiedFile][]slug
+func buildWaveFileOwnershipMap(implDocs map[string]*IMPLManifest) map[int]map[string][]string {
+	result := make(map[int]map[string][]string)
+	for slug, manifest := range implDocs {
+		for _, fo := range manifest.FileOwnership {
+			waveNum := fo.Wave
+			if waveNum == 0 {
+				waveNum = 1 // default
+			}
+			key := fo.File
+			if fo.Repo != "" {
+				key = fo.Repo + ":" + fo.File
+			}
+			if result[waveNum] == nil {
+				result[waveNum] = make(map[string][]string)
+			}
+			// deduplicate slugs per file per wave
+			found := false
+			for _, existing := range result[waveNum][key] {
+				if existing == slug {
+					found = true
+					break
+				}
+			}
+			if !found {
+				result[waveNum][key] = append(result[waveNum][key], slug)
+			}
+		}
+	}
+	return result
+}
+
+// CheckIMPLConflictsWaveLevel performs wave-aware cross-IMPL conflict detection.
+// It replaces the coarse IMPL-level check used in GenerateProgramFromIMPLs.
+// implSlugs: IMPL slugs to analyze
+// repoPath: repository root
+// Returns WaveConflictReport, which embeds ConflictReport for backwards compat.
+func CheckIMPLConflictsWaveLevel(implSlugs []string, repoPath string) (*WaveConflictReport, error) {
+	// Step 1: Run existing IMPL-level check for backwards compat
+	implReport, err := CheckIMPLConflicts(implSlugs, repoPath)
+	if err != nil {
+		return nil, err
+	}
+
+	// Step 2: Load all IMPL docs
+	implDocs := make(map[string]*IMPLManifest)
+	for _, slug := range implSlugs {
+		implPath, err := resolveIMPLPathOrAbs(repoPath, slug)
+		if err != nil {
+			return nil, fmt.Errorf("cannot resolve IMPL %q: %w", slug, err)
+		}
+		manifest, err := Load(implPath)
+		if err != nil {
+			return nil, fmt.Errorf("cannot load IMPL %q: %w", slug, err)
+		}
+		implDocs[slug] = manifest
+	}
+
+	// Step 3: Build per-wave ownership map
+	waveOwnership := buildWaveFileOwnershipMap(implDocs)
+
+	// Step 4: Detect wave-level conflicts
+	var waveConflicts []WaveConflict
+	// wave1ConflictMap is used for tier suggestion: only Wave 1 conflicts determine tier separation.
+	// Later-wave conflicts are captured in SerialWaves — the IMPLs remain in the same tier.
+	wave1ConflictMap := make(map[string]map[string]bool) // slug -> set of conflicting slugs (wave 1 only)
+
+	// Sort wave numbers for deterministic output
+	var waveNums []int
+	for wn := range waveOwnership {
+		waveNums = append(waveNums, wn)
+	}
+	sort.Ints(waveNums)
+
+	for _, wn := range waveNums {
+		fileMap := waveOwnership[wn]
+		// Sort files for deterministic output
+		var files []string
+		for f := range fileMap {
+			files = append(files, f)
+		}
+		sort.Strings(files)
+
+		for _, file := range files {
+			owners := fileMap[file]
+			if len(owners) > 1 {
+				sorted := make([]string, len(owners))
+				copy(sorted, owners)
+				sort.Strings(sorted)
+				waveConflicts = append(waveConflicts, WaveConflict{
+					File:    file,
+					WaveNum: wn,
+					Impls:   sorted,
+				})
+				// Only Wave 1 conflicts affect tier assignment.
+				// Later-wave conflicts are serialized within a tier via SerialWaves.
+				if wn == 1 {
+					for _, a := range sorted {
+						for _, b := range sorted {
+							if a != b {
+								if wave1ConflictMap[a] == nil {
+									wave1ConflictMap[a] = make(map[string]bool)
+								}
+								wave1ConflictMap[a][b] = true
+							}
+						}
+					}
+				}
+			}
+		}
+	}
+
+	// Step 5: Build SerialWaves: for each slug, which wave numbers need serialization
+	serialWaves := make(map[string][]int)
+	for _, wc := range waveConflicts {
+		for _, slug := range wc.Impls {
+			// Check if wc.WaveNum already in serialWaves[slug]
+			found := false
+			for _, existing := range serialWaves[slug] {
+				if existing == wc.WaveNum {
+					found = true
+					break
+				}
+			}
+			if !found {
+				serialWaves[slug] = append(serialWaves[slug], wc.WaveNum)
+			}
+		}
+	}
+	// Sort serial wave numbers for determinism
+	for slug := range serialWaves {
+		sort.Ints(serialWaves[slug])
+	}
+
+	// Step 6: Compute wave-level TierSuggestion (override IMPL-level suggestion)
+	// Only Wave 1 conflicts drive tier separation. Two IMPLs whose first waves are
+	// disjoint can share tier 1 — their later-wave conflicts are handled via SerialWaves.
+	waveTierSuggestion := computeTierSuggestion(implSlugs, wave1ConflictMap)
+
+	// Override TierSuggestion in the embedded ConflictReport with wave-level result
+	implReport.TierSuggestion = waveTierSuggestion
+
+	return &WaveConflictReport{
+		ConflictReport: *implReport,
+		WaveConflicts:  waveConflicts,
+		SerialWaves:    serialWaves,
+	}, nil
+}
+
 // CheckIMPLConflicts loads IMPL docs and performs cross-IMPL disjointness analysis.
 // implRefs: list of IMPL slugs or absolute paths to analyze
 // repoPath: repository root for resolving slug-based refs
