@@ -1,0 +1,860 @@
+title: 'Semantic Code Index'
+feature_slug: semantic-code-index
+verdict: SUITABLE
+suitability_assessment: |
+  File decomposition: 9+ distinct new files across 2 packages (pkg/codeindex/,
+  cmd/sawtools/), cleanly partitioned into types/schema, storage/query, parser/indexer,
+  and CLI layers. Disjoint ownership is achievable.
+
+  Investigation-first items: None. Design doc fully specifies the schema, storage,
+  CLI interface, and integration points. No root cause analysis needed.
+
+  Interface discoverability: All cross-agent interfaces are defined by the design doc.
+  Symbol, Ref, IndexDB types can be fully specified before implementation starts.
+  The SQLite schema and query layer contract is deterministic.
+
+  Pre-implementation status: Feature is entirely unimplemented as of 2026-03-25
+  (confirmed by design doc status note). No pkg/codeindex/ package exists, no
+  tree-sitter dependency, no index-codebase or query-symbols CLI commands.
+
+  Parallelization value: 4 agents, build/test cycle ~30s for Go, average 3+ files
+  per agent. Wave 1 (types/schema) runs alone and is fast; Wave 2 (storage + parser)
+  parallelizes the two heaviest implementation tasks; Wave 3 (CLI) and integration
+  are sequential but light. Clear speedup over sequential.
+
+  Note: github.com/tree-sitter/go-tree-sitter and tree-sitter language grammars
+  (tree-sitter-go grammar package) are NOT currently in go.mod. Agent C must
+  run `go get` to add them, or the indexer must be written to use a fallback
+  go/ast-based approach when tree-sitter is unavailable. Given the design doc
+  explicitly requires the official CGo-free binding, Agent C must add the
+  dependency. This is documented as a risk below.
+
+  Tier scope: This IMPL covers Tier 1 only (index schema + query layer + Go grammar
+  + CLI + scaffolded Scout integration). Tier 2 (TypeScript, Python, Rust grammars +
+  E25 wiring) is out of scope.
+
+  Estimated times:
+  - Scout phase: ~10 min (dependency mapping, interface contracts, IMPL doc)
+  - Agent execution: ~40 min (4 agents x ~10 min avg, accounting for parallelism in wave 2)
+  - Merge and verification: ~5 min
+  Total SAW time: ~55 min
+
+  Sequential baseline: ~80 min (4 agents x 20 min avg sequential)
+  Time savings: ~25 min (~31% faster)
+
+  Recommendation: Clear speedup. Proceed with parallelization.
+
+test_command: go test ./...
+lint_command: go vet ./...
+state: SCOUT_PENDING
+
+quality_gates:
+  level: standard
+  gates:
+    - type: build
+      command: go build ./...
+      required: true
+    - type: lint
+      command: go vet ./...
+      required: true
+    - type: test
+      command: go test ./...
+      required: true
+
+scaffolds:
+  - file: pkg/codeindex/types.go
+    contents: |
+      // Symbol, Ref, IndexDB, QueryFilter types for cross-agent use.
+      // Agent A owns this file and defines all shared types.
+    import_path: github.com/blackwell-systems/scout-and-wave-go/pkg/codeindex
+    status: pending
+
+file_ownership:
+  # Wave 1: Foundation types
+  - file: pkg/codeindex/types.go
+    agent: A
+    wave: 1
+    action: new
+    depends_on: []
+
+  - file: pkg/codeindex/schema.go
+    agent: A
+    wave: 1
+    action: new
+    depends_on: []
+
+  # Wave 2: Storage + Query (Agent B) and Parser + Indexer (Agent C) — parallel
+  - file: pkg/codeindex/store.go
+    agent: B
+    wave: 2
+    action: new
+    depends_on: [A]
+
+  - file: pkg/codeindex/query.go
+    agent: B
+    wave: 2
+    action: new
+    depends_on: [A]
+
+  - file: pkg/codeindex/store_test.go
+    agent: B
+    wave: 2
+    action: new
+    depends_on: [A]
+
+  - file: pkg/codeindex/go_parser.go
+    agent: C
+    wave: 2
+    action: new
+    depends_on: [A]
+
+  - file: pkg/codeindex/indexer.go
+    agent: C
+    wave: 2
+    action: new
+    depends_on: [A]
+
+  - file: pkg/codeindex/go_parser_test.go
+    agent: C
+    wave: 2
+    action: new
+    depends_on: [A]
+
+  # Wave 3: CLI commands
+  - file: cmd/sawtools/index_codebase_cmd.go
+    agent: D
+    wave: 3
+    action: new
+    depends_on: [B, C]
+
+  - file: cmd/sawtools/query_symbols_cmd.go
+    agent: D
+    wave: 3
+    action: new
+    depends_on: [B, C]
+
+  - file: cmd/sawtools/index_codebase_cmd_test.go
+    agent: D
+    wave: 3
+    action: new
+    depends_on: []
+
+  # Wave 4: Integration — wire CLI into main.go
+  - file: cmd/sawtools/main.go
+    agent: E
+    wave: 4
+    action: modify
+    depends_on: [D]
+
+interface_contracts:
+  - name: Symbol
+    description: Per-symbol data extracted from source files
+    definition: |
+      type Symbol struct {
+          Name      string // e.g. "RegisterHandler"
+          Kind      string // "function" | "type" | "interface" | "method" | "const" | "var"
+          File      string // relative path, e.g. "pkg/api/routes.go"
+          Line      int
+          Exported  bool
+          Signature string // e.g. "func RegisterHandler(mux *http.ServeMux, h Handler)"
+          Package   string // Go package path, e.g. "pkg/api"
+          Callers   []Ref
+          CallsTo   []Ref
+      }
+    location: pkg/codeindex/types.go
+
+  - name: Ref
+    description: A reference (caller or callee) to/from a symbol
+    definition: |
+      type Ref struct {
+          File string
+          Line int
+          Name string // symbol name at reference site
+      }
+    location: pkg/codeindex/types.go
+
+  - name: IndexDB
+    description: Handle to an open symbol index (wraps sql.DB)
+    definition: |
+      type IndexDB struct {
+          db   *sql.DB
+          path string
+      }
+
+      // Open opens or creates a symbol index at path.
+      func Open(path string) (*IndexDB, error)
+
+      // Close closes the underlying database connection.
+      func (idx *IndexDB) Close() error
+    location: pkg/codeindex/store.go
+
+  - name: QueryFilter
+    description: Filters for symbol queries
+    definition: |
+      type QueryFilter struct {
+          Kind     string // filter by kind ("function", "type", etc.) — empty = any
+          Exported *bool  // nil = any, true = exported only, false = unexported only
+          Package  string // filter by package path prefix — empty = any
+          Name     string // exact name filter — empty = any
+      }
+    location: pkg/codeindex/types.go
+
+  - name: IndexFile
+    description: Index all symbols in a single source file into an open IndexDB
+    definition: |
+      // IndexFile parses src (Go source) and inserts extracted symbols into idx.
+      // lang must be "go" (only Go is supported in Tier 1).
+      func IndexFile(idx *IndexDB, repoRoot, filePath, lang string) error
+    location: pkg/codeindex/indexer.go
+
+  - name: IndexRepo
+    description: Walk a repository and index all Go source files
+    definition: |
+      // IndexRepo walks repoRoot, discovers all .go files (skipping vendor/ and
+      // _test.go files unless includeTests is true), and calls IndexFile for each.
+      // Returns count of files indexed and any accumulated errors.
+      func IndexRepo(idx *IndexDB, repoRoot string, langs []string, includeTests bool) (int, error)
+    location: pkg/codeindex/indexer.go
+
+  - name: QuerySymbols
+    description: Query symbols from an open IndexDB with filters
+    definition: |
+      // QuerySymbols returns all symbols matching filter. If filter is zero value,
+      // returns all symbols. Results are sorted by File, then Line.
+      func QuerySymbols(idx *IndexDB, filter QueryFilter) ([]Symbol, error)
+    location: pkg/codeindex/query.go
+
+  - name: QueryCallers
+    description: Find all caller references for a named symbol
+    definition: |
+      // QueryCallers returns all Ref entries where the symbol Name matches symbolName.
+      // Searches the references table for callee_name = symbolName.
+      func QueryCallers(idx *IndexDB, symbolName string) ([]Ref, error)
+    location: pkg/codeindex/query.go
+
+  - name: QueryUnusedExports
+    description: Find exported symbols with no recorded callers
+    definition: |
+      // QueryUnusedExports returns exported symbols that have no entries in the
+      // references table as callee. Useful for E25 integration detection.
+      func QueryUnusedExports(idx *IndexDB, packagePrefix string) ([]Symbol, error)
+    location: pkg/codeindex/query.go
+
+  - name: ParseGoFile
+    description: Parse a single Go source file and return extracted symbols
+    definition: |
+      // ParseGoFile reads the Go source file at absPath and extracts all top-level
+      // symbols (functions, types, methods, consts, vars). repoRoot is used to
+      // compute relative file paths stored in Symbol.File. Returns extracted
+      // symbols; does not write to any database.
+      func ParseGoFile(repoRoot, absPath string) ([]Symbol, error)
+    location: pkg/codeindex/go_parser.go
+
+  - name: newIndexCodesbaseCmd
+    description: Cobra command constructor for index-codebase
+    definition: |
+      func newIndexCodebaseCmd() *cobra.Command
+      // Flags: --repo-dir string (default "."), --lang string (default "go"),
+      //        --output string (default "$repo-dir/.saw-index/symbols.db"),
+      //        --include-tests bool (default false)
+    location: cmd/sawtools/index_codebase_cmd.go
+
+  - name: newQuerySymbolsCmd
+    description: Cobra command constructor for query-symbols
+    definition: |
+      func newQuerySymbolsCmd() *cobra.Command
+      // Flags: --repo-dir string (default "."), --kind string, --exported bool,
+      //        --package string, --callers-of string, --unused-exports bool,
+      //        --format string (default "table", also "json")
+    location: cmd/sawtools/query_symbols_cmd.go
+
+waves:
+  - number: 1
+    agents:
+      - id: A
+        task: |
+          ## Context
+
+          You are implementing the foundation types and SQLite schema for the semantic
+          code index feature in pkg/codeindex/. This is a brand-new package — no files
+          exist yet.
+
+          ## What to implement
+
+          Create two new files:
+
+          ### pkg/codeindex/types.go
+
+          Define all shared types used across the package:
+
+          ```go
+          package codeindex
+
+          // Ref is a reference to a symbol (caller or callee location).
+          type Ref struct {
+              File string // relative path from repo root
+              Line int
+              Name string // symbol name at reference site
+          }
+
+          // Symbol represents a code symbol extracted from a source file.
+          type Symbol struct {
+              Name      string   // e.g. "RegisterHandler"
+              Kind      string   // "function" | "type" | "interface" | "method" | "const" | "var"
+              File      string   // relative path from repo root, e.g. "pkg/api/routes.go"
+              Line      int
+              Exported  bool
+              Signature string   // full signature string
+              Package   string   // Go package path, e.g. "github.com/foo/bar/pkg/api"
+              Callers   []Ref
+              CallsTo   []Ref
+          }
+
+          // QueryFilter specifies filters for symbol queries.
+          type QueryFilter struct {
+              Kind     string // filter by kind — empty = any
+              Exported *bool  // nil = any
+              Package  string // package path prefix filter — empty = any
+              Name     string // exact name filter — empty = any
+          }
+          ```
+
+          ### pkg/codeindex/schema.go
+
+          Define the SQLite schema constants:
+
+          ```go
+          package codeindex
+
+          // Schema is the SQL DDL for the symbols and references tables.
+          const Schema = `
+          CREATE TABLE IF NOT EXISTS symbols (
+              id          INTEGER PRIMARY KEY AUTOINCREMENT,
+              name        TEXT NOT NULL,
+              kind        TEXT NOT NULL,
+              file        TEXT NOT NULL,
+              line        INTEGER NOT NULL,
+              exported    INTEGER NOT NULL DEFAULT 0,
+              signature   TEXT NOT NULL DEFAULT '',
+              package     TEXT NOT NULL DEFAULT ''
+          );
+          CREATE INDEX IF NOT EXISTS idx_symbols_name    ON symbols(name);
+          CREATE INDEX IF NOT EXISTS idx_symbols_kind    ON symbols(kind);
+          CREATE INDEX IF NOT EXISTS idx_symbols_file    ON symbols(file);
+          CREATE INDEX IF NOT EXISTS idx_symbols_package ON symbols(package);
+          CREATE INDEX IF NOT EXISTS idx_symbols_exported ON symbols(exported);
+
+          CREATE TABLE IF NOT EXISTS references (
+              id           INTEGER PRIMARY KEY AUTOINCREMENT,
+              symbol_id    INTEGER NOT NULL REFERENCES symbols(id) ON DELETE CASCADE,
+              ref_type     TEXT NOT NULL,    -- "caller" or "callee"
+              callee_name  TEXT NOT NULL DEFAULT '',
+              ref_file     TEXT NOT NULL,
+              ref_line     INTEGER NOT NULL
+          );
+          CREATE INDEX IF NOT EXISTS idx_refs_symbol_id  ON references(symbol_id);
+          CREATE INDEX IF NOT EXISTS idx_refs_callee_name ON references(callee_name);
+          `
+          ```
+
+          ## Tests
+
+          Write a small test file `pkg/codeindex/types_test.go` that verifies:
+          - Symbol struct has all expected fields (compile-time check is sufficient)
+          - QueryFilter zero value works as expected (all filters empty/nil)
+
+          ## Verification gate
+
+          ```
+          go build ./pkg/codeindex/...
+          go vet ./pkg/codeindex/...
+          go test ./pkg/codeindex/...
+          ```
+
+          ## Constraints
+
+          - Package name must be `codeindex`
+          - Do NOT import modernc.org/sqlite in types.go or schema.go — schema.go
+            only holds string constants; store.go (owned by Agent B) handles the DB
+          - Do NOT create store.go, query.go, go_parser.go, or indexer.go — those
+            are owned by other agents
+          - Follow existing project patterns: pure Go, no CGo, table-driven tests
+        files:
+          - pkg/codeindex/types.go
+          - pkg/codeindex/schema.go
+        dependencies: []
+
+  - number: 2
+    agents:
+      - id: B
+        task: |
+          ## Context
+
+          You are implementing the SQLite storage and query layer for the semantic code
+          index in pkg/codeindex/. Agent A (wave 1) has already created:
+          - pkg/codeindex/types.go — Symbol, Ref, QueryFilter types
+          - pkg/codeindex/schema.go — Schema constant (DDL string)
+
+          Read both files before implementing.
+
+          ## What to implement
+
+          ### pkg/codeindex/store.go
+
+          ```go
+          package codeindex
+
+          import (
+              "database/sql"
+              "fmt"
+              _ "modernc.org/sqlite"
+          )
+
+          // IndexDB is a handle to an open symbol index backed by SQLite.
+          type IndexDB struct {
+              db   *sql.DB
+              path string
+          }
+
+          // Open opens or creates a symbol index at path (creates directories as needed).
+          // Applies the Schema DDL and enables WAL mode.
+          func Open(path string) (*IndexDB, error)
+
+          // Close closes the underlying database connection.
+          func (idx *IndexDB) Close() error
+
+          // InsertSymbol inserts a Symbol into the symbols table and inserts its
+          // Callers and CallsTo entries into the references table.
+          // Returns the assigned symbol ID.
+          func (idx *IndexDB) InsertSymbol(sym Symbol) (int64, error)
+
+          // ClearFile deletes all symbols (and their references via CASCADE) for a
+          // given file path. Used for incremental re-indexing.
+          func (idx *IndexDB) ClearFile(filePath string) error
+          ```
+
+          Use `sql.Open("sqlite", path)` with `PRAGMA journal_mode=WAL` — same
+          pattern as pkg/observability/sqlite/sqlite.go (read that file for reference).
+
+          ### pkg/codeindex/query.go
+
+          ```go
+          package codeindex
+
+          // QuerySymbols returns symbols matching filter, sorted by file then line.
+          // Zero-value filter returns all symbols.
+          func QuerySymbols(idx *IndexDB, filter QueryFilter) ([]Symbol, error)
+
+          // QueryCallers returns all Ref entries where callee_name = symbolName.
+          func QueryCallers(idx *IndexDB, symbolName string) ([]Ref, error)
+
+          // QueryUnusedExports returns exported symbols with no callee references.
+          // If packagePrefix is non-empty, restricts to symbols whose package starts
+          // with that prefix.
+          func QueryUnusedExports(idx *IndexDB, packagePrefix string) ([]Symbol, error)
+          ```
+
+          Implementation notes:
+          - QuerySymbols: build WHERE clause dynamically from non-zero filter fields;
+            use `exported = 1` / `exported = 0` for the boolean filter
+          - QueryCallers: JOIN symbols s ON s.id = r.symbol_id WHERE r.callee_name = ?
+            AND r.ref_type = 'caller' — return Ref{File: r.ref_file, Line: r.ref_line, Name: symbolName}
+          - QueryUnusedExports: LEFT JOIN references r ON r.symbol_id = s.id AND
+            r.ref_type = 'caller' WHERE s.exported = 1 AND r.id IS NULL
+
+          ### pkg/codeindex/store_test.go
+
+          Write table-driven tests covering:
+          - Open creates DB and applies schema (tables exist)
+          - InsertSymbol round-trips a Symbol (insert then QuerySymbols by name)
+          - ClearFile removes the symbol from DB
+          - QueryFilter by kind, exported, package
+          - QueryCallers finds the inserted caller ref
+          - QueryUnusedExports finds an exported symbol with no callers
+
+          Use an in-memory SQLite path (":memory:") for tests.
+
+          ## Verification gate
+
+          ```
+          go build ./pkg/codeindex/...
+          go vet ./pkg/codeindex/...
+          go test ./pkg/codeindex/... -run TestStore
+          go test ./pkg/codeindex/... -run TestQuery
+          ```
+
+          ## Constraints
+
+          - Do NOT create types.go, schema.go, go_parser.go, or indexer.go
+          - Import path: `modernc.org/sqlite` (already in go.mod)
+          - Follow the same Open/WAL/schema pattern as pkg/observability/sqlite/sqlite.go
+          - InsertSymbol must be transactional: if reference inserts fail, roll back
+            the symbol insert
+        files:
+          - pkg/codeindex/store.go
+          - pkg/codeindex/query.go
+          - pkg/codeindex/store_test.go
+        dependencies:
+          - A
+
+      - id: C
+        task: |
+          ## Context
+
+          You are implementing the Go source parser and index-building orchestrator for
+          the semantic code index in pkg/codeindex/. Agent A (wave 1) has already created:
+          - pkg/codeindex/types.go — Symbol, Ref, QueryFilter types
+          - pkg/codeindex/schema.go — Schema constant
+
+          Read both files before implementing.
+
+          ## What to implement
+
+          ### pkg/codeindex/go_parser.go
+
+          Parse Go source files using the standard library `go/ast` and `go/parser`
+          packages (NOT tree-sitter — the tree-sitter Go binding is not yet in go.mod;
+          use go/ast for Tier 1). The design doc's tree-sitter requirement is for the
+          external language grammars in Tier 2; for Go, go/ast is the idiomatic,
+          zero-dependency equivalent.
+
+          ```go
+          package codeindex
+
+          import (
+              "go/ast"
+              "go/parser"
+              "go/token"
+              "strings"
+          )
+
+          // ParseGoFile reads the Go source at absPath and extracts all top-level symbols.
+          // repoRoot is used to compute relative file paths stored in Symbol.File.
+          // Does not populate Callers or CallsTo (reference analysis is future work).
+          func ParseGoFile(repoRoot, absPath string) ([]Symbol, error)
+          ```
+
+          Symbol extraction rules:
+          - `*ast.FuncDecl` with no receiver → Kind: "function"
+          - `*ast.FuncDecl` with receiver → Kind: "method"
+          - `*ast.GenDecl` CONST token → Kind: "const" (one Symbol per Spec)
+          - `*ast.GenDecl` VAR token → Kind: "var"
+          - `*ast.GenDecl` TYPE token:
+            - If underlying type is `*ast.InterfaceType` → Kind: "interface"
+            - Otherwise → Kind: "type"
+          - Exported: `ast.IsExported(name)`
+          - Signature: reconstruct from the AST node (use `go/format` or manual
+            string construction); for functions, the full `func Name(params) returns` string
+          - Package: read the `package` declaration from the file; prefix with the
+            module path derived from repoRoot/go.mod if present; fallback to
+            directory-relative path
+          - Line: `fset.Position(node.Pos()).Line`
+
+          ### pkg/codeindex/indexer.go
+
+          ```go
+          package codeindex
+
+          import (
+              "fmt"
+              "io/fs"
+              "os"
+              "path/filepath"
+              "strings"
+          )
+
+          // IndexFile parses a single source file and inserts extracted symbols into idx.
+          // lang must be "go" (Tier 1 only). Returns error if parsing fails.
+          func IndexFile(idx *IndexDB, repoRoot, filePath, lang string) error
+
+          // IndexRepo walks repoRoot, discovers source files for the specified langs
+          // (Tier 1: only "go" is supported), and calls IndexFile for each.
+          // Skips vendor/, testdata/, and _test.go files unless includeTests is true.
+          // Returns count of files indexed and any accumulated non-fatal errors.
+          func IndexRepo(idx *IndexDB, repoRoot string, langs []string, includeTests bool) (int, error)
+          ```
+
+          IndexFile implementation:
+          1. Switch on lang; return fmt.Errorf("unsupported language: %s", lang) for
+             non-"go" values
+          2. Call ParseGoFile(repoRoot, absPath)
+          3. For each Symbol, call idx.InsertSymbol(sym)
+
+          IndexRepo implementation:
+          1. Walk with filepath.WalkDir
+          2. Skip vendor/, .git/, testdata/ directories
+          3. For "go": match `*.go` files; skip `*_test.go` unless includeTests
+          4. Call IndexFile for each matched file; accumulate errors (don't abort on
+             single-file parse failure)
+          5. Return (count, joined errors)
+
+          ### pkg/codeindex/go_parser_test.go
+
+          Write table-driven tests:
+          - Parse a simple inline Go source (write to a temp file) with a function,
+            a type, an interface, and a const; verify all 4 symbols are extracted
+          - Verify Exported field is correct for exported vs unexported names
+          - Verify Kind is correct for each declaration type
+          - Verify Line numbers are > 0
+
+          ## Verification gate
+
+          ```
+          go build ./pkg/codeindex/...
+          go vet ./pkg/codeindex/...
+          go test ./pkg/codeindex/... -run TestParse
+          go test ./pkg/codeindex/... -run TestIndex
+          ```
+
+          ## Constraints
+
+          - Do NOT import github.com/tree-sitter/go-tree-sitter — use go/ast (standard library)
+          - Do NOT create types.go, schema.go, store.go, or query.go
+          - Do NOT modify go.mod — all dependencies used (go/ast, go/parser, go/token,
+            go/format, path/filepath, io/fs) are standard library
+          - IndexRepo must not abort on a single bad file — accumulate and return errors
+          - Follow project table-driven test patterns (testify/require for assertions)
+        files:
+          - pkg/codeindex/go_parser.go
+          - pkg/codeindex/indexer.go
+          - pkg/codeindex/go_parser_test.go
+        dependencies:
+          - A
+
+  - number: 3
+    agents:
+      - id: D
+        task: |
+          ## Context
+
+          You are implementing two new CLI commands for the sawtools binary. Agents A,
+          B, and C (waves 1-2) have already created the pkg/codeindex/ package with:
+          - types.go — Symbol, Ref, QueryFilter
+          - schema.go — Schema DDL constant
+          - store.go — Open, Close, InsertSymbol, ClearFile (IndexDB type)
+          - query.go — QuerySymbols, QueryCallers, QueryUnusedExports
+          - go_parser.go — ParseGoFile
+          - indexer.go — IndexFile, IndexRepo
+
+          Read ALL of those files before implementing your commands.
+
+          ## What to implement
+
+          ### cmd/sawtools/index_codebase_cmd.go
+
+          ```go
+          package main
+
+          import (
+              "fmt"
+              "path/filepath"
+
+              "github.com/blackwell-systems/scout-and-wave-go/pkg/codeindex"
+              "github.com/spf13/cobra"
+          )
+
+          func newIndexCodebaseCmd() *cobra.Command
+          ```
+
+          Command spec:
+          - Use: `index-codebase`
+          - Short: `Build or rebuild the symbol index for a repository`
+          - Flags:
+            - `--repo-dir string` (default ".", repository root)
+            - `--lang string` (default "go", comma-separated language list)
+            - `--output string` (default `<repo-dir>/.saw-index/symbols.db`)
+            - `--include-tests bool` (default false)
+          - Logic:
+            1. Resolve repo-dir to absolute path
+            2. Open (or create) the index DB at output path
+               (create parent directories with os.MkdirAll)
+            3. Call codeindex.IndexRepo(idx, absRepoDir, langs, includeTests)
+            4. Print: `Indexed N files. Symbol index at: <output-path>`
+            5. Return any errors
+          - Exit codes: 0 = success, non-zero = error (cobra handles this)
+
+          ### cmd/sawtools/query_symbols_cmd.go
+
+          ```go
+          package main
+
+          import (
+              "encoding/json"
+              "fmt"
+              "strings"
+              "text/tabwriter"
+
+              "github.com/blackwell-systems/scout-and-wave-go/pkg/codeindex"
+              "github.com/spf13/cobra"
+          )
+
+          func newQuerySymbolsCmd() *cobra.Command
+          ```
+
+          Command spec:
+          - Use: `query-symbols`
+          - Short: `Query the symbol index for a repository`
+          - Flags:
+            - `--repo-dir string` (default ".")
+            - `--kind string` (filter by kind: function, type, interface, method, const, var)
+            - `--exported` (bool flag, filter exported-only when set)
+            - `--package string` (package path prefix filter)
+            - `--name string` (exact name filter)
+            - `--callers-of string` (find callers of this symbol name)
+            - `--unused-exports` (bool flag, find exported symbols with no callers)
+            - `--format string` (default "table", also "json")
+          - Logic:
+            1. Resolve repo-dir; construct DB path: `<repo-dir>/.saw-index/symbols.db`
+            2. Open the index DB (error if not found — user must run index-codebase first)
+            3. Dispatch:
+               - If `--callers-of` is set: call QueryCallers, print results
+               - Else if `--unused-exports` is set: call QueryUnusedExports(idx, packageFlag)
+               - Else: build QueryFilter from flags, call QuerySymbols
+            4. Format output:
+               - `--format table`: use text/tabwriter with columns: NAME KIND FILE:LINE EXPORTED PACKAGE
+               - `--format json`: json.MarshalIndent the results array
+            5. Print to stdout; return errors
+
+          ### cmd/sawtools/index_codebase_cmd_test.go
+
+          Write at least 2 tests:
+          - TestIndexCodebaseCmd_help: run command with --help, verify no error and
+            usage text contains "index-codebase"
+          - TestIndexCodebaseCmd_smokeSmallRepo: use a temp directory, write a simple
+            .go file, run newIndexCodebaseCmd().RunE against it, verify DB is created
+
+          ## Verification gate
+
+          ```
+          go build ./cmd/sawtools/...
+          go vet ./cmd/sawtools/...
+          go test ./cmd/sawtools/... -run TestIndexCodebase
+          go test ./cmd/sawtools/... -run TestQuerySymbols
+          ```
+
+          ## Constraints
+
+          - Do NOT modify main.go — that is owned by Agent E (integration wave)
+          - Function names MUST be newIndexCodebaseCmd and newQuerySymbolsCmd (exact)
+          - Do NOT add tree-sitter to go.mod — the pkg/codeindex package uses go/ast
+          - Follow existing cmd/sawtools/ command patterns: cobra.Command, --repo-dir
+            flag, RunE (not Run), return errors rather than os.Exit
+          - For the DB path default, use filepath.Join(absRepoDir, ".saw-index", "symbols.db")
+        files:
+          - cmd/sawtools/index_codebase_cmd.go
+          - cmd/sawtools/query_symbols_cmd.go
+          - cmd/sawtools/index_codebase_cmd_test.go
+        dependencies:
+          - B
+          - C
+
+  - number: 4
+    type: integration
+    agents:
+      - id: E
+        task: |
+          ## Context
+
+          You are wiring the two new CLI commands into main.go. Agents A-D have
+          completed the implementation. The commands are:
+
+          - newIndexCodebaseCmd() in cmd/sawtools/index_codebase_cmd.go
+          - newQuerySymbolsCmd() in cmd/sawtools/query_symbols_cmd.go
+
+          ## What to implement
+
+          In cmd/sawtools/main.go, locate the rootCmd.AddCommand(...) call and add
+          two new entries:
+
+          ```go
+          newIndexCodebaseCmd(),
+          newQuerySymbolsCmd(),
+          ```
+
+          Add them after the existing newVerifyInstallCmd() line (near the end of the
+          AddCommand block), with a comment:
+          ```go
+          // Semantic code index (Tier 1)
+          newIndexCodebaseCmd(),
+          newQuerySymbolsCmd(),
+          ```
+
+          Read main.go before editing. Do NOT reorder existing commands. Do NOT change
+          any other lines.
+
+          ## Verification gate
+
+          ```
+          go build ./cmd/sawtools/...
+          go vet ./cmd/sawtools/...
+          sawtools index-codebase --help
+          sawtools query-symbols --help
+          ```
+
+          ## Constraints
+
+          - Modify ONLY main.go (the AddCommand block)
+          - Do not modify any other files
+        files:
+          - cmd/sawtools/main.go
+        dependencies:
+          - D
+
+pre_mortem:
+  overall_risk: medium
+  rows:
+    - scenario: >
+        go-tree-sitter module not in go.mod. The design doc specifies
+        github.com/tree-sitter/go-tree-sitter but Agent C uses go/ast instead.
+        If a later tier adds go-tree-sitter, it may conflict with go/ast-based
+        Symbol extraction logic in go_parser.go.
+      likelihood: low
+      impact: medium
+      mitigation: >
+        Agent C is explicitly instructed to use go/ast (standard library) and NOT
+        add go-tree-sitter to go.mod. The go/ast approach is documented as the
+        Tier 1 strategy; Tier 2 would add tree-sitter for non-Go languages.
+        go_parser.go is a single file — replacing its internals in Tier 2 is safe.
+
+    - scenario: >
+        Agent B and Agent C both import pkg/codeindex but run in parallel worktrees.
+        If Agent A's wave 1 does not merge cleanly before wave 2 launches, both
+        agents will see an empty pkg/codeindex/ directory.
+      likelihood: low
+      impact: high
+      mitigation: >
+        Wave structure enforces wave 1 completes and merges before wave 2 launches.
+        Both B and C depend on A. The orchestrator's prepare-wave step verifies
+        the dependency constraint before creating worktrees.
+
+    - scenario: >
+        InsertSymbol in store.go and ParseGoFile in go_parser.go must agree on
+        the Symbol struct field layout. If Agent B writes InsertSymbol before
+        Agent A's types.go is finalized, field mismatches occur.
+      likelihood: low
+      impact: high
+      mitigation: >
+        Agent A owns types.go exclusively (wave 1). B and C both read types.go
+        before implementing (explicit instruction in their prompts). The interface
+        contracts section defines the exact Symbol struct fields as a binding spec.
+
+    - scenario: >
+        QueryCallers JOIN logic in query.go is complex (JOIN on symbol_id +
+        callee_name). Incorrect SQL will pass compilation but fail at test time.
+      likelihood: medium
+      impact: low
+      mitigation: >
+        Agent B's task includes explicit SQL guidance and a test requirement for
+        QueryCallers that inserts a symbol with a caller ref and verifies retrieval.
+        Using ":memory:" SQLite for tests enables fast iteration.
+
+    - scenario: >
+        main.go (Agent E, integration wave) has 100+ AddCommand lines; inserting
+        in the wrong location causes a compile error from a missing comma or
+        mismatched parenthesis.
+      likelihood: low
+      impact: low
+      mitigation: >
+        Agent E is instructed to read main.go before editing and to add after the
+        existing newVerifyInstallCmd() line. The integration wave runs on the merged
+        main branch (no worktree isolation), so the agent has the full current state.

@@ -85,7 +85,7 @@ sawtools query-symbols --repo-dir . --unused-exports --format json
 - `--incremental` flag for fast updates
 
 ### Dependencies
-- `github.com/smacker/go-tree-sitter` — Go bindings for tree-sitter (not yet in go.mod)
+- `github.com/tree-sitter/go-tree-sitter` — Official pure-Go tree-sitter bindings (released 2024, no CGo). **Do NOT use `github.com/smacker/go-tree-sitter`** — that binding uses CGo, which complicates cross-compilation and breaks simple `go build` for the `sawtools` binary (darwin/arm64 or linux/amd64). The official bindings are CGo-free and drop in as a standard Go module.
 - Language grammars: `tree-sitter-go`, `tree-sitter-typescript`, `tree-sitter-python`, `tree-sitter-rust` (not yet in go.mod)
 - `modernc.org/sqlite` — Pure Go SQLite (already in go.mod, used by `pkg/observability/sqlite/`)
 

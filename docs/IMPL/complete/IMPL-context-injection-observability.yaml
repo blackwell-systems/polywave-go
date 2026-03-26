@@ -1,0 +1,680 @@
+completion_date: "2026-03-26"
+title: Context Injection Observability
+feature_slug: context-injection-observability
+verdict: SUITABLE
+suitability_assessment: |-
+    All five suitability gates pass.
+
+    1. File decomposition: The work spans 7 files across two repos (scout-and-wave-go and scout-and-wave).
+       In scout-and-wave-go: pkg/protocol/types.go, pkg/protocol/schema_enum_validation.go, pkg/protocol/schema.go
+       (Agent A wave 1); cmd/sawtools/set_injection_method_cmd.go (Agent B wave 2);
+       cmd/sawtools/main.go (Agent D wave 3). In scout-and-wave: agents/scout.md and saw-skill.md (Agent C wave 2).
+       Four agents across 3 waves with disjoint ownership.
+
+    2. Investigation-first: No crash or race condition to diagnose. The gap is a schema/observability gap
+       with no fields existing yet, so no pre-investigation required.
+
+    3. Interface discoverability: The new types (InjectionMethod, ContextSource) can be defined before
+       implementation. All downstream agents consume them after Agent A's wave merges.
+
+    4. Pre-implementation status: Neither injection_method nor context_source fields exist in types.go.
+       Neither appears in any existing .go files. The feature is 100% TODO.
+
+    5. Parallelization value: Build + test cycle is ~30s. Wave 2 runs Agents B and C in parallel
+       (different repos, fully independent). Wave 3 is a single integration agent that wires B's
+       command into main.go. Total: 4 agents across 3 waves with meaningful parallelism in wave 2.
+
+    Wave structure:
+      Wave 1: [A]              — types, validators, schema struct (scout-and-wave-go)
+                   | (A complete)
+      Wave 2: [B] [C]          — new CLI command (scout-and-wave-go) + prompt updates (scout-and-wave) in parallel
+                   | (B complete)
+      Wave 3: {D}              — type: integration, wire B into main.go (scout-and-wave-go)
+
+    Estimated times:
+    - Scout phase: ~10 min
+    - Agent execution: Wave 1 ~12 min, Wave 2 ~10 min (B+C parallel), Wave 3 ~5 min
+    - Merge and verification: ~8 min total across 3 waves
+    Total SAW time: ~35 min
+
+    Sequential baseline: ~4 agents x 8 min = ~32 min sequential + overhead = ~40 min
+    Time savings: marginal; primary value is coordination and cross-repo audit trail.
+test_command: go test ./... -timeout 120s
+lint_command: go vet ./...
+file_ownership:
+    - file: pkg/protocol/types.go
+      agent: A
+      wave: 1
+      action: modify
+      repo: scout-and-wave-go
+    - file: pkg/protocol/schema_enum_validation.go
+      agent: A
+      wave: 1
+      action: modify
+      repo: scout-and-wave-go
+    - file: pkg/protocol/schema.go
+      agent: A
+      wave: 1
+      action: modify
+      repo: scout-and-wave-go
+    - file: pkg/protocol/schema_enum_validation_test.go
+      agent: A
+      wave: 1
+      action: modify
+      repo: scout-and-wave-go
+    - file: cmd/sawtools/set_injection_method_cmd.go
+      agent: B
+      wave: 2
+      action: new
+      depends_on:
+        - A
+      repo: scout-and-wave-go
+    - file: cmd/sawtools/prepare_agent.go
+      agent: B
+      wave: 2
+      action: modify
+      depends_on:
+        - A
+      repo: scout-and-wave-go
+    - file: cmd/sawtools/set_injection_method_cmd_test.go
+      agent: B
+      wave: 2
+      action: new
+      depends_on:
+        - A
+      repo: scout-and-wave-go
+    - file: implementations/claude-code/prompts/references/scout-implementation-process.md
+      agent: C
+      wave: 2
+      action: modify
+      repo: scout-and-wave
+    - file: implementations/claude-code/prompts/agents/scout.md
+      agent: C
+      wave: 2
+      action: modify
+      repo: scout-and-wave
+    - file: implementations/claude-code/prompts/saw-skill.md
+      agent: C
+      wave: 2
+      action: modify
+      repo: scout-and-wave
+    - file: protocol/execution-rules.md
+      agent: C
+      wave: 2
+      action: modify
+      repo: scout-and-wave
+    - file: cmd/sawtools/main.go
+      agent: D
+      wave: 3
+      action: modify
+      depends_on:
+        - B
+      repo: scout-and-wave-go
+interface_contracts:
+    - name: InjectionMethod
+      description: |-
+        Typed string alias recording how the Scout received its reference file content.
+        Written by the Scout agent to the IMPL doc before completing.
+      definition: |-
+        type InjectionMethod string
+
+        const (
+            InjectionMethodHook           InjectionMethod = "hook"            // validate_agent_launch injected references via updatedInput
+            InjectionMethodManualFallback InjectionMethod = "manual-fallback" // Scout read reference files explicitly (hook absent/failed)
+            InjectionMethodUnknown        InjectionMethod = "unknown"         // Scout did not support this field (old IMPL)
+        )
+      location: pkg/protocol/types.go
+    - name: ContextSource
+      description: |-
+        Typed string alias recording which prompt path the orchestrator used when launching a wave agent.
+        Written by the orchestrator to each Agent entry in the IMPL doc during wave preparation.
+      definition: |-
+        type ContextSource string
+
+        const (
+            ContextSourcePreparedBrief      ContextSource = "prepared-brief"        // .saw-agent-brief.md used (normal path)
+            ContextSourceFallbackFullContext ContextSource = "fallback-full-context" // full IMPL context passed inline (brief inaccessible)
+            ContextSourceCrossRepoFull      ContextSource = "cross-repo-full"       // cross-repo agent, full context payload
+        )
+      location: pkg/protocol/types.go
+    - name: IMPLManifest.InjectionMethod field
+      description: New optional top-level field on IMPLManifest. omitempty for backwards compat.
+      definition: InjectionMethod InjectionMethod `yaml:"injection_method,omitempty" json:"injection_method,omitempty"`
+      location: pkg/protocol/types.go
+    - name: Agent.ContextSource field
+      description: New optional field on Agent struct. omitempty for backwards compat.
+      definition: ContextSource ContextSource `yaml:"context_source,omitempty" json:"context_source,omitempty"`
+      location: pkg/protocol/types.go
+    - name: validateInjectionMethod
+      description: |-
+        Unexported validator for the injection_method top-level field. Warning-only, non-blocking.
+        Called from validateAllEnums().
+      definition: |-
+        func validateInjectionMethod(m *IMPLManifest) []result.SAWError
+        // Valid: "hook", "manual-fallback", "unknown", or empty (absent).
+        // Absent when state is active (not COMPLETE, not empty): warning severity.
+        // Absent when state is COMPLETE or empty: skip entirely.
+        // Present + invalid value: error severity.
+      location: pkg/protocol/schema_enum_validation.go
+    - name: validateAgentContextSource
+      description: |-
+        Unexported validator for context_source on each Agent. Warning-only, non-blocking.
+        Called from validateAllEnums().
+      definition: |-
+        func validateAgentContextSource(m *IMPLManifest) []result.SAWError
+        // Valid: "prepared-brief", "fallback-full-context", "cross-repo-full", or empty (absent).
+        // Absent on agents when state is WAVE_EXECUTING, WAVE_MERGING, or WAVE_VERIFIED: warning.
+        // Absent in other states: skip.
+        // Present + invalid value: error severity.
+      location: pkg/protocol/schema_enum_validation.go
+    - name: newSetInjectionMethodCmd
+      description: |-
+        New sawtools subcommand. Loads IMPL doc, sets InjectionMethod field, saves, prints JSON.
+        Used by Scout agents to record how they received their context.
+      definition: |-
+        func newSetInjectionMethodCmd() *cobra.Command
+        // CLI: sawtools set-injection-method <manifest-path> --method <value>
+        // --method required: one of "hook", "manual-fallback", "unknown"
+        // Output: {"manifest": "<path>", "injection_method": "<value>", "saved": true}
+      location: cmd/sawtools/set_injection_method_cmd.go
+waves:
+    - number: 1
+      agents:
+        - id: A
+          task: |-
+            ## Context
+            You are Agent A in Wave 1 of the context-injection-observability feature.
+            Repository: /Users/dayna.blackwell/code/scout-and-wave-go
+
+            ## What to implement
+
+            ### 1. Add new types and fields to pkg/protocol/types.go
+
+            Read pkg/protocol/types.go first. After the existing MergeState const block
+            (around line 240), add:
+
+            ```go
+            // InjectionMethod records how the Scout agent received its reference file content.
+            // Written by the Scout itself before completing; absent on pre-feature IMPLs.
+            type InjectionMethod string
+
+            const (
+                InjectionMethodHook           InjectionMethod = "hook"            // validate_agent_launch injected references via updatedInput
+                InjectionMethodManualFallback InjectionMethod = "manual-fallback" // Scout read reference files explicitly (hook absent/failed)
+                InjectionMethodUnknown        InjectionMethod = "unknown"         // Scout did not support this field (old IMPL)
+            )
+
+            // ContextSource records which prompt path the orchestrator used when launching a wave agent.
+            // Written by the orchestrator during wave preparation; absent on old agent entries.
+            type ContextSource string
+
+            const (
+                ContextSourcePreparedBrief      ContextSource = "prepared-brief"        // .saw-agent-brief.md used (normal path)
+                ContextSourceFallbackFullContext ContextSource = "fallback-full-context" // full IMPL context passed inline (brief inaccessible)
+                ContextSourceCrossRepoFull      ContextSource = "cross-repo-full"       // cross-repo agent, full context payload
+            )
+            ```
+
+            Add `InjectionMethod` field to the `IMPLManifest` struct (after the CompletionDate field):
+            ```go
+            // InjectionMethod records how the Scout agent received its reference file content.
+            // Written by the Scout itself before completing; absent on pre-feature IMPLs.
+            InjectionMethod InjectionMethod `yaml:"injection_method,omitempty" json:"injection_method,omitempty"`
+            ```
+
+            Add `ContextSource` field to the `Agent` struct (after the Model field):
+            ```go
+            // ContextSource records which prompt path the orchestrator used when launching this agent.
+            // Written by the orchestrator during wave preparation; absent on old agent entries.
+            ContextSource ContextSource `yaml:"context_source,omitempty" json:"context_source,omitempty"`
+            ```
+
+            ### 2. Add validators to pkg/protocol/schema_enum_validation.go
+
+            Read schema_enum_validation.go first to understand the existing pattern.
+            The file has validateAllEnums() calling 4 validators. Add two more calls:
+
+            In validateAllEnums(), append:
+            ```go
+            errs = append(errs, validateInjectionMethod(m)...)
+            errs = append(errs, validateAgentContextSource(m)...)
+            ```
+
+            Add these two new functions after validatePreMortemRowEnums():
+
+            ```go
+            // validateInjectionMethod checks the injection_method top-level field.
+            // Valid values: "hook", "manual-fallback", "unknown", or empty (absent = conditional skip).
+            // Absent when state is active (not COMPLETE, not empty, not NOT_SUITABLE): warning.
+            // Absent when state is COMPLETE, NOT_SUITABLE, or empty string: skip entirely.
+            // Present + invalid value: error.
+            func validateInjectionMethod(m *IMPLManifest) []result.SAWError {
+                var errs []result.SAWError
+
+                validValues := map[string]bool{
+                    "hook":            true,
+                    "manual-fallback": true,
+                    "unknown":         true,
+                }
+
+                if m.InjectionMethod == "" {
+                    // Only warn when IMPL is in an active (non-terminal, non-empty) state
+                    if m.State != "" && m.State != StateComplete && m.State != StateNotSuitable {
+                        errs = append(errs, result.SAWError{
+                            Code:     SV01InvalidEnum,
+                            Severity: "warning",
+                            Message:  "injection_method is absent — Scout should write this field before completing (valid: hook, manual-fallback, unknown)",
+                            Field:    "injection_method",
+                        })
+                    }
+                    return errs
+                }
+
+                if !validValues[string(m.InjectionMethod)] {
+                    errs = append(errs, result.SAWError{
+                        Code:     SV01InvalidEnum,
+                        Severity: "error",
+                        Message:  fmt.Sprintf("injection_method has invalid value %q — must be one of: hook, manual-fallback, unknown", m.InjectionMethod),
+                        Field:    "injection_method",
+                    })
+                }
+
+                return errs
+            }
+
+            // validateAgentContextSource checks context_source on each agent in all waves.
+            // Valid values: "prepared-brief", "fallback-full-context", "cross-repo-full", or empty (absent = conditional skip).
+            // Absent on any agent when state is WAVE_EXECUTING, WAVE_MERGING, or WAVE_VERIFIED: warning.
+            // Absent in other states: skip.
+            // Present + invalid value: error.
+            func validateAgentContextSource(m *IMPLManifest) []result.SAWError {
+                var errs []result.SAWError
+
+                validValues := map[string]bool{
+                    "prepared-brief":        true,
+                    "fallback-full-context": true,
+                    "cross-repo-full":       true,
+                }
+
+                isActiveState := m.State == StateWaveExecuting || m.State == StateWaveMerging || m.State == StateWaveVerified
+
+                for i, w := range m.Waves {
+                    for j, agent := range w.Agents {
+                        if agent.ContextSource == "" {
+                            if isActiveState {
+                                errs = append(errs, result.SAWError{
+                                    Code:     SV01InvalidEnum,
+                                    Severity: "warning",
+                                    Message:  fmt.Sprintf("waves[%d].agents[%d] (id=%s) context_source is absent — orchestrator should write this field when launching wave agents (valid: prepared-brief, fallback-full-context, cross-repo-full)", i, j, agent.ID),
+                                    Field:    fmt.Sprintf("waves[%d].agents[%d].context_source", i, j),
+                                })
+                            }
+                            continue
+                        }
+                        if !validValues[string(agent.ContextSource)] {
+                            errs = append(errs, result.SAWError{
+                                Code:     SV01InvalidEnum,
+                                Severity: "error",
+                                Message:  fmt.Sprintf("waves[%d].agents[%d] (id=%s) context_source has invalid value %q — must be one of: prepared-brief, fallback-full-context, cross-repo-full", i, j, agent.ID, agent.ContextSource),
+                                Field:    fmt.Sprintf("waves[%d].agents[%d].context_source", i, j),
+                            })
+                        }
+                    }
+                }
+
+                return errs
+            }
+            ```
+
+            ### 3. Update scoutOutputSchema in pkg/protocol/schema.go
+
+            Read schema.go. In the scoutOutputSchema struct, add the InjectionMethod field
+            so the JSON Schema for Scout output accepts the new field:
+            ```go
+            InjectionMethod string `json:"injection_method,omitempty"`
+            ```
+            Place it after the CompletionDate field in scoutOutputSchema (maintaining parallel
+            structure with IMPLManifest).
+
+            ## Tests
+
+            Add tests to pkg/protocol/schema_enum_validation_test.go. Read the existing test
+            file first to understand the helper pattern. Add test functions:
+
+            1. TestValidateInjectionMethod_valid — present + "hook"/"manual-fallback"/"unknown" produce no errors
+            2. TestValidateInjectionMethod_invalid — present + "bad-value" returns error severity
+            3. TestValidateInjectionMethod_absent_active — absent on StateWaveExecuting returns warning
+            4. TestValidateInjectionMethod_absent_complete — absent on StateComplete returns nothing
+            5. TestValidateInjectionMethod_absent_empty_state — absent with State=="" returns nothing
+            6. TestValidateAgentContextSource_valid — present + valid value produces no errors
+            7. TestValidateAgentContextSource_invalid — present + invalid value returns error
+            8. TestValidateAgentContextSource_absent_active — absent on StateWaveExecuting returns warning
+            9. TestValidateAgentContextSource_absent_scout — absent on StateScoutPending returns nothing
+
+            ## Verification gate
+            cd /Users/dayna.blackwell/code/scout-and-wave-go && go build ./... && go vet ./... && go test ./pkg/protocol/... -timeout 60s
+          files:
+            - pkg/protocol/types.go
+            - pkg/protocol/schema_enum_validation.go
+            - pkg/protocol/schema.go
+    - number: 2
+      agents:
+        - id: B
+          task: |-
+            ## Context
+            You are Agent B in Wave 2 of the context-injection-observability feature.
+            Repository: /Users/dayna.blackwell/code/scout-and-wave-go
+
+            Wave 1 (Agent A) has already merged. The following types now exist in pkg/protocol/types.go:
+            - type InjectionMethod string (with consts InjectionMethodHook, InjectionMethodManualFallback, InjectionMethodUnknown)
+            - type ContextSource string (with consts ContextSourcePreparedBrief, ContextSourceFallbackFullContext, ContextSourceCrossRepoFull)
+            - IMPLManifest.InjectionMethod field (yaml:"injection_method,omitempty")
+            - Agent.ContextSource field (yaml:"context_source,omitempty")
+
+            ## What to implement
+
+            ### 1. Create cmd/sawtools/set_injection_method_cmd.go
+
+            A new sawtools subcommand that writes the injection_method field to an IMPL doc.
+            CLI: sawtools set-injection-method <manifest-path> --method <value>
+            --method required: one of hook, manual-fallback, unknown
+            Output: {"manifest": "<path>", "injection_method": "<value>", "saved": true}
+
+            Use protocol.Load / protocol.Save pattern. Validate --method before loading.
+            See other cmd/sawtools/*.go files for the cobra command pattern.
+
+            ### Tests for set_injection_method_cmd.go
+
+            Create cmd/sawtools/set_injection_method_cmd_test.go. Test:
+            1. Valid --method hook/manual-fallback/unknown → saves and reloads correctly
+            2. Invalid --method → non-nil error
+            3. Missing --method flag → error
+
+            ### 2. Modify cmd/sawtools/prepare_agent.go
+
+            Read the file first. After the section that writes .saw-ownership.json (around line 173),
+            add logic to automatically determine and persist context_source for this agent.
+
+            Detection logic:
+            - Get manifestRepoName := filepath.Base(projectRoot)
+            - Iterate doc.FileOwnership entries where fo.Agent == agentID && fo.Wave == waveNum
+            - If any entry has non-empty fo.Repo that differs from manifestRepoName: contextSource = protocol.ContextSourceCrossRepoFull
+            - Otherwise: contextSource = protocol.ContextSourcePreparedBrief
+            - Find the agent in doc.Waves[i].Agents[j] where agent.ID == agentID and wave.Number == waveNum
+            - Set doc.Waves[i].Agents[j].ContextSource = contextSource
+            - Call protocol.Save(doc, manifestPath) to persist
+            - Add "context_source": string(contextSource) to the result JSON output
+
+            Do NOT add any new CLI flags to prepare-agent. The detection is fully automatic.
+
+            ## Verification gate
+            cd /Users/dayna.blackwell/code/scout-and-wave-go && go build ./... && go vet ./... && go test ./cmd/sawtools/... -timeout 60s -run TestSetInjectionMethod
+          files:
+            - cmd/sawtools/set_injection_method_cmd.go
+            - cmd/sawtools/set_injection_method_cmd_test.go
+            - cmd/sawtools/prepare_agent.go
+        - id: C
+          task: |-
+            ## Context
+
+            You are Agent C in Wave 2 of the context-injection-observability feature.
+            You work in the scout-and-wave PROTOCOL repo at /Users/dayna.blackwell/code/scout-and-wave
+            (NOT scout-and-wave-go). Your wave runs in parallel with Agent B.
+
+            ## What to implement
+
+            You own FOUR files, all in the scout-and-wave repo:
+
+            ### 1. implementations/claude-code/prompts/references/scout-implementation-process.md
+
+            This file contains the numbered steps 1-17 for IMPL doc production. The numbered
+            steps DO NOT live in scout.md — they live here (extracted by the scout-prompt-extraction IMPL).
+
+            Add a new Step 18 at the end of the numbered steps, after Step 17 (brief accuracy self-check),
+            before any closing horizontal rule or section.
+
+            New step content:
+            ---
+            **Step 18: Write injection_method to IMPL doc.**
+            Before completing, record how you received your reference file content by running:
+
+                sawtools set-injection-method <impl-doc-path> --method <value>
+
+            Determine the value as follows:
+            - If you see <!-- injected: references/scout-suitability-gate.md --> markers in your context: --method hook
+            - If those markers are absent and you read the reference files manually: --method manual-fallback
+            - If you are uncertain: --method unknown
+
+            This creates an audit trail of whether hook-based progressive disclosure is working.
+            ---
+
+            ### 2. implementations/claude-code/prompts/agents/scout.md
+
+            In the Reference Files section, add a note after the reference file list:
+
+            "After producing the IMPL doc, run sawtools set-injection-method <impl-doc-path> --method <value>
+            to record whether references were injected by hook or loaded manually. See Step 18 in
+            references/scout-implementation-process.md for how to determine the value."
+
+            Do NOT attempt to add numbered steps to scout.md — the steps live in scout-implementation-process.md.
+
+            ### 3. implementations/claude-code/prompts/saw-skill.md
+
+            In the paragraph after the On-Demand References routing table, add one sentence:
+
+            "E44: sawtools prepare-agent automatically writes context_source to each agent entry when extracting
+            its brief, recording whether the prepared-brief path or cross-repo-full path was used
+            (see protocol/execution-rules.md E44)."
+
+            ### 4. protocol/execution-rules.md
+
+            Add E44 as a new rule at the end of the file after the last existing rule.
+
+            New rule:
+            ---
+            ## E44: Context Injection Observability
+
+            **Scout obligation:** Before completing, the Scout MUST call
+            sawtools set-injection-method <impl-doc-path> --method <value>
+            to record how reference files were received. Valid values: hook, manual-fallback, unknown.
+
+            **Orchestrator obligation:** sawtools prepare-agent automatically writes context_source
+            to each agent entry when extracting the brief. Valid values: prepared-brief, cross-repo-full.
+            The orchestrator may write fallback-full-context manually when the fallback prompt path was used.
+
+            **Enforcement:** sawtools validate warns (non-blocking) when injection_method is absent
+            on an active IMPL, and warns when context_source is absent on wave agents in
+            WAVE_EXECUTING/WAVE_MERGING/WAVE_VERIFIED state.
+            ---
+
+            ## Verification gate
+
+            - Read scout-implementation-process.md and confirm step 18 is present
+            - Read protocol/execution-rules.md and confirm E44 is present at the end
+            - Read saw-skill.md and confirm it references prepare-agent for context_source (not update-status)
+
+            ## Constraints
+
+            - Do NOT modify files outside your 4 owned files
+            - Do NOT change steps 1-17 in scout-implementation-process.md
+            - scout.md gets only the brief note, not the full step
+            - execution-rules.md addition goes at the END after the last existing rule
+            - Do NOT reference sawtools update-status --context-source anywhere — that flag does not exist
+          files:
+            - implementations/claude-code/prompts/references/scout-implementation-process.md
+            - implementations/claude-code/prompts/agents/scout.md
+            - implementations/claude-code/prompts/saw-skill.md
+            - protocol/execution-rules.md
+      base_commit: deab86396545a8162e27b9f5604e01c937ce870c
+    - number: 3
+      type: integration
+      agents:
+        - id: D
+          task: |-
+            ## Context
+            You are Agent D in Wave 3 of the context-injection-observability feature.
+            Repository: /Users/dayna.blackwell/code/scout-and-wave-go
+
+            Waves 1 and 2 have merged. The following now exist:
+            - pkg/protocol/types.go: InjectionMethod and ContextSource types + struct fields (Agent A)
+            - cmd/sawtools/set_injection_method_cmd.go: newSetInjectionMethodCmd() function (Agent B)
+
+            ## What to implement
+
+            Register the new command in cmd/sawtools/main.go.
+
+            Read main.go first to find the AddCommand block (around line 47 where
+            newSetCompletionCmd() is registered). Add `newSetInjectionMethodCmd()` to the
+            rootCmd.AddCommand(...) call, near newSetCompletionCmd(). For example:
+
+            ```go
+            newSetCompletionCmd(),
+            newSetInjectionMethodCmd(),  // add this line
+            ```
+
+            That is the only change needed in this file.
+
+            ## Verification gate
+            cd /Users/dayna.blackwell/code/scout-and-wave-go && go build ./... && go vet ./... && sawtools set-injection-method --help
+          files:
+            - cmd/sawtools/main.go
+quality_gates:
+    level: standard
+    gates:
+        - type: build
+          command: go build ./...
+          required: true
+          repo: scout-and-wave-go
+        - type: lint
+          command: go vet ./...
+          required: true
+          repo: scout-and-wave-go
+        - type: test
+          command: go test ./... -timeout 120s
+          required: true
+          repo: scout-and-wave-go
+completion_reports:
+    A:
+        status: complete
+        branch: main
+        commit: deab863
+        files_changed:
+            - pkg/protocol/types.go
+            - pkg/protocol/schema_enum_validation.go
+            - pkg/protocol/schema.go
+            - pkg/protocol/schema_enum_validation_test.go
+        tests_added:
+            - TestValidateInjectionMethod_valid
+            - TestValidateInjectionMethod_invalid
+            - TestValidateInjectionMethod_absent_active
+            - TestValidateInjectionMethod_absent_complete
+            - TestValidateInjectionMethod_absent_empty_state
+            - TestValidateAgentContextSource_valid
+            - TestValidateAgentContextSource_invalid
+            - TestValidateAgentContextSource_absent_active
+            - TestValidateAgentContextSource_absent_scout
+        verification: PASS
+    B:
+        status: complete
+        branch: saw/context-injection-observability/wave2-agent-B
+        commit: 466fda5
+        files_changed:
+            - cmd/sawtools/set_injection_method_cmd.go
+            - cmd/sawtools/set_injection_method_cmd_test.go
+            - cmd/sawtools/prepare_agent.go
+            - cmd/sawtools/main.go
+        files_created:
+            - cmd/sawtools/set_injection_method_cmd.go
+            - cmd/sawtools/set_injection_method_cmd_test.go
+        tests_added:
+            - TestSetInjectionMethod_Hook
+            - TestSetInjectionMethod_ManualFallback
+            - TestSetInjectionMethod_Unknown
+            - TestSetInjectionMethod_InvalidMethod
+            - TestSetInjectionMethod_MissingMethod
+        verification: PASS
+    C:
+        status: complete
+        branch: saw/context-injection-observability/wave2-agent-C
+        commit: cb0fa47
+        files_changed:
+            - implementations/claude-code/prompts/references/scout-implementation-process.md
+            - implementations/claude-code/prompts/agents/scout.md
+            - implementations/claude-code/prompts/saw-skill.md
+            - protocol/execution-rules.md
+        verification: PASS
+    D:
+        status: complete
+        branch: main
+        commit: 9cbf69da94d6d723aef18aa777d7adb72fad14b7
+        verification: 'PASS: newSetInjectionMethodCmd() already registered by Agent B; go build, go vet, go test all pass'
+pre_mortem:
+    overall_risk: low
+    rows:
+        - scenario: |-
+            Agent B (wave 2) references protocol.InjectionMethod defined by Agent A (wave 1).
+            If Agent A's wave did not merge cleanly, B's worktree will fail to compile.
+          likelihood: low
+          impact: high
+          mitigation: |-
+            Wave structure enforces A merges before B launches. The orchestrator validates merge
+            success (finalize-wave exit 0) before proceeding to wave 2. B's worktree starts from
+            the merged HEAD that includes A's types.
+        - scenario: |-
+            The scoutOutputSchema struct in schema.go mirrors IMPLManifest manually.
+            If Agent A forgets to add InjectionMethod to scoutOutputSchema, the JSON Schema
+            for Scout output validation will silently omit the new field.
+          likelihood: low
+          impact: low
+          mitigation: |-
+            Agent A's task explicitly instructs updating scoutOutputSchema. The field is
+            omitempty so omitting it from the schema struct is non-fatal — it just won't
+            appear in the generated JSON Schema for Scout output.
+        - scenario: |-
+            saw-skill.md (Agent C) instructs using sawtools update-context with --field/--value
+            for writing context_source, but update-context may only support predefined fields
+            (status, notes) not arbitrary field writes.
+          likelihood: medium
+          impact: low
+          mitigation: |-
+            Agent C is instructed to check the command's actual interface before writing the
+            instruction. If --field/--value is not supported, Agent C writes a descriptive note
+            in saw-skill.md explaining that the field is written manually or via a future
+            sawtools set-context-source command, and records an interface_deviation in the
+            completion report.
+        - scenario: |-
+            The validateInjectionMethod warning fires on every existing IMPL doc that is in an
+            active state (WAVE_EXECUTING, etc.) because they pre-date this feature and have no
+            injection_method field. This could create noise during the transition period.
+          likelihood: high
+          impact: low
+          mitigation: |-
+            This is by design — warnings are advisory and non-blocking. The warning text
+            says "Scout should write this field before completing" which is accurate for
+            new IMPLs. Existing active IMPLs will show the warning once then complete
+            normally. The warning only fires on active states, not COMPLETE or empty.
+critic_report:
+    verdict: PASS
+    agent_reviews:
+        A:
+            agent_id: A
+            verdict: ISSUES
+            issues:
+                - check: interface_consistency
+                  severity: warning
+                  description: Interface contract for validateInjectionMethod specifies warning severity when injection_method is absent and state is active (not COMPLETE, not empty, not NOT_SUITABLE). The implemented function silently returns nil for absent values regardless of state. Same deviation applies to validateAgentContextSource. The deviation is intentional (documented in inline comments citing FullValidate severity filtering limitation) and does not affect downstream agents B or D, which consume only the type definitions.
+                  file: pkg/protocol/schema_enum_validation.go
+                  symbol: validateInjectionMethod
+        B:
+            agent_id: B
+            verdict: PASS
+        C:
+            agent_id: C
+            verdict: PASS
+        D:
+            agent_id: D
+            verdict: PASS
+    summary: 'All four agents verified against the codebase. Agent A has already completed (commit deab863): InjectionMethod and ContextSource types, consts, struct fields, validators, and schema entry are all present and correct in pkg/protocol/types.go, schema_enum_validation.go, schema.go, and the test file. One interface_consistency deviation noted: the contract specified warning-on-absent behavior for validateInjectionMethod and validateAgentContextSource in active states, but the implemented code skips absent values entirely; this is documented in inline comments and does not affect downstream agents B or D, which consume only the types. Agent B''s file existence checks pass: set_injection_method_cmd.go (action: new) correctly does not exist yet, set_injection_method_cmd_test.go (action: new) correctly does not exist yet, prepare_agent.go (action: modify) exists; all symbols B depends on (protocol.Load, protocol.Save, InjectionMethod, ContextSource, cobra.Command pattern) are verified present. Agent C''s four owned files in the scout-and-wave repo all exist (action: modify); Step 18 and E44 are not yet present because wave 2 has not run — this is expected. Agent D''s only file (cmd/sawtools/main.go) exists; the AddCommand pattern is confirmed at lines 29-112 with newSetCompletionCmd() at line 44, exactly where the brief instructs placing the new command. Two prior warnings from the previous review (test files missing from file_ownership) are resolved: both schema_enum_validation_test.go and set_injection_method_cmd_test.go are present in file_ownership with the correct actions.'
+    reviewed_at: "2026-03-26T04:09:01Z"
+    issue_count: 1
+state: COMPLETE
