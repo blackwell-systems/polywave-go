@@ -39,7 +39,7 @@ Exit codes:
 			// Parse the PROGRAM manifest
 			manifest, err := protocol.ParseProgramManifest(manifestPath)
 			if err != nil {
-				return fmt.Errorf("update-program-state: parse error: %v", err)
+				return fmt.Errorf("update-program-state: parse error: %w", err)
 			}
 
 			// Record previous state

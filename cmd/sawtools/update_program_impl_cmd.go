@@ -43,7 +43,7 @@ Exit codes:
 			// Parse the PROGRAM manifest
 			manifest, err := protocol.ParseProgramManifest(manifestPath)
 			if err != nil {
-				return fmt.Errorf("update-program-impl: parse error: %v", err)
+				return fmt.Errorf("update-program-impl: parse error: %w", err)
 			}
 
 			// Find the impl entry by slug
