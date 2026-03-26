@@ -24,12 +24,23 @@ func newCreateProgramCmd() *cobra.Command {
 Uses cross-IMPL conflict detection to automatically assign tiers so that
 IMPLs with overlapping file ownership are placed in separate tiers.
 
+Accepts IMPL slugs (resolved from docs/IMPL/ in the repo) or absolute paths
+to IMPL YAML files (for cross-repo programs).
+
 Examples:
   # Generate a PROGRAM from two IMPL slugs
   sawtools create-program --from-impls feature-a --from-impls feature-b
 
-  # With custom slug and title
-  sawtools create-program --from-impls feature-a --from-impls feature-b --slug my-program --title "My Program"`,
+  # Generate a PROGRAM using absolute paths (cross-repo)
+  sawtools create-program \
+    --from-impls /path/to/repo1/docs/IMPL/IMPL-feature-a.yaml \
+    --from-impls /path/to/repo2/docs/IMPL/IMPL-feature-b.yaml
+
+  # Mix slugs and absolute paths
+  sawtools create-program \
+    --from-impls feature-a \
+    --from-impls /path/to/other-repo/docs/IMPL/IMPL-feature-b.yaml \
+    --slug my-program --title "My Program"`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if len(fromImpls) == 0 {
 				return fmt.Errorf("create-program: --from-impls is required")
@@ -71,7 +82,7 @@ Examples:
 		},
 	}
 
-	cmd.Flags().StringSliceVar(&fromImpls, "from-impls", nil, "IMPL slugs to include (required, at least 2)")
+	cmd.Flags().StringSliceVar(&fromImpls, "from-impls", nil, "IMPL slugs or absolute paths to include (required, at least 2)")
 	cmd.Flags().StringVar(&slug, "slug", "", "Override program slug (auto-derived if empty)")
 	cmd.Flags().StringVar(&title, "title", "", "Override program title (auto-derived if empty)")
 
@@ -86,14 +97,17 @@ func newCheckIMPLConflictsCmd() *cobra.Command {
 		Short: "Check for file ownership conflicts across IMPL docs",
 		Long: `Check for file ownership conflicts across IMPL docs.
 
-Loads IMPL docs by slug, extracts file_ownership entries, and detects
-overlapping files across IMPLs. Returns a structured JSON report.
+Loads IMPL docs by slug or absolute path, extracts file_ownership entries,
+and detects overlapping files across IMPLs. Returns a structured JSON report.
 
 Exit code 1 if conflicts found, 0 if all disjoint.
 
 Examples:
   sawtools check-impl-conflicts --impls feature-a --impls feature-b
-  sawtools check-impl-conflicts --impls feature-a --impls feature-b --repo-dir /path/to/repo`,
+  sawtools check-impl-conflicts --impls feature-a --impls feature-b --repo-dir /path/to/repo
+  sawtools check-impl-conflicts \
+    --impls /path/to/repo1/docs/IMPL/IMPL-feature-a.yaml \
+    --impls /path/to/repo2/docs/IMPL/IMPL-feature-b.yaml`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if len(impls) == 0 {
 				return fmt.Errorf("check-impl-conflicts: --impls is required")
@@ -117,7 +131,7 @@ Examples:
 		},
 	}
 
-	cmd.Flags().StringSliceVar(&impls, "impls", nil, "IMPL slugs to check for conflicts (required)")
+	cmd.Flags().StringSliceVar(&impls, "impls", nil, "IMPL slugs or absolute paths to check for conflicts (required)")
 
 	return cmd
 }
