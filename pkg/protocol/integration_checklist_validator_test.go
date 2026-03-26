@@ -4,6 +4,8 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
 )
 
 // TestValidateIntegrationChecklist_NoHandlers verifies that a manifest with no
@@ -63,7 +65,7 @@ func TestValidateIntegrationChecklist_MissingChecklist(t *testing.T) {
 	if len(errs) != 1 {
 		t.Fatalf("expected 1 warning, got %d: %+v", len(errs), errs)
 	}
-	if errs[0].Code != "E16_MISSING_CHECKLIST" {
+	if errs[0].Code != result.CodeMissingChecklist {
 		t.Errorf("expected code E16_MISSING_CHECKLIST, got %q", errs[0].Code)
 	}
 	if errs[0].Field != "post_merge_checklist" {
@@ -87,7 +89,7 @@ func TestValidateIntegrationChecklist_ComponentsDetected(t *testing.T) {
 	if len(errs) != 1 {
 		t.Fatalf("expected 1 warning for empty checklist, got %d: %+v", len(errs), errs)
 	}
-	if errs[0].Code != "E16_MISSING_CHECKLIST" {
+	if errs[0].Code != result.CodeMissingChecklist {
 		t.Errorf("expected code E16_MISSING_CHECKLIST, got %q", errs[0].Code)
 	}
 }
@@ -154,7 +156,7 @@ func TestValidateIntegrationChecklist_RepoPathWarnsWhenPresent(t *testing.T) {
 	if len(errs) != 1 {
 		t.Fatalf("expected 1 warning when file exists on disk, got %d: %+v", len(errs), errs)
 	}
-	if errs[0].Code != "E16_MISSING_CHECKLIST" {
+	if errs[0].Code != result.CodeMissingChecklist {
 		t.Errorf("expected E16_MISSING_CHECKLIST, got %q", errs[0].Code)
 	}
 }

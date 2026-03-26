@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
 )
 
 // Minimal valid IMPL manifest YAML for testing.
@@ -87,10 +89,10 @@ quality_gates:
 		t.Error("expected errors for I1 violation")
 	}
 
-	// Check that at least one error mentions I1
+	// Check that at least one error has the disjoint ownership code
 	foundI1 := false
 	for _, e := range data.Errors {
-		if strings.Contains(e.Code, "I1") {
+		if e.Code == result.CodeDisjointOwnership {
 			foundI1 = true
 			break
 		}

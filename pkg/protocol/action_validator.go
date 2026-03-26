@@ -26,7 +26,7 @@ func ValidateActionEnums(m *IMPLManifest) []result.SAWError {
 
 		if !validActions[fo.Action] {
 			errs = append(errs, result.SAWError{
-				Code:     "E16_INVALID_ACTION",
+				Code:     result.CodeInvalidActionEnum,
 				Message:  fmt.Sprintf("file_ownership[%d].action has invalid value %q — must be new, modify, or delete", i, fo.Action),
 				Severity: "error",
 				Field:    fmt.Sprintf("file_ownership[%d].action", i),

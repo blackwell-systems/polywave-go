@@ -4,6 +4,8 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
 )
 
 func TestValidateFileExistence_EmptyRepoPath(t *testing.T) {
@@ -59,7 +61,7 @@ func TestValidateFileExistence_FileMissing(t *testing.T) {
 	}
 
 	e := errs[0]
-	if e.Code != "E16_FILE_NOT_FOUND" {
+	if e.Code != result.CodeFileMissing {
 		t.Errorf("expected code E16_FILE_NOT_FOUND, got %q", e.Code)
 	}
 	if e.Field != "file_ownership[0]" {
@@ -164,13 +166,13 @@ func TestValidateFileExistenceMultiRepo_AllMissingSuspectsRepoMismatch(t *testin
 
 	// First two should be FILE_NOT_FOUND
 	for i := 0; i < 2; i++ {
-		if errs[i].Code != "E16_FILE_NOT_FOUND" {
+		if errs[i].Code != result.CodeFileMissing {
 			t.Errorf("errs[%d]: expected E16_FILE_NOT_FOUND, got %q", i, errs[i].Code)
 		}
 	}
 
 	// Last should be REPO_MISMATCH_SUSPECTED
-	if errs[2].Code != "E16_REPO_MISMATCH_SUSPECTED" {
+	if errs[2].Code != result.CodeRepoMismatch {
 		t.Errorf("expected E16_REPO_MISMATCH_SUSPECTED, got %q", errs[2].Code)
 	}
 }

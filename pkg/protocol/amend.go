@@ -46,7 +46,7 @@ func AmendImpl(opts AmendImplOpts) result.Result[AmendImplData] {
 	if err != nil {
 		return result.NewFailure[AmendImplData]([]result.SAWError{
 			{
-				Code:     "LOAD_FAILED",
+				Code:     result.CodeManifestInvalid,
 				Message:  fmt.Sprintf("failed to load manifest: %v", err),
 				Severity: "fatal",
 			},
@@ -69,7 +69,7 @@ func AmendImpl(opts AmendImplOpts) result.Result[AmendImplData] {
 	if err != nil {
 		return result.NewFailure[AmendImplData]([]result.SAWError{
 			{
-				Code:     "READ_FAILED",
+				Code:     result.CodeManifestInvalid,
 				Message:  fmt.Sprintf("failed to read manifest file: %v", err),
 				Severity: "fatal",
 			},
@@ -142,7 +142,7 @@ func amendAddWave(opts AmendImplOpts, m *IMPLManifest) result.Result[AmendImplDa
 	if err := Save(m, opts.ManifestPath); err != nil {
 		return result.NewFailure[AmendImplData]([]result.SAWError{
 			{
-				Code:     "SAVE_FAILED",
+				Code:     result.CodeManifestInvalid,
 				Message:  fmt.Sprintf("failed to save manifest: %v", err),
 				Severity: "fatal",
 			},
@@ -240,7 +240,7 @@ func amendRedirectAgent(opts AmendImplOpts, m *IMPLManifest) result.Result[Amend
 	if err := Save(m, opts.ManifestPath); err != nil {
 		return result.NewFailure[AmendImplData]([]result.SAWError{
 			{
-				Code:     "SAVE_FAILED",
+				Code:     result.CodeManifestInvalid,
 				Message:  fmt.Sprintf("failed to save manifest: %v", err),
 				Severity: "fatal",
 			},

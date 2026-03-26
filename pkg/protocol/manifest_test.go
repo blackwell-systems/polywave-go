@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
 	"gopkg.in/yaml.v3"
 )
 
@@ -473,7 +474,7 @@ func TestValidateSM02_WaveExecutingToMerging_Incomplete(t *testing.T) {
 	if len(errs) == 0 {
 		t.Error("Expected error when agent B incomplete")
 	}
-	if len(errs) > 0 && errs[0].Code != "SM02_INVALID_TRANSITION" {
+	if len(errs) > 0 && errs[0].Code != result.CodeStateTransitionInvalid {
 		t.Errorf("Expected SM02_INVALID_TRANSITION, got %s", errs[0].Code)
 	}
 }
@@ -486,7 +487,7 @@ func TestValidateSM02_IllegalTransition(t *testing.T) {
 	if len(errs) != 1 {
 		t.Fatalf("Expected 1 error for illegal transition, got %d: %v", len(errs), errs)
 	}
-	if errs[0].Code != "SM02_INVALID_TRANSITION" {
+	if errs[0].Code != result.CodeStateTransitionInvalid {
 		t.Errorf("Expected SM02_INVALID_TRANSITION, got %s", errs[0].Code)
 	}
 }
@@ -565,7 +566,7 @@ func TestTransitionTo_InvalidTransition(t *testing.T) {
 		t.Errorf("State = %q, want %q (should be unchanged after failed transition)", m.State, StateScoutPending)
 	}
 
-	if len(errs) > 0 && errs[0].Code != "SM02_INVALID_TRANSITION" {
+	if len(errs) > 0 && errs[0].Code != result.CodeStateTransitionInvalid {
 		t.Errorf("Expected SM02_INVALID_TRANSITION error code, got %s", errs[0].Code)
 	}
 }

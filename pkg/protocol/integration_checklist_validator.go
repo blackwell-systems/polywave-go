@@ -77,7 +77,7 @@ func ValidateIntegrationChecklist(m *IMPLManifest, repoPath string) []result.SAW
 
 	return []result.SAWError{
 		{
-			Code:     "E16_MISSING_CHECKLIST",
+			Code:     result.CodeMissingChecklist,
 			Message:  "new handlers/components detected but post_merge_checklist is empty — integration steps may be needed",
 			Severity: "warning",
 			Field:    "post_merge_checklist",

@@ -2,6 +2,8 @@ package protocol
 
 import (
 	"testing"
+
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
 )
 
 func TestValidateActionEnums_AllValid(t *testing.T) {
@@ -46,7 +48,7 @@ func TestValidateActionEnums_InvalidAction(t *testing.T) {
 	}
 
 	err := errs[0]
-	if err.Code != "E16_INVALID_ACTION" {
+	if err.Code != result.CodeInvalidActionEnum {
 		t.Errorf("expected code E16_INVALID_ACTION, got %q", err.Code)
 	}
 	if err.Field != "file_ownership[0].action" {
@@ -74,7 +76,7 @@ func TestValidateActionEnums_MultipleInvalid(t *testing.T) {
 	}
 
 	// First invalid: index 0, action "update"
-	if errs[0].Code != "E16_INVALID_ACTION" {
+	if errs[0].Code != result.CodeInvalidActionEnum {
 		t.Errorf("errs[0]: expected code E16_INVALID_ACTION, got %q", errs[0].Code)
 	}
 	if errs[0].Field != "file_ownership[0].action" {
@@ -82,7 +84,7 @@ func TestValidateActionEnums_MultipleInvalid(t *testing.T) {
 	}
 
 	// Second invalid: index 2, action "create"
-	if errs[1].Code != "E16_INVALID_ACTION" {
+	if errs[1].Code != result.CodeInvalidActionEnum {
 		t.Errorf("errs[1]: expected code E16_INVALID_ACTION, got %q", errs[1].Code)
 	}
 	if errs[1].Field != "file_ownership[2].action" {
