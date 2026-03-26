@@ -1,0 +1,52 @@
+completion_date: "2026-03-26"
+title: FullValidate Severity Filtering
+feature_slug: fullvalidate-severity-filter
+verdict: SUITABLE
+suitability_assessment: Single-file fix. FullValidate counts all SAWErrors as blocking regardless of Severity field. Warnings should be advisory only.
+test_command: go test ./pkg/protocol/... -timeout 60s
+lint_command: go vet ./...
+file_ownership:
+    - file: pkg/protocol/full_validate.go
+      agent: A
+      wave: 1
+      action: modify
+      repo: scout-and-wave-go
+    - file: pkg/protocol/full_validate_test.go
+      agent: A
+      wave: 1
+      action: modify
+      repo: scout-and-wave-go
+interface_contracts: []
+waves:
+    - number: 1
+      agents:
+        - id: A
+          task: Fix severity filtering in FullValidate and FullValidateProgram. See prompt for full instructions.
+          files:
+            - pkg/protocol/full_validate.go
+            - pkg/protocol/full_validate_test.go
+          context_source: prepared-brief
+quality_gates:
+    level: standard
+    gates:
+        - type: build
+          command: go build ./...
+          required: true
+        - type: lint
+          command: go vet ./...
+          required: true
+        - type: test
+          command: go test ./pkg/protocol/... -timeout 60s
+          required: true
+completion_reports:
+    A:
+        status: complete
+        branch: main
+        commit: bd80e5e
+        files_changed:
+            - pkg/protocol/full_validate.go
+            - pkg/protocol/full_validate_test.go
+        tests_added:
+            - TestFullValidate_WarningsNonBlocking
+        verification: PASS
+state: COMPLETE

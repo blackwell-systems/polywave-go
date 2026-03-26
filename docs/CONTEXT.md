@@ -214,3 +214,5 @@ type BackendConfig struct {
   - IMPL doc: docs/IMPL/complete/IMPL-protocol-architectural-unification.yaml
 - **context-injection-observability**: completed 2026-03-25, 3 waves, 4 agents
   - IMPL doc: docs/IMPL/complete/IMPL-context-injection-observability.yaml
+- **fullvalidate-severity-filter**: completed 2026-03-25, 1 waves, 1 agents
+  - IMPL doc: docs/IMPL/complete/IMPL-fullvalidate-severity-filter.yaml
