@@ -220,3 +220,5 @@ type BackendConfig struct {
   - IMPL doc: docs/IMPL/complete/IMPL-error-code-unification.yaml
 - **go-engine-deduplication**: completed 2026-03-25, 1 waves, 4 agents
   - IMPL doc: docs/IMPL/complete/IMPL-go-engine-deduplication.yaml
+- **state-machine-unification**: completed 2026-03-26, 1 waves, 2 agents
+  - IMPL doc: docs/IMPL/complete/IMPL-state-machine-unification.yaml

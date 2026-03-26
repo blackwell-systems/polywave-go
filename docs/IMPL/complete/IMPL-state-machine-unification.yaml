@@ -1,0 +1,276 @@
+completion_date: "2026-03-26"
+title: Unify State Machine — Delete Dead ValidateSM02TransitionGuards and TransitionTo
+feature_slug: state-machine-unification
+verdict: SUITABLE_WITH_CAVEATS
+suitability_assessment: |-
+    The work is suitable for parallel execution with caveats.
+
+    Suitability gate results:
+    1. File decomposition: 3 files change across 2 packages (pkg/protocol/manifest.go,
+       pkg/protocol/manifest_test.go, pkg/orchestrator/transitions.go). Agent A owns the
+       protocol package files; Agent B owns the orchestrator file. Disjoint ownership is clean.
+    2. Investigation-first: No investigation needed. Research is complete. All callers verified
+       (zero production callers for both deleted functions). Line numbers spot-checked against
+       current source.
+    3. Interface discoverability: No cross-agent interfaces — this is pure deletion work. No
+       new types or function signatures are introduced.
+    4. Pre-implementation status: Both deletion targets are confirmed TODO (not yet removed).
+    5. Parallelization value: Low per-agent complexity (deletion only), but SAW provides value as
+       an audit trail. Coordination value independent of speed; single-wave so both agents run
+       simultaneously.
+
+    Caveats:
+    - Agent B's task (adding a clarifying comment to orchestrator/transitions.go) is optional.
+      If the existing comment is deemed sufficient, Agent B can confirm and do nothing.
+    - The dead functions have 4 bugs relative to the production state machine. These bugs are
+      irrelevant post-deletion but are documented for context in the pre-mortem.
+
+    Estimated times:
+    - Scout phase: ~5 min (dependency mapping, verification)
+    - Agent execution: ~5 min (2 agents x ~3 min avg, parallel)
+    - Merge and verification: ~2 min
+    Total SAW time: ~12 min
+
+    Sequential baseline: ~6 min
+    Time savings: marginal. Recommendation: Coordination value for audit trail. Proceed.
+test_command: go test ./...
+lint_command: go vet ./...
+file_ownership:
+    - file: pkg/protocol/manifest.go
+      agent: A
+      wave: 1
+      action: modify
+    - file: pkg/protocol/manifest_test.go
+      agent: A
+      wave: 1
+      action: modify
+    - file: pkg/orchestrator/transitions.go
+      agent: B
+      wave: 1
+      action: modify
+interface_contracts:
+    - name: SetImplState (retained)
+      description: |-
+        The production state machine function. Not modified. Retained as-is.
+        Callers: set_impl_state_cmd.go:37, close_impl_cmd.go:48, finalize_wave.go:534.
+      definition: |
+        func SetImplState(manifestPath string, newState ProtocolState, opts SetImplStateOpts) result.Result[*SetImplStateData]
+      location: pkg/protocol/state_transition.go
+    - name: isValidTransition (orchestrator, retained)
+      description: |-
+        Orchestrator-scoped private FSM function. Not modified. Retained as-is.
+        This is a separate concern from the protocol-level state machine.
+      definition: |
+        func isValidTransition(from, to protocol.ProtocolState) bool
+      location: pkg/orchestrator/transitions.go
+waves:
+    - number: 1
+      agents:
+        - id: A
+          task: |-
+            ## Role
+            Delete dead state machine code from pkg/protocol/manifest.go and its tests from
+            pkg/protocol/manifest_test.go.
+
+            ## What to implement
+
+            ### 1. Delete ValidateSM02TransitionGuards from manifest.go
+
+            In `/Users/dayna.blackwell/code/scout-and-wave-go/pkg/protocol/manifest.go`,
+            delete lines 156–232 in their entirety. This is the full body of
+            `ValidateSM02TransitionGuards(from, to ProtocolState, m *IMPLManifest) []result.SAWError`
+            including its doc comment starting at line 156. The function ends at line 232
+            (closing brace).
+
+            After deletion, the next content should be the `TransitionTo` function (currently
+            at line 234).
+
+            ### 2. Delete TransitionTo from manifest.go
+
+            In the same file, delete lines 234–255 in their entirety. This is the full body
+            of `TransitionTo(m *IMPLManifest, target ProtocolState) []result.SAWError`
+            including its doc comment starting at line 234. The function ends at line 255
+            (closing brace).
+
+            After both deletions, manifest.go must still compile. Verify that the `result`
+            import is still used by other code in the file (it is — by SetCompletionReport
+            and other functions). If after deletion the `result` import becomes unused,
+            remove it. Spot-check: grep for `result.` in manifest.go after deletion to
+            confirm the import is still needed.
+
+            ### 3. Delete 10 test functions from manifest_test.go
+
+            In `/Users/dayna.blackwell/code/scout-and-wave-go/pkg/protocol/manifest_test.go`,
+            delete lines 437–636 in their entirety. These are the 10 test functions:
+            - TestValidateSM02_WaveExecutingToMerging_AllComplete (line 438)
+            - TestValidateSM02_WaveExecutingToMerging_Incomplete (line 459)
+            - TestValidateSM02_IllegalTransition (line 483)
+            - TestValidateSM02_BlockedToAny (line 496)
+            - TestValidateSM02_MergingToVerified_RequiresCompleted (line 521)
+            - TestTransitionTo_ValidTransition (line 538)
+            - TestTransitionTo_InvalidTransition (line 554)
+            - TestTransitionTo_DefaultState (line 575)
+            - TestTransitionTo_BlockedEscape (line 592)
+            - TestTransitionTo_Idempotent (line 623)
+
+            Also delete the helper comment at line 432–435 (`// intPtr returns a pointer to an int`)
+            and the `intPtr` helper function at lines 433–435 ONLY IF `intPtr` is not referenced
+            by any of the remaining test functions (lines 1–436). Grep for `intPtr` in the
+            remaining file to confirm before deleting.
+
+            The file should end after line 430 (closing brace of TestManifestLoadInitializesNilMaps).
+
+            ## Verification gate
+
+            ```
+            go build ./pkg/protocol/...
+            go vet ./pkg/protocol/...
+            go test ./pkg/protocol/... -run TestManifest
+            go test ./pkg/protocol/...
+            ```
+
+            The full package test suite must pass. The 10 deleted tests must no longer appear.
+            The 8 remaining tests (TestManifestLoadSave, TestManifestLoadInvalidFile,
+            TestManifestLoadInvalidYAML, TestManifestCurrentWave, TestManifestSetCompletionReport,
+            TestManifestYAMLUnmarshalOptionalFields, TestManifestJSONMarshal,
+            TestManifestLoadInitializesNilMaps) must all pass.
+
+            ## Constraints
+
+            - No backward-compatibility shims. No deprecation comments. No re-exports.
+            - Do not touch pkg/protocol/state_transition.go — the production state machine lives
+              there and must not be modified.
+            - Do not touch pkg/orchestrator/transitions.go — that is Agent B's file.
+            - Do not add any new functions to replace the deleted ones.
+          files:
+            - pkg/protocol/manifest.go
+            - pkg/protocol/manifest_test.go
+        - id: B
+          task: |-
+            ## Role
+            Clarify the orchestrator-scoped state machine comment in pkg/orchestrator/transitions.go
+            to prevent future confusion with the protocol-level state machine.
+
+            ## Context
+
+            There are now two clearly distinct state machine definitions in the codebase:
+            1. pkg/protocol/state_transition.go — `allowedTransitions` map used by `SetImplState()`.
+               This is the PROTOCOL-LEVEL state machine. It is the authoritative implementation of
+               SM-02 per the SAW protocol spec.
+            2. pkg/orchestrator/transitions.go — `validTransitions` map used by the orchestrator's
+               private `isValidTransition()`. This is an ORCHESTRATOR-SCOPED FSM for the
+               orchestrator's own state tracking.
+
+            Previously a third definition existed in pkg/protocol/manifest.go (the dead code being
+            deleted by Agent A). After Agent A's deletion, only these two remain. The orchestrator
+            file's existing comment reads:
+
+            ```
+            // validTransitions maps each state to the set of states reachable from it.
+            // The SAW protocol defines 11 states with the following directed edges.
+            ```
+
+            ## What to implement
+
+            Review the comment block at lines 7–8 of
+            `/Users/dayna.blackwell/code/scout-and-wave-go/pkg/orchestrator/transitions.go`.
+
+            Update the comment to make clear that this map is the orchestrator's private FSM,
+            NOT the protocol-level SM-02 implementation (which lives in
+            pkg/protocol/state_transition.go). A suggested revision:
+
+            ```go
+            // validTransitions is the orchestrator's private state machine.
+            // It maps each protocol state to the set of states reachable from it,
+            // mirroring SM-02 for the orchestrator's own transition tracking.
+            // The authoritative protocol-level FSM is SetImplState in pkg/protocol/state_transition.go.
+            var validTransitions = map[protocol.ProtocolState][]protocol.ProtocolState{
+            ```
+
+            You may adjust the wording as long as it clearly distinguishes this map from
+            pkg/protocol/state_transition.go's `allowedTransitions`.
+
+            Do NOT modify the `validTransitions` map contents, the `isValidTransition` function
+            logic, or any other code in this file. Comment update only.
+
+            ## Verification gate
+
+            ```
+            go build ./pkg/orchestrator/...
+            go vet ./pkg/orchestrator/...
+            go test ./pkg/orchestrator/...
+            ```
+
+            ## Constraints
+
+            - Comment update only. Do not modify map contents or function signatures.
+            - Do not touch any files outside pkg/orchestrator/transitions.go.
+            - This is Agent B's only file. Do not touch pkg/protocol/ files (those belong to Agent A).
+          files:
+            - pkg/orchestrator/transitions.go
+      base_commit: c6ecc6060b37c60b959b541cd977a7a5cfdec851
+quality_gates:
+    level: standard
+    gates:
+        - type: build
+          command: go build ./...
+          required: true
+        - type: lint
+          command: go vet ./...
+          required: true
+        - type: test
+          command: go test ./...
+          required: true
+completion_reports:
+    A:
+        status: complete
+        branch: saw/state-machine-unification/wave1-agent-A
+        commit: e973ea1
+        files_changed:
+            - pkg/protocol/manifest.go
+            - pkg/protocol/manifest_test.go
+        verification: PASS
+    B:
+        status: complete
+        branch: saw/state-machine-unification/wave1-agent-B
+        commit: 1d63f87
+        files_changed:
+            - pkg/orchestrator/transitions.go
+        verification: PASS
+pre_mortem:
+    overall_risk: low
+    rows:
+        - scenario: |-
+            The `result` import in manifest.go becomes unused after deleting both functions,
+            causing a compile error.
+          likelihood: low
+          impact: high
+          mitigation: |-
+            Agent A must grep for `result.` in manifest.go after deletion to confirm the import
+            is still used. If not used, remove the import. The brief explicitly includes this check.
+        - scenario: |-
+            The `intPtr` helper function in manifest_test.go is used by a retained test and
+            is accidentally deleted.
+          likelihood: low
+          impact: medium
+          mitigation: |-
+            Agent A is instructed to grep for `intPtr` in the retained lines (1-436) before
+            deleting the helper. If found, retain the helper.
+        - scenario: |-
+            Stale worktrees in .claude/worktrees/ still contain the deleted functions and
+            cause confusion during post-merge verification.
+          likelihood: medium
+          impact: low
+          mitigation: |-
+            Stale worktrees are from completed programs and are not active. The main branch
+            is the target; worktrees are irrelevant to this deletion.
+        - scenario: |-
+            Agent B's comment update causes an unintended whitespace or formatting change
+            that triggers gofmt lint failure.
+          likelihood: low
+          impact: low
+          mitigation: |-
+            Agent B runs go vet as part of verification. gofmt-clean comments are simple;
+            no structural formatting issues expected from a comment-only change.
+state: COMPLETE
+injection_method: hook
