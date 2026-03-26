@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/blackwell-systems/scout-and-wave-go/internal/git"
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
 )
 
 // ContextMDEntry is one completed feature record for docs/CONTEXT.md (E18).
@@ -29,7 +30,7 @@ func UpdateContextMD(repoPath string, entry ContextMDEntry) error {
 	}
 
 	// 2. Build context file path.
-	contextPath := filepath.Join(repoPath, "docs", "CONTEXT.md")
+	contextPath := protocol.ContextMDPath(repoPath)
 
 	// 3. If file does not exist, create it with the canonical schema.
 	if _, err := os.Stat(contextPath); os.IsNotExist(err) {

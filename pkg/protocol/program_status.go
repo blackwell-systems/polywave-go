@@ -132,7 +132,7 @@ func getIMPLStatusFromDisk(implSlug, repoPath, fallbackStatus string) string {
 	}
 
 	// Also try root docs/IMPL/ directory
-	path := filepath.Join(repoPath, "docs", "IMPL", fmt.Sprintf("IMPL-%s.yaml", implSlug))
+	path := IMPLPath(repoPath, implSlug)
 	if status := tryReadIMPLState(path); status != "" {
 		return status
 	}

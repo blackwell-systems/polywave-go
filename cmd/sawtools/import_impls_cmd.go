@@ -56,8 +56,8 @@ Examples:
 			var discoveredPaths []string
 			if discover {
 				patterns := []string{
-					filepath.Join(repoDir, "docs", "IMPL", "IMPL-*.yaml"),
-					filepath.Join(repoDir, "docs", "IMPL", "complete", "IMPL-*.yaml"),
+					filepath.Join(protocol.IMPLDir(repoDir), "IMPL-*.yaml"),
+					filepath.Join(protocol.IMPLCompleteDir(repoDir), "IMPL-*.yaml"),
 				}
 				for _, pattern := range patterns {
 					matches, err := filepath.Glob(pattern)

@@ -102,11 +102,11 @@ Examples:
 
 			// Step 5: Clean .saw-state wave directories
 			stateCleanedCount := 0
-			sawStatePath := filepath.Join(projectRoot, ".saw-state")
+			sawStatePath := protocol.SAWStateDir(projectRoot)
 			if entries, err := os.ReadDir(sawStatePath); err == nil {
 				// Check if any active IMPLs exist in this repo
 				activeIMPLs := 0
-				implDir := filepath.Join(projectRoot, "docs", "IMPL")
+				implDir := protocol.IMPLDir(projectRoot)
 				if implEntries, err := os.ReadDir(implDir); err == nil {
 					for _, e := range implEntries {
 						if !e.IsDir() && filepath.Ext(e.Name()) == ".yaml" {

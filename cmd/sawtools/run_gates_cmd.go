@@ -3,7 +3,6 @@ package main
 import (
 	"encoding/json"
 	"fmt"
-	"path/filepath"
 
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/gatecache"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
@@ -34,7 +33,7 @@ func newRunGatesCmd() *cobra.Command {
 				}
 				results = res.GetData().Gates
 			} else {
-				stateDir := filepath.Join(repoDir, ".saw-state")
+				stateDir := protocol.SAWStateDir(repoDir)
 				cache := gatecache.New(stateDir, gatecache.DefaultTTL)
 				res := protocol.RunGatesWithCache(m, waveNum, repoDir, cache)
 				if !res.IsSuccess() {

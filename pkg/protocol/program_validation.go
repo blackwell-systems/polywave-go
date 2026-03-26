@@ -3,7 +3,6 @@ package protocol
 import (
 	"fmt"
 	"os"
-	"path/filepath"
 	"regexp"
 	"strings"
 
@@ -405,8 +404,8 @@ func ValidateProgramImportMode(manifest *PROGRAMManifest, repoPath string) []res
 		}
 
 		// Check 1: IMPL file exists on disk.
-		implPath := filepath.Join(repoPath, "docs", "IMPL", fmt.Sprintf("IMPL-%s.yaml", impl.Slug))
-		completePath := filepath.Join(repoPath, "docs", "IMPL", "complete", fmt.Sprintf("IMPL-%s.yaml", impl.Slug))
+		implPath := IMPLPath(repoPath, impl.Slug)
+		completePath := IMPLCompletePath(repoPath, impl.Slug)
 
 		var resolvedPath string
 		if _, err := os.Stat(implPath); err == nil {

@@ -72,7 +72,7 @@ Output:
 
 			// Generate IMPL slug from feature description
 			slug := generateSlug(featureDesc)
-			implPath := filepath.Join(repoPath, "docs", "IMPL", fmt.Sprintf("IMPL-%s.yaml", slug))
+			implPath := protocol.IMPLPath(repoPath, slug)
 
 			// Check if IMPL doc already exists; skip Scout if state is advanced
 			if existingDoc, loadErr := protocol.Load(implPath); loadErr == nil {

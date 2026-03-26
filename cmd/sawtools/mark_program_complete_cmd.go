@@ -226,7 +226,7 @@ func writeProgramCompleteMarker(manifestPath, date string) error {
 // Entry format: "Program: <title> (<slug>) — <N> tiers, <M> IMPLs, <date>"
 // Returns the path to the CONTEXT.md file, or empty string if update failed.
 func updateContextForProgram(manifest *protocol.PROGRAMManifest, repoDir, date string, tiersCount, implsCount int) (string, error) {
-	contextPath := filepath.Join(repoDir, "docs", "CONTEXT.md")
+	contextPath := protocol.ContextMDPath(repoDir)
 
 	docsDir := filepath.Dir(contextPath)
 	if err := os.MkdirAll(docsDir, 0755); err != nil {

@@ -3,7 +3,6 @@ package protocol
 import (
 	"fmt"
 	"os"
-	"path/filepath"
 
 	"github.com/blackwell-systems/scout-and-wave-go/internal/git"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
@@ -59,8 +58,8 @@ func DetectStaleWorktrees(repoPath string) ([]StaleWorktree, error) {
 		}
 
 		// Check for completed IMPL.
-		completePath := filepath.Join(repoPath, "docs", "IMPL", "complete", "IMPL-"+slug+".yaml")
-		activePath := filepath.Join(repoPath, "docs", "IMPL", "IMPL-"+slug+".yaml")
+		completePath := IMPLCompletePath(repoPath, slug)
+		activePath := IMPLPath(repoPath, slug)
 
 		if fileExists(completePath) {
 			stale = append(stale, StaleWorktree{

@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/journal"
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
 )
 
 // PrepareAgentContext loads journal history and generates context.md for agent recovery.
@@ -21,7 +22,7 @@ func PrepareAgentContext(projectRoot string, waveNum int, agentID string, maxEnt
 	}
 
 	// Construct journal path: .saw-state/wave{N}/agent-{ID}/index.jsonl
-	journalPath := filepath.Join(projectRoot, ".saw-state", fmt.Sprintf("wave%d", waveNum), agentID, "index.jsonl")
+	journalPath := filepath.Join(protocol.SAWStateAgentDir(projectRoot, waveNum, agentID), "index.jsonl")
 
 	// Check if journal exists
 	if _, err := os.Stat(journalPath); os.IsNotExist(err) {
@@ -57,7 +58,7 @@ func PrepareAgentContext(projectRoot string, waveNum int, agentID string, maxEnt
 // Creates journal directory structure on first write.
 func WriteJournalEntry(projectRoot string, waveNum int, agentID string, entry journal.ToolEntry) error {
 	// Construct journal directory: .saw-state/wave{N}/agent-{ID}/
-	journalDir := filepath.Join(projectRoot, ".saw-state", fmt.Sprintf("wave%d", waveNum), agentID)
+	journalDir := protocol.SAWStateAgentDir(projectRoot, waveNum, agentID)
 
 	// Create directory structure if needed
 	if err := os.MkdirAll(journalDir, 0755); err != nil {

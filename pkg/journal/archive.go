@@ -11,6 +11,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
 )
 
 // ArchiveMetadata holds metadata about an archived journal
@@ -52,7 +54,7 @@ func (o *JournalObserver) Archive() error {
 	}
 
 	// Create archive directory if needed
-	archiveDir := filepath.Join(o.ProjectRoot, ".saw-state", "archive")
+	archiveDir := protocol.SAWStateArchiveDir(o.ProjectRoot)
 	if err := os.MkdirAll(archiveDir, 0755); err != nil {
 		return fmt.Errorf("creating archive directory: %w", err)
 	}
@@ -111,7 +113,7 @@ func (o *JournalObserver) Archive() error {
 
 // CleanupExpired deletes archives older than retention period
 func CleanupExpired(repoPath string, retentionDays int) error {
-	archiveDir := filepath.Join(repoPath, ".saw-state", "archive")
+	archiveDir := protocol.SAWStateArchiveDir(repoPath)
 
 	// Read all archives
 	archives, err := ListArchives(repoPath)
@@ -146,7 +148,7 @@ func CleanupExpired(repoPath string, retentionDays int) error {
 
 // ListArchives returns metadata for all archived journals, sorted by archived_at
 func ListArchives(repoPath string) ([]ArchiveMetadata, error) {
-	archiveDir := filepath.Join(repoPath, ".saw-state", "archive")
+	archiveDir := protocol.SAWStateArchiveDir(repoPath)
 
 	// Check if archive directory exists
 	if _, err := os.Stat(archiveDir); os.IsNotExist(err) {

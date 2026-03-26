@@ -11,6 +11,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
 )
 
 // JournalObserver tails Claude Code session logs and extracts tool execution history.
@@ -54,7 +56,7 @@ func NewObserver(projectRoot string, agentID string) (*JournalObserver, error) {
 		}
 	}
 
-	journalDir := filepath.Join(projectRoot, ".saw-state", waveDir, agentID)
+	journalDir := filepath.Join(protocol.SAWStateDir(projectRoot), waveDir, agentID)
 	ResultsDir := filepath.Join(journalDir, "tool-results")
 
 	// Create directory structure

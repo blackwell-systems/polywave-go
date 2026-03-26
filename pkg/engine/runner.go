@@ -637,7 +637,7 @@ func LoadTypePromptWithRefs(promptPath string) (string, error) {
 // readContextMD reads docs/CONTEXT.md from repoPath and returns its contents (E17).
 // Returns empty string if the file does not exist or cannot be read.
 func readContextMD(repoPath string) string {
-	p := filepath.Join(repoPath, "docs", "CONTEXT.md")
+	p := protocol.ContextMDPath(repoPath)
 	b, err := os.ReadFile(p)
 	if err != nil {
 		return ""

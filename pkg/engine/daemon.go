@@ -3,7 +3,6 @@ package engine
 import (
 	"context"
 	"fmt"
-	"path/filepath"
 	"time"
 
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/autonomy"
@@ -230,7 +229,7 @@ func daemonProcessItem(
 	emit func(string, interface{}),
 ) error {
 	// ── Step c-i: Run Scout to generate IMPL ──────────────────────────────
-	implPath := filepath.Join(opts.RepoPath, "docs", "IMPL", fmt.Sprintf("IMPL-%s.yaml", slug))
+	implPath := protocol.IMPLPath(opts.RepoPath, slug)
 
 	scoutOpts := RunScoutOpts{
 		Feature:     title,

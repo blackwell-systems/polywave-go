@@ -39,7 +39,7 @@ func UpdateContext(manifestPath string, projectRoot string) result.Result[*Updat
 	}
 
 	// Determine context file path
-	contextPath := filepath.Join(projectRoot, "docs", "CONTEXT.md")
+	contextPath := ContextMDPath(projectRoot)
 
 	// Ensure docs directory exists
 	docsDir := filepath.Dir(contextPath)

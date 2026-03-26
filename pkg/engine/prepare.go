@@ -70,7 +70,7 @@ func PrepareWave(ctx context.Context, opts PrepareWaveOpts) (*PrepareWaveResult,
 	projectRoot := opts.RepoPath
 
 	// Write active-impl marker so SubagentStop hooks can find the IMPL doc.
-	sawStateDir := filepath.Join(projectRoot, ".saw-state")
+	sawStateDir := protocol.SAWStateDir(projectRoot)
 	_ = os.MkdirAll(sawStateDir, 0o755)
 	_ = os.WriteFile(filepath.Join(sawStateDir, "active-impl"), []byte(opts.IMPLPath), 0o644)
 
@@ -272,7 +272,7 @@ func PrepareWave(ctx context.Context, opts PrepareWaveOpts) (*PrepareWaveResult,
 	// Step: Baseline quality gates (E21A) with gate cache
 	var cache *gatecache.Cache
 	if !opts.NoCache {
-		stateDir := filepath.Join(projectRoot, ".saw-state")
+		stateDir := protocol.SAWStateDir(projectRoot)
 		cache = gatecache.New(stateDir, gatecache.DefaultTTL)
 	}
 

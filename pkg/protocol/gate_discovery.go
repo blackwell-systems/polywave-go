@@ -13,7 +13,7 @@ import (
 // field. Returns ("", nil) if nothing is configured (silent pass).
 func DiscoverLintGate(repoDir string) (string, error) {
 	// Step 1: Check active IMPL docs for a lint gate.
-	implDir := filepath.Join(repoDir, "docs", "IMPL")
+	implDir := IMPLDir(repoDir)
 	entries, err := os.ReadDir(implDir)
 	if err != nil {
 		// If the directory doesn't exist, that's not an error — just no IMPL docs.

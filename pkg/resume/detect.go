@@ -71,7 +71,7 @@ func DetectWithConfig(repoPaths []string) ([]SessionState, error) {
 	var sessions []SessionState
 
 	for _, repoPath := range repoPaths {
-		implDir := filepath.Join(repoPath, "docs", "IMPL")
+		implDir := protocol.IMPLDir(repoPath)
 
 		entries, err := os.ReadDir(implDir)
 		if err != nil {
@@ -181,7 +181,7 @@ func buildSessionState(repoPaths []string, implPath string, manifest *protocol.I
 	// Use the first repo path as the state dir base (where .saw-state/ lives).
 	var agentSessions map[string]AgentSession
 	if len(repoPaths) > 0 {
-		stateDir := filepath.Join(repoPaths[0], ".saw-state")
+		stateDir := protocol.SAWStateDir(repoPaths[0])
 		if loaded, err := LoadAgentSessions(stateDir, manifest.FeatureSlug); err == nil {
 			agentSessions = loaded
 		}
@@ -375,7 +375,7 @@ var slugPattern = regexp.MustCompile(`^saw/([a-z0-9][-a-z0-9]*)/wave\d+-agent-`)
 // and returns a set of slugs extracted from filenames (strip "IMPL-" prefix and ".yaml" suffix).
 // Worktrees belonging to completed IMPLs are stale artifacts, not interrupted sessions.
 func loadCompletedSlugs(repoPath string) map[string]bool {
-	completeDir := filepath.Join(repoPath, "docs", "IMPL", "complete")
+	completeDir := protocol.IMPLCompleteDir(repoPath)
 	entries, err := os.ReadDir(completeDir)
 	if err != nil {
 		return nil

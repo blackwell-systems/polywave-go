@@ -315,7 +315,7 @@ pattern matching (H7) and appends diagnosis to the output.`,
 			// Step 3: RunPreMergeGates (E21) — structural checks that don't require merged state
 			// CLI-only: uses RunPreMergeGates (not RunGatesWithCache), has C2 closed-loop retry
 			for repoKey, repoPath := range repos {
-				stateDir := filepath.Join(repoPath, ".saw-state")
+				stateDir := protocol.SAWStateDir(repoPath)
 				cache := gatecache.New(stateDir, gatecache.DefaultTTL)
 				gateRes := protocol.RunPreMergeGates(manifest, waveNum, repoPath, cache)
 				if !gateRes.IsSuccess() {

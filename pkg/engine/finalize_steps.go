@@ -3,7 +3,6 @@ package engine
 import (
 	"context"
 	"fmt"
-	"path/filepath"
 	"time"
 
 	"github.com/blackwell-systems/scout-and-wave-go/internal/git"
@@ -129,7 +128,7 @@ func StepRunGates(ctx context.Context, opts FinalizeWaveOpts, manifest *protocol
 	const stepName = "run-gates"
 	emitStepEvent(onEvent, stepName, "running", "")
 
-	stateDir := filepath.Join(opts.RepoPath, ".saw-state")
+	stateDir := protocol.SAWStateDir(opts.RepoPath)
 	cache := gatecache.New(stateDir, 5*time.Minute)
 	gateRes := protocol.RunGatesWithCache(manifest, opts.WaveNum, opts.RepoPath, cache)
 	if !gateRes.IsSuccess() {

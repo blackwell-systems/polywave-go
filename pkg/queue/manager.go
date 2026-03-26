@@ -8,6 +8,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
 	"gopkg.in/yaml.v3"
 )
 
@@ -23,12 +24,12 @@ func NewManager(repoPath string) *Manager {
 
 // queueDir returns the absolute path to docs/IMPL/queue/.
 func (m *Manager) queueDir() string {
-	return filepath.Join(m.repoPath, "docs", "IMPL", "queue")
+	return protocol.IMPLQueueDir(m.repoPath)
 }
 
 // completeDir returns the absolute path to docs/IMPL/complete/.
 func (m *Manager) completeDir() string {
-	return filepath.Join(m.repoPath, "docs", "IMPL", "complete")
+	return protocol.IMPLCompleteDir(m.repoPath)
 }
 
 // slugFromTitle generates a URL-safe slug from a title string.

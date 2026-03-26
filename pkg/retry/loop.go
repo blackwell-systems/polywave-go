@@ -128,19 +128,18 @@ func (rl *RetryLoop) GenerateRetryIMPL(failedFiles []string, gateOutput string) 
 // saveRetryIMPL writes the manifest to docs/IMPL/IMPL-{slug}.yaml under RepoPath.
 // Creates the directory if it does not exist. Returns the relative path.
 func (rl *RetryLoop) saveRetryIMPL(m *protocol.IMPLManifest, slug string) (string, error) {
-	implDir := filepath.Join(rl.cfg.RepoPath, "docs", "IMPL")
+	implDir := protocol.IMPLDir(rl.cfg.RepoPath)
 	if err := os.MkdirAll(implDir, 0755); err != nil {
 		return "", fmt.Errorf("saveRetryIMPL: cannot create %s: %w", implDir, err)
 	}
 
-	filename := fmt.Sprintf("IMPL-%s.yaml", slug)
-	absPath := filepath.Join(implDir, filename)
+	absPath := protocol.IMPLPath(rl.cfg.RepoPath, slug)
 	if err := protocol.Save(m, absPath); err != nil {
 		return "", err
 	}
 
 	// Return the path relative to RepoPath for portability.
-	relPath := filepath.Join("docs", "IMPL", filename)
+	relPath := filepath.Join("docs", "IMPL", fmt.Sprintf("IMPL-%s.yaml", slug))
 	return relPath, nil
 }
 

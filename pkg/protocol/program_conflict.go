@@ -294,8 +294,8 @@ func resolveIMPLPathOrAbs(repoPath, ref string) (string, error) {
 // docs/IMPL/ and docs/IMPL/complete/ directories.
 func ResolveIMPLPath(repoPath, slug string) (string, error) {
 	candidates := []string{
-		filepath.Join(repoPath, "docs", "IMPL", fmt.Sprintf("IMPL-%s.yaml", slug)),
-		filepath.Join(repoPath, "docs", "IMPL", "complete", fmt.Sprintf("IMPL-%s.yaml", slug)),
+		IMPLPath(repoPath, slug),
+		IMPLCompletePath(repoPath, slug),
 	}
 	for _, p := range candidates {
 		if _, err := os.Stat(p); err == nil {

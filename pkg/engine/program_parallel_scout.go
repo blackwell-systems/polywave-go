@@ -3,7 +3,6 @@ package engine
 import (
 	"context"
 	"fmt"
-	"path/filepath"
 	"sync"
 
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
@@ -68,7 +67,7 @@ func LaunchParallelScouts(ctx context.Context, opts ParallelScoutOpts) (*Paralle
 				})
 			}
 
-			implOutPath := filepath.Join(opts.RepoPath, "docs", "IMPL", fmt.Sprintf("IMPL-%s.yaml", slug))
+			implOutPath := protocol.IMPLPath(opts.RepoPath, slug)
 
 			scoutOpts := RunScoutOpts{
 				Feature:             title,
