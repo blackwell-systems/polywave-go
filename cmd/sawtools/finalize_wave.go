@@ -540,7 +540,7 @@ pattern matching (H7) and appends diagnosis to the output.`,
 
 			// Per-agent update-status: complete (non-fatal)
 			for _, agent := range manifest.Waves[waveNum-1].Agents {
-				updateRes := protocol.UpdateStatus(manifestPath, waveNum, agent.ID, "complete")
+				updateRes := protocol.UpdateStatus(manifestPath, waveNum, agent.ID, protocol.StatusComplete)
 				if updateRes.IsFatal() {
 					fmt.Fprintf(os.Stderr, "finalize-wave: warning: update-status for agent %s failed: %v\n",
 						agent.ID, updateRes.Errors)
