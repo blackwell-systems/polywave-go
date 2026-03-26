@@ -107,6 +107,8 @@ func main() {
 		newUpdateProgramImplCmd(),
 		newUpdateProgramStateCmd(),
 		newCloseImplCmd(),
+		newPreCommitCheckCmd(),
+		newInstallHooksCmd(),
 	)
 	if err := rootCmd.Execute(); err != nil {
 		fmt.Fprintln(os.Stderr, err)
