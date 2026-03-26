@@ -7,9 +7,9 @@ import (
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
 )
 
-// RetryAttempt holds all structured information about a retry attempt for an agent.
-// It replaces retryctx.RetryContext with identical JSON field names to preserve
-// the binary contract of sawtools build-retry-context.
+// RetryAttempt is the unified per-attempt state carrier.
+// It replaces both the old RetryAttempt and RetryResult types.
+// It preserves identical JSON field names for sawtools build-retry-context binary contract.
 type RetryAttempt struct {
 	AttemptNumber  int        `json:"attempt_number"`
 	AgentID        string     `json:"agent_id"`
@@ -20,6 +20,11 @@ type RetryAttempt struct {
 	PriorNotes     string     `json:"prior_notes"`
 	PromptText     string     `json:"prompt_text"`
 	FailureType    string     `json:"failure_type,omitempty"`
+	// Fields merged from former RetryResult:
+	GatePassed bool   `json:"gate_passed"`
+	GateOutput string `json:"gate_output"`
+	RetryIMPL  string `json:"retry_impl,omitempty"`
+	FinalState string `json:"final_state"` // "passed" | "retrying" | "blocked"
 }
 
 const maxExcerptLen = 2000
@@ -62,6 +67,10 @@ func BuildRetryAttempt(manifestPath string, agentID string, attemptNum int) (*Re
 		}
 	}
 
+	// Derive GatePassed and GateOutput from the completion report.
+	gatePassed := report.Status == "complete" || report.Status == ""
+	gateOutput := report.Verification
+
 	promptText := BuildPromptText(RetryAttempt{
 		AttemptNumber:  attemptNum,
 		ErrorClass:     class,
@@ -81,6 +90,8 @@ func BuildRetryAttempt(manifestPath string, agentID string, attemptNum int) (*Re
 		PriorNotes:     report.Notes,
 		PromptText:     promptText,
 		FailureType:    report.FailureType,
+		GatePassed:     gatePassed,
+		GateOutput:     gateOutput,
 	}
 	return ra, nil
 }

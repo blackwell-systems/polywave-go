@@ -37,8 +37,8 @@ func TestRetryLoop_MaxRetries(t *testing.T) {
 	if r1.FinalState != "retrying" {
 		t.Errorf("attempt 1: FinalState = %q, want %q", r1.FinalState, "retrying")
 	}
-	if r1.Attempt != 1 {
-		t.Errorf("attempt 1: Attempt = %d, want 1", r1.Attempt)
+	if r1.AttemptNumber != 1 {
+		t.Errorf("attempt 1: AttemptNumber = %d, want 1", r1.AttemptNumber)
 	}
 	if r1.RetryIMPL == "" {
 		t.Error("attempt 1: RetryIMPL path should not be empty")
@@ -49,8 +49,8 @@ func TestRetryLoop_MaxRetries(t *testing.T) {
 	if err != nil {
 		t.Fatalf("attempt 2: unexpected error: %v", err)
 	}
-	if r2.Attempt != 2 {
-		t.Errorf("attempt 2: Attempt = %d, want 2", r2.Attempt)
+	if r2.AttemptNumber != 2 {
+		t.Errorf("attempt 2: AttemptNumber = %d, want 2", r2.AttemptNumber)
 	}
 	if r2.RetryIMPL == "" {
 		t.Error("attempt 2: RetryIMPL path should not be empty")
@@ -70,8 +70,8 @@ func TestRetryLoop_MaxRetries(t *testing.T) {
 	if r3.RetryIMPL != "" {
 		t.Errorf("attempt 3: RetryIMPL should be empty when blocked, got %q", r3.RetryIMPL)
 	}
-	if r3.Attempt != 3 {
-		t.Errorf("attempt 3: Attempt = %d, want 3", r3.Attempt)
+	if r3.AttemptNumber != 3 {
+		t.Errorf("attempt 3: AttemptNumber = %d, want 3", r3.AttemptNumber)
 	}
 
 	// Should have emitted "retry_blocked" event
@@ -118,9 +118,9 @@ func TestRetryLoop_PassOnFirstRetry(t *testing.T) {
 		t.Errorf("FinalState = %q, want %q", result.FinalState, "retrying")
 	}
 
-	// Attempt should be 1
-	if result.Attempt != 1 {
-		t.Errorf("Attempt = %d, want 1", result.Attempt)
+	// AttemptNumber should be 1
+	if result.AttemptNumber != 1 {
+		t.Errorf("AttemptNumber = %d, want 1", result.AttemptNumber)
 	}
 
 	// AgentID should be "R"
