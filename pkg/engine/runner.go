@@ -23,7 +23,7 @@ import (
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/observability"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/orchestrator"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/retryctx"
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/retry"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/suitability"
 	"gopkg.in/yaml.v3"
 )
@@ -807,7 +807,7 @@ func RunSingleAgent(ctx context.Context, opts RunWaveOpts, waveNum int, agentLet
 		manifest, loadErr := protocol.Load(opts.IMPLPath)
 		if loadErr == nil {
 			if report, ok := manifest.CompletionReports[agentLetter]; ok && report.Status != "complete" {
-				rc, rcErr := retryctx.BuildRetryContext(opts.IMPLPath, agentLetter, 1)
+				rc, rcErr := retry.BuildRetryAttempt(opts.IMPLPath, agentLetter, 1)
 				if rcErr != nil {
 					loggerFrom(opts.Logger).Debug("engine.RunSingleAgent: retry context (best-effort)", "err", rcErr)
 				} else if rc != nil && rc.PromptText != "" {
