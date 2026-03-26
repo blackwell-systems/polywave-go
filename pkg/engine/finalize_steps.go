@@ -422,7 +422,7 @@ func StepCheckAgentStatuses(ctx context.Context, opts FinalizeWaveOpts, manifest
 			if !ok {
 				continue
 			}
-			if report.Status == "partial" || report.Status == "blocked" {
+			if report.Status == protocol.StatusPartial || report.Status == protocol.StatusBlocked {
 				detail := fmt.Sprintf("agent %s has status %q — cannot merge (E7)", agent.ID, report.Status)
 				emitStepEvent(onEvent, stepName, "failed", detail)
 				return &StepResult{

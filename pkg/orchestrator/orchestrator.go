@@ -830,7 +830,7 @@ func (o *Orchestrator) launchAgent(
 		// masking the failure with a spurious "complete".
 		if savedManifest, checkErr := protocol.Load(o.implDocPath); checkErr == nil {
 			if cr, ok := savedManifest.CompletionReports[agentSpec.ID]; ok &&
-				(cr.Status == "partial" || cr.Status == "blocked") {
+				(cr.Status == protocol.StatusPartial || cr.Status == protocol.StatusBlocked) {
 				report = &cr
 			}
 		}
@@ -852,7 +852,7 @@ func (o *Orchestrator) launchAgent(
 			notes = "no changes produced (API agent)"
 		}
 		report = &protocol.CompletionReport{
-			Status:       "complete",
+			Status:       protocol.StatusComplete,
 			Worktree:     wtPath,
 			Branch:       branch,
 			Commit:       commitSHA,
@@ -910,11 +910,11 @@ func (o *Orchestrator) launchAgent(
 	// the recursive launchAgent call (from executeRetryLoop) will publish
 	// agent_complete with the final settled status.
 	willAutoRetry := report != nil &&
-		(report.Status == "partial" || report.Status == "blocked") &&
+		(report.Status == protocol.StatusPartial || report.Status == protocol.StatusBlocked) &&
 		(report.FailureType == "transient" || report.FailureType == "fixable" || report.FailureType == "timeout")
 
 	if !willAutoRetry {
-		status := "complete"
+		status := string(protocol.StatusComplete)
 		if report != nil {
 			status = string(report.Status)
 		}
@@ -930,7 +930,7 @@ func (o *Orchestrator) launchAgent(
 	}
 
 	// E19: If agent reported partial or blocked, apply the decision tree.
-	if report != nil && (report.Status == "partial" || report.Status == "blocked") {
+	if report != nil && (report.Status == protocol.StatusPartial || report.Status == protocol.StatusBlocked) {
 		var failureType protocol.FailureTypeEnum
 		switch report.FailureType {
 		case "transient":
@@ -1216,7 +1216,7 @@ func (o *Orchestrator) UpdateIMPLStatus(waveNum int) error {
 		if !ok {
 			continue // Report not found
 		}
-		if report.Status != "complete" {
+		if report.Status != protocol.StatusComplete {
 			continue
 		}
 		completedLetters = append(completedLetters, a.ID)

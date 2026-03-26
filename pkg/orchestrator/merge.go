@@ -37,7 +37,7 @@ func executeMergeWave(o *Orchestrator, waveNum int) error {
 
 		report := &protoReport
 
-		if report.Status == "partial" || report.Status == "blocked" {
+		if report.Status == protocol.StatusPartial || report.Status == protocol.StatusBlocked {
 			return fmt.Errorf("executeMergeWave: agent %s has status %q — merge aborted", agent.ID, report.Status)
 		}
 		reports[agent.ID] = report
@@ -97,7 +97,7 @@ func executeMergeWave(o *Orchestrator, waveNum int) error {
 	// Cross-repo agents are merged in their own repos.
 	for _, agent := range wave.Agents {
 		report, ok := reports[agent.ID]
-		if !ok || report.Status != "complete" {
+		if !ok || report.Status != protocol.StatusComplete {
 			continue
 		}
 
@@ -208,7 +208,7 @@ func predictConflicts(reports map[string]*protocol.CompletionReport) error {
 // paths for cross-repo waves; agents not in the map use repoPath.
 func verifyAgentCommits(repoPath, baseCommit string, reports map[string]*protocol.CompletionReport, agentRepoDir map[string]string) error {
 	for letter, report := range reports {
-		if report.Status != "complete" {
+		if report.Status != protocol.StatusComplete {
 			continue
 		}
 

@@ -806,7 +806,7 @@ func RunSingleAgent(ctx context.Context, opts RunWaveOpts, waveNum int, agentLet
 	if promptPrefix == "" {
 		manifest, loadErr := protocol.Load(opts.IMPLPath)
 		if loadErr == nil {
-			if report, ok := manifest.CompletionReports[agentLetter]; ok && report.Status != "complete" {
+			if report, ok := manifest.CompletionReports[agentLetter]; ok && report.Status != protocol.StatusComplete {
 				rc, rcErr := retry.BuildRetryAttempt(opts.IMPLPath, agentLetter, 1)
 				if rcErr != nil {
 					loggerFrom(opts.Logger).Debug("engine.RunSingleAgent: retry context (best-effort)", "err", rcErr)
