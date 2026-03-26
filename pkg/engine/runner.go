@@ -73,8 +73,8 @@ func RunScout(ctx context.Context, opts RunScoutOpts, onChunk func(string)) erro
 	}
 
 	// Load scout.md prompt (L1: no fallback — missing file is a fatal error).
-	scoutMdPath := filepath.Join(sawRepo, "implementations", "claude-code", "prompts", "scout.md")
-	scoutMdBytes, err := os.ReadFile(scoutMdPath)
+	scoutMdPath := filepath.Join(sawRepo, "implementations", "claude-code", "prompts", "agents", "scout.md")
+	scoutMdContent, err := LoadTypePromptWithRefs(scoutMdPath)
 	if err != nil {
 		return fmt.Errorf("engine.RunScout: scout.md not found at %s: %w", scoutMdPath, err)
 	}
@@ -99,10 +99,10 @@ func RunScout(ctx context.Context, opts RunScoutOpts, onChunk func(string)) erro
 	var prompt string
 	if contextMD != "" {
 		prompt = fmt.Sprintf("## Project Memory (docs/CONTEXT.md)\n\n%s\n\n%s%s\n\n## Feature\n%s\n\n%s\n\n## IMPL Output Path\n%s\n",
-			contextMD, programContractsSection, string(scoutMdBytes), opts.Feature, automationContext, opts.IMPLOutPath)
+			contextMD, programContractsSection, scoutMdContent, opts.Feature, automationContext, opts.IMPLOutPath)
 	} else {
 		prompt = fmt.Sprintf("%s%s\n\n## Feature\n%s\n\n%s\n\n## IMPL Output Path\n%s\n",
-			programContractsSection, string(scoutMdBytes), opts.Feature, automationContext, opts.IMPLOutPath)
+			programContractsSection, scoutMdContent, opts.Feature, automationContext, opts.IMPLOutPath)
 	}
 
 	var execErr error
@@ -176,10 +176,12 @@ func RunPlanner(ctx context.Context, opts RunPlannerOpts, onChunk func(string)) 
 	}
 
 	// Load planner.md prompt with fallback.
-	plannerMdPath := filepath.Join(sawRepo, "agents", "planner.md")
-	plannerMdBytes, err := os.ReadFile(plannerMdPath)
+	plannerMdPath := filepath.Join(sawRepo, "implementations", "claude-code", "prompts", "agents", "planner.md")
+	plannerMdContent, err := LoadTypePromptWithRefs(plannerMdPath)
 	if err != nil {
-		plannerMdBytes = []byte("You are a Planner agent. Analyze the project requirements and produce a PROGRAM manifest at the specified output path. Decompose the project into features organized into dependency-ordered tiers. Define cross-feature program contracts for shared types/APIs.")
+		// Fallback: LoadTypePromptWithRefs only errors on ReadFile failure of
+		// the core file. Keep the same fallback behavior as before.
+		plannerMdContent = "You are a Planner agent. Analyze the project requirements and produce a PROGRAM manifest at the specified output path. Decompose the project into features organized into dependency-ordered tiers. Define cross-feature program contracts for shared types/APIs."
 	}
 
 	// E17: Prepend docs/CONTEXT.md if present.
@@ -187,10 +189,10 @@ func RunPlanner(ctx context.Context, opts RunPlannerOpts, onChunk func(string)) 
 	var prompt string
 	if contextMD != "" {
 		prompt = fmt.Sprintf("## Project Memory (docs/CONTEXT.md)\n\n%s\n\n%s\n\n## Project Description\n%s\n\n## PROGRAM Output Path\n%s\n",
-			contextMD, string(plannerMdBytes), opts.Description, opts.ProgramOutPath)
+			contextMD, plannerMdContent, opts.Description, opts.ProgramOutPath)
 	} else {
 		prompt = fmt.Sprintf("%s\n\n## Project Description\n%s\n\n## PROGRAM Output Path\n%s\n",
-			string(plannerMdBytes), opts.Description, opts.ProgramOutPath)
+			plannerMdContent, opts.Description, opts.ProgramOutPath)
 	}
 
 	model := opts.PlannerModel
@@ -547,12 +549,12 @@ func RunScaffold(ctx context.Context, implPath, repoPath, sawRepoPath, model str
 		sawRepo = filepath.Join(home, "code", "scout-and-wave")
 	}
 	scaffoldMdPath := filepath.Join(sawRepo, "implementations", "claude-code", "prompts", "agents", "scaffold-agent.md")
-	scaffoldMdBytes, err := os.ReadFile(scaffoldMdPath)
+	scaffoldMdContent, err := LoadTypePromptWithRefs(scaffoldMdPath)
 	if err != nil {
-		scaffoldMdBytes = []byte("You are a Scaffold Agent. Create the stub files defined in the IMPL doc Scaffolds section.")
+		scaffoldMdContent = "You are a Scaffold Agent. Create the stub files defined in the IMPL doc Scaffolds section."
 	}
 
-	prompt := fmt.Sprintf("%s\n\n## IMPL Doc Path\n%s\n", string(scaffoldMdBytes), implPath)
+	prompt := fmt.Sprintf("%s\n\n## IMPL Doc Path\n%s\n", scaffoldMdContent, implPath)
 
 	b, err := orchestrator.NewBackendFromModel(model)
 	if err != nil {
@@ -578,6 +580,58 @@ func RunScaffold(ctx context.Context, implPath, repoPath, sawRepoPath, model str
 
 	publish("scaffold_complete", map[string]string{"impl_path": implPath})
 	return nil
+}
+
+// LoadTypePromptWithRefs reads the agent type prompt at promptPath and
+// prepends any reference files from the adjacent references/ directory.
+// Reference files must match the pattern "<type-stem>-*.md" where
+// type-stem is the base filename without the ".md" extension.
+// Each reference file is prepended with a dedup marker:
+//
+//	<!-- injected: references/<filename> -->
+//
+// Missing refsDir is not an error; returns core content only.
+func LoadTypePromptWithRefs(promptPath string) (string, error) {
+	coreBytes, err := os.ReadFile(promptPath)
+	if err != nil {
+		return "", err
+	}
+	coreContent := string(coreBytes)
+
+	refsDir := filepath.Join(filepath.Dir(filepath.Dir(promptPath)), "references")
+	if _, statErr := os.Stat(refsDir); os.IsNotExist(statErr) {
+		return coreContent, nil
+	}
+
+	stem := strings.TrimSuffix(filepath.Base(promptPath), ".md")
+	matches, err := filepath.Glob(filepath.Join(refsDir, stem+"-*.md"))
+	if err != nil {
+		// Glob only errors on malformed patterns; safe to skip
+		return coreContent, nil
+	}
+
+	var injectedParts []string
+	for _, refPath := range matches {
+		filename := filepath.Base(refPath)
+		marker := "<!-- injected: references/" + filename + " -->"
+
+		if strings.Contains(coreContent, marker) {
+			continue // already injected — skip to avoid duplication
+		}
+
+		refBytes, readErr := os.ReadFile(refPath)
+		if readErr != nil {
+			slog.Default().Warn("LoadTypePromptWithRefs: cannot read reference file", "path", refPath, "err", readErr)
+			continue
+		}
+
+		injectedParts = append(injectedParts, marker+"\n"+string(refBytes)+"\n\n")
+	}
+
+	if len(injectedParts) == 0 {
+		return coreContent, nil
+	}
+	return strings.Join(injectedParts, "") + "\n\n" + coreContent, nil
 }
 
 // readContextMD reads docs/CONTEXT.md from repoPath and returns its contents (E17).
