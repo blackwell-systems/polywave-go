@@ -20,7 +20,7 @@ func ValidateCompletionStatuses(m *IMPLManifest) []result.SAWError {
 	for agentID, report := range m.CompletionReports {
 		if !validStatuses[report.Status] {
 			errs = append(errs, result.SAWError{
-				Code:     "DC02_INVALID_STATUS",
+				Code:     result.CodeInvalidEnum,
 				Severity: "error",
 				Message:  fmt.Sprintf("agent %s completion report has invalid status %q — must be one of: complete, partial, blocked", agentID, report.Status),
 				Field:    fmt.Sprintf("completion_reports[%s].status", agentID),
@@ -53,7 +53,7 @@ func ValidateFailureTypes(m *IMPLManifest) []result.SAWError {
 
 		if !validTypes[report.FailureType] {
 			errs = append(errs, result.SAWError{
-				Code:     "DC03_INVALID_FAILURE_TYPE",
+				Code:     result.CodeInvalidFailureType,
 				Severity: "error",
 				Message:  fmt.Sprintf("agent %s completion report has invalid failure_type %q — must be one of: transient, fixable, needs_replan, escalate, timeout", agentID, report.FailureType),
 				Field:    fmt.Sprintf("completion_reports[%s].failure_type", agentID),
@@ -88,7 +88,7 @@ func ValidatePreMortemRisk(m *IMPLManifest) []result.SAWError {
 
 	if !validRisks[m.PreMortem.OverallRisk] {
 		errs = append(errs, result.SAWError{
-			Code:     "DC06_INVALID_RISK",
+			Code:     result.CodeInvalidPreMortemRisk,
 			Severity: "error",
 			Message:  fmt.Sprintf("pre_mortem overall_risk has invalid value %q — must be one of: low, medium, high", m.PreMortem.OverallRisk),
 			Field:    "pre_mortem.overall_risk",

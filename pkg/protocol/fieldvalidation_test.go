@@ -2,6 +2,8 @@ package protocol
 
 import (
 	"testing"
+
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
 )
 
 func TestValidateWorktreeNames_Valid(t *testing.T) {
@@ -54,7 +56,7 @@ func TestValidateWorktreeNames_InvalidBranch(t *testing.T) {
 	if len(errs) != 1 {
 		t.Fatalf("Expected 1 error, got %d: %v", len(errs), errs)
 	}
-	if errs[0].Code != "E5_INVALID_WORKTREE_NAME" {
+	if errs[0].Code != result.CodeInvalidWorktreeName {
 		t.Errorf("Expected E5_INVALID_WORKTREE_NAME, got %s", errs[0].Code)
 	}
 }
@@ -83,7 +85,7 @@ func TestValidateWorktreeNames_WrongWave(t *testing.T) {
 	if len(errs) != 1 {
 		t.Fatalf("Expected 1 error for wrong wave number, got %d: %v", len(errs), errs)
 	}
-	if errs[0].Code != "E5_INVALID_WORKTREE_NAME" {
+	if errs[0].Code != result.CodeInvalidWorktreeName {
 		t.Errorf("Expected E5_INVALID_WORKTREE_NAME, got %s", errs[0].Code)
 	}
 }
@@ -184,7 +186,7 @@ func TestValidateWorktreeNames_InvalidPath(t *testing.T) {
 	if len(errs) != 1 {
 		t.Fatalf("Expected 1 error for invalid worktree path, got %d: %v", len(errs), errs)
 	}
-	if errs[0].Code != "E5_INVALID_WORKTREE_PATH" {
+	if errs[0].Code != result.CodeInvalidWorktreeName {
 		t.Errorf("Expected E5_INVALID_WORKTREE_PATH, got %s", errs[0].Code)
 	}
 }
@@ -291,7 +293,7 @@ func TestValidateWorktreeNames_WrongAgentID(t *testing.T) {
 	if len(errs) != 1 {
 		t.Fatalf("Expected 1 error for wrong agent ID, got %d: %v", len(errs), errs)
 	}
-	if errs[0].Code != "E5_INVALID_WORKTREE_NAME" {
+	if errs[0].Code != result.CodeInvalidWorktreeName {
 		t.Errorf("Expected E5_INVALID_WORKTREE_NAME, got %s", errs[0].Code)
 	}
 }
@@ -367,7 +369,7 @@ func TestValidateWorktreeNames_SoloWaveStillFailsMultiAgent(t *testing.T) {
 	if len(errs) != 1 {
 		t.Fatalf("Expected 1 error (multi-agent wave must use worktree branch), got %d: %v", len(errs), errs)
 	}
-	if errs[0].Code != "E5_INVALID_WORKTREE_NAME" {
+	if errs[0].Code != result.CodeInvalidWorktreeName {
 		t.Errorf("Expected E5_INVALID_WORKTREE_NAME, got %s", errs[0].Code)
 	}
 }
@@ -467,7 +469,7 @@ func TestValidateVerificationField_Invalid(t *testing.T) {
 			if len(errs) != 1 {
 				t.Fatalf("Expected 1 error for invalid verification %q, got %d: %v", tc.verification, len(errs), errs)
 			}
-			if errs[0].Code != "E10_INVALID_VERIFICATION" {
+			if errs[0].Code != result.CodeInvalidVerification {
 				t.Errorf("Expected E10_INVALID_VERIFICATION, got %s", errs[0].Code)
 			}
 		})
@@ -555,7 +557,7 @@ func TestValidateVerificationField_MultipleReports(t *testing.T) {
 	if len(errs) != 1 {
 		t.Fatalf("Expected 1 error for agent C, got %d: %v", len(errs), errs)
 	}
-	if errs[0].Code != "E10_INVALID_VERIFICATION" {
+	if errs[0].Code != result.CodeInvalidVerification {
 		t.Errorf("Expected E10_INVALID_VERIFICATION, got %s", errs[0].Code)
 	}
 }
