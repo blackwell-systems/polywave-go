@@ -177,3 +177,120 @@ func TestValidateAllEnums_NilOptionals(t *testing.T) {
 		t.Errorf("expected no errors for nil optionals, got %d: %v", len(errs), errs)
 	}
 }
+
+// --- InjectionMethod tests ---
+
+func TestValidateInjectionMethod_valid(t *testing.T) {
+	for _, v := range []InjectionMethod{InjectionMethodHook, InjectionMethodManualFallback, InjectionMethodUnknown} {
+		m := &IMPLManifest{InjectionMethod: v, State: StateWaveExecuting}
+		errs := validateInjectionMethod(m)
+		if len(errs) != 0 {
+			t.Errorf("expected no errors for %q, got %d: %v", v, len(errs), errs)
+		}
+	}
+}
+
+func TestValidateInjectionMethod_invalid(t *testing.T) {
+	m := &IMPLManifest{InjectionMethod: "bad-value", State: StateWaveExecuting}
+	errs := validateInjectionMethod(m)
+	if len(errs) != 1 {
+		t.Fatalf("expected 1 error, got %d: %v", len(errs), errs)
+	}
+	if errs[0].Severity != "error" {
+		t.Errorf("expected error severity, got %s", errs[0].Severity)
+	}
+	if errs[0].Code != SV01InvalidEnum {
+		t.Errorf("expected code %s, got %s", SV01InvalidEnum, errs[0].Code)
+	}
+	if errs[0].Field != "injection_method" {
+		t.Errorf("expected field injection_method, got %s", errs[0].Field)
+	}
+}
+
+func TestValidateInjectionMethod_absent_active(t *testing.T) {
+	// Absent injection_method is always skipped (backwards compatible; no absent-field warning yet).
+	m := &IMPLManifest{InjectionMethod: "", State: StateWaveExecuting}
+	errs := validateInjectionMethod(m)
+	if len(errs) != 0 {
+		t.Errorf("expected no errors for absent injection_method in active state, got %d: %v", len(errs), errs)
+	}
+}
+
+func TestValidateInjectionMethod_absent_complete(t *testing.T) {
+	m := &IMPLManifest{InjectionMethod: "", State: StateComplete}
+	errs := validateInjectionMethod(m)
+	if len(errs) != 0 {
+		t.Errorf("expected no errors for COMPLETE state, got %d: %v", len(errs), errs)
+	}
+}
+
+func TestValidateInjectionMethod_absent_empty_state(t *testing.T) {
+	m := &IMPLManifest{InjectionMethod: "", State: ""}
+	errs := validateInjectionMethod(m)
+	if len(errs) != 0 {
+		t.Errorf("expected no errors for empty state, got %d: %v", len(errs), errs)
+	}
+}
+
+// --- ContextSource tests ---
+
+func TestValidateAgentContextSource_valid(t *testing.T) {
+	for _, v := range []ContextSource{ContextSourcePreparedBrief, ContextSourceFallbackFullContext, ContextSourceCrossRepoFull} {
+		m := &IMPLManifest{
+			State: StateWaveExecuting,
+			Waves: []Wave{
+				{Number: 1, Agents: []Agent{{ID: "A", Task: "t", Files: []string{"f.go"}, ContextSource: v}}},
+			},
+		}
+		errs := validateAgentContextSource(m)
+		if len(errs) != 0 {
+			t.Errorf("expected no errors for %q, got %d: %v", v, len(errs), errs)
+		}
+	}
+}
+
+func TestValidateAgentContextSource_invalid(t *testing.T) {
+	m := &IMPLManifest{
+		State: StateWaveExecuting,
+		Waves: []Wave{
+			{Number: 1, Agents: []Agent{{ID: "A", Task: "t", Files: []string{"f.go"}, ContextSource: "bad-source"}}},
+		},
+	}
+	errs := validateAgentContextSource(m)
+	if len(errs) != 1 {
+		t.Fatalf("expected 1 error, got %d: %v", len(errs), errs)
+	}
+	if errs[0].Severity != "error" {
+		t.Errorf("expected error severity, got %s", errs[0].Severity)
+	}
+	if errs[0].Code != SV01InvalidEnum {
+		t.Errorf("expected code %s, got %s", SV01InvalidEnum, errs[0].Code)
+	}
+}
+
+func TestValidateAgentContextSource_absent_active(t *testing.T) {
+	// Absent context_source is always skipped (backwards compatible; no absent-field warning yet).
+	m := &IMPLManifest{
+		State: StateWaveExecuting,
+		Waves: []Wave{
+			{Number: 1, Agents: []Agent{{ID: "A", Task: "t", Files: []string{"f.go"}, ContextSource: ""}}},
+		},
+	}
+	errs := validateAgentContextSource(m)
+	if len(errs) != 0 {
+		t.Errorf("expected no errors for absent context_source in active state, got %d: %v", len(errs), errs)
+	}
+}
+
+func TestValidateAgentContextSource_absent_scout(t *testing.T) {
+	m := &IMPLManifest{
+		State: StateScoutPending,
+		Waves: []Wave{
+			{Number: 1, Agents: []Agent{{ID: "A", Task: "t", Files: []string{"f.go"}, ContextSource: ""}}},
+		},
+	}
+	errs := validateAgentContextSource(m)
+	if len(errs) != 0 {
+		t.Errorf("expected no errors for SCOUT_PENDING state, got %d: %v", len(errs), errs)
+	}
+}

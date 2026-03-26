@@ -27,6 +27,7 @@ type scoutOutputSchema struct {
 	PreMortem             *PreMortem          `json:"pre_mortem,omitempty"`
 	KnownIssues           []KnownIssue        `json:"known_issues,omitempty"`
 	CompletionDate        string              `json:"completion_date,omitempty"`
+	InjectionMethod       string              `json:"injection_method,omitempty"`
 }
 
 // GenerateScoutSchema returns a JSON Schema (as map[string]any) describing the

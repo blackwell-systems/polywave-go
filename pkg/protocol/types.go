@@ -59,6 +59,9 @@ type IMPLManifest struct {
 	FrozenContractsHash string     `yaml:"frozen_contracts_hash,omitempty" json:"frozen_contracts_hash,omitempty"`
 	FrozenScaffoldsHash string     `yaml:"frozen_scaffolds_hash,omitempty" json:"frozen_scaffolds_hash,omitempty"`
 	CompletionDate      string     `yaml:"completion_date,omitempty"        json:"completion_date,omitempty"`
+	// InjectionMethod records how the Scout agent received its reference file content.
+	// Written by the Scout itself before completing; absent on pre-feature IMPLs.
+	InjectionMethod InjectionMethod `yaml:"injection_method,omitempty" json:"injection_method,omitempty"`
 }
 
 // FileOwnership tracks which agent owns which file in which wave.
@@ -90,6 +93,9 @@ type Agent struct {
 	Files        []string `yaml:"files" json:"files"`
 	Dependencies []string `yaml:"dependencies,omitempty" json:"dependencies,omitempty"`
 	Model        string   `yaml:"model,omitempty" json:"model,omitempty"`
+	// ContextSource records which prompt path the orchestrator used when launching this agent.
+	// Written by the orchestrator during wave preparation; absent on old agent entries.
+	ContextSource ContextSource `yaml:"context_source,omitempty" json:"context_source,omitempty"`
 }
 
 // CompletionReport records the outcome of an agent's work.
@@ -237,4 +243,24 @@ const (
 	MergeStateInProgress MergeState = "in_progress"
 	MergeStateCompleted  MergeState = "completed"
 	MergeStateFailed     MergeState = "failed"
+)
+
+// InjectionMethod records how the Scout agent received its reference file content.
+// Written by the Scout itself before completing; absent on pre-feature IMPLs.
+type InjectionMethod string
+
+const (
+	InjectionMethodHook           InjectionMethod = "hook"            // validate_agent_launch injected references via updatedInput
+	InjectionMethodManualFallback InjectionMethod = "manual-fallback" // Scout read reference files explicitly (hook absent/failed)
+	InjectionMethodUnknown        InjectionMethod = "unknown"         // Scout did not support this field (old IMPL)
+)
+
+// ContextSource records which prompt path the orchestrator used when launching a wave agent.
+// Written by the orchestrator during wave preparation; absent on old agent entries.
+type ContextSource string
+
+const (
+	ContextSourcePreparedBrief      ContextSource = "prepared-brief"        // .saw-agent-brief.md used (normal path)
+	ContextSourceFallbackFullContext ContextSource = "fallback-full-context" // full IMPL context passed inline (brief inaccessible)
+	ContextSourceCrossRepoFull      ContextSource = "cross-repo-full"       // cross-repo agent, full context payload
 )

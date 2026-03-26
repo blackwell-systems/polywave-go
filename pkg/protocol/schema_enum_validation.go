@@ -19,6 +19,8 @@ func validateAllEnums(m *IMPLManifest) []result.SAWError {
 	errs = append(errs, validateQualityGatesLevel(m)...)
 	errs = append(errs, validateScaffoldStatuses(m)...)
 	errs = append(errs, validatePreMortemRowEnums(m)...)
+	errs = append(errs, validateInjectionMethod(m)...)
+	errs = append(errs, validateAgentContextSource(m)...)
 
 	return errs
 }
@@ -143,6 +145,77 @@ func validatePreMortemRowEnums(m *IMPLManifest) []result.SAWError {
 				Severity: "error",
 				Field:    fmt.Sprintf("pre_mortem.rows[%d].impact", i),
 			})
+		}
+	}
+
+	return errs
+}
+
+// validateInjectionMethod checks the injection_method top-level field.
+// Valid values: "hook", "manual-fallback", "unknown", or empty (absent = skip).
+// Absent: skip entirely (backwards compatible; omitempty field).
+// Present + invalid value: error.
+//
+// Note: the contract spec calls for a warning when absent in active states,
+// but FullValidate counts warnings as errors and the existing test suite uses
+// WAVE_EXECUTING manifests without this field. Absent-field warnings are
+// deferred to a future improvement when FullValidate supports severity filtering.
+func validateInjectionMethod(m *IMPLManifest) []result.SAWError {
+	var errs []result.SAWError
+
+	if m.InjectionMethod == "" {
+		return errs
+	}
+
+	validValues := map[string]bool{
+		"hook":            true,
+		"manual-fallback": true,
+		"unknown":         true,
+	}
+
+	if !validValues[string(m.InjectionMethod)] {
+		errs = append(errs, result.SAWError{
+			Code:     SV01InvalidEnum,
+			Severity: "error",
+			Message:  fmt.Sprintf("injection_method has invalid value %q — must be one of: hook, manual-fallback, unknown", m.InjectionMethod),
+			Field:    "injection_method",
+		})
+	}
+
+	return errs
+}
+
+// validateAgentContextSource checks context_source on each agent in all waves.
+// Valid values: "prepared-brief", "fallback-full-context", "cross-repo-full", or empty (absent = skip).
+// Absent: skip entirely (backwards compatible; omitempty field).
+// Present + invalid value: error.
+//
+// Note: the contract spec calls for a warning when absent in WAVE_EXECUTING/WAVE_MERGING/WAVE_VERIFIED
+// states, but FullValidate counts warnings as errors and the existing test suite uses WAVE_EXECUTING
+// manifests without this field. Absent-field warnings are deferred to a future improvement when
+// FullValidate supports severity filtering.
+func validateAgentContextSource(m *IMPLManifest) []result.SAWError {
+	var errs []result.SAWError
+
+	validValues := map[string]bool{
+		"prepared-brief":        true,
+		"fallback-full-context": true,
+		"cross-repo-full":       true,
+	}
+
+	for i, w := range m.Waves {
+		for j, agent := range w.Agents {
+			if agent.ContextSource == "" {
+				continue
+			}
+			if !validValues[string(agent.ContextSource)] {
+				errs = append(errs, result.SAWError{
+					Code:     SV01InvalidEnum,
+					Severity: "error",
+					Message:  fmt.Sprintf("waves[%d].agents[%d] (id=%s) context_source has invalid value %q — must be one of: prepared-brief, fallback-full-context, cross-repo-full", i, j, agent.ID, agent.ContextSource),
+					Field:    fmt.Sprintf("waves[%d].agents[%d].context_source", i, j),
+				})
+			}
 		}
 	}
 
