@@ -372,6 +372,112 @@ func TestRunTierLoop_CreatesIMPLBranch(t *testing.T) {
 	}
 }
 
+func TestIsCrossImplSerialWaveBlocked_NoSerialWaves(t *testing.T) {
+	manifest := buildTierLoopManifest(
+		[]protocol.ProgramTier{{Number: 1, Impls: []string{"a", "b"}}},
+		[]protocol.ProgramIMPL{
+			{Slug: "a", Tier: 1, Status: "pending", EstimatedWaves: 2},
+			{Slug: "b", Tier: 1, Status: "pending", EstimatedWaves: 2},
+		},
+	)
+
+	// No serial waves defined — never blocked
+	if isCrossImplSerialWaveBlocked(manifest, 1, "a", 1, map[string]int{}) {
+		t.Error("expected false: no serial waves defined for either IMPL")
+	}
+}
+
+func TestIsCrossImplSerialWaveBlocked_WaveNotInSerialList(t *testing.T) {
+	manifest := buildTierLoopManifest(
+		[]protocol.ProgramTier{{Number: 1, Impls: []string{"a", "b"}}},
+		[]protocol.ProgramIMPL{
+			{Slug: "a", Tier: 1, Status: "pending", EstimatedWaves: 3, SerialWaves: []int{2}},
+			{Slug: "b", Tier: 1, Status: "pending", EstimatedWaves: 3, SerialWaves: []int{2}},
+		},
+	)
+
+	// Wave 1 is not in SerialWaves — not blocked
+	if isCrossImplSerialWaveBlocked(manifest, 1, "a", 1, map[string]int{}) {
+		t.Error("expected false: wave 1 is not in SerialWaves")
+	}
+	// Wave 3 is not in SerialWaves — not blocked
+	if isCrossImplSerialWaveBlocked(manifest, 1, "a", 3, map[string]int{}) {
+		t.Error("expected false: wave 3 is not in SerialWaves")
+	}
+}
+
+func TestIsCrossImplSerialWaveBlocked_BlockedWhenOtherNotComplete(t *testing.T) {
+	manifest := buildTierLoopManifest(
+		[]protocol.ProgramTier{{Number: 1, Impls: []string{"a", "b"}}},
+		[]protocol.ProgramIMPL{
+			{Slug: "a", Tier: 1, Status: "pending", EstimatedWaves: 2, SerialWaves: []int{2}},
+			{Slug: "b", Tier: 1, Status: "pending", EstimatedWaves: 2, SerialWaves: []int{2}},
+		},
+	)
+
+	// "b" hasn't completed wave 2 yet (waveProgress["b"] = 0 by default)
+	// so "a" should be blocked from starting wave 2
+	waveProgress := map[string]int{"a": 1} // "a" completed wave 1; "b" not started
+	if !isCrossImplSerialWaveBlocked(manifest, 1, "a", 2, waveProgress) {
+		t.Error("expected true: b has not completed wave 2, so a should be blocked")
+	}
+}
+
+func TestIsCrossImplSerialWaveBlocked_NotBlockedWhenOtherComplete(t *testing.T) {
+	manifest := buildTierLoopManifest(
+		[]protocol.ProgramTier{{Number: 1, Impls: []string{"a", "b"}}},
+		[]protocol.ProgramIMPL{
+			{Slug: "a", Tier: 1, Status: "pending", EstimatedWaves: 2, SerialWaves: []int{2}},
+			{Slug: "b", Tier: 1, Status: "pending", EstimatedWaves: 2, SerialWaves: []int{2}},
+		},
+	)
+
+	// "b" has completed wave 2; "a" should not be blocked
+	waveProgress := map[string]int{"b": 2}
+	if isCrossImplSerialWaveBlocked(manifest, 1, "a", 2, waveProgress) {
+		t.Error("expected false: b has completed wave 2, a is not blocked")
+	}
+}
+
+func TestIsCrossImplSerialWaveBlocked_OtherNotInSerialList(t *testing.T) {
+	manifest := buildTierLoopManifest(
+		[]protocol.ProgramTier{{Number: 1, Impls: []string{"a", "b"}}},
+		[]protocol.ProgramIMPL{
+			{Slug: "a", Tier: 1, Status: "pending", EstimatedWaves: 2, SerialWaves: []int{2}},
+			{Slug: "b", Tier: 1, Status: "pending", EstimatedWaves: 2}, // no SerialWaves
+		},
+	)
+
+	// "b" doesn't have wave 2 as serial — "a" is not blocked by "b"
+	waveProgress := map[string]int{}
+	if isCrossImplSerialWaveBlocked(manifest, 1, "a", 2, waveProgress) {
+		t.Error("expected false: b does not have wave 2 as serial")
+	}
+}
+
+func TestIsCrossImplSerialWaveBlocked_MultipleIMPLsOnlyOneBlocks(t *testing.T) {
+	manifest := buildTierLoopManifest(
+		[]protocol.ProgramTier{{Number: 1, Impls: []string{"a", "b", "c"}}},
+		[]protocol.ProgramIMPL{
+			{Slug: "a", Tier: 1, Status: "pending", EstimatedWaves: 2, SerialWaves: []int{2}},
+			{Slug: "b", Tier: 1, Status: "pending", EstimatedWaves: 2, SerialWaves: []int{2}},
+			{Slug: "c", Tier: 1, Status: "pending", EstimatedWaves: 2, SerialWaves: []int{2}},
+		},
+	)
+
+	// "b" completed wave 2 but "c" did not
+	waveProgress := map[string]int{"b": 2}
+	if !isCrossImplSerialWaveBlocked(manifest, 1, "a", 2, waveProgress) {
+		t.Error("expected true: c has not completed wave 2, so a should be blocked")
+	}
+
+	// Now "c" also completes wave 2
+	waveProgress["c"] = 2
+	if isCrossImplSerialWaveBlocked(manifest, 1, "a", 2, waveProgress) {
+		t.Error("expected false: both b and c completed wave 2, a is not blocked")
+	}
+}
+
 func TestTierLoop_GetTierSlugs(t *testing.T) {
 	manifest := buildTierLoopManifest(
 		[]protocol.ProgramTier{

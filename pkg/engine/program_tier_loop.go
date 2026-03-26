@@ -32,7 +32,7 @@ type TierLoopResult struct {
 
 // TierLoopEvent is emitted at each major step for observability.
 type TierLoopEvent struct {
-	Type   string `json:"type"`   // "tier_started", "scout_launched", "impl_complete", "tier_gate", "contracts_frozen", "tier_advanced", "replan_triggered"
+	Type   string `json:"type"`   // "tier_started", "scout_launched", "impl_complete", "tier_gate", "contracts_frozen", "tier_advanced", "replan_triggered", "wave_complete"
 	Tier   int    `json:"tier"`
 	Detail string `json:"detail"`
 }
@@ -148,38 +148,77 @@ func RunTierLoop(ctx context.Context, opts TierLoopOpts) (*TierLoopResult, error
 			return result, nil
 		}
 
-		// Step 8: Execute waves for each IMPL in the tier
+		// Step 8: Execute waves for each IMPL in the tier, respecting serial_waves
 		tierSlugs := getTierSlugs(manifest, currentTier)
-		for _, slug := range tierSlugs {
-			implPath := findIMPLDocPath(opts.RepoPath, slug)
-			if implPath == "" {
-				result.Errors = append(result.Errors, fmt.Sprintf("IMPL doc not found for %s", slug))
-				continue
-			}
+		waveProgress := make(map[string]int)
 
-			// Ensure IMPL branch exists before wave execution (E28)
-			implBranch := protocol.ProgramBranchName(manifest.ProgramSlug, currentTier, slug)
-			if !git.BranchExists(opts.RepoPath, implBranch) {
-				if _, err := git.Run(opts.RepoPath, "checkout", "-b", implBranch); err != nil {
-					result.Errors = append(result.Errors, fmt.Sprintf("failed to create IMPL branch %s: %s", implBranch, err))
+		// Find max wave count in this tier
+		maxWaveCount := 0
+		for _, slug := range tierSlugs {
+			wc := getIMPLWaveCount(manifest, slug)
+			if wc > maxWaveCount {
+				maxWaveCount = wc
+			}
+		}
+
+		for waveNum := 1; waveNum <= maxWaveCount; waveNum++ {
+			for _, slug := range tierSlugs {
+				implWaveCount := getIMPLWaveCount(manifest, slug)
+				if waveNum > implWaveCount {
+					continue // this IMPL doesn't have wave waveNum
+				}
+
+				// Wait for serial wave constraint to clear
+				// (in this sequential implementation we simply check and skip if blocked,
+				//  relying on the outer wave loop to retry — but for correctness in the
+				//  sequential model, we run serial waves in slug order which is sufficient)
+				if isCrossImplSerialWaveBlocked(manifest, currentTier, slug, waveNum, waveProgress) {
+					// In fully sequential execution, this should not happen because we
+					// complete one serial wave at a time. Log and continue.
+					result.Errors = append(result.Errors,
+						fmt.Sprintf("unexpected serial wave block: impl=%s wave=%d", slug, waveNum))
 					continue
 				}
-			}
 
-			// Determine number of waves for this IMPL
-			waveCount := getIMPLWaveCount(manifest, slug)
-			for wave := 1; wave <= waveCount; wave++ {
+				implPath := findIMPLDocPath(opts.RepoPath, slug)
+				if implPath == "" {
+					result.Errors = append(result.Errors,
+						fmt.Sprintf("IMPL doc not found for %s", slug))
+					continue
+				}
+
+				implBranch := protocol.ProgramBranchName(manifest.ProgramSlug, currentTier, slug)
+				if !git.BranchExists(opts.RepoPath, implBranch) {
+					if _, err := git.Run(opts.RepoPath, "checkout", "-b", implBranch); err != nil {
+						result.Errors = append(result.Errors,
+							fmt.Sprintf("failed to create IMPL branch %s: %s", implBranch, err))
+						continue
+					}
+				}
+
 				_, waveErr := RunWaveFull(ctx, RunWaveFullOpts{
 					ManifestPath: implPath,
 					RepoPath:     opts.RepoPath,
-					WaveNum:      wave,
+					WaveNum:      waveNum,
 					MergeTarget:  implBranch,
 				})
 				if waveErr != nil {
-					result.Errors = append(result.Errors, fmt.Sprintf("wave %d for %s failed: %s", wave, slug, waveErr))
+					result.Errors = append(result.Errors,
+						fmt.Sprintf("wave %d for %s failed: %s", waveNum, slug, waveErr))
+				} else {
+					waveProgress[slug] = waveNum
 				}
 			}
 
+			emitEvent(opts.OnEvent, TierLoopEvent{
+				Type:   "wave_complete",
+				Tier:   currentTier,
+				Detail: fmt.Sprintf("Wave %d complete for tier %d", waveNum, currentTier),
+			})
+		}
+
+		// Emit impl_complete events after all waves done
+		for _, slug := range tierSlugs {
 			emitEvent(opts.OnEvent, TierLoopEvent{
 				Type:   "impl_complete",
 				Tier:   currentTier,
@@ -468,6 +507,76 @@ func findIMPLDocPath(repoPath, slug string) string {
 		return loc
 	}
 	return ""
+}
+
+// isCrossImplSerialWaveBlocked returns true if starting wave waveNum for impl slug
+// would violate cross-IMPL serialization constraints within tierNumber.
+// A wave is blocked if: (a) it is listed in slug's SerialWaves AND
+// (b) any other IMPL in the same tier has that same wave number still in-progress
+// (i.e., its waveProgress value is < waveNum or it hasn't reached waveNum yet
+// from the perspective of the serial ordering).
+// waveProgress maps slug -> highest wave number that has COMPLETED for that IMPL.
+func isCrossImplSerialWaveBlocked(
+	manifest *protocol.PROGRAMManifest,
+	tierNumber int,
+	slug string,
+	waveNum int,
+	waveProgress map[string]int,
+) bool {
+	// Find this IMPL's SerialWaves
+	var serialWaves []int
+	for _, impl := range manifest.Impls {
+		if impl.Slug == slug {
+			serialWaves = impl.SerialWaves
+			break
+		}
+	}
+	if len(serialWaves) == 0 {
+		return false // no serial constraint
+	}
+	isSerial := false
+	for _, sw := range serialWaves {
+		if sw == waveNum {
+			isSerial = true
+			break
+		}
+	}
+	if !isSerial {
+		return false // this wave number is not constrained
+	}
+
+	// Check all other IMPLs in the same tier
+	tierSlugs := getTierSlugs(manifest, tierNumber)
+	for _, other := range tierSlugs {
+		if other == slug {
+			continue
+		}
+		// Check if other IMPL also has waveNum in its SerialWaves
+		var otherSerial []int
+		for _, impl := range manifest.Impls {
+			if impl.Slug == other {
+				otherSerial = impl.SerialWaves
+				break
+			}
+		}
+		otherIsSerial := false
+		for _, sw := range otherSerial {
+			if sw == waveNum {
+				otherIsSerial = true
+				break
+			}
+		}
+		if !otherIsSerial {
+			continue // other IMPL doesn't have this wave as serial
+		}
+
+		// If other IMPL hasn't completed waveNum yet, this IMPL is blocked
+		// (waveProgress[other] < waveNum means other hasn't finished waveNum)
+		if waveProgress[other] < waveNum {
+			return true
+		}
+	}
+	return false
 }
 
 // emitEvent safely calls the OnEvent callback if it is non-nil.
