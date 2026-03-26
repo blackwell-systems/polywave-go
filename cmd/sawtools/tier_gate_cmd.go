@@ -40,7 +40,7 @@ Exit codes:
 			if repoDir == "" {
 				cwd, err := os.Getwd()
 				if err != nil {
-					return fmt.Errorf("tier-gate: failed to get current directory: %v", err)
+					return fmt.Errorf("tier-gate: failed to get current directory: %w", err)
 				}
 				repoDir = cwd
 			}
@@ -48,7 +48,7 @@ Exit codes:
 			// Parse the PROGRAM manifest
 			manifest, err := protocol.ParseProgramManifest(manifestPath)
 			if err != nil {
-				return fmt.Errorf("tier-gate: parse error: %v", err)
+				return fmt.Errorf("tier-gate: parse error: %w", err)
 			}
 
 			// Run tier gate verification

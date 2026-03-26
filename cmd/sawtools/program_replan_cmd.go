@@ -41,7 +41,7 @@ Exit codes:
 			// Parse the PROGRAM manifest (return error on parse error)
 			_, err := protocol.ParseProgramManifest(manifestPath)
 			if err != nil {
-				return fmt.Errorf("program-replan: parse error: %v", err)
+				return fmt.Errorf("program-replan: parse error: %w", err)
 			}
 
 			// Construct opts from flags
@@ -55,7 +55,7 @@ Exit codes:
 			// Call engine function
 			result, err := engine.ReplanProgram(opts)
 			if err != nil {
-				return fmt.Errorf("program-replan: %v", err)
+				return fmt.Errorf("program-replan: %w", err)
 			}
 
 			// Output JSON result

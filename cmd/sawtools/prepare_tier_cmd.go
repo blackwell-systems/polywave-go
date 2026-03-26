@@ -38,7 +38,7 @@ Exit codes:
 			result, err := protocol.PrepareTier(manifestPath, tierNum, repoDir)
 			if err != nil {
 				if result == nil {
-					return fmt.Errorf("prepare-tier: %v", err)
+					return fmt.Errorf("prepare-tier: %w", err)
 				}
 				return err
 			}

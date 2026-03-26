@@ -28,7 +28,7 @@ func newSolveCmd() *cobra.Command {
 			// Run the solver.
 			fixed, changes, err := protocol.SolveManifest(m)
 			if err != nil {
-				return fmt.Errorf("solve: cannot solve: %s", err)
+				return fmt.Errorf("solve: cannot solve: %w", err)
 			}
 
 			// Count agents and waves for summary.

@@ -214,7 +214,7 @@ pattern matching (H7) and appends diagnosis to the output.`,
 				if stepErr != nil {
 					out, _ := json.MarshalIndent(result, "", "  ")
 					fmt.Println(string(out))
-					return fmt.Errorf("finalize-wave: verify-commits failed in %s: %v", repoKey, stepErr)
+					return fmt.Errorf("finalize-wave: verify-commits failed in %s: %w", repoKey, stepErr)
 				}
 				if verifyData, ok := stepResult.Data.(protocol.VerifyCommitsData); ok {
 					result.VerifyCommits[repoKey] = &verifyData
@@ -235,7 +235,7 @@ pattern matching (H7) and appends diagnosis to the output.`,
 				if stepErr != nil {
 					out, _ := json.MarshalIndent(result, "", "  ")
 					fmt.Println(string(out))
-					return fmt.Errorf("finalize-wave: %v", stepErr)
+					return fmt.Errorf("finalize-wave: %w", stepErr)
 				}
 				break // manifest-level check, only run once
 			}
@@ -250,7 +250,7 @@ pattern matching (H7) and appends diagnosis to the output.`,
 				if stepErr != nil {
 					out, _ := json.MarshalIndent(result, "", "  ")
 					fmt.Println(string(out))
-					return fmt.Errorf("finalize-wave: %v", stepErr)
+					return fmt.Errorf("finalize-wave: %w", stepErr)
 				}
 				break
 			}
@@ -265,7 +265,7 @@ pattern matching (H7) and appends diagnosis to the output.`,
 				if stepErr != nil {
 					out, _ := json.MarshalIndent(result, "", "  ")
 					fmt.Println(string(out))
-					return fmt.Errorf("finalize-wave: %v", stepErr)
+					return fmt.Errorf("finalize-wave: %w", stepErr)
 				}
 				break
 			}
@@ -283,7 +283,7 @@ pattern matching (H7) and appends diagnosis to the output.`,
 				if stepErr != nil {
 					out, _ := json.MarshalIndent(result, "", "  ")
 					fmt.Println(string(out))
-					return fmt.Errorf("finalize-wave: %v", stepErr)
+					return fmt.Errorf("finalize-wave: %w", stepErr)
 				}
 			}
 
@@ -303,7 +303,7 @@ pattern matching (H7) and appends diagnosis to the output.`,
 				}
 				stepResult, stepErr := engine.StepScanStubs(cmd.Context(), stepOpts, manifest, onEvent)
 				if stepErr != nil {
-					return fmt.Errorf("finalize-wave: scan-stubs failed: %v", stepErr)
+					return fmt.Errorf("finalize-wave: scan-stubs failed: %w", stepErr)
 				}
 				if stubData, ok := stepResult.Data.(*protocol.ScanStubsData); ok {
 					result.StubReport = stubData
@@ -487,7 +487,7 @@ pattern matching (H7) and appends diagnosis to the output.`,
 					}
 					out, _ := json.MarshalIndent(result, "", "  ")
 					fmt.Println(string(out))
-					return fmt.Errorf("finalize-wave: verify-build failed in %s: %v", repoKey, stepErr)
+					return fmt.Errorf("finalize-wave: verify-build failed in %s: %w", repoKey, stepErr)
 				}
 				if stepResult != nil && stepResult.Data != nil {
 					if verifyData, ok := stepResult.Data.(protocol.VerifyBuildData); ok {

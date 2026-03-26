@@ -47,7 +47,7 @@ Exit codes:
 			// Validate manifest is parseable (return error on parse error)
 			_, err := protocol.ParseProgramManifest(manifestPath)
 			if err != nil {
-				return fmt.Errorf("program-execute: parse error: %v", err)
+				return fmt.Errorf("program-execute: parse error: %w", err)
 			}
 
 			// Set up context with signal handling
@@ -87,7 +87,7 @@ Exit codes:
 
 			result, err := engine.RunTierLoop(ctx, opts)
 			if err != nil {
-				return fmt.Errorf("program-execute: %v", err)
+				return fmt.Errorf("program-execute: %w", err)
 			}
 
 			// Output final result as JSON

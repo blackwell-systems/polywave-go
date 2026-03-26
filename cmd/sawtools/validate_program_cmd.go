@@ -38,7 +38,7 @@ func newValidateProgramCmd() *cobra.Command {
 			// Parse the manifest; fail fast if unparseable
 			manifest, err := protocol.ParseProgramManifest(manifestPath)
 			if err != nil {
-				return fmt.Errorf("validate-program: parse error: %v", err)
+				return fmt.Errorf("validate-program: parse error: %w", err)
 			}
 
 			// Run validation
