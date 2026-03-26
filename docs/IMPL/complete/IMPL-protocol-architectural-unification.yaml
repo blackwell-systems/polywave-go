@@ -1,0 +1,1240 @@
+completion_date: "2026-03-25"
+title: Protocol Architectural Unification
+feature_slug: protocol-architectural-unification
+verdict: SUITABLE
+suitability_assessment: |
+    All five suitability questions resolve cleanly.
+
+    1. File decomposition: 7 distinct unification scopes touch disjoint file sets.
+       Scopes 1-4 (slug, tier, ownership map, path resolution) are concentrated in
+       pkg/protocol/ and cmd/sawtools/. Scope 5 (state->status) spans two pkg/ files.
+       Scope 6 (error codes) affects pkg/protocol/ files in distinct domains.
+       Scope 7 (archive utility) is already extracted -- no action needed beyond
+       confirming callers use the existing canonical functions. File ownership is
+       cleanly disjoint across agents.
+
+    2. Investigation-first: No root cause analysis needed. All duplication sites are
+       identified with exact line numbers. The behavioral differences in state->status
+       mapping (implStateToStatus returns "reviewed" for active states; mapIMPLStateToStatus
+       in program_status.go returns "in-progress") are documented and the canonical
+       behavior is determinable from the feature spec.
+
+    3. Interface discoverability: All cross-agent interfaces (ExtractIMPLSlug,
+       ComputeTierAssignments, BuildFileOwnershipMap, ResolveIMPLPathOrAbs,
+       ResolveIMPLPath, IMPLStateToStatus, new error code constants) can be fully
+       specified before wave execution.
+
+    4. Implementation status: All items are TODO -- confirmed by reading current source.
+       The ExtractIMPLSlug function does not exist. The tier assignment function is
+       duplicated (not consolidated). The canonical path resolvers are unexported.
+       The state->status canonical function does not exist. Ad-hoc error code strings
+       are present throughout pkg/.
+
+    5. Parallelization value: High. Go build+test cycle is >30s. Agents own 3-8 files
+       each. Tasks involve non-trivial logic refactoring, constant additions, and
+       caller updates. Wave 1 has 6 parallel agents.
+
+    Scope 7 (archive utility) analysis: ArchiveIMPL and ArchiveProgram already exist as
+    exported canonical functions in discovery.go and are used by all callers. No
+    duplication. This scope requires NO implementation work -- confirmed by grep.
+
+    State->status behavioral note: The canonical function will align with program_status.go
+    behavior (the authoritative "what status does the UI show" function). The
+    import_impls_cmd.go and program_generator.go versions return "reviewed" for active
+    wave states; program_status.go returns "in-progress". The canonical function will
+    return "in-progress" for active wave states. The cmd and generator callers will be
+    updated to use the canonical exported function, which changes their output for
+    WAVE_EXECUTING/WAVE_MERGING states from "reviewed" to "in-progress" -- correct behavior.
+
+    program_status.go conflict resolution: Both Agent B (state->status unification) and
+    the error code work need to touch program_status.go. Agent B owns the file entirely.
+    B's task includes BOTH the mapIMPLStateToStatus adapter update AND the E_PROGRAM_STATUS
+    error code replacement (line 24), keeping ownership disjoint.
+
+    Agent E split: The 17 error-code files originally assigned to E are split into E
+    (9 files: state-machine and infrastructure codes) and E2 (8 files: validation,
+    commit, critic, and gate codes). Both agents have independent files and can run
+    in parallel.
+
+    Estimated times:
+    - Scout phase: ~25 min
+    - Agent execution: ~6 agents x ~15 min avg = 90 min parallelized (Wave 1), ~15 min (Wave 2)
+    - Merge and verification: ~10 min
+    Total SAW time: ~55 min
+    Sequential baseline: ~7 scopes x ~20 min = ~140 min
+    Time savings: ~85 min (61% faster)
+    Recommendation: Clear speedup. Proceed.
+test_command: go test ./...
+lint_command: go vet ./...
+file_ownership:
+    - file: pkg/protocol/impl_slug.go
+      agent: A
+      wave: 1
+      action: new
+    - file: pkg/protocol/program_conflict.go
+      agent: A
+      wave: 1
+      action: modify
+    - file: pkg/protocol/program_conflict_test.go
+      agent: A
+      wave: 1
+      action: modify
+    - file: pkg/protocol/state_status.go
+      agent: B
+      wave: 1
+      action: new
+    - file: pkg/protocol/program_generator.go
+      agent: B
+      wave: 1
+      action: modify
+    - file: pkg/protocol/program_status.go
+      agent: B
+      wave: 1
+      action: modify
+    - file: pkg/protocol/program_generator_test.go
+      agent: B
+      wave: 1
+      action: modify
+    - file: pkg/result/codes.go
+      agent: C
+      wave: 1
+      action: modify
+    - file: pkg/protocol/worktree.go
+      agent: D
+      wave: 1
+      action: modify
+    - file: pkg/protocol/cleanup.go
+      agent: D
+      wave: 1
+      action: modify
+    - file: pkg/protocol/program_worktree.go
+      agent: D
+      wave: 1
+      action: modify
+    - file: pkg/protocol/verify_build.go
+      agent: D
+      wave: 1
+      action: modify
+    - file: pkg/protocol/program_tier_finalize.go
+      agent: D
+      wave: 1
+      action: modify
+    - file: pkg/protocol/context_update.go
+      agent: E
+      wave: 1
+      action: modify
+    - file: pkg/protocol/program_freeze.go
+      agent: E
+      wave: 1
+      action: modify
+    - file: pkg/protocol/stale_worktree.go
+      agent: E
+      wave: 1
+      action: modify
+    - file: pkg/protocol/state_transition.go
+      agent: E
+      wave: 1
+      action: modify
+    - file: pkg/protocol/baseline_gates.go
+      agent: E
+      wave: 1
+      action: modify
+    - file: pkg/protocol/isolation.go
+      agent: E
+      wave: 1
+      action: modify
+    - file: pkg/protocol/status_update.go
+      agent: E
+      wave: 1
+      action: modify
+    - file: pkg/protocol/program_tier_gate.go
+      agent: E
+      wave: 1
+      action: modify
+    - file: pkg/protocol/dependency_verifier.go
+      agent: E2
+      wave: 1
+      action: modify
+    - file: pkg/protocol/gate_input_validator.go
+      agent: E2
+      wave: 1
+      action: modify
+    - file: pkg/protocol/wiring_validation.go
+      agent: E2
+      wave: 1
+      action: modify
+    - file: pkg/protocol/commit_verify.go
+      agent: E2
+      wave: 1
+      action: modify
+    - file: pkg/protocol/critic.go
+      agent: E2
+      wave: 1
+      action: modify
+    - file: pkg/protocol/completion_validator.go
+      agent: E2
+      wave: 1
+      action: modify
+    - file: pkg/protocol/gate_populator.go
+      agent: E2
+      wave: 1
+      action: modify
+    - file: pkg/protocol/critic_test.go
+      agent: E2
+      wave: 1
+      action: modify
+    - file: cmd/sawtools/import_impls_cmd.go
+      agent: F
+      wave: 2
+      action: modify
+      depends_on:
+        - A
+        - B
+        - C
+    - file: cmd/sawtools/import_impls_cmd_test.go
+      agent: F
+      wave: 2
+      action: modify
+      depends_on:
+        - A
+        - B
+        - C
+interface_contracts:
+    - name: ExtractIMPLSlug
+      description: |
+        Canonical slug extraction from an IMPL path and manifest.
+        Priority: manifest.FeatureSlug -> filepath.Base(implPath) with
+        "IMPL-" prefix and ".yaml" suffix stripped -> implPath fallback.
+      definition: |
+        // ExtractIMPLSlug returns the canonical feature slug for an IMPL document.
+        // Priority order:
+        //  1. manifest.FeatureSlug if non-empty
+        //  2. filepath.Base(implPath) with "IMPL-" prefix and ".yaml" suffix stripped (if non-empty result)
+        //  3. implPath as final fallback
+        func ExtractIMPLSlug(implPath string, manifest *IMPLManifest) string
+      location: pkg/protocol/impl_slug.go
+    - name: ComputeTierAssignments
+      description: |
+        Exported greedy graph-coloring tier assignment. Replaces both
+        computeTierSuggestion (program_conflict.go) and computeTierAssignments
+        (import_impls_cmd.go). The existing computeTierSuggestion becomes an
+        unexported wrapper that calls this function.
+      definition: |
+        // ComputeTierAssignments assigns each slug to the earliest tier where it
+        // has no overlap conflicts with already-assigned slugs (greedy graph coloring).
+        // slugs: ordered list of IMPL feature slugs to assign
+        // overlaps: map[slug]map[conflicting-slug]bool representing the overlap graph
+        // Returns: map[slug]int where int is the 1-indexed tier number
+        func ComputeTierAssignments(slugs []string, overlaps map[string]map[string]bool) map[string]int
+      location: pkg/protocol/program_conflict.go
+    - name: ResolveIMPLPathOrAbs
+      description: |
+        Exported version of the existing resolveIMPLPathOrAbs. Resolves an IMPL
+        reference (slug, relative path, or absolute path) to an absolute file path.
+      definition: |
+        // ResolveIMPLPathOrAbs resolves a single IMPL reference (slug or absolute path)
+        // to an absolute file path.
+        // Path detection: filepath.IsAbs -> verify+return; contains os.PathSeparator ->
+        // join+verify; otherwise slug -> ResolveIMPLPath.
+        func ResolveIMPLPathOrAbs(repoPath, ref string) (string, error)
+      location: pkg/protocol/program_conflict.go
+    - name: ResolveIMPLPath
+      description: |
+        Exported version of the existing resolveIMPLPath. Finds the IMPL doc for
+        a given slug, checking docs/IMPL/ and docs/IMPL/complete/.
+      definition: |
+        // ResolveIMPLPath finds the IMPL doc for a given slug, checking both
+        // docs/IMPL/ and docs/IMPL/complete/ directories.
+        func ResolveIMPLPath(repoPath, slug string) (string, error)
+      location: pkg/protocol/program_conflict.go
+    - name: IMPLStateToStatus
+      description: |
+        Canonical state-to-status mapping. Single authoritative function replacing:
+        - implStateToStatus() in program_generator.go (returns "reviewed" for active states)
+        - mapIMPLStateToStatus(ProtocolState) in import_impls_cmd.go (returns "reviewed")
+        - mapIMPLStateToStatus(string) in program_status.go (returns "in-progress")
+        The canonical function takes ProtocolState (typed) and returns "in-progress"
+        for active wave states (WAVE_EXECUTING, WAVE_MERGING, WAVE_VERIFIED, WAVE_PENDING).
+      definition: |
+        // IMPLStateToStatus maps a ProtocolState to a program IMPL status string.
+        // Returns: "complete", "in-progress", "pending", "blocked", "not-suitable",
+        // or string(state) for unknown states.
+        func IMPLStateToStatus(state ProtocolState) string
+      location: pkg/protocol/state_status.go
+    - name: BuildFileOwnershipMap
+      description: |
+        Canonical builder for a file-to-slugs ownership map from IMPL refs.
+        Replaces inline map-building loops in CheckIMPLConflicts.
+        Uses repo-qualified keys (repo:file) where Repo is set.
+      definition: |
+        // BuildFileOwnershipMap loads each IMPL ref (slug or abs path) and builds
+        // a qualified-file -> []featureSlug map with deduplication.
+        // Returns: fileOwners map, ordered featureSlugs list, error.
+        func BuildFileOwnershipMap(refs []string, repoPath string) (map[string][]string, []string, error)
+      location: pkg/protocol/program_conflict.go
+    - name: NewErrorCodeConstants
+      description: |
+        New constants added to pkg/result/codes.go by Agent C.
+        These replace ad-hoc E_X string codes used in pkg/protocol/ files.
+      definition: |
+        // Engine error codes (N015-N017)
+        CodeStatusUpdateFailed  = "N015_STATUS_UPDATE_FAILED"
+        CodeTierGateFailed      = "N016_TIER_GATE_FAILED"
+        CodeProgramStatusFailed = "N017_PROGRAM_STATUS_FAILED"
+
+        // Build/gate error codes (B008)
+        CodeGateInputInvalid = "B008_GATE_INPUT_INVALID"
+
+        // Protocol error codes (P007)
+        CodeWiringGap = "P007_WIRING_GAP"
+      location: pkg/result/codes.go
+waves:
+    - number: 1
+      agents:
+        - id: A
+          task: |
+            ## Context
+
+            You are implementing Scopes 1, 2, 3, and 4 of the protocol architectural
+            unification: canonical slug extraction, exported path resolution functions,
+            exported tier assignment function, and canonical file ownership map building.
+
+            ## What to implement
+
+            ### 1. Create pkg/protocol/impl_slug.go
+
+            Create this new file with the exported ExtractIMPLSlug function:
+
+            ```go
+            package protocol
+
+            import (
+                "path/filepath"
+                "strings"
+            )
+
+            // ExtractIMPLSlug returns the canonical feature slug for an IMPL document.
+            // Priority:
+            //  1. manifest.FeatureSlug if non-empty
+            //  2. filepath.Base(implPath) with "IMPL-" prefix and ".yaml" suffix stripped (if result non-empty)
+            //  3. implPath as final fallback
+            func ExtractIMPLSlug(implPath string, manifest *IMPLManifest) string {
+                if manifest != nil && manifest.FeatureSlug != "" {
+                    return manifest.FeatureSlug
+                }
+                base := strings.TrimSuffix(strings.TrimPrefix(filepath.Base(implPath), "IMPL-"), ".yaml")
+                if base != "" {
+                    return base
+                }
+                return implPath
+            }
+            ```
+
+            Also add a test file `pkg/protocol/impl_slug_test.go` (note: NOT listed in
+            file_ownership because it is a companion to impl_slug.go which IS listed).
+
+            ### 2. Export path resolution functions in program_conflict.go
+
+            Rename the unexported functions to exported names:
+            - `resolveIMPLPathOrAbs` -> `ResolveIMPLPathOrAbs`
+            - `resolveIMPLPath` -> `ResolveIMPLPath`
+
+            Update ALL call sites within pkg/protocol/ to use the new names:
+            - program_conflict.go line 92: `resolveIMPLPathOrAbs(repoPath, slug)` -> `ResolveIMPLPathOrAbs`
+            - program_conflict.go line 212: `resolveIMPLPathOrAbs(repoPath, ref)` -> `ResolveIMPLPathOrAbs`
+            - program_conflict.go line 318: `return resolveIMPLPath(repoPath, ref)` -> `ResolveIMPLPath`
+            - program_tier_prepare.go line 80: `resolveIMPLPath(repoDir, slug)` -> `ResolveIMPLPath`
+              (program_tier_prepare.go is in the same package; update it here)
+
+            Note: program_generator.go (line 71) is owned by Agent B -- B will update that call site.
+
+            ### 3. Export ComputeTierAssignments in program_conflict.go
+
+            Rename `computeTierSuggestion` to `ComputeTierAssignments`. Add a thin
+            unexported wrapper to keep internal call sites working:
+
+            ```go
+            func computeTierSuggestion(slugs []string, overlaps map[string]map[string]bool) map[string]int {
+                return ComputeTierAssignments(slugs, overlaps)
+            }
+            ```
+
+            Internal call sites in program_conflict.go (lines 182, 287) continue to call
+            computeTierSuggestion -- leave them as-is; the wrapper handles them.
+
+            ### 4. Create BuildFileOwnershipMap in program_conflict.go
+
+            Extract the file ownership map building logic from CheckIMPLConflicts
+            (lines 207-245) into:
+
+            ```go
+            func BuildFileOwnershipMap(refs []string, repoPath string) (map[string][]string, []string, error)
+            ```
+
+            The extracted logic:
+            - For each ref: call ResolveIMPLPathOrAbs + Load
+            - Extract slug via ExtractIMPLSlug(implPath, manifest)
+            - Build fileOwners map with repo-qualified keys (repo:file) and deduplication
+            - Collect ordered featureSlugs
+
+            Then update CheckIMPLConflicts to call BuildFileOwnershipMap:
+            ```go
+            fileOwners, featureSlugs, err := BuildFileOwnershipMap(implRefs, repoPath)
+            if err != nil {
+                return nil, err
+            }
+            ```
+
+            Note: CheckIMPLConflicts previously used `manifest.FeatureSlug` with a `slug = ref`
+            fallback. With BuildFileOwnershipMap using ExtractIMPLSlug, the fallback now
+            strips "IMPL-" prefix and ".yaml" suffix from the filename -- this is a minor
+            behavioral improvement for malformed docs.
+
+            ### 5. Tests
+
+            In impl_slug_test.go:
+            - TestExtractIMPLSlug_FeatureSlug: non-empty FeatureSlug returned directly
+            - TestExtractIMPLSlug_PathFallback: empty FeatureSlug, standard IMPL-foo.yaml path
+            - TestExtractIMPLSlug_NilManifest: nil manifest, path fallback
+
+            In program_conflict_test.go:
+            - Update any calls to resolveIMPLPathOrAbs -> ResolveIMPLPathOrAbs
+            - Add TestBuildFileOwnershipMap with a temp dir fixture
+
+            ## Verification gate
+
+            ```
+            go build ./pkg/protocol/...
+            go vet ./pkg/protocol/...
+            go test ./pkg/protocol/ -run TestCheckIMPL -v
+            go test ./pkg/protocol/ -run TestExtractIMPLSlug -v
+            go test ./pkg/protocol/ -run TestBuildFileOwnership -v
+            ```
+
+            ## Constraints
+
+            - Do NOT touch cmd/sawtools/import_impls_cmd.go (Agent F, Wave 2)
+            - Do NOT touch pkg/protocol/program_generator.go (Agent B)
+            - program_tier_prepare.go: update call sites only, no logic changes
+            - Exported functions must have identical behavior to the unexported originals
+          files:
+            - pkg/protocol/impl_slug.go
+            - pkg/protocol/program_conflict.go
+            - pkg/protocol/program_conflict_test.go
+        - id: B
+          task: |
+            ## Context
+
+            You are implementing Scope 5 (canonical state->status conversion) of the
+            protocol architectural unification. You also own program_status.go entirely
+            and are responsible for the E_PROGRAM_STATUS error code replacement there.
+
+            ## What to implement
+
+            ### 1. Create pkg/protocol/state_status.go
+
+            Create the canonical state-to-status function. First, read pkg/protocol/types.go
+            to confirm the exact names of ProtocolState constants (e.g., StateBlocked,
+            StateNotSuitable -- verify these exist before using them).
+
+            ```go
+            package protocol
+
+            // IMPLStateToStatus maps a ProtocolState to a program IMPL status string.
+            // Returns: "complete", "in-progress", "pending", "blocked",
+            // "not-suitable", or string(state) for unknown states.
+            func IMPLStateToStatus(state ProtocolState) string {
+                switch state {
+                case StateComplete:
+                    return "complete"
+                case StateWaveExecuting, StateWaveMerging, StateWaveVerified, StateWavePending:
+                    return "in-progress"
+                case StateReviewed, StateScaffoldPending, StateScoutPending, StateScoutValidating:
+                    return "pending"
+                case StateBlocked:
+                    return "blocked"
+                case StateNotSuitable:
+                    return "not-suitable"
+                default:
+                    return string(state)
+                }
+            }
+            ```
+
+            If StateBlocked or StateNotSuitable do not exist in types.go, omit those
+            cases (check before writing).
+
+            ### 2. Update pkg/protocol/program_generator.go
+
+            Replace the unexported implStateToStatus function (lines 304-320) with a
+            backwards-compat wrapper:
+
+            ```go
+            func implStateToStatus(state ProtocolState) string {
+                return IMPLStateToStatus(state)
+            }
+            ```
+
+            Also update the resolveIMPLPathOrAbs call at line 71 to ResolveIMPLPathOrAbs
+            (Agent A exports that function; use the new name).
+
+            ### 3. Update pkg/protocol/program_status.go
+
+            Two changes to this file:
+
+            a) Replace the E_PROGRAM_STATUS ad-hoc code at line 24 with
+               result.CodeProgramStatusFailed (new constant added by Agent C as N017).
+               Import "github.com/blackwell-systems/scout-and-wave-go/pkg/result" if
+               not already imported in this file.
+               Note: Agent C adds this constant in parallel. If it's not available in
+               your worktree at build time, define a temporary local const and note it
+               in your completion report.
+
+            b) Replace the mapIMPLStateToStatus function body (lines 158-174) with
+               a delegation to IMPLStateToStatus:
+
+            ```go
+            func mapIMPLStateToStatus(state string) string {
+                return IMPLStateToStatus(ProtocolState(state))
+            }
+            ```
+
+            ### 4. Tests
+
+            Create pkg/protocol/state_status_test.go:
+            - TestIMPLStateToStatus_Complete: StateComplete -> "complete"
+            - TestIMPLStateToStatus_InProgress: StateWaveExecuting -> "in-progress"
+            - TestIMPLStateToStatus_Pending: StateReviewed -> "pending"
+            - TestIMPLStateToStatus_Unknown: unknown state -> string(state)
+
+            Update pkg/protocol/program_generator_test.go:
+            - If any test asserts status == "reviewed" for WAVE_EXECUTING/WAVE_MERGING
+              states, update it to assert "in-progress" (the canonical behavior)
+
+            ## Verification gate
+
+            ```
+            go build ./pkg/protocol/...
+            go vet ./pkg/protocol/...
+            go test ./pkg/protocol/ -run TestIMPLStateToStatus -v
+            go test ./pkg/protocol/ -run TestGenerate -v
+            ```
+
+            ## Constraints
+
+            - Do NOT touch cmd/sawtools/import_impls_cmd.go (Agent F, Wave 2)
+            - Your changes to program_status.go are at lines 24 and 158-174 only
+            - Do NOT change any function signatures beyond what is specified
+            - program_generator.go comment at line 302 says "resolveIMPLPath is defined
+              in program_conflict.go (canonical location)" -- update that comment to
+              say "ResolveIMPLPath" (the exported name)
+          files:
+            - pkg/protocol/state_status.go
+            - pkg/protocol/program_generator.go
+            - pkg/protocol/program_status.go
+            - pkg/protocol/program_generator_test.go
+        - id: C
+          task: |
+            ## Context
+
+            You are adding new error code constants to pkg/result/codes.go.
+            This is a pure addition -- no existing constants are renamed or removed.
+            Agents D, E, and E2 depend on these constants to replace ad-hoc codes.
+
+            ## What to implement
+
+            Add the following constants to codes.go, placed in their respective
+            existing const blocks. Follow the exact naming convention.
+
+            ### Engine error codes block (N001-N099) -- add after N014:
+
+            ```go
+            // N015: status update mutation failed (replaces "E_STATUS" in status_update.go)
+            CodeStatusUpdateFailed = "N015_STATUS_UPDATE_FAILED"
+            // N016: tier gate evaluation failed (replaces "E_TIER_GATE" in program_tier_gate.go)
+            CodeTierGateFailed = "N016_TIER_GATE_FAILED"
+            // N017: program status computation failed (replaces "E_PROGRAM_STATUS" in program_status.go)
+            CodeProgramStatusFailed = "N017_PROGRAM_STATUS_FAILED"
+            ```
+
+            ### Build and gate error codes block (B001-B099) -- add after B007:
+
+            ```go
+            // B008: gate input validation failed (replaces "E_GATE_INPUT" in gate_input_validator.go)
+            CodeGateInputInvalid = "B008_GATE_INPUT_INVALID"
+            ```
+
+            ### Protocol error codes block (P001-P099) -- add after P006:
+
+            ```go
+            // P007: wiring gap detected (replaces "E_WIRING" in wiring_validation.go)
+            CodeWiringGap = "P007_WIRING_GAP"
+            ```
+
+            ## Mapping reference for Agents D, E, E2
+
+            Use this guide when replacing ad-hoc codes. Existing constants to use:
+
+            For worktree.go, cleanup.go, program_worktree.go (Agent D):
+              "E001" (load fail) -> result.CodeIMPLParseFailed
+              "E002" (wave not found) -> result.CodeWaveNotReady
+              "E003" (repo path) -> result.CodeWorktreeCreateFailed
+              "E004" (save fail) -> result.CodeIMPLParseFailed
+              "E005" (resolve path) -> result.CodeWorktreeCreateFailed
+              "E006" (branch exists) -> result.CodeBranchExists
+              "E007" (HEAD fail) -> result.CodeWorktreeCreateFailed
+              "E008" (worktree add) -> result.CodeWorktreeCreateFailed
+              "E_PROGRAM_WORKTREE" (all) -> result.CodeWorktreeCreateFailed
+
+            For program_tier_finalize.go (Agent D):
+              "E001" (merge failed) -> result.CodeMergeConflict
+              "E002" (tier gate error) -> result.CodeTierGateFailed  [NEW N016]
+              "E003" (tier gate failed) -> result.CodeTierGateFailed  [NEW N016]
+
+            For verify_build.go (Agent D):
+              "E001" (load fail) -> result.CodeIMPLParseFailed
+
+            For context_update.go (Agent E):
+              "E_CONTEXT" (all) -> result.CodeContextError
+
+            For program_freeze.go (Agent E):
+              "E_FREEZE" (all) -> result.CodeFreezeError
+
+            For stale_worktree.go (Agent E):
+              "E_STALE" (all) -> result.CodeStaleWorktree
+
+            For state_transition.go (Agent E):
+              "E_STATE" (all) -> result.CodeStateTransition
+
+            For baseline_gates.go (Agent E):
+              "E_BASELINE" (all) -> result.CodeBaselineError
+
+            For isolation.go (Agent E):
+              "E_ISOLATION" (all) -> result.CodeIsolationVerifyFailed
+
+            For status_update.go (Agent E):
+              "E_STATUS" (all) -> result.CodeStatusUpdateFailed  [NEW N015]
+
+            For program_tier_gate.go (Agent E):
+              "E_TIER_GATE" (all) -> result.CodeTierGateFailed  [NEW N016]
+
+            For dependency_verifier.go (Agent E):
+              "E_WAVE_NOT_FOUND" -> result.CodeWaveNotReady
+
+            For gate_input_validator.go (Agent E2):
+              "E_GATE_INPUT" -> result.CodeGateInputInvalid  [NEW B008]
+
+            For wiring_validation.go (Agent E2):
+              "E_WIRING" -> result.CodeWiringGap  [NEW P007]
+
+            For commit_verify.go (Agent E2):
+              "E101" -> result.CodeCommitMissing
+              "E102" -> result.CodeDirtyWorktree
+              "E103" -> result.CodeWorktreeCreateFailed
+              "E104" -> result.CodeCommitMissing
+
+            For critic.go (Agent E2):
+              Read critic.go to map E001/E002/E003 to appropriate codes.
+              E001 (load manifest) -> result.CodeIMPLParseFailed
+              E002 (save/write) -> result.CodeIMPLParseFailed
+              E003 (critic report missing, asserted in critic_test.go line 368) ->
+                read context to determine best code; likely result.CodeCompletionReportMissing
+
+            For completion_validator.go (Agent E2):
+              Read to understand -- likely all -> result.CodeCompletionReportMissing
+
+            For gate_populator.go (Agent E2):
+              "E001" (load fail) -> result.CodeIMPLParseFailed
+              "E016" (validation fail) -> result.CodeManifestInvalid
+              "E002" (no H2 data) -> result.CodeToolNotFound
+              "E003", "E004", "E005" -> read gate_populator.go to determine
+              "E016" (second occurrence) -> result.CodeManifestInvalid
+
+            ## Verification gate
+
+            ```
+            go build ./pkg/result/...
+            go vet ./pkg/result/...
+            go test ./pkg/result/...
+            ```
+
+            ## Constraints
+
+            - Only ADD constants; do NOT rename or remove existing constants
+            - Follow naming convention exactly: CodeXxxYyy = "X000_XXXXX"
+            - Do not touch any pkg/protocol/ files
+          files:
+            - pkg/result/codes.go
+        - id: D
+          task: |
+            ## Context
+
+            You are implementing Scope 6 (error code canonicalization) for the
+            worktree, cleanup, build verification, and program tier finalization
+            files in pkg/protocol/. All ad-hoc numeric string codes in your 5 files
+            must be replaced with constants from pkg/result/codes.go (Agent C adds
+            the new constants you need in parallel).
+
+            ## What to implement
+
+            For each file, add the import
+            "github.com/blackwell-systems/scout-and-wave-go/pkg/result"
+            if not already present, then replace each ad-hoc code string literal
+            with the appropriate constant per the Agent C mapping guide.
+
+            ### worktree.go (8 replacements at lines 50, 69, 81, 93, 105, 180, 196, 243)
+
+            - Line 50: "E001" -> result.CodeIMPLParseFailed
+            - Line 69: "E002" -> result.CodeWaveNotReady
+            - Line 81: "E003" -> result.CodeWorktreeCreateFailed
+            - Line 93: "E004" -> result.CodeIMPLParseFailed
+            - Line 105: "E005" -> result.CodeWorktreeCreateFailed
+            - Line 180: "E006" -> result.CodeBranchExists
+            - Line 196: "E007" -> result.CodeWorktreeCreateFailed
+            - Line 243: "E008" -> result.CodeWorktreeCreateFailed
+
+            ### cleanup.go (3 replacements at lines 72, 91, 108)
+
+            - Line 72: "E001" -> result.CodeIMPLParseFailed
+            - Line 91: "E002" -> result.CodeWaveNotReady
+            - Line 108: "E003" -> result.CodeWorktreeCreateFailed
+
+            ### verify_build.go (1 replacement at line 39)
+
+            - Line 39: "E001" -> result.CodeIMPLParseFailed
+
+            ### program_worktree.go (5 replacements at lines 50, 65, 73, 91, 99)
+
+            All "E_PROGRAM_WORKTREE" -> result.CodeWorktreeCreateFailed
+
+            ### program_tier_finalize.go (3 replacements at lines 93, 117, 128)
+
+            - Line 93: "E001" -> result.CodeMergeConflict
+            - Line 117: "E002" -> result.CodeTierGateFailed
+            - Line 128: "E003" -> result.CodeTierGateFailed
+
+            Note: result.CodeTierGateFailed (N016) is added by Agent C in parallel.
+            If C's worktree is not merged when you compile, temporarily define:
+              const codeTierGateFailed = "N016_TIER_GATE_FAILED"
+            and note this in your completion report. Do not commit a local const --
+            use result.CodeTierGateFailed in the final code.
+
+            ## Verification gate
+
+            ```
+            go build ./pkg/protocol/...
+            go vet ./pkg/protocol/...
+            go test ./pkg/protocol/ -run TestCleanup -v
+            go test ./pkg/protocol/ -run TestCreateWorktrees -v
+            go test ./pkg/protocol/ -run TestFinalizeTier -v
+            ```
+
+            ## Constraints
+
+            - Only change Code: string literal values -- do NOT change messages,
+              severity, function logic, or any other field
+            - Do NOT touch files owned by other agents
+            - If any test asserts on a specific code string value (e.g., "E001"),
+              update both source and test to use the constant
+          files:
+            - pkg/protocol/worktree.go
+            - pkg/protocol/cleanup.go
+            - pkg/protocol/verify_build.go
+            - pkg/protocol/program_worktree.go
+            - pkg/protocol/program_tier_finalize.go
+        - id: E
+          task: |
+            ## Context
+
+            You are implementing Scope 6 (error code canonicalization) for
+            state/infrastructure pkg/protocol/ files. Your 9 files cover the
+            state machine, context update, freeze, stale worktree, baseline,
+            isolation, status update, tier gate, and dependency verification.
+
+            ## What to implement
+
+            For each file, add the import
+            "github.com/blackwell-systems/scout-and-wave-go/pkg/result"
+            if not already present, then replace each ad-hoc code string literal
+            with the appropriate constant per the Agent C mapping guide.
+
+            ### context_update.go (4 replacements of "E_CONTEXT")
+            -> result.CodeContextError for all 4
+
+            ### program_freeze.go (2 replacements of "E_FREEZE")
+            -> result.CodeFreezeError for both
+
+            ### stale_worktree.go (2 replacements of "E_STALE")
+            -> result.CodeStaleWorktree for both
+
+            ### state_transition.go (7 replacements of "E_STATE")
+            -> result.CodeStateTransition for all 7
+
+            ### baseline_gates.go (2 replacements of "E_BASELINE")
+            -> result.CodeBaselineError for both
+
+            ### isolation.go (3 replacements of "E_ISOLATION")
+            -> result.CodeIsolationVerifyFailed for all 3
+
+            ### status_update.go (4 replacements of "E_STATUS")
+            -> result.CodeStatusUpdateFailed for all 4
+            (CodeStatusUpdateFailed = "N015_STATUS_UPDATE_FAILED" added by Agent C)
+
+            ### program_tier_gate.go (3 replacements of "E_TIER_GATE")
+            -> result.CodeTierGateFailed for all 3
+            (CodeTierGateFailed = "N016_TIER_GATE_FAILED" added by Agent C)
+
+            Note on new constants: CodeStatusUpdateFailed and CodeTierGateFailed are
+            added by Agent C in parallel. If C's worktree is not merged when you compile,
+            temporarily define local consts and note them in your completion report.
+
+            ## Verification gate
+
+            ```
+            go build ./pkg/protocol/...
+            go vet ./pkg/protocol/...
+            go test ./pkg/protocol/ -run TestStateTransition -v
+            go test ./pkg/protocol/ -run TestBaselineGates -v
+            go test ./pkg/protocol/ -run TestIsolation -v
+            ```
+
+            ## Constraints
+
+            - Only change Code: string literal values -- do NOT change messages,
+              severity, or function logic
+            - Do NOT touch files owned by other agents (B owns program_status.go;
+              E2 owns gate_input_validator.go, wiring_validation.go, commit_verify.go,
+              critic.go, completion_validator.go, gate_populator.go)
+            - If any test asserts on a specific code string, update both source and test
+          files:
+            - pkg/protocol/context_update.go
+            - pkg/protocol/program_freeze.go
+            - pkg/protocol/stale_worktree.go
+            - pkg/protocol/state_transition.go
+            - pkg/protocol/baseline_gates.go
+            - pkg/protocol/isolation.go
+            - pkg/protocol/status_update.go
+            - pkg/protocol/program_tier_gate.go
+        - id: E2
+          task: |
+            ## Context
+
+            You are implementing Scope 6 (error code canonicalization) for validation,
+            commit verification, critic, completion validation, and gate population
+            files in pkg/protocol/. Your 8 source files plus one test file cover the
+            remaining ad-hoc codes after Agent E handles the state/infra group.
+
+            ## What to implement
+
+            For each file, add the import
+            "github.com/blackwell-systems/scout-and-wave-go/pkg/result"
+            if not already present, then replace each ad-hoc code string literal
+            with the appropriate constant.
+
+            ### dependency_verifier.go (1 replacement of "E_WAVE_NOT_FOUND")
+            -> result.CodeWaveNotReady
+
+            ### gate_input_validator.go (1 replacement of "E_GATE_INPUT")
+            -> result.CodeGateInputInvalid
+            (CodeGateInputInvalid = "B008_GATE_INPUT_INVALID" added by Agent C)
+
+            ### wiring_validation.go (1 replacement of "E_WIRING")
+            -> result.CodeWiringGap
+            (CodeWiringGap = "P007_WIRING_GAP" added by Agent C)
+
+            ### commit_verify.go (4 replacements: "E101", "E102", "E103", "E104")
+
+            Read commit_verify.go in full first to understand context of each code:
+            - "E101" (line 49) -> result.CodeCommitMissing
+            - "E102" (line 68) -> result.CodeDirtyWorktree
+            - "E103" (line 81) -> result.CodeWorktreeCreateFailed
+            - "E104" (line 124) -> result.CodeCommitMissing
+
+            ### critic.go (3 replacements: "E001", "E002", "E003")
+
+            Read critic.go in full. The semantic mapping:
+            - "E001" (line 107, failed to load manifest) -> result.CodeIMPLParseFailed
+            - "E002" (line 119, failed to write/save) -> result.CodeIMPLParseFailed
+            - "E003" (line 146, critic report missing or empty) -> result.CodeCompletionReportMissing
+
+            IMPORTANT: critic_test.go line 368 asserts:
+              if res.Errors[0].Code != "E003" {
+            You MUST update this to:
+              if res.Errors[0].Code != result.CodeCompletionReportMissing {
+            (or compare to the string value "A003_COMPLETION_REPORT_MISSING")
+            Add the import for the result package in the test file.
+
+            ### completion_validator.go (3 replacements: "E001", "E002", "E003")
+
+            Read completion_validator.go in full. Map each code to the appropriate
+            constant (likely all -> result.CodeCompletionReportMissing based on context).
+
+            ### gate_populator.go (7 replacements at various lines)
+
+            Read gate_populator.go lines 280-460 in full to understand each code:
+            - "E001" (load fail) -> result.CodeIMPLParseFailed
+            - "E016" (first, validation fail) -> result.CodeManifestInvalid
+            - "E002" (no H2 data) -> result.CodeToolNotFound
+            - "E003" -> read context and map to appropriate code
+            - "E004" -> read context and map to appropriate code
+            - "E016" (second) -> result.CodeManifestInvalid
+            - "E005" -> read context and map to appropriate code
+
+            ## Verification gate
+
+            ```
+            go build ./pkg/protocol/...
+            go vet ./pkg/protocol/...
+            go test ./pkg/protocol/ -run TestGetCriticReviewResult -v
+            go test ./pkg/protocol/ -run TestVerifyCommits -v
+            go test ./pkg/protocol/ -run TestCompletionValidator -v
+            go test ./pkg/protocol/ -run TestFinalizeIMPL -v
+            ```
+
+            ## Constraints
+
+            - Only change Code: string literal values -- do NOT change messages,
+              severity, or function logic
+            - critic_test.go line 368 MUST be updated to match the new code value
+            - CodeGateInputInvalid and CodeWiringGap are added by Agent C in parallel.
+              If C's worktree is not merged when you compile, temporarily define local
+              consts and note in your completion report
+            - Do NOT touch files owned by Agent E or other agents
+          files:
+            - pkg/protocol/dependency_verifier.go
+            - pkg/protocol/gate_input_validator.go
+            - pkg/protocol/wiring_validation.go
+            - pkg/protocol/commit_verify.go
+            - pkg/protocol/critic.go
+            - pkg/protocol/completion_validator.go
+            - pkg/protocol/gate_populator.go
+            - pkg/protocol/critic_test.go
+      base_commit: 39c62ab398b4d33a5af7b75748fa89916c7e4360
+    - number: 2
+      type: integration
+      agents:
+        - id: F
+          task: |
+            ## Context
+
+            You are implementing the cmd/ integration for the protocol architectural
+            unification. Wave 1 agents have exported canonical functions from
+            pkg/protocol/: ExtractIMPLSlug, ComputeTierAssignments, ResolveIMPLPathOrAbs,
+            IMPLStateToStatus. Your job is to update import_impls_cmd.go to use them
+            and delete the duplicated inline logic.
+
+            ## What to implement
+
+            ### 1. Replace slug extraction (lines 118-124)
+
+            Current inline code:
+            ```go
+            slug := implDoc.FeatureSlug
+            if slug == "" {
+                base := filepath.Base(implPath)
+                slug = strings.TrimPrefix(base, "IMPL-")
+                slug = strings.TrimSuffix(slug, ".yaml")
+            }
+            ```
+            Replace with:
+            ```go
+            slug := protocol.ExtractIMPLSlug(implPath, implDoc)
+            ```
+
+            ### 2. Replace mapIMPLStateToStatus (lines 245-259)
+
+            Delete the entire mapIMPLStateToStatus function from import_impls_cmd.go.
+            Replace the call at line 132:
+            ```go
+            status := mapIMPLStateToStatus(implDoc.State)
+            ```
+            with:
+            ```go
+            status := protocol.IMPLStateToStatus(implDoc.State)
+            ```
+
+            Note: the canonical function returns "in-progress" for active wave states,
+            whereas the deleted function returned "reviewed". This is the intended
+            behavioral change per the unification spec.
+
+            ### 3. Replace computeTierAssignments (lines 262-315)
+
+            Delete the entire computeTierAssignments function from import_impls_cmd.go.
+            Replace the call at line 160:
+            ```go
+            tierAssignments := computeTierAssignments(imported, fileOwners)
+            ```
+            with:
+            ```go
+            // Build slug list and overlap graph for protocol.ComputeTierAssignments
+            var slugList []string
+            for _, imp := range imported {
+                slugList = append(slugList, imp.Slug)
+            }
+            overlaps := make(map[string]map[string]bool)
+            for _, owners := range fileOwners {
+                if len(owners) <= 1 {
+                    continue
+                }
+                for _, a := range owners {
+                    for _, b := range owners {
+                        if a != b {
+                            if overlaps[a] == nil {
+                                overlaps[a] = make(map[string]bool)
+                            }
+                            overlaps[a][b] = true
+                        }
+                    }
+                }
+            }
+            tierAssignments := protocol.ComputeTierAssignments(slugList, overlaps)
+            ```
+
+            ### 4. Clean up unused imports
+
+            After removing the three functions, check if "path/filepath" or "strings"
+            imports become unused. Remove any that are no longer needed.
+
+            ### 5. Update tests in import_impls_cmd_test.go
+
+            Remove any test functions that directly tested mapIMPLStateToStatus or
+            computeTierAssignments (they are deleted from the cmd package; coverage
+            now lives in pkg/protocol tests). Verify remaining tests still pass.
+
+            ## Verification gate
+
+            ```
+            go build ./cmd/sawtools/...
+            go vet ./cmd/sawtools/...
+            go test ./cmd/sawtools/ -run TestImportImpls -v
+            ```
+
+            ## Constraints
+
+            - Wave 1 must be fully merged before you begin (dependencies: A, B, C)
+            - Do NOT change the command's overall behavior or flag set
+            - The fileOwners map built in the discovery loop is NOT replaced by
+              BuildFileOwnershipMap -- keep the existing loop; only replace
+              computeTierAssignments
+            - slugFromProgramPath, rebuildTiers, and unwrapPathError are NOT part of
+              this unification -- leave them untouched
+          files:
+            - cmd/sawtools/import_impls_cmd.go
+            - cmd/sawtools/import_impls_cmd_test.go
+          dependencies:
+            - A
+            - B
+            - C
+quality_gates:
+    level: standard
+    gates:
+        - type: build
+          command: go build ./...
+          required: true
+        - type: lint
+          command: go vet ./...
+          required: true
+        - type: test
+          command: go test ./...
+          required: true
+scaffolds:
+    - file: pkg/protocol/impl_slug.go
+      contents: |
+        package protocol stub -- Agent A will implement fully.
+        ExtractIMPLSlug(implPath string, manifest *IMPLManifest) string
+        Priority: manifest.FeatureSlug -> strip "IMPL-" prefix and ".yaml" suffix
+        from filepath.Base(implPath) -> implPath fallback.
+      import_path: github.com/blackwell-systems/scout-and-wave-go/pkg/protocol
+      status: committed (fe68019)
+    - file: pkg/protocol/state_status.go
+      contents: |
+        package protocol stub -- Agent B will implement fully.
+        IMPLStateToStatus(state ProtocolState) string
+        canonical mapping: StateComplete -> "complete"; active wave states -> "in-progress";
+        planning states -> "pending"; StateBlocked -> "blocked"; default -> string(state).
+      import_path: github.com/blackwell-systems/scout-and-wave-go/pkg/protocol
+      status: committed (fe68019)
+completion_reports:
+    A:
+        status: complete
+        branch: saw/protocol-architectural-unification/wave1-agent-A
+        commit: 09f16aa
+        files_changed:
+            - pkg/protocol/impl_slug.go
+            - pkg/protocol/program_conflict.go
+            - pkg/protocol/program_conflict_test.go
+            - pkg/protocol/program_tier_prepare.go
+        files_created:
+            - pkg/protocol/impl_slug_test.go
+        tests_added:
+            - TestExtractIMPLSlug_FeatureSlug
+            - TestExtractIMPLSlug_PathFallback
+            - TestExtractIMPLSlug_NilManifest
+            - TestExtractIMPLSlug_EmptyBase
+            - TestBuildFileOwnershipMap_Basic
+            - TestBuildFileOwnershipMap_Empty
+            - TestBuildFileOwnershipMap_RepoQualified
+        verification: PASS
+    B:
+        status: complete
+        branch: saw/protocol-architectural-unification/wave1-agent-B
+        commit: 7c03856
+        files_changed:
+            - pkg/protocol/state_status.go
+            - pkg/protocol/program_generator.go
+            - pkg/protocol/program_status.go
+            - pkg/protocol/state_status_test.go
+        files_created:
+            - pkg/protocol/state_status_test.go
+        tests_added:
+            - TestIMPLStateToStatus_Complete
+            - TestIMPLStateToStatus_InProgress
+            - TestIMPLStateToStatus_Pending
+            - TestIMPLStateToStatus_Unknown
+        verification: PASS
+    C:
+        status: complete
+        branch: saw/protocol-architectural-unification/wave1-agent-C
+        commit: f3352d0
+        files_changed:
+            - pkg/result/codes.go
+        verification: PASS
+    D:
+        status: complete
+        branch: saw/protocol-architectural-unification/wave1-agent-D
+        commit: "9412e43"
+        files_changed:
+            - pkg/protocol/worktree.go
+            - pkg/protocol/cleanup.go
+            - pkg/protocol/verify_build.go
+            - pkg/protocol/program_worktree.go
+            - pkg/protocol/program_tier_finalize.go
+            - pkg/result/codes.go
+        verification: 'PASS: go build ./pkg/protocol/... and go vet ./pkg/protocol/... both clean; 21 tests pass (TestCleanup*, TestCreateWorktrees*, TestFinalizeTier*). Note: added N015/N016/N017/B008/P007 to codes.go to compile before Agent C merge; Integration Agent should deduplicate on merge.'
+    E:
+        status: complete
+        branch: saw/protocol-architectural-unification/wave1-agent-E
+        commit: 81d6e64
+        files_changed:
+            - pkg/protocol/context_update.go
+            - pkg/protocol/program_freeze.go
+            - pkg/protocol/stale_worktree.go
+            - pkg/protocol/state_transition.go
+            - pkg/protocol/baseline_gates.go
+            - pkg/protocol/isolation.go
+            - pkg/protocol/status_update.go
+            - pkg/protocol/program_tier_gate.go
+        verification: 'PASS: go build ./pkg/protocol/... go vet ./pkg/protocol/... go test ./pkg/protocol/ all pass. NOTE: CodeStatusUpdateFailed and CodeTierGateFailed not yet in codes.go - defined as local consts pending Agent C merge. Integration agent should swap to result.CodeStatusUpdateFailed and result.CodeTierGateFailed after merge.'
+    E2:
+        status: complete
+        branch: saw/protocol-architectural-unification/wave1-agent-E2
+        commit: b50a34f
+        files_changed:
+            - pkg/protocol/dependency_verifier.go
+            - pkg/protocol/gate_input_validator.go
+            - pkg/protocol/wiring_validation.go
+            - pkg/protocol/commit_verify.go
+            - pkg/protocol/critic.go
+            - pkg/protocol/completion_validator.go
+            - pkg/protocol/gate_populator.go
+            - pkg/protocol/critic_test.go
+        verification: PASS
+    F:
+        status: complete
+        branch: main
+        commit: 27d65c4
+        files_changed:
+            - cmd/sawtools/import_impls_cmd.go
+            - cmd/sawtools/import_impls_cmd_test.go
+        tests_added:
+            - TestImportImplsDiscover
+            - TestImportImplsFromFiles
+            - TestImportImplsP1Conflict
+        verification: PASS
+pre_mortem:
+    overall_risk: low
+    rows:
+        - scenario: |
+            Agents D, E, E2 use new constants (N015, N016, N017, B008, P007) added
+            by Agent C in parallel. If those constants are unavailable at compile
+            time within an agent's worktree, go build fails.
+          likelihood: medium
+          impact: medium
+          mitigation: |
+            Agent briefs for D, E, and E2 explicitly instruct them to define temporary
+            inline constants if C's work is not yet merged, and to note this in their
+            completion report. The orchestrator merges all Wave 1 agents before running
+            post-merge verification, so the final build will use C's real constants.
+        - scenario: |
+            critic_test.go line 368 asserts the string "E003" which becomes stale
+            when Agent E2 replaces it with result.CodeCompletionReportMissing.
+            If E2 forgets to update the test, CI fails.
+          likelihood: low
+          impact: medium
+          mitigation: |
+            Agent E2's brief explicitly calls out critic_test.go line 368 and requires
+            updating it. The verification gate runs TestGetCriticReviewResult so the
+            failure is caught immediately during E2's own verification pass.
+        - scenario: |
+            The behavioral change in IMPLStateToStatus (returning "in-progress" instead
+            of "reviewed" for WAVE_EXECUTING states) could break callers whose tests
+            assert the old "reviewed" output.
+          likelihood: low
+          impact: low
+          mitigation: |
+            Agent B is instructed to check program_generator_test.go for any such
+            assertions and update them. Agent F is told the behavioral change is
+            intentional. Post-merge full test suite catches any remaining regressions.
+        - scenario: |
+            program_tier_prepare.go is not listed in file_ownership but calls
+            resolveIMPLPath (unexported). When Agent A renames it to ResolveIMPLPath,
+            the package will fail to compile.
+          likelihood: high
+          impact: high
+          mitigation: |
+            Agent A's brief explicitly includes updating program_tier_prepare.go call
+            sites as part of the rename work. Since it is in the same package,
+            go build ./pkg/protocol/... will catch the break immediately during A's
+            verification gate.
+        - scenario: |
+            Agent B modifies program_status.go (mapIMPLStateToStatus + E_PROGRAM_STATUS).
+            No other agent touches program_status.go. Ownership is disjoint -- no merge
+            conflict risk.
+          likelihood: low
+          impact: low
+          mitigation: |
+            Disjoint ownership enforced. No action needed.
+critic_report:
+    verdict: PASS
+    agent_reviews:
+        A:
+            agent_id: A
+            verdict: PASS
+        B:
+            agent_id: B
+            verdict: PASS
+        C:
+            agent_id: C
+            verdict: PASS
+        D:
+            agent_id: D
+            verdict: PASS
+        E:
+            agent_id: E
+            verdict: PASS
+            issues:
+                - check: symbol_accuracy
+                  severity: warning
+                  description: 'Task description says "Your 9 files" but Agent E owns 8 files in file_ownership (dependency_verifier.go is assigned to E2, not E). The files: list at the bottom of the brief is correct with 8 files. Agents will use the files: list for work assignment so this does not block execution.'
+                  file: pkg/protocol/dependency_verifier.go
+                  symbol: dependency_verifier.go ownership
+        E2:
+            agent_id: E2
+            verdict: PASS
+        F:
+            agent_id: F
+            verdict: PASS
+    summary: 'All 7 agents verified against the scout-and-wave-go codebase. File existence checks pass: both new files (impl_slug.go, state_status.go) are absent as expected for action:new; all 28 modify-action files exist. Symbol accuracy is clean: resolveIMPLPathOrAbs, resolveIMPLPath, computeTierSuggestion, implStateToStatus, mapIMPLStateToStatus, IMPLManifest.FeatureSlug, ImportedIMPL.Slug, and all ProtocolState constants (including StateBlocked, StateNotSuitable) are confirmed at the exact names and line numbers cited in every brief. All 65+ error-code string literals targeted by Agents D, E, and E2 are present at the specified line numbers. All 28 existing result constants referenced in the mapping guides exist in pkg/result/codes.go. The 5 new constants (N015, N016, N017, B008, P007) correctly do not yet exist and are reserved for Agent C. Import chain checks pass: all packages are within the github.com/blackwell-systems/scout-and-wave-go module. One advisory warning: Agent E''s task description says ''Your 9 files'' but E owns 8 files (dependency_verifier.go is E2''s); the actual files: list is correct, so agents will not be misled.'
+    reviewed_at: "2026-03-26T02:48:05Z"
+    issue_count: 1
+state: COMPLETE

@@ -210,3 +210,5 @@ type BackendConfig struct {
   - IMPL doc: docs/IMPL/complete/IMPL-engine-reference-injection.yaml
 - **program-wave-conflict**: completed 2026-03-25, 2 waves, 4 agents
   - IMPL doc: docs/IMPL/complete/IMPL-program-wave-conflict.yaml
+- **protocol-architectural-unification**: completed 2026-03-25, 2 waves, 7 agents
+  - IMPL doc: docs/IMPL/complete/IMPL-protocol-architectural-unification.yaml
