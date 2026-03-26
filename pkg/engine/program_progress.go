@@ -2,10 +2,8 @@ package engine
 
 import (
 	"fmt"
-	"os"
 
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
-	"gopkg.in/yaml.v3"
 )
 
 // UpdateProgramIMPLStatus updates the status of a single IMPL in the PROGRAM
@@ -112,12 +110,8 @@ func recalculateCompletion(manifest *protocol.PROGRAMManifest) {
 
 // writeManifest marshals the manifest to YAML and writes it to disk.
 func writeManifest(path string, manifest *protocol.PROGRAMManifest) error {
-	data, err := yaml.Marshal(manifest)
-	if err != nil {
-		return fmt.Errorf("writeManifest: failed to marshal manifest: %w", err)
-	}
-	if err := os.WriteFile(path, data, 0644); err != nil {
-		return fmt.Errorf("writeManifest: failed to write manifest: %w", err)
+	if err := protocol.SaveYAML(path, manifest); err != nil {
+		return fmt.Errorf("writeManifest: %w", err)
 	}
 	return nil
 }
