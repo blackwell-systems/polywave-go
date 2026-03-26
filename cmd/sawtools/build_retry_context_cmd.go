@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/retryctx"
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/retry"
 	"github.com/spf13/cobra"
 )
 
@@ -35,7 +35,7 @@ Exit codes:
 		RunE: func(cmd *cobra.Command, args []string) error {
 			manifestPath := args[0]
 
-			rc, err := retryctx.BuildRetryContext(manifestPath, agentID, attemptNum)
+			rc, err := retry.BuildRetryAttempt(manifestPath, agentID, attemptNum)
 			if err != nil {
 				return fmt.Errorf("build-retry-context: %w", err)
 			}

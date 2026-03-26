@@ -21,7 +21,7 @@ import (
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/agent"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/agent/backend"
 	apiclient "github.com/blackwell-systems/scout-and-wave-go/pkg/agent/backend/api"
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/retryctx"
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/retry"
 	bedrockbackend "github.com/blackwell-systems/scout-and-wave-go/pkg/agent/backend/bedrock"
 	cliclient "github.com/blackwell-systems/scout-and-wave-go/pkg/agent/backend/cli"
 	openaibackend "github.com/blackwell-systems/scout-and-wave-go/pkg/agent/backend/openai"
@@ -1015,10 +1015,10 @@ func (o *Orchestrator) executeRetryLoop(
 	count++
 	retryCountMap.Store(key, count)
 
-	// Build retry context using retryctx package (enriched prompt with fix guidance).
+	// Build retry context using retry package (enriched prompt with fix guidance).
 	var promptPrefix string
 	if o.implDocPath != "" {
-		rc, rcErr := retryctx.BuildRetryContext(o.implDocPath, agentSpec.ID, count)
+		rc, rcErr := retry.BuildRetryAttempt(o.implDocPath, agentSpec.ID, count)
 		if rcErr != nil {
 			o.log().Debug("orchestrator: retry context build (best-effort)", "err", rcErr)
 		} else if rc != nil && rc.PromptText != "" {
