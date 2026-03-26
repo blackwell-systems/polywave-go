@@ -26,6 +26,21 @@ func Run(repoPath string, args ...string) (string, error) {
 	return output, nil
 }
 
+// RunOutput executes a git command in repoPath with the given args.
+// It returns stdout-only output (not combined with stderr) and any error.
+// Use this for machine-parseable output (e.g., rev-parse, diff --stat).
+// Use Run when you want combined stdout+stderr for error messages.
+func RunOutput(repoPath string, args ...string) (string, error) {
+	cmdArgs := append([]string{"-C", repoPath}, args...)
+	cmd := exec.Command("git", cmdArgs...)
+	out, err := cmd.Output()
+	output := string(out)
+	if err != nil {
+		return output, fmt.Errorf("%w: %s", err, strings.TrimSpace(output))
+	}
+	return output, nil
+}
+
 // WorktreeAdd creates a new worktree at path on a new branch named branch,
 // branching from HEAD of the repository at repoPath.
 func WorktreeAdd(repoPath, path, branch string) error {
