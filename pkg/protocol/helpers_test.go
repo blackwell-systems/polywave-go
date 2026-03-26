@@ -201,3 +201,104 @@ func TestIsFinalWave_OutOfBounds(t *testing.T) {
 		t.Errorf("IsFinalWave(manifest with 2 waves, waveNumber=0) = true, want false")
 	}
 }
+
+func TestFindWave_Found(t *testing.T) {
+	manifest := &IMPLManifest{
+		Waves: []Wave{
+			{Number: 1, Agents: []Agent{{ID: "A"}}},
+			{Number: 2, Agents: []Agent{{ID: "B"}}},
+		},
+	}
+
+	wave := manifest.FindWave(2)
+	if wave == nil {
+		t.Fatal("FindWave(2) = nil, want non-nil")
+	}
+	if wave.Number != 2 {
+		t.Errorf("FindWave(2).Number = %d, want 2", wave.Number)
+	}
+}
+
+func TestFindWave_NotFound(t *testing.T) {
+	manifest := &IMPLManifest{
+		Waves: []Wave{
+			{Number: 1, Agents: []Agent{{ID: "A"}}},
+		},
+	}
+
+	wave := manifest.FindWave(99)
+	if wave != nil {
+		t.Errorf("FindWave(99) = %+v, want nil", wave)
+	}
+}
+
+func TestFindAgent_Found(t *testing.T) {
+	wave := &Wave{
+		Number: 1,
+		Agents: []Agent{
+			{ID: "A", Task: "Task A"},
+			{ID: "B", Task: "Task B"},
+		},
+	}
+
+	agent := wave.FindAgent("B")
+	if agent == nil {
+		t.Fatal("FindAgent(\"B\") = nil, want non-nil")
+	}
+	if agent.ID != "B" {
+		t.Errorf("FindAgent(\"B\").ID = %q, want \"B\"", agent.ID)
+	}
+}
+
+func TestFindAgent_NotFound(t *testing.T) {
+	wave := &Wave{
+		Number: 1,
+		Agents: []Agent{
+			{ID: "A", Task: "Task A"},
+		},
+	}
+
+	agent := wave.FindAgent("Z")
+	if agent != nil {
+		t.Errorf("FindAgent(\"Z\") = %+v, want nil", agent)
+	}
+}
+
+func TestFindWaveWithAgent_Found(t *testing.T) {
+	manifest := &IMPLManifest{
+		Waves: []Wave{
+			{Number: 1, Agents: []Agent{{ID: "A"}}},
+			{Number: 2, Agents: []Agent{{ID: "B"}, {ID: "C"}}},
+		},
+	}
+
+	wave, agent := manifest.FindWaveWithAgent("C")
+	if wave == nil {
+		t.Fatal("FindWaveWithAgent(\"C\").wave = nil, want non-nil")
+	}
+	if agent == nil {
+		t.Fatal("FindWaveWithAgent(\"C\").agent = nil, want non-nil")
+	}
+	if wave.Number != 2 {
+		t.Errorf("FindWaveWithAgent(\"C\").wave.Number = %d, want 2", wave.Number)
+	}
+	if agent.ID != "C" {
+		t.Errorf("FindWaveWithAgent(\"C\").agent.ID = %q, want \"C\"", agent.ID)
+	}
+}
+
+func TestFindWaveWithAgent_NotFound(t *testing.T) {
+	manifest := &IMPLManifest{
+		Waves: []Wave{
+			{Number: 1, Agents: []Agent{{ID: "A"}}},
+		},
+	}
+
+	wave, agent := manifest.FindWaveWithAgent("Z")
+	if wave != nil {
+		t.Errorf("FindWaveWithAgent(\"Z\").wave = %+v, want nil", wave)
+	}
+	if agent != nil {
+		t.Errorf("FindWaveWithAgent(\"Z\").agent = %+v, want nil", agent)
+	}
+}
