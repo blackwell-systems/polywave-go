@@ -5,10 +5,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/blackwell-systems/scout-and-wave-go/internal/git"
 )
 
 const (
@@ -90,17 +91,17 @@ func hashKey(key CacheKey) string {
 // BuildKey computes a CacheKey for the repository at repoDir by running git
 // commands to capture HEAD commit and diff stats.
 func (c *Cache) BuildKey(repoDir string) (CacheKey, error) {
-	headCommit, err := runGit(repoDir, "rev-parse", "HEAD")
+	headCommit, err := git.RunOutput(repoDir, "rev-parse", "HEAD")
 	if err != nil {
 		return CacheKey{}, fmt.Errorf("gatecache: get HEAD: %w", err)
 	}
 
-	stagedStat, err := runGit(repoDir, "diff", "--cached", "--stat")
+	stagedStat, err := git.RunOutput(repoDir, "diff", "--cached", "--stat")
 	if err != nil {
 		return CacheKey{}, fmt.Errorf("gatecache: get staged stat: %w", err)
 	}
 
-	unstagedStat, err := runGit(repoDir, "diff", "--stat")
+	unstagedStat, err := git.RunOutput(repoDir, "diff", "--stat")
 	if err != nil {
 		return CacheKey{}, fmt.Errorf("gatecache: get unstaged stat: %w", err)
 	}
@@ -122,17 +123,6 @@ func (c *Cache) BuildKeyForGate(repoDir string, command string) (CacheKey, error
 	}
 	key.Command = command
 	return key, nil
-}
-
-// runGit executes a git subcommand in dir and returns the trimmed stdout.
-func runGit(dir string, args ...string) (string, error) {
-	cmd := exec.Command("git", args...)
-	cmd.Dir = dir
-	out, err := cmd.Output()
-	if err != nil {
-		return "", err
-	}
-	return string(out), nil
 }
 
 // Get returns the cached result for (key, gateType) if it exists and has not

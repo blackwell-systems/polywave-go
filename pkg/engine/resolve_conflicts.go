@@ -4,10 +4,10 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 
+	"github.com/blackwell-systems/scout-and-wave-go/internal/git"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/agent/backend"
 	apiclient "github.com/blackwell-systems/scout-and-wave-go/pkg/agent/backend/api"
 	bedrockbackend "github.com/blackwell-systems/scout-and-wave-go/pkg/agent/backend/bedrock"
@@ -35,7 +35,7 @@ func ResolveConflicts(ctx context.Context, opts ResolveConflictsOpts) error {
 	}
 
 	// Get list of conflicted files
-	conflictedFiles, err := getConflictedFiles(opts.RepoPath)
+	conflictedFiles, err := git.ConflictedFiles(opts.RepoPath)
 	if err != nil {
 		return fmt.Errorf("engine.ResolveConflicts: failed to get conflicted files: %w", err)
 	}
@@ -66,32 +66,11 @@ func ResolveConflicts(ctx context.Context, opts ResolveConflictsOpts) error {
 	}
 
 	// Commit the merge
-	if err := commitMerge(opts.RepoPath); err != nil {
+	if _, err := git.Run(opts.RepoPath, "commit", "--no-edit"); err != nil {
 		return fmt.Errorf("engine.ResolveConflicts: failed to commit merge: %w", err)
 	}
 
 	return nil
-}
-
-// getConflictedFiles returns a list of files with merge conflicts.
-func getConflictedFiles(repoPath string) ([]string, error) {
-	cmd := exec.Command("git", "diff", "--name-only", "--diff-filter=U")
-	cmd.Dir = repoPath
-	output, err := cmd.CombinedOutput()
-	if err != nil {
-		return nil, fmt.Errorf("git diff failed: %w: %s", err, output)
-	}
-
-	lines := strings.Split(strings.TrimSpace(string(output)), "\n")
-	files := make([]string, 0, len(lines))
-	for _, line := range lines {
-		line = strings.TrimSpace(line)
-		if line != "" {
-			files = append(files, line)
-		}
-	}
-
-	return files, nil
 }
 
 // resolveConflictedFile resolves a single conflicted file using Claude.
@@ -126,10 +105,8 @@ func resolveConflictedFile(ctx context.Context, file string, manifest *protocol.
 	}
 
 	// Stage the resolved file
-	cmd := exec.Command("git", "add", file)
-	cmd.Dir = opts.RepoPath
-	if output, err := cmd.CombinedOutput(); err != nil {
-		return fmt.Errorf("git add failed: %w: %s", err, output)
+	if _, err := git.Run(opts.RepoPath, "add", file); err != nil {
+		return fmt.Errorf("git add failed: %w", err)
 	}
 
 	return nil
@@ -298,12 +275,3 @@ func selectConflictResolutionBackend(chatModel string) (backend.Backend, error) 
 	}
 }
 
-// commitMerge completes the merge by committing with --no-edit.
-func commitMerge(repoPath string) error {
-	cmd := exec.Command("git", "commit", "--no-edit")
-	cmd.Dir = repoPath
-	if output, err := cmd.CombinedOutput(); err != nil {
-		return fmt.Errorf("git commit failed: %w: %s", err, output)
-	}
-	return nil
-}
