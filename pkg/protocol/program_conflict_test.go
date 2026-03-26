@@ -301,7 +301,7 @@ func TestResolveIMPLPathOrAbs_AbsoluteExists(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	got, err := resolveIMPLPathOrAbs("", absPath)
+	got, err := ResolveIMPLPathOrAbs("", absPath)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -312,7 +312,7 @@ func TestResolveIMPLPathOrAbs_AbsoluteExists(t *testing.T) {
 
 func TestResolveIMPLPathOrAbs_AbsoluteNotExists(t *testing.T) {
 	// Test B: absolute path that does not exist
-	_, err := resolveIMPLPathOrAbs("", "/nonexistent/path/IMPL-missing.yaml")
+	_, err := ResolveIMPLPathOrAbs("", "/nonexistent/path/IMPL-missing.yaml")
 	if err == nil {
 		t.Fatal("expected error for nonexistent absolute path, got nil")
 	}
@@ -333,13 +333,106 @@ func TestResolveIMPLPathOrAbs_SlugStillWorks(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	got, err := resolveIMPLPathOrAbs(tmp, "my-slug")
+	got, err := ResolveIMPLPathOrAbs(tmp, "my-slug")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if got != implPath {
 		t.Errorf("expected %q, got %q", implPath, got)
 	}
+}
+
+func TestBuildFileOwnershipMap_Basic(t *testing.T) {
+	tmp := t.TempDir()
+
+	writeConflictTestIMPL(t, tmp, "alpha", []map[string]string{
+		{"file": "pkg/a/file1.go"},
+		{"file": "pkg/shared/file.go"},
+	})
+	writeConflictTestIMPL(t, tmp, "beta", []map[string]string{
+		{"file": "pkg/b/file1.go"},
+		{"file": "pkg/shared/file.go"},
+	})
+
+	fileOwners, featureSlugs, err := BuildFileOwnershipMap([]string{"alpha", "beta"}, tmp)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// featureSlugs should be ["alpha", "beta"] in order
+	if len(featureSlugs) != 2 {
+		t.Fatalf("expected 2 feature slugs, got %d: %v", len(featureSlugs), featureSlugs)
+	}
+	if featureSlugs[0] != "alpha" || featureSlugs[1] != "beta" {
+		t.Errorf("expected [alpha beta], got %v", featureSlugs)
+	}
+
+	// pkg/shared/file.go should be owned by both
+	owners := fileOwners["pkg/shared/file.go"]
+	if len(owners) != 2 {
+		t.Errorf("expected 2 owners for shared file, got %d: %v", len(owners), owners)
+	}
+
+	// pkg/a/file1.go should be owned only by alpha
+	aOwners := fileOwners["pkg/a/file1.go"]
+	if len(aOwners) != 1 || aOwners[0] != "alpha" {
+		t.Errorf("expected [alpha] for pkg/a/file1.go, got %v", aOwners)
+	}
+}
+
+func TestBuildFileOwnershipMap_Empty(t *testing.T) {
+	fileOwners, featureSlugs, err := BuildFileOwnershipMap([]string{}, "/nonexistent")
+	if err != nil {
+		t.Fatalf("unexpected error for empty refs: %v", err)
+	}
+	if len(fileOwners) != 0 {
+		t.Errorf("expected empty fileOwners, got %v", fileOwners)
+	}
+	if len(featureSlugs) != 0 {
+		t.Errorf("expected empty featureSlugs, got %v", featureSlugs)
+	}
+}
+
+func TestBuildFileOwnershipMap_RepoQualified(t *testing.T) {
+	tmp := t.TempDir()
+
+	// Same file but different repos -> different keys
+	writeConflictTestIMPL(t, tmp, "alpha", []map[string]string{
+		{"file": "pkg/shared/file.go", "repo": "repo-a"},
+	})
+	writeConflictTestIMPL(t, tmp, "beta", []map[string]string{
+		{"file": "pkg/shared/file.go", "repo": "repo-b"},
+	})
+
+	fileOwners, _, err := BuildFileOwnershipMap([]string{"alpha", "beta"}, tmp)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Keys should be repo-qualified
+	keyA := "repo-a:pkg/shared/file.go"
+	keyB := "repo-b:pkg/shared/file.go"
+
+	if _, ok := fileOwners[keyA]; !ok {
+		t.Errorf("expected key %q in fileOwners, got keys: %v", keyA, keys(fileOwners))
+	}
+	if _, ok := fileOwners[keyB]; !ok {
+		t.Errorf("expected key %q in fileOwners, got keys: %v", keyB, keys(fileOwners))
+	}
+
+	// No overlap since repos differ
+	if len(fileOwners[keyA]) != 1 || fileOwners[keyA][0] != "alpha" {
+		t.Errorf("expected [alpha] for %q, got %v", keyA, fileOwners[keyA])
+	}
+}
+
+// keys returns the keys of a map for use in error messages.
+func keys(m map[string][]string) []string {
+	result := make([]string, 0, len(m))
+	for k := range m {
+		result = append(result, k)
+	}
+	return result
 }
 
 // writeConflictTestIMPLWithWaves creates a minimal IMPL YAML file with per-wave file ownership.

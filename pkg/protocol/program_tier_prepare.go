@@ -77,7 +77,7 @@ func PrepareTier(programManifestPath string, tierNumber int, repoDir string) (*P
 
 	// Step 4: IMPL validation.
 	for _, slug := range targetTier.Impls {
-		implPath, err := resolveIMPLPath(repoDir, slug)
+		implPath, err := ResolveIMPLPath(repoDir, slug)
 		if err != nil {
 			return nil, fmt.Errorf("cannot resolve IMPL %q: %w", slug, err)
 		}

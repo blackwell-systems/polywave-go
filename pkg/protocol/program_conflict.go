@@ -206,42 +206,9 @@ func CheckIMPLConflicts(implRefs []string, repoPath string) (*ConflictReport, er
 	// Load all IMPL docs and build file -> []featureSlug map.
 	// TierSuggestion keys are IMPL feature slugs (extracted from loaded docs),
 	// not raw refs. This ensures compatibility with both slug and path refs.
-	fileOwners := make(map[string][]string) // qualified-file -> feature slugs
-	var featureSlugs []string               // ordered list of extracted feature slugs
-	for _, ref := range implRefs {
-		implPath, err := resolveIMPLPathOrAbs(repoPath, ref)
-		if err != nil {
-			return nil, fmt.Errorf("cannot resolve IMPL ref %q: %w", ref, err)
-		}
-		manifest, err := Load(implPath)
-		if err != nil {
-			return nil, fmt.Errorf("cannot load IMPL %q: %w", ref, err)
-		}
-
-		// Use the feature slug extracted from the loaded doc as the canonical key.
-		slug := manifest.FeatureSlug
-		if slug == "" {
-			slug = ref // fallback for malformed docs
-		}
-		featureSlugs = append(featureSlugs, slug)
-
-		for _, fo := range manifest.FileOwnership {
-			key := fo.File
-			if fo.Repo != "" {
-				key = fo.Repo + ":" + fo.File
-			}
-			// Only add slug once per file
-			found := false
-			for _, existing := range fileOwners[key] {
-				if existing == slug {
-					found = true
-					break
-				}
-			}
-			if !found {
-				fileOwners[key] = append(fileOwners[key], slug)
-			}
-		}
+	fileOwners, featureSlugs, err := BuildFileOwnershipMap(implRefs, repoPath)
+	if err != nil {
+		return nil, err
 	}
 
 	// Detect conflicts: any file owned by 2+ slugs
@@ -293,14 +260,14 @@ func CheckIMPLConflicts(implRefs []string, repoPath string) (*ConflictReport, er
 	}, nil
 }
 
-// resolveIMPLPathOrAbs resolves a single IMPL reference (slug or absolute path)
+// ResolveIMPLPathOrAbs resolves a single IMPL reference (slug or absolute path)
 // to an absolute file path.
 //
 // Path detection rules:
 //   - filepath.IsAbs(ref) → absolute path; verify exists, return as-is
 //   - contains os.PathSeparator → relative path; join with repoPath, verify exists
 //   - otherwise → slug; check docs/IMPL/IMPL-<slug>.yaml and docs/IMPL/complete/IMPL-<slug>.yaml
-func resolveIMPLPathOrAbs(repoPath, ref string) (string, error) {
+func ResolveIMPLPathOrAbs(repoPath, ref string) (string, error) {
 	if filepath.IsAbs(ref) {
 		if _, err := os.Stat(ref); err != nil {
 			return "", fmt.Errorf("IMPL path %q does not exist", ref)
@@ -315,12 +282,17 @@ func resolveIMPLPathOrAbs(repoPath, ref string) (string, error) {
 		return joined, nil
 	}
 	// Treat as slug
-	return resolveIMPLPath(repoPath, ref)
+	return ResolveIMPLPath(repoPath, ref)
 }
 
-// resolveIMPLPath finds the IMPL doc for a given slug, checking both
+// resolveIMPLPathOrAbs is an unexported wrapper for backwards compatibility.
+func resolveIMPLPathOrAbs(repoPath, ref string) (string, error) {
+	return ResolveIMPLPathOrAbs(repoPath, ref)
+}
+
+// ResolveIMPLPath finds the IMPL doc for a given slug, checking both
 // docs/IMPL/ and docs/IMPL/complete/ directories.
-func resolveIMPLPath(repoPath, slug string) (string, error) {
+func ResolveIMPLPath(repoPath, slug string) (string, error) {
 	candidates := []string{
 		filepath.Join(repoPath, "docs", "IMPL", fmt.Sprintf("IMPL-%s.yaml", slug)),
 		filepath.Join(repoPath, "docs", "IMPL", "complete", fmt.Sprintf("IMPL-%s.yaml", slug)),
@@ -331,6 +303,11 @@ func resolveIMPLPath(repoPath, slug string) (string, error) {
 		}
 	}
 	return "", fmt.Errorf("IMPL doc not found for slug %q (checked %s and %s)", slug, candidates[0], candidates[1])
+}
+
+// resolveIMPLPath is an unexported wrapper for backwards compatibility.
+func resolveIMPLPath(repoPath, slug string) (string, error) {
+	return ResolveIMPLPath(repoPath, slug)
 }
 
 // computeDisjointSets finds connected components in the overlap graph.
@@ -371,11 +348,12 @@ func computeDisjointSets(slugs []string, overlaps map[string]map[string]bool) []
 	return sets
 }
 
-// computeTierSuggestion assigns each slug to the earliest tier where it has
-// no conflicts with already-assigned slugs. This is identical to the algorithm
-// in computeTierAssignments in cmd/saw/import_impls_cmd.go but operates on
-// slugs directly instead of ImportedIMPL structs.
-func computeTierSuggestion(slugs []string, overlaps map[string]map[string]bool) map[string]int {
+// ComputeTierAssignments assigns each slug to the earliest tier where it
+// has no overlap conflicts with already-assigned slugs (greedy graph coloring).
+// slugs: ordered list of IMPL feature slugs to assign
+// overlaps: map[slug]map[conflicting-slug]bool representing the overlap graph
+// Returns: map[slug]int where int is the 1-indexed tier number
+func ComputeTierAssignments(slugs []string, overlaps map[string]map[string]bool) map[string]int {
 	assignments := make(map[string]int)
 	tierMembers := make(map[int][]string) // tier -> slugs assigned to it
 
@@ -405,4 +383,52 @@ func computeTierSuggestion(slugs []string, overlaps map[string]map[string]bool) 
 	}
 
 	return assignments
+}
+
+// computeTierSuggestion is an unexported wrapper around ComputeTierAssignments
+// for backwards compatibility with internal callers.
+func computeTierSuggestion(slugs []string, overlaps map[string]map[string]bool) map[string]int {
+	return ComputeTierAssignments(slugs, overlaps)
+}
+
+// BuildFileOwnershipMap loads each IMPL ref (slug or abs path) and builds
+// a qualified-file -> []featureSlug map with deduplication.
+// Returns: fileOwners map, ordered featureSlugs list, error.
+func BuildFileOwnershipMap(refs []string, repoPath string) (map[string][]string, []string, error) {
+	fileOwners := make(map[string][]string) // qualified-file -> feature slugs
+	var featureSlugs []string               // ordered list of extracted feature slugs
+
+	for _, ref := range refs {
+		implPath, err := ResolveIMPLPathOrAbs(repoPath, ref)
+		if err != nil {
+			return nil, nil, fmt.Errorf("cannot resolve IMPL ref %q: %w", ref, err)
+		}
+		manifest, err := Load(implPath)
+		if err != nil {
+			return nil, nil, fmt.Errorf("cannot load IMPL %q: %w", ref, err)
+		}
+
+		slug := ExtractIMPLSlug(implPath, manifest)
+		featureSlugs = append(featureSlugs, slug)
+
+		for _, fo := range manifest.FileOwnership {
+			key := fo.File
+			if fo.Repo != "" {
+				key = fo.Repo + ":" + fo.File
+			}
+			// Only add slug once per file
+			found := false
+			for _, existing := range fileOwners[key] {
+				if existing == slug {
+					found = true
+					break
+				}
+			}
+			if !found {
+				fileOwners[key] = append(fileOwners[key], slug)
+			}
+		}
+	}
+
+	return fileOwners, featureSlugs, nil
 }
