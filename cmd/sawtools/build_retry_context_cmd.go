@@ -37,7 +37,7 @@ Exit codes:
 
 			rc, err := retryctx.BuildRetryContext(manifestPath, agentID, attemptNum)
 			if err != nil {
-				return fmt.Errorf("build-retry-context: %v", err)
+				return fmt.Errorf("build-retry-context: %w", err)
 			}
 
 			out, err := json.MarshalIndent(rc, "", "  ")

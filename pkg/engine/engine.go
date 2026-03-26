@@ -2,7 +2,6 @@ package engine
 
 import (
 	"context"
-	"errors"
 	"log/slog"
 
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/agent/backend"
@@ -35,9 +34,6 @@ type Event struct {
 	Event string      // e.g. "agent_started", "agent_complete", "run_complete"
 	Data  interface{} // same payload structs as pkg/orchestrator
 }
-
-// ErrReportNotFound is returned by ParseCompletionReport when no report exists for the agent.
-var ErrReportNotFound = errors.New("completion report not found")
 
 // RunScoutOpts configures a Scout agent run.
 type RunScoutOpts struct {

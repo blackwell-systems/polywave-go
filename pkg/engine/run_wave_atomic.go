@@ -97,7 +97,7 @@ func RunWaveTransaction(ctx context.Context, opts RunWaveTransactionOpts) (*Fina
 		// Roll back IMPL doc state to pre-execution snapshot.
 		if rbErr := restoreSnapshot(opts.IMPLPath, snap); rbErr != nil {
 			// Return both the original error and the rollback failure.
-			return result, fmt.Errorf("engine.RunWaveTransaction: rollback failed (%v) after: %w", rbErr, finalizeErr)
+			return result, fmt.Errorf("engine.RunWaveTransaction: rollback failed (%w) after: %w", rbErr, finalizeErr)
 		}
 		return result, fmt.Errorf("engine.RunWaveTransaction: %w", finalizeErr)
 	}

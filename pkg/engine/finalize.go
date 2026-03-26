@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"strings"
 	"time"
 
 	"path/filepath"
@@ -319,44 +320,25 @@ func inferLanguageFromTestCommand(testCommand string) string {
 	}
 	// Reuse the same heuristics as the CLI
 	switch {
-	case contains(testCommand, "cargo test", "cargo build"):
+	case containsAny(testCommand, "cargo test", "cargo build"):
 		return "rust"
-	case contains(testCommand, "go test", "go build"):
+	case containsAny(testCommand, "go test", "go build"):
 		return "go"
-	case contains(testCommand, "npm test", "jest", "vitest", "mocha"):
+	case containsAny(testCommand, "npm test", "jest", "vitest", "mocha"):
 		return "javascript"
-	case contains(testCommand, "pytest", "python -m unittest"):
+	case containsAny(testCommand, "pytest", "python -m unittest"):
 		return "python"
 	default:
 		return ""
 	}
 }
 
-// contains checks if s contains any of the substrings.
-func contains(s string, substrs ...string) bool {
+// containsAny reports whether s (case-insensitive) contains any of the given substrings.
+func containsAny(s string, substrs ...string) bool {
+	lower := strings.ToLower(s)
 	for _, sub := range substrs {
-		if len(s) >= len(sub) {
-			// Case-insensitive check
-			for i := 0; i <= len(s)-len(sub); i++ {
-				match := true
-				for j := 0; j < len(sub); j++ {
-					sc := s[i+j]
-					tc := sub[j]
-					if sc >= 'A' && sc <= 'Z' {
-						sc += 32
-					}
-					if tc >= 'A' && tc <= 'Z' {
-						tc += 32
-					}
-					if sc != tc {
-						match = false
-						break
-					}
-				}
-				if match {
-					return true
-				}
-			}
+		if strings.Contains(lower, sub) {
+			return true
 		}
 	}
 	return false

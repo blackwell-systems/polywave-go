@@ -1,0 +1,529 @@
+completion_date: "2026-03-26"
+title: Remove os.Exit() from CLI Handlers
+feature_slug: os-exit-cleanup
+verdict: SUITABLE
+suitability_assessment: |
+    Pre-analyzed research context incorporated directly (no discovery work repeated).
+
+    The change is a mechanical find-and-replace across 38 source files in cmd/sawtools/.
+    Every affected call site follows one of two identical patterns inside a RunE handler:
+
+      fmt.Fprintf(os.Stderr, "cmd: message: %v\n", err)
+      os.Exit(1)   # or os.Exit(2)
+
+    Each pair is replaced with a single `return fmt.Errorf("cmd: message: %v", err)`.
+    Cobra propagates the error to main(), which prints to stderr and exits 1.
+
+    Exit-code semantics: Cobra always calls os.Exit(1) on a returned error — so the
+    distinction between os.Exit(1) and os.Exit(2) is lost when using return. For the
+    commands that currently emit exit 2 (parse errors, missing flags), the behaviour
+    change is acceptable per the feature description ("no backward compatibility required").
+
+    One call is kept: cmd/sawtools/main.go line 116 — this is the Cobra root executor
+    and must remain.
+
+    13 skipped tests across 8 test files will be un-skipped once os.Exit() is gone
+    from the production code they exercise.
+
+    File decomposition: 38 implementation files + 8 test files = 46 files, all in
+    cmd/sawtools/. One agent can own all files because the package is a single
+    compilation unit and the changes are independent per file (no cross-file
+    dependencies to sequence). Single-agent single-wave structure is correct here.
+
+    Suitability: SUITABLE. The parallelization value is low (mechanical edits), but the
+    IMPL doc provides coordination value as an audit trail and tracking artifact.
+
+    Estimated times:
+    - Scout phase: ~5 min (research pre-provided, IMPL doc writing only)
+    - Agent execution: ~15 min (38 files, mechanical substitution + test un-skipping)
+    - Merge and verification: ~3 min
+    Total SAW time: ~23 min
+
+    Sequential baseline: ~15 min (same work, one agent either way)
+    Time savings: marginal; value is audit trail and structured tracking.
+test_command: go test ./cmd/sawtools/...
+lint_command: go vet ./cmd/sawtools/...
+file_ownership:
+    - file: cmd/sawtools/amend_impl_cmd.go
+      agent: A
+      wave: 1
+      action: modify
+    - file: cmd/sawtools/build_retry_context_cmd.go
+      agent: A
+      wave: 1
+      action: modify
+    - file: cmd/sawtools/check_completion_cmd.go
+      agent: A
+      wave: 1
+      action: modify
+    - file: cmd/sawtools/check_conflicts_cmd.go
+      agent: A
+      wave: 1
+      action: modify
+    - file: cmd/sawtools/check_deps_cmd.go
+      agent: A
+      wave: 1
+      action: modify
+    - file: cmd/sawtools/check_program_conflicts_cmd.go
+      agent: A
+      wave: 1
+      action: modify
+    - file: cmd/sawtools/check_type_collisions_cmd.go
+      agent: A
+      wave: 1
+      action: modify
+    - file: cmd/sawtools/create_program_worktrees_cmd.go
+      agent: A
+      wave: 1
+      action: modify
+    - file: cmd/sawtools/finalize_impl_cmd.go
+      agent: A
+      wave: 1
+      action: modify
+    - file: cmd/sawtools/finalize_tier_cmd.go
+      agent: A
+      wave: 1
+      action: modify
+    - file: cmd/sawtools/freeze_check_cmd.go
+      agent: A
+      wave: 1
+      action: modify
+    - file: cmd/sawtools/freeze_contracts_cmd.go
+      agent: A
+      wave: 1
+      action: modify
+    - file: cmd/sawtools/interview_cmd.go
+      agent: A
+      wave: 1
+      action: modify
+    - file: cmd/sawtools/mark_program_complete_cmd.go
+      agent: A
+      wave: 1
+      action: modify
+    - file: cmd/sawtools/merge_agents.go
+      agent: A
+      wave: 1
+      action: modify
+    - file: cmd/sawtools/pre_wave_gate_cmd.go
+      agent: A
+      wave: 1
+      action: modify
+    - file: cmd/sawtools/prepare_tier_cmd.go
+      agent: A
+      wave: 1
+      action: modify
+    - file: cmd/sawtools/program_execute_cmd.go
+      agent: A
+      wave: 1
+      action: modify
+    - file: cmd/sawtools/program_replan_cmd.go
+      agent: A
+      wave: 1
+      action: modify
+    - file: cmd/sawtools/program_status_cmd.go
+      agent: A
+      wave: 1
+      action: modify
+    - file: cmd/sawtools/run_gates_cmd.go
+      agent: A
+      wave: 1
+      action: modify
+    - file: cmd/sawtools/run_wave_cmd.go
+      agent: A
+      wave: 1
+      action: modify
+    - file: cmd/sawtools/solve_cmd.go
+      agent: A
+      wave: 1
+      action: modify
+    - file: cmd/sawtools/tier_gate_cmd.go
+      agent: A
+      wave: 1
+      action: modify
+    - file: cmd/sawtools/update_program_impl_cmd.go
+      agent: A
+      wave: 1
+      action: modify
+    - file: cmd/sawtools/update_program_state_cmd.go
+      agent: A
+      wave: 1
+      action: modify
+    - file: cmd/sawtools/validate_cmd.go
+      agent: A
+      wave: 1
+      action: modify
+    - file: cmd/sawtools/validate_program_cmd.go
+      agent: A
+      wave: 1
+      action: modify
+    - file: cmd/sawtools/validate_scaffold_cmd.go
+      agent: A
+      wave: 1
+      action: modify
+    - file: cmd/sawtools/validate_scaffolds_cmd.go
+      agent: A
+      wave: 1
+      action: modify
+    - file: cmd/sawtools/verify_build.go
+      agent: A
+      wave: 1
+      action: modify
+    - file: cmd/sawtools/verify_commits.go
+      agent: A
+      wave: 1
+      action: modify
+    - file: cmd/sawtools/verify_isolation.go
+      agent: A
+      wave: 1
+      action: modify
+    - file: cmd/sawtools/check_deps_cmd_test.go
+      agent: A
+      wave: 1
+      action: modify
+    - file: cmd/sawtools/freeze_contracts_cmd_test.go
+      agent: A
+      wave: 1
+      action: modify
+    - file: cmd/sawtools/pre_wave_gate_cmd_test.go
+      agent: A
+      wave: 1
+      action: modify
+    - file: cmd/sawtools/program_replan_cmd_test.go
+      agent: A
+      wave: 1
+      action: modify
+    - file: cmd/sawtools/program_status_cmd_test.go
+      agent: A
+      wave: 1
+      action: modify
+    - file: cmd/sawtools/tier_gate_cmd_test.go
+      agent: A
+      wave: 1
+      action: modify
+    - file: cmd/sawtools/validate_program_cmd_test.go
+      agent: A
+      wave: 1
+      action: modify
+    - file: cmd/sawtools/validate_scaffold_cmd_test.go
+      agent: A
+      wave: 1
+      action: modify
+interface_contracts: []
+waves:
+    - number: 1
+      agents:
+        - id: A
+          task: |
+            ## Role
+            Mechanical cleanup agent: replace all `os.Exit()` calls in cmd/sawtools/ RunE
+            handlers with `return fmt.Errorf(...)`, then un-skip the tests that were blocked
+            by those calls.
+
+            ## What to Implement
+
+            ### Step 1 — Replace os.Exit() in production files
+
+            Apply the following substitution to every file listed in your ownership table
+            EXCEPT cmd/sawtools/main.go (which is NOT in your ownership — leave it untouched):
+
+            **Pattern to replace (two variants):**
+
+            Variant A — explicit message before exit:
+            ```go
+            fmt.Fprintf(os.Stderr, "cmd-name: some message: %v\n", err)
+            os.Exit(1)  // or os.Exit(2)
+            ```
+            Replace with:
+            ```go
+            return fmt.Errorf("cmd-name: some message: %v", err)
+            ```
+
+            Variant B — exit without a preceding Fprintf (just a bare os.Exit):
+            ```go
+            os.Exit(1)
+            ```
+            Replace with:
+            ```go
+            return fmt.Errorf("operation failed")
+            ```
+            (Use a descriptive message derived from surrounding context.)
+
+            Variant C — exit after printing JSON output (success path guard):
+            Some commands print JSON then exit 1 if a condition is false (e.g., `!data.Passed`).
+            Example from tier_gate_cmd.go:
+            ```go
+            out, _ := json.MarshalIndent(data, "", "  ")
+            fmt.Fprintln(cmd.OutOrStdout(), string(out))
+            if !data.Passed {
+                os.Exit(1)
+            }
+            return nil
+            ```
+            Replace with:
+            ```go
+            out, _ := json.MarshalIndent(data, "", "  ")
+            fmt.Fprintln(cmd.OutOrStdout(), string(out))
+            if !data.Passed {
+                return fmt.Errorf("tier gate failed")
+            }
+            return nil
+            ```
+            The JSON has already been printed before the error return, so callers parsing
+            stdout still receive it. The error message goes to stderr via Cobra.
+
+            **Important notes:**
+            - After removing os.Exit() calls, remove the `"os"` import from any file where
+              `os` is no longer referenced (other than `os.Stderr`, `os.Stdout`, `os.Getwd`,
+              `os.ReadFile`, etc. — only remove if `os` has zero remaining usages).
+            - Do NOT add `"fmt"` to imports if it is already present.
+            - The `fmt.Fprintf(os.Stderr, ...)` calls that precede an os.Exit() are made
+              redundant by the error return (Cobra prints the returned error to stderr).
+              Remove the Fprintf line when replacing the os.Exit() that follows it.
+
+            **Files with the most calls (verify these carefully):**
+            - cmd/sawtools/mark_program_complete_cmd.go — 4 calls (lines 63, 72, 78, 88)
+            - cmd/sawtools/tier_gate_cmd.go — 4 calls (lines 44, 53, 60, 70)
+            - cmd/sawtools/freeze_contracts_cmd.go — 4 calls (lines 43, 52, 59, 69)
+            - cmd/sawtools/update_program_impl_cmd.go — 4 calls (lines 49, 63, 76, 82)
+            - cmd/sawtools/program_execute_cmd.go — 3 calls (lines 51, 92, 100)
+            - cmd/sawtools/program_status_cmd.go — 3 calls (lines 39, 46, 58)
+            - cmd/sawtools/update_program_state_cmd.go — 3 calls (lines 45, 58, 64)
+
+            ### Step 2 — Un-skip tests in test files
+
+            The following 13 t.Skip() calls were added specifically because os.Exit() would
+            kill the test runner. Once os.Exit() is removed from the production code, these
+            tests become runnable. Remove the t.Skip() call and any comment explaining why
+            the test was skipped.
+
+            **check_deps_cmd_test.go** (1 skip):
+            - Line 299: `t.Skip("Skipping test that would call os.Exit(1) and terminate test process")`
+              Remove this line. The test body above it (creating a test case with conflicts)
+              should execute normally once RunE returns an error instead of exiting.
+
+            **freeze_contracts_cmd_test.go** (2 skips):
+            - Line 142: `t.Skip("Cannot test os.Exit(1) behavior in unit tests - requires integration test")`
+              in TestFreezeContractsCmd_MissingFile — remove, let the test run.
+            - Line 192: `t.Skip("Cannot test os.Exit(1) behavior in unit tests - requires integration test")`
+              in TestFreezeContractsCmd_UncommittedFile — remove, let the test run.
+              After removing the skips, these tests call cmd.Execute() and expect an error.
+              Update the test assertions: replace any "we can't test os.Exit" comments with
+              assertions that `cmd.Execute()` returns a non-nil error.
+
+            **pre_wave_gate_cmd_test.go** (1 skip):
+            - Line 89: `t.Skip("Skipping test that would call os.Exit(1) and terminate test process")`
+              Remove this line. The test should call cmd.Execute() and assert error != nil.
+
+            **program_replan_cmd_test.go** (1 skip to remove, 2 to keep):
+            - Line 64: `t.Skip("Cannot test os.Exit(2) behavior in unit tests...")`
+              Remove this skip. Once os.Exit(2) becomes return fmt.Errorf(), the test can
+              call cmd.Execute() and assert it returns an error.
+            - Lines 109 and 121: These are skipped for a different reason ("Requires
+              engine.ReplanProgram implementation from Agent C") — keep these skips.
+
+            **program_status_cmd_test.go** (1 skip):
+            - Line 192: `t.Skip("Cannot test os.Exit(2) behavior in unit tests - requires integration test")`
+              Remove this line. Assert cmd.Execute() returns non-nil error.
+
+            **tier_gate_cmd_test.go** (2 skips):
+            - Line 135: `t.Skip("Cannot test os.Exit(1) behavior in unit tests - requires integration test")`
+              in TestTierGateCmd_Fail — remove skip. Assert cmd.Execute() returns error != nil.
+            - Line 169: `t.Skip("Cannot test os.Exit(2) behavior in unit tests - requires integration test")`
+              in TestTierGateCmd_InvalidTier — remove skip. Assert cmd.Execute() returns error != nil.
+
+            **validate_program_cmd_test.go** (3 skips):
+            - Line 114: remove skip in the validation failure test.
+            - Line 155: remove skip in the second validation failure test.
+            - Line 161: remove skip in the exit-2 test.
+              For all three: assert cmd.Execute() returns non-nil error after removing the skip.
+
+            **validate_scaffold_cmd_test.go** (2 skips):
+            - Line 123: remove skip. Assert cmd.Execute() returns error.
+            - Line 189: remove skip. Assert cmd.Execute() returns error.
+
+            **Pattern for un-skipped tests:** After removing `t.Skip(...)`, the test function
+            typically already has the setup code (manifest file creation, cmd.Execute() call).
+            Add or update the error assertion:
+            ```go
+            err := cmd.Execute()
+            if err == nil {
+                t.Fatal("expected error, got nil")
+            }
+            ```
+
+            ### Step 3 — Verify no os.Exit remains (except main.go)
+
+            After completing Steps 1 and 2, run:
+            ```
+            grep -rn "os\.Exit" cmd/sawtools/ | grep -v "^cmd/sawtools/main\.go"
+            ```
+            The output must be empty (zero lines). If any remain, fix them before proceeding.
+
+            ## Verification Gate
+
+            ```
+            go build ./...
+            go vet ./cmd/sawtools/...
+            go test ./cmd/sawtools/...
+            ```
+
+            All three must pass with zero errors. The test run must show 0 skipped tests
+            for the 13 previously-skipped tests (they should now pass or fail explicitly).
+
+            ## Constraints
+
+            - Do NOT modify cmd/sawtools/main.go. Its os.Exit(1) on line 116 is correct
+              and intentional — it is the Cobra root executor exit, not a handler pattern.
+            - Do NOT modify any file outside cmd/sawtools/.
+            - Do NOT change any function signatures, exported types, or package-level variables.
+            - Do NOT add new helper functions. Each replacement is local within its RunE closure.
+            - The `"os"` package import may be kept if the file still uses os.Stderr, os.Stdout,
+              os.Getwd, os.ReadFile, os.WriteFile, os.MkdirAll, etc.
+              Only remove the import if os.Exit was the sole use of the "os" package in that file.
+            - Comment lines in test files that reference os.Exit behavior (e.g. "we can't test
+              os.Exit(1)") should be removed along with the t.Skip() call, since they are no
+              longer accurate.
+          files:
+            - cmd/sawtools/amend_impl_cmd.go
+            - cmd/sawtools/build_retry_context_cmd.go
+            - cmd/sawtools/check_completion_cmd.go
+            - cmd/sawtools/check_conflicts_cmd.go
+            - cmd/sawtools/check_deps_cmd.go
+            - cmd/sawtools/check_program_conflicts_cmd.go
+            - cmd/sawtools/check_type_collisions_cmd.go
+            - cmd/sawtools/create_program_worktrees_cmd.go
+            - cmd/sawtools/finalize_impl_cmd.go
+            - cmd/sawtools/finalize_tier_cmd.go
+            - cmd/sawtools/freeze_check_cmd.go
+            - cmd/sawtools/freeze_contracts_cmd.go
+            - cmd/sawtools/interview_cmd.go
+            - cmd/sawtools/mark_program_complete_cmd.go
+            - cmd/sawtools/merge_agents.go
+            - cmd/sawtools/pre_wave_gate_cmd.go
+            - cmd/sawtools/prepare_tier_cmd.go
+            - cmd/sawtools/program_execute_cmd.go
+            - cmd/sawtools/program_replan_cmd.go
+            - cmd/sawtools/program_status_cmd.go
+            - cmd/sawtools/run_gates_cmd.go
+            - cmd/sawtools/run_wave_cmd.go
+            - cmd/sawtools/solve_cmd.go
+            - cmd/sawtools/tier_gate_cmd.go
+            - cmd/sawtools/update_program_impl_cmd.go
+            - cmd/sawtools/update_program_state_cmd.go
+            - cmd/sawtools/validate_cmd.go
+            - cmd/sawtools/validate_program_cmd.go
+            - cmd/sawtools/validate_scaffold_cmd.go
+            - cmd/sawtools/validate_scaffolds_cmd.go
+            - cmd/sawtools/verify_build.go
+            - cmd/sawtools/verify_commits.go
+            - cmd/sawtools/verify_isolation.go
+            - cmd/sawtools/check_deps_cmd_test.go
+            - cmd/sawtools/freeze_contracts_cmd_test.go
+            - cmd/sawtools/pre_wave_gate_cmd_test.go
+            - cmd/sawtools/program_replan_cmd_test.go
+            - cmd/sawtools/program_status_cmd_test.go
+            - cmd/sawtools/tier_gate_cmd_test.go
+            - cmd/sawtools/validate_program_cmd_test.go
+            - cmd/sawtools/validate_scaffold_cmd_test.go
+          context_source: prepared-brief
+quality_gates:
+    level: standard
+    gates:
+        - type: build
+          command: go build ./...
+          required: true
+        - type: lint
+          command: go vet ./cmd/sawtools/...
+          required: true
+        - type: test
+          command: go test ./cmd/sawtools/...
+          required: true
+completion_reports:
+    A:
+        status: complete
+        branch: main
+        commit: ed5676a
+        files_changed:
+            - cmd/sawtools/amend_impl_cmd.go
+            - cmd/sawtools/build_retry_context_cmd.go
+            - cmd/sawtools/check_completion_cmd.go
+            - cmd/sawtools/check_conflicts_cmd.go
+            - cmd/sawtools/check_deps_cmd.go
+            - cmd/sawtools/check_program_conflicts_cmd.go
+            - cmd/sawtools/check_type_collisions_cmd.go
+            - cmd/sawtools/create_program_worktrees_cmd.go
+            - cmd/sawtools/finalize_tier_cmd.go
+            - cmd/sawtools/freeze_check_cmd.go
+            - cmd/sawtools/freeze_contracts_cmd.go
+            - cmd/sawtools/interview_cmd.go
+            - cmd/sawtools/mark_program_complete_cmd.go
+            - cmd/sawtools/merge_agents.go
+            - cmd/sawtools/pre_wave_gate_cmd.go
+            - cmd/sawtools/prepare_tier_cmd.go
+            - cmd/sawtools/program_execute_cmd.go
+            - cmd/sawtools/program_replan_cmd.go
+            - cmd/sawtools/program_status_cmd.go
+            - cmd/sawtools/run_gates_cmd.go
+            - cmd/sawtools/run_wave_cmd.go
+            - cmd/sawtools/solve_cmd.go
+            - cmd/sawtools/tier_gate_cmd.go
+            - cmd/sawtools/update_program_impl_cmd.go
+            - cmd/sawtools/update_program_state_cmd.go
+            - cmd/sawtools/validate_cmd.go
+            - cmd/sawtools/validate_program_cmd.go
+            - cmd/sawtools/validate_scaffold_cmd.go
+            - cmd/sawtools/validate_scaffolds_cmd.go
+            - cmd/sawtools/verify_build.go
+            - cmd/sawtools/verify_commits.go
+            - cmd/sawtools/verify_isolation.go
+            - cmd/sawtools/check_deps_cmd_test.go
+            - cmd/sawtools/freeze_contracts_cmd_test.go
+            - cmd/sawtools/pre_wave_gate_cmd_test.go
+            - cmd/sawtools/program_replan_cmd_test.go
+            - cmd/sawtools/program_status_cmd_test.go
+            - cmd/sawtools/tier_gate_cmd_test.go
+            - cmd/sawtools/validate_program_cmd_test.go
+            - cmd/sawtools/validate_scaffold_cmd_test.go
+        tests_added:
+            - TestFreezeContractsCmd_MissingFile
+            - TestFreezeContractsCmd_UncommittedFile
+            - TestPreWaveGateCmd_StateComplete_ExitsOne
+            - TestProgramReplan_WithTierNumber
+            - TestProgramStatusCmd_ParseError
+            - TestTierGateCmd_Fail
+            - TestTierGateCmd_InvalidTier
+            - TestValidateProgramCmd_InvalidManifest
+            - TestValidateProgramCmd_P1Violation
+            - TestValidateProgramCmd_MissingFile
+            - TestValidateScaffoldCmd_Invalid
+            - TestValidateScaffoldCmd_FileNotFound
+            - TestCheckDepsCmd_WithConflicts
+        verification: PASS
+pre_mortem:
+    overall_risk: low
+    rows:
+        - scenario: |
+            Exit code 2 is currently used in some commands to distinguish parse errors from runtime failures. After the change, all error returns produce exit code 1 via Cobra. Any script or CI step that tests for exit code 2 will break.
+          likelihood: low
+          impact: medium
+          mitigation: |
+            Feature description explicitly states no backward compatibility required. Document the exit-code flattening in commit message so callers are aware.
+        - scenario: |
+            Some commands print JSON output to stdout before the failure guard (e.g., tier-gate prints results then checks !data.Passed). If the agent replaces the os.Exit(1) but forgets to also remove the preceding fmt.Fprintf(os.Stderr, ...) call, Cobra will double-print the error message.
+          likelihood: medium
+          impact: low
+          mitigation: |
+            Agent brief explicitly instructs: remove the Fprintf line when replacing the os.Exit that follows it. Verification: grep for residual "Fprintf.*Stderr" near the replaced sites. The double-print is cosmetic (stderr only) and does not affect correctness or tests.
+        - scenario: |
+            An un-skipped test expects the command to fail but the production fix introduced a regression (e.g., the return path is unreachable, or the error message format changed). The test could pass vacuously or fail with a confusing message.
+          likelihood: low
+          impact: low
+          mitigation: |
+            Agent brief requires asserting err != nil (not just absence of panic) for each un-skipped test. go test ./cmd/sawtools/... must pass cleanly — any newly-un-skipped test that now fails will surface immediately.
+        - scenario: |
+            A file that used os.Getwd() or os.ReadFile() also had os.Exit() as the only additional os.* usage. The agent incorrectly removes the "os" import, causing a compile error.
+          likelihood: low
+          impact: low
+          mitigation: |
+            Agent brief explicitly lists os.Getwd, os.Stderr, etc. as reasons to retain the import. `go build ./...` will catch this immediately.
+state: COMPLETE

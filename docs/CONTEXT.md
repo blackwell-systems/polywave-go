@@ -222,3 +222,5 @@ type BackendConfig struct {
   - IMPL doc: docs/IMPL/complete/IMPL-go-engine-deduplication.yaml
 - **state-machine-unification**: completed 2026-03-26, 1 waves, 2 agents
   - IMPL doc: docs/IMPL/complete/IMPL-state-machine-unification.yaml
+- **os-exit-cleanup**: completed 2026-03-26, 1 waves, 1 agents
+  - IMPL doc: docs/IMPL/complete/IMPL-os-exit-cleanup.yaml
