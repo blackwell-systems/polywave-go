@@ -1,0 +1,981 @@
+completion_date: "2026-03-26"
+title: Unify completion report write paths — builder pattern, consolidated lock, consistent field population
+feature_slug: completion-report-unification
+feature: |
+    Three write paths for CompletionReport (orchestrator, engine, CLI) each use their own
+    local mutex and manually construct the struct, leading to lock fragmentation, inconsistent
+    field population, and no early validation. This IMPL adds a builder API
+    (pkg/protocol/completion_report.go) with Validate() semantics, consolidates the two
+    independent locks into a single WithCompletionReportLock() in pkg/protocol/manifest.go,
+    migrates all three callers to the builder, and populates previously-missing fields
+    (FailureType in engine path, WrittenAt timestamp on all paths).
+verdict: SUITABLE
+suitability_assessment: |
+    1. File decomposition: 7 files across 4 packages (pkg/protocol, pkg/orchestrator,
+       pkg/engine, cmd/sawtools). Wave 1 owns protocol package additions in disjoint files
+       (types.go + completion_report.go to Agent A; manifest.go to Agent B). Wave 2 migrates
+       three write paths in fully disjoint packages (engine to Agent C, orchestrator to Agent D,
+       CLI to Agent E). No conflicting modifications.
+
+    2. Investigation-first items: None. Research doc (docs/research-completion-report-unification.md)
+       has fully identified all write sites, lock locations, missing fields, and race conditions.
+       Root cause is understood.
+
+    3. Interface discoverability: Builder API fully specifiable before wave launch (see
+       interface_contracts). Lock mechanism is self-contained in manifest.go. All cross-agent
+       interfaces are locked in before Wave 2 begins.
+
+    4. Pre-implementation status check: No builder exists yet. All 7 planned files need
+       implementation (6 modify, 1 new). Research confirms all three write paths are
+       unmodified. No DONE or PARTIAL items.
+
+    5. Parallelization value: High. Wave 2 has 3 fully independent agents in different
+       packages. Go build cycles ~5-10s each. Builder API defined upfront enables true
+       parallel migration with no coordination needed between Wave 2 agents.
+
+    Estimated times:
+    - Scout phase: ~20 min (research pre-done; primarily IMPL doc writing + validation)
+    - Agent execution: ~25 min (2 Wave 1 agents x 12 min avg + 3 Wave 2 agents x 10 min avg, full parallelism per wave)
+    - Merge & verification: ~5 min
+    Total SAW time: ~50 min
+    Sequential baseline: ~75 min (5 agents x 15 min avg sequential)
+    Time savings: ~25 min (~33% faster)
+    Recommendation: Clear speedup. Three-way parallel caller migration in Wave 2 is the primary win.
+test_command: go test ./... -timeout 120s
+lint_command: go vet ./...
+file_ownership:
+    - file: pkg/protocol/types.go
+      agent: A
+      wave: 1
+      action: modify
+    - file: pkg/protocol/completion_report.go
+      agent: A
+      wave: 1
+      action: new
+    - file: pkg/protocol/completion_report_test.go
+      agent: A
+      wave: 1
+      action: new
+    - file: pkg/protocol/manifest.go
+      agent: B
+      wave: 1
+      action: modify
+    - file: pkg/engine/runner_wave_structured.go
+      agent: C
+      wave: 2
+      action: modify
+    - file: pkg/orchestrator/orchestrator.go
+      agent: D
+      wave: 2
+      action: modify
+    - file: pkg/orchestrator/structured_wave.go
+      agent: D
+      wave: 2
+      action: modify
+    - file: cmd/sawtools/set_completion_cmd.go
+      agent: E
+      wave: 2
+      action: modify
+interface_contracts:
+    - name: NewCompletionReport
+      description: Creates a new builder for the given agent ID
+      definition: |
+        func NewCompletionReport(agentID string) *CompletionReportBuilder
+      location: pkg/protocol/completion_report.go
+    - name: CompletionReportBuilder.WithStatus
+      description: Sets the completion status
+      definition: |
+        func (b *CompletionReportBuilder) WithStatus(status string) *CompletionReportBuilder
+        // Valid values: "complete", "partial", "blocked"
+      location: pkg/protocol/completion_report.go
+    - name: CompletionReportBuilder.WithCommit
+      description: Sets the git commit SHA
+      definition: |
+        func (b *CompletionReportBuilder) WithCommit(sha string) *CompletionReportBuilder
+      location: pkg/protocol/completion_report.go
+    - name: CompletionReportBuilder.WithFiles
+      description: Sets files changed and created lists
+      definition: |
+        func (b *CompletionReportBuilder) WithFiles(changed, created []string) *CompletionReportBuilder
+      location: pkg/protocol/completion_report.go
+    - name: CompletionReportBuilder.WithVerification
+      description: Sets the verification result string
+      definition: |
+        func (b *CompletionReportBuilder) WithVerification(result string) *CompletionReportBuilder
+      location: pkg/protocol/completion_report.go
+    - name: CompletionReportBuilder.WithFailureType
+      description: Sets the failure type; required for blocked/partial status
+      definition: |
+        func (b *CompletionReportBuilder) WithFailureType(ft string) *CompletionReportBuilder
+        // Valid values: "transient", "fixable", "needs_replan", "escalate", "timeout"
+      location: pkg/protocol/completion_report.go
+    - name: CompletionReportBuilder.WithWorktree
+      description: Sets the worktree path
+      definition: |
+        func (b *CompletionReportBuilder) WithWorktree(path string) *CompletionReportBuilder
+      location: pkg/protocol/completion_report.go
+    - name: CompletionReportBuilder.WithBranch
+      description: Sets the branch name
+      definition: |
+        func (b *CompletionReportBuilder) WithBranch(name string) *CompletionReportBuilder
+      location: pkg/protocol/completion_report.go
+    - name: CompletionReportBuilder.WithRepo
+      description: Sets the repository path (required for cross-repo waves)
+      definition: |
+        func (b *CompletionReportBuilder) WithRepo(path string) *CompletionReportBuilder
+      location: pkg/protocol/completion_report.go
+    - name: CompletionReportBuilder.WithTestsAdded
+      description: Sets the list of tests added
+      definition: |
+        func (b *CompletionReportBuilder) WithTestsAdded(tests []string) *CompletionReportBuilder
+      location: pkg/protocol/completion_report.go
+    - name: CompletionReportBuilder.WithNotes
+      description: Sets the free-text notes field
+      definition: |
+        func (b *CompletionReportBuilder) WithNotes(text string) *CompletionReportBuilder
+      location: pkg/protocol/completion_report.go
+    - name: CompletionReportBuilder.WithDedupStats
+      description: Sets the dedup statistics
+      definition: |
+        func (b *CompletionReportBuilder) WithDedupStats(stats *DedupStats) *CompletionReportBuilder
+      location: pkg/protocol/completion_report.go
+    - name: CompletionReportBuilder.WithInterfaceDeviations
+      description: Sets the interface deviation list
+      definition: |
+        func (b *CompletionReportBuilder) WithInterfaceDeviations(devs []InterfaceDeviation) *CompletionReportBuilder
+      location: pkg/protocol/completion_report.go
+    - name: CompletionReportBuilder.Validate
+      description: |
+        Checks semantic rules before manifest mutation. Rules: status must be complete/partial/blocked; commit required when status is complete; failure_type required when blocked or partial; failure_type must NOT be set when complete; failure_type must be valid FailureTypeEnum.
+      definition: |
+        func (b *CompletionReportBuilder) Validate() error
+      location: pkg/protocol/completion_report.go
+    - name: CompletionReportBuilder.AppendToManifest
+      description: |
+        Validates the report, sets WrittenAt to time.Now(), and writes it into manifest.CompletionReports[agentID] in-memory via SetCompletionReport. Does NOT call Save(); the caller inside WithCompletionReportLock controls persistence.
+      definition: |
+        func (b *CompletionReportBuilder) AppendToManifest(manifest *IMPLManifest) error
+        // Returns Validate() errors if validation fails.
+        // Returns ErrAgentNotFound if agentID is not in the manifest's wave list.
+      location: pkg/protocol/completion_report.go
+    - name: WithCompletionReportLock
+      description: |
+        Executes fn inside completionReportMu (package-level mutex) and returns its error. All callers that perform a Load-Set-Save sequence for completion reports must use this instead of their own local locks (replacing reportMu in orchestrator, reportWaveMu in engine).
+      definition: |
+        func WithCompletionReportLock(fn func() error) error
+      location: pkg/protocol/manifest.go
+waves:
+    - number: 1
+      agents:
+        - id: A
+          task: |
+            ## Context
+
+            You are implementing Wave 1 Agent A of the completion-report-unification feature
+            in `github.com/blackwell-systems/scout-and-wave-go`. The research for this work is
+            at `docs/research-completion-report-unification.md` — read it before starting.
+
+            You own three files: modify `pkg/protocol/types.go`, create
+            `pkg/protocol/completion_report.go`, and create `pkg/protocol/completion_report_test.go`.
+
+            Agent B (same wave) owns `pkg/protocol/manifest.go` and is adding
+            `WithCompletionReportLock`. Your `AppendToManifest` function must call
+            `SetCompletionReport` (already in manifest.go) — NOT `WithCompletionReportLock`
+            (that is for callers in Wave 2 who need the lock, not for in-package calls).
+
+            ## Task 1 — Modify pkg/protocol/types.go
+
+            Read `pkg/protocol/types.go` lines 101-118 (the `CompletionReport` struct).
+            Add one field after the `Repo` field (the last field):
+
+            ```go
+            WrittenAt *time.Time `yaml:"written_at,omitempty" json:"written_at,omitempty"`
+            ```
+
+            Add `"time"` to the import block if not already present. Only touch the
+            `CompletionReport` struct. Leave all other types unchanged.
+
+            ## Task 2 — Create pkg/protocol/completion_report.go
+
+            Create this file with the full builder implementation:
+
+            ```go
+            package protocol
+
+            import (
+                "fmt"
+                "strings"
+                "time"
+            )
+
+            // CompletionReportBuilder constructs and validates a CompletionReport before
+            // writing it to a manifest. Not thread-safe; use one builder per goroutine.
+            // The consolidated lock is in WithCompletionReportLock (manifest.go); the builder
+            // itself does not acquire any lock.
+            type CompletionReportBuilder struct {
+                report  CompletionReport
+                agentID string
+            }
+
+            // NewCompletionReport creates a new builder for the given agent ID.
+            func NewCompletionReport(agentID string) *CompletionReportBuilder {
+                return &CompletionReportBuilder{agentID: agentID}
+            }
+
+            func (b *CompletionReportBuilder) WithStatus(status string) *CompletionReportBuilder {
+                b.report.Status = status
+                return b
+            }
+
+            func (b *CompletionReportBuilder) WithCommit(sha string) *CompletionReportBuilder {
+                b.report.Commit = sha
+                return b
+            }
+
+            func (b *CompletionReportBuilder) WithFiles(changed, created []string) *CompletionReportBuilder {
+                b.report.FilesChanged = changed
+                b.report.FilesCreated = created
+                return b
+            }
+
+            func (b *CompletionReportBuilder) WithVerification(result string) *CompletionReportBuilder {
+                b.report.Verification = result
+                return b
+            }
+
+            func (b *CompletionReportBuilder) WithFailureType(ft string) *CompletionReportBuilder {
+                b.report.FailureType = ft
+                return b
+            }
+
+            func (b *CompletionReportBuilder) WithWorktree(path string) *CompletionReportBuilder {
+                b.report.Worktree = path
+                return b
+            }
+
+            func (b *CompletionReportBuilder) WithBranch(name string) *CompletionReportBuilder {
+                b.report.Branch = name
+                return b
+            }
+
+            func (b *CompletionReportBuilder) WithRepo(path string) *CompletionReportBuilder {
+                b.report.Repo = path
+                return b
+            }
+
+            func (b *CompletionReportBuilder) WithTestsAdded(tests []string) *CompletionReportBuilder {
+                b.report.TestsAdded = tests
+                return b
+            }
+
+            func (b *CompletionReportBuilder) WithNotes(text string) *CompletionReportBuilder {
+                b.report.Notes = text
+                return b
+            }
+
+            func (b *CompletionReportBuilder) WithDedupStats(stats *DedupStats) *CompletionReportBuilder {
+                b.report.DedupStats = stats
+                return b
+            }
+
+            func (b *CompletionReportBuilder) WithInterfaceDeviations(devs []InterfaceDeviation) *CompletionReportBuilder {
+                b.report.InterfaceDeviations = devs
+                return b
+            }
+
+            // Validate checks semantic consistency rules before any manifest mutation.
+            // Rules enforced:
+            //   - status must be "complete", "partial", or "blocked"
+            //   - commit must be non-empty when status is "complete"
+            //   - failure_type must be set when status is "blocked" or "partial"
+            //   - failure_type must NOT be set when status is "complete"
+            //   - failure_type value must be a valid FailureTypeEnum (uses ValidFailureType)
+            func (b *CompletionReportBuilder) Validate() error {
+                var errs []string
+
+                switch b.report.Status {
+                case "complete", "partial", "blocked":
+                    // valid
+                case "":
+                    errs = append(errs, "status is required")
+                default:
+                    errs = append(errs, fmt.Sprintf("status %q is invalid: must be complete, partial, or blocked", b.report.Status))
+                }
+
+                if b.report.Status == "complete" && b.report.Commit == "" {
+                    errs = append(errs, "commit is required when status is complete")
+                }
+
+                if (b.report.Status == "blocked" || b.report.Status == "partial") && b.report.FailureType == "" {
+                    errs = append(errs, fmt.Sprintf("failure_type is required when status is %q", b.report.Status))
+                }
+
+                if b.report.Status == "complete" && b.report.FailureType != "" {
+                    errs = append(errs, "failure_type must not be set when status is complete")
+                }
+
+                if b.report.FailureType != "" && !ValidFailureType(b.report.FailureType) {
+                    errs = append(errs, fmt.Sprintf("failure_type %q is invalid", b.report.FailureType))
+                }
+
+                if len(errs) > 0 {
+                    return fmt.Errorf("completion report validation failed: %s", strings.Join(errs, "; "))
+                }
+                return nil
+            }
+
+            // AppendToManifest validates the report, sets WrittenAt to time.Now(), and writes
+            // it into manifest.CompletionReports[agentID] in-memory.
+            // Does NOT call Save(); callers inside WithCompletionReportLock control persistence.
+            // Returns Validate() errors if validation fails.
+            // Returns ErrAgentNotFound if agentID is not in the manifest's wave list.
+            func (b *CompletionReportBuilder) AppendToManifest(manifest *IMPLManifest) error {
+                if err := b.Validate(); err != nil {
+                    return err
+                }
+                now := time.Now()
+                b.report.WrittenAt = &now
+                return SetCompletionReport(manifest, b.agentID, b.report)
+            }
+            ```
+
+            ## Task 3 — Create pkg/protocol/completion_report_test.go
+
+            Create this file using `package protocol` (same package, not `_test`):
+
+            ```go
+            package protocol
+
+            import (
+                "errors"
+                "testing"
+            )
+
+            func TestCompletionReportBuilder_ValidComplete(t *testing.T) {
+                err := NewCompletionReport("A").
+                    WithStatus("complete").
+                    WithCommit("abc123").
+                    Validate()
+                if err != nil {
+                    t.Errorf("expected no error, got: %v", err)
+                }
+            }
+
+            func TestCompletionReportBuilder_BlockedWithoutFailureType(t *testing.T) {
+                err := NewCompletionReport("A").
+                    WithStatus("blocked").
+                    Validate()
+                if err == nil {
+                    t.Error("expected error for blocked without failure_type")
+                }
+            }
+
+            func TestCompletionReportBuilder_PartialRequiresFailureType(t *testing.T) {
+                err := NewCompletionReport("A").
+                    WithStatus("partial").
+                    WithCommit("abc123").
+                    Validate()
+                if err == nil {
+                    t.Error("expected error for partial without failure_type")
+                }
+            }
+
+            func TestCompletionReportBuilder_CompleteWithFailureType(t *testing.T) {
+                err := NewCompletionReport("A").
+                    WithStatus("complete").
+                    WithCommit("abc123").
+                    WithFailureType("transient").
+                    Validate()
+                if err == nil {
+                    t.Error("expected error for complete with failure_type set")
+                }
+            }
+
+            func TestCompletionReportBuilder_EmptyCommitOnComplete(t *testing.T) {
+                err := NewCompletionReport("A").
+                    WithStatus("complete").
+                    Validate()
+                if err == nil {
+                    t.Error("expected error for complete with empty commit")
+                }
+            }
+
+            func TestCompletionReportBuilder_InvalidStatus(t *testing.T) {
+                err := NewCompletionReport("A").
+                    WithStatus("done").
+                    Validate()
+                if err == nil {
+                    t.Error("expected error for invalid status")
+                }
+            }
+
+            func TestCompletionReportBuilder_InvalidFailureType(t *testing.T) {
+                err := NewCompletionReport("A").
+                    WithStatus("blocked").
+                    WithFailureType("bad").
+                    Validate()
+                if err == nil {
+                    t.Error("expected error for invalid failure_type")
+                }
+            }
+
+            func TestCompletionReportBuilder_AppendToManifest(t *testing.T) {
+                manifest := &IMPLManifest{
+                    Waves: []Wave{
+                        {Number: 1, Agents: []Agent{{ID: "X", Task: "test"}}},
+                    },
+                    CompletionReports: make(map[string]CompletionReport),
+                }
+
+                err := NewCompletionReport("X").
+                    WithStatus("complete").
+                    WithCommit("deadbeef").
+                    AppendToManifest(manifest)
+                if err != nil {
+                    t.Fatalf("AppendToManifest failed: %v", err)
+                }
+
+                report, ok := manifest.CompletionReports["X"]
+                if !ok {
+                    t.Fatal("report not stored in manifest")
+                }
+                if report.Status != "complete" {
+                    t.Errorf("status = %q, want %q", report.Status, "complete")
+                }
+                if report.Commit != "deadbeef" {
+                    t.Errorf("commit = %q, want %q", report.Commit, "deadbeef")
+                }
+                if report.WrittenAt == nil {
+                    t.Error("WrittenAt not set by AppendToManifest")
+                }
+            }
+
+            func TestCompletionReportBuilder_AppendToManifest_UnknownAgent(t *testing.T) {
+                manifest := &IMPLManifest{
+                    Waves: []Wave{
+                        {Number: 1, Agents: []Agent{{ID: "X", Task: "test"}}},
+                    },
+                    CompletionReports: make(map[string]CompletionReport),
+                }
+
+                err := NewCompletionReport("Z").
+                    WithStatus("complete").
+                    WithCommit("abc123").
+                    AppendToManifest(manifest)
+                if err == nil {
+                    t.Error("expected ErrAgentNotFound for unknown agent")
+                }
+                if !errors.Is(err, ErrAgentNotFound) {
+                    t.Errorf("expected ErrAgentNotFound, got: %v", err)
+                }
+            }
+            ```
+
+            ## Verification gates
+
+            ```
+            go build ./pkg/protocol/...
+            go vet ./pkg/protocol/...
+            go test ./pkg/protocol/... -run TestCompletionReportBuilder -timeout 30s
+            ```
+          files:
+            - pkg/protocol/types.go
+            - pkg/protocol/completion_report.go
+            - pkg/protocol/completion_report_test.go
+        - id: B
+          task: |
+            ## Context
+
+            You are implementing Wave 1 Agent B of the completion-report-unification feature
+            in `github.com/blackwell-systems/scout-and-wave-go`. You own one file:
+            `pkg/protocol/manifest.go`. Your task is to add a package-level mutex and a
+            `WithCompletionReportLock` helper function. Do NOT modify any other files.
+
+            Agent A (same wave) is adding the builder in `pkg/protocol/completion_report.go`.
+            Your function `WithCompletionReportLock` will be called by Wave 2 agents in
+            pkg/orchestrator, pkg/engine, and cmd/sawtools.
+
+            ## Task — Modify pkg/protocol/manifest.go
+
+            Read `pkg/protocol/manifest.go` in full before making changes. The file currently
+            contains: imports (os, errors, fmt, strings, gopkg.in/yaml.v3), `ErrAgentNotFound`,
+            `Load()`, `isYAMLDuplicateKeyError()`, `Save()`, `CurrentWave()`, `SetCompletionReport()`.
+
+            Make two additions:
+
+            **1. Add "sync" to the import block.** The current imports are:
+            ```go
+            import (
+                "errors"
+                "fmt"
+                "os"
+                "strings"
+
+                "gopkg.in/yaml.v3"
+            )
+            ```
+            Add `"sync"` to this block.
+
+            **2. Add the mutex and helper function after the `ErrAgentNotFound` declaration
+            and before the `Load()` function.** Insert:
+
+            ```go
+            // completionReportMu serializes all Load-Set-Save sequences for completion
+            // reports across the orchestrator, engine, and CLI write paths.
+            // Replaces the caller-side reportMu (pkg/orchestrator) and reportWaveMu
+            // (pkg/engine) with a single canonical lock owned by the protocol package.
+            var completionReportMu sync.Mutex
+
+            // WithCompletionReportLock executes fn inside completionReportMu and returns
+            // its error. All callers that perform a Load-Set-Save sequence for completion
+            // reports must use this function instead of their own local mutexes.
+            //
+            // Typical usage:
+            //
+            //   err := protocol.WithCompletionReportLock(func() error {
+            //       m, err := protocol.Load(implDocPath)
+            //       if err != nil { return err }
+            //       if err := builder.AppendToManifest(m); err != nil { return err }
+            //       return protocol.Save(m, implDocPath)
+            //   })
+            func WithCompletionReportLock(fn func() error) error {
+                completionReportMu.Lock()
+                defer completionReportMu.Unlock()
+                return fn()
+            }
+            ```
+
+            Do not change any existing function or variable.
+
+            ## Verification gates
+
+            ```
+            go build ./pkg/protocol/...
+            go vet ./pkg/protocol/...
+            go test ./pkg/protocol/... -timeout 30s
+            ```
+          files:
+            - pkg/protocol/manifest.go
+      base_commit: f71ba69865da5c6a598d9e47cabb5b5e357257b9
+    - number: 2
+      agents:
+        - id: C
+          task: |
+            ## Context
+
+            You are implementing Wave 2 Agent C of the completion-report-unification feature
+            in `github.com/blackwell-systems/scout-and-wave-go`. Wave 1 has already added:
+            - `protocol.CompletionReportBuilder` and `protocol.NewCompletionReport` in
+              `pkg/protocol/completion_report.go`
+            - `protocol.WithCompletionReportLock` in `pkg/protocol/manifest.go`
+            - `WrittenAt *time.Time` field in `CompletionReport`
+
+            You own one file: `pkg/engine/runner_wave_structured.go`.
+
+            ## Task — Migrate engine write path
+
+            Read `pkg/engine/runner_wave_structured.go` in full before making changes.
+            Focus on:
+            - Lines 16-19: `reportWaveMu` declaration
+            - Lines 106-133: unmarshal + persist block
+
+            **Change 1: Remove reportWaveMu declaration.**
+            Delete these lines (approximately 16-19):
+            ```go
+            // reportWaveMu serializes concurrent writes to the IMPL doc's completion_reports
+            // from wave agents using structured output. Mirrors orchestrator.reportMu.
+            var reportWaveMu sync.Mutex
+            ```
+
+            **Change 2: Replace the unmarshal + persist block (lines 106-133).**
+
+            The current block does:
+            1. Unmarshal JSON into bare `protocol.CompletionReport`
+            2. Fall back Status to "complete"
+            3. `reportWaveMu.Lock() / Load / SetCompletionReport / Save / Unlock`
+            4. Return `&report`
+
+            Replace the entire block starting from `// Unmarshal the structured JSON response`
+            to the end of the function with:
+
+            ```go
+            // Unmarshal the structured JSON response into a raw CompletionReport.
+            var rawReport protocol.CompletionReport
+            if err := json.Unmarshal([]byte(jsonStr), &rawReport); err != nil {
+                return nil, fmt.Errorf("runWaveAgentStructured: unmarshal report for agent %s: %w", agentSpec.ID, err)
+            }
+
+            // Fall back to "complete" if model omitted status.
+            if rawReport.Status == "" {
+                rawReport.Status = "complete"
+            }
+
+            // Build and validate the report using the canonical builder.
+            // FailureType is now explicitly populated from the JSON (previously missing).
+            builder := protocol.NewCompletionReport(agentSpec.ID).
+                WithStatus(rawReport.Status).
+                WithCommit(rawReport.Commit).
+                WithFiles(rawReport.FilesChanged, rawReport.FilesCreated).
+                WithVerification(rawReport.Verification).
+                WithWorktree(rawReport.Worktree).
+                WithBranch(rawReport.Branch).
+                WithTestsAdded(rawReport.TestsAdded).
+                WithNotes(rawReport.Notes).
+                WithDedupStats(rawReport.DedupStats).
+                WithInterfaceDeviations(rawReport.InterfaceDeviations)
+
+            if rawReport.FailureType != "" {
+                builder = builder.WithFailureType(rawReport.FailureType)
+            }
+
+            // Persist using the consolidated lock (replaces reportWaveMu).
+            if saveErr := protocol.WithCompletionReportLock(func() error {
+                manifest, loadErr := protocol.Load(opts.IMPLPath)
+                if loadErr != nil {
+                    return fmt.Errorf("load manifest for agent %s: %w", agentSpec.ID, loadErr)
+                }
+                if appendErr := builder.AppendToManifest(manifest); appendErr != nil {
+                    return fmt.Errorf("append report for agent %s: %w", agentSpec.ID, appendErr)
+                }
+                return protocol.Save(manifest, opts.IMPLPath)
+            }); saveErr != nil {
+                return nil, fmt.Errorf("runWaveAgentStructured: save report for agent %s: %w", agentSpec.ID, saveErr)
+            }
+
+            // Re-read the saved report (with WrittenAt set by AppendToManifest).
+            finalManifest, _ := protocol.Load(opts.IMPLPath)
+            var finalReport protocol.CompletionReport
+            if finalManifest != nil {
+                if r, ok := finalManifest.CompletionReports[agentSpec.ID]; ok {
+                    finalReport = r
+                }
+            }
+            return &finalReport, nil
+            ```
+
+            **Change 3: Remove sync import if unused.**
+            After removing `reportWaveMu`, check if `sync` is still imported and used elsewhere
+            in the file. Run:
+            ```
+            grep -n "sync\." pkg/engine/runner_wave_structured.go
+            ```
+            If no other sync usage exists, remove `"sync"` from the import block.
+
+            Note on validation: AppendToManifest enforces "blocked/partial requires failure_type".
+            If the agent's JSON output has status=blocked/partial but no failure_type, the save
+            will return a validation error. This is intentional — it surfaces malformed agent output
+            immediately rather than silently writing invalid data.
+
+            ## Verification gates
+
+            ```
+            go build ./pkg/engine/...
+            go vet ./pkg/engine/...
+            go test ./pkg/engine/... -timeout 60s
+            ```
+          files:
+            - pkg/engine/runner_wave_structured.go
+        - id: D
+          task: |
+            ## Context
+
+            You are implementing Wave 2 Agent D of the completion-report-unification feature
+            in `github.com/blackwell-systems/scout-and-wave-go`. Wave 1 has already added:
+            - `protocol.CompletionReportBuilder` and `protocol.NewCompletionReport` in
+              `pkg/protocol/completion_report.go`
+            - `protocol.WithCompletionReportLock` in `pkg/protocol/manifest.go`
+            - `WrittenAt *time.Time` field in `CompletionReport`
+
+            You own two files: `pkg/orchestrator/orchestrator.go` and
+            `pkg/orchestrator/structured_wave.go`.
+
+            ## Task 1 — Migrate orchestrator.go write path
+
+            Read `pkg/orchestrator/orchestrator.go` in full before making changes.
+            The `reportMu` declaration is around lines 94-97. The write block you will
+            replace is at lines 875-890 (the `if report != nil { reportMu.Lock() ... Unlock() }` block).
+
+            **Replace the write block (the entire `if report != nil { ... }` block that calls
+            reportMu.Lock/Unlock and SetCompletionReport/Save)** with:
+
+            ```go
+            // e. Always persist the completion report to the main branch IMPL doc.
+            if report != nil {
+                builder := protocol.NewCompletionReport(agentSpec.ID).
+                    WithStatus(report.Status).
+                    WithCommit(report.Commit).
+                    WithFiles(report.FilesChanged, report.FilesCreated).
+                    WithVerification(report.Verification).
+                    WithWorktree(report.Worktree).
+                    WithBranch(report.Branch).
+                    WithTestsAdded(report.TestsAdded).
+                    WithNotes(report.Notes).
+                    WithDedupStats(report.DedupStats).
+                    WithInterfaceDeviations(report.InterfaceDeviations).
+                    WithRepo(report.Repo)
+
+                if report.FailureType != "" {
+                    builder = builder.WithFailureType(report.FailureType)
+                }
+
+                if saveErr := protocol.WithCompletionReportLock(func() error {
+                    manifest, loadErr := protocol.Load(o.implDocPath)
+                    if loadErr != nil {
+                        return loadErr
+                    }
+                    if appendErr := builder.AppendToManifest(manifest); appendErr != nil {
+                        return appendErr
+                    }
+                    return protocol.Save(manifest, o.implDocPath)
+                }); saveErr != nil {
+                    o.log().Warn("orchestrator: failed to save report", "agent", agentSpec.ID, "err", saveErr)
+                }
+            }
+            ```
+
+            The `reportMu.Lock()` / `reportMu.Unlock()` calls are removed from this write site.
+
+            ## Task 2 — Migrate structured_wave.go read-lock
+
+            Read `pkg/orchestrator/structured_wave.go` in full. The read-lock block at lines
+            135-143 uses `reportMu` to protect a manifest re-load:
+
+            ```go
+            reportMu.Lock()
+            if manifest, loadErr := protocol.Load(o.implDocPath); loadErr == nil {
+                if r, ok := manifest.CompletionReports[protoAgent.ID]; ok {
+                    savedStatus = r.Status
+                    savedFailureType = r.FailureType
+                    status = r.Status
+                }
+            }
+            reportMu.Unlock()
+            ```
+
+            Replace with `WithCompletionReportLock` for consistency:
+
+            ```go
+            _ = protocol.WithCompletionReportLock(func() error {
+                manifest, loadErr := protocol.Load(o.implDocPath)
+                if loadErr != nil {
+                    return loadErr
+                }
+                if r, ok := manifest.CompletionReports[protoAgent.ID]; ok {
+                    savedStatus = r.Status
+                    savedFailureType = r.FailureType
+                    status = r.Status
+                }
+                return nil
+            })
+            ```
+
+            ## Task 3 — Check reportMu cleanup
+
+            After migrating both sites, check if `reportMu` is still referenced anywhere
+            in the orchestrator package:
+
+            ```
+            grep -rn "reportMu" pkg/orchestrator/
+            ```
+
+            Expected results after your changes:
+            - `orchestrator.go`: only the `var reportMu sync.Mutex` declaration line
+            - `structured_wave_test.go`: may reference reportMu in test helpers
+
+            Check `pkg/orchestrator/structured_wave_test.go` for `reportMu` usage. If the
+            test file uses `reportMu` directly (e.g., `reportMu.Lock()` in test setup),
+            keep the `var reportMu sync.Mutex` declaration — removing it would break the
+            test. If the test file does NOT use it, and only the declaration remains in
+            production code with no callers, remove the declaration.
+
+            Do NOT modify test files to fix this — only modify production code.
+
+            ## Verification gates
+
+            ```
+            go build ./pkg/orchestrator/...
+            go vet ./pkg/orchestrator/...
+            go test ./pkg/orchestrator/... -timeout 60s
+            ```
+          files:
+            - pkg/orchestrator/orchestrator.go
+            - pkg/orchestrator/structured_wave.go
+        - id: E
+          task: |
+            ## Context
+
+            You are implementing Wave 2 Agent E of the completion-report-unification feature
+            in `github.com/blackwell-systems/scout-and-wave-go`. Wave 1 has already added:
+            - `protocol.CompletionReportBuilder` and `protocol.NewCompletionReport` in
+              `pkg/protocol/completion_report.go`
+            - `protocol.WithCompletionReportLock` in `pkg/protocol/manifest.go`
+            - `WrittenAt *time.Time` field in `CompletionReport`
+
+            You own one file: `cmd/sawtools/set_completion_cmd.go`.
+
+            ## Task — Migrate CLI write path
+
+            Read `cmd/sawtools/set_completion_cmd.go` in full before making changes.
+            The current implementation:
+            - Declares flags including agentID, status, commit, worktree, branch,
+              filesChanged, filesCreated, testsAdded, verification
+            - Validates status enum in a switch statement (lines 47-52)
+            - Manually constructs `protocol.CompletionReport` struct (lines 61-70)
+            - Calls `protocol.SetCompletionReport` + `protocol.Save` directly (lines 73-80)
+
+            **Change 1: Add new flag variables.**
+            Add `var notes string` and `var failureType string` alongside the existing vars.
+
+            **Change 2: Register the new flags.**
+            Add after the existing flag registrations:
+            ```go
+            cmd.Flags().StringVar(&notes, "notes", "", "Free-text notes")
+            cmd.Flags().StringVar(&failureType, "failure-type", "", "Failure type: transient|fixable|needs_replan|escalate|timeout")
+            ```
+
+            **Change 3: Remove MarkFlagRequired for --commit.**
+            The current code has `_ = cmd.MarkFlagRequired("commit")`. Remove this line.
+            The builder's Validate() will enforce that commit is required for "complete" status,
+            but NOT for "blocked" or "partial" (where commit may be absent). The old behavior
+            required commit unconditionally which was too strict.
+
+            **Change 4: Replace the manual construction + save block.**
+            Replace the status validation switch, manual struct construction, SetCompletionReport,
+            and Save calls with the builder pattern:
+
+            ```go
+            // Build completion report using the canonical builder.
+            builder := protocol.NewCompletionReport(agentID).
+                WithStatus(status).
+                WithCommit(commit).
+                WithWorktree(worktree).
+                WithBranch(branch).
+                WithFiles(splitCSV(filesChanged), splitCSV(filesCreated)).
+                WithTestsAdded(splitCSV(testsAdded)).
+                WithVerification(verification).
+                WithNotes(notes)
+
+            if failureType != "" {
+                builder = builder.WithFailureType(failureType)
+            }
+
+            // Validate before touching disk.
+            if err := builder.Validate(); err != nil {
+                return fmt.Errorf("set-completion: %w", err)
+            }
+
+            // Persist with consolidated lock.
+            if err := protocol.WithCompletionReportLock(func() error {
+                m, loadErr := protocol.Load(manifestPath)
+                if loadErr != nil {
+                    return fmt.Errorf("set-completion: %w", loadErr)
+                }
+                if appendErr := builder.AppendToManifest(m); appendErr != nil {
+                    return fmt.Errorf("set-completion: %w", appendErr)
+                }
+                return protocol.Save(m, manifestPath)
+            }); err != nil {
+                return err
+            }
+
+            // Print result
+            out, _ := json.Marshal(map[string]interface{}{
+                "agent":  agentID,
+                "status": status,
+                "saved":  true,
+            })
+            fmt.Println(string(out))
+            return nil
+            ```
+
+            Note: The old status validation switch (lines 47-52) can be removed since
+            builder.Validate() now handles status validation with better error messages.
+            However, if you prefer to keep it as a fast-fail pre-check, that is acceptable.
+
+            ## Verification gates
+
+            ```
+            go build ./cmd/sawtools/...
+            go vet ./cmd/sawtools/...
+            go test ./cmd/sawtools/... -timeout 30s
+            ```
+          files:
+            - cmd/sawtools/set_completion_cmd.go
+      base_commit: a0669fc5e7238b5e543ef7b8ae0479c130eb8036
+quality_gates:
+    level: standard
+    gates:
+        - type: build
+          command: go build ./...
+          required: true
+        - type: lint
+          command: go vet ./...
+          required: true
+        - type: test
+          command: go test ./... -timeout 120s
+          required: true
+        - type: custom
+          command: bash -c '! grep -rn "reportWaveMu" pkg/engine/'
+          required: false
+          description: Verify reportWaveMu fully removed from pkg/engine (Wave 2 check)
+          timing: post-merge
+        - type: custom
+          command: grep -rn "WithCompletionReportLock" pkg/ cmd/
+          required: false
+          description: Verify WithCompletionReportLock called in all 3 write paths (Wave 2 check)
+          timing: post-merge
+completion_reports:
+    A:
+        status: complete
+        branch: saw/completion-report-unification/wave1-agent-A
+        commit: d3dac8d
+        files_changed:
+            - pkg/protocol/types.go
+            - pkg/protocol/completion_report.go
+            - pkg/protocol/completion_report_test.go
+        files_created:
+            - pkg/protocol/completion_report.go
+            - pkg/protocol/completion_report_test.go
+        tests_added:
+            - TestCompletionReportBuilder_ValidComplete
+            - TestCompletionReportBuilder_BlockedWithoutFailureType
+            - TestCompletionReportBuilder_PartialRequiresFailureType
+            - TestCompletionReportBuilder_CompleteWithFailureType
+            - TestCompletionReportBuilder_EmptyCommitOnComplete
+            - TestCompletionReportBuilder_InvalidStatus
+            - TestCompletionReportBuilder_InvalidFailureType
+            - TestCompletionReportBuilder_AppendToManifest
+            - TestCompletionReportBuilder_AppendToManifest_UnknownAgent
+        verification: PASS
+    B:
+        status: complete
+        branch: saw/completion-report-unification/wave1-agent-B
+        commit: 77ac6c8
+        files_changed:
+            - pkg/protocol/manifest.go
+        verification: PASS
+    C:
+        status: complete
+        branch: saw/completion-report-unification/wave2-agent-C
+        commit: f80de43
+        files_changed:
+            - pkg/engine/runner_wave_structured.go
+            - pkg/engine/runner_wave_structured_test.go
+        verification: PASS
+    D:
+        status: complete
+        branch: saw/completion-report-unification/wave2-agent-D
+        commit: 6e149f2
+        files_changed:
+            - pkg/orchestrator/orchestrator.go
+            - pkg/orchestrator/structured_wave.go
+        verification: PASS
+    E:
+        status: complete
+        branch: saw/completion-report-unification/wave2-agent-E
+        commit: b70209d
+        files_changed:
+            - cmd/sawtools/set_completion_cmd.go
+        verification: PASS
+        notes: 'Migrated set-completion CLI to CompletionReportBuilder. Added --notes and --failure-type flags. Removed unconditional --commit MarkFlagRequired (builder Validate() enforces it only for complete status). All gates pass: build, vet, test.'
+injection_method: hook
