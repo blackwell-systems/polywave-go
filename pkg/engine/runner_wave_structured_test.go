@@ -53,6 +53,7 @@ func TestRunWaveAgentStructured_APIBackend(t *testing.T) {
 	// Build a completion report JSON the stub will return.
 	report := protocol.CompletionReport{
 		Status:       "complete",
+		Commit:       "abc1234",
 		FilesChanged: []string{"pkg/foo/bar.go"},
 		FilesCreated: []string{"pkg/foo/baz.go"},
 		Notes:        "all done",
@@ -123,6 +124,7 @@ func TestRunWaveAgentStructured_APIBackend(t *testing.T) {
 func TestRunWaveAgentStructured_BedrockBackend(t *testing.T) {
 	report := protocol.CompletionReport{
 		Status: "complete",
+		Commit: "def5678",
 		Notes:  "bedrock agent done",
 	}
 	reportJSON, err := json.Marshal(report)
@@ -246,7 +248,7 @@ func TestRunWaveAgentStructured_PerAgentModelOverride(t *testing.T) {
 	origFn := runWaveAgentStructuredAPI
 	runWaveAgentStructuredAPI = func(_ context.Context, model, _, _ string, _ map[string]any, _ func(string)) (string, error) {
 		capturedModel = model
-		report := protocol.CompletionReport{Status: "complete"}
+		report := protocol.CompletionReport{Status: "complete", Commit: "ghi9012"}
 		b, _ := json.Marshal(report)
 		return string(b), nil
 	}
@@ -282,7 +284,7 @@ func TestRunWaveAgentStructured_EmptyStatusDefaultsToComplete(t *testing.T) {
 	// Return a JSON object without the status field.
 	origFn := runWaveAgentStructuredAPI
 	runWaveAgentStructuredAPI = func(_ context.Context, _, _, _ string, _ map[string]any, _ func(string)) (string, error) {
-		return `{"files_changed":["a.go"]}`, nil
+		return `{"files_changed":["a.go"],"commit":"jkl3456"}`, nil
 	}
 	t.Cleanup(func() { runWaveAgentStructuredAPI = origFn })
 
