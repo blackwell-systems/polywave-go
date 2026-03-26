@@ -3,8 +3,10 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"testing"
 )
@@ -246,5 +248,148 @@ func TestCreateProgramCmd_MixedSlugAndPath(t *testing.T) {
 
 	if len(result.Manifest.Impls) != 2 {
 		t.Fatalf("expected 2 impls in manifest, got %d", len(result.Manifest.Impls))
+	}
+}
+
+// writeTestIMPLWithWaves creates a minimal IMPL YAML with files assigned to specific waves.
+// fileWaves maps file path -> wave number.
+func writeTestIMPLWithWaves(t *testing.T, repoDir, slug string, fileWaves map[string]int) {
+	t.Helper()
+	implDir := filepath.Join(repoDir, "docs", "IMPL")
+	if err := os.MkdirAll(implDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	var foEntries []string
+	// Sort keys for determinism
+	var files []string
+	for f := range fileWaves {
+		files = append(files, f)
+	}
+	sort.Strings(files)
+	for _, f := range files {
+		wn := fileWaves[f]
+		foEntries = append(foEntries, fmt.Sprintf("  - file: %s\n    agent: A\n    wave: %d", f, wn))
+	}
+
+	// Find max wave number for wave definitions
+	maxWave := 1
+	for _, wn := range fileWaves {
+		if wn > maxWave {
+			maxWave = wn
+		}
+	}
+
+	var waveEntries []string
+	for i := 1; i <= maxWave; i++ {
+		waveEntries = append(waveEntries, fmt.Sprintf("  - number: %d\n    agents:\n      - id: A\n        task: do stuff", i))
+	}
+
+	content := "feature_slug: " + slug + "\n" +
+		"title: Test " + slug + "\n" +
+		"state: reviewed\n" +
+		"file_ownership:\n" + strings.Join(foEntries, "\n") + "\n" +
+		"waves:\n" + strings.Join(waveEntries, "\n") + "\n"
+
+	path := filepath.Join(implDir, "IMPL-"+slug+".yaml")
+	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestCreateProgramCmd_WaveLevelConflict_SerialWavesPopulated(t *testing.T) {
+	repoDir := t.TempDir()
+
+	// Both IMPLs own different files in Wave 1, but share a file in Wave 2
+	writeTestIMPLWithWaves(t, repoDir, "alpha", map[string]int{
+		"pkg/alpha/core.go":    1,
+		"pkg/shared/append.go": 2,
+	})
+	writeTestIMPLWithWaves(t, repoDir, "beta", map[string]int{
+		"pkg/beta/core.go":     1,
+		"pkg/shared/append.go": 2,
+	})
+
+	var stdout bytes.Buffer
+	cmd := newRootCmd()
+	cmd.AddCommand(newCreateProgramCmd())
+	cmd.SetOut(&stdout)
+	cmd.SetErr(&bytes.Buffer{})
+	cmd.SetArgs([]string{
+		"create-program",
+		"--from-impls", "alpha",
+		"--from-impls", "beta",
+		"--slug", "test-wave-conflict",
+		"--repo-dir", repoDir,
+	})
+	err := cmd.Execute()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	var result map[string]interface{}
+	if err := json.Unmarshal(stdout.Bytes(), &result); err != nil {
+		t.Fatalf("invalid JSON output: %v\noutput: %s", err, stdout.String())
+	}
+
+	// Parse the manifest from disk
+	programPath := filepath.Join(repoDir, "docs", "PROGRAM", "PROGRAM-test-wave-conflict.yaml")
+	data, err := os.ReadFile(programPath)
+	if err != nil {
+		t.Fatalf("program manifest not written: %v", err)
+	}
+
+	manifestStr := string(data)
+
+	// Both IMPLs should be in tier 1 (Wave 1 is disjoint)
+	if strings.Count(manifestStr, "tier: 1") < 2 {
+		t.Errorf("expected both alpha and beta in tier 1 (Wave 1 disjoint), got:\n%s", manifestStr)
+	}
+	if strings.Contains(manifestStr, "tier: 2") {
+		t.Errorf("expected no tier 2 (wave-level detection should allow tier 1 for both), got:\n%s", manifestStr)
+	}
+
+	// serial_waves: [2] should appear for both alpha and beta
+	if !strings.Contains(manifestStr, "serial_waves:") {
+		t.Errorf("expected serial_waves field in manifest, got:\n%s", manifestStr)
+	}
+}
+
+func TestCreateProgramCmd_WaveLevelConflict_NoSerialWavesWhenDisjoint(t *testing.T) {
+	repoDir := t.TempDir()
+
+	writeTestIMPLWithWaves(t, repoDir, "alpha", map[string]int{
+		"pkg/alpha/core.go": 1,
+		"pkg/alpha/util.go": 2,
+	})
+	writeTestIMPLWithWaves(t, repoDir, "beta", map[string]int{
+		"pkg/beta/core.go": 1,
+		"pkg/beta/util.go": 2,
+	})
+
+	programPath := filepath.Join(repoDir, "docs", "PROGRAM", "PROGRAM-test-disjoint.yaml")
+	var stdout bytes.Buffer
+	cmd := newRootCmd()
+	cmd.AddCommand(newCreateProgramCmd())
+	cmd.SetOut(&stdout)
+	cmd.SetErr(&bytes.Buffer{})
+	cmd.SetArgs([]string{
+		"create-program",
+		"--from-impls", "alpha",
+		"--from-impls", "beta",
+		"--slug", "test-disjoint",
+		"--repo-dir", repoDir,
+	})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	data, err := os.ReadFile(programPath)
+	if err != nil {
+		t.Fatalf("program manifest not written: %v", err)
+	}
+
+	if strings.Contains(string(data), "serial_waves:") {
+		t.Errorf("expected no serial_waves for fully disjoint IMPLs, got:\n%s", string(data))
 	}
 }
