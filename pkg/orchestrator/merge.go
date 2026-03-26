@@ -17,13 +17,7 @@ func init() {
 // Called by Orchestrator.MergeWave via the mergeWaveFunc variable (set in init()).
 func executeMergeWave(o *Orchestrator, waveNum int) error {
 	// Step 1: Find wave in IMPL doc.
-	var wave *protocol.Wave
-	for i := range o.IMPLDoc().Waves {
-		if o.IMPLDoc().Waves[i].Number == waveNum {
-			wave = &o.IMPLDoc().Waves[i]
-			break
-		}
-	}
+	wave := o.IMPLDoc().FindWave(waveNum)
 	if wave == nil {
 		return fmt.Errorf("executeMergeWave: wave %d not found in IMPL doc", waveNum)
 	}
