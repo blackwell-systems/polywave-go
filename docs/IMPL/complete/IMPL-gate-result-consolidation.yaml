@@ -1,0 +1,195 @@
+completion_date: "2026-03-26"
+title: Consolidate divergent GateResult types — eliminate pkg/config.GateResult, migrate to pkg/protocol.GateResult
+feature_slug: gate-result-consolidation
+verdict: SUITABLE_WITH_CAVEATS
+suitability_assessment: |
+    Scout performed an exhaustive audit of both GateResult types before writing this IMPL doc.
+
+    1. File decomposition: Only 2 files change — pkg/config/state.go and pkg/config/state_test.go.
+       Both files are in the same package and must be modified by the same agent. There is no
+       decomposition into disjoint file sets; a single agent handles all changes.
+
+    2. Investigation-first: No investigation required. The type definitions, their consumers,
+       and the migration path are fully understood from static analysis.
+
+    3. Interface discoverability: The change is self-contained. config.GateResult is only
+       referenced inside pkg/config, and pkg/config already imports pkg/protocol, so no
+       import cycle arises.
+
+    4. Pre-implementation status:
+       - config.GateResult (4-field simplified type): EXISTS, must be eliminated.
+       - protocol.GateResult (10-field canonical type): EXISTS, is the migration target.
+       - WaveState.GateResults field uses config.GateResult but is NEVER populated by
+         GetWaveState() — confirmed by reading state.go lines 91-101. This makes the
+         migration low-risk: no data loss is possible on an unpopulated field.
+
+    5. Parallelization value: Only 2 files change in a single package. A single agent handles
+       both. SAW overhead exceeds the ~5-minute sequential implementation time. However,
+       this IMPL doc provides value as an audit trail documenting the migration rationale,
+       JSON compatibility analysis, and verification of the "never populated" finding.
+
+    Caveats:
+    - Single-agent work: parallelization savings are zero. Value is in audit trail and
+      verification, not speed.
+    - WaveState.GateResults is never populated by GetWaveState(); it is dead state. After
+      migration the field remains dead but carries the correct type.
+    - JSON field name change (gate_type -> type): Only affects WaveState serialization. Since
+      WaveState is computed on demand from the manifest and is never written to disk, there is
+      no .saw-state/ migration needed. The gate-cache.json file uses "gate_type" but that
+      belongs to gatecache.CachedResult (pkg/gatecache), a completely separate type
+      unaffected by this change.
+    - config.GateResult is not referenced outside pkg/config (confirmed: grep -r
+      "config.GateResult" returns zero Go source matches). The change scope is minimal.
+
+    Dependency graph (from sawtools analyze-deps . --files "pkg/config/state.go" --format yaml):
+      nodes:
+        - file: pkg/config/state.go
+          depends_on: []
+          depended_by: []
+          wave_candidate: 0
+      waves:
+        1: [pkg/config/state.go]
+    pkg/config/state.go has zero depended_by entries. No cascade candidates. config.GateResult
+    is only used as a bare name within pkg/config; no external package references it.
+
+    Estimated times:
+    - Scout phase: ~15 min (exhaustive audit required by mission spec)
+    - Agent execution: ~5 min (single agent, 2 files)
+    - Merge and verification: ~2 min
+    Total SAW time: ~22 min
+    Sequential baseline: ~5 min
+    Time savings: -17 min (SAW is slower for this task)
+    Recommendation: Marginal gains. IMPL doc value is audit trail and verification.
+    Implement via a single SAW agent or sequentially.
+test_command: go test ./...
+lint_command: go vet ./...
+file_ownership:
+    - file: pkg/config/state.go
+      agent: A
+      wave: 1
+      action: modify
+    - file: pkg/config/state_test.go
+      agent: A
+      wave: 1
+      action: modify
+interface_contracts:
+    - name: WaveState.GateResults field type
+      description: Field type change from local config.GateResult to protocol.GateResult
+      definition: |
+        // Before (pkg/config/state.go):
+        GateResults map[string]GateResult `json:"gate_results,omitempty"`
+
+        // After:
+        GateResults map[string]protocol.GateResult `json:"gate_results,omitempty"`
+
+        // JSON note: the field name "gate_results" is unchanged. The change is only the
+        // value type. Individual entries now use JSON tag "type" (not "gate_type")
+        // for the gate type field, but since WaveState is never serialized to disk
+        // this has no backward compatibility impact.
+      location: pkg/config/state.go
+waves:
+    - number: 1
+      agents:
+        - id: A
+          task: |
+            ## Context
+
+            Two structurally different but conceptually identical GateResult types exist:
+
+            - pkg/protocol/gates.go — canonical, 10-field type with JSON tag "type" for gate type
+            - pkg/config/state.go — simplified, 4-field type with JSON tag "gate_type" for gate type
+
+            Your task is to eliminate config.GateResult and replace it with protocol.GateResult.
+
+            ## Exhaustive audit findings (verified before writing this brief)
+
+            1. config.GateResult is defined at pkg/config/state.go lines 24-30.
+            2. It is only used at state.go line 19 as the value type of WaveState.GateResults.
+            3. No external package references config.GateResult — grep -r "config\.GateResult"
+               returns zero results. The type is only used as a bare name within pkg/config.
+            4. WaveState.GateResults is NEVER populated by GetWaveState() (lines 91-101 of
+               state.go). The field exists on the struct but is always nil/empty at runtime.
+               No data loss risk.
+            5. pkg/config already imports pkg/protocol at state.go line 8. No import change needed.
+            6. The JSON tag change (gate_type -> type) affects only WaveState JSON serialization.
+               WaveState is never written to disk — it is computed on demand. No state file
+               migration is needed.
+            7. The .saw-state/gate-cache.json file uses "gate_type" but that is
+               gatecache.CachedResult in pkg/gatecache — completely unrelated to this change.
+
+            ## Changes to make in pkg/config/state.go
+
+            Step 1: Delete the entire GateResult type definition (lines 24-30):
+
+              // GateResult is a cached gate execution outcome.
+              type GateResult struct {
+                  GateType string `json:"gate_type"`
+                  Command  string `json:"command"`
+                  Passed   bool   `json:"passed"`
+                  ExitCode int    `json:"exit_code"`
+              }
+
+            Step 2: In the WaveState struct definition, change the GateResults field type
+            from the local GateResult to protocol.GateResult:
+
+              Before: GateResults map[string]GateResult         `json:"gate_results,omitempty"`
+              After:  GateResults map[string]protocol.GateResult `json:"gate_results,omitempty"`
+
+            Step 3: Verify the import block. pkg/protocol is already imported on line 8.
+            The pkg/result import is still needed for result.Result, result.NewFailure,
+            result.NewSuccess, and result.SAWError return types — do NOT remove it.
+
+            ## Changes to make in pkg/config/state_test.go
+
+            Read state_test.go in full and verify it contains no references to GateResult,
+            GateType, or a WaveState literal with GateResults set. The existing tests only
+            verify agent classification (completed/failed/pending), IsComplete, and WaveNum.
+
+            Expected outcome: no test file changes required. Record "verified unchanged" in
+            your completion report.
+
+            ## Verification gates
+
+            Run these in order:
+
+            1. go build ./...
+               Must pass with zero errors.
+
+            2. go vet ./...
+               Must pass with zero errors.
+
+            3. go test ./pkg/config/... -v
+               Must pass. All existing TestGetWaveState_* and TestGetAllWaveStates tests pass.
+
+            4. go test ./... -timeout 120s
+               Full suite must pass.
+
+            5. grep -r "config\.GateResult" . --include="*.go"
+               Must return zero results (no remaining references).
+
+            6. grep -n "protocol\.GateResult" pkg/config/state.go
+               Must return at least one match confirming the migration.
+
+            ## Definition of done
+
+            - config.GateResult struct is deleted from pkg/config/state.go
+            - WaveState.GateResults field type is map[string]protocol.GateResult
+            - All 6 verification gates pass
+            - Completion report status: complete
+          files:
+            - pkg/config/state.go
+            - pkg/config/state_test.go
+          context_source: prepared-brief
+completion_reports:
+    A:
+        status: complete
+        branch: main
+        commit: "4685e23"
+        files_changed:
+            - pkg/config/state.go
+        verification: 'PASS: go build, go vet, go test ./pkg/config/... (16 tests), go test ./... full suite, zero config.GateResult refs remaining'
+known_issues:
+    - title: WaveState.GateResults is a dead field after migration
+      description: |
+        WaveState.GateResults is never populated by GetWaveState(). After this migration the field exists with the correct type but remains unused. A follow-up cleanup could either remove the field entirely or wire gate result population into GetWaveState() if that behavior is ever desired.
+injection_method: hook

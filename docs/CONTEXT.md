@@ -228,3 +228,5 @@ type BackendConfig struct {
   - IMPL doc: docs/IMPL/complete/IMPL-engine-cleanup-remaining.yaml
 - **retry-unification**: completed 2026-03-26, 3 waves, 5 agents
   - IMPL doc: docs/IMPL/complete/IMPL-retry-unification.yaml
+- **gate-result-consolidation**: completed 2026-03-26, 1 waves, 1 agents
+  - IMPL doc: docs/IMPL/complete/IMPL-gate-result-consolidation.yaml

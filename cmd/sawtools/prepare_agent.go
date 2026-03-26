@@ -82,7 +82,7 @@ This eliminates the ~10s latency of agents calling extract-context at startup.`,
 
 			// Extract quality gates
 			gatesSection := ""
-			if doc.QualityGates.Level != "" {
+			if doc.QualityGates != nil && doc.QualityGates.Level != "" {
 				gatesSection = "\n\n## Quality Gates\n\n"
 				gatesSection += fmt.Sprintf("Level: %s\n\n", doc.QualityGates.Level)
 				for _, gate := range doc.QualityGates.Gates {
