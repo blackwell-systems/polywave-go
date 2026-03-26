@@ -60,7 +60,7 @@ func TestGenerateProgramFromIMPLs_Basic(t *testing.T) {
 		[]string{"pkg/b/file1.go"}, []string{"InterfaceB"})
 
 	res := GenerateProgramFromIMPLs(GenerateProgramOpts{
-		ImplSlugs:   []string{"feature-a", "feature-b"},
+		ImplRefs:   []string{"feature-a", "feature-b"},
 		RepoPath:    repoPath,
 		ProgramSlug: "test-program",
 		Title:       "Test Program",
@@ -108,7 +108,7 @@ func TestGenerateProgramFromIMPLs_WithOverlap(t *testing.T) {
 		[]string{"pkg/shared/file.go", "pkg/y/own.go"}, nil)
 
 	res := GenerateProgramFromIMPLs(GenerateProgramOpts{
-		ImplSlugs:   []string{"impl-x", "impl-y"},
+		ImplRefs:   []string{"impl-x", "impl-y"},
 		RepoPath:    repoPath,
 		ProgramSlug: "overlap-test",
 		Title:       "Overlap Test",
@@ -146,7 +146,7 @@ func TestGenerateProgramFromIMPLs_AutoSlug(t *testing.T) {
 	writeGeneratorTestIMPL(t, repoPath, "beta", "Beta", StateReviewed, []string{"b.go"}, nil)
 
 	res := GenerateProgramFromIMPLs(GenerateProgramOpts{
-		ImplSlugs: []string{"alpha", "beta"},
+		ImplRefs: []string{"alpha", "beta"},
 		RepoPath:  repoPath,
 		// ProgramSlug and Title intentionally empty
 	})
@@ -170,7 +170,7 @@ func TestGenerateProgramFromIMPLs_AutoSlug(t *testing.T) {
 	writeGeneratorTestIMPL(t, repoPath, "delta", "Delta", StateReviewed, []string{"d.go"}, nil)
 
 	res2 := GenerateProgramFromIMPLs(GenerateProgramOpts{
-		ImplSlugs: []string{"alpha", "beta", "gamma", "delta"},
+		ImplRefs: []string{"alpha", "beta", "gamma", "delta"},
 		RepoPath:  repoPath,
 	})
 	if !res2.IsSuccess() && !res2.IsPartial() {
@@ -191,7 +191,7 @@ func TestGenerateProgramFromIMPLs_WritesToDisk(t *testing.T) {
 	writeGeneratorTestIMPL(t, repoPath, "disk-test", "Disk Test", StateReviewed, []string{"x.go"}, nil)
 
 	res := GenerateProgramFromIMPLs(GenerateProgramOpts{
-		ImplSlugs:   []string{"disk-test"},
+		ImplRefs:   []string{"disk-test"},
 		RepoPath:    repoPath,
 		ProgramSlug: "disk-test-program",
 		Title:       "Disk Test Program",
@@ -235,7 +235,7 @@ func TestGenerateProgramFromIMPLs_MissingIMPL(t *testing.T) {
 	}
 
 	res := GenerateProgramFromIMPLs(GenerateProgramOpts{
-		ImplSlugs:   []string{"nonexistent-slug"},
+		ImplRefs:   []string{"nonexistent-slug"},
 		RepoPath:    repoPath,
 		ProgramSlug: "test",
 	})
@@ -255,5 +255,85 @@ func TestGenerateProgramFromIMPLs_MissingIMPL(t *testing.T) {
 	}
 	if !found {
 		t.Errorf("error should mention the missing slug, got: %v", res.Errors)
+	}
+}
+
+// writeGeneratorTestIMPLAtPath writes a minimal IMPL YAML to a custom directory
+// (not necessarily inside a repoPath's docs/IMPL/). Used for absolute-path testing.
+func writeGeneratorTestIMPLAtPath(t *testing.T, dir, slug, title string, state ProtocolState) string {
+	t.Helper()
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	manifest := &IMPLManifest{
+		Title:         title,
+		FeatureSlug:   slug,
+		State:         state,
+		Verdict:       "SUITABLE",
+		FileOwnership: []FileOwnership{{File: slug + ".go", Agent: "A"}},
+		Waves: []Wave{
+			{Number: 1, Agents: []Agent{{ID: "A"}}},
+		},
+		CompletionReports: make(map[string]CompletionReport),
+	}
+
+	data, err := yaml.Marshal(manifest)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	path := filepath.Join(dir, "IMPL-"+slug+".yaml")
+	if err := os.WriteFile(path, data, 0644); err != nil {
+		t.Fatal(err)
+	}
+	return path
+}
+
+func TestGenerateProgramFromIMPLs_AbsolutePaths(t *testing.T) {
+	// Simulate two separate repos by creating two temp directories.
+	repo1 := t.TempDir()
+	repo2 := t.TempDir()
+
+	// Write IMPL docs to each "repo" using absolute paths outside the standard docs/IMPL/ tree.
+	implPath1 := writeGeneratorTestIMPLAtPath(t, repo1, "cross-repo-alpha", "Cross Repo Alpha", StateReviewed)
+	implPath2 := writeGeneratorTestIMPLAtPath(t, repo2, "cross-repo-beta", "Cross Repo Beta", StateReviewed)
+
+	// The local repoPath is still required (for PROGRAM output path); use a fresh temp dir.
+	repoPath := t.TempDir()
+
+	res := GenerateProgramFromIMPLs(GenerateProgramOpts{
+		ImplRefs:    []string{implPath1, implPath2},
+		RepoPath:    repoPath,
+		ProgramSlug: "cross-repo-test",
+		Title:       "Cross Repo Test Program",
+	})
+	if !res.IsSuccess() && !res.IsPartial() {
+		t.Fatalf("unexpected failure for absolute-path refs: %v", res.Errors)
+	}
+
+	d := res.GetData()
+
+	if len(d.Manifest.Impls) != 2 {
+		t.Fatalf("expected 2 IMPLs, got %d", len(d.Manifest.Impls))
+	}
+
+	// All cross-repo IMPLs should have AbsPath set.
+	for _, impl := range d.Manifest.Impls {
+		if impl.AbsPath == "" {
+			t.Errorf("expected AbsPath to be set for cross-repo IMPL %q, got empty", impl.Slug)
+		}
+	}
+
+	// Slug should be derived from the loaded doc's FeatureSlug, not the path.
+	slugs := make(map[string]bool)
+	for _, impl := range d.Manifest.Impls {
+		slugs[impl.Slug] = true
+	}
+	if !slugs["cross-repo-alpha"] {
+		t.Errorf("expected slug %q in impls, got %v", "cross-repo-alpha", d.Manifest.Impls)
+	}
+	if !slugs["cross-repo-beta"] {
+		t.Errorf("expected slug %q in impls, got %v", "cross-repo-beta", d.Manifest.Impls)
 	}
 }
