@@ -2,9 +2,6 @@ package protocol
 
 import (
 	"fmt"
-	"os"
-
-	"gopkg.in/yaml.v3"
 )
 
 // ProjectMemory represents the contents of docs/CONTEXT.md in structured YAML format.
@@ -67,31 +64,19 @@ type CompletedFeature struct {
 // LoadProjectMemory reads a YAML project memory file from the specified path and parses it into a ProjectMemory.
 // Returns an error if the file cannot be read or the YAML is invalid.
 func LoadProjectMemory(path string) (*ProjectMemory, error) {
-	data, err := os.ReadFile(path)
+	pm, err := LoadYAML[ProjectMemory](path)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read project memory file: %w", err)
 	}
-
-	var pm ProjectMemory
-	if err := yaml.Unmarshal(data, &pm); err != nil {
-		return nil, fmt.Errorf("failed to parse project memory YAML: %w", err)
-	}
-
 	return &pm, nil
 }
 
 // SaveProjectMemory writes a ProjectMemory to the specified path as YAML.
 // Returns an error if the file cannot be written or the memory cannot be marshaled.
 func SaveProjectMemory(path string, pm *ProjectMemory) error {
-	data, err := yaml.Marshal(pm)
-	if err != nil {
-		return fmt.Errorf("failed to marshal project memory to YAML: %w", err)
-	}
-
-	if err := os.WriteFile(path, data, 0644); err != nil {
+	if err := SaveYAML(path, pm); err != nil {
 		return fmt.Errorf("failed to write project memory file: %w", err)
 	}
-
 	return nil
 }
 
