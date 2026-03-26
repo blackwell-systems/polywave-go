@@ -1,0 +1,1028 @@
+completion_date: "2026-03-25"
+title: 'Error Code Unification: Delete SV01/E-series, replace with V-series'
+feature_slug: error-code-unification
+verdict: SUITABLE
+suitability_assessment: |
+    File decomposition: 22+ source files change across two independent groups. pkg/result/codes.go
+    (Wave 1, no deps) and 18 pkg/protocol/ files + 4 pkg/errparse/ files (Wave 2, depend on Wave 1
+    constants). File ownership is fully disjoint across waves and between agents within Wave 2.
+
+    Investigation: No root-cause analysis needed. The analysis is pre-loaded. error_codes.go has
+    zero callers and can be deleted. schema_errors.go has 5 constants referenced in 6 files, all
+    mapped to new V-series constants. All hardcoded string codes are catalogued.
+
+    Interface discoverability: New constants fully specified. No ambiguity.
+
+    Pre-implementation status: error_codes.go confirmed unused. All SV01 and hardcoded-string
+    usages are catalogued with precise file mappings.
+
+    Parallelization value: 22+ files across 2 waves with 5 parallel agents in Wave 2. Clear speedup.
+
+    Estimated times:
+    - Scout phase: ~10 min
+    - Agent execution: ~15 min (Wave 1 1 agent 2 min; Wave 2 5 parallel agents 8 min avg)
+    - Merge and verification: ~5 min
+    Total SAW time: ~30 min
+    Sequential baseline: ~50 min
+    Time savings: ~20 min (40% faster)
+    Recommendation: Clear speedup. Proceed.
+test_command: go test ./pkg/protocol/... ./pkg/result/... ./pkg/errparse/...
+lint_command: go vet ./...
+file_ownership:
+    - file: pkg/result/codes.go
+      agent: A
+      wave: 1
+      action: modify
+    - file: pkg/protocol/error_codes.go
+      agent: B
+      wave: 2
+      action: delete
+    - file: pkg/protocol/schema_errors.go
+      agent: B
+      wave: 2
+      action: delete
+    - file: pkg/protocol/error_codes_test.go
+      agent: B
+      wave: 2
+      action: delete
+    - file: pkg/protocol/schema_validation.go
+      agent: C
+      wave: 2
+      action: modify
+    - file: pkg/protocol/schema_enum_validation.go
+      agent: C
+      wave: 2
+      action: modify
+    - file: pkg/protocol/schema_unknown_keys.go
+      agent: C
+      wave: 2
+      action: modify
+    - file: pkg/protocol/schema_cross_field.go
+      agent: C
+      wave: 2
+      action: modify
+    - file: pkg/protocol/reactions_validation.go
+      agent: C
+      wave: 2
+      action: modify
+    - file: pkg/protocol/schema_cross_field_test.go
+      agent: C
+      wave: 2
+      action: modify
+    - file: pkg/protocol/schema_enum_validation_test.go
+      agent: C
+      wave: 2
+      action: modify
+    - file: pkg/protocol/reactions_validation_test.go
+      agent: C
+      wave: 2
+      action: modify
+    - file: pkg/protocol/schema_validation_test.go
+      agent: C
+      wave: 2
+      action: modify
+    - file: pkg/protocol/schema_unknown_keys_test.go
+      agent: C
+      wave: 2
+      action: modify
+    - file: pkg/protocol/validation.go
+      agent: D
+      wave: 2
+      action: modify
+    - file: pkg/protocol/enumvalidation.go
+      agent: D
+      wave: 2
+      action: modify
+    - file: pkg/protocol/fieldvalidation.go
+      agent: D
+      wave: 2
+      action: modify
+    - file: pkg/protocol/commit_verify.go
+      agent: D
+      wave: 2
+      action: modify
+    - file: pkg/protocol/enumvalidation_test.go
+      agent: D
+      wave: 2
+      action: modify
+    - file: pkg/protocol/fieldvalidation_test.go
+      agent: D
+      wave: 2
+      action: modify
+    - file: pkg/protocol/validation_test.go
+      agent: D
+      wave: 2
+      action: modify
+    - file: pkg/protocol/solver_integration_test.go
+      agent: D
+      wave: 2
+      action: modify
+    - file: pkg/protocol/jsonschema_validator_test.go
+      agent: D
+      wave: 2
+      action: modify
+    - file: pkg/protocol/action_validator.go
+      agent: E
+      wave: 2
+      action: modify
+    - file: pkg/protocol/amend.go
+      agent: E
+      wave: 2
+      action: modify
+    - file: pkg/protocol/duplicate_key_validator.go
+      agent: E
+      wave: 2
+      action: modify
+    - file: pkg/protocol/file_existence_validator.go
+      agent: E
+      wave: 2
+      action: modify
+    - file: pkg/protocol/full_validate.go
+      agent: E
+      wave: 2
+      action: modify
+    - file: pkg/protocol/integration_checklist_validator.go
+      agent: E
+      wave: 2
+      action: modify
+    - file: pkg/protocol/manifest.go
+      agent: E
+      wave: 2
+      action: modify
+    - file: pkg/protocol/manifest_test.go
+      agent: E
+      wave: 2
+      action: modify
+    - file: pkg/protocol/action_validator_test.go
+      agent: E
+      wave: 2
+      action: modify
+    - file: pkg/protocol/duplicate_key_validator_test.go
+      agent: E
+      wave: 2
+      action: modify
+    - file: pkg/protocol/file_existence_validator_test.go
+      agent: E
+      wave: 2
+      action: modify
+    - file: pkg/protocol/integration_checklist_validator_test.go
+      agent: E
+      wave: 2
+      action: modify
+    - file: pkg/protocol/full_validate_test.go
+      agent: E
+      wave: 2
+      action: modify
+    - file: pkg/protocol/program_validation.go
+      agent: G
+      wave: 2
+      action: modify
+    - file: pkg/protocol/program_generator.go
+      agent: G
+      wave: 2
+      action: modify
+    - file: pkg/protocol/program_validation_test.go
+      agent: G
+      wave: 2
+      action: modify
+    - file: pkg/errparse/format_parsers.go
+      agent: F
+      wave: 2
+      action: modify
+    - file: pkg/errparse/go_parsers.go
+      agent: F
+      wave: 2
+      action: modify
+    - file: pkg/errparse/js_parsers.go
+      agent: F
+      wave: 2
+      action: modify
+    - file: pkg/errparse/python_parsers.go
+      agent: F
+      wave: 2
+      action: modify
+    - file: pkg/errparse/go_parsers_test.go
+      agent: F
+      wave: 2
+      action: modify
+    - file: pkg/errparse/registry_test.go
+      agent: F
+      wave: 2
+      action: modify
+    - file: pkg/errparse/format_parsers_test.go
+      agent: F
+      wave: 2
+      action: modify
+interface_contracts:
+    - name: New V-series and W-series constants in pkg/result/codes.go
+      description: |
+        Eleven new V-series constants and one new W-series constant added by Agent A in Wave 1.
+        All Wave 2 agents reference these via result.CodeXxx.
+      definition: |
+        CodeInvalidEnum                   = "V036_INVALID_ENUM"
+        CodeInvalidPath                   = "V037_INVALID_PATH"
+        CodeCrossField                    = "V038_CROSS_FIELD"
+        CodeInvalidFieldValue             = "V039_INVALID_FIELD_VALUE"
+        CodeUnscopedGate                  = "V040_UNSCOPED_GATE"
+        CodeFileMissing                   = "V041_FILE_MISSING"
+        CodeInvalidWorktreeName           = "V042_INVALID_WORKTREE_NAME"
+        CodeInvalidVerification           = "V043_INVALID_VERIFICATION"
+        CodeMissingChecklist              = "V044_MISSING_CHECKLIST"
+        CodeRepoMismatch                  = "V045_REPO_MISMATCH"
+        CodeParseError                    = "V046_PARSE_ERROR"
+        CodeCompletionVerificationWarning = "W002_COMPLETION_VERIFY"
+      location: pkg/result/codes.go
+    - name: SV01 constant replacement mapping
+      description: |
+        schema_errors.go is deleted by Agent B. All SV01 constants replaced by result.CodeXxx.
+      definition: |
+        SV01RequiredField   -> result.CodeRequiredFieldsMissing
+        SV01InvalidEnum     -> result.CodeInvalidEnum
+        SV01InvalidPath     -> result.CodeInvalidPath
+        SV01UnknownKey      -> result.CodeUnknownKey
+        SV01CrossFieldError -> result.CodeCrossField
+      location: pkg/protocol/schema_errors.go
+    - name: Hardcoded string code replacement mapping
+      description: |
+        Full mapping from legacy hardcoded Code string literals to result.CodeXxx constants.
+      definition: |
+        "KNOWN_ISSUE_MISSING_TITLE"    -> result.CodeKnownIssueMissingTitle
+        "I1_VIOLATION"                 -> result.CodeDisjointOwnership
+        "I2_MISSING_DEP"               -> result.CodeSameWaveDependency
+        "I2_WAVE_ORDER"                -> result.CodeSameWaveDependency
+        "I3_WAVE_ORDER"                -> result.CodeWaveNotOneIndexed
+        "I4_MISSING_FIELD"             -> result.CodeRequiredFieldsMissing
+        "I4_INVALID_FORMAT"            -> result.CodeInvalidFieldValue
+        "I4_INVALID_VALUE"             -> result.CodeInvalidFieldValue
+        "I5_ORPHAN_FILE"               -> result.CodeOrphanFile
+        "I6_CYCLE"                     -> result.CodeDependencyCycle
+        "I5_UNCOMMITTED"               -> result.CodeCommitMissing
+        "E9_INVALID_MERGE_STATE"       -> result.CodeInvalidMergeState
+        "SM01_INVALID_STATE"           -> result.CodeInvalidState
+        "DC04_INVALID_AGENT_ID"        -> result.CodeInvalidAgentID
+        "MR01_INCONSISTENT_REPO"       -> result.CodeInconsistentRepo
+        "MR02_UNSCOPED_GATE"           -> result.CodeUnscopedGate
+        "DC07_INVALID_GATE_TYPE"       -> result.CodeInvalidGateType
+        "E16_INVALID_ACTION"           -> result.CodeInvalidActionEnum
+        "LOAD_FAILED"                  -> result.CodeManifestInvalid
+        "READ_FAILED"                  -> result.CodeManifestInvalid
+        "SAVE_FAILED"                  -> result.CodeManifestInvalid
+        "W101"                         -> result.CodeCompletionVerificationWarning
+        "E16_PARSE_ERROR"              -> result.CodeParseError
+        "E16_DUPLICATE_KEY"            -> result.CodeDuplicateKey
+        "DC02_INVALID_STATUS"          -> result.CodeInvalidEnum
+        "DC03_INVALID_FAILURE_TYPE"    -> result.CodeInvalidFailureType
+        "DC06_INVALID_RISK"            -> result.CodeInvalidPreMortemRisk
+        "E5_INVALID_WORKTREE_PATH"     -> result.CodeInvalidWorktreeName
+        "E5_INVALID_WORKTREE_NAME"     -> result.CodeInvalidWorktreeName
+        "E10_INVALID_VERIFICATION"     -> result.CodeInvalidVerification
+        "E16_FILE_NOT_FOUND"           -> result.CodeFileMissing
+        "E16_REPO_MISMATCH_SUSPECTED"  -> result.CodeRepoMismatch
+        "V001_MANIFEST_INVALID"        -> result.CodeManifestInvalid
+        "P000_PARSE_ERROR"             -> result.CodeParseError
+        "E16_MISSING_CHECKLIST"        -> result.CodeMissingChecklist
+        "SM02_INVALID_TRANSITION"      -> result.CodeStateTransitionInvalid
+        "TOOL_ERROR"                   -> result.CodeToolError
+      location: pkg/protocol/
+waves:
+    - number: 1
+      agents:
+        - id: A
+          task: |
+            ## Context
+            You are implementing Wave 1 of the error-code-unification feature.
+            Your sole task is to add 11 new V-series constants and 1 W-series constant
+            to `pkg/result/codes.go`. No other files change in this wave.
+
+            ## Repository
+            /Users/dayna.blackwell/code/scout-and-wave-go
+
+            ## What to implement
+
+            Open `pkg/result/codes.go`. The validation const block currently ends with:
+              CodeP1Violation = "V035_P1_VIOLATION"
+
+            Step 1 - Append to the validation const block after CodeP1Violation:
+              // CodeInvalidEnum is emitted for invalid enum field values (replaces SV01_INVALID_ENUM, DC02_INVALID_STATUS)
+              CodeInvalidEnum = "V036_INVALID_ENUM"
+              // CodeInvalidPath is emitted for invalid path format (replaces SV01_INVALID_PATH)
+              CodeInvalidPath = "V037_INVALID_PATH"
+              // CodeCrossField is emitted for cross-field consistency violations (replaces SV01_CROSS_FIELD)
+              CodeCrossField = "V038_CROSS_FIELD"
+              // CodeInvalidFieldValue is emitted for invalid field values (replaces I4_INVALID_VALUE, I4_INVALID_FORMAT)
+              CodeInvalidFieldValue = "V039_INVALID_FIELD_VALUE"
+              // CodeUnscopedGate is emitted for multi-repo gates missing a repo: scope (replaces MR02_UNSCOPED_GATE)
+              CodeUnscopedGate = "V040_UNSCOPED_GATE"
+              // CodeFileMissing is emitted when an action=modify file does not exist (replaces E16_FILE_NOT_FOUND)
+              CodeFileMissing = "V041_FILE_MISSING"
+              // CodeInvalidWorktreeName is emitted for invalid worktree branch or path naming (replaces E5_INVALID_WORKTREE_*)
+              CodeInvalidWorktreeName = "V042_INVALID_WORKTREE_NAME"
+              // CodeInvalidVerification is emitted for invalid verification field format (replaces E10_INVALID_VERIFICATION)
+              CodeInvalidVerification = "V043_INVALID_VERIFICATION"
+              // CodeMissingChecklist is emitted when new handlers lack a post_merge_checklist (replaces E16_MISSING_CHECKLIST)
+              CodeMissingChecklist = "V044_MISSING_CHECKLIST"
+              // CodeRepoMismatch is emitted when all action=modify files are missing, indicating wrong repo (replaces E16_REPO_MISMATCH_SUSPECTED)
+              CodeRepoMismatch = "V045_REPO_MISMATCH"
+              // CodeParseError is emitted for YAML parse failures (replaces E16_PARSE_ERROR, P000_PARSE_ERROR)
+              CodeParseError = "V046_PARSE_ERROR"
+
+            Step 2 - Append to the warning const block after CodeAgentScopeLarge:
+              // CodeCompletionVerificationWarning is emitted when an agent has no commits on its wave branch (replaces W101)
+              CodeCompletionVerificationWarning = "W002_COMPLETION_VERIFY"
+
+            ## Tests
+            No new tests needed. Run existing result package tests to confirm no regressions.
+
+            ## Verification gate
+              go build ./...
+              go vet ./pkg/result/...
+              go test ./pkg/result/...
+
+            ## Constraints
+            - Do NOT modify any pkg/protocol/ or pkg/errparse/ file
+            - Add constants in numeric order within each range
+            - Do not add migration tables or backward compat shims
+            - Do not delete anything
+          files:
+            - pkg/result/codes.go
+      base_commit: 3764dcbf0c8f2be59128be15648b2e1e94d102dc
+    - number: 2
+      agents:
+        - id: B
+          task: |
+            ## Context
+            Wave 1 (Agent A) has added new constants to pkg/result/codes.go.
+            Your task: delete three files.
+
+            ## Repository
+            /Users/dayna.blackwell/code/scout-and-wave-go
+
+            ## What to implement
+
+            Delete these three files using git rm:
+
+            1. pkg/protocol/error_codes.go
+               - Defines ErrorCode type, E-series constants, LookupErrorCode, AllErrorCodes, MigrateErrorCode
+               - Zero callers anywhere in pkg/ or cmd/ (confirmed by grep)
+
+            2. pkg/protocol/schema_errors.go
+               - Defines only 5 constants: SV01RequiredField, SV01InvalidEnum, SV01InvalidPath,
+                 SV01UnknownKey, SV01CrossFieldError
+               - Agent C (same wave) updates all consumers to use result.CodeXxx instead
+
+            3. pkg/protocol/error_codes_test.go
+               - Tests LookupErrorCode, AllErrorCodes, MigrateErrorCode, ErrorCode type — all deleted with error_codes.go
+
+            Commands:
+              git rm pkg/protocol/error_codes.go
+              git rm pkg/protocol/schema_errors.go
+              git rm pkg/protocol/error_codes_test.go
+
+            ## Important
+            Your isolated worktree will have compilation errors because other Wave 2 agents
+            have not yet merged. This is expected. The post-merge go build gate is the arbiter.
+
+            ## Verification gate
+              test ! -f pkg/protocol/error_codes.go && echo "PASS: error_codes.go deleted"
+              test ! -f pkg/protocol/schema_errors.go && echo "PASS: schema_errors.go deleted"
+              test ! -f pkg/protocol/error_codes_test.go && echo "PASS: error_codes_test.go deleted"
+
+            ## Constraints
+            - Do NOT modify any other file
+            - Use git rm (not plain rm) so deletions are staged for commit
+            - Do NOT create replacement files or stubs
+          files:
+            - pkg/protocol/error_codes.go
+            - pkg/protocol/schema_errors.go
+            - pkg/protocol/error_codes_test.go
+          dependencies:
+            - A
+        - id: C
+          task: |
+            ## Context
+            Wave 1 (Agent A) has added new V-series constants to pkg/result/codes.go.
+            Your task: update 5 schema_* files and reactions_validation.go to replace all
+            SV01* constants with result.CodeXxx. Agent B (same wave) is deleting schema_errors.go.
+            Update the 3 associated test files as well.
+
+            ## Repository
+            /Users/dayna.blackwell/code/scout-and-wave-go
+
+            ## Replacement mapping
+              SV01RequiredField   -> result.CodeRequiredFieldsMissing
+              SV01InvalidEnum     -> result.CodeInvalidEnum
+              SV01InvalidPath     -> result.CodeInvalidPath
+              SV01UnknownKey      -> result.CodeUnknownKey
+              SV01CrossFieldError -> result.CodeCrossField
+            Import: "github.com/blackwell-systems/scout-and-wave-go/pkg/result"
+
+            ## What to implement
+
+            pkg/protocol/schema_validation.go
+            - Replace SV01RequiredField with result.CodeRequiredFieldsMissing (all occurrences)
+            - Replace SV01InvalidPath with result.CodeInvalidPath (all occurrences)
+            - Confirm result import present
+
+            pkg/protocol/schema_enum_validation.go
+            - Replace SV01InvalidEnum with result.CodeInvalidEnum (all occurrences - appears in 6 functions)
+            - Confirm result import present
+
+            pkg/protocol/schema_unknown_keys.go
+            - Replace SV01UnknownKey with result.CodeUnknownKey (all occurrences)
+            - Confirm result import present
+
+            pkg/protocol/schema_cross_field.go
+            - Replace SV01CrossFieldError with result.CodeCrossField (all 5 occurrences)
+            - Confirm result import present
+
+            pkg/protocol/reactions_validation.go
+            - Replace SV01RequiredField with result.CodeRequiredFieldsMissing
+            - Replace SV01InvalidEnum with result.CodeInvalidEnum
+            - Confirm result import present
+
+            pkg/protocol/schema_cross_field_test.go
+            - Replace e.Code == SV01CrossFieldError with e.Code == result.CodeCrossField
+            - Update t.Errorf messages referencing "SV01_CROSS_FIELD" to "V038_CROSS_FIELD"
+            - Add result import if missing
+
+            pkg/protocol/schema_enum_validation_test.go
+            - Replace errs[0].Code != SV01InvalidEnum with errs[0].Code != result.CodeInvalidEnum
+            - Update t.Errorf messages referencing "SV01_INVALID_ENUM" to "V036_INVALID_ENUM"
+            - Add result import if missing
+
+            pkg/protocol/reactions_validation_test.go
+            - Replace SV01InvalidEnum comparisons with result.CodeInvalidEnum
+            - Replace SV01RequiredField comparisons (if any) with result.CodeRequiredFieldsMissing
+            - Add result import if missing
+
+            pkg/protocol/schema_validation_test.go
+            - Replace e.Code == SV01RequiredField with e.Code == result.CodeRequiredFieldsMissing (all occurrences)
+            - Replace e.Code == SV01InvalidPath with e.Code == result.CodeInvalidPath (all occurrences)
+            - Update t.Errorf messages referencing "SV01_REQUIRED_FIELD" to use "V005_REQUIRED_FIELDS_MISSING"
+            - Update t.Errorf messages referencing "SV01_INVALID_PATH" to use "V037_INVALID_PATH"
+            - Add result import if missing
+
+            pkg/protocol/schema_unknown_keys_test.go
+            - Replace all SV01UnknownKey comparisons with result.CodeUnknownKey
+            - Update t.Errorf messages referencing "SV01_UNKNOWN_KEY" to use "V013_UNKNOWN_KEY"
+            - Add result import if missing
+
+            ## Verification gate
+              go build ./pkg/protocol/...
+              go vet ./pkg/protocol/...
+              go test ./pkg/protocol/... -run "TestValidateSchema|TestSchemaCross|TestSchemaEnum|TestValidateReactions|TestValidateNested|TestValidateFilePaths|TestDetectUnknownKeys"
+
+            ## Constraints
+            - Do NOT modify files owned by agents B, D, E, or F
+            - After your changes, none of your 10 files may reference SV01* constants
+            - All Code field values must use result.CodeXxx constants
+          files:
+            - pkg/protocol/schema_validation.go
+            - pkg/protocol/schema_enum_validation.go
+            - pkg/protocol/schema_unknown_keys.go
+            - pkg/protocol/schema_cross_field.go
+            - pkg/protocol/reactions_validation.go
+            - pkg/protocol/schema_cross_field_test.go
+            - pkg/protocol/schema_enum_validation_test.go
+            - pkg/protocol/reactions_validation_test.go
+            - pkg/protocol/schema_validation_test.go
+            - pkg/protocol/schema_unknown_keys_test.go
+          dependencies:
+            - A
+        - id: D
+          task: |
+            ## Context
+            Wave 1 (Agent A) has added new V/W-series constants to pkg/result/codes.go.
+            Your task: update validation.go, enumvalidation.go, fieldvalidation.go, commit_verify.go
+            to replace all hardcoded string codes with result.CodeXxx constants.
+            Update the 2 associated test files as well.
+
+            ## Repository
+            /Users/dayna.blackwell/code/scout-and-wave-go
+
+            ## What to implement
+
+            pkg/protocol/validation.go
+            Replace every hardcoded Code string (in SAWError literals and result.NewError() calls):
+              "KNOWN_ISSUE_MISSING_TITLE"  -> result.CodeKnownIssueMissingTitle
+              "I1_VIOLATION"               -> result.CodeDisjointOwnership
+              "I2_MISSING_DEP"             -> result.CodeSameWaveDependency
+              "I2_WAVE_ORDER"              -> result.CodeSameWaveDependency
+              "I3_WAVE_ORDER"              -> result.CodeWaveNotOneIndexed
+              "I4_MISSING_FIELD"           -> result.CodeRequiredFieldsMissing
+              "I4_INVALID_FORMAT"          -> result.CodeInvalidFieldValue
+              "I4_INVALID_VALUE"           -> result.CodeInvalidFieldValue
+              "I5_ORPHAN_FILE"             -> result.CodeOrphanFile
+              "I6_CYCLE"                   -> result.CodeDependencyCycle
+              "I5_UNCOMMITTED"             -> result.CodeCommitMissing
+              "E9_INVALID_MERGE_STATE"     -> result.CodeInvalidMergeState
+              "SM01_INVALID_STATE"         -> result.CodeInvalidState
+              "DC04_INVALID_AGENT_ID"      -> result.CodeInvalidAgentID
+              "MR01_INCONSISTENT_REPO"     -> result.CodeInconsistentRepo
+              "MR02_UNSCOPED_GATE"         -> result.CodeUnscopedGate
+              "DC07_INVALID_GATE_TYPE"     -> result.CodeInvalidGateType
+            Note: result.NewError() takes a string as first arg; result.CodeXxx constants
+            are plain strings, so result.NewError(result.CodeDisjointOwnership, ...) compiles.
+            The file already imports pkg/result; confirm import is present.
+
+            pkg/protocol/enumvalidation.go
+            Replace:
+              "DC02_INVALID_STATUS"        -> result.CodeInvalidEnum
+              "DC03_INVALID_FAILURE_TYPE"  -> result.CodeInvalidFailureType
+              "DC06_INVALID_RISK"          -> result.CodeInvalidPreMortemRisk
+            Add result import if missing.
+
+            pkg/protocol/fieldvalidation.go
+            Replace:
+              "E5_INVALID_WORKTREE_PATH"   -> result.CodeInvalidWorktreeName
+              "E5_INVALID_WORKTREE_NAME"   -> result.CodeInvalidWorktreeName
+              "E10_INVALID_VERIFICATION"   -> result.CodeInvalidVerification
+            Add result import if missing.
+
+            pkg/protocol/commit_verify.go
+            Replace:
+              "W101"                       -> result.CodeCompletionVerificationWarning
+            Add result import if missing.
+
+            pkg/protocol/enumvalidation_test.go
+            Update test assertions:
+              "DC02_INVALID_STATUS"        -> result.CodeInvalidEnum
+              "DC03_INVALID_FAILURE_TYPE"  -> result.CodeInvalidFailureType
+              "DC06_INVALID_RISK"          -> result.CodeInvalidPreMortemRisk
+            Use result.CodeXxx constants. Add result import if missing.
+
+            pkg/protocol/fieldvalidation_test.go
+            Update test assertions:
+              "E5_INVALID_WORKTREE_NAME"   -> result.CodeInvalidWorktreeName
+              "E5_INVALID_WORKTREE_PATH"   -> result.CodeInvalidWorktreeName
+              "E10_INVALID_VERIFICATION"   -> result.CodeInvalidVerification
+            Add result import if missing.
+
+            ## Verification gate
+              go build ./pkg/protocol/...
+              go vet ./pkg/protocol/...
+              go test ./pkg/protocol/... -run "TestValidateI|TestValidateKnown|TestValidateAgent|TestValidateGate|TestValidateMulti|TestEnum|TestField|TestCommit"
+
+            pkg/protocol/validation_test.go
+            Update ALL Code string assertions to use result.CodeXxx constants, using
+            the same mapping as validation.go above. Also update:
+              "E16_DUPLICATE_KEY"   -> result.CodeDuplicateKey
+              "E16_INVALID_ACTION"  -> result.CodeInvalidActionEnum
+              "E16_MISSING_CHECKLIST" -> result.CodeMissingChecklist
+            Add result import if missing.
+
+            pkg/protocol/solver_integration_test.go
+            Update assertions that check for old string codes:
+              "I4_MISSING_FIELD"  -> result.CodeRequiredFieldsMissing
+              "I2_WAVE_ORDER"     -> result.CodeSameWaveDependency
+              "I3_WAVE_ORDER"     -> result.CodeWaveNotOneIndexed
+            Do NOT change "SOLVER_CYCLE", "SOLVER_MISSING_DEP", "SOLVER_WAVE_MISMATCH" — these are not being unified.
+            Add result import if missing.
+
+            pkg/protocol/jsonschema_validator_test.go
+            Update assertion at line ~423:
+              "DC04_INVALID_AGENT_ID" -> result.CodeInvalidAgentID
+            Do NOT change JS01 checks.
+            Add result import if missing.
+
+            ## Verification gate
+              go build ./pkg/protocol/...
+              go vet ./pkg/protocol/...
+              go test ./pkg/protocol/... -run "TestValidateI|TestValidateKnown|TestValidateAgent|TestValidateGate|TestValidateMulti|TestEnum|TestField|TestCommit|TestSolver|TestJSONSchema"
+
+            ## Constraints
+            - Do NOT modify files owned by agents B, C, E, F, or G
+            - All Code field values must use result.CodeXxx constants
+            - Confirm all modified files import pkg/result
+          files:
+            - pkg/protocol/validation.go
+            - pkg/protocol/enumvalidation.go
+            - pkg/protocol/fieldvalidation.go
+            - pkg/protocol/commit_verify.go
+            - pkg/protocol/enumvalidation_test.go
+            - pkg/protocol/fieldvalidation_test.go
+            - pkg/protocol/validation_test.go
+            - pkg/protocol/solver_integration_test.go
+            - pkg/protocol/jsonschema_validator_test.go
+          dependencies:
+            - A
+        - id: E
+          task: |
+            ## Context
+            Wave 1 (Agent A) has added new V-series constants to pkg/result/codes.go.
+            Your task: update 7 remaining protocol files and 3 test files to replace all
+            hardcoded string codes with result.CodeXxx constants.
+
+            ## Repository
+            /Users/dayna.blackwell/code/scout-and-wave-go
+
+            ## What to implement
+
+            pkg/protocol/action_validator.go
+            Replace: "E16_INVALID_ACTION" -> result.CodeInvalidActionEnum
+            Add result import if missing.
+
+            pkg/protocol/amend.go
+            Replace:
+              "LOAD_FAILED"  -> result.CodeManifestInvalid
+              "READ_FAILED"  -> result.CodeManifestInvalid
+              "SAVE_FAILED"  -> result.CodeManifestInvalid
+            There are 2 occurrences of "SAVE_FAILED" (lines 145 and 243). Replace both.
+            The file imports result; confirm import present.
+
+            pkg/protocol/duplicate_key_validator.go
+            Replace:
+              "E16_PARSE_ERROR"   -> result.CodeParseError
+              "E16_DUPLICATE_KEY" -> result.CodeDuplicateKey
+            Add result import if missing.
+
+            pkg/protocol/file_existence_validator.go
+            Replace:
+              "E16_FILE_NOT_FOUND"          -> result.CodeFileMissing
+              "E16_REPO_MISMATCH_SUSPECTED" -> result.CodeRepoMismatch
+            Note: "E16_FILE_NOT_FOUND" appears in both ValidateFileExistence and
+            ValidateFileExistenceMultiRepo - replace both occurrences.
+            Add result import if missing.
+
+            pkg/protocol/full_validate.go
+            Replace ALL occurrences of:
+              "V001_MANIFEST_INVALID" -> result.CodeManifestInvalid
+              "P000_PARSE_ERROR"      -> result.CodeParseError
+            There are multiple "V001_MANIFEST_INVALID" occurrences - replace ALL of them.
+            The file already uses result.CodeManifestInvalid in some places; find remaining
+            raw string literals and replace them too.
+
+            pkg/protocol/integration_checklist_validator.go
+            Replace: "E16_MISSING_CHECKLIST" -> result.CodeMissingChecklist
+            Add result import if missing.
+
+            pkg/protocol/manifest.go
+            Replace ALL occurrences of:
+              "SM02_INVALID_TRANSITION" -> result.CodeStateTransitionInvalid
+            There are multiple occurrences in ValidateSM02TransitionGuards.
+            Replace every one. File already imports pkg/result; confirm import present.
+
+            pkg/protocol/manifest_test.go
+            This file has test assertions checking for "SM02_INVALID_TRANSITION":
+              if errs[0].Code != "SM02_INVALID_TRANSITION" {
+            Update ALL such string assertions to use result.CodeStateTransitionInvalid.
+            Add import of "github.com/blackwell-systems/scout-and-wave-go/pkg/result" if missing.
+
+            pkg/protocol/action_validator_test.go
+            Update assertions:
+              "E16_INVALID_ACTION" -> result.CodeInvalidActionEnum
+            Add result import if missing.
+
+            pkg/protocol/duplicate_key_validator_test.go
+            Update assertions:
+              "E16_DUPLICATE_KEY" -> result.CodeDuplicateKey
+              "E16_PARSE_ERROR"   -> result.CodeParseError
+            Add result import if missing.
+
+            pkg/protocol/file_existence_validator_test.go
+            Update assertions:
+              "E16_FILE_NOT_FOUND"          -> result.CodeFileMissing
+              "E16_REPO_MISMATCH_SUSPECTED" -> result.CodeRepoMismatch
+            Add result import if missing.
+
+            pkg/protocol/integration_checklist_validator_test.go
+            Update assertions:
+              "E16_MISSING_CHECKLIST" -> result.CodeMissingChecklist
+            Add result import if missing.
+
+            pkg/protocol/full_validate_test.go
+            This file uses strings.Contains(e.Code, "I1") at line ~93.
+            After Agent D's changes, the I1 code becomes "V002_DISJOINT_OWNERSHIP" which
+            does NOT contain "I1". Change this check to:
+              e.Code == result.CodeDisjointOwnership
+            The strings.Contains(e.Code, "DUPLICATE") check at lines ~170/179 is fine —
+            "V012_DUPLICATE_KEY" still contains "DUPLICATE". No change needed for those lines.
+            Add result import if missing.
+
+            ## Verification gate
+              go build ./pkg/protocol/...
+              go vet ./pkg/protocol/...
+              go test ./pkg/protocol/... -run "TestAction|TestAmend|TestDuplicate|TestFile|TestFull|TestIntegration|TestValidateSM02|TestTransition"
+
+            ## Constraints
+            - Do NOT modify files owned by agents B, C, D, F, or G
+            - All Code field values must use result.CodeXxx constants
+            - Confirm all modified files import pkg/result
+          files:
+            - pkg/protocol/action_validator.go
+            - pkg/protocol/amend.go
+            - pkg/protocol/duplicate_key_validator.go
+            - pkg/protocol/file_existence_validator.go
+            - pkg/protocol/full_validate.go
+            - pkg/protocol/integration_checklist_validator.go
+            - pkg/protocol/manifest.go
+            - pkg/protocol/manifest_test.go
+            - pkg/protocol/action_validator_test.go
+            - pkg/protocol/duplicate_key_validator_test.go
+            - pkg/protocol/file_existence_validator_test.go
+            - pkg/protocol/integration_checklist_validator_test.go
+            - pkg/protocol/full_validate_test.go
+          dependencies:
+            - A
+        - id: F
+          task: |
+            ## Context
+            Wave 1 (Agent A) confirmed result.CodeToolError = "T001_TOOL_ERROR" already exists
+            in pkg/result/codes.go (no new constant needed). Your task: update 4 errparse files
+            to replace hardcoded "TOOL_ERROR" string literals with result.CodeToolError.
+            Update 3 associated test files as well.
+
+            ## Repository
+            /Users/dayna.blackwell/code/scout-and-wave-go
+
+            ## What to implement
+
+            pkg/errparse/format_parsers.go
+            Replace all occurrences of Code: "TOOL_ERROR" with Code: result.CodeToolError.
+            There are 4 parsers in this file each emitting Code: "TOOL_ERROR". Replace all 4.
+            Confirm import: "github.com/blackwell-systems/scout-and-wave-go/pkg/result"
+
+            pkg/errparse/go_parsers.go
+            Replace all Code: "TOOL_ERROR" with Code: result.CodeToolError.
+            Confirm result import present.
+
+            pkg/errparse/js_parsers.go
+            Replace all Code: "TOOL_ERROR" with Code: result.CodeToolError.
+            Confirm result import present.
+
+            pkg/errparse/python_parsers.go
+            Replace all Code: "TOOL_ERROR" with Code: result.CodeToolError.
+            Confirm result import present.
+
+            pkg/errparse/go_parsers_test.go
+            Update assertions: if e.Code != "TOOL_ERROR" { -> if e.Code != result.CodeToolError {
+            Add result import if missing.
+
+            pkg/errparse/registry_test.go
+            Find any SAWError literal setting Code: "TOOL_ERROR" and replace with Code: result.CodeToolError.
+            Add result import if missing.
+
+            pkg/errparse/format_parsers_test.go
+            Read the file first. If it exists and has Code: "TOOL_ERROR" assertions, replace them
+            with Code: result.CodeToolError. If the file does not exist or has no such assertions,
+            no change is needed (note in completion report).
+            Add result import if missing.
+
+            ## Verification gate
+              go build ./pkg/errparse/...
+              go vet ./pkg/errparse/...
+              go test ./pkg/errparse/...
+
+            ## Constraints
+            - Do NOT modify files owned by agents B, C, D, or E
+            - All Code: "TOOL_ERROR" literals in pkg/errparse/ must be replaced with result.CodeToolError
+            - result.CodeToolError = "T001_TOOL_ERROR" (already exists, no new constant needed)
+          files:
+            - pkg/errparse/format_parsers.go
+            - pkg/errparse/go_parsers.go
+            - pkg/errparse/js_parsers.go
+            - pkg/errparse/python_parsers.go
+            - pkg/errparse/go_parsers_test.go
+            - pkg/errparse/registry_test.go
+            - pkg/errparse/format_parsers_test.go
+          dependencies:
+            - A
+        - id: G
+          task: |
+            ## Context
+            Wave 1 (Agent A) has added new V-series constants to pkg/result/codes.go.
+            Your task: update program_validation.go, program_generator.go, and
+            program_validation_test.go to replace all hardcoded string codes.
+
+            ## Repository
+            /Users/dayna.blackwell/code/scout-and-wave-go
+
+            ## What to implement
+
+            pkg/protocol/program_validation.go
+            Replace every hardcoded Code string:
+              "MISSING_FIELD"            -> result.CodeRequiredFieldsMissing
+              "INVALID_STATE"            -> result.CodeInvalidState
+              "INVALID_STATUS"           -> result.CodeInvalidEnum
+              "P1_VIOLATION"             -> result.CodeP1Violation
+              "TIER_MISMATCH"            -> result.CodeTierMismatch
+              "INVALID_DEPENDENCY"       -> result.CodeInvalidDependency
+              "TIER_ORDER_VIOLATION"     -> result.CodeTierOrderViolation
+              "INVALID_CONSUMER"         -> result.CodeInvalidConsumer
+              "INVALID_SLUG_FORMAT"      -> result.CodeInvalidSlugFormat
+              "P1_FILE_OVERLAP"          -> result.CodeP1FileOverlap
+              "IMPL_FILE_MISSING"        -> result.CodeIMPLFileMissing
+              "IMPL_STATE_MISMATCH"      -> result.CodeIMPLStateMismatch
+              "P2_CONTRACT_REDEFINITION" -> result.CodeP2ContractRedefinition
+              "COMPLETION_BOUNDS"        -> result.CodeCompletionBounds
+              "IMPLS_TOTAL_MISMATCH"     -> result.CodeImplsTotalMismatch
+            Add result import if missing.
+
+            pkg/protocol/program_generator.go
+            Replace bare E-code strings:
+              "E001" -> result.CodeRequiredFieldsMissing
+              "E002" -> result.CodeInvalidSlugFormat
+              "E003" -> result.CodeManifestInvalid
+              "E004" -> result.CodeInvalidAgentID
+              "E005" -> result.CodeDisjointOwnership
+              "E006" -> result.CodeDependencyCycle
+              "E007" -> result.CodeWaveNotOneIndexed
+              "E008" -> result.CodeOrphanFile
+              "E009" -> result.CodeOrphanFile
+            Add result import if missing.
+
+            pkg/protocol/program_validation_test.go
+            Read the file and grep for Code string assertions. Update ALL assertions
+            that check for old hardcoded code strings to use result.CodeXxx constants
+            using the same mapping as program_validation.go above.
+            Add result import if missing.
+
+            ## Verification gate
+              go build ./pkg/protocol/...
+              go vet ./pkg/protocol/...
+              go test ./pkg/protocol/... -run "TestValidateProgram|TestGenerate"
+
+            ## Constraints
+            - Do NOT modify files owned by agents B, C, D, E, or F
+            - All Code field values must use result.CodeXxx constants
+            - Confirm all modified files import pkg/result
+          files:
+            - pkg/protocol/program_validation.go
+            - pkg/protocol/program_generator.go
+            - pkg/protocol/program_validation_test.go
+          dependencies:
+            - A
+      base_commit: 2ec3592a8dec64c4a417474e56c2d9f3daa2bc99
+quality_gates:
+    level: standard
+    gates:
+        - type: build
+          command: go build ./...
+          required: true
+        - type: test
+          command: go test ./pkg/protocol/... ./pkg/result/... ./pkg/errparse/...
+          required: true
+        - type: lint
+          command: go vet ./...
+          required: false
+completion_reports:
+    A:
+        status: complete
+        branch: saw/error-code-unification/wave1-agent-A
+        commit: 73e8641
+        files_changed:
+            - pkg/result/codes.go
+        verification: PASS
+    B:
+        status: complete
+        branch: saw/error-code-unification/wave2-agent-B
+        commit: cfa366f
+        files_changed:
+            - pkg/protocol/error_codes.go
+            - pkg/protocol/schema_errors.go
+            - pkg/protocol/error_codes_test.go
+        verification: PASS
+    C:
+        status: complete
+        branch: saw/error-code-unification/wave2-agent-C
+        commit: 34d8995
+        files_changed:
+            - pkg/protocol/schema_validation.go
+            - pkg/protocol/schema_enum_validation.go
+            - pkg/protocol/schema_unknown_keys.go
+            - pkg/protocol/schema_cross_field.go
+            - pkg/protocol/reactions_validation.go
+            - pkg/protocol/schema_cross_field_test.go
+            - pkg/protocol/schema_enum_validation_test.go
+            - pkg/protocol/reactions_validation_test.go
+            - pkg/protocol/schema_validation_test.go
+            - pkg/protocol/schema_unknown_keys_test.go
+        verification: PASS
+    D:
+        status: complete
+        branch: saw/error-code-unification/wave2-agent-D
+        commit: b1f770c
+        files_changed:
+            - pkg/protocol/validation.go
+            - pkg/protocol/enumvalidation.go
+            - pkg/protocol/fieldvalidation.go
+            - pkg/protocol/commit_verify.go
+            - pkg/protocol/enumvalidation_test.go
+            - pkg/protocol/fieldvalidation_test.go
+            - pkg/protocol/validation_test.go
+            - pkg/protocol/solver_integration_test.go
+            - pkg/protocol/jsonschema_validator_test.go
+        verification: PASS
+    E:
+        status: complete
+        branch: saw/error-code-unification/wave2-agent-E
+        commit: 1e3912c
+        files_changed:
+            - pkg/protocol/action_validator.go
+            - pkg/protocol/amend.go
+            - pkg/protocol/duplicate_key_validator.go
+            - pkg/protocol/file_existence_validator.go
+            - pkg/protocol/full_validate.go
+            - pkg/protocol/integration_checklist_validator.go
+            - pkg/protocol/manifest.go
+            - pkg/protocol/manifest_test.go
+            - pkg/protocol/action_validator_test.go
+            - pkg/protocol/duplicate_key_validator_test.go
+            - pkg/protocol/file_existence_validator_test.go
+            - pkg/protocol/integration_checklist_validator_test.go
+            - pkg/protocol/full_validate_test.go
+        verification: PASS (12/13 targeted tests pass; TestFullValidate_InvalidManifest awaits Agent D merge)
+    F:
+        status: complete
+        branch: saw/error-code-unification/wave2-agent-F
+        commit: abd4834
+        files_changed:
+            - pkg/errparse/format_parsers.go
+            - pkg/errparse/go_parsers.go
+            - pkg/errparse/js_parsers.go
+            - pkg/errparse/python_parsers.go
+            - pkg/errparse/go_parsers_test.go
+            - pkg/errparse/registry_test.go
+        verification: PASS
+    G:
+        status: complete
+        branch: saw/error-code-unification/wave2-agent-G
+        commit: bcd12fc
+        files_changed:
+            - pkg/protocol/program_validation.go
+            - pkg/protocol/program_generator.go
+            - pkg/protocol/program_validation_test.go
+        verification: PASS
+pre_mortem:
+    overall_risk: low
+    rows:
+        - scenario: |
+            manifest_test.go assertions check for "SM02_INVALID_TRANSITION" string.
+            After Agent E replaces manifest.go, tests will fail unless manifest_test.go
+            is also updated.
+          likelihood: medium
+          impact: medium
+          mitigation: |
+            manifest_test.go is explicitly listed in Agent E's file ownership and task.
+            Post-merge go test gate will catch any remaining failures.
+        - scenario: |
+            Wave 2 runs in parallel. Agent B deletes schema_errors.go. Other agents'
+            worktrees still have it. On merge, deletion happens, then C's changes
+            eliminate all SV01* references. If merge order is wrong, intermediate
+            build failures may occur.
+          likelihood: medium
+          impact: low
+          mitigation: |
+            finalize-wave merges all agents sequentially then runs go build ./... as final gate.
+            Intermediate per-agent build states are expected. Final gate is the arbiter.
+        - scenario: |
+            format_parsers_test.go may not exist in pkg/errparse/. Agent F's task references
+            it as action=modify but the file may not be on disk.
+          likelihood: high
+          impact: low
+          mitigation: |
+            Agent F is instructed to read the file first. If it does not exist, no change needed.
+            Agent should note in completion report. action=modify files are validated by
+            ValidateFileExistence which only runs when repoPath is provided - this won't block the wave.
+        - scenario: |
+            A typo in one of the new V036-V046 string values in codes.go would cause all Wave 2
+            agents to embed a wrong value, breaking tests that assert on the actual string.
+          likelihood: low
+          impact: medium
+          mitigation: |
+            Agent A's task specifies exact string values. Post-merge go test gate catches mismatches.
+            Wave 2 agents compare result.CodeXxx to result.CodeXxx so a consistent constant works.
+critic_report:
+    verdict: PASS
+    agent_reviews:
+        A:
+            agent_id: A
+            verdict: PASS
+        B:
+            agent_id: B
+            verdict: PASS
+        C:
+            agent_id: C
+            verdict: PASS
+        D:
+            agent_id: D
+            verdict: PASS
+        E:
+            agent_id: E
+            verdict: PASS
+            issues:
+                - check: pattern_accuracy
+                  severity: warning
+                  description: Brief states full_validate.go already uses result.CodeManifestInvalid in some places, but no such references exist — all occurrences are raw string literals. Actionable instruction is correct so this does not affect agent outcome.
+                  file: pkg/protocol/full_validate.go
+                  symbol: result.CodeManifestInvalid
+        F:
+            agent_id: F
+            verdict: PASS
+        G:
+            agent_id: G
+            verdict: PASS
+    summary: 'All 7 agents have correct file ownership. All modify-action files exist. All delete-action files exist (B: error_codes.go, schema_errors.go, error_codes_test.go). Agent A anchor points are accurate: CodeP1Violation is the last V-series constant at V035, CodeAgentScopeLarge is the sole W-series constant at W001. All 12 new constant names (V036-V046, W002) have no conflicts in codes.go. Agent B''s three delete targets all exist on disk. Agent C: all 5 SV01 constants are confirmed present in the target source files. Agent D: all hardcoded strings (I1_VIOLATION, I2_MISSING_DEP, I2_WAVE_ORDER, I3_WAVE_ORDER, DC02_INVALID_STATUS, DC03_INVALID_FAILURE_TYPE, DC06_INVALID_RISK, E5_INVALID_WORKTREE_*, E10_INVALID_VERIFICATION, KNOWN_ISSUE_MISSING_TITLE) confirmed present in their respective files; result import already present in all D-owned source files. Agent E: all target strings confirmed (LOAD_FAILED, READ_FAILED, SAVE_FAILED x2 at lines 145 and 243, E16_PARSE_ERROR, E16_DUPLICATE_KEY, E16_FILE_NOT_FOUND x2, E16_REPO_MISMATCH_SUSPECTED, V001_MANIFEST_INVALID x5, P000_PARSE_ERROR, E16_MISSING_CHECKLIST, SM02_INVALID_TRANSITION x3, E16_INVALID_ACTION, SM02_INVALID_TRANSITION). Minor brief inaccuracy: full_validate.go description says the file already uses result.CodeManifestInvalid in some places, but zero such references exist — all are raw string literals. The actionable instruction (find remaining raw string literals and replace them) is correct and unaffected. Agent F: TOOL_ERROR confirmed in all 4 errparse source files; format_parsers_test.go exists but has 0 TOOL_ERROR occurrences, so no change needed (consistent with the brief instructions). Agent G: all 15 program_validation.go string codes confirmed; all 9 program_generator.go E00x codes confirmed. Import path github.com/blackwell-systems/scout-and-wave-go/pkg/result is valid per go.mod. The previous critic report incorrectly flagged Agent E for SAVE_FAILED not being covered — the brief at lines 625-628 explicitly maps SAVE_FAILED to result.CodeManifestInvalid and mentions both occurrences.'
+    reviewed_at: "2026-03-26T05:09:24Z"
+    issue_count: 0
+state: COMPLETE

@@ -216,3 +216,5 @@ type BackendConfig struct {
   - IMPL doc: docs/IMPL/complete/IMPL-context-injection-observability.yaml
 - **fullvalidate-severity-filter**: completed 2026-03-25, 1 waves, 1 agents
   - IMPL doc: docs/IMPL/complete/IMPL-fullvalidate-severity-filter.yaml
+- **error-code-unification**: completed 2026-03-25, 2 waves, 7 agents
+  - IMPL doc: docs/IMPL/complete/IMPL-error-code-unification.yaml
