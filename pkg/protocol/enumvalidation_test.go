@@ -2,6 +2,8 @@ package protocol
 
 import (
 	"testing"
+
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
 )
 
 func TestValidateCompletionStatuses_Valid(t *testing.T) {
@@ -42,7 +44,7 @@ func TestValidateCompletionStatuses_Invalid(t *testing.T) {
 		t.Fatalf("expected 1 error, got %d", len(errs))
 	}
 
-	if errs[0].Code != "DC02_INVALID_STATUS" {
+	if errs[0].Code != result.CodeInvalidEnum {
 		t.Errorf("expected error code DC02_INVALID_STATUS, got %q", errs[0].Code)
 	}
 
@@ -102,7 +104,7 @@ func TestValidateFailureTypes_Invalid(t *testing.T) {
 		t.Fatalf("expected 1 error, got %d", len(errs))
 	}
 
-	if errs[0].Code != "DC03_INVALID_FAILURE_TYPE" {
+	if errs[0].Code != result.CodeInvalidFailureType {
 		t.Errorf("expected error code DC03_INVALID_FAILURE_TYPE, got %q", errs[0].Code)
 	}
 
@@ -162,7 +164,7 @@ func TestValidatePreMortemRisk_Invalid(t *testing.T) {
 		t.Fatalf("expected 1 error, got %d", len(errs))
 	}
 
-	if errs[0].Code != "DC06_INVALID_RISK" {
+	if errs[0].Code != result.CodeInvalidPreMortemRisk {
 		t.Errorf("expected error code DC06_INVALID_RISK, got %q", errs[0].Code)
 	}
 

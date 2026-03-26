@@ -214,7 +214,7 @@ func VerifyCommits(manifestPath string, waveNum int, repoDir string) result.Resu
 		if !status.HasCommits {
 			allValid = false
 			warnings = append(warnings, result.SAWError{
-				Code:     "W101",
+				Code:     result.CodeCompletionVerificationWarning,
 				Message:  fmt.Sprintf("agent %s has no commits on branch %s", status.Agent, status.Branch),
 				Severity: "warning",
 				Field:    "agent",

@@ -59,7 +59,7 @@ func validateKnownIssueTitles(m *IMPLManifest) []result.SAWError {
 	for i, issue := range m.KnownIssues {
 		if issue.Title == "" {
 			errs = append(errs, result.SAWError{
-				Code:     "KNOWN_ISSUE_MISSING_TITLE",
+				Code:     result.CodeKnownIssueMissingTitle,
 				Message:  fmt.Sprintf("known_issues[%d]: title is required", i),
 				Severity: "error",
 				Field:    fmt.Sprintf("known_issues[%d].title", i),
@@ -91,7 +91,7 @@ func validateI1DisjointOwnership(m *IMPLManifest, slug string) []result.SAWError
 	for key, agents := range ownership {
 		if len(agents) > 1 {
 			e := result.NewError(
-				"I1_VIOLATION",
+				result.CodeDisjointOwnership,
 				fmt.Sprintf("file %q owned by multiple agents in wave %d: %v", key.file, key.wave, agents),
 			).
 				WithContext("slug", slug).
@@ -125,7 +125,7 @@ func validateI2AgentDependencies(m *IMPLManifest, slug string) []result.SAWError
 				depWave, exists := agentWave[dep]
 				if !exists {
 					ve := result.NewError(
-						"I2_MISSING_DEP",
+						result.CodeSameWaveDependency,
 						fmt.Sprintf("agent %s (wave %d) depends on unknown agent %q", agent.ID, wave.Number, dep),
 					).
 						WithContext("slug", slug).
@@ -135,7 +135,7 @@ func validateI2AgentDependencies(m *IMPLManifest, slug string) []result.SAWError
 					errs = append(errs, ve)
 				} else if depWave >= wave.Number {
 					ve := result.NewError(
-						"I2_WAVE_ORDER",
+						result.CodeSameWaveDependency,
 						fmt.Sprintf("agent %s (wave %d) depends on %s (wave %d) — dependencies must be in prior waves", agent.ID, wave.Number, dep, depWave),
 					).
 						WithContext("slug", slug).
@@ -161,7 +161,7 @@ func validateI2AgentDependencies(m *IMPLManifest, slug string) []result.SAWError
 			depWave, exists := agentWave[depAgent]
 			if !exists {
 				ve := result.NewError(
-					"I2_MISSING_DEP",
+					result.CodeSameWaveDependency,
 					fmt.Sprintf("file %q (agent %s, wave %d) depends on unknown agent %q", fo.File, fo.Agent, fo.Wave, depAgent),
 				).
 					WithContext("slug", slug).
@@ -171,7 +171,7 @@ func validateI2AgentDependencies(m *IMPLManifest, slug string) []result.SAWError
 				errs = append(errs, ve)
 			} else if depWave >= fo.Wave {
 				ve := result.NewError(
-					"I2_WAVE_ORDER",
+					result.CodeSameWaveDependency,
 					fmt.Sprintf("file %q (agent %s, wave %d) depends on agent %s (wave %d) — dependencies must be in prior waves", fo.File, fo.Agent, fo.Wave, depAgent, depWave),
 				).
 					WithContext("slug", slug).
@@ -199,7 +199,7 @@ func validateI3WaveOrdering(m *IMPLManifest) []result.SAWError {
 		expected := i + 1
 		if wave.Number != expected {
 			errs = append(errs, result.SAWError{
-				Code:     "I3_WAVE_ORDER",
+				Code:     result.CodeWaveNotOneIndexed,
 				Message:  fmt.Sprintf("wave number mismatch: expected wave %d, got wave %d", expected, wave.Number),
 				Severity: "error",
 				Field:    fmt.Sprintf("waves[%d].number", i),
@@ -216,7 +216,7 @@ func validateI4RequiredFields(m *IMPLManifest) []result.SAWError {
 
 	if strings.TrimSpace(m.Title) == "" {
 		errs = append(errs, result.SAWError{
-			Code:     "I4_MISSING_FIELD",
+			Code:     result.CodeRequiredFieldsMissing,
 			Message:  "title is required",
 			Severity: "error",
 			Field:    "title",
@@ -225,14 +225,14 @@ func validateI4RequiredFields(m *IMPLManifest) []result.SAWError {
 
 	if strings.TrimSpace(m.FeatureSlug) == "" {
 		errs = append(errs, result.SAWError{
-			Code:     "I4_MISSING_FIELD",
+			Code:     result.CodeRequiredFieldsMissing,
 			Message:  "feature_slug is required",
 			Severity: "error",
 			Field:    "feature_slug",
 		})
 	} else if !featureSlugRegex.MatchString(m.FeatureSlug) {
 		errs = append(errs, result.SAWError{
-			Code:     "I4_INVALID_FORMAT",
+			Code:     result.CodeInvalidFieldValue,
 			Message:  fmt.Sprintf("feature_slug %q must be kebab-case (lowercase letters, digits, hyphens; no leading/trailing hyphens)", m.FeatureSlug),
 			Severity: "error",
 			Field:    "feature_slug",
@@ -241,7 +241,7 @@ func validateI4RequiredFields(m *IMPLManifest) []result.SAWError {
 
 	if strings.TrimSpace(m.Verdict) == "" {
 		errs = append(errs, result.SAWError{
-			Code:     "I4_MISSING_FIELD",
+			Code:     result.CodeRequiredFieldsMissing,
 			Message:  "verdict is required",
 			Severity: "error",
 			Field:    "verdict",
@@ -255,7 +255,7 @@ func validateI4RequiredFields(m *IMPLManifest) []result.SAWError {
 		}
 		if !validVerdicts[m.Verdict] {
 			errs = append(errs, result.SAWError{
-				Code:     "I4_INVALID_VALUE",
+				Code:     result.CodeInvalidFieldValue,
 				Message:  fmt.Sprintf("verdict must be SUITABLE, NOT_SUITABLE, or SUITABLE_WITH_CAVEATS, got %q", m.Verdict),
 				Severity: "error",
 				Field:    "verdict",
@@ -282,7 +282,7 @@ func validateI5FileOwnershipComplete(m *IMPLManifest) []result.SAWError {
 			for _, file := range agent.Files {
 				if !ownedFiles[file] {
 					errs = append(errs, result.SAWError{
-						Code:     "I5_ORPHAN_FILE",
+						Code:     result.CodeOrphanFile,
 						Message:  fmt.Sprintf("agent %s (wave %d) references file %q which is not in file_ownership table", agent.ID, wave.Number, file),
 						Severity: "error",
 						Field:    fmt.Sprintf("waves[%d].agents[%s].files", wave.Number-1, agent.ID),
@@ -348,7 +348,7 @@ func validateI6NoCycles(m *IMPLManifest) []result.SAWError {
 		if !visited[agent] {
 			if cycle := dfs(agent, nil); cycle != nil {
 				errs = append(errs, result.SAWError{
-					Code:     "I6_CYCLE",
+					Code:     result.CodeDependencyCycle,
 					Message:  fmt.Sprintf("dependency cycle detected: %s", strings.Join(cycle, " -> ")),
 					Severity: "error",
 					Field:    "waves",
@@ -370,7 +370,7 @@ func validateI5CommitBeforeReport(m *IMPLManifest) []result.SAWError {
 	for agentID, report := range m.CompletionReports {
 		if strings.TrimSpace(report.Commit) == "" || report.Commit == "uncommitted" {
 			errs = append(errs, result.SAWError{
-				Code:     "I5_UNCOMMITTED",
+				Code:     result.CodeCommitMissing,
 				Message:  fmt.Sprintf("agent %s completion report has no valid commit (commit=%q) — agents must commit before reporting", agentID, report.Commit),
 				Severity: "error",
 				Field:    fmt.Sprintf("completion_reports[%s].commit", agentID),
@@ -401,7 +401,7 @@ func validateE9MergeState(m *IMPLManifest) []result.SAWError {
 
 	if !validStates[m.MergeState] {
 		errs = append(errs, result.SAWError{
-			Code:     "E9_INVALID_MERGE_STATE",
+			Code:     result.CodeInvalidMergeState,
 			Message:  fmt.Sprintf("merge_state has invalid value %q — must be one of: idle, in_progress, completed, failed", m.MergeState),
 			Severity: "error",
 			Field:    "merge_state",
@@ -437,7 +437,7 @@ func validateSM01StateValid(m *IMPLManifest) []result.SAWError {
 
 	if !validStates[m.State] {
 		errs = append(errs, result.SAWError{
-			Code:     "SM01_INVALID_STATE",
+			Code:     result.CodeInvalidState,
 			Message:  fmt.Sprintf("state has invalid value %q — must be one of: SCOUT_PENDING, SCOUT_VALIDATING, REVIEWED, SCAFFOLD_PENDING, WAVE_PENDING, WAVE_EXECUTING, WAVE_MERGING, WAVE_VERIFIED, BLOCKED, COMPLETE, NOT_SUITABLE", m.State),
 			Severity: "error",
 			Field:    "state",
@@ -458,7 +458,7 @@ func validateAgentIDs(m *IMPLManifest) []result.SAWError {
 		for _, agent := range wave.Agents {
 			if !agentIDRegex.MatchString(agent.ID) {
 				errs = append(errs, result.SAWError{
-					Code:     "DC04_INVALID_AGENT_ID",
+					Code:     result.CodeInvalidAgentID,
 					Message:  fmt.Sprintf("agent ID %q in wave %d does not match protocol pattern ^[A-Z][2-9]?$ (one uppercase letter, optionally followed by digit 2-9)", agent.ID, wave.Number),
 					Severity: "error",
 					Field:    fmt.Sprintf("waves[%d].agents[%s].id", wave.Number-1, agent.ID),
@@ -475,7 +475,7 @@ func validateAgentIDs(m *IMPLManifest) []result.SAWError {
 		}
 		if !agentIDRegex.MatchString(fo.Agent) {
 			errs = append(errs, result.SAWError{
-				Code:     "DC04_INVALID_AGENT_ID",
+				Code:     result.CodeInvalidAgentID,
 				Message:  fmt.Sprintf("agent ID %q in file_ownership entry %d (file=%q) does not match protocol pattern ^[A-Z][2-9]?$", fo.Agent, i, fo.File),
 				Severity: "error",
 				Field:    fmt.Sprintf("file_ownership[%d].agent", i),
@@ -487,7 +487,7 @@ func validateAgentIDs(m *IMPLManifest) []result.SAWError {
 	for agentID := range m.CompletionReports {
 		if !agentIDRegex.MatchString(agentID) {
 			errs = append(errs, result.SAWError{
-				Code:     "DC04_INVALID_AGENT_ID",
+				Code:     result.CodeInvalidAgentID,
 				Message:  fmt.Sprintf("agent ID %q in completion_reports does not match protocol pattern ^[A-Z][2-9]?$", agentID),
 				Severity: "error",
 				Field:    fmt.Sprintf("completion_reports[%s]", agentID),
@@ -560,7 +560,7 @@ func validateMultiRepoConsistency(m *IMPLManifest) []result.SAWError {
 			suffix = " ..."
 		}
 		errs = append(errs, result.SAWError{
-			Code:     "MR01_INCONSISTENT_REPO",
+			Code:     result.CodeInconsistentRepo,
 			Message:  fmt.Sprintf("file_ownership has mixed repo tags: some entries have repo: and some don't — add explicit repo: to all entries (missing on: %s%s)", strings.Join(missing, ", "), suffix),
 			Severity: "error",
 			Field:    "file_ownership",
@@ -581,7 +581,7 @@ func validateMultiRepoConsistency(m *IMPLManifest) []result.SAWError {
 			for i, gate := range m.QualityGates.Gates {
 				if gate.Repo == "" {
 					errs = append(errs, result.SAWError{
-						Code:     "MR02_UNSCOPED_GATE",
+						Code:     result.CodeUnscopedGate,
 						Message:  fmt.Sprintf("quality_gates.gates[%d] (%s): multi-repo IMPL requires repo: on every gate — without it, '%s' runs in all repos including docs-only repos with no build system", i, gate.Type, gate.Command),
 						Severity: "error",
 						Field:    fmt.Sprintf("quality_gates.gates[%d].repo", i),
@@ -626,7 +626,7 @@ func validateGateTypes(m *IMPLManifest) []result.SAWError {
 	for i, gate := range m.QualityGates.Gates {
 		if !ValidGateTypes[gate.Type] {
 			errs = append(errs, result.SAWError{
-				Code:     "DC07_INVALID_GATE_TYPE",
+				Code:     result.CodeInvalidGateType,
 				Message:  fmt.Sprintf("quality gate type %q is invalid — must be one of: build, lint, test, typecheck, format, custom", gate.Type),
 				Severity: "error",
 				Field:    fmt.Sprintf("quality_gates.gates[%d].type", i),

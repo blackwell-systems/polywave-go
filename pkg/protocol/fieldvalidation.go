@@ -64,7 +64,7 @@ func ValidateWorktreeNames(m *IMPLManifest) []result.SAWError {
 			matches := worktreeBranchRegex.FindStringSubmatch(report.Branch)
 			if matches == nil {
 				errs = append(errs, result.SAWError{
-					Code:     "E5_INVALID_WORKTREE_NAME",
+					Code:     result.CodeInvalidWorktreeName,
 					Severity: "error",
 					Message:  fmt.Sprintf("agent %s branch %q does not match pattern wave{N}-agent-{ID} or saw/{slug}/wave{N}-agent-{ID}", agentID, report.Branch),
 					Field:    fmt.Sprintf("completion_reports[%s].branch", agentID),
@@ -79,7 +79,7 @@ func ValidateWorktreeNames(m *IMPLManifest) []result.SAWError {
 				expectedWave := fmt.Sprintf("%d", waveNum)
 				if branchWave != expectedWave {
 					errs = append(errs, result.SAWError{
-						Code:     "E5_INVALID_WORKTREE_NAME",
+						Code:     result.CodeInvalidWorktreeName,
 						Severity: "error",
 						Message:  fmt.Sprintf("agent %s (wave %d) branch %q has wrong wave number (expected wave%s-agent-%s)", agentID, waveNum, report.Branch, expectedWave, agentID),
 						Field:    fmt.Sprintf("completion_reports[%s].branch", agentID),
@@ -90,7 +90,7 @@ func ValidateWorktreeNames(m *IMPLManifest) []result.SAWError {
 				// Validate agent ID matches
 				if branchAgent != agentID {
 					errs = append(errs, result.SAWError{
-						Code:     "E5_INVALID_WORKTREE_NAME",
+						Code:     result.CodeInvalidWorktreeName,
 						Severity: "error",
 						Message:  fmt.Sprintf("agent %s branch %q has wrong agent ID (expected wave%s-agent-%s)", agentID, report.Branch, expectedWave, agentID),
 						Field:    fmt.Sprintf("completion_reports[%s].branch", agentID),
@@ -119,7 +119,7 @@ func ValidateWorktreeNames(m *IMPLManifest) []result.SAWError {
 
 			if !found {
 				errs = append(errs, result.SAWError{
-					Code:     "E5_INVALID_WORKTREE_PATH",
+					Code:     result.CodeInvalidWorktreeName,
 					Severity: "error",
 					Message:  fmt.Sprintf("agent %s worktree path %q does not contain expected segment %q", agentID, report.Worktree, expectedSegment),
 					Field:    fmt.Sprintf("completion_reports[%s].worktree", agentID),
@@ -161,7 +161,7 @@ func ValidateVerificationField(m *IMPLManifest) []result.SAWError {
 		// Validate format
 		if !verificationRegex.MatchString(report.Verification) {
 			errs = append(errs, result.SAWError{
-				Code:     "E10_INVALID_VERIFICATION",
+				Code:     result.CodeInvalidVerification,
 				Severity: "error",
 				Message:  fmt.Sprintf("agent %s verification field %q does not match format 'PASS' or 'FAIL (details)'", agentID, report.Verification),
 				Field:    fmt.Sprintf("completion_reports[%s].verification", agentID),

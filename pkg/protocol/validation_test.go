@@ -36,7 +36,7 @@ func TestValidateI1DisjointOwnership_Violation(t *testing.T) {
 	if len(errs) != 1 {
 		t.Fatalf("Expected 1 error, got %d: %v", len(errs), errs)
 	}
-	if errs[0].Code != "I1_VIOLATION" {
+	if errs[0].Code != result.CodeDisjointOwnership {
 		t.Errorf("Expected I1_VIOLATION, got %s", errs[0].Code)
 	}
 	if errs[0].Field != "file_ownership" {
@@ -88,7 +88,7 @@ func TestValidateI2AgentDependencies_MissingDep(t *testing.T) {
 	if len(errs) != 1 {
 		t.Fatalf("Expected 1 error, got %d: %v", len(errs), errs)
 	}
-	if errs[0].Code != "I2_MISSING_DEP" {
+	if errs[0].Code != result.CodeSameWaveDependency {
 		t.Errorf("Expected I2_MISSING_DEP, got %s", errs[0].Code)
 	}
 }
@@ -111,7 +111,7 @@ func TestValidateI2AgentDependencies_SameWave(t *testing.T) {
 	if len(errs) != 1 {
 		t.Fatalf("Expected 1 error, got %d: %v", len(errs), errs)
 	}
-	if errs[0].Code != "I2_WAVE_ORDER" {
+	if errs[0].Code != result.CodeSameWaveDependency {
 		t.Errorf("Expected I2_WAVE_ORDER, got %s", errs[0].Code)
 	}
 }
@@ -139,7 +139,7 @@ func TestValidateI2AgentDependencies_FutureWave(t *testing.T) {
 	if len(errs) != 1 {
 		t.Fatalf("Expected 1 error, got %d: %v", len(errs), errs)
 	}
-	if errs[0].Code != "I2_WAVE_ORDER" {
+	if errs[0].Code != result.CodeSameWaveDependency {
 		t.Errorf("Expected I2_WAVE_ORDER, got %s", errs[0].Code)
 	}
 }
@@ -161,7 +161,7 @@ func TestValidateI2AgentDependencies_FileOwnership(t *testing.T) {
 	if len(errs) != 1 {
 		t.Fatalf("Expected 1 error, got %d: %v", len(errs), errs)
 	}
-	if errs[0].Code != "I2_MISSING_DEP" {
+	if errs[0].Code != result.CodeSameWaveDependency {
 		t.Errorf("Expected I2_MISSING_DEP, got %s", errs[0].Code)
 	}
 }
@@ -195,7 +195,7 @@ func TestValidateI3WaveOrdering_SkippedWave(t *testing.T) {
 	if len(errs) != 1 {
 		t.Fatalf("Expected 1 error, got %d: %v", len(errs), errs)
 	}
-	if errs[0].Code != "I3_WAVE_ORDER" {
+	if errs[0].Code != result.CodeWaveNotOneIndexed {
 		t.Errorf("Expected I3_WAVE_ORDER, got %s", errs[0].Code)
 	}
 }
@@ -238,7 +238,7 @@ func TestValidateI4RequiredFields_MissingTitle(t *testing.T) {
 	if len(errs) != 1 {
 		t.Fatalf("Expected 1 error, got %d: %v", len(errs), errs)
 	}
-	if errs[0].Code != "I4_MISSING_FIELD" {
+	if errs[0].Code != result.CodeRequiredFieldsMissing {
 		t.Errorf("Expected I4_MISSING_FIELD, got %s", errs[0].Code)
 	}
 	if errs[0].Field != "title" {
@@ -272,7 +272,7 @@ func TestValidateI4RequiredFields_InvalidVerdict(t *testing.T) {
 	if len(errs) != 1 {
 		t.Fatalf("Expected 1 error, got %d: %v", len(errs), errs)
 	}
-	if errs[0].Code != "I4_INVALID_VALUE" {
+	if errs[0].Code != result.CodeInvalidFieldValue {
 		t.Errorf("Expected I4_INVALID_VALUE, got %s", errs[0].Code)
 	}
 }
@@ -339,7 +339,7 @@ func TestValidateI5FileOwnershipComplete_OrphanFile(t *testing.T) {
 	if len(errs) != 1 {
 		t.Fatalf("Expected 1 error, got %d: %v", len(errs), errs)
 	}
-	if errs[0].Code != "I5_ORPHAN_FILE" {
+	if errs[0].Code != result.CodeOrphanFile {
 		t.Errorf("Expected I5_ORPHAN_FILE, got %s", errs[0].Code)
 	}
 }
@@ -378,7 +378,7 @@ func TestValidateI6NoCycles_SimpleCycle(t *testing.T) {
 	if len(errs) != 1 {
 		t.Fatalf("Expected 1 error, got %d: %v", len(errs), errs)
 	}
-	if errs[0].Code != "I6_CYCLE" {
+	if errs[0].Code != result.CodeDependencyCycle {
 		t.Errorf("Expected I6_CYCLE, got %s", errs[0].Code)
 	}
 }
@@ -402,7 +402,7 @@ func TestValidateI6NoCycles_ComplexCycle(t *testing.T) {
 	if len(errs) != 1 {
 		t.Fatalf("Expected 1 error, got %d: %v", len(errs), errs)
 	}
-	if errs[0].Code != "I6_CYCLE" {
+	if errs[0].Code != result.CodeDependencyCycle {
 		t.Errorf("Expected I6_CYCLE, got %s", errs[0].Code)
 	}
 }
@@ -501,7 +501,7 @@ func TestValidate_MultipleErrors(t *testing.T) {
 		codes[err.Code] = true
 	}
 
-	expectedCodes := []string{"I1_VIOLATION", "I2_MISSING_DEP", "I3_WAVE_ORDER", "I4_MISSING_FIELD", "I5_ORPHAN_FILE"}
+	expectedCodes := []string{result.CodeDisjointOwnership, result.CodeSameWaveDependency, result.CodeWaveNotOneIndexed, result.CodeRequiredFieldsMissing, result.CodeOrphanFile}
 	for _, code := range expectedCodes {
 		if !codes[code] {
 			t.Errorf("Expected error code %s, but it was not found in errors: %v", code, errs)
@@ -521,7 +521,7 @@ func TestValidate_EmptyManifest(t *testing.T) {
 
 	foundI4 := false
 	for _, err := range errs {
-		if err.Code == "I4_MISSING_FIELD" {
+		if err.Code == result.CodeRequiredFieldsMissing {
 			foundI4 = true
 			break
 		}
@@ -612,7 +612,7 @@ func TestValidateI5CommitBeforeReport_Uncommitted(t *testing.T) {
 	if len(errs) != 1 {
 		t.Fatalf("Expected 1 error, got %d: %v", len(errs), errs)
 	}
-	if errs[0].Code != "I5_UNCOMMITTED" {
+	if errs[0].Code != result.CodeCommitMissing {
 		t.Errorf("Expected I5_UNCOMMITTED, got %s", errs[0].Code)
 	}
 }
@@ -631,7 +631,7 @@ func TestValidateI5CommitBeforeReport_Empty(t *testing.T) {
 		t.Fatalf("Expected 2 errors, got %d: %v", len(errs), errs)
 	}
 	for _, err := range errs {
-		if err.Code != "I5_UNCOMMITTED" {
+		if err.Code != result.CodeCommitMissing {
 			t.Errorf("Expected I5_UNCOMMITTED, got %s", err.Code)
 		}
 	}
@@ -663,7 +663,7 @@ func TestValidateE9MergeState_Invalid(t *testing.T) {
 	if len(errs) != 1 {
 		t.Fatalf("Expected 1 error, got %d: %v", len(errs), errs)
 	}
-	if errs[0].Code != "E9_INVALID_MERGE_STATE" {
+	if errs[0].Code != result.CodeInvalidMergeState {
 		t.Errorf("Expected E9_INVALID_MERGE_STATE, got %s", errs[0].Code)
 	}
 }
@@ -711,7 +711,7 @@ func TestValidateSM01StateValid_Invalid(t *testing.T) {
 	if len(errs) != 1 {
 		t.Fatalf("Expected 1 error, got %d: %v", len(errs), errs)
 	}
-	if errs[0].Code != "SM01_INVALID_STATE" {
+	if errs[0].Code != result.CodeInvalidState {
 		t.Errorf("Expected SM01_INVALID_STATE, got %s", errs[0].Code)
 	}
 }
@@ -773,7 +773,7 @@ func TestValidateAgentIDs_InvalidLowercase(t *testing.T) {
 	if len(errs) != 1 {
 		t.Fatalf("Expected 1 error, got %d: %v", len(errs), errs)
 	}
-	if errs[0].Code != "DC04_INVALID_AGENT_ID" {
+	if errs[0].Code != result.CodeInvalidAgentID {
 		t.Errorf("Expected DC04_INVALID_AGENT_ID, got %s", errs[0].Code)
 	}
 }
@@ -795,7 +795,7 @@ func TestValidateAgentIDs_InvalidMultiChar(t *testing.T) {
 	if len(errs) != 1 {
 		t.Fatalf("Expected 1 error, got %d: %v", len(errs), errs)
 	}
-	if errs[0].Code != "DC04_INVALID_AGENT_ID" {
+	if errs[0].Code != result.CodeInvalidAgentID {
 		t.Errorf("Expected DC04_INVALID_AGENT_ID, got %s", errs[0].Code)
 	}
 }
@@ -817,7 +817,7 @@ func TestValidateAgentIDs_InvalidDigit1(t *testing.T) {
 	if len(errs) != 1 {
 		t.Fatalf("Expected 1 error, got %d: %v", len(errs), errs)
 	}
-	if errs[0].Code != "DC04_INVALID_AGENT_ID" {
+	if errs[0].Code != result.CodeInvalidAgentID {
 		t.Errorf("Expected DC04_INVALID_AGENT_ID, got %s", errs[0].Code)
 	}
 }
@@ -839,7 +839,7 @@ func TestValidateAgentIDs_InvalidDigit0(t *testing.T) {
 	if len(errs) != 1 {
 		t.Fatalf("Expected 1 error, got %d: %v", len(errs), errs)
 	}
-	if errs[0].Code != "DC04_INVALID_AGENT_ID" {
+	if errs[0].Code != result.CodeInvalidAgentID {
 		t.Errorf("Expected DC04_INVALID_AGENT_ID, got %s", errs[0].Code)
 	}
 }
@@ -861,7 +861,7 @@ func TestValidateAgentIDs_Empty(t *testing.T) {
 	if len(errs) != 1 {
 		t.Fatalf("Expected 1 error, got %d: %v", len(errs), errs)
 	}
-	if errs[0].Code != "DC04_INVALID_AGENT_ID" {
+	if errs[0].Code != result.CodeInvalidAgentID {
 		t.Errorf("Expected DC04_INVALID_AGENT_ID, got %s", errs[0].Code)
 	}
 }
@@ -878,7 +878,7 @@ func TestValidateAgentIDs_FileOwnership(t *testing.T) {
 	if len(errs) != 1 {
 		t.Fatalf("Expected 1 error, got %d: %v", len(errs), errs)
 	}
-	if errs[0].Code != "DC04_INVALID_AGENT_ID" {
+	if errs[0].Code != result.CodeInvalidAgentID {
 		t.Errorf("Expected DC04_INVALID_AGENT_ID, got %s", errs[0].Code)
 	}
 	if !testContains(errs[0].Field, "file_ownership") {
@@ -898,7 +898,7 @@ func TestValidateAgentIDs_CompletionReports(t *testing.T) {
 	if len(errs) != 1 {
 		t.Fatalf("Expected 1 error, got %d: %v", len(errs), errs)
 	}
-	if errs[0].Code != "DC04_INVALID_AGENT_ID" {
+	if errs[0].Code != result.CodeInvalidAgentID {
 		t.Errorf("Expected DC04_INVALID_AGENT_ID, got %s", errs[0].Code)
 	}
 	if !testContains(errs[0].Field, "completion_reports") {
@@ -981,7 +981,7 @@ func TestValidateGateTypes_Invalid(t *testing.T) {
 	if len(errs) != 1 {
 		t.Fatalf("Expected 1 error, got %d: %v", len(errs), errs)
 	}
-	if errs[0].Code != "DC07_INVALID_GATE_TYPE" {
+	if errs[0].Code != result.CodeInvalidGateType {
 		t.Errorf("Expected DC07_INVALID_GATE_TYPE, got %s", errs[0].Code)
 	}
 }
@@ -1013,7 +1013,7 @@ func TestValidateGateTypes_EmptyType(t *testing.T) {
 	if len(errs) != 1 {
 		t.Fatalf("Expected 1 error, got %d: %v", len(errs), errs)
 	}
-	if errs[0].Code != "DC07_INVALID_GATE_TYPE" {
+	if errs[0].Code != result.CodeInvalidGateType {
 		t.Errorf("Expected DC07_INVALID_GATE_TYPE, got %s", errs[0].Code)
 	}
 }
@@ -1117,7 +1117,7 @@ func TestValidateMultiRepoConsistency_Mixed(t *testing.T) {
 	if len(errs) != 1 {
 		t.Fatalf("Expected 1 error, got %d: %v", len(errs), errs)
 	}
-	if errs[0].Code != "MR01_INCONSISTENT_REPO" {
+	if errs[0].Code != result.CodeInconsistentRepo {
 		t.Errorf("Expected MR01_INCONSISTENT_REPO, got %s", errs[0].Code)
 	}
 }
@@ -1144,7 +1144,7 @@ verdict: SUITABLE
 	if len(errs) != 1 {
 		t.Fatalf("Expected 1 error, got %d: %v", len(errs), errs)
 	}
-	if errs[0].Code != "E16_DUPLICATE_KEY" {
+	if errs[0].Code != result.CodeDuplicateKey {
 		t.Errorf("Expected E16_DUPLICATE_KEY, got %s", errs[0].Code)
 	}
 	if errs[0].Field != "state" {
@@ -1167,7 +1167,7 @@ func TestValidate_E16Enhancements_InvalidAction(t *testing.T) {
 	if len(errs) != 1 {
 		t.Fatalf("Expected 1 error, got %d: %v", len(errs), errs)
 	}
-	if errs[0].Code != "E16_INVALID_ACTION" {
+	if errs[0].Code != result.CodeInvalidActionEnum {
 		t.Errorf("Expected E16_INVALID_ACTION, got %s", errs[0].Code)
 	}
 }
@@ -1188,7 +1188,7 @@ func TestValidate_E16Enhancements_MissingChecklist(t *testing.T) {
 	if len(errs) != 1 {
 		t.Fatalf("Expected 1 error, got %d: %v", len(errs), errs)
 	}
-	if errs[0].Code != "E16_MISSING_CHECKLIST" {
+	if errs[0].Code != result.CodeMissingChecklist {
 		t.Errorf("Expected E16_MISSING_CHECKLIST, got %s", errs[0].Code)
 	}
 	if errs[0].Field != "post_merge_checklist" {
@@ -1260,7 +1260,7 @@ func TestFeatureSlugKebabValidation(t *testing.T) {
 			}
 			errs := validateI4RequiredFields(m)
 			for _, e := range errs {
-				if e.Code == "I4_INVALID_FORMAT" {
+				if e.Code == result.CodeInvalidFieldValue {
 					t.Errorf("valid slug %q should not produce I4_INVALID_FORMAT, got: %v", slug, e.Message)
 				}
 			}
@@ -1283,7 +1283,7 @@ func TestFeatureSlugKebabValidation(t *testing.T) {
 			errs := validateI4RequiredFields(m)
 			found := false
 			for _, e := range errs {
-				if e.Code == "I4_INVALID_FORMAT" && e.Field == "feature_slug" {
+				if e.Code == result.CodeInvalidFieldValue && e.Field == "feature_slug" {
 					found = true
 					break
 				}

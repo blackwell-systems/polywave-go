@@ -158,7 +158,7 @@ func TestValidateWithSolver_IncludesBaseValidation(t *testing.T) {
 	)
 
 	errs := ValidateWithSolver(m)
-	if !hasErrorCode(errs, "I4_MISSING_FIELD") {
+	if !hasErrorCode(errs, result.CodeRequiredFieldsMissing) {
 		t.Errorf("expected I4_MISSING_FIELD error from base validation, got: %+v", errs)
 	}
 	// Should have no solver errors (graph is valid and optimal).
@@ -406,12 +406,12 @@ func TestRoundTrip_SolveAndApply(t *testing.T) {
 	)
 
 	nodes := manifestToNodes(m)
-	result := solver.Solve(nodes)
-	if !result.Valid {
-		t.Fatalf("solver failed: %v", result.Errors)
+	solveResult := solver.Solve(nodes)
+	if !solveResult.Valid {
+		t.Fatalf("solver failed: %v", solveResult.Errors)
 	}
 
-	fixed, err := applyResult(result, m)
+	fixed, err := applyResult(solveResult, m)
 	if err != nil {
 		t.Fatalf("applyResult error: %v", err)
 	}
@@ -419,7 +419,7 @@ func TestRoundTrip_SolveAndApply(t *testing.T) {
 	// The fixed manifest should pass I2 and I3 validation.
 	errs := Validate(fixed)
 	for _, e := range errs {
-		if e.Code == "I2_WAVE_ORDER" || e.Code == "I3_WAVE_ORDER" {
+		if e.Code == result.CodeSameWaveDependency || e.Code == result.CodeWaveNotOneIndexed {
 			t.Errorf("fixed manifest has ordering error: %+v", e)
 		}
 	}

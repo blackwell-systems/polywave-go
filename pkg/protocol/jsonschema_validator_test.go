@@ -2,6 +2,8 @@ package protocol
 
 import (
 	"testing"
+
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
 )
 
 // validManifestForJS returns a minimal but complete manifest that should pass
@@ -420,7 +422,7 @@ func TestValidateManifestJSON_ConsistentWithValidate(t *testing.T) {
 		allErrs := Validate(m)
 		foundAgentIDErr := false
 		for _, e := range allErrs {
-			if e.Code == "DC04_INVALID_AGENT_ID" {
+			if e.Code == result.CodeInvalidAgentID {
 				foundAgentIDErr = true
 				break
 			}
