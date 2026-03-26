@@ -47,7 +47,7 @@ func ValidateCompletionReportClaims(
 		if err != nil {
 			data.Valid = false
 			errs = append(errs, result.SAWError{
-				Code:     "E001",
+				Code:     result.CodeCommitMissing,
 				Message:  fmt.Sprintf("commit %s does not exist in repository: %v", report.Commit, err),
 				Severity: "fatal",
 				Field:    "commit",
@@ -110,7 +110,7 @@ func ValidateCompletionReportClaims(
 		if !ownedFiles[f] && !frozenPaths[f] {
 			data.Valid = false
 			errs = append(errs, result.SAWError{
-				Code:     "E002",
+				Code:     result.CodeDisjointOwnership,
 				Message:  fmt.Sprintf("file %s in files_changed is not in agent %s owned files or frozen scaffold paths", f, agentID),
 				Severity: "fatal",
 				Field:    "files_changed",
@@ -125,7 +125,7 @@ func ValidateCompletionReportClaims(
 		if _, err := os.Stat(fullPath); os.IsNotExist(err) {
 			data.Valid = false
 			errs = append(errs, result.SAWError{
-				Code:     "E003",
+				Code:     result.CodeCompletionReportMissing,
 				Message:  fmt.Sprintf("file %s in files_created does not exist on disk at %s", f, fullPath),
 				Severity: "fatal",
 				Field:    "files_created",

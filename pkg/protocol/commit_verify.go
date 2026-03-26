@@ -46,7 +46,7 @@ func VerifyCommits(manifestPath string, waveNum int, repoDir string) result.Resu
 	if err != nil {
 		return result.NewFailure[VerifyCommitsData]([]result.SAWError{
 			{
-				Code:     "E101",
+				Code:     result.CodeIMPLParseFailed,
 				Message:  fmt.Sprintf("failed to load manifest: %v", err),
 				Severity: "fatal",
 			},
@@ -65,7 +65,7 @@ func VerifyCommits(manifestPath string, waveNum int, repoDir string) result.Resu
 	if targetWave == nil {
 		return result.NewFailure[VerifyCommitsData]([]result.SAWError{
 			{
-				Code:     "E102",
+				Code:     result.CodeWaveNotReady,
 				Message:  fmt.Sprintf("wave %d not found in manifest", waveNum),
 				Severity: "fatal",
 			},
@@ -78,7 +78,7 @@ func VerifyCommits(manifestPath string, waveNum int, repoDir string) result.Resu
 	if err != nil {
 		return result.NewFailure[VerifyCommitsData]([]result.SAWError{
 			{
-				Code:     "E103",
+				Code:     result.CodeWorktreeCreateFailed,
 				Message:  fmt.Sprintf("failed to resolve repo dir: %v", err),
 				Severity: "fatal",
 			},
@@ -121,7 +121,7 @@ func VerifyCommits(manifestPath string, waveNum int, repoDir string) result.Resu
 		if err != nil {
 			return result.NewFailure[VerifyCommitsData]([]result.SAWError{
 				{
-					Code:     "E104",
+					Code:     result.CodeCommitMissing,
 					Message:  fmt.Sprintf("failed to get base commit: %v", err),
 					Severity: "fatal",
 				},
