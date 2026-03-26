@@ -126,7 +126,7 @@ func checkWaveExists(m *protocol.IMPLManifest, waveNum int) PreLaunchCheck {
 	if m.CompletionReports != nil && len(wave.Agents) > 0 {
 		completedCount := 0
 		for _, agent := range wave.Agents {
-			if report, ok := m.CompletionReports[agent.ID]; ok && report.Status == "complete" {
+			if report, ok := m.CompletionReports[agent.ID]; ok && report.Status == protocol.StatusComplete {
 				completedCount++
 			}
 		}

@@ -41,7 +41,7 @@ func ValidateIntegration(manifest *IMPLManifest, waveNum int, repoPath string) (
 		if !ok {
 			continue
 		}
-		if cr.Status != "complete" {
+		if cr.Status != StatusComplete {
 			continue
 		}
 

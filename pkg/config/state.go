@@ -55,11 +55,11 @@ func GetWaveState(manifest *protocol.IMPLManifest, waveNum int) result.Result[*W
 			continue
 		}
 		switch report.Status {
-		case "blocked":
+		case protocol.StatusBlocked:
 			failed = append(failed, id)
-		case "partial":
+		case protocol.StatusPartial:
 			failed = append(failed, id)
-		case "complete":
+		case protocol.StatusComplete:
 			completed = append(completed, id)
 		default:
 			// Unknown status treated as pending.

@@ -114,8 +114,8 @@ func TestManifestLoadSave(t *testing.T) {
 
 	// Verify completion report contents
 	if report, ok := loaded.CompletionReports["A"]; ok {
-		if report.Status != "complete" {
-			t.Errorf("CompletionReport[A].Status = %q, want %q", report.Status, "complete")
+		if report.Status != StatusComplete {
+			t.Errorf("CompletionReport[A].Status = %q, want %q", report.Status, StatusComplete)
 		}
 		if report.Commit != "def456" {
 			t.Errorf("CompletionReport[A].Commit = %q, want %q", report.Commit, "def456")
@@ -286,8 +286,8 @@ func TestManifestSetCompletionReport(t *testing.T) {
 	// Verify report was stored
 	if stored, ok := manifest.CompletionReports["A"]; !ok {
 		t.Error("Report for agent A not stored")
-	} else if stored.Status != "complete" {
-		t.Errorf("Stored report status = %q, want %q", stored.Status, "complete")
+	} else if stored.Status != StatusComplete {
+		t.Errorf("Stored report status = %q, want %q", stored.Status, StatusComplete)
 	}
 
 	// Test invalid agent
@@ -317,8 +317,8 @@ func TestManifestSetCompletionReport(t *testing.T) {
 		t.Errorf("SetCompletionReport(A) update failed: %v", err)
 	}
 
-	if stored := manifest.CompletionReports["A"]; stored.Status != "partial" {
-		t.Errorf("Updated report status = %q, want %q", stored.Status, "partial")
+	if stored := manifest.CompletionReports["A"]; stored.Status != StatusPartial {
+		t.Errorf("Updated report status = %q, want %q", stored.Status, StatusPartial)
 	}
 }
 
@@ -393,8 +393,8 @@ func TestManifestJSONMarshal(t *testing.T) {
 	if len(decoded.Waves) != len(manifest.Waves) {
 		t.Errorf("JSON roundtrip: Waves length = %d, want %d", len(decoded.Waves), len(manifest.Waves))
 	}
-	if decoded.CompletionReports["A"].Status != "complete" {
-		t.Errorf("JSON roundtrip: CompletionReports[A].Status = %q, want %q", decoded.CompletionReports["A"].Status, "complete")
+	if decoded.CompletionReports["A"].Status != StatusComplete {
+		t.Errorf("JSON roundtrip: CompletionReports[A].Status = %q, want %q", decoded.CompletionReports["A"].Status, StatusComplete)
 	}
 }
 
