@@ -3,6 +3,7 @@ package protocol
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -120,7 +121,7 @@ func TestParseProgramManifest_FileNotFound(t *testing.T) {
 
 	// Verify error mentions file read failure
 	errMsg := err.Error()
-	if !contains(errMsg, "failed to read PROGRAM manifest file") {
+	if !strings.Contains(errMsg, "failed to read PROGRAM manifest file") {
 		t.Errorf("expected error to mention file read failure, got: %s", errMsg)
 	}
 }
@@ -145,7 +146,7 @@ func TestParseProgramManifest_InvalidYAML(t *testing.T) {
 
 	// Verify error mentions parse failure
 	errMsg := err.Error()
-	if !contains(errMsg, "failed to parse PROGRAM manifest YAML") {
+	if !strings.Contains(errMsg, "failed to parse PROGRAM manifest YAML") {
 		t.Errorf("expected error to mention YAML parse failure, got: %s", errMsg)
 	}
 }

@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
@@ -496,10 +497,10 @@ completion_reports:
 
 	// Error should be from VerifyCommits, NOT from stub detection
 	errMsg := err.Error()
-	if contains(errMsg, "stub") {
+	if strings.Contains(errMsg, "stub") {
 		t.Errorf("default behavior should not fail on stubs, but got: %v", err)
 	}
-	if contains(errMsg, "unconnected export") {
+	if strings.Contains(errMsg, "unconnected export") {
 		t.Errorf("default behavior should not fail on integration gaps, but got: %v", err)
 	}
 

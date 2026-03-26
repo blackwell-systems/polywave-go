@@ -3,6 +3,7 @@ package protocol
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"gopkg.in/yaml.v3"
@@ -298,7 +299,7 @@ func TestAmendImpl_RedirectAgent_NoBaseCommit(t *testing.T) {
 	}
 	found := false
 	for _, w := range data.Warnings {
-		if contains(w, "base_commit not set") {
+		if strings.Contains(w, "base_commit not set") {
 			found = true
 			break
 		}

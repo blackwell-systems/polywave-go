@@ -3,6 +3,7 @@ package protocol
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
@@ -822,10 +823,10 @@ func TestValidateP1FileDisjointness_SameTier(t *testing.T) {
 	if errs[0].Code != result.CodeP1FileOverlap {
 		t.Errorf("expected P1_FILE_OVERLAP, got %s", errs[0].Code)
 	}
-	if !contains(errs[0].Message, "pkg/shared.go") {
+	if !strings.Contains(errs[0].Message, "pkg/shared.go") {
 		t.Errorf("error message should mention conflicting file, got: %s", errs[0].Message)
 	}
-	if !contains(errs[0].Message, "feature-a") || !contains(errs[0].Message, "feature-b") {
+	if !strings.Contains(errs[0].Message, "feature-a") || !strings.Contains(errs[0].Message, "feature-b") {
 		t.Errorf("error message should mention both IMPLs, got: %s", errs[0].Message)
 	}
 }

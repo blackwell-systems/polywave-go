@@ -3,6 +3,7 @@ package engine
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
@@ -525,10 +526,10 @@ func TestAutoRemediate_ExtractErrorLog(t *testing.T) {
 	}
 
 	log := extractErrorLog(result)
-	if !contains(log, "test error") {
+	if !strings.Contains(log, "test error") {
 		t.Error("expected test output in error log")
 	}
-	if !contains(log, "lint: some warning") {
+	if !strings.Contains(log, "lint: some warning") {
 		t.Error("expected lint output in error log")
 	}
 
