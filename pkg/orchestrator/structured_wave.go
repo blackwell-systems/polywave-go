@@ -132,15 +132,18 @@ func (o *Orchestrator) launchAgentStructured(
 	var savedStatus string
 	var savedFailureType string
 
-	reportMu.Lock()
-	if manifest, loadErr := protocol.Load(o.implDocPath); loadErr == nil {
+	_ = protocol.WithCompletionReportLock(func() error {
+		manifest, loadErr := protocol.Load(o.implDocPath)
+		if loadErr != nil {
+			return loadErr
+		}
 		if r, ok := manifest.CompletionReports[protoAgent.ID]; ok {
 			savedStatus = r.Status
 			savedFailureType = r.FailureType
 			status = r.Status
 		}
-	}
-	reportMu.Unlock()
+		return nil
+	})
 
 	o.publish(OrchestratorEvent{
 		Event: "agent_complete",
