@@ -6,9 +6,9 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
-	"os/exec"
 	"strings"
 
+	"github.com/blackwell-systems/scout-and-wave-go/internal/git"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
 )
 
@@ -106,15 +106,14 @@ func isWorktreeDirty(path string, lockedPaths map[string]bool) bool {
 		return true
 	}
 
-	cmd := exec.Command("git", "-C", path, "status", "--porcelain")
-	out, err := cmd.Output()
+	out, err := git.StatusPorcelain(path)
 	if err != nil {
 		// Git command failed — treat as clean and log a warning.
 		slog.Default().Warn("resume: ClassifyWorktrees: git status failed", "path", path, "err", err)
 		return false
 	}
 
-	return strings.TrimSpace(string(out)) != ""
+	return out != ""
 }
 
 // resolveWorktreeBranch returns the current branch name (refs/heads/...) for the
@@ -149,12 +148,11 @@ func resolveWorktreeBranch(path string) string {
 
 // branchViaSymbolicRef uses `git symbolic-ref HEAD` to return the current branch.
 func branchViaSymbolicRef(path string) string {
-	cmd := exec.Command("git", "-C", path, "symbolic-ref", "HEAD")
-	out, err := cmd.Output()
+	branch, err := git.SymbolicRef(path)
 	if err != nil {
 		return ""
 	}
-	return strings.TrimSpace(string(out))
+	return branch
 }
 
 // detectLockedWorktreePaths runs `git worktree list --porcelain` using anyRepoPath
@@ -162,8 +160,7 @@ func branchViaSymbolicRef(path string) string {
 func detectLockedWorktreePaths(anyRepoPath string) map[string]bool {
 	locked := map[string]bool{}
 
-	cmd := exec.Command("git", "-C", anyRepoPath, "worktree", "list", "--porcelain")
-	out, err := cmd.Output()
+	out, err := git.WorktreeListRaw(anyRepoPath)
 	if err != nil {
 		return locked
 	}
