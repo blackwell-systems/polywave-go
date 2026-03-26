@@ -16,17 +16,9 @@ type WaveState struct {
 	CompletedAgents []string              `json:"completed_agents"`
 	FailedAgents    []string              `json:"failed_agents"`
 	PendingAgents   []string              `json:"pending_agents"`
-	GateResults     map[string]GateResult `json:"gate_results,omitempty"`
+	GateResults     map[string]protocol.GateResult `json:"gate_results,omitempty"`
 	IsComplete      bool                  `json:"is_complete"`
 	MergeState      string                `json:"merge_state,omitempty"`
-}
-
-// GateResult is a cached gate execution outcome.
-type GateResult struct {
-	GateType string `json:"gate_type"`
-	Command  string `json:"command"`
-	Passed   bool   `json:"passed"`
-	ExitCode int    `json:"exit_code"`
 }
 
 // GetWaveState derives the complete state of a wave from the IMPL manifest.
