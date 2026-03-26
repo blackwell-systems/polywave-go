@@ -53,6 +53,7 @@ type ProgramContractConsumer struct {
 // ProgramIMPL represents an IMPL within the PROGRAM manifest.
 type ProgramIMPL struct {
 	Slug            string   `yaml:"slug" json:"slug"`
+	AbsPath         string   `yaml:"abs_path,omitempty" json:"abs_path,omitempty"`
 	Title           string   `yaml:"title" json:"title"`
 	Tier            int      `yaml:"tier" json:"tier"`
 	DependsOn       []string `yaml:"depends_on,omitempty" json:"depends_on,omitempty"`
