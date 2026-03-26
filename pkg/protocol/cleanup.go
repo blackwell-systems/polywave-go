@@ -69,7 +69,7 @@ func Cleanup(manifestPath string, waveNum int, repoDir string) (result.Result[Cl
 	if err != nil {
 		return result.NewFailure[CleanupData]([]result.SAWError{
 			{
-				Code:     "E001",
+				Code:     result.CodeIMPLParseFailed,
 				Message:  fmt.Sprintf("failed to load manifest: %v", err),
 				Severity: "fatal",
 			},
@@ -88,7 +88,7 @@ func Cleanup(manifestPath string, waveNum int, repoDir string) (result.Result[Cl
 	if targetWave == nil {
 		return result.NewFailure[CleanupData]([]result.SAWError{
 			{
-				Code:     "E002",
+				Code:     result.CodeWaveNotReady,
 				Message:  fmt.Sprintf("wave %d not found in manifest", waveNum),
 				Severity: "fatal",
 			},
@@ -105,7 +105,7 @@ func Cleanup(manifestPath string, waveNum int, repoDir string) (result.Result[Cl
 	if err != nil {
 		return result.NewFailure[CleanupData]([]result.SAWError{
 			{
-				Code:     "E003",
+				Code:     result.CodeWorktreeCreateFailed,
 				Message:  fmt.Sprintf("failed to resolve repo dir: %v", err),
 				Severity: "fatal",
 			},

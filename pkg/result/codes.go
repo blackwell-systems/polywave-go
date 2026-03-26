@@ -67,6 +67,7 @@ const (
 	CodeGateTimeout        = "B005_GATE_TIMEOUT"
 	CodeGateCommandMissing = "B006_GATE_COMMAND_MISSING"
 	CodeStubDetected       = "B007_STUB_DETECTED"
+	CodeGateInputInvalid   = "B008_GATE_INPUT_INVALID"
 )
 
 // Git error codes (G001-G099)
@@ -107,6 +108,9 @@ const (
 	CodeFreezeError           = "N012_FREEZE_ERROR"
 	CodeConfigNotFound        = "N013_CONFIG_NOT_FOUND"
 	CodeConfigInvalid         = "N014_CONFIG_INVALID"
+	CodeStatusUpdateFailed    = "N015_STATUS_UPDATE_FAILED"
+	CodeTierGateFailed        = "N016_TIER_GATE_FAILED"
+	CodeProgramStatusFailed   = "N017_PROGRAM_STATUS_FAILED"
 )
 
 // Protocol error codes (P001-P099)
@@ -117,6 +121,7 @@ const (
 	CodeDepsNotMet              = "P004_DEPS_NOT_MET"
 	CodeInvariantViolation      = "P005_INVARIANT_VIOLATION"
 	CodeExecutionRule           = "P006_EXECUTION_RULE"
+	CodeWiringGap               = "P007_WIRING_GAP"
 )
 
 // Tool/parse error codes (T001-T099)

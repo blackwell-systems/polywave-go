@@ -47,7 +47,7 @@ func CreateWorktrees(manifestPath string, waveNum int, repoDir string) result.Re
 	if err != nil {
 		return result.NewFailure[CreateWorktreesData]([]result.SAWError{
 			{
-				Code:     "E001",
+				Code:     result.CodeIMPLParseFailed,
 				Message:  fmt.Sprintf("failed to load manifest: %v", err),
 				Severity: "fatal",
 			},
@@ -66,7 +66,7 @@ func CreateWorktrees(manifestPath string, waveNum int, repoDir string) result.Re
 	if targetWave == nil {
 		return result.NewFailure[CreateWorktreesData]([]result.SAWError{
 			{
-				Code:     "E002",
+				Code:     result.CodeWaveNotReady,
 				Message:  fmt.Sprintf("wave %d not found in manifest", waveNum),
 				Severity: "fatal",
 			},
@@ -78,7 +78,7 @@ func CreateWorktrees(manifestPath string, waveNum int, repoDir string) result.Re
 	if err != nil {
 		return result.NewFailure[CreateWorktreesData]([]result.SAWError{
 			{
-				Code:     "E003",
+				Code:     result.CodeWorktreeCreateFailed,
 				Message:  fmt.Sprintf("failed to get base commit: %v", err),
 				Severity: "fatal",
 			},
@@ -90,7 +90,7 @@ func CreateWorktrees(manifestPath string, waveNum int, repoDir string) result.Re
 	if err := Save(doc, manifestPath); err != nil {
 		return result.NewFailure[CreateWorktreesData]([]result.SAWError{
 			{
-				Code:     "E004",
+				Code:     result.CodeIMPLParseFailed,
 				Message:  fmt.Sprintf("failed to save manifest with base commit: %v", err),
 				Severity: "fatal",
 			},
@@ -102,7 +102,7 @@ func CreateWorktrees(manifestPath string, waveNum int, repoDir string) result.Re
 	if err != nil {
 		return result.NewFailure[CreateWorktreesData]([]result.SAWError{
 			{
-				Code:     "E005",
+				Code:     result.CodeWorktreeCreateFailed,
 				Message:  fmt.Sprintf("failed to resolve repo path: %v", err),
 				Severity: "fatal",
 			},
@@ -177,7 +177,7 @@ func CreateWorktrees(manifestPath string, waveNum int, repoDir string) result.Re
 					// that are unmerged are a soft warning.
 					return result.NewFailure[CreateWorktreesData]([]result.SAWError{
 						{
-							Code:     "E006",
+							Code:     result.CodeBranchExists,
 							Message:  fmt.Sprintf("branch %q already exists in %s and is not merged into HEAD; delete it manually or merge first", candidate.branch, agentRepoDir),
 							Severity: "fatal",
 						},
@@ -193,7 +193,7 @@ func CreateWorktrees(manifestPath string, waveNum int, repoDir string) result.Re
 			if err != nil {
 				return result.NewFailure[CreateWorktreesData]([]result.SAWError{
 					{
-						Code:     "E007",
+						Code:     result.CodeWorktreeCreateFailed,
 						Message:  fmt.Sprintf("failed to get current HEAD: %v", err),
 						Severity: "fatal",
 					},
@@ -240,7 +240,7 @@ func CreateWorktrees(manifestPath string, waveNum int, repoDir string) result.Re
 		if err := git.WorktreeAdd(agentRepoDir, worktreePath, branchName); err != nil {
 			return result.NewFailure[CreateWorktreesData]([]result.SAWError{
 				{
-					Code:     "E008",
+					Code:     result.CodeWorktreeCreateFailed,
 					Message:  fmt.Sprintf("failed to create worktree for agent %s in repo %s: %v", agent.ID, agentRepoDir, err),
 					Severity: "fatal",
 				},
