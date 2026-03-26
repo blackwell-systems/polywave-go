@@ -148,7 +148,7 @@ func CleanStaleWorktrees(stale []StaleWorktree, force bool) result.Result[*Stale
 		warnings := make([]result.SAWError, len(data.Errors))
 		for i, e := range data.Errors {
 			warnings[i] = result.SAWError{
-				Code:     "E_STALE",
+				Code:     result.CodeStaleWorktree,
 				Message:  fmt.Sprintf("cleanup failed for %s: %s", e.Worktree.BranchName, e.Error),
 				Severity: "warning",
 			}
@@ -179,7 +179,7 @@ func CleanupBySlug(repoDir, slug string, force bool) result.Result[*StaleCleanup
 	stale, err := DetectStaleWorktreesForSlug(repoDir, slug)
 	if err != nil {
 		return result.NewFailure[*StaleCleanupData]([]result.SAWError{{
-			Code:     "E_STALE",
+			Code:     result.CodeStaleWorktree,
 			Message:  fmt.Sprintf("failed to detect stale worktrees for slug %s: %v", slug, err),
 			Severity: "fatal",
 		}})

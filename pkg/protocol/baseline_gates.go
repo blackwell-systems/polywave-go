@@ -42,7 +42,7 @@ func RunBaselineGates(manifest *IMPLManifest, waveNumber int, repoDir string, ca
 	res := RunPreMergeGates(manifest, waveNumber, repoDir, cache)
 	if !res.IsSuccess() {
 		return result.NewFailure[*BaselineData]([]result.SAWError{{
-			Code:     "E_BASELINE",
+			Code:     result.CodeBaselineError,
 			Message:  fmt.Sprintf("pre-merge gates failed: %v", res.Errors),
 			Severity: "fatal",
 		}})
@@ -133,7 +133,7 @@ func RunCrossRepoBaselineGates(manifest *IMPLManifest, waveNumber int, targetRep
 		repoRes := RunBaselineGates(manifest, waveNumber, repoPath, nil)
 		if repoRes.IsFatal() {
 			return result.NewFailure[*CrossRepoBaselineData]([]result.SAWError{{
-				Code:     "E_BASELINE",
+				Code:     result.CodeBaselineError,
 				Message:  fmt.Sprintf("E21B: baseline gates for repo %s failed: %v", repoName, repoRes.Errors),
 				Severity: "fatal",
 			}})
