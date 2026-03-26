@@ -1,6 +1,7 @@
 package protocol
 
 import (
+	"bytes"
 	"fmt"
 	"os"
 
@@ -12,11 +13,19 @@ import (
 // Returns an error if the file cannot be read or the YAML is invalid.
 //
 // This function follows the pattern of Load() in manifest.go for IMPL documents.
+// The SAW:PROGRAM:COMPLETE marker (a non-YAML line appended by mark-program-complete)
+// is stripped before parsing so completed manifests remain readable.
 func ParseProgramManifest(path string) (*PROGRAMManifest, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read PROGRAM manifest file: %w", err)
 	}
+
+	// Strip the SAW:PROGRAM:COMPLETE marker line before YAML parsing.
+	// mark-program-complete appends this as a bare non-YAML string; the YAML
+	// parser rejects it with "could not find expected ':'".
+	data = bytes.ReplaceAll(data, []byte("\nSAW:PROGRAM:COMPLETE\n"), []byte("\n"))
+	data = bytes.TrimSuffix(data, []byte("\nSAW:PROGRAM:COMPLETE"))
 
 	var manifest PROGRAMManifest
 	if err := yaml.Unmarshal(data, &manifest); err != nil {
