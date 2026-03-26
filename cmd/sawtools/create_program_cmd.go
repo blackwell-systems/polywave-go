@@ -39,7 +39,7 @@ Examples:
 			}
 
 			res := protocol.GenerateProgramFromIMPLs(protocol.GenerateProgramOpts{
-				ImplSlugs:   fromImpls,
+				ImplRefs:    fromImpls,
 				RepoPath:    repoDir,
 				ProgramSlug: slug,
 				Title:       title,
