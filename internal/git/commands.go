@@ -501,3 +501,60 @@ func VerifyHookInWorktree(worktreePath string) (bool, error) {
 
 	return true, nil
 }
+
+// StatusPorcelainFile returns the git porcelain (machine-readable) status for a
+// specific file in the repository at repoPath. Returns empty string if the file
+// is unmodified. Returns an error if the git command fails.
+func StatusPorcelainFile(repoPath, filePath string) (string, error) {
+	out, err := Run(repoPath, "status", "--porcelain", filePath)
+	if err != nil {
+		return "", fmt.Errorf("git status --porcelain %s failed: %w", filePath, err)
+	}
+	return strings.TrimSpace(out), nil
+}
+
+// Add stages the given file paths for commit in the repository at repoPath.
+// Unlike AddAll, this stages only the specified paths (not all changes).
+func Add(repoPath string, paths ...string) error {
+	args := append([]string{"add"}, paths...)
+	_, err := Run(repoPath, args...)
+	if err != nil {
+		return fmt.Errorf("git add failed: %w", err)
+	}
+	return nil
+}
+
+// CommitWithMessage creates a commit with the given message in the repository
+// at repoPath. Unlike Commit(), this does NOT pass --no-verify, so pre-commit
+// hooks run. Use this for protocol-layer commits (state transitions) where
+// hook enforcement is appropriate.
+// Returns the commit SHA string on success.
+func CommitWithMessage(repoPath, message string) (string, error) {
+	_, err := Run(repoPath, "commit", "-m", message)
+	if err != nil {
+		return "", fmt.Errorf("git commit failed: %w", err)
+	}
+	sha, err := RevParse(repoPath, "HEAD")
+	if err != nil {
+		return "", fmt.Errorf("git rev-parse HEAD after commit: %w", err)
+	}
+	return sha, nil
+}
+
+// LogOneline returns lines from git log --oneline for the given args
+// (e.g., a commit range like "abc123..branchname"). Returns an empty
+// slice (not an error) when no commits match. Returns an error only
+// on git system failures (not when the branch simply has no commits).
+func LogOneline(repoPath string, args ...string) ([]string, error) {
+	allArgs := append([]string{"log", "--oneline"}, args...)
+	out, err := Run(repoPath, allArgs...)
+	if err != nil {
+		// git log exits 128 when a ref doesn't exist; treat as empty, not error
+		return []string{}, nil
+	}
+	trimmed := strings.TrimSpace(out)
+	if trimmed == "" {
+		return []string{}, nil
+	}
+	return strings.Split(trimmed, "\n"), nil
+}
