@@ -224,3 +224,5 @@ type BackendConfig struct {
   - IMPL doc: docs/IMPL/complete/IMPL-state-machine-unification.yaml
 - **os-exit-cleanup**: completed 2026-03-26, 1 waves, 1 agents
   - IMPL doc: docs/IMPL/complete/IMPL-os-exit-cleanup.yaml
+- **engine-cleanup-remaining**: completed 2026-03-26, 2 waves, 6 agents
+  - IMPL doc: docs/IMPL/complete/IMPL-engine-cleanup-remaining.yaml

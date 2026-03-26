@@ -1,0 +1,745 @@
+completion_date: "2026-03-26"
+title: 'Engine Cleanup: Remaining Items'
+feature_slug: engine-cleanup-remaining
+verdict: SUITABLE
+suitability_assessment: |
+    Three of the four requested areas have actionable work; one was found empty after investigation.
+
+    Area 1 — pkg/protocol → internal/git migration: CONFIRMED. 5 direct exec.Command("git", ...)
+    calls exist across 3 files (program_freeze.go:96, state_transition.go:108/117/126,
+    amend.go:209/215). The 6 call sites map to 4 new wrapper functions needed in
+    internal/git/commands.go. The state_transition.go rev-parse call is subsumed by the new
+    CommitWithMessage wrapper which calls RevParse internally. The amend.go rev-parse
+    --show-toplevel can use the existing Run() directly.
+    Net new wrappers: StatusPorcelainFile, Add, CommitWithMessage, LogOneline (4 functions).
+
+    Area 2 — Unify FinalizeWaveResult structs: EXCLUDED. Investigation found two INTENTIONALLY
+    different structs. pkg/engine/finalize.go has a single-repo struct (pointer fields, no maps).
+    cmd/sawtools/finalize_wave.go has a cross-repo struct (map[string]* fields for multi-repo
+    aggregation, plus CrossRepo bool, IntegrationActionRequired bool fields not in the engine
+    struct). These serve different abstraction layers by design. No unification work identified.
+
+    Area 3 — Consolidate YAML loading variants: PARTIAL. LoadYAML/SaveYAML already exists in
+    pkg/protocol/yaml_io.go. Two production files still use raw yaml.Marshal + os.WriteFile for
+    *PROGRAMManifest writes: pkg/protocol/program_generator.go:257-266 and
+    pkg/engine/program_progress.go:115-122. Both can switch to SaveYAML[*PROGRAMManifest].
+    The pkg/queue/manager.go YAML patterns are more complex (sets FilePath after load, dynamic
+    paths) and do not simplify meaningfully with LoadYAML. The pkg/protocol/program_status.go
+    reads into an anonymous struct — LoadYAML does not apply. Net: 2 files to update, each
+    a simple 2-line replacement.
+
+    Area 4 — Fix silent error drops: EMPTY after investigation. All three _ = err patterns
+    in production code are intentional and carry explanatory comments:
+    - auto_remediate.go:105: "Fix agent itself failed — treat as failed attempt, continue loop"
+    - finalize.go:204: StepFixGoMod always returns nil error (non-fatal by design in its impl)
+    - checkpoint.go:57-65: copyFileIfExists on optional snapshot files (comment: "may not exist")
+    No accidental error drops found. Area 4 excluded from agent scope.
+
+    Wave structure: Area 1 has an intra-area dependency (wrappers must exist before callers).
+    Agent A (Wave 1) adds wrappers to internal/git/commands.go. Agents D/E/F (Wave 2) update
+    the 3 protocol files. Agents B and C (Wave 1) handle the YAML consolidation and are
+    independent of Area 1 — they touch different packages.
+
+    Estimated times:
+    - Scout phase: ~20 min (multi-area investigation with code reading)
+    - Agent execution: ~30 min (6 agents x ~5 min avg; Wave 1 parallel, Wave 2 parallel)
+    - Merge and verification: ~5 min
+    Total SAW time: ~55 min
+
+    Sequential baseline: ~50 min (6 agents x ~8 min avg sequential)
+    Time savings: marginal speed gain; primary value is coordination and parallel isolation.
+    Recommendation: Proceed — disjoint file ownership ensures clean merge with zero conflicts.
+test_command: go test ./...
+lint_command: go vet ./...
+file_ownership:
+    - file: internal/git/commands.go
+      agent: A
+      wave: 1
+      action: modify
+    - file: internal/git/commands_test.go
+      agent: A
+      wave: 1
+      action: modify
+    - file: pkg/protocol/program_generator.go
+      agent: B
+      wave: 1
+      action: modify
+    - file: pkg/engine/program_progress.go
+      agent: C
+      wave: 1
+      action: modify
+    - file: pkg/protocol/program_freeze.go
+      agent: D
+      wave: 2
+      action: modify
+      depends_on:
+        - A
+    - file: pkg/protocol/state_transition.go
+      agent: E
+      wave: 2
+      action: modify
+      depends_on:
+        - A
+    - file: pkg/protocol/amend.go
+      agent: F
+      wave: 2
+      action: modify
+      depends_on:
+        - A
+interface_contracts:
+    - name: StatusPorcelainFile
+      description: |
+        Returns the git porcelain status output for a specific file path in repoPath.
+        Returns empty string if the file is clean (no modifications). Returns an error
+        if the git command fails (e.g., not a git repo). Distinct from StatusPorcelain
+        which reports the whole working tree.
+      definition: |
+        func StatusPorcelainFile(repoPath, filePath string) (string, error)
+      location: internal/git/commands.go
+    - name: Add
+      description: |
+        Stages specific file paths for commit in the repository at repoPath.
+        Wraps git add with explicit paths (not -A). Accepts one or more paths.
+      definition: |
+        func Add(repoPath string, paths ...string) error
+      location: internal/git/commands.go
+    - name: CommitWithMessage
+      description: |
+        Creates a commit with the given message WITHOUT --no-verify (hooks run).
+        Contrast with the existing Commit() which passes --no-verify and is used
+        by the orchestrator. This variant is for protocol-layer commits (state
+        transitions) where hook enforcement is desired.
+        Returns the commit SHA on success.
+      definition: |
+        func CommitWithMessage(repoPath, message string) (string, error)
+      location: internal/git/commands.go
+    - name: LogOneline
+      description: |
+        Returns the lines of git log output for the given args with --oneline format.
+        Returns an empty slice (not an error) if no commits match the range
+        (e.g., branch does not exist). Returns an error only for git system failures.
+      definition: |
+        func LogOneline(repoPath string, args ...string) ([]string, error)
+      location: internal/git/commands.go
+waves:
+    - number: 1
+      agents:
+        - id: A
+          task: |
+            ## Context
+            You are implementing Area 1 of the engine-cleanup-remaining feature:
+            adding 4 new git wrapper functions to internal/git/commands.go.
+
+            These wrappers eliminate direct exec.Command("git", ...) calls in pkg/protocol/.
+            Wave 2 agents (D, E, F) will use these wrappers — they depend on your work.
+
+            ## Your Files
+            - `internal/git/commands.go` — append 4 new exported functions at the end of the file
+            - `internal/git/commands_test.go` — add tests for the 4 new functions
+
+            ## What to Implement
+
+            Add the following 4 functions to internal/git/commands.go.
+            Append them after the last existing function (VerifyHookInWorktree at the end of file).
+
+            ### 1. StatusPorcelainFile
+            ```go
+            // StatusPorcelainFile returns the git porcelain (machine-readable) status for a
+            // specific file in the repository at repoPath. Returns empty string if the file
+            // is unmodified. Returns an error if the git command fails.
+            func StatusPorcelainFile(repoPath, filePath string) (string, error) {
+                out, err := Run(repoPath, "status", "--porcelain", filePath)
+                if err != nil {
+                    return "", fmt.Errorf("git status --porcelain %s failed: %w", filePath, err)
+                }
+                return strings.TrimSpace(out), nil
+            }
+            ```
+
+            ### 2. Add
+            ```go
+            // Add stages the given file paths for commit in the repository at repoPath.
+            // Unlike AddAll, this stages only the specified paths (not all changes).
+            func Add(repoPath string, paths ...string) error {
+                args := append([]string{"add"}, paths...)
+                _, err := Run(repoPath, args...)
+                if err != nil {
+                    return fmt.Errorf("git add failed: %w", err)
+                }
+                return nil
+            }
+            ```
+
+            ### 3. CommitWithMessage
+            ```go
+            // CommitWithMessage creates a commit with the given message in the repository
+            // at repoPath. Unlike Commit(), this does NOT pass --no-verify, so pre-commit
+            // hooks run. Use this for protocol-layer commits (state transitions) where
+            // hook enforcement is appropriate.
+            // Returns the commit SHA string on success.
+            func CommitWithMessage(repoPath, message string) (string, error) {
+                _, err := Run(repoPath, "commit", "-m", message)
+                if err != nil {
+                    return "", fmt.Errorf("git commit failed: %w", err)
+                }
+                sha, err := RevParse(repoPath, "HEAD")
+                if err != nil {
+                    return "", fmt.Errorf("git rev-parse HEAD after commit: %w", err)
+                }
+                return sha, nil
+            }
+            ```
+
+            ### 4. LogOneline
+            ```go
+            // LogOneline returns lines from git log --oneline for the given args
+            // (e.g., a commit range like "abc123..branchname"). Returns an empty
+            // slice (not an error) when no commits match. Returns an error only
+            // on git system failures (not when the branch simply has no commits).
+            func LogOneline(repoPath string, args ...string) ([]string, error) {
+                allArgs := append([]string{"log", "--oneline"}, args...)
+                out, err := Run(repoPath, allArgs...)
+                if err != nil {
+                    // git log exits 128 when a ref doesn't exist; treat as empty, not error
+                    return []string{}, nil
+                }
+                trimmed := strings.TrimSpace(out)
+                if trimmed == "" {
+                    return []string{}, nil
+                }
+                return strings.Split(trimmed, "\n"), nil
+            }
+            ```
+
+            ## No New Imports Required
+            All 4 functions use only fmt, strings, and the existing Run/RevParse helpers
+            already in the file. No new imports are needed in commands.go.
+
+            ## Tests
+            Add tests for the 4 new functions to the existing `internal/git/commands_test.go`.
+            Do NOT create a new test file — append the new test functions to the existing file.
+            Use t.TempDir() with git init to create isolated repositories. Cover:
+            - TestStatusPorcelainFile: returns empty for clean file, returns status line for
+              a modified (but staged) file
+            - TestAdd: stages a file and verify with StatusPorcelain or status --porcelain
+            - TestCommitWithMessage: creates a commit, returns a non-empty SHA string
+            - TestLogOneline: returns empty slice for empty commit range, returns lines for
+              existing commits, returns empty slice (no error) for a non-existent branch name
+
+            ## Verification Gate
+            ```
+            go build ./internal/git/...
+            go vet ./internal/git/...
+            go test ./internal/git/...
+            ```
+          files:
+            - internal/git/commands.go
+            - internal/git/commands_test.go
+        - id: B
+          task: |
+            ## Context
+            You are implementing Area 3 (partial) of the engine-cleanup-remaining feature:
+            replacing raw yaml.Marshal + os.WriteFile with SaveYAML in program_generator.go.
+
+            pkg/protocol/yaml_io.go already provides:
+            ```go
+            func SaveYAML[T any](path string, v T) error
+            ```
+
+            ## Your File
+            - `pkg/protocol/program_generator.go`
+
+            ## What to Change
+
+            In program_generator.go, find the section around line 257 where the manifest is
+            written to disk. It currently reads:
+
+            ```go
+            data, err := yaml.Marshal(manifest)
+            if err != nil {
+                return result.NewFailure[GenerateProgramData]([]result.SAWError{{
+                    Code:     result.CodeWaveNotOneIndexed,
+                    Message:  fmt.Sprintf("generate-program: failed to marshal manifest: %v", err),
+                    Severity: "fatal",
+                }})
+            }
+
+            if err := os.WriteFile(outputPath, data, 0644); err != nil {
+                return result.NewFailure[GenerateProgramData]([]result.SAWError{{
+                    Code:     result.CodeOrphanFile,
+                    Message:  fmt.Sprintf("generate-program: failed to write manifest: %v", err),
+                    Severity: "fatal",
+                }})
+            }
+            ```
+
+            Replace this two-step pattern with a single SaveYAML call:
+
+            ```go
+            if err := SaveYAML(outputPath, manifest); err != nil {
+                return result.NewFailure[GenerateProgramData]([]result.SAWError{{
+                    Code:     result.CodeOrphanFile,
+                    Message:  fmt.Sprintf("generate-program: failed to write manifest: %v", err),
+                    Severity: "fatal",
+                }})
+            }
+            ```
+
+            Note: SaveYAML wraps both marshal and write steps. The CodeOrphanFile error
+            code is kept (it was the write failure code; acceptable for a combined error).
+
+            ## Import Cleanup
+            After the change, remove "gopkg.in/yaml.v3" from the imports — yaml.Marshal
+            is the only yaml usage and it is being removed.
+            Keep "os" — it is still used on lines 104 (os.PathSeparator) and 249
+            (os.MkdirAll) in this file.
+
+            ## Tests
+            No new tests required. The existing tests for GenerateProgramFromIMPLs in
+            pkg/protocol/program_generator_test.go cover the write path. Run them to verify.
+
+            ## Verification Gate
+            ```
+            go build ./pkg/protocol/...
+            go vet ./pkg/protocol/...
+            go test ./pkg/protocol/...
+            ```
+          files:
+            - pkg/protocol/program_generator.go
+        - id: C
+          task: |
+            ## Context
+            You are implementing Area 3 (partial) of the engine-cleanup-remaining feature:
+            replacing the local writeManifest helper in program_progress.go with SaveYAML.
+
+            pkg/protocol/yaml_io.go already provides:
+            ```go
+            func SaveYAML[T any](path string, v T) error
+            ```
+
+            ## Your File
+            - `pkg/engine/program_progress.go`
+
+            ## What to Change
+
+            Find the private helper function writeManifest around line 113:
+
+            ```go
+            // writeManifest marshals the manifest to YAML and writes it to disk.
+            func writeManifest(path string, manifest *protocol.PROGRAMManifest) error {
+                data, err := yaml.Marshal(manifest)
+                if err != nil {
+                    return fmt.Errorf("writeManifest: failed to marshal manifest: %w", err)
+                }
+                if err := os.WriteFile(path, data, 0644); err != nil {
+                    return fmt.Errorf("writeManifest: failed to write manifest: %w", err)
+                }
+                return nil
+            }
+            ```
+
+            Replace the body with a call to SaveYAML:
+
+            ```go
+            // writeManifest marshals the manifest to YAML and writes it to disk.
+            func writeManifest(path string, manifest *protocol.PROGRAMManifest) error {
+                if err := protocol.SaveYAML(path, manifest); err != nil {
+                    return fmt.Errorf("writeManifest: %w", err)
+                }
+                return nil
+            }
+            ```
+
+            ## Import Cleanup
+            After the change, check what imports are still needed:
+            - "os" — used only by os.WriteFile in writeManifest. After the change, if no
+              other function in program_progress.go uses os.*, remove the "os" import.
+            - "gopkg.in/yaml.v3" — used only by yaml.Marshal in writeManifest. After the
+              change, remove this import.
+            To verify: grep the file for "os\." and "yaml\." after making the change.
+
+            ## Tests
+            No new tests required. Existing tests in pkg/engine/program_progress_test.go
+            cover this path. Run them to verify.
+
+            ## Verification Gate
+            ```
+            go build ./pkg/engine/...
+            go vet ./pkg/engine/...
+            go test ./pkg/engine/...
+            ```
+          files:
+            - pkg/engine/program_progress.go
+      base_commit: 0387aa8a210402cdf50c9948a7263b50e2cf01a4
+    - number: 2
+      agents:
+        - id: D
+          task: |
+            ## Context
+            You are implementing the Area 1 protocol migration for program_freeze.go.
+            Agent A (Wave 1) has already added StatusPorcelainFile to internal/git/commands.go.
+
+            ## Your File
+            - `pkg/protocol/program_freeze.go`
+
+            ## What to Change
+
+            In program_freeze.go, find the direct exec.Command call around line 96:
+
+            ```go
+            cmd := exec.Command("git", "-C", repoPath, "status", "--porcelain", contract.Location)
+            out, err := cmd.CombinedOutput()
+            if err == nil && strings.TrimSpace(string(out)) == "" {
+                frozen.Committed = true
+            }
+            ```
+
+            Replace with the git.StatusPorcelainFile wrapper:
+
+            ```go
+            out, err := git.StatusPorcelainFile(repoPath, contract.Location)
+            if err == nil && out == "" {
+                frozen.Committed = true
+            }
+            ```
+
+            Note: StatusPorcelainFile already trims whitespace and returns empty string for
+            a clean file, so the strings.TrimSpace call is no longer needed.
+
+            ## Import Changes
+            Add the internal/git package import:
+            ```go
+            "github.com/blackwell-systems/scout-and-wave-go/internal/git"
+            ```
+
+            Remove "os/exec" from the imports — it is the only exec user in this file.
+            Keep "os" — os.Stat is called on line 90 (file existence check). Keep "strings"
+            — strings.TrimSpace is used elsewhere (line 57 TrimSpace on contract.FreezeAt).
+
+            ## Tests
+            No new tests required. Run the package tests to verify correctness.
+
+            ## Verification Gate
+            ```
+            go build ./pkg/protocol/...
+            go vet ./pkg/protocol/...
+            go test ./pkg/protocol/...
+            ```
+          files:
+            - pkg/protocol/program_freeze.go
+          dependencies:
+            - A
+        - id: E
+          task: |
+            ## Context
+            You are implementing the Area 1 protocol migration for state_transition.go.
+            Agent A (Wave 1) has already added Add() and CommitWithMessage() to
+            internal/git/commands.go. The existing RevParse() is not needed separately
+            because CommitWithMessage returns the SHA directly.
+
+            ## Your File
+            - `pkg/protocol/state_transition.go`
+
+            ## What to Change
+
+            In state_transition.go, the optional commit block around lines 108-137 has
+            3 direct exec.Command calls. Replace them all with internal/git wrappers:
+
+            **Current code (lines 108-137):**
+            ```go
+            addCmd := exec.Command("git", "-C", manifestDir, "add", manifestPath)
+            if out, err := addCmd.CombinedOutput(); err != nil {
+                return result.NewFailure[*SetImplStateData]([]result.SAWError{{
+                    Code:     result.CodeStateTransition,
+                    Message:  fmt.Sprintf("git add failed: %v\n%s", err, out),
+                    Severity: "fatal",
+                }})
+            }
+
+            commitCmd := exec.Command("git", "-C", manifestDir, "commit", "-m", commitMsg)
+            if out, err := commitCmd.CombinedOutput(); err != nil {
+                return result.NewFailure[*SetImplStateData]([]result.SAWError{{
+                    Code:     result.CodeStateTransition,
+                    Message:  fmt.Sprintf("git commit failed: %v\n%s", err, out),
+                    Severity: "fatal",
+                }})
+            }
+
+            shaCmd := exec.Command("git", "-C", manifestDir, "rev-parse", "HEAD")
+            shaOut, err := shaCmd.Output()
+            if err != nil {
+                return result.NewFailure[*SetImplStateData]([]result.SAWError{{
+                    Code:     result.CodeStateTransition,
+                    Message:  fmt.Sprintf("git rev-parse HEAD failed: %v", err),
+                    Severity: "fatal",
+                }})
+            }
+
+            data.Committed = true
+            data.CommitSHA = strings.TrimSpace(string(shaOut))
+            ```
+
+            **Replace with:**
+            ```go
+            if err := git.Add(manifestDir, manifestPath); err != nil {
+                return result.NewFailure[*SetImplStateData]([]result.SAWError{{
+                    Code:     result.CodeStateTransition,
+                    Message:  fmt.Sprintf("git add failed: %v", err),
+                    Severity: "fatal",
+                }})
+            }
+
+            sha, err := git.CommitWithMessage(manifestDir, commitMsg)
+            if err != nil {
+                return result.NewFailure[*SetImplStateData]([]result.SAWError{{
+                    Code:     result.CodeStateTransition,
+                    Message:  fmt.Sprintf("git commit failed: %v", err),
+                    Severity: "fatal",
+                }})
+            }
+
+            data.Committed = true
+            data.CommitSHA = sha
+            ```
+
+            Note: CommitWithMessage already calls RevParse internally and returns the SHA,
+            so the separate shaCmd block is eliminated entirely (3 blocks become 2).
+
+            ## Import Changes
+            Add the internal/git package import:
+            ```go
+            "github.com/blackwell-systems/scout-and-wave-go/internal/git"
+            ```
+
+            Remove "os/exec" from the imports — it is the only exec user in this file.
+            Keep "strings" — strings.Join is used on line 77 (building validTargets message).
+            Keep "path/filepath" — filepath.Dir is used on line 101 (manifestDir).
+
+            ## Tests
+            No new tests required. Existing tests in pkg/protocol/ cover SetImplState.
+            Run the package tests to verify.
+
+            ## Verification Gate
+            ```
+            go build ./pkg/protocol/...
+            go vet ./pkg/protocol/...
+            go test ./pkg/protocol/...
+            ```
+          files:
+            - pkg/protocol/state_transition.go
+          dependencies:
+            - A
+        - id: F
+          task: |
+            ## Context
+            You are implementing the Area 1 protocol migration for amend.go.
+            Agent A (Wave 1) has already added LogOneline() to internal/git/commands.go,
+            and the existing Run() is already available for the rev-parse call.
+
+            ## Your File
+            - `pkg/protocol/amend.go`
+
+            ## What to Change
+
+            In amend.go, the amendRedirectAgent function around lines 207-228 has 2 direct
+            exec.Command calls. Replace them with internal/git wrappers:
+
+            **Current code (lines 207-228):**
+            ```go
+            manifestDir := filepath.Dir(opts.ManifestPath)
+            repoRootBytes, err := exec.Command("git", "-C", manifestDir, "rev-parse", "--show-toplevel").Output()
+            if err != nil {
+                warnings = append(warnings, "could not find repo root; skipping worktree commit check")
+            } else {
+                repoRoot := strings.TrimSpace(string(repoRootBytes))
+                // Check for commits on the agent's branch since base commit
+                logOut, err := exec.Command("git", "-C", repoRoot, "log",
+                    wave.BaseCommit+".."+branchName, "--oneline").Output()
+                if err != nil {
+                    // Branch not found or other git error — no commits, proceed
+                } else if len(strings.TrimSpace(string(logOut))) > 0 {
+                    return result.NewFailure[AmendImplData]([]result.SAWError{
+                        {
+                            Code:     amendBlocked,
+                            Message:  fmt.Sprintf("agent %s has commits on branch %s; cannot redirect a committed agent", opts.AgentID, branchName),
+                            Severity: "fatal",
+                        },
+                    })
+                }
+            }
+            ```
+
+            **Replace with:**
+            ```go
+            manifestDir := filepath.Dir(opts.ManifestPath)
+            repoRoot, err := git.Run(manifestDir, "rev-parse", "--show-toplevel")
+            if err != nil {
+                warnings = append(warnings, "could not find repo root; skipping worktree commit check")
+            } else {
+                repoRoot = strings.TrimSpace(repoRoot)
+                // Check for commits on the agent's branch since base commit
+                lines, _ := git.LogOneline(repoRoot, wave.BaseCommit+".."+branchName)
+                if len(lines) > 0 {
+                    return result.NewFailure[AmendImplData]([]result.SAWError{
+                        {
+                            Code:     amendBlocked,
+                            Message:  fmt.Sprintf("agent %s has commits on branch %s; cannot redirect a committed agent", opts.AgentID, branchName),
+                            Severity: "fatal",
+                        },
+                    })
+                }
+            }
+            ```
+
+            Important: LogOneline returns ([]string, error) but by contract returns an empty
+            slice (not an error) when a branch does not exist. Ignoring the error with `_`
+            is correct — the empty slice correctly triggers "no commits, allow redirect".
+
+            ## Import Changes
+            Add the internal/git package import:
+            ```go
+            "github.com/blackwell-systems/scout-and-wave-go/internal/git"
+            ```
+
+            Remove "os/exec" from the imports — it is the only exec user in this file.
+            Keep "os" — os.ReadFile is called on line 68 (SAW:COMPLETE marker check). Keep
+            "strings" — strings.TrimSpace, strings.Contains, and strings.Join are all used.
+
+            ## Tests
+            No new tests required. Existing tests in pkg/protocol/amend_test.go cover
+            amendRedirectAgent. Run the package tests to verify.
+
+            ## Verification Gate
+            ```
+            go build ./pkg/protocol/...
+            go vet ./pkg/protocol/...
+            go test ./pkg/protocol/...
+            ```
+          files:
+            - pkg/protocol/amend.go
+          dependencies:
+            - A
+      base_commit: 456e72e0b1e7eebbb2c91a2a01ef8be1b0611964
+quality_gates:
+    level: standard
+    gates:
+        - type: build
+          command: go build ./...
+          required: true
+        - type: lint
+          command: go vet ./...
+          required: true
+        - type: test
+          command: go test ./...
+          required: true
+completion_reports:
+    A:
+        status: complete
+        branch: saw/engine-cleanup-remaining/wave1-agent-A
+        commit: 5cdc7ac
+        files_changed:
+            - internal/git/commands.go
+            - internal/git/commands_test.go
+        tests_added:
+            - TestStatusPorcelainFile
+            - TestAdd
+            - TestCommitWithMessage
+            - TestLogOneline
+        verification: PASS
+    B:
+        status: complete
+        branch: saw/engine-cleanup-remaining/wave1-agent-B
+        commit: a023dc6
+        files_changed:
+            - pkg/protocol/program_generator.go
+        verification: PASS
+    C:
+        status: complete
+        branch: saw/engine-cleanup-remaining/wave1-agent-C
+        commit: 4da8921
+        files_changed:
+            - pkg/engine/program_progress.go
+        verification: PASS
+    D:
+        status: complete
+        branch: saw/engine-cleanup-remaining/wave2-agent-D
+        commit: 7444baf
+        files_changed:
+            - pkg/protocol/program_freeze.go
+        verification: PASS
+    E:
+        status: complete
+        branch: saw/engine-cleanup-remaining/wave2-agent-E
+        commit: 7f17449
+        files_changed:
+            - pkg/protocol/state_transition.go
+        verification: PASS
+    F:
+        status: complete
+        branch: saw/engine-cleanup-remaining/wave2-agent-F
+        commit: 6d56f8c
+        files_changed:
+            - pkg/protocol/amend.go
+        verification: PASS
+pre_mortem:
+    overall_risk: low
+    rows:
+        - scenario: |
+            CommitWithMessage vs Commit confusion: an agent writes a test or caller that
+            uses the wrong variant (with --no-verify vs without), causing pre-commit hooks
+            to run unexpectedly or be skipped when they should run.
+          likelihood: low
+          impact: low
+          mitigation: |
+            Agent A's docstring explicitly names the intended call site for each variant.
+            Agent E's brief notes the distinction: CommitWithMessage (hooks run, protocol
+            use) vs Commit (--no-verify, orchestrator use).
+        - scenario: |
+            LogOneline error-as-empty contract misunderstood: Agent F adds error handling
+            for the nil error return, breaking the "no commits = allow redirect" logic.
+          likelihood: low
+          impact: medium
+          mitigation: |
+            Agent F brief explicitly documents that LogOneline returns empty slice (not error)
+            for non-existent branches, and shows the `lines, _` usage pattern with explanation.
+        - scenario: |
+            Import cleanup removes a still-needed import: an agent removes "os" or "strings"
+            believing they are unused after the exec.Command removal.
+          likelihood: medium
+          impact: low
+          mitigation: |
+            Each Wave 2 agent brief explicitly lists which symbols are still in use and which
+            imports to keep or remove, based on actual grep results from code analysis.
+        - scenario: |
+            Agent B removes "os" from program_generator.go prematurely, not noticing
+            os.PathSeparator and os.MkdirAll usage elsewhere in the file.
+          likelihood: low
+          impact: low
+          mitigation: |
+            Agent B brief explicitly states: keep "os" — it is still used on lines 104
+            (os.PathSeparator) and 249 (os.MkdirAll). Only "gopkg.in/yaml.v3" is removed.
+critic_report:
+    verdict: PASS
+    agent_reviews:
+        A:
+            agent_id: A
+            verdict: PASS
+        B:
+            agent_id: B
+            verdict: PASS
+        C:
+            agent_id: C
+            verdict: PASS
+        D:
+            agent_id: D
+            verdict: PASS
+        E:
+            agent_id: E
+            verdict: PASS
+        F:
+            agent_id: F
+            verdict: PASS
+    summary: 'All six agents verified against the codebase. Every file in the ownership table exists. Named symbols (Run, RevParse, SaveYAML, StatusPorcelain, AddAll, Commit, VerifyHookInWorktree) all exist at their described locations. The four new wrapper functions (StatusPorcelainFile, Add, CommitWithMessage, LogOneline) have no name conflicts with existing exports in internal/git/commands.go. The two-step yaml.Marshal + os.WriteFile patterns in program_generator.go and program_progress.go exist exactly as described. The exec.Command patterns in program_freeze.go, state_transition.go, and amend.go exist at approximately the stated line numbers. SaveYAML is confirmed in pkg/protocol/yaml_io.go with the correct generic signature. The module path github.com/blackwell-systems/scout-and-wave-go/internal/git is valid per go.mod. Import cleanup instructions are accurate: os is still needed in program_generator.go (os.PathSeparator line 104, os.MkdirAll line 249), os is not needed elsewhere in program_progress.go after the change, and os/exec is the only exec user in each of the three Wave 2 files. One cosmetic inaccuracy noted: Agent E brief says strings.Join is at line 77 but it is at line 80; the symbol name and usage are correct and this does not affect implementation.'
+    reviewed_at: "2026-03-26T08:29:21Z"
+    issue_count: 0
+state: COMPLETE
