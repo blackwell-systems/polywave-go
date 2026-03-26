@@ -109,6 +109,7 @@ func main() {
 		newCloseImplCmd(),
 		newPreCommitCheckCmd(),
 		newInstallHooksCmd(),
+		newSetInjectionMethodCmd(),
 	)
 	if err := rootCmd.Execute(); err != nil {
 		fmt.Fprintln(os.Stderr, err)

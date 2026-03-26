@@ -172,6 +172,37 @@ This eliminates the ~10s latency of agents calling extract-context at startup.`,
 				return fmt.Errorf("failed to write ownership manifest: %w", err)
 			}
 
+			// Determine and persist context_source for this agent.
+			// Detection: if any owned file belongs to a repo different from the manifest repo,
+			// use cross-repo-full; otherwise use prepared-brief (normal worktree path).
+			manifestRepoName := filepath.Base(projectRoot)
+			contextSource := protocol.ContextSourcePreparedBrief
+			for _, fo := range doc.FileOwnership {
+				if fo.Agent == agentID && fo.Wave == waveNum {
+					if fo.Repo != "" && fo.Repo != manifestRepoName {
+						contextSource = protocol.ContextSourceCrossRepoFull
+						break
+					}
+				}
+			}
+
+			// Write context_source to the agent entry in the IMPL doc.
+			for i, wave := range doc.Waves {
+				if wave.Number != waveNum {
+					continue
+				}
+				for j, agent := range wave.Agents {
+					if agent.ID == agentID {
+						doc.Waves[i].Agents[j].ContextSource = contextSource
+						break
+					}
+				}
+			}
+			if err := protocol.Save(doc, manifestPath); err != nil {
+				// Non-fatal: log but don't abort agent preparation
+				fmt.Fprintf(os.Stderr, "prepare-agent: warning: failed to persist context_source: %v\n", err)
+			}
+
 			// Initialize journal observer
 			fullAgentID := fmt.Sprintf("wave%d-agent-%s", waveNum, agentID)
 			observer, err := journal.NewObserver(projectRoot, fullAgentID)
@@ -193,15 +224,16 @@ This eliminates the ~10s latency of agents calling extract-context at startup.`,
 
 			// Output result
 			result := map[string]interface{}{
-				"brief_path":   briefPath,
-				"brief_length": len(brief),
-				"journal_dir":  observer.JournalDir,
-				"cursor_path":  observer.CursorPath,
-				"index_path":   observer.IndexPath,
-				"results_dir":  observer.ResultsDir,
-				"agent_id":     agentID,
-				"wave":         waveNum,
-				"files_owned":  len(agentFiles),
+				"brief_path":     briefPath,
+				"brief_length":   len(brief),
+				"journal_dir":    observer.JournalDir,
+				"cursor_path":    observer.CursorPath,
+				"index_path":     observer.IndexPath,
+				"results_dir":    observer.ResultsDir,
+				"agent_id":       agentID,
+				"wave":           waveNum,
+				"files_owned":    len(agentFiles),
+				"context_source": string(contextSource),
 			}
 
 			out, _ := json.MarshalIndent(result, "", "  ")
