@@ -5,12 +5,37 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"sync"
 
 	"gopkg.in/yaml.v3"
 )
 
 // ErrAgentNotFound is returned when SetCompletionReport is called with an unknown agent ID.
 var ErrAgentNotFound = errors.New("agent not found in manifest")
+
+// completionReportMu serializes all Load-Set-Save sequences for completion
+// reports across the orchestrator, engine, and CLI write paths.
+// Replaces the caller-side reportMu (pkg/orchestrator) and reportWaveMu
+// (pkg/engine) with a single canonical lock owned by the protocol package.
+var completionReportMu sync.Mutex
+
+// WithCompletionReportLock executes fn inside completionReportMu and returns
+// its error. All callers that perform a Load-Set-Save sequence for completion
+// reports must use this function instead of their own local mutexes.
+//
+// Typical usage:
+//
+//	err := protocol.WithCompletionReportLock(func() error {
+//	    m, err := protocol.Load(implDocPath)
+//	    if err != nil { return err }
+//	    if err := builder.AppendToManifest(m); err != nil { return err }
+//	    return protocol.Save(m, implDocPath)
+//	})
+func WithCompletionReportLock(fn func() error) error {
+	completionReportMu.Lock()
+	defer completionReportMu.Unlock()
+	return fn()
+}
 
 // Load reads a YAML IMPL manifest from the specified path and parses it into an IMPLManifest.
 // Returns an error if the file cannot be read or the YAML is invalid.
