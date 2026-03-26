@@ -90,7 +90,7 @@ func FinalizeTier(programManifestPath string, tierNumber int, repoDir string) (r
 			data.ImplMergeResults[implSlug] = mergeResult
 			data.Errors = append(data.Errors, fmt.Sprintf("merge failed for impl %s: %v", implSlug, mergeErr))
 			return result.NewFailure[FinalizeTierData]([]result.SAWError{{
-				Code:     "E001",
+				Code:     result.CodeMergeConflict,
 				Message:  fmt.Sprintf("merge failed for impl %s: %v", implSlug, mergeErr),
 				Severity: "fatal",
 			}}), nil
@@ -114,7 +114,7 @@ func FinalizeTier(programManifestPath string, tierNumber int, repoDir string) (r
 		}
 		data.Errors = append(data.Errors, errMsg)
 		return result.NewFailure[FinalizeTierData]([]result.SAWError{{
-			Code:     "E002",
+			Code:     result.CodeTierGateFailed,
 			Message:  errMsg,
 			Severity: "fatal",
 		}}), nil
@@ -125,7 +125,7 @@ func FinalizeTier(programManifestPath string, tierNumber int, repoDir string) (r
 	if !gateData.Passed {
 		data.Errors = append(data.Errors, fmt.Sprintf("tier gate failed for tier %d", tierNumber))
 		return result.NewFailure[FinalizeTierData]([]result.SAWError{{
-			Code:     "E003",
+			Code:     result.CodeTierGateFailed,
 			Message:  fmt.Sprintf("tier gate failed for tier %d", tierNumber),
 			Severity: "fatal",
 		}}), nil
