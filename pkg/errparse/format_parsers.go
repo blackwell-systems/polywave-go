@@ -40,7 +40,7 @@ func (p *GofmtParser) Parse(stdout, stderr string) *ParseResult {
 			continue
 		}
 		pr.Errors = append(pr.Errors, result.SAWError{
-			Code:     "TOOL_ERROR",
+			Code:     result.CodeToolError,
 			File:     line,
 			Severity: "warning",
 			Message:  "file is not gofmt-formatted",
@@ -97,7 +97,7 @@ func (p *PrettierFormatParser) Parse(stdout, stderr string) *ParseResult {
 				continue
 			}
 			pr.Errors = append(pr.Errors, result.SAWError{
-				Code:     "TOOL_ERROR",
+				Code:     result.CodeToolError,
 				File:     file,
 				Severity: "warning",
 				Message:  "file is not prettier-formatted",
@@ -150,7 +150,7 @@ func (p *RuffFormatParser) Parse(stdout, stderr string) *ParseResult {
 				continue
 			}
 			pr.Errors = append(pr.Errors, result.SAWError{
-				Code:     "TOOL_ERROR",
+				Code:     result.CodeToolError,
 				File:     file,
 				Severity: "warning",
 				Message:  "file needs ruff format",
@@ -196,7 +196,7 @@ func (p *CargoFmtParser) Parse(stdout, stderr string) *ParseResult {
 					continue
 				}
 				pr.Errors = append(pr.Errors, result.SAWError{
-					Code:     "TOOL_ERROR",
+					Code:     result.CodeToolError,
 					File:     file,
 					Severity: "warning",
 					Message:  "file needs cargo fmt",

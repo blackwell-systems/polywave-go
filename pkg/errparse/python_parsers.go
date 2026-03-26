@@ -110,7 +110,7 @@ func (p *PytestParser) Parse(stdout, stderr string) *ParseResult {
 			file := extractPytestFile(testID)
 
 			se := result.SAWError{
-				Code:     "TOOL_ERROR",
+				Code:     result.CodeToolError,
 				File:     file,
 				Severity: "error",
 				Message:  msg,
@@ -144,7 +144,7 @@ func (p *PytestParser) Parse(stdout, stderr string) *ParseResult {
 
 			file := m[1]
 			se := result.SAWError{
-				Code:     "TOOL_ERROR",
+				Code:     result.CodeToolError,
 				File:     file,
 				Severity: "error",
 				Message:  "collection error: " + file,
@@ -225,7 +225,7 @@ func (m *MypyParser) Parse(stdout, stderr string) *ParseResult {
 		}
 
 		se := result.SAWError{
-			Code:     "TOOL_ERROR",
+			Code:     result.CodeToolError,
 			File:     file,
 			Line:     lineNum,
 			Severity: severity,
@@ -305,7 +305,7 @@ func (r *RuffParser) Parse(stdout, stderr string) *ParseResult {
 		}
 
 		se := result.SAWError{
-			Code:     "TOOL_ERROR",
+			Code:     result.CodeToolError,
 			File:     file,
 			Line:     lineNum,
 			Severity: severity,

@@ -42,8 +42,8 @@ func TestGoBuildParser_SingleError(t *testing.T) {
 	if e.Severity != "error" {
 		t.Errorf("expected Severity 'error', got %q", e.Severity)
 	}
-	if e.Code != "TOOL_ERROR" {
-		t.Errorf("expected Code 'TOOL_ERROR', got %q", e.Code)
+	if e.Code != result.CodeToolError {
+		t.Errorf("expected Code %q, got %q", result.CodeToolError, e.Code)
 	}
 	if e.Tool != "go-build" {
 		t.Errorf("expected Tool 'go-build', got %q", e.Tool)
