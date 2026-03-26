@@ -8,11 +8,11 @@ import (
 	"bytes"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"regexp"
 	"strings"
 
+	"github.com/blackwell-systems/scout-and-wave-go/internal/git"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
 )
 
@@ -439,10 +439,7 @@ func detectOrphanedWorktrees(repoPaths []string, manifest *protocol.IMPLManifest
 	var orphaned []string
 
 	for _, repoPath := range repoPaths {
-		cmd := exec.Command("git", "worktree", "list", "--porcelain")
-		cmd.Dir = repoPath
-
-		out, err := cmd.Output()
+		out, err := git.WorktreeListRaw(repoPath)
 		if err != nil {
 			// Git not available or no worktrees — skip this repo.
 			continue
