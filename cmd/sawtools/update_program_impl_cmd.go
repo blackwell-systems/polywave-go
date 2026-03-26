@@ -45,8 +45,7 @@ Exit codes:
 			// Parse the PROGRAM manifest
 			manifest, err := protocol.ParseProgramManifest(manifestPath)
 			if err != nil {
-				fmt.Fprintf(os.Stderr, "update-program-impl: parse error: %v\n", err)
-				os.Exit(2)
+				return fmt.Errorf("update-program-impl: parse error: %v", err)
 			}
 
 			// Find the impl entry by slug
@@ -59,8 +58,7 @@ Exit codes:
 			}
 
 			if implIdx == -1 {
-				fmt.Fprintf(os.Stderr, "update-program-impl: impl %s not found in manifest\n", implSlug)
-				os.Exit(1)
+				return fmt.Errorf("update-program-impl: impl %s not found in manifest", implSlug)
 			}
 
 			// Record previous status
@@ -72,14 +70,12 @@ Exit codes:
 			// Marshal manifest back to YAML
 			data, err := yaml.Marshal(manifest)
 			if err != nil {
-				fmt.Fprintf(os.Stderr, "update-program-impl: failed to marshal manifest: %v\n", err)
-				os.Exit(1)
+				return fmt.Errorf("update-program-impl: failed to marshal manifest: %v", err)
 			}
 
 			// Write manifest back to disk
 			if err := os.WriteFile(manifestPath, data, 0644); err != nil {
-				fmt.Fprintf(os.Stderr, "update-program-impl: failed to write manifest: %v\n", err)
-				os.Exit(1)
+				return fmt.Errorf("update-program-impl: failed to write manifest: %v", err)
 			}
 
 			result := UpdateProgramImplResult{

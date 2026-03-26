@@ -3,7 +3,6 @@ package main
 import (
 	"encoding/json"
 	"fmt"
-	"os"
 
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
 	"github.com/spf13/cobra"
@@ -36,7 +35,7 @@ func newCheckConflictsCmd() *cobra.Command {
 			fmt.Println(string(out))
 
 			if len(conflicts) > 0 {
-				os.Exit(1)
+				return fmt.Errorf("check-conflicts: %d conflict(s) detected", len(conflicts))
 			}
 			return nil
 		},

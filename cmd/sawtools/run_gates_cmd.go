@@ -3,7 +3,6 @@ package main
 import (
 	"encoding/json"
 	"fmt"
-	"os"
 	"path/filepath"
 
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/gatecache"
@@ -49,7 +48,7 @@ func newRunGatesCmd() *cobra.Command {
 
 			for _, r := range results {
 				if r.Required && !r.Passed {
-					os.Exit(1)
+					return fmt.Errorf("run-gates: required gate failed")
 				}
 			}
 			return nil

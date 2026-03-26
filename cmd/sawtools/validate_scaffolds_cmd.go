@@ -3,7 +3,6 @@ package main
 import (
 	"encoding/json"
 	"fmt"
-	"os"
 
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
 	"github.com/spf13/cobra"
@@ -39,7 +38,7 @@ func newValidateScaffoldsCmd() *cobra.Command {
 			fmt.Println(string(out))
 
 			if !allCommitted {
-				os.Exit(1)
+				return fmt.Errorf("validate-scaffolds: not all scaffolds are committed")
 			}
 			return nil
 		},

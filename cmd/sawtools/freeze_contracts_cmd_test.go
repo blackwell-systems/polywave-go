@@ -138,8 +138,17 @@ completion:
 		t.Fatal(err)
 	}
 
-	// Skip this test because os.Exit(1) will kill the test runner
-	t.Skip("Cannot test os.Exit(1) behavior in unit tests - requires integration test")
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	cmd := newFreezeContractsCmd()
+	cmd.SetOut(&stdout)
+	cmd.SetErr(&stderr)
+	cmd.SetArgs([]string{manifestPath, "--tier", "1", "--repo-dir", tmpDir})
+
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatal("expected error for missing contract file, got nil")
+	}
 }
 
 // TestFreezeContractsCmd_UncommittedFile tests handling of uncommitted contract.
@@ -188,8 +197,17 @@ completion:
 		t.Fatal(err)
 	}
 
-	// Skip this test because os.Exit(1) will kill the test runner
-	t.Skip("Cannot test os.Exit(1) behavior in unit tests - requires integration test")
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	cmd := newFreezeContractsCmd()
+	cmd.SetOut(&stdout)
+	cmd.SetErr(&stderr)
+	cmd.SetArgs([]string{manifestPath, "--tier", "1", "--repo-dir", tmpDir})
+
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatal("expected error for uncommitted contract file, got nil")
+	}
 }
 
 // Helper: initialize a git repository

@@ -2,7 +2,6 @@ package main
 
 import (
 	"fmt"
-	"os"
 
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
 	"github.com/spf13/cobra"
@@ -37,7 +36,7 @@ Exit code 1 if any check fails (ready=false).`,
 			}
 
 			if !gateResult.Ready {
-				os.Exit(1)
+				return fmt.Errorf("pre-wave-gate: not ready")
 			}
 			return nil
 		},

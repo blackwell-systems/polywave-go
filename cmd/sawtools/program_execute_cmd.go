@@ -44,11 +44,10 @@ Exit codes:
 		RunE: func(cmd *cobra.Command, args []string) error {
 			manifestPath := args[0]
 
-			// Validate manifest is parseable (exit 2 on parse error)
+			// Validate manifest is parseable (return error on parse error)
 			_, err := protocol.ParseProgramManifest(manifestPath)
 			if err != nil {
-				fmt.Fprintf(os.Stderr, "program-execute: parse error: %v\n", err)
-				os.Exit(2)
+				return fmt.Errorf("program-execute: parse error: %v", err)
 			}
 
 			// Set up context with signal handling
@@ -88,8 +87,7 @@ Exit codes:
 
 			result, err := engine.RunTierLoop(ctx, opts)
 			if err != nil {
-				fmt.Fprintf(os.Stderr, "program-execute: %v\n", err)
-				os.Exit(1)
+				return fmt.Errorf("program-execute: %v", err)
 			}
 
 			// Output final result as JSON
@@ -97,7 +95,7 @@ Exit codes:
 			fmt.Fprintln(cmd.OutOrStdout(), string(out))
 
 			if !result.ProgramComplete && len(result.Errors) > 0 {
-				os.Exit(1)
+				return fmt.Errorf("program-execute: execution failed")
 			}
 
 			return nil

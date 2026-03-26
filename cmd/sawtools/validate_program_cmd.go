@@ -35,12 +35,10 @@ func newValidateProgramCmd() *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			manifestPath := args[0]
 
-			// Parse the manifest; fail fast if unparseable (exit 2)
+			// Parse the manifest; fail fast if unparseable
 			manifest, err := protocol.ParseProgramManifest(manifestPath)
 			if err != nil {
-				// Parse error - exit code 2
-				fmt.Fprintf(os.Stderr, "validate-program: parse error: %v\n", err)
-				os.Exit(2)
+				return fmt.Errorf("validate-program: parse error: %v", err)
 			}
 
 			// Run validation
@@ -79,9 +77,9 @@ func newValidateProgramCmd() *cobra.Command {
 			out, _ := json.MarshalIndent(result, "", "  ")
 			fmt.Fprintln(cmd.OutOrStdout(), string(out))
 
-			// Exit code 1 if validation errors, 0 if valid
+			// Return error if validation errors
 			if !result.Valid {
-				os.Exit(1)
+				return fmt.Errorf("validate-program: validation failed")
 			}
 			return nil
 		},

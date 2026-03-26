@@ -35,15 +35,13 @@ Exit codes:
 			// Parse the PROGRAM manifest
 			manifest, err := protocol.ParseProgramManifest(manifestPath)
 			if err != nil {
-				fmt.Fprintf(os.Stderr, "program-status: parse error: %v\n", err)
-				os.Exit(2)
+				return fmt.Errorf("program-status: parse error: %v", err)
 			}
 
 			// Get current working directory as repo path
 			repoPath, err := os.Getwd()
 			if err != nil {
-				fmt.Fprintf(os.Stderr, "program-status: failed to get current directory: %v\n", err)
-				os.Exit(2)
+				return fmt.Errorf("program-status: failed to get current directory: %v", err)
 			}
 
 			// Sync status from disk before displaying (non-fatal on error)
@@ -54,8 +52,7 @@ Exit codes:
 			// Get program status
 			res := protocol.GetProgramStatus(manifest, repoPath)
 			if res.IsFatal() {
-				fmt.Fprintf(os.Stderr, "program-status: %s\n", res.Errors[0].Message)
-				os.Exit(2)
+				return fmt.Errorf("program-status: %s", res.Errors[0].Message)
 			}
 			data := res.GetData()
 

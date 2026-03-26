@@ -37,9 +37,9 @@ Prevents agents wasting time on dependency thrashing.`,
 				return fmt.Errorf("failed to encode report: %w", err)
 			}
 
-			// Exit code: 0 if no conflicts, 1 if conflicts found
+			// Return error if conflicts found
 			if len(report.MissingDeps) > 0 || len(report.VersionConflicts) > 0 {
-				os.Exit(1)
+				return fmt.Errorf("check-deps: dependency conflicts detected")
 			}
 
 			return nil

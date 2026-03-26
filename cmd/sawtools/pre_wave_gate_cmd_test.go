@@ -79,14 +79,39 @@ func TestPreWaveGateCmd_InvalidPath(t *testing.T) {
 }
 
 func TestPreWaveGateCmd_StateComplete_ExitsOne(t *testing.T) {
-	// SKIP: This test would call os.Exit(1) when ready=false, terminating the
-	// entire test process. The exit code behavior should be tested via
-	// subprocess/integration tests, not unit tests.
-	//
-	// The underlying protocol.PreWaveGate behavior (state=COMPLETE => fail) is
-	// tested in pkg/protocol/pre_wave_gate_test.go.
-	// The CLI correctly calls os.Exit(1) when Ready==false (implemented correctly).
-	t.Skip("Skipping test that would call os.Exit(1) and terminate test process")
+	tmpDir := t.TempDir()
+	implPath := filepath.Join(tmpDir, "IMPL-complete.yaml")
+
+	// A manifest in COMPLETE state should fail pre-wave-gate
+	implContent := `title: Test Implementation
+feature_slug: test-implementation
+state: COMPLETE
+verdict: SUITABLE
+waves:
+  - number: 1
+    agents:
+      - id: A
+        task: implement test feature
+file_ownership:
+  - file: pkg/test/file.go
+    agent: A
+    wave: 1
+    action: new
+`
+	if err := os.WriteFile(implPath, []byte(implContent), 0644); err != nil {
+		t.Fatalf("failed to write temp IMPL: %v", err)
+	}
+
+	cmd := newPreWaveGateCmd()
+	cmd.SetArgs([]string{implPath})
+
+	var stdout bytes.Buffer
+	cmd.SetOut(&stdout)
+
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatal("expected error when ready=false, got nil")
+	}
 }
 
 func TestPreWaveGateCmd_Structure(t *testing.T) {

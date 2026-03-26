@@ -59,9 +59,12 @@ func TestProgramReplan_WithTierNumber(t *testing.T) {
 	// because the manifest file doesn't exist, but flags must parse cleanly.
 	cmd.SetArgs([]string{"nonexistent.yaml", "--reason", "tier gate failed", "--tier", "3"})
 
-	// We expect exit 2 (parse error) due to missing file — but since os.Exit
-	// cannot be tested directly, we skip and document the expected behavior.
-	t.Skip("Cannot test os.Exit(2) behavior in unit tests — --tier flag acceptance is verified by TestProgramReplan_FlagStructure")
+	// We expect an error (parse error) due to missing file.
+	// With os.Exit replaced by return fmt.Errorf(), cmd.Execute() returns a non-nil error.
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatal("expected error for nonexistent manifest file, got nil")
+	}
 }
 
 // TestProgramReplan_FlagStructure verifies the command registers all expected flags.

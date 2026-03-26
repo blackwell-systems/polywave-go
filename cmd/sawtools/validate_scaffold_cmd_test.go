@@ -117,10 +117,17 @@ wave_count: 1
 		t.Fatal(err)
 	}
 
-	// We need to skip this test because os.Exit(1) will kill the test runner.
-	// This is a known limitation of testing commands that call os.Exit().
-	// The functionality should be tested via integration tests or manual testing.
-	t.Skip("Cannot test os.Exit(1) behavior in unit tests - requires integration test")
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	cmd := newValidateScaffoldCmd()
+	cmd.SetOut(&stdout)
+	cmd.SetErr(&stderr)
+	cmd.SetArgs([]string{scaffoldPath, "--impl-doc", implPath})
+
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatal("expected error for scaffold validation failure, got nil")
+	}
 }
 
 // TestValidateScaffoldCmd_MissingImplDoc tests error handling when --impl-doc is not provided.
@@ -185,8 +192,17 @@ wave_count: 1
 		t.Fatal(err)
 	}
 
-	// Skip this test because validation will call os.Exit(1) for the failure
-	t.Skip("Cannot test os.Exit(1) behavior in unit tests - requires integration test")
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	cmd := newValidateScaffoldCmd()
+	cmd.SetOut(&stdout)
+	cmd.SetErr(&stderr)
+	cmd.SetArgs([]string{"/nonexistent/scaffold.go", "--impl-doc", implPath})
+
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatal("expected error for non-existent scaffold file, got nil")
+	}
 }
 
 // TestValidateScaffoldCmd_YAMLOutput tests the YAML output format.

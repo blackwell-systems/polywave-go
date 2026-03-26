@@ -59,8 +59,7 @@ Exit codes:
 			if repoDir == "" {
 				cwd, err := os.Getwd()
 				if err != nil {
-					fmt.Fprintf(os.Stderr, "mark-program-complete: failed to get current directory: %v\n", err)
-					os.Exit(2)
+					return fmt.Errorf("mark-program-complete: failed to get current directory: %v", err)
 				}
 				repoDir = cwd
 			}
@@ -68,14 +67,12 @@ Exit codes:
 			// Parse the PROGRAM manifest
 			manifest, err := protocol.ParseProgramManifest(manifestPath)
 			if err != nil {
-				fmt.Fprintf(os.Stderr, "mark-program-complete: parse error: %v\n", err)
-				os.Exit(2)
+				return fmt.Errorf("mark-program-complete: parse error: %v", err)
 			}
 
 			// Verify all tiers are complete (all IMPLs have status "complete")
 			if err := verifyAllTiersComplete(manifest); err != nil {
-				fmt.Fprintf(os.Stderr, "mark-program-complete: %v\n", err)
-				os.Exit(1)
+				return fmt.Errorf("mark-program-complete: %v", err)
 			}
 
 			// Count tiers and impls for reporting
@@ -84,8 +81,7 @@ Exit codes:
 
 			// Update the manifest file: set state, completion_date, and marker
 			if err := writeProgramCompleteMarker(manifestPath, date); err != nil {
-				fmt.Fprintf(os.Stderr, "mark-program-complete: failed to update manifest: %v\n", err)
-				os.Exit(2)
+				return fmt.Errorf("mark-program-complete: failed to update manifest: %v", err)
 			}
 
 			// Step 2: Archive to docs/PROGRAM/complete/

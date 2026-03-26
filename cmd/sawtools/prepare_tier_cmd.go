@@ -4,7 +4,6 @@ package main
 import (
 	"encoding/json"
 	"fmt"
-	"os"
 
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
 	"github.com/spf13/cobra"
@@ -39,8 +38,7 @@ Exit codes:
 			result, err := protocol.PrepareTier(manifestPath, tierNum, repoDir)
 			if err != nil {
 				if result == nil {
-					fmt.Fprintln(cmd.ErrOrStderr(), err)
-					os.Exit(2)
+					return fmt.Errorf("prepare-tier: %v", err)
 				}
 				return err
 			}
@@ -49,7 +47,7 @@ Exit codes:
 			fmt.Fprintln(cmd.OutOrStdout(), string(out))
 
 			if !result.Success {
-				os.Exit(1)
+				return fmt.Errorf("prepare-tier: step failure")
 			}
 
 			return nil

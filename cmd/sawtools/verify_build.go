@@ -3,7 +3,6 @@ package main
 import (
 	"encoding/json"
 	"fmt"
-	"os"
 
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
 	"github.com/spf13/cobra"
@@ -26,7 +25,7 @@ func newVerifyBuildCmd() *cobra.Command {
 			fmt.Println(string(out))
 
 			if !result.TestPassed || !result.LintPassed {
-				os.Exit(1)
+				return fmt.Errorf("verify-build: test or lint failed")
 			}
 			return nil
 		},

@@ -5,7 +5,6 @@ package main
 import (
 	"encoding/json"
 	"fmt"
-	"os"
 
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
 	"github.com/spf13/cobra"
@@ -30,14 +29,7 @@ func newCheckProgramConflictsCmd() *cobra.Command {
 			fmt.Fprintln(cmd.OutOrStdout(), string(out))
 
 			if exitCode != 0 {
-				// Write BLOCKED message to stderr
-				fmt.Fprintf(cmd.ErrOrStderr(), "check-program-conflicts: BLOCKED — %d conflict(s) detected in tier %d\n", len(report.Conflicts), tierNum)
-				fmt.Fprintf(cmd.ErrOrStderr(), "Conflicting IMPLs:\n")
-				for _, c := range report.Conflicts {
-					fmt.Fprintf(cmd.ErrOrStderr(), "  %s: %v\n", c.File, c.Impls)
-				}
-				fmt.Fprintf(cmd.ErrOrStderr(), "Resolve by moving conflicting IMPLs to different tiers.\n")
-				os.Exit(1)
+				return fmt.Errorf("check-program-conflicts: BLOCKED — %d conflict(s) detected in tier %d", len(report.Conflicts), tierNum)
 			}
 			return nil
 		},

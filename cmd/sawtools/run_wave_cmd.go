@@ -44,7 +44,7 @@ func newRunWaveCmd() *cobra.Command {
 			fmt.Println(string(out))
 
 			if !result.Success {
-				os.Exit(1)
+				return fmt.Errorf("run-wave: wave execution failed")
 			}
 			return nil
 		},

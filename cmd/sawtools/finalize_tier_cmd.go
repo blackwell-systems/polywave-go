@@ -4,7 +4,6 @@ package main
 import (
 	"encoding/json"
 	"fmt"
-	"os"
 
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/engine"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
@@ -48,7 +47,7 @@ Exit codes:
 			fmt.Fprintln(cmd.OutOrStdout(), string(out))
 
 			if !result.IsSuccess() {
-				os.Exit(1)
+				return fmt.Errorf("finalize-tier: one or more merges failed or tier gate failed")
 			}
 
 			// If --auto is set and tier gate passed, advance to next tier

@@ -2,7 +2,6 @@ package main
 
 import (
 	"fmt"
-	"os"
 
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
 	"github.com/spf13/cobra"
@@ -29,8 +28,7 @@ func newSolveCmd() *cobra.Command {
 			// Run the solver.
 			fixed, changes, err := protocol.SolveManifest(m)
 			if err != nil {
-				fmt.Fprintf(os.Stderr, "✗ Cannot solve: %s\n", err)
-				os.Exit(1)
+				return fmt.Errorf("solve: cannot solve: %s", err)
 			}
 
 			// Count agents and waves for summary.

@@ -2,7 +2,6 @@ package main
 
 import (
 	"fmt"
-	"os"
 
 	"github.com/spf13/cobra"
 	"gopkg.in/yaml.v3"
@@ -44,9 +43,9 @@ Outputs structured YAML with pass/fail status per step.`,
 				return fmt.Errorf("failed to encode result: %w", err)
 			}
 
-			// Exit code: 0 if PASS, 1 if FAIL
+			// Return error if FAIL
 			if result.OverallStatus() == "FAIL" {
-				os.Exit(1)
+				return fmt.Errorf("validate-scaffold: validation failed")
 			}
 
 			return nil

@@ -114,7 +114,7 @@ Output is always JSON.`,
 				if len(res.Errors) > 0 && res.Errors[0].Code == "AMEND_BLOCKED" {
 					out, _ := json.MarshalIndent(errResp, "", "  ")
 					fmt.Println(string(out))
-					os.Exit(1)
+					return fmt.Errorf("amend-impl: blocked")
 				}
 				return fmt.Errorf("amend-impl: %s", msg)
 			}

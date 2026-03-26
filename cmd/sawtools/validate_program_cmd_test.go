@@ -109,9 +109,17 @@ completion:
 		t.Fatal(err)
 	}
 
-	// We need to skip this test because os.Exit(1) will kill the test runner.
-	// The functionality should be tested via integration tests or manual testing.
-	t.Skip("Cannot test os.Exit(1) behavior in unit tests - requires integration test")
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	cmd := newValidateProgramCmd()
+	cmd.SetOut(&stdout)
+	cmd.SetErr(&stderr)
+	cmd.SetArgs([]string{manifestPath})
+
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatal("expected error for invalid program manifest, got nil")
+	}
 }
 
 // TestValidateProgramCmd_P1Violation tests detection of P1 violations (same-tier dependencies).
@@ -151,14 +159,32 @@ completion:
 		t.Fatal(err)
 	}
 
-	// Skip due to os.Exit(1) behavior
-	t.Skip("Cannot test os.Exit(1) behavior in unit tests - requires integration test")
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	cmd := newValidateProgramCmd()
+	cmd.SetOut(&stdout)
+	cmd.SetErr(&stderr)
+	cmd.SetArgs([]string{manifestPath})
+
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatal("expected error for P1 violation, got nil")
+	}
 }
 
 // TestValidateProgramCmd_MissingFile tests handling of non-existent manifest file.
 func TestValidateProgramCmd_MissingFile(t *testing.T) {
-	// Skip due to os.Exit(2) behavior
-	t.Skip("Cannot test os.Exit(2) behavior in unit tests - requires integration test")
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	cmd := newValidateProgramCmd()
+	cmd.SetOut(&stdout)
+	cmd.SetErr(&stderr)
+	cmd.SetArgs([]string{"/nonexistent/path/PROGRAM-missing.yaml"})
+
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatal("expected error for non-existent manifest file, got nil")
+	}
 }
 
 // TestValidateProgramCmd_JSONOutput tests the JSON output format.

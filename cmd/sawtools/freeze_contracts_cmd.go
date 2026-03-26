@@ -39,8 +39,7 @@ Exit codes:
 			if repoDir == "" {
 				cwd, err := os.Getwd()
 				if err != nil {
-					fmt.Fprintf(os.Stderr, "freeze-contracts: failed to get current directory: %v\n", err)
-					os.Exit(2)
+					return fmt.Errorf("freeze-contracts: failed to get current directory: %v", err)
 				}
 				repoDir = cwd
 			}
@@ -48,15 +47,13 @@ Exit codes:
 			// Parse the PROGRAM manifest
 			manifest, err := protocol.ParseProgramManifest(manifestPath)
 			if err != nil {
-				fmt.Fprintf(os.Stderr, "freeze-contracts: parse error: %v\n", err)
-				os.Exit(2)
+				return fmt.Errorf("freeze-contracts: parse error: %v", err)
 			}
 
 			// Freeze contracts
 			res := protocol.FreezeContracts(manifest, tier, repoDir)
 			if res.IsFatal() {
-				fmt.Fprintf(os.Stderr, "freeze-contracts: %s\n", res.Errors[0].Message)
-				os.Exit(2)
+				return fmt.Errorf("freeze-contracts: %s", res.Errors[0].Message)
 			}
 			data := res.GetData()
 
@@ -64,9 +61,9 @@ Exit codes:
 			out, _ := json.MarshalIndent(data, "", "  ")
 			fmt.Fprintln(cmd.OutOrStdout(), string(out))
 
-			// Exit code based on success/errors
+			// Return error if not successful
 			if !data.Success {
-				os.Exit(1)
+				return fmt.Errorf("freeze-contracts: freeze errors detected")
 			}
 
 			return nil

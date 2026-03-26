@@ -127,13 +127,13 @@ Examples:
 
 				// Read the answer from stdin
 				if !reader.Scan() {
-					// stdin closed before interview complete — save state and exit 2
+					// stdin closed before interview complete — save state and return error
 					docPath := interviewDocPath(docsDir, doc.Slug)
 					if saveErr := mgr.Save(doc, docPath); saveErr != nil {
 						fmt.Fprintf(cmd.ErrOrStderr(), "Warning: failed to save interview state: %v\n", saveErr)
 					}
 					fmt.Fprintf(writer, "\nInterview paused. Resume with:\n  sawtools interview --resume %s\n", docPath)
-					os.Exit(2)
+					return fmt.Errorf("interview paused: resume with --resume %s", docPath)
 				}
 				answer := reader.Text()
 

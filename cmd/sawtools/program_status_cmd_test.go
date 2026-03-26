@@ -188,6 +188,15 @@ func TestProgramStatusCmd_ParseError(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Skip this test because os.Exit(2) will kill the test runner
-	t.Skip("Cannot test os.Exit(2) behavior in unit tests - requires integration test")
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	cmd := newProgramStatusCmd()
+	cmd.SetOut(&stdout)
+	cmd.SetErr(&stderr)
+	cmd.SetArgs([]string{manifestPath})
+
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatal("expected error for invalid manifest, got nil")
+	}
 }

@@ -4,7 +4,6 @@ package main
 import (
 	"encoding/json"
 	"fmt"
-	"os"
 
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
 	"github.com/spf13/cobra"
@@ -36,11 +35,8 @@ Exit codes:
 			res := protocol.CreateProgramWorktrees(manifestPath, tierNum, repoDir)
 
 			if res.IsFatal() {
-				// Print structured error and exit 2 for parse/tier-not-found errors
-				for _, e := range res.Errors {
-					fmt.Fprintf(os.Stderr, "create-program-worktrees: %s: %s\n", e.Code, e.Message)
-				}
-				os.Exit(2)
+				// Return error for parse/tier-not-found errors
+				return fmt.Errorf("create-program-worktrees: %s: %s", res.Errors[0].Code, res.Errors[0].Message)
 			}
 
 			data := res.GetData()
@@ -48,7 +44,7 @@ Exit codes:
 			fmt.Fprintln(cmd.OutOrStdout(), string(out))
 
 			if !res.IsSuccess() {
-				os.Exit(1)
+				return fmt.Errorf("create-program-worktrees: one or more worktrees failed")
 			}
 
 			return nil

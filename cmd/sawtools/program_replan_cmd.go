@@ -3,7 +3,6 @@ package main
 import (
 	"encoding/json"
 	"fmt"
-	"os"
 
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/engine"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
@@ -39,11 +38,10 @@ Exit codes:
 		RunE: func(cmd *cobra.Command, args []string) error {
 			manifestPath := args[0]
 
-			// Parse the PROGRAM manifest (exit 2 on parse error)
+			// Parse the PROGRAM manifest (return error on parse error)
 			_, err := protocol.ParseProgramManifest(manifestPath)
 			if err != nil {
-				fmt.Fprintf(os.Stderr, "program-replan: parse error: %v\n", err)
-				os.Exit(2)
+				return fmt.Errorf("program-replan: parse error: %v", err)
 			}
 
 			// Construct opts from flags
@@ -57,17 +55,16 @@ Exit codes:
 			// Call engine function
 			result, err := engine.ReplanProgram(opts)
 			if err != nil {
-				fmt.Fprintf(os.Stderr, "program-replan: %v\n", err)
-				os.Exit(1)
+				return fmt.Errorf("program-replan: %v", err)
 			}
 
 			// Output JSON result
 			out, _ := json.MarshalIndent(result, "", "  ")
 			fmt.Fprintln(cmd.OutOrStdout(), string(out))
 
-			// Exit 1 if validation failed
+			// Return error if validation failed
 			if !result.ValidationPassed {
-				os.Exit(1)
+				return fmt.Errorf("program-replan: validation failed")
 			}
 
 			return nil

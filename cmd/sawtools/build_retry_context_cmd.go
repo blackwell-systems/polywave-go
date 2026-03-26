@@ -3,7 +3,6 @@ package main
 import (
 	"encoding/json"
 	"fmt"
-	"os"
 
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/retryctx"
 	"github.com/spf13/cobra"
@@ -38,8 +37,7 @@ Exit codes:
 
 			rc, err := retryctx.BuildRetryContext(manifestPath, agentID, attemptNum)
 			if err != nil {
-				fmt.Fprintln(os.Stderr, "build-retry-context:", err)
-				os.Exit(1)
+				return fmt.Errorf("build-retry-context: %v", err)
 			}
 
 			out, err := json.MarshalIndent(rc, "", "  ")

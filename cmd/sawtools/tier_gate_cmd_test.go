@@ -131,8 +131,17 @@ completion:
 		t.Fatal(err)
 	}
 
-	// Skip this test because os.Exit(1) will kill the test runner
-	t.Skip("Cannot test os.Exit(1) behavior in unit tests - requires integration test")
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	cmd := newTierGateCmd()
+	cmd.SetOut(&stdout)
+	cmd.SetErr(&stderr)
+	cmd.SetArgs([]string{manifestPath, "--tier", "1"})
+
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatal("expected error for failing tier gate, got nil")
+	}
 }
 
 // TestTierGateCmd_InvalidTier tests handling of tier number not found.
@@ -165,8 +174,17 @@ completion:
 		t.Fatal(err)
 	}
 
-	// Skip this test because os.Exit(2) will kill the test runner
-	t.Skip("Cannot test os.Exit(2) behavior in unit tests - requires integration test")
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	cmd := newTierGateCmd()
+	cmd.SetOut(&stdout)
+	cmd.SetErr(&stderr)
+	cmd.SetArgs([]string{manifestPath, "--tier", "99"})
+
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatal("expected error for invalid tier number, got nil")
+	}
 }
 
 // TestTierGateCmd_NoTierFlag tests error handling when --tier flag is missing.

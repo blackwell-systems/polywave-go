@@ -3,7 +3,6 @@ package main
 import (
 	"encoding/json"
 	"fmt"
-	"os"
 
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/collision"
 	"github.com/spf13/cobra"
@@ -36,7 +35,7 @@ resolution.`,
 			fmt.Println(string(out))
 
 			if !report.Valid {
-				os.Exit(1)
+				return fmt.Errorf("check-type-collisions: type collisions detected")
 			}
 			return nil
 		},

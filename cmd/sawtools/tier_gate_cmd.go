@@ -40,8 +40,7 @@ Exit codes:
 			if repoDir == "" {
 				cwd, err := os.Getwd()
 				if err != nil {
-					fmt.Fprintf(os.Stderr, "tier-gate: failed to get current directory: %v\n", err)
-					os.Exit(2)
+					return fmt.Errorf("tier-gate: failed to get current directory: %v", err)
 				}
 				repoDir = cwd
 			}
@@ -49,15 +48,13 @@ Exit codes:
 			// Parse the PROGRAM manifest
 			manifest, err := protocol.ParseProgramManifest(manifestPath)
 			if err != nil {
-				fmt.Fprintf(os.Stderr, "tier-gate: parse error: %v\n", err)
-				os.Exit(2)
+				return fmt.Errorf("tier-gate: parse error: %v", err)
 			}
 
 			// Run tier gate verification
 			res := protocol.RunTierGate(manifest, tier, repoDir)
 			if res.IsFatal() {
-				fmt.Fprintf(os.Stderr, "tier-gate: %s\n", res.Errors[0].Message)
-				os.Exit(2)
+				return fmt.Errorf("tier-gate: %s", res.Errors[0].Message)
 			}
 			data := res.GetData()
 
@@ -65,9 +62,9 @@ Exit codes:
 			out, _ := json.MarshalIndent(data, "", "  ")
 			fmt.Fprintln(cmd.OutOrStdout(), string(out))
 
-			// Exit code based on pass/fail
+			// Return error if gate failed
 			if !data.Passed {
-				os.Exit(1)
+				return fmt.Errorf("tier gate failed")
 			}
 
 			return nil

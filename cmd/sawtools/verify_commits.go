@@ -3,7 +3,6 @@ package main
 import (
 	"encoding/json"
 	"fmt"
-	"os"
 
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
 	"github.com/spf13/cobra"
@@ -36,7 +35,7 @@ func newVerifyCommitsCmd() *cobra.Command {
 				}
 			}
 			if !allValid {
-				os.Exit(1)
+				return fmt.Errorf("verify-commits: not all agents have commits")
 			}
 			return nil
 		},

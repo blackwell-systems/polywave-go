@@ -3,7 +3,6 @@ package main
 import (
 	"encoding/json"
 	"fmt"
-	"os"
 
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
 	"github.com/spf13/cobra"
@@ -63,10 +62,9 @@ func newCheckCompletionCmd() *cobra.Command {
 			}
 			fmt.Fprintln(cmd.OutOrStdout(), string(out))
 
-			// Exit 1 if not found or status is empty
+			// Return error if not found or status is empty
 			if !result.Found {
-				fmt.Fprintln(cmd.ErrOrStderr(), "agent completion report not found or status is empty")
-				os.Exit(1)
+				return fmt.Errorf("agent completion report not found or status is empty")
 			}
 
 			return nil
