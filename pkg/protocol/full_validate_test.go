@@ -271,6 +271,80 @@ completion:
 	}
 }
 
+func TestFullValidate_WarningsNonBlocking(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	// Build a manifest where agent A owns 9 files — triggers W001_AGENT_SCOPE_LARGE
+	// (severity: "warning") from CheckAgentComplexity via Validate(m).
+	// After severity splitting, Valid must be true with ErrorCount=0 and WarningCount>0.
+	manifest := `title: "Test Feature"
+feature_slug: "test-feature"
+verdict: "SUITABLE"
+state: "WAVE_EXECUTING"
+waves:
+  - number: 1
+    agents:
+      - id: "A"
+        task: "implement feature"
+file_ownership:
+  - file: "pkg/a1.go"
+    agent: "A"
+    wave: 1
+  - file: "pkg/a2.go"
+    agent: "A"
+    wave: 1
+  - file: "pkg/a3.go"
+    agent: "A"
+    wave: 1
+  - file: "pkg/a4.go"
+    agent: "A"
+    wave: 1
+  - file: "pkg/a5.go"
+    agent: "A"
+    wave: 1
+  - file: "pkg/a6.go"
+    agent: "A"
+    wave: 1
+  - file: "pkg/a7.go"
+    agent: "A"
+    wave: 1
+  - file: "pkg/a8.go"
+    agent: "A"
+    wave: 1
+  - file: "pkg/a9.go"
+    agent: "A"
+    wave: 1
+quality_gates:
+  level: "standard"
+`
+	path := writeManifest(t, tmpDir, "IMPL-test.yaml", manifest)
+
+	res := FullValidate(path, FullValidateOpts{})
+	if res.IsFatal() {
+		t.Fatalf("expected non-fatal result, got fatal: %v", res.Errors)
+	}
+	data := res.GetData()
+	if !data.Valid {
+		t.Errorf("expected Valid=true (warnings only are non-blocking), got false; errors: %v", data.Errors)
+	}
+	if data.ErrorCount != 0 {
+		t.Errorf("expected ErrorCount=0, got %d; errors: %v", data.ErrorCount, data.Errors)
+	}
+	if data.WarningCount == 0 {
+		t.Errorf("expected WarningCount>0 for oversized agent, got 0")
+	}
+	// All items in Warnings must have severity warning or info
+	for _, w := range data.Warnings {
+		if w.Severity != "warning" && w.Severity != "info" {
+			t.Errorf("expected warning/info severity in Warnings, got %q (code: %s)", w.Severity, w.Code)
+		}
+	}
+	// Errors slice must be empty
+	if len(data.Errors) != 0 {
+		t.Errorf("expected empty Errors slice, got: %v", data.Errors)
+	}
+}
+
 func TestAppendWiringReport(t *testing.T) {
 	tmpDir := t.TempDir()
 

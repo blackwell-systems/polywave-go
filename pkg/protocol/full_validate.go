@@ -9,10 +9,12 @@ import (
 
 // FullValidateData holds the result of a complete manifest validation.
 type FullValidateData struct {
-	Valid      bool              `json:"valid"`
-	ErrorCount int              `json:"error_count"`
-	Errors     []result.SAWError `json:"errors"`
-	Fixed      int              `json:"fixed,omitempty"`
+	Valid        bool              `json:"valid"`
+	ErrorCount   int               `json:"error_count"`
+	Errors       []result.SAWError `json:"errors"`
+	WarningCount int               `json:"warning_count,omitempty"`
+	Warnings     []result.SAWError `json:"warnings,omitempty"`
+	Fixed        int               `json:"fixed,omitempty"`
 }
 
 // FullValidateOpts controls validation behavior.
@@ -109,29 +111,45 @@ func FullValidate(manifestPath string, opts FullValidateOpts) result.Result[Full
 		errs = append(errs, docErrs...)
 	}
 
-	// Ensure errors is never nil
-	if errs == nil {
-		errs = []result.SAWError{}
+	// Split errors by severity: warnings/info are advisory, others are blocking.
+	var blockingErrs []result.SAWError
+	var warnings []result.SAWError
+	for _, e := range errs {
+		if e.Severity == "warning" || e.Severity == "info" {
+			warnings = append(warnings, e)
+		} else {
+			blockingErrs = append(blockingErrs, e)
+		}
+	}
+	if blockingErrs == nil {
+		blockingErrs = []result.SAWError{}
+	}
+	if warnings == nil {
+		warnings = []result.SAWError{}
 	}
 
 	data := FullValidateData{
-		Valid:      len(errs) == 0,
-		ErrorCount: len(errs),
-		Errors:     errs,
-		Fixed:      totalFixed,
+		Valid:        len(blockingErrs) == 0,
+		ErrorCount:   len(blockingErrs),
+		Errors:       blockingErrs,
+		WarningCount: len(warnings),
+		Warnings:     warnings,
+		Fixed:        totalFixed,
 	}
 
 	if data.Valid {
 		return result.NewSuccess(data)
 	}
-	return result.NewPartial(data, errs)
+	return result.NewPartial(data, blockingErrs)
 }
 
 // FullValidateProgramData holds the result of program manifest validation.
 type FullValidateProgramData struct {
-	Valid      bool              `json:"valid"`
-	ErrorCount int              `json:"error_count"`
-	Errors     []result.SAWError `json:"errors"`
+	Valid        bool              `json:"valid"`
+	ErrorCount   int               `json:"error_count"`
+	Errors       []result.SAWError `json:"errors"`
+	WarningCount int               `json:"warning_count,omitempty"`
+	Warnings     []result.SAWError `json:"warnings,omitempty"`
 }
 
 // FullValidateProgramOpts controls program validation behavior.
@@ -165,19 +183,33 @@ func FullValidateProgram(manifestPath string, opts FullValidateProgramOpts) resu
 		validationErrs = append(validationErrs, importErrs...)
 	}
 
-	// Ensure errors is never nil
-	if validationErrs == nil {
-		validationErrs = []result.SAWError{}
+	// Split errors by severity: warnings/info are advisory, others are blocking.
+	var blockingErrs []result.SAWError
+	var warnings []result.SAWError
+	for _, e := range validationErrs {
+		if e.Severity == "warning" || e.Severity == "info" {
+			warnings = append(warnings, e)
+		} else {
+			blockingErrs = append(blockingErrs, e)
+		}
+	}
+	if blockingErrs == nil {
+		blockingErrs = []result.SAWError{}
+	}
+	if warnings == nil {
+		warnings = []result.SAWError{}
 	}
 
 	data := FullValidateProgramData{
-		Valid:      len(validationErrs) == 0,
-		ErrorCount: len(validationErrs),
-		Errors:     validationErrs,
+		Valid:        len(blockingErrs) == 0,
+		ErrorCount:   len(blockingErrs),
+		Errors:       blockingErrs,
+		WarningCount: len(warnings),
+		Warnings:     warnings,
 	}
 
 	if data.Valid {
 		return result.NewSuccess(data)
 	}
-	return result.NewPartial(data, validationErrs)
+	return result.NewPartial(data, blockingErrs)
 }
