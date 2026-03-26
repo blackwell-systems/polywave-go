@@ -1,0 +1,835 @@
+completion_date: "2026-03-26"
+title: Consolidate all git subprocess calls into internal/git
+feature_slug: git-subprocess-unification
+feature: |
+    Eliminate every direct exec.Command("git",...) call outside of internal/git/.
+    Add missing wrapper functions to internal/git/commands.go, then migrate all
+    call sites in pkg/resume, pkg/orchestrator, pkg/tools, and cmd/sawtools to
+    use those wrappers. After this change, internal/git/ is the sole location of
+    exec.Command("git",...) in production code.
+verdict: SUITABLE
+suitability_assessment: |
+    1. File decomposition: 7 non-test files have direct git subprocess calls plus
+       internal/git/commands.go needs new wrappers and internal/git/commands_test.go
+       needs new tests. Wave 1 adds wrappers + tests to internal/git (no other
+       packages depend on this change during execution). Wave 2 migrates all 7
+       call-site files in parallel — they are fully independent. Disjoint ownership
+       is clean.
+
+    2. Investigation-first: No root cause investigation required. All call sites
+       are fully understood from direct code reading. The audit doc (Finding 2)
+       identified 3 packages; an exhaustive grep confirmed 7 files total.
+
+    3. Interface discoverability: All new internal/git function signatures are
+       fully specified before implementation begins (see interface_contracts).
+
+    4. Pre-implementation status check: 3 needed wrappers already exist in
+       internal/git (StatusPorcelain, Add, RevParse, IsAncestor, CommitWithMessage).
+       Agents are assigned only the missing wrappers and the migration tasks.
+       Existing functions in internal/git that are already in scope:
+         - StatusPorcelain — replaces git status --porcelain in worktree_status.go
+         - Add — replaces git add in context.go and mark_program_complete_cmd.go
+         - RevParse — replaces git rev-parse HEAD in mark_program_complete_cmd.go
+         - IsAncestor — replaces git merge-base --is-ancestor in finalize_wave.go
+         - CommitWithMessage — replaces git commit -m in context.go and mark_program_complete_cmd.go
+       Missing wrappers to add: SymbolicRef, WorktreeListRaw, DiffNameOnlyHEAD,
+       DiffNameOnlyStaged, AddUpdate, Version.
+
+    5. Parallelization value: 3 independent agents in Wave 2 (resume, tools+orch,
+       cmd). Build/test cycle ~15s. Clear coordination value as audit trail.
+
+    Estimated times:
+    - Scout phase: ~30 min
+    - Agent execution: ~20 min (Wave 1: 2 agents x 10 min parallel; Wave 2: 3 agents x 8 min parallel)
+    - Merge and verification: ~5 min per wave
+    Total SAW time: ~55 min
+    Sequential baseline: ~60 min (5 agents x 12 min avg sequential)
+    Time savings: ~5 min (marginal speed gain; primary value is audit completeness)
+    Recommendation: Proceed. Coordination value outweighs marginal speed gain.
+test_command: go test ./... -timeout 120s
+lint_command: go vet ./...
+file_ownership:
+    - file: internal/git/commands.go
+      agent: A
+      wave: 1
+      action: modify
+    - file: internal/git/commands_test.go
+      agent: B
+      wave: 1
+      action: modify
+    - file: pkg/resume/worktree_status.go
+      agent: C
+      wave: 2
+      action: modify
+    - file: pkg/resume/detect.go
+      agent: C
+      wave: 2
+      action: modify
+    - file: pkg/tools/executors.go
+      agent: D
+      wave: 2
+      action: modify
+    - file: pkg/orchestrator/context.go
+      agent: D
+      wave: 2
+      action: modify
+    - file: cmd/sawtools/finalize_wave.go
+      agent: E
+      wave: 2
+      action: modify
+    - file: cmd/sawtools/mark_program_complete_cmd.go
+      agent: E
+      wave: 2
+      action: modify
+    - file: cmd/sawtools/verify_install_cmd.go
+      agent: E
+      wave: 2
+      action: modify
+interface_contracts:
+    - name: git.SymbolicRef
+      description: Returns the full ref that HEAD points to (e.g., refs/heads/main)
+      definition: |
+        func SymbolicRef(repoPath string) (string, error)
+        // Returns an error for detached HEAD or when the git command fails.
+        // Uses RunOutput(repoPath, "symbolic-ref", "HEAD").
+        // Returns trimmed output on success.
+      location: internal/git/commands.go
+    - name: git.WorktreeListRaw
+      description: Returns raw bytes of git worktree list --porcelain for custom parsers
+      definition: |
+        func WorktreeListRaw(repoPath string) ([]byte, error)
+        // Executes git worktree list --porcelain and returns raw stdout bytes.
+        // Callers that parse the porcelain format directly use this instead of WorktreeList.
+        // Returns an error if git command fails.
+      location: internal/git/commands.go
+    - name: git.DiffNameOnlyHEAD
+      description: Returns file paths differing between HEAD and working tree (unstaged)
+      definition: |
+        func DiffNameOnlyHEAD(repoPath string) ([]string, error)
+        // Uses RunOutput(repoPath, "diff", "--name-only", "HEAD").
+        // Returns nil and no error when there are no differences.
+        // Returns an error only on git command failure.
+      location: internal/git/commands.go
+    - name: git.DiffNameOnlyStaged
+      description: Returns file paths that are staged for commit (index vs HEAD)
+      definition: |
+        func DiffNameOnlyStaged(repoPath string) ([]string, error)
+        // Uses RunOutput(repoPath, "diff", "--name-only", "--cached").
+        // Returns nil and no error when nothing is staged.
+        // Returns an error only on git command failure.
+      location: internal/git/commands.go
+    - name: git.AddUpdate
+      description: Stages updates (modifications and deletions, not new files) under path
+      definition: |
+        func AddUpdate(repoPath, path string) error
+        // Equivalent to git add -u <path>.
+        // Uses Run(repoPath, "add", "-u", path).
+        // Returns an error if the git command fails.
+      location: internal/git/commands.go
+    - name: git.Version
+      description: Returns the output of git --version without requiring a repo path
+      definition: |
+        func Version() (string, error)
+        // Runs exec.Command("git", "--version").Output() directly (no -C flag).
+        // Returns trimmed output string on success.
+        // Returns an error if git is not found on PATH or the command fails.
+      location: internal/git/commands.go
+waves:
+    - number: 1
+      agents:
+        - id: A
+          task: |
+            ## Context
+
+            You are adding 6 new wrapper functions to `internal/git/commands.go`. This
+            file is the centralized git abstraction for the codebase. It uses `Run()` and
+            `RunOutput()` as the two primitives — all higher-level functions call one of
+            these. Add new functions following existing conventions exactly.
+
+            Module: github.com/blackwell-systems/scout-and-wave-go
+
+            ## What to implement
+
+            Read `internal/git/commands.go` in full before starting. Append these 6
+            functions after the existing `LogOneline` function:
+
+            ### 1. SymbolicRef(repoPath string) (string, error)
+            ```go
+            // SymbolicRef returns the full ref that HEAD points to in the repository
+            // at repoPath (e.g., "refs/heads/main"). Returns an error for detached HEAD
+            // or when the git command fails.
+            func SymbolicRef(repoPath string) (string, error) {
+                out, err := RunOutput(repoPath, "symbolic-ref", "HEAD")
+                if err != nil {
+                    return "", fmt.Errorf("git symbolic-ref failed: %w", err)
+                }
+                return strings.TrimSpace(out), nil
+            }
+            ```
+
+            ### 2. WorktreeListRaw(repoPath string) ([]byte, error)
+            ```go
+            // WorktreeListRaw executes git worktree list --porcelain in repoPath and
+            // returns the raw stdout bytes for callers that parse the porcelain format directly.
+            func WorktreeListRaw(repoPath string) ([]byte, error) {
+                cmd := exec.Command("git", "-C", repoPath, "worktree", "list", "--porcelain")
+                out, err := cmd.Output()
+                if err != nil {
+                    return nil, fmt.Errorf("git worktree list --porcelain failed: %w", err)
+                }
+                return out, nil
+            }
+            ```
+
+            ### 3. DiffNameOnlyHEAD(repoPath string) ([]string, error)
+            ```go
+            // DiffNameOnlyHEAD returns file paths that differ between HEAD and the working
+            // tree (unstaged changes) in the repository at repoPath. Returns nil and no
+            // error when there are no differences.
+            func DiffNameOnlyHEAD(repoPath string) ([]string, error) {
+                out, err := RunOutput(repoPath, "diff", "--name-only", "HEAD")
+                if err != nil {
+                    return nil, fmt.Errorf("git diff --name-only HEAD failed: %w", err)
+                }
+                trimmed := strings.TrimSpace(out)
+                if trimmed == "" {
+                    return nil, nil
+                }
+                return strings.Split(trimmed, "\n"), nil
+            }
+            ```
+
+            ### 4. DiffNameOnlyStaged(repoPath string) ([]string, error)
+            ```go
+            // DiffNameOnlyStaged returns file paths that are staged for commit (index vs HEAD)
+            // in the repository at repoPath. Returns nil and no error when nothing is staged.
+            func DiffNameOnlyStaged(repoPath string) ([]string, error) {
+                out, err := RunOutput(repoPath, "diff", "--name-only", "--cached")
+                if err != nil {
+                    return nil, fmt.Errorf("git diff --name-only --cached failed: %w", err)
+                }
+                trimmed := strings.TrimSpace(out)
+                if trimmed == "" {
+                    return nil, nil
+                }
+                return strings.Split(trimmed, "\n"), nil
+            }
+            ```
+
+            ### 5. AddUpdate(repoPath, path string) error
+            ```go
+            // AddUpdate stages updates (modifications and deletions, not new files) for all
+            // tracked files under path in the repository at repoPath. Equivalent to git add -u <path>.
+            func AddUpdate(repoPath, path string) error {
+                _, err := Run(repoPath, "add", "-u", path)
+                if err != nil {
+                    return fmt.Errorf("git add -u failed: %w", err)
+                }
+                return nil
+            }
+            ```
+
+            ### 6. Version() (string, error)
+            ```go
+            // Version returns the raw output of git --version (e.g., "git version 2.39.2").
+            // Does not require a repository path. Returns an error if git is not found on PATH.
+            func Version() (string, error) {
+                out, err := exec.Command("git", "--version").Output()
+                if err != nil {
+                    return "", fmt.Errorf("git --version failed: %w", err)
+                }
+                return strings.TrimSpace(string(out)), nil
+            }
+            ```
+
+            ## Constraints
+
+            - Do NOT modify any existing functions.
+            - Follow error wrapping pattern: `fmt.Errorf("git X failed: %w", err)`.
+            - All new functions go after `LogOneline` at the end of the file.
+            - No new imports needed — `exec`, `fmt`, `strings` are already imported.
+
+            ## Verification gate
+
+            ```
+            go build ./internal/git/ && go vet ./internal/git/
+            ```
+          files:
+            - internal/git/commands.go
+        - id: B
+          task: |
+            ## Context
+
+            You are adding test cases for 6 new functions in `internal/git/commands_test.go`.
+            The file has an `initTestRepo(t)` helper at line 309 that creates a temp git repo
+            with one initial commit. Use this for all tests. Agent A adds the functions
+            you are testing — they will be in your worktree's main branch.
+
+            Module: github.com/blackwell-systems/scout-and-wave-go
+
+            ## What to implement
+
+            Read `internal/git/commands_test.go` in full before starting. Append the
+            following test functions after the last test (`TestInstallHooks_CreatesHooksDirectory`).
+
+            ### TestSymbolicRef_OnBranch
+            - Use initTestRepo(t)
+            - Call SymbolicRef(dir)
+            - Expect no error
+            - Expect output to start with "refs/heads/"
+
+            ### TestSymbolicRef_DetachedHEAD
+            - Use initTestRepo(t)
+            - Detach HEAD: Run(dir, "checkout", "--detach", "HEAD") — ignore error
+            - Call SymbolicRef(dir)
+            - Expect an error (detached HEAD returns non-zero exit from git)
+
+            ### TestWorktreeListRaw_ReturnsBytes
+            - Use initTestRepo(t)
+            - Call WorktreeListRaw(dir)
+            - Expect no error
+            - Expect output to not be empty and contain "worktree"
+
+            ### TestDiffNameOnlyHEAD_NoDiff
+            - Use initTestRepo(t) — clean repo
+            - Call DiffNameOnlyHEAD(dir)
+            - Expect no error and nil result (no unstaged changes)
+
+            ### TestDiffNameOnlyHEAD_WithModification
+            - Use initTestRepo(t)
+            - Write a file, stage it, commit it via Add(dir, f) + CommitWithMessage(dir, msg)
+            - Modify the committed file (os.WriteFile with different content, do NOT re-stage)
+            - Call DiffNameOnlyHEAD(dir)
+            - Expect no error
+            - Expect result to contain the modified filename
+
+            ### TestDiffNameOnlyStaged_NoStaged
+            - Use initTestRepo(t)
+            - Call DiffNameOnlyStaged(dir)
+            - Expect no error and nil result
+
+            ### TestDiffNameOnlyStaged_WithStaged
+            - Use initTestRepo(t)
+            - Write a file and stage it: os.WriteFile + Add(dir, filename)
+            - Call DiffNameOnlyStaged(dir)
+            - Expect no error
+            - Expect result to contain the filename (note: new untracked staged file
+              may appear differently — use "A " prefix in status but DiffNameOnlyStaged
+              uses git diff --cached which shows new staged files against HEAD)
+
+            ### TestAddUpdate_TrackedFile
+            - Use initTestRepo(t)
+            - Write a file, stage + commit it (so it's tracked)
+            - Modify the file (os.WriteFile)
+            - Call AddUpdate(dir, ".") — stage the update
+            - Verify the file is staged: StatusPorcelainFile(dir, filename) is non-empty
+            - Expect no error from AddUpdate
+
+            ### TestVersion_ReturnsGitVersion
+            - Call Version() with no arguments
+            - Expect no error
+            - Expect output to contain "git version"
+
+            ## Constraints
+
+            - Use initTestRepo(t) for all tests that need a git repo.
+            - Follow existing test naming: TestFunctionName_Scenario.
+            - Do not modify existing tests.
+
+            ## Verification gate
+
+            ```
+            go test ./internal/git/ -v
+            ```
+          files:
+            - internal/git/commands_test.go
+      base_commit: ea73d6530519b9fe561b2e24e066c233affeeffc
+    - number: 2
+      agents:
+        - id: C
+          task: |
+            ## Context
+
+            You are migrating the `pkg/resume` package to use `internal/git` wrappers
+            instead of direct `exec.Command("git",...)` calls. Wave 1 has added the
+            following new functions to internal/git: SymbolicRef, WorktreeListRaw.
+            The existing StatusPorcelain function also covers one call site.
+
+            Module: github.com/blackwell-systems/scout-and-wave-go
+            Import to add: "github.com/blackwell-systems/scout-and-wave-go/internal/git"
+
+            No circular dependency risk: internal/git imports only stdlib. pkg/resume
+            currently imports pkg/protocol and stdlib.
+
+            ## Files to modify
+
+            ### pkg/resume/worktree_status.go — 3 changes
+
+            Read the entire file before making changes.
+
+            **Change 1 — isWorktreeDirty (around line 104-118):**
+            Replace:
+            ```go
+            cmd := exec.Command("git", "-C", path, "status", "--porcelain")
+            out, err := cmd.Output()
+            if err != nil {
+                slog.Default().Warn("resume: ClassifyWorktrees: git status failed", "path", path, "err", err)
+                return false
+            }
+            return strings.TrimSpace(string(out)) != ""
+            ```
+            With:
+            ```go
+            out, err := git.StatusPorcelain(path)
+            if err != nil {
+                slog.Default().Warn("resume: ClassifyWorktrees: git status failed", "path", path, "err", err)
+                return false
+            }
+            return out != ""
+            ```
+            Note: git.StatusPorcelain already trims whitespace and returns string.
+
+            **Change 2 — branchViaSymbolicRef (around line 151-158):**
+            Replace:
+            ```go
+            cmd := exec.Command("git", "-C", path, "symbolic-ref", "HEAD")
+            out, err := cmd.Output()
+            if err != nil {
+                return ""
+            }
+            return strings.TrimSpace(string(out))
+            ```
+            With:
+            ```go
+            branch, err := git.SymbolicRef(path)
+            if err != nil {
+                return ""
+            }
+            return branch
+            ```
+
+            **Change 3 — detectLockedWorktreePaths (around line 163-169):**
+            Replace:
+            ```go
+            cmd := exec.Command("git", "-C", anyRepoPath, "worktree", "list", "--porcelain")
+            out, err := cmd.Output()
+            if err != nil {
+                return locked
+            }
+            ```
+            With:
+            ```go
+            out, err := git.WorktreeListRaw(anyRepoPath)
+            if err != nil {
+                return locked
+            }
+            ```
+            The variable `out` ([]byte) is used as `bytes.NewReader(out)` below — this
+            still works because WorktreeListRaw returns []byte.
+
+            **Import changes for worktree_status.go:**
+            - Remove "os/exec" from imports
+            - Add "github.com/blackwell-systems/scout-and-wave-go/internal/git"
+            - Keep: bufio, bytes, fmt, log/slog, os, strings, pkg/protocol
+
+            ### pkg/resume/detect.go — 1 change
+
+            Read the entire file before making changes.
+
+            **Change 4 — detectOrphanedWorktrees (around line 441-450):**
+            Replace:
+            ```go
+            cmd := exec.Command("git", "worktree", "list", "--porcelain")
+            cmd.Dir = repoPath
+
+            out, err := cmd.Output()
+            if err != nil {
+                // Git not available or no worktrees — skip this repo.
+                continue
+            }
+            ```
+            With:
+            ```go
+            out, err := git.WorktreeListRaw(repoPath)
+            if err != nil {
+                // Git not available or no worktrees — skip this repo.
+                continue
+            }
+            ```
+            Note: WorktreeListRaw uses -C repoPath internally, equivalent to cmd.Dir = repoPath.
+            The `out` variable ([]byte) is passed to parseWorktreePorcelain(out) below — compatible.
+
+            **Import changes for detect.go:**
+            - Remove "os/exec" from imports
+            - Add "github.com/blackwell-systems/scout-and-wave-go/internal/git"
+            - Keep: bufio, bytes, fmt, os, path/filepath, regexp, strings, pkg/protocol
+
+            ## Verification gates
+
+            ```
+            go build ./pkg/resume/ && go vet ./pkg/resume/
+            go test ./pkg/resume/ -v
+            grep -n "exec.Command" pkg/resume/worktree_status.go pkg/resume/detect.go
+            ```
+            The grep must return zero lines.
+          files:
+            - pkg/resume/worktree_status.go
+            - pkg/resume/detect.go
+        - id: D
+          task: |
+            ## Context
+
+            You are migrating pkg/tools/executors.go and pkg/orchestrator/context.go
+            to use internal/git wrappers. Wave 1 has added: DiffNameOnlyHEAD, DiffNameOnlyStaged,
+            AddUpdate. Existing wrappers used: Add, CommitWithMessage.
+
+            Module: github.com/blackwell-systems/scout-and-wave-go
+            Import to add: "github.com/blackwell-systems/scout-and-wave-go/internal/git"
+
+            ## pkg/tools/executors.go — 2 changes
+
+            Read the entire file before making changes.
+
+            The `checkGitOwnershipViolations` function (around line 115) currently:
+            1. Runs `git diff --name-only HEAD` via exec.Command with cmd.Dir = workDir
+            2. Runs `git diff --name-only --cached` via exec.Command with staged.Dir = workDir
+            3. Combines both outputs as strings, splits by newline, checks ownership
+
+            **Change 1 — Replace the two exec.Command blocks:**
+            Replace the block that reads:
+            ```go
+            cmd := exec.Command("git", "diff", "--name-only", "HEAD")
+            cmd.Dir = workDir
+            out, err := cmd.Output()
+            if err != nil {
+                return "" // Can't check — don't warn
+            }
+            staged := exec.Command("git", "diff", "--name-only", "--cached")
+            staged.Dir = workDir
+            stagedOut, _ := staged.Output()
+
+            allFiles := strings.TrimSpace(string(out) + "\n" + string(stagedOut))
+            if allFiles == "" {
+                return ""
+            }
+
+            var violations []string
+            for _, file := range strings.Split(allFiles, "\n") {
+                file = strings.TrimSpace(file)
+                if file == "" {
+                    continue
+                }
+                if !ownedFiles[file] {
+                    violations = append(violations, file)
+                }
+            }
+            ```
+            With:
+            ```go
+            unstaged, err := git.DiffNameOnlyHEAD(workDir)
+            if err != nil {
+                return "" // Can't check — don't warn
+            }
+            staged, _ := git.DiffNameOnlyStaged(workDir)
+
+            // Collect all changed files, deduplicating.
+            seen := make(map[string]bool)
+            var violations []string
+            for _, file := range append(unstaged, staged...) {
+                file = strings.TrimSpace(file)
+                if file == "" || seen[file] {
+                    continue
+                }
+                seen[file] = true
+                if !ownedFiles[file] {
+                    violations = append(violations, file)
+                }
+            }
+            ```
+
+            **Import changes for executors.go:**
+            IMPORTANT: Do NOT remove "os/exec" — BashExecutor.Execute uses
+            exec.CommandContext for bash, and GrepExecutor uses exec.LookPath.
+            Only ADD "github.com/blackwell-systems/scout-and-wave-go/internal/git".
+
+            ## pkg/orchestrator/context.go — 2 changes
+
+            Read the entire file before making changes.
+
+            The `UpdateContextMD` function (around line 69-82) currently uses:
+            ```go
+            addCmd := exec.Command("git", "-C", repoPath, "add", "docs/CONTEXT.md")
+            if out, err := addCmd.CombinedOutput(); err != nil {
+                return fmt.Errorf("UpdateContextMD: git add: %w\n%s", err, out)
+            }
+
+            commitMsg := fmt.Sprintf("chore: update docs/CONTEXT.md for %s", entry.Slug)
+            commitCmd := exec.Command("git", "-C", repoPath, "commit", "-m", commitMsg)
+            if out, err := commitCmd.CombinedOutput(); err != nil {
+                return fmt.Errorf("UpdateContextMD: git commit: %w\n%s", err, out)
+            }
+            ```
+
+            **Change 2 — Replace both exec.Command blocks:**
+            ```go
+            if err := git.Add(repoPath, "docs/CONTEXT.md"); err != nil {
+                return fmt.Errorf("UpdateContextMD: git add: %w", err)
+            }
+
+            commitMsg := fmt.Sprintf("chore: update docs/CONTEXT.md for %s", entry.Slug)
+            if _, err := git.CommitWithMessage(repoPath, commitMsg); err != nil {
+                return fmt.Errorf("UpdateContextMD: git commit: %w", err)
+            }
+            ```
+            Note: CommitWithMessage returns (sha, error); discard sha with _.
+            Note: git.Add wraps errors internally; outer fmt.Errorf adds context prefix.
+
+            **Import changes for context.go:**
+            - Remove "os/exec" from imports
+            - Add "github.com/blackwell-systems/scout-and-wave-go/internal/git"
+            - Keep: fmt, os, path/filepath, time
+
+            ## Verification gates
+
+            ```
+            go build ./pkg/tools/ ./pkg/orchestrator/ && go vet ./pkg/tools/ ./pkg/orchestrator/
+            go test ./pkg/tools/ ./pkg/orchestrator/ -v
+            grep -n "exec.Command(\"git\"" pkg/tools/executors.go pkg/orchestrator/context.go
+            ```
+            The grep must return zero lines.
+          files:
+            - pkg/tools/executors.go
+            - pkg/orchestrator/context.go
+        - id: E
+          task: |
+            ## Context
+
+            You are migrating 3 files in cmd/sawtools/ to use internal/git wrappers.
+            Wave 1 has added: AddUpdate, Version. Existing wrappers used: IsAncestor,
+            Add, CommitWithMessage, RevParse.
+
+            Module: github.com/blackwell-systems/scout-and-wave-go
+            Import to add: "github.com/blackwell-systems/scout-and-wave-go/internal/git"
+
+            ## cmd/sawtools/finalize_wave.go — 1 change
+
+            Read the entire file before making changes. Locate the exec.Command call
+            at approximately line 179 inside the finalizeWaveCmd function.
+
+            **Change 1 — merge-base --is-ancestor check:**
+            Replace:
+            ```go
+            checkCmd := exec.Command("git", "-C", repoPath, "merge-base", "--is-ancestor", report.Commit, "HEAD")
+            if err := checkCmd.Run(); err != nil {
+            ```
+            With:
+            ```go
+            if !git.IsAncestor(repoPath, report.Commit, "HEAD") {
+            ```
+            Note: git.IsAncestor returns bool. Original: err != nil means NOT ancestor.
+            Equivalent mapping: err != nil → !git.IsAncestor(...).
+            Keep the entire error handling block body unchanged — only change the condition.
+
+            **Import changes for finalize_wave.go:**
+            After making the change, search the entire file for remaining exec.Command
+            calls. If none remain, remove "os/exec" from imports.
+            Add "github.com/blackwell-systems/scout-and-wave-go/internal/git" to imports.
+
+            ## cmd/sawtools/mark_program_complete_cmd.go — 5 changes
+
+            Read the `commitProgramComplete` function in full (approximately lines 278-317).
+
+            **Change 2 — Stage manifest:**
+            ```go
+            // Before:
+            addArgs := []string{"-C", repoDir, "add", manifestPath}
+            if out, err := exec.Command("git", addArgs...).CombinedOutput(); err != nil {
+                return "", fmt.Errorf("git add manifest failed: %w: %s", err, string(out))
+            }
+            // After:
+            if err := git.Add(repoDir, manifestPath); err != nil {
+                return "", fmt.Errorf("git add manifest failed: %w", err)
+            }
+            ```
+
+            **Change 3 — Stage deletions (non-fatal):**
+            ```go
+            // Before:
+            addUArgs := []string{"-C", repoDir, "add", "-u", "docs/"}
+            if out, err := exec.Command("git", addUArgs...).CombinedOutput(); err != nil {
+                _ = out
+            }
+            // After:
+            _ = git.AddUpdate(repoDir, "docs/") // Non-fatal — original may not have been tracked yet
+            ```
+
+            **Change 4 — Stage context (conditional):**
+            ```go
+            // Before:
+            if contextPath != "" {
+                addArgs := []string{"-C", repoDir, "add", contextPath}
+                if out, err := exec.Command("git", addArgs...).CombinedOutput(); err != nil {
+                    return "", fmt.Errorf("git add context failed: %w: %s", err, string(out))
+                }
+            }
+            // After:
+            if contextPath != "" {
+                if err := git.Add(repoDir, contextPath); err != nil {
+                    return "", fmt.Errorf("git add context failed: %w", err)
+                }
+            }
+            ```
+
+            **Change 5 — Commit:**
+            ```go
+            // Before:
+            commitMsg := fmt.Sprintf("chore: mark PROGRAM %s complete", programSlug)
+            commitArgs := []string{"-C", repoDir, "commit", "-m", commitMsg}
+            if out, err := exec.Command("git", commitArgs...).CombinedOutput(); err != nil {
+                return "", fmt.Errorf("git commit failed: %w: %s", err, string(out))
+            }
+            // After:
+            commitMsg := fmt.Sprintf("chore: mark PROGRAM %s complete", programSlug)
+            if _, err := git.CommitWithMessage(repoDir, commitMsg); err != nil {
+                return "", fmt.Errorf("git commit failed: %w", err)
+            }
+            ```
+
+            **Change 6 — Get commit SHA:**
+            ```go
+            // Before:
+            shaOut, err := exec.Command("git", "-C", repoDir, "rev-parse", "HEAD").Output()
+            if err != nil {
+                return "", nil // Non-fatal
+            }
+            return strings.TrimSpace(string(shaOut)), nil
+            // After:
+            sha, err := git.RevParse(repoDir, "HEAD")
+            if err != nil {
+                return "", nil // Non-fatal
+            }
+            return sha, nil
+            ```
+            Note: git.RevParse already trims whitespace, so remove the TrimSpace call.
+
+            **Import changes for mark_program_complete_cmd.go:**
+            Search entire file for remaining exec.Command calls. If none remain,
+            remove "os/exec". Add internal/git import.
+            Check if "strings" is still needed for TrimSpace after this change — if
+            TrimSpace was only used for the shaOut conversion, check other usages.
+
+            ## cmd/sawtools/verify_install_cmd.go — 1 change
+
+            Read the `checkGitVersion` function in full.
+
+            **Change 7 — git --version check:**
+            Replace:
+            ```go
+            out, err := exec.Command("git", "--version").Output()
+            if err != nil {
+                return installCheck{
+                    Name:   "git_version",
+                    Status: "fail",
+                    Detail: "git not found on PATH",
+                }
+            }
+            versionStr := strings.TrimSpace(string(out))
+            ```
+            With:
+            ```go
+            versionStr, err := git.Version()
+            if err != nil {
+                return installCheck{
+                    Name:   "git_version",
+                    Status: "fail",
+                    Detail: "git not found on PATH",
+                }
+            }
+            ```
+            Note: git.Version() returns a trimmed string, so the `strings.TrimSpace(string(out))`
+            line is no longer needed — use `versionStr` directly.
+
+            **Import changes for verify_install_cmd.go:**
+            Search entire file for remaining exec.Command calls. If none remain,
+            remove "os/exec". Add internal/git import.
+
+            ## Final verification gates
+
+            ```
+            go build ./cmd/sawtools/ && go vet ./cmd/sawtools/
+            grep -n "exec.Command(\"git\"" cmd/sawtools/finalize_wave.go cmd/sawtools/mark_program_complete_cmd.go cmd/sawtools/verify_install_cmd.go
+            grep -rn "exec.Command(\"git\"" . --include="*.go" | grep -v "_test.go" | grep -v "internal/git/commands.go"
+            ```
+            Both greps must return zero lines.
+          files:
+            - cmd/sawtools/finalize_wave.go
+            - cmd/sawtools/mark_program_complete_cmd.go
+            - cmd/sawtools/verify_install_cmd.go
+      base_commit: 8f861c712f5518c731633a147c147dfd6d92fac1
+quality_gates:
+    level: standard
+    gates:
+        - type: build
+          command: go build ./...
+          required: true
+        - type: lint
+          command: go vet ./...
+          required: true
+        - type: test
+          command: go test ./... -timeout 120s
+          required: true
+        - type: custom
+          command: grep -rn "exec.Command(\"git\"" . --include="*.go" | grep -v "_test.go" | grep -v "internal/git/commands.go"
+          required: true
+          description: Verify no direct git subprocess calls remain outside internal/git
+completion_reports:
+    A:
+        status: complete
+        branch: saw/git-subprocess-unification/wave1-agent-A
+        commit: 8eac22c
+        files_changed:
+            - internal/git/commands.go
+        verification: 'PASS: go build ./..., go vet ./..., go test ./... all pass (41 packages). Custom gate shows pre-existing direct subprocess calls in other files — those are targets for other wave agents.'
+    B:
+        status: complete
+        branch: saw/git-subprocess-unification/wave1-agent-B
+        commit: 191a79c
+        files_changed:
+            - internal/git/commands_test.go
+        tests_added:
+            - TestSymbolicRef_OnBranch
+            - TestSymbolicRef_DetachedHEAD
+            - TestWorktreeListRaw_ReturnsBytes
+            - TestDiffNameOnlyHEAD_NoDiff
+            - TestDiffNameOnlyHEAD_WithModification
+            - TestDiffNameOnlyStaged_NoStaged
+            - TestDiffNameOnlyStaged_WithStaged
+            - TestAddUpdate_TrackedFile
+            - TestVersion_ReturnsGitVersion
+        verification: PASS
+    C:
+        status: complete
+        branch: saw/git-subprocess-unification/wave2-agent-C
+        commit: 64ff22b
+        files_changed:
+            - pkg/resume/worktree_status.go
+            - pkg/resume/detect.go
+        verification: PASS
+    D:
+        status: complete
+        branch: saw/git-subprocess-unification/wave2-agent-D
+        commit: 93ffad7
+        files_changed:
+            - pkg/tools/executors.go
+            - pkg/orchestrator/context.go
+        verification: 'PASS: go build ./pkg/tools/ ./pkg/orchestrator/ && go vet ./pkg/tools/ ./pkg/orchestrator/ && go test ./pkg/tools/ ./pkg/orchestrator/ — all pass. grep for exec.Command(git) in owned files returns zero lines.'
+    E:
+        status: complete
+        branch: saw/git-subprocess-unification/wave2-agent-E
+        commit: a9f0c19
+        files_changed:
+            - cmd/sawtools/finalize_wave.go
+            - cmd/sawtools/mark_program_complete_cmd.go
+            - cmd/sawtools/verify_install_cmd.go
+        verification: 'PASS: build, vet, all tests pass, grep gate zero - 7 exec.Command(git) calls replaced across 3 files'
+injection_method: hook
