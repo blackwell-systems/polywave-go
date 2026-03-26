@@ -299,24 +299,11 @@ func GenerateProgramFromIMPLs(opts GenerateProgramOpts) result.Result[GeneratePr
 	return result.NewSuccess(data_)
 }
 
-// resolveIMPLPath is defined in program_conflict.go (canonical location).
+// ResolveIMPLPath is defined in program_conflict.go (canonical location).
 
-// implStateToStatus maps an IMPL doc ProtocolState to a program IMPL status string.
-// This mirrors the logic in cmd/saw/import_impls_cmd.go but lives in pkg/protocol
-// so it can be used by the generator without importing cmd/.
+// implStateToStatus is a backwards-compat wrapper around IMPLStateToStatus.
 func implStateToStatus(state ProtocolState) string {
-	switch state {
-	case StateComplete:
-		return "complete"
-	case StateReviewed, StateScaffoldPending,
-		StateWavePending, StateWaveExecuting,
-		StateWaveMerging, StateWaveVerified:
-		return "reviewed"
-	case StateScoutPending, StateScoutValidating:
-		return "pending"
-	default:
-		return "pending"
-	}
+	return IMPLStateToStatus(state)
 }
 
 // appendUnique appends s to slice only if not already present.

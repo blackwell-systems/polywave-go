@@ -18,10 +18,15 @@ import (
 // is used as a fallback.
 //
 // Returns a result.Result[*ProgramStatusData] containing all computed status information.
+// codeProgramStatusFailed is a placeholder for result.CodeProgramStatusFailed (N017),
+// which is added by Agent C in parallel. Once Agent C's changes are merged,
+// replace this with result.CodeProgramStatusFailed.
+const codeProgramStatusFailed = "N017_PROGRAM_STATUS_FAILED"
+
 func GetProgramStatus(manifest *PROGRAMManifest, repoPath string) result.Result[*ProgramStatusData] {
 	if manifest == nil {
 		return result.NewFailure[*ProgramStatusData]([]result.SAWError{{
-			Code: "E_PROGRAM_STATUS", Message: "manifest cannot be nil", Severity: "fatal",
+			Code: codeProgramStatusFailed, Message: "manifest cannot be nil", Severity: "fatal",
 		}})
 	}
 
@@ -156,21 +161,9 @@ func tryReadIMPLState(path string) string {
 }
 
 // mapIMPLStateToStatus maps IMPL doc state strings to status strings.
+// Delegates to IMPLStateToStatus for canonical behavior.
 func mapIMPLStateToStatus(state string) string {
-	switch state {
-	case "COMPLETE":
-		return "complete"
-	case "WAVE_EXECUTING", "WAVE_MERGING", "WAVE_VERIFIED", "WAVE_PENDING":
-		return "in-progress"
-	case "SCOUT_PENDING", "SCOUT_VALIDATING", "REVIEWED", "SCAFFOLD_PENDING":
-		return "pending"
-	case "BLOCKED":
-		return "blocked"
-	case "NOT_SUITABLE":
-		return "not-suitable"
-	default:
-		return state // Pass through unknown states
-	}
+	return IMPLStateToStatus(ProtocolState(state))
 }
 
 // buildContractStatuses determines freeze status for each program contract.
