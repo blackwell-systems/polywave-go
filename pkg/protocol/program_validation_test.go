@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
 	"gopkg.in/yaml.v3"
 )
 
@@ -80,7 +81,7 @@ func TestValidateProgram_MissingRequiredFields(t *testing.T) {
 				ProgramSlug: "test-program",
 				State:       ProgramStatePlanning,
 			},
-			expectedCode:  "MISSING_FIELD",
+			expectedCode:  result.CodeRequiredFieldsMissing,
 			expectedField: "title",
 		},
 		{
@@ -90,7 +91,7 @@ func TestValidateProgram_MissingRequiredFields(t *testing.T) {
 				ProgramSlug: "",
 				State:       ProgramStatePlanning,
 			},
-			expectedCode:  "MISSING_FIELD",
+			expectedCode:  result.CodeRequiredFieldsMissing,
 			expectedField: "program_slug",
 		},
 		{
@@ -100,7 +101,7 @@ func TestValidateProgram_MissingRequiredFields(t *testing.T) {
 				ProgramSlug: "test-program",
 				State:       "",
 			},
-			expectedCode:  "MISSING_FIELD",
+			expectedCode:  result.CodeRequiredFieldsMissing,
 			expectedField: "state",
 		},
 	}
@@ -130,13 +131,13 @@ func TestValidateProgram_InvalidState(t *testing.T) {
 	manifest := &PROGRAMManifest{
 		Title:       "Test Program",
 		ProgramSlug: "test-program",
-		State:       ProgramState("INVALID_STATE"),
+		State:       ProgramState(result.CodeInvalidState),
 	}
 
 	errs := ValidateProgram(manifest)
 	found := false
 	for _, err := range errs {
-		if err.Code == "INVALID_STATE" && err.Field == "state" {
+		if err.Code == result.CodeInvalidState && err.Field == "state" {
 			found = true
 			break
 		}
@@ -180,7 +181,7 @@ func TestValidateProgram_P1Violation(t *testing.T) {
 	errs := ValidateProgram(manifest)
 	found := false
 	for _, err := range errs {
-		if err.Code == "P1_VIOLATION" {
+		if err.Code == result.CodeP1Violation {
 			found = true
 			break
 		}
@@ -213,7 +214,7 @@ func TestValidateProgram_TierIMPLMismatch(t *testing.T) {
 				},
 				Completion: ProgramCompletion{TiersTotal: 1, ImplsTotal: 2},
 			},
-			wantCode: "TIER_MISMATCH",
+			wantCode: result.CodeTierMismatch,
 		},
 		{
 			name: "tier references undefined IMPL",
@@ -229,7 +230,7 @@ func TestValidateProgram_TierIMPLMismatch(t *testing.T) {
 				},
 				Completion: ProgramCompletion{TiersTotal: 1, ImplsTotal: 1},
 			},
-			wantCode: "TIER_MISMATCH",
+			wantCode: result.CodeTierMismatch,
 		},
 		{
 			name: "IMPL in multiple tiers",
@@ -246,7 +247,7 @@ func TestValidateProgram_TierIMPLMismatch(t *testing.T) {
 				},
 				Completion: ProgramCompletion{TiersTotal: 2, ImplsTotal: 1},
 			},
-			wantCode: "TIER_MISMATCH",
+			wantCode: result.CodeTierMismatch,
 		},
 	}
 
@@ -290,7 +291,7 @@ func TestValidateProgram_InvalidDependency(t *testing.T) {
 	errs := ValidateProgram(manifest)
 	found := false
 	for _, err := range errs {
-		if err.Code == "INVALID_DEPENDENCY" {
+		if err.Code == result.CodeInvalidDependency {
 			found = true
 			break
 		}
@@ -347,7 +348,7 @@ func TestValidateProgram_TierOrderViolation(t *testing.T) {
 			found := false
 			for _, err := range errs {
 				// TIER_ORDER_VIOLATION for backward deps, P1_VIOLATION for same-tier deps
-				if err.Code == "TIER_ORDER_VIOLATION" || err.Code == "P1_VIOLATION" {
+				if err.Code == result.CodeTierOrderViolation || err.Code == result.CodeP1Violation {
 					found = true
 					break
 				}
@@ -387,7 +388,7 @@ func TestValidateProgram_InvalidConsumer(t *testing.T) {
 	errs := ValidateProgram(manifest)
 	found := false
 	for _, err := range errs {
-		if err.Code == "INVALID_CONSUMER" {
+		if err.Code == result.CodeInvalidConsumer {
 			found = true
 			break
 		}
@@ -458,7 +459,7 @@ func TestValidateProgram_InvalidSlugFormat(t *testing.T) {
 			errs := ValidateProgram(tt.manifest)
 			found := false
 			for _, err := range errs {
-				if err.Code == "INVALID_SLUG_FORMAT" {
+				if err.Code == result.CodeInvalidSlugFormat {
 					found = true
 					break
 				}
@@ -517,7 +518,7 @@ func TestValidateProgram_CompletionBounds(t *testing.T) {
 			errs := ValidateProgram(manifest)
 			found := false
 			for _, err := range errs {
-				if err.Code == "COMPLETION_BOUNDS" {
+				if err.Code == result.CodeCompletionBounds {
 					found = true
 					break
 				}
@@ -551,7 +552,7 @@ func TestValidateProgram_InvalidIMPLStatus(t *testing.T) {
 	errs := ValidateProgram(manifest)
 	found := false
 	for _, err := range errs {
-		if err.Code == "INVALID_STATUS" {
+		if err.Code == result.CodeInvalidEnum {
 			found = true
 			break
 		}
@@ -586,7 +587,7 @@ func TestValidateProgram_AllValidIMPLStatuses(t *testing.T) {
 
 			errs := ValidateProgram(manifest)
 			for _, err := range errs {
-				if err.Code == "INVALID_STATUS" {
+				if err.Code == result.CodeInvalidEnum {
 					t.Errorf("valid status %q should not trigger INVALID_STATUS error: %v", status, err)
 				}
 			}
@@ -614,7 +615,7 @@ func TestImplsTotalExactMatch(t *testing.T) {
 		}
 		errs := ValidateProgram(manifest)
 		for _, e := range errs {
-			if e.Code == "IMPLS_TOTAL_MISMATCH" {
+			if e.Code == result.CodeImplsTotalMismatch {
 				t.Errorf("exact match (impls_total=2, len(impls)=2) should not produce IMPLS_TOTAL_MISMATCH: %v", e.Message)
 			}
 		}
@@ -632,7 +633,7 @@ func TestImplsTotalExactMatch(t *testing.T) {
 		errs := ValidateProgram(manifest)
 		found := false
 		for _, e := range errs {
-			if e.Code == "IMPLS_TOTAL_MISMATCH" {
+			if e.Code == result.CodeImplsTotalMismatch {
 				found = true
 				break
 			}
@@ -654,7 +655,7 @@ func TestImplsTotalExactMatch(t *testing.T) {
 		errs := ValidateProgram(manifest)
 		found := false
 		for _, e := range errs {
-			if e.Code == "IMPLS_TOTAL_MISMATCH" {
+			if e.Code == result.CodeImplsTotalMismatch {
 				found = true
 				break
 			}
@@ -673,7 +674,7 @@ func TestImplsTotalExactMatch(t *testing.T) {
 		}
 		errs := ValidateProgram(manifest)
 		for _, e := range errs {
-			if e.Code == "IMPLS_TOTAL_MISMATCH" {
+			if e.Code == result.CodeImplsTotalMismatch {
 				t.Errorf("zero impls with impls_total=0 should not produce IMPLS_TOTAL_MISMATCH: %v", e.Message)
 			}
 		}
@@ -760,7 +761,7 @@ func TestValidateProgramImportMode_MissingIMPLFile(t *testing.T) {
 	errs := ValidateProgramImportMode(manifest, tmpDir)
 	found := false
 	for _, e := range errs {
-		if e.Code == "IMPL_FILE_MISSING" {
+		if e.Code == result.CodeIMPLFileMissing {
 			found = true
 			break
 		}
@@ -793,7 +794,7 @@ func TestValidateProgramImportMode_P1FileOverlap(t *testing.T) {
 	errs := ValidateProgramImportMode(manifest, tmpDir)
 	found := false
 	for _, e := range errs {
-		if e.Code == "P1_FILE_OVERLAP" {
+		if e.Code == result.CodeP1FileOverlap {
 			found = true
 			break
 		}
@@ -818,7 +819,7 @@ func TestValidateP1FileDisjointness_SameTier(t *testing.T) {
 	if len(errs) != 1 {
 		t.Fatalf("expected 1 error, got %d", len(errs))
 	}
-	if errs[0].Code != "P1_FILE_OVERLAP" {
+	if errs[0].Code != result.CodeP1FileOverlap {
 		t.Errorf("expected P1_FILE_OVERLAP, got %s", errs[0].Code)
 	}
 	if !contains(errs[0].Message, "pkg/shared.go") {
@@ -868,7 +869,7 @@ func TestValidateP1FileDisjointness_MultipleOverlaps(t *testing.T) {
 		t.Fatalf("expected 2 errors (one per overlapping file), got %d: %v", len(errs), errs)
 	}
 	for _, err := range errs {
-		if err.Code != "P1_FILE_OVERLAP" {
+		if err.Code != result.CodeP1FileOverlap {
 			t.Errorf("expected all errors to be P1_FILE_OVERLAP, got: %s", err.Code)
 		}
 	}
@@ -914,7 +915,7 @@ func TestValidateProgramImportMode_P2ContractRedefinition(t *testing.T) {
 	errs := ValidateProgramImportMode(manifest, tmpDir)
 	found := false
 	for _, e := range errs {
-		if e.Code == "P2_CONTRACT_REDEFINITION" {
+		if e.Code == result.CodeP2ContractRedefinition {
 			found = true
 			break
 		}
@@ -1034,7 +1035,7 @@ func TestValidateProgram_AllValidProgramStates(t *testing.T) {
 
 			errs := ValidateProgram(manifest)
 			for _, err := range errs {
-				if err.Code == "INVALID_STATE" {
+				if err.Code == result.CodeInvalidState {
 					t.Errorf("valid state %q should not trigger INVALID_STATE error: %v", state, err)
 				}
 			}
