@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 )
 
 // ConflictReport describes cross-IMPL file ownership overlaps.
@@ -22,10 +23,10 @@ type IMPLFileConflict struct {
 }
 
 // CheckIMPLConflicts loads IMPL docs and performs cross-IMPL disjointness analysis.
-// implSlugs: list of IMPL slugs to analyze (resolved from docs/IMPL/ and docs/IMPL/complete/)
-// repoPath: repository root for resolving IMPL doc paths
-func CheckIMPLConflicts(implSlugs []string, repoPath string) (*ConflictReport, error) {
-	if len(implSlugs) == 0 {
+// implRefs: list of IMPL slugs or absolute paths to analyze
+// repoPath: repository root for resolving slug-based refs
+func CheckIMPLConflicts(implRefs []string, repoPath string) (*ConflictReport, error) {
+	if len(implRefs) == 0 {
 		return &ConflictReport{
 			Conflicts:      []IMPLFileConflict{},
 			DisjointSets:   [][]string{},
@@ -33,17 +34,27 @@ func CheckIMPLConflicts(implSlugs []string, repoPath string) (*ConflictReport, e
 		}, nil
 	}
 
-	// Load all IMPL docs and build file -> []slug map
-	fileOwners := make(map[string][]string) // qualified-file -> slugs
-	for _, slug := range implSlugs {
-		implPath, err := resolveIMPLPath(repoPath, slug)
+	// Load all IMPL docs and build file -> []featureSlug map.
+	// TierSuggestion keys are IMPL feature slugs (extracted from loaded docs),
+	// not raw refs. This ensures compatibility with both slug and path refs.
+	fileOwners := make(map[string][]string) // qualified-file -> feature slugs
+	var featureSlugs []string               // ordered list of extracted feature slugs
+	for _, ref := range implRefs {
+		implPath, err := resolveIMPLPathOrAbs(repoPath, ref)
 		if err != nil {
-			return nil, fmt.Errorf("cannot resolve IMPL %q: %w", slug, err)
+			return nil, fmt.Errorf("cannot resolve IMPL ref %q: %w", ref, err)
 		}
 		manifest, err := Load(implPath)
 		if err != nil {
-			return nil, fmt.Errorf("cannot load IMPL %q: %w", slug, err)
+			return nil, fmt.Errorf("cannot load IMPL %q: %w", ref, err)
 		}
+
+		// Use the feature slug extracted from the loaded doc as the canonical key.
+		slug := manifest.FeatureSlug
+		if slug == "" {
+			slug = ref // fallback for malformed docs
+		}
+		featureSlugs = append(featureSlugs, slug)
 
 		for _, fo := range manifest.FileOwnership {
 			key := fo.File
@@ -100,17 +111,42 @@ func CheckIMPLConflicts(implSlugs []string, repoPath string) (*ConflictReport, e
 		}
 	}
 
-	// Compute DisjointSets using connected components
-	disjointSets := computeDisjointSets(implSlugs, overlaps)
+	// Compute DisjointSets using connected components (keyed by feature slug)
+	disjointSets := computeDisjointSets(featureSlugs, overlaps)
 
-	// Compute TierSuggestion using greedy graph coloring
-	tierSuggestion := computeTierSuggestion(implSlugs, overlaps)
+	// Compute TierSuggestion using greedy graph coloring (keyed by feature slug)
+	tierSuggestion := computeTierSuggestion(featureSlugs, overlaps)
 
 	return &ConflictReport{
 		Conflicts:      conflicts,
 		DisjointSets:   disjointSets,
 		TierSuggestion: tierSuggestion,
 	}, nil
+}
+
+// resolveIMPLPathOrAbs resolves a single IMPL reference (slug or absolute path)
+// to an absolute file path.
+//
+// Path detection rules:
+//   - filepath.IsAbs(ref) → absolute path; verify exists, return as-is
+//   - contains os.PathSeparator → relative path; join with repoPath, verify exists
+//   - otherwise → slug; check docs/IMPL/IMPL-<slug>.yaml and docs/IMPL/complete/IMPL-<slug>.yaml
+func resolveIMPLPathOrAbs(repoPath, ref string) (string, error) {
+	if filepath.IsAbs(ref) {
+		if _, err := os.Stat(ref); err != nil {
+			return "", fmt.Errorf("IMPL path %q does not exist", ref)
+		}
+		return ref, nil
+	}
+	if strings.ContainsRune(ref, os.PathSeparator) {
+		joined := filepath.Join(repoPath, ref)
+		if _, err := os.Stat(joined); err != nil {
+			return "", fmt.Errorf("IMPL path %q does not exist", joined)
+		}
+		return joined, nil
+	}
+	// Treat as slug
+	return resolveIMPLPath(repoPath, ref)
 }
 
 // resolveIMPLPath finds the IMPL doc for a given slug, checking both
