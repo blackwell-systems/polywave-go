@@ -2,6 +2,8 @@ package protocol
 
 import (
 	"testing"
+
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
 )
 
 // helper to build a minimal valid manifest for cross-field tests.
@@ -44,13 +46,13 @@ func TestCrossField_OrphanAgentInOwnership(t *testing.T) {
 	errs := validateCrossFieldConsistency(m)
 	found := false
 	for _, e := range errs {
-		if e.Code == SV01CrossFieldError && e.Field == "file_ownership[2].agent" {
+		if e.Code == result.CodeCrossField && e.Field == "file_ownership[2].agent" {
 			found = true
 			break
 		}
 	}
 	if !found {
-		t.Errorf("expected SV01_CROSS_FIELD error for orphan agent Z in file_ownership, got: %v", errs)
+		t.Errorf("expected V038_CROSS_FIELD error for orphan agent Z in file_ownership, got: %v", errs)
 	}
 }
 
@@ -64,13 +66,13 @@ func TestCrossField_InvalidWaveInOwnership(t *testing.T) {
 	errs := validateCrossFieldConsistency(m)
 	found := false
 	for _, e := range errs {
-		if e.Code == SV01CrossFieldError && e.Field == "file_ownership[2].wave" {
+		if e.Code == result.CodeCrossField && e.Field == "file_ownership[2].wave" {
 			found = true
 			break
 		}
 	}
 	if !found {
-		t.Errorf("expected SV01_CROSS_FIELD error for invalid wave 99, got: %v", errs)
+		t.Errorf("expected V038_CROSS_FIELD error for invalid wave 99, got: %v", errs)
 	}
 }
 
@@ -88,18 +90,18 @@ func TestCrossField_NotSuitableWithWaves(t *testing.T) {
 	wavesWarning := false
 	ownershipWarning := false
 	for _, e := range errs {
-		if e.Code == SV01CrossFieldError && e.Field == "waves" {
+		if e.Code == result.CodeCrossField && e.Field == "waves" {
 			wavesWarning = true
 		}
-		if e.Code == SV01CrossFieldError && e.Field == "file_ownership" {
+		if e.Code == result.CodeCrossField && e.Field == "file_ownership" {
 			ownershipWarning = true
 		}
 	}
 	if !wavesWarning {
-		t.Error("expected SV01_CROSS_FIELD warning for waves when verdict is NOT_SUITABLE")
+		t.Error("expected V038_CROSS_FIELD warning for waves when verdict is NOT_SUITABLE")
 	}
 	if !ownershipWarning {
-		t.Error("expected SV01_CROSS_FIELD warning for file_ownership when verdict is NOT_SUITABLE")
+		t.Error("expected V038_CROSS_FIELD warning for file_ownership when verdict is NOT_SUITABLE")
 	}
 }
 
@@ -127,13 +129,13 @@ func TestCrossField_CompletionReportUnknownAgent(t *testing.T) {
 	errs := validateCrossFieldConsistency(m)
 	found := false
 	for _, e := range errs {
-		if e.Code == SV01CrossFieldError && e.Field == "completion_reports[X]" {
+		if e.Code == result.CodeCrossField && e.Field == "completion_reports[X]" {
 			found = true
 			break
 		}
 	}
 	if !found {
-		t.Errorf("expected SV01_CROSS_FIELD error for unknown agent X in completion_reports, got: %v", errs)
+		t.Errorf("expected V038_CROSS_FIELD error for unknown agent X in completion_reports, got: %v", errs)
 	}
 
 	// Agent A should not trigger an error.
@@ -152,13 +154,13 @@ func TestCrossField_AgentFileNotInOwnership(t *testing.T) {
 	errs := validateCrossFieldConsistency(m)
 	found := false
 	for _, e := range errs {
-		if e.Code == SV01CrossFieldError && e.Field == "waves[0].agents[A].files" {
+		if e.Code == result.CodeCrossField && e.Field == "waves[0].agents[A].files" {
 			found = true
 			break
 		}
 	}
 	if !found {
-		t.Errorf("expected SV01_CROSS_FIELD error for agent file not in ownership, got: %v", errs)
+		t.Errorf("expected V038_CROSS_FIELD error for agent file not in ownership, got: %v", errs)
 	}
 }
 

@@ -1,6 +1,10 @@
 package protocol
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
+)
 
 func TestValidateReactions_Nil(t *testing.T) {
 	m := &IMPLManifest{Reactions: nil}
@@ -38,12 +42,12 @@ func TestValidateReactions_InvalidAction(t *testing.T) {
 	}
 	found := false
 	for _, e := range errs {
-		if e.Code == SV01InvalidEnum && e.Field == "reactions.transient.action" {
+		if e.Code == result.CodeInvalidEnum && e.Field == "reactions.transient.action" {
 			found = true
 		}
 	}
 	if !found {
-		t.Errorf("expected SV01_INVALID_ENUM for reactions.transient.action, got: %v", errs)
+		t.Errorf("expected V036_INVALID_ENUM for reactions.transient.action, got: %v", errs)
 	}
 }
 
@@ -59,12 +63,12 @@ func TestValidateReactions_NegativeMaxAttempts(t *testing.T) {
 	}
 	found := false
 	for _, e := range errs {
-		if e.Code == SV01RequiredField && e.Field == "reactions.fixable.max_attempts" {
+		if e.Code == result.CodeRequiredFieldsMissing && e.Field == "reactions.fixable.max_attempts" {
 			found = true
 		}
 	}
 	if !found {
-		t.Errorf("expected SV01_REQUIRED_FIELD for reactions.fixable.max_attempts, got: %v", errs)
+		t.Errorf("expected V005_REQUIRED_FIELDS_MISSING for reactions.fixable.max_attempts, got: %v", errs)
 	}
 }
 

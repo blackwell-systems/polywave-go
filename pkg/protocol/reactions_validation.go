@@ -16,7 +16,7 @@ var validReactionActions = map[string]bool{
 }
 
 // ValidateReactions validates the reactions block in an IMPL manifest.
-// Called by ValidateSchema. Returns SV01 errors for invalid action values
+// Called by ValidateSchema. Returns V-series errors for invalid action values
 // or negative max_attempts. Returns nil if reactions is absent.
 func ValidateReactions(m *IMPLManifest) []result.SAWError {
 	if m.Reactions == nil {
@@ -36,14 +36,14 @@ func ValidateReactions(m *IMPLManifest) []result.SAWError {
 		}
 		if entry.Action == "" {
 			errs = append(errs, result.SAWError{
-				Code:     SV01RequiredField,
+				Code:     result.CodeRequiredFieldsMissing,
 				Message:  fmt.Sprintf("reactions.%s.action is required", name),
 				Severity: "error",
 				Field:    fmt.Sprintf("reactions.%s.action", name),
 			})
 		} else if !validReactionActions[entry.Action] {
 			errs = append(errs, result.SAWError{
-				Code:     SV01InvalidEnum,
+				Code:     result.CodeInvalidEnum,
 				Message:  fmt.Sprintf("reactions.%s.action %q is not valid; must be one of: retry, send-fix-prompt, pause, auto-scout", name, entry.Action),
 				Severity: "error",
 				Field:    fmt.Sprintf("reactions.%s.action", name),
@@ -51,7 +51,7 @@ func ValidateReactions(m *IMPLManifest) []result.SAWError {
 		}
 		if entry.MaxAttempts < 0 {
 			errs = append(errs, result.SAWError{
-				Code:     SV01RequiredField,
+				Code:     result.CodeRequiredFieldsMissing,
 				Message:  fmt.Sprintf("reactions.%s.max_attempts must be >= 0, got %d", name, entry.MaxAttempts),
 				Severity: "error",
 				Field:    fmt.Sprintf("reactions.%s.max_attempts", name),
