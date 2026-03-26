@@ -244,6 +244,150 @@ func TestRunScout_ProgramManifestNotFound(t *testing.T) {
 	}
 }
 
+// TestLoadTypePromptWithRefs verifies the reference injection helper.
+func TestLoadTypePromptWithRefs(t *testing.T) {
+	t.Run("no references dir returns core only", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		agentsDir := filepath.Join(tmpDir, "agents")
+		if err := os.MkdirAll(agentsDir, 0755); err != nil {
+			t.Fatalf("mkdir agents: %v", err)
+		}
+		coreContent := "# Scout\n\nCore content"
+		if err := os.WriteFile(filepath.Join(agentsDir, "scout.md"), []byte(coreContent), 0644); err != nil {
+			t.Fatalf("write scout.md: %v", err)
+		}
+
+		result, err := LoadTypePromptWithRefs(filepath.Join(agentsDir, "scout.md"))
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if result != coreContent {
+			t.Errorf("expected %q, got %q", coreContent, result)
+		}
+	})
+
+	t.Run("matching reference files are prepended with dedup markers", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		agentsDir := filepath.Join(tmpDir, "agents")
+		refsDir := filepath.Join(tmpDir, "references")
+		if err := os.MkdirAll(agentsDir, 0755); err != nil {
+			t.Fatalf("mkdir agents: %v", err)
+		}
+		if err := os.MkdirAll(refsDir, 0755); err != nil {
+			t.Fatalf("mkdir references: %v", err)
+		}
+
+		if err := os.WriteFile(filepath.Join(agentsDir, "scout.md"), []byte("# Scout Core"), 0644); err != nil {
+			t.Fatalf("write scout.md: %v", err)
+		}
+		if err := os.WriteFile(filepath.Join(refsDir, "scout-implementation-process.md"), []byte("## Implementation Process"), 0644); err != nil {
+			t.Fatalf("write scout-implementation-process.md: %v", err)
+		}
+		if err := os.WriteFile(filepath.Join(refsDir, "scout-suitability-gate.md"), []byte("## Suitability Gate"), 0644); err != nil {
+			t.Fatalf("write scout-suitability-gate.md: %v", err)
+		}
+		// This file should NOT be included (wrong prefix)
+		if err := os.WriteFile(filepath.Join(refsDir, "wave-agent-worktree.md"), []byte("## Worktree"), 0644); err != nil {
+			t.Fatalf("write wave-agent-worktree.md: %v", err)
+		}
+
+		result, err := LoadTypePromptWithRefs(filepath.Join(agentsDir, "scout.md"))
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+
+		if !strings.Contains(result, "<!-- injected: references/scout-suitability-gate.md -->") {
+			t.Errorf("missing suitability-gate marker in result: %q", result)
+		}
+		if !strings.Contains(result, "## Suitability Gate") {
+			t.Errorf("missing suitability gate content in result: %q", result)
+		}
+		if !strings.Contains(result, "<!-- injected: references/scout-implementation-process.md -->") {
+			t.Errorf("missing implementation-process marker in result: %q", result)
+		}
+		if !strings.Contains(result, "## Implementation Process") {
+			t.Errorf("missing implementation process content in result: %q", result)
+		}
+		if !strings.Contains(result, "# Scout Core") {
+			t.Errorf("missing core content in result: %q", result)
+		}
+		if strings.Contains(result, "## Worktree") {
+			t.Errorf("wave-agent content should not be included in scout result: %q", result)
+		}
+	})
+
+	t.Run("dedup marker already in core skips injection", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		agentsDir := filepath.Join(tmpDir, "agents")
+		refsDir := filepath.Join(tmpDir, "references")
+		if err := os.MkdirAll(agentsDir, 0755); err != nil {
+			t.Fatalf("mkdir agents: %v", err)
+		}
+		if err := os.MkdirAll(refsDir, 0755); err != nil {
+			t.Fatalf("mkdir references: %v", err)
+		}
+
+		// Core already contains the dedup marker
+		coreWithMarker := "<!-- injected: references/scout-suitability-gate.md -->\n# Scout Core"
+		if err := os.WriteFile(filepath.Join(agentsDir, "scout.md"), []byte(coreWithMarker), 0644); err != nil {
+			t.Fatalf("write scout.md: %v", err)
+		}
+		if err := os.WriteFile(filepath.Join(refsDir, "scout-suitability-gate.md"), []byte("## Suitability Gate"), 0644); err != nil {
+			t.Fatalf("write scout-suitability-gate.md: %v", err)
+		}
+
+		result, err := LoadTypePromptWithRefs(filepath.Join(agentsDir, "scout.md"))
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+
+		// The marker should appear only once (not doubled)
+		count := strings.Count(result, "<!-- injected: references/scout-suitability-gate.md -->")
+		if count != 1 {
+			t.Errorf("expected marker to appear exactly once, got %d times in: %q", count, result)
+		}
+	})
+
+	t.Run("empty references dir returns core only", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		agentsDir := filepath.Join(tmpDir, "agents")
+		refsDir := filepath.Join(tmpDir, "references")
+		if err := os.MkdirAll(agentsDir, 0755); err != nil {
+			t.Fatalf("mkdir agents: %v", err)
+		}
+		if err := os.MkdirAll(refsDir, 0755); err != nil {
+			t.Fatalf("mkdir references: %v", err)
+		}
+
+		coreContent := "# Scout Core"
+		if err := os.WriteFile(filepath.Join(agentsDir, "scout.md"), []byte(coreContent), 0644); err != nil {
+			t.Fatalf("write scout.md: %v", err)
+		}
+		// Only a non-matching file in refs
+		if err := os.WriteFile(filepath.Join(refsDir, "wave-agent-worktree.md"), []byte("## Worktree"), 0644); err != nil {
+			t.Fatalf("write wave-agent-worktree.md: %v", err)
+		}
+
+		result, err := LoadTypePromptWithRefs(filepath.Join(agentsDir, "scout.md"))
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if result != coreContent {
+			t.Errorf("expected core only %q, got %q", coreContent, result)
+		}
+	})
+
+	t.Run("missing core file returns error", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		nonexistent := filepath.Join(tmpDir, "agents", "scout.md")
+
+		_, err := LoadTypePromptWithRefs(nonexistent)
+		if err == nil {
+			t.Fatal("expected error for missing core file, got nil")
+		}
+	})
+}
+
 // TestBuildProgramContractsSection verifies that frozen contracts are correctly extracted and formatted.
 func TestBuildProgramContractsSection(t *testing.T) {
 	// Create a test manifest with frozen contracts

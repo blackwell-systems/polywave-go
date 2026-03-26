@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/agent"
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/engine"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/orchestrator"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
 	"github.com/spf13/cobra"
@@ -111,12 +112,12 @@ Examples:
 				sawRepo = filepath.Join(home, "code", "scout-and-wave")
 			}
 
-			// Load critic-agent.md prompt
+			// Load critic-agent.md prompt with reference injection
 			criticMdPath := filepath.Join(sawRepo, "implementations", "claude-code", "prompts", "agents", "critic-agent.md")
-			criticMdBytes, err := os.ReadFile(criticMdPath)
+			criticMdContent, err := engine.LoadTypePromptWithRefs(criticMdPath)
 			if err != nil {
 				// Fallback prompt if the file doesn't exist yet
-				criticMdBytes = []byte("You are a Critic Agent. Review every agent brief in the IMPL doc against the actual codebase. Verify file_existence, symbol_accuracy, pattern_accuracy, interface_consistency, import_chains, and side_effect_completeness. Write the result using: sawtools set-critic-review <impl-path> --verdict <PASS|ISSUES> --summary <text> --issue-count <N> --agent-reviews <JSON>")
+				criticMdContent = "You are a Critic Agent. Review every agent brief in the IMPL doc against the actual codebase. Verify file_existence, symbol_accuracy, pattern_accuracy, interface_consistency, import_chains, and side_effect_completeness. Write the result using: sawtools set-critic-review <impl-path> --verdict <PASS|ISSUES> --summary <text> --issue-count <N> --agent-reviews <JSON>"
 			}
 
 			// Build the critic agent prompt
@@ -126,7 +127,7 @@ Examples:
 			}
 
 			prompt := fmt.Sprintf("%s\n\n## IMPL Doc Path\n%s\n\n## Repository Root(s)\n%s",
-				string(criticMdBytes), implPath, repoRootsSection)
+				criticMdContent, implPath, repoRootsSection)
 
 			fmt.Println("Launching critic agent (E37)...")
 			fmt.Printf("  IMPL doc: %s\n", implPath)
