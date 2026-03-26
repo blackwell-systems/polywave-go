@@ -67,6 +67,8 @@ const (
 	CodeGateTimeout        = "B005_GATE_TIMEOUT"
 	CodeGateCommandMissing = "B006_GATE_COMMAND_MISSING"
 	CodeStubDetected       = "B007_STUB_DETECTED"
+	// B008: gate input validation failed (replaces "E_GATE_INPUT" in gate_input_validator.go)
+	CodeGateInputInvalid = "B008_GATE_INPUT_INVALID"
 )
 
 // Git error codes (G001-G099)
@@ -107,6 +109,12 @@ const (
 	CodeFreezeError           = "N012_FREEZE_ERROR"
 	CodeConfigNotFound        = "N013_CONFIG_NOT_FOUND"
 	CodeConfigInvalid         = "N014_CONFIG_INVALID"
+	// N015: status update mutation failed (replaces "E_STATUS" in status_update.go)
+	CodeStatusUpdateFailed = "N015_STATUS_UPDATE_FAILED"
+	// N016: tier gate evaluation failed (replaces "E_TIER_GATE" in program_tier_gate.go)
+	CodeTierGateFailed = "N016_TIER_GATE_FAILED"
+	// N017: program status computation failed (replaces "E_PROGRAM_STATUS" in program_status.go)
+	CodeProgramStatusFailed = "N017_PROGRAM_STATUS_FAILED"
 )
 
 // Protocol error codes (P001-P099)
@@ -117,6 +125,8 @@ const (
 	CodeDepsNotMet              = "P004_DEPS_NOT_MET"
 	CodeInvariantViolation      = "P005_INVARIANT_VIOLATION"
 	CodeExecutionRule           = "P006_EXECUTION_RULE"
+	// P007: wiring gap detected (replaces "E_WIRING" in wiring_validation.go)
+	CodeWiringGap = "P007_WIRING_GAP"
 )
 
 // Tool/parse error codes (T001-T099)
