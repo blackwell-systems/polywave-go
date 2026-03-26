@@ -44,6 +44,7 @@ var knownKeys = map[string]map[string]bool{
 		"frozen_contracts_hash":  true,
 		"frozen_scaffolds_hash":  true,
 		"completion_date":        true,
+		"injection_method":       true,
 	},
 	"file_ownership": {
 		"file":       true,
@@ -61,11 +62,12 @@ var knownKeys = map[string]map[string]bool{
 		"base_commit":        true,
 	},
 	"agent": {
-		"id":           true,
-		"task":         true,
-		"files":        true,
-		"dependencies": true,
-		"model":        true,
+		"id":             true,
+		"task":           true,
+		"files":          true,
+		"dependencies":   true,
+		"model":          true,
+		"context_source": true,
 	},
 	"interface_contract": {
 		"name":        true,
