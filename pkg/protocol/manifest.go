@@ -189,7 +189,7 @@ func ValidateSM02TransitionGuards(from, to ProtocolState, m *IMPLManifest) []res
 
 	if !allowed {
 		errs = append(errs, result.SAWError{
-			Code:     "SM02_INVALID_TRANSITION",
+			Code:     result.CodeStateTransitionInvalid,
 			Message:  fmt.Sprintf("invalid state transition from %q to %q", from, to),
 			Severity: "error",
 			Field:    "state",
@@ -207,7 +207,7 @@ func ValidateSM02TransitionGuards(from, to ProtocolState, m *IMPLManifest) []res
 				report, exists := m.CompletionReports[agent.ID]
 				if !exists || report.Status != "complete" {
 					errs = append(errs, result.SAWError{
-						Code:     "SM02_INVALID_TRANSITION",
+						Code:     result.CodeStateTransitionInvalid,
 						Message:  fmt.Sprintf("cannot transition from WAVE_EXECUTING to WAVE_MERGING: agent %s is not complete (status=%s)", agent.ID, report.Status),
 						Severity: "error",
 						Field:    "state",
@@ -220,7 +220,7 @@ func ValidateSM02TransitionGuards(from, to ProtocolState, m *IMPLManifest) []res
 		// Require merge_state == completed
 		if m.MergeState != MergeStateCompleted {
 			errs = append(errs, result.SAWError{
-				Code:     "SM02_INVALID_TRANSITION",
+				Code:     result.CodeStateTransitionInvalid,
 				Message:  fmt.Sprintf("cannot transition from WAVE_MERGING to WAVE_VERIFIED: merge_state must be 'completed' (got %q)", m.MergeState),
 				Severity: "error",
 				Field:    "state",

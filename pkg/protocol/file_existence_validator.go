@@ -38,7 +38,7 @@ func ValidateFileExistence(m *IMPLManifest, repoPath string) []result.SAWError {
 		fullPath := filepath.Join(repoPath, fo.File)
 		if _, err := os.Stat(fullPath); os.IsNotExist(err) {
 			errs = append(errs, result.SAWError{
-				Code:     "E16_FILE_NOT_FOUND",
+				Code:     result.CodeFileMissing,
 				Message:  fmt.Sprintf("file '%s' marked action=modify but does not exist", fo.File),
 				Severity: "error",
 				Field:    fmt.Sprintf("file_ownership[%d]", i),
@@ -94,7 +94,7 @@ func ValidateFileExistenceMultiRepo(m *IMPLManifest, primaryRepoPath string, con
 		if _, err := os.Stat(fullPath); os.IsNotExist(err) {
 			missingCount++
 			errs = append(errs, result.SAWError{
-				Code:     "E16_FILE_NOT_FOUND",
+				Code:     result.CodeFileMissing,
 				Message:  fmt.Sprintf("file '%s' marked action=modify but does not exist in repo '%s'", fo.File, filepath.Base(repoPath)),
 				Severity: "error",
 				Field:    fmt.Sprintf("file_ownership[%d]", i),
@@ -105,7 +105,7 @@ func ValidateFileExistenceMultiRepo(m *IMPLManifest, primaryRepoPath string, con
 	// If ALL modify entries are missing, suspect a repo mismatch
 	if modifyCount > 0 && missingCount == modifyCount {
 		errs = append(errs, result.SAWError{
-			Code:     "E16_REPO_MISMATCH_SUSPECTED",
+			Code:     result.CodeRepoMismatch,
 			Message:  fmt.Sprintf("all %d action=modify files are missing - this IMPL may target a different repository", modifyCount),
 			Severity: "error",
 			Field:    "file_ownership",

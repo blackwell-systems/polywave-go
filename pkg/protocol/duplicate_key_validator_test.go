@@ -2,6 +2,8 @@ package protocol
 
 import (
 	"testing"
+
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
 )
 
 func TestValidateDuplicateKeys_NoDuplicates(t *testing.T) {
@@ -30,7 +32,7 @@ state: WAVE_EXECUTING
 		t.Fatalf("expected 1 error for duplicate 'state' key, got %d: %v", len(errs), errs)
 	}
 	err := errs[0]
-	if err.Code != "E16_DUPLICATE_KEY" {
+	if err.Code != result.CodeDuplicateKey {
 		t.Errorf("expected code E16_DUPLICATE_KEY, got %q", err.Code)
 	}
 	if err.Field != "state" {
@@ -57,7 +59,7 @@ state: COMPLETE
 		t.Fatalf("expected 1 error (for 'state'), got %d: %v", len(errs), errs)
 	}
 	err := errs[0]
-	if err.Code != "E16_DUPLICATE_KEY" {
+	if err.Code != result.CodeDuplicateKey {
 		t.Errorf("expected code E16_DUPLICATE_KEY, got %q", err.Code)
 	}
 	if err.Field != "state" {

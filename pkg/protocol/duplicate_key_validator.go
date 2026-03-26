@@ -23,7 +23,7 @@ func ValidateDuplicateKeys(rawYAML []byte) []result.SAWError {
 		// If YAML is unparseable, return a single parse error
 		return []result.SAWError{
 			{
-				Code:     "E16_PARSE_ERROR",
+				Code:     result.CodeParseError,
 				Message:  fmt.Sprintf("failed to parse YAML: %v", err),
 				Severity: "error",
 			},
@@ -72,7 +72,7 @@ func ValidateDuplicateKeys(rawYAML []byte) []result.SAWError {
 			lineStrs[i] = fmt.Sprintf("%d", l)
 		}
 		errs = append(errs, result.SAWError{
-			Code:     "E16_DUPLICATE_KEY",
+			Code:     result.CodeDuplicateKey,
 			Message:  fmt.Sprintf("duplicate key %q at lines %s", key, strings.Join(lineStrs, ", ")),
 			Severity: "error",
 			Field:    key,

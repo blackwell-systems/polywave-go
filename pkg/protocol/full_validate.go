@@ -31,7 +31,7 @@ func FullValidate(manifestPath string, opts FullValidateOpts) result.Result[Full
 	m, err := Load(manifestPath)
 	if err != nil {
 		return result.NewFailure[FullValidateData]([]result.SAWError{{
-			Code:     "V001_MANIFEST_INVALID",
+			Code:     result.CodeManifestInvalid,
 			Message:  fmt.Sprintf("failed to load manifest: %v", err),
 			Severity: "fatal",
 		}})
@@ -45,7 +45,7 @@ func FullValidate(manifestPath string, opts FullValidateOpts) result.Result[Full
 		if totalFixed > 0 {
 			if err := Save(m, manifestPath); err != nil {
 				return result.NewFailure[FullValidateData]([]result.SAWError{{
-					Code:     "V001_MANIFEST_INVALID",
+					Code:     result.CodeManifestInvalid,
 					Message:  fmt.Sprintf("failed to write corrections: %v", err),
 					Severity: "fatal",
 				}})
@@ -59,7 +59,7 @@ func FullValidate(manifestPath string, opts FullValidateOpts) result.Result[Full
 			if stripErr == nil && len(stripped) > 0 {
 				if writeErr := os.WriteFile(manifestPath, cleaned, 0644); writeErr != nil {
 					return result.NewFailure[FullValidateData]([]result.SAWError{{
-						Code:     "V001_MANIFEST_INVALID",
+						Code:     result.CodeManifestInvalid,
 						Message:  fmt.Sprintf("failed to write stripped YAML: %v", writeErr),
 						Severity: "fatal",
 					}})
@@ -69,7 +69,7 @@ func FullValidate(manifestPath string, opts FullValidateOpts) result.Result[Full
 				m, err = Load(manifestPath)
 				if err != nil {
 					return result.NewFailure[FullValidateData]([]result.SAWError{{
-						Code:     "V001_MANIFEST_INVALID",
+						Code:     result.CodeManifestInvalid,
 						Message:  fmt.Sprintf("reload after strip: %v", err),
 						Severity: "fatal",
 					}})
@@ -103,7 +103,7 @@ func FullValidate(manifestPath string, opts FullValidateOpts) result.Result[Full
 	docErrs, docErr := ValidateIMPLDoc(manifestPath)
 	if docErr != nil {
 		errs = append(errs, result.SAWError{
-			Code:     "V001_MANIFEST_INVALID",
+			Code:     result.CodeManifestInvalid,
 			Message:  fmt.Sprintf("typed-block validation error: %v", docErr),
 			Severity: "error",
 		})
@@ -164,7 +164,7 @@ func FullValidateProgram(manifestPath string, opts FullValidateProgramOpts) resu
 	manifest, err := ParseProgramManifest(manifestPath)
 	if err != nil {
 		return result.NewFailure[FullValidateProgramData]([]result.SAWError{{
-			Code:     "P000_PARSE_ERROR",
+			Code:     result.CodeParseError,
 			Message:  fmt.Sprintf("failed to parse program manifest: %v", err),
 			Severity: "fatal",
 		}})
