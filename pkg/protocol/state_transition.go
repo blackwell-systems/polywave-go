@@ -44,7 +44,7 @@ func SetImplState(manifestPath string, newState ProtocolState, opts SetImplState
 	manifest, err := Load(manifestPath)
 	if err != nil {
 		return result.NewFailure[*SetImplStateData]([]result.SAWError{{
-			Code:     "E_STATE",
+			Code:     result.CodeStateTransition,
 			Message:  fmt.Sprintf("failed to load manifest: %v", err),
 			Severity: "fatal",
 		}})
@@ -56,7 +56,7 @@ func SetImplState(manifestPath string, newState ProtocolState, opts SetImplState
 	allowed, ok := allowedTransitions[previousState]
 	if !ok {
 		return result.NewFailure[*SetImplStateData]([]result.SAWError{{
-			Code:     "E_STATE",
+			Code:     result.CodeStateTransition,
 			Message:  fmt.Sprintf("unknown state %q; cannot determine valid transitions", previousState),
 			Severity: "fatal",
 		}})
@@ -76,7 +76,7 @@ func SetImplState(manifestPath string, newState ProtocolState, opts SetImplState
 			validTargets[i] = string(s)
 		}
 		return result.NewFailure[*SetImplStateData]([]result.SAWError{{
-			Code:     "E_STATE",
+			Code:     result.CodeStateTransition,
 			Message:  fmt.Sprintf("transition from %s to %s is not allowed; valid targets: [%s]", previousState, newState, strings.Join(validTargets, ", ")),
 			Severity: "fatal",
 		}})
@@ -85,7 +85,7 @@ func SetImplState(manifestPath string, newState ProtocolState, opts SetImplState
 	// Write the new state atomically
 	if err := updateManifestState(manifestPath, newState); err != nil {
 		return result.NewFailure[*SetImplStateData]([]result.SAWError{{
-			Code:     "E_STATE",
+			Code:     result.CodeStateTransition,
 			Message:  fmt.Sprintf("failed to update manifest state: %v", err),
 			Severity: "fatal",
 		}})
@@ -108,7 +108,7 @@ func SetImplState(manifestPath string, newState ProtocolState, opts SetImplState
 		addCmd := exec.Command("git", "-C", manifestDir, "add", manifestPath)
 		if out, err := addCmd.CombinedOutput(); err != nil {
 			return result.NewFailure[*SetImplStateData]([]result.SAWError{{
-				Code:     "E_STATE",
+				Code:     result.CodeStateTransition,
 				Message:  fmt.Sprintf("git add failed: %v\n%s", err, out),
 				Severity: "fatal",
 			}})
@@ -117,7 +117,7 @@ func SetImplState(manifestPath string, newState ProtocolState, opts SetImplState
 		commitCmd := exec.Command("git", "-C", manifestDir, "commit", "-m", commitMsg)
 		if out, err := commitCmd.CombinedOutput(); err != nil {
 			return result.NewFailure[*SetImplStateData]([]result.SAWError{{
-				Code:     "E_STATE",
+				Code:     result.CodeStateTransition,
 				Message:  fmt.Sprintf("git commit failed: %v\n%s", err, out),
 				Severity: "fatal",
 			}})
@@ -127,7 +127,7 @@ func SetImplState(manifestPath string, newState ProtocolState, opts SetImplState
 		shaOut, err := shaCmd.Output()
 		if err != nil {
 			return result.NewFailure[*SetImplStateData]([]result.SAWError{{
-				Code:     "E_STATE",
+				Code:     result.CodeStateTransition,
 				Message:  fmt.Sprintf("git rev-parse HEAD failed: %v", err),
 				Severity: "fatal",
 			}})

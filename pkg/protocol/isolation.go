@@ -35,7 +35,7 @@ func VerifyIsolation(repoDir, expectedBranch string) result.Result[*IsolationDat
 	absPath, err := git.Run(repoDir, "rev-parse", "--show-toplevel")
 	if err != nil {
 		return result.NewFailure[*IsolationData]([]result.SAWError{{
-			Code:     "E_ISOLATION",
+			Code:     result.CodeIsolationVerifyFailed,
 			Message:  fmt.Sprintf("could not determine repository path: %v", err),
 			Severity: "fatal",
 		}})
@@ -55,7 +55,7 @@ func VerifyIsolation(repoDir, expectedBranch string) result.Result[*IsolationDat
 	out, err := git.Run(repoDir, "rev-parse", "--abbrev-ref", "HEAD")
 	if err != nil {
 		return result.NewFailure[*IsolationData]([]result.SAWError{{
-			Code:     "E_ISOLATION",
+			Code:     result.CodeIsolationVerifyFailed,
 			Message:  fmt.Sprintf("could not determine current branch: %v", err),
 			Severity: "fatal",
 		}})
@@ -73,7 +73,7 @@ func VerifyIsolation(repoDir, expectedBranch string) result.Result[*IsolationDat
 	worktrees, err := git.WorktreeList(repoDir)
 	if err != nil {
 		return result.NewFailure[*IsolationData]([]result.SAWError{{
-			Code:     "E_ISOLATION",
+			Code:     result.CodeIsolationVerifyFailed,
 			Message:  fmt.Sprintf("could not list worktrees: %v", err),
 			Severity: "fatal",
 		}})

@@ -42,7 +42,7 @@ func FreezeContracts(manifest *PROGRAMManifest, tierNumber int, repoPath string)
 
 	if tier == nil {
 		return result.NewFailure[*FreezeContractsData]([]result.SAWError{{
-			Code: "E_FREEZE", Message: fmt.Sprintf("tier %d not found in manifest", tierNumber), Severity: "fatal",
+			Code: result.CodeFreezeError, Message: fmt.Sprintf("tier %d not found in manifest", tierNumber), Severity: "fatal",
 		}})
 	}
 
@@ -118,7 +118,7 @@ func FreezeContracts(manifest *PROGRAMManifest, tierNumber int, repoPath string)
 
 	if !data.Success {
 		return result.NewPartial(data, []result.SAWError{{
-			Code: "E_FREEZE", Message: fmt.Sprintf("%d freeze error(s)", len(data.Errors)), Severity: "error",
+			Code: result.CodeFreezeError, Message: fmt.Sprintf("%d freeze error(s)", len(data.Errors)), Severity: "error",
 		}})
 	}
 	return result.NewSuccess(data)
