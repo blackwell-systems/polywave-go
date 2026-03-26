@@ -4,10 +4,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/blackwell-systems/scout-and-wave-go/internal/git"
 
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
 	"github.com/spf13/cobra"
@@ -280,38 +281,31 @@ func updateContextForProgram(manifest *protocol.PROGRAMManifest, repoDir, date s
 func commitProgramComplete(repoDir, manifestPath, contextPath, programSlug string) (string, error) {
 	// Stage the archived manifest (new location) and any deletion of old location
 	// Use "git add -A docs/PROGRAM" to catch both the new file and the removal
-	addArgs := []string{"-C", repoDir, "add", manifestPath}
-	if out, err := exec.Command("git", addArgs...).CombinedOutput(); err != nil {
-		return "", fmt.Errorf("git add manifest failed: %w: %s", err, string(out))
+	if err := git.Add(repoDir, manifestPath); err != nil {
+		return "", fmt.Errorf("git add manifest failed: %w", err)
 	}
 
 	// Stage the deletion of the original location (if it was moved)
 	// git add -u stages deletions of tracked files
-	addUArgs := []string{"-C", repoDir, "add", "-u", "docs/"}
-	if out, err := exec.Command("git", addUArgs...).CombinedOutput(); err != nil {
-		// Non-fatal — the original may not have been tracked yet
-		_ = out
-	}
+	_ = git.AddUpdate(repoDir, "docs/") // Non-fatal — original may not have been tracked yet
 
 	// Stage context if it was updated
 	if contextPath != "" {
-		addArgs := []string{"-C", repoDir, "add", contextPath}
-		if out, err := exec.Command("git", addArgs...).CombinedOutput(); err != nil {
-			return "", fmt.Errorf("git add context failed: %w: %s", err, string(out))
+		if err := git.Add(repoDir, contextPath); err != nil {
+			return "", fmt.Errorf("git add context failed: %w", err)
 		}
 	}
 
 	// Commit
 	commitMsg := fmt.Sprintf("chore: mark PROGRAM %s complete", programSlug)
-	commitArgs := []string{"-C", repoDir, "commit", "-m", commitMsg}
-	if out, err := exec.Command("git", commitArgs...).CombinedOutput(); err != nil {
-		return "", fmt.Errorf("git commit failed: %w: %s", err, string(out))
+	if _, err := git.CommitWithMessage(repoDir, commitMsg); err != nil {
+		return "", fmt.Errorf("git commit failed: %w", err)
 	}
 
 	// Get commit SHA
-	shaOut, err := exec.Command("git", "-C", repoDir, "rev-parse", "HEAD").Output()
+	sha, err := git.RevParse(repoDir, "HEAD")
 	if err != nil {
 		return "", nil // Non-fatal
 	}
-	return strings.TrimSpace(string(shaOut)), nil
+	return sha, nil
 }
