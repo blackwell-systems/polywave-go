@@ -1,0 +1,1372 @@
+completion_date: "2026-03-26"
+title: 'Audit Findings Unification: Retry, YAML, CompletionStatus, Validation Docs, Error Wrapping'
+feature_slug: audit-findings-unification
+verdict: SUITABLE
+suitability_assessment: |
+    All 5 findings decompose cleanly into disjoint file ownership.
+
+    File decomposition: 3 independent Wave 1 agents (retry structs, protocol type
+    definitions, doc/yaml audit) feed 4 parallel Wave 2 agents (engine/orchestrator
+    callers, remaining protocol callers, sawtools callers, misc packages). No two
+    agents in the same wave own the same file.
+
+    Investigation status: All findings are fully diagnosed — audit doc specifies
+    exact locations and fix strategies. No root-cause analysis required.
+
+    Interface discoverability: CompletionStatus type constants can be fully specified
+    before Wave 2 agents launch. RetryAttempt unified shape is specified in interfaces.
+    All cross-agent boundaries are contractually defined.
+
+    Pre-implementation status: All 5 findings are TODO based on codebase inspection.
+    CompletionReport.Status is still a plain string; RetryResult is still separate;
+    yaml calls exist without exemption catalog; doc.go still missing entry-point
+    documentation; fmt.Errorf with %v/%s wrapping errors exists in cmd/sawtools/.
+
+    Parallelization value: High. Build + test cycle is >30 seconds; agents own
+    3-8 files each; Wave 1 and Wave 2 both have 3-4 independent parallel agents.
+    Estimated 50%+ time savings vs sequential.
+
+    Estimated times:
+    - Scout phase: ~15 min (deep grep all call sites, dependency mapping, interface contracts)
+    - Agent execution: ~25 min (Wave 1: 3 agents x 10 min avg; Wave 2: 4 agents x 15 min avg, running in parallel)
+    - Merge and verification: ~5 min
+    Total SAW time: ~45 min
+
+    Sequential baseline: ~90 min (7 agents x 13 min avg)
+    Time savings: ~45 min (50% faster)
+
+    Recommendation: Clear speedup. Proceed.
+test_command: go test ./...
+lint_command: golangci-lint run ./...
+file_ownership:
+    - file: pkg/retry/types.go
+      agent: A
+      wave: 1
+      action: modify
+    - file: pkg/retry/attempt.go
+      agent: A
+      wave: 1
+      action: modify
+    - file: pkg/retry/loop.go
+      agent: A
+      wave: 1
+      action: modify
+    - file: pkg/protocol/types.go
+      agent: B
+      wave: 1
+      action: modify
+    - file: pkg/protocol/completion_report.go
+      agent: B
+      wave: 1
+      action: modify
+    - file: pkg/protocol/enumvalidation.go
+      agent: B
+      wave: 1
+      action: modify
+    - file: pkg/protocol/status_update.go
+      agent: B
+      wave: 1
+      action: modify
+    - file: pkg/protocol/helpers.go
+      agent: B
+      wave: 1
+      action: modify
+    - file: pkg/protocol/amend.go
+      agent: B
+      wave: 1
+      action: modify
+    - file: pkg/protocol/dependency_verifier.go
+      agent: B
+      wave: 1
+      action: modify
+    - file: pkg/protocol/doc.go
+      agent: C
+      wave: 1
+      action: modify
+    - file: pkg/protocol/yaml_io.go
+      agent: C
+      wave: 1
+      action: modify
+    - file: pkg/protocol/validation.go
+      agent: C
+      wave: 1
+      action: modify
+    - file: pkg/protocol/validator.go
+      agent: C
+      wave: 1
+      action: modify
+    - file: pkg/protocol/full_validate.go
+      agent: C
+      wave: 1
+      action: modify
+    - file: pkg/orchestrator/orchestrator.go
+      agent: D
+      wave: 2
+      action: modify
+      depends_on:
+        - B
+    - file: pkg/orchestrator/merge.go
+      agent: D
+      wave: 2
+      action: modify
+      depends_on:
+        - B
+    - file: pkg/orchestrator/structured_wave.go
+      agent: D
+      wave: 2
+      action: modify
+      depends_on:
+        - B
+    - file: pkg/engine/finalize_steps.go
+      agent: D
+      wave: 2
+      action: modify
+      depends_on:
+        - B
+    - file: pkg/engine/prepare.go
+      agent: D
+      wave: 2
+      action: modify
+      depends_on:
+        - B
+    - file: pkg/engine/runner.go
+      agent: D
+      wave: 2
+      action: modify
+      depends_on:
+        - B
+    - file: pkg/engine/runner_wave_structured.go
+      agent: D
+      wave: 2
+      action: modify
+      depends_on:
+        - B
+    - file: pkg/protocol/manifest.go
+      agent: E
+      wave: 2
+      action: modify
+      depends_on:
+        - B
+    - file: pkg/protocol/merge_agents.go
+      agent: E
+      wave: 2
+      action: modify
+      depends_on:
+        - B
+    - file: pkg/protocol/integration.go
+      agent: E
+      wave: 2
+      action: modify
+      depends_on:
+        - B
+    - file: pkg/resume/detect.go
+      agent: E
+      wave: 2
+      action: modify
+      depends_on:
+        - B
+    - file: pkg/config/state.go
+      agent: E
+      wave: 2
+      action: modify
+      depends_on:
+        - B
+    - file: pkg/hooks/prelaunch_gate.go
+      agent: E
+      wave: 2
+      action: modify
+      depends_on:
+        - B
+    - file: cmd/sawtools/finalize_wave.go
+      agent: F
+      wave: 2
+      action: modify
+      depends_on:
+        - A
+        - B
+    - file: cmd/sawtools/update_program_impl_cmd.go
+      agent: G
+      wave: 2
+      action: modify
+    - file: cmd/sawtools/update_program_state_cmd.go
+      agent: G
+      wave: 2
+      action: modify
+    - file: cmd/sawtools/update_status.go
+      agent: F
+      wave: 2
+      action: modify
+      depends_on:
+        - B
+    - file: cmd/sawtools/check_completion_cmd.go
+      agent: F
+      wave: 2
+      action: modify
+      depends_on:
+        - B
+    - file: cmd/sawtools/set_completion_cmd.go
+      agent: F
+      wave: 2
+      action: modify
+      depends_on:
+        - B
+    - file: cmd/sawtools/retry_cmd.go
+      agent: F
+      wave: 2
+      action: modify
+      depends_on:
+        - A
+    - file: pkg/interview/deterministic.go
+      agent: G
+      wave: 2
+      action: modify
+      depends_on:
+        - B
+    - file: cmd/sawtools/detect_cascades_cmd.go
+      agent: G
+      wave: 2
+      action: modify
+    - file: cmd/sawtools/extract_commands_cmd.go
+      agent: G
+      wave: 2
+      action: modify
+    - file: cmd/sawtools/diagnose_build_failure_cmd.go
+      agent: G
+      wave: 2
+      action: modify
+    - file: cmd/sawtools/validate_scaffold_cmd.go
+      agent: G
+      wave: 2
+      action: modify
+    - file: pkg/commands/github_actions.go
+      agent: G
+      wave: 2
+      action: modify
+interface_contracts:
+    - name: CompletionStatus
+      description: |-
+        Typed enum for CompletionReport.Status replacing the plain string field.
+        Agent B defines this in pkg/protocol/types.go. All Wave 2 agents consume it.
+      definition: |
+        // CompletionStatus is the typed outcome of a wave agent's work.
+        // Valid values: StatusComplete, StatusPartial, StatusBlocked.
+        type CompletionStatus string
+
+        const (
+            StatusComplete CompletionStatus = "complete"
+            StatusPartial  CompletionStatus = "partial"
+            StatusBlocked  CompletionStatus = "blocked"
+        )
+      location: pkg/protocol/types.go
+    - name: CompletionReport.Status
+      description: |-
+        Field type changes from string to CompletionStatus.
+        YAML and JSON serialization are unchanged (both still serialize as "complete"|"partial"|"blocked").
+        All comparisons must use constants: report.Status == protocol.StatusComplete.
+        Callers using string(report.Status) for string conversion remain valid since CompletionStatus
+        is a string type alias.
+      definition: |
+        // In types.go:
+        type CompletionReport struct {
+            Status CompletionStatus `yaml:"status" json:"status"`
+            // ... all other fields unchanged
+        }
+      location: pkg/protocol/types.go
+    - name: CompletionReportBuilder.WithStatus
+      description: |-
+        Signature changes to accept CompletionStatus instead of string.
+        Agent B implements. Wave 2 agents (D, E, F) update call sites.
+      definition: |
+        func (b *CompletionReportBuilder) WithStatus(status CompletionStatus) *CompletionReportBuilder
+      location: pkg/protocol/completion_report.go
+    - name: UpdateStatus
+      description: |-
+        The status parameter changes from string to CompletionStatus.
+        Agent B implements. Wave 2 agents (E, F) update call sites.
+        UpdateStatusData.OldStatus and NewStatus also change to CompletionStatus.
+      definition: |
+        func UpdateStatus(manifestPath string, waveNum int, agentID string, status CompletionStatus) result.Result[*UpdateStatusData]
+
+        type UpdateStatusData struct {
+            Wave      int              `json:"wave"`
+            Agent     string           `json:"agent"`
+            OldStatus CompletionStatus `json:"old_status"`
+            NewStatus CompletionStatus `json:"new_status"`
+            Updated   bool             `json:"updated"`
+        }
+      location: pkg/protocol/status_update.go
+    - name: RetryAttempt (unified)
+      description: |-
+        Agent A merges RetryResult fields into RetryAttempt and deletes RetryResult.
+        RetryLoop.Run() returns *RetryAttempt instead of *RetryResult.
+        Wave 2 Agent F updates cmd/sawtools/retry_cmd.go.
+      definition: |
+        // RetryAttempt is the unified per-attempt state carrier.
+        // It replaces both the old RetryAttempt and RetryResult types.
+        type RetryAttempt struct {
+            AttemptNumber  int        `json:"attempt_number"`
+            AgentID        string     `json:"agent_id"`
+            ErrorClass     ErrorClass `json:"error_class"`
+            ErrorExcerpt   string     `json:"error_excerpt"`
+            GateResults    []string   `json:"gate_results"`
+            SuggestedFixes []string   `json:"suggested_fixes"`
+            PriorNotes     string     `json:"prior_notes"`
+            PromptText     string     `json:"prompt_text"`
+            FailureType    string     `json:"failure_type,omitempty"`
+            // From former RetryResult:
+            GatePassed bool   `json:"gate_passed"`
+            GateOutput string `json:"gate_output"`
+            RetryIMPL  string `json:"retry_impl,omitempty"`
+            FinalState string `json:"final_state"` // "passed" | "retrying" | "blocked"
+        }
+
+        // RetryLoop.Run signature changes return type:
+        func (rl *RetryLoop) Run(ctx context.Context, failedGate QualityGateFailure, onEvent func(Event)) (*RetryAttempt, error)
+      location: pkg/retry/attempt.go
+    - name: YAML exemption catalog
+      description: |-
+        Agent C adds an exemption catalog to pkg/protocol/yaml_io.go as a block comment
+        listing every production file with a direct yaml.* call and its exemption reason.
+        This documents which calls are legitimate and which would be bugs if added in future.
+      definition: |
+        // Exemptions from LoadYAML/SaveYAML (direct yaml.* calls are intentional):
+        //
+        // yaml.Node API (cannot use generic helpers — these need tree-level manipulation):
+        //   pkg/protocol/integration.go        — AppendIntegrationReport: splice into yaml.Node tree
+        //   pkg/protocol/wiring_validation.go  — AppendWiringValidationReport: splice into yaml.Node tree
+        //   pkg/protocol/schema_unknown_keys.go — StripUnknownKeys: operates on yaml.Node tree
+        //   pkg/protocol/duplicate_key_validator.go — ValidateDuplicateKeys: needs yaml.Node
+        //   pkg/protocol/marker.go             — SAW:COMPLETE marker detection via yaml.Node
+        //   cmd/sawtools/validate_integration.go — raw yaml.Node manipulation
+        //   cmd/sawtools/validate_scaffold_cmd.go — yaml.NewEncoder to stdout (not file path)
+        //   cmd/sawtools/diagnose_build_failure_cmd.go — yaml.NewEncoder to stdout
+        //
+        // In-memory operations (no file path; LoadYAML/SaveYAML require a path):
+        //   pkg/engine/runner.go                — marshal to []byte for inline string embedding
+        //   pkg/protocol/solver_integration.go  — deep copy via marshal/unmarshal roundtrip
+        //   pkg/protocol/program_parser.go      — pre-processed bytes (SAW:PROGRAM:COMPLETE stripped)
+        //   pkg/protocol/program_status.go      — swallows errors; anonymous struct
+        //   pkg/protocol/validation.go          — ValidateBytes takes []byte, not file path
+        //   pkg/queue/manager.go                — unmarshals already-read bytes (no path)
+        //   pkg/commands/github_actions.go      — unmarshals already-read bytes (no path)
+        //   pkg/analyzer/output.go              — marshal to []byte for return value
+        //   cmd/sawtools/detect_cascades_cmd.go — marshal to []byte for stdout
+        //   cmd/sawtools/extract_commands_cmd.go — marshal to []byte for stdout
+        //
+        // Any new direct yaml.* call outside this list is a bug — use LoadYAML/SaveYAML instead.
+      location: pkg/protocol/yaml_io.go
+    - name: Validation entry-point call order
+      description: |-
+        Agent C documents all three entry points in pkg/protocol/doc.go and adds
+        call-order doc comments on Validate, ValidateIMPLDoc, and FullValidate.
+      definition: |
+        // Call order for validation entry points:
+        //
+        // 1. FullValidate(path, opts) — primary entry point for CLI and web
+        //    Loads manifest → optionally auto-fixes → calls Validate(m) →
+        //    calls ValidateIMPLDoc(path) → returns FullValidateData
+        //
+        // 2. Validate(m *IMPLManifest) — structural/invariant checks on parsed manifest
+        //    Runs I1-I6, agent IDs, gate types, enum validation, schema checks.
+        //    Does NOT run unknown-key detection (needs raw bytes).
+        //    Use when you already have a parsed *IMPLManifest.
+        //
+        // 3. ValidateIMPLDoc(path string) — E16 typed-block validation on raw file
+        //    Reads raw lines; validates typed blocks (impl-file-ownership,
+        //    impl-dep-graph, impl-wave-structure, impl-completion-report).
+        //    Use when you have a file path and need block-level validation.
+        //
+        // 4. ValidateBytes(data []byte) — convenience wrapper for in-memory YAML
+        //    Parses bytes → calls Validate + DetectUnknownKeys.
+        //    Does NOT call ValidateIMPLDoc (no file path for line numbers).
+      location: pkg/protocol/doc.go
+waves:
+    - number: 1
+      agents:
+        - id: A
+          task: |
+            ## Finding 3: Merge RetryResult into RetryAttempt
+
+            ### What to implement
+
+            Merge `RetryResult` into `RetryAttempt` to produce a single unified per-attempt
+            state type. Delete `RetryResult` entirely. Update `RetryLoop.Run()` to return
+            `*RetryAttempt`.
+
+            #### Step 1 — Extend RetryAttempt in pkg/retry/attempt.go
+
+            Note: `RetryAttempt` is defined in `attempt.go`. `RetryResult`, `RetryConfig`,
+            `QualityGateFailure`, and `Event` are all in `types.go`.
+
+            Add the fields from `RetryResult` that are not already present:
+
+            ```go
+            type RetryAttempt struct {
+                AttemptNumber  int        `json:"attempt_number"`
+                AgentID        string     `json:"agent_id"`
+                ErrorClass     ErrorClass `json:"error_class"`
+                ErrorExcerpt   string     `json:"error_excerpt"`
+                GateResults    []string   `json:"gate_results"`
+                SuggestedFixes []string   `json:"suggested_fixes"`
+                PriorNotes     string     `json:"prior_notes"`
+                PromptText     string     `json:"prompt_text"`
+                FailureType    string     `json:"failure_type,omitempty"`
+                // Fields merged from RetryResult:
+                GatePassed bool   `json:"gate_passed"`
+                GateOutput string `json:"gate_output"`
+                RetryIMPL  string `json:"retry_impl,omitempty"`
+                FinalState string `json:"final_state"` // "passed" | "retrying" | "blocked"
+            }
+            ```
+
+            Delete `RetryResult` struct entirely from `pkg/retry/types.go`.
+
+            Note: `RetryConfig`, `QualityGateFailure`, and `Event` remain unchanged.
+
+            #### Step 2 — Update RetryLoop.Run() in pkg/retry/loop.go
+
+            Change the return type from `*RetryResult` to `*RetryAttempt`. Update the
+            two `return &RetryResult{...}` calls to `return &RetryAttempt{...}`. Populate
+            `GateOutput` from `failedGate.Output`, `GatePassed: false` on failure paths,
+            and `FinalState` as before. Preserve all existing field values.
+
+            Blocked path (line 73):
+            ```go
+            return &RetryAttempt{
+                AttemptNumber: rl.attempt,
+                AgentID:       "R",
+                GatePassed:    false,
+                GateOutput:    failedGate.Output,
+                FinalState:    "blocked",
+            }, nil
+            ```
+
+            Success path (line 106):
+            ```go
+            return &RetryAttempt{
+                AttemptNumber: rl.attempt,
+                AgentID:       "R",
+                GatePassed:    false,
+                GateOutput:    failedGate.Output,
+                RetryIMPL:     retryIMPLPath,
+                FinalState:    finalState,
+            }, nil
+            ```
+
+            #### Step 3 — Update BuildRetryAttempt in pkg/retry/attempt.go
+
+            The function returns `*RetryAttempt` which already has the new fields.
+            Populate `GatePassed` and `GateOutput` from the gate results loop:
+
+            In the gate results loop (around line 58), set GatePassed and GateOutput:
+            ```go
+            // After collecting gate result summaries, populate GatePassed/GateOutput
+            // from CompletionReport context:
+            gatePassed := report.Status == "complete" || report.Status == ""
+            gateOutput := report.Verification
+            ```
+
+            Then in the final `ra := &RetryAttempt{...}` struct literal, add:
+            ```go
+            GatePassed: gatePassed,
+            GateOutput: gateOutput,
+            ```
+
+            Note: `FinalState` and `RetryIMPL` are not populated by `BuildRetryAttempt` —
+            they are only set by `RetryLoop.Run()`.
+
+            ### Interfaces to implement
+
+            See interface_contracts: `RetryAttempt (unified)`.
+
+            The return type of `RetryLoop.Run` changes from `*RetryResult` to `*RetryAttempt`.
+
+            ### Tests to write / update
+
+            Update `pkg/retry/loop_test.go` if it checks `RetryResult` fields — use
+            `RetryAttempt` instead. Update `pkg/retry/attempt_test.go` if it references
+            `RetryResult`.
+
+            Run: `go test ./pkg/retry/... -v`
+
+            ### Verification gate
+
+            ```
+            go build ./...
+            go test ./pkg/retry/...
+            ```
+
+            ### Constraints
+
+            - No backward-compat shims; delete RetryResult entirely.
+            - Breaking changes are explicitly allowed.
+            - Do NOT modify any files outside pkg/retry/.
+            - Wave 2 Agent F will update cmd/sawtools/retry_cmd.go.
+          files:
+            - pkg/retry/types.go
+            - pkg/retry/attempt.go
+            - pkg/retry/loop.go
+        - id: B
+          task: |
+            ## Finding 6: CompletionReport.Status typed enum
+
+            ### What to implement
+
+            Add a `CompletionStatus` typed string enum to `pkg/protocol/types.go`.
+            Change `CompletionReport.Status` from `string` to `CompletionStatus`.
+            Update all in-package callers (files owned by this agent).
+
+            #### Step 1 — Add CompletionStatus type to pkg/protocol/types.go
+
+            Add immediately before the `CompletionReport` struct definition (around line 101):
+
+            ```go
+            // CompletionStatus is the typed outcome of a wave agent's work.
+            // Valid values: StatusComplete, StatusPartial, StatusBlocked.
+            // Serializes as "complete", "partial", "blocked" in YAML and JSON.
+            type CompletionStatus string
+
+            const (
+                StatusComplete CompletionStatus = "complete"
+                StatusPartial  CompletionStatus = "partial"
+                StatusBlocked  CompletionStatus = "blocked"
+            )
+            ```
+
+            Change the `Status` field in `CompletionReport`:
+            ```go
+            type CompletionReport struct {
+                Status CompletionStatus `yaml:"status" json:"status"`
+                // ... all other fields unchanged
+            }
+            ```
+
+            #### Step 2 — Update CompletionReportBuilder in pkg/protocol/completion_report.go
+
+            Change `WithStatus` signature:
+            ```go
+            func (b *CompletionReportBuilder) WithStatus(status CompletionStatus) *CompletionReportBuilder {
+                b.report.Status = status
+                return b
+            }
+            ```
+
+            Update all string comparisons in `Validate()` to use constants:
+            ```go
+            switch b.report.Status {
+            case StatusComplete, StatusPartial, StatusBlocked:
+                // valid
+            case "":
+                errs = append(errs, "status is required")
+            default:
+                errs = append(errs, fmt.Sprintf(...))
+            }
+            if b.report.Status == StatusComplete && b.report.Commit == "" { ... }
+            if (b.report.Status == StatusBlocked || b.report.Status == StatusPartial) && b.report.FailureType == "" { ... }
+            if b.report.Status == StatusComplete && b.report.FailureType != "" { ... }
+            ```
+
+            Note: `b.report.FailureType` remains a plain `string` — do not change it.
+
+            #### Step 3 — Update pkg/protocol/enumvalidation.go
+
+            In `ValidateCompletionStatuses`, change the validity check:
+            ```go
+            validStatuses := map[CompletionStatus]bool{
+                StatusComplete: true,
+                StatusPartial:  true,
+                StatusBlocked:  true,
+            }
+            if !validStatuses[report.Status] {
+                ...fmt.Sprintf("...invalid status %q — must be one of: complete, partial, blocked", agentID, report.Status)...
+            }
+            ```
+
+            Also fix the validator.go `validateCompletionReport` function (line 488):
+            ```go
+            if val != string(StatusComplete) && val != string(StatusPartial) && val != string(StatusBlocked) { ... }
+            ```
+            Note: `validator.go` is owned by Agent C. Do not modify it. The string comparison there
+            operates on YAML text lines, not on `CompletionStatus` values, so no change is needed.
+
+            #### Step 4 — Update pkg/protocol/status_update.go
+
+            Change `UpdateStatus` signature and `UpdateStatusData`:
+            ```go
+            func UpdateStatus(manifestPath string, waveNum int, agentID string, status CompletionStatus) result.Result[*UpdateStatusData]
+
+            type UpdateStatusData struct {
+                Wave      int              `json:"wave"`
+                Agent     string           `json:"agent"`
+                OldStatus CompletionStatus `json:"old_status"`
+                NewStatus CompletionStatus `json:"new_status"`
+                Updated   bool             `json:"updated"`
+            }
+            ```
+
+            In the function body: `oldStatus := CompletionStatus("")` (zero value) and
+            `oldStatus = existingReport.Status` (already CompletionStatus).
+            Line `report.Status = status` remains valid.
+
+            #### Step 5 — Update in-package callers in pkg/protocol/
+
+            **pkg/protocol/helpers.go** — change `report.Status != "complete"` to
+            `report.Status != StatusComplete`.
+
+            **pkg/protocol/amend.go** — change both comparisons:
+            - `cr.Status == "complete"` → `cr.Status == StatusComplete`
+            - `cr.Status != "complete"` → `cr.Status != StatusComplete`
+
+            **pkg/protocol/dependency_verifier.go** — change `report.Status != "complete"` to
+            `report.Status != StatusComplete`.
+
+            ### Interfaces to implement
+
+            See interface_contracts: `CompletionStatus`, `CompletionReport.Status`,
+            `CompletionReportBuilder.WithStatus`, `UpdateStatus`.
+
+            ### Tests to write / update
+
+            Update `pkg/protocol/completion_report_test.go` to use `StatusComplete` etc.
+            Update `pkg/protocol/enumvalidation_test.go` if it passes string literals.
+
+            Run: `go test ./pkg/protocol/...`
+
+            ### Verification gate
+
+            ```
+            go build ./...
+            go test ./pkg/protocol/...
+            ```
+
+            ### Constraints
+
+            - Do NOT modify pkg/protocol/manifest.go, merge_agents.go, integration.go —
+              those are owned by Wave 2 Agent E.
+            - Do NOT modify pkg/protocol/validation.go, validator.go, doc.go, full_validate.go,
+              yaml_io.go — those are owned by Agent C.
+            - Breaking changes are allowed; no backward-compat shims.
+          files:
+            - pkg/protocol/types.go
+            - pkg/protocol/completion_report.go
+            - pkg/protocol/enumvalidation.go
+            - pkg/protocol/status_update.go
+            - pkg/protocol/helpers.go
+            - pkg/protocol/amend.go
+            - pkg/protocol/dependency_verifier.go
+        - id: C
+          task: |
+            ## Finding 7: Validation entry-point documentation
+            ## Finding 5: YAML call exemption catalog
+
+            ### What to implement
+
+            #### Finding 7 — Document validation entry points
+
+            **pkg/protocol/doc.go**: Add a `# Validation Entry Points` section after the
+            existing `# Validation` section. Document the call-order hierarchy:
+
+            ```go
+            // # Validation Entry Points
+            //
+            // There are three public validation entry points. Choose based on what you have:
+            //
+            // FullValidate(path, opts) — primary entry point for CLI, web, and testing.
+            //   Loads the YAML file, optionally auto-fixes correctable issues (gate type
+            //   normalization, unknown-key stripping), then runs Validate and ValidateIMPLDoc.
+            //   Returns FullValidateData with counts, errors, warnings, and fix count.
+            //   Use this when you have a file path and want all checks.
+            //
+            // Validate(m) — structural and invariant checks on a parsed *IMPLManifest.
+            //   Runs: I1 disjoint ownership, I2 agent dependencies, I3 wave ordering,
+            //   I4 required fields, I5 file ownership completeness, I6 no cycles,
+            //   E9 merge state, SM01 state machine, agent IDs, gate types, worktree
+            //   names, verification fields, completion statuses, failure types, pre-mortem
+            //   risk, multi-repo consistency, schema, action enums, integration checklist,
+            //   file existence, known issue titles, agent complexity.
+            //   Does NOT detect unknown YAML keys (requires raw bytes).
+            //   Use when you already have a parsed manifest and need fast structural checks.
+            //
+            // ValidateIMPLDoc(path) — E16 typed-block validation on the raw file.
+            //   Reads raw lines; validates typed block content:
+            //   impl-file-ownership, impl-dep-graph, impl-wave-structure, impl-completion-report.
+            //   Also checks for out-of-band dep graphs (E16C) and agent ID format (I2).
+            //   Use when you need line-number-accurate block-level validation.
+            //
+            // ValidateBytes(data) — in-memory convenience wrapper.
+            //   Parses bytes, runs Validate + DetectUnknownKeys.
+            //   Does NOT run ValidateIMPLDoc (no file path for line-number reporting).
+            //   Use when you have raw YAML bytes (e.g., from an HTTP request body).
+            ```
+
+            **pkg/protocol/validation.go**: Add a godoc comment on `Validate`:
+
+            ```go
+            // Validate runs all I1-I6 invariant checks and supplementary validations on a
+            // parsed IMPLManifest. It does not load or save files; pass a pre-loaded manifest.
+            //
+            // This is the structural validator. It cannot detect unknown YAML keys because
+            // those require the raw source bytes. Use ValidateBytes or FullValidate when
+            // unknown-key detection is also needed.
+            //
+            // Called by: FullValidate (full pipeline), ValidateBytes (in-memory shortcut).
+            // Do not call directly unless you have already loaded the manifest yourself.
+            func Validate(m *IMPLManifest) []result.SAWError {
+            ```
+
+            **pkg/protocol/validator.go**: Add a godoc comment on `ValidateIMPLDoc`:
+
+            ```go
+            // ValidateIMPLDoc runs E16 typed-block validation on the IMPL doc at path.
+            // It reads the file directly (not via ParseIMPLDoc) to preserve line numbers.
+            //
+            // Checks performed:
+            //   - E16A: required block presence (impl-file-ownership, impl-dep-graph, impl-wave-structure)
+            //   - E16B: structural content within each typed block
+            //   - E16C: out-of-band dep graph detection in plain fenced blocks (warn only)
+            //   - I2: agent ID format validation across all blocks
+            //
+            // Called by: FullValidate (after Validate). Does not call Validate itself.
+            // Do not call directly unless you specifically need E16 block validation without
+            // the full invariant suite.
+            func ValidateIMPLDoc(path string) ([]result.SAWError, error) {
+            ```
+
+            **pkg/protocol/full_validate.go**: Add a godoc comment on `FullValidate`:
+
+            ```go
+            // FullValidate runs all validation checks on an IMPL manifest file.
+            // This is the single entry point for CLI (sawtools validate), web API,
+            // and programmatic validation when you have a file path.
+            //
+            // Pipeline (in order):
+            //   1. Load(path) — parse YAML manifest
+            //   2. If AutoFix: FixGateTypes(m) + Save; StripUnknownKeys + WriteFile
+            //   3. Validate(m) — structural/invariant checks
+            //   4. ValidateIMPLDoc(path) — E16 typed-block checks
+            //
+            // Use FullValidate in preference to calling Validate + ValidateIMPLDoc separately,
+            // since it handles auto-fix, deduplication, and severity-based filtering.
+            func FullValidate(manifestPath string, opts FullValidateOpts) result.Result[FullValidateData] {
+            ```
+
+            #### Finding 5 — YAML exemption catalog
+
+            **pkg/protocol/yaml_io.go**: Add a block comment directly below the package doc
+            header (before the imports) documenting all legitimate direct yaml.* call sites
+            in the codebase. Format:
+
+            ```go
+            // Direct yaml.* calls outside this file are intentional exemptions.
+            // Every such call must appear in the list below with its reason.
+            // Any new direct yaml.* call NOT in this list is a bug — use LoadYAML or SaveYAML.
+            //
+            // Exempt call sites (yaml.Node API — cannot use generic helpers):
+            //   pkg/protocol/integration.go          — AppendIntegrationReport: yaml.Node tree splice
+            //   pkg/protocol/wiring_validation.go    — AppendWiringValidationReport: yaml.Node tree splice
+            //   pkg/protocol/schema_unknown_keys.go  — StripUnknownKeys: yaml.Node tree traversal
+            //   pkg/protocol/duplicate_key_validator.go — ValidateDuplicateKeys: yaml.Node scan
+            //   pkg/protocol/marker.go               — SAW:COMPLETE marker detection via yaml.Node
+            //   cmd/sawtools/validate_integration.go — raw yaml.Node manipulation
+            //
+            // Exempt call sites (encoder-to-stdout — no file path; yaml.NewEncoder target is os.Stdout):
+            //   cmd/sawtools/validate_scaffold_cmd.go   — yaml.NewEncoder(cmd.OutOrStdout())
+            //   cmd/sawtools/diagnose_build_failure_cmd.go — yaml.NewEncoder(cmd.OutOrStdout())
+            //
+            // Exempt call sites (in-memory / no file path):
+            //   pkg/engine/runner.go                 — marshal to []byte for inline string embed
+            //   pkg/protocol/solver_integration.go   — deep copy via marshal+unmarshal roundtrip
+            //   pkg/protocol/program_parser.go        — pre-processed bytes (SAW:PROGRAM:COMPLETE stripped)
+            //   pkg/protocol/program_status.go        — swallows errors; anonymous struct
+            //   pkg/protocol/validation.go            — ValidateBytes takes []byte, not file path
+            //   pkg/queue/manager.go                  — unmarshals already-read bytes from dir scan
+            //   pkg/commands/github_actions.go        — unmarshals already-read bytes from caller
+            //   pkg/analyzer/output.go                — marshal to []byte as return value
+            //   cmd/sawtools/detect_cascades_cmd.go   — marshal to []byte for stdout print
+            //   cmd/sawtools/extract_commands_cmd.go  — marshal to []byte for stdout print
+            ```
+
+            ### Tests to write / update
+
+            Finding 7 is documentation-only. No test changes required.
+            Finding 5 is comment-only. No test changes required.
+
+            Run after editing: `go build ./pkg/protocol/... && go vet ./pkg/protocol/...`
+
+            ### Verification gate
+
+            ```
+            go build ./...
+            go vet ./pkg/protocol/...
+            ```
+
+            ### Constraints
+
+            - Do NOT modify any struct fields or function signatures.
+            - Do NOT modify pkg/protocol/types.go, completion_report.go, enumvalidation.go,
+              status_update.go, helpers.go, amend.go, dependency_verifier.go — owned by Agent B.
+            - pkg/protocol/validation.go: ONLY add the godoc comment on Validate(). Do not
+              change the yaml.Unmarshal call at line 607 in ValidateBytes() — it already has
+              an exemption comment.
+            - All changes are comments and doc strings only for Finding 7.
+            - yaml_io.go change is a block comment only for Finding 5.
+          files:
+            - pkg/protocol/doc.go
+            - pkg/protocol/yaml_io.go
+            - pkg/protocol/validation.go
+            - pkg/protocol/validator.go
+            - pkg/protocol/full_validate.go
+      base_commit: 5647c34e6e73c2897a03e27e107db1208615f411
+    - number: 2
+      agents:
+        - id: D
+          task: |
+            ## Finding 6 callers: pkg/orchestrator/ and pkg/engine/
+
+            ### What to implement
+
+            Update all `CompletionReport.Status` comparisons and assignments in the
+            `pkg/orchestrator/` and `pkg/engine/` packages to use the new typed
+            `CompletionStatus` constants defined by Wave 1 Agent B.
+
+            The constants are in `pkg/protocol`:
+            - `protocol.StatusComplete` = "complete"
+            - `protocol.StatusPartial`  = "partial"
+            - `protocol.StatusBlocked`  = "blocked"
+
+            #### pkg/engine/finalize_steps.go
+
+            Line 425: `report.Status == "partial" || report.Status == "blocked"` →
+            `report.Status == protocol.StatusPartial || report.Status == protocol.StatusBlocked`
+
+            Line 426: `fmt.Sprintf("agent %s has status %q...", agent.ID, report.Status)` —
+            `%q` on a `CompletionStatus` value is fine (it formats the underlying string).
+
+            Line 432: Same pattern — update the two status comparisons.
+
+            #### pkg/engine/prepare.go
+
+            Line 456: `report.Status != "complete"` → `report.Status != protocol.StatusComplete`
+
+            Line 458: The `%q` formatting of `report.Status` is fine as-is.
+
+            #### pkg/engine/runner.go
+
+            Line 809: `report.Status != "complete"` → `report.Status != protocol.StatusComplete`
+
+            Note: line 1134 compares `implStatus` (which is a plain string, not a
+            `CompletionStatus`) — leave that alone.
+
+            #### pkg/engine/runner_wave_structured.go
+
+            Line 108-109: `rawReport.Status == ""` and `rawReport.Status = "complete"` →
+            ```go
+            if rawReport.Status == "" {
+                rawReport.Status = protocol.StatusComplete
+            }
+            ```
+            Line 115: `.WithStatus(rawReport.Status)` — `rawReport` is `CompletionReport`,
+            so `rawReport.Status` is already `CompletionStatus`. No cast needed. This call
+            is correct as-is once Agent B changes the `WithStatus` signature.
+
+            #### pkg/orchestrator/orchestrator.go
+
+            There are several `report.Status` comparisons. Update each:
+            - `report.Status != "complete"` → `report.Status != protocol.StatusComplete`
+            - `cr.Status == "partial" || cr.Status == "blocked"` → `protocol.StatusPartial || protocol.StatusBlocked`
+            - `report.Status == "partial" || report.Status == "blocked"` → constants
+            - Line 917: `status := "complete"` → `status := string(protocol.StatusComplete)`
+              (because `status` is a plain `string` used for the event payload)
+            - Line 919: `status = string(report.Status)` — this already works since
+              `CompletionStatus` is a string type; `string(report.Status)` is valid.
+            - Line 956: `Status: report.Status` — this is inside an `AgentBlockedPayload`
+              literal (not `AgentCompletePayload`). `AgentBlockedPayload.Status` is `string`.
+              Change to `Status: string(report.Status)`.
+            - Line 1219: `report.Status != "complete"` → `report.Status != protocol.StatusComplete`
+
+            Check `pkg/orchestrator/events.go` — `AgentBlockedPayload.Status` is `string`.
+            Do NOT change `events.go`; just use `string(report.Status)` where needed in
+            `orchestrator.go`.
+
+            #### pkg/orchestrator/merge.go
+
+            Line 40: `report.Status == "partial" || report.Status == "blocked"` → constants
+            Line 41: format string is fine with `%q`
+            Line 100: `report.Status != "complete"` → `report.Status != protocol.StatusComplete`
+            Line 211: same
+
+            #### pkg/orchestrator/structured_wave.go
+
+            The `savedFailureType` is a `string` — leave that as-is.
+            No direct `report.Status` comparisons were found in this file at initial grep.
+            Verify by searching the file before making changes.
+
+            ### Tests to write / update
+
+            If any test in `pkg/engine/` or `pkg/orchestrator/` passes string literals for
+            `CompletionReport.Status`, update them to use constants. Run:
+            `go test ./pkg/engine/... ./pkg/orchestrator/...`
+
+            ### Verification gate
+
+            ```
+            go build ./...
+            go test ./pkg/engine/... ./pkg/orchestrator/...
+            ```
+
+            ### Constraints
+
+            - Do NOT modify files owned by other Wave 2 agents.
+            - Do NOT modify pkg/orchestrator/events.go (not in your ownership list).
+            - Breaking changes are allowed; no shims.
+            - Depends on Wave 1 Agent B completing first.
+          files:
+            - pkg/orchestrator/orchestrator.go
+            - pkg/orchestrator/merge.go
+            - pkg/orchestrator/structured_wave.go
+            - pkg/engine/finalize_steps.go
+            - pkg/engine/prepare.go
+            - pkg/engine/runner.go
+            - pkg/engine/runner_wave_structured.go
+          dependencies:
+            - B
+        - id: E
+          task: |
+            ## Finding 6 callers: remaining pkg/protocol/ and misc packages
+
+            ### What to implement
+
+            Update all `CompletionReport.Status` comparisons in the remaining
+            `pkg/protocol/` files and in `pkg/resume/`, `pkg/config/`, `pkg/hooks/`.
+
+            Constants to use (from `protocol` package; for files in `pkg/protocol/`
+            these are package-local; for files in other packages use `protocol.StatusXxx`):
+
+            #### pkg/protocol/manifest.go
+
+            Line 129: `report.Status != "complete"` → `report.Status != StatusComplete`
+            (within the `protocol` package, use unqualified `StatusComplete`).
+
+            #### pkg/protocol/merge_agents.go
+
+            Line 361: `UpdateStatus(manifestPath, waveNum, agent.ID, "complete")` →
+            `UpdateStatus(manifestPath, waveNum, agent.ID, StatusComplete)`
+
+            Line 500: same change.
+
+            #### pkg/protocol/integration.go
+
+            Line 44: `cr.Status != "complete"` → `cr.Status != StatusComplete`
+
+            Note: The yaml.Node API calls in this file are intentional exemptions —
+            do NOT change them.
+
+            #### pkg/resume/detect.go
+
+            Line 147 (switch on `report.Status`):
+            ```go
+            switch report.Status {
+            case protocol.StatusComplete:
+                // ...
+            case protocol.StatusPartial, protocol.StatusBlocked:
+                // ...
+            ```
+
+            Line 286: `report.Status == "complete"` → `report.Status == protocol.StatusComplete`
+            Line 312: same pattern
+            Line 418: same
+
+            #### pkg/config/state.go
+
+            Line 57 (switch on `report.Status`):
+            Update to use `protocol.StatusComplete`, `protocol.StatusPartial`,
+            `protocol.StatusBlocked`.
+
+            #### pkg/hooks/prelaunch_gate.go
+
+            Line 129: `report.Status == "complete"` → `report.Status == protocol.StatusComplete`
+
+            ### Tests to write / update
+
+            Update tests in these packages if they use string literals for Status.
+            Run: `go test ./pkg/protocol/... ./pkg/resume/... ./pkg/config/... ./pkg/hooks/...`
+
+            ### Verification gate
+
+            ```
+            go build ./...
+            go test ./pkg/protocol/... ./pkg/resume/... ./pkg/config/... ./pkg/hooks/...
+            ```
+
+            ### Constraints
+
+            - Do NOT modify files owned by Agent B (types.go, completion_report.go,
+              enumvalidation.go, status_update.go, helpers.go, amend.go, dependency_verifier.go).
+            - Do NOT modify files owned by Agent D (orchestrator, engine files).
+            - Do NOT modify files owned by Agents F or G.
+            - Depends on Wave 1 Agent B completing first.
+          files:
+            - pkg/protocol/manifest.go
+            - pkg/protocol/merge_agents.go
+            - pkg/protocol/integration.go
+            - pkg/resume/detect.go
+            - pkg/config/state.go
+            - pkg/hooks/prelaunch_gate.go
+          dependencies:
+            - B
+        - id: F
+          task: |
+            ## Finding 10: Error wrapping in cmd/sawtools/
+            ## Finding 6 callers in cmd/sawtools/
+            ## Finding 3 caller update (retry_cmd.go)
+
+            ### What to implement
+
+            #### Part 1 — Finding 10: Fix fmt.Errorf chain-breakers in cmd/sawtools/
+
+            Sweep every `fmt.Errorf` call in your owned files. Fix any that wrap a Go
+            `error` value using `%v` or `%s` instead of `%w`.
+
+            **Rule:** Only fix calls where the format argument is a Go `error` type.
+            Do NOT fix calls where `%v`/`%s` formats a `[]SAWError` slice, a string,
+            or a struct — those are intentional. Use `%w` only for actual `error` values.
+
+            **cmd/sawtools/finalize_wave.go** — fix these specific lines:
+            - Line 322: `fmt.Errorf("finalize-wave: run-pre-merge-gates failed in %s: %v", repoKey, gateRes.Errors)`
+              → This formats `gateRes.Errors` (a `[]SAWError` slice), NOT a Go error.
+              Leave as `%v`. Do NOT change.
+            - Line 436: `fmt.Errorf("finalize-wave: merge-agents failed in %s: %v", repoKey, mergeRes.Errors)`
+              → Same: `[]SAWError` slice. Leave as `%v`.
+            - Line 503: `fmt.Errorf("finalize-wave: run-post-merge-gates failed in %s: %v", repoKey, postGateRes.Errors)`
+              → Same. Leave as `%v`.
+
+            Note: `cleanup_stale_cmd.go` and `verify_commits.go` are NOT in this agent's
+            ownership — they format `[]SAWError` slices with `%v` (correct, not chain-breakers)
+            and require no changes. `update_program_impl_cmd.go` and `update_program_state_cmd.go`
+            (which need only a `%w` fix) are owned by Agent G.
+
+            For your owned file `finalize_wave.go`: the `%v` calls at lines 322, 436, and 503
+            format `gateRes.Errors` / `mergeRes.Errors` / `postGateRes.Errors` (all `[]SAWError`
+            slices) — leave as `%v`. No error-wrapping changes needed in finalize_wave.go
+            beyond the Finding 6 CompletionStatus update at line 543.
+
+            Scan `update_status.go`, `check_completion_cmd.go`, `set_completion_cmd.go`,
+            and `retry_cmd.go` for any `%v`/`%s` wrapping actual Go `error` values and fix them.
+
+            #### Part 2 — Finding 6: CompletionStatus in cmd/sawtools/
+
+            **cmd/sawtools/finalize_wave.go** — line 543:
+            `protocol.UpdateStatus(manifestPath, waveNum, agent.ID, "complete")` →
+            `protocol.UpdateStatus(manifestPath, waveNum, agent.ID, protocol.StatusComplete)`
+
+            **cmd/sawtools/update_status.go** — the `status` variable comes from a CLI flag
+            (a plain string). Convert it before passing to `UpdateStatus`:
+            ```go
+            res := protocol.UpdateStatus(manifestPath, waveNum, agentID, protocol.CompletionStatus(status))
+            ```
+
+            **cmd/sawtools/check_completion_cmd.go** — line 47 and 49:
+            ```go
+            if report, ok := m.CompletionReports[agentID]; ok && report.Status != "" {
+                result.Status = string(report.Status)  // result.Status is a string field
+            ```
+            The `report.Status` is `CompletionStatus`; `result.Status` is likely a `string`.
+            Add `string()` cast: `result.Status = string(report.Status)`.
+
+            **cmd/sawtools/set_completion_cmd.go** — line 50:
+            `.WithStatus(status)` where `status` is a plain string from a CLI flag.
+            Change to `.WithStatus(protocol.CompletionStatus(status))`.
+
+            #### Part 3 — Finding 3 caller: cmd/sawtools/retry_cmd.go
+
+            `rl.Run()` now returns `*retry.RetryAttempt` instead of `*retry.RetryResult`.
+            The code at line 75: `result, err := rl.Run(...)` still works. The JSON
+            serialization at line 81 still works. The field names in the JSON output will
+            include the new fields (`gate_passed`, `gate_output`, `final_state`).
+
+            Verify the code compiles with the new return type. No field-name changes should
+            be needed in retry_cmd.go since it just marshals the whole struct to JSON.
+
+            ### Tests to write / update
+
+            Verify `go vet ./cmd/sawtools/...` passes (it catches `%v` on error values).
+            Run: `go test ./cmd/sawtools/...`
+
+            ### Verification gate
+
+            ```
+            go build ./...
+            go vet ./cmd/sawtools/...
+            go test ./cmd/sawtools/...
+            ```
+
+            ### Constraints
+
+            - Only fix `%v`/`%s` where the argument type is `error`. Leave `[]SAWError`
+              slice formatting as-is (they are intentional).
+            - Do NOT modify cmd/sawtools files owned by Agent G.
+            - Depends on Wave 1 Agent A (for Finding 3) and Agent B (for Finding 6).
+          files:
+            - cmd/sawtools/finalize_wave.go
+            - cmd/sawtools/update_status.go
+            - cmd/sawtools/check_completion_cmd.go
+            - cmd/sawtools/set_completion_cmd.go
+            - cmd/sawtools/retry_cmd.go
+          dependencies:
+            - A
+            - B
+        - id: G
+          task: |
+            ## Finding 6 callers: pkg/interview/ and remaining packages
+            ## Finding 5: yaml call comments in cmd/sawtools/ files
+
+            ### What to implement
+
+            #### Part 1 — Finding 10: Error wrapping in cmd/sawtools/ (two files)
+
+            **cmd/sawtools/update_program_impl_cmd.go** — line 46:
+            `fmt.Errorf("update-program-impl: parse error: %v", err)` → `err` IS a Go error.
+            Change to `%w`.
+
+            **cmd/sawtools/update_program_state_cmd.go** — line 42:
+            `fmt.Errorf("update-program-state: parse error: %v", err)` → `err` IS a Go error.
+            Change to `%w`.
+
+            After these two fixes, scan both files for any other `%v`/`%s` wrapping Go
+            `error` values and fix them.
+
+            #### Part 2 — Finding 6: CompletionStatus in pkg/interview/
+
+            **pkg/interview/deterministic.go** — two status comparisons:
+            - Line 66: `doc.Status == "complete"` — check if `doc` is an `InterviewDoc`
+              with a plain `string Status` field. If the field is `string` (not
+              `CompletionReport.Status`), leave it unchanged. Do NOT blindly change all
+              "complete" string comparisons — only change ones on `CompletionReport.Status`.
+
+            Verify: grep for `type InterviewDoc` in `pkg/interview/types.go`.
+            `InterviewDoc.Status` is `string` (values: "in_progress" | "complete") — this
+            is a different status domain. Do NOT change it.
+
+            This means `pkg/interview/deterministic.go` requires no changes for Finding 6.
+            However, it is still in your ownership for the purposes of this wave. Confirm
+            no `CompletionReport.Status` comparisons exist in this file.
+
+            #### Part 3 — Finding 5: yaml call exemption comments
+
+            Add a comment above each `yaml.Marshal` / `yaml.NewEncoder` call in the
+            owned files explaining the exemption (i.e., why `protocol.SaveYAML` / `yaml_io.go`
+            helpers cannot be used). Follow the pattern already established in the codebase
+            (e.g., `detect_cascades_cmd.go:52` already has such a comment).
+
+            **cmd/sawtools/extract_commands_cmd.go** — line 46:
+            Verify the existing comment. If it says "Cannot use protocol.SaveYAML: marshaling
+            to []byte for stdout", leave it. If absent, add:
+            ```go
+            // Cannot use protocol.SaveYAML: marshaling to []byte for stdout, not to a file path.
+            ```
+
+            **cmd/sawtools/diagnose_build_failure_cmd.go** — line 47:
+            Add above `enc := yaml.NewEncoder(cmd.OutOrStdout())`:
+            ```go
+            // Cannot use protocol.SaveYAML: target is os.Stdout via cmd.OutOrStdout(), not a file path.
+            ```
+
+            **cmd/sawtools/validate_scaffold_cmd.go** — line 42:
+            Add above `enc := yaml.NewEncoder(cmd.OutOrStdout())`:
+            ```go
+            // Cannot use protocol.SaveYAML: target is os.Stdout via cmd.OutOrStdout(), not a file path.
+            ```
+
+            **pkg/commands/github_actions.go** — line 94-95:
+            Verify the existing comment at line 94. If it says "Cannot use protocol.LoadYAML:
+            data is already-read bytes", leave it. If absent, add:
+            ```go
+            // Cannot use protocol.LoadYAML: data is already-read bytes from the caller, not a file path.
+            ```
+
+            **cmd/sawtools/detect_cascades_cmd.go** — line 52:
+            Already has the comment. Verify and leave unchanged.
+
+            #### Summary
+
+            The owned files in this agent primarily need exemption comments added. The
+            `pkg/interview/deterministic.go` file requires no code changes (InterviewDoc.Status
+            is a different type from CompletionReport.Status). The cmd/sawtools yaml files
+            need comment additions only.
+
+            ### Tests to write / update
+
+            No new tests required. These are comment-only changes.
+
+            Run: `go build ./... && go vet ./...`
+
+            ### Verification gate
+
+            ```
+            go build ./...
+            go vet ./cmd/sawtools/... ./pkg/commands/... ./pkg/interview/...
+            ```
+
+            ### Constraints
+
+            - Confirm pkg/interview/deterministic.go does NOT use CompletionReport.Status
+              before marking it as "no changes needed". Do not blindly change all "complete"
+              string comparisons.
+            - Do NOT modify files owned by Agents D, E, or F.
+            - Depends on Wave 1 Agent B.
+          files:
+            - pkg/interview/deterministic.go
+            - cmd/sawtools/update_program_impl_cmd.go
+            - cmd/sawtools/update_program_state_cmd.go
+            - cmd/sawtools/detect_cascades_cmd.go
+            - cmd/sawtools/extract_commands_cmd.go
+            - cmd/sawtools/diagnose_build_failure_cmd.go
+            - cmd/sawtools/validate_scaffold_cmd.go
+            - pkg/commands/github_actions.go
+          dependencies:
+            - B
+      base_commit: 1006d179171b5c5be3d86e7694b5e25ce31eb4ca
+quality_gates:
+    level: standard
+    gates:
+        - type: build
+          command: go build ./...
+          required: true
+        - type: test
+          command: go test ./...
+          required: true
+completion_reports:
+    A:
+        status: complete
+        branch: saw/audit-findings-unification/wave1-agent-A
+        commit: 8194d4e
+        files_changed:
+            - pkg/retry/types.go
+            - pkg/retry/attempt.go
+            - pkg/retry/loop.go
+            - pkg/retry/loop_test.go
+        tests_added:
+            - TestBuildRetryAttempt_Complete
+            - TestBuildRetryAttempt_ExcerptTruncation
+            - TestBuildRetryAttempt_FixableFailureType
+            - TestBuildRetryAttempt_MissingReport
+            - TestBuildPromptText_FixRequired
+        verification: 'PASS: go build ./... clean; go test ./pkg/retry/... 27/27 pass. OUT-OF-SCOPE: cmd/sawtools/retry_cmd_test.go uses retry.RetryResult (2 refs) - Wave 2 Agent F must update.'
+    B:
+        status: complete
+        branch: saw/audit-findings-unification/wave1-agent-B
+        commit: b02134a
+        files_changed:
+            - pkg/protocol/types.go
+            - pkg/protocol/completion_report.go
+            - pkg/protocol/enumvalidation.go
+            - pkg/protocol/status_update.go
+            - pkg/protocol/helpers.go
+            - pkg/protocol/amend.go
+            - pkg/protocol/dependency_verifier.go
+            - pkg/protocol/completion_report_test.go
+            - pkg/protocol/enumvalidation_test.go
+        verification: PASS
+    C:
+        status: complete
+        branch: saw/audit-findings-unification/wave1-agent-C
+        commit: 88da6ce
+        files_changed:
+            - pkg/protocol/doc.go
+            - pkg/protocol/yaml_io.go
+            - pkg/protocol/validation.go
+            - pkg/protocol/validator.go
+            - pkg/protocol/full_validate.go
+        verification: PASS
+    D:
+        status: complete
+        branch: saw/audit-findings-unification/wave2-agent-D
+        commit: 0c9cc8b
+        files_changed:
+            - pkg/engine/finalize_steps.go
+            - pkg/engine/prepare.go
+            - pkg/engine/runner.go
+            - pkg/engine/runner_wave_structured.go
+            - pkg/orchestrator/orchestrator.go
+            - pkg/orchestrator/merge.go
+        verification: PASS
+    E:
+        status: complete
+        branch: saw/audit-findings-unification/wave2-agent-E
+        commit: f2d583c
+        files_changed:
+            - pkg/protocol/manifest.go
+            - pkg/protocol/merge_agents.go
+            - pkg/protocol/integration.go
+            - pkg/protocol/manifest_test.go
+            - pkg/resume/detect.go
+            - pkg/config/state.go
+            - pkg/hooks/prelaunch_gate.go
+        verification: PASS
+    F:
+        status: complete
+        branch: saw/audit-findings-unification/wave2-agent-F
+        commit: 10b1cdb
+        files_changed:
+            - cmd/sawtools/finalize_wave.go
+        verification: PASS
+    G:
+        status: complete
+        branch: saw/audit-findings-unification/wave2-agent-G
+        commit: b0820ab
+        files_changed:
+            - cmd/sawtools/update_program_impl_cmd.go
+            - cmd/sawtools/update_program_state_cmd.go
+        verification: 'PASS: go build ./... && go vet ./cmd/sawtools/... ./pkg/commands/... ./pkg/interview/...'
+pre_mortem:
+    overall_risk: medium
+    rows:
+        - scenario: CompletionStatus change breaks compilation in a file not in the ownership table. The type change from string to CompletionStatus propagates to any file comparing or assigning report.Status. If any file was missed in the grep, wave 2 agents may encounter build failures.
+          likelihood: medium
+          impact: high
+          mitigation: Wave 2 agents must run `go build ./...` as their first verification step before running tests. If build fails due to a missed caller, the agent should fix the missed file even if not in its ownership list, then document it in the completion report.
+        - scenario: RetryAttempt JSON field names change in an unexpected way, breaking any caller that parses the JSON output of sawtools retry. The retry_cmd.go marshals the entire struct — new fields (gate_passed, gate_output, final_state) appear but old callers may not expect them.
+          likelihood: low
+          impact: low
+          mitigation: JSON additions are backward-compatible. Callers that ignore unknown fields are unaffected. Agent F should verify the JSON output of retry_cmd still includes the expected fields via a quick manual test if feasible.
+        - scenario: pkg/protocol/status_update.go UpdateStatus signature change breaks pkg/orchestrator/ or pkg/engine/ callers that pass plain string "complete". These packages are in Wave 2 (Agent D/E/F) and depend on Wave 1 Agent B, so they will see the new signature. The risk is that an agent in Wave 2 misses a call site.
+          likelihood: low
+          impact: medium
+          mitigation: Run `grep -rn '"complete"\|"partial"\|"blocked"' pkg/ cmd/` after Wave 2 completes to catch any missed literal. The post-merge go build will also catch type mismatches.
+        - scenario: Wave 1 Agent B touches 7 files in pkg/protocol/; Wave 1 Agent C touches 5 files in pkg/protocol/. If agents overlap (e.g., both modify validation.go), a merge conflict will occur. Disjoint file lists prevent this if both agents respect boundaries.
+          likelihood: low
+          impact: medium
+          mitigation: File ownership is strictly disjoint. Agent B explicitly must not touch validation.go, validator.go, doc.go, full_validate.go, yaml_io.go. Agent C explicitly must not touch types.go, completion_report.go, enumvalidation.go, status_update.go, helpers.go, amend.go, dependency_verifier.go. Briefs state these constraints explicitly.
+critic_report:
+    verdict: PASS
+    agent_reviews:
+        A:
+            agent_id: A
+            verdict: PASS
+        B:
+            agent_id: B
+            verdict: PASS
+        C:
+            agent_id: C
+            verdict: PASS
+        D:
+            agent_id: D
+            verdict: PASS
+        E:
+            agent_id: E
+            verdict: PASS
+        F:
+            agent_id: F
+            verdict: PASS
+        G:
+            agent_id: G
+            verdict: PASS
+            issues:
+                - check: complexity_balance
+                  severity: warning
+                  description: Agent G owns 8 files — at the 8-file threshold; monitor for scope creep but no split required
+    summary: 'All 7 agents verified against the codebase. File existence: all 41 owned files (action: modify) confirmed present. Symbol accuracy: RetryResult and RetryAttempt exist as described; BuildRetryAttempt, RetryLoop.Run (returns *RetryResult — correct pre-merge baseline), CompletionReportBuilder.WithStatus (string param — correct pre-merge baseline), UpdateStatus (string param — correct pre-merge baseline), and all validation entry points (Validate, ValidateIMPLDoc, FullValidate, ValidateBytes) match documented signatures. Pattern accuracy: all string literal comparisons on CompletionReport.Status confirmed present in owned files; UpdateStatus callers in merge_agents.go at lines 361 and 500 match brief exactly; runner_wave_structured.go lines 108-109 match; check_completion_cmd.go result.Status is string (cast needed as brief states). Caller exhaustiveness: comprehensive grep of CompletionReport.Status string comparisons found no unowned call sites; all protocol.UpdateStatus callers are in owned files; only one RetryLoop.Run caller (retry_cmd.go, owned by F). YAML exemption comments already exist in detect_cascades_cmd.go, extract_commands_cmd.go, and github_actions.go. Interface contracts are syntactically valid Go; result package exists locally. Complexity: Agent G owns exactly 8 files (at threshold, advisory only). No errors found.'
+    reviewed_at: "2026-03-26T18:37:46Z"
+    issue_count: 1
+state: COMPLETE
+injection_method: hook
