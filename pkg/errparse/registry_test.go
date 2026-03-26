@@ -101,7 +101,7 @@ func TestParseOutput_Dispatches(t *testing.T) {
 
 	expected := &ParseResult{
 		Tool:   "go-build",
-		Errors: []result.SAWError{{Code: "TOOL_ERROR", File: "main.go", Line: 1, Severity: "error", Message: "syntax error", Tool: "go-build"}},
+		Errors: []result.SAWError{{Code: result.CodeToolError, File: "main.go", Line: 1, Severity: "error", Message: "syntax error", Tool: "go-build"}},
 		Raw:    "main.go:1: syntax error",
 	}
 

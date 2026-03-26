@@ -86,7 +86,7 @@ func (p *GoBuildParser) Parse(stdout, stderr string) *ParseResult {
 		message := strings.TrimSpace(m[4])
 
 		pr.Errors = append(pr.Errors, result.SAWError{
-			Code:     "TOOL_ERROR",
+			Code:     result.CodeToolError,
 			File:     file,
 			Line:     lineNum,
 			Severity: "error",
@@ -147,7 +147,7 @@ func (p *GoTestParser) Parse(stdout, stderr string) *ParseResult {
 		if m := failRe.FindStringSubmatch(line); m != nil {
 			currentTest = m[1]
 			pr.Errors = append(pr.Errors, result.SAWError{
-				Code:     "TOOL_ERROR",
+				Code:     result.CodeToolError,
 				Severity: "error",
 				Message:  "FAIL: " + currentTest,
 				Tool:     p.Name(),
@@ -162,7 +162,7 @@ func (p *GoTestParser) Parse(stdout, stderr string) *ParseResult {
 			panicMsg = m[1]
 			_ = i
 			pr.Errors = append(pr.Errors, result.SAWError{
-				Code:     "TOOL_ERROR",
+				Code:     result.CodeToolError,
 				Severity: "error",
 				Message:  "panic: " + panicMsg,
 				Tool:     p.Name(),
@@ -198,7 +198,7 @@ func (p *GoTestParser) Parse(stdout, stderr string) *ParseResult {
 			}
 			rule := currentTest
 			pr.Errors = append(pr.Errors, result.SAWError{
-				Code:     "TOOL_ERROR",
+				Code:     result.CodeToolError,
 				File:     file,
 				Line:     lineNum,
 				Severity: "error",
@@ -245,7 +245,7 @@ func (p *GoVetParser) Parse(stdout, stderr string) *ParseResult {
 		message := strings.TrimSpace(m[4])
 
 		pr.Errors = append(pr.Errors, result.SAWError{
-			Code:     "TOOL_ERROR",
+			Code:     result.CodeToolError,
 			File:     file,
 			Line:     lineNum,
 			Severity: "warning",
@@ -331,7 +331,7 @@ func (p *GolangciLintParser) Parse(stdout, stderr string) *ParseResult {
 		}
 
 		pr.Errors = append(pr.Errors, result.SAWError{
-			Code:       "TOOL_ERROR",
+			Code:       result.CodeToolError,
 			File:       file,
 			Line:       lineNum,
 			Severity:   "warning",

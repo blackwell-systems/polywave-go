@@ -41,7 +41,7 @@ func (p *TscParser) Parse(stdout, stderr string) *ParseResult {
 		lineNum, _ := strconv.Atoi(m[2])
 		colNum, _ := strconv.Atoi(m[3])
 		pr.Errors = append(pr.Errors, result.SAWError{
-			Code:     "TOOL_ERROR",
+			Code:     result.CodeToolError,
 			File:     m[1],
 			Line:     lineNum,
 			Severity: m[4],
@@ -108,7 +108,7 @@ func (p *EslintParser) Parse(stdout, stderr string) *ParseResult {
 						suggestion = "--fix available: " + msg.Fix.Text
 					}
 					pr.Errors = append(pr.Errors, result.SAWError{
-						Code:       "TOOL_ERROR",
+						Code:       result.CodeToolError,
 						File:       file.FilePath,
 						Line:       msg.Line,
 						Severity:   severity,
@@ -154,7 +154,7 @@ func (p *EslintParser) Parse(stdout, stderr string) *ParseResult {
 		}
 
 		pr.Errors = append(pr.Errors, result.SAWError{
-			Code:       "TOOL_ERROR",
+			Code:       result.CodeToolError,
 			File:       m[1],
 			Line:       lineNum,
 			Severity:   severity,
@@ -245,7 +245,7 @@ func (p *NpmTestParser) Parse(stdout, stderr string) *ParseResult {
 				f = "unknown"
 			}
 			pr.Errors = append(pr.Errors, result.SAWError{
-				Code:     "TOOL_ERROR",
+				Code:     result.CodeToolError,
 				File:     f,
 				Line:     refLine,
 				Severity: "error",
@@ -281,7 +281,7 @@ func (p *NpmTestParser) Parse(stdout, stderr string) *ParseResult {
 				f = "unknown"
 			}
 			pr.Errors = append(pr.Errors, result.SAWError{
-				Code:     "TOOL_ERROR",
+				Code:     result.CodeToolError,
 				File:     f,
 				Line:     refLine,
 				Severity: "error",
