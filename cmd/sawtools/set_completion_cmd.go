@@ -35,6 +35,8 @@ func newSetCompletionCmd() *cobra.Command {
 	var filesCreated string
 	var testsAdded string
 	var verification string
+	var notes string
+	var failureType string
 
 	cmd := &cobra.Command{
 		Use:   "set-completion <manifest-path>",
@@ -43,40 +45,38 @@ func newSetCompletionCmd() *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			manifestPath := args[0]
 
-			// Validate status
-			switch status {
-			case "complete", "partial", "blocked":
-				// valid
-			default:
-				return fmt.Errorf("--status must be one of: complete, partial, blocked (got %q)", status)
+			// Build completion report using the canonical builder.
+			builder := protocol.NewCompletionReport(agentID).
+				WithStatus(status).
+				WithCommit(commit).
+				WithWorktree(worktree).
+				WithBranch(branch).
+				WithFiles(splitCSV(filesChanged), splitCSV(filesCreated)).
+				WithTestsAdded(splitCSV(testsAdded)).
+				WithVerification(verification).
+				WithNotes(notes)
+
+			if failureType != "" {
+				builder = builder.WithFailureType(failureType)
 			}
 
-			// Load manifest
-			m, err := protocol.Load(manifestPath)
-			if err != nil {
+			// Validate before touching disk.
+			if err := builder.Validate(); err != nil {
 				return fmt.Errorf("set-completion: %w", err)
 			}
 
-			// Build completion report
-			report := protocol.CompletionReport{
-				Status:       status,
-				Commit:       commit,
-				Worktree:     worktree,
-				Branch:       branch,
-				FilesChanged: splitCSV(filesChanged),
-				FilesCreated: splitCSV(filesCreated),
-				TestsAdded:   splitCSV(testsAdded),
-				Verification: verification,
-			}
-
-			// Set completion report
-			if err := protocol.SetCompletionReport(m, agentID, report); err != nil {
-				return fmt.Errorf("set-completion: %w", err)
-			}
-
-			// Save manifest
-			if err := protocol.Save(m, manifestPath); err != nil {
-				return fmt.Errorf("set-completion: %w", err)
+			// Persist with consolidated lock.
+			if err := protocol.WithCompletionReportLock(func() error {
+				m, loadErr := protocol.Load(manifestPath)
+				if loadErr != nil {
+					return fmt.Errorf("set-completion: %w", loadErr)
+				}
+				if appendErr := builder.AppendToManifest(m); appendErr != nil {
+					return fmt.Errorf("set-completion: %w", appendErr)
+				}
+				return protocol.Save(m, manifestPath)
+			}); err != nil {
+				return err
 			}
 
 			// Print result
@@ -92,17 +92,18 @@ func newSetCompletionCmd() *cobra.Command {
 
 	cmd.Flags().StringVar(&agentID, "agent", "", "Agent ID (required)")
 	cmd.Flags().StringVar(&status, "status", "", "Status: complete|partial|blocked (required)")
-	cmd.Flags().StringVar(&commit, "commit", "", "Commit SHA (required)")
+	cmd.Flags().StringVar(&commit, "commit", "", "Commit SHA")
 	cmd.Flags().StringVar(&worktree, "worktree", "", "Worktree path")
 	cmd.Flags().StringVar(&branch, "branch", "", "Branch name")
 	cmd.Flags().StringVar(&filesChanged, "files-changed", "", "Comma-separated list of changed files")
 	cmd.Flags().StringVar(&filesCreated, "files-created", "", "Comma-separated list of created files")
 	cmd.Flags().StringVar(&testsAdded, "tests-added", "", "Comma-separated list of tests added")
 	cmd.Flags().StringVar(&verification, "verification", "", "Verification result text")
+	cmd.Flags().StringVar(&notes, "notes", "", "Free-text notes")
+	cmd.Flags().StringVar(&failureType, "failure-type", "", "Failure type: transient|fixable|needs_replan|escalate|timeout")
 
 	_ = cmd.MarkFlagRequired("agent")
 	_ = cmd.MarkFlagRequired("status")
-	_ = cmd.MarkFlagRequired("commit")
 
 	return cmd
 }
