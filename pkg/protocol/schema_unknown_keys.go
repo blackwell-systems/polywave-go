@@ -153,6 +153,8 @@ var knownKeys = map[string]map[string]bool{
 // This operates on raw YAML bytes (not the parsed struct) to catch keys that
 // Go's YAML unmarshaling silently ignores.
 func DetectUnknownKeys(yamlData []byte) []result.SAWError {
+	// Cannot use LoadYAML: operates on raw bytes in memory and unmarshals into a yaml.Node
+	// for key-walking — LoadYAML unmarshals into a typed struct, not a Node.
 	var doc yaml.Node
 	if err := yaml.Unmarshal(yamlData, &doc); err != nil {
 		return nil
@@ -301,6 +303,9 @@ func formatKeyPath(parts []string) string {
 // known keys. Returns the cleaned YAML bytes, the list of stripped key names,
 // and any error.
 func StripUnknownKeys(yamlData []byte) ([]byte, []string, error) {
+	// Cannot use LoadYAML/SaveYAML: operates on raw bytes in memory and uses the yaml.Node
+	// tree API to remove key-value pairs while preserving YAML structure. Re-marshals the
+	// modified Node tree (a yaml.Node, not a typed struct) back to bytes for the caller.
 	var doc yaml.Node
 	if err := yaml.Unmarshal(yamlData, &doc); err != nil {
 		return nil, nil, fmt.Errorf("StripUnknownKeys: parse YAML: %w", err)

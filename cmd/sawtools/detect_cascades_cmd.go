@@ -48,7 +48,8 @@ Output format is YAML matching the CascadeResult schema.`,
 				return fmt.Errorf("detect cascades: %w", err)
 			}
 
-			// Output YAML
+			// Output YAML.
+			// Cannot use protocol.SaveYAML: marshaling to []byte for stdout, not to a file path.
 			data, err := yaml.Marshal(&result)
 			if err != nil {
 				return fmt.Errorf("marshal YAML: %w", err)

@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"gopkg.in/yaml.v3"
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
 )
 
 // DeterministicManager implements the Manager interface using a fixed question set.
@@ -58,14 +58,9 @@ func (m *DeterministicManager) Start(cfg InterviewConfig) (*InterviewDoc, *Inter
 
 // Resume loads an existing interview from its YAML file and returns the current question.
 func (m *DeterministicManager) Resume(docPath string) (*InterviewDoc, *InterviewQuestion, error) {
-	data, err := os.ReadFile(docPath)
+	doc, err := protocol.LoadYAML[InterviewDoc](docPath)
 	if err != nil {
-		return nil, nil, fmt.Errorf("reading interview doc: %w", err)
-	}
-
-	var doc InterviewDoc
-	if err := yaml.Unmarshal(data, &doc); err != nil {
-		return nil, nil, fmt.Errorf("parsing interview doc: %w", err)
+		return nil, nil, fmt.Errorf("resume interview doc: %w", err)
 	}
 
 	if doc.Status == "complete" {
@@ -342,13 +337,8 @@ func (m *DeterministicManager) Save(doc *InterviewDoc, docPath string) error {
 		return fmt.Errorf("creating directory %s: %w", dir, err)
 	}
 
-	data, err := yaml.Marshal(doc)
-	if err != nil {
-		return fmt.Errorf("marshaling interview doc: %w", err)
-	}
-
-	if err := os.WriteFile(docPath, data, 0o644); err != nil {
-		return fmt.Errorf("writing interview doc: %w", err)
+	if err := protocol.SaveYAML(docPath, doc); err != nil {
+		return fmt.Errorf("save interview doc: %w", err)
 	}
 
 	return nil

@@ -91,6 +91,7 @@ func (p *GithubActionsParser) parseWorkflowFile(path string) ([]string, error) {
 		} `yaml:"jobs"`
 	}
 
+	// Cannot use protocol.LoadYAML: data is already-read bytes from the caller, not a file path.
 	if err := yaml.Unmarshal(data, &workflow); err != nil {
 		return nil, fmt.Errorf("parsing YAML: %w", err)
 	}

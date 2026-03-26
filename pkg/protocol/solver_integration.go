@@ -152,6 +152,7 @@ func applyResult(solveResult solver.SolveResult, m *IMPLManifest) (*IMPLManifest
 	}
 
 	// Deep copy via YAML round-trip.
+	// Cannot use LoadYAML/SaveYAML: marshaling to/from in-memory bytes, not a file path.
 	data, err := yaml.Marshal(m)
 	if err != nil {
 		return nil, fmt.Errorf("marshaling manifest for deep copy: %w", err)

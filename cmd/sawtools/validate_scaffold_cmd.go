@@ -36,7 +36,9 @@ Outputs structured YAML with pass/fail status per step.`,
 				return fmt.Errorf("validation failed: %w", err)
 			}
 
-			// Output YAML to command's output stream (for testability)
+			// Output YAML to command's output stream (for testability).
+			// Cannot use protocol.SaveYAML: writes to an io.Writer (stdout), not a file path,
+			// and uses SetIndent(2) which SaveYAML does not support.
 			enc := yaml.NewEncoder(cmd.OutOrStdout())
 			enc.SetIndent(2)
 			if err := enc.Encode(result); err != nil {

@@ -3,11 +3,9 @@ package main
 import (
 	"encoding/json"
 	"fmt"
-	"os"
 
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
 	"github.com/spf13/cobra"
-	"gopkg.in/yaml.v3"
 )
 
 // UpdateProgramStateResult is the JSON output of the update-program-state command.
@@ -50,15 +48,9 @@ Exit codes:
 			// Update state
 			manifest.State = protocol.ProgramState(state)
 
-			// Marshal manifest back to YAML
-			data, err := yaml.Marshal(manifest)
-			if err != nil {
-				return fmt.Errorf("update-program-state: failed to marshal manifest: %v", err)
-			}
-
 			// Write manifest back to disk
-			if err := os.WriteFile(manifestPath, data, 0644); err != nil {
-				return fmt.Errorf("update-program-state: failed to write manifest: %v", err)
+			if err := protocol.SaveYAML(manifestPath, manifest); err != nil {
+				return fmt.Errorf("update-program-state: %w", err)
 			}
 
 			result := UpdateProgramStateResult{

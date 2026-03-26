@@ -149,7 +149,9 @@ func tryReadIMPLState(path string) string {
 		return ""
 	}
 
-	// Parse just enough to get the state field
+	// Cannot use LoadYAML: this function intentionally swallows all errors (returns ""),
+	// and LoadYAML would need the error to be checked by the caller. The anonymous struct
+	// also cannot be expressed as a named type parameter without adding unnecessary ceremony.
 	var doc struct {
 		State string `yaml:"state"`
 	}

@@ -18,6 +18,8 @@ import (
 //
 // Returns a slice of result.SAWError, empty if no duplicates found.
 func ValidateDuplicateKeys(rawYAML []byte) []result.SAWError {
+	// Cannot use LoadYAML: operates on raw bytes already in memory and needs the yaml.Node
+	// tree for duplicate-key walking — LoadYAML unmarshals into a typed struct, not a Node.
 	var root yaml.Node
 	if err := yaml.Unmarshal(rawYAML, &root); err != nil {
 		// If YAML is unparseable, return a single parse error

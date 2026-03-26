@@ -319,7 +319,9 @@ func AppendIntegrationReport(manifestPath string, waveKey string, report *Integr
 		return fmt.Errorf("AppendIntegrationReport: failed to read manifest: %w", err)
 	}
 
-	// Parse into raw YAML node tree
+	// Cannot use LoadYAML/SaveYAML: this function uses the yaml.Node tree API to splice
+	// a new wave key into the integration_reports mapping without re-marshaling the entire
+	// manifest (which would lose unknown fields). All yaml calls here are intentional Node ops.
 	var doc yaml.Node
 	if err := yaml.Unmarshal(data, &doc); err != nil {
 		return fmt.Errorf("AppendIntegrationReport: failed to parse YAML: %w", err)

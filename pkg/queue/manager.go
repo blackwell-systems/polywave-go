@@ -65,13 +65,8 @@ func (m *Manager) Add(item Item) error {
 	filename := fmt.Sprintf("%03d-%s.yaml", item.Priority, item.Slug)
 	path := filepath.Join(dir, filename)
 
-	data, err := yaml.Marshal(&item)
-	if err != nil {
-		return fmt.Errorf("queue.Manager.Add: marshal item: %w", err)
-	}
-
-	if err := os.WriteFile(path, data, 0o644); err != nil {
-		return fmt.Errorf("queue.Manager.Add: write file: %w", err)
+	if err := protocol.SaveYAML(path, &item); err != nil {
+		return fmt.Errorf("queue.Manager.Add: %w", err)
 	}
 	return nil
 }
@@ -98,13 +93,9 @@ func (m *Manager) List() ([]Item, error) {
 			continue
 		}
 		path := filepath.Join(dir, name)
-		data, err := os.ReadFile(path)
+		item, err := protocol.LoadYAML[Item](path)
 		if err != nil {
-			return nil, fmt.Errorf("queue.Manager.List: read file %s: %w", name, err)
-		}
-		var item Item
-		if err := yaml.Unmarshal(data, &item); err != nil {
-			return nil, fmt.Errorf("queue.Manager.List: unmarshal %s: %w", name, err)
+			return nil, fmt.Errorf("queue.Manager.List: %w", err)
 		}
 		item.FilePath = path
 		items = append(items, item)
@@ -164,6 +155,7 @@ func (m *Manager) completedSlugs() (map[string]bool, error) {
 		if err != nil {
 			continue
 		}
+		// In-memory unmarshal: data already read above; cannot use LoadYAML (no file path).
 		var is implSlug
 		if err := yaml.Unmarshal(data, &is); err == nil && is.FeatureSlug != "" {
 			completed[is.FeatureSlug] = true
@@ -231,22 +223,14 @@ func (m *Manager) UpdateStatus(slug string, status string) error {
 			continue
 		}
 		path := filepath.Join(dir, name)
-		data, err := os.ReadFile(path)
+		item, err := protocol.LoadYAML[Item](path)
 		if err != nil {
-			return fmt.Errorf("queue.Manager.UpdateStatus: read file %s: %w", name, err)
-		}
-		var item Item
-		if err := yaml.Unmarshal(data, &item); err != nil {
-			return fmt.Errorf("queue.Manager.UpdateStatus: unmarshal %s: %w", name, err)
+			return fmt.Errorf("queue.Manager.UpdateStatus: %w", err)
 		}
 		if item.Slug == slug {
 			item.Status = status
-			updated, err := yaml.Marshal(&item)
-			if err != nil {
-				return fmt.Errorf("queue.Manager.UpdateStatus: marshal: %w", err)
-			}
-			if err := os.WriteFile(path, updated, 0o644); err != nil {
-				return fmt.Errorf("queue.Manager.UpdateStatus: write file: %w", err)
+			if err := protocol.SaveYAML(path, &item); err != nil {
+				return fmt.Errorf("queue.Manager.UpdateStatus: %w", err)
 			}
 			return nil
 		}

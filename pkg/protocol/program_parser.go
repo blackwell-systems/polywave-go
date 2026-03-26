@@ -27,6 +27,8 @@ func ParseProgramManifest(path string) (*PROGRAMManifest, error) {
 	data = bytes.ReplaceAll(data, []byte("\nSAW:PROGRAM:COMPLETE\n"), []byte("\n"))
 	data = bytes.TrimSuffix(data, []byte("\nSAW:PROGRAM:COMPLETE"))
 
+	// Cannot use LoadYAML: data has been pre-processed above to strip the SAW:PROGRAM:COMPLETE
+	// marker line before YAML parsing. LoadYAML reads raw file bytes without that transformation.
 	var manifest PROGRAMManifest
 	if err := yaml.Unmarshal(data, &manifest); err != nil {
 		return nil, fmt.Errorf("failed to parse PROGRAM manifest YAML: %w", err)

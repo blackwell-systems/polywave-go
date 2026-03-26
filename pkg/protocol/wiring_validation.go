@@ -211,7 +211,9 @@ func AppendWiringReport(manifestPath, waveKey string, data *WiringValidationData
 		return fmt.Errorf("AppendWiringReport: failed to read manifest: %w", err)
 	}
 
-	// Parse into raw YAML node tree
+	// Cannot use LoadYAML/SaveYAML: uses the yaml.Node tree API to splice a new wave key
+	// into the wiring_validation_reports mapping without re-marshaling the entire manifest
+	// (which would lose unknown fields). All yaml calls here are intentional Node ops.
 	var doc yaml.Node
 	if err := yaml.Unmarshal(raw, &doc); err != nil {
 		return fmt.Errorf("AppendWiringReport: failed to parse YAML: %w", err)

@@ -602,6 +602,7 @@ func validateMultiRepoConsistency(m *IMPLManifest) []result.SAWError {
 // Use Validate when you already have a parsed *IMPLManifest and only need
 // structural/invariant checks (unknown-key detection will not run).
 func ValidateBytes(yamlData []byte) ([]result.SAWError, error) {
+	// Cannot use LoadYAML: yamlData is a []byte parameter, not a file path.
 	var m IMPLManifest
 	if err := yaml.Unmarshal(yamlData, &m); err != nil {
 		return nil, fmt.Errorf("ValidateBytes: unmarshal YAML: %w", err)

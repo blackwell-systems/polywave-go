@@ -83,6 +83,7 @@ func ToOutput(g *DepGraph) *Output {
 }
 
 // FormatYAML serializes Output to YAML bytes.
+// Cannot use protocol.SaveYAML: marshals to []byte for the caller, not to a file path.
 func FormatYAML(o *Output) ([]byte, error) {
 	return yaml.Marshal(o)
 }

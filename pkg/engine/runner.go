@@ -1011,6 +1011,7 @@ func runScoutAutomation(repoPath string, featureDescription string) string {
 	if commandsErr != nil {
 		sections = append(sections, "### Build/Test Commands (H2)\nNot detected")
 	} else {
+		// Cannot use protocol.SaveYAML: marshaling to []byte for inline string formatting, not to a file.
 		commandsYAML, err := yaml.Marshal(commandsResult)
 		if err != nil {
 			sections = append(sections, "### Build/Test Commands (H2)\nNot detected")
@@ -1029,6 +1030,7 @@ func runScoutAutomation(repoPath string, featureDescription string) string {
 		} else if suitResult == nil {
 			sections = append(sections, "### Pre-Implementation Status (H1a)\nSkipped - no requirements file")
 		} else {
+			// Cannot use protocol.SaveYAML: marshaling to []byte for inline string formatting, not to a file.
 			suitYAML, err := yaml.Marshal(suitResult)
 			if err != nil {
 				sections = append(sections, "### Pre-Implementation Status (H1a)\nSkipped - no requirements file")
@@ -1051,6 +1053,7 @@ func runScoutAutomation(repoPath string, featureDescription string) string {
 	if depsErr != nil {
 		sections = append(sections, fmt.Sprintf("### Dependency Analysis (H3)\nAnalysis failed: %v", depsErr))
 	} else {
+		// Cannot use protocol.SaveYAML: marshaling to []byte for inline string formatting, not to a file.
 		depsYAML, err := yaml.Marshal(depsResult)
 		if err != nil {
 			sections = append(sections, fmt.Sprintf("### Dependency Analysis (H3)\nAnalysis failed: %v", err))

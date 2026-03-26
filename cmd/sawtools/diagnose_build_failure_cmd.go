@@ -41,7 +41,9 @@ Outputs structured YAML with:
 				return fmt.Errorf("failed to diagnose error: %w", err)
 			}
 
-			// Output YAML to command's configured output
+			// Output YAML to command's configured output.
+			// Cannot use protocol.SaveYAML: writes to an io.Writer (stdout), not a file path,
+			// and uses SetIndent(2) which SaveYAML does not support.
 			enc := yaml.NewEncoder(cmd.OutOrStdout())
 			enc.SetIndent(2)
 			if err := enc.Encode(diagnosis); err != nil {

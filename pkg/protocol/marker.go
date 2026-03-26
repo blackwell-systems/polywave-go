@@ -77,7 +77,9 @@ func writeCompletionMarkerYAML(implDocPath string, date string) error {
 	// Write back
 	content := strings.Join(lines, "\n") + "\n"
 
-	// Validate that the modified YAML is still parseable
+	// Validate that the modified YAML is still parseable.
+	// Cannot use LoadYAML: content is an in-memory string (not yet on disk), and we need
+	// the yaml.Node type to parse without a specific target struct.
 	var testDoc yaml.Node
 	if err := yaml.Unmarshal([]byte(content), &testDoc); err != nil {
 		return fmt.Errorf("generated invalid YAML after adding completion_date: %w", err)

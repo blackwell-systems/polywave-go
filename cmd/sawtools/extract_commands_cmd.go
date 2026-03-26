@@ -42,6 +42,7 @@ Output format matches the Scout IMPL doc command specification.`,
 			var data []byte
 			switch formatFlag {
 			case "yaml":
+				// Cannot use protocol.SaveYAML: marshaling to []byte for stdout, not to a file path.
 				data, err = yaml.Marshal(commandSet)
 				if err != nil {
 					return fmt.Errorf("marshal yaml: %w", err)

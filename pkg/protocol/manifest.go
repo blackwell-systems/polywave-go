@@ -40,6 +40,9 @@ func WithCompletionReportLock(fn func() error) error {
 // Load reads a YAML IMPL manifest from the specified path and parses it into an IMPLManifest.
 // Returns an error if the file cannot be read or the YAML is invalid.
 // Prevention fix: Detects duplicate completion report keys (agents writing reports twice).
+//
+// Cannot use LoadYAML: has specialized duplicate-key detection and orphaned-report validation
+// logic that the generic LoadYAML helper omits. LoadYAML delegates here for IMPLManifest.
 func Load(path string) (*IMPLManifest, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -94,6 +97,10 @@ func isYAMLDuplicateKeyError(err error) bool {
 
 // Save writes an IMPLManifest to the specified path as YAML.
 // Returns an error if the file cannot be written or the manifest cannot be marshaled.
+//
+// Cannot use SaveYAML: Save is the canonical write path for IMPLManifest and is called
+// via WithCompletionReportLock. Routing through the generic helper would invert the
+// dependency — callers should use Save (not SaveYAML) for IMPLManifest.
 func Save(m *IMPLManifest, path string) error {
 	data, err := yaml.Marshal(m)
 	if err != nil {

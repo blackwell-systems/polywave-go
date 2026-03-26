@@ -9,7 +9,6 @@ import (
 
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
 	"github.com/spf13/cobra"
-	"gopkg.in/yaml.v3"
 )
 
 func newImportImplsCmd() *cobra.Command {
@@ -216,15 +215,11 @@ Examples:
 			}
 
 			// Write updated manifest
-			data, err := yaml.Marshal(manifest)
-			if err != nil {
-				return fmt.Errorf("import-impls: failed to marshal manifest: %w", err)
-			}
 			if err := os.MkdirAll(filepath.Dir(programPath), 0755); err != nil {
 				return fmt.Errorf("import-impls: failed to create directory: %w", err)
 			}
-			if err := os.WriteFile(programPath, data, 0644); err != nil {
-				return fmt.Errorf("import-impls: failed to write manifest: %w", err)
+			if err := protocol.SaveYAML(programPath, manifest); err != nil {
+				return fmt.Errorf("import-impls: %w", err)
 			}
 
 			// Build result
