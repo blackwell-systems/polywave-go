@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
 	"gopkg.in/yaml.v3"
 )
 
@@ -427,8 +428,8 @@ func TestKnownIssue_ValidationRejectsEmptyTitle(t *testing.T) {
 	if len(errs) != 1 {
 		t.Fatalf("Expected 1 error for empty title, got %d: %v", len(errs), errs)
 	}
-	if errs[0].Code != "KNOWN_ISSUE_MISSING_TITLE" {
-		t.Errorf("Expected KNOWN_ISSUE_MISSING_TITLE, got %s", errs[0].Code)
+	if errs[0].Code != result.CodeKnownIssueMissingTitle {
+		t.Errorf("Expected %s, got %s", result.CodeKnownIssueMissingTitle, errs[0].Code)
 	}
 	if !strings.Contains(errs[0].Field, "known_issues[0]") {
 		t.Errorf("Expected field to contain 'known_issues[0]', got %s", errs[0].Field)
