@@ -31,7 +31,7 @@ func NewRetryLoop(cfg RetryConfig) *RetryLoop {
 
 // Run generates a retry IMPL doc for the failed quality gate, saves it to
 // docs/IMPL/IMPL-{parentSlug}-retry-{attempt}.yaml (relative to RepoPath),
-// and returns a RetryResult describing the outcome.
+// and returns a *RetryAttempt describing the outcome.
 //
 // It does NOT execute the retry agent — that is the caller's responsibility.
 //
@@ -42,7 +42,7 @@ func NewRetryLoop(cfg RetryConfig) *RetryLoop {
 // onEvent is called with lifecycle events:
 //   - "retry_started"  when beginning a retry attempt
 //   - "retry_blocked"  when max retries are exceeded (no IMPL saved)
-func (rl *RetryLoop) Run(ctx context.Context, failedGate QualityGateFailure, onEvent func(Event)) (*RetryResult, error) {
+func (rl *RetryLoop) Run(ctx context.Context, failedGate QualityGateFailure, onEvent func(Event)) (*RetryAttempt, error) {
 	rl.attempt++
 
 	if onEvent != nil {
@@ -70,12 +70,12 @@ func (rl *RetryLoop) Run(ctx context.Context, failedGate QualityGateFailure, onE
 				},
 			})
 		}
-		return &RetryResult{
-			Attempt:    rl.attempt,
-			AgentID:    "R",
-			GatePassed: false,
-			GateOutput: failedGate.Output,
-			FinalState: "blocked",
+		return &RetryAttempt{
+			AttemptNumber: rl.attempt,
+			AgentID:       "R",
+			GatePassed:    false,
+			GateOutput:    failedGate.Output,
+			FinalState:    "blocked",
 		}, nil
 	}
 
@@ -103,13 +103,13 @@ func (rl *RetryLoop) Run(ctx context.Context, failedGate QualityGateFailure, onE
 		finalState = "retrying"
 	}
 
-	return &RetryResult{
-		Attempt:    rl.attempt,
-		AgentID:    "R",
-		GatePassed: false,
-		GateOutput: failedGate.Output,
-		RetryIMPL:  retryIMPLPath,
-		FinalState: finalState,
+	return &RetryAttempt{
+		AttemptNumber: rl.attempt,
+		AgentID:       "R",
+		GatePassed:    false,
+		GateOutput:    failedGate.Output,
+		RetryIMPL:     retryIMPLPath,
+		FinalState:    finalState,
 	}, nil
 }
 

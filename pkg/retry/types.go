@@ -7,16 +7,6 @@ type RetryConfig struct {
 	RepoPath   string // Repository root path
 }
 
-// RetryResult captures the outcome of a retry attempt.
-type RetryResult struct {
-	Attempt    int    `json:"attempt"`
-	AgentID    string `json:"agent_id"`
-	GatePassed bool   `json:"gate_passed"`
-	GateOutput string `json:"gate_output"`
-	RetryIMPL  string `json:"retry_impl,omitempty"`
-	FinalState string `json:"final_state"` // "passed" | "retrying" | "blocked"
-}
-
 // QualityGateFailure describes a quality gate that failed after wave merge.
 // This is a local type to avoid importing pkg/engine or pkg/orchestrator.
 type QualityGateFailure struct {
