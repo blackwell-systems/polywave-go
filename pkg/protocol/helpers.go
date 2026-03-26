@@ -32,3 +32,38 @@ func IsFinalWave(manifest *IMPLManifest, waveNumber int) bool {
 	}
 	return waveNumber == len(manifest.Waves)
 }
+
+// FindWave returns a pointer to the Wave whose Number equals waveNum,
+// or nil if no such wave exists.
+func (m *IMPLManifest) FindWave(waveNum int) *Wave {
+	for i := range m.Waves {
+		if m.Waves[i].Number == waveNum {
+			return &m.Waves[i]
+		}
+	}
+	return nil
+}
+
+// FindAgent returns a pointer to the Agent whose ID equals agentID
+// within the wave, or nil if not found.
+func (w *Wave) FindAgent(agentID string) *Agent {
+	for i := range w.Agents {
+		if w.Agents[i].ID == agentID {
+			return &w.Agents[i]
+		}
+	}
+	return nil
+}
+
+// FindWaveWithAgent returns the Wave containing agentID and a pointer
+// to the Agent, or (nil, nil) if not found.
+func (m *IMPLManifest) FindWaveWithAgent(agentID string) (*Wave, *Agent) {
+	for i := range m.Waves {
+		for j := range m.Waves[i].Agents {
+			if m.Waves[i].Agents[j].ID == agentID {
+				return &m.Waves[i], &m.Waves[i].Agents[j]
+			}
+		}
+	}
+	return nil, nil
+}

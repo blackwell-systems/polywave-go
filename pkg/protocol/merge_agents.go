@@ -11,6 +11,16 @@ import (
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
 )
 
+// isAgentAlreadyMerged returns true if the agent's branch (slug or legacy)
+// is recorded in the merge log AND is an ancestor of HEAD in repoDir.
+// This dual-check prevents false positives when the log has a stale entry
+// but the branch was deleted before the actual merge completed.
+func isAgentAlreadyMerged(repoDir string, mergeLog *MergeLog, agentID, slugBranch, legacyBranch string) bool {
+	return mergeLog.IsMerged(agentID) &&
+		(git.IsAncestor(repoDir, slugBranch, "HEAD") ||
+			git.IsAncestor(repoDir, legacyBranch, "HEAD"))
+}
+
 // PreMergeValidation validates ownership table consistency before any merge operations.
 // It verifies:
 //  1. Every file_ownership entry for this wave references an agent that exists in the wave.
@@ -19,13 +29,7 @@ import (
 // Returns a slice of result.SAWError if inconsistencies are found; nil slice means valid.
 func PreMergeValidation(manifest *IMPLManifest, waveNum int) []result.SAWError {
 	// Find the target wave and build a set of valid agent IDs
-	var targetWave *Wave
-	for i := range manifest.Waves {
-		if manifest.Waves[i].Number == waveNum {
-			targetWave = &manifest.Waves[i]
-			break
-		}
-	}
+	targetWave := manifest.FindWave(waveNum)
 	if targetWave == nil {
 		return []result.SAWError{{
 			Code:     "WAVE_NOT_FOUND",
@@ -82,13 +86,7 @@ func PreMergeValidation(manifest *IMPLManifest, waveNum int) []result.SAWError {
 // otherwise fail because it looks for branches that don't exist.
 func WorktreesAbsent(manifest *IMPLManifest, waveNum int, repoDir string) bool {
 	// Find the target wave
-	var targetWave *Wave
-	for i := range manifest.Waves {
-		if manifest.Waves[i].Number == waveNum {
-			targetWave = &manifest.Waves[i]
-			break
-		}
-	}
+	targetWave := manifest.FindWave(waveNum)
 	if targetWave == nil {
 		return false
 	}
@@ -111,13 +109,7 @@ func WorktreesAbsent(manifest *IMPLManifest, waveNum int, repoDir string) bool {
 // when it detects that all expected branches are absent from the repo
 // (see AllBranchesAbsent check in finalize_wave.go).
 func AllBranchesAbsent(manifest *IMPLManifest, waveNum int, repoDir string) bool {
-	var targetWave *Wave
-	for i := range manifest.Waves {
-		if manifest.Waves[i].Number == waveNum {
-			targetWave = &manifest.Waves[i]
-			break
-		}
-	}
+	targetWave := manifest.FindWave(waveNum)
 	if targetWave == nil {
 		return true // no wave = no branches
 	}
@@ -174,14 +166,7 @@ func MergeAgents(manifestPath string, waveNum int, repoDir string, mergeTarget s
 	}
 
 	// Find the specified wave
-	var targetWave *Wave
-	for i := range manifest.Waves {
-		if manifest.Waves[i].Number == waveNum {
-			targetWave = &manifest.Waves[i]
-			break
-		}
-	}
-
+	targetWave := manifest.FindWave(waveNum)
 	if targetWave == nil {
 		return result.Result[MergeAgentsData]{}, fmt.Errorf("wave %d not found in manifest", waveNum)
 	}
@@ -304,7 +289,7 @@ func mergeAgentsSingleRepo(manifestPath string, waveNum int, repoDir string, man
 		// Trusting only the log caused data loss when the log had a stale entry and the
 		// branch was deleted during cleanup before the actual merge happened.
 		// Check both slug-scoped and legacy branch names for backward compatibility.
-		if mergeLog.IsMerged(agent.ID) && (git.IsAncestor(repoDir, branch, "HEAD") || git.IsAncestor(repoDir, legacyBranch, "HEAD")) {
+		if isAgentAlreadyMerged(repoDir, mergeLog, agent.ID, branch, legacyBranch) {
 			status := MergeStatus{
 				Agent:   agent.ID,
 				Branch:  branch,
@@ -447,7 +432,7 @@ func mergeAgentsMultiRepo(manifestPath string, waveNum int, manifest *IMPLManife
 			legacyBranch := LegacyBranchName(waveNum, agent.ID)
 			// Check if agent already merged (idempotency): merge log AND git history agree.
 			// Check both slug-scoped and legacy branch names for backward compatibility.
-			if mergeLog.IsMerged(agent.ID) && (git.IsAncestor(absRepoDir, branch, "HEAD") || git.IsAncestor(absRepoDir, legacyBranch, "HEAD")) {
+			if isAgentAlreadyMerged(absRepoDir, mergeLog, agent.ID, branch, legacyBranch) {
 				status := MergeStatus{
 					Agent:   agent.ID,
 					Branch:  branch,

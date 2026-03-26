@@ -40,13 +40,7 @@ type GateInputValidationData struct {
 // Returns a fatal result if waveNum is not found in the manifest.
 func ValidateGateInputs(manifest *IMPLManifest, waveNum int, repoDir string) result.Result[*GateInputValidationData] {
 	// Find target wave
-	var targetWave *Wave
-	for i := range manifest.Waves {
-		if manifest.Waves[i].Number == waveNum {
-			targetWave = &manifest.Waves[i]
-			break
-		}
-	}
+	targetWave := manifest.FindWave(waveNum)
 	if targetWave == nil {
 		return result.NewFailure[*GateInputValidationData]([]result.SAWError{{
 			Code:     codeGateInputInvalid,
