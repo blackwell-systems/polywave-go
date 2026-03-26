@@ -3,6 +3,8 @@ package protocol
 import (
 	"strings"
 	"testing"
+
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
 )
 
 func TestDetectUnknownKeys_ValidManifest(t *testing.T) {
@@ -69,8 +71,8 @@ verdict: SUITABLE
 	if len(errs) != 1 {
 		t.Fatalf("expected 1 error, got %d: %v", len(errs), errs)
 	}
-	if errs[0].Code != SV01UnknownKey {
-		t.Errorf("expected code %s, got %s", SV01UnknownKey, errs[0].Code)
+	if errs[0].Code != result.CodeUnknownKey {
+		t.Errorf("expected code %s, got %s", result.CodeUnknownKey, errs[0].Code)
 	}
 	if errs[0].Field != "titl" {
 		t.Errorf("expected field 'titl', got '%s'", errs[0].Field)
@@ -89,8 +91,8 @@ file_ownership:
 	if len(errs) != 1 {
 		t.Fatalf("expected 1 error, got %d: %v", len(errs), errs)
 	}
-	if errs[0].Code != SV01UnknownKey {
-		t.Errorf("expected code %s, got %s", SV01UnknownKey, errs[0].Code)
+	if errs[0].Code != result.CodeUnknownKey {
+		t.Errorf("expected code %s, got %s", result.CodeUnknownKey, errs[0].Code)
 	}
 	if errs[0].Field != "file_ownership[0].flie" {
 		t.Errorf("expected field 'file_ownership[0].flie', got '%s'", errs[0].Field)
@@ -112,8 +114,8 @@ waves:
 	if len(errs) != 1 {
 		t.Fatalf("expected 1 error, got %d: %v", len(errs), errs)
 	}
-	if errs[0].Code != SV01UnknownKey {
-		t.Errorf("expected code %s, got %s", SV01UnknownKey, errs[0].Code)
+	if errs[0].Code != result.CodeUnknownKey {
+		t.Errorf("expected code %s, got %s", result.CodeUnknownKey, errs[0].Code)
 	}
 	if errs[0].Field != "waves[0].agents[0].taks" {
 		t.Errorf("expected field 'waves[0].agents[0].taks', got '%s'", errs[0].Field)
@@ -131,8 +133,8 @@ waves:
 	if len(errs) != 1 {
 		t.Fatalf("expected 1 error, got %d: %v", len(errs), errs)
 	}
-	if errs[0].Code != SV01UnknownKey {
-		t.Errorf("expected code %s, got %s", SV01UnknownKey, errs[0].Code)
+	if errs[0].Code != result.CodeUnknownKey {
+		t.Errorf("expected code %s, got %s", result.CodeUnknownKey, errs[0].Code)
 	}
 	if errs[0].Field != "waves[0].agentss" {
 		t.Errorf("expected field 'waves[0].agentss', got '%s'", errs[0].Field)
@@ -152,8 +154,8 @@ verdict: SUITABLE
 	}
 	// Verify both are unknown key errors
 	for _, e := range errs {
-		if e.Code != SV01UnknownKey {
-			t.Errorf("expected code %s, got %s", SV01UnknownKey, e.Code)
+		if e.Code != result.CodeUnknownKey {
+			t.Errorf("expected code %s, got %s", result.CodeUnknownKey, e.Code)
 		}
 	}
 }
@@ -173,8 +175,8 @@ quality_gates:
 	if len(errs) != 1 {
 		t.Fatalf("expected 1 error, got %d: %v", len(errs), errs)
 	}
-	if errs[0].Code != SV01UnknownKey {
-		t.Errorf("expected code %s, got %s", SV01UnknownKey, errs[0].Code)
+	if errs[0].Code != result.CodeUnknownKey {
+		t.Errorf("expected code %s, got %s", result.CodeUnknownKey, errs[0].Code)
 	}
 	if errs[0].Field != "quality_gates.gates[0].bogus_field" {
 		t.Errorf("expected field 'quality_gates.gates[0].bogus_field', got '%s'", errs[0].Field)

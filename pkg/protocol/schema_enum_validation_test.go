@@ -2,6 +2,8 @@ package protocol
 
 import (
 	"testing"
+
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
 )
 
 func TestValidateAllEnums_Valid(t *testing.T) {
@@ -42,8 +44,8 @@ func TestValidateAllEnums_InvalidAction(t *testing.T) {
 	if len(errs) != 1 {
 		t.Fatalf("expected 1 error, got %d: %v", len(errs), errs)
 	}
-	if errs[0].Code != SV01InvalidEnum {
-		t.Errorf("expected code %s, got %s", SV01InvalidEnum, errs[0].Code)
+	if errs[0].Code != result.CodeInvalidEnum {
+		t.Errorf("expected code %s, got %s", result.CodeInvalidEnum, errs[0].Code)
 	}
 	if errs[0].Field != "file_ownership[0].action" {
 		t.Errorf("expected field file_ownership[0].action, got %s", errs[0].Field)
@@ -72,8 +74,8 @@ func TestValidateAllEnums_InvalidLevel(t *testing.T) {
 	if len(errs) != 1 {
 		t.Fatalf("expected 1 error, got %d: %v", len(errs), errs)
 	}
-	if errs[0].Code != SV01InvalidEnum {
-		t.Errorf("expected code %s, got %s", SV01InvalidEnum, errs[0].Code)
+	if errs[0].Code != result.CodeInvalidEnum {
+		t.Errorf("expected code %s, got %s", result.CodeInvalidEnum, errs[0].Code)
 	}
 	if errs[0].Field != "quality_gates.level" {
 		t.Errorf("expected field quality_gates.level, got %s", errs[0].Field)
@@ -102,8 +104,8 @@ func TestValidateAllEnums_InvalidScaffoldStatus(t *testing.T) {
 	if len(errs) != 1 {
 		t.Fatalf("expected 1 error, got %d: %v", len(errs), errs)
 	}
-	if errs[0].Code != SV01InvalidEnum {
-		t.Errorf("expected code %s, got %s", SV01InvalidEnum, errs[0].Code)
+	if errs[0].Code != result.CodeInvalidEnum {
+		t.Errorf("expected code %s, got %s", result.CodeInvalidEnum, errs[0].Code)
 	}
 	if errs[0].Field != "scaffolds[0].status" {
 		t.Errorf("expected field scaffolds[0].status, got %s", errs[0].Field)
@@ -137,8 +139,8 @@ func TestValidateAllEnums_InvalidLikelihood(t *testing.T) {
 	if len(errs) != 1 {
 		t.Fatalf("expected 1 error, got %d: %v", len(errs), errs)
 	}
-	if errs[0].Code != SV01InvalidEnum {
-		t.Errorf("expected code %s, got %s", SV01InvalidEnum, errs[0].Code)
+	if errs[0].Code != result.CodeInvalidEnum {
+		t.Errorf("expected code %s, got %s", result.CodeInvalidEnum, errs[0].Code)
 	}
 	if errs[0].Field != "pre_mortem.rows[0].likelihood" {
 		t.Errorf("expected field pre_mortem.rows[0].likelihood, got %s", errs[0].Field)
@@ -158,8 +160,8 @@ func TestValidateAllEnums_InvalidImpact(t *testing.T) {
 	if len(errs) != 1 {
 		t.Fatalf("expected 1 error, got %d: %v", len(errs), errs)
 	}
-	if errs[0].Code != SV01InvalidEnum {
-		t.Errorf("expected code %s, got %s", SV01InvalidEnum, errs[0].Code)
+	if errs[0].Code != result.CodeInvalidEnum {
+		t.Errorf("expected code %s, got %s", result.CodeInvalidEnum, errs[0].Code)
 	}
 	if errs[0].Field != "pre_mortem.rows[0].impact" {
 		t.Errorf("expected field pre_mortem.rows[0].impact, got %s", errs[0].Field)
@@ -199,8 +201,8 @@ func TestValidateInjectionMethod_invalid(t *testing.T) {
 	if errs[0].Severity != "error" {
 		t.Errorf("expected error severity, got %s", errs[0].Severity)
 	}
-	if errs[0].Code != SV01InvalidEnum {
-		t.Errorf("expected code %s, got %s", SV01InvalidEnum, errs[0].Code)
+	if errs[0].Code != result.CodeInvalidEnum {
+		t.Errorf("expected code %s, got %s", result.CodeInvalidEnum, errs[0].Code)
 	}
 	if errs[0].Field != "injection_method" {
 		t.Errorf("expected field injection_method, got %s", errs[0].Field)
@@ -263,8 +265,8 @@ func TestValidateAgentContextSource_invalid(t *testing.T) {
 	if errs[0].Severity != "error" {
 		t.Errorf("expected error severity, got %s", errs[0].Severity)
 	}
-	if errs[0].Code != SV01InvalidEnum {
-		t.Errorf("expected code %s, got %s", SV01InvalidEnum, errs[0].Code)
+	if errs[0].Code != result.CodeInvalidEnum {
+		t.Errorf("expected code %s, got %s", result.CodeInvalidEnum, errs[0].Code)
 	}
 }
 

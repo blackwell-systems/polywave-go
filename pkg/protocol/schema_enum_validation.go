@@ -42,7 +42,7 @@ func validateFileOwnershipActions(m *IMPLManifest) []result.SAWError {
 		}
 		if !validActions[fo.Action] {
 			errs = append(errs, result.SAWError{
-				Code:     SV01InvalidEnum,
+				Code:     result.CodeInvalidEnum,
 				Message:  fmt.Sprintf("file_ownership[%d].action has invalid value %q — must be one of: new, modify, delete", i, fo.Action),
 				Severity: "error",
 				Field:    fmt.Sprintf("file_ownership[%d].action", i),
@@ -74,7 +74,7 @@ func validateQualityGatesLevel(m *IMPLManifest) []result.SAWError {
 
 	if !validLevels[m.QualityGates.Level] {
 		errs = append(errs, result.SAWError{
-			Code:     SV01InvalidEnum,
+			Code:     result.CodeInvalidEnum,
 			Message:  fmt.Sprintf("quality_gates.level has invalid value %q — must be one of: quick, standard, full", m.QualityGates.Level),
 			Severity: "error",
 			Field:    "quality_gates.level",
@@ -104,7 +104,7 @@ func validateScaffoldStatuses(m *IMPLManifest) []result.SAWError {
 			continue
 		}
 		errs = append(errs, result.SAWError{
-			Code:     SV01InvalidEnum,
+			Code:     result.CodeInvalidEnum,
 			Message:  fmt.Sprintf("scaffolds[%d].status has invalid value %q — must be one of: pending, committed, or start with \"committed\" or \"FAILED\"", i, sf.Status),
 			Severity: "error",
 			Field:    fmt.Sprintf("scaffolds[%d].status", i),
@@ -132,7 +132,7 @@ func validatePreMortemRowEnums(m *IMPLManifest) []result.SAWError {
 	for i, row := range m.PreMortem.Rows {
 		if row.Likelihood != "" && !validValues[row.Likelihood] {
 			errs = append(errs, result.SAWError{
-				Code:     SV01InvalidEnum,
+				Code:     result.CodeInvalidEnum,
 				Message:  fmt.Sprintf("pre_mortem.rows[%d].likelihood has invalid value %q — must be one of: low, medium, high", i, row.Likelihood),
 				Severity: "error",
 				Field:    fmt.Sprintf("pre_mortem.rows[%d].likelihood", i),
@@ -140,7 +140,7 @@ func validatePreMortemRowEnums(m *IMPLManifest) []result.SAWError {
 		}
 		if row.Impact != "" && !validValues[row.Impact] {
 			errs = append(errs, result.SAWError{
-				Code:     SV01InvalidEnum,
+				Code:     result.CodeInvalidEnum,
 				Message:  fmt.Sprintf("pre_mortem.rows[%d].impact has invalid value %q — must be one of: low, medium, high", i, row.Impact),
 				Severity: "error",
 				Field:    fmt.Sprintf("pre_mortem.rows[%d].impact", i),
@@ -175,7 +175,7 @@ func validateInjectionMethod(m *IMPLManifest) []result.SAWError {
 
 	if !validValues[string(m.InjectionMethod)] {
 		errs = append(errs, result.SAWError{
-			Code:     SV01InvalidEnum,
+			Code:     result.CodeInvalidEnum,
 			Severity: "error",
 			Message:  fmt.Sprintf("injection_method has invalid value %q — must be one of: hook, manual-fallback, unknown", m.InjectionMethod),
 			Field:    "injection_method",
@@ -210,7 +210,7 @@ func validateAgentContextSource(m *IMPLManifest) []result.SAWError {
 			}
 			if !validValues[string(agent.ContextSource)] {
 				errs = append(errs, result.SAWError{
-					Code:     SV01InvalidEnum,
+					Code:     result.CodeInvalidEnum,
 					Severity: "error",
 					Message:  fmt.Sprintf("waves[%d].agents[%d] (id=%s) context_source has invalid value %q — must be one of: prepared-brief, fallback-full-context, cross-repo-full", i, j, agent.ID, agent.ContextSource),
 					Field:    fmt.Sprintf("waves[%d].agents[%d].context_source", i, j),

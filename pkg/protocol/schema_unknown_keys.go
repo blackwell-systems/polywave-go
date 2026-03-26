@@ -149,7 +149,7 @@ var knownKeys = map[string]map[string]bool{
 
 // DetectUnknownKeys detects unknown/typo YAML keys by parsing raw YAML into
 // a yaml.Node tree and comparing keys at each level against the known schema.
-// It returns SV01_UNKNOWN_KEY warnings for any unrecognized keys.
+// It returns V013_UNKNOWN_KEY errors for any unrecognized keys.
 // This operates on raw YAML bytes (not the parsed struct) to catch keys that
 // Go's YAML unmarshaling silently ignores.
 func DetectUnknownKeys(yamlData []byte) []result.SAWError {
@@ -191,7 +191,7 @@ func checkMapping(node *yaml.Node, context, pathPrefix string, errs *[]result.SA
 				path = pathPrefix + "." + key
 			}
 			*errs = append(*errs, result.SAWError{
-				Code:     SV01UnknownKey,
+				Code:     result.CodeUnknownKey,
 				Message:  fmt.Sprintf("unknown key '%s' at %s", key, path),
 				Severity: "error",
 				Field:    path,

@@ -2,6 +2,8 @@ package protocol
 
 import (
 	"testing"
+
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
 )
 
 // validManifest returns a fully populated manifest that passes all nested required field checks.
@@ -56,13 +58,13 @@ func TestValidateNestedRequiredFields_EmptyFileOwnershipFile(t *testing.T) {
 	errs := validateNestedRequiredFields(m)
 	found := false
 	for _, e := range errs {
-		if e.Code == SV01RequiredField && e.Field == "file_ownership[0].file" {
+		if e.Code == result.CodeRequiredFieldsMissing && e.Field == "file_ownership[0].file" {
 			found = true
 			break
 		}
 	}
 	if !found {
-		t.Errorf("expected SV01_REQUIRED_FIELD for file_ownership[0].file, got %v", errs)
+		t.Errorf("expected V005_REQUIRED_FIELDS_MISSING for file_ownership[0].file, got %v", errs)
 	}
 }
 
@@ -72,13 +74,13 @@ func TestValidateNestedRequiredFields_EmptyAgentID(t *testing.T) {
 	errs := validateNestedRequiredFields(m)
 	found := false
 	for _, e := range errs {
-		if e.Code == SV01RequiredField && e.Field == "waves[0].agents[0].id" {
+		if e.Code == result.CodeRequiredFieldsMissing && e.Field == "waves[0].agents[0].id" {
 			found = true
 			break
 		}
 	}
 	if !found {
-		t.Errorf("expected SV01_REQUIRED_FIELD for waves[0].agents[0].id, got %v", errs)
+		t.Errorf("expected V005_REQUIRED_FIELDS_MISSING for waves[0].agents[0].id, got %v", errs)
 	}
 }
 
@@ -88,13 +90,13 @@ func TestValidateNestedRequiredFields_EmptyAgentTask(t *testing.T) {
 	errs := validateNestedRequiredFields(m)
 	found := false
 	for _, e := range errs {
-		if e.Code == SV01RequiredField && e.Field == "waves[0].agents[0].task" {
+		if e.Code == result.CodeRequiredFieldsMissing && e.Field == "waves[0].agents[0].task" {
 			found = true
 			break
 		}
 	}
 	if !found {
-		t.Errorf("expected SV01_REQUIRED_FIELD for waves[0].agents[0].task, got %v", errs)
+		t.Errorf("expected V005_REQUIRED_FIELDS_MISSING for waves[0].agents[0].task, got %v", errs)
 	}
 }
 
@@ -104,13 +106,13 @@ func TestValidateNestedRequiredFields_ZeroWaveNumber(t *testing.T) {
 	errs := validateNestedRequiredFields(m)
 	found := false
 	for _, e := range errs {
-		if e.Code == SV01RequiredField && e.Field == "waves[0].number" {
+		if e.Code == result.CodeRequiredFieldsMissing && e.Field == "waves[0].number" {
 			found = true
 			break
 		}
 	}
 	if !found {
-		t.Errorf("expected SV01_REQUIRED_FIELD for waves[0].number, got %v", errs)
+		t.Errorf("expected V005_REQUIRED_FIELDS_MISSING for waves[0].number, got %v", errs)
 	}
 }
 
@@ -120,13 +122,13 @@ func TestValidateNestedRequiredFields_EmptyInterfaceContractName(t *testing.T) {
 	errs := validateNestedRequiredFields(m)
 	found := false
 	for _, e := range errs {
-		if e.Code == SV01RequiredField && e.Field == "interface_contracts[0].name" {
+		if e.Code == result.CodeRequiredFieldsMissing && e.Field == "interface_contracts[0].name" {
 			found = true
 			break
 		}
 	}
 	if !found {
-		t.Errorf("expected SV01_REQUIRED_FIELD for interface_contracts[0].name, got %v", errs)
+		t.Errorf("expected V005_REQUIRED_FIELDS_MISSING for interface_contracts[0].name, got %v", errs)
 	}
 }
 
@@ -136,13 +138,13 @@ func TestValidateNestedRequiredFields_EmptyScaffoldFilePath(t *testing.T) {
 	errs := validateNestedRequiredFields(m)
 	found := false
 	for _, e := range errs {
-		if e.Code == SV01RequiredField && e.Field == "scaffolds[0].file_path" {
+		if e.Code == result.CodeRequiredFieldsMissing && e.Field == "scaffolds[0].file_path" {
 			found = true
 			break
 		}
 	}
 	if !found {
-		t.Errorf("expected SV01_REQUIRED_FIELD for scaffolds[0].file_path, got %v", errs)
+		t.Errorf("expected V005_REQUIRED_FIELDS_MISSING for scaffolds[0].file_path, got %v", errs)
 	}
 }
 
@@ -160,13 +162,13 @@ func TestValidateFilePaths_LeadingSlash(t *testing.T) {
 	errs := validateFilePaths(m)
 	found := false
 	for _, e := range errs {
-		if e.Code == SV01InvalidPath && e.Field == "file_ownership[0].file" {
+		if e.Code == result.CodeInvalidPath && e.Field == "file_ownership[0].file" {
 			found = true
 			break
 		}
 	}
 	if !found {
-		t.Errorf("expected SV01_INVALID_PATH for leading slash, got %v", errs)
+		t.Errorf("expected V037_INVALID_PATH for leading slash, got %v", errs)
 	}
 }
 
@@ -176,13 +178,13 @@ func TestValidateFilePaths_DotDot(t *testing.T) {
 	errs := validateFilePaths(m)
 	found := false
 	for _, e := range errs {
-		if e.Code == SV01InvalidPath && e.Field == "file_ownership[0].file" {
+		if e.Code == result.CodeInvalidPath && e.Field == "file_ownership[0].file" {
 			found = true
 			break
 		}
 	}
 	if !found {
-		t.Errorf("expected SV01_INVALID_PATH for '..' traversal, got %v", errs)
+		t.Errorf("expected V037_INVALID_PATH for '..' traversal, got %v", errs)
 	}
 }
 
@@ -192,13 +194,13 @@ func TestValidateFilePaths_Backslash(t *testing.T) {
 	errs := validateFilePaths(m)
 	found := false
 	for _, e := range errs {
-		if e.Code == SV01InvalidPath && e.Field == "file_ownership[0].file" {
+		if e.Code == result.CodeInvalidPath && e.Field == "file_ownership[0].file" {
 			found = true
 			break
 		}
 	}
 	if !found {
-		t.Errorf("expected SV01_INVALID_PATH for backslash, got %v", errs)
+		t.Errorf("expected V037_INVALID_PATH for backslash, got %v", errs)
 	}
 }
 
@@ -213,19 +215,19 @@ func TestValidateSchema_CombinesResults(t *testing.T) {
 	hasRequired := false
 	hasPath := false
 	for _, e := range errs {
-		if e.Code == SV01RequiredField {
+		if e.Code == result.CodeRequiredFieldsMissing {
 			hasRequired = true
 		}
-		if e.Code == SV01InvalidPath {
+		if e.Code == result.CodeInvalidPath {
 			hasPath = true
 		}
 	}
 
 	if !hasRequired {
-		t.Error("expected ValidateSchema to include SV01_REQUIRED_FIELD errors")
+		t.Error("expected ValidateSchema to include V005_REQUIRED_FIELDS_MISSING errors")
 	}
 	if !hasPath {
-		t.Error("expected ValidateSchema to include SV01_INVALID_PATH errors")
+		t.Error("expected ValidateSchema to include V037_INVALID_PATH errors")
 	}
 }
 
@@ -268,13 +270,13 @@ func TestValidateFilePaths_AgentFiles(t *testing.T) {
 	errs := validateFilePaths(m)
 	found := false
 	for _, e := range errs {
-		if e.Code == SV01InvalidPath && e.Field == "waves[0].agents[0].files[0]" {
+		if e.Code == result.CodeInvalidPath && e.Field == "waves[0].agents[0].files[0]" {
 			found = true
 			break
 		}
 	}
 	if !found {
-		t.Errorf("expected SV01_INVALID_PATH for agent files with '..', got %v", errs)
+		t.Errorf("expected V037_INVALID_PATH for agent files with '..', got %v", errs)
 	}
 }
 
@@ -284,12 +286,12 @@ func TestValidateFilePaths_ScaffoldFiles(t *testing.T) {
 	errs := validateFilePaths(m)
 	found := false
 	for _, e := range errs {
-		if e.Code == SV01InvalidPath && e.Field == "scaffolds[0].file_path" {
+		if e.Code == result.CodeInvalidPath && e.Field == "scaffolds[0].file_path" {
 			found = true
 			break
 		}
 	}
 	if !found {
-		t.Errorf("expected SV01_INVALID_PATH for scaffold with leading slash, got %v", errs)
+		t.Errorf("expected V037_INVALID_PATH for scaffold with leading slash, got %v", errs)
 	}
 }
