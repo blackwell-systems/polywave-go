@@ -7,6 +7,7 @@ import (
 
 	"github.com/blackwell-systems/scout-and-wave-go/internal/git"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
 )
 
 // PreLaunchCheck is a single pre-launch validation result.
@@ -258,7 +259,7 @@ func checkOwnershipDisjoint(m *protocol.IMPLManifest) PreLaunchCheck {
 	errs := protocol.Validate(m)
 	i1Violations := make([]string, 0)
 	for _, e := range errs {
-		if e.Code == "I1_VIOLATION" {
+		if e.Code == result.CodeDisjointOwnership {
 			i1Violations = append(i1Violations, e.Message)
 		}
 	}

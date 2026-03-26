@@ -175,13 +175,13 @@ func TestPrepareWave_AllFilesMissingSuspectsRepoMismatch(t *testing.T) {
 
 	foundSuspected := false
 	for _, w := range warnings {
-		if w.Code == "E16_REPO_MISMATCH_SUSPECTED" {
+		if w.Code == result.CodeRepoMismatch {
 			foundSuspected = true
 			break
 		}
 	}
 	if !foundSuspected {
-		t.Errorf("expected E16_REPO_MISMATCH_SUSPECTED when all modify files missing, got warnings: %+v", warnings)
+		t.Errorf("expected %s when all modify files missing, got warnings: %+v", result.CodeRepoMismatch, warnings)
 	}
 }
 
@@ -198,7 +198,7 @@ func TestPrepareWave_I1OwnershipViolation(t *testing.T) {
 	allErrs := protocol.Validate(doc)
 	var i1Errs []result.SAWError
 	for _, e := range allErrs {
-		if e.Code == "I1_VIOLATION" {
+		if e.Code == result.CodeDisjointOwnership {
 			i1Errs = append(i1Errs, e)
 		}
 	}
@@ -231,7 +231,7 @@ func TestPrepareWave_I1OwnershipNoViolation(t *testing.T) {
 
 	allErrs := protocol.Validate(doc)
 	for _, e := range allErrs {
-		if e.Code == "I1_VIOLATION" {
+		if e.Code == result.CodeDisjointOwnership {
 			t.Errorf("unexpected I1_VIOLATION for disjoint ownership: %s", e.Message)
 		}
 	}
@@ -249,7 +249,7 @@ func TestPrepareWave_I1CrossWaveAllowed(t *testing.T) {
 
 	allErrs := protocol.Validate(doc)
 	for _, e := range allErrs {
-		if e.Code == "I1_VIOLATION" {
+		if e.Code == result.CodeDisjointOwnership {
 			t.Errorf("unexpected I1_VIOLATION for cross-wave sequential ownership: %s", e.Message)
 		}
 	}
