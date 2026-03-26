@@ -244,12 +244,29 @@ func PrepareWave(ctx context.Context, opts PrepareWaveOpts) (*PrepareWaveResult,
 
 	// Step: Merge target checkout (when set)
 	if opts.MergeTarget != "" {
-		if _, err := git.Run(projectRoot, "checkout", opts.MergeTarget); err != nil {
-			recordStep(res, opts.OnEvent, "merge_target_checkout", "failed", err.Error())
-			return res, fmt.Errorf("failed to checkout merge target %s: %w", opts.MergeTarget, err)
+		// In program context, create-program-worktrees may have already checked out
+		// this branch as a long-lived IMPL branch worktree. Attempting git checkout on
+		// an already-worktree branch fails with "already used by worktree at <path>".
+		// Detect this case and skip the checkout — the worktree is the merge target.
+		alreadyWorktree := false
+		if worktrees, wtErr := git.WorktreeList(projectRoot); wtErr == nil {
+			for _, wt := range worktrees {
+				if wt[1] == opts.MergeTarget {
+					alreadyWorktree = true
+					recordStep(res, opts.OnEvent, "merge_target_checkout", "skipped",
+						fmt.Sprintf("branch already checked out as worktree at %s", wt[0]))
+					break
+				}
+			}
 		}
-		recordStep(res, opts.OnEvent, "merge_target_checkout", "success",
-			fmt.Sprintf("checked out %s", opts.MergeTarget))
+		if !alreadyWorktree {
+			if _, err := git.Run(projectRoot, "checkout", opts.MergeTarget); err != nil {
+				recordStep(res, opts.OnEvent, "merge_target_checkout", "failed", err.Error())
+				return res, fmt.Errorf("failed to checkout merge target %s: %w", opts.MergeTarget, err)
+			}
+			recordStep(res, opts.OnEvent, "merge_target_checkout", "success",
+				fmt.Sprintf("checked out %s", opts.MergeTarget))
+		}
 	}
 
 	// Step: Baseline quality gates (E21A) with gate cache

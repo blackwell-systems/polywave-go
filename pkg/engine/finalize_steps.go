@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/blackwell-systems/scout-and-wave-go/internal/git"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/builddiag"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/collision"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/gatecache"
@@ -283,7 +284,22 @@ func StepVerifyBuild(ctx context.Context, opts FinalizeWaveOpts, onEvent EventCa
 	const stepName = "verify-build"
 	emitStepEvent(onEvent, stepName, "running", "")
 
-	verifyBuildRes := protocol.VerifyBuild(opts.IMPLPath, opts.RepoPath)
+	// In program context (MergeTarget set), wave merges land in the IMPL branch worktree,
+	// not in opts.RepoPath (the main repo). Run verify-build there so the test suite sees
+	// the merged changes, not the pre-merge state of main.
+	buildRepoPath := opts.RepoPath
+	if opts.MergeTarget != "" {
+		if worktrees, err := git.WorktreeList(opts.RepoPath); err == nil {
+			for _, wt := range worktrees {
+				if wt[1] == opts.MergeTarget {
+					buildRepoPath = wt[0]
+					break
+				}
+			}
+		}
+	}
+
+	verifyBuildRes := protocol.VerifyBuild(opts.IMPLPath, buildRepoPath)
 	if !verifyBuildRes.IsSuccess() {
 		emitStepEvent(onEvent, stepName, "failed", fmt.Sprintf("%v", verifyBuildRes.Errors))
 		return &StepResult{
