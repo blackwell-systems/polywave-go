@@ -1,0 +1,708 @@
+title: IMPL-level git rollback via automatic baseline/completion tagging and sawtools rollback command
+feature_slug: impl-rollback
+verdict: SUITABLE
+suitability_assessment: |
+    1. File decomposition: 8 files across 3 packages (internal/git, pkg/engine, cmd/sawtools)
+       plus test files. Work decomposes cleanly into: (a) git tagging primitives in internal/git,
+       (b) engine-level tagging integration in pkg/engine, (c) new rollback CLI command, and
+       (d) tagging hooks in existing prepare-wave/finalize-wave/close-impl commands.
+       No two agents need conflicting modifications to the same file within a wave.
+
+    2. Investigation-first: No unknowns. Git tagging and revert semantics are well-defined.
+       All target files are inspected and understood.
+
+    3. Interface discoverability: The tagging functions are simple git wrappers with clear
+       signatures. The rollback command consumes tags created by the tagging functions.
+       All interfaces can be fully specified before implementation.
+
+    4. Pre-implementation status: No existing tagging or rollback functionality exists.
+       The internal/git package has no tag-related functions. All work is net-new.
+
+    5. Parallelization value: 3 agents in wave 1 (git primitives, rollback command, tagging
+       engine logic) are fully independent. Wave 2 wires tagging into existing commands.
+       Build/test cycle is ~30s (go test ./...). Clear speedup from parallel execution.
+
+    Estimated times:
+    - Scout phase: ~10 min
+    - Agent execution: ~15 min (wave 1: 3 agents parallel ~10 min, wave 2: 2 agents parallel ~5 min)
+    - Merge and verification: ~5 min per wave
+    Total SAW time: ~35 min
+    Sequential baseline: ~50 min (5 agents x 10 min avg)
+    Time savings: ~15 min (30% faster)
+    Recommendation: Clear speedup. Proceed.
+test_command: go test ./...
+lint_command: go vet ./...
+file_ownership:
+    - file: internal/git/commands.go
+      agent: A
+      wave: 1
+      action: modify
+    - file: internal/git/commands_test.go
+      agent: A
+      wave: 1
+      action: modify
+    - file: pkg/engine/tagging.go
+      agent: B
+      wave: 1
+      action: new
+    - file: pkg/engine/tagging_test.go
+      agent: B
+      wave: 1
+      action: new
+    - file: cmd/sawtools/rollback_cmd.go
+      agent: C
+      wave: 1
+      action: new
+    - file: cmd/sawtools/rollback_cmd_test.go
+      agent: C
+      wave: 1
+      action: new
+    - file: pkg/engine/prepare.go
+      agent: D
+      wave: 2
+      action: modify
+    - file: pkg/engine/prepare_test.go
+      agent: D
+      wave: 2
+      action: modify
+    - file: cmd/sawtools/close_impl_cmd.go
+      agent: E
+      wave: 2
+      action: modify
+    - file: cmd/sawtools/close_impl_cmd_test.go
+      agent: E
+      wave: 2
+      action: modify
+    - file: cmd/sawtools/main.go
+      agent: E
+      wave: 2
+      action: modify
+    - file: cmd/sawtools/finalize_wave.go
+      agent: E
+      wave: 2
+      action: modify
+interface_contracts:
+    - name: git.CreateTag
+      description: Create a lightweight git tag at a specific commit (or HEAD if empty)
+      definition: |
+        func CreateTag(repoPath, tagName, commitSHA string) error
+        // If commitSHA is empty, tags HEAD.
+        // Returns nil if tag created successfully.
+        // Returns error wrapping git output on failure.
+      location: internal/git/commands.go
+    - name: git.TagExists
+      description: Check if a git tag exists in the repository
+      definition: |
+        func TagExists(repoPath, tagName string) bool
+        // Returns true if the tag exists, false otherwise.
+      location: internal/git/commands.go
+    - name: git.DeleteTag
+      description: Delete a git tag from the repository
+      definition: |
+        func DeleteTag(repoPath, tagName string) error
+        // Returns nil if tag deleted successfully.
+        // Returns error if tag doesn't exist or git fails.
+      location: internal/git/commands.go
+    - name: git.ListTagsWithPrefix
+      description: List all tags matching a prefix pattern
+      definition: |
+        func ListTagsWithPrefix(repoPath, prefix string) ([]string, error)
+        // Returns sorted list of tag names starting with prefix.
+        // Uses git tag -l 'prefix*'.
+      location: internal/git/commands.go
+    - name: git.RevertRange
+      description: Revert a range of commits (baseline..HEAD) without committing
+      definition: |
+        func RevertRange(repoPath, fromRef, toRef string) error
+        // Runs: git revert --no-commit fromRef..toRef
+        // Returns nil on success, error with git output on failure (e.g. conflicts).
+      location: internal/git/commands.go
+    - name: git.ResetHard
+      description: Hard reset to a specific ref
+      definition: |
+        func ResetHard(repoPath, ref string) error
+        // Runs: git reset --hard ref
+        // Destructive operation.
+      location: internal/git/commands.go
+    - name: git.LogOneline
+      description: Return oneline log between two refs
+      definition: |
+        func LogOneline(repoPath, fromRef, toRef string) (string, error)
+        // Runs: git log --oneline fromRef..toRef
+        // Returns formatted log output.
+      location: internal/git/commands.go
+    - name: TagBaseline
+      description: Create saw/{slug}/baseline tag at current HEAD
+      definition: |
+        func TagBaseline(repoPath, slug string) error
+        // Creates tag saw/{slug}/baseline at HEAD.
+        // Idempotent: returns nil if tag already exists.
+      location: pkg/engine/tagging.go
+    - name: TagWaveMerged
+      description: Create saw/{slug}/wave{N}-merged tag at current HEAD
+      definition: |
+        func TagWaveMerged(repoPath, slug string, waveNum int) error
+        // Creates tag saw/{slug}/wave{N}-merged at HEAD after successful merge.
+        // Idempotent: returns nil if tag already exists.
+      location: pkg/engine/tagging.go
+    - name: TagComplete
+      description: Create saw/{slug}/complete tag at current HEAD
+      definition: |
+        func TagComplete(repoPath, slug string) error
+        // Creates tag saw/{slug}/complete at HEAD.
+        // Idempotent: returns nil if tag already exists.
+      location: pkg/engine/tagging.go
+    - name: CleanupTags
+      description: Remove all saw/{slug}/* tags
+      definition: |
+        func CleanupTags(repoPath, slug string) ([]string, error)
+        // Returns list of deleted tag names. Returns nil error if no tags found.
+      location: pkg/engine/tagging.go
+    - name: RollbackResult
+      description: Result struct for rollback operations
+      definition: |
+        type RollbackResult struct {
+          Slug         string   `json:"slug"`
+          TargetTag    string   `json:"target_tag"`
+          TargetCommit string   `json:"target_commit"`
+          Mode         string   `json:"mode"`          // "revert" or "hard"
+          CommitsRange int      `json:"commits_range"`  // number of commits being undone
+          FilesChanged []string `json:"files_changed"`  // files affected
+          DryRun       bool     `json:"dry_run"`
+          Success      bool     `json:"success"`
+          TagsCleaned  []string `json:"tags_cleaned,omitempty"`
+        }
+      location: pkg/engine/tagging.go
+    - name: Rollback
+      description: Execute IMPL rollback to a specific tag
+      definition: |
+        func Rollback(repoPath, slug, target string, hard, dryRun bool) (*RollbackResult, error)
+        // target is "baseline" or "wave{N}" — resolved to saw/{slug}/{target} or
+        // saw/{slug}/{target}-merged tag.
+        // Default (hard=false): git revert --no-commit.
+        // hard=true: git reset --hard.
+        // dryRun=true: report what would happen without doing it.
+      location: pkg/engine/tagging.go
+waves:
+    - number: 1
+      agents:
+        - id: A
+          task: |
+            ## What to implement
+
+            Add git tag primitives to `internal/git/commands.go`. These are thin wrappers
+            around git CLI commands, following the existing pattern in the file (see `Run`,
+            `BranchExists`, `DeleteBranch`, `RevParse`, etc.).
+
+            Add these functions at the end of `commands.go` (before the closing of the file):
+
+            1. **`CreateTag(repoPath, tagName, commitSHA string) error`**
+               - Run: `git -C repoPath tag tagName commitSHA` (if commitSHA non-empty)
+               - Run: `git -C repoPath tag tagName` (if commitSHA is empty, tags HEAD)
+               - Return wrapped error on failure
+
+            2. **`TagExists(repoPath, tagName string) bool`**
+               - Run: `git -C repoPath rev-parse --verify refs/tags/tagName`
+               - Return true if exit 0, false otherwise (same pattern as `BranchExists`)
+
+            3. **`DeleteTag(repoPath, tagName string) error`**
+               - Run: `git -C repoPath tag -d tagName`
+               - Return wrapped error on failure
+
+            4. **`ListTagsWithPrefix(repoPath, prefix string) ([]string, error)`**
+               - Run: `git -C repoPath tag -l 'prefix*'`
+               - Parse output into sorted string slice
+               - Return empty slice (not nil) if no tags match
+
+            5. **`RevertRange(repoPath, fromRef, toRef string) error`**
+               - Run: `git -C repoPath revert --no-commit fromRef..toRef`
+               - Return wrapped error on failure (e.g. conflicts)
+
+            6. **`ResetHard(repoPath, ref string) error`**
+               - Run: `git -C repoPath reset --hard ref`
+               - Return wrapped error on failure
+
+            7. **`LogOneline(repoPath, fromRef, toRef string) (string, error)`**
+               - Run: `git -C repoPath log --oneline fromRef..toRef`
+               - Return raw output string
+
+            ## Tests
+
+            Add tests in `internal/git/commands_test.go`. For each function, create a
+            temporary git repo with `git init`, make some commits, and verify the function
+            behavior. Use `t.TempDir()` for test repos. Test cases:
+
+            - CreateTag: creates tag, verify with TagExists
+            - CreateTag with empty SHA: tags HEAD
+            - TagExists: true for existing, false for non-existing
+            - DeleteTag: deletes tag, verify with TagExists returning false
+            - ListTagsWithPrefix: multiple tags, verify prefix filtering
+            - RevertRange: create 2 commits, revert range, verify files restored
+            - ResetHard: verify HEAD moves to target ref
+            - LogOneline: verify output contains expected commits
+
+            ## Verification gate
+
+            ```
+            go test ./internal/git/ -run "TestCreateTag|TestTagExists|TestDeleteTag|TestListTags|TestRevertRange|TestResetHard|TestLogOneline" -v
+            ```
+
+            ## Constraints
+
+            - Follow existing patterns in commands.go: use `Run()` helper, return
+              `fmt.Errorf("git X failed: %w", err)` for errors
+            - Do not modify any existing functions
+            - All new functions go after the existing `WorktreeExists` function
+          files:
+            - internal/git/commands.go
+            - internal/git/commands_test.go
+        - id: B
+          task: |
+            ## What to implement
+
+            Create new file `pkg/engine/tagging.go` with IMPL lifecycle tagging and
+            rollback functions. This file contains the business logic layer that uses
+            `internal/git` primitives.
+
+            Import `github.com/blackwell-systems/scout-and-wave-go/internal/git` for
+            git operations.
+
+            ### Tag name helpers
+
+            ```go
+            func baselineTagName(slug string) string { return fmt.Sprintf("saw/%s/baseline", slug) }
+            func waveMergedTagName(slug string, waveNum int) string { return fmt.Sprintf("saw/%s/wave%d-merged", slug, waveNum) }
+            func completeTagName(slug string) string { return fmt.Sprintf("saw/%s/complete", slug) }
+            func tagPrefix(slug string) string { return fmt.Sprintf("saw/%s/", slug) }
+            ```
+
+            ### Lifecycle tagging functions
+
+            1. **`TagBaseline(repoPath, slug string) error`**
+               - Tag name: `saw/{slug}/baseline`
+               - Idempotent: if `git.TagExists` returns true, return nil (skip)
+               - Otherwise call `git.CreateTag(repoPath, tagName, "")` to tag HEAD
+
+            2. **`TagWaveMerged(repoPath, slug string, waveNum int) error`**
+               - Tag name: `saw/{slug}/wave{N}-merged`
+               - Same idempotency pattern as TagBaseline
+
+            3. **`TagComplete(repoPath, slug string) error`**
+               - Tag name: `saw/{slug}/complete`
+               - Same idempotency pattern as TagBaseline
+
+            4. **`CleanupTags(repoPath, slug string) ([]string, error)`**
+               - List all tags with prefix `saw/{slug}/` via `git.ListTagsWithPrefix`
+               - Delete each tag via `git.DeleteTag`
+               - Return list of deleted tag names
+               - Return nil error if no tags found (not an error condition)
+
+            ### RollbackResult struct
+
+            ```go
+            type RollbackResult struct {
+              Slug         string   `json:"slug"`
+              TargetTag    string   `json:"target_tag"`
+              TargetCommit string   `json:"target_commit"`
+              Mode         string   `json:"mode"`
+              CommitsRange int      `json:"commits_range"`
+              FilesChanged []string `json:"files_changed"`
+              DryRun       bool     `json:"dry_run"`
+              Success      bool     `json:"success"`
+              TagsCleaned  []string `json:"tags_cleaned,omitempty"`
+            }
+            ```
+
+            ### Rollback function
+
+            **`Rollback(repoPath, slug, target string, hard, dryRun bool) (*RollbackResult, error)`**
+
+            Logic:
+            1. Resolve target to tag name:
+               - If target == "baseline": use `baselineTagName(slug)`
+               - If target starts with "wave": use `waveMergedTagName(slug, N)` where N is
+                 parsed from target (e.g. "wave2" -> 2)
+               - Otherwise: return error "unknown target"
+            2. Check tag exists via `git.TagExists`. If not, return error with helpful message:
+               "no baseline tag found for IMPL {slug} -- IMPL may have started before rollback
+               tagging was enabled"
+            3. Resolve tag to commit SHA via `git.RevParse(repoPath, tagName)`
+            4. Count commits in range: `git.CommitCount(repoPath, commitSHA, "HEAD")`
+            5. Get files changed: `git.DiffNameOnly(repoPath, commitSHA, "HEAD")`
+            6. If dryRun: populate result with DryRun=true, Success=true, return
+            7. Check working tree is clean via `git.StatusPorcelain(repoPath)`:
+               - If dirty and !hard: return error "working tree has uncommitted changes --
+                 commit or stash before rollback, or use --hard"
+            8. Execute rollback:
+               - If hard: `git.ResetHard(repoPath, commitSHA)`
+               - Else: `git.RevertRange(repoPath, commitSHA, "HEAD")`
+            9. Populate result with Success=true
+
+            ### Multi-repo support helper
+
+            **`RollbackMultiRepo(repos map[string]string, slug, target string, hard, dryRun bool) (map[string]*RollbackResult, error)`**
+
+            - Iterate each repo path
+            - Skip repos where baseline tag doesn't exist (they weren't part of this IMPL)
+            - Call Rollback for repos with matching tags
+            - Return map of repoKey -> RollbackResult
+
+            ## Tests
+
+            Create `pkg/engine/tagging_test.go` with tests using temporary git repos:
+            - TestTagBaseline: creates tag, verify idempotent on second call
+            - TestTagWaveMerged: creates wave-specific tag
+            - TestTagComplete: creates complete tag
+            - TestCleanupTags: creates multiple tags, cleanup removes all
+            - TestRollback_DryRun: verify dry run reports without changing state
+            - TestRollback_Revert: verify revert mode creates proper state
+            - TestRollback_Hard: verify hard reset moves HEAD
+            - TestRollback_NoTag: verify error message for missing tag
+            - TestRollback_DirtyWorktree: verify blocked when dirty and not --hard
+
+            For test setup, create a helper that initializes a git repo with some commits:
+            ```go
+            func setupTestRepo(t *testing.T) string {
+              dir := t.TempDir()
+              // git init, create initial commit, add files, make additional commits
+              // Return repo path
+            }
+            ```
+
+            ## Verification gate
+
+            ```
+            go test ./pkg/engine/ -run "TestTag|TestRollback|TestCleanup" -v
+            ```
+
+            ## Constraints
+
+            - Import internal/git for all git operations (do not use exec.Command directly)
+            - Use `log/slog` for any logging (follow project convention)
+            - All exported functions must have doc comments
+          files:
+            - pkg/engine/tagging.go
+            - pkg/engine/tagging_test.go
+        - id: C
+          task: |
+            ## What to implement
+
+            Create `cmd/sawtools/rollback_cmd.go` with the `sawtools rollback` CLI command.
+
+            **IMPORTANT:** This agent creates the command definition only. The command will be
+            registered in main.go by Agent E in wave 2. For now, just define the function
+            `newRollbackCmd() *cobra.Command`.
+
+            ### Command definition
+
+            ```
+            sawtools rollback --impl <slug> [--to baseline|wave{N}] [--repo-dir <path>] [--hard] [--dry-run] [--cleanup]
+            ```
+
+            Flags:
+            - `--impl` (string, required): IMPL slug (e.g. "my-feature")
+            - `--to` (string, default "baseline"): Rollback target: "baseline" or "wave{N}"
+            - `--hard` (bool): Use git reset --hard instead of revert
+            - `--dry-run` (bool): Show what would happen without doing it
+            - `--cleanup` (bool): Remove all saw/{slug}/* tags after rollback (or standalone)
+
+            Note: `--repo-dir` is already a persistent flag on the root command (see root.go),
+            available as the package-level `repoDir` variable.
+
+            ### Implementation
+
+            The `RunE` function should:
+
+            1. Validate `--impl` is provided
+            2. Resolve repo path from `repoDir` (package-level var from root.go)
+            3. If `--cleanup` is set without `--hard` and without `--dry-run`:
+               - Just clean up tags and exit:
+               - Call `engine.CleanupTags(repoPath, slug)` (from pkg/engine/tagging.go)
+               - Print JSON result: `{"slug": "...", "tags_cleaned": [...]}`
+               - Return
+            4. For rollback operations:
+               - Call `engine.Rollback(repoPath, slug, target, hard, dryRun)`
+               - If `--cleanup` is also set and rollback succeeded:
+                 call `engine.CleanupTags(repoPath, slug)` and merge into result
+            5. Check for multi-repo: look for `saw.config.json` in repoDir
+               - If found and has repos array, iterate each repo
+               - Use `engine.RollbackMultiRepo(repos, slug, target, hard, dryRun)`
+            6. Print JSON result to stdout (json.MarshalIndent, 2-space indent)
+            7. If --hard is set, print warning to stderr:
+               "WARNING: --hard performs destructive git reset. This cannot be undone."
+
+            ### Output format
+
+            Single repo:
+            ```json
+            {
+              "slug": "my-feature",
+              "target_tag": "saw/my-feature/baseline",
+              "target_commit": "abc123",
+              "mode": "revert",
+              "commits_range": 15,
+              "files_changed": ["pkg/foo.go", "cmd/bar.go"],
+              "dry_run": false,
+              "success": true
+            }
+            ```
+
+            Multi repo:
+            ```json
+            {
+              "repos": {
+                "scout-and-wave-go": { ... },
+                "scout-and-wave-web": { ... }
+              }
+            }
+            ```
+
+            ## Tests
+
+            Create `cmd/sawtools/rollback_cmd_test.go` with:
+            - TestNewRollbackCmd_RequiresImpl: verify error when --impl not provided
+            - TestNewRollbackCmd_DefaultTarget: verify --to defaults to "baseline"
+            - TestNewRollbackCmd_FlagParsing: verify all flags parse correctly
+
+            ## Verification gate
+
+            ```
+            go test ./cmd/sawtools/ -run "TestNewRollbackCmd" -v
+            ```
+
+            ## Constraints
+
+            - Import `engine` package for Rollback/CleanupTags/RollbackMultiRepo
+            - Follow existing command patterns (see close_impl_cmd.go, retry_cmd.go)
+            - Use `newSawLogger()` for any logging
+            - JSON output to stdout, progress/warnings to stderr
+            - The function `newRollbackCmd()` must be exported in the package
+              (lowercase new, uppercase R — matching convention: newCloseImplCmd, etc.)
+          files:
+            - cmd/sawtools/rollback_cmd.go
+            - cmd/sawtools/rollback_cmd_test.go
+    - number: 2
+      agents:
+        - id: D
+          task: |
+            ## What to implement
+
+            Wire baseline tagging into `pkg/engine/prepare.go` and wave-merged tagging
+            into the engine's finalize pipeline.
+
+            ### 1. Baseline tag in PrepareWave (prepare.go)
+
+            In the `PrepareWave` function, add a new step **after** "load_manifest" succeeds
+            and **before** the I3 wave sequencing gate. Only for wave 1:
+
+            ```go
+            // Step: Baseline tag (wave 1 only)
+            if opts.WaveNum == 1 {
+              if err := TagBaseline(projectRoot, doc.FeatureSlug); err != nil {
+                recordStep(res, opts.OnEvent, "baseline_tag", "failed", err.Error())
+                return res, fmt.Errorf("failed to create baseline tag: %w", err)
+              }
+              recordStep(res, opts.OnEvent, "baseline_tag", "success",
+                fmt.Sprintf("tagged saw/%s/baseline", doc.FeatureSlug))
+            }
+            ```
+
+            Note: `TagBaseline` is defined in `pkg/engine/tagging.go` (same package), so
+            no import needed — just call it directly.
+
+            ### 2. Wave-merged tag in finalize
+
+            The finalize pipeline lives in `cmd/sawtools/finalize_wave.go` which is Agent E's
+            file. Instead, add a step function in `pkg/engine/prepare.go` or a separate
+            location that Agent E can call. Actually, since `FinalizeWave` in
+            `pkg/engine/finalize.go` is also not this agent's file, the cleanest approach:
+
+            Add this helper at the bottom of `prepare.go`:
+
+            ```go
+            // TagWaveAfterMerge tags the current HEAD as saw/{slug}/wave{N}-merged.
+            // Called by finalize-wave after successful merge+verify.
+            // This is a thin wrapper that delegates to TagWaveMerged in tagging.go.
+            // Exported so the CLI finalize_wave.go can call engine.TagWaveAfterMerge().
+            func TagWaveAfterMerge(repoPath, slug string, waveNum int) error {
+              return TagWaveMerged(repoPath, slug, waveNum)
+            }
+            ```
+
+            ### 3. Tests
+
+            Add tests in `pkg/engine/prepare_test.go`:
+            - TestPrepareWave_BaselineTag: Verify that PrepareWave for wave 1 creates
+              the baseline tag (requires a full test setup with manifest, repo, etc.)
+            - If full integration test is too complex, test TagWaveAfterMerge delegation:
+              create temp repo, call TagWaveAfterMerge, verify tag exists.
+
+            ## Verification gate
+
+            ```
+            go test ./pkg/engine/ -run "TestPrepareWave_Baseline|TestTagWaveAfterMerge" -v
+            ```
+
+            ## Constraints
+
+            - Only modify prepare.go and prepare_test.go
+            - TagBaseline and TagWaveMerged are in tagging.go (same package, no import needed)
+            - Follow the recordStep pattern used throughout prepare.go
+            - The baseline tag step must be idempotent (TagBaseline handles this internally)
+          files:
+            - pkg/engine/prepare.go
+            - pkg/engine/prepare_test.go
+          dependencies:
+            - B
+        - id: E
+          task: |
+            ## What to implement
+
+            Wire tagging into close-impl, finalize-wave, and register the rollback command.
+
+            ### 1. Register rollback command in main.go
+
+            In `cmd/sawtools/main.go`, add `newRollbackCmd()` to the `rootCmd.AddCommand()`
+            call. Add it after `newCloseImplCmd(),` (the last entry currently). The function
+            is defined in `cmd/sawtools/rollback_cmd.go` (created by Agent C in wave 1).
+
+            ### 2. Add wave-merged tag to finalize_wave.go
+
+            In `cmd/sawtools/finalize_wave.go`, after the successful merge step (Step 4:
+            MergeAgents, around line 445 at the `postMerge:` label), add tagging logic.
+            Insert after the `postMerge:` label and before Step 4.5:
+
+            ```go
+            // Step 4.1: Tag wave-merged (after successful merge)
+            {
+              for _, repoPath := range repos {
+                if tagErr := engine.TagWaveAfterMerge(repoPath, manifest.FeatureSlug, waveNum); tagErr != nil {
+                  fmt.Fprintf(os.Stderr, "finalize-wave: warning: failed to tag wave-merged: %v\n", tagErr)
+                } else {
+                  fmt.Fprintf(os.Stderr, "finalize-wave: tagged saw/%s/wave%d-merged\n",
+                    manifest.FeatureSlug, waveNum)
+                }
+              }
+            }
+            ```
+
+            Note: `engine` is already imported in finalize_wave.go.
+
+            ### 3. Add complete tag to close_impl_cmd.go
+
+            In `cmd/sawtools/close_impl_cmd.go`, after Step 2 (archive) and before Step 3
+            (update CONTEXT.md), add:
+
+            ```go
+            // Step 2.5: Tag complete
+            {
+              tagErr := engine.TagComplete(projectRoot, manifest.FeatureSlug)
+              if tagErr != nil {
+                fmt.Fprintf(os.Stderr, "close-impl: warning: failed to tag complete: %v\n", tagErr)
+              } else {
+                fmt.Fprintf(os.Stderr, "close-impl: tagged saw/%s/complete\n", manifest.FeatureSlug)
+              }
+            }
+            ```
+
+            Add `--cleanup-tags` flag to close-impl:
+            ```go
+            var cleanupTags bool
+            // In flag registration:
+            cmd.Flags().BoolVar(&cleanupTags, "cleanup-tags", false, "Remove saw/{slug}/* tags after closing")
+            ```
+
+            After Step 5 (clean .saw-state), if `cleanupTags` is true:
+            ```go
+            if cleanupTags {
+              cleaned, err := engine.CleanupTags(projectRoot, manifest.FeatureSlug)
+              if err != nil {
+                fmt.Fprintf(os.Stderr, "close-impl: warning: tag cleanup failed: %v\n", err)
+              } else if len(cleaned) > 0 {
+                fmt.Fprintf(os.Stderr, "close-impl: cleaned %d tag(s)\n", len(cleaned))
+              }
+            }
+            ```
+
+            Add `"engine"` import: `"github.com/blackwell-systems/scout-and-wave-go/pkg/engine"`
+            to close_impl_cmd.go (it currently only imports `protocol`).
+
+            ### 4. Tests
+
+            In `cmd/sawtools/close_impl_cmd_test.go`:
+            - TestCloseImplCmd_HasCleanupTagsFlag: verify the flag exists and defaults to false
+
+            ## Verification gate
+
+            ```
+            go build ./cmd/sawtools/ && go test ./cmd/sawtools/ -run "TestCloseImpl" -v
+            ```
+
+            ## Constraints
+
+            - close_impl_cmd.go: add `engine` import for TagComplete and CleanupTags
+            - finalize_wave.go: `engine` already imported, just add the tagging call
+            - main.go: single line addition for newRollbackCmd()
+            - All tagging calls are non-fatal (warnings only) — tagging failure must not
+              block the primary operation
+          files:
+            - cmd/sawtools/close_impl_cmd.go
+            - cmd/sawtools/close_impl_cmd_test.go
+            - cmd/sawtools/main.go
+            - cmd/sawtools/finalize_wave.go
+          dependencies:
+            - B
+            - C
+quality_gates:
+    level: standard
+    gates:
+        - type: build
+          command: go build ./...
+          required: true
+        - type: lint
+          command: go vet ./...
+          required: true
+        - type: test
+          command: go test ./...
+          required: true
+pre_mortem:
+    overall_risk: low
+    rows:
+        - scenario: git revert conflicts during rollback of complex multi-agent merge
+          likelihood: medium
+          impact: low
+          mitigation: Rollback reports conflicting files and suggests --hard or manual resolution. The --dry-run flag lets users preview before executing.
+        - scenario: Tag names collide if multiple IMPLs use similar slugs
+          likelihood: low
+          impact: low
+          mitigation: Tags are namespaced under saw/{slug}/ which is unique per IMPL. Slug uniqueness is enforced by IMPL naming convention.
+        - scenario: Baseline tag created after first commit (race with fast agent)
+          likelihood: low
+          impact: medium
+          mitigation: Baseline tag is created in PrepareWave before worktrees, which is before any agent can commit. Sequencing is guaranteed.
+        - scenario: Tests require real git repos which may be slow in CI
+          likelihood: medium
+          impact: low
+          mitigation: Use t.TempDir() for lightweight disposable repos. Git init + commit is fast (~100ms).
+critic_report:
+    verdict: PASS
+    agent_reviews:
+        A:
+            agent_id: A
+            verdict: PASS
+        B:
+            agent_id: B
+            verdict: PASS
+        C:
+            agent_id: C
+            verdict: PASS
+        D:
+            agent_id: D
+            verdict: PASS
+        E:
+            agent_id: E
+            verdict: PASS
+    summary: All five agent briefs verified against the codebase. Agent A's seven new git tag primitives follow the exact pattern established in internal/git/commands.go and no tag-related functions exist yet. Agent B's new tagging.go file has all required internal/git symbols available (CommitCount, DiffNameOnly, StatusPorcelain, RevParse). Agent C correctly references the repoDir package-level variable from root.go and the newSawLogger function from logger.go. Agent D's step ordering description accurately reflects the actual prepare.go code structure. Agent E's step numbering, import addition instruction, postMerge label position, and last-entry placement in main.go all match the codebase exactly. No errors found; wave execution may proceed.
+    reviewed_at: "2026-03-25T23:49:20Z"
+    issue_count: 0
+state: REVIEWED

@@ -174,6 +174,7 @@ type BackendConfig struct {
   - IMPL doc: docs/IMPL/complete/IMPL-determinism-remaining.yaml
 
 ## Features Completed
+- Program: Go Engine Enhancements (create-program-cross-repo-and-program-wave-conflict-and-engine-reference-injection) — 2 tiers, 3 IMPLs, 2026-03-25
 - Program: engine-hardening (engine-hardening) — 1 tiers, 2 IMPLs, 2026-03-22
 - **types-consolidation**: completed 2026-03-22, 3 waves, 5 agents
   - IMPL doc: docs/IMPL/complete/IMPL-types-consolidation.yaml
@@ -203,3 +204,9 @@ type BackendConfig struct {
   - IMPL doc: docs/IMPL/complete/IMPL-logging-injection.yaml
 - **webhook-notifications**: completed 2026-03-25, 3 waves, 6 agents
   - IMPL doc: docs/IMPL/complete/IMPL-webhook-notifications.yaml
+- **create-program-cross-repo**: completed 2026-03-25, 2 waves, 3 agents
+  - IMPL doc: docs/IMPL/complete/IMPL-create-program-cross-repo.yaml
+- **engine-reference-injection**: completed 2026-03-25, 2 waves, 2 agents
+  - IMPL doc: docs/IMPL/complete/IMPL-engine-reference-injection.yaml
+- **program-wave-conflict**: completed 2026-03-25, 2 waves, 4 agents
+  - IMPL doc: docs/IMPL/complete/IMPL-program-wave-conflict.yaml

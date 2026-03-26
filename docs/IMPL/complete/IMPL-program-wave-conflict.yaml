@@ -1,0 +1,1022 @@
+completion_date: "2026-03-25"
+title: Wave-level conflict detection and cross-IMPL serialization for create-program
+feature_slug: program-wave-conflict
+verdict: SUITABLE
+suitability_assessment: |
+    The work decomposes cleanly across 4 agents with disjoint file ownership:
+    Agent A owns the new wave-level conflict detection logic in pkg/protocol/program_conflict.go
+    and its test file. Agent B owns the ProgramIMPL schema extension in pkg/protocol/program_types.go
+    and pkg/protocol/program_generator.go (updating generator to populate serial_waves).
+    Agent C owns the tier loop enforcement in pkg/engine/program_tier_loop.go.
+    Agent D owns a new test file for the wave-level conflict cmd integration test.
+
+    Design decision: Option A (serial_waves field on ProgramIMPL) is recommended over
+    Options B and C. Option A is backwards-compatible (omitempty means existing PROGRAM
+    manifests are unaffected), requires the smallest schema delta (one new []int field),
+    and maps cleanly to the tier loop's existing per-IMPL wave iteration. Option C
+    (wave_tiers) would require restructuring the entire PROGRAM manifest schema and
+    rewriting the tier loop engine. Option B (cross_impl_serial_agents) is verbose,
+    agent-ID-coupled, and would go stale when agents are reassigned.
+
+    The serial_waves field says: "when executing this IMPL within a tier, wave numbers
+    listed here must not run concurrently with the same-numbered wave of any other IMPL
+    in the same tier." The conflict detection computes which wave numbers need serialization
+    by checking which wave-wave intersections share files.
+
+    All 5 files that will change are distinct. Wave 1 work (conflict detection logic +
+    schema) is independent of Wave 2 work (tier loop enforcement). Interfaces are
+    fully specifiable before implementation.
+
+    Estimated times:
+    - Scout phase: ~10 min
+    - Agent execution: ~4 agents x ~10 min avg, Wave 1 parallel + Wave 2 parallel = ~20 min
+    - Merge and verification: ~5 min
+    Total SAW time: ~35 min
+    Sequential baseline: ~4 agents x 15 min = ~60 min
+    Time savings: ~25 min (42% faster). Clear speedup given non-trivial logic and Go build cycles.
+test_command: go test ./...
+lint_command: go vet ./...
+file_ownership:
+    - file: pkg/protocol/program_conflict.go
+      agent: A
+      wave: 1
+      action: modify
+    - file: pkg/protocol/program_conflict_test.go
+      agent: A
+      wave: 1
+      action: modify
+    - file: pkg/protocol/program_types.go
+      agent: B
+      wave: 1
+      action: modify
+    - file: pkg/protocol/program_generator.go
+      agent: B
+      wave: 1
+      action: modify
+    - file: pkg/engine/program_tier_loop.go
+      agent: C
+      wave: 2
+      action: modify
+    - file: cmd/sawtools/create_program_cmd_test.go
+      agent: D
+      wave: 2
+      action: modify
+interface_contracts:
+    - name: WaveConflictReport
+      description: |
+        Extended conflict report that includes wave-level conflict detail.
+        Returned by CheckIMPLConflictsWaveLevel. Embeds the existing ConflictReport
+        fields and adds WaveConflicts for per-wave analysis.
+      definition: |
+        // WaveConflict describes a file owned by multiple IMPLs in the same wave number.
+        type WaveConflict struct {
+            File      string              `json:"file"`
+            WaveNum   int                 `json:"wave_num"`
+            Impls     []string            `json:"impls"`
+            Repos     []string            `json:"repos,omitempty"`
+        }
+
+        // WaveConflictReport extends ConflictReport with per-wave analysis.
+        // ConflictReport.Conflicts (IMPL-level) is still populated for backwards compat.
+        // WaveConflicts contains only the concurrent-wave-level conflicts.
+        // SerialWaves maps each IMPL slug to the set of wave numbers that must serialize.
+        type WaveConflictReport struct {
+            ConflictReport                          // embedded: Conflicts, DisjointSets, TierSuggestion
+            WaveConflicts  []WaveConflict           `json:"wave_conflicts"`
+            SerialWaves    map[string][]int          `json:"serial_waves"`
+        }
+      location: pkg/protocol/program_conflict.go
+    - name: CheckIMPLConflictsWaveLevel
+      description: |
+        Wave-aware conflict check. Loads IMPL docs, builds per-wave file ownership maps,
+        and detects only concurrent-wave conflicts. Returns both the legacy ConflictReport
+        (IMPL-level) and the new WaveConflictReport (wave-level) fields.
+      definition: |
+        // CheckIMPLConflictsWaveLevel performs wave-aware cross-IMPL conflict detection.
+        // It replaces the coarse IMPL-level check used in GenerateProgramFromIMPLs.
+        // implSlugs: IMPL slugs to analyze
+        // repoPath: repository root
+        // Returns WaveConflictReport, which embeds ConflictReport for backwards compat.
+        func CheckIMPLConflictsWaveLevel(implSlugs []string, repoPath string) (*WaveConflictReport, error)
+      location: pkg/protocol/program_conflict.go
+    - name: ProgramIMPL.SerialWaves
+      description: |
+        New field on ProgramIMPL. Lists wave numbers that must not execute concurrently
+        with the same-numbered wave of any other IMPL in the same program tier.
+        Empty slice (default) means all waves of this IMPL can run freely in parallel
+        with other IMPLs in the tier. Populated by GenerateProgramFromIMPLs using
+        WaveConflictReport.SerialWaves.
+      definition: |
+        // In ProgramIMPL struct (pkg/protocol/program_types.go), add:
+        SerialWaves []int `yaml:"serial_waves,omitempty" json:"serial_waves,omitempty"`
+
+        // Example serialized form:
+        // impls:
+        //   - slug: scout-prompt-extraction
+        //     tier: 1
+        //     serial_waves: [2]   # Wave 2 must not run concurrently with Wave 2 of other tier-1 IMPLs
+      location: pkg/protocol/program_types.go
+    - name: buildWaveFileOwnershipMap
+      description: |
+        Helper used inside CheckIMPLConflictsWaveLevel. Returns a nested map:
+        waveNum -> qualifiedFile -> []slug. Used to detect concurrent-wave file conflicts.
+      definition: |
+        // buildWaveFileOwnershipMap builds a per-wave file ownership index for a set of loaded IMPL docs.
+        // implDocs maps slug -> *IMPLManifest.
+        // Returns: map[waveNum]map[qualifiedFile][]slug
+        func buildWaveFileOwnershipMap(implDocs map[string]*IMPLManifest) map[int]map[string][]string
+      location: pkg/protocol/program_conflict.go
+    - name: isCrossImplSerialWaveBlocked
+      description: |
+        Engine helper: returns true if IMPL slug's waveNum is a serial wave AND any
+        other IMPL in the same tier has that wave number still in-progress or not yet
+        complete. Called in the tier loop before launching a wave for a given IMPL.
+      definition: |
+        // isCrossImplSerialWaveBlocked checks whether starting wave waveNum for impl slug
+        // would violate cross-IMPL serialization constraints.
+        // manifest: the current PROGRAM manifest
+        // tierNumber: the currently executing tier
+        // slug: the IMPL about to start wave waveNum
+        // waveNum: the wave number being considered
+        // waveProgress: map[slug]int tracking the highest wave number currently complete per IMPL
+        // Returns true if this wave is blocked (must wait), false if safe to start.
+        func isCrossImplSerialWaveBlocked(manifest *protocol.PROGRAMManifest, tierNumber int, slug string, waveNum int, waveProgress map[string]int) bool
+      location: pkg/engine/program_tier_loop.go
+waves:
+    - number: 1
+      agents:
+        - id: A
+          task: |
+            ## Context
+            You are implementing wave-level conflict detection for the `create-program` command.
+            The current `CheckIMPLConflicts` function in `pkg/protocol/program_conflict.go` checks
+            whether any two IMPLs own the same file anywhere across all their waves — it is
+            too coarse. You will add `CheckIMPLConflictsWaveLevel` that only flags conflicts
+            between concurrent waves (same wave number across IMPLs that would run simultaneously).
+
+            ## What to implement
+
+            ### 1. New types in pkg/protocol/program_conflict.go
+
+            Add two new types immediately after the existing `IMPLFileConflict` type:
+
+            ```go
+            // WaveConflict describes a file owned by multiple IMPLs in the same wave number.
+            type WaveConflict struct {
+                File    string   `json:"file"`
+                WaveNum int      `json:"wave_num"`
+                Impls   []string `json:"impls"`
+                Repos   []string `json:"repos,omitempty"`
+            }
+
+            // WaveConflictReport extends ConflictReport with per-wave analysis.
+            // ConflictReport fields are still populated for backwards compatibility.
+            // WaveConflicts contains only concurrent-wave-level conflicts.
+            // SerialWaves maps each IMPL slug to the wave numbers that must serialize.
+            type WaveConflictReport struct {
+                ConflictReport
+                WaveConflicts []WaveConflict  `json:"wave_conflicts"`
+                SerialWaves   map[string][]int `json:"serial_waves"`
+            }
+            ```
+
+            ### 2. Helper: buildWaveFileOwnershipMap
+
+            Add a private helper after the new types:
+
+            ```go
+            // buildWaveFileOwnershipMap builds a per-wave file ownership index.
+            // implDocs maps slug -> *IMPLManifest.
+            // Returns: map[waveNum]map[qualifiedFile][]slug
+            func buildWaveFileOwnershipMap(implDocs map[string]*IMPLManifest) map[int]map[string][]string {
+                result := make(map[int]map[string][]string)
+                for slug, manifest := range implDocs {
+                    for _, fo := range manifest.FileOwnership {
+                        waveNum := fo.Wave
+                        if waveNum == 0 {
+                            waveNum = 1 // default
+                        }
+                        key := fo.File
+                        if fo.Repo != "" {
+                            key = fo.Repo + ":" + fo.File
+                        }
+                        if result[waveNum] == nil {
+                            result[waveNum] = make(map[string][]string)
+                        }
+                        // deduplicate slugs per file per wave
+                        found := false
+                        for _, existing := range result[waveNum][key] {
+                            if existing == slug {
+                                found = true
+                                break
+                            }
+                        }
+                        if !found {
+                            result[waveNum][key] = append(result[waveNum][key], slug)
+                        }
+                    }
+                }
+                return result
+            }
+            ```
+
+            ### 3. New function: CheckIMPLConflictsWaveLevel
+
+            Add this function after `CheckIMPLConflicts`. It:
+            1. Loads all IMPL docs (same loop as CheckIMPLConflicts)
+            2. Calls the existing `CheckIMPLConflicts` to populate the embedded ConflictReport
+            3. Calls `buildWaveFileOwnershipMap` to get per-wave ownership
+            4. Detects wave-level conflicts: any file with 2+ slugs at the same wave number
+            5. Builds `SerialWaves`: for each slug, collects wave numbers where it has a wave conflict
+            6. Computes `TierSuggestion` from wave conflicts only (not IMPL-level conflicts)
+
+            ```go
+            func CheckIMPLConflictsWaveLevel(implSlugs []string, repoPath string) (*WaveConflictReport, error) {
+                // Step 1: Run existing IMPL-level check for backwards compat
+                implReport, err := CheckIMPLConflicts(implSlugs, repoPath)
+                if err != nil {
+                    return nil, err
+                }
+
+                // Step 2: Load all IMPL docs
+                implDocs := make(map[string]*IMPLManifest)
+                for _, slug := range implSlugs {
+                    implPath, err := resolveIMPLPath(repoPath, slug)
+                    if err != nil {
+                        return nil, fmt.Errorf("cannot resolve IMPL %q: %w", slug, err)
+                    }
+                    manifest, err := Load(implPath)
+                    if err != nil {
+                        return nil, fmt.Errorf("cannot load IMPL %q: %w", slug, err)
+                    }
+                    implDocs[slug] = manifest
+                }
+
+                // Step 3: Build per-wave ownership map
+                waveOwnership := buildWaveFileOwnershipMap(implDocs)
+
+                // Step 4: Detect wave-level conflicts
+                var waveConflicts []WaveConflict
+                waveConflictMap := make(map[string]map[string]bool) // slug -> set of conflicting slugs (wave-level only)
+
+                // Sort wave numbers for deterministic output
+                var waveNums []int
+                for wn := range waveOwnership {
+                    waveNums = append(waveNums, wn)
+                }
+                sort.Ints(waveNums)
+
+                for _, wn := range waveNums {
+                    fileMap := waveOwnership[wn]
+                    // Sort files for deterministic output
+                    var files []string
+                    for f := range fileMap {
+                        files = append(files, f)
+                    }
+                    sort.Strings(files)
+
+                    for _, file := range files {
+                        owners := fileMap[file]
+                        if len(owners) > 1 {
+                            sorted := make([]string, len(owners))
+                            copy(sorted, owners)
+                            sort.Strings(sorted)
+                            waveConflicts = append(waveConflicts, WaveConflict{
+                                File:    file,
+                                WaveNum: wn,
+                                Impls:   sorted,
+                            })
+                            // Build wave-level overlap graph
+                            for _, a := range sorted {
+                                for _, b := range sorted {
+                                    if a != b {
+                                        if waveConflictMap[a] == nil {
+                                            waveConflictMap[a] = make(map[string]bool)
+                                        }
+                                        waveConflictMap[a][b] = true
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // Step 5: Build SerialWaves: for each slug, which wave numbers need serialization
+                serialWaves := make(map[string][]int)
+                for _, wc := range waveConflicts {
+                    for _, slug := range wc.Impls {
+                        // Check if wc.WaveNum already in serialWaves[slug]
+                        found := false
+                        for _, existing := range serialWaves[slug] {
+                            if existing == wc.WaveNum {
+                                found = true
+                                break
+                            }
+                        }
+                        if !found {
+                            serialWaves[slug] = append(serialWaves[slug], wc.WaveNum)
+                        }
+                    }
+                }
+                // Sort serial wave numbers for determinism
+                for slug := range serialWaves {
+                    sort.Ints(serialWaves[slug])
+                }
+
+                // Step 6: Compute wave-level TierSuggestion (override IMPL-level suggestion)
+                // IMPLs with ONLY wave-level conflicts (not total-file conflicts) can be in tier 1
+                // because their Wave 1 is disjoint. Use waveConflictMap for tier suggestion only
+                // if there are wave conflicts; fall back to IMPL-level overlaps otherwise.
+                waveTierSuggestion := computeTierSuggestion(implSlugs, waveConflictMap)
+
+                // Override TierSuggestion in the embedded ConflictReport with wave-level result
+                implReport.TierSuggestion = waveTierSuggestion
+
+                return &WaveConflictReport{
+                    ConflictReport: *implReport,
+                    WaveConflicts:  waveConflicts,
+                    SerialWaves:    serialWaves,
+                }, nil
+            }
+            ```
+
+            Note: The `waveConflictMap` uses only wave-level conflicts to compute tier suggestion.
+            This means two IMPLs that only conflict in Wave 2 (not Wave 1) will both be assigned
+            to tier 1, since their Wave 1 is disjoint. The serialization constraint is captured
+            in `SerialWaves`, not in tier separation.
+
+            ### 4. Tests in pkg/protocol/program_conflict_test.go
+
+            Add tests after the existing tests. Create a helper `writeConflictTestIMPLWithWaves`
+            that accepts per-wave file ownership (wave number per file entry). Add these tests:
+
+            - `TestCheckIMPLConflictsWaveLevel_DisjointWave1ConflictWave2`: 2 IMPLs share a file
+              only in Wave 2. Expect: both in tier 1 (wave-level TierSuggestion), SerialWaves
+              has wave 2 for both IMPLs, WaveConflicts has 1 entry with WaveNum=2.
+            - `TestCheckIMPLConflictsWaveLevel_Wave1Conflict`: 2 IMPLs share a file in Wave 1.
+              Expect: different tiers, SerialWaves has wave 1 for both.
+            - `TestCheckIMPLConflictsWaveLevel_NoConflicts`: 2 IMPLs fully disjoint across all
+              waves. Expect: empty WaveConflicts, empty SerialWaves, both in tier 1.
+            - `TestCheckIMPLConflictsWaveLevel_MultipleWaveConflicts`: 3 IMPLs where A+B share
+              a file in Wave 1, and B+C share a file in Wave 2. Expect: A and B in different
+              tiers (Wave 1 conflict), C in tier 1 (Wave 1 disjoint from A and B).
+
+            ## Verification gate
+            ```
+            go build ./pkg/protocol/...
+            go vet ./pkg/protocol/...
+            go test ./pkg/protocol/... -run TestCheckIMPLConflictsWaveLevel
+            ```
+
+            ## Constraints
+            - Do NOT modify any function signatures in program_conflict.go other than adding new ones
+            - The existing CheckIMPLConflicts function must remain unchanged (called by WaveLevel)
+            - computeTierSuggestion and computeDisjointSets are already defined — call them, don't redefine
+            - All new types must have json and yaml struct tags
+            - Keep deterministic output: sort slices before returning
+          files:
+            - pkg/protocol/program_conflict.go
+            - pkg/protocol/program_conflict_test.go
+        - id: B
+          task: |
+            ## Context
+            You are extending the ProgramIMPL schema and updating the program generator to
+            use the new wave-level conflict detection. Two files need changes.
+
+            ## What to implement
+
+            ### 1. Add SerialWaves field to ProgramIMPL in pkg/protocol/program_types.go
+
+            Find the `ProgramIMPL` struct (around line 54). Add `SerialWaves` as the last
+            field in the struct, after `PriorityReasoning`:
+
+            ```go
+            // SerialWaves lists wave numbers that must not execute concurrently with the
+            // same-numbered wave of any other IMPL in the same program tier.
+            // Empty (default) means all waves can run in parallel with tier peers.
+            // Populated automatically by create-program based on wave-level conflict detection.
+            SerialWaves []int `yaml:"serial_waves,omitempty" json:"serial_waves,omitempty"`
+            ```
+
+            No other changes to program_types.go.
+
+            ### 2. Update GenerateProgramFromIMPLs in pkg/protocol/program_generator.go
+
+            The generator currently calls `CheckIMPLConflicts` (line ~51). Replace this call
+            with `CheckIMPLConflictsWaveLevel` and use the returned `SerialWaves` map to
+            populate `ProgramIMPL.SerialWaves` for each IMPL.
+
+            **Step 1: Change the conflict check call** (around line 51):
+
+            Before:
+            ```go
+            conflictReport, err := CheckIMPLConflicts(opts.ImplSlugs, opts.RepoPath)
+            ```
+
+            After:
+            ```go
+            waveConflictReport, err := CheckIMPLConflictsWaveLevel(opts.ImplSlugs, opts.RepoPath)
+            if err != nil { ... } // keep existing error handling shape
+            // Downcast for backwards-compat fields used later
+            conflictReport := &waveConflictReport.ConflictReport
+            ```
+
+            **Step 2: Update GenerateProgramData** — add the wave conflict report to output.
+
+            In `GenerateProgramData` struct (around line 23), add:
+            ```go
+            WaveConflictReport *WaveConflictReport `json:"wave_conflict_report,omitempty"`
+            ```
+
+            **Step 3: Populate SerialWaves when building ProgramIMPL entries** (around line 123).
+
+            In the loop that builds `impls`, after building `dependsOn`, add:
+            ```go
+            var serialWaves []int
+            if waveConflictReport.SerialWaves != nil {
+                serialWaves = waveConflictReport.SerialWaves[slug]
+            }
+            ```
+
+            Then add `SerialWaves: serialWaves` to the `ProgramIMPL{}` literal.
+
+            **Step 4: Store waveConflictReport in result** (around line 239):
+            ```go
+            data_ := GenerateProgramData{
+                ManifestPath:       outputPath,
+                ConflictReport:     conflictReport,
+                WaveConflictReport: waveConflictReport,
+                TierAssignments:    tierAssignments,
+                Manifest:           manifest,
+                ValidationErrors:   validationErrors,
+            }
+            ```
+
+            **Step 5: Update the conflict summary stderr message** in `create_program_cmd.go`
+            — do NOT change that file (owned by Agent D's wave 2). Just make sure the
+            GenerateProgramData you return contains enough information for D to use.
+
+            ## Verification gate
+            ```
+            go build ./pkg/protocol/...
+            go vet ./pkg/protocol/...
+            go test ./pkg/protocol/... -run TestGenerateProgram
+            ```
+
+            ## Constraints
+            - CheckIMPLConflictsWaveLevel is defined by Agent A — it will exist when you compile
+              since you are in the same wave. If compilation fails during isolated development,
+              add a stub: `func CheckIMPLConflictsWaveLevel(slugs []string, repo string) (*WaveConflictReport, error) { return nil, nil }`
+              then remove the stub after Agent A merges.
+            - WaveConflictReport and SerialWaves types are defined by Agent A in program_conflict.go
+            - Do NOT modify program_conflict.go or program_conflict_test.go
+            - The `appendUnique` and `implStateToStatus` helpers in program_generator.go are
+              already defined — do not redefine them
+          files:
+            - pkg/protocol/program_types.go
+            - pkg/protocol/program_generator.go
+      base_commit: 54ca7acff0f80f7383f6ea489e810083eafbce32
+    - number: 2
+      agents:
+        - id: C
+          task: |
+            ## Context
+            You are implementing cross-IMPL wave serialization enforcement in the tier loop engine.
+            The `RunTierLoop` function in `pkg/engine/program_tier_loop.go` currently executes all
+            IMPL waves sequentially within a tier (one IMPL at a time, all waves). After this change,
+            IMPLs in a tier will execute their non-serial waves in parallel, but waves listed in
+            `ProgramIMPL.SerialWaves` must run one at a time across all IMPLs in the tier.
+
+            Wave 1 agents (A and B) add `SerialWaves []int` to `ProgramIMPL` and define
+            `WaveConflictReport`. Those changes are merged before this wave starts.
+
+            ## What to implement
+
+            ### 1. Add isCrossImplSerialWaveBlocked helper function
+
+            Add this function at the bottom of `program_tier_loop.go` (after the existing helpers):
+
+            ```go
+            // isCrossImplSerialWaveBlocked returns true if starting wave waveNum for impl slug
+            // would violate cross-IMPL serialization constraints within tierNumber.
+            // A wave is blocked if: (a) it is listed in slug's SerialWaves AND
+            // (b) any other IMPL in the same tier has that same wave number still in-progress
+            // (i.e., its waveProgress value is < waveNum or it hasn't reached waveNum yet
+            // from the perspective of the serial ordering).
+            // waveProgress maps slug -> highest wave number that has COMPLETED for that IMPL.
+            func isCrossImplSerialWaveBlocked(
+                manifest *protocol.PROGRAMManifest,
+                tierNumber int,
+                slug string,
+                waveNum int,
+                waveProgress map[string]int,
+            ) bool {
+                // Find this IMPL's SerialWaves
+                var serialWaves []int
+                for _, impl := range manifest.Impls {
+                    if impl.Slug == slug {
+                        serialWaves = impl.SerialWaves
+                        break
+                    }
+                }
+                if len(serialWaves) == 0 {
+                    return false // no serial constraint
+                }
+                isSerial := false
+                for _, sw := range serialWaves {
+                    if sw == waveNum {
+                        isSerial = true
+                        break
+                    }
+                }
+                if !isSerial {
+                    return false // this wave number is not constrained
+                }
+
+                // Check all other IMPLs in the same tier
+                tierSlugs := getTierSlugs(manifest, tierNumber)
+                for _, other := range tierSlugs {
+                    if other == slug {
+                        continue
+                    }
+                    // Check if other IMPL also has waveNum in its SerialWaves
+                    var otherSerial []int
+                    for _, impl := range manifest.Impls {
+                        if impl.Slug == other {
+                            otherSerial = impl.SerialWaves
+                            break
+                        }
+                    }
+                    otherIsSerial := false
+                    for _, sw := range otherSerial {
+                        if sw == waveNum {
+                            otherIsSerial = true
+                            break
+                        }
+                    }
+                    if !otherIsSerial {
+                        continue // other IMPL doesn't have this wave as serial
+                    }
+
+                    // If other IMPL hasn't completed waveNum yet, this IMPL is blocked
+                    // (waveProgress[other] < waveNum means other hasn't finished waveNum)
+                    if waveProgress[other] < waveNum {
+                        return true
+                    }
+                }
+                return false
+            }
+            ```
+
+            ### 2. Add waveProgress tracking to the tier execution loop
+
+            In `RunTierLoop`, the tier execution block (Step 8, around line 151) currently
+            iterates `tierSlugs` sequentially running all waves per IMPL. Replace this block
+            with a wave-aware execution loop that:
+
+            1. Initializes `waveProgress := make(map[string]int)` — tracks highest completed
+               wave per IMPL (0 = none started)
+            2. Computes the max wave count across all IMPLs in the tier
+            3. For each wave number W from 1 to maxWaveCount:
+               a. For each IMPL in the tier, check `isCrossImplSerialWaveBlocked`
+               b. If NOT blocked, run that wave (call `RunWaveFull` for that IMPL's wave W)
+               c. For serial waves: run them one at a time. Specifically, when wave W is
+                  a serial wave for any IMPL in the tier, execute those one at a time in
+                  tier slug order, waiting for each to complete before starting the next.
+               d. After completing wave W for an IMPL, set `waveProgress[slug] = W`
+
+            The simplified sequential reference implementation (preserves existing behavior
+            for non-serial waves, adds serialization only for serial waves):
+
+            ```go
+            // Step 8: Execute waves for each IMPL in the tier, respecting serial_waves
+            tierSlugs := getTierSlugs(manifest, currentTier)
+            waveProgress := make(map[string]int)
+
+            // Find max wave count in this tier
+            maxWaveCount := 0
+            for _, slug := range tierSlugs {
+                wc := getIMPLWaveCount(manifest, slug)
+                if wc > maxWaveCount {
+                    maxWaveCount = wc
+                }
+            }
+
+            for waveNum := 1; waveNum <= maxWaveCount; waveNum++ {
+                for _, slug := range tierSlugs {
+                    implWaveCount := getIMPLWaveCount(manifest, slug)
+                    if waveNum > implWaveCount {
+                        continue // this IMPL doesn't have wave waveNum
+                    }
+
+                    // Wait for serial wave constraint to clear
+                    // (in this sequential implementation we simply check and skip if blocked,
+                    //  relying on the outer wave loop to retry — but for correctness in the
+                    //  sequential model, we run serial waves in slug order which is sufficient)
+                    if isCrossImplSerialWaveBlocked(manifest, currentTier, slug, waveNum, waveProgress) {
+                        // In fully sequential execution, this should not happen because we
+                        // complete one serial wave at a time. Log and continue.
+                        result.Errors = append(result.Errors,
+                            fmt.Sprintf("unexpected serial wave block: impl=%s wave=%d", slug, waveNum))
+                        continue
+                    }
+
+                    implPath := findIMPLDocPath(opts.RepoPath, slug)
+                    if implPath == "" {
+                        result.Errors = append(result.Errors,
+                            fmt.Sprintf("IMPL doc not found for %s", slug))
+                        continue
+                    }
+
+                    implBranch := protocol.ProgramBranchName(manifest.ProgramSlug, currentTier, slug)
+                    if !git.BranchExists(opts.RepoPath, implBranch) {
+                        if _, err := git.Run(opts.RepoPath, "checkout", "-b", implBranch); err != nil {
+                            result.Errors = append(result.Errors,
+                                fmt.Sprintf("failed to create IMPL branch %s: %s", implBranch, err))
+                            continue
+                        }
+                    }
+
+                    _, waveErr := RunWaveFull(ctx, RunWaveFullOpts{
+                        ManifestPath: implPath,
+                        RepoPath:     opts.RepoPath,
+                        WaveNum:      waveNum,
+                        MergeTarget:  implBranch,
+                    })
+                    if waveErr != nil {
+                        result.Errors = append(result.Errors,
+                            fmt.Sprintf("wave %d for %s failed: %s", waveNum, slug, waveErr))
+                    } else {
+                        waveProgress[slug] = waveNum
+                    }
+                }
+
+                emitEvent(opts.OnEvent, TierLoopEvent{
+                    Type:   "wave_complete",
+                    Tier:   currentTier,
+                    Detail: fmt.Sprintf("Wave %d complete for tier %d", waveNum, currentTier),
+                })
+            }
+
+            // Emit impl_complete events after all waves done
+            for _, slug := range tierSlugs {
+                emitEvent(opts.OnEvent, TierLoopEvent{
+                    Type:   "impl_complete",
+                    Tier:   currentTier,
+                    Detail: fmt.Sprintf("IMPL %s wave execution finished", slug),
+                })
+            }
+            ```
+
+            Remove the old Step 8 block (the one with the inner `for wave := 1; wave <= waveCount; wave++` loop).
+            The impl_complete events were previously emitted inside the old loop; make sure they are
+            emitted in the new structure after all waves finish for each IMPL.
+
+            ### 3. Add TierLoopEvent type constant "wave_complete"
+
+            In the `TierLoopEvent` struct comment at the top of the file, add `"wave_complete"` to
+            the list of valid Type values:
+            ```go
+            // Type: "tier_started", "scout_launched", "impl_complete", "tier_gate",
+            //       "contracts_frozen", "tier_advanced", "replan_triggered", "wave_complete"
+            ```
+
+            ## Verification gate
+            ```
+            go build ./pkg/engine/...
+            go vet ./pkg/engine/...
+            go test ./pkg/engine/... -run TestRunTierLoop
+            ```
+
+            ## Constraints
+            - Do NOT modify pkg/protocol/ files (owned by Wave 1 agents A and B)
+            - isCrossImplSerialWaveBlocked must be a standalone function, not a method
+            - The function variable `launchParallelScoutsFunc` and `replanProgramFunc` must
+              remain unchanged — only the Step 8 block changes
+            - getTierSlugs, getIMPLWaveCount, findIMPLDocPath are already defined in this file —
+              call them, do not redefine
+            - If the existing tests in program_tier_loop_test.go test the old step 8 loop structure,
+              update them to match the new wave-number-first iteration order
+          files:
+            - pkg/engine/program_tier_loop.go
+        - id: D
+          task: |
+            ## Context
+            You are adding an integration test for the wave-level conflict detection in
+            `cmd/sawtools/create_program_cmd_test.go`. The existing tests cover basic
+            conflict and no-conflict cases using IMPL docs with all files in Wave 1.
+            You will add tests that verify wave-level conflict behavior.
+
+            Wave 1 agents (A and B) have added:
+            - `CheckIMPLConflictsWaveLevel` in pkg/protocol/program_conflict.go
+            - `SerialWaves []int` field on `ProgramIMPL` in pkg/protocol/program_types.go
+            - Updated `GenerateProgramFromIMPLs` to use wave-level detection and populate SerialWaves
+
+            ## What to implement
+
+            ### 1. Add writeTestIMPLWithWaves helper
+
+            Add a new helper function after `writeTestIMPLForConflicts` in the test file.
+            This helper accepts a map of `filename -> waveNumber` to create IMPL docs with
+            files spread across multiple waves:
+
+            ```go
+            // writeTestIMPLWithWaves creates a minimal IMPL YAML with files assigned to specific waves.
+            // fileWaves maps file path -> wave number.
+            func writeTestIMPLWithWaves(t *testing.T, repoDir, slug string, fileWaves map[string]int) {
+                t.Helper()
+                implDir := filepath.Join(repoDir, "docs", "IMPL")
+                if err := os.MkdirAll(implDir, 0755); err != nil {
+                    t.Fatal(err)
+                }
+
+                var foEntries []string
+                // Sort keys for determinism
+                var files []string
+                for f := range fileWaves {
+                    files = append(files, f)
+                }
+                sort.Strings(files)
+                for _, f := range files {
+                    wn := fileWaves[f]
+                    foEntries = append(foEntries, fmt.Sprintf("  - file: %s\n    agent: A\n    wave: %d", f, wn))
+                }
+
+                // Find max wave number for wave definitions
+                maxWave := 1
+                for _, wn := range fileWaves {
+                    if wn > maxWave {
+                        maxWave = wn
+                    }
+                }
+
+                var waveEntries []string
+                for i := 1; i <= maxWave; i++ {
+                    waveEntries = append(waveEntries, fmt.Sprintf("  - number: %d\n    agents:\n      - id: A\n        task: do stuff", i))
+                }
+
+                content := "feature_slug: " + slug + "\n" +
+                    "title: Test " + slug + "\n" +
+                    "state: reviewed\n" +
+                    "file_ownership:\n" + strings.Join(foEntries, "\n") + "\n" +
+                    "waves:\n" + strings.Join(waveEntries, "\n") + "\n"
+
+                path := filepath.Join(implDir, "IMPL-"+slug+".yaml")
+                if err := os.WriteFile(path, []byte(content), 0644); err != nil {
+                    t.Fatal(err)
+                }
+            }
+            ```
+
+            Add the necessary imports: `"fmt"`, `"sort"` (in addition to existing imports).
+
+            ### 2. Add test: disjoint Wave 1, conflicting Wave 2
+
+            ```go
+            func TestCreateProgramCmd_WaveLevelConflict_SerialWavesPopulated(t *testing.T) {
+                repoDir := t.TempDir()
+
+                // Both IMPLs own different files in Wave 1, but share a file in Wave 2
+                writeTestIMPLWithWaves(t, repoDir, "alpha", map[string]int{
+                    "pkg/alpha/core.go":   1,
+                    "pkg/shared/append.go": 2,
+                })
+                writeTestIMPLWithWaves(t, repoDir, "beta", map[string]int{
+                    "pkg/beta/core.go":    1,
+                    "pkg/shared/append.go": 2,
+                })
+
+                var stdout bytes.Buffer
+                cmd := newRootCmd()
+                cmd.AddCommand(newCreateProgramCmd())
+                cmd.SetOut(&stdout)
+                cmd.SetErr(&bytes.Buffer{})
+                cmd.SetArgs([]string{
+                    "create-program",
+                    "--from-impls", "alpha",
+                    "--from-impls", "beta",
+                    "--slug", "test-wave-conflict",
+                    "--repo-dir", repoDir,
+                })
+                err := cmd.Execute()
+                if err != nil {
+                    t.Fatalf("unexpected error: %v", err)
+                }
+
+                var result map[string]interface{}
+                if err := json.Unmarshal(stdout.Bytes(), &result); err != nil {
+                    t.Fatalf("invalid JSON output: %v\noutput: %s", err, stdout.String())
+                }
+
+                // Parse the manifest from disk
+                programPath := filepath.Join(repoDir, "docs", "PROGRAM", "PROGRAM-test-wave-conflict.yaml")
+                data, err := os.ReadFile(programPath)
+                if err != nil {
+                    t.Fatalf("program manifest not written: %v", err)
+                }
+
+                manifestStr := string(data)
+
+                // Both IMPLs should be in tier 1 (Wave 1 is disjoint)
+                if strings.Count(manifestStr, "tier: 1") < 2 {
+                    t.Errorf("expected both alpha and beta in tier 1 (Wave 1 disjoint), got:\n%s", manifestStr)
+                }
+                if strings.Contains(manifestStr, "tier: 2") {
+                    t.Errorf("expected no tier 2 (wave-level detection should allow tier 1 for both), got:\n%s", manifestStr)
+                }
+
+                // serial_waves: [2] should appear for both alpha and beta
+                if !strings.Contains(manifestStr, "serial_waves:") {
+                    t.Errorf("expected serial_waves field in manifest, got:\n%s", manifestStr)
+                }
+            }
+            ```
+
+            ### 3. Add test: fully disjoint IMPLs produce no serial_waves
+
+            ```go
+            func TestCreateProgramCmd_WaveLevelConflict_NoSerialWavesWhenDisjoint(t *testing.T) {
+                repoDir := t.TempDir()
+
+                writeTestIMPLWithWaves(t, repoDir, "alpha", map[string]int{
+                    "pkg/alpha/core.go": 1,
+                    "pkg/alpha/util.go": 2,
+                })
+                writeTestIMPLWithWaves(t, repoDir, "beta", map[string]int{
+                    "pkg/beta/core.go": 1,
+                    "pkg/beta/util.go": 2,
+                })
+
+                programPath := filepath.Join(repoDir, "docs", "PROGRAM", "PROGRAM-test-disjoint.yaml")
+                var stdout bytes.Buffer
+                cmd := newRootCmd()
+                cmd.AddCommand(newCreateProgramCmd())
+                cmd.SetOut(&stdout)
+                cmd.SetErr(&bytes.Buffer{})
+                cmd.SetArgs([]string{
+                    "create-program",
+                    "--from-impls", "alpha",
+                    "--from-impls", "beta",
+                    "--slug", "test-disjoint",
+                    "--repo-dir", repoDir,
+                })
+                if err := cmd.Execute(); err != nil {
+                    t.Fatalf("unexpected error: %v", err)
+                }
+
+                data, err := os.ReadFile(programPath)
+                if err != nil {
+                    t.Fatalf("program manifest not written: %v", err)
+                }
+
+                if strings.Contains(string(data), "serial_waves:") {
+                    t.Errorf("expected no serial_waves for fully disjoint IMPLs, got:\n%s", string(data))
+                }
+            }
+            ```
+
+            ### 4. Add "encoding/json" import if not already present
+
+            The test file currently imports `bytes`, `os`, `path/filepath`, `strings`, `testing`.
+            Add `"encoding/json"`, `"fmt"`, `"sort"` to the import block.
+
+            ## Verification gate
+            ```
+            go build ./cmd/sawtools/...
+            go vet ./cmd/sawtools/...
+            go test ./cmd/sawtools/... -run TestCreateProgramCmd_WaveLevel
+            ```
+
+            ## Constraints
+            - Do NOT modify create_program_cmd.go (the production command file)
+            - Do NOT modify program_conflict.go or program_types.go (owned by Wave 1 agents)
+            - Use the existing `newRootCmd()` and `newCreateProgramCmd()` functions — they
+              are already defined in the package
+            - The `writeTestIMPLForConflicts` helper exists in this file — do not redefine it;
+              add your new helper alongside it
+            - Write the manifest to a temp `repoDir`, not to the actual repo
+          files:
+            - cmd/sawtools/create_program_cmd_test.go
+      base_commit: 84d3162e624cc5ec7efcb957050892771f808fa2
+quality_gates:
+    level: standard
+    gates:
+        - type: build
+          command: go build ./...
+          required: true
+        - type: lint
+          command: go vet ./...
+          required: true
+        - type: test
+          command: go test ./...
+          required: true
+completion_reports:
+    A:
+        status: complete
+        branch: saw/program-wave-conflict/wave1-agent-A
+        commit: caa1917
+        files_changed:
+            - pkg/protocol/program_conflict.go
+            - pkg/protocol/program_conflict_test.go
+        tests_added:
+            - TestCheckIMPLConflictsWaveLevel_DisjointWave1ConflictWave2
+            - TestCheckIMPLConflictsWaveLevel_Wave1Conflict
+            - TestCheckIMPLConflictsWaveLevel_NoConflicts
+            - TestCheckIMPLConflictsWaveLevel_MultipleWaveConflicts
+        verification: PASS
+    B:
+        status: complete
+        branch: saw/program-wave-conflict/wave1-agent-B
+        commit: f2f555c
+        files_changed:
+            - pkg/protocol/program_types.go
+            - pkg/protocol/program_generator.go
+        files_created:
+            - pkg/protocol/program_wave_conflict_stub.go
+        verification: PASS
+    C:
+        status: complete
+        branch: saw/program-wave-conflict/wave2-agent-C
+        commit: 4f366a0
+        files_changed:
+            - pkg/engine/program_tier_loop.go
+            - pkg/engine/program_tier_loop_test.go
+        tests_added:
+            - TestIsCrossImplSerialWaveBlocked_NoSerialWaves
+            - TestIsCrossImplSerialWaveBlocked_WaveNotInSerialList
+            - TestIsCrossImplSerialWaveBlocked_BlockedWhenOtherNotComplete
+            - TestIsCrossImplSerialWaveBlocked_NotBlockedWhenOtherComplete
+            - TestIsCrossImplSerialWaveBlocked_OtherNotInSerialList
+            - TestIsCrossImplSerialWaveBlocked_MultipleIMPLsOnlyOneBlocks
+        verification: PASS
+    D:
+        status: complete
+        branch: saw/program-wave-conflict/wave2-agent-D
+        commit: 9fcf02a
+        files_changed:
+            - cmd/sawtools/create_program_cmd_test.go
+        tests_added:
+            - TestCreateProgramCmd_WaveLevelConflict_SerialWavesPopulated
+            - TestCreateProgramCmd_WaveLevelConflict_NoSerialWavesWhenDisjoint
+        verification: PASS
+pre_mortem:
+    overall_risk: low
+    rows:
+        - scenario: |
+            Agent B uses CheckIMPLConflictsWaveLevel before Agent A's code compiles,
+            causing a build failure in Agent B's isolated worktree.
+          likelihood: medium
+          impact: medium
+          mitigation: |
+            Agent B's brief includes an explicit stub instruction: if compilation fails
+            because CheckIMPLConflictsWaveLevel is not yet defined, add a one-line stub
+            to unblock compilation, then remove it when merging. Both agents are in Wave 1
+            so the merge ordering is handled by the orchestrator.
+        - scenario: |
+            The wave-level TierSuggestion override in CheckIMPLConflictsWaveLevel
+            incorrectly places IMPLs that have Wave 1 conflicts into the same tier.
+          likelihood: low
+          impact: high
+          mitigation: |
+            Test TestCheckIMPLConflictsWaveLevel_Wave1Conflict explicitly covers this case.
+            The logic uses waveConflictMap (not implReport.TierSuggestion) so Wave 1
+            conflicts correctly separate IMPLs into different tiers.
+        - scenario: |
+            The existing program_tier_loop tests in program_tier_loop_test.go test
+            the old wave iteration structure (per-IMPL inner loop) and break when
+            Agent C restructures to wave-number-first iteration.
+          likelihood: medium
+          impact: low
+          mitigation: |
+            Agent C's brief explicitly says to update existing tests that test the old
+            loop structure. The behavior change is additive (same outcome for IMPLs with
+            no SerialWaves), so test updates are straightforward.
+        - scenario: |
+            PROGRAM manifests already on disk (e.g., PROGRAM-agent-type-progressive-disclosure.yaml)
+            do not have serial_waves fields and will not benefit from the new detection
+            without being regenerated.
+          likelihood: high
+          impact: low
+          mitigation: |
+            This is by design. The feature affects new programs created after this change.
+            Existing programs can be regenerated with `sawtools create-program` if needed.
+            The omitempty tag means existing manifests remain valid.
+critic_report:
+    verdict: PASS
+    agent_reviews:
+        A:
+            agent_id: A
+            verdict: PASS
+        B:
+            agent_id: B
+            verdict: PASS
+        C:
+            agent_id: C
+            verdict: PASS
+        D:
+            agent_id: D
+            verdict: PASS
+    summary: 'All four agent briefs verified against the codebase. Every file marked modify exists. All symbols referenced in briefs were found at the described locations: CheckIMPLConflicts, resolveIMPLPath, Load, computeTierSuggestion, computeDisjointSets in program_conflict.go; GenerateProgramData struct, ProgramIMPL literal, appendUnique, implStateToStatus in program_generator.go at the stated line numbers; getTierSlugs, getIMPLWaveCount, findIMPLDocPath, RunWaveFull, ProgramBranchName, launchParallelScoutsFunc, replanProgramFunc in program_tier_loop.go; newRootCmd, newCreateProgramCmd, writeTestIMPLForConflicts in the cmd/sawtools package. The TierLoopEvent Type comment pattern and Step 8 block location match exactly. Import packages (sort, fmt, encoding/json) are all stdlib. No errors found.'
+    reviewed_at: "2026-03-26T00:02:20Z"
+    issue_count: 0
+state: COMPLETE

@@ -1,0 +1,593 @@
+completion_date: "2026-03-25"
+title: Engine agent type reference injection — parity with CLI hook layer
+feature_slug: engine-reference-injection
+verdict: SUITABLE
+suitability_assessment: |
+    File decomposition: 3 distinct files across 2 agents with disjoint ownership.
+    Agent A owns pkg/engine/runner.go (helper + 3 load sites + 2 path bug fixes)
+    and pkg/engine/runner_test.go (unit tests). Agent B owns
+    cmd/sawtools/run_critic_cmd.go (1 load site). These files are fully disjoint.
+
+    Investigation-first: None required. All load sites identified by direct grep
+    of the codebase. Key discoveries during scouting:
+    1. Wave agents do NOT have a wave-agent.md load site in the Go engine — their
+       prompts come from the IMPL doc task field (extractBriefsAndInitJournals in
+       prepare.go). No wave-agent.md injection needed.
+    2. runner.go line 76 uses wrong path: "prompts/scout.md" (file does not exist
+       at that location). Actual path is "implementations/claude-code/prompts/agents/scout.md".
+       This is a pre-existing bug; the fix is included in scope.
+    3. runner.go line 179 uses wrong path for planner: "agents/planner.md" (relative
+       to sawRepo root, not the correct subpath). Actual path is
+       "implementations/claude-code/prompts/agents/planner.md". Also a pre-existing
+       bug; fix included in scope.
+    4. Reference files are in a shared "references/" sibling directory alongside
+       "agents/" — both under "implementations/claude-code/prompts/". The convention
+       is NOT per-agent subdirectories ("agents/scout/references/"); instead all
+       reference files go into "implementations/claude-code/prompts/references/" and
+       are named with a type-specific prefix ("scout-*.md", "wave-agent-*.md", etc.).
+
+    Interface discoverability: Yes. The exported helper function signature
+    (LoadTypePromptWithRefs) can be defined upfront. Agent B depends on this
+    signature but not on its implementation details.
+
+    Pre-implementation status: Fresh feature, nothing implemented yet. The
+    four extraction IMPLs (scout, wave-agent, critic-agent, planner) are all
+    state: SCOUT_PENDING — their reference files don't exist yet. The helper
+    must gracefully skip when the references/ directory is empty or missing.
+
+    Parallelization value: 2 agents in 2 sequential waves (B depends on A's
+    exported function). The build/test cycle is fast (Go unit tests). The main
+    value here is clean interface contract definition and separation of concerns.
+    Agent A does the heavy lifting (helper + tests); Agent B does a simple
+    substitution once the helper is exported.
+
+    Estimated times:
+    - Scout phase: ~15 min (codebase analysis, path discovery, IMPL doc)
+    - Agent execution: ~15 min (Agent A: 20 min; Agent B: 5 min, runs after A)
+    - Merge & verification: ~5 min
+    Total SAW time: ~35 min
+
+    Sequential baseline: ~25 min (simple change, low parallelization value)
+    Time savings: minimal. Value is in coordination and interface contract clarity.
+
+    Recommendation: Proceed. The IMPL doc captures important discoveries
+    (path bugs, no wave-agent.md load site, reference directory convention)
+    that prevent agents from making incorrect assumptions.
+test_command: go test ./...
+lint_command: go vet ./...
+file_ownership:
+    - file: pkg/engine/runner.go
+      agent: A
+      wave: 1
+      action: modify
+    - file: pkg/engine/runner_test.go
+      agent: A
+      wave: 1
+      action: modify
+    - file: cmd/sawtools/run_critic_cmd.go
+      agent: B
+      wave: 2
+      action: modify
+      depends_on:
+        - A
+interface_contracts:
+    - name: LoadTypePromptWithRefs
+      description: |
+        Exported helper that reads a type prompt file and prepends reference file
+        content from the adjacent references/ directory. Replaces all direct
+        os.ReadFile calls for agent type prompts in the engine layer.
+
+        The references/ directory is computed as a sibling of the agents/ directory:
+          promptPath = "<sawRepo>/implementations/claude-code/prompts/agents/<type>.md"
+          refsDir    = "<sawRepo>/implementations/claude-code/prompts/references/"
+
+        Reference files are filtered by prefix matching the prompt file's base name
+        without extension (e.g., "scout.md" → load "scout-*.md" files from refsDir).
+
+        Files are sorted alphabetically within the prefix group before prepending,
+        ensuring deterministic ordering across runs.
+
+        Dedup: if the injected content for a file is already present in the core
+        prompt (detected via the marker "<!-- injected: references/<filename> -->"),
+        that file is skipped. This matches the CLI hook dedup logic.
+
+        Returns "[dedup-marked reference content]\n\n[core prompt content]" when
+        references exist, or just "[core prompt content]" when refsDir is absent
+        or contains no matching files.
+      definition: |
+        // LoadTypePromptWithRefs reads a type prompt file and prepends any
+        // reference files from the adjacent references/ directory.
+        //
+        // refsDir is derived as filepath.Join(filepath.Dir(filepath.Dir(promptPath)), "references").
+        // Reference files must match the glob "<type-stem>-*.md" where type-stem is
+        // filepath.Base(promptPath) without the ".md" extension.
+        //
+        // Each reference file is prepended with a dedup marker:
+        //   <!-- injected: references/<filename> -->
+        //
+        // If a marker for a file is already present in the core prompt content,
+        // that file is skipped (no double-injection).
+        //
+        // Missing refsDir is not an error; returns core content only.
+        func LoadTypePromptWithRefs(promptPath string) (string, error)
+      location: pkg/engine/runner.go
+    - name: Corrected scout.md path (runner.go)
+      description: |
+        The RunScout function currently loads from:
+          implementations/claude-code/prompts/scout.md   (does not exist)
+        The correct path is:
+          implementations/claude-code/prompts/agents/scout.md
+        Agent A must fix this path as part of replacing the os.ReadFile call.
+      definition: |
+        // Before (buggy):
+        scoutMdPath := filepath.Join(sawRepo, "implementations", "claude-code", "prompts", "scout.md")
+
+        // After (fixed):
+        scoutMdPath := filepath.Join(sawRepo, "implementations", "claude-code", "prompts", "agents", "scout.md")
+      location: pkg/engine/runner.go
+    - name: Corrected planner.md path (runner.go)
+      description: |
+        The RunPlanner function currently loads from:
+          agents/planner.md    (relative to sawRepo root, does not exist)
+        The correct path is:
+          implementations/claude-code/prompts/agents/planner.md
+        Agent A must fix this path as part of replacing the os.ReadFile call.
+        RunPlanner has a fallback prompt, so this was a silent failure before.
+      definition: |
+        // Before (buggy):
+        plannerMdPath := filepath.Join(sawRepo, "agents", "planner.md")
+
+        // After (fixed):
+        plannerMdPath := filepath.Join(sawRepo, "implementations", "claude-code", "prompts", "agents", "planner.md")
+      location: pkg/engine/runner.go
+waves:
+    - number: 1
+      agents:
+        - id: A
+          task: |
+            ## Context
+
+            You are implementing a shared helper `LoadTypePromptWithRefs` in
+            `pkg/engine/runner.go` and replacing all direct `os.ReadFile` calls
+            for agent type prompts with this helper. You are also fixing two
+            pre-existing path bugs discovered during scouting.
+
+            The Go engine currently reads agent type prompt files with bare
+            `os.ReadFile`. After the progressive disclosure extraction IMPLs
+            run (scout, wave-agent, critic-agent, planner), those prompts will
+            be slimmed down and their content moved to adjacent `references/`
+            files. Without this helper, the engine will serve slimmed prompts
+            without reference content — a regression.
+
+            **KEY FINDING: Wave agents do NOT have a type prompt file in the
+            Go engine.** Wave agent prompts are built dynamically from the IMPL
+            doc brief in `extractBriefsAndInitJournals` (prepare.go). Do NOT
+            add a wave-agent.md load site — there is none to replace.
+
+            ## What to implement
+
+            ### 1. Add LoadTypePromptWithRefs helper to runner.go
+
+            Add a new exported function `LoadTypePromptWithRefs` to
+            `pkg/engine/runner.go`. This function:
+
+            1. Reads the core prompt file at `promptPath` (same as current os.ReadFile)
+            2. Derives the refsDir as:
+               ```go
+               refsDir := filepath.Join(filepath.Dir(filepath.Dir(promptPath)), "references")
+               ```
+               This gives the `references/` directory that is a sibling of `agents/`.
+            3. If refsDir does not exist, returns `(string(coreBytes), nil)` — graceful skip
+            4. Determines the type stem from the prompt filename:
+               ```go
+               stem := strings.TrimSuffix(filepath.Base(promptPath), ".md")
+               // e.g., "scout.md" → "scout", "critic-agent.md" → "critic-agent"
+               ```
+            5. Reads all `.md` files in refsDir matching the glob `<stem>-*.md`
+               (use `filepath.Glob` for deterministic alphabetical ordering)
+            6. For each matching reference file:
+               a. Read its contents
+               b. Compute the marker: `<!-- injected: references/<filename> -->`
+               c. Check if core prompt already contains this marker (dedup check):
+                  ```go
+                  if strings.Contains(coreContent, marker) {
+                      continue // skip — already injected
+                  }
+                  ```
+               d. Prepend: `marker + "\n" + refContent + "\n\n"` to the injectedParts
+            7. Returns: `strings.Join(injectedParts, "") + "\n\n" + coreContent`
+               (or just `coreContent` if no references were injected)
+
+            If refsDir exists but has no matching files, return core content only
+            (empty injection is not an error).
+
+            If refsDir exists but a specific reference file cannot be read,
+            log a warning with `slog.Default().Warn(...)` and skip that file
+            (non-fatal — degraded injection is better than a hard failure).
+
+            **Function signature (binding contract):**
+            ```go
+            // LoadTypePromptWithRefs reads the agent type prompt at promptPath and
+            // prepends any reference files from the adjacent references/ directory.
+            // Reference files must match the pattern "<type-stem>-*.md" where
+            // type-stem is the base filename without the ".md" extension.
+            // Each reference file is prepended with a dedup marker:
+            //   <!-- injected: references/<filename> -->
+            // Missing refsDir is not an error; returns core content only.
+            func LoadTypePromptWithRefs(promptPath string) (string, error)
+            ```
+
+            Place this function near the end of runner.go, before `readContextMD`.
+
+            ### 2. Replace os.ReadFile call in RunScout (~line 76)
+
+            **Fix the path bug first.** The current code:
+            ```go
+            scoutMdPath := filepath.Join(sawRepo, "implementations", "claude-code", "prompts", "scout.md")
+            scoutMdBytes, err := os.ReadFile(scoutMdPath)
+            if err != nil {
+                return fmt.Errorf("engine.RunScout: scout.md not found at %s: %w", scoutMdPath, err)
+            }
+            ```
+
+            Replace with:
+            ```go
+            scoutMdPath := filepath.Join(sawRepo, "implementations", "claude-code", "prompts", "agents", "scout.md")
+            scoutMdContent, err := LoadTypePromptWithRefs(scoutMdPath)
+            if err != nil {
+                return fmt.Errorf("engine.RunScout: scout.md not found at %s: %w", scoutMdPath, err)
+            }
+            ```
+
+            Then update the uses of `scoutMdBytes` to `scoutMdContent` (it's now a string,
+            not a []byte). Find all uses of `scoutMdBytes` after this point:
+            - In the prompt format strings: `string(scoutMdBytes)` → `scoutMdContent`
+
+            Grep for `scoutMdBytes` in runner.go to find all occurrences (including in
+            the `runScoutStructured` path via the `prompt` variable).
+
+            ### 3. Replace os.ReadFile call in RunPlanner (~line 180)
+
+            **Fix the path bug first.** The current code:
+            ```go
+            plannerMdPath := filepath.Join(sawRepo, "agents", "planner.md")
+            plannerMdBytes, err := os.ReadFile(plannerMdPath)
+            if err != nil {
+                plannerMdBytes = []byte("You are a Planner agent. ...")
+            }
+            ```
+
+            Replace with:
+            ```go
+            plannerMdPath := filepath.Join(sawRepo, "implementations", "claude-code", "prompts", "agents", "planner.md")
+            plannerMdContent, err := LoadTypePromptWithRefs(plannerMdPath)
+            if err != nil {
+                // Fallback: LoadTypePromptWithRefs only errors on ReadFile failure of
+                // the core file. Keep the same fallback behavior as before.
+                plannerMdContent = "You are a Planner agent. Analyze the project requirements and produce a PROGRAM manifest at the specified output path. Decompose the project into features organized into dependency-ordered tiers. Define cross-feature program contracts for shared types/APIs."
+            }
+            ```
+
+            Then update uses of `plannerMdBytes` → `plannerMdContent` (string, not []byte).
+            Find all occurrences of `plannerMdBytes` in runner.go with grep.
+
+            ### 4. Replace os.ReadFile call in RunScaffold (~line 550)
+
+            The current code:
+            ```go
+            scaffoldMdPath := filepath.Join(sawRepo, "implementations", "claude-code", "prompts", "agents", "scaffold-agent.md")
+            scaffoldMdBytes, err := os.ReadFile(scaffoldMdPath)
+            if err != nil {
+                scaffoldMdBytes = []byte("You are a Scaffold Agent. Create the stub files defined in the IMPL doc Scaffolds section.")
+            }
+            prompt := fmt.Sprintf("%s\n\n## IMPL Doc Path\n%s\n", string(scaffoldMdBytes), implPath)
+            ```
+
+            Replace with:
+            ```go
+            scaffoldMdPath := filepath.Join(sawRepo, "implementations", "claude-code", "prompts", "agents", "scaffold-agent.md")
+            scaffoldMdContent, err := LoadTypePromptWithRefs(scaffoldMdPath)
+            if err != nil {
+                scaffoldMdContent = "You are a Scaffold Agent. Create the stub files defined in the IMPL doc Scaffolds section."
+            }
+            prompt := fmt.Sprintf("%s\n\n## IMPL Doc Path\n%s\n", scaffoldMdContent, implPath)
+            ```
+
+            ### 5. Write unit tests in runner_test.go
+
+            Add tests for `LoadTypePromptWithRefs` in `pkg/engine/runner_test.go`.
+            The test function must be `TestLoadTypePromptWithRefs`.
+
+            Use `t.TempDir()` to create isolated directory structures.
+
+            **Test case 1: no references/ dir → returns core content only**
+            ```
+            Setup:
+              tmpDir/
+                agents/
+                  scout.md  (content: "# Scout\n\nCore content")
+              (no references/ dir)
+            Expected: result == "# Scout\n\nCore content", nil
+            ```
+
+            **Test case 2: references/ dir with matching files → dedup-marked refs prepended**
+            ```
+            Setup:
+              tmpDir/
+                agents/
+                  scout.md  (content: "# Scout Core")
+                references/
+                  scout-suitability-gate.md  (content: "## Suitability Gate")
+                  scout-implementation-process.md  (content: "## Implementation Process")
+                  wave-agent-worktree.md  (content: "## Worktree")  ← should NOT be included
+            Expected result contains:
+              "<!-- injected: references/scout-suitability-gate.md -->"
+              "## Suitability Gate"
+              "<!-- injected: references/scout-implementation-process.md -->"
+              "## Implementation Process"
+              "# Scout Core"
+            Expected result does NOT contain "Worktree" (wave-agent prefix filtered out)
+            Expected: nil error
+            ```
+
+            **Test case 3: dedup marker already in core → no double-injection**
+            ```
+            Setup:
+              tmpDir/
+                agents/
+                  scout.md  (content includes:
+                    "<!-- injected: references/scout-suitability-gate.md -->\n# Scout Core")
+                references/
+                  scout-suitability-gate.md  (content: "## Suitability Gate")
+            Expected: "scout-suitability-gate.md" content appears only ONCE in result
+            (the already-injected file is skipped)
+            ```
+
+            **Test case 4: empty references/ dir with no matching files → returns core only**
+            ```
+            Setup:
+              tmpDir/
+                agents/
+                  scout.md  (content: "# Scout Core")
+                references/
+                  (empty or only non-matching files like wave-agent-*.md)
+            Expected: result == "# Scout Core", nil
+            ```
+
+            **Test case 5: core file missing → returns error**
+            ```
+            Setup: promptPath points to a non-existent file
+            Expected: error is non-nil
+            ```
+
+            ## Verification gate
+
+            After implementing, run:
+            ```bash
+            cd /Users/dayna.blackwell/code/scout-and-wave-go
+            go build ./...
+            go vet ./...
+            go test ./pkg/engine/... -run TestLoadTypePromptWithRefs -v
+            ```
+
+            All 5 test cases must pass. The build must succeed.
+
+            ## Constraints
+
+            - Do NOT add a wave-agent.md load site — wave agent prompts come from
+              the IMPL brief, not a type prompt file (key finding from scouting)
+            - Do NOT modify prepare.go, run_critic_cmd.go, or any other file
+            - The function must be exported (capital L) so Agent B's wave 2 work
+              can import and use it from cmd/sawtools/run_critic_cmd.go
+            - Preserve the fallback behavior in RunPlanner and RunScaffold
+              (these had soft fallbacks; maintain that graceful degradation)
+            - RunScout has no fallback (hard failure on missing file) — maintain that
+            - The `os` import is already present in runner.go; verify `strings`,
+              `path/filepath` are already imported (they are — check imports at top)
+            - Use `slog.Default().Warn(...)` for non-fatal reference file read errors
+              (slog is already imported in runner.go)
+          files:
+            - pkg/engine/runner.go
+            - pkg/engine/runner_test.go
+      base_commit: 5283c0a1a6a0de33d9f596b9dfaaa8909b3c76e3
+    - number: 2
+      agents:
+        - id: B
+          task: |
+            ## Context
+
+            Agent A (wave 1) has implemented `LoadTypePromptWithRefs` in
+            `pkg/engine/runner.go`. Your job is to replace the `os.ReadFile`
+            call in `cmd/sawtools/run_critic_cmd.go` with this helper.
+
+            The critic cmd is the only load site outside `pkg/engine`. It
+            currently uses:
+            ```go
+            criticMdPath := filepath.Join(sawRepo, "implementations", "claude-code", "prompts", "agents", "critic-agent.md")
+            criticMdBytes, err := os.ReadFile(criticMdPath)
+            if err != nil {
+                criticMdBytes = []byte("You are a Critic Agent. ...")
+            }
+            ```
+
+            Note: the critic path (`implementations/claude-code/prompts/agents/critic-agent.md`)
+            is ALREADY CORRECT — no path bug to fix here. Your only job is to
+            replace the os.ReadFile with the helper and add the engine import.
+
+            ## What to implement
+
+            ### 1. Add import for pkg/engine
+
+            In `cmd/sawtools/run_critic_cmd.go`, add the engine package import:
+            ```go
+            "github.com/blackwell-systems/scout-and-wave-go/pkg/engine"
+            ```
+
+            Add this to the existing import block alongside the other
+            `github.com/blackwell-systems/...` imports.
+
+            ### 2. Replace os.ReadFile with LoadTypePromptWithRefs (~line 115)
+
+            Find the critic-agent.md loading block (around line 114-120):
+            ```go
+            // Load critic-agent.md prompt
+            criticMdPath := filepath.Join(sawRepo, "implementations", "claude-code", "prompts", "agents", "critic-agent.md")
+            criticMdBytes, err := os.ReadFile(criticMdPath)
+            if err != nil {
+                // Fallback prompt if the file doesn't exist yet
+                criticMdBytes = []byte("You are a Critic Agent. Review every agent brief in the IMPL doc against the actual codebase. Verify file_existence, symbol_accuracy, pattern_accuracy, interface_consistency, import_chains, and side_effect_completeness. Write the result using: sawtools set-critic-review <impl-path> --verdict <PASS|ISSUES> --summary <text> --issue-count <N> --agent-reviews <JSON>")
+            }
+            ```
+
+            Replace with:
+            ```go
+            // Load critic-agent.md prompt with reference injection
+            criticMdPath := filepath.Join(sawRepo, "implementations", "claude-code", "prompts", "agents", "critic-agent.md")
+            criticMdContent, err := engine.LoadTypePromptWithRefs(criticMdPath)
+            if err != nil {
+                // Fallback prompt if the file doesn't exist yet
+                criticMdContent = "You are a Critic Agent. Review every agent brief in the IMPL doc against the actual codebase. Verify file_existence, symbol_accuracy, pattern_accuracy, interface_consistency, import_chains, and side_effect_completeness. Write the result using: sawtools set-critic-review <impl-path> --verdict <PASS|ISSUES> --summary <text> --issue-count <N> --agent-reviews <JSON>"
+            }
+            ```
+
+            ### 3. Update uses of criticMdBytes → criticMdContent
+
+            After the loading block, find where `criticMdBytes` is used to build
+            the prompt (around line 128):
+            ```go
+            prompt := fmt.Sprintf("%s\n\n## IMPL Doc Path\n%s\n\n## Repository Root(s)\n%s",
+                string(criticMdBytes), implPath, repoRootsSection)
+            ```
+
+            Replace with:
+            ```go
+            prompt := fmt.Sprintf("%s\n\n## IMPL Doc Path\n%s\n\n## Repository Root(s)\n%s",
+                criticMdContent, implPath, repoRootsSection)
+            ```
+
+            ### 4. Remove unused `os` import if applicable
+
+            Check whether `os` is still used elsewhere in `run_critic_cmd.go`
+            after removing the `os.ReadFile` call. Look for other `os.` usages
+            in the file. If `os` is no longer used, remove it from the import block.
+            If it is still used elsewhere (e.g., `os.UserHomeDir()`, `os.Getenv()`),
+            keep it.
+
+            ## Verification gate
+
+            After implementing, run:
+            ```bash
+            cd /Users/dayna.blackwell/code/scout-and-wave-go
+            go build ./...
+            go vet ./...
+            go test ./cmd/sawtools/... 2>/dev/null || go test ./pkg/engine/... -run TestLoadTypePromptWithRefs -v
+            ```
+
+            The build must succeed with no import errors or type mismatches.
+
+            ## Constraints
+
+            - Only modify `cmd/sawtools/run_critic_cmd.go`
+            - Do NOT change any other sawtools command files
+            - Preserve the fallback string exactly as-is (content unchanged)
+            - The `criticMdContent` variable is now `string` type (not `[]byte`);
+              remove `string(criticMdContent)` cast if you accidentally add it
+          files:
+            - cmd/sawtools/run_critic_cmd.go
+          dependencies:
+            - A
+      base_commit: 89ec5e114d7fbd56a951f239d6615978784cfd8a
+quality_gates:
+    level: standard
+    gates:
+        - type: build
+          command: go build ./...
+          required: true
+        - type: lint
+          command: go vet ./...
+          required: true
+        - type: test
+          command: go test ./pkg/engine/... -run TestLoadTypePromptWithRefs
+          required: true
+completion_reports:
+    A:
+        status: complete
+        branch: saw/engine-reference-injection/wave1-agent-A
+        commit: 8ed7e37
+        files_changed:
+            - pkg/engine/runner.go
+            - pkg/engine/runner_test.go
+        tests_added:
+            - TestLoadTypePromptWithRefs/no_references_dir_returns_core_only
+            - TestLoadTypePromptWithRefs/matching_reference_files_are_prepended_with_dedup_markers
+            - TestLoadTypePromptWithRefs/dedup_marker_already_in_core_skips_injection
+            - TestLoadTypePromptWithRefs/empty_references_dir_returns_core_only
+            - TestLoadTypePromptWithRefs/missing_core_file_returns_error
+        verification: PASS
+    B:
+        status: complete
+        branch: saw/engine-reference-injection/wave2-agent-B
+        commit: ca2783f
+        files_changed:
+            - cmd/sawtools/run_critic_cmd.go
+        verification: PASS
+pre_mortem:
+    overall_risk: low
+    rows:
+        - scenario: Agent A introduces a duplicate loggerFrom or package-level helper name
+          likelihood: low
+          impact: medium
+          mitigation: |
+            runner.go already has `loggerFrom` defined at the top. Agent A must
+            use a different name for any new private helpers. The exported function
+            is `LoadTypePromptWithRefs` (no conflict). Brief explicitly warns not
+            to redeclare loggerFrom.
+        - scenario: filepath.Glob returns non-alphabetical ordering on some OS
+          likelihood: low
+          impact: low
+          mitigation: |
+            filepath.Glob returns results in lexicographical order by spec (Go docs).
+            No explicit sort needed. Tests will verify deterministic ordering.
+        - scenario: scoutMdBytes variable rename breaks usage in runScoutStructured path
+          likelihood: medium
+          impact: high
+          mitigation: |
+            Agent A brief explicitly says "grep for scoutMdBytes in runner.go to
+            find ALL occurrences". The variable is renamed to scoutMdContent (string
+            not []byte) and all string() casts must be removed. There may be uses
+            in the runScoutStructured and runScoutStructuredBedrock paths. The
+            verification gate (go build) will catch any missed rename.
+        - scenario: pkg/engine import in run_critic_cmd.go creates a build cycle
+          likelihood: low
+          impact: high
+          mitigation: |
+            Scouting verified pkg/engine does not import cmd/sawtools. The import
+            graph is cmd/sawtools → pkg/engine (one-way). No cycle exists.
+        - scenario: os import removal in run_critic_cmd.go breaks compilation
+          likelihood: medium
+          impact: medium
+          mitigation: |
+            Agent B brief explicitly says to check whether os is still used elsewhere
+            in the file (os.UserHomeDir, os.Getenv etc.) before removing. The brief
+            instructs to keep os if still needed, remove only if unused.
+        - scenario: references/ directory not yet populated (extraction IMPLs pending)
+          likelihood: high
+          impact: low
+          mitigation: |
+            The helper is explicitly designed to gracefully skip when references/
+            is empty or missing. When no reference files match the prefix pattern,
+            the function returns core content only. This is the expected behavior
+            until the extraction IMPLs execute. No regression.
+critic_report:
+    verdict: PASS
+    agent_reviews:
+        A:
+            agent_id: A
+            verdict: PASS
+        B:
+            agent_id: B
+            verdict: PASS
+    summary: 'All agent briefs verified against the codebase. Agent A''s claims about runner.go are accurate: the buggy scout.md path (line 76, missing ''agents/'' subdir), the buggy planner.md path (line 179, ''agents/planner.md'' relative to sawRepo root), and the RunScaffold load site (~line 550) all exist exactly as described. The LoadTypePromptWithRefs symbol does not yet exist (fresh feature, action: new via modify to runner.go), which is expected. Agent B''s claims about run_critic_cmd.go are accurate: the os.ReadFile call for critic-agent.md (line 116), the criticMdBytes usage (line 129 in string() cast), and the correct existing path are all verified. The module path ''github.com/blackwell-systems/scout-and-wave-go'' is confirmed in go.mod. extractBriefsAndInitJournals exists in prepare.go confirming the key finding that wave agent prompts come from the IMPL brief. All imports claimed present in runner.go (os, path/filepath, strings, log/slog) are confirmed. The references/ directory does not yet exist in the SAW repo, consistent with the graceful-skip design requirement. No errors found.'
+    reviewed_at: "2026-03-25T23:44:44Z"
+    issue_count: 0
+state: COMPLETE

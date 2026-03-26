@@ -1,0 +1,618 @@
+completion_date: "2026-03-25"
+title: Cross-repo IMPL support for sawtools create-program
+feature_slug: create-program-cross-repo
+verdict: SUITABLE
+suitability_assessment: |
+    The feature touches 3 clearly separable files with disjoint ownership:
+    1. pkg/protocol/program_conflict.go — resolveIMPLPath needs path-vs-slug detection
+    2. pkg/protocol/program_generator.go — GenerateProgramOpts.ImplSlugs becomes ImplRefs (or the
+       function must normalize absolute paths to slugs for tier key/slug derivation), plus
+       ProgramIMPL gets an optional AbsPath field for cross-repo identification
+    3. cmd/sawtools/create_program_cmd.go — CLI parsing of --from-impls and routing to the updated API
+
+    Tests live in sibling _test.go files and are owned by the same agents as the source files,
+    so test files and implementation files are co-owned (no conflict).
+
+    All cross-agent interfaces can be defined before implementation starts (resolveIMPLPathOrAbs
+    signature, updated GenerateProgramOpts, updated ProgramIMPL struct). No investigation-first
+    work is required; the bug is fully understood from code reading.
+
+    Estimated times:
+    - Scout phase: ~10 min
+    - Agent execution: ~2 agents x ~15 min avg = ~30 min (parallel wave 1)
+    - Merge and verification: ~5 min
+    Total SAW time: ~15 min (parallel)
+    Sequential baseline: ~35 min
+    Time savings: ~20 min (57% faster)
+    Recommendation: Clear speedup. Proceed.
+
+    Implementation notes:
+    - resolveIMPLPath in program_conflict.go is the CANONICAL location for path resolution.
+      All callers (program_generator.go, program_tier_prepare.go, CheckIMPLConflicts) call through
+      this single function. The fix only needs to happen in one place.
+    - The create-program cmd passes fromImpls directly as ImplSlugs to GenerateProgramOpts.
+      The cmd needs to be updated to pre-classify each entry and the opts struct needs to
+      accommodate paths in addition to slugs.
+    - ProgramIMPL.Slug is used as the map key in TierSuggestion and as the label in conflict
+      reporting. For cross-repo IMPLs supplied by path, the slug must still be extracted from
+      the loaded IMPL doc (implDoc.FeatureSlug), not derived from the path string. The absolute
+      path is stored in a separate field (AbsPath) so the orchestrator can locate the file.
+    - list-impls is NOT in the call path for create-program's conflict check. CheckIMPLConflicts
+      receives a []string of slugs and calls resolveIMPLPath internally. The fix to
+      resolveIMPLPath covers the conflict-check path automatically — no list-impls changes needed.
+    - check-impl-conflicts cmd in create_program_cmd.go also calls CheckIMPLConflicts with raw
+      slugs; it should also be updated to accept absolute paths via its --impls flag (same
+      path-vs-slug classification logic).
+test_command: go test ./...
+lint_command: go vet ./...
+file_ownership:
+    - file: pkg/protocol/program_conflict.go
+      agent: A
+      wave: 1
+      action: modify
+    - file: pkg/protocol/program_conflict_test.go
+      agent: A
+      wave: 1
+      action: modify
+    - file: pkg/protocol/program_generator.go
+      agent: B
+      wave: 1
+      action: modify
+    - file: pkg/protocol/program_types.go
+      agent: B
+      wave: 1
+      action: modify
+    - file: pkg/protocol/program_generator_test.go
+      agent: B
+      wave: 1
+      action: modify
+    - file: cmd/sawtools/create_program_cmd.go
+      agent: C
+      wave: 2
+      action: modify
+      depends_on:
+        - A
+        - B
+    - file: cmd/sawtools/create_program_cmd_test.go
+      agent: C
+      wave: 2
+      action: modify
+      depends_on:
+        - A
+        - B
+interface_contracts:
+    - name: resolveIMPLPathOrAbs
+      description: |-
+        Resolves a single IMPL reference to an absolute file path.
+        If ref starts with "/" or contains a filepath separator (os.PathSeparator),
+        it is treated as an absolute or relative path and returned after existence check.
+        Otherwise it is treated as a slug and resolved via the existing slug lookup
+        (docs/IMPL/ and docs/IMPL/complete/).
+      definition: |
+        // resolveIMPLPathOrAbs resolves a single IMPL reference (slug or absolute path)
+        // to an absolute file path.
+        //
+        // Path detection rules:
+        //   - starts with "/" → absolute path; verify exists, return as-is
+        //   - contains os.PathSeparator → relative path; join with repoPath, verify exists
+        //   - otherwise → slug; check docs/IMPL/IMPL-<slug>.yaml and docs/IMPL/complete/IMPL-<slug>.yaml
+        func resolveIMPLPathOrAbs(repoPath, ref string) (string, error)
+      location: pkg/protocol/program_conflict.go
+    - name: ProgramIMPL.AbsPath
+      description: |-
+        Optional absolute path field on ProgramIMPL. Set when the IMPL was supplied
+        by path rather than slug, so the orchestrator can locate the file across repos.
+        Empty for same-repo IMPLs supplied by slug.
+      definition: |
+        // In ProgramIMPL struct (pkg/protocol/program_types.go):
+        AbsPath string `yaml:"abs_path,omitempty" json:"abs_path,omitempty"`
+      location: pkg/protocol/program_types.go
+    - name: GenerateProgramOpts.ImplRefs
+      description: |-
+        Replaces ImplSlugs in GenerateProgramOpts. Accepts both slugs and absolute
+        paths. The generator internally resolves each ref to a path, loads the IMPL
+        doc, and extracts the slug from implDoc.FeatureSlug for use as the canonical
+        key in TierSuggestion maps and conflict reporting. The resolved absolute path
+        is stored in ProgramIMPL.AbsPath if the ref was a path (not a slug).
+      definition: |
+        type GenerateProgramOpts struct {
+            ImplRefs    []string // IMPL slugs or absolute paths to include
+            RepoPath    string   // repository root (used for slug resolution only)
+            ProgramSlug string   // slug for the generated PROGRAM (auto-derived if empty)
+            Title       string   // title for the generated PROGRAM (auto-derived if empty)
+        }
+      location: pkg/protocol/program_generator.go
+    - name: CheckIMPLConflictsRefs
+      description: |-
+        Updated signature for CheckIMPLConflicts that accepts refs (slugs or absolute
+        paths) in addition to pure slugs. Internally calls resolveIMPLPathOrAbs for
+        each entry. This is a backward-compatible change: existing callers passing
+        pure slugs continue to work unchanged.
+      definition: |
+        // CheckIMPLConflicts loads IMPL docs and performs cross-IMPL disjointness analysis.
+        // implRefs: list of IMPL slugs or absolute paths to analyze
+        // repoPath: repository root for resolving slug-based refs
+        // (Signature unchanged — parameter renamed from implSlugs to implRefs in docs only;
+        // the []string type is compatible. Internal call changes from resolveIMPLPath to
+        // resolveIMPLPathOrAbs.)
+        func CheckIMPLConflicts(implRefs []string, repoPath string) (*ConflictReport, error)
+      location: pkg/protocol/program_conflict.go
+waves:
+    - number: 1
+      agents:
+        - id: A
+          task: |
+            ## Context
+            You are implementing cross-repo IMPL path support in the protocol layer.
+            The bug: resolveIMPLPath in pkg/protocol/program_conflict.go only handles
+            slug-based lookup. When an absolute path like
+            "/Users/.../docs/IMPL/IMPL-engine-reference-injection.yaml" is passed,
+            it constructs a broken path because it blindly prepends the slug-resolution
+            prefix.
+
+            ## Files to modify
+            - pkg/protocol/program_conflict.go
+            - pkg/protocol/program_conflict_test.go
+
+            ## What to implement
+
+            ### 1. Add resolveIMPLPathOrAbs (new function in program_conflict.go)
+
+            Add a new function `resolveIMPLPathOrAbs(repoPath, ref string) (string, error)` with
+            this detection logic:
+            - If `strings.HasPrefix(ref, "/")` → treat as absolute path; call `os.Stat(ref)`;
+              if the file exists return ref, else return an error like
+              `"IMPL path %q does not exist"`.
+            - Else if `strings.ContainsRune(ref, os.PathSeparator)` → treat as relative path;
+              join with repoPath; call os.Stat; if exists return joined path, else error.
+            - Else → treat as slug; call the existing `resolveIMPLPath(repoPath, ref)` and
+              return its result.
+
+            Keep the existing `resolveIMPLPath` function unchanged — it is used directly by
+            program_tier_prepare.go which only receives slugs from the PROGRAM manifest's
+            tier.Impls list.
+
+            ### 2. Update CheckIMPLConflicts to use resolveIMPLPathOrAbs
+
+            In CheckIMPLConflicts, change the call on line ~39 from:
+            ```go
+            implPath, err := resolveIMPLPath(repoPath, slug)
+            ```
+            to:
+            ```go
+            implPath, err := resolveIMPLPathOrAbs(repoPath, slug)
+            ```
+            The variable name `slug` in the loop body can remain (it's just a loop variable name);
+            the semantics change is in the resolver function.
+
+            Also update the error message from `"cannot resolve IMPL %q"` to
+            `"cannot resolve IMPL ref %q"` to reflect that refs are no longer only slugs.
+
+            ### 3. Tests in program_conflict_test.go
+
+            Add test cases for `resolveIMPLPathOrAbs`:
+
+            **Test A — absolute path that exists:**
+            Create a temp dir, write a dummy file, pass its absolute path. Expect the
+            absolute path returned without modification.
+
+            **Test B — absolute path that does not exist:**
+            Pass `/nonexistent/path/IMPL-missing.yaml`. Expect an error containing
+            "does not exist".
+
+            **Test C — slug still works:**
+            Create a temp repo with docs/IMPL/IMPL-my-slug.yaml. Pass "my-slug" as ref.
+            Expect the resolved path returned.
+
+            **Test D — CheckIMPLConflicts with absolute paths:**
+            Create two real IMPL files in separate temp dirs (simulating cross-repo scenario).
+            Pass their absolute paths to CheckIMPLConflicts. Expect no error, conflict report
+            returned with correct slug values (extracted from loaded IMPL docs, NOT from the
+            path strings).
+
+            Use the existing `writeGeneratorTestIMPL` helper (in program_generator_test.go)
+            as a reference for IMPL file construction — write a minimal IMPL YAML with
+            feature_slug, file_ownership, and waves fields.
+
+            ### 4. TierSuggestion keying — coordination with Agent B
+
+            **CRITICAL (high-likelihood/medium-impact):** When you update `CheckIMPLConflicts`
+            to call `resolveIMPLPathOrAbs`, you must ALSO change how `TierSuggestion` map
+            keys are populated. Currently the map is keyed by the raw input slug/ref string.
+            After your change, the key must be `implDoc.FeatureSlug` (the slug extracted
+            from the loaded IMPL doc), NOT the raw ref.
+
+            This is required because `GenerateProgramFromIMPLs` (Agent B's file) looks up
+            tiers via `conflictReport.TierSuggestion[slug]` where `slug` is `implDoc.FeatureSlug`.
+            If you key by raw ref and Agent B keys by feature slug, all path-based IMPLs
+            silently get tier 0 (the Go map zero value), collapsing them all into tier 1.
+
+            Agent B's brief section 4 documents this coordination. Read it before implementing.
+
+            ## Verification gate
+            ```
+            go build ./...
+            go vet ./pkg/protocol/...
+            go test ./pkg/protocol/... -run TestResolveIMPLPathOrAbs -v
+            go test ./pkg/protocol/... -run TestCheckIMPLConflicts -v
+            go test ./pkg/protocol/...
+            ```
+          files:
+            - pkg/protocol/program_conflict.go
+            - pkg/protocol/program_conflict_test.go
+        - id: B
+          task: |
+            ## Context
+            You are updating the PROGRAM generator data types and logic to support
+            cross-repo IMPLs supplied by absolute path.
+
+            The current GenerateProgramOpts.ImplSlugs field only accepts slug strings.
+            The current ProgramIMPL struct has no field to record the absolute path
+            of a cross-repo IMPL.
+
+            ## Files to modify
+            - pkg/protocol/program_generator.go
+            - pkg/protocol/program_types.go
+            - pkg/protocol/program_generator_test.go
+
+            ## What to implement
+
+            ### 1. Add AbsPath field to ProgramIMPL (program_types.go)
+
+            In the ProgramIMPL struct, add:
+            ```go
+            AbsPath string `yaml:"abs_path,omitempty" json:"abs_path,omitempty"`
+            ```
+            Place it after the `Slug` field. This field is only set when the IMPL was
+            supplied by an absolute path (cross-repo case). It is empty for same-repo
+            IMPLs supplied by slug.
+
+            ### 2. Rename ImplSlugs to ImplRefs in GenerateProgramOpts (program_generator.go)
+
+            In `GenerateProgramOpts`:
+            - Rename `ImplSlugs []string` to `ImplRefs []string`
+            - Update the comment from "IMPL slugs to include" to
+              "IMPL slugs or absolute paths to include"
+
+            Update all uses of `opts.ImplSlugs` within GenerateProgramFromIMPLs to
+            `opts.ImplRefs`. There are exactly 6 references in this function:
+            1. `len(opts.ImplSlugs) == 0` guard (line 35)
+            2. `CheckIMPLConflicts(opts.ImplSlugs, ...)` call (line 51)
+            3. `for _, slug := range opts.ImplSlugs {` loop (line 64)
+            4. `len(opts.ImplSlugs) <= 3` slug-derivation check (line 138)
+            5. `strings.Join(opts.ImplSlugs, "-and-")` (line 139)
+            6. `opts.ImplSlugs[0]` in the else branch (line 141)
+
+            NOTE: For items 4 and 5 (auto-slug derivation), the logic currently uses
+            ImplSlugs values as the slug components. After the rename, you need to
+            handle the case where a ref is a path (not a slug) — derive the slug
+            component from the loaded implDoc.FeatureSlug instead of from the ref string.
+            The easiest approach: build a `slugList []string` from the loaded impls
+            (collecting `impl.Slug` which is set from `implDoc.FeatureSlug`) and use
+            that for auto-derivation instead of iterating `opts.ImplRefs` directly.
+
+            ### 3. Update the IMPL loading loop (program_generator.go)
+
+            In the loop `for _, slug := range opts.ImplSlugs { ... }`, after renaming
+            to ImplRefs:
+            - Rename the loop variable from `slug` to `ref` to clarify it may be a path.
+            - Change the path resolution call from `resolveIMPLPath(opts.RepoPath, slug)`
+              to `resolveIMPLPathOrAbs(opts.RepoPath, ref)`.
+              (`resolveIMPLPathOrAbs` is implemented by Agent A in program_conflict.go.)
+            - The slug for this IMPL entry must come from the loaded doc: use
+              `implDoc.FeatureSlug` (already loaded as `implDoc`). The existing code
+              already uses `implDoc.Title` and iterates `implDoc.Waves` — add:
+              ```go
+              slug := implDoc.FeatureSlug
+              if slug == "" {
+                  slug = filepath.Base(implPath) // fallback for malformed docs
+              }
+              ```
+            - When building the `ProgramIMPL` entry, set `AbsPath` if the ref looks
+              like a path (starts with "/" or contains filepath.Separator):
+              ```go
+              var absPath string
+              if strings.HasPrefix(ref, "/") || strings.ContainsRune(ref, os.PathSeparator) {
+                  absPath = implPath
+              }
+              ```
+              Then in the ProgramIMPL literal: `AbsPath: absPath`.
+
+            - The tier lookup uses `conflictReport.TierSuggestion[slug]` — this still
+              works because CheckIMPLConflicts (updated by Agent A) will also extract
+              slugs from loaded docs when building TierSuggestion.
+
+            ### 4. Update TierSuggestion key in CheckIMPLConflicts (if needed)
+
+            IMPORTANT: The TierSuggestion map in ConflictReport is keyed by the input
+            ref strings (currently slugs). After the change, when refs are absolute
+            paths, the keys would be absolute paths. But in GenerateProgramFromIMPLs
+            step where we look up `conflictReport.TierSuggestion[slug]`, we now use
+            the extracted `slug` (implDoc.FeatureSlug), not the original ref.
+
+            This means the TierSuggestion map must ALSO be keyed by feature slugs, not
+            by raw refs. Coordinate with Agent A: the TierSuggestion map in
+            CheckIMPLConflicts should extract the slug from each loaded IMPL doc
+            (implDoc.FeatureSlug) and use that as the key, not the raw ref string.
+
+            Document this in a comment in program_generator.go near the TierSuggestion
+            lookup to make the contract explicit:
+            ```go
+            // TierSuggestion keys are IMPL feature slugs (extracted from loaded docs),
+            // not raw refs. This ensures compatibility with both slug and path refs.
+            tier := 1
+            if t, ok := conflictReport.TierSuggestion[slug]; ok {
+                tier = t
+            }
+            ```
+
+            ### 5. Tests in program_generator_test.go
+
+            Add one new test:
+
+            **TestGenerateProgramFromIMPLs_AbsolutePaths:**
+            - Create two temp directories to simulate two separate repos.
+            - Write a minimal IMPL YAML to each (use same helper pattern as existing tests).
+            - Call GenerateProgramFromIMPLs with ImplRefs set to the two absolute paths
+              (not slugs).
+            - RepoPath must be a non-empty temp dir (use t.TempDir()). The existing
+              guard at lines 42-48 of program_generator.go returns a fatal error when
+              RepoPath == "" — do not remove or conditionalize this guard. The PROGRAM
+              manifest output path will go into the temp dir; assert against that path.
+            - Assert IsSuccess() or IsPartial() (not fatal).
+            - Assert len(d.Manifest.Impls) == 2.
+            - Assert d.Manifest.Impls[0].AbsPath != "" (cross-repo path is recorded).
+            - Assert d.Manifest.Impls[0].Slug == the feature_slug from the written IMPL.
+
+            ## Verification gate
+            ```
+            go build ./...
+            go vet ./pkg/protocol/...
+            go test ./pkg/protocol/... -run TestGenerateProgram -v
+            go test ./pkg/protocol/...
+            ```
+          files:
+            - pkg/protocol/program_generator.go
+            - pkg/protocol/program_types.go
+            - pkg/protocol/program_generator_test.go
+      base_commit: 5283c0a1a6a0de33d9f596b9dfaaa8909b3c76e3
+    - number: 2
+      agents:
+        - id: C
+          task: |
+            ## Context
+            You are updating the CLI command layer to expose the cross-repo path support
+            implemented in Wave 1. Agents A and B updated the protocol layer so that:
+            - resolveIMPLPathOrAbs in program_conflict.go handles both slugs and absolute paths
+            - GenerateProgramOpts.ImplRefs (was ImplSlugs) accepts slugs or absolute paths
+            - ProgramIMPL.AbsPath records the resolved path for cross-repo entries
+            - CheckIMPLConflicts accepts refs (slugs or paths) transparently
+
+            ## Files to modify
+            - cmd/sawtools/create_program_cmd.go
+            - cmd/sawtools/create_program_cmd_test.go
+
+            ## What to implement
+
+            ### 1. Update newCreateProgramCmd (create_program_cmd.go)
+
+            In the `RunE` closure of `newCreateProgramCmd`:
+            - Change the field name from `ImplSlugs` to `ImplRefs` in the
+              `GenerateProgramOpts` literal (line ~42):
+              ```go
+              res := protocol.GenerateProgramFromIMPLs(protocol.GenerateProgramOpts{
+                  ImplRefs:    fromImpls,   // was: ImplSlugs
+                  RepoPath:    repoDir,
+                  ProgramSlug: slug,
+                  Title:       title,
+              })
+              ```
+
+            - Update the `--from-impls` flag description from
+              "IMPL slugs to include (required, at least 2)" to
+              "IMPL slugs or absolute paths to include (required, at least 2)".
+
+            - Update the Long description and Examples section to show both usages:
+              ```
+              Examples:
+                # Generate a PROGRAM from two IMPL slugs
+                sawtools create-program --from-impls feature-a --from-impls feature-b
+
+                # Generate a PROGRAM using absolute paths (cross-repo)
+                sawtools create-program \
+                  --from-impls /path/to/repo1/docs/IMPL/IMPL-feature-a.yaml \
+                  --from-impls /path/to/repo2/docs/IMPL/IMPL-feature-b.yaml
+
+                # Mix slugs and absolute paths
+                sawtools create-program \
+                  --from-impls feature-a \
+                  --from-impls /path/to/other-repo/docs/IMPL/IMPL-feature-b.yaml \
+                  --slug my-program --title "My Program"
+              ```
+
+            ### 2. Update newCheckIMPLConflictsCmd (create_program_cmd.go)
+
+            The `check-impl-conflicts` command also calls `CheckIMPLConflicts` with raw
+            slugs from `--impls`. Update its flag description and Long/Examples section
+            similarly to accept absolute paths. No code change is needed in RunE because
+            CheckIMPLConflicts now handles paths transparently — only documentation
+            update is required.
+
+            Update the `--impls` flag description from:
+            "IMPL slugs to check for conflicts (required)" to
+            "IMPL slugs or absolute paths to check for conflicts (required)".
+
+            ### 3. Tests in create_program_cmd_test.go
+
+            Add two new test cases:
+
+            **TestCreateProgramCmd_AbsolutePaths:**
+            - Create two temp directories.
+            - Write a minimal IMPL YAML file in each (do not use docs/IMPL structure —
+              place the files at absolute paths directly, e.g.,
+              `filepath.Join(dir1, "IMPL-cross-a.yaml")` and
+              `filepath.Join(dir2, "IMPL-cross-b.yaml")`).
+              Each file needs at minimum: feature_slug, title, state: reviewed,
+              file_ownership (non-overlapping), and a minimal waves block.
+            - Set up the command with:
+              ```go
+              cmd.SetArgs([]string{
+                  "create-program",
+                  "--from-impls", absPath1,
+                  "--from-impls", absPath2,
+                  "--repo-dir", t.TempDir(), // a valid but otherwise unused repo dir
+              })
+              ```
+            - Capture stdout and assert no error returned.
+            - Unmarshal the JSON output and assert ManifestPath is non-empty and that
+              the manifest has 2 impls.
+
+            **TestCreateProgramCmd_MixedSlugAndPath:**
+            - Create one IMPL via the normal slug structure in a temp repo
+              (docs/IMPL/IMPL-slug-a.yaml) and one IMPL as a standalone absolute path.
+            - Pass one as a slug and one as an absolute path to --from-impls.
+            - Assert success and 2 impls in the result.
+
+            Use the existing `writeTestIMPLForConflicts` helper for slug-based IMPLs.
+            For path-based IMPLs, write the YAML manually:
+            ```go
+            content := "feature_slug: cross-a\ntitle: Cross A\nstate: reviewed\n" +
+                "file_ownership:\n  - file: pkg/cross-a/main.go\n    agent: A\n" +
+                "waves:\n  - number: 1\n    agents:\n      - id: A\n        task: do it\n"
+            os.WriteFile(absPath, []byte(content), 0644)
+            ```
+
+            ## Verification gate
+            ```
+            go build ./cmd/sawtools/...
+            go vet ./cmd/sawtools/...
+            go test ./cmd/sawtools/... -run TestCreateProgram -v
+            go test ./cmd/sawtools/... -run TestCheckIMPLConflicts -v
+            go test ./cmd/sawtools/...
+            go test ./...
+            ```
+          files:
+            - cmd/sawtools/create_program_cmd.go
+            - cmd/sawtools/create_program_cmd_test.go
+          dependencies:
+            - A
+            - B
+      base_commit: 891af3db3b1839dda1d0be8e6b78ac7721507807
+quality_gates:
+    level: standard
+    gates:
+        - type: build
+          command: go build ./...
+          required: true
+        - type: lint
+          command: go vet ./...
+          required: true
+        - type: test
+          command: go test ./...
+          required: true
+completion_reports:
+    A:
+        status: complete
+        branch: saw/create-program-cross-repo/wave1-agent-A
+        commit: fe47b88
+        files_changed:
+            - pkg/protocol/program_conflict.go
+            - pkg/protocol/program_conflict_test.go
+        tests_added:
+            - TestResolveIMPLPathOrAbs_AbsoluteExists
+            - TestResolveIMPLPathOrAbs_AbsoluteNotExists
+            - TestResolveIMPLPathOrAbs_SlugStillWorks
+            - TestCheckIMPLConflicts_AbsolutePaths
+        verification: PASS
+    B:
+        status: complete
+        branch: saw/create-program-cross-repo/wave1-agent-B
+        commit: 328ca3a
+        files_changed:
+            - pkg/protocol/program_generator.go
+            - pkg/protocol/program_types.go
+            - pkg/protocol/program_generator_test.go
+        tests_added:
+            - TestGenerateProgramFromIMPLs_AbsolutePaths
+        verification: 'PASS: all 6 TestGenerateProgram tests pass; go vet clean. Out-of-scope: cmd/sawtools/create_program_cmd.go uses ImplSlugs (renamed to ImplRefs) - needs update by Integration Agent.'
+    C:
+        status: complete
+        branch: saw/create-program-cross-repo/wave2-agent-C
+        commit: 5a3f8a4
+        files_changed:
+            - cmd/sawtools/create_program_cmd.go
+            - cmd/sawtools/create_program_cmd_test.go
+        tests_added:
+            - TestCreateProgramCmd_AbsolutePaths
+            - TestCreateProgramCmd_MixedSlugAndPath
+        verification: PASS
+pre_mortem:
+    overall_risk: low
+    rows:
+        - scenario: |-
+            TierSuggestion map key mismatch. CheckIMPLConflicts currently keys TierSuggestion
+            by the raw input ref string (slug). After the change, when refs are absolute paths,
+            the key would be the path string. But GenerateProgramFromIMPLs looks up
+            TierSuggestion[slug] where slug is now implDoc.FeatureSlug. If CheckIMPLConflicts
+            still keys by raw ref, the tier lookup returns 0 (default) for every path-based IMPL
+            and all IMPLs end up in tier 1, ignoring conflict detection.
+          likelihood: high
+          impact: medium
+          mitigation: |-
+            Agent A (program_conflict.go) must key TierSuggestion by implDoc.FeatureSlug, not
+            by the raw ref. Agent B's brief explicitly coordinates this. The test
+            TestGenerateProgramFromIMPLs_AbsolutePaths with overlapping files will catch this
+            regression if the tier assignment comes out wrong.
+        - scenario: |-
+            filepath.Separator portability. On Windows, paths use backslash as separator.
+            The path-detection logic using strings.ContainsRune(ref, os.PathSeparator) handles
+            this but the HasPrefix("/") check is Unix-only. Windows absolute paths start with
+            a drive letter (C:\...).
+          likelihood: low
+          impact: low
+          mitigation: |-
+            The codebase targets Unix (macOS/Linux) based on project conventions in CONTEXT.md.
+            Use filepath.IsAbs(ref) instead of strings.HasPrefix(ref, "/") for the
+            absolute-path detection — this handles both Unix and Windows correctly and is
+            semantically clearer. Agents should use filepath.IsAbs in their implementation
+            rather than the HasPrefix heuristic described in the briefs.
+        - scenario: |-
+            Auto-slug derivation from path refs. When 2-3 ImplRefs are paths, the auto-slug
+            code currently uses strings.Join(opts.ImplRefs, "-and-") which would produce a
+            slug like "auto-program-/Users/dayna/.../IMPL-foo.yaml-and-..." — an invalid slug.
+          likelihood: high
+          impact: medium
+          mitigation: |-
+            Agent B's brief covers this: build a slugList from loaded implDoc.FeatureSlug values
+            and use that for auto-derivation instead of iterating ImplRefs directly. The test
+            TestGenerateProgramFromIMPLs_AbsolutePaths should assert that the auto-derived slug
+            is a valid short slug string (no slashes, no .yaml extension).
+        - scenario: |-
+            The single-ref guard in GenerateProgramFromIMPLs (len(opts.ImplRefs) == 0) and the
+            2-ref minimum in the CLI command both still work correctly since we're not changing
+            the semantics of the count check.
+          likelihood: low
+          impact: low
+          mitigation: No change needed. Existing validation passes through unchanged.
+critic_report:
+    verdict: PASS
+    agent_reviews:
+        A:
+            agent_id: A
+            verdict: ISSUES
+            issues:
+                - check: side_effect_completeness
+                  severity: warning
+                  description: 'Agent A brief does not instruct updating TierSuggestion keying to use implDoc.FeatureSlug as the map key. Agent B brief section 4 says "Coordinate with Agent A: the TierSuggestion map in CheckIMPLConflicts should extract the slug from each loaded IMPL doc (implDoc.FeatureSlug) and use that as the key, not the raw ref string." This requirement is not present in Agent A owns task. If Agent A updates CheckIMPLConflicts to call resolveIMPLPathOrAbs without also changing TierSuggestion keying, tier lookups in GenerateProgramFromIMPLs will silently return default tier 1 for all path-based IMPLs. The pre_mortem identifies this as high-likelihood/medium-impact.'
+                  file: pkg/protocol/program_conflict.go
+                  symbol: CheckIMPLConflicts
+        B:
+            agent_id: B
+            verdict: PASS
+        C:
+            agent_id: C
+            verdict: PASS
+    summary: 'All three agent briefs verified against the codebase. The previously-filed error in the Agent B brief (test guidance suggesting RepoPath could be empty) has been corrected in the current IMPL doc text, which now explicitly instructs using a non-empty temp dir and warns not to remove the RepoPath guard. Agent A has one advisory warning: the brief does not instruct Agent A to change TierSuggestion keying from raw ref to implDoc.FeatureSlug, even though Agent B''s brief (section 4) says to coordinate this with Agent A. This cross-agent requirement is only documented on the receiving side (Agent B). A careful reading of both briefs together surfaces the requirement, but Agent A may miss it. The pre_mortem also flags this as a high-likelihood/medium-impact risk. No errors remain. All symbols, line numbers, and patterns verified accurately against source files.'
+    reviewed_at: "2026-03-26T00:01:57Z"
+    issue_count: 1
+state: COMPLETE

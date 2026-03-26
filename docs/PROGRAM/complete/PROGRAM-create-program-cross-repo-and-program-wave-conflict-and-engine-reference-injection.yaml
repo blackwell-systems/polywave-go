@@ -1,0 +1,59 @@
+title: Go Engine Enhancements
+program_slug: create-program-cross-repo-and-program-wave-conflict-and-engine-reference-injection
+state: COMPLETE
+completion_date: "2026-03-25"
+created: "2026-03-26T00:07:29Z"
+updated: "2026-03-26T00:07:29Z"
+impls:
+    - slug: create-program-cross-repo
+      title: Cross-repo IMPL support for sawtools create-program
+      tier: 1
+      estimated_agents: 3
+      estimated_waves: 2
+      key_outputs:
+        - resolveIMPLPathOrAbs
+        - ProgramIMPL.AbsPath
+        - GenerateProgramOpts.ImplRefs
+        - CheckIMPLConflictsRefs
+      status: complete
+    - slug: program-wave-conflict
+      title: Wave-level conflict detection and cross-IMPL serialization for create-program
+      tier: 2
+      depends_on:
+        - create-program-cross-repo
+      estimated_agents: 4
+      estimated_waves: 2
+      key_outputs:
+        - WaveConflictReport
+        - CheckIMPLConflictsWaveLevel
+        - ProgramIMPL.SerialWaves
+        - buildWaveFileOwnershipMap
+        - isCrossImplSerialWaveBlocked
+      status: complete
+    - slug: engine-reference-injection
+      title: Engine agent type reference injection — parity with CLI hook layer
+      tier: 1
+      estimated_agents: 2
+      estimated_waves: 2
+      key_outputs:
+        - LoadTypePromptWithRefs
+        - Corrected scout.md path (runner.go)
+        - Corrected planner.md path (runner.go)
+      status: complete
+tiers:
+    - number: 1
+      impls:
+        - create-program-cross-repo
+        - engine-reference-injection
+    - number: 2
+      impls:
+        - program-wave-conflict
+completion:
+    tiers_complete: 1
+    tiers_total: 2
+    impls_complete: 2
+    impls_total: 3
+    total_agents: 9
+    total_waves: 6
+
+SAW:PROGRAM:COMPLETE
