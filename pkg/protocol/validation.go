@@ -17,11 +17,15 @@ var agentIDRegex = regexp.MustCompile(`^[A-Z][2-9]?$`)
 // Must not start or end with a hyphen.
 var featureSlugRegex = regexp.MustCompile(`^[a-z0-9]+(-[a-z0-9]+)*$`)
 
-// Validate runs all I1-I6 invariant checks on an IMPLManifest.
-// Returns a slice of SAWErrors (empty if valid).
-// Multiple violations may be returned together for comprehensive reporting.
-// Note: unknown-key detection requires raw YAML bytes and cannot be performed here.
-// Use ValidateBytes to run both structural validation and unknown-key detection together.
+// Validate runs all I1-I6 invariant checks and supplementary validations on a
+// parsed IMPLManifest. It does not load or save files; pass a pre-loaded manifest.
+//
+// This is the structural validator. It cannot detect unknown YAML keys because
+// those require the raw source bytes. Use ValidateBytes or FullValidate when
+// unknown-key detection is also needed.
+//
+// Called by: FullValidate (full pipeline), ValidateBytes (in-memory shortcut).
+// Do not call directly unless you have already loaded the manifest yourself.
 func Validate(m *IMPLManifest) []result.SAWError {
 	var errs []result.SAWError
 

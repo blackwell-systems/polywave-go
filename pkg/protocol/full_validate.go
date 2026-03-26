@@ -24,8 +24,17 @@ type FullValidateOpts struct {
 }
 
 // FullValidate runs all validation checks on an IMPL manifest file.
-// This is the single entry point for CLI, web, and programmatic validation.
-// When AutoFix is true, correctable issues are fixed in-place before validation.
+// This is the single entry point for CLI (sawtools validate), web API,
+// and programmatic validation when you have a file path.
+//
+// Pipeline (in order):
+//  1. Load(path) — parse YAML manifest
+//  2. If AutoFix: FixGateTypes(m) + Save; StripUnknownKeys + WriteFile
+//  3. Validate(m) — structural/invariant checks
+//  4. ValidateIMPLDoc(path) — E16 typed-block checks
+//
+// Use FullValidate in preference to calling Validate + ValidateIMPLDoc separately,
+// since it handles auto-fix, deduplication, and severity-based filtering.
 func FullValidate(manifestPath string, opts FullValidateOpts) result.Result[FullValidateData] {
 	// Step 1: Load manifest
 	m, err := Load(manifestPath)

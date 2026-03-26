@@ -53,8 +53,16 @@ var invalidAgentIDRe = regexp.MustCompile(`\[([A-Z]1|[A-Z]0|[A-Z][0-9]{2,}|[A-Z]
 
 // ValidateIMPLDoc runs E16 typed-block validation on the IMPL doc at path.
 // It reads the file directly (not via ParseIMPLDoc) to preserve line numbers.
-// Returns nil slice if all blocks are valid or no typed blocks exist.
-// Returns one result.SAWError per violation; multiple errors may be returned.
+//
+// Checks performed:
+//   - E16A: required block presence (impl-file-ownership, impl-dep-graph, impl-wave-structure)
+//   - E16B: structural content within each typed block
+//   - E16C: out-of-band dep graph detection in plain fenced blocks (warn only)
+//   - I2: agent ID format validation across all blocks
+//
+// Called by: FullValidate (after Validate). Does not call Validate itself.
+// Do not call directly unless you specifically need E16 block validation without
+// the full invariant suite.
 func ValidateIMPLDoc(path string) ([]result.SAWError, error) {
 	f, err := os.Open(path)
 	if err != nil {
