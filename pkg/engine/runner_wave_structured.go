@@ -5,17 +5,12 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
-	"sync"
 
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/agent/backend"
 	apiclient "github.com/blackwell-systems/scout-and-wave-go/pkg/agent/backend/api"
 	bedrockbackend "github.com/blackwell-systems/scout-and-wave-go/pkg/agent/backend/bedrock"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
 )
-
-// reportWaveMu serializes concurrent writes to the IMPL doc's completion_reports
-// from wave agents using structured output. Mirrors orchestrator.reportMu.
-var reportWaveMu sync.Mutex
 
 // runWaveAgentStructuredAPI is a seam for tests: constructs the API backend call
 // for structured wave agent execution. Tests replace this var to inject a mock
@@ -103,31 +98,56 @@ func runWaveAgentStructured(ctx context.Context, opts RunWaveOpts, agentSpec pro
 		return nil, fmt.Errorf("runWaveAgentStructured: agent %s: %w", agentSpec.ID, err)
 	}
 
-	// Unmarshal the structured JSON response into CompletionReport.
-	var report protocol.CompletionReport
-	if err := json.Unmarshal([]byte(jsonStr), &report); err != nil {
+	// Unmarshal the structured JSON response into a raw CompletionReport.
+	var rawReport protocol.CompletionReport
+	if err := json.Unmarshal([]byte(jsonStr), &rawReport); err != nil {
 		return nil, fmt.Errorf("runWaveAgentStructured: unmarshal report for agent %s: %w", agentSpec.ID, err)
 	}
 
-	// Validate that the status field is populated; fall back to "complete".
-	if report.Status == "" {
-		report.Status = "complete"
+	// Fall back to "complete" if model omitted status.
+	if rawReport.Status == "" {
+		rawReport.Status = "complete"
 	}
 
-	// Persist the report to the IMPL doc.
-	reportWaveMu.Lock()
-	defer reportWaveMu.Unlock()
+	// Build and validate the report using the canonical builder.
+	// FailureType is now explicitly populated from the JSON (previously missing).
+	builder := protocol.NewCompletionReport(agentSpec.ID).
+		WithStatus(rawReport.Status).
+		WithCommit(rawReport.Commit).
+		WithFiles(rawReport.FilesChanged, rawReport.FilesCreated).
+		WithVerification(rawReport.Verification).
+		WithWorktree(rawReport.Worktree).
+		WithBranch(rawReport.Branch).
+		WithTestsAdded(rawReport.TestsAdded).
+		WithNotes(rawReport.Notes).
+		WithDedupStats(rawReport.DedupStats).
+		WithInterfaceDeviations(rawReport.InterfaceDeviations)
 
-	manifest, loadErr := protocol.Load(opts.IMPLPath)
-	if loadErr != nil {
-		return nil, fmt.Errorf("runWaveAgentStructured: load manifest for agent %s: %w", agentSpec.ID, loadErr)
-	}
-	if setErr := protocol.SetCompletionReport(manifest, agentSpec.ID, report); setErr != nil {
-		return nil, fmt.Errorf("runWaveAgentStructured: set completion report for agent %s: %w", agentSpec.ID, setErr)
-	}
-	if saveErr := protocol.Save(manifest, opts.IMPLPath); saveErr != nil {
-		return nil, fmt.Errorf("runWaveAgentStructured: save manifest for agent %s: %w", agentSpec.ID, saveErr)
+	if rawReport.FailureType != "" {
+		builder = builder.WithFailureType(rawReport.FailureType)
 	}
 
-	return &report, nil
+	// Persist using the consolidated package-level lock.
+	if saveErr := protocol.WithCompletionReportLock(func() error {
+		manifest, loadErr := protocol.Load(opts.IMPLPath)
+		if loadErr != nil {
+			return fmt.Errorf("load manifest for agent %s: %w", agentSpec.ID, loadErr)
+		}
+		if appendErr := builder.AppendToManifest(manifest); appendErr != nil {
+			return fmt.Errorf("append report for agent %s: %w", agentSpec.ID, appendErr)
+		}
+		return protocol.Save(manifest, opts.IMPLPath)
+	}); saveErr != nil {
+		return nil, fmt.Errorf("runWaveAgentStructured: save report for agent %s: %w", agentSpec.ID, saveErr)
+	}
+
+	// Re-read the saved report (with WrittenAt set by AppendToManifest).
+	finalManifest, _ := protocol.Load(opts.IMPLPath)
+	var finalReport protocol.CompletionReport
+	if finalManifest != nil {
+		if r, ok := finalManifest.CompletionReports[agentSpec.ID]; ok {
+			finalReport = r
+		}
+	}
+	return &finalReport, nil
 }
