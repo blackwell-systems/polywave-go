@@ -1,0 +1,787 @@
+completion_date: "2026-03-26"
+title: Retry Abstraction Unification
+feature_slug: retry-unification
+verdict: SUITABLE
+suitability_assessment: |-
+    The codebase has three retry-related types split across two packages:
+    pkg/retryctx (ErrorClass, ClassifyError, SuggestFixes, RetryContext, BuildRetryContext)
+    and pkg/retry (RetryConfig, RetryResult, QualityGateFailure, RetryLoop, GenerateRetryIMPL).
+    They already have a dependency relationship: pkg/retry/impl_generator.go imports
+    pkg/retryctx to call ClassifyError and SuggestFixes.
+
+    The proposed design in the feature description requires adjustment for reality:
+    - The proposed ErrorClass values (transient/fixable/needs_replan/escalate/timeout) do NOT
+      match the actual ErrorClass values in retryctx. Those values live in pkg/protocol as
+      FailureTypeEnum. The actual ErrorClass values are: import_error, type_error,
+      test_failure, build_error, lint_error, unknown.
+    - RetryContext and the proposed RetryAttempt serve similar purposes; the real migration
+      is to consolidate RetryContext into pkg/retry as RetryAttempt, move ClassifyError
+      and ErrorClass from pkg/retryctx into pkg/retry/classify.go, keep SuggestFixes and
+      BuildPromptText in pkg/retry as well, and provide a thin shim in pkg/retryctx that
+      re-exports from pkg/retry for backward compat.
+
+    Callers of pkg/retryctx (non-test):
+    1. cmd/sawtools/build_retry_context_cmd.go — calls BuildRetryContext(), marshals *RetryContext to JSON
+    2. pkg/engine/closed_loop_gate.go — calls ClassifyError() + SuggestFixes(), uses ErrorClass as type
+    3. pkg/engine/runner.go — calls BuildRetryContext()
+    4. pkg/retry/impl_generator.go — calls ClassifyError() + SuggestFixes()
+    5. pkg/orchestrator/orchestrator.go — calls BuildRetryContext() on line 1021 (E24 auto-retry path)
+
+    External consumers (separate repo):
+    - scout-and-wave-web/pkg/api/wave_runner.go — calls retryctx.BuildRetryContext() on line 853.
+      This is a cross-repo consumer (github.com/blackwell-systems/scout-and-wave-web). It is NOT
+      in this repo's file_ownership. The Wave 3 shim is load-bearing for this consumer — it must
+      preserve the BuildRetryContext() signature and *RetryContext return type exactly.
+
+    Binary contract: sawtools build-retry-context emits JSON with fields attempt_number,
+    agent_id, error_class, error_excerpt, gate_results, suggested_fixes, prior_notes,
+    prompt_text, failure_type. These field names are fixed. The retryctx.RetryContext struct
+    drives this output via json.MarshalIndent. This struct must either be preserved in-place
+    or re-exported from pkg/retry with identical JSON tags.
+
+    Migration strategy: Wave 1 builds new pkg/retry types. Wave 2 updates all 5 internal
+    callers. Wave 3 replaces pkg/retryctx body with a thin shim (type aliases + wrapper
+    functions). The shim is REQUIRED — scout-and-wave-web is an external consumer that
+    imports pkg/retryctx directly; deletion would break it at runtime.
+
+    Suitability: SUITABLE. 3+ distinct files change per agent, build+test cycle is
+    non-trivial (go test ./...), agents can have disjoint file ownership.
+
+    Estimated times:
+    - Scout phase: ~15 min
+    - Agent execution: ~4 agents x ~15 min avg, wave1+wave2 run in parallel = ~30 min
+    - Merge and verification: ~5 min
+    Total SAW time: ~50 min
+    Sequential baseline: ~4 agents x 20 min = ~80 min
+    Time savings: ~30 min (37% faster)
+    Recommendation: Clear speedup for a refactor spanning 3 packages with tests.
+test_command: go test ./...
+lint_command: go vet ./...
+file_ownership:
+    - file: pkg/retry/classify.go
+      agent: A
+      wave: 1
+      action: new
+    - file: pkg/retry/classify_test.go
+      agent: A
+      wave: 1
+      action: new
+    - file: pkg/retry/attempt.go
+      agent: B
+      wave: 1
+      action: new
+    - file: pkg/retry/attempt_test.go
+      agent: B
+      wave: 1
+      action: new
+    - file: pkg/retry/impl_generator.go
+      agent: C
+      wave: 2
+      action: modify
+      depends_on:
+        - A
+        - B
+    - file: pkg/engine/closed_loop_gate.go
+      agent: C
+      wave: 2
+      action: modify
+      depends_on:
+        - A
+    - file: pkg/engine/runner.go
+      agent: D
+      wave: 2
+      action: modify
+      depends_on:
+        - B
+    - file: cmd/sawtools/build_retry_context_cmd.go
+      agent: D
+      wave: 2
+      action: modify
+      depends_on:
+        - B
+    - file: pkg/orchestrator/orchestrator.go
+      agent: D
+      wave: 2
+      action: modify
+      depends_on:
+        - B
+    - file: pkg/retryctx/retryctx.go
+      agent: E
+      wave: 3
+      action: modify
+      depends_on:
+        - C
+        - D
+    - file: pkg/retryctx/retryctx_test.go
+      agent: E
+      wave: 3
+      action: modify
+      depends_on:
+        - C
+        - D
+interface_contracts:
+    - name: ErrorClass
+      description: |-
+        Typed string for Go error classification. Moves from pkg/retryctx to pkg/retry.
+        Existing values are preserved exactly (import_error, type_error, etc.) — the
+        proposed design's values (transient/fixable) are FailureTypeEnum, not ErrorClass.
+      definition: |
+        // pkg/retry/classify.go
+        type ErrorClass string
+
+        const (
+            ErrorClassImport  ErrorClass = "import_error"
+            ErrorClassType    ErrorClass = "type_error"
+            ErrorClassTest    ErrorClass = "test_failure"
+            ErrorClassBuild   ErrorClass = "build_error"
+            ErrorClassLint    ErrorClass = "lint_error"
+            ErrorClassUnknown ErrorClass = "unknown"
+        )
+      location: pkg/retry/classify.go
+    - name: ClassifyError
+      description: |-
+        Moves from pkg/retryctx to pkg/retry. Signature is identical; only the
+        package changes. engine/closed_loop_gate.go currently annotates its local
+        variable as retryctx.ErrorClass — after migration it uses retry.ErrorClass.
+      definition: |
+        // pkg/retry/classify.go
+        func ClassifyError(output string) ErrorClass
+      location: pkg/retry/classify.go
+    - name: SuggestFixes
+      description: |-
+        Moves from pkg/retryctx to pkg/retry. Signature changes only in return type
+        (now uses retry.ErrorClass instead of retryctx.ErrorClass).
+      definition: |
+        // pkg/retry/classify.go
+        func SuggestFixes(class ErrorClass) []string
+      location: pkg/retry/classify.go
+    - name: BuildPromptText
+      description: |-
+        Extracted from the unexported buildPromptText() in pkg/retryctx into
+        an exported function in pkg/retry. Signature takes a RetryAttempt to
+        bundle all parameters. Engine code that calls BuildRetryContext can now
+        call BuildPromptText directly if needed.
+      definition: |
+        // pkg/retry/attempt.go
+        func BuildPromptText(attempt RetryAttempt) string
+      location: pkg/retry/attempt.go
+    - name: RetryAttempt
+      description: |-
+        New unified type in pkg/retry replacing retryctx.RetryContext. Has identical
+        JSON field names to preserve the binary contract of sawtools build-retry-context.
+        The json tags MUST match retryctx.RetryContext exactly: attempt_number, agent_id,
+        error_class, error_excerpt, gate_results, suggested_fixes, prior_notes,
+        prompt_text, failure_type. PriorNotes replaces the prior Notes + Verification
+        concatenation that BuildRetryContext currently performs.
+      definition: |
+        // pkg/retry/attempt.go
+        type RetryAttempt struct {
+            AttemptNumber  int        `json:"attempt_number"`
+            AgentID        string     `json:"agent_id"`
+            ErrorClass     ErrorClass `json:"error_class"`
+            ErrorExcerpt   string     `json:"error_excerpt"`
+            GateResults    []string   `json:"gate_results"`
+            SuggestedFixes []string   `json:"suggested_fixes"`
+            PriorNotes     string     `json:"prior_notes"`
+            PromptText     string     `json:"prompt_text"`
+            FailureType    string     `json:"failure_type,omitempty"`
+        }
+      location: pkg/retry/attempt.go
+    - name: BuildRetryAttempt
+      description: |-
+        New function in pkg/retry replacing retryctx.BuildRetryContext. Reads the manifest
+        at manifestPath, looks up the agent completion report, classifies the error, and
+        returns a populated *RetryAttempt. The return type changes from *retryctx.RetryContext
+        to *retry.RetryAttempt. engine/runner.go and build_retry_context_cmd.go are the
+        callers that must be updated to use this function.
+      definition: |
+        // pkg/retry/attempt.go
+        func BuildRetryAttempt(manifestPath string, agentID string, attemptNum int) (*RetryAttempt, error)
+      location: pkg/retry/attempt.go
+waves:
+    - number: 1
+      agents:
+        - id: A
+          task: |-
+            ## Context
+            You are implementing Layer 1 of the retry-unification refactor for the scout-and-wave-go repo
+            at /Users/dayna.blackwell/code/scout-and-wave-go. Your job is to create pkg/retry/classify.go
+            and pkg/retry/classify_test.go by moving error classification logic from pkg/retryctx into
+            the pkg/retry package.
+
+            ## What to implement
+
+            ### pkg/retry/classify.go (new file)
+
+            Create this file in package `retry`. Copy the following from pkg/retryctx/retryctx.go:
+
+            1. The `ErrorClass` type and all 6 constants:
+               - ErrorClassImport  = "import_error"
+               - ErrorClassType    = "type_error"
+               - ErrorClassTest    = "test_failure"
+               - ErrorClassBuild   = "build_error"
+               - ErrorClassLint    = "lint_error"
+               - ErrorClassUnknown = "unknown"
+
+            2. All pattern variables: importPatterns, typePatterns, testPatterns, buildPatterns, lintPatterns
+               (copy all regexp and string slice variables exactly as they are in retryctx.go)
+
+            3. The `ClassifyError(output string) ErrorClass` function (copy body verbatim)
+
+            4. The `SuggestFixes(class ErrorClass) []string` function (copy body verbatim)
+
+            Do NOT delete or modify pkg/retryctx/retryctx.go — that happens in Wave 3.
+            Do NOT change the function signatures or constant values — they must remain identical.
+
+            ### pkg/retry/classify_test.go (new file)
+
+            Create unit tests for ClassifyError and SuggestFixes in package `retry_test`.
+            Mirror the test coverage in pkg/retryctx/retryctx_test.go for:
+            - TestClassifyError_ImportError
+            - TestClassifyError_TypeError
+            - TestClassifyError_TestFailure
+            - TestClassifyError_BuildError
+            - TestClassifyError_LintError
+            - TestClassifyError_Unknown
+            - TestSuggestFixes_AllClasses (all 5 known classes return non-empty, unknown returns empty non-nil)
+
+            Tests must import "github.com/blackwell-systems/scout-and-wave-go/pkg/retry" (not retryctx).
+
+            ## Verification gate
+            go build ./pkg/retry/... && go vet ./pkg/retry/... && go test ./pkg/retry/...
+
+            ## Constraints
+            - Do NOT import pkg/retryctx from pkg/retry (would create a circular dep if retryctx later imports retry)
+            - Do NOT modify any existing file
+            - Package name: `retry` (not retry_test for classify.go, retry_test for classify_test.go)
+            - All regex must compile at package init via regexp.MustCompile
+          files:
+            - pkg/retry/classify.go
+            - pkg/retry/classify_test.go
+        - id: B
+          task: |-
+            ## Context
+            You are implementing Layer 1 of the retry-unification refactor for the scout-and-wave-go repo
+            at /Users/dayna.blackwell/code/scout-and-wave-go. Your job is to create pkg/retry/attempt.go
+            and pkg/retry/attempt_test.go — the new unified RetryAttempt type and its constructor.
+
+            ## What to implement
+
+            ### pkg/retry/attempt.go (new file)
+
+            Create this file in package `retry`. It must define:
+
+            **1. RetryAttempt struct** — replaces retryctx.RetryContext with identical JSON tags:
+
+            ```go
+            type RetryAttempt struct {
+                AttemptNumber  int        `json:"attempt_number"`
+                AgentID        string     `json:"agent_id"`
+                ErrorClass     ErrorClass `json:"error_class"`
+                ErrorExcerpt   string     `json:"error_excerpt"`
+                GateResults    []string   `json:"gate_results"`
+                SuggestedFixes []string   `json:"suggested_fixes"`
+                PriorNotes     string     `json:"prior_notes"`
+                PromptText     string     `json:"prompt_text"`
+                FailureType    string     `json:"failure_type,omitempty"`
+            }
+            ```
+
+            CRITICAL: The JSON field names must be exactly these values. The sawtools
+            build-retry-context command marshals this struct to stdout and the orchestrator
+            parses those fields by name. Changing field names would break the binary contract.
+
+            The `ErrorClass` type referenced here will be defined in pkg/retry/classify.go
+            (created by Agent A in the same wave). Both files are in package `retry`, so
+            RetryAttempt can use ErrorClass directly.
+
+            **2. BuildRetryAttempt function** — replaces retryctx.BuildRetryContext:
+
+            ```go
+            func BuildRetryAttempt(manifestPath string, agentID string, attemptNum int) (*RetryAttempt, error)
+            ```
+
+            Implementation: copy the logic from retryctx.BuildRetryContext (in
+            pkg/retryctx/retryctx.go lines 170-216) but:
+            - Return *RetryAttempt instead of *retryctx.RetryContext
+            - Call ClassifyError and SuggestFixes from the same package (they are in classify.go)
+            - The excerpt truncation, gate result collection, and promptText building must
+              be functionally identical to the original
+
+            **3. BuildPromptText function** — exports the prompt building logic:
+
+            ```go
+            func BuildPromptText(attempt RetryAttempt) string
+            ```
+
+            Copy the body of retryctx.buildPromptText (lines 221-251 in retryctx.go) into this
+            exported function, adapting it to receive a RetryAttempt instead of individual params:
+            - attempt.AttemptNumber replaces attemptNum
+            - attempt.ErrorClass replaces class
+            - attempt.ErrorExcerpt replaces excerpt
+            - attempt.SuggestedFixes replaces fixes
+            - attempt.PriorNotes replaces priorNotes
+            - attempt.FailureType replaces failureType
+
+            Also define the unexported `buildPromptText` as a thin wrapper that constructs
+            a RetryAttempt and calls BuildPromptText — or just inline it in BuildRetryAttempt.
+
+            ### pkg/retry/attempt_test.go (new file)
+
+            Create tests in package `retry_test` covering:
+
+            1. TestBuildRetryAttempt_Complete — write a minimal valid IMPL YAML to a temp dir,
+               call BuildRetryAttempt, verify AttemptNumber/AgentID/ErrorClass/SuggestedFixes/
+               PriorNotes fields, verify PromptText contains "## Retry Context (Attempt N)".
+
+            2. TestBuildRetryAttempt_ExcerptTruncation — write a manifest with >2000 char notes,
+               verify ErrorExcerpt len <= 2000.
+
+            3. TestBuildRetryAttempt_FixableFailureType — write manifest with failure_type: "fixable"
+               and notes text, verify FailureType is "fixable" and PromptText contains "## Fix Required".
+
+            4. TestBuildRetryAttempt_MissingReport — write manifest with no completion_reports,
+               verify error contains "no completion report found".
+
+            5. TestBuildPromptText_FixRequired — call BuildPromptText with a RetryAttempt where
+               FailureType="fixable" and PriorNotes non-empty, verify "## Fix Required" is present.
+
+            Minimal YAML helper: you can copy the minimalManifestYAML helper from
+            pkg/retryctx/retryctx_test.go and adapt it for this test file.
+
+            ## Verification gate
+            go build ./pkg/retry/... && go vet ./pkg/retry/... && go test ./pkg/retry/...
+
+            ## Constraints
+            - Do NOT modify any existing file
+            - The `attempt.go` file is in package `retry` (no test suffix)
+            - `attempt_test.go` is in package `retry_test`
+            - You must import "github.com/blackwell-systems/scout-and-wave-go/pkg/protocol" for
+              protocol.Load and protocol.IMPLManifest in BuildRetryAttempt
+            - Do NOT import pkg/retryctx — all classification logic comes from classify.go in the same package
+          files:
+            - pkg/retry/attempt.go
+            - pkg/retry/attempt_test.go
+      base_commit: c8a7a8a6a1b1d6ca8e0ed967d5ce9135bd401464
+    - number: 2
+      agents:
+        - id: C
+          task: |-
+            ## Context
+            You are implementing Layer 2 of the retry-unification refactor for the scout-and-wave-go repo
+            at /Users/dayna.blackwell/code/scout-and-wave-go. Wave 1 created pkg/retry/classify.go
+            (with ErrorClass, ClassifyError, SuggestFixes) and pkg/retry/attempt.go (with RetryAttempt,
+            BuildRetryAttempt, BuildPromptText). Your job is to migrate two callers of pkg/retryctx
+            to use pkg/retry directly.
+
+            ## Files to modify
+
+            ### pkg/retry/impl_generator.go
+
+            This file already imports pkg/retryctx and calls:
+            - retryctx.ClassifyError(gateOutput) on line 85
+            - retryctx.SuggestFixes(errorClass) on line 86
+
+            It also uses retryctx.ErrorClass as the type of errorClass (the local variable).
+
+            Changes needed:
+            1. Remove the import of "github.com/blackwell-systems/scout-and-wave-go/pkg/retryctx"
+            2. The calls to ClassifyError and SuggestFixes are already within package `retry`,
+               so they become unqualified calls: ClassifyError(gateOutput), SuggestFixes(errorClass)
+            3. The local variable `errorClass` in buildRetryAgentTask changes type from
+               retryctx.ErrorClass to ErrorClass (same package, no qualifier needed)
+            4. On line 119 where the task uses `string(errorClass)`, that stays the same
+
+            Verify the file compiles with no imports from retryctx after your change.
+
+            ### pkg/engine/closed_loop_gate.go
+
+            This file imports pkg/retryctx and uses:
+            - retryctx.ClassifyError(currentOutput) on line 123
+            - retryctx.SuggestFixes(errClass) on line 124
+            - retryctx.ErrorClass as the type in buildClosedLoopFixPrompt signature (line 169)
+
+            Changes needed:
+            1. Remove the import "github.com/blackwell-systems/scout-and-wave-go/pkg/retryctx"
+            2. Add import "github.com/blackwell-systems/scout-and-wave-go/pkg/retry"
+            3. Line 123: retryctx.ClassifyError(currentOutput) → retry.ClassifyError(currentOutput)
+            4. Line 124: retryctx.SuggestFixes(errClass) → retry.SuggestFixes(errClass)
+            5. Line 169 (buildClosedLoopFixPrompt signature): errClass retryctx.ErrorClass → errClass retry.ErrorClass
+            6. Line 181 inside buildClosedLoopFixPrompt where errClass is used: string(errClass) stays the same
+
+            Do NOT change any other logic in closed_loop_gate.go.
+
+            ## Verification gate
+            go build ./pkg/retry/... && go build ./pkg/engine/... && go vet ./pkg/retry/... && go vet ./pkg/engine/... && go test ./pkg/retry/... && go test ./pkg/engine/...
+
+            ## Constraints
+            - Do NOT touch pkg/retryctx/retryctx.go — that is Agent E's job in Wave 3
+            - Do NOT modify pkg/engine/runner.go — that belongs to Agent D
+            - After your changes, pkg/retry and pkg/engine packages must build and pass tests
+          files:
+            - pkg/retry/impl_generator.go
+            - pkg/engine/closed_loop_gate.go
+          dependencies:
+            - A
+        - id: D
+          task: |-
+            ## Context
+            You are implementing Layer 2 of the retry-unification refactor for the scout-and-wave-go repo
+            at /Users/dayna.blackwell/code/scout-and-wave-go. Wave 1 created pkg/retry/attempt.go
+            (with RetryAttempt and BuildRetryAttempt). Your job is to migrate two callers of
+            retryctx.BuildRetryContext to use retry.BuildRetryAttempt.
+
+            ## Files to modify
+
+            ### pkg/engine/runner.go
+
+            This file has TWO uses of pkg/retryctx:
+            1. Line 26: import "github.com/blackwell-systems/scout-and-wave-go/pkg/retryctx"
+            2. Lines 809-815 (approx): calls retryctx.BuildRetryContext and uses rc.PromptText
+
+            The logic around line 810 is:
+            ```go
+            rc, rcErr := retryctx.BuildRetryContext(opts.IMPLPath, agentLetter, 1)
+            if rcErr != nil {
+                loggerFrom(opts.Logger).Debug("engine.RunSingleAgent: retry context (best-effort)", "err", rcErr)
+            } else if rc != nil && rc.PromptText != "" {
+                promptPrefix = rc.PromptText
+            }
+            ```
+
+            Changes needed:
+            1. Replace the retryctx import with "github.com/blackwell-systems/scout-and-wave-go/pkg/retry"
+               (check if pkg/retry is already imported — if so, just remove the retryctx import)
+            2. Change retryctx.BuildRetryContext(...) to retry.BuildRetryAttempt(...)
+            3. rc is now *retry.RetryAttempt instead of *retryctx.RetryContext
+            4. rc.PromptText access is unchanged (same field name on RetryAttempt)
+
+            ### cmd/sawtools/build_retry_context_cmd.go
+
+            This file uses retryctx.BuildRetryContext and marshals the result to JSON stdout.
+
+            Current code (lines 38-43 approx):
+            ```go
+            rc, err := retryctx.BuildRetryContext(manifestPath, agentID, attemptNum)
+            ...
+            out, err := json.MarshalIndent(rc, "", "  ")
+            ```
+
+            The JSON output is the BINARY CONTRACT with the orchestrator. The JSON field
+            names must not change. RetryAttempt in pkg/retry has identical JSON tags to
+            retryctx.RetryContext, so this is a safe substitution.
+
+            Changes needed:
+            1. Remove import "github.com/blackwell-systems/scout-and-wave-go/pkg/retryctx"
+            2. Add import "github.com/blackwell-systems/scout-and-wave-go/pkg/retry"
+            3. retryctx.BuildRetryContext(...) → retry.BuildRetryAttempt(...)
+            4. No other changes — the JSON serialization of *retry.RetryAttempt produces
+               the same JSON keys as *retryctx.RetryContext
+
+            ## Verification gate
+            go build ./cmd/sawtools/... && go build ./pkg/engine/... && go vet ./cmd/sawtools/... && go vet ./pkg/engine/... && go test ./pkg/engine/...
+
+            ## Constraints
+            - Do NOT touch pkg/retryctx/retryctx.go — that is Agent E's job in Wave 3
+            - Do NOT modify pkg/engine/closed_loop_gate.go or pkg/retry/impl_generator.go — those belong to Agent C
+            - The JSON output of build-retry-context must remain identical in field names — verify
+              by inspecting the RetryAttempt struct JSON tags in pkg/retry/attempt.go
+            ### pkg/orchestrator/orchestrator.go
+
+            This file calls retryctx.BuildRetryContext on line 1021 (E24 auto-retry path):
+            ```go
+            rc, rcErr := retryctx.BuildRetryContext(o.implDocPath, agentSpec.ID, count)
+            if rcErr != nil {
+                o.log().Debug("orchestrator: retry context build (best-effort)", "err", rcErr)
+            } else if rc != nil && rc.PromptText != "" {
+                promptPrefix = rc.PromptText
+            }
+            ```
+
+            Changes needed:
+            1. Remove import "github.com/blackwell-systems/scout-and-wave-go/pkg/retryctx"
+            2. Add import "github.com/blackwell-systems/scout-and-wave-go/pkg/retry"
+               (check if already imported — if so, just remove retryctx)
+            3. retryctx.BuildRetryContext(...) → retry.BuildRetryAttempt(...)
+            4. rc is now *retry.RetryAttempt — rc.PromptText access is unchanged
+
+            ## Verification gate
+            go build ./cmd/sawtools/... && go build ./pkg/engine/... && go build ./pkg/orchestrator/... && go vet ./cmd/sawtools/... && go vet ./pkg/engine/... && go vet ./pkg/orchestrator/... && go test ./pkg/engine/...
+
+            ## Constraints
+            - Do NOT touch pkg/retryctx/retryctx.go — that is Agent E's job in Wave 3
+            - Do NOT modify pkg/engine/closed_loop_gate.go or pkg/retry/impl_generator.go — those belong to Agent C
+            - The JSON output of build-retry-context must remain identical in field names — verify
+              by inspecting the RetryAttempt struct JSON tags in pkg/retry/attempt.go
+            - After your changes, cmd/sawtools, pkg/engine, and pkg/orchestrator packages must build without errors
+          files:
+            - pkg/engine/runner.go
+            - cmd/sawtools/build_retry_context_cmd.go
+            - pkg/orchestrator/orchestrator.go
+          dependencies:
+            - B
+      base_commit: 422086b012e96f2d8e0e78945123aad6e4728cca
+    - number: 3
+      agents:
+        - id: E
+          task: |-
+            ## Context
+            You are implementing Layer 3 (final layer) of the retry-unification refactor for the
+            scout-and-wave-go repo at /Users/dayna.blackwell/code/scout-and-wave-go.
+
+            Waves 1 and 2 have completed:
+            - pkg/retry/classify.go now has ErrorClass, ClassifyError, SuggestFixes
+            - pkg/retry/attempt.go now has RetryAttempt, BuildRetryAttempt, BuildPromptText
+            - All 4 internal callers (impl_generator.go, closed_loop_gate.go, runner.go,
+              build_retry_context_cmd.go) have been migrated to use pkg/retry directly
+
+            Your job: replace pkg/retryctx with a thin re-export shim so the package still
+            compiles (for any external SDK consumers who may import it) but all logic is
+            delegated to pkg/retry.
+
+            ## Files to modify
+
+            ### pkg/retryctx/retryctx.go
+
+            Replace the entire file with a thin shim that re-exports from pkg/retry using
+            type aliases and wrapper functions. This preserves the public API of pkg/retryctx
+            while removing all implementation duplication.
+
+            The shim must define:
+            ```go
+            package retryctx
+
+            import "github.com/blackwell-systems/scout-and-wave-go/pkg/retry"
+
+            // Type alias — same underlying type, no conversion needed by callers.
+            type ErrorClass = retry.ErrorClass
+
+            // Constant re-exports.
+            const (
+                ErrorClassImport  = retry.ErrorClassImport
+                ErrorClassType    = retry.ErrorClassType
+                ErrorClassTest    = retry.ErrorClassTest
+                ErrorClassBuild   = retry.ErrorClassBuild
+                ErrorClassLint    = retry.ErrorClassLint
+                ErrorClassUnknown = retry.ErrorClassUnknown
+            )
+
+            // RetryContext is a type alias to preserve JSON serialization contract.
+            type RetryContext = retry.RetryAttempt
+
+            // Function re-exports — delegate to pkg/retry.
+            func ClassifyError(output string) ErrorClass { return retry.ClassifyError(output) }
+            func SuggestFixes(class ErrorClass) []string  { return retry.SuggestFixes(class) }
+            func BuildRetryContext(manifestPath, agentID string, attemptNum int) (*RetryContext, error) {
+                return retry.BuildRetryAttempt(manifestPath, agentID, attemptNum)
+            }
+            ```
+
+            Remove all the old implementation code: pattern variables, ClassifyError body,
+            SuggestFixes body, BuildRetryContext body, buildPromptText body, maxExcerptLen const.
+
+            IMPORTANT: Do NOT use `type RetryContext = retry.RetryAttempt` if it causes a
+            "cannot use type alias with different JSON tags" issue — if RetryAttempt has the
+            same fields and tags as RetryContext (which it does by design), the alias is safe.
+
+            ### pkg/retryctx/retryctx_test.go
+
+            The existing tests in this file test functions that are now implemented in pkg/retry
+            and covered by pkg/retry/classify_test.go and pkg/retry/attempt_test.go.
+
+            Replace the test file with a minimal smoke-test that verifies the shim compiles
+            and re-exports correctly:
+
+            ```go
+            package retryctx_test
+
+            import (
+                "testing"
+                "github.com/blackwell-systems/scout-and-wave-go/pkg/retryctx"
+            )
+
+            // TestRetryctxShim verifies the shim package compiles and re-exports
+            // the expected symbols from pkg/retry.
+            func TestRetryctxShim_Compilation(t *testing.T) {
+                // ErrorClass constants must be accessible
+                _ = retryctx.ErrorClassImport
+                _ = retryctx.ErrorClassType
+                _ = retryctx.ErrorClassTest
+                _ = retryctx.ErrorClassBuild
+                _ = retryctx.ErrorClassLint
+                _ = retryctx.ErrorClassUnknown
+
+                // ClassifyError must be callable and return expected type
+                class := retryctx.ClassifyError("undefined: Foo")
+                if class != retryctx.ErrorClassType {
+                    t.Errorf("ClassifyError returned %v, want ErrorClassType", class)
+                }
+
+                // SuggestFixes must return non-empty for known classes
+                fixes := retryctx.SuggestFixes(retryctx.ErrorClassType)
+                if len(fixes) == 0 {
+                    t.Error("SuggestFixes returned empty for ErrorClassType")
+                }
+            }
+            ```
+
+            ## Verification gate
+            go build ./... && go vet ./... && go test ./...
+
+            ## Constraints
+            - After your change, `go build ./...` must pass (no compilation errors in retryctx or anywhere)
+            - The retryctx package must remain importable as a shim (do not delete the directory)
+            - If a type alias causes issues (e.g., method set problems), use a struct wrapper
+              with forwarding methods instead — but prefer the alias for simplicity
+            - All other tests in the repo must still pass (the shim must be behaviorally identical)
+          files:
+            - pkg/retryctx/retryctx.go
+            - pkg/retryctx/retryctx_test.go
+          dependencies:
+            - C
+            - D
+          context_source: prepared-brief
+quality_gates:
+    level: standard
+    gates:
+        - type: build
+          command: go build ./...
+          required: true
+        - type: lint
+          command: go vet ./...
+          required: true
+        - type: test
+          command: go test ./...
+          required: true
+completion_reports:
+    A:
+        status: complete
+        branch: saw/retry-unification/wave1-agent-A
+        commit: 2e52691
+        files_changed:
+            - pkg/retry/classify.go
+            - pkg/retry/classify_test.go
+        files_created:
+            - pkg/retry/classify.go
+            - pkg/retry/classify_test.go
+        tests_added:
+            - TestClassifyError_ImportError
+            - TestClassifyError_TypeError
+            - TestClassifyError_TestFailure
+            - TestClassifyError_BuildError
+            - TestClassifyError_LintError
+            - TestClassifyError_Unknown
+            - TestSuggestFixes_AllClasses
+        verification: PASS
+    B:
+        status: complete
+        branch: saw/retry-unification/wave1-agent-B
+        commit: 025fb97
+        files_changed:
+            - pkg/retry/attempt.go
+            - pkg/retry/attempt_test.go
+        files_created:
+            - pkg/retry/attempt.go
+            - pkg/retry/attempt_test.go
+        tests_added:
+            - TestBuildRetryAttempt_Complete
+            - TestBuildRetryAttempt_ExcerptTruncation
+            - TestBuildRetryAttempt_FixableFailureType
+            - TestBuildRetryAttempt_MissingReport
+            - TestBuildPromptText_FixRequired
+        verification: PASS
+    C:
+        status: complete
+        branch: saw/retry-unification/wave2-agent-C
+        commit: 3585f4d
+        files_changed:
+            - pkg/retry/impl_generator.go
+            - pkg/engine/closed_loop_gate.go
+        verification: PASS
+    D:
+        status: complete
+        branch: saw/retry-unification/wave2-agent-D
+        commit: d8d213a
+        files_changed:
+            - pkg/engine/runner.go
+            - cmd/sawtools/build_retry_context_cmd.go
+            - pkg/orchestrator/orchestrator.go
+        verification: PASS
+    E:
+        status: complete
+        branch: main
+        commit: f768e0d
+        files_changed:
+            - pkg/retryctx/retryctx.go
+            - pkg/retryctx/retryctx_test.go
+        tests_added:
+            - TestRetryctxShim_Compilation
+        verification: PASS
+pre_mortem:
+    overall_risk: medium
+    rows:
+        - scenario: |-
+            Wave 1 agents A and B both produce files in package retry. If either introduces a
+            function or variable name that conflicts with the other (e.g., both define a helper
+            called buildPromptText or maxExcerptLen), the package will fail to compile in Wave 2.
+          likelihood: medium
+          impact: high
+          mitigation: |-
+            Interface contracts specify exactly which symbols each file defines. Agent A owns
+            only classify.go (ErrorClass, ClassifyError, SuggestFixes, pattern vars). Agent B
+            owns only attempt.go (RetryAttempt, BuildRetryAttempt, BuildPromptText, maxExcerptLen).
+            The const maxExcerptLen should be defined in attempt.go only — classify.go must not
+            define it. Both agents must read the other's interface contract before coding.
+        - scenario: |-
+            The binary contract for sawtools build-retry-context may silently break if Agent B
+            introduces RetryAttempt with different JSON field names from RetryContext. The
+            orchestrator parses fields like attempt_number, error_class, etc. by name.
+          likelihood: low
+          impact: high
+          mitigation: |-
+            Interface contract specifies all JSON tags explicitly. Agent D (who updates
+            build_retry_context_cmd.go) should verify the JSON output by running:
+            echo '{}' | sawtools build-retry-context --help and inspecting the struct tags
+            in pkg/retry/attempt.go before committing.
+        - scenario: |-
+            pkg/retry/impl_generator.go already imports retryctx (at time of planning). After
+            Agent A creates classify.go in the same package, Agent C removes the retryctx import
+            and uses unqualified calls. If Agent A's classify.go is not yet merged, Agent C's
+            build will fail on unresolved symbols ClassifyError and SuggestFixes.
+          likelihood: low
+          impact: medium
+          mitigation: |-
+            Wave 2 is explicitly blocked on Wave 1 completing. The orchestrator merges Wave 1
+            before launching Wave 2. No worktree isolation issue.
+        - scenario: |-
+            The type alias `type RetryContext = retry.RetryAttempt` in the shim may cause a
+            redeclaration error if retryctx_test.go still references retryctx.RetryContext
+            directly before Agent E replaces the test file.
+          likelihood: low
+          impact: low
+          mitigation: |-
+            Agent E replaces both files atomically in one commit. The old test file is deleted
+            and replaced simultaneously.
+        - scenario: |-
+            pkg/engine/runner.go may already import pkg/retry (for RetryConfig or RetryResult).
+            If so, Agent D's task of adding a second import from pkg/retry is a no-op — but the
+            removal of the retryctx import must still happen or the build will fail.
+          likelihood: medium
+          impact: low
+          mitigation: |-
+            Agent D's task explicitly says: "check if pkg/retry is already imported — if so,
+            just remove the retryctx import." The agent must read the full import block before
+            making changes.
+        - scenario: |-
+            scout-and-wave-web/pkg/api/wave_runner.go (external repo) imports retryctx.BuildRetryContext
+            and is not in this repo's file_ownership. It is not migrated in Wave 2. If the Wave 3
+            shim is broken or incomplete, wave_runner.go will fail to compile against a new
+            scout-and-wave-go release.
+          likelihood: low
+          impact: high
+          mitigation: |-
+            The Wave 3 shim must preserve the exact BuildRetryContext(manifestPath, agentID string,
+            attemptNum int) (*RetryContext, error) signature. Since RetryContext = retry.RetryAttempt
+            (type alias), the return type is compatible. After Wave 3, run `go build ./...` in
+            scout-and-wave-web to verify before releasing a new scout-and-wave-go version.
+state: COMPLETE
