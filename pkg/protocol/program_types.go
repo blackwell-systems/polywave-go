@@ -63,6 +63,11 @@ type ProgramIMPL struct {
 	Status            string `yaml:"status" json:"status"`
 	PriorityScore     int    `yaml:"priority_score,omitempty" json:"priority_score,omitempty"`
 	PriorityReasoning string `yaml:"priority_reasoning,omitempty" json:"priority_reasoning,omitempty"`
+	// SerialWaves lists wave numbers that must not execute concurrently with the
+	// same-numbered wave of any other IMPL in the same program tier.
+	// Empty (default) means all waves can run in parallel with tier peers.
+	// Populated automatically by create-program based on wave-level conflict detection.
+	SerialWaves []int `yaml:"serial_waves,omitempty" json:"serial_waves,omitempty"`
 }
 
 // ProgramTier groups IMPLs that can execute in parallel.

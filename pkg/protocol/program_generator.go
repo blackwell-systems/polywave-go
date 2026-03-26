@@ -21,11 +21,12 @@ type GenerateProgramOpts struct {
 
 // GenerateProgramData is the output of automatic PROGRAM generation.
 type GenerateProgramData struct {
-	ManifestPath     string            `json:"manifest_path"`
-	ConflictReport   *ConflictReport   `json:"conflict_report"`
-	TierAssignments  map[string]int    `json:"tier_assignments"`
-	Manifest         *PROGRAMManifest  `json:"manifest"`
-	ValidationErrors []result.SAWError `json:"validation_errors,omitempty"`
+	ManifestPath       string             `json:"manifest_path"`
+	ConflictReport     *ConflictReport    `json:"conflict_report"`
+	WaveConflictReport *WaveConflictReport `json:"wave_conflict_report,omitempty"`
+	TierAssignments    map[string]int     `json:"tier_assignments"`
+	Manifest           *PROGRAMManifest   `json:"manifest"`
+	ValidationErrors   []result.SAWError  `json:"validation_errors,omitempty"`
 }
 
 // GenerateProgramFromIMPLs creates a PROGRAM manifest from existing IMPL docs.
@@ -47,10 +48,10 @@ func GenerateProgramFromIMPLs(opts GenerateProgramOpts) result.Result[GeneratePr
 		}})
 	}
 
-	// Step 1: Run conflict detection for tier assignments.
+	// Step 1: Run wave-level conflict detection for tier assignments.
 	// TierSuggestion keys are IMPL feature slugs (extracted from loaded docs),
 	// not raw refs. This ensures compatibility with both slug and path refs.
-	conflictReport, err := CheckIMPLConflicts(opts.ImplRefs, opts.RepoPath)
+	waveConflictReport, err := CheckIMPLConflictsWaveLevel(opts.ImplRefs, opts.RepoPath)
 	if err != nil {
 		return result.NewFailure[GenerateProgramData]([]result.SAWError{{
 			Code:     "E003",
@@ -58,6 +59,8 @@ func GenerateProgramFromIMPLs(opts GenerateProgramOpts) result.Result[GeneratePr
 			Severity: "fatal",
 		}})
 	}
+	// Downcast for backwards-compat fields used later.
+	conflictReport := &waveConflictReport.ConflictReport
 
 	// Step 2: Load each IMPL doc and build ProgramIMPL entries.
 	var impls []ProgramIMPL
@@ -138,6 +141,12 @@ func GenerateProgramFromIMPLs(opts GenerateProgramOpts) result.Result[GeneratePr
 		titles = append(titles, title)
 		slugList = append(slugList, slug)
 
+		// Populate SerialWaves from wave conflict report.
+		var serialWaves []int
+		if waveConflictReport.SerialWaves != nil {
+			serialWaves = waveConflictReport.SerialWaves[slug]
+		}
+
 		impls = append(impls, ProgramIMPL{
 			Slug:            slug,
 			AbsPath:         absPath,
@@ -148,6 +157,7 @@ func GenerateProgramFromIMPLs(opts GenerateProgramOpts) result.Result[GeneratePr
 			EstimatedWaves:  waveCount,
 			KeyOutputs:      keyOutputs,
 			Status:          status,
+			SerialWaves:     serialWaves,
 		})
 	}
 
@@ -258,11 +268,12 @@ func GenerateProgramFromIMPLs(opts GenerateProgramOpts) result.Result[GeneratePr
 	validationErrors := ValidateProgram(manifest)
 
 	data_ := GenerateProgramData{
-		ManifestPath:     outputPath,
-		ConflictReport:   conflictReport,
-		TierAssignments:  tierAssignments,
-		Manifest:         manifest,
-		ValidationErrors: validationErrors,
+		ManifestPath:       outputPath,
+		ConflictReport:     conflictReport,
+		WaveConflictReport: waveConflictReport,
+		TierAssignments:    tierAssignments,
+		Manifest:           manifest,
+		ValidationErrors:   validationErrors,
 	}
 
 	if len(validationErrors) > 0 {
