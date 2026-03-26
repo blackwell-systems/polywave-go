@@ -10,6 +10,8 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/blackwell-systems/scout-and-wave-go/internal/git"
 )
 
 // FileReadExecutor implements the ToolExecutor interface for reading files.
@@ -115,28 +117,21 @@ func isGitModifyCommand(command string) bool {
 // checkGitOwnershipViolations runs git diff to find files modified outside the ownership list.
 // Returns a warning string if violations found, empty string otherwise.
 func checkGitOwnershipViolations(workDir string, ownedFiles map[string]bool) string {
-	// Get modified files (staged + unstaged) relative to HEAD
-	cmd := exec.Command("git", "diff", "--name-only", "HEAD")
-	cmd.Dir = workDir
-	out, err := cmd.Output()
+	unstaged, err := git.DiffNameOnlyHEAD(workDir)
 	if err != nil {
 		return "" // Can't check — don't warn
 	}
-	staged := exec.Command("git", "diff", "--name-only", "--cached")
-	staged.Dir = workDir
-	stagedOut, _ := staged.Output()
+	staged, _ := git.DiffNameOnlyStaged(workDir)
 
-	allFiles := strings.TrimSpace(string(out) + "\n" + string(stagedOut))
-	if allFiles == "" {
-		return ""
-	}
-
+	// Collect all changed files, deduplicating.
+	seen := make(map[string]bool)
 	var violations []string
-	for _, file := range strings.Split(allFiles, "\n") {
+	for _, file := range append(unstaged, staged...) {
 		file = strings.TrimSpace(file)
-		if file == "" {
+		if file == "" || seen[file] {
 			continue
 		}
+		seen[file] = true
 		if !ownedFiles[file] {
 			violations = append(violations, file)
 		}

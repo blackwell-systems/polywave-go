@@ -3,9 +3,10 @@ package orchestrator
 import (
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"time"
+
+	"github.com/blackwell-systems/scout-and-wave-go/internal/git"
 )
 
 // ContextMDEntry is one completed feature record for docs/CONTEXT.md (E18).
@@ -67,15 +68,13 @@ features_completed: []
 	f.Close()
 
 	// 5. Git add and commit.
-	addCmd := exec.Command("git", "-C", repoPath, "add", "docs/CONTEXT.md")
-	if out, err := addCmd.CombinedOutput(); err != nil {
-		return fmt.Errorf("UpdateContextMD: git add: %w\n%s", err, out)
+	if err := git.Add(repoPath, "docs/CONTEXT.md"); err != nil {
+		return fmt.Errorf("UpdateContextMD: git add: %w", err)
 	}
 
 	commitMsg := fmt.Sprintf("chore: update docs/CONTEXT.md for %s", entry.Slug)
-	commitCmd := exec.Command("git", "-C", repoPath, "commit", "-m", commitMsg)
-	if out, err := commitCmd.CombinedOutput(); err != nil {
-		return fmt.Errorf("UpdateContextMD: git commit: %w\n%s", err, out)
+	if _, err := git.CommitWithMessage(repoPath, commitMsg); err != nil {
+		return fmt.Errorf("UpdateContextMD: git commit: %w", err)
 	}
 
 	return nil
