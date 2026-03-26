@@ -1,7 +1,6 @@
 title: Go Engine Enhancements
 program_slug: create-program-cross-repo-and-program-wave-conflict-and-engine-reference-injection
 state: COMPLETE
-completion_date: "2026-03-25"
 created: "2026-03-26T00:07:29Z"
 updated: "2026-03-26T00:07:29Z"
 impls:
@@ -49,11 +48,9 @@ tiers:
       impls:
         - program-wave-conflict
 completion:
-    tiers_complete: 1
+    tiers_complete: 2
     tiers_total: 2
-    impls_complete: 2
+    impls_complete: 3
     impls_total: 3
     total_agents: 9
     total_waves: 6
-
-SAW:PROGRAM:COMPLETE

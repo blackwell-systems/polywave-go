@@ -1,7 +1,6 @@
 title: engine-hardening
 program_slug: engine-hardening
 state: COMPLETE
-completion_date: "2026-03-22"
 impls:
     - slug: determinism-remaining
       title: Determinism Roadmap Remaining Items
@@ -14,7 +13,7 @@ impls:
       tier: 1
       estimated_agents: 3
       estimated_waves: 2
-      status: complete
+      status: SAW:COMPLETE
 tiers:
     - number: 1
       impls:
@@ -23,9 +22,7 @@ tiers:
 completion:
     tiers_complete: 0
     tiers_total: 1
-    impls_complete: 0
+    impls_complete: 1
     impls_total: 2
     total_agents: 0
     total_waves: 0
-
-SAW:PROGRAM:COMPLETE
