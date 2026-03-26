@@ -3,11 +3,11 @@ package protocol
 import (
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"regexp"
 	"strings"
 
+	"github.com/blackwell-systems/scout-and-wave-go/internal/git"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
 )
 
@@ -93,9 +93,8 @@ func FreezeContracts(manifest *PROGRAMManifest, tierNumber int, repoPath string)
 
 		// Check if file is committed (git status --porcelain returns empty)
 		if frozen.FileExists {
-			cmd := exec.Command("git", "-C", repoPath, "status", "--porcelain", contract.Location)
-			out, err := cmd.CombinedOutput()
-			if err == nil && strings.TrimSpace(string(out)) == "" {
+			out, err := git.StatusPorcelainFile(repoPath, contract.Location)
+			if err == nil && out == "" {
 				frozen.Committed = true
 			}
 		}
