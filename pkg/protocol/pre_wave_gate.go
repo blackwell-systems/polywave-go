@@ -50,8 +50,8 @@ func PreWaveGate(m *IMPLManifest) *PreWaveGateResult {
 }
 
 func checkValidation(m *IMPLManifest) PreWaveGateCheck {
-	errs := Validate(m)
-	if len(errs) == 0 {
+	all := Validate(m)
+	if len(all) == 0 {
 		return PreWaveGateCheck{
 			Name:    "validation",
 			Status:  "pass",
@@ -59,14 +59,28 @@ func checkValidation(m *IMPLManifest) PreWaveGateCheck {
 		}
 	}
 
-	msgs := make([]string, 0, len(errs))
-	for _, e := range errs {
-		msgs = append(msgs, e.Message)
+	// Separate errors from warnings — only errors block wave execution.
+	var errMsgs, warnMsgs []string
+	for _, e := range all {
+		if e.Severity == "warning" {
+			warnMsgs = append(warnMsgs, e.Message)
+		} else {
+			errMsgs = append(errMsgs, e.Message)
+		}
 	}
+
+	if len(errMsgs) == 0 {
+		return PreWaveGateCheck{
+			Name:    "validation",
+			Status:  "warn",
+			Message: strings.Join(warnMsgs, "; "),
+		}
+	}
+
 	return PreWaveGateCheck{
 		Name:    "validation",
 		Status:  "fail",
-		Message: strings.Join(msgs, "; "),
+		Message: strings.Join(errMsgs, "; "),
 	}
 }
 
