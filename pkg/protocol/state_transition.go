@@ -2,10 +2,10 @@ package protocol
 
 import (
 	"fmt"
-	"os/exec"
 	"path/filepath"
 	"strings"
 
+	"github.com/blackwell-systems/scout-and-wave-go/internal/git"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
 )
 
@@ -105,36 +105,25 @@ func SetImplState(manifestPath string, newState ProtocolState, opts SetImplState
 			commitMsg = fmt.Sprintf("chore: set IMPL state to %s", newState)
 		}
 
-		addCmd := exec.Command("git", "-C", manifestDir, "add", manifestPath)
-		if out, err := addCmd.CombinedOutput(); err != nil {
+		if err := git.Add(manifestDir, manifestPath); err != nil {
 			return result.NewFailure[*SetImplStateData]([]result.SAWError{{
 				Code:     result.CodeStateTransition,
-				Message:  fmt.Sprintf("git add failed: %v\n%s", err, out),
+				Message:  fmt.Sprintf("git add failed: %v", err),
 				Severity: "fatal",
 			}})
 		}
 
-		commitCmd := exec.Command("git", "-C", manifestDir, "commit", "-m", commitMsg)
-		if out, err := commitCmd.CombinedOutput(); err != nil {
-			return result.NewFailure[*SetImplStateData]([]result.SAWError{{
-				Code:     result.CodeStateTransition,
-				Message:  fmt.Sprintf("git commit failed: %v\n%s", err, out),
-				Severity: "fatal",
-			}})
-		}
-
-		shaCmd := exec.Command("git", "-C", manifestDir, "rev-parse", "HEAD")
-		shaOut, err := shaCmd.Output()
+		sha, err := git.CommitWithMessage(manifestDir, commitMsg)
 		if err != nil {
 			return result.NewFailure[*SetImplStateData]([]result.SAWError{{
 				Code:     result.CodeStateTransition,
-				Message:  fmt.Sprintf("git rev-parse HEAD failed: %v", err),
+				Message:  fmt.Sprintf("git commit failed: %v", err),
 				Severity: "fatal",
 			}})
 		}
 
 		data.Committed = true
-		data.CommitSHA = strings.TrimSpace(string(shaOut))
+		data.CommitSHA = sha
 	}
 
 	return result.NewSuccess(data)
