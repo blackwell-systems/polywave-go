@@ -342,6 +342,247 @@ func TestResolveIMPLPathOrAbs_SlugStillWorks(t *testing.T) {
 	}
 }
 
+// writeConflictTestIMPLWithWaves creates a minimal IMPL YAML file with per-wave file ownership.
+// files is a slice of maps with "file", optionally "repo", and "wave" (as string, e.g. "1", "2").
+func writeConflictTestIMPLWithWaves(t *testing.T, repoPath, slug string, files []map[string]string) {
+	t.Helper()
+	dir := filepath.Join(repoPath, "docs", "IMPL")
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	// Collect unique wave numbers for the waves section
+	waveSet := make(map[string]bool)
+	for _, f := range files {
+		w := f["wave"]
+		if w == "" {
+			w = "1"
+		}
+		waveSet[w] = true
+	}
+
+	yaml := "title: Test IMPL " + slug + "\n"
+	yaml += "feature_slug: " + slug + "\n"
+	yaml += "verdict: SUITABLE\n"
+	yaml += "test_command: \"go test ./...\"\n"
+	yaml += "lint_command: \"go vet ./...\"\n"
+	yaml += "file_ownership:\n"
+	for _, f := range files {
+		yaml += "  - file: " + f["file"] + "\n"
+		yaml += "    agent: A\n"
+		w := f["wave"]
+		if w == "" {
+			w = "1"
+		}
+		yaml += "    wave: " + w + "\n"
+		if repo, ok := f["repo"]; ok {
+			yaml += "    repo: " + repo + "\n"
+		}
+	}
+	yaml += "waves:\n"
+	for w := range waveSet {
+		yaml += "  - number: " + w + "\n"
+		yaml += "    agents:\n"
+		yaml += "      - id: A\n"
+		yaml += "        task: test task\n"
+	}
+
+	path := filepath.Join(dir, "IMPL-"+slug+".yaml")
+	if err := os.WriteFile(path, []byte(yaml), 0644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestCheckIMPLConflictsWaveLevel_DisjointWave1ConflictWave2(t *testing.T) {
+	// 2 IMPLs share a file only in Wave 2. Wave 1 is disjoint.
+	// Expect: both in tier 1 (wave-level TierSuggestion), SerialWaves has wave 2
+	// for both IMPLs, WaveConflicts has 1 entry with WaveNum=2.
+	tmp := t.TempDir()
+
+	writeConflictTestIMPLWithWaves(t, tmp, "alpha", []map[string]string{
+		{"file": "pkg/a/file1.go", "wave": "1"},
+		{"file": "pkg/shared/file.go", "wave": "2"},
+	})
+	writeConflictTestIMPLWithWaves(t, tmp, "beta", []map[string]string{
+		{"file": "pkg/b/file1.go", "wave": "1"},
+		{"file": "pkg/shared/file.go", "wave": "2"},
+	})
+
+	report, err := CheckIMPLConflictsWaveLevel([]string{"alpha", "beta"}, tmp)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Both should be in tier 1 (no Wave 1 conflict)
+	if report.TierSuggestion["alpha"] != 1 {
+		t.Errorf("expected alpha in tier 1, got %d", report.TierSuggestion["alpha"])
+	}
+	if report.TierSuggestion["beta"] != 1 {
+		t.Errorf("expected beta in tier 1, got %d", report.TierSuggestion["beta"])
+	}
+
+	// WaveConflicts should have exactly 1 entry at wave 2
+	if len(report.WaveConflicts) != 1 {
+		t.Fatalf("expected 1 wave conflict, got %d: %+v", len(report.WaveConflicts), report.WaveConflicts)
+	}
+	if report.WaveConflicts[0].WaveNum != 2 {
+		t.Errorf("expected WaveNum=2, got %d", report.WaveConflicts[0].WaveNum)
+	}
+	if report.WaveConflicts[0].File != "pkg/shared/file.go" {
+		t.Errorf("expected conflict on pkg/shared/file.go, got %s", report.WaveConflicts[0].File)
+	}
+
+	// SerialWaves: both slugs should have wave 2
+	if len(report.SerialWaves["alpha"]) != 1 || report.SerialWaves["alpha"][0] != 2 {
+		t.Errorf("expected alpha SerialWaves=[2], got %v", report.SerialWaves["alpha"])
+	}
+	if len(report.SerialWaves["beta"]) != 1 || report.SerialWaves["beta"][0] != 2 {
+		t.Errorf("expected beta SerialWaves=[2], got %v", report.SerialWaves["beta"])
+	}
+}
+
+func TestCheckIMPLConflictsWaveLevel_Wave1Conflict(t *testing.T) {
+	// 2 IMPLs share a file in Wave 1.
+	// Expect: different tiers, SerialWaves has wave 1 for both.
+	tmp := t.TempDir()
+
+	writeConflictTestIMPLWithWaves(t, tmp, "alpha", []map[string]string{
+		{"file": "pkg/shared/file.go", "wave": "1"},
+		{"file": "pkg/a/file.go", "wave": "1"},
+	})
+	writeConflictTestIMPLWithWaves(t, tmp, "beta", []map[string]string{
+		{"file": "pkg/shared/file.go", "wave": "1"},
+		{"file": "pkg/b/file.go", "wave": "1"},
+	})
+
+	report, err := CheckIMPLConflictsWaveLevel([]string{"alpha", "beta"}, tmp)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Different tiers (Wave 1 conflict)
+	if report.TierSuggestion["alpha"] == report.TierSuggestion["beta"] {
+		t.Errorf("alpha and beta should be in different tiers (Wave 1 conflict), both in tier %d", report.TierSuggestion["alpha"])
+	}
+
+	// WaveConflicts: 1 entry at wave 1
+	if len(report.WaveConflicts) != 1 {
+		t.Fatalf("expected 1 wave conflict, got %d", len(report.WaveConflicts))
+	}
+	if report.WaveConflicts[0].WaveNum != 1 {
+		t.Errorf("expected WaveNum=1, got %d", report.WaveConflicts[0].WaveNum)
+	}
+
+	// SerialWaves: both slugs should have wave 1
+	if len(report.SerialWaves["alpha"]) != 1 || report.SerialWaves["alpha"][0] != 1 {
+		t.Errorf("expected alpha SerialWaves=[1], got %v", report.SerialWaves["alpha"])
+	}
+	if len(report.SerialWaves["beta"]) != 1 || report.SerialWaves["beta"][0] != 1 {
+		t.Errorf("expected beta SerialWaves=[1], got %v", report.SerialWaves["beta"])
+	}
+}
+
+func TestCheckIMPLConflictsWaveLevel_NoConflicts(t *testing.T) {
+	// 2 IMPLs fully disjoint across all waves.
+	// Expect: empty WaveConflicts, empty SerialWaves, both in tier 1.
+	tmp := t.TempDir()
+
+	writeConflictTestIMPLWithWaves(t, tmp, "alpha", []map[string]string{
+		{"file": "pkg/a/file1.go", "wave": "1"},
+		{"file": "pkg/a/file2.go", "wave": "2"},
+	})
+	writeConflictTestIMPLWithWaves(t, tmp, "beta", []map[string]string{
+		{"file": "pkg/b/file1.go", "wave": "1"},
+		{"file": "pkg/b/file2.go", "wave": "2"},
+	})
+
+	report, err := CheckIMPLConflictsWaveLevel([]string{"alpha", "beta"}, tmp)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// No wave conflicts
+	if len(report.WaveConflicts) != 0 {
+		t.Errorf("expected 0 wave conflicts, got %d: %+v", len(report.WaveConflicts), report.WaveConflicts)
+	}
+
+	// Empty SerialWaves
+	if len(report.SerialWaves) != 0 {
+		t.Errorf("expected empty SerialWaves, got %v", report.SerialWaves)
+	}
+
+	// Both in tier 1
+	if report.TierSuggestion["alpha"] != 1 {
+		t.Errorf("expected alpha in tier 1, got %d", report.TierSuggestion["alpha"])
+	}
+	if report.TierSuggestion["beta"] != 1 {
+		t.Errorf("expected beta in tier 1, got %d", report.TierSuggestion["beta"])
+	}
+}
+
+func TestCheckIMPLConflictsWaveLevel_MultipleWaveConflicts(t *testing.T) {
+	// 3 IMPLs: A+B share a file in Wave 1, B+C share a file in Wave 2.
+	// Expect: A and B in different tiers (Wave 1 conflict),
+	//         C in tier 1 (Wave 1 disjoint from A and B).
+	tmp := t.TempDir()
+
+	writeConflictTestIMPLWithWaves(t, tmp, "alpha", []map[string]string{
+		{"file": "pkg/shared/ab.go", "wave": "1"},
+		{"file": "pkg/a/only.go", "wave": "1"},
+	})
+	writeConflictTestIMPLWithWaves(t, tmp, "beta", []map[string]string{
+		{"file": "pkg/shared/ab.go", "wave": "1"},
+		{"file": "pkg/shared/bc.go", "wave": "2"},
+	})
+	writeConflictTestIMPLWithWaves(t, tmp, "gamma", []map[string]string{
+		{"file": "pkg/shared/bc.go", "wave": "2"},
+		{"file": "pkg/c/only.go", "wave": "1"},
+	})
+
+	report, err := CheckIMPLConflictsWaveLevel([]string{"alpha", "beta", "gamma"}, tmp)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// A and B should be in different tiers (Wave 1 conflict between them)
+	if report.TierSuggestion["alpha"] == report.TierSuggestion["beta"] {
+		t.Errorf("alpha and beta should be in different tiers (Wave 1 conflict), both in tier %d", report.TierSuggestion["alpha"])
+	}
+
+	// C should be in tier 1 (no Wave 1 conflict with A or B)
+	if report.TierSuggestion["gamma"] != 1 {
+		t.Errorf("expected gamma in tier 1, got %d (gamma has no Wave 1 conflict with alpha or beta)", report.TierSuggestion["gamma"])
+	}
+
+	// WaveConflicts: 2 entries (one at wave 1 for A+B, one at wave 2 for B+C)
+	if len(report.WaveConflicts) != 2 {
+		t.Fatalf("expected 2 wave conflicts, got %d: %+v", len(report.WaveConflicts), report.WaveConflicts)
+	}
+
+	// Verify conflict files and wave numbers (sorted by wave then file)
+	waveNums := map[int]string{}
+	for _, wc := range report.WaveConflicts {
+		waveNums[wc.WaveNum] = wc.File
+	}
+	if waveNums[1] != "pkg/shared/ab.go" {
+		t.Errorf("expected wave 1 conflict on pkg/shared/ab.go, got %q", waveNums[1])
+	}
+	if waveNums[2] != "pkg/shared/bc.go" {
+		t.Errorf("expected wave 2 conflict on pkg/shared/bc.go, got %q", waveNums[2])
+	}
+
+	// alpha should have serial wave 1, beta should have serial waves 1 and 2
+	if len(report.SerialWaves["alpha"]) != 1 || report.SerialWaves["alpha"][0] != 1 {
+		t.Errorf("expected alpha SerialWaves=[1], got %v", report.SerialWaves["alpha"])
+	}
+	if len(report.SerialWaves["beta"]) != 2 {
+		t.Errorf("expected beta SerialWaves=[1, 2], got %v", report.SerialWaves["beta"])
+	}
+	if len(report.SerialWaves["gamma"]) != 1 || report.SerialWaves["gamma"][0] != 2 {
+		t.Errorf("expected gamma SerialWaves=[2], got %v", report.SerialWaves["gamma"])
+	}
+}
+
 func TestCheckIMPLConflicts_AbsolutePaths(t *testing.T) {
 	// Test D: CheckIMPLConflicts with absolute paths (cross-repo scenario)
 	dir1 := t.TempDir()
