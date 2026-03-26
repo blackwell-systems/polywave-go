@@ -4,8 +4,10 @@ import (
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
 )
 
-// validTransitions maps each state to the set of states reachable from it.
-// The SAW protocol defines 11 states with the following directed edges.
+// validTransitions is the orchestrator's private state machine.
+// It maps each protocol state to the set of states reachable from it,
+// mirroring SM-02 for the orchestrator's own transition tracking.
+// The authoritative protocol-level FSM is SetImplState in pkg/protocol/state_transition.go.
 var validTransitions = map[protocol.ProtocolState][]protocol.ProtocolState{
 	protocol.StateScoutPending:    {protocol.StateScoutValidating, protocol.StateReviewed, protocol.StateNotSuitable, protocol.StateBlocked},
 	protocol.StateScoutValidating: {protocol.StateReviewed, protocol.StateScoutValidating, protocol.StateBlocked},
@@ -21,7 +23,7 @@ var validTransitions = map[protocol.ProtocolState][]protocol.ProtocolState{
 }
 
 // isValidTransition returns true if transitioning from -> to is permitted
-// by the SAW protocol state machine.
+// by the orchestrator's private state machine (validTransitions above).
 func isValidTransition(from, to protocol.ProtocolState) bool {
 	allowed, ok := validTransitions[from]
 	if !ok {
