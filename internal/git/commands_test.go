@@ -505,6 +505,196 @@ func TestLogOneline(t *testing.T) {
 	}
 }
 
+// TestSymbolicRef_OnBranch verifies that SymbolicRef returns a ref starting
+// with "refs/heads/" when HEAD points to a branch.
+func TestSymbolicRef_OnBranch(t *testing.T) {
+	dir := initTestRepo(t)
+
+	ref, err := SymbolicRef(dir)
+	if err != nil {
+		t.Fatalf("SymbolicRef returned error: %v", err)
+	}
+	if !strings.HasPrefix(ref, "refs/heads/") {
+		t.Errorf("expected ref to start with 'refs/heads/', got %q", ref)
+	}
+}
+
+// TestSymbolicRef_DetachedHEAD verifies that SymbolicRef returns an error
+// when the repository is in detached HEAD state.
+func TestSymbolicRef_DetachedHEAD(t *testing.T) {
+	dir := initTestRepo(t)
+
+	// Detach HEAD — ignore error (checkout --detach may print output but succeed)
+	Run(dir, "checkout", "--detach", "HEAD") //nolint:errcheck
+
+	_, err := SymbolicRef(dir)
+	if err == nil {
+		t.Fatal("expected error for detached HEAD, got nil")
+	}
+}
+
+// TestWorktreeListRaw_ReturnsBytes verifies that WorktreeListRaw returns
+// non-empty bytes containing the word "worktree".
+func TestWorktreeListRaw_ReturnsBytes(t *testing.T) {
+	dir := initTestRepo(t)
+
+	out, err := WorktreeListRaw(dir)
+	if err != nil {
+		t.Fatalf("WorktreeListRaw returned error: %v", err)
+	}
+	if len(out) == 0 {
+		t.Fatal("expected non-empty output from WorktreeListRaw")
+	}
+	if !strings.Contains(string(out), "worktree") {
+		t.Errorf("expected output to contain 'worktree', got %q", string(out))
+	}
+}
+
+// TestDiffNameOnlyHEAD_NoDiff verifies that DiffNameOnlyHEAD returns nil
+// for a clean repository with no unstaged changes.
+func TestDiffNameOnlyHEAD_NoDiff(t *testing.T) {
+	dir := initTestRepo(t)
+
+	result, err := DiffNameOnlyHEAD(dir)
+	if err != nil {
+		t.Fatalf("DiffNameOnlyHEAD returned error: %v", err)
+	}
+	if result != nil {
+		t.Errorf("expected nil result for clean repo, got %v", result)
+	}
+}
+
+// TestDiffNameOnlyHEAD_WithModification verifies that DiffNameOnlyHEAD returns
+// the filename of a file that was committed and then modified (but not re-staged).
+func TestDiffNameOnlyHEAD_WithModification(t *testing.T) {
+	dir := initTestRepo(t)
+
+	// Write, stage and commit a file
+	filePath := dir + "/tracked.txt"
+	if err := os.WriteFile(filePath, []byte("original content"), 0644); err != nil {
+		t.Fatalf("failed to write file: %v", err)
+	}
+	if err := Add(dir, "tracked.txt"); err != nil {
+		t.Fatalf("Add failed: %v", err)
+	}
+	if _, err := CommitWithMessage(dir, "add tracked.txt"); err != nil {
+		t.Fatalf("CommitWithMessage failed: %v", err)
+	}
+
+	// Modify the file without staging it
+	if err := os.WriteFile(filePath, []byte("modified content"), 0644); err != nil {
+		t.Fatalf("failed to modify file: %v", err)
+	}
+
+	result, err := DiffNameOnlyHEAD(dir)
+	if err != nil {
+		t.Fatalf("DiffNameOnlyHEAD returned error: %v", err)
+	}
+	found := false
+	for _, f := range result {
+		if f == "tracked.txt" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Errorf("expected result to contain 'tracked.txt', got %v", result)
+	}
+}
+
+// TestDiffNameOnlyStaged_NoStaged verifies that DiffNameOnlyStaged returns nil
+// when no files are staged.
+func TestDiffNameOnlyStaged_NoStaged(t *testing.T) {
+	dir := initTestRepo(t)
+
+	result, err := DiffNameOnlyStaged(dir)
+	if err != nil {
+		t.Fatalf("DiffNameOnlyStaged returned error: %v", err)
+	}
+	if result != nil {
+		t.Errorf("expected nil result for clean index, got %v", result)
+	}
+}
+
+// TestDiffNameOnlyStaged_WithStaged verifies that DiffNameOnlyStaged returns
+// a filename that has been staged via git add.
+func TestDiffNameOnlyStaged_WithStaged(t *testing.T) {
+	dir := initTestRepo(t)
+
+	// Write and stage a file
+	filePath := dir + "/staged.txt"
+	if err := os.WriteFile(filePath, []byte("staged content"), 0644); err != nil {
+		t.Fatalf("failed to write file: %v", err)
+	}
+	if err := Add(dir, "staged.txt"); err != nil {
+		t.Fatalf("Add failed: %v", err)
+	}
+
+	result, err := DiffNameOnlyStaged(dir)
+	if err != nil {
+		t.Fatalf("DiffNameOnlyStaged returned error: %v", err)
+	}
+	found := false
+	for _, f := range result {
+		if f == "staged.txt" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Errorf("expected result to contain 'staged.txt', got %v", result)
+	}
+}
+
+// TestAddUpdate_TrackedFile verifies that AddUpdate stages modifications to
+// a tracked file (but not new untracked files).
+func TestAddUpdate_TrackedFile(t *testing.T) {
+	dir := initTestRepo(t)
+
+	// Write, stage and commit a file so it is tracked
+	filePath := dir + "/update.txt"
+	if err := os.WriteFile(filePath, []byte("initial content"), 0644); err != nil {
+		t.Fatalf("failed to write file: %v", err)
+	}
+	if err := Add(dir, "update.txt"); err != nil {
+		t.Fatalf("Add failed: %v", err)
+	}
+	if _, err := CommitWithMessage(dir, "add update.txt"); err != nil {
+		t.Fatalf("CommitWithMessage failed: %v", err)
+	}
+
+	// Modify the tracked file
+	if err := os.WriteFile(filePath, []byte("updated content"), 0644); err != nil {
+		t.Fatalf("failed to modify file: %v", err)
+	}
+
+	// Stage via AddUpdate
+	if err := AddUpdate(dir, "."); err != nil {
+		t.Fatalf("AddUpdate returned error: %v", err)
+	}
+
+	// Verify the file is now staged
+	status, err := StatusPorcelainFile(dir, "update.txt")
+	if err != nil {
+		t.Fatalf("StatusPorcelainFile returned error: %v", err)
+	}
+	if status == "" {
+		t.Error("expected update.txt to be staged after AddUpdate, status was empty")
+	}
+}
+
+// TestVersion_ReturnsGitVersion verifies that Version returns a string
+// containing "git version" and no error.
+func TestVersion_ReturnsGitVersion(t *testing.T) {
+	out, err := Version()
+	if err != nil {
+		t.Fatalf("Version returned error: %v", err)
+	}
+	if !strings.Contains(out, "git version") {
+		t.Errorf("expected output to contain 'git version', got %q", out)
+	}
+}
+
 // TestInstallHooks_CreatesHooksDirectory verifies that InstallHooks creates
 // the hooks directory if it doesn't exist.
 func TestInstallHooks_CreatesHooksDirectory(t *testing.T) {
