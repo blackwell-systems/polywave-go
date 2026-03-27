@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/engine"
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
 	"github.com/spf13/cobra"
 )
 
@@ -69,8 +70,17 @@ waves that execute on the main branch.`,
 			// Call engine
 			result, err := engine.PrepareWave(context.Background(), opts)
 			if err != nil {
-				// On failure, output partial result if available (for diagnostics)
+				// Check if this is a baseline gate failure
 				if result != nil {
+					for _, step := range result.Steps {
+						if step.Step == "baseline_gates" && step.Status == "failed" && step.Data != nil {
+							// Extract BaselineData and format diagnostics
+							if baselineData, ok := step.Data.(*protocol.BaselineData); ok {
+								fmt.Fprintln(os.Stderr, FormatBaselineOutput(baselineData))
+							}
+						}
+					}
+					// Output partial result for full diagnostics
 					out, _ := json.MarshalIndent(result, "", "  ")
 					fmt.Fprintln(cmd.OutOrStdout(), string(out))
 				}

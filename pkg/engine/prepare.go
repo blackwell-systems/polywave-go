@@ -32,6 +32,13 @@ func recordStep(res *PrepareWaveResult, cb EventCallback, step, status, detail s
 	fireEvent(cb, step, status, detail)
 }
 
+// recordStepWithData appends a StepResult with structured data to the result and fires an event.
+func recordStepWithData(res *PrepareWaveResult, cb EventCallback, step, status, detail string, data interface{}) {
+	sr := StepResult{Step: step, Status: status, Detail: detail, Data: data}
+	res.Steps = append(res.Steps, sr)
+	fireEvent(cb, step, status, detail)
+}
+
 // loadSAWConfigRepos reads saw.config.json and returns the repos array.
 func loadSAWConfigRepos(configPath string) []protocol.RepoEntry {
 	data, err := os.ReadFile(configPath)
@@ -283,7 +290,7 @@ func PrepareWave(ctx context.Context, opts PrepareWaveOpts) (*PrepareWaveResult,
 	}
 	baselineResult := baselineRes.GetData()
 	if !baselineResult.Passed {
-		recordStep(res, opts.OnEvent, "baseline_gates", "failed", baselineResult.Reason)
+		recordStepWithData(res, opts.OnEvent, "baseline_gates", "failed", baselineResult.Reason, baselineResult)
 		return res, fmt.Errorf("baseline verification failed: %s", baselineResult.Reason)
 	}
 	recordStep(res, opts.OnEvent, "baseline_gates", "success", "baseline gates passed")
