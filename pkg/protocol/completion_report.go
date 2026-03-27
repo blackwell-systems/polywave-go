@@ -3,7 +3,6 @@ package protocol
 import (
 	"fmt"
 	"strings"
-	"time"
 )
 
 // CompletionReportBuilder constructs and validates a CompletionReport before
@@ -122,8 +121,8 @@ func (b *CompletionReportBuilder) Validate() error {
 	return nil
 }
 
-// AppendToManifest validates the report, sets WrittenAt to time.Now(), and writes
-// it into manifest.CompletionReports[agentID] in-memory.
+// AppendToManifest validates the report and writes it into
+// manifest.CompletionReports[agentID] in-memory.
 // Does NOT call Save(); callers inside WithCompletionReportLock control persistence.
 // Returns Validate() errors if validation fails.
 // Returns ErrAgentNotFound if agentID is not in the manifest's wave list.
@@ -131,7 +130,5 @@ func (b *CompletionReportBuilder) AppendToManifest(manifest *IMPLManifest) error
 	if err := b.Validate(); err != nil {
 		return err
 	}
-	now := time.Now()
-	b.report.WrittenAt = &now
 	return SetCompletionReport(manifest, b.agentID, b.report)
 }
