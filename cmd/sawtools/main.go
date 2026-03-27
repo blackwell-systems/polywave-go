@@ -64,6 +64,7 @@ func main() {
 		newAmendImplCmd(),
 		newAnalyzeDepsCmd(),
 		newDetectScaffoldsCmd(),
+		newDetectSharedTypesCmd(),
 		newAnalyzeSuitabilityCmd(),
 		newExtractCommandsCmd(),
 		newFinalizeWaveCmd(),

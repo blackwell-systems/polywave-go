@@ -947,7 +947,7 @@ func (o *Orchestrator) launchAgent(
 			failureType = protocol.FailureEscalate
 		}
 
-		action := RouteFailure(failureType)
+		action := RouteFailureWithReactions(failureType, o.implDoc.Reactions)
 		o.publish(OrchestratorEvent{
 			Event: "agent_blocked",
 			Data: AgentBlockedPayload{
