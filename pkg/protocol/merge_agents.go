@@ -349,6 +349,25 @@ func mergeAgentsSingleRepo(manifestPath string, waveNum int, repoDir string, man
 			mergeSHA = "unknown"
 		}
 
+		// POST-MERGE VERIFICATION: Ensure agent's commit is actually in HEAD's history
+		// This catches cases where merge operation succeeded but commit didn't land
+		// (e.g., due to conflict handling bugs, partial merges, or git anomalies)
+		if report, ok := manifest.CompletionReports[agent.ID]; ok && report.Commit != "" {
+			if !git.IsAncestor(repoDir, report.Commit, "HEAD") {
+				status.Success = false
+				status.Error = fmt.Sprintf("merge operation succeeded but agent commit %s not found in HEAD history (verification failed)", report.Commit)
+				data.Merges = append(data.Merges, status)
+				data.Success = false
+				return result.NewPartial(data, []result.SAWError{{
+					Code:     "MERGE_VERIFICATION_FAILED",
+					Message:  fmt.Sprintf("agent %s: merge succeeded but commit %s not in HEAD history", agent.ID, report.Commit),
+					Severity: "error",
+					Field:    "agent",
+					Context:  map[string]string{"agent": agent.ID, "commit": report.Commit, "merge_sha": mergeSHA},
+				}}), nil
+			}
+		}
+
 		// Record merge in log (E9)
 		mergeLog.AddMergeEntry(agent.ID, mergeSHA)
 		if saveErr := SaveMergeLog(manifestPath, waveNum, mergeLog); saveErr != nil {
@@ -486,6 +505,23 @@ func mergeAgentsMultiRepo(manifestPath string, waveNum int, manifest *IMPLManife
 			if err != nil {
 				// Non-fatal: log warning but continue
 				mergeSHA = "unknown"
+			}
+
+			// POST-MERGE VERIFICATION: Ensure agent's commit is actually in HEAD's history
+			if report, ok := manifest.CompletionReports[agent.ID]; ok && report.Commit != "" {
+				if !git.IsAncestor(absRepoDir, report.Commit, "HEAD") {
+					status.Success = false
+					status.Error = fmt.Sprintf("merge operation succeeded but agent commit %s not found in HEAD history (verification failed, repo: %s)", report.Commit, repoDir)
+					data.Merges = append(data.Merges, status)
+					data.Success = false
+					return result.NewPartial(data, []result.SAWError{{
+						Code:     "MERGE_VERIFICATION_FAILED",
+						Message:  fmt.Sprintf("agent %s in repo %s: merge succeeded but commit %s not in HEAD history", agent.ID, repoDir, report.Commit),
+						Severity: "error",
+						Field:    "agent",
+						Context:  map[string]string{"agent": agent.ID, "commit": report.Commit, "merge_sha": mergeSHA, "repo": repoDir},
+					}}), nil
+				}
 			}
 
 			// Record merge in log (E9)
