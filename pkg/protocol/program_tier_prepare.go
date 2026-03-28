@@ -109,6 +109,18 @@ func PrepareTier(programManifestPath string, tierNumber int, repoDir string) (*P
 			result.Success = false
 			return result, nil
 		}
+
+		// Step 4.5: E37 critic gate enforcement (auto mode for program execution).
+		if !CriticGatePasses(m, true) {
+			vr := IMPLValidationResult{
+				ImplSlug: slug,
+				Valid:    false,
+				Errors:   []string{"E37 critic gate failed — ISSUES verdict with errors"},
+			}
+			result.Validations = append(result.Validations, vr)
+			result.Success = false
+			return result, nil
+		}
 	}
 
 	// Step 5: Create worktrees.
