@@ -43,6 +43,17 @@ waves that execute on the main branch.`,
 
 			manifestPath := args[0]
 
+			// Load manifest for E37 pre-flight check
+			manifest, err := protocol.Load(manifestPath)
+			if err != nil {
+				return fmt.Errorf("prepare-wave: failed to load manifest: %w", err)
+			}
+
+			// E37: Critic gate enforcement (manual mode)
+			if !protocol.CriticGatePasses(manifest, false) {
+				return fmt.Errorf("prepare-wave: E37 critic gate failed — ISSUES verdict with errors")
+			}
+
 			// Determine project root from manifest path or --repo-dir flag
 			projectRoot := filepath.Dir(filepath.Dir(filepath.Dir(manifestPath)))
 			if repoDir != "" {
