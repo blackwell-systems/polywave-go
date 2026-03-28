@@ -251,6 +251,18 @@ func PrepareWave(ctx context.Context, opts PrepareWaveOpts) (*PrepareWaveResult,
 
 	// Step: Merge target checkout (when set)
 	if opts.MergeTarget != "" {
+		// P1 fix: Save current branch before checkout, restore via defer
+		out, err := git.Run(projectRoot, "branch", "--show-current")
+		if err == nil {
+			res.OriginalBranch = strings.TrimSpace(string(out))
+			if res.OriginalBranch != "" {
+				// Restore original branch on function exit (success or failure)
+				defer func() {
+					git.Run(projectRoot, "checkout", res.OriginalBranch)
+				}()
+			}
+		}
+
 		// In program context, create-program-worktrees may have already checked out
 		// this branch as a long-lived IMPL branch worktree. Attempting git checkout on
 		// an already-worktree branch fails with "already used by worktree at <path>".

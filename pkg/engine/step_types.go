@@ -32,11 +32,12 @@ type PrepareWaveOpts struct {
 
 // PrepareWaveResult captures results of all preparation steps.
 type PrepareWaveResult struct {
-	Wave        int                     `json:"wave"`
-	Worktrees   []protocol.WorktreeInfo `json:"worktrees"`
-	AgentBriefs []AgentBriefInfo        `json:"agent_briefs"`
-	Steps       []StepResult            `json:"steps"`
-	Success     bool                    `json:"success"`
+	Wave           int                     `json:"wave"`
+	Worktrees      []protocol.WorktreeInfo `json:"worktrees"`
+	AgentBriefs    []AgentBriefInfo        `json:"agent_briefs"`
+	Steps          []StepResult            `json:"steps"`
+	Success        bool                    `json:"success"`
+	OriginalBranch string                  `json:"original_branch,omitempty"` // P1: branch before merge-target checkout
 }
 
 // AgentBriefInfo contains metadata about a prepared agent brief.
