@@ -2,8 +2,10 @@ package protocol
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"os/exec"
+	"strings"
 	"testing"
 	"time"
 
@@ -524,6 +526,7 @@ func TestRunGates_FormatGate_FixMode(t *testing.T) {
 					Command:  "echo fixed",
 					Required: true,
 					Fix:      true,
+					Phase:    GatePhasePre, // Fix gates must be in PRE_VALIDATION
 				},
 			},
 		},
@@ -926,5 +929,489 @@ func TestGateResult_JSONWithParsedErrors(t *testing.T) {
 	errs := m2["parsed_errors"].([]interface{})
 	if len(errs) != 1 {
 		t.Errorf("expected 1 parsed error in JSON, got %d", len(errs))
+	}
+}
+
+// ---- Phase and parallel execution tests ----
+
+// TestPhaseOrdering verifies that PRE runs before VALIDATION, VALIDATION before POST.
+func TestPhaseOrdering(t *testing.T) {
+	// Create a temp git repo so cache can build keys
+	repoDir := t.TempDir()
+	cacheDir := t.TempDir()
+	cache := gatecache.New(cacheDir, 5*time.Minute)
+
+	gitCmd := func(args ...string) {
+		cmd := exec.Command("git", args...)
+		cmd.Dir = repoDir
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v failed: %v\n%s", args, err, out)
+		}
+	}
+	gitCmd("init")
+	gitCmd("config", "user.email", "test@test.com")
+	gitCmd("config", "user.name", "Test")
+	if err := os.WriteFile(repoDir+"/README.md", []byte("test"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	gitCmd("add", ".")
+	gitCmd("commit", "-m", "init")
+
+	// Write ordered output to a temp file to track execution order
+	orderFile := repoDir + "/order.txt"
+
+	manifest := &IMPLManifest{
+		QualityGates: &QualityGates{
+			Level: "standard",
+			Gates: []QualityGate{
+				{Type: "lint", Command: fmt.Sprintf("echo POST >> %s", orderFile), Required: true, Phase: GatePhasePost},
+				{Type: "format", Command: fmt.Sprintf("echo PRE >> %s", orderFile), Required: true, Phase: GatePhasePre},
+				{Type: "test", Command: fmt.Sprintf("echo VALIDATION >> %s", orderFile), Required: true, Phase: GatePhaseMain},
+			},
+		},
+	}
+
+	res := RunGatesWithCache(manifest, 1, repoDir, cache)
+	if !res.IsSuccess() {
+		t.Fatalf("expected success, got: %v", res.Errors)
+	}
+
+	// Read the order file to verify execution order
+	orderBytes, err := os.ReadFile(orderFile)
+	if err != nil {
+		t.Fatalf("failed to read order file: %v", err)
+	}
+	order := string(orderBytes)
+
+	// Verify PRE appears before VALIDATION, and VALIDATION before POST
+	preIdx := strings.Index(order, "PRE")
+	valIdx := strings.Index(order, "VALIDATION")
+	postIdx := strings.Index(order, "POST")
+
+	if preIdx == -1 || valIdx == -1 || postIdx == -1 {
+		t.Fatalf("missing phase output in order file: %s", order)
+	}
+	if preIdx > valIdx {
+		t.Errorf("PRE phase should execute before VALIDATION phase, got order: %s", order)
+	}
+	if valIdx > postIdx {
+		t.Errorf("VALIDATION phase should execute before POST phase, got order: %s", order)
+	}
+}
+
+// TestParallelGroupConcurrency verifies gates in same parallel_group run concurrently.
+func TestParallelGroupConcurrency(t *testing.T) {
+	repoDir := t.TempDir()
+	cacheDir := t.TempDir()
+	cache := gatecache.New(cacheDir, 5*time.Minute)
+
+	gitCmd := func(args ...string) {
+		cmd := exec.Command("git", args...)
+		cmd.Dir = repoDir
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v failed: %v\n%s", args, err, out)
+		}
+	}
+	gitCmd("init")
+	gitCmd("config", "user.email", "test@test.com")
+	gitCmd("config", "user.name", "Test")
+	if err := os.WriteFile(repoDir+"/README.md", []byte("test"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	gitCmd("add", ".")
+	gitCmd("commit", "-m", "init")
+
+	// Two gates that each sleep for 100ms, but in same parallel group
+	// If sequential: ~200ms. If parallel: ~100ms
+	manifest := &IMPLManifest{
+		QualityGates: &QualityGates{
+			Level: "standard",
+			Gates: []QualityGate{
+				{Type: "test1", Command: "sleep 0.1", Required: true, Phase: GatePhaseMain, ParallelGroup: "group1"},
+				{Type: "test2", Command: "sleep 0.1", Required: true, Phase: GatePhaseMain, ParallelGroup: "group1"},
+			},
+		},
+	}
+
+	start := time.Now()
+	res := RunGatesWithCache(manifest, 1, repoDir, cache)
+	elapsed := time.Since(start)
+
+	if !res.IsSuccess() {
+		t.Fatalf("expected success, got: %v", res.Errors)
+	}
+
+	// Parallel execution should complete in ~100-200ms (with some overhead)
+	// Sequential would be ~220ms+
+	// Allow generous threshold due to system load and test environment variability
+	if elapsed > 210*time.Millisecond {
+		t.Errorf("parallel execution took too long (%v), likely ran sequentially", elapsed)
+	}
+}
+
+// TestBackwardCompat verifies old IMPL docs with no Phase/ParallelGroup default to VALIDATION sequential.
+func TestBackwardCompat(t *testing.T) {
+	repoDir := t.TempDir()
+	cacheDir := t.TempDir()
+	cache := gatecache.New(cacheDir, 5*time.Minute)
+
+	gitCmd := func(args ...string) {
+		cmd := exec.Command("git", args...)
+		cmd.Dir = repoDir
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v failed: %v\n%s", args, err, out)
+		}
+	}
+	gitCmd("init")
+	gitCmd("config", "user.email", "test@test.com")
+	gitCmd("config", "user.name", "Test")
+	if err := os.WriteFile(repoDir+"/README.md", []byte("test"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	gitCmd("add", ".")
+	gitCmd("commit", "-m", "init")
+
+	// Gates with no Phase or ParallelGroup (backward compat)
+	manifest := &IMPLManifest{
+		QualityGates: &QualityGates{
+			Level: "standard",
+			Gates: []QualityGate{
+				{Type: "build", Command: "echo build ok", Required: true},
+				{Type: "test", Command: "echo test ok", Required: true},
+			},
+		},
+	}
+
+	res := RunGatesWithCache(manifest, 1, repoDir, cache)
+	if !res.IsSuccess() {
+		t.Fatalf("expected success, got: %v", res.Errors)
+	}
+	data := res.GetData()
+	if len(data.Gates) != 2 {
+		t.Fatalf("expected 2 gate results, got %d", len(data.Gates))
+	}
+	for i, g := range data.Gates {
+		if !g.Passed {
+			t.Errorf("gate[%d] should pass in backward compat mode", i)
+		}
+	}
+}
+
+// TestValidateQualityGate verifies format gates with fix=true in wrong phase return error.
+func TestValidateQualityGate(t *testing.T) {
+	tests := []struct {
+		name      string
+		gate      QualityGate
+		expectErr bool
+	}{
+		{
+			name:      "fix=true in PRE phase (valid)",
+			gate:      QualityGate{Type: "format", Command: "gofmt", Fix: true, Phase: GatePhasePre},
+			expectErr: false,
+		},
+		{
+			name:      "fix=true in VALIDATION phase (invalid)",
+			gate:      QualityGate{Type: "format", Command: "gofmt", Fix: true, Phase: GatePhaseMain},
+			expectErr: true,
+		},
+		{
+			name:      "fix=true in POST phase (invalid)",
+			gate:      QualityGate{Type: "format", Command: "gofmt", Fix: true, Phase: GatePhasePost},
+			expectErr: true,
+		},
+		{
+			name:      "fix=true with empty phase (invalid - defaults to VALIDATION)",
+			gate:      QualityGate{Type: "format", Command: "gofmt", Fix: true, Phase: ""},
+			expectErr: true,
+		},
+		{
+			name:      "fix=false in any phase (valid)",
+			gate:      QualityGate{Type: "format", Command: "gofmt", Fix: false, Phase: GatePhaseMain},
+			expectErr: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := ValidateQualityGate(tt.gate)
+			if tt.expectErr && err == nil {
+				t.Errorf("expected validation error, got nil")
+			}
+			if !tt.expectErr && err != nil {
+				t.Errorf("expected no error, got: %v", err)
+			}
+		})
+	}
+}
+
+// TestFormatGateInvalidatesCacheAcrossPhases verifies format gate in PRE invalidates cache,
+// VALIDATION gates see fresh files.
+func TestFormatGateInvalidatesCacheAcrossPhases(t *testing.T) {
+	repoDir := t.TempDir()
+	cacheDir := t.TempDir()
+	cache := gatecache.New(cacheDir, 5*time.Minute)
+
+	gitCmd := func(args ...string) {
+		cmd := exec.Command("git", args...)
+		cmd.Dir = repoDir
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v failed: %v\n%s", args, err, out)
+		}
+	}
+	gitCmd("init")
+	gitCmd("config", "user.email", "test@test.com")
+	gitCmd("config", "user.name", "Test")
+	testFile := repoDir + "/test.txt"
+	if err := os.WriteFile(testFile, []byte("original"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	gitCmd("add", ".")
+	gitCmd("commit", "-m", "init")
+
+	// Format gate modifies file, VALIDATION gate reads it
+	manifest := &IMPLManifest{
+		QualityGates: &QualityGates{
+			Level: "standard",
+			Gates: []QualityGate{
+				{Type: "format", Command: fmt.Sprintf("echo modified > %s", testFile), Required: true, Phase: GatePhasePre, Fix: true},
+				{Type: "test", Command: fmt.Sprintf("cat %s", testFile), Required: true, Phase: GatePhaseMain},
+			},
+		},
+	}
+
+	res := RunGatesWithCache(manifest, 1, repoDir, cache)
+	if !res.IsSuccess() {
+		t.Fatalf("expected success, got: %v", res.Errors)
+	}
+	data := res.GetData()
+	if len(data.Gates) != 2 {
+		t.Fatalf("expected 2 gate results, got %d", len(data.Gates))
+	}
+
+	// VALIDATION gate should see "modified" not "original"
+	testGate := data.Gates[1]
+	if !strings.Contains(testGate.Stdout, "modified") {
+		t.Errorf("VALIDATION gate should see modified file content, got: %s", testGate.Stdout)
+	}
+}
+
+// TestEmptyPhaseDefaults verifies gates with empty Phase field execute in VALIDATION phase.
+func TestEmptyPhaseDefaults(t *testing.T) {
+	gates := []QualityGate{
+		{Type: "build", Command: "echo build", Phase: ""},
+		{Type: "test", Command: "echo test", Phase: ""},
+	}
+
+	grouped := groupGatesByPhase(gates)
+
+	if len(grouped[GatePhaseMain]) != 2 {
+		t.Errorf("expected 2 gates in VALIDATION phase, got %d", len(grouped[GatePhaseMain]))
+	}
+	if len(grouped[GatePhasePre]) != 0 {
+		t.Errorf("expected 0 gates in PRE phase, got %d", len(grouped[GatePhasePre]))
+	}
+	if len(grouped[GatePhasePost]) != 0 {
+		t.Errorf("expected 0 gates in POST phase, got %d", len(grouped[GatePhasePost]))
+	}
+}
+
+// TestParallelErrorCollection verifies multiple concurrent gate failures are all collected.
+func TestParallelErrorCollection(t *testing.T) {
+	repoDir := t.TempDir()
+	cacheDir := t.TempDir()
+	cache := gatecache.New(cacheDir, 5*time.Minute)
+
+	gitCmd := func(args ...string) {
+		cmd := exec.Command("git", args...)
+		cmd.Dir = repoDir
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v failed: %v\n%s", args, err, out)
+		}
+	}
+	gitCmd("init")
+	gitCmd("config", "user.email", "test@test.com")
+	gitCmd("config", "user.name", "Test")
+	if err := os.WriteFile(repoDir+"/README.md", []byte("test"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	gitCmd("add", ".")
+	gitCmd("commit", "-m", "init")
+
+	manifest := &IMPLManifest{
+		QualityGates: &QualityGates{
+			Level: "standard",
+			Gates: []QualityGate{
+				{Type: "test1", Command: "exit 1", Required: true, Phase: GatePhaseMain, ParallelGroup: "failing"},
+				{Type: "test2", Command: "exit 2", Required: true, Phase: GatePhaseMain, ParallelGroup: "failing"},
+				{Type: "test3", Command: "exit 3", Required: true, Phase: GatePhaseMain, ParallelGroup: "failing"},
+			},
+		},
+	}
+
+	res := RunGatesWithCache(manifest, 1, repoDir, cache)
+	if !res.IsSuccess() {
+		t.Fatalf("expected success (gate failures don't fail Result), got: %v", res.Errors)
+	}
+	data := res.GetData()
+	if len(data.Gates) != 3 {
+		t.Fatalf("expected 3 gate results, got %d", len(data.Gates))
+	}
+
+	// All gates should have failed with their respective exit codes
+	exitCodes := map[int]bool{}
+	for _, g := range data.Gates {
+		if g.Passed {
+			t.Errorf("gate %s should have failed", g.Type)
+		}
+		exitCodes[g.ExitCode] = true
+	}
+
+	if !exitCodes[1] || !exitCodes[2] || !exitCodes[3] {
+		t.Errorf("expected exit codes 1, 2, 3 to all be present, got: %v", exitCodes)
+	}
+}
+
+// TestMixedSequentialParallel verifies mix of sequential and parallel gates in same phase.
+func TestMixedSequentialParallel(t *testing.T) {
+	repoDir := t.TempDir()
+	cacheDir := t.TempDir()
+	cache := gatecache.New(cacheDir, 5*time.Minute)
+
+	gitCmd := func(args ...string) {
+		cmd := exec.Command("git", args...)
+		cmd.Dir = repoDir
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v failed: %v\n%s", args, err, out)
+		}
+	}
+	gitCmd("init")
+	gitCmd("config", "user.email", "test@test.com")
+	gitCmd("config", "user.name", "Test")
+	if err := os.WriteFile(repoDir+"/README.md", []byte("test"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	gitCmd("add", ".")
+	gitCmd("commit", "-m", "init")
+
+	manifest := &IMPLManifest{
+		QualityGates: &QualityGates{
+			Level: "standard",
+			Gates: []QualityGate{
+				{Type: "seq1", Command: "echo seq1", Required: true, Phase: GatePhaseMain, ParallelGroup: ""},
+				{Type: "par1", Command: "echo par1", Required: true, Phase: GatePhaseMain, ParallelGroup: "parallel"},
+				{Type: "par2", Command: "echo par2", Required: true, Phase: GatePhaseMain, ParallelGroup: "parallel"},
+				{Type: "seq2", Command: "echo seq2", Required: true, Phase: GatePhaseMain, ParallelGroup: ""},
+			},
+		},
+	}
+
+	res := RunGatesWithCache(manifest, 1, repoDir, cache)
+	if !res.IsSuccess() {
+		t.Fatalf("expected success, got: %v", res.Errors)
+	}
+	data := res.GetData()
+	if len(data.Gates) != 4 {
+		t.Fatalf("expected 4 gate results, got %d", len(data.Gates))
+	}
+
+	for _, g := range data.Gates {
+		if !g.Passed {
+			t.Errorf("gate %s should pass, got Passed=false", g.Type)
+		}
+	}
+}
+
+// TestParallelGroupIsolation verifies different parallel groups don't block each other.
+func TestParallelGroupIsolation(t *testing.T) {
+	repoDir := t.TempDir()
+	cacheDir := t.TempDir()
+	cache := gatecache.New(cacheDir, 5*time.Minute)
+
+	gitCmd := func(args ...string) {
+		cmd := exec.Command("git", args...)
+		cmd.Dir = repoDir
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v failed: %v\n%s", args, err, out)
+		}
+	}
+	gitCmd("init")
+	gitCmd("config", "user.email", "test@test.com")
+	gitCmd("config", "user.name", "Test")
+	if err := os.WriteFile(repoDir+"/README.md", []byte("test"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	gitCmd("add", ".")
+	gitCmd("commit", "-m", "init")
+
+	manifest := &IMPLManifest{
+		QualityGates: &QualityGates{
+			Level: "standard",
+			Gates: []QualityGate{
+				{Type: "g1a", Command: "echo g1a", Required: true, Phase: GatePhaseMain, ParallelGroup: "group1"},
+				{Type: "g1b", Command: "echo g1b", Required: true, Phase: GatePhaseMain, ParallelGroup: "group1"},
+				{Type: "g2a", Command: "echo g2a", Required: true, Phase: GatePhaseMain, ParallelGroup: "group2"},
+				{Type: "g2b", Command: "echo g2b", Required: true, Phase: GatePhaseMain, ParallelGroup: "group2"},
+			},
+		},
+	}
+
+	res := RunGatesWithCache(manifest, 1, repoDir, cache)
+	if !res.IsSuccess() {
+		t.Fatalf("expected success, got: %v", res.Errors)
+	}
+	data := res.GetData()
+	if len(data.Gates) != 4 {
+		t.Fatalf("expected 4 gate results, got %d", len(data.Gates))
+	}
+
+	for _, g := range data.Gates {
+		if !g.Passed {
+			t.Errorf("gate %s should pass", g.Type)
+		}
+	}
+}
+
+// TestRaceDetection runs with -race flag in the verification gate to detect data races.
+// This test itself doesn't do anything special; the value is in running it with -race.
+func TestRaceDetection(t *testing.T) {
+	repoDir := t.TempDir()
+	cacheDir := t.TempDir()
+	cache := gatecache.New(cacheDir, 5*time.Minute)
+
+	gitCmd := func(args ...string) {
+		cmd := exec.Command("git", args...)
+		cmd.Dir = repoDir
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v failed: %v\n%s", args, err, out)
+		}
+	}
+	gitCmd("init")
+	gitCmd("config", "user.email", "test@test.com")
+	gitCmd("config", "user.name", "Test")
+	if err := os.WriteFile(repoDir+"/README.md", []byte("test"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	gitCmd("add", ".")
+	gitCmd("commit", "-m", "init")
+
+	// Run multiple parallel gates that access the cache concurrently
+	manifest := &IMPLManifest{
+		QualityGates: &QualityGates{
+			Level: "standard",
+			Gates: []QualityGate{
+				{Type: "test1", Command: "echo test1", Required: true, Phase: GatePhaseMain, ParallelGroup: "race"},
+				{Type: "test2", Command: "echo test2", Required: true, Phase: GatePhaseMain, ParallelGroup: "race"},
+				{Type: "test3", Command: "echo test3", Required: true, Phase: GatePhaseMain, ParallelGroup: "race"},
+				{Type: "test4", Command: "echo test4", Required: true, Phase: GatePhaseMain, ParallelGroup: "race"},
+			},
+		},
+	}
+
+	// Run multiple times to increase chance of race detection
+	for i := 0; i < 5; i++ {
+		res := RunGatesWithCache(manifest, 1, repoDir, cache)
+		if !res.IsSuccess() {
+			t.Fatalf("iteration %d: expected success, got: %v", i, res.Errors)
+		}
 	}
 }

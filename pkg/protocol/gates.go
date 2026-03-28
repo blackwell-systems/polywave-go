@@ -8,6 +8,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/errparse"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/format"
@@ -34,6 +35,188 @@ type GateResult struct {
 // GatesData wraps gate execution results for use with result.Result[T].
 type GatesData struct {
 	Gates []GateResult `json:"gates"`
+}
+
+// ValidateQualityGate checks that a quality gate configuration is valid.
+// Returns error if gate has invalid field combinations.
+// BLOCKER 2 FIX: Format gates with fix=true MUST be in PRE_VALIDATION phase
+// to prevent cache invalidation during parallel VALIDATION phase execution.
+func ValidateQualityGate(gate QualityGate) error {
+	// Format gates with fix=true MUST be in PRE_VALIDATION phase
+	// (or empty phase, which defaults to VALIDATION — that's an error too)
+	if gate.Fix && gate.Phase != GatePhasePre && gate.Phase != "" {
+		return fmt.Errorf("format gates with fix=true must be in PRE_VALIDATION phase (got %s)", gate.Phase)
+	}
+	// Empty phase + fix=true is also invalid (would default to VALIDATION)
+	if gate.Fix && gate.Phase == "" {
+		return fmt.Errorf("format gates with fix=true must be in PRE_VALIDATION phase (got empty, which defaults to VALIDATION)")
+	}
+	return nil
+}
+
+// gateGroup represents a set of gates that execute together (sequentially or concurrently).
+type gateGroup struct {
+	parallel bool            // true = execute concurrently, false = sequential
+	gates    []QualityGate
+}
+
+// groupGatesByPhase partitions gates into phase buckets.
+// Gates with empty Phase are placed in GatePhaseMain (VALIDATION).
+func groupGatesByPhase(gates []QualityGate) map[GatePhase][]QualityGate {
+	grouped := make(map[GatePhase][]QualityGate)
+	for _, gate := range gates {
+		phase := gate.Phase
+		if phase == "" {
+			phase = GatePhaseMain // backward compat default
+		}
+		grouped[phase] = append(grouped[phase], gate)
+	}
+	return grouped
+}
+
+// groupGatesByParallelGroup partitions gates within a phase into execution groups.
+// Gates with empty ParallelGroup run sequentially (one group per gate).
+// Gates with the same non-empty ParallelGroup run concurrently (one group).
+func groupGatesByParallelGroup(gates []QualityGate) []gateGroup {
+	var sequential []QualityGate
+	parallelMap := make(map[string][]QualityGate)
+
+	for _, gate := range gates {
+		if gate.ParallelGroup == "" {
+			sequential = append(sequential, gate)
+		} else {
+			parallelMap[gate.ParallelGroup] = append(parallelMap[gate.ParallelGroup], gate)
+		}
+	}
+
+	var groups []gateGroup
+	// Sequential gates first (maintain order)
+	for _, gate := range sequential {
+		groups = append(groups, gateGroup{parallel: false, gates: []QualityGate{gate}})
+	}
+	// Parallel groups next
+	for _, groupGates := range parallelMap {
+		groups = append(groups, gateGroup{parallel: true, gates: groupGates})
+	}
+	return groups
+}
+
+// executeSingleGate runs a single gate and returns its result.
+// Handles cache lookup, format gate special case, and result caching.
+// This function extracts the per-gate execution logic from RunGatesWithCache's loop.
+func executeSingleGate(gate QualityGate, repoDir string, cache *gatecache.Cache) GateResult {
+	// Build a per-gate cache key that includes the gate command string.
+	// This ensures that changing the command (e.g. adding a flag) causes
+	// a cache miss rather than returning a stale result.
+	var cacheKey gatecache.CacheKey
+	if cache != nil {
+		var err error
+		cacheKey, err = cache.BuildKeyForGate(repoDir, gate.Command)
+		if err != nil {
+			// Cannot build key (e.g. not a git repo) — fall back to no-cache for
+			// this gate by running it below without checking or populating cache.
+			// We continue through the rest of the function.
+			cacheKey = gatecache.CacheKey{}
+		}
+	}
+
+	// Check the cache first (only when we successfully built a key)
+	if cache != nil && cacheKey.HeadCommit != "" {
+		if cached, ok := cache.Get(cacheKey, gate.Type); ok {
+			skipReason := fmt.Sprintf("cached at SHA %s", cacheKey.HeadCommit)
+			slog.Default().Debug("protocol: gate skipped (cached)", "gate", gate.Type, "sha", cacheKey.HeadCommit)
+			return GateResult{
+				Type:       gate.Type,
+				Command:    gate.Command,
+				Required:   gate.Required,
+				Passed:     cached.Passed,
+				ExitCode:   cached.ExitCode,
+				Stdout:     cached.Stdout,
+				Stderr:     cached.Stderr,
+				FromCache:  true,
+				SkipReason: skipReason,
+			}
+		}
+	}
+
+	// Format gates use the dedicated runner for auto-detection + fix mode.
+	// Place after cache-hit check so cached format results are still served,
+	// but before the generic exec block. Fix mode always bypasses cache anyway
+	// since we invalidate after running.
+	if gate.Type == "format" {
+		return runFormatGate(gate, repoDir, cache)
+	}
+
+	// Cache miss — run the gate
+	result := GateResult{
+		Type:     gate.Type,
+		Command:  gate.Command,
+		Required: gate.Required,
+	}
+
+	cmd := exec.Command("sh", "-c", gate.Command)
+	cmd.Dir = repoDir
+
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+
+	runErr := cmd.Run()
+	result.Stdout = stdout.String()
+	result.Stderr = stderr.String()
+
+	if runErr != nil {
+		if exitErr, ok := runErr.(*exec.ExitError); ok {
+			result.ExitCode = exitErr.ExitCode()
+		} else {
+			result.ExitCode = -1
+			if result.Stderr == "" {
+				result.Stderr = fmt.Sprintf("command failed to execute: %v", runErr)
+			}
+		}
+		result.Passed = false
+	} else {
+		result.ExitCode = 0
+		result.Passed = true
+	}
+
+	// Parse structured errors from output
+	if pr := errparse.ParseOutput(gate.Type, gate.Command, result.Stdout, result.Stderr); pr != nil {
+		result.ParsedErrors = pr.Errors
+	}
+
+	// Store in cache (ignore errors — cache is best-effort).
+	// Only store when we have a valid key (HeadCommit non-empty).
+	if cache != nil && cacheKey.HeadCommit != "" {
+		_ = cache.Put(cacheKey, gate.Type, gatecache.CachedResult{
+			GateType: gate.Type,
+			Command:  gate.Command,
+			Passed:   result.Passed,
+			ExitCode: result.ExitCode,
+			Stdout:   result.Stdout,
+			Stderr:   result.Stderr,
+		})
+	}
+
+	return result
+}
+
+// executeGatesConcurrently runs gates in parallel using goroutines.
+// Returns when all gates complete. Collects results in order.
+func executeGatesConcurrently(gates []QualityGate, repoDir string, cache *gatecache.Cache) []GateResult {
+	var wg sync.WaitGroup
+	results := make([]GateResult, len(gates))
+
+	for i, gate := range gates {
+		wg.Add(1)
+		go func(idx int, g QualityGate) {
+			defer wg.Done()
+			results[idx] = executeSingleGate(g, repoDir, cache)
+		}(i, gate)
+	}
+
+	wg.Wait()
+	return results
 }
 
 // isDocsOnlyWave returns true when every file owned by the given wave number
@@ -313,9 +496,8 @@ func RunPostMergeGates(manifest *IMPLManifest, waveNumber int, repoDir string) r
 
 // RunGatesWithCache executes quality gates with optional result caching.
 // If cache is nil, it behaves identically to RunGates.
-// For each gate, if a valid (non-expired) cached result exists, it is returned
-// directly without re-executing the gate command. Otherwise the gate is run
-// normally and the result is stored in the cache.
+// Gates are grouped by phase (PRE → VALIDATION → POST) and executed in order.
+// Within each phase, gates can be grouped by parallel_group for concurrent execution.
 func RunGatesWithCache(manifest *IMPLManifest, waveNumber int, repoDir string, cache *gatecache.Cache) result.Result[GatesData] {
 	if cache == nil {
 		return RunGates(manifest, waveNumber, repoDir)
@@ -329,121 +511,86 @@ func RunGatesWithCache(manifest *IMPLManifest, waveNumber int, repoDir string, c
 	repoName := filepath.Base(repoDir)
 	docsOnly := isDocsOnlyWave(manifest, waveNumber)
 
-	var gates []GateResult
+	// Filter gates by repo + docs-only logic
+	var filteredGates []QualityGate
 	for _, gate := range manifest.QualityGates.Gates {
-		// Skip gates scoped to a different repo.
+		// Validate gate before execution (BLOCKER 2 fix)
+		if err := ValidateQualityGate(gate); err != nil {
+			return result.NewFailure[GatesData]([]result.SAWError{
+				result.NewFatal("GATE_INVALID", fmt.Sprintf("invalid gate %s: %v", gate.Type, err)),
+			})
+		}
+
+		// Skip gates scoped to a different repo
 		if gate.Repo != "" && gate.Repo != repoName {
 			continue
 		}
 
-		// Auto-skip build/test/lint gates for docs-only waves.
+		// Auto-skip build/test/lint gates for docs-only waves
 		if docsOnly && isSourceGateType(gate.Type) {
-			gates = append(gates, GateResult{
-				Type:       gate.Type,
-				Command:    gate.Command,
-				Required:   gate.Required,
-				Passed:     true,
-				Skipped:    true,
-				SkipReason: "docs-only wave: no compilable source files changed",
-			})
+			// Add skipped result to maintain output consistency
+			filteredGates = append(filteredGates, gate)
 			continue
 		}
 
-		// Build a per-gate cache key that includes the gate command string.
-		// This ensures that changing the command (e.g. adding a flag) causes
-		// a cache miss rather than returning a stale result.
-		cacheKey, err := cache.BuildKeyForGate(repoDir, gate.Command)
-		if err != nil {
-			// Cannot build key (e.g. not a git repo) — fall back to no-cache for
-			// this gate by running it below without checking or populating cache.
-			// We continue through the rest of the loop body.
-			cacheKey = gatecache.CacheKey{}
-		}
-
-		// Check the cache first (only when we successfully built a key)
-		if cacheKey.HeadCommit != "" {
-			if cached, ok := cache.Get(cacheKey, gate.Type); ok {
-				skipReason := fmt.Sprintf("cached at SHA %s", cacheKey.HeadCommit)
-				slog.Default().Debug("protocol: gate skipped (cached)", "gate", gate.Type, "sha", cacheKey.HeadCommit)
-				gates = append(gates, GateResult{
-					Type:       gate.Type,
-					Command:    gate.Command,
-					Required:   gate.Required,
-					Passed:     cached.Passed,
-					ExitCode:   cached.ExitCode,
-					Stdout:     cached.Stdout,
-					Stderr:     cached.Stderr,
-					FromCache:  true,
-					SkipReason: skipReason,
-				})
-				continue
-			}
-		}
-
-		// Format gates use the dedicated runner for auto-detection + fix mode.
-		// Place after cache-hit check so cached format results are still served,
-		// but before the generic exec block. Fix mode always bypasses cache anyway
-		// since we invalidate after running.
-		if gate.Type == "format" {
-			gates = append(gates, runFormatGate(gate, repoDir, cache))
-			continue
-		}
-
-		// Cache miss — run the gate
-		result := GateResult{
-			Type:     gate.Type,
-			Command:  gate.Command,
-			Required: gate.Required,
-		}
-
-		cmd := exec.Command("sh", "-c", gate.Command)
-		cmd.Dir = repoDir
-
-		var stdout, stderr bytes.Buffer
-		cmd.Stdout = &stdout
-		cmd.Stderr = &stderr
-
-		runErr := cmd.Run()
-		result.Stdout = stdout.String()
-		result.Stderr = stderr.String()
-
-		if runErr != nil {
-			if exitErr, ok := runErr.(*exec.ExitError); ok {
-				result.ExitCode = exitErr.ExitCode()
-			} else {
-				result.ExitCode = -1
-				if result.Stderr == "" {
-					result.Stderr = fmt.Sprintf("command failed to execute: %v", runErr)
-				}
-			}
-			result.Passed = false
-		} else {
-			result.ExitCode = 0
-			result.Passed = true
-		}
-
-		// Parse structured errors from output
-		if pr := errparse.ParseOutput(gate.Type, gate.Command, result.Stdout, result.Stderr); pr != nil {
-			result.ParsedErrors = pr.Errors
-		}
-
-		// Store in cache (ignore errors — cache is best-effort).
-		// Only store when we have a valid key (HeadCommit non-empty).
-		if cacheKey.HeadCommit != "" {
-			_ = cache.Put(cacheKey, gate.Type, gatecache.CachedResult{
-				GateType: gate.Type,
-				Command:  gate.Command,
-				Passed:   result.Passed,
-				ExitCode: result.ExitCode,
-				Stdout:   result.Stdout,
-				Stderr:   result.Stderr,
-			})
-		}
-
-		gates = append(gates, result)
+		filteredGates = append(filteredGates, gate)
 	}
 
-	return result.NewSuccess(GatesData{Gates: gates})
+	// Group gates by phase
+	phaseGroups := groupGatesByPhase(filteredGates)
+
+	var allResults []GateResult
+
+	// Execute phases in order: PRE → VALIDATION → POST
+	for _, phase := range []GatePhase{GatePhasePre, GatePhaseMain, GatePhasePost} {
+		phaseGates := phaseGroups[phase]
+		if len(phaseGates) == 0 {
+			continue
+		}
+
+		// Group gates within phase by parallel_group
+		groups := groupGatesByParallelGroup(phaseGates)
+
+		for _, group := range groups {
+			// Check for docs-only skip within group execution
+			var groupResults []GateResult
+			var activeGates []QualityGate
+
+			for _, gate := range group.gates {
+				if docsOnly && isSourceGateType(gate.Type) {
+					// Skip with result
+					groupResults = append(groupResults, GateResult{
+						Type:       gate.Type,
+						Command:    gate.Command,
+						Required:   gate.Required,
+						Passed:     true,
+						Skipped:    true,
+						SkipReason: "docs-only wave: no compilable source files changed",
+					})
+				} else {
+					activeGates = append(activeGates, gate)
+				}
+			}
+
+			if len(activeGates) > 0 {
+				if group.parallel {
+					// Execute concurrently
+					results := executeGatesConcurrently(activeGates, repoDir, cache)
+					groupResults = append(groupResults, results...)
+				} else {
+					// Execute sequentially
+					for _, gate := range activeGates {
+						gateResult := executeSingleGate(gate, repoDir, cache)
+						groupResults = append(groupResults, gateResult)
+					}
+				}
+			}
+
+			allResults = append(allResults, groupResults...)
+		}
+	}
+
+	return result.NewSuccess(GatesData{Gates: allResults})
 }
 
 // detectBuildSystems returns the set of build systems present in repoDir by
