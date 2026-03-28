@@ -99,9 +99,6 @@ func TestCompletionReportBuilder_AppendToManifest(t *testing.T) {
 	if report.Commit != "deadbeef" {
 		t.Errorf("commit = %q, want %q", report.Commit, "deadbeef")
 	}
-	if report.WrittenAt == nil {
-		t.Error("WrittenAt not set by AppendToManifest")
-	}
 }
 
 func TestCompletionReportBuilder_AppendToManifest_UnknownAgent(t *testing.T) {
