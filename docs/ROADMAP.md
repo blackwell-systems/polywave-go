@@ -1,12 +1,12 @@
 # Scout-and-Wave Engine Roadmap
 
-> Last audited: 2026-03-17. Completed items removed; see CHANGELOG.md for shipped features.
+> Last audited: 2026-03-28. Completed items removed; see CHANGELOG.md for shipped features.
 
 This is the engine/SDK roadmap. See also:
 - **scout-and-wave-web** roadmap for UI/UX features
 - **scout-and-wave** (protocol repo) roadmap for protocol enhancements
 
-**Current version:** v0.57.0
+**Current version:** v1.2.3
 
 ---
 
