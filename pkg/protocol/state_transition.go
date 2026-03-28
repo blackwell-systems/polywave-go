@@ -27,7 +27,9 @@ type SetImplStateData struct {
 var allowedTransitions = map[ProtocolState][]ProtocolState{
 	StateScoutPending:    {StateReviewed, StateNotSuitable},
 	StateScoutValidating: {StateReviewed, StateNotSuitable},
-	StateReviewed:        {StateScaffoldPending, StateWavePending, StateWaveExecuting, StateBlocked},
+	// StateReviewed allows direct transition to COMPLETE for close-impl
+	// without wave execution (e.g., NOT_SUITABLE after review, or manual closure)
+	StateReviewed:        {StateScaffoldPending, StateWavePending, StateWaveExecuting, StateBlocked, StateComplete},
 	StateScaffoldPending: {StateWavePending, StateWaveExecuting, StateBlocked},
 	StateWavePending:     {StateWaveExecuting, StateBlocked},
 	StateWaveExecuting:   {StateWaveMerging, StateWaveVerified, StateBlocked, StateComplete},

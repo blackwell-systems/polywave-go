@@ -108,6 +108,31 @@ func TestSetImplState_BlockedCanGoBack(t *testing.T) {
 	}
 }
 
+func TestSetImplState_ReviewedToComplete(t *testing.T) {
+	path := writeStateTestManifest(t, StateReviewed)
+
+	res := SetImplState(path, StateComplete, SetImplStateOpts{})
+	if res.IsFatal() {
+		t.Fatalf("SetImplState REVIEWED -> COMPLETE: unexpected error: %+v", res.Errors)
+	}
+	result := res.GetData()
+	if result.PreviousState != StateReviewed {
+		t.Errorf("PreviousState = %q; want %q", result.PreviousState, StateReviewed)
+	}
+	if result.NewState != StateComplete {
+		t.Errorf("NewState = %q; want %q", result.NewState, StateComplete)
+	}
+
+	// Verify the file was actually updated
+	updated, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load after SetImplState: %v", err)
+	}
+	if updated.State != StateComplete {
+		t.Errorf("persisted state = %q; want %q", updated.State, StateComplete)
+	}
+}
+
 // containsAll returns true if s contains all of the given substrings.
 func containsAll(s string, subs ...string) bool {
 	for _, sub := range subs {
