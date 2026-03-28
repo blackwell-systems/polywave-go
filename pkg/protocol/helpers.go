@@ -1,5 +1,10 @@
 package protocol
 
+import (
+	"os"
+	"path/filepath"
+)
+
 // IsSoloWave returns true if the wave has exactly 1 agent.
 // Returns false if the wave is nil or has 0 or 2+ agents.
 func IsSoloWave(wave *Wave) bool {
@@ -66,4 +71,81 @@ func (m *IMPLManifest) FindWaveWithAgent(agentID string) (*Wave, *Agent) {
 		}
 	}
 	return nil, nil
+}
+
+// TargetsRepo returns true if this IMPL targets the given repository.
+// Used by pre-commit-check to skip cross-repo IMPLs.
+//
+// Logic:
+// 1. If IMPL has explicit Repository field, check if it matches repoDir path
+// 2. If IMPL has Repositories list, check if any path matches repoDir
+// 3. Otherwise check FileOwnership:
+//    - Returns true if ANY FileOwnership entry has Repo == "" (same-repo default)
+//      OR Repo == extracted repo name
+//    - Returns true if FileOwnership is empty (no file constraints)
+//    - Returns false if ALL FileOwnership entries specify different repos
+func (m *IMPLManifest) TargetsRepo(repoDir string) bool {
+	// Normalize repoDir to absolute path for comparison
+	absRepoDir, err := filepath.Abs(repoDir)
+	if err != nil {
+		absRepoDir = repoDir
+	}
+
+	// Check explicit Repository field (single-repo IMPL)
+	if m.Repository != "" {
+		absImplRepo, err := filepath.Abs(m.Repository)
+		if err != nil {
+			absImplRepo = m.Repository
+		}
+		return absImplRepo == absRepoDir
+	}
+
+	// Check Repositories list (multi-repo IMPL)
+	if len(m.Repositories) > 0 {
+		for _, repo := range m.Repositories {
+			absImplRepo, err := filepath.Abs(repo)
+			if err != nil {
+				absImplRepo = repo
+			}
+			if absImplRepo == absRepoDir {
+				return true
+			}
+		}
+		return false
+	}
+
+	// Fallback: Check FileOwnership repo field
+	if len(m.FileOwnership) == 0 {
+		return true // No file ownership = no repo restriction
+	}
+
+	// Extract repo name from path for FileOwnership.Repo matching
+	repoName := filepath.Base(absRepoDir)
+
+	// Track if we found any matches and if all entries have empty Repo fields
+	hasMatch := false
+	allEmptyRepoFields := true
+
+	for _, fo := range m.FileOwnership {
+		if fo.Repo != "" {
+			allEmptyRepoFields = false
+			if fo.Repo == repoName {
+				hasMatch = true
+			}
+		} else {
+			// Empty Repo field - check if file exists in current repo
+			filePath := filepath.Join(absRepoDir, fo.File)
+			if _, err := os.Stat(filePath); err == nil {
+				hasMatch = true
+			}
+		}
+	}
+
+	// If all Repo fields are empty and no files exist in current repo,
+	// this is likely a cross-repo IMPL stored in the wrong location
+	if allEmptyRepoFields && !hasMatch {
+		return false
+	}
+
+	return hasMatch
 }

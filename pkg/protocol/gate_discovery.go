@@ -43,6 +43,11 @@ func DiscoverLintGate(repoDir string) (string, error) {
 			continue
 		}
 
+		// Skip IMPLs that don't target this repo (cross-repo validation).
+		if !manifest.TargetsRepo(repoDir) {
+			continue
+		}
+
 		if manifest.QualityGates == nil {
 			continue
 		}
