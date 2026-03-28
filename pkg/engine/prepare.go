@@ -129,25 +129,31 @@ func PrepareWave(ctx context.Context, opts PrepareWaveOpts) (*PrepareWaveResult,
 			fmt.Sprintf("wave %d verified — launching wave %d", opts.WaveNum-1, opts.WaveNum))
 	}
 
-	// Step: E37 critic verdict enforcement
+	// Step: E37 critic verdict enforcement (using CriticGatePasses helper)
+	if !protocol.CriticGatePasses(doc, false) {
+		// Gate failed — either no critic report or ISSUES with errors
+		if doc.CriticReport == nil {
+			recordStep(res, opts.OnEvent, "critic_verdict", "failed", "no critic report present")
+			return res, fmt.Errorf("E37: critic gate failed — no critic report")
+		}
+		// Count errors for detailed diagnostics
+		errorCount := 0
+		for _, review := range doc.CriticReport.AgentReviews {
+			for _, issue := range review.Issues {
+				if issue.Severity == protocol.CriticSeverityError {
+					errorCount++
+				}
+			}
+		}
+		detail := fmt.Sprintf("critic found %d error(s) in agent briefs", errorCount)
+		recordStep(res, opts.OnEvent, "critic_verdict", "failed", detail)
+		return res, fmt.Errorf("E37: critic found %d error(s) in agent briefs — fix before launching wave", errorCount)
+	}
+	// Gate passed — either PASS verdict or ISSUES with warnings only
 	if doc.CriticReport != nil {
 		switch doc.CriticReport.Verdict {
 		case protocol.CriticVerdictIssues:
-			// Distinguish error-severity issues (blocking) from warning-only (advisory).
-			errorCount := 0
-			for _, review := range doc.CriticReport.AgentReviews {
-				for _, issue := range review.Issues {
-					if issue.Severity == protocol.CriticSeverityError {
-						errorCount++
-					}
-				}
-			}
-			if errorCount > 0 {
-				detail := fmt.Sprintf("critic found %d error(s) in agent briefs", errorCount)
-				recordStep(res, opts.OnEvent, "critic_verdict", "failed", detail)
-				return res, fmt.Errorf("E37: critic found %d error(s) in agent briefs — fix before launching wave", errorCount)
-			}
-			// Warnings only: advisory, proceed with notification.
+			// Warnings only (errorCount == 0 since gate passed)
 			warningCount := doc.CriticReport.IssueCount
 			recordStep(res, opts.OnEvent, "critic_verdict", "success",
 				fmt.Sprintf("critic found %d warning(s) only — proceeding (advisory)", warningCount))
