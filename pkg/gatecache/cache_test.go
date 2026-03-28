@@ -1,9 +1,11 @@
 package gatecache
 
 import (
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sync"
 	"testing"
 	"time"
 )
@@ -362,5 +364,114 @@ func TestBuildKeyForGate(t *testing.T) {
 	}
 	if hashKey(key1) != hashKey(key3) {
 		t.Error("same gate command should produce the same hash")
+	}
+}
+
+// TestCacheThreadSafety launches 10 goroutines that call Get/Put concurrently.
+// Run with `go test -race` to detect data races.
+func TestCacheThreadSafety(t *testing.T) {
+	cache := New(t.TempDir(), DefaultTTL)
+	key := CacheKey{HeadCommit: "abc123", Command: "go test"}
+
+	var wg sync.WaitGroup
+	for i := 0; i < 10; i++ {
+		wg.Add(1)
+		go func(idx int) {
+			defer wg.Done()
+			// Concurrent writes
+			result := CachedResult{
+				GateType: fmt.Sprintf("type-%d", idx),
+				Passed:   true,
+			}
+			_ = cache.Put(key, fmt.Sprintf("type-%d", idx), result)
+			// Concurrent reads
+			_, _ = cache.Get(key, fmt.Sprintf("type-%d", idx))
+		}(i)
+	}
+	wg.Wait()
+
+	// Verify all entries exist after concurrent writes
+	for i := 0; i < 10; i++ {
+		if _, ok := cache.Get(key, fmt.Sprintf("type-%d", i)); !ok {
+			t.Errorf("expected gate type-%d to exist after concurrent Put", i)
+		}
+	}
+}
+
+// TestConcurrentInvalidate verifies that Invalidate can be called safely
+// while other goroutines are calling Get/Put. This should not panic.
+func TestConcurrentInvalidate(t *testing.T) {
+	cache := New(t.TempDir(), DefaultTTL)
+	key := CacheKey{HeadCommit: "invalidate123"}
+
+	var wg sync.WaitGroup
+
+	// Launch 5 goroutines that continuously Get/Put
+	for i := 0; i < 5; i++ {
+		wg.Add(1)
+		go func(idx int) {
+			defer wg.Done()
+			for j := 0; j < 20; j++ {
+				result := CachedResult{
+					GateType: fmt.Sprintf("gate-%d-%d", idx, j),
+					Passed:   true,
+				}
+				_ = cache.Put(key, result.GateType, result)
+				_, _ = cache.Get(key, result.GateType)
+			}
+		}(i)
+	}
+
+	// Launch 1 goroutine that calls Invalidate multiple times
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		for i := 0; i < 10; i++ {
+			_ = cache.Invalidate()
+		}
+	}()
+
+	wg.Wait()
+	// If we reach here without panicking, the test passed
+}
+
+// TestConcurrentPut verifies that multiple goroutines can Put different gate
+// results to the same cache key without corrupting the entries map.
+func TestConcurrentPut(t *testing.T) {
+	cache := New(t.TempDir(), DefaultTTL)
+	key := CacheKey{HeadCommit: "concurrent-put-123"}
+
+	const numGoroutines = 20
+	var wg sync.WaitGroup
+
+	// Each goroutine writes a unique gate type
+	for i := 0; i < numGoroutines; i++ {
+		wg.Add(1)
+		go func(idx int) {
+			defer wg.Done()
+			result := CachedResult{
+				GateType: fmt.Sprintf("parallel-gate-%d", idx),
+				Passed:   idx%2 == 0, // Alternate passed/failed
+			}
+			if err := cache.Put(key, result.GateType, result); err != nil {
+				t.Errorf("Put failed for gate %d: %v", idx, err)
+			}
+		}(i)
+	}
+
+	wg.Wait()
+
+	// Verify all gate types exist and have correct values
+	for i := 0; i < numGoroutines; i++ {
+		gateType := fmt.Sprintf("parallel-gate-%d", i)
+		got, ok := cache.Get(key, gateType)
+		if !ok {
+			t.Errorf("expected gate %q to exist, got miss", gateType)
+			continue
+		}
+		expectedPassed := i%2 == 0
+		if got.Passed != expectedPassed {
+			t.Errorf("gate %q: expected Passed=%v, got %v", gateType, expectedPassed, got.Passed)
+		}
 	}
 }

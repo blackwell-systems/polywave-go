@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/blackwell-systems/scout-and-wave-go/internal/git"
@@ -59,9 +60,11 @@ type cacheFile struct {
 }
 
 // Cache is an in-memory + file-backed cache for quality gate results.
+// The mu field protects concurrent access to entries map during parallel gate execution.
 type Cache struct {
 	stateDir string
 	ttl      time.Duration
+	mu       sync.RWMutex // Protects entries map
 	entries  map[string]map[string]CachedResult
 }
 
@@ -76,7 +79,9 @@ func New(stateDir string, ttl time.Duration) *Cache {
 		ttl:      ttl,
 		entries:  make(map[string]map[string]CachedResult),
 	}
+	c.mu.Lock()
 	_ = c.load() // ignore load errors; start with empty cache
+	c.mu.Unlock()
 	return c
 }
 
@@ -128,6 +133,9 @@ func (c *Cache) BuildKeyForGate(repoDir string, command string) (CacheKey, error
 // Get returns the cached result for (key, gateType) if it exists and has not
 // expired. The returned CachedResult has its TTL field populated from the cache.
 func (c *Cache) Get(key CacheKey, gateType string) (*CachedResult, bool) {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+
 	h := hashKey(key)
 	inner, ok := c.entries[h]
 	if !ok {
@@ -147,6 +155,9 @@ func (c *Cache) Get(key CacheKey, gateType string) (*CachedResult, bool) {
 
 // Put stores result under (key, gateType) and persists the cache to disk.
 func (c *Cache) Put(key CacheKey, gateType string, result CachedResult) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
 	h := hashKey(key)
 	if c.entries[h] == nil {
 		c.entries[h] = make(map[string]CachedResult)
@@ -161,6 +172,9 @@ func (c *Cache) Put(key CacheKey, gateType string, result CachedResult) error {
 
 // Invalidate clears all in-memory entries and removes the cache file from disk.
 func (c *Cache) Invalidate() error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
 	c.entries = make(map[string]map[string]CachedResult)
 	path := filepath.Join(c.stateDir, cacheFileName)
 	if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
@@ -170,6 +184,7 @@ func (c *Cache) Invalidate() error {
 }
 
 // load reads the cache file from disk into c.entries.
+// MUST be called with c.mu held (write lock).
 func (c *Cache) load() error {
 	path := filepath.Join(c.stateDir, cacheFileName)
 	data, err := os.ReadFile(path)
@@ -190,6 +205,7 @@ func (c *Cache) load() error {
 }
 
 // save writes c.entries to the cache file on disk.
+// MUST be called with c.mu held (lock already acquired by caller).
 func (c *Cache) save() error {
 	if err := os.MkdirAll(c.stateDir, 0755); err != nil {
 		return fmt.Errorf("gatecache: create state dir: %w", err)
