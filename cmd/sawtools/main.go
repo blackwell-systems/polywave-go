@@ -80,6 +80,7 @@ func main() {
 		newVerifyHookInstalledCmd(),
 		newValidateIntegrationCmd(),
 		newRetryCmd(),
+		newResolveImplCmd(),
 		newBuildRetryContextCmd(),
 		newResumeDetectCmd(),
 		newDaemonCmd(),
