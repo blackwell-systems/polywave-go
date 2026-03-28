@@ -22,8 +22,13 @@ sawtools --repo-dir /path/to/repo [command] ...
 | `analyze-deps` | Context | Analyze Go file dependencies and compute wave structure |
 | `analyze-suitability` | Context | Scan codebase for pre-implemented requirements |
 | `detect-scaffolds` | Context | Detect shared types that should be scaffold files |
+| `detect-shared-types` | Context | Alias for detect-scaffolds (legacy compatibility) |
 | `detect-cascades` | Context | Detect files affected by type renames |
 | `interview` | Context | Conduct a structured requirements interview |
+| `init` | Setup | Zero-config project initialization |
+| `install-hooks` | Setup | Install SAW git hooks in repository |
+| `pre-commit-check` | Quality | Pre-commit validation check (called by hooks) |
+| `set-injection-method` | Execution | Set agent injection method for an IMPL |
 | `create-worktrees` | Execution | Create git worktrees for agents in a wave |
 | `prepare-agent` | Execution | Prepare agent environment (extract brief, init journal) |
 | `prepare-wave` | Execution | Prepare all agents in a wave (atomic batch operation) |
@@ -371,6 +376,18 @@ sawtools detect-scaffolds <impl-doc-path> --stage <stage>
 sawtools detect-scaffolds docs/IMPL/my-feature.yaml --stage pre-agent
 sawtools detect-scaffolds docs/IMPL/my-feature.yaml --stage post-agent
 ```
+
+---
+
+### detect-shared-types
+
+Alias for `detect-scaffolds`. Maintained for backward compatibility with older IMPL documents and scripts.
+
+```
+sawtools detect-shared-types <impl-doc-path> --stage <stage>
+```
+
+See `detect-scaffolds` for full documentation.
 
 ---
 
@@ -859,6 +876,102 @@ sawtools verify-install [flags]
 ```bash
 sawtools verify-install
 sawtools verify-install --human
+```
+
+---
+
+### init
+
+Initialize a new SAW-managed repository with zero configuration. Creates `docs/IMPL/`, `docs/IMPL/complete/`, and `saw.config.json` with sensible defaults.
+
+```
+sawtools init [flags]
+```
+
+**Flags:**
+- `--repo-dir` -- target repository path (default: current directory)
+
+**Output:** JSON confirmation of created files and directories.
+
+**Exit codes:** 0 on success, 1 on error.
+
+**Example:**
+```bash
+sawtools init
+sawtools init --repo-dir /path/to/new/repo
+```
+
+---
+
+### install-hooks
+
+Install SAW git hooks in a repository. Installs pre-commit hook for worktree isolation enforcement (E43) and other validation checks.
+
+```
+sawtools install-hooks [flags]
+```
+
+**Flags:**
+- `--repo-dir` -- target repository path (default: current directory)
+- `--force` -- overwrite existing hooks (default: false)
+
+**Output:** JSON confirmation of installed hooks.
+
+**Exit codes:** 0 on success, 1 on error.
+
+**Example:**
+```bash
+sawtools install-hooks
+sawtools install-hooks --repo-dir /path/to/repo --force
+```
+
+---
+
+### pre-commit-check
+
+Run pre-commit validation checks. Called automatically by the pre-commit hook. Validates worktree isolation, file ownership, and other protocol invariants.
+
+```
+sawtools pre-commit-check [flags]
+```
+
+**Flags:**
+- `--repo-dir` -- repository root path (default: current directory)
+
+**Output:** JSON validation result with `ok` (bool) and diagnostic messages.
+
+**Exit codes:** 0 if all checks pass, 1 if any check fails.
+
+**Example:**
+```bash
+sawtools pre-commit-check
+```
+
+**Note:** This command is typically called by the pre-commit hook and not invoked manually.
+
+---
+
+### set-injection-method
+
+Set the agent injection method for an IMPL manifest. Controls how agent prompts receive context (e.g., `full`, `incremental`, `minimal`).
+
+```
+sawtools set-injection-method <manifest-path> --method <method>
+```
+
+**Arguments:**
+- `manifest-path` -- path to YAML IMPL manifest (required)
+
+**Flags:**
+- `--method` -- injection method: `full` | `incremental` | `minimal` (required)
+
+**Output:** JSON confirmation.
+
+**Exit codes:** 0 on success, 1 on error.
+
+**Example:**
+```bash
+sawtools set-injection-method docs/IMPL/my-feature.yaml --method incremental
 ```
 
 ---
@@ -1796,9 +1909,12 @@ sawtools metrics --program my-program
 
 ---
 
-### query events
+### query
 
-Query observability events with various filters and output formats.
+Query observability data with various subcommands and filters.
+
+**Subcommands:**
+- `events` -- Query observability events
 
 ```
 sawtools query events [flags]
@@ -2180,4 +2296,4 @@ sawtools finalize-tier program.yaml --tier 1 --auto
 
 ---
 
-Last reviewed: 2026-03-24
+Last reviewed: 2026-03-28

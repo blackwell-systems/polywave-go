@@ -1,6 +1,6 @@
 # Server-Sent Events (SSE)
 
-Last reviewed: 2026-03-24
+Last reviewed: 2026-03-28
 
 The web application publishes real-time events via Server-Sent Events for monitoring Scout runs, Wave progress, agent execution, merge operations, program orchestration, and more.
 

@@ -1282,6 +1282,26 @@ Cancel a running interview session.
 
 ---
 
+### `POST /api/interview/resume`
+
+Resume a previously saved interview session from its state file.
+
+**Request:**
+```json
+{
+  "interview_path": "/path/to/INTERVIEW-my-feature.yaml"
+}
+```
+
+**Response:** `202 Accepted`
+```json
+{ "run_id": "interview-1234567890" }
+```
+
+Subscribe to `GET /api/interview/{runID}/events` for questions and completion.
+
+---
+
 ## Configuration & System
 
 ### `GET /api/config`
@@ -1542,6 +1562,72 @@ Save notification preferences (preserves all other config fields).
 ```
 
 **Response:** `200 OK` (empty body)
+
+---
+
+### `GET /api/webhooks`
+
+Get configured webhook adapters from `saw.config.json`.
+
+**Response:** `200 OK`
+```json
+{
+  "enabled": true,
+  "adapters": [
+    {
+      "type": "slack",
+      "webhook_url": "https://hooks.slack.com/services/...",
+      "enabled": true
+    }
+  ]
+}
+```
+
+---
+
+### `POST /api/webhooks`
+
+Save webhook adapter configuration (preserves all other config fields).
+
+**Request:**
+```json
+{
+  "enabled": true,
+  "adapters": [
+    {
+      "type": "slack",
+      "webhook_url": "https://hooks.slack.com/services/...",
+      "enabled": true
+    }
+  ]
+}
+```
+
+**Response:** `200 OK` (empty body)
+
+---
+
+### `POST /api/webhooks/test`
+
+Test a webhook adapter by sending a test notification.
+
+**Request:**
+```json
+{
+  "type": "slack",
+  "webhook_url": "https://hooks.slack.com/services/..."
+}
+```
+
+**Response:** `200 OK`
+```json
+{
+  "success": true,
+  "message": "Test notification sent successfully"
+}
+```
+
+**Errors:** `400` invalid adapter type or configuration, `500` delivery failed.
 
 ---
 
@@ -2027,4 +2113,4 @@ Model names support provider-prefix routing:
 
 ---
 
-Last reviewed: 2026-03-24
+Last reviewed: 2026-03-28
