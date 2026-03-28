@@ -392,7 +392,19 @@ pattern matching (H7) and appends diagnosis to the output.`,
 				if integrationReport != nil {
 					result.IntegrationReport = integrationReport
 					if !integrationReport.Valid {
-						fmt.Fprintf(os.Stderr, "finalize-wave: %d integration gap(s) detected\n", len(integrationReport.Gaps))
+						fmt.Fprintf(os.Stderr, "finalize-wave: %d integration gap(s) detected\n\n", len(integrationReport.Gaps))
+
+						// Print gap summary
+						fmt.Fprintf(os.Stderr, "Integration gaps found:\n")
+						for _, gap := range integrationReport.Gaps {
+							fmt.Fprintf(os.Stderr, "  - %s (exported from %s, severity: %s)\n",
+								gap.ExportName, gap.FilePath, gap.Severity)
+						}
+						fmt.Fprintf(os.Stderr, "\n")
+
+						// Print next-step guidance
+						fmt.Fprintf(os.Stderr, "Next step: sawtools run-integration-agent \"%s\" --wave %d\n",
+							manifestPath, waveNum)
 					}
 				}
 				break // single-repo default; cross-repo would need aggregation
