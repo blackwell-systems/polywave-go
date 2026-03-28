@@ -1,6 +1,7 @@
 package protocol
 
 import (
+	"encoding/json"
 	"testing"
 
 	"gopkg.in/yaml.v3"
@@ -187,4 +188,119 @@ func containsSubstring(s, substr string) bool {
 		}
 	}
 	return false
+}
+
+// TestQualityGate_PhaseAndParallelGroup_YAMLUnmarshal tests YAML unmarshaling with Phase and ParallelGroup fields present.
+func TestQualityGate_PhaseAndParallelGroup_YAMLUnmarshal(t *testing.T) {
+	yamlData := `
+type: test
+command: go test ./...
+required: true
+phase: PRE_VALIDATION
+parallel_group: group1
+`
+	var gate QualityGate
+	if err := yaml.Unmarshal([]byte(yamlData), &gate); err != nil {
+		t.Fatalf("Unmarshal failed: %v", err)
+	}
+
+	if gate.Type != "test" {
+		t.Errorf("Expected type 'test', got %q", gate.Type)
+	}
+	if gate.Phase != GatePhasePre {
+		t.Errorf("Expected phase PRE_VALIDATION, got %q", gate.Phase)
+	}
+	if gate.ParallelGroup != "group1" {
+		t.Errorf("Expected parallel_group 'group1', got %q", gate.ParallelGroup)
+	}
+}
+
+// TestQualityGate_BackwardCompatibility tests YAML unmarshaling with fields absent (backward compat).
+func TestQualityGate_BackwardCompatibility(t *testing.T) {
+	yamlData := `
+type: build
+command: go build ./...
+required: true
+`
+	var gate QualityGate
+	if err := yaml.Unmarshal([]byte(yamlData), &gate); err != nil {
+		t.Fatalf("Unmarshal failed: %v", err)
+	}
+
+	if gate.Type != "build" {
+		t.Errorf("Expected type 'build', got %q", gate.Type)
+	}
+	// Phase should be empty (zero value) when not present in YAML
+	if gate.Phase != "" {
+		t.Errorf("Expected empty phase for backward compat, got %q", gate.Phase)
+	}
+	// ParallelGroup should be empty (zero value) when not present in YAML
+	if gate.ParallelGroup != "" {
+		t.Errorf("Expected empty parallel_group for backward compat, got %q", gate.ParallelGroup)
+	}
+}
+
+// TestQualityGate_JSONSerialization tests JSON serialization includes new fields when present.
+func TestQualityGate_JSONSerialization(t *testing.T) {
+	gate := QualityGate{
+		Type:          "lint",
+		Command:       "golangci-lint run",
+		Required:      true,
+		Phase:         GatePhaseMain,
+		ParallelGroup: "checks",
+	}
+
+	jsonBytes, err := json.Marshal(&gate)
+	if err != nil {
+		t.Fatalf("Marshal failed: %v", err)
+	}
+
+	jsonStr := string(jsonBytes)
+
+	// Verify that new fields are present in JSON output
+	if !containsString(jsonStr, "phase") {
+		t.Errorf("Expected 'phase' field in JSON output, got: %s", jsonStr)
+	}
+	if !containsString(jsonStr, "VALIDATION") {
+		t.Errorf("Expected 'VALIDATION' value in JSON output, got: %s", jsonStr)
+	}
+	if !containsString(jsonStr, "parallel_group") {
+		t.Errorf("Expected 'parallel_group' field in JSON output, got: %s", jsonStr)
+	}
+	if !containsString(jsonStr, "checks") {
+		t.Errorf("Expected 'checks' value in JSON output, got: %s", jsonStr)
+	}
+
+	// Verify round-trip
+	var roundTrip QualityGate
+	if err := json.Unmarshal(jsonBytes, &roundTrip); err != nil {
+		t.Fatalf("Unmarshal failed: %v", err)
+	}
+
+	if roundTrip.Phase != GatePhaseMain {
+		t.Errorf("Round-trip phase mismatch: expected %q, got %q", GatePhaseMain, roundTrip.Phase)
+	}
+	if roundTrip.ParallelGroup != "checks" {
+		t.Errorf("Round-trip parallel_group mismatch: expected 'checks', got %q", roundTrip.ParallelGroup)
+	}
+}
+
+// TestGatePhase_Constants tests that GatePhase constants have expected string values.
+func TestGatePhase_Constants(t *testing.T) {
+	tests := []struct {
+		constant GatePhase
+		expected string
+	}{
+		{GatePhasePre, "PRE_VALIDATION"},
+		{GatePhaseMain, "VALIDATION"},
+		{GatePhasePost, "POST_VALIDATION"},
+	}
+
+	for _, tt := range tests {
+		t.Run(string(tt.constant), func(t *testing.T) {
+			if string(tt.constant) != tt.expected {
+				t.Errorf("Expected %q, got %q", tt.expected, string(tt.constant))
+			}
+		})
+	}
 }

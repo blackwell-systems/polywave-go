@@ -159,6 +159,18 @@ type QualityGates struct {
 	Gates []QualityGate `yaml:"gates" json:"gates"`
 }
 
+// GatePhase determines when a quality gate executes and whether it can run in parallel.
+type GatePhase string
+
+const (
+	// GatePhasePre is the sequential pre-validation phase for auto-fix gates (format --fix, lint --fix).
+	GatePhasePre GatePhase = "PRE_VALIDATION"
+	// GatePhaseMain is the parallel validation phase for independent checks (typecheck, test, lint).
+	GatePhaseMain GatePhase = "VALIDATION"
+	// GatePhasePost is the parallel post-validation phase for review gates (code_review, implementation_verify).
+	GatePhasePost GatePhase = "POST_VALIDATION"
+)
+
 // QualityGate represents a single quality check (build, lint, test, etc.).
 // Gates marked as Required must pass; others are advisory.
 type QualityGate struct {
@@ -173,6 +185,10 @@ type QualityGate struct {
 	// "post-merge" — run at step 5, after MergeAgents completes
 	// Empty string is treated as "pre-merge" for backward compatibility.
 	Timing string `yaml:"timing,omitempty" json:"timing,omitempty"`
+	// Phase controls execution ordering and parallelization (defaults to VALIDATION when empty).
+	Phase GatePhase `yaml:"phase,omitempty" json:"phase,omitempty"`
+	// ParallelGroup enables parallel execution within a phase (empty = sequential).
+	ParallelGroup string `yaml:"parallel_group,omitempty" json:"parallel_group,omitempty"`
 }
 
 // ScaffoldFile represents a type scaffold file that is created before wave execution.
