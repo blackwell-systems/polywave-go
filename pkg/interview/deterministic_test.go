@@ -302,9 +302,21 @@ func TestDeterministicManager_SaveAndLoad(t *testing.T) {
 	}
 
 	docPath := filepath.Join(dir, "INTERVIEW-"+doc.Slug+".yaml")
-	err = mgr.Save(doc, docPath)
-	if err != nil {
-		t.Fatalf("Save error: %v", err)
+	saveResult := mgr.Save(doc, docPath)
+	if saveResult.IsFatal() {
+		t.Fatalf("Save error: %v", saveResult.Errors)
+	}
+	if !saveResult.IsSuccess() {
+		t.Fatalf("expected success result, got code: %s", saveResult.Code)
+	}
+
+	// Verify data fields are populated correctly.
+	data := saveResult.GetData()
+	if data.DocPath != docPath {
+		t.Errorf("expected DocPath %q, got %q", docPath, data.DocPath)
+	}
+	if data.Timestamp.IsZero() {
+		t.Error("expected non-zero Timestamp in SaveDocData")
 	}
 
 	// Verify file exists.
@@ -319,6 +331,37 @@ func TestDeterministicManager_SaveAndLoad(t *testing.T) {
 	}
 	if doc2.Slug != doc.Slug {
 		t.Errorf("slug mismatch: %q vs %q", doc2.Slug, doc.Slug)
+	}
+}
+
+func TestDeterministicManager_SaveFailure(t *testing.T) {
+	dir := t.TempDir()
+	mgr := NewDeterministicManager(dir)
+
+	doc, _, err := mgr.Start(InterviewConfig{Description: "Save Fail"})
+	if err != nil {
+		t.Fatalf("Start error: %v", err)
+	}
+
+	// Use a path where the directory cannot be created (file blocks it).
+	blockingFile := filepath.Join(dir, "blocked")
+	if err := os.WriteFile(blockingFile, []byte("x"), 0o644); err != nil {
+		t.Fatalf("setup: %v", err)
+	}
+	badPath := filepath.Join(blockingFile, "INTERVIEW-test.yaml")
+
+	saveResult := mgr.Save(doc, badPath)
+	if !saveResult.IsFatal() {
+		t.Fatalf("expected FATAL result for unwritable path, got code: %s", saveResult.Code)
+	}
+	if len(saveResult.Errors) == 0 {
+		t.Fatal("expected at least one error in FATAL result")
+	}
+	if saveResult.Errors[0].Code != "INTERVIEW_SAVE_FAILED" {
+		t.Errorf("expected error code INTERVIEW_SAVE_FAILED, got %q", saveResult.Errors[0].Code)
+	}
+	if saveResult.Errors[0].Context["path"] != badPath {
+		t.Errorf("expected path context %q, got %q", badPath, saveResult.Errors[0].Context["path"])
 	}
 }
 

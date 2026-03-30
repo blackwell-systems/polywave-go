@@ -5,7 +5,15 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
 )
+
+// WriteReqData holds metadata returned from a successful WriteRequirementsFile call.
+type WriteReqData struct {
+	OutputPath string
+	LineCount  int
+}
 
 func init() {
 	RegisterCompiler(CompileToRequirements)
@@ -123,22 +131,40 @@ func CompileToRequirements(doc *InterviewDoc) (string, error) {
 }
 
 // WriteRequirementsFile writes the compiled REQUIREMENTS.md to disk.
-func WriteRequirementsFile(doc *InterviewDoc, outputPath string) error {
+// Returns a Result containing the output path and line count on success,
+// or a FATAL result with code "REQUIREMENTS_WRITE_FAILED" on failure.
+func WriteRequirementsFile(doc *InterviewDoc, outputPath string) result.Result[WriteReqData] {
 	content, err := CompileToRequirements(doc)
 	if err != nil {
-		return fmt.Errorf("compiling requirements: %w", err)
+		return result.NewFailure[WriteReqData]([]result.SAWError{
+			result.NewFatal("REQUIREMENTS_WRITE_FAILED", fmt.Sprintf("compiling requirements: %s", err.Error())).
+				WithContext("path", outputPath).
+				WithCause(err),
+		})
 	}
 
 	dir := filepath.Dir(outputPath)
 	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return fmt.Errorf("creating output directory: %w", err)
+		return result.NewFailure[WriteReqData]([]result.SAWError{
+			result.NewFatal("REQUIREMENTS_WRITE_FAILED", fmt.Sprintf("creating output directory: %s", err.Error())).
+				WithContext("path", outputPath).
+				WithCause(err),
+		})
 	}
 
 	if err := os.WriteFile(outputPath, []byte(content), 0o644); err != nil {
-		return fmt.Errorf("writing requirements file: %w", err)
+		return result.NewFailure[WriteReqData]([]result.SAWError{
+			result.NewFatal("REQUIREMENTS_WRITE_FAILED", fmt.Sprintf("writing requirements file: %s", err.Error())).
+				WithContext("path", outputPath).
+				WithCause(err),
+		})
 	}
 
-	return nil
+	lineCount := strings.Count(content, "\n")
+	return result.NewSuccess(WriteReqData{
+		OutputPath: outputPath,
+		LineCount:  lineCount,
+	})
 }
 
 // sectionFromString renders a single string value, or a placeholder if empty.

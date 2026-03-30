@@ -1,6 +1,10 @@
 package interview
 
-import "time"
+import (
+	"time"
+
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
+)
 
 // InterviewPhase is the current section of the requirements being explored.
 type InterviewPhase string
@@ -134,5 +138,5 @@ type Manager interface {
 	Compile(doc *InterviewDoc, outputPath string) (string, error)
 
 	// Save persists the InterviewDoc to its YAML file.
-	Save(doc *InterviewDoc, docPath string) error
+	Save(doc *InterviewDoc, docPath string) result.Result[SaveDocData]
 }
