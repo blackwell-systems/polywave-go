@@ -11,6 +11,14 @@ import (
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
 )
 
+// loggerFrom returns the provided logger if non-nil, otherwise returns slog.Default().
+func loggerFrom(l *slog.Logger) *slog.Logger {
+	if l == nil {
+		return slog.Default()
+	}
+	return l
+}
+
 // CleanupAllStale removes all stale worktrees across all slugs.
 func CleanupAllStale(repoDir string, force bool) (*StaleCleanupData, error) {
 	stale, err := DetectStaleWorktrees(repoDir)
@@ -63,7 +71,8 @@ type CleanupData struct {
 //
 // Returns result.Result[CleanupData] with status for each agent, or an error if the
 // wave is not found.
-func Cleanup(manifestPath string, waveNum int, repoDir string) (result.Result[CleanupData], error) {
+func Cleanup(manifestPath string, waveNum int, repoDir string, logger *slog.Logger) (result.Result[CleanupData], error) {
+	log := loggerFrom(logger)
 	// Load manifest
 	manifest, err := Load(manifestPath)
 	if err != nil {
@@ -180,7 +189,7 @@ func Cleanup(manifestPath string, waveNum int, repoDir string) (result.Result[Cl
 	// Best-effort: prune stale worktree entries from all involved repos.
 	for repo := range prunedRepos {
 		if err := git.WorktreePrune(repo); err != nil {
-			slog.Default().Warn("protocol: git worktree prune failed", "repo", repo, "err", err)
+			log.Warn("protocol: git worktree prune failed", "repo", repo, "err", err)
 		}
 	}
 
