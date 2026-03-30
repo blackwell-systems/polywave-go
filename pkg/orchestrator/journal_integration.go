@@ -12,10 +12,19 @@ import (
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
 )
 
+// loggerFrom returns the provided logger, or slog.Default() if nil.
+func loggerFrom(l *slog.Logger) *slog.Logger {
+	if l == nil {
+		return slog.Default()
+	}
+	return l
+}
+
 // PrepareAgentContext loads journal history and generates context.md for agent recovery.
 // Returns empty string if no journal exists (first launch).
 // Returns error if journal exists but cannot be read (differentiate from "no journal").
-func PrepareAgentContext(projectRoot string, waveNum int, agentID string, maxEntries int) (string, error) {
+func PrepareAgentContext(projectRoot string, waveNum int, agentID string, maxEntries int, logger *slog.Logger) (string, error) {
+	log := loggerFrom(logger)
 	// Default maxEntries to 50 per E23A spec
 	if maxEntries == 0 {
 		maxEntries = 50
@@ -34,7 +43,7 @@ func PrepareAgentContext(projectRoot string, waveNum int, agentID string, maxEnt
 	}
 
 	// Read all entries from index.jsonl
-	entries, err := loadJournalEntries(journalPath)
+	entries, err := loadJournalEntries(journalPath, log)
 	if err != nil {
 		return "", fmt.Errorf("failed to load journal entries: %w", err)
 	}
@@ -84,7 +93,8 @@ func WriteJournalEntry(projectRoot string, waveNum int, agentID string, entry jo
 
 // loadJournalEntries reads all ToolEntry records from index.jsonl file.
 // Returns empty slice if file is empty or contains no valid entries.
-func loadJournalEntries(indexPath string) ([]journal.ToolEntry, error) {
+func loadJournalEntries(indexPath string, logger *slog.Logger) ([]journal.ToolEntry, error) {
+	log := loggerFrom(logger)
 	f, err := os.Open(indexPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open index.jsonl: %w", err)
@@ -103,7 +113,7 @@ func loadJournalEntries(indexPath string) ([]journal.ToolEntry, error) {
 		var entry journal.ToolEntry
 		if err := json.Unmarshal(line, &entry); err != nil {
 			// Skip malformed lines with warning (don't fail entire load)
-			slog.Default().Warn("skipping malformed journal entry", "line", lineNum, "err", err)
+			log.Warn("skipping malformed journal entry", "line", lineNum, "err", err)
 			continue
 		}
 
