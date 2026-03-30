@@ -52,8 +52,13 @@ func DiscoverLintGate(repoDir string) (string, error) {
 			continue
 		}
 
+		repoName := filepath.Base(repoDir)
 		for _, gate := range manifest.QualityGates.Gates {
 			if gate.Type == "lint" {
+				// Skip gates scoped to a different repo.
+				if gate.Repo != "" && gate.Repo != repoName {
+					continue
+				}
 				return gate.Command, nil
 			}
 		}

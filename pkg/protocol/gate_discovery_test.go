@@ -128,6 +128,90 @@ quality_gates:
 			want: "",
 		},
 		{
+			name: "lint gate scoped to different repo is skipped",
+			setup: func(t *testing.T, dir string) {
+				implDir := filepath.Join(dir, "docs", "IMPL")
+				if err := os.MkdirAll(implDir, 0o755); err != nil {
+					t.Fatal(err)
+				}
+				// Create the file so TargetsRepo confirms this IMPL targets this repo.
+				protoDir := filepath.Join(dir, "protocol")
+				if err := os.MkdirAll(protoDir, 0o755); err != nil {
+					t.Fatal(err)
+				}
+				writeYAML(t, filepath.Join(protoDir, "execution-rules.md"), "# placeholder")
+				// IMPL targets this repo (file exists on disk) but first lint gate
+				// is scoped to another repo — should be skipped.
+				writeYAML(t, filepath.Join(implDir, "IMPL-crossrepo.yaml"), `
+title: cross-repo feature
+feature_slug: crossrepo
+state: WAVE_PENDING
+file_ownership:
+  - file: protocol/execution-rules.md
+    agent: G
+    wave: 3
+    action: modify
+quality_gates:
+  level: standard
+  gates:
+    - type: lint
+      command: "go vet ./..."
+      required: true
+      repo: other-repo
+    - type: lint
+      command: "markdownlint ."
+      required: true
+`)
+			},
+			want: "markdownlint .",
+		},
+		{
+			name: "lint gate scoped to this repo is returned",
+			setup: func(t *testing.T, dir string) {
+				implDir := filepath.Join(dir, "docs", "IMPL")
+				if err := os.MkdirAll(implDir, 0o755); err != nil {
+					t.Fatal(err)
+				}
+				repoName := filepath.Base(dir)
+				writeYAML(t, filepath.Join(implDir, "IMPL-scoped.yaml"), `
+title: scoped feature
+feature_slug: scoped
+state: WAVE_PENDING
+quality_gates:
+  level: standard
+  gates:
+    - type: lint
+      command: "go vet ./..."
+      required: true
+      repo: `+repoName+`
+`)
+			},
+			want: "go vet ./...",
+		},
+		{
+			name: "all lint gates scoped to other repos falls back to config",
+			setup: func(t *testing.T, dir string) {
+				implDir := filepath.Join(dir, "docs", "IMPL")
+				if err := os.MkdirAll(implDir, 0o755); err != nil {
+					t.Fatal(err)
+				}
+				writeYAML(t, filepath.Join(implDir, "IMPL-allother.yaml"), `
+title: all other
+feature_slug: allother
+state: WAVE_PENDING
+quality_gates:
+  level: standard
+  gates:
+    - type: lint
+      command: "go vet ./..."
+      required: true
+      repo: some-other-repo
+`)
+				writeJSON(t, filepath.Join(dir, "saw.config.json"), `{"lint_command": "echo ok"}`)
+			},
+			want: "echo ok",
+		},
+		{
 			name: "malformed YAML is skipped gracefully",
 			setup: func(t *testing.T, dir string) {
 				implDir := filepath.Join(dir, "docs", "IMPL")
