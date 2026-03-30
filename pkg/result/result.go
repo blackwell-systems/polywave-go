@@ -105,11 +105,12 @@ func (r Result[T]) HasErrors() bool {
 	return len(r.Errors) > 0
 }
 
-// GetData returns the data payload, panicking if result is not successful.
-// Use IsSuccess() check before calling.
+// GetData returns the data payload. Returns the zero value of T if Data is nil.
+// Prefer checking IsSuccess() before calling to ensure meaningful data.
 func (r Result[T]) GetData() T {
 	if r.Data == nil {
-		panic("GetData called on Result with nil Data")
+		var zero T
+		return zero
 	}
 	return *r.Data
 }
