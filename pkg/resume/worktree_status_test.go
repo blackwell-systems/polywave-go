@@ -70,7 +70,7 @@ func TestClassifyWorktrees_DirtyWorktree(t *testing.T) {
 	}
 
 	manifest := makeManifest("my-slug")
-	result, err := ClassifyWorktrees([]string{wtPath}, manifest)
+	result, err := ClassifyWorktrees([]string{wtPath}, manifest, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -104,7 +104,7 @@ func TestClassifyWorktrees_CleanWorktree(t *testing.T) {
 
 	// No changes — worktree is clean.
 	manifest := makeManifest("my-slug")
-	result, err := ClassifyWorktrees([]string{wtPath}, manifest)
+	result, err := ClassifyWorktrees([]string{wtPath}, manifest, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -127,7 +127,7 @@ func TestClassifyWorktrees_CleanWorktree(t *testing.T) {
 // exist is silently skipped and returns an empty slice with no error.
 func TestClassifyWorktrees_NonexistentPath(t *testing.T) {
 	manifest := makeManifest("my-slug")
-	result, err := ClassifyWorktrees([]string{"/no/such/path/ever"}, manifest)
+	result, err := ClassifyWorktrees([]string{"/no/such/path/ever"}, manifest, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -154,7 +154,7 @@ func TestClassifyWorktrees_MixedDirtyClean(t *testing.T) {
 	}
 
 	manifest := makeManifest("my-slug")
-	result, err := ClassifyWorktrees([]string{dirtyPath, cleanPath}, manifest)
+	result, err := ClassifyWorktrees([]string{dirtyPath, cleanPath}, manifest, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -190,7 +190,7 @@ func TestClassifyWorktrees_SlugFiltering(t *testing.T) {
 	addWorktree(t, repo, otherPath, "saw/other-slug/wave1-agent-B")
 
 	manifest := makeManifest("my-slug")
-	result, err := ClassifyWorktrees([]string{matchPath, otherPath}, manifest)
+	result, err := ClassifyWorktrees([]string{matchPath, otherPath}, manifest, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
