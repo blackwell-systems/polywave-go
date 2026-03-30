@@ -410,12 +410,19 @@ func StartWave(ctx context.Context, opts RunWaveOpts, onEvent func(Event)) error
 
 		// E21: Post-wave quality gates before merge.
 		if doc := orch.IMPLDoc(); doc != nil && doc.QualityGates != nil {
-			results, err := orchestrator.RunQualityGates(opts.RepoPath, doc.QualityGates)
-			for _, r := range results {
-				onEvent(Event{Event: "quality_gate_result", Data: r})
-			}
-			if err != nil {
-				return fmt.Errorf("engine.StartWave: quality gate wave %d: %w", waveNum, err)
+			gateRes := protocol.RunPreMergeGates(doc, waveNum, opts.RepoPath, nil)
+			if gateRes.IsSuccess() || gateRes.IsPartial() {
+				gatesData := gateRes.GetData()
+				for _, r := range gatesData.Gates {
+					onEvent(Event{Event: "quality_gate_result", Data: r})
+				}
+				for _, gate := range gatesData.Gates {
+					if gate.Required && !gate.Passed {
+						return fmt.Errorf("engine.StartWave: required gate %q failed in wave %d", gate.Type, waveNum)
+					}
+				}
+			} else {
+				return fmt.Errorf("engine.StartWave: quality gate wave %d: %v", waveNum, gateRes.Errors)
 			}
 		}
 

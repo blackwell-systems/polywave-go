@@ -24,7 +24,7 @@
 //
 //  1. StartWave — Create worktrees, launch agents in parallel
 //  2. [Agents execute — tool calls, streaming output]
-//  3. RunQualityGates — Execute custom quality gates
+//  3. RunPreMergeGates — Execute pre-merge quality gates
 //  4. MergeWave — Merge agent branches to main
 //  5. RunVerification — Build, tests, invariant checks
 //
