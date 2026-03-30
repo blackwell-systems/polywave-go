@@ -130,7 +130,7 @@ func StepRunGates(ctx context.Context, opts FinalizeWaveOpts, manifest *protocol
 
 	stateDir := protocol.SAWStateDir(opts.RepoPath)
 	cache := gatecache.New(stateDir, 5*time.Minute)
-	gateRes := protocol.RunGatesWithCache(manifest, opts.WaveNum, opts.RepoPath, cache)
+	gateRes := protocol.RunGatesWithCache(manifest, opts.WaveNum, opts.RepoPath, cache, opts.Logger)
 	if !gateRes.IsSuccess() {
 		emitStepEvent(onEvent, stepName, "failed", fmt.Sprintf("%v", gateRes.Errors))
 		return &StepResult{
@@ -209,7 +209,7 @@ func StepMergeAgents(ctx context.Context, opts FinalizeWaveOpts, onEvent EventCa
 	const stepName = "merge-agents"
 	emitStepEvent(onEvent, stepName, "running", "")
 
-	mergeRes, err := protocol.MergeAgents(opts.IMPLPath, opts.WaveNum, opts.RepoPath, opts.MergeTarget)
+	mergeRes, err := protocol.MergeAgents(opts.IMPLPath, opts.WaveNum, opts.RepoPath, opts.MergeTarget, opts.Logger)
 	if err != nil {
 		emitStepEvent(onEvent, stepName, "failed", err.Error())
 		return &StepResult{
@@ -357,7 +357,7 @@ func StepCleanup(ctx context.Context, opts FinalizeWaveOpts, onEvent EventCallba
 	const stepName = "cleanup"
 	emitStepEvent(onEvent, stepName, "running", "")
 
-	cleanupResult, err := protocol.Cleanup(opts.IMPLPath, opts.WaveNum, opts.RepoPath)
+	cleanupResult, err := protocol.Cleanup(opts.IMPLPath, opts.WaveNum, opts.RepoPath, opts.Logger)
 	if err != nil {
 		// Non-fatal
 		loggerFrom(opts.Logger).Warn("engine.StepCleanup", "err", err)

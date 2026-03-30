@@ -373,7 +373,7 @@ func StartWave(ctx context.Context, opts RunWaveOpts, onEvent func(Event)) error
 		waveNum := wave.Number
 
 		// Pre-create worktrees via protocol (handles multi-repo from file ownership).
-		wtRes := protocol.CreateWorktrees(opts.IMPLPath, waveNum, opts.RepoPath)
+		wtRes := protocol.CreateWorktrees(opts.IMPLPath, waveNum, opts.RepoPath, nil)
 		if !wtRes.IsSuccess() {
 			errMsg := fmt.Sprintf("%v", wtRes.Errors)
 			publish("run_failed", map[string]string{"error": errMsg})
@@ -410,7 +410,7 @@ func StartWave(ctx context.Context, opts RunWaveOpts, onEvent func(Event)) error
 
 		// E21: Post-wave quality gates before merge.
 		if doc := orch.IMPLDoc(); doc != nil && doc.QualityGates != nil {
-			gateRes := protocol.RunPreMergeGates(doc, waveNum, opts.RepoPath, nil)
+			gateRes := protocol.RunPreMergeGates(doc, waveNum, opts.RepoPath, nil, nil)
 			if gateRes.IsSuccess() || gateRes.IsPartial() {
 				gatesData := gateRes.GetData()
 				for _, r := range gatesData.Gates {
@@ -774,7 +774,7 @@ func RunSingleWave(ctx context.Context, opts RunWaveOpts, waveNum int, onEvent f
 	// file_ownership repo: field and creates worktrees in sibling repos when
 	// needed. Feed the resulting paths into the orchestrator so launchAgent
 	// uses the correct worktree for each agent.
-	wtRes := protocol.CreateWorktrees(opts.IMPLPath, waveNum, opts.RepoPath)
+	wtRes := protocol.CreateWorktrees(opts.IMPLPath, waveNum, opts.RepoPath, nil)
 	if !wtRes.IsSuccess() {
 		return fmt.Errorf("engine.RunSingleWave: create worktrees: %v", wtRes.Errors)
 	}

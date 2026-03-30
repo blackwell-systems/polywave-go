@@ -49,7 +49,7 @@ func newCleanupCmd() *cobra.Command {
 			}
 			manifestPath := args[0]
 
-			result, err := protocol.Cleanup(manifestPath, waveNum, repoDir)
+			result, err := protocol.Cleanup(manifestPath, waveNum, repoDir, nil)
 			if err != nil {
 				return fmt.Errorf("cleanup: %w", err)
 			}

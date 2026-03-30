@@ -5,60 +5,57 @@
 
 ## Issues Identified
 
-### 1. Wrong Agent Naming Scheme (Observability Violation)
+### 1. Wrong Agent Naming Scheme (Observability Violation) ✅ FIXED
 **What happened:** Agents launched with `Wave1-Agent-A` instead of `[SAW:wave1:agent-A]`
 **Impact:** Monitoring tools (claudewatch) cannot detect SAW agent runs
 **Root cause:** Orchestrator manually constructed agent names instead of using protocol-defined format
 
-**Structural fix required:**
-- Add `agentName(wave, id, slug)` helper function to orchestrator that enforces SAW tag format
-- Update Agent tool invocation to use helper: `name: agentName(1, "A", "logging-injection")`
-- Add validation in `sawtools prepare-wave` that checks agent name format in briefs
-- **Blocker until:** Helper function implemented in orchestrator skill
+**Structural fix implemented:**
+- ✅ `sawtools prepare-agent` writes `saw_name` field to brief frontmatter (commit 71e820b)
+- ✅ Orchestrator reads `saw_name` from brief metadata per E44 section (commit abf8c5c)
+- ✅ `auto_format_saw_agent_names` PreToolUse hook validates and provides fallback (commit 06b5527)
+- ✅ Three-layer architecture: metadata (primary) → orchestrator (secondary) → hook (fallback)
+- ✅ Documentation updated in saw-skill.md, wave-agent-contracts.md, hooks/README.md
 
-### 2. Agent Branch Isolation Violation (I1)
+### 2. Agent Branch Isolation Violation (I1) ✅ FIXED
 **What happened:** Agent B committed to Agent D's branch (`wave1-agent-D` instead of `wave1-agent-B`)
 **Impact:** I1 (disjoint ownership) violated; merge confusion; branch doesn't exist
 **Root cause:** Agent tool doesn't set working directory context for worktrees; agents ran in wrong locations
 
-**Structural fix required:**
-- **Option A (preferred):** Agent tool enhancement to support explicit working directory parameter
-  - Add `cwd: "/path/to/worktree"` parameter to Agent tool
-  - Update orchestrator to pass worktree path from prepare-wave output
-- **Option B (workaround):** Pre-flight cd command in agent prompt
-  - Already tried this — agents ignored it or couldn't execute
-- **Option C (E42 hook enhancement):** SubagentStop hook detects branch mismatch
-  - Check: agent brief says branch X, actual git branch is Y → block completion
-  - Add to `validate_agent_completion` hook
-- **Blocker until:** Agent tool cwd parameter implemented OR E42 enhancement deployed
+**Structural fix implemented:**
+- ✅ **Option C selected:** E42 branch verification added to `validate_agent_completion` hook (commit 1124c8a)
+- ✅ Hook verifies agent committed to expected `saw/{slug}/wave{N}-agent-{ID}` branch
+- ✅ Blocks completion if branch mismatch detected
+- ✅ Prevents future I1 violations like Agent B→D confusion
+- **Note:** Option A (Agent tool cwd parameter) would be ideal long-term enhancement but requires external changes
 
-### 3. Isolation Verification False Negatives
+### 3. Isolation Verification False Negatives ✅ FIXED
 **What happened:** `sawtools verify-isolation` failed for all agents despite correct worktree setup
 **Impact:** Agents A, B, C blocked; manual recovery required
 **Root cause:** Verification tool checks orchestrator's cwd instead of agent's actual location
 
-**Structural fix required:**
-- Fix `sawtools verify-isolation` to detect actual agent working directory
-  - Read cwd from agent environment, not from caller
-  - Verify worktree registration via `git worktree list` lookup
-- Remove "MANDATORY FIRST STEP - If fails, STOP" from agent briefs
-  - Replace with: "Verify isolation. If check fails but `git branch --show-current` shows correct branch, proceed (known false negative)"
-- **Blocker until:** sawtools verify-isolation bug fixed
+**Structural fix implemented:**
+- ✅ Added `--cwd` flag to `sawtools verify-isolation` command (agents explicitly pass working directory)
+- ✅ Created `validate_agent_isolation` SubagentStart hook for automatic enforcement
+- ✅ Hook blocks agent from starting with exit 2 if isolation check fails (E12 enforcement)
+- ✅ Removed manual verification step from agent briefs (now automatic via hook)
+- ✅ Documentation updated in saw-skill.md, hooks/README.md, install.sh
+- ✅ Three-layer enforcement: command accepts `--cwd`, hook validates at start, exit 2 blocks execution
 
-### 4. E35 Violations (Unowned Call Sites)
+### 4. E35 Violations (Unowned Call Sites) ✅ FIXED
 **What happened:** Agent C defined `CreateProgramWorktrees(logger)` but didn't own 2 call sites in same package
 **Impact:** Post-merge build failure; manual fixup required
 **Root cause:** Scout assigned function ownership without checking same-package callers
 
-**Structural fix required:**
-- **Scout enhancement:** Same-package caller detection
-  - When agent owns function F in file X, scan package for calls to F
-  - If calls exist in files not owned by agent, flag as E35 violation
-  - Add to suitability assessment: "Agent C owns CreateProgramWorktrees but not its 2 callers"
-- **Option A:** Auto-extend ownership to include callers (risky - may bloat scope)
-- **Option B:** Require Scout to explicitly document E35 gaps in pre_mortem section
-- **Option C:** Add `sawtools detect-e35-gaps` post-scout validation
-- **Blocker until:** Scout same-package analysis implemented OR detect-e35-gaps command added
+**Structural fix implemented:**
+- ✅ **Option C selected:** `sawtools pre-wave-validate` command with integrated E35 detection
+- ✅ Go AST-based analysis detects same-package function definitions and call sites
+- ✅ Runs after E16 validation, before E37 critic gate
+- ✅ Reports gaps with file:line references in JSON output
+- ✅ Blocks wave execution if gaps detected (exit 1)
+- ✅ Three remediation strategies documented: reassign ownership, create wiring entry, defer to integration
+- ✅ Implementation: `pkg/protocol/e35_detection.go` + `cmd/sawtools/pre_wave_validate_cmd.go`
+- ✅ Documentation updated in saw-skill.md and pre-wave-validation.md
 
 ### 5. Redundant Helper Definitions (Pre-mortem Predicted)
 **What happened:** 3 agents independently defined `loggerFrom` helper in same package
@@ -72,33 +69,28 @@
 
 ## Priority Order
 
-1. **P0 (Blocking):** Agent tool cwd parameter OR E42 branch mismatch detection
-   - Without this, agents will continue committing to wrong branches
-2. **P0 (Blocking):** Agent naming helper function
-   - Simple fix, high observability impact
-3. **P1 (High):** Scout same-package caller detection for E35
-   - Prevents post-merge build failures
-4. **P2 (Medium):** Fix sawtools verify-isolation bug
-   - Currently worked around via brief wording
+1. ~~**P0 (Blocking):** Agent tool cwd parameter OR E42 branch mismatch detection~~ ✅ FIXED
+   - ~~Without this, agents will continue committing to wrong branches~~
+2. ~~**P0 (Blocking):** Agent naming helper function~~ ✅ FIXED
+   - ~~Simple fix, high observability impact~~
+3. ~~**P1 (High):** Scout same-package caller detection for E35~~ ✅ FIXED
+   - ~~Prevents post-merge build failures~~
+4. ~~**P2 (Medium):** Fix sawtools verify-isolation bug~~ ✅ FIXED
+   - ~~Currently worked around via brief wording~~
 5. **P3 (Low):** Shared helper scaffolding
    - Pre-mortem already catches this; manual cleanup is acceptable
 
 ## Implementation Plan
 
-### Phase 1: Immediate (This Session)
+### Phase 1: Immediate (This Session) ✅ COMPLETE
 - [x] Document issues (this file)
-- [ ] Update orchestrator to use proper SAW tag format for agent names
-- [ ] Update agent briefs to soften isolation verification failure handling
+- [x] Update orchestrator to use proper SAW tag format for agent names (E44)
+- [x] Implement E42 branch mismatch detection in SubagentStop hook
+- [x] Add `sawtools pre-wave-validate` with E35 detection
 
-### Phase 2: Next Session (Tooling)
-- [ ] Add cwd parameter to Agent tool (request from Claude Code team)
-- [ ] Fix `sawtools verify-isolation` to detect agent cwd correctly
-- [ ] Implement E42 branch mismatch detection in SubagentStop hook
-
-### Phase 3: Scout Enhancement (Week)
-- [ ] Add same-package caller detection to Scout analysis
-- [ ] Update suitability gate to flag E35 gaps
-- [ ] Add `sawtools detect-e35-gaps` validation command
+### Phase 2: Future (Low Priority)
+- [ ] Add cwd parameter to Agent tool (request from Claude Code team) — nice-to-have, E42 hook covers this
+- [ ] Fix `sawtools verify-isolation` to detect agent cwd correctly — workaround acceptable
 
 ## Lessons for Protocol
 
@@ -106,13 +98,15 @@
 - E7 (all agents complete) enforcement caught issues before merge
 - Pre-mortem correctly predicted loggerFrom duplication
 - Manual recovery was possible because files were disjoint (I1 partially held)
+- Hook-based enforcement (E42, E44) prevents protocol violations automatically
 
-**What failed:**
-- Agent tool doesn't enforce worktree isolation (I1 violation possible)
-- Scout doesn't detect same-package E35 gaps
-- Verification tool has false negatives (agents proceeded anyway - correct behavior)
+**What was fixed:**
+- ~~Agent tool doesn't enforce worktree isolation (I1 violation possible)~~ → E42 hook validates branch
+- ~~Scout doesn't detect same-package E35 gaps~~ → pre-wave-validate detects at planning time
+- ~~Orchestrator manually constructed agent names~~ → metadata-driven E44 compliance
+- Verification tool has false negatives (agents proceeded anyway - correct behavior, still acceptable)
 
-**Protocol changes needed:**
-- Add E44: "Orchestrator must use SAW tag format for agent names"
-- Update E35: "Scout must detect same-package callers for ownership analysis"
-- Update I1: "SubagentStop hook must verify agent committed to correct branch"
+**Protocol changes implemented:**
+- ✅ E44: "Orchestrator must use SAW tag format for agent names" (metadata + hook)
+- ✅ E35: "pre-wave-validate must detect same-package callers for ownership analysis" (AST-based)
+- ✅ I1: "SubagentStop hook must verify agent committed to correct branch" (E42 enforcement)

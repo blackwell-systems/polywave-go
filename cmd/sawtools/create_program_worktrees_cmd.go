@@ -32,7 +32,7 @@ Exit codes:
 		RunE: func(cmd *cobra.Command, args []string) error {
 			manifestPath := args[0]
 
-			res := protocol.CreateProgramWorktrees(manifestPath, tierNum, repoDir)
+			res := protocol.CreateProgramWorktrees(manifestPath, tierNum, repoDir, nil)
 
 			if res.IsFatal() {
 				// Return error for parse/tier-not-found errors

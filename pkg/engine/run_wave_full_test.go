@@ -120,7 +120,7 @@ func TestRunWaveFull_Success(t *testing.T) {
 	)
 
 	// Create worktrees manually before calling RunWaveFull (simulating Step 1)
-	wtRes := protocol.CreateWorktrees(manifestPath, 1, repoDir)
+	wtRes := protocol.CreateWorktrees(manifestPath, 1, repoDir, nil)
 	if !wtRes.IsSuccess() {
 		t.Fatalf("failed to create worktrees: %v", wtRes.Errors)
 	}
@@ -149,7 +149,7 @@ func TestRunWaveFull_Success(t *testing.T) {
 	t.Logf("Got expected error when worktrees exist: %v", runErr)
 
 	// Clean up for testing error paths below
-	protocol.Cleanup(manifestPath, 1, repoDir)
+	protocol.Cleanup(manifestPath, 1, repoDir, nil)
 }
 
 func TestRunWaveFull_WorktreeFailure(t *testing.T) {

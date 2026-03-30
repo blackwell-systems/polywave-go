@@ -379,7 +379,7 @@ func FinalizeWave(ctx context.Context, opts FinalizeWaveOpts) (*FinalizeWaveResu
 			for repoKey, repoPath := range repos {
 				stateDir := protocol.SAWStateDir(repoPath)
 				cache := gatecache.New(stateDir, gatecache.DefaultTTL)
-				gateRes := protocol.RunPreMergeGates(manifest, opts.WaveNum, repoPath, cache)
+				gateRes := protocol.RunPreMergeGates(manifest, opts.WaveNum, repoPath, cache, opts.Logger)
 				if !gateRes.IsSuccess() {
 					return result, fmt.Errorf("engine.FinalizeWave: run-pre-merge-gates failed in %s: %v", repoKey, gateRes.Errors)
 				}
@@ -425,7 +425,7 @@ func FinalizeWave(ctx context.Context, opts FinalizeWaveOpts) (*FinalizeWaveResu
 							if retryFixed {
 								// Gate was fixed by the retry agent; re-run gates to confirm.
 								cache = gatecache.New(stateDir, gatecache.DefaultTTL)
-								rerunRes := protocol.RunPreMergeGates(manifest, opts.WaveNum, repoPath, cache)
+								rerunRes := protocol.RunPreMergeGates(manifest, opts.WaveNum, repoPath, cache, opts.Logger)
 								if rerunRes.IsSuccess() {
 									rerunResults := rerunRes.GetData().Gates
 									result.GateResults[repoKey] = rerunResults
@@ -522,7 +522,7 @@ func FinalizeWave(ctx context.Context, opts FinalizeWaveOpts) (*FinalizeWaveResu
 					}
 					continue
 				}
-				mergeRes, mergeErr := protocol.MergeAgents(opts.IMPLPath, opts.WaveNum, repoPath, opts.MergeTarget)
+				mergeRes, mergeErr := protocol.MergeAgents(opts.IMPLPath, opts.WaveNum, repoPath, opts.MergeTarget, opts.Logger)
 				if mergeErr != nil {
 					return result, fmt.Errorf("engine.FinalizeWave: merge-agents failed in %s: %w", repoKey, mergeErr)
 				}
@@ -603,7 +603,7 @@ func FinalizeWave(ctx context.Context, opts FinalizeWaveOpts) (*FinalizeWaveResu
 
 	// Step 5.5: RunPostMergeGates (E21) — per repo
 	for repoKey, repoPath := range repos {
-		postGateRes := protocol.RunPostMergeGates(manifest, opts.WaveNum, repoPath)
+		postGateRes := protocol.RunPostMergeGates(manifest, opts.WaveNum, repoPath, opts.Logger)
 		if !postGateRes.IsSuccess() {
 			return result, fmt.Errorf("engine.FinalizeWave: run-post-merge-gates failed in %s: %v", repoKey, postGateRes.Errors)
 		}

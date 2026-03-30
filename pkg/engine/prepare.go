@@ -446,7 +446,7 @@ func PrepareWave(ctx context.Context, opts PrepareWaveOpts) (*PrepareWaveResult,
 	}
 
 	// Step: Create worktrees
-	wtRes := protocol.CreateWorktrees(opts.IMPLPath, opts.WaveNum, projectRoot)
+	wtRes := protocol.CreateWorktrees(opts.IMPLPath, opts.WaveNum, projectRoot, opts.Logger)
 	if !wtRes.IsSuccess() {
 		recordStep(res, opts.OnEvent, "create_worktrees", "failed", fmt.Sprintf("%v", wtRes.Errors))
 		return res, fmt.Errorf("failed to create worktrees: %v", wtRes.Errors)

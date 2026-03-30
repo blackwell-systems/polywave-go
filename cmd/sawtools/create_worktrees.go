@@ -17,7 +17,7 @@ func newCreateWorktreesCmd() *cobra.Command {
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			manifestPath := args[0]
-			res := protocol.CreateWorktrees(manifestPath, waveNum, repoDir)
+			res := protocol.CreateWorktrees(manifestPath, waveNum, repoDir, nil)
 			if !res.IsSuccess() {
 				return fmt.Errorf("create-worktrees: %v", res.Errors)
 			}

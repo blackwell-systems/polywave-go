@@ -436,6 +436,7 @@ waves:
             - C
             - D
             - E
+      base_commit: 71e820bfd87988345a6d4ba6e1cbe9333245b708
 quality_gates:
     level: standard
     gates:
@@ -458,7 +459,7 @@ completion_reports:
         verification: PASS
     B:
         status: complete
-        branch: saw/logging-injection-remaining/wave1-agent-D
+        branch: saw/logging-injection-remaining/wave1-agent-B
         commit: 1dd977e
         files_changed:
             - pkg/protocol/merge_agents.go
@@ -488,6 +489,34 @@ completion_reports:
             - pkg/protocol/cleanup.go
         verification: PASS
         notes: 'Cleanup function signature updated with logger parameter. loggerFrom helper added. slog.Default() replaced with injected logger. Build passes. Out-of-scope: pkg/protocol/cleanup_test.go needs test call updates (8 test functions require logger parameter).'
+    F:
+        status: complete
+        branch: saw/logging-injection-remaining/wave2-agent-F
+        commit: "8646322"
+        files_changed:
+            - pkg/orchestrator/stubs.go
+            - pkg/engine/runner.go
+            - pkg/orchestrator/stubs_test.go
+        verification: PASS
+        notes: 'Logger injection complete for RunStubScan. Added loggerFrom helper, updated function signature, replaced 4 slog.Default() calls. Updated call site in runner.go line 407. Test file updated to pass nil logger. All tests pass. Note: Full project build fails due to out-of-scope files (daemon.go, finalize.go, etc.) not yet updated by other agents - these files call protocol functions requiring logger parameters.'
+    G:
+        status: complete
+        branch: saw/logging-injection-remaining/wave2-agent-G
+        commit: b255ab9
+        files_changed:
+            - pkg/orchestrator/journal_integration.go
+        verification: PASS
+        notes: 'Successfully added logger injection to PrepareAgentContext and loadJournalEntries. Implementation file passes go build and go vet. Out-of-scope: pkg/orchestrator/journal_integration_test.go requires updates to pass logger parameter - this file is not in Agent G''s ownership and must be updated by another agent.'
+    H:
+        status: complete
+        branch: saw/logging-injection-remaining/wave2-agent-H
+        commit: "1154665"
+        files_changed:
+            - pkg/resume/worktree_status.go
+            - pkg/resume/detect.go
+            - pkg/resume/worktree_status_test.go
+        verification: PASS
+        notes: Added logger parameter to ClassifyWorktrees and isWorktreeDirty. Replaced slog.Default() with loggerFrom(logger). Updated all test call sites. All tests passing.
 pre_mortem:
     overall_risk: low
     rows:
@@ -539,3 +568,41 @@ critic_report:
     issue_count: 0
 state: REVIEWED
 injection_method: hook
+integration_reports:
+    wave2:
+        wave: 2
+        gaps:
+            - export_name: RunSingleWave
+              file_path: pkg/engine/runner.go
+              agent_id: F
+              category: function_call
+              severity: error
+              reason: exported func "RunSingleWave" has no call-sites outside its defining file
+              suggested_fix: Find appropriate caller for RunSingleWave and add invocation
+              search_results: []
+            - export_name: RunSingleAgent
+              file_path: pkg/engine/runner.go
+              agent_id: F
+              category: function_call
+              severity: error
+              reason: exported func "RunSingleAgent" has no call-sites outside its defining file
+              suggested_fix: Find appropriate caller for RunSingleAgent and add invocation
+              search_results: []
+            - export_name: NewJournalIntegration
+              file_path: pkg/engine/runner.go
+              agent_id: F
+              category: function_call
+              severity: error
+              reason: exported func "NewJournalIntegration" has no call-sites outside its defining file
+              suggested_fix: Find appropriate caller for NewJournalIntegration and add invocation
+              search_results: []
+            - export_name: StartPeriodicSync
+              file_path: pkg/engine/runner.go
+              agent_id: F
+              category: function_call
+              severity: error
+              reason: exported method "StartPeriodicSync" has no call-sites outside its defining file
+              suggested_fix: Find appropriate caller for StartPeriodicSync and add invocation
+              search_results: []
+        valid: false
+        summary: 'Wave 2: 4 integration gap(s) detected, 4 error(s)'

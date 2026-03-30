@@ -115,6 +115,7 @@ func main() {
 		newPreCommitCheckCmd(),
 		newInstallHooksCmd(),
 		newSetInjectionMethodCmd(),
+		newPreWaveValidateCmd(),
 	)
 	if err := rootCmd.Execute(); err != nil {
 		fmt.Fprintln(os.Stderr, err)
