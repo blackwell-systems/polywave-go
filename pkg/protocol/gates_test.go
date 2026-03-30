@@ -5,12 +5,13 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/gatecache"
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
 )
 
 func TestRunGates_NoGates(t *testing.T) {
@@ -1413,5 +1414,119 @@ func TestRaceDetection(t *testing.T) {
 		if !res.IsSuccess() {
 			t.Fatalf("iteration %d: expected success, got: %v", i, res.Errors)
 		}
+	}
+}
+
+func TestRunGates_RepoScoping(t *testing.T) {
+	// Gate with matching Repo runs; gate with non-matching Repo is skipped entirely.
+	repoDir, err := os.MkdirTemp("", "scout-and-wave-go*")
+	if err != nil {
+		t.Fatalf("failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(repoDir)
+
+	repoName := filepath.Base(repoDir)
+	manifest := &IMPLManifest{
+		QualityGates: &QualityGates{
+			Gates: []QualityGate{
+				{Type: "build", Command: "echo matched", Required: true, Repo: repoName},
+				{Type: "build", Command: "exit 1", Required: true, Repo: "other-repo"},
+			},
+		},
+	}
+
+	res := runGates(manifest, 1, repoDir)
+	if !res.IsSuccess() {
+		t.Fatalf("expected success, got: %v", res.Errors)
+	}
+	gates := res.GetData().Gates
+	if len(gates) != 1 {
+		t.Fatalf("expected 1 gate result (other-repo gate skipped), got %d", len(gates))
+	}
+	if !gates[0].Passed {
+		t.Errorf("expected matched gate to pass, got Passed=false; stderr: %s", gates[0].Stderr)
+	}
+}
+
+func TestRunGates_RepoScoping_NoRepoField(t *testing.T) {
+	// Gate with empty Repo always runs regardless of repoDir.
+	repoDir, err := os.MkdirTemp("", "any-repo*")
+	if err != nil {
+		t.Fatalf("failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(repoDir)
+
+	manifest := &IMPLManifest{
+		QualityGates: &QualityGates{
+			Gates: []QualityGate{
+				{Type: "build", Command: "echo always-runs", Required: true, Repo: ""},
+			},
+		},
+	}
+
+	res := runGates(manifest, 1, repoDir)
+	if !res.IsSuccess() {
+		t.Fatalf("expected success, got: %v", res.Errors)
+	}
+	gates := res.GetData().Gates
+	if len(gates) != 1 {
+		t.Fatalf("expected 1 gate result, got %d", len(gates))
+	}
+	if !gates[0].Passed {
+		t.Errorf("expected gate with empty Repo to pass, got Passed=false")
+	}
+}
+
+func TestRunGatesWithCache_RepoScoping(t *testing.T) {
+	// Gate with matching Repo runs; gate with non-matching Repo is skipped.
+	repoDir := makeTempGitRepo(t)
+	repoName := filepath.Base(repoDir)
+
+	cache := gatecache.New(t.TempDir(), 5*time.Minute)
+
+	manifest := &IMPLManifest{
+		QualityGates: &QualityGates{
+			Gates: []QualityGate{
+				{Type: "build", Command: "echo matched", Required: true, Repo: repoName},
+				{Type: "build", Command: "exit 1", Required: true, Repo: "other-repo"},
+			},
+		},
+	}
+
+	res := RunGatesWithCache(manifest, 1, repoDir, cache)
+	if !res.IsSuccess() {
+		t.Fatalf("expected success, got: %v", res.Errors)
+	}
+	gates := res.GetData().Gates
+	if len(gates) != 1 {
+		t.Fatalf("expected 1 gate result (other-repo gate skipped), got %d", len(gates))
+	}
+	if !gates[0].Passed {
+		t.Errorf("expected matched gate to pass, got Passed=false; stderr: %s", gates[0].Stderr)
+	}
+}
+
+func TestRunGatesWithCache_RepoScoping_NoRepoField(t *testing.T) {
+	// Gates with empty Repo run regardless of repoDir — both appear in results.
+	repoDir := makeTempGitRepo(t)
+
+	cache := gatecache.New(t.TempDir(), 5*time.Minute)
+
+	manifest := &IMPLManifest{
+		QualityGates: &QualityGates{
+			Gates: []QualityGate{
+				{Type: "build", Command: "echo gate-one", Required: true, Repo: ""},
+				{Type: "build", Command: "echo gate-two", Required: true, Repo: ""},
+			},
+		},
+	}
+
+	res := RunGatesWithCache(manifest, 1, repoDir, cache)
+	if !res.IsSuccess() {
+		t.Fatalf("expected success, got: %v", res.Errors)
+	}
+	gates := res.GetData().Gates
+	if len(gates) != 2 {
+		t.Fatalf("expected 2 gate results (both empty-Repo gates run), got %d", len(gates))
 	}
 }

@@ -246,10 +246,16 @@ func TestRetryLoop_FilenameFormat(t *testing.T) {
 		FeatureSlug: "my-slug",
 		Verdict:     "SUITABLE",
 		Waves: []protocol.Wave{
-			{Number: 1, Agents: []protocol.Agent{{ID: "A", Task: "task", Files: []string{"file.go"}}}},
+			{Number: 1, Agents: []protocol.Agent{
+				{ID: "A", Task: "task", Files: []string{"file.go"}},
+				{ID: "B", Task: "tests", Files: []string{"file_test.go"}},
+			}},
 		},
-		FileOwnership: []protocol.FileOwnership{{File: "file.go", Agent: "A", Wave: 1}},
-		State:         protocol.StateWavePending,
+		FileOwnership: []protocol.FileOwnership{
+			{File: "file.go", Agent: "A", Wave: 1},
+			{File: "file_test.go", Agent: "B", Wave: 1},
+		},
+		State: protocol.StateWavePending,
 	}
 	if err := protocol.Save(m, parentIMPL); err != nil {
 		t.Fatal(err)
@@ -346,10 +352,16 @@ func TestRetryLoop_GenerateRetryIMPLMethod(t *testing.T) {
 		Verdict:     "SUITABLE",
 		TestCommand: "go test ./pkg/method/...",
 		Waves: []protocol.Wave{
-			{Number: 1, Agents: []protocol.Agent{{ID: "A", Task: "task", Files: []string{"pkg/method/m.go"}}}},
+			{Number: 1, Agents: []protocol.Agent{
+				{ID: "A", Task: "task", Files: []string{"pkg/method/m.go"}},
+				{ID: "B", Task: "tests", Files: []string{"pkg/method/m_test.go"}},
+			}},
 		},
-		FileOwnership: []protocol.FileOwnership{{File: "pkg/method/m.go", Agent: "A", Wave: 1}},
-		State:         protocol.StateWavePending,
+		FileOwnership: []protocol.FileOwnership{
+			{File: "pkg/method/m.go", Agent: "A", Wave: 1},
+			{File: "pkg/method/m_test.go", Agent: "B", Wave: 1},
+		},
+		State: protocol.StateWavePending,
 	}
 	if err := protocol.Save(parent, parentIMPL); err != nil {
 		t.Fatal(err)

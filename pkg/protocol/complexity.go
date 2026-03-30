@@ -2,6 +2,7 @@ package protocol
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
 )
@@ -20,7 +21,10 @@ func CheckAgentComplexity(m *IMPLManifest) []result.SAWError {
 	// V047: Reject trivial single-agent, single-file IMPLs declared SUITABLE.
 	// The suitability gate is LLM-driven; this catch ensures small-scope work
 	// doesn't incur full SAW orchestration overhead for zero parallelism benefit.
-	if m.Verdict == "SUITABLE" || m.Verdict == "SUITABLE_WITH_CAVEATS" {
+	// Exempt retry IMPLs (slug contains "-retry-") — those are machine-generated
+	// and are intentionally targeted single-agent documents.
+	isRetry := strings.Contains(m.FeatureSlug, "-retry-")
+	if !isRetry && (m.Verdict == "SUITABLE" || m.Verdict == "SUITABLE_WITH_CAVEATS") {
 		totalAgents := 0
 		for _, wave := range m.Waves {
 			totalAgents += len(wave.Agents)

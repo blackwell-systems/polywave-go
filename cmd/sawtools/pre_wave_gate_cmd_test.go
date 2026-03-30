@@ -14,7 +14,7 @@ func TestPreWaveGateCmd_ValidManifest(t *testing.T) {
 	tmpDir := t.TempDir()
 	implPath := filepath.Join(tmpDir, "IMPL-test.yaml")
 
-	// A minimal valid IMPL with one agent, no scaffolds, no critic report
+	// A minimal valid IMPL with two agents (V047 requires >1 agent for SUITABLE), no scaffolds
 	implContent := `title: Test Implementation
 feature_slug: test-implementation
 verdict: SUITABLE
@@ -23,9 +23,15 @@ waves:
     agents:
       - id: A
         task: implement test feature
+      - id: B
+        task: implement tests
 file_ownership:
   - file: pkg/test/file.go
     agent: A
+    wave: 1
+    action: new
+  - file: pkg/test/file_test.go
+    agent: B
     wave: 1
     action: new
 `
