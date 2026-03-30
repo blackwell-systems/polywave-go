@@ -424,6 +424,10 @@ func PrepareWave(ctx context.Context, opts PrepareWaveOpts) (*PrepareWaveResult,
 	// Auto-advance SCOUT_PENDING → REVIEWED now that validation + critic have cleared.
 	// finalize-wave needs the state to be at least REVIEWED to reach WAVE_VERIFIED.
 	if doc.State == protocol.StateScoutPending || doc.State == protocol.StateScoutValidating {
+		// Bypass isolation hook for orchestration commit
+		os.Setenv("SAW_ALLOW_MAIN_COMMIT", "1")
+		defer os.Unsetenv("SAW_ALLOW_MAIN_COMMIT")
+
 		stateRes := protocol.SetImplState(opts.IMPLPath, protocol.StateReviewed, protocol.SetImplStateOpts{
 			Commit:    true,
 			CommitMsg: "chore: advance IMPL state to REVIEWED (pre-wave gate passed)",
