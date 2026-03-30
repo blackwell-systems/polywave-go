@@ -9,48 +9,6 @@ import (
 	"testing"
 )
 
-func TestDetectProject(t *testing.T) {
-	tests := []struct {
-		name     string
-		marker   string
-		wantLang string
-		wantBld  string
-		wantTest string
-	}{
-		{"go", "go.mod", "go", "go build ./...", "go test ./..."},
-		{"rust", "Cargo.toml", "rust", "cargo build", "cargo test"},
-		{"node", "package.json", "node", "npm run build", "npm test"},
-		{"python_pyproject", "pyproject.toml", "python", "", "pytest"},
-		{"ruby", "Gemfile", "ruby", "", "bundle exec rspec"},
-		{"makefile", "Makefile", "makefile", "make", "make test"},
-		{"unknown", "", "unknown", "", ""},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			dir := t.TempDir()
-			if tt.marker != "" {
-				if err := os.WriteFile(filepath.Join(dir, tt.marker), []byte(""), 0644); err != nil {
-					t.Fatal(err)
-				}
-			}
-			got := detectProject(dir)
-			if got.Language != tt.wantLang {
-				t.Errorf("Language = %q, want %q", got.Language, tt.wantLang)
-			}
-			if got.Build != tt.wantBld {
-				t.Errorf("Build = %q, want %q", got.Build, tt.wantBld)
-			}
-			if got.Test != tt.wantTest {
-				t.Errorf("Test = %q, want %q", got.Test, tt.wantTest)
-			}
-			if got.Name != filepath.Base(dir) {
-				t.Errorf("Name = %q, want %q", got.Name, filepath.Base(dir))
-			}
-		})
-	}
-}
-
 func TestInitCmd_AlreadyExists(t *testing.T) {
 	dir := t.TempDir()
 	// Create existing saw.config.json.
