@@ -6,11 +6,34 @@ import (
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
 )
 
-// CheckAgentComplexity returns W001_AGENT_SCOPE_LARGE warnings for any agent
-// that owns more than 8 files total, or creates more than 5 new files.
-// Warnings are advisory — they do not block execution.
+// CheckAgentComplexity returns complexity errors and warnings for agent scope.
+//
+// Hard errors (block execution):
+//   - V047_TRIVIAL_SCOPE: IMPL is SUITABLE but has only 1 agent owning 1 file.
+//     SAW adds no parallelization value; the change should be made directly.
+//
+// Warnings (advisory):
+//   - W001_AGENT_SCOPE_LARGE: agent owns >8 files or creates >5 new files.
 func CheckAgentComplexity(m *IMPLManifest) []result.SAWError {
 	var warnings []result.SAWError
+
+	// V047: Reject trivial single-agent, single-file IMPLs declared SUITABLE.
+	// The suitability gate is LLM-driven; this catch ensures small-scope work
+	// doesn't incur full SAW orchestration overhead for zero parallelism benefit.
+	if m.Verdict == "SUITABLE" || m.Verdict == "SUITABLE_WITH_CAVEATS" {
+		totalAgents := 0
+		for _, wave := range m.Waves {
+			totalAgents += len(wave.Agents)
+		}
+		if totalAgents == 1 && len(m.FileOwnership) == 1 {
+			warnings = append(warnings, result.SAWError{
+				Code:     result.CodeTrivialScope,
+				Message:  "IMPL has 1 agent owning 1 file — SAW adds no parallelization value at this scope; make the change directly instead",
+				Severity: "error",
+				Field:    "file_ownership",
+			})
+		}
+	}
 
 	// Build per-agent file count maps from file_ownership
 	totalFiles := make(map[string]int)

@@ -4,7 +4,8 @@ import (
 	"testing"
 )
 
-// makeMinimalValidManifest creates a minimal valid manifest with one agent and no scaffolds.
+// makeMinimalValidManifest creates a minimal valid manifest with two agents and no scaffolds.
+// Uses 2 agents so it does not trip V047_TRIVIAL_SCOPE.
 func makeMinimalValidManifest() *IMPLManifest {
 	return &IMPLManifest{
 		Title:       "Test IMPL",
@@ -15,11 +16,13 @@ func makeMinimalValidManifest() *IMPLManifest {
 				Number: 1,
 				Agents: []Agent{
 					{ID: "A", Task: "implement test feature"},
+					{ID: "B", Task: "implement tests"},
 				},
 			},
 		},
 		FileOwnership: []FileOwnership{
 			{File: "pkg/test/file.go", Agent: "A", Wave: 1, Action: "new"},
+			{File: "pkg/test/file_test.go", Agent: "B", Wave: 1, Action: "new"},
 		},
 	}
 }

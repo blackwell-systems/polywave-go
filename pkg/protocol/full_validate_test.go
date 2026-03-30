@@ -10,6 +10,7 @@ import (
 )
 
 // Minimal valid IMPL manifest YAML for testing.
+// Uses 2 agents so it does not trip V047_TRIVIAL_SCOPE.
 const validManifestYAML = `title: "Test Feature"
 feature_slug: "test-feature"
 verdict: "SUITABLE"
@@ -19,9 +20,14 @@ waves:
     agents:
       - id: "A"
         task: "implement feature"
+      - id: "B"
+        task: "implement tests"
 file_ownership:
   - file: "pkg/foo.go"
     agent: "A"
+    wave: 1
+  - file: "pkg/foo_test.go"
+    agent: "B"
     wave: 1
 quality_gates:
   level: "standard"

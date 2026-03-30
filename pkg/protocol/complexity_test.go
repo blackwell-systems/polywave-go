@@ -96,6 +96,65 @@ func TestCheckAgentComplexity(t *testing.T) {
 		},
 	}
 
+	// V047 trivial scope cases
+	v047Tests := []struct {
+		name      string
+		manifest  *IMPLManifest
+		wantError bool
+	}{
+		{
+			name: "1 agent 1 file SUITABLE — expect V047 error",
+			manifest: &IMPLManifest{
+				Verdict: "SUITABLE",
+				Waves:   []Wave{{Number: 1, Agents: []Agent{{ID: "A"}}}},
+				FileOwnership: []FileOwnership{
+					{File: "pkg/foo.go", Agent: "A", Wave: 1},
+				},
+			},
+			wantError: true,
+		},
+		{
+			name: "2 agents 2 files SUITABLE — no V047",
+			manifest: &IMPLManifest{
+				Verdict: "SUITABLE",
+				Waves:   []Wave{{Number: 1, Agents: []Agent{{ID: "A"}, {ID: "B"}}}},
+				FileOwnership: []FileOwnership{
+					{File: "pkg/foo.go", Agent: "A", Wave: 1},
+					{File: "pkg/bar.go", Agent: "B", Wave: 1},
+				},
+			},
+			wantError: false,
+		},
+		{
+			name: "1 agent 1 file NOT_SUITABLE — no V047 (already rejected)",
+			manifest: &IMPLManifest{
+				Verdict: "NOT_SUITABLE",
+				Waves:   []Wave{{Number: 1, Agents: []Agent{{ID: "A"}}}},
+				FileOwnership: []FileOwnership{
+					{File: "pkg/foo.go", Agent: "A", Wave: 1},
+				},
+			},
+			wantError: false,
+		},
+	}
+	for _, tt := range v047Tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := CheckAgentComplexity(tt.manifest)
+			hasV047 := false
+			for _, e := range got {
+				if e.Code == "V047_TRIVIAL_SCOPE" {
+					hasV047 = true
+					if e.Severity != "error" {
+						t.Errorf("V047 severity = %q, want \"error\"", e.Severity)
+					}
+				}
+			}
+			if hasV047 != tt.wantError {
+				t.Errorf("hasV047 = %v, want %v; errors: %v", hasV047, tt.wantError, got)
+			}
+		})
+	}
+
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			got := CheckAgentComplexity(tt.manifest)
