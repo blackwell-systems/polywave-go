@@ -27,7 +27,7 @@ func newRunGatesCmd() *cobra.Command {
 
 			var results []protocol.GateResult
 			if noCache {
-				res := protocol.RunGates(m, waveNum, repoDir)
+				res := protocol.RunGatesWithCache(m, waveNum, repoDir, nil)
 				if !res.IsSuccess() {
 					return fmt.Errorf("run-gates: %v", res.Errors)
 				}
