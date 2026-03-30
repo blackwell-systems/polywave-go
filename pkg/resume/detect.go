@@ -163,7 +163,7 @@ func buildSessionState(repoPaths []string, implPath string, manifest *protocol.I
 	currentWave := determineCurrentWave(manifest, orphaned)
 
 	// Step 2: Classify worktrees as dirty/clean (Agent B provides ClassifyWorktrees).
-	dirty, _ := ClassifyWorktrees(orphaned, manifest)
+	dirty, _ := ClassifyWorktrees(orphaned, manifest, nil)
 
 	// Step 3: Build suggested action and resume command using dirty classification.
 	suggestedAction, resumeCommand := buildActionAndCommandInternal(implPath, manifest, orphaned, dirty, completed)

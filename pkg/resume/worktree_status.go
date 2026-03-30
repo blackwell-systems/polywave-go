@@ -12,6 +12,14 @@ import (
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
 )
 
+// loggerFrom returns the provided logger or slog.Default() if nil.
+func loggerFrom(l *slog.Logger) *slog.Logger {
+	if l == nil {
+		return slog.Default()
+	}
+	return l
+}
+
 // DirtyWorktree describes a SAW agent worktree and whether it has uncommitted changes.
 // NOTE: Agent A (detect.go) also declares this struct as part of the SessionState
 // extension. The Integration Agent will deduplicate at merge time — only one
@@ -31,7 +39,8 @@ type DirtyWorktree struct {
 // manifest's FeatureSlug are included. Worktrees with non-matching branches are
 // skipped. Paths that do not exist are silently skipped. Git failures are treated
 // as clean (not an error). Locked worktrees are conservatively treated as dirty.
-func ClassifyWorktrees(worktreePaths []string, manifest *protocol.IMPLManifest) ([]DirtyWorktree, error) {
+func ClassifyWorktrees(worktreePaths []string, manifest *protocol.IMPLManifest, logger *slog.Logger) ([]DirtyWorktree, error) {
+	log := loggerFrom(logger)
 	// Build the required slug prefix for branch filtering.
 	slugPrefix := ""
 	if manifest != nil && manifest.FeatureSlug != "" {
@@ -81,7 +90,7 @@ func ClassifyWorktrees(worktreePaths []string, manifest *protocol.IMPLManifest) 
 		fmt.Sscanf(m[1], "%d", &waveNum)
 		agentID := m[2]
 
-		hasChanges := isWorktreeDirty(wt, lockedPaths)
+		hasChanges := isWorktreeDirty(wt, lockedPaths, log)
 
 		result = append(result, DirtyWorktree{
 			Path:       wt,
@@ -101,7 +110,9 @@ func ClassifyWorktrees(worktreePaths []string, manifest *protocol.IMPLManifest) 
 
 // isWorktreeDirty returns true if the worktree at path has uncommitted changes or
 // is locked (locked = conservatively assume work in progress).
-func isWorktreeDirty(path string, lockedPaths map[string]bool) bool {
+func isWorktreeDirty(path string, lockedPaths map[string]bool, logger *slog.Logger) bool {
+	log := loggerFrom(logger)
+
 	if lockedPaths[path] {
 		return true
 	}
@@ -109,7 +120,7 @@ func isWorktreeDirty(path string, lockedPaths map[string]bool) bool {
 	out, err := git.StatusPorcelain(path)
 	if err != nil {
 		// Git command failed — treat as clean and log a warning.
-		slog.Default().Warn("resume: ClassifyWorktrees: git status failed", "path", path, "err", err)
+		log.Warn("resume: ClassifyWorktrees: git status failed", "path", path, "err", err)
 		return false
 	}
 
