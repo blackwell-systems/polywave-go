@@ -9,90 +9,13 @@ import (
 	"testing"
 
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/collision"
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/engine"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
 )
 
-func TestInferLanguageFromCommand(t *testing.T) {
-	tests := []struct {
-		name        string
-		testCommand string
-		want        string
-	}{
-		{
-			name:        "Go test command",
-			testCommand: "go test ./...",
-			want:        "go",
-		},
-		{
-			name:        "Go build command",
-			testCommand: "go build ./cmd/...",
-			want:        "go",
-		},
-		{
-			name:        "Rust cargo test",
-			testCommand: "cargo test",
-			want:        "rust",
-		},
-		{
-			name:        "Rust cargo build",
-			testCommand: "cargo build --release",
-			want:        "rust",
-		},
-		{
-			name:        "JavaScript npm test",
-			testCommand: "npm test",
-			want:        "javascript",
-		},
-		{
-			name:        "JavaScript jest",
-			testCommand: "jest --coverage",
-			want:        "javascript",
-		},
-		{
-			name:        "JavaScript vitest",
-			testCommand: "vitest run",
-			want:        "javascript",
-		},
-		{
-			name:        "Python pytest",
-			testCommand: "pytest tests/",
-			want:        "python",
-		},
-		{
-			name:        "Python unittest",
-			testCommand: "python -m unittest discover",
-			want:        "python",
-		},
-		{
-			name:        "Unknown command",
-			testCommand: "make test",
-			want:        "",
-		},
-		{
-			name:        "Empty command",
-			testCommand: "",
-			want:        "",
-		},
-		{
-			name:        "Case insensitive Go",
-			testCommand: "GO TEST ./...",
-			want:        "go",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got := inferLanguageFromCommand(tt.testCommand)
-			if got != tt.want {
-				t.Errorf("inferLanguageFromCommand(%q) = %q, want %q", tt.testCommand, got, tt.want)
-			}
-		})
-	}
-}
-
 func TestFinalizeWaveResult_CollisionReportsField(t *testing.T) {
-	// Verify that FinalizeWaveResult has the CollisionReports field
-	result := &FinalizeWaveResult{
+	// Verify that engine.FinalizeWaveResult has the CollisionReports field
+	result := &engine.FinalizeWaveResult{
 		Wave:             1,
 		CrossRepo:        false,
 		Success:          false,
@@ -103,13 +26,13 @@ func TestFinalizeWaveResult_CollisionReportsField(t *testing.T) {
 	}
 
 	if result.CollisionReports == nil {
-		t.Error("FinalizeWaveResult.CollisionReports should be initialized")
+		t.Error("engine.FinalizeWaveResult.CollisionReports should be initialized")
 	}
 }
 
 func TestFinalizeWaveResult_CollisionReportIntegration(t *testing.T) {
-	// Verify that CollisionReport can be properly added to FinalizeWaveResult
-	result := &FinalizeWaveResult{
+	// Verify that CollisionReport can be properly added to engine.FinalizeWaveResult
+	result := &engine.FinalizeWaveResult{
 		Wave:             1,
 		CollisionReports: make(map[string]*collision.CollisionReport),
 	}
@@ -130,7 +53,7 @@ func TestFinalizeWaveResult_CollisionReportIntegration(t *testing.T) {
 	result.CollisionReports["main-repo"] = report
 
 	if result.CollisionReports["main-repo"] == nil {
-		t.Error("CollisionReport should be stored in FinalizeWaveResult")
+		t.Error("CollisionReport should be stored in engine.FinalizeWaveResult")
 	}
 
 	if result.CollisionReports["main-repo"].Valid {
@@ -471,11 +394,11 @@ func initBareGitRepo(t *testing.T, dir string) error {
 }
 
 // TestFinalizeWaveResult_IntegrationActionRequiredField verifies that
-// FinalizeWaveResult serializes the new integration_action_required and
+// engine.FinalizeWaveResult serializes the integration_action_required and
 // wiring_gaps fields correctly, and that they are zero-valued when clean.
 func TestFinalizeWaveResult_IntegrationActionRequiredField(t *testing.T) {
 	// Zero-valued case: wiring is clean
-	r := &FinalizeWaveResult{
+	r := &engine.FinalizeWaveResult{
 		Wave:    1,
 		Success: true,
 	}
@@ -530,7 +453,7 @@ func TestFinalizeWave_SkipMergeFlag(t *testing.T) {
 // TestFinalizeWaveResult_WiringGapsPopulated verifies that when wiring gaps
 // exist, IntegrationActionRequired is true and WiringGaps is serialized correctly.
 func TestFinalizeWaveResult_WiringGapsPopulated(t *testing.T) {
-	r := &FinalizeWaveResult{
+	r := &engine.FinalizeWaveResult{
 		Wave:                     1,
 		IntegrationActionRequired: true,
 		WiringGaps: []string{
@@ -552,5 +475,27 @@ func TestFinalizeWaveResult_WiringGapsPopulated(t *testing.T) {
 	}
 	if !strings.Contains(s, "MyFunc not called in cmd/main.go") {
 		t.Errorf("expected gap text in wiring_gaps, got: %s", s)
+	}
+}
+
+// TestFinalizeWave_BuildPassedField verifies that engine.FinalizeWaveResult
+// includes the BuildPassed field (present in engine, previously absent in CLI).
+func TestFinalizeWave_BuildPassedField(t *testing.T) {
+	r := &engine.FinalizeWaveResult{
+		Wave:        1,
+		BuildPassed: true,
+		Success:     true,
+	}
+	if !r.BuildPassed {
+		t.Error("BuildPassed should be true when set")
+	}
+
+	out, err := json.Marshal(r)
+	if err != nil {
+		t.Fatalf("json.Marshal failed: %v", err)
+	}
+	s := string(out)
+	if !strings.Contains(s, `"build_passed":true`) {
+		t.Errorf("expected build_passed:true in JSON, got: %s", s)
 	}
 }
