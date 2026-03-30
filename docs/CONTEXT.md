@@ -236,3 +236,5 @@ type BackendConfig struct {
   - IMPL doc: docs/IMPL/complete/IMPL-git-subprocess-unification.yaml
 - **audit-findings-unification**: completed 2026-03-26, 2 waves, 7 agents
   - IMPL doc: docs/IMPL/complete/IMPL-audit-findings-unification.yaml
+- **engine-unification**: completed 2026-03-30, 3 waves, 6 agents
+  - IMPL doc: docs/IMPL/complete/IMPL-engine-unification.yaml

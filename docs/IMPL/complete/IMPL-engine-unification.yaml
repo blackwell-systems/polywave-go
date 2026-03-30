@@ -1,3 +1,4 @@
+completion_date: "2026-03-30"
 title: Engine Unification
 feature_slug: engine-unification
 verdict: SUITABLE
@@ -717,6 +718,7 @@ waves:
             - pkg/api/wave_runner.go
           dependencies:
             - C
+      base_commit: e9f8578bfc54e47c8d4af7ea81684ad534587dd6
 quality_gates:
     level: standard
     gates:
@@ -793,6 +795,22 @@ completion_reports:
             - pkg/orchestrator/doc.go
         verification: PASS
         notes: 'Deleted orchestrator.RunQualityGates dead code (QualityGateResult struct, RunQualityGates func, runGate helper, truncate helper) and their test file. Migrated pkg/engine/runner.go E21 quality gate block to use protocol.RunPreMergeGates, publishing protocol.GateResult events. Updated orchestrator doc.go Wave Lifecycle comment. All gates pass: go build ./..., go test ./pkg/engine/..., go test ./pkg/orchestrator/..., go test ./pkg/pipeline/..., go vet ./...'
+    E:
+        status: complete
+        commit: "9031621"
+        files_changed:
+            - cmd/sawtools/finalize_wave.go
+            - cmd/sawtools/finalize_wave_test.go
+            - cmd/sawtools/wiring_cmd_test.go
+        verification: 'go build ./...: pass; go test ./...: pass (all packages); go vet ./...: pass'
+        notes: Rewrote finalize_wave.go as thin adapter (~79 lines) over engine.FinalizeWave. Removed CLI-local FinalizeWaveResult, extractReposFromManifest, and inferLanguageFromCommand. Updated test files to reference engine.FinalizeWaveResult. State transitions (SetImplState/UpdateStatus) remain only in engine.FinalizeWave — not re-added to CLI. wiring_cmd_test.go fixed as collateral (referenced deleted CLI-local struct).
+    F:
+        status: complete
+        commit: 201f61d
+        files_changed:
+            - pkg/api/wave_runner.go
+        verification: go build ./... OK; go vet ./... OK
+        notes: Updated pkg/api/wave_runner.go to use engine WiringReport from FinalizeWaveResult instead of inline wiring validation. The GateResults loop was already correctly using the nested map[string][]protocol.GateResult format. Replaced inline protocol.ValidateWiringDeclarations block with a simpler read from finalizeResult.WiringReport. SSE event names and field shapes unchanged.
 pre_mortem:
     overall_risk: medium
     rows:
@@ -885,5 +903,5 @@ critic_report:
     summary: 'All six agent briefs verified against the codebase. The two corrections from the previous review are accurate: Agent A no longer contains any contradictory instruction about TestRunQualityGatesRequiredFail (it now correctly notes that file is deleted by Agent D), and Agent D correctly describes StepRunQualityGates in saw_steps.go as a stub that returns nil without calling orchestrator.RunQualityGates, meaning no nil-panic risk from deletion. Agent F''s description of wave_runner.go is accurate: line 325 iterates GateResults as a flat slice (for _, gate := range finalizeResult.GateResults), and lines 336-362 run protocol.ValidateWiringDeclarations inline with the explicit comment that the engine does not carry a WiringReport. All interface contract types (WiringValidationData, GateResult, WiringGap fields) are verified against actual source. No errors found across all six agents.'
     reviewed_at: "2026-03-30T12:33:08Z"
     issue_count: 0
-state: SCOUT_PENDING
+state: COMPLETE
 injection_method: hook
