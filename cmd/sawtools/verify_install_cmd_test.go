@@ -4,11 +4,13 @@ import (
 	"encoding/json"
 	"strings"
 	"testing"
+
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/engine"
 )
 
 func TestVerifyInstallCmd_OutputJSON(t *testing.T) {
 	// Run the actual install checks and verify the JSON structure is valid.
-	result := runInstallChecks()
+	result := engine.RunVerifyInstall(engine.VerifyInstallOpts{})
 
 	data, err := json.Marshal(result)
 	if err != nil {
@@ -16,7 +18,7 @@ func TestVerifyInstallCmd_OutputJSON(t *testing.T) {
 	}
 
 	// Verify it round-trips to the expected structure
-	var decoded installResult
+	var decoded engine.InstallResult
 	if err := json.Unmarshal(data, &decoded); err != nil {
 		t.Fatalf("failed to unmarshal install result: %v", err)
 	}
@@ -51,11 +53,17 @@ func TestVerifyInstallCmd_OutputJSON(t *testing.T) {
 }
 
 func TestVerifyInstallCmd_GitVersion(t *testing.T) {
-	// checkGitVersion should succeed in any CI/dev environment with git installed
-	check := checkGitVersion()
+	result := engine.RunVerifyInstall(engine.VerifyInstallOpts{})
 
-	if check.Name != "git_version" {
-		t.Errorf("expected name git_version, got %q", check.Name)
+	var check *engine.InstallCheck
+	for i := range result.Checks {
+		if result.Checks[i].Name == "git_version" {
+			check = &result.Checks[i]
+			break
+		}
+	}
+	if check == nil {
+		t.Fatal("git_version check not found in result")
 	}
 
 	// Git should be installed in any environment running these tests
@@ -63,7 +71,6 @@ func TestVerifyInstallCmd_GitVersion(t *testing.T) {
 		t.Skip("git not installed, skipping version check test")
 	}
 
-	// If git is installed, we expect a pass (git >= 2.20 is very common)
 	if check.Status != "pass" {
 		t.Logf("git version check status: %s, detail: %s", check.Status, check.Detail)
 	}
@@ -76,8 +83,8 @@ func TestVerifyInstallCmd_GitVersion(t *testing.T) {
 
 func TestVerifyInstallCmd_HumanFlag(t *testing.T) {
 	// Build a known result to verify human output format
-	result := installResult{
-		Checks: []installCheck{
+	result := engine.InstallResult{
+		Checks: []engine.InstallCheck{
 			{Name: "sawtools_binary", Status: "pass", Detail: "at /usr/local/bin/sawtools"},
 			{Name: "git_version", Status: "pass", Detail: "2.43 >= 2.20"},
 			{Name: "skill_directory", Status: "fail", Detail: "~/.claude/skills/saw/ not found"},
@@ -120,7 +127,19 @@ func TestVerifyInstallCmd_HumanFlag(t *testing.T) {
 }
 
 func TestVerifyInstallCmd_SawtoolsBinary(t *testing.T) {
-	check := checkSawtoolsBinary()
+	result := engine.RunVerifyInstall(engine.VerifyInstallOpts{})
+
+	var check *engine.InstallCheck
+	for i := range result.Checks {
+		if result.Checks[i].Name == "sawtools_binary" {
+			check = &result.Checks[i]
+			break
+		}
+	}
+	if check == nil {
+		t.Fatal("sawtools_binary check not found in result")
+	}
+
 	if check.Name != "sawtools_binary" {
 		t.Errorf("expected name sawtools_binary, got %q", check.Name)
 	}
