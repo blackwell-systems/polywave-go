@@ -252,7 +252,7 @@ func TestHasErrors(t *testing.T) {
 	}
 }
 
-// TestGetData verifies GetData method returns data and panics when nil.
+// TestGetData verifies GetData method returns data when present.
 func TestGetData(t *testing.T) {
 	t.Run("returns data when present", func(t *testing.T) {
 		expected := "test data"
@@ -262,22 +262,40 @@ func TestGetData(t *testing.T) {
 			t.Errorf("GetData() = %q, want %q", got, expected)
 		}
 	})
+}
 
-	t.Run("panics when data is nil", func(t *testing.T) {
-		r := NewFailure[string]([]SAWError{
-			{Code: "E001", Message: "error", Severity: "fatal"},
-		})
+// TestGetDataZeroOnNilData verifies GetData returns the zero value instead of
+// panicking when called on a Result with nil Data (e.g. a FATAL result).
+func TestGetDataZeroOnNilData(t *testing.T) {
+	r := NewFailure[string]([]SAWError{
+		{Code: "E001", Message: "error", Severity: "fatal"},
+	})
 
+	// Must not panic
+	var got string
+	func() {
 		defer func() {
-			if r := recover(); r == nil {
-				t.Error("GetData() should panic when Data is nil")
-			} else if msg, ok := r.(string); !ok || msg != "GetData called on Result with nil Data" {
-				t.Errorf("panic message = %v, want 'GetData called on Result with nil Data'", r)
+			if rec := recover(); rec != nil {
+				t.Errorf("GetData() panicked unexpectedly: %v", rec)
 			}
 		}()
+		got = r.GetData()
+	}()
 
-		_ = r.GetData()
-	})
+	// Zero value of string is ""
+	if got != "" {
+		t.Errorf("GetData() = %q, want zero value %q", got, "")
+	}
+}
+
+// TestGetDataSuccess verifies GetData returns the correct value on a SUCCESS result.
+func TestGetDataSuccess(t *testing.T) {
+	expected := "hello world"
+	r := NewSuccess(expected)
+	got := r.GetData()
+	if got != expected {
+		t.Errorf("GetData() = %q, want %q", got, expected)
+	}
 }
 
 // TestJSONMarshalUnmarshal verifies JSON serialization round-trip.
