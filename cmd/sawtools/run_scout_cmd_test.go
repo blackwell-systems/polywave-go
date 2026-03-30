@@ -4,68 +4,7 @@ import (
 	"os"
 	"strings"
 	"testing"
-
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
 )
-
-func TestGenerateSlug(t *testing.T) {
-	tests := []struct {
-		name    string
-		feature string
-		want    string
-	}{
-		{
-			name:    "Simple feature name",
-			feature: "Add audit logging",
-			want:    "add-audit-logging",
-		},
-		{
-			name:    "Feature with special characters",
-			feature: "Fix bug #123: auth fails",
-			want:    "fix-bug-123-auth-fails",
-		},
-		{
-			name:    "Feature with multiple spaces",
-			feature: "Add   multiple   spaces",
-			want:    "add-multiple-spaces",
-		},
-		{
-			name:    "Feature with leading/trailing spaces",
-			feature: "  leading and trailing  ",
-			want:    "leading-and-trailing",
-		},
-		{
-			name:    "Long feature name (>50 chars, truncated to 49)",
-			feature: "This is a very long feature description that exceeds fifty characters",
-			want:    "this-is-a-very-long-feature-description-that-exce", // 49 chars (index 0-48)
-		},
-		{
-			name:    "Feature with only numbers",
-			feature: "123456",
-			want:    "123456",
-		},
-		{
-			name:    "Feature with mixed case",
-			feature: "Add OAuth Integration",
-			want:    "add-oauth-integration",
-		},
-		{
-			name:    "Feature with underscores",
-			feature: "fix_bug_in_auth_module",
-			want:    "fix-bug-in-auth-module",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got := generateSlug(tt.feature)
-			if got != tt.want {
-				t.Errorf("generateSlug(%q) = %q, want %q", tt.feature, got, tt.want)
-			}
-		})
-	}
-}
 
 // TestRunScoutCmd_ProgramFlag tests that the --program flag is parsed and accepted.
 func TestRunScoutCmd_ProgramFlag(t *testing.T) {
@@ -101,225 +40,36 @@ func TestRunScoutCmd_ProgramFlag(t *testing.T) {
 	}
 }
 
-func TestCountAgentsFromErrors(t *testing.T) {
-	tests := []struct {
-		name string
-		errs []result.SAWError
-		want int
-	}{
-		{
-			name: "No errors",
-			errs: []result.SAWError{},
-			want: 0,
-		},
-		{
-			name: "Non-agent-id errors",
-			errs: []result.SAWError{
-				{Code: "impl-file-ownership", Line: 10, Message: "missing header"},
-			},
-			want: 0,
-		},
-		{
-			name: "Agent ID errors without suggestion",
-			errs: []result.SAWError{
-				{Code: "agent-id", Line: 10, Message: "invalid agent ID 'A1'"},
-			},
-			want: 0,
-		},
-		{
-			name: "Agent ID errors with suggestion",
-			errs: []result.SAWError{
-				{Code: "agent-id", Line: 10, Message: "invalid agent ID 'A1'"},
-				{Code: "agent-id", Line: 0, Message: "Run: sawtools assign-agent-ids --count 5"},
-			},
-			want: 5,
-		},
-		{
-			name: "Multiple errors with suggestion",
-			errs: []result.SAWError{
-				{Code: "agent-id", Line: 10, Message: "invalid agent ID 'A1'"},
-				{Code: "agent-id", Line: 15, Message: "invalid agent ID 'B1'"},
-				{Code: "agent-id", Line: 20, Message: "invalid agent ID 'C1'"},
-				{Code: "agent-id", Line: 0, Message: "Run: sawtools assign-agent-ids --count 12"},
-			},
-			want: 12,
-		},
-		{
-			name: "Suggestion with large count",
-			errs: []result.SAWError{
-				{Code: "agent-id", Line: 0, Message: "Run: sawtools assign-agent-ids --count 234"},
-			},
-			want: 234,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got := countAgentsFromErrors(tt.errs)
-			if got != tt.want {
-				t.Errorf("countAgentsFromErrors() = %d, want %d", got, tt.want)
-			}
-		})
-	}
-}
-
-func TestCriticThresholdMet(t *testing.T) {
-	tests := []struct {
-		name     string
-		manifest *protocol.IMPLManifest
-		want     bool
-	}{
-		{
-			name: "Wave 1 with 3 agents triggers threshold",
-			manifest: &protocol.IMPLManifest{
-				Waves: []protocol.Wave{
-					{Number: 1, Agents: []protocol.Agent{
-						{ID: "A"}, {ID: "B"}, {ID: "C"},
-					}},
-				},
-			},
-			want: true,
-		},
-		{
-			name: "Wave 1 with 4 agents triggers threshold",
-			manifest: &protocol.IMPLManifest{
-				Waves: []protocol.Wave{
-					{Number: 1, Agents: []protocol.Agent{
-						{ID: "A"}, {ID: "B"}, {ID: "C"}, {ID: "D"},
-					}},
-				},
-			},
-			want: true,
-		},
-		{
-			name: "Wave 1 with 2 agents does not trigger threshold",
-			manifest: &protocol.IMPLManifest{
-				Waves: []protocol.Wave{
-					{Number: 1, Agents: []protocol.Agent{
-						{ID: "A"}, {ID: "B"},
-					}},
-				},
-			},
-			want: false,
-		},
-		{
-			name: "Wave 1 with 1 agent does not trigger threshold",
-			manifest: &protocol.IMPLManifest{
-				Waves: []protocol.Wave{
-					{Number: 1, Agents: []protocol.Agent{
-						{ID: "A"},
-					}},
-				},
-			},
-			want: false,
-		},
-		{
-			name: "No waves does not trigger threshold",
-			manifest: &protocol.IMPLManifest{
-				Waves: []protocol.Wave{},
-			},
-			want: false,
-		},
-		{
-			name: "File ownership spanning 2 repos triggers threshold",
-			manifest: &protocol.IMPLManifest{
-				Waves: []protocol.Wave{
-					{Number: 1, Agents: []protocol.Agent{
-						{ID: "A"}, {ID: "B"},
-					}},
-				},
-				FileOwnership: []protocol.FileOwnership{
-					{File: "pkg/foo.go", Agent: "A", Wave: 1, Repo: "/repo/alpha"},
-					{File: "pkg/bar.go", Agent: "B", Wave: 1, Repo: "/repo/beta"},
-				},
-			},
-			want: true,
-		},
-		{
-			name: "File ownership in single repo does not trigger repo threshold",
-			manifest: &protocol.IMPLManifest{
-				Waves: []protocol.Wave{
-					{Number: 1, Agents: []protocol.Agent{
-						{ID: "A"}, {ID: "B"},
-					}},
-				},
-				FileOwnership: []protocol.FileOwnership{
-					{File: "pkg/foo.go", Agent: "A", Wave: 1, Repo: "/repo/alpha"},
-					{File: "pkg/bar.go", Agent: "B", Wave: 1, Repo: "/repo/alpha"},
-				},
-			},
-			want: false,
-		},
-		{
-			name: "File ownership with no repo fields does not trigger repo threshold",
-			manifest: &protocol.IMPLManifest{
-				Waves: []protocol.Wave{
-					{Number: 1, Agents: []protocol.Agent{
-						{ID: "A"}, {ID: "B"},
-					}},
-				},
-				FileOwnership: []protocol.FileOwnership{
-					{File: "pkg/foo.go", Agent: "A", Wave: 1},
-					{File: "pkg/bar.go", Agent: "B", Wave: 1},
-				},
-			},
-			want: false,
-		},
-		{
-			name: "Wave 2 with 3 agents does not trigger threshold (only wave 1 counts)",
-			manifest: &protocol.IMPLManifest{
-				Waves: []protocol.Wave{
-					{Number: 1, Agents: []protocol.Agent{
-						{ID: "A"}, {ID: "B"},
-					}},
-					{Number: 2, Agents: []protocol.Agent{
-						{ID: "C"}, {ID: "D"}, {ID: "E"},
-					}},
-				},
-			},
-			want: false,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got := criticThresholdMet(tt.manifest)
-			if got != tt.want {
-				t.Errorf("criticThresholdMet() = %v, want %v", got, tt.want)
-			}
-		})
-	}
-}
-
-// TestRunScoutCmd_SingleFinalizationEntryPoint verifies that run_scout_cmd.go
-// calls FinalizeIMPLEngine exactly once and does not duplicate validation logic inline.
-// The single-entry-point contract ensures all post-Scout validation flows through
-// engine.FinalizeIMPLEngine, which owns the validate → populate-gates → validate pipeline.
-func TestRunScoutCmd_SingleFinalizationEntryPoint(t *testing.T) {
-	// Read the source file and count FinalizeIMPLEngine call sites.
+// TestRunScoutCmd_ThinAdapter verifies that run_scout_cmd.go is a thin adapter:
+// it must call engine.RunScoutFull and must NOT contain inline orchestration logic
+// (generateSlug, waitForFile, criticThresholdMet, FinalizeIMPLEngine, ValidateIMPLDoc).
+func TestRunScoutCmd_ThinAdapter(t *testing.T) {
 	src, err := os.ReadFile("run_scout_cmd.go")
 	if err != nil {
 		t.Fatalf("failed to read run_scout_cmd.go: %v", err)
 	}
 	content := string(src)
 
-	// Exactly one call to engine.FinalizeIMPLEngine must exist.
-	callCount := strings.Count(content, "engine.FinalizeIMPLEngine(")
-	if callCount != 1 {
-		t.Errorf("expected exactly 1 call to engine.FinalizeIMPLEngine, found %d", callCount)
+	// Must call engine.RunScoutFull.
+	if !strings.Contains(content, "engine.RunScoutFull(") {
+		t.Error("expected run_scout_cmd.go to call engine.RunScoutFull()")
 	}
 
-	// There must be a comment marking it as the single entry point for post-Scout validation.
-	if !strings.Contains(content, "single entry point for post-Scout validation") {
-		t.Error("expected a comment at the FinalizeIMPL call site marking it as the single entry point for post-Scout validation")
+	// Must NOT contain inline orchestration that belongs in engine.
+	forbidden := []string{
+		"generateSlug(",
+		"waitForFile(",
+		"criticThresholdMet(",
+		"countAgentsFromErrors(",
+		"protocol.ValidateIMPLDoc(",
+		"engine.FinalizeIMPLEngine(",
+		"engine.ScoutCorrectionLoop(",
+		"idgen.AssignAgentIDs(",
 	}
-
-	// ValidateIMPLDoc must NOT be called after the FinalizeIMPL block — FinalizeIMPL owns
-	// post-finalization validation internally. Count all ValidateIMPLDoc calls; they
-	// should all appear in the pre-finalize validation step (Step 3) only.
-	validateCallCount := strings.Count(content, "protocol.ValidateIMPLDoc(")
-	if validateCallCount > 1 {
-		t.Errorf("expected at most 1 explicit call to protocol.ValidateIMPLDoc (Step 3 pre-check), found %d — post-finalize validation must not be duplicated here", validateCallCount)
+	for _, f := range forbidden {
+		if strings.Contains(content, f) {
+			t.Errorf("run_scout_cmd.go must not contain inline orchestration %q (belongs in engine.RunScoutFull)", f)
+		}
 	}
 }
 
