@@ -1,0 +1,622 @@
+completion_date: "2026-03-30"
+title: Add sawtools detect-wiring command with cross-repo integration
+feature_slug: detect-wiring
+verdict: SUITABLE_WITH_CAVEATS
+suitability_assessment: |
+    **REVISED SCOPE (post-coordinator clarification):**
+
+    The feature spans 2 repos (scout-and-wave-go only; protocol repo is IN scout-and-wave-go/protocol/):
+    1. **Detection logic** — `pkg/analyzer/wiring.go` (pattern matching agent tasks)
+    2. **CLI command** — `cmd/sawtools/detect_wiring_cmd.go` (follows detect_shared_types pattern)
+    3. **Protocol docs** — update `protocol/execution-rules.md` E35 section
+    4. **Scout integration** — update `implementations/claude-code/prompts/agents/scout.md`
+    5. **Test fixtures** — `pkg/analyzer/testdata/wiring/` sample IMPL docs + expected output
+
+    **Suitability gate analysis:**
+
+    1. **File decomposition:** YES. Clean disjoint ownership across 4 agents:
+       - Agent A: `pkg/analyzer/wiring.go` + `pkg/analyzer/wiring_test.go` (detection logic)
+       - Agent B: `cmd/sawtools/detect_wiring_cmd.go` + `cmd/sawtools/detect_wiring_cmd_test.go`
+       - Agent C: `protocol/execution-rules.md` (update E35 section to mention detect-wiring)
+       - Agent D: `implementations/claude-code/prompts/agents/scout.md` + test fixtures
+
+       No two agents touch the same file. Agent A → B dependency (B calls A's DetectWiring function).
+
+    2. **Investigation-first items:** None. Pattern matching logic is well-defined:
+       - "calls `FunctionName()`" → extract FunctionName, find defining agent via file_ownership
+       - "uses `pkg.FunctionName`" → same
+       - "delegates to `X`" → same
+       Output schema (WiringDeclaration) already exists in pkg/protocol/wiring_types.go.
+
+    3. **Interface discoverability:** YES. Agent A exports `DetectWiring(manifest, repoRoot) ([]WiringDeclaration, error)`.
+       Agent B imports and calls it (same pattern as detect_shared_types_cmd.go → shared_types.go).
+       No cross-agent runtime dependencies — B depends on A's exported function, satisfied by Wave 1 → Wave 2 sequencing.
+
+    4. **Pre-implementation status:** All 5 components are TODO. Wiring infrastructure
+       (validation in pkg/protocol/wiring_validation.go, types in wiring_types.go) exists
+       but detection command does not.
+
+    5. **Parallelization value check:** MEDIUM value:
+       - **Build/test cycle:** Go build + test ~30s. Agent A writes detection logic with tests (~15 min).
+         Agent B writes CLI wrapper (~8 min). Agents C and D write docs concurrently (~5 min each).
+       - **Files per agent:** 2-3 files per agent (clean boundaries).
+       - **Agent independence:** Wave 1 = A (logic) + C (protocol doc) + D (scout prompt + fixtures).
+         Wave 2 = B (CLI command, depends on A's function). Good parallelism in Wave 1.
+       - **Task complexity:** Detection is regex + file_ownership lookup (straightforward), but
+         cross-repo documentation updates benefit from SAW's parallel execution.
+
+    **Estimated times:**
+    - Scout phase: ~10 min (dependency mapping, interface contracts, E35 cross-reference)
+    - Agent execution: ~18 min (Wave 1: 3 agents × 8 min avg; Wave 2: 1 agent × 8 min)
+    - Merge & verification: ~5 min
+    Total SAW time: ~33 min
+
+    Sequential baseline: ~40 min (4 tasks × 10 min avg with context switching)
+    Time savings: ~7 min (18% faster)
+
+    **Recommendation:** SUITABLE WITH CAVEATS. The 4-agent decomposition benefits from
+    parallel execution, especially Wave 1 (3 independent agents). Caveat: this is a
+    "nice to have" feature (E35 wiring validation already exists; detect-wiring just
+    auto-generates declarations from task text). If time-to-completion is the priority,
+    sequential implementation is faster due to SAW overhead. Use SAW if:
+    - Dogfooding the protocol is valuable (self-hosting test)
+    - Cross-repo coordination docs (protocol + scout prompt updates) benefit from
+      structured planning
+    - The IMPL doc itself serves as documentation for future similar features
+test_command: go test ./... -timeout 120s
+lint_command: go vet ./...
+file_ownership:
+    - file: pkg/analyzer/wiring.go
+      agent: A
+      wave: 1
+      action: new
+      repo: scout-and-wave-go
+    - file: pkg/analyzer/wiring_test.go
+      agent: A
+      wave: 1
+      action: new
+      repo: scout-and-wave-go
+    - file: protocol/execution-rules.md
+      agent: C
+      wave: 1
+      action: modify
+      repo: scout-and-wave
+    - file: implementations/claude-code/prompts/agents/scout.md
+      agent: D
+      wave: 1
+      action: modify
+      repo: scout-and-wave
+    - file: pkg/analyzer/testdata/wiring/sample-impl-with-cross-agent-calls.yaml
+      agent: D
+      wave: 1
+      action: new
+      repo: scout-and-wave-go
+    - file: pkg/analyzer/testdata/wiring/expected-wiring-output.yaml
+      agent: D
+      wave: 1
+      action: new
+      repo: scout-and-wave-go
+    - file: cmd/sawtools/detect_wiring_cmd.go
+      agent: B
+      wave: 2
+      action: new
+      repo: scout-and-wave-go
+    - file: cmd/sawtools/detect_wiring_cmd_test.go
+      agent: B
+      wave: 2
+      action: new
+      repo: scout-and-wave-go
+interface_contracts:
+    - name: DetectWiring
+      description: |-
+        Analyzes an IMPL manifest's agent task prompts for cross-agent function calls
+        and returns WiringDeclaration entries. Patterns detected:
+        - "calls `FunctionName()`"
+        - "uses `pkg.FunctionName`"
+        - "delegates to `X`"
+        Cross-references function names against file_ownership to find defining agent.
+        Only emits wiring declarations when caller agent ≠ definer agent.
+      definition: |-
+        func DetectWiring(manifest *protocol.IMPLManifest, repoRoot string) ([]protocol.WiringDeclaration, error)
+
+        Returns: slice of WiringDeclaration structs (symbol, defined_in, must_be_called_from,
+        agent, wave, integration_pattern). Empty slice if no cross-agent calls detected.
+        Error if manifest is nil or file_ownership is malformed.
+
+        Pattern matching is 80% reliable (regex-based). False negatives are safe (finalize-wave
+        catches them); false positives fail validation immediately (symbolFoundInFile returns false).
+      location: pkg/analyzer/wiring.go
+    - name: WiringDeclaration
+      description: |-
+        Already-defined type in pkg/protocol/wiring_types.go. Agent A returns []WiringDeclaration;
+        Agent B marshals to YAML/JSON for CLI output.
+      definition: |-
+        type WiringDeclaration struct {
+            Symbol             string `yaml:"symbol" json:"symbol"`
+            DefinedIn          string `yaml:"defined_in" json:"defined_in"`
+            MustBeCalledFrom   string `yaml:"must_be_called_from" json:"must_be_called_from"`
+            Agent              string `yaml:"agent" json:"agent"`
+            Wave               int    `yaml:"wave" json:"wave"`
+            IntegrationPattern string `yaml:"integration_pattern,omitempty" json:"integration_pattern,omitempty"`
+        }
+      location: pkg/protocol/wiring_types.go
+waves:
+    - number: 1
+      agents:
+        - id: A
+          task: |
+            ## What to Implement
+
+            Create `pkg/analyzer/wiring.go` with the `DetectWiring` function that scans
+            IMPL manifest agent task prompts for cross-agent function call patterns and
+            generates wiring declarations.
+
+            ### Detection patterns (regex-based)
+
+            Scan each agent's `task` field for these patterns:
+            1. **Direct call:** `calls \`FunctionName()\`` → extract FunctionName
+            2. **Package-qualified call:** `uses \`pkg.FunctionName\`` → extract FunctionName
+            3. **Delegation:** `delegates to \`FunctionName\`` → extract FunctionName
+            4. **Invocation:** `invokes \`FunctionName\`` → extract FunctionName
+
+            For each match:
+            - Extract the function name (strip backticks, trailing parens, package prefixes)
+            - Search `manifest.FileOwnership` for the file that defines this function:
+              - Check `manifest.InterfaceContracts` for a contract with matching `name` field
+              - If found, use `contract.Location` as `defined_in`
+              - If not in contracts, search `file_ownership` for files owned by other agents
+                in prior waves (heuristic: assume function is in the first file owned by the
+                earliest-wave agent that is NOT the calling agent)
+            - If defining agent ≠ calling agent, emit a WiringDeclaration:
+              ```
+              Symbol: <FunctionName>
+              DefinedIn: <file path from contract.Location or ownership heuristic>
+              MustBeCalledFrom: <first file in calling agent's ownership>
+              Agent: <calling agent ID>
+              Wave: <calling agent's wave number>
+              IntegrationPattern: "call" (default for function calls)
+              ```
+
+            ### Function signature
+
+            ```go
+            func DetectWiring(manifest *protocol.IMPLManifest, repoRoot string) ([]protocol.WiringDeclaration, error)
+            ```
+
+            Returns:
+            - Empty slice if no cross-agent calls detected
+            - Error if manifest is nil or malformed
+
+            ### Edge cases
+
+            - If a function is called by its defining agent (same agent), do NOT emit a wiring entry
+            - If a function name appears in multiple agents' tasks but is not in interface_contracts,
+              skip it (likely a stdlib or external function)
+            - If `must_be_called_from` file is not in the calling agent's file_ownership, the
+              wiring declaration is invalid (prepare-wave will catch this in Layer 3A verification)
+            - Use the calling agent's first owned file as `must_be_called_from` (the agent prompt
+              should specify which file, but for auto-detection, use the first one)
+
+            ## Interfaces to Implement
+
+            - `DetectWiring(manifest, repoRoot) ([]WiringDeclaration, error)` — main detection function
+
+            ## Interfaces to Call
+
+            - `protocol.IMPLManifest` — read from `manifest.Waves`, `manifest.FileOwnership`, `manifest.InterfaceContracts`
+            - `protocol.WiringDeclaration` — return type (already exists in pkg/protocol/wiring_types.go)
+
+            ## Tests to Write
+
+            1. `TestDetectWiring_DirectCall` — agent task says "calls `RunScout()`", verify wiring emitted
+            2. `TestDetectWiring_PackageQualified` — "uses `engine.RunScout`" → same
+            3. `TestDetectWiring_Delegation` — "delegates to `RunCritic`" → same
+            4. `TestDetectWiring_SameAgentNoWiring` — defining agent calls its own function → no wiring
+            5. `TestDetectWiring_NoInterfaceContract` — function not in contracts → skip
+            6. `TestDetectWiring_MultipleCallers` — 2 agents call same function → 2 wiring entries
+            7. `TestDetectWiring_EmptyManifest` — no agents → empty result
+
+            Use test fixtures in `pkg/analyzer/testdata/wiring/` (Agent D creates these).
+
+            ## Verification Gate
+
+            ```bash
+            go build ./pkg/analyzer/
+            go vet ./pkg/analyzer/
+            go test ./pkg/analyzer/ -run TestDetectWiring -count=1
+            ```
+
+            ## Constraints
+
+            - Do NOT modify any existing files in pkg/analyzer/ (shared_types.go, cascade.go, etc.)
+            - Pattern matching is regex-based (80% reliable is acceptable; false positives fail
+              validation, false negatives are caught by finalize-wave)
+            - If a function is in `interface_contracts` but has no explicit location, use the
+              defining agent's first owned file as a fallback
+            - Output WiringDeclaration structs must match the schema in pkg/protocol/wiring_types.go
+          files:
+            - pkg/analyzer/wiring.go
+            - pkg/analyzer/wiring_test.go
+        - id: C
+          task: |
+            ## What to Implement
+
+            Update `protocol/execution-rules.md` section E35 (Wiring Obligation Declaration)
+            to mention the new `sawtools detect-wiring` command as a post-scout validation aid.
+
+            ### Changes needed
+
+            Add a new paragraph after the "Enforcement" bullet list (before "Rationale"):
+
+            ```markdown
+            **Detection aid:** Scout can auto-generate wiring declarations from agent task
+            prompts using `sawtools detect-wiring <impl-doc-path>`. This command scans for
+            patterns like "calls `FunctionName()`" and cross-references against file_ownership
+            to detect cross-agent function calls. Output is YAML in wiring: schema format.
+            Pattern matching is ~80% reliable; Scout should review and adjust before committing.
+            ```
+
+            ### Where to insert
+
+            In `protocol/execution-rules.md`, find the E35 section (around line 1405). Insert
+            the new paragraph after the "Enforcement:" bullet list and before the "Rationale:"
+            paragraph.
+
+            ## Interfaces to Implement
+
+            None (documentation change only).
+
+            ## Interfaces to Call
+
+            None.
+
+            ## Tests to Write
+
+            None (documentation has no automated tests). Verify the Markdown renders correctly
+            by previewing the file in a Markdown viewer or GitHub UI.
+
+            ## Verification Gate
+
+            ```bash
+            echo "protocol/execution-rules.md updated — verify Markdown syntax"
+            grep -A 5 "Detection aid" protocol/execution-rules.md
+            ```
+
+            ## Constraints
+
+            - Only modify the E35 section
+            - Do NOT change line numbers or structure of other E-sections
+            - Keep the new paragraph concise (3-4 sentences max)
+            - Use backticks for command names (`sawtools detect-wiring`)
+          files:
+            - protocol/execution-rules.md
+        - id: D
+          task: |
+            ## What to Implement
+
+            1. Update `implementations/claude-code/prompts/agents/scout.md` to mention the
+               `sawtools detect-wiring` command in the "Implementation Process" section (step 5:
+               Define interface contracts).
+
+            2. Create test fixtures in `pkg/analyzer/testdata/wiring/` for Agent A's tests:
+               - `sample-impl-with-cross-agent-calls.yaml` — minimal IMPL doc with 2 agents where
+                 Agent B's task says "calls `RunVerifyInstall()`" (defined by Agent A)
+               - `expected-wiring-output.yaml` — the WiringDeclaration that should be emitted
+
+            ### scout.md change
+
+            In the "Define interface contracts" step (step 5), add a new paragraph after the
+            "Integration-required exports (E25/E26)" paragraph:
+
+            ```markdown
+            **Wiring detection aid (E35):** After writing interface contracts, run
+            `sawtools detect-wiring <impl-path>` to auto-generate wiring declarations from
+            agent task prompts. The command scans for patterns like "calls `FunctionName()`"
+            and emits YAML entries in wiring: schema format. Review and adjust before committing —
+            pattern matching is ~80% reliable (false positives fail validation; false negatives
+            are caught by finalize-wave post-merge checks).
+            ```
+
+            ### Test fixture format
+
+            **sample-impl-with-cross-agent-calls.yaml:**
+
+            ```yaml
+            title: Sample IMPL for wiring detection
+            feature_slug: sample-wiring
+            verdict: SUITABLE
+            test_command: go test ./...
+            lint_command: go vet ./...
+            file_ownership:
+              - file: pkg/engine/verify_install.go
+                agent: A
+                wave: 1
+                action: new
+              - file: cmd/sawtools/init_cmd.go
+                agent: B
+                wave: 1
+                action: modify
+            interface_contracts:
+              - name: RunVerifyInstall
+                definition: "func RunVerifyInstall(opts VerifyInstallOpts) error"
+                location: pkg/engine/verify_install.go
+            waves:
+              - number: 1
+                agents:
+                  - id: A
+                    task: "Implement RunVerifyInstall function"
+                    files: [pkg/engine/verify_install.go]
+                  - id: B
+                    task: "Update init_cmd.go to call `RunVerifyInstall()` from pkg/engine"
+                    files: [cmd/sawtools/init_cmd.go]
+            ```
+
+            **expected-wiring-output.yaml:**
+
+            ```yaml
+            - symbol: RunVerifyInstall
+              defined_in: pkg/engine/verify_install.go
+              must_be_called_from: cmd/sawtools/init_cmd.go
+              agent: B
+              wave: 1
+              integration_pattern: call
+            ```
+
+            ## Interfaces to Implement
+
+            None (documentation + test fixtures).
+
+            ## Interfaces to Call
+
+            None.
+
+            ## Tests to Write
+
+            None (Agent A's tests will consume these fixtures).
+
+            ## Verification Gate
+
+            ```bash
+            test -f pkg/analyzer/testdata/wiring/sample-impl-with-cross-agent-calls.yaml || exit 1
+            test -f pkg/analyzer/testdata/wiring/expected-wiring-output.yaml || exit 1
+            grep "detect-wiring" implementations/claude-code/prompts/agents/scout.md || exit 1
+            ```
+
+            ## Constraints
+
+            - Only modify the "Define interface contracts" step (step 5) in scout.md
+            - Do NOT change other steps or sections
+            - Test fixtures must be valid YAML (use `yamllint` or `yq` to verify)
+            - Keep the scout.md paragraph concise (3-4 sentences)
+          files:
+            - implementations/claude-code/prompts/agents/scout.md
+            - pkg/analyzer/testdata/wiring/sample-impl-with-cross-agent-calls.yaml
+            - pkg/analyzer/testdata/wiring/expected-wiring-output.yaml
+      base_commit: 8e2508225c3844ab14dabc2644005550a6051fb7
+    - number: 2
+      agents:
+        - id: B
+          task: |
+            ## What to Implement
+
+            Create `cmd/sawtools/detect_wiring_cmd.go` — a CLI command that wraps
+            `analyzer.DetectWiring` and outputs wiring declarations in YAML or JSON format.
+
+            ### Command structure (follow detect_shared_types_cmd.go pattern)
+
+            ```go
+            func newDetectWiringCmd() *cobra.Command {
+                var format string
+                cmd := &cobra.Command{
+                    Use:   "detect-wiring <impl-doc-path>",
+                    Short: "Detect cross-agent function calls and generate wiring declarations",
+                    Long:  `Analyze IMPL document agent task prompts for cross-agent calls...`,
+                    Args:  cobra.ExactArgs(1),
+                    RunE: func(cmd *cobra.Command, args []string) error {
+                        implDocPath := args[0]
+                        // Validate format flag (yaml or json)
+                        // Load manifest via protocol.Load(implDocPath)
+                        // Determine repo root (use findRepoRoot helper from detect_shared_types_cmd.go)
+                        // Call analyzer.DetectWiring(manifest, repoRoot)
+                        // Marshal to YAML or JSON
+                        // Write to stdout
+                    },
+                }
+                cmd.Flags().StringVar(&format, "format", "yaml", "Output format: yaml or json")
+                return cmd
+            }
+            ```
+
+            ### Output format
+
+            ```yaml
+            wiring:
+              - symbol: RunVerifyInstall
+                defined_in: pkg/engine/verify_install.go
+                must_be_called_from: cmd/sawtools/init_cmd.go
+                agent: B
+                wave: 1
+                integration_pattern: call
+            ```
+
+            Or JSON equivalent (if `--format json`).
+
+            ### Error handling
+
+            - Exit code 1 if IMPL doc is malformed or repo root cannot be determined
+            - Exit code 0 if analysis succeeds (even if no wiring declarations found)
+            - Print errors to stderr, results to stdout
+
+            ### Integration into root command
+
+            Add `rootCmd.AddCommand(newDetectWiringCmd())` in `cmd/sawtools/main.go` following the existing pattern (e.g., `detect_shared_types` at line 67). Do NOT modify `root.go` — all command registrations are in `main.go`.
+
+            ## Interfaces to Implement
+
+            - `newDetectWiringCmd() *cobra.Command` — CLI command definition
+
+            ## Interfaces to Call
+
+            - `analyzer.DetectWiring(manifest, repoRoot) ([]WiringDeclaration, error)` — from Agent A
+            - `protocol.Load(path) (*IMPLManifest, error)` — existing function
+            - `yaml.Marshal` / `json.MarshalIndent` — stdlib
+
+            ## Tests to Write
+
+            1. `TestDetectWiringCmd_YAMLOutput` — run command with `--format yaml`, verify output
+            2. `TestDetectWiringCmd_JSONOutput` — run command with `--format json`, verify output
+            3. `TestDetectWiringCmd_InvalidFormat` — `--format xml` → exit 1
+            4. `TestDetectWiringCmd_MissingIMPL` — nonexistent file → exit 1
+            5. `TestDetectWiringCmd_NoWiring` — IMPL with no cross-agent calls → empty wiring array
+
+            Use test fixtures from `pkg/analyzer/testdata/wiring/` (created by Agent D).
+
+            ## Verification Gate
+
+            ```bash
+            go build ./cmd/sawtools/
+            go vet ./cmd/sawtools/
+            go test ./cmd/sawtools/ -run TestDetectWiring -count=1
+            ./sawtools detect-wiring --help
+            ```
+
+            ## Constraints
+
+            - Follow the exact pattern of `detect_shared_types_cmd.go` (reuse findRepoRoot helper)
+            - Do NOT modify root.go or other commands
+            - Output must match WiringDeclaration schema from pkg/protocol/wiring_types.go
+            - Default format is YAML (matches other sawtools commands)
+          files:
+            - cmd/sawtools/detect_wiring_cmd.go
+            - cmd/sawtools/detect_wiring_cmd_test.go
+          dependencies:
+            - A
+      base_commit: c73950bfe669f455fcf0fe3986db90fadec844f7
+quality_gates:
+    level: standard
+    gates:
+        - type: build
+          command: go build ./...
+          required: true
+          repo: scout-and-wave-go
+        - type: lint
+          command: go vet ./...
+          required: true
+          repo: scout-and-wave-go
+        - type: test
+          command: go test ./... -timeout 120s
+          required: true
+          repo: scout-and-wave-go
+completion_reports:
+    A:
+        status: complete
+        branch: saw/detect-wiring/wave1-agent-A
+        commit: 74dde82
+        files_changed:
+            - pkg/analyzer/wiring.go
+            - pkg/analyzer/wiring_test.go
+        files_created:
+            - pkg/analyzer/wiring.go
+            - pkg/analyzer/wiring_test.go
+        tests_added:
+            - TestDetectWiring_DirectCall
+            - TestDetectWiring_PackageQualified
+            - TestDetectWiring_Delegation
+            - TestDetectWiring_Invokes
+            - TestDetectWiring_SameAgentNoWiring
+            - TestDetectWiring_NoInterfaceContract
+            - TestDetectWiring_MultipleCallers
+            - TestDetectWiring_EmptyManifest
+            - TestDetectWiring_NilManifest
+            - TestDetectWiring_EmptyFileOwnership
+            - TestDetectWiring_MultiplePatternsInOneTask
+            - TestDetectWiring_ContractWithoutLocation
+            - TestExtractFunctionName
+        verification: PASS
+        notes: DetectWiring implementation complete. All 12 tests passing. Supports 4 detection patterns (calls, uses, delegates to, invokes) with regex-based matching. Cross-references interface contracts and uses earliest-wave heuristic fallback for functions without explicit location.
+    B:
+        status: complete
+        branch: saw/detect-wiring/wave2-agent-B
+        commit: f4f40e2
+        files_changed:
+            - cmd/sawtools/detect_wiring_cmd.go
+            - cmd/sawtools/detect_wiring_cmd_test.go
+            - cmd/sawtools/main.go
+        files_created:
+            - cmd/sawtools/detect_wiring_cmd.go
+            - cmd/sawtools/detect_wiring_cmd_test.go
+        tests_added:
+            - TestDetectWiringCmd_YAMLOutput
+            - TestDetectWiringCmd_JSONOutput
+            - TestDetectWiringCmd_InvalidFormat
+            - TestDetectWiringCmd_MissingIMPL
+            - TestDetectWiringCmd_NoWiring
+            - TestDetectWiringCmd_MultipleCalls
+        verification: PASS
+        notes: CLI command complete. All 6 tests passing. Command registered in main.go. Follows detect-shared-types pattern. Outputs wiring declarations in YAML (default) or JSON format.
+    C:
+        status: complete
+        branch: saw/detect-wiring/wave1-agent-C
+        commit: 6f7667d
+        files_changed:
+            - protocol/execution-rules.md
+        verification: PASS
+    D:
+        status: complete
+        branch: saw/detect-wiring/wave1-agent-D
+        commit: ef50cda
+        files_changed:
+            - implementations/claude-code/prompts/agents/scout.md
+            - pkg/analyzer/testdata/wiring/sample-impl-with-cross-agent-calls.yaml
+            - pkg/analyzer/testdata/wiring/expected-wiring-output.yaml
+        files_created:
+            - pkg/analyzer/testdata/wiring/sample-impl-with-cross-agent-calls.yaml
+            - pkg/analyzer/testdata/wiring/expected-wiring-output.yaml
+        verification: PASS
+        notes: Documentation and test fixtures complete. Added wiring detection paragraph to scout.md step 5. Created both test fixtures with valid YAML format verified by yq.
+integration_reports:
+    wave1:
+        wave: 1
+        gaps: []
+        valid: true
+        summary: 'Wave 1: all exports are integrated (no gaps detected)'
+    wave2:
+        wave: 2
+        gaps: []
+        valid: true
+        summary: 'Wave 2: all exports are integrated (no gaps detected)'
+pre_mortem:
+    overall_risk: low
+    rows:
+        - scenario: Regex pattern matching misses some function call patterns (e.g., "Agent B invokes X" vs "calls X")
+          likelihood: medium
+          impact: low
+          mitigation: Pattern matching is advisory only — false negatives are caught by finalize-wave post-merge validation. Scout reviews detect-wiring output before committing.
+        - scenario: Function name appears in task prompt but is not actually called (e.g., mentioned in a comment or as an example)
+          likelihood: low
+          impact: low
+          mitigation: False positives fail validation immediately (symbolFoundInFile returns false if function is not called in must_be_called_from file).
+        - scenario: Cross-agent call exists but function is not in interface_contracts (stdlib or external package)
+          likelihood: medium
+          impact: low
+          mitigation: DetectWiring skips functions not in interface_contracts. This is correct behavior — wiring declarations are only for cross-agent internal functions, not stdlib/third-party calls.
+critic_report:
+    verdict: PASS
+    agent_reviews:
+        A:
+            agent_id: A
+            verdict: PASS
+        B:
+            agent_id: B
+            verdict: PASS
+        C:
+            agent_id: C
+            verdict: PASS
+        D:
+            agent_id: D
+            verdict: PASS
+    summary: 'Agent B brief corrected: command registration moved from root.go to main.go (correct pattern verified). All 4 agents now have accurate briefs.'
+    reviewed_at: "2026-03-30T16:38:20Z"
+    issue_count: 0
+state: COMPLETE
+injection_method: hook

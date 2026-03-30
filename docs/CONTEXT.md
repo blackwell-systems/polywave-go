@@ -238,3 +238,7 @@ type BackendConfig struct {
   - IMPL doc: docs/IMPL/complete/IMPL-audit-findings-unification.yaml
 - **engine-unification**: completed 2026-03-30, 3 waves, 6 agents
   - IMPL doc: docs/IMPL/complete/IMPL-engine-unification.yaml
+- **cli-thin-adapter**: completed 2026-03-30, 1 waves, 8 agents
+  - IMPL doc: docs/IMPL/complete/IMPL-cli-thin-adapter.yaml
+- **detect-wiring**: completed 2026-03-30, 2 waves, 4 agents
+  - IMPL doc: docs/IMPL/complete/IMPL-detect-wiring.yaml
