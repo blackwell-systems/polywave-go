@@ -310,10 +310,17 @@ if [[ "${SAW_ALLOW_MAIN_COMMIT:-0}" == "1" ]]; then
 	exit 0
 fi
 
+# Only enforce isolation in Wave agent contexts (presence of .saw-agent-brief.md)
+# Orchestrator commits to main are allowed (baseline fixes, state management, etc.)
+if [[ ! -f ".saw-agent-brief.md" ]]; then
+	# Not in agent worktree - allow commit to any branch (Orchestrator context)
+	exit 0
+fi
+
 # Get current branch name
 branch=$(git rev-parse --abbrev-ref HEAD)
 
-# Block commits to main/master branches
+# Block commits to main/master branches from agent worktrees
 if [[ "$branch" == "main" || "$branch" == "master" ]]; then
 	echo "❌ SAW isolation violation: Cannot commit to $branch from Wave agent worktree"
 	echo ""
