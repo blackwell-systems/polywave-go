@@ -3,6 +3,8 @@ package notify
 import (
 	"context"
 	"time"
+
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
 )
 
 // Severity represents the importance level of a notification event.
@@ -30,10 +32,24 @@ type Message struct {
 	Embeds interface{} // adapter-specific rich content (Slack blocks, Discord embeds)
 }
 
+// SendData carries metadata about a successfully delivered message.
+type SendData struct {
+	MessageID string
+	Timestamp time.Time
+	Provider  string
+}
+
+// DispatchData carries aggregate metrics from a fan-out Dispatch call.
+type DispatchData struct {
+	SentCount   int
+	FailedCount int
+	Errors      []result.SAWError
+}
+
 // Adapter delivers a formatted Message to an external service.
 type Adapter interface {
 	Name() string
-	Send(ctx context.Context, msg Message) error
+	Send(ctx context.Context, msg Message) result.Result[SendData]
 }
 
 // Formatter transforms an Event into a Message suitable for a specific adapter.

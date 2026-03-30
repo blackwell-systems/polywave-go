@@ -4,13 +4,18 @@ import (
 	"context"
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
 )
 
 // simpleAdapter is a minimal Adapter for registry tests.
 type simpleAdapter struct{ name string }
 
-func (s *simpleAdapter) Name() string                                 { return s.name }
-func (s *simpleAdapter) Send(_ context.Context, _ Message) error      { return nil }
+func (s *simpleAdapter) Name() string { return s.name }
+func (s *simpleAdapter) Send(_ context.Context, _ Message) result.Result[SendData] {
+	return result.NewSuccess(SendData{Timestamp: time.Now(), Provider: s.name})
+}
 
 func resetRegistry() {
 	registryMu.Lock()

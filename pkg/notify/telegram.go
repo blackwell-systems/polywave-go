@@ -8,6 +8,9 @@ import (
 	"net/http"
 	"sort"
 	"strings"
+	"time"
+
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
 )
 
 // TelegramAdapter sends notifications via the Telegram Bot API.
@@ -42,7 +45,7 @@ func NewTelegramAdapter(cfg map[string]string) (Adapter, error) {
 func (a *TelegramAdapter) Name() string { return "telegram" }
 
 // Send delivers a formatted message via the Telegram sendMessage API.
-func (a *TelegramAdapter) Send(ctx context.Context, msg Message) error {
+func (a *TelegramAdapter) Send(ctx context.Context, msg Message) result.Result[SendData] {
 	url := fmt.Sprintf("%s/bot%s/sendMessage", a.baseURL, a.token)
 
 	payload := map[string]string{
@@ -53,25 +56,58 @@ func (a *TelegramAdapter) Send(ctx context.Context, msg Message) error {
 
 	body, err := json.Marshal(payload)
 	if err != nil {
-		return fmt.Errorf("telegram: marshal payload: %w", err)
+		return result.NewFailure[SendData]([]result.SAWError{
+			{Code: "TELEGRAM_MARSHAL_ERROR", Message: fmt.Sprintf("telegram: marshal payload: %v", err), Severity: "fatal"},
+		})
 	}
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
 	if err != nil {
-		return fmt.Errorf("telegram: create request: %w", err)
+		return result.NewFailure[SendData]([]result.SAWError{
+			{Code: "TELEGRAM_REQUEST_ERROR", Message: fmt.Sprintf("telegram: create request: %v", err), Severity: "fatal"},
+		})
 	}
 	req.Header.Set("Content-Type", "application/json")
 
 	resp, err := a.client.Do(req)
 	if err != nil {
-		return fmt.Errorf("telegram: send request: %w", err)
+		if ctx.Err() != nil {
+			return result.NewFailure[SendData]([]result.SAWError{
+				{Code: "CONTEXT_CANCELLED", Message: ctx.Err().Error(), Severity: "fatal"},
+			})
+		}
+		return result.NewFailure[SendData]([]result.SAWError{
+			{Code: "TELEGRAM_SEND_ERROR", Message: fmt.Sprintf("telegram: send request: %v", err), Severity: "fatal"},
+		})
 	}
 	defer resp.Body.Close()
 
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return fmt.Errorf("telegram: unexpected status %d", resp.StatusCode)
+	if resp.StatusCode == http.StatusTooManyRequests {
+		retryAfter := resp.Header.Get("Retry-After")
+		return result.NewFailure[SendData]([]result.SAWError{
+			{
+				Code:     "TELEGRAM_RATE_LIMITED",
+				Message:  "telegram: rate limited",
+				Severity: "error",
+				Context:  map[string]string{"retry_after": retryAfter},
+			},
+		})
 	}
-	return nil
+
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return result.NewFailure[SendData]([]result.SAWError{
+			{
+				Code:     "TELEGRAM_HTTP_ERROR",
+				Message:  fmt.Sprintf("telegram: unexpected status %d", resp.StatusCode),
+				Severity: "fatal",
+			},
+		})
+	}
+
+	return result.NewSuccess(SendData{
+		Timestamp: time.Now(),
+		Provider:  "telegram",
+	})
 }
 
 // TelegramFormatter formats events into Telegram Markdown messages.

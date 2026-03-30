@@ -58,9 +58,16 @@ func TestDiscordAdapter_SendSuccess(t *testing.T) {
 		},
 	}
 
-	err := adapter.Send(context.Background(), msg)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+	res := adapter.Send(context.Background(), msg)
+	if !res.IsSuccess() {
+		t.Fatalf("unexpected result %q: %v", res.Code, res.Errors)
+	}
+	data := res.GetData()
+	if data.Provider != "discord" {
+		t.Errorf("expected provider 'discord', got %q", data.Provider)
+	}
+	if data.Timestamp.IsZero() {
+		t.Error("expected non-zero timestamp")
 	}
 	if receivedBody == nil {
 		t.Fatal("server did not receive body")
@@ -86,9 +93,9 @@ func TestDiscordAdapter_SendHTTPError(t *testing.T) {
 		client:     srv.Client(),
 	}
 
-	err := adapter.Send(context.Background(), Message{Text: "test"})
-	if err == nil {
-		t.Fatal("expected error for 403 response")
+	res := adapter.Send(context.Background(), Message{Text: "test"})
+	if !res.IsFatal() {
+		t.Fatalf("expected FATAL result for 403 response, got %q", res.Code)
 	}
 }
 
@@ -106,12 +113,54 @@ func TestDiscordAdapter_SendPlainText(t *testing.T) {
 		client:     srv.Client(),
 	}
 
-	err := adapter.Send(context.Background(), Message{Text: "plain text only"})
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+	res := adapter.Send(context.Background(), Message{Text: "plain text only"})
+	if !res.IsSuccess() {
+		t.Fatalf("unexpected result %q: %v", res.Code, res.Errors)
 	}
 	if _, hasContent := receivedBody["content"]; !hasContent {
 		t.Error("expected 'content' key for plain text message")
+	}
+}
+
+func TestDiscordAdapter_SendRateLimited(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Retry-After", "5")
+		w.WriteHeader(http.StatusTooManyRequests)
+	}))
+	defer srv.Close()
+
+	adapter := &DiscordAdapter{
+		webhookURL: srv.URL,
+		client:     srv.Client(),
+	}
+
+	res := adapter.Send(context.Background(), Message{Text: "test"})
+	if !res.IsFatal() {
+		t.Fatalf("expected FATAL result for rate limit, got %q", res.Code)
+	}
+	if len(res.Errors) == 0 || res.Errors[0].Code != "DISCORD_RATE_LIMITED" {
+		t.Errorf("expected DISCORD_RATE_LIMITED error, got %v", res.Errors)
+	}
+}
+
+func TestDiscordAdapter_ContextCancellation(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	// Use a slow server that the context will interrupt.
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	adapter := &DiscordAdapter{
+		webhookURL: srv.URL,
+		client:     srv.Client(),
+	}
+
+	res := adapter.Send(ctx, Message{Text: "test"})
+	if !res.IsFatal() {
+		t.Fatalf("expected FATAL result for cancelled context, got %q", res.Code)
 	}
 }
 
