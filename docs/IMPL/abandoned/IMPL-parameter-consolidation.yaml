@@ -1,0 +1,614 @@
+title: Parameter Consolidation - Remaining 5+ Parameter Functions
+feature_slug: parameter-consolidation
+verdict: SUITABLE_WITH_CAVEATS
+suitability_assessment: |
+    This is a small-scope cleanup pass to consolidate the remaining functions with
+    5+ parameters into options structs, following the pattern already established
+    by 37 existing Opts structs in the codebase.
+
+    **Scope:** 4 functions identified:
+    1. RunScaffold (pkg/engine/runner.go) - 8 call sites
+    2. PrepareAgentContext (pkg/orchestrator/journal_integration.go) - 28 call sites
+    3. MergeAgents (pkg/protocol/merge_agents.go) - 83 call sites (HIGH IMPACT)
+    4. ComputeTrend (pkg/observability/rollups.go) - 8 call sites
+
+    **Decomposition:** Work is cleanly decomposable - each function can be updated
+    independently with no cross-file conflicts. Files are in different packages:
+    - pkg/engine/runner.go
+    - pkg/orchestrator/journal_integration.go
+    - pkg/protocol/merge_agents.go
+    - pkg/observability/rollups.go
+
+    Each agent will create its opts struct in a new file in the same package, then
+    refactor the function and update all call sites.
+
+    **Parallelization value:** Moderate. While each function refactor is relatively
+    straightforward (extract Opts struct, update signature, update all call sites),
+    the high call-site counts (especially MergeAgents with 83 sites) make this
+    tedious to do sequentially. Running 4 agents in parallel cuts the total time
+    from ~25-30 min sequential to ~10-12 min parallel.
+
+    **Caveats:**
+    - MergeAgents has 83 call sites - this is the bulk of the work and represents
+      moderate risk for introducing compilation errors if not done carefully
+    - PrepareAgentContext has 28 call sites - second highest impact
+    - All functions are internal API - no public backward compatibility concerns
+    - Quality gates must verify all call sites compile correctly
+
+    **Estimated times:**
+    - Scout phase: ~5 min (simple dependency analysis, straightforward contracts)
+    - Agent execution: ~8-12 min (4 agents × 3-4 min avg, accounting for parallelism)
+    - Merge & verification: ~3 min
+    Total SAW time: ~16-20 min
+
+    Sequential baseline: ~25-30 min (4 functions × 6-7 min avg sequential time)
+    Time savings: ~8-12 min (35-40% faster)
+
+    Recommendation: Clear speedup. The parallelization value comes from distributing
+    the tedious call-site updates across agents while maintaining type safety through
+    isolated package boundaries.
+test_command: go test ./... -timeout 120s
+lint_command: go vet ./...
+file_ownership:
+    - file: pkg/engine/scaffold_opts.go
+      agent: A
+      wave: 1
+      action: new
+    - file: pkg/engine/runner.go
+      agent: A
+      wave: 1
+      action: modify
+    - file: pkg/orchestrator/journal_opts.go
+      agent: B
+      wave: 1
+      action: new
+    - file: pkg/orchestrator/journal_integration.go
+      agent: B
+      wave: 1
+      action: modify
+    - file: pkg/protocol/merge_opts.go
+      agent: C
+      wave: 1
+      action: new
+    - file: pkg/protocol/merge_agents.go
+      agent: C
+      wave: 1
+      action: modify
+    - file: pkg/observability/trend_opts.go
+      agent: D
+      wave: 1
+      action: new
+    - file: pkg/observability/rollups.go
+      agent: D
+      wave: 1
+      action: modify
+interface_contracts:
+    - name: RunScaffoldOpts
+      description: Options struct for RunScaffold
+      definition: |
+        type RunScaffoldOpts struct {
+            IMPLPath     string
+            RepoPath     string
+            SAWRepoPath  string
+            Model        string
+            OnEvent      func(Event)
+        }
+      location: pkg/engine/scaffold_opts.go
+    - name: RunScaffold (refactored)
+      description: Refactored RunScaffold signature using opts struct
+      definition: |
+        func RunScaffold(ctx context.Context, opts RunScaffoldOpts) error
+      location: pkg/engine/runner.go
+    - name: PrepareAgentContextOpts
+      description: Options struct for PrepareAgentContext
+      definition: |
+        type PrepareAgentContextOpts struct {
+            ProjectRoot string
+            WaveNum     int
+            AgentID     string
+            MaxEntries  int
+            Logger      *slog.Logger
+        }
+      location: pkg/orchestrator/journal_opts.go
+    - name: PrepareAgentContext (refactored)
+      description: Refactored PrepareAgentContext signature using opts struct
+      definition: |
+        func PrepareAgentContext(opts PrepareAgentContextOpts) (string, error)
+      location: pkg/orchestrator/journal_integration.go
+    - name: MergeAgentsOpts
+      description: Options struct for MergeAgents
+      definition: |
+        type MergeAgentsOpts struct {
+            ManifestPath string
+            WaveNum      int
+            RepoDir      string
+            MergeTarget  string
+            Logger       *slog.Logger
+        }
+      location: pkg/protocol/merge_opts.go
+    - name: MergeAgents (refactored)
+      description: Refactored MergeAgents signature using opts struct
+      definition: |
+        func MergeAgents(opts MergeAgentsOpts) (result.Result[MergeAgentsData], error)
+      location: pkg/protocol/merge_agents.go
+    - name: ComputeTrendOpts
+      description: Options struct for ComputeTrend
+      definition: |
+        type ComputeTrendOpts struct {
+            Store     Store
+            Metric    string
+            TimeRange time.Duration
+            Buckets   int
+        }
+      location: pkg/observability/trend_opts.go
+    - name: ComputeTrend (refactored)
+      description: Refactored ComputeTrend signature using opts struct
+      definition: |
+        func ComputeTrend(ctx context.Context, opts ComputeTrendOpts) (*TrendResult, error)
+      location: pkg/observability/rollups.go
+waves:
+    - number: 1
+      agents:
+        - id: A
+          task: |
+            ## Objective
+            Refactor `RunScaffold` to use `RunScaffoldOpts` struct instead of individual parameters.
+
+            ## Implementation
+
+            **1. Create pkg/engine/scaffold_opts.go:**
+            ```go
+            package engine
+
+            // RunScaffoldOpts configures RunScaffold execution.
+            type RunScaffoldOpts struct {
+                IMPLPath     string      // absolute path to IMPL manifest
+                RepoPath     string      // absolute path to target repository
+                SAWRepoPath  string      // absolute path to scout-and-wave repo (for prompts)
+                Model        string      // optional model override; empty = backend default
+                OnEvent      func(Event) // event callback for progress updates
+            }
+            ```
+
+            **2. Update the function signature in pkg/engine/runner.go:**
+
+            Current signature (line ~515):
+            ```go
+            func RunScaffold(ctx context.Context, implPath, repoPath, sawRepoPath, model string, onEvent func(Event)) error
+            ```
+
+            New signature:
+            ```go
+            func RunScaffold(ctx context.Context, opts RunScaffoldOpts) error
+            ```
+
+            **3. Update function body:**
+            Replace all parameter references with `opts.FieldName`:
+            - `implPath` → `opts.IMPLPath`
+            - `repoPath` → `opts.RepoPath`
+            - `sawRepoPath` → `opts.SAWRepoPath`
+            - `model` → `opts.Model`
+            - `onEvent` → `opts.OnEvent`
+
+            **4. Update all call sites:**
+
+            Search for all `RunScaffold(` calls in the codebase (expected: ~8 call sites).
+            For each call site, transform from:
+            ```go
+            RunScaffold(ctx, implPath, repoPath, sawRepoPath, model, onEvent)
+            ```
+
+            To:
+            ```go
+            RunScaffold(ctx, RunScaffoldOpts{
+                IMPLPath:    implPath,
+                RepoPath:    repoPath,
+                SAWRepoPath: sawRepoPath,
+                Model:       model,
+                OnEvent:     onEvent,
+            })
+            ```
+
+            **5. Handle test files:**
+            Update test files that call `RunScaffold` following the same pattern.
+
+            ## Verification
+
+            Run quality gates:
+            ```bash
+            go build ./pkg/engine/...
+            go vet ./pkg/engine/...
+            go test ./pkg/engine/... -timeout 30s
+            ```
+
+            Verify all call sites updated:
+            ```bash
+            grep -r 'RunScaffold(' --include="*.go" | grep -v "func RunScaffold\|type RunScaffold"
+            ```
+
+            ## Constraints
+
+            - Do NOT modify files outside pkg/engine/ except for call sites in other packages
+            - Do NOT touch pkg/orchestrator/, pkg/protocol/, or pkg/observability/ function definitions
+            - Preserve all existing behavior - this is a signature refactor only
+            - Ensure all 8 call sites are updated (verify with grep before committing)
+          files:
+            - pkg/engine/scaffold_opts.go
+            - pkg/engine/runner.go
+        - id: B
+          task: |
+            ## Objective
+            Refactor `PrepareAgentContext` to use `PrepareAgentContextOpts` struct instead of
+            individual parameters.
+
+            ## Implementation
+
+            **1. Create pkg/orchestrator/journal_opts.go:**
+            ```go
+            package orchestrator
+
+            import "log/slog"
+
+            // PrepareAgentContextOpts configures journal context preparation.
+            type PrepareAgentContextOpts struct {
+                ProjectRoot string       // absolute path to project root
+                WaveNum     int          // wave number
+                AgentID     string       // agent identifier (e.g. "A", "B2")
+                MaxEntries  int          // max journal entries to include; 0 = 50 (default)
+                Logger      *slog.Logger // optional logger; nil = slog.Default()
+            }
+            ```
+
+            **2. Update the function signature in pkg/orchestrator/journal_integration.go:**
+
+            Current signature (line ~26):
+            ```go
+            func PrepareAgentContext(projectRoot string, waveNum int, agentID string, maxEntries int, logger *slog.Logger) (string, error)
+            ```
+
+            New signature:
+            ```go
+            func PrepareAgentContext(opts PrepareAgentContextOpts) (string, error)
+            ```
+
+            **3. Update function body:**
+            Replace all parameter references with `opts.FieldName`:
+            - `projectRoot` → `opts.ProjectRoot`
+            - `waveNum` → `opts.WaveNum`
+            - `agentID` → `opts.AgentID`
+            - `maxEntries` → `opts.MaxEntries`
+            - `logger` → `opts.Logger`
+
+            The function already has a `loggerFrom()` helper that handles nil loggers, so
+            the existing `loggerFrom(logger)` calls become `loggerFrom(opts.Logger)`.
+
+            **4. Update all call sites:**
+
+            Search for all `PrepareAgentContext(` calls in the codebase (expected: ~28 call sites).
+            For each call site, transform from:
+            ```go
+            contextMd, err := PrepareAgentContext(projectRoot, waveNum, agentID, maxEntries, logger)
+            ```
+
+            To:
+            ```go
+            contextMd, err := PrepareAgentContext(PrepareAgentContextOpts{
+                ProjectRoot: projectRoot,
+                WaveNum:     waveNum,
+                AgentID:     agentID,
+                MaxEntries:  maxEntries,
+                Logger:      logger,
+            })
+            ```
+
+            **5. Handle nil logger cases:**
+            Some call sites may pass `nil` for logger - preserve this by passing `Logger: nil`
+            in the opts struct (the function handles nil correctly).
+
+            ## Verification
+
+            Run quality gates:
+            ```bash
+            go build ./pkg/orchestrator/...
+            go vet ./pkg/orchestrator/...
+            go test ./pkg/orchestrator/... -timeout 30s
+            ```
+
+            Verify all call sites updated:
+            ```bash
+            grep -r 'PrepareAgentContext(' --include="*.go" | grep -v "func PrepareAgentContext"
+            ```
+
+            ## Constraints
+
+            - Do NOT modify files outside pkg/orchestrator/ except for call sites in other packages
+            - Do NOT touch pkg/engine/, pkg/protocol/, or pkg/observability/ function definitions
+            - Preserve all existing behavior - this is a signature refactor only
+            - Ensure all 28 call sites are updated (verify with grep before committing)
+          files:
+            - pkg/orchestrator/journal_opts.go
+            - pkg/orchestrator/journal_integration.go
+        - id: C
+          task: |
+            ## Objective
+            Refactor `MergeAgents` to use `MergeAgentsOpts` struct instead of individual parameters.
+            This is the highest-impact function with 83 call sites across the codebase.
+
+            ## Implementation
+
+            **1. Create pkg/protocol/merge_opts.go:**
+            ```go
+            package protocol
+
+            import "log/slog"
+
+            // MergeAgentsOpts configures multi-repo agent merge.
+            type MergeAgentsOpts struct {
+                ManifestPath string       // absolute path to IMPL manifest
+                WaveNum      int          // wave number to merge
+                RepoDir      string       // absolute path to target repository
+                MergeTarget  string       // target branch; empty = HEAD
+                Logger       *slog.Logger // optional logger; nil = slog.Default()
+            }
+            ```
+
+            **2. Update the function signature in pkg/protocol/merge_agents.go:**
+
+            Current signature (line ~162):
+            ```go
+            func MergeAgents(manifestPath string, waveNum int, repoDir string, mergeTarget string, logger *slog.Logger) (result.Result[MergeAgentsData], error)
+            ```
+
+            New signature:
+            ```go
+            func MergeAgents(opts MergeAgentsOpts) (result.Result[MergeAgentsData], error)
+            ```
+
+            **3. Update function body:**
+            Replace all parameter references with `opts.FieldName`:
+            - `manifestPath` → `opts.ManifestPath`
+            - `waveNum` → `opts.WaveNum`
+            - `repoDir` → `opts.RepoDir`
+            - `mergeTarget` → `opts.MergeTarget`
+            - `logger` → `opts.Logger`
+
+            **4. Update internal helper functions:**
+            The file contains two internal helper functions that also take similar parameters:
+            - `mergeAgentsSingleRepo` (line ~251)
+            - `mergeAgentsMultiRepo` (line ~399)
+
+            These should also be updated to accept `MergeAgentsOpts` instead of individual
+            parameters for consistency. They are internal (unexported) so no external call
+            sites to update.
+
+            **5. Update all call sites:**
+
+            Search for all `MergeAgents(` calls in the codebase (expected: ~83 call sites).
+            For each call site, transform from:
+            ```go
+            res, err := MergeAgents(manifestPath, waveNum, repoDir, mergeTarget, logger)
+            ```
+
+            To:
+            ```go
+            res, err := MergeAgents(MergeAgentsOpts{
+                ManifestPath: manifestPath,
+                WaveNum:      waveNum,
+                RepoDir:      repoDir,
+                MergeTarget:  mergeTarget,
+                Logger:       logger,
+            })
+            ```
+
+            **6. Handle empty string defaults:**
+            Some call sites may pass `""` for `mergeTarget` to indicate "use HEAD". Preserve
+            this by passing `MergeTarget: ""` in the opts struct.
+
+            **7. Verify systematically:**
+            After updating all call sites, run:
+            ```bash
+            grep -r 'MergeAgents(' --include="*.go" | grep -v "func MergeAgents\|type MergeAgents"
+            ```
+
+            Verify that every match uses the new `MergeAgentsOpts` struct syntax.
+
+            ## Verification
+
+            Run quality gates:
+            ```bash
+            go build ./pkg/protocol/...
+            go vet ./pkg/protocol/...
+            go test ./pkg/protocol/... -timeout 30s
+            ```
+
+            ## Constraints
+
+            - Do NOT modify files outside pkg/protocol/ except for call sites in other packages
+            - Do NOT touch pkg/orchestrator/ or pkg/observability/ function definitions
+            - Preserve all existing behavior - this is a signature refactor only
+            - Ensure all 83 call sites are updated (verify with grep before committing)
+            - This is the highest-risk refactor due to call-site count - be systematic
+          files:
+            - pkg/protocol/merge_opts.go
+            - pkg/protocol/merge_agents.go
+        - id: D
+          task: |
+            ## Objective
+            Refactor `ComputeTrend` to use `ComputeTrendOpts` struct instead of individual parameters.
+
+            ## Implementation
+
+            **1. Create pkg/observability/trend_opts.go:**
+            ```go
+            package observability
+
+            import "time"
+
+            // ComputeTrendOpts configures trend computation.
+            type ComputeTrendOpts struct {
+                Store     Store         // observability event store
+                Metric    string        // metric name: "cost", "success_rate", "retry_count"
+                TimeRange time.Duration // time window to analyze
+                Buckets   int           // number of buckets to divide timeRange into
+            }
+            ```
+
+            **2. Update the function signature in pkg/observability/rollups.go:**
+
+            Current signature (line ~166):
+            ```go
+            func ComputeTrend(ctx context.Context, store Store, metric string, timeRange time.Duration, buckets int) (*TrendResult, error)
+            ```
+
+            New signature:
+            ```go
+            func ComputeTrend(ctx context.Context, opts ComputeTrendOpts) (*TrendResult, error)
+            ```
+
+            Note: `ctx` remains as the first parameter (standard Go convention for context).
+
+            **3. Update function body:**
+            Replace all parameter references with `opts.FieldName`:
+            - `store` → `opts.Store`
+            - `metric` → `opts.Metric`
+            - `timeRange` → `opts.TimeRange`
+            - `buckets` → `opts.Buckets`
+
+            **4. Update all call sites:**
+
+            Search for all `ComputeTrend(` calls in the codebase (expected: ~8 call sites).
+            For each call site, transform from:
+            ```go
+            trend, err := ComputeTrend(ctx, store, metric, timeRange, buckets)
+            ```
+
+            To:
+            ```go
+            trend, err := ComputeTrend(ctx, ComputeTrendOpts{
+                Store:     store,
+                Metric:    metric,
+                TimeRange: timeRange,
+                Buckets:   buckets,
+            })
+            ```
+
+            **5. Handle default values:**
+            The existing function has logic that defaults `buckets` to 1 if <= 0. Preserve
+            this behavior in the function body (the opts struct itself has no defaults).
+
+            ## Verification
+
+            Run quality gates:
+            ```bash
+            go build ./pkg/observability/...
+            go vet ./pkg/observability/...
+            go test ./pkg/observability/... -timeout 30s
+            ```
+
+            Verify all call sites updated:
+            ```bash
+            grep -r 'ComputeTrend(' --include="*.go" | grep -v "func ComputeTrend"
+            ```
+
+            ## Constraints
+
+            - Do NOT modify files outside pkg/observability/ except for call sites in other packages
+            - Do NOT touch pkg/engine/, pkg/orchestrator/, or pkg/protocol/ function definitions
+            - Preserve all existing behavior - this is a signature refactor only
+            - Ensure all 8 call sites are updated (verify with grep before committing)
+          files:
+            - pkg/observability/trend_opts.go
+            - pkg/observability/rollups.go
+quality_gates:
+    level: standard
+    gates:
+        - type: build
+          command: go build ./...
+          required: true
+        - type: lint
+          command: go vet ./...
+          required: true
+        - type: test
+          command: go test ./... -timeout 120s
+          required: true
+pre_mortem:
+    overall_risk: medium
+    rows:
+        - scenario: Agent C (MergeAgents refactor) misses some of the 83 call sites, causing compilation failures
+          likelihood: medium
+          impact: high
+          mitigation: |
+            Agent C's task explicitly requires grep verification before committing. Quality
+            gates will catch any missed call sites. The agent should update call sites
+            systematically (one package at a time) and verify after each package.
+        - scenario: Call site transformations introduce subtle behavioral changes (e.g., argument ordering bugs)
+          likelihood: low
+          impact: medium
+          mitigation: |
+            The refactor is purely mechanical - parameter names in opts struct match
+            the original parameter names exactly. Quality gates include full test suite.
+            All agents instructed to preserve existing behavior.
+        - scenario: Test files use different calling patterns that agents miss
+          likelihood: low
+          impact: medium
+          mitigation: |
+            Agent tasks explicitly mention updating test files. Grep searches will
+            find test file call sites. Quality gates run full test suite.
+        - scenario: Nil logger handling breaks after refactor
+          likelihood: low
+          impact: low
+          mitigation: |
+            Agent B's task explicitly covers nil logger cases. PrepareAgentContext
+            already has loggerFrom() helper that handles nil. MergeAgents likely
+            has similar patterns.
+        - scenario: Agents modify files outside their ownership scope
+          likelihood: low
+          impact: low
+          mitigation: |
+            Each agent task explicitly lists the constraint "Do NOT modify files outside
+            pkg/X/ except for call sites". File ownership table enforces disjoint ownership
+            (I1 invariant). Call sites in other packages are expected and necessary.
+critic_report:
+    verdict: ISSUES
+    agent_reviews:
+        A:
+            agent_id: A
+            verdict: ISSUES
+            issues:
+                - check: symbol_accuracy
+                  severity: error
+                  description: Brief states RunScaffold has ~8 call sites, but only 1 actual call site exists (pkg/engine/runner.go:361). The doc.go:40 reference is a comment example, not a call site.
+                  file: pkg/engine/runner.go
+                  symbol: RunScaffold
+        B:
+            agent_id: B
+            verdict: ISSUES
+            issues:
+                - check: symbol_accuracy
+                  severity: error
+                  description: Brief states PrepareAgentContext has ~28 call sites, but only 4 actual call sites exist (all in pkg/orchestrator/journal_integration_test.go). The runner.go:917 reference is a method receiver with the same name, not a call to this function.
+                  file: pkg/orchestrator/journal_integration.go
+                  symbol: PrepareAgentContext
+        C:
+            agent_id: C
+            verdict: ISSUES
+            issues:
+                - check: symbol_accuracy
+                  severity: error
+                  description: 'Brief states MergeAgents has ~83 call sites (marked as HIGH IMPACT), but only 14 actual call sites exist: 1 in sawtools CLI, 11 in test files, 2 in pkg/engine. This drastically overstates the refactor scope and risk.'
+                  file: pkg/protocol/merge_agents.go
+                  symbol: MergeAgents
+        D:
+            agent_id: D
+            verdict: ISSUES
+            issues:
+                - check: symbol_accuracy
+                  severity: error
+                  description: Brief states ComputeTrend has ~8 call sites, but only 2 actual call sites exist (both in pkg/observability/rollups_test.go).
+                  file: pkg/observability/rollups.go
+                  symbol: ComputeTrend
+    summary: 'Critical inaccuracies found in all agent briefs: call site counts are drastically overstated across all 4 functions. Agent A brief claims 8 RunScaffold call sites but only 1 exists. Agent B claims 28 PrepareAgentContext call sites but only 4 exist (all in tests). Agent C claims 83 MergeAgents call sites but only 14 exist. Agent D claims 8 ComputeTrend call sites but only 2 exist. Function signatures and line numbers are accurate. All files marked as ''new'' correctly do not exist yet. Interface contract types are valid.'
+    reviewed_at: "2026-03-30T22:41:40Z"
+    issue_count: 4
+state: SCOUT_PENDING
+injection_method: hook

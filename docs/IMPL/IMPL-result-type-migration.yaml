@@ -1,0 +1,1609 @@
+title: Migrate error-only returns to result.Result[T]
+feature_slug: result-type-migration
+verdict: SUITABLE
+suitability_assessment: |
+    The work satisfies all five suitability gate questions:
+
+    1. **File decomposition:** 113 error-only functions across 16 packages can be
+       assigned to agents with disjoint file ownership. Each package has distinct files
+       that can be migrated independently.
+
+    2. **Investigation-first items:** None. The result.Result[T] pattern is already
+       established and proven in protocol/engine packages. Migration is mechanical.
+
+    3. **Interface discoverability:** All cross-agent interfaces are known. The
+       result.Result[T] type and constructors (NewSuccess, NewPartial, NewFailure) are
+       already defined in pkg/result/result.go. No new interfaces need definition.
+
+    4. **Pre-implementation status check:** Survey found:
+       - 81 functions already use result.Result[T] (protocol: 71, engine: 6, config: 4)
+       - 113 functions still use error-only returns (27% remaining)
+       - Packages with highest error-only count: engine (39), protocol (23), orchestrator (16)
+       - No partial migrations that would block progress
+
+    5. **Parallelization value check:** High value. Agents are independent AND:
+       - Build/test cycle: go test ./... takes ~60s (benefits from parallelization)
+       - Avg files per agent: 2-3 files (substantial implementation per agent)
+       - Tasks involve logic changes (signature changes, test updates, caller updates)
+       - 16 agents across 3 waves: Wave 1 (leaf packages, 8 agents), Wave 2 (mid-layer,
+         6 agents), Wave 3 (orchestration layer, 2 agents)
+
+    Estimated times:
+    - Scout phase: ~10 min (dependency mapping, interface contracts, IMPL doc)
+    - Agent execution: ~40 min (16 agents × 5 min avg, 3 waves with parallelism)
+    - Merge & verification: ~10 min (3 wave merges + full test suite)
+    Total SAW time: ~60 min
+
+    Sequential baseline: ~120 min (16 agents × 7.5 min avg sequential time)
+    Time savings: ~60 min (50% faster)
+
+    Recommendation: Clear speedup. Proceed with SAW.
+test_command: go test ./... -timeout 120s
+lint_command: go vet ./...
+file_ownership:
+    - file: pkg/journal/checkpoint.go
+      agent: A
+      wave: 1
+      action: modify
+    - file: pkg/journal/observer.go
+      agent: A
+      wave: 1
+      action: modify
+    - file: pkg/journal/archive.go
+      agent: A
+      wave: 1
+      action: modify
+    - file: pkg/notify/dispatcher.go
+      agent: B
+      wave: 1
+      action: modify
+    - file: pkg/notify/discord.go
+      agent: B
+      wave: 1
+      action: modify
+    - file: pkg/notify/telegram.go
+      agent: B
+      wave: 1
+      action: modify
+    - file: pkg/notify/slack.go
+      agent: B
+      wave: 1
+      action: modify
+    - file: pkg/worktree/manager.go
+      agent: C
+      wave: 1
+      action: modify
+    - file: pkg/resume/sessions.go
+      agent: D
+      wave: 1
+      action: modify
+    - file: pkg/resume/detect.go
+      agent: D
+      wave: 1
+      action: modify
+    - file: pkg/tools/workshop.go
+      agent: E
+      wave: 1
+      action: modify
+    - file: pkg/tools/middleware.go
+      agent: E
+      wave: 1
+      action: modify
+    - file: pkg/tools/standard.go
+      agent: E
+      wave: 1
+      action: modify
+    - file: pkg/tools/workshop_constrained.go
+      agent: E
+      wave: 1
+      action: modify
+    - file: pkg/tools/constraint_enforcer.go
+      agent: E
+      wave: 1
+      action: modify
+    - file: pkg/tools/role_middleware.go
+      agent: E
+      wave: 1
+      action: modify
+    - file: pkg/hooks/scout_boundaries.go
+      agent: F
+      wave: 1
+      action: modify
+    - file: pkg/interview/compiler.go
+      agent: G
+      wave: 1
+      action: modify
+    - file: pkg/interview/deterministic.go
+      agent: G
+      wave: 1
+      action: modify
+    - file: pkg/gatecache/cache.go
+      agent: H
+      wave: 1
+      action: modify
+    - file: pkg/queue/manager.go
+      agent: H2
+      wave: 1
+      action: modify
+    - file: pkg/protocol/memory.go
+      agent: I
+      wave: 2
+      action: modify
+    - file: pkg/protocol/manifest.go
+      agent: I
+      wave: 2
+      action: modify
+    - file: pkg/protocol/conflict_predict.go
+      agent: J
+      wave: 2
+      action: modify
+    - file: pkg/protocol/updater.go
+      agent: J
+      wave: 2
+      action: modify
+    - file: pkg/protocol/gates.go
+      agent: K
+      wave: 2
+      action: modify
+    - file: pkg/protocol/merge_log.go
+      agent: K
+      wave: 2
+      action: modify
+    - file: pkg/protocol/freeze.go
+      agent: L
+      wave: 2
+      action: modify
+    - file: pkg/protocol/repo_resolve.go
+      agent: L
+      wave: 2
+      action: modify
+    - file: pkg/protocol/stubs.go
+      agent: M
+      wave: 2
+      action: modify
+    - file: pkg/protocol/wiring_validation.go
+      agent: M
+      wave: 2
+      action: modify
+    - file: pkg/protocol/integration.go
+      agent: M
+      wave: 2
+      action: modify
+    - file: pkg/pipeline/pipeline.go
+      agent: "N"
+      wave: 2
+      action: modify
+    - file: pkg/pipeline/saw_steps.go
+      agent: "N"
+      wave: 2
+      action: modify
+    - file: pkg/observability/emitter.go
+      agent: O
+      wave: 2
+      action: modify
+    - file: pkg/observability/query.go
+      agent: O
+      wave: 2
+      action: modify
+    - file: pkg/autonomy/planner.go
+      agent: P
+      wave: 2
+      action: modify
+    - file: pkg/orchestrator/orchestrator.go
+      agent: Q
+      wave: 3
+      action: modify
+    - file: pkg/orchestrator/merge.go
+      agent: Q
+      wave: 3
+      action: modify
+    - file: pkg/orchestrator/context.go
+      agent: Q
+      wave: 3
+      action: modify
+    - file: pkg/orchestrator/verification.go
+      agent: Q
+      wave: 3
+      action: modify
+    - file: pkg/orchestrator/structured_wave.go
+      agent: Q
+      wave: 3
+      action: modify
+    - file: pkg/orchestrator/stubs.go
+      agent: Q
+      wave: 3
+      action: modify
+    - file: pkg/orchestrator/journal_integration.go
+      agent: Q
+      wave: 3
+      action: modify
+    - file: pkg/engine/runner.go
+      agent: R
+      wave: 3
+      action: modify
+    - file: pkg/engine/prepare.go
+      agent: R
+      wave: 3
+      action: modify
+    - file: pkg/engine/finalize.go
+      agent: R
+      wave: 3
+      action: modify
+    - file: pkg/engine/chat.go
+      agent: R
+      wave: 3
+      action: modify
+    - file: pkg/engine/daemon.go
+      agent: R
+      wave: 3
+      action: modify
+    - file: pkg/engine/fix_build.go
+      agent: R
+      wave: 3
+      action: modify
+    - file: pkg/engine/integration_runner.go
+      agent: R
+      wave: 3
+      action: modify
+    - file: pkg/engine/mark_program_complete.go
+      agent: R2
+      wave: 3
+      action: modify
+    - file: pkg/engine/merge_cleanup.go
+      agent: R2
+      wave: 3
+      action: modify
+    - file: pkg/engine/program_progress.go
+      agent: R2
+      wave: 3
+      action: modify
+    - file: pkg/engine/resolve_conflicts.go
+      agent: R2
+      wave: 3
+      action: modify
+    - file: pkg/engine/run_wave_atomic.go
+      agent: R2
+      wave: 3
+      action: modify
+    - file: pkg/engine/scout_correction_loop.go
+      agent: R2
+      wave: 3
+      action: modify
+    - file: pkg/engine/test_runner.go
+      agent: R2
+      wave: 3
+      action: modify
+    - file: pkg/engine/debug_journal.go
+      agent: R2
+      wave: 3
+      action: modify
+interface_contracts:
+    - name: result.Result[T]
+      description: Generic Result wrapper for all operations
+      definition: |
+        type Result[T any] struct {
+          Data   *T         `json:"data,omitempty"`
+          Errors []SAWError `json:"errors,omitempty"`
+          Code   string     `json:"code"` // "SUCCESS" | "PARTIAL" | "FATAL"
+        }
+      location: pkg/result/result.go
+    - name: result.NewSuccess[T]
+      description: Constructor for successful results
+      definition: |
+        func NewSuccess[T any](data T) Result[T] {
+          return Result[T]{Data: &data, Code: "SUCCESS"}
+        }
+      location: pkg/result/result.go
+    - name: result.NewPartial[T]
+      description: Constructor for partial success with warnings
+      definition: |
+        func NewPartial[T any](data T, warnings []SAWError) Result[T] {
+          return Result[T]{Data: &data, Errors: warnings, Code: "PARTIAL"}
+        }
+      location: pkg/result/result.go
+    - name: result.NewFailure[T]
+      description: Constructor for total failure
+      definition: |
+        func NewFailure[T any](errors []SAWError) Result[T] {
+          return Result[T]{Errors: errors, Code: "FATAL"}
+        }
+      location: pkg/result/result.go
+    - name: result.SAWError
+      description: Structured error type with code, severity, context
+      definition: |
+        type SAWError struct {
+          Code       string            `json:"code"`
+          Message    string            `json:"message"`
+          Severity   string            `json:"severity"` // "fatal"|"error"|"warning"|"info"
+          File       string            `json:"file,omitempty"`
+          Line       int               `json:"line,omitempty"`
+          Field      string            `json:"field,omitempty"`
+          Tool       string            `json:"tool,omitempty"`
+          Suggestion string            `json:"suggestion,omitempty"`
+          Context    map[string]string `json:"context,omitempty"`
+          Cause      error             `json:"-"`
+        }
+      location: pkg/result/result.go
+waves:
+    - number: 1
+      agents:
+        - id: A
+          task: |
+            **Role:** Migrate pkg/journal error-only returns to result.Result[T]
+
+            **Files to modify:**
+            - pkg/journal/checkpoint.go
+            - pkg/journal/observer.go
+            - pkg/journal/archive.go
+
+            **What to implement:**
+
+            Migrate 12 error-only functions to result.Result[T]:
+
+            1. **checkpoint.go (4 functions):**
+               - `Checkpoint(name string) error` → `Checkpoint(name string) result.Result[CheckpointData]`
+               - `RestoreCheckpoint(name string) error` → `RestoreCheckpoint(name string) result.Result[RestoreData]`
+               - `DeleteCheckpoint(name string) error` → `DeleteCheckpoint(name string) result.Result[DeleteData]`
+               - `copyFileIfExists(src, dst string) error` → `copyFileIfExists(src, dst string) result.Result[CopyData]`
+
+            2. **observer.go (3 functions):**
+               - `saveCursor(*SessionCursor) error` → `saveCursor(*SessionCursor) result.Result[SaveCursorData]`
+               - `appendToIndex([]ToolEntry) error` → `appendToIndex([]ToolEntry) result.Result[AppendData]`
+               - `updateRecent([]ToolEntry) error` → `updateRecent([]ToolEntry) result.Result[UpdateData]`
+
+            3. **archive.go (5 functions):**
+               - `Archive() error` → `Archive() result.Result[ArchiveData]`
+               - `CleanupExpired(string, int) error` → `CleanupExpired(string, int) result.Result[CleanupData]`
+               - `Extract(string, string) error` → `Extract(string, string) result.Result[ExtractData]`
+               - `createTarGz(string, string) error` → `createTarGz(string, string) result.Result[CreateTarData]`
+               - `writeMetadataAtomic(string, ArchiveMetadata) error` → `writeMetadataAtomic(string, ArchiveMetadata) result.Result[WriteMetaData]`
+
+            **Migration rules:**
+
+            - Define data types for each Result[T]: `CheckpointData`, `RestoreData`, etc. with relevant fields
+            - Convert `return nil` → `return result.NewSuccess(DataType{...})`
+            - Convert `return err` → `return result.NewFailure[DataType]([]result.SAWError{{Code: "JOURNAL_ERROR", Message: err.Error(), Severity: "fatal"}})`
+            - Wrap errors with context: `result.SAWError{Code: "CHECKPOINT_FAILED", Message: fmt.Sprintf("checkpoint %q: %v", name, err), Severity: "fatal"}`
+            - Add imports: `"github.com/blackwell-systems/scout-and-wave-go/pkg/result"`
+
+            **Tests:**
+
+            Update pkg/journal/*_test.go to check Result[T] instead of error:
+            - Replace `if err != nil` checks with `if !result.IsSuccess()`
+            - Verify `.GetData()` returns expected values
+            - Test error cases verify `.IsFatal()` and `.Errors[0].Code`
+
+            **Verification gate:**
+
+            ```bash
+            go build ./pkg/journal/...
+            go vet ./pkg/journal/...
+            go test ./pkg/journal/... -v
+            ```
+          files:
+            - pkg/journal/checkpoint.go
+            - pkg/journal/observer.go
+            - pkg/journal/archive.go
+        - id: B
+          task: |
+            **Role:** Migrate pkg/notify error-only returns to result.Result[T]
+
+            **Files to modify:**
+            - pkg/notify/dispatcher.go
+            - pkg/notify/discord.go
+            - pkg/notify/telegram.go
+            - pkg/notify/slack.go
+
+            **What to implement:**
+
+            Migrate 4 error-only functions to result.Result[T]:
+
+            1. **dispatcher.go:**
+               - `Dispatch(context.Context, Event, Formatter) error` → `Dispatch(context.Context, Event, Formatter) result.Result[DispatchData]`
+               - DispatchData includes `{SentCount int, FailedCount int, Errors []result.SAWError}`
+
+            2. **discord.go:**
+               - `Send(context.Context, Message) error` → `Send(context.Context, Message) result.Result[SendData]`
+
+            3. **telegram.go:**
+               - `Send(context.Context, Message) error` → `Send(context.Context, Message) result.Result[SendData]`
+
+            4. **slack.go:**
+               - `Send(context.Context, Message) error` → `Send(context.Context, Message) result.Result[SendData]`
+
+            **Adapter interface update:**
+
+            The `Adapter` interface in pkg/notify/types.go currently defines:
+            ```go
+            type Adapter interface {
+                Name() string
+                Send(ctx context.Context, msg Message) error
+            }
+            ```
+
+            Update to:
+            ```go
+            type Adapter interface {
+                Name() string
+                Send(ctx context.Context, msg Message) result.Result[SendData]
+            }
+            ```
+
+            **Migration rules:**
+
+            - Define `SendData struct {MessageID string, Timestamp time.Time, Provider string}`
+            - Define `DispatchData struct {SentCount int, FailedCount int, Errors []result.SAWError}`
+            - In dispatcher.go `Dispatch()`: collect errors from each adapter Send(), return Partial if some succeed
+            - HTTP adapters: parse response status → Success (2xx), Partial (429 with retry-after), Fatal (4xx/5xx)
+            - Context cancellation: return Fatal with Code: "CONTEXT_CANCELLED"
+
+            **Tests:**
+
+            Update pkg/notify/*_test.go:
+            - Mock adapters return Result[SendData] instead of error
+            - Verify Dispatch returns Partial when some adapters fail
+            - Test context cancellation returns Fatal
+
+            **Verification gate:**
+
+            ```bash
+            go build ./pkg/notify/...
+            go vet ./pkg/notify/...
+            go test ./pkg/notify/... -v
+            ```
+          files:
+            - pkg/notify/dispatcher.go
+            - pkg/notify/discord.go
+            - pkg/notify/telegram.go
+            - pkg/notify/slack.go
+        - id: C
+          task: |
+            **Role:** Migrate pkg/worktree error-only returns to result.Result[T]
+
+            **Files to modify:**
+            - pkg/worktree/manager.go
+
+            **What to implement:**
+
+            Migrate 2 error-only functions to result.Result[T]:
+
+            1. `Remove(path string) error` → `Remove(path string) result.Result[RemoveData]`
+            2. `CleanupAll() error` → `CleanupAll() result.Result[CleanupData]`
+
+            **Data types:**
+
+            ```go
+            type RemoveData struct {
+                RemovedPath string
+                WasTracked  bool
+            }
+
+            type CleanupData struct {
+                RemovedCount int
+                RemovedPaths []string
+            }
+            ```
+
+            **Migration rules:**
+
+            - `Remove()`: return Success with removed path on success, Fatal on filesystem error
+            - `CleanupAll()`: collect all removal errors, return Partial if some succeed, Fatal if all fail
+            - Use error codes: "WORKTREE_REMOVE_FAILED", "WORKTREE_CLEANUP_FAILED"
+
+            **Tests:**
+
+            Update pkg/worktree/manager_test.go:
+            - Verify RemoveData includes correct path
+            - Verify CleanupData.RemovedCount matches actual removals
+            - Test CleanupAll with mixed success/failure returns Partial
+
+            **Verification gate:**
+
+            ```bash
+            go build ./pkg/worktree/...
+            go vet ./pkg/worktree/...
+            go test ./pkg/worktree/... -v
+            ```
+          files:
+            - pkg/worktree/manager.go
+        - id: D
+          task: |
+            **Role:** Migrate pkg/resume error-only returns to result.Result[T]
+
+            **Files to modify:**
+            - pkg/resume/sessions.go
+
+            **What to implement:**
+
+            Migrate 1 error-only function to result.Result[T]:
+
+            - `SaveAgentSession(stateDir, slug string, session AgentSession) error` →
+              `SaveAgentSession(stateDir, slug string, session AgentSession) result.Result[SaveSessionData]`
+
+            **Data type:**
+
+            ```go
+            type SaveSessionData struct {
+                SessionPath string
+                Timestamp   time.Time
+            }
+            ```
+
+            **Migration rules:**
+
+            - Return Success with session path and timestamp on successful save
+            - Return Fatal with Code: "SESSION_SAVE_FAILED" on filesystem error
+            - Include slug in error context: `Context: map[string]string{"slug": slug}`
+
+            **Tests:**
+
+            Update pkg/resume/sessions_test.go:
+            - Verify SaveSessionData.SessionPath is correct
+            - Test failure cases return Fatal with SESSION_SAVE_FAILED code
+
+            **Caller updates (E35):**
+
+            `pkg/resume/detect.go` is owned for E35 compliance because it calls
+            `LoadAgentSessions` from sessions.go. `LoadAgentSessions` is NOT being
+            migrated, so no changes are required in detect.go. Ensure the file still
+            compiles after sessions.go changes.
+
+            **Verification gate:**
+
+            ```bash
+            go build ./pkg/resume/...
+            go vet ./pkg/resume/...
+            go test ./pkg/resume/... -v
+            ```
+          files:
+            - pkg/resume/sessions.go
+            - pkg/resume/detect.go
+        - id: E
+          task: |
+            **Role:** Migrate pkg/tools error-only returns to result.Result[T]
+
+            **Files to modify:**
+            - pkg/tools/workshop.go
+
+            **What to implement:**
+
+            Migrate 1 error-only function to result.Result[T]:
+
+            - `Register(tool Tool) error` → `Register(tool Tool) result.Result[RegisterData]`
+
+            **Data type:**
+
+            ```go
+            type RegisterData struct {
+                ToolName    string
+                Registered  bool
+                TotalTools  int
+            }
+            ```
+
+            **Migration rules:**
+
+            - Return Success with tool name and updated count
+            - Return Fatal with Code: "TOOL_ALREADY_REGISTERED" if duplicate
+            - Include tool name in error context
+
+            **Tests:**
+
+            Update pkg/tools/workshop_test.go:
+            - Verify RegisterData.TotalTools increments
+            - Test duplicate registration returns Fatal
+
+            **Caller updates (E35):**
+
+            - `pkg/tools/middleware.go`, `pkg/tools/standard.go`, `pkg/tools/workshop_constrained.go`:
+              These call `Register()` — update all call sites to handle the new
+              `result.Result[RegisterData]` return type.
+            - `pkg/tools/constraint_enforcer.go`, `pkg/tools/role_middleware.go`:
+              These call `Execute()` from middleware.go. `Execute` is NOT being
+              migrated, so no changes are required. Owned for E35 compliance only;
+              ensure these files still compile.
+
+            **Verification gate:**
+
+            ```bash
+            go build ./pkg/tools/...
+            go vet ./pkg/tools/...
+            go test ./pkg/tools/... -v
+            ```
+          files:
+            - pkg/tools/workshop.go
+            - pkg/tools/middleware.go
+            - pkg/tools/standard.go
+            - pkg/tools/workshop_constrained.go
+            - pkg/tools/constraint_enforcer.go
+            - pkg/tools/role_middleware.go
+        - id: F
+          task: |
+            **Role:** Migrate pkg/hooks error-only returns to result.Result[T]
+
+            **Files to modify:**
+            - pkg/hooks/scout_boundaries.go
+
+            **What to implement:**
+
+            Migrate 1 error-only function to result.Result[T]:
+
+            - `ValidateScoutWrites(repoPath, expectedIMPLPath string, startTime time.Time) error` →
+              `ValidateScoutWrites(repoPath, expectedIMPLPath string, startTime time.Time) result.Result[ValidateData]`
+
+            **Data type:**
+
+            ```go
+            type ValidateData struct {
+                ValidatedPath  string
+                UnexpectedWrites []string
+                Violations     []result.SAWError
+            }
+            ```
+
+            **Migration rules:**
+
+            - Return Success if no unexpected writes found
+            - Return Partial if unexpected writes exist (non-fatal, reportable)
+            - Return Fatal on filesystem scan error
+            - Use error code: "SCOUT_BOUNDARY_VIOLATION"
+
+            **Tests:**
+
+            Update pkg/hooks/scout_boundaries_test.go:
+            - Verify ValidateData.UnexpectedWrites lists all violations
+            - Test Partial result when extra files written
+
+            **Verification gate:**
+
+            ```bash
+            go build ./pkg/hooks/...
+            go vet ./pkg/hooks/...
+            go test ./pkg/hooks/... -v
+            ```
+          files:
+            - pkg/hooks/scout_boundaries.go
+        - id: G
+          task: |
+            **Role:** Migrate pkg/interview error-only returns to result.Result[T]
+
+            **Files to modify:**
+            - pkg/interview/compiler.go
+            - pkg/interview/deterministic.go
+
+            **What to implement:**
+
+            Migrate 2 error-only functions to result.Result[T]:
+
+            1. **compiler.go:**
+               - `WriteRequirementsFile(doc *InterviewDoc, outputPath string) error` →
+                 `WriteRequirementsFile(doc *InterviewDoc, outputPath string) result.Result[WriteReqData]`
+
+            2. **deterministic.go:**
+               - `Save(doc *InterviewDoc, docPath string) error` →
+                 `Save(doc *InterviewDoc, docPath string) result.Result[SaveDocData]`
+
+            **Data types:**
+
+            ```go
+            type WriteReqData struct {
+                OutputPath  string
+                LineCount   int
+            }
+
+            type SaveDocData struct {
+                DocPath     string
+                Timestamp   time.Time
+            }
+            ```
+
+            **Migration rules:**
+
+            - Return Success with file metadata
+            - Use error codes: "REQUIREMENTS_WRITE_FAILED", "INTERVIEW_SAVE_FAILED"
+            - Include path in error context
+
+            **Tests:**
+
+            Update pkg/interview/*_test.go:
+            - Verify data fields are populated correctly
+            - Test write failures return Fatal
+
+            **Verification gate:**
+
+            ```bash
+            go build ./pkg/interview/...
+            go vet ./pkg/interview/...
+            go test ./pkg/interview/... -v
+            ```
+          files:
+            - pkg/interview/compiler.go
+            - pkg/interview/deterministic.go
+        - id: H
+          task: |
+            **Role:** Migrate pkg/gatecache error-only returns to result.Result[T]
+
+            **Files to modify:**
+            - pkg/gatecache/cache.go
+
+            **What to implement:**
+
+            The actual API (verified against codebase):
+            - `CacheKey` struct with HeadCommit/StagedStat/UnstagedStat/Command fields
+            - `CachedResult` struct (NOT GateResult)
+            - `Get(key CacheKey, gateType string) (*CachedResult, bool)` — returns bool, not error; skip
+            - `Put(key CacheKey, gateType string, result CachedResult) error` — migrate
+            - `Invalidate() error` — migrate (no key parameter)
+            - `BuildKey(repoDir string) (CacheKey, error)` — migrate
+            - `BuildKeyForGate(repoDir string, command string) (CacheKey, error)` — migrate
+
+            Migrate 4 functions to result.Result[T]:
+
+            1. `Put(key CacheKey, gateType string, result CachedResult) error` →
+               `Put(key CacheKey, gateType string, result CachedResult) result.Result[PutData]`
+            2. `Invalidate() error` → `Invalidate() result.Result[InvalidateData]`
+            3. `BuildKey(repoDir string) (CacheKey, error)` → `BuildKey(repoDir string) result.Result[CacheKey]`
+            4. `BuildKeyForGate(repoDir string, command string) (CacheKey, error)` →
+               `BuildKeyForGate(repoDir string, command string) result.Result[CacheKey]`
+
+            **Data types:**
+
+            ```go
+            type PutData struct {
+                Key       string // hex of hashed CacheKey
+                GateType  string
+                Timestamp time.Time
+            }
+
+            type InvalidateData struct {
+                ClearedCount int
+            }
+            ```
+
+            **Migration rules:**
+
+            - `Put()`: return Success with key hash + timestamp, Fatal on file save error
+            - `Invalidate()`: return Success with count of cleared entries, Fatal on filesystem error
+            - `BuildKey/BuildKeyForGate()`: return Success with CacheKey, Fatal on git errors
+            - Use error codes: "CACHE_PUT_FAILED", "CACHE_INVALIDATE_FAILED", "CACHE_BUILD_KEY_FAILED"
+
+            **Tests:**
+
+            Update pkg/gatecache/cache_test.go:
+            - Test Put returns Success with correct GateType
+            - Test Invalidate returns Success with ClearedCount > 0
+            - Test BuildKey returns Success with non-empty HeadCommit
+
+            **Verification gate:**
+
+            ```bash
+            go build ./pkg/gatecache/...
+            go vet ./pkg/gatecache/...
+            go test ./pkg/gatecache/... -v
+            ```
+          files:
+            - pkg/gatecache/cache.go
+        - id: H2
+          task: |
+            **Role:** Migrate pkg/queue error-only returns to result.Result[T]
+
+            **Files to modify:**
+            - pkg/queue/manager.go
+
+            **IMPORTANT:** The file is `manager.go`, NOT `queue.go`. The type is
+            `Item` (not QueueItem), managed by `*Manager` (not a standalone struct).
+
+            **What to implement:**
+
+            The actual API (verified against codebase):
+            - `Add(item Item) error` — migrate
+            - `List() ([]Item, error)` — migrate
+            - `Next() (*Item, error)` — migrate
+            - `UpdateStatus(slug string, status string) error` — migrate
+            - `completedSlugs() (map[string]bool, error)` — private helper; skip
+
+            Migrate 4 functions to result.Result[T]:
+
+            1. `Add(item Item) error` → `Add(item Item) result.Result[AddData]`
+            2. `List() ([]Item, error)` → `List() result.Result[ListData]`
+            3. `Next() (*Item, error)` → `Next() result.Result[Item]`
+            4. `UpdateStatus(slug string, status string) error` →
+               `UpdateStatus(slug string, status string) result.Result[UpdateStatusData]`
+
+            **Data types:**
+
+            ```go
+            type AddData struct {
+                Slug     string
+                FilePath string
+            }
+
+            type ListData struct {
+                Items []Item
+                Count int
+            }
+
+            type UpdateStatusData struct {
+                Slug      string
+                NewStatus string
+            }
+            ```
+
+            **Migration rules:**
+
+            - `Add()`: return Success with slug + file path, Fatal on filesystem error
+            - `List()`: return Success with items (empty slice if none), Fatal on read error
+            - `Next()`: return Success with first Item if available, Fatal with Code:
+              "QUEUE_EMPTY" if no items remain
+            - `UpdateStatus()`: return Success with slug + new status, Fatal on file error
+            - Use error codes: "QUEUE_ADD_FAILED", "QUEUE_LIST_FAILED", "QUEUE_EMPTY",
+              "QUEUE_STATUS_UPDATE_FAILED"
+
+            **Tests:**
+
+            Update pkg/queue/manager_test.go:
+            - Verify AddData.Slug is set
+            - Test Next() returns Fatal with QUEUE_EMPTY when nothing queued
+            - Test UpdateStatus returns Success with correct NewStatus
+
+            **Verification gate:**
+
+            ```bash
+            go build ./pkg/queue/...
+            go vet ./pkg/queue/...
+            go test ./pkg/queue/... -v
+            ```
+          files:
+            - pkg/queue/manager.go
+    - number: 2
+      agents:
+        - id: I
+          task: |
+            **Role:** Migrate pkg/protocol memory/manifest functions to result.Result[T]
+
+            **Files to modify:**
+            - pkg/protocol/memory.go
+            - pkg/protocol/manifest.go
+
+            **What to implement:**
+
+            Migrate protocol functions (4 total):
+
+            1. **memory.go:**
+               - `SaveProjectMemory(path string, pm *ProjectMemory) error` →
+                 `SaveProjectMemory(path string, pm *ProjectMemory) result.Result[SaveMemoryData]`
+
+            2. **manifest.go (3 functions):**
+               - `Save(m *IMPLManifest, path string) error` → `Save(m *IMPLManifest, path string) result.Result[SaveManifestData]`
+               - `SetCompletionReport(m *IMPLManifest, agentID string, report CompletionReport) error` →
+                 `SetCompletionReport(m *IMPLManifest, agentID string, report CompletionReport) result.Result[SetReportData]`
+               - `WithCompletionReportLock(fn func() error) error` → Keep as-is (lock helper, not domain logic)
+
+            **Data types:**
+
+            ```go
+            type SaveMemoryData struct {
+                MemoryPath string
+                BytesWritten int
+            }
+
+            type SaveManifestData struct {
+                ManifestPath string
+                Timestamp    time.Time
+            }
+
+            type SetReportData struct {
+                AgentID      string
+                ReportSet    bool
+            }
+            ```
+
+            **Migration rules:**
+
+            - Use error codes: "MEMORY_SAVE_FAILED", "MANIFEST_SAVE_FAILED", "REPORT_SET_FAILED"
+            - Include agentID in SetReportData error context
+            - YAML marshal errors → Fatal
+
+            **Tests:**
+
+            Update pkg/protocol/manifest_test.go:
+            - Verify SaveManifestData.ManifestPath matches input
+            - Test SetCompletionReport returns Success when agent exists
+
+            **Verification gate:**
+
+            ```bash
+            go build ./pkg/protocol/...
+            go vet ./pkg/protocol/...
+            go test ./pkg/protocol/... -v -run "TestSave|TestSetCompletion"
+            ```
+          files:
+            - pkg/protocol/memory.go
+            - pkg/protocol/manifest.go
+        - id: J
+          task: |
+            **Role:** Migrate pkg/protocol conflict_predict/updater to result.Result[T]
+
+            **Files to modify:**
+            - pkg/protocol/conflict_predict.go
+            - pkg/protocol/updater.go
+
+            **What to implement:**
+
+            1. **conflict_predict.go:**
+               - `PredictConflictsFromReports(manifest *IMPLManifest, waveNum int) error` →
+                 `PredictConflictsFromReports(manifest *IMPLManifest, waveNum int) result.Result[ConflictData]`
+
+            2. **updater.go (2 functions):**
+               - `UpdateIMPLStatus(path string, completedAgents []string) error` →
+                 `UpdateIMPLStatus(path string, completedAgents []string) result.Result[UpdateStatusData]`
+               - `UpdateAgentPrompt(m *IMPLManifest, agentID string, newPrompt string) error` →
+                 `UpdateAgentPrompt(m *IMPLManifest, agentID string, newPrompt string) result.Result[UpdatePromptData]`
+
+            **Data types:**
+
+            ```go
+            type ConflictData struct {
+                ConflictsDetected int
+                Conflicts         []ConflictPrediction
+            }
+
+            type UpdateStatusData struct {
+                UpdatedPath     string
+                CompletedAgents []string
+                NewState        string
+            }
+
+            type UpdatePromptData struct {
+                AgentID    string
+                PromptUpdated bool
+            }
+            ```
+
+            **Migration rules:**
+
+            - `PredictConflictsFromReports()`: return Partial if conflicts detected (warnings), Success if none
+            - Use error codes: "CONFLICT_PREDICT_FAILED", "STATUS_UPDATE_FAILED", "PROMPT_UPDATE_FAILED"
+
+            **Tests:**
+
+            Update pkg/protocol/*_test.go:
+            - Test ConflictData.ConflictsDetected matches prediction count
+            - Test UpdateStatusData.NewState reflects completion
+
+            **Verification gate:**
+
+            ```bash
+            go build ./pkg/protocol/...
+            go vet ./pkg/protocol/...
+            go test ./pkg/protocol/... -v -run "TestPredict|TestUpdate"
+            ```
+          files:
+            - pkg/protocol/conflict_predict.go
+            - pkg/protocol/updater.go
+        - id: K
+          task: |
+            **Role:** Migrate pkg/protocol gates/merge_log to result.Result[T]
+
+            **Files to modify:**
+            - pkg/protocol/gates.go
+            - pkg/protocol/merge_log.go
+
+            **What to implement:**
+
+            1. **gates.go:**
+               - `ValidateQualityGate(gate QualityGate) error` →
+                 `ValidateQualityGate(gate QualityGate) result.Result[ValidateGateData]`
+
+            2. **merge_log.go (2 functions):**
+               - `SaveMergeLog(manifestPath string, waveNum int, log *MergeLog) error` →
+                 `SaveMergeLog(manifestPath string, waveNum int, log *MergeLog) result.Result[SaveLogData]`
+               - `AddMergeEntry(agent string, mergeSHA string) error` →
+                 `AddMergeEntry(agent string, mergeSHA string) result.Result[AddEntryData]`
+
+            **Data types:**
+
+            ```go
+            type ValidateGateData struct {
+                GateType string
+                Valid    bool
+            }
+
+            type SaveLogData struct {
+                LogPath  string
+                WaveNum  int
+            }
+
+            type AddEntryData struct {
+                Agent    string
+                MergeSHA string
+                Added    bool
+            }
+            ```
+
+            **Migration rules:**
+
+            - `ValidateQualityGate()`: return Success if valid, Partial with warnings for non-critical issues
+            - Use error codes: "GATE_VALIDATION_FAILED", "LOG_SAVE_FAILED", "ENTRY_ADD_FAILED"
+
+            **Tests:**
+
+            Update pkg/protocol/*_test.go:
+            - Test ValidateGateData.Valid is true for valid gates
+            - Test SaveLogData.WaveNum matches input
+
+            **Verification gate:**
+
+            ```bash
+            go build ./pkg/protocol/...
+            go vet ./pkg/protocol/...
+            go test ./pkg/protocol/... -v -run "TestValidate|TestSaveLog|TestAddEntry"
+            ```
+          files:
+            - pkg/protocol/gates.go
+            - pkg/protocol/merge_log.go
+        - id: L
+          task: |
+            **Role:** Migrate pkg/protocol freeze/repo_resolve to result.Result[T]
+
+            **Files to modify:**
+            - pkg/protocol/freeze.go
+            - pkg/protocol/repo_resolve.go
+
+            **What to implement:**
+
+            1. **freeze.go:**
+               - `SetFreezeTimestamp(m *IMPLManifest, t time.Time) error` →
+                 `SetFreezeTimestamp(m *IMPLManifest, t time.Time) result.Result[FreezeData]`
+
+            2. **repo_resolve.go:**
+               - `ValidateRepoMatch(manifest *IMPLManifest, worktreeRepoPath string, configRepos []RepoEntry) error` →
+                 `ValidateRepoMatch(manifest *IMPLManifest, worktreeRepoPath string, configRepos []RepoEntry) result.Result[ValidateRepoData]`
+
+            **Data types:**
+
+            ```go
+            type FreezeData struct {
+                FreezeTimestamp time.Time
+                ContractsFrozen bool
+            }
+
+            type ValidateRepoData struct {
+                MatchedRepo   string
+                Valid         bool
+                Mismatches    []string
+            }
+            ```
+
+            **Migration rules:**
+
+            - `ValidateRepoMatch()`: return Partial if mismatches detected, Fatal if critical repo mismatch
+            - Use error codes: "FREEZE_FAILED", "REPO_MISMATCH"
+
+            **Tests:**
+
+            Update pkg/protocol/*_test.go:
+            - Test FreezeData.ContractsFrozen is true after freeze
+            - Test ValidateRepoData.Mismatches lists all mismatches
+
+            **Verification gate:**
+
+            ```bash
+            go build ./pkg/protocol/...
+            go vet ./pkg/protocol/...
+            go test ./pkg/protocol/... -v -run "TestFreeze|TestValidateRepo"
+            ```
+          files:
+            - pkg/protocol/freeze.go
+            - pkg/protocol/repo_resolve.go
+        - id: M
+          task: |
+            **Role:** Migrate pkg/protocol stubs/wiring_validation/integration to result.Result[T]
+
+            **Files to modify:**
+            - pkg/protocol/stubs.go
+            - pkg/protocol/wiring_validation.go
+            - pkg/protocol/integration.go
+
+            **What to implement:**
+
+            1. **stubs.go:**
+               - `AppendStubReport(manifestPath, waveKey string, scanResult result.Result[ScanStubsData]) error` →
+                 `AppendStubReport(manifestPath, waveKey string, scanResult result.Result[ScanStubsData]) result.Result[AppendStubData]`
+
+            2. **wiring_validation.go:**
+               - `AppendWiringReport(manifestPath, waveKey string, data *WiringValidationData) error` →
+                 `AppendWiringReport(manifestPath, waveKey string, data *WiringValidationData) result.Result[AppendWiringData]`
+
+            3. **integration.go:**
+               - `AppendIntegrationReport(manifestPath string, waveKey string, report *IntegrationReport) error` →
+                 `AppendIntegrationReport(manifestPath string, waveKey string, report *IntegrationReport) result.Result[AppendIntegrationData]`
+
+            **Data types:**
+
+            ```go
+            type AppendStubData struct {
+                ManifestPath string
+                WaveKey      string
+                Appended     bool
+            }
+
+            type AppendWiringData struct {
+                ManifestPath string
+                WaveKey      string
+                Appended     bool
+            }
+
+            type AppendIntegrationData struct {
+                ManifestPath string
+                WaveKey      string
+                Appended     bool
+            }
+            ```
+
+            **Migration rules:**
+
+            - All Append* functions: return Success if append succeeded, Fatal if manifest load/save failed
+            - Use error codes: "STUB_APPEND_FAILED", "WIRING_APPEND_FAILED", "INTEGRATION_APPEND_FAILED"
+
+            **Tests:**
+
+            Update pkg/protocol/*_test.go:
+            - Test Appended is true on success
+            - Test Fatal when manifest doesn't exist
+
+            **Verification gate:**
+
+            ```bash
+            go build ./pkg/protocol/...
+            go vet ./pkg/protocol/...
+            go test ./pkg/protocol/... -v -run "TestAppend"
+            ```
+          files:
+            - pkg/protocol/stubs.go
+            - pkg/protocol/wiring_validation.go
+            - pkg/protocol/integration.go
+        - id: "N"
+          task: |
+            **Role:** Migrate pkg/pipeline error-only returns to result.Result[T]
+
+            **Files to modify:**
+            - pkg/pipeline/pipeline.go
+            - pkg/pipeline/saw_steps.go
+
+            **What to implement:**
+
+            Migrate 3 error-only functions to result.Result[T]:
+
+            1. **pipeline.go (2 functions):**
+               - `Run(ctx context.Context, state *State) error` →
+                 `Run(ctx context.Context, state *State) result.Result[RunData]`
+               - `executeStep(ctx context.Context, step Step, state *State) error` →
+                 `executeStep(ctx context.Context, step Step, state *State) result.Result[StepData]`
+
+            2. **saw_steps.go:**
+               - `requiredKey(state *State, key string) error` →
+                 `requiredKey(state *State, key string) result.Result[KeyData]`
+
+            **Data types:**
+
+            ```go
+            type RunData struct {
+                StepsExecuted int
+                TotalDuration time.Duration
+            }
+
+            type StepData struct {
+                StepName string
+                Duration time.Duration
+            }
+
+            type KeyData struct {
+                Key   string
+                Found bool
+            }
+            ```
+
+            **Migration rules:**
+
+            - `Run()`: collect step errors, return Partial if some steps fail but pipeline continues
+            - `executeStep()`: return Success with step metadata, Fatal on step error
+            - Use error codes: "PIPELINE_RUN_FAILED", "STEP_EXECUTION_FAILED", "REQUIRED_KEY_MISSING"
+
+            **Tests:**
+
+            Update pkg/pipeline/*_test.go:
+            - Test RunData.StepsExecuted matches step count
+            - Test requiredKey returns Fatal when key missing
+
+            **Verification gate:**
+
+            ```bash
+            go build ./pkg/pipeline/...
+            go vet ./pkg/pipeline/...
+            go test ./pkg/pipeline/... -v
+            ```
+          files:
+            - pkg/pipeline/pipeline.go
+            - pkg/pipeline/saw_steps.go
+        - id: O
+          task: |
+            **Role:** Migrate pkg/observability error-only returns to result.Result[T]
+
+            **Files to modify:**
+            - pkg/observability/emitter.go
+            - pkg/observability/query.go
+
+            **What to implement:**
+
+            Migrate 2 error-only functions to result.Result[T]:
+
+            1. **emitter.go:**
+               - `Emit(event Event) error` → `Emit(event Event) result.Result[EmitData]`
+
+            2. **query.go:**
+               - `Query(filter QueryFilter) ([]Event, error)` → `Query(filter QueryFilter) result.Result[QueryData]`
+
+            **Data types:**
+
+            ```go
+            type EmitData struct {
+                EventID   string
+                Timestamp time.Time
+            }
+
+            type QueryData struct {
+                Events    []Event
+                Count     int
+            }
+            ```
+
+            **Migration rules:**
+
+            - `Emit()`: return Success with event ID, Fatal on write error
+            - `Query()`: return Success with events (empty slice if none), Fatal on read error
+            - Use error codes: "EVENT_EMIT_FAILED", "EVENT_QUERY_FAILED"
+
+            **Tests:**
+
+            Update pkg/observability/*_test.go:
+            - Test EmitData.EventID is populated
+            - Test QueryData.Count matches event count
+
+            **Verification gate:**
+
+            ```bash
+            go build ./pkg/observability/...
+            go vet ./pkg/observability/...
+            go test ./pkg/observability/... -v
+            ```
+          files:
+            - pkg/observability/emitter.go
+            - pkg/observability/query.go
+        - id: P
+          task: |
+            **Role:** Migrate pkg/autonomy error-only returns to result.Result[T]
+
+            **Files to modify:**
+            - pkg/autonomy/planner.go
+
+            **What to implement:**
+
+            Migrate 1 error-only function to result.Result[T]:
+
+            - `Plan(ctx context.Context, requirements string) error` →
+              `Plan(ctx context.Context, requirements string) result.Result[PlanData]`
+
+            **Data type:**
+
+            ```go
+            type PlanData struct {
+                IMPLPath    string
+                TasksPlanned int
+                Timestamp    time.Time
+            }
+            ```
+
+            **Migration rules:**
+
+            - Return Success with IMPL path and task count
+            - Return Fatal with Code: "PLANNING_FAILED" on error
+            - Include requirements summary in error context
+
+            **Tests:**
+
+            Update pkg/autonomy/planner_test.go:
+            - Verify PlanData.IMPLPath is set
+            - Test Fatal when requirements invalid
+
+            **Verification gate:**
+
+            ```bash
+            go build ./pkg/autonomy/...
+            go vet ./pkg/autonomy/...
+            go test ./pkg/autonomy/... -v
+            ```
+          files:
+            - pkg/autonomy/planner.go
+    - number: 3
+      agents:
+        - id: Q
+          task: |
+            **Role:** Migrate pkg/orchestrator error-only returns to result.Result[T]
+
+            **Files to modify:**
+            - pkg/orchestrator/orchestrator.go
+            - pkg/orchestrator/merge.go
+            - pkg/orchestrator/context.go
+            - pkg/orchestrator/verification.go
+            - pkg/orchestrator/structured_wave.go
+            - pkg/orchestrator/stubs.go
+            - pkg/orchestrator/journal_integration.go
+
+            **What to implement:**
+
+            Migrate 16 error-only functions to result.Result[T]:
+
+            1. **orchestrator.go (8 functions):**
+               - `validateManifestInvariantsAdapter(manifest *protocol.IMPLManifest) error` → result.Result[ValidateData]
+               - `validateModelName(model string) error` → result.Result[ModelData]
+               - `TransitionTo(newState protocol.ProtocolState) error` → result.Result[TransitionData]
+               - `RunWave(waveNum int) error` → result.Result[WaveData]
+               - `RunAgent(waveNum int, agentLetter string, promptPrefix string) error` → result.Result[AgentData]
+               - `MergeWave(waveNum int) error` → result.Result[MergeData]
+               - `RunVerification(testCommand string) error` → result.Result[VerificationData]
+               - `UpdateIMPLStatus(waveNum int) error` → result.Result[UpdateData]
+
+            2. **merge.go (3 functions):**
+               - `executeMergeWave(o *Orchestrator, waveNum int) error` → result.Result[ExecuteMergeData]
+               - `predictConflicts(reports map[string]*protocol.CompletionReport) error` → result.Result[ConflictData]
+               - `verifyAgentCommits(...) error` → result.Result[VerifyCommitsData]
+
+            3. **context.go:**
+               - `UpdateContextMD(repoPath string, entry ContextMDEntry) error` → result.Result[UpdateContextData]
+
+            4. **verification.go, structured_wave.go, stubs.go, journal_integration.go:**
+               - Migrate remaining functions following same pattern
+
+            **Migration rules:**
+
+            - Define data types for each operation (ValidateData, TransitionData, etc.)
+            - Use error codes: "ORCHESTRATOR_*" prefix for all codes
+            - Methods on *Orchestrator: update return type, propagate Result[T] to callers
+            - Functions taking Orchestrator: return Result[T], let caller handle
+
+            **Tests:**
+
+            Update pkg/orchestrator/*_test.go:
+            - Replace `if err != nil` with `if !result.IsSuccess()`
+            - Verify data fields populated correctly
+
+            **Verification gate:**
+
+            ```bash
+            go build ./pkg/orchestrator/...
+            go vet ./pkg/orchestrator/...
+            go test ./pkg/orchestrator/... -v
+            ```
+          files:
+            - pkg/orchestrator/orchestrator.go
+            - pkg/orchestrator/merge.go
+            - pkg/orchestrator/context.go
+            - pkg/orchestrator/verification.go
+            - pkg/orchestrator/structured_wave.go
+            - pkg/orchestrator/stubs.go
+            - pkg/orchestrator/journal_integration.go
+        - id: R
+          task: |
+            **Role:** Migrate pkg/engine core runner functions to result.Result[T]
+
+            **Files to modify:**
+            - pkg/engine/runner.go (11 functions)
+            - pkg/engine/prepare.go (2 functions)
+            - pkg/engine/finalize.go (1 function)
+            - pkg/engine/chat.go (1 function)
+            - pkg/engine/daemon.go (1 function)
+            - pkg/engine/fix_build.go (1 function)
+            - pkg/engine/integration_runner.go (3 functions)
+
+            **What to implement:**
+
+            Migrate 19 error-only functions to result.Result[T]. Key functions:
+
+            1. **runner.go:**
+               - `RunScout(ctx, opts, onChunk) error` → `RunScout(...) result.Result[ScoutData]`
+               - `RunPlanner(ctx, opts, onChunk) error` → `RunPlanner(...) result.Result[PlannerData]`
+               - `StartWave(ctx, opts, onEvent) error` → `StartWave(...) result.Result[StartWaveData]`
+               - `RunScaffold(ctx, ...) error` → `RunScaffold(...) result.Result[ScaffoldData]`
+               - `RunSingleWave(ctx, opts, waveNum, onEvent) error` → `RunSingleWave(...) result.Result[WaveData]`
+               - `RunSingleAgent(ctx, opts, waveNum, agentLetter, promptPrefix, onEvent) error` → result.Result[AgentData]
+               - `MergeWave(ctx, opts) error` → `MergeWave(...) result.Result[MergeData]`
+               - `RunVerification(ctx, opts) error` → `RunVerification(...) result.Result[VerificationData]`
+               - `UpdateIMPLStatus(implDocPath, completedLetters) error` → result.Result[UpdateData]
+               - `ValidateInvariants(manifest) error` → result.Result[ValidateData]
+
+            2. **prepare.go:**
+               - `checkPreviousWaveVerified(doc, prevWaveNum) error` → result.Result[CheckData]
+               - `verifyHookInWorktree(worktreePath) error` → result.Result[VerifyHookData]
+
+            3. **finalize.go:**
+               - `MarkIMPLComplete(ctx, opts) error` → result.Result[MarkCompleteData]
+
+            4. **Other files:**
+               - Follow same pattern: define data type, convert returns
+
+            **Migration rules:**
+
+            - Define data types: ScoutData, PlannerData, WaveData, etc. with operation metadata
+            - Use error codes: "ENGINE_*" prefix (ENGINE_SCOUT_FAILED, ENGINE_WAVE_FAILED, etc.)
+            - Context cancellation: return Fatal with Code: "CONTEXT_CANCELLED"
+            - Backend errors: propagate as Fatal with original error in Cause field
+
+            **Tests:**
+
+            Update pkg/engine/*_test.go:
+            - Replace error checks with Result[T] checks
+            - Verify data fields match expected values
+            - Test context cancellation returns Fatal
+
+            **Verification gate:**
+
+            ```bash
+            go build ./pkg/engine/...
+            go vet ./pkg/engine/...
+            go test ./pkg/engine/... -v
+            ```
+          files:
+            - pkg/engine/runner.go
+            - pkg/engine/prepare.go
+            - pkg/engine/finalize.go
+            - pkg/engine/chat.go
+            - pkg/engine/daemon.go
+            - pkg/engine/fix_build.go
+            - pkg/engine/integration_runner.go
+        - id: R2
+          task: |
+            **Role:** Migrate pkg/engine auxiliary functions to result.Result[T]
+
+            **Files to modify:**
+            - pkg/engine/mark_program_complete.go (2 functions)
+            - pkg/engine/merge_cleanup.go (1 function)
+            - pkg/engine/program_progress.go (3 functions)
+            - pkg/engine/resolve_conflicts.go (2 functions)
+            - pkg/engine/run_wave_atomic.go (1 function)
+            - pkg/engine/scout_correction_loop.go (2 functions)
+            - pkg/engine/test_runner.go (1 function)
+            - pkg/engine/debug_journal.go (1 function)
+
+            **What to implement:**
+
+            Migrate 13 error-only functions to result.Result[T]:
+
+            1. **mark_program_complete.go:**
+               - `verifyAllTiersComplete(manifest) error` → result.Result[VerifyData]
+               - `writeProgramCompleteMarker(path, date) error` → result.Result[WriteMarkerData]
+
+            2. **merge_cleanup.go:**
+               - `PostMergeCleanup(ctx, implPath, waveNum, repoPath, onEvent) error` → result.Result[CleanupData]
+
+            3. **program_progress.go:**
+               - `UpdateProgramIMPLStatus(manifestPath, implSlug, newStatus) error` → result.Result[UpdateProgData]
+               - `SyncProgramStatusFromDisk(manifestPath, repoPath) error` → result.Result[SyncData]
+               - `writeManifest(path, manifest) error` → result.Result[WriteManifestData]
+
+            4. **resolve_conflicts.go:**
+               - `ResolveConflicts(ctx, opts) error` → result.Result[ResolveData]
+               - `resolveConflictedFile(...) error` → result.Result[ResolveFileData]
+
+            5. **run_wave_atomic.go:**
+               - `restoreSnapshot(implPath, snap) error` → result.Result[RestoreData]
+
+            6. **scout_correction_loop.go:**
+               - `ScoutCorrectionLoop(ctx, opts, onChunk) error` → result.Result[CorrectionData]
+               - `setIMPLStateBlocked(implPath) error` → result.Result[SetBlockedData]
+
+            7. **test_runner.go:**
+               - `RunTestCommand(ctx, implPath, repoPath, onOutput) error` → result.Result[TestData]
+
+            8. **debug_journal.go:**
+               - `exportHTMLTimeline(entries, agentPath, exportPath, force) error` → result.Result[ExportData]
+
+            **Migration rules:**
+
+            - Define data types for each operation with relevant metadata
+            - Use error codes: "ENGINE_*" prefix (ENGINE_CLEANUP_FAILED, ENGINE_RESOLVE_FAILED, etc.)
+            - Context cancellation: return Fatal with Code: "CONTEXT_CANCELLED"
+            - Filesystem errors: wrap in Fatal with context
+
+            **Tests:**
+
+            Update pkg/engine/*_test.go:
+            - Replace error checks with Result[T] checks
+            - Verify data fields match expected values
+
+            **Verification gate:**
+
+            ```bash
+            go build ./pkg/engine/...
+            go vet ./pkg/engine/...
+            go test ./pkg/engine/... -v
+            ```
+          files:
+            - pkg/engine/mark_program_complete.go
+            - pkg/engine/merge_cleanup.go
+            - pkg/engine/program_progress.go
+            - pkg/engine/resolve_conflicts.go
+            - pkg/engine/run_wave_atomic.go
+            - pkg/engine/scout_correction_loop.go
+            - pkg/engine/test_runner.go
+            - pkg/engine/debug_journal.go
+quality_gates:
+    level: standard
+    gates:
+        - type: build
+          command: go build ./...
+          required: true
+        - type: lint
+          command: go vet ./...
+          required: true
+        - type: test
+          command: go test ./... -timeout 120s
+          required: true
+pre_mortem:
+    overall_risk: medium
+    rows:
+        - scenario: Caller sites break due to signature changes
+          likelihood: high
+          impact: medium
+          mitigation: Each agent updates test files and immediate callers. Wave 3 agents handle orchestrator/engine callers after Wave 2 protocol changes merge.
+        - scenario: Data types incomplete or missing fields
+          likelihood: medium
+          impact: low
+          mitigation: Interface contracts define minimal data types. Agents can add fields as needed. Tests verify essential fields populated.
+        - scenario: Error code collisions across agents
+          likelihood: low
+          impact: low
+          mitigation: Use package-scoped prefixes (JOURNAL_, NOTIFY_, PROTOCOL_, ENGINE_, ORCHESTRATOR_). Scout validates no duplicate codes.
+        - scenario: Test files not updated, CI fails after merge
+          likelihood: medium
+          impact: medium
+          mitigation: Each agent's task explicitly requires test updates. Verification gates run tests per agent. Post-merge gate runs full suite.
+        - scenario: Wave 3 agents (orchestrator/engine) block on Wave 2 protocol changes
+          likelihood: low
+          impact: low
+          mitigation: Wave structure correctly sequences dependencies. Protocol changes merge before orchestrator/engine start.
+critic_report:
+    verdict: PASS
+    agent_reviews:
+        A:
+            agent_id: A
+            verdict: PASS
+        B:
+            agent_id: B
+            verdict: PASS
+        C:
+            agent_id: C
+            verdict: PASS
+        D:
+            agent_id: D
+            verdict: PASS
+        E:
+            agent_id: E
+            verdict: PASS
+        F:
+            agent_id: F
+            verdict: PASS
+        G:
+            agent_id: G
+            verdict: PASS
+        H:
+            agent_id: H
+            verdict: PASS
+        H2:
+            agent_id: H2
+            verdict: PASS
+    summary: 'Re-review of Wave 1 agents A through H2 confirms all 5 previously errored agents now have accurate briefs. Agent B: the Adapter interface location is correctly stated as pkg/notify/types.go and the current interface signature (Send returning error) matches the file at line 34. Agent D: the E35 note is corrected — detect.go calls LoadAgentSessions (not SaveAgentSession), LoadAgentSessions is not being migrated, so no caller changes are needed in detect.go; verified against the file. Agent E: constraint_enforcer.go and role_middleware.go are correctly described as E35 compliance-only files that do not call Register() — both files use next.Execute() in middleware closures only; the actual Register() callers (middleware.go, standard.go, workshop_constrained.go) remain correctly listed. Agent H: the rewritten brief correctly describes the actual gatecache API — Put/Invalidate/BuildKey/BuildKeyForGate signatures all match cache.go exactly, CachedResult type name is correct, and the note that Get returns bool (skip) is accurate. Agent H2: the rewritten brief correctly identifies manager.go (not queue.go), the Item type, the *Manager struct, and all four method signatures (Add/List/Next/UpdateStatus) match the file exactly. Agents A, C, F, and G were previously passing and remain accurate. All Wave 1 briefs are verified against the codebase. Wave execution may proceed.'
+    reviewed_at: "2026-03-30T23:36:47Z"
+    issue_count: 0
+state: SCOUT_PENDING
+injection_method: hook
