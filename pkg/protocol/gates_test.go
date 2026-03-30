@@ -287,8 +287,8 @@ func TestRunGatesWithCache_CacheHit(t *testing.T) {
 		Stdout:   "cached stdout",
 		Stderr:   "",
 	}
-	if err := cache.Put(fakeKey, "build", seedResult); err != nil {
-		t.Fatalf("seeding cache failed: %v", err)
+	if putResult := cache.Put(fakeKey, "build", seedResult); putResult.IsFatal() {
+		t.Fatalf("seeding cache failed: %v", putResult.Errors)
 	}
 
 	// Verify the seeded value is retrievable

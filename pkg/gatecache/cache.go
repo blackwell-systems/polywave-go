@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/blackwell-systems/scout-and-wave-go/internal/git"
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
 )
 
 const (
@@ -43,6 +44,18 @@ type CachedResult struct {
 	FromCache bool          `json:"from_cache"`
 	CachedAt  time.Time     `json:"cached_at"`
 	TTL       time.Duration `json:"-"`
+}
+
+// PutData is returned on successful Put operations.
+type PutData struct {
+	Key       string    // hex of hashed CacheKey
+	GateType  string
+	Timestamp time.Time
+}
+
+// InvalidateData is returned on successful Invalidate operations.
+type InvalidateData struct {
+	ClearedCount int
 }
 
 // IsExpired reports whether this cached result has exceeded its TTL.
@@ -95,39 +108,47 @@ func hashKey(key CacheKey) string {
 
 // BuildKey computes a CacheKey for the repository at repoDir by running git
 // commands to capture HEAD commit and diff stats.
-func (c *Cache) BuildKey(repoDir string) (CacheKey, error) {
+func (c *Cache) BuildKey(repoDir string) result.Result[CacheKey] {
 	headCommit, err := git.RunOutput(repoDir, "rev-parse", "HEAD")
 	if err != nil {
-		return CacheKey{}, fmt.Errorf("gatecache: get HEAD: %w", err)
+		return result.NewFailure[CacheKey]([]result.SAWError{
+			result.NewFatal("CACHE_BUILD_KEY_FAILED", fmt.Sprintf("gatecache: get HEAD: %v", err)).WithCause(err),
+		})
 	}
 
 	stagedStat, err := git.RunOutput(repoDir, "diff", "--cached", "--stat")
 	if err != nil {
-		return CacheKey{}, fmt.Errorf("gatecache: get staged stat: %w", err)
+		return result.NewFailure[CacheKey]([]result.SAWError{
+			result.NewFatal("CACHE_BUILD_KEY_FAILED", fmt.Sprintf("gatecache: get staged stat: %v", err)).WithCause(err),
+		})
 	}
 
 	unstagedStat, err := git.RunOutput(repoDir, "diff", "--stat")
 	if err != nil {
-		return CacheKey{}, fmt.Errorf("gatecache: get unstaged stat: %w", err)
+		return result.NewFailure[CacheKey]([]result.SAWError{
+			result.NewFatal("CACHE_BUILD_KEY_FAILED", fmt.Sprintf("gatecache: get unstaged stat: %v", err)).WithCause(err),
+		})
 	}
 
-	return CacheKey{
+	key := CacheKey{
 		HeadCommit:   strings.TrimSpace(headCommit),
 		StagedStat:   strings.TrimSpace(stagedStat),
 		UnstagedStat: strings.TrimSpace(unstagedStat),
-	}, nil
+	}
+	return result.NewSuccess(key)
 }
 
 // BuildKeyForGate computes a CacheKey for the repository at repoDir
 // combined with the given gate command string. The command is included in the
 // key so that changing a gate's command (e.g. adding a flag) causes a cache miss.
-func (c *Cache) BuildKeyForGate(repoDir string, command string) (CacheKey, error) {
-	key, err := c.BuildKey(repoDir)
-	if err != nil {
-		return CacheKey{}, err
+func (c *Cache) BuildKeyForGate(repoDir string, command string) result.Result[CacheKey] {
+	r := c.BuildKey(repoDir)
+	if r.IsFatal() {
+		return r
 	}
+	key := r.GetData()
 	key.Command = command
-	return key, nil
+	return result.NewSuccess(key)
 }
 
 // Get returns the cached result for (key, gateType) if it exists and has not
@@ -141,20 +162,20 @@ func (c *Cache) Get(key CacheKey, gateType string) (*CachedResult, bool) {
 	if !ok {
 		return nil, false
 	}
-	result, ok := inner[gateType]
+	r, ok := inner[gateType]
 	if !ok {
 		return nil, false
 	}
 	// Populate TTL for expiry check
-	result.TTL = c.ttl
-	if result.IsExpired() {
+	r.TTL = c.ttl
+	if r.IsExpired() {
 		return nil, false
 	}
-	return &result, true
+	return &r, true
 }
 
 // Put stores result under (key, gateType) and persists the cache to disk.
-func (c *Cache) Put(key CacheKey, gateType string, result CachedResult) error {
+func (c *Cache) Put(key CacheKey, gateType string, r CachedResult) result.Result[PutData] {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
@@ -162,25 +183,42 @@ func (c *Cache) Put(key CacheKey, gateType string, result CachedResult) error {
 	if c.entries[h] == nil {
 		c.entries[h] = make(map[string]CachedResult)
 	}
-	result.FromCache = true
-	if result.CachedAt.IsZero() {
-		result.CachedAt = time.Now()
+	r.FromCache = true
+	if r.CachedAt.IsZero() {
+		r.CachedAt = time.Now()
 	}
-	c.entries[h][gateType] = result
-	return c.save()
+	c.entries[h][gateType] = r
+	if err := c.save(); err != nil {
+		return result.NewFailure[PutData]([]result.SAWError{
+			result.NewFatal("CACHE_PUT_FAILED", fmt.Sprintf("gatecache: save cache: %v", err)).WithCause(err),
+		})
+	}
+	return result.NewSuccess(PutData{
+		Key:       h,
+		GateType:  gateType,
+		Timestamp: r.CachedAt,
+	})
 }
 
 // Invalidate clears all in-memory entries and removes the cache file from disk.
-func (c *Cache) Invalidate() error {
+func (c *Cache) Invalidate() result.Result[InvalidateData] {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+
+	// Count entries before clearing
+	count := 0
+	for _, inner := range c.entries {
+		count += len(inner)
+	}
 
 	c.entries = make(map[string]map[string]CachedResult)
 	path := filepath.Join(c.stateDir, cacheFileName)
 	if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
-		return fmt.Errorf("gatecache: remove cache file: %w", err)
+		return result.NewFailure[InvalidateData]([]result.SAWError{
+			result.NewFatal("CACHE_INVALIDATE_FAILED", fmt.Sprintf("gatecache: remove cache file: %v", err)).WithCause(err),
+		})
 	}
-	return nil
+	return result.NewSuccess(InvalidateData{ClearedCount: count})
 }
 
 // load reads the cache file from disk into c.entries.
