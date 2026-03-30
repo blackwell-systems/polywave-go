@@ -1,0 +1,889 @@
+title: Engine Unification
+feature_slug: engine-unification
+verdict: SUITABLE
+suitability_assessment: |-
+    All 5 issues are well-scoped with clear file ownership boundaries. The work involves
+    deleting dead code, unifying duplicate types, hardening a panic path, and rewriting
+    the CLI as a thin adapter. Breaking changes are intentional and desired. The main
+    complexity is Issue 1 (CLI rewrite), which requires the canonical FinalizeWaveResult
+    type from Issue 2 to be ready first. That ordering constraint drives the wave structure.
+
+    The orchestrator.RunQualityGates function is called by engine/runner.go (StartWave
+    legacy path) and registered in pipeline/registry.go. It is NOT purely dead — but
+    it runs parallel to and duplicates protocol.RunGatesWithCache. Issue 3 requires
+    migrating the runner.go call to use the engine step function before deleting
+    orchestrator.RunQualityGates and its test file.
+
+    The web app (scout-and-wave-web) calls engine.FinalizeWave and consumes
+    engine.FinalizeWaveResult directly. The type change in Issue 2 is a breaking
+    change addressed in-scope by Wave 3 Agent F, which updates wave_runner.go to
+    iterate the new map[string][]protocol.GateResult type and replace the inline
+    wiring validation workaround with the engine's new WiringReport field. This
+    makes the IMPL cross-repo (scout-and-wave-go + scout-and-wave-web).
+test_command: go test ./...
+lint_command: go vet ./...
+file_ownership:
+    - file: pkg/result/result.go
+      agent: A
+      wave: 1
+      action: modify
+      repo: scout-and-wave-go
+    - file: pkg/result/result_test.go
+      agent: A
+      wave: 1
+      action: modify
+      repo: scout-and-wave-go
+    - file: pkg/protocol/gates.go
+      agent: B
+      wave: 1
+      action: modify
+      repo: scout-and-wave-go
+    - file: pkg/engine/finalize.go
+      agent: C
+      wave: 2
+      action: modify
+      depends_on:
+        - A
+      repo: scout-and-wave-go
+    - file: pkg/engine/finalize_test.go
+      agent: C
+      wave: 2
+      action: modify
+      depends_on:
+        - A
+      repo: scout-and-wave-go
+    - file: pkg/orchestrator/quality_gates.go
+      agent: D
+      wave: 2
+      action: modify
+      depends_on:
+        - B
+      repo: scout-and-wave-go
+    - file: pkg/orchestrator/quality_gates_test.go
+      agent: D
+      wave: 2
+      action: modify
+      depends_on:
+        - B
+      repo: scout-and-wave-go
+    - file: pkg/engine/runner.go
+      agent: D
+      wave: 2
+      action: modify
+      depends_on:
+        - B
+      repo: scout-and-wave-go
+    - file: cmd/sawtools/finalize_wave.go
+      agent: E
+      wave: 3
+      action: modify
+      depends_on:
+        - C
+        - D
+      repo: scout-and-wave-go
+    - file: pkg/api/wave_runner.go
+      agent: F
+      wave: 3
+      action: modify
+      depends_on:
+        - C
+      repo: scout-and-wave-web
+interface_contracts:
+    - name: FinalizeWaveResult (canonical, engine package)
+      description: |-
+        Unified result type for both single-repo and multi-repo wave finalization.
+        Replaces the diverged CLI-local struct and the engine's single-value struct.
+        All fields that were single-value in engine become map[string]*T keyed by
+        repo name (using "." for single-repo IMPLs, consistent with extractReposFromManifest).
+        BuildPassed (present in engine, absent in CLI) is preserved.
+        CrossRepo bool field is added from CLI. WiringGaps and IntegrationActionRequired
+        are added from CLI.
+      definition: |
+        type FinalizeWaveResult struct {
+            Wave                    int                              `json:"wave"`
+            CrossRepo               bool                             `json:"cross_repo"`
+            VerifyCommits           map[string]*protocol.VerifyCommitsData  `json:"verify_commits"`
+            CollisionReports        map[string]*collision.CollisionReport   `json:"collision_reports,omitempty"`
+            StubReport              *protocol.ScanStubsData                 `json:"stub_report,omitempty"`
+            GateResults             map[string][]protocol.GateResult        `json:"gate_results"`
+            IntegrationReport       *protocol.IntegrationReport             `json:"integration_report,omitempty"`
+            MergeResult             map[string]*protocol.MergeAgentsData    `json:"merge_result"`
+            VerifyBuild             map[string]*protocol.VerifyBuildData    `json:"verify_build"`
+            BuildDiagnosis          map[string]*builddiag.Diagnosis         `json:"build_diagnosis,omitempty"`
+            CleanupResult           map[string]*protocol.CleanupData        `json:"cleanup_result"`
+            WiringReport            *protocol.WiringValidationData          `json:"wiring_report,omitempty"`
+            IntegrationActionRequired bool                                  `json:"integration_action_required"`
+            WiringGaps              []string                                `json:"wiring_gaps,omitempty"`
+            BuildPassed             bool                                    `json:"build_passed"`
+            Success                 bool                                    `json:"success"`
+        }
+      location: pkg/engine/finalize.go
+    - name: FinalizeWave (updated signature)
+      description: |-
+        Engine function for the full post-agent finalization pipeline.
+        Updated to accept multi-repo via opts and return the canonical FinalizeWaveResult.
+        Multi-repo is handled by iterating over repos extracted from file_ownership,
+        consistent with the CLI's extractReposFromManifest helper (which moves to engine).
+        ClosedLoopRetryEnabled flag in FinalizeWaveOpts activates C2 retry inside
+        StepRunGates when a required gate fails. CollisionDetectionEnabled flag
+        activates StepCheckTypeCollisions (already in FinalizeWaveOpts).
+      definition: |
+        func FinalizeWave(ctx context.Context, opts FinalizeWaveOpts) (*FinalizeWaveResult, error)
+      location: pkg/engine/finalize.go
+    - name: result.GetData() (safe version)
+      description: |-
+        GetData must not panic when called on a Result with nil Data.
+        Instead it returns the zero value of T. The existing doc comment says
+        "panicking if result is not successful" — that contract is changed to
+        "returning zero value if Data is nil." The IsSuccess() guard pattern
+        is still the recommended usage; this change makes defensive callers safe.
+      definition: |
+        // GetData returns the data payload. Returns the zero value of T if Data is nil.
+        // Prefer checking IsSuccess() before calling to ensure meaningful data.
+        func (r Result[T]) GetData() T {
+            if r.Data == nil {
+                var zero T
+                return zero
+            }
+            return *r.Data
+        }
+      location: pkg/result/result.go
+    - name: RunGates (unexported, renamed)
+      description: |-
+        RunGates is an internal implementation detail used only by RunPostMergeGates
+        (intentionally no-cache). It should be unexported (renamed to runGates) so
+        callers cannot accidentally use it instead of RunGatesWithCache.
+        RunGatesWithCache is the correct public entry point for pre-merge execution.
+        RunPreMergeGates and RunPostMergeGates remain the named public wrappers.
+        This change is internal to pkg/protocol. Only RunPostMergeGates calls RunGates
+        today; making it unexported locks that down.
+      definition: |
+        // runGates executes quality gates without caching. Internal use only.
+        // Callers outside this package must use RunPreMergeGates or RunPostMergeGates.
+        func runGates(manifest *IMPLManifest, waveNumber int, repoDir string) result.Result[GatesData]
+      location: pkg/protocol/gates.go
+waves:
+    - number: 1
+      agents:
+        - id: A
+          task: |-
+            ## Issue 4: Make result.GetData() safe (no panic)
+
+            ### What to implement
+
+            In `pkg/result/result.go`, change `GetData()` from a panic on nil Data to
+            returning the zero value of T. Update the doc comment to reflect the new contract.
+
+            **Current behavior (line 108-115):**
+            ```go
+            func (r Result[T]) GetData() T {
+                if r.Data == nil {
+                    panic("GetData called on Result with nil Data")
+                }
+                return *r.Data
+            }
+            ```
+
+            **New behavior:**
+            ```go
+            // GetData returns the data payload. Returns the zero value of T if Data is nil.
+            // Prefer checking IsSuccess() before calling to ensure meaningful data.
+            func (r Result[T]) GetData() T {
+                if r.Data == nil {
+                    var zero T
+                    return zero
+                }
+                return *r.Data
+            }
+            ```
+
+            ### Tests
+
+            In `pkg/result/result_test.go` (create if it doesn't exist; check first):
+            - Add `TestGetDataZeroOnNilData`: call GetData() on a FATAL result (nil Data),
+              verify it does NOT panic and returns the zero value.
+            - Add `TestGetDataSuccess`: call GetData() on a SUCCESS result, verify correct
+              value is returned.
+            - `pkg/orchestrator/quality_gates_test.go` (including `TestRunQualityGatesRequiredFail`)
+              will be deleted by Wave 2 Agent D — you do not own that file.
+
+            ### Verification gate
+
+            Run `go test ./pkg/result/...` — all tests must pass.
+            Run `go build ./...` — must compile.
+
+            ### Constraints
+
+            - Do NOT change IsSuccess(), IsFatal(), or any other Result method.
+            - Do NOT change callers — they already guard with IsSuccess() checks.
+            - Only modify `pkg/result/result.go` and `pkg/result/result_test.go`.
+          files:
+            - pkg/result/result.go
+            - pkg/result/result_test.go
+        - id: B
+          task: |-
+            ## Issue 5: Clarify gate function hierarchy in pkg/protocol/gates.go
+
+            ### What to implement
+
+            In `pkg/protocol/gates.go`, unexport `RunGates` by renaming it to `runGates`.
+            Update its doc comment to state it is internal and should not be called
+            directly from outside the package. Update `RunPostMergeGates` (the only
+            external caller) to call `runGates` instead.
+
+            Add clear doc comments to each exported gate function explaining its place
+            in the hierarchy:
+
+            1. `runGates` — internal, no cache, called only by RunPostMergeGates
+            2. `RunGatesWithCache` — public, with optional cache, used for pre-merge
+            3. `RunPreMergeGates` — public wrapper for timing="pre-merge" gates, uses RunGatesWithCache
+            4. `RunPostMergeGates` — public wrapper for timing="post-merge" gates, uses runGates (intentionally no cache)
+
+            **File to modify:** `pkg/protocol/gates.go`
+
+            Exact change:
+            - Rename `RunGates` function (line 334) to `runGates`
+            - In `RunPostMergeGates` (line 484), change `return RunGates(...)` to
+              `return runGates(...)`
+            - In `RunGatesWithCache` (line 501), change `return RunGates(...)` to
+              `return runGates(...)`
+            - Update all doc comments on the four functions to explain the hierarchy
+
+            ### Tests
+
+            Search for any test or external caller that references `RunGates` by name
+            (outside the package). There should be none — it is only called internally.
+            Verify with: `grep -rn 'protocol\.RunGates\b' .`
+
+            If any external callers exist (unlikely), migrate them to
+            `RunPreMergeGates` or `RunGatesWithCache` as appropriate.
+
+            Run `go test ./pkg/protocol/...` — all tests must pass.
+            Run `go build ./...` — must compile.
+
+            ### Constraints
+
+            - Do NOT change function signatures; only rename RunGates → runGates
+              and update doc comments.
+            - Do NOT touch RunPreMergeGates, RunPostMergeGates, or RunGatesWithCache
+              signatures — only their internal call to runGates and their doc comments.
+            - Only modify `pkg/protocol/gates.go`.
+          files:
+            - pkg/protocol/gates.go
+      base_commit: cc103f691f6d2c309875b34d9557583fec28952f
+    - number: 2
+      agents:
+        - id: C
+          task: |-
+            ## Issue 2: Canonical FinalizeWaveResult + Issue 1 engine half (multi-repo + C2 retry)
+
+            ### Context
+
+            There are two `FinalizeWaveResult` structs:
+            - `cmd/sawtools/finalize_wave.go:22-38` — CLI version with maps for multi-repo
+            - `pkg/engine/finalize.go:58-72` — engine version with single-value fields
+
+            The canonical type lives in `pkg/engine/finalize.go`. Wave 3 Agent E will
+            rewrite the CLI to be a thin adapter using this canonical type.
+
+            ### What to implement
+
+            **Part 1: Replace engine's FinalizeWaveResult (pkg/engine/finalize.go)**
+
+            Delete the current `FinalizeWaveResult` struct (lines 58-72) and replace it
+            with the unified version that supports both single-repo and multi-repo:
+
+            ```go
+            // FinalizeWaveResult combines all post-agent verification, merge, and cleanup results.
+            // For single-repo IMPLs, each map has a single key ".".
+            // For cross-repo IMPLs, keys match the repo names from file_ownership.Repo.
+            type FinalizeWaveResult struct {
+                Wave                     int                                       `json:"wave"`
+                CrossRepo                bool                                      `json:"cross_repo"`
+                VerifyCommits            map[string]*protocol.VerifyCommitsData    `json:"verify_commits"`
+                CollisionReports         map[string]*collision.CollisionReport     `json:"collision_reports,omitempty"`
+                StubReport               *protocol.ScanStubsData                  `json:"stub_report,omitempty"`
+                GateResults              map[string][]protocol.GateResult          `json:"gate_results"`
+                IntegrationReport        *protocol.IntegrationReport              `json:"integration_report,omitempty"`
+                MergeResult              map[string]*protocol.MergeAgentsData     `json:"merge_result"`
+                VerifyBuild              map[string]*protocol.VerifyBuildData     `json:"verify_build"`
+                BuildDiagnosis           map[string]*builddiag.Diagnosis          `json:"build_diagnosis,omitempty"`
+                CleanupResult            map[string]*protocol.CleanupData         `json:"cleanup_result"`
+                WiringReport             *protocol.WiringValidationData           `json:"wiring_report,omitempty"`
+                IntegrationActionRequired bool                                    `json:"integration_action_required"`
+                WiringGaps               []string                                 `json:"wiring_gaps,omitempty"`
+                BuildPassed              bool                                     `json:"build_passed"`
+                Success                  bool                                     `json:"success"`
+            }
+            ```
+
+            **Part 2: Move extractReposFromManifest to engine package**
+
+            Move the `extractReposFromManifest` helper (currently in
+            `cmd/sawtools/finalize_wave.go:581-637`) into `pkg/engine/finalize.go`.
+            Make it an exported function: `ExtractReposFromManifest`. This allows
+            `FinalizeWave` to use it internally and the CLI to also call it.
+
+            Signature:
+            ```go
+            // ExtractReposFromManifest extracts unique repos from file_ownership for the
+            // given wave. Returns repos map (repo key -> absolute path) and agentRepos map
+            // (agent ID -> repo key). For single-repo IMPLs, returns {"." -> defaultRepo}.
+            func ExtractReposFromManifest(m *protocol.IMPLManifest, waveNum int, defaultRepo string) (map[string]string, map[string]string)
+            ```
+
+            **Part 3: Update FinalizeWave to support multi-repo and C2 retry**
+
+            Update `FinalizeWave` in `pkg/engine/finalize.go` to:
+
+            1. Extract repos using ExtractReposFromManifest
+            2. Set CrossRepo on the result
+            3. Initialize all map fields (VerifyCommits, GateResults, MergeResult, etc.)
+            4. Implement the same solo-wave and allBranchesAbsent shortcuts the CLI uses
+               (copy the logic from cmd/sawtools/finalize_wave.go lines 124-201)
+            5. Run each step (VerifyCommits, ScanStubs, RunPreMergeGates, etc.) per-repo
+               as the CLI does
+            6. **C2 closed-loop retry**: When ClosedLoopRetryEnabled is true and a required
+               pre-merge gate fails, invoke engine.ClosedLoopGateRetry per agent, then
+               re-run gates. This logic is currently in CLI finalize_wave.go lines 327-380.
+               Move it into the engine's FinalizeWave (after StepRunGates in the pipeline,
+               replacing the current simple "fail immediately" behavior when
+               ClosedLoopRetryEnabled is true).
+            7. Run post-merge gates (RunPostMergeGates) per-repo, appending to GateResults
+            8. Populate result.BuildPassed = true when verify build succeeds across all repos
+            9. Populate result.WiringReport, IntegrationActionRequired, WiringGaps from
+               StepCheckWiringDeclarations results
+
+            **Note on StepRunGates vs RunPreMergeGates**: The engine's FinalizeWave currently
+            calls StepRunGates which uses RunGatesWithCache (all gates, no timing filter).
+            Change it to call protocol.RunPreMergeGates (via a new StepRunPreMergeGates or
+            inline) for consistency with the CLI. Post-merge gates run after merge via
+            protocol.RunPostMergeGates.
+
+            **Part 4: Update FinalizeWave return for single-repo callers**
+
+            For backward compatibility with the web app (which reads scalar fields like
+            .VerifyBuild directly): add a helper method or document the single-repo accessor
+            pattern. Since Breaking changes are acceptable, the web app will be updated
+            separately — just ensure the type signature change is clear.
+
+            ### Tests (pkg/engine/finalize_test.go)
+
+            Update existing tests to match the new FinalizeWaveResult shape:
+            - `result.MergeResult` is now a map; update checks to use
+              `result.MergeResult["."]` for single-repo tests
+            - `result.VerifyCommits` is now a map; update to `result.VerifyCommits["."]`
+            - `result.GateResults` is now a map; update to `result.GateResults["."]`
+            - Add `TestFinalizeWave_MultiRepo`: create a mock manifest with two repos in
+              file_ownership, verify ExtractReposFromManifest returns both repos
+            - Add `TestExtractReposFromManifest_SingleRepo`: default repo path, no repo
+              field in ownership → returns {"." -> defaultRepo}
+            - Add `TestExtractReposFromManifest_CrossRepo`: ownership has repo fields →
+              returns map with both repos
+
+            ### Verification gate
+
+            `go test ./pkg/engine/...` — all tests must pass.
+            `go build ./...` — must compile. (Compilation failure is expected in CLI
+            which still has the old local FinalizeWaveResult — Wave 3 fixes that.)
+
+            ### Constraints
+
+            - Do NOT touch `cmd/sawtools/finalize_wave.go` — that is Wave 3 Agent E's file.
+            - Do NOT touch `pkg/orchestrator/quality_gates.go` — that is Wave 2 Agent D's file.
+            - Do NOT touch `pkg/protocol/gates.go` — Wave 1 Agent B owns it.
+            - Do NOT touch `pkg/result/result.go` — Wave 1 Agent A owns it.
+            - The `inferLanguageFromTestCommand` helper is duplicated between
+              `pkg/engine/finalize.go` and `cmd/sawtools/finalize_wave.go`. Keep the
+              engine version; CLI will be simplified in Wave 3.
+          files:
+            - pkg/engine/finalize.go
+            - pkg/engine/finalize_test.go
+          dependencies:
+            - A
+        - id: D
+          task: |-
+            ## Issue 3: Delete orchestrator.RunQualityGates dead code + migrate runner.go caller
+
+            ### Context
+
+            `pkg/orchestrator/quality_gates.go` contains:
+            - `QualityGateResult` struct (line 15) — legacy type superseded by `protocol.GateResult`
+            - `RunQualityGates()` function (line 32) — called by `pkg/engine/runner.go:413` and
+              registered in `pkg/pipeline/registry.go` (as "run_quality_gates" stub)
+
+            `runner.go:413` calls `orchestrator.RunQualityGates` in the `StartWave` legacy path.
+            This must be migrated to use `protocol.RunGatesWithCache` (or `protocol.RunPreMergeGates`
+            after Wave 1 clarifies the hierarchy) before `RunQualityGates` can be deleted.
+
+            ### What to implement
+
+            **Step 1: Migrate runner.go (pkg/engine/runner.go)**
+
+            In `pkg/engine/runner.go` around line 411-419, replace the call to
+            `orchestrator.RunQualityGates(opts.RepoPath, doc.QualityGates)` with a call
+            to `protocol.RunPreMergeGates(doc, waveNum, opts.RepoPath, nil)`:
+
+            ```go
+            // E21: Post-wave quality gates before merge.
+            if doc := orch.IMPLDoc(); doc != nil && doc.QualityGates != nil {
+                gateRes := protocol.RunPreMergeGates(doc, waveNum, opts.RepoPath, nil)
+                if gateRes.IsSuccess() || gateRes.IsPartial() {
+                    gatesData := gateRes.GetData()
+                    for _, r := range gatesData.Gates {
+                        onEvent(Event{Event: "quality_gate_result", Data: r})
+                    }
+                    for _, gate := range gatesData.Gates {
+                        if gate.Required && !gate.Passed {
+                            return fmt.Errorf("engine.StartWave: required gate %q failed in wave %d", gate.Type, waveNum)
+                        }
+                    }
+                } else {
+                    return fmt.Errorf("engine.StartWave: quality gate wave %d: %v", waveNum, gateRes.Errors)
+                }
+            }
+            ```
+
+            Note: The old code published `orchestrator.QualityGateResult` events; the new
+            code publishes `protocol.GateResult` events. These have different shapes.
+            The Event data field change is acceptable (breaking change is desired).
+
+            Also check `pkg/pipeline/registry.go`. The registry registers `"run_quality_gates"`
+            via `StepRunQualityGates()` from `pkg/pipeline/saw_steps.go` — a stub that does NOT
+            directly call `orchestrator.RunQualityGates`. Deleting quality_gates.go will not
+            cause a registry panic. However, the `run_quality_gates` step registration is now
+            a no-op stub; remove it from the registry or replace it with a real implementation
+            using `protocol.RunPreMergeGates`.
+
+            **Step 2: Delete orchestrator.RunQualityGates and QualityGateResult**
+
+            Once runner.go is migrated, delete `pkg/orchestrator/quality_gates.go` entirely
+            (the whole file: RunQualityGates, QualityGateResult, runGate, truncate).
+
+            **Step 3: Delete the test file**
+
+            Delete `pkg/orchestrator/quality_gates_test.go` entirely. The coverage is now
+            provided by `pkg/protocol` tests which test RunPreMergeGates/RunGatesWithCache.
+
+            **Step 4: Check for remaining references**
+
+            After deletion, run:
+            `grep -rn 'orchestrator\.RunQualityGates\|orchestrator\.QualityGateResult' .`
+
+            Fix any remaining references. The only known callers are:
+            - `pkg/engine/runner.go` (fixed in Step 1)
+            - `pkg/pipeline/registry.go` (check and fix)
+            - `pkg/orchestrator/doc.go:27` — update the doc comment to remove step 3
+              "RunQualityGates" from the Wave Lifecycle list; replace with
+              "RunPreMergeGates — Execute pre-merge quality gates"
+            - `docs/IMPL/complete/` files — do NOT modify archived IMPL docs
+
+            ### Tests
+
+            After deletion, verify:
+            - `go test ./pkg/engine/...` — runner tests must pass
+            - `go test ./pkg/orchestrator/...` — all remaining orchestrator tests pass
+            - `go test ./pkg/pipeline/...` — pipeline tests pass
+            - `go build ./...` — compiles
+
+            ### Constraints
+
+            - Do NOT modify `pkg/protocol/gates.go` — Wave 1 Agent B owns it.
+            - Do NOT modify `pkg/engine/finalize.go` — Wave 2 Agent C owns it.
+            - Do NOT modify `cmd/sawtools/finalize_wave.go` — Wave 3 Agent E owns it.
+            - The `truncate` helper in quality_gates.go is private to the package.
+              Verify no other file in `pkg/orchestrator/` uses it before deleting.
+            - `pkg/orchestrator/doc.go` may be modified (minor comment update only).
+          files:
+            - pkg/orchestrator/quality_gates.go
+            - pkg/orchestrator/quality_gates_test.go
+            - pkg/engine/runner.go
+          dependencies:
+            - B
+      base_commit: 0dc484fa4d85ac497fff8b21b3d19b6b24c83334
+    - number: 3
+      agents:
+        - id: E
+          task: |-
+            ## Issue 1: Rewrite CLI finalize_wave.go as thin adapter (~50 lines)
+
+            ### Context
+
+            `cmd/sawtools/finalize_wave.go` is ~661 lines and reimplements the finalization
+            pipeline independently of `pkg/engine/FinalizeWave`. After Wave 2 Agent C:
+            - `engine.FinalizeWave` supports multi-repo via ExtractReposFromManifest
+            - `engine.FinalizeWave` supports C2 closed-loop retry via ClosedLoopRetryEnabled
+            - `engine.FinalizeWaveResult` is the canonical unified type
+
+            The CLI must become a thin adapter: parse flags, call `engine.FinalizeWave`,
+            serialize result to JSON.
+
+            ### What to implement
+
+            **Rewrite `cmd/sawtools/finalize_wave.go`** to:
+
+            1. Keep only `newFinalizeWaveCmd()` — delete `FinalizeWaveResult` (now in engine),
+               delete `extractReposFromManifest` (now in engine as ExtractReposFromManifest),
+               delete `inferLanguageFromCommand` (duplicate; engine has inferLanguageFromTestCommand).
+
+            2. The command body becomes approximately:
+            ```go
+            func newFinalizeWaveCmd() *cobra.Command {
+                var waveNum int
+                var mergeTarget string
+                var skipMerge bool
+
+                cmd := &cobra.Command{
+                    Use:   "finalize-wave <manifest-path>",
+                    Short: "Finalize wave: verify, scan stubs, run gates, merge, verify build, and cleanup",
+                    // ... (keep long description, update to note engine handles all steps)
+                    Args: cobra.ExactArgs(1),
+                    RunE: func(cmd *cobra.Command, args []string) error {
+                        manifestPath := args[0]
+                        defaultRepoPath := repoDir
+                        if defaultRepoPath == "" {
+                            defaultRepoPath, _ = os.Getwd()
+                        }
+                        onEvent := engine.EventCallback(func(step, status, detail string) {
+                            if detail != "" {
+                                fmt.Fprintf(os.Stderr, "finalize-wave: [%s] %s — %s\n", step, status, detail)
+                            } else {
+                                fmt.Fprintf(os.Stderr, "finalize-wave: [%s] %s\n", step, status)
+                            }
+                        })
+                        result, err := engine.FinalizeWave(cmd.Context(), engine.FinalizeWaveOpts{
+                            IMPLPath:                  manifestPath,
+                            RepoPath:                  defaultRepoPath,
+                            WaveNum:                   waveNum,
+                            MergeTarget:               mergeTarget,
+                            SkipMerge:                 skipMerge,
+                            Logger:                    newSawLogger(),
+                            CollisionDetectionEnabled: true,
+                            ClosedLoopRetryEnabled:    true,
+                            OnEvent:                   onEvent,
+                        })
+                        out, _ := json.MarshalIndent(result, "", "  ")
+                        fmt.Println(string(out))
+                        if err != nil {
+                            return fmt.Errorf("finalize-wave: %w", err)
+                        }
+                        return nil
+                    },
+                }
+                cmd.Flags().IntVar(&waveNum, "wave", 0, "Wave number (required)")
+                _ = cmd.MarkFlagRequired("wave")
+                cmd.Flags().StringVar(&mergeTarget, "merge-target", "", "Target branch for merge (default: current HEAD)")
+                cmd.Flags().BoolVar(&skipMerge, "skip-merge", false, "Skip merge step (merge already done manually); start from verify-build")
+                return cmd
+            }
+            ```
+
+            3. The `FinalizeWave` engine function now handles:
+               - Solo-wave shortcut
+               - AllBranchesAbsent shortcut with ancestry verification
+               - State transitions (WAVE_VERIFIED)
+               - Per-agent update-status calls
+               These were previously inline in the CLI. Verify they are now in
+               `pkg/engine/finalize.go` (from Wave 2 Agent C). If any state transitions
+               are missing from the engine, add them to the engine function — do NOT
+               add them back to the CLI.
+
+            4. The total line count for `cmd/sawtools/finalize_wave.go` after rewrite
+               should be under 100 lines.
+
+            ### Tests
+
+            The existing CLI integration tests (if any) that test `newFinalizeWaveCmd()`
+            should still pass because the behavior is preserved through the engine.
+
+            Verify: `go build ./cmd/sawtools/...` — must compile.
+            Verify: `go test ./cmd/sawtools/...` — all tests pass.
+            Verify: `go test ./...` — full suite passes.
+
+            ### Constraints
+
+            - Do NOT modify any file in `pkg/engine/` — Wave 2 Agent C owns them.
+            - Do NOT modify `pkg/orchestrator/quality_gates.go` — deleted by Wave 2 Agent D.
+            - The result JSON output format (what gets printed to stdout) must remain
+              backward-compatible in structure at top level. The GateResults field
+              changes from `map[string][]GateResult` (was already a map in CLI version)
+              to the same — no change for CLI callers. VerifyBuild changes from
+              `map[string]*VerifyBuildData` (map in CLI version) to the same — no change.
+            - Keep the `--skip-merge`, `--wave`, and `--merge-target` flags exactly as-is.
+          files:
+            - cmd/sawtools/finalize_wave.go
+          dependencies:
+            - C
+            - D
+        - id: F
+          task: |-
+            ## Web app: update wave_runner.go for unified FinalizeWaveResult type
+
+            ### Repo
+            `/Users/dayna.blackwell/code/scout-and-wave-web`
+
+            ### Context
+
+            Wave 2 Agent C changes `engine.FinalizeWaveResult` in two ways that affect
+            `pkg/api/wave_runner.go`:
+
+            1. `GateResults` changes from `[]protocol.GateResult` (slice) to
+               `map[string][]protocol.GateResult` (map keyed by repo name, "." for single-repo)
+            2. `FinalizeWaveResult` gains a `WiringReport *protocol.WiringValidationData` field.
+               The web app currently runs inline wiring validation because the engine didn't
+               expose this result — that workaround is now obsolete.
+
+            ### What to implement
+
+            **Fix 1: GateResults loop (line 325)**
+
+            Change:
+            ```go
+            for _, gate := range finalizeResult.GateResults {
+                publish("quality_gate_result", gate)
+                if gate.FromCache {
+                    publish("gate_cache_hit", map[string]interface{}{
+                        "gate_type": gate.Type,
+                        "command":   gate.Command,
+                        "wave":      waveNum,
+                        "sha":       gate.SkipReason,
+                    })
+                }
+            }
+            ```
+
+            To:
+            ```go
+            for _, gates := range finalizeResult.GateResults {
+                for _, gate := range gates {
+                    publish("quality_gate_result", gate)
+                    if gate.FromCache {
+                        publish("gate_cache_hit", map[string]interface{}{
+                            "gate_type": gate.Type,
+                            "command":   gate.Command,
+                            "wave":      waveNum,
+                            "sha":       gate.SkipReason,
+                        })
+                    }
+                }
+            }
+            ```
+
+            **Fix 2: Replace inline wiring validation with engine result (lines 336-362)**
+
+            The current inline block (starting with the comment "Wiring gap events (E35)...")
+            runs `protocol.ValidateWiringDeclarations` directly because the engine didn't
+            expose the result. Replace it with a read from `finalizeResult.WiringReport`:
+
+            ```go
+            // Wiring gap events (E35): engine now carries WiringReport in FinalizeWaveResult.
+            if finalizeResult.WiringReport != nil && !finalizeResult.WiringReport.Valid {
+                for _, gap := range finalizeResult.WiringReport.Gaps {
+                    publish("wiring_gap", map[string]interface{}{
+                        "wave":                waveNum,
+                        "symbol":              gap.Declaration.Symbol,
+                        "defined_in":          gap.Declaration.DefinedIn,
+                        "must_be_called_from": gap.Declaration.MustBeCalledFrom,
+                        "agent":               gap.Declaration.Agent,
+                        "reason":              gap.Reason,
+                        "severity":            gap.Severity,
+                    })
+                }
+                publish("wiring_gaps_summary", map[string]interface{}{
+                    "wave":      waveNum,
+                    "gap_count": len(finalizeResult.WiringReport.Gaps),
+                    "summary":   finalizeResult.WiringReport.Summary,
+                })
+            }
+            ```
+
+            Remove the now-unused `manifest` and `repoPath` variables if they are only
+            used by the inline wiring block. If they are used elsewhere in the function,
+            leave them.
+
+            ### Verification
+
+            Run `go build ./...` from the scout-and-wave-web root — must compile.
+            Run `go vet ./...` — no errors.
+
+            ### Constraints
+
+            - Only modify `pkg/api/wave_runner.go`.
+            - Do NOT change any SSE event names or shapes — downstream clients depend on them.
+            - Do NOT change the wiring_gap or wiring_gaps_summary event field names.
+            - If `finalizeResult.WiringReport` is nil (engine ran no wiring validation),
+              emit no wiring events — that is the correct behavior.
+          files:
+            - pkg/api/wave_runner.go
+          dependencies:
+            - C
+quality_gates:
+    level: standard
+    gates:
+        - type: build
+          command: go build ./...
+          required: true
+          repo: scout-and-wave-go
+        - type: test
+          command: go test ./...
+          required: true
+          repo: scout-and-wave-go
+        - type: lint
+          command: go vet ./...
+          required: true
+          repo: scout-and-wave-go
+        - type: build
+          command: go build ./...
+          required: true
+          repo: scout-and-wave-web
+        - type: lint
+          command: go vet ./...
+          required: true
+          repo: scout-and-wave-web
+completion_reports:
+    A:
+        status: complete
+        worktree: /Users/dayna.blackwell/code/scout-and-wave-go/.claude/worktrees/saw/engine-unification/wave1-agent-A
+        branch: saw/engine-unification/wave1-agent-A
+        commit: f723555
+        files_changed:
+            - pkg/result/result.go
+            - pkg/result/result_test.go
+        tests_added:
+            - TestGetDataZeroOnNilData
+            - TestGetDataSuccess
+        verification: go test ./pkg/result/... PASS; go build ./... PASS; go vet ./... PASS
+        notes: Changed GetData() to return zero value of T instead of panicking when Data is nil. Updated existing TestGetData to remove the panic-expectation subtest. Added TestGetDataZeroOnNilData and TestGetDataSuccess.
+    B:
+        status: complete
+        worktree: /Users/dayna.blackwell/code/scout-and-wave-go/.claude/worktrees/saw/engine-unification/wave1-agent-B
+        commit: bca34e8
+        files_changed:
+            - pkg/protocol/gates.go
+            - pkg/protocol/gates_test.go
+        verification: go test ./pkg/protocol/... PASS (21.9s); go vet ./pkg/protocol/... PASS; go build ./... FAIL (cmd/sawtools/run_gates_cmd.go:30 calls undefined protocol.RunGates)
+        failure_type: fixable
+        notes: 'Renamed RunGates to runGates in pkg/protocol/gates.go. Updated RunPostMergeGates and RunGatesWithCache to call runGates. Added hierarchy doc comments. Updated gates_test.go (same package) to use runGates. OUT_OF_SCOPE: cmd/sawtools/run_gates_cmd.go line 30 must change protocol.RunGates(m, waveNum, repoDir) to protocol.RunGatesWithCache(m, waveNum, repoDir, nil) — this file is unowned by any wave agent. Fix required for go build ./... to pass.'
+    C:
+        status: complete
+        branch: saw/engine-unification/wave2-agent-C
+        commit: d9d4471
+        files_changed:
+            - pkg/engine/finalize.go
+            - pkg/engine/finalize_test.go
+            - pkg/engine/auto_remediate.go
+            - pkg/engine/auto_remediate_test.go
+            - pkg/engine/finalize_steps_test.go
+            - pkg/engine/run_wave_atomic_test.go
+            - pkg/engine/run_wave_full_test.go
+        tests_added:
+            - TestExtractReposFromManifest_SingleRepo
+            - TestExtractReposFromManifest_CrossRepo
+            - TestFinalizeWave_MultiRepo
+            - TestFinalizeWave_ResultMapFields
+            - TestFinalizeWave_SingleRepoMapKey
+        verification: PASS
+        notes: 'Also updated auto_remediate.go and several test files in pkg/engine/ that are callers of FinalizeWaveResult to use the new map-based fields. Added firstVerifyBuild() and firstGateResults() helper methods for backward-compatible access. Out-of-scope deps: cmd/sawtools/finalize_wave.go still has its own local FinalizeWaveResult — Wave 3 Agent E will replace it with a thin adapter using the canonical engine type.'
+    D:
+        status: complete
+        worktree: /Users/dayna.blackwell/code/scout-and-wave-go/.claude/worktrees/saw/engine-unification/wave2-agent-D
+        commit: 23e89e8
+        files_changed:
+            - pkg/engine/runner.go
+            - pkg/orchestrator/doc.go
+        verification: PASS
+        notes: 'Deleted orchestrator.RunQualityGates dead code (QualityGateResult struct, RunQualityGates func, runGate helper, truncate helper) and their test file. Migrated pkg/engine/runner.go E21 quality gate block to use protocol.RunPreMergeGates, publishing protocol.GateResult events. Updated orchestrator doc.go Wave Lifecycle comment. All gates pass: go build ./..., go test ./pkg/engine/..., go test ./pkg/orchestrator/..., go test ./pkg/pipeline/..., go vet ./...'
+pre_mortem:
+    overall_risk: medium
+    rows:
+        - scenario: |-
+            Wave 2 Agent C adds multi-repo support to FinalizeWave but the engine's step
+            functions (StepVerifyCommits, StepMergeAgents, etc.) take a single RepoPath.
+            The per-repo loop must call each step once per repo, but some steps are
+            manifest-level (e.g., ScanStubs, ValidateIntegration). Agent C must carefully
+            distinguish repo-scoped steps from manifest-scoped steps, or the loop will
+            run manifest-level steps N times unnecessarily.
+          likelihood: medium
+          impact: medium
+          mitigation: |-
+            Specify in Agent C's task which steps are repo-scoped (VerifyCommits, RunGates,
+            MergeAgents, VerifyBuild, Cleanup) vs manifest-scoped (ScanStubs, ValidateIntegration,
+            CheckWiringDeclarations, PopulateIntegrationChecklist). The CLI already does this
+            correctly — Agent C should use it as the reference implementation.
+        - scenario: |-
+            State transition calls (SetImplState WAVE_VERIFIED, UpdateStatus per agent)
+            are currently in the CLI finalize_wave.go (lines 545-560). If Agent C in
+            Wave 2 does not move them into engine.FinalizeWave, Agent E in Wave 3
+            will produce a thin adapter that silently drops state transitions.
+          likelihood: high
+          impact: high
+          mitigation: |-
+            Agent C's task explicitly lists state transitions as required engine behavior.
+            Agent E's task cross-checks that state transitions are present in the engine
+            before finalizing the thin adapter. If missing, Agent E adds them to engine.
+        - scenario: |-
+            Wave 3 Agent F updates wave_runner.go for the GateResults map type change.
+            However, if Agent C's WiringReport field is named differently than expected,
+            Agent F's Fix 2 (replacing inline wiring with finalizeResult.WiringReport)
+            will fail to compile.
+          likelihood: low
+          impact: medium
+          mitigation: |-
+            Agent F's brief specifies the exact field name (WiringReport *protocol.WiringValidationData)
+            from the interface contract. If Agent C deviates, Agent F should read the
+            actual field name from pkg/engine/finalize.go before writing code.
+        - scenario: |-
+            pkg/pipeline/registry.go registers "run_quality_gates" via StepRunQualityGates()
+            in saw_steps.go — a stub that does NOT call orchestrator.RunQualityGates.
+            Deleting quality_gates.go will not panic the binary, but leaves a no-op step
+            registered under a name that implies gate execution. If Agent D leaves it as-is,
+            the registry silently does nothing when "run_quality_gates" is invoked.
+          likelihood: medium
+          impact: medium
+          mitigation: |-
+            Agent D's task directs them to remove or replace the run_quality_gates registry
+            entry with a real implementation using protocol.RunPreMergeGates.
+        - scenario: |-
+            The allBranchesAbsent shortcut in the CLI performs ancestry verification
+            (git.IsAncestor) before accepting "already merged" as valid. If Agent C
+            omits this check when porting the logic to engine.FinalizeWave, the engine
+            will silently accept branch-deleted-without-merge as a success.
+          likelihood: medium
+          impact: high
+          mitigation: |-
+            Agent C's task specifies to copy the allBranchesAbsent logic from
+            cmd/sawtools/finalize_wave.go lines 157-201, which includes the ancestry check.
+            The test suite should include a test for this case.
+known_issues:
+    - title: inferLanguageFromCommand duplicate removed
+      description: |-
+        inferLanguageFromCommand in cmd/sawtools/finalize_wave.go is deleted by this IMPL.
+        The engine version (inferLanguageFromTestCommand) is the canonical copy.
+      status: open
+      workaround: Use engine version only.
+critic_report:
+    verdict: PASS
+    agent_reviews:
+        A:
+            agent_id: A
+            verdict: PASS
+        B:
+            agent_id: B
+            verdict: PASS
+        C:
+            agent_id: C
+            verdict: PASS
+        D:
+            agent_id: D
+            verdict: PASS
+        E:
+            agent_id: E
+            verdict: PASS
+        F:
+            agent_id: F
+            verdict: PASS
+    summary: 'All six agent briefs verified against the codebase. The two corrections from the previous review are accurate: Agent A no longer contains any contradictory instruction about TestRunQualityGatesRequiredFail (it now correctly notes that file is deleted by Agent D), and Agent D correctly describes StepRunQualityGates in saw_steps.go as a stub that returns nil without calling orchestrator.RunQualityGates, meaning no nil-panic risk from deletion. Agent F''s description of wave_runner.go is accurate: line 325 iterates GateResults as a flat slice (for _, gate := range finalizeResult.GateResults), and lines 336-362 run protocol.ValidateWiringDeclarations inline with the explicit comment that the engine does not carry a WiringReport. All interface contract types (WiringValidationData, GateResult, WiringGap fields) are verified against actual source. No errors found across all six agents.'
+    reviewed_at: "2026-03-30T12:33:08Z"
+    issue_count: 0
+state: SCOUT_PENDING
+injection_method: hook
