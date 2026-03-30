@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -81,9 +82,9 @@ func TestCheckpoint_CreatesSnapshot(t *testing.T) {
 	writeTestCursor(t, string(observer.CursorPath))
 
 	// Create checkpoint
-	err := observer.Checkpoint("test-checkpoint")
-	if err != nil {
-		t.Fatalf("Checkpoint failed: %v", err)
+	r := observer.Checkpoint("test-checkpoint")
+	if !r.IsSuccess() {
+		t.Fatalf("Checkpoint failed: %v", r.Errors[0].Message)
 	}
 
 	// Verify snapshot files exist
@@ -111,20 +112,32 @@ func TestCheckpoint_SavesMetadata(t *testing.T) {
 	writeTestCursor(t, string(observer.CursorPath))
 
 	// Create checkpoint
-	err := observer.Checkpoint("metadata-test")
-	if err != nil {
-		t.Fatalf("Checkpoint failed: %v", err)
+	r := observer.Checkpoint("metadata-test")
+	if !r.IsSuccess() {
+		t.Fatalf("Checkpoint failed: %v", r.Errors[0].Message)
 	}
 
-	// Read and verify metadata
+	// Verify result data
+	data := r.GetData()
+	if data.Name != "metadata-test" {
+		t.Errorf("Expected name 'metadata-test', got %q", data.Name)
+	}
+	if data.EntryCount != 3 {
+		t.Errorf("Expected entry count 3, got %d", data.EntryCount)
+	}
+	if data.Timestamp.IsZero() {
+		t.Error("Expected non-zero timestamp")
+	}
+
+	// Read and verify metadata file
 	metadataPath := filepath.Join(string(observer.JournalDir), "checkpoints", "metadata-test.json")
-	data, err := os.ReadFile(metadataPath)
+	fileData, err := os.ReadFile(metadataPath)
 	if err != nil {
 		t.Fatalf("Failed to read metadata: %v", err)
 	}
 
 	var checkpoint Checkpoint
-	if err := json.Unmarshal(data, &checkpoint); err != nil {
+	if err := json.Unmarshal(fileData, &checkpoint); err != nil {
 		t.Fatalf("Failed to unmarshal metadata: %v", err)
 	}
 
@@ -150,8 +163,9 @@ func TestListCheckpoints_ReturnsAll(t *testing.T) {
 	// Create multiple checkpoints with delays to ensure different timestamps
 	checkpoints := []string{"001-first", "002-second", "003-third"}
 	for _, name := range checkpoints {
-		if err := observer.Checkpoint(name); err != nil {
-			t.Fatalf("Failed to create checkpoint %s: %v", name, err)
+		r := observer.Checkpoint(name)
+		if !r.IsSuccess() {
+			t.Fatalf("Failed to create checkpoint %s: %v", name, r.Errors[0].Message)
 		}
 		time.Sleep(10 * time.Millisecond) // Ensure different timestamps
 	}
@@ -187,8 +201,9 @@ func TestRestoreCheckpoint_RollsBackIndex(t *testing.T) {
 	writeTestCursor(t, string(observer.CursorPath))
 
 	// Create checkpoint
-	if err := observer.Checkpoint("rollback-test"); err != nil {
-		t.Fatalf("Checkpoint failed: %v", err)
+	r := observer.Checkpoint("rollback-test")
+	if !r.IsSuccess() {
+		t.Fatalf("Checkpoint failed: %v", r.Errors[0].Message)
 	}
 
 	// Modify index (simulate more entries added)
@@ -204,8 +219,9 @@ func TestRestoreCheckpoint_RollsBackIndex(t *testing.T) {
 	}
 
 	// Restore checkpoint
-	if err := observer.RestoreCheckpoint("rollback-test"); err != nil {
-		t.Fatalf("RestoreCheckpoint failed: %v", err)
+	rr := observer.RestoreCheckpoint("rollback-test")
+	if !rr.IsSuccess() {
+		t.Fatalf("RestoreCheckpoint failed: %v", rr.Errors[0].Message)
 	}
 
 	// Verify index rolled back to 5 entries
@@ -228,8 +244,9 @@ func TestRestoreCheckpoint_RollsBackCursor(t *testing.T) {
 	os.WriteFile(string(observer.CursorPath), data, 0644)
 
 	// Create checkpoint
-	if err := observer.Checkpoint("cursor-test"); err != nil {
-		t.Fatalf("Checkpoint failed: %v", err)
+	r := observer.Checkpoint("cursor-test")
+	if !r.IsSuccess() {
+		t.Fatalf("Checkpoint failed: %v", r.Errors[0].Message)
 	}
 
 	// Modify cursor
@@ -238,8 +255,9 @@ func TestRestoreCheckpoint_RollsBackCursor(t *testing.T) {
 	os.WriteFile(string(observer.CursorPath), data, 0644)
 
 	// Restore checkpoint
-	if err := observer.RestoreCheckpoint("cursor-test"); err != nil {
-		t.Fatalf("RestoreCheckpoint failed: %v", err)
+	rr := observer.RestoreCheckpoint("cursor-test")
+	if !rr.IsSuccess() {
+		t.Fatalf("RestoreCheckpoint failed: %v", rr.Errors[0].Message)
 	}
 
 	// Verify cursor restored
@@ -267,13 +285,15 @@ func TestRestoreCheckpoint_PreservesCheckpoints(t *testing.T) {
 	writeTestCursor(t, string(observer.CursorPath))
 
 	// Create checkpoint
-	if err := observer.Checkpoint("preserve-test"); err != nil {
-		t.Fatalf("Checkpoint failed: %v", err)
+	r := observer.Checkpoint("preserve-test")
+	if !r.IsSuccess() {
+		t.Fatalf("Checkpoint failed: %v", r.Errors[0].Message)
 	}
 
 	// Restore checkpoint
-	if err := observer.RestoreCheckpoint("preserve-test"); err != nil {
-		t.Fatalf("RestoreCheckpoint failed: %v", err)
+	rr := observer.RestoreCheckpoint("preserve-test")
+	if !rr.IsSuccess() {
+		t.Fatalf("RestoreCheckpoint failed: %v", rr.Errors[0].Message)
 	}
 
 	// Verify checkpoint still exists
@@ -283,8 +303,9 @@ func TestRestoreCheckpoint_PreservesCheckpoints(t *testing.T) {
 	}
 
 	// Verify we can restore again
-	if err := observer.RestoreCheckpoint("preserve-test"); err != nil {
-		t.Errorf("Cannot restore checkpoint twice: %v", err)
+	rr2 := observer.RestoreCheckpoint("preserve-test")
+	if !rr2.IsSuccess() {
+		t.Errorf("Cannot restore checkpoint twice: %v", rr2.Errors[0].Message)
 	}
 }
 
@@ -297,13 +318,15 @@ func TestDeleteCheckpoint_RemovesFiles(t *testing.T) {
 	writeTestCursor(t, string(observer.CursorPath))
 
 	// Create checkpoint
-	if err := observer.Checkpoint("delete-test"); err != nil {
-		t.Fatalf("Checkpoint failed: %v", err)
+	r := observer.Checkpoint("delete-test")
+	if !r.IsSuccess() {
+		t.Fatalf("Checkpoint failed: %v", r.Errors[0].Message)
 	}
 
 	// Delete checkpoint
-	if err := observer.DeleteCheckpoint("delete-test"); err != nil {
-		t.Fatalf("DeleteCheckpoint failed: %v", err)
+	rd := observer.DeleteCheckpoint("delete-test")
+	if !rd.IsSuccess() {
+		t.Fatalf("DeleteCheckpoint failed: %v", rd.Errors[0].Message)
 	}
 
 	// Verify all files removed
@@ -319,6 +342,15 @@ func TestDeleteCheckpoint_RemovesFiles(t *testing.T) {
 			t.Errorf("File not deleted: %s", file)
 		}
 	}
+
+	// Verify result data
+	dd := rd.GetData()
+	if !dd.Deleted {
+		t.Error("Expected Deleted=true in result data")
+	}
+	if dd.Name != "delete-test" {
+		t.Errorf("Expected Name='delete-test', got %q", dd.Name)
+	}
 }
 
 func TestCheckpoint_DuplicateName(t *testing.T) {
@@ -330,17 +362,21 @@ func TestCheckpoint_DuplicateName(t *testing.T) {
 	writeTestCursor(t, string(observer.CursorPath))
 
 	// Create first checkpoint
-	if err := observer.Checkpoint("duplicate"); err != nil {
-		t.Fatalf("First checkpoint failed: %v", err)
+	r := observer.Checkpoint("duplicate")
+	if !r.IsSuccess() {
+		t.Fatalf("First checkpoint failed: %v", r.Errors[0].Message)
 	}
 
 	// Try to create duplicate
-	err := observer.Checkpoint("duplicate")
-	if err == nil {
-		t.Fatal("Expected error for duplicate checkpoint name, got nil")
+	r2 := observer.Checkpoint("duplicate")
+	if r2.IsSuccess() {
+		t.Fatal("Expected failure for duplicate checkpoint name, got success")
 	}
-	if err.Error() != `checkpoint "duplicate" already exists` {
-		t.Errorf("Wrong error message: %v", err)
+	if !r2.IsFatal() {
+		t.Error("Expected IsFatal() to be true for duplicate checkpoint")
+	}
+	if r2.Errors[0].Code != "CHECKPOINT_ALREADY_EXISTS" {
+		t.Errorf("Wrong error code: %v", r2.Errors[0].Code)
 	}
 }
 
@@ -349,12 +385,18 @@ func TestRestoreCheckpoint_NonexistentName(t *testing.T) {
 	defer cleanup()
 
 	// Try to restore non-existent checkpoint
-	err := observer.RestoreCheckpoint("nonexistent")
-	if err == nil {
-		t.Fatal("Expected error for nonexistent checkpoint, got nil")
+	r := observer.RestoreCheckpoint("nonexistent")
+	if r.IsSuccess() {
+		t.Fatal("Expected failure for nonexistent checkpoint, got success")
 	}
-	if err.Error() != `checkpoint "nonexistent" not found` {
-		t.Errorf("Wrong error message: %v", err)
+	if !r.IsFatal() {
+		t.Error("Expected IsFatal() to be true for nonexistent checkpoint")
+	}
+	if r.Errors[0].Code != "CHECKPOINT_NOT_FOUND" {
+		t.Errorf("Wrong error code: %v", r.Errors[0].Code)
+	}
+	if !strings.Contains(r.Errors[0].Message, "nonexistent") {
+		t.Errorf("Error message should mention checkpoint name: %v", r.Errors[0].Message)
 	}
 }
 
@@ -368,19 +410,26 @@ func TestCheckpoint_CountsEntries(t *testing.T) {
 	writeTestCursor(t, string(observer.CursorPath))
 
 	// Create checkpoint
-	if err := observer.Checkpoint("count-test"); err != nil {
-		t.Fatalf("Checkpoint failed: %v", err)
+	r := observer.Checkpoint("count-test")
+	if !r.IsSuccess() {
+		t.Fatalf("Checkpoint failed: %v", r.Errors[0].Message)
 	}
 
-	// Verify entry count in metadata
+	// Verify entry count in result data
+	data := r.GetData()
+	if data.EntryCount != entryCount {
+		t.Errorf("Expected entry count %d, got %d", entryCount, data.EntryCount)
+	}
+
+	// Also verify via metadata file
 	metadataPath := filepath.Join(string(observer.JournalDir), "checkpoints", "count-test.json")
-	data, err := os.ReadFile(metadataPath)
+	fileData, err := os.ReadFile(metadataPath)
 	if err != nil {
 		t.Fatalf("Failed to read metadata: %v", err)
 	}
 
 	var checkpoint Checkpoint
-	if err := json.Unmarshal(data, &checkpoint); err != nil {
+	if err := json.Unmarshal(fileData, &checkpoint); err != nil {
 		t.Fatalf("Failed to unmarshal metadata: %v", err)
 	}
 
@@ -394,25 +443,15 @@ func TestCheckpoint_EmptyJournal(t *testing.T) {
 	defer cleanup()
 
 	// Create checkpoint with no journal files (valid empty state)
-	err := observer.Checkpoint("empty-state")
-	if err != nil {
-		t.Fatalf("Checkpoint of empty journal should succeed, got: %v", err)
+	r := observer.Checkpoint("empty-state")
+	if !r.IsSuccess() {
+		t.Fatalf("Checkpoint of empty journal should succeed, got: %v", r.Errors[0].Message)
 	}
 
 	// Verify checkpoint created with zero entries
-	metadataPath := filepath.Join(string(observer.JournalDir), "checkpoints", "empty-state.json")
-	data, err := os.ReadFile(metadataPath)
-	if err != nil {
-		t.Fatalf("Failed to read metadata: %v", err)
-	}
-
-	var checkpoint Checkpoint
-	if err := json.Unmarshal(data, &checkpoint); err != nil {
-		t.Fatalf("Failed to unmarshal metadata: %v", err)
-	}
-
-	if checkpoint.EntryCount != 0 {
-		t.Errorf("Expected entry count 0 for empty journal, got %d", checkpoint.EntryCount)
+	data := r.GetData()
+	if data.EntryCount != 0 {
+		t.Errorf("Expected entry count 0 for empty journal, got %d", data.EntryCount)
 	}
 }
 
@@ -421,17 +460,46 @@ func TestCheckpoint_InvalidNames(t *testing.T) {
 	defer cleanup()
 
 	invalidNames := []string{
-		"",              // empty
-		"foo/bar",       // slash
-		"foo\\bar",      // backslash
-		"foo bar",       // space
-		"foo/bar/baz",   // multiple slashes
+		"",            // empty
+		"foo/bar",     // slash
+		"foo\\bar",    // backslash
+		"foo bar",     // space
+		"foo/bar/baz", // multiple slashes
 	}
 
 	for _, name := range invalidNames {
-		err := observer.Checkpoint(name)
-		if err == nil {
-			t.Errorf("Expected error for invalid checkpoint name %q, got nil", name)
+		r := observer.Checkpoint(name)
+		if r.IsSuccess() {
+			t.Errorf("Expected failure for invalid checkpoint name %q, got success", name)
 		}
+		if !r.IsFatal() {
+			t.Errorf("Expected IsFatal() for invalid checkpoint name %q", name)
+		}
+	}
+}
+
+func TestCheckpoint_RestoreReturnsData(t *testing.T) {
+	observer, cleanup := setupTestObserver(t)
+	defer cleanup()
+
+	writeTestIndex(t, string(observer.IndexPath), 3)
+	writeTestCursor(t, string(observer.CursorPath))
+
+	r := observer.Checkpoint("restore-data-test")
+	if !r.IsSuccess() {
+		t.Fatalf("Checkpoint failed: %v", r.Errors[0].Message)
+	}
+
+	rr := observer.RestoreCheckpoint("restore-data-test")
+	if !rr.IsSuccess() {
+		t.Fatalf("RestoreCheckpoint failed: %v", rr.Errors[0].Message)
+	}
+
+	rd := rr.GetData()
+	if rd.Name != "restore-data-test" {
+		t.Errorf("Expected Name='restore-data-test', got %q", rd.Name)
+	}
+	if rd.RestoredAt.IsZero() {
+		t.Error("Expected non-zero RestoredAt")
 	}
 }

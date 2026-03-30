@@ -34,14 +34,24 @@ func TestArchive_CreatesTarGz(t *testing.T) {
 	}
 
 	// Archive
-	if err := observer.Archive(); err != nil {
-		t.Fatalf("Archive failed: %v", err)
+	r := observer.Archive()
+	if !r.IsSuccess() {
+		t.Fatalf("Archive failed: %v", r.Errors[0].Message)
 	}
 
 	// Verify archive file exists
 	archivePath := filepath.Join(tmpDir, ".saw-state", "archive", "wave1-agent-A.tar.gz")
 	if _, err := os.Stat(archivePath); os.IsNotExist(err) {
 		t.Fatalf("archive file not created: %s", archivePath)
+	}
+
+	// Verify result data
+	data := r.GetData()
+	if data.Wave != 1 {
+		t.Errorf("expected wave 1, got %d", data.Wave)
+	}
+	if data.Agent != "A" {
+		t.Errorf("expected agent A, got %s", data.Agent)
 	}
 }
 
@@ -66,8 +76,9 @@ func TestArchive_SavesMetadata(t *testing.T) {
 	}
 
 	// Archive
-	if err := observer.Archive(); err != nil {
-		t.Fatalf("Archive failed: %v", err)
+	r := observer.Archive()
+	if !r.IsSuccess() {
+		t.Fatalf("Archive failed: %v", r.Errors[0].Message)
 	}
 
 	// Read metadata
@@ -125,8 +136,9 @@ func TestArchive_CalculatesCompressionRatio(t *testing.T) {
 	}
 
 	// Archive
-	if err := observer.Archive(); err != nil {
-		t.Fatalf("Archive failed: %v", err)
+	r := observer.Archive()
+	if !r.IsSuccess() {
+		t.Fatalf("Archive failed: %v", r.Errors[0].Message)
 	}
 
 	// Read metadata
@@ -235,16 +247,18 @@ func TestExtract_DecompressesArchive(t *testing.T) {
 		AgentID:     "D",
 	}
 
-	if err := observer.Archive(); err != nil {
-		t.Fatalf("Archive failed: %v", err)
+	r := observer.Archive()
+	if !r.IsSuccess() {
+		t.Fatalf("Archive failed: %v", r.Errors[0].Message)
 	}
 
 	// Extract to new location
 	extractDir := filepath.Join(tmpDir, "extracted")
 	archivePath := filepath.Join(tmpDir, ".saw-state", "archive", "wave1-agent-D.tar.gz")
 
-	if err := Extract(archivePath, extractDir); err != nil {
-		t.Fatalf("Extract failed: %v", err)
+	re := Extract(archivePath, extractDir)
+	if !re.IsSuccess() {
+		t.Fatalf("Extract failed: %v", re.Errors[0].Message)
 	}
 
 	// Verify extracted files match originals
@@ -307,8 +321,9 @@ func TestCleanupExpired_DeletesOldArchives(t *testing.T) {
 	}
 
 	// Cleanup with 30 day retention
-	if err := CleanupExpired(tmpDir, 30); err != nil {
-		t.Fatalf("CleanupExpired failed: %v", err)
+	r := CleanupExpired(tmpDir, 30)
+	if !r.IsSuccess() {
+		t.Fatalf("CleanupExpired failed: %v", r.Errors[0].Message)
 	}
 
 	// Verify files were deleted
@@ -317,6 +332,12 @@ func TestCleanupExpired_DeletesOldArchives(t *testing.T) {
 	}
 	if _, err := os.Stat(oldMetadataPath); !os.IsNotExist(err) {
 		t.Error("old metadata should be deleted")
+	}
+
+	// Verify result data
+	cd := r.GetData()
+	if cd.DeletedCount != 1 {
+		t.Errorf("expected 1 deleted, got %d", cd.DeletedCount)
 	}
 }
 
@@ -353,8 +374,9 @@ func TestCleanupExpired_PreservesRecent(t *testing.T) {
 	}
 
 	// Cleanup with 30 day retention
-	if err := CleanupExpired(tmpDir, 30); err != nil {
-		t.Fatalf("CleanupExpired failed: %v", err)
+	r := CleanupExpired(tmpDir, 30)
+	if !r.IsSuccess() {
+		t.Fatalf("CleanupExpired failed: %v", r.Errors[0].Message)
 	}
 
 	// Verify files still exist
@@ -395,8 +417,9 @@ func TestArchive_CountsEntries(t *testing.T) {
 		AgentID:     "E",
 	}
 
-	if err := observer.Archive(); err != nil {
-		t.Fatalf("Archive failed: %v", err)
+	r := observer.Archive()
+	if !r.IsSuccess() {
+		t.Fatalf("Archive failed: %v", r.Errors[0].Message)
 	}
 
 	// Read metadata
@@ -452,16 +475,18 @@ func TestArchive_IncludesCheckpoints(t *testing.T) {
 		AgentID:     "F",
 	}
 
-	if err := observer.Archive(); err != nil {
-		t.Fatalf("Archive failed: %v", err)
+	r := observer.Archive()
+	if !r.IsSuccess() {
+		t.Fatalf("Archive failed: %v", r.Errors[0].Message)
 	}
 
 	// Extract and verify checkpoints are included
 	extractDir := filepath.Join(tmpDir, "extracted")
 	archivePath := filepath.Join(tmpDir, ".saw-state", "archive", "wave1-agent-F.tar.gz")
 
-	if err := Extract(archivePath, extractDir); err != nil {
-		t.Fatalf("Extract failed: %v", err)
+	re := Extract(archivePath, extractDir)
+	if !re.IsSuccess() {
+		t.Fatalf("Extract failed: %v", re.Errors[0].Message)
 	}
 
 	// Verify all checkpoint files exist
@@ -504,16 +529,18 @@ func TestArchive_ExcludesToolResults(t *testing.T) {
 		AgentID:     "G",
 	}
 
-	if err := observer.Archive(); err != nil {
-		t.Fatalf("Archive failed: %v", err)
+	r := observer.Archive()
+	if !r.IsSuccess() {
+		t.Fatalf("Archive failed: %v", r.Errors[0].Message)
 	}
 
 	// Extract and verify tool-results is excluded
 	extractDir := filepath.Join(tmpDir, "extracted")
 	archivePath := filepath.Join(tmpDir, ".saw-state", "archive", "wave1-agent-G.tar.gz")
 
-	if err := Extract(archivePath, extractDir); err != nil {
-		t.Fatalf("Extract failed: %v", err)
+	re := Extract(archivePath, extractDir)
+	if !re.IsSuccess() {
+		t.Fatalf("Extract failed: %v", re.Errors[0].Message)
 	}
 
 	// Verify index.jsonl exists
@@ -558,12 +585,15 @@ func TestArchive_ReturnsErrorIfExists(t *testing.T) {
 	}
 
 	// Attempt archive - should fail
-	err := observer.Archive()
-	if err == nil {
+	r := observer.Archive()
+	if r.IsSuccess() {
 		t.Fatal("Archive should fail when archive already exists")
 	}
-	if !strings.Contains(err.Error(), "already exists") {
-		t.Errorf("expected 'already exists' error, got: %v", err)
+	if !r.IsFatal() {
+		t.Error("Expected IsFatal() to be true")
+	}
+	if !strings.Contains(r.Errors[0].Message, "already exists") {
+		t.Errorf("expected 'already exists' error, got: %v", r.Errors[0].Message)
 	}
 }
 
@@ -598,8 +628,9 @@ func TestCleanupExpired_Idempotent(t *testing.T) {
 
 	// Run cleanup multiple times
 	for i := 0; i < 3; i++ {
-		if err := CleanupExpired(tmpDir, 30); err != nil {
-			t.Fatalf("CleanupExpired run %d failed: %v", i+1, err)
+		r := CleanupExpired(tmpDir, 30)
+		if !r.IsSuccess() {
+			t.Fatalf("CleanupExpired run %d failed: %v", i+1, r.Errors[0].Message)
 		}
 	}
 
@@ -620,5 +651,92 @@ func TestListArchives_EmptyDirectory(t *testing.T) {
 
 	if len(result) != 0 {
 		t.Errorf("expected 0 archives, got %d", len(result))
+	}
+}
+
+func TestArchive_ResultDataMatchesMetadata(t *testing.T) {
+	// Verify that the ArchiveData returned matches the written metadata
+	tmpDir := t.TempDir()
+	journalDir := filepath.Join(tmpDir, ".saw-state", "wave3", "agent-Z")
+	if err := os.MkdirAll(journalDir, 0755); err != nil {
+		t.Fatalf("creating journal dir: %v", err)
+	}
+
+	if err := os.WriteFile(filepath.Join(journalDir, "index.jsonl"), []byte("e1\ne2\ne3\n"), 0644); err != nil {
+		t.Fatalf("creating index.jsonl: %v", err)
+	}
+
+	observer := &JournalObserver{
+		ProjectRoot: tmpDir,
+		JournalDir:  journalDir,
+		AgentID:     "Z",
+	}
+
+	r := observer.Archive()
+	if !r.IsSuccess() {
+		t.Fatalf("Archive failed: %v", r.Errors[0].Message)
+	}
+
+	archiveData := r.GetData()
+	if archiveData.Wave != 3 {
+		t.Errorf("wave = %d, want 3", archiveData.Wave)
+	}
+	if archiveData.Agent != "Z" {
+		t.Errorf("agent = %s, want Z", archiveData.Agent)
+	}
+	if archiveData.OriginalSizeBytes == 0 {
+		t.Error("expected non-zero original size")
+	}
+	if archiveData.CompressedSizeBytes == 0 {
+		t.Error("expected non-zero compressed size")
+	}
+	if archiveData.ArchivedAt.IsZero() {
+		t.Error("expected non-zero archived_at")
+	}
+}
+
+func TestExtract_ReturnsData(t *testing.T) {
+	// Verify Extract result data is populated
+	tmpDir := t.TempDir()
+	journalDir := filepath.Join(tmpDir, ".saw-state", "wave1", "agent-X")
+	if err := os.MkdirAll(journalDir, 0755); err != nil {
+		t.Fatalf("creating journal dir: %v", err)
+	}
+
+	if err := os.WriteFile(filepath.Join(journalDir, "index.jsonl"), []byte("entry\n"), 0644); err != nil {
+		t.Fatalf("creating index.jsonl: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(journalDir, "cursor.json"), []byte("{}"), 0644); err != nil {
+		t.Fatalf("creating cursor.json: %v", err)
+	}
+
+	observer := &JournalObserver{
+		ProjectRoot: tmpDir,
+		JournalDir:  journalDir,
+		AgentID:     "X",
+	}
+
+	ar := observer.Archive()
+	if !ar.IsSuccess() {
+		t.Fatalf("Archive failed: %v", ar.Errors[0].Message)
+	}
+
+	extractDir := filepath.Join(tmpDir, "extracted")
+	archivePath := filepath.Join(tmpDir, ".saw-state", "archive", "wave1-agent-X.tar.gz")
+
+	er := Extract(archivePath, extractDir)
+	if !er.IsSuccess() {
+		t.Fatalf("Extract failed: %v", er.Errors[0].Message)
+	}
+
+	ed := er.GetData()
+	if ed.ArchivePath != archivePath {
+		t.Errorf("ArchivePath = %s, want %s", ed.ArchivePath, archivePath)
+	}
+	if ed.DestPath != extractDir {
+		t.Errorf("DestPath = %s, want %s", ed.DestPath, extractDir)
+	}
+	if ed.FilesCount == 0 {
+		t.Error("expected FilesCount > 0")
 	}
 }

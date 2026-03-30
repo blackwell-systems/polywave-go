@@ -876,9 +876,9 @@ func MergeWave(ctx context.Context, opts RunMergeOpts) error {
 					agentPath := fmt.Sprintf("wave%d/agent-%s", opts.WaveNum, agent.ID)
 					observer, obsErr := journal.NewObserver(opts.RepoPath, agentPath)
 					if obsErr == nil {
-						if archErr := observer.Archive(); archErr != nil {
+						if archRes := observer.Archive(); archRes.IsFatal() {
 							// Log but don't fail the merge
-							loggerFrom(opts.Logger).Warn("engine: failed to archive journal for agent", "agent", agent.ID, "err", archErr)
+							loggerFrom(opts.Logger).Warn("engine: failed to archive journal for agent", "agent", agent.ID, "err", archRes.Errors[0].Message)
 						}
 					}
 				}
@@ -1007,9 +1007,9 @@ func (ji *JournalIntegration) TriggerCheckpoint(observer *journal.JournalObserve
 		return nil // no-op if observer wasn't created
 	}
 
-	if err := observer.Checkpoint(name); err != nil {
-		ji.logger("Checkpoint failed", "name", name, "error", err)
-		return fmt.Errorf("checkpoint %s: %w", name, err)
+	if r := observer.Checkpoint(name); r.IsFatal() {
+		ji.logger("Checkpoint failed", "name", name, "error", r.Errors[0].Message)
+		return fmt.Errorf("checkpoint %s: %s", name, r.Errors[0].Message)
 	}
 
 	ji.logger("Checkpoint created", "name", name)
@@ -1022,9 +1022,9 @@ func (ji *JournalIntegration) ArchiveJournal(observer *journal.JournalObserver) 
 		return nil // no-op if observer wasn't created
 	}
 
-	if err := observer.Archive(); err != nil {
-		ji.logger("Archive failed", "error", err)
-		return fmt.Errorf("archive journal: %w", err)
+	if r := observer.Archive(); r.IsFatal() {
+		ji.logger("Archive failed", "error", r.Errors[0].Message)
+		return fmt.Errorf("archive journal: %s", r.Errors[0].Message)
 	}
 
 	ji.logger("Journal archived")

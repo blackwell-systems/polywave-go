@@ -13,7 +13,24 @@ import (
 	"time"
 
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
 )
+
+// SaveCursorData holds the result data from a successful saveCursor operation.
+type SaveCursorData struct {
+	SessionFile string `json:"session_file"`
+	Offset      int64  `json:"offset"`
+}
+
+// AppendData holds the result data from a successful appendToIndex operation.
+type AppendData struct {
+	EntriesAppended int `json:"entries_appended"`
+}
+
+// UpdateData holds the result data from a successful updateRecent operation.
+type UpdateData struct {
+	TotalEntries int `json:"total_entries"`
+}
 
 // JournalObserver tails Claude Code session logs and extracts tool execution history.
 type JournalObserver struct {
@@ -152,19 +169,19 @@ func (o *JournalObserver) Sync() (*SyncResult, error) {
 
 	// Update cursor
 	cursor.Offset += bytesRead
-	if err := o.saveCursor(cursor); err != nil {
-		return nil, fmt.Errorf("failed to save cursor: %w", err)
+	if r := o.saveCursor(cursor); r.IsFatal() {
+		return nil, fmt.Errorf("failed to save cursor: %s", r.Errors[0].Message)
 	}
 
 	// Append to index
 	if len(entries) > 0 {
-		if err := o.appendToIndex(entries); err != nil {
-			return nil, fmt.Errorf("failed to append to index: %w", err)
+		if r := o.appendToIndex(entries); r.IsFatal() {
+			return nil, fmt.Errorf("failed to append to index: %s", r.Errors[0].Message)
 		}
 
 		// Update recent cache
-		if err := o.updateRecent(entries); err != nil {
-			return nil, fmt.Errorf("failed to update recent: %w", err)
+		if r := o.updateRecent(entries); r.IsFatal() {
+			return nil, fmt.Errorf("failed to update recent: %s", r.Errors[0].Message)
 		}
 	}
 
@@ -390,34 +407,56 @@ func (o *JournalObserver) loadCursor() (*SessionCursor, error) {
 }
 
 // saveCursor persists the session cursor to disk.
-func (o *JournalObserver) saveCursor(cursor *SessionCursor) error {
+func (o *JournalObserver) saveCursor(cursor *SessionCursor) result.Result[SaveCursorData] {
 	data, err := json.MarshalIndent(cursor, "", "  ")
 	if err != nil {
-		return err
+		return result.NewFailure[SaveCursorData]([]result.SAWError{{
+			Code:     "JOURNAL_ERROR",
+			Message:  err.Error(),
+			Severity: "fatal",
+		}})
 	}
-	return os.WriteFile(o.CursorPath, data, 0644)
+	if err := os.WriteFile(o.CursorPath, data, 0644); err != nil {
+		return result.NewFailure[SaveCursorData]([]result.SAWError{{
+			Code:     "JOURNAL_ERROR",
+			Message:  err.Error(),
+			Severity: "fatal",
+		}})
+	}
+	return result.NewSuccess(SaveCursorData{
+		SessionFile: cursor.SessionFile,
+		Offset:      cursor.Offset,
+	})
 }
 
 // appendToIndex appends new tool entries to the index.jsonl file.
-func (o *JournalObserver) appendToIndex(entries []ToolEntry) error {
+func (o *JournalObserver) appendToIndex(entries []ToolEntry) result.Result[AppendData] {
 	f, err := os.OpenFile(o.IndexPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 	if err != nil {
-		return err
+		return result.NewFailure[AppendData]([]result.SAWError{{
+			Code:     "JOURNAL_ERROR",
+			Message:  err.Error(),
+			Severity: "fatal",
+		}})
 	}
 	defer f.Close()
 
 	encoder := json.NewEncoder(f)
 	for _, entry := range entries {
 		if err := encoder.Encode(entry); err != nil {
-			return err
+			return result.NewFailure[AppendData]([]result.SAWError{{
+				Code:     "JOURNAL_ERROR",
+				Message:  err.Error(),
+				Severity: "fatal",
+			}})
 		}
 	}
 
-	return nil
+	return result.NewSuccess(AppendData{EntriesAppended: len(entries)})
 }
 
 // updateRecent maintains a sliding window of the last 30 tool entries in recent.json.
-func (o *JournalObserver) updateRecent(newEntries []ToolEntry) error {
+func (o *JournalObserver) updateRecent(newEntries []ToolEntry) result.Result[UpdateData] {
 	// Load existing recent entries
 	var existing []ToolEntry
 	if data, err := os.ReadFile(o.RecentPath); err == nil {
@@ -435,9 +474,20 @@ func (o *JournalObserver) updateRecent(newEntries []ToolEntry) error {
 	// Save back
 	data, err := json.MarshalIndent(existing, "", "  ")
 	if err != nil {
-		return err
+		return result.NewFailure[UpdateData]([]result.SAWError{{
+			Code:     "JOURNAL_ERROR",
+			Message:  err.Error(),
+			Severity: "fatal",
+		}})
 	}
-	return os.WriteFile(o.RecentPath, data, 0644)
+	if err := os.WriteFile(o.RecentPath, data, 0644); err != nil {
+		return result.NewFailure[UpdateData]([]result.SAWError{{
+			Code:     "JOURNAL_ERROR",
+			Message:  err.Error(),
+			Severity: "fatal",
+		}})
+	}
+	return result.NewSuccess(UpdateData{TotalEntries: len(existing)})
 }
 
 // LoadJournal reads all entries from index.jsonl.
