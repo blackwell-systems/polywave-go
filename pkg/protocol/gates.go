@@ -16,6 +16,15 @@ import (
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
 )
 
+// loggerFrom returns the provided logger if non-nil, otherwise slog.Default().
+// This helper allows optional logger injection while maintaining backward compatibility.
+func loggerFrom(l *slog.Logger) *slog.Logger {
+	if l == nil {
+		return slog.Default()
+	}
+	return l
+}
+
 // GateResult represents the outcome of executing a single quality gate.
 // It captures all execution details including stdout/stderr and pass/fail status.
 type GateResult struct {
@@ -104,7 +113,8 @@ func groupGatesByParallelGroup(gates []QualityGate) []gateGroup {
 // executeSingleGate runs a single gate and returns its result.
 // Handles cache lookup, format gate special case, and result caching.
 // This function extracts the per-gate execution logic from RunGatesWithCache's loop.
-func executeSingleGate(gate QualityGate, repoDir string, cache *gatecache.Cache) GateResult {
+func executeSingleGate(gate QualityGate, repoDir string, cache *gatecache.Cache, logger *slog.Logger) GateResult {
+	log := loggerFrom(logger)
 	// Build a per-gate cache key that includes the gate command string.
 	// This ensures that changing the command (e.g. adding a flag) causes
 	// a cache miss rather than returning a stale result.
@@ -124,7 +134,7 @@ func executeSingleGate(gate QualityGate, repoDir string, cache *gatecache.Cache)
 	if cache != nil && cacheKey.HeadCommit != "" {
 		if cached, ok := cache.Get(cacheKey, gate.Type); ok {
 			skipReason := fmt.Sprintf("cached at SHA %s", cacheKey.HeadCommit)
-			slog.Default().Debug("protocol: gate skipped (cached)", "gate", gate.Type, "sha", cacheKey.HeadCommit)
+			log.Debug("protocol: gate skipped (cached)", "gate", gate.Type, "sha", cacheKey.HeadCommit)
 			return GateResult{
 				Type:       gate.Type,
 				Command:    gate.Command,
@@ -144,7 +154,7 @@ func executeSingleGate(gate QualityGate, repoDir string, cache *gatecache.Cache)
 	// but before the generic exec block. Fix mode always bypasses cache anyway
 	// since we invalidate after running.
 	if gate.Type == "format" {
-		return runFormatGate(gate, repoDir, cache)
+		return runFormatGate(gate, repoDir, cache, logger)
 	}
 
 	// Cache miss — run the gate
@@ -203,7 +213,7 @@ func executeSingleGate(gate QualityGate, repoDir string, cache *gatecache.Cache)
 
 // executeGatesConcurrently runs gates in parallel using goroutines.
 // Returns when all gates complete. Collects results in order.
-func executeGatesConcurrently(gates []QualityGate, repoDir string, cache *gatecache.Cache) []GateResult {
+func executeGatesConcurrently(gates []QualityGate, repoDir string, cache *gatecache.Cache, logger *slog.Logger) []GateResult {
 	var wg sync.WaitGroup
 	results := make([]GateResult, len(gates))
 
@@ -211,7 +221,7 @@ func executeGatesConcurrently(gates []QualityGate, repoDir string, cache *gateca
 		wg.Add(1)
 		go func(idx int, g QualityGate) {
 			defer wg.Done()
-			results[idx] = executeSingleGate(g, repoDir, cache)
+			results[idx] = executeSingleGate(g, repoDir, cache, logger)
 		}(i, gate)
 	}
 
@@ -258,7 +268,8 @@ func isSourceGateType(t string) bool {
 // If gate.Fix is true, runs the fix command (rewrites files) and invalidates
 // the cache (if non-nil) because file content has changed.
 // If gate.Fix is false (default), runs the check command (report only).
-func runFormatGate(gate QualityGate, repoDir string, cache *gatecache.Cache) GateResult {
+func runFormatGate(gate QualityGate, repoDir string, cache *gatecache.Cache, logger *slog.Logger) GateResult {
+	_ = loggerFrom(logger) // Reserved for future logging
 	result := GateResult{
 		Type:     gate.Type,
 		Command:  gate.Command,
@@ -335,7 +346,8 @@ func runFormatGate(gate QualityGate, repoDir string, cache *gatecache.Cache) Gat
 //
 // Returns a successful Result with empty Gates slice if manifest has no QualityGates or Gates is empty.
 // Gate failures are recorded in GateResult.Passed; the caller decides how to handle them.
-func runGates(manifest *IMPLManifest, waveNumber int, repoDir string) result.Result[GatesData] {
+func runGates(manifest *IMPLManifest, waveNumber int, repoDir string, logger *slog.Logger) result.Result[GatesData] {
+	_ = loggerFrom(logger) // Reserved for future logging
 	// Return empty results if no quality gates defined
 	if manifest.QualityGates == nil || len(manifest.QualityGates.Gates) == 0 {
 		return result.NewSuccess(GatesData{Gates: []GateResult{}})
@@ -386,7 +398,7 @@ func runGates(manifest *IMPLManifest, waveNumber int, repoDir string) result.Res
 
 		// Format gates use the dedicated runner for auto-detection + fix mode.
 		if gate.Type == "format" {
-			gates = append(gates, runFormatGate(gate, repoDir, nil))
+			gates = append(gates, runFormatGate(gate, repoDir, nil, logger))
 			continue
 		}
 
@@ -468,7 +480,8 @@ func filterGatesByTiming(manifest *IMPLManifest, timing string) []QualityGate {
 // This is the preferred public entry point for pre-merge gate execution at finalize-wave step 3.
 // It delegates to RunGatesWithCache with a filtered manifest; cache param may be nil.
 // Signature mirrors RunGatesWithCache exactly.
-func RunPreMergeGates(manifest *IMPLManifest, waveNumber int, repoDir string, cache *gatecache.Cache) result.Result[GatesData] {
+func RunPreMergeGates(manifest *IMPLManifest, waveNumber int, repoDir string, cache *gatecache.Cache, logger *slog.Logger) result.Result[GatesData] {
+	_ = loggerFrom(logger) // Reserved for future logging
 	filtered := filterGatesByTiming(manifest, "pre-merge")
 	if len(filtered) == 0 {
 		return result.NewSuccess(GatesData{Gates: []GateResult{}})
@@ -479,7 +492,7 @@ func RunPreMergeGates(manifest *IMPLManifest, waveNumber int, repoDir string, ca
 		Level: manifest.QualityGates.Level,
 		Gates: filtered,
 	}
-	return RunGatesWithCache(&tmp, waveNumber, repoDir, cache)
+	return RunGatesWithCache(&tmp, waveNumber, repoDir, cache, logger)
 }
 
 // RunPostMergeGates executes only gates with timing="post-merge".
@@ -488,7 +501,8 @@ func RunPreMergeGates(manifest *IMPLManifest, waveNumber int, repoDir string, ca
 // Runs without cache (post-merge state is always fresh, so caching is intentionally omitted).
 // This is the public entry point for post-merge gate execution; it delegates to the
 // internal runGates function.
-func RunPostMergeGates(manifest *IMPLManifest, waveNumber int, repoDir string) result.Result[GatesData] {
+func RunPostMergeGates(manifest *IMPLManifest, waveNumber int, repoDir string, logger *slog.Logger) result.Result[GatesData] {
+	_ = loggerFrom(logger) // Reserved for future logging
 	filtered := filterGatesByTiming(manifest, "post-merge")
 	if len(filtered) == 0 {
 		return result.NewSuccess(GatesData{Gates: []GateResult{}})
@@ -498,7 +512,7 @@ func RunPostMergeGates(manifest *IMPLManifest, waveNumber int, repoDir string) r
 		Level: manifest.QualityGates.Level,
 		Gates: filtered,
 	}
-	return runGates(&tmp, waveNumber, repoDir)
+	return runGates(&tmp, waveNumber, repoDir, logger)
 }
 
 // RunGatesWithCache executes quality gates with optional result caching.
@@ -507,9 +521,11 @@ func RunPostMergeGates(manifest *IMPLManifest, waveNumber int, repoDir string) r
 // Gates are grouped by phase (PRE → VALIDATION → POST) and executed in order.
 // Within each phase, gates can be grouped by parallel_group for concurrent execution.
 // Prefer RunPreMergeGates over calling this directly for pre-merge gate execution.
-func RunGatesWithCache(manifest *IMPLManifest, waveNumber int, repoDir string, cache *gatecache.Cache) result.Result[GatesData] {
+func RunGatesWithCache(manifest *IMPLManifest, waveNumber int, repoDir string, cache *gatecache.Cache, logger *slog.Logger) result.Result[GatesData] {
+	_ = loggerFrom(logger) // Reserved for future logging
+
 	if cache == nil {
-		return runGates(manifest, waveNumber, repoDir)
+		return runGates(manifest, waveNumber, repoDir, logger)
 	}
 
 	// Return empty results if no quality gates defined
@@ -584,12 +600,12 @@ func RunGatesWithCache(manifest *IMPLManifest, waveNumber int, repoDir string, c
 			if len(activeGates) > 0 {
 				if group.parallel {
 					// Execute concurrently
-					results := executeGatesConcurrently(activeGates, repoDir, cache)
+					results := executeGatesConcurrently(activeGates, repoDir, cache, logger)
 					groupResults = append(groupResults, results...)
 				} else {
 					// Execute sequentially
 					for _, gate := range activeGates {
-						gateResult := executeSingleGate(gate, repoDir, cache)
+						gateResult := executeSingleGate(gate, repoDir, cache, logger)
 						groupResults = append(groupResults, gateResult)
 					}
 				}
