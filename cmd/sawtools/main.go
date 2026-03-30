@@ -65,6 +65,7 @@ func main() {
 		newAnalyzeDepsCmd(),
 		newDetectScaffoldsCmd(),
 		newDetectSharedTypesCmd(),
+		newDetectWiringCmd(),
 		newAnalyzeSuitabilityCmd(),
 		newExtractCommandsCmd(),
 		newFinalizeWaveCmd(),
