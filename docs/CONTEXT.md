@@ -242,3 +242,5 @@ type BackendConfig struct {
   - IMPL doc: docs/IMPL/complete/IMPL-cli-thin-adapter.yaml
 - **detect-wiring**: completed 2026-03-30, 2 waves, 4 agents
   - IMPL doc: docs/IMPL/complete/IMPL-detect-wiring.yaml
+- **logging-injection-remaining**: completed 2026-03-30, 2 waves, 8 agents
+  - IMPL doc: docs/IMPL/complete/IMPL-logging-injection-remaining.yaml

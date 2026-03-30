@@ -1,3 +1,4 @@
+completion_date: "2026-03-30"
 title: Complete Logger Injection — Protocol, Orchestrator, Resume Packages
 feature_slug: logging-injection-remaining
 verdict: SUITABLE
@@ -604,5 +605,5 @@ critic_report:
     summary: All agent briefs verified against codebase. Line numbers, function signatures, and call sites are accurate. Interface contracts match actual function definitions. loggerFrom helper exists in pkg/engine/runner.go. Wave 2 agents correctly identify and include all necessary call site updates. No errors found.
     reviewed_at: "2026-03-30T17:17:47Z"
     issue_count: 0
-state: REVIEWED
+state: COMPLETE
 injection_method: hook
