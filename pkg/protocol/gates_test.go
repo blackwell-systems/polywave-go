@@ -16,7 +16,7 @@ import (
 func TestRunGates_NoGates(t *testing.T) {
 	// Test with nil QualityGates
 	manifest := &IMPLManifest{}
-	result := RunGates(manifest, 1, "/tmp")
+	result := runGates(manifest, 1, "/tmp")
 	if !result.IsSuccess() {
 		t.Fatalf("expected success, got: %v", result.Errors)
 	}
@@ -30,7 +30,7 @@ func TestRunGates_NoGates(t *testing.T) {
 		Level: "quick",
 		Gates: []QualityGate{},
 	}
-	result = RunGates(manifest, 1, "/tmp")
+	result = runGates(manifest, 1, "/tmp")
 	if !result.IsSuccess() {
 		t.Fatalf("expected success, got: %v", result.Errors)
 	}
@@ -54,7 +54,7 @@ func TestRunGates_PassingGate(t *testing.T) {
 		},
 	}
 
-	res := RunGates(manifest, 1, "/tmp")
+	res := runGates(manifest, 1, "/tmp")
 	if !res.IsSuccess() {
 		t.Fatalf("expected success, got: %v", res.Errors)
 	}
@@ -99,7 +99,7 @@ func TestRunGates_FailingGate(t *testing.T) {
 		},
 	}
 
-	res := RunGates(manifest, 1, "/tmp")
+	res := runGates(manifest, 1, "/tmp")
 	if !res.IsSuccess() {
 		t.Fatalf("expected success (gate failures don't fail Result), got: %v", res.Errors)
 	}
@@ -137,7 +137,7 @@ func TestRunGates_MixedGates(t *testing.T) {
 		},
 	}
 
-	res := RunGates(manifest, 1, "/tmp")
+	res := runGates(manifest, 1, "/tmp")
 	if !res.IsSuccess() {
 		t.Fatalf("expected success, got: %v", res.Errors)
 	}
@@ -178,7 +178,7 @@ func TestRunGates_CapturesOutput(t *testing.T) {
 		},
 	}
 
-	res := RunGates(manifest, 1, "/tmp")
+	res := runGates(manifest, 1, "/tmp")
 	if !res.IsSuccess() {
 		t.Fatalf("expected success, got: %v", res.Errors)
 	}
@@ -211,7 +211,7 @@ func TestRunGates_NonExistentCommand(t *testing.T) {
 		},
 	}
 
-	res := RunGates(manifest, 1, "/tmp")
+	res := runGates(manifest, 1, "/tmp")
 	if !res.IsSuccess() {
 		t.Fatalf("expected success (gate failures don't fail Result), got: %v", res.Errors)
 	}
@@ -367,7 +367,7 @@ func TestRunGates_ParsedErrors_Build(t *testing.T) {
 		},
 	}
 
-	res := RunGates(manifest, 1, "/tmp")
+	res := runGates(manifest, 1, "/tmp")
 	if !res.IsSuccess() {
 		t.Fatalf("expected success, got: %v", res.Errors)
 	}
@@ -402,7 +402,7 @@ func TestRunGates_ParsedErrors_Passing(t *testing.T) {
 		},
 	}
 
-	res := RunGates(manifest, 1, "/tmp")
+	res := runGates(manifest, 1, "/tmp")
 	if !res.IsSuccess() {
 		t.Fatalf("expected success, got: %v", res.Errors)
 	}
@@ -491,7 +491,7 @@ func TestRunGates_FormatGate_CheckMode(t *testing.T) {
 		},
 	}
 
-	res := RunGates(manifest, 1, t.TempDir())
+	res := runGates(manifest, 1, t.TempDir())
 	if !res.IsSuccess() {
 		t.Fatalf("expected success, got: %v", res.Errors)
 	}
@@ -572,7 +572,7 @@ func TestRunGates_FormatGate_SkipNoFormatter(t *testing.T) {
 		},
 	}
 
-	res := RunGates(manifest, 1, emptyDir)
+	res := runGates(manifest, 1, emptyDir)
 	if !res.IsSuccess() {
 		t.Fatalf("expected success, got: %v", res.Errors)
 	}
@@ -617,7 +617,7 @@ func TestRunGates_FormatGate_ExplicitCommandSucceeds(t *testing.T) {
 		},
 	}
 
-	res := RunGates(manifest, 1, tmpDir)
+	res := runGates(manifest, 1, tmpDir)
 	if !res.IsSuccess() {
 		t.Fatalf("expected success, got: %v", res.Errors)
 	}

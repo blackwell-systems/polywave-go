@@ -325,13 +325,17 @@ func runFormatGate(gate QualityGate, repoDir string, cache *gatecache.Cache) Gat
 	return result
 }
 
-// RunGates executes quality gates for a specific wave from the manifest.
+// runGates executes quality gates for a specific wave from the manifest.
 // It runs each gate command and collects results.
 // The repoDir parameter is the working directory for command execution.
 //
+// This is an internal implementation detail. Callers outside this package must
+// use RunPreMergeGates or RunPostMergeGates. RunGatesWithCache is the correct
+// public entry point when optional caching is desired.
+//
 // Returns a successful Result with empty Gates slice if manifest has no QualityGates or Gates is empty.
 // Gate failures are recorded in GateResult.Passed; the caller decides how to handle them.
-func RunGates(manifest *IMPLManifest, waveNumber int, repoDir string) result.Result[GatesData] {
+func runGates(manifest *IMPLManifest, waveNumber int, repoDir string) result.Result[GatesData] {
 	// Return empty results if no quality gates defined
 	if manifest.QualityGates == nil || len(manifest.QualityGates.Gates) == 0 {
 		return result.NewSuccess(GatesData{Gates: []GateResult{}})
@@ -461,8 +465,9 @@ func filterGatesByTiming(manifest *IMPLManifest, timing string) []QualityGate {
 }
 
 // RunPreMergeGates executes only gates with timing="pre-merge" or timing="" (default).
-// It replaces the direct RunGatesWithCache call at finalize-wave step 3.
-// Signature mirrors RunGatesWithCache exactly; cache param may be nil.
+// This is the preferred public entry point for pre-merge gate execution at finalize-wave step 3.
+// It delegates to RunGatesWithCache with a filtered manifest; cache param may be nil.
+// Signature mirrors RunGatesWithCache exactly.
 func RunPreMergeGates(manifest *IMPLManifest, waveNumber int, repoDir string, cache *gatecache.Cache) result.Result[GatesData] {
 	filtered := filterGatesByTiming(manifest, "pre-merge")
 	if len(filtered) == 0 {
@@ -480,7 +485,9 @@ func RunPreMergeGates(manifest *IMPLManifest, waveNumber int, repoDir string, ca
 // RunPostMergeGates executes only gates with timing="post-merge".
 // Called at finalize-wave step 5, after MergeAgents completes successfully.
 // Returns empty GatesData (not error) when no post-merge gates are defined.
-// Runs without cache (post-merge state is always fresh).
+// Runs without cache (post-merge state is always fresh, so caching is intentionally omitted).
+// This is the public entry point for post-merge gate execution; it delegates to the
+// internal runGates function.
 func RunPostMergeGates(manifest *IMPLManifest, waveNumber int, repoDir string) result.Result[GatesData] {
 	filtered := filterGatesByTiming(manifest, "post-merge")
 	if len(filtered) == 0 {
@@ -491,16 +498,18 @@ func RunPostMergeGates(manifest *IMPLManifest, waveNumber int, repoDir string) r
 		Level: manifest.QualityGates.Level,
 		Gates: filtered,
 	}
-	return RunGates(&tmp, waveNumber, repoDir)
+	return runGates(&tmp, waveNumber, repoDir)
 }
 
 // RunGatesWithCache executes quality gates with optional result caching.
-// If cache is nil, it behaves identically to RunGates.
+// This is the public entry point for pre-merge gate execution with optional caching.
+// If cache is nil, it delegates to the internal runGates function (no caching).
 // Gates are grouped by phase (PRE → VALIDATION → POST) and executed in order.
 // Within each phase, gates can be grouped by parallel_group for concurrent execution.
+// Prefer RunPreMergeGates over calling this directly for pre-merge gate execution.
 func RunGatesWithCache(manifest *IMPLManifest, waveNumber int, repoDir string, cache *gatecache.Cache) result.Result[GatesData] {
 	if cache == nil {
-		return RunGates(manifest, waveNumber, repoDir)
+		return runGates(manifest, waveNumber, repoDir)
 	}
 
 	// Return empty results if no quality gates defined
