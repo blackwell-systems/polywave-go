@@ -3,6 +3,7 @@ package resume
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -23,8 +24,19 @@ func TestSaveAndLoadAgentSession(t *testing.T) {
 	slug := "my-feature"
 	session := makeTestSession("A", 1)
 
-	if err := SaveAgentSession(stateDir, slug, session); err != nil {
-		t.Fatalf("SaveAgentSession: %v", err)
+	res := SaveAgentSession(stateDir, slug, session)
+	if !res.IsSuccess() {
+		t.Fatalf("SaveAgentSession: result not success: %v", res.Errors)
+	}
+
+	// Verify SaveSessionData.SessionPath is correct.
+	data := res.GetData()
+	expectedPath := filepath.Join(stateDir, "sessions", slug+".json")
+	if data.SessionPath != expectedPath {
+		t.Errorf("SaveSessionData.SessionPath: got %q, want %q", data.SessionPath, expectedPath)
+	}
+	if data.Timestamp.IsZero() {
+		t.Error("SaveSessionData.Timestamp should not be zero")
 	}
 
 	sessions, err := LoadAgentSessions(stateDir, slug)
@@ -61,11 +73,11 @@ func TestSaveAgentSession_UpdateExisting(t *testing.T) {
 	sessionA := makeTestSession("A", 1)
 	sessionB := makeTestSession("B", 1)
 
-	if err := SaveAgentSession(stateDir, slug, sessionA); err != nil {
-		t.Fatalf("SaveAgentSession A: %v", err)
+	if res := SaveAgentSession(stateDir, slug, sessionA); !res.IsSuccess() {
+		t.Fatalf("SaveAgentSession A: %v", res.Errors)
 	}
-	if err := SaveAgentSession(stateDir, slug, sessionB); err != nil {
-		t.Fatalf("SaveAgentSession B: %v", err)
+	if res := SaveAgentSession(stateDir, slug, sessionB); !res.IsSuccess() {
+		t.Fatalf("SaveAgentSession B: %v", res.Errors)
 	}
 
 	sessions, err := LoadAgentSessions(stateDir, slug)
@@ -112,8 +124,8 @@ func TestSaveAgentSession_CreatesDirectory(t *testing.T) {
 	slug := "dir-test"
 	session := makeTestSession("A", 2)
 
-	if err := SaveAgentSession(stateDir, slug, session); err != nil {
-		t.Fatalf("SaveAgentSession: %v", err)
+	if res := SaveAgentSession(stateDir, slug, session); !res.IsSuccess() {
+		t.Fatalf("SaveAgentSession: %v", res.Errors)
 	}
 
 	expectedDir := filepath.Join(stateDir, "sessions")
@@ -142,8 +154,8 @@ func TestSaveAgentSession_AtomicWrite(t *testing.T) {
 	slug := "atomic-test"
 	session := makeTestSession("A", 1)
 
-	if err := SaveAgentSession(stateDir, slug, session); err != nil {
-		t.Fatalf("SaveAgentSession: %v", err)
+	if res := SaveAgentSession(stateDir, slug, session); !res.IsSuccess() {
+		t.Fatalf("SaveAgentSession: %v", res.Errors)
 	}
 
 	destPath := filepath.Join(stateDir, "sessions", slug+".json")
@@ -157,5 +169,41 @@ func TestSaveAgentSession_AtomicWrite(t *testing.T) {
 	// Temp file must NOT remain after successful write.
 	if _, err := os.Stat(tmpPath); !os.IsNotExist(err) {
 		t.Errorf("temp file %s should not exist after successful save", tmpPath)
+	}
+}
+
+// TestSaveAgentSession_FailureReturnsFatal verifies that a filesystem error results
+// in a Fatal result with code SESSION_SAVE_FAILED and the slug in the error context.
+func TestSaveAgentSession_FailureReturnsFatal(t *testing.T) {
+	// Use a stateDir path that cannot be created: use an existing file as the parent.
+	tmpFile, err := os.CreateTemp(t.TempDir(), "not-a-dir-*.txt")
+	if err != nil {
+		t.Fatalf("setup: %v", err)
+	}
+	_ = tmpFile.Close()
+
+	// Point stateDir to a path that uses the file as a directory component — cannot be created.
+	stateDir := filepath.Join(tmpFile.Name(), "subdir")
+	slug := "fail-test"
+	session := makeTestSession("A", 1)
+
+	res := SaveAgentSession(stateDir, slug, session)
+
+	if !res.IsFatal() {
+		t.Fatalf("expected Fatal result, got code: %s", res.Code)
+	}
+	if len(res.Errors) == 0 {
+		t.Fatal("expected at least one error in Fatal result")
+	}
+
+	sawErr := res.Errors[0]
+	if sawErr.Code != "SESSION_SAVE_FAILED" {
+		t.Errorf("error code: got %q, want %q", sawErr.Code, "SESSION_SAVE_FAILED")
+	}
+	if sawErr.Context["slug"] != slug {
+		t.Errorf("error context slug: got %q, want %q", sawErr.Context["slug"], slug)
+	}
+	if !strings.Contains(sawErr.Message, "resume.SaveAgentSession") {
+		t.Errorf("error message should contain function name, got: %q", sawErr.Message)
 	}
 }
