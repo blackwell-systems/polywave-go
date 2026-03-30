@@ -25,7 +25,7 @@ All four protocol files (`worktree.go`, `merge_agents.go`, `program_worktree.go`
 **What is needed:** Add a `Logger *slog.Logger` parameter to the relevant protocol functions, or introduce a package-level options struct for the functions that are called with many arguments. Replace all `slog.Default()` calls with the injected logger. Wire it at the `pkg/engine` and `cmd/sawtools` call sites.
 
 Affected files and approximate call counts:
-- `pkg/protocol/worktree.go` — 7 calls
+- `pkg/protocol/worktree.go` — 8 calls
 - `pkg/protocol/merge_agents.go` — 2 calls
 - `pkg/protocol/program_worktree.go` — 2 calls
 - `pkg/protocol/gates.go` — 1 call
@@ -42,6 +42,39 @@ The `Orchestrator` type has a proper `log()` method, but `stubs.go` (4 calls) an
 `ClassifyWorktrees` calls `slog.Default().Warn(...)` directly. The function has no options struct or constructor; the logger cannot be overridden by callers.
 
 **What is needed:** Add a `logger *slog.Logger` parameter to `ClassifyWorktrees` (or a `ClassifyWorktreesOpts` struct if it grows). Wire it at the call site in the engine.
+
+---
+
+## Why these logging islands exist
+
+The three sections above describe **architectural isolation gaps** where the engine layer has a logger but cannot inject it into lower-level packages.
+
+**The pattern:**
+- `pkg/engine` functions receive a logger via their opts structs (`FinalizeWaveOpts.Logger`, `PrepareWaveOpts.Logger`, etc.)
+- The engine functions call protocol/orchestrator/resume functions without logger parameters
+- Those functions fall back to `slog.Default()`, which may route to a different handler than the engine's logger
+
+**Examples:**
+- `pkg/engine/finalize.go` has a logger but calls `protocol.MergeAgents()` without passing it
+- `pkg/engine/prepare.go` has a logger but calls `resume.ClassifyWorktrees()` without passing it
+- `pkg/orchestrator` package-level functions like `RunStubScan()` have no access to the `Orchestrator` struct's logger field
+
+**Impact:**
+- CLI consumers (`cmd/sawtools`) get consistent logging through `newSawLogger()`
+- Programmatic consumers (`scout-and-wave-web`) cannot control protocol/orchestrator/resume logging — these always route to `slog.Default()`, which in the web app goes to a different handler than the engine's logger
+
+**The fix:** The three "Remaining work" sections above close these gaps by adding logger injection at the call boundaries between engine and protocol/orchestrator/resume packages.
+
+**Helper pattern:** Some engine functions use `loggerFrom(opts.Logger)` to handle nil-logger fallback:
+```go
+func loggerFrom(l *slog.Logger) *slog.Logger {
+    if l != nil {
+        return l
+    }
+    return slog.Default()
+}
+```
+This pattern should be adopted across all engine functions that accept optional loggers.
 
 ---
 
