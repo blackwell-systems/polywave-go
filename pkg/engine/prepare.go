@@ -713,20 +713,10 @@ func extractBriefsAndInitJournals(
 				"IMPL branch to main after all IMPLs in the tier complete.\n"
 		}
 
-		// Build the agent brief
-		brief := fmt.Sprintf(`# Agent %s Brief - Wave %d
-
-**IMPL Doc:** %s
-
-## Files Owned
-
-%s
-
-## Task
-
-%s
-%s%s%s%s
-`,
+		// Build the agent brief with YAML frontmatter (E44: saw_name for Orchestrator naming)
+		sawName := fmt.Sprintf("[SAW:wave%d:agent-%s] %s", opts.WaveNum, agentID, briefTaskSummary(agentTask))
+		brief := fmt.Sprintf("---\nsaw_name: %q\n---\n\n# Agent %s Brief - Wave %d\n\n**IMPL Doc:** %s\n\n## Files Owned\n\n%s\n\n## Task\n\n%s\n%s%s%s%s\n",
+			sawName,
 			agentID,
 			opts.WaveNum,
 			opts.IMPLPath,
@@ -787,6 +777,36 @@ func extractBriefsAndInitJournals(
 	}
 
 	return agentBriefs, nil
+}
+
+// briefTaskSummary extracts a short task summary for use in saw_name frontmatter.
+// It looks for a "**Role:**" line first, then falls back to the first non-empty line.
+// Result is truncated to 60 characters.
+func briefTaskSummary(task string) string {
+	const maxLen = 60
+	for _, line := range strings.Split(task, "\n") {
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, "**Role:**") {
+			line = strings.TrimSpace(strings.TrimPrefix(line, "**Role:**"))
+			if len(line) > maxLen {
+				return line[:maxLen]
+			}
+			return line
+		}
+	}
+	// Fallback: first non-empty, non-heading line
+	for _, line := range strings.Split(task, "\n") {
+		line = strings.TrimSpace(line)
+		if line != "" && !strings.HasPrefix(line, "#") {
+			// Strip markdown bold markers for cleaner output
+			line = strings.ReplaceAll(line, "**", "")
+			if len(line) > maxLen {
+				return line[:maxLen]
+			}
+			return line
+		}
+	}
+	return "implement task"
 }
 
 // formatFileList formats a list of file paths as a markdown bullet list.

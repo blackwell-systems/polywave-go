@@ -107,7 +107,7 @@ func SetImplState(manifestPath string, newState ProtocolState, opts SetImplState
 			commitMsg = fmt.Sprintf("chore: set IMPL state to %s", newState)
 		}
 
-		if err := git.Add(manifestDir, manifestPath); err != nil {
+		if err := git.Add(manifestDir, filepath.Base(manifestPath)); err != nil {
 			return result.NewFailure[*SetImplStateData]([]result.SAWError{{
 				Code:     result.CodeStateTransition,
 				Message:  fmt.Sprintf("git add failed: %v", err),

@@ -176,12 +176,14 @@ saw_name: %s
 		Wave       int      `json:"wave"`
 		ImplDoc    string   `json:"impl_doc"`
 		OwnedFiles []string `json:"owned_files"`
+		RepoRoot   string   `json:"repo_root"`
 	}
 	ownershipData, _ := json.MarshalIndent(ownershipManifest{
 		Agent:      opts.AgentID,
 		Wave:       opts.WaveNum,
 		ImplDoc:    opts.ManifestPath,
 		OwnedFiles: ownedFiles,
+		RepoRoot:   opts.ProjectRoot,
 	}, "", "  ")
 	ownershipPath := filepath.Join(filepath.Dir(briefPath), ".saw-ownership.json")
 	if err := os.WriteFile(ownershipPath, ownershipData, 0644); err != nil {
