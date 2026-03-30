@@ -2,13 +2,14 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/engine"
 )
 
 // allCompleteManifestYAML is a PROGRAM manifest where all IMPLs are complete.
@@ -91,7 +92,7 @@ func TestMarkProgramComplete_AllComplete(t *testing.T) {
 		t.Fatalf("command failed: %v\nstderr: %s\nstdout: %s", err, stderr.String(), stdout.String())
 	}
 
-	var result MarkProgramCompleteResult
+	var result engine.MarkProgramCompleteResult
 	if err := json.Unmarshal(stdout.Bytes(), &result); err != nil {
 		t.Fatalf("failed to parse JSON output: %v\noutput: %s", err, stdout.String())
 	}
@@ -138,7 +139,7 @@ func TestMarkProgramComplete_AllComplete(t *testing.T) {
 	}
 }
 
-// TestMarkProgramComplete_NotComplete_TierPending tests that verifyAllTiersComplete
+// TestMarkProgramComplete_NotComplete_TierPending tests that MarkProgramComplete
 // returns an error when not all IMPLs are complete.
 func TestMarkProgramComplete_NotComplete_TierPending(t *testing.T) {
 	tmpDir := t.TempDir()
@@ -148,12 +149,10 @@ func TestMarkProgramComplete_NotComplete_TierPending(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	manifest, err := protocol.ParseProgramManifest(manifestPath)
-	if err != nil {
-		t.Fatalf("unexpected parse error: %v", err)
-	}
-
-	err = verifyAllTiersComplete(manifest)
+	_, err := engine.MarkProgramComplete(context.Background(), engine.MarkProgramCompleteOpts{
+		ManifestPath: manifestPath,
+		RepoDir:      tmpDir,
+	})
 	if err == nil {
 		t.Fatal("expected error for incomplete tiers, got nil")
 	}
@@ -204,7 +203,7 @@ func TestMarkProgramComplete_UpdatesContext(t *testing.T) {
 		t.Errorf("expected tier count in CONTEXT.md, got:\n%s", content)
 	}
 
-	var result MarkProgramCompleteResult
+	var result engine.MarkProgramCompleteResult
 	if err := json.Unmarshal(stdout.Bytes(), &result); err != nil {
 		t.Fatalf("failed to parse JSON: %v", err)
 	}
@@ -242,12 +241,10 @@ completion:
 		t.Fatal(err)
 	}
 
-	manifest, err := protocol.ParseProgramManifest(manifestPath)
-	if err != nil {
-		t.Fatalf("unexpected parse error: %v", err)
-	}
-
-	err = verifyAllTiersComplete(manifest)
+	_, err := engine.MarkProgramComplete(context.Background(), engine.MarkProgramCompleteOpts{
+		ManifestPath: manifestPath,
+		RepoDir:      tmpDir,
+	})
 	if err == nil {
 		t.Fatal("expected error for impl with missing status, got nil")
 	}
