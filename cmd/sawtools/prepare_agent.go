@@ -3,11 +3,9 @@ package main
 import (
 	"encoding/json"
 	"fmt"
-	"os"
 	"path/filepath"
 
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/journal"
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/engine"
 	"github.com/spf13/cobra"
 )
 
@@ -44,196 +42,15 @@ This eliminates the ~10s latency of agents calling extract-context at startup.`,
 				projectRoot = repoDir
 			}
 
-			// Parse IMPL doc
-			doc, err := protocol.Load(manifestPath)
+			result, err := engine.PrepareAgent(engine.PrepareAgentOpts{
+				ManifestPath: manifestPath,
+				ProjectRoot:  projectRoot,
+				WaveNum:      waveNum,
+				AgentID:      agentID,
+				NoWorktree:   noWorktree,
+			})
 			if err != nil {
-				return fmt.Errorf("failed to parse IMPL doc: %w", err)
-			}
-
-			// Find the agent's wave and task
-			var agentTask string
-			var agentFiles []string
-			for _, wave := range doc.Waves {
-				if wave.Number != waveNum {
-					continue
-				}
-				for _, agent := range wave.Agents {
-					if agent.ID == agentID {
-						agentTask = agent.Task
-						agentFiles = agent.Files
-						break
-					}
-				}
-			}
-
-			if agentTask == "" {
-				return fmt.Errorf("agent %s not found in wave %d", agentID, waveNum)
-			}
-
-			// Extract interface contracts
-			contractsSection := ""
-			if len(doc.InterfaceContracts) > 0 {
-				contractsSection = "\n\n## Interface Contracts\n\n"
-				for _, contract := range doc.InterfaceContracts {
-					contractsSection += fmt.Sprintf("### %s\n\n%s\n\n```\n%s\n```\n\n",
-						contract.Name, contract.Description, contract.Definition)
-				}
-			}
-
-			// Extract quality gates
-			gatesSection := ""
-			if doc.QualityGates != nil && doc.QualityGates.Level != "" {
-				gatesSection = "\n\n## Quality Gates\n\n"
-				gatesSection += fmt.Sprintf("Level: %s\n\n", doc.QualityGates.Level)
-				for _, gate := range doc.QualityGates.Gates {
-					gatesSection += fmt.Sprintf("- **%s**: `%s` (required: %t)\n",
-						gate.Type, gate.Command, gate.Required)
-					if gate.Description != "" {
-						gatesSection += fmt.Sprintf("  %s\n", gate.Description)
-					}
-				}
-			}
-
-			// Build the agent brief
-			brief := fmt.Sprintf(`# Agent %s Brief - Wave %d
-
-**IMPL Doc:** %s
-
-## Files Owned
-
-%s
-
-## Task
-
-%s
-%s%s
-`,
-				agentID,
-				waveNum,
-				manifestPath,
-				formatFileList(agentFiles),
-				agentTask,
-				contractsSection,
-				gatesSection,
-			)
-
-			// Determine output path
-			var briefPath string
-			if noWorktree {
-				// Solo agent - write to .saw-state (no slug scoping for .saw-state paths)
-				stateDir := protocol.SAWStateAgentDir(projectRoot, waveNum, fmt.Sprintf("agent-%s", agentID))
-				if err := os.MkdirAll(stateDir, 0755); err != nil {
-					return fmt.Errorf("failed to create state dir: %w", err)
-				}
-				briefPath = filepath.Join(stateDir, "brief.md")
-			} else {
-				// Worktree agent - write to worktree root (slug-scoped path)
-				worktreePath := protocol.WorktreeDir(projectRoot, doc.FeatureSlug, waveNum, agentID)
-				briefPath = filepath.Join(worktreePath, ".saw-agent-brief.md")
-			}
-
-			// Write brief
-			if err := os.WriteFile(briefPath, []byte(brief), 0644); err != nil {
-				return fmt.Errorf("failed to write brief: %w", err)
-			}
-
-			// Collect owned files from both agent.Files and file_ownership table.
-			// Many IMPL docs only populate file_ownership, so we merge both sources.
-			ownedSet := make(map[string]struct{})
-			for _, f := range agentFiles {
-				ownedSet[f] = struct{}{}
-			}
-			for _, fo := range doc.FileOwnership {
-				if fo.Agent == agentID && fo.Wave == waveNum {
-					ownedSet[fo.File] = struct{}{}
-				}
-			}
-			ownedFiles := make([]string, 0, len(ownedSet))
-			for f := range ownedSet {
-				ownedFiles = append(ownedFiles, f)
-			}
-
-			// Write .saw-ownership.json to the same directory as the brief.
-			// The check_wave_ownership PreToolUse hook reads this at write time.
-			type ownershipManifest struct {
-				Agent      string   `json:"agent"`
-				Wave       int      `json:"wave"`
-				ImplDoc    string   `json:"impl_doc"`
-				OwnedFiles []string `json:"owned_files"`
-			}
-			ownershipData, _ := json.MarshalIndent(ownershipManifest{
-				Agent:      agentID,
-				Wave:       waveNum,
-				ImplDoc:    manifestPath,
-				OwnedFiles: ownedFiles,
-			}, "", "  ")
-			ownershipPath := filepath.Join(filepath.Dir(briefPath), ".saw-ownership.json")
-			if err := os.WriteFile(ownershipPath, ownershipData, 0644); err != nil {
-				return fmt.Errorf("failed to write ownership manifest: %w", err)
-			}
-
-			// Determine and persist context_source for this agent.
-			// Detection: if any owned file belongs to a repo different from the manifest repo,
-			// use cross-repo-full; otherwise use prepared-brief (normal worktree path).
-			manifestRepoName := filepath.Base(projectRoot)
-			contextSource := protocol.ContextSourcePreparedBrief
-			for _, fo := range doc.FileOwnership {
-				if fo.Agent == agentID && fo.Wave == waveNum {
-					if fo.Repo != "" && fo.Repo != manifestRepoName {
-						contextSource = protocol.ContextSourceCrossRepoFull
-						break
-					}
-				}
-			}
-
-			// Write context_source to the agent entry in the IMPL doc.
-			for i, wave := range doc.Waves {
-				if wave.Number != waveNum {
-					continue
-				}
-				for j, agent := range wave.Agents {
-					if agent.ID == agentID {
-						doc.Waves[i].Agents[j].ContextSource = contextSource
-						break
-					}
-				}
-			}
-			if err := protocol.Save(doc, manifestPath); err != nil {
-				// Non-fatal: log but don't abort agent preparation
-				fmt.Fprintf(os.Stderr, "prepare-agent: warning: failed to persist context_source: %v\n", err)
-			}
-
-			// Initialize journal observer
-			fullAgentID := fmt.Sprintf("wave%d-agent-%s", waveNum, agentID)
-			observer, err := journal.NewObserver(projectRoot, fullAgentID)
-			if err != nil {
-				return fmt.Errorf("failed to create journal observer: %w", err)
-			}
-
-			// Initialize cursor if it doesn't exist
-			if _, err := os.Stat(observer.CursorPath); os.IsNotExist(err) {
-				emptyCursor := journal.SessionCursor{
-					SessionFile: "",
-					Offset:      0,
-				}
-				cursorData, _ := json.MarshalIndent(emptyCursor, "", "  ")
-				if err := os.WriteFile(observer.CursorPath, cursorData, 0644); err != nil {
-					return fmt.Errorf("failed to write cursor file: %w", err)
-				}
-			}
-
-			// Output result
-			result := map[string]interface{}{
-				"brief_path":     briefPath,
-				"brief_length":   len(brief),
-				"journal_dir":    observer.JournalDir,
-				"cursor_path":    observer.CursorPath,
-				"index_path":     observer.IndexPath,
-				"results_dir":    observer.ResultsDir,
-				"agent_id":       agentID,
-				"wave":           waveNum,
-				"files_owned":    len(agentFiles),
-				"context_source": string(contextSource),
+				return err
 			}
 
 			out, _ := json.MarshalIndent(result, "", "  ")
@@ -250,15 +67,4 @@ This eliminates the ~10s latency of agents calling extract-context at startup.`,
 	_ = cmd.MarkFlagRequired("agent")
 
 	return cmd
-}
-
-func formatFileList(files []string) string {
-	if len(files) == 0 {
-		return "(no files specified)"
-	}
-	result := ""
-	for _, f := range files {
-		result += fmt.Sprintf("- `%s`\n", f)
-	}
-	return result
 }
