@@ -291,7 +291,13 @@ func TestRollupTrend(t *testing.T) {
 		})
 	}
 
-	result, err := ComputeTrend(ctx, store, "cost", 7*24*time.Hour, 7)
+	result, err := ComputeTrend(ComputeTrendOpts{
+		Ctx:       ctx,
+		Store:     store,
+		Metric:    "cost",
+		TimeRange: 7 * 24 * time.Hour,
+		Buckets:   7,
+	})
 	if err != nil {
 		t.Fatalf("ComputeTrend: %v", err)
 	}
@@ -316,7 +322,13 @@ func TestRollupTrend(t *testing.T) {
 func TestRollupTrendUnsupportedMetric(t *testing.T) {
 	ctx := context.Background()
 	store := &rollupMockStore{}
-	_, err := ComputeTrend(ctx, store, "unknown", time.Hour, 5)
+	_, err := ComputeTrend(ComputeTrendOpts{
+		Ctx:       ctx,
+		Store:     store,
+		Metric:    "unknown",
+		TimeRange: time.Hour,
+		Buckets:   5,
+	})
 	if err == nil {
 		t.Fatal("expected error for unsupported metric")
 	}

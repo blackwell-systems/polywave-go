@@ -358,7 +358,13 @@ func StartWave(ctx context.Context, opts RunWaveOpts, onEvent func(Event)) error
 	if scaffoldModel == "" {
 		scaffoldModel = opts.WaveModel
 	}
-	if err := RunScaffold(ctx, opts.IMPLPath, opts.RepoPath, "", scaffoldModel, onEvent); err != nil {
+	if err := RunScaffold(RunScaffoldOpts{
+		Ctx:      ctx,
+		ImplPath: opts.IMPLPath,
+		RepoPath: opts.RepoPath,
+		Model:    scaffoldModel,
+		OnEvent:  onEvent,
+	}); err != nil {
 		publish("run_failed", map[string]string{"error": err.Error()})
 		return fmt.Errorf("engine.StartWave: scaffold: %w", err)
 	}
@@ -512,7 +518,14 @@ var gateChannels sync.Map
 
 // RunScaffold checks for pending scaffold files and runs a Scaffold agent if needed.
 // The model parameter is optional; if empty, the backend uses its default model.
-func RunScaffold(ctx context.Context, implPath, repoPath, sawRepoPath, model string, onEvent func(Event)) error {
+func RunScaffold(opts RunScaffoldOpts) error {
+	ctx := opts.Ctx
+	implPath := opts.ImplPath
+	repoPath := opts.RepoPath
+	sawRepoPath := opts.SAWRepoPath
+	model := opts.Model
+	onEvent := opts.OnEvent
+
 	publish := func(event string, data interface{}) {
 		onEvent(Event{Event: event, Data: data})
 	}

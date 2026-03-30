@@ -23,7 +23,13 @@ func loggerFrom(l *slog.Logger) *slog.Logger {
 // PrepareAgentContext loads journal history and generates context.md for agent recovery.
 // Returns empty string if no journal exists (first launch).
 // Returns error if journal exists but cannot be read (differentiate from "no journal").
-func PrepareAgentContext(projectRoot string, waveNum int, agentID string, maxEntries int, logger *slog.Logger) (string, error) {
+func PrepareAgentContext(opts PrepareAgentContextOpts) (string, error) {
+	projectRoot := opts.ProjectRoot
+	waveNum := opts.WaveNum
+	agentID := opts.AgentID
+	maxEntries := opts.MaxEntries
+	logger := opts.Logger
+
 	log := loggerFrom(logger)
 	// Default maxEntries to 50 per E23A spec
 	if maxEntries == 0 {

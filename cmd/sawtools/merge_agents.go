@@ -17,7 +17,11 @@ func newMergeAgentsCmd() *cobra.Command {
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			manifestPath := args[0]
-			res, err := protocol.MergeAgents(manifestPath, waveNum, repoDir, "", nil)
+			res, err := protocol.MergeAgents(protocol.MergeAgentsOpts{
+				ManifestPath: manifestPath,
+				WaveNum:      waveNum,
+				RepoDir:      repoDir,
+			})
 			if err != nil {
 				return fmt.Errorf("merge-agents: %w", err)
 			}

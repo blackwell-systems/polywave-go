@@ -135,7 +135,7 @@ func TestMergeAgents_AllSucceed(t *testing.T) {
 	manifestPath := createManifest(t, repoDir, waves)
 
 	// Run merge
-	result, err := MergeAgents(manifestPath, 1, repoDir, "", nil)
+	result, err := MergeAgents(MergeAgentsOpts{ManifestPath: manifestPath, WaveNum: 1, RepoDir: repoDir})
 	if err != nil {
 		t.Fatalf("MergeAgents returned error: %v", err)
 	}
@@ -254,7 +254,7 @@ func TestMergeAgents_ConflictStops(t *testing.T) {
 	manifestPath := createManifest(t, repoDir, waves)
 
 	// Run merge
-	result, err := MergeAgents(manifestPath, 1, repoDir, "", nil)
+	result, err := MergeAgents(MergeAgentsOpts{ManifestPath: manifestPath, WaveNum: 1, RepoDir: repoDir})
 	if err != nil {
 		t.Fatalf("MergeAgents returned error: %v", err)
 	}
@@ -309,7 +309,7 @@ func TestMergeAgents_WaveNotFound(t *testing.T) {
 	manifestPath := createManifest(t, repoDir, waves)
 
 	// Try to merge wave 2 (does not exist)
-	_, err := MergeAgents(manifestPath, 2, repoDir, "", nil)
+	_, err := MergeAgents(MergeAgentsOpts{ManifestPath: manifestPath, WaveNum: 2, RepoDir: repoDir})
 
 	// Should return error
 	if err == nil {
@@ -333,7 +333,7 @@ func TestMergeAgents_BranchNotFound(t *testing.T) {
 	manifestPath := createManifest(t, repoDir, waves)
 
 	// Run merge (branch wave1-agent-A does not exist)
-	result, err := MergeAgents(manifestPath, 1, repoDir, "", nil)
+	result, err := MergeAgents(MergeAgentsOpts{ManifestPath: manifestPath, WaveNum: 1, RepoDir: repoDir})
 	if err != nil {
 		t.Fatalf("MergeAgents returned error: %v", err)
 	}
@@ -385,7 +385,7 @@ func TestMergeAgents_TaskTruncation(t *testing.T) {
 	manifestPath := createManifest(t, repoDir, waves)
 
 	// Run merge
-	result, err := MergeAgents(manifestPath, 1, repoDir, "", nil)
+	result, err := MergeAgents(MergeAgentsOpts{ManifestPath: manifestPath, WaveNum: 1, RepoDir: repoDir})
 	if err != nil {
 		t.Fatalf("MergeAgents returned error: %v", err)
 	}
@@ -456,7 +456,7 @@ func TestMergeAgents_SkipsAlreadyMergedAgents(t *testing.T) {
 	}
 
 	// Run merge
-	result, err := MergeAgents(manifestPath, 1, repoDir, "", nil)
+	result, err := MergeAgents(MergeAgentsOpts{ManifestPath: manifestPath, WaveNum: 1, RepoDir: repoDir})
 	if err != nil {
 		t.Fatalf("MergeAgents returned error: %v", err)
 	}
@@ -523,7 +523,7 @@ func TestMergeAgents_AppendsMergeLog(t *testing.T) {
 	manifestPath := createManifest(t, repoDir, waves)
 
 	// Run merge
-	result, err := MergeAgents(manifestPath, 1, repoDir, "", nil)
+	result, err := MergeAgents(MergeAgentsOpts{ManifestPath: manifestPath, WaveNum: 1, RepoDir: repoDir})
 	if err != nil {
 		t.Fatalf("MergeAgents returned error: %v", err)
 	}
@@ -623,7 +623,7 @@ func TestMergeAgents_IdempotentOnCrash(t *testing.T) {
 	}
 
 	// Now "restart" - MergeAgents should skip A and B (already merged) and merge C
-	result2, err := MergeAgents(manifestPath, 1, repoDir, "", nil)
+	result2, err := MergeAgents(MergeAgentsOpts{ManifestPath: manifestPath, WaveNum: 1, RepoDir: repoDir})
 	if err != nil {
 		t.Fatalf("second MergeAgents returned error: %v", err)
 	}
@@ -698,7 +698,7 @@ func TestMergeAgents_LegacyBranchFallback(t *testing.T) {
 	manifestPath := createManifest(t, repoDir, waves)
 
 	// Run merge
-	result, err := MergeAgents(manifestPath, 1, repoDir, "", nil)
+	result, err := MergeAgents(MergeAgentsOpts{ManifestPath: manifestPath, WaveNum: 1, RepoDir: repoDir})
 	if err != nil {
 		t.Fatalf("MergeAgents returned error: %v", err)
 	}
@@ -960,7 +960,7 @@ func TestMergeAgents_WithMergeTarget(t *testing.T) {
 	manifestPath := createManifest(t, repoDir, waves)
 
 	// Run merge with mergeTarget = "impl/test-feature"
-	result, err := MergeAgents(manifestPath, 1, repoDir, "impl/test-feature", nil)
+	result, err := MergeAgents(MergeAgentsOpts{ManifestPath: manifestPath, WaveNum: 1, RepoDir: repoDir, MergeTarget: "impl/test-feature"})
 	if err != nil {
 		t.Fatalf("MergeAgents returned error: %v", err)
 	}
@@ -1014,7 +1014,7 @@ func TestMergeAgents_EmptyMergeTarget(t *testing.T) {
 	manifestPath := createManifest(t, repoDir, waves)
 
 	// Run merge with empty mergeTarget (backward compatible)
-	result, err := MergeAgents(manifestPath, 1, repoDir, "", nil)
+	result, err := MergeAgents(MergeAgentsOpts{ManifestPath: manifestPath, WaveNum: 1, RepoDir: repoDir})
 	if err != nil {
 		t.Fatalf("MergeAgents returned error: %v", err)
 	}

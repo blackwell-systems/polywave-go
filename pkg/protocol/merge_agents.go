@@ -149,17 +149,22 @@ type MergeAgentsData struct {
 // The function stops on the first merge conflict and returns a partial result.
 // All merges are recorded in the result, including both successful and failed attempts.
 //
-// Parameters:
-//   - manifestPath: path to the IMPL manifest file
-//   - waveNum: wave number to merge
-//   - repoDir: default repository directory (used when agent repo is not explicitly specified)
-//   - mergeTarget: target branch for merge; empty string means merge to current HEAD (backward compatible)
-//   - logger: structured logger for operation logging
+// Parameters via MergeAgentsOpts:
+//   - ManifestPath: path to the IMPL manifest file
+//   - WaveNum: wave number to merge
+//   - RepoDir: default repository directory (used when agent repo is not explicitly specified)
+//   - MergeTarget: target branch for merge; empty string means merge to current HEAD (backward compatible)
+//   - Logger: structured logger for operation logging
 //
 // Returns:
 //   - result.Result[MergeAgentsData] with wave number, merge statuses
 //   - error if manifest cannot be loaded or wave is not found (not returned for merge conflicts)
-func MergeAgents(manifestPath string, waveNum int, repoDir string, mergeTarget string, logger *slog.Logger) (result.Result[MergeAgentsData], error) {
+func MergeAgents(opts MergeAgentsOpts) (result.Result[MergeAgentsData], error) {
+	manifestPath := opts.ManifestPath
+	waveNum := opts.WaveNum
+	repoDir := opts.RepoDir
+	mergeTarget := opts.MergeTarget
+	logger := opts.Logger
 	// Load manifest to check if this is a multi-repo wave
 	manifest, err := Load(manifestPath)
 	if err != nil {

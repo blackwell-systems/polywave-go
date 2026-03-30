@@ -163,7 +163,13 @@ func ComputeRetryRollup(ctx context.Context, store Store, req RollupRequest) (*R
 // ComputeTrend computes a time-series trend for the given metric over the
 // specified time range, divided into N buckets. Supported metrics: "cost",
 // "success_rate", "retry_count".
-func ComputeTrend(ctx context.Context, store Store, metric string, timeRange time.Duration, buckets int) (*TrendResult, error) {
+func ComputeTrend(opts ComputeTrendOpts) (*TrendResult, error) {
+	ctx := opts.Ctx
+	store := opts.Store
+	metric := opts.Metric
+	timeRange := opts.TimeRange
+	buckets := opts.Buckets
+
 	if buckets <= 0 {
 		buckets = 1
 	}
