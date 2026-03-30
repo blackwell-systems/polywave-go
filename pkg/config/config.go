@@ -137,21 +137,21 @@ func Load(startDir string) result.Result[*SAWConfig] {
 	path := FindConfigPath(startDir)
 	if path == "" {
 		return result.NewFailure[*SAWConfig]([]result.SAWError{
-			result.NewError("N013_CONFIG_NOT_FOUND", "no saw.config.json found walking up from "+startDir),
+			result.NewError(result.CodeConfigNotFound, "no saw.config.json found walking up from "+startDir),
 		})
 	}
 
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return result.NewFailure[*SAWConfig]([]result.SAWError{
-			result.NewError("N014_CONFIG_INVALID", "failed to read config: "+err.Error()),
+			result.NewError(result.CodeConfigInvalid, "failed to read config: "+err.Error()),
 		})
 	}
 
 	var cfg SAWConfig
 	if err := json.Unmarshal(data, &cfg); err != nil {
 		return result.NewFailure[*SAWConfig]([]result.SAWError{
-			result.NewError("N014_CONFIG_INVALID", "invalid JSON in "+path+": "+err.Error()),
+			result.NewError(result.CodeConfigInvalid, "invalid JSON in "+path+": "+err.Error()),
 		})
 	}
 
@@ -194,13 +194,13 @@ func Save(repoPath string, cfg *SAWConfig) result.Result[bool] {
 	cfgBytes, err := json.Marshal(cfg)
 	if err != nil {
 		return result.NewFailure[bool]([]result.SAWError{
-			result.NewError("N014_CONFIG_INVALID", "failed to marshal config: "+err.Error()),
+			result.NewError(result.CodeConfigInvalid, "failed to marshal config: "+err.Error()),
 		})
 	}
 	var cfgMap map[string]json.RawMessage
 	if err := json.Unmarshal(cfgBytes, &cfgMap); err != nil {
 		return result.NewFailure[bool]([]result.SAWError{
-			result.NewError("N014_CONFIG_INVALID", "failed to re-parse config: "+err.Error()),
+			result.NewError(result.CodeConfigInvalid, "failed to re-parse config: "+err.Error()),
 		})
 	}
 
@@ -212,7 +212,7 @@ func Save(repoPath string, cfg *SAWConfig) result.Result[bool] {
 	output, err := json.MarshalIndent(existing, "", "  ")
 	if err != nil {
 		return result.NewFailure[bool]([]result.SAWError{
-			result.NewError("N014_CONFIG_INVALID", "failed to marshal merged config: "+err.Error()),
+			result.NewError(result.CodeConfigInvalid, "failed to marshal merged config: "+err.Error()),
 		})
 	}
 	output = append(output, '\n')
@@ -221,7 +221,7 @@ func Save(repoPath string, cfg *SAWConfig) result.Result[bool] {
 	tmpFile, err := os.CreateTemp(repoPath, ".saw-config-*.tmp")
 	if err != nil {
 		return result.NewFailure[bool]([]result.SAWError{
-			result.NewError("N014_CONFIG_INVALID", "failed to create temp file: "+err.Error()),
+			result.NewError(result.CodeConfigInvalid, "failed to create temp file: "+err.Error()),
 		})
 	}
 	tmpPath := tmpFile.Name()
@@ -230,20 +230,20 @@ func Save(repoPath string, cfg *SAWConfig) result.Result[bool] {
 		tmpFile.Close()
 		os.Remove(tmpPath)
 		return result.NewFailure[bool]([]result.SAWError{
-			result.NewError("N014_CONFIG_INVALID", "failed to write temp file: "+err.Error()),
+			result.NewError(result.CodeConfigInvalid, "failed to write temp file: "+err.Error()),
 		})
 	}
 	if err := tmpFile.Close(); err != nil {
 		os.Remove(tmpPath)
 		return result.NewFailure[bool]([]result.SAWError{
-			result.NewError("N014_CONFIG_INVALID", "failed to close temp file: "+err.Error()),
+			result.NewError(result.CodeConfigInvalid, "failed to close temp file: "+err.Error()),
 		})
 	}
 
 	if err := os.Rename(tmpPath, configPath); err != nil {
 		os.Remove(tmpPath)
 		return result.NewFailure[bool]([]result.SAWError{
-			result.NewError("N014_CONFIG_INVALID", "failed to rename temp file: "+err.Error()),
+			result.NewError(result.CodeConfigInvalid, "failed to rename temp file: "+err.Error()),
 		})
 	}
 

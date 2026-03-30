@@ -56,7 +56,7 @@ func ValidateWiringDeclarations(manifest *IMPLManifest, repoPath string) result.
 
 	if !data.Valid {
 		return result.NewPartial(data, []result.SAWError{{
-			Code: codeWiringGap, Message: data.Summary, Severity: "error",
+			Code: result.CodeWiringGap, Message: data.Summary, Severity: "error",
 		}})
 	}
 	return result.NewSuccess(data)

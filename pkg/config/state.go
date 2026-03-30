@@ -34,7 +34,7 @@ func GetWaveState(manifest *protocol.IMPLManifest, waveNum int) result.Result[*W
 	}
 	if wave == nil {
 		return result.NewFailure[*WaveState]([]result.SAWError{
-			result.NewError("N007_WAVE_NOT_READY",
+			result.NewError(result.CodeWaveNotReady,
 				fmt.Sprintf("wave %d not found in manifest", waveNum)),
 		})
 	}

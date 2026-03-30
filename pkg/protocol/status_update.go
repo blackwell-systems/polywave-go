@@ -6,11 +6,6 @@ import (
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
 )
 
-// codeStatusUpdateFailed is a local const until Agent C merges
-// result.CodeStatusUpdateFailed = "N015_STATUS_UPDATE_FAILED" into pkg/result/codes.go.
-// TODO(integration): remove this const after Agent C's codes are merged.
-const codeStatusUpdateFailed = "N015_STATUS_UPDATE_FAILED"
-
 // UpdateStatusData contains the data of a status update operation.
 type UpdateStatusData struct {
 	Wave      int              `json:"wave"`
@@ -28,7 +23,7 @@ func UpdateStatus(manifestPath string, waveNum int, agentID string, status Compl
 	manifest, err := Load(manifestPath)
 	if err != nil {
 		return result.NewFailure[*UpdateStatusData]([]result.SAWError{{
-			Code:     codeStatusUpdateFailed,
+			Code:     result.CodeStatusUpdateFailed,
 			Message:  fmt.Sprintf("failed to load manifest: %v", err),
 			Severity: "fatal",
 		}})
@@ -45,7 +40,7 @@ func UpdateStatus(manifestPath string, waveNum int, agentID string, status Compl
 
 	if targetWave == nil {
 		return result.NewFailure[*UpdateStatusData]([]result.SAWError{{
-			Code:     codeStatusUpdateFailed,
+			Code:     result.CodeStatusUpdateFailed,
 			Message:  fmt.Sprintf("wave %d not found in manifest", waveNum),
 			Severity: "fatal",
 		}})
@@ -62,7 +57,7 @@ func UpdateStatus(manifestPath string, waveNum int, agentID string, status Compl
 
 	if !found {
 		return result.NewFailure[*UpdateStatusData]([]result.SAWError{{
-			Code:     codeStatusUpdateFailed,
+			Code:     result.CodeStatusUpdateFailed,
 			Message:  fmt.Sprintf("agent %s not found in wave %d", agentID, waveNum),
 			Severity: "fatal",
 		}})
@@ -87,7 +82,7 @@ func UpdateStatus(manifestPath string, waveNum int, agentID string, status Compl
 	// Save manifest
 	if err := Save(manifest, manifestPath); err != nil {
 		return result.NewFailure[*UpdateStatusData]([]result.SAWError{{
-			Code:     codeStatusUpdateFailed,
+			Code:     result.CodeStatusUpdateFailed,
 			Message:  fmt.Sprintf("failed to save manifest: %v", err),
 			Severity: "fatal",
 		}})

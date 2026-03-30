@@ -9,13 +9,6 @@ import (
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
 )
 
-// Temporary local aliases for codes added by Agent C (pkg/result/codes.go).
-// Remove once Agent C's branch is merged and result.CodeGateInputInvalid / result.CodeWiringGap are available.
-const (
-	codeGateInputInvalid = "B008_GATE_INPUT_INVALID"
-	codeWiringGap        = "P007_WIRING_GAP"
-)
-
 // GateInputValidationData captures whether the reported files in completion
 // reports match the actual git-diff files for each agent in the wave.
 type GateInputValidationData struct {
@@ -43,7 +36,7 @@ func ValidateGateInputs(manifest *IMPLManifest, waveNum int, repoDir string) res
 	targetWave := manifest.FindWave(waveNum)
 	if targetWave == nil {
 		return result.NewFailure[*GateInputValidationData]([]result.SAWError{{
-			Code:     codeGateInputInvalid,
+			Code:     result.CodeGateInputInvalid,
 			Message:  fmt.Sprintf("wave %d not found in manifest", waveNum),
 			Severity: "fatal",
 		}})

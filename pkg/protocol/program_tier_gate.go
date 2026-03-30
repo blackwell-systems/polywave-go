@@ -10,11 +10,6 @@ import (
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
 )
 
-// codeTierGateFailed is a local const until Agent C merges
-// result.CodeTierGateFailed = "N016_TIER_GATE_FAILED" into pkg/result/codes.go.
-// TODO(integration): remove this const after Agent C's codes are merged.
-const codeTierGateFailed = "N016_TIER_GATE_FAILED"
-
 // RunTierGate verifies that all IMPLs in a tier are complete and runs the tier-level
 // quality gates defined in the PROGRAM manifest. Returns structured result with
 // per-gate and per-IMPL status.
@@ -30,7 +25,7 @@ func RunTierGate(manifest *PROGRAMManifest, tierNumber int, repoPath string) res
 
 	if tier == nil {
 		return result.NewFailure[*TierGateData]([]result.SAWError{{
-			Code: codeTierGateFailed, Message: fmt.Sprintf("tier %d not found in manifest", tierNumber), Severity: "fatal",
+			Code: result.CodeTierGateFailed, Message: fmt.Sprintf("tier %d not found in manifest", tierNumber), Severity: "fatal",
 		}})
 	}
 
@@ -77,7 +72,7 @@ func RunTierGate(manifest *PROGRAMManifest, tierNumber int, repoPath string) res
 	if !data.AllImplsDone {
 		data.Passed = false
 		return result.NewPartial(data, []result.SAWError{{
-			Code: codeTierGateFailed, Message: "not all IMPLs in tier are complete", Severity: "error",
+			Code: result.CodeTierGateFailed, Message: "not all IMPLs in tier are complete", Severity: "error",
 		}})
 	}
 
@@ -94,7 +89,7 @@ func RunTierGate(manifest *PROGRAMManifest, tierNumber int, repoPath string) res
 
 	if !data.Passed {
 		return result.NewPartial(data, []result.SAWError{{
-			Code: codeTierGateFailed, Message: "one or more required gates failed", Severity: "error",
+			Code: result.CodeTierGateFailed, Message: "one or more required gates failed", Severity: "error",
 		}})
 	}
 	return result.NewSuccess(data)

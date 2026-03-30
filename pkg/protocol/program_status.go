@@ -18,15 +18,10 @@ import (
 // is used as a fallback.
 //
 // Returns a result.Result[*ProgramStatusData] containing all computed status information.
-// codeProgramStatusFailed is a placeholder for result.CodeProgramStatusFailed (N017),
-// which is added by Agent C in parallel. Once Agent C's changes are merged,
-// replace this with result.CodeProgramStatusFailed.
-const codeProgramStatusFailed = "N017_PROGRAM_STATUS_FAILED"
-
 func GetProgramStatus(manifest *PROGRAMManifest, repoPath string) result.Result[*ProgramStatusData] {
 	if manifest == nil {
 		return result.NewFailure[*ProgramStatusData]([]result.SAWError{{
-			Code: codeProgramStatusFailed, Message: "manifest cannot be nil", Severity: "fatal",
+			Code: result.CodeProgramStatusFailed, Message: "manifest cannot be nil", Severity: "fatal",
 		}})
 	}
 
