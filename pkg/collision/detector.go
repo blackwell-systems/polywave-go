@@ -165,25 +165,35 @@ func extractTypeDecls(filePath, content string) ([]TypeDeclaration, error) {
 	// Derive package path from file path (e.g., "pkg/service/handler.go" → "pkg/service")
 	pkgPath := filepath.Dir(filePath)
 
+	// Only inspect top-level declarations (node.Decls), not recursively.
+	// ast.Inspect with return true would visit function bodies and catch
+	// local type aliases (e.g., "type Alias T" inside MarshalJSON methods),
+	// producing false-positive collisions.
 	var decls []TypeDeclaration
-	ast.Inspect(node, func(n ast.Node) bool {
-		switch t := n.(type) {
-		case *ast.TypeSpec:
+	for _, decl := range node.Decls {
+		genDecl, ok := decl.(*ast.GenDecl)
+		if !ok || genDecl.Tok != token.TYPE {
+			continue
+		}
+		for _, spec := range genDecl.Specs {
+			typeSpec, ok := spec.(*ast.TypeSpec)
+			if !ok {
+				continue
+			}
 			kind := "alias"
-			switch t.Type.(type) {
+			switch typeSpec.Type.(type) {
 			case *ast.StructType:
 				kind = "struct"
 			case *ast.InterfaceType:
 				kind = "interface"
 			}
 			decls = append(decls, TypeDeclaration{
-				Name:    t.Name.Name,
+				Name:    typeSpec.Name.Name,
 				Package: pkgPath,
 				Kind:    kind,
 			})
 		}
-		return true
-	})
+	}
 
 	return decls, nil
 }
