@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/engine"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
 )
 
@@ -149,7 +150,7 @@ wiring_validation_reports:
 // TestFinalizeWaveResultHasWiringReport verifies FinalizeWaveResult has the
 // WiringReport field and it serializes correctly.
 func TestFinalizeWaveResultHasWiringReport(t *testing.T) {
-	result := &FinalizeWaveResult{
+	result := &engine.FinalizeWaveResult{
 		Wave:    1,
 		Success: true,
 		WiringReport: &protocol.WiringValidationData{
