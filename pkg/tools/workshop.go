@@ -5,7 +5,16 @@ import (
 	"sort"
 	"strings"
 	"sync"
+
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
 )
+
+// RegisterData holds the result of a successful tool registration.
+type RegisterData struct {
+	ToolName   string
+	Registered bool
+	TotalTools int
+}
 
 // DefaultWorkshop is the default implementation of the Workshop interface.
 // It provides thread-safe tool registration and lookup with namespace filtering.
@@ -21,18 +30,29 @@ func NewWorkshop() Workshop {
 	}
 }
 
-// Register adds a tool to the workshop. Returns an error if a tool with the
-// same name already exists.
-func (w *DefaultWorkshop) Register(tool Tool) error {
+// Register adds a tool to the workshop. Returns a Fatal result if a tool with
+// the same name already exists, otherwise returns Success with registration metadata.
+func (w *DefaultWorkshop) Register(tool Tool) result.Result[RegisterData] {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 
 	if _, exists := w.tools[tool.Name]; exists {
-		return fmt.Errorf("tool %q already registered", tool.Name)
+		return result.NewFailure[RegisterData]([]result.SAWError{
+			{
+				Code:     "TOOL_ALREADY_REGISTERED",
+				Message:  fmt.Sprintf("tool %q already registered", tool.Name),
+				Severity: "fatal",
+				Context:  map[string]string{"tool_name": tool.Name},
+			},
+		})
 	}
 
 	w.tools[tool.Name] = tool
-	return nil
+	return result.NewSuccess(RegisterData{
+		ToolName:   tool.Name,
+		Registered: true,
+		TotalTools: len(w.tools),
+	})
 }
 
 // Get retrieves a tool by exact name. Returns the tool and true if found,

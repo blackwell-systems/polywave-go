@@ -73,7 +73,7 @@ func WithTiming(w Workshop, onCall func(ToolCallEvent)) Workshop {
 	for _, tool := range w.All() {
 		mw := TimingMiddleware(tool.Name, onCall)
 		tool.Executor = mw(tool.Executor)
-		wrapped.Register(tool)
+		wrapped.Register(tool) // nolint: errors are expected only on duplicate names, which cannot occur here
 	}
 	return wrapped
 }
@@ -85,7 +85,7 @@ func WithPermissions(w Workshop, allowed map[string]bool) Workshop {
 	for _, tool := range w.All() {
 		mw := PermissionMiddleware(tool.Name, allowed)
 		tool.Executor = mw(tool.Executor)
-		wrapped.Register(tool)
+		wrapped.Register(tool) // nolint: errors are expected only on duplicate names, which cannot occur here
 	}
 	return wrapped
 }

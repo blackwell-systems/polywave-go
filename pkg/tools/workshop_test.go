@@ -2,10 +2,11 @@ package tools
 
 import (
 	"context"
-	"errors"
 	"reflect"
 	"sort"
 	"testing"
+
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
 )
 
 // Mock implementations for testing (will be replaced by Agent A's real implementations)
@@ -19,12 +20,23 @@ func newMockWorkshop() *mockWorkshop {
 	}
 }
 
-func (w *mockWorkshop) Register(tool Tool) error {
+func (w *mockWorkshop) Register(tool Tool) result.Result[RegisterData] {
 	if _, exists := w.tools[tool.Name]; exists {
-		return errors.New("tool already registered: " + tool.Name)
+		return result.NewFailure[RegisterData]([]result.SAWError{
+			{
+				Code:     "TOOL_ALREADY_REGISTERED",
+				Message:  "tool already registered: " + tool.Name,
+				Severity: "fatal",
+				Context:  map[string]string{"tool_name": tool.Name},
+			},
+		})
 	}
 	w.tools[tool.Name] = tool
-	return nil
+	return result.NewSuccess(RegisterData{
+		ToolName:   tool.Name,
+		Registered: true,
+		TotalTools: len(w.tools),
+	})
 }
 
 func (w *mockWorkshop) Get(name string) (Tool, bool) {
@@ -82,9 +94,19 @@ func TestRegisterAndGet(t *testing.T) {
 		Executor: &mockExecutor{result: "success"},
 	}
 
-	err := workshop.Register(tool)
-	if err != nil {
-		t.Fatalf("Register failed: %v", err)
+	res := workshop.Register(tool)
+	if !res.IsSuccess() {
+		t.Fatalf("Register failed: %v", res.Errors)
+	}
+	data := res.GetData()
+	if data.ToolName != tool.Name {
+		t.Errorf("Expected ToolName %s, got %s", tool.Name, data.ToolName)
+	}
+	if !data.Registered {
+		t.Error("Expected Registered=true")
+	}
+	if data.TotalTools != 1 {
+		t.Errorf("Expected TotalTools=1, got %d", data.TotalTools)
 	}
 
 	retrieved, ok := workshop.Get("test:tool")
@@ -100,7 +122,7 @@ func TestRegisterAndGet(t *testing.T) {
 	}
 }
 
-// TestRegisterDuplicate tests that registering the same name twice returns an error
+// TestRegisterDuplicate tests that registering the same name twice returns a Fatal result
 func TestRegisterDuplicate(t *testing.T) {
 	workshop := newMockWorkshop()
 
@@ -111,9 +133,9 @@ func TestRegisterDuplicate(t *testing.T) {
 		Executor:    &mockExecutor{},
 	}
 
-	err := workshop.Register(tool)
-	if err != nil {
-		t.Fatalf("First registration failed: %v", err)
+	res := workshop.Register(tool)
+	if !res.IsSuccess() {
+		t.Fatalf("First registration failed: %v", res.Errors)
 	}
 
 	// Try to register again with same name
@@ -124,9 +146,32 @@ func TestRegisterDuplicate(t *testing.T) {
 		Executor:    &mockExecutor{},
 	}
 
-	err = workshop.Register(tool2)
-	if err == nil {
-		t.Fatal("Expected error when registering duplicate tool name, got nil")
+	res2 := workshop.Register(tool2)
+	if !res2.IsFatal() {
+		t.Fatal("Expected Fatal result when registering duplicate tool name")
+	}
+	if len(res2.Errors) == 0 {
+		t.Fatal("Expected errors in Fatal result")
+	}
+	if res2.Errors[0].Code != "TOOL_ALREADY_REGISTERED" {
+		t.Errorf("Expected error code TOOL_ALREADY_REGISTERED, got %s", res2.Errors[0].Code)
+	}
+}
+
+// TestRegisterTotalToolsIncrements tests that RegisterData.TotalTools increments on each registration
+func TestRegisterTotalToolsIncrements(t *testing.T) {
+	workshop := newMockWorkshop()
+
+	for i, name := range []string{"tool:a", "tool:b", "tool:c"} {
+		res := workshop.Register(Tool{Name: name, Executor: &mockExecutor{}})
+		if !res.IsSuccess() {
+			t.Fatalf("Register %s failed: %v", name, res.Errors)
+		}
+		data := res.GetData()
+		expected := i + 1
+		if data.TotalTools != expected {
+			t.Errorf("After registering %s: expected TotalTools=%d, got %d", name, expected, data.TotalTools)
+		}
 	}
 }
 
@@ -141,8 +186,8 @@ func TestAll(t *testing.T) {
 	}
 
 	for _, tool := range tools {
-		if err := workshop.Register(tool); err != nil {
-			t.Fatalf("Register failed: %v", err)
+		if res := workshop.Register(tool); !res.IsSuccess() {
+			t.Fatalf("Register failed: %v", res.Errors)
 		}
 	}
 
@@ -173,8 +218,8 @@ func TestNamespace(t *testing.T) {
 	}
 
 	for _, tool := range tools {
-		if err := workshop.Register(tool); err != nil {
-			t.Fatalf("Register failed: %v", err)
+		if res := workshop.Register(tool); !res.IsSuccess() {
+			t.Fatalf("Register failed: %v", res.Errors)
 		}
 	}
 
@@ -216,8 +261,8 @@ func TestNamespaceEmpty(t *testing.T) {
 		Executor:    &mockExecutor{},
 	}
 
-	if err := workshop.Register(tool); err != nil {
-		t.Fatalf("Register failed: %v", err)
+	if res := workshop.Register(tool); !res.IsSuccess() {
+		t.Fatalf("Register failed: %v", res.Errors)
 	}
 
 	result := workshop.Namespace("nonexistent")
@@ -303,8 +348,8 @@ func TestStandardToolsRegistration(t *testing.T) {
 	}
 
 	for _, tool := range standardTools {
-		if err := workshop.Register(tool); err != nil {
-			t.Fatalf("Failed to register tool %s: %v", tool.Name, err)
+		if res := workshop.Register(tool); !res.IsSuccess() {
+			t.Fatalf("Failed to register tool %s: %v", tool.Name, res.Errors)
 		}
 	}
 
