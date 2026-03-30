@@ -124,7 +124,7 @@ func PrepareTier(programManifestPath string, tierNumber int, repoDir string) (*P
 	}
 
 	// Step 5: Create worktrees.
-	wtResult := CreateProgramWorktrees(programManifestPath, tierNumber, repoDir, nil)
+	wtResult := CreateProgramWorktrees(programManifestPath, tierNumber, repoDir)
 	if !wtResult.IsSuccess() {
 		result.Success = false
 		result.Branches = []ProgramWorktreeInfo{}
