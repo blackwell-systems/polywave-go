@@ -125,8 +125,19 @@ func RunScout(ctx context.Context, opts RunScoutOpts, onChunk func(string)) erro
 
 	// I6 enforcement: Validate Scout only wrote to docs/IMPL/IMPL-*.yaml
 	if execErr == nil {
-		if err := hooks.ValidateScoutWrites(opts.RepoPath, opts.IMPLOutPath, startTime); err != nil {
-			return fmt.Errorf("engine.RunScout: %w", err)
+		validateRes := hooks.ValidateScoutWrites(opts.RepoPath, opts.IMPLOutPath, startTime)
+		if validateRes.IsFatal() {
+			if len(validateRes.Errors) > 0 {
+				return fmt.Errorf("engine.RunScout: %s", validateRes.Errors[0].Message)
+			}
+			return fmt.Errorf("engine.RunScout: scout boundary validation failed")
+		}
+		if validateRes.IsPartial() {
+			data := validateRes.GetData()
+			if len(data.UnexpectedWrites) > 0 {
+				return fmt.Errorf("engine.RunScout: I6 VIOLATION: Scout wrote files outside permitted boundaries: %s",
+					strings.Join(data.UnexpectedWrites, ", "))
+			}
 		}
 		// E40: Emit scout_complete on success.
 		opts.ObsEmitter.Emit(ctx, observability.NewScoutCompleteEvent(implSlug))
