@@ -421,6 +421,26 @@ func PrepareWave(ctx context.Context, opts PrepareWaveOpts) (*PrepareWaveResult,
 	}
 	recordStep(res, opts.OnEvent, "pre_wave_gate", "success", "pre-wave gate passed")
 
+	// Auto-advance SCOUT_PENDING → REVIEWED now that validation + critic have cleared.
+	// finalize-wave needs the state to be at least REVIEWED to reach WAVE_VERIFIED.
+	if doc.State == protocol.StateScoutPending || doc.State == protocol.StateScoutValidating {
+		stateRes := protocol.SetImplState(opts.IMPLPath, protocol.StateReviewed, protocol.SetImplStateOpts{
+			Commit:    true,
+			CommitMsg: "chore: advance IMPL state to REVIEWED (pre-wave gate passed)",
+		})
+		if stateRes.IsFatal() {
+			recordStep(res, opts.OnEvent, "advance_state", "warning",
+				fmt.Sprintf("could not advance to REVIEWED: %v", stateRes.Errors))
+		} else {
+			recordStep(res, opts.OnEvent, "advance_state", "success", "IMPL state advanced to REVIEWED")
+			// Reload manifest so subsequent steps see the updated state
+			doc, err = protocol.Load(opts.IMPLPath)
+			if err != nil {
+				return res, fmt.Errorf("failed to reload manifest after state advance: %w", err)
+			}
+		}
+	}
+
 	// Step: Create worktrees
 	wtRes := protocol.CreateWorktrees(opts.IMPLPath, opts.WaveNum, projectRoot)
 	if !wtRes.IsSuccess() {
