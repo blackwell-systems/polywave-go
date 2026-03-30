@@ -70,7 +70,11 @@ var daemonCreateWorktreesFunc = func(manifestPath string, waveNum int, repoDir s
 // daemonUpdateQueueStatusFunc is the function called to update a queue item status.
 var daemonUpdateQueueStatusFunc = func(repoPath, slug, status string) error {
 	mgr := queue.NewManager(repoPath)
-	return mgr.UpdateStatus(slug, status)
+	res := mgr.UpdateStatus(slug, status)
+	if res.IsFatal() {
+		return fmt.Errorf("queue.UpdateStatus: %s", res.Errors[0].Message)
+	}
+	return nil
 }
 
 // daemonLoadIMPLWavesFunc loads the wave list from a manifest path.
@@ -146,9 +150,9 @@ func RunDaemon(ctx context.Context, opts DaemonOpts) error {
 
 		// Refresh queue depth from list.
 		if mgr := queue.NewManager(opts.RepoPath); mgr != nil {
-			if items, listErr := mgr.List(); listErr == nil {
+			if listRes := mgr.List(); !listRes.IsFatal() {
 				pending := 0
-				for _, item := range items {
+				for _, item := range listRes.GetData().Items {
 					if item.Status == "queued" || item.Status == "in_progress" {
 						pending++
 					}

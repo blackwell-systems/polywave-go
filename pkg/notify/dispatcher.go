@@ -2,8 +2,10 @@ package notify
 
 import (
 	"context"
-	"errors"
+	"fmt"
 	"sync"
+
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
 )
 
 // Dispatcher fans out formatted messages to N adapters concurrently,
@@ -21,9 +23,10 @@ func NewDispatcher(adapters ...Adapter) *Dispatcher {
 }
 
 // Dispatch formats the event and sends the resulting message to every
-// registered adapter concurrently. All errors are collected and returned
-// as a joined error. Context cancellation is respected.
-func (d *Dispatcher) Dispatch(ctx context.Context, event Event, formatter Formatter) error {
+// registered adapter concurrently. Returns PARTIAL if some adapters fail,
+// SUCCESS if all succeed, and FATAL if no adapters are registered or if
+// context is cancelled before any send occurs.
+func (d *Dispatcher) Dispatch(ctx context.Context, event Event, formatter Formatter) result.Result[DispatchData] {
 	msg := formatter.Format(event)
 
 	d.mu.RLock()
@@ -32,14 +35,29 @@ func (d *Dispatcher) Dispatch(ctx context.Context, event Event, formatter Format
 	d.mu.RUnlock()
 
 	if len(snapshot) == 0 {
-		return nil
+		return result.NewSuccess(DispatchData{})
 	}
 
-	var (
-		mu   sync.Mutex
-		errs []error
-		wg   sync.WaitGroup
-	)
+	// Check context before spawning goroutines.
+	select {
+	case <-ctx.Done():
+		return result.NewFailure[DispatchData]([]result.SAWError{
+			{
+				Code:     "CONTEXT_CANCELLED",
+				Message:  ctx.Err().Error(),
+				Severity: "fatal",
+			},
+		})
+	default:
+	}
+
+	type sendResult struct {
+		adapterName string
+		res         result.Result[SendData]
+	}
+
+	results := make(chan sendResult, len(snapshot))
+	var wg sync.WaitGroup
 
 	for _, a := range snapshot {
 		wg.Add(1)
@@ -49,23 +67,68 @@ func (d *Dispatcher) Dispatch(ctx context.Context, event Event, formatter Format
 			// Check context before sending.
 			select {
 			case <-ctx.Done():
-				mu.Lock()
-				errs = append(errs, ctx.Err())
-				mu.Unlock()
+				results <- sendResult{
+					adapterName: adapter.Name(),
+					res: result.NewFailure[SendData]([]result.SAWError{
+						{
+							Code:     "CONTEXT_CANCELLED",
+							Message:  ctx.Err().Error(),
+							Severity: "fatal",
+							Context:  map[string]string{"adapter": adapter.Name()},
+						},
+					}),
+				}
 				return
 			default:
 			}
 
-			if err := adapter.Send(ctx, msg); err != nil {
-				mu.Lock()
-				errs = append(errs, err)
-				mu.Unlock()
+			results <- sendResult{
+				adapterName: adapter.Name(),
+				res:         adapter.Send(ctx, msg),
 			}
 		}(a)
 	}
 
 	wg.Wait()
-	return errors.Join(errs...)
+	close(results)
+
+	var (
+		sentCount   int
+		failedCount int
+		errs        []result.SAWError
+	)
+
+	for sr := range results {
+		if sr.res.IsFatal() || sr.res.IsPartial() {
+			failedCount++
+			errs = append(errs, sr.res.Errors...)
+		} else {
+			sentCount++
+		}
+	}
+
+	data := DispatchData{
+		SentCount:   sentCount,
+		FailedCount: failedCount,
+		Errors:      errs,
+	}
+
+	if failedCount == 0 {
+		return result.NewSuccess(data)
+	}
+
+	if sentCount == 0 {
+		return result.NewFailure[DispatchData]([]result.SAWError{
+			{
+				Code:     "DISPATCH_ALL_FAILED",
+				Message:  fmt.Sprintf("all %d adapters failed", failedCount),
+				Severity: "fatal",
+			},
+		})
+	}
+
+	// Some succeeded, some failed: PARTIAL.
+	return result.NewPartial(data, errs)
 }
 
 // AddAdapter appends an adapter to the dispatcher.

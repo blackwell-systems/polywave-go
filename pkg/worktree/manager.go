@@ -12,7 +12,20 @@ import (
 
 	"github.com/blackwell-systems/scout-and-wave-go/internal/git"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
 )
+
+// RemoveData holds the result payload for a successful Remove operation.
+type RemoveData struct {
+	RemovedPath string
+	WasTracked  bool
+}
+
+// CleanupData holds the result payload for a CleanupAll operation.
+type CleanupData struct {
+	RemovedCount int
+	RemovedPaths []string
+}
 
 // Manager tracks and manages git worktrees for SAW wave agents.
 type Manager struct {
@@ -76,14 +89,20 @@ func (m *Manager) Create(wave int, agent string) (string, error) {
 }
 
 // Remove removes the worktree at the given absolute path and deletes its branch.
-func (m *Manager) Remove(path string) error {
+// Returns a result.Result[RemoveData] with the removed path on success, or a
+// Fatal result if the path is not tracked or the filesystem removal fails.
+func (m *Manager) Remove(path string) result.Result[RemoveData] {
 	branch, ok := m.active[path]
 	if !ok {
-		return fmt.Errorf("manager: worktree %q is not tracked", path)
+		return result.NewFailure[RemoveData]([]result.SAWError{
+			result.NewFatal("WORKTREE_REMOVE_FAILED", fmt.Sprintf("manager: worktree %q is not tracked", path)),
+		})
 	}
 
 	if err := git.WorktreeRemove(m.repoPath, path); err != nil {
-		return fmt.Errorf("manager: remove worktree %q: %w", path, err)
+		return result.NewFailure[RemoveData]([]result.SAWError{
+			result.NewFatal("WORKTREE_REMOVE_FAILED", fmt.Sprintf("manager: remove worktree %q: %v", path, err)).WithCause(err),
+		})
 	}
 
 	if err := git.DeleteBranch(m.repoPath, branch); err != nil {
@@ -92,27 +111,57 @@ func (m *Manager) Remove(path string) error {
 	}
 
 	delete(m.active, path)
-	return nil
+	return result.NewSuccess(RemoveData{
+		RemovedPath: path,
+		WasTracked:  true,
+	})
 }
 
 // CleanupAll removes all tracked worktrees. It is best-effort: all worktrees
-// are attempted even if some fail. Returns the last error encountered, if any.
-func (m *Manager) CleanupAll() error {
-	var lastErr error
+// are attempted even if some fail. Returns Partial if some succeed and some
+// fail, Fatal if all removals fail, and Success if all succeed.
+func (m *Manager) CleanupAll() result.Result[CleanupData] {
 	// Collect paths to avoid mutating the map while iterating.
 	paths := make([]string, 0, len(m.active))
 	for path := range m.active {
 		paths = append(paths, path)
 	}
 
+	var removedPaths []string
+	var warnings []result.SAWError
+
 	for _, path := range paths {
-		if err := m.Remove(path); err != nil {
-			m.log().Warn("manager: cleanup error", "path", path, "err", err)
-			lastErr = err
+		r := m.Remove(path)
+		if r.IsFatal() {
+			// Collect warnings from each failed removal.
+			for _, e := range r.Errors {
+				w := result.NewWarning("WORKTREE_CLEANUP_FAILED", e.Message).WithCause(e.Cause)
+				warnings = append(warnings, w)
+			}
+			m.log().Warn("manager: cleanup error", "path", path)
+		} else {
+			removedPaths = append(removedPaths, path)
 		}
 	}
 
-	return lastErr
+	data := CleanupData{
+		RemovedCount: len(removedPaths),
+		RemovedPaths: removedPaths,
+	}
+
+	if len(warnings) == 0 {
+		return result.NewSuccess(data)
+	}
+	if len(removedPaths) == 0 {
+		// All removals failed — total failure.
+		var errs []result.SAWError
+		for _, w := range warnings {
+			errs = append(errs, result.NewFatal("WORKTREE_CLEANUP_FAILED", w.Message).WithCause(w.Cause))
+		}
+		return result.NewFailure[CleanupData](errs)
+	}
+	// Some succeeded, some failed — partial.
+	return result.NewPartial(data, warnings)
 }
 
 // List returns the absolute paths of all currently tracked worktrees.

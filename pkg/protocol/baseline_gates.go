@@ -31,8 +31,8 @@ func RunBaselineGates(manifest *IMPLManifest, waveNumber int, repoDir string, ca
 	// Step 1: If cache is non-nil, get HEAD SHA for CommitSHA field.
 	// BuildKey failure is non-fatal — cache is best-effort.
 	if cache != nil {
-		if key, err := cache.BuildKey(repoDir); err == nil {
-			data.CommitSHA = key.HeadCommit
+		if keyResult := cache.BuildKey(repoDir); keyResult.IsSuccess() {
+			data.CommitSHA = keyResult.GetData().HeadCommit
 		}
 	}
 

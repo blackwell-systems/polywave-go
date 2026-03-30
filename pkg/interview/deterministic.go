@@ -10,7 +10,14 @@ import (
 	"time"
 
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
 )
+
+// SaveDocData holds metadata returned from a successful Save call.
+type SaveDocData struct {
+	DocPath   string
+	Timestamp time.Time
+}
 
 // DeterministicManager implements the Manager interface using a fixed question set.
 type DeterministicManager struct {
@@ -81,8 +88,9 @@ func (m *DeterministicManager) Answer(doc *InterviewDoc, answer string) (*Interv
 
 		// Save state after going back.
 		docPath := filepath.Join(m.docsDir, fmt.Sprintf("INTERVIEW-%s.yaml", doc.Slug))
-		if err := m.Save(doc, docPath); err != nil {
-			return doc, currentQ, fmt.Errorf("saving interview state: %w", err)
+		if saveResult := m.Save(doc, docPath); saveResult.IsFatal() {
+			sawErr := saveResult.Errors[0]
+			return doc, currentQ, fmt.Errorf("saving interview state: %w", sawErr)
 		}
 
 		return doc, currentQ, nil
@@ -138,8 +146,9 @@ func (m *DeterministicManager) Answer(doc *InterviewDoc, answer string) (*Interv
 
 	// Save state.
 	docPath := filepath.Join(m.docsDir, fmt.Sprintf("INTERVIEW-%s.yaml", doc.Slug))
-	if err := m.Save(doc, docPath); err != nil {
-		return doc, nextQ, fmt.Errorf("saving interview state: %w", err)
+	if saveResult := m.Save(doc, docPath); saveResult.IsFatal() {
+		sawErr := saveResult.Errors[0]
+		return doc, nextQ, fmt.Errorf("saving interview state: %w", sawErr)
 	}
 
 	return doc, nextQ, nil
@@ -331,17 +340,30 @@ func RegisterCompiler(fn func(doc *InterviewDoc) (string, error)) {
 }
 
 // Save persists the InterviewDoc to a YAML file.
-func (m *DeterministicManager) Save(doc *InterviewDoc, docPath string) error {
+// Returns a Result containing the doc path and timestamp on success,
+// or a FATAL result with code "INTERVIEW_SAVE_FAILED" on failure.
+func (m *DeterministicManager) Save(doc *InterviewDoc, docPath string) result.Result[SaveDocData] {
 	dir := filepath.Dir(docPath)
 	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return fmt.Errorf("creating directory %s: %w", dir, err)
+		return result.NewFailure[SaveDocData]([]result.SAWError{
+			result.NewFatal("INTERVIEW_SAVE_FAILED", fmt.Sprintf("creating directory %s: %s", dir, err.Error())).
+				WithContext("path", docPath).
+				WithCause(err),
+		})
 	}
 
 	if err := protocol.SaveYAML(docPath, doc); err != nil {
-		return fmt.Errorf("save interview doc: %w", err)
+		return result.NewFailure[SaveDocData]([]result.SAWError{
+			result.NewFatal("INTERVIEW_SAVE_FAILED", fmt.Sprintf("save interview doc: %s", err.Error())).
+				WithContext("path", docPath).
+				WithCause(err),
+		})
 	}
 
-	return nil
+	return result.NewSuccess(SaveDocData{
+		DocPath:   docPath,
+		Timestamp: time.Now(),
+	})
 }
 
 // newID generates a random UUID-formatted ID (xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx).

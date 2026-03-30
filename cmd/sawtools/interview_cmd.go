@@ -129,8 +129,8 @@ Examples:
 				if !reader.Scan() {
 					// stdin closed before interview complete — save state and return error
 					docPath := interviewDocPath(docsDir, doc.Slug)
-					if saveErr := mgr.Save(doc, docPath); saveErr != nil {
-						fmt.Fprintf(cmd.ErrOrStderr(), "Warning: failed to save interview state: %v\n", saveErr)
+					if saveResult := mgr.Save(doc, docPath); saveResult.IsFatal() {
+						fmt.Fprintf(cmd.ErrOrStderr(), "Warning: failed to save interview state: %v\n", saveResult.Errors)
 					}
 					fmt.Fprintf(writer, "\nInterview paused. Resume with:\n  sawtools interview --resume %s\n", docPath)
 					return fmt.Errorf("interview paused: resume with --resume %s", docPath)
@@ -145,8 +145,8 @@ Examples:
 
 				// Save state after each turn
 				docPath := interviewDocPath(docsDir, doc.Slug)
-				if saveErr := mgr.Save(doc, docPath); saveErr != nil {
-					fmt.Fprintf(cmd.ErrOrStderr(), "Warning: failed to save interview state: %v\n", saveErr)
+				if saveResult := mgr.Save(doc, docPath); saveResult.IsFatal() {
+					fmt.Fprintf(cmd.ErrOrStderr(), "Warning: failed to save interview state: %v\n", saveResult.Errors)
 				}
 			}
 
@@ -158,8 +158,8 @@ Examples:
 
 			// Save final state
 			docPath := interviewDocPath(docsDir, doc.Slug)
-			if saveErr := mgr.Save(doc, docPath); saveErr != nil {
-				fmt.Fprintf(cmd.ErrOrStderr(), "Warning: failed to save final interview state: %v\n", saveErr)
+			if saveResult := mgr.Save(doc, docPath); saveResult.IsFatal() {
+				fmt.Fprintf(cmd.ErrOrStderr(), "Warning: failed to save final interview state: %v\n", saveResult.Errors)
 			}
 
 			// Print completion message

@@ -2,26 +2,27 @@ package notify
 
 import (
 	"context"
-	"errors"
 	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
 )
 
 // --- mock helpers ---
 
 type mockAdapter struct {
-	name    string
-	sendFn  func(ctx context.Context, msg Message) error
-	calls   atomic.Int32
+	name   string
+	sendFn func(ctx context.Context, msg Message) result.Result[SendData]
+	calls  atomic.Int32
 	lastMsg Message
 	mu      sync.Mutex
 }
 
 func (m *mockAdapter) Name() string { return m.name }
 
-func (m *mockAdapter) Send(ctx context.Context, msg Message) error {
+func (m *mockAdapter) Send(ctx context.Context, msg Message) result.Result[SendData] {
 	m.calls.Add(1)
 	m.mu.Lock()
 	m.lastMsg = msg
@@ -29,7 +30,7 @@ func (m *mockAdapter) Send(ctx context.Context, msg Message) error {
 	if m.sendFn != nil {
 		return m.sendFn(ctx, msg)
 	}
-	return nil
+	return result.NewSuccess(SendData{Timestamp: time.Now(), Provider: m.name})
 }
 
 type mockFormatter struct{}
@@ -47,13 +48,20 @@ func TestDispatch_AllReceive(t *testing.T) {
 
 	d := NewDispatcher(a1, a2, a3)
 
-	err := d.Dispatch(context.Background(), Event{
+	res := d.Dispatch(context.Background(), Event{
 		Title: "hello",
 		Body:  "world",
 	}, mockFormatter{})
 
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+	if !res.IsSuccess() {
+		t.Fatalf("unexpected result code %q, errors: %v", res.Code, res.Errors)
+	}
+	data := res.GetData()
+	if data.SentCount != 3 {
+		t.Errorf("expected SentCount=3, got %d", data.SentCount)
+	}
+	if data.FailedCount != 0 {
+		t.Errorf("expected FailedCount=0, got %d", data.FailedCount)
 	}
 	for _, a := range []*mockAdapter{a1, a2, a3} {
 		if got := a.calls.Load(); got != 1 {
@@ -63,20 +71,26 @@ func TestDispatch_AllReceive(t *testing.T) {
 }
 
 func TestDispatch_OneFailsOthersStillReceive(t *testing.T) {
-	errBoom := errors.New("boom")
-
 	a1 := &mockAdapter{name: "a1"}
-	a2 := &mockAdapter{name: "a2", sendFn: func(_ context.Context, _ Message) error { return errBoom }}
+	a2 := &mockAdapter{name: "a2", sendFn: func(_ context.Context, _ Message) result.Result[SendData] {
+		return result.NewFailure[SendData]([]result.SAWError{
+			{Code: "BOOM", Message: "boom", Severity: "fatal"},
+		})
+	}}
 	a3 := &mockAdapter{name: "a3"}
 
 	d := NewDispatcher(a1, a2, a3)
 
-	err := d.Dispatch(context.Background(), Event{Title: "t"}, mockFormatter{})
-	if err == nil {
-		t.Fatal("expected error, got nil")
+	res := d.Dispatch(context.Background(), Event{Title: "t"}, mockFormatter{})
+	if !res.IsPartial() {
+		t.Fatalf("expected PARTIAL result, got %q", res.Code)
 	}
-	if !errors.Is(err, errBoom) {
-		t.Errorf("error should contain boom: %v", err)
+	data := res.GetData()
+	if data.SentCount != 2 {
+		t.Errorf("expected SentCount=2, got %d", data.SentCount)
+	}
+	if data.FailedCount != 1 {
+		t.Errorf("expected FailedCount=1, got %d", data.FailedCount)
 	}
 	// The other two adapters should still have been called.
 	if a1.calls.Load() != 1 {
@@ -91,26 +105,26 @@ func TestDispatch_ContextCancellation(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel() // cancel immediately
 
-	a1 := &mockAdapter{name: "a1", sendFn: func(ctx context.Context, _ Message) error {
-		return ctx.Err()
-	}}
-
+	a1 := &mockAdapter{name: "a1"}
 	d := NewDispatcher(a1)
 
-	err := d.Dispatch(ctx, Event{Title: "t"}, mockFormatter{})
-	if err == nil {
-		t.Fatal("expected error from cancelled context")
+	res := d.Dispatch(ctx, Event{Title: "t"}, mockFormatter{})
+	if !res.IsFatal() {
+		t.Fatalf("expected FATAL result for cancelled context, got %q", res.Code)
 	}
-	if !errors.Is(err, context.Canceled) {
-		t.Errorf("expected context.Canceled, got: %v", err)
+	if len(res.Errors) == 0 {
+		t.Fatal("expected errors in FATAL result")
+	}
+	if res.Errors[0].Code != "CONTEXT_CANCELLED" {
+		t.Errorf("expected CONTEXT_CANCELLED error code, got %q", res.Errors[0].Code)
 	}
 }
 
 func TestDispatch_NoAdapters(t *testing.T) {
 	d := NewDispatcher()
-	err := d.Dispatch(context.Background(), Event{}, mockFormatter{})
-	if err != nil {
-		t.Fatalf("dispatch with no adapters should succeed, got: %v", err)
+	res := d.Dispatch(context.Background(), Event{}, mockFormatter{})
+	if !res.IsSuccess() {
+		t.Fatalf("dispatch with no adapters should succeed, got: %q", res.Code)
 	}
 }
 
@@ -119,8 +133,9 @@ func TestDispatcher_AddRemove(t *testing.T) {
 	a := &mockAdapter{name: "x"}
 
 	d.AddAdapter(a)
-	if err := d.Dispatch(context.Background(), Event{Title: "t"}, mockFormatter{}); err != nil {
-		t.Fatal(err)
+	res := d.Dispatch(context.Background(), Event{Title: "t"}, mockFormatter{})
+	if !res.IsSuccess() {
+		t.Fatalf("unexpected result: %q errors: %v", res.Code, res.Errors)
 	}
 	if a.calls.Load() != 1 {
 		t.Error("adapter should have been called after Add")
@@ -128,8 +143,9 @@ func TestDispatcher_AddRemove(t *testing.T) {
 
 	d.RemoveAdapter("x")
 	// Dispatch again; removed adapter should NOT be called.
-	if err := d.Dispatch(context.Background(), Event{Title: "t2"}, mockFormatter{}); err != nil {
-		t.Fatal(err)
+	res2 := d.Dispatch(context.Background(), Event{Title: "t2"}, mockFormatter{})
+	if !res2.IsSuccess() {
+		t.Fatalf("unexpected result: %q errors: %v", res2.Code, res2.Errors)
 	}
 	if a.calls.Load() != 1 {
 		t.Error("adapter should not have been called after Remove")
@@ -146,8 +162,9 @@ func TestDispatch_FormatterOutput(t *testing.T) {
 		Timestamp: time.Now(),
 	}
 
-	if err := d.Dispatch(context.Background(), ev, mockFormatter{}); err != nil {
-		t.Fatal(err)
+	res := d.Dispatch(context.Background(), ev, mockFormatter{})
+	if !res.IsSuccess() {
+		t.Fatalf("unexpected result: %q", res.Code)
 	}
 
 	a.mu.Lock()
@@ -157,5 +174,40 @@ func TestDispatch_FormatterOutput(t *testing.T) {
 	want := "Build Failed: pkg/foo: compile error"
 	if got != want {
 		t.Errorf("message text = %q, want %q", got, want)
+	}
+}
+
+func TestDispatch_AllFail(t *testing.T) {
+	failFn := func(_ context.Context, _ Message) result.Result[SendData] {
+		return result.NewFailure[SendData]([]result.SAWError{
+			{Code: "ERR", Message: "fail", Severity: "fatal"},
+		})
+	}
+	a1 := &mockAdapter{name: "a1", sendFn: failFn}
+	a2 := &mockAdapter{name: "a2", sendFn: failFn}
+
+	d := NewDispatcher(a1, a2)
+	res := d.Dispatch(context.Background(), Event{Title: "t"}, mockFormatter{})
+	if !res.IsFatal() {
+		t.Fatalf("expected FATAL when all adapters fail, got %q", res.Code)
+	}
+}
+
+func TestDispatch_PartialWhenSomeFail(t *testing.T) {
+	a1 := &mockAdapter{name: "ok"}
+	a2 := &mockAdapter{name: "fail", sendFn: func(_ context.Context, _ Message) result.Result[SendData] {
+		return result.NewFailure[SendData]([]result.SAWError{
+			{Code: "ERR", Message: "fail", Severity: "error"},
+		})
+	}}
+
+	d := NewDispatcher(a1, a2)
+	res := d.Dispatch(context.Background(), Event{Title: "t"}, mockFormatter{})
+	if !res.IsPartial() {
+		t.Fatalf("expected PARTIAL result, got %q", res.Code)
+	}
+	data := res.GetData()
+	if data.SentCount != 1 || data.FailedCount != 1 {
+		t.Errorf("expected SentCount=1 FailedCount=1, got %d/%d", data.SentCount, data.FailedCount)
 	}
 }

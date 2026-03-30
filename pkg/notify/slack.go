@@ -7,6 +7,9 @@ import (
 	"fmt"
 	"net/http"
 	"sort"
+	"time"
+
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
 )
 
 // readWithFallback reads key from cfg, falling back to fallbackKey.
@@ -56,7 +59,7 @@ func NewSlackAdapter(cfg map[string]string) (Adapter, error) {
 func (s *SlackAdapter) Name() string { return "slack" }
 
 // Send delivers a formatted message via webhook or Bot API.
-func (s *SlackAdapter) Send(ctx context.Context, msg Message) error {
+func (s *SlackAdapter) Send(ctx context.Context, msg Message) result.Result[SendData] {
 	payload := make(map[string]interface{})
 
 	if msg.Embeds != nil {
@@ -75,7 +78,9 @@ func (s *SlackAdapter) Send(ctx context.Context, msg Message) error {
 
 	body, err := json.Marshal(payload)
 	if err != nil {
-		return fmt.Errorf("slack: marshal payload: %w", err)
+		return result.NewFailure[SendData]([]result.SAWError{
+			{Code: "SLACK_MARSHAL_ERROR", Message: fmt.Sprintf("slack: marshal payload: %v", err), Severity: "fatal"},
+		})
 	}
 
 	// Bot token mode: POST to chat.postMessage API
@@ -88,7 +93,9 @@ func (s *SlackAdapter) Send(ctx context.Context, msg Message) error {
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, targetURL, bytes.NewReader(body))
 	if err != nil {
-		return fmt.Errorf("slack: create request: %w", err)
+		return result.NewFailure[SendData]([]result.SAWError{
+			{Code: "SLACK_REQUEST_ERROR", Message: fmt.Sprintf("slack: create request: %v", err), Severity: "fatal"},
+		})
 	}
 	req.Header.Set("Content-Type", "application/json")
 
@@ -98,12 +105,37 @@ func (s *SlackAdapter) Send(ctx context.Context, msg Message) error {
 
 	resp, err := s.client.Do(req)
 	if err != nil {
-		return fmt.Errorf("slack: send request: %w", err)
+		if ctx.Err() != nil {
+			return result.NewFailure[SendData]([]result.SAWError{
+				{Code: "CONTEXT_CANCELLED", Message: ctx.Err().Error(), Severity: "fatal"},
+			})
+		}
+		return result.NewFailure[SendData]([]result.SAWError{
+			{Code: "SLACK_SEND_ERROR", Message: fmt.Sprintf("slack: send request: %v", err), Severity: "fatal"},
+		})
 	}
 	defer resp.Body.Close()
 
+	if resp.StatusCode == http.StatusTooManyRequests {
+		retryAfter := resp.Header.Get("Retry-After")
+		return result.NewFailure[SendData]([]result.SAWError{
+			{
+				Code:     "SLACK_RATE_LIMITED",
+				Message:  "slack: rate limited",
+				Severity: "error",
+				Context:  map[string]string{"retry_after": retryAfter},
+			},
+		})
+	}
+
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return fmt.Errorf("slack: unexpected status %d", resp.StatusCode)
+		return result.NewFailure[SendData]([]result.SAWError{
+			{
+				Code:     "SLACK_HTTP_ERROR",
+				Message:  fmt.Sprintf("slack: unexpected status %d", resp.StatusCode),
+				Severity: "fatal",
+			},
+		})
 	}
 
 	// Bot API returns {"ok": false, "error": "..."} on failure even with 200
@@ -113,11 +145,16 @@ func (s *SlackAdapter) Send(ctx context.Context, msg Message) error {
 			Error string `json:"error"`
 		}
 		if err := json.NewDecoder(resp.Body).Decode(&apiResp); err == nil && !apiResp.OK {
-			return fmt.Errorf("slack: API error: %s", apiResp.Error)
+			return result.NewFailure[SendData]([]result.SAWError{
+				{Code: "SLACK_API_ERROR", Message: fmt.Sprintf("slack: API error: %s", apiResp.Error), Severity: "fatal"},
+			})
 		}
 	}
 
-	return nil
+	return result.NewSuccess(SendData{
+		Timestamp: time.Now(),
+		Provider:  "slack",
+	})
 }
 
 // severityColor maps severity levels to Slack color codes.
@@ -207,4 +244,3 @@ func (f *SlackFormatter) Format(event Event) Message {
 func init() {
 	Register("slack", NewSlackAdapter)
 }
-

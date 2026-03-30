@@ -42,16 +42,18 @@ func CheckQueue(ctx context.Context, opts CheckQueueOpts) (*CheckQueueResult, er
 
 	mgr := queue.NewManager(opts.RepoPath)
 
-	item, err := mgr.Next()
-	if err != nil {
-		return nil, fmt.Errorf("engine.CheckQueue: queue.Next: %w", err)
+	nextRes := mgr.Next()
+	if nextRes.IsFatal() {
+		// QUEUE_EMPTY is not an error — it means no eligible items.
+		if len(nextRes.Errors) > 0 && nextRes.Errors[0].Code == "QUEUE_EMPTY" {
+			return &CheckQueueResult{
+				Advanced: false,
+				Reason:   "no_items",
+			}, nil
+		}
+		return nil, fmt.Errorf("engine.CheckQueue: queue.Next: %s", nextRes.Errors[0].Message)
 	}
-	if item == nil {
-		return &CheckQueueResult{
-			Advanced: false,
-			Reason:   "no_items",
-		}, nil
-	}
+	item := nextRes.GetData()
 
 	// Determine effective autonomy level (honour per-item override).
 	level := autonomy.EffectiveLevel(opts.AutonomyConfig, item.AutonomyOverride)
@@ -66,8 +68,8 @@ func CheckQueue(ctx context.Context, opts CheckQueueOpts) (*CheckQueueResult, er
 	}
 
 	// Autonomy allows it — mark item in_progress.
-	if err := mgr.UpdateStatus(item.Slug, "in_progress"); err != nil {
-		return nil, fmt.Errorf("engine.CheckQueue: UpdateStatus: %w", err)
+	if updateRes := mgr.UpdateStatus(item.Slug, "in_progress"); updateRes.IsFatal() {
+		return nil, fmt.Errorf("engine.CheckQueue: UpdateStatus: %s", updateRes.Errors[0].Message)
 	}
 
 	result := &CheckQueueResult{

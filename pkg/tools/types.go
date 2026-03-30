@@ -1,12 +1,16 @@
 // pkg/tools/types.go
 package tools
 
-import "context"
+import (
+	"context"
+
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
+)
 
 // Workshop manages tool registration and lookup with namespace filtering.
 // This implements the Registry design pattern with domain-friendly naming.
 type Workshop interface {
-	Register(tool Tool) error
+	Register(tool Tool) result.Result[RegisterData]
 	Get(name string) (Tool, bool)
 	All() []Tool
 	Namespace(prefix string) []Tool

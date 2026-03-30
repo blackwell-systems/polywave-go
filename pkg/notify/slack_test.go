@@ -68,9 +68,13 @@ func TestSlackAdapter_Send_Success(t *testing.T) {
 	}
 	msg := formatter.Format(event)
 
-	err = adapter.Send(context.Background(), msg)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+	res := adapter.Send(context.Background(), msg)
+	if !res.IsSuccess() {
+		t.Fatalf("unexpected result %q: %v", res.Code, res.Errors)
+	}
+	data := res.GetData()
+	if data.Provider != "slack" {
+		t.Errorf("expected provider 'slack', got %q", data.Provider)
 	}
 
 	// Verify payload structure
@@ -118,9 +122,9 @@ func TestSlackAdapter_Send_ChannelOverride(t *testing.T) {
 	}
 
 	msg := Message{Text: "test", Embeds: []interface{}{}}
-	err = adapter.Send(context.Background(), msg)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+	res := adapter.Send(context.Background(), msg)
+	if !res.IsSuccess() {
+		t.Fatalf("unexpected result %q: %v", res.Code, res.Errors)
 	}
 
 	channel, ok := receivedBody["channel"].(string)
@@ -143,9 +147,54 @@ func TestSlackAdapter_Send_HTTPError(t *testing.T) {
 	}
 
 	msg := Message{Text: "test"}
-	err = adapter.Send(context.Background(), msg)
-	if err == nil {
-		t.Fatal("expected error for 500 response, got nil")
+	res := adapter.Send(context.Background(), msg)
+	if !res.IsFatal() {
+		t.Fatalf("expected FATAL result for 500 response, got %q", res.Code)
+	}
+}
+
+func TestSlackAdapter_Send_RateLimited(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Retry-After", "60")
+		w.WriteHeader(http.StatusTooManyRequests)
+	}))
+	defer server.Close()
+
+	adapter, err := NewSlackAdapter(map[string]string{
+		"webhook_url": server.URL,
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	res := adapter.Send(context.Background(), Message{Text: "test"})
+	if !res.IsFatal() {
+		t.Fatalf("expected FATAL result for rate limit, got %q", res.Code)
+	}
+	if len(res.Errors) == 0 || res.Errors[0].Code != "SLACK_RATE_LIMITED" {
+		t.Errorf("expected SLACK_RATE_LIMITED error, got %v", res.Errors)
+	}
+}
+
+func TestSlackAdapter_Send_ContextCancellation(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	adapter, err := NewSlackAdapter(map[string]string{
+		"webhook_url": server.URL,
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	res := adapter.Send(ctx, Message{Text: "test"})
+	if !res.IsFatal() {
+		t.Fatalf("expected FATAL result for cancelled context, got %q", res.Code)
 	}
 }
 

@@ -6,19 +6,31 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
 )
+
+// ValidateData holds the output of a successful or partial scout boundary validation.
+type ValidateData struct {
+	ValidatedPath    string
+	UnexpectedWrites []string
+	Violations       []result.SAWError
+}
 
 // ValidateScoutWrites checks if Scout wrote files outside its boundaries.
 // Call this after Scout execution completes.
-// Returns error with violation details if any unauthorized writes detected.
-func ValidateScoutWrites(repoPath, expectedIMPLPath string, startTime time.Time) error {
+// Returns:
+//   - Success if no unexpected writes found
+//   - Partial if unexpected writes exist (non-fatal, reportable)
+//   - Fatal on filesystem scan error
+func ValidateScoutWrites(repoPath, expectedIMPLPath string, startTime time.Time) result.Result[ValidateData] {
 	docsDir := filepath.Join(repoPath, "docs")
 	if _, err := os.Stat(docsDir); os.IsNotExist(err) {
 		// No docs/ directory - no violations possible
-		return nil
+		return result.NewSuccess(ValidateData{ValidatedPath: repoPath})
 	}
 
-	var violations []string
+	var unexpectedWrites []string
 
 	// Walk docs/ tree looking for files modified after startTime
 	err := filepath.Walk(docsDir, func(path string, info os.FileInfo, err error) error {
@@ -50,30 +62,41 @@ func ValidateScoutWrites(repoPath, expectedIMPLPath string, startTime time.Time)
 		}
 
 		// Everything else is a violation
-		violations = append(violations, relPath)
+		unexpectedWrites = append(unexpectedWrites, relPath)
 		return nil
 	})
 
 	if err != nil {
-		return fmt.Errorf("scout boundaries validation: walk failed: %w", err)
+		return result.NewFailure[ValidateData]([]result.SAWError{
+			result.NewFatal("SCOUT_BOUNDARY_VIOLATION", fmt.Sprintf("scout boundaries validation: walk failed: %v", err)),
+		})
 	}
 
-	if len(violations) > 0 {
-		return fmt.Errorf(`I6 VIOLATION: Scout wrote files outside permitted boundaries.
+	if len(unexpectedWrites) > 0 {
+		violations := make([]result.SAWError, len(unexpectedWrites))
+		for i, path := range unexpectedWrites {
+			violations[i] = result.SAWError{
+				Code:    "SCOUT_BOUNDARY_VIOLATION",
+				Message: fmt.Sprintf("Scout wrote file outside permitted boundaries: %s", path),
+				Severity: "warning",
+				File:    path,
+				Suggestion: "Allowed: docs/IMPL/IMPL-<feature-slug>.yaml. " +
+					"Scout's role is reconnaissance only. " +
+					"Orchestrator writes docs/REQUIREMENTS.md (bootstrap); " +
+					"Wave agents write source code; " +
+					"Tools (sawtools) manage CONTEXT.md and archiving.",
+			}
+		}
 
-Unauthorized writes detected:
-%s
-
-Allowed: docs/IMPL/IMPL-<feature-slug>.yaml
-
-Scout's role is reconnaissance (analyze, plan, document).
-- Orchestrator writes docs/REQUIREMENTS.md (bootstrap)
-- Wave agents write source code
-- Tools (sawtools) manage CONTEXT.md and archiving`,
-			strings.Join(violations, "\n"))
+		data := ValidateData{
+			ValidatedPath:    repoPath,
+			UnexpectedWrites: unexpectedWrites,
+			Violations:       violations,
+		}
+		return result.NewPartial(data, violations)
 	}
 
-	return nil
+	return result.NewSuccess(ValidateData{ValidatedPath: repoPath})
 }
 
 // IsValidScoutPath checks if a file path is within Scout's write boundaries.

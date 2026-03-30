@@ -64,9 +64,16 @@ func TestTelegramAdapter_SendSuccess(t *testing.T) {
 		baseURL:     srv.URL,
 	}
 
-	err := adapter.Send(context.Background(), Message{Text: "*Hello*\nWorld"})
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+	res := adapter.Send(context.Background(), Message{Text: "*Hello*\nWorld"})
+	if !res.IsSuccess() {
+		t.Fatalf("unexpected result %q: %v", res.Code, res.Errors)
+	}
+	data := res.GetData()
+	if data.Provider != "telegram" {
+		t.Errorf("expected provider 'telegram', got %q", data.Provider)
+	}
+	if data.Timestamp.IsZero() {
+		t.Error("expected non-zero timestamp")
 	}
 	if receivedBody["chat_id"] != "-100123" {
 		t.Errorf("expected chat_id '-100123', got %q", receivedBody["chat_id"])
@@ -89,9 +96,54 @@ func TestTelegramAdapter_SendHTTPError(t *testing.T) {
 		baseURL:     srv.URL,
 	}
 
-	err := adapter.Send(context.Background(), Message{Text: "test"})
-	if err == nil {
-		t.Fatal("expected error for 401 response")
+	res := adapter.Send(context.Background(), Message{Text: "test"})
+	if !res.IsFatal() {
+		t.Fatalf("expected FATAL result for 401 response, got %q", res.Code)
+	}
+}
+
+func TestTelegramAdapter_SendRateLimited(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Retry-After", "30")
+		w.WriteHeader(http.StatusTooManyRequests)
+	}))
+	defer srv.Close()
+
+	adapter := &TelegramAdapter{
+		token:       "123:ABC",
+		destination: "-100123",
+		client:      srv.Client(),
+		baseURL:     srv.URL,
+	}
+
+	res := adapter.Send(context.Background(), Message{Text: "test"})
+	if !res.IsFatal() {
+		t.Fatalf("expected FATAL result for rate limit, got %q", res.Code)
+	}
+	if len(res.Errors) == 0 || res.Errors[0].Code != "TELEGRAM_RATE_LIMITED" {
+		t.Errorf("expected TELEGRAM_RATE_LIMITED error, got %v", res.Errors)
+	}
+}
+
+func TestTelegramAdapter_ContextCancellation(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	adapter := &TelegramAdapter{
+		token:       "123:ABC",
+		destination: "-100123",
+		client:      srv.Client(),
+		baseURL:     srv.URL,
+	}
+
+	res := adapter.Send(ctx, Message{Text: "test"})
+	if !res.IsFatal() {
+		t.Fatalf("expected FATAL result for cancelled context, got %q", res.Code)
 	}
 }
 

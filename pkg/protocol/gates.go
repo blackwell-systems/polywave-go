@@ -111,14 +111,13 @@ func executeSingleGate(gate QualityGate, repoDir string, cache *gatecache.Cache,
 	// a cache miss rather than returning a stale result.
 	var cacheKey gatecache.CacheKey
 	if cache != nil {
-		var err error
-		cacheKey, err = cache.BuildKeyForGate(repoDir, gate.Command)
-		if err != nil {
-			// Cannot build key (e.g. not a git repo) — fall back to no-cache for
-			// this gate by running it below without checking or populating cache.
-			// We continue through the rest of the function.
-			cacheKey = gatecache.CacheKey{}
+		keyResult := cache.BuildKeyForGate(repoDir, gate.Command)
+		if keyResult.IsSuccess() {
+			cacheKey = keyResult.GetData()
 		}
+		// If fatal: cannot build key (e.g. not a git repo) — fall back to no-cache for
+		// this gate by running it below without checking or populating cache.
+		// cacheKey remains zero value (HeadCommit == ""), skipping cache checks below.
 	}
 
 	// Check the cache first (only when we successfully built a key)

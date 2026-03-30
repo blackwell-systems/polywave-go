@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/interview"
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
 )
 
 // mockManager is a test double for the interview.Manager interface.
@@ -82,11 +83,18 @@ func (m *mockManager) Compile(doc *interview.InterviewDoc, outputPath string) (s
 	return outputPath, nil
 }
 
-func (m *mockManager) Save(doc *interview.InterviewDoc, docPath string) error {
+func (m *mockManager) Save(doc *interview.InterviewDoc, docPath string) result.Result[interview.SaveDocData] {
 	if err := os.MkdirAll(filepath.Dir(docPath), 0o755); err != nil {
-		return err
+		return result.NewFailure[interview.SaveDocData]([]result.SAWError{
+			result.NewFatal("INTERVIEW_SAVE_FAILED", err.Error()).WithContext("path", docPath).WithCause(err),
+		})
 	}
-	return os.WriteFile(docPath, []byte("mock interview doc"), 0o644)
+	if err := os.WriteFile(docPath, []byte("mock interview doc"), 0o644); err != nil {
+		return result.NewFailure[interview.SaveDocData]([]result.SAWError{
+			result.NewFatal("INTERVIEW_SAVE_FAILED", err.Error()).WithContext("path", docPath).WithCause(err),
+		})
+	}
+	return result.NewSuccess(interview.SaveDocData{DocPath: docPath})
 }
 
 // installMockManager replaces the default manager factory with a mock and

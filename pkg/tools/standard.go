@@ -5,7 +5,7 @@ package tools
 func StandardTools(workDir string) Workshop {
 	reg := NewWorkshop()
 
-	reg.Register(Tool{
+	reg.Register(Tool{ //nolint: result ignored, duplicates cannot occur in StandardTools
 		Name:        "read_file",
 		Description: "Read the contents of a file. Absolute paths pass through; relative paths resolve against working directory.",
 		Namespace:   "file",
@@ -22,7 +22,7 @@ func StandardTools(workDir string) Workshop {
 		Executor: &FileReadExecutor{},
 	})
 
-	reg.Register(Tool{
+	reg.Register(Tool{ //nolint: result ignored, duplicates cannot occur in StandardTools
 		Name:        "write_file",
 		Description: "Write content to a file, creating parent directories as needed.",
 		Namespace:   "file",
@@ -43,7 +43,7 @@ func StandardTools(workDir string) Workshop {
 		Executor: &FileWriteExecutor{},
 	})
 
-	reg.Register(Tool{
+	reg.Register(Tool{ //nolint: result ignored, duplicates cannot occur in StandardTools
 		Name:        "list_directory",
 		Description: "List files in a directory. Path is relative to working directory.",
 		Namespace:   "file",
@@ -59,7 +59,7 @@ func StandardTools(workDir string) Workshop {
 		Executor: &FileListExecutor{},
 	})
 
-	reg.Register(Tool{
+	reg.Register(Tool{ //nolint: result ignored, duplicates cannot occur in StandardTools
 		Name:        "bash",
 		Description: "Execute a shell command in the working directory. Returns combined stdout+stderr.",
 		Namespace:   "bash",
@@ -76,7 +76,7 @@ func StandardTools(workDir string) Workshop {
 		Executor: &BashExecutor{},
 	})
 
-	reg.Register(Tool{
+	reg.Register(Tool{ //nolint: result ignored, duplicates cannot occur in StandardTools
 		Name:        "edit_file",
 		Description: "Replace old_string with new_string in a file. Fails if old_string is not found.",
 		Namespace:   "file",
@@ -101,7 +101,7 @@ func StandardTools(workDir string) Workshop {
 		Executor: &EditExecutor{},
 	})
 
-	reg.Register(Tool{
+	reg.Register(Tool{ //nolint: result ignored, duplicates cannot occur in StandardTools
 		Name:        "glob",
 		Description: "Find files matching a glob pattern relative to the working directory. Returns one match per line.",
 		Namespace:   "file",
@@ -118,7 +118,7 @@ func StandardTools(workDir string) Workshop {
 		Executor: &GlobExecutor{},
 	})
 
-	reg.Register(Tool{
+	reg.Register(Tool{ //nolint: result ignored, duplicates cannot occur in StandardTools
 		Name:        "grep",
 		Description: "Search for a pattern in files. Uses rg (ripgrep) if available, otherwise falls back to line-by-line scan.",
 		Namespace:   "file",

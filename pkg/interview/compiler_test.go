@@ -268,9 +268,21 @@ func TestWriteRequirementsFile(t *testing.T) {
 	tmpDir := t.TempDir()
 	outputPath := filepath.Join(tmpDir, "docs", "REQUIREMENTS.md")
 
-	err := WriteRequirementsFile(doc, outputPath)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+	writeResult := WriteRequirementsFile(doc, outputPath)
+	if writeResult.IsFatal() {
+		t.Fatalf("unexpected failure: %v", writeResult.Errors)
+	}
+	if !writeResult.IsSuccess() {
+		t.Fatalf("expected success result, got code: %s", writeResult.Code)
+	}
+
+	// Verify data fields are populated correctly.
+	data := writeResult.GetData()
+	if data.OutputPath != outputPath {
+		t.Errorf("expected OutputPath %q, got %q", outputPath, data.OutputPath)
+	}
+	if data.LineCount <= 0 {
+		t.Errorf("expected positive LineCount, got %d", data.LineCount)
 	}
 
 	// Read back and verify
@@ -279,17 +291,49 @@ func TestWriteRequirementsFile(t *testing.T) {
 		t.Fatalf("failed to read written file: %v", err)
 	}
 
-	result := string(content)
-	if !strings.Contains(result, "# Requirements: Write Test Project") {
+	fileContent := string(content)
+	if !strings.Contains(fileContent, "# Requirements: Write Test Project") {
 		t.Error("written file missing title")
 	}
-	if !strings.Contains(result, "1. File I/O") {
+	if !strings.Contains(fileContent, "1. File I/O") {
 		t.Error("written file missing Key Concerns")
 	}
 
 	// Verify it's the same as CompileToRequirements output
 	expected, _ := CompileToRequirements(doc)
-	if result != expected {
+	if fileContent != expected {
 		t.Error("written file content does not match CompileToRequirements output")
+	}
+}
+
+func TestWriteRequirementsFile_WriteFailure(t *testing.T) {
+	doc := &InterviewDoc{
+		Slug: "fail-test",
+		SpecData: SpecData{
+			Overview: OverviewSpec{Title: "Fail Test"},
+		},
+	}
+
+	// Use a path where the directory cannot be created (file exists where dir should be).
+	tmpDir := t.TempDir()
+	// Create a file at the directory path so MkdirAll fails.
+	blockingFile := filepath.Join(tmpDir, "blocked")
+	if err := os.WriteFile(blockingFile, []byte("x"), 0o644); err != nil {
+		t.Fatalf("setup: %v", err)
+	}
+	outputPath := filepath.Join(blockingFile, "REQUIREMENTS.md")
+
+	writeResult := WriteRequirementsFile(doc, outputPath)
+	if !writeResult.IsFatal() {
+		t.Fatalf("expected FATAL result for unwritable path, got code: %s", writeResult.Code)
+	}
+	if len(writeResult.Errors) == 0 {
+		t.Fatal("expected at least one error in FATAL result")
+	}
+	if writeResult.Errors[0].Code != "REQUIREMENTS_WRITE_FAILED" {
+		t.Errorf("expected error code REQUIREMENTS_WRITE_FAILED, got %q", writeResult.Errors[0].Code)
+	}
+	if writeResult.Errors[0].Context["path"] != outputPath {
+		t.Errorf("expected path context %q, got %q", outputPath, writeResult.Errors[0].Context["path"])
 	}
 }

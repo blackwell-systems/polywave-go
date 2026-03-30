@@ -3,7 +3,6 @@ package hooks
 import (
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 	"time"
 )
@@ -47,40 +46,85 @@ func TestValidateScoutWrites(t *testing.T) {
 	startTime := time.Now()
 	time.Sleep(10 * time.Millisecond) // Ensure file mtime > startTime
 
-	t.Run("No violations", func(t *testing.T) {
-		// Write valid IMPL doc
+	t.Run("No violations returns Success", func(t *testing.T) {
 		implPath := filepath.Join(docsIMPL, "IMPL-feature.yaml")
 		if err := os.WriteFile(implPath, []byte("test"), 0644); err != nil {
 			t.Fatal(err)
 		}
 
-		err := ValidateScoutWrites(tmpDir, implPath, startTime)
-		if err != nil {
-			t.Errorf("Expected no violations, got: %v", err)
+		res := ValidateScoutWrites(tmpDir, implPath, startTime)
+		if !res.IsSuccess() {
+			t.Errorf("Expected SUCCESS, got code=%q errors=%v", res.Code, res.Errors)
+		}
+		data := res.GetData()
+		if data.ValidatedPath != tmpDir {
+			t.Errorf("Expected ValidatedPath=%q, got %q", tmpDir, data.ValidatedPath)
+		}
+		if len(data.UnexpectedWrites) != 0 {
+			t.Errorf("Expected no UnexpectedWrites, got %v", data.UnexpectedWrites)
 		}
 	})
 
-	t.Run("CONTEXT.md violation", func(t *testing.T) {
+	t.Run("CONTEXT.md violation returns Partial", func(t *testing.T) {
 		contextPath := filepath.Join(tmpDir, "docs", "CONTEXT.md")
 		if err := os.WriteFile(contextPath, []byte("test"), 0644); err != nil {
 			t.Fatal(err)
 		}
 
 		implPath := filepath.Join(docsIMPL, "IMPL-test.yaml")
-		err := ValidateScoutWrites(tmpDir, implPath, startTime)
-		if err == nil {
-			t.Error("Expected violation error, got nil")
+		res := ValidateScoutWrites(tmpDir, implPath, startTime)
+		if !res.IsPartial() {
+			t.Errorf("Expected PARTIAL result, got code=%q", res.Code)
 		}
-		if !strings.Contains(err.Error(), "I6 VIOLATION") {
-			t.Errorf("Expected I6 VIOLATION, got: %v", err)
+		data := res.GetData()
+		found := false
+		for _, w := range data.UnexpectedWrites {
+			if w == "docs/CONTEXT.md" {
+				found = true
+				break
+			}
 		}
-		if !strings.Contains(err.Error(), "CONTEXT.md") {
-			t.Errorf("Expected CONTEXT.md in error, got: %v", err)
+		if !found {
+			t.Errorf("Expected CONTEXT.md in UnexpectedWrites, got %v", data.UnexpectedWrites)
+		}
+		if len(data.Violations) == 0 {
+			t.Error("Expected Violations to be populated")
+		}
+		for _, v := range data.Violations {
+			if v.Code != "SCOUT_BOUNDARY_VIOLATION" {
+				t.Errorf("Expected error code SCOUT_BOUNDARY_VIOLATION, got %q", v.Code)
+			}
+		}
+	})
+
+	t.Run("Partial result lists all violations", func(t *testing.T) {
+		// Add two additional unauthorized files
+		extraDir := filepath.Join(tmpDir, "docs", "extra")
+		if err := os.MkdirAll(extraDir, 0755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(extraDir, "notes.txt"), []byte("x"), 0644); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(tmpDir, "docs", "README.md"), []byte("x"), 0644); err != nil {
+			t.Fatal(err)
+		}
+
+		implPath := filepath.Join(docsIMPL, "IMPL-test2.yaml")
+		res := ValidateScoutWrites(tmpDir, implPath, startTime)
+		if !res.IsPartial() {
+			t.Errorf("Expected PARTIAL result, got code=%q", res.Code)
+		}
+		data := res.GetData()
+		if len(data.UnexpectedWrites) < 2 {
+			t.Errorf("Expected at least 2 unexpected writes, got %d: %v", len(data.UnexpectedWrites), data.UnexpectedWrites)
+		}
+		if len(data.Violations) != len(data.UnexpectedWrites) {
+			t.Errorf("Violations count (%d) should match UnexpectedWrites count (%d)", len(data.Violations), len(data.UnexpectedWrites))
 		}
 	})
 
 	t.Run("Old files ignored", func(t *testing.T) {
-		// Create file with old mtime
 		oldPath := filepath.Join(docsIMPL, "IMPL-old.yaml")
 		if err := os.WriteFile(oldPath, []byte("old"), 0644); err != nil {
 			t.Fatal(err)
@@ -90,11 +134,32 @@ func TestValidateScoutWrites(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		implPath := filepath.Join(docsIMPL, "IMPL-new.yaml")
-		err := ValidateScoutWrites(tmpDir, implPath, startTime)
-		// Should not report old file as violation
-		if err != nil && strings.Contains(err.Error(), "IMPL-old.yaml") {
-			t.Errorf("Old file should be ignored, got: %v", err)
+		// Use a fresh temp dir to avoid interference from other subtests
+		freshDir := t.TempDir()
+		freshIMPL := filepath.Join(freshDir, "docs", "IMPL")
+		if err := os.MkdirAll(freshIMPL, 0755); err != nil {
+			t.Fatal(err)
+		}
+		oldFile := filepath.Join(freshIMPL, "IMPL-old.yaml")
+		if err := os.WriteFile(oldFile, []byte("old"), 0644); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Chtimes(oldFile, oldTime, oldTime); err != nil {
+			t.Fatal(err)
+		}
+
+		implPath := filepath.Join(freshIMPL, "IMPL-new.yaml")
+		res := ValidateScoutWrites(freshDir, implPath, startTime)
+		if !res.IsSuccess() {
+			t.Errorf("Expected SUCCESS when only old files present, got code=%q errors=%v", res.Code, res.Errors)
+		}
+	})
+
+	t.Run("No docs dir returns Success", func(t *testing.T) {
+		emptyDir := t.TempDir()
+		res := ValidateScoutWrites(emptyDir, filepath.Join(emptyDir, "docs/IMPL/IMPL-x.yaml"), startTime)
+		if !res.IsSuccess() {
+			t.Errorf("Expected SUCCESS when no docs dir, got code=%q", res.Code)
 		}
 	})
 }

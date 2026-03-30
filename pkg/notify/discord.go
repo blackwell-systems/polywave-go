@@ -7,6 +7,9 @@ import (
 	"fmt"
 	"net/http"
 	"sort"
+	"time"
+
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
 )
 
 // Discord embed color constants by severity.
@@ -39,7 +42,7 @@ func NewDiscordAdapter(cfg map[string]string) (Adapter, error) {
 func (a *DiscordAdapter) Name() string { return "discord" }
 
 // Send delivers a formatted message to the Discord webhook endpoint.
-func (a *DiscordAdapter) Send(ctx context.Context, msg Message) error {
+func (a *DiscordAdapter) Send(ctx context.Context, msg Message) result.Result[SendData] {
 	var payload interface{}
 	if msg.Embeds != nil {
 		payload = map[string]interface{}{
@@ -53,25 +56,59 @@ func (a *DiscordAdapter) Send(ctx context.Context, msg Message) error {
 
 	body, err := json.Marshal(payload)
 	if err != nil {
-		return fmt.Errorf("discord: marshal payload: %w", err)
+		return result.NewFailure[SendData]([]result.SAWError{
+			{Code: "DISCORD_MARSHAL_ERROR", Message: fmt.Sprintf("discord: marshal payload: %v", err), Severity: "fatal"},
+		})
 	}
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, a.webhookURL, bytes.NewReader(body))
 	if err != nil {
-		return fmt.Errorf("discord: create request: %w", err)
+		return result.NewFailure[SendData]([]result.SAWError{
+			{Code: "DISCORD_REQUEST_ERROR", Message: fmt.Sprintf("discord: create request: %v", err), Severity: "fatal"},
+		})
 	}
 	req.Header.Set("Content-Type", "application/json")
 
 	resp, err := a.client.Do(req)
 	if err != nil {
-		return fmt.Errorf("discord: send request: %w", err)
+		// Context cancellation surfaces here.
+		if ctx.Err() != nil {
+			return result.NewFailure[SendData]([]result.SAWError{
+				{Code: "CONTEXT_CANCELLED", Message: ctx.Err().Error(), Severity: "fatal"},
+			})
+		}
+		return result.NewFailure[SendData]([]result.SAWError{
+			{Code: "DISCORD_SEND_ERROR", Message: fmt.Sprintf("discord: send request: %v", err), Severity: "fatal"},
+		})
 	}
 	defer resp.Body.Close()
 
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return fmt.Errorf("discord: unexpected status %d", resp.StatusCode)
+	if resp.StatusCode == http.StatusTooManyRequests {
+		retryAfter := resp.Header.Get("Retry-After")
+		return result.NewFailure[SendData]([]result.SAWError{
+			{
+				Code:     "DISCORD_RATE_LIMITED",
+				Message:  "discord: rate limited",
+				Severity: "error",
+				Context:  map[string]string{"retry_after": retryAfter},
+			},
+		})
 	}
-	return nil
+
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return result.NewFailure[SendData]([]result.SAWError{
+			{
+				Code:     "DISCORD_HTTP_ERROR",
+				Message:  fmt.Sprintf("discord: unexpected status %d", resp.StatusCode),
+				Severity: "fatal",
+			},
+		})
+	}
+
+	return result.NewSuccess(SendData{
+		Timestamp: time.Now(),
+		Provider:  "discord",
+	})
 }
 
 // DiscordFormatter formats events into Discord embed messages.

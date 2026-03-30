@@ -112,7 +112,7 @@ func WithConstraints(w Workshop, c Constraints) (Workshop, *CommitTracker) {
 			// Read-only tools (read_file, glob, grep, list_directory): no constraints
 		}
 
-		wrapped.Register(t)
+		wrapped.Register(t) // nolint: result ignored, duplicates cannot occur here (iterating w.All())
 	}
 
 	return wrapped, tracker
