@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/journal"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
@@ -92,8 +93,24 @@ func PrepareAgent(opts PrepareAgentOpts) (PrepareAgentResult, error) {
 		}
 	}
 
-	// Build the agent brief
-	brief := fmt.Sprintf(`# Agent %s Brief - Wave %d
+	// Extract first line of task for SAW name
+	taskFirstLine := agentTask
+	if idx := strings.Index(agentTask, "\n"); idx > 0 {
+		taskFirstLine = agentTask[:idx]
+	}
+	if len(taskFirstLine) > 80 {
+		taskFirstLine = taskFirstLine[:77] + "..."
+	}
+
+	// Generate SAW-formatted name for Agent tool
+	sawName := fmt.Sprintf("[SAW:wave%d:agent-%s] %s", opts.WaveNum, opts.AgentID, taskFirstLine)
+
+	// Build the agent brief with frontmatter
+	brief := fmt.Sprintf(`---
+saw_name: %s
+---
+
+# Agent %s Brief - Wave %d
 
 **IMPL Doc:** %s
 
@@ -106,6 +123,7 @@ func PrepareAgent(opts PrepareAgentOpts) (PrepareAgentResult, error) {
 %s
 %s%s
 `,
+		sawName,
 		opts.AgentID,
 		opts.WaveNum,
 		opts.ManifestPath,
