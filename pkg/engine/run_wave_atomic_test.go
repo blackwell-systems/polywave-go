@@ -30,6 +30,7 @@ func TestRunWaveTransaction_SuccessPathStructure(t *testing.T) {
 		t.Fatalf("failed to create repo root: %v", err)
 	}
 
+	// 2 agents needed to bypass the solo-wave shortcut (which skips VerifyCommits)
 	implContent := `feature_slug: test-atomic-success
 title: Test atomic success
 verdict: SUITABLE
@@ -43,11 +44,19 @@ waves:
         branch: wave1-agent-A
         files:
           - pkg/foo/foo.go
+      - id: B
+        branch: wave1-agent-B
+        files:
+          - pkg/bar/bar.go
 completion_reports:
   A:
     status: complete
     commit: abc123
     branch: wave1-agent-A
+  B:
+    status: complete
+    commit: def456
+    branch: wave1-agent-B
 `
 	implPath := filepath.Join(tmpDir, "IMPL-test.yaml")
 	if err := os.WriteFile(implPath, []byte(implContent), 0644); err != nil {
@@ -81,6 +90,7 @@ func TestRunWaveTransaction_FailureRollsBackState(t *testing.T) {
 	}
 
 	// Write an IMPL with known state and merge_state values.
+	// 2 agents needed to bypass the solo-wave shortcut (which skips VerifyCommits).
 	implContent := `feature_slug: test-atomic-rollback
 title: Test atomic rollback
 verdict: SUITABLE
@@ -95,11 +105,19 @@ waves:
         branch: wave1-agent-A
         files:
           - pkg/foo/foo.go
+      - id: B
+        branch: wave1-agent-B
+        files:
+          - pkg/bar/bar.go
 completion_reports:
   A:
     status: complete
     commit: abc123
     branch: wave1-agent-A
+  B:
+    status: complete
+    commit: def456
+    branch: wave1-agent-B
 `
 	implPath := filepath.Join(tmpDir, "IMPL-test.yaml")
 	if err := os.WriteFile(implPath, []byte(implContent), 0644); err != nil {

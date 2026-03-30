@@ -9,8 +9,10 @@ import (
 
 	"path/filepath"
 
+	"github.com/blackwell-systems/scout-and-wave-go/internal/git"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/builddiag"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/collision"
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/gatecache"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/observability"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
 )
@@ -55,20 +57,118 @@ type FinalizeWaveOpts struct {
 }
 
 // FinalizeWaveResult combines all post-agent verification, merge, and cleanup results.
+// For single-repo IMPLs, each map has a single key ".".
+// For cross-repo IMPLs, keys match the repo names from file_ownership.Repo.
 type FinalizeWaveResult struct {
-	Wave           int                          `json:"wave"`
-	VerifyCommits  *protocol.VerifyCommitsData  `json:"verify_commits,omitempty"`
-	StubReport     *protocol.ScanStubsData      `json:"stub_report,omitempty"`
-	GateResults       []protocol.GateResult         `json:"gate_results,omitempty"`
-	IntegrationReport *protocol.IntegrationReport   `json:"integration_report,omitempty"`
-	MergeResult       *protocol.MergeAgentsData     `json:"merge_result,omitempty"`
-	VerifyBuild    *protocol.VerifyBuildData    `json:"verify_build,omitempty"`
-	BuildDiagnosis *builddiag.Diagnosis         `json:"build_diagnosis,omitempty"`
-	CleanupResult  *protocol.CleanupData        `json:"cleanup_result,omitempty"`
-	CollisionReport  *collision.CollisionReport     `json:"collision_report,omitempty"`
-	WiringReport     *protocol.WiringValidationData `json:"wiring_report,omitempty"`
-	BuildPassed    bool                         `json:"build_passed"`
-	Success        bool                         `json:"success"`
+	Wave                      int                                    `json:"wave"`
+	CrossRepo                 bool                                   `json:"cross_repo"`
+	VerifyCommits             map[string]*protocol.VerifyCommitsData `json:"verify_commits"`
+	CollisionReports          map[string]*collision.CollisionReport  `json:"collision_reports,omitempty"`
+	StubReport                *protocol.ScanStubsData               `json:"stub_report,omitempty"`
+	GateResults               map[string][]protocol.GateResult      `json:"gate_results"`
+	IntegrationReport         *protocol.IntegrationReport           `json:"integration_report,omitempty"`
+	MergeResult               map[string]*protocol.MergeAgentsData  `json:"merge_result"`
+	VerifyBuild               map[string]*protocol.VerifyBuildData  `json:"verify_build"`
+	BuildDiagnosis            map[string]*builddiag.Diagnosis        `json:"build_diagnosis,omitempty"`
+	CleanupResult             map[string]*protocol.CleanupData      `json:"cleanup_result"`
+	WiringReport              *protocol.WiringValidationData        `json:"wiring_report,omitempty"`
+	IntegrationActionRequired bool                                  `json:"integration_action_required"`
+	WiringGaps                []string                              `json:"wiring_gaps,omitempty"`
+	BuildPassed               bool                                  `json:"build_passed"`
+	Success                   bool                                  `json:"success"`
+}
+
+// firstVerifyBuild returns the VerifyBuildData for the first (or only) repo.
+// For single-repo IMPLs, this is equivalent to the old scalar field.
+// Returns nil if the map is empty.
+func (r *FinalizeWaveResult) firstVerifyBuild() *protocol.VerifyBuildData {
+	if len(r.VerifyBuild) == 0 {
+		return nil
+	}
+	// Prefer "." key (single-repo), fall back to first key found
+	if v, ok := r.VerifyBuild["."]; ok {
+		return v
+	}
+	for _, v := range r.VerifyBuild {
+		return v
+	}
+	return nil
+}
+
+// firstGateResults returns the GateResults for the first (or only) repo.
+// For single-repo IMPLs, this is equivalent to the old scalar field.
+func (r *FinalizeWaveResult) firstGateResults() []protocol.GateResult {
+	if len(r.GateResults) == 0 {
+		return nil
+	}
+	if v, ok := r.GateResults["."]; ok {
+		return v
+	}
+	for _, v := range r.GateResults {
+		return v
+	}
+	return nil
+}
+
+// ExtractReposFromManifest extracts unique repos from file_ownership for the
+// given wave. Returns repos map (repo key -> absolute path) and agentRepos map
+// (agent ID -> repo key). For single-repo IMPLs, returns {"." -> defaultRepo}.
+func ExtractReposFromManifest(m *protocol.IMPLManifest, waveNum int, defaultRepo string) (map[string]string, map[string]string) {
+	repos := make(map[string]string)
+	agentRepos := make(map[string]string)
+
+	// Find the target wave
+	var targetWave *protocol.Wave
+	for i := range m.Waves {
+		if m.Waves[i].Number == waveNum {
+			targetWave = &m.Waves[i]
+			break
+		}
+	}
+	if targetWave == nil {
+		// Wave not found - return default repo
+		repos["."] = defaultRepo
+		return repos, agentRepos
+	}
+
+	// Extract repo paths from file_ownership
+	repoSet := make(map[string]bool)
+	for _, ownership := range m.FileOwnership {
+		if ownership.Wave == waveNum {
+			if ownership.Repo != "" {
+				repoSet[ownership.Repo] = true
+				agentRepos[ownership.Agent] = ownership.Repo
+			}
+		}
+	}
+
+	// If no repos specified, use default (single-repo IMPL)
+	if len(repoSet) == 0 {
+		repos["."] = defaultRepo
+		for _, agent := range targetWave.Agents {
+			agentRepos[agent.ID] = "."
+		}
+		return repos, agentRepos
+	}
+
+	// Resolve relative paths to absolute paths.
+	// defaultRepo may be relative (e.g. "." from --repo-dir flag) — resolve it first
+	// so parentDir is always an absolute path, preventing repo names like "scout-and-wave"
+	// from resolving to "./scout-and-wave" instead of "/abs/path/to/scout-and-wave".
+	absDefaultRepo, err := filepath.Abs(defaultRepo)
+	if err != nil {
+		absDefaultRepo = defaultRepo
+	}
+	parentDir := filepath.Dir(absDefaultRepo)
+	for repo := range repoSet {
+		absPath := repo
+		if !filepath.IsAbs(repo) {
+			absPath = filepath.Join(parentDir, repo)
+		}
+		repos[repo] = absPath
+	}
+
+	return repos, agentRepos
 }
 
 // FinalizeWave runs the full post-agent finalization pipeline for a single wave.
@@ -77,10 +177,13 @@ type FinalizeWaveResult struct {
 // Pipeline:
 //  1. VerifyCommits (I5) - ensure all agents committed work
 //  2. ScanStubs (E20) - scan changed files for TODO/FIXME markers
-//  3. RunGates (E21) - execute quality gates
+//  3. RunPreMergeGates (E21) - execute structural quality gates
+//  3.3. CheckTypeCollisions (E27, opt-in) - detect type name collisions
 //  3.5. ValidateIntegration (E25) - scan for unconnected exports (informational)
+//  3.6. CheckWiringDeclarations (E35, non-fatal) - verify wiring declarations
 //  4. MergeAgents - merge agent branches into main
 //  5. VerifyBuild - run test_command and lint_command
+//  5.5. RunPostMergeGates (E21) - content/integration gates on merged state
 //  6. Cleanup - remove worktrees and branches
 //
 // Stops on first fatal failure and returns partial result.
@@ -97,151 +200,438 @@ func FinalizeWave(ctx context.Context, opts FinalizeWaveOpts) (*FinalizeWaveResu
 		return nil, fmt.Errorf("engine.FinalizeWave: load manifest: %w", err)
 	}
 
+	// Extract repos from manifest for multi-repo support.
+	repos, _ := ExtractReposFromManifest(manifest, opts.WaveNum, opts.RepoPath)
+
 	result := &FinalizeWaveResult{
-		Wave: opts.WaveNum,
+		Wave:             opts.WaveNum,
+		CrossRepo:        len(repos) > 1,
+		VerifyCommits:    make(map[string]*protocol.VerifyCommitsData),
+		CollisionReports: make(map[string]*collision.CollisionReport),
+		GateResults:      make(map[string][]protocol.GateResult),
+		MergeResult:      make(map[string]*protocol.MergeAgentsData),
+		VerifyBuild:      make(map[string]*protocol.VerifyBuildData),
+		BuildDiagnosis:   make(map[string]*builddiag.Diagnosis),
+		CleanupResult:    make(map[string]*protocol.CleanupData),
 	}
 
 	onEvent := opts.OnEvent
 
 	// If SkipMerge is true, skip steps 1-4 and jump directly to verify-build.
 	// Populate MergeResult with synthetic entry indicating merge already done.
-	if !opts.SkipMerge {
-		// Step 1: VerifyCommits (I5)
-		verifyStepResult, stepErr := StepVerifyCommits(ctx, opts, onEvent)
-		if stepErr != nil {
-			return result, fmt.Errorf("engine.FinalizeWave: %w", stepErr)
-		}
-		if verifyData, ok := verifyStepResult.Data.(protocol.VerifyCommitsData); ok {
-			result.VerifyCommits = &verifyData
-		}
-
-		// Step 1.1: VerifyCompletionReports (I4)
-		_, stepErr = StepVerifyCompletionReports(ctx, opts, manifest, onEvent)
-		if stepErr != nil {
-			return result, fmt.Errorf("engine.FinalizeWave: %w", stepErr)
-		}
-
-		// Step 1.2: CheckAgentStatuses (E7)
-		_, stepErr = StepCheckAgentStatuses(ctx, opts, manifest, onEvent)
-		if stepErr != nil {
-			return result, fmt.Errorf("engine.FinalizeWave: %w", stepErr)
-		}
-
-		// Step 1.3: PredictConflicts (E11)
-		_, stepErr = StepPredictConflicts(ctx, opts, manifest, onEvent)
-		if stepErr != nil {
-			return result, fmt.Errorf("engine.FinalizeWave: %w", stepErr)
-		}
-
-		// Step 2: ScanStubs (E20)
-		stubStepResult, stepErr := StepScanStubs(ctx, opts, manifest, onEvent)
-		if stepErr != nil {
-			return result, fmt.Errorf("engine.FinalizeWave: %w", stepErr)
-		}
-		if stubData, ok := stubStepResult.Data.(protocol.ScanStubsData); ok {
-			result.StubReport = &stubData
-		}
-
-		// Step 3: RunGates (E21)
-		_, gatesData, stepErr := StepRunGates(ctx, opts, manifest, onEvent)
-		if stepErr != nil {
-			return result, fmt.Errorf("engine.FinalizeWave: %w", stepErr)
-		}
-		if gatesData != nil {
-			result.GateResults = gatesData.Gates
-		}
-
-		// Step 3.3: CheckTypeCollisions (E27, opt-in)
-		collisionResult, collisionReport, stepErr := StepCheckTypeCollisions(ctx, opts, onEvent)
-		_ = collisionResult
-		if collisionReport != nil {
-			result.CollisionReport = collisionReport
-		}
-		if stepErr != nil {
-			return result, fmt.Errorf("engine.FinalizeWave: %w", stepErr)
-		}
-
-		// Step 3.5: ValidateIntegration (E25)
-		_, integrationReport, stepErr := StepValidateIntegration(ctx, opts, manifest, onEvent)
-		if stepErr != nil {
-			return result, fmt.Errorf("engine.FinalizeWave: %w", stepErr)
-		}
-		result.IntegrationReport = integrationReport
-
-		// Step 3.6: CheckWiringDeclarations (E35, non-fatal)
-		_, wiringData, _ := StepCheckWiringDeclarations(ctx, opts, manifest, onEvent)
-		if wiringData != nil {
-			result.WiringReport = wiringData
-		}
-
-		// Step 4: MergeAgents
-		mergeStepResult, stepErr := StepMergeAgents(ctx, opts, onEvent)
-		if stepErr != nil {
-			return result, fmt.Errorf("engine.FinalizeWave: %w", stepErr)
-		}
-		if mergeData, ok := mergeStepResult.Data.(protocol.MergeAgentsData); ok {
-			result.MergeResult = &mergeData
-		}
-
-		// Step 4.2: PopulateIntegrationChecklist (M5, non-fatal)
-		_, updatedManifest, _ := StepPopulateIntegrationChecklist(ctx, opts, manifest, onEvent)
-		if updatedManifest != nil {
-			manifest = updatedManifest
-		}
-	} else {
-		// SkipMerge mode: populate synthetic MergeResult
-		result.MergeResult = &protocol.MergeAgentsData{
-			Wave:    opts.WaveNum,
-			Success: true,
+	if opts.SkipMerge {
+		for repoKey := range repos {
+			result.MergeResult[repoKey] = &protocol.MergeAgentsData{
+				Wave:    opts.WaveNum,
+				Success: true,
+			}
 		}
 		// Warning if worktrees still exist
-		if !protocol.WorktreesAbsent(manifest, opts.WaveNum, opts.RepoPath) {
-			loggerFrom(opts.Logger).Warn("engine.FinalizeWave: --skip-merge used but worktrees detected; cleanup will remove them")
+		for _, repoPath := range repos {
+			if !protocol.WorktreesAbsent(manifest, opts.WaveNum, repoPath) {
+				loggerFrom(opts.Logger).Warn("engine.FinalizeWave: --skip-merge used but worktrees detected; cleanup will remove them")
+			}
+		}
+	} else {
+		// Solo wave: if the manifest declares exactly 1 agent in this wave AND
+		// no worktrees exist, this was a solo-agent wave (no isolation needed).
+		// Skip VerifyCommits and MergeAgents.
+		isSolo := false
+		var waveAgentCount int
+		for _, w := range manifest.Waves {
+			if w.Number == opts.WaveNum {
+				waveAgentCount = len(w.Agents)
+				break
+			}
+		}
+		if waveAgentCount <= 1 {
+			for _, repoPath := range repos {
+				if protocol.WorktreesAbsent(manifest, opts.WaveNum, repoPath) {
+					isSolo = true
+					break
+				}
+			}
+		}
+
+		// allBranchesAbsent: if all agent branches are absent (wave already merged and cleaned up),
+		// skip VerifyCommits and MergeAgents entirely.
+		allGone := false
+		for _, repoPath := range repos {
+			if protocol.AllBranchesAbsent(manifest, opts.WaveNum, repoPath) {
+				allGone = true
+				break
+			}
+		}
+
+		if isSolo || allGone {
+			if allGone && !isSolo {
+				// Safety check: absent branches do NOT prove the work was merged.
+				// Verify each agent's commit SHA is reachable from HEAD.
+				for _, w := range manifest.Waves {
+					if w.Number != opts.WaveNum {
+						continue
+					}
+					for _, agent := range w.Agents {
+						report, hasReport := manifest.CompletionReports[agent.ID]
+						if !hasReport || report.Commit == "" {
+							continue
+						}
+						for _, repoPath := range repos {
+							if !git.IsAncestor(repoPath, report.Commit, "HEAD") {
+								return result, fmt.Errorf(
+									"engine.FinalizeWave: agent %s commit %s is NOT reachable from main in %s — "+
+										"branches deleted without merging (data loss). "+
+										"Recover with: git branch recover-%s %s",
+									agent.ID, report.Commit, repoPath, agent.ID, report.Commit)
+							}
+						}
+					}
+					break
+				}
+			}
+			// Populate synthetic merge results for all repos
+			for repoKey := range repos {
+				result.MergeResult[repoKey] = &protocol.MergeAgentsData{
+					Wave:    opts.WaveNum,
+					Success: true,
+				}
+			}
+		} else {
+			// Full pipeline: VerifyCommits → ScanStubs → RunPreMergeGates → MergeAgents
+
+			// Step 1: VerifyCommits (I5) — per repo
+			for repoKey, repoPath := range repos {
+				repoOpts := opts
+				repoOpts.RepoPath = repoPath
+				verifyStepResult, stepErr := StepVerifyCommits(ctx, repoOpts, onEvent)
+				if stepErr != nil {
+					return result, fmt.Errorf("engine.FinalizeWave: verify-commits failed in %s: %w", repoKey, stepErr)
+				}
+				if verifyData, ok := verifyStepResult.Data.(protocol.VerifyCommitsData); ok {
+					result.VerifyCommits[repoKey] = &verifyData
+				}
+			}
+
+			// Step 1.1: VerifyCompletionReports (I4) — manifest-level, run once
+			{
+				firstRepo := opts.RepoPath
+				for _, rp := range repos {
+					firstRepo = rp
+					break
+				}
+				repoOpts := opts
+				repoOpts.RepoPath = firstRepo
+				_, stepErr := StepVerifyCompletionReports(ctx, repoOpts, manifest, onEvent)
+				if stepErr != nil {
+					return result, fmt.Errorf("engine.FinalizeWave: %w", stepErr)
+				}
+			}
+
+			// Step 1.2: CheckAgentStatuses (E7) — manifest-level, run once
+			{
+				firstRepo := opts.RepoPath
+				for _, rp := range repos {
+					firstRepo = rp
+					break
+				}
+				repoOpts := opts
+				repoOpts.RepoPath = firstRepo
+				_, stepErr := StepCheckAgentStatuses(ctx, repoOpts, manifest, onEvent)
+				if stepErr != nil {
+					return result, fmt.Errorf("engine.FinalizeWave: %w", stepErr)
+				}
+			}
+
+			// Step 1.3: PredictConflicts (E11) — manifest-level, run once
+			{
+				firstRepo := opts.RepoPath
+				for _, rp := range repos {
+					firstRepo = rp
+					break
+				}
+				repoOpts := opts
+				repoOpts.RepoPath = firstRepo
+				_, stepErr := StepPredictConflicts(ctx, repoOpts, manifest, onEvent)
+				if stepErr != nil {
+					return result, fmt.Errorf("engine.FinalizeWave: %w", stepErr)
+				}
+			}
+
+			// Step 2: ScanStubs (E20) — manifest-level, run once against first repo
+			{
+				firstRepo := opts.RepoPath
+				for _, rp := range repos {
+					firstRepo = rp
+					break
+				}
+				repoOpts := opts
+				repoOpts.RepoPath = firstRepo
+				stubStepResult, stepErr := StepScanStubs(ctx, repoOpts, manifest, onEvent)
+				if stepErr != nil {
+					return result, fmt.Errorf("engine.FinalizeWave: %w", stepErr)
+				}
+				if stubData, ok := stubStepResult.Data.(protocol.ScanStubsData); ok {
+					result.StubReport = &stubData
+				}
+			}
+
+			// Step 3: RunPreMergeGates (E21) — per repo, with C2 closed-loop retry
+			for repoKey, repoPath := range repos {
+				stateDir := protocol.SAWStateDir(repoPath)
+				cache := gatecache.New(stateDir, gatecache.DefaultTTL)
+				gateRes := protocol.RunPreMergeGates(manifest, opts.WaveNum, repoPath, cache)
+				if !gateRes.IsSuccess() {
+					return result, fmt.Errorf("engine.FinalizeWave: run-pre-merge-gates failed in %s: %v", repoKey, gateRes.Errors)
+				}
+				gateResults := gateRes.GetData().Gates
+				result.GateResults[repoKey] = gateResults
+
+				// C2 closed-loop retry when enabled
+				if opts.ClosedLoopRetryEnabled {
+					for _, gate := range gateResults {
+						if gate.Required && !gate.Passed {
+							retryFixed := false
+							var waveAgents []protocol.Agent
+							for _, w := range manifest.Waves {
+								if w.Number == opts.WaveNum {
+									waveAgents = w.Agents
+									break
+								}
+							}
+							for _, ag := range waveAgents {
+								branch := protocol.BranchName(manifest.FeatureSlug, opts.WaveNum, ag.ID)
+								wtPath := protocol.ResolveWorktreePath(repoPath, branch)
+								retryOpts := ClosedLoopRetryOpts{
+									IMPLPath:     opts.IMPLPath,
+									RepoPath:     repoPath,
+									WaveNum:      opts.WaveNum,
+									AgentID:      ag.ID,
+									GateType:     gate.Type,
+									GateCommand:  gate.Command,
+									GateOutput:   gate.Stdout + "\n" + gate.Stderr,
+									WorktreePath: wtPath,
+									MaxRetries:   2,
+								}
+								retryResult, retryErr := ClosedLoopGateRetry(ctx, retryOpts)
+								if retryErr != nil {
+									loggerFrom(opts.Logger).Warn("engine.FinalizeWave: closed-loop retry error",
+										"agent", ag.ID, "err", retryErr)
+								} else if retryResult != nil && retryResult.Fixed {
+									retryFixed = true
+								}
+								// Only retry with the first agent — the gate is repo-scoped.
+								break
+							}
+							if retryFixed {
+								// Gate was fixed by the retry agent; re-run gates to confirm.
+								cache = gatecache.New(stateDir, gatecache.DefaultTTL)
+								rerunRes := protocol.RunPreMergeGates(manifest, opts.WaveNum, repoPath, cache)
+								if rerunRes.IsSuccess() {
+									rerunResults := rerunRes.GetData().Gates
+									result.GateResults[repoKey] = rerunResults
+									stillFailing := false
+									for _, rg := range rerunResults {
+										if rg.Required && !rg.Passed {
+											stillFailing = true
+											break
+										}
+									}
+									if !stillFailing {
+										break
+									}
+								}
+							}
+							return result, fmt.Errorf("engine.FinalizeWave: required pre-merge gate %q failed in %s", gate.Type, repoKey)
+						}
+					}
+				} else {
+					// No retry: fail immediately on required gate failure
+					for _, gate := range gateResults {
+						if gate.Required && !gate.Passed {
+							return result, fmt.Errorf("engine.FinalizeWave: required pre-merge gate %q failed in %s", gate.Type, repoKey)
+						}
+					}
+				}
+			}
+
+			// Step 3.3: CheckTypeCollisions (E27, opt-in) — per repo
+			for repoKey, repoPath := range repos {
+				repoOpts := opts
+				repoOpts.RepoPath = repoPath
+				_, collisionReport, stepErr := StepCheckTypeCollisions(ctx, repoOpts, onEvent)
+				if collisionReport != nil {
+					result.CollisionReports[repoKey] = collisionReport
+				}
+				if stepErr != nil {
+					return result, fmt.Errorf("engine.FinalizeWave: %w", stepErr)
+				}
+			}
+
+			// Step 3.5: ValidateIntegration (E25) — run once (first repo)
+			{
+				firstRepo := opts.RepoPath
+				for _, rp := range repos {
+					firstRepo = rp
+					break
+				}
+				repoOpts := opts
+				repoOpts.RepoPath = firstRepo
+				_, integrationReport, stepErr := StepValidateIntegration(ctx, repoOpts, manifest, onEvent)
+				if stepErr != nil {
+					return result, fmt.Errorf("engine.FinalizeWave: %w", stepErr)
+				}
+				result.IntegrationReport = integrationReport
+			}
+
+			// Step 3.6: CheckWiringDeclarations (E35, non-fatal) — run once
+			{
+				firstRepo := opts.RepoPath
+				for _, rp := range repos {
+					firstRepo = rp
+					break
+				}
+				repoOpts := opts
+				repoOpts.RepoPath = firstRepo
+				_, wiringData, _ := StepCheckWiringDeclarations(ctx, repoOpts, manifest, onEvent)
+				if wiringData != nil {
+					result.WiringReport = wiringData
+					if !wiringData.Valid {
+						result.IntegrationActionRequired = true
+						for _, gap := range wiringData.Gaps {
+							result.WiringGaps = append(result.WiringGaps,
+								fmt.Sprintf("%s not called in %s", gap.Declaration.Symbol, gap.Declaration.MustBeCalledFrom))
+						}
+					}
+				}
+			}
+
+			// Step 4: MergeAgents — per repo
+			// Skip for integration waves (type: integration) — agents commit directly to main.
+			skipMergeAgents := false
+			for _, w := range manifest.Waves {
+				if w.Number == opts.WaveNum && w.Type == "integration" {
+					skipMergeAgents = true
+					break
+				}
+			}
+			for repoKey, repoPath := range repos {
+				if skipMergeAgents {
+					result.MergeResult[repoKey] = &protocol.MergeAgentsData{
+						Wave:    opts.WaveNum,
+						Success: true,
+					}
+					continue
+				}
+				mergeRes, mergeErr := protocol.MergeAgents(opts.IMPLPath, opts.WaveNum, repoPath, opts.MergeTarget)
+				if mergeErr != nil {
+					return result, fmt.Errorf("engine.FinalizeWave: merge-agents failed in %s: %w", repoKey, mergeErr)
+				}
+				if !mergeRes.IsSuccess() {
+					return result, fmt.Errorf("engine.FinalizeWave: merge-agents failed in %s: %v", repoKey, mergeRes.Errors)
+				}
+				mergeData := mergeRes.GetData()
+				result.MergeResult[repoKey] = &mergeData
+				if !mergeData.Success {
+					return result, fmt.Errorf("engine.FinalizeWave: merge-agents encountered conflicts in %s", repoKey)
+				}
+			}
+
+			// Step 4.2: PopulateIntegrationChecklist (M5, non-fatal) — run once
+			{
+				firstRepo := opts.RepoPath
+				for _, rp := range repos {
+					firstRepo = rp
+					break
+				}
+				repoOpts := opts
+				repoOpts.RepoPath = firstRepo
+				_, updatedManifest, _ := StepPopulateIntegrationChecklist(ctx, repoOpts, manifest, onEvent)
+				if updatedManifest != nil {
+					manifest = updatedManifest
+				}
+			}
 		}
 	}
 
 	// Step 4.5: Fix go.mod replace paths
 	_, _ = StepFixGoMod(ctx, opts, onEvent)
 
-	// Step 5: VerifyBuild
-	verifyBuildStepResult, stepErr := StepVerifyBuild(ctx, opts, onEvent)
-	if stepErr != nil {
-		// Extract verify build data for the result
-		if verifyData, ok := verifyBuildStepResult.Data.(protocol.VerifyBuildData); ok {
-			result.VerifyBuild = &verifyData
-			result.BuildPassed = false
-		} else if dataMap, ok := verifyBuildStepResult.Data.(map[string]interface{}); ok {
-			// Data contains both verify_build and diagnosis
-			if vb, ok := dataMap["verify_build"]; ok {
-				if verifyData, ok := vb.(protocol.VerifyBuildData); ok {
-					result.VerifyBuild = &verifyData
+	// Step 5: VerifyBuild — per repo
+	allBuildPassed := true
+	for repoKey, repoPath := range repos {
+		repoOpts := opts
+		repoOpts.RepoPath = repoPath
+		verifyBuildStepResult, stepErr := StepVerifyBuild(ctx, repoOpts, onEvent)
+		if stepErr != nil {
+			allBuildPassed = false
+			// Extract verify build data for the result
+			if verifyBuildStepResult != nil && verifyBuildStepResult.Data != nil {
+				if verifyData, ok := verifyBuildStepResult.Data.(protocol.VerifyBuildData); ok {
+					result.VerifyBuild[repoKey] = &verifyData
+				} else if dataMap, ok := verifyBuildStepResult.Data.(map[string]interface{}); ok {
+					if vb, ok := dataMap["verify_build"]; ok {
+						if verifyData, ok := vb.(protocol.VerifyBuildData); ok {
+							result.VerifyBuild[repoKey] = &verifyData
+						}
+					}
+					if d, ok := dataMap["diagnosis"]; ok {
+						if diagnosis, ok := d.(*builddiag.Diagnosis); ok {
+							result.BuildDiagnosis[repoKey] = diagnosis
+						}
+					}
 				}
 			}
-			if d, ok := dataMap["diagnosis"]; ok {
-				if diagnosis, ok := d.(*builddiag.Diagnosis); ok {
-					result.BuildDiagnosis = diagnosis
+			// Still run cleanup before returning
+			cleanupStepResult, _ := StepCleanup(ctx, opts, onEvent)
+			if cleanupStepResult != nil {
+				if cleanupData, ok := cleanupStepResult.Data.(protocol.CleanupData); ok {
+					result.CleanupResult["."] = &cleanupData
 				}
 			}
-			result.BuildPassed = false
+			return result, fmt.Errorf("engine.FinalizeWave: verify-build failed in %s: %w", repoKey, stepErr)
 		}
-
-		// Still run cleanup before returning
-		cleanupStepResult, _ := StepCleanup(ctx, opts, onEvent)
-		if cleanupData, ok := cleanupStepResult.Data.(protocol.CleanupData); ok {
-			result.CleanupResult = &cleanupData
+		if verifyBuildStepResult != nil && verifyBuildStepResult.Data != nil {
+			if verifyData, ok := verifyBuildStepResult.Data.(protocol.VerifyBuildData); ok {
+				result.VerifyBuild[repoKey] = &verifyData
+				if !verifyData.TestPassed || !verifyData.LintPassed {
+					allBuildPassed = false
+				}
+			}
 		}
-		return result, fmt.Errorf("engine.FinalizeWave: %w", stepErr)
 	}
-	if verifyData, ok := verifyBuildStepResult.Data.(protocol.VerifyBuildData); ok {
-		result.VerifyBuild = &verifyData
-		result.BuildPassed = verifyData.TestPassed && verifyData.LintPassed
+	result.BuildPassed = allBuildPassed
+
+	// Step 5.5: RunPostMergeGates (E21) — per repo
+	for repoKey, repoPath := range repos {
+		postGateRes := protocol.RunPostMergeGates(manifest, opts.WaveNum, repoPath)
+		if !postGateRes.IsSuccess() {
+			return result, fmt.Errorf("engine.FinalizeWave: run-post-merge-gates failed in %s: %v", repoKey, postGateRes.Errors)
+		}
+		postGateResults := postGateRes.GetData().Gates
+		result.GateResults[repoKey] = append(result.GateResults[repoKey], postGateResults...)
+		for _, gate := range postGateResults {
+			if gate.Required && !gate.Passed {
+				// Still run cleanup before returning
+				cleanupStepResult, _ := StepCleanup(ctx, opts, onEvent)
+				if cleanupStepResult != nil {
+					if cleanupData, ok := cleanupStepResult.Data.(protocol.CleanupData); ok {
+						result.CleanupResult["."] = &cleanupData
+					}
+				}
+				return result, fmt.Errorf("engine.FinalizeWave: required post-merge gate %q failed in %s", gate.Type, repoKey)
+			}
+		}
 	}
 
-	// Step 6: Cleanup
-	cleanupStepResult, _ := StepCleanup(ctx, opts, onEvent)
-	if cleanupStepResult != nil {
-		if cleanupData, ok := cleanupStepResult.Data.(protocol.CleanupData); ok {
-			result.CleanupResult = &cleanupData
+	// Step 6: Cleanup — per repo
+	for repoKey, repoPath := range repos {
+		repoOpts := opts
+		repoOpts.RepoPath = repoPath
+		cleanupStepResult, _ := StepCleanup(ctx, repoOpts, onEvent)
+		if cleanupStepResult != nil {
+			if cleanupData, ok := cleanupStepResult.Data.(protocol.CleanupData); ok {
+				result.CleanupResult[repoKey] = &cleanupData
+			}
 		}
 	}
 
