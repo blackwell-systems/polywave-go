@@ -43,7 +43,8 @@ type CreateProgramWorktreesData struct {
 // Worktree paths follow: {repoDir}/.claude/worktrees/saw/program/{program-slug}/tier{N}-impl-{impl-slug}
 //
 // If any worktree creation fails, returns a failure result immediately (no partial state).
-func CreateProgramWorktrees(programManifestPath string, tierNumber int, repoDir string) result.Result[*CreateProgramWorktreesData] {
+func CreateProgramWorktrees(programManifestPath string, tierNumber int, repoDir string, logger *slog.Logger) result.Result[*CreateProgramWorktreesData] {
+	log := loggerFrom(logger)
 	manifest, err := ParseProgramManifest(programManifestPath)
 	if err != nil {
 		return result.NewFailure[*CreateProgramWorktreesData]([]result.SAWError{{
@@ -85,7 +86,7 @@ func CreateProgramWorktrees(programManifestPath string, tierNumber int, repoDir 
 			if git.IsAncestor(absRepoDir, branchName, "HEAD") {
 				_ = git.WorktreeRemove(absRepoDir, worktreePath)
 				_ = git.DeleteBranch(absRepoDir, branchName)
-				slog.Default().Debug("protocol: cleaned up stale merged branch", "branch", branchName)
+				log.Debug("protocol: cleaned up stale merged branch", "branch", branchName)
 			} else {
 				return result.NewFailure[*CreateProgramWorktreesData]([]result.SAWError{{
 					Code: result.CodeWorktreeCreateFailed, Message: fmt.Sprintf("branch %q already exists and is not merged into HEAD; delete it manually or merge first", branchName), Severity: "fatal",
@@ -102,7 +103,7 @@ func CreateProgramWorktrees(programManifestPath string, tierNumber int, repoDir 
 
 		// Install pre-commit hook (log warning on error, don't fail)
 		if err := git.InstallHooks(absRepoDir, worktreePath); err != nil {
-			slog.Default().Warn("protocol: failed to install hooks for impl", "impl", implSlug, "err", err)
+			log.Warn("protocol: failed to install hooks for impl", "impl", implSlug, "err", err)
 		}
 
 		worktrees = append(worktrees, ProgramWorktreeInfo{
