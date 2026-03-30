@@ -1,16 +1,13 @@
 package main
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
 	"time"
 
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/agent"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/engine"
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/orchestrator"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
 	"github.com/spf13/cobra"
 )
@@ -54,155 +51,84 @@ Examples:
 		RunE: func(cmd *cobra.Command, args []string) error {
 			implPath := args[0]
 
-			// Validate impl path is absolute
+			// Validate impl path is absolute and exists.
 			if !filepath.IsAbs(implPath) {
 				return fmt.Errorf("run-critic: impl-path must be absolute (got %q)", implPath)
 			}
-
-			// Validate impl path exists
 			if _, err := os.Stat(implPath); err != nil {
 				return fmt.Errorf("run-critic: impl path does not exist: %s", implPath)
 			}
 
-			// --skip is an alias for --no-review
+			// --skip is an alias for --no-review.
 			if skip {
 				noReview = true
 			}
 
-			// Handle --no-review / --skip: write PASS result immediately
+			// Handle --no-review / --skip: write PASS result immediately without launching an agent.
 			if noReview {
 				fmt.Println("Skipping critic review (operator flag)")
-				result := protocol.CriticData{
+				skipResult := protocol.CriticData{
 					Verdict:      "PASS",
 					AgentReviews: map[string]protocol.AgentCriticReview{},
 					Summary:      "Skipped by operator",
 					ReviewedAt:   time.Now().UTC().Format(time.RFC3339),
 					IssueCount:   0,
 				}
-				if err := protocol.WriteCriticReview(implPath, result); err != nil {
+				if err := protocol.WriteCriticReview(implPath, skipResult); err != nil {
 					return fmt.Errorf("run-critic: failed to write skip result: %w", err)
 				}
 				fmt.Println("Critic Review: PASS (Skipped by operator)")
 				return nil
 			}
 
-			// Load the IMPL doc to get repo roots for the critic agent
-			manifest, err := protocol.Load(implPath)
-			if err != nil {
-				return fmt.Errorf("run-critic: failed to load IMPL doc: %w", err)
-			}
-
-			// Collect repo roots from manifest
-			repoPaths := collectRepoPaths(manifest)
-			if len(repoPaths) == 0 {
-				// Fall back to inferring from IMPL path: strip /docs/IMPL/IMPL-*.yaml
-				inferredRoot := inferRepoRoot(implPath)
-				if inferredRoot != "" {
-					repoPaths = []string{inferredRoot}
-				}
-			}
-
-			// Resolve SAW repo path for loading critic-agent.md prompt
-			sawRepo := os.Getenv("SAW_REPO")
-			if sawRepo == "" {
-				home, err := os.UserHomeDir()
-				if err != nil {
-					return fmt.Errorf("run-critic: cannot determine home directory: %w", err)
-				}
-				sawRepo = filepath.Join(home, "code", "scout-and-wave")
-			}
-
-			// Load critic-agent.md prompt with reference injection
-			criticMdPath := filepath.Join(sawRepo, "implementations", "claude-code", "prompts", "agents", "critic-agent.md")
-			criticMdContent, err := engine.LoadTypePromptWithRefs(criticMdPath)
-			if err != nil {
-				// Fallback prompt if the file doesn't exist yet
-				criticMdContent = "You are a Critic Agent. Review every agent brief in the IMPL doc against the actual codebase. Verify file_existence, symbol_accuracy, pattern_accuracy, interface_consistency, import_chains, and side_effect_completeness. Write the result using: sawtools set-critic-review <impl-path> --verdict <PASS|ISSUES> --summary <text> --issue-count <N> --agent-reviews <JSON>"
-			}
-
-			// Build the critic agent prompt
-			repoRootsSection := ""
-			for _, root := range repoPaths {
-				repoRootsSection += fmt.Sprintf("- %s\n", root)
-			}
-
-			prompt := fmt.Sprintf("%s\n\n## IMPL Doc Path\n%s\n\n## Repository Root(s)\n%s",
-				criticMdContent, implPath, repoRootsSection)
-
 			fmt.Println("Launching critic agent (E37)...")
 			fmt.Printf("  IMPL doc: %s\n", implPath)
-			for _, root := range repoPaths {
-				fmt.Printf("  Repo root: %s\n", root)
-			}
 			fmt.Println()
 
-			// Create context with timeout
-			ctx, cancel := context.WithTimeout(context.Background(), time.Duration(timeout)*time.Minute)
-			defer cancel()
-
-			// Use the primary repo root as the working directory for the agent
-			workDir := ""
-			if len(repoPaths) > 0 {
-				workDir = repoPaths[0]
-			} else {
-				workDir = filepath.Dir(implPath)
-			}
-
-			// Launch critic agent using the same pattern as run_scout_cmd.go
-			b, bErr := orchestrator.NewBackendFromModel(criticModel)
-			if bErr != nil {
-				return fmt.Errorf("run-critic: backend init: %w", bErr)
-			}
-			runner := agent.NewRunner(b, nil)
-			spec := &protocol.Agent{ID: "critic", Task: prompt}
-			_, execErr := runner.ExecuteStreamingWithTools(ctx, spec, workDir, func(chunk string) {
-				fmt.Print(chunk)
-			}, nil)
-
-			if execErr != nil {
-				return fmt.Errorf("run-critic: critic agent execution failed: %w", execErr)
+			result, err := engine.RunCritic(cmd.Context(), engine.RunCriticOpts{
+				IMPLPath:    implPath,
+				CriticModel: criticModel,
+				Timeout:     timeout,
+			}, func(chunk string) { fmt.Print(chunk) })
+			if err != nil {
+				return err
 			}
 
 			fmt.Println()
 			fmt.Println("Critic agent completed")
 			fmt.Println()
 
-			// Read the critic_report from the IMPL doc
-			updatedManifest, err := protocol.Load(implPath)
-			if err != nil {
-				return fmt.Errorf("run-critic: failed to reload IMPL doc after critic run: %w", err)
-			}
-
-			result := protocol.GetCriticReview(updatedManifest)
-			if result == nil {
-				return fmt.Errorf("run-critic: critic agent completed but no critic_report was written to IMPL doc")
-			}
-
-			// Print human-readable summary
+			// Print human-readable summary.
 			fmt.Printf("Critic Review: %s\n", result.Verdict)
 			fmt.Printf("  Summary: %s\n", result.Summary)
 			fmt.Printf("  Issues found: %d\n", result.IssueCount)
-			if len(result.AgentReviews) > 0 {
-				fmt.Println("  Per-agent verdicts:")
-				for agentID, review := range result.AgentReviews {
-					fmt.Printf("    Agent %s: %s", agentID, review.Verdict)
-					if len(review.Issues) > 0 {
-						fmt.Printf(" (%d issue(s))", len(review.Issues))
-					}
-					fmt.Println()
-					for _, issue := range review.Issues {
-						fmt.Printf("      [%s/%s] %s\n", issue.Severity, issue.Check, issue.Description)
-						if issue.File != "" {
-							fmt.Printf("        File: %s\n", issue.File)
+
+			// Reload manifest to print per-agent verdicts (AgentReviews is not in RunCriticResult).
+			updatedManifest, loadErr := protocol.Load(implPath)
+			if loadErr == nil {
+				review := protocol.GetCriticReview(updatedManifest)
+				if review != nil && len(review.AgentReviews) > 0 {
+					fmt.Println("  Per-agent verdicts:")
+					for agentID, agentReview := range review.AgentReviews {
+						fmt.Printf("    Agent %s: %s", agentID, agentReview.Verdict)
+						if len(agentReview.Issues) > 0 {
+							fmt.Printf(" (%d issue(s))", len(agentReview.Issues))
 						}
-						if issue.Symbol != "" {
-							fmt.Printf("        Symbol: %s\n", issue.Symbol)
+						fmt.Println()
+						for _, issue := range agentReview.Issues {
+							fmt.Printf("      [%s/%s] %s\n", issue.Severity, issue.Check, issue.Description)
+							if issue.File != "" {
+								fmt.Printf("        File: %s\n", issue.File)
+							}
+							if issue.Symbol != "" {
+								fmt.Printf("        Symbol: %s\n", issue.Symbol)
+							}
 						}
 					}
 				}
 			}
 
-			// Exit 1 if ISSUES verdict
+			// Exit 1 if ISSUES verdict.
 			if result.Verdict == "ISSUES" {
 				return fmt.Errorf("run-critic: critic found issues — review and correct IMPL doc before proceeding")
 			}
@@ -266,17 +192,17 @@ The --agent-reviews flag accepts a JSON array of AgentCriticReview objects:
 		RunE: func(cmd *cobra.Command, args []string) error {
 			implPath := args[0]
 
-			// Validate verdict
+			// Validate verdict.
 			if verdict != "PASS" && verdict != "ISSUES" {
 				return fmt.Errorf("set-critic-review: --verdict must be PASS or ISSUES (got %q)", verdict)
 			}
 
-			// Validate impl path exists
+			// Validate impl path exists.
 			if _, err := os.Stat(implPath); err != nil {
 				return fmt.Errorf("set-critic-review: impl path does not exist: %s", implPath)
 			}
 
-			// Parse agent reviews JSON
+			// Parse agent reviews JSON.
 			var reviews []protocol.AgentCriticReview
 			if agentReviews != "" {
 				if err := json.Unmarshal([]byte(agentReviews), &reviews); err != nil {
@@ -284,13 +210,13 @@ The --agent-reviews flag accepts a JSON array of AgentCriticReview objects:
 				}
 			}
 
-			// Build AgentReviews map indexed by agent ID
+			// Build AgentReviews map indexed by agent ID.
 			reviewMap := make(map[string]protocol.AgentCriticReview, len(reviews))
 			for _, r := range reviews {
 				reviewMap[r.AgentID] = r
 			}
 
-			// Build CriticData
+			// Build CriticData.
 			result := protocol.CriticData{
 				Verdict:      verdict,
 				AgentReviews: reviewMap,
@@ -299,12 +225,12 @@ The --agent-reviews flag accepts a JSON array of AgentCriticReview objects:
 				IssueCount:   issueCount,
 			}
 
-			// Write to IMPL doc
+			// Write to IMPL doc.
 			if err := protocol.WriteCriticReview(implPath, result); err != nil {
 				return fmt.Errorf("set-critic-review: %w", err)
 			}
 
-			// Print confirmation
+			// Print confirmation.
 			out, _ := json.Marshal(map[string]interface{}{
 				"verdict":     result.Verdict,
 				"issue_count": result.IssueCount,
@@ -327,8 +253,8 @@ The --agent-reviews flag accepts a JSON array of AgentCriticReview objects:
 	return cmd
 }
 
-// collectRepoPaths returns all unique repo root paths from the IMPL manifest.
-// It checks the Repository and Repositories fields.
+// collectRepoPaths returns all unique repository root paths referenced by the
+// IMPL manifest (Repository + Repositories fields).
 func collectRepoPaths(manifest *protocol.IMPLManifest) []string {
 	seen := make(map[string]bool)
 	var paths []string
@@ -346,13 +272,13 @@ func collectRepoPaths(manifest *protocol.IMPLManifest) []string {
 	return paths
 }
 
-// inferRepoRoot attempts to infer the repo root from an IMPL doc path.
-// Strips the /docs/IMPL/IMPL-*.yaml suffix if present.
+// inferRepoRoot attempts to derive the repository root from an IMPL doc path
+// by stripping the trailing /docs/IMPL/IMPL-*.yaml suffix.
 func inferRepoRoot(implPath string) string {
-	dir := filepath.Dir(implPath)             // .../docs/IMPL
-	implDir := filepath.Dir(dir)              // .../docs
+	dir := filepath.Dir(implPath)    // .../docs/IMPL
+	implDir := filepath.Dir(dir)     // .../docs
 	if filepath.Base(implDir) == "docs" {
-		return filepath.Dir(implDir)          // strip /docs
+		return filepath.Dir(implDir) // strip /docs
 	}
 	return ""
 }
