@@ -15,7 +15,7 @@ func TestPrepareAgentContext_NoJournal(t *testing.T) {
 	tmpDir := t.TempDir()
 
 	// Call PrepareAgentContext when no .saw-state directory exists
-	context, err := PrepareAgentContext(tmpDir, 1, "agent-A", 50)
+	context, err := PrepareAgentContext(tmpDir, 1, "agent-A", 50, nil)
 	if err != nil {
 		t.Fatalf("PrepareAgentContext failed: %v", err)
 	}
@@ -78,7 +78,7 @@ func TestPrepareAgentContext_WithJournal(t *testing.T) {
 	f.Close()
 
 	// Call PrepareAgentContext
-	context, err := PrepareAgentContext(tmpDir, 1, "agent-A", 50)
+	context, err := PrepareAgentContext(tmpDir, 1, "agent-A", 50, nil)
 	if err != nil {
 		t.Fatalf("PrepareAgentContext failed: %v", err)
 	}
@@ -133,7 +133,7 @@ func TestPrepareAgentContext_MaxEntriesLimit(t *testing.T) {
 	f.Close()
 
 	// Call with maxEntries=10 (should only process last 10 entries)
-	context, err := PrepareAgentContext(tmpDir, 1, "agent-B", 10)
+	context, err := PrepareAgentContext(tmpDir, 1, "agent-B", 10, nil)
 	if err != nil {
 		t.Fatalf("PrepareAgentContext failed: %v", err)
 	}
@@ -175,7 +175,7 @@ func TestPrepareAgentContext_DefaultMaxEntries(t *testing.T) {
 	f.Close()
 
 	// Call with maxEntries=0 (should default to 50)
-	context, err := PrepareAgentContext(tmpDir, 2, "agent-C", 0)
+	context, err := PrepareAgentContext(tmpDir, 2, "agent-C", 0, nil)
 	if err != nil {
 		t.Fatalf("PrepareAgentContext failed: %v", err)
 	}

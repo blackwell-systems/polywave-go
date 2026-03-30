@@ -517,6 +517,44 @@ completion_reports:
             - pkg/resume/worktree_status_test.go
         verification: PASS
         notes: Added logger parameter to ClassifyWorktrees and isWorktreeDirty. Replaced slog.Default() with loggerFrom(logger). Updated all test call sites. All tests passing.
+integration_reports:
+    wave2:
+        wave: 2
+        gaps:
+            - export_name: RunSingleWave
+              file_path: pkg/engine/runner.go
+              agent_id: F
+              category: function_call
+              severity: error
+              reason: exported func "RunSingleWave" has no call-sites outside its defining file
+              suggested_fix: Find appropriate caller for RunSingleWave and add invocation
+              search_results: []
+            - export_name: RunSingleAgent
+              file_path: pkg/engine/runner.go
+              agent_id: F
+              category: function_call
+              severity: error
+              reason: exported func "RunSingleAgent" has no call-sites outside its defining file
+              suggested_fix: Find appropriate caller for RunSingleAgent and add invocation
+              search_results: []
+            - export_name: NewJournalIntegration
+              file_path: pkg/engine/runner.go
+              agent_id: F
+              category: function_call
+              severity: error
+              reason: exported func "NewJournalIntegration" has no call-sites outside its defining file
+              suggested_fix: Find appropriate caller for NewJournalIntegration and add invocation
+              search_results: []
+            - export_name: StartPeriodicSync
+              file_path: pkg/engine/runner.go
+              agent_id: F
+              category: function_call
+              severity: error
+              reason: exported method "StartPeriodicSync" has no call-sites outside its defining file
+              suggested_fix: Find appropriate caller for StartPeriodicSync and add invocation
+              search_results: []
+        valid: false
+        summary: 'Wave 2: 4 integration gap(s) detected, 4 error(s)'
 pre_mortem:
     overall_risk: low
     rows:
@@ -568,41 +606,3 @@ critic_report:
     issue_count: 0
 state: REVIEWED
 injection_method: hook
-integration_reports:
-    wave2:
-        wave: 2
-        gaps:
-            - export_name: RunSingleWave
-              file_path: pkg/engine/runner.go
-              agent_id: F
-              category: function_call
-              severity: error
-              reason: exported func "RunSingleWave" has no call-sites outside its defining file
-              suggested_fix: Find appropriate caller for RunSingleWave and add invocation
-              search_results: []
-            - export_name: RunSingleAgent
-              file_path: pkg/engine/runner.go
-              agent_id: F
-              category: function_call
-              severity: error
-              reason: exported func "RunSingleAgent" has no call-sites outside its defining file
-              suggested_fix: Find appropriate caller for RunSingleAgent and add invocation
-              search_results: []
-            - export_name: NewJournalIntegration
-              file_path: pkg/engine/runner.go
-              agent_id: F
-              category: function_call
-              severity: error
-              reason: exported func "NewJournalIntegration" has no call-sites outside its defining file
-              suggested_fix: Find appropriate caller for NewJournalIntegration and add invocation
-              search_results: []
-            - export_name: StartPeriodicSync
-              file_path: pkg/engine/runner.go
-              agent_id: F
-              category: function_call
-              severity: error
-              reason: exported method "StartPeriodicSync" has no call-sites outside its defining file
-              suggested_fix: Find appropriate caller for StartPeriodicSync and add invocation
-              search_results: []
-        valid: false
-        summary: 'Wave 2: 4 integration gap(s) detected, 4 error(s)'
