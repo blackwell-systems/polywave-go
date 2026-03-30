@@ -9,8 +9,27 @@ import (
 	"strings"
 
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
 	"gopkg.in/yaml.v3"
 )
+
+// AddData holds the result payload for a successful Add operation.
+type AddData struct {
+	Slug     string
+	FilePath string
+}
+
+// ListData holds the result payload for a successful List operation.
+type ListData struct {
+	Items []Item
+	Count int
+}
+
+// UpdateStatusData holds the result payload for a successful UpdateStatus operation.
+type UpdateStatusData struct {
+	Slug      string
+	NewStatus string
+}
 
 // Manager manages the IMPL queue directory (docs/IMPL/queue/).
 type Manager struct {
@@ -49,7 +68,8 @@ func slugFromTitle(title string) string {
 // Add writes item as YAML to docs/IMPL/queue/{priority:03d}-{slug}.yaml.
 // Auto-generates slug from title if item.Slug is empty.
 // Sets status to "queued" if empty.
-func (m *Manager) Add(item Item) error {
+// Returns a Result containing the slug and file path on success.
+func (m *Manager) Add(item Item) result.Result[AddData] {
 	if item.Slug == "" {
 		item.Slug = slugFromTitle(item.Title)
 	}
@@ -59,28 +79,38 @@ func (m *Manager) Add(item Item) error {
 
 	dir := m.queueDir()
 	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return fmt.Errorf("queue.Manager.Add: create queue dir: %w", err)
+		return result.NewFailure[AddData]([]result.SAWError{
+			result.NewFatal("QUEUE_ADD_FAILED", fmt.Sprintf("create queue dir: %s", err.Error())).WithCause(err),
+		})
 	}
 
 	filename := fmt.Sprintf("%03d-%s.yaml", item.Priority, item.Slug)
 	path := filepath.Join(dir, filename)
 
 	if err := protocol.SaveYAML(path, &item); err != nil {
-		return fmt.Errorf("queue.Manager.Add: %w", err)
+		return result.NewFailure[AddData]([]result.SAWError{
+			result.NewFatal("QUEUE_ADD_FAILED", err.Error()).WithCause(err),
+		})
 	}
-	return nil
+
+	return result.NewSuccess(AddData{
+		Slug:     item.Slug,
+		FilePath: path,
+	})
 }
 
 // List reads all YAML files in docs/IMPL/queue/, sorts by priority (ascending),
-// and returns the slice. FilePath is populated on each item.
-func (m *Manager) List() ([]Item, error) {
+// and returns a Result containing the items slice. FilePath is populated on each item.
+func (m *Manager) List() result.Result[ListData] {
 	dir := m.queueDir()
 	entries, err := os.ReadDir(dir)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return []Item{}, nil
+			return result.NewSuccess(ListData{Items: []Item{}, Count: 0})
 		}
-		return nil, fmt.Errorf("queue.Manager.List: read dir: %w", err)
+		return result.NewFailure[ListData]([]result.SAWError{
+			result.NewFatal("QUEUE_LIST_FAILED", fmt.Sprintf("read dir: %s", err.Error())).WithCause(err),
+		})
 	}
 
 	var items []Item
@@ -95,7 +125,9 @@ func (m *Manager) List() ([]Item, error) {
 		path := filepath.Join(dir, name)
 		item, err := protocol.LoadYAML[Item](path)
 		if err != nil {
-			return nil, fmt.Errorf("queue.Manager.List: %w", err)
+			return result.NewFailure[ListData]([]result.SAWError{
+				result.NewFatal("QUEUE_LIST_FAILED", err.Error()).WithCause(err),
+			})
 		}
 		item.FilePath = path
 		items = append(items, item)
@@ -105,7 +137,11 @@ func (m *Manager) List() ([]Item, error) {
 		return items[i].Priority < items[j].Priority
 	})
 
-	return items, nil
+	if items == nil {
+		items = []Item{}
+	}
+
+	return result.NewSuccess(ListData{Items: items, Count: len(items)})
 }
 
 // implSlug is a minimal struct for extracting feature_slug from IMPL YAML files.
@@ -119,11 +155,11 @@ func (m *Manager) completedSlugs() (map[string]bool, error) {
 	completed := make(map[string]bool)
 
 	// Check queue items for complete status
-	queueItems, err := m.List()
-	if err != nil {
-		return nil, err
+	listResult := m.List()
+	if listResult.IsFatal() {
+		return nil, fmt.Errorf("completedSlugs: %s", listResult.Errors[0].Message)
 	}
-	for _, item := range queueItems {
+	for _, item := range listResult.GetData().Items {
 		if item.Status == "complete" && item.Slug != "" {
 			completed[item.Slug] = true
 		}
@@ -173,17 +209,20 @@ func (m *Manager) completedSlugs() (map[string]bool, error) {
 }
 
 // Next returns the highest-priority (lowest number) item whose status is
-// "queued" AND all depends_on slugs have status "complete". Returns nil if
-// no eligible item exists.
-func (m *Manager) Next() (*Item, error) {
-	items, err := m.List()
-	if err != nil {
-		return nil, err
+// "queued" AND all depends_on slugs have status "complete".
+// Returns Fatal with Code "QUEUE_EMPTY" if no eligible item exists.
+func (m *Manager) Next() result.Result[Item] {
+	listResult := m.List()
+	if listResult.IsFatal() {
+		return result.NewFailure[Item](listResult.Errors)
 	}
+	items := listResult.GetData().Items
 
 	completed, err := m.completedSlugs()
 	if err != nil {
-		return nil, err
+		return result.NewFailure[Item]([]result.SAWError{
+			result.NewFatal("QUEUE_LIST_FAILED", err.Error()).WithCause(err),
+		})
 	}
 
 	for i := range items {
@@ -199,19 +238,24 @@ func (m *Manager) Next() (*Item, error) {
 			}
 		}
 		if eligible {
-			return item, nil
+			return result.NewSuccess(*item)
 		}
 	}
-	return nil, nil
+
+	return result.NewFailure[Item]([]result.SAWError{
+		result.NewFatal("QUEUE_EMPTY", "no eligible items in queue"),
+	})
 }
 
 // UpdateStatus updates the status field in the queue item's YAML file
-// identified by slug.
-func (m *Manager) UpdateStatus(slug string, status string) error {
+// identified by slug. Returns a Result containing the slug and new status on success.
+func (m *Manager) UpdateStatus(slug string, status string) result.Result[UpdateStatusData] {
 	dir := m.queueDir()
 	entries, err := os.ReadDir(dir)
 	if err != nil {
-		return fmt.Errorf("queue.Manager.UpdateStatus: read dir: %w", err)
+		return result.NewFailure[UpdateStatusData]([]result.SAWError{
+			result.NewFatal("QUEUE_STATUS_UPDATE_FAILED", fmt.Sprintf("read dir: %s", err.Error())).WithCause(err),
+		})
 	}
 
 	for _, e := range entries {
@@ -225,16 +269,25 @@ func (m *Manager) UpdateStatus(slug string, status string) error {
 		path := filepath.Join(dir, name)
 		item, err := protocol.LoadYAML[Item](path)
 		if err != nil {
-			return fmt.Errorf("queue.Manager.UpdateStatus: %w", err)
+			return result.NewFailure[UpdateStatusData]([]result.SAWError{
+				result.NewFatal("QUEUE_STATUS_UPDATE_FAILED", err.Error()).WithCause(err),
+			})
 		}
 		if item.Slug == slug {
 			item.Status = status
 			if err := protocol.SaveYAML(path, &item); err != nil {
-				return fmt.Errorf("queue.Manager.UpdateStatus: %w", err)
+				return result.NewFailure[UpdateStatusData]([]result.SAWError{
+					result.NewFatal("QUEUE_STATUS_UPDATE_FAILED", err.Error()).WithCause(err),
+				})
 			}
-			return nil
+			return result.NewSuccess(UpdateStatusData{
+				Slug:      slug,
+				NewStatus: status,
+			})
 		}
 	}
 
-	return fmt.Errorf("queue.Manager.UpdateStatus: slug %q not found in queue", slug)
+	return result.NewFailure[UpdateStatusData]([]result.SAWError{
+		result.NewFatal("QUEUE_STATUS_UPDATE_FAILED", fmt.Sprintf("slug %q not found in queue", slug)),
+	})
 }

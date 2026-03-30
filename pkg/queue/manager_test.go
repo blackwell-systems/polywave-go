@@ -18,8 +18,9 @@ func TestAdd_CreatesFile(t *testing.T) {
 		Slug:               "dark-mode",
 		FeatureDescription: "Add dark mode support",
 	}
-	if err := mgr.Add(item); err != nil {
-		t.Fatalf("Add: %v", err)
+	res := mgr.Add(item)
+	if res.IsFatal() {
+		t.Fatalf("Add: %v", res.Errors[0].Message)
 	}
 
 	path := filepath.Join(dir, "docs", "IMPL", "queue", "001-dark-mode.yaml")
@@ -43,6 +44,28 @@ func TestAdd_CreatesFile(t *testing.T) {
 	}
 }
 
+func TestAdd_SlugInResult(t *testing.T) {
+	dir := t.TempDir()
+	mgr := NewManager(dir)
+
+	item := Item{
+		Title:    "My Feature",
+		Priority: 3,
+	}
+	res := mgr.Add(item)
+	if res.IsFatal() {
+		t.Fatalf("Add: %v", res.Errors[0].Message)
+	}
+
+	d := res.GetData()
+	if d.Slug != "my-feature" {
+		t.Errorf("AddData.Slug = %q, want %q", d.Slug, "my-feature")
+	}
+	if d.FilePath == "" {
+		t.Error("AddData.FilePath should not be empty")
+	}
+}
+
 func TestAdd_AutoSlug(t *testing.T) {
 	dir := t.TempDir()
 	mgr := NewManager(dir)
@@ -51,8 +74,9 @@ func TestAdd_AutoSlug(t *testing.T) {
 		Title:    "My Cool Feature!",
 		Priority: 5,
 	}
-	if err := mgr.Add(item); err != nil {
-		t.Fatalf("Add: %v", err)
+	res := mgr.Add(item)
+	if res.IsFatal() {
+		t.Fatalf("Add: %v", res.Errors[0].Message)
 	}
 
 	path := filepath.Join(dir, "docs", "IMPL", "queue", "005-my-cool-feature.yaml")
@@ -84,15 +108,17 @@ func TestList_SortsByPriority(t *testing.T) {
 		{Title: "Second", Priority: 2, Slug: "second"},
 	}
 	for _, item := range items {
-		if err := mgr.Add(item); err != nil {
-			t.Fatalf("Add %q: %v", item.Title, err)
+		res := mgr.Add(item)
+		if res.IsFatal() {
+			t.Fatalf("Add %q: %v", item.Title, res.Errors[0].Message)
 		}
 	}
 
-	listed, err := mgr.List()
-	if err != nil {
-		t.Fatalf("List: %v", err)
+	listRes := mgr.List()
+	if listRes.IsFatal() {
+		t.Fatalf("List: %v", listRes.Errors[0].Message)
 	}
+	listed := listRes.GetData().Items
 	if len(listed) != 3 {
 		t.Fatalf("len = %d, want 3", len(listed))
 	}
@@ -118,10 +144,11 @@ func TestList_EmptyDir(t *testing.T) {
 	dir := t.TempDir()
 	mgr := NewManager(dir)
 
-	listed, err := mgr.List()
-	if err != nil {
-		t.Fatalf("List: %v", err)
+	listRes := mgr.List()
+	if listRes.IsFatal() {
+		t.Fatalf("List: %v", listRes.Errors[0].Message)
 	}
+	listed := listRes.GetData().Items
 	if len(listed) != 0 {
 		t.Errorf("len = %d, want 0", len(listed))
 	}
@@ -137,20 +164,35 @@ func TestNext_ReturnsHighestPriority(t *testing.T) {
 		{Title: "Mid", Priority: 5, Slug: "mid"},
 	}
 	for _, item := range items {
-		if err := mgr.Add(item); err != nil {
-			t.Fatalf("Add: %v", err)
+		res := mgr.Add(item)
+		if res.IsFatal() {
+			t.Fatalf("Add: %v", res.Errors[0].Message)
 		}
 	}
 
-	next, err := mgr.Next()
-	if err != nil {
-		t.Fatalf("Next: %v", err)
+	nextRes := mgr.Next()
+	if nextRes.IsFatal() {
+		t.Fatalf("Next: %v", nextRes.Errors[0].Message)
 	}
-	if next == nil {
-		t.Fatal("Next returned nil, want item")
-	}
+	next := nextRes.GetData()
 	if next.Slug != "high" {
 		t.Errorf("slug = %q, want %q", next.Slug, "high")
+	}
+}
+
+func TestNext_QueueEmpty(t *testing.T) {
+	dir := t.TempDir()
+	mgr := NewManager(dir)
+
+	nextRes := mgr.Next()
+	if !nextRes.IsFatal() {
+		t.Fatal("expected Fatal result when queue is empty")
+	}
+	if len(nextRes.Errors) == 0 {
+		t.Fatal("expected errors in Fatal result")
+	}
+	if nextRes.Errors[0].Code != "QUEUE_EMPTY" {
+		t.Errorf("error code = %q, want %q", nextRes.Errors[0].Code, "QUEUE_EMPTY")
 	}
 }
 
@@ -165,19 +207,18 @@ func TestNext_SkipsDependencies(t *testing.T) {
 		{Title: "A", Priority: 2, Slug: "a"},
 	}
 	for _, item := range items {
-		if err := mgr.Add(item); err != nil {
-			t.Fatalf("Add: %v", err)
+		res := mgr.Add(item)
+		if res.IsFatal() {
+			t.Fatalf("Add: %v", res.Errors[0].Message)
 		}
 	}
 
-	next, err := mgr.Next()
-	if err != nil {
-		t.Fatalf("Next: %v", err)
-	}
-	if next == nil {
-		t.Fatal("Next returned nil, want item")
+	nextRes := mgr.Next()
+	if nextRes.IsFatal() {
+		t.Fatalf("Next: %v", nextRes.Errors[0].Message)
 	}
 	// B has unmet dep, so A should be returned even though B has higher priority
+	next := nextRes.GetData()
 	if next.Slug != "a" {
 		t.Errorf("slug = %q, want %q", next.Slug, "a")
 	}
@@ -193,17 +234,18 @@ func TestNext_NoneEligible(t *testing.T) {
 		{Title: "B", Priority: 2, Slug: "b", DependsOn: []string{"also-missing"}},
 	}
 	for _, item := range items {
-		if err := mgr.Add(item); err != nil {
-			t.Fatalf("Add: %v", err)
+		res := mgr.Add(item)
+		if res.IsFatal() {
+			t.Fatalf("Add: %v", res.Errors[0].Message)
 		}
 	}
 
-	next, err := mgr.Next()
-	if err != nil {
-		t.Fatalf("Next: %v", err)
+	nextRes := mgr.Next()
+	if !nextRes.IsFatal() {
+		t.Errorf("expected Fatal when no items eligible, got Code=%q", nextRes.Code)
 	}
-	if next != nil {
-		t.Errorf("expected nil, got %+v", next)
+	if nextRes.Errors[0].Code != "QUEUE_EMPTY" {
+		t.Errorf("error code = %q, want %q", nextRes.Errors[0].Code, "QUEUE_EMPTY")
 	}
 }
 
@@ -217,18 +259,17 @@ func TestNext_DependencyMetByCompleteQueueItem(t *testing.T) {
 		{Title: "Dependent", Priority: 2, Slug: "dependent", DependsOn: []string{"prereq"}},
 	}
 	for _, item := range items {
-		if err := mgr.Add(item); err != nil {
-			t.Fatalf("Add: %v", err)
+		res := mgr.Add(item)
+		if res.IsFatal() {
+			t.Fatalf("Add: %v", res.Errors[0].Message)
 		}
 	}
 
-	next, err := mgr.Next()
-	if err != nil {
-		t.Fatalf("Next: %v", err)
+	nextRes := mgr.Next()
+	if nextRes.IsFatal() {
+		t.Fatalf("Next: %v", nextRes.Errors[0].Message)
 	}
-	if next == nil {
-		t.Fatal("Next returned nil, want item")
-	}
+	next := nextRes.GetData()
 	if next.Slug != "dependent" {
 		t.Errorf("slug = %q, want %q", next.Slug, "dependent")
 	}
@@ -250,17 +291,16 @@ func TestNext_DependencyMetByCompleteDir(t *testing.T) {
 
 	// Add item that depends on "prereq"
 	item := Item{Title: "Dependent", Priority: 1, Slug: "dependent", DependsOn: []string{"prereq"}}
-	if err := mgr.Add(item); err != nil {
-		t.Fatalf("Add: %v", err)
+	res := mgr.Add(item)
+	if res.IsFatal() {
+		t.Fatalf("Add: %v", res.Errors[0].Message)
 	}
 
-	next, err := mgr.Next()
-	if err != nil {
-		t.Fatalf("Next: %v", err)
+	nextRes := mgr.Next()
+	if nextRes.IsFatal() {
+		t.Fatalf("Next: %v", nextRes.Errors[0].Message)
 	}
-	if next == nil {
-		t.Fatal("Next returned nil, want item")
-	}
+	next := nextRes.GetData()
 	if next.Slug != "dependent" {
 		t.Errorf("slug = %q, want %q", next.Slug, "dependent")
 	}
@@ -271,23 +311,54 @@ func TestUpdateStatus(t *testing.T) {
 	mgr := NewManager(dir)
 
 	item := Item{Title: "Test", Priority: 1, Slug: "test"}
-	if err := mgr.Add(item); err != nil {
-		t.Fatalf("Add: %v", err)
+	if addRes := mgr.Add(item); addRes.IsFatal() {
+		t.Fatalf("Add: %v", addRes.Errors[0].Message)
 	}
 
-	if err := mgr.UpdateStatus("test", "in_progress"); err != nil {
-		t.Fatalf("UpdateStatus: %v", err)
+	updateRes := mgr.UpdateStatus("test", "in_progress")
+	if updateRes.IsFatal() {
+		t.Fatalf("UpdateStatus: %v", updateRes.Errors[0].Message)
 	}
 
-	items, err := mgr.List()
-	if err != nil {
-		t.Fatalf("List: %v", err)
+	// Verify returned data
+	d := updateRes.GetData()
+	if d.Slug != "test" {
+		t.Errorf("UpdateStatusData.Slug = %q, want %q", d.Slug, "test")
 	}
-	if len(items) != 1 {
-		t.Fatalf("len = %d, want 1", len(items))
+	if d.NewStatus != "in_progress" {
+		t.Errorf("UpdateStatusData.NewStatus = %q, want %q", d.NewStatus, "in_progress")
 	}
-	if items[0].Status != "in_progress" {
-		t.Errorf("status = %q, want %q", items[0].Status, "in_progress")
+
+	listRes := mgr.List()
+	if listRes.IsFatal() {
+		t.Fatalf("List: %v", listRes.Errors[0].Message)
+	}
+	listed := listRes.GetData().Items
+	if len(listed) != 1 {
+		t.Fatalf("len = %d, want 1", len(listed))
+	}
+	if listed[0].Status != "in_progress" {
+		t.Errorf("status = %q, want %q", listed[0].Status, "in_progress")
+	}
+}
+
+func TestUpdateStatus_ReturnsCorrectNewStatus(t *testing.T) {
+	dir := t.TempDir()
+	mgr := NewManager(dir)
+
+	item := Item{Title: "Status Test", Priority: 1, Slug: "status-test"}
+	if addRes := mgr.Add(item); addRes.IsFatal() {
+		t.Fatalf("Add: %v", addRes.Errors[0].Message)
+	}
+
+	updateRes := mgr.UpdateStatus("status-test", "complete")
+	if updateRes.IsFatal() {
+		t.Fatalf("UpdateStatus: %v", updateRes.Errors[0].Message)
+	}
+
+	d := updateRes.GetData()
+	if d.NewStatus != "complete" {
+		t.Errorf("UpdateStatusData.NewStatus = %q, want %q", d.NewStatus, "complete")
 	}
 }
 
@@ -301,9 +372,12 @@ func TestUpdateStatus_NotFound(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	err := mgr.UpdateStatus("nonexistent", "complete")
-	if err == nil {
-		t.Fatal("expected error for nonexistent slug")
+	updateRes := mgr.UpdateStatus("nonexistent", "complete")
+	if !updateRes.IsFatal() {
+		t.Fatal("expected Fatal result for nonexistent slug")
+	}
+	if updateRes.Errors[0].Code != "QUEUE_STATUS_UPDATE_FAILED" {
+		t.Errorf("error code = %q, want %q", updateRes.Errors[0].Code, "QUEUE_STATUS_UPDATE_FAILED")
 	}
 }
 

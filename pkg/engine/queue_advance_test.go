@@ -14,8 +14,9 @@ func seedQueue(t *testing.T, repoPath string, items []queue.Item) *queue.Manager
 	t.Helper()
 	mgr := queue.NewManager(repoPath)
 	for _, item := range items {
-		if err := mgr.Add(item); err != nil {
-			t.Fatalf("seedQueue: Add(%q): %v", item.Slug, err)
+		res := mgr.Add(item)
+		if res.IsFatal() {
+			t.Fatalf("seedQueue: Add(%q): %s", item.Slug, res.Errors[0].Message)
 		}
 	}
 	return mgr
@@ -97,10 +98,11 @@ func TestCheckQueue_Advances(t *testing.T) {
 	}
 
 	// Verify the status was updated to in_progress.
-	items, err := mgr.List()
-	if err != nil {
-		t.Fatalf("List: %v", err)
+	listRes := mgr.List()
+	if listRes.IsFatal() {
+		t.Fatalf("List: %s", listRes.Errors[0].Message)
 	}
+	items := listRes.GetData().Items
 	if len(items) != 1 {
 		t.Fatalf("expected 1 item, got %d", len(items))
 	}

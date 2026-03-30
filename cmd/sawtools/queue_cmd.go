@@ -3,25 +3,10 @@ package main
 import (
 	"encoding/json"
 	"fmt"
-	"regexp"
-	"strings"
 
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/queue"
 	"github.com/spf13/cobra"
 )
-
-// queueSlugFromTitle mirrors the unexported slugFromTitle in pkg/queue/manager.go.
-// It converts a title to a URL-safe slug for constructing the expected file path.
-func queueSlugFromTitle(title string) string {
-	s := strings.ToLower(title)
-	re := regexp.MustCompile(`[^a-z0-9]+`)
-	s = re.ReplaceAllString(s, "-")
-	s = strings.Trim(s, "-")
-	if s == "" {
-		s = "item"
-	}
-	return s
-}
 
 // newQueueCmd returns the parent "queue" subcommand with its children.
 func newQueueCmd() *cobra.Command {
@@ -53,13 +38,13 @@ func newQueueAddCmd() *cobra.Command {
 				FeatureDescription: description,
 			}
 
-			if err := mgr.Add(item); err != nil {
-				return fmt.Errorf("queue add: %w", err)
+			addRes := mgr.Add(item)
+			if addRes.IsFatal() {
+				return fmt.Errorf("queue add: %s", addRes.Errors[0].Message)
 			}
 
-			// Re-derive the slug and path the same way Manager.Add() does.
-			slug := queueSlugFromTitle(title)
-			path := fmt.Sprintf("docs/IMPL/queue/%03d-%s.yaml", priority, slug)
+			slug := addRes.GetData().Slug
+			path := addRes.GetData().FilePath
 
 			result := map[string]interface{}{
 				"added": true,
@@ -91,10 +76,11 @@ func newQueueListCmd() *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			mgr := queue.NewManager(repoDir)
 
-			items, err := mgr.List()
-			if err != nil {
-				return fmt.Errorf("queue list: %w", err)
+			listRes := mgr.List()
+			if listRes.IsFatal() {
+				return fmt.Errorf("queue list: %s", listRes.Errors[0].Message)
 			}
+			items := listRes.GetData().Items
 
 			// Build a simplified output slice.
 			type listItem struct {
@@ -134,23 +120,26 @@ func newQueueNextCmd() *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			mgr := queue.NewManager(repoDir)
 
-			item, err := mgr.Next()
-			if err != nil {
-				return fmt.Errorf("queue next: %w", err)
-			}
+			nextRes := mgr.Next()
 
-			var result interface{}
-			if item == nil {
-				result = map[string]interface{}{"next": nil}
+			var output interface{}
+			if nextRes.IsFatal() {
+				// QUEUE_EMPTY is not an error to the CLI caller — report next: nil.
+				if len(nextRes.Errors) > 0 && nextRes.Errors[0].Code == "QUEUE_EMPTY" {
+					output = map[string]interface{}{"next": nil}
+				} else {
+					return fmt.Errorf("queue next: %s", nextRes.Errors[0].Message)
+				}
 			} else {
-				result = map[string]interface{}{
+				item := nextRes.GetData()
+				output = map[string]interface{}{
 					"slug":     item.Slug,
 					"title":    item.Title,
 					"priority": item.Priority,
 				}
 			}
 
-			out, err := json.MarshalIndent(result, "", "  ")
+			out, err := json.MarshalIndent(output, "", "  ")
 			if err != nil {
 				return fmt.Errorf("queue next: marshal output: %w", err)
 			}

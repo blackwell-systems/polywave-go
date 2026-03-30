@@ -115,10 +115,11 @@ func (c *collectEvents) hasEvent(name string) bool {
 func seedQueueForDaemon(t *testing.T, repoPath string, item queue.Item) string {
 	t.Helper()
 	mgr := queue.NewManager(repoPath)
-	if err := mgr.Add(item); err != nil {
-		t.Fatalf("seedQueueForDaemon: %v", err)
+	res := mgr.Add(item)
+	if res.IsFatal() {
+		t.Fatalf("seedQueueForDaemon: %s", res.Errors[0].Message)
 	}
-	return item.Slug
+	return res.GetData().Slug
 }
 
 // ─── TestRunDaemon_StopsOnCancel ──────────────────────────────────────────
