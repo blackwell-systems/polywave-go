@@ -39,7 +39,7 @@ func RunBaselineGates(manifest *IMPLManifest, waveNumber int, repoDir string, ca
 	// Step 2: Delegate gate execution entirely to RunPreMergeGates.
 	// RunPreMergeGates internally calls RunGatesWithCache which handles
 	// cache lookup/store.
-	res := RunPreMergeGates(manifest, waveNumber, repoDir, cache)
+	res := RunPreMergeGates(manifest, waveNumber, repoDir, cache, nil)
 	if !res.IsSuccess() {
 		return result.NewFailure[*BaselineData]([]result.SAWError{{
 			Code:     result.CodeBaselineError,

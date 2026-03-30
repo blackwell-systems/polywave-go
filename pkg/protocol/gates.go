@@ -16,15 +16,6 @@ import (
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
 )
 
-// loggerFrom returns the provided logger if non-nil, otherwise slog.Default().
-// This helper allows optional logger injection while maintaining backward compatibility.
-func loggerFrom(l *slog.Logger) *slog.Logger {
-	if l == nil {
-		return slog.Default()
-	}
-	return l
-}
-
 // GateResult represents the outcome of executing a single quality gate.
 // It captures all execution details including stdout/stderr and pass/fail status.
 type GateResult struct {

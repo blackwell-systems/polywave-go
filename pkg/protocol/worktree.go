@@ -9,14 +9,6 @@ import (
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
 )
 
-// loggerFrom returns the provided logger if non-nil, otherwise returns slog.Default().
-func loggerFrom(l *slog.Logger) *slog.Logger {
-	if l == nil {
-		return slog.Default()
-	}
-	return l
-}
-
 // WorktreeInfo contains the details of a created worktree for a single agent.
 type WorktreeInfo struct {
 	Agent  string `json:"agent"`
