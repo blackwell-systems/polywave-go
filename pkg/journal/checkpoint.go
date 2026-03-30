@@ -9,7 +9,37 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
 )
+
+// CheckpointData holds the result data from a successful Checkpoint operation.
+type CheckpointData struct {
+	Name         string    `json:"name"`
+	Timestamp    time.Time `json:"timestamp"`
+	EntryCount   int       `json:"entry_count"`
+	SnapshotPath string    `json:"snapshot_path"`
+}
+
+// RestoreData holds the result data from a successful RestoreCheckpoint operation.
+type RestoreData struct {
+	Name         string    `json:"name"`
+	RestoredAt   time.Time `json:"restored_at"`
+	SnapshotPath string    `json:"snapshot_path"`
+}
+
+// DeleteData holds the result data from a successful DeleteCheckpoint operation.
+type DeleteData struct {
+	Name    string `json:"name"`
+	Deleted bool   `json:"deleted"`
+}
+
+// CopyData holds the result data from a successful copyFileIfExists operation.
+type CopyData struct {
+	Src      string `json:"src"`
+	Dst      string `json:"dst"`
+	BytesCopied int64 `json:"bytes_copied"`
+}
 
 // Checkpoint represents a named snapshot of journal state at a key milestone
 type Checkpoint struct {
@@ -21,32 +51,52 @@ type Checkpoint struct {
 
 // Checkpoint creates a snapshot of current journal state with the given name.
 // Copies index.jsonl, cursor.json, and recent.json to checkpoints/ subdirectory.
-// Returns error if checkpoint name already exists or filesystem operation fails.
-func (o *JournalObserver) Checkpoint(name string) error {
+// Returns failure if checkpoint name already exists or filesystem operation fails.
+func (o *JournalObserver) Checkpoint(name string) result.Result[CheckpointData] {
 	// Validate checkpoint name (filesystem-safe, no slashes or spaces)
 	if strings.ContainsAny(name, "/\\ ") {
-		return fmt.Errorf("checkpoint name must be filesystem-safe (no slashes or spaces): %q", name)
+		return result.NewFailure[CheckpointData]([]result.SAWError{{
+			Code:     "CHECKPOINT_INVALID_NAME",
+			Message:  fmt.Sprintf("checkpoint name must be filesystem-safe (no slashes or spaces): %q", name),
+			Severity: "fatal",
+		}})
 	}
 	if name == "" {
-		return fmt.Errorf("checkpoint name cannot be empty")
+		return result.NewFailure[CheckpointData]([]result.SAWError{{
+			Code:     "CHECKPOINT_INVALID_NAME",
+			Message:  "checkpoint name cannot be empty",
+			Severity: "fatal",
+		}})
 	}
 
 	// Create checkpoints directory if it doesn't exist
 	checkpointsDir := filepath.Join(string(o.JournalDir), "checkpoints")
 	if err := os.MkdirAll(checkpointsDir, 0755); err != nil {
-		return fmt.Errorf("failed to create checkpoints directory: %w", err)
+		return result.NewFailure[CheckpointData]([]result.SAWError{{
+			Code:     "CHECKPOINT_FAILED",
+			Message:  fmt.Sprintf("checkpoint %q: failed to create checkpoints directory: %v", name, err),
+			Severity: "fatal",
+		}})
 	}
 
 	// Check if checkpoint already exists
 	metadataPath := filepath.Join(checkpointsDir, fmt.Sprintf("%s.json", name))
 	if _, err := os.Stat(metadataPath); err == nil {
-		return fmt.Errorf("checkpoint %q already exists", name)
+		return result.NewFailure[CheckpointData]([]result.SAWError{{
+			Code:     "CHECKPOINT_ALREADY_EXISTS",
+			Message:  fmt.Sprintf("checkpoint %q already exists", name),
+			Severity: "fatal",
+		}})
 	}
 
 	// Count entries in index.jsonl
 	entryCount, err := countJSONLLines(string(o.IndexPath))
 	if err != nil && !os.IsNotExist(err) {
-		return fmt.Errorf("failed to count entries: %w", err)
+		return result.NewFailure[CheckpointData]([]result.SAWError{{
+			Code:     "CHECKPOINT_FAILED",
+			Message:  fmt.Sprintf("checkpoint %q: failed to count entries: %v", name, err),
+			Severity: "fatal",
+		}})
 	}
 
 	// Create checkpoint snapshot files
@@ -75,14 +125,27 @@ func (o *JournalObserver) Checkpoint(name string) error {
 	// Write checkpoint metadata
 	metadataBytes, err := json.MarshalIndent(checkpoint, "", "  ")
 	if err != nil {
-		return fmt.Errorf("failed to marshal checkpoint metadata: %w", err)
+		return result.NewFailure[CheckpointData]([]result.SAWError{{
+			Code:     "CHECKPOINT_FAILED",
+			Message:  fmt.Sprintf("checkpoint %q: failed to marshal checkpoint metadata: %v", name, err),
+			Severity: "fatal",
+		}})
 	}
 
 	if err := os.WriteFile(metadataPath, metadataBytes, 0644); err != nil {
-		return fmt.Errorf("failed to write checkpoint metadata: %w", err)
+		return result.NewFailure[CheckpointData]([]result.SAWError{{
+			Code:     "CHECKPOINT_FAILED",
+			Message:  fmt.Sprintf("checkpoint %q: failed to write checkpoint metadata: %v", name, err),
+			Severity: "fatal",
+		}})
 	}
 
-	return nil
+	return result.NewSuccess(CheckpointData{
+		Name:         checkpoint.Name,
+		Timestamp:    checkpoint.Timestamp,
+		EntryCount:   checkpoint.EntryCount,
+		SnapshotPath: checkpoint.SnapshotPath,
+	})
 }
 
 // ListCheckpoints returns all checkpoints with metadata, sorted by timestamp (oldest first).
@@ -142,79 +205,97 @@ func (o *JournalObserver) ListCheckpoints() ([]Checkpoint, error) {
 // Overwrites current index.jsonl and cursor.json with checkpoint snapshots.
 // Does NOT affect tool-results/ directory (full outputs preserved).
 // Does NOT delete checkpoint files (checkpoints are immutable).
-// Returns error if checkpoint doesn't exist or restoration fails.
-func (o *JournalObserver) RestoreCheckpoint(name string) error {
+// Returns failure if checkpoint doesn't exist or restoration fails.
+func (o *JournalObserver) RestoreCheckpoint(name string) result.Result[RestoreData] {
 	checkpointsDir := filepath.Join(string(o.JournalDir), "checkpoints")
 	metadataPath := filepath.Join(checkpointsDir, fmt.Sprintf("%s.json", name))
 
 	// Verify checkpoint exists
 	if _, err := os.Stat(metadataPath); os.IsNotExist(err) {
-		return fmt.Errorf("checkpoint %q not found", name)
+		return result.NewFailure[RestoreData]([]result.SAWError{{
+			Code:     "CHECKPOINT_NOT_FOUND",
+			Message:  fmt.Sprintf("checkpoint %q not found", name),
+			Severity: "fatal",
+		}})
 	}
 
 	// Read checkpoint metadata
 	data, err := os.ReadFile(metadataPath)
 	if err != nil {
-		return fmt.Errorf("failed to read checkpoint metadata: %w", err)
+		return result.NewFailure[RestoreData]([]result.SAWError{{
+			Code:     "CHECKPOINT_FAILED",
+			Message:  fmt.Sprintf("checkpoint %q: failed to read checkpoint metadata: %v", name, err),
+			Severity: "fatal",
+		}})
 	}
 
 	var checkpoint Checkpoint
 	if err := json.Unmarshal(data, &checkpoint); err != nil {
-		return fmt.Errorf("failed to parse checkpoint metadata: %w", err)
+		return result.NewFailure[RestoreData]([]result.SAWError{{
+			Code:     "CHECKPOINT_FAILED",
+			Message:  fmt.Sprintf("checkpoint %q: failed to parse checkpoint metadata: %v", name, err),
+			Severity: "fatal",
+		}})
 	}
 
 	// Restore index.jsonl (delete target if snapshot doesn't exist - restoring to empty state)
 	indexSnapshot := checkpoint.SnapshotPath + "-index.jsonl"
-	if err := copyFileIfExists(indexSnapshot, string(o.IndexPath)); err != nil {
-		if os.IsNotExist(err) {
-			// Snapshot doesn't exist - restore to empty state by removing target
-			os.Remove(string(o.IndexPath))
-		} else {
-			return fmt.Errorf("failed to restore index: %w", err)
-		}
+	if r := copyFileIfExists(indexSnapshot, string(o.IndexPath)); r.IsFatal() {
+		// Snapshot doesn't exist - restore to empty state by removing target
+		os.Remove(string(o.IndexPath))
 	}
 
 	// Restore cursor.json (delete target if snapshot doesn't exist)
 	cursorSnapshot := checkpoint.SnapshotPath + "-cursor.json"
-	if err := copyFileIfExists(cursorSnapshot, string(o.CursorPath)); err != nil {
-		if os.IsNotExist(err) {
-			os.Remove(string(o.CursorPath))
-		} else {
-			return fmt.Errorf("failed to restore cursor: %w", err)
-		}
+	if r := copyFileIfExists(cursorSnapshot, string(o.CursorPath)); r.IsFatal() {
+		os.Remove(string(o.CursorPath))
 	}
 
 	// Restore recent.json (optional)
 	recentSnapshot := checkpoint.SnapshotPath + "-recent.json"
-	if err := copyFileIfExists(recentSnapshot, string(o.RecentPath)); err != nil {
-		if os.IsNotExist(err) {
-			os.Remove(string(o.RecentPath))
-		}
+	if r := copyFileIfExists(recentSnapshot, string(o.RecentPath)); r.IsFatal() {
+		os.Remove(string(o.RecentPath))
 	}
 
-	return nil
+	return result.NewSuccess(RestoreData{
+		Name:         name,
+		RestoredAt:   time.Now().UTC(),
+		SnapshotPath: checkpoint.SnapshotPath,
+	})
 }
 
 // DeleteCheckpoint removes checkpoint metadata and snapshot files.
-// Returns error if checkpoint doesn't exist or deletion fails.
-func (o *JournalObserver) DeleteCheckpoint(name string) error {
+// Returns failure if checkpoint doesn't exist or deletion fails.
+func (o *JournalObserver) DeleteCheckpoint(name string) result.Result[DeleteData] {
 	checkpointsDir := filepath.Join(string(o.JournalDir), "checkpoints")
 	metadataPath := filepath.Join(checkpointsDir, fmt.Sprintf("%s.json", name))
 
 	// Verify checkpoint exists
 	if _, err := os.Stat(metadataPath); os.IsNotExist(err) {
-		return fmt.Errorf("checkpoint %q not found", name)
+		return result.NewFailure[DeleteData]([]result.SAWError{{
+			Code:     "CHECKPOINT_NOT_FOUND",
+			Message:  fmt.Sprintf("checkpoint %q not found", name),
+			Severity: "fatal",
+		}})
 	}
 
 	// Read checkpoint metadata to get snapshot path
 	data, err := os.ReadFile(metadataPath)
 	if err != nil {
-		return fmt.Errorf("failed to read checkpoint metadata: %w", err)
+		return result.NewFailure[DeleteData]([]result.SAWError{{
+			Code:     "CHECKPOINT_FAILED",
+			Message:  fmt.Sprintf("checkpoint %q: failed to read checkpoint metadata: %v", name, err),
+			Severity: "fatal",
+		}})
 	}
 
 	var checkpoint Checkpoint
 	if err := json.Unmarshal(data, &checkpoint); err != nil {
-		return fmt.Errorf("failed to parse checkpoint metadata: %w", err)
+		return result.NewFailure[DeleteData]([]result.SAWError{{
+			Code:     "CHECKPOINT_FAILED",
+			Message:  fmt.Sprintf("checkpoint %q: failed to parse checkpoint metadata: %v", name, err),
+			Severity: "fatal",
+		}})
 	}
 
 	// Delete snapshot files
@@ -226,16 +307,27 @@ func (o *JournalObserver) DeleteCheckpoint(name string) error {
 
 	for _, file := range snapshotFiles {
 		if err := os.Remove(file); err != nil && !os.IsNotExist(err) {
-			return fmt.Errorf("failed to delete snapshot file %s: %w", file, err)
+			return result.NewFailure[DeleteData]([]result.SAWError{{
+				Code:     "CHECKPOINT_FAILED",
+				Message:  fmt.Sprintf("checkpoint %q: failed to delete snapshot file %s: %v", name, file, err),
+				Severity: "fatal",
+			}})
 		}
 	}
 
 	// Delete metadata file
 	if err := os.Remove(metadataPath); err != nil {
-		return fmt.Errorf("failed to delete checkpoint metadata: %w", err)
+		return result.NewFailure[DeleteData]([]result.SAWError{{
+			Code:     "CHECKPOINT_FAILED",
+			Message:  fmt.Sprintf("checkpoint %q: failed to delete checkpoint metadata: %v", name, err),
+			Severity: "fatal",
+		}})
 	}
 
-	return nil
+	return result.NewSuccess(DeleteData{
+		Name:    name,
+		Deleted: true,
+	})
 }
 
 // countJSONLLines counts the number of lines in a JSONL file.
@@ -272,27 +364,51 @@ func countJSONLLines(path string) (int, error) {
 	return count, nil
 }
 
-// copyFileIfExists copies src to dst. Returns error if src doesn't exist.
+// copyFileIfExists copies src to dst. Returns failure if src doesn't exist or copy fails.
 // Creates parent directories for dst if needed.
-func copyFileIfExists(src, dst string) error {
+func copyFileIfExists(src, dst string) result.Result[CopyData] {
 	srcFile, err := os.Open(src)
 	if err != nil {
-		return err
+		return result.NewFailure[CopyData]([]result.SAWError{{
+			Code:     "COPY_FAILED",
+			Message:  fmt.Sprintf("failed to open source file %q: %v", src, err),
+			Severity: "fatal",
+		}})
 	}
 	defer srcFile.Close()
 
 	// Create parent directory for destination
 	dstDir := filepath.Dir(dst)
 	if err := os.MkdirAll(dstDir, 0755); err != nil {
-		return err
+		return result.NewFailure[CopyData]([]result.SAWError{{
+			Code:     "COPY_FAILED",
+			Message:  fmt.Sprintf("failed to create destination directory for %q: %v", dst, err),
+			Severity: "fatal",
+		}})
 	}
 
 	dstFile, err := os.Create(dst)
 	if err != nil {
-		return err
+		return result.NewFailure[CopyData]([]result.SAWError{{
+			Code:     "COPY_FAILED",
+			Message:  fmt.Sprintf("failed to create destination file %q: %v", dst, err),
+			Severity: "fatal",
+		}})
 	}
 	defer dstFile.Close()
 
-	_, err = io.Copy(dstFile, srcFile)
-	return err
+	n, err := io.Copy(dstFile, srcFile)
+	if err != nil {
+		return result.NewFailure[CopyData]([]result.SAWError{{
+			Code:     "COPY_FAILED",
+			Message:  fmt.Sprintf("failed to copy %q to %q: %v", src, dst, err),
+			Severity: "fatal",
+		}})
+	}
+
+	return result.NewSuccess(CopyData{
+		Src:         src,
+		Dst:         dst,
+		BytesCopied: n,
+	})
 }

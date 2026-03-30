@@ -153,19 +153,19 @@ func (w *testObserverWrapper) syncFromFile(f *os.File, cursor *SessionCursor) (*
 
 	// Update cursor
 	cursor.Offset += bytesRead
-	if err := w.saveCursor(cursor); err != nil {
-		return nil, fmt.Errorf("failed to save cursor: %w", err)
+	if r := w.saveCursor(cursor); r.IsFatal() {
+		return nil, fmt.Errorf("failed to save cursor: %s", r.Errors[0].Message)
 	}
 
 	// Append to index
 	if len(entries) > 0 {
-		if err := w.appendToIndex(entries); err != nil {
-			return nil, fmt.Errorf("failed to append to index: %w", err)
+		if r := w.appendToIndex(entries); r.IsFatal() {
+			return nil, fmt.Errorf("failed to append to index: %s", r.Errors[0].Message)
 		}
 
 		// Update recent cache
-		if err := w.updateRecent(entries); err != nil {
-			return nil, fmt.Errorf("failed to update recent: %w", err)
+		if r := w.updateRecent(entries); r.IsFatal() {
+			return nil, fmt.Errorf("failed to update recent: %s", r.Errors[0].Message)
 		}
 	}
 
@@ -421,8 +421,8 @@ func TestAppendToIndex_PreservesExisting(t *testing.T) {
 			ToolUseID: "toolu_001",
 		},
 	}
-	if err := obs.appendToIndex(entries1); err != nil {
-		t.Fatalf("First appendToIndex failed: %v", err)
+	if r := obs.appendToIndex(entries1); !r.IsSuccess() {
+		t.Fatalf("First appendToIndex failed: %v", r.Errors[0].Message)
 	}
 
 	// Second append
@@ -434,8 +434,8 @@ func TestAppendToIndex_PreservesExisting(t *testing.T) {
 			Preview:   "output",
 		},
 	}
-	if err := obs.appendToIndex(entries2); err != nil {
-		t.Fatalf("Second appendToIndex failed: %v", err)
+	if r := obs.appendToIndex(entries2); !r.IsSuccess() {
+		t.Fatalf("Second appendToIndex failed: %v", r.Errors[0].Message)
 	}
 
 	// Read back and verify both entries exist
@@ -475,8 +475,8 @@ func TestUpdateRecent_MaintainsLast30(t *testing.T) {
 			ToolName:  "Bash",
 			ToolUseID: fmt.Sprintf("toolu_%03d", i),
 		}
-		if err := obs.updateRecent([]ToolEntry{entry}); err != nil {
-			t.Fatalf("updateRecent failed at entry %d: %v", i, err)
+		if r := obs.updateRecent([]ToolEntry{entry}); !r.IsSuccess() {
+			t.Fatalf("updateRecent failed at entry %d: %v", i, r.Errors[0].Message)
 		}
 	}
 
@@ -762,8 +762,8 @@ func TestGenerateContext_CallsGenerateContextFunc(t *testing.T) {
 			Preview:   "PASS",
 		},
 	}
-	if err := obs.appendToIndex(entries); err != nil {
-		t.Fatalf("Failed to create index: %v", err)
+	if r := obs.appendToIndex(entries); !r.IsSuccess() {
+		t.Fatalf("Failed to create index: %v", r.Errors[0].Message)
 	}
 
 	// Call GenerateContext
