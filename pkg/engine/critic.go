@@ -3,7 +3,6 @@ package engine
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"os"
 	"path/filepath"
 	"time"
@@ -13,21 +12,9 @@ import (
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
 )
 
-// RunCriticOpts configures a critic agent run.
-type RunCriticOpts struct {
-	IMPLPath    string       // absolute path to IMPL doc (required)
-	CriticModel string       // optional model override
-	SAWRepoPath string       // optional; falls back to $SAW_REPO then ~/code/scout-and-wave
-	Timeout     int          // minutes; default 20
-	Logger      *slog.Logger // optional
-}
-
-// RunCriticResult holds the structured outcome of a critic agent run.
-type RunCriticResult struct {
-	Verdict    string `json:"verdict"`     // "PASS" or "ISSUES"
-	Summary    string `json:"summary"`
-	IssueCount int    `json:"issue_count"`
-	ReviewedAt string `json:"reviewed_at"`
+// init wires RunCritic into the runCriticFn hook used by RunScoutFull in scout_run.go.
+func init() {
+	runCriticFn = RunCritic
 }
 
 // RunCritic runs the critic agent end-to-end: loads the IMPL doc, discovers
