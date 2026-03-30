@@ -11,6 +11,14 @@ import (
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
 )
 
+// loggerFrom is a nil-safe helper that returns slog.Default() when l is nil.
+func loggerFrom(l *slog.Logger) *slog.Logger {
+	if l == nil {
+		return slog.Default()
+	}
+	return l
+}
+
 // RunStubScan implements E20: collects all files_changed and files_created from
 // wave agent completion reports, invokes scan-stubs.sh, and appends the
 // ## Stub Report — Wave {N} section to the IMPL doc at implDocPath.
@@ -19,7 +27,8 @@ import (
 // ~/code/scout-and-wave (same fallback as RunScout).
 //
 // Always returns nil — stub detection is informational only (E20).
-func RunStubScan(implDocPath string, waveNum int, reports map[string]*protocol.CompletionReport, sawRepoPath string) error {
+func RunStubScan(implDocPath string, waveNum int, reports map[string]*protocol.CompletionReport, sawRepoPath string, logger *slog.Logger) error {
+	log := loggerFrom(logger)
 	// 1. Collect the union of all FilesChanged and FilesCreated, deduplicated,
 	//    skipping any files under docs/IMPL/.
 	seen := make(map[string]struct{})
@@ -52,7 +61,7 @@ func RunStubScan(implDocPath string, waveNum int, reports map[string]*protocol.C
 	if sawRepoPath == "" {
 		homeDir, err := os.UserHomeDir()
 		if err != nil {
-			slog.Default().Warn("RunStubScan: could not determine home dir", "err", err)
+			log.Warn("RunStubScan: could not determine home dir", "err", err)
 			homeDir = "~"
 		}
 		sawRepoPath = filepath.Join(homeDir, "code", "scout-and-wave")
@@ -65,7 +74,7 @@ func RunStubScan(implDocPath string, waveNum int, reports map[string]*protocol.C
 	if _, err := os.Stat(scriptPath); os.IsNotExist(err) {
 		section := fmt.Sprintf("\n## Stub Report — Wave %d\n\nscan-stubs.sh not found at %s\n", waveNum, scriptPath)
 		if appendErr := appendToFile(implDocPath, section); appendErr != nil {
-			slog.Default().Warn("RunStubScan: failed to append stub report", "err", appendErr)
+			log.Warn("RunStubScan: failed to append stub report", "err", appendErr)
 		}
 		return nil
 	}
@@ -81,7 +90,7 @@ func RunStubScan(implDocPath string, waveNum int, reports map[string]*protocol.C
 		out, err := cmd.CombinedOutput()
 		if err != nil {
 			// E20: exit code is always treated as 0 (informational only)
-			slog.Default().Warn("RunStubScan: scan-stubs.sh exited with error (ignored)", "err", err)
+			log.Warn("RunStubScan: scan-stubs.sh exited with error (ignored)", "err", err)
 		}
 		output = strings.TrimSpace(string(out))
 	}
@@ -95,7 +104,7 @@ func RunStubScan(implDocPath string, waveNum int, reports map[string]*protocol.C
 	}
 	section := fmt.Sprintf("\n## Stub Report — Wave %d\n\n%s\n", waveNum, body)
 	if appendErr := appendToFile(implDocPath, section); appendErr != nil {
-		slog.Default().Warn("RunStubScan: failed to append stub report", "err", appendErr)
+		log.Warn("RunStubScan: failed to append stub report", "err", appendErr)
 	}
 
 	// 7. Always return nil — stub detection is informational only.
