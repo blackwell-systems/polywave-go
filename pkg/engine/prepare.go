@@ -294,6 +294,49 @@ func PrepareWave(ctx context.Context, opts PrepareWaveOpts) (*PrepareWaveResult,
 		}
 	}
 
+	// Step: Working directory check + auto-commit baseline fixes
+	out, err := git.Run(projectRoot, "status", "--porcelain")
+	if err != nil {
+		recordStep(res, opts.OnEvent, "working_dir_check", "warning",
+			fmt.Sprintf("could not check git status: %v", err))
+	} else if len(out) > 0 {
+		// Working directory is dirty
+		modifiedFiles := strings.Split(strings.TrimSpace(string(out)), "\n")
+		fileCount := len(modifiedFiles)
+
+		if opts.CommitBaseline {
+			// Auto-commit baseline fixes
+			os.Setenv("SAW_ALLOW_MAIN_COMMIT", "1")
+			defer os.Unsetenv("SAW_ALLOW_MAIN_COMMIT")
+
+			// Stage all changes
+			if _, addErr := git.Run(projectRoot, "add", "-A"); addErr != nil {
+				recordStep(res, opts.OnEvent, "commit_baseline", "failed",
+					fmt.Sprintf("failed to stage files: %v", addErr))
+				return res, fmt.Errorf("failed to stage baseline fixes: %w", addErr)
+			}
+
+			// Commit with descriptive message
+			commitMsg := fmt.Sprintf("chore: fix baseline for wave %d\n\nAuto-committed %d modified file(s) before worktree creation.",
+				opts.WaveNum, fileCount)
+			if _, commitErr := git.Run(projectRoot, "commit", "-m", commitMsg); commitErr != nil {
+				recordStep(res, opts.OnEvent, "commit_baseline", "failed",
+					fmt.Sprintf("failed to create commit: %v", commitErr))
+				return res, fmt.Errorf("failed to commit baseline fixes: %w", commitErr)
+			}
+
+			recordStep(res, opts.OnEvent, "commit_baseline", "success",
+				fmt.Sprintf("committed %d file(s)", fileCount))
+		} else {
+			// Working directory is dirty but auto-commit not requested
+			detail := fmt.Sprintf("%d modified file(s) detected. Use --commit-baseline to auto-commit, or commit manually", fileCount)
+			recordStep(res, opts.OnEvent, "working_dir_check", "failed", detail)
+			return res, fmt.Errorf("working directory is dirty: %d modified files (use --commit-baseline or commit manually)", fileCount)
+		}
+	} else {
+		recordStep(res, opts.OnEvent, "working_dir_check", "success", "working directory is clean")
+	}
+
 	// Step: Baseline quality gates (E21A) with gate cache
 	var cache *gatecache.Cache
 	if !opts.NoCache {
@@ -475,6 +518,21 @@ func PrepareWave(ctx context.Context, opts PrepareWaveOpts) (*PrepareWaveResult,
 	res.AgentBriefs = agentBriefs
 	recordStep(res, opts.OnEvent, "extract_briefs", "success",
 		fmt.Sprintf("prepared %d agent(s)", len(agentBriefs)))
+
+	// Write result to state file for automation-friendly access
+	stateDir := protocol.SAWStateDir(projectRoot)
+	waveStateDir := filepath.Join(stateDir, fmt.Sprintf("wave%d", opts.WaveNum))
+	if err := os.MkdirAll(waveStateDir, 0o755); err == nil {
+		resultPath := filepath.Join(waveStateDir, "prepare-result.json")
+		resultJSON, _ := json.MarshalIndent(res, "", "  ")
+		if writeErr := os.WriteFile(resultPath, resultJSON, 0o644); writeErr != nil {
+			recordStep(res, opts.OnEvent, "write_state_file", "warning",
+				fmt.Sprintf("failed to write state file: %v", writeErr))
+		} else {
+			recordStep(res, opts.OnEvent, "write_state_file", "success",
+				fmt.Sprintf("wrote %s", resultPath))
+		}
+	}
 
 	res.Success = true
 	return res, nil

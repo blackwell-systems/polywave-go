@@ -21,13 +21,14 @@ type StepResult struct {
 
 // PrepareWaveOpts configures the engine-level wave preparation pipeline.
 type PrepareWaveOpts struct {
-	IMPLPath    string
-	RepoPath    string
-	WaveNum     int
-	MergeTarget string
-	NoCache     bool
-	OnEvent     EventCallback
-	Logger      *slog.Logger // optional: nil falls back to slog.Default()
+	IMPLPath       string
+	RepoPath       string
+	WaveNum        int
+	MergeTarget    string
+	NoCache        bool
+	CommitBaseline bool          // Auto-commit baseline fixes if working directory is dirty
+	OnEvent        EventCallback
+	Logger         *slog.Logger // optional: nil falls back to slog.Default()
 }
 
 // PrepareWaveResult captures results of all preparation steps.

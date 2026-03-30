@@ -16,6 +16,8 @@ func newPrepareWaveCmd() *cobra.Command {
 	var waveNum int
 	var noCache bool
 	var mergeTarget string
+	var commitBaseline bool
+	var jsonOnly bool
 
 	cmd := &cobra.Command{
 		Use:   "prepare-wave <manifest-path>",
@@ -62,14 +64,17 @@ waves that execute on the main branch.`,
 
 			// Build engine options
 			opts := engine.PrepareWaveOpts{
-				IMPLPath:    manifestPath,
-				RepoPath:    projectRoot,
-				WaveNum:     waveNum,
-				MergeTarget: mergeTarget,
-				NoCache:     noCache,
-				Logger:      newSawLogger(),
+				IMPLPath:       manifestPath,
+				RepoPath:       projectRoot,
+				WaveNum:        waveNum,
+				MergeTarget:    mergeTarget,
+				NoCache:        noCache,
+				CommitBaseline: commitBaseline,
+				Logger:         newSawLogger(),
 				OnEvent: func(step string, status string, detail string) {
-					fmt.Fprintf(os.Stderr, "prepare-wave: [%s] %s — %s\n", step, status, detail)
+					if !jsonOnly {
+						fmt.Fprintf(os.Stderr, "prepare-wave: [%s] %s — %s\n", step, status, detail)
+					}
 				},
 			}
 
@@ -110,6 +115,8 @@ waves that execute on the main branch.`,
 	_ = cmd.MarkFlagRequired("wave")
 	cmd.Flags().BoolVar(&noCache, "no-cache", false, "Disable baseline gate result caching")
 	cmd.Flags().StringVar(&mergeTarget, "merge-target", "", "Baseline branch for verification (default: current HEAD)")
+	cmd.Flags().BoolVar(&commitBaseline, "commit-baseline", false, "Auto-commit baseline fixes if working directory is dirty")
+	cmd.Flags().BoolVar(&jsonOnly, "json-only", false, "Suppress progress messages (only output JSON result)")
 
 	return cmd
 }
