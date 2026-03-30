@@ -114,10 +114,16 @@ func AutoRemediate(ctx context.Context, opts AutoRemediateOpts) (*AutoRemediateR
 		}
 
 		// Update current failed result with new verify build output
+		verifyBuildMap := make(map[string]*protocol.VerifyBuildData)
+		verifyBuildMap["."] = verifyResult
 		updatedResult := &FinalizeWaveResult{
-			Wave:         opts.WaveNum,
-			VerifyBuild:  verifyResult,
-			BuildPassed:  verifyResult.TestPassed && verifyResult.LintPassed,
+			Wave:        opts.WaveNum,
+			VerifyBuild: verifyBuildMap,
+			VerifyCommits: make(map[string]*protocol.VerifyCommitsData),
+			GateResults:   make(map[string][]protocol.GateResult),
+			MergeResult:   make(map[string]*protocol.MergeAgentsData),
+			CleanupResult: make(map[string]*protocol.CleanupData),
+			BuildPassed:   verifyResult.TestPassed && verifyResult.LintPassed,
 		}
 
 		result.Attempts = attempt
@@ -152,16 +158,17 @@ func extractErrorLog(r *FinalizeWaveResult) string {
 	if r == nil {
 		return ""
 	}
-	if r.VerifyBuild == nil {
+	vb := r.firstVerifyBuild()
+	if vb == nil {
 		return ""
 	}
 
 	var parts []string
-	if r.VerifyBuild.TestOutput != "" {
-		parts = append(parts, "=== Test Output ===\n"+r.VerifyBuild.TestOutput)
+	if vb.TestOutput != "" {
+		parts = append(parts, "=== Test Output ===\n"+vb.TestOutput)
 	}
-	if r.VerifyBuild.LintOutput != "" {
-		parts = append(parts, "=== Lint Output ===\n"+r.VerifyBuild.LintOutput)
+	if vb.LintOutput != "" {
+		parts = append(parts, "=== Lint Output ===\n"+vb.LintOutput)
 	}
 	return strings.Join(parts, "\n\n")
 }
@@ -172,16 +179,17 @@ func determineFailedGateType(r *FinalizeWaveResult) string {
 	if r == nil {
 		return ""
 	}
-	if r.VerifyBuild != nil {
-		if !r.VerifyBuild.TestPassed {
+	vb := r.firstVerifyBuild()
+	if vb != nil {
+		if !vb.TestPassed {
 			return "test"
 		}
-		if !r.VerifyBuild.LintPassed {
+		if !vb.LintPassed {
 			return "lint"
 		}
 	}
 	// Check gate results for more specific types (typecheck, build, custom)
-	for _, gate := range r.GateResults {
+	for _, gate := range r.firstGateResults() {
 		if gate.Required && !gate.Passed {
 			return gate.Type
 		}

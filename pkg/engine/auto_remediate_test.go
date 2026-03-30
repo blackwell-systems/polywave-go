@@ -31,14 +31,13 @@ func TestAutoRemediate_FixesOnFirstAttempt(t *testing.T) {
 	}
 
 	failedResult := &FinalizeWaveResult{
-		Wave:        1,
-		BuildPassed: false,
-		VerifyBuild: &protocol.VerifyBuildData{
-			TestPassed:  false,
-			LintPassed:  true,
-			TestOutput:  "FAIL: some test error",
-			LintOutput:  "",
-		},
+		Wave:          1,
+		BuildPassed:   false,
+		VerifyBuild:   map[string]*protocol.VerifyBuildData{".": {TestPassed: false, LintPassed: true, TestOutput: "FAIL: some test error"}},
+		VerifyCommits: make(map[string]*protocol.VerifyCommitsData),
+		GateResults:   make(map[string][]protocol.GateResult),
+		MergeResult:   make(map[string]*protocol.MergeAgentsData),
+		CleanupResult: make(map[string]*protocol.CleanupData),
 	}
 
 	result, err := AutoRemediate(context.Background(), AutoRemediateOpts{
@@ -99,13 +98,13 @@ func TestAutoRemediate_FixesOnSecondAttempt(t *testing.T) {
 	}
 
 	failedResult := &FinalizeWaveResult{
-		Wave:        1,
-		BuildPassed: false,
-		VerifyBuild: &protocol.VerifyBuildData{
-			TestPassed: false,
-			LintPassed: true,
-			TestOutput: "FAIL: original error",
-		},
+		Wave:          1,
+		BuildPassed:   false,
+		VerifyBuild:   map[string]*protocol.VerifyBuildData{".": {TestPassed: false, LintPassed: true, TestOutput: "FAIL: original error"}},
+		VerifyCommits: make(map[string]*protocol.VerifyCommitsData),
+		GateResults:   make(map[string][]protocol.GateResult),
+		MergeResult:   make(map[string]*protocol.MergeAgentsData),
+		CleanupResult: make(map[string]*protocol.CleanupData),
 	}
 
 	result, err := AutoRemediate(context.Background(), AutoRemediateOpts{
@@ -160,13 +159,13 @@ func TestAutoRemediate_ExhaustsRetries(t *testing.T) {
 	}
 
 	failedResult := &FinalizeWaveResult{
-		Wave:        2,
-		BuildPassed: false,
-		VerifyBuild: &protocol.VerifyBuildData{
-			TestPassed: false,
-			LintPassed: false,
-			TestOutput: "initial failure",
-		},
+		Wave:          2,
+		BuildPassed:   false,
+		VerifyBuild:   map[string]*protocol.VerifyBuildData{".": {TestPassed: false, LintPassed: false, TestOutput: "initial failure"}},
+		VerifyCommits: make(map[string]*protocol.VerifyCommitsData),
+		GateResults:   make(map[string][]protocol.GateResult),
+		MergeResult:   make(map[string]*protocol.MergeAgentsData),
+		CleanupResult: make(map[string]*protocol.CleanupData),
 	}
 
 	const maxRetries = 4
@@ -219,9 +218,13 @@ func TestAutoRemediate_ZeroRetries(t *testing.T) {
 	}
 
 	failedResult := &FinalizeWaveResult{
-		Wave:        1,
-		BuildPassed: false,
-		VerifyBuild: &protocol.VerifyBuildData{TestPassed: false},
+		Wave:          1,
+		BuildPassed:   false,
+		VerifyBuild:   map[string]*protocol.VerifyBuildData{".": {TestPassed: false}},
+		VerifyCommits: make(map[string]*protocol.VerifyCommitsData),
+		GateResults:   make(map[string][]protocol.GateResult),
+		MergeResult:   make(map[string]*protocol.MergeAgentsData),
+		CleanupResult: make(map[string]*protocol.CleanupData),
 	}
 
 	result, err := AutoRemediate(context.Background(), AutoRemediateOpts{
@@ -277,9 +280,13 @@ func TestAutoRemediate_EmitsEvents(t *testing.T) {
 	}
 
 	failedResult := &FinalizeWaveResult{
-		Wave:        1,
-		BuildPassed: false,
-		VerifyBuild: &protocol.VerifyBuildData{TestPassed: false},
+		Wave:          1,
+		BuildPassed:   false,
+		VerifyBuild:   map[string]*protocol.VerifyBuildData{".": {TestPassed: false}},
+		VerifyCommits: make(map[string]*protocol.VerifyCommitsData),
+		GateResults:   make(map[string][]protocol.GateResult),
+		MergeResult:   make(map[string]*protocol.MergeAgentsData),
+		CleanupResult: make(map[string]*protocol.CleanupData),
 	}
 
 	result, err := AutoRemediate(context.Background(), AutoRemediateOpts{
@@ -341,9 +348,13 @@ func TestAutoRemediate_EmitsExhaustedEvent(t *testing.T) {
 	}
 
 	failedResult := &FinalizeWaveResult{
-		Wave:        1,
-		BuildPassed: false,
-		VerifyBuild: &protocol.VerifyBuildData{TestPassed: false},
+		Wave:          1,
+		BuildPassed:   false,
+		VerifyBuild:   map[string]*protocol.VerifyBuildData{".": {TestPassed: false}},
+		VerifyCommits: make(map[string]*protocol.VerifyCommitsData),
+		GateResults:   make(map[string][]protocol.GateResult),
+		MergeResult:   make(map[string]*protocol.MergeAgentsData),
+		CleanupResult: make(map[string]*protocol.CleanupData),
 	}
 
 	result, err := AutoRemediate(context.Background(), AutoRemediateOpts{
@@ -391,9 +402,13 @@ func TestAutoRemediate_VerifyBuildSystemError(t *testing.T) {
 	}
 
 	failedResult := &FinalizeWaveResult{
-		Wave:        1,
-		BuildPassed: false,
-		VerifyBuild: &protocol.VerifyBuildData{TestPassed: false},
+		Wave:          1,
+		BuildPassed:   false,
+		VerifyBuild:   map[string]*protocol.VerifyBuildData{".": {TestPassed: false}},
+		VerifyCommits: make(map[string]*protocol.VerifyCommitsData),
+		GateResults:   make(map[string][]protocol.GateResult),
+		MergeResult:   make(map[string]*protocol.MergeAgentsData),
+		CleanupResult: make(map[string]*protocol.CleanupData),
 	}
 
 	_, err := AutoRemediate(context.Background(), AutoRemediateOpts{
@@ -441,9 +456,13 @@ func TestAutoRemediate_FixAgentErrorContinues(t *testing.T) {
 	}
 
 	failedResult := &FinalizeWaveResult{
-		Wave:        1,
-		BuildPassed: false,
-		VerifyBuild: &protocol.VerifyBuildData{TestPassed: false},
+		Wave:          1,
+		BuildPassed:   false,
+		VerifyBuild:   map[string]*protocol.VerifyBuildData{".": {TestPassed: false}},
+		VerifyCommits: make(map[string]*protocol.VerifyCommitsData),
+		GateResults:   make(map[string][]protocol.GateResult),
+		MergeResult:   make(map[string]*protocol.MergeAgentsData),
+		CleanupResult: make(map[string]*protocol.CleanupData),
 	}
 
 	result, err := AutoRemediate(context.Background(), AutoRemediateOpts{
@@ -477,24 +496,33 @@ func TestAutoRemediate_GateTypeDetection(t *testing.T) {
 		{
 			name: "test fails first",
 			result: &FinalizeWaveResult{
-				VerifyBuild: &protocol.VerifyBuildData{TestPassed: false, LintPassed: false},
+				VerifyBuild:   map[string]*protocol.VerifyBuildData{".": {TestPassed: false, LintPassed: false}},
+				VerifyCommits: make(map[string]*protocol.VerifyCommitsData),
+				GateResults:   make(map[string][]protocol.GateResult),
+				MergeResult:   make(map[string]*protocol.MergeAgentsData),
+				CleanupResult: make(map[string]*protocol.CleanupData),
 			},
 			expected: "test",
 		},
 		{
 			name: "only lint fails",
 			result: &FinalizeWaveResult{
-				VerifyBuild: &protocol.VerifyBuildData{TestPassed: true, LintPassed: false},
+				VerifyBuild:   map[string]*protocol.VerifyBuildData{".": {TestPassed: true, LintPassed: false}},
+				VerifyCommits: make(map[string]*protocol.VerifyCommitsData),
+				GateResults:   make(map[string][]protocol.GateResult),
+				MergeResult:   make(map[string]*protocol.MergeAgentsData),
+				CleanupResult: make(map[string]*protocol.CleanupData),
 			},
 			expected: "lint",
 		},
 		{
 			name: "gate result fails",
 			result: &FinalizeWaveResult{
-				VerifyBuild: &protocol.VerifyBuildData{TestPassed: true, LintPassed: true},
-				GateResults: []protocol.GateResult{
-					{Type: "typecheck", Required: true, Passed: false},
-				},
+				VerifyBuild:   map[string]*protocol.VerifyBuildData{".": {TestPassed: true, LintPassed: true}},
+				GateResults:   map[string][]protocol.GateResult{".": {{Type: "typecheck", Required: true, Passed: false}}},
+				VerifyCommits: make(map[string]*protocol.VerifyCommitsData),
+				MergeResult:   make(map[string]*protocol.MergeAgentsData),
+				CleanupResult: make(map[string]*protocol.CleanupData),
 			},
 			expected: "typecheck",
 		},
@@ -519,10 +547,11 @@ func TestAutoRemediate_GateTypeDetection(t *testing.T) {
 // combined log correctly from test and lint outputs.
 func TestAutoRemediate_ExtractErrorLog(t *testing.T) {
 	result := &FinalizeWaveResult{
-		VerifyBuild: &protocol.VerifyBuildData{
-			TestOutput: "FAIL: test error",
-			LintOutput: "lint: some warning",
-		},
+		VerifyBuild:   map[string]*protocol.VerifyBuildData{".": {TestOutput: "FAIL: test error", LintOutput: "lint: some warning"}},
+		VerifyCommits: make(map[string]*protocol.VerifyCommitsData),
+		GateResults:   make(map[string][]protocol.GateResult),
+		MergeResult:   make(map[string]*protocol.MergeAgentsData),
+		CleanupResult: make(map[string]*protocol.CleanupData),
 	}
 
 	log := extractErrorLog(result)
@@ -533,10 +562,16 @@ func TestAutoRemediate_ExtractErrorLog(t *testing.T) {
 		t.Error("expected lint output in error log")
 	}
 
-	// Nil VerifyBuild returns empty string
-	emptyResult := &FinalizeWaveResult{}
+	// Empty VerifyBuild map returns empty string
+	emptyResult := &FinalizeWaveResult{
+		VerifyBuild:   make(map[string]*protocol.VerifyBuildData),
+		VerifyCommits: make(map[string]*protocol.VerifyCommitsData),
+		GateResults:   make(map[string][]protocol.GateResult),
+		MergeResult:   make(map[string]*protocol.MergeAgentsData),
+		CleanupResult: make(map[string]*protocol.CleanupData),
+	}
 	if extractErrorLog(emptyResult) != "" {
-		t.Error("expected empty log for nil VerifyBuild")
+		t.Error("expected empty log for empty VerifyBuild map")
 	}
 
 	// Nil result returns empty string

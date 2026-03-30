@@ -223,12 +223,17 @@ func TestRunWaveFull_MergeFailure(t *testing.T) {
 		t.Fatal("expected result struct, got nil")
 	}
 	// FinalizeResult should be populated with partial data
-	if result.FinalizeResult != nil && result.FinalizeResult.VerifyCommits != nil {
+	if result.FinalizeResult != nil && len(result.FinalizeResult.VerifyCommits) > 0 {
 		allValid := true
-		for _, agent := range result.FinalizeResult.VerifyCommits.Agents {
-			if !agent.HasCommits {
-				allValid = false
-				break
+		for _, vc := range result.FinalizeResult.VerifyCommits {
+			if vc == nil {
+				continue
+			}
+			for _, agent := range vc.Agents {
+				if !agent.HasCommits {
+					allValid = false
+					break
+				}
 			}
 		}
 		if allValid {
