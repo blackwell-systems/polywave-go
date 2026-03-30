@@ -154,11 +154,12 @@ type MergeAgentsData struct {
 //   - waveNum: wave number to merge
 //   - repoDir: default repository directory (used when agent repo is not explicitly specified)
 //   - mergeTarget: target branch for merge; empty string means merge to current HEAD (backward compatible)
+//   - logger: structured logger for operation logging
 //
 // Returns:
 //   - result.Result[MergeAgentsData] with wave number, merge statuses
 //   - error if manifest cannot be loaded or wave is not found (not returned for merge conflicts)
-func MergeAgents(manifestPath string, waveNum int, repoDir string, mergeTarget string) (result.Result[MergeAgentsData], error) {
+func MergeAgents(manifestPath string, waveNum int, repoDir string, mergeTarget string, logger *slog.Logger) (result.Result[MergeAgentsData], error) {
 	// Load manifest to check if this is a multi-repo wave
 	manifest, err := Load(manifestPath)
 	if err != nil {
@@ -212,11 +213,11 @@ func MergeAgents(manifestPath string, waveNum int, repoDir string, mergeTarget s
 
 	// If single-repo wave, use optimized single-repo logic
 	if len(repoSet) == 1 {
-		return mergeAgentsSingleRepo(manifestPath, waveNum, absRepoDir, manifest, targetWave, mergeTarget)
+		return mergeAgentsSingleRepo(manifestPath, waveNum, absRepoDir, manifest, targetWave, mergeTarget, logger)
 	}
 
 	// Multi-repo wave: merge each repo group separately
-	return mergeAgentsMultiRepo(manifestPath, waveNum, manifest, targetWave, agentRepos, mergeTarget)
+	return mergeAgentsMultiRepo(manifestPath, waveNum, manifest, targetWave, agentRepos, mergeTarget, logger)
 }
 
 // buildFileOwnerMap constructs a map of relative file path → agent ID for all
@@ -247,7 +248,8 @@ func buildFileOwnerMap(manifest *IMPLManifest, waveNum int) map[string]string {
 
 // mergeAgentsSingleRepo handles merging when all agents belong to the same repository.
 // When mergeTarget is non-empty, checks out the target branch before the merge loop.
-func mergeAgentsSingleRepo(manifestPath string, waveNum int, repoDir string, manifest *IMPLManifest, targetWave *Wave, mergeTarget string) (result.Result[MergeAgentsData], error) {
+func mergeAgentsSingleRepo(manifestPath string, waveNum int, repoDir string, manifest *IMPLManifest, targetWave *Wave, mergeTarget string, logger *slog.Logger) (result.Result[MergeAgentsData], error) {
+	log := loggerFrom(logger)
 	// H4: PreMergeValidation — verify ownership table consistency before any git operations.
 	if validationErrs := PreMergeValidation(manifest, waveNum); len(validationErrs) > 0 {
 		return result.NewFailure[MergeAgentsData]([]result.SAWError{{
@@ -372,7 +374,7 @@ func mergeAgentsSingleRepo(manifestPath string, waveNum int, repoDir string, man
 		mergeLog.AddMergeEntry(agent.ID, mergeSHA)
 		if saveErr := SaveMergeLog(manifestPath, waveNum, mergeLog); saveErr != nil {
 			// Non-fatal: log warning but continue (best-effort tracking)
-			slog.Default().Warn("protocol: failed to save merge-log", "err", saveErr)
+			log.Warn("protocol: failed to save merge-log", "err", saveErr)
 		}
 
 		// Merge succeeded — auto-update completion status (best-effort)
@@ -394,7 +396,8 @@ func mergeAgentsSingleRepo(manifestPath string, waveNum int, repoDir string, man
 
 // mergeAgentsMultiRepo handles merging when agents span multiple repositories.
 // When mergeTarget is non-empty, checks out the target branch in each repo before merging.
-func mergeAgentsMultiRepo(manifestPath string, waveNum int, manifest *IMPLManifest, targetWave *Wave, agentRepos map[string]string, mergeTarget string) (result.Result[MergeAgentsData], error) {
+func mergeAgentsMultiRepo(manifestPath string, waveNum int, manifest *IMPLManifest, targetWave *Wave, agentRepos map[string]string, mergeTarget string, logger *slog.Logger) (result.Result[MergeAgentsData], error) {
+	log := loggerFrom(logger)
 	// H4: PreMergeValidation — verify ownership table consistency before any git operations.
 	if validationErrs := PreMergeValidation(manifest, waveNum); len(validationErrs) > 0 {
 		return result.NewFailure[MergeAgentsData]([]result.SAWError{{
@@ -528,7 +531,7 @@ func mergeAgentsMultiRepo(manifestPath string, waveNum int, manifest *IMPLManife
 			mergeLog.AddMergeEntry(agent.ID, mergeSHA)
 			if saveErr := SaveMergeLog(manifestPath, waveNum, mergeLog); saveErr != nil {
 				// Non-fatal: log warning but continue (best-effort tracking)
-				slog.Default().Warn("protocol: failed to save merge-log", "err", saveErr)
+				log.Warn("protocol: failed to save merge-log", "err", saveErr)
 			}
 
 			// Merge succeeded
