@@ -51,9 +51,12 @@ waves that execute on the main branch.`,
 				return fmt.Errorf("prepare-wave: failed to load manifest: %w", err)
 			}
 
-			// E37: Critic gate enforcement (manual mode)
-			if !protocol.CriticGatePasses(manifest, false) {
-				return fmt.Errorf("prepare-wave: E37 critic gate failed — ISSUES verdict with errors")
+			// E37: Critic gate — blocks on errors; warnings-only ISSUES proceed (automated step).
+			if !protocol.CriticGatePasses(manifest, true) {
+				if manifest.CriticReport == nil {
+					return fmt.Errorf("prepare-wave: E37 critic gate: no critic report found — run 'sawtools run-critic' first")
+				}
+				return fmt.Errorf("prepare-wave: E37 critic gate: ISSUES verdict contains blocking errors — review critic report and fix errors before proceeding")
 			}
 
 			// Determine project root from manifest path or --repo-dir flag

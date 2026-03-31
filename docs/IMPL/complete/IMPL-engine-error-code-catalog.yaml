@@ -1,0 +1,749 @@
+completion_date: "2026-03-31"
+title: Engine Error Code Catalog
+feature_slug: engine-error-code-catalog
+verdict: SUITABLE_WITH_CAVEATS
+suitability_assessment: |
+    This is a mechanical substitution task: define ~67 constants in pkg/result/codes.go,
+    then replace every matching string literal across ~20 files with the constant reference.
+    The work is fully enumerable upfront (grep produces the complete list) and there are
+    no interface signature changes.
+
+    Suitability gate answers:
+    1. File decomposition: The constants file is the single foundation dependency. All
+       replacements in engine/ and notify/ are independent of each other once codes.go
+       is written. A single solo agent is appropriate — this is a mechanical sweep, not
+       creative parallel implementation. Splitting across two agents would require careful
+       file partitioning that adds overhead for minimal benefit.
+    2. Investigation-first: No — all ad-hoc strings are enumerated by grep.
+    3. Interfaces: No cross-agent interfaces; additive constants only.
+    4. Pre-implementation status: IMPL 1 (commit 47af66c) modified runner.go and
+       finalize.go for nil-guard fixes. IMPL 2's changes to those files are in different
+       regions (error code string literals, not nil guards). IMPL 3 will also touch runner.go
+       and finalize.go for StartWave/startWaveWithGate merge — IMPL 2 must land first or
+       the merge regions must be noted as non-overlapping cascade patches.
+    5. Parallelization value: Solo wave, 1 agent — coordination value here is the audit
+       trail and the pre-enumerated constant list, not parallelization speed.
+
+    Caveats:
+    - pkg/notify/ files (slack.go, discord.go, telegram.go, dispatcher.go, dispatcher_test.go)
+      use CONTEXT_CANCELLED with no other ENGINE_* codes. Including them keeps the constant
+      fully exercised; excluding them leaves inconsistency. They are in scope.
+    - Test files (program_progress_test.go, scout_correction_loop_test.go, dispatcher_test.go)
+      assert on the string literals directly and must also be updated.
+    - IMPL 3 also owns runner.go and finalize.go. If IMPL 2 and IMPL 3 run in parallel,
+      the changes are non-overlapping (string replacements vs wave-loop restructuring) but
+      a merge conflict is possible if the same lines appear in both patches. Run IMPL 2
+      first or declare a cascade patch contract.
+
+    Estimated times:
+    - Scout phase: ~15 min (grep enumeration, constant assignment, IMPL doc)
+    - Agent execution: ~25 min (1 agent, 20 files, mechanical replacements + compile check)
+    - Merge and verification: ~5 min
+    Total SAW time: ~45 min
+
+    Sequential baseline: ~30 min (single developer with IDE)
+    Recommendation: Marginal speed gain; primary value is the pre-enumerated constant list
+    and audit trail. Proceed as SUITABLE_WITH_CAVEATS.
+test_command: go test ./...
+lint_command: go vet ./...
+file_ownership:
+    - file: pkg/result/codes.go
+      agent: A
+      wave: 1
+      action: modify
+    - file: pkg/engine/runner.go
+      agent: A
+      wave: 1
+      action: modify
+    - file: pkg/engine/finalize.go
+      agent: A
+      wave: 1
+      action: modify
+    - file: pkg/engine/chat.go
+      agent: A
+      wave: 1
+      action: modify
+    - file: pkg/engine/debug_journal.go
+      agent: A
+      wave: 1
+      action: modify
+    - file: pkg/engine/fix_build.go
+      agent: A
+      wave: 1
+      action: modify
+    - file: pkg/engine/integration_runner.go
+      agent: A
+      wave: 1
+      action: modify
+    - file: pkg/engine/mark_program_complete.go
+      agent: A
+      wave: 1
+      action: modify
+    - file: pkg/engine/merge_cleanup.go
+      agent: A
+      wave: 1
+      action: modify
+    - file: pkg/engine/prepare.go
+      agent: A
+      wave: 1
+      action: modify
+    - file: pkg/engine/program_progress.go
+      agent: A
+      wave: 1
+      action: modify
+    - file: pkg/engine/resolve_conflicts.go
+      agent: A
+      wave: 1
+      action: modify
+    - file: pkg/engine/run_wave_atomic.go
+      agent: A
+      wave: 1
+      action: modify
+    - file: pkg/engine/scout_correction_loop.go
+      agent: A
+      wave: 1
+      action: modify
+    - file: pkg/engine/test_runner.go
+      agent: A
+      wave: 1
+      action: modify
+    - file: pkg/engine/program_progress_test.go
+      agent: A
+      wave: 1
+      action: modify
+    - file: pkg/engine/scout_correction_loop_test.go
+      agent: A
+      wave: 1
+      action: modify
+    - file: pkg/notify/slack.go
+      agent: A
+      wave: 1
+      action: modify
+    - file: pkg/notify/discord.go
+      agent: A
+      wave: 1
+      action: modify
+    - file: pkg/notify/telegram.go
+      agent: A
+      wave: 1
+      action: modify
+    - file: pkg/notify/dispatcher.go
+      agent: A
+      wave: 1
+      action: modify
+    - file: pkg/notify/dispatcher_test.go
+      agent: A
+      wave: 1
+      action: modify
+interface_contracts:
+    - name: N-range engine constants (N018–N084)
+      description: |
+        New constants to add to the N001-N099 block in pkg/result/codes.go.
+        These replace all ad-hoc "ENGINE_*" and "CONTEXT_CANCELLED" string
+        literals in pkg/engine/ and pkg/notify/. Exact string values are
+        preserved to maintain backward compatibility with any external consumers
+        parsing error codes.
+      definition: |
+        // N018–N084: Engine operation constants — added by IMPL-engine-error-code-catalog
+
+        // Context cancellation (shared across engine and notify)
+        CodeContextCancelled = "CONTEXT_CANCELLED"   // N018
+
+        // Scout operation codes
+        CodeScoutInvalidOpts         = "ENGINE_SCOUT_INVALID_OPTS"         // N019
+        CodeScoutRunFailed           = "ENGINE_SCOUT_FAILED"               // N020
+        CodeScoutBoundaryViolation   = "ENGINE_SCOUT_BOUNDARY_VIOLATION"   // N021
+        CodeScoutRunnerFailed        = "ENGINE_SCOUT_RUN_FAILED"           // N054
+        CodeScoutValidationFailed    = "ENGINE_SCOUT_VALIDATION_FAILED"    // N055
+        CodeScoutCorrectionExhausted = "ENGINE_SCOUT_CORRECTION_EXHAUSTED" // N056
+        CodeSetBlockedLoadFailed     = "ENGINE_SET_BLOCKED_LOAD_FAILED"    // N057
+        CodeSetBlockedSaveFailed     = "ENGINE_SET_BLOCKED_SAVE_FAILED"    // N058
+
+        // Planner operation codes
+        CodePlannerInvalidOpts = "ENGINE_PLANNER_INVALID_OPTS" // N022
+        CodePlannerFailed      = "ENGINE_PLANNER_FAILED"       // N023
+
+        // Wave operation codes
+        CodeWaveInvalidOpts      = "ENGINE_WAVE_INVALID_OPTS"      // N024
+        CodeWaveFailed           = "ENGINE_WAVE_FAILED"            // N025
+        CodeWaveSequencingFailed = "ENGINE_WAVE_SEQUENCING_FAILED" // N026
+
+        // Hook verification
+        CodeHookVerifyFailed = "ENGINE_HOOK_VERIFY_FAILED" // N027
+
+        // Scaffold operation
+        CodeScaffoldFailed = "ENGINE_SCAFFOLD_FAILED" // N028
+
+        // Agent operation codes
+        CodeAgentRunFailed      = "ENGINE_AGENT_FAILED"        // N029
+        CodeAgentRunInvalidOpts = "ENGINE_AGENT_INVALID_OPTS"  // N030
+
+        // Merge operation codes
+        CodeMergeFailed      = "ENGINE_MERGE_FAILED"       // N031
+        CodeMergeInvalidOpts = "ENGINE_MERGE_INVALID_OPTS" // N032
+
+        // Verification
+        CodeVerificationFailed = "ENGINE_VERIFICATION_FAILED" // N033
+
+        // Status and validation
+        CodeUpdateStatusFailed = "ENGINE_UPDATE_STATUS_FAILED" // N034
+        CodeValidateFailed     = "ENGINE_VALIDATE_FAILED"      // N035
+
+        // Journal
+        CodeJournalArchiveFailed = "ENGINE_JOURNAL_ARCHIVE_FAILED" // N036
+
+        // Mark complete
+        CodeMarkCompleteFailed      = "ENGINE_MARK_COMPLETE_FAILED"       // N037
+        CodeMarkCompleteInvalidOpts = "ENGINE_MARK_COMPLETE_INVALID_OPTS" // N038
+
+        // Tier verification
+        CodeVerifyTiersIncomplete = "ENGINE_VERIFY_TIERS_INCOMPLETE" // N039
+
+        // Marker I/O
+        CodeMarkerReadFailed  = "ENGINE_MARKER_READ_FAILED"  // N040
+        CodeMarkerWriteFailed = "ENGINE_MARKER_WRITE_FAILED" // N041
+
+        // Program progress
+        CodeUpdateProgParseFailed    = "ENGINE_UPDATE_PROG_PARSE_FAILED"    // N042
+        CodeUpdateProgSlugNotFound   = "ENGINE_UPDATE_PROG_SLUG_NOT_FOUND"  // N043
+        CodeSyncParseFailed          = "ENGINE_SYNC_PARSE_FAILED"           // N044
+        CodeSyncStatusFailed         = "ENGINE_SYNC_STATUS_FAILED"          // N045
+        CodeWriteManifestFailed      = "ENGINE_WRITE_MANIFEST_FAILED"       // N046
+
+        // Restore operation
+        CodeRestoreLoadFailed = "ENGINE_RESTORE_LOAD_FAILED" // N047
+        CodeRestoreSaveFailed = "ENGINE_RESTORE_SAVE_FAILED" // N048
+
+        // Test runner
+        CodeTestLoadFailed    = "ENGINE_TEST_LOAD_FAILED"    // N049
+        CodeTestNoCommand     = "ENGINE_TEST_NO_COMMAND"     // N050
+        CodeTestPipeFailed    = "ENGINE_TEST_PIPE_FAILED"    // N051
+        CodeTestStartFailed   = "ENGINE_TEST_START_FAILED"   // N052
+        CodeTestCommandFailed = "ENGINE_TEST_COMMAND_FAILED" // N053
+
+        // Fix build
+        CodeFixBuildInvalidOpts = "ENGINE_FIX_BUILD_INVALID_OPTS" // N059
+        CodeFixBuildFailed      = "ENGINE_FIX_BUILD_FAILED"       // N060
+
+        // Merge cleanup
+        CodeGomodFixupFailed = "ENGINE_GOMOD_FIXUP_FAILED" // N061
+        CodeCleanupFailed    = "ENGINE_CLEANUP_FAILED"     // N062
+
+        // Resolve conflicts
+        CodeResolveInvalidOpts     = "ENGINE_RESOLVE_INVALID_OPTS"      // N063
+        CodeResolveLoadFailed      = "ENGINE_RESOLVE_LOAD_FAILED"       // N064
+        CodeResolveGitFailed       = "ENGINE_RESOLVE_GIT_FAILED"        // N065
+        CodeResolveNoConflicts     = "ENGINE_RESOLVE_NO_CONFLICTS"      // N066
+        CodeResolveBackendFailed   = "ENGINE_RESOLVE_BACKEND_FAILED"    // N067
+        CodeResolveFileFailed      = "ENGINE_RESOLVE_FILE_FAILED"       // N068
+        CodeResolveCommitFailed    = "ENGINE_RESOLVE_COMMIT_FAILED"     // N069
+        CodeResolveFileReadFailed  = "ENGINE_RESOLVE_FILE_READ_FAILED"  // N070
+        CodeResolveBackendCallFailed = "ENGINE_RESOLVE_BACKEND_CALL_FAILED" // N071
+        CodeResolveFileWriteFailed = "ENGINE_RESOLVE_FILE_WRITE_FAILED" // N072
+        CodeResolveGitAddFailed    = "ENGINE_RESOLVE_GIT_ADD_FAILED"    // N073
+
+        // Debug journal export
+        CodeExportFileExists  = "ENGINE_EXPORT_FILE_EXISTS"  // N074
+        CodeExportNoEntries   = "ENGINE_EXPORT_NO_ENTRIES"   // N075
+        CodeExportWriteFailed = "ENGINE_EXPORT_WRITE_FAILED" // N076
+
+        // Integration runner
+        CodeIntegrationInvalidOpts   = "ENGINE_INTEGRATION_INVALID_OPTS"   // N077
+        CodeIntegrationLoadFailed    = "ENGINE_INTEGRATION_LOAD_FAILED"    // N078
+        CodeIntegrationNoConnectors  = "ENGINE_INTEGRATION_NO_CONNECTORS"  // N079
+        CodeIntegrationPromptFailed  = "ENGINE_INTEGRATION_PROMPT_FAILED"  // N080
+        CodeIntegrationBackendFailed = "ENGINE_INTEGRATION_BACKEND_FAILED" // N081
+        CodeIntegrationAgentFailed   = "ENGINE_INTEGRATION_AGENT_FAILED"   // N082
+
+        // Chat
+        CodeChatInvalidOpts = "ENGINE_CHAT_INVALID_OPTS" // N083
+        CodeChatFailed      = "ENGINE_CHAT_FAILED"       // N084
+      location: pkg/result/codes.go
+waves:
+    - number: 1
+      agents:
+        - id: A
+          task: |
+            # Wave 1 Agent A: Engine Error Code Catalog
+
+            You are Wave 1 Agent A. Your task is to define 67 new engine error code
+            constants in pkg/result/codes.go and replace every matching ad-hoc string
+            literal across pkg/engine/ and pkg/notify/ with the new constants.
+
+            ## 0. CRITICAL: Isolation Verification (RUN FIRST)
+
+            Run the isolation check for your worktree before any file modifications.
+            Worktree path: {absolute-repo-path}/.claude/worktrees/saw/engine-error-code-catalog/wave1-agent-A
+            Branch: saw/engine-error-code-catalog/wave1-agent-A
+
+            ## 1. File Ownership
+
+            You own ALL of these files — do not touch any other files:
+
+            pkg/result/codes.go                      (modify — add N018–N084 constants)
+            pkg/engine/runner.go                     (modify — replace ENGINE_* and CONTEXT_CANCELLED strings)
+            pkg/engine/finalize.go                   (modify — replace ENGINE_* strings)
+            pkg/engine/chat.go                       (modify — replace ENGINE_* and CONTEXT_CANCELLED strings)
+            pkg/engine/debug_journal.go              (modify — replace ENGINE_* strings)
+            pkg/engine/fix_build.go                  (modify — replace ENGINE_* and CONTEXT_CANCELLED strings)
+            pkg/engine/integration_runner.go         (modify — replace ENGINE_* strings)
+            pkg/engine/mark_program_complete.go      (modify — replace ENGINE_* strings)
+            pkg/engine/merge_cleanup.go              (modify — replace ENGINE_* strings)
+            pkg/engine/prepare.go                    (modify — replace ENGINE_* strings)
+            pkg/engine/program_progress.go           (modify — replace ENGINE_* strings)
+            pkg/engine/resolve_conflicts.go          (modify — replace ENGINE_* strings)
+            pkg/engine/run_wave_atomic.go            (modify — replace ENGINE_* strings)
+            pkg/engine/scout_correction_loop.go      (modify — replace ENGINE_* and CONTEXT_CANCELLED strings)
+            pkg/engine/test_runner.go                (modify — replace ENGINE_* and CONTEXT_CANCELLED strings)
+            pkg/engine/program_progress_test.go      (modify — update string literal in assertion)
+            pkg/engine/scout_correction_loop_test.go (modify — update string literal in assertion)
+            pkg/notify/slack.go                      (modify — replace CONTEXT_CANCELLED string)
+            pkg/notify/discord.go                    (modify — replace CONTEXT_CANCELLED string)
+            pkg/notify/telegram.go                   (modify — replace CONTEXT_CANCELLED string)
+            pkg/notify/dispatcher.go                 (modify — replace CONTEXT_CANCELLED strings)
+            pkg/notify/dispatcher_test.go            (modify — update string literal in assertion)
+
+            IMPORTANT cascade patch note: runner.go and finalize.go were modified
+            by IMPL 1 (commit 47af66c) for nil-guard fixes. Your changes to those
+            files touch only error code string literals in different regions — not
+            the nil guards. Keep your changes to string literal replacements only;
+            do not modify the nil-guard logic.
+
+            ## 2. Interfaces You Must Implement
+
+            Add to the N001-N099 block in pkg/result/codes.go, immediately after the
+            N017 comment block. Insert as a new sub-block with a header comment. The
+            exact constant names and string values are fixed — the string values must
+            not change (they are backward-compatible identifiers).
+
+            Full constant block to add (append after the existing N017 entry):
+
+            ```go
+            // N018-N084: Engine operation codes — ad-hoc strings migrated from pkg/engine/ and pkg/notify/
+
+            // CodeContextCancelled is emitted when an operation is cancelled via context.
+            CodeContextCancelled = "CONTEXT_CANCELLED" // N018
+
+            // Scout operation codes
+            CodeScoutInvalidOpts         = "ENGINE_SCOUT_INVALID_OPTS"         // N019
+            CodeScoutRunFailed           = "ENGINE_SCOUT_FAILED"               // N020
+            CodeScoutBoundaryViolation   = "ENGINE_SCOUT_BOUNDARY_VIOLATION"   // N021
+            CodePlannerInvalidOpts       = "ENGINE_PLANNER_INVALID_OPTS"       // N022
+            CodePlannerFailed            = "ENGINE_PLANNER_FAILED"             // N023
+            CodeWaveInvalidOpts          = "ENGINE_WAVE_INVALID_OPTS"          // N024
+            CodeWaveFailed               = "ENGINE_WAVE_FAILED"                // N025
+            CodeWaveSequencingFailed     = "ENGINE_WAVE_SEQUENCING_FAILED"     // N026
+            CodeHookVerifyFailed         = "ENGINE_HOOK_VERIFY_FAILED"         // N027
+            CodeScaffoldRunFailed        = "ENGINE_SCAFFOLD_FAILED"            // N028
+            CodeAgentRunFailed           = "ENGINE_AGENT_FAILED"               // N029
+            CodeAgentRunInvalidOpts      = "ENGINE_AGENT_INVALID_OPTS"         // N030
+            CodeMergeWaveFailed          = "ENGINE_MERGE_FAILED"               // N031
+            CodeMergeWaveInvalidOpts     = "ENGINE_MERGE_INVALID_OPTS"         // N032
+            CodeVerificationFailed       = "ENGINE_VERIFICATION_FAILED"        // N033
+            CodeUpdateStatusFailed       = "ENGINE_UPDATE_STATUS_FAILED"       // N034
+            CodeValidateFailed           = "ENGINE_VALIDATE_FAILED"            // N035
+            CodeJournalArchiveFailed     = "ENGINE_JOURNAL_ARCHIVE_FAILED"     // N036
+            CodeMarkCompleteFailed       = "ENGINE_MARK_COMPLETE_FAILED"       // N037
+            CodeMarkCompleteInvalidOpts  = "ENGINE_MARK_COMPLETE_INVALID_OPTS" // N038
+            CodeVerifyTiersIncomplete    = "ENGINE_VERIFY_TIERS_INCOMPLETE"    // N039
+            CodeMarkerReadFailed         = "ENGINE_MARKER_READ_FAILED"         // N040
+            CodeMarkerWriteFailed        = "ENGINE_MARKER_WRITE_FAILED"        // N041
+            CodeUpdateProgParseFailed    = "ENGINE_UPDATE_PROG_PARSE_FAILED"   // N042
+            CodeUpdateProgSlugNotFound   = "ENGINE_UPDATE_PROG_SLUG_NOT_FOUND" // N043
+            CodeSyncParseFailed          = "ENGINE_SYNC_PARSE_FAILED"          // N044
+            CodeSyncStatusFailed         = "ENGINE_SYNC_STATUS_FAILED"         // N045
+            CodeWriteManifestFailed      = "ENGINE_WRITE_MANIFEST_FAILED"      // N046
+            CodeRestoreLoadFailed        = "ENGINE_RESTORE_LOAD_FAILED"        // N047
+            CodeRestoreSaveFailed        = "ENGINE_RESTORE_SAVE_FAILED"        // N048
+            CodeTestLoadFailed           = "ENGINE_TEST_LOAD_FAILED"           // N049
+            CodeTestNoCommand            = "ENGINE_TEST_NO_COMMAND"            // N050
+            CodeTestPipeFailed           = "ENGINE_TEST_PIPE_FAILED"           // N051
+            CodeTestStartFailed          = "ENGINE_TEST_START_FAILED"          // N052
+            CodeTestCommandFailed        = "ENGINE_TEST_COMMAND_FAILED"        // N053
+            CodeScoutRunnerFailed        = "ENGINE_SCOUT_RUN_FAILED"           // N054
+            CodeScoutValidationFailed    = "ENGINE_SCOUT_VALIDATION_FAILED"    // N055
+            CodeScoutCorrectionExhausted = "ENGINE_SCOUT_CORRECTION_EXHAUSTED" // N056
+            CodeSetBlockedLoadFailed     = "ENGINE_SET_BLOCKED_LOAD_FAILED"    // N057
+            CodeSetBlockedSaveFailed     = "ENGINE_SET_BLOCKED_SAVE_FAILED"    // N058
+            CodeFixBuildInvalidOpts      = "ENGINE_FIX_BUILD_INVALID_OPTS"     // N059
+            CodeFixBuildFailed           = "ENGINE_FIX_BUILD_FAILED"           // N060
+            CodeGomodFixupFailed         = "ENGINE_GOMOD_FIXUP_FAILED"         // N061
+            CodeCleanupFailed            = "ENGINE_CLEANUP_FAILED"             // N062
+            CodeResolveInvalidOpts       = "ENGINE_RESOLVE_INVALID_OPTS"       // N063
+            CodeResolveLoadFailed        = "ENGINE_RESOLVE_LOAD_FAILED"        // N064
+            CodeResolveGitFailed         = "ENGINE_RESOLVE_GIT_FAILED"         // N065
+            CodeResolveNoConflicts       = "ENGINE_RESOLVE_NO_CONFLICTS"       // N066
+            CodeResolveBackendFailed     = "ENGINE_RESOLVE_BACKEND_FAILED"     // N067
+            CodeResolveFileFailed        = "ENGINE_RESOLVE_FILE_FAILED"        // N068
+            CodeResolveCommitFailed      = "ENGINE_RESOLVE_COMMIT_FAILED"      // N069
+            CodeResolveFileReadFailed    = "ENGINE_RESOLVE_FILE_READ_FAILED"   // N070
+            CodeResolveBackendCallFailed = "ENGINE_RESOLVE_BACKEND_CALL_FAILED" // N071
+            CodeResolveFileWriteFailed   = "ENGINE_RESOLVE_FILE_WRITE_FAILED"  // N072
+            CodeResolveGitAddFailed      = "ENGINE_RESOLVE_GIT_ADD_FAILED"     // N073
+            CodeExportFileExists         = "ENGINE_EXPORT_FILE_EXISTS"         // N074
+            CodeExportNoEntries          = "ENGINE_EXPORT_NO_ENTRIES"          // N075
+            CodeExportWriteFailed        = "ENGINE_EXPORT_WRITE_FAILED"        // N076
+            CodeIntegrationInvalidOpts   = "ENGINE_INTEGRATION_INVALID_OPTS"   // N077
+            CodeIntegrationLoadFailed    = "ENGINE_INTEGRATION_LOAD_FAILED"    // N078
+            CodeIntegrationNoConnectors  = "ENGINE_INTEGRATION_NO_CONNECTORS"  // N079
+            CodeIntegrationPromptFailed  = "ENGINE_INTEGRATION_PROMPT_FAILED"  // N080
+            CodeIntegrationBackendFailed = "ENGINE_INTEGRATION_BACKEND_FAILED" // N081
+            CodeIntegrationAgentFailed   = "ENGINE_INTEGRATION_AGENT_FAILED"   // N082
+            CodeChatInvalidOpts          = "ENGINE_CHAT_INVALID_OPTS"          // N083
+            CodeChatFailed               = "ENGINE_CHAT_FAILED"                // N084
+            ```
+
+            Note on naming collisions: The existing catalog already has CodeScoutFailed = "N003_SCOUT_FAILED"
+            and CodeScaffoldFailed = "N004_ISOLATION_VERIFY_FAILED" (etc.) for different
+            operations. Verify that none of your new constant NAMES conflict with existing
+            names in the file — if a name collides, append "Run" or "Ops" suffix
+            (e.g., CodeScaffoldRunFailed instead of CodeScaffoldFailed).
+            The existing constants use CodeScoutFailed, so use CodeScoutRunFailed for N054.
+
+            ## 3. Interfaces You May Call
+
+            The existing result package functions:
+            - result.NewFatal(code, msg) — already used at every call site; just swap the string literal for the constant
+            - result.NewWarning(code, msg) — same pattern for warning sites
+            - The inline struct literal pattern: result.SAWError{Code: "CONTEXT_CANCELLED", ...}
+              — replace the string with result.CodeContextCancelled
+
+            ## 4. What to Implement
+
+            ### Step 1: Add constants to pkg/result/codes.go
+
+            Open pkg/result/codes.go. Find the end of the N001-N099 block (currently ends
+            at N017: CodeProgramStatusFailed). Append the 67-constant block shown in
+            section 2 above. The block goes INSIDE the existing `const (...)` block for
+            N-range codes, after the N017 entry.
+
+            Before adding, check every new constant NAME against existing names in codes.go
+            to avoid duplicate identifier errors. In particular:
+            - CodeScoutFailed already exists (N003) — use CodeScoutRunFailed for the
+              ENGINE_SCOUT_RUN_FAILED constant (N054, not the same as N003's N003_SCOUT_FAILED)
+            - CodeScaffoldFailed — check if it exists; if so rename to CodeScaffoldRunFailed
+            - CodeContextError already exists (N009) — CodeContextCancelled is different, fine
+            - CodeUpdateStatusFailed — check against N015 CodeStatusUpdateFailed
+            - CodeVerificationFailed — check against existing A004 CodeVerificationFailed;
+              if it already exists, rename to CodeEngineVerificationFailed
+
+            ### Step 2: Replace string literals file by file
+
+            For each file in your ownership list, grep it for ENGINE_* and CONTEXT_CANCELLED,
+            then replace each occurrence with the corresponding constant. The mapping:
+
+            pkg/engine/runner.go:
+            - "ENGINE_SCOUT_INVALID_OPTS" -> result.CodeScoutInvalidOpts
+            - "ENGINE_SCOUT_FAILED" -> result.CodeScoutRunFailed
+            - "ENGINE_SCOUT_BOUNDARY_VIOLATION" -> result.CodeScoutBoundaryViolation
+            - "CONTEXT_CANCELLED" (3 occurrences: lines ~146, ~272, ~945, ~1000, ~1085) -> result.CodeContextCancelled
+            - "ENGINE_PLANNER_INVALID_OPTS" -> result.CodePlannerInvalidOpts
+            - "ENGINE_PLANNER_FAILED" -> result.CodePlannerFailed
+            - "ENGINE_WAVE_INVALID_OPTS" -> result.CodeWaveInvalidOpts
+            - "ENGINE_WAVE_FAILED" -> result.CodeWaveFailed
+            - "ENGINE_SCAFFOLD_FAILED" -> result.CodeScaffoldRunFailed
+            - "ENGINE_AGENT_INVALID_OPTS" -> result.CodeAgentRunInvalidOpts
+            - "ENGINE_AGENT_FAILED" -> result.CodeAgentRunFailed
+            - "ENGINE_MERGE_INVALID_OPTS" -> result.CodeMergeWaveInvalidOpts
+            - "ENGINE_MERGE_FAILED" -> result.CodeMergeWaveFailed
+            - "ENGINE_JOURNAL_ARCHIVE_FAILED" -> result.CodeJournalArchiveFailed
+            - "ENGINE_VERIFICATION_FAILED" -> result.CodeVerificationFailed (or CodeEngineVerificationFailed)
+            - "ENGINE_UPDATE_STATUS_FAILED" -> result.CodeUpdateStatusFailed
+            - "ENGINE_VALIDATE_FAILED" -> result.CodeValidateFailed
+
+            pkg/engine/finalize.go:
+            - "ENGINE_MARK_COMPLETE_INVALID_OPTS" -> result.CodeMarkCompleteInvalidOpts
+            - "ENGINE_MARK_COMPLETE_FAILED" -> result.CodeMarkCompleteFailed
+
+            pkg/engine/chat.go:
+            - "ENGINE_CHAT_INVALID_OPTS" -> result.CodeChatInvalidOpts
+            - "ENGINE_CHAT_FAILED" -> result.CodeChatFailed
+            - "CONTEXT_CANCELLED" -> result.CodeContextCancelled
+
+            pkg/engine/debug_journal.go:
+            - "ENGINE_EXPORT_FILE_EXISTS" -> result.CodeExportFileExists
+            - "ENGINE_EXPORT_NO_ENTRIES" -> result.CodeExportNoEntries
+            - "ENGINE_EXPORT_WRITE_FAILED" -> result.CodeExportWriteFailed
+
+            pkg/engine/fix_build.go:
+            - "ENGINE_FIX_BUILD_INVALID_OPTS" -> result.CodeFixBuildInvalidOpts
+            - "ENGINE_FIX_BUILD_FAILED" -> result.CodeFixBuildFailed
+            - "CONTEXT_CANCELLED" -> result.CodeContextCancelled
+
+            pkg/engine/integration_runner.go:
+            - "ENGINE_INTEGRATION_INVALID_OPTS" -> result.CodeIntegrationInvalidOpts
+            - "ENGINE_INTEGRATION_LOAD_FAILED" -> result.CodeIntegrationLoadFailed
+            - "ENGINE_INTEGRATION_NO_CONNECTORS" -> result.CodeIntegrationNoConnectors
+            - "ENGINE_INTEGRATION_PROMPT_FAILED" -> result.CodeIntegrationPromptFailed
+            - "ENGINE_INTEGRATION_BACKEND_FAILED" -> result.CodeIntegrationBackendFailed
+            - "ENGINE_INTEGRATION_AGENT_FAILED" -> result.CodeIntegrationAgentFailed
+
+            pkg/engine/mark_program_complete.go:
+            - "ENGINE_VERIFY_TIERS_INCOMPLETE" -> result.CodeVerifyTiersIncomplete
+            - "ENGINE_MARKER_READ_FAILED" -> result.CodeMarkerReadFailed
+            - "ENGINE_MARKER_WRITE_FAILED" -> result.CodeMarkerWriteFailed
+
+            pkg/engine/merge_cleanup.go:
+            - "ENGINE_GOMOD_FIXUP_FAILED" -> result.CodeGomodFixupFailed
+            - "ENGINE_CLEANUP_FAILED" -> result.CodeCleanupFailed
+
+            pkg/engine/prepare.go:
+            - "ENGINE_WAVE_SEQUENCING_FAILED" (3 occurrences) -> result.CodeWaveSequencingFailed
+            - "ENGINE_HOOK_VERIFY_FAILED" (8 occurrences) -> result.CodeHookVerifyFailed
+
+            pkg/engine/program_progress.go:
+            - "ENGINE_UPDATE_PROG_PARSE_FAILED" -> result.CodeUpdateProgParseFailed
+            - "ENGINE_UPDATE_PROG_SLUG_NOT_FOUND" -> result.CodeUpdateProgSlugNotFound
+            - "ENGINE_SYNC_PARSE_FAILED" -> result.CodeSyncParseFailed
+            - "ENGINE_SYNC_STATUS_FAILED" -> result.CodeSyncStatusFailed
+            - "ENGINE_WRITE_MANIFEST_FAILED" -> result.CodeWriteManifestFailed
+
+            pkg/engine/resolve_conflicts.go:
+            - "ENGINE_RESOLVE_INVALID_OPTS" (2 occurrences) -> result.CodeResolveInvalidOpts
+            - "ENGINE_RESOLVE_LOAD_FAILED" -> result.CodeResolveLoadFailed
+            - "ENGINE_RESOLVE_GIT_FAILED" -> result.CodeResolveGitFailed
+            - "ENGINE_RESOLVE_NO_CONFLICTS" -> result.CodeResolveNoConflicts
+            - "ENGINE_RESOLVE_BACKEND_FAILED" -> result.CodeResolveBackendFailed
+            - "ENGINE_RESOLVE_FILE_FAILED" -> result.CodeResolveFileFailed
+            - "ENGINE_RESOLVE_COMMIT_FAILED" -> result.CodeResolveCommitFailed
+            - "ENGINE_RESOLVE_FILE_READ_FAILED" -> result.CodeResolveFileReadFailed
+            - "ENGINE_RESOLVE_BACKEND_CALL_FAILED" -> result.CodeResolveBackendCallFailed
+            - "ENGINE_RESOLVE_FILE_WRITE_FAILED" -> result.CodeResolveFileWriteFailed
+            - "ENGINE_RESOLVE_GIT_ADD_FAILED" -> result.CodeResolveGitAddFailed
+
+            pkg/engine/run_wave_atomic.go:
+            - "ENGINE_RESTORE_LOAD_FAILED" -> result.CodeRestoreLoadFailed
+            - "ENGINE_RESTORE_SAVE_FAILED" -> result.CodeRestoreSaveFailed
+
+            pkg/engine/scout_correction_loop.go:
+            - "CONTEXT_CANCELLED" -> result.CodeContextCancelled
+            - "ENGINE_SCOUT_RUN_FAILED" -> result.CodeScoutRunnerFailed
+            - "ENGINE_SCOUT_VALIDATION_FAILED" -> result.CodeScoutValidationFailed
+            - "ENGINE_SCOUT_CORRECTION_EXHAUSTED" -> result.CodeScoutCorrectionExhausted
+            - "ENGINE_SET_BLOCKED_LOAD_FAILED" -> result.CodeSetBlockedLoadFailed
+            - "ENGINE_SET_BLOCKED_SAVE_FAILED" -> result.CodeSetBlockedSaveFailed
+
+            pkg/engine/test_runner.go:
+            - "ENGINE_TEST_LOAD_FAILED" -> result.CodeTestLoadFailed
+            - "ENGINE_TEST_NO_COMMAND" -> result.CodeTestNoCommand
+            - "ENGINE_TEST_PIPE_FAILED" -> result.CodeTestPipeFailed
+            - "ENGINE_TEST_START_FAILED" -> result.CodeTestStartFailed
+            - "CONTEXT_CANCELLED" -> result.CodeContextCancelled
+            - "ENGINE_TEST_COMMAND_FAILED" -> result.CodeTestCommandFailed
+
+            pkg/engine/program_progress_test.go:
+            - "ENGINE_UPDATE_PROG_SLUG_NOT_FOUND" (in assertion) -> result.CodeUpdateProgSlugNotFound
+              Add import: "github.com/blackwell-systems/scout-and-wave-go/pkg/result"
+
+            pkg/engine/scout_correction_loop_test.go:
+            - "CONTEXT_CANCELLED" (in assertion) -> result.CodeContextCancelled
+              Add import: "github.com/blackwell-systems/scout-and-wave-go/pkg/result"
+
+            pkg/notify/slack.go:
+            - "CONTEXT_CANCELLED" -> result.CodeContextCancelled
+              Add import if not already present: "github.com/blackwell-systems/scout-and-wave-go/pkg/result"
+
+            pkg/notify/discord.go:
+            - "CONTEXT_CANCELLED" -> result.CodeContextCancelled
+
+            pkg/notify/telegram.go:
+            - "CONTEXT_CANCELLED" -> result.CodeContextCancelled
+
+            pkg/notify/dispatcher.go:
+            - "CONTEXT_CANCELLED" (2 occurrences) -> result.CodeContextCancelled
+
+            pkg/notify/dispatcher_test.go:
+            - "CONTEXT_CANCELLED" (in assertion) -> result.CodeContextCancelled
+
+            ### Step 3: Verify completeness
+
+            After all replacements, run:
+              grep -rn '"ENGINE_' pkg/engine/ pkg/notify/
+              grep -rn '"CONTEXT_CANCELLED"' pkg/engine/ pkg/notify/
+
+            Both should return zero matches. Any remaining hits are missed replacements.
+
+            ## 5. Tests to Write
+
+            No new test functions are required. The replacements themselves serve as a
+            compile-time test — if any constant name is misspelled, the build will fail.
+
+            The two existing tests that assert on string literals must be updated:
+            1. pkg/engine/program_progress_test.go — change the assertion at line 111-112
+               from the string literal to result.CodeUpdateProgSlugNotFound
+            2. pkg/engine/scout_correction_loop_test.go — change the assertion at line 171-172
+               from the string literal to result.CodeContextCancelled
+            3. pkg/notify/dispatcher_test.go — change the assertion at lines 118-119
+               from the string literal to result.CodeContextCancelled
+
+            These tests will continue to pass since the constant value equals the original string.
+
+            ## 6. Verification Gate
+
+            Run these commands from the repo root. All must pass.
+
+              cd /Users/dayna.blackwell/code/scout-and-wave-go/.claude/worktrees/saw/engine-error-code-catalog/wave1-agent-A
+              go build ./...
+              go vet ./...
+              go test ./pkg/result/... ./pkg/engine/... ./pkg/notify/...
+
+            Then run the completeness check:
+              grep -rn '"ENGINE_' pkg/engine/ pkg/notify/
+              grep -rn '"CONTEXT_CANCELLED"' pkg/engine/ pkg/notify/
+
+            Both grep commands must return no output.
+
+            ## 7. Constraints
+
+            - Do NOT change any string value in the constants. The values must remain
+              identical to the original ad-hoc strings to preserve backward compatibility
+              with any external consumers parsing error codes.
+            - Do NOT change any error message text (the second argument to NewFatal/NewWarning).
+              Only the code string (first argument) changes.
+            - Do NOT modify nil-guard logic in runner.go or finalize.go — those were
+              changed by IMPL 1 and are in different regions from your changes.
+            - Do NOT rename or restructure any const blocks — only add the new block
+              after N017.
+            - If you discover a constant name collision with an existing name in codes.go,
+              add a suffix (e.g., "Run", "Wave", "Engine") to disambiguate. Document
+              the deviation in your completion report.
+            - The pkg/notify/ files use only CONTEXT_CANCELLED — verify they already
+              import pkg/result before adding the constant reference, or add the import.
+            - Do not add imports that are already present (deduplicate imports).
+
+            ## 8. Report
+
+            Commit all changes to your worktree branch:
+              git add .
+              git commit -m "wave1-agent-A: add N018-N084 engine error code constants, replace ad-hoc strings"
+
+            Then write your completion report at the end of:
+              /Users/dayna.blackwell/code/scout-and-wave-go/docs/IMPL/IMPL-engine-error-code-catalog.yaml
+
+            Use the structured format:
+            ```yaml type=impl-completion-report
+            status: complete | partial | blocked
+            worktree: .claude/worktrees/saw/engine-error-code-catalog/wave1-agent-A
+            branch: saw/engine-error-code-catalog/wave1-agent-A
+            commit: {sha}
+            files_changed:
+              - pkg/result/codes.go
+              - pkg/engine/runner.go
+              - ... (all files you modified)
+            files_created: []
+            interface_deviations:
+              - "List any constant name deviations from the spec (e.g., renamed to avoid collision), or []"
+            out_of_scope_deps: []
+            tests_added: []
+            verification: PASS | FAIL ({command} - N tests)
+            ```
+          files:
+            - pkg/result/codes.go
+            - pkg/engine/runner.go
+            - pkg/engine/finalize.go
+            - pkg/engine/chat.go
+            - pkg/engine/debug_journal.go
+            - pkg/engine/fix_build.go
+            - pkg/engine/integration_runner.go
+            - pkg/engine/mark_program_complete.go
+            - pkg/engine/merge_cleanup.go
+            - pkg/engine/prepare.go
+            - pkg/engine/program_progress.go
+            - pkg/engine/resolve_conflicts.go
+            - pkg/engine/run_wave_atomic.go
+            - pkg/engine/scout_correction_loop.go
+            - pkg/engine/test_runner.go
+            - pkg/engine/program_progress_test.go
+            - pkg/engine/scout_correction_loop_test.go
+            - pkg/notify/slack.go
+            - pkg/notify/discord.go
+            - pkg/notify/telegram.go
+            - pkg/notify/dispatcher.go
+            - pkg/notify/dispatcher_test.go
+          context_source: prepared-brief
+quality_gates:
+    level: standard
+    gates:
+        - type: build
+          command: go build ./...
+          required: true
+        - type: lint
+          command: go vet ./...
+          required: true
+        - type: test
+          command: go test ./...
+          required: true
+completion_reports:
+    A:
+        status: complete
+        branch: main
+        commit: 58c04fa
+        files_changed:
+            - pkg/result/codes.go
+            - pkg/engine/runner.go
+            - pkg/engine/finalize.go
+            - pkg/engine/chat.go
+            - pkg/engine/debug_journal.go
+            - pkg/engine/fix_build.go
+            - pkg/engine/integration_runner.go
+            - pkg/engine/mark_program_complete.go
+            - pkg/engine/merge_cleanup.go
+            - pkg/engine/prepare.go
+            - pkg/engine/program_progress.go
+            - pkg/engine/resolve_conflicts.go
+            - pkg/engine/run_wave_atomic.go
+            - pkg/engine/scout_correction_loop.go
+            - pkg/engine/test_runner.go
+            - pkg/engine/program_progress_test.go
+            - pkg/engine/scout_correction_loop_test.go
+            - pkg/notify/slack.go
+            - pkg/notify/discord.go
+            - pkg/notify/telegram.go
+            - pkg/notify/dispatcher.go
+            - pkg/notify/dispatcher_test.go
+        verification: PASS
+        notes: 'All 67 constants added (N018-N084). All ENGINE_ and CONTEXT_CANCELLED literals replaced. Both grep completeness checks return zero matches. Build, vet, and tests pass (engine: 7.7s, result: ok, notify: ok). Name deviations: CodeEngineVerificationFailed for N033 (CodeVerificationFailed taken by A004); CodeScaffoldRunFailed for N028; CodeMergeWaveFailed/CodeMergeWaveInvalidOpts for N031/N032 — all per spec section 2.'
+pre_mortem:
+    overall_risk: low
+    rows:
+        - scenario: Constant name collision with existing codes.go identifiers
+          likelihood: medium
+          impact: low
+          mitigation: |
+            Agent must check every new constant NAME against existing names before
+            adding. Known risk: CodeScoutFailed (N003), CodeVerificationFailed (A004),
+            CodeUpdateStatusFailed (N015 as CodeStatusUpdateFailed). Agent must rename
+            with suffix if collision found and document deviation in completion report.
+        - scenario: runner.go or finalize.go merge conflict with IMPL 3
+          likelihood: medium
+          impact: medium
+          mitigation: |
+            IMPL 2 changes only error code string literals; IMPL 3 changes wave-loop
+            structure. Changes are non-overlapping by region. Run IMPL 2 first to land
+            the constants, then IMPL 3 can reference them if desired. If run in parallel,
+            the merge is mechanical — string replacements do not conflict with function
+            restructuring at different line ranges.
+        - scenario: pkg/notify files do not yet import pkg/result
+          likelihood: medium
+          impact: low
+          mitigation: |
+            Agent must check import blocks in each notify file and add the import if absent.
+            The build failure will be immediate and the fix is a one-line import addition.
+        - scenario: Missed replacement leaves residual string literal
+          likelihood: low
+          impact: low
+          mitigation: |
+            Agent runs grep completeness check after all replacements. Zero remaining
+            matches required before committing. The verification gate also catches this
+            since the test assertions would still pass (string equals constant value),
+            so the grep check is the only enforcement mechanism.
+        - scenario: W001 warning on agent scope (22 files)
+          likelihood: high
+          impact: low
+          mitigation: |
+            The task is mechanical (find-and-replace), not creative parallel work. A solo
+            agent with 22 files is appropriate here — splitting into two agents would
+            require pkg/result to be in a scaffold (wave 0) and introduce coordination
+            overhead for a task that takes 20-30 minutes sequentially. Accept W001.
+state: COMPLETE
+injection_method: hook

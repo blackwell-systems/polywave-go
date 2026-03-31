@@ -627,6 +627,28 @@ func AddUpdate(repoPath, path string) error {
 	return nil
 }
 
+// MergeBase returns the best common ancestor commit SHA of ref1 and ref2
+// in the repository at repoPath. Used for hunk-level conflict prediction.
+func MergeBase(repoPath, ref1, ref2 string) (string, error) {
+	out, err := RunOutput(repoPath, "merge-base", ref1, ref2)
+	if err != nil {
+		return "", fmt.Errorf("git merge-base failed: %w", err)
+	}
+	return strings.TrimSpace(out), nil
+}
+
+// DiffUnifiedZero returns the unified diff with zero context lines between
+// fromRef and toRef for the specified file path. Zero context gives minimal
+// hunk ranges for accurate conflict prediction.
+// Returns empty string when there are no differences.
+func DiffUnifiedZero(repoPath, fromRef, toRef, file string) (string, error) {
+	out, err := RunOutput(repoPath, "diff", "--unified=0", fromRef+".."+toRef, "--", file)
+	if err != nil {
+		return "", fmt.Errorf("git diff --unified=0 failed: %w", err)
+	}
+	return out, nil
+}
+
 // Version returns the raw output of git --version (e.g., "git version 2.39.2").
 // Does not require a repository path. Returns an error if git is not found on PATH.
 func Version() (string, error) {

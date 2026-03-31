@@ -1,0 +1,302 @@
+completion_date: "2026-03-31"
+title: Crash Fixes and Legacy Error Code String
+feature_slug: crash-fixes-and-error-code-string
+verdict: SUITABLE
+suitability_assessment: |-
+    All five suitability gate questions resolve cleanly.
+
+    1. File decomposition: Three files need surgical changes. The work is
+       inherently a single coherent unit (nil-guard fixes plus one string
+       replacement). A solo agent owns all three files with no overlap risk.
+
+    2. Investigation-first: Root causes are fully identified in the audit.
+       All line numbers are confirmed in the source. No investigation needed.
+
+    3. Interface discoverability: No interface changes. All fixes are
+       internal nil guards and a constant substitution.
+
+    4. Pre-implementation status: 0 of 3 fixes are implemented. All are TODO.
+       result.CodeRepoMismatch ("V045_REPO_MISMATCH") exists in
+       pkg/result/codes.go:71 — no addition needed there.
+
+    5. Parallelization value: This is a solo-wave IMPL with a single agent.
+       The value is correctness (fixing crash-path panics) and coordination
+       (audit trail). No speedup expected — sequential implementation in one
+       agent session is appropriate.
+
+    Estimated times:
+    - Scout phase: ~10 min
+    - Agent execution: ~10 min (3 surgical fixes, 1 agent, short build cycle)
+    - Merge and verification: ~3 min
+    Total SAW time: ~23 min
+
+    Sequential baseline: ~10 min (same single-agent work without SAW overhead)
+    Recommendation: Coordination value only (audit trail, critic gate, IMPL
+    doc as change record). Proceed as solo wave.
+test_command: go test ./...
+lint_command: go vet ./...
+file_ownership:
+    - file: pkg/engine/runner.go
+      agent: A
+      wave: 1
+      action: modify
+    - file: pkg/engine/program_tier_loop.go
+      agent: A
+      wave: 1
+      action: modify
+    - file: pkg/engine/prepare.go
+      agent: A
+      wave: 1
+      action: modify
+interface_contracts: []
+waves:
+    - number: 1
+      agents:
+        - id: A
+          task: |-
+            **Role:** Crash fix — nil ObsEmitter guards and legacy error code string replacement
+
+            You are applying three surgical fixes identified in the Go engine refactor audit.
+            All fixes are in `pkg/engine/`. No new exported APIs. No interface changes.
+
+            ## 1. File Ownership
+
+            You own these files. Do not touch any other files.
+            - `pkg/engine/runner.go` — modify
+            - `pkg/engine/program_tier_loop.go` — modify
+            - `pkg/engine/prepare.go` — modify
+
+            ## 2. Interfaces You Must Implement
+
+            None. These are nil-guard and constant fixes only.
+
+            ## 3. Interfaces You May Call
+
+            `result.CodeRepoMismatch` is defined at `pkg/result/codes.go:71`:
+            ```go
+            CodeRepoMismatch = "V045_REPO_MISMATCH"
+            ```
+            The `result` package is already imported in `pkg/engine/prepare.go`.
+
+            The `loggerFrom` nil-safe helper is defined at `pkg/engine/runner.go:35`:
+            ```go
+            func loggerFrom(l *slog.Logger) *slog.Logger { ... }
+            ```
+            Use the same `if opts.ObsEmitter != nil` guard pattern already used at
+            `runner.go:67-71` and `finalize.go:692-693` as your model.
+
+            ## 4. What to Implement
+
+            ### Fix 1 — runner.go:177: Unguarded ObsEmitter.Emit on scout success path
+
+            **File:** `pkg/engine/runner.go`
+            **Line:** 177
+
+            Current code (line 177):
+            ```go
+            opts.ObsEmitter.Emit(ctx, observability.NewScoutCompleteEvent(implSlug))
+            ```
+
+            Replace with:
+            ```go
+            if opts.ObsEmitter != nil {
+                opts.ObsEmitter.Emit(ctx, observability.NewScoutCompleteEvent(implSlug))
+            }
+            ```
+
+            This is a one-line change within the `RunScout` function, on the success
+            path after I6 enforcement passes. The `EmitSync` call at line 67-71 has
+            the identical pattern — copy it exactly.
+
+            ### Fix 2 — program_tier_loop.go: Four unguarded ObsEmitter.Emit calls
+
+            **File:** `pkg/engine/program_tier_loop.go`
+            **Lines:** 246, 280, 318, 335
+
+            Add `if opts.ObsEmitter != nil` guards around each of these four calls.
+            Alternatively, define a package-private `nilSafeEmit` helper in
+            `program_tier_loop.go` and use it for all four:
+
+            ```go
+            // nilSafeEmit calls emitter.Emit only when emitter is non-nil.
+            // Mirrors the loggerFrom nil-safe pattern in runner.go.
+            func nilSafeEmit(ctx context.Context, emitter ObsEmitter, event observability.Event) {
+                if emitter != nil {
+                    emitter.Emit(ctx, event)
+                }
+            }
+            ```
+
+            Then replace each bare call, e.g.:
+            ```go
+            // line 246 — was: opts.ObsEmitter.Emit(ctx, observability.NewTierGateFailedEvent(...))
+            nilSafeEmit(ctx, opts.ObsEmitter, observability.NewTierGateFailedEvent(...))
+
+            // line 280 — was: opts.ObsEmitter.Emit(ctx, observability.NewTierGatePassedEvent(...))
+            nilSafeEmit(ctx, opts.ObsEmitter, observability.NewTierGatePassedEvent(...))
+
+            // line 318 — was: opts.ObsEmitter.Emit(ctx, observability.NewTierAdvancedEvent(...))
+            nilSafeEmit(ctx, opts.ObsEmitter, observability.NewTierAdvancedEvent(...))
+
+            // line 335 — was: opts.ObsEmitter.Emit(ctx, observability.NewTierAdvancedEvent(...))
+            nilSafeEmit(ctx, opts.ObsEmitter, observability.NewTierAdvancedEvent(...))
+            ```
+
+            Choose either approach (inline guards or helper) — the helper is preferred
+            because it mirrors `loggerFrom` and is easier to extend. If you choose inline
+            guards, wrap each call identically with `if opts.ObsEmitter != nil { ... }`.
+
+            Either way: do NOT move nilSafeEmit to runner.go or any other file — keep it
+            local to program_tier_loop.go. The `loggerFrom` function in runner.go is
+            package-level and accessible, but a new nilSafeEmit function must not be
+            defined in runner.go if you are not the file's sole author in a multi-agent
+            wave. In this solo-agent IMPL, you own runner.go too, so placing nilSafeEmit
+            in runner.go is also acceptable. Just ensure it is defined exactly once.
+
+            ### Fix 3 — prepare.go:255: Hardcoded legacy error code string
+
+            **File:** `pkg/engine/prepare.go`
+            **Line:** 255
+
+            Current code:
+            ```go
+            if w.Code == "E16_REPO_MISMATCH_SUSPECTED" {
+            ```
+
+            Replace with:
+            ```go
+            if w.Code == result.CodeRepoMismatch {
+            ```
+
+            The `result` package is already imported in `pkg/engine/prepare.go` (line 17).
+            `result.CodeRepoMismatch` evaluates to `"V045_REPO_MISMATCH"` — the canonical
+            code emitted by `ValidateFileExistenceMultiRepo` today.
+
+            ## 5. Tests to Write
+
+            Write tests in `pkg/engine/runner_test.go` (create if absent) or an
+            appropriate existing test file in `pkg/engine/`:
+
+            1. `TestRunScout_NilObsEmitter_NoScoutCompletePanic` — construct a minimal
+               `RunScoutOpts` with `ObsEmitter: nil` and verify that the function does
+               not panic when reaching the `scout_complete` emit path. You may need to
+               mock the agent execution to reach line 177; use a fake that returns
+               success immediately. The key assertion is: no panic.
+
+            2. `TestRunTierLoop_NilObsEmitter_NoTierGatePanic` — call `RunTierLoop` with
+               `TierLoopOpts{ObsEmitter: nil}` and a minimal manifest that exercises the
+               tier gate paths (lines 246, 280). Verify no panic on nil ObsEmitter.
+
+            If the test setup for these is too expensive (requires significant mocking of
+            the agent runner), write simpler unit tests that call the nil-guard paths
+            directly, or write table-driven tests that verify the guard logic. At minimum,
+            add a test that constructs `TierLoopOpts{ObsEmitter: nil}` and passes it
+            through a code path that reaches one of the guarded lines.
+
+            3. `TestPrepareWave_RepoMismatchConstant` — verify that the constant
+               `result.CodeRepoMismatch` equals the string `"V045_REPO_MISMATCH"` (simple
+               sanity check that the constant resolves correctly). This is low-value but
+               ensures a future rename of the constant will surface as a compile error
+               here rather than a silent runtime regression.
+
+            ## 6. Verification Gate
+
+            Run these commands from the repo root. All must pass before reporting completion.
+
+            ```bash
+            cd /Users/dayna.blackwell/code/scout-and-wave-go
+            go build ./...
+            go vet ./pkg/engine/... ./pkg/result/...
+            go test ./pkg/engine/... ./pkg/result/...
+            ```
+
+            If build or test commands fail, capture the log and use:
+            ```bash
+            go build ./... 2>&1 | tee /tmp/build-error-agent-A.log
+            sawtools diagnose-build-failure /tmp/build-error-agent-A.log --language go
+            ```
+
+            ## 7. Constraints
+
+            - Do NOT modify any file outside `pkg/engine/runner.go`,
+              `pkg/engine/program_tier_loop.go`, and `pkg/engine/prepare.go`.
+            - Do NOT add a `nilSafeEmit` function to runner.go AND program_tier_loop.go —
+              define it in exactly one place (prefer program_tier_loop.go since that is
+              where all four call sites live, or inline guards in runner.go since that
+              file already has the pattern written out).
+            - Do NOT rename or change the signature of any exported function.
+            - Do NOT change `result.CodeRepoMismatch`'s value in codes.go — the constant
+              already exists with the correct value.
+            - The note in `pkg/engine/finalize_steps.go:145,147` also has unguarded
+              ObsEmitter calls. Do NOT fix those — they are out of scope for IMPL 1.
+              Document them in your completion report as a known out-of-scope item.
+            - All three fixes must be in a single commit to keep the change atomic
+              and easy to review.
+          files:
+            - pkg/engine/runner.go
+            - pkg/engine/program_tier_loop.go
+            - pkg/engine/prepare.go
+          context_source: prepared-brief
+quality_gates:
+    level: standard
+    gates:
+        - type: build
+          command: go build ./...
+          required: true
+        - type: lint
+          command: go vet ./...
+          required: true
+        - type: test
+          command: go test ./pkg/engine/... ./pkg/result/...
+          required: true
+completion_reports:
+    A:
+        status: complete
+        branch: main
+        commit: 47af66c
+        files_changed:
+            - pkg/engine/runner.go
+            - pkg/engine/program_tier_loop.go
+            - pkg/engine/prepare.go
+            - pkg/engine/runner_test.go
+            - pkg/engine/program_tier_loop_test.go
+        tests_added:
+            - TestRunScout_NilObsEmitter_NoScoutCompletePanic
+            - TestRunTierLoop_NilObsEmitter_NoTierGatePanic
+            - TestPrepareWave_RepoMismatchConstant
+        verification: PASS
+        notes: 'All three fixes applied atomically. nilSafeEmit defined in program_tier_loop.go only. result.CodeRepoMismatch constant confirmed as V045_REPO_MISMATCH. Known out-of-scope: finalize_steps.go:145,147 also has unguarded ObsEmitter.Emit calls (not fixed per constraints).'
+pre_mortem:
+    overall_risk: low
+    rows:
+        - scenario: |-
+            nilSafeEmit defined in both runner.go and program_tier_loop.go causes
+            a duplicate function declaration compile error (two files in package engine).
+          likelihood: low
+          impact: high
+          mitigation: |-
+            Define nilSafeEmit in exactly one file. The brief specifies this explicitly.
+            The preferred location is program_tier_loop.go since all four call sites are there.
+        - scenario: |-
+            result.CodeRepoMismatch value ("V045_REPO_MISMATCH") does not match the
+            string emitted by ValidateFileExistenceMultiRepo, so the prepare.go guard
+            still silently misses the error after the fix.
+          likelihood: low
+          impact: medium
+          mitigation: |-
+            result.CodeRepoMismatch is confirmed at pkg/result/codes.go:71 with value
+            "V045_REPO_MISMATCH". The comment on the constant explicitly states it
+            replaces "E16_REPO_MISMATCH_SUSPECTED". Verify ValidateFileExistenceMultiRepo
+            emits CodeRepoMismatch (not the legacy string) in the implementation.
+        - scenario: |-
+            Tests for RunScout nil ObsEmitter path require heavy mocking of the agent
+            execution pipeline, blocking verification.
+          likelihood: medium
+          impact: low
+          mitigation: |-
+            Fall back to simpler guard-path tests (inject nil ObsEmitter, call a
+            helper that exercises the guarded code path directly) rather than
+            end-to-end RunScout execution. The critical correctness guarantee is
+            the nil check in production code, not test coverage depth.
+state: COMPLETE
+injection_method: hook

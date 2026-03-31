@@ -252,3 +252,11 @@ type BackendConfig struct {
   - IMPL doc: docs/IMPL/complete/IMPL-post-migration-cleanup.yaml
 - **observability-improvements**: completed 2026-03-30, 1 waves, 3 agents
   - IMPL doc: docs/IMPL/complete/IMPL-observability-improvements.yaml
+- **context-propagation**: completed 2026-03-31, 6 waves, 31 agents
+  - IMPL doc: docs/IMPL/complete/IMPL-context-propagation.yaml
+- **crash-fixes-and-error-code-string**: completed 2026-03-31, 1 waves, 1 agents
+  - IMPL doc: docs/IMPL/complete/IMPL-crash-fixes-and-error-code-string.yaml
+- **engine-error-code-catalog**: completed 2026-03-31, 1 waves, 1 agents
+  - IMPL doc: docs/IMPL/complete/IMPL-engine-error-code-catalog.yaml
+- **engine-structural-debt**: completed 2026-03-31, 1 waves, 1 agents
+  - IMPL doc: docs/IMPL/complete/IMPL-engine-structural-debt.yaml

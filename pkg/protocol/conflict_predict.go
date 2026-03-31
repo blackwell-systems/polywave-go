@@ -4,6 +4,8 @@ import (
 	"context"
 	"crypto/sha256"
 	"fmt"
+	"strconv"
+	"strings"
 
 	"github.com/blackwell-systems/scout-and-wave-go/internal/git"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
@@ -70,21 +72,26 @@ func PredictConflictsFromReports(ctx context.Context, manifest *IMPLManifest, wa
 	}
 
 	// Collect conflicts: any file touched by 2+ agents.
-	// Enhancement: Compare file content hashes - identical edits are allowed.
+	// Two passes to avoid false positives on cascade patches:
+	//   1. Identical edits (SHA hash) — git auto-resolves convergent changes.
+	//   2. Non-overlapping hunks — git 3-way merge handles disjoint line ranges.
 	var conflictPredictions []ConflictPrediction
 	var conflictMessages []string
 	for file, agents := range fileAgents {
 		if len(agents) > 1 {
-			// Check if all agents produced identical content
+			// Pass 1: identical content — safe regardless of position.
 			if manifest.FeatureSlug != "" && allAgentsHaveSameContent(manifest, file, agents, waveNum) {
-				// Identical edits - safe to merge, skip conflict
+				continue
+			}
+			// Pass 2: non-overlapping hunks — cascade patches are safe to merge.
+			if manifest.FeatureSlug != "" && !agentsHaveOverlappingHunks(manifest, file, agents, waveNum) {
 				continue
 			}
 			conflictPredictions = append(conflictPredictions, ConflictPrediction{
 				File:   file,
 				Agents: agents,
 			})
-			conflictMessages = append(conflictMessages, fmt.Sprintf("  %s has differing edits (agents: %v)", file, agents))
+			conflictMessages = append(conflictMessages, fmt.Sprintf("  %s has overlapping edits (agents: %v)", file, agents))
 		}
 	}
 
@@ -148,6 +155,109 @@ func joinLines(lines []string) string {
 		result += l
 	}
 	return result
+}
+
+// HunkRange represents a contiguous range of lines in the base file that an
+// agent's diff modifies. Used for hunk-level conflict prediction (E11).
+type HunkRange struct {
+	Start int // first modified line (1-indexed, inclusive)
+	End   int // last modified line (1-indexed, inclusive)
+}
+
+// parseDiffHunks extracts old-file line ranges from a unified diff produced
+// with --unified=0. Only modification hunks (count > 0) are returned;
+// pure insertions (-a,0) do not modify existing lines and are skipped.
+func parseDiffHunks(diff string) []HunkRange {
+	var hunks []HunkRange
+	for _, line := range strings.Split(diff, "\n") {
+		if !strings.HasPrefix(line, "@@") {
+			continue
+		}
+		// @@ -old[,count] +new[,count] @@ [context]
+		parts := strings.Fields(line)
+		if len(parts) < 3 {
+			continue
+		}
+		oldPart := parts[1] // e.g. "-10,5" or "-10"
+		if !strings.HasPrefix(oldPart, "-") {
+			continue
+		}
+		rangeStr := oldPart[1:] // strip leading "-"
+		var start, count int
+		if comma := strings.Index(rangeStr, ","); comma >= 0 {
+			start, _ = strconv.Atoi(rangeStr[:comma])
+			count, _ = strconv.Atoi(rangeStr[comma+1:])
+		} else {
+			start, _ = strconv.Atoi(rangeStr)
+			count = 1
+		}
+		if count == 0 {
+			// Pure insertion after line 'start' — track as a zero-width anchor.
+			// Two agents inserting at the same anchor position conflict in 3-way merge.
+			hunks = append(hunks, HunkRange{Start: start, End: start})
+			continue
+		}
+		hunks = append(hunks, HunkRange{Start: start, End: start + count - 1})
+	}
+	return hunks
+}
+
+// hunksOverlap returns true if any hunk in a overlaps with any hunk in b.
+// Two ranges overlap when they share at least one line.
+func hunksOverlap(a, b []HunkRange) bool {
+	for _, ha := range a {
+		for _, hb := range b {
+			if ha.Start <= hb.End && hb.Start <= ha.End {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// agentsHaveOverlappingHunks returns true when at least one pair of agents'
+// diffs for file have overlapping line ranges (meaning a 3-way merge conflict
+// is likely). Returns true (conservative/safe) when git calls fail.
+func agentsHaveOverlappingHunks(manifest *IMPLManifest, file string, agents []string, waveNum int) bool {
+	if manifest.Repository == "" || len(agents) < 2 {
+		return true // can't check — assume conflict (safe default)
+	}
+
+	// Find common ancestor of the first two agent branches (all branches share
+	// the same base commit, so merge-base of any pair gives the base ref).
+	branchFmt := func(id string) string {
+		return fmt.Sprintf("saw/%s/wave%d-agent-%s", manifest.FeatureSlug, waveNum, id)
+	}
+	mergeBase, err := git.MergeBase(manifest.Repository, branchFmt(agents[0]), branchFmt(agents[1]))
+	if err != nil {
+		return true // can't determine base — assume conflict
+	}
+
+	// Collect hunk ranges for each agent that has a non-trivial diff.
+	agentHunks := make(map[string][]HunkRange, len(agents))
+	for _, id := range agents {
+		diff, err := git.DiffUnifiedZero(manifest.Repository, mergeBase, branchFmt(id), file)
+		if err != nil || diff == "" {
+			continue
+		}
+		if h := parseDiffHunks(diff); len(h) > 0 {
+			agentHunks[id] = h
+		}
+	}
+
+	// Check all pairs for overlapping hunks.
+	ids := make([]string, 0, len(agentHunks))
+	for id := range agentHunks {
+		ids = append(ids, id)
+	}
+	for i := 0; i < len(ids); i++ {
+		for j := i + 1; j < len(ids); j++ {
+			if hunksOverlap(agentHunks[ids[i]], agentHunks[ids[j]]) {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // allAgentsHaveSameContent checks if all agents produced identical file content.

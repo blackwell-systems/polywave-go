@@ -48,6 +48,7 @@ func main() {
 		newRunGatesCmd(),
 		newRunReviewCmd(),
 		newCheckConflictsCmd(),
+		newPredictConflictsCmd(),
 		newCheckDepsCmd(),
 		newCheckTypeCollisionsCmd(),
 		newValidateScaffoldsCmd(),

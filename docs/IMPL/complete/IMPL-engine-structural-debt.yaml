@@ -1,0 +1,627 @@
+completion_date: "2026-03-31"
+title: Engine Structural Debt (IMPL 3)
+feature_slug: engine-structural-debt
+verdict: SUITABLE
+suitability_assessment: |-
+    All four issues (3, 9, 10, 13) are in the same four files, same package, and are
+    interdependent. Issue 13 requires touching both finalize_steps.go and finalize.go
+    atomically — the step function signatures and their call sites must change in a
+    single commit or the build breaks. A single solo agent is the correct decomposition:
+    it owns all four files and makes the changes atomically.
+
+    The test file finalize_steps_test.go also calls the 4 step functions being updated
+    (StepVerifyCommits, StepScanStubs, StepVerifyBuild, StepCleanup) using the old
+    2-return signatures. It must be updated atomically with the signatures and is
+    included in the agent's ownership.
+
+    File decomposition: 1 agent, 5 files (runner.go, finalize.go, step_types.go,
+    finalize_steps.go, finalize_steps_test.go). All in pkg/engine/ (same Go package).
+    No parallelization opportunity because all issues are interdependent across these files.
+
+    Verdict: SUITABLE WITH CAVEATS — no parallelization, but the IMPL doc provides
+    an interface spec, audit trail, and progress tracker. Value is coordination, not speed.
+
+    IMPL 2 (engine-error-code-catalog) already touched runner.go and finalize.go for
+    ENGINE_* string replacements. IMPL 3 touches different code regions in those files:
+    - runner.go: wave-loop structure (StartWave/startWaveWithGate) and implSlugFromIMPLPath
+    - finalize.go: firstRepo copy-paste and implSlugFromPath
+
+    Estimated times:
+    - Scout phase: ~10 min
+    - Agent execution: ~30 min (1 agent, 5 files, structural refactor)
+    - Merge and verification: ~5 min
+    Total SAW time: ~45 min
+    Sequential baseline: ~45 min
+    Time savings: ~0 min (solo agent — value is coordination spec, not speed)
+test_command: go test ./...
+lint_command: go vet ./...
+file_ownership:
+    - file: pkg/engine/runner.go
+      agent: A
+      wave: 1
+      action: modify
+      repo: scout-and-wave-go
+    - file: pkg/engine/finalize.go
+      agent: A
+      wave: 1
+      action: modify
+      repo: scout-and-wave-go
+    - file: pkg/engine/step_types.go
+      agent: A
+      wave: 1
+      action: modify
+      repo: scout-and-wave-go
+    - file: pkg/engine/finalize_steps.go
+      agent: A
+      wave: 1
+      action: modify
+      repo: scout-and-wave-go
+    - file: pkg/engine/finalize_steps_test.go
+      agent: A
+      wave: 1
+      action: modify
+      repo: scout-and-wave-go
+interface_contracts:
+    - name: runOneWave
+      description: |-
+        Shared per-wave body extracted from StartWave and startWaveWithGate.
+        Handles RunWave → quality gates → MergeWave → RunVerification → E25/E26 integration
+        validation → UpdateIMPLStatus. gateCh is nil when called from StartWave (no gate).
+      definition: |-
+        func runOneWave(
+            ctx context.Context,
+            orch *orchestrator.Orchestrator,
+            opts RunWaveOpts,
+            waveNum int,
+            waveIdx int,
+            totalWaves int,
+            publish func(event string, data interface{}),
+            gateCh <-chan bool,
+        ) error
+      location: pkg/engine/runner.go
+    - name: firstRepoOpts
+      description: |-
+        Returns a copy of opts with RepoPath set to the first value in repos.
+        Eliminates the 9 copy-pasted firstRepo patterns in FinalizeWave.
+      definition: func firstRepoOpts(opts FinalizeWaveOpts, repos map[string]string) FinalizeWaveOpts
+      location: pkg/engine/finalize.go
+    - name: StepVerifyCommits (updated signature)
+      description: |-
+        Updated to return typed *protocol.VerifyCommitsData as second return value.
+        Eliminates type assertion at finalize.go:309.
+      definition: |-
+        func StepVerifyCommits(
+            ctx context.Context,
+            opts FinalizeWaveOpts,
+            onEvent EventCallback,
+        ) (*StepResult, *protocol.VerifyCommitsData, error)
+      location: pkg/engine/finalize_steps.go
+    - name: StepScanStubs (updated signature)
+      description: |-
+        Updated to return typed *protocol.ScanStubsData as second return value.
+        Eliminates type assertion at finalize.go:372.
+      definition: |-
+        func StepScanStubs(
+            ctx context.Context,
+            opts FinalizeWaveOpts,
+            manifest *protocol.IMPLManifest,
+            onEvent EventCallback,
+        ) (*StepResult, *protocol.ScanStubsData, error)
+      location: pkg/engine/finalize_steps.go
+    - name: StepVerifyBuild (updated signature)
+      description: |-
+        Updated to return typed *protocol.VerifyBuildData as second return value.
+        Eliminates type assertions at finalize.go:570,572-583,595. The diagnosis
+        attachment stays in StepResult.Data as before; the typed return gives callers
+        direct access to the VerifyBuildData without assertion.
+      definition: |-
+        func StepVerifyBuild(
+            ctx context.Context,
+            opts FinalizeWaveOpts,
+            onEvent EventCallback,
+        ) (*StepResult, *protocol.VerifyBuildData, error)
+      location: pkg/engine/finalize_steps.go
+    - name: StepCleanup (updated signature)
+      description: |-
+        Updated to return typed *protocol.CleanupData as second return value.
+        Eliminates type assertions at finalize.go:588,618,633.
+      definition: |-
+        func StepCleanup(
+            ctx context.Context,
+            opts FinalizeWaveOpts,
+            onEvent EventCallback,
+        ) (*StepResult, *protocol.CleanupData, error)
+      location: pkg/engine/finalize_steps.go
+waves:
+    - number: 1
+      agents:
+        - id: A
+          task: |-
+            You are Wave 1 Agent A. Eliminate four structural debt issues in pkg/engine/:
+            Issue 3 (runOneWave refactor), Issue 9 (delete duplicate slug helpers),
+            Issue 10 (firstRepoOpts helper), and Issue 13 (typed step function returns).
+
+            ## 0. CRITICAL: Isolation Verification (RUN FIRST)
+
+            ⚠️ MANDATORY PRE-FLIGHT CHECK - Run BEFORE any file modifications
+
+            **Step 1: Navigate to worktree**
+
+            ```bash
+            cd /Users/dayna.blackwell/code/scout-and-wave-go/.claude/worktrees/saw/engine-structural-debt/wave1-agent-A
+            ```
+
+            **Step 2: Verify isolation (strict fail-fast after self-correction attempt)**
+
+            ```bash
+            ACTUAL_DIR=$(pwd)
+            EXPECTED_DIR="/Users/dayna.blackwell/code/scout-and-wave-go/.claude/worktrees/saw/engine-structural-debt/wave1-agent-A"
+
+            if [ "$ACTUAL_DIR" != "$EXPECTED_DIR" ]; then
+              echo "ISOLATION FAILURE: Wrong directory (even after cd attempt)"
+              echo "Expected: $EXPECTED_DIR"
+              echo "Actual: $ACTUAL_DIR"
+              exit 1
+            fi
+
+            ACTUAL_BRANCH=$(git branch --show-current)
+            EXPECTED_BRANCH="saw/engine-structural-debt/wave1-agent-A"
+
+            if [ "$ACTUAL_BRANCH" != "$EXPECTED_BRANCH" ]; then
+              echo "ISOLATION FAILURE: Wrong branch"
+              echo "Expected: $EXPECTED_BRANCH"
+              echo "Actual: $ACTUAL_BRANCH"
+              exit 1
+            fi
+
+            git worktree list | grep -q "$EXPECTED_BRANCH" || {
+              echo "ISOLATION FAILURE: Worktree not in git worktree list"
+              exit 1
+            }
+
+            echo "✓ Isolation verified: $ACTUAL_DIR on $ACTUAL_BRANCH"
+            ```
+
+            ## 1. File Ownership
+
+            You own exactly these 5 files (all in /Users/dayna.blackwell/code/scout-and-wave-go/):
+            - `pkg/engine/runner.go` — modify (Issues 3 and 9)
+            - `pkg/engine/finalize.go` — modify (Issues 9 and 10, and call-site updates for Issue 13)
+            - `pkg/engine/step_types.go` — read only (confirm StepResult struct is unchanged; do NOT modify)
+            - `pkg/engine/finalize_steps.go` — modify (Issue 13: add typed second returns)
+            - `pkg/engine/finalize_steps_test.go` — modify (update call sites for the 4 step functions)
+
+            Do NOT touch any other files.
+
+            ## 2. Interfaces You Must Implement
+
+            ### Issue 3: runOneWave helper
+
+            ```go
+            // runOneWave is the per-wave body shared by StartWave and startWaveWithGate.
+            // publish forwards event notifications. waveIdx is the 0-based index into the
+            // waves slice; totalWaves is len(waves). gateCh is nil when called from StartWave.
+            // When non-nil, after each wave except the last (waveIdx < totalWaves-1),
+            // runOneWave waits for a bool from gateCh: true = proceed, false = abort.
+            func runOneWave(
+                ctx context.Context,
+                orch *orchestrator.Orchestrator,
+                opts RunWaveOpts,
+                waveNum int,
+                waveIdx int,
+                totalWaves int,
+                publish func(event string, data interface{}),
+                gateCh <-chan bool,
+            ) error
+            ```
+
+            ### Issue 9: Deleted helpers (replace with protocol.ExtractIMPLSlug)
+
+            ```go
+            // DELETE: implSlugFromPath in finalize.go (~line 701-715)
+            // DELETE: implSlugFromIMPLPath in runner.go (~line 187-200)
+            //
+            // REPLACE call sites with:
+            //   protocol.ExtractIMPLSlug(path, nil)
+            //
+            // Call sites:
+            //   finalize.go:691  implSlug := implSlugFromPath(opts.IMPLPath)
+            //                    → implSlug := protocol.ExtractIMPLSlug(opts.IMPLPath, nil)
+            //   runner.go:66     implSlug := implSlugFromIMPLPath(opts.IMPLOutPath)
+            //                    → implSlug := protocol.ExtractIMPLSlug(opts.IMPLOutPath, nil)
+            ```
+
+            ### Issue 10: firstRepoOpts helper
+
+            ```go
+            // firstRepoOpts returns a copy of opts with RepoPath overridden by the first
+            // value in repos. When repos is empty, opts is returned unchanged.
+            // This eliminates the 9 copy-pasted firstRepo patterns in FinalizeWave.
+            func firstRepoOpts(opts FinalizeWaveOpts, repos map[string]string) FinalizeWaveOpts {
+                for _, rp := range repos {
+                    opts.RepoPath = rp
+                    break
+                }
+                return opts
+            }
+            ```
+
+            Replace all 9 copy-paste blocks with calls to this helper. The pattern to replace
+            (found 9 times in finalize.go at steps 1.1, 1.2, 1.3, 2, 3.5, 3.6, 4.2, and two more):
+
+            ```go
+            // BEFORE (replace all 9 occurrences):
+            firstRepo := opts.RepoPath
+            for _, rp := range repos {
+                firstRepo = rp
+                break
+            }
+            repoOpts := opts
+            repoOpts.RepoPath = firstRepo
+
+            // AFTER:
+            repoOpts := firstRepoOpts(opts, repos)
+            ```
+
+            ### Issue 13: Typed step function second returns
+
+            CRITICAL CONSTRAINT: Do NOT make StepResult a generic struct. PrepareWaveResult.Steps
+            []StepResult requires a single concrete type — making it StepResult[T] would break
+            the slice. The StepResult.Data interface{} field and PrepareWaveResult.Steps []StepResult
+            remain completely unchanged.
+
+            Instead, add a typed second return value to each step function that currently returns
+            only (*StepResult, error):
+
+            **StepVerifyCommits** — current: `(*StepResult, error)` → new:
+            ```go
+            func StepVerifyCommits(ctx context.Context, opts FinalizeWaveOpts, onEvent EventCallback) (*StepResult, *protocol.VerifyCommitsData, error)
+            ```
+            Return the typed data pointer alongside the StepResult. In success path, return
+            &verifyData. In failure paths, return nil as the second value.
+            Keep Data: verifyData on the StepResult unchanged.
+
+            **StepScanStubs** — current: `(*StepResult, error)` → new:
+            ```go
+            func StepScanStubs(ctx context.Context, opts FinalizeWaveOpts, manifest *protocol.IMPLManifest, onEvent EventCallback) (*StepResult, *protocol.ScanStubsData, error)
+            ```
+            Return &stubData in success path. Return nil in skip/failure paths.
+            Keep Data: stubData on the StepResult unchanged.
+
+            **StepVerifyBuild** — current: `(*StepResult, error)` → new:
+            ```go
+            func StepVerifyBuild(ctx context.Context, opts FinalizeWaveOpts, onEvent EventCallback) (*StepResult, *protocol.VerifyBuildData, error)
+            ```
+            Return &verifyData in success path AND in the build-failed path (callers need
+            the data even on failure). When diagnosis is attached, keep the existing behavior
+            of setting StepResult.Data to map[string]interface{}{"verify_build": verifyData,
+            "diagnosis": diagnosis} — but also return &verifyData as the typed second return.
+
+            **StepCleanup** — current: `(*StepResult, error)` → new:
+            ```go
+            func StepCleanup(ctx context.Context, opts FinalizeWaveOpts, onEvent EventCallback) (*StepResult, *protocol.CleanupData, error)
+            ```
+            Return &cleanupData in success path. Return nil on non-fatal error path.
+
+            The following step functions already have typed second returns and must NOT be
+            changed: StepRunGates, StepValidateIntegration, StepCheckTypeCollisions,
+            StepCheckWiringDeclarations, StepPopulateIntegrationChecklist.
+
+            ## 3. Interfaces You May Call
+
+            ```go
+            // Existing function in pkg/protocol/impl_slug.go — already exported:
+            func protocol.ExtractIMPLSlug(implPath string, manifest *IMPLManifest) string
+            // Pass nil as manifest to use path-based extraction (same behavior as the
+            // deleted helpers).
+
+            // Existing orchestrator methods available in runner.go:
+            orch.RunWave(ctx, waveNum) result.Result[...]
+            orch.MergeWave(ctx, waveNum) result.Result[...]
+            orch.RunVerification(ctx, testCmd) result.Result[...]
+            orch.UpdateIMPLStatus(ctx, waveNum) result.Result[...]
+            orch.IMPLDoc() *protocol.IMPLManifest
+            orch.SetWorktreePaths(paths map[string]string)
+            ```
+
+            ## 4. What to Implement
+
+            ### Issue 3: Merge StartWave and startWaveWithGate via runOneWave
+
+            Read StartWave (runner.go ~line 404) and startWaveWithGate (runner.go ~line 1424)
+            carefully before making any changes. Understand every line of both functions.
+
+            The differences between the two implementations:
+
+            1. StartWave creates worktrees via protocol.CreateWorktrees + orch.SetWorktreePaths
+               before RunWave; startWaveWithGate does NOT do this.
+            2. StartWave has a quality gates block (RunPreMergeGates) before MergeWave;
+               startWaveWithGate does NOT.
+            3. StartWave runs stub scan (E20) after RunWave; startWaveWithGate does NOT.
+            4. StartWave calls UpdateIMPLStatus and logs non-fatal on failure;
+               startWaveWithGate calls _ = orch.UpdateIMPLStatus (silently ignores).
+            5. Both have the identical E25/E26 integration block (~60 lines). This is
+               the main duplication target.
+            6. startWaveWithGate has the gate wait (gateCh + wave_gate_pending/resolved events);
+               StartWave does not.
+
+            Design for runOneWave:
+            - The E25/E26 integration validation block moves entirely into runOneWave.
+            - RunWave, MergeWave, RunVerification, UpdateIMPLStatus also move into runOneWave.
+            - The quality gates block (RunPreMergeGates) and stub scan remain in StartWave's
+              outer loop (they do not exist in startWaveWithGate, so putting them in runOneWave
+              would change startWaveWithGate behavior). Alternatively, make them conditional
+              via a parameter — either approach is acceptable as long as startWaveWithGate
+              behavior is preserved.
+            - The gate wait logic (select on gateCh) moves into runOneWave. When gateCh is nil,
+              skip the gate wait. Use waveIdx < totalWaves-1 to determine if a gate wait is needed.
+            - The worktree creation (CreateWorktrees + SetWorktreePaths) stays in StartWave's
+              outer loop.
+
+            After the refactor:
+            - StartWave's wave loop body: CreateWorktrees → stub scan → quality gates →
+              runOneWave(ctx, orch, opts, waveNum, waveIdx, totalWaves, publish, nil)
+            - startWaveWithGate's wave loop body:
+              runOneWave(ctx, orch, opts, waveNum, waveIdx, len(waves), publish, gateCh)
+
+            The E18 UpdateContextMD and the final run_complete publish remain in StartWave
+            after the loop (they are post-loop, not per-wave).
+            startWaveWithGate has its own run_complete publish — keep it.
+
+            ### Issue 9: Delete duplicate slug helpers
+
+            After deleting both helper functions:
+            1. `finalize.go`: delete `implSlugFromPath` (lines ~701-715), update the one call
+               site at line ~691 to use `protocol.ExtractIMPLSlug(opts.IMPLPath, nil)`.
+            2. `runner.go`: delete `implSlugFromIMPLPath` (lines ~187-200), update the one call
+               site at line ~66 to use `protocol.ExtractIMPLSlug(opts.IMPLOutPath, nil)`.
+
+            Verify `pkg/protocol` is already imported in both files (it is).
+
+            ### Issue 10: Extract firstRepoOpts in finalize.go
+
+            Add the `firstRepoOpts` helper function and replace all 9 occurrences of the
+            copy-paste block in FinalizeWave. Run grep to confirm you found all 9:
+
+            ```bash
+            grep -n "firstRepo :=" /Users/dayna.blackwell/code/scout-and-wave-go/pkg/engine/finalize.go
+            ```
+
+            Expected output: 7 matches (the audit said 9 but grep shows 7 distinct occurrences
+            of `firstRepo :=` — verify the actual count and replace all of them). The pattern
+            appears at approximately lines 316, 331, 346, 361, 471, 487, 542.
+
+            ### Issue 13: Update step function signatures in finalize_steps.go
+
+            Update ONLY these 4 step functions (the others already have typed returns):
+            - StepVerifyCommits: add *protocol.VerifyCommitsData as second return
+            - StepScanStubs: add *protocol.ScanStubsData as second return
+            - StepVerifyBuild: add *protocol.VerifyBuildData as second return
+            - StepCleanup: add *protocol.CleanupData as second return
+
+            Then update ALL call sites in finalize.go to use the typed returns instead of
+            type assertions. The type assertions to remove are at approximately:
+            - Line 309: `if verifyData, ok := verifyStepResult.Data.(protocol.VerifyCommitsData); ok {`
+            - Line 372: `if stubData, ok := stubStepResult.Data.(protocol.ScanStubsData); ok {`
+            - Lines 570, 595: VerifyBuildData assertions
+            - Lines 588, 618, 633: CleanupData assertions
+
+            After updating, the VerifyBuild call site in the failure path should look like:
+
+            ```go
+            verifyBuildStepResult, verifyData, stepErr := StepVerifyBuild(ctx, repoOpts, onEvent)
+            if stepErr != nil {
+                allBuildPassed = false
+                if verifyData != nil {
+                    result.VerifyBuild[repoKey] = verifyData
+                }
+                // Diagnosis is still in StepResult.Data as map[string]interface{}
+                if verifyBuildStepResult != nil && verifyBuildStepResult.Data != nil {
+                    if dataMap, ok := verifyBuildStepResult.Data.(map[string]interface{}); ok {
+                        if d, ok := dataMap["diagnosis"]; ok {
+                            if diagnosis, ok := d.(*builddiag.Diagnosis); ok {
+                                result.BuildDiagnosis[repoKey] = diagnosis
+                            }
+                        }
+                    }
+                }
+                // still run cleanup before returning
+                ...
+            ```
+
+            **IMPORTANT: finalize_steps_test.go must also be updated.**
+            The test file calls StepVerifyCommits, StepScanStubs, StepVerifyBuild, and StepCleanup
+            using the old 2-return signatures. You own this file. Update all test call sites to
+            use the new 3-return signatures. The test logic does not need to change — just update
+            the variable declarations to capture the new return value (use _ if not needed):
+
+            ```go
+            // Before:
+            result, err := StepVerifyCommits(ctx, opts, nil)
+            // After:
+            result, _, err := StepVerifyCommits(ctx, opts, nil)
+            ```
+
+            Or, if the test uses the typed data, assign it to a named variable.
+
+            ## 5. Tests to Write
+
+            This is a structural refactor. The primary gate is `go build ./...` — compilation
+            proves correctness of signatures. No behavior changes; existing tests cover the logic.
+
+            Write one smoke test:
+
+            1. TestFirstRepoOpts — verifies that firstRepoOpts returns opts.RepoPath unchanged
+               when repos is empty, and returns the first repo value when repos has one entry.
+               Place in finalize_test.go if it exists, or add to finalize.go package test file.
+
+            Check if finalize_test.go exists:
+            ```bash
+            ls /Users/dayna.blackwell/code/scout-and-wave-go/pkg/engine/finalize_test.go
+            ```
+            If not, create it with package engine and just the TestFirstRepoOpts test.
+
+            Do NOT add tests for runOneWave — behavior covered by existing StartWave tests.
+            Do NOT add tests for the slug helper deletion — covered by protocol.ExtractIMPLSlug tests.
+
+            ## 6. Verification Gate
+
+            Before running verification, check test call sites for old signatures:
+            ```bash
+            grep -n "StepVerifyCommits\|StepScanStubs\|StepVerifyBuild\|StepCleanup" \
+              /Users/dayna.blackwell/code/scout-and-wave-go/pkg/engine/finalize_steps_test.go
+            ```
+            Ensure all call sites use the 3-return form after your updates.
+
+            ```bash
+            cd /Users/dayna.blackwell/code/scout-and-wave-go
+
+            # Primary gate — compilation proves signature correctness
+            go build ./...
+
+            # Lint
+            go vet ./...
+
+            # Run engine package tests
+            go test ./pkg/engine/...
+            ```
+
+            If build fails, capture and diagnose:
+            ```bash
+            go build ./... 2>&1 | tee /tmp/build-error-agent-A.log
+            sawtools diagnose-build-failure /tmp/build-error-agent-A.log --language go
+            ```
+
+            ## 7. Constraints
+
+            - Do NOT change StepResult struct in step_types.go. PrepareWaveResult.Steps []StepResult
+              must remain a slice of concrete StepResult (not generic). StepResult.Data interface{}
+              field must remain unchanged.
+            - Do NOT change the signatures of StepRunGates, StepValidateIntegration,
+              StepCheckTypeCollisions, StepCheckWiringDeclarations, StepPopulateIntegrationChecklist.
+              These already have typed second returns.
+            - Do NOT change the behavior of StartWave or startWaveWithGate — only refactor
+              structure. The E25/E26 integration block logic must be preserved exactly.
+            - The runOneWave helper is unexported (lowercase). It is an engine-internal helper.
+            - firstRepoOpts is unexported (lowercase).
+            - If any call site for the updated step functions exists outside the 5 owned files,
+              report it in out_of_scope_deps rather than modifying that file.
+
+            ## 8. Report
+
+            Commit your changes before writing the report:
+
+            ```bash
+            cd /Users/dayna.blackwell/code/scout-and-wave-go/.claude/worktrees/saw/engine-structural-debt/wave1-agent-A
+            git add pkg/engine/runner.go pkg/engine/finalize.go pkg/engine/finalize_steps.go \
+                    pkg/engine/finalize_steps_test.go
+            git commit -m "wave1-agent-A: engine structural debt — runOneWave, firstRepoOpts, slug dedup, typed step returns"
+            ```
+
+            Write your completion report as a YAML block appended to the IMPL doc at:
+            /Users/dayna.blackwell/code/scout-and-wave-go/docs/IMPL/IMPL-engine-structural-debt.yaml
+
+            ### Agent A - Completion Report
+
+            ```yaml type=impl-completion-report
+            status: complete | partial | blocked
+            worktree: .claude/worktrees/saw/engine-structural-debt/wave1-agent-A
+            branch: saw/engine-structural-debt/wave1-agent-A
+            commit: {sha}
+            files_changed:
+              - pkg/engine/runner.go
+              - pkg/engine/finalize.go
+              - pkg/engine/finalize_steps.go
+              - pkg/engine/finalize_steps_test.go
+            files_created: []
+            interface_deviations: []
+            out_of_scope_deps: []
+            tests_added:
+              - TestFirstRepoOpts
+            verification: PASS | FAIL (go build ./... - N/N tests)
+            ```
+          files:
+            - pkg/engine/runner.go
+            - pkg/engine/finalize.go
+            - pkg/engine/step_types.go
+            - pkg/engine/finalize_steps.go
+            - pkg/engine/finalize_steps_test.go
+          context_source: prepared-brief
+quality_gates:
+    level: standard
+    gates:
+        - type: build
+          command: go build ./...
+          required: true
+          repo: scout-and-wave-go
+        - type: lint
+          command: go vet ./...
+          required: true
+          repo: scout-and-wave-go
+        - type: test
+          command: go test ./pkg/engine/...
+          required: true
+          repo: scout-and-wave-go
+completion_reports:
+    A:
+        status: complete
+        branch: main
+        commit: ed2bb95
+        files_changed:
+            - pkg/engine/runner.go
+            - pkg/engine/finalize.go
+            - pkg/engine/finalize_steps.go
+            - pkg/engine/finalize_steps_test.go
+        tests_added:
+            - TestFirstRepoOpts_EmptyRepos
+            - TestFirstRepoOpts_SingleEntry
+        verification: PASS
+        notes: 'All 4 issues complete. Issue 3: runOneWave helper extracted from StartWave/startWaveWithGate — E25/E26 integration block, RunWave/MergeWave/RunVerification, UpdateIMPLStatus, and gate-wait logic moved in. Issue 9: deleted implSlugFromIMPLPath (runner.go) and implSlugFromPath (finalize.go), replaced call sites with protocol.ExtractIMPLSlug(path, nil). Issue 10: firstRepoOpts helper added, all 7 firstRepo copy-paste blocks replaced. Issue 13: StepVerifyCommits/StepScanStubs/StepVerifyBuild/StepCleanup updated to typed 3-return signatures; all call sites in finalize.go updated to use typed returns; finalize_steps_test.go updated to use 3-return form. TestFirstRepoOpts split into two tests placed in finalize_steps_test.go (finalize_test.go is not owned). go build, go vet, go test ./pkg/engine/... all pass.'
+pre_mortem:
+    overall_risk: low
+    rows:
+        - scenario: |-
+            runOneWave refactor introduces subtle behavioral difference between
+            StartWave and startWaveWithGate. The two implementations have already
+            diverged (worktree creation, quality gates, stub scan are in StartWave
+            only). If the agent is not careful about which features are StartWave-only
+            vs shared, the refactor may accidentally add worktree creation to
+            startWaveWithGate or skip quality gates from StartWave.
+          likelihood: medium
+          impact: medium
+          mitigation: |-
+            Brief explicitly lists the differences between the two implementations
+            and states which features stay in StartWave outer loop vs move to
+            runOneWave. Agent must read both functions in full before touching either.
+        - scenario: |-
+            Step function signature changes break call sites outside the 5 owned
+            files. finalize_steps_test.go is included in ownership, but other engine
+            files (e.g., integration_runner.go) may also call these functions.
+          likelihood: low
+          impact: medium
+          mitigation: |-
+            Agent is instructed to grep for call sites before modifying signatures
+            and report out_of_scope_deps for any call site outside the 5 owned files.
+            Post-merge build gate catches any missed sites.
+        - scenario: |-
+            IMPL 2 (engine-error-code-catalog) changed string literals in runner.go
+            and finalize.go. If IMPL 2 merge lands after IMPL 3 worktree is created,
+            the agent's worktree will have stale string literals and produce a
+            merge conflict on those lines.
+          likelihood: low
+          impact: low
+          mitigation: |-
+            IMPL 2 was completed (2026-03-31) before this IMPL scouts. Worktree
+            is created from HEAD which already includes IMPL 2 changes. No conflict
+            risk if worktree is created after IMPL 2 merge.
+        - scenario: |-
+            The firstRepo copy-paste occurrences are not all found. The audit
+            mentions 9 but grep shows 7 distinct `firstRepo :=` lines. Agent may
+            use the wrong expected count and think it is done early.
+          likelihood: low
+          impact: low
+          mitigation: |-
+            Brief instructs agent to run grep first and use the actual count found,
+            not the audit's estimate. Replace all occurrences found by grep.
+state: COMPLETE
+injection_method: hook
