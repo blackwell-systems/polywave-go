@@ -1,6 +1,10 @@
 package pipeline
 
-import "context"
+import (
+	"context"
+
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
+)
 
 // StepFunc is a single pipeline step. It receives the pipeline context
 // and returns an error. Steps are executed in sequence within a stage;
@@ -31,5 +35,5 @@ type State struct {
 	IMPLPath string
 	WaveNum  int
 	Values   map[string]interface{}
-	Errors   []error
+	Errors   []result.SAWError
 }

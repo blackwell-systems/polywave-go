@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"path/filepath"
 	"regexp"
+
+	"github.com/blackwell-systems/scout-and-wave-go/internal/git"
 )
 
 // BranchName returns the slug-scoped branch name for an agent.
@@ -78,4 +80,22 @@ func ExtractSlug(branch string) string {
 		}
 	}
 	return ""
+}
+
+// resolveAgentBranch returns the active branch name for the given agent by
+// checking whether the slug-scoped branch exists in repoDir via git.BranchExists.
+// If the slug-scoped branch does not exist, falls back to LegacyBranchName.
+// isLegacy is true when the legacy fallback was used.
+// If neither branch exists, branchName is the slug-scoped form (BranchName result)
+// and isLegacy is false.
+func resolveAgentBranch(featureSlug, agentID string, waveNum int, repoDir string) (branchName string, isLegacy bool) {
+	slug := BranchName(featureSlug, waveNum, agentID)
+	if git.BranchExists(repoDir, slug) {
+		return slug, false
+	}
+	legacy := LegacyBranchName(waveNum, agentID)
+	if git.BranchExists(repoDir, legacy) {
+		return legacy, true
+	}
+	return slug, false // neither exists; return slug-scoped form
 }

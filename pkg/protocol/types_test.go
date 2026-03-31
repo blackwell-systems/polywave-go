@@ -285,6 +285,124 @@ func TestQualityGate_JSONSerialization(t *testing.T) {
 	}
 }
 
+// TestScaffoldFileRoundtrip_JSONToYAML marshals to JSON then unmarshals as YAML,
+// asserting that FilePath is preserved (Issue 16 regression test).
+func TestScaffoldFileRoundtrip_JSONToYAML(t *testing.T) {
+	original := ScaffoldFile{FilePath: "docs/IMPL/test.yaml", Contents: "body"}
+
+	jsonBytes, err := json.Marshal(original)
+	if err != nil {
+		t.Fatalf("json.Marshal failed: %v", err)
+	}
+
+	var roundTrip ScaffoldFile
+	if err := yaml.Unmarshal(jsonBytes, &roundTrip); err != nil {
+		t.Fatalf("yaml.Unmarshal failed: %v", err)
+	}
+
+	if roundTrip.FilePath != original.FilePath {
+		t.Errorf("FilePath not preserved: got %q, want %q", roundTrip.FilePath, original.FilePath)
+	}
+	if roundTrip.Contents != original.Contents {
+		t.Errorf("Contents not preserved: got %q, want %q", roundTrip.Contents, original.Contents)
+	}
+}
+
+// TestScaffoldFileRoundtrip_YAMLToJSON marshals to YAML then unmarshals as JSON,
+// asserting that FilePath is preserved.
+func TestScaffoldFileRoundtrip_YAMLToJSON(t *testing.T) {
+	original := ScaffoldFile{FilePath: "docs/IMPL/test.yaml", Contents: "body"}
+
+	yamlBytes, err := yaml.Marshal(original)
+	if err != nil {
+		t.Fatalf("yaml.Marshal failed: %v", err)
+	}
+
+	// Convert YAML bytes to JSON bytes for json.Unmarshal
+	var intermediate interface{}
+	if err := yaml.Unmarshal(yamlBytes, &intermediate); err != nil {
+		t.Fatalf("yaml.Unmarshal (intermediate) failed: %v", err)
+	}
+	jsonBytes, err := json.Marshal(intermediate)
+	if err != nil {
+		t.Fatalf("json.Marshal (intermediate) failed: %v", err)
+	}
+
+	var roundTrip ScaffoldFile
+	if err := json.Unmarshal(jsonBytes, &roundTrip); err != nil {
+		t.Fatalf("json.Unmarshal failed: %v", err)
+	}
+
+	if roundTrip.FilePath != original.FilePath {
+		t.Errorf("FilePath not preserved: got %q, want %q", roundTrip.FilePath, original.FilePath)
+	}
+	if roundTrip.Contents != original.Contents {
+		t.Errorf("Contents not preserved: got %q, want %q", roundTrip.Contents, original.Contents)
+	}
+}
+
+// TestScaffoldFileRoundtrip_ZeroValue verifies a zero-value ScaffoldFile
+// marshals and unmarshals without error.
+func TestScaffoldFileRoundtrip_ZeroValue(t *testing.T) {
+	var original ScaffoldFile
+
+	jsonBytes, err := json.Marshal(original)
+	if err != nil {
+		t.Fatalf("json.Marshal zero value failed: %v", err)
+	}
+	var fromJSON ScaffoldFile
+	if err := json.Unmarshal(jsonBytes, &fromJSON); err != nil {
+		t.Fatalf("json.Unmarshal zero value failed: %v", err)
+	}
+
+	yamlBytes, err := yaml.Marshal(original)
+	if err != nil {
+		t.Fatalf("yaml.Marshal zero value failed: %v", err)
+	}
+	var fromYAML ScaffoldFile
+	if err := yaml.Unmarshal(yamlBytes, &fromYAML); err != nil {
+		t.Fatalf("yaml.Unmarshal zero value failed: %v", err)
+	}
+}
+
+// TestScaffoldFileRoundtrip_AllFields verifies all fields are preserved
+// through a full YAML roundtrip.
+func TestScaffoldFileRoundtrip_AllFields(t *testing.T) {
+	original := ScaffoldFile{
+		FilePath:   "pkg/protocol/types.go",
+		Contents:   "package protocol\n",
+		ImportPath: "github.com/example/pkg/protocol",
+		Status:     "committed",
+		Commit:     "abc123def456",
+	}
+
+	yamlBytes, err := yaml.Marshal(original)
+	if err != nil {
+		t.Fatalf("yaml.Marshal failed: %v", err)
+	}
+
+	var roundTrip ScaffoldFile
+	if err := yaml.Unmarshal(yamlBytes, &roundTrip); err != nil {
+		t.Fatalf("yaml.Unmarshal failed: %v", err)
+	}
+
+	if roundTrip.FilePath != original.FilePath {
+		t.Errorf("FilePath: got %q, want %q", roundTrip.FilePath, original.FilePath)
+	}
+	if roundTrip.Contents != original.Contents {
+		t.Errorf("Contents: got %q, want %q", roundTrip.Contents, original.Contents)
+	}
+	if roundTrip.ImportPath != original.ImportPath {
+		t.Errorf("ImportPath: got %q, want %q", roundTrip.ImportPath, original.ImportPath)
+	}
+	if roundTrip.Status != original.Status {
+		t.Errorf("Status: got %q, want %q", roundTrip.Status, original.Status)
+	}
+	if roundTrip.Commit != original.Commit {
+		t.Errorf("Commit: got %q, want %q", roundTrip.Commit, original.Commit)
+	}
+}
+
 // TestGatePhase_Constants tests that GatePhase constants have expected string values.
 func TestGatePhase_Constants(t *testing.T) {
 	tests := []struct {
