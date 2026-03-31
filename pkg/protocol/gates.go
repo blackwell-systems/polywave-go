@@ -2,6 +2,7 @@ package protocol
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"log/slog"
 	"os"
@@ -281,7 +282,7 @@ func runFormatGate(gate QualityGate, repoDir string, cache *gatecache.Cache, log
 	if gate.Command != "" {
 		cmd = gate.Command
 	} else {
-		cfg := format.DetectFormatter(repoDir)
+		cfg := format.DetectFormatter(context.TODO(), repoDir)
 		if cfg.Tool == "" {
 			// No formatter detected — treat as skipped (not an error).
 			result.Passed = true
