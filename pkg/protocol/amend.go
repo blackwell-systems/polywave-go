@@ -41,9 +41,9 @@ const amendBlocked = "AMEND_BLOCKED"
 // opts.ManifestPath, saves the updated manifest, and returns the result.
 // Returns a fatal Result with Code "AMEND_BLOCKED" if a hard invariant would
 // be violated.
-func AmendImpl(opts AmendImplOpts) result.Result[AmendImplData] {
+func AmendImpl(ctx context.Context, opts AmendImplOpts) result.Result[AmendImplData] {
 	// Step 1: Load manifest
-	m, err := Load(context.TODO(), opts.ManifestPath)
+	m, err := Load(ctx, opts.ManifestPath)
 	if err != nil {
 		return result.NewFailure[AmendImplData]([]result.SAWError{
 			{
@@ -88,9 +88,9 @@ func AmendImpl(opts AmendImplOpts) result.Result[AmendImplData] {
 
 	switch {
 	case opts.AddWave:
-		return amendAddWave(opts, m)
+		return amendAddWave(ctx, opts, m)
 	case opts.RedirectAgent:
-		return amendRedirectAgent(opts, m)
+		return amendRedirectAgent(ctx, opts, m)
 	default:
 		// ExtendScope is handled by the CLI layer; nothing to do in the engine
 		return result.NewSuccess(AmendImplData{
@@ -101,7 +101,7 @@ func AmendImpl(opts AmendImplOpts) result.Result[AmendImplData] {
 }
 
 // amendAddWave appends a new empty wave to the manifest.
-func amendAddWave(opts AmendImplOpts, m *IMPLManifest) result.Result[AmendImplData] {
+func amendAddWave(ctx context.Context, opts AmendImplOpts, m *IMPLManifest) result.Result[AmendImplData] {
 	// Find highest wave number
 	maxWave := 0
 	for _, w := range m.Waves {
@@ -140,7 +140,7 @@ func amendAddWave(opts AmendImplOpts, m *IMPLManifest) result.Result[AmendImplDa
 
 	// Validation passed — mutate real manifest and save
 	m.Waves = append(m.Waves, newWave)
-	if saveRes := Save(context.TODO(), m, opts.ManifestPath); saveRes.IsFatal() {
+	if saveRes := Save(ctx, m, opts.ManifestPath); saveRes.IsFatal() {
 		return result.NewFailure[AmendImplData](saveRes.Errors)
 	}
 
@@ -152,7 +152,7 @@ func amendAddWave(opts AmendImplOpts, m *IMPLManifest) result.Result[AmendImplDa
 }
 
 // amendRedirectAgent updates an agent's task and clears any non-complete completion report.
-func amendRedirectAgent(opts AmendImplOpts, m *IMPLManifest) result.Result[AmendImplData] {
+func amendRedirectAgent(ctx context.Context, opts AmendImplOpts, m *IMPLManifest) result.Result[AmendImplData] {
 	var warnings []string
 
 	// Step 1: Find the agent in the specified wave
@@ -229,7 +229,7 @@ func amendRedirectAgent(opts AmendImplOpts, m *IMPLManifest) result.Result[Amend
 	}
 
 	// Step 6: Save
-	if saveRes := Save(context.TODO(), m, opts.ManifestPath); saveRes.IsFatal() {
+	if saveRes := Save(ctx, m, opts.ManifestPath); saveRes.IsFatal() {
 		return result.NewFailure[AmendImplData](saveRes.Errors)
 	}
 
