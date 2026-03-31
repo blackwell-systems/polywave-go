@@ -1,11 +1,16 @@
 package protocol
 
 import (
+	"bufio"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
 )
+
+const codeAgentLOCBudget = "V048_AGENT_LOC_BUDGET"
 
 // CheckAgentComplexity returns complexity errors and warnings for agent scope.
 //
@@ -75,4 +80,51 @@ func CheckAgentComplexity(m *IMPLManifest) []result.SAWError {
 	}
 
 	return warnings
+}
+
+// CheckAgentLOCBudget checks that no agent owns files totalling more than maxLOC
+// lines. Only action=modify files are counted (action=new files do not yet exist).
+// Returns blocking errors for agents over budget.
+// If repoPath is empty, all checks are skipped (allows offline validation).
+func CheckAgentLOCBudget(m *IMPLManifest, repoPath string, maxLOC int) []result.SAWError {
+	if repoPath == "" {
+		return nil
+	}
+
+	// Build per-agent LOC and file count maps (action=modify only)
+	totalLOC := make(map[string]int)
+	fileCount := make(map[string]int)
+
+	for _, fo := range m.FileOwnership {
+		if fo.Action != "modify" {
+			continue
+		}
+		absPath := filepath.Join(repoPath, fo.File)
+		f, err := os.Open(absPath)
+		if err != nil {
+			// File doesn't exist or can't be opened — skip silently
+			continue
+		}
+		lines := 0
+		scanner := bufio.NewScanner(f)
+		for scanner.Scan() {
+			lines++
+		}
+		f.Close()
+		totalLOC[fo.Agent] += lines
+		fileCount[fo.Agent]++
+	}
+
+	var errs []result.SAWError
+	for agentID, loc := range totalLOC {
+		if loc > maxLOC {
+			errs = append(errs, result.SAWError{
+				Code:     codeAgentLOCBudget,
+				Message:  fmt.Sprintf("agent %s owns %d lines across %d files (limit: %d) — split the agent or reduce scope", agentID, loc, fileCount[agentID], maxLOC),
+				Severity: "error",
+				Field:    "file_ownership",
+			})
+		}
+	}
+	return errs
 }
