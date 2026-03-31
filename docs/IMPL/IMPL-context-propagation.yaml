@@ -1257,6 +1257,7 @@ waves:
             - D
             - F
             - K
+      base_commit: ff38078ac4b8754a6f5a610494521bf31b59f404
     - number: 5
       agents:
         - id: A2
@@ -1301,6 +1302,7 @@ waves:
             - G
             - H
             - X
+          context_source: prepared-brief
     - number: 6
       agents:
         - id: B2
@@ -1470,6 +1472,21 @@ completion_reports:
             - pkg/idgen/generator.go
         verification: PASS
         notes: AssignAgentIDs is a pure computation function (no I/O, no blocking, no network). Interface contract explicitly exempts pure value functions from ctx requirement. All existing tests pass. No callers need updating. Package build, vet, and test all clean.
+    A2:
+        status: complete
+        branch: main
+        commit: 1694988a53def2bc5b075b5ae0f366589ceb1a5d
+        files_changed:
+            - pkg/orchestrator/orchestrator.go
+            - pkg/orchestrator/context.go
+            - pkg/orchestrator/merge.go
+            - pkg/orchestrator/verification.go
+            - pkg/orchestrator/orchestrator_test.go
+            - pkg/orchestrator/context_test.go
+            - pkg/orchestrator/setters.go
+            - pkg/engine/runner.go
+        verification: PASS
+        notes: Added ctx context.Context to New, RunWave, RunAgent, MergeWave, RunVerification, UpdateIMPLStatus, UpdateContextMD. Updated mergeWaveFunc and runVerificationFunc variable types. Pre-commit hook required go vet ./... to pass, so pkg/engine/runner.go was updated as a necessary cascade (nominally Wave 6 Agent B2 scope). All orchestrator and engine tests pass. Full build clean.
     B:
         status: complete
         branch: saw/context-propagation/wave1-agent-B
@@ -1764,6 +1781,73 @@ completion_reports:
             - TestSetFreezeTimestamp_ContractsFrozenTrue
         verification: PASS
         notes: 'Added ctx context.Context to ExtractAgentContextFromManifest, SetFreezeTimestamp, and CheckFreeze. All three functions check ctx.Err() at entry for cancellation support. Wired out-of-scope callers: protocol tests use context.Background(), cmd files use context.TODO(), engine/prepare.go uses real ctx already in scope, orchestrator uses context.TODO() matching its existing pattern. All pkg/protocol tests pass (22s). Full repo go build and go vet clean.'
+    V:
+        status: complete
+        branch: saw/context-propagation/wave4-agent-V
+        commit: bb7311c
+        files_changed:
+            - pkg/analyzer/analyzer.go
+            - pkg/analyzer/deps.go
+            - pkg/analyzer/analyzer_test.go
+            - pkg/analyzer/deps_test.go
+            - pkg/analyzer/graph.go
+            - pkg/engine/runner.go
+        files_created:
+            - pkg/analyzer/deps_test.go
+        tests_added:
+            - TestParseFile_CancelledContext
+            - TestExtractImports_CancelledContext
+            - TestAnalyzeDeps_CancelledContext
+        verification: PASS
+        notes: Added ctx to ParseFile, ExtractImports, getModulePath, AnalyzeDeps. Updated callers in graph.go (context.Background() placeholders, unassigned file) and pkg/engine/runner.go (context.Background() placeholder, owned by B2/wave6) to keep go vet ./... clean per pre-commit hook. B2/wave6 should thread real context through runScoutAutomation. graph.go parseGoFiles/detectCascades should also get ctx in a future pass.
+    W:
+        status: complete
+        branch: saw/context-propagation/wave4-agent-W
+        commit: f44a517
+        files_changed:
+            - pkg/analyzer/cascade.go
+            - pkg/analyzer/shared_types.go
+            - pkg/analyzer/cascade_test.go
+            - pkg/analyzer/shared_types_test.go
+            - cmd/sawtools/detect_cascades_cmd.go
+            - cmd/sawtools/detect_shared_types_cmd.go
+        verification: PASS
+        notes: Added ctx to DetectCascades (with Walk cancellation check) and DetectSharedTypes (entry check). Updated co-located test files to pass context.Background(). Wired cmd/sawtools callers (detect_cascades_cmd.go, detect_shared_types_cmd.go) with cmd.Context() to satisfy pre-commit go vet ./... gate — same pattern as prior wave agents.
+    X:
+        status: complete
+        branch: saw/context-propagation/wave4-agent-X
+        commit: ff38078
+        verification: PASS
+        notes: 'Audit complete: all four files (runner.go, api/client.go, bedrock/client.go, cli/client.go) already have context.Context on all exported methods, exec.CommandContext is already used in cli/client.go, and no bare http.NewRequest calls exist in api or bedrock clients. No code changes required. All tests pass: go build, go vet, go test ./pkg/agent/... all clean.'
+    "Y":
+        status: complete
+        branch: saw/context-propagation/wave4-agent-Y
+        commit: 74f4d6c
+        files_changed:
+            - pkg/commands/extractor.go
+            - pkg/commands/wrapper.go
+            - pkg/commands/extractor_test.go
+        tests_added:
+            - TestExtractor_ContextCancellation
+        verification: PASS
+        notes: 'Added ctx to Extractor.Extract() and ExtractCommands(). Context cancellation checked between parser invocations. Four out-of-scope callers updated with context.TODO()/cmd.Context() to restore build health: pkg/protocol/gate_populator.go, pkg/engine/runner.go, cmd/sawtools/extract_commands_cmd.go, pkg/scaffoldval/validator.go.'
+    Z:
+        status: complete
+        branch: saw/context-propagation/wave4-agent-Z
+        commit: 62f76b3
+        files_changed:
+            - pkg/protocol/gates.go
+            - pkg/protocol/gate_discovery.go
+            - pkg/protocol/gates_test.go
+            - pkg/protocol/gate_discovery_test.go
+            - pkg/protocol/baseline_gates.go
+            - pkg/engine/finalize.go
+            - pkg/engine/finalize_steps.go
+            - pkg/engine/runner.go
+            - cmd/sawtools/run_gates_cmd.go
+            - cmd/sawtools/pre_commit_cmd.go
+        verification: PASS
+        notes: Added ctx to RunGatesWithCache, RunPreMergeGates, RunPostMergeGates, DiscoverLintGate, DiscoverBuildGate. Added ctx to internal functions runGates, executeSingleGate, executeGatesConcurrently, runFormatGate. Replaced all context.TODO() placeholders with propagated ctx. Used exec.CommandContext for subprocess cancellation. Patched out-of-scope callers (pkg/engine/finalize.go, pkg/engine/finalize_steps.go, pkg/engine/runner.go, cmd/sawtools/run_gates_cmd.go, cmd/sawtools/pre_commit_cmd.go) and baseline_gates.go (Agent K) with real ctx — all already had ctx in scope. go test ./pkg/protocol/... PASS.
 pre_mortem:
     overall_risk: medium
     rows:
