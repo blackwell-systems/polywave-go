@@ -47,8 +47,12 @@ Example:
 
 			doc.InjectionMethod = im
 
-			if err := protocol.Save(doc, manifestPath); err != nil {
-				return fmt.Errorf("failed to save IMPL doc: %w", err)
+			if saveRes := protocol.Save(doc, manifestPath); saveRes.IsFatal() {
+				saveErrMsg := "save failed"
+				if len(saveRes.Errors) > 0 {
+					saveErrMsg = saveRes.Errors[0].Message
+				}
+				return fmt.Errorf("failed to save IMPL doc: %s", saveErrMsg)
 			}
 
 			out, _ := json.Marshal(map[string]interface{}{

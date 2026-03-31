@@ -236,8 +236,8 @@ func TestAppendStubReport_Success(t *testing.T) {
 		Waves:       []Wave{{Number: 1, Agents: []Agent{{ID: "A"}}}},
 	}
 	manifestPath := filepath.Join(tmpDir, "IMPL-test.yaml")
-	if err := Save(manifest, manifestPath); err != nil {
-		t.Fatalf("failed to write manifest: %v", err)
+	if saveRes := Save(manifest, manifestPath); saveRes.IsFatal() {
+		t.Fatalf("failed to write manifest: %v", saveRes.Errors)
 	}
 
 	scanResult := ScanStubs([]string{})

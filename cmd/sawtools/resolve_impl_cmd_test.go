@@ -30,8 +30,8 @@ func TestResolveImplCmd_ExplicitSlug(t *testing.T) {
 			{Number: 1, Agents: []protocol.Agent{{ID: "A"}}},
 		},
 	}
-	if err := protocol.Save(testManifest, testIMPLPath); err != nil {
-		t.Fatalf("Failed to save test IMPL: %v", err)
+	if saveRes := protocol.Save(testManifest, testIMPLPath); saveRes.IsFatal() {
+		t.Fatalf("Failed to save test IMPL: %v", saveRes.Errors)
 	}
 
 	// Run command
@@ -88,8 +88,8 @@ func TestResolveImplCmd_ExplicitFilename(t *testing.T) {
 			{Number: 1, Agents: []protocol.Agent{{ID: "A"}}},
 		},
 	}
-	if err := protocol.Save(testManifest, testIMPLPath); err != nil {
-		t.Fatalf("Failed to save test IMPL: %v", err)
+	if saveRes := protocol.Save(testManifest, testIMPLPath); saveRes.IsFatal() {
+		t.Fatalf("Failed to save test IMPL: %v", saveRes.Errors)
 	}
 
 	// Run command
@@ -139,8 +139,8 @@ func TestResolveImplCmd_ExplicitAbsolutePath(t *testing.T) {
 			{Number: 1, Agents: []protocol.Agent{{ID: "A"}}},
 		},
 	}
-	if err := protocol.Save(testManifest, testIMPLPath); err != nil {
-		t.Fatalf("Failed to save test IMPL: %v", err)
+	if saveRes := protocol.Save(testManifest, testIMPLPath); saveRes.IsFatal() {
+		t.Fatalf("Failed to save test IMPL: %v", saveRes.Errors)
 	}
 
 	// Run command
@@ -193,8 +193,8 @@ func TestResolveImplCmd_AutoSelect(t *testing.T) {
 			{Number: 1, Agents: []protocol.Agent{{ID: "A"}}},
 		},
 	}
-	if err := protocol.Save(testManifest, testIMPLPath); err != nil {
-		t.Fatalf("Failed to save test IMPL: %v", err)
+	if saveRes := protocol.Save(testManifest, testIMPLPath); saveRes.IsFatal() {
+		t.Fatalf("Failed to save test IMPL: %v", saveRes.Errors)
 	}
 
 	// Run command without --impl flag
@@ -250,8 +250,8 @@ func TestResolveImplCmd_AutoSelectMultipleFails(t *testing.T) {
 				{Number: 1, Agents: []protocol.Agent{{ID: "A"}}},
 			},
 		}
-		if err := protocol.Save(testManifest, testIMPLPath); err != nil {
-			t.Fatalf("Failed to save test IMPL: %v", err)
+		if saveRes := protocol.Save(testManifest, testIMPLPath); saveRes.IsFatal() {
+			t.Fatalf("Failed to save test IMPL: %v", saveRes.Errors)
 		}
 	}
 
@@ -337,8 +337,8 @@ func TestResolveImplCmd_InvalidSlug(t *testing.T) {
 			{Number: 1, Agents: []protocol.Agent{{ID: "A"}}},
 		},
 	}
-	if err := protocol.Save(testManifest, testIMPLPath); err != nil {
-		t.Fatalf("Failed to save test IMPL: %v", err)
+	if saveRes := protocol.Save(testManifest, testIMPLPath); saveRes.IsFatal() {
+		t.Fatalf("Failed to save test IMPL: %v", saveRes.Errors)
 	}
 
 	// Run command with non-existent slug

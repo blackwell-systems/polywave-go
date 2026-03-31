@@ -134,8 +134,11 @@ func (rl *RetryLoop) saveRetryIMPL(m *protocol.IMPLManifest, slug string) (strin
 	}
 
 	absPath := protocol.IMPLPath(rl.cfg.RepoPath, slug)
-	if err := protocol.Save(m, absPath); err != nil {
-		return "", err
+	if saveRes := protocol.Save(m, absPath); saveRes.IsFatal() {
+		if len(saveRes.Errors) > 0 {
+			return "", fmt.Errorf("%s", saveRes.Errors[0].Message)
+		}
+		return "", fmt.Errorf("failed to save IMPL manifest")
 	}
 
 	// Return the path relative to RepoPath for portability.

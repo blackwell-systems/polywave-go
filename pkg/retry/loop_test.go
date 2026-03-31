@@ -257,8 +257,8 @@ func TestRetryLoop_FilenameFormat(t *testing.T) {
 		},
 		State: protocol.StateWavePending,
 	}
-	if err := protocol.Save(m, parentIMPL); err != nil {
-		t.Fatal(err)
+	if saveRes := protocol.Save(m, parentIMPL); saveRes.IsFatal() {
+		t.Fatal(saveRes.Errors)
 	}
 
 	cfg := RetryConfig{
@@ -363,8 +363,8 @@ func TestRetryLoop_GenerateRetryIMPLMethod(t *testing.T) {
 		},
 		State: protocol.StateWavePending,
 	}
-	if err := protocol.Save(parent, parentIMPL); err != nil {
-		t.Fatal(err)
+	if saveRes := protocol.Save(parent, parentIMPL); saveRes.IsFatal() {
+		t.Fatal(saveRes.Errors)
 	}
 
 	cfg := RetryConfig{
@@ -422,8 +422,8 @@ func TestRetryLoop_FallbackToIMPLFiles(t *testing.T) {
 		FileOwnership: []protocol.FileOwnership{{File: "pkg/fb/fb.go", Agent: "A", Wave: 1}},
 		State:         protocol.StateWavePending,
 	}
-	if err := protocol.Save(parent, parentIMPL); err != nil {
-		t.Fatal(err)
+	if saveRes := protocol.Save(parent, parentIMPL); saveRes.IsFatal() {
+		t.Fatal(saveRes.Errors)
 	}
 
 	cfg := RetryConfig{

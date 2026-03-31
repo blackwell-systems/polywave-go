@@ -88,14 +88,8 @@ func CreateWorktrees(manifestPath string, waveNum int, repoDir string, logger *s
 	targetWave.BaseCommit = baseCommit
 
 	// Save manifest with base commit recorded
-	if err := Save(doc, manifestPath); err != nil {
-		return result.NewFailure[CreateWorktreesData]([]result.SAWError{
-			{
-				Code:     result.CodeIMPLParseFailed,
-				Message:  fmt.Sprintf("failed to save manifest with base commit: %v", err),
-				Severity: "fatal",
-			},
-		})
+	if saveRes := Save(doc, manifestPath); saveRes.IsFatal() {
+		return result.NewFailure[CreateWorktreesData](saveRes.Errors)
 	}
 
 	// Resolve absolute path for repoDir (handles "." case)

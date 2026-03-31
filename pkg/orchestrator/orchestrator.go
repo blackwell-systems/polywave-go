@@ -899,7 +899,13 @@ func (o *Orchestrator) launchAgent(
 			if appendErr := builder.AppendToManifest(manifest); appendErr != nil {
 				return appendErr
 			}
-			return protocol.Save(manifest, o.implDocPath)
+			if saveRes := protocol.Save(manifest, o.implDocPath); saveRes.IsFatal() {
+				if len(saveRes.Errors) > 0 {
+					return fmt.Errorf("%s", saveRes.Errors[0].Message)
+				}
+				return fmt.Errorf("failed to save manifest")
+			}
+			return nil
 		}); saveErr != nil {
 			o.log().Warn("orchestrator: failed to save report", "agent", agentSpec.ID, "err", saveErr)
 		}

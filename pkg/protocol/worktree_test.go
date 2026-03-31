@@ -71,8 +71,8 @@ func createTestManifest(t *testing.T, repoDir string, waveNum int, agentIDs []st
 	}
 
 	manifestPath := filepath.Join(repoDir, "IMPL.yaml")
-	if err := Save(manifest, manifestPath); err != nil {
-		t.Fatalf("failed to save test manifest: %v", err)
+	if saveRes := Save(manifest, manifestPath); saveRes.IsFatal() {
+		t.Fatalf("failed to save test manifest: %v", saveRes.Errors)
 	}
 
 	return manifestPath
@@ -241,8 +241,8 @@ func TestCreateWorktrees_EmptyWave(t *testing.T) {
 	}
 
 	manifestPath := filepath.Join(repoDir, "IMPL.yaml")
-	if err := Save(manifest, manifestPath); err != nil {
-		t.Fatalf("failed to save test manifest: %v", err)
+	if saveRes := Save(manifest, manifestPath); saveRes.IsFatal() {
+		t.Fatalf("failed to save test manifest: %v", saveRes.Errors)
 	}
 
 	// Create worktrees for empty wave

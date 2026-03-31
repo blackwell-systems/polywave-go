@@ -80,12 +80,8 @@ func UpdateStatus(manifestPath string, waveNum int, agentID string, status Compl
 	manifest.CompletionReports[agentID] = report
 
 	// Save manifest
-	if err := Save(manifest, manifestPath); err != nil {
-		return result.NewFailure[*UpdateStatusData]([]result.SAWError{{
-			Code:     result.CodeStatusUpdateFailed,
-			Message:  fmt.Sprintf("failed to save manifest: %v", err),
-			Severity: "fatal",
-		}})
+	if saveRes := Save(manifest, manifestPath); saveRes.IsFatal() {
+		return result.NewFailure[*UpdateStatusData](saveRes.Errors)
 	}
 
 	return result.NewSuccess(&UpdateStatusData{

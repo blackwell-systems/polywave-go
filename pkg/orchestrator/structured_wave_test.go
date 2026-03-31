@@ -56,11 +56,11 @@ func saveCompletionReportToManifest(t *testing.T, implPath, agentID string, repo
 	if err != nil {
 		t.Fatalf("saveCompletionReportToManifest: Load: %v", err)
 	}
-	if err := protocol.SetCompletionReport(manifest, agentID, report); err != nil {
-		t.Fatalf("saveCompletionReportToManifest: SetCompletionReport: %v", err)
+	if res := protocol.SetCompletionReport(manifest, agentID, report); res.IsFatal() {
+		t.Fatalf("saveCompletionReportToManifest: SetCompletionReport: %v", res.Errors)
 	}
-	if err := protocol.Save(manifest, implPath); err != nil {
-		t.Fatalf("saveCompletionReportToManifest: Save: %v", err)
+	if saveRes := protocol.Save(manifest, implPath); saveRes.IsFatal() {
+		t.Fatalf("saveCompletionReportToManifest: Save: %v", saveRes.Errors)
 	}
 }
 

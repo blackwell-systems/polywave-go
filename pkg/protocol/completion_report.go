@@ -130,5 +130,19 @@ func (b *CompletionReportBuilder) AppendToManifest(manifest *IMPLManifest) error
 	if err := b.Validate(); err != nil {
 		return err
 	}
-	return SetCompletionReport(manifest, b.agentID, b.report)
+	res := SetCompletionReport(manifest, b.agentID, b.report)
+	if res.IsFatal() {
+		if len(res.Errors) > 0 {
+			// Preserve ErrAgentNotFound sentinel for callers that use errors.Is.
+			if res.Errors[0].Code == "REPORT_SET_FAILED" {
+				agentID, _ := res.Errors[0].Context["agent_id"]
+				if agentID != "" {
+					return fmt.Errorf("%w: %s", ErrAgentNotFound, agentID)
+				}
+			}
+			return fmt.Errorf("%s", res.Errors[0].Message)
+		}
+		return fmt.Errorf("SetCompletionReport failed")
+	}
+	return nil
 }

@@ -58,8 +58,8 @@ func GenerateReport(config ReportConfig) error`,
 		Waves:         []protocol.Wave{},
 	}
 
-	if err := protocol.Save(manifest, manifestPath); err != nil {
-		t.Fatalf("Failed to save test manifest: %v", err)
+	if saveRes := protocol.Save(manifest, manifestPath); saveRes.IsFatal() {
+		t.Fatalf("Failed to save test manifest: %v", saveRes.Errors)
 	}
 
 	// Run sawtools detect-scaffolds --stage pre-agent
@@ -193,8 +193,8 @@ type Logger interface {
 		},
 	}
 
-	if err := protocol.Save(manifest, manifestPath); err != nil {
-		t.Fatalf("Failed to save test manifest: %v", err)
+	if saveRes := protocol.Save(manifest, manifestPath); saveRes.IsFatal() {
+		t.Fatalf("Failed to save test manifest: %v", saveRes.Errors)
 	}
 
 	// Run sawtools detect-scaffolds --stage post-agent
@@ -276,8 +276,8 @@ func TestCLI_InvalidStage(t *testing.T) {
 		Waves:              []protocol.Wave{},
 	}
 
-	if err := protocol.Save(manifest, manifestPath); err != nil {
-		t.Fatalf("Failed to save test manifest: %v", err)
+	if saveRes := protocol.Save(manifest, manifestPath); saveRes.IsFatal() {
+		t.Fatalf("Failed to save test manifest: %v", saveRes.Errors)
 	}
 
 	// Run with invalid stage
@@ -315,8 +315,8 @@ func TestCLI_MissingStageFlag(t *testing.T) {
 		Waves:              []protocol.Wave{},
 	}
 
-	if err := protocol.Save(manifest, manifestPath); err != nil {
-		t.Fatalf("Failed to save test manifest: %v", err)
+	if saveRes := protocol.Save(manifest, manifestPath); saveRes.IsFatal() {
+		t.Fatalf("Failed to save test manifest: %v", saveRes.Errors)
 	}
 
 	// Run without --stage flag
@@ -379,8 +379,8 @@ func TestCLI_EmptyManifest(t *testing.T) {
 		Waves:              []protocol.Wave{},
 	}
 
-	if err := protocol.Save(manifest, manifestPath); err != nil {
-		t.Fatalf("Failed to save test manifest: %v", err)
+	if saveRes := protocol.Save(manifest, manifestPath); saveRes.IsFatal() {
+		t.Fatalf("Failed to save test manifest: %v", saveRes.Errors)
 	}
 
 	// Test pre-agent mode

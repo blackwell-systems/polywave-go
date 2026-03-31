@@ -139,14 +139,8 @@ func amendAddWave(opts AmendImplOpts, m *IMPLManifest) result.Result[AmendImplDa
 
 	// Validation passed — mutate real manifest and save
 	m.Waves = append(m.Waves, newWave)
-	if err := Save(m, opts.ManifestPath); err != nil {
-		return result.NewFailure[AmendImplData]([]result.SAWError{
-			{
-				Code:     result.CodeManifestInvalid,
-				Message:  fmt.Sprintf("failed to save manifest: %v", err),
-				Severity: "fatal",
-			},
-		})
+	if saveRes := Save(m, opts.ManifestPath); saveRes.IsFatal() {
+		return result.NewFailure[AmendImplData](saveRes.Errors)
 	}
 
 	return result.NewSuccess(AmendImplData{
@@ -234,14 +228,8 @@ func amendRedirectAgent(opts AmendImplOpts, m *IMPLManifest) result.Result[Amend
 	}
 
 	// Step 6: Save
-	if err := Save(m, opts.ManifestPath); err != nil {
-		return result.NewFailure[AmendImplData]([]result.SAWError{
-			{
-				Code:     result.CodeManifestInvalid,
-				Message:  fmt.Sprintf("failed to save manifest: %v", err),
-				Severity: "fatal",
-			},
-		})
+	if saveRes := Save(m, opts.ManifestPath); saveRes.IsFatal() {
+		return result.NewFailure[AmendImplData](saveRes.Errors)
 	}
 
 	return result.NewSuccess(AmendImplData{

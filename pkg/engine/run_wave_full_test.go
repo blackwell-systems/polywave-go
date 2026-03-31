@@ -75,8 +75,8 @@ func createTestManifestForRunWaveFull(t *testing.T, repoDir string, waveNum int,
 	}
 
 	manifestPath := filepath.Join(repoDir, "IMPL.yaml")
-	if err := protocol.Save(manifest, manifestPath); err != nil {
-		t.Fatalf("failed to save test manifest: %v", err)
+	if saveRes := protocol.Save(manifest, manifestPath); saveRes.IsFatal() {
+		t.Fatalf("failed to save test manifest: %v", saveRes.Errors)
 	}
 
 	return manifestPath

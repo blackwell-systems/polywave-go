@@ -20,6 +20,8 @@
 package protocol
 
 import (
+	"fmt"
+
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
 )
 
@@ -93,7 +95,10 @@ func WriteCriticReview(implPath string, data CriticData) error {
 
 	manifest.CriticReport = &data
 
-	return Save(manifest, implPath)
+	if saveRes := Save(manifest, implPath); saveRes.IsFatal() && len(saveRes.Errors) > 0 {
+		return fmt.Errorf("%s", saveRes.Errors[0].Message)
+	}
+	return nil
 }
 
 // WriteCriticReviewResult writes the critic result to the IMPL manifest at implPath.
@@ -113,14 +118,8 @@ func WriteCriticReviewResult(implPath string, data CriticData) result.Result[Cri
 
 	manifest.CriticReport = &data
 
-	if err := Save(manifest, implPath); err != nil {
-		return result.NewFailure[CriticData]([]result.SAWError{
-			{
-				Code:     result.CodeIMPLParseFailed,
-				Message:  err.Error(),
-				Severity: "fatal",
-			},
-		})
+	if saveRes := Save(manifest, implPath); saveRes.IsFatal() {
+		return result.NewFailure[CriticData](saveRes.Errors)
 	}
 
 	return result.NewSuccess(data)

@@ -53,8 +53,8 @@ func TestLoadProjectMemory_Valid(t *testing.T) {
 	}
 
 	// Save
-	if err := SaveProjectMemory(path, original); err != nil {
-		t.Fatalf("SaveProjectMemory failed: %v", err)
+	if saveRes := SaveProjectMemory(path, original); saveRes.IsFatal() {
+		t.Fatalf("SaveProjectMemory failed: %v", saveRes.Errors)
 	}
 
 	// Load
@@ -127,8 +127,8 @@ func TestSaveProjectMemory_Creates(t *testing.T) {
 		ProtocolVersion: "0.1.0",
 	}
 
-	if err := SaveProjectMemory(path, pm); err != nil {
-		t.Fatalf("SaveProjectMemory failed: %v", err)
+	if saveRes := SaveProjectMemory(path, pm); saveRes.IsFatal() {
+		t.Fatalf("SaveProjectMemory failed: %v", saveRes.Errors)
 	}
 
 	// Verify file was created
@@ -196,8 +196,8 @@ func TestSaveProjectMemory_Roundtrip(t *testing.T) {
 	}
 
 	// Save
-	if err := SaveProjectMemory(path, original); err != nil {
-		t.Fatalf("SaveProjectMemory failed: %v", err)
+	if saveRes := SaveProjectMemory(path, original); saveRes.IsFatal() {
+		t.Fatalf("SaveProjectMemory failed: %v", saveRes.Errors)
 	}
 
 	// Load
@@ -386,8 +386,8 @@ func TestArchitectureModule_Roundtrip(t *testing.T) {
 		},
 	}
 
-	if err := SaveProjectMemory(path, original); err != nil {
-		t.Fatalf("SaveProjectMemory failed: %v", err)
+	if saveRes := SaveProjectMemory(path, original); saveRes.IsFatal() {
+		t.Fatalf("SaveProjectMemory failed: %v", saveRes.Errors)
 	}
 
 	loaded, err := LoadProjectMemory(path)

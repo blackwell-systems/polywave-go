@@ -439,14 +439,8 @@ func FinalizeIMPL(implPath, repoRoot string) result.Result[FinalizeIMPLData] {
 	}
 
 	// Step 6: Save updated manifest (atomic write)
-	if err := Save(updatedManifest, implPath); err != nil {
-		return result.NewFailure[FinalizeIMPLData]([]result.SAWError{
-			{
-				Code:     result.CodeFinalizeWaveFailed,
-				Message:  fmt.Sprintf("failed to save updated manifest: %v", err),
-				Severity: "fatal",
-			},
-		})
+	if saveRes := Save(updatedManifest, implPath); saveRes.IsFatal() {
+		return result.NewFailure[FinalizeIMPLData](saveRes.Errors)
 	}
 
 	return result.NewSuccess(data)

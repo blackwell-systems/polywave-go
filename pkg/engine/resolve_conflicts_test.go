@@ -146,8 +146,8 @@ line 2`
 			{File: "file.txt", Agent: "A", Wave: 1},
 		},
 	}
-	if err := protocol.Save(manifest, implPath); err != nil {
-		t.Fatalf("failed to save manifest: %v", err)
+	if saveRes := protocol.Save(manifest, implPath); saveRes.IsFatal() {
+		t.Fatalf("failed to save manifest: %v", saveRes.Errors)
 	}
 
 	// Verify conflict markers are present

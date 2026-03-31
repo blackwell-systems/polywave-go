@@ -2,7 +2,6 @@ package protocol
 
 import (
 	"encoding/json"
-	"errors"
 	"os"
 	"path/filepath"
 	"testing"
@@ -82,8 +81,8 @@ func TestManifestLoadSave(t *testing.T) {
 	path := filepath.Join(tmpDir, "test-manifest.yaml")
 
 	// Save
-	if err := Save(original, path); err != nil {
-		t.Fatalf("Save failed: %v", err)
+	if saveRes := Save(original, path); saveRes.IsFatal() {
+		t.Fatalf("Save failed: %v", saveRes.Errors)
 	}
 
 	// Load
@@ -278,12 +277,22 @@ func TestManifestSetCompletionReport(t *testing.T) {
 		Commit: "abc123",
 	}
 
-	err := SetCompletionReport(manifest, "A", report)
-	if err != nil {
-		t.Errorf("SetCompletionReport(A) failed: %v", err)
+	res := SetCompletionReport(manifest, "A", report)
+	if res.IsFatal() {
+		t.Errorf("SetCompletionReport(A) failed: %v", res.Errors)
 	}
 
-	// Verify report was stored
+	// Verify report was stored and SetReportData is populated correctly
+	if res.IsSuccess() {
+		data := res.GetData()
+		if data.AgentID != "A" {
+			t.Errorf("SetReportData.AgentID = %q, want %q", data.AgentID, "A")
+		}
+		if !data.ReportSet {
+			t.Error("SetReportData.ReportSet should be true on success")
+		}
+	}
+
 	if stored, ok := manifest.CompletionReports["A"]; !ok {
 		t.Error("Report for agent A not stored")
 	} else if stored.Status != StatusComplete {
@@ -291,17 +300,14 @@ func TestManifestSetCompletionReport(t *testing.T) {
 	}
 
 	// Test invalid agent
-	err = SetCompletionReport(manifest, "Z", report)
-	if err == nil {
+	resZ := SetCompletionReport(manifest, "Z", report)
+	if !resZ.IsFatal() {
 		t.Error("SetCompletionReport(Z) should fail with unknown agent")
-	}
-	if err != nil && !errors.Is(err, ErrAgentNotFound) {
-		t.Errorf("SetCompletionReport(Z) error = %v, want ErrAgentNotFound", err)
 	}
 
 	// Test empty agent ID
-	err = SetCompletionReport(manifest, "", report)
-	if err == nil {
+	resEmpty := SetCompletionReport(manifest, "", report)
+	if !resEmpty.IsFatal() {
 		t.Error("SetCompletionReport('') should fail with empty agent ID")
 	}
 
@@ -312,9 +318,9 @@ func TestManifestSetCompletionReport(t *testing.T) {
 		Commit: "def456",
 	}
 
-	err = SetCompletionReport(manifest, "A", updatedReport)
-	if err != nil {
-		t.Errorf("SetCompletionReport(A) update failed: %v", err)
+	resUpdate := SetCompletionReport(manifest, "A", updatedReport)
+	if resUpdate.IsFatal() {
+		t.Errorf("SetCompletionReport(A) update failed: %v", resUpdate.Errors)
 	}
 
 	if stored := manifest.CompletionReports["A"]; stored.Status != StatusPartial {

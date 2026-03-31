@@ -60,8 +60,12 @@ func restoreSnapshot(implPath string, snap *implSnapshot) error {
 	manifest.MergeState = snap.MergeState
 	manifest.CompletionReports = snap.CompletionReports
 
-	if err := protocol.Save(manifest, implPath); err != nil {
-		return fmt.Errorf("engine.RunWaveTransaction: save rollback: %w", err)
+	if saveRes := protocol.Save(manifest, implPath); saveRes.IsFatal() {
+		saveErrMsg := "save failed"
+		if len(saveRes.Errors) > 0 {
+			saveErrMsg = saveRes.Errors[0].Message
+		}
+		return fmt.Errorf("engine.RunWaveTransaction: save rollback: %s", saveErrMsg)
 	}
 	return nil
 }
