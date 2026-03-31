@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"log/slog"
 
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/observability"
 )
@@ -13,5 +14,9 @@ func emitWaveStart(emitter *observability.Emitter, implSlug string, waveNum int)
 		return
 	}
 	event := observability.NewWaveStartEvent(implSlug, waveNum)
-	emitter.Emit(context.Background(), event)
+	if res := emitter.EmitSync(context.Background(), event); res.IsFatal() {
+		slog.Warn("emitWaveStart: store write failed",
+			"slug", implSlug, "wave", waveNum,
+			"error", res.Errors[0].Message)
+	}
 }
