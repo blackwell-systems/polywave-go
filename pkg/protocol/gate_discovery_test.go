@@ -242,6 +242,141 @@ quality_gates:
 	}
 }
 
+func TestDiscoverBuildGate(t *testing.T) {
+	tests := []struct {
+		name    string
+		setup   func(t *testing.T, dir string)
+		want    string
+		wantErr bool
+	}{
+		{
+			name:  "no docs/IMPL directory returns empty",
+			setup: func(t *testing.T, dir string) {},
+			want:  "",
+		},
+		{
+			name: "active IMPL with build gate returns command",
+			setup: func(t *testing.T, dir string) {
+				implDir := filepath.Join(dir, "docs", "IMPL")
+				if err := os.MkdirAll(implDir, 0o755); err != nil {
+					t.Fatal(err)
+				}
+				writeYAML(t, filepath.Join(implDir, "IMPL-active.yaml"), `
+title: active feature
+feature_slug: active
+state: WAVE_PENDING
+quality_gates:
+  level: standard
+  gates:
+    - type: build
+      command: "go build ./..."
+      required: true
+    - type: lint
+      command: "go vet ./..."
+      required: true
+`)
+			},
+			want: "go build ./...",
+		},
+		{
+			name: "active IMPL without build gate but saw.config.json has build_command returns config value",
+			setup: func(t *testing.T, dir string) {
+				implDir := filepath.Join(dir, "docs", "IMPL")
+				if err := os.MkdirAll(implDir, 0o755); err != nil {
+					t.Fatal(err)
+				}
+				writeYAML(t, filepath.Join(implDir, "IMPL-nobuild.yaml"), `
+title: no build gate feature
+feature_slug: nobuild
+state: WAVE_EXECUTING
+quality_gates:
+  level: quick
+  gates:
+    - type: lint
+      command: "go vet ./..."
+      required: true
+`)
+				writeJSON(t, filepath.Join(dir, "saw.config.json"), `{"build_command": "make build"}`)
+			},
+			want: "make build",
+		},
+		{
+			name: "IMPL in StateComplete is skipped; returns empty",
+			setup: func(t *testing.T, dir string) {
+				implDir := filepath.Join(dir, "docs", "IMPL")
+				if err := os.MkdirAll(implDir, 0o755); err != nil {
+					t.Fatal(err)
+				}
+				writeYAML(t, filepath.Join(implDir, "IMPL-done.yaml"), `
+title: done feature
+feature_slug: done
+state: COMPLETE
+quality_gates:
+  level: standard
+  gates:
+    - type: build
+      command: "go build ./..."
+      required: true
+`)
+			},
+			want: "",
+		},
+		{
+			name: "build gate scoped to different repo is skipped",
+			setup: func(t *testing.T, dir string) {
+				implDir := filepath.Join(dir, "docs", "IMPL")
+				if err := os.MkdirAll(implDir, 0o755); err != nil {
+					t.Fatal(err)
+				}
+				// Create the file so TargetsRepo confirms this IMPL targets this repo.
+				protoDir := filepath.Join(dir, "protocol")
+				if err := os.MkdirAll(protoDir, 0o755); err != nil {
+					t.Fatal(err)
+				}
+				writeYAML(t, filepath.Join(protoDir, "execution-rules.md"), "# placeholder")
+				// IMPL targets this repo (file exists on disk) but first build gate
+				// is scoped to another repo — should be skipped.
+				writeYAML(t, filepath.Join(implDir, "IMPL-crossrepo.yaml"), `
+title: cross-repo feature
+feature_slug: crossrepo
+state: WAVE_PENDING
+file_ownership:
+  - file: protocol/execution-rules.md
+    agent: G
+    wave: 3
+    action: modify
+quality_gates:
+  level: standard
+  gates:
+    - type: build
+      command: "make build-other"
+      required: true
+      repo: other-repo
+    - type: build
+      command: "go build ./..."
+      required: true
+`)
+			},
+			want: "go build ./...",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			dir := t.TempDir()
+			tt.setup(t, dir)
+
+			got, err := DiscoverBuildGate(dir)
+			if (err != nil) != tt.wantErr {
+				t.Fatalf("DiscoverBuildGate() error = %v, wantErr %v", err, tt.wantErr)
+			}
+			if got != tt.want {
+				t.Errorf("DiscoverBuildGate() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
 func writeYAML(t *testing.T, path, content string) {
 	t.Helper()
 	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
