@@ -1,6 +1,7 @@
 package analyzer
 
 import (
+	"context"
 	"fmt"
 	"go/parser"
 	"go/token"
@@ -51,11 +52,11 @@ func parseGoFiles(repoRoot string, files []string) (map[string][]string, error) 
 	fileImports := make(map[string][]string)
 
 	for _, f := range files {
-		ast, err := analyzer.ParseFile(f)
+		ast, err := analyzer.ParseFile(context.Background(), f)
 		if err != nil {
 			return nil, fmt.Errorf("parse %s: %w", f, err)
 		}
-		imports, err := analyzer.ExtractImports(ast, repoRoot)
+		imports, err := analyzer.ExtractImports(context.Background(), ast, repoRoot)
 		if err != nil {
 			return nil, fmt.Errorf("extract imports %s: %w", f, err)
 		}
@@ -353,7 +354,7 @@ func detectCascades(repoRoot string, modifiedFiles []string, revAdj map[string][
 	}
 
 	// Also scan for files in the repo that import modified packages but aren't in our graph
-	modulePath, err := getModulePath(repoRoot)
+	modulePath, err := getModulePath(context.Background(), repoRoot)
 	if err != nil {
 		return cascades, nil // Non-fatal
 	}

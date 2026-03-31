@@ -1289,7 +1289,7 @@ func runScoutAutomation(repoPath string, featureDescription string) string {
 	}
 
 	// H3: Analyze dependencies
-	depsResult, depsErr := analyzer.AnalyzeDeps(repoPath, targetFiles)
+	depsResult, depsErr := analyzer.AnalyzeDeps(context.Background(), repoPath, targetFiles)
 	if depsErr != nil {
 		sections = append(sections, fmt.Sprintf("### Dependency Analysis (H3)\nAnalysis failed: %v", depsErr))
 	} else {
