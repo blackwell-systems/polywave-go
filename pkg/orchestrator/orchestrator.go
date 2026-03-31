@@ -788,7 +788,7 @@ func (o *Orchestrator) launchAgent(
 	// E23: Construct per-agent context payload instead of passing full IMPL doc prompt.
 	manifest, err := protocol.Load(context.TODO(), o.implDocPath)
 	if err == nil {
-		if contextPayload, extractErr := protocol.ExtractAgentContextFromManifest(manifest, agentSpec.ID); extractErr == nil {
+		if contextPayload, extractErr := protocol.ExtractAgentContextFromManifest(context.TODO(), manifest, agentSpec.ID); extractErr == nil {
 			if jsonBytes, marshalErr := json.Marshal(contextPayload); marshalErr == nil {
 				agentSpec.Task = string(jsonBytes)
 			} else {

@@ -22,7 +22,7 @@ func newFreezeCheckCmd() *cobra.Command {
 				return fmt.Errorf("freeze-check: %w", err)
 			}
 
-			violations, err := protocol.CheckFreeze(m)
+			violations, err := protocol.CheckFreeze(context.TODO(), m)
 			if err != nil {
 				return fmt.Errorf("freeze-check: %w", err)
 			}

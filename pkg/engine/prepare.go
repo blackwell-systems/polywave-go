@@ -412,7 +412,7 @@ func PrepareWave(ctx context.Context, opts PrepareWaveOpts) (*PrepareWaveResult,
 
 	// Step: Freeze check (I2, when WorktreesCreatedAt set)
 	if doc.WorktreesCreatedAt != nil {
-		violations, freezeErr := protocol.CheckFreeze(doc)
+		violations, freezeErr := protocol.CheckFreeze(ctx, doc)
 		if freezeErr != nil {
 			recordStep(res, opts.OnEvent, "freeze_check", "warning", freezeErr.Error())
 		} else if len(violations) > 0 {

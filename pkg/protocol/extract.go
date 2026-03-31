@@ -4,6 +4,7 @@
 package protocol
 
 import (
+	"context"
 	"fmt"
 )
 
@@ -21,7 +22,10 @@ type AgentContextJSONPayload struct {
 // ExtractAgentContextFromManifest builds a per-agent context payload from a parsed
 // IMPLManifest. YAML-mode equivalent of ExtractAgentContext. Returns ErrAgentNotFound
 // (wrapped) if agentID is not in any wave.
-func ExtractAgentContextFromManifest(m *IMPLManifest, agentID string) (*AgentContextJSONPayload, error) {
+func ExtractAgentContextFromManifest(ctx context.Context, m *IMPLManifest, agentID string) (*AgentContextJSONPayload, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	// Search all waves for the agent with matching ID.
 	var foundAgent *Agent
 	for i := range m.Waves {

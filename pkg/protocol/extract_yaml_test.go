@@ -1,6 +1,7 @@
 package protocol
 
 import (
+	"context"
 	"errors"
 	"testing"
 )
@@ -46,7 +47,7 @@ func minimalManifest() *IMPLManifest {
 func TestExtractAgentContextFromManifest_Found(t *testing.T) {
 	m := minimalManifest()
 
-	payload, err := ExtractAgentContextFromManifest(m, "A")
+	payload, err := ExtractAgentContextFromManifest(context.Background(), m, "A")
 	if err != nil {
 		t.Fatalf("ExtractAgentContextFromManifest returned unexpected error: %v", err)
 	}
@@ -90,7 +91,7 @@ func TestExtractAgentContextFromManifest_Found(t *testing.T) {
 func TestExtractAgentContextFromManifest_NotFound(t *testing.T) {
 	m := minimalManifest()
 
-	payload, err := ExtractAgentContextFromManifest(m, "Z")
+	payload, err := ExtractAgentContextFromManifest(context.Background(), m, "Z")
 	if err == nil {
 		t.Fatalf("expected error for missing agent Z, got payload: %+v", payload)
 	}
@@ -104,7 +105,7 @@ func TestExtractAgentContextFromManifest_NotFound(t *testing.T) {
 func TestExtractAgentContextFromManifest_FiltersByAgent(t *testing.T) {
 	m := minimalManifest()
 
-	payload, err := ExtractAgentContextFromManifest(m, "A")
+	payload, err := ExtractAgentContextFromManifest(context.Background(), m, "A")
 	if err != nil {
 		t.Fatalf("ExtractAgentContextFromManifest returned unexpected error: %v", err)
 	}
@@ -120,7 +121,7 @@ func TestExtractAgentContextFromManifest_FiltersByAgent(t *testing.T) {
 	}
 
 	// Agent B payload should include B's file and not A's.
-	payloadB, err := ExtractAgentContextFromManifest(m, "B")
+	payloadB, err := ExtractAgentContextFromManifest(context.Background(), m, "B")
 	if err != nil {
 		t.Fatalf("ExtractAgentContextFromManifest(B) returned unexpected error: %v", err)
 	}
