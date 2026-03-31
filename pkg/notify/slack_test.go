@@ -77,7 +77,8 @@ func TestSlackAdapter_Send_Success(t *testing.T) {
 		t.Errorf("expected provider 'slack', got %q", data.Provider)
 	}
 
-	// Verify payload structure
+	// Verify payload structure — blocks are JSON-marshalled typed structs so we
+	// read them back as map[string]interface{} after the round-trip through the server.
 	blocks, ok := receivedBody["blocks"].([]interface{})
 	if !ok {
 		t.Fatal("expected blocks array in payload")
@@ -235,11 +236,15 @@ func TestSlackFormatter_Info(t *testing.T) {
 		t.Fatalf("expected 3 blocks (title, fields, context), got %d", len(blocks))
 	}
 
-	// Verify context block has info color
-	contextBlock := blocks[2].(map[string]interface{})
-	elements := contextBlock["elements"].([]interface{})
-	elem := elements[0].(map[string]interface{})
-	text := elem["text"].(string)
+	// Verify context block has info color (typed slackContext)
+	contextBlock, ok := blocks[2].(*slackContext)
+	if !ok {
+		t.Fatal("expected last block to be *slackContext")
+	}
+	if len(contextBlock.Elements) == 0 {
+		t.Fatal("expected at least one element in context block")
+	}
+	text := contextBlock.Elements[0].Text
 	if text != "Severity: info | Color: #36a64f" {
 		t.Errorf("unexpected context text: %s", text)
 	}
@@ -256,10 +261,11 @@ func TestSlackFormatter_Warning(t *testing.T) {
 
 	blocks := msg.Embeds.([]interface{})
 	// title + context (no body, no fields)
-	contextBlock := blocks[len(blocks)-1].(map[string]interface{})
-	elements := contextBlock["elements"].([]interface{})
-	elem := elements[0].(map[string]interface{})
-	text := elem["text"].(string)
+	contextBlock, ok := blocks[len(blocks)-1].(*slackContext)
+	if !ok {
+		t.Fatal("expected last block to be *slackContext")
+	}
+	text := contextBlock.Elements[0].Text
 	if text != "Severity: warning | Color: #daa038" {
 		t.Errorf("unexpected context text: %s", text)
 	}
@@ -275,11 +281,34 @@ func TestSlackFormatter_Error(t *testing.T) {
 	msg := f.Format(event)
 
 	blocks := msg.Embeds.([]interface{})
-	contextBlock := blocks[len(blocks)-1].(map[string]interface{})
-	elements := contextBlock["elements"].([]interface{})
-	elem := elements[0].(map[string]interface{})
-	text := elem["text"].(string)
+	contextBlock, ok := blocks[len(blocks)-1].(*slackContext)
+	if !ok {
+		t.Fatal("expected last block to be *slackContext")
+	}
+	text := contextBlock.Elements[0].Text
 	if text != "Severity: error | Color: #cc0000" {
 		t.Errorf("unexpected context text: %s", text)
+	}
+}
+
+func TestSlackFormatter_TypedBlocks(t *testing.T) {
+	f := &SlackFormatter{}
+	event := Event{Title: "T", Body: "B"}
+	msg := f.Format(event)
+
+	data, err := json.Marshal(msg.Embeds)
+	if err != nil {
+		t.Fatalf("marshal error: %v", err)
+	}
+
+	var decoded []map[string]interface{}
+	if err := json.Unmarshal(data, &decoded); err != nil {
+		t.Fatalf("unmarshal error: %v", err)
+	}
+	if len(decoded) == 0 {
+		t.Fatal("expected at least one block")
+	}
+	if _, ok := decoded[0]["type"]; !ok {
+		t.Error("expected \"type\" key in first block")
 	}
 }

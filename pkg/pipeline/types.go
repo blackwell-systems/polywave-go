@@ -34,6 +34,30 @@ type State struct {
 	RepoPath string
 	IMPLPath string
 	WaveNum  int
-	Values   map[string]interface{}
+	Values   map[string]any
 	Errors   []result.SAWError
+}
+
+// GetValue retrieves a typed value from state.Values.
+// Returns (zero, false) if the key is absent or value cannot be asserted to T.
+func GetValue[T any](state *State, key string) (T, bool) {
+	if state.Values == nil {
+		var zero T
+		return zero, false
+	}
+	v, ok := state.Values[key]
+	if !ok {
+		var zero T
+		return zero, false
+	}
+	typed, ok := v.(T)
+	return typed, ok
+}
+
+// SetValue sets key in state.Values, initializing the map if nil.
+func SetValue(state *State, key string, val any) {
+	if state.Values == nil {
+		state.Values = make(map[string]any)
+	}
+	state.Values[key] = val
 }
