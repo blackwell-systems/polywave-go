@@ -6,6 +6,8 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
 )
 
 func init() {
@@ -13,20 +15,25 @@ func init() {
 }
 
 // runVerification runs go vet then testCommand in o.repoPath.
-// Returns nil only when both pass.
-func runVerification(o *Orchestrator, testCommand string) error {
+// Returns failure only when either pass fails.
+func runVerification(o *Orchestrator, testCommand string) result.Result[VerificationData] {
 	// Lint pass: go vet ./... (skip if no go.mod in repoPath — e.g. in tests)
 	if _, err := os.Stat(filepath.Join(o.repoPath, "go.mod")); err == nil {
 		vet := exec.Command("go", "vet", "./...")
 		vet.Dir = o.repoPath
 		if out, err := vet.CombinedOutput(); err != nil {
-			return fmt.Errorf("runVerification: go vet failed: %w\noutput: %s", err, string(out))
+			return result.NewFailure[VerificationData]([]result.SAWError{
+				result.NewFatal(result.CodeLintFailed, fmt.Sprintf(
+					"runVerification: go vet failed: %s\noutput: %s", err.Error(), string(out))),
+			})
 		}
 	}
 
 	parts := strings.Fields(testCommand)
 	if len(parts) == 0 {
-		return fmt.Errorf("runVerification: empty test command")
+		return result.NewFailure[VerificationData]([]result.SAWError{
+			result.NewFatal(result.CodeGateCommandMissing, "runVerification: empty test command"),
+		})
 	}
 
 	cmd := exec.Command(parts[0], parts[1:]...)
@@ -34,8 +41,11 @@ func runVerification(o *Orchestrator, testCommand string) error {
 
 	out, err := cmd.CombinedOutput()
 	if err != nil {
-		return fmt.Errorf("runVerification: command %q failed: %w\noutput: %s", testCommand, err, string(out))
+		return result.NewFailure[VerificationData]([]result.SAWError{
+			result.NewFatal(result.CodeTestFailed, fmt.Sprintf(
+				"runVerification: command %q failed: %s\noutput: %s", testCommand, err.Error(), string(out))),
+		})
 	}
 
-	return nil
+	return result.NewSuccess(VerificationData{TestCommand: testCommand})
 }

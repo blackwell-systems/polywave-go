@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
 )
 
 // RunStubScan implements E20: collects all files_changed and files_created from
@@ -18,8 +19,8 @@ import (
 // sawRepoPath locates scan-stubs.sh: falls back to $SAW_REPO env var, then
 // ~/code/scout-and-wave (same fallback as RunScout).
 //
-// Always returns nil — stub detection is informational only (E20).
-func RunStubScan(implDocPath string, waveNum int, reports map[string]*protocol.CompletionReport, sawRepoPath string, logger *slog.Logger) error {
+// Always returns success — stub detection is informational only (E20).
+func RunStubScan(implDocPath string, waveNum int, reports map[string]*protocol.CompletionReport, sawRepoPath string, logger *slog.Logger) result.Result[RunStubData] {
 	log := loggerFrom(logger)
 	// 1. Collect the union of all FilesChanged and FilesCreated, deduplicated,
 	//    skipping any files under docs/IMPL/.
@@ -68,7 +69,7 @@ func RunStubScan(implDocPath string, waveNum int, reports map[string]*protocol.C
 		if appendErr := appendToFile(implDocPath, section); appendErr != nil {
 			log.Warn("RunStubScan: failed to append stub report", "err", appendErr)
 		}
-		return nil
+		return result.NewSuccess(RunStubData{WaveNum: waveNum, FilesScanned: 0})
 	}
 
 	// 5. Run the script with files as arguments. If no files, still run to get a clean report.
@@ -99,8 +100,8 @@ func RunStubScan(implDocPath string, waveNum int, reports map[string]*protocol.C
 		log.Warn("RunStubScan: failed to append stub report", "err", appendErr)
 	}
 
-	// 7. Always return nil — stub detection is informational only.
-	return nil
+	// 7. Always return success — stub detection is informational only.
+	return result.NewSuccess(RunStubData{WaveNum: waveNum, FilesScanned: len(files)})
 }
 
 // appendToFile opens the file at path in append mode and writes content.

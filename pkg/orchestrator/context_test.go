@@ -45,8 +45,8 @@ func TestUpdateContextMDCreatesFile(t *testing.T) {
 		Date:    "2026-03-08",
 	}
 
-	if err := UpdateContextMD(dir, entry); err != nil {
-		t.Fatalf("UpdateContextMD returned error: %v", err)
+	if res := UpdateContextMD(dir, entry); !res.IsSuccess() {
+		t.Fatalf("UpdateContextMD returned failure: %v", res.Errors)
 	}
 
 	contextPath := filepath.Join(dir, "docs", "CONTEXT.md")
@@ -96,11 +96,11 @@ func TestUpdateContextMDAppendsToExisting(t *testing.T) {
 		Date:    "2026-03-08",
 	}
 
-	if err := UpdateContextMD(dir, entry1); err != nil {
-		t.Fatalf("first UpdateContextMD: %v", err)
+	if res := UpdateContextMD(dir, entry1); !res.IsSuccess() {
+		t.Fatalf("first UpdateContextMD returned failure: %v", res.Errors)
 	}
-	if err := UpdateContextMD(dir, entry2); err != nil {
-		t.Fatalf("second UpdateContextMD: %v", err)
+	if res := UpdateContextMD(dir, entry2); !res.IsSuccess() {
+		t.Fatalf("second UpdateContextMD returned failure: %v", res.Errors)
 	}
 
 	contextPath := filepath.Join(dir, "docs", "CONTEXT.md")

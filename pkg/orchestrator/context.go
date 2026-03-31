@@ -8,6 +8,7 @@ import (
 
 	"github.com/blackwell-systems/scout-and-wave-go/internal/git"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
 )
 
 // ContextMDEntry is one completed feature record for docs/CONTEXT.md (E18).
@@ -23,7 +24,7 @@ type ContextMDEntry struct {
 // If the file does not exist, creates it with the canonical schema.
 // Appends entry to the features_completed list.
 // Commits: git commit -m "chore: update docs/CONTEXT.md for {entry.Slug}"
-func UpdateContextMD(repoPath string, entry ContextMDEntry) error {
+func UpdateContextMD(repoPath string, entry ContextMDEntry) result.Result[UpdateContextData] {
 	// 1. Auto-fill date if empty.
 	if entry.Date == "" {
 		entry.Date = time.Now().Format("2006-01-02")
@@ -36,7 +37,10 @@ func UpdateContextMD(repoPath string, entry ContextMDEntry) error {
 	if _, err := os.Stat(contextPath); os.IsNotExist(err) {
 		// Ensure docs/ directory exists.
 		if err := os.MkdirAll(filepath.Dir(contextPath), 0755); err != nil {
-			return fmt.Errorf("UpdateContextMD: create docs dir: %w", err)
+			return result.NewFailure[UpdateContextData]([]result.SAWError{
+				result.NewFatal(result.CodeContextError,
+					fmt.Sprintf("UpdateContextMD: create docs dir: %s", err.Error())),
+			})
 		}
 		canonical := fmt.Sprintf(`# docs/CONTEXT.md — Project memory for Scout-and-Wave (E17/E18)
 created: %s
@@ -50,7 +54,10 @@ established_interfaces: []
 features_completed: []
 `, entry.Date)
 		if err := os.WriteFile(contextPath, []byte(canonical), 0644); err != nil {
-			return fmt.Errorf("UpdateContextMD: create CONTEXT.md: %w", err)
+			return result.NewFailure[UpdateContextData]([]result.SAWError{
+				result.NewFatal(result.CodeContextError,
+					fmt.Sprintf("UpdateContextMD: create CONTEXT.md: %s", err.Error())),
+			})
 		}
 	}
 
@@ -60,23 +67,38 @@ features_completed: []
 
 	f, err := os.OpenFile(contextPath, os.O_APPEND|os.O_WRONLY, 0644)
 	if err != nil {
-		return fmt.Errorf("UpdateContextMD: open CONTEXT.md for append: %w", err)
+		return result.NewFailure[UpdateContextData]([]result.SAWError{
+			result.NewFatal(result.CodeContextError,
+				fmt.Sprintf("UpdateContextMD: open CONTEXT.md for append: %s", err.Error())),
+		})
 	}
 	if _, err := f.WriteString(entryLines); err != nil {
 		f.Close()
-		return fmt.Errorf("UpdateContextMD: write entry: %w", err)
+		return result.NewFailure[UpdateContextData]([]result.SAWError{
+			result.NewFatal(result.CodeContextError,
+				fmt.Sprintf("UpdateContextMD: write entry: %s", err.Error())),
+		})
 	}
 	f.Close()
 
 	// 5. Git add and commit.
 	if err := git.Add(repoPath, "docs/CONTEXT.md"); err != nil {
-		return fmt.Errorf("UpdateContextMD: git add: %w", err)
+		return result.NewFailure[UpdateContextData]([]result.SAWError{
+			result.NewFatal(result.CodeContextError,
+				fmt.Sprintf("UpdateContextMD: git add: %s", err.Error())),
+		})
 	}
 
 	commitMsg := fmt.Sprintf("chore: update docs/CONTEXT.md for %s", entry.Slug)
 	if _, err := git.CommitWithMessage(repoPath, commitMsg); err != nil {
-		return fmt.Errorf("UpdateContextMD: git commit: %w", err)
+		return result.NewFailure[UpdateContextData]([]result.SAWError{
+			result.NewFatal(result.CodeContextError,
+				fmt.Sprintf("UpdateContextMD: git commit: %s", err.Error())),
+		})
 	}
 
-	return nil
+	return result.NewSuccess(UpdateContextData{
+		Slug:        entry.Slug,
+		ContextPath: contextPath,
+	})
 }
