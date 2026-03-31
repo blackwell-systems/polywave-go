@@ -12,6 +12,28 @@ import (
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
 )
 
+type slackText struct {
+	Type string `json:"type"`
+	Text string `json:"text"`
+}
+
+type slackSection struct {
+	Type   string       `json:"type"`
+	Text   *slackText   `json:"text,omitempty"`
+	Fields []*slackText `json:"fields,omitempty"`
+}
+
+type slackContext struct {
+	Type     string       `json:"type"`
+	Elements []*slackText `json:"elements"`
+}
+
+type slackPayload struct {
+	Text    string        `json:"text,omitempty"`
+	Channel string        `json:"channel,omitempty"`
+	Blocks  []interface{} `json:"blocks,omitempty"`
+}
+
 // readWithFallback reads key from cfg, falling back to fallbackKey.
 func readWithFallback(cfg map[string]string, key, fallbackKey string) string {
 	if v := cfg[key]; v != "" {
@@ -60,23 +82,17 @@ func (s *SlackAdapter) Name() string { return "slack" }
 
 // Send delivers a formatted message via webhook or Bot API.
 func (s *SlackAdapter) Send(ctx context.Context, msg Message) result.Result[SendData] {
-	payload := make(map[string]interface{})
-
+	p := slackPayload{Text: msg.Text}
+	if s.destination != "" {
+		p.Channel = s.destination
+	}
 	if msg.Embeds != nil {
 		if blocks, ok := msg.Embeds.([]interface{}); ok {
-			payload["blocks"] = blocks
+			p.Blocks = blocks
 		}
 	}
 
-	if msg.Text != "" {
-		payload["text"] = msg.Text
-	}
-
-	if s.destination != "" {
-		payload["channel"] = s.destination
-	}
-
-	body, err := json.Marshal(payload)
+	body, err := json.Marshal(p)
 	if err != nil {
 		return result.NewFailure[SendData]([]result.SAWError{
 			{Code: "SLACK_MARSHAL_ERROR", Message: fmt.Sprintf("slack: marshal payload: %v", err), Severity: "fatal"},
@@ -179,30 +195,23 @@ func (f *SlackFormatter) Format(event Event) Message {
 	blocks := []interface{}{}
 
 	// Section block with title as text
-	titleBlock := map[string]interface{}{
-		"type": "section",
-		"text": map[string]interface{}{
-			"type": "mrkdwn",
-			"text": fmt.Sprintf("*%s*", event.Title),
-		},
+	titleBlock := &slackSection{
+		Type: "section",
+		Text: &slackText{Type: "mrkdwn", Text: fmt.Sprintf("*%s*", event.Title)},
 	}
 	blocks = append(blocks, titleBlock)
 
 	// Body as a section if present
 	if event.Body != "" {
-		bodyBlock := map[string]interface{}{
-			"type": "section",
-			"text": map[string]interface{}{
-				"type": "mrkdwn",
-				"text": event.Body,
-			},
+		bodyBlock := &slackSection{
+			Type: "section",
+			Text: &slackText{Type: "mrkdwn", Text: event.Body},
 		}
 		blocks = append(blocks, bodyBlock)
 	}
 
 	// Fields block with key-value pairs
 	if len(event.Fields) > 0 {
-		fields := []interface{}{}
 		// Sort keys for deterministic output
 		keys := make([]string, 0, len(event.Fields))
 		for k := range event.Fields {
@@ -210,28 +219,24 @@ func (f *SlackFormatter) Format(event Event) Message {
 		}
 		sort.Strings(keys)
 
+		fieldItems := make([]*slackText, 0, len(event.Fields))
 		for _, k := range keys {
-			fields = append(fields, map[string]interface{}{
-				"type": "mrkdwn",
-				"text": fmt.Sprintf("*%s:* %s", k, event.Fields[k]),
+			fieldItems = append(fieldItems, &slackText{
+				Type: "mrkdwn",
+				Text: fmt.Sprintf("*%s:* %s", k, event.Fields[k]),
 			})
 		}
-		fieldsBlock := map[string]interface{}{
-			"type":   "section",
-			"fields": fields,
-		}
+		fieldsBlock := &slackSection{Type: "section", Fields: fieldItems}
 		blocks = append(blocks, fieldsBlock)
 	}
 
 	// Color context block
-	colorBlock := map[string]interface{}{
-		"type": "context",
-		"elements": []interface{}{
-			map[string]interface{}{
-				"type": "mrkdwn",
-				"text": fmt.Sprintf("Severity: %s | Color: %s", event.Severity, severityColor(event.Severity)),
-			},
-		},
+	colorBlock := &slackContext{
+		Type: "context",
+		Elements: []*slackText{{
+			Type: "mrkdwn",
+			Text: fmt.Sprintf("Severity: %s | Color: %s", event.Severity, severityColor(event.Severity)),
+		}},
 	}
 	blocks = append(blocks, colorBlock)
 

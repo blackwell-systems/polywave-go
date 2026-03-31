@@ -20,23 +20,11 @@ type KeyData struct {
 //   - SUCCESS: key is present and non-nil
 //   - FATAL (REQUIRED_KEY_MISSING): key is absent, state.Values is nil, or value is nil
 func requiredKey(state *State, key string) result.Result[KeyData] {
-	if state.Values == nil {
-		return result.NewFailure[KeyData]([]result.SAWError{
-			result.NewFatal("REQUIRED_KEY_MISSING",
-				fmt.Sprintf("state.Values is nil; required key %q not set", key)),
-		})
-	}
-	v, ok := state.Values[key]
-	if !ok {
+	v, ok := GetValue[any](state, key)
+	if !ok || v == nil {
 		return result.NewFailure[KeyData]([]result.SAWError{
 			result.NewFatal("REQUIRED_KEY_MISSING",
 				fmt.Sprintf("required state key %q not set", key)),
-		})
-	}
-	if v == nil {
-		return result.NewFailure[KeyData]([]result.SAWError{
-			result.NewFatal("REQUIRED_KEY_MISSING",
-				fmt.Sprintf("required state key %q is nil", key)),
 		})
 	}
 	return result.NewSuccess(KeyData{Key: key, Found: true})

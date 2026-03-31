@@ -53,8 +53,8 @@ func TestDiscordAdapter_SendSuccess(t *testing.T) {
 
 	msg := Message{
 		Text: "test",
-		Embeds: []map[string]interface{}{
-			{"title": "Test", "description": "body", "color": 3447003},
+		Embeds: []discordEmbed{
+			{Title: "Test", Description: "body", Color: 3447003},
 		},
 	}
 
@@ -186,26 +186,25 @@ func TestDiscordFormatter_Format(t *testing.T) {
 		t.Fatal("expected non-nil embeds")
 	}
 
-	embeds, ok := msg.Embeds.([]map[string]interface{})
+	embeds, ok := msg.Embeds.([]discordEmbed)
 	if !ok || len(embeds) != 1 {
 		t.Fatal("expected exactly one embed")
 	}
 
 	embed := embeds[0]
-	if embed["title"] != "Wave 1 Complete" {
-		t.Errorf("expected title 'Wave 1 Complete', got %v", embed["title"])
+	if embed.Title != "Wave 1 Complete" {
+		t.Errorf("expected title 'Wave 1 Complete', got %q", embed.Title)
 	}
-	if embed["color"] != discordColorInfo {
-		t.Errorf("expected info color %d, got %v", discordColorInfo, embed["color"])
+	if embed.Color != discordColorInfo {
+		t.Errorf("expected info color %d, got %d", discordColorInfo, embed.Color)
 	}
 
-	fields, ok := embed["fields"].([]map[string]interface{})
-	if !ok || len(fields) != 2 {
-		t.Fatalf("expected 2 fields, got %v", embed["fields"])
+	if len(embed.Fields) != 2 {
+		t.Fatalf("expected 2 fields, got %d", len(embed.Fields))
 	}
 	// Fields are sorted alphabetically.
-	if fields[0]["name"] != "agents" {
-		t.Errorf("expected first field name 'agents', got %v", fields[0]["name"])
+	if embed.Fields[0].Name != "agents" {
+		t.Errorf("expected first field name 'agents', got %q", embed.Fields[0].Name)
 	}
 }
 
@@ -221,9 +220,33 @@ func TestDiscordFormatter_SeverityColors(t *testing.T) {
 	}
 	for _, tt := range tests {
 		msg := f.Format(Event{Severity: tt.severity, Title: "test", Body: "body"})
-		embeds := msg.Embeds.([]map[string]interface{})
-		if embeds[0]["color"] != tt.color {
-			t.Errorf("severity %s: expected color %d, got %v", tt.severity, tt.color, embeds[0]["color"])
+		embeds := msg.Embeds.([]discordEmbed)
+		if embeds[0].Color != tt.color {
+			t.Errorf("severity %s: expected color %d, got %d", tt.severity, tt.color, embeds[0].Color)
 		}
+	}
+}
+
+func TestDiscordFormatter_TypedEmbeds(t *testing.T) {
+	f := &DiscordFormatter{}
+	msg := f.Format(Event{Title: "T"})
+
+	data, err := json.Marshal(msg.Embeds)
+	if err != nil {
+		t.Fatalf("marshal error: %v", err)
+	}
+
+	var decoded []map[string]interface{}
+	if err := json.Unmarshal(data, &decoded); err != nil {
+		t.Fatalf("unmarshal error: %v", err)
+	}
+	if len(decoded) == 0 {
+		t.Fatal("expected at least one embed")
+	}
+	if _, ok := decoded[0]["title"]; !ok {
+		t.Error("expected \"title\" key in embed")
+	}
+	if _, ok := decoded[0]["color"]; !ok {
+		t.Error("expected \"color\" key in embed")
 	}
 }

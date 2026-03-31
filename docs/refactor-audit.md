@@ -363,6 +363,11 @@ Callers that forget to set `cfg.Ctx` get an uncancellable background context, si
 
 ## Scout IMPL Notes
 
+**Status as of 2026-03-31:** IMPLs 1–4 complete (see individual COMPLETE markers below).
+IMPL 5 (protocol + backend cleanup, Issues 7/8/16/17/22) and IMPL 6 (%w sweep, Issue 15)
+are not started. Issues 12, 19, 20, 24, and 25 from this audit are tracked separately in
+`docs/IMPL/IMPL-miscellaneous-cleanup.yaml`.
+
 The issues group into 6 IMPLs. IMPLs 2 and 3 are fully independent and run in parallel. IMPL 4 is gated on the ctx decision (Decision 1 above). IMPL 5 can partially overlap with IMPL 4 for non-ctx items. IMPL 6 runs last to avoid merge conflicts.
 
 **IMPL 1: Crash fixes + legacy code string (immediate, solo wave or 2 agents) — ✅ COMPLETE (2026-03-31, commit 47af66c)**

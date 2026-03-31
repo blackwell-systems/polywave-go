@@ -12,6 +12,24 @@ import (
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
 )
 
+type discordField struct {
+	Name   string `json:"name"`
+	Value  string `json:"value"`
+	Inline bool   `json:"inline"`
+}
+
+type discordEmbed struct {
+	Title       string         `json:"title"`
+	Description string         `json:"description"`
+	Color       int            `json:"color"`
+	Fields      []discordField `json:"fields,omitempty"`
+}
+
+type discordPayload struct {
+	Content string         `json:"content,omitempty"`
+	Embeds  []discordEmbed `json:"embeds,omitempty"`
+}
+
 // Discord embed color constants by severity.
 const (
 	discordColorInfo    = 3447003  // blue
@@ -43,18 +61,16 @@ func (a *DiscordAdapter) Name() string { return "discord" }
 
 // Send delivers a formatted message to the Discord webhook endpoint.
 func (a *DiscordAdapter) Send(ctx context.Context, msg Message) result.Result[SendData] {
-	var payload interface{}
+	p := discordPayload{}
 	if msg.Embeds != nil {
-		payload = map[string]interface{}{
-			"embeds": msg.Embeds,
+		if embeds, ok := msg.Embeds.([]discordEmbed); ok {
+			p.Embeds = embeds
 		}
 	} else {
-		payload = map[string]interface{}{
-			"content": msg.Text,
-		}
+		p.Content = msg.Text
 	}
 
-	body, err := json.Marshal(payload)
+	body, err := json.Marshal(p)
 	if err != nil {
 		return result.NewFailure[SendData]([]result.SAWError{
 			{Code: "DISCORD_MARSHAL_ERROR", Message: fmt.Sprintf("discord: marshal payload: %v", err), Severity: "fatal"},
@@ -124,7 +140,7 @@ func (f *DiscordFormatter) Format(event Event) Message {
 		color = discordColorError
 	}
 
-	fields := make([]map[string]interface{}, 0, len(event.Fields))
+	fields := make([]discordField, 0, len(event.Fields))
 	// Sort keys for deterministic output.
 	keys := make([]string, 0, len(event.Fields))
 	for k := range event.Fields {
@@ -132,25 +148,21 @@ func (f *DiscordFormatter) Format(event Event) Message {
 	}
 	sort.Strings(keys)
 	for _, k := range keys {
-		fields = append(fields, map[string]interface{}{
-			"name":   k,
-			"value":  event.Fields[k],
-			"inline": true,
-		})
+		fields = append(fields, discordField{Name: k, Value: event.Fields[k], Inline: true})
 	}
 
-	embed := map[string]interface{}{
-		"title":       event.Title,
-		"description": event.Body,
-		"color":       color,
+	embed := discordEmbed{
+		Title:       event.Title,
+		Description: event.Body,
+		Color:       color,
 	}
 	if len(fields) > 0 {
-		embed["fields"] = fields
+		embed.Fields = fields
 	}
 
 	return Message{
 		Text:   event.Title + ": " + event.Body,
-		Embeds: []map[string]interface{}{embed},
+		Embeds: []discordEmbed{embed},
 	}
 }
 

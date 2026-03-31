@@ -165,6 +165,81 @@ Emitted by the saw orchestration engine during wave preparation, execution, and 
 | `N016_TIER_GATE_FAILED` | A program-level tier gate failed — either the tier was not found or not all IMPLs in the tier are complete. | Ensure all IMPLs in the tier have `status: complete` before running the tier gate. The error message specifies the tier number and which IMPLs are incomplete. |
 | `N017_PROGRAM_STATUS_FAILED` | Computing the PROGRAM status failed. | The error message describes the underlying failure. This is typically a parse or I/O issue with one of the IMPL docs referenced by the PROGRAM. |
 
+### N018–N084 — Engine Operation Codes
+
+These codes appear in `SAWError.Code` for fine-grained engine operation tracking.
+They correspond to `ENGINE_*` and `CONTEXT_CANCELLED` constants in `pkg/result/codes.go`.
+
+| Code | Description | Fix |
+|------|-------------|-----|
+| `CONTEXT_CANCELLED` | Operation cancelled via context. | Check if the calling context had a deadline or was cancelled. Retry if unintentional. |
+| `ENGINE_SCOUT_INVALID_OPTS` | Scout agent received invalid or missing options. | Check the options passed to RunScout (Feature, RepoPath, IMPLOutPath are required). |
+| `ENGINE_SCOUT_FAILED` | The scout agent run failed. | Review the scout agent output for details. Check that the repo is accessible and the IMPL output path is writable. |
+| `ENGINE_SCOUT_BOUNDARY_VIOLATION` | Scout attempted to access files outside the allowed boundary. | This is an internal guard. Report as a bug if encountered unexpectedly. |
+| `ENGINE_PLANNER_INVALID_OPTS` | The planner received invalid or missing options. | Verify options passed to the planner function. |
+| `ENGINE_PLANNER_FAILED` | The planner step failed. | Check planner output. Typically caused by malformed IMPL doc or scout output. |
+| `ENGINE_WAVE_INVALID_OPTS` | Wave execution received invalid options. | Verify wave number and IMPL path are set correctly before launching a wave. |
+| `ENGINE_WAVE_FAILED` | A wave execution step failed. | The error message identifies the failing sub-step. Check agent logs and the IMPL doc state. |
+| `ENGINE_WAVE_SEQUENCING_FAILED` | Wave sequencing failed — waves are out of order or a prerequisite wave did not complete. | Ensure all prior waves are complete before running the next wave. |
+| `ENGINE_HOOK_VERIFY_FAILED` | Hook verification failed — a required Claude Code hook is missing or not registered. | Run `./install.sh --claude-code` to reinstall hooks. Check `~/.claude/settings.json` for the expected hook entries. |
+| `ENGINE_SCAFFOLD_FAILED` | The scaffold agent run failed. | Check scaffold agent output. The IMPL may have invalid scaffold config or the agent timed out. |
+| `ENGINE_AGENT_FAILED` | An agent run failed. | Review the agent output. Common causes: invalid brief, context overflow, or a stuck tool call. |
+| `ENGINE_AGENT_INVALID_OPTS` | Agent launch options are invalid. | Verify that agent ID, wave number, and IMPL path are all set before launching the agent. |
+| `ENGINE_MERGE_FAILED` | The wave merge step failed. | Check for merge conflicts in agent branches. Resolve conflicts and re-run finalize-wave. |
+| `ENGINE_MERGE_INVALID_OPTS` | Merge options are invalid. | Verify that the merge command has all required inputs (wave number, IMPL path, repo path). |
+| `ENGINE_VERIFICATION_FAILED` | Post-merge build verification failed. | Fix build or test failures in the merged codebase. The error message identifies which gates failed. |
+| `ENGINE_UPDATE_STATUS_FAILED` | An IMPL status update failed to write or commit. | Check file permissions on the IMPL doc. Ensure the git working tree is clean. |
+| `ENGINE_VALIDATE_FAILED` | The validation step failed. | Run `sawtools validate` for detailed errors and fix the identified issues. |
+| `ENGINE_JOURNAL_ARCHIVE_FAILED` | Archiving the agent journal failed. | Check write permissions in the `.claude/` directory. |
+| `ENGINE_MARK_COMPLETE_FAILED` | Marking the IMPL complete failed. | Check file permissions. The IMPL doc must be writable. |
+| `ENGINE_MARK_COMPLETE_INVALID_OPTS` | Mark-complete options are invalid. | Verify that the IMPL path and slug are set correctly. |
+| `ENGINE_VERIFY_TIERS_INCOMPLETE` | Program tier verification failed — not all tiers are complete. | Complete all IMPLs in the tier before running tier gate. |
+| `ENGINE_MARKER_READ_FAILED` | Reading a state marker file failed. | Check the `.saw/` directory for permission issues or corrupt files. |
+| `ENGINE_MARKER_WRITE_FAILED` | Writing a state marker file failed. | Check write permissions on the `.saw/` directory. |
+| `ENGINE_UPDATE_PROG_PARSE_FAILED` | Parsing the PROGRAM manifest for status update failed. | Fix YAML syntax errors in the PROGRAM manifest. |
+| `ENGINE_UPDATE_PROG_SLUG_NOT_FOUND` | The IMPL slug was not found in the PROGRAM manifest during a status update. | Ensure the IMPL slug matches an entry in the PROGRAM's `impls` section. |
+| `ENGINE_SYNC_PARSE_FAILED` | Parsing during IMPL sync failed. | Check YAML validity of the IMPL or PROGRAM doc being synced. |
+| `ENGINE_SYNC_STATUS_FAILED` | Syncing the IMPL status failed. | Check that the IMPL doc is writable and the state transition is valid. |
+| `ENGINE_WRITE_MANIFEST_FAILED` | Writing the PROGRAM manifest failed. | Check file permissions on the PROGRAM manifest. |
+| `ENGINE_RESTORE_LOAD_FAILED` | Loading a restore checkpoint failed. | The checkpoint file may be missing or corrupt. Re-run prepare-wave to create a fresh checkpoint. |
+| `ENGINE_RESTORE_SAVE_FAILED` | Saving a restore checkpoint failed. | Check write permissions in the working directory. |
+| `ENGINE_TEST_LOAD_FAILED` | Loading test configuration failed. | Check the quality gate configuration in the IMPL doc. |
+| `ENGINE_TEST_NO_COMMAND` | A test gate has no command specified. | Add a `command` field to the gate entry. |
+| `ENGINE_TEST_PIPE_FAILED` | Setting up the test output pipe failed. | This is an OS-level error. Check system resources and file descriptor limits. |
+| `ENGINE_TEST_START_FAILED` | Starting the test command failed. | Verify the test command is installed and accessible in the PATH. |
+| `ENGINE_TEST_COMMAND_FAILED` | The test command exited with a non-zero status. | Fix the failing tests. The error message includes test output. |
+| `ENGINE_SCOUT_RUN_FAILED` | The inner scout runner failed after all retry attempts. | Check scout agent output for the root cause. May indicate a model API issue or prompt problem. |
+| `ENGINE_SCOUT_VALIDATION_FAILED` | Scout output failed the post-run validation step. | The scout produced an IMPL doc that failed validation. Check the IMPL doc for structural errors. |
+| `ENGINE_SCOUT_CORRECTION_EXHAUSTED` | Scout exhausted all correction attempts without producing a valid IMPL. | Manual intervention required. Review the scout output and fix the IMPL doc manually, then use `/saw wave`. |
+| `ENGINE_SET_BLOCKED_LOAD_FAILED` | Loading the IMPL doc to set it blocked failed. | Check that the IMPL file exists and is readable. |
+| `ENGINE_SET_BLOCKED_SAVE_FAILED` | Saving the blocked IMPL doc failed. | Check write permissions on the IMPL file. |
+| `ENGINE_FIX_BUILD_INVALID_OPTS` | Fix-build options are invalid. | Verify that the IMPL path and repo path are set. |
+| `ENGINE_FIX_BUILD_FAILED` | The automated fix-build step failed. | Review the build errors. Automated fix was unable to resolve them. Manual intervention required. |
+| `ENGINE_GOMOD_FIXUP_FAILED` | The go.mod fixup step failed. | Check the go.mod and go.sum files for inconsistencies. Run `go mod tidy` manually. |
+| `ENGINE_CLEANUP_FAILED` | Cleanup of temporary resources failed. | Run `git worktree prune` manually. Stale worktree directories may need manual removal. |
+| `ENGINE_RESOLVE_INVALID_OPTS` | Conflict resolution options are invalid. | Verify that all required options for conflict resolution are set. |
+| `ENGINE_RESOLVE_LOAD_FAILED` | Loading the IMPL doc for conflict resolution failed. | Check that the IMPL file exists and is readable. |
+| `ENGINE_RESOLVE_GIT_FAILED` | A git operation during conflict resolution failed. | Check the git error in the message. Common causes: detached HEAD, locked index, or missing branch. |
+| `ENGINE_RESOLVE_NO_CONFLICTS` | No conflicts were found during conflict resolution. | Nothing to resolve. If conflicts were expected, verify the merge was actually performed. |
+| `ENGINE_RESOLVE_BACKEND_FAILED` | The AI backend call for conflict resolution failed. | Check model API availability. Retry after a short delay. |
+| `ENGINE_RESOLVE_FILE_FAILED` | Resolving a specific conflicted file failed. | The error message identifies the file. Review the conflict markers manually and resolve. |
+| `ENGINE_RESOLVE_COMMIT_FAILED` | Committing the resolved conflict failed. | Check git state. The working tree may have additional uncommitted changes preventing the commit. |
+| `ENGINE_RESOLVE_FILE_READ_FAILED` | Reading a conflicted file failed. | Check file permissions and that the file exists at the expected path. |
+| `ENGINE_RESOLVE_BACKEND_CALL_FAILED` | The backend API call during resolution failed. | Retry the resolution. If persistent, check API credentials and network connectivity. |
+| `ENGINE_RESOLVE_FILE_WRITE_FAILED` | Writing a resolved file failed. | Check disk space and file permissions. |
+| `ENGINE_RESOLVE_GIT_ADD_FAILED` | Adding a resolved file to git staging failed. | Ensure the file path is correct and the git index is not locked. |
+| `ENGINE_EXPORT_FILE_EXISTS` | An export target file already exists. | Remove the existing file or choose a different output path before re-running export. |
+| `ENGINE_EXPORT_NO_ENTRIES` | Export found no entries to write. | The IMPL or PROGRAM has no exportable content. Check filters or selection criteria. |
+| `ENGINE_EXPORT_WRITE_FAILED` | Writing the export output file failed. | Check disk space and write permissions at the target path. |
+| `ENGINE_INTEGRATION_INVALID_OPTS` | Integration runner options are invalid. | Verify all required integration options are set. |
+| `ENGINE_INTEGRATION_LOAD_FAILED` | Loading the IMPL for integration failed. | Check that the IMPL file exists and is readable. |
+| `ENGINE_INTEGRATION_NO_CONNECTORS` | No integration connectors were found for the given wave. | Ensure integration connectors are registered for the target wave. |
+| `ENGINE_INTEGRATION_PROMPT_FAILED` | Building the integration agent prompt failed. | Check the IMPL doc structure. The integration prompt builder requires complete wave data. |
+| `ENGINE_INTEGRATION_BACKEND_FAILED` | The integration backend call failed. | Check model API availability and retry. |
+| `ENGINE_INTEGRATION_AGENT_FAILED` | The integration agent run failed. | Review integration agent output for the failure reason. |
+| `ENGINE_CHAT_INVALID_OPTS` | Chat command options are invalid. | Verify required chat options (model, context) are set. |
+| `ENGINE_CHAT_FAILED` | The chat command failed. | Review the error message. Common causes: API error, invalid model name, or context overflow. |
+
 ---
 
 ## P — Protocol
