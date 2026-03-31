@@ -1,6 +1,7 @@
 package protocol
 
 import (
+	"context"
 	"fmt"
 	"log/slog"
 	"os"
@@ -20,7 +21,10 @@ func loggerFrom(l *slog.Logger) *slog.Logger {
 }
 
 // CleanupAllStale removes all stale worktrees across all slugs.
-func CleanupAllStale(repoDir string, force bool) (*StaleCleanupData, error) {
+func CleanupAllStale(ctx context.Context, repoDir string, force bool) (*StaleCleanupData, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, fmt.Errorf("cleanup all stale: %w", err)
+	}
 	stale, err := DetectStaleWorktrees(repoDir)
 	if err != nil {
 		return nil, fmt.Errorf("detect stale worktrees: %w", err)
@@ -31,6 +35,9 @@ func CleanupAllStale(repoDir string, force bool) (*StaleCleanupData, error) {
 			Skipped: []StaleWorktree{},
 			Errors:  []StaleCleanupFailure{},
 		}, nil
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, fmt.Errorf("cleanup all stale: %w", err)
 	}
 	res := CleanStaleWorktrees(stale, force)
 	if !res.IsSuccess() {
@@ -69,9 +76,22 @@ type CleanupData struct {
 // if a worktree or branch is already gone, it's treated as success. Individual agent
 // cleanup failures do not stop the overall cleanup process.
 //
+// The provided ctx is checked for cancellation before each agent's cleanup. If the
+// context is cancelled, Cleanup returns immediately with the partial data collected
+// so far plus a context error.
+//
 // Returns result.Result[CleanupData] with status for each agent, or an error if the
 // wave is not found.
-func Cleanup(manifestPath string, waveNum int, repoDir string, logger *slog.Logger) (result.Result[CleanupData], error) {
+func Cleanup(ctx context.Context, manifestPath string, waveNum int, repoDir string, logger *slog.Logger) (result.Result[CleanupData], error) {
+	if err := ctx.Err(); err != nil {
+		return result.NewFailure[CleanupData]([]result.SAWError{
+			{
+				Code:     result.CodeWorktreeCreateFailed,
+				Message:  fmt.Sprintf("cleanup cancelled: %v", err),
+				Severity: "fatal",
+			},
+		}), fmt.Errorf("cleanup cancelled: %w", err)
+	}
 	log := loggerFrom(logger)
 	// Load manifest
 	manifest, err := Load(manifestPath)
@@ -127,6 +147,17 @@ func Cleanup(manifestPath string, waveNum int, repoDir string, logger *slog.Logg
 
 	// Clean up each agent in the wave
 	for _, agent := range targetWave.Agents {
+		// Check for cancellation before each agent's cleanup.
+		if err := ctx.Err(); err != nil {
+			return result.NewPartial(data, []result.SAWError{
+				{
+					Code:     result.CodeWorktreeCreateFailed,
+					Message:  fmt.Sprintf("cleanup cancelled after %d agents: %v", len(data.Agents), err),
+					Severity: "warning",
+				},
+			}), fmt.Errorf("cleanup cancelled: %w", err)
+		}
+
 		status := CleanupStatus{
 			Agent:           agent.ID,
 			WorktreeRemoved: false,
