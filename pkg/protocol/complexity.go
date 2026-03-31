@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
@@ -94,6 +95,11 @@ func CheckAgentLOCBudget(m *IMPLManifest, repoPath string, maxLOC int) []result.
 	// Build per-agent LOC and file count maps (action=modify only)
 	totalLOC := make(map[string]int)
 	fileCount := make(map[string]int)
+	type fileEntry struct {
+		file  string
+		lines int
+	}
+	perFileLOC := make(map[string][]fileEntry)
 
 	for _, fo := range m.FileOwnership {
 		if fo.Action != "modify" {
@@ -113,14 +119,24 @@ func CheckAgentLOCBudget(m *IMPLManifest, repoPath string, maxLOC int) []result.
 		f.Close()
 		totalLOC[fo.Agent] += lines
 		fileCount[fo.Agent]++
+		perFileLOC[fo.Agent] = append(perFileLOC[fo.Agent], fileEntry{fo.File, lines})
 	}
 
 	var errs []result.SAWError
 	for agentID, loc := range totalLOC {
 		if loc > maxLOC {
+			entries := perFileLOC[agentID]
+			sort.Slice(entries, func(i, j int) bool {
+				return entries[i].lines > entries[j].lines
+			})
+			var sb strings.Builder
+			sb.WriteString(fmt.Sprintf("agent %s owns %d lines across %d files (limit: %d) — split the agent or reduce scope", agentID, loc, fileCount[agentID], maxLOC))
+			for _, e := range entries {
+				sb.WriteString(fmt.Sprintf("\n  %s: %d lines", e.file, e.lines))
+			}
 			errs = append(errs, result.SAWError{
 				Code:     codeAgentLOCBudget,
-				Message:  fmt.Sprintf("agent %s owns %d lines across %d files (limit: %d) — split the agent or reduce scope", agentID, loc, fileCount[agentID], maxLOC),
+				Message:  sb.String(),
 				Severity: "error",
 				Field:    "file_ownership",
 			})
