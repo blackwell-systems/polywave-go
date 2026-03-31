@@ -37,7 +37,7 @@ func newMarkCompleteCmd() *cobra.Command {
 			}
 
 			// Always archive to docs/IMPL/complete/
-			archivedPath, err := protocol.ArchiveIMPL(manifestPath)
+			archivedPath, err := protocol.ArchiveIMPL(cmd.Context(), manifestPath)
 			if err != nil {
 				return fmt.Errorf("mark-complete: archive failed: %w", err)
 			}

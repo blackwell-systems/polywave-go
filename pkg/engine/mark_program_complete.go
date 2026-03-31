@@ -87,7 +87,7 @@ func MarkProgramComplete(ctx context.Context, opts MarkProgramCompleteOpts) (Mar
 	}
 
 	// 6. Archive to docs/PROGRAM/complete/ — non-fatal
-	archivedPath, archiveErr := protocol.ArchiveProgram(opts.ManifestPath)
+	archivedPath, archiveErr := protocol.ArchiveProgram(ctx, opts.ManifestPath)
 	if archiveErr != nil {
 		logger.Warn("mark-program-complete: archive warning", "error", archiveErr)
 		archivedPath = opts.ManifestPath // fall back to original path

@@ -57,7 +57,7 @@ Examples:
 			fmt.Fprintf(os.Stderr, "close-impl: marked complete (date=%s)\n", date)
 
 			// Step 2: Archive to complete/
-			archivedPath, err := protocol.ArchiveIMPL(manifestPath)
+			archivedPath, err := protocol.ArchiveIMPL(cmd.Context(), manifestPath)
 			if err != nil {
 				return fmt.Errorf("close-impl: archive failed: %w", err)
 			}

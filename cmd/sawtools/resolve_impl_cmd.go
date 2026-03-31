@@ -129,7 +129,7 @@ Returns JSON (ResolveImplData) on success, exits 1 with error message on failure
 
 // autoSelectIMPL scans for pending IMPLs and auto-selects if exactly 1 exists.
 func autoSelectIMPL(cmd *cobra.Command, implDocsDir string) error {
-	res := protocol.ListIMPLs(implDocsDir, protocol.ListIMPLsOpts{
+	res := protocol.ListIMPLs(cmd.Context(), implDocsDir, protocol.ListIMPLsOpts{
 		IncludeComplete: false,
 	})
 	if res.IsFatal() {
@@ -159,7 +159,7 @@ func autoSelectIMPL(cmd *cobra.Command, implDocsDir string) error {
 
 // resolveBySlug scans pending IMPLs and matches by feature_slug.
 func resolveBySlug(cmd *cobra.Command, implDocsDir, slug string) error {
-	res := protocol.ListIMPLs(implDocsDir, protocol.ListIMPLsOpts{
+	res := protocol.ListIMPLs(cmd.Context(), implDocsDir, protocol.ListIMPLsOpts{
 		IncludeComplete: false,
 	})
 	if res.IsFatal() {

@@ -1,6 +1,7 @@
 package protocol
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"sort"
@@ -48,7 +49,7 @@ type ListIMPLsOpts struct {
 	IncludeComplete bool // If false (default), exclude IMPLs with state COMPLETE or in complete/ directory
 }
 
-func ListIMPLs(dir string, opts ...ListIMPLsOpts) result.Result[*ListIMPLsData] {
+func ListIMPLs(ctx context.Context, dir string, opts ...ListIMPLsOpts) result.Result[*ListIMPLsData] {
 	var o ListIMPLsOpts
 	if len(opts) > 0 {
 		o = opts[0]
@@ -65,6 +66,13 @@ func ListIMPLs(dir string, opts ...ListIMPLsOpts) result.Result[*ListIMPLsData] 
 
 	var allMatches []string
 	for _, scanDir := range dirs {
+		// Check for cancellation before scanning each directory
+		if err := ctx.Err(); err != nil {
+			return result.NewFailure[*ListIMPLsData]([]result.SAWError{
+				{Code: "CANCELLED", Message: "context cancelled during directory scan", Severity: "fatal"},
+			})
+		}
+
 		// Find all IMPL-*.yaml and IMPL-*.yml files
 		yamlPattern := filepath.Join(scanDir, "IMPL-*.yaml")
 		ymlPattern := filepath.Join(scanDir, "IMPL-*.yml")
@@ -88,6 +96,13 @@ func ListIMPLs(dir string, opts ...ListIMPLsOpts) result.Result[*ListIMPLsData] 
 
 	// Process each manifest file
 	for _, path := range allMatches {
+		// Check for cancellation before processing each file
+		if err := ctx.Err(); err != nil {
+			return result.NewFailure[*ListIMPLsData]([]result.SAWError{
+				{Code: "CANCELLED", Message: "context cancelled during manifest processing", Severity: "fatal"},
+			})
+		}
+
 		manifest, err := Load(path)
 		if err != nil {
 			// Skip files that fail to load
@@ -131,7 +146,10 @@ func ListIMPLs(dir string, opts ...ListIMPLsOpts) result.Result[*ListIMPLsData] 
 
 // ArchiveIMPL moves an IMPL doc from docs/IMPL/ to docs/IMPL/complete/.
 // Returns the new path if successful.
-func ArchiveIMPL(manifestPath string) (string, error) {
+func ArchiveIMPL(ctx context.Context, manifestPath string) (string, error) {
+	if err := ctx.Err(); err != nil {
+		return "", err
+	}
 	// Get directory and filename
 	dir := filepath.Dir(manifestPath)
 	filename := filepath.Base(manifestPath)
@@ -158,7 +176,10 @@ func ArchiveIMPL(manifestPath string) (string, error) {
 
 // ArchiveProgram moves a PROGRAM manifest from docs/PROGRAM/ to docs/PROGRAM/complete/.
 // Returns the new path. Idempotent — returns the existing path if already archived.
-func ArchiveProgram(manifestPath string) (string, error) {
+func ArchiveProgram(ctx context.Context, manifestPath string) (string, error) {
+	if err := ctx.Err(); err != nil {
+		return "", err
+	}
 	dir := filepath.Dir(manifestPath)
 	filename := filepath.Base(manifestPath)
 
