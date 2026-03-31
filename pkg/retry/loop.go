@@ -35,6 +35,9 @@ func NewRetryLoop(cfg RetryConfig) *RetryLoop {
 //
 // It does NOT execute the retry agent — that is the caller's responsibility.
 //
+// ctx is checked for cancellation before each significant step; if cancelled,
+// Run returns ctx.Err() immediately.
+//
 // State transitions:
 //   - attempt < MaxRetries → FinalState = "retrying" (more attempts available)
 //   - attempt >= MaxRetries → FinalState = "blocked" (max retries exhausted)
@@ -43,6 +46,13 @@ func NewRetryLoop(cfg RetryConfig) *RetryLoop {
 //   - "retry_started"  when beginning a retry attempt
 //   - "retry_blocked"  when max retries are exceeded (no IMPL saved)
 func (rl *RetryLoop) Run(ctx context.Context, failedGate QualityGateFailure, onEvent func(Event)) (*RetryAttempt, error) {
+	// Check for cancellation before doing any work.
+	select {
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	default:
+	}
+
 	rl.attempt++
 
 	if onEvent != nil {
