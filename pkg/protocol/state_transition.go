@@ -1,6 +1,7 @@
 package protocol
 
 import (
+	"context"
 	"fmt"
 	"path/filepath"
 	"strings"
@@ -43,7 +44,7 @@ var allowedTransitions = map[ProtocolState][]ProtocolState{
 // SetImplState atomically reads the manifest, validates the state transition,
 // writes the new state, and optionally commits to git.
 func SetImplState(manifestPath string, newState ProtocolState, opts SetImplStateOpts) result.Result[*SetImplStateData] {
-	manifest, err := Load(manifestPath)
+	manifest, err := Load(context.TODO(), manifestPath)
 	if err != nil {
 		return result.NewFailure[*SetImplStateData]([]result.SAWError{{
 			Code:     result.CodeStateTransition,

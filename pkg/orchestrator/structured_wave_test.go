@@ -52,14 +52,14 @@ func saveCompletionReportToManifest(t *testing.T, implPath, agentID string, repo
 	reportMu.Lock()
 	defer reportMu.Unlock()
 
-	manifest, err := protocol.Load(implPath)
+	manifest, err := protocol.Load(context.TODO(), implPath)
 	if err != nil {
 		t.Fatalf("saveCompletionReportToManifest: Load: %v", err)
 	}
 	if res := protocol.SetCompletionReport(manifest, agentID, report); res.IsFatal() {
 		t.Fatalf("saveCompletionReportToManifest: SetCompletionReport: %v", res.Errors)
 	}
-	if saveRes := protocol.Save(manifest, implPath); saveRes.IsFatal() {
+	if saveRes := protocol.Save(context.TODO(), manifest, implPath); saveRes.IsFatal() {
 		t.Fatalf("saveCompletionReportToManifest: Save: %v", saveRes.Errors)
 	}
 }

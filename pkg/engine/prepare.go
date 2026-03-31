@@ -111,7 +111,7 @@ func PrepareWave(ctx context.Context, opts PrepareWaveOpts) (*PrepareWaveResult,
 	repos := loadSAWConfigRepos(filepath.Join(projectRoot, "saw.config.json"))
 
 	// Step: Load and validate manifest
-	doc, err := protocol.Load(opts.IMPLPath)
+	doc, err := protocol.Load(context.TODO(), opts.IMPLPath)
 	if err != nil {
 		recordStep(res, opts.OnEvent, "load_manifest", "failed", err.Error())
 		return res, fmt.Errorf("failed to load IMPL doc: %w", err)
@@ -493,7 +493,7 @@ func PrepareWave(ctx context.Context, opts PrepareWaveOpts) (*PrepareWaveResult,
 		} else {
 			recordStep(res, opts.OnEvent, "advance_state", "success", "IMPL state advanced to REVIEWED")
 			// Reload manifest so subsequent steps see the updated state
-			doc, err = protocol.Load(opts.IMPLPath)
+			doc, err = protocol.Load(context.TODO(), opts.IMPLPath)
 			if err != nil {
 				return res, fmt.Errorf("failed to reload manifest after state advance: %w", err)
 			}

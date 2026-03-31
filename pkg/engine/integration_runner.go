@@ -69,7 +69,7 @@ func RunIntegrationAgent(ctx context.Context, opts RunIntegrationAgentOpts, onEv
 	})
 
 	// Load manifest for context (integration_connectors, completion reports).
-	manifest, err := protocol.Load(opts.IMPLPath)
+	manifest, err := protocol.Load(context.TODO(), opts.IMPLPath)
 	if err != nil {
 		publish("integration_agent_failed", map[string]string{"error": err.Error()})
 		return result.NewFailure[IntegrationAgentData]([]result.SAWError{{

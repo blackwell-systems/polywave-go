@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -60,7 +61,7 @@ func TestRunCriticCmd_SkipFlag(t *testing.T) {
 	}
 
 	// Load the IMPL doc and verify critic_report was written
-	manifest, err := protocol.Load(implPath)
+	manifest, err := protocol.Load(context.TODO(), implPath)
 	if err != nil {
 		t.Fatalf("failed to load IMPL after run-critic --skip: %v", err)
 	}
@@ -101,7 +102,7 @@ func TestRunCriticCmd_NoReviewFlag(t *testing.T) {
 		t.Fatalf("run-critic --no-review failed: %v", err)
 	}
 
-	manifest, err := protocol.Load(implPath)
+	manifest, err := protocol.Load(context.TODO(), implPath)
 	if err != nil {
 		t.Fatalf("failed to load IMPL after run-critic --no-review: %v", err)
 	}
@@ -194,7 +195,7 @@ func TestSetCriticReviewCmd_ValidInput(t *testing.T) {
 	}
 
 	// Load the IMPL doc and verify the critic_report was written correctly
-	manifest, err := protocol.Load(implPath)
+	manifest, err := protocol.Load(context.TODO(), implPath)
 	if err != nil {
 		t.Fatalf("failed to load IMPL after set-critic-review: %v", err)
 	}
@@ -316,7 +317,7 @@ func TestSetCriticReviewCmd_EmptyAgentReviews(t *testing.T) {
 		t.Fatalf("set-critic-review failed: %v", err)
 	}
 
-	manifest, err := protocol.Load(implPath)
+	manifest, err := protocol.Load(context.TODO(), implPath)
 	if err != nil {
 		t.Fatalf("failed to load IMPL: %v", err)
 	}

@@ -125,7 +125,7 @@ completion_reports:
 	}
 
 	// Capture state before transaction.
-	beforeManifest, err := protocol.Load(implPath)
+	beforeManifest, err := protocol.Load(context.TODO(), implPath)
 	if err != nil {
 		t.Fatalf("failed to load IMPL before transaction: %v", err)
 	}
@@ -143,7 +143,7 @@ completion_reports:
 	}
 
 	// Load IMPL after transaction and verify rollback.
-	afterManifest, err := protocol.Load(implPath)
+	afterManifest, err := protocol.Load(context.TODO(), implPath)
 	if err != nil {
 		t.Fatalf("failed to load IMPL after transaction: %v", err)
 	}

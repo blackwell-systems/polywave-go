@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
@@ -24,7 +25,7 @@ Exit code 1 if any check fails (ready=false).`,
 		Args:          cobra.ExactArgs(1),
 		SilenceErrors: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			doc, err := protocol.Load(args[0])
+			doc, err := protocol.Load(context.TODO(), args[0])
 			if err != nil {
 				return fmt.Errorf("load manifest: %w", err)
 			}

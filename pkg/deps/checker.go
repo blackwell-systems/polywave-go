@@ -1,6 +1,7 @@
 package deps
 
 import (
+	"context"
 	"fmt"
 	"go/parser"
 	"go/token"
@@ -22,7 +23,7 @@ func RegisterParser(p LockFileParser) {
 // CheckDeps analyzes IMPL doc and lock files for dependency conflicts
 func CheckDeps(implPath string, wave int) (*ConflictReport, error) {
 	// 1. Parse IMPL doc to get file ownership for specified wave
-	manifest, err := protocol.Load(implPath)
+	manifest, err := protocol.Load(context.TODO(), implPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse IMPL doc: %w", err)
 	}

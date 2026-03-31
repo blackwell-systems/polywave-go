@@ -146,7 +146,7 @@ func (o *Orchestrator) implSlug() string {
 	if o.implDocPath == "" {
 		return ""
 	}
-	manifest, err := protocol.Load(o.implDocPath)
+	manifest, err := protocol.Load(context.TODO(), o.implDocPath)
 	if err != nil {
 		return ""
 	}
@@ -492,7 +492,7 @@ func New(repoPath string, implDocPath string) (*Orchestrator, error) {
 	var doc *protocol.IMPLManifest
 	if implDocPath != "" {
 		var err error
-		doc, err = protocol.Load(implDocPath)
+		doc, err = protocol.Load(context.TODO(), implDocPath)
 		if err != nil {
 			return nil, fmt.Errorf("orchestrator.New: %w", err)
 		}
@@ -786,7 +786,7 @@ func (o *Orchestrator) launchAgent(
 	})
 
 	// E23: Construct per-agent context payload instead of passing full IMPL doc prompt.
-	manifest, err := protocol.Load(o.implDocPath)
+	manifest, err := protocol.Load(context.TODO(), o.implDocPath)
 	if err == nil {
 		if contextPayload, extractErr := protocol.ExtractAgentContextFromManifest(manifest, agentSpec.ID); extractErr == nil {
 			if jsonBytes, marshalErr := json.Marshal(contextPayload); marshalErr == nil {
@@ -873,7 +873,7 @@ func (o *Orchestrator) launchAgent(
 		// BUG-4 fix: Before synthesizing "complete", check if a previous retry wrote
 		// a partial/blocked report to the main IMPL doc. If so, reuse it rather than
 		// masking the failure with a spurious "complete".
-		if savedManifest, checkErr := protocol.Load(o.implDocPath); checkErr == nil {
+		if savedManifest, checkErr := protocol.Load(context.TODO(), o.implDocPath); checkErr == nil {
 			if cr, ok := savedManifest.CompletionReports[agentSpec.ID]; ok &&
 				(cr.Status == protocol.StatusPartial || cr.Status == protocol.StatusBlocked) {
 				report = &cr
@@ -936,15 +936,15 @@ func (o *Orchestrator) launchAgent(
 			builder = builder.WithFailureType(report.FailureType)
 		}
 
-		if saveErr := protocol.WithCompletionReportLock(func() error {
-			manifest, loadErr := protocol.Load(o.implDocPath)
+		if saveErr := protocol.WithCompletionReportLock(context.TODO(), func(ctx context.Context) error {
+			manifest, loadErr := protocol.Load(ctx, o.implDocPath)
 			if loadErr != nil {
 				return loadErr
 			}
 			if appendErr := builder.AppendToManifest(manifest); appendErr != nil {
 				return appendErr
 			}
-			if saveRes := protocol.Save(manifest, o.implDocPath); saveRes.IsFatal() {
+			if saveRes := protocol.Save(ctx, manifest, o.implDocPath); saveRes.IsFatal() {
 				if len(saveRes.Errors) > 0 {
 					return fmt.Errorf("%s", saveRes.Errors[0].Message)
 				}
@@ -1275,7 +1275,7 @@ func (o *Orchestrator) UpdateIMPLStatus(waveNum int) result.Result[UpdateData] {
 
 	// 2. Load manifest and check completion reports.
 	//    If report not found or status != StatusComplete, skip.
-	manifest, err := protocol.Load(o.implDocPath)
+	manifest, err := protocol.Load(context.TODO(), o.implDocPath)
 	if err != nil {
 		return result.NewSuccess(UpdateData{WaveNum: waveNum, CompletedAgents: nil}) // Cannot determine completed agents without manifest
 	}
@@ -1311,7 +1311,7 @@ func (o *Orchestrator) UpdateIMPLStatus(waveNum int) result.Result[UpdateData] {
 // for wave-role enforcement (I1 ownership, I2 freeze, I5 commit tracking).
 // Returns nil if the manifest can't be loaded (backward compatible, no enforcement).
 func buildWaveConstraints(implPath string, agentID string) *tools.Constraints {
-	manifest, err := protocol.Load(implPath)
+	manifest, err := protocol.Load(context.TODO(), implPath)
 	if err != nil || manifest == nil {
 		return nil
 	}

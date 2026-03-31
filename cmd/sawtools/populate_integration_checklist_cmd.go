@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 
@@ -45,7 +46,7 @@ Idempotent: safe to run multiple times (won't duplicate items).`,
 			manifestPath := args[0]
 
 			// Load manifest
-			manifest, err := protocol.Load(manifestPath)
+			manifest, err := protocol.Load(context.TODO(), manifestPath)
 			if err != nil {
 				return fmt.Errorf("populate-integration-checklist: failed to load manifest: %w", err)
 			}
@@ -63,7 +64,7 @@ Idempotent: safe to run multiple times (won't duplicate items).`,
 			}
 
 			// Save updated manifest
-			if saveRes := protocol.Save(updated, manifestPath); saveRes.IsFatal() {
+			if saveRes := protocol.Save(context.TODO(), updated, manifestPath); saveRes.IsFatal() {
 				saveErrMsg := "save failed"
 				if len(saveRes.Errors) > 0 {
 					saveErrMsg = saveRes.Errors[0].Message

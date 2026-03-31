@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"context"
 	"fmt"
 
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
@@ -93,7 +94,7 @@ func buildConstraints(manifest *protocol.IMPLManifest, agentID string, role stri
 // Returns nil constraints (not an error) if the manifest cannot be loaded,
 // preserving backward compatibility for IMPL docs without constraint support.
 func BuildWaveConstraints(implPath string, agentID string) (*tools.Constraints, error) {
-	manifest, err := protocol.Load(implPath)
+	manifest, err := protocol.Load(context.TODO(), implPath)
 	if err != nil {
 		return nil, fmt.Errorf("BuildWaveConstraints: load manifest: %w", err)
 	}
@@ -128,7 +129,7 @@ func buildIntegratorConstraints(manifest *protocol.IMPLManifest, connectors []pr
 // The integrator may only write to files listed in integration_connectors.
 // It loads the manifest from implPath and uses manifest.IntegrationConnectors directly.
 func BuildIntegratorConstraints(implPath string) (*tools.Constraints, error) {
-	manifest, err := protocol.Load(implPath)
+	manifest, err := protocol.Load(context.TODO(), implPath)
 	if err != nil {
 		return nil, fmt.Errorf("BuildIntegratorConstraints: load manifest: %w", err)
 	}

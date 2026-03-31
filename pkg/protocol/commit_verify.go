@@ -1,6 +1,7 @@
 package protocol
 
 import (
+	"context"
 	"fmt"
 	"path/filepath"
 	"strconv"
@@ -42,7 +43,7 @@ type VerifyCommitsData struct {
 //   - FATAL (Code="FATAL"): System-level failure (cannot load manifest, wave not found, etc.)
 func VerifyCommits(manifestPath string, waveNum int, repoDir string) result.Result[VerifyCommitsData] {
 	// Load the manifest
-	manifest, err := Load(manifestPath)
+	manifest, err := Load(context.TODO(), manifestPath)
 	if err != nil {
 		return result.NewFailure[VerifyCommitsData]([]result.SAWError{
 			{

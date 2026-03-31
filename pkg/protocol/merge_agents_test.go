@@ -1,6 +1,7 @@
 package protocol
 
 import (
+	"context"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -107,7 +108,7 @@ func createManifest(t *testing.T, repoDir string, waves []Wave) string {
 	}
 
 	manifestPath := filepath.Join(repoDir, "IMPL.yaml")
-	if saveRes := Save(manifest, manifestPath); saveRes.IsFatal() {
+	if saveRes := Save(context.Background(), manifest, manifestPath); saveRes.IsFatal() {
 		t.Fatalf("failed to save manifest: %v", saveRes.Errors)
 	}
 

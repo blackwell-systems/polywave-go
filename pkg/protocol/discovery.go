@@ -1,6 +1,7 @@
 package protocol
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"sort"
@@ -88,7 +89,7 @@ func ListIMPLs(dir string, opts ...ListIMPLsOpts) result.Result[*ListIMPLsData] 
 
 	// Process each manifest file
 	for _, path := range allMatches {
-		manifest, err := Load(path)
+		manifest, err := Load(context.TODO(), path)
 		if err != nil {
 			// Skip files that fail to load
 			continue

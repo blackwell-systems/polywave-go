@@ -95,7 +95,7 @@ var daemonUpdateQueueStatusFunc = func(repoPath, slug, status string) error {
 // daemonLoadIMPLWavesFunc loads the wave list from a manifest path.
 // Returns (waveNums, error).
 var daemonLoadIMPLWavesFunc = func(implPath string) ([]int, error) {
-	manifest, err := protocol.Load(implPath)
+	manifest, err := protocol.Load(context.TODO(), implPath)
 	if err != nil {
 		return nil, err
 	}

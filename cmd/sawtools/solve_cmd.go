@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
@@ -20,7 +21,7 @@ func newSolveCmd() *cobra.Command {
 			manifestPath := args[0]
 
 			// Load the manifest.
-			m, err := protocol.Load(manifestPath)
+			m, err := protocol.Load(context.TODO(), manifestPath)
 			if err != nil {
 				return fmt.Errorf("solve: %w", err)
 			}
@@ -55,7 +56,7 @@ func newSolveCmd() *cobra.Command {
 			}
 
 			// Write the corrected manifest.
-			if saveRes := protocol.Save(fixed, manifestPath); saveRes.IsFatal() {
+			if saveRes := protocol.Save(context.TODO(), fixed, manifestPath); saveRes.IsFatal() {
 				saveErrMsg := "save failed"
 				if len(saveRes.Errors) > 0 {
 					saveErrMsg = saveRes.Errors[0].Message

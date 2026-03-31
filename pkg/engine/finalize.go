@@ -196,7 +196,7 @@ func FinalizeWave(ctx context.Context, opts FinalizeWaveOpts) (*FinalizeWaveResu
 		return nil, fmt.Errorf("engine.FinalizeWave: RepoPath is required")
 	}
 
-	manifest, err := protocol.Load(opts.IMPLPath)
+	manifest, err := protocol.Load(context.TODO(), opts.IMPLPath)
 	if err != nil {
 		return nil, fmt.Errorf("engine.FinalizeWave: load manifest: %w", err)
 	}

@@ -1,6 +1,7 @@
 package protocol
 
 import (
+	"context"
 	"fmt"
 	"path/filepath"
 	"strings"
@@ -282,7 +283,7 @@ func FinalizeIMPL(implPath, repoRoot string) result.Result[FinalizeIMPLData] {
 	data := FinalizeIMPLData{}
 
 	// Step 1: Load manifest
-	manifest, err := Load(implPath)
+	manifest, err := Load(context.TODO(), implPath)
 	if err != nil {
 		return result.NewFailure[FinalizeIMPLData]([]result.SAWError{
 			{
@@ -439,7 +440,7 @@ func FinalizeIMPL(implPath, repoRoot string) result.Result[FinalizeIMPLData] {
 	}
 
 	// Step 6: Save updated manifest (atomic write)
-	if saveRes := Save(updatedManifest, implPath); saveRes.IsFatal() {
+	if saveRes := Save(context.TODO(), updatedManifest, implPath); saveRes.IsFatal() {
 		return result.NewFailure[FinalizeIMPLData](saveRes.Errors)
 	}
 

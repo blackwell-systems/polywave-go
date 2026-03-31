@@ -1,6 +1,7 @@
 package protocol
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"strings"
@@ -115,7 +116,7 @@ func TestAmendImpl_AddWave(t *testing.T) {
 	}
 
 	// Verify manifest on disk was updated
-	loaded, err := Load(path)
+	loaded, err := Load(context.Background(), path)
 	if err != nil {
 		t.Fatalf("failed to load updated manifest: %v", err)
 	}
@@ -153,7 +154,7 @@ func TestAmendImpl_AddWave_EmptyWaves(t *testing.T) {
 		t.Errorf("NewWaveNumber = %d, want 1", data.NewWaveNumber)
 	}
 
-	loaded, err := Load(path)
+	loaded, err := Load(context.Background(), path)
 	if err != nil {
 		t.Fatalf("failed to load updated manifest: %v", err)
 	}
@@ -236,7 +237,7 @@ func TestAmendImpl_RedirectAgent_Success(t *testing.T) {
 	}
 
 	// Verify task was updated on disk
-	loaded, err := Load(path)
+	loaded, err := Load(context.Background(), path)
 	if err != nil {
 		t.Fatalf("failed to load updated manifest: %v", err)
 	}
@@ -266,7 +267,7 @@ func TestAmendImpl_RedirectAgent_ClearsPartialReport(t *testing.T) {
 	}
 
 	// Verify partial report was cleared
-	loaded, err := Load(path)
+	loaded, err := Load(context.Background(), path)
 	if err != nil {
 		t.Fatalf("failed to load updated manifest: %v", err)
 	}

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -27,7 +28,7 @@ func newMarkCompleteCmd() *cobra.Command {
 			}
 
 			// Load manifest to get FeatureSlug before archiving
-			manifest, err := protocol.Load(manifestPath)
+			manifest, err := protocol.Load(context.TODO(), manifestPath)
 			if err != nil {
 				return fmt.Errorf("mark-complete: failed to load manifest: %w", err)
 			}

@@ -1,6 +1,7 @@
 package protocol
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"testing"
@@ -80,7 +81,7 @@ func TestWriteCriticReview_WritesAndReads(t *testing.T) {
 		t.Fatalf("WriteCriticReview() error = %v", err)
 	}
 
-	manifest, err := Load(path)
+	manifest, err := Load(context.Background(), path)
 	if err != nil {
 		t.Fatalf("Load() after WriteCriticReview error = %v", err)
 	}
@@ -322,7 +323,7 @@ func TestGetCriticReviewResult_Success(t *testing.T) {
 		t.Fatalf("WriteCriticReview() error = %v", err)
 	}
 
-	manifest, err := Load(path)
+	manifest, err := Load(context.Background(), path)
 	if err != nil {
 		t.Fatalf("Load() error = %v", err)
 	}
@@ -385,7 +386,7 @@ func TestWriteCriticReviewResult_DataRoundtrip(t *testing.T) {
 		t.Fatalf("WriteCriticReviewResult() failed: %v", writeRes.Errors)
 	}
 
-	manifest, err := Load(path)
+	manifest, err := Load(context.Background(), path)
 	if err != nil {
 		t.Fatalf("Load() error = %v", err)
 	}

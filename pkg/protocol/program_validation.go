@@ -1,6 +1,7 @@
 package protocol
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"regexp"
@@ -423,7 +424,7 @@ func ValidateProgramImportMode(manifest *PROGRAMManifest, repoPath string) []res
 		}
 
 		// Check 2: Parse IMPL doc and verify state consistency.
-		implDoc, err := Load(resolvedPath)
+		implDoc, err := Load(context.TODO(), resolvedPath)
 		if err != nil {
 			errs = append(errs, result.SAWError{
 				Code:     result.CodeIMPLFileMissing,

@@ -1,6 +1,7 @@
 package protocol
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"testing"
@@ -53,7 +54,7 @@ waves:
 	}
 
 	// Verify manifest was saved correctly
-	manifest, err := Load(manifestPath)
+	manifest, err := Load(context.Background(), manifestPath)
 	if err != nil {
 		t.Fatalf("Failed to reload manifest: %v", err)
 	}
@@ -109,7 +110,7 @@ completion_reports:
 	}
 
 	// Verify manifest was saved correctly
-	manifest, err := Load(manifestPath)
+	manifest, err := Load(context.Background(), manifestPath)
 	if err != nil {
 		t.Fatalf("Failed to reload manifest: %v", err)
 	}
@@ -249,7 +250,7 @@ waves:
 	}
 
 	// Verify saved report has the commit
-	manifest, err := Load(manifestPath)
+	manifest, err := Load(context.Background(), manifestPath)
 	if err != nil {
 		t.Fatalf("Failed to reload manifest: %v", err)
 	}
@@ -298,7 +299,7 @@ completion_reports:
 	}
 
 	// Verify saved report still has the original commit
-	manifest, err := Load(manifestPath)
+	manifest, err := Load(context.Background(), manifestPath)
 	if err != nil {
 		t.Fatalf("Failed to reload manifest: %v", err)
 	}

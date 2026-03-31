@@ -128,15 +128,15 @@ func runWaveAgentStructured(ctx context.Context, opts RunWaveOpts, agentSpec pro
 	}
 
 	// Persist using the consolidated package-level lock.
-	if saveErr := protocol.WithCompletionReportLock(func() error {
-		manifest, loadErr := protocol.Load(opts.IMPLPath)
+	if saveErr := protocol.WithCompletionReportLock(context.TODO(), func(ctx context.Context) error {
+		manifest, loadErr := protocol.Load(ctx, opts.IMPLPath)
 		if loadErr != nil {
 			return fmt.Errorf("load manifest for agent %s: %w", agentSpec.ID, loadErr)
 		}
 		if appendErr := builder.AppendToManifest(manifest); appendErr != nil {
 			return fmt.Errorf("append report for agent %s: %w", agentSpec.ID, appendErr)
 		}
-		if saveRes := protocol.Save(manifest, opts.IMPLPath); saveRes.IsFatal() {
+		if saveRes := protocol.Save(ctx, manifest, opts.IMPLPath); saveRes.IsFatal() {
 			if len(saveRes.Errors) > 0 {
 				return fmt.Errorf("%s", saveRes.Errors[0].Message)
 			}
@@ -148,7 +148,7 @@ func runWaveAgentStructured(ctx context.Context, opts RunWaveOpts, agentSpec pro
 	}
 
 	// Re-read the saved report (with WrittenAt set by AppendToManifest).
-	finalManifest, _ := protocol.Load(opts.IMPLPath)
+	finalManifest, _ := protocol.Load(context.TODO(), opts.IMPLPath)
 	var finalReport protocol.CompletionReport
 	if finalManifest != nil {
 		if r, ok := finalManifest.CompletionReports[agentSpec.ID]; ok {

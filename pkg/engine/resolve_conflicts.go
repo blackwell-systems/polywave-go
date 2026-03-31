@@ -47,7 +47,7 @@ func ResolveConflicts(ctx context.Context, opts ResolveConflictsOpts) result.Res
 	}
 
 	// Load IMPL manifest for agent context
-	manifest, err := protocol.Load(opts.IMPLPath)
+	manifest, err := protocol.Load(context.TODO(), opts.IMPLPath)
 	if err != nil {
 		return result.NewFailure[ResolveData]([]result.SAWError{
 			result.NewFatal("ENGINE_RESOLVE_LOAD_FAILED",

@@ -1,11 +1,12 @@
 package protocol
 
 import (
+	"context"
+	"os"
 	"path/filepath"
 	"testing"
 
 	"gopkg.in/yaml.v3"
-	"os"
 )
 
 // writeStateTestManifest writes a minimal IMPL manifest with the given state to a temp dir.
@@ -64,7 +65,7 @@ func TestSetImplState_ValidTransition(t *testing.T) {
 	}
 
 	// Verify the file was actually updated
-	updated, err := Load(path)
+	updated, err := Load(context.Background(), path)
 	if err != nil {
 		t.Fatalf("Load after SetImplState: %v", err)
 	}
@@ -124,7 +125,7 @@ func TestSetImplState_ReviewedToComplete(t *testing.T) {
 	}
 
 	// Verify the file was actually updated
-	updated, err := Load(path)
+	updated, err := Load(context.Background(), path)
 	if err != nil {
 		t.Fatalf("Load after SetImplState: %v", err)
 	}

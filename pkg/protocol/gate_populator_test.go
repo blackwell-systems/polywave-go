@@ -1,6 +1,7 @@
 package protocol
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"strings"
@@ -427,7 +428,7 @@ waves:
 	}
 
 	// Verify file was updated
-	updatedManifest, err := Load(implPath)
+	updatedManifest, err := Load(context.Background(), implPath)
 	if err != nil {
 		t.Fatalf("Failed to reload manifest: %v", err)
 	}
@@ -485,7 +486,7 @@ waves:
 	}
 
 	// Verify file unchanged (rollback)
-	reloadedManifest, err := Load(implPath)
+	reloadedManifest, err := Load(context.Background(), implPath)
 	if err != nil {
 		t.Fatalf("Failed to reload manifest: %v", err)
 	}
@@ -538,7 +539,7 @@ waves:
 	}
 
 	// Verify file unchanged
-	reloadedManifest, err := Load(implPath)
+	reloadedManifest, err := Load(context.Background(), implPath)
 	if err != nil {
 		t.Fatalf("Failed to reload manifest: %v", err)
 	}

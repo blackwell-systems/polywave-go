@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -59,7 +60,7 @@ Returns JSON (ResolveImplData) on success, exits 1 with error message on failure
 			if filepath.IsAbs(implFlag) {
 				if _, err := os.Stat(implFlag); err == nil {
 					// Load to extract slug
-					manifest, err := protocol.Load(implFlag)
+					manifest, err := protocol.Load(context.TODO(), implFlag)
 					if err != nil {
 						return fmt.Errorf("resolve-impl: failed to load IMPL at absolute path %s: %w", implFlag, err)
 					}
@@ -82,7 +83,7 @@ Returns JSON (ResolveImplData) on success, exits 1 with error message on failure
 				}
 				if _, err := os.Stat(absPath); err == nil {
 					// Load to extract slug
-					manifest, err := protocol.Load(absPath)
+					manifest, err := protocol.Load(context.TODO(), absPath)
 					if err != nil {
 						return fmt.Errorf("resolve-impl: failed to load IMPL at relative path %s: %w", implFlag, err)
 					}
@@ -102,7 +103,7 @@ Returns JSON (ResolveImplData) on success, exits 1 with error message on failure
 				candidatePath := filepath.Join(implDocsDir, implFlag)
 				if _, err := os.Stat(candidatePath); err == nil {
 					// Load to extract slug
-					manifest, err := protocol.Load(candidatePath)
+					manifest, err := protocol.Load(context.TODO(), candidatePath)
 					if err != nil {
 						return fmt.Errorf("resolve-impl: failed to load IMPL at filename %s: %w", implFlag, err)
 					}

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -49,7 +50,7 @@ Agent C added a parameter but the unowned call sites still had the old signature
 			})
 
 			// Step 2: Run E35 detection
-			manifest, err := protocol.Load(manifestPath)
+			manifest, err := protocol.Load(context.TODO(), manifestPath)
 			if err != nil {
 				return fmt.Errorf("failed to load manifest for E35 detection: %w", err)
 			}

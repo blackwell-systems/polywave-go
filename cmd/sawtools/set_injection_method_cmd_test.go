@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"testing"
@@ -54,7 +55,7 @@ func TestSetInjectionMethod_Hook(t *testing.T) {
 		t.Fatalf("Execute: %v", err)
 	}
 
-	doc, err := protocol.Load(manifestPath)
+	doc, err := protocol.Load(context.TODO(), manifestPath)
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
@@ -73,7 +74,7 @@ func TestSetInjectionMethod_ManualFallback(t *testing.T) {
 		t.Fatalf("Execute: %v", err)
 	}
 
-	doc, err := protocol.Load(manifestPath)
+	doc, err := protocol.Load(context.TODO(), manifestPath)
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
@@ -92,7 +93,7 @@ func TestSetInjectionMethod_Unknown(t *testing.T) {
 		t.Fatalf("Execute: %v", err)
 	}
 
-	doc, err := protocol.Load(manifestPath)
+	doc, err := protocol.Load(context.TODO(), manifestPath)
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}

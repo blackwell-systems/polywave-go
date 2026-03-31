@@ -1,6 +1,7 @@
 package protocol
 
 import (
+	"context"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -81,12 +82,12 @@ func TestManifestLoadSave(t *testing.T) {
 	path := filepath.Join(tmpDir, "test-manifest.yaml")
 
 	// Save
-	if saveRes := Save(original, path); saveRes.IsFatal() {
+	if saveRes := Save(context.Background(), original, path); saveRes.IsFatal() {
 		t.Fatalf("Save failed: %v", saveRes.Errors)
 	}
 
 	// Load
-	loaded, err := Load(path)
+	loaded, err := Load(context.Background(), path)
 	if err != nil {
 		t.Fatalf("Load failed: %v", err)
 	}
@@ -126,7 +127,7 @@ func TestManifestLoadSave(t *testing.T) {
 
 // TestManifestLoadInvalidFile tests Load with non-existent file.
 func TestManifestLoadInvalidFile(t *testing.T) {
-	_, err := Load("/nonexistent/path/manifest.yaml")
+	_, err := Load(context.Background(), "/nonexistent/path/manifest.yaml")
 	if err == nil {
 		t.Error("Load should fail with non-existent file")
 	}
@@ -142,7 +143,7 @@ func TestManifestLoadInvalidYAML(t *testing.T) {
 		t.Fatalf("Failed to write test file: %v", err)
 	}
 
-	_, err := Load(path)
+	_, err := Load(context.Background(), path)
 	if err == nil {
 		t.Error("Load should fail with invalid YAML")
 	}
@@ -424,7 +425,7 @@ waves:
 		t.Fatalf("Failed to write test file: %v", err)
 	}
 
-	manifest, err := Load(path)
+	manifest, err := Load(context.Background(), path)
 	if err != nil {
 		t.Fatalf("Load failed: %v", err)
 	}

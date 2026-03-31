@@ -190,7 +190,7 @@ completion_reports:
 	}
 
 	// Load manifest to verify it parses
-	manifest, err := protocol.Load(implPath)
+	manifest, err := protocol.Load(context.TODO(), implPath)
 	if err != nil {
 		t.Fatalf("failed to load manifest: %v", err)
 	}
@@ -419,7 +419,7 @@ completion_reports:
 	}
 
 	// Verify integration gaps are detected for our file
-	manifest, err := protocol.Load(implPath)
+	manifest, err := protocol.Load(context.TODO(), implPath)
 	if err != nil {
 		t.Fatalf("failed to load manifest: %v", err)
 	}

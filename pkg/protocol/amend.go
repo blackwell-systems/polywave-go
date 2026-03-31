@@ -1,6 +1,7 @@
 package protocol
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -42,7 +43,7 @@ const amendBlocked = "AMEND_BLOCKED"
 // be violated.
 func AmendImpl(opts AmendImplOpts) result.Result[AmendImplData] {
 	// Step 1: Load manifest
-	m, err := Load(opts.ManifestPath)
+	m, err := Load(context.TODO(), opts.ManifestPath)
 	if err != nil {
 		return result.NewFailure[AmendImplData]([]result.SAWError{
 			{
@@ -139,7 +140,7 @@ func amendAddWave(opts AmendImplOpts, m *IMPLManifest) result.Result[AmendImplDa
 
 	// Validation passed — mutate real manifest and save
 	m.Waves = append(m.Waves, newWave)
-	if saveRes := Save(m, opts.ManifestPath); saveRes.IsFatal() {
+	if saveRes := Save(context.TODO(), m, opts.ManifestPath); saveRes.IsFatal() {
 		return result.NewFailure[AmendImplData](saveRes.Errors)
 	}
 
@@ -228,7 +229,7 @@ func amendRedirectAgent(opts AmendImplOpts, m *IMPLManifest) result.Result[Amend
 	}
 
 	// Step 6: Save
-	if saveRes := Save(m, opts.ManifestPath); saveRes.IsFatal() {
+	if saveRes := Save(context.TODO(), m, opts.ManifestPath); saveRes.IsFatal() {
 		return result.NewFailure[AmendImplData](saveRes.Errors)
 	}
 

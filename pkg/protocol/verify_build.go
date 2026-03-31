@@ -2,6 +2,7 @@ package protocol
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"os"
 	"os/exec"
@@ -32,7 +33,7 @@ type VerifyBuildData struct {
 // Returns FATAL result for system-level failures (e.g., cannot load manifest).
 func VerifyBuild(manifestPath string, repoDir string) result.Result[VerifyBuildData] {
 	// Load the manifest
-	manifest, err := Load(manifestPath)
+	manifest, err := Load(context.TODO(), manifestPath)
 	if err != nil {
 		return result.NewFailure[VerifyBuildData]([]result.SAWError{
 			{

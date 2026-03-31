@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -38,7 +39,7 @@ Exits 0 if no gaps found (both reports valid), exits 1 if gaps are detected.`,
 			manifestPath := args[0]
 
 			// Step 1: Load manifest
-			manifest, err := protocol.Load(manifestPath)
+			manifest, err := protocol.Load(context.TODO(), manifestPath)
 			if err != nil {
 				return fmt.Errorf("validate-integration: failed to load manifest: %w", err)
 			}

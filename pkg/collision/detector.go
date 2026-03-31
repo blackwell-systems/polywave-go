@@ -33,7 +33,7 @@ func DetectCollisions(ctx context.Context, manifestPath string, waveNum int, rep
 		return CollisionReport{}, err
 	}
 	// Load IMPL manifest
-	manifest, err := protocol.Load(manifestPath)
+	manifest, err := protocol.Load(context.TODO(), manifestPath)
 	if err != nil {
 		return CollisionReport{}, fmt.Errorf("load manifest: %w", err)
 	}

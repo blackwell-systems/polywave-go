@@ -44,7 +44,7 @@ func BuildRetryAttempt(ctx context.Context, manifestPath string, agentID string,
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	m, err := protocol.Load(manifestPath)
+	m, err := protocol.Load(context.TODO(), manifestPath)
 	if err != nil {
 		return nil, fmt.Errorf("retry: failed to load manifest: %w", err)
 	}

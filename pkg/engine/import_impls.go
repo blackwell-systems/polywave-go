@@ -80,7 +80,7 @@ func ImportImpls(_ context.Context, opts ImportImplsOpts) (protocol.ImportIMPLsD
 	// Parse each IMPL doc and build imported entries
 	var imported []protocol.ImportedIMPL
 	for _, implPath := range implPaths {
-		implDoc, loadErr := protocol.Load(implPath)
+		implDoc, loadErr := protocol.Load(context.TODO(), implPath)
 		if loadErr != nil {
 			fmt.Fprintf(os.Stderr, "import-impls: warning: failed to load %s: %v\n", implPath, loadErr)
 			continue
@@ -190,7 +190,7 @@ func ImportImpls(_ context.Context, opts ImportImplsOpts) (protocol.ImportIMPLsD
 	if err := os.MkdirAll(filepath.Dir(opts.ProgramPath), 0755); err != nil {
 		return protocol.ImportIMPLsData{}, fmt.Errorf("import-impls: failed to create directory: %w", err)
 	}
-	if err := protocol.SaveYAML(opts.ProgramPath, manifest); err != nil {
+	if err := protocol.SaveYAML(context.TODO(), opts.ProgramPath, manifest); err != nil {
 		return protocol.ImportIMPLsData{}, fmt.Errorf("import-impls: %w", err)
 	}
 

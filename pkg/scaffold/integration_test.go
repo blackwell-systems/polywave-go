@@ -1,6 +1,7 @@
 package scaffold_test
 
 import (
+	"context"
 	"encoding/json"
 	"os/exec"
 	"path/filepath"
@@ -58,7 +59,7 @@ func GenerateReport(config ReportConfig) error`,
 		Waves:         []protocol.Wave{},
 	}
 
-	if saveRes := protocol.Save(manifest, manifestPath); saveRes.IsFatal() {
+	if saveRes := protocol.Save(context.TODO(), manifest, manifestPath); saveRes.IsFatal() {
 		t.Fatalf("Failed to save test manifest: %v", saveRes.Errors)
 	}
 
@@ -193,7 +194,7 @@ type Logger interface {
 		},
 	}
 
-	if saveRes := protocol.Save(manifest, manifestPath); saveRes.IsFatal() {
+	if saveRes := protocol.Save(context.TODO(), manifest, manifestPath); saveRes.IsFatal() {
 		t.Fatalf("Failed to save test manifest: %v", saveRes.Errors)
 	}
 
@@ -276,7 +277,7 @@ func TestCLI_InvalidStage(t *testing.T) {
 		Waves:              []protocol.Wave{},
 	}
 
-	if saveRes := protocol.Save(manifest, manifestPath); saveRes.IsFatal() {
+	if saveRes := protocol.Save(context.TODO(), manifest, manifestPath); saveRes.IsFatal() {
 		t.Fatalf("Failed to save test manifest: %v", saveRes.Errors)
 	}
 
@@ -315,7 +316,7 @@ func TestCLI_MissingStageFlag(t *testing.T) {
 		Waves:              []protocol.Wave{},
 	}
 
-	if saveRes := protocol.Save(manifest, manifestPath); saveRes.IsFatal() {
+	if saveRes := protocol.Save(context.TODO(), manifest, manifestPath); saveRes.IsFatal() {
 		t.Fatalf("Failed to save test manifest: %v", saveRes.Errors)
 	}
 
@@ -379,7 +380,7 @@ func TestCLI_EmptyManifest(t *testing.T) {
 		Waves:              []protocol.Wave{},
 	}
 
-	if saveRes := protocol.Save(manifest, manifestPath); saveRes.IsFatal() {
+	if saveRes := protocol.Save(context.TODO(), manifest, manifestPath); saveRes.IsFatal() {
 		t.Fatalf("Failed to save test manifest: %v", saveRes.Errors)
 	}
 

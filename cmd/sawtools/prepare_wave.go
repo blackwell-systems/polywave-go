@@ -46,7 +46,7 @@ waves that execute on the main branch.`,
 			manifestPath := args[0]
 
 			// Load manifest for E37 pre-flight check
-			manifest, err := protocol.Load(manifestPath)
+			manifest, err := protocol.Load(context.TODO(), manifestPath)
 			if err != nil {
 				return fmt.Errorf("prepare-wave: failed to load manifest: %w", err)
 			}

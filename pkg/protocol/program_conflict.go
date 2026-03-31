@@ -1,6 +1,7 @@
 package protocol
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -93,7 +94,7 @@ func CheckIMPLConflictsWaveLevel(implSlugs []string, repoPath string) (*WaveConf
 		if err != nil {
 			return nil, fmt.Errorf("cannot resolve IMPL %q: %w", slug, err)
 		}
-		manifest, err := Load(implPath)
+		manifest, err := Load(context.TODO(), implPath)
 		if err != nil {
 			return nil, fmt.Errorf("cannot load IMPL %q: %w", slug, err)
 		}
@@ -403,7 +404,7 @@ func BuildFileOwnershipMap(refs []string, repoPath string) (map[string][]string,
 		if err != nil {
 			return nil, nil, fmt.Errorf("cannot resolve IMPL ref %q: %w", ref, err)
 		}
-		manifest, err := Load(implPath)
+		manifest, err := Load(context.TODO(), implPath)
 		if err != nil {
 			return nil, nil, fmt.Errorf("cannot load IMPL %q: %w", ref, err)
 		}

@@ -217,9 +217,9 @@ func TestRetryLoop_IMPLFileContents(t *testing.T) {
 	}
 
 	absPath := filepath.Join(tmpDir, result.RetryIMPL)
-	loaded, err := protocol.Load(absPath)
+	loaded, err := protocol.Load(context.TODO(), absPath)
 	if err != nil {
-		t.Fatalf("protocol.Load(%s) error: %v", absPath, err)
+		t.Fatalf("protocol.Load(context.TODO(), %s) error: %v", absPath, err)
 	}
 
 	errs := protocol.Validate(loaded)
@@ -257,7 +257,7 @@ func TestRetryLoop_FilenameFormat(t *testing.T) {
 		},
 		State: protocol.StateWavePending,
 	}
-	if saveRes := protocol.Save(m, parentIMPL); saveRes.IsFatal() {
+	if saveRes := protocol.Save(context.TODO(), m, parentIMPL); saveRes.IsFatal() {
 		t.Fatal(saveRes.Errors)
 	}
 
@@ -363,7 +363,7 @@ func TestRetryLoop_GenerateRetryIMPLMethod(t *testing.T) {
 		},
 		State: protocol.StateWavePending,
 	}
-	if saveRes := protocol.Save(parent, parentIMPL); saveRes.IsFatal() {
+	if saveRes := protocol.Save(context.TODO(), parent, parentIMPL); saveRes.IsFatal() {
 		t.Fatal(saveRes.Errors)
 	}
 
@@ -422,7 +422,7 @@ func TestRetryLoop_FallbackToIMPLFiles(t *testing.T) {
 		FileOwnership: []protocol.FileOwnership{{File: "pkg/fb/fb.go", Agent: "A", Wave: 1}},
 		State:         protocol.StateWavePending,
 	}
-	if saveRes := protocol.Save(parent, parentIMPL); saveRes.IsFatal() {
+	if saveRes := protocol.Save(context.TODO(), parent, parentIMPL); saveRes.IsFatal() {
 		t.Fatal(saveRes.Errors)
 	}
 
@@ -448,7 +448,7 @@ func TestRetryLoop_FallbackToIMPLFiles(t *testing.T) {
 
 	// Load the generated IMPL and check it includes the parent's files
 	absPath := filepath.Join(tmpDir, result.RetryIMPL)
-	loaded, err := protocol.Load(absPath)
+	loaded, err := protocol.Load(context.TODO(), absPath)
 	if err != nil {
 		t.Fatalf("protocol.Load error: %v", err)
 	}

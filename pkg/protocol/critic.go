@@ -20,6 +20,7 @@
 package protocol
 
 import (
+	"context"
 	"fmt"
 
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
@@ -88,14 +89,14 @@ type CriticIssue struct {
 //
 // Deprecated: prefer WriteCriticReviewResult which returns result.Result[CriticData].
 func WriteCriticReview(implPath string, data CriticData) error {
-	manifest, err := Load(implPath)
+	manifest, err := Load(context.TODO(), implPath)
 	if err != nil {
 		return err
 	}
 
 	manifest.CriticReport = &data
 
-	if saveRes := Save(manifest, implPath); saveRes.IsFatal() && len(saveRes.Errors) > 0 {
+	if saveRes := Save(context.TODO(), manifest, implPath); saveRes.IsFatal() && len(saveRes.Errors) > 0 {
 		return fmt.Errorf("%s", saveRes.Errors[0].Message)
 	}
 	return nil
@@ -105,7 +106,7 @@ func WriteCriticReview(implPath string, data CriticData) error {
 // It loads the existing manifest, sets the CriticReport field, and saves.
 // Returns a result.Result[CriticData] indicating success or failure.
 func WriteCriticReviewResult(implPath string, data CriticData) result.Result[CriticData] {
-	manifest, err := Load(implPath)
+	manifest, err := Load(context.TODO(), implPath)
 	if err != nil {
 		return result.NewFailure[CriticData]([]result.SAWError{
 			{
@@ -118,7 +119,7 @@ func WriteCriticReviewResult(implPath string, data CriticData) result.Result[Cri
 
 	manifest.CriticReport = &data
 
-	if saveRes := Save(manifest, implPath); saveRes.IsFatal() {
+	if saveRes := Save(context.TODO(), manifest, implPath); saveRes.IsFatal() {
 		return result.NewFailure[CriticData](saveRes.Errors)
 	}
 

@@ -1,6 +1,7 @@
 package queue
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -87,7 +88,7 @@ func (m *Manager) Add(item Item) result.Result[AddData] {
 	filename := fmt.Sprintf("%03d-%s.yaml", item.Priority, item.Slug)
 	path := filepath.Join(dir, filename)
 
-	if err := protocol.SaveYAML(path, &item); err != nil {
+	if err := protocol.SaveYAML(context.TODO(), path, &item); err != nil {
 		return result.NewFailure[AddData]([]result.SAWError{
 			result.NewFatal("QUEUE_ADD_FAILED", err.Error()).WithCause(err),
 		})
@@ -123,7 +124,7 @@ func (m *Manager) List() result.Result[ListData] {
 			continue
 		}
 		path := filepath.Join(dir, name)
-		item, err := protocol.LoadYAML[Item](path)
+		item, err := protocol.LoadYAML[Item](context.TODO(), path)
 		if err != nil {
 			return result.NewFailure[ListData]([]result.SAWError{
 				result.NewFatal("QUEUE_LIST_FAILED", err.Error()).WithCause(err),
@@ -267,7 +268,7 @@ func (m *Manager) UpdateStatus(slug string, status string) result.Result[UpdateS
 			continue
 		}
 		path := filepath.Join(dir, name)
-		item, err := protocol.LoadYAML[Item](path)
+		item, err := protocol.LoadYAML[Item](context.TODO(), path)
 		if err != nil {
 			return result.NewFailure[UpdateStatusData]([]result.SAWError{
 				result.NewFatal("QUEUE_STATUS_UPDATE_FAILED", err.Error()).WithCause(err),
@@ -275,7 +276,7 @@ func (m *Manager) UpdateStatus(slug string, status string) result.Result[UpdateS
 		}
 		if item.Slug == slug {
 			item.Status = status
-			if err := protocol.SaveYAML(path, &item); err != nil {
+			if err := protocol.SaveYAML(context.TODO(), path, &item); err != nil {
 				return result.NewFailure[UpdateStatusData]([]result.SAWError{
 					result.NewFatal("QUEUE_STATUS_UPDATE_FAILED", err.Error()).WithCause(err),
 				})

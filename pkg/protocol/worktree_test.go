@@ -1,6 +1,7 @@
 package protocol
 
 import (
+	"context"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -71,7 +72,7 @@ func createTestManifest(t *testing.T, repoDir string, waveNum int, agentIDs []st
 	}
 
 	manifestPath := filepath.Join(repoDir, "IMPL.yaml")
-	if saveRes := Save(manifest, manifestPath); saveRes.IsFatal() {
+	if saveRes := Save(context.Background(), manifest, manifestPath); saveRes.IsFatal() {
 		t.Fatalf("failed to save test manifest: %v", saveRes.Errors)
 	}
 
@@ -241,7 +242,7 @@ func TestCreateWorktrees_EmptyWave(t *testing.T) {
 	}
 
 	manifestPath := filepath.Join(repoDir, "IMPL.yaml")
-	if saveRes := Save(manifest, manifestPath); saveRes.IsFatal() {
+	if saveRes := Save(context.Background(), manifest, manifestPath); saveRes.IsFatal() {
 		t.Fatalf("failed to save test manifest: %v", saveRes.Errors)
 	}
 

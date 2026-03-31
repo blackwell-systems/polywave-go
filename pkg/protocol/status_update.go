@@ -1,6 +1,7 @@
 package protocol
 
 import (
+	"context"
 	"fmt"
 	"strings"
 
@@ -28,7 +29,7 @@ type UpdateStatusData struct {
 // (neither in opts.Commit nor in the existing report).
 func UpdateStatus(manifestPath string, waveNum int, agentID string, status CompletionStatus, opts UpdateStatusOpts) result.Result[*UpdateStatusData] {
 	// Load manifest
-	manifest, err := Load(manifestPath)
+	manifest, err := Load(context.TODO(), manifestPath)
 	if err != nil {
 		return result.NewFailure[*UpdateStatusData]([]result.SAWError{{
 			Code:     result.CodeStatusUpdateFailed,
@@ -111,7 +112,7 @@ func UpdateStatus(manifestPath string, waveNum int, agentID string, status Compl
 	manifest.CompletionReports[agentID] = report
 
 	// Save manifest
-	if saveRes := Save(manifest, manifestPath); saveRes.IsFatal() {
+	if saveRes := Save(context.TODO(), manifest, manifestPath); saveRes.IsFatal() {
 		return result.NewFailure[*UpdateStatusData](saveRes.Errors)
 	}
 

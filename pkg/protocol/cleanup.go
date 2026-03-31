@@ -1,6 +1,7 @@
 package protocol
 
 import (
+	"context"
 	"fmt"
 	"log/slog"
 	"os"
@@ -74,7 +75,7 @@ type CleanupData struct {
 func Cleanup(manifestPath string, waveNum int, repoDir string, logger *slog.Logger) (result.Result[CleanupData], error) {
 	log := loggerFrom(logger)
 	// Load manifest
-	manifest, err := Load(manifestPath)
+	manifest, err := Load(context.TODO(), manifestPath)
 	if err != nil {
 		return result.NewFailure[CleanupData]([]result.SAWError{
 			{

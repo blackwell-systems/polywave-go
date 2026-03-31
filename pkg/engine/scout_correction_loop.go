@@ -171,7 +171,7 @@ func buildCorrectionPrompt(errors []result.SAWError) string {
 
 // validateIMPLDoc loads an IMPL doc and runs E16 validation, returning any errors.
 func validateIMPLDoc(implPath string) ([]result.SAWError, error) {
-	manifest, err := protocol.Load(implPath)
+	manifest, err := protocol.Load(context.TODO(), implPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to load IMPL doc: %w", err)
 	}
@@ -181,7 +181,7 @@ func validateIMPLDoc(implPath string) ([]result.SAWError, error) {
 // setIMPLStateBlocked updates the IMPL doc state to BLOCKED after exhausting
 // correction retries.
 func setIMPLStateBlocked(implPath string) result.Result[SetBlockedData] {
-	manifest, err := protocol.Load(implPath)
+	manifest, err := protocol.Load(context.TODO(), implPath)
 	if err != nil {
 		return result.NewFailure[SetBlockedData]([]result.SAWError{
 			result.NewFatal("ENGINE_SET_BLOCKED_LOAD_FAILED",
@@ -190,7 +190,7 @@ func setIMPLStateBlocked(implPath string) result.Result[SetBlockedData] {
 		})
 	}
 	manifest.State = protocol.StateBlocked
-	if saveRes := protocol.Save(manifest, implPath); saveRes.IsFatal() {
+	if saveRes := protocol.Save(context.TODO(), manifest, implPath); saveRes.IsFatal() {
 		errMsg := "failed to save manifest"
 		if len(saveRes.Errors) > 0 {
 			errMsg = saveRes.Errors[0].Message

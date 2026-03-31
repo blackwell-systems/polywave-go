@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 
@@ -19,7 +20,7 @@ func newUpdateAgentPromptCmd() *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			manifestPath := args[0]
 
-			m, err := protocol.Load(manifestPath)
+			m, err := protocol.Load(context.TODO(), manifestPath)
 			if err != nil {
 				return fmt.Errorf("update-agent-prompt: %w", err)
 			}
@@ -32,7 +33,7 @@ func newUpdateAgentPromptCmd() *cobra.Command {
 				return fmt.Errorf("update-agent-prompt: %s", msg)
 			}
 
-			if saveRes := protocol.Save(m, manifestPath); saveRes.IsFatal() {
+			if saveRes := protocol.Save(context.TODO(), m, manifestPath); saveRes.IsFatal() {
 				saveErrMsg := "save failed"
 				if len(saveRes.Errors) > 0 {
 					saveErrMsg = saveRes.Errors[0].Message

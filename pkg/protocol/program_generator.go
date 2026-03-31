@@ -1,6 +1,7 @@
 package protocol
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -76,7 +77,7 @@ func GenerateProgramFromIMPLs(opts GenerateProgramOpts) result.Result[GeneratePr
 			}})
 		}
 
-		implDoc, loadErr := Load(implPath)
+		implDoc, loadErr := Load(context.TODO(), implPath)
 		if loadErr != nil {
 			return result.NewFailure[GenerateProgramData]([]result.SAWError{{
 				Code:     result.CodeDisjointOwnership,
@@ -253,7 +254,7 @@ func GenerateProgramFromIMPLs(opts GenerateProgramOpts) result.Result[GeneratePr
 		}})
 	}
 
-	if err := SaveYAML(outputPath, manifest); err != nil {
+	if err := SaveYAML(context.TODO(), outputPath, manifest); err != nil {
 		return result.NewFailure[GenerateProgramData]([]result.SAWError{{
 			Code:     result.CodeOrphanFile,
 			Message:  fmt.Sprintf("generate-program: failed to write manifest: %v", err),

@@ -1,6 +1,7 @@
 package orchestrator
 
 import (
+	"context"
 	"fmt"
 	"path/filepath"
 	"strings"
@@ -27,7 +28,7 @@ func executeMergeWave(o *Orchestrator, waveNum int) result.Result[MergeData] {
 	}
 
 	// Step 2: Load manifest and check completion reports; abort if any agent is partial or blocked.
-	manifest, err := protocol.Load(o.implDocPath)
+	manifest, err := protocol.Load(context.TODO(), o.implDocPath)
 	if err != nil {
 		return result.NewFailure[MergeData]([]result.SAWError{
 			result.NewFatal(result.CodeIMPLParseFailed,
