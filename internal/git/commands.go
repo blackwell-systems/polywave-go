@@ -430,24 +430,26 @@ func InstallHooks(repoPath, worktreePath string) error {
 
 	return nil
 }
-// GetWorktreeBaseCommit returns the base commit SHA that a worktree was created from.
-// This is the commit that HEAD pointed to when the worktree was created.
+// GetWorktreeBaseCommit returns the commit SHA that the worktree's branch
+// diverged from the main repository's HEAD. This is the point at which the
+// worktree was effectively "created from" — i.e. the merge-base between the
+// worktree branch and the main repo's current HEAD.
+//
+// If the worktree was just created from current HEAD and no new commits have
+// landed on main since, the result equals HEAD (worktree is fresh).
+// If main has advanced since the worktree was created, the result differs
+// from HEAD (worktree is stale).
 func GetWorktreeBaseCommit(repoPath, worktreePath string) (string, error) {
-	// Get current HEAD in the worktree
-	head, err := Run(worktreePath, "rev-parse", "HEAD")
+	ref, err := SymbolicRef(worktreePath)
 	if err != nil {
-		return "", fmt.Errorf("failed to get worktree HEAD: %w", err)
+		return "", fmt.Errorf("failed to get worktree branch: %w", err)
 	}
-	head = strings.TrimSpace(head)
-
-	// Try to get the root commit (first commit in the worktree's history)
-	root, err := Run(worktreePath, "rev-list", "--max-parents=0", "HEAD")
+	branch := strings.TrimPrefix(ref, "refs/heads/")
+	base, err := MergeBase(repoPath, "HEAD", branch)
 	if err != nil {
-		// No commits yet in worktree, return current HEAD
-		return head, nil
+		return "", fmt.Errorf("failed to get merge base for branch %s: %w", branch, err)
 	}
-
-	return strings.TrimSpace(root), nil
+	return base, nil
 }
 
 // WorktreeExists checks if a worktree at the given path is registered in git's worktree list.
@@ -501,8 +503,8 @@ func VerifyHookInWorktree(worktreePath string) (bool, error) {
 		return false, fmt.Errorf("failed to read hook: %w", err)
 	}
 
-	content_str := string(hookContent)
-	if !strings.Contains(content_str, "SAW_ALLOW_MAIN_COMMIT") && !strings.Contains(content_str, "SAW pre-commit guard") {
+	contentStr := string(hookContent)
+	if !strings.Contains(contentStr, "SAW_ALLOW_MAIN_COMMIT") && !strings.Contains(contentStr, "SAW pre-commit guard") {
 		return false, nil // Hook doesn't contain SAW logic
 	}
 
