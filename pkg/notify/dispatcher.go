@@ -43,7 +43,7 @@ func (d *Dispatcher) Dispatch(ctx context.Context, event Event, formatter Format
 	case <-ctx.Done():
 		return result.NewFailure[DispatchData]([]result.SAWError{
 			{
-				Code:     "CONTEXT_CANCELLED",
+				Code:     result.CodeContextCancelled,
 				Message:  ctx.Err().Error(),
 				Severity: "fatal",
 			},
@@ -71,7 +71,7 @@ func (d *Dispatcher) Dispatch(ctx context.Context, event Event, formatter Format
 					adapterName: adapter.Name(),
 					res: result.NewFailure[SendData]([]result.SAWError{
 						{
-							Code:     "CONTEXT_CANCELLED",
+							Code:     result.CodeContextCancelled,
 							Message:  ctx.Err().Error(),
 							Severity: "fatal",
 							Context:  map[string]string{"adapter": adapter.Name()},

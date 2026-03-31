@@ -45,17 +45,17 @@ func loggerFrom(l *slog.Logger) *slog.Logger {
 func RunScout(ctx context.Context, opts RunScoutOpts, onChunk func(string)) result.Result[ScoutData] {
 	if opts.Feature == "" {
 		return result.NewFailure[ScoutData]([]result.SAWError{
-			result.NewFatal("ENGINE_SCOUT_INVALID_OPTS", "engine.RunScout: Feature is required"),
+			result.NewFatal(result.CodeScoutInvalidOpts, "engine.RunScout: Feature is required"),
 		})
 	}
 	if opts.RepoPath == "" {
 		return result.NewFailure[ScoutData]([]result.SAWError{
-			result.NewFatal("ENGINE_SCOUT_INVALID_OPTS", "engine.RunScout: RepoPath is required"),
+			result.NewFatal(result.CodeScoutInvalidOpts, "engine.RunScout: RepoPath is required"),
 		})
 	}
 	if opts.IMPLOutPath == "" {
 		return result.NewFailure[ScoutData]([]result.SAWError{
-			result.NewFatal("ENGINE_SCOUT_INVALID_OPTS", "engine.RunScout: IMPLOutPath is required"),
+			result.NewFatal(result.CodeScoutInvalidOpts, "engine.RunScout: IMPLOutPath is required"),
 		})
 	}
 
@@ -79,7 +79,7 @@ func RunScout(ctx context.Context, opts RunScoutOpts, onChunk func(string)) resu
 		home, err := os.UserHomeDir()
 		if err != nil {
 			return result.NewFailure[ScoutData]([]result.SAWError{
-				result.NewFatal("ENGINE_SCOUT_FAILED", "engine.RunScout: cannot determine home directory").WithCause(err),
+				result.NewFatal(result.CodeScoutRunFailed, "engine.RunScout: cannot determine home directory").WithCause(err),
 			})
 		}
 		sawRepo = filepath.Join(home, "code", "scout-and-wave")
@@ -90,7 +90,7 @@ func RunScout(ctx context.Context, opts RunScoutOpts, onChunk func(string)) resu
 	scoutMdContent, err := LoadTypePromptWithRefs(scoutMdPath)
 	if err != nil {
 		return result.NewFailure[ScoutData]([]result.SAWError{
-			result.NewFatal("ENGINE_SCOUT_FAILED", fmt.Sprintf("engine.RunScout: scout.md not found at %s", scoutMdPath)).WithCause(err),
+			result.NewFatal(result.CodeScoutRunFailed, fmt.Sprintf("engine.RunScout: scout.md not found at %s", scoutMdPath)).WithCause(err),
 		})
 	}
 
@@ -132,7 +132,7 @@ func RunScout(ctx context.Context, opts RunScoutOpts, onChunk func(string)) resu
 		b, bErr := orchestrator.NewBackendFromModel(opts.ScoutModel)
 		if bErr != nil {
 			return result.NewFailure[ScoutData]([]result.SAWError{
-				result.NewFatal("ENGINE_SCOUT_FAILED", "engine.RunScout: backend init failed").WithCause(bErr),
+				result.NewFatal(result.CodeScoutRunFailed, "engine.RunScout: backend init failed").WithCause(bErr),
 			})
 		}
 		runner := agent.NewRunner(b, nil)
@@ -143,11 +143,11 @@ func RunScout(ctx context.Context, opts RunScoutOpts, onChunk func(string)) resu
 	if execErr != nil {
 		if ctx.Err() != nil {
 			return result.NewFailure[ScoutData]([]result.SAWError{
-				{Code: "CONTEXT_CANCELLED", Message: "engine.RunScout: context cancelled", Severity: "fatal", Cause: execErr},
+				{Code: result.CodeContextCancelled, Message: "engine.RunScout: context cancelled", Severity: "fatal", Cause: execErr},
 			})
 		}
 		return result.NewFailure[ScoutData]([]result.SAWError{
-			result.NewFatal("ENGINE_SCOUT_FAILED", "engine.RunScout: agent execution failed").WithCause(execErr),
+			result.NewFatal(result.CodeScoutRunFailed, "engine.RunScout: agent execution failed").WithCause(execErr),
 		})
 	}
 
@@ -159,14 +159,14 @@ func RunScout(ctx context.Context, opts RunScoutOpts, onChunk func(string)) resu
 			msg = "engine.RunScout: " + validateRes.Errors[0].Message
 		}
 		return result.NewFailure[ScoutData]([]result.SAWError{
-			result.NewFatal("ENGINE_SCOUT_BOUNDARY_VIOLATION", msg),
+			result.NewFatal(result.CodeScoutBoundaryViolation, msg),
 		})
 	}
 	if validateRes.IsPartial() {
 		data := validateRes.GetData()
 		if len(data.UnexpectedWrites) > 0 {
 			return result.NewFailure[ScoutData]([]result.SAWError{
-				result.NewFatal("ENGINE_SCOUT_BOUNDARY_VIOLATION",
+				result.NewFatal(result.CodeScoutBoundaryViolation,
 					fmt.Sprintf("engine.RunScout: I6 VIOLATION: Scout wrote files outside permitted boundaries: %s",
 						strings.Join(data.UnexpectedWrites, ", "))),
 			})
@@ -204,17 +204,17 @@ func implSlugFromIMPLPath(path string) string {
 func RunPlanner(ctx context.Context, opts RunPlannerOpts, onChunk func(string)) result.Result[PlannerData] {
 	if opts.Description == "" {
 		return result.NewFailure[PlannerData]([]result.SAWError{
-			result.NewFatal("ENGINE_PLANNER_INVALID_OPTS", "engine.RunPlanner: Description is required"),
+			result.NewFatal(result.CodePlannerInvalidOpts, "engine.RunPlanner: Description is required"),
 		})
 	}
 	if opts.RepoPath == "" {
 		return result.NewFailure[PlannerData]([]result.SAWError{
-			result.NewFatal("ENGINE_PLANNER_INVALID_OPTS", "engine.RunPlanner: RepoPath is required"),
+			result.NewFatal(result.CodePlannerInvalidOpts, "engine.RunPlanner: RepoPath is required"),
 		})
 	}
 	if opts.ProgramOutPath == "" {
 		return result.NewFailure[PlannerData]([]result.SAWError{
-			result.NewFatal("ENGINE_PLANNER_INVALID_OPTS", "engine.RunPlanner: ProgramOutPath is required"),
+			result.NewFatal(result.CodePlannerInvalidOpts, "engine.RunPlanner: ProgramOutPath is required"),
 		})
 	}
 
@@ -226,7 +226,7 @@ func RunPlanner(ctx context.Context, opts RunPlannerOpts, onChunk func(string)) 
 		home, err := os.UserHomeDir()
 		if err != nil {
 			return result.NewFailure[PlannerData]([]result.SAWError{
-				result.NewFatal("ENGINE_PLANNER_FAILED", "engine.RunPlanner: cannot determine home directory").WithCause(err),
+				result.NewFatal(result.CodePlannerFailed, "engine.RunPlanner: cannot determine home directory").WithCause(err),
 			})
 		}
 		sawRepo = filepath.Join(home, "code", "scout-and-wave")
@@ -260,7 +260,7 @@ func RunPlanner(ctx context.Context, opts RunPlannerOpts, onChunk func(string)) 
 	b, bErr := orchestrator.NewBackendFromModel(model)
 	if bErr != nil {
 		return result.NewFailure[PlannerData]([]result.SAWError{
-			result.NewFatal("ENGINE_PLANNER_FAILED", "engine.RunPlanner: backend init failed").WithCause(bErr),
+			result.NewFatal(result.CodePlannerFailed, "engine.RunPlanner: backend init failed").WithCause(bErr),
 		})
 	}
 	runner := agent.NewRunner(b, nil)
@@ -269,11 +269,11 @@ func RunPlanner(ctx context.Context, opts RunPlannerOpts, onChunk func(string)) 
 	if execErr != nil {
 		if ctx.Err() != nil {
 			return result.NewFailure[PlannerData]([]result.SAWError{
-				{Code: "CONTEXT_CANCELLED", Message: "engine.RunPlanner: context cancelled", Severity: "fatal", Cause: execErr},
+				{Code: result.CodeContextCancelled, Message: "engine.RunPlanner: context cancelled", Severity: "fatal", Cause: execErr},
 			})
 		}
 		return result.NewFailure[PlannerData]([]result.SAWError{
-			result.NewFatal("ENGINE_PLANNER_FAILED", "engine.RunPlanner: agent execution failed").WithCause(execErr),
+			result.NewFatal(result.CodePlannerFailed, "engine.RunPlanner: agent execution failed").WithCause(execErr),
 		})
 	}
 	return result.NewSuccess(PlannerData{
@@ -407,12 +407,12 @@ func runScoutStructuredBedrock(ctx context.Context, opts RunScoutOpts, prompt st
 func StartWave(ctx context.Context, opts RunWaveOpts, onEvent func(Event)) result.Result[StartWaveData] {
 	if opts.IMPLPath == "" {
 		return result.NewFailure[StartWaveData]([]result.SAWError{
-			result.NewFatal("ENGINE_WAVE_INVALID_OPTS", "engine.StartWave: IMPLPath is required"),
+			result.NewFatal(result.CodeWaveInvalidOpts, "engine.StartWave: IMPLPath is required"),
 		})
 	}
 	if opts.RepoPath == "" {
 		return result.NewFailure[StartWaveData]([]result.SAWError{
-			result.NewFatal("ENGINE_WAVE_INVALID_OPTS", "engine.StartWave: RepoPath is required"),
+			result.NewFatal(result.CodeWaveInvalidOpts, "engine.StartWave: RepoPath is required"),
 		})
 	}
 
@@ -433,7 +433,7 @@ func StartWave(ctx context.Context, opts RunWaveOpts, onEvent func(Event)) resul
 
 	orch, err := orchestrator.New(ctx, opts.RepoPath, opts.IMPLPath)
 	if err != nil {
-		return fatalf("ENGINE_WAVE_FAILED", fmt.Sprintf("engine.StartWave: %s", err.Error()), err)
+		return fatalf(result.CodeWaveFailed, fmt.Sprintf("engine.StartWave: %s", err.Error()), err)
 	}
 
 	if opts.WaveModel != "" {
@@ -462,7 +462,7 @@ func StartWave(ctx context.Context, opts RunWaveOpts, onEvent func(Event)) resul
 		if len(scaffoldRes.Errors) > 0 {
 			msg = "engine.StartWave: scaffold: " + scaffoldRes.Errors[0].Message
 		}
-		return fatalf("ENGINE_WAVE_FAILED", msg, nil)
+		return fatalf(result.CodeWaveFailed, msg, nil)
 	}
 
 	waves := orch.IMPLDoc().Waves
@@ -478,7 +478,7 @@ func StartWave(ctx context.Context, opts RunWaveOpts, onEvent func(Event)) resul
 		wtRes := protocol.CreateWorktrees(opts.IMPLPath, waveNum, opts.RepoPath, nil)
 		if !wtRes.IsSuccess() {
 			errMsg := fmt.Sprintf("%v", wtRes.Errors)
-			return fatalf("ENGINE_WAVE_FAILED", fmt.Sprintf("engine.StartWave: CreateWorktrees wave %d: %s", waveNum, errMsg), nil)
+			return fatalf(result.CodeWaveFailed, fmt.Sprintf("engine.StartWave: CreateWorktrees wave %d: %s", waveNum, errMsg), nil)
 		}
 		wtResult := wtRes.GetData()
 		// Pass pre-computed worktree paths to orchestrator so launchAgent
@@ -495,7 +495,7 @@ func StartWave(ctx context.Context, opts RunWaveOpts, onEvent func(Event)) resul
 				errMsg = runRes.Errors[0].Message
 			}
 			publish("run_failed", map[string]string{"error": errMsg})
-			return fatalf("ENGINE_WAVE_FAILED", fmt.Sprintf("engine.StartWave: RunWave %d: %s", waveNum, errMsg), nil)
+			return fatalf(result.CodeWaveFailed, fmt.Sprintf("engine.StartWave: RunWave %d: %s", waveNum, errMsg), nil)
 		}
 
 		// E20: Post-wave stub scan (informational only).
@@ -523,12 +523,12 @@ func StartWave(ctx context.Context, opts RunWaveOpts, onEvent func(Event)) resul
 				}
 				for _, gate := range gatesData.Gates {
 					if gate.Required && !gate.Passed {
-						return fatalf("ENGINE_WAVE_FAILED",
+						return fatalf(result.CodeWaveFailed,
 							fmt.Sprintf("engine.StartWave: required gate %q failed in wave %d", gate.Type, waveNum), nil)
 					}
 				}
 			} else {
-				return fatalf("ENGINE_WAVE_FAILED",
+				return fatalf(result.CodeWaveFailed,
 					fmt.Sprintf("engine.StartWave: quality gate wave %d: %v", waveNum, gateRes.Errors), nil)
 			}
 		}
@@ -539,7 +539,7 @@ func StartWave(ctx context.Context, opts RunWaveOpts, onEvent func(Event)) resul
 				errMsg = mergeRes.Errors[0].Message
 			}
 			publish("run_failed", map[string]string{"error": errMsg})
-			return fatalf("ENGINE_WAVE_FAILED", fmt.Sprintf("engine.StartWave: MergeWave %d: %s", waveNum, errMsg), nil)
+			return fatalf(result.CodeWaveFailed, fmt.Sprintf("engine.StartWave: MergeWave %d: %s", waveNum, errMsg), nil)
 		}
 
 		testCmd := orch.IMPLDoc().TestCommand
@@ -550,7 +550,7 @@ func StartWave(ctx context.Context, opts RunWaveOpts, onEvent func(Event)) resul
 					errMsg = verRes.Errors[0].Message
 				}
 				publish("run_failed", map[string]string{"error": errMsg})
-				return fatalf("ENGINE_WAVE_FAILED", fmt.Sprintf("engine.StartWave: RunVerification %d: %s", waveNum, errMsg), nil)
+				return fatalf(result.CodeWaveFailed, fmt.Sprintf("engine.StartWave: RunVerification %d: %s", waveNum, errMsg), nil)
 			}
 		}
 
@@ -659,7 +659,7 @@ func RunScaffold(opts RunScaffoldOpts) result.Result[ScaffoldData] {
 	manifest, err := protocol.Load(ctx, implPath)
 	if err != nil {
 		return result.NewFailure[ScaffoldData]([]result.SAWError{
-			result.NewFatal("ENGINE_SCAFFOLD_FAILED", "engine.RunScaffold: load manifest failed").WithCause(err),
+			result.NewFatal(result.CodeScaffoldRunFailed, "engine.RunScaffold: load manifest failed").WithCause(err),
 		})
 	}
 
@@ -707,7 +707,7 @@ func RunScaffold(opts RunScaffoldOpts) result.Result[ScaffoldData] {
 	if err != nil {
 		publish("scaffold_failed", map[string]string{"error": err.Error()})
 		return result.NewFailure[ScaffoldData]([]result.SAWError{
-			result.NewFatal("ENGINE_SCAFFOLD_FAILED", "engine.RunScaffold: backend init failed").WithCause(err),
+			result.NewFatal(result.CodeScaffoldRunFailed, "engine.RunScaffold: backend init failed").WithCause(err),
 		})
 	}
 	runner := agent.NewRunner(b, nil)
@@ -720,14 +720,14 @@ func RunScaffold(opts RunScaffoldOpts) result.Result[ScaffoldData] {
 	if _, execErr := runner.ExecuteStreamingWithTools(ctx, spec, repoPath, onChunk, nil); execErr != nil {
 		publish("scaffold_failed", map[string]string{"error": execErr.Error()})
 		return result.NewFailure[ScaffoldData]([]result.SAWError{
-			result.NewFatal("ENGINE_SCAFFOLD_FAILED", "engine.RunScaffold: scaffold agent failed").WithCause(execErr),
+			result.NewFatal(result.CodeScaffoldRunFailed, "engine.RunScaffold: scaffold agent failed").WithCause(execErr),
 		})
 	}
 
 	// E22: Scaffold build verification — compile to catch scaffold errors early.
 	if err := runScaffoldBuildVerification(repoPath, onEvent); err != nil {
 		return result.NewFailure[ScaffoldData]([]result.SAWError{
-			result.NewFatal("ENGINE_SCAFFOLD_FAILED", "engine.RunScaffold: build verification failed").WithCause(err),
+			result.NewFatal(result.CodeScaffoldRunFailed, "engine.RunScaffold: build verification failed").WithCause(err),
 		})
 	}
 
@@ -904,13 +904,13 @@ func runScaffoldBuildVerificationWithDoc(ctx context.Context, repoPath string, d
 func RunSingleWave(ctx context.Context, opts RunWaveOpts, waveNum int, onEvent func(Event)) result.Result[WaveData] {
 	if opts.IMPLPath == "" {
 		return result.NewFailure[WaveData]([]result.SAWError{
-			result.NewFatal("ENGINE_WAVE_INVALID_OPTS", "engine.RunSingleWave: IMPLPath is required"),
+			result.NewFatal(result.CodeWaveInvalidOpts, "engine.RunSingleWave: IMPLPath is required"),
 		})
 	}
 	orch, err := orchestrator.New(ctx, opts.RepoPath, opts.IMPLPath)
 	if err != nil {
 		return result.NewFailure[WaveData]([]result.SAWError{
-			result.NewFatal("ENGINE_WAVE_FAILED", fmt.Sprintf("engine.RunSingleWave: %s", err.Error())).WithCause(err),
+			result.NewFatal(result.CodeWaveFailed, fmt.Sprintf("engine.RunSingleWave: %s", err.Error())).WithCause(err),
 		})
 	}
 	if opts.WaveModel != "" {
@@ -927,7 +927,7 @@ func RunSingleWave(ctx context.Context, opts RunWaveOpts, waveNum int, onEvent f
 	wtRes := protocol.CreateWorktrees(opts.IMPLPath, waveNum, opts.RepoPath, nil)
 	if !wtRes.IsSuccess() {
 		return result.NewFailure[WaveData]([]result.SAWError{
-			result.NewFatal("ENGINE_WAVE_FAILED", fmt.Sprintf("engine.RunSingleWave: create worktrees: %v", wtRes.Errors)),
+			result.NewFatal(result.CodeWaveFailed, fmt.Sprintf("engine.RunSingleWave: create worktrees: %v", wtRes.Errors)),
 		})
 	}
 	wtResult := wtRes.GetData()
@@ -942,7 +942,7 @@ func RunSingleWave(ctx context.Context, opts RunWaveOpts, waveNum int, onEvent f
 	if runRes := orch.RunWave(ctx, waveNum); runRes.IsFatal() {
 		if ctx.Err() != nil {
 			return result.NewFailure[WaveData]([]result.SAWError{
-				{Code: "CONTEXT_CANCELLED", Message: "engine.RunSingleWave: context cancelled", Severity: "fatal"},
+				{Code: result.CodeContextCancelled, Message: "engine.RunSingleWave: context cancelled", Severity: "fatal"},
 			})
 		}
 		msg := "RunWave failed"
@@ -950,7 +950,7 @@ func RunSingleWave(ctx context.Context, opts RunWaveOpts, waveNum int, onEvent f
 			msg = runRes.Errors[0].Message
 		}
 		return result.NewFailure[WaveData]([]result.SAWError{
-			result.NewFatal("ENGINE_WAVE_FAILED", msg),
+			result.NewFatal(result.CodeWaveFailed, msg),
 		})
 	}
 	return result.NewSuccess(WaveData{IMPLPath: opts.IMPLPath, WaveNum: waveNum})
@@ -962,13 +962,13 @@ func RunSingleWave(ctx context.Context, opts RunWaveOpts, waveNum int, onEvent f
 func RunSingleAgent(ctx context.Context, opts RunWaveOpts, waveNum int, agentLetter string, promptPrefix string, onEvent func(Event)) result.Result[AgentData] {
 	if opts.IMPLPath == "" {
 		return result.NewFailure[AgentData]([]result.SAWError{
-			result.NewFatal("ENGINE_AGENT_INVALID_OPTS", "engine.RunSingleAgent: IMPLPath is required"),
+			result.NewFatal(result.CodeAgentRunInvalidOpts, "engine.RunSingleAgent: IMPLPath is required"),
 		})
 	}
 	orch, err := orchestrator.New(ctx, opts.RepoPath, opts.IMPLPath)
 	if err != nil {
 		return result.NewFailure[AgentData]([]result.SAWError{
-			result.NewFatal("ENGINE_AGENT_FAILED", fmt.Sprintf("engine.RunSingleAgent: %s", err.Error())).WithCause(err),
+			result.NewFatal(result.CodeAgentRunFailed, fmt.Sprintf("engine.RunSingleAgent: %s", err.Error())).WithCause(err),
 		})
 	}
 	if opts.WaveModel != "" {
@@ -997,7 +997,7 @@ func RunSingleAgent(ctx context.Context, opts RunWaveOpts, waveNum int, agentLet
 	if agentRes := orch.RunAgent(ctx, waveNum, agentLetter, promptPrefix); agentRes.IsFatal() {
 		if ctx.Err() != nil {
 			return result.NewFailure[AgentData]([]result.SAWError{
-				{Code: "CONTEXT_CANCELLED", Message: "engine.RunSingleAgent: context cancelled", Severity: "fatal"},
+				{Code: result.CodeContextCancelled, Message: "engine.RunSingleAgent: context cancelled", Severity: "fatal"},
 			})
 		}
 		msg := "RunAgent failed"
@@ -1005,7 +1005,7 @@ func RunSingleAgent(ctx context.Context, opts RunWaveOpts, waveNum int, agentLet
 			msg = agentRes.Errors[0].Message
 		}
 		return result.NewFailure[AgentData]([]result.SAWError{
-			result.NewFatal("ENGINE_AGENT_FAILED", msg),
+			result.NewFatal(result.CodeAgentRunFailed, msg),
 		})
 	}
 	return result.NewSuccess(AgentData{IMPLPath: opts.IMPLPath, WaveNum: waveNum, AgentLetter: agentLetter})
@@ -1016,13 +1016,13 @@ func RunSingleAgent(ctx context.Context, opts RunWaveOpts, waveNum int, agentLet
 func MergeWave(ctx context.Context, opts RunMergeOpts) result.Result[MergeData] {
 	if opts.IMPLPath == "" {
 		return result.NewFailure[MergeData]([]result.SAWError{
-			result.NewFatal("ENGINE_MERGE_INVALID_OPTS", "engine.MergeWave: IMPLPath is required"),
+			result.NewFatal(result.CodeMergeWaveInvalidOpts, "engine.MergeWave: IMPLPath is required"),
 		})
 	}
 	orch, err := orchestrator.New(ctx, opts.RepoPath, opts.IMPLPath)
 	if err != nil {
 		return result.NewFailure[MergeData]([]result.SAWError{
-			result.NewFatal("ENGINE_MERGE_FAILED", fmt.Sprintf("engine.MergeWave: %s", err.Error())).WithCause(err),
+			result.NewFatal(result.CodeMergeWaveFailed, fmt.Sprintf("engine.MergeWave: %s", err.Error())).WithCause(err),
 		})
 	}
 
@@ -1033,7 +1033,7 @@ func MergeWave(ctx context.Context, opts RunMergeOpts) result.Result[MergeData] 
 			msg = mergeRes.Errors[0].Message
 		}
 		return result.NewFailure[MergeData]([]result.SAWError{
-			result.NewFatal("ENGINE_MERGE_FAILED", fmt.Sprintf("engine.MergeWave: %s", msg)),
+			result.NewFatal(result.CodeMergeWaveFailed, fmt.Sprintf("engine.MergeWave: %s", msg)),
 		})
 	}
 
@@ -1050,7 +1050,7 @@ func MergeWave(ctx context.Context, opts RunMergeOpts) result.Result[MergeData] 
 						if archRes := observer.Archive(); archRes.IsFatal() {
 							// Log but don't fail the merge
 							loggerFrom(opts.Logger).Warn("engine: failed to archive journal for agent", "agent", ag.ID, "err", archRes.Errors[0].Message)
-							warnings = append(warnings, result.NewWarning("ENGINE_JOURNAL_ARCHIVE_FAILED",
+							warnings = append(warnings, result.NewWarning(result.CodeJournalArchiveFailed,
 								fmt.Sprintf("failed to archive journal for agent %s: %s", ag.ID, archRes.Errors[0].Message)))
 						}
 					}
@@ -1076,13 +1076,13 @@ func RunVerification(ctx context.Context, opts RunVerificationOpts) result.Resul
 	orch, err := orchestrator.New(ctx, opts.RepoPath, "")
 	if err != nil {
 		return result.NewFailure[VerificationData]([]result.SAWError{
-			result.NewFatal("ENGINE_VERIFICATION_FAILED", fmt.Sprintf("engine.RunVerification: %s", err.Error())).WithCause(err),
+			result.NewFatal(result.CodeEngineVerificationFailed, fmt.Sprintf("engine.RunVerification: %s", err.Error())).WithCause(err),
 		})
 	}
 	if verRes := orch.RunVerification(ctx, testCmd); verRes.IsFatal() {
 		if ctx.Err() != nil {
 			return result.NewFailure[VerificationData]([]result.SAWError{
-				{Code: "CONTEXT_CANCELLED", Message: "engine.RunVerification: context cancelled", Severity: "fatal"},
+				{Code: result.CodeContextCancelled, Message: "engine.RunVerification: context cancelled", Severity: "fatal"},
 			})
 		}
 		msg := "RunVerification failed"
@@ -1090,7 +1090,7 @@ func RunVerification(ctx context.Context, opts RunVerificationOpts) result.Resul
 			msg = verRes.Errors[0].Message
 		}
 		return result.NewFailure[VerificationData]([]result.SAWError{
-			result.NewFatal("ENGINE_VERIFICATION_FAILED", msg),
+			result.NewFatal(result.CodeEngineVerificationFailed, msg),
 		})
 	}
 	return result.NewSuccess(VerificationData{RepoPath: opts.RepoPath, TestCommand: testCmd})
@@ -1106,7 +1106,7 @@ func UpdateIMPLStatus(implDocPath string, completedLetters []string) result.Resu
 			msg = res.Errors[0].Message
 		}
 		return result.NewFailure[UpdateData]([]result.SAWError{
-			result.NewFatal("ENGINE_UPDATE_STATUS_FAILED", msg),
+			result.NewFatal(result.CodeUpdateStatusFailed, msg),
 		})
 	}
 	return result.NewSuccess(UpdateData{
@@ -1120,7 +1120,7 @@ func UpdateIMPLStatus(implDocPath string, completedLetters []string) result.Resu
 func ValidateInvariants(manifest *protocol.IMPLManifest) result.Result[ValidateData] {
 	if err := protocol.ValidateInvariants(manifest); err != nil {
 		return result.NewFailure[ValidateData]([]result.SAWError{
-			result.NewFatal("ENGINE_VALIDATE_FAILED", err.Error()).WithCause(err),
+			result.NewFatal(result.CodeValidateFailed, err.Error()).WithCause(err),
 		})
 	}
 	return result.NewSuccess(ValidateData{Valid: true})

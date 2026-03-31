@@ -248,7 +248,7 @@ func exportHTMLTimeline(entries []journal.ToolEntry, agentPath, exportPath strin
 	if !force {
 		if _, err := os.Stat(exportPath); err == nil {
 			return result.NewFailure[ExportData]([]result.SAWError{
-				result.NewFatal("ENGINE_EXPORT_FILE_EXISTS",
+				result.NewFatal(result.CodeExportFileExists,
 					fmt.Sprintf("export file already exists: %s (use --force to overwrite)", exportPath)).
 					WithContext("export_path", exportPath),
 			})
@@ -257,7 +257,7 @@ func exportHTMLTimeline(entries []journal.ToolEntry, agentPath, exportPath strin
 
 	if len(entries) == 0 {
 		return result.NewFailure[ExportData]([]result.SAWError{
-			result.NewFatal("ENGINE_EXPORT_NO_ENTRIES",
+			result.NewFatal(result.CodeExportNoEntries,
 				"no entries to export"),
 		})
 	}
@@ -266,7 +266,7 @@ func exportHTMLTimeline(entries []journal.ToolEntry, agentPath, exportPath strin
 
 	if err := os.WriteFile(exportPath, []byte(htmlContent), 0644); err != nil {
 		return result.NewFailure[ExportData]([]result.SAWError{
-			result.NewFatal("ENGINE_EXPORT_WRITE_FAILED",
+			result.NewFatal(result.CodeExportWriteFailed,
 				fmt.Sprintf("failed to write HTML file: %v", err)).
 				WithContext("export_path", exportPath),
 		})

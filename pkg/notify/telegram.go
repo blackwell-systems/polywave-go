@@ -73,7 +73,7 @@ func (a *TelegramAdapter) Send(ctx context.Context, msg Message) result.Result[S
 	if err != nil {
 		if ctx.Err() != nil {
 			return result.NewFailure[SendData]([]result.SAWError{
-				{Code: "CONTEXT_CANCELLED", Message: ctx.Err().Error(), Severity: "fatal"},
+				{Code: result.CodeContextCancelled, Message: ctx.Err().Error(), Severity: "fatal"},
 			})
 		}
 		return result.NewFailure[SendData]([]result.SAWError{

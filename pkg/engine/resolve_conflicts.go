@@ -35,13 +35,13 @@ type ResolveFileData struct {
 func ResolveConflicts(ctx context.Context, opts ResolveConflictsOpts) result.Result[ResolveData] {
 	if opts.IMPLPath == "" {
 		return result.NewFailure[ResolveData]([]result.SAWError{
-			result.NewFatal("ENGINE_RESOLVE_INVALID_OPTS",
+			result.NewFatal(result.CodeResolveInvalidOpts,
 				"engine.ResolveConflicts: IMPLPath is required"),
 		})
 	}
 	if opts.RepoPath == "" {
 		return result.NewFailure[ResolveData]([]result.SAWError{
-			result.NewFatal("ENGINE_RESOLVE_INVALID_OPTS",
+			result.NewFatal(result.CodeResolveInvalidOpts,
 				"engine.ResolveConflicts: RepoPath is required"),
 		})
 	}
@@ -50,7 +50,7 @@ func ResolveConflicts(ctx context.Context, opts ResolveConflictsOpts) result.Res
 	manifest, err := protocol.Load(context.TODO(), opts.IMPLPath)
 	if err != nil {
 		return result.NewFailure[ResolveData]([]result.SAWError{
-			result.NewFatal("ENGINE_RESOLVE_LOAD_FAILED",
+			result.NewFatal(result.CodeResolveLoadFailed,
 				fmt.Sprintf("engine.ResolveConflicts: failed to load IMPL manifest: %v", err)).
 				WithContext("impl_path", opts.IMPLPath),
 		})
@@ -60,7 +60,7 @@ func ResolveConflicts(ctx context.Context, opts ResolveConflictsOpts) result.Res
 	conflictedFiles, err := git.ConflictedFiles(opts.RepoPath)
 	if err != nil {
 		return result.NewFailure[ResolveData]([]result.SAWError{
-			result.NewFatal("ENGINE_RESOLVE_GIT_FAILED",
+			result.NewFatal(result.CodeResolveGitFailed,
 				fmt.Sprintf("engine.ResolveConflicts: failed to get conflicted files: %v", err)).
 				WithContext("repo_path", opts.RepoPath),
 		})
@@ -68,7 +68,7 @@ func ResolveConflicts(ctx context.Context, opts ResolveConflictsOpts) result.Res
 
 	if len(conflictedFiles) == 0 {
 		return result.NewFailure[ResolveData]([]result.SAWError{
-			result.NewFatal("ENGINE_RESOLVE_NO_CONFLICTS",
+			result.NewFatal(result.CodeResolveNoConflicts,
 				"engine.ResolveConflicts: no conflicted files found"),
 		})
 	}
@@ -77,7 +77,7 @@ func ResolveConflicts(ctx context.Context, opts ResolveConflictsOpts) result.Res
 	b, err := selectConflictResolutionBackend(opts.ChatModel)
 	if err != nil {
 		return result.NewFailure[ResolveData]([]result.SAWError{
-			result.NewFatal("ENGINE_RESOLVE_BACKEND_FAILED",
+			result.NewFatal(result.CodeResolveBackendFailed,
 				fmt.Sprintf("engine.ResolveConflicts: failed to select backend: %v", err)),
 		})
 	}
@@ -92,7 +92,7 @@ func ResolveConflicts(ctx context.Context, opts ResolveConflictsOpts) result.Res
 		fileRes := resolveConflictedFile(ctx, file, manifest, opts, b)
 		if fileRes.IsFatal() {
 			return result.NewFailure[ResolveData]([]result.SAWError{
-				result.NewFatal("ENGINE_RESOLVE_FILE_FAILED",
+				result.NewFatal(result.CodeResolveFileFailed,
 					fmt.Sprintf("engine.ResolveConflicts: failed to resolve %s: %s", file, fileRes.Errors[0].Message)).
 					WithContext("file", file),
 			})
@@ -108,7 +108,7 @@ func ResolveConflicts(ctx context.Context, opts ResolveConflictsOpts) result.Res
 	// Commit the merge
 	if _, err := git.Run(opts.RepoPath, "commit", "--no-edit"); err != nil {
 		return result.NewFailure[ResolveData]([]result.SAWError{
-			result.NewFatal("ENGINE_RESOLVE_COMMIT_FAILED",
+			result.NewFatal(result.CodeResolveCommitFailed,
 				fmt.Sprintf("engine.ResolveConflicts: failed to commit merge: %v", err)).
 				WithContext("repo_path", opts.RepoPath),
 		})
@@ -127,7 +127,7 @@ func resolveConflictedFile(ctx context.Context, file string, manifest *protocol.
 	content, err := os.ReadFile(filePath)
 	if err != nil {
 		return result.NewFailure[ResolveFileData]([]result.SAWError{
-			result.NewFatal("ENGINE_RESOLVE_FILE_READ_FAILED",
+			result.NewFatal(result.CodeResolveFileReadFailed,
 				fmt.Sprintf("failed to read conflicted file: %v", err)).
 				WithContext("file", file),
 		})
@@ -148,7 +148,7 @@ func resolveConflictedFile(ctx context.Context, file string, manifest *protocol.
 	})
 	if err != nil {
 		return result.NewFailure[ResolveFileData]([]result.SAWError{
-			result.NewFatal("ENGINE_RESOLVE_BACKEND_CALL_FAILED",
+			result.NewFatal(result.CodeResolveBackendCallFailed,
 				fmt.Sprintf("backend call failed: %v", err)).
 				WithContext("file", file),
 		})
@@ -157,7 +157,7 @@ func resolveConflictedFile(ctx context.Context, file string, manifest *protocol.
 	// Write resolved content back to file
 	if err := os.WriteFile(filePath, []byte(resolvedContent), 0644); err != nil {
 		return result.NewFailure[ResolveFileData]([]result.SAWError{
-			result.NewFatal("ENGINE_RESOLVE_FILE_WRITE_FAILED",
+			result.NewFatal(result.CodeResolveFileWriteFailed,
 				fmt.Sprintf("failed to write resolved file: %v", err)).
 				WithContext("file", file),
 		})
@@ -166,7 +166,7 @@ func resolveConflictedFile(ctx context.Context, file string, manifest *protocol.
 	// Stage the resolved file
 	if _, err := git.Run(opts.RepoPath, "add", file); err != nil {
 		return result.NewFailure[ResolveFileData]([]result.SAWError{
-			result.NewFatal("ENGINE_RESOLVE_GIT_ADD_FAILED",
+			result.NewFatal(result.CodeResolveGitAddFailed,
 				fmt.Sprintf("git add failed: %v", err)).
 				WithContext("file", file),
 		})

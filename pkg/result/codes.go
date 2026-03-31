@@ -142,6 +142,79 @@ const (
 	CodeTierGateFailed = "N016_TIER_GATE_FAILED"
 	// N017: program status computation failed (replaces "E_PROGRAM_STATUS" in program_status.go)
 	CodeProgramStatusFailed = "N017_PROGRAM_STATUS_FAILED"
+
+	// N018-N084: Engine operation codes — ad-hoc strings migrated from pkg/engine/ and pkg/notify/
+
+	// CodeContextCancelled is emitted when an operation is cancelled via context.
+	CodeContextCancelled = "CONTEXT_CANCELLED" // N018
+
+	// Scout operation codes
+	CodeScoutInvalidOpts         = "ENGINE_SCOUT_INVALID_OPTS"         // N019
+	CodeScoutRunFailed           = "ENGINE_SCOUT_FAILED"               // N020
+	CodeScoutBoundaryViolation   = "ENGINE_SCOUT_BOUNDARY_VIOLATION"   // N021
+	CodePlannerInvalidOpts       = "ENGINE_PLANNER_INVALID_OPTS"       // N022
+	CodePlannerFailed            = "ENGINE_PLANNER_FAILED"             // N023
+	CodeWaveInvalidOpts          = "ENGINE_WAVE_INVALID_OPTS"          // N024
+	CodeWaveFailed               = "ENGINE_WAVE_FAILED"                // N025
+	CodeWaveSequencingFailed     = "ENGINE_WAVE_SEQUENCING_FAILED"     // N026
+	CodeHookVerifyFailed         = "ENGINE_HOOK_VERIFY_FAILED"         // N027
+	CodeScaffoldRunFailed        = "ENGINE_SCAFFOLD_FAILED"            // N028
+	CodeAgentRunFailed           = "ENGINE_AGENT_FAILED"               // N029
+	CodeAgentRunInvalidOpts      = "ENGINE_AGENT_INVALID_OPTS"         // N030
+	CodeMergeWaveFailed          = "ENGINE_MERGE_FAILED"               // N031
+	CodeMergeWaveInvalidOpts     = "ENGINE_MERGE_INVALID_OPTS"         // N032
+	CodeEngineVerificationFailed = "ENGINE_VERIFICATION_FAILED"        // N033
+	CodeUpdateStatusFailed       = "ENGINE_UPDATE_STATUS_FAILED"       // N034
+	CodeValidateFailed           = "ENGINE_VALIDATE_FAILED"            // N035
+	CodeJournalArchiveFailed     = "ENGINE_JOURNAL_ARCHIVE_FAILED"     // N036
+	CodeMarkCompleteFailed       = "ENGINE_MARK_COMPLETE_FAILED"       // N037
+	CodeMarkCompleteInvalidOpts  = "ENGINE_MARK_COMPLETE_INVALID_OPTS" // N038
+	CodeVerifyTiersIncomplete    = "ENGINE_VERIFY_TIERS_INCOMPLETE"    // N039
+	CodeMarkerReadFailed         = "ENGINE_MARKER_READ_FAILED"         // N040
+	CodeMarkerWriteFailed        = "ENGINE_MARKER_WRITE_FAILED"        // N041
+	CodeUpdateProgParseFailed    = "ENGINE_UPDATE_PROG_PARSE_FAILED"   // N042
+	CodeUpdateProgSlugNotFound   = "ENGINE_UPDATE_PROG_SLUG_NOT_FOUND" // N043
+	CodeSyncParseFailed          = "ENGINE_SYNC_PARSE_FAILED"          // N044
+	CodeSyncStatusFailed         = "ENGINE_SYNC_STATUS_FAILED"         // N045
+	CodeWriteManifestFailed      = "ENGINE_WRITE_MANIFEST_FAILED"      // N046
+	CodeRestoreLoadFailed        = "ENGINE_RESTORE_LOAD_FAILED"        // N047
+	CodeRestoreSaveFailed        = "ENGINE_RESTORE_SAVE_FAILED"        // N048
+	CodeTestLoadFailed           = "ENGINE_TEST_LOAD_FAILED"           // N049
+	CodeTestNoCommand            = "ENGINE_TEST_NO_COMMAND"            // N050
+	CodeTestPipeFailed           = "ENGINE_TEST_PIPE_FAILED"           // N051
+	CodeTestStartFailed          = "ENGINE_TEST_START_FAILED"          // N052
+	CodeTestCommandFailed        = "ENGINE_TEST_COMMAND_FAILED"        // N053
+	CodeScoutRunnerFailed        = "ENGINE_SCOUT_RUN_FAILED"           // N054
+	CodeScoutValidationFailed    = "ENGINE_SCOUT_VALIDATION_FAILED"    // N055
+	CodeScoutCorrectionExhausted = "ENGINE_SCOUT_CORRECTION_EXHAUSTED" // N056
+	CodeSetBlockedLoadFailed     = "ENGINE_SET_BLOCKED_LOAD_FAILED"    // N057
+	CodeSetBlockedSaveFailed     = "ENGINE_SET_BLOCKED_SAVE_FAILED"    // N058
+	CodeFixBuildInvalidOpts      = "ENGINE_FIX_BUILD_INVALID_OPTS"     // N059
+	CodeFixBuildFailed           = "ENGINE_FIX_BUILD_FAILED"           // N060
+	CodeGomodFixupFailed         = "ENGINE_GOMOD_FIXUP_FAILED"         // N061
+	CodeCleanupFailed            = "ENGINE_CLEANUP_FAILED"             // N062
+	CodeResolveInvalidOpts       = "ENGINE_RESOLVE_INVALID_OPTS"       // N063
+	CodeResolveLoadFailed        = "ENGINE_RESOLVE_LOAD_FAILED"        // N064
+	CodeResolveGitFailed         = "ENGINE_RESOLVE_GIT_FAILED"         // N065
+	CodeResolveNoConflicts       = "ENGINE_RESOLVE_NO_CONFLICTS"       // N066
+	CodeResolveBackendFailed     = "ENGINE_RESOLVE_BACKEND_FAILED"     // N067
+	CodeResolveFileFailed        = "ENGINE_RESOLVE_FILE_FAILED"        // N068
+	CodeResolveCommitFailed      = "ENGINE_RESOLVE_COMMIT_FAILED"      // N069
+	CodeResolveFileReadFailed    = "ENGINE_RESOLVE_FILE_READ_FAILED"   // N070
+	CodeResolveBackendCallFailed = "ENGINE_RESOLVE_BACKEND_CALL_FAILED" // N071
+	CodeResolveFileWriteFailed   = "ENGINE_RESOLVE_FILE_WRITE_FAILED"  // N072
+	CodeResolveGitAddFailed      = "ENGINE_RESOLVE_GIT_ADD_FAILED"     // N073
+	CodeExportFileExists         = "ENGINE_EXPORT_FILE_EXISTS"         // N074
+	CodeExportNoEntries          = "ENGINE_EXPORT_NO_ENTRIES"          // N075
+	CodeExportWriteFailed        = "ENGINE_EXPORT_WRITE_FAILED"        // N076
+	CodeIntegrationInvalidOpts   = "ENGINE_INTEGRATION_INVALID_OPTS"   // N077
+	CodeIntegrationLoadFailed    = "ENGINE_INTEGRATION_LOAD_FAILED"    // N078
+	CodeIntegrationNoConnectors  = "ENGINE_INTEGRATION_NO_CONNECTORS"  // N079
+	CodeIntegrationPromptFailed  = "ENGINE_INTEGRATION_PROMPT_FAILED"  // N080
+	CodeIntegrationBackendFailed = "ENGINE_INTEGRATION_BACKEND_FAILED" // N081
+	CodeIntegrationAgentFailed   = "ENGINE_INTEGRATION_AGENT_FAILED"   // N082
+	CodeChatInvalidOpts          = "ENGINE_CHAT_INVALID_OPTS"          // N083
+	CodeChatFailed               = "ENGINE_CHAT_FAILED"                // N084
 )
 
 // Protocol error codes (P001-P099)

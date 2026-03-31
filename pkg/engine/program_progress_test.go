@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
 	"gopkg.in/yaml.v3"
 )
 
@@ -108,7 +109,7 @@ func TestProgramProgress_UpdateStatus_NotFound(t *testing.T) {
 	if len(res.Errors) == 0 {
 		t.Fatal("expected at least one error in fatal result")
 	}
-	if res.Errors[0].Code != "ENGINE_UPDATE_PROG_SLUG_NOT_FOUND" {
+	if res.Errors[0].Code != result.CodeUpdateProgSlugNotFound {
 		t.Errorf("expected error code ENGINE_UPDATE_PROG_SLUG_NOT_FOUND, got %q", res.Errors[0].Code)
 	}
 }

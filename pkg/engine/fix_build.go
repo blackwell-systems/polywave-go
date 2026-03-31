@@ -20,31 +20,31 @@ import (
 func FixBuildFailure(ctx context.Context, opts FixBuildOpts) result.Result[FixBuildData] {
 	if opts.IMPLPath == "" {
 		return result.NewFailure[FixBuildData]([]result.SAWError{
-			result.NewFatal("ENGINE_FIX_BUILD_INVALID_OPTS", "engine.FixBuildFailure: IMPLPath is required"),
+			result.NewFatal(result.CodeFixBuildInvalidOpts, "engine.FixBuildFailure: IMPLPath is required"),
 		})
 	}
 	if opts.RepoPath == "" {
 		return result.NewFailure[FixBuildData]([]result.SAWError{
-			result.NewFatal("ENGINE_FIX_BUILD_INVALID_OPTS", "engine.FixBuildFailure: RepoPath is required"),
+			result.NewFatal(result.CodeFixBuildInvalidOpts, "engine.FixBuildFailure: RepoPath is required"),
 		})
 	}
 	if opts.ErrorLog == "" {
 		return result.NewFailure[FixBuildData]([]result.SAWError{
-			result.NewFatal("ENGINE_FIX_BUILD_INVALID_OPTS", "engine.FixBuildFailure: ErrorLog is required"),
+			result.NewFatal(result.CodeFixBuildInvalidOpts, "engine.FixBuildFailure: ErrorLog is required"),
 		})
 	}
 
 	manifest, err := protocol.Load(context.TODO(), opts.IMPLPath)
 	if err != nil {
 		return result.NewFailure[FixBuildData]([]result.SAWError{
-			result.NewFatal("ENGINE_FIX_BUILD_FAILED", "engine.FixBuildFailure: load manifest failed").WithCause(err),
+			result.NewFatal(result.CodeFixBuildFailed, "engine.FixBuildFailure: load manifest failed").WithCause(err),
 		})
 	}
 
 	b, err := selectFixBuildBackend(opts.ChatModel, opts.OnToolCall)
 	if err != nil {
 		return result.NewFailure[FixBuildData]([]result.SAWError{
-			result.NewFatal("ENGINE_FIX_BUILD_FAILED", "engine.FixBuildFailure: select backend failed").WithCause(err),
+			result.NewFatal(result.CodeFixBuildFailed, "engine.FixBuildFailure: select backend failed").WithCause(err),
 		})
 	}
 
@@ -59,11 +59,11 @@ func FixBuildFailure(ctx context.Context, opts FixBuildOpts) result.Result[FixBu
 	if err != nil {
 		if ctx.Err() != nil {
 			return result.NewFailure[FixBuildData]([]result.SAWError{
-				{Code: "CONTEXT_CANCELLED", Message: "engine.FixBuildFailure: context cancelled", Severity: "fatal", Cause: err},
+				{Code: result.CodeContextCancelled, Message: "engine.FixBuildFailure: context cancelled", Severity: "fatal", Cause: err},
 			})
 		}
 		return result.NewFailure[FixBuildData]([]result.SAWError{
-			result.NewFatal("ENGINE_FIX_BUILD_FAILED", "engine.FixBuildFailure: agent execution failed").WithCause(err),
+			result.NewFatal(result.CodeFixBuildFailed, "engine.FixBuildFailure: agent execution failed").WithCause(err),
 		})
 	}
 

@@ -115,7 +115,7 @@ func TestDispatch_ContextCancellation(t *testing.T) {
 	if len(res.Errors) == 0 {
 		t.Fatal("expected errors in FATAL result")
 	}
-	if res.Errors[0].Code != "CONTEXT_CANCELLED" {
+	if res.Errors[0].Code != result.CodeContextCancelled {
 		t.Errorf("expected CONTEXT_CANCELLED error code, got %q", res.Errors[0].Code)
 	}
 }

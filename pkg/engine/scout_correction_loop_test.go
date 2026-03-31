@@ -168,7 +168,7 @@ func TestScoutCorrectionLoop_ContextCancelled(t *testing.T) {
 	if len(res.Errors) == 0 {
 		t.Fatal("expected errors in fatal result")
 	}
-	if res.Errors[0].Code != "CONTEXT_CANCELLED" {
+	if res.Errors[0].Code != result.CodeContextCancelled {
 		t.Errorf("expected CONTEXT_CANCELLED code, got %q", res.Errors[0].Code)
 	}
 }

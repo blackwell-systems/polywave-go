@@ -40,7 +40,7 @@ type RunIntegrationAgentOpts struct {
 func RunIntegrationAgent(ctx context.Context, opts RunIntegrationAgentOpts, onEvent func(Event)) result.Result[IntegrationAgentData] {
 	if err := validateIntegrationOpts(opts); err != nil {
 		return result.NewFailure[IntegrationAgentData]([]result.SAWError{{
-			Code:     "ENGINE_INTEGRATION_INVALID_OPTS",
+			Code:     result.CodeIntegrationInvalidOpts,
 			Message:  err.Error(),
 			Severity: "fatal",
 			Cause:    err,
@@ -73,7 +73,7 @@ func RunIntegrationAgent(ctx context.Context, opts RunIntegrationAgentOpts, onEv
 	if err != nil {
 		publish("integration_agent_failed", map[string]string{"error": err.Error()})
 		return result.NewFailure[IntegrationAgentData]([]result.SAWError{{
-			Code:     "ENGINE_INTEGRATION_LOAD_FAILED",
+			Code:     result.CodeIntegrationLoadFailed,
 			Message:  fmt.Sprintf("engine.RunIntegrationAgent: load manifest: %v", err),
 			Severity: "fatal",
 			Cause:    err,
@@ -98,7 +98,7 @@ func RunIntegrationAgent(ctx context.Context, opts RunIntegrationAgentOpts, onEv
 			"error": "no integration_connectors defined in manifest (E26-P2)",
 		})
 		return result.NewFailure[IntegrationAgentData]([]result.SAWError{{
-			Code:     "ENGINE_INTEGRATION_NO_CONNECTORS",
+			Code:     result.CodeIntegrationNoConnectors,
 			Message:  "engine.RunIntegrationAgent: no integration_connectors defined in manifest — add integration_connectors entries listing files the agent may edit (E26-P2)",
 			Severity: "fatal",
 		}})
@@ -109,7 +109,7 @@ func RunIntegrationAgent(ctx context.Context, opts RunIntegrationAgentOpts, onEv
 	if err != nil {
 		publish("integration_agent_failed", map[string]string{"error": err.Error()})
 		return result.NewFailure[IntegrationAgentData]([]result.SAWError{{
-			Code:     "ENGINE_INTEGRATION_PROMPT_FAILED",
+			Code:     result.CodeIntegrationPromptFailed,
 			Message:  fmt.Sprintf("engine.RunIntegrationAgent: build prompt: %v", err),
 			Severity: "fatal",
 			Cause:    err,
@@ -121,7 +121,7 @@ func RunIntegrationAgent(ctx context.Context, opts RunIntegrationAgentOpts, onEv
 	if err != nil {
 		publish("integration_agent_failed", map[string]string{"error": err.Error()})
 		return result.NewFailure[IntegrationAgentData]([]result.SAWError{{
-			Code:     "ENGINE_INTEGRATION_BACKEND_FAILED",
+			Code:     result.CodeIntegrationBackendFailed,
 			Message:  fmt.Sprintf("engine.RunIntegrationAgent: backend init: %v", err),
 			Severity: "fatal",
 			Cause:    err,
@@ -150,7 +150,7 @@ func RunIntegrationAgent(ctx context.Context, opts RunIntegrationAgentOpts, onEv
 	if _, execErr := runner.ExecuteStreamingWithTools(ctx, spec, opts.RepoPath, onChunk, nil); execErr != nil {
 		publish("integration_agent_failed", map[string]string{"error": execErr.Error()})
 		return result.NewFailure[IntegrationAgentData]([]result.SAWError{{
-			Code:     "ENGINE_INTEGRATION_AGENT_FAILED",
+			Code:     result.CodeIntegrationAgentFailed,
 			Message:  fmt.Sprintf("engine.RunIntegrationAgent: agent execution failed: %v", execErr),
 			Severity: "fatal",
 			Cause:    execErr,

@@ -27,7 +27,7 @@ func RunTestCommand(ctx context.Context, implPath, repoPath string, onOutput fun
 	manifest, err := protocol.Load(context.TODO(), implPath)
 	if err != nil {
 		return result.NewFailure[TestData]([]result.SAWError{
-			result.NewFatal("ENGINE_TEST_LOAD_FAILED",
+			result.NewFatal(result.CodeTestLoadFailed,
 				fmt.Sprintf("load manifest: %v", err)).
 				WithContext("impl_path", implPath),
 		})
@@ -36,7 +36,7 @@ func RunTestCommand(ctx context.Context, implPath, repoPath string, onOutput fun
 	testCommand := manifest.TestCommand
 	if testCommand == "" {
 		return result.NewFailure[TestData]([]result.SAWError{
-			result.NewFatal("ENGINE_TEST_NO_COMMAND",
+			result.NewFatal(result.CodeTestNoCommand,
 				"no test_command defined in IMPL manifest").
 				WithContext("impl_path", implPath),
 		})
@@ -50,7 +50,7 @@ func RunTestCommand(ctx context.Context, implPath, repoPath string, onOutput fun
 	pipe, err := cmd.StdoutPipe()
 	if err != nil {
 		return result.NewFailure[TestData]([]result.SAWError{
-			result.NewFatal("ENGINE_TEST_PIPE_FAILED",
+			result.NewFatal(result.CodeTestPipeFailed,
 				fmt.Sprintf("create stdout pipe: %v", err)),
 		})
 	}
@@ -58,7 +58,7 @@ func RunTestCommand(ctx context.Context, implPath, repoPath string, onOutput fun
 
 	if err := cmd.Start(); err != nil {
 		return result.NewFailure[TestData]([]result.SAWError{
-			result.NewFatal("ENGINE_TEST_START_FAILED",
+			result.NewFatal(result.CodeTestStartFailed,
 				fmt.Sprintf("start test command: %v", err)).
 				WithContext("command", testCommand),
 		})
@@ -81,14 +81,14 @@ func RunTestCommand(ctx context.Context, implPath, repoPath string, onOutput fun
 		if ctx.Err() != nil {
 			_ = syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
 			return result.NewFailure[TestData]([]result.SAWError{
-				result.NewFatal("CONTEXT_CANCELLED",
+				result.NewFatal(result.CodeContextCancelled,
 					fmt.Sprintf("test command cancelled: %v", ctx.Err())).
 					WithContext("command", testCommand),
 			})
 		}
 		accumulated := strings.Join(outputLines, "\n")
 		return result.NewFailure[TestData]([]result.SAWError{
-			result.NewFatal("ENGINE_TEST_COMMAND_FAILED",
+			result.NewFatal(result.CodeTestCommandFailed,
 				fmt.Sprintf("test command failed: %v\nOutput:\n%s", err, accumulated)).
 				WithContext("command", testCommand),
 		})

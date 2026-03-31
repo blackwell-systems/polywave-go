@@ -59,7 +59,7 @@ func restoreSnapshot(implPath string, snap *implSnapshot) result.Result[RestoreD
 	manifest, err := protocol.Load(context.TODO(), implPath)
 	if err != nil {
 		return result.NewFailure[RestoreData]([]result.SAWError{
-			result.NewFatal("ENGINE_RESTORE_LOAD_FAILED",
+			result.NewFatal(result.CodeRestoreLoadFailed,
 				fmt.Sprintf("engine.RunWaveTransaction: load for rollback: %v", err)).
 				WithContext("impl_path", implPath),
 		})
@@ -75,7 +75,7 @@ func restoreSnapshot(implPath string, snap *implSnapshot) result.Result[RestoreD
 			saveErrMsg = saveRes.Errors[0].Message
 		}
 		return result.NewFailure[RestoreData]([]result.SAWError{
-			result.NewFatal("ENGINE_RESTORE_SAVE_FAILED",
+			result.NewFatal(result.CodeRestoreSaveFailed,
 				fmt.Sprintf("engine.RunWaveTransaction: save rollback: %s", saveErrMsg)).
 				WithContext("impl_path", implPath),
 		})

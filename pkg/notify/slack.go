@@ -107,7 +107,7 @@ func (s *SlackAdapter) Send(ctx context.Context, msg Message) result.Result[Send
 	if err != nil {
 		if ctx.Err() != nil {
 			return result.NewFailure[SendData]([]result.SAWError{
-				{Code: "CONTEXT_CANCELLED", Message: ctx.Err().Error(), Severity: "fatal"},
+				{Code: result.CodeContextCancelled, Message: ctx.Err().Error(), Severity: "fatal"},
 			})
 		}
 		return result.NewFailure[SendData]([]result.SAWError{

@@ -569,7 +569,7 @@ func checkPreviousWaveVerified(doc *protocol.IMPLManifest, prevWaveNum int) resu
 	}
 	if prevWave == nil {
 		return result.NewFailure[CheckData]([]result.SAWError{
-			result.NewFatal("ENGINE_WAVE_SEQUENCING_FAILED",
+			result.NewFatal(result.CodeWaveSequencingFailed,
 				fmt.Sprintf("wave %d not found in manifest — cannot verify sequencing", prevWaveNum)),
 		})
 	}
@@ -578,14 +578,14 @@ func checkPreviousWaveVerified(doc *protocol.IMPLManifest, prevWaveNum int) resu
 		report, exists := doc.CompletionReports[agent.ID]
 		if !exists {
 			return result.NewFailure[CheckData]([]result.SAWError{
-				result.NewFatal("ENGINE_WAVE_SEQUENCING_FAILED",
+				result.NewFatal(result.CodeWaveSequencingFailed,
 					fmt.Sprintf("wave %d agent %s has no completion report — wave must be merged and verified before wave %d launches",
 						prevWaveNum, agent.ID, prevWaveNum+1)),
 			})
 		}
 		if report.Status != protocol.StatusComplete {
 			return result.NewFailure[CheckData]([]result.SAWError{
-				result.NewFatal("ENGINE_WAVE_SEQUENCING_FAILED",
+				result.NewFatal(result.CodeWaveSequencingFailed,
 					fmt.Sprintf("wave %d agent %s status is %q (expected \"complete\") — wave must be fully merged and verified before wave %d launches",
 						prevWaveNum, agent.ID, report.Status, prevWaveNum+1)),
 			})
@@ -620,7 +620,7 @@ func verifyHookInWorktree(worktreePath string) result.Result[VerifyHookData] {
 	absPath, err := filepath.Abs(worktreePath)
 	if err != nil {
 		return result.NewFailure[VerifyHookData]([]result.SAWError{
-			result.NewFatal("ENGINE_HOOK_VERIFY_FAILED", "failed to resolve worktree path").WithCause(err),
+			result.NewFatal(result.CodeHookVerifyFailed, "failed to resolve worktree path").WithCause(err),
 		})
 	}
 
@@ -628,7 +628,7 @@ func verifyHookInWorktree(worktreePath string) result.Result[VerifyHookData] {
 	gitStat, err := os.Stat(gitDir)
 	if err != nil {
 		return result.NewFailure[VerifyHookData]([]result.SAWError{
-			result.NewFatal("ENGINE_HOOK_VERIFY_FAILED", "failed to stat .git").WithCause(err),
+			result.NewFatal(result.CodeHookVerifyFailed, "failed to stat .git").WithCause(err),
 		})
 	}
 
@@ -640,13 +640,13 @@ func verifyHookInWorktree(worktreePath string) result.Result[VerifyHookData] {
 		content, err := os.ReadFile(gitDir)
 		if err != nil {
 			return result.NewFailure[VerifyHookData]([]result.SAWError{
-				result.NewFatal("ENGINE_HOOK_VERIFY_FAILED", "failed to read .git file").WithCause(err),
+				result.NewFatal(result.CodeHookVerifyFailed, "failed to read .git file").WithCause(err),
 			})
 		}
 		line := strings.TrimSpace(string(content))
 		if !strings.HasPrefix(line, "gitdir: ") {
 			return result.NewFailure[VerifyHookData]([]result.SAWError{
-				result.NewFatal("ENGINE_HOOK_VERIFY_FAILED", fmt.Sprintf("invalid .git file format: %s", line)),
+				result.NewFatal(result.CodeHookVerifyFailed, fmt.Sprintf("invalid .git file format: %s", line)),
 			})
 		}
 		actualGitDir := strings.TrimPrefix(line, "gitdir: ")
@@ -656,32 +656,32 @@ func verifyHookInWorktree(worktreePath string) result.Result[VerifyHookData] {
 	stat, err := os.Stat(hookPath)
 	if os.IsNotExist(err) {
 		return result.NewFailure[VerifyHookData]([]result.SAWError{
-			result.NewFatal("ENGINE_HOOK_VERIFY_FAILED", fmt.Sprintf("pre-commit hook does not exist at %s", hookPath)),
+			result.NewFatal(result.CodeHookVerifyFailed, fmt.Sprintf("pre-commit hook does not exist at %s", hookPath)),
 		})
 	}
 	if err != nil {
 		return result.NewFailure[VerifyHookData]([]result.SAWError{
-			result.NewFatal("ENGINE_HOOK_VERIFY_FAILED", "failed to stat hook").WithCause(err),
+			result.NewFatal(result.CodeHookVerifyFailed, "failed to stat hook").WithCause(err),
 		})
 	}
 
 	if stat.Mode()&0111 == 0 {
 		return result.NewFailure[VerifyHookData]([]result.SAWError{
-			result.NewFatal("ENGINE_HOOK_VERIFY_FAILED", "pre-commit hook exists but is not executable"),
+			result.NewFatal(result.CodeHookVerifyFailed, "pre-commit hook exists but is not executable"),
 		})
 	}
 
 	hookContent, err := os.ReadFile(hookPath)
 	if err != nil {
 		return result.NewFailure[VerifyHookData]([]result.SAWError{
-			result.NewFatal("ENGINE_HOOK_VERIFY_FAILED", "failed to read hook").WithCause(err),
+			result.NewFatal(result.CodeHookVerifyFailed, "failed to read hook").WithCause(err),
 		})
 	}
 
 	if !strings.Contains(string(hookContent), "SAW_ALLOW_MAIN_COMMIT") &&
 		!strings.Contains(string(hookContent), "SAW pre-commit guard") {
 		return result.NewFailure[VerifyHookData]([]result.SAWError{
-			result.NewFatal("ENGINE_HOOK_VERIFY_FAILED", "pre-commit hook missing isolation logic"),
+			result.NewFatal(result.CodeHookVerifyFailed, "pre-commit hook missing isolation logic"),
 		})
 	}
 

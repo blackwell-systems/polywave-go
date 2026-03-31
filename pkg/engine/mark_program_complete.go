@@ -141,7 +141,7 @@ func verifyAllTiersComplete(manifest *protocol.PROGRAMManifest) result.Result[Ve
 
 	if len(incomplete) > 0 {
 		return result.NewFailure[VerifyData]([]result.SAWError{
-			result.NewFatal("ENGINE_VERIFY_TIERS_INCOMPLETE",
+			result.NewFatal(result.CodeVerifyTiersIncomplete,
 				fmt.Sprintf("not all tiers complete — incomplete IMPLs: %s", strings.Join(incomplete, ", "))).
 				WithContext("incomplete_count", fmt.Sprintf("%d", len(incomplete))),
 		})
@@ -159,7 +159,7 @@ func writeProgramCompleteMarker(manifestPath, date string) result.Result[WriteMa
 	data, err := os.ReadFile(manifestPath)
 	if err != nil {
 		return result.NewFailure[WriteMarkerData]([]result.SAWError{
-			result.NewFatal("ENGINE_MARKER_READ_FAILED",
+			result.NewFatal(result.CodeMarkerReadFailed,
 				fmt.Sprintf("cannot read manifest: %v", err)).
 				WithContext("manifest_path", manifestPath),
 		})
@@ -212,7 +212,7 @@ func writeProgramCompleteMarker(manifestPath, date string) result.Result[WriteMa
 	content := strings.Join(filtered, "\n")
 	if err := os.WriteFile(manifestPath, []byte(content), 0644); err != nil {
 		return result.NewFailure[WriteMarkerData]([]result.SAWError{
-			result.NewFatal("ENGINE_MARKER_WRITE_FAILED",
+			result.NewFatal(result.CodeMarkerWriteFailed,
 				fmt.Sprintf("cannot write manifest: %v", err)).
 				WithContext("manifest_path", manifestPath),
 		})

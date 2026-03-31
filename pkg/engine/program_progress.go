@@ -36,7 +36,7 @@ func UpdateProgramIMPLStatus(manifestPath string, implSlug string, newStatus str
 	manifest, err := protocol.ParseProgramManifest(manifestPath)
 	if err != nil {
 		return result.NewFailure[UpdateProgData]([]result.SAWError{
-			result.NewFatal("ENGINE_UPDATE_PROG_PARSE_FAILED",
+			result.NewFatal(result.CodeUpdateProgParseFailed,
 				fmt.Sprintf("UpdateProgramIMPLStatus: failed to parse manifest: %v", err)).
 				WithContext("manifest_path", manifestPath),
 		})
@@ -53,7 +53,7 @@ func UpdateProgramIMPLStatus(manifestPath string, implSlug string, newStatus str
 	}
 	if !found {
 		return result.NewFailure[UpdateProgData]([]result.SAWError{
-			result.NewFatal("ENGINE_UPDATE_PROG_SLUG_NOT_FOUND",
+			result.NewFatal(result.CodeUpdateProgSlugNotFound,
 				fmt.Sprintf("UpdateProgramIMPLStatus: IMPL slug %q not found in manifest", implSlug)).
 				WithContext("impl_slug", implSlug).
 				WithContext("manifest_path", manifestPath),
@@ -85,7 +85,7 @@ func SyncProgramStatusFromDisk(manifestPath string, repoPath string) result.Resu
 	manifest, err := protocol.ParseProgramManifest(manifestPath)
 	if err != nil {
 		return result.NewFailure[SyncData]([]result.SAWError{
-			result.NewFatal("ENGINE_SYNC_PARSE_FAILED",
+			result.NewFatal(result.CodeSyncParseFailed,
 				fmt.Sprintf("SyncProgramStatusFromDisk: failed to parse manifest: %v", err)).
 				WithContext("manifest_path", manifestPath),
 		})
@@ -95,7 +95,7 @@ func SyncProgramStatusFromDisk(manifestPath string, repoPath string) result.Resu
 	statusRes := protocol.GetProgramStatus(manifest, repoPath)
 	if statusRes.IsFatal() {
 		return result.NewFailure[SyncData]([]result.SAWError{
-			result.NewFatal("ENGINE_SYNC_STATUS_FAILED",
+			result.NewFatal(result.CodeSyncStatusFailed,
 				fmt.Sprintf("SyncProgramStatusFromDisk: failed to get program status: %s", statusRes.Errors[0].Message)).
 				WithContext("manifest_path", manifestPath),
 		})
@@ -180,7 +180,7 @@ func recalculateCompletion(manifest *protocol.PROGRAMManifest) {
 func writeManifest(path string, manifest *protocol.PROGRAMManifest) result.Result[WriteManifestData] {
 	if err := protocol.SaveYAML(context.TODO(), path, manifest); err != nil {
 		return result.NewFailure[WriteManifestData]([]result.SAWError{
-			result.NewFatal("ENGINE_WRITE_MANIFEST_FAILED",
+			result.NewFatal(result.CodeWriteManifestFailed,
 				fmt.Sprintf("writeManifest: %v", err)).
 				WithContext("path", path),
 		})

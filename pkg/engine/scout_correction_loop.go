@@ -81,7 +81,7 @@ func ScoutCorrectionLoop(ctx context.Context, opts ScoutCorrectionOpts, onChunk 
 		select {
 		case <-ctx.Done():
 			return result.NewFailure[CorrectionData]([]result.SAWError{
-				result.NewFatal("CONTEXT_CANCELLED",
+				result.NewFatal(result.CodeContextCancelled,
 					fmt.Sprintf("context cancelled: %v", ctx.Err())),
 			})
 		default:
@@ -108,7 +108,7 @@ func ScoutCorrectionLoop(ctx context.Context, opts ScoutCorrectionOpts, onChunk 
 		err := runScout(ctx, scoutOpts, onChunk)
 		if err != nil {
 			return result.NewFailure[CorrectionData]([]result.SAWError{
-				result.NewFatal("ENGINE_SCOUT_RUN_FAILED",
+				result.NewFatal(result.CodeScoutRunnerFailed,
 					fmt.Sprintf("scout correction loop: RunScout failed on attempt %d: %v", attempts, err)).
 					WithContext("attempt", fmt.Sprintf("%d", attempts)),
 			})
@@ -118,7 +118,7 @@ func ScoutCorrectionLoop(ctx context.Context, opts ScoutCorrectionOpts, onChunk 
 		validationErrors, err := validate(scoutOpts.IMPLOutPath)
 		if err != nil {
 			return result.NewFailure[CorrectionData]([]result.SAWError{
-				result.NewFatal("ENGINE_SCOUT_VALIDATION_FAILED",
+				result.NewFatal(result.CodeScoutValidationFailed,
 					fmt.Sprintf("scout correction loop: validation failed on attempt %d: %v", attempts, err)).
 					WithContext("attempt", fmt.Sprintf("%d", attempts)),
 			})
@@ -147,7 +147,7 @@ func ScoutCorrectionLoop(ctx context.Context, opts ScoutCorrectionOpts, onChunk 
 		errorMsgs[i] = e.Message
 	}
 	return result.NewFailure[CorrectionData]([]result.SAWError{
-		result.NewFatal("ENGINE_SCOUT_CORRECTION_EXHAUSTED",
+		result.NewFatal(result.CodeScoutCorrectionExhausted,
 			fmt.Sprintf("scout correction loop: validation failed after %d retries: %s",
 				maxRetries, strings.Join(errorMsgs, "; "))).
 			WithContext("retries", fmt.Sprintf("%d", maxRetries)),
@@ -184,7 +184,7 @@ func setIMPLStateBlocked(implPath string) result.Result[SetBlockedData] {
 	manifest, err := protocol.Load(context.TODO(), implPath)
 	if err != nil {
 		return result.NewFailure[SetBlockedData]([]result.SAWError{
-			result.NewFatal("ENGINE_SET_BLOCKED_LOAD_FAILED",
+			result.NewFatal(result.CodeSetBlockedLoadFailed,
 				fmt.Sprintf("failed to load manifest: %v", err)).
 				WithContext("impl_path", implPath),
 		})
@@ -196,7 +196,7 @@ func setIMPLStateBlocked(implPath string) result.Result[SetBlockedData] {
 			errMsg = saveRes.Errors[0].Message
 		}
 		return result.NewFailure[SetBlockedData]([]result.SAWError{
-			result.NewFatal("ENGINE_SET_BLOCKED_SAVE_FAILED", errMsg).
+			result.NewFatal(result.CodeSetBlockedSaveFailed, errMsg).
 				WithContext("impl_path", implPath),
 		})
 	}

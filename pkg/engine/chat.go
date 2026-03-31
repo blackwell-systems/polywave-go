@@ -22,17 +22,17 @@ import (
 func RunChat(ctx context.Context, opts RunChatOpts, onChunk func(string)) result.Result[ChatData] {
 	if opts.Message == "" {
 		return result.NewFailure[ChatData]([]result.SAWError{
-			result.NewFatal("ENGINE_CHAT_INVALID_OPTS", "engine.RunChat: Message is required"),
+			result.NewFatal(result.CodeChatInvalidOpts, "engine.RunChat: Message is required"),
 		})
 	}
 	if opts.RepoPath == "" {
 		return result.NewFailure[ChatData]([]result.SAWError{
-			result.NewFatal("ENGINE_CHAT_INVALID_OPTS", "engine.RunChat: RepoPath is required"),
+			result.NewFatal(result.CodeChatInvalidOpts, "engine.RunChat: RepoPath is required"),
 		})
 	}
 	if opts.IMPLPath == "" {
 		return result.NewFailure[ChatData]([]result.SAWError{
-			result.NewFatal("ENGINE_CHAT_INVALID_OPTS", "engine.RunChat: IMPLPath is required"),
+			result.NewFatal(result.CodeChatInvalidOpts, "engine.RunChat: IMPLPath is required"),
 		})
 	}
 
@@ -45,7 +45,7 @@ func RunChat(ctx context.Context, opts RunChatOpts, onChunk func(string)) result
 		home, err := os.UserHomeDir()
 		if err != nil {
 			return result.NewFailure[ChatData]([]result.SAWError{
-				result.NewFatal("ENGINE_CHAT_FAILED", "engine.RunChat: cannot determine home directory").WithCause(err),
+				result.NewFatal(result.CodeChatFailed, "engine.RunChat: cannot determine home directory").WithCause(err),
 			})
 		}
 		sawRepo = filepath.Join(home, "code", "scout-and-wave")
@@ -129,11 +129,11 @@ Focus on interesting insights specific to this IMPL doc rather than general prog
 	if err != nil {
 		if ctx.Err() != nil {
 			return result.NewFailure[ChatData]([]result.SAWError{
-				{Code: "CONTEXT_CANCELLED", Message: "engine.RunChat: context cancelled", Severity: "fatal", Cause: err},
+				{Code: result.CodeContextCancelled, Message: "engine.RunChat: context cancelled", Severity: "fatal", Cause: err},
 			})
 		}
 		return result.NewFailure[ChatData]([]result.SAWError{
-			result.NewFatal("ENGINE_CHAT_FAILED", "engine.RunChat: backend execution failed").WithCause(err),
+			result.NewFatal(result.CodeChatFailed, "engine.RunChat: backend execution failed").WithCause(err),
 		})
 	}
 

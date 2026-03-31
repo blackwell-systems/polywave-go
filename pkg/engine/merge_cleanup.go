@@ -33,7 +33,7 @@ func PostMergeCleanup(ctx context.Context, implPath string, waveNum int, repoPat
 		if onEvent != nil {
 			onEvent("gomod_fixup", "error", fmt.Sprintf("go.mod fixup failed (non-fatal): %v", err))
 		}
-		warnings = append(warnings, result.NewWarning("ENGINE_GOMOD_FIXUP_FAILED",
+		warnings = append(warnings, result.NewWarning(result.CodeGomodFixupFailed,
 			fmt.Sprintf("go.mod fixup failed: %v", err)).
 			WithContext("repo_path", repoPath))
 	} else {
@@ -58,7 +58,7 @@ func PostMergeCleanup(ctx context.Context, implPath string, waveNum int, repoPat
 		if onEvent != nil {
 			onEvent("cleanup", "error", fmt.Sprintf("Cleanup failed (non-fatal): %v", cleanupErr))
 		}
-		warnings = append(warnings, result.NewWarning("ENGINE_CLEANUP_FAILED",
+		warnings = append(warnings, result.NewWarning(result.CodeCleanupFailed,
 			fmt.Sprintf("cleanup failed: %v", cleanupErr)).
 			WithContext("impl_path", implPath).
 			WithContext("wave_num", fmt.Sprintf("%d", waveNum)))

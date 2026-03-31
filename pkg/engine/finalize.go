@@ -654,7 +654,7 @@ type MarkIMPLCompleteOpts struct {
 func MarkIMPLComplete(ctx context.Context, opts MarkIMPLCompleteOpts) result.Result[MarkCompleteData] {
 	if opts.IMPLPath == "" {
 		return result.NewFailure[MarkCompleteData]([]result.SAWError{
-			result.NewFatal("ENGINE_MARK_COMPLETE_INVALID_OPTS", "engine.MarkIMPLComplete: IMPLPath is required"),
+			result.NewFatal(result.CodeMarkCompleteInvalidOpts, "engine.MarkIMPLComplete: IMPLPath is required"),
 		})
 	}
 
@@ -666,7 +666,7 @@ func MarkIMPLComplete(ctx context.Context, opts MarkIMPLCompleteOpts) result.Res
 	// E15: Write completion marker
 	if err := protocol.WriteCompletionMarker(opts.IMPLPath, date); err != nil {
 		return result.NewFailure[MarkCompleteData]([]result.SAWError{
-			result.NewFatal("ENGINE_MARK_COMPLETE_FAILED", "engine.MarkIMPLComplete: write marker failed").WithCause(err),
+			result.NewFatal(result.CodeMarkCompleteFailed, "engine.MarkIMPLComplete: write marker failed").WithCause(err),
 		})
 	}
 
@@ -682,7 +682,7 @@ func MarkIMPLComplete(ctx context.Context, opts MarkIMPLCompleteOpts) result.Res
 	// Archive: move IMPL from docs/IMPL/ to docs/IMPL/complete/
 	if _, err := protocol.ArchiveIMPL(ctx, opts.IMPLPath); err != nil {
 		return result.NewFailure[MarkCompleteData]([]result.SAWError{
-			result.NewFatal("ENGINE_MARK_COMPLETE_FAILED", "engine.MarkIMPLComplete: archive failed").WithCause(err),
+			result.NewFatal(result.CodeMarkCompleteFailed, "engine.MarkIMPLComplete: archive failed").WithCause(err),
 		})
 	}
 
