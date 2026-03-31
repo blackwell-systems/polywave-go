@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"strings"
@@ -395,7 +396,7 @@ func TestVerifyDependenciesAvailable_Wave1Skipped(t *testing.T) {
 		},
 	}
 
-	res := protocol.VerifyDependenciesAvailable(doc, 1)
+	res := protocol.VerifyDependenciesAvailable(context.Background(), doc, 1)
 	if !res.GetData().Valid {
 		t.Errorf("expected Valid=true for wave 1 (no deps), got false")
 	}
@@ -421,7 +422,7 @@ func TestVerifyDependenciesAvailable_Wave2MissingDep(t *testing.T) {
 		},
 	}
 
-	res := protocol.VerifyDependenciesAvailable(doc, 2)
+	res := protocol.VerifyDependenciesAvailable(context.Background(), doc, 2)
 	if res.GetData().Valid {
 		t.Errorf("expected Valid=false when dependency A has no completion report")
 	}
@@ -461,7 +462,7 @@ func TestVerifyDependenciesAvailable_Wave2DepComplete(t *testing.T) {
 		},
 	}
 
-	res := protocol.VerifyDependenciesAvailable(doc, 2)
+	res := protocol.VerifyDependenciesAvailable(context.Background(), doc, 2)
 	if !res.GetData().Valid {
 		t.Errorf("expected Valid=true when all dependencies are complete")
 	}

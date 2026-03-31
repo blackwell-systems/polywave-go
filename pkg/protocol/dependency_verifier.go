@@ -1,6 +1,8 @@
 package protocol
 
 import (
+	"context"
+
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
 )
 
@@ -27,7 +29,8 @@ type AgentDependencyCheck struct {
 // Wave 1 agents (which have no dependencies) will always return Valid=true.
 //
 // Returns a FATAL result if waveNum is not found in the manifest.
-func VerifyDependenciesAvailable(manifest *IMPLManifest, waveNum int) result.Result[DependencyVerificationData] {
+func VerifyDependenciesAvailable(ctx context.Context, manifest *IMPLManifest, waveNum int) result.Result[DependencyVerificationData] {
+	_ = ctx // reserved for future cancellation/tracing
 	// Find the target wave
 	var targetWave *Wave
 	for i := range manifest.Waves {
