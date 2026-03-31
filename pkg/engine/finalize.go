@@ -496,6 +496,7 @@ func FinalizeWave(ctx context.Context, opts FinalizeWaveOpts) (*FinalizeWaveResu
 					continue
 				}
 				mergeRes, mergeErr := protocol.MergeAgents(protocol.MergeAgentsOpts{
+					Ctx:          ctx,
 					ManifestPath: opts.IMPLPath,
 					WaveNum:      opts.WaveNum,
 					RepoDir:      repoPath,

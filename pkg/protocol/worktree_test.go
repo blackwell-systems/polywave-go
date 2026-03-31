@@ -88,7 +88,7 @@ func TestCreateWorktrees_HappyPath(t *testing.T) {
 	manifestPath := createTestManifest(t, repoDir, 1, agentIDs)
 
 	// Create worktrees
-	res := CreateWorktrees(manifestPath, 1, repoDir, nil)
+	res := CreateWorktrees(context.Background(), manifestPath, 1, repoDir, nil)
 	if !res.IsSuccess() {
 		t.Fatalf("CreateWorktrees failed: %v", res.Errors)
 	}
@@ -146,7 +146,7 @@ func TestCreateWorktrees_WaveNotFound(t *testing.T) {
 	manifestPath := createTestManifest(t, repoDir, 1, agentIDs)
 
 	// Try to create worktrees for wave 2 (doesn't exist)
-	res := CreateWorktrees(manifestPath, 2, repoDir, nil)
+	res := CreateWorktrees(context.Background(), manifestPath, 2, repoDir, nil)
 	if res.IsSuccess() {
 		t.Fatal("expected error for non-existent wave, got success")
 	}
@@ -171,7 +171,7 @@ func TestCreateWorktrees_ManifestLoadFailure(t *testing.T) {
 	// Use a non-existent manifest path
 	manifestPath := filepath.Join(repoDir, "does-not-exist.yaml")
 
-	res := CreateWorktrees(manifestPath, 1, repoDir, nil)
+	res := CreateWorktrees(context.Background(), manifestPath, 1, repoDir, nil)
 	if res.IsSuccess() {
 		t.Fatal("expected error for missing manifest file, got success")
 	}
@@ -207,7 +207,7 @@ func TestCreateWorktrees_GitFailure(t *testing.T) {
 	}
 
 	// Try to create worktrees (should fail due to directory already existing)
-	res := CreateWorktrees(manifestPath, 1, repoDir, nil)
+	res := CreateWorktrees(context.Background(), manifestPath, 1, repoDir, nil)
 	if res.IsSuccess() {
 		t.Fatal("expected error for git worktree add failure, got success")
 	}
@@ -247,7 +247,7 @@ func TestCreateWorktrees_EmptyWave(t *testing.T) {
 	}
 
 	// Create worktrees for empty wave
-	res := CreateWorktrees(manifestPath, 1, repoDir, nil)
+	res := CreateWorktrees(context.Background(), manifestPath, 1, repoDir, nil)
 	if !res.IsSuccess() {
 		t.Fatalf("CreateWorktrees failed for empty wave: %v", res.Errors)
 	}
@@ -280,7 +280,7 @@ func TestCreateWorktrees_InstallsHooks(t *testing.T) {
 	manifestPath := createTestManifest(t, repoDir, 1, agentIDs)
 
 	// Create worktrees
-	res := CreateWorktrees(manifestPath, 1, repoDir, nil)
+	res := CreateWorktrees(context.Background(), manifestPath, 1, repoDir, nil)
 	if !res.IsSuccess() {
 		t.Fatalf("CreateWorktrees failed: %v", res.Errors)
 	}
@@ -326,7 +326,7 @@ func TestCreateWorktrees_ContinuesOnHookInstallFailure(t *testing.T) {
 	manifestPath := createTestManifest(t, repoDir, 1, agentIDs)
 
 	// Create worktrees (should succeed despite missing hook)
-	res := CreateWorktrees(manifestPath, 1, repoDir, nil)
+	res := CreateWorktrees(context.Background(), manifestPath, 1, repoDir, nil)
 	if !res.IsSuccess() {
 		t.Fatalf("CreateWorktrees failed: %v", res.Errors)
 	}
