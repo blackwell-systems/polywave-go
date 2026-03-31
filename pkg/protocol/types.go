@@ -194,7 +194,7 @@ type QualityGate struct {
 // ScaffoldFile represents a type scaffold file that is created before wave execution.
 // Scaffolds allow parallel agents to reference shared types without race conditions.
 type ScaffoldFile struct {
-	FilePath   string `yaml:"file" json:"file_path"`
+	FilePath   string `yaml:"file_path" json:"file_path"`
 	Contents   string `yaml:"contents,omitempty" json:"contents,omitempty"`
 	ImportPath string `yaml:"import_path,omitempty" json:"import_path,omitempty"`
 	Status     string `yaml:"status,omitempty" json:"status,omitempty"` // "pending" | "committed"

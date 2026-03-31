@@ -90,9 +90,8 @@ func (p *Pipeline) Run(ctx context.Context, state *State) result.Result[RunData]
 				for _, e := range stepResult.Errors {
 					wrapped := result.NewWarning(e.Code,
 						fmt.Sprintf("step %q: %s", step.Name, e.Message))
-					state.Errors = append(state.Errors,
-						fmt.Errorf("step %q: %s", step.Name, e.Message))
 					warnings = append(warnings, wrapped)
+					state.Errors = append(state.Errors, wrapped)
 				}
 			default: // ErrorFail or unset
 				return result.NewFailure[RunData]([]result.SAWError{
