@@ -1,0 +1,318 @@
+title: 'Final Cleanup: resolveAgentBranch wiring, manifest.go ctx, and %w sweep'
+feature_slug: final-cleanup
+verdict: SUITABLE_WITH_CAVEATS
+suitability_assessment: |
+    All three items are mechanical/structural with no new behavior or interface changes.
+
+    Item 1 (resolveAgentBranch wiring): Five files in pkg/protocol use inline
+    BranchName+LegacyBranchName patterns instead of calling the resolveAgentBranch
+    helper. However, the helper is unexported and accepts a repoDir for a git
+    check — callers that need both branch names for other operations (e.g.,
+    isAgentAlreadyMerged which needs slug+legacy separately, or worktree.go which
+    creates rather than resolves branches) cannot always use the helper directly.
+    The agent must read each call site carefully and apply resolveAgentBranch only
+    where the semantic matches (try-slug-then-legacy-then-return-slug-scoped form).
+    Files that only compute branch names for creation/deletion may not benefit from
+    the helper at every location.
+
+    Item 2 (manifest.go ctx): Load and Save already have `_ = ctx` with the comment
+    "reserved for future cancellation support". The ctx parameter is intentionally
+    kept as a no-op for API stability. The fix is minimal: ensure internal callers
+    that pass context.TODO() are consistent, and note that the wrappers already
+    document the no-op. No signature changes are needed or desirable; the ctx
+    parameter documents intent for future work.
+
+    Item 3 (%w sweep): Investigation reveals the 229-call estimate does not match
+    actual codebase state. All non-test fmt.Errorf calls that appear without %w
+    are either (a) formatting non-error types ([]SAWError slices, Result structs,
+    booleans) correctly with %v, or (b) using %s/%d on strings/ints. The fmt.Sprintf
+    calls inside Message: string fields cannot use %w (which only applies to
+    fmt.Errorf). Zero fmt.Errorf calls wrap an error variable using %v instead of %w.
+    This item is a VERIFY task: the agent should confirm this finding and document it,
+    touching no code if the finding holds.
+
+    Parallelization value: Items 1+2 are pkg/protocol only (one agent, ~7 files).
+    Item 3 is a verification/documentation task with no code changes expected.
+    Single-wave execution is appropriate.
+
+    Estimated times:
+    - Scout phase: ~20 min (file analysis, pattern investigation)
+    - Agent execution: ~25 min (1 agent for items 1+2, 1 agent for item 3 verify)
+    - Merge and verification: ~5 min
+    Total SAW time: ~50 min
+
+    Sequential baseline: ~45 min (items 1+2 together, item 3 verify)
+    Time savings: marginal; value is coordination and audit trail.
+
+    Recommendation: Marginal parallelization gains. Proceed for audit trail and
+    to ensure item 3 is definitively verified and documented.
+test_command: go test ./...
+lint_command: go vet ./...
+file_ownership:
+    - file: pkg/protocol/branchname.go
+      agent: A
+      wave: 1
+      action: modify
+    - file: pkg/protocol/merge_agents.go
+      agent: A
+      wave: 1
+      action: modify
+    - file: pkg/protocol/commit_verify.go
+      agent: A
+      wave: 1
+      action: modify
+    - file: pkg/protocol/worktree.go
+      agent: A
+      wave: 1
+      action: modify
+    - file: pkg/protocol/cleanup.go
+      agent: A
+      wave: 1
+      action: modify
+    - file: pkg/protocol/completion_validator.go
+      agent: A
+      wave: 1
+      action: modify
+    - file: pkg/protocol/manifest.go
+      agent: A
+      wave: 1
+      action: modify
+    - file: docs/IMPL/IMPL-final-cleanup-item3-report.md
+      agent: B
+      wave: 1
+      action: new
+interface_contracts:
+    - name: resolveAgentBranch
+      description: |-
+        Unexported helper in branchname.go. Returns the active branch name for
+        the given agent by checking whether the slug-scoped branch exists in repoDir
+        via git.BranchExists. Falls back to LegacyBranchName if slug-scoped does
+        not exist. isLegacy is true when the legacy fallback was used. If neither
+        exists, returns the slug-scoped form and isLegacy=false.
+      definition: |
+        func resolveAgentBranch(featureSlug, agentID string, waveNum int, repoDir string) (branchName string, isLegacy bool)
+      location: pkg/protocol/branchname.go
+waves:
+    - number: 1
+      agents:
+        - id: A
+          task: |
+            ## Agent A — resolveAgentBranch wiring + manifest.go ctx cleanup
+
+            ### Context
+            You are working in pkg/protocol in the scout-and-wave-go repository.
+            This is a mechanical cleanup with no new behavior.
+
+            ### Item 1: Wire resolveAgentBranch into the 5 caller files
+
+            `pkg/protocol/branchname.go` defines:
+            ```go
+            func resolveAgentBranch(featureSlug, agentID string, waveNum int, repoDir string) (branchName string, isLegacy bool)
+            ```
+            This helper checks git to return the active branch (slug-scoped if it exists,
+            legacy if the slug form does not, slug-scoped form if neither exists).
+
+            Five files compute `BranchName(...)` and `LegacyBranchName(...)` inline and
+            then try one then fall back to the other. Replace those with `resolveAgentBranch`
+            where the semantics match. Apply the following rules:
+
+            **File: pkg/protocol/merge_agents.go**
+            - Lines ~290-305 (mergeAgentsSingleRepo loop): `branch` and `legacyBranch` are
+              computed, then `isAgentAlreadyMerged` is called with both, and later
+              `MergeNoFFWithOwnership` is tried with slug first then legacy.
+              - `isAgentAlreadyMerged` needs both names independently — do NOT replace
+                those two variable declarations. Keep `branch` and `legacyBranch` as-is
+                for `isAgentAlreadyMerged`.
+              - The merge attempt block (~line 325) tries `branch` then falls back to
+                `legacyBranch` — this pattern CAN use `resolveAgentBranch`. Replace the
+                try-slug-then-try-legacy merge pattern with a single call to
+                `resolveAgentBranch(manifest.FeatureSlug, agent.ID, waveNum, repoDir)`
+                to determine the active branch, then call `MergeNoFFWithOwnership` once
+                with that branch. Update `status.Branch` accordingly.
+            - Lines ~452-488 (mergeAgentsMultiRepo loop): same analysis and same approach.
+              Use `resolveAgentBranch` for the merge step; keep both names for
+              `isAgentAlreadyMerged`.
+
+            **File: pkg/protocol/commit_verify.go**
+            - Lines ~171-172: `branchName` and `legacyBranch` are computed. The subsequent
+              rev-list block tries slug first, falls back to legacy via repeated git.Run calls.
+              Replace this with `resolveAgentBranch(manifest.FeatureSlug, agent.ID, waveNum, agentRepoDir)`
+              to get the active branch, then run rev-list once against it.
+              Note: the fallback cross-repo HEAD..branch logic must still be preserved for
+              the case where the base commit doesn't exist in the agent's repo.
+
+            **File: pkg/protocol/worktree.go**
+            - Lines ~148-151: `branchName` and `legacyBranch` are computed. The file
+              creates NEW worktrees — it doesn't resolve which branch exists. The legacy
+              branch variables are used for stale branch cleanup (checking if stale legacy
+              branches should be pruned), not for resolving which branch to use.
+              Do NOT apply `resolveAgentBranch` here. The creation path uses `BranchName`
+              to create a NEW branch — `resolveAgentBranch` is semantically wrong for
+              creation. Leave worktree.go unchanged for this pattern.
+
+            **File: pkg/protocol/cleanup.go**
+            - Lines ~176-177: `branchName` and `legacyBranch` are computed. Cleanup
+              attempts to delete slug-scoped first, falls back to legacy if not found.
+              This IS a resolve-then-operate pattern. Replace the two-step deletion
+              attempt with a single `resolveAgentBranch(manifest.FeatureSlug, agent.ID,
+              waveNum, agentRepoDir)` call to find the active branch, then call
+              `git.DeleteBranch` once on the resolved branch. The not-found check in the
+              error message handling still applies to the resolved branch.
+
+            **File: pkg/protocol/completion_validator.go**
+            - Line ~75: `BranchName(manifest.FeatureSlug, waveNum, agentID)` is called
+              once to compute `expectedBranch`. There is no legacy fallback and no git
+              check — this is a pure name computation for comparison against
+              `report.Branch`. Do NOT apply `resolveAgentBranch` here (no git check
+              needed, no fallback).
+
+            ### Item 2: manifest.go ctx param
+
+            Open `pkg/protocol/manifest.go`. Read the `Load` and `Save` function bodies.
+
+            Both functions already have `_ = ctx // reserved for future cancellation support`.
+            This is intentional — the ctx parameter is kept for API stability while being
+            a no-op today.
+
+            **Decision**: Keep option (b) — retain signatures, no change to Load/Save
+            signatures or their `_ = ctx` lines. The parameter is correctly documented.
+
+            **What to do**: Audit the two internal callers within pkg/protocol that pass
+            `context.TODO()` to Load (cleanup.go line 97, commit_verify.go line 50).
+            These are fine as-is since the ctx is a no-op. No code changes are needed
+            for Item 2. Add a brief inline comment if it aids clarity, but do not modify
+            the function signatures.
+
+            If you find that no changes are needed for Item 2, document that finding
+            in a single-line comment in manifest.go (e.g., `// ctx param intentionally
+            no-op; callers may pass context.TODO() or a live context`), only if such
+            a comment would be a net improvement. Do not add noise.
+
+            ### Verification gate
+            After making changes:
+            ```
+            go build ./pkg/protocol/...
+            go vet ./pkg/protocol/...
+            go test ./pkg/protocol/...
+            ```
+            Ensure all tests pass. Do not change any test files.
+          files:
+            - pkg/protocol/branchname.go
+            - pkg/protocol/merge_agents.go
+            - pkg/protocol/commit_verify.go
+            - pkg/protocol/worktree.go
+            - pkg/protocol/cleanup.go
+            - pkg/protocol/completion_validator.go
+            - pkg/protocol/manifest.go
+        - id: B
+          task: |
+            ## Agent B — %w sweep verification
+
+            ### Context
+            The task description estimated 229 fmt.Errorf calls using %v instead of %w
+            for error wrapping. Before making any changes, verify this claim against the
+            actual codebase.
+
+            ### Investigation steps
+
+            Run the following commands from the repository root and record your findings:
+
+            1. Count all non-test fmt.Errorf calls that do NOT contain %w:
+            ```
+            grep -rn 'fmt\.Errorf' pkg/ cmd/ internal/ --include='*.go' | grep -v '%w' | grep -v '_test\.go' | wc -l
+            ```
+
+            2. Among those, find ones that use %v to format a variable:
+            ```
+            grep -rn 'fmt\.Errorf.*%v' pkg/ cmd/ internal/ --include='*.go' | grep -v '_test\.go'
+            ```
+
+            3. For each result in step 2, determine the type of the variable formatted
+            with %v:
+            - If the variable is of type `error`, it SHOULD use %w (eligible for change)
+            - If the variable is of type []SAWError, result.Result, bool, []string,
+              or any non-error type, it MUST stay as %v (%w only works for error values)
+            - Note: fmt.Sprintf calls building Message: string fields cannot use %w at all
+
+            4. Search for any fmt.Errorf that wraps an error variable (named `err` or
+            similar) using %v instead of %w:
+            ```
+            grep -rn 'fmt\.Errorf.*%v.*\berr\b' pkg/ cmd/ internal/ --include='*.go' | grep -v '_test\.go'
+            ```
+
+            ### Expected finding
+            Prior analysis indicates zero fmt.Errorf calls wrap an `error` value with %v.
+            All %v usages in fmt.Errorf format non-error types. If this holds, NO code
+            changes are needed.
+
+            ### What to do
+            - If zero eligible fmt.Errorf calls found: write a brief Markdown report to
+              `docs/IMPL/IMPL-final-cleanup-item3-report.md` documenting the finding.
+              Include the grep command outputs and conclusion. No source code changes.
+            - If eligible calls are found: make the changes (replace %v with %w in
+              fmt.Errorf calls that wrap an `error` value). Do NOT change:
+              - fmt.Sprintf calls (cannot use %w)
+              - fmt.Errorf calls where %v formats a non-error type ([]SAWError, bool, etc.)
+              - Error message text (only change the verb, not the surrounding string)
+
+            ### Verification gate
+            ```
+            go build ./...
+            go vet ./...
+            go test ./...
+            ```
+            If no code was changed, go build/vet/test will pass unchanged.
+          files:
+            - docs/IMPL/IMPL-final-cleanup-item3-report.md
+quality_gates:
+    level: standard
+    gates:
+        - type: build
+          command: go build ./...
+          required: true
+        - type: lint
+          command: go vet ./...
+          required: true
+        - type: test
+          command: go test ./pkg/protocol/...
+          required: true
+pre_mortem:
+    overall_risk: low
+    rows:
+        - scenario: |-
+            resolveAgentBranch applied in worktree.go creation path, causing incorrect
+            branch resolution (helper checks git, but branch doesn't exist yet at creation time).
+          likelihood: medium
+          impact: high
+          mitigation: |-
+            Agent A instructions explicitly say NOT to apply resolveAgentBranch in worktree.go
+            for the creation path. The agent must read the semantic carefully and verify the
+            diff before committing.
+        - scenario: |-
+            resolveAgentBranch applied to the isAgentAlreadyMerged call sites in merge_agents.go,
+            breaking the dual-branch check that prevents false-positive merge detection.
+          likelihood: low
+          impact: high
+          mitigation: |-
+            Agent A instructions explicitly say to keep branch and legacyBranch variables
+            for isAgentAlreadyMerged calls. The helper is only used for the merge step
+            that tries one branch then falls back.
+        - scenario: |-
+            Item 3 agent makes changes to fmt.Sprintf calls or changes error message text,
+            causing test failures or unintended behavior changes.
+          likelihood: low
+          impact: medium
+          mitigation: |-
+            Agent B instructions explicitly say not to change fmt.Sprintf calls, not to
+            change error message text, and not to change non-error type %v usages.
+            Expected outcome is zero code changes (verification only).
+        - scenario: |-
+            manifest.go ctx cleanup changes Load/Save signatures, breaking all call sites
+            across cmd/ and pkg/.
+          likelihood: low
+          impact: high
+          mitigation: |-
+            Agent A instructions explicitly choose option (b): keep signatures unchanged.
+            No signature modification is needed or desired.
+state: SCOUT_PENDING
+injection_method: hook
