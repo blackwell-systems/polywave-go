@@ -2,6 +2,7 @@ package protocol
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"os/exec"
 
@@ -31,7 +32,7 @@ func RunBaselineGates(manifest *IMPLManifest, waveNumber int, repoDir string, ca
 	// Step 1: If cache is non-nil, get HEAD SHA for CommitSHA field.
 	// BuildKey failure is non-fatal — cache is best-effort.
 	if cache != nil {
-		if keyResult := cache.BuildKey(repoDir); keyResult.IsSuccess() {
+		if keyResult := cache.BuildKey(context.TODO(), repoDir); keyResult.IsSuccess() { //nolint:context // TODO: Agent K (Wave 2) should replace with real context when adding ctx to RunBaselineGates
 			data.CommitSHA = keyResult.GetData().HeadCommit
 		}
 	}

@@ -377,7 +377,7 @@ func FinalizeWave(ctx context.Context, opts FinalizeWaveOpts) (*FinalizeWaveResu
 			// Step 3: RunPreMergeGates (E21) — per repo, with C2 closed-loop retry
 			for repoKey, repoPath := range repos {
 				stateDir := protocol.SAWStateDir(repoPath)
-				cache := gatecache.New(stateDir, gatecache.DefaultTTL)
+				cache := gatecache.New(ctx, stateDir, gatecache.DefaultTTL)
 				gateRes := protocol.RunPreMergeGates(manifest, opts.WaveNum, repoPath, cache, opts.Logger)
 				if !gateRes.IsSuccess() {
 					return result, fmt.Errorf("engine.FinalizeWave: run-pre-merge-gates failed in %s: %v", repoKey, gateRes.Errors)
@@ -423,7 +423,7 @@ func FinalizeWave(ctx context.Context, opts FinalizeWaveOpts) (*FinalizeWaveResu
 							}
 							if retryFixed {
 								// Gate was fixed by the retry agent; re-run gates to confirm.
-								cache = gatecache.New(stateDir, gatecache.DefaultTTL)
+								cache = gatecache.New(ctx, stateDir, gatecache.DefaultTTL)
 								rerunRes := protocol.RunPreMergeGates(manifest, opts.WaveNum, repoPath, cache, opts.Logger)
 								if rerunRes.IsSuccess() {
 									rerunResults := rerunRes.GetData().Gates

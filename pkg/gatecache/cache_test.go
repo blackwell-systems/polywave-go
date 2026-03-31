@@ -1,6 +1,7 @@
 package gatecache
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"os/exec"
@@ -11,8 +12,9 @@ import (
 )
 
 func TestCache_PutGet(t *testing.T) {
+	ctx := context.Background()
 	dir := t.TempDir()
-	c := New(dir, DefaultTTL)
+	c := New(ctx, dir, DefaultTTL)
 
 	key := CacheKey{
 		HeadCommit:   "abc123",
@@ -29,12 +31,12 @@ func TestCache_PutGet(t *testing.T) {
 		Stderr:   "",
 	}
 
-	putResult := c.Put(key, "build", r)
+	putResult := c.Put(ctx, key, "build", r)
 	if putResult.IsFatal() {
 		t.Fatalf("Put failed: %v", putResult.Errors)
 	}
 
-	got, ok := c.Get(key, "build")
+	got, ok := c.Get(ctx, key, "build")
 	if !ok {
 		t.Fatal("expected cache hit, got miss")
 	}
@@ -53,8 +55,9 @@ func TestCache_PutGet(t *testing.T) {
 }
 
 func TestCache_Put_ReturnsSuccessWithCorrectGateType(t *testing.T) {
+	ctx := context.Background()
 	dir := t.TempDir()
-	c := New(dir, DefaultTTL)
+	c := New(ctx, dir, DefaultTTL)
 
 	key := CacheKey{HeadCommit: "abc123"}
 	r := CachedResult{
@@ -62,7 +65,7 @@ func TestCache_Put_ReturnsSuccessWithCorrectGateType(t *testing.T) {
 		Passed:   true,
 	}
 
-	putResult := c.Put(key, "lint", r)
+	putResult := c.Put(ctx, key, "lint", r)
 	if !putResult.IsSuccess() {
 		t.Fatalf("expected Put to return Success, got code=%q errors=%v", putResult.Code, putResult.Errors)
 	}
@@ -79,9 +82,10 @@ func TestCache_Put_ReturnsSuccessWithCorrectGateType(t *testing.T) {
 }
 
 func TestCache_TTLExpiry(t *testing.T) {
+	ctx := context.Background()
 	dir := t.TempDir()
 	ttl := 50 * time.Millisecond
-	c := New(dir, ttl)
+	c := New(ctx, dir, ttl)
 
 	key := CacheKey{HeadCommit: "deadbeef"}
 	// Set CachedAt to already-expired timestamp
@@ -91,20 +95,21 @@ func TestCache_TTLExpiry(t *testing.T) {
 		CachedAt: time.Now().Add(-100 * time.Millisecond),
 	}
 
-	putResult := c.Put(key, "test", r)
+	putResult := c.Put(ctx, key, "test", r)
 	if putResult.IsFatal() {
 		t.Fatalf("Put failed: %v", putResult.Errors)
 	}
 
-	got, ok := c.Get(key, "test")
+	got, ok := c.Get(ctx, key, "test")
 	if ok {
 		t.Errorf("expected cache miss due to TTL expiry, but got hit: %+v", got)
 	}
 }
 
 func TestCache_TTLNotExpired(t *testing.T) {
+	ctx := context.Background()
 	dir := t.TempDir()
-	c := New(dir, 5*time.Minute)
+	c := New(ctx, dir, 5*time.Minute)
 
 	key := CacheKey{HeadCommit: "fresh123"}
 	r := CachedResult{
@@ -112,12 +117,12 @@ func TestCache_TTLNotExpired(t *testing.T) {
 		Passed:   true,
 	}
 
-	putResult := c.Put(key, "lint", r)
+	putResult := c.Put(ctx, key, "lint", r)
 	if putResult.IsFatal() {
 		t.Fatalf("Put failed: %v", putResult.Errors)
 	}
 
-	got, ok := c.Get(key, "lint")
+	got, ok := c.Get(ctx, key, "lint")
 	if !ok {
 		t.Fatal("expected cache hit, got miss")
 	}
@@ -127,13 +132,14 @@ func TestCache_TTLNotExpired(t *testing.T) {
 }
 
 func TestCache_Invalidate(t *testing.T) {
+	ctx := context.Background()
 	dir := t.TempDir()
-	c := New(dir, DefaultTTL)
+	c := New(ctx, dir, DefaultTTL)
 
 	key := CacheKey{HeadCommit: "abc"}
 	r := CachedResult{GateType: "build", Passed: true}
 
-	putResult := c.Put(key, "build", r)
+	putResult := c.Put(ctx, key, "build", r)
 	if putResult.IsFatal() {
 		t.Fatalf("Put failed: %v", putResult.Errors)
 	}
@@ -144,13 +150,13 @@ func TestCache_Invalidate(t *testing.T) {
 		t.Fatal("expected cache file to exist before Invalidate")
 	}
 
-	invResult := c.Invalidate()
+	invResult := c.Invalidate(ctx)
 	if invResult.IsFatal() {
 		t.Fatalf("Invalidate failed: %v", invResult.Errors)
 	}
 
 	// Entries should be gone
-	if _, ok := c.Get(key, "build"); ok {
+	if _, ok := c.Get(ctx, key, "build"); ok {
 		t.Error("expected cache miss after Invalidate, got hit")
 	}
 
@@ -161,19 +167,20 @@ func TestCache_Invalidate(t *testing.T) {
 }
 
 func TestCache_Invalidate_ReturnsSuccessWithClearedCount(t *testing.T) {
+	ctx := context.Background()
 	dir := t.TempDir()
-	c := New(dir, DefaultTTL)
+	c := New(ctx, dir, DefaultTTL)
 
 	// Put multiple entries
 	key := CacheKey{HeadCommit: "abc"}
 	for _, gt := range []string{"build", "test", "lint"} {
-		putResult := c.Put(key, gt, CachedResult{GateType: gt, Passed: true})
+		putResult := c.Put(ctx, key, gt, CachedResult{GateType: gt, Passed: true})
 		if putResult.IsFatal() {
 			t.Fatalf("Put(%q) failed: %v", gt, putResult.Errors)
 		}
 	}
 
-	invResult := c.Invalidate()
+	invResult := c.Invalidate(ctx)
 	if !invResult.IsSuccess() {
 		t.Fatalf("expected Invalidate to return Success, got code=%q errors=%v", invResult.Code, invResult.Errors)
 	}
@@ -184,19 +191,21 @@ func TestCache_Invalidate_ReturnsSuccessWithClearedCount(t *testing.T) {
 }
 
 func TestCache_InvalidateNonExistentFile(t *testing.T) {
+	ctx := context.Background()
 	dir := t.TempDir()
-	c := New(dir, DefaultTTL)
+	c := New(ctx, dir, DefaultTTL)
 
 	// Invalidate with no cache file should not error
-	invResult := c.Invalidate()
+	invResult := c.Invalidate(ctx)
 	if invResult.IsFatal() {
 		t.Errorf("Invalidate with no cache file should not error: %v", invResult.Errors)
 	}
 }
 
 func TestCache_Persistence(t *testing.T) {
+	ctx := context.Background()
 	dir := t.TempDir()
-	c1 := New(dir, DefaultTTL)
+	c1 := New(ctx, dir, DefaultTTL)
 
 	key := CacheKey{
 		HeadCommit:   "persist123",
@@ -213,15 +222,15 @@ func TestCache_Persistence(t *testing.T) {
 		Stderr:   "",
 	}
 
-	putResult := c1.Put(key, "vet", r)
+	putResult := c1.Put(ctx, key, "vet", r)
 	if putResult.IsFatal() {
 		t.Fatalf("Put failed: %v", putResult.Errors)
 	}
 
 	// Create a new cache instance from the same directory — it should load from disk
-	c2 := New(dir, DefaultTTL)
+	c2 := New(ctx, dir, DefaultTTL)
 
-	got, ok := c2.Get(key, "vet")
+	got, ok := c2.Get(ctx, key, "vet")
 	if !ok {
 		t.Fatal("expected cache hit after reload from disk, got miss")
 	}
@@ -240,8 +249,9 @@ func TestCache_Persistence(t *testing.T) {
 }
 
 func TestCache_MultipleGateTypes(t *testing.T) {
+	ctx := context.Background()
 	dir := t.TempDir()
-	c := New(dir, DefaultTTL)
+	c := New(ctx, dir, DefaultTTL)
 
 	key := CacheKey{HeadCommit: "multi"}
 	gates := []struct {
@@ -255,14 +265,14 @@ func TestCache_MultipleGateTypes(t *testing.T) {
 
 	for _, g := range gates {
 		r := CachedResult{GateType: g.gateType, Passed: g.passed}
-		putResult := c.Put(key, g.gateType, r)
+		putResult := c.Put(ctx, key, g.gateType, r)
 		if putResult.IsFatal() {
 			t.Fatalf("Put(%q) failed: %v", g.gateType, putResult.Errors)
 		}
 	}
 
 	for _, g := range gates {
-		got, ok := c.Get(key, g.gateType)
+		got, ok := c.Get(ctx, key, g.gateType)
 		if !ok {
 			t.Errorf("expected hit for gate %q, got miss", g.gateType)
 			continue
@@ -297,8 +307,9 @@ func TestBuildKey(t *testing.T) {
 	gitCmd("add", ".")
 	gitCmd("commit", "-m", "initial")
 
-	c := New(dir, DefaultTTL)
-	keyResult := c.BuildKey(dir)
+	ctx := context.Background()
+	c := New(ctx, dir, DefaultTTL)
+	keyResult := c.BuildKey(ctx, dir)
 	if keyResult.IsFatal() {
 		t.Fatalf("BuildKey failed: %v", keyResult.Errors)
 	}
@@ -312,7 +323,7 @@ func TestBuildKey(t *testing.T) {
 	}
 
 	// Build a second key from the same state — it should produce the same hash
-	keyResult2 := c.BuildKey(dir)
+	keyResult2 := c.BuildKey(ctx, dir)
 	if keyResult2.IsFatal() {
 		t.Fatalf("second BuildKey failed: %v", keyResult2.Errors)
 	}
@@ -325,7 +336,7 @@ func TestBuildKey(t *testing.T) {
 	if err := os.WriteFile(testFile, []byte("hello world"), 0644); err != nil {
 		t.Fatal(err)
 	}
-	keyResult3 := c.BuildKey(dir)
+	keyResult3 := c.BuildKey(ctx, dir)
 	if keyResult3.IsFatal() {
 		t.Fatalf("third BuildKey failed: %v", keyResult3.Errors)
 	}
@@ -356,8 +367,9 @@ func TestBuildKey_ReturnsSuccessWithNonEmptyHeadCommit(t *testing.T) {
 	gitCmd("add", ".")
 	gitCmd("commit", "-m", "initial")
 
-	c := New(dir, DefaultTTL)
-	keyResult := c.BuildKey(dir)
+	ctx := context.Background()
+	c := New(ctx, dir, DefaultTTL)
+	keyResult := c.BuildKey(ctx, dir)
 	if !keyResult.IsSuccess() {
 		t.Fatalf("expected BuildKey to return Success, got code=%q errors=%v", keyResult.Code, keyResult.Errors)
 	}
@@ -368,8 +380,9 @@ func TestBuildKey_ReturnsSuccessWithNonEmptyHeadCommit(t *testing.T) {
 }
 
 func TestCache_CommandDifferentiation(t *testing.T) {
+	ctx := context.Background()
 	dir := t.TempDir()
-	c := New(dir, DefaultTTL)
+	c := New(ctx, dir, DefaultTTL)
 
 	// Two keys identical except for Command field
 	key1 := CacheKey{
@@ -392,15 +405,15 @@ func TestCache_CommandDifferentiation(t *testing.T) {
 
 	// Storing under key1 should not be retrievable via key2
 	r := CachedResult{GateType: "build", Passed: true}
-	putResult := c.Put(key1, "build", r)
+	putResult := c.Put(ctx, key1, "build", r)
 	if putResult.IsFatal() {
 		t.Fatalf("Put failed: %v", putResult.Errors)
 	}
 
-	if _, ok := c.Get(key2, "build"); ok {
+	if _, ok := c.Get(ctx, key2, "build"); ok {
 		t.Error("expected cache miss for key2 (different Command), but got hit")
 	}
-	if _, ok := c.Get(key1, "build"); !ok {
+	if _, ok := c.Get(ctx, key1, "build"); !ok {
 		t.Error("expected cache hit for key1, got miss")
 	}
 }
@@ -427,9 +440,10 @@ func TestBuildKeyForGate(t *testing.T) {
 	gitCmd("add", ".")
 	gitCmd("commit", "-m", "initial")
 
-	c := New(dir, DefaultTTL)
+	ctx := context.Background()
+	c := New(ctx, dir, DefaultTTL)
 
-	r1 := c.BuildKeyForGate(dir, "go test ./...")
+	r1 := c.BuildKeyForGate(ctx, dir, "go test ./...")
 	if r1.IsFatal() {
 		t.Fatalf("BuildKeyForGate failed: %v", r1.Errors)
 	}
@@ -438,7 +452,7 @@ func TestBuildKeyForGate(t *testing.T) {
 		t.Errorf("Command field not set: got %q", key1.Command)
 	}
 
-	r2 := c.BuildKeyForGate(dir, "go test -count=1 ./...")
+	r2 := c.BuildKeyForGate(ctx, dir, "go test -count=1 ./...")
 	if r2.IsFatal() {
 		t.Fatalf("BuildKeyForGate (second) failed: %v", r2.Errors)
 	}
@@ -453,7 +467,7 @@ func TestBuildKeyForGate(t *testing.T) {
 	}
 
 	// Same command must produce the same hash
-	r3 := c.BuildKeyForGate(dir, "go test ./...")
+	r3 := c.BuildKeyForGate(ctx, dir, "go test ./...")
 	if r3.IsFatal() {
 		t.Fatalf("BuildKeyForGate (third) failed: %v", r3.Errors)
 	}
@@ -466,7 +480,8 @@ func TestBuildKeyForGate(t *testing.T) {
 // TestCacheThreadSafety launches 10 goroutines that call Get/Put concurrently.
 // Run with `go test -race` to detect data races.
 func TestCacheThreadSafety(t *testing.T) {
-	cache := New(t.TempDir(), DefaultTTL)
+	ctx := context.Background()
+	cache := New(ctx, t.TempDir(), DefaultTTL)
 	key := CacheKey{HeadCommit: "abc123", Command: "go test"}
 
 	var wg sync.WaitGroup
@@ -479,16 +494,16 @@ func TestCacheThreadSafety(t *testing.T) {
 				GateType: fmt.Sprintf("type-%d", idx),
 				Passed:   true,
 			}
-			_ = cache.Put(key, fmt.Sprintf("type-%d", idx), r)
+			_ = cache.Put(ctx, key, fmt.Sprintf("type-%d", idx), r)
 			// Concurrent reads
-			_, _ = cache.Get(key, fmt.Sprintf("type-%d", idx))
+			_, _ = cache.Get(ctx, key, fmt.Sprintf("type-%d", idx))
 		}(i)
 	}
 	wg.Wait()
 
 	// Verify all entries exist after concurrent writes
 	for i := 0; i < 10; i++ {
-		if _, ok := cache.Get(key, fmt.Sprintf("type-%d", i)); !ok {
+		if _, ok := cache.Get(ctx, key, fmt.Sprintf("type-%d", i)); !ok {
 			t.Errorf("expected gate type-%d to exist after concurrent Put", i)
 		}
 	}
@@ -497,7 +512,8 @@ func TestCacheThreadSafety(t *testing.T) {
 // TestConcurrentInvalidate verifies that Invalidate can be called safely
 // while other goroutines are calling Get/Put. This should not panic.
 func TestConcurrentInvalidate(t *testing.T) {
-	cache := New(t.TempDir(), DefaultTTL)
+	ctx := context.Background()
+	cache := New(ctx, t.TempDir(), DefaultTTL)
 	key := CacheKey{HeadCommit: "invalidate123"}
 
 	var wg sync.WaitGroup
@@ -512,8 +528,8 @@ func TestConcurrentInvalidate(t *testing.T) {
 					GateType: fmt.Sprintf("gate-%d-%d", idx, j),
 					Passed:   true,
 				}
-				_ = cache.Put(key, r.GateType, r)
-				_, _ = cache.Get(key, r.GateType)
+				_ = cache.Put(ctx, key, r.GateType, r)
+				_, _ = cache.Get(ctx, key, r.GateType)
 			}
 		}(i)
 	}
@@ -523,7 +539,7 @@ func TestConcurrentInvalidate(t *testing.T) {
 	go func() {
 		defer wg.Done()
 		for i := 0; i < 10; i++ {
-			_ = cache.Invalidate()
+			_ = cache.Invalidate(ctx)
 		}
 	}()
 
@@ -534,7 +550,8 @@ func TestConcurrentInvalidate(t *testing.T) {
 // TestConcurrentPut verifies that multiple goroutines can Put different gate
 // results to the same cache key without corrupting the entries map.
 func TestConcurrentPut(t *testing.T) {
-	cache := New(t.TempDir(), DefaultTTL)
+	ctx := context.Background()
+	cache := New(ctx, t.TempDir(), DefaultTTL)
 	key := CacheKey{HeadCommit: "concurrent-put-123"}
 
 	const numGoroutines = 20
@@ -549,7 +566,7 @@ func TestConcurrentPut(t *testing.T) {
 				GateType: fmt.Sprintf("parallel-gate-%d", idx),
 				Passed:   idx%2 == 0, // Alternate passed/failed
 			}
-			putResult := cache.Put(key, r.GateType, r)
+			putResult := cache.Put(ctx, key, r.GateType, r)
 			if putResult.IsFatal() {
 				t.Errorf("Put failed for gate %d: %v", idx, putResult.Errors)
 			}
@@ -561,7 +578,7 @@ func TestConcurrentPut(t *testing.T) {
 	// Verify all gate types exist and have correct values
 	for i := 0; i < numGoroutines; i++ {
 		gateType := fmt.Sprintf("parallel-gate-%d", i)
-		got, ok := cache.Get(key, gateType)
+		got, ok := cache.Get(ctx, key, gateType)
 		if !ok {
 			t.Errorf("expected gate %q to exist, got miss", gateType)
 			continue

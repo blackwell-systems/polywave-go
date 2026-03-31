@@ -1,6 +1,7 @@
 package gatecache
 
 import (
+	"context"
 	"crypto/md5"
 	"encoding/json"
 	"fmt"
@@ -83,7 +84,7 @@ type Cache struct {
 
 // New creates a new Cache backed by stateDir. It loads any existing cache data
 // from disk. If ttl is zero, DefaultTTL is used.
-func New(stateDir string, ttl time.Duration) *Cache {
+func New(ctx context.Context, stateDir string, ttl time.Duration) *Cache {
 	if ttl == 0 {
 		ttl = DefaultTTL
 	}
@@ -93,7 +94,7 @@ func New(stateDir string, ttl time.Duration) *Cache {
 		entries:  make(map[string]map[string]CachedResult),
 	}
 	c.mu.Lock()
-	_ = c.load() // ignore load errors; start with empty cache
+	_ = c.load(ctx) // ignore load errors; start with empty cache
 	c.mu.Unlock()
 	return c
 }
@@ -108,7 +109,13 @@ func hashKey(key CacheKey) string {
 
 // BuildKey computes a CacheKey for the repository at repoDir by running git
 // commands to capture HEAD commit and diff stats.
-func (c *Cache) BuildKey(repoDir string) result.Result[CacheKey] {
+func (c *Cache) BuildKey(ctx context.Context, repoDir string) result.Result[CacheKey] {
+	if err := ctx.Err(); err != nil {
+		return result.NewFailure[CacheKey]([]result.SAWError{
+			result.NewFatal("CACHE_BUILD_KEY_CANCELLED", fmt.Sprintf("gatecache: context cancelled: %v", err)).WithCause(err),
+		})
+	}
+
 	headCommit, err := git.RunOutput(repoDir, "rev-parse", "HEAD")
 	if err != nil {
 		return result.NewFailure[CacheKey]([]result.SAWError{
@@ -141,8 +148,8 @@ func (c *Cache) BuildKey(repoDir string) result.Result[CacheKey] {
 // BuildKeyForGate computes a CacheKey for the repository at repoDir
 // combined with the given gate command string. The command is included in the
 // key so that changing a gate's command (e.g. adding a flag) causes a cache miss.
-func (c *Cache) BuildKeyForGate(repoDir string, command string) result.Result[CacheKey] {
-	r := c.BuildKey(repoDir)
+func (c *Cache) BuildKeyForGate(ctx context.Context, repoDir string, command string) result.Result[CacheKey] {
+	r := c.BuildKey(ctx, repoDir)
 	if r.IsFatal() {
 		return r
 	}
@@ -153,7 +160,7 @@ func (c *Cache) BuildKeyForGate(repoDir string, command string) result.Result[Ca
 
 // Get returns the cached result for (key, gateType) if it exists and has not
 // expired. The returned CachedResult has its TTL field populated from the cache.
-func (c *Cache) Get(key CacheKey, gateType string) (*CachedResult, bool) {
+func (c *Cache) Get(ctx context.Context, key CacheKey, gateType string) (*CachedResult, bool) {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 
@@ -175,7 +182,13 @@ func (c *Cache) Get(key CacheKey, gateType string) (*CachedResult, bool) {
 }
 
 // Put stores result under (key, gateType) and persists the cache to disk.
-func (c *Cache) Put(key CacheKey, gateType string, r CachedResult) result.Result[PutData] {
+func (c *Cache) Put(ctx context.Context, key CacheKey, gateType string, r CachedResult) result.Result[PutData] {
+	if err := ctx.Err(); err != nil {
+		return result.NewFailure[PutData]([]result.SAWError{
+			result.NewFatal("CACHE_PUT_CANCELLED", fmt.Sprintf("gatecache: context cancelled: %v", err)).WithCause(err),
+		})
+	}
+
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
@@ -188,7 +201,7 @@ func (c *Cache) Put(key CacheKey, gateType string, r CachedResult) result.Result
 		r.CachedAt = time.Now()
 	}
 	c.entries[h][gateType] = r
-	if err := c.save(); err != nil {
+	if err := c.save(ctx); err != nil {
 		return result.NewFailure[PutData]([]result.SAWError{
 			result.NewFatal("CACHE_PUT_FAILED", fmt.Sprintf("gatecache: save cache: %v", err)).WithCause(err),
 		})
@@ -201,7 +214,13 @@ func (c *Cache) Put(key CacheKey, gateType string, r CachedResult) result.Result
 }
 
 // Invalidate clears all in-memory entries and removes the cache file from disk.
-func (c *Cache) Invalidate() result.Result[InvalidateData] {
+func (c *Cache) Invalidate(ctx context.Context) result.Result[InvalidateData] {
+	if err := ctx.Err(); err != nil {
+		return result.NewFailure[InvalidateData]([]result.SAWError{
+			result.NewFatal("CACHE_INVALIDATE_CANCELLED", fmt.Sprintf("gatecache: context cancelled: %v", err)).WithCause(err),
+		})
+	}
+
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
@@ -223,7 +242,10 @@ func (c *Cache) Invalidate() result.Result[InvalidateData] {
 
 // load reads the cache file from disk into c.entries.
 // MUST be called with c.mu held (write lock).
-func (c *Cache) load() error {
+func (c *Cache) load(ctx context.Context) error {
+	if err := ctx.Err(); err != nil {
+		return fmt.Errorf("gatecache: load cancelled: %w", err)
+	}
 	path := filepath.Join(c.stateDir, cacheFileName)
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -244,7 +266,10 @@ func (c *Cache) load() error {
 
 // save writes c.entries to the cache file on disk.
 // MUST be called with c.mu held (lock already acquired by caller).
-func (c *Cache) save() error {
+func (c *Cache) save(ctx context.Context) error {
+	if err := ctx.Err(); err != nil {
+		return fmt.Errorf("gatecache: save cancelled: %w", err)
+	}
 	if err := os.MkdirAll(c.stateDir, 0755); err != nil {
 		return fmt.Errorf("gatecache: create state dir: %w", err)
 	}

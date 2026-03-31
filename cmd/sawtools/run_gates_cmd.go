@@ -36,7 +36,7 @@ func newRunGatesCmd() *cobra.Command {
 				results = res.GetData().Gates
 			} else {
 				stateDir := protocol.SAWStateDir(repoDir)
-				cache := gatecache.New(stateDir, gatecache.DefaultTTL)
+				cache := gatecache.New(cmd.Context(), stateDir, gatecache.DefaultTTL)
 				res := protocol.RunGatesWithCache(m, waveNum, repoDir, cache, nil)
 				if !res.IsSuccess() {
 					return fmt.Errorf("run-gates: %w", errors.Join(result.ToErrors(res.Errors)...))

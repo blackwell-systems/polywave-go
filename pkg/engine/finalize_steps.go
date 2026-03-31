@@ -129,7 +129,7 @@ func StepRunGates(ctx context.Context, opts FinalizeWaveOpts, manifest *protocol
 	emitStepEvent(onEvent, stepName, "running", "")
 
 	stateDir := protocol.SAWStateDir(opts.RepoPath)
-	cache := gatecache.New(stateDir, 5*time.Minute)
+	cache := gatecache.New(ctx, stateDir, 5*time.Minute)
 	gateRes := protocol.RunGatesWithCache(manifest, opts.WaveNum, opts.RepoPath, cache, opts.Logger)
 	if !gateRes.IsSuccess() {
 		emitStepEvent(onEvent, stepName, "failed", fmt.Sprintf("%v", gateRes.Errors))
