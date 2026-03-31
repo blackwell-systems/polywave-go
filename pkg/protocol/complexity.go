@@ -2,6 +2,7 @@ package protocol
 
 import (
 	"bufio"
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -21,7 +22,8 @@ const codeAgentLOCBudget = "V048_AGENT_LOC_BUDGET"
 //
 // Warnings (advisory):
 //   - W001_AGENT_SCOPE_LARGE: agent owns >8 files or creates >5 new files.
-func CheckAgentComplexity(m *IMPLManifest) []result.SAWError {
+func CheckAgentComplexity(ctx context.Context, m *IMPLManifest) []result.SAWError {
+	_ = ctx
 	var warnings []result.SAWError
 
 	// V047: Reject trivial single-agent, single-file IMPLs declared SUITABLE.
@@ -87,7 +89,8 @@ func CheckAgentComplexity(m *IMPLManifest) []result.SAWError {
 // lines. Only action=modify files are counted (action=new files do not yet exist).
 // Returns blocking errors for agents over budget.
 // If repoPath is empty, all checks are skipped (allows offline validation).
-func CheckAgentLOCBudget(m *IMPLManifest, repoPath string, maxLOC int) []result.SAWError {
+func CheckAgentLOCBudget(ctx context.Context, m *IMPLManifest, repoPath string, maxLOC int) []result.SAWError {
+	_ = ctx
 	if repoPath == "" {
 		return nil
 	}

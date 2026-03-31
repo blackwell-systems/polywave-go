@@ -1,6 +1,7 @@
 package protocol
 
 import (
+	"context"
 	"testing"
 )
 
@@ -32,7 +33,7 @@ func TestDetectOwnershipConflicts_NoConflicts(t *testing.T) {
 		},
 	}
 
-	conflicts := DetectOwnershipConflicts(manifest, reports)
+	conflicts := DetectOwnershipConflicts(context.Background(), manifest, reports)
 	if len(conflicts) != 0 {
 		t.Errorf("expected no conflicts, got %d: %v", len(conflicts), conflicts)
 	}
@@ -65,7 +66,7 @@ func TestDetectOwnershipConflicts_SameFile(t *testing.T) {
 		},
 	}
 
-	conflicts := DetectOwnershipConflicts(manifest, reports)
+	conflicts := DetectOwnershipConflicts(context.Background(), manifest, reports)
 	if len(conflicts) == 0 {
 		t.Fatal("expected conflicts, got none")
 	}
@@ -111,7 +112,7 @@ func TestDetectOwnershipConflicts_FilesCreatedOverlap(t *testing.T) {
 		},
 	}
 
-	conflicts := DetectOwnershipConflicts(manifest, reports)
+	conflicts := DetectOwnershipConflicts(context.Background(), manifest, reports)
 	if len(conflicts) == 0 {
 		t.Fatal("expected conflicts, got none")
 	}
@@ -157,7 +158,7 @@ func TestDetectOwnershipConflicts_MixedChangedCreated(t *testing.T) {
 		},
 	}
 
-	conflicts := DetectOwnershipConflicts(manifest, reports)
+	conflicts := DetectOwnershipConflicts(context.Background(), manifest, reports)
 	if len(conflicts) == 0 {
 		t.Fatal("expected conflicts, got none")
 	}
@@ -210,7 +211,7 @@ func TestDetectOwnershipConflicts_DifferentWaves(t *testing.T) {
 		},
 	}
 
-	conflicts := DetectOwnershipConflicts(manifest, reports)
+	conflicts := DetectOwnershipConflicts(context.Background(), manifest, reports)
 	// No conflict: agents are in different waves
 	// Should only detect conflicts within the same wave
 	for _, c := range conflicts {
@@ -260,7 +261,7 @@ func TestDetectOwnershipConflicts_UndeclaredFile(t *testing.T) {
 		},
 	}
 
-	conflicts := DetectOwnershipConflicts(manifest, reports)
+	conflicts := DetectOwnershipConflicts(context.Background(), manifest, reports)
 	if len(conflicts) == 0 {
 		t.Fatal("expected conflicts for undeclared modification, got none")
 	}
@@ -294,14 +295,14 @@ func TestDetectOwnershipConflicts_UndeclaredFile(t *testing.T) {
 
 func TestDetectOwnershipConflicts_NilInputs(t *testing.T) {
 	// Nil manifest
-	conflicts := DetectOwnershipConflicts(nil, map[string]CompletionReport{})
+	conflicts := DetectOwnershipConflicts(context.Background(), nil, map[string]CompletionReport{})
 	if conflicts != nil {
 		t.Errorf("expected nil result for nil manifest, got %v", conflicts)
 	}
 
 	// Nil reports
 	manifest := &IMPLManifest{}
-	conflicts = DetectOwnershipConflicts(manifest, nil)
+	conflicts = DetectOwnershipConflicts(context.Background(), manifest, nil)
 	if conflicts != nil {
 		t.Errorf("expected nil result for nil reports, got %v", conflicts)
 	}
@@ -339,7 +340,7 @@ func TestDetectOwnershipConflicts_MultipleAgentsOnSameFile(t *testing.T) {
 		},
 	}
 
-	conflicts := DetectOwnershipConflicts(manifest, reports)
+	conflicts := DetectOwnershipConflicts(context.Background(), manifest, reports)
 	if len(conflicts) == 0 {
 		t.Fatal("expected conflicts, got none")
 	}
@@ -387,7 +388,7 @@ func TestDetectOwnershipConflicts_CrossRepoTracking(t *testing.T) {
 		},
 	}
 
-	conflicts := DetectOwnershipConflicts(manifest, reports)
+	conflicts := DetectOwnershipConflicts(context.Background(), manifest, reports)
 	if len(conflicts) == 0 {
 		t.Fatal("expected conflicts, got none")
 	}

@@ -22,7 +22,7 @@ func newCheckConflictsCmd() *cobra.Command {
 				return fmt.Errorf("check-conflicts: %w", err)
 			}
 
-			conflicts := protocol.DetectOwnershipConflicts(m, m.CompletionReports)
+			conflicts := protocol.DetectOwnershipConflicts(context.TODO(), m, m.CompletionReports)
 
 			result := struct {
 				ConflictCount int                         `json:"conflict_count"`

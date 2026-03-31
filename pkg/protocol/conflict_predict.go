@@ -1,6 +1,7 @@
 package protocol
 
 import (
+	"context"
 	"crypto/sha256"
 	"fmt"
 
@@ -29,7 +30,8 @@ type ConflictPrediction struct {
 //
 // Returns Partial if conflicts are detected (warnings), Success if none.
 // Returns Fatal if an unexpected failure occurs.
-func PredictConflictsFromReports(manifest *IMPLManifest, waveNum int) result.Result[ConflictData] {
+func PredictConflictsFromReports(ctx context.Context, manifest *IMPLManifest, waveNum int) result.Result[ConflictData] {
+	_ = ctx
 	if manifest == nil {
 		return result.NewSuccess(ConflictData{})
 	}

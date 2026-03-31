@@ -1,6 +1,7 @@
 package protocol
 
 import (
+	"context"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -32,7 +33,7 @@ func TestPredictConflictsFromReports_NoConflicts(t *testing.T) {
 		},
 	}
 
-	res := PredictConflictsFromReports(manifest, 1)
+	res := PredictConflictsFromReports(context.Background(), manifest, 1)
 	if res.IsFatal() {
 		t.Errorf("expected non-fatal result for non-overlapping files, got: %v", res.Errors)
 	}
@@ -70,7 +71,7 @@ func TestPredictConflictsFromReports_ConflictDetected(t *testing.T) {
 		},
 	}
 
-	res := PredictConflictsFromReports(manifest, 1)
+	res := PredictConflictsFromReports(context.Background(), manifest, 1)
 	if res.IsSuccess() {
 		t.Fatal("expected non-success result for file modified by 2 agents, got success")
 	}
@@ -117,7 +118,7 @@ func TestPredictConflictsFromReports_FilesCreatedConflict(t *testing.T) {
 		},
 	}
 
-	res := PredictConflictsFromReports(manifest, 1)
+	res := PredictConflictsFromReports(context.Background(), manifest, 1)
 	if res.IsSuccess() {
 		t.Fatal("expected non-success for file created by 2 agents, got success")
 	}
@@ -151,7 +152,7 @@ func TestPredictConflictsFromReports_IMPLFilesIgnored(t *testing.T) {
 		},
 	}
 
-	res := PredictConflictsFromReports(manifest, 1)
+	res := PredictConflictsFromReports(context.Background(), manifest, 1)
 	if !res.IsSuccess() {
 		t.Errorf("expected success for IMPL file overlap, got: %v", res.Errors)
 	}
@@ -180,14 +181,14 @@ func TestPredictConflictsFromReports_SawStateFilesIgnored(t *testing.T) {
 		},
 	}
 
-	res := PredictConflictsFromReports(manifest, 1)
+	res := PredictConflictsFromReports(context.Background(), manifest, 1)
 	if !res.IsSuccess() {
 		t.Errorf("expected success for .saw-state file overlap, got: %v", res.Errors)
 	}
 }
 
 func TestPredictConflictsFromReports_NilManifest(t *testing.T) {
-	res := PredictConflictsFromReports(nil, 1)
+	res := PredictConflictsFromReports(context.Background(), nil, 1)
 	if !res.IsSuccess() {
 		t.Errorf("expected success for nil manifest, got: %v", res.Errors)
 	}
@@ -204,7 +205,7 @@ func TestPredictConflictsFromReports_WaveNotFound(t *testing.T) {
 	}
 
 	// Wave 2 doesn't exist — should return success with no conflicts.
-	res := PredictConflictsFromReports(manifest, 2)
+	res := PredictConflictsFromReports(context.Background(), manifest, 2)
 	if !res.IsSuccess() {
 		t.Errorf("expected success for missing wave, got: %v", res.Errors)
 	}
@@ -231,7 +232,7 @@ func TestPredictConflictsFromReports_MissingReportSkipped(t *testing.T) {
 		},
 	}
 
-	res := PredictConflictsFromReports(manifest, 1)
+	res := PredictConflictsFromReports(context.Background(), manifest, 1)
 	if !res.IsSuccess() {
 		t.Errorf("expected success when B has no report, got: %v", res.Errors)
 	}
@@ -261,7 +262,7 @@ func TestPredictConflictsFromReports_ConflictData_Count(t *testing.T) {
 		},
 	}
 
-	res := PredictConflictsFromReports(manifest, 1)
+	res := PredictConflictsFromReports(context.Background(), manifest, 1)
 	if res.IsSuccess() {
 		t.Fatal("expected partial result for conflicts, got success")
 	}
@@ -347,7 +348,7 @@ func TestPredictConflictsFromReports_IdenticalEditsAllowed(t *testing.T) {
 		},
 	}
 
-	res := PredictConflictsFromReports(manifest, 1)
+	res := PredictConflictsFromReports(context.Background(), manifest, 1)
 	if !res.IsSuccess() {
 		t.Errorf("expected success for identical edits, got: %v", res.Errors)
 	}
@@ -426,7 +427,7 @@ func TestPredictConflictsFromReports_DifferingEditsBlocked(t *testing.T) {
 		},
 	}
 
-	res := PredictConflictsFromReports(manifest, 1)
+	res := PredictConflictsFromReports(context.Background(), manifest, 1)
 	if res.IsSuccess() {
 		t.Fatal("expected non-success for differing edits, got success")
 	}
