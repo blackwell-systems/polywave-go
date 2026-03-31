@@ -264,3 +264,5 @@ type BackendConfig struct {
   - IMPL doc: docs/IMPL/complete/IMPL-context-propagation.yaml
 - **protocol-backend-cleanup**: completed 2026-03-31, 1 waves, 2 agents
   - IMPL doc: docs/IMPL/complete/IMPL-protocol-backend-cleanup.yaml
+- **miscellaneous-cleanup**: completed 2026-03-31, 1 waves, 3 agents
+  - IMPL doc: docs/IMPL/complete/IMPL-miscellaneous-cleanup.yaml

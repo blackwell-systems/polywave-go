@@ -1,3 +1,4 @@
+completion_date: "2026-03-31"
 title: Miscellaneous Cleanup (Issues 12, 19, 20, 24, 25)
 feature_slug: miscellaneous-cleanup
 verdict: SUITABLE
@@ -793,6 +794,7 @@ waves:
           files:
             - pkg/orchestrator/setters.go
             - pkg/orchestrator/orchestrator.go
+      base_commit: 1914e7cd4675ba9b5b27fc0e5b09fbd17944a69a
 quality_gates:
     level: standard
     gates:
@@ -805,6 +807,59 @@ quality_gates:
         - type: test
           command: go test ./...
           required: true
+completion_reports:
+    A:
+        status: complete
+        branch: saw/miscellaneous-cleanup/wave1-agent-A
+        commit: 4868f81
+        files_changed:
+            - pkg/engine/engine.go
+            - pkg/engine/runner.go
+            - pkg/engine/runner_data_types.go
+            - pkg/engine/runner_data_types_test.go
+        files_created:
+            - pkg/engine/runner_data_types_test.go
+        tests_added:
+            - TestRunStartedPayload_JSON
+            - TestRunFailedPayload_JSON
+            - TestWaveGatePendingPayload_JSON
+        verification: PASS
+        notes: All 14 map[string]string/map[string]interface{} publish call sites replaced with typed structs. protocol.IntegrationReport import added to runner_data_types.go (no cycle — engine already imports protocol). Event.Data changed from interface{} to any. All tests pass.
+    B:
+        status: complete
+        branch: saw/miscellaneous-cleanup/wave1-agent-B
+        commit: 75314df
+        files_changed:
+            - pkg/pipeline/types.go
+            - pkg/pipeline/saw_steps.go
+            - pkg/pipeline/types_test.go
+            - pkg/notify/slack.go
+            - pkg/notify/discord.go
+            - pkg/notify/slack_test.go
+            - pkg/notify/discord_test.go
+            - docs/error-codes.md
+            - docs/refactor-audit.md
+        files_created:
+            - pkg/pipeline/types_test.go
+        tests_added:
+            - TestGetValue_HappyPath
+            - TestGetValue_WrongType
+            - TestGetValue_NilValues
+            - TestGetValue_MissingKey
+            - TestSetValue_InitializesMap
+            - TestSlackFormatter_TypedBlocks
+            - TestDiscordFormatter_TypedEmbeds
+        verification: PASS
+        notes: All 4 issues complete. GetValue/SetValue generics added to pipeline.State. requiredKey updated to use GetValue[any]. Slack and Discord formatters refactored to typed private structs. Updated existing tests in slack_test.go and discord_test.go that asserted on map[string]interface{} — changed to typed struct assertions after the formatter return types changed. N018-N084 entries added to error-codes.md. Audit status summary added to refactor-audit.md.
+    C:
+        status: complete
+        branch: saw/miscellaneous-cleanup/wave1-agent-C
+        commit: bfe0012
+        files_changed:
+            - pkg/orchestrator/orchestrator.go
+            - pkg/orchestrator/setters.go
+        verification: PASS
+        notes: SetLogger moved to orchestrator.go (after SetWorktreePaths). setters.go deleted. Build, vet, and orchestrator tests all pass.
 pre_mortem:
     overall_risk: low
     rows:
@@ -841,5 +896,5 @@ critic_report:
     summary: Skipped by operator
     reviewed_at: "2026-03-31T21:04:54Z"
     issue_count: 0
-state: "REVIEWED"
+state: COMPLETE
 injection_method: hook
