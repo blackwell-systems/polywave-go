@@ -210,6 +210,7 @@ func StepMergeAgents(ctx context.Context, opts FinalizeWaveOpts, onEvent EventCa
 	emitStepEvent(onEvent, stepName, "running", "")
 
 	mergeRes, err := protocol.MergeAgents(protocol.MergeAgentsOpts{
+		Ctx:          ctx,
 		ManifestPath: opts.IMPLPath,
 		WaveNum:      opts.WaveNum,
 		RepoDir:      opts.RepoPath,
@@ -298,7 +299,7 @@ func StepVerifyBuild(ctx context.Context, opts FinalizeWaveOpts, onEvent EventCa
 		}
 	}
 
-	verifyBuildRes := protocol.VerifyBuild(opts.IMPLPath, buildRepoPath)
+	verifyBuildRes := protocol.VerifyBuild(ctx, opts.IMPLPath, buildRepoPath)
 	if !verifyBuildRes.IsSuccess() {
 		emitStepEvent(onEvent, stepName, "failed", fmt.Sprintf("%v", verifyBuildRes.Errors))
 		return &StepResult{

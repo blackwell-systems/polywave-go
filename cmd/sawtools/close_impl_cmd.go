@@ -1,7 +1,6 @@
 package main
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -32,6 +31,7 @@ Examples:
   sawtools close-impl docs/IMPL/IMPL-feature.yaml --date 2026-03-22`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			ctx := cmd.Context()
 			manifestPath := args[0]
 			logger := newSawLogger()
 
@@ -40,13 +40,13 @@ Examples:
 			}
 
 			// Load manifest before archiving to get slug
-			manifest, err := protocol.Load(context.TODO(), manifestPath)
+			manifest, err := protocol.Load(ctx, manifestPath)
 			if err != nil {
 				return fmt.Errorf("close-impl: failed to load manifest: %w", err)
 			}
 
 			// Step 1a: Transition state to COMPLETE (best-effort; failure does not abort)
-			stateRes := protocol.SetImplState(manifestPath, protocol.StateComplete, protocol.SetImplStateOpts{})
+			stateRes := protocol.SetImplState(ctx, manifestPath, protocol.StateComplete, protocol.SetImplStateOpts{})
 			if !stateRes.IsSuccess() {
 				logger.Warn("close-impl: state transition to COMPLETE failed", "errs", stateRes.Errors)
 			}

@@ -23,7 +23,7 @@ func TestAutoRemediate_FixesOnFirstAttempt(t *testing.T) {
 	autoRemediateFixBuildFailureFunc = func(ctx context.Context, opts FixBuildOpts) error {
 		return nil // fix succeeds
 	}
-	autoRemediateVerifyBuildFunc = func(implPath, repoPath string) (*protocol.VerifyBuildData, error) {
+	autoRemediateVerifyBuildFunc = func(ctx context.Context, implPath, repoPath string) (*protocol.VerifyBuildData, error) {
 		return &protocol.VerifyBuildData{
 			TestPassed: true,
 			LintPassed: true,
@@ -80,7 +80,7 @@ func TestAutoRemediate_FixesOnSecondAttempt(t *testing.T) {
 	autoRemediateFixBuildFailureFunc = func(ctx context.Context, opts FixBuildOpts) error {
 		return nil // always "succeeds" from the fix agent perspective
 	}
-	autoRemediateVerifyBuildFunc = func(implPath, repoPath string) (*protocol.VerifyBuildData, error) {
+	autoRemediateVerifyBuildFunc = func(ctx context.Context, implPath, repoPath string) (*protocol.VerifyBuildData, error) {
 		verifyCallCount++
 		if verifyCallCount == 1 {
 			// First verify: still failing
@@ -147,7 +147,7 @@ func TestAutoRemediate_ExhaustsRetries(t *testing.T) {
 		fixCallCount++
 		return nil
 	}
-	autoRemediateVerifyBuildFunc = func(implPath, repoPath string) (*protocol.VerifyBuildData, error) {
+	autoRemediateVerifyBuildFunc = func(ctx context.Context, implPath, repoPath string) (*protocol.VerifyBuildData, error) {
 		verifyCallCount++
 		// Always still failing
 		return &protocol.VerifyBuildData{
@@ -212,7 +212,7 @@ func TestAutoRemediate_ZeroRetries(t *testing.T) {
 		fixCalled = true
 		return nil
 	}
-	autoRemediateVerifyBuildFunc = func(implPath, repoPath string) (*protocol.VerifyBuildData, error) {
+	autoRemediateVerifyBuildFunc = func(ctx context.Context, implPath, repoPath string) (*protocol.VerifyBuildData, error) {
 		verifyCalled = true
 		return &protocol.VerifyBuildData{TestPassed: true, LintPassed: true}, nil
 	}
@@ -266,7 +266,7 @@ func TestAutoRemediate_EmitsEvents(t *testing.T) {
 	autoRemediateFixBuildFailureFunc = func(ctx context.Context, opts FixBuildOpts) error {
 		return nil
 	}
-	autoRemediateVerifyBuildFunc = func(implPath, repoPath string) (*protocol.VerifyBuildData, error) {
+	autoRemediateVerifyBuildFunc = func(ctx context.Context, implPath, repoPath string) (*protocol.VerifyBuildData, error) {
 		verifyCallCount++
 		if verifyCallCount == 1 {
 			return &protocol.VerifyBuildData{TestPassed: false, LintPassed: true}, nil
@@ -338,7 +338,7 @@ func TestAutoRemediate_EmitsExhaustedEvent(t *testing.T) {
 	autoRemediateFixBuildFailureFunc = func(ctx context.Context, opts FixBuildOpts) error {
 		return nil
 	}
-	autoRemediateVerifyBuildFunc = func(implPath, repoPath string) (*protocol.VerifyBuildData, error) {
+	autoRemediateVerifyBuildFunc = func(ctx context.Context, implPath, repoPath string) (*protocol.VerifyBuildData, error) {
 		return &protocol.VerifyBuildData{TestPassed: false, LintPassed: true}, nil
 	}
 
@@ -397,7 +397,7 @@ func TestAutoRemediate_VerifyBuildSystemError(t *testing.T) {
 		return nil
 	}
 	verifyErr := errors.New("cannot read manifest: file not found")
-	autoRemediateVerifyBuildFunc = func(implPath, repoPath string) (*protocol.VerifyBuildData, error) {
+	autoRemediateVerifyBuildFunc = func(ctx context.Context, implPath, repoPath string) (*protocol.VerifyBuildData, error) {
 		return nil, verifyErr
 	}
 
@@ -447,7 +447,7 @@ func TestAutoRemediate_FixAgentErrorContinues(t *testing.T) {
 	}
 
 	verifyCallCount := 0
-	autoRemediateVerifyBuildFunc = func(implPath, repoPath string) (*protocol.VerifyBuildData, error) {
+	autoRemediateVerifyBuildFunc = func(ctx context.Context, implPath, repoPath string) (*protocol.VerifyBuildData, error) {
 		verifyCallCount++
 		if verifyCallCount >= 2 {
 			return &protocol.VerifyBuildData{TestPassed: true, LintPassed: true}, nil

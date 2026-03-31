@@ -16,8 +16,10 @@ func newMergeAgentsCmd() *cobra.Command {
 		Short: "Merge all agent branches for a wave",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			ctx := cmd.Context()
 			manifestPath := args[0]
 			res, err := protocol.MergeAgents(protocol.MergeAgentsOpts{
+				Ctx:          ctx,
 				ManifestPath: manifestPath,
 				WaveNum:      waveNum,
 				RepoDir:      repoDir,

@@ -164,7 +164,7 @@ func MergeAgents(opts MergeAgentsOpts) (result.Result[MergeAgentsData], error) {
 	mergeTarget := opts.MergeTarget
 	logger := opts.Logger
 	// Load manifest to check if this is a multi-repo wave
-	manifest, err := Load(context.TODO(), manifestPath)
+	manifest, err := Load(opts.Ctx, manifestPath)
 	if err != nil {
 		return result.Result[MergeAgentsData]{}, fmt.Errorf("failed to load manifest: %w", err)
 	}
@@ -216,11 +216,11 @@ func MergeAgents(opts MergeAgentsOpts) (result.Result[MergeAgentsData], error) {
 
 	// If single-repo wave, use optimized single-repo logic
 	if len(repoSet) == 1 {
-		return mergeAgentsSingleRepo(manifestPath, waveNum, absRepoDir, manifest, targetWave, mergeTarget, logger)
+		return mergeAgentsSingleRepo(opts.Ctx, manifestPath, waveNum, absRepoDir, manifest, targetWave, mergeTarget, logger)
 	}
 
 	// Multi-repo wave: merge each repo group separately
-	return mergeAgentsMultiRepo(manifestPath, waveNum, manifest, targetWave, agentRepos, mergeTarget, logger)
+	return mergeAgentsMultiRepo(opts.Ctx, manifestPath, waveNum, manifest, targetWave, agentRepos, mergeTarget, logger)
 }
 
 // buildFileOwnerMap constructs a map of relative file path → agent ID for all
@@ -251,7 +251,7 @@ func buildFileOwnerMap(manifest *IMPLManifest, waveNum int) map[string]string {
 
 // mergeAgentsSingleRepo handles merging when all agents belong to the same repository.
 // When mergeTarget is non-empty, checks out the target branch before the merge loop.
-func mergeAgentsSingleRepo(manifestPath string, waveNum int, repoDir string, manifest *IMPLManifest, targetWave *Wave, mergeTarget string, logger *slog.Logger) (result.Result[MergeAgentsData], error) {
+func mergeAgentsSingleRepo(ctx context.Context, manifestPath string, waveNum int, repoDir string, manifest *IMPLManifest, targetWave *Wave, mergeTarget string, logger *slog.Logger) (result.Result[MergeAgentsData], error) {
 	log := loggerFrom(logger)
 	// H4: PreMergeValidation — verify ownership table consistency before any git operations.
 	if validationErrs := PreMergeValidation(manifest, waveNum); len(validationErrs) > 0 {
@@ -379,7 +379,7 @@ func mergeAgentsSingleRepo(manifestPath string, waveNum int, repoDir string, man
 
 		// Merge succeeded — auto-update completion status (best-effort)
 		status.Success = true
-		if res := UpdateStatus(manifestPath, waveNum, agent.ID, StatusComplete, UpdateStatusOpts{}); res.IsSuccess() {
+		if res := UpdateStatus(ctx, manifestPath, waveNum, agent.ID, StatusComplete, UpdateStatusOpts{}); res.IsSuccess() {
 			status.StatusUpdated = true
 		}
 		data.Merges = append(data.Merges, status)
@@ -396,7 +396,7 @@ func mergeAgentsSingleRepo(manifestPath string, waveNum int, repoDir string, man
 
 // mergeAgentsMultiRepo handles merging when agents span multiple repositories.
 // When mergeTarget is non-empty, checks out the target branch in each repo before merging.
-func mergeAgentsMultiRepo(manifestPath string, waveNum int, manifest *IMPLManifest, targetWave *Wave, agentRepos map[string]string, mergeTarget string, logger *slog.Logger) (result.Result[MergeAgentsData], error) {
+func mergeAgentsMultiRepo(ctx context.Context, manifestPath string, waveNum int, manifest *IMPLManifest, targetWave *Wave, agentRepos map[string]string, mergeTarget string, logger *slog.Logger) (result.Result[MergeAgentsData], error) {
 	log := loggerFrom(logger)
 	// H4: PreMergeValidation — verify ownership table consistency before any git operations.
 	if validationErrs := PreMergeValidation(manifest, waveNum); len(validationErrs) > 0 {
@@ -533,7 +533,7 @@ func mergeAgentsMultiRepo(manifestPath string, waveNum int, manifest *IMPLManife
 
 			// Merge succeeded
 			status.Success = true
-			if res := UpdateStatus(manifestPath, waveNum, agent.ID, StatusComplete, UpdateStatusOpts{}); res.IsSuccess() {
+			if res := UpdateStatus(ctx, manifestPath, waveNum, agent.ID, StatusComplete, UpdateStatusOpts{}); res.IsSuccess() {
 				status.StatusUpdated = true
 			}
 			data.Merges = append(data.Merges, status)

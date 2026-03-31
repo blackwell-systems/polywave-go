@@ -27,9 +27,9 @@ type UpdateStatusData struct {
 // Returns a failure if the agent is not found in the specified wave.
 // Returns a failure if status=complete is requested but no commit is available
 // (neither in opts.Commit nor in the existing report).
-func UpdateStatus(manifestPath string, waveNum int, agentID string, status CompletionStatus, opts UpdateStatusOpts) result.Result[*UpdateStatusData] {
+func UpdateStatus(ctx context.Context, manifestPath string, waveNum int, agentID string, status CompletionStatus, opts UpdateStatusOpts) result.Result[*UpdateStatusData] {
 	// Load manifest
-	manifest, err := Load(context.TODO(), manifestPath)
+	manifest, err := Load(ctx, manifestPath)
 	if err != nil {
 		return result.NewFailure[*UpdateStatusData]([]result.SAWError{{
 			Code:     result.CodeStatusUpdateFailed,
@@ -112,7 +112,7 @@ func UpdateStatus(manifestPath string, waveNum int, agentID string, status Compl
 	manifest.CompletionReports[agentID] = report
 
 	// Save manifest
-	if saveRes := Save(context.TODO(), manifest, manifestPath); saveRes.IsFatal() {
+	if saveRes := Save(ctx, manifest, manifestPath); saveRes.IsFatal() {
 		return result.NewFailure[*UpdateStatusData](saveRes.Errors)
 	}
 

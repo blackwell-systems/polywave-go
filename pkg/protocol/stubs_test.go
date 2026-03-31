@@ -242,7 +242,7 @@ func TestAppendStubReport_Success(t *testing.T) {
 	}
 
 	scanResult := ScanStubs([]string{})
-	res := AppendStubReport(manifestPath, "wave1", scanResult)
+	res := AppendStubReport(context.Background(), manifestPath, "wave1", scanResult)
 	if res.IsFatal() {
 		t.Fatalf("AppendStubReport failed: %v", res.Errors)
 	}
@@ -260,7 +260,7 @@ func TestAppendStubReport_Success(t *testing.T) {
 
 func TestAppendStubReport_FatalOnMissingManifest(t *testing.T) {
 	scanResult := ScanStubs([]string{})
-	res := AppendStubReport("/nonexistent/path/impl.yaml", "wave1", scanResult)
+	res := AppendStubReport(context.Background(), "/nonexistent/path/impl.yaml", "wave1", scanResult)
 	if !res.IsFatal() {
 		t.Error("expected FATAL result when manifest does not exist")
 	}

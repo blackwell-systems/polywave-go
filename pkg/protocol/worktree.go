@@ -42,10 +42,10 @@ type CreateWorktreesData struct {
 // - The IMPL doc cannot be parsed
 // - The specified wave number is not found in the document
 // - Any git worktree add operation fails
-func CreateWorktrees(manifestPath string, waveNum int, repoDir string, logger *slog.Logger) result.Result[CreateWorktreesData] {
+func CreateWorktrees(ctx context.Context, manifestPath string, waveNum int, repoDir string, logger *slog.Logger) result.Result[CreateWorktreesData] {
 	log := loggerFrom(logger)
 	// Load IMPL doc (pure YAML format)
-	doc, err := Load(context.TODO(), manifestPath)
+	doc, err := Load(ctx, manifestPath)
 	if err != nil {
 		return result.NewFailure[CreateWorktreesData]([]result.SAWError{
 			{
@@ -89,7 +89,7 @@ func CreateWorktrees(manifestPath string, waveNum int, repoDir string, logger *s
 	targetWave.BaseCommit = baseCommit
 
 	// Save manifest with base commit recorded
-	if saveRes := Save(context.TODO(), doc, manifestPath); saveRes.IsFatal() {
+	if saveRes := Save(ctx, doc, manifestPath); saveRes.IsFatal() {
 		return result.NewFailure[CreateWorktreesData](saveRes.Errors)
 	}
 

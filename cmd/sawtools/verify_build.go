@@ -16,8 +16,9 @@ func newVerifyBuildCmd() *cobra.Command {
 		Short: "Run test and lint commands from manifest",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			ctx := cmd.Context()
 			manifestPath := args[0]
-			res := protocol.VerifyBuild(manifestPath, repoDir)
+			res := protocol.VerifyBuild(ctx, manifestPath, repoDir)
 			if !res.IsSuccess() {
 				return fmt.Errorf("verify-build: %w", errors.Join(result.ToErrors(res.Errors)...))
 			}

@@ -18,8 +18,9 @@ func newUpdateStatusCmd() *cobra.Command {
 		Short: "Update agent status in manifest",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			ctx := cmd.Context()
 			manifestPath := args[0]
-			res := protocol.UpdateStatus(manifestPath, waveNum, agentID, protocol.CompletionStatus(status), protocol.UpdateStatusOpts{}) // commit not accepted by this command
+			res := protocol.UpdateStatus(ctx, manifestPath, waveNum, agentID, protocol.CompletionStatus(status), protocol.UpdateStatusOpts{}) // commit not accepted by this command
 			if res.IsFatal() {
 				return fmt.Errorf("update-status: %s", res.Errors[0].Message)
 			}

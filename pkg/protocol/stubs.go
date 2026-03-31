@@ -96,8 +96,8 @@ type AppendStubData struct {
 
 // AppendStubReport loads the manifest at manifestPath, stores result under
 // waveKey (e.g. "wave1"), and saves the manifest back to disk.
-func AppendStubReport(manifestPath, waveKey string, scanResult result.Result[ScanStubsData]) result.Result[AppendStubData] {
-	manifest, err := Load(context.TODO(), manifestPath)
+func AppendStubReport(ctx context.Context, manifestPath, waveKey string, scanResult result.Result[ScanStubsData]) result.Result[AppendStubData] {
+	manifest, err := Load(ctx, manifestPath)
 	if err != nil {
 		return result.NewFailure[AppendStubData]([]result.SAWError{
 			result.NewFatal("STUB_APPEND_FAILED", fmt.Sprintf("AppendStubReport: failed to load manifest: %v", err)),
@@ -108,7 +108,7 @@ func AppendStubReport(manifestPath, waveKey string, scanResult result.Result[Sca
 	}
 	scanData := scanResult.GetData()
 	manifest.StubReports[waveKey] = &scanData
-	if saveRes := Save(context.TODO(), manifest, manifestPath); saveRes.IsFatal() {
+	if saveRes := Save(ctx, manifest, manifestPath); saveRes.IsFatal() {
 		msg := ""
 		if len(saveRes.Errors) > 0 {
 			msg = saveRes.Errors[0].Message

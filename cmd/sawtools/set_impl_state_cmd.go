@@ -28,13 +28,14 @@ NOT_SUITABLE
 Output: JSON with previous_state, new_state, committed, commit_sha.`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			ctx := cmd.Context()
 			manifestPath := args[0]
 			newState := protocol.ProtocolState(state)
 			opts := protocol.SetImplStateOpts{
 				Commit:    commit,
 				CommitMsg: commitMsg,
 			}
-			res := protocol.SetImplState(manifestPath, newState, opts)
+			res := protocol.SetImplState(ctx, manifestPath, newState, opts)
 			if res.IsFatal() {
 				return fmt.Errorf("set-impl-state: %s", res.Errors[0].Message)
 			}

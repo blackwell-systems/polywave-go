@@ -30,7 +30,7 @@ waves:
 	}
 
 	// Update status for agent A (provide commit so the complete guard passes)
-	res := UpdateStatus(manifestPath, 1, "A", "complete", UpdateStatusOpts{Commit: "abc123"})
+	res := UpdateStatus(context.Background(), manifestPath,1, "A", "complete", UpdateStatusOpts{Commit: "abc123"})
 	if res.IsFatal() {
 		t.Fatalf("UpdateStatus failed: %+v", res.Errors)
 	}
@@ -95,7 +95,7 @@ completion_reports:
 	}
 
 	// Update status from partial to complete (provide commit so the complete guard passes)
-	res := UpdateStatus(manifestPath, 1, "B", "complete", UpdateStatusOpts{Commit: "def456"})
+	res := UpdateStatus(context.Background(), manifestPath,1, "B", "complete", UpdateStatusOpts{Commit: "def456"})
 	if res.IsFatal() {
 		t.Fatalf("UpdateStatus failed: %+v", res.Errors)
 	}
@@ -154,7 +154,7 @@ waves:
 	}
 
 	// Try to update status for non-existent agent
-	res := UpdateStatus(manifestPath, 1, "Z", "complete", UpdateStatusOpts{})
+	res := UpdateStatus(context.Background(), manifestPath,1, "Z", "complete", UpdateStatusOpts{})
 	if !res.IsFatal() {
 		t.Fatal("Expected fatal result for non-existent agent")
 	}
@@ -182,7 +182,7 @@ waves:
 	}
 
 	// Try to update status for wave 99
-	res := UpdateStatus(manifestPath, 99, "A", "complete", UpdateStatusOpts{})
+	res := UpdateStatus(context.Background(), manifestPath,99, "A", "complete", UpdateStatusOpts{})
 	if !res.IsFatal() {
 		t.Fatal("Expected fatal result for non-existent wave")
 	}
@@ -209,7 +209,7 @@ waves:
 	}
 
 	// No prior completion report, no commit in opts — should fail
-	res := UpdateStatus(manifestPath, 1, "A", StatusComplete, UpdateStatusOpts{})
+	res := UpdateStatus(context.Background(), manifestPath,1, "A", StatusComplete, UpdateStatusOpts{})
 	if !res.IsFatal() {
 		t.Fatal("Expected fatal result when setting complete without a commit")
 	}
@@ -244,7 +244,7 @@ waves:
 	}
 
 	// Provide commit in opts — should succeed
-	res := UpdateStatus(manifestPath, 1, "A", StatusComplete, UpdateStatusOpts{Commit: "abc123"})
+	res := UpdateStatus(context.Background(), manifestPath,1, "A", StatusComplete, UpdateStatusOpts{Commit: "abc123"})
 	if res.IsFatal() {
 		t.Fatalf("UpdateStatus failed: %+v", res.Errors)
 	}
@@ -293,7 +293,7 @@ completion_reports:
 	}
 
 	// No commit in opts but existing report has one — should succeed
-	res := UpdateStatus(manifestPath, 1, "A", StatusComplete, UpdateStatusOpts{})
+	res := UpdateStatus(context.Background(), manifestPath,1, "A", StatusComplete, UpdateStatusOpts{})
 	if res.IsFatal() {
 		t.Fatalf("UpdateStatus failed: %+v", res.Errors)
 	}
@@ -337,7 +337,7 @@ waves:
 	}
 
 	// partial status with no commit — should succeed
-	res := UpdateStatus(manifestPath, 1, "A", StatusPartial, UpdateStatusOpts{})
+	res := UpdateStatus(context.Background(), manifestPath,1, "A", StatusPartial, UpdateStatusOpts{})
 	if res.IsFatal() {
 		t.Fatalf("UpdateStatus failed unexpectedly: %+v", res.Errors)
 	}

@@ -43,7 +43,7 @@ func RunWaveFull(ctx context.Context, opts RunWaveFullOpts) (*RunWaveFullResult,
 	result := &RunWaveFullResult{Wave: opts.WaveNum}
 
 	// Step 1: Create worktrees for all agents in the wave
-	wtRes := protocol.CreateWorktrees(opts.ManifestPath, opts.WaveNum, opts.RepoPath, opts.Logger)
+	wtRes := protocol.CreateWorktrees(ctx, opts.ManifestPath, opts.WaveNum, opts.RepoPath, opts.Logger)
 	if !wtRes.IsSuccess() {
 		return result, fmt.Errorf("create worktrees: %v", wtRes.Errors)
 	}

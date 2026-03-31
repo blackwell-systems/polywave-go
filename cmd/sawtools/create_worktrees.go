@@ -18,8 +18,9 @@ func newCreateWorktreesCmd() *cobra.Command {
 		Short: "Create git worktrees for all agents in a wave",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			ctx := cmd.Context()
 			manifestPath := args[0]
-			res := protocol.CreateWorktrees(manifestPath, waveNum, repoDir, nil)
+			res := protocol.CreateWorktrees(ctx, manifestPath, waveNum, repoDir, nil)
 			if !res.IsSuccess() {
 				return fmt.Errorf("create-worktrees: %w", errors.Join(result.ToErrors(res.Errors)...))
 			}
