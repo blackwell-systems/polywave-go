@@ -64,7 +64,11 @@ func RunScout(ctx context.Context, opts RunScoutOpts, onChunk func(string)) resu
 
 	// E40: Emit scout_launch after validation passes.
 	implSlug := implSlugFromIMPLPath(opts.IMPLOutPath)
-	opts.ObsEmitter.Emit(ctx, observability.NewScoutLaunchEvent(implSlug))
+	if opts.ObsEmitter != nil {
+		if r := opts.ObsEmitter.EmitSync(ctx, observability.NewScoutLaunchEvent(implSlug)); !r.IsSuccess() {
+			loggerFrom(opts.Logger).Warn("engine: scout_launch emit failed", "slug", implSlug, "err", r.Errors)
+		}
+	}
 
 	// Resolve SAW repo path.
 	sawRepo := opts.SAWRepoPath

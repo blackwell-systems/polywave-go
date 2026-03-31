@@ -235,7 +235,11 @@ func StepMergeAgents(ctx context.Context, opts FinalizeWaveOpts, onEvent EventCa
 
 	mergeData := mergeRes.GetData()
 
-	opts.ObsEmitter.Emit(ctx, observability.NewWaveMergeEvent("", opts.WaveNum))
+	if opts.ObsEmitter != nil {
+		if r := opts.ObsEmitter.EmitSync(ctx, observability.NewWaveMergeEvent("", opts.WaveNum)); !r.IsSuccess() {
+			loggerFrom(opts.Logger).Warn("engine: wave_merge emit failed", "wave", opts.WaveNum, "err", r.Errors)
+		}
+	}
 	emitStepEvent(onEvent, stepName, "complete", "")
 	return &StepResult{
 		Step:   stepName,

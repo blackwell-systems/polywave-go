@@ -18,6 +18,7 @@ type EmitData struct {
 // Emitter is a nil-safe, non-blocking wrapper around Store.RecordEvent.
 // All writes happen in a goroutine so they never block the caller.
 // A nil Emitter silently no-ops on every method call.
+// *Emitter satisfies pkg/engine.ObsEmitter (defined there to avoid circular imports).
 type Emitter struct {
 	store Store
 }

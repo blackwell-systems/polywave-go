@@ -24,8 +24,8 @@ type FinalizeWaveOpts struct {
 	RepoPath    string                 // absolute path to the target repository
 	WaveNum     int                    // wave number to finalize
 	MergeTarget string                 // target branch for merge; empty = HEAD (default)
-	ObsEmitter  *observability.Emitter // optional: non-blocking observability emitter
-	Logger      *slog.Logger          // optional: nil falls back to slog.Default()
+	ObsEmitter  ObsEmitter   // optional: non-blocking observability emitter
+	Logger      *slog.Logger // optional: nil falls back to slog.Default()
 
 	// M2 (E25): When true, unconnected exports in the integration report
 	// block the merge with a fatal error. Default (false) preserves the
@@ -645,8 +645,8 @@ type MarkIMPLCompleteOpts struct {
 	IMPLPath   string                 // absolute path to IMPL manifest
 	RepoPath   string                 // absolute path to the target repository
 	Date       string                 // completion date in YYYY-MM-DD format
-	ObsEmitter *observability.Emitter // optional: non-blocking observability emitter
-	Logger     *slog.Logger           // optional: nil falls back to slog.Default()
+	ObsEmitter ObsEmitter   // optional: non-blocking observability emitter
+	Logger     *slog.Logger // optional: nil falls back to slog.Default()
 }
 
 // MarkIMPLComplete writes the completion marker (E15), updates project context (E18),
@@ -689,7 +689,11 @@ func MarkIMPLComplete(ctx context.Context, opts MarkIMPLCompleteOpts) result.Res
 	// Emit impl_complete after successful archival.
 	// Derive the slug from the IMPL path basename (e.g. IMPL-my-feature.yaml → my-feature).
 	implSlug := implSlugFromPath(opts.IMPLPath)
-	opts.ObsEmitter.Emit(ctx, observability.NewImplCompleteEvent(implSlug))
+	if opts.ObsEmitter != nil {
+		if r := opts.ObsEmitter.EmitSync(ctx, observability.NewImplCompleteEvent(implSlug)); !r.IsSuccess() {
+			loggerFrom(opts.Logger).Warn("engine: impl_complete emit failed", "slug", implSlug, "err", r.Errors)
+		}
+	}
 
 	return result.NewSuccess(MarkCompleteData{IMPLPath: opts.IMPLPath, Date: date})
 }

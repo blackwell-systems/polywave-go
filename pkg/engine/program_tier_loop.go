@@ -17,7 +17,7 @@ type TierLoopOpts struct {
 	AutoMode     bool
 	Model        string
 	OnEvent      func(TierLoopEvent)
-	ObsEmitter   *observability.Emitter // optional: non-blocking observability emitter
+	ObsEmitter   ObsEmitter // optional: non-blocking observability emitter
 }
 
 // TierLoopResult captures the outcome of the tier execution loop.
