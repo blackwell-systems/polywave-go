@@ -1,6 +1,7 @@
 package format
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"testing"
@@ -108,7 +109,7 @@ func TestDetectFormatter(t *testing.T) {
 				}
 			}
 
-			got := DetectFormatter(dir)
+			got := DetectFormatter(context.Background(), dir)
 
 			if got.Tool != tc.wantTool {
 				t.Errorf("Tool: got %q, want %q", got.Tool, tc.wantTool)
@@ -130,7 +131,7 @@ func TestDetectFormatter(t *testing.T) {
 }
 
 func TestDetectFormatter_NonexistentDir(t *testing.T) {
-	got := DetectFormatter("/nonexistent/path/that/does/not/exist")
+	got := DetectFormatter(context.Background(), "/nonexistent/path/that/does/not/exist")
 	if got.Tool != "" {
 		t.Errorf("expected zero FormatConfig for nonexistent dir, got Tool=%q", got.Tool)
 	}

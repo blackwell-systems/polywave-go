@@ -1,6 +1,7 @@
 package format
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 )
@@ -26,7 +27,7 @@ type FormatConfig struct {
 //
 // When Command is set on the gate (non-empty), DetectFormatter is bypassed
 // and the caller's explicit Command is used as-is.
-func DetectFormatter(projectRoot string) FormatConfig {
+func DetectFormatter(ctx context.Context, projectRoot string) FormatConfig {
 	// Check go.mod → gofmt
 	if _, err := os.Stat(filepath.Join(projectRoot, "go.mod")); err == nil {
 		return FormatConfig{
