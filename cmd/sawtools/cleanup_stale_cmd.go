@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
@@ -72,7 +73,7 @@ Use --force to skip safety checks for uncommitted changes.`,
 
 			cleanRes := protocol.CleanStaleWorktrees(stale, force)
 			if cleanRes.IsFatal() {
-				return fmt.Errorf("clean stale worktrees: %v", cleanRes.Errors)
+				return fmt.Errorf("clean stale worktrees: %w", errors.Join(sawErrsToErrors(cleanRes.Errors)...))
 			}
 			cleanData := cleanRes.GetData()
 

@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
@@ -17,7 +18,7 @@ func newVerifyBuildCmd() *cobra.Command {
 			manifestPath := args[0]
 			res := protocol.VerifyBuild(manifestPath, repoDir)
 			if !res.IsSuccess() {
-				return fmt.Errorf("verify-build: %v", res.Errors)
+				return fmt.Errorf("verify-build: %w", errors.Join(sawErrsToErrors(res.Errors)...))
 			}
 			result := res.GetData()
 
