@@ -262,3 +262,5 @@ type BackendConfig struct {
   - IMPL doc: docs/IMPL/complete/IMPL-engine-structural-debt.yaml
 - **context-propagation**: completed 2026-03-31, 1 waves, 2 agents
   - IMPL doc: docs/IMPL/complete/IMPL-context-propagation.yaml
+- **protocol-backend-cleanup**: completed 2026-03-31, 1 waves, 2 agents
+  - IMPL doc: docs/IMPL/complete/IMPL-protocol-backend-cleanup.yaml

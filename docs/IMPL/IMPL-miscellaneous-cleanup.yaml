@@ -835,5 +835,11 @@ pre_mortem:
           mitigation: |
             Agent B should add at minimum N018-N050 entries and note the remaining as TODO.
             Partial completion is acceptable and far better than the current state.
+critic_report:
+    verdict: PASS
+    agent_reviews: {}
+    summary: Skipped by operator
+    reviewed_at: "2026-03-31T20:57:41Z"
+    issue_count: 0
 state: SCOUT_PENDING
 injection_method: hook

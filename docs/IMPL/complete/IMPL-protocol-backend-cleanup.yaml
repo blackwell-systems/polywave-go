@@ -1,3 +1,4 @@
+completion_date: "2026-03-31"
 title: Protocol + Backend Cleanup (IMPL 5)
 feature_slug: protocol-backend-cleanup
 verdict: SUITABLE
@@ -597,6 +598,7 @@ waves:
             - pkg/pipeline/types.go
             - pkg/pipeline/pipeline.go
             - pkg/pipeline/saw_steps.go
+      base_commit: 31f22cfb0b9dc9cfe8e21d53d92346e50dedab52
 quality_gates:
     level: standard
     gates:
@@ -612,6 +614,51 @@ quality_gates:
           command: go test ./...
           required: true
           repo: scout-and-wave-go
+completion_reports:
+    A:
+        status: complete
+        branch: saw/protocol-backend-cleanup/wave1-agent-A
+        commit: 2288efa
+        files_changed:
+            - pkg/agent/backend/api/client.go
+            - pkg/agent/backend/bedrock/tools.go
+            - pkg/agent/backend/openai/client.go
+            - pkg/agent/backend/cli/client.go
+        files_created:
+            - pkg/agent/backend/execute_tool.go
+            - pkg/agent/backend/cli/constraint_enforcer.go
+            - pkg/agent/backend/cli/constraint_enforcer_test.go
+        tests_added:
+            - TestCheckConstraints_I1_OwnedFiles
+            - TestCheckConstraints_I1_AllowedPath
+            - TestCheckConstraints_I2_FrozenPath
+            - TestCheckConstraints_I2_NoFreezeTime
+            - TestCheckConstraints_I6_RolePath
+            - TestCheckConstraints_I6_Allowed
+            - TestCheckConstraints_SkipNonWriteTools
+            - TestCheckConstraints_NilConstraints
+        verification: PASS
+        notes: 'Shared ExecuteTool extracted to pkg/agent/backend/execute_tool.go. All three backends updated (api, bedrock, openai). bedrock/tools.go keeps a thin wrapper that delegates to backend.ExecuteTool. CLI post-hoc enforcement added to RunStreamingWithTools: ToolUseEvents recorded unconditionally during stream parse, CheckConstraints called after cmd.Wait() succeeds. Run and RunStreaming have comments noting enforcement is not available on those paths. All 8 tests pass, build and vet clean.'
+    B:
+        status: complete
+        branch: saw/protocol-backend-cleanup/wave1-agent-B
+        commit: 96b3650
+        files_changed:
+            - pkg/protocol/branchname.go
+            - pkg/protocol/types.go
+            - pkg/protocol/types_test.go
+            - pkg/pipeline/types.go
+            - pkg/pipeline/pipeline.go
+            - pkg/pipeline/pipeline_test.go
+        files_created:
+            - pkg/protocol/branchname.go
+        tests_added:
+            - TestScaffoldFileRoundtrip_JSONToYAML
+            - TestScaffoldFileRoundtrip_YAMLToJSON
+            - TestScaffoldFileRoundtrip_ZeroValue
+            - TestScaffoldFileRoundtrip_AllFields
+        verification: PASS
+        notes: 'All three issues complete. ScaffoldFile YAML tag fixed (file->file_path, Issue 16). resolveAgentBranch added to branchname.go (Issue 17, unexported). State.Errors changed to []result.SAWError (Issue 22). pipeline_test.go updated too (vet gate). Out-of-scope: 5 callers not updated (merge_agents.go, commit_verify.go, worktree.go, cleanup.go, completion_validator.go) — resolveAgentBranch is additive, callers still work as-is.'
 pre_mortem:
     overall_risk: low
     rows:
@@ -664,5 +711,5 @@ critic_report:
     summary: Skipped by operator
     reviewed_at: "2026-03-31T20:57:25Z"
     issue_count: 0
-state: "REVIEWED"
+state: COMPLETE
 injection_method: hook
