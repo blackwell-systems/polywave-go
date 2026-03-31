@@ -1,6 +1,7 @@
 package retry_test
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"strings"
@@ -44,7 +45,7 @@ func TestBuildRetryAttempt_Complete(t *testing.T) {
 		t.Fatalf("failed to write test manifest: %v", err)
 	}
 
-	ra, err := retry.BuildRetryAttempt(manifestPath, "A", 2)
+	ra, err := retry.BuildRetryAttempt(context.Background(), manifestPath, "A", 2)
 	if err != nil {
 		t.Fatalf("BuildRetryAttempt() returned error: %v", err)
 	}
@@ -83,7 +84,7 @@ func TestBuildRetryAttempt_ExcerptTruncation(t *testing.T) {
 		t.Fatalf("failed to write test manifest: %v", err)
 	}
 
-	ra, err := retry.BuildRetryAttempt(manifestPath, "A", 1)
+	ra, err := retry.BuildRetryAttempt(context.Background(), manifestPath, "A", 1)
 	if err != nil {
 		t.Fatalf("BuildRetryAttempt() returned error: %v", err)
 	}
@@ -122,7 +123,7 @@ completion_reports:
 		t.Fatalf("failed to write test manifest: %v", err)
 	}
 
-	ra, err := retry.BuildRetryAttempt(manifestPath, "A", 1)
+	ra, err := retry.BuildRetryAttempt(context.Background(), manifestPath, "A", 1)
 	if err != nil {
 		t.Fatalf("BuildRetryAttempt() returned error: %v", err)
 	}
@@ -160,12 +161,28 @@ waves:
 		t.Fatalf("failed to write test manifest: %v", err)
 	}
 
-	_, err := retry.BuildRetryAttempt(manifestPath, "A", 1)
+	_, err := retry.BuildRetryAttempt(context.Background(), manifestPath, "A", 1)
 	if err == nil {
 		t.Fatal("expected error for missing completion report, got nil")
 	}
 	if !strings.Contains(err.Error(), "no completion report found") {
 		t.Errorf("error message %q does not mention missing report", err.Error())
+	}
+}
+
+func TestBuildRetryAttempt_ContextCancelled(t *testing.T) {
+	dir := t.TempDir()
+	manifestPath := filepath.Join(dir, "impl.yaml")
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel() // cancel immediately
+
+	_, err := retry.BuildRetryAttempt(ctx, manifestPath, "A", 1)
+	if err == nil {
+		t.Fatal("expected error for cancelled context, got nil")
+	}
+	if err != context.Canceled {
+		t.Errorf("error = %v; want context.Canceled", err)
 	}
 }
 

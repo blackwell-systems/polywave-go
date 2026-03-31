@@ -474,6 +474,36 @@ func contains(slice []string, item string) bool {
 	return false
 }
 
+// TestRetryLoop_ContextCancelled verifies that Run returns ctx.Err() immediately
+// when the context is already cancelled before the call.
+func TestRetryLoop_ContextCancelled(t *testing.T) {
+	tmpDir := t.TempDir()
+	cfg := RetryConfig{MaxRetries: 2, RepoPath: tmpDir}
+	loop := NewRetryLoop(cfg)
+
+	gate := QualityGateFailure{
+		GateType:    "build",
+		Command:     "go build ./...",
+		Output:      "error",
+		FailedFiles: []string{"pkg/x/x.go"},
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel() // cancel before calling Run
+
+	_, err := loop.Run(ctx, gate, nil)
+	if err == nil {
+		t.Fatal("expected error for cancelled context, got nil")
+	}
+	if err != context.Canceled {
+		t.Errorf("Run error = %v; want context.Canceled", err)
+	}
+	// attempt counter should not have been incremented
+	if loop.attempt != 0 {
+		t.Errorf("attempt = %d; want 0 (cancelled before increment)", loop.attempt)
+	}
+}
+
 // helper: ensures fmt and strings are used.
 var _ = fmt.Sprintf
 var _ = strings.Contains

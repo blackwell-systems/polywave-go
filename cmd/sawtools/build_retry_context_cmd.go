@@ -35,7 +35,7 @@ Exit codes:
 		RunE: func(cmd *cobra.Command, args []string) error {
 			manifestPath := args[0]
 
-			rc, err := retry.BuildRetryAttempt(manifestPath, agentID, attemptNum)
+			rc, err := retry.BuildRetryAttempt(cmd.Context(), manifestPath, agentID, attemptNum)
 			if err != nil {
 				return fmt.Errorf("build-retry-context: %w", err)
 			}

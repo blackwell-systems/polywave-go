@@ -1,6 +1,7 @@
 package retry
 
 import (
+	"context"
 	"fmt"
 	"strings"
 
@@ -32,10 +33,17 @@ const maxExcerptLen = 2000
 // BuildRetryAttempt reads the agent's completion report from the manifest at
 // manifestPath, classifies the error, and returns a populated *RetryAttempt.
 //
+// ctx is checked for cancellation before performing I/O. If ctx is already
+// done when BuildRetryAttempt is called, ctx.Err() is returned immediately.
+//
 // Returns an error when:
+//   - ctx is cancelled or deadline exceeded
 //   - the manifest cannot be loaded
 //   - the agent has no completion report in the manifest
-func BuildRetryAttempt(manifestPath string, agentID string, attemptNum int) (*RetryAttempt, error) {
+func BuildRetryAttempt(ctx context.Context, manifestPath string, agentID string, attemptNum int) (*RetryAttempt, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	m, err := protocol.Load(manifestPath)
 	if err != nil {
 		return nil, fmt.Errorf("retry: failed to load manifest: %w", err)

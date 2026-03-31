@@ -1085,7 +1085,7 @@ func (o *Orchestrator) executeRetryLoop(
 	// Build retry context using retry package (enriched prompt with fix guidance).
 	var promptPrefix string
 	if o.implDocPath != "" {
-		rc, rcErr := retry.BuildRetryAttempt(o.implDocPath, agentSpec.ID, count)
+		rc, rcErr := retry.BuildRetryAttempt(ctx, o.implDocPath, agentSpec.ID, count)
 		if rcErr != nil {
 			o.log().Debug("orchestrator: retry context build (best-effort)", "err", rcErr)
 		} else if rc != nil && rc.PromptText != "" {
