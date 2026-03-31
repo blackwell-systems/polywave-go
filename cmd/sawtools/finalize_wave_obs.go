@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"log/slog"
 
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/observability"
 )
@@ -13,7 +14,11 @@ func emitWaveMerge(emitter *observability.Emitter, implSlug string, waveNum int)
 		return
 	}
 	event := observability.NewWaveMergeEvent(implSlug, waveNum)
-	emitter.Emit(context.Background(), event)
+	if res := emitter.EmitSync(context.Background(), event); res.IsFatal() {
+		slog.Warn("emitWaveMerge: store write failed",
+			"slug", implSlug, "wave", waveNum,
+			"error", res.Errors[0].Message)
+	}
 }
 
 // emitWaveFailed emits a wave_failed observability event.
