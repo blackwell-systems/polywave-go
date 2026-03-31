@@ -1352,6 +1352,7 @@ waves:
           files:
             - pkg/autonomy/config.go
             - cmd/sawtools/daemon_cmd.go
+      base_commit: 6463a33e3f16670a73898cd889c57ad7a36fbc5c
     - number: 3
       agents:
         - id: Q
@@ -1754,6 +1755,201 @@ completion_reports:
             - TestUpdateStatus_ReturnsCorrectNewStatus
         verification: PASS
         notes: Migrated Add, List, Next, UpdateStatus to result.Result[T]. Next returns Fatal with QUEUE_EMPTY instead of nil. Added AddData, ListData, UpdateStatusData payload types. Pre-commit gate (go vet ./...) required fixing callers in pkg/engine/daemon.go, pkg/engine/queue_advance.go, pkg/engine/daemon_test.go, pkg/engine/queue_advance_test.go, and cmd/sawtools/queue_cmd.go — these were out-of-scope per ownership but blocking the commit. The engine files (daemon.go, queue_advance.go) are owned by other wave agents; those agents should be aware their files were updated to maintain compilation.
+    I:
+        status: complete
+        branch: saw/result-type-migration/wave2-agent-I
+        commit: 67f5a53
+        files_changed:
+            - pkg/protocol/memory.go
+            - pkg/protocol/manifest.go
+            - pkg/protocol/manifest_test.go
+            - pkg/protocol/memory_test.go
+            - pkg/protocol/amend.go
+            - pkg/protocol/completion_report.go
+            - pkg/protocol/critic.go
+            - pkg/protocol/full_validate.go
+            - pkg/protocol/gate_populator.go
+            - pkg/protocol/program_tier_prepare.go
+            - pkg/protocol/status_update.go
+            - pkg/protocol/stubs.go
+            - pkg/protocol/worktree.go
+            - pkg/protocol/merge_agents_test.go
+            - pkg/protocol/worktree_test.go
+            - pkg/retry/loop.go
+            - pkg/retry/loop_test.go
+            - pkg/orchestrator/orchestrator.go
+            - pkg/orchestrator/structured_wave_test.go
+            - pkg/scaffold/integration_test.go
+            - pkg/engine/finalize_steps.go
+            - pkg/engine/prepare_agent.go
+            - pkg/engine/run_wave_atomic.go
+            - pkg/engine/runner.go
+            - pkg/engine/runner_wave_structured.go
+            - pkg/engine/scout_correction_loop.go
+            - pkg/engine/resolve_conflicts_test.go
+            - pkg/engine/run_wave_full_test.go
+            - cmd/sawtools/populate_integration_checklist_cmd.go
+            - cmd/sawtools/set_completion_cmd.go
+            - cmd/sawtools/set_injection_method_cmd.go
+            - cmd/sawtools/solve_cmd.go
+            - cmd/sawtools/update_agent_prompt_cmd.go
+            - cmd/sawtools/resolve_impl_cmd_test.go
+        tests_added:
+            - TestSaveProjectMemory_Creates
+            - TestSaveProjectMemory_Roundtrip
+            - TestManifestLoadSave
+            - TestManifestSetCompletionReport
+        verification: PASS
+        notes: Migrated SaveProjectMemory, Save, SetCompletionReport to result.Result[T]. Added SaveMemoryData, SaveManifestData, SetReportData types. All in-package callers (amend, completion_report, critic, full_validate, gate_populator, program_tier_prepare, status_update, stubs, worktree) updated. Out-of-package callers in pkg/retry, pkg/engine, pkg/orchestrator, pkg/scaffold, cmd/sawtools updated to maintain compilation. Full build and all tests pass. Wave 3 engine/orchestrator agents own further migration of these callers.
+    J:
+        status: complete
+        branch: saw/result-type-migration/wave2-agent-J
+        commit: 9297c4b
+        files_changed:
+            - pkg/protocol/conflict_predict.go
+            - pkg/protocol/updater.go
+            - pkg/protocol/conflict_predict_test.go
+            - pkg/protocol/updater_test.go
+            - pkg/orchestrator/orchestrator.go
+            - pkg/engine/runner.go
+            - pkg/engine/finalize_steps.go
+            - cmd/sawtools/update_agent_prompt_cmd.go
+            - cmd/sawtools/finalize_wave_test.go
+        files_created:
+            - pkg/protocol/conflict_predict.go
+            - pkg/protocol/updater.go
+        tests_added:
+            - TestPredictConflictsFromReports_NoConflicts
+            - TestPredictConflictsFromReports_ConflictDetected
+            - TestPredictConflictsFromReports_FilesCreatedConflict
+            - TestPredictConflictsFromReports_IMPLFilesIgnored
+            - TestPredictConflictsFromReports_SawStateFilesIgnored
+            - TestPredictConflictsFromReports_NilManifest
+            - TestPredictConflictsFromReports_WaveNotFound
+            - TestPredictConflictsFromReports_MissingReportSkipped
+            - TestPredictConflictsFromReports_ConflictData_Count
+            - TestPredictConflictsFromReports_IdenticalEditsAllowed
+            - TestPredictConflictsFromReports_DifferingEditsBlocked
+            - TestUpdateAgentPrompt_Success
+            - TestUpdateAgentPrompt_NotFound
+            - TestUpdateAgentPrompt_EmptyID
+            - TestUpdateAgentPrompt_MultiWave
+            - TestUpdateAgentPrompt_PreservesOtherFields
+            - TestUpdateIMPLStatus_NewStateReflectsCompletion
+            - TestUpdateIMPLStatusBytes_Basic
+            - TestUpdateIMPLStatusBytes_Idempotent
+            - TestUpdateIMPLStatusBytes_NoStatusSection
+            - TestUpdateIMPLStatusBytes_EmptyAgentList
+            - TestUpdateIMPLStatus_Fatal_BadPath
+        verification: PASS
+        notes: 'Migrated 3 functions across 2 owned files to result.Result[T]. IMPLStatusData renamed from UpdateStatusData to avoid collision with existing type in status_update.go. Out-of-scope callers minimally adapted: pkg/orchestrator/orchestrator.go, pkg/engine/runner.go, pkg/engine/finalize_steps.go, cmd/sawtools/update_agent_prompt_cmd.go, cmd/sawtools/finalize_wave_test.go. Full test suite passes. 22 tests added/updated.'
+    K:
+        status: complete
+        branch: saw/result-type-migration/wave2-agent-K
+        commit: a2a9bbe
+        files_changed:
+            - pkg/protocol/gates.go
+            - pkg/protocol/merge_log.go
+            - pkg/protocol/gates_test.go
+            - pkg/protocol/merge_log_test.go
+            - pkg/protocol/merge_agents.go
+            - pkg/protocol/merge_agents_test.go
+            - pkg/orchestrator/merge.go
+        tests_added:
+            - TestValidateQualityGate
+            - TestSaveMergeLog_CreatesDirectory
+            - TestSaveMergeLog_WritesJSON
+            - TestAddMergeEntry_AppendsEntry
+            - TestAddMergeEntry_ValidatesInput
+        verification: PASS
+        notes: 'Migrated 3 functions to Result[T]: ValidateQualityGate->Result[ValidateGateData], SaveMergeLog->Result[SaveLogData], AddMergeEntry->Result[AddEntryData]. Added data types. Updated callers in merge_agents.go (unowned, same package — required for build) and orchestrator/merge.go (Agent Q Wave 3 scope — minimal build fix only). Out-of-scope: full orchestrator/merge.go migration (Agent Q Wave 3).'
+    L:
+        status: complete
+        branch: saw/result-type-migration/wave2-agent-L
+        commit: 9c227d3
+        files_changed:
+            - pkg/protocol/freeze.go
+            - pkg/protocol/repo_resolve.go
+            - pkg/protocol/freeze_test.go
+            - pkg/protocol/repo_resolve_test.go
+            - pkg/engine/prepare.go
+            - cmd/sawtools/prepare_wave_test.go
+        tests_added:
+            - TestSetFreezeTimestamp_ContractsFrozenTrue
+            - TestValidateRepoMatch_MismatchesPopulated
+        verification: PASS
+        notes: Migrated SetFreezeTimestamp to result.Result[FreezeData] (ContractsFrozen=true on success) and ValidateRepoMatch to result.Result[ValidateRepoData] (Mismatches slice populated on mismatch). Error codes FREEZE_FAILED and REPO_MISMATCH. All 24 protocol tests pass. Minimal caller fixups applied to pkg/engine/prepare.go and cmd/sawtools/prepare_wave_test.go to unblock pre-commit go vet ./... gate — Agent R should own full engine migration in Wave 3.
+    M:
+        status: complete
+        branch: saw/result-type-migration/wave2-agent-M
+        commit: c877b80
+        files_changed:
+            - pkg/protocol/stubs.go
+            - pkg/protocol/wiring_validation.go
+            - pkg/protocol/integration.go
+            - pkg/protocol/stubs_test.go
+            - pkg/protocol/full_validate_test.go
+            - pkg/protocol/integration_test.go
+            - cmd/sawtools/scan_stubs.go
+            - cmd/sawtools/validate_integration.go
+        tests_added:
+            - TestAppendStubReport_Success
+            - TestAppendStubReport_FatalOnMissingManifest
+            - TestAppendWiringReport_FatalOnMissingManifest
+            - TestAppendIntegrationReport_FatalOnMissingManifest
+        verification: PASS
+        notes: 'All three Append* functions migrated to result.Result[T]. New types: AppendStubData, AppendWiringData, AppendIntegrationData. cmd/sawtools/scan_stubs.go and cmd/sawtools/validate_integration.go fixed minimally to pass pre-commit go vet gate (outside nominal ownership but required by repo-wide lint gate). pkg/engine/finalize_steps.go used _ = pattern so no change needed.'
+    "N":
+        status: complete
+        branch: saw/result-type-migration/wave2-agent-N
+        commit: a5c9668
+        files_changed:
+            - pkg/pipeline/pipeline.go
+            - pkg/pipeline/saw_steps.go
+            - pkg/pipeline/pipeline_test.go
+            - pkg/pipeline/saw_steps_test.go
+        tests_added:
+            - TestPipeline_RunData_StepsExecuted
+            - TestRequiredKey_Missing
+            - TestRequiredKey_Present
+            - TestRequiredKey_NilValues
+        verification: PASS
+        notes: Migrated Run()->result.Result[RunData], executeStep()->result.Result[StepData], requiredKey()->result.Result[KeyData]. Added requiredKeyErr() as a StepFunc-compatible wrapper (StepFunc still returns error). ErrorContinue steps yield PARTIAL; abort/cancel yield FATAL. All 27 tests pass.
+    O:
+        status: complete
+        branch: saw/result-type-migration/wave2-agent-O
+        commit: a694783
+        files_changed:
+            - pkg/observability/emitter.go
+            - pkg/observability/query.go
+            - pkg/observability/emitter_test.go
+            - pkg/observability/query_test.go
+        tests_added:
+            - TestEmitSyncReturnsEventID
+            - TestEmitSyncStoreErrorReturnsFatal
+            - TestEmitSyncNilEmitterReturnsSuccess
+            - TestQueryFunctionReturnsQueryData
+            - TestQueryFunctionEmptyResultReturnsSuccess
+            - TestQueryFunctionStoreErrorReturnsFatal
+        verification: PASS
+        notes: Added EmitData type and EmitSync method to emitter.go; added QueryData type and Query function to query.go. Kept existing async Emit method intact to avoid breaking callers. All 6 new tests pass, all 32 existing tests continue to pass.
+    P:
+        status: complete
+        branch: saw/result-type-migration/wave2-agent-P
+        commit: 934bccd
+        files_changed:
+            - pkg/autonomy/config.go
+            - pkg/autonomy/config_test.go
+            - cmd/sawtools/daemon_cmd.go
+        tests_added:
+            - TestLoadConfig_NoFile
+            - TestLoadConfig_ValidFile
+            - TestLoadConfig_InvalidJSON
+            - TestLoadConfig_MissingAutonomySection
+            - TestSaveConfig_NewFile
+            - TestSaveConfig_PreservesOtherKeys
+        verification: PASS
+        notes: LoadConfig and SaveConfig migrated to result.Result[T]. LoadConfigData.WasDefault=true when file absent or autonomy section missing. SaveConfigData includes ConfigPath and BytesWritten. daemon_cmd.go call site updated. All 13 tests pass (7 pre-existing + 6 updated config tests).
 pre_mortem:
     overall_risk: medium
     rows:
