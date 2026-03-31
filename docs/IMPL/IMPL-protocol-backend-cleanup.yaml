@@ -658,5 +658,11 @@ pre_mortem:
           mitigation: |-
             Agent B greps for `file:` patterns in test YAML within pkg/protocol/ and updates
             any found. The go test suite will catch this immediately at verification.
+critic_report:
+    verdict: PASS
+    agent_reviews: {}
+    summary: Skipped by operator
+    reviewed_at: "2026-03-31T20:57:25Z"
+    issue_count: 0
 state: SCOUT_PENDING
 injection_method: hook
