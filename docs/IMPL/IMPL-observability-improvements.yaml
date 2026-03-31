@@ -578,5 +578,5 @@ critic_report:
     summary: All three agent briefs are accurate against the codebase. Agent A's references to CheckAgentLOCBudget, fileCount accumulator locations, line numbers in complexity.go, and test structure in complexity_test.go are all verified correct. Agent B's four opts struct field names (RunScoutOpts, FinalizeWaveOpts, MarkIMPLCompleteOpts, RunWaveTransactionOpts, TierLoopOpts) and the three Emit call site locations are all accurate; notably, the brief correctly uses TierLoopOpts (not ProgramTierLoopOpts) for program_tier_loop.go. Agent C's ToErrors function signature, the sawErrsToErrors deletion target, all 10 call site locations and counts, and the import status (only cleanup.go already imports pkg/result) are all verified accurate. The two errors flagged in the prior critic_report were misreadings of the brief text and are not actual errors.
     reviewed_at: "2026-03-31T02:46:04Z"
     issue_count: 0
-state: SCOUT_PENDING
+state: "REVIEWED"
 injection_method: hook
