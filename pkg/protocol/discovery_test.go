@@ -1,6 +1,7 @@
 package protocol
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"testing"
@@ -63,7 +64,7 @@ waves:
 	}
 
 	// List IMPLs
-	res := ListIMPLs(tmpDir)
+	res := ListIMPLs(context.Background(), tmpDir)
 	if res.IsFatal() {
 		t.Fatalf("ListIMPLs failed: %+v", res.Errors)
 	}
@@ -116,7 +117,7 @@ func TestListIMPLs_EmptyDir(t *testing.T) {
 	tmpDir := t.TempDir()
 
 	// List IMPLs
-	res := ListIMPLs(tmpDir)
+	res := ListIMPLs(context.Background(), tmpDir)
 	if res.IsFatal() {
 		t.Fatalf("ListIMPLs failed: %+v", res.Errors)
 	}
@@ -133,7 +134,7 @@ func TestListIMPLs_InvalidDir(t *testing.T) {
 	invalidDir := "/nonexistent/path/to/dir"
 
 	// List IMPLs
-	res := ListIMPLs(invalidDir)
+	res := ListIMPLs(context.Background(), invalidDir)
 	if res.IsFatal() {
 		t.Fatalf("ListIMPLs failed: %+v", res.Errors)
 	}
@@ -179,7 +180,7 @@ waves:
 	}
 
 	// List IMPLs
-	res := ListIMPLs(tmpDir)
+	res := ListIMPLs(context.Background(), tmpDir)
 	if res.IsFatal() {
 		t.Fatalf("ListIMPLs failed: %+v", res.Errors)
 	}
@@ -237,7 +238,7 @@ completion_reports:
 	}
 
 	// List IMPLs
-	res := ListIMPLs(tmpDir)
+	res := ListIMPLs(context.Background(), tmpDir)
 	if res.IsFatal() {
 		t.Fatalf("ListIMPLs failed: %+v", res.Errors)
 	}
@@ -289,7 +290,7 @@ waves:
 	}
 
 	// List IMPLs
-	res := ListIMPLs(tmpDir)
+	res := ListIMPLs(context.Background(), tmpDir)
 	if res.IsFatal() {
 		t.Fatalf("ListIMPLs failed: %+v", res.Errors)
 	}
@@ -309,5 +310,59 @@ waves:
 	}
 	if result.IMPLs[2].Path != path1 { // zebra
 		t.Errorf("expected third path to be %s, got %s", path1, result.IMPLs[2].Path)
+	}
+}
+
+func TestListIMPLs_CancelledContext(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel() // cancel immediately
+
+	res := ListIMPLs(ctx, tmpDir)
+	if !res.IsFatal() {
+		t.Error("expected IsFatal() == true for cancelled context, got false")
+	}
+	if len(res.Errors) == 0 {
+		t.Fatal("expected at least one error for cancelled context")
+	}
+	if res.Errors[0].Code != "CANCELLED" {
+		t.Errorf("expected error code 'CANCELLED', got '%s'", res.Errors[0].Code)
+	}
+}
+
+func TestArchiveIMPL_CancelledContext(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	// Create a fake IMPL file to archive
+	src := filepath.Join(tmpDir, "IMPL-test.yaml")
+	if err := os.WriteFile(src, []byte("test"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel() // cancel immediately
+
+	_, err := ArchiveIMPL(ctx, src)
+	if err == nil {
+		t.Error("expected error for cancelled context, got nil")
+	}
+}
+
+func TestArchiveProgram_CancelledContext(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	// Create a fake PROGRAM manifest to archive
+	src := filepath.Join(tmpDir, "PROGRAM-test.yaml")
+	if err := os.WriteFile(src, []byte("test"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel() // cancel immediately
+
+	_, err := ArchiveProgram(ctx, src)
+	if err == nil {
+		t.Error("expected error for cancelled context, got nil")
 	}
 }
