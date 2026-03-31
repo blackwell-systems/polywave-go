@@ -1,6 +1,7 @@
 package protocol
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"strings"
@@ -40,7 +41,7 @@ waves:
 	}
 
 	// Call UpdateContext
-	res := UpdateContext(manifestPath, projectRoot)
+	res := UpdateContext(context.Background(), manifestPath, projectRoot)
 	if res.IsFatal() {
 		t.Fatalf("UpdateContext failed: %+v", res.Errors)
 	}
@@ -127,7 +128,7 @@ waves:
 	}
 
 	// Call UpdateContext
-	res := UpdateContext(manifestPath, projectRoot)
+	res := UpdateContext(context.Background(), manifestPath, projectRoot)
 	if res.IsFatal() {
 		t.Fatalf("UpdateContext failed: %+v", res.Errors)
 	}
@@ -164,7 +165,7 @@ func TestUpdateContext_InvalidRoot(t *testing.T) {
 	projectRoot := "/tmp"
 
 	// Call UpdateContext - should fail
-	res := UpdateContext(manifestPath, projectRoot)
+	res := UpdateContext(context.Background(), manifestPath, projectRoot)
 	if !res.IsFatal() {
 		t.Error("expected fatal result for nonexistent manifest")
 	}
@@ -203,7 +204,7 @@ waves:
 	defer os.Chmod(readOnlyRoot, 0755) // Cleanup
 
 	// Call UpdateContext - should fail
-	res := UpdateContext(manifestPath, readOnlyRoot)
+	res := UpdateContext(context.Background(), manifestPath, readOnlyRoot)
 	if !res.IsFatal() {
 		t.Error("expected fatal result for read-only directory")
 	}
@@ -226,7 +227,7 @@ waves: []
 	}
 
 	// Call UpdateContext
-	res := UpdateContext(manifestPath, projectRoot)
+	res := UpdateContext(context.Background(), manifestPath, projectRoot)
 	if res.IsFatal() {
 		t.Fatalf("UpdateContext failed: %+v", res.Errors)
 	}

@@ -672,7 +672,7 @@ func MarkIMPLComplete(ctx context.Context, opts MarkIMPLCompleteOpts) result.Res
 
 	// E18: Update project context
 	if opts.RepoPath != "" {
-		res := protocol.UpdateContext(opts.IMPLPath, opts.RepoPath)
+		res := protocol.UpdateContext(ctx, opts.IMPLPath, opts.RepoPath)
 		if res.IsFatal() {
 			// Non-fatal: log but continue to archive
 			loggerFrom(opts.Logger).Warn("engine.MarkIMPLComplete: update-context", "msg", res.Errors[0].Message)

@@ -21,9 +21,9 @@ type UpdateContextData struct {
 // UpdateContext appends a completion entry to the project CONTEXT.md file.
 // It loads the manifest to extract feature metadata and appends a completion record per E18 schema.
 // If CONTEXT.md doesn't exist, it creates it with the standard header.
-func UpdateContext(manifestPath string, projectRoot string) result.Result[*UpdateContextData] {
+func UpdateContext(ctx context.Context, manifestPath string, projectRoot string) result.Result[*UpdateContextData] {
 	// Load manifest to get feature metadata
-	manifest, err := Load(context.TODO(), manifestPath)
+	manifest, err := Load(ctx, manifestPath)
 	if err != nil {
 		return result.NewFailure[*UpdateContextData]([]result.SAWError{{
 			Code:     result.CodeContextError,
