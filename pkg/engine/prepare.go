@@ -252,7 +252,7 @@ func PrepareWave(ctx context.Context, opts PrepareWaveOpts) (*PrepareWaveResult,
 	// Step: File existence validation across repos
 	fileWarnings := protocol.ValidateFileExistenceMultiRepo(doc, projectRoot, repos)
 	for _, w := range fileWarnings {
-		if w.Code == "E16_REPO_MISMATCH_SUSPECTED" {
+		if w.Code == result.CodeRepoMismatch {
 			recordStep(res, opts.OnEvent, "file_existence", "failed", w.Message)
 			return res, fmt.Errorf("file existence: %s", w.Message)
 		}

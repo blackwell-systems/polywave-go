@@ -174,7 +174,9 @@ func RunScout(ctx context.Context, opts RunScoutOpts, onChunk func(string)) resu
 	}
 
 	// E40: Emit scout_complete on success.
-	opts.ObsEmitter.Emit(ctx, observability.NewScoutCompleteEvent(implSlug))
+	if opts.ObsEmitter != nil {
+		opts.ObsEmitter.Emit(ctx, observability.NewScoutCompleteEvent(implSlug))
+	}
 
 	return result.NewSuccess(ScoutData{
 		IMPLOutPath: opts.IMPLOutPath,

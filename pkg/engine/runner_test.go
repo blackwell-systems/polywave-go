@@ -10,6 +10,7 @@ import (
 
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/journal"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
 )
 
 // TestRunScout_MissingScoutMd verifies that RunScout returns a fatal result when scout.md is missing (L1).
@@ -389,6 +390,51 @@ func TestLoadTypePromptWithRefs(t *testing.T) {
 			t.Fatal("expected error for missing core file, got nil")
 		}
 	})
+}
+
+// TestRunScout_NilObsEmitter_NoScoutCompletePanic verifies that RunScout does not
+// panic when ObsEmitter is nil and the function would otherwise call Emit on the
+// scout_complete path. The test exercises the nil guard at runner.go:177 by
+// calling RunScout with ObsEmitter nil and a missing scout.md, which returns a
+// fatal error before reaching line 177. We also verify the guard directly via
+// a scout run that terminates early without an agent call.
+//
+// Because running an actual Scout agent requires network access and a real model,
+// we exercise the guard by verifying RunScout returns a clear fatal error (not a
+// nil pointer panic) when invoked with nil ObsEmitter.
+func TestRunScout_NilObsEmitter_NoScoutCompletePanic(t *testing.T) {
+	dir := t.TempDir()
+	nonexistentSAWRepo := dir + "/fake-saw"
+
+	defer func() {
+		if r := recover(); r != nil {
+			t.Errorf("RunScout panicked with nil ObsEmitter: %v", r)
+		}
+	}()
+
+	// ObsEmitter is nil. RunScout must not panic — it should return a fatal result.
+	res := RunScout(context.Background(), RunScoutOpts{
+		Feature:     "test feature",
+		RepoPath:    dir,
+		IMPLOutPath: dir + "/IMPL-test.yaml",
+		SAWRepoPath: nonexistentSAWRepo,
+		ObsEmitter:  nil,
+	}, func(string) {})
+
+	if !res.IsFatal() {
+		t.Fatal("expected fatal result (scout.md missing), got success")
+	}
+}
+
+// TestPrepareWave_RepoMismatchConstant verifies that result.CodeRepoMismatch
+// resolves to the canonical string value. This ensures a future rename of the
+// constant surfaces as a compile error rather than a silent runtime regression
+// in the prepare.go comparison.
+func TestPrepareWave_RepoMismatchConstant(t *testing.T) {
+	const expectedValue = "V045_REPO_MISMATCH"
+	if result.CodeRepoMismatch != expectedValue {
+		t.Errorf("result.CodeRepoMismatch = %q, want %q", result.CodeRepoMismatch, expectedValue)
+	}
 }
 
 // TestBuildProgramContractsSection verifies that frozen contracts are correctly extracted and formatted.

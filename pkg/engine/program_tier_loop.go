@@ -243,7 +243,7 @@ func RunTierLoop(ctx context.Context, opts TierLoopOpts) (*TierLoopResult, error
 
 		if !gateResult.Passed {
 			// E40: Emit tier_gate_failed.
-			opts.ObsEmitter.Emit(ctx, observability.NewTierGateFailedEvent(manifest.ProgramSlug, currentTier, fmt.Sprintf("tier %d gate failed: %d gate(s) did not pass", currentTier, len(gateResult.GateResults))))
+			nilSafeEmit(ctx, opts.ObsEmitter, observability.NewTierGateFailedEvent(manifest.ProgramSlug, currentTier, fmt.Sprintf("tier %d gate failed: %d gate(s) did not pass", currentTier, len(gateResult.GateResults))))
 
 			// Step 11: Auto trigger replan (E34)
 			if opts.AutoMode {
@@ -277,7 +277,7 @@ func RunTierLoop(ctx context.Context, opts TierLoopOpts) (*TierLoopResult, error
 		}
 
 		// E40: Emit tier_gate_passed.
-		opts.ObsEmitter.Emit(ctx, observability.NewTierGatePassedEvent(manifest.ProgramSlug, currentTier))
+		nilSafeEmit(ctx, opts.ObsEmitter, observability.NewTierGatePassedEvent(manifest.ProgramSlug, currentTier))
 
 		// Step 10: Freeze contracts (E30)
 		freezeRes := protocol.FreezeContracts(manifest, currentTier, opts.RepoPath)
@@ -315,7 +315,7 @@ func RunTierLoop(ctx context.Context, opts TierLoopOpts) (*TierLoopResult, error
 					Tier:   currentTier,
 					Detail: fmt.Sprintf("Advancing from tier %d to %d", currentTier, advResult.NextTier),
 				})
-				opts.ObsEmitter.Emit(ctx, observability.NewTierAdvancedEvent(manifest.ProgramSlug, currentTier))
+				nilSafeEmit(ctx, opts.ObsEmitter, observability.NewTierAdvancedEvent(manifest.ProgramSlug, currentTier))
 				result.TiersExecuted++
 			}
 		} else {
@@ -332,7 +332,7 @@ func RunTierLoop(ctx context.Context, opts TierLoopOpts) (*TierLoopResult, error
 				Tier:   currentTier,
 				Detail: fmt.Sprintf("Advancing from tier %d to %d", currentTier, currentTier+1),
 			})
-			opts.ObsEmitter.Emit(ctx, observability.NewTierAdvancedEvent(manifest.ProgramSlug, currentTier))
+			nilSafeEmit(ctx, opts.ObsEmitter, observability.NewTierAdvancedEvent(manifest.ProgramSlug, currentTier))
 			result.TiersExecuted++
 		}
 
@@ -583,5 +583,13 @@ func isCrossImplSerialWaveBlocked(
 func emitEvent(fn func(TierLoopEvent), event TierLoopEvent) {
 	if fn != nil {
 		fn(event)
+	}
+}
+
+// nilSafeEmit calls emitter.Emit only when emitter is non-nil.
+// Mirrors the loggerFrom nil-safe pattern in runner.go.
+func nilSafeEmit(ctx context.Context, emitter ObsEmitter, event observability.Event) {
+	if emitter != nil {
+		emitter.Emit(ctx, event)
 	}
 }
