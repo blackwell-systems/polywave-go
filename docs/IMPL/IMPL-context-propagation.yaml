@@ -1066,6 +1066,7 @@ waves:
           dependencies:
             - F
             - H
+      base_commit: d6d890755e769864d25b270e8ba086c67911ff38
     - number: 4
       agents:
         - id: V
@@ -1643,6 +1644,126 @@ completion_reports:
             - TestArchiveProgram_CancelledContext
         verification: PASS
         notes: 'Core scope: added ctx to ListIMPLs, ArchiveIMPL, ArchiveProgram in pkg/protocol/discovery.go. Also updated 6 out-of-scope caller files (pkg/engine/finalize.go, pkg/engine/mark_program_complete.go, cmd/sawtools/list_impls.go, cmd/sawtools/resolve_impl_cmd.go, cmd/sawtools/close_impl_cmd.go, cmd/sawtools/mark_complete_cmd.go) with minimal ctx threading to satisfy pre-commit go vet ./... gate. 9 tests pass (6 original + 3 new cancellation tests).'
+    O:
+        status: complete
+        branch: saw/context-propagation/wave3-agent-O
+        commit: d8ec88a
+        files_changed:
+            - pkg/protocol/amend.go
+            - pkg/protocol/amend_test.go
+            - cmd/sawtools/amend_impl_cmd.go
+        tests_added:
+            - TestAmendImpl_RejectsComplete
+            - TestAmendImpl_RejectsComplete_SAWMarker
+            - TestAmendImpl_AddWave
+            - TestAmendImpl_AddWave_EmptyWaves
+            - TestAmendImpl_RedirectAgent_RejectsComplete
+            - TestAmendImpl_RedirectAgent_NotFound
+            - TestAmendImpl_RedirectAgent_Success
+            - TestAmendImpl_RedirectAgent_ClearsPartialReport
+            - TestAmendImpl_RedirectAgent_NoBaseCommit
+        verification: PASS
+        notes: Added ctx context.Context to AmendImpl, amendAddWave, and amendRedirectAgent. Replaced context.TODO() with propagated ctx. Updated amend_test.go to pass context.Background(). Wired cmd/sawtools/amend_impl_cmd.go with cmd.Context() as out-of-scope fix to unblock pre-commit go vet gate. All tests pass.
+    P:
+        status: complete
+        branch: saw/context-propagation/wave3-agent-P
+        commit: d4039e7
+        files_changed:
+            - pkg/protocol/critic.go
+            - pkg/protocol/critic_test.go
+            - pkg/engine/critic.go
+            - cmd/sawtools/run_critic_cmd.go
+            - cmd/sawtools/run_critic_cmd_test.go
+        verification: PASS
+        notes: 'Added ctx to WriteCriticReview, WriteCriticReviewResult, GetCriticReview, GetCriticReviewResult. GetCriticReview/Result use _ context.Context (no I/O). Out-of-scope wiring: fixed callers in pkg/engine/critic.go (Wave 6 C2 scope), cmd/sawtools/run_critic_cmd.go and cmd/sawtools/run_critic_cmd_test.go (not in IMPL ownership) to unblock pre-commit vet gate which runs go vet ./.. CriticGatePasses needs no ctx (pure logic).'
+    Q:
+        status: complete
+        branch: saw/context-propagation/wave3-agent-Q
+        commit: a5acba5
+        files_changed:
+            - pkg/protocol/context_update.go
+            - pkg/protocol/context_update_test.go
+            - cmd/sawtools/update_context.go
+            - cmd/sawtools/close_impl_cmd.go
+            - pkg/engine/finalize.go
+        tests_added:
+            - TestUpdateContext_NewFile
+            - TestUpdateContext_ExistingFile
+            - TestUpdateContext_InvalidRoot
+            - TestUpdateContext_ReadOnlyDirectory
+            - TestUpdateContext_ZeroWaves
+        verification: PASS
+        notes: 'Added ctx context.Context to UpdateContext. Load call now passes ctx. Out-of-scope callers wired: cmd/sawtools uses cmd.Context(), pkg/engine/finalize.go passes existing ctx. TestParallelGroupConcurrency in gates_test.go is a pre-existing flaky timing test unrelated to this change.'
+    R:
+        status: complete
+        branch: saw/context-propagation/wave3-agent-R
+        commit: 433c720
+        files_changed:
+            - pkg/protocol/complexity.go
+            - pkg/protocol/conflict.go
+            - pkg/protocol/conflict_predict.go
+            - pkg/protocol/complexity_test.go
+            - pkg/protocol/conflict_test.go
+            - pkg/protocol/conflict_predict_test.go
+            - pkg/protocol/validation.go
+            - pkg/protocol/full_validate.go
+            - pkg/engine/finalize_steps.go
+            - cmd/sawtools/check_conflicts_cmd.go
+            - cmd/sawtools/finalize_wave_test.go
+        verification: PASS
+        notes: Added ctx context.Context to CheckAgentComplexity, CheckAgentLOCBudget, DetectOwnershipConflicts, PredictConflictsFromReports. Out-of-scope callers (validation.go, full_validate.go, finalize_steps.go, check_conflicts_cmd.go) updated with context.TODO() to keep pre-commit lint gate passing. Agent S should replace context.TODO() with propagated context when adding ctx to Validate/FullValidate.
+    S:
+        status: complete
+        branch: saw/context-propagation/wave3-agent-S
+        commit: ebc9638
+        files_changed:
+            - pkg/protocol/dependency_verifier.go
+            - pkg/protocol/dependency_verifier_test.go
+            - pkg/engine/prepare.go
+            - cmd/sawtools/prepare_wave_test.go
+        verification: PASS
+        notes: 'Added ctx context.Context to VerifyDependenciesAvailable. Pre-commit hook enforces repo-wide go vet, so two out-of-scope callers needed minimal wiring: pkg/engine/prepare.go line 221 (owned by Agent E2, Wave 6) and cmd/sawtools/prepare_wave_test.go — both trivially updated to pass ctx through.'
+    T:
+        status: complete
+        branch: saw/context-propagation/wave3-agent-T
+        commit: b4aa8a4
+        files_changed:
+            - pkg/protocol/validation.go
+            - pkg/protocol/full_validate.go
+            - pkg/protocol/full_validate_test.go
+            - cmd/sawtools/validate_cmd.go
+            - cmd/sawtools/pre_wave_validate_cmd.go
+        verification: PASS
+        notes: 'Added ctx to FullValidate and ValidateBytes. Validate(m) left unchanged (pure structural, no I/O, per interface contract). Pre-commit hook runs go vet ./... so two cmd/sawtools callers required minimal updates (context.TODO() at CLI entry points). full_validate_test.go updated to pass context.Background(). Out-of-scope files touched to satisfy pre-commit hook: cmd/sawtools/validate_cmd.go, cmd/sawtools/pre_wave_validate_cmd.go.'
+    U:
+        status: complete
+        branch: saw/context-propagation/wave3-agent-U
+        commit: 1205bea
+        files_changed:
+            - pkg/protocol/extract.go
+            - pkg/protocol/freeze.go
+            - pkg/protocol/extract_yaml_test.go
+            - pkg/protocol/freeze_test.go
+            - cmd/sawtools/extract_context_cmd.go
+            - cmd/sawtools/freeze_check_cmd.go
+            - pkg/engine/prepare.go
+            - pkg/orchestrator/orchestrator.go
+        tests_added:
+            - TestExtractAgentContextFromManifest_Found
+            - TestExtractAgentContextFromManifest_NotFound
+            - TestExtractAgentContextFromManifest_FiltersByAgent
+            - TestCheckFreeze_NoTimestamp
+            - TestCheckFreeze_NoChanges
+            - TestCheckFreeze_ContractsChanged
+            - TestCheckFreeze_ScaffoldsChanged
+            - TestCheckFreeze_BothChanged
+            - TestSetFreezeTimestamp_SetsHash
+            - TestSetFreezeTimestamp_SetsTime
+            - TestCheckFreeze_EmptyCollections
+            - TestCheckFreeze_AddingItems
+            - TestSetFreezeTimestamp_ContractsFrozenTrue
+        verification: PASS
+        notes: 'Added ctx context.Context to ExtractAgentContextFromManifest, SetFreezeTimestamp, and CheckFreeze. All three functions check ctx.Err() at entry for cancellation support. Wired out-of-scope callers: protocol tests use context.Background(), cmd files use context.TODO(), engine/prepare.go uses real ctx already in scope, orchestrator uses context.TODO() matching its existing pattern. All pkg/protocol tests pass (22s). Full repo go build and go vet clean.'
 pre_mortem:
     overall_risk: medium
     rows:
