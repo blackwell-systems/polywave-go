@@ -1,3 +1,4 @@
+completion_date: "2026-03-30"
 title: Observability Improvements
 feature_slug: observability-improvements
 verdict: SUITABLE
@@ -497,6 +498,7 @@ waves:
             - cmd/sawtools/validate_integration.go
             - cmd/sawtools/cleanup_stale_cmd.go
             - cmd/sawtools/verify_commits.go
+      base_commit: e034f587d17852adef0a7f72c99276b06086fc26
 quality_gates:
     level: standard
     gates:
@@ -509,6 +511,54 @@ quality_gates:
         - type: test
           command: go test ./...
           required: true
+completion_reports:
+    A:
+        status: complete
+        branch: saw/observability-improvements/wave1-agent-A
+        commit: 468df40
+        files_changed:
+            - pkg/protocol/complexity.go
+            - pkg/protocol/complexity_test.go
+        tests_added:
+            - TestCheckAgentLOCBudget/agent_with_two_files_totalling_over_2000_lines_—_one_error
+            - TestCheckAgentLOCBudget/single_file_over_budget_—_file_name_and_line_count_in_message
+        verification: PASS
+        notes: All 6 TestCheckAgentLOCBudget sub-tests pass. Added sort import to complexity.go, perFileLOC map for per-file tracking, and strings.Builder message assembly. New single-file sub-test added.
+    B:
+        status: complete
+        branch: saw/observability-improvements/wave1-agent-B
+        commit: 32c6a86
+        files_changed:
+            - pkg/engine/engine.go
+            - pkg/engine/finalize.go
+            - pkg/engine/finalize_steps.go
+            - pkg/engine/runner.go
+            - pkg/engine/run_wave_atomic.go
+            - pkg/engine/program_tier_loop.go
+            - pkg/observability/emitter.go
+        verification: PASS
+        notes: ObsEmitter interface defined in engine.go. All 5 opts structs updated (RunScoutOpts, FinalizeWaveOpts, MarkIMPLCompleteOpts, RunWaveTransactionOpts, TierLoopOpts). 3 sites migrated to EmitSync with nil guards. Removed now-unused observability import from run_wave_atomic.go. All tests pass including pre-existing TestStepMergeAgents_EmitsEvents which panicked before nil guards were added.
+    C:
+        status: complete
+        branch: saw/observability-improvements/wave1-agent-C
+        commit: c9c3060
+        files_changed:
+            - pkg/result/result.go
+            - pkg/result/result_test.go
+            - cmd/sawtools/cleanup.go
+            - cmd/sawtools/scan_stubs.go
+            - cmd/sawtools/run_gates_cmd.go
+            - cmd/sawtools/verify_build.go
+            - cmd/sawtools/create_worktrees.go
+            - cmd/sawtools/validate_integration.go
+            - cmd/sawtools/cleanup_stale_cmd.go
+            - cmd/sawtools/verify_commits.go
+        tests_added:
+            - TestToErrors/nil_input_returns_empty_slice
+            - TestToErrors/single_error_round-trips
+            - TestToErrors/compatible_with_errors.Join
+        verification: PASS
+        notes: Added result.ToErrors to pkg/result/result.go. Deleted sawErrsToErrors from cleanup.go. Updated all 10 call sites across 8 cmd/sawtools files to use result.ToErrors. All tests pass, go vet clean.
 pre_mortem:
     overall_risk: low
     rows:
@@ -578,5 +628,5 @@ critic_report:
     summary: All three agent briefs are accurate against the codebase. Agent A's references to CheckAgentLOCBudget, fileCount accumulator locations, line numbers in complexity.go, and test structure in complexity_test.go are all verified correct. Agent B's four opts struct field names (RunScoutOpts, FinalizeWaveOpts, MarkIMPLCompleteOpts, RunWaveTransactionOpts, TierLoopOpts) and the three Emit call site locations are all accurate; notably, the brief correctly uses TierLoopOpts (not ProgramTierLoopOpts) for program_tier_loop.go. Agent C's ToErrors function signature, the sawErrsToErrors deletion target, all 10 call site locations and counts, and the import status (only cleanup.go already imports pkg/result) are all verified accurate. The two errors flagged in the prior critic_report were misreadings of the brief text and are not actual errors.
     reviewed_at: "2026-03-31T02:46:04Z"
     issue_count: 0
-state: "REVIEWED"
+state: COMPLETE
 injection_method: hook

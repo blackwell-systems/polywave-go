@@ -250,3 +250,5 @@ type BackendConfig struct {
   - IMPL doc: docs/IMPL/complete/IMPL-saw-system-hardening.yaml
 - **post-migration-cleanup**: completed 2026-03-30, 1 waves, 4 agents
   - IMPL doc: docs/IMPL/complete/IMPL-post-migration-cleanup.yaml
+- **observability-improvements**: completed 2026-03-30, 1 waves, 3 agents
+  - IMPL doc: docs/IMPL/complete/IMPL-observability-improvements.yaml
