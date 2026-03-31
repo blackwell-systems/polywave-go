@@ -111,8 +111,7 @@ func FullValidate(manifestPath string, opts FullValidateOpts) result.Result[Full
 	feErrs := ValidateFileExistence(m, opts.RepoPath)
 	errs = append(errs, feErrs...)
 
-	// TODO(saw-system-hardening): wired by Agent B — CheckAgentLOCBudget call goes here
-	// errs = append(errs, CheckAgentLOCBudget(m, opts.RepoPath, 2000)...)
+	errs = append(errs, CheckAgentLOCBudget(m, opts.RepoPath, 2000)...)
 
 	// Step 7: E16 typed-block validation
 	docErrs, docErr := ValidateIMPLDoc(manifestPath)
