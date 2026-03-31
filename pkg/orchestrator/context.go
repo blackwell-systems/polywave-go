@@ -1,6 +1,7 @@
 package orchestrator
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -24,7 +25,8 @@ type ContextMDEntry struct {
 // If the file does not exist, creates it with the canonical schema.
 // Appends entry to the features_completed list.
 // Commits: git commit -m "chore: update docs/CONTEXT.md for {entry.Slug}"
-func UpdateContextMD(repoPath string, entry ContextMDEntry) result.Result[UpdateContextData] {
+func UpdateContextMD(ctx context.Context, repoPath string, entry ContextMDEntry) result.Result[UpdateContextData] {
+	_ = ctx // propagated for future use (e.g., cancellation of git operations)
 	// 1. Auto-fill date if empty.
 	if entry.Date == "" {
 		entry.Date = time.Now().Format("2006-01-02")

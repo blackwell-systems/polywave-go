@@ -17,7 +17,7 @@ func init() {
 
 // executeMergeWave implements the full SAW merge procedure for waveNum.
 // Called by Orchestrator.MergeWave via the mergeWaveFunc variable (set in init()).
-func executeMergeWave(o *Orchestrator, waveNum int) result.Result[MergeData] {
+func executeMergeWave(ctx context.Context, o *Orchestrator, waveNum int) result.Result[MergeData] {
 	// Step 1: Find wave in IMPL doc.
 	wave := o.IMPLDoc().FindWave(waveNum)
 	if wave == nil {
@@ -28,7 +28,7 @@ func executeMergeWave(o *Orchestrator, waveNum int) result.Result[MergeData] {
 	}
 
 	// Step 2: Load manifest and check completion reports; abort if any agent is partial or blocked.
-	manifest, err := protocol.Load(context.TODO(), o.implDocPath)
+	manifest, err := protocol.Load(ctx, o.implDocPath)
 	if err != nil {
 		return result.NewFailure[MergeData]([]result.SAWError{
 			result.NewFatal(result.CodeIMPLParseFailed,

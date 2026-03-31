@@ -429,7 +429,7 @@ func StartWave(ctx context.Context, opts RunWaveOpts, onEvent func(Event)) resul
 
 	publish("run_started", map[string]string{"slug": opts.Slug, "impl_path": opts.IMPLPath})
 
-	orch, err := orchestrator.New(opts.RepoPath, opts.IMPLPath)
+	orch, err := orchestrator.New(ctx, opts.RepoPath, opts.IMPLPath)
 	if err != nil {
 		return fatalf("ENGINE_WAVE_FAILED", fmt.Sprintf("engine.StartWave: %s", err.Error()), err)
 	}
@@ -487,7 +487,7 @@ func StartWave(ctx context.Context, opts RunWaveOpts, onEvent func(Event)) resul
 		}
 		orch.SetWorktreePaths(wtPaths)
 
-		if runRes := orch.RunWave(waveNum); runRes.IsFatal() {
+		if runRes := orch.RunWave(ctx, waveNum); runRes.IsFatal() {
 			errMsg := "RunWave failed"
 			if len(runRes.Errors) > 0 {
 				errMsg = runRes.Errors[0].Message
@@ -531,7 +531,7 @@ func StartWave(ctx context.Context, opts RunWaveOpts, onEvent func(Event)) resul
 			}
 		}
 
-		if mergeRes := orch.MergeWave(waveNum); mergeRes.IsFatal() {
+		if mergeRes := orch.MergeWave(ctx, waveNum); mergeRes.IsFatal() {
 			errMsg := "MergeWave failed"
 			if len(mergeRes.Errors) > 0 {
 				errMsg = mergeRes.Errors[0].Message
@@ -542,7 +542,7 @@ func StartWave(ctx context.Context, opts RunWaveOpts, onEvent func(Event)) resul
 
 		testCmd := orch.IMPLDoc().TestCommand
 		if testCmd != "" {
-			if verRes := orch.RunVerification(testCmd); verRes.IsFatal() {
+			if verRes := orch.RunVerification(ctx, testCmd); verRes.IsFatal() {
 				errMsg := "RunVerification failed"
 				if len(verRes.Errors) > 0 {
 					errMsg = verRes.Errors[0].Message
@@ -588,7 +588,7 @@ func StartWave(ctx context.Context, opts RunWaveOpts, onEvent func(Event)) resul
 			}
 		}
 
-		if statusRes := orch.UpdateIMPLStatus(waveNum); statusRes.IsFatal() {
+		if statusRes := orch.UpdateIMPLStatus(ctx, waveNum); statusRes.IsFatal() {
 			// Non-fatal: log but don't abort.
 			errMsg := "UpdateIMPLStatus failed"
 			if len(statusRes.Errors) > 0 {
@@ -615,7 +615,7 @@ func StartWave(ctx context.Context, opts RunWaveOpts, onEvent func(Event)) resul
 		Waves:   len(waves),
 		Agents:  totalAgents,
 	}
-	if ctxRes := orchestrator.UpdateContextMD(opts.RepoPath, entry); ctxRes.IsFatal() {
+	if ctxRes := orchestrator.UpdateContextMD(ctx, opts.RepoPath, entry); ctxRes.IsFatal() {
 		// Non-fatal: log but don't abort.
 		errMsg := "UpdateContextMD failed"
 		if len(ctxRes.Errors) > 0 {
@@ -905,7 +905,7 @@ func RunSingleWave(ctx context.Context, opts RunWaveOpts, waveNum int, onEvent f
 			result.NewFatal("ENGINE_WAVE_INVALID_OPTS", "engine.RunSingleWave: IMPLPath is required"),
 		})
 	}
-	orch, err := orchestrator.New(opts.RepoPath, opts.IMPLPath)
+	orch, err := orchestrator.New(ctx, opts.RepoPath, opts.IMPLPath)
 	if err != nil {
 		return result.NewFailure[WaveData]([]result.SAWError{
 			result.NewFatal("ENGINE_WAVE_FAILED", fmt.Sprintf("engine.RunSingleWave: %s", err.Error())).WithCause(err),
@@ -937,7 +937,7 @@ func RunSingleWave(ctx context.Context, opts RunWaveOpts, waveNum int, onEvent f
 		orch.SetWorktreePaths(paths)
 	}
 
-	if runRes := orch.RunWave(waveNum); runRes.IsFatal() {
+	if runRes := orch.RunWave(ctx, waveNum); runRes.IsFatal() {
 		if ctx.Err() != nil {
 			return result.NewFailure[WaveData]([]result.SAWError{
 				{Code: "CONTEXT_CANCELLED", Message: "engine.RunSingleWave: context cancelled", Severity: "fatal"},
@@ -963,7 +963,7 @@ func RunSingleAgent(ctx context.Context, opts RunWaveOpts, waveNum int, agentLet
 			result.NewFatal("ENGINE_AGENT_INVALID_OPTS", "engine.RunSingleAgent: IMPLPath is required"),
 		})
 	}
-	orch, err := orchestrator.New(opts.RepoPath, opts.IMPLPath)
+	orch, err := orchestrator.New(ctx, opts.RepoPath, opts.IMPLPath)
 	if err != nil {
 		return result.NewFailure[AgentData]([]result.SAWError{
 			result.NewFatal("ENGINE_AGENT_FAILED", fmt.Sprintf("engine.RunSingleAgent: %s", err.Error())).WithCause(err),
@@ -992,7 +992,7 @@ func RunSingleAgent(ctx context.Context, opts RunWaveOpts, waveNum int, agentLet
 		}
 	}
 
-	if agentRes := orch.RunAgent(waveNum, agentLetter, promptPrefix); agentRes.IsFatal() {
+	if agentRes := orch.RunAgent(ctx, waveNum, agentLetter, promptPrefix); agentRes.IsFatal() {
 		if ctx.Err() != nil {
 			return result.NewFailure[AgentData]([]result.SAWError{
 				{Code: "CONTEXT_CANCELLED", Message: "engine.RunSingleAgent: context cancelled", Severity: "fatal"},
@@ -1017,7 +1017,7 @@ func MergeWave(ctx context.Context, opts RunMergeOpts) result.Result[MergeData] 
 			result.NewFatal("ENGINE_MERGE_INVALID_OPTS", "engine.MergeWave: IMPLPath is required"),
 		})
 	}
-	orch, err := orchestrator.New(opts.RepoPath, opts.IMPLPath)
+	orch, err := orchestrator.New(ctx, opts.RepoPath, opts.IMPLPath)
 	if err != nil {
 		return result.NewFailure[MergeData]([]result.SAWError{
 			result.NewFatal("ENGINE_MERGE_FAILED", fmt.Sprintf("engine.MergeWave: %s", err.Error())).WithCause(err),
@@ -1025,7 +1025,7 @@ func MergeWave(ctx context.Context, opts RunMergeOpts) result.Result[MergeData] 
 	}
 
 	// Merge the wave
-	if mergeRes := orch.MergeWave(opts.WaveNum); mergeRes.IsFatal() {
+	if mergeRes := orch.MergeWave(ctx, opts.WaveNum); mergeRes.IsFatal() {
 		msg := "MergeWave failed"
 		if len(mergeRes.Errors) > 0 {
 			msg = mergeRes.Errors[0].Message
@@ -1071,13 +1071,13 @@ func RunVerification(ctx context.Context, opts RunVerificationOpts) result.Resul
 	if testCmd == "" {
 		testCmd = "go test ./..."
 	}
-	orch, err := orchestrator.New(opts.RepoPath, "")
+	orch, err := orchestrator.New(ctx, opts.RepoPath, "")
 	if err != nil {
 		return result.NewFailure[VerificationData]([]result.SAWError{
 			result.NewFatal("ENGINE_VERIFICATION_FAILED", fmt.Sprintf("engine.RunVerification: %s", err.Error())).WithCause(err),
 		})
 	}
-	if verRes := orch.RunVerification(testCmd); verRes.IsFatal() {
+	if verRes := orch.RunVerification(ctx, testCmd); verRes.IsFatal() {
 		if ctx.Err() != nil {
 			return result.NewFailure[VerificationData]([]result.SAWError{
 				{Code: "CONTEXT_CANCELLED", Message: "engine.RunVerification: context cancelled", Severity: "fatal"},
@@ -1427,7 +1427,7 @@ func startWaveWithGate(ctx context.Context, opts RunWaveOpts, onEvent func(Event
 		onEvent(Event{Event: event, Data: data})
 	}
 
-	orch, err := orchestrator.New(opts.RepoPath, opts.IMPLPath)
+	orch, err := orchestrator.New(ctx, opts.RepoPath, opts.IMPLPath)
 	if err != nil {
 		return fmt.Errorf("startWaveWithGate: %w", err)
 	}
@@ -1445,13 +1445,13 @@ func startWaveWithGate(ctx context.Context, opts RunWaveOpts, onEvent func(Event
 	for i, wave := range waves {
 		waveNum := wave.Number
 
-		if runRes := orch.RunWave(waveNum); runRes.IsFatal() {
+		if runRes := orch.RunWave(ctx, waveNum); runRes.IsFatal() {
 			if len(runRes.Errors) > 0 {
 				return fmt.Errorf("%s", runRes.Errors[0].Message)
 			}
 			return fmt.Errorf("RunWave failed")
 		}
-		if mergeRes := orch.MergeWave(waveNum); mergeRes.IsFatal() {
+		if mergeRes := orch.MergeWave(ctx, waveNum); mergeRes.IsFatal() {
 			if len(mergeRes.Errors) > 0 {
 				return fmt.Errorf("%s", mergeRes.Errors[0].Message)
 			}
@@ -1459,7 +1459,7 @@ func startWaveWithGate(ctx context.Context, opts RunWaveOpts, onEvent func(Event
 		}
 		testCmd := orch.IMPLDoc().TestCommand
 		if testCmd != "" {
-			if verRes := orch.RunVerification(testCmd); verRes.IsFatal() {
+			if verRes := orch.RunVerification(ctx, testCmd); verRes.IsFatal() {
 				if len(verRes.Errors) > 0 {
 					return fmt.Errorf("%s", verRes.Errors[0].Message)
 				}
@@ -1503,7 +1503,7 @@ func startWaveWithGate(ctx context.Context, opts RunWaveOpts, onEvent func(Event
 			}
 		}
 
-		_ = orch.UpdateIMPLStatus(waveNum)
+		_ = orch.UpdateIMPLStatus(ctx, waveNum)
 
 		if i < len(waves)-1 && gateCh != nil {
 			nextWave := waves[i+1].Number

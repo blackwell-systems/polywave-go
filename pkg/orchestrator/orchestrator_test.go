@@ -95,7 +95,7 @@ quality_gates:
 		t.Fatalf("failed to write IMPL manifest: %v", err)
 	}
 
-	o, err := New("/repo", implPath)
+	o, err := New(context.Background(), "/repo", implPath)
 	if err != nil {
 		t.Fatalf("New returned error: %v", err)
 	}
@@ -115,7 +115,7 @@ quality_gates:
 func TestRunWaveNilDoc(t *testing.T) {
 	// Orchestrator with a doc that has waves defined — request a non-existent wave.
 	o := makeOrchWithWave(1, "A")
-	res := o.RunWave(99)
+	res := o.RunWave(context.Background(), 99)
 	if !res.IsFatal() {
 		t.Fatal("expected failure for missing wave 99, got success")
 	}
@@ -145,7 +145,7 @@ quality_gates:
 		t.Fatalf("failed to write IMPL manifest: %v", err)
 	}
 
-	o, err := New("/repo", implPath)
+	o, err := New(context.Background(), "/repo", implPath)
 	if err != nil {
 		t.Fatalf("New returned error: %v", err)
 	}
@@ -183,13 +183,13 @@ func TestMergeWave_DelegatesTo_mergeWaveFunc(t *testing.T) {
 	t.Cleanup(func() { mergeWaveFunc = orig })
 
 	var gotWave int
-	mergeWaveFunc = func(_ *Orchestrator, waveNum int) result.Result[MergeData] {
+	mergeWaveFunc = func(_ context.Context, _ *Orchestrator, waveNum int) result.Result[MergeData] {
 		gotWave = waveNum
 		return result.NewSuccess(MergeData{WaveNum: waveNum})
 	}
 
 	o := makeOrch()
-	if res := o.MergeWave(3); res.IsFatal() {
+	if res := o.MergeWave(context.Background(), 3); res.IsFatal() {
 		t.Fatalf("MergeWave returned failure: %v", res.Errors)
 	}
 	if gotWave != 3 {
@@ -203,13 +203,13 @@ func TestRunVerification_DelegatesTo_runVerificationFunc(t *testing.T) {
 	t.Cleanup(func() { runVerificationFunc = orig })
 
 	var gotCmd string
-	runVerificationFunc = func(_ *Orchestrator, cmd string) result.Result[VerificationData] {
+	runVerificationFunc = func(_ context.Context, _ *Orchestrator, cmd string) result.Result[VerificationData] {
 		gotCmd = cmd
 		return result.NewSuccess(VerificationData{TestCommand: cmd})
 	}
 
 	o := makeOrch()
-	if res := o.RunVerification("go test ./..."); res.IsFatal() {
+	if res := o.RunVerification(context.Background(), "go test ./..."); res.IsFatal() {
 		t.Fatalf("RunVerification returned failure: %v", res.Errors)
 	}
 	if gotCmd != "go test ./..." {
@@ -221,7 +221,7 @@ func TestRunVerification_DelegatesTo_runVerificationFunc(t *testing.T) {
 // requested wave number is absent from the IMPL doc.
 func TestRunWave_WaveNotFound(t *testing.T) {
 	o := makeOrchWithWave(1, "A", "B")
-	res := o.RunWave(99)
+	res := o.RunWave(context.Background(), 99)
 	if !res.IsFatal() {
 		t.Fatal("expected failure for missing wave 99, got success")
 	}
@@ -287,7 +287,7 @@ func TestRunWave_LaunchesAllAgents(t *testing.T) {
 	}
 	o := newFromDoc(doc, "/repo", "/repo/IMPL.md")
 
-	if res := o.RunWave(1); res.IsFatal() {
+	if res := o.RunWave(context.Background(), 1); res.IsFatal() {
 		t.Fatalf("RunWave returned unexpected failure: %v", res.Errors)
 	}
 
@@ -344,7 +344,7 @@ func TestRunWave_ReturnsErrorOnAgentFailure(t *testing.T) {
 	}
 	o := newFromDoc(doc, "/repo", "/repo/IMPL.md")
 
-	res := o.RunWave(1)
+	res := o.RunWave(context.Background(), 1)
 	if !res.IsFatal() {
 		t.Fatal("expected failure when agent B fails, got success")
 	}
@@ -513,7 +513,7 @@ func TestSetEventPublisher_NilPublisher_NoOp(t *testing.T) {
 
 	o := makeOrchWithWave(1, "A")
 
-	if res := o.RunWave(1); res.IsFatal() {
+	if res := o.RunWave(context.Background(), 1); res.IsFatal() {
 		t.Fatalf("RunWave with nil publisher returned unexpected failure: %v", res.Errors)
 	}
 }
@@ -558,7 +558,7 @@ func TestPublish_EmitsAgentStarted(t *testing.T) {
 	o := makeOrchWithWave(1, "A")
 	o.SetEventPublisher(publisher)
 
-	if res := o.RunWave(1); res.IsFatal() {
+	if res := o.RunWave(context.Background(), 1); res.IsFatal() {
 		t.Fatalf("RunWave returned unexpected failure: %v", res.Errors)
 	}
 
@@ -703,7 +703,7 @@ func TestLaunchAgent_PollsWorktreeIMPLDoc(t *testing.T) {
 	}
 	o := newFromDoc(doc, repoPath, implDocPath)
 
-	if res := o.RunWave(1); res.IsFatal() {
+	if res := o.RunWave(context.Background(), 1); res.IsFatal() {
 		t.Fatalf("RunWave returned unexpected failure: %v", res.Errors)
 	}
 
@@ -767,7 +767,7 @@ func TestLaunchAgentE23FallbackOnExtractError(t *testing.T) {
 	// Use a non-existent implDocPath so ExtractAgentContext always errors.
 	o := newFromDoc(doc, "/repo", "/nonexistent/IMPL.md")
 
-	if res := o.RunWave(1); res.IsFatal() {
+	if res := o.RunWave(context.Background(), 1); res.IsFatal() {
 		t.Fatalf("RunWave returned unexpected failure: %v", res.Errors)
 	}
 
@@ -826,7 +826,7 @@ func TestLaunchAgentE19BlockedEvent(t *testing.T) {
 		mu.Unlock()
 	})
 
-	if res := o.RunWave(1); res.IsFatal() {
+	if res := o.RunWave(context.Background(), 1); res.IsFatal() {
 		t.Fatalf("RunWave returned unexpected failure: %v", res.Errors)
 	}
 
@@ -920,7 +920,7 @@ func TestExecuteRetryLoop_TransientRetries(t *testing.T) {
 	})
 
 	// RunWave should return success because the retry succeeds.
-	if res := o.RunWave(1); res.IsFatal() {
+	if res := o.RunWave(context.Background(), 1); res.IsFatal() {
 		t.Fatalf("RunWave returned failure, want success: %v", res.Errors)
 	}
 
@@ -1084,7 +1084,7 @@ func TestRunWave_AgentPrioritization(t *testing.T) {
 
 	o := makeOrchWithWave(1, "A", "B", "C")
 
-	if res := o.RunWave(1); res.IsFatal() {
+	if res := o.RunWave(context.Background(), 1); res.IsFatal() {
 		t.Fatalf("RunWave returned failure: %v", res.Errors)
 	}
 
@@ -1163,7 +1163,7 @@ func TestRunWave_AgentPrioritizedEvent(t *testing.T) {
 		mu.Unlock()
 	})
 
-	if res := o.RunWave(1); res.IsFatal() {
+	if res := o.RunWave(context.Background(), 1); res.IsFatal() {
 		t.Fatalf("RunWave returned failure: %v", res.Errors)
 	}
 

@@ -124,13 +124,13 @@ const MaxTimeoutRetries = 1
 
 // mergeWaveFunc is replaced by merge.go via init().
 // Default no-op for compilation.
-var mergeWaveFunc = func(o *Orchestrator, waveNum int) result.Result[MergeData] {
+var mergeWaveFunc = func(ctx context.Context, o *Orchestrator, waveNum int) result.Result[MergeData] {
 	return result.NewSuccess(MergeData{WaveNum: waveNum})
 }
 
 // runVerificationFunc is replaced by verification.go via init().
 // Default no-op for compilation.
-var runVerificationFunc = func(o *Orchestrator, testCommand string) result.Result[VerificationData] {
+var runVerificationFunc = func(ctx context.Context, o *Orchestrator, testCommand string) result.Result[VerificationData] {
 	return result.NewSuccess(VerificationData{TestCommand: testCommand})
 }
 
@@ -146,7 +146,7 @@ func (o *Orchestrator) implSlug() string {
 	if o.implDocPath == "" {
 		return ""
 	}
-	manifest, err := protocol.Load(context.TODO(), o.implDocPath)
+	manifest, err := protocol.Load(context.Background(), o.implDocPath)
 	if err != nil {
 		return ""
 	}
@@ -488,11 +488,11 @@ func (o *Orchestrator) publish(ev OrchestratorEvent) {
 
 // New creates an Orchestrator by loading the IMPL doc at implDocPath.
 // Initial state is ScoutPending.
-func New(repoPath string, implDocPath string) (*Orchestrator, error) {
+func New(ctx context.Context, repoPath string, implDocPath string) (*Orchestrator, error) {
 	var doc *protocol.IMPLManifest
 	if implDocPath != "" {
 		var err error
-		doc, err = protocol.Load(context.TODO(), implDocPath)
+		doc, err = protocol.Load(ctx, implDocPath)
 		if err != nil {
 			return nil, fmt.Errorf("orchestrator.New: %w", err)
 		}
@@ -553,7 +553,7 @@ func (o *Orchestrator) TransitionTo(newState protocol.ProtocolState) result.Resu
 // RunWave executes all agents in wave waveNum concurrently. Each agent receives
 // its own git worktree and the backend handles all LLM interaction internally.
 // RunWave blocks until all agents complete (or one fails), then returns.
-func (o *Orchestrator) RunWave(waveNum int) result.Result[WaveData] {
+func (o *Orchestrator) RunWave(ctx context.Context, waveNum int) result.Result[WaveData] {
 	if o.implDoc == nil {
 		return result.NewFailure[WaveData]([]result.SAWError{
 			result.NewFatal(result.CodeIMPLNotFound, "orchestrator.RunWave: no IMPL doc loaded"),
@@ -609,7 +609,7 @@ func (o *Orchestrator) RunWave(waveNum int) result.Result[WaveData] {
 	defaultRunner := newRunnerFunc(defaultBackend, wm)
 
 	// Launch all agents concurrently and collect the first error.
-	eg, ctx := errgroup.WithContext(context.Background())
+	eg, ctx := errgroup.WithContext(ctx)
 
 	// Prioritize agent launch order based on dependency graph critical path depth.
 	agentOrder := prioritizeAgentsFunc(o.implDoc, waveNum)
@@ -652,7 +652,7 @@ func (o *Orchestrator) RunWave(waveNum int) result.Result[WaveData] {
 
 		eg.Go(func() error {
 			// Build per-agent constraints from the IMPL manifest (I1/I2/I5/I6).
-			constraints := buildWaveConstraints(o.implDocPath, protoAgent.ID)
+			constraints := buildWaveConstraints(ctx, o.implDocPath, protoAgent.ID)
 
 			runner := defaultRunner
 			// Per-agent model override or constraints: create a separate backend.
@@ -786,9 +786,9 @@ func (o *Orchestrator) launchAgent(
 	})
 
 	// E23: Construct per-agent context payload instead of passing full IMPL doc prompt.
-	manifest, err := protocol.Load(context.TODO(), o.implDocPath)
+	manifest, err := protocol.Load(ctx, o.implDocPath)
 	if err == nil {
-		if contextPayload, extractErr := protocol.ExtractAgentContextFromManifest(context.TODO(), manifest, agentSpec.ID); extractErr == nil {
+		if contextPayload, extractErr := protocol.ExtractAgentContextFromManifest(ctx, manifest, agentSpec.ID); extractErr == nil {
 			if jsonBytes, marshalErr := json.Marshal(contextPayload); marshalErr == nil {
 				agentSpec.Task = string(jsonBytes)
 			} else {
@@ -873,7 +873,7 @@ func (o *Orchestrator) launchAgent(
 		// BUG-4 fix: Before synthesizing "complete", check if a previous retry wrote
 		// a partial/blocked report to the main IMPL doc. If so, reuse it rather than
 		// masking the failure with a spurious "complete".
-		if savedManifest, checkErr := protocol.Load(context.TODO(), o.implDocPath); checkErr == nil {
+		if savedManifest, checkErr := protocol.Load(ctx, o.implDocPath); checkErr == nil {
 			if cr, ok := savedManifest.CompletionReports[agentSpec.ID]; ok &&
 				(cr.Status == protocol.StatusPartial || cr.Status == protocol.StatusBlocked) {
 				report = &cr
@@ -936,7 +936,7 @@ func (o *Orchestrator) launchAgent(
 			builder = builder.WithFailureType(report.FailureType)
 		}
 
-		if saveErr := protocol.WithCompletionReportLock(context.TODO(), func(ctx context.Context) error {
+		if saveErr := protocol.WithCompletionReportLock(ctx, func(ctx context.Context) error {
 			manifest, loadErr := protocol.Load(ctx, o.implDocPath)
 			if loadErr != nil {
 				return loadErr
@@ -1174,7 +1174,7 @@ func autoCommitWorktree(wtPath string, waveNum int, agentLetter string, baseSHA 
 // by letter. This is used for single-agent reruns. If promptPrefix is non-empty,
 // it is prepended to the agent's task prompt (e.g. scope-reduction hints for
 // timeout reruns).
-func (o *Orchestrator) RunAgent(waveNum int, agentLetter string, promptPrefix string) result.Result[AgentData] {
+func (o *Orchestrator) RunAgent(ctx context.Context, waveNum int, agentLetter string, promptPrefix string) result.Result[AgentData] {
 	if o.implDoc == nil {
 		return result.NewFailure[AgentData]([]result.SAWError{
 			result.NewFatal(result.CodeIMPLNotFound, "orchestrator.RunAgent: no IMPL doc loaded"),
@@ -1237,7 +1237,7 @@ func (o *Orchestrator) RunAgent(waveNum int, agentLetter string, promptPrefix st
 	}
 	runner := newRunnerFunc(b, wm)
 
-	if launchErr := o.launchAgent(context.Background(), runner, wm, waveNum, spec); launchErr != nil {
+	if launchErr := o.launchAgent(ctx, runner, wm, waveNum, spec); launchErr != nil {
 		return result.NewFailure[AgentData]([]result.SAWError{
 			result.NewFatal(result.CodeAgentLaunchFailed, launchErr.Error()),
 		})
@@ -1247,20 +1247,20 @@ func (o *Orchestrator) RunAgent(waveNum int, agentLetter string, promptPrefix st
 
 // MergeWave merges the worktrees for wave waveNum.
 // Implementation is provided by merge.go via mergeWaveFunc.
-func (o *Orchestrator) MergeWave(waveNum int) result.Result[MergeData] {
-	return mergeWaveFunc(o, waveNum)
+func (o *Orchestrator) MergeWave(ctx context.Context, waveNum int) result.Result[MergeData] {
+	return mergeWaveFunc(ctx, o, waveNum)
 }
 
 // RunVerification runs the post-merge test command.
 // Implementation is provided by verification.go via runVerificationFunc.
-func (o *Orchestrator) RunVerification(testCommand string) result.Result[VerificationData] {
-	return runVerificationFunc(o, testCommand)
+func (o *Orchestrator) RunVerification(ctx context.Context, testCommand string) result.Result[VerificationData] {
+	return runVerificationFunc(ctx, o, testCommand)
 }
 
 // UpdateIMPLStatus ticks the Status table checkboxes in the IMPL doc for all
 // agents in waveNum that reported status: complete. Non-fatal: returns success
 // if no Status section found. Returns failure only on file I/O failure.
-func (o *Orchestrator) UpdateIMPLStatus(waveNum int) result.Result[UpdateData] {
+func (o *Orchestrator) UpdateIMPLStatus(ctx context.Context, waveNum int) result.Result[UpdateData] {
 	// 1. Find wave in o.implDoc.Waves by waveNum. If not found, return success.
 	var wave *protocol.Wave
 	for i := range o.implDoc.Waves {
@@ -1275,7 +1275,7 @@ func (o *Orchestrator) UpdateIMPLStatus(waveNum int) result.Result[UpdateData] {
 
 	// 2. Load manifest and check completion reports.
 	//    If report not found or status != StatusComplete, skip.
-	manifest, err := protocol.Load(context.TODO(), o.implDocPath)
+	manifest, err := protocol.Load(ctx, o.implDocPath)
 	if err != nil {
 		return result.NewSuccess(UpdateData{WaveNum: waveNum, CompletedAgents: nil}) // Cannot determine completed agents without manifest
 	}
@@ -1310,8 +1310,8 @@ func (o *Orchestrator) UpdateIMPLStatus(waveNum int) result.Result[UpdateData] {
 // buildWaveConstraints loads the IMPL manifest and builds per-agent constraints
 // for wave-role enforcement (I1 ownership, I2 freeze, I5 commit tracking).
 // Returns nil if the manifest can't be loaded (backward compatible, no enforcement).
-func buildWaveConstraints(implPath string, agentID string) *tools.Constraints {
-	manifest, err := protocol.Load(context.TODO(), implPath)
+func buildWaveConstraints(ctx context.Context, implPath string, agentID string) *tools.Constraints {
+	manifest, err := protocol.Load(ctx, implPath)
 	if err != nil || manifest == nil {
 		return nil
 	}

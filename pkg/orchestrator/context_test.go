@@ -1,6 +1,7 @@
 package orchestrator
 
 import (
+	"context"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -45,7 +46,7 @@ func TestUpdateContextMDCreatesFile(t *testing.T) {
 		Date:    "2026-03-08",
 	}
 
-	if res := UpdateContextMD(dir, entry); !res.IsSuccess() {
+	if res := UpdateContextMD(context.Background(), dir, entry); !res.IsSuccess() {
 		t.Fatalf("UpdateContextMD returned failure: %v", res.Errors)
 	}
 
@@ -96,10 +97,10 @@ func TestUpdateContextMDAppendsToExisting(t *testing.T) {
 		Date:    "2026-03-08",
 	}
 
-	if res := UpdateContextMD(dir, entry1); !res.IsSuccess() {
+	if res := UpdateContextMD(context.Background(), dir, entry1); !res.IsSuccess() {
 		t.Fatalf("first UpdateContextMD returned failure: %v", res.Errors)
 	}
-	if res := UpdateContextMD(dir, entry2); !res.IsSuccess() {
+	if res := UpdateContextMD(context.Background(), dir, entry2); !res.IsSuccess() {
 		t.Fatalf("second UpdateContextMD returned failure: %v", res.Errors)
 	}
 

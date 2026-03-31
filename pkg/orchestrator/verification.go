@@ -1,6 +1,7 @@
 package orchestrator
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"os/exec"
@@ -16,7 +17,8 @@ func init() {
 
 // runVerification runs go vet then testCommand in o.repoPath.
 // Returns failure only when either pass fails.
-func runVerification(o *Orchestrator, testCommand string) result.Result[VerificationData] {
+func runVerification(ctx context.Context, o *Orchestrator, testCommand string) result.Result[VerificationData] {
+	_ = ctx // propagated for future use (e.g., cancellation of exec commands)
 	// Lint pass: go vet ./... (skip if no go.mod in repoPath — e.g. in tests)
 	if _, err := os.Stat(filepath.Join(o.repoPath, "go.mod")); err == nil {
 		vet := exec.Command("go", "vet", "./...")
