@@ -1247,7 +1247,7 @@ func runScoutAutomation(repoPath string, featureDescription string) string {
 	var sections []string
 
 	// H2: Extract build/test/lint commands
-	commandsResult, commandsErr := commands.ExtractCommands(repoPath)
+	commandsResult, commandsErr := commands.ExtractCommands(context.TODO(), repoPath)
 	if commandsErr != nil {
 		sections = append(sections, "### Build/Test Commands (H2)\nNot detected")
 	} else {

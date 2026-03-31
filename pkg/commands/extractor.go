@@ -1,6 +1,7 @@
 package commands
 
 import (
+	"context"
 	"fmt"
 	"sort"
 )
@@ -40,12 +41,16 @@ type parserResult struct {
 // Extract is the main entry point for command extraction. It orchestrates
 // priority-based resolution across CI parsers and build system parsers.
 // Returns the highest-priority CommandSet found, or language defaults if
-// no config files are present.
-func (e *Extractor) Extract(repoRoot string) (*CommandSet, error) {
+// no config files are present. The ctx parameter allows cancellation of the
+// extraction process between parser invocations.
+func (e *Extractor) Extract(ctx context.Context, repoRoot string) (*CommandSet, error) {
 	var results []parserResult
 
 	// Collect results from CI parsers
 	for _, parser := range e.ciParsers {
+		if err := ctx.Err(); err != nil {
+			return nil, fmt.Errorf("extraction cancelled: %w", err)
+		}
 		commandSet, err := parser.ParseCI(repoRoot)
 		if err != nil {
 			// Log error but continue with other parsers
@@ -61,6 +66,9 @@ func (e *Extractor) Extract(repoRoot string) (*CommandSet, error) {
 
 	// Collect results from build system parsers
 	for _, parser := range e.buildSystemParsers {
+		if err := ctx.Err(); err != nil {
+			return nil, fmt.Errorf("extraction cancelled: %w", err)
+		}
 		commandSet, err := parser.ParseBuildSystem(repoRoot)
 		if err != nil {
 			// Log error but continue with other parsers

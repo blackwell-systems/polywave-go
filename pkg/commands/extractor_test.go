@@ -1,6 +1,7 @@
 package commands
 
 import (
+	"context"
 	"errors"
 	"testing"
 )
@@ -94,7 +95,7 @@ func TestExtractor_PriorityResolution(t *testing.T) {
 	})
 
 	// Execute
-	result, err := extractor.Extract("/fake/repo")
+	result, err := extractor.Extract(context.Background(), "/fake/repo")
 
 	// Verify
 	if err != nil {
@@ -134,7 +135,7 @@ func TestExtractor_FallbackToDefaults(t *testing.T) {
 	})
 
 	// Execute
-	result, err := extractor.Extract("/fake/repo")
+	result, err := extractor.Extract(context.Background(), "/fake/repo")
 
 	// Verify
 	if err != nil {
@@ -180,7 +181,7 @@ func TestExtractor_NilResults(t *testing.T) {
 	})
 
 	// Execute
-	result, err := extractor.Extract("/fake/repo")
+	result, err := extractor.Extract(context.Background(), "/fake/repo")
 
 	// Verify
 	if err != nil {
@@ -205,7 +206,7 @@ func TestExtractor_EmptyParsers(t *testing.T) {
 	extractor := New()
 
 	// Execute with no parsers registered
-	result, err := extractor.Extract("/fake/repo")
+	result, err := extractor.Extract(context.Background(), "/fake/repo")
 
 	// Verify
 	if err != nil {
@@ -247,7 +248,7 @@ func TestExtractor_ErrorHandling(t *testing.T) {
 	})
 
 	// Execute
-	result, err := extractor.Extract("/fake/repo")
+	result, err := extractor.Extract(context.Background(), "/fake/repo")
 
 	// Verify
 	if err != nil {
@@ -296,7 +297,7 @@ func TestExtractor_PriorityTies(t *testing.T) {
 	})
 
 	// Execute
-	result, err := extractor.Extract("/fake/repo")
+	result, err := extractor.Extract(context.Background(), "/fake/repo")
 
 	// Verify
 	if err != nil {
@@ -313,6 +314,30 @@ func TestExtractor_PriorityTies(t *testing.T) {
 	}
 }
 
+func TestExtractor_ContextCancellation(t *testing.T) {
+	// Setup: pre-cancel context
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel() // Cancel immediately
+
+	extractor := New()
+	extractor.RegisterCIParser(&mockCIParser{
+		commandSet: &CommandSet{Toolchain: "go"},
+		priority:   100,
+	})
+
+	// Execute with cancelled context
+	result, err := extractor.Extract(ctx, "/fake/repo")
+
+	// Verify cancellation is propagated
+	if err == nil {
+		t.Fatal("Expected error from cancelled context, got nil")
+	}
+
+	if result != nil {
+		t.Errorf("Expected nil result on cancellation, got %v", result)
+	}
+}
+
 func TestExtractor_LanguageDefaultsError(t *testing.T) {
 	// Setup: Replace LanguageDefaults with error-returning mock
 	defer func() { LanguageDefaults = originalLanguageDefaults }()
@@ -323,7 +348,7 @@ func TestExtractor_LanguageDefaultsError(t *testing.T) {
 	extractor := New()
 
 	// Execute with no valid parsers
-	result, err := extractor.Extract("/fake/repo")
+	result, err := extractor.Extract(context.Background(), "/fake/repo")
 
 	// Verify
 	if err == nil {
