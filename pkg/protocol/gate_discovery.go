@@ -1,6 +1,7 @@
 package protocol
 
 import (
+	"context"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -32,7 +33,7 @@ func DiscoverLintGate(repoDir string) (string, error) {
 			continue
 		}
 
-		manifest, err := Load(filepath.Join(implDir, name))
+		manifest, err := Load(context.TODO(), filepath.Join(implDir, name))
 		if err != nil {
 			// Malformed YAML is non-fatal: skip and continue.
 			continue
@@ -141,7 +142,7 @@ func DiscoverBuildGate(repoDir string) (string, error) {
 			continue
 		}
 
-		manifest, err := Load(filepath.Join(implDir, name))
+		manifest, err := Load(context.TODO(), filepath.Join(implDir, name))
 		if err != nil {
 			// Malformed YAML is non-fatal: skip and continue.
 			continue

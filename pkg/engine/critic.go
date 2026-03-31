@@ -34,7 +34,7 @@ func RunCritic(ctx context.Context, opts RunCriticOpts, onChunk func(string)) (R
 	}
 
 	// Load the IMPL doc to collect repo roots.
-	manifest, err := protocol.Load(opts.IMPLPath)
+	manifest, err := protocol.Load(context.TODO(), opts.IMPLPath)
 	if err != nil {
 		return RunCriticResult{}, fmt.Errorf("run-critic: failed to load IMPL doc: %w", err)
 	}
@@ -106,7 +106,7 @@ func RunCritic(ctx context.Context, opts RunCriticOpts, onChunk func(string)) (R
 	}
 
 	// Reload the manifest to pick up the critic_report written by the agent.
-	updatedManifest, err := protocol.Load(opts.IMPLPath)
+	updatedManifest, err := protocol.Load(context.TODO(), opts.IMPLPath)
 	if err != nil {
 		return RunCriticResult{}, fmt.Errorf("run-critic: failed to reload IMPL doc after critic run: %w", err)
 	}

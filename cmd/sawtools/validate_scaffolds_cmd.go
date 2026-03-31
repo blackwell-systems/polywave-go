@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 
@@ -16,7 +17,7 @@ func newValidateScaffoldsCmd() *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			manifestPath := args[0]
 
-			m, err := protocol.Load(manifestPath)
+			m, err := protocol.Load(context.TODO(), manifestPath)
 			if err != nil {
 				return fmt.Errorf("validate-scaffolds: %w", err)
 			}

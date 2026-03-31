@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 
@@ -29,7 +30,7 @@ Post-agent mode analyzes agent task fields to detect duplicate type definitions.
 			}
 
 			// Load the manifest
-			manifest, err := protocol.Load(implDocPath)
+			manifest, err := protocol.Load(context.TODO(), implDocPath)
 			if err != nil {
 				return fmt.Errorf("failed to load IMPL doc: %w", err)
 			}

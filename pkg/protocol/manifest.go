@@ -1,6 +1,7 @@
 package protocol
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os"
@@ -40,16 +41,16 @@ var completionReportMu sync.Mutex
 //
 // Typical usage:
 //
-//	err := protocol.WithCompletionReportLock(func() error {
-//	    m, err := protocol.Load(implDocPath)
+//	err := protocol.WithCompletionReportLock(ctx, func(ctx context.Context) error {
+//	    m, err := protocol.Load(ctx, implDocPath)
 //	    if err != nil { return err }
 //	    if err := builder.AppendToManifest(m); err != nil { return err }
-//	    return protocol.Save(m, implDocPath)
+//	    return protocol.Save(ctx, m, implDocPath)
 //	})
-func WithCompletionReportLock(fn func() error) error {
+func WithCompletionReportLock(ctx context.Context, fn func(ctx context.Context) error) error {
 	completionReportMu.Lock()
 	defer completionReportMu.Unlock()
-	return fn()
+	return fn(ctx)
 }
 
 // Load reads a YAML IMPL manifest from the specified path and parses it into an IMPLManifest.
@@ -58,7 +59,8 @@ func WithCompletionReportLock(fn func() error) error {
 //
 // Cannot use LoadYAML: has specialized duplicate-key detection and orphaned-report validation
 // logic that the generic LoadYAML helper omits. LoadYAML delegates here for IMPLManifest.
-func Load(path string) (*IMPLManifest, error) {
+func Load(ctx context.Context, path string) (*IMPLManifest, error) {
+	_ = ctx // reserved for future cancellation support
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read manifest file: %w", err)
@@ -116,7 +118,8 @@ func isYAMLDuplicateKeyError(err error) bool {
 // Cannot use SaveYAML: Save is the canonical write path for IMPLManifest and is called
 // via WithCompletionReportLock. Routing through the generic helper would invert the
 // dependency — callers should use Save (not SaveYAML) for IMPLManifest.
-func Save(m *IMPLManifest, path string) result.Result[SaveManifestData] {
+func Save(ctx context.Context, m *IMPLManifest, path string) result.Result[SaveManifestData] {
+	_ = ctx // reserved for future cancellation support
 	data, err := yaml.Marshal(m)
 	if err != nil {
 		return result.NewFailure[SaveManifestData]([]result.SAWError{

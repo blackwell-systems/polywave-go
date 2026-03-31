@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"path/filepath"
@@ -49,7 +50,7 @@ Output is JSON to stdout for programmatic consumption.`,
 			}
 
 			// Load the parent IMPL manifest.
-			manifest, err := protocol.Load(implPath)
+			manifest, err := protocol.Load(context.TODO(), implPath)
 			if err != nil {
 				return fmt.Errorf("retry: failed to load IMPL doc: %w", err)
 			}

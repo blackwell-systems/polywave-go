@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 
@@ -33,7 +34,7 @@ func newCheckCompletionCmd() *cobra.Command {
 			manifestPath := args[0]
 
 			// Load manifest
-			m, err := protocol.Load(manifestPath)
+			m, err := protocol.Load(context.TODO(), manifestPath)
 			if err != nil {
 				return fmt.Errorf("check-completion: %w", err)
 			}

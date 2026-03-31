@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -104,7 +105,7 @@ Examples:
 			fmt.Printf("  Issues found: %d\n", result.IssueCount)
 
 			// Reload manifest to print per-agent verdicts (AgentReviews is not in RunCriticResult).
-			updatedManifest, loadErr := protocol.Load(implPath)
+			updatedManifest, loadErr := protocol.Load(context.TODO(), implPath)
 			if loadErr == nil {
 				review := protocol.GetCriticReview(updatedManifest)
 				if review != nil && len(review.AgentReviews) > 0 {

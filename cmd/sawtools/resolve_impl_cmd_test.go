@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -30,7 +31,7 @@ func TestResolveImplCmd_ExplicitSlug(t *testing.T) {
 			{Number: 1, Agents: []protocol.Agent{{ID: "A"}}},
 		},
 	}
-	if saveRes := protocol.Save(testManifest, testIMPLPath); saveRes.IsFatal() {
+	if saveRes := protocol.Save(context.TODO(), testManifest, testIMPLPath); saveRes.IsFatal() {
 		t.Fatalf("Failed to save test IMPL: %v", saveRes.Errors)
 	}
 
@@ -88,7 +89,7 @@ func TestResolveImplCmd_ExplicitFilename(t *testing.T) {
 			{Number: 1, Agents: []protocol.Agent{{ID: "A"}}},
 		},
 	}
-	if saveRes := protocol.Save(testManifest, testIMPLPath); saveRes.IsFatal() {
+	if saveRes := protocol.Save(context.TODO(), testManifest, testIMPLPath); saveRes.IsFatal() {
 		t.Fatalf("Failed to save test IMPL: %v", saveRes.Errors)
 	}
 
@@ -139,7 +140,7 @@ func TestResolveImplCmd_ExplicitAbsolutePath(t *testing.T) {
 			{Number: 1, Agents: []protocol.Agent{{ID: "A"}}},
 		},
 	}
-	if saveRes := protocol.Save(testManifest, testIMPLPath); saveRes.IsFatal() {
+	if saveRes := protocol.Save(context.TODO(), testManifest, testIMPLPath); saveRes.IsFatal() {
 		t.Fatalf("Failed to save test IMPL: %v", saveRes.Errors)
 	}
 
@@ -193,7 +194,7 @@ func TestResolveImplCmd_AutoSelect(t *testing.T) {
 			{Number: 1, Agents: []protocol.Agent{{ID: "A"}}},
 		},
 	}
-	if saveRes := protocol.Save(testManifest, testIMPLPath); saveRes.IsFatal() {
+	if saveRes := protocol.Save(context.TODO(), testManifest, testIMPLPath); saveRes.IsFatal() {
 		t.Fatalf("Failed to save test IMPL: %v", saveRes.Errors)
 	}
 
@@ -250,7 +251,7 @@ func TestResolveImplCmd_AutoSelectMultipleFails(t *testing.T) {
 				{Number: 1, Agents: []protocol.Agent{{ID: "A"}}},
 			},
 		}
-		if saveRes := protocol.Save(testManifest, testIMPLPath); saveRes.IsFatal() {
+		if saveRes := protocol.Save(context.TODO(), testManifest, testIMPLPath); saveRes.IsFatal() {
 			t.Fatalf("Failed to save test IMPL: %v", saveRes.Errors)
 		}
 	}
@@ -337,7 +338,7 @@ func TestResolveImplCmd_InvalidSlug(t *testing.T) {
 			{Number: 1, Agents: []protocol.Agent{{ID: "A"}}},
 		},
 	}
-	if saveRes := protocol.Save(testManifest, testIMPLPath); saveRes.IsFatal() {
+	if saveRes := protocol.Save(context.TODO(), testManifest, testIMPLPath); saveRes.IsFatal() {
 		t.Fatalf("Failed to save test IMPL: %v", saveRes.Errors)
 	}
 

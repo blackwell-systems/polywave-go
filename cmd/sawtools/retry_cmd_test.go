@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -165,7 +166,7 @@ func TestRetryCmd_GeneratesIMPL(t *testing.T) {
 	}
 
 	// Load and validate it's a valid manifest.
-	m, err := protocol.Load(retryFilePath)
+	m, err := protocol.Load(context.TODO(), retryFilePath)
 	if err != nil {
 		t.Fatalf("generated retry IMPL is not a valid manifest: %v", err)
 	}
@@ -210,7 +211,7 @@ func TestRetryCmd_GeneratesIMPL_Wave2(t *testing.T) {
 	}
 
 	retryFilePath := filepath.Join(dir, result.RetryIMPL)
-	m, err := protocol.Load(retryFilePath)
+	m, err := protocol.Load(context.TODO(), retryFilePath)
 	if err != nil {
 		t.Fatalf("generated retry IMPL invalid: %v", err)
 	}

@@ -120,7 +120,7 @@ waves:
           - pkg/foo/foo.go
 `)
 
-	manifest, err := protocol.Load(implPath)
+	manifest, err := protocol.Load(context.TODO(), implPath)
 	if err != nil {
 		t.Fatalf("failed to load manifest: %v", err)
 	}
@@ -189,7 +189,7 @@ completion_reports:
 		t.Fatalf("failed to write IMPL: %v", err)
 	}
 
-	manifest, err := protocol.Load(implPath)
+	manifest, err := protocol.Load(context.TODO(), implPath)
 	if err != nil {
 		t.Fatalf("failed to load manifest: %v", err)
 	}
@@ -466,7 +466,7 @@ waves:
           - pkg/bar/bar.go
 `)
 
-	manifest, err := protocol.Load(implPath)
+	manifest, err := protocol.Load(context.TODO(), implPath)
 	if err != nil {
 		t.Fatalf("failed to load manifest: %v", err)
 	}
@@ -518,7 +518,7 @@ completion_reports:
     files_created: []
 `)
 
-	manifest, err := protocol.Load(implPath)
+	manifest, err := protocol.Load(context.TODO(), implPath)
 	if err != nil {
 		t.Fatalf("failed to load manifest: %v", err)
 	}
@@ -556,7 +556,7 @@ waves:
           - pkg/foo/foo.go
 `)
 
-	manifest, err := protocol.Load(implPath)
+	manifest, err := protocol.Load(context.TODO(), implPath)
 	if err != nil {
 		t.Fatalf("failed to load manifest: %v", err)
 	}
@@ -594,7 +594,7 @@ completion_reports:
     files_created: []
 `)
 
-	manifest, err := protocol.Load(implPath)
+	manifest, err := protocol.Load(context.TODO(), implPath)
 	if err != nil {
 		t.Fatalf("failed to load manifest: %v", err)
 	}
@@ -642,7 +642,7 @@ completion_reports:
     files_created: []
 `)
 
-	manifest, err := protocol.Load(implPath)
+	manifest, err := protocol.Load(context.TODO(), implPath)
 	if err != nil {
 		t.Fatalf("failed to load manifest: %v", err)
 	}
@@ -690,7 +690,7 @@ completion_reports:
     files_created: []
 `)
 
-	manifest, err := protocol.Load(implPath)
+	manifest, err := protocol.Load(context.TODO(), implPath)
 	if err != nil {
 		t.Fatalf("failed to load manifest: %v", err)
 	}
@@ -737,7 +737,7 @@ completion_reports:
       - pkg/foo/foo.go
 `)
 
-	manifest, err := protocol.Load(implPath)
+	manifest, err := protocol.Load(context.TODO(), implPath)
 	if err != nil {
 		t.Fatalf("failed to load manifest: %v", err)
 	}
@@ -812,7 +812,7 @@ waves:
           - pkg/foo/foo.go
 `)
 
-	manifest, err := protocol.Load(implPath)
+	manifest, err := protocol.Load(context.TODO(), implPath)
 	if err != nil {
 		t.Fatalf("failed to load manifest: %v", err)
 	}
@@ -853,7 +853,7 @@ waves:
           - pkg/foo/foo.go
 `)
 
-	manifest, err := protocol.Load(implPath)
+	manifest, err := protocol.Load(context.TODO(), implPath)
 	if err != nil {
 		t.Fatalf("failed to load manifest: %v", err)
 	}

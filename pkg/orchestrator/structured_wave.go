@@ -132,8 +132,8 @@ func (o *Orchestrator) launchAgentStructured(
 	var savedStatus string
 	var savedFailureType string
 
-	_ = protocol.WithCompletionReportLock(func() error {
-		manifest, loadErr := protocol.Load(o.implDocPath)
+	_ = protocol.WithCompletionReportLock(context.TODO(), func(ctx context.Context) error {
+		manifest, loadErr := protocol.Load(ctx, o.implDocPath)
 		if loadErr != nil {
 			return loadErr
 		}

@@ -147,7 +147,7 @@ func (rl *RetryLoop) saveRetryIMPL(m *protocol.IMPLManifest, slug string) (strin
 	}
 
 	absPath := protocol.IMPLPath(rl.cfg.RepoPath, slug)
-	if saveRes := protocol.Save(m, absPath); saveRes.IsFatal() {
+	if saveRes := protocol.Save(context.TODO(), m, absPath); saveRes.IsFatal() {
 		if len(saveRes.Errors) > 0 {
 			return "", fmt.Errorf("%s", saveRes.Errors[0].Message)
 		}
@@ -165,7 +165,7 @@ func (rl *RetryLoop) filesFromIMPL() []string {
 	if rl.cfg.IMPLPath == "" {
 		return nil
 	}
-	m, err := protocol.Load(rl.cfg.IMPLPath)
+	m, err := protocol.Load(context.TODO(), rl.cfg.IMPLPath)
 	if err != nil {
 		return nil
 	}
@@ -203,7 +203,7 @@ func gateCommandFromIMPL(implPath string) string {
 	if implPath == "" {
 		return "go build ./..."
 	}
-	m, err := protocol.Load(implPath)
+	m, err := protocol.Load(context.TODO(), implPath)
 	if err != nil {
 		return "go build ./..."
 	}

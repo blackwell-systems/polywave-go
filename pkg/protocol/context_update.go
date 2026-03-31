@@ -1,6 +1,7 @@
 package protocol
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -22,7 +23,7 @@ type UpdateContextData struct {
 // If CONTEXT.md doesn't exist, it creates it with the standard header.
 func UpdateContext(manifestPath string, projectRoot string) result.Result[*UpdateContextData] {
 	// Load manifest to get feature metadata
-	manifest, err := Load(manifestPath)
+	manifest, err := Load(context.TODO(), manifestPath)
 	if err != nil {
 		return result.NewFailure[*UpdateContextData]([]result.SAWError{{
 			Code:     result.CodeContextError,

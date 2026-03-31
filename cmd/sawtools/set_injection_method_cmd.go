@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 
@@ -40,14 +41,14 @@ Example:
 
 			manifestPath := args[0]
 
-			doc, err := protocol.Load(manifestPath)
+			doc, err := protocol.Load(context.TODO(), manifestPath)
 			if err != nil {
 				return fmt.Errorf("failed to load IMPL doc: %w", err)
 			}
 
 			doc.InjectionMethod = im
 
-			if saveRes := protocol.Save(doc, manifestPath); saveRes.IsFatal() {
+			if saveRes := protocol.Save(context.TODO(), doc, manifestPath); saveRes.IsFatal() {
 				saveErrMsg := "save failed"
 				if len(saveRes.Errors) > 0 {
 					saveErrMsg = saveRes.Errors[0].Message

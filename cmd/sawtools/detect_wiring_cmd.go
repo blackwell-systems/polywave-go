@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 
@@ -39,7 +40,7 @@ Exit code 1 if IMPL doc is malformed or repo root cannot be determined.`,
 			}
 
 			// Load the manifest
-			manifest, err := protocol.Load(implDocPath)
+			manifest, err := protocol.Load(context.TODO(), implDocPath)
 			if err != nil {
 				return fmt.Errorf("error: failed to parse IMPL doc: %w", err)
 			}

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 
@@ -49,7 +50,7 @@ Exit codes:
 			manifest.State = protocol.ProgramState(state)
 
 			// Write manifest back to disk
-			if err := protocol.SaveYAML(manifestPath, manifest); err != nil {
+			if err := protocol.SaveYAML(context.TODO(), manifestPath, manifest); err != nil {
 				return fmt.Errorf("update-program-state: %w", err)
 			}
 

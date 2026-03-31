@@ -46,7 +46,7 @@ Output:
 			manifestPath := args[0]
 
 			// Load manifest
-			manifest, err := protocol.Load(manifestPath)
+			manifest, err := protocol.Load(context.TODO(), manifestPath)
 			if err != nil {
 				return fmt.Errorf("run-integration-agent: failed to load manifest: %w", err)
 			}
@@ -137,7 +137,7 @@ Output:
 			}
 
 			// Re-load manifest to get updated completion report
-			manifest, err = protocol.Load(manifestPath)
+			manifest, err = protocol.Load(context.TODO(), manifestPath)
 			if err != nil {
 				return fmt.Errorf("run-integration-agent: failed to reload manifest: %w", err)
 			}

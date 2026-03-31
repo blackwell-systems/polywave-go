@@ -24,7 +24,7 @@ type TestData struct {
 // context cancellation. Returns fatal result on failure; on success the result
 // includes accumulated output for diagnostics.
 func RunTestCommand(ctx context.Context, implPath, repoPath string, onOutput func(line string)) result.Result[TestData] {
-	manifest, err := protocol.Load(implPath)
+	manifest, err := protocol.Load(context.TODO(), implPath)
 	if err != nil {
 		return result.NewFailure[TestData]([]result.SAWError{
 			result.NewFatal("ENGINE_TEST_LOAD_FAILED",

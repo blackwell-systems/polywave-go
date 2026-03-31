@@ -1,6 +1,7 @@
 package agent
 
 import (
+	"context"
 	"fmt"
 	"time"
 
@@ -20,7 +21,7 @@ func WaitForCompletion(implDocPath, agentID string, timeout, pollInterval time.D
 
 	for {
 		// Load the YAML manifest
-		manifest, err := protocol.Load(implDocPath)
+		manifest, err := protocol.Load(context.TODO(), implDocPath)
 		if err != nil {
 			return nil, fmt.Errorf("WaitForCompletion agent %s: failed to load manifest: %w", agentID, err)
 		}

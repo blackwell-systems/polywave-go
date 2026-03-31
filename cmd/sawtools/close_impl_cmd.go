@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -39,7 +40,7 @@ Examples:
 			}
 
 			// Load manifest before archiving to get slug
-			manifest, err := protocol.Load(manifestPath)
+			manifest, err := protocol.Load(context.TODO(), manifestPath)
 			if err != nil {
 				return fmt.Errorf("close-impl: failed to load manifest: %w", err)
 			}

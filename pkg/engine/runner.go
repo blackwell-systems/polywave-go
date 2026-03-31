@@ -318,7 +318,7 @@ func runScoutStructured(ctx context.Context, opts RunScoutOpts, prompt string, o
 	}
 
 	// Persist to disk.
-	if saveRes := protocol.Save(&manifest, opts.IMPLOutPath); saveRes.IsFatal() {
+	if saveRes := protocol.Save(context.TODO(), &manifest, opts.IMPLOutPath); saveRes.IsFatal() {
 		saveErrMsg := "save failed"
 		if len(saveRes.Errors) > 0 {
 			saveErrMsg = saveRes.Errors[0].Message
@@ -335,7 +335,7 @@ func runScoutStructured(ctx context.Context, opts RunScoutOpts, prompt string, o
 //  1. Strips the "bedrock:" provider prefix from opts.ScoutModel to get the bare model ID.
 //  2. Builds a Bedrock client with WithOutputConfig set to the scout schema.
 //  3. Calls client.Run() (non-streaming Converse API) so the full JSON is returned at once.
-//  4. Unmarshals the JSON response into protocol.IMPLManifest and persists it via protocol.Save().
+//  4. Unmarshals the JSON response into protocol.IMPLManifest and persists it via protocol.Save(context.TODO(), ).
 //
 // If onChunk is non-nil the raw JSON response is forwarded as a single chunk so callers
 // (e.g. SSE streams) can surface progress without requiring a streaming call.
@@ -388,7 +388,7 @@ func runScoutStructuredBedrock(ctx context.Context, opts RunScoutOpts, prompt st
 	}
 
 	// Persist to disk.
-	if saveRes := protocol.Save(&manifest, opts.IMPLOutPath); saveRes.IsFatal() {
+	if saveRes := protocol.Save(context.TODO(), &manifest, opts.IMPLOutPath); saveRes.IsFatal() {
 		saveErrMsg := "save failed"
 		if len(saveRes.Errors) > 0 {
 			saveErrMsg = saveRes.Errors[0].Message
@@ -498,7 +498,7 @@ func StartWave(ctx context.Context, opts RunWaveOpts, onEvent func(Event)) resul
 
 		// E20: Post-wave stub scan (informational only).
 		if doc := orch.IMPLDoc(); doc != nil {
-			manifest, err := protocol.Load(opts.IMPLPath)
+			manifest, err := protocol.Load(context.TODO(), opts.IMPLPath)
 			if err == nil {
 				stubReports := make(map[string]*protocol.CompletionReport)
 				for _, ag := range wave.Agents {
@@ -553,7 +553,7 @@ func StartWave(ctx context.Context, opts RunWaveOpts, onEvent func(Event)) resul
 		}
 
 		// E25: Post-wave integration validation
-		manifest, loadErr := protocol.Load(opts.IMPLPath)
+		manifest, loadErr := protocol.Load(context.TODO(), opts.IMPLPath)
 		if loadErr == nil {
 			integrationReport, intErr := protocol.ValidateIntegration(manifest, waveNum, opts.RepoPath)
 			if intErr == nil && integrationReport != nil && !integrationReport.Valid {
@@ -654,7 +654,7 @@ func RunScaffold(opts RunScaffoldOpts) result.Result[ScaffoldData] {
 	}
 
 	// Load YAML manifest to get scaffold files.
-	manifest, err := protocol.Load(implPath)
+	manifest, err := protocol.Load(context.TODO(), implPath)
 	if err != nil {
 		return result.NewFailure[ScaffoldData]([]result.SAWError{
 			result.NewFatal("ENGINE_SCAFFOLD_FAILED", "engine.RunScaffold: load manifest failed").WithCause(err),
@@ -979,7 +979,7 @@ func RunSingleAgent(ctx context.Context, opts RunWaveOpts, waveNum int, agentLet
 	// Auto-inject retry context when no explicit promptPrefix is provided
 	// and the agent has a prior non-complete completion report.
 	if promptPrefix == "" {
-		manifest, loadErr := protocol.Load(opts.IMPLPath)
+		manifest, loadErr := protocol.Load(context.TODO(), opts.IMPLPath)
 		if loadErr == nil {
 			if report, ok := manifest.CompletionReports[agentLetter]; ok && report.Status != protocol.StatusComplete {
 				rc, rcErr := retry.BuildRetryAttempt(ctx, opts.IMPLPath, agentLetter, 1)
@@ -1468,7 +1468,7 @@ func startWaveWithGate(ctx context.Context, opts RunWaveOpts, onEvent func(Event
 		}
 
 		// E25: Post-wave integration validation
-		manifest, loadErr := protocol.Load(opts.IMPLPath)
+		manifest, loadErr := protocol.Load(context.TODO(), opts.IMPLPath)
 		if loadErr == nil {
 			integrationReport, intErr := protocol.ValidateIntegration(manifest, waveNum, opts.RepoPath)
 			if intErr == nil && integrationReport != nil && !integrationReport.Valid {

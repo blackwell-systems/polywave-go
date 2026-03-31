@@ -3,7 +3,7 @@ package orchestrator
 import "log/slog"
 
 // setters.go previously contained SetParseIMPLDocFunc which injected the IMPL
-// doc parser. Now that orchestrator.New() calls protocol.Load() directly, this
+// doc parser. Now that orchestrator.New() calls protocol.Load(context.TODO(), ) directly, this
 // setter is no longer needed. The file is retained for backward compatibility
 // of the package structure.
 

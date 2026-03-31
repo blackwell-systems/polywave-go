@@ -100,7 +100,7 @@ func TestRunWaveAgentStructured_APIBackend(t *testing.T) {
 	}
 
 	// Verify the report was persisted to the manifest.
-	manifest, loadErr := protocol.Load(implPath)
+	manifest, loadErr := protocol.Load(context.TODO(), implPath)
 	if loadErr != nil {
 		t.Fatalf("failed to reload manifest: %v", loadErr)
 	}
@@ -167,7 +167,7 @@ func TestRunWaveAgentStructured_BedrockBackend(t *testing.T) {
 	}
 
 	// Verify persistence.
-	manifest, loadErr := protocol.Load(implPath)
+	manifest, loadErr := protocol.Load(context.TODO(), implPath)
 	if loadErr != nil {
 		t.Fatalf("failed to reload manifest: %v", loadErr)
 	}

@@ -146,7 +146,7 @@ line 2`
 			{File: "file.txt", Agent: "A", Wave: 1},
 		},
 	}
-	if saveRes := protocol.Save(manifest, implPath); saveRes.IsFatal() {
+	if saveRes := protocol.Save(context.TODO(), manifest, implPath); saveRes.IsFatal() {
 		t.Fatalf("failed to save manifest: %v", saveRes.Errors)
 	}
 

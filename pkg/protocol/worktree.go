@@ -1,6 +1,7 @@
 package protocol
 
 import (
+	"context"
 	"fmt"
 	"log/slog"
 	"path/filepath"
@@ -44,7 +45,7 @@ type CreateWorktreesData struct {
 func CreateWorktrees(manifestPath string, waveNum int, repoDir string, logger *slog.Logger) result.Result[CreateWorktreesData] {
 	log := loggerFrom(logger)
 	// Load IMPL doc (pure YAML format)
-	doc, err := Load(manifestPath)
+	doc, err := Load(context.TODO(), manifestPath)
 	if err != nil {
 		return result.NewFailure[CreateWorktreesData]([]result.SAWError{
 			{
@@ -88,7 +89,7 @@ func CreateWorktrees(manifestPath string, waveNum int, repoDir string, logger *s
 	targetWave.BaseCommit = baseCommit
 
 	// Save manifest with base commit recorded
-	if saveRes := Save(doc, manifestPath); saveRes.IsFatal() {
+	if saveRes := Save(context.TODO(), doc, manifestPath); saveRes.IsFatal() {
 		return result.NewFailure[CreateWorktreesData](saveRes.Errors)
 	}
 

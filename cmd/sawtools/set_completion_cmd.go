@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"strings"
@@ -66,15 +67,15 @@ func newSetCompletionCmd() *cobra.Command {
 			}
 
 			// Persist with consolidated lock.
-			if err := protocol.WithCompletionReportLock(func() error {
-				m, loadErr := protocol.Load(manifestPath)
+			if err := protocol.WithCompletionReportLock(context.TODO(), func(ctx context.Context) error {
+				m, loadErr := protocol.Load(ctx, manifestPath)
 				if loadErr != nil {
 					return fmt.Errorf("set-completion: %w", loadErr)
 				}
 				if appendErr := builder.AppendToManifest(m); appendErr != nil {
 					return fmt.Errorf("set-completion: %w", appendErr)
 				}
-				if saveRes := protocol.Save(m, manifestPath); saveRes.IsFatal() {
+				if saveRes := protocol.Save(ctx, m, manifestPath); saveRes.IsFatal() {
 					if len(saveRes.Errors) > 0 {
 						return fmt.Errorf("set-completion: %s", saveRes.Errors[0].Message)
 					}

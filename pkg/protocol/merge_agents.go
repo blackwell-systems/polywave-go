@@ -1,6 +1,7 @@
 package protocol
 
 import (
+	"context"
 	"fmt"
 	"log/slog"
 	"os"
@@ -163,7 +164,7 @@ func MergeAgents(opts MergeAgentsOpts) (result.Result[MergeAgentsData], error) {
 	mergeTarget := opts.MergeTarget
 	logger := opts.Logger
 	// Load manifest to check if this is a multi-repo wave
-	manifest, err := Load(manifestPath)
+	manifest, err := Load(context.TODO(), manifestPath)
 	if err != nil {
 		return result.Result[MergeAgentsData]{}, fmt.Errorf("failed to load manifest: %w", err)
 	}

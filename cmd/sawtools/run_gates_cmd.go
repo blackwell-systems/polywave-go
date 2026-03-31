@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -22,7 +23,7 @@ func newRunGatesCmd() *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			manifestPath := args[0]
 
-			m, err := protocol.Load(manifestPath)
+			m, err := protocol.Load(context.TODO(), manifestPath)
 			if err != nil {
 				return fmt.Errorf("run-gates: %w", err)
 			}

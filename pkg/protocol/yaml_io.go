@@ -32,6 +32,7 @@ package protocol
 //	cmd/sawtools/extract_commands_cmd.go  — marshal to []byte for stdout print
 
 import (
+	"context"
 	"fmt"
 	"os"
 
@@ -43,7 +44,8 @@ import (
 //
 // Do not use this for IMPLManifest — use Load() instead, which has special
 // duplicate-key detection logic that this helper omits.
-func LoadYAML[T any](path string) (T, error) {
+func LoadYAML[T any](ctx context.Context, path string) (T, error) {
+	_ = ctx // reserved for future cancellation support
 	var zero T
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -58,7 +60,8 @@ func LoadYAML[T any](path string) (T, error) {
 
 // SaveYAML marshals v to YAML and writes it to path with permissions 0644.
 // Returns a wrapped error if marshaling or writing fails.
-func SaveYAML[T any](path string, v T) error {
+func SaveYAML[T any](ctx context.Context, path string, v T) error {
+	_ = ctx // reserved for future cancellation support
 	data, err := yaml.Marshal(v)
 	if err != nil {
 		return fmt.Errorf("SaveYAML: marshal: %w", err)

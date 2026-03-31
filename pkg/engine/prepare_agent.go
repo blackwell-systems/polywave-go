@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"log/slog"
@@ -44,7 +45,7 @@ func PrepareAgent(opts PrepareAgentOpts) (PrepareAgentResult, error) {
 	var result PrepareAgentResult
 
 	// Parse IMPL doc
-	doc, err := protocol.Load(opts.ManifestPath)
+	doc, err := protocol.Load(context.TODO(), opts.ManifestPath)
 	if err != nil {
 		return result, fmt.Errorf("failed to parse IMPL doc: %w", err)
 	}
@@ -216,7 +217,7 @@ saw_name: %s
 			}
 		}
 	}
-	if saveRes := protocol.Save(doc, opts.ManifestPath); saveRes.IsFatal() {
+	if saveRes := protocol.Save(context.TODO(), doc, opts.ManifestPath); saveRes.IsFatal() {
 		// Non-fatal: log but don't abort agent preparation
 		saveErrMsg := "save failed"
 		if len(saveRes.Errors) > 0 {

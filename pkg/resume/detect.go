@@ -4,6 +4,7 @@
 package resume
 
 import (
+	"context"
 	"bufio"
 	"bytes"
 	"fmt"
@@ -94,7 +95,7 @@ func DetectWithConfig(repoPaths []string) ([]SessionState, error) {
 
 			implPath := filepath.Join(implDir, name)
 
-			manifest, err := protocol.Load(implPath)
+			manifest, err := protocol.Load(context.TODO(), implPath)
 			if err != nil {
 				// Skip unreadable / malformed manifests.
 				continue

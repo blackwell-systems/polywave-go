@@ -34,7 +34,7 @@ type RestoreData struct {
 
 // captureSnapshot loads the manifest from disk and copies the mutable state fields.
 func captureSnapshot(implPath string) (*implSnapshot, error) {
-	manifest, err := protocol.Load(implPath)
+	manifest, err := protocol.Load(context.TODO(), implPath)
 	if err != nil {
 		return nil, fmt.Errorf("engine.RunWaveTransaction: load snapshot: %w", err)
 	}
@@ -56,7 +56,7 @@ func captureSnapshot(implPath string) (*implSnapshot, error) {
 // snapshot values, and saves the manifest back. This handles partial state
 // written by FinalizeWave substeps.
 func restoreSnapshot(implPath string, snap *implSnapshot) result.Result[RestoreData] {
-	manifest, err := protocol.Load(implPath)
+	manifest, err := protocol.Load(context.TODO(), implPath)
 	if err != nil {
 		return result.NewFailure[RestoreData]([]result.SAWError{
 			result.NewFatal("ENGINE_RESTORE_LOAD_FAILED",
@@ -69,7 +69,7 @@ func restoreSnapshot(implPath string, snap *implSnapshot) result.Result[RestoreD
 	manifest.MergeState = snap.MergeState
 	manifest.CompletionReports = snap.CompletionReports
 
-	if saveRes := protocol.Save(manifest, implPath); saveRes.IsFatal() {
+	if saveRes := protocol.Save(context.TODO(), manifest, implPath); saveRes.IsFatal() {
 		saveErrMsg := "save failed"
 		if len(saveRes.Errors) > 0 {
 			saveErrMsg = saveRes.Errors[0].Message

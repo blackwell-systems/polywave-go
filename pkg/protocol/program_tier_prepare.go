@@ -1,6 +1,7 @@
 package protocol
 
 import (
+	"context"
 	"fmt"
 )
 
@@ -82,14 +83,14 @@ func PrepareTier(programManifestPath string, tierNumber int, repoDir string) (*P
 			return nil, fmt.Errorf("cannot resolve IMPL %q: %w", slug, err)
 		}
 
-		m, err := Load(implPath)
+		m, err := Load(context.TODO(), implPath)
 		if err != nil {
 			return nil, fmt.Errorf("cannot load IMPL %q: %w", slug, err)
 		}
 
 		fixCount := FixGateTypes(m)
 		if fixCount > 0 {
-			if saveRes := Save(m, implPath); saveRes.IsFatal() {
+			if saveRes := Save(context.TODO(), m, implPath); saveRes.IsFatal() {
 				saveMsg := ""
 				if len(saveRes.Errors) > 0 {
 					saveMsg = saveRes.Errors[0].Message

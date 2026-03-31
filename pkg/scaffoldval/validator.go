@@ -1,6 +1,7 @@
 package scaffoldval
 
 import (
+	"context"
 	"fmt"
 	"go/parser"
 	"go/token"
@@ -53,7 +54,7 @@ func ValidateScaffold(scaffoldPath string, implPath string) (*ValidationResult, 
 
 	// Step 4: Build check (compile scaffold in isolation)
 	// Extract build command from IMPL doc using pkg/commands
-	_, err = protocol.Load(implPath)
+	_, err = protocol.Load(context.TODO(), implPath)
 	if err != nil {
 		result.Build.Status = "SKIP"
 		result.Build.Errors = []string{fmt.Sprintf("Failed to parse IMPL manifest: %v", err)}
