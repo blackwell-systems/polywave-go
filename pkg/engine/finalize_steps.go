@@ -453,13 +453,17 @@ func StepPredictConflicts(ctx context.Context, opts FinalizeWaveOpts, manifest *
 	const stepName = "predict-conflicts"
 	emitStepEvent(onEvent, stepName, "running", "")
 
-	if err := protocol.PredictConflictsFromReports(manifest, opts.WaveNum); err != nil {
-		emitStepEvent(onEvent, stepName, "failed", err.Error())
+	if conflictRes := protocol.PredictConflictsFromReports(manifest, opts.WaveNum); !conflictRes.IsSuccess() {
+		msg := ""
+		if len(conflictRes.Errors) > 0 {
+			msg = conflictRes.Errors[0].Message
+		}
+		emitStepEvent(onEvent, stepName, "failed", msg)
 		return &StepResult{
 			Step:   stepName,
 			Status: "failed",
-			Detail: err.Error(),
-		}, fmt.Errorf("predict-conflicts: %w", err)
+			Detail: msg,
+		}, fmt.Errorf("predict-conflicts: %s", msg)
 	}
 
 	emitStepEvent(onEvent, stepName, "complete", "")

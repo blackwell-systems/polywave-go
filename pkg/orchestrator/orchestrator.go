@@ -1228,7 +1228,11 @@ func (o *Orchestrator) UpdateIMPLStatus(waveNum int) error {
 	}
 
 	// 5. Call protocol.UpdateIMPLStatus to tick checkboxes.
-	return protocol.UpdateIMPLStatus(o.implDocPath, completedLetters)
+	res := protocol.UpdateIMPLStatus(o.implDocPath, completedLetters)
+	if res.IsFatal() && len(res.Errors) > 0 {
+		return fmt.Errorf("%s", res.Errors[0].Message)
+	}
+	return nil
 }
 
 // buildWaveConstraints loads the IMPL manifest and builds per-agent constraints

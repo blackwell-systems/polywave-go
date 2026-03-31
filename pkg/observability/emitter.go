@@ -5,7 +5,15 @@ import (
 	"fmt"
 	"os"
 	"time"
+
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
 )
+
+// EmitData holds the result data returned by a synchronous Emit operation.
+type EmitData struct {
+	EventID   string
+	Timestamp time.Time
+}
 
 // Emitter is a nil-safe, non-blocking wrapper around Store.RecordEvent.
 // All writes happen in a goroutine so they never block the caller.
@@ -35,6 +43,28 @@ func (e *Emitter) Emit(ctx context.Context, event Event) {
 			fmt.Fprintf(os.Stderr, "observability: emit %s: %v\n", event.EventType(), err)
 		}
 	}()
+}
+
+// EmitSync records event synchronously and returns a result.Result[EmitData].
+// Unlike Emit, it blocks until the store write completes and surfaces any error
+// through the Result type rather than writing to stderr.
+// It is safe to call on a nil *Emitter; a successful no-op result is returned.
+func (e *Emitter) EmitSync(ctx context.Context, event Event) result.Result[EmitData] {
+	if e == nil || e.store == nil {
+		return result.NewSuccess(EmitData{
+			EventID:   event.EventID(),
+			Timestamp: event.Timestamp(),
+		})
+	}
+	if err := e.store.RecordEvent(ctx, event); err != nil {
+		return result.NewFailure[EmitData]([]result.SAWError{
+			result.NewFatal("EVENT_EMIT_FAILED", err.Error()).WithCause(err),
+		})
+	}
+	return result.NewSuccess(EmitData{
+		EventID:   event.EventID(),
+		Timestamp: event.Timestamp(),
+	})
 }
 
 // ---------------------------------------------------------------------------

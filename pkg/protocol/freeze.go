@@ -6,6 +6,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"time"
+
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
 )
 
 // FreezeViolation represents a detected modification to frozen sections of the manifest.
@@ -14,27 +16,40 @@ type FreezeViolation struct {
 	Message string `json:"message"`
 }
 
+// FreezeData holds the data returned by a successful SetFreezeTimestamp call.
+type FreezeData struct {
+	FreezeTimestamp time.Time
+	ContractsFrozen bool
+}
+
 // SetFreezeTimestamp sets the worktrees_created_at timestamp on a manifest
 // and computes hash checksums for interface contracts and scaffolds to detect
 // future modifications.
-func SetFreezeTimestamp(m *IMPLManifest, t time.Time) error {
+func SetFreezeTimestamp(m *IMPLManifest, t time.Time) result.Result[FreezeData] {
 	m.WorktreesCreatedAt = &t
 
 	// Compute and store hash of interface contracts
 	contractsHash, err := computeHash(m.InterfaceContracts)
 	if err != nil {
-		return fmt.Errorf("failed to compute contracts hash: %w", err)
+		return result.NewFailure[FreezeData]([]result.SAWError{
+			result.NewFatal("FREEZE_FAILED", fmt.Sprintf("failed to compute contracts hash: %v", err)),
+		})
 	}
 	m.FrozenContractsHash = contractsHash
 
 	// Compute and store hash of scaffolds
 	scaffoldsHash, err := computeHash(m.Scaffolds)
 	if err != nil {
-		return fmt.Errorf("failed to compute scaffolds hash: %w", err)
+		return result.NewFailure[FreezeData]([]result.SAWError{
+			result.NewFatal("FREEZE_FAILED", fmt.Sprintf("failed to compute scaffolds hash: %v", err)),
+		})
 	}
 	m.FrozenScaffoldsHash = scaffoldsHash
 
-	return nil
+	return result.NewSuccess(FreezeData{
+		FreezeTimestamp: t,
+		ContractsFrozen: true,
+	})
 }
 
 // CheckFreeze checks if the manifest has been modified after worktree creation.

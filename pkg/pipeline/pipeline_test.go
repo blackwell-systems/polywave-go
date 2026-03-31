@@ -29,16 +29,41 @@ func TestPipeline_SequentialExecution(t *testing.T) {
 	}
 
 	p := New("seq").AddStep(step(1)).AddStep(step(2)).AddStep(step(3))
-	if err := p.Run(context.Background(), makeState()); err != nil {
-		t.Fatalf("unexpected error: %v", err)
+	r := p.Run(context.Background(), makeState())
+	if r.IsFatal() {
+		t.Fatalf("unexpected failure: %v", r.Errors)
 	}
 	if len(order) != 3 || order[0] != 1 || order[1] != 2 || order[2] != 3 {
 		t.Fatalf("wrong execution order: %v", order)
 	}
 }
 
+// TestPipeline_RunData_StepsExecuted verifies that RunData.StepsExecuted matches
+// the number of steps that actually ran.
+func TestPipeline_RunData_StepsExecuted(t *testing.T) {
+	p := New("count-test")
+	for i := 0; i < 4; i++ {
+		p.AddStep(Step{
+			Name:          fmt.Sprintf("step-%d", i),
+			ErrorStrategy: ErrorFail,
+			Func: func(ctx context.Context, state *State) error {
+				return nil
+			},
+		})
+	}
+
+	r := p.Run(context.Background(), makeState())
+	if r.IsFatal() {
+		t.Fatalf("unexpected failure: %v", r.Errors)
+	}
+	data := r.GetData()
+	if data.StepsExecuted != 4 {
+		t.Fatalf("expected StepsExecuted=4, got %d", data.StepsExecuted)
+	}
+}
+
 // TestPipeline_ErrorFail verifies that a failing step with ErrorFail aborts
-// the pipeline immediately and returns an error.
+// the pipeline immediately and returns a FATAL result.
 func TestPipeline_ErrorFail(t *testing.T) {
 	ran := false
 	p := New("fail-test")
@@ -58,9 +83,9 @@ func TestPipeline_ErrorFail(t *testing.T) {
 		},
 	})
 
-	err := p.Run(context.Background(), makeState())
-	if err == nil {
-		t.Fatal("expected error, got nil")
+	r := p.Run(context.Background(), makeState())
+	if !r.IsFatal() {
+		t.Fatal("expected FATAL result, got success")
 	}
 	if ran {
 		t.Fatal("second step should not have run after ErrorFail")
@@ -68,7 +93,8 @@ func TestPipeline_ErrorFail(t *testing.T) {
 }
 
 // TestPipeline_ErrorContinue verifies that a failing step with ErrorContinue
-// appends the error to state.Errors but lets subsequent steps run.
+// appends the error to state.Errors but lets subsequent steps run,
+// and returns a PARTIAL result.
 func TestPipeline_ErrorContinue(t *testing.T) {
 	ran := false
 	p := New("continue-test")
@@ -89,8 +115,12 @@ func TestPipeline_ErrorContinue(t *testing.T) {
 	})
 
 	state := makeState()
-	if err := p.Run(context.Background(), state); err != nil {
-		t.Fatalf("pipeline returned error: %v", err)
+	r := p.Run(context.Background(), state)
+	if r.IsFatal() {
+		t.Fatalf("pipeline returned fatal: %v", r.Errors)
+	}
+	if !r.IsPartial() {
+		t.Fatalf("expected PARTIAL result, got code=%s", r.Code)
 	}
 	if !ran {
 		t.Fatal("second step did not run after ErrorContinue")
@@ -101,7 +131,7 @@ func TestPipeline_ErrorContinue(t *testing.T) {
 }
 
 // TestPipeline_ErrorRetry verifies that a step is retried the configured number
-// of times before ultimately failing.
+// of times before ultimately failing with a FATAL result.
 func TestPipeline_ErrorRetry(t *testing.T) {
 	attempts := 0
 	p := New("retry-test")
@@ -115,9 +145,9 @@ func TestPipeline_ErrorRetry(t *testing.T) {
 		},
 	})
 
-	err := p.Run(context.Background(), makeState())
-	if err == nil {
-		t.Fatal("expected error after exhausting retries")
+	r := p.Run(context.Background(), makeState())
+	if !r.IsFatal() {
+		t.Fatal("expected FATAL result after exhausting retries")
 	}
 	// 1 initial attempt + 2 retries = 3 total
 	if attempts != 3 {
@@ -126,7 +156,7 @@ func TestPipeline_ErrorRetry(t *testing.T) {
 }
 
 // TestPipeline_ErrorRetry_Success verifies that a step that eventually succeeds
-// within the retry budget does not cause an error.
+// within the retry budget returns a SUCCESS result.
 func TestPipeline_ErrorRetry_Success(t *testing.T) {
 	attempts := 0
 	p := New("retry-success")
@@ -143,8 +173,9 @@ func TestPipeline_ErrorRetry_Success(t *testing.T) {
 		},
 	})
 
-	if err := p.Run(context.Background(), makeState()); err != nil {
-		t.Fatalf("expected success, got %v", err)
+	r := p.Run(context.Background(), makeState())
+	if r.IsFatal() {
+		t.Fatalf("expected success, got FATAL: %v", r.Errors)
 	}
 	if attempts != 3 {
 		t.Fatalf("expected 3 attempts, got %d", attempts)
@@ -152,7 +183,7 @@ func TestPipeline_ErrorRetry_Success(t *testing.T) {
 }
 
 // TestPipeline_ContextCancellation verifies that a cancelled context stops
-// execution before the next step starts.
+// execution before the next step starts and returns a FATAL result.
 func TestPipeline_ContextCancellation(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 
@@ -175,12 +206,9 @@ func TestPipeline_ContextCancellation(t *testing.T) {
 		},
 	})
 
-	err := p.Run(ctx, makeState())
-	if err == nil {
-		t.Fatal("expected error due to cancellation")
-	}
-	if !errors.Is(err, context.Canceled) {
-		t.Fatalf("expected context.Canceled in error chain, got: %v", err)
+	r := p.Run(ctx, makeState())
+	if !r.IsFatal() {
+		t.Fatal("expected FATAL result due to cancellation")
 	}
 	if secondRan {
 		t.Fatal("second step should not have run after cancellation")
@@ -205,8 +233,9 @@ func TestPipeline_ConditionOnSuccess(t *testing.T) {
 		},
 	})
 
-	if err := p.Run(context.Background(), state); err != nil {
-		t.Fatalf("unexpected error: %v", err)
+	r := p.Run(context.Background(), state)
+	if r.IsFatal() {
+		t.Fatalf("unexpected failure: %v", r.Errors)
 	}
 	if ran {
 		t.Fatal("on_success step should not have run when errors exist")
@@ -230,8 +259,8 @@ func TestPipeline_ConditionOnFailure(t *testing.T) {
 			return nil
 		},
 	})
-	if err := p1.Run(context.Background(), makeState()); err != nil {
-		t.Fatalf("unexpected error: %v", err)
+	if r := p1.Run(context.Background(), makeState()); r.IsFatal() {
+		t.Fatalf("unexpected failure: %v", r.Errors)
 	}
 	if ranWhenClean {
 		t.Fatal("on_failure step should not run when state has no errors")
@@ -251,8 +280,8 @@ func TestPipeline_ConditionOnFailure(t *testing.T) {
 			return nil
 		},
 	})
-	if err := p2.Run(context.Background(), dirtyState); err != nil {
-		t.Fatalf("unexpected error: %v", err)
+	if r := p2.Run(context.Background(), dirtyState); r.IsFatal() {
+		t.Fatalf("unexpected failure: %v", r.Errors)
 	}
 	if !ranWhenDirty {
 		t.Fatal("on_failure step should have run when state has errors")
@@ -281,7 +310,8 @@ func TestState_ValuesMap(t *testing.T) {
 		},
 	})
 
-	if err := p.Run(context.Background(), makeState()); err != nil {
-		t.Fatalf("unexpected error: %v", err)
+	r := p.Run(context.Background(), makeState())
+	if r.IsFatal() {
+		t.Fatalf("unexpected failure: %v", r.Errors)
 	}
 }

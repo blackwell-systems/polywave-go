@@ -225,3 +225,48 @@ func TestScanStubs_RustPatterns(t *testing.T) {
 		t.Errorf("expected 2 hits for Rust patterns, got %d", len(data.Hits))
 	}
 }
+
+func TestAppendStubReport_Success(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	// Write a minimal manifest
+	manifest := &IMPLManifest{
+		Title:       "Test",
+		FeatureSlug: "test-stub",
+		Waves:       []Wave{{Number: 1, Agents: []Agent{{ID: "A"}}}},
+	}
+	manifestPath := filepath.Join(tmpDir, "IMPL-test.yaml")
+	if err := Save(manifest, manifestPath); err != nil {
+		t.Fatalf("failed to write manifest: %v", err)
+	}
+
+	scanResult := ScanStubs([]string{})
+	res := AppendStubReport(manifestPath, "wave1", scanResult)
+	if res.IsFatal() {
+		t.Fatalf("AppendStubReport failed: %v", res.Errors)
+	}
+	appendData := res.GetData()
+	if !appendData.Appended {
+		t.Error("expected Appended=true on success")
+	}
+	if appendData.WaveKey != "wave1" {
+		t.Errorf("expected WaveKey=wave1, got %s", appendData.WaveKey)
+	}
+	if appendData.ManifestPath != manifestPath {
+		t.Errorf("expected ManifestPath=%s, got %s", manifestPath, appendData.ManifestPath)
+	}
+}
+
+func TestAppendStubReport_FatalOnMissingManifest(t *testing.T) {
+	scanResult := ScanStubs([]string{})
+	res := AppendStubReport("/nonexistent/path/impl.yaml", "wave1", scanResult)
+	if !res.IsFatal() {
+		t.Error("expected FATAL result when manifest does not exist")
+	}
+	if len(res.Errors) == 0 {
+		t.Error("expected at least one error in FATAL result")
+	}
+	if res.Errors[0].Code != "STUB_APPEND_FAILED" {
+		t.Errorf("expected error code STUB_APPEND_FAILED, got %s", res.Errors[0].Code)
+	}
+}

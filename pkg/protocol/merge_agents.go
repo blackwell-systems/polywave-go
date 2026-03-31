@@ -377,9 +377,9 @@ func mergeAgentsSingleRepo(manifestPath string, waveNum int, repoDir string, man
 
 		// Record merge in log (E9)
 		mergeLog.AddMergeEntry(agent.ID, mergeSHA)
-		if saveErr := SaveMergeLog(manifestPath, waveNum, mergeLog); saveErr != nil {
+		if saveRes := SaveMergeLog(manifestPath, waveNum, mergeLog); saveRes.IsFatal() {
 			// Non-fatal: log warning but continue (best-effort tracking)
-			log.Warn("protocol: failed to save merge-log", "err", saveErr)
+			log.Warn("protocol: failed to save merge-log", "err", saveRes.Errors[0].Message)
 		}
 
 		// Merge succeeded — auto-update completion status (best-effort)
@@ -534,9 +534,9 @@ func mergeAgentsMultiRepo(manifestPath string, waveNum int, manifest *IMPLManife
 
 			// Record merge in log (E9)
 			mergeLog.AddMergeEntry(agent.ID, mergeSHA)
-			if saveErr := SaveMergeLog(manifestPath, waveNum, mergeLog); saveErr != nil {
+			if saveRes := SaveMergeLog(manifestPath, waveNum, mergeLog); saveRes.IsFatal() {
 				// Non-fatal: log warning but continue (best-effort tracking)
-				log.Warn("protocol: failed to save merge-log", "err", saveErr)
+				log.Warn("protocol: failed to save merge-log", "err", saveRes.Errors[0].Message)
 			}
 
 			// Merge succeeded

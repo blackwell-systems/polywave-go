@@ -86,20 +86,35 @@ func ScanStubs(files []string) result.Result[ScanStubsData] {
 	return result.NewSuccess(data)
 }
 
+// AppendStubData contains metadata about a completed stub report append operation.
+type AppendStubData struct {
+	ManifestPath string
+	WaveKey      string
+	Appended     bool
+}
+
 // AppendStubReport loads the manifest at manifestPath, stores result under
 // waveKey (e.g. "wave1"), and saves the manifest back to disk.
-func AppendStubReport(manifestPath, waveKey string, scanResult result.Result[ScanStubsData]) error {
+func AppendStubReport(manifestPath, waveKey string, scanResult result.Result[ScanStubsData]) result.Result[AppendStubData] {
 	manifest, err := Load(manifestPath)
 	if err != nil {
-		return fmt.Errorf("AppendStubReport: failed to load manifest: %w", err)
+		return result.NewFailure[AppendStubData]([]result.SAWError{
+			result.NewFatal("STUB_APPEND_FAILED", fmt.Sprintf("AppendStubReport: failed to load manifest: %v", err)),
+		})
 	}
 	if manifest.StubReports == nil {
 		manifest.StubReports = make(map[string]*ScanStubsData)
 	}
-	data := scanResult.GetData()
-	manifest.StubReports[waveKey] = &data
+	scanData := scanResult.GetData()
+	manifest.StubReports[waveKey] = &scanData
 	if err := Save(manifest, manifestPath); err != nil {
-		return fmt.Errorf("AppendStubReport: failed to save manifest: %w", err)
+		return result.NewFailure[AppendStubData]([]result.SAWError{
+			result.NewFatal("STUB_APPEND_FAILED", fmt.Sprintf("AppendStubReport: failed to save manifest: %v", err)),
+		})
 	}
-	return nil
+	return result.NewSuccess(AppendStubData{
+		ManifestPath: manifestPath,
+		WaveKey:      waveKey,
+		Appended:     true,
+	})
 }

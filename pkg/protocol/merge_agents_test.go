@@ -451,8 +451,8 @@ func TestMergeAgents_SkipsAlreadyMergedAgents(t *testing.T) {
 			{Agent: "A", MergeSHA: mergeSHA, Timestamp: time.Time{}},
 		},
 	}
-	if err := SaveMergeLog(manifestPath, 1, mergeLog); err != nil {
-		t.Fatalf("failed to save initial merge-log: %v", err)
+	if saveRes := SaveMergeLog(manifestPath, 1, mergeLog); saveRes.IsFatal() {
+		t.Fatalf("failed to save initial merge-log: %v", saveRes.Errors)
 	}
 
 	// Run merge
@@ -618,8 +618,8 @@ func TestMergeAgents_IdempotentOnCrash(t *testing.T) {
 			{Agent: "B", MergeSHA: mergeSHAB, Timestamp: time.Now()},
 		},
 	}
-	if err := SaveMergeLog(manifestPath, 1, crashedLog); err != nil {
-		t.Fatalf("failed to save crashed merge-log: %v", err)
+	if saveRes := SaveMergeLog(manifestPath, 1, crashedLog); saveRes.IsFatal() {
+		t.Fatalf("failed to save crashed merge-log: %v", saveRes.Errors)
 	}
 
 	// Now "restart" - MergeAgents should skip A and B (already merged) and merge C

@@ -149,12 +149,15 @@ func TestPrepareWave_RepoMismatchBlocksWorktreeCreation(t *testing.T) {
 		{Name: "scout-and-wave-web", Path: "/tmp/saw-web"},
 	}
 
-	err := protocol.ValidateRepoMatch(doc, "/tmp/saw-go", configRepos)
-	if err == nil {
-		t.Fatal("expected repo mismatch error, got nil")
+	res := protocol.ValidateRepoMatch(doc, "/tmp/saw-go", configRepos)
+	if res.IsSuccess() {
+		t.Fatal("expected repo mismatch error, got success")
 	}
-	if !strings.Contains(err.Error(), "repo") {
-		t.Errorf("expected error to mention 'repo', got: %s", err.Error())
+	if len(res.Errors) == 0 {
+		t.Fatal("expected errors for repo mismatch, got none")
+	}
+	if !strings.Contains(res.Errors[0].Message, "repo") {
+		t.Errorf("expected error to mention 'repo', got: %s", res.Errors[0].Message)
 	}
 }
 

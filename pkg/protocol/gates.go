@@ -37,21 +37,31 @@ type GatesData struct {
 	Gates []GateResult `json:"gates"`
 }
 
+// ValidateGateData holds the result data for a successful ValidateQualityGate call.
+type ValidateGateData struct {
+	GateType string `json:"gate_type"`
+	Valid    bool   `json:"valid"`
+}
+
 // ValidateQualityGate checks that a quality gate configuration is valid.
-// Returns error if gate has invalid field combinations.
+// Returns Result[ValidateGateData] indicating success or failure with structured errors.
 // BLOCKER 2 FIX: Format gates with fix=true MUST be in PRE_VALIDATION phase
 // to prevent cache invalidation during parallel VALIDATION phase execution.
-func ValidateQualityGate(gate QualityGate) error {
+func ValidateQualityGate(gate QualityGate) result.Result[ValidateGateData] {
 	// Format gates with fix=true MUST be in PRE_VALIDATION phase
 	// (or empty phase, which defaults to VALIDATION — that's an error too)
 	if gate.Fix && gate.Phase != GatePhasePre && gate.Phase != "" {
-		return fmt.Errorf("format gates with fix=true must be in PRE_VALIDATION phase (got %s)", gate.Phase)
+		return result.NewFailure[ValidateGateData]([]result.SAWError{
+			result.NewFatal("GATE_VALIDATION_FAILED", fmt.Sprintf("format gates with fix=true must be in PRE_VALIDATION phase (got %s)", gate.Phase)),
+		})
 	}
 	// Empty phase + fix=true is also invalid (would default to VALIDATION)
 	if gate.Fix && gate.Phase == "" {
-		return fmt.Errorf("format gates with fix=true must be in PRE_VALIDATION phase (got empty, which defaults to VALIDATION)")
+		return result.NewFailure[ValidateGateData]([]result.SAWError{
+			result.NewFatal("GATE_VALIDATION_FAILED", "format gates with fix=true must be in PRE_VALIDATION phase (got empty, which defaults to VALIDATION)"),
+		})
 	}
-	return nil
+	return result.NewSuccess(ValidateGateData{GateType: gate.Type, Valid: true})
 }
 
 // gateGroup represents a set of gates that execute together (sequentially or concurrently).
@@ -530,9 +540,9 @@ func RunGatesWithCache(manifest *IMPLManifest, waveNumber int, repoDir string, c
 	var filteredGates []QualityGate
 	for _, gate := range manifest.QualityGates.Gates {
 		// Validate gate before execution (BLOCKER 2 fix)
-		if err := ValidateQualityGate(gate); err != nil {
+		if vr := ValidateQualityGate(gate); vr.IsFatal() {
 			return result.NewFailure[GatesData]([]result.SAWError{
-				result.NewFatal("GATE_INVALID", fmt.Sprintf("invalid gate %s: %v", gate.Type, err)),
+				result.NewFatal("GATE_INVALID", fmt.Sprintf("invalid gate %s: %s", gate.Type, vr.Errors[0].Message)),
 			})
 		}
 

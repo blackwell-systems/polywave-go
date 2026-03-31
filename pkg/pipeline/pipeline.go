@@ -3,6 +3,9 @@ package pipeline
 import (
 	"context"
 	"fmt"
+	"time"
+
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
 )
 
 // Pipeline is a named sequence of steps executed in order.
@@ -24,6 +27,18 @@ func (p *Pipeline) AddStep(step Step) *Pipeline {
 	return p
 }
 
+// RunData carries metadata about a completed pipeline run.
+type RunData struct {
+	StepsExecuted int
+	TotalDuration time.Duration
+}
+
+// StepData carries metadata about a completed step execution.
+type StepData struct {
+	StepName string
+	Duration time.Duration
+}
+
 // Run executes all steps sequentially, respecting conditions, error strategies,
 // and context cancellation.
 //
@@ -38,12 +53,24 @@ func (p *Pipeline) AddStep(step Step) *Pipeline {
 //   - "retry"            — retry up to step.MaxRetries additional attempts;
 //                          on final failure apply the underlying fail/continue
 //                          behaviour (treated as "fail" when using ErrorRetry)
-func (p *Pipeline) Run(ctx context.Context, state *State) error {
+//
+// Returns result.Result[RunData]:
+//   - SUCCESS: all steps executed without error
+//   - PARTIAL: some steps failed with ErrorContinue but pipeline continued
+//   - FATAL: pipeline aborted due to a step failure or context cancellation
+func (p *Pipeline) Run(ctx context.Context, state *State) result.Result[RunData] {
+	start := time.Now()
+	stepsExecuted := 0
+	var warnings []result.SAWError
+
 	for _, step := range p.steps {
 		// Check context cancellation before each step.
 		select {
 		case <-ctx.Done():
-			return fmt.Errorf("pipeline %q cancelled before step %q: %w", p.name, step.Name, ctx.Err())
+			return result.NewFailure[RunData]([]result.SAWError{
+				result.NewFatal("PIPELINE_RUN_FAILED",
+					fmt.Sprintf("pipeline %q cancelled before step %q: %v", p.name, step.Name, ctx.Err())),
+			})
 		default:
 		}
 
@@ -53,18 +80,39 @@ func (p *Pipeline) Run(ctx context.Context, state *State) error {
 		}
 
 		// Execute the step (with optional retries).
-		err := executeStep(ctx, step, state)
-		if err != nil {
+		stepResult := executeStep(ctx, step, state)
+		stepsExecuted++
+
+		if stepResult.IsFatal() {
 			switch step.ErrorStrategy {
 			case ErrorContinue:
-				state.Errors = append(state.Errors, fmt.Errorf("step %q: %w", step.Name, err))
-				// Continue to next step.
+				// Append the step errors as warnings and continue.
+				for _, e := range stepResult.Errors {
+					wrapped := result.NewWarning(e.Code,
+						fmt.Sprintf("step %q: %s", step.Name, e.Message))
+					state.Errors = append(state.Errors,
+						fmt.Errorf("step %q: %s", step.Name, e.Message))
+					warnings = append(warnings, wrapped)
+				}
 			default: // ErrorFail or unset
-				return fmt.Errorf("pipeline %q step %q failed: %w", p.name, step.Name, err)
+				return result.NewFailure[RunData]([]result.SAWError{
+					result.NewFatal("PIPELINE_RUN_FAILED",
+						fmt.Sprintf("pipeline %q step %q failed: %s",
+							p.name, step.Name, stepResult.Errors[0].Message)),
+				})
 			}
 		}
 	}
-	return nil
+
+	data := RunData{
+		StepsExecuted: stepsExecuted,
+		TotalDuration: time.Since(start),
+	}
+
+	if len(warnings) > 0 {
+		return result.NewPartial(data, warnings)
+	}
+	return result.NewSuccess(data)
 }
 
 // shouldRun returns true when the step's condition allows execution.
@@ -81,13 +129,30 @@ func shouldRun(condition string, state *State) bool {
 
 // executeStep runs a step function, retrying according to the step's
 // MaxRetries setting when ErrorStrategy is ErrorRetry.
-func executeStep(ctx context.Context, step Step, state *State) error {
+//
+// Returns result.Result[StepData]:
+//   - SUCCESS: step executed without error, with timing metadata
+//   - FATAL: step returned an error (after all retries are exhausted)
+func executeStep(ctx context.Context, step Step, state *State) result.Result[StepData] {
 	if step.Func == nil {
-		return fmt.Errorf("step %q has no function", step.Name)
+		return result.NewFailure[StepData]([]result.SAWError{
+			result.NewFatal("STEP_EXECUTION_FAILED",
+				fmt.Sprintf("step %q has no function", step.Name)),
+		})
 	}
 
+	start := time.Now()
+
 	if step.ErrorStrategy != ErrorRetry {
-		return step.Func(ctx, state)
+		if err := step.Func(ctx, state); err != nil {
+			return result.NewFailure[StepData]([]result.SAWError{
+				result.NewFatal("STEP_EXECUTION_FAILED", err.Error()).WithCause(err),
+			})
+		}
+		return result.NewSuccess(StepData{
+			StepName: step.Name,
+			Duration: time.Since(start),
+		})
 	}
 
 	// Retry loop.
@@ -101,14 +166,21 @@ func executeStep(ctx context.Context, step Step, state *State) error {
 		// Respect context cancellation between retries.
 		select {
 		case <-ctx.Done():
-			return ctx.Err()
+			return result.NewFailure[StepData]([]result.SAWError{
+				result.NewFatal("STEP_EXECUTION_FAILED", ctx.Err().Error()).WithCause(ctx.Err()),
+			})
 		default:
 		}
 
 		lastErr = step.Func(ctx, state)
 		if lastErr == nil {
-			return nil
+			return result.NewSuccess(StepData{
+				StepName: step.Name,
+				Duration: time.Since(start),
+			})
 		}
 	}
-	return lastErr
+	return result.NewFailure[StepData]([]result.SAWError{
+		result.NewFatal("STEP_EXECUTION_FAILED", lastErr.Error()).WithCause(lastErr),
+	})
 }

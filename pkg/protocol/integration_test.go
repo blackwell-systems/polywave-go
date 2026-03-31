@@ -263,8 +263,12 @@ func TestAppendIntegrationReport(t *testing.T) {
 		Summary: "1 gap",
 	}
 
-	if err := AppendIntegrationReport(manifestPath, "wave1", report); err != nil {
-		t.Fatalf("AppendIntegrationReport failed: %v", err)
+	appendRes := AppendIntegrationReport(manifestPath, "wave1", report)
+	if appendRes.IsFatal() {
+		t.Fatalf("AppendIntegrationReport failed: %v", appendRes.Errors)
+	}
+	if !appendRes.GetData().Appended {
+		t.Error("expected Appended=true on success")
 	}
 
 	// Read back and verify
@@ -325,8 +329,9 @@ func TestAppendIntegrationReport(t *testing.T) {
 		Valid:   true,
 		Summary: "no gaps after fix",
 	}
-	if err := AppendIntegrationReport(manifestPath, "wave1", report2); err != nil {
-		t.Fatalf("AppendIntegrationReport (overwrite) failed: %v", err)
+	appendRes2 := AppendIntegrationReport(manifestPath, "wave1", report2)
+	if appendRes2.IsFatal() {
+		t.Fatalf("AppendIntegrationReport (overwrite) failed: %v", appendRes2.Errors)
 	}
 
 	content2, err := os.ReadFile(manifestPath)
@@ -346,6 +351,20 @@ func TestAppendIntegrationReport(t *testing.T) {
 	}
 	if !recovered2.Valid {
 		t.Error("expected valid=true after overwrite")
+	}
+}
+
+func TestAppendIntegrationReport_FatalOnMissingManifest(t *testing.T) {
+	report := &IntegrationReport{Wave: 1, Gaps: []IntegrationGap{}, Valid: true, Summary: "ok"}
+	res := AppendIntegrationReport("/nonexistent/path/impl.yaml", "wave1", report)
+	if !res.IsFatal() {
+		t.Error("expected FATAL result when manifest does not exist")
+	}
+	if len(res.Errors) == 0 {
+		t.Error("expected at least one error in FATAL result")
+	}
+	if res.Errors[0].Code != "INTEGRATION_APPEND_FAILED" {
+		t.Errorf("expected error code INTEGRATION_APPEND_FAILED, got %s", res.Errors[0].Code)
 	}
 }
 

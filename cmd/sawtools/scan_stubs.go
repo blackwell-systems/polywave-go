@@ -24,8 +24,8 @@ func newScanStubsCmd() *cobra.Command {
 
 			if appendImpl != "" {
 				waveKey := fmt.Sprintf("wave%d", waveNum)
-				if err := protocol.AppendStubReport(appendImpl, waveKey, res); err != nil {
-					return fmt.Errorf("scan-stubs: %w", err)
+				if appendRes := protocol.AppendStubReport(appendImpl, waveKey, res); appendRes.IsFatal() {
+					return fmt.Errorf("scan-stubs: %v", appendRes.Errors)
 				}
 			}
 

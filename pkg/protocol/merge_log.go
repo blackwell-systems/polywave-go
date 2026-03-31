@@ -7,7 +7,22 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
 )
+
+// SaveLogData holds the result data for a successful SaveMergeLog call.
+type SaveLogData struct {
+	LogPath string `json:"log_path"`
+	WaveNum int    `json:"wave_num"`
+}
+
+// AddEntryData holds the result data for a successful AddMergeEntry call.
+type AddEntryData struct {
+	Agent    string `json:"agent"`
+	MergeSHA string `json:"merge_sha"`
+	Added    bool   `json:"added"`
+}
 
 // MergeLog tracks per-agent merge state for wave merge idempotency.
 type MergeLog struct {
@@ -48,36 +63,50 @@ func LoadMergeLog(manifestPath string, waveNum int) (*MergeLog, error) {
 }
 
 // SaveMergeLog writes merge-log.json after successful agent merge.
-func SaveMergeLog(manifestPath string, waveNum int, log *MergeLog) error {
+// Returns Result[SaveLogData] with the log path and wave number on success,
+// or a FATAL result with error code "LOG_SAVE_FAILED" on failure.
+func SaveMergeLog(manifestPath string, waveNum int, log *MergeLog) result.Result[SaveLogData] {
 	logPath := getMergeLogPath(manifestPath, waveNum)
 	logDir := filepath.Dir(logPath)
 
 	// Create .saw-state/wave{N}/ directory if needed
 	if err := os.MkdirAll(logDir, 0755); err != nil {
-		return fmt.Errorf("failed to create merge log directory: %w", err)
+		return result.NewFailure[SaveLogData]([]result.SAWError{
+			result.NewFatal("LOG_SAVE_FAILED", fmt.Sprintf("failed to create merge log directory: %v", err)),
+		})
 	}
 
 	// Pretty-print JSON with 2-space indent for readability
 	data, err := json.MarshalIndent(log, "", "  ")
 	if err != nil {
-		return fmt.Errorf("failed to marshal merge log: %w", err)
+		return result.NewFailure[SaveLogData]([]result.SAWError{
+			result.NewFatal("LOG_SAVE_FAILED", fmt.Sprintf("failed to marshal merge log: %v", err)),
+		})
 	}
 
 	// Overwrite existing file (not append)
 	if err := os.WriteFile(logPath, data, 0644); err != nil {
-		return fmt.Errorf("failed to write merge log: %w", err)
+		return result.NewFailure[SaveLogData]([]result.SAWError{
+			result.NewFatal("LOG_SAVE_FAILED", fmt.Sprintf("failed to write merge log: %v", err)),
+		})
 	}
 
-	return nil
+	return result.NewSuccess(SaveLogData{LogPath: logPath, WaveNum: waveNum})
 }
 
 // AddMergeEntry appends a merge entry to the log.
-func (ml *MergeLog) AddMergeEntry(agent string, mergeSHA string) error {
+// Returns Result[AddEntryData] with agent and SHA info on success,
+// or a FATAL result with error code "ENTRY_ADD_FAILED" on validation failure.
+func (ml *MergeLog) AddMergeEntry(agent string, mergeSHA string) result.Result[AddEntryData] {
 	if agent == "" {
-		return fmt.Errorf("agent ID cannot be empty")
+		return result.NewFailure[AddEntryData]([]result.SAWError{
+			result.NewFatal("ENTRY_ADD_FAILED", "agent ID cannot be empty"),
+		})
 	}
 	if mergeSHA == "" {
-		return fmt.Errorf("merge SHA cannot be empty")
+		return result.NewFailure[AddEntryData]([]result.SAWError{
+			result.NewFatal("ENTRY_ADD_FAILED", "merge SHA cannot be empty"),
+		})
 	}
 
 	entry := MergeEntry{
@@ -87,7 +116,7 @@ func (ml *MergeLog) AddMergeEntry(agent string, mergeSHA string) error {
 	}
 
 	ml.Merges = append(ml.Merges, entry)
-	return nil
+	return result.NewSuccess(AddEntryData{Agent: agent, MergeSHA: mergeSHA, Added: true})
 }
 
 // IsMerged checks if an agent has already been merged.

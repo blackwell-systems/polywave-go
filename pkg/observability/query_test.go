@@ -307,6 +307,86 @@ func TestQueryGetCostBreakdown(t *testing.T) {
 	}
 }
 
+// TestQueryFunctionReturnsQueryData verifies Query returns QueryData with Count.
+func TestQueryFunctionReturnsQueryData(t *testing.T) {
+	store := &mockStore{}
+	ctx := context.Background()
+	base := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+
+	// Record 3 activity events.
+	for i := range 3 {
+		_ = store.RecordEvent(ctx, &ActivityEvent{
+			ID:           fmt.Sprintf("a%d", i),
+			Type:         "activity",
+			Time:         base.Add(time.Duration(i) * time.Minute),
+			ActivityType: "wave_start",
+			IMPLSlug:     "impl-q",
+		})
+	}
+
+	res := Query(ctx, store, QueryFilters{
+		EventTypes: []string{"activity"},
+		IMPLSlugs:  []string{"impl-q"},
+	})
+	if !res.IsSuccess() {
+		t.Fatalf("expected success, got code=%s errors=%v", res.Code, res.Errors)
+	}
+	data := res.GetData()
+	if data.Count != 3 {
+		t.Errorf("QueryData.Count = %d, want 3", data.Count)
+	}
+	if len(data.Events) != 3 {
+		t.Errorf("len(QueryData.Events) = %d, want 3", len(data.Events))
+	}
+}
+
+// TestQueryFunctionEmptyResultReturnsSuccess verifies Query returns empty slice (not error) when no matches.
+func TestQueryFunctionEmptyResultReturnsSuccess(t *testing.T) {
+	store := &mockStore{}
+	ctx := context.Background()
+
+	res := Query(ctx, store, QueryFilters{IMPLSlugs: []string{"nonexistent"}})
+	if !res.IsSuccess() {
+		t.Fatalf("expected success for empty result, got code=%s", res.Code)
+	}
+	data := res.GetData()
+	if data.Count != 0 {
+		t.Errorf("QueryData.Count = %d, want 0", data.Count)
+	}
+	if data.Events == nil {
+		t.Error("expected non-nil Events slice for empty result")
+	}
+}
+
+// TestQueryFunctionStoreErrorReturnsFatal verifies store errors produce FATAL result.
+func TestQueryFunctionStoreErrorReturnsFatal(t *testing.T) {
+	store := &errorStore{}
+	ctx := context.Background()
+
+	res := Query(ctx, store, QueryFilters{})
+	if !res.IsFatal() {
+		t.Fatalf("expected FATAL result, got code=%s", res.Code)
+	}
+	if len(res.Errors) == 0 {
+		t.Fatal("expected at least one error")
+	}
+	if res.Errors[0].Code != "EVENT_QUERY_FAILED" {
+		t.Errorf("error code = %q, want EVENT_QUERY_FAILED", res.Errors[0].Code)
+	}
+}
+
+// errorStore is a Store that always returns an error from QueryEvents.
+type errorStore struct{}
+
+func (e *errorStore) RecordEvent(_ context.Context, _ Event) error { return nil }
+func (e *errorStore) QueryEvents(_ context.Context, _ QueryFilters) ([]Event, error) {
+	return nil, fmt.Errorf("query error: connection refused")
+}
+func (e *errorStore) GetRollup(_ context.Context, _ RollupRequest) (*RollupResult, error) {
+	return nil, nil
+}
+func (e *errorStore) Close() error { return nil }
+
 func TestQueryGetFailurePatterns(t *testing.T) {
 	store := &mockStore{}
 	ctx := context.Background()

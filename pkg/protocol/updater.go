@@ -4,15 +4,30 @@ import (
 	"fmt"
 	"os"
 	"strings"
+
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
 )
+
+// IMPLStatusData holds the result of an UpdateIMPLStatus operation.
+type IMPLStatusData struct {
+	UpdatedPath     string
+	CompletedAgents []string
+	NewState        string
+}
+
+// UpdatePromptData holds the result of an UpdateAgentPrompt operation.
+type UpdatePromptData struct {
+	AgentID       string
+	PromptUpdated bool
+}
 
 // UpdateIMPLStatus reads the IMPL doc at path, ticks the Status table
 // checkboxes for all agents whose letter appears in completedAgents,
 // and writes the result back to path.
 //
 // It is idempotent: rows already showing "DONE" are left unchanged.
-// Returns nil if no Status table section is found (non-fatal).
-// Returns an error if the file cannot be read or written.
+// Returns Fatal if the file cannot be read or written.
+// Returns Success with UpdateStatusData on success (including when no Status section is found).
 //
 // Expected Status table row format:
 //
@@ -25,19 +40,29 @@ import (
 // The function matches rows where:
 //   - The row contains "| TO-DO |" (case-sensitive)
 //   - The agent letter cell matches one of completedAgents (exact, single char)
-func UpdateIMPLStatus(path string, completedAgents []string) error {
+func UpdateIMPLStatus(path string, completedAgents []string) result.Result[IMPLStatusData] {
 	data, err := os.ReadFile(path)
 	if err != nil {
-		return fmt.Errorf("UpdateIMPLStatus: cannot read %q: %w", path, err)
+		return result.NewFailure[IMPLStatusData]([]result.SAWError{
+			result.NewFatal("STATUS_UPDATE_FAILED",
+				fmt.Sprintf("UpdateIMPLStatus: cannot read %q: %v", path, err)),
+		})
 	}
 
 	updated := UpdateIMPLStatusBytes(data, completedAgents)
 
 	if err := os.WriteFile(path, updated, 0644); err != nil {
-		return fmt.Errorf("UpdateIMPLStatus: cannot write %q: %w", path, err)
+		return result.NewFailure[IMPLStatusData]([]result.SAWError{
+			result.NewFatal("STATUS_UPDATE_FAILED",
+				fmt.Sprintf("UpdateIMPLStatus: cannot write %q: %v", path, err)),
+		})
 	}
 
-	return nil
+	return result.NewSuccess(IMPLStatusData{
+		UpdatedPath:     path,
+		CompletedAgents: completedAgents,
+		NewState:        "DONE",
+	})
 }
 
 // UpdateIMPLStatusBytes is the pure functional core of UpdateIMPLStatus.
@@ -96,10 +121,12 @@ func UpdateIMPLStatusBytes(content []byte, completedAgents []string) []byte {
 }
 
 // UpdateAgentPrompt updates the task/prompt text for a specific agent in a YAML manifest.
-// Returns ErrAgentNotFound if the agent ID doesn't exist in any wave.
-func UpdateAgentPrompt(m *IMPLManifest, agentID string, newPrompt string) error {
+// Returns Fatal wrapping ErrAgentNotFound if the agent ID doesn't exist in any wave.
+func UpdateAgentPrompt(m *IMPLManifest, agentID string, newPrompt string) result.Result[UpdatePromptData] {
 	if agentID == "" {
-		return fmt.Errorf("agent ID cannot be empty")
+		return result.NewFailure[UpdatePromptData]([]result.SAWError{
+			result.NewFatal("PROMPT_UPDATE_FAILED", "agent ID cannot be empty"),
+		})
 	}
 
 	// Search all waves for the agent with matching ID
@@ -108,11 +135,17 @@ func UpdateAgentPrompt(m *IMPLManifest, agentID string, newPrompt string) error 
 			if m.Waves[i].Agents[j].ID == agentID {
 				// Update the agent's Task field with newPrompt
 				m.Waves[i].Agents[j].Task = newPrompt
-				return nil
+				return result.NewSuccess(UpdatePromptData{
+					AgentID:       agentID,
+					PromptUpdated: true,
+				})
 			}
 		}
 	}
 
 	// Agent not found in any wave
-	return fmt.Errorf("%w: %s", ErrAgentNotFound, agentID)
+	return result.NewFailure[UpdatePromptData]([]result.SAWError{
+		result.NewFatal("PROMPT_UPDATE_FAILED",
+			fmt.Sprintf("%s: %s", ErrAgentNotFound, agentID)),
+	})
 }

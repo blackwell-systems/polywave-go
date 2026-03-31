@@ -29,10 +29,15 @@ runs Scout/Wave cycles, auto-remediates failures, and advances the queue.
 Events are streamed as JSON lines to stdout.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			// Load autonomy config from saw.config.json.
-			cfg, err := autonomy.LoadConfig(repoDir)
-			if err != nil {
-				return fmt.Errorf("daemon: load config: %w", err)
+			cfgResult := autonomy.LoadConfig(repoDir)
+			if cfgResult.IsFatal() {
+				errs := cfgResult.Errors
+				if len(errs) > 0 {
+					return fmt.Errorf("daemon: load config: %s", errs[0].Message)
+				}
+				return fmt.Errorf("daemon: load config: unknown error")
 			}
+			cfg := cfgResult.GetData().Config
 
 			// Override level if --autonomy flag is set.
 			if autonomyLevel != "" {
