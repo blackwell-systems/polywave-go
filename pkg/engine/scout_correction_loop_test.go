@@ -25,18 +25,22 @@ func TestScoutCorrectionLoop_SucceedsFirstTry(t *testing.T) {
 			// Passes on first try.
 			return nil, nil
 		},
-		setStateFn: func(implPath string) error {
+		setStateFn: func(implPath string) result.Result[SetBlockedData] {
 			t.Fatal("setStateFn should not be called on success")
-			return nil
+			return result.NewSuccess(SetBlockedData{})
 		},
 	}
 
-	err := ScoutCorrectionLoop(context.Background(), opts, nil)
-	if err != nil {
-		t.Fatalf("expected nil error, got: %v", err)
+	res := ScoutCorrectionLoop(context.Background(), opts, nil)
+	if res.IsFatal() {
+		t.Fatalf("expected success result, got fatal: %v", res.Errors)
 	}
 	if scoutCalls != 1 {
 		t.Fatalf("expected 1 RunScout call, got %d", scoutCalls)
+	}
+	data := res.GetData()
+	if data.Attempts != 1 {
+		t.Errorf("expected Attempts=1, got %d", data.Attempts)
 	}
 }
 
@@ -73,15 +77,15 @@ func TestScoutCorrectionLoop_RetriesAndSucceeds(t *testing.T) {
 			}
 			return nil, nil
 		},
-		setStateFn: func(implPath string) error {
+		setStateFn: func(implPath string) result.Result[SetBlockedData] {
 			t.Fatal("setStateFn should not be called when retry succeeds")
-			return nil
+			return result.NewSuccess(SetBlockedData{})
 		},
 	}
 
-	err := ScoutCorrectionLoop(context.Background(), opts, nil)
-	if err != nil {
-		t.Fatalf("expected nil error, got: %v", err)
+	res := ScoutCorrectionLoop(context.Background(), opts, nil)
+	if res.IsFatal() {
+		t.Fatalf("expected success result, got fatal: %v", res.Errors)
 	}
 	if scoutCalls != 2 {
 		t.Fatalf("expected 2 RunScout calls, got %d", scoutCalls)
@@ -113,21 +117,24 @@ func TestScoutCorrectionLoop_ExhaustsRetriesAndSetsState(t *testing.T) {
 				{Code: "E16_002", Message: "no waves defined"},
 			}, nil
 		},
-		setStateFn: func(implPath string) error {
+		setStateFn: func(implPath string) result.Result[SetBlockedData] {
 			stateSet = true
-			return nil
+			return result.NewSuccess(SetBlockedData{IMPLPath: implPath})
 		},
 	}
 
-	err := ScoutCorrectionLoop(context.Background(), opts, nil)
-	if err == nil {
-		t.Fatal("expected error after exhausting retries")
+	res := ScoutCorrectionLoop(context.Background(), opts, nil)
+	if !res.IsFatal() {
+		t.Fatal("expected fatal result after exhausting retries, got non-fatal")
 	}
-	if !strings.Contains(err.Error(), "validation failed after 2 retries") {
-		t.Fatalf("unexpected error message: %v", err)
+	if len(res.Errors) == 0 {
+		t.Fatal("expected errors in fatal result")
 	}
-	if !strings.Contains(err.Error(), "missing slug field") {
-		t.Fatalf("expected error details in message: %v", err)
+	if !strings.Contains(res.Errors[0].Message, "validation failed after 2 retries") {
+		t.Fatalf("unexpected error message: %v", res.Errors[0].Message)
+	}
+	if !strings.Contains(res.Errors[0].Message, "missing slug field") {
+		t.Fatalf("expected error details in message: %v", res.Errors[0].Message)
 	}
 	// Initial attempt + 2 retries = 3 total calls.
 	if scoutCalls != 3 {
@@ -154,9 +161,15 @@ func TestScoutCorrectionLoop_ContextCancelled(t *testing.T) {
 		},
 	}
 
-	err := ScoutCorrectionLoop(ctx, opts, nil)
-	if err != context.Canceled {
-		t.Fatalf("expected context.Canceled, got: %v", err)
+	res := ScoutCorrectionLoop(ctx, opts, nil)
+	if !res.IsFatal() {
+		t.Fatal("expected fatal result for cancelled context")
+	}
+	if len(res.Errors) == 0 {
+		t.Fatal("expected errors in fatal result")
+	}
+	if res.Errors[0].Code != "CONTEXT_CANCELLED" {
+		t.Errorf("expected CONTEXT_CANCELLED code, got %q", res.Errors[0].Code)
 	}
 }
 

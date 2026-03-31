@@ -9,22 +9,37 @@ import (
 	"syscall"
 
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
 )
+
+// TestData holds data returned by RunTestCommand.
+type TestData struct {
+	Command     string   `json:"command"`
+	OutputLines []string `json:"output_lines"`
+}
 
 // RunTestCommand loads the IMPL manifest from implPath, extracts the
 // test_command, and runs it in repoPath via "sh -c". Output is streamed
 // line-by-line through the onOutput callback. The process is killed on
-// context cancellation. Returns nil on success; on failure the error
+// context cancellation. Returns fatal result on failure; on success the result
 // includes accumulated output for diagnostics.
-func RunTestCommand(ctx context.Context, implPath, repoPath string, onOutput func(line string)) error {
+func RunTestCommand(ctx context.Context, implPath, repoPath string, onOutput func(line string)) result.Result[TestData] {
 	manifest, err := protocol.Load(implPath)
 	if err != nil {
-		return fmt.Errorf("load manifest: %w", err)
+		return result.NewFailure[TestData]([]result.SAWError{
+			result.NewFatal("ENGINE_TEST_LOAD_FAILED",
+				fmt.Sprintf("load manifest: %v", err)).
+				WithContext("impl_path", implPath),
+		})
 	}
 
 	testCommand := manifest.TestCommand
 	if testCommand == "" {
-		return fmt.Errorf("no test_command defined in IMPL manifest")
+		return result.NewFailure[TestData]([]result.SAWError{
+			result.NewFatal("ENGINE_TEST_NO_COMMAND",
+				"no test_command defined in IMPL manifest").
+				WithContext("impl_path", implPath),
+		})
 	}
 
 	cmd := exec.CommandContext(ctx, "sh", "-c", testCommand)
@@ -34,12 +49,19 @@ func RunTestCommand(ctx context.Context, implPath, repoPath string, onOutput fun
 	// Combine stdout and stderr for streaming.
 	pipe, err := cmd.StdoutPipe()
 	if err != nil {
-		return fmt.Errorf("create stdout pipe: %w", err)
+		return result.NewFailure[TestData]([]result.SAWError{
+			result.NewFatal("ENGINE_TEST_PIPE_FAILED",
+				fmt.Sprintf("create stdout pipe: %v", err)),
+		})
 	}
 	cmd.Stderr = cmd.Stdout // merge stderr into stdout pipe
 
 	if err := cmd.Start(); err != nil {
-		return fmt.Errorf("start test command: %w", err)
+		return result.NewFailure[TestData]([]result.SAWError{
+			result.NewFatal("ENGINE_TEST_START_FAILED",
+				fmt.Sprintf("start test command: %v", err)).
+				WithContext("command", testCommand),
+		})
 	}
 
 	// Stream output line-by-line.
@@ -58,11 +80,22 @@ func RunTestCommand(ctx context.Context, implPath, repoPath string, onOutput fun
 		// On context cancellation, kill the process group.
 		if ctx.Err() != nil {
 			_ = syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
-			return fmt.Errorf("test command cancelled: %w", ctx.Err())
+			return result.NewFailure[TestData]([]result.SAWError{
+				result.NewFatal("CONTEXT_CANCELLED",
+					fmt.Sprintf("test command cancelled: %v", ctx.Err())).
+					WithContext("command", testCommand),
+			})
 		}
 		accumulated := strings.Join(outputLines, "\n")
-		return fmt.Errorf("test command failed: %w\nOutput:\n%s", err, accumulated)
+		return result.NewFailure[TestData]([]result.SAWError{
+			result.NewFatal("ENGINE_TEST_COMMAND_FAILED",
+				fmt.Sprintf("test command failed: %v\nOutput:\n%s", err, accumulated)).
+				WithContext("command", testCommand),
+		})
 	}
 
-	return nil
+	return result.NewSuccess(TestData{
+		Command:     testCommand,
+		OutputLines: outputLines,
+	})
 }

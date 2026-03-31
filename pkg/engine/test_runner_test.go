@@ -26,12 +26,15 @@ func TestRunTestCommand_EmptyTestCommand(t *testing.T) {
 	dir := t.TempDir()
 	implPath := writeTestManifest(t, dir, `""`)
 
-	err := RunTestCommand(context.Background(), implPath, dir, nil)
-	if err == nil {
-		t.Fatal("expected error for empty test_command")
+	res := RunTestCommand(context.Background(), implPath, dir, nil)
+	if !res.IsFatal() {
+		t.Fatal("expected fatal result for empty test_command")
 	}
-	if !strings.Contains(err.Error(), "no test_command") {
-		t.Errorf("expected 'no test_command' error, got: %v", err)
+	if len(res.Errors) == 0 {
+		t.Fatal("expected at least one error in fatal result")
+	}
+	if !strings.Contains(res.Errors[0].Message, "no test_command") {
+		t.Errorf("expected 'no test_command' error message, got: %v", res.Errors[0].Message)
 	}
 }
 
@@ -40,11 +43,11 @@ func TestRunTestCommand_CallbackInvoked(t *testing.T) {
 	implPath := writeTestManifest(t, dir, "echo hello && echo world")
 
 	var lines []string
-	err := RunTestCommand(context.Background(), implPath, dir, func(line string) {
+	res := RunTestCommand(context.Background(), implPath, dir, func(line string) {
 		lines = append(lines, line)
 	})
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+	if res.IsFatal() {
+		t.Fatalf("unexpected fatal result: %v", res.Errors)
 	}
 	if len(lines) < 2 {
 		t.Fatalf("expected at least 2 lines, got %d: %v", len(lines), lines)
@@ -55,6 +58,11 @@ func TestRunTestCommand_CallbackInvoked(t *testing.T) {
 	if lines[1] != "world" {
 		t.Errorf("expected second line 'world', got %q", lines[1])
 	}
+	// Verify result data
+	data := res.GetData()
+	if !strings.Contains(data.Command, "echo") {
+		t.Errorf("expected command to contain 'echo', got %q", data.Command)
+	}
 }
 
 func TestRunTestCommand_NilCallback(t *testing.T) {
@@ -62,9 +70,9 @@ func TestRunTestCommand_NilCallback(t *testing.T) {
 	implPath := writeTestManifest(t, dir, "echo ok")
 
 	// Should not panic with nil callback.
-	err := RunTestCommand(context.Background(), implPath, dir, nil)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+	res := RunTestCommand(context.Background(), implPath, dir, nil)
+	if res.IsFatal() {
+		t.Fatalf("unexpected fatal result: %v", res.Errors)
 	}
 }
 
@@ -73,16 +81,19 @@ func TestRunTestCommand_FailingCommand(t *testing.T) {
 	implPath := writeTestManifest(t, dir, "echo failing && exit 1")
 
 	var lines []string
-	err := RunTestCommand(context.Background(), implPath, dir, func(line string) {
+	res := RunTestCommand(context.Background(), implPath, dir, func(line string) {
 		lines = append(lines, line)
 	})
-	if err == nil {
-		t.Fatal("expected error for failing command")
+	if !res.IsFatal() {
+		t.Fatal("expected fatal result for failing command")
 	}
-	if !strings.Contains(err.Error(), "test command failed") {
-		t.Errorf("expected 'test command failed' error, got: %v", err)
+	if len(res.Errors) == 0 {
+		t.Fatal("expected at least one error in fatal result")
 	}
-	// Output should still be captured.
+	if !strings.Contains(res.Errors[0].Message, "test command failed") {
+		t.Errorf("expected 'test command failed' error message, got: %v", res.Errors[0].Message)
+	}
+	// Output should still be captured in the error message.
 	if len(lines) == 0 {
 		t.Error("expected at least some output lines from failing command")
 	}

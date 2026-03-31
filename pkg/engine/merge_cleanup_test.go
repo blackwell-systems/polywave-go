@@ -7,15 +7,15 @@ import (
 
 func TestPostMergeCleanup_CallbackInvoked(t *testing.T) {
 	// PostMergeCleanup is non-fatal — even with an invalid implPath,
-	// it should call onEvent with error status but not return an error.
+	// it should call onEvent with error status but not return a fatal result.
 	var events []struct{ step, status, detail string }
 	onEvent := func(step, status, detail string) {
 		events = append(events, struct{ step, status, detail string }{step, status, detail})
 	}
 
-	err := PostMergeCleanup(context.Background(), "/nonexistent/IMPL.yaml", 1, t.TempDir(), onEvent)
-	if err != nil {
-		t.Fatalf("PostMergeCleanup should not return error (non-fatal), got: %v", err)
+	res := PostMergeCleanup(context.Background(), "/nonexistent/IMPL.yaml", 1, t.TempDir(), onEvent)
+	if res.IsFatal() {
+		t.Fatalf("PostMergeCleanup should not return fatal result (non-fatal), got: %v", res.Errors)
 	}
 
 	// Should have events for both steps.
@@ -43,9 +43,9 @@ func TestPostMergeCleanup_CallbackInvoked(t *testing.T) {
 
 func TestPostMergeCleanup_NilCallback(t *testing.T) {
 	// Should not panic with nil onEvent.
-	err := PostMergeCleanup(context.Background(), "/nonexistent/IMPL.yaml", 1, t.TempDir(), nil)
-	if err != nil {
-		t.Fatalf("PostMergeCleanup should not return error, got: %v", err)
+	res := PostMergeCleanup(context.Background(), "/nonexistent/IMPL.yaml", 1, t.TempDir(), nil)
+	if res.IsFatal() {
+		t.Fatalf("PostMergeCleanup should not return fatal result, got: %v", res.Errors)
 	}
 }
 
@@ -57,13 +57,23 @@ func TestPostMergeCleanup_NonFatalErrors(t *testing.T) {
 		statuses = append(statuses, step+":"+status)
 	}
 
-	err := PostMergeCleanup(context.Background(), "/nonexistent/IMPL.yaml", 99, t.TempDir(), onEvent)
-	if err != nil {
-		t.Fatalf("expected nil error (non-fatal), got: %v", err)
+	res := PostMergeCleanup(context.Background(), "/nonexistent/IMPL.yaml", 99, t.TempDir(), onEvent)
+	if res.IsFatal() {
+		t.Fatalf("expected non-fatal result, got fatal: %v", res.Errors)
 	}
 
 	// Should have reported some events even though underlying ops fail.
 	if len(statuses) == 0 {
 		t.Error("expected at least some status events")
+	}
+}
+
+func TestPostMergeCleanup_ReturnsWarningsOnError(t *testing.T) {
+	// When operations fail (non-fatal), result should be PARTIAL with warnings.
+	res := PostMergeCleanup(context.Background(), "/nonexistent/IMPL.yaml", 1, t.TempDir(), nil)
+	// Non-fatal means either SUCCESS (if ops succeed) or PARTIAL (warnings for failures)
+	// but NOT FATAL.
+	if res.IsFatal() {
+		t.Errorf("expected non-fatal (SUCCESS or PARTIAL), got FATAL: %v", res.Errors)
 	}
 }

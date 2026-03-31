@@ -172,8 +172,12 @@ func RunScoutFull(ctx context.Context, opts RunScoutFullOpts, onChunk func(strin
 		},
 	}
 
-	if err := ScoutCorrectionLoop(runCtx, correctionOpts, onChunk); err != nil {
-		return RunScoutFullResult{}, fmt.Errorf("engine.RunScoutFull: Scout execution failed: %w", err)
+	if corrRes := ScoutCorrectionLoop(runCtx, correctionOpts, onChunk); corrRes.IsFatal() {
+		errMsg := "unknown error"
+		if len(corrRes.Errors) > 0 {
+			errMsg = corrRes.Errors[0].Message
+		}
+		return RunScoutFullResult{}, fmt.Errorf("engine.RunScoutFull: Scout execution failed: %s", errMsg)
 	}
 
 	// Wait for IMPL file to appear (race condition guard).

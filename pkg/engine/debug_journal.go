@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/journal"
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
 )
 
 // DebugJournalOpts holds options for the DebugJournal engine function.
@@ -71,6 +72,12 @@ type GateStatus struct {
 	Timestamp time.Time
 }
 
+// ExportData holds data returned by exportHTMLTimeline.
+type ExportData struct {
+	ExportPath  string `json:"export_path"`
+	EntryCount  int    `json:"entry_count"`
+}
+
 // DebugJournal loads, filters, and summarises a wave-agent journal.
 // It is the single entry point for all debug-journal business logic.
 func DebugJournal(opts DebugJournalOpts) (DebugJournalResult, error) {
@@ -109,8 +116,9 @@ func DebugJournal(opts DebugJournalOpts) (DebugJournalResult, error) {
 
 	// Handle HTML export.
 	if opts.Export != "" {
-		if err := exportHTMLTimeline(filtered, opts.AgentPath, opts.Export, opts.Force); err != nil {
-			return result, err
+		exportRes := exportHTMLTimeline(filtered, opts.AgentPath, opts.Export, opts.Force)
+		if exportRes.IsFatal() {
+			return result, fmt.Errorf("%s", exportRes.Errors[0].Message)
 		}
 		result.ExportPath = opts.Export
 		return result, nil
@@ -236,24 +244,38 @@ func buildJournalSummary(agentPath string, all []journal.ToolEntry, display []jo
 }
 
 // exportHTMLTimeline writes an interactive HTML timeline to exportPath.
-func exportHTMLTimeline(entries []journal.ToolEntry, agentPath, exportPath string, force bool) error {
+func exportHTMLTimeline(entries []journal.ToolEntry, agentPath, exportPath string, force bool) result.Result[ExportData] {
 	if !force {
 		if _, err := os.Stat(exportPath); err == nil {
-			return fmt.Errorf("export file already exists: %s (use --force to overwrite)", exportPath)
+			return result.NewFailure[ExportData]([]result.SAWError{
+				result.NewFatal("ENGINE_EXPORT_FILE_EXISTS",
+					fmt.Sprintf("export file already exists: %s (use --force to overwrite)", exportPath)).
+					WithContext("export_path", exportPath),
+			})
 		}
 	}
 
 	if len(entries) == 0 {
-		return fmt.Errorf("no entries to export")
+		return result.NewFailure[ExportData]([]result.SAWError{
+			result.NewFatal("ENGINE_EXPORT_NO_ENTRIES",
+				"no entries to export"),
+		})
 	}
 
 	htmlContent := generateTimelineHTML(entries, agentPath)
 
 	if err := os.WriteFile(exportPath, []byte(htmlContent), 0644); err != nil {
-		return fmt.Errorf("failed to write HTML file: %w", err)
+		return result.NewFailure[ExportData]([]result.SAWError{
+			result.NewFatal("ENGINE_EXPORT_WRITE_FAILED",
+				fmt.Sprintf("failed to write HTML file: %v", err)).
+				WithContext("export_path", exportPath),
+		})
 	}
 
-	return nil
+	return result.NewSuccess(ExportData{
+		ExportPath: exportPath,
+		EntryCount: len(entries),
+	})
 }
 
 // generateTimelineHTML creates a self-contained HTML timeline string.

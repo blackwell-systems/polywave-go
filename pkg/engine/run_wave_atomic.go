@@ -7,6 +7,7 @@ import (
 
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/observability"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
 )
 
 // RunWaveTransactionOpts configures the atomic wave execution wrapper.
@@ -25,6 +26,11 @@ type implSnapshot struct {
 	State             protocol.ProtocolState
 	MergeState        protocol.MergeState
 	CompletionReports map[string]protocol.CompletionReport
+}
+
+// RestoreData holds data returned by restoreSnapshot.
+type RestoreData struct {
+	IMPLPath string `json:"impl_path"`
 }
 
 // captureSnapshot loads the manifest from disk and copies the mutable state fields.
@@ -50,10 +56,14 @@ func captureSnapshot(implPath string) (*implSnapshot, error) {
 // restoreSnapshot reloads the manifest from disk, resets state fields to the
 // snapshot values, and saves the manifest back. This handles partial state
 // written by FinalizeWave substeps.
-func restoreSnapshot(implPath string, snap *implSnapshot) error {
+func restoreSnapshot(implPath string, snap *implSnapshot) result.Result[RestoreData] {
 	manifest, err := protocol.Load(implPath)
 	if err != nil {
-		return fmt.Errorf("engine.RunWaveTransaction: load for rollback: %w", err)
+		return result.NewFailure[RestoreData]([]result.SAWError{
+			result.NewFatal("ENGINE_RESTORE_LOAD_FAILED",
+				fmt.Sprintf("engine.RunWaveTransaction: load for rollback: %v", err)).
+				WithContext("impl_path", implPath),
+		})
 	}
 
 	manifest.State = snap.State
@@ -65,9 +75,14 @@ func restoreSnapshot(implPath string, snap *implSnapshot) error {
 		if len(saveRes.Errors) > 0 {
 			saveErrMsg = saveRes.Errors[0].Message
 		}
-		return fmt.Errorf("engine.RunWaveTransaction: save rollback: %s", saveErrMsg)
+		return result.NewFailure[RestoreData]([]result.SAWError{
+			result.NewFatal("ENGINE_RESTORE_SAVE_FAILED",
+				fmt.Sprintf("engine.RunWaveTransaction: save rollback: %s", saveErrMsg)).
+				WithContext("impl_path", implPath),
+		})
 	}
-	return nil
+
+	return result.NewSuccess(RestoreData{IMPLPath: implPath})
 }
 
 // RunWaveTransaction executes FinalizeWave atomically: on any step failure,
@@ -99,9 +114,13 @@ func RunWaveTransaction(ctx context.Context, opts RunWaveTransactionOpts) (*Fina
 
 	if finalizeErr != nil {
 		// Roll back IMPL doc state to pre-execution snapshot.
-		if rbErr := restoreSnapshot(opts.IMPLPath, snap); rbErr != nil {
-			// Return both the original error and the rollback failure.
-			return result, fmt.Errorf("engine.RunWaveTransaction: rollback failed (%w) after: %w", rbErr, finalizeErr)
+		restoreRes := restoreSnapshot(opts.IMPLPath, snap)
+		if restoreRes.IsFatal() {
+			rbErrMsg := "rollback failed"
+			if len(restoreRes.Errors) > 0 {
+				rbErrMsg = restoreRes.Errors[0].Message
+			}
+			return result, fmt.Errorf("engine.RunWaveTransaction: rollback failed (%s) after: %w", rbErrMsg, finalizeErr)
 		}
 		return result, fmt.Errorf("engine.RunWaveTransaction: %w", finalizeErr)
 	}

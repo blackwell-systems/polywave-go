@@ -5,16 +5,26 @@ import (
 	"fmt"
 
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
 )
+
+// CleanupData holds data returned by PostMergeCleanup.
+type CleanupData struct {
+	GoModFixed bool `json:"gomod_fixed"`
+	Cleaned    bool `json:"cleaned"`
+}
 
 // PostMergeCleanup runs post-merge processing: go.mod replace path fixup
 // followed by worktree/branch cleanup. Both steps are non-fatal — errors
 // are reported through the onEvent callback but do not cause the function
-// to return an error. This consolidates identical cleanup blocks previously
+// to return a fatal result. This consolidates identical cleanup blocks previously
 // duplicated across service.MergeWave, api.handleWaveMerge, and
 // api.handleResolveConflicts.
-func PostMergeCleanup(ctx context.Context, implPath string, waveNum int, repoPath string, onEvent EventCallback) error {
+func PostMergeCleanup(ctx context.Context, implPath string, waveNum int, repoPath string, onEvent EventCallback) result.Result[CleanupData] {
 	_ = ctx // reserved for future cancellation support
+
+	data := CleanupData{}
+	var warnings []result.SAWError
 
 	// Step 1: Fix go.mod replace paths (deep relative paths from worktree agents).
 	if onEvent != nil {
@@ -25,13 +35,19 @@ func PostMergeCleanup(ctx context.Context, implPath string, waveNum int, repoPat
 		if onEvent != nil {
 			onEvent("gomod_fixup", "error", fmt.Sprintf("go.mod fixup failed (non-fatal): %v", err))
 		}
-	} else if fixed {
-		if onEvent != nil {
-			onEvent("gomod_fixup", "success", "Fixed deep replace paths in go.mod")
-		}
+		warnings = append(warnings, result.NewWarning("ENGINE_GOMOD_FIXUP_FAILED",
+			fmt.Sprintf("go.mod fixup failed: %v", err)).
+			WithContext("repo_path", repoPath))
 	} else {
-		if onEvent != nil {
-			onEvent("gomod_fixup", "success", "No go.mod fixes needed")
+		data.GoModFixed = fixed
+		if fixed {
+			if onEvent != nil {
+				onEvent("gomod_fixup", "success", "Fixed deep replace paths in go.mod")
+			}
+		} else {
+			if onEvent != nil {
+				onEvent("gomod_fixup", "success", "No go.mod fixes needed")
+			}
 		}
 	}
 
@@ -44,11 +60,19 @@ func PostMergeCleanup(ctx context.Context, implPath string, waveNum int, repoPat
 		if onEvent != nil {
 			onEvent("cleanup", "error", fmt.Sprintf("Cleanup failed (non-fatal): %v", cleanupErr))
 		}
+		warnings = append(warnings, result.NewWarning("ENGINE_CLEANUP_FAILED",
+			fmt.Sprintf("cleanup failed: %v", cleanupErr)).
+			WithContext("impl_path", implPath).
+			WithContext("wave_num", fmt.Sprintf("%d", waveNum)))
 	} else {
+		data.Cleaned = true
 		if onEvent != nil {
 			onEvent("cleanup", "success", fmt.Sprintf("Wave %d worktrees cleaned up", waveNum))
 		}
 	}
 
-	return nil
+	if len(warnings) > 0 {
+		return result.NewPartial(data, warnings)
+	}
+	return result.NewSuccess(data)
 }

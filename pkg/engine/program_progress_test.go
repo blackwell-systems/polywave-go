@@ -30,8 +30,9 @@ func TestProgramProgress_UpdateStatus(t *testing.T) {
 	manifestPath := createTestManifest(t, manifest)
 
 	// Update feat-a to complete
-	if err := UpdateProgramIMPLStatus(manifestPath, "feat-a", "complete"); err != nil {
-		t.Fatalf("UpdateProgramIMPLStatus failed: %v", err)
+	res := UpdateProgramIMPLStatus(manifestPath, "feat-a", "complete")
+	if res.IsFatal() {
+		t.Fatalf("UpdateProgramIMPLStatus failed: %v", res.Errors)
 	}
 
 	// Re-read and verify
@@ -55,9 +56,22 @@ func TestProgramProgress_UpdateStatus(t *testing.T) {
 		t.Errorf("expected TiersComplete=0, got %d", updated.Completion.TiersComplete)
 	}
 
+	// Verify result data fields
+	data := res.GetData()
+	if data.ImplSlug != "feat-a" {
+		t.Errorf("expected ImplSlug=feat-a, got %q", data.ImplSlug)
+	}
+	if data.NewStatus != "complete" {
+		t.Errorf("expected NewStatus=complete, got %q", data.NewStatus)
+	}
+	if data.ImplsComplete != 1 {
+		t.Errorf("expected data.ImplsComplete=1, got %d", data.ImplsComplete)
+	}
+
 	// Now complete feat-b to finish tier 1
-	if err := UpdateProgramIMPLStatus(manifestPath, "feat-b", "complete"); err != nil {
-		t.Fatalf("UpdateProgramIMPLStatus failed: %v", err)
+	res2 := UpdateProgramIMPLStatus(manifestPath, "feat-b", "complete")
+	if res2.IsFatal() {
+		t.Fatalf("UpdateProgramIMPLStatus failed: %v", res2.Errors)
 	}
 
 	updated, err = protocol.ParseProgramManifest(manifestPath)
@@ -87,9 +101,15 @@ func TestProgramProgress_UpdateStatus_NotFound(t *testing.T) {
 	}
 	manifestPath := createTestManifest(t, manifest)
 
-	err := UpdateProgramIMPLStatus(manifestPath, "nonexistent", "complete")
-	if err == nil {
-		t.Fatal("expected error for nonexistent slug, got nil")
+	res := UpdateProgramIMPLStatus(manifestPath, "nonexistent", "complete")
+	if !res.IsFatal() {
+		t.Fatal("expected fatal result for nonexistent slug, got non-fatal")
+	}
+	if len(res.Errors) == 0 {
+		t.Fatal("expected at least one error in fatal result")
+	}
+	if res.Errors[0].Code != "ENGINE_UPDATE_PROG_SLUG_NOT_FOUND" {
+		t.Errorf("expected error code ENGINE_UPDATE_PROG_SLUG_NOT_FOUND, got %q", res.Errors[0].Code)
 	}
 }
 
@@ -140,8 +160,9 @@ func TestProgramProgress_SyncFromDisk(t *testing.T) {
 	manifestPath := createTestManifest(t, manifest)
 
 	// Sync from disk
-	if err := SyncProgramStatusFromDisk(manifestPath, repoDir); err != nil {
-		t.Fatalf("SyncProgramStatusFromDisk failed: %v", err)
+	syncRes := SyncProgramStatusFromDisk(manifestPath, repoDir)
+	if syncRes.IsFatal() {
+		t.Fatalf("SyncProgramStatusFromDisk failed: %v", syncRes.Errors)
 	}
 
 	// Re-read and verify
