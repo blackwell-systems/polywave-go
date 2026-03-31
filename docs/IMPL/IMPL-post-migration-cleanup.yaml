@@ -601,5 +601,5 @@ critic_report:
     summary: 'All 16 files in the ownership table exist on disk. The rewritten Agent C brief resolves the previous side_effect_completeness warning. Agent C now keeps both emitWaveMerge and emitWaveStart as void functions, uses EmitSync internally, and handles errors with inline slog.Warn — no caller files need to change and no out-of-scope files are touched. All symbols referenced in the brief are accurate: EmitSync exists on *Emitter with the correct signature, IsFatal() exists on Result[T], and SAWError.Message is a valid field. Agents A, B, and D are unchanged and remain accurate: MergeAgentsData.Success field and callers are confirmed, CheckAgentLOCBudget signature matches the interface contract, and all 9 fmt.Errorf %v targets exist at the described lines. Zero errors and zero warnings.'
     reviewed_at: "2026-03-31T01:47:27Z"
     issue_count: 0
-state: SCOUT_PENDING
+state: "REVIEWED"
 injection_method: hook
