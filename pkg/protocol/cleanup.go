@@ -172,11 +172,10 @@ func Cleanup(ctx context.Context, manifestPath string, waveNum int, repoDir stri
 		}
 		prunedRepos[agentRepoDir] = true
 
-		// Try new slug-scoped format first, then legacy format as fallback.
-		branchName := BranchName(manifest.FeatureSlug, waveNum, agent.ID)
-		legacyBranch := LegacyBranchName(waveNum, agent.ID)
+		// Resolve the active branch (slug-scoped or legacy) via git.BranchExists.
+		activeBranch, _ := resolveAgentBranch(manifest.FeatureSlug, agent.ID, waveNum, agentRepoDir)
 
-		// Resolve worktree paths for both formats
+		// Resolve worktree path for the slug-scoped format.
 		worktreePath := ResolveWorktreePathWithSlug(agentRepoDir, manifest.FeatureSlug, waveNum, agent.ID)
 
 		// Attempt to remove worktree (tries slug-scoped path which may resolve to legacy)
@@ -192,23 +191,13 @@ func Cleanup(ctx context.Context, manifestPath string, waveNum int, repoDir stri
 			status.WorktreeRemoved = true
 		}
 
-		// Attempt to delete branch: try new format first, then legacy
-		delErr := git.DeleteBranch(agentRepoDir, branchName)
+		// Attempt to delete the resolved branch. If not found, treat as already deleted.
+		delErr := git.DeleteBranch(agentRepoDir, activeBranch)
 		if delErr != nil {
 			errMsg := delErr.Error()
 			if strings.Contains(errMsg, "not found") ||
 				strings.Contains(errMsg, "branch") && strings.Contains(errMsg, "not found") {
-				// New-format branch not found — try legacy
-				err2 := git.DeleteBranch(agentRepoDir, legacyBranch)
-				if err2 != nil {
-					errMsg2 := err2.Error()
-					if strings.Contains(errMsg2, "not found") ||
-						strings.Contains(errMsg2, "branch") && strings.Contains(errMsg2, "not found") {
-						status.BranchDeleted = true
-					}
-				} else {
-					status.BranchDeleted = true
-				}
+				status.BranchDeleted = true
 			}
 		} else {
 			status.BranchDeleted = true

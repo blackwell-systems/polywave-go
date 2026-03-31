@@ -168,44 +168,27 @@ func VerifyCommits(ctx context.Context, manifestPath string, waveNum int, repoDi
 				},
 			})
 		}
-		branchName := BranchName(manifest.FeatureSlug, waveNum, agent.ID)
-		legacyBranch := LegacyBranchName(waveNum, agent.ID)
-
 		// Determine which repo this agent worked in (already an absolute path)
 		agentRepoDir := agentRepos[agent.ID]
 
+		// Resolve the active branch (slug-scoped or legacy) via git.BranchExists.
+		activeBranch, _ := resolveAgentBranch(manifest.FeatureSlug, agent.ID, waveNum, agentRepoDir)
+
 		status := CommitStatus{
 			Agent:  agent.ID,
-			Branch: branchName,
+			Branch: activeBranch,
 		}
 
 		// Count commits on the branch relative to recorded base commit.
 		// Use the wave's base commit (recorded at worktree creation) rather than
 		// current HEAD, so verification works even if branches were already merged.
-		// Try slug-scoped branch first, then fall back to legacy branch name.
-		activeBranch := branchName
-		revListArg := baseCommit + ".." + branchName
-		output, err := git.Run(agentRepoDir, "rev-list", "--count", revListArg)
+		output, err := git.Run(agentRepoDir, "rev-list", "--count", baseCommit+".."+activeBranch)
 
 		if err != nil {
 			// The base commit may not exist in this repo (cross-repo wave: base commit
 			// was recorded from a different repo). Fall back to HEAD..branch in the
 			// agent's own repo, which counts commits not yet merged to the local HEAD.
-			output, err = git.Run(agentRepoDir, "rev-list", "--count", "HEAD.."+branchName)
-		}
-
-		if err != nil {
-			// Try legacy branch name for backward compatibility
-			activeBranch = legacyBranch
-			revListArg = baseCommit + ".." + legacyBranch
-			output, err = git.Run(agentRepoDir, "rev-list", "--count", revListArg)
-			if err != nil {
-				output, err = git.Run(agentRepoDir, "rev-list", "--count", "HEAD.."+legacyBranch)
-			}
-		}
-
-		if err == nil {
-			status.Branch = activeBranch
+			output, err = git.Run(agentRepoDir, "rev-list", "--count", "HEAD.."+activeBranch)
 		}
 
 		if err != nil {
