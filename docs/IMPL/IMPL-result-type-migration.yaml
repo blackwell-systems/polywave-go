@@ -185,7 +185,11 @@ file_ownership:
       agent: O
       wave: 2
       action: modify
-    - file: pkg/autonomy/planner.go
+    - file: pkg/autonomy/config.go
+      agent: P
+      wave: 2
+      action: modify
+    - file: cmd/sawtools/daemon_cmd.go
       agent: P
       wave: 2
       action: modify
@@ -855,6 +859,7 @@ waves:
             ```
           files:
             - pkg/queue/manager.go
+      base_commit: 1adb76ecd782a5f2aae71f8cc3401bc167812c02
     - number: 2
       agents:
         - id: I
@@ -1282,49 +1287,71 @@ waves:
             - pkg/observability/query.go
         - id: P
           task: |
-            **Role:** Migrate pkg/autonomy error-only returns to result.Result[T]
+            **Role:** Migrate pkg/autonomy config functions to result.Result[T]
 
             **Files to modify:**
-            - pkg/autonomy/planner.go
+            - pkg/autonomy/config.go
+            - cmd/sawtools/daemon_cmd.go  (E35: owns the caller of LoadConfig)
 
             **What to implement:**
 
-            Migrate 1 error-only function to result.Result[T]:
+            Migrate 2 error-only functions to result.Result[T]:
 
-            - `Plan(ctx context.Context, requirements string) error` →
-              `Plan(ctx context.Context, requirements string) result.Result[PlanData]`
+            1. **config.go:**
+               - `LoadConfig(repoPath string) (Config, error)` →
+                 `LoadConfig(repoPath string) result.Result[LoadConfigData]`
+               - `SaveConfig(repoPath string, cfg Config) error` →
+                 `SaveConfig(repoPath string, cfg Config) result.Result[SaveConfigData]`
 
-            **Data type:**
+            **Data types:**
 
             ```go
-            type PlanData struct {
-                IMPLPath    string
-                TasksPlanned int
-                Timestamp    time.Time
+            type LoadConfigData struct {
+                ConfigPath string
+                WasDefault bool // true if file not found, DefaultConfig() returned
+            }
+
+            type SaveConfigData struct {
+                ConfigPath   string
+                BytesWritten int
             }
             ```
 
             **Migration rules:**
 
-            - Return Success with IMPL path and task count
-            - Return Fatal with Code: "PLANNING_FAILED" on error
-            - Include requirements summary in error context
+            - `LoadConfig()`: return Success with WasDefault=true when file not found (not an error), Fatal on JSON parse error
+            - `SaveConfig()`: return Success with config path and bytes written, Fatal on marshal/write error
+            - Use error codes: "CONFIG_LOAD_FAILED", "CONFIG_SAVE_FAILED"
+
+            **E35 compliance:**
+
+            `cmd/sawtools/daemon_cmd.go` calls `autonomy.LoadConfig`. Update its call site to use
+            the result.Result[T] return. Pattern:
+            ```go
+            cfgResult := autonomy.LoadConfig(repoDir)
+            if !cfgResult.IsSuccess() { /* handle */ }
+            cfg := cfgResult.Data.Config // or however the caller uses cfg
+            ```
+            Check the existing call site at line ~32 of daemon_cmd.go for exact usage.
 
             **Tests:**
 
-            Update pkg/autonomy/planner_test.go:
-            - Verify PlanData.IMPLPath is set
-            - Test Fatal when requirements invalid
+            Update pkg/autonomy/config_test.go:
+            - Verify LoadConfigData.WasDefault=true when no config file exists
+            - Verify LoadConfigData.WasDefault=false when config file is present
+            - Verify SaveConfigData.ConfigPath is set after successful save
+            - Test Fatal when invalid JSON in config file
 
             **Verification gate:**
 
             ```bash
-            go build ./pkg/autonomy/...
-            go vet ./pkg/autonomy/...
+            go build ./pkg/autonomy/... ./cmd/sawtools/...
+            go vet ./pkg/autonomy/... ./cmd/sawtools/...
             go test ./pkg/autonomy/... -v
             ```
           files:
-            - pkg/autonomy/planner.go
+            - pkg/autonomy/config.go
+            - cmd/sawtools/daemon_cmd.go
     - number: 3
       agents:
         - id: Q
@@ -1549,6 +1576,184 @@ quality_gates:
         - type: test
           command: go test ./... -timeout 120s
           required: true
+completion_reports:
+    A:
+        status: complete
+        branch: saw/result-type-migration/wave1-agent-A
+        commit: 52ffa7f
+        files_changed:
+            - pkg/journal/checkpoint.go
+            - pkg/journal/observer.go
+            - pkg/journal/archive.go
+            - pkg/journal/checkpoint_test.go
+            - pkg/journal/observer_test.go
+            - pkg/journal/archive_test.go
+            - pkg/engine/runner.go
+        tests_added:
+            - TestCheckpoint_CreatesSnapshot
+            - TestCheckpoint_SavesMetadata
+            - TestRestoreCheckpoint_RollsBackIndex
+            - TestRestoreCheckpoint_RollsBackCursor
+            - TestRestoreCheckpoint_PreservesCheckpoints
+            - TestDeleteCheckpoint_RemovesFiles
+            - TestCheckpoint_DuplicateName
+            - TestRestoreCheckpoint_NonexistentName
+            - TestCheckpoint_CountsEntries
+            - TestCheckpoint_EmptyJournal
+            - TestCheckpoint_InvalidNames
+            - TestCheckpoint_RestoreReturnsData
+            - TestArchive_ResultDataMatchesMetadata
+            - TestExtract_ReturnsData
+            - TestCleanupExpired_DeletesOldArchives
+        verification: PASS
+        notes: 'Migrated 12 functions in 3 owned files to result.Result[T]. All 61 pkg/journal tests pass. Had to minimally update pkg/engine/runner.go (3 call sites) to pass pre-commit go vet gate — changes limited to error pattern only (archErr != nil -> archRes.IsFatal()). Data types defined for all 12 Result[T] variants. Out-of-scope: pkg/engine/runner.go call sites were adapted only to compile, not fully migrated.'
+    B:
+        status: complete
+        branch: saw/result-type-migration/wave1-agent-B
+        commit: d56e4f6
+        files_changed:
+            - pkg/notify/dispatcher.go
+            - pkg/notify/discord.go
+            - pkg/notify/telegram.go
+            - pkg/notify/slack.go
+            - pkg/notify/types.go
+            - pkg/notify/dispatcher_test.go
+            - pkg/notify/discord_test.go
+            - pkg/notify/telegram_test.go
+            - pkg/notify/slack_test.go
+            - pkg/notify/registry_test.go
+        tests_added:
+            - TestDispatch_AllReceive
+            - TestDispatch_OneFailsOthersStillReceive
+            - TestDispatch_ContextCancellation
+            - TestDispatch_NoAdapters
+            - TestDispatcher_AddRemove
+            - TestDispatch_FormatterOutput
+            - TestDispatch_AllFail
+            - TestDispatch_PartialWhenSomeFail
+            - TestDiscordAdapter_SendSuccess
+            - TestDiscordAdapter_SendHTTPError
+            - TestDiscordAdapter_SendPlainText
+            - TestDiscordAdapter_SendRateLimited
+            - TestDiscordAdapter_ContextCancellation
+            - TestTelegramAdapter_SendSuccess
+            - TestTelegramAdapter_SendHTTPError
+            - TestTelegramAdapter_SendRateLimited
+            - TestTelegramAdapter_ContextCancellation
+            - TestSlackAdapter_Send_Success
+            - TestSlackAdapter_Send_ChannelOverride
+            - TestSlackAdapter_Send_HTTPError
+            - TestSlackAdapter_Send_RateLimited
+            - TestSlackAdapter_Send_ContextCancellation
+        verification: PASS
+        notes: '44/44 tests passing. types.go modified (not in owned files list per brief) to add SendData/DispatchData structs and update Adapter interface — explicitly required by task. registry_test.go simpleAdapter.Send updated as interface cascade. Dispatcher: PARTIAL when some adapters succeed, FATAL when all fail or context pre-cancelled. HTTP adapters: 429 maps to FATAL with DISCORD/TELEGRAM/SLACK_RATE_LIMITED code; context cancellation detected via ctx.Err() after client.Do failure.'
+    C:
+        status: complete
+        branch: saw/result-type-migration/wave1-agent-C
+        commit: eaa96af
+        files_changed:
+            - pkg/worktree/manager.go
+            - pkg/worktree/manager_test.go
+        tests_added:
+            - TestRemoveUntrackedPath
+            - TestCleanupAllSuccess
+            - TestCleanupAllEmpty
+            - TestCleanupAllPartial
+        verification: PASS
+        notes: Migrated Remove and CleanupAll to result.Result[T]. Added RemoveData and CleanupData types. All 6 tests pass, full build clean.
+    D:
+        status: complete
+        branch: saw/result-type-migration/wave1-agent-D
+        commit: ce7eff4
+        files_changed:
+            - pkg/resume/sessions.go
+            - pkg/resume/sessions_test.go
+        tests_added:
+            - TestSaveAgentSession_FailureReturnsFatal
+        verification: PASS
+        notes: SaveAgentSession migrated to result.Result[SaveSessionData]. All 43 tests pass. detect.go required no changes as LoadAgentSessions was not migrated.
+    E:
+        status: complete
+        branch: saw/result-type-migration/wave1-agent-E
+        commit: a3b816e
+        files_changed:
+            - pkg/tools/workshop.go
+            - pkg/tools/types.go
+            - pkg/tools/middleware.go
+            - pkg/tools/standard.go
+            - pkg/tools/workshop_constrained.go
+            - pkg/tools/workshop_test.go
+        tests_added:
+            - TestRegisterTotalToolsIncrements
+        verification: PASS
+        notes: All 50 tests pass. Also modified pkg/tools/types.go (not in owned files list) to update Workshop interface signature — required for compilation since DefaultWorkshop.Register return type changed; types.go is not owned by any other agent. constraint_enforcer.go and role_middleware.go required no changes (do not call Register). All Register call sites updated to ignore Result[T] return (duplicates cannot occur in those contexts).
+    F:
+        status: complete
+        branch: saw/result-type-migration/wave1-agent-F
+        commit: a3317eb
+        files_changed:
+            - pkg/hooks/scout_boundaries.go
+            - pkg/hooks/scout_boundaries_test.go
+            - pkg/engine/runner.go
+        tests_added:
+            - TestValidateScoutWrites/No_violations_returns_Success
+            - TestValidateScoutWrites/CONTEXT.md_violation_returns_Partial
+            - TestValidateScoutWrites/Partial_result_lists_all_violations
+            - TestValidateScoutWrites/Old_files_ignored
+            - TestValidateScoutWrites/No_docs_dir_returns_Success
+        verification: PASS
+        notes: Migrated ValidateScoutWrites to result.Result[ValidateData]. ValidateData struct added. Returns Success/Partial/Fatal per spec using SCOUT_BOUNDARY_VIOLATION code. Pre-commit hook runs go vet ./... globally, so pkg/engine/runner.go (Wave 3 Agent R scope) required a minimal caller fix to unblock commit. Agent R should review and own that caller going forward.
+    G:
+        status: complete
+        branch: saw/result-type-migration/wave1-agent-G
+        commit: 4831ace
+        files_changed:
+            - pkg/interview/compiler.go
+            - pkg/interview/compiler_test.go
+            - pkg/interview/deterministic.go
+            - pkg/interview/deterministic_test.go
+            - pkg/interview/types.go
+            - cmd/sawtools/interview_cmd.go
+            - cmd/sawtools/interview_cmd_test.go
+        verification: PASS
+        notes: Migrated WriteRequirementsFile and DeterministicManager.Save to result.Result[T]. Manager interface in types.go updated. Internal callers in Answer() and interview_cmd.go updated. Error codes REQUIREMENTS_WRITE_FAILED and INTERVIEW_SAVE_FAILED.
+    H:
+        status: complete
+        branch: saw/result-type-migration/wave1-agent-H
+        commit: bdfbe9e
+        files_changed:
+            - pkg/gatecache/cache.go
+            - pkg/gatecache/cache_test.go
+            - pkg/protocol/baseline_gates.go
+            - pkg/protocol/gates.go
+            - pkg/protocol/gates_test.go
+        tests_added:
+            - TestCache_Put_ReturnsSuccessWithCorrectGateType
+            - TestCache_Invalidate_ReturnsSuccessWithClearedCount
+            - TestBuildKey_ReturnsSuccessWithNonEmptyHeadCommit
+        verification: PASS
+        notes: 'Owned files complete: cache.go migrated (Put/Invalidate/BuildKey/BuildKeyForGate to result.Result[T]), cache_test.go updated with 16 passing tests including 3 new result-specific tests. Out-of-scope minimal fixups applied to baseline_gates.go, gates.go, gates_test.go call sites to unblock pre-commit go vet hook. Full migration of protocol files is Wave 2 Agent K scope.'
+    H2:
+        status: complete
+        branch: saw/result-type-migration/wave1-agent-H2
+        commit: "2696041"
+        files_changed:
+            - pkg/queue/manager.go
+            - pkg/queue/manager_test.go
+            - pkg/engine/daemon.go
+            - pkg/engine/daemon_test.go
+            - pkg/engine/queue_advance.go
+            - pkg/engine/queue_advance_test.go
+            - cmd/sawtools/queue_cmd.go
+        files_created:
+            - pkg/queue/manager.go
+            - pkg/queue/manager_test.go
+        tests_added:
+            - TestAdd_SlugInResult
+            - TestNext_QueueEmpty
+            - TestUpdateStatus_ReturnsCorrectNewStatus
+        verification: PASS
+        notes: Migrated Add, List, Next, UpdateStatus to result.Result[T]. Next returns Fatal with QUEUE_EMPTY instead of nil. Added AddData, ListData, UpdateStatusData payload types. Pre-commit gate (go vet ./...) required fixing callers in pkg/engine/daemon.go, pkg/engine/queue_advance.go, pkg/engine/daemon_test.go, pkg/engine/queue_advance_test.go, and cmd/sawtools/queue_cmd.go — these were out-of-scope per ownership but blocking the commit. The engine files (daemon.go, queue_advance.go) are owned by other wave agents; those agents should be aware their files were updated to maintain compilation.
 pre_mortem:
     overall_risk: medium
     rows:
@@ -1605,5 +1810,5 @@ critic_report:
     summary: 'Re-review of Wave 1 agents A through H2 confirms all 5 previously errored agents now have accurate briefs. Agent B: the Adapter interface location is correctly stated as pkg/notify/types.go and the current interface signature (Send returning error) matches the file at line 34. Agent D: the E35 note is corrected — detect.go calls LoadAgentSessions (not SaveAgentSession), LoadAgentSessions is not being migrated, so no caller changes are needed in detect.go; verified against the file. Agent E: constraint_enforcer.go and role_middleware.go are correctly described as E35 compliance-only files that do not call Register() — both files use next.Execute() in middleware closures only; the actual Register() callers (middleware.go, standard.go, workshop_constrained.go) remain correctly listed. Agent H: the rewritten brief correctly describes the actual gatecache API — Put/Invalidate/BuildKey/BuildKeyForGate signatures all match cache.go exactly, CachedResult type name is correct, and the note that Get returns bool (skip) is accurate. Agent H2: the rewritten brief correctly identifies manager.go (not queue.go), the Item type, the *Manager struct, and all four method signatures (Add/List/Next/UpdateStatus) match the file exactly. Agents A, C, F, and G were previously passing and remain accurate. All Wave 1 briefs are verified against the codebase. Wave execution may proceed.'
     reviewed_at: "2026-03-30T23:36:47Z"
     issue_count: 0
-state: SCOUT_PENDING
+state: REVIEWED
 injection_method: hook
