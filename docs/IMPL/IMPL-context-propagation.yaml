@@ -564,6 +564,7 @@ waves:
             **Note:** Wave 2+ agents will update protocol package to use updated result functions.
           files:
             - pkg/result/result.go
+      base_commit: 26d68dbe717d125a8f25d6c3335fbcbc68e37d4f
     - number: 2
       agents:
         - id: G
@@ -1458,6 +1459,101 @@ quality_gates:
         - type: test
           command: go test ./... -timeout 120s
           required: true
+completion_reports:
+    A:
+        status: complete
+        branch: saw/context-propagation/wave1-agent-A
+        commit: 26d68db
+        files_changed:
+            - pkg/idgen/generator.go
+        verification: PASS
+        notes: AssignAgentIDs is a pure computation function (no I/O, no blocking, no network). Interface contract explicitly exempts pure value functions from ctx requirement. All existing tests pass. No callers need updating. Package build, vet, and test all clean.
+    B:
+        status: complete
+        branch: saw/context-propagation/wave1-agent-B
+        commit: 18972c6
+        files_changed:
+            - pkg/format/detect.go
+            - pkg/format/detect_test.go
+            - pkg/protocol/gates.go
+        tests_added:
+            - TestDetectFormatter
+            - TestDetectFormatter_NonexistentDir
+        verification: PASS
+        notes: Added ctx context.Context to DetectFormatter (os.Stat I/O). Updated detect_test.go to pass context.Background(). Patched gates.go call site with context.TODO() — it was not in my owned files but the pre-commit hook runs go vet ./... repo-wide, blocking the commit without this fix. Agent K/Z should replace context.TODO() with the real context when adding ctx to runFormatGate and the exported gates functions.
+    C:
+        status: complete
+        branch: saw/context-propagation/wave1-agent-C
+        commit: f9cfd76
+        files_changed:
+            - pkg/collision/detector.go
+            - pkg/collision/detector_test.go
+            - pkg/engine/finalize_steps.go
+            - pkg/engine/prepare.go
+            - cmd/sawtools/check_type_collisions_cmd.go
+        tests_added:
+            - TestDetectCollisionsContextCancellation
+        verification: PASS
+        notes: Added ctx context.Context to DetectCollisions and propagated through internal helpers. Pre-commit hook runs go vet ./... so callers in pkg/engine/finalize_steps.go, pkg/engine/prepare.go, cmd/sawtools/check_type_collisions_cmd.go needed minimal wiring (these are out-of-scope deps). types.go had no exported functions needing context. igit.Run/BranchExists do not yet accept context - ctx cancellation is checked before calling igit.
+    D:
+        status: complete
+        branch: saw/context-propagation/wave1-agent-D
+        commit: bddc570
+        files_changed:
+            - pkg/gatecache/cache.go
+            - pkg/gatecache/cache_test.go
+            - pkg/protocol/gates.go
+            - pkg/protocol/gates_test.go
+            - pkg/protocol/baseline_gates.go
+            - pkg/protocol/baseline_gates_test.go
+            - pkg/engine/prepare.go
+            - pkg/engine/finalize.go
+            - pkg/engine/finalize_steps.go
+            - cmd/sawtools/run_gates_cmd.go
+        tests_added:
+            - TestCache_PutGet
+            - TestCache_Put_ReturnsSuccessWithCorrectGateType
+            - TestCache_TTLExpiry
+            - TestCache_TTLNotExpired
+            - TestCache_Invalidate
+            - TestCache_Invalidate_ReturnsSuccessWithClearedCount
+            - TestCache_InvalidateNonExistentFile
+            - TestCache_Persistence
+            - TestCache_MultipleGateTypes
+            - TestBuildKey
+            - TestBuildKey_ReturnsSuccessWithNonEmptyHeadCommit
+            - TestCache_CommandDifferentiation
+            - TestBuildKeyForGate
+            - TestCacheThreadSafety
+            - TestConcurrentInvalidate
+            - TestConcurrentPut
+        verification: PASS
+        notes: Added ctx to New, BuildKey, BuildKeyForGate, Get, Put, Invalidate plus private load/save. Engine callers (prepare.go, finalize.go, finalize_steps.go) pass real ctx already in scope. Protocol callers (gates.go, baseline_gates.go) and cmd/sawtools patched with context.TODO() to unblock pre-commit go vet ./... hook — same pattern as Agent B. Agent K (Wave 2) and Agent Z (Wave 4) must replace context.TODO() with real context when adding ctx to their function signatures.
+    E:
+        status: complete
+        branch: saw/context-propagation/wave1-agent-E
+        commit: 84a868e
+        files_changed:
+            - pkg/retry/loop.go
+            - pkg/retry/attempt.go
+            - pkg/retry/loop_test.go
+            - pkg/retry/attempt_test.go
+            - cmd/sawtools/build_retry_context_cmd.go
+            - pkg/engine/runner.go
+            - pkg/orchestrator/orchestrator.go
+        tests_added:
+            - TestRetryLoop_ContextCancelled
+            - TestBuildRetryAttempt_ContextCancelled
+        verification: PASS
+        notes: Added ctx to BuildRetryAttempt and ctx.Done() check at top of RetryLoop.Run. Three callers outside owned files (cmd/sawtools/build_retry_context_cmd.go, pkg/engine/runner.go, pkg/orchestrator/orchestrator.go) needed wiring to pass pre-commit go vet; updated them with cmd.Context() / existing ctx vars. All 31 pkg/retry tests pass.
+    F:
+        status: complete
+        branch: saw/context-propagation/wave1-agent-F
+        commit: 26d68db
+        files_changed:
+            - pkg/result/result.go
+        verification: PASS
+        notes: No changes needed. All exported functions in pkg/result are pure value operations (constructors, predicates, accessors, JSON marshaling, type converters). None perform I/O, call context-accepting functions, or block. Per the interface contract, pure value functions are explicitly exempt from context addition. All 19 existing tests pass. Adding context.Context here would violate Go idiom and cascade unnecessary threading through all callers with zero benefit.
 pre_mortem:
     overall_risk: medium
     rows:
@@ -1628,5 +1724,5 @@ critic_report:
     summary: 'Three agents have inaccurate briefs. Agent D2: the brief claims FinalizeWave ''does NOT yet have context'' but FinalizeWave(ctx context.Context, opts FinalizeWaveOpts) already accepts ctx as its first parameter (finalize.go line 191). This is a pattern_accuracy warning — D2 will attempt a no-op on FinalizeWave. The brief also correctly notes Step* functions already have context and FinalizeIMPL should not be touched. Agent E2: the brief instructs adding ctx to PrepareWave, but PrepareWave(ctx context.Context, opts PrepareWaveOpts) already has ctx (prepare.go line 61). This is a pattern_accuracy warning; PrepareAgent correctly lacks context and needs it. Agent B2: the brief says to add ctx to RunScout, but RunScout(ctx context.Context, ...) in runner.go already has ctx, and RunScoutFull in scout_run.go also already has ctx. B2 owns both files and both functions already have context — the work described is already done. Additionally, Agent X: the brief correctly identifies that all exported methods already have ctx and directs the agent to audit http.NewRequest calls; however the API client uses the Anthropic Go SDK and does not call http.NewRequest directly, and the CLI client already uses exec.CommandContext. X''s audit work is valid but will find nothing to change. All file existence checks pass for all 32 agents (all action:modify files exist). All other symbol references (WriteCriticReview, GetCriticReview, CriticGatePasses, RunBaselineGates, CleanupAllStale, VerifyCommits, ListIMPLs, ArchiveIMPL, AmendImpl, UpdateContext, CheckAgentComplexity, DetectOwnershipConflicts, PredictConflictsFromReports, VerifyDependenciesAvailable, Validate, ValidateBytes, FullValidate, ExtractAgentContextFromManifest, SetFreezeTimestamp, RunGatesWithCache, RunPreMergeGates, RunPostMergeGates, ExtractCommands, AnalyzeDeps, DetectCascades, DetectSharedTypes, BranchName, ParseBranch, IMPLStateToStatus, NewCompletionReport, New, RunWave, AssignAgentIDs, DetectFormatter, DetectCollisions) all verified accurate against the codebase.'
     reviewed_at: "2026-03-31T04:29:51Z"
     issue_count: 3
-state: "REVIEWED"
+state: REVIEWED
 injection_method: hook
