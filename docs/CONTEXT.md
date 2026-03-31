@@ -244,3 +244,5 @@ type BackendConfig struct {
   - IMPL doc: docs/IMPL/complete/IMPL-detect-wiring.yaml
 - **logging-injection-remaining**: completed 2026-03-30, 2 waves, 8 agents
   - IMPL doc: docs/IMPL/complete/IMPL-logging-injection-remaining.yaml
+- **result-type-migration**: completed 2026-03-30, 3 waves, 20 agents
+  - IMPL doc: docs/IMPL/complete/IMPL-result-type-migration.yaml

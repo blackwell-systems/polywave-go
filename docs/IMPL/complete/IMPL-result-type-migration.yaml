@@ -1,3 +1,4 @@
+completion_date: "2026-03-30"
 title: Migrate error-only returns to result.Result[T]
 feature_slug: result-type-migration
 verdict: SUITABLE
@@ -1565,6 +1566,7 @@ waves:
             - pkg/engine/scout_correction_loop.go
             - pkg/engine/test_runner.go
             - pkg/engine/debug_journal.go
+      base_commit: 38e3b03c5ee6422b4c5782ab75ad36c3bd999ae0
 quality_gates:
     level: standard
     gates:
@@ -1950,6 +1952,110 @@ completion_reports:
             - TestSaveConfig_PreservesOtherKeys
         verification: PASS
         notes: LoadConfig and SaveConfig migrated to result.Result[T]. LoadConfigData.WasDefault=true when file absent or autonomy section missing. SaveConfigData includes ConfigPath and BytesWritten. daemon_cmd.go call site updated. All 13 tests pass (7 pre-existing + 6 updated config tests).
+    Q:
+        status: complete
+        branch: saw/result-type-migration/wave3-agent-Q
+        commit: a7e8340
+        files_changed:
+            - pkg/orchestrator/orchestrator.go
+            - pkg/orchestrator/merge.go
+            - pkg/orchestrator/context.go
+            - pkg/orchestrator/verification.go
+            - pkg/orchestrator/stubs.go
+            - pkg/orchestrator/journal_integration.go
+            - pkg/orchestrator/orchestrator_test.go
+            - pkg/orchestrator/context_test.go
+            - pkg/orchestrator/journal_integration_test.go
+            - pkg/orchestrator/stubs_test.go
+            - pkg/engine/runner.go
+        files_created:
+            - pkg/orchestrator/result_types.go
+        tests_added:
+            - TestRunWaveNilDoc
+            - TestRunWave_WaveNotFound
+            - TestRunWave_LaunchesAllAgents
+            - TestRunWave_ReturnsErrorOnAgentFailure
+            - TestTransitionTo_ValidTransitions
+            - TestTransitionTo_InvalidTransition
+            - TestTransitionTo_TerminalState
+            - TestMergeWave_DelegatesTo_mergeWaveFunc
+            - TestRunVerification_DelegatesTo_runVerificationFunc
+            - TestUpdateContextMDCreatesFile
+            - TestUpdateContextMDAppendsToExisting
+            - TestPrepareAgentContext_NoJournal
+            - TestPrepareAgentContext_WithJournal
+            - TestWriteJournalEntry_CreatesJournalDir
+            - TestWriteJournalEntry_AppendsEntry
+            - TestRunStubScanNoFiles
+            - TestRunStubScanMissingScript
+            - TestRunStubScanAppendsSection
+        verification: PASS
+        notes: Migrated 16 functions to result.Result[T] across 6 orchestrator files. Created result_types.go with 15 data types. Updated mergeWaveFunc/runVerificationFunc var signatures. Applied minimal fixups to pkg/engine/runner.go (not owned) to pass pre-commit go vet gate — identical pattern to Wave 1/2 agents. Agent R should own full engine migration.
+    R:
+        status: complete
+        branch: saw/result-type-migration/wave3-agent-R
+        commit: 8db22e7
+        files_changed:
+            - pkg/engine/runner.go
+            - pkg/engine/prepare.go
+            - pkg/engine/finalize.go
+            - pkg/engine/chat.go
+            - pkg/engine/daemon.go
+            - pkg/engine/fix_build.go
+            - pkg/engine/integration_runner.go
+            - pkg/engine/runner_data_types.go
+            - pkg/engine/daemon_test.go
+            - pkg/engine/integration_runner_test.go
+            - pkg/engine/runner_test.go
+            - pkg/engine/runner_structured_test.go
+            - pkg/engine/auto_remediate.go
+            - pkg/engine/program_auto.go
+            - pkg/engine/program_parallel_scout.go
+            - pkg/engine/scout_correction_loop.go
+            - cmd/sawtools/daemon_cmd.go
+            - cmd/sawtools/run_integration_agent_cmd.go
+        files_created:
+            - pkg/engine/runner_data_types.go
+        tests_added:
+            - TestRunIntegrationAgent_NoGaps
+            - TestRunIntegrationAgent_PublishesEvents
+            - TestRunIntegrationAgent_OptsValidation
+        verification: PASS
+        notes: 'All 20 engine functions migrated to result.Result[T]. Fixed compilation errors in unowned caller files (auto_remediate.go, program_auto.go, program_parallel_scout.go, scout_correction_loop.go, daemon_cmd.go, run_integration_agent_cmd.go) which were not assigned to any agent but broke the build. Tests pass: go test ./pkg/engine/... PASS. Full go build ./... and go vet ./... clean.'
+    R2:
+        status: complete
+        branch: saw/result-type-migration/wave3-agent-R2
+        commit: b0e12e4
+        files_changed:
+            - pkg/engine/mark_program_complete.go
+            - pkg/engine/merge_cleanup.go
+            - pkg/engine/program_progress.go
+            - pkg/engine/resolve_conflicts.go
+            - pkg/engine/run_wave_atomic.go
+            - pkg/engine/scout_correction_loop.go
+            - pkg/engine/test_runner.go
+            - pkg/engine/debug_journal.go
+            - pkg/engine/merge_cleanup_test.go
+            - pkg/engine/program_progress_test.go
+            - pkg/engine/resolve_conflicts_test.go
+            - pkg/engine/scout_correction_loop_test.go
+            - pkg/engine/test_runner_test.go
+        tests_added:
+            - TestPostMergeCleanup_ReturnsWarningsOnError
+            - TestProgramProgress_UpdateStatus
+            - TestProgramProgress_UpdateStatus_NotFound
+            - TestProgramProgress_SyncFromDisk
+            - TestResolveConflicts_OptsValidation
+            - TestRunTestCommand_EmptyTestCommand
+            - TestRunTestCommand_CallbackInvoked
+            - TestRunTestCommand_NilCallback
+            - TestRunTestCommand_FailingCommand
+            - TestScoutCorrectionLoop_SucceedsFirstTry
+            - TestScoutCorrectionLoop_RetriesAndSucceeds
+            - TestScoutCorrectionLoop_ExhaustsRetriesAndSetsState
+            - TestScoutCorrectionLoop_ContextCancelled
+        verification: PASS
+        notes: 'Migrated 13 functions across 8 owned files. All use ENGINE_* error codes. PostMergeCleanup returns PARTIAL (not FATAL) on non-fatal failures with warnings. ScoutCorrectionOpts.setStateFn signature updated from func(string) error to func(string) result.Result[SetBlockedData]. Updated 2 unowned files to fix compilation: scout_run.go (ScoutCorrectionLoop caller) and program_status_cmd.go (SyncProgramStatusFromDisk caller). Out-of-scope deps: cmd/sawtools/program_execute_cmd.go already compiles (ignores UpdateProgramIMPLStatus result with _). Full test suite passes — 30 packages, 0 failures.'
 pre_mortem:
     overall_risk: medium
     rows:
@@ -2006,5 +2112,5 @@ critic_report:
     summary: 'Re-review of Wave 1 agents A through H2 confirms all 5 previously errored agents now have accurate briefs. Agent B: the Adapter interface location is correctly stated as pkg/notify/types.go and the current interface signature (Send returning error) matches the file at line 34. Agent D: the E35 note is corrected — detect.go calls LoadAgentSessions (not SaveAgentSession), LoadAgentSessions is not being migrated, so no caller changes are needed in detect.go; verified against the file. Agent E: constraint_enforcer.go and role_middleware.go are correctly described as E35 compliance-only files that do not call Register() — both files use next.Execute() in middleware closures only; the actual Register() callers (middleware.go, standard.go, workshop_constrained.go) remain correctly listed. Agent H: the rewritten brief correctly describes the actual gatecache API — Put/Invalidate/BuildKey/BuildKeyForGate signatures all match cache.go exactly, CachedResult type name is correct, and the note that Get returns bool (skip) is accurate. Agent H2: the rewritten brief correctly identifies manager.go (not queue.go), the Item type, the *Manager struct, and all four method signatures (Add/List/Next/UpdateStatus) match the file exactly. Agents A, C, F, and G were previously passing and remain accurate. All Wave 1 briefs are verified against the codebase. Wave execution may proceed.'
     reviewed_at: "2026-03-30T23:36:47Z"
     issue_count: 0
-state: REVIEWED
+state: COMPLETE
 injection_method: hook

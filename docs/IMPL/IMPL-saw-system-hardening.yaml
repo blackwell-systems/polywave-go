@@ -1,0 +1,697 @@
+title: SAW System Hardening — Five Protocol Gap Fixes
+feature_slug: saw-system-hardening
+verdict: SUITABLE
+suitability_assessment: |
+    All five suitability gate questions resolve cleanly.
+
+    1. File decomposition: 5 independent problems map to 5 independent file clusters.
+       No two agents touch the same file. Problems 1, 2, 3, 4, and 5 are all purely
+       additive changes to different source files with no shared ownership.
+
+    2. Investigation-first items: None. Each problem has a known root cause identified
+       by code inspection:
+       - Problem 1: validate_cmd.go passes no repoPath; ValidateFileExistence is a no-op.
+       - Problem 2: CheckAgentComplexity counts files but never reads LOC.
+       - Problem 3: prepare.go filters on "I1_VIOLATION" but the emitted code is
+         "V002_DISJOINT_OWNERSHIP" — a string mismatch makes the guard dead code.
+       - Problem 4: UpdateStatus() directly writes report.Status without invoking
+         CompletionReportBuilder.Validate(); commit field is never enforced.
+       - Problem 5: DiscoverLintGate returns only "lint" gates; pre-commit hook runs
+         lint only, never build.
+
+    3. Interface discoverability: All cross-agent interfaces are defined before work
+       starts. No agent's output is consumed by another agent (Wave 1 only, no Wave 2
+       integration needed).
+
+    4. Pre-implementation status check:
+       - I1 disjoint ownership detection (Problem 3): partially implemented but broken
+         (dead-code string mismatch). Fix is a one-line change in engine/prepare.go.
+       - Completion report commit enforcement (Problem 4): fully implemented in
+         CompletionReportBuilder.Validate() for set-completion; the gap is the
+         update-status path that bypasses the builder. Fix is additive to status_update.go.
+       - All other problems (1, 2, 5): clearly missing; no partial implementation.
+
+    5. Parallelization value check: High value. 5 independent agents, each touching
+       distinct files. go test ./... takes ~60s. Parallelization reduces total elapsed
+       time from ~30 min sequential to ~8 min parallel.
+
+    Estimated times:
+    - Scout phase: ~15 min (5-problem analysis, interface contracts, IMPL doc)
+    - Agent execution: ~6 min (5 agents x ~6 min avg, all parallel in Wave 1)
+    - Merge and verification: ~5 min (single wave merge + go test ./...)
+    Total SAW time: ~26 min
+
+    Sequential baseline: ~30 min (5 problems x 6 min each)
+    Time savings: ~4 min (15% faster) plus coordination value as protocol audit trail.
+
+    Recommendation: Clear speedup at the margin; coordination value is primary benefit.
+    Proceed with SAW.
+test_command: go test ./... -timeout 120s
+lint_command: go vet ./...
+file_ownership:
+    - file: pkg/protocol/full_validate.go
+      agent: A
+      wave: 1
+      action: modify
+    - file: pkg/protocol/full_validate_test.go
+      agent: A
+      wave: 1
+      action: modify
+    - file: cmd/sawtools/validate_cmd.go
+      agent: A
+      wave: 1
+      action: modify
+    - file: pkg/protocol/complexity.go
+      agent: B
+      wave: 1
+      action: modify
+    - file: pkg/protocol/complexity_test.go
+      agent: B
+      wave: 1
+      action: modify
+    - file: pkg/engine/prepare.go
+      agent: C
+      wave: 1
+      action: modify
+    - file: pkg/protocol/status_update.go
+      agent: D
+      wave: 1
+      action: modify
+    - file: pkg/protocol/status_update_test.go
+      agent: D
+      wave: 1
+      action: modify
+    - file: cmd/sawtools/update_status.go
+      agent: D
+      wave: 1
+      action: modify
+    - file: pkg/protocol/gate_discovery.go
+      agent: E
+      wave: 1
+      action: modify
+    - file: pkg/protocol/gate_discovery_test.go
+      agent: E
+      wave: 1
+      action: modify
+    - file: cmd/sawtools/pre_commit_cmd.go
+      agent: E
+      wave: 1
+      action: modify
+interface_contracts:
+    - name: FullValidateOpts
+      description: |
+        Extended to accept RepoPath for file-existence checks. Agents writing callers
+        should pass the repo root when available; empty string means skip the check.
+      definition: |
+        type FullValidateOpts struct {
+            AutoFix   bool   // auto-correct fixable issues (gate types, unknown keys)
+            UseSolver bool   // use CSP solver for wave assignment validation
+            RepoPath  string // optional: absolute path to repo root for file-existence checks
+        }
+      location: pkg/protocol/full_validate.go
+    - name: CheckAgentLOCBudget
+      description: |
+        New function added to complexity.go. Reads line counts for all files owned by
+        each agent (action=modify only; action=new files do not yet exist). Emits a
+        blocking error if any agent exceeds the LOC threshold (2000 lines total across
+        owned files). Returns nil (empty slice) when repoPath is empty (offline/schema-only
+        validation).
+      definition: |
+        // CheckAgentLOCBudget checks that no agent owns files totalling more than maxLOC
+        // lines. Only action=modify files are counted (action=new files do not yet exist).
+        // Returns blocking errors for agents over budget.
+        // If repoPath is empty, all checks are skipped (allows offline validation).
+        func CheckAgentLOCBudget(m *IMPLManifest, repoPath string, maxLOC int) []result.SAWError
+      location: pkg/protocol/complexity.go
+    - name: DiscoverBuildGate
+      description: |
+        New function parallel to DiscoverLintGate. Returns the command for the first
+        quality gate of type "build" found in the active IMPL doc, or falls back to
+        saw.config.json build_command field. Returns ("", nil) if nothing configured.
+      definition: |
+        func DiscoverBuildGate(repoDir string) (string, error)
+      location: pkg/protocol/gate_discovery.go
+    - name: UpdateStatusOpts and UpdateStatus
+      description: |
+        UpdateStatus will reject setting status=complete when the existing completion
+        report has an empty commit field AND no commit is supplied in the call. The
+        UpdateStatusOpts struct allows callers to supply a commit SHA alongside the
+        status change. Existing callers that pass status != complete are unaffected.
+      definition: |
+        // UpdateStatusOpts carries optional fields for update-status beyond the status string.
+        type UpdateStatusOpts struct {
+            Commit string // required when Status == StatusComplete and no commit in existing report
+        }
+
+        // UpdateStatus loads the manifest, updates the agent completion report status,
+        // and saves back to disk. Returns failure if status=complete is requested but
+        // no commit is available (neither in opts.Commit nor in the existing report).
+        func UpdateStatus(manifestPath string, waveNum int, agentID string, status CompletionStatus, opts UpdateStatusOpts) result.Result[*UpdateStatusData]
+      location: pkg/protocol/status_update.go
+waves:
+    - number: 1
+      agents:
+        - id: A
+          task: |
+            ## Problem 1 — Ghost file target detection in sawtools validate
+
+            ### Context
+            `ValidateFileExistence` in `pkg/protocol/file_existence_validator.go` checks
+            that `action=modify` files exist on disk, but it is called with an empty
+            `repoPath` from `Validate()` (line 52 of `validation.go`). This makes the
+            check a no-op for the CLI path. `validate_cmd.go` does not accept a
+            `--repo-dir` flag and does not pass a repo path into `FullValidate`.
+
+            ### What to implement
+
+            **File 1: `pkg/protocol/full_validate.go`**
+
+            1. Add `RepoPath string` field to `FullValidateOpts` (see interface contract).
+            2. After the existing Step 6 (`Validate(m)` call), add a Step 6b that calls
+               `ValidateFileExistence(m, opts.RepoPath)` with the provided RepoPath and
+               appends any errors to `errs`. Do not change the existing `ValidateFileExistence`
+               call inside `Validate()` — that call stays as-is with empty string for backward
+               compatibility. The new call in `FullValidate` uses `opts.RepoPath`.
+            3. After the `ValidateFileExistence` call, add a call to `CheckAgentLOCBudget`:
+               ```go
+               // TODO(saw-system-hardening): wired by Agent B — CheckAgentLOCBudget call goes here
+               // errs = append(errs, CheckAgentLOCBudget(m, opts.RepoPath, 2000)...)
+               ```
+               Leave this as a commented-out TODO so Agent B can uncomment it when they
+               verify the function compiles. This avoids a compilation failure if agents
+               merge in an order where Agent A's changes land before Agent B's changes.
+
+            **File 2: `cmd/sawtools/validate_cmd.go`**
+
+            1. Add a `--repo-dir` local string flag to the validate subcommand.
+            2. In `RunE`, after `manifestPath := args[0]`, determine the effective repo
+               dir: prefer the explicit `--repo-dir` flag value; if empty, infer the repo
+               root from the manifest path by walking up from the manifest's directory
+               until finding a directory containing `go.mod` or `go.sum`. If inference
+               fails, leave as empty string (skip file-existence check with no error).
+            3. Pass `RepoPath: effectiveRepoDir` in the `FullValidateOpts` struct.
+
+            **File 3: `pkg/protocol/full_validate_test.go`**
+
+            Add test `TestFullValidate_GhostFileTarget`:
+            - Creates a temp dir with a minimal valid manifest where `file_ownership`
+              has one `action=modify` entry pointing to a file that does not exist on disk.
+            - Calls `FullValidate(path, FullValidateOpts{RepoPath: tempDir})`.
+            - Asserts `data.Valid == false` and at least one error has code
+              `result.CodeFileMissing` (`"V041_FILE_MISSING"`).
+
+            ### Verification gate
+            ```
+            go build ./...
+            go vet ./pkg/protocol/... ./cmd/sawtools/...
+            go test ./pkg/protocol/... -run TestFullValidate -v
+            ```
+
+            ### Constraints
+            - Do not modify `pkg/protocol/validation.go`.
+            - Leave the `CheckAgentLOCBudget` call as a commented-out TODO — Agent B
+              owns that wiring.
+            - The `--repo-dir` flag must be a local flag on the validate subcommand,
+              not a global flag (the global `repoDir` in root.go is a separate variable).
+          files:
+            - pkg/protocol/full_validate.go
+            - pkg/protocol/full_validate_test.go
+            - cmd/sawtools/validate_cmd.go
+        - id: B
+          task: |
+            ## Problem 2 — LOC budget enforcement in sawtools validate
+
+            ### Context
+            `CheckAgentComplexity` in `pkg/protocol/complexity.go` checks file *count*
+            per agent (>8 files => W001 warning) but never reads actual line counts. A
+            single agent can legitimately own 3 files totalling 6,000 lines, exhausting
+            context window before any commit happens.
+
+            ### What to implement
+
+            **File 1: `pkg/protocol/complexity.go`**
+
+            Add a new exported function `CheckAgentLOCBudget` exactly matching the
+            interface contract:
+
+            ```go
+            func CheckAgentLOCBudget(m *IMPLManifest, repoPath string, maxLOC int) []result.SAWError
+            ```
+
+            Also add an unexported string constant for the error code:
+            ```go
+            const codeAgentLOCBudget = "V048_AGENT_LOC_BUDGET"
+            ```
+
+            Implementation requirements:
+            1. If `repoPath == ""`, return nil immediately (offline/schema-only mode).
+            2. Build a map of `agentID -> total LOC` and `agentID -> file count` from
+               `m.FileOwnership`. Only count files with `action == "modify"`. For each
+               such file, open `filepath.Join(repoPath, fo.File)` and count lines with
+               `bufio.Scanner`. If the file does not exist (stat error), skip silently.
+            3. If an agent's total LOC > maxLOC, append a blocking error:
+               - Code: `codeAgentLOCBudget` ("V048_AGENT_LOC_BUDGET")
+               - Severity: `"error"` (blocking, not warning)
+               - Message: `fmt.Sprintf("agent %s owns %d lines across %d files (limit: %d) — split the agent or reduce scope", agentID, totalLOC, fileCount, maxLOC)`
+               - Field: `"file_ownership"`
+
+            After implementing `CheckAgentLOCBudget`, open `pkg/protocol/full_validate.go`
+            (which Agent A has already modified). Find the TODO comment:
+            ```go
+            // TODO(saw-system-hardening): wired by Agent B — CheckAgentLOCBudget call goes here
+            // errs = append(errs, CheckAgentLOCBudget(m, opts.RepoPath, 2000)...)
+            ```
+            Uncomment the actual call line and remove the TODO comment line. The file is
+            owned by Agent A but you must make this one targeted change to wire the function.
+            If Agent A's changes are not yet merged when you run your verification gate,
+            the build will fail on `opts.RepoPath` — work around this by first verifying
+            that `full_validate.go` has the `RepoPath` field before uncommenting.
+
+            Note: do NOT add `V048_AGENT_LOC_BUDGET` to `pkg/result/codes.go` — that
+            file is not in your ownership. The unexported constant in `complexity.go`
+            is sufficient for this implementation.
+
+            **File 2: `pkg/protocol/complexity_test.go`**
+
+            Add `TestCheckAgentLOCBudget` with the following cases:
+            - `repoPath == ""` returns nil (offline mode, no file I/O).
+            - Agent owns one file under 2000 lines: no errors returned.
+            - Agent owns two files totalling over 2000 lines: one error with code
+              `"V048_AGENT_LOC_BUDGET"` and severity `"error"`.
+            - Agent owns files with `action=new`: those files are skipped even if created
+              on disk with many lines.
+            - Agent owns a missing `action=modify` file: skipped silently, no panic.
+
+            Use `t.TempDir()` and `os.WriteFile` to create files with known line counts
+            (write N newlines to produce N lines).
+
+            ### Verification gate
+            ```
+            go build ./...
+            go vet ./pkg/protocol/...
+            go test ./pkg/protocol/... -run TestCheckAgentLOCBudget -v
+            ```
+
+            ### Constraints
+            - Do NOT add constants to `pkg/result/codes.go` (not in ownership).
+            - Do NOT modify `pkg/protocol/validation.go` (not in ownership).
+            - Uncomment the wiring call in `full_validate.go` as described above. This
+              is a targeted one-line change to Agent A's file to complete the integration.
+          files:
+            - pkg/protocol/complexity.go
+            - pkg/protocol/complexity_test.go
+        - id: C
+          task: |
+            ## Problem 3 — I1 dead-code string mismatch in prepare.go
+
+            ### Context
+            In `pkg/engine/prepare.go`, the I1 disjoint ownership guard (around line 434)
+            calls `protocol.Validate(doc)` and then filters for errors with
+            `e.Code == "I1_VIOLATION"`. However, the actual error code emitted by
+            `validateI1DisjointOwnership` in `pkg/protocol/validation.go` is
+            `result.CodeDisjointOwnership` which equals `"V002_DISJOINT_OWNERSHIP"`.
+            The string `"I1_VIOLATION"` is never emitted anywhere in the codebase, so
+            the filter catches nothing. All I1 violations pass silently through
+            `prepare-wave`.
+
+            ### What to implement
+
+            **File 1: `pkg/engine/prepare.go`**
+
+            Find the block starting with the comment
+            `// Step: I1 disjoint ownership verification (E3)` (approximately line 433).
+            The current code is:
+
+            ```go
+            if allErrs := protocol.Validate(doc); len(allErrs) > 0 {
+                var i1Errs []result.SAWError
+                for _, e := range allErrs {
+                    if e.Code == "I1_VIOLATION" {
+                        i1Errs = append(i1Errs, e)
+                    }
+                }
+                ...
+            }
+            ```
+
+            Change the filter to use the correct constant:
+
+            ```go
+            if allErrs := protocol.Validate(doc); len(allErrs) > 0 {
+                var i1Errs []result.SAWError
+                for _, e := range allErrs {
+                    if e.Code == result.CodeDisjointOwnership {
+                        i1Errs = append(i1Errs, e)
+                    }
+                }
+                ...
+            }
+            ```
+
+            Verify that `result` is already imported in `prepare.go`. If not, add:
+            ```go
+            "github.com/blackwell-systems/scout-and-wave-go/pkg/result"
+            ```
+            Check with:
+            ```bash
+            grep -n 'scout-and-wave-go/pkg/result' pkg/engine/prepare.go
+            ```
+
+            ### Verification gate
+            ```
+            go build ./...
+            go vet ./pkg/engine/...
+            go test ./pkg/engine/... -run TestPrepare -v -timeout 60s
+            ```
+
+            ### Constraints
+            - Change only the one string literal `"I1_VIOLATION"` to `result.CodeDisjointOwnership`.
+            - Do not refactor any other part of the I1 block.
+            - Do not modify `pkg/protocol/validation.go`.
+          files:
+            - pkg/engine/prepare.go
+        - id: D
+          task: |
+            ## Problem 4 — Completion report enforcement in update-status
+
+            ### Context
+            `CompletionReportBuilder.Validate()` in `pkg/protocol/completion_report.go`
+            correctly enforces `commit != ""` when `status == "complete"`. But
+            `pkg/protocol/status_update.go` (`UpdateStatus` function) bypasses the builder
+            entirely — it reads the existing report from the manifest, sets `report.Status`,
+            and writes back without ever calling `Validate()`. An agent can therefore call:
+
+                sawtools update-status --wave 1 --agent A --status complete
+
+            without providing a commit, producing a manifest that passes `update-status`
+            but then fails `verify-commits` (E7 gate) downstream in `finalize-wave`.
+
+            ### What to implement
+
+            **File 1: `pkg/protocol/status_update.go`**
+
+            1. Add `UpdateStatusOpts` struct (see interface contract):
+               ```go
+               type UpdateStatusOpts struct {
+                   Commit string // required when Status == StatusComplete and no commit in existing report
+               }
+               ```
+
+            2. Change `UpdateStatus` function signature to accept opts as last parameter:
+               ```go
+               func UpdateStatus(manifestPath string, waveNum int, agentID string, status CompletionStatus, opts UpdateStatusOpts) result.Result[*UpdateStatusData]
+               ```
+
+            3. After the existing agent-not-found check and before writing the report,
+               add a commit guard:
+               ```go
+               if status == StatusComplete {
+                   existingCommit := ""
+                   if existing, ok := manifest.CompletionReports[agentID]; ok {
+                       existingCommit = existing.Commit
+                   }
+                   effectiveCommit := opts.Commit
+                   if effectiveCommit == "" {
+                       effectiveCommit = existingCommit
+                   }
+                   if strings.TrimSpace(effectiveCommit) == "" {
+                       return result.NewFailure[*UpdateStatusData]([]result.SAWError{{
+                           Code:     result.CodeCommitMissing,
+                           Message:  fmt.Sprintf("cannot set agent %s status to complete: commit is required", agentID),
+                           Severity: "fatal",
+                           Field:    "completion_reports." + agentID + ".commit",
+                       }})
+                   }
+               }
+               ```
+
+            4. When writing the report, also apply opts.Commit if provided:
+               ```go
+               report := manifest.CompletionReports[agentID]
+               report.Status = status
+               if opts.Commit != "" {
+                   report.Commit = opts.Commit
+               }
+               manifest.CompletionReports[agentID] = report
+               ```
+
+            **File 2: `cmd/sawtools/update_status.go`**
+
+            Update the `UpdateStatus` call in `newUpdateStatusCmd` to pass the new opts
+            parameter:
+            ```go
+            res := protocol.UpdateStatus(manifestPath, waveNum, agentID,
+                protocol.CompletionStatus(status),
+                protocol.UpdateStatusOpts{}) // commit not accepted by this command
+            ```
+            The `update-status` command does not take `--commit`. The guard will allow
+            `--status complete` only if the manifest already contains a commit for that
+            agent (placed there by a prior `set-completion` call).
+
+            **File 3: `pkg/protocol/status_update_test.go`**
+
+            Add the following test cases:
+
+            - `TestUpdateStatus_CompleteRequiresCommit`: manifest has wave 1 agent A,
+              no prior completion report. Calls `UpdateStatus(..., StatusComplete,
+              UpdateStatusOpts{})`. Asserts result is fatal with code
+              `result.CodeCommitMissing`.
+
+            - `TestUpdateStatus_CompleteWithCommitInOpts`: calls `UpdateStatus(...,
+              StatusComplete, UpdateStatusOpts{Commit: "abc123"})`. Asserts success
+              and saved report has `Commit == "abc123"`.
+
+            - `TestUpdateStatus_CompleteWithExistingCommit`: manifest has existing report
+              with `Commit: "existing-sha"`. Calls `UpdateStatus(..., StatusComplete,
+              UpdateStatusOpts{})`. Asserts success (existing commit satisfies guard).
+
+            - `TestUpdateStatus_PartialNoCommitRequired`: calls `UpdateStatus(...,
+              StatusPartial, UpdateStatusOpts{})`. Asserts success (partial does not
+              require a commit).
+
+            ### Verification gate
+            ```
+            go build ./...
+            go vet ./pkg/protocol/... ./cmd/sawtools/...
+            go test ./pkg/protocol/... -run TestUpdateStatus -v
+            ```
+
+            ### Existing call sites to update
+
+            `status_update_test.go` has 4 existing `UpdateStatus` calls (lines 32, 97,
+            156, 184) using the old 4-argument signature. After the signature change they
+            will fail to compile. Update each to pass `UpdateStatusOpts{}` as the fifth
+            argument:
+
+            ```go
+            // Before:
+            protocol.UpdateStatus(manifestPath, 1, "A", protocol.StatusComplete)
+            // After:
+            protocol.UpdateStatus(manifestPath, 1, "A", protocol.StatusComplete, protocol.UpdateStatusOpts{})
+            ```
+
+            Apply this pattern to all 4 existing call sites before committing.
+
+            ### Constraints
+            - Do not change `CompletionReportBuilder` or `set-completion` — those paths
+              already work correctly.
+            - The `strings` package is NOT currently imported in `status_update.go`.
+              Add it to the import block alongside `fmt` and `result`.
+          files:
+            - pkg/protocol/status_update.go
+            - pkg/protocol/status_update_test.go
+            - cmd/sawtools/update_status.go
+        - id: E
+          task: |
+            ## Problem 5 — Build gate before agent commit in pre-commit hook
+
+            ### Context
+            The pre-commit hook installed by `sawtools install-hooks` runs
+            `RunPreCommitCheck`, which calls `protocol.DiscoverLintGate(repoDir)` and
+            executes only the lint gate (typically `go vet ./...`). An agent can commit
+            code that passes `go vet` but produces type errors in callers
+            (`go build ./...` fails). The build failure is only discovered at
+            `finalize-wave` when all agents' branches are merged and the full build runs.
+
+            Fix: extend the pre-commit hook to also discover and run a build gate.
+
+            ### What to implement
+
+            **File 1: `pkg/protocol/gate_discovery.go`**
+
+            1. Extend the `sawConfig` struct with a `BuildCommand` field:
+               ```go
+               type sawConfig struct {
+                   LintCommand  string `json:"lint_command"`
+                   BuildCommand string `json:"build_command"`
+               }
+               ```
+
+            2. Add `DiscoverBuildGate` matching the interface contract:
+               ```go
+               // DiscoverBuildGate searches for an active IMPL doc under repoDir/docs/IMPL/
+               // and extracts the first gate of type "build". Falls back to saw.config.json
+               // build_command field. Returns ("", nil) if nothing is configured.
+               func DiscoverBuildGate(repoDir string) (string, error)
+               ```
+               Implementation mirrors `DiscoverLintGate` exactly, with two changes:
+               - Filter `gate.Type == "build"` instead of `gate.Type == "lint"`.
+               - In the config fallback, return `cfg.BuildCommand` instead of
+                 `cfg.LintCommand`.
+
+            **File 2: `pkg/protocol/gate_discovery_test.go`**
+
+            Add `TestDiscoverBuildGate` with these cases (mirror `TestDiscoverLintGate`
+            structure):
+            - No IMPL doc present: returns `("", nil)`.
+            - IMPL doc with `type: build` gate: returns the gate command.
+            - IMPL doc with no build gate but `saw.config.json` has `build_command`:
+              returns the config value.
+            - IMPL doc in StateComplete: skipped; returns `("", nil)`.
+            - IMPL doc with build gate scoped to different repo: skipped.
+
+            **File 3: `cmd/sawtools/pre_commit_cmd.go`**
+
+            Refactor `RunPreCommitCheck` to run both lint and build gates:
+
+            ```go
+            func RunPreCommitCheck(repoDir string) error {
+                // Lint gate (existing behavior)
+                lintCmd, err := protocol.DiscoverLintGate(repoDir)
+                if err != nil {
+                    return fmt.Errorf("pre-commit-check: %w", err)
+                }
+                if lintCmd != "" {
+                    fmt.Fprintf(os.Stderr, "[pre-commit] running lint gate: %s\n", lintCmd)
+                    if err := runGateCommand(repoDir, lintCmd); err != nil {
+                        return err
+                    }
+                }
+
+                // Build gate (new — runs after lint so lint fails fast)
+                buildCmd, err := protocol.DiscoverBuildGate(repoDir)
+                if err != nil {
+                    return fmt.Errorf("pre-commit-check: %w", err)
+                }
+                if buildCmd != "" {
+                    fmt.Fprintf(os.Stderr, "[pre-commit] running build gate: %s\n", buildCmd)
+                    if err := runGateCommand(repoDir, buildCmd); err != nil {
+                        return err
+                    }
+                }
+
+                return nil
+            }
+
+            // runGateCommand executes a shell command in repoDir, streaming output
+            // to stdout/stderr. Returns error on non-zero exit.
+            func runGateCommand(repoDir, command string) error {
+                cmd := exec.Command("sh", "-c", command)
+                cmd.Dir = repoDir
+                cmd.Stdout = os.Stdout
+                cmd.Stderr = os.Stderr
+                if err := cmd.Run(); err != nil {
+                    if exitErr, ok := err.(*exec.ExitError); ok {
+                        return fmt.Errorf("gate failed: exit %d", exitErr.ExitCode())
+                    }
+                    return fmt.Errorf("gate failed: %w", err)
+                }
+                return nil
+            }
+            ```
+
+            The existing inline `exec.Command` block in `RunPreCommitCheck` is replaced
+            by the `runGateCommand` helper. Remove the old inline block.
+
+            ### Verification gate
+            ```
+            go build ./...
+            go vet ./pkg/protocol/... ./cmd/sawtools/...
+            go test ./pkg/protocol/... -run TestDiscoverBuildGate -v
+            ```
+
+            ### Constraints
+            - Do not modify `DiscoverLintGate` behavior.
+            - The `sawConfig` struct is unexported in `gate_discovery.go`; extend it freely.
+            - Build gate runs AFTER lint (lint is faster; fail fast on lint errors).
+            - Keep `runGateCommand` unexported in `pre_commit_cmd.go`.
+          files:
+            - pkg/protocol/gate_discovery.go
+            - pkg/protocol/gate_discovery_test.go
+            - cmd/sawtools/pre_commit_cmd.go
+quality_gates:
+    level: standard
+    gates:
+        - type: build
+          command: go build ./...
+          required: true
+        - type: lint
+          command: go vet ./...
+          required: true
+        - type: test
+          command: go test ./...
+          required: true
+pre_mortem:
+    overall_risk: low
+    rows:
+        - scenario: |
+            Agent A and Agent B both touch full_validate.go: A adds RepoPath to
+            FullValidateOpts and a TODO comment; B uncomments the CheckAgentLOCBudget call.
+            If B merges before A, B will not find the TODO comment and the wiring will
+            be missing.
+          likelihood: low
+          impact: medium
+          mitigation: |
+            Both agent tasks document the exact TODO comment text and line. The merge
+            order is enforced by the wave: both are Wave 1 agents who must complete before
+            finalize-wave runs. The integration gate (go build ./...) will fail if the
+            wiring is incomplete, surfacing the gap before the wave closes.
+        - scenario: |
+            pkg/result/codes.go is not in any agent's ownership. Agent B uses an unexported
+            string constant in complexity.go for the new error code. External callers who
+            want to check for V048_AGENT_LOC_BUDGET by name cannot use the result package
+            constant.
+          likelihood: medium
+          impact: low
+          mitigation: |
+            Unexported constant is sufficient for initial implementation. The code string
+            "V048_AGENT_LOC_BUDGET" is documented in the interface contract above. A
+            follow-up IMPL can promote it to codes.go when external callers need it.
+        - scenario: |
+            Agent C must verify that the `result` package is already imported in
+            prepare.go. If it is not, the one-line filter fix requires adding an import,
+            slightly expanding scope.
+          likelihood: low
+          impact: low
+          mitigation: |
+            Agent C's task includes a grep command to check the import before proceeding.
+            Adding one import line is within scope for a one-file agent.
+critic_report:
+    verdict: PASS
+    agent_reviews:
+        A:
+            agent_id: A
+            verdict: PASS
+        B:
+            agent_id: B
+            verdict: PASS
+            issues:
+                - check: side_effect_completeness
+                  severity: warning
+                  description: Brief instructs Agent B to modify pkg/protocol/full_validate.go (owned by Agent A in file_ownership) to uncomment the CheckAgentLOCBudget wiring call. This cross-agent file touch is acknowledged in the pre_mortem but full_validate.go is not listed under Agent B ownership. If Agent B merges before Agent A, the TODO comment will not exist and the uncomment step will silently no-op. The pre_mortem mitigation (go build ./... gate catches incomplete wiring) is sound.
+                  file: pkg/protocol/full_validate.go
+                  symbol: CheckAgentLOCBudget
+        C:
+            agent_id: C
+            verdict: PASS
+        D:
+            agent_id: D
+            verdict: PASS
+        E:
+            agent_id: E
+            verdict: PASS
+    summary: 'All five agent briefs are accurate against the codebase. Agent D''s brief has been patched to include a ''### Existing call sites to update'' section (lines 479-493 of the IMPL doc) that explicitly identifies the 4 existing UpdateStatus call sites in status_update_test.go at lines 32, 97, 156, and 184, provides the exact before/after transformation pattern, and instructs the agent to apply it to all 4 sites before committing. The patch is correct: the actual file confirms all 4 calls use the old 4-argument signature. File ownership across all 5 agents is disjoint (11 distinct files, no overlaps). Agent B''s previously noted warning about the cross-agent full_validate.go touch remains advisory and is mitigated by the build gate. No new issues were introduced by the patch.'
+    reviewed_at: "2026-03-31T01:24:10Z"
+    issue_count: 0
+state: SCOUT_PENDING
+injection_method: hook
