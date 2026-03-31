@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -49,7 +50,7 @@ func newValidateCmd() *cobra.Command {
 				effectiveRepoDir = inferRepoDir(manifestDir)
 			}
 
-			res := protocol.FullValidate(manifestPath, protocol.FullValidateOpts{
+			res := protocol.FullValidate(context.TODO(), manifestPath, protocol.FullValidateOpts{
 				AutoFix:   autoFix,
 				UseSolver: useSolver,
 				RepoPath:  effectiveRepoDir,

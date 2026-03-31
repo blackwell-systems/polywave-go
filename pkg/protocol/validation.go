@@ -1,6 +1,7 @@
 package protocol
 
 import (
+	"context"
 	"fmt"
 	"regexp"
 	"strconv"
@@ -605,7 +606,8 @@ func validateMultiRepoConsistency(m *IMPLManifest) []result.SAWError {
 // Use ValidateBytes when you have the raw YAML source (e.g., reading from disk).
 // Use Validate when you already have a parsed *IMPLManifest and only need
 // structural/invariant checks (unknown-key detection will not run).
-func ValidateBytes(yamlData []byte) ([]result.SAWError, error) {
+func ValidateBytes(ctx context.Context, yamlData []byte) ([]result.SAWError, error) {
+	_ = ctx // reserved for future context-aware validation (e.g., cancellation)
 	// Cannot use LoadYAML: yamlData is a []byte parameter, not a file path.
 	var m IMPLManifest
 	if err := yaml.Unmarshal(yamlData, &m); err != nil {

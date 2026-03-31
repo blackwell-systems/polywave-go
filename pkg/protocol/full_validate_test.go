@@ -1,6 +1,7 @@
 package protocol
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"strings"
@@ -46,7 +47,7 @@ func TestFullValidate_ValidManifest(t *testing.T) {
 	tmpDir := t.TempDir()
 	path := writeManifest(t, tmpDir, "IMPL-test.yaml", validManifestYAML)
 
-	res := FullValidate(path, FullValidateOpts{})
+	res := FullValidate(context.Background(), path, FullValidateOpts{})
 	if res.IsFatal() {
 		t.Fatalf("expected success, got fatal: %v", res.Errors)
 	}
@@ -86,7 +87,7 @@ quality_gates:
 `
 	path := writeManifest(t, tmpDir, "IMPL-test.yaml", manifest)
 
-	res := FullValidate(path, FullValidateOpts{})
+	res := FullValidate(context.Background(), path, FullValidateOpts{})
 	data := res.GetData()
 	if data.Valid {
 		t.Error("expected Valid=false for I1 violation")
@@ -134,7 +135,7 @@ quality_gates:
 `
 	path := writeManifest(t, tmpDir, "IMPL-test.yaml", manifest)
 
-	res := FullValidate(path, FullValidateOpts{AutoFix: true})
+	res := FullValidate(context.Background(), path, FullValidateOpts{AutoFix: true})
 	data := res.GetData()
 	if data.Fixed == 0 {
 		t.Error("expected Fixed > 0 after auto-fix")
@@ -166,7 +167,7 @@ quality_gates:
 `
 	path := writeManifest(t, tmpDir, "IMPL-test.yaml", manifest)
 
-	res := FullValidate(path, FullValidateOpts{})
+	res := FullValidate(context.Background(), path, FullValidateOpts{})
 	// Result may be partial (data available) or fatal (Load failed).
 	// Either way, there should be errors mentioning "duplicate".
 	if res.IsSuccess() {
@@ -327,7 +328,7 @@ quality_gates:
 `
 	path := writeManifest(t, tmpDir, "IMPL-test.yaml", manifest)
 
-	res := FullValidate(path, FullValidateOpts{})
+	res := FullValidate(context.Background(), path, FullValidateOpts{})
 	if res.IsFatal() {
 		t.Fatalf("expected non-fatal result, got fatal: %v", res.Errors)
 	}
@@ -383,7 +384,7 @@ quality_gates:
 	path := writeManifest(t, tmpDir, "IMPL-ghost.yaml", manifest)
 
 	// RepoPath is tmpDir — the file pkg/does_not_exist.go is absent there.
-	res := FullValidate(path, FullValidateOpts{RepoPath: tmpDir})
+	res := FullValidate(context.Background(), path, FullValidateOpts{RepoPath: tmpDir})
 	if res.IsFatal() {
 		t.Fatalf("expected non-fatal result, got fatal: %v", res.Errors)
 	}

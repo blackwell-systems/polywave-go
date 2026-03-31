@@ -45,7 +45,7 @@ Agent C added a parameter but the unowned call sites still had the old signature
 			manifestPath := args[0]
 
 			// Step 1: Run FullValidate (E16)
-			validateRes := protocol.FullValidate(manifestPath, protocol.FullValidateOpts{
+			validateRes := protocol.FullValidate(context.TODO(), manifestPath, protocol.FullValidateOpts{
 				AutoFix: autoFix,
 			})
 
