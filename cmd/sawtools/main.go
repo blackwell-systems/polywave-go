@@ -75,6 +75,7 @@ func main() {
 		newAssignAgentIDsCmd(),
 		newInterviewCmd(),
 		newRunScoutCmd(),       // I3: Phase 5 integration
+		newAutoCmd(),           // /saw auto: scout + confirm + wave in one command
 		newRunCriticCmd(),      // E37: Pre-wave brief review
 		newSetCriticReviewCmd(), // E37: Used by critic agents to write results
 		newRunIntegrationAgentCmd(), // E26: Integration agent workflow
