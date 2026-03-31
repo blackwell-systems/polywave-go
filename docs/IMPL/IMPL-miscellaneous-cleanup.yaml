@@ -839,7 +839,7 @@ critic_report:
     verdict: PASS
     agent_reviews: {}
     summary: Skipped by operator
-    reviewed_at: "2026-03-31T20:57:41Z"
+    reviewed_at: "2026-03-31T21:04:54Z"
     issue_count: 0
 state: SCOUT_PENDING
 injection_method: hook
