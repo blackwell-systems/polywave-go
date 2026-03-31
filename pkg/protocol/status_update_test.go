@@ -28,8 +28,8 @@ waves:
 		t.Fatalf("Failed to write test manifest: %v", err)
 	}
 
-	// Update status for agent A
-	res := UpdateStatus(manifestPath, 1, "A", "complete")
+	// Update status for agent A (provide commit so the complete guard passes)
+	res := UpdateStatus(manifestPath, 1, "A", "complete", UpdateStatusOpts{Commit: "abc123"})
 	if res.IsFatal() {
 		t.Fatalf("UpdateStatus failed: %+v", res.Errors)
 	}
@@ -93,8 +93,8 @@ completion_reports:
 		t.Fatalf("Failed to write test manifest: %v", err)
 	}
 
-	// Update status from partial to complete
-	res := UpdateStatus(manifestPath, 1, "B", "complete")
+	// Update status from partial to complete (provide commit so the complete guard passes)
+	res := UpdateStatus(manifestPath, 1, "B", "complete", UpdateStatusOpts{Commit: "def456"})
 	if res.IsFatal() {
 		t.Fatalf("UpdateStatus failed: %+v", res.Errors)
 	}
@@ -153,7 +153,7 @@ waves:
 	}
 
 	// Try to update status for non-existent agent
-	res := UpdateStatus(manifestPath, 1, "Z", "complete")
+	res := UpdateStatus(manifestPath, 1, "Z", "complete", UpdateStatusOpts{})
 	if !res.IsFatal() {
 		t.Fatal("Expected fatal result for non-existent agent")
 	}
@@ -181,8 +181,168 @@ waves:
 	}
 
 	// Try to update status for wave 99
-	res := UpdateStatus(manifestPath, 99, "A", "complete")
+	res := UpdateStatus(manifestPath, 99, "A", "complete", UpdateStatusOpts{})
 	if !res.IsFatal() {
 		t.Fatal("Expected fatal result for non-existent wave")
+	}
+}
+
+// TestUpdateStatus_CompleteRequiresCommit tests that setting status=complete without a commit fails.
+func TestUpdateStatus_CompleteRequiresCommit(t *testing.T) {
+	tmpDir := t.TempDir()
+	manifestPath := filepath.Join(tmpDir, "manifest.yaml")
+
+	manifestYAML := `title: Test Manifest
+feature_slug: test-feature
+verdict: SUITABLE
+waves:
+  - number: 1
+    agents:
+      - id: A
+        task: Test task
+        files:
+          - test.go
+`
+	if err := os.WriteFile(manifestPath, []byte(manifestYAML), 0644); err != nil {
+		t.Fatalf("Failed to write test manifest: %v", err)
+	}
+
+	// No prior completion report, no commit in opts — should fail
+	res := UpdateStatus(manifestPath, 1, "A", StatusComplete, UpdateStatusOpts{})
+	if !res.IsFatal() {
+		t.Fatal("Expected fatal result when setting complete without a commit")
+	}
+
+	// Verify error code
+	if len(res.Errors) == 0 {
+		t.Fatal("Expected at least one error")
+	}
+	if res.Errors[0].Code != "G003_COMMIT_MISSING" {
+		t.Errorf("Expected code G003_COMMIT_MISSING, got %q", res.Errors[0].Code)
+	}
+}
+
+// TestUpdateStatus_CompleteWithCommitInOpts tests that providing a commit in opts succeeds.
+func TestUpdateStatus_CompleteWithCommitInOpts(t *testing.T) {
+	tmpDir := t.TempDir()
+	manifestPath := filepath.Join(tmpDir, "manifest.yaml")
+
+	manifestYAML := `title: Test Manifest
+feature_slug: test-feature
+verdict: SUITABLE
+waves:
+  - number: 1
+    agents:
+      - id: A
+        task: Test task
+        files:
+          - test.go
+`
+	if err := os.WriteFile(manifestPath, []byte(manifestYAML), 0644); err != nil {
+		t.Fatalf("Failed to write test manifest: %v", err)
+	}
+
+	// Provide commit in opts — should succeed
+	res := UpdateStatus(manifestPath, 1, "A", StatusComplete, UpdateStatusOpts{Commit: "abc123"})
+	if res.IsFatal() {
+		t.Fatalf("UpdateStatus failed: %+v", res.Errors)
+	}
+
+	// Verify saved report has the commit
+	manifest, err := Load(manifestPath)
+	if err != nil {
+		t.Fatalf("Failed to reload manifest: %v", err)
+	}
+
+	report, exists := manifest.CompletionReports["A"]
+	if !exists {
+		t.Fatalf("Expected completion report for agent A to exist")
+	}
+	if report.Commit != "abc123" {
+		t.Errorf("Expected commit=abc123, got %q", report.Commit)
+	}
+	if report.Status != StatusComplete {
+		t.Errorf("Expected status=complete, got %q", report.Status)
+	}
+}
+
+// TestUpdateStatus_CompleteWithExistingCommit tests that an existing commit in the report satisfies the guard.
+func TestUpdateStatus_CompleteWithExistingCommit(t *testing.T) {
+	tmpDir := t.TempDir()
+	manifestPath := filepath.Join(tmpDir, "manifest.yaml")
+
+	// Manifest with existing completion report containing a commit SHA
+	manifestYAML := `title: Test Manifest
+feature_slug: test-feature
+verdict: SUITABLE
+waves:
+  - number: 1
+    agents:
+      - id: A
+        task: Test task
+        files:
+          - test.go
+completion_reports:
+  A:
+    status: partial
+    commit: existing-sha
+`
+	if err := os.WriteFile(manifestPath, []byte(manifestYAML), 0644); err != nil {
+		t.Fatalf("Failed to write test manifest: %v", err)
+	}
+
+	// No commit in opts but existing report has one — should succeed
+	res := UpdateStatus(manifestPath, 1, "A", StatusComplete, UpdateStatusOpts{})
+	if res.IsFatal() {
+		t.Fatalf("UpdateStatus failed: %+v", res.Errors)
+	}
+
+	// Verify saved report still has the original commit
+	manifest, err := Load(manifestPath)
+	if err != nil {
+		t.Fatalf("Failed to reload manifest: %v", err)
+	}
+
+	report, exists := manifest.CompletionReports["A"]
+	if !exists {
+		t.Fatalf("Expected completion report for agent A to exist")
+	}
+	if report.Commit != "existing-sha" {
+		t.Errorf("Expected commit=existing-sha, got %q", report.Commit)
+	}
+	if report.Status != StatusComplete {
+		t.Errorf("Expected status=complete, got %q", report.Status)
+	}
+}
+
+// TestUpdateStatus_PartialNoCommitRequired tests that partial status does not require a commit.
+func TestUpdateStatus_PartialNoCommitRequired(t *testing.T) {
+	tmpDir := t.TempDir()
+	manifestPath := filepath.Join(tmpDir, "manifest.yaml")
+
+	manifestYAML := `title: Test Manifest
+feature_slug: test-feature
+verdict: SUITABLE
+waves:
+  - number: 1
+    agents:
+      - id: A
+        task: Test task
+        files:
+          - test.go
+`
+	if err := os.WriteFile(manifestPath, []byte(manifestYAML), 0644); err != nil {
+		t.Fatalf("Failed to write test manifest: %v", err)
+	}
+
+	// partial status with no commit — should succeed
+	res := UpdateStatus(manifestPath, 1, "A", StatusPartial, UpdateStatusOpts{})
+	if res.IsFatal() {
+		t.Fatalf("UpdateStatus failed unexpectedly: %+v", res.Errors)
+	}
+
+	data := res.GetData()
+	if data.NewStatus != StatusPartial {
+		t.Errorf("Expected new status=partial, got %q", data.NewStatus)
 	}
 }
