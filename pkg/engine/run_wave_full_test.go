@@ -149,7 +149,7 @@ func TestRunWaveFull_Success(t *testing.T) {
 	t.Logf("Got expected error when worktrees exist: %v", runErr)
 
 	// Clean up for testing error paths below
-	protocol.Cleanup(manifestPath, 1, repoDir, nil)
+	protocol.Cleanup(context.Background(), manifestPath, 1, repoDir, nil)
 }
 
 func TestRunWaveFull_WorktreeFailure(t *testing.T) {

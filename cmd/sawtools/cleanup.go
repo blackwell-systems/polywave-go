@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -21,6 +22,8 @@ func newCleanupCmd() *cobra.Command {
 		Short: "Remove worktrees and branches after merge",
 		Args:  cobra.RangeArgs(0, 1),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			ctx := context.Background()
+
 			if slugFlag != "" && allStale {
 				return fmt.Errorf("--slug and --all-stale are mutually exclusive")
 			}
@@ -36,7 +39,7 @@ func newCleanupCmd() *cobra.Command {
 			}
 
 			if allStale {
-				result, err := protocol.CleanupAllStale(repoDir, force)
+				result, err := protocol.CleanupAllStale(ctx, repoDir, force)
 				if err != nil {
 					return fmt.Errorf("cleanup-all-stale: %w", err)
 				}
@@ -51,7 +54,7 @@ func newCleanupCmd() *cobra.Command {
 			}
 			manifestPath := args[0]
 
-			result, err := protocol.Cleanup(manifestPath, waveNum, repoDir, nil)
+			result, err := protocol.Cleanup(ctx, manifestPath, waveNum, repoDir, nil)
 			if err != nil {
 				return fmt.Errorf("cleanup: %w", err)
 			}

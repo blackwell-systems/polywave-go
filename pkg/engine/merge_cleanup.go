@@ -21,8 +21,6 @@ type CleanupData struct {
 // duplicated across service.MergeWave, api.handleWaveMerge, and
 // api.handleResolveConflicts.
 func PostMergeCleanup(ctx context.Context, implPath string, waveNum int, repoPath string, onEvent EventCallback) result.Result[CleanupData] {
-	_ = ctx // reserved for future cancellation support
-
 	data := CleanupData{}
 	var warnings []result.SAWError
 
@@ -55,7 +53,7 @@ func PostMergeCleanup(ctx context.Context, implPath string, waveNum int, repoPat
 	if onEvent != nil {
 		onEvent("cleanup", "running", fmt.Sprintf("Cleaning up wave %d worktrees", waveNum))
 	}
-	_, cleanupErr := protocol.Cleanup(implPath, waveNum, repoPath, nil)
+	_, cleanupErr := protocol.Cleanup(ctx, implPath, waveNum, repoPath, nil)
 	if cleanupErr != nil {
 		if onEvent != nil {
 			onEvent("cleanup", "error", fmt.Sprintf("Cleanup failed (non-fatal): %v", cleanupErr))
