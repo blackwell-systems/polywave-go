@@ -89,7 +89,7 @@ Output is always JSON.`,
 			}
 
 			// Call protocol engine for --add-wave and --redirect-agent
-			res := protocol.AmendImpl(protocol.AmendImplOpts{
+			res := protocol.AmendImpl(cmd.Context(), protocol.AmendImplOpts{
 				ManifestPath:  manifestPath,
 				AddWave:       addWave,
 				RedirectAgent: redirectAgent != "",

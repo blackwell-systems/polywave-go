@@ -54,7 +54,7 @@ func TestAmendImpl_RejectsComplete(t *testing.T) {
 	m.CompletionDate = "2026-01-01"
 	path := saveAmendTestManifest(t, m)
 
-	res := AmendImpl(AmendImplOpts{
+	res := AmendImpl(context.Background(), AmendImplOpts{
 		ManifestPath: path,
 		AddWave:      true,
 	})
@@ -82,7 +82,7 @@ func TestAmendImpl_RejectsComplete_SAWMarker(t *testing.T) {
 		t.Fatalf("failed to write manifest: %v", err)
 	}
 
-	res := AmendImpl(AmendImplOpts{
+	res := AmendImpl(context.Background(), AmendImplOpts{
 		ManifestPath: path,
 		AddWave:      true,
 	})
@@ -99,7 +99,7 @@ func TestAmendImpl_AddWave(t *testing.T) {
 	m := amendTestManifest("test-feature")
 	path := saveAmendTestManifest(t, m)
 
-	res := AmendImpl(AmendImplOpts{
+	res := AmendImpl(context.Background(), AmendImplOpts{
 		ManifestPath: path,
 		AddWave:      true,
 	})
@@ -141,7 +141,7 @@ func TestAmendImpl_AddWave_EmptyWaves(t *testing.T) {
 	}
 	path := saveAmendTestManifest(t, m)
 
-	res := AmendImpl(AmendImplOpts{
+	res := AmendImpl(context.Background(), AmendImplOpts{
 		ManifestPath: path,
 		AddWave:      true,
 	})
@@ -175,7 +175,7 @@ func TestAmendImpl_RedirectAgent_RejectsComplete(t *testing.T) {
 	}
 	path := saveAmendTestManifest(t, m)
 
-	res := AmendImpl(AmendImplOpts{
+	res := AmendImpl(context.Background(), AmendImplOpts{
 		ManifestPath:  path,
 		RedirectAgent: true,
 		AgentID:       "A",
@@ -195,7 +195,7 @@ func TestAmendImpl_RedirectAgent_NotFound(t *testing.T) {
 	m := amendTestManifest("test-feature")
 	path := saveAmendTestManifest(t, m)
 
-	res := AmendImpl(AmendImplOpts{
+	res := AmendImpl(context.Background(), AmendImplOpts{
 		ManifestPath:  path,
 		RedirectAgent: true,
 		AgentID:       "Z",
@@ -217,7 +217,7 @@ func TestAmendImpl_RedirectAgent_Success(t *testing.T) {
 	path := saveAmendTestManifest(t, m)
 
 	newTask := "Updated task description"
-	res := AmendImpl(AmendImplOpts{
+	res := AmendImpl(context.Background(), AmendImplOpts{
 		ManifestPath:  path,
 		RedirectAgent: true,
 		AgentID:       "A",
@@ -255,7 +255,7 @@ func TestAmendImpl_RedirectAgent_ClearsPartialReport(t *testing.T) {
 	}
 	path := saveAmendTestManifest(t, m)
 
-	res := AmendImpl(AmendImplOpts{
+	res := AmendImpl(context.Background(), AmendImplOpts{
 		ManifestPath:  path,
 		RedirectAgent: true,
 		AgentID:       "A",
@@ -282,7 +282,7 @@ func TestAmendImpl_RedirectAgent_NoBaseCommit(t *testing.T) {
 	// Wave has no base_commit (default)
 	path := saveAmendTestManifest(t, m)
 
-	res := AmendImpl(AmendImplOpts{
+	res := AmendImpl(context.Background(), AmendImplOpts{
 		ManifestPath:  path,
 		RedirectAgent: true,
 		AgentID:       "A",
