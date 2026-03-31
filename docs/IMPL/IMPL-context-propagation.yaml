@@ -826,6 +826,7 @@ waves:
             - pkg/protocol/discovery.go
           dependencies:
             - F
+      base_commit: 1ea661cf5103c20b0d47f459ff9f2121cd4c730c
     - number: 3
       agents:
         - id: O
@@ -1554,6 +1555,94 @@ completion_reports:
             - pkg/result/result.go
         verification: PASS
         notes: No changes needed. All exported functions in pkg/result are pure value operations (constructors, predicates, accessors, JSON marshaling, type converters). None perform I/O, call context-accepting functions, or block. Per the interface contract, pure value functions are explicitly exempt from context addition. All 19 existing tests pass. Adding context.Context here would violate Go idiom and cascade unnecessary threading through all callers with zero benefit.
+    G:
+        status: complete
+        branch: saw/context-propagation/wave2-agent-G
+        commit: 11fbec2
+        files_changed:
+            - pkg/protocol/types.go
+        verification: PASS
+        notes: No changes needed. pkg/protocol/types.go contains only struct type definitions, constants, and one variable — zero functions or methods. Per the interface contract, pure value types are explicitly exempt from context addition. Same finding as Agent F for pkg/result. All protocol tests pass unchanged.
+    H:
+        status: complete
+        branch: saw/context-propagation/wave2-agent-H
+        commit: f966da7
+        files_changed:
+            - pkg/protocol/manifest.go
+            - pkg/protocol/yaml_io.go
+        verification: PASS
+        notes: Added ctx context.Context to Load, Save, LoadYAML, SaveYAML, and WithCompletionReportLock. Updated all call sites in pkg/protocol with context.TODO()/context.Background(). Also propagated context.TODO() to all external callers across cmd/sawtools, pkg/engine, pkg/orchestrator, pkg/retry, pkg/collision, pkg/agent, pkg/interview, pkg/queue, pkg/resume, pkg/scaffold, pkg/scaffoldval, pkg/deps to make go vet ./... pass (required by pre-commit hook). Wave 3 agents (O, P, Q, etc.) should replace context.TODO() calls in their owned files with proper context propagation.
+    I:
+        status: complete
+        branch: saw/context-propagation/wave2-agent-I
+        commit: 1ea661c
+        files_changed:
+            - pkg/protocol/branchname.go
+            - pkg/protocol/state_status.go
+        verification: PASS
+        notes: All functions in branchname.go (BranchName, LegacyBranchName, WorktreeDir, ParseBranch, ExtractSlug) and state_status.go (IMPLStateToStatus) are pure value functions with no I/O or blocking operations. Per interface contract, context is optional for pure functions and these are explicitly exempted. No changes needed. go build, go vet, and go test all pass.
+    J:
+        status: complete
+        branch: saw/context-propagation/wave2-agent-J
+        commit: 1ea661c
+        files_changed:
+            - pkg/protocol/completion_report.go
+        verification: PASS
+        notes: 'No changes needed. All functions in completion_report.go are pure value operations: NewCompletionReport (constructor), all With* builder methods (pure setters), Validate (pure string/enum checks), and AppendToManifest (calls SetCompletionReport which is an in-memory map update, explicitly documented as NOT calling Save). Per the interface contract, pure value functions with no I/O are exempt from context addition. Consistent with Agents F and I who reached the same conclusion for their respective pure-function files. All 9 existing completion report tests pass. go build, go vet, and go test all clean.'
+    K:
+        status: complete
+        branch: saw/context-propagation/wave2-agent-K
+        commit: 19f03d3
+        files_changed:
+            - pkg/protocol/baseline_gates.go
+            - pkg/protocol/baseline_gates_test.go
+            - pkg/engine/prepare.go
+        verification: PASS
+        notes: Added ctx context.Context to RunBaselineGates, RunCrossRepoBaselineGates, and runSimpleGate. Replaced context.TODO() placeholder (left by Agent D wave 1) with real ctx in cache.BuildKey call. Used exec.CommandContext for cancellation support in runSimpleGate. Updated baseline_gates_test.go to pass context.Background() at all call sites. Patched pkg/engine/prepare.go callers with real ctx (already in scope at call sites) to unblock repo-wide go build — same pattern as prior wave agents. All tests pass.
+    L:
+        status: complete
+        branch: saw/context-propagation/wave2-agent-L
+        commit: 24e90f7
+        files_changed:
+            - pkg/protocol/cleanup.go
+            - pkg/protocol/cleanup_test.go
+            - cmd/sawtools/cleanup.go
+            - pkg/engine/finalize_steps.go
+            - pkg/engine/merge_cleanup.go
+            - pkg/engine/run_wave_full_test.go
+        verification: PASS
+        notes: 'Added ctx context.Context to Cleanup and CleanupAllStale. Context checked at entry and before each per-agent iteration; partial result returned on mid-loop cancellation. Out-of-scope callers minimally wired: cmd/sawtools/cleanup.go (context.Background()), pkg/engine/finalize_steps.go (ctx propagated), pkg/engine/merge_cleanup.go (ctx propagated), pkg/engine/run_wave_full_test.go (context.Background()). git package does not yet accept context — cancellation checked between git calls. All pkg/protocol tests pass.'
+    M:
+        status: complete
+        branch: saw/context-propagation/wave2-agent-M
+        commit: 3d7b93a
+        files_changed:
+            - pkg/protocol/commit_verify.go
+            - pkg/protocol/commit_verify_test.go
+            - pkg/protocol/merge_agents_test.go
+            - cmd/sawtools/verify_commits.go
+            - pkg/engine/finalize_steps.go
+        verification: PASS
+        notes: Added ctx context.Context as first param to VerifyCommits with ctx.Err() checks before and during per-agent loop. Wired unassigned callers with context.Background() (cmd/sawtools/verify_commits.go, pkg/protocol test files). Applied trivial ctx pass-through to pkg/engine/finalize_steps.go (owned by D2) to unblock go build — D2 should review. go test ./pkg/protocol/... PASS.
+    "N":
+        status: complete
+        branch: saw/context-propagation/wave2-agent-N
+        commit: cf99a92
+        files_changed:
+            - pkg/protocol/discovery.go
+            - pkg/protocol/discovery_test.go
+            - pkg/engine/finalize.go
+            - pkg/engine/mark_program_complete.go
+            - cmd/sawtools/list_impls.go
+            - cmd/sawtools/resolve_impl_cmd.go
+            - cmd/sawtools/close_impl_cmd.go
+            - cmd/sawtools/mark_complete_cmd.go
+        tests_added:
+            - TestListIMPLs_CancelledContext
+            - TestArchiveIMPL_CancelledContext
+            - TestArchiveProgram_CancelledContext
+        verification: PASS
+        notes: 'Core scope: added ctx to ListIMPLs, ArchiveIMPL, ArchiveProgram in pkg/protocol/discovery.go. Also updated 6 out-of-scope caller files (pkg/engine/finalize.go, pkg/engine/mark_program_complete.go, cmd/sawtools/list_impls.go, cmd/sawtools/resolve_impl_cmd.go, cmd/sawtools/close_impl_cmd.go, cmd/sawtools/mark_complete_cmd.go) with minimal ctx threading to satisfy pre-commit go vet ./... gate. 9 tests pass (6 original + 3 new cancellation tests).'
 pre_mortem:
     overall_risk: medium
     rows:
