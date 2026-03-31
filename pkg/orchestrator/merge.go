@@ -119,8 +119,8 @@ func executeMergeWave(o *Orchestrator, waveNum int) error {
 		if len(report.FilesChanged) == 0 && len(report.FilesCreated) == 0 {
 			o.log().Debug("executeMergeWave: agent produced no changes (skipping merge)", "agent", agent.ID)
 			mergeLog.AddMergeEntry(agent.ID, "no-op")
-			if saveErr := protocol.SaveMergeLog(o.implDocPath, waveNum, mergeLog); saveErr != nil {
-				o.log().Warn("executeMergeWave: failed to save merge-log", "err", saveErr)
+			if saveRes := protocol.SaveMergeLog(o.implDocPath, waveNum, mergeLog); saveRes.IsFatal() {
+				o.log().Warn("executeMergeWave: failed to save merge-log", "err", saveRes.Errors[0].Message)
 			}
 			// Still clean up the worktree.
 			wtPath := report.Worktree
@@ -153,8 +153,8 @@ func executeMergeWave(o *Orchestrator, waveNum int) error {
 
 		// Record merge in log (E9)
 		mergeLog.AddMergeEntry(agent.ID, mergeSHA)
-		if saveErr := protocol.SaveMergeLog(o.implDocPath, waveNum, mergeLog); saveErr != nil {
-			o.log().Warn("executeMergeWave: failed to save merge-log", "err", saveErr)
+		if saveRes := protocol.SaveMergeLog(o.implDocPath, waveNum, mergeLog); saveRes.IsFatal() {
+			o.log().Warn("executeMergeWave: failed to save merge-log", "err", saveRes.Errors[0].Message)
 		}
 
 		// Determine worktree path from report or convention.

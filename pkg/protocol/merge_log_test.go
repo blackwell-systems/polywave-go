@@ -111,8 +111,12 @@ func TestSaveMergeLog_CreatesDirectory(t *testing.T) {
 	}
 
 	// Save log - should create directory
-	if err := SaveMergeLog(manifestPath, 1, log); err != nil {
-		t.Fatalf("failed to save merge log: %v", err)
+	saveRes := SaveMergeLog(manifestPath, 1, log)
+	if saveRes.IsFatal() {
+		t.Fatalf("failed to save merge log: %v", saveRes.Errors)
+	}
+	if saveRes.GetData().WaveNum != 1 {
+		t.Errorf("expected WaveNum=1, got: %d", saveRes.GetData().WaveNum)
 	}
 
 	// Verify directory was created
@@ -145,8 +149,8 @@ func TestSaveMergeLog_WritesJSON(t *testing.T) {
 	}
 
 	// Save log
-	if err := SaveMergeLog(manifestPath, 1, log); err != nil {
-		t.Fatalf("failed to save merge log: %v", err)
+	if saveRes := SaveMergeLog(manifestPath, 1, log); saveRes.IsFatal() {
+		t.Fatalf("failed to save merge log: %v", saveRes.Errors)
 	}
 
 	// Read file and verify content
@@ -185,8 +189,8 @@ func TestAddMergeEntry_AppendsEntry(t *testing.T) {
 	}
 
 	// Add first entry
-	if err := log.AddMergeEntry("A", "abc123"); err != nil {
-		t.Fatalf("failed to add first entry: %v", err)
+	if res := log.AddMergeEntry("A", "abc123"); res.IsFatal() {
+		t.Fatalf("failed to add first entry: %v", res.Errors)
 	}
 
 	if len(log.Merges) != 1 {
@@ -202,8 +206,8 @@ func TestAddMergeEntry_AppendsEntry(t *testing.T) {
 	}
 
 	// Add second entry
-	if err := log.AddMergeEntry("B", "def456"); err != nil {
-		t.Fatalf("failed to add second entry: %v", err)
+	if res := log.AddMergeEntry("B", "def456"); res.IsFatal() {
+		t.Fatalf("failed to add second entry: %v", res.Errors)
 	}
 
 	if len(log.Merges) != 2 {
@@ -235,13 +239,13 @@ func TestAddMergeEntry_ValidatesInput(t *testing.T) {
 	}
 
 	// Test empty agent ID
-	if err := log.AddMergeEntry("", "abc123"); err == nil {
-		t.Error("expected error for empty agent ID")
+	if res := log.AddMergeEntry("", "abc123"); !res.IsFatal() {
+		t.Error("expected FATAL result for empty agent ID")
 	}
 
 	// Test empty merge SHA
-	if err := log.AddMergeEntry("A", ""); err == nil {
-		t.Error("expected error for empty merge SHA")
+	if res := log.AddMergeEntry("A", ""); !res.IsFatal() {
+		t.Error("expected FATAL result for empty merge SHA")
 	}
 
 	// Verify no entries were added

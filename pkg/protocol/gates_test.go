@@ -1134,12 +1134,22 @@ func TestValidateQualityGate(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := ValidateQualityGate(tt.gate)
-			if tt.expectErr && err == nil {
-				t.Errorf("expected validation error, got nil")
+			res := ValidateQualityGate(tt.gate)
+			if tt.expectErr && !res.IsFatal() {
+				t.Errorf("expected validation error (FATAL result), got: %s", res.Code)
 			}
-			if !tt.expectErr && err != nil {
-				t.Errorf("expected no error, got: %v", err)
+			if !tt.expectErr && res.IsFatal() {
+				t.Errorf("expected no error, got FATAL: %v", res.Errors)
+			}
+			// For valid gates, verify data is populated correctly
+			if !tt.expectErr && res.IsSuccess() {
+				data := res.GetData()
+				if !data.Valid {
+					t.Errorf("expected ValidateGateData.Valid=true, got false")
+				}
+				if data.GateType != tt.gate.Type {
+					t.Errorf("expected GateType=%s, got: %s", tt.gate.Type, data.GateType)
+				}
 			}
 		})
 	}
