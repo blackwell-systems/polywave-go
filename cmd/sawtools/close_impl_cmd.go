@@ -69,7 +69,7 @@ Examples:
 			if projectRoot == "" || projectRoot == "." {
 				projectRoot = filepath.Dir(filepath.Dir(filepath.Dir(manifestPath)))
 			}
-			contextRes := protocol.UpdateContext(archivedPath, projectRoot)
+			contextRes := protocol.UpdateContext(cmd.Context(), archivedPath, projectRoot)
 			contextFailed := contextRes.IsFatal()
 			var contextData *protocol.UpdateContextData
 			if contextFailed {

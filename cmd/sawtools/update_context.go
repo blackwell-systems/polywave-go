@@ -17,7 +17,7 @@ func newUpdateContextCmd() *cobra.Command {
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			manifestPath := args[0]
-			res := protocol.UpdateContext(manifestPath, projectRoot)
+			res := protocol.UpdateContext(cmd.Context(), manifestPath, projectRoot)
 			if res.IsFatal() {
 				return fmt.Errorf("update-context: %s", res.Errors[0].Message)
 			}
