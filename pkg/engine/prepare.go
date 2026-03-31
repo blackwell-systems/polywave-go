@@ -434,7 +434,7 @@ func PrepareWave(ctx context.Context, opts PrepareWaveOpts) (*PrepareWaveResult,
 	if allErrs := protocol.Validate(doc); len(allErrs) > 0 {
 		var i1Errs []result.SAWError
 		for _, e := range allErrs {
-			if e.Code == "I1_VIOLATION" {
+			if e.Code == result.CodeDisjointOwnership {
 				i1Errs = append(i1Errs, e)
 			}
 		}
