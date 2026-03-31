@@ -24,7 +24,7 @@ func newExtractContextCmd() *cobra.Command {
 				return fmt.Errorf("extract-context: %w", err)
 			}
 
-			payload, err := protocol.ExtractAgentContextFromManifest(m, agentID)
+			payload, err := protocol.ExtractAgentContextFromManifest(context.TODO(), m, agentID)
 			if err != nil {
 				return fmt.Errorf("extract-context: %w", err)
 			}

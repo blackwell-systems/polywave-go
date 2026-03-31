@@ -1,6 +1,7 @@
 package protocol
 
 import (
+	"context"
 	"testing"
 	"time"
 )
@@ -15,7 +16,7 @@ func TestCheckFreeze_NoTimestamp(t *testing.T) {
 		},
 	}
 
-	violations, err := CheckFreeze(manifest)
+	violations, err := CheckFreeze(context.Background(), manifest)
 	if err != nil {
 		t.Fatalf("CheckFreeze returned error: %v", err)
 	}
@@ -37,13 +38,13 @@ func TestCheckFreeze_NoChanges(t *testing.T) {
 
 	// Set freeze timestamp and compute hashes
 	now := time.Now()
-	res := SetFreezeTimestamp(manifest, now)
+	res := SetFreezeTimestamp(context.Background(), manifest, now)
 	if res.IsFatal() {
 		t.Fatalf("SetFreezeTimestamp failed: %v", res.Errors)
 	}
 
 	// Check freeze with no changes
-	violations, err := CheckFreeze(manifest)
+	violations, err := CheckFreeze(context.Background(), manifest)
 	if err != nil {
 		t.Fatalf("CheckFreeze returned error: %v", err)
 	}
@@ -65,7 +66,7 @@ func TestCheckFreeze_ContractsChanged(t *testing.T) {
 
 	// Set freeze timestamp
 	now := time.Now()
-	res := SetFreezeTimestamp(manifest, now)
+	res := SetFreezeTimestamp(context.Background(), manifest, now)
 	if res.IsFatal() {
 		t.Fatalf("SetFreezeTimestamp failed: %v", res.Errors)
 	}
@@ -74,7 +75,7 @@ func TestCheckFreeze_ContractsChanged(t *testing.T) {
 	manifest.InterfaceContracts[0].Definition = "func TestModified()"
 
 	// Check freeze - should detect violation
-	violations, err := CheckFreeze(manifest)
+	violations, err := CheckFreeze(context.Background(), manifest)
 	if err != nil {
 		t.Fatalf("CheckFreeze returned error: %v", err)
 	}
@@ -104,7 +105,7 @@ func TestCheckFreeze_ScaffoldsChanged(t *testing.T) {
 
 	// Set freeze timestamp
 	now := time.Now()
-	res := SetFreezeTimestamp(manifest, now)
+	res := SetFreezeTimestamp(context.Background(), manifest, now)
 	if res.IsFatal() {
 		t.Fatalf("SetFreezeTimestamp failed: %v", res.Errors)
 	}
@@ -113,7 +114,7 @@ func TestCheckFreeze_ScaffoldsChanged(t *testing.T) {
 	manifest.Scaffolds[0].Contents = "package test\n// modified"
 
 	// Check freeze - should detect violation
-	violations, err := CheckFreeze(manifest)
+	violations, err := CheckFreeze(context.Background(), manifest)
 	if err != nil {
 		t.Fatalf("CheckFreeze returned error: %v", err)
 	}
@@ -143,7 +144,7 @@ func TestCheckFreeze_BothChanged(t *testing.T) {
 
 	// Set freeze timestamp
 	now := time.Now()
-	res := SetFreezeTimestamp(manifest, now)
+	res := SetFreezeTimestamp(context.Background(), manifest, now)
 	if res.IsFatal() {
 		t.Fatalf("SetFreezeTimestamp failed: %v", res.Errors)
 	}
@@ -153,7 +154,7 @@ func TestCheckFreeze_BothChanged(t *testing.T) {
 	manifest.Scaffolds[0].Contents = "package test\n// modified"
 
 	// Check freeze - should detect both violations
-	violations, err := CheckFreeze(manifest)
+	violations, err := CheckFreeze(context.Background(), manifest)
 	if err != nil {
 		t.Fatalf("CheckFreeze returned error: %v", err)
 	}
@@ -187,7 +188,7 @@ func TestSetFreezeTimestamp_SetsHash(t *testing.T) {
 	}
 
 	now := time.Now()
-	res := SetFreezeTimestamp(manifest, now)
+	res := SetFreezeTimestamp(context.Background(), manifest, now)
 	if res.IsFatal() {
 		t.Fatalf("SetFreezeTimestamp failed: %v", res.Errors)
 	}
@@ -218,7 +219,7 @@ func TestSetFreezeTimestamp_SetsTime(t *testing.T) {
 	}
 
 	now := time.Now()
-	res := SetFreezeTimestamp(manifest, now)
+	res := SetFreezeTimestamp(context.Background(), manifest, now)
 	if res.IsFatal() {
 		t.Fatalf("SetFreezeTimestamp failed: %v", res.Errors)
 	}
@@ -242,13 +243,13 @@ func TestCheckFreeze_EmptyCollections(t *testing.T) {
 
 	// Set freeze timestamp
 	now := time.Now()
-	res := SetFreezeTimestamp(manifest, now)
+	res := SetFreezeTimestamp(context.Background(), manifest, now)
 	if res.IsFatal() {
 		t.Fatalf("SetFreezeTimestamp failed: %v", res.Errors)
 	}
 
 	// Check freeze - should not error with empty collections
-	violations, err := CheckFreeze(manifest)
+	violations, err := CheckFreeze(context.Background(), manifest)
 	if err != nil {
 		t.Fatalf("CheckFreeze returned error with empty collections: %v", err)
 	}
@@ -270,7 +271,7 @@ func TestCheckFreeze_AddingItems(t *testing.T) {
 
 	// Set freeze timestamp
 	now := time.Now()
-	res := SetFreezeTimestamp(manifest, now)
+	res := SetFreezeTimestamp(context.Background(), manifest, now)
 	if res.IsFatal() {
 		t.Fatalf("SetFreezeTimestamp failed: %v", res.Errors)
 	}
@@ -283,7 +284,7 @@ func TestCheckFreeze_AddingItems(t *testing.T) {
 	})
 
 	// Check freeze - should detect violation
-	violations, err := CheckFreeze(manifest)
+	violations, err := CheckFreeze(context.Background(), manifest)
 	if err != nil {
 		t.Fatalf("CheckFreeze returned error: %v", err)
 	}
@@ -329,7 +330,7 @@ func TestSetFreezeTimestamp_ContractsFrozenTrue(t *testing.T) {
 	}
 
 	now := time.Now()
-	res := SetFreezeTimestamp(manifest, now)
+	res := SetFreezeTimestamp(context.Background(), manifest, now)
 	if res.IsFatal() {
 		t.Fatalf("SetFreezeTimestamp failed: %v", res.Errors)
 	}

@@ -1,6 +1,7 @@
 package protocol
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -25,7 +26,12 @@ type FreezeData struct {
 // SetFreezeTimestamp sets the worktrees_created_at timestamp on a manifest
 // and computes hash checksums for interface contracts and scaffolds to detect
 // future modifications.
-func SetFreezeTimestamp(m *IMPLManifest, t time.Time) result.Result[FreezeData] {
+func SetFreezeTimestamp(ctx context.Context, m *IMPLManifest, t time.Time) result.Result[FreezeData] {
+	if err := ctx.Err(); err != nil {
+		return result.NewFailure[FreezeData]([]result.SAWError{
+			result.NewFatal("FREEZE_CANCELLED", err.Error()),
+		})
+	}
 	m.WorktreesCreatedAt = &t
 
 	// Compute and store hash of interface contracts
@@ -55,7 +61,10 @@ func SetFreezeTimestamp(m *IMPLManifest, t time.Time) result.Result[FreezeData] 
 // CheckFreeze checks if the manifest has been modified after worktree creation.
 // Returns violations if interface contracts or scaffolds were edited post-freeze.
 // Returns empty slice if no freeze timestamp is set (backward compatible).
-func CheckFreeze(manifest *IMPLManifest) ([]FreezeViolation, error) {
+func CheckFreeze(ctx context.Context, manifest *IMPLManifest) ([]FreezeViolation, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	// No freeze timestamp means no freeze enforcement (backward compatible)
 	if manifest.WorktreesCreatedAt == nil {
 		return nil, nil
