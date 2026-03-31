@@ -1,5 +1,7 @@
 package protocol
 
+import "context"
+
 // OwnershipConflict represents a file that was modified by multiple agents in the same wave,
 // or a file that was modified by an agent but not declared in the file ownership table.
 type OwnershipConflict struct {
@@ -19,7 +21,8 @@ type OwnershipConflict struct {
 // 3. Undeclared modifications: agent modified a file outside its ownership list
 //
 // Returns an empty slice if no conflicts are found.
-func DetectOwnershipConflicts(manifest *IMPLManifest, reports map[string]CompletionReport) []OwnershipConflict {
+func DetectOwnershipConflicts(ctx context.Context, manifest *IMPLManifest, reports map[string]CompletionReport) []OwnershipConflict {
+	_ = ctx
 	if manifest == nil || reports == nil {
 		return nil
 	}

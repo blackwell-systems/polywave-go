@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"strings"
 	"fmt"
@@ -278,7 +279,7 @@ func TestFinalizeWave_E11BlocksOnFileConflict(t *testing.T) {
 		},
 	}
 
-	conflictRes := protocol.PredictConflictsFromReports(manifest, 1)
+	conflictRes := protocol.PredictConflictsFromReports(context.Background(), manifest, 1)
 	if conflictRes.IsSuccess() {
 		t.Error("E11 check: expected conflict result when two agents share a file, got success")
 	}
@@ -307,7 +308,7 @@ func TestFinalizeWave_E11NoConflict(t *testing.T) {
 		},
 	}
 
-	if res := protocol.PredictConflictsFromReports(manifest, 1); !res.IsSuccess() {
+	if res := protocol.PredictConflictsFromReports(context.Background(), manifest, 1); !res.IsSuccess() {
 		t.Errorf("E11 check: expected success for disjoint files, got code: %s errors: %v", res.Code, res.Errors)
 	}
 }

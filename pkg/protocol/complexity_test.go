@@ -1,6 +1,7 @@
 package protocol
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"strings"
@@ -142,7 +143,7 @@ func TestCheckAgentComplexity(t *testing.T) {
 	}
 	for _, tt := range v047Tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := CheckAgentComplexity(tt.manifest)
+			got := CheckAgentComplexity(context.Background(), tt.manifest)
 			hasV047 := false
 			for _, e := range got {
 				if e.Code == "V047_TRIVIAL_SCOPE" {
@@ -160,7 +161,7 @@ func TestCheckAgentComplexity(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := CheckAgentComplexity(tt.manifest)
+			got := CheckAgentComplexity(context.Background(), tt.manifest)
 			if len(got) != tt.wantWarnings {
 				t.Errorf("CheckAgentComplexity() returned %d warnings, want %d; warnings: %v", len(got), tt.wantWarnings, got)
 			}
@@ -197,7 +198,7 @@ func TestCheckAgentLOCBudget(t *testing.T) {
 				{File: "pkg/foo.go", Agent: "A", Wave: 1, Action: "modify"},
 			},
 		}
-		got := CheckAgentLOCBudget(m, "", 2000)
+		got := CheckAgentLOCBudget(context.Background(), m, "", 2000)
 		if got != nil {
 			t.Errorf("expected nil, got %v", got)
 		}
@@ -211,7 +212,7 @@ func TestCheckAgentLOCBudget(t *testing.T) {
 				{File: "foo.go", Agent: "A", Wave: 1, Action: "modify"},
 			},
 		}
-		got := CheckAgentLOCBudget(m, dir, 2000)
+		got := CheckAgentLOCBudget(context.Background(), m, dir, 2000)
 		if len(got) != 0 {
 			t.Errorf("expected 0 errors, got %v", got)
 		}
@@ -227,7 +228,7 @@ func TestCheckAgentLOCBudget(t *testing.T) {
 				{File: "bar.go", Agent: "A", Wave: 1, Action: "modify"},
 			},
 		}
-		got := CheckAgentLOCBudget(m, dir, 2000)
+		got := CheckAgentLOCBudget(context.Background(), m, dir, 2000)
 		if len(got) != 1 {
 			t.Fatalf("expected 1 error, got %d: %v", len(got), got)
 		}
@@ -259,7 +260,7 @@ func TestCheckAgentLOCBudget(t *testing.T) {
 				{File: "newfile.go", Agent: "A", Wave: 1, Action: "new"},
 			},
 		}
-		got := CheckAgentLOCBudget(m, dir, 2000)
+		got := CheckAgentLOCBudget(context.Background(), m, dir, 2000)
 		if len(got) != 0 {
 			t.Errorf("expected 0 errors (action=new skipped), got %v", got)
 		}
@@ -273,7 +274,7 @@ func TestCheckAgentLOCBudget(t *testing.T) {
 				{File: "bigfile.go", Agent: "A", Wave: 1, Action: "modify"},
 			},
 		}
-		got := CheckAgentLOCBudget(m, dir, 2000)
+		got := CheckAgentLOCBudget(context.Background(), m, dir, 2000)
 		if len(got) != 1 {
 			t.Fatalf("expected 1 error, got %d: %v", len(got), got)
 		}
@@ -294,7 +295,7 @@ func TestCheckAgentLOCBudget(t *testing.T) {
 			},
 		}
 		// Should not panic
-		got := CheckAgentLOCBudget(m, dir, 2000)
+		got := CheckAgentLOCBudget(context.Background(), m, dir, 2000)
 		if len(got) != 0 {
 			t.Errorf("expected 0 errors for missing file, got %v", got)
 		}

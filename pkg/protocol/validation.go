@@ -1,6 +1,7 @@
 package protocol
 
 import (
+	"context"
 	"fmt"
 	"regexp"
 	"strconv"
@@ -51,7 +52,7 @@ func Validate(m *IMPLManifest) []result.SAWError {
 	errs = append(errs, ValidateIntegrationChecklist(m, "")...)
 	errs = append(errs, ValidateFileExistence(m, "")...)
 	errs = append(errs, validateKnownIssueTitles(m)...)
-	errs = append(errs, CheckAgentComplexity(m)...)
+	errs = append(errs, CheckAgentComplexity(context.TODO(), m)...)
 
 	return errs
 }
