@@ -406,7 +406,7 @@ func StartWave(ctx context.Context, opts RunWaveOpts, onEvent func(Event)) resul
 	}
 
 	fatalf := func(code, msg string, cause error) result.Result[StartWaveData] {
-		publish("run_failed", map[string]string{"error": msg})
+		publish("run_failed", RunFailedPayload{Error: msg})
 		sawErr := result.NewFatal(code, msg)
 		if cause != nil {
 			sawErr = sawErr.WithCause(cause)
@@ -414,7 +414,7 @@ func StartWave(ctx context.Context, opts RunWaveOpts, onEvent func(Event)) resul
 		return result.NewFailure[StartWaveData]([]result.SAWError{sawErr})
 	}
 
-	publish("run_started", map[string]string{"slug": opts.Slug, "impl_path": opts.IMPLPath})
+	publish("run_started", RunStartedPayload{Slug: opts.Slug, IMPLPath: opts.IMPLPath})
 
 	orch, err := orchestrator.New(ctx, opts.RepoPath, opts.IMPLPath)
 	if err != nil {
@@ -592,7 +592,7 @@ func RunScaffold(opts RunScaffoldOpts) result.Result[ScaffoldData] {
 		return result.NewSuccess(ScaffoldData{IMPLPath: implPath, ScaffoldsFound: len(scaffolds)})
 	}
 
-	publish("scaffold_started", map[string]string{"impl_path": implPath})
+	publish("scaffold_started", ScaffoldStartedPayload{IMPLPath: implPath})
 
 	// Locate scaffold-agent.md prompt.
 	sawRepo := sawRepoPath
@@ -613,7 +613,7 @@ func RunScaffold(opts RunScaffoldOpts) result.Result[ScaffoldData] {
 
 	b, err := orchestrator.NewBackendFromModel(model)
 	if err != nil {
-		publish("scaffold_failed", map[string]string{"error": err.Error()})
+		publish("scaffold_failed", ScaffoldFailedPayload{Error: err.Error()})
 		return result.NewFailure[ScaffoldData]([]result.SAWError{
 			result.NewFatal(result.CodeScaffoldRunFailed, "engine.RunScaffold: backend init failed").WithCause(err),
 		})
@@ -622,11 +622,11 @@ func RunScaffold(opts RunScaffoldOpts) result.Result[ScaffoldData] {
 	spec := &protocol.Agent{ID: "scaffold", Task: prompt}
 
 	onChunk := func(chunk string) {
-		publish("scaffold_output", map[string]string{"chunk": chunk})
+		publish("scaffold_output", ScaffoldOutputPayload{Chunk: chunk})
 	}
 
 	if _, execErr := runner.ExecuteStreamingWithTools(ctx, spec, repoPath, onChunk, nil); execErr != nil {
-		publish("scaffold_failed", map[string]string{"error": execErr.Error()})
+		publish("scaffold_failed", ScaffoldFailedPayload{Error: execErr.Error()})
 		return result.NewFailure[ScaffoldData]([]result.SAWError{
 			result.NewFatal(result.CodeScaffoldRunFailed, "engine.RunScaffold: scaffold agent failed").WithCause(execErr),
 		})
@@ -639,7 +639,7 @@ func RunScaffold(opts RunScaffoldOpts) result.Result[ScaffoldData] {
 		})
 	}
 
-	publish("scaffold_complete", map[string]string{"impl_path": implPath})
+	publish("scaffold_complete", ScaffoldCompletePayload{IMPLPath: implPath})
 	return result.NewSuccess(ScaffoldData{IMPLPath: implPath, ScaffoldsFound: len(scaffolds)})
 }
 
@@ -1376,10 +1376,10 @@ func runOneWave(
 	if loadErr == nil {
 		integrationReport, intErr := protocol.ValidateIntegration(manifest, waveNum, opts.RepoPath)
 		if intErr == nil && integrationReport != nil && !integrationReport.Valid {
-			publish("integration_gaps_detected", map[string]interface{}{
-				"wave":   waveNum,
-				"gaps":   len(integrationReport.Gaps),
-				"report": integrationReport,
+			publish("integration_gaps_detected", IntegrationGapsPayload{
+				Wave:   waveNum,
+				Gaps:   len(integrationReport.Gaps),
+				Report: integrationReport,
 			})
 
 			// E26: Launch integration agent to wire gaps
@@ -1402,9 +1402,7 @@ func runOneWave(
 				if len(intAgentRes.Errors) > 0 {
 					msg = intAgentRes.Errors[0].Message
 				}
-				publish("integration_agent_warning", map[string]string{
-					"error": msg,
-				})
+				publish("integration_agent_warning", IntegrationAgentWarningPayload{Error: msg})
 			}
 		}
 	}
@@ -1415,32 +1413,21 @@ func runOneWave(
 		if len(statusRes.Errors) > 0 {
 			errMsg = statusRes.Errors[0].Message
 		}
-		publish("update_status_failed", map[string]string{
-			"wave":  opts.Slug,
-			"error": errMsg,
-		})
+		publish("update_status_failed", UpdateStatusFailedPayload{Wave: opts.Slug, Error: errMsg})
 	}
 
 	// Gate wait: pause between waves when gateCh is provided.
 	if waveIdx < totalWaves-1 && gateCh != nil {
-		publish("wave_gate_pending", map[string]interface{}{
-			"wave":      waveNum,
-			"next_wave": waveNum + 1,
-			"slug":      opts.Slug,
-		})
+		publish("wave_gate_pending", WaveGatePendingPayload{Wave: waveNum, NextWave: waveNum + 1, Slug: opts.Slug})
 		select {
 		case ok := <-gateCh:
 			if !ok {
-				publish("run_failed", map[string]string{"error": "gate cancelled"})
+				publish("run_failed", RunFailedPayload{Error: "gate cancelled"})
 				return fmt.Errorf("startWaveWithGate: gate cancelled at wave %d", waveNum)
 			}
-			publish("wave_gate_resolved", map[string]interface{}{
-				"wave":   waveNum,
-				"action": "proceed",
-				"slug":   opts.Slug,
-			})
+			publish("wave_gate_resolved", WaveGateResolvedPayload{Wave: waveNum, Action: "proceed", Slug: opts.Slug})
 		case <-time.After(30 * time.Minute):
-			publish("run_failed", map[string]string{"error": "gate timed out"})
+			publish("run_failed", RunFailedPayload{Error: "gate timed out"})
 			return fmt.Errorf("startWaveWithGate: gate timed out at wave %d", waveNum)
 		case <-ctx.Done():
 			return ctx.Err()

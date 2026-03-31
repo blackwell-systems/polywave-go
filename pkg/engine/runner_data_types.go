@@ -1,5 +1,7 @@
 package engine
 
+import "github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
+
 // ScoutData contains metadata from a successful RunScout operation.
 type ScoutData struct {
 	IMPLOutPath string `json:"impl_out_path"`
@@ -101,4 +103,73 @@ type IntegrationAgentData struct {
 	IMPLPath string `json:"impl_path"`
 	WaveNum  int    `json:"wave_num"`
 	GapCount int    `json:"gap_count"`
+}
+
+// --- Typed event payload structs for engine event bus (Issue 19) ---
+// These replace ad-hoc map[string]string / map[string]interface{} payloads
+// in runner.go publish calls. engine.Event.Data is typed as any.
+
+// RunStartedPayload is the Data for "run_started" events.
+type RunStartedPayload struct {
+	Slug     string `json:"slug"`
+	IMPLPath string `json:"impl_path"`
+}
+
+// RunFailedPayload is the Data for "run_failed" events.
+type RunFailedPayload struct {
+	Error string `json:"error"`
+}
+
+// ScaffoldStartedPayload is the Data for "scaffold_started" events.
+type ScaffoldStartedPayload struct {
+	IMPLPath string `json:"impl_path"`
+}
+
+// ScaffoldOutputPayload is the Data for "scaffold_output" events.
+type ScaffoldOutputPayload struct {
+	Chunk string `json:"chunk"`
+}
+
+// ScaffoldFailedPayload is the Data for "scaffold_failed" events.
+type ScaffoldFailedPayload struct {
+	Error string `json:"error"`
+}
+
+// ScaffoldCompletePayload is the Data for "scaffold_complete" events.
+type ScaffoldCompletePayload struct {
+	IMPLPath string `json:"impl_path"`
+}
+
+// IntegrationGapsPayload is the Data for "integration_gaps_detected" events.
+// Fields: wave (int), gaps (count int), report (*protocol.IntegrationReport).
+type IntegrationGapsPayload struct {
+	Wave   int                          `json:"wave"`
+	Gaps   int                          `json:"gaps"`
+	Report *protocol.IntegrationReport `json:"report,omitempty"`
+}
+
+// IntegrationAgentWarningPayload is the Data for "integration_agent_warning" events.
+type IntegrationAgentWarningPayload struct {
+	Error string `json:"error"`
+}
+
+// UpdateStatusFailedPayload is the Data for "update_status_failed" events.
+// Wave is the IMPL slug string, not a wave number.
+type UpdateStatusFailedPayload struct {
+	Wave  string `json:"wave"`
+	Error string `json:"error"`
+}
+
+// WaveGatePendingPayload is the Data for "wave_gate_pending" events.
+type WaveGatePendingPayload struct {
+	Wave     int    `json:"wave"`
+	NextWave int    `json:"next_wave"`
+	Slug     string `json:"slug"`
+}
+
+// WaveGateResolvedPayload is the Data for "wave_gate_resolved" events.
+type WaveGateResolvedPayload struct {
+	Wave   int    `json:"wave"`
+	Action string `json:"action"`
+	Slug   string `json:"slug"`
 }
