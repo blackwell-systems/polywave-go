@@ -1,6 +1,7 @@
 package analyzer
 
 import (
+	"context"
 	"fmt"
 	"path/filepath"
 	"regexp"
@@ -33,9 +34,14 @@ type SharedTypeCandidate struct {
 // - Types imported from external packages (stdlib, third-party deps)
 // - Types in files not owned by any agent (existing codebase infrastructure)
 // - Types mentioned in only one agent's task
-func DetectSharedTypes(manifest *protocol.IMPLManifest, repoRoot string) ([]SharedTypeCandidate, error) {
+func DetectSharedTypes(ctx context.Context, manifest *protocol.IMPLManifest, repoRoot string) ([]SharedTypeCandidate, error) {
 	if manifest == nil {
 		return []SharedTypeCandidate{}, fmt.Errorf("manifest cannot be nil")
+	}
+
+	// Check for context cancellation before starting work
+	if ctx.Err() != nil {
+		return nil, ctx.Err()
 	}
 
 	// Build a map of file path -> (agent, wave) ownership

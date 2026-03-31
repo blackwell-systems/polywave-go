@@ -46,7 +46,7 @@ Exit code 1 if IMPL doc is malformed or repo root cannot be determined.`,
 			}
 
 			// Call DetectSharedTypes
-			candidates, err := analyzer.DetectSharedTypes(manifest, repoRoot)
+			candidates, err := analyzer.DetectSharedTypes(cmd.Context(), manifest, repoRoot)
 			if err != nil {
 				return fmt.Errorf("error: detection failed: %w", err)
 			}

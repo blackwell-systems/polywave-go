@@ -1,6 +1,7 @@
 package analyzer
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"testing"
@@ -43,7 +44,7 @@ func GetUser() {
 		},
 	}
 
-	result, err := DetectCascades(tmpDir, renames)
+	result, err := DetectCascades(context.Background(), tmpDir, renames)
 	if err != nil {
 		t.Fatalf("DetectCascades failed: %v", err)
 	}
@@ -105,7 +106,7 @@ var token AuthToken
 		},
 	}
 
-	result, err := DetectCascades(tmpDir, renames)
+	result, err := DetectCascades(context.Background(), tmpDir, renames)
 	if err != nil {
 		t.Fatalf("DetectCascades failed: %v", err)
 	}
@@ -174,7 +175,7 @@ func GetSession() {
 		},
 	}
 
-	result, err := DetectCascades(tmpDir, renames)
+	result, err := DetectCascades(context.Background(), tmpDir, renames)
 	if err != nil {
 		t.Fatalf("DetectCascades failed: %v", err)
 	}
@@ -235,7 +236,7 @@ func LogAuth() {
 		},
 	}
 
-	result, err := DetectCascades(tmpDir, renames)
+	result, err := DetectCascades(context.Background(), tmpDir, renames)
 	if err != nil {
 		t.Fatalf("DetectCascades failed: %v", err)
 	}
@@ -304,7 +305,7 @@ var role UserRole
 		},
 	}
 
-	result, err := DetectCascades(tmpDir, renames)
+	result, err := DetectCascades(context.Background(), tmpDir, renames)
 	if err != nil {
 		t.Fatalf("DetectCascades failed: %v", err)
 	}
@@ -375,7 +376,7 @@ func DoSomething() {
 		},
 	}
 
-	result, err := DetectCascades(tmpDir, renames)
+	result, err := DetectCascades(context.Background(), tmpDir, renames)
 	if err != nil {
 		t.Fatalf("DetectCascades failed: %v", err)
 	}
@@ -429,7 +430,7 @@ func TestAuth() {
 		},
 	}
 
-	result, err := DetectCascades(tmpDir, renames)
+	result, err := DetectCascades(context.Background(), tmpDir, renames)
 	if err != nil {
 		t.Fatalf("DetectCascades failed: %v", err)
 	}
@@ -481,12 +482,12 @@ type AuthToken struct {
 	}
 
 	// Run twice and verify identical order
-	result1, err := DetectCascades(tmpDir, renames)
+	result1, err := DetectCascades(context.Background(), tmpDir, renames)
 	if err != nil {
 		t.Fatalf("DetectCascades run 1 failed: %v", err)
 	}
 
-	result2, err := DetectCascades(tmpDir, renames)
+	result2, err := DetectCascades(context.Background(), tmpDir, renames)
 	if err != nil {
 		t.Fatalf("DetectCascades run 2 failed: %v", err)
 	}

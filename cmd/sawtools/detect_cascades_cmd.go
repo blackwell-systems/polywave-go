@@ -43,7 +43,7 @@ Output format is YAML matching the CascadeResult schema.`,
 			}
 
 			// Detect cascades
-			result, err := analyzer.DetectCascades(repoRoot, renames)
+			result, err := analyzer.DetectCascades(cmd.Context(), repoRoot, renames)
 			if err != nil {
 				return fmt.Errorf("detect cascades: %w", err)
 			}
