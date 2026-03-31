@@ -110,7 +110,7 @@ func RunScoutFull(ctx context.Context, opts RunScoutFullOpts, onChunk func(strin
 	log.Debug("RunScoutFull: starting", "feature", opts.Feature, "slug", slug, "impl_path", implPath)
 
 	// Check if IMPL doc already exists with advanced state — return early if so.
-	if existingDoc, loadErr := protocol.Load(context.TODO(), implPath); loadErr == nil {
+	if existingDoc, loadErr := protocol.Load(ctx, implPath); loadErr == nil {
 		switch existingDoc.State {
 		case protocol.StateReviewed,
 			protocol.StateScaffoldPending,
@@ -243,7 +243,7 @@ func RunScoutFull(ctx context.Context, opts RunScoutFullOpts, onChunk func(strin
 	// RunCritic is defined in pkg/engine/critic.go (Agent D's file).
 	// runCriticFn is set by init() in critic.go after merge; defaults to nil (skip).
 	if !opts.NoCritic && runCriticFn != nil {
-		manifest, loadErr := protocol.Load(context.TODO(), implPath)
+		manifest, loadErr := protocol.Load(ctx, implPath)
 		if loadErr != nil {
 			log.Warn("RunScoutFull: could not load IMPL manifest for critic threshold check; skipping critic gate",
 				"error", loadErr)
