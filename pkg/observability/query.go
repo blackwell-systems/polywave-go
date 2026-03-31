@@ -3,7 +3,33 @@ package observability
 import (
 	"context"
 	"sort"
+
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
 )
+
+// QueryData holds the result data returned by a Query operation.
+type QueryData struct {
+	Events []Event
+	Count  int
+}
+
+// Query retrieves events matching the given filters and returns a result.Result[QueryData].
+// Returns a successful Result with an empty slice (not an error) when no events match.
+func Query(ctx context.Context, store Store, filters QueryFilters) result.Result[QueryData] {
+	events, err := store.QueryEvents(ctx, filters)
+	if err != nil {
+		return result.NewFailure[QueryData]([]result.SAWError{
+			result.NewFatal("EVENT_QUERY_FAILED", err.Error()).WithCause(err),
+		})
+	}
+	if events == nil {
+		events = []Event{}
+	}
+	return result.NewSuccess(QueryData{
+		Events: events,
+		Count:  len(events),
+	})
+}
 
 // IMPLMetrics holds aggregated metrics for a single IMPL.
 type IMPLMetrics struct {

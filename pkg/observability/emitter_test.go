@@ -240,6 +240,58 @@ func TestNewTierGateFailedEvent(t *testing.T) {
 	}
 }
 
+// TestEmitSyncReturnsEventID verifies that EmitSync populates EmitData.EventID.
+func TestEmitSyncReturnsEventID(t *testing.T) {
+	store := &fakeStore{}
+	e := NewEmitter(store)
+	event := NewScoutLaunchEvent("my-impl")
+
+	res := e.EmitSync(context.Background(), event)
+	if !res.IsSuccess() {
+		t.Fatalf("expected success, got code=%s errors=%v", res.Code, res.Errors)
+	}
+	data := res.GetData()
+	if data.EventID == "" {
+		t.Error("expected non-empty EventID in EmitData")
+	}
+	if data.EventID != event.EventID() {
+		t.Errorf("EventID = %q, want %q", data.EventID, event.EventID())
+	}
+	if data.Timestamp.IsZero() {
+		t.Error("expected non-zero Timestamp in EmitData")
+	}
+}
+
+// TestEmitSyncStoreErrorReturnsFatal verifies that a store error returns a FATAL result.
+func TestEmitSyncStoreErrorReturnsFatal(t *testing.T) {
+	store := &fakeStore{err: errors.New("disk full")}
+	e := NewEmitter(store)
+
+	res := e.EmitSync(context.Background(), NewScoutLaunchEvent("my-impl"))
+	if !res.IsFatal() {
+		t.Fatalf("expected FATAL result, got code=%s", res.Code)
+	}
+	if len(res.Errors) == 0 {
+		t.Fatal("expected at least one error")
+	}
+	if res.Errors[0].Code != "EVENT_EMIT_FAILED" {
+		t.Errorf("error code = %q, want EVENT_EMIT_FAILED", res.Errors[0].Code)
+	}
+}
+
+// TestEmitSyncNilEmitterReturnsSuccess verifies that EmitSync on a nil Emitter is safe.
+func TestEmitSyncNilEmitterReturnsSuccess(t *testing.T) {
+	var e *Emitter
+	event := NewScoutLaunchEvent("my-impl")
+	res := e.EmitSync(context.Background(), event)
+	if !res.IsSuccess() {
+		t.Fatalf("expected success for nil emitter, got code=%s", res.Code)
+	}
+	if res.GetData().EventID == "" {
+		t.Error("expected non-empty EventID even for nil emitter")
+	}
+}
+
 // TestMultipleEmitsAreConcurrencySafe verifies concurrent Emit calls don't race.
 func TestMultipleEmitsAreConcurrencySafe(t *testing.T) {
 	store := &fakeStore{}
