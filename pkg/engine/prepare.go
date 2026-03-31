@@ -356,7 +356,7 @@ func PrepareWave(ctx context.Context, opts PrepareWaveOpts) (*PrepareWaveResult,
 		cache = gatecache.New(ctx, stateDir, gatecache.DefaultTTL)
 	}
 
-	baselineRes := protocol.RunBaselineGates(doc, opts.WaveNum, projectRoot, cache)
+	baselineRes := protocol.RunBaselineGates(ctx, doc, opts.WaveNum, projectRoot, cache)
 	if baselineRes.IsFatal() {
 		recordStep(res, opts.OnEvent, "baseline_gates", "failed", fmt.Sprintf("%v", baselineRes.Errors))
 		return res, fmt.Errorf("failed to run baseline quality gates: %v", baselineRes.Errors)
@@ -371,7 +371,7 @@ func PrepareWave(ctx context.Context, opts PrepareWaveOpts) (*PrepareWaveResult,
 	// Step: Cross-repo baseline gates (E21B, multi-repo only)
 	targetRepos, resolveErr := protocol.ResolveTargetRepos(doc, projectRoot, repos)
 	if resolveErr == nil && len(targetRepos) > 1 {
-		crossRes := protocol.RunCrossRepoBaselineGates(doc, opts.WaveNum, targetRepos, repos)
+		crossRes := protocol.RunCrossRepoBaselineGates(ctx, doc, opts.WaveNum, targetRepos, repos)
 		if crossRes.IsFatal() {
 			recordStep(res, opts.OnEvent, "cross_repo_baseline", "failed", fmt.Sprintf("%v", crossRes.Errors))
 			return res, fmt.Errorf("E21B cross-repo baseline check failed: %v", crossRes.Errors)
