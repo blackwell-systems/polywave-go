@@ -46,6 +46,9 @@ func NewRetryLoop(cfg RetryConfig) *RetryLoop {
 //   - "retry_started"  when beginning a retry attempt
 //   - "retry_blocked"  when max retries are exceeded (no IMPL saved)
 func (rl *RetryLoop) Run(ctx context.Context, failedGate QualityGateFailure, onEvent func(Event)) (*RetryAttempt, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	// Check for cancellation before doing any work.
 	select {
 	case <-ctx.Done():
