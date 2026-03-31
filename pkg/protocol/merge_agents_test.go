@@ -1,6 +1,7 @@
 package protocol
 
 import (
+	"context"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -778,7 +779,7 @@ waves:
 	createBranchWithCommits(t, repoDir, "wave1-agent-A", 1)
 
 	// Verify commits - should find via legacy fallback
-	res := VerifyCommits(manifestPath, 1, repoDir)
+	res := VerifyCommits(context.Background(), manifestPath, 1, repoDir)
 	if !res.IsSuccess() {
 		t.Fatalf("VerifyCommits failed. Errors: %v", res.Errors)
 	}

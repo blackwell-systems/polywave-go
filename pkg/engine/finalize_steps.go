@@ -26,7 +26,7 @@ func StepVerifyCommits(ctx context.Context, opts FinalizeWaveOpts, onEvent Event
 	const stepName = "verify-commits"
 	emitStepEvent(onEvent, stepName, "running", "")
 
-	verifyRes := protocol.VerifyCommits(opts.IMPLPath, opts.WaveNum, opts.RepoPath)
+	verifyRes := protocol.VerifyCommits(ctx, opts.IMPLPath, opts.WaveNum, opts.RepoPath)
 	if !verifyRes.IsSuccess() {
 		emitStepEvent(onEvent, stepName, "failed", fmt.Sprintf("%v", verifyRes.Errors))
 		return &StepResult{

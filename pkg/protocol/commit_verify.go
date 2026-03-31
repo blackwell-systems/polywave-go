@@ -1,6 +1,7 @@
 package protocol
 
 import (
+	"context"
 	"fmt"
 	"path/filepath"
 	"strconv"
@@ -36,11 +37,15 @@ type VerifyCommitsData struct {
 // does not exist or has no commits relative to the base, it is recorded with
 // HasCommits=false.
 //
+// The ctx parameter supports cancellation: the function checks ctx.Err()
+// between per-agent git operations and returns early with a FATAL result if
+// the context is cancelled or its deadline is exceeded.
+//
 // Returns result.Result[VerifyCommitsData]:
 //   - SUCCESS (Code="SUCCESS"): All agents have commits
 //   - PARTIAL (Code="PARTIAL"): Some agents missing commits (warnings in Errors)
 //   - FATAL (Code="FATAL"): System-level failure (cannot load manifest, wave not found, etc.)
-func VerifyCommits(manifestPath string, waveNum int, repoDir string) result.Result[VerifyCommitsData] {
+func VerifyCommits(ctx context.Context, manifestPath string, waveNum int, repoDir string) result.Result[VerifyCommitsData] {
 	// Load the manifest
 	manifest, err := Load(manifestPath)
 	if err != nil {
@@ -129,6 +134,17 @@ func VerifyCommits(manifestPath string, waveNum int, repoDir string) result.Resu
 		}
 	}
 
+	// Check context before starting per-agent iteration (may be slow for large waves).
+	if err := ctx.Err(); err != nil {
+		return result.NewFailure[VerifyCommitsData]([]result.SAWError{
+			{
+				Code:     result.CodeCommitMissing,
+				Message:  fmt.Sprintf("context cancelled before verifying agents: %v", err),
+				Severity: "fatal",
+			},
+		})
+	}
+
 	// Build the data
 	data := VerifyCommitsData{
 		BaseCommit: baseCommit,
@@ -141,6 +157,17 @@ func VerifyCommits(manifestPath string, waveNum int, repoDir string) result.Resu
 
 	// Check each agent's branch in its respective repository
 	for _, agent := range targetWave.Agents {
+		// Support cancellation between agents. Each iteration may invoke multiple
+		// git subprocesses; checking here avoids starting new git work after cancel.
+		if err := ctx.Err(); err != nil {
+			return result.NewFailure[VerifyCommitsData]([]result.SAWError{
+				{
+					Code:     result.CodeCommitMissing,
+					Message:  fmt.Sprintf("context cancelled while verifying agent %s: %v", agent.ID, err),
+					Severity: "fatal",
+				},
+			})
+		}
 		branchName := BranchName(manifest.FeatureSlug, waveNum, agent.ID)
 		legacyBranch := LegacyBranchName(waveNum, agent.ID)
 
