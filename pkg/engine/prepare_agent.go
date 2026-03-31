@@ -41,11 +41,11 @@ type PrepareAgentResult struct {
 // PrepareAgent performs all prepare-agent work: parse IMPL doc, find agent task,
 // build brief, write .saw-agent-brief.md and .saw-ownership.json, detect
 // context_source, persist to IMPL doc, initialize journal observer.
-func PrepareAgent(opts PrepareAgentOpts) (PrepareAgentResult, error) {
+func PrepareAgent(ctx context.Context, opts PrepareAgentOpts) (PrepareAgentResult, error) {
 	var result PrepareAgentResult
 
 	// Parse IMPL doc
-	doc, err := protocol.Load(context.TODO(), opts.ManifestPath)
+	doc, err := protocol.Load(ctx, opts.ManifestPath)
 	if err != nil {
 		return result, fmt.Errorf("failed to parse IMPL doc: %w", err)
 	}
@@ -217,7 +217,7 @@ saw_name: %s
 			}
 		}
 	}
-	if saveRes := protocol.Save(context.TODO(), doc, opts.ManifestPath); saveRes.IsFatal() {
+	if saveRes := protocol.Save(ctx, doc, opts.ManifestPath); saveRes.IsFatal() {
 		// Non-fatal: log but don't abort agent preparation
 		saveErrMsg := "save failed"
 		if len(saveRes.Errors) > 0 {
