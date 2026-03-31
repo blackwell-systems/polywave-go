@@ -1,7 +1,6 @@
 package engine
 
 import (
-	"context"
 	"fmt"
 
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
@@ -178,7 +177,7 @@ func recalculateCompletion(manifest *protocol.PROGRAMManifest) {
 
 // writeManifest marshals the manifest to YAML and writes it to disk.
 func writeManifest(path string, manifest *protocol.PROGRAMManifest) result.Result[WriteManifestData] {
-	if err := protocol.SaveYAML(context.TODO(), path, manifest); err != nil {
+	if err := protocol.SaveYAML(path, manifest); err != nil {
 		return result.NewFailure[WriteManifestData]([]result.SAWError{
 			result.NewFatal(result.CodeWriteManifestFailed,
 				fmt.Sprintf("writeManifest: %v", err)).
