@@ -65,9 +65,8 @@ func FinalizeTier(programManifestPath string, tierNumber int, repoDir string) (r
 		if !git.BranchExists(repoDir, branch) {
 			fmt.Printf("branch %q not found, skipping (already merged or not yet created)\n", branch)
 			data.ImplMergeResults[implSlug] = &MergeAgentsData{
-				Wave:    tierNumber,
-				Merges:  []MergeStatus{{Agent: implSlug, Branch: branch, Success: true, Error: "branch absent (skipped)"}},
-				Success: true,
+				Wave:   tierNumber,
+				Merges: []MergeStatus{{Agent: implSlug, Branch: branch, Success: true, Error: "branch absent (skipped)"}},
 			}
 			continue
 		}
@@ -86,7 +85,6 @@ func FinalizeTier(programManifestPath string, tierNumber int, repoDir string) (r
 				Success: false,
 				Error:   mergeErr.Error(),
 			}}
-			mergeResult.Success = false
 			data.ImplMergeResults[implSlug] = mergeResult
 			data.Errors = append(data.Errors, fmt.Sprintf("merge failed for impl %s: %v", implSlug, mergeErr))
 			return result.NewFailure[FinalizeTierData]([]result.SAWError{{
@@ -101,7 +99,6 @@ func FinalizeTier(programManifestPath string, tierNumber int, repoDir string) (r
 			Branch:  branch,
 			Success: true,
 		}}
-		mergeResult.Success = true
 		data.ImplMergeResults[implSlug] = mergeResult
 	}
 
