@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
@@ -19,13 +20,13 @@ func newScanStubsCmd() *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			res := protocol.ScanStubs(args)
 			if !res.IsSuccess() {
-				return fmt.Errorf("scan-stubs: %v", res.Errors)
+				return fmt.Errorf("scan-stubs: %w", errors.Join(sawErrsToErrors(res.Errors)...))
 			}
 
 			if appendImpl != "" {
 				waveKey := fmt.Sprintf("wave%d", waveNum)
 				if appendRes := protocol.AppendStubReport(appendImpl, waveKey, res); appendRes.IsFatal() {
-					return fmt.Errorf("scan-stubs: %v", appendRes.Errors)
+					return fmt.Errorf("scan-stubs: %w", errors.Join(sawErrsToErrors(appendRes.Errors)...))
 				}
 			}
 

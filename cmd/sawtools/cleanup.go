@@ -2,11 +2,23 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
 	"github.com/spf13/cobra"
 )
+
+// sawErrsToErrors converts []result.SAWError to []error so callers can
+// pass the slice to errors.Join, which requires the []error interface type.
+func sawErrsToErrors(errs []result.SAWError) []error {
+	out := make([]error, len(errs))
+	for i, e := range errs {
+		out[i] = e
+	}
+	return out
+}
 
 func newCleanupCmd() *cobra.Command {
 	var waveNum int
@@ -26,7 +38,7 @@ func newCleanupCmd() *cobra.Command {
 			if slugFlag != "" {
 				res := protocol.CleanupBySlug(repoDir, slugFlag, force)
 				if res.IsFatal() {
-					return fmt.Errorf("cleanup-by-slug: %v", res.Errors)
+					return fmt.Errorf("cleanup-by-slug: %w", errors.Join(sawErrsToErrors(res.Errors)...))
 				}
 				out, _ := json.MarshalIndent(res.GetData(), "", "  ")
 				fmt.Println(string(out))

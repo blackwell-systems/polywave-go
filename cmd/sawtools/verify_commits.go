@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
@@ -19,7 +20,7 @@ func newVerifyCommitsCmd() *cobra.Command {
 			manifestPath := args[0]
 			res := protocol.VerifyCommits(manifestPath, waveNum, repoDir)
 			if !res.IsSuccess() {
-				return fmt.Errorf("verify-commits: %v", res.Errors)
+				return fmt.Errorf("verify-commits: %w", errors.Join(sawErrsToErrors(res.Errors)...))
 			}
 			result := res.GetData()
 

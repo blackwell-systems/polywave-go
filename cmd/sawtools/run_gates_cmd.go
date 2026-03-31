@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/gatecache"
@@ -29,7 +30,7 @@ func newRunGatesCmd() *cobra.Command {
 			if noCache {
 				res := protocol.RunGatesWithCache(m, waveNum, repoDir, nil, nil)
 				if !res.IsSuccess() {
-					return fmt.Errorf("run-gates: %v", res.Errors)
+					return fmt.Errorf("run-gates: %w", errors.Join(sawErrsToErrors(res.Errors)...))
 				}
 				results = res.GetData().Gates
 			} else {
@@ -37,7 +38,7 @@ func newRunGatesCmd() *cobra.Command {
 				cache := gatecache.New(stateDir, gatecache.DefaultTTL)
 				res := protocol.RunGatesWithCache(m, waveNum, repoDir, cache, nil)
 				if !res.IsSuccess() {
-					return fmt.Errorf("run-gates: %v", res.Errors)
+					return fmt.Errorf("run-gates: %w", errors.Join(sawErrsToErrors(res.Errors)...))
 				}
 				results = res.GetData().Gates
 			}
