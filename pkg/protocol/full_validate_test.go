@@ -369,9 +369,12 @@ state: "WAVE_EXECUTING"
 		Summary: "all 2 wiring declarations satisfied",
 	}
 
-	err := AppendWiringReport(path, "wave1", data)
-	if err != nil {
-		t.Fatalf("AppendWiringReport failed: %v", err)
+	res := AppendWiringReport(path, "wave1", data)
+	if res.IsFatal() {
+		t.Fatalf("AppendWiringReport failed: %v", res.Errors)
+	}
+	if !res.GetData().Appended {
+		t.Error("expected Appended=true on success")
 	}
 
 	// Read back and verify the report was persisted
@@ -396,9 +399,12 @@ state: "WAVE_EXECUTING"
 		Valid:   true,
 		Summary: "all 3 wiring declarations satisfied",
 	}
-	err = AppendWiringReport(path, "wave2", data2)
-	if err != nil {
-		t.Fatalf("AppendWiringReport (wave2) failed: %v", err)
+	res2 := AppendWiringReport(path, "wave2", data2)
+	if res2.IsFatal() {
+		t.Fatalf("AppendWiringReport (wave2) failed: %v", res2.Errors)
+	}
+	if !res2.GetData().Appended {
+		t.Error("expected Appended=true on wave2 success")
 	}
 
 	raw2, _ := os.ReadFile(path)
@@ -408,5 +414,18 @@ state: "WAVE_EXECUTING"
 	}
 	if !strings.Contains(content2, "wave1") {
 		t.Error("expected wave1 key still present after second append")
+	}
+}
+
+func TestAppendWiringReport_FatalOnMissingManifest(t *testing.T) {
+	res := AppendWiringReport("/nonexistent/path/impl.yaml", "wave1", &WiringValidationData{})
+	if !res.IsFatal() {
+		t.Error("expected FATAL result when manifest does not exist")
+	}
+	if len(res.Errors) == 0 {
+		t.Error("expected at least one error in FATAL result")
+	}
+	if res.Errors[0].Code != "WIRING_APPEND_FAILED" {
+		t.Errorf("expected error code WIRING_APPEND_FAILED, got %s", res.Errors[0].Code)
 	}
 }

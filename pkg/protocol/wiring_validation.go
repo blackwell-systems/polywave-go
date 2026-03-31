@@ -202,13 +202,22 @@ func FormatWiringBriefSection(manifest *IMPLManifest, agentID string) string {
 	return sb.String()
 }
 
+// AppendWiringData contains metadata about a completed wiring report append operation.
+type AppendWiringData struct {
+	ManifestPath string
+	WaveKey      string
+	Appended     bool
+}
+
 // AppendWiringReport persists a WiringValidationData report to the manifest
 // file under wiring_validation_reports.{waveKey}. Uses raw YAML manipulation
 // to avoid re-marshaling the entire manifest.
-func AppendWiringReport(manifestPath, waveKey string, data *WiringValidationData) error {
+func AppendWiringReport(manifestPath, waveKey string, data *WiringValidationData) result.Result[AppendWiringData] {
 	raw, err := os.ReadFile(manifestPath)
 	if err != nil {
-		return fmt.Errorf("AppendWiringReport: failed to read manifest: %w", err)
+		return result.NewFailure[AppendWiringData]([]result.SAWError{
+			result.NewFatal("WIRING_APPEND_FAILED", fmt.Sprintf("AppendWiringReport: failed to read manifest: %v", err)),
+		})
 	}
 
 	// Cannot use LoadYAML/SaveYAML: uses the yaml.Node tree API to splice a new wave key
@@ -216,26 +225,36 @@ func AppendWiringReport(manifestPath, waveKey string, data *WiringValidationData
 	// (which would lose unknown fields). All yaml calls here are intentional Node ops.
 	var doc yaml.Node
 	if err := yaml.Unmarshal(raw, &doc); err != nil {
-		return fmt.Errorf("AppendWiringReport: failed to parse YAML: %w", err)
+		return result.NewFailure[AppendWiringData]([]result.SAWError{
+			result.NewFatal("WIRING_APPEND_FAILED", fmt.Sprintf("AppendWiringReport: failed to parse YAML: %v", err)),
+		})
 	}
 
 	if doc.Kind != yaml.DocumentNode || len(doc.Content) == 0 {
-		return fmt.Errorf("AppendWiringReport: unexpected YAML structure")
+		return result.NewFailure[AppendWiringData]([]result.SAWError{
+			result.NewFatal("WIRING_APPEND_FAILED", "AppendWiringReport: unexpected YAML structure"),
+		})
 	}
 
 	root := doc.Content[0]
 	if root.Kind != yaml.MappingNode {
-		return fmt.Errorf("AppendWiringReport: root is not a mapping")
+		return result.NewFailure[AppendWiringData]([]result.SAWError{
+			result.NewFatal("WIRING_APPEND_FAILED", "AppendWiringReport: root is not a mapping"),
+		})
 	}
 
 	// Marshal the result to a YAML node
 	resultBytes, err := yaml.Marshal(data)
 	if err != nil {
-		return fmt.Errorf("AppendWiringReport: failed to marshal result: %w", err)
+		return result.NewFailure[AppendWiringData]([]result.SAWError{
+			result.NewFatal("WIRING_APPEND_FAILED", fmt.Sprintf("AppendWiringReport: failed to marshal result: %v", err)),
+		})
 	}
 	var resultNode yaml.Node
 	if err := yaml.Unmarshal(resultBytes, &resultNode); err != nil {
-		return fmt.Errorf("AppendWiringReport: failed to unmarshal result node: %w", err)
+		return result.NewFailure[AppendWiringData]([]result.SAWError{
+			result.NewFatal("WIRING_APPEND_FAILED", fmt.Sprintf("AppendWiringReport: failed to unmarshal result node: %v", err)),
+		})
 	}
 
 	// Find or create wiring_validation_reports mapping
@@ -256,7 +275,9 @@ func AppendWiringReport(manifestPath, waveKey string, data *WiringValidationData
 	}
 
 	if reportsValue.Kind != yaml.MappingNode {
-		return fmt.Errorf("AppendWiringReport: wiring_validation_reports is not a mapping")
+		return result.NewFailure[AppendWiringData]([]result.SAWError{
+			result.NewFatal("WIRING_APPEND_FAILED", "AppendWiringReport: wiring_validation_reports is not a mapping"),
+		})
 	}
 
 	// Add or replace the wave key
@@ -276,11 +297,19 @@ func AppendWiringReport(manifestPath, waveKey string, data *WiringValidationData
 	// Write back
 	out, err := yaml.Marshal(&doc)
 	if err != nil {
-		return fmt.Errorf("AppendWiringReport: failed to marshal output: %w", err)
+		return result.NewFailure[AppendWiringData]([]result.SAWError{
+			result.NewFatal("WIRING_APPEND_FAILED", fmt.Sprintf("AppendWiringReport: failed to marshal output: %v", err)),
+		})
 	}
 	if err := os.WriteFile(manifestPath, out, 0644); err != nil {
-		return fmt.Errorf("AppendWiringReport: failed to write file: %w", err)
+		return result.NewFailure[AppendWiringData]([]result.SAWError{
+			result.NewFatal("WIRING_APPEND_FAILED", fmt.Sprintf("AppendWiringReport: failed to write file: %v", err)),
+		})
 	}
 
-	return nil
+	return result.NewSuccess(AppendWiringData{
+		ManifestPath: manifestPath,
+		WaveKey:      waveKey,
+		Appended:     true,
+	})
 }

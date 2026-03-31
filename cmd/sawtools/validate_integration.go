@@ -55,8 +55,8 @@ Exits 0 if no gaps found (both reports valid), exits 1 if gaps are detected.`,
 
 			// Step 3: Persist heuristic report to manifest
 			waveKey := fmt.Sprintf("wave%d", waveNum)
-			if err := protocol.AppendIntegrationReport(manifestPath, waveKey, report); err != nil {
-				return fmt.Errorf("validate-integration: failed to persist heuristic report: %w", err)
+			if appendRes := protocol.AppendIntegrationReport(manifestPath, waveKey, report); appendRes.IsFatal() {
+				return fmt.Errorf("validate-integration: failed to persist heuristic report: %v", appendRes.Errors)
 			}
 
 			// Step 3.5: Wiring declaration check (E35 Layer 3B)

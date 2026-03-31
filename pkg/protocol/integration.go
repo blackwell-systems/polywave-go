@@ -11,6 +11,7 @@ import (
 	"reflect"
 	"strings"
 
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
 	"gopkg.in/yaml.v3"
 )
 
@@ -310,13 +311,22 @@ func buildSummary(report *IntegrationReport) string {
 	return strings.Join(parts, ", ")
 }
 
+// AppendIntegrationData contains metadata about a completed integration report append operation.
+type AppendIntegrationData struct {
+	ManifestPath string
+	WaveKey      string
+	Appended     bool
+}
+
 // AppendIntegrationReport persists an IntegrationReport to the IMPL manifest
 // under the given waveKey (e.g. "wave1"). Since the IntegrationReports field
 // may not yet exist on IMPLManifest, this uses raw YAML manipulation.
-func AppendIntegrationReport(manifestPath string, waveKey string, report *IntegrationReport) error {
+func AppendIntegrationReport(manifestPath string, waveKey string, report *IntegrationReport) result.Result[AppendIntegrationData] {
 	data, err := os.ReadFile(manifestPath)
 	if err != nil {
-		return fmt.Errorf("AppendIntegrationReport: failed to read manifest: %w", err)
+		return result.NewFailure[AppendIntegrationData]([]result.SAWError{
+			result.NewFatal("INTEGRATION_APPEND_FAILED", fmt.Sprintf("AppendIntegrationReport: failed to read manifest: %v", err)),
+		})
 	}
 
 	// Cannot use LoadYAML/SaveYAML: this function uses the yaml.Node tree API to splice
@@ -324,26 +334,36 @@ func AppendIntegrationReport(manifestPath string, waveKey string, report *Integr
 	// manifest (which would lose unknown fields). All yaml calls here are intentional Node ops.
 	var doc yaml.Node
 	if err := yaml.Unmarshal(data, &doc); err != nil {
-		return fmt.Errorf("AppendIntegrationReport: failed to parse YAML: %w", err)
+		return result.NewFailure[AppendIntegrationData]([]result.SAWError{
+			result.NewFatal("INTEGRATION_APPEND_FAILED", fmt.Sprintf("AppendIntegrationReport: failed to parse YAML: %v", err)),
+		})
 	}
 
 	if doc.Kind != yaml.DocumentNode || len(doc.Content) == 0 {
-		return fmt.Errorf("AppendIntegrationReport: unexpected YAML structure")
+		return result.NewFailure[AppendIntegrationData]([]result.SAWError{
+			result.NewFatal("INTEGRATION_APPEND_FAILED", "AppendIntegrationReport: unexpected YAML structure"),
+		})
 	}
 
 	root := doc.Content[0]
 	if root.Kind != yaml.MappingNode {
-		return fmt.Errorf("AppendIntegrationReport: root is not a mapping")
+		return result.NewFailure[AppendIntegrationData]([]result.SAWError{
+			result.NewFatal("INTEGRATION_APPEND_FAILED", "AppendIntegrationReport: root is not a mapping"),
+		})
 	}
 
 	// Marshal the report to a YAML node
 	var reportNode yaml.Node
 	reportBytes, err := yaml.Marshal(report)
 	if err != nil {
-		return fmt.Errorf("AppendIntegrationReport: failed to marshal report: %w", err)
+		return result.NewFailure[AppendIntegrationData]([]result.SAWError{
+			result.NewFatal("INTEGRATION_APPEND_FAILED", fmt.Sprintf("AppendIntegrationReport: failed to marshal report: %v", err)),
+		})
 	}
 	if err := yaml.Unmarshal(reportBytes, &reportNode); err != nil {
-		return fmt.Errorf("AppendIntegrationReport: failed to unmarshal report node: %w", err)
+		return result.NewFailure[AppendIntegrationData]([]result.SAWError{
+			result.NewFatal("INTEGRATION_APPEND_FAILED", fmt.Sprintf("AppendIntegrationReport: failed to unmarshal report node: %v", err)),
+		})
 	}
 
 	// Find or create integration_reports mapping
@@ -364,7 +384,9 @@ func AppendIntegrationReport(manifestPath string, waveKey string, report *Integr
 	}
 
 	if reportsValue.Kind != yaml.MappingNode {
-		return fmt.Errorf("AppendIntegrationReport: integration_reports is not a mapping")
+		return result.NewFailure[AppendIntegrationData]([]result.SAWError{
+			result.NewFatal("INTEGRATION_APPEND_FAILED", "AppendIntegrationReport: integration_reports is not a mapping"),
+		})
 	}
 
 	// Add or replace the wave key
@@ -384,11 +406,19 @@ func AppendIntegrationReport(manifestPath string, waveKey string, report *Integr
 	// Write back
 	out, err := yaml.Marshal(&doc)
 	if err != nil {
-		return fmt.Errorf("AppendIntegrationReport: failed to marshal output: %w", err)
+		return result.NewFailure[AppendIntegrationData]([]result.SAWError{
+			result.NewFatal("INTEGRATION_APPEND_FAILED", fmt.Sprintf("AppendIntegrationReport: failed to marshal output: %v", err)),
+		})
 	}
 	if err := os.WriteFile(manifestPath, out, 0644); err != nil {
-		return fmt.Errorf("AppendIntegrationReport: failed to write file: %w", err)
+		return result.NewFailure[AppendIntegrationData]([]result.SAWError{
+			result.NewFatal("INTEGRATION_APPEND_FAILED", fmt.Sprintf("AppendIntegrationReport: failed to write file: %v", err)),
+		})
 	}
 
-	return nil
+	return result.NewSuccess(AppendIntegrationData{
+		ManifestPath: manifestPath,
+		WaveKey:      waveKey,
+		Appended:     true,
+	})
 }
