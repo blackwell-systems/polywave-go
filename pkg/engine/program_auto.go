@@ -196,14 +196,18 @@ func ReplanProgram(opts ReplanProgramOpts) (*ReplanResult, error) {
 
 	// Step 4: Launch Planner agent with the revision prompt overwriting the manifest in place
 	var chunks []string
-	execErr := RunPlanner(context.Background(), RunPlannerOpts{
+	plannerRes := RunPlanner(context.Background(), RunPlannerOpts{
 		Description:    revisionPrompt,
 		RepoPath:       repoPath,
 		ProgramOutPath: opts.ProgramManifestPath,
 		PlannerModel:   opts.PlannerModel,
 	}, func(chunk string) { chunks = append(chunks, chunk) })
-	if execErr != nil {
-		return nil, fmt.Errorf("ReplanProgram: planner agent: %w", execErr)
+	if plannerRes.IsFatal() {
+		msg := "ReplanProgram: planner agent failed"
+		if len(plannerRes.Errors) > 0 {
+			msg = fmt.Sprintf("ReplanProgram: planner agent: %s", plannerRes.Errors[0].Message)
+		}
+		return nil, fmt.Errorf("%s", msg)
 	}
 
 	// Step 5: Validate revised manifest

@@ -11,7 +11,14 @@ import (
 // autoRemediateFixBuildFailureFunc is the function variable used to call FixBuildFailure.
 // Override in tests to avoid real AI calls.
 var autoRemediateFixBuildFailureFunc = func(ctx context.Context, opts FixBuildOpts) error {
-	return FixBuildFailure(ctx, opts)
+	res := FixBuildFailure(ctx, opts)
+	if res.IsFatal() {
+		if len(res.Errors) > 0 {
+			return fmt.Errorf("%s", res.Errors[0].Message)
+		}
+		return fmt.Errorf("FixBuildFailure failed")
+	}
+	return nil
 }
 
 // autoRemediateVerifyBuildFunc is the function variable used to call protocol.VerifyBuild.

@@ -41,7 +41,16 @@ func ScoutCorrectionLoop(ctx context.Context, opts ScoutCorrectionOpts, onChunk 
 
 	runScout := opts.runScoutFn
 	if runScout == nil {
-		runScout = RunScout
+		runScout = func(ctx context.Context, opts RunScoutOpts, onChunk func(string)) error {
+			res := RunScout(ctx, opts, onChunk)
+			if res.IsFatal() {
+				if len(res.Errors) > 0 {
+					return fmt.Errorf("%s", res.Errors[0].Message)
+				}
+				return fmt.Errorf("RunScout failed")
+			}
+			return nil
+		}
 	}
 	validate := opts.validateFn
 	if validate == nil {

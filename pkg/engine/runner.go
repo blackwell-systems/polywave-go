@@ -23,6 +23,7 @@ import (
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/observability"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/orchestrator"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/retry"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/suitability"
 	"gopkg.in/yaml.v3"
@@ -41,15 +42,21 @@ func loggerFrom(l *slog.Logger) *slog.Logger {
 // RunScout executes a Scout agent, calling onChunk for each output fragment.
 // Returns when the agent finishes. Cancellable via ctx.
 // I6 enforcement: Post-execution validation checks that Scout only wrote to docs/IMPL/IMPL-*.yaml.
-func RunScout(ctx context.Context, opts RunScoutOpts, onChunk func(string)) error {
+func RunScout(ctx context.Context, opts RunScoutOpts, onChunk func(string)) result.Result[ScoutData] {
 	if opts.Feature == "" {
-		return fmt.Errorf("engine.RunScout: Feature is required")
+		return result.NewFailure[ScoutData]([]result.SAWError{
+			result.NewFatal("ENGINE_SCOUT_INVALID_OPTS", "engine.RunScout: Feature is required"),
+		})
 	}
 	if opts.RepoPath == "" {
-		return fmt.Errorf("engine.RunScout: RepoPath is required")
+		return result.NewFailure[ScoutData]([]result.SAWError{
+			result.NewFatal("ENGINE_SCOUT_INVALID_OPTS", "engine.RunScout: RepoPath is required"),
+		})
 	}
 	if opts.IMPLOutPath == "" {
-		return fmt.Errorf("engine.RunScout: IMPLOutPath is required")
+		return result.NewFailure[ScoutData]([]result.SAWError{
+			result.NewFatal("ENGINE_SCOUT_INVALID_OPTS", "engine.RunScout: IMPLOutPath is required"),
+		})
 	}
 
 	// Record start time for I6 validation (detect files written during execution)
@@ -67,7 +74,9 @@ func RunScout(ctx context.Context, opts RunScoutOpts, onChunk func(string)) erro
 	if sawRepo == "" {
 		home, err := os.UserHomeDir()
 		if err != nil {
-			return fmt.Errorf("engine.RunScout: cannot determine home directory: %w", err)
+			return result.NewFailure[ScoutData]([]result.SAWError{
+				result.NewFatal("ENGINE_SCOUT_FAILED", "engine.RunScout: cannot determine home directory").WithCause(err),
+			})
 		}
 		sawRepo = filepath.Join(home, "code", "scout-and-wave")
 	}
@@ -76,7 +85,9 @@ func RunScout(ctx context.Context, opts RunScoutOpts, onChunk func(string)) erro
 	scoutMdPath := filepath.Join(sawRepo, "implementations", "claude-code", "prompts", "agents", "scout.md")
 	scoutMdContent, err := LoadTypePromptWithRefs(scoutMdPath)
 	if err != nil {
-		return fmt.Errorf("engine.RunScout: scout.md not found at %s: %w", scoutMdPath, err)
+		return result.NewFailure[ScoutData]([]result.SAWError{
+			result.NewFatal("ENGINE_SCOUT_FAILED", fmt.Sprintf("engine.RunScout: scout.md not found at %s", scoutMdPath)).WithCause(err),
+		})
 	}
 
 	// Run automation tools (H1a, H2, H3) before launching Scout.
@@ -116,34 +127,55 @@ func RunScout(ctx context.Context, opts RunScoutOpts, onChunk func(string)) erro
 	} else {
 		b, bErr := orchestrator.NewBackendFromModel(opts.ScoutModel)
 		if bErr != nil {
-			return fmt.Errorf("engine.RunScout: backend init: %w", bErr)
+			return result.NewFailure[ScoutData]([]result.SAWError{
+				result.NewFatal("ENGINE_SCOUT_FAILED", "engine.RunScout: backend init failed").WithCause(bErr),
+			})
 		}
 		runner := agent.NewRunner(b, nil)
 		spec := &protocol.Agent{ID: "scout", Task: prompt}
 		_, execErr = runner.ExecuteStreamingWithTools(ctx, spec, opts.RepoPath, onChunk, nil)
 	}
 
-	// I6 enforcement: Validate Scout only wrote to docs/IMPL/IMPL-*.yaml
-	if execErr == nil {
-		validateRes := hooks.ValidateScoutWrites(opts.RepoPath, opts.IMPLOutPath, startTime)
-		if validateRes.IsFatal() {
-			if len(validateRes.Errors) > 0 {
-				return fmt.Errorf("engine.RunScout: %s", validateRes.Errors[0].Message)
-			}
-			return fmt.Errorf("engine.RunScout: scout boundary validation failed")
+	if execErr != nil {
+		if ctx.Err() != nil {
+			return result.NewFailure[ScoutData]([]result.SAWError{
+				{Code: "CONTEXT_CANCELLED", Message: "engine.RunScout: context cancelled", Severity: "fatal", Cause: execErr},
+			})
 		}
-		if validateRes.IsPartial() {
-			data := validateRes.GetData()
-			if len(data.UnexpectedWrites) > 0 {
-				return fmt.Errorf("engine.RunScout: I6 VIOLATION: Scout wrote files outside permitted boundaries: %s",
-					strings.Join(data.UnexpectedWrites, ", "))
-			}
-		}
-		// E40: Emit scout_complete on success.
-		opts.ObsEmitter.Emit(ctx, observability.NewScoutCompleteEvent(implSlug))
+		return result.NewFailure[ScoutData]([]result.SAWError{
+			result.NewFatal("ENGINE_SCOUT_FAILED", "engine.RunScout: agent execution failed").WithCause(execErr),
+		})
 	}
 
-	return execErr
+	// I6 enforcement: Validate Scout only wrote to docs/IMPL/IMPL-*.yaml
+	validateRes := hooks.ValidateScoutWrites(opts.RepoPath, opts.IMPLOutPath, startTime)
+	if validateRes.IsFatal() {
+		msg := "engine.RunScout: scout boundary validation failed"
+		if len(validateRes.Errors) > 0 {
+			msg = "engine.RunScout: " + validateRes.Errors[0].Message
+		}
+		return result.NewFailure[ScoutData]([]result.SAWError{
+			result.NewFatal("ENGINE_SCOUT_BOUNDARY_VIOLATION", msg),
+		})
+	}
+	if validateRes.IsPartial() {
+		data := validateRes.GetData()
+		if len(data.UnexpectedWrites) > 0 {
+			return result.NewFailure[ScoutData]([]result.SAWError{
+				result.NewFatal("ENGINE_SCOUT_BOUNDARY_VIOLATION",
+					fmt.Sprintf("engine.RunScout: I6 VIOLATION: Scout wrote files outside permitted boundaries: %s",
+						strings.Join(data.UnexpectedWrites, ", "))),
+			})
+		}
+	}
+
+	// E40: Emit scout_complete on success.
+	opts.ObsEmitter.Emit(ctx, observability.NewScoutCompleteEvent(implSlug))
+
+	return result.NewSuccess(ScoutData{
+		IMPLOutPath: opts.IMPLOutPath,
+		Feature:     opts.Feature,
+	})
 }
 
 // implSlugFromIMPLPath derives an IMPL slug from a file path such as
@@ -163,15 +195,21 @@ func implSlugFromIMPLPath(path string) string {
 
 // RunPlanner executes a Planner agent to produce a PROGRAM manifest.
 // Mirrors RunScout but reads agents/planner.md and writes docs/PROGRAM/PROGRAM-*.yaml.
-func RunPlanner(ctx context.Context, opts RunPlannerOpts, onChunk func(string)) error {
+func RunPlanner(ctx context.Context, opts RunPlannerOpts, onChunk func(string)) result.Result[PlannerData] {
 	if opts.Description == "" {
-		return fmt.Errorf("engine.RunPlanner: Description is required")
+		return result.NewFailure[PlannerData]([]result.SAWError{
+			result.NewFatal("ENGINE_PLANNER_INVALID_OPTS", "engine.RunPlanner: Description is required"),
+		})
 	}
 	if opts.RepoPath == "" {
-		return fmt.Errorf("engine.RunPlanner: RepoPath is required")
+		return result.NewFailure[PlannerData]([]result.SAWError{
+			result.NewFatal("ENGINE_PLANNER_INVALID_OPTS", "engine.RunPlanner: RepoPath is required"),
+		})
 	}
 	if opts.ProgramOutPath == "" {
-		return fmt.Errorf("engine.RunPlanner: ProgramOutPath is required")
+		return result.NewFailure[PlannerData]([]result.SAWError{
+			result.NewFatal("ENGINE_PLANNER_INVALID_OPTS", "engine.RunPlanner: ProgramOutPath is required"),
+		})
 	}
 
 	sawRepo := opts.SAWRepoPath
@@ -181,7 +219,9 @@ func RunPlanner(ctx context.Context, opts RunPlannerOpts, onChunk func(string)) 
 	if sawRepo == "" {
 		home, err := os.UserHomeDir()
 		if err != nil {
-			return fmt.Errorf("engine.RunPlanner: cannot determine home directory: %w", err)
+			return result.NewFailure[PlannerData]([]result.SAWError{
+				result.NewFatal("ENGINE_PLANNER_FAILED", "engine.RunPlanner: cannot determine home directory").WithCause(err),
+			})
 		}
 		sawRepo = filepath.Join(home, "code", "scout-and-wave")
 	}
@@ -213,12 +253,27 @@ func RunPlanner(ctx context.Context, opts RunPlannerOpts, onChunk func(string)) 
 
 	b, bErr := orchestrator.NewBackendFromModel(model)
 	if bErr != nil {
-		return fmt.Errorf("engine.RunPlanner: backend init: %w", bErr)
+		return result.NewFailure[PlannerData]([]result.SAWError{
+			result.NewFatal("ENGINE_PLANNER_FAILED", "engine.RunPlanner: backend init failed").WithCause(bErr),
+		})
 	}
 	runner := agent.NewRunner(b, nil)
 	spec := &protocol.Agent{ID: "planner", Task: prompt}
 	_, execErr := runner.ExecuteStreamingWithTools(ctx, spec, opts.RepoPath, onChunk, nil)
-	return execErr
+	if execErr != nil {
+		if ctx.Err() != nil {
+			return result.NewFailure[PlannerData]([]result.SAWError{
+				{Code: "CONTEXT_CANCELLED", Message: "engine.RunPlanner: context cancelled", Severity: "fatal", Cause: execErr},
+			})
+		}
+		return result.NewFailure[PlannerData]([]result.SAWError{
+			result.NewFatal("ENGINE_PLANNER_FAILED", "engine.RunPlanner: agent execution failed").WithCause(execErr),
+		})
+	}
+	return result.NewSuccess(PlannerData{
+		ProgramOutPath: opts.ProgramOutPath,
+		Description:    opts.Description,
+	})
 }
 
 // runScoutStructured runs the Scout agent via the API backend with structured
@@ -343,24 +398,36 @@ func runScoutStructuredBedrock(ctx context.Context, opts RunScoutOpts, prompt st
 // StartWave executes a full wave run (all waves in the IMPL doc).
 // Publishes lifecycle events via onEvent. Blocks until all waves complete
 // or a fatal error occurs.
-func StartWave(ctx context.Context, opts RunWaveOpts, onEvent func(Event)) error {
+func StartWave(ctx context.Context, opts RunWaveOpts, onEvent func(Event)) result.Result[StartWaveData] {
 	if opts.IMPLPath == "" {
-		return fmt.Errorf("engine.StartWave: IMPLPath is required")
+		return result.NewFailure[StartWaveData]([]result.SAWError{
+			result.NewFatal("ENGINE_WAVE_INVALID_OPTS", "engine.StartWave: IMPLPath is required"),
+		})
 	}
 	if opts.RepoPath == "" {
-		return fmt.Errorf("engine.StartWave: RepoPath is required")
+		return result.NewFailure[StartWaveData]([]result.SAWError{
+			result.NewFatal("ENGINE_WAVE_INVALID_OPTS", "engine.StartWave: RepoPath is required"),
+		})
 	}
 
 	publish := func(event string, data interface{}) {
 		onEvent(Event{Event: event, Data: data})
 	}
 
+	fatalf := func(code, msg string, cause error) result.Result[StartWaveData] {
+		publish("run_failed", map[string]string{"error": msg})
+		sawErr := result.NewFatal(code, msg)
+		if cause != nil {
+			sawErr = sawErr.WithCause(cause)
+		}
+		return result.NewFailure[StartWaveData]([]result.SAWError{sawErr})
+	}
+
 	publish("run_started", map[string]string{"slug": opts.Slug, "impl_path": opts.IMPLPath})
 
 	orch, err := orchestrator.New(opts.RepoPath, opts.IMPLPath)
 	if err != nil {
-		publish("run_failed", map[string]string{"error": err.Error()})
-		return fmt.Errorf("engine.StartWave: %w", err)
+		return fatalf("ENGINE_WAVE_FAILED", fmt.Sprintf("engine.StartWave: %s", err.Error()), err)
 	}
 
 	if opts.WaveModel != "" {
@@ -377,15 +444,19 @@ func StartWave(ctx context.Context, opts RunWaveOpts, onEvent func(Event)) error
 	if scaffoldModel == "" {
 		scaffoldModel = opts.WaveModel
 	}
-	if err := RunScaffold(RunScaffoldOpts{
+	scaffoldRes := RunScaffold(RunScaffoldOpts{
 		Ctx:      ctx,
 		ImplPath: opts.IMPLPath,
 		RepoPath: opts.RepoPath,
 		Model:    scaffoldModel,
 		OnEvent:  onEvent,
-	}); err != nil {
-		publish("run_failed", map[string]string{"error": err.Error()})
-		return fmt.Errorf("engine.StartWave: scaffold: %w", err)
+	})
+	if scaffoldRes.IsFatal() {
+		msg := "engine.StartWave: scaffold failed"
+		if len(scaffoldRes.Errors) > 0 {
+			msg = "engine.StartWave: scaffold: " + scaffoldRes.Errors[0].Message
+		}
+		return fatalf("ENGINE_WAVE_FAILED", msg, nil)
 	}
 
 	waves := orch.IMPLDoc().Waves
@@ -401,8 +472,7 @@ func StartWave(ctx context.Context, opts RunWaveOpts, onEvent func(Event)) error
 		wtRes := protocol.CreateWorktrees(opts.IMPLPath, waveNum, opts.RepoPath, nil)
 		if !wtRes.IsSuccess() {
 			errMsg := fmt.Sprintf("%v", wtRes.Errors)
-			publish("run_failed", map[string]string{"error": errMsg})
-			return fmt.Errorf("engine.StartWave: CreateWorktrees wave %d: %v", waveNum, wtRes.Errors)
+			return fatalf("ENGINE_WAVE_FAILED", fmt.Sprintf("engine.StartWave: CreateWorktrees wave %d: %s", waveNum, errMsg), nil)
 		}
 		wtResult := wtRes.GetData()
 		// Pass pre-computed worktree paths to orchestrator so launchAgent
@@ -414,8 +484,7 @@ func StartWave(ctx context.Context, opts RunWaveOpts, onEvent func(Event)) error
 		orch.SetWorktreePaths(wtPaths)
 
 		if err := orch.RunWave(waveNum); err != nil {
-			publish("run_failed", map[string]string{"error": err.Error()})
-			return fmt.Errorf("engine.StartWave: RunWave %d: %w", waveNum, err)
+			return fatalf("ENGINE_WAVE_FAILED", fmt.Sprintf("engine.StartWave: RunWave %d: %s", waveNum, err.Error()), err)
 		}
 
 		// E20: Post-wave stub scan (informational only).
@@ -443,24 +512,24 @@ func StartWave(ctx context.Context, opts RunWaveOpts, onEvent func(Event)) error
 				}
 				for _, gate := range gatesData.Gates {
 					if gate.Required && !gate.Passed {
-						return fmt.Errorf("engine.StartWave: required gate %q failed in wave %d", gate.Type, waveNum)
+						return fatalf("ENGINE_WAVE_FAILED",
+							fmt.Sprintf("engine.StartWave: required gate %q failed in wave %d", gate.Type, waveNum), nil)
 					}
 				}
 			} else {
-				return fmt.Errorf("engine.StartWave: quality gate wave %d: %v", waveNum, gateRes.Errors)
+				return fatalf("ENGINE_WAVE_FAILED",
+					fmt.Sprintf("engine.StartWave: quality gate wave %d: %v", waveNum, gateRes.Errors), nil)
 			}
 		}
 
 		if err := orch.MergeWave(waveNum); err != nil {
-			publish("run_failed", map[string]string{"error": err.Error()})
-			return fmt.Errorf("engine.StartWave: MergeWave %d: %w", waveNum, err)
+			return fatalf("ENGINE_WAVE_FAILED", fmt.Sprintf("engine.StartWave: MergeWave %d: %s", waveNum, err.Error()), err)
 		}
 
 		testCmd := orch.IMPLDoc().TestCommand
 		if testCmd != "" {
 			if err := orch.RunVerification(testCmd); err != nil {
-				publish("run_failed", map[string]string{"error": err.Error()})
-				return fmt.Errorf("engine.StartWave: RunVerification %d: %w", waveNum, err)
+				return fatalf("ENGINE_WAVE_FAILED", fmt.Sprintf("engine.StartWave: RunVerification %d: %s", waveNum, err.Error()), err)
 			}
 		}
 
@@ -480,17 +549,21 @@ func StartWave(ctx context.Context, opts RunWaveOpts, onEvent func(Event)) error
 				if intModel == "" {
 					intModel = opts.WaveModel
 				}
-				intAgentErr := RunIntegrationAgent(ctx, RunIntegrationAgentOpts{
+				intAgentRes := RunIntegrationAgent(ctx, RunIntegrationAgentOpts{
 					IMPLPath: opts.IMPLPath,
 					RepoPath: opts.RepoPath,
 					WaveNum:  waveNum,
 					Report:   integrationReport,
 					Model:    intModel,
 				}, func(ev Event) { onEvent(ev) })
-				if intAgentErr != nil {
+				if intAgentRes.IsFatal() {
 					// Non-fatal: log but don't abort wave
+					msg := "integration agent failed"
+					if len(intAgentRes.Errors) > 0 {
+						msg = intAgentRes.Errors[0].Message
+					}
 					publish("integration_agent_warning", map[string]string{
-						"error": intAgentErr.Error(),
+						"error": msg,
 					})
 				}
 			}
@@ -529,7 +602,11 @@ func StartWave(ctx context.Context, opts RunWaveOpts, onEvent func(Event)) error
 		Waves:  len(waves),
 		Agents: totalAgents,
 	})
-	return nil
+	return result.NewSuccess(StartWaveData{
+		Slug:   slug,
+		Waves:  len(waves),
+		Agents: totalAgents,
+	})
 }
 
 // gateChannels stores per-slug gate channels used to pause the wave loop between waves.
@@ -537,7 +614,7 @@ var gateChannels sync.Map
 
 // RunScaffold checks for pending scaffold files and runs a Scaffold agent if needed.
 // The model parameter is optional; if empty, the backend uses its default model.
-func RunScaffold(opts RunScaffoldOpts) error {
+func RunScaffold(opts RunScaffoldOpts) result.Result[ScaffoldData] {
 	ctx := opts.Ctx
 	implPath := opts.ImplPath
 	repoPath := opts.RepoPath
@@ -552,12 +629,14 @@ func RunScaffold(opts RunScaffoldOpts) error {
 	// Load YAML manifest to get scaffold files.
 	manifest, err := protocol.Load(implPath)
 	if err != nil {
-		return fmt.Errorf("engine.RunScaffold: load manifest: %w", err)
+		return result.NewFailure[ScaffoldData]([]result.SAWError{
+			result.NewFatal("ENGINE_SCAFFOLD_FAILED", "engine.RunScaffold: load manifest failed").WithCause(err),
+		})
 	}
 
 	scaffolds := manifest.Scaffolds
 	if len(scaffolds) == 0 {
-		return nil
+		return result.NewSuccess(ScaffoldData{IMPLPath: implPath, ScaffoldsFound: 0})
 	}
 
 	// If all scaffold files already exist, skip.
@@ -573,7 +652,7 @@ func RunScaffold(opts RunScaffoldOpts) error {
 		}
 	}
 	if allExist {
-		return nil
+		return result.NewSuccess(ScaffoldData{IMPLPath: implPath, ScaffoldsFound: len(scaffolds)})
 	}
 
 	publish("scaffold_started", map[string]string{"impl_path": implPath})
@@ -598,7 +677,9 @@ func RunScaffold(opts RunScaffoldOpts) error {
 	b, err := orchestrator.NewBackendFromModel(model)
 	if err != nil {
 		publish("scaffold_failed", map[string]string{"error": err.Error()})
-		return fmt.Errorf("engine.RunScaffold: backend init: %w", err)
+		return result.NewFailure[ScaffoldData]([]result.SAWError{
+			result.NewFatal("ENGINE_SCAFFOLD_FAILED", "engine.RunScaffold: backend init failed").WithCause(err),
+		})
 	}
 	runner := agent.NewRunner(b, nil)
 	spec := &protocol.Agent{ID: "scaffold", Task: prompt}
@@ -609,16 +690,20 @@ func RunScaffold(opts RunScaffoldOpts) error {
 
 	if _, execErr := runner.ExecuteStreamingWithTools(ctx, spec, repoPath, onChunk, nil); execErr != nil {
 		publish("scaffold_failed", map[string]string{"error": execErr.Error()})
-		return fmt.Errorf("engine.RunScaffold: scaffold agent failed: %w", execErr)
+		return result.NewFailure[ScaffoldData]([]result.SAWError{
+			result.NewFatal("ENGINE_SCAFFOLD_FAILED", "engine.RunScaffold: scaffold agent failed").WithCause(execErr),
+		})
 	}
 
 	// E22: Scaffold build verification — compile to catch scaffold errors early.
 	if err := runScaffoldBuildVerification(repoPath, onEvent); err != nil {
-		return fmt.Errorf("engine.RunScaffold: build verification failed: %w", err)
+		return result.NewFailure[ScaffoldData]([]result.SAWError{
+			result.NewFatal("ENGINE_SCAFFOLD_FAILED", "engine.RunScaffold: build verification failed").WithCause(err),
+		})
 	}
 
 	publish("scaffold_complete", map[string]string{"impl_path": implPath})
-	return nil
+	return result.NewSuccess(ScaffoldData{IMPLPath: implPath, ScaffoldsFound: len(scaffolds)})
 }
 
 // LoadTypePromptWithRefs reads the agent type prompt at promptPath and
@@ -787,13 +872,17 @@ func runScaffoldBuildVerificationWithDoc(ctx context.Context, repoPath string, d
 
 // RunSingleWave runs the agents for one wave number without merging or verifying.
 // The caller is responsible for calling MergeWave and RunVerification afterwards.
-func RunSingleWave(ctx context.Context, opts RunWaveOpts, waveNum int, onEvent func(Event)) error {
+func RunSingleWave(ctx context.Context, opts RunWaveOpts, waveNum int, onEvent func(Event)) result.Result[WaveData] {
 	if opts.IMPLPath == "" {
-		return fmt.Errorf("engine.RunSingleWave: IMPLPath is required")
+		return result.NewFailure[WaveData]([]result.SAWError{
+			result.NewFatal("ENGINE_WAVE_INVALID_OPTS", "engine.RunSingleWave: IMPLPath is required"),
+		})
 	}
 	orch, err := orchestrator.New(opts.RepoPath, opts.IMPLPath)
 	if err != nil {
-		return fmt.Errorf("engine.RunSingleWave: %w", err)
+		return result.NewFailure[WaveData]([]result.SAWError{
+			result.NewFatal("ENGINE_WAVE_FAILED", fmt.Sprintf("engine.RunSingleWave: %s", err.Error())).WithCause(err),
+		})
 	}
 	if opts.WaveModel != "" {
 		orch.SetDefaultModel(opts.WaveModel)
@@ -808,7 +897,9 @@ func RunSingleWave(ctx context.Context, opts RunWaveOpts, waveNum int, onEvent f
 	// uses the correct worktree for each agent.
 	wtRes := protocol.CreateWorktrees(opts.IMPLPath, waveNum, opts.RepoPath, nil)
 	if !wtRes.IsSuccess() {
-		return fmt.Errorf("engine.RunSingleWave: create worktrees: %v", wtRes.Errors)
+		return result.NewFailure[WaveData]([]result.SAWError{
+			result.NewFatal("ENGINE_WAVE_FAILED", fmt.Sprintf("engine.RunSingleWave: create worktrees: %v", wtRes.Errors)),
+		})
 	}
 	wtResult := wtRes.GetData()
 	if len(wtResult.Worktrees) > 0 {
@@ -819,19 +910,33 @@ func RunSingleWave(ctx context.Context, opts RunWaveOpts, waveNum int, onEvent f
 		orch.SetWorktreePaths(paths)
 	}
 
-	return orch.RunWave(waveNum)
+	if err := orch.RunWave(waveNum); err != nil {
+		if ctx.Err() != nil {
+			return result.NewFailure[WaveData]([]result.SAWError{
+				{Code: "CONTEXT_CANCELLED", Message: "engine.RunSingleWave: context cancelled", Severity: "fatal", Cause: err},
+			})
+		}
+		return result.NewFailure[WaveData]([]result.SAWError{
+			result.NewFatal("ENGINE_WAVE_FAILED", "engine.RunSingleWave: RunWave failed").WithCause(err),
+		})
+	}
+	return result.NewSuccess(WaveData{IMPLPath: opts.IMPLPath, WaveNum: waveNum})
 }
 
 // RunSingleAgent runs exactly one agent from the specified wave. This is used
 // for single-agent reruns (e.g. retrying a failed agent). If promptPrefix is
 // non-empty it is prepended to the agent's task prompt before execution.
-func RunSingleAgent(ctx context.Context, opts RunWaveOpts, waveNum int, agentLetter string, promptPrefix string, onEvent func(Event)) error {
+func RunSingleAgent(ctx context.Context, opts RunWaveOpts, waveNum int, agentLetter string, promptPrefix string, onEvent func(Event)) result.Result[AgentData] {
 	if opts.IMPLPath == "" {
-		return fmt.Errorf("engine.RunSingleAgent: IMPLPath is required")
+		return result.NewFailure[AgentData]([]result.SAWError{
+			result.NewFatal("ENGINE_AGENT_INVALID_OPTS", "engine.RunSingleAgent: IMPLPath is required"),
+		})
 	}
 	orch, err := orchestrator.New(opts.RepoPath, opts.IMPLPath)
 	if err != nil {
-		return fmt.Errorf("engine.RunSingleAgent: %w", err)
+		return result.NewFailure[AgentData]([]result.SAWError{
+			result.NewFatal("ENGINE_AGENT_FAILED", fmt.Sprintf("engine.RunSingleAgent: %s", err.Error())).WithCause(err),
+		})
 	}
 	if opts.WaveModel != "" {
 		orch.SetDefaultModel(opts.WaveModel)
@@ -856,37 +961,56 @@ func RunSingleAgent(ctx context.Context, opts RunWaveOpts, waveNum int, agentLet
 		}
 	}
 
-	return orch.RunAgent(waveNum, agentLetter, promptPrefix)
+	if err := orch.RunAgent(waveNum, agentLetter, promptPrefix); err != nil {
+		if ctx.Err() != nil {
+			return result.NewFailure[AgentData]([]result.SAWError{
+				{Code: "CONTEXT_CANCELLED", Message: "engine.RunSingleAgent: context cancelled", Severity: "fatal", Cause: err},
+			})
+		}
+		return result.NewFailure[AgentData]([]result.SAWError{
+			result.NewFatal("ENGINE_AGENT_FAILED", "engine.RunSingleAgent: RunAgent failed").WithCause(err),
+		})
+	}
+	return result.NewSuccess(AgentData{IMPLPath: opts.IMPLPath, WaveNum: waveNum, AgentLetter: agentLetter})
 }
 
 // MergeWave merges the agent branches for the given wave into the repo's main branch.
 // After successful merge, archives journals for all agents in the wave.
-func MergeWave(ctx context.Context, opts RunMergeOpts) error {
+func MergeWave(ctx context.Context, opts RunMergeOpts) result.Result[MergeData] {
 	if opts.IMPLPath == "" {
-		return fmt.Errorf("engine.MergeWave: IMPLPath is required")
+		return result.NewFailure[MergeData]([]result.SAWError{
+			result.NewFatal("ENGINE_MERGE_INVALID_OPTS", "engine.MergeWave: IMPLPath is required"),
+		})
 	}
 	orch, err := orchestrator.New(opts.RepoPath, opts.IMPLPath)
 	if err != nil {
-		return fmt.Errorf("engine.MergeWave: %w", err)
+		return result.NewFailure[MergeData]([]result.SAWError{
+			result.NewFatal("ENGINE_MERGE_FAILED", fmt.Sprintf("engine.MergeWave: %s", err.Error())).WithCause(err),
+		})
 	}
 
 	// Merge the wave
 	if err := orch.MergeWave(opts.WaveNum); err != nil {
-		return err
+		return result.NewFailure[MergeData]([]result.SAWError{
+			result.NewFatal("ENGINE_MERGE_FAILED", "engine.MergeWave: merge failed").WithCause(err),
+		})
 	}
 
 	// Archive journals for all agents in this wave (non-fatal)
+	var warnings []result.SAWError
 	doc := orch.IMPLDoc()
 	if doc != nil {
 		for _, wave := range doc.Waves {
 			if wave.Number == opts.WaveNum {
-				for _, agent := range wave.Agents {
-					agentPath := fmt.Sprintf("wave%d/agent-%s", opts.WaveNum, agent.ID)
+				for _, ag := range wave.Agents {
+					agentPath := fmt.Sprintf("wave%d/agent-%s", opts.WaveNum, ag.ID)
 					observer, obsErr := journal.NewObserver(opts.RepoPath, agentPath)
 					if obsErr == nil {
 						if archRes := observer.Archive(); archRes.IsFatal() {
 							// Log but don't fail the merge
-							loggerFrom(opts.Logger).Warn("engine: failed to archive journal for agent", "agent", agent.ID, "err", archRes.Errors[0].Message)
+							loggerFrom(opts.Logger).Warn("engine: failed to archive journal for agent", "agent", ag.ID, "err", archRes.Errors[0].Message)
+							warnings = append(warnings, result.NewWarning("ENGINE_JOURNAL_ARCHIVE_FAILED",
+								fmt.Sprintf("failed to archive journal for agent %s: %s", ag.ID, archRes.Errors[0].Message)))
 						}
 					}
 				}
@@ -895,36 +1019,66 @@ func MergeWave(ctx context.Context, opts RunMergeOpts) error {
 		}
 	}
 
-	return nil
+	data := MergeData{IMPLPath: opts.IMPLPath, WaveNum: opts.WaveNum}
+	if len(warnings) > 0 {
+		return result.NewPartial(data, warnings)
+	}
+	return result.NewSuccess(data)
 }
 
 // RunVerification runs post-merge verification (go vet + test command).
-func RunVerification(ctx context.Context, opts RunVerificationOpts) error {
+func RunVerification(ctx context.Context, opts RunVerificationOpts) result.Result[VerificationData] {
 	testCmd := opts.TestCommand
 	if testCmd == "" {
 		testCmd = "go test ./..."
 	}
 	orch, err := orchestrator.New(opts.RepoPath, "")
 	if err != nil {
-		return fmt.Errorf("engine.RunVerification: %w", err)
+		return result.NewFailure[VerificationData]([]result.SAWError{
+			result.NewFatal("ENGINE_VERIFICATION_FAILED", fmt.Sprintf("engine.RunVerification: %s", err.Error())).WithCause(err),
+		})
 	}
-	return orch.RunVerification(testCmd)
+	if err := orch.RunVerification(testCmd); err != nil {
+		if ctx.Err() != nil {
+			return result.NewFailure[VerificationData]([]result.SAWError{
+				{Code: "CONTEXT_CANCELLED", Message: "engine.RunVerification: context cancelled", Severity: "fatal", Cause: err},
+			})
+		}
+		return result.NewFailure[VerificationData]([]result.SAWError{
+			result.NewFatal("ENGINE_VERIFICATION_FAILED", "engine.RunVerification: verification failed").WithCause(err),
+		})
+	}
+	return result.NewSuccess(VerificationData{RepoPath: opts.RepoPath, TestCommand: testCmd})
 }
 
 // UpdateIMPLStatus ticks status checkboxes for completed agents.
 // Delegates to pkg/protocol.UpdateIMPLStatus.
-func UpdateIMPLStatus(implDocPath string, completedLetters []string) error {
+func UpdateIMPLStatus(implDocPath string, completedLetters []string) result.Result[UpdateData] {
 	res := protocol.UpdateIMPLStatus(implDocPath, completedLetters)
-	if res.IsFatal() && len(res.Errors) > 0 {
-		return fmt.Errorf("%s", res.Errors[0].Message)
+	if res.IsFatal() {
+		msg := "engine.UpdateIMPLStatus: update failed"
+		if len(res.Errors) > 0 {
+			msg = res.Errors[0].Message
+		}
+		return result.NewFailure[UpdateData]([]result.SAWError{
+			result.NewFatal("ENGINE_UPDATE_STATUS_FAILED", msg),
+		})
 	}
-	return nil
+	return result.NewSuccess(UpdateData{
+		IMPLDocPath:      implDocPath,
+		CompletedLetters: completedLetters,
+	})
 }
 
 // ValidateInvariants validates disjoint file ownership invariants.
 // Delegates to pkg/protocol.ValidateInvariants.
-func ValidateInvariants(manifest *protocol.IMPLManifest) error {
-	return protocol.ValidateInvariants(manifest)
+func ValidateInvariants(manifest *protocol.IMPLManifest) result.Result[ValidateData] {
+	if err := protocol.ValidateInvariants(manifest); err != nil {
+		return result.NewFailure[ValidateData]([]result.SAWError{
+			result.NewFatal("ENGINE_VALIDATE_FAILED", err.Error()).WithCause(err),
+		})
+	}
+	return result.NewSuccess(ValidateData{Valid: true})
 }
 
 // JournalIntegration provides journal lifecycle hooks for wave execution.
@@ -1277,17 +1431,21 @@ func startWaveWithGate(ctx context.Context, opts RunWaveOpts, onEvent func(Event
 				if intModel == "" {
 					intModel = opts.WaveModel
 				}
-				intAgentErr := RunIntegrationAgent(ctx, RunIntegrationAgentOpts{
+				intAgentRes2 := RunIntegrationAgent(ctx, RunIntegrationAgentOpts{
 					IMPLPath: opts.IMPLPath,
 					RepoPath: opts.RepoPath,
 					WaveNum:  waveNum,
 					Report:   integrationReport,
 					Model:    intModel,
 				}, func(ev Event) { onEvent(ev) })
-				if intAgentErr != nil {
+				if intAgentRes2.IsFatal() {
 					// Non-fatal: log but don't abort wave
+					msg2 := "integration agent failed"
+					if len(intAgentRes2.Errors) > 0 {
+						msg2 = intAgentRes2.Errors[0].Message
+					}
 					publish("integration_agent_warning", map[string]string{
-						"error": intAgentErr.Error(),
+						"error": msg2,
 					})
 				}
 			}

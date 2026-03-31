@@ -121,9 +121,14 @@ func PrepareWave(ctx context.Context, opts PrepareWaveOpts) (*PrepareWaveResult,
 	// Step: I3 wave sequencing gate — Wave N-1 must be verified before Wave N launches.
 	// Prevents Wave N from launching while Wave N-1 is still executing, blocked, or unmerged.
 	if opts.WaveNum > 1 {
-		if err := checkPreviousWaveVerified(doc, opts.WaveNum-1); err != nil {
-			recordStep(res, opts.OnEvent, "wave_sequencing", "failed", err.Error())
-			return res, fmt.Errorf("I3 wave sequencing violation: %w", err)
+		seqRes := checkPreviousWaveVerified(doc, opts.WaveNum-1)
+		if seqRes.IsFatal() {
+			msg := "wave sequencing check failed"
+			if len(seqRes.Errors) > 0 {
+				msg = seqRes.Errors[0].Message
+			}
+			recordStep(res, opts.OnEvent, "wave_sequencing", "failed", msg)
+			return res, fmt.Errorf("I3 wave sequencing violation: %s", msg)
 		}
 		recordStep(res, opts.OnEvent, "wave_sequencing", "success",
 			fmt.Sprintf("wave %d verified — launching wave %d", opts.WaveNum-1, opts.WaveNum))
@@ -508,10 +513,15 @@ func PrepareWave(ctx context.Context, opts PrepareWaveOpts) (*PrepareWaveResult,
 
 	// Step: Verify pre-commit hooks (H10)
 	for _, wtInfo := range worktreeResult.Worktrees {
-		if err := verifyHookInWorktree(wtInfo.Path); err != nil {
+		hookRes := verifyHookInWorktree(wtInfo.Path)
+		if hookRes.IsFatal() {
+			msg := "hook verification failed"
+			if len(hookRes.Errors) > 0 {
+				msg = hookRes.Errors[0].Message
+			}
 			recordStep(res, opts.OnEvent, "verify_hooks", "failed",
-				fmt.Sprintf("agent %s: %s", wtInfo.Agent, err.Error()))
-			return res, fmt.Errorf("hook verification failed for agent %s: %w", wtInfo.Agent, err)
+				fmt.Sprintf("agent %s: %s", wtInfo.Agent, msg))
+			return res, fmt.Errorf("hook verification failed for agent %s: %s", wtInfo.Agent, msg)
 		}
 	}
 	recordStep(res, opts.OnEvent, "verify_hooks", "success", "all hooks verified")
@@ -549,7 +559,7 @@ func PrepareWave(ctx context.Context, opts PrepareWaveOpts) (*PrepareWaveResult,
 // must have completion reports with status "complete" before the next wave can launch.
 // This is the execution-time gate that prevents Wave N from launching while Wave N-1
 // is still executing, has blocked agents, or has not been finalized and merged.
-func checkPreviousWaveVerified(doc *protocol.IMPLManifest, prevWaveNum int) error {
+func checkPreviousWaveVerified(doc *protocol.IMPLManifest, prevWaveNum int) result.Result[CheckData] {
 	var prevWave *protocol.Wave
 	for i := range doc.Waves {
 		if doc.Waves[i].Number == prevWaveNum {
@@ -558,22 +568,31 @@ func checkPreviousWaveVerified(doc *protocol.IMPLManifest, prevWaveNum int) erro
 		}
 	}
 	if prevWave == nil {
-		return fmt.Errorf("wave %d not found in manifest — cannot verify sequencing", prevWaveNum)
+		return result.NewFailure[CheckData]([]result.SAWError{
+			result.NewFatal("ENGINE_WAVE_SEQUENCING_FAILED",
+				fmt.Sprintf("wave %d not found in manifest — cannot verify sequencing", prevWaveNum)),
+		})
 	}
 
 	for _, agent := range prevWave.Agents {
 		report, exists := doc.CompletionReports[agent.ID]
 		if !exists {
-			return fmt.Errorf("wave %d agent %s has no completion report — wave must be merged and verified before wave %d launches",
-				prevWaveNum, agent.ID, prevWaveNum+1)
+			return result.NewFailure[CheckData]([]result.SAWError{
+				result.NewFatal("ENGINE_WAVE_SEQUENCING_FAILED",
+					fmt.Sprintf("wave %d agent %s has no completion report — wave must be merged and verified before wave %d launches",
+						prevWaveNum, agent.ID, prevWaveNum+1)),
+			})
 		}
 		if report.Status != protocol.StatusComplete {
-			return fmt.Errorf("wave %d agent %s status is %q (expected \"complete\") — wave must be fully merged and verified before wave %d launches",
-				prevWaveNum, agent.ID, report.Status, prevWaveNum+1)
+			return result.NewFailure[CheckData]([]result.SAWError{
+				result.NewFatal("ENGINE_WAVE_SEQUENCING_FAILED",
+					fmt.Sprintf("wave %d agent %s status is %q (expected \"complete\") — wave must be fully merged and verified before wave %d launches",
+						prevWaveNum, agent.ID, report.Status, prevWaveNum+1)),
+			})
 		}
 	}
 
-	return nil
+	return result.NewSuccess(CheckData{PrevWaveNum: prevWaveNum})
 }
 
 // checkDependencies wraps deps.CheckDeps to return nil report if no conflicts detected.
@@ -597,16 +616,20 @@ func checkDependencies(implPath string, wave int) (*deps.ConflictReport, error) 
 }
 
 // verifyHookInWorktree checks that a pre-commit hook exists and is executable.
-func verifyHookInWorktree(worktreePath string) error {
+func verifyHookInWorktree(worktreePath string) result.Result[VerifyHookData] {
 	absPath, err := filepath.Abs(worktreePath)
 	if err != nil {
-		return fmt.Errorf("failed to resolve worktree path: %w", err)
+		return result.NewFailure[VerifyHookData]([]result.SAWError{
+			result.NewFatal("ENGINE_HOOK_VERIFY_FAILED", "failed to resolve worktree path").WithCause(err),
+		})
 	}
 
 	gitDir := filepath.Join(absPath, ".git")
 	gitStat, err := os.Stat(gitDir)
 	if err != nil {
-		return fmt.Errorf("failed to stat .git: %w", err)
+		return result.NewFailure[VerifyHookData]([]result.SAWError{
+			result.NewFatal("ENGINE_HOOK_VERIFY_FAILED", "failed to stat .git").WithCause(err),
+		})
 	}
 
 	var hookPath string
@@ -616,11 +639,15 @@ func verifyHookInWorktree(worktreePath string) error {
 		// Worktree: .git is a file pointing to actual git dir
 		content, err := os.ReadFile(gitDir)
 		if err != nil {
-			return fmt.Errorf("failed to read .git file: %w", err)
+			return result.NewFailure[VerifyHookData]([]result.SAWError{
+				result.NewFatal("ENGINE_HOOK_VERIFY_FAILED", "failed to read .git file").WithCause(err),
+			})
 		}
 		line := strings.TrimSpace(string(content))
 		if !strings.HasPrefix(line, "gitdir: ") {
-			return fmt.Errorf("invalid .git file format: %s", line)
+			return result.NewFailure[VerifyHookData]([]result.SAWError{
+				result.NewFatal("ENGINE_HOOK_VERIFY_FAILED", fmt.Sprintf("invalid .git file format: %s", line)),
+			})
 		}
 		actualGitDir := strings.TrimPrefix(line, "gitdir: ")
 		hookPath = filepath.Join(actualGitDir, "hooks", "pre-commit")
@@ -628,27 +655,37 @@ func verifyHookInWorktree(worktreePath string) error {
 
 	stat, err := os.Stat(hookPath)
 	if os.IsNotExist(err) {
-		return fmt.Errorf("pre-commit hook does not exist at %s", hookPath)
+		return result.NewFailure[VerifyHookData]([]result.SAWError{
+			result.NewFatal("ENGINE_HOOK_VERIFY_FAILED", fmt.Sprintf("pre-commit hook does not exist at %s", hookPath)),
+		})
 	}
 	if err != nil {
-		return fmt.Errorf("failed to stat hook: %w", err)
+		return result.NewFailure[VerifyHookData]([]result.SAWError{
+			result.NewFatal("ENGINE_HOOK_VERIFY_FAILED", "failed to stat hook").WithCause(err),
+		})
 	}
 
 	if stat.Mode()&0111 == 0 {
-		return fmt.Errorf("pre-commit hook exists but is not executable")
+		return result.NewFailure[VerifyHookData]([]result.SAWError{
+			result.NewFatal("ENGINE_HOOK_VERIFY_FAILED", "pre-commit hook exists but is not executable"),
+		})
 	}
 
 	hookContent, err := os.ReadFile(hookPath)
 	if err != nil {
-		return fmt.Errorf("failed to read hook: %w", err)
+		return result.NewFailure[VerifyHookData]([]result.SAWError{
+			result.NewFatal("ENGINE_HOOK_VERIFY_FAILED", "failed to read hook").WithCause(err),
+		})
 	}
 
 	if !strings.Contains(string(hookContent), "SAW_ALLOW_MAIN_COMMIT") &&
 		!strings.Contains(string(hookContent), "SAW pre-commit guard") {
-		return fmt.Errorf("pre-commit hook missing isolation logic")
+		return result.NewFailure[VerifyHookData]([]result.SAWError{
+			result.NewFatal("ENGINE_HOOK_VERIFY_FAILED", "pre-commit hook missing isolation logic"),
+		})
 	}
 
-	return nil
+	return result.NewSuccess(VerifyHookData{WorktreePath: worktreePath})
 }
 
 // extractBriefsAndInitJournals prepares agent briefs and initializes journals

@@ -12,6 +12,7 @@ import (
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/agent"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/orchestrator"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
 )
 
 // RunIntegrationAgentOpts configures an integration agent run (E26).
@@ -36,9 +37,14 @@ type RunIntegrationAgentOpts struct {
 //
 // If Report.Valid is true (no gaps), returns immediately without launching
 // an agent.
-func RunIntegrationAgent(ctx context.Context, opts RunIntegrationAgentOpts, onEvent func(Event)) error {
+func RunIntegrationAgent(ctx context.Context, opts RunIntegrationAgentOpts, onEvent func(Event)) result.Result[IntegrationAgentData] {
 	if err := validateIntegrationOpts(opts); err != nil {
-		return err
+		return result.NewFailure[IntegrationAgentData]([]result.SAWError{{
+			Code:     "ENGINE_INTEGRATION_INVALID_OPTS",
+			Message:  err.Error(),
+			Severity: "fatal",
+			Cause:    err,
+		}})
 	}
 
 	publish := func(event string, data interface{}) {
@@ -49,7 +55,11 @@ func RunIntegrationAgent(ctx context.Context, opts RunIntegrationAgentOpts, onEv
 
 	// If no gaps, nothing to do.
 	if opts.Report.Valid {
-		return nil
+		return result.NewSuccess(IntegrationAgentData{
+			IMPLPath: opts.IMPLPath,
+			WaveNum:  opts.WaveNum,
+			GapCount: 0,
+		})
 	}
 
 	publish("integration_agent_started", map[string]interface{}{
@@ -62,7 +72,12 @@ func RunIntegrationAgent(ctx context.Context, opts RunIntegrationAgentOpts, onEv
 	manifest, err := protocol.Load(opts.IMPLPath)
 	if err != nil {
 		publish("integration_agent_failed", map[string]string{"error": err.Error()})
-		return fmt.Errorf("engine.RunIntegrationAgent: load manifest: %w", err)
+		return result.NewFailure[IntegrationAgentData]([]result.SAWError{{
+			Code:     "ENGINE_INTEGRATION_LOAD_FAILED",
+			Message:  fmt.Sprintf("engine.RunIntegrationAgent: load manifest: %v", err),
+			Severity: "fatal",
+			Cause:    err,
+		}})
 	}
 
 	// E26-P1: Verify integration_reports exist and contain gaps for this wave.
@@ -82,22 +97,35 @@ func RunIntegrationAgent(ctx context.Context, opts RunIntegrationAgentOpts, onEv
 		publish("integration_agent_failed", map[string]string{
 			"error": "no integration_connectors defined in manifest (E26-P2)",
 		})
-		return fmt.Errorf("engine.RunIntegrationAgent: no integration_connectors defined in manifest — " +
-			"add integration_connectors entries listing files the agent may edit (E26-P2)")
+		return result.NewFailure[IntegrationAgentData]([]result.SAWError{{
+			Code:     "ENGINE_INTEGRATION_NO_CONNECTORS",
+			Message:  "engine.RunIntegrationAgent: no integration_connectors defined in manifest — add integration_connectors entries listing files the agent may edit (E26-P2)",
+			Severity: "fatal",
+		}})
 	}
 
 	// Build the integration agent prompt.
 	prompt, err := buildIntegrationPrompt(opts, manifest)
 	if err != nil {
 		publish("integration_agent_failed", map[string]string{"error": err.Error()})
-		return fmt.Errorf("engine.RunIntegrationAgent: build prompt: %w", err)
+		return result.NewFailure[IntegrationAgentData]([]result.SAWError{{
+			Code:     "ENGINE_INTEGRATION_PROMPT_FAILED",
+			Message:  fmt.Sprintf("engine.RunIntegrationAgent: build prompt: %v", err),
+			Severity: "fatal",
+			Cause:    err,
+		}})
 	}
 
 	// Create backend via orchestrator.NewBackendFromModel (supports all providers).
 	b, err := orchestrator.NewBackendFromModel(opts.Model)
 	if err != nil {
 		publish("integration_agent_failed", map[string]string{"error": err.Error()})
-		return fmt.Errorf("engine.RunIntegrationAgent: backend init: %w", err)
+		return result.NewFailure[IntegrationAgentData]([]result.SAWError{{
+			Code:     "ENGINE_INTEGRATION_BACKEND_FAILED",
+			Message:  fmt.Sprintf("engine.RunIntegrationAgent: backend init: %v", err),
+			Severity: "fatal",
+			Cause:    err,
+		}})
 	}
 
 	// Build constraints for integrator role.
@@ -121,7 +149,12 @@ func RunIntegrationAgent(ctx context.Context, opts RunIntegrationAgentOpts, onEv
 
 	if _, execErr := runner.ExecuteStreamingWithTools(ctx, spec, opts.RepoPath, onChunk, nil); execErr != nil {
 		publish("integration_agent_failed", map[string]string{"error": execErr.Error()})
-		return fmt.Errorf("engine.RunIntegrationAgent: agent execution failed: %w", execErr)
+		return result.NewFailure[IntegrationAgentData]([]result.SAWError{{
+			Code:     "ENGINE_INTEGRATION_AGENT_FAILED",
+			Message:  fmt.Sprintf("engine.RunIntegrationAgent: agent execution failed: %v", execErr),
+			Severity: "fatal",
+			Cause:    execErr,
+		}})
 	}
 
 	// Auto-commit changes (same pattern as autoCommitWorktree in orchestrator.go).
@@ -137,7 +170,11 @@ func RunIntegrationAgent(ctx context.Context, opts RunIntegrationAgentOpts, onEv
 		"wave":      opts.WaveNum,
 	})
 
-	return nil
+	return result.NewSuccess(IntegrationAgentData{
+		IMPLPath: opts.IMPLPath,
+		WaveNum:  opts.WaveNum,
+		GapCount: len(opts.Report.Gaps),
+	})
 }
 
 // validateIntegrationOpts checks that required fields are present.

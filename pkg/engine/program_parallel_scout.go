@@ -14,7 +14,14 @@ import (
 // runScoutFunc is the function used to launch a single Scout agent.
 // It defaults to RunScout but can be overridden in tests.
 var runScoutFunc = func(ctx context.Context, opts RunScoutOpts, onChunk func(string)) error {
-	return RunScout(ctx, opts, onChunk)
+	res := RunScout(ctx, opts, onChunk)
+	if res.IsFatal() {
+		if len(res.Errors) > 0 {
+			return fmt.Errorf("%s", res.Errors[0].Message)
+		}
+		return fmt.Errorf("RunScout failed")
+	}
+	return nil
 }
 
 // LaunchParallelScouts launches N Scout agents in parallel for all pending

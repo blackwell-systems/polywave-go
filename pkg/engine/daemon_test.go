@@ -149,9 +149,9 @@ func TestRunDaemon_StopsOnCancel(t *testing.T) {
 		OnEvent:      col.add,
 	}
 
-	err := RunDaemon(ctx, opts)
-	if err != nil {
-		t.Fatalf("RunDaemon returned error: %v", err)
+	res := RunDaemon(ctx, opts)
+	if res.IsFatal() {
+		t.Fatalf("RunDaemon returned fatal: %v", res.Errors)
 	}
 	if !col.hasEvent("daemon_started") {
 		t.Error("expected daemon_started event")
@@ -189,8 +189,8 @@ func TestRunDaemon_EmptyQueue(t *testing.T) {
 		OnEvent:      col.add,
 	}
 
-	if err := RunDaemon(ctx, opts); err != nil {
-		t.Fatalf("RunDaemon: %v", err)
+	if daemonRes := RunDaemon(ctx, opts); daemonRes.IsFatal() {
+		t.Fatalf("RunDaemon: %v", daemonRes.Errors)
 	}
 
 	if !col.hasEvent("daemon_poll") {
@@ -246,8 +246,8 @@ func TestRunDaemon_ProcessesOneItem(t *testing.T) {
 		OnEvent:        col.add,
 	}
 
-	if err := RunDaemon(ctx, opts); err != nil {
-		t.Fatalf("RunDaemon: %v", err)
+	if daemonRes2 := RunDaemon(ctx, opts); daemonRes2.IsFatal() {
+		t.Fatalf("RunDaemon: %v", daemonRes2.Errors)
 	}
 
 	// Verify full cycle events.
@@ -321,8 +321,8 @@ func TestRunDaemon_AutoRemediatesOnFailure(t *testing.T) {
 		OnEvent:        col.add,
 	}
 
-	if err := RunDaemon(ctx, opts); err != nil {
-		t.Fatalf("RunDaemon: %v", err)
+	if daemonRes2 := RunDaemon(ctx, opts); daemonRes2.IsFatal() {
+		t.Fatalf("RunDaemon: %v", daemonRes2.Errors)
 	}
 
 	if !remediateCalled {
@@ -382,8 +382,8 @@ func TestRunDaemon_PausesForReview(t *testing.T) {
 		OnEvent:        col.add,
 	}
 
-	if err := RunDaemon(ctx, opts); err != nil {
-		t.Fatalf("RunDaemon: %v", err)
+	if daemonRes2 := RunDaemon(ctx, opts); daemonRes2.IsFatal() {
+		t.Fatalf("RunDaemon: %v", daemonRes2.Errors)
 	}
 
 	if !col.hasEvent("daemon_awaiting_review") {
@@ -437,8 +437,8 @@ func TestRunDaemon_EmitsEvents(t *testing.T) {
 		OnEvent:        col.add,
 	}
 
-	if err := RunDaemon(ctx, opts); err != nil {
-		t.Fatalf("RunDaemon: %v", err)
+	if daemonRes2 := RunDaemon(ctx, opts); daemonRes2.IsFatal() {
+		t.Fatalf("RunDaemon: %v", daemonRes2.Errors)
 	}
 
 	required := []string{
@@ -512,8 +512,8 @@ func TestRunDaemon_BlockedOnRemediationFailure(t *testing.T) {
 		OnEvent:        col.add,
 	}
 
-	if err := RunDaemon(ctx, opts); err != nil {
-		t.Fatalf("RunDaemon: %v", err)
+	if daemonRes2 := RunDaemon(ctx, opts); daemonRes2.IsFatal() {
+		t.Fatalf("RunDaemon: %v", daemonRes2.Errors)
 	}
 
 	if !col.hasEvent("daemon_blocked") {

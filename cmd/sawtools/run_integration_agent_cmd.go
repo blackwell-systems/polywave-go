@@ -90,7 +90,7 @@ Output:
 			// Launch integration agent
 			fmt.Fprintf(os.Stderr, "Launching integration agent to fix %d gap(s)...\n", len(existingReport.Gaps))
 
-			err = engine.RunIntegrationAgent(context.Background(), engine.RunIntegrationAgentOpts{
+			intAgentRes := engine.RunIntegrationAgent(context.Background(), engine.RunIntegrationAgentOpts{
 				IMPLPath: manifestPath,
 				RepoPath: repoDir,
 				WaveNum:  waveNum,
@@ -106,16 +106,20 @@ Output:
 				}
 			})
 
-			if err != nil {
+			if intAgentRes.IsFatal() {
+				errMsg := "integration agent failed"
+				if len(intAgentRes.Errors) > 0 {
+					errMsg = intAgentRes.Errors[0].Message
+				}
 				result := map[string]interface{}{
 					"success":        false,
 					"gap_count":      len(existingReport.Gaps),
 					"agent_launched": true,
-					"error":          err.Error(),
+					"error":          errMsg,
 				}
 				out, _ := json.MarshalIndent(result, "", "  ")
 				fmt.Fprintln(cmd.OutOrStdout(), string(out))
-				return fmt.Errorf("run-integration-agent: %w", err)
+				return fmt.Errorf("run-integration-agent: %s", errMsg)
 			}
 
 			// Verify build

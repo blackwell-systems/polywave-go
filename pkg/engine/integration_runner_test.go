@@ -23,15 +23,20 @@ func TestRunIntegrationAgent_NoGaps(t *testing.T) {
 		events = append(events, e.Event)
 	}
 
-	err := RunIntegrationAgent(context.Background(), RunIntegrationAgentOpts{
+	res := RunIntegrationAgent(context.Background(), RunIntegrationAgentOpts{
 		IMPLPath: "/tmp/test-impl.yaml",
 		RepoPath: "/tmp/test-repo",
 		WaveNum:  1,
 		Report:   report,
 	}, onEvent)
 
-	if err != nil {
-		t.Fatalf("expected nil error for valid report, got: %v", err)
+	if res.IsFatal() {
+		t.Fatalf("expected success for valid report, got fatal: %v", res.Errors)
+	}
+
+	data := res.GetData()
+	if data.GapCount != 0 {
+		t.Errorf("expected 0 gaps, got %d", data.GapCount)
 	}
 
 	// No events should be emitted when there are no gaps.
@@ -66,15 +71,15 @@ func TestRunIntegrationAgent_PublishesEvents(t *testing.T) {
 
 	// This will fail because the IMPL path doesn't exist, but we verify
 	// that integration_agent_started and integration_agent_failed events fire.
-	err := RunIntegrationAgent(context.Background(), RunIntegrationAgentOpts{
+	res := RunIntegrationAgent(context.Background(), RunIntegrationAgentOpts{
 		IMPLPath: "/nonexistent/IMPL.yaml",
 		RepoPath: "/tmp/test-repo",
 		WaveNum:  1,
 		Report:   report,
 	}, onEvent)
 
-	if err == nil {
-		t.Fatal("expected error for nonexistent IMPL path, got nil")
+	if !res.IsFatal() {
+		t.Fatal("expected fatal result for nonexistent IMPL path, got success")
 	}
 
 	// Should have started event then failed event.
@@ -139,11 +144,14 @@ func TestRunIntegrationAgent_OptsValidation(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			err := RunIntegrationAgent(context.Background(), tc.opts, func(Event) {})
-			if err == nil {
-				t.Fatalf("expected error containing %q, got nil", tc.want)
+			res := RunIntegrationAgent(context.Background(), tc.opts, func(Event) {})
+			if !res.IsFatal() {
+				t.Fatalf("expected fatal result containing %q, got success", tc.want)
 			}
-			if got := err.Error(); !strings.Contains(got, tc.want) {
+			if len(res.Errors) == 0 {
+				t.Fatalf("expected errors containing %q, got empty errors", tc.want)
+			}
+			if got := res.Errors[0].Message; !strings.Contains(got, tc.want) {
 				t.Errorf("error %q does not contain %q", got, tc.want)
 			}
 		})

@@ -11,30 +11,41 @@ import (
 	bedrockbackend "github.com/blackwell-systems/scout-and-wave-go/pkg/agent/backend/bedrock"
 	openaibackend "github.com/blackwell-systems/scout-and-wave-go/pkg/agent/backend/openai"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
 )
 
 // FixBuildFailure uses an AI agent to diagnose and fix a build/test/gate failure.
 // The agent has full tool use (Read, Edit, Bash) and works in the repo directory.
 // It streams progress via OnOutput and OnToolCall callbacks.
-func FixBuildFailure(ctx context.Context, opts FixBuildOpts) error {
+func FixBuildFailure(ctx context.Context, opts FixBuildOpts) result.Result[FixBuildData] {
 	if opts.IMPLPath == "" {
-		return fmt.Errorf("engine.FixBuildFailure: IMPLPath is required")
+		return result.NewFailure[FixBuildData]([]result.SAWError{
+			result.NewFatal("ENGINE_FIX_BUILD_INVALID_OPTS", "engine.FixBuildFailure: IMPLPath is required"),
+		})
 	}
 	if opts.RepoPath == "" {
-		return fmt.Errorf("engine.FixBuildFailure: RepoPath is required")
+		return result.NewFailure[FixBuildData]([]result.SAWError{
+			result.NewFatal("ENGINE_FIX_BUILD_INVALID_OPTS", "engine.FixBuildFailure: RepoPath is required"),
+		})
 	}
 	if opts.ErrorLog == "" {
-		return fmt.Errorf("engine.FixBuildFailure: ErrorLog is required")
+		return result.NewFailure[FixBuildData]([]result.SAWError{
+			result.NewFatal("ENGINE_FIX_BUILD_INVALID_OPTS", "engine.FixBuildFailure: ErrorLog is required"),
+		})
 	}
 
 	manifest, err := protocol.Load(opts.IMPLPath)
 	if err != nil {
-		return fmt.Errorf("engine.FixBuildFailure: load manifest: %w", err)
+		return result.NewFailure[FixBuildData]([]result.SAWError{
+			result.NewFatal("ENGINE_FIX_BUILD_FAILED", "engine.FixBuildFailure: load manifest failed").WithCause(err),
+		})
 	}
 
 	b, err := selectFixBuildBackend(opts.ChatModel, opts.OnToolCall)
 	if err != nil {
-		return fmt.Errorf("engine.FixBuildFailure: select backend: %w", err)
+		return result.NewFailure[FixBuildData]([]result.SAWError{
+			result.NewFatal("ENGINE_FIX_BUILD_FAILED", "engine.FixBuildFailure: select backend failed").WithCause(err),
+		})
 	}
 
 	systemPrompt := buildFixBuildSystemPrompt()
@@ -46,10 +57,17 @@ func FixBuildFailure(ctx context.Context, opts FixBuildOpts) error {
 		}
 	}, opts.OnToolCall)
 	if err != nil {
-		return fmt.Errorf("engine.FixBuildFailure: agent execution failed: %w", err)
+		if ctx.Err() != nil {
+			return result.NewFailure[FixBuildData]([]result.SAWError{
+				{Code: "CONTEXT_CANCELLED", Message: "engine.FixBuildFailure: context cancelled", Severity: "fatal", Cause: err},
+			})
+		}
+		return result.NewFailure[FixBuildData]([]result.SAWError{
+			result.NewFatal("ENGINE_FIX_BUILD_FAILED", "engine.FixBuildFailure: agent execution failed").WithCause(err),
+		})
 	}
 
-	return nil
+	return result.NewSuccess(FixBuildData{IMPLPath: opts.IMPLPath, WaveNum: opts.WaveNum, GateType: opts.GateType})
 }
 
 func buildFixBuildSystemPrompt() string {
