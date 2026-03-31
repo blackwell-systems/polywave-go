@@ -3,19 +3,51 @@ package pipeline
 import (
 	"context"
 	"fmt"
+
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
 )
 
-// requiredKey is a helper that returns an error if key is absent from state.Values.
-func requiredKey(state *State, key string) error {
+// KeyData carries the result of a required-key lookup.
+type KeyData struct {
+	Key   string
+	Found bool
+}
+
+// requiredKey returns result.Result[KeyData] indicating whether key is present
+// and non-nil in state.Values.
+//
+// Returns:
+//   - SUCCESS: key is present and non-nil
+//   - FATAL (REQUIRED_KEY_MISSING): key is absent, state.Values is nil, or value is nil
+func requiredKey(state *State, key string) result.Result[KeyData] {
 	if state.Values == nil {
-		return fmt.Errorf("state.Values is nil; required key %q not set", key)
+		return result.NewFailure[KeyData]([]result.SAWError{
+			result.NewFatal("REQUIRED_KEY_MISSING",
+				fmt.Sprintf("state.Values is nil; required key %q not set", key)),
+		})
 	}
 	v, ok := state.Values[key]
 	if !ok {
-		return fmt.Errorf("required state key %q not set", key)
+		return result.NewFailure[KeyData]([]result.SAWError{
+			result.NewFatal("REQUIRED_KEY_MISSING",
+				fmt.Sprintf("required state key %q not set", key)),
+		})
 	}
 	if v == nil {
-		return fmt.Errorf("required state key %q is nil", key)
+		return result.NewFailure[KeyData]([]result.SAWError{
+			result.NewFatal("REQUIRED_KEY_MISSING",
+				fmt.Sprintf("required state key %q is nil", key)),
+		})
+	}
+	return result.NewSuccess(KeyData{Key: key, Found: true})
+}
+
+// requiredKeyErr is a convenience wrapper that converts requiredKey's Result
+// into a plain error for use inside StepFunc bodies (which must return error).
+func requiredKeyErr(state *State, key string) error {
+	r := requiredKey(state, key)
+	if r.IsFatal() {
+		return fmt.Errorf("%s", r.Errors[0].Message)
 	}
 	return nil
 }
@@ -28,10 +60,10 @@ func StepValidateInvariants() Step {
 		Name:          "validate_invariants",
 		ErrorStrategy: ErrorFail,
 		Func: func(ctx context.Context, state *State) error {
-			if err := requiredKey(state, "repo_path"); err != nil {
+			if err := requiredKeyErr(state, "repo_path"); err != nil {
 				return fmt.Errorf("validate_invariants: %w", err)
 			}
-			if err := requiredKey(state, "impl_path"); err != nil {
+			if err := requiredKeyErr(state, "impl_path"); err != nil {
 				return fmt.Errorf("validate_invariants: %w", err)
 			}
 			return nil
@@ -47,7 +79,7 @@ func StepCreateWorktrees() Step {
 		Name:          "create_worktrees",
 		ErrorStrategy: ErrorFail,
 		Func: func(ctx context.Context, state *State) error {
-			if err := requiredKey(state, "repo_path"); err != nil {
+			if err := requiredKeyErr(state, "repo_path"); err != nil {
 				return fmt.Errorf("create_worktrees: %w", err)
 			}
 			// Real implementation wired via registry by the engine layer.
@@ -64,7 +96,7 @@ func StepRunQualityGates() Step {
 		Name:          "run_quality_gates",
 		ErrorStrategy: ErrorFail,
 		Func: func(ctx context.Context, state *State) error {
-			if err := requiredKey(state, "repo_path"); err != nil {
+			if err := requiredKeyErr(state, "repo_path"); err != nil {
 				return fmt.Errorf("run_quality_gates: %w", err)
 			}
 			// Real implementation wired via registry by the engine layer.
@@ -82,7 +114,7 @@ func StepMergeAgents() Step {
 		Name:          "merge_agents",
 		ErrorStrategy: ErrorFail,
 		Func: func(ctx context.Context, state *State) error {
-			if err := requiredKey(state, "repo_path"); err != nil {
+			if err := requiredKeyErr(state, "repo_path"); err != nil {
 				return fmt.Errorf("merge_agents: %w", err)
 			}
 			// Real implementation wired via registry by the engine layer.
@@ -100,7 +132,7 @@ func StepVerifyBuild() Step {
 		Name:          "verify_build",
 		ErrorStrategy: ErrorFail,
 		Func: func(ctx context.Context, state *State) error {
-			if err := requiredKey(state, "repo_path"); err != nil {
+			if err := requiredKeyErr(state, "repo_path"); err != nil {
 				return fmt.Errorf("verify_build: %w", err)
 			}
 			// Real implementation wired via registry by the engine layer.
@@ -117,7 +149,7 @@ func StepCleanup() Step {
 		Name:          "cleanup",
 		ErrorStrategy: ErrorContinue,
 		Func: func(ctx context.Context, state *State) error {
-			if err := requiredKey(state, "repo_path"); err != nil {
+			if err := requiredKeyErr(state, "repo_path"); err != nil {
 				return fmt.Errorf("cleanup: %w", err)
 			}
 			// Real implementation wired via registry by the engine layer.

@@ -14,6 +14,51 @@ func stateWithKeys(pairs ...string) *State {
 	return s
 }
 
+// TestRequiredKey_Missing verifies that requiredKey returns a FATAL result
+// when the key is absent from state.Values.
+func TestRequiredKey_Missing(t *testing.T) {
+	r := requiredKey(makeState(), "missing_key")
+	if !r.IsFatal() {
+		t.Fatal("expected FATAL result for missing key")
+	}
+	if len(r.Errors) == 0 {
+		t.Fatal("expected at least one error in FATAL result")
+	}
+	if r.Errors[0].Code != "REQUIRED_KEY_MISSING" {
+		t.Errorf("expected code REQUIRED_KEY_MISSING, got %q", r.Errors[0].Code)
+	}
+}
+
+// TestRequiredKey_Present verifies that requiredKey returns a SUCCESS result
+// when the key exists and is non-nil.
+func TestRequiredKey_Present(t *testing.T) {
+	s := stateWithKeys("my_key", "some_value")
+	r := requiredKey(s, "my_key")
+	if !r.IsSuccess() {
+		t.Fatalf("expected SUCCESS result, got code=%s errors=%v", r.Code, r.Errors)
+	}
+	data := r.GetData()
+	if data.Key != "my_key" {
+		t.Errorf("expected Key=%q, got %q", "my_key", data.Key)
+	}
+	if !data.Found {
+		t.Error("expected Found=true")
+	}
+}
+
+// TestRequiredKey_NilValues verifies that requiredKey returns FATAL when
+// state.Values is nil.
+func TestRequiredKey_NilValues(t *testing.T) {
+	s := &State{} // Values is nil
+	r := requiredKey(s, "any_key")
+	if !r.IsFatal() {
+		t.Fatal("expected FATAL result when state.Values is nil")
+	}
+	if r.Errors[0].Code != "REQUIRED_KEY_MISSING" {
+		t.Errorf("expected code REQUIRED_KEY_MISSING, got %q", r.Errors[0].Code)
+	}
+}
+
 // TestStepValidateInvariants_MissingRepoPath verifies an error when repo_path is absent.
 func TestStepValidateInvariants_MissingRepoPath(t *testing.T) {
 	step := StepValidateInvariants()
@@ -123,7 +168,8 @@ func TestWavePipeline_Structure(t *testing.T) {
 func TestWavePipeline_RunOK(t *testing.T) {
 	p := WavePipeline(1)
 	s := stateWithKeys("repo_path", "/tmp/repo", "impl_path", "/tmp/impl.yaml")
-	if err := p.Run(context.Background(), s); err != nil {
-		t.Fatalf("unexpected error: %v", err)
+	r := p.Run(context.Background(), s)
+	if r.IsFatal() {
+		t.Fatalf("unexpected failure: %v", r.Errors)
 	}
 }
