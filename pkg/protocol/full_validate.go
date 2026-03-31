@@ -37,9 +37,9 @@ type FullValidateOpts struct {
 //
 // Use FullValidate in preference to calling Validate + ValidateIMPLDoc separately,
 // since it handles auto-fix, deduplication, and severity-based filtering.
-func FullValidate(manifestPath string, opts FullValidateOpts) result.Result[FullValidateData] {
+func FullValidate(ctx context.Context, manifestPath string, opts FullValidateOpts) result.Result[FullValidateData] {
 	// Step 1: Load manifest
-	m, err := Load(context.TODO(), manifestPath)
+	m, err := Load(ctx, manifestPath)
 	if err != nil {
 		return result.NewFailure[FullValidateData]([]result.SAWError{{
 			Code:     result.CodeManifestInvalid,
@@ -54,7 +54,7 @@ func FullValidate(manifestPath string, opts FullValidateOpts) result.Result[Full
 	if opts.AutoFix {
 		totalFixed += FixGateTypes(m)
 		if totalFixed > 0 {
-			if saveRes := Save(context.TODO(), m, manifestPath); saveRes.IsFatal() {
+			if saveRes := Save(ctx, m, manifestPath); saveRes.IsFatal() {
 				return result.NewFailure[FullValidateData](saveRes.Errors)
 			}
 		}
@@ -73,7 +73,7 @@ func FullValidate(manifestPath string, opts FullValidateOpts) result.Result[Full
 				}
 				totalFixed += len(stripped)
 				// Re-load manifest after stripping keys.
-				m, err = Load(context.TODO(), manifestPath)
+				m, err = Load(ctx, manifestPath)
 				if err != nil {
 					return result.NewFailure[FullValidateData]([]result.SAWError{{
 						Code:     result.CodeManifestInvalid,
