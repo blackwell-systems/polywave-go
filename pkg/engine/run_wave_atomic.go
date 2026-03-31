@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"log/slog"
 
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/observability"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
 )
@@ -16,7 +15,7 @@ type RunWaveTransactionOpts struct {
 	RepoPath    string
 	WaveNum     int
 	MergeTarget string
-	ObsEmitter  *observability.Emitter
+	ObsEmitter  ObsEmitter   // optional: non-blocking observability emitter
 	Logger      *slog.Logger // optional: nil falls back to slog.Default()
 }
 

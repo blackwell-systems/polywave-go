@@ -8,6 +8,7 @@ import (
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/observability"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/orchestrator"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
 )
 
 func init() {
@@ -29,6 +30,14 @@ func init() {
 	orchestrator.SetPrioritizeAgentsFunc(PrioritizeAgents)
 }
 
+// ObsEmitter is the observability emitter interface accepted by engine opts.
+// *observability.Emitter satisfies this interface; a nil *observability.Emitter
+// is also safe (all methods are nil-receiver-safe on the concrete type).
+type ObsEmitter interface {
+	Emit(ctx context.Context, event observability.Event)
+	EmitSync(ctx context.Context, event observability.Event) result.Result[observability.EmitData]
+}
+
 // Event is emitted during wave execution (mirrors orchestrator.OrchestratorEvent).
 type Event struct {
 	Event string      // e.g. "agent_started", "agent_complete", "run_complete"
@@ -45,8 +54,8 @@ type RunScoutOpts struct {
 	ProgramManifestPath  string                  // optional: path to PROGRAM manifest; Scout receives frozen contracts as input
 	UseStructuredOutput  bool                    // if true, invoke Scout via API backend with output_config.format
 	OutputSchemaOverride map[string]any          // optional: overrides GenerateScoutSchema(); useful in tests
-	ObsEmitter           *observability.Emitter  // optional: non-blocking observability emitter
-	Logger               *slog.Logger            // optional: nil falls back to slog.Default()
+	ObsEmitter           ObsEmitter   // optional: non-blocking observability emitter
+	Logger               *slog.Logger // optional: nil falls back to slog.Default()
 }
 
 // RunPlannerOpts configures a Planner agent run.
