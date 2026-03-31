@@ -56,7 +56,7 @@ func TestRunBaselineGates_AllPass(t *testing.T) {
 		},
 	}
 
-	res := RunBaselineGates(manifest, 1, repoDir, nil)
+	res := RunBaselineGates(context.Background(), manifest, 1, repoDir, nil)
 	if !res.IsSuccess() {
 		t.Fatalf("unexpected failure: %+v", res.Errors)
 	}
@@ -83,7 +83,7 @@ func TestRunBaselineGates_RequiredFails(t *testing.T) {
 		},
 	}
 
-	res := RunBaselineGates(manifest, 1, repoDir, nil)
+	res := RunBaselineGates(context.Background(), manifest, 1, repoDir, nil)
 	data := res.GetData()
 	if data.Passed {
 		t.Errorf("expected Passed=false, got true")
@@ -106,7 +106,7 @@ func TestRunBaselineGates_OptionalFails(t *testing.T) {
 		},
 	}
 
-	res := RunBaselineGates(manifest, 1, repoDir, nil)
+	res := RunBaselineGates(context.Background(), manifest, 1, repoDir, nil)
 	data := res.GetData()
 	if !data.Passed {
 		t.Errorf("expected Passed=true (optional failure should not block), got false")
@@ -120,7 +120,7 @@ func TestRunBaselineGates_NoGates(t *testing.T) {
 	repoDir := makeTempGitRepo(t)
 	manifest := &IMPLManifest{} // No quality_gates defined
 
-	res := RunBaselineGates(manifest, 1, repoDir, nil)
+	res := RunBaselineGates(context.Background(), manifest, 1, repoDir, nil)
 	data := res.GetData()
 	if !data.Passed {
 		t.Errorf("expected Passed=true for empty manifest, got false")
@@ -135,7 +135,7 @@ func TestRunBaselineGates_NilCache(t *testing.T) {
 	manifest := makePassingManifest()
 
 	// Must not panic with nil cache
-	res := RunBaselineGates(manifest, 1, repoDir, nil)
+	res := RunBaselineGates(context.Background(), manifest, 1, repoDir, nil)
 	if !res.IsSuccess() {
 		t.Fatalf("unexpected failure with nil cache: %+v", res.Errors)
 	}
@@ -159,7 +159,7 @@ func TestRunBaselineGates_CommitSHAPopulated(t *testing.T) {
 	}
 	cache := gatecache.New(context.Background(), stateDir, time.Minute)
 
-	res := RunBaselineGates(manifest, 1, repoDir, cache)
+	res := RunBaselineGates(context.Background(), manifest, 1, repoDir, cache)
 	if !res.IsSuccess() {
 		t.Fatalf("unexpected failure: %+v", res.Errors)
 	}
@@ -183,7 +183,7 @@ func TestRunCrossRepoBaselineGates_AllPass(t *testing.T) {
 		{Name: "repo-b", Path: dir2, BuildCommand: "echo build-b"},
 	}
 
-	res := RunCrossRepoBaselineGates(&IMPLManifest{}, 1, targetRepos, configRepos)
+	res := RunCrossRepoBaselineGates(context.Background(), &IMPLManifest{}, 1, targetRepos, configRepos)
 	data := res.GetData()
 	if !data.Passed {
 		t.Error("expected all repos to pass")
@@ -205,7 +205,7 @@ func TestRunCrossRepoBaselineGates_OneFails(t *testing.T) {
 		{Name: "repo-b", Path: dir2, BuildCommand: "exit 1"},
 	}
 
-	res := RunCrossRepoBaselineGates(&IMPLManifest{}, 1, targetRepos, configRepos)
+	res := RunCrossRepoBaselineGates(context.Background(), &IMPLManifest{}, 1, targetRepos, configRepos)
 	data := res.GetData()
 	if data.Passed {
 		t.Error("expected failure when one repo fails")
@@ -223,7 +223,7 @@ func TestRunCrossRepoBaselineGates_FallbackToManifestGates(t *testing.T) {
 		{Name: "repo-a", Path: repoDir},
 	}
 
-	res := RunCrossRepoBaselineGates(manifest, 1, targetRepos, configRepos)
+	res := RunCrossRepoBaselineGates(context.Background(), manifest, 1, targetRepos, configRepos)
 	data := res.GetData()
 	if !data.Passed {
 		t.Error("expected pass with manifest gate fallback")
@@ -237,7 +237,7 @@ func TestRunCrossRepoBaselineGates_WithTestCommand(t *testing.T) {
 		{Name: "repo-a", Path: dir, BuildCommand: "echo build", TestCommand: "echo test"},
 	}
 
-	res := RunCrossRepoBaselineGates(&IMPLManifest{}, 1, targetRepos, configRepos)
+	res := RunCrossRepoBaselineGates(context.Background(), &IMPLManifest{}, 1, targetRepos, configRepos)
 	data := res.GetData()
 	if !data.Passed {
 		t.Error("expected pass")
@@ -252,7 +252,7 @@ func TestRunCrossRepoBaselineGates_WithTestCommand(t *testing.T) {
 
 func TestRunSimpleGate_Success(t *testing.T) {
 	dir := t.TempDir()
-	gr := runSimpleGate("build", "echo hello", dir)
+	gr := runSimpleGate(context.Background(), "build", "echo hello", dir)
 	if !gr.Passed {
 		t.Error("expected gate to pass")
 	}
@@ -263,7 +263,7 @@ func TestRunSimpleGate_Success(t *testing.T) {
 
 func TestRunSimpleGate_Failure(t *testing.T) {
 	dir := t.TempDir()
-	gr := runSimpleGate("build", "exit 42", dir)
+	gr := runSimpleGate(context.Background(), "build", "exit 42", dir)
 	if gr.Passed {
 		t.Error("expected gate to fail")
 	}

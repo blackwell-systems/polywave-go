@@ -24,7 +24,7 @@ type BaselineData struct {
 // (before worktree creation) to verify the baseline is healthy.
 // If cache is non-nil, results are cached keyed by HEAD commit.
 // The waveNumber is used for docs-only wave detection (skip source gates).
-func RunBaselineGates(manifest *IMPLManifest, waveNumber int, repoDir string, cache *gatecache.Cache) result.Result[*BaselineData] {
+func RunBaselineGates(ctx context.Context, manifest *IMPLManifest, waveNumber int, repoDir string, cache *gatecache.Cache) result.Result[*BaselineData] {
 	data := &BaselineData{
 		Passed: true,
 	}
@@ -32,7 +32,7 @@ func RunBaselineGates(manifest *IMPLManifest, waveNumber int, repoDir string, ca
 	// Step 1: If cache is non-nil, get HEAD SHA for CommitSHA field.
 	// BuildKey failure is non-fatal — cache is best-effort.
 	if cache != nil {
-		if keyResult := cache.BuildKey(context.TODO(), repoDir); keyResult.IsSuccess() { //nolint:context // TODO: Agent K (Wave 2) should replace with real context when adding ctx to RunBaselineGates
+		if keyResult := cache.BuildKey(ctx, repoDir); keyResult.IsSuccess() {
 			data.CommitSHA = keyResult.GetData().HeadCommit
 		}
 	}
@@ -88,7 +88,7 @@ type CrossRepoBaselineData struct {
 // cross-repo IMPL manifest (E21B). For each repo, it uses per-repo gate
 // commands from configRepos if available, falling back to the IMPL's
 // quality_gates. Returns early on first failure for fast feedback.
-func RunCrossRepoBaselineGates(manifest *IMPLManifest, waveNumber int, targetRepos map[string]string, configRepos []RepoEntry) result.Result[*CrossRepoBaselineData] {
+func RunCrossRepoBaselineGates(ctx context.Context, manifest *IMPLManifest, waveNumber int, targetRepos map[string]string, configRepos []RepoEntry) result.Result[*CrossRepoBaselineData] {
 	// Build config lookup for per-repo commands
 	configLookup := make(map[string]RepoEntry, len(configRepos))
 	for _, r := range configRepos {
@@ -107,7 +107,7 @@ func RunCrossRepoBaselineGates(manifest *IMPLManifest, waveNumber int, targetRep
 		if entry.BuildCommand != "" || entry.TestCommand != "" {
 			repoData := &BaselineData{Passed: true}
 			if entry.BuildCommand != "" {
-				gr := runSimpleGate("build", entry.BuildCommand, repoPath)
+				gr := runSimpleGate(ctx, "build", entry.BuildCommand, repoPath)
 				repoData.GateResults = append(repoData.GateResults, gr)
 				if !gr.Passed {
 					repoData.Passed = false
@@ -115,7 +115,7 @@ func RunCrossRepoBaselineGates(manifest *IMPLManifest, waveNumber int, targetRep
 				}
 			}
 			if entry.TestCommand != "" && repoData.Passed {
-				gr := runSimpleGate("test", entry.TestCommand, repoPath)
+				gr := runSimpleGate(ctx, "test", entry.TestCommand, repoPath)
 				repoData.GateResults = append(repoData.GateResults, gr)
 				if !gr.Passed {
 					repoData.Passed = false
@@ -131,7 +131,7 @@ func RunCrossRepoBaselineGates(manifest *IMPLManifest, waveNumber int, targetRep
 		}
 
 		// Fall back to IMPL quality_gates run in this repo's directory
-		repoRes := RunBaselineGates(manifest, waveNumber, repoPath, nil)
+		repoRes := RunBaselineGates(ctx, manifest, waveNumber, repoPath, nil)
 		if repoRes.IsFatal() {
 			return result.NewFailure[*CrossRepoBaselineData]([]result.SAWError{{
 				Code:     result.CodeBaselineError,
@@ -151,13 +151,13 @@ func RunCrossRepoBaselineGates(manifest *IMPLManifest, waveNumber int, targetRep
 }
 
 // runSimpleGate executes a single shell command as a gate check.
-func runSimpleGate(gateType, command, dir string) GateResult {
+func runSimpleGate(ctx context.Context, gateType, command, dir string) GateResult {
 	gr := GateResult{
 		Type:     gateType,
 		Command:  command,
 		Required: true,
 	}
-	cmd := exec.Command("sh", "-c", command)
+	cmd := exec.CommandContext(ctx, "sh", "-c", command)
 	cmd.Dir = dir
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
