@@ -1,7 +1,6 @@
 package interview
 
 import (
-	"context"
 	"crypto/rand"
 	"fmt"
 	"os"
@@ -66,7 +65,7 @@ func (m *DeterministicManager) Start(cfg InterviewConfig) (*InterviewDoc, *Inter
 
 // Resume loads an existing interview from its YAML file and returns the current question.
 func (m *DeterministicManager) Resume(docPath string) (*InterviewDoc, *InterviewQuestion, error) {
-	doc, err := protocol.LoadYAML[InterviewDoc](context.TODO(), docPath)
+	doc, err := protocol.LoadYAML[InterviewDoc](docPath)
 	if err != nil {
 		return nil, nil, fmt.Errorf("resume interview doc: %w", err)
 	}
@@ -353,7 +352,7 @@ func (m *DeterministicManager) Save(doc *InterviewDoc, docPath string) result.Re
 		})
 	}
 
-	if err := protocol.SaveYAML(context.TODO(), docPath, doc); err != nil {
+	if err := protocol.SaveYAML(docPath, doc); err != nil {
 		return result.NewFailure[SaveDocData]([]result.SAWError{
 			result.NewFatal("INTERVIEW_SAVE_FAILED", fmt.Sprintf("save interview doc: %s", err.Error())).
 				WithContext("path", docPath).

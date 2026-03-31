@@ -1,7 +1,6 @@
 package main
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 
@@ -67,7 +66,7 @@ Exit codes:
 			manifest.Impls[implIdx].Status = status
 
 			// Write manifest back to disk
-			if err := protocol.SaveYAML(context.TODO(), manifestPath, manifest); err != nil {
+			if err := protocol.SaveYAML(manifestPath, manifest); err != nil {
 				return fmt.Errorf("update-program-impl: %w", err)
 			}
 

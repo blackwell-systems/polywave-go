@@ -190,7 +190,7 @@ func ImportImpls(_ context.Context, opts ImportImplsOpts) (protocol.ImportIMPLsD
 	if err := os.MkdirAll(filepath.Dir(opts.ProgramPath), 0755); err != nil {
 		return protocol.ImportIMPLsData{}, fmt.Errorf("import-impls: failed to create directory: %w", err)
 	}
-	if err := protocol.SaveYAML(context.TODO(), opts.ProgramPath, manifest); err != nil {
+	if err := protocol.SaveYAML(opts.ProgramPath, manifest); err != nil {
 		return protocol.ImportIMPLsData{}, fmt.Errorf("import-impls: %w", err)
 	}
 
