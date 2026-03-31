@@ -12,7 +12,7 @@ import (
 // and extracts the first gate of type "lint". If no IMPL doc is found or
 // none defines a lint gate, it falls back to saw.config.json's lint_command
 // field. Returns ("", nil) if nothing is configured (silent pass).
-func DiscoverLintGate(repoDir string) (string, error) {
+func DiscoverLintGate(ctx context.Context, repoDir string) (string, error) {
 	// Step 1: Check active IMPL docs for a lint gate.
 	implDir := IMPLDir(repoDir)
 	entries, err := os.ReadDir(implDir)
@@ -33,7 +33,7 @@ func DiscoverLintGate(repoDir string) (string, error) {
 			continue
 		}
 
-		manifest, err := Load(context.TODO(), filepath.Join(implDir, name))
+		manifest, err := Load(ctx, filepath.Join(implDir, name))
 		if err != nil {
 			// Malformed YAML is non-fatal: skip and continue.
 			continue
@@ -121,7 +121,7 @@ func discoverBuildFromConfig(repoDir string) (string, error) {
 // DiscoverBuildGate searches for an active IMPL doc under repoDir/docs/IMPL/
 // and extracts the first gate of type "build". Falls back to saw.config.json
 // build_command field. Returns ("", nil) if nothing is configured.
-func DiscoverBuildGate(repoDir string) (string, error) {
+func DiscoverBuildGate(ctx context.Context, repoDir string) (string, error) {
 	// Step 1: Check active IMPL docs for a build gate.
 	implDir := IMPLDir(repoDir)
 	entries, err := os.ReadDir(implDir)
@@ -142,7 +142,7 @@ func DiscoverBuildGate(repoDir string) (string, error) {
 			continue
 		}
 
-		manifest, err := Load(context.TODO(), filepath.Join(implDir, name))
+		manifest, err := Load(ctx, filepath.Join(implDir, name))
 		if err != nil {
 			// Malformed YAML is non-fatal: skip and continue.
 			continue
