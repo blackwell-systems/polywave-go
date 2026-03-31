@@ -1,0 +1,582 @@
+title: Observability Improvements
+feature_slug: observability-improvements
+verdict: SUITABLE
+suitability_assessment: |
+    Three self-contained, file-disjoint items that can execute in parallel.
+
+    1. File decomposition: Each item owns distinct files with no overlap.
+       Item 1 owns pkg/protocol/complexity.go + complexity_test.go.
+       Item 2 owns pkg/engine/engine.go, finalize.go, finalize_steps.go, runner.go,
+       run_wave_atomic.go, program_tier_loop.go, and pkg/observability/emitter.go.
+       Item 3 owns pkg/result/result.go + result_test.go and 8 cmd/sawtools/ files.
+       No file appears in two agents' ownership.
+
+    2. No investigation-first items. All changes are clear transformations on known code.
+
+    3. Interface discoverability: Item 2's ObsEmitter interface contract can be fully
+       specified before implementation — the concrete Emitter already has EmitSync; the
+       new interface just wraps what exists. Item 3's ToErrors signature is trivial.
+
+    4. Pre-implementation status: All three items are TODO. None are partially implemented.
+       Note on Item 3 call-site count: feature description says 9 call sites; actual grep
+       shows 10 (cleanup.go, scan_stubs.go x2, run_gates_cmd.go x2, verify_build.go,
+       create_worktrees.go, validate_integration.go, cleanup_stale_cmd.go, verify_commits.go).
+       Agent C brief accounts for all 10.
+
+    5. Parallelization value: Go build + test cycle is moderate. Three independent agents
+       each touching 2-8 files with non-trivial logic (error messages, interface introduction,
+       refactoring). Clear speedup over sequential.
+
+    Estimated times:
+    - Scout phase: ~10 min
+    - Agent execution: ~3 agents x 10 min avg, fully parallel = ~10 min
+    - Merge and verification: ~3 min
+    Total SAW time: ~23 min
+
+    Sequential baseline: ~3 x 10 min = ~30 min
+    Time savings: ~7 min (23% faster)
+
+    Recommendation: Clear speedup. Proceed.
+test_command: go test ./...
+lint_command: go vet ./...
+file_ownership:
+    - file: pkg/protocol/complexity.go
+      agent: A
+      wave: 1
+      action: modify
+    - file: pkg/protocol/complexity_test.go
+      agent: A
+      wave: 1
+      action: modify
+    - file: pkg/observability/emitter.go
+      agent: B
+      wave: 1
+      action: modify
+    - file: pkg/engine/engine.go
+      agent: B
+      wave: 1
+      action: modify
+    - file: pkg/engine/finalize.go
+      agent: B
+      wave: 1
+      action: modify
+    - file: pkg/engine/finalize_steps.go
+      agent: B
+      wave: 1
+      action: modify
+    - file: pkg/engine/runner.go
+      agent: B
+      wave: 1
+      action: modify
+    - file: pkg/engine/run_wave_atomic.go
+      agent: B
+      wave: 1
+      action: modify
+    - file: pkg/engine/program_tier_loop.go
+      agent: B
+      wave: 1
+      action: modify
+    - file: pkg/result/result.go
+      agent: C
+      wave: 1
+      action: modify
+    - file: pkg/result/result_test.go
+      agent: C
+      wave: 1
+      action: modify
+    - file: cmd/sawtools/cleanup.go
+      agent: C
+      wave: 1
+      action: modify
+    - file: cmd/sawtools/scan_stubs.go
+      agent: C
+      wave: 1
+      action: modify
+    - file: cmd/sawtools/run_gates_cmd.go
+      agent: C
+      wave: 1
+      action: modify
+    - file: cmd/sawtools/verify_build.go
+      agent: C
+      wave: 1
+      action: modify
+    - file: cmd/sawtools/create_worktrees.go
+      agent: C
+      wave: 1
+      action: modify
+    - file: cmd/sawtools/validate_integration.go
+      agent: C
+      wave: 1
+      action: modify
+    - file: cmd/sawtools/cleanup_stale_cmd.go
+      agent: C
+      wave: 1
+      action: modify
+    - file: cmd/sawtools/verify_commits.go
+      agent: C
+      wave: 1
+      action: modify
+interface_contracts:
+    - name: ObsEmitter
+      description: |-
+        New interface in pkg/engine/engine.go that exposes both fire-and-forget Emit
+        and synchronous EmitSync. The concrete *observability.Emitter already implements
+        both methods; this interface simply formalizes the contract so engine opts
+        accept the interface rather than the concrete pointer. All four opts structs
+        (RunScoutOpts, FinalizeWaveOpts, RunWaveTransactionOpts, ProgramTierLoopOpts)
+        change their ObsEmitter field from *observability.Emitter to ObsEmitter.
+      definition: |
+        // ObsEmitter is the observability emitter interface accepted by engine opts.
+        // *observability.Emitter satisfies this interface; a nil *observability.Emitter
+        // is also safe (all methods are nil-receiver-safe on the concrete type).
+        type ObsEmitter interface {
+            Emit(ctx context.Context, event observability.Event)
+            EmitSync(ctx context.Context, event observability.Event) result.Result[observability.EmitData]
+        }
+      location: pkg/engine/engine.go
+    - name: result.ToErrors
+      description: |-
+        Package-level helper in pkg/result that converts []SAWError to []error.
+        Replaces the package-private sawErrsToErrors helper in cmd/sawtools/cleanup.go.
+        After this change, all cmd/sawtools/ callers use result.ToErrors(...) instead of
+        the local function. The local sawErrsToErrors function in cleanup.go is deleted.
+      definition: |
+        // ToErrors converts a slice of SAWError to a slice of error so callers can
+        // pass the result to errors.Join or range over standard error values.
+        func ToErrors(errs []SAWError) []error {
+            out := make([]error, len(errs))
+            for i, e := range errs {
+                out[i] = e
+            }
+            return out
+        }
+      location: pkg/result/result.go
+waves:
+    - number: 1
+      agents:
+        - id: A
+          task: |
+            ## Item 1 — LOC budget error message UX
+
+            ### What to implement
+
+            In `pkg/protocol/complexity.go`, update `CheckAgentLOCBudget` to include a
+            per-file breakdown in the error message when an agent exceeds the LOC budget.
+
+            **Current behavior (lines 119-124 of complexity.go):**
+            ```go
+            errs = append(errs, result.SAWError{
+                Code:     codeAgentLOCBudget,
+                Message:  fmt.Sprintf("agent %s owns %d lines across %d files (limit: %d) — split the agent or reduce scope", agentID, loc, fileCount[agentID], maxLOC),
+                Severity: "error",
+                Field:    "file_ownership",
+            })
+            ```
+
+            **Required behavior:** The message must list each file with its individual line
+            count. Example output format:
+            ```
+            agent A owns 3200 lines across 3 files (limit: 2000) — split the agent or reduce scope
+              pkg/engine/runner.go: 1537 lines
+              pkg/engine/finalize.go: 742 lines
+              pkg/engine/finalize_steps.go: 588 lines
+            ```
+
+            ### Implementation plan
+
+            1. Change the data collection loop (currently lines 98-116) to also record
+               per-file line counts. Introduce a new map `perFileLOC map[string][]struct{ file string; lines int }`
+               keyed by agent ID. Inside the scanner loop, append to this map after counting:
+               ```go
+               perFileLOC[fo.Agent] = append(perFileLOC[fo.Agent], struct{ file string; lines int }{fo.File, lines})
+               ```
+
+            2. When building the error message for an agent over budget, sort the per-file
+               entries by line count descending (largest file first), then format each entry
+               as `"  <file>: <N> lines"` appended with `\n`. Use a `strings.Builder` to
+               assemble the full message.
+
+            3. The import for `"sort"` and `"strings"` — check if they are already imported
+               in complexity.go. `strings` is already imported (line 8). `sort` is not yet
+               imported; add it.
+
+            4. The existing `fileCount[fo.Agent]++` accumulator is still used for the summary
+               line — keep it. The new `perFileLOC` map is additive.
+
+            ### Changes to complexity_test.go
+
+            In `TestCheckAgentLOCBudget`, find the existing test case
+            "agent with two files totalling over 2000 lines — one error" (starting at line 220).
+            After the existing assertions on `got[0].Code` and `got[0].Severity`, add:
+            ```go
+            if !strings.Contains(got[0].Message, "foo.go") {
+                t.Errorf("expected foo.go in message, got: %s", got[0].Message)
+            }
+            if !strings.Contains(got[0].Message, "1200") {
+                t.Errorf("expected 1200 in message, got: %s", got[0].Message)
+            }
+            if !strings.Contains(got[0].Message, "bar.go") {
+                t.Errorf("expected bar.go in message, got: %s", got[0].Message)
+            }
+            if !strings.Contains(got[0].Message, "900") {
+                t.Errorf("expected 900 in message, got: %s", got[0].Message)
+            }
+            ```
+
+            Add `"strings"` to the imports in complexity_test.go if not already present
+            (it is already imported at line 6).
+
+            Also add a new sub-test for a single-file agent over budget that verifies the
+            file name and line count appear in the message.
+
+            ### Verification gate
+            ```
+            go build ./pkg/protocol/...
+            go vet ./pkg/protocol/...
+            go test ./pkg/protocol/... -run TestCheckAgentLOCBudget -v
+            ```
+          files:
+            - pkg/protocol/complexity.go
+            - pkg/protocol/complexity_test.go
+        - id: B
+          task: |
+            ## Item 2 — EmitSync adoption in pkg/engine
+
+            ### Context
+
+            Currently all engine opts structs hold a concrete `*observability.Emitter`
+            field named `ObsEmitter`. The concrete type already implements both `Emit`
+            (async, fire-and-forget) and `EmitSync` (synchronous, returns
+            result.Result[EmitData]). There is no interface — callers use the concrete
+            pointer directly.
+
+            The goal is to:
+            1. Define an `ObsEmitter` interface in `pkg/engine/engine.go`.
+            2. Change all four opts structs to accept `ObsEmitter` (interface) instead of
+               `*observability.Emitter` (concrete pointer).
+            3. Migrate the 3 highest-signal Emit call sites to EmitSync with slog.Warn.
+            4. Leave all other Emit call sites unchanged.
+
+            ### Step 1 — Define ObsEmitter interface in engine.go
+
+            Add the following to `pkg/engine/engine.go` after the existing imports block,
+            before the `Event` type declaration:
+
+            ```go
+            // ObsEmitter is the observability emitter interface accepted by engine opts.
+            // *observability.Emitter satisfies this interface; a nil *observability.Emitter
+            // is also safe (all methods are nil-receiver-safe on the concrete type).
+            type ObsEmitter interface {
+                Emit(ctx context.Context, event observability.Event)
+                EmitSync(ctx context.Context, event observability.Event) result.Result[observability.EmitData]
+            }
+            ```
+
+            The import for `observability` is already present in engine.go at line 8.
+            Add the import for `pkg/result`:
+            ```go
+            "github.com/blackwell-systems/scout-and-wave-go/pkg/result"
+            ```
+
+            ### Step 2 — Update all four opts structs
+
+            **In pkg/engine/engine.go**, change `RunScoutOpts.ObsEmitter` field type from
+            `*observability.Emitter` to `ObsEmitter`.
+
+            **In pkg/engine/finalize.go**, change two opts struct fields:
+            - `FinalizeWaveOpts.ObsEmitter` (line ~27): from `*observability.Emitter` to `ObsEmitter`
+            - `MarkIMPLCompleteOpts.ObsEmitter` (line ~648): from `*observability.Emitter` to `ObsEmitter`
+
+            **In pkg/engine/run_wave_atomic.go** (line 19), change
+            `RunWaveTransactionOpts.ObsEmitter` from `*observability.Emitter` to `ObsEmitter`.
+
+            **In pkg/engine/program_tier_loop.go** (line 20), change
+            `TierLoopOpts.ObsEmitter` from `*observability.Emitter` to `ObsEmitter`.
+
+            These are one-line field type swaps. The concrete `*observability.Emitter`
+            satisfies the new interface structurally, so all existing callers that pass a
+            `*observability.Emitter` will continue to compile without change.
+
+            ### Step 3 — Migrate 3 highest-signal call sites to EmitSync
+
+            **Site 1 — impl_complete** in `pkg/engine/finalize.go` (approximately line 692):
+            ```go
+            // Before:
+            opts.ObsEmitter.Emit(ctx, observability.NewImplCompleteEvent(implSlug))
+
+            // After:
+            if r := opts.ObsEmitter.EmitSync(ctx, observability.NewImplCompleteEvent(implSlug)); !r.IsSuccess() {
+                loggerFrom(opts.Logger).Warn("engine: impl_complete emit failed", "slug", implSlug, "err", r.Errors)
+            }
+            ```
+
+            **Site 2 — scout_launch** in `pkg/engine/runner.go` (approximately line 67):
+            ```go
+            // Before:
+            opts.ObsEmitter.Emit(ctx, observability.NewScoutLaunchEvent(implSlug))
+
+            // After:
+            if r := opts.ObsEmitter.EmitSync(ctx, observability.NewScoutLaunchEvent(implSlug)); !r.IsSuccess() {
+                loggerFrom(opts.Logger).Warn("engine: scout_launch emit failed", "slug", implSlug, "err", r.Errors)
+            }
+            ```
+
+            **Site 3 — wave_merge** in `pkg/engine/finalize_steps.go` (approximately line 238):
+            ```go
+            // Before:
+            opts.ObsEmitter.Emit(ctx, observability.NewWaveMergeEvent("", opts.WaveNum))
+
+            // After:
+            if r := opts.ObsEmitter.EmitSync(ctx, observability.NewWaveMergeEvent("", opts.WaveNum)); !r.IsSuccess() {
+                loggerFrom(opts.Logger).Warn("engine: wave_merge emit failed", "wave", opts.WaveNum, "err", r.Errors)
+            }
+            ```
+
+            All other Emit calls in the package remain as fire-and-forget. Do not change them.
+
+            ### Step 4 — Add comment to emitter.go
+
+            In `pkg/observability/emitter.go`, add a one-line doc comment near the top of the
+            `Emitter` struct declaration noting that the concrete type satisfies the
+            `engine.ObsEmitter` interface:
+            ```go
+            // *Emitter satisfies pkg/engine.ObsEmitter (defined there to avoid circular imports).
+            ```
+
+            ### LOC budget note
+
+            Your 7 owned action=modify files total ~3,900 lines, exceeding the 800-line
+            V048 advisory budget. This is expected — the actual diff is ~30 lines of changes
+            spread across large files. The files cannot be split because the interface change
+            must be consistent across the entire `package engine` in one commit.
+
+            ### Verification gate
+            ```
+            go build ./pkg/engine/... ./pkg/observability/...
+            go vet ./pkg/engine/... ./pkg/observability/...
+            go test ./pkg/engine/... -v
+            ```
+          files:
+            - pkg/observability/emitter.go
+            - pkg/engine/engine.go
+            - pkg/engine/finalize.go
+            - pkg/engine/finalize_steps.go
+            - pkg/engine/runner.go
+            - pkg/engine/run_wave_atomic.go
+            - pkg/engine/program_tier_loop.go
+        - id: C
+          task: |
+            ## Item 3 — Move sawErrsToErrors to pkg/result as ToErrors
+
+            ### What to implement
+
+            Move the `sawErrsToErrors` helper from `cmd/sawtools/cleanup.go` to
+            `pkg/result/result.go` as the exported function `ToErrors`, update all 10
+            call sites in `cmd/sawtools/` to use `result.ToErrors(...)`, and delete the
+            original private function.
+
+            ### Step 1 — Add ToErrors to pkg/result/result.go
+
+            Append the following function to `pkg/result/result.go` after the `UnmarshalJSON`
+            method (the last function in the file, currently ending at line 157):
+
+            ```go
+            // ToErrors converts a slice of SAWError to a slice of error so callers can
+            // pass the result to errors.Join or range over standard error values.
+            func ToErrors(errs []SAWError) []error {
+                out := make([]error, len(errs))
+                for i, e := range errs {
+                    out[i] = e
+                }
+                return out
+            }
+            ```
+
+            No new imports needed in result.go.
+
+            ### Step 2 — Add test to pkg/result/result_test.go
+
+            Add a `TestToErrors` function:
+
+            ```go
+            func TestToErrors(t *testing.T) {
+                t.Run("nil input returns empty slice", func(t *testing.T) {
+                    got := ToErrors(nil)
+                    if len(got) != 0 {
+                        t.Errorf("expected empty, got %v", got)
+                    }
+                })
+                t.Run("single error round-trips", func(t *testing.T) {
+                    errs := []SAWError{{Code: "X", Message: "msg", Severity: "error"}}
+                    got := ToErrors(errs)
+                    if len(got) != 1 {
+                        t.Fatalf("expected 1, got %d", len(got))
+                    }
+                    want := "[error] X: msg"
+                    if got[0].Error() != want {
+                        t.Errorf("got %q, want %q", got[0].Error(), want)
+                    }
+                })
+                t.Run("compatible with errors.Join", func(t *testing.T) {
+                    errs := []SAWError{
+                        {Code: "A", Message: "first", Severity: "error"},
+                        {Code: "B", Message: "second", Severity: "error"},
+                    }
+                    joined := errors.Join(ToErrors(errs)...)
+                    if joined == nil {
+                        t.Error("expected non-nil joined error")
+                    }
+                })
+            }
+            ```
+
+            Ensure `"errors"` is imported in result_test.go. Check the existing imports at
+            the top of the file — add it if absent.
+
+            ### Step 3 — Update all 10 call sites in cmd/sawtools/
+
+            For each file listed below, replace `sawErrsToErrors(...)` with
+            `result.ToErrors(...)`. The call pattern is always:
+            ```go
+            errors.Join(sawErrsToErrors(res.Errors)...)
+            ```
+            which becomes:
+            ```go
+            errors.Join(result.ToErrors(res.Errors)...)
+            ```
+
+            Files and call counts (verify exact line numbers by reading the file before editing):
+            - `cmd/sawtools/cleanup.go` — 1 call (line ~41)
+            - `cmd/sawtools/scan_stubs.go` — 2 calls (lines ~23 and ~29)
+            - `cmd/sawtools/run_gates_cmd.go` — 2 calls (lines ~33 and ~41)
+            - `cmd/sawtools/verify_build.go` — 1 call (line ~21)
+            - `cmd/sawtools/create_worktrees.go` — 1 call (line ~23)
+            - `cmd/sawtools/validate_integration.go` — 1 call (line ~60)
+            - `cmd/sawtools/cleanup_stale_cmd.go` — 1 call (line ~76)
+            - `cmd/sawtools/verify_commits.go` — 1 call (line ~23)
+
+            Total: 10 calls across 8 files.
+
+            Most of these files do NOT yet import `"github.com/blackwell-systems/scout-and-wave-go/pkg/result"` —
+            only `cleanup.go` already has it. Add the import to every other file before editing.
+
+            ### Step 4 — Delete sawErrsToErrors from cleanup.go
+
+            In `cmd/sawtools/cleanup.go`, delete the entire `sawErrsToErrors` function
+            (lines 13-21, the comment and function body):
+            ```go
+            // sawErrsToErrors converts []result.SAWError to []error so callers can
+            // pass the slice to errors.Join, which requires the []error interface type.
+            func sawErrsToErrors(errs []result.SAWError) []error {
+                out := make([]error, len(errs))
+                for i, e := range errs {
+                    out[i] = e
+                }
+                return out
+            }
+            ```
+
+            After deletion, check whether `"errors"` is still used in cleanup.go (it is,
+            at the `errors.Join(result.ToErrors(...))` call on line ~41) — keep the import.
+
+            ### Verification gate
+            ```
+            go build ./pkg/result/... ./cmd/sawtools/...
+            go vet ./pkg/result/... ./cmd/sawtools/...
+            go test ./pkg/result/... -run TestToErrors -v
+            go test ./cmd/sawtools/... -v
+            ```
+          files:
+            - pkg/result/result.go
+            - pkg/result/result_test.go
+            - cmd/sawtools/cleanup.go
+            - cmd/sawtools/scan_stubs.go
+            - cmd/sawtools/run_gates_cmd.go
+            - cmd/sawtools/verify_build.go
+            - cmd/sawtools/create_worktrees.go
+            - cmd/sawtools/validate_integration.go
+            - cmd/sawtools/cleanup_stale_cmd.go
+            - cmd/sawtools/verify_commits.go
+quality_gates:
+    level: standard
+    gates:
+        - type: build
+          command: go build ./...
+          required: true
+        - type: lint
+          command: go vet ./...
+          required: true
+        - type: test
+          command: go test ./...
+          required: true
+pre_mortem:
+    overall_risk: low
+    rows:
+        - scenario: |-
+            Agent B correctly updates the four opts structs but an external caller
+            (e.g., in pkg/orchestrator or cmd/sawtools) passes a *observability.Emitter
+            literal to an opts struct field typed as ObsEmitter — this should still
+            compile since the concrete type satisfies the interface, but if a caller
+            assigned nil explicitly as (*observability.Emitter)(nil) the interface will
+            be non-nil, causing a subtle nil-check difference.
+          likelihood: low
+          impact: low
+          mitigation: |-
+            The concrete *Emitter methods are nil-receiver-safe (they check e == nil
+            as the first line). A nil interface value also short-circuits correctly
+            in the existing Emit/EmitSync implementations. The behavior is unchanged.
+            Post-merge go test ./... will surface any nil-dereference panics.
+        - scenario: |-
+            Agent C updates call sites but misses one of the 10 occurrences, leaving
+            a reference to the deleted sawErrsToErrors function and causing a compile error.
+          likelihood: low
+          impact: medium
+          mitigation: |-
+            The task brief lists all 10 call sites with file names and approximate line
+            numbers. After deleting sawErrsToErrors, go build ./cmd/sawtools/... will
+            immediately surface any missed reference as "undefined: sawErrsToErrors".
+        - scenario: |-
+            Agent B's new ObsEmitter interface definition introduces a circular import
+            because it references both observability.Event and result.Result[observability.EmitData],
+            and pkg/engine already transitively imports these packages.
+          likelihood: low
+          impact: medium
+          mitigation: |-
+            pkg/engine already directly imports both pkg/observability (line 8 of engine.go)
+            and pkg/result (used in finalize.go). Adding result to engine.go's imports is
+            not a new dependency edge. No circular import risk.
+        - scenario: |-
+            Agent A's multi-line error message format causes the existing test assertion
+            that checks for the full message string to fail.
+          likelihood: low
+          impact: low
+          mitigation: |-
+            The existing test in complexity_test.go (lines 234-239) only checks
+            got[0].Code and got[0].Severity — it does not assert on the full Message
+            string. Agent A's new assertions use strings.Contains which is additive.
+            Existing assertions continue to pass.
+known_issues:
+    - title: Agent B LOC budget exceedance is expected
+      description: |
+        Agent B owns 7 action=modify files totalling ~3,900 lines, exceeding the
+        800-line V048 advisory budget. However, the actual diff is ~30 lines: one-line
+        type swaps in 4 opts structs, 3 EmitSync call site migrations, and a comment.
+        The files cannot be split because the ObsEmitter interface change must be
+        consistent across the entire package engine in one commit.
+critic_report:
+    verdict: PASS
+    agent_reviews:
+        A:
+            agent_id: A
+            verdict: PASS
+        B:
+            agent_id: B
+            verdict: PASS
+        C:
+            agent_id: C
+            verdict: PASS
+    summary: All three agent briefs are accurate against the codebase. Agent A's references to CheckAgentLOCBudget, fileCount accumulator locations, line numbers in complexity.go, and test structure in complexity_test.go are all verified correct. Agent B's four opts struct field names (RunScoutOpts, FinalizeWaveOpts, MarkIMPLCompleteOpts, RunWaveTransactionOpts, TierLoopOpts) and the three Emit call site locations are all accurate; notably, the brief correctly uses TierLoopOpts (not ProgramTierLoopOpts) for program_tier_loop.go. Agent C's ToErrors function signature, the sawErrsToErrors deletion target, all 10 call site locations and counts, and the import status (only cleanup.go already imports pkg/result) are all verified accurate. The two errors flagged in the prior critic_report were misreadings of the brief text and are not actual errors.
+    reviewed_at: "2026-03-31T02:46:04Z"
+    issue_count: 0
+state: SCOUT_PENDING
+injection_method: hook

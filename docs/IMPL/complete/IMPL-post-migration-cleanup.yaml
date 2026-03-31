@@ -1,3 +1,4 @@
+completion_date: "2026-03-30"
 title: Post-Migration Cleanup
 feature_slug: post-migration-cleanup
 verdict: SUITABLE
@@ -519,6 +520,7 @@ waves:
             - cmd/sawtools/run_gates_cmd.go
             - cmd/sawtools/create_worktrees.go
             - cmd/sawtools/validate_integration.go
+      base_commit: 59fdae2a71d5ad897cbb7dfb2d66b892ecba2d60
 quality_gates:
     level: standard
     gates:
@@ -531,6 +533,53 @@ quality_gates:
         - type: test
           command: go test ./...
           required: true
+completion_reports:
+    A:
+        status: complete
+        branch: saw/post-migration-cleanup/wave1-agent-A
+        commit: dcb9961
+        files_changed:
+            - pkg/protocol/merge_agents.go
+            - cmd/sawtools/merge_agents.go
+            - pkg/engine/finalize.go
+            - pkg/engine/finalize_steps.go
+            - pkg/protocol/program_tier_finalize.go
+            - cmd/sawtools/finalize_wave_test.go
+            - pkg/protocol/program_tier_finalize_test.go
+        verification: PASS
+        notes: 'Removed MergeAgentsData.Success shim from struct, all 5 assignment sites, and 2 redundant guard checks in finalize.go and finalize_steps.go. Two test files outside ownership list required mechanical updates (Success field removed from struct literals): cmd/sawtools/finalize_wave_test.go and pkg/protocol/program_tier_finalize_test.go. Step 6 (%v->%w) skipped: brief text was truncated and fix is inapplicable as-is (res.Errors is []SAWError not error interface).'
+    B:
+        status: complete
+        branch: saw/post-migration-cleanup/wave1-agent-B
+        commit: 8922bb5
+        files_changed:
+            - pkg/protocol/full_validate.go
+        verification: PASS
+        notes: Uncommented CheckAgentLOCBudget call in FullValidate. Deleted TODO comment. build/vet/test all pass (21s).
+    C:
+        status: complete
+        branch: saw/post-migration-cleanup/wave1-agent-C
+        commit: 7e3a367
+        files_changed:
+            - cmd/sawtools/finalize_wave_obs.go
+            - cmd/sawtools/prepare_wave_obs.go
+        verification: PASS
+        notes: Migrated emitWaveMerge (finalize_wave_obs.go) and emitWaveStart (prepare_wave_obs.go) from Emit to EmitSync. Added log/slog import to both files. IsFatal error logging inline. Low-signal functions (emitWaveFailed, emitGateResult) left unchanged as specified. All function signatures preserved.
+    D:
+        status: complete
+        branch: saw/post-migration-cleanup/wave1-agent-D
+        commit: 5739ba2
+        files_changed:
+            - cmd/sawtools/cleanup.go
+            - cmd/sawtools/cleanup_stale_cmd.go
+            - cmd/sawtools/create_worktrees.go
+            - cmd/sawtools/run_gates_cmd.go
+            - cmd/sawtools/scan_stubs.go
+            - cmd/sawtools/validate_integration.go
+            - cmd/sawtools/verify_build.go
+            - cmd/sawtools/verify_commits.go
+        verification: PASS
+        notes: 9 error sites across 8 files updated. errors.Join requires []error but res.Errors is []result.SAWError — added sawErrsToErrors helper in cleanup.go (package main, shared across all cmd/sawtools files). All sites use errors.Join(sawErrsToErrors(res.Errors)...). interview_cmd.go and merge_agents.go untouched per constraints.
 pre_mortem:
     overall_risk: low
     rows:
@@ -601,5 +650,5 @@ critic_report:
     summary: 'All 16 files in the ownership table exist on disk. The rewritten Agent C brief resolves the previous side_effect_completeness warning. Agent C now keeps both emitWaveMerge and emitWaveStart as void functions, uses EmitSync internally, and handles errors with inline slog.Warn — no caller files need to change and no out-of-scope files are touched. All symbols referenced in the brief are accurate: EmitSync exists on *Emitter with the correct signature, IsFatal() exists on Result[T], and SAWError.Message is a valid field. Agents A, B, and D are unchanged and remain accurate: MergeAgentsData.Success field and callers are confirmed, CheckAgentLOCBudget signature matches the interface contract, and all 9 fmt.Errorf %v targets exist at the described lines. Zero errors and zero warnings.'
     reviewed_at: "2026-03-31T01:47:27Z"
     issue_count: 0
-state: "REVIEWED"
+state: COMPLETE
 injection_method: hook
