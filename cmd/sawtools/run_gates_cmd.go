@@ -7,6 +7,7 @@ import (
 
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/gatecache"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
 	"github.com/spf13/cobra"
 )
 
@@ -30,7 +31,7 @@ func newRunGatesCmd() *cobra.Command {
 			if noCache {
 				res := protocol.RunGatesWithCache(m, waveNum, repoDir, nil, nil)
 				if !res.IsSuccess() {
-					return fmt.Errorf("run-gates: %w", errors.Join(sawErrsToErrors(res.Errors)...))
+					return fmt.Errorf("run-gates: %w", errors.Join(result.ToErrors(res.Errors)...))
 				}
 				results = res.GetData().Gates
 			} else {
@@ -38,7 +39,7 @@ func newRunGatesCmd() *cobra.Command {
 				cache := gatecache.New(stateDir, gatecache.DefaultTTL)
 				res := protocol.RunGatesWithCache(m, waveNum, repoDir, cache, nil)
 				if !res.IsSuccess() {
-					return fmt.Errorf("run-gates: %w", errors.Join(sawErrsToErrors(res.Errors)...))
+					return fmt.Errorf("run-gates: %w", errors.Join(result.ToErrors(res.Errors)...))
 				}
 				results = res.GetData().Gates
 			}

@@ -6,6 +6,7 @@ import (
 	"fmt"
 
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
 	"github.com/spf13/cobra"
 )
 
@@ -73,7 +74,7 @@ Use --force to skip safety checks for uncommitted changes.`,
 
 			cleanRes := protocol.CleanStaleWorktrees(stale, force)
 			if cleanRes.IsFatal() {
-				return fmt.Errorf("clean stale worktrees: %w", errors.Join(sawErrsToErrors(cleanRes.Errors)...))
+				return fmt.Errorf("clean stale worktrees: %w", errors.Join(result.ToErrors(cleanRes.Errors)...))
 			}
 			cleanData := cleanRes.GetData()
 

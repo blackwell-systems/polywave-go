@@ -661,6 +661,37 @@ func searchString(s, substr string) bool {
 	return false
 }
 
+// TestToErrors verifies the ToErrors helper converts []SAWError to []error.
+func TestToErrors(t *testing.T) {
+	t.Run("nil input returns empty slice", func(t *testing.T) {
+		got := ToErrors(nil)
+		if len(got) != 0 {
+			t.Errorf("expected empty, got %v", got)
+		}
+	})
+	t.Run("single error round-trips", func(t *testing.T) {
+		errs := []SAWError{{Code: "X", Message: "msg", Severity: "error"}}
+		got := ToErrors(errs)
+		if len(got) != 1 {
+			t.Fatalf("expected 1, got %d", len(got))
+		}
+		want := "[error] X: msg"
+		if got[0].Error() != want {
+			t.Errorf("got %q, want %q", got[0].Error(), want)
+		}
+	})
+	t.Run("compatible with errors.Join", func(t *testing.T) {
+		errs := []SAWError{
+			{Code: "A", Message: "first", Severity: "error"},
+			{Code: "B", Message: "second", Severity: "error"},
+		}
+		joined := errors.Join(ToErrors(errs)...)
+		if joined == nil {
+			t.Error("expected non-nil joined error")
+		}
+	})
+}
+
 // ptr is a helper function to create a pointer to a value.
 func ptr[T any](v T) *T {
 	return &v

@@ -6,6 +6,7 @@ import (
 	"fmt"
 
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
 	"github.com/spf13/cobra"
 )
 
@@ -20,13 +21,13 @@ func newScanStubsCmd() *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			res := protocol.ScanStubs(args)
 			if !res.IsSuccess() {
-				return fmt.Errorf("scan-stubs: %w", errors.Join(sawErrsToErrors(res.Errors)...))
+				return fmt.Errorf("scan-stubs: %w", errors.Join(result.ToErrors(res.Errors)...))
 			}
 
 			if appendImpl != "" {
 				waveKey := fmt.Sprintf("wave%d", waveNum)
 				if appendRes := protocol.AppendStubReport(appendImpl, waveKey, res); appendRes.IsFatal() {
-					return fmt.Errorf("scan-stubs: %w", errors.Join(sawErrsToErrors(appendRes.Errors)...))
+					return fmt.Errorf("scan-stubs: %w", errors.Join(result.ToErrors(appendRes.Errors)...))
 				}
 			}
 

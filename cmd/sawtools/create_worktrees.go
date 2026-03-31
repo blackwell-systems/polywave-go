@@ -6,6 +6,7 @@ import (
 	"fmt"
 
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
 	"github.com/spf13/cobra"
 )
 
@@ -20,7 +21,7 @@ func newCreateWorktreesCmd() *cobra.Command {
 			manifestPath := args[0]
 			res := protocol.CreateWorktrees(manifestPath, waveNum, repoDir, nil)
 			if !res.IsSuccess() {
-				return fmt.Errorf("create-worktrees: %w", errors.Join(sawErrsToErrors(res.Errors)...))
+				return fmt.Errorf("create-worktrees: %w", errors.Join(result.ToErrors(res.Errors)...))
 			}
 			result := res.GetData()
 			out, _ := json.MarshalIndent(result, "", "  ")

@@ -155,3 +155,13 @@ func (r *Result[T]) UnmarshalJSON(data []byte) error {
 	type Alias Result[T]
 	return json.Unmarshal(data, (*Alias)(r))
 }
+
+// ToErrors converts a slice of SAWError to a slice of error so callers can
+// pass the result to errors.Join or range over standard error values.
+func ToErrors(errs []SAWError) []error {
+	out := make([]error, len(errs))
+	for i, e := range errs {
+		out[i] = e
+	}
+	return out
+}
