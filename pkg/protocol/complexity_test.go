@@ -1,6 +1,9 @@
 package protocol
 
 import (
+	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -176,4 +179,92 @@ func TestCheckAgentComplexity(t *testing.T) {
 			}
 		})
 	}
+}
+
+// writeLines writes a file with n lines (each line is "x\n").
+func writeLines(t *testing.T, path string, n int) {
+	t.Helper()
+	content := strings.Repeat("x\n", n)
+	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
+		t.Fatalf("writeLines: %v", err)
+	}
+}
+
+func TestCheckAgentLOCBudget(t *testing.T) {
+	t.Run("repoPath empty returns nil (offline mode)", func(t *testing.T) {
+		m := &IMPLManifest{
+			FileOwnership: []FileOwnership{
+				{File: "pkg/foo.go", Agent: "A", Wave: 1, Action: "modify"},
+			},
+		}
+		got := CheckAgentLOCBudget(m, "", 2000)
+		if got != nil {
+			t.Errorf("expected nil, got %v", got)
+		}
+	})
+
+	t.Run("agent with one file under 2000 lines — no errors", func(t *testing.T) {
+		dir := t.TempDir()
+		writeLines(t, filepath.Join(dir, "foo.go"), 100)
+		m := &IMPLManifest{
+			FileOwnership: []FileOwnership{
+				{File: "foo.go", Agent: "A", Wave: 1, Action: "modify"},
+			},
+		}
+		got := CheckAgentLOCBudget(m, dir, 2000)
+		if len(got) != 0 {
+			t.Errorf("expected 0 errors, got %v", got)
+		}
+	})
+
+	t.Run("agent with two files totalling over 2000 lines — one error", func(t *testing.T) {
+		dir := t.TempDir()
+		writeLines(t, filepath.Join(dir, "foo.go"), 1200)
+		writeLines(t, filepath.Join(dir, "bar.go"), 900)
+		m := &IMPLManifest{
+			FileOwnership: []FileOwnership{
+				{File: "foo.go", Agent: "A", Wave: 1, Action: "modify"},
+				{File: "bar.go", Agent: "A", Wave: 1, Action: "modify"},
+			},
+		}
+		got := CheckAgentLOCBudget(m, dir, 2000)
+		if len(got) != 1 {
+			t.Fatalf("expected 1 error, got %d: %v", len(got), got)
+		}
+		if got[0].Code != "V048_AGENT_LOC_BUDGET" {
+			t.Errorf("code = %q, want V048_AGENT_LOC_BUDGET", got[0].Code)
+		}
+		if got[0].Severity != "error" {
+			t.Errorf("severity = %q, want error", got[0].Severity)
+		}
+	})
+
+	t.Run("action=new files are skipped even if large", func(t *testing.T) {
+		dir := t.TempDir()
+		writeLines(t, filepath.Join(dir, "newfile.go"), 5000)
+		m := &IMPLManifest{
+			FileOwnership: []FileOwnership{
+				{File: "newfile.go", Agent: "A", Wave: 1, Action: "new"},
+			},
+		}
+		got := CheckAgentLOCBudget(m, dir, 2000)
+		if len(got) != 0 {
+			t.Errorf("expected 0 errors (action=new skipped), got %v", got)
+		}
+	})
+
+	t.Run("missing action=modify file is skipped silently, no panic", func(t *testing.T) {
+		dir := t.TempDir()
+		// Intentionally do NOT create the file
+		m := &IMPLManifest{
+			FileOwnership: []FileOwnership{
+				{File: "nonexistent.go", Agent: "A", Wave: 1, Action: "modify"},
+			},
+		}
+		// Should not panic
+		got := CheckAgentLOCBudget(m, dir, 2000)
+		if len(got) != 0 {
+			t.Errorf("expected 0 errors for missing file, got %v", got)
+		}
+	})
 }
