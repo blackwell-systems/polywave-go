@@ -40,8 +40,9 @@ type ObsEmitter interface {
 
 // Event is emitted during wave execution (mirrors orchestrator.OrchestratorEvent).
 type Event struct {
-	Event string      // e.g. "agent_started", "agent_complete", "run_complete"
-	Data  interface{} // same payload structs as pkg/orchestrator
+	Event string // e.g. "agent_started", "agent_complete", "run_complete"
+	// Data is a typed payload struct; see runner_data_types.go for the full list.
+	Data any
 }
 
 // RunScoutOpts configures a Scout agent run.
