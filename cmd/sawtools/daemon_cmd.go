@@ -72,8 +72,12 @@ Events are streamed as JSON lines to stdout.`,
 				fmt.Fprintln(cmd.ErrOrStderr(), "daemon shutting down...")
 			}()
 
-			if err := engine.RunDaemon(ctx, opts); err != nil {
-				return fmt.Errorf("daemon: %w", err)
+			daemonRes := engine.RunDaemon(ctx, opts)
+			if daemonRes.IsFatal() {
+				if len(daemonRes.Errors) > 0 {
+					return fmt.Errorf("daemon: %s", daemonRes.Errors[0].Message)
+				}
+				return fmt.Errorf("daemon: failed")
 			}
 
 			return nil

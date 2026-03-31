@@ -12,21 +12,28 @@ import (
 	bedrockbackend "github.com/blackwell-systems/scout-and-wave-go/pkg/agent/backend/bedrock"
 	cliclient "github.com/blackwell-systems/scout-and-wave-go/pkg/agent/backend/cli"
 	openaibackend "github.com/blackwell-systems/scout-and-wave-go/pkg/agent/backend/openai"
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
 )
 
 // RunChat executes a chat agent with proper conversation history.
 // Unlike RunScout which flattens history into the prompt, this uses the
 // backend's native message API for proper turn-by-turn context.
 // ChatModel in opts selects the model; empty string uses the backend default.
-func RunChat(ctx context.Context, opts RunChatOpts, onChunk func(string)) error {
+func RunChat(ctx context.Context, opts RunChatOpts, onChunk func(string)) result.Result[ChatData] {
 	if opts.Message == "" {
-		return fmt.Errorf("engine.RunChat: Message is required")
+		return result.NewFailure[ChatData]([]result.SAWError{
+			result.NewFatal("ENGINE_CHAT_INVALID_OPTS", "engine.RunChat: Message is required"),
+		})
 	}
 	if opts.RepoPath == "" {
-		return fmt.Errorf("engine.RunChat: RepoPath is required")
+		return result.NewFailure[ChatData]([]result.SAWError{
+			result.NewFatal("ENGINE_CHAT_INVALID_OPTS", "engine.RunChat: RepoPath is required"),
+		})
 	}
 	if opts.IMPLPath == "" {
-		return fmt.Errorf("engine.RunChat: IMPLPath is required")
+		return result.NewFailure[ChatData]([]result.SAWError{
+			result.NewFatal("ENGINE_CHAT_INVALID_OPTS", "engine.RunChat: IMPLPath is required"),
+		})
 	}
 
 	// Resolve SAW repo path.
@@ -37,7 +44,9 @@ func RunChat(ctx context.Context, opts RunChatOpts, onChunk func(string)) error 
 	if sawRepo == "" {
 		home, err := os.UserHomeDir()
 		if err != nil {
-			return fmt.Errorf("engine.RunChat: cannot determine home directory: %w", err)
+			return result.NewFailure[ChatData]([]result.SAWError{
+				result.NewFatal("ENGINE_CHAT_FAILED", "engine.RunChat: cannot determine home directory").WithCause(err),
+			})
 		}
 		sawRepo = filepath.Join(home, "code", "scout-and-wave")
 	}
@@ -118,11 +127,18 @@ Focus on interesting insights specific to this IMPL doc rather than general prog
 	// Use the backend directly for streaming.
 	response, err := b.RunStreaming(ctx, systemPrompt, "Begin now.", opts.RepoPath, onChunk)
 	if err != nil {
-		return fmt.Errorf("engine.RunChat: %w", err)
+		if ctx.Err() != nil {
+			return result.NewFailure[ChatData]([]result.SAWError{
+				{Code: "CONTEXT_CANCELLED", Message: "engine.RunChat: context cancelled", Severity: "fatal", Cause: err},
+			})
+		}
+		return result.NewFailure[ChatData]([]result.SAWError{
+			result.NewFatal("ENGINE_CHAT_FAILED", "engine.RunChat: backend execution failed").WithCause(err),
+		})
 	}
 
 	_ = response // Response is already streamed via onChunk
-	return nil
+	return result.NewSuccess(ChatData{IMPLPath: opts.IMPLPath, Message: opts.Message})
 }
 
 // chatExpandBedrockModelID converts short Bedrock model names to full region-prefixed IDs.

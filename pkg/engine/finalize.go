@@ -15,6 +15,7 @@ import (
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/gatecache"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/observability"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
 )
 
 // FinalizeWaveOpts configures a full post-agent finalization pipeline.
@@ -656,9 +657,11 @@ type MarkIMPLCompleteOpts struct {
 
 // MarkIMPLComplete writes the completion marker (E15), updates project context (E18),
 // and archives the IMPL doc to docs/IMPL/complete/.
-func MarkIMPLComplete(ctx context.Context, opts MarkIMPLCompleteOpts) error {
+func MarkIMPLComplete(ctx context.Context, opts MarkIMPLCompleteOpts) result.Result[MarkCompleteData] {
 	if opts.IMPLPath == "" {
-		return fmt.Errorf("engine.MarkIMPLComplete: IMPLPath is required")
+		return result.NewFailure[MarkCompleteData]([]result.SAWError{
+			result.NewFatal("ENGINE_MARK_COMPLETE_INVALID_OPTS", "engine.MarkIMPLComplete: IMPLPath is required"),
+		})
 	}
 
 	date := opts.Date
@@ -668,7 +671,9 @@ func MarkIMPLComplete(ctx context.Context, opts MarkIMPLCompleteOpts) error {
 
 	// E15: Write completion marker
 	if err := protocol.WriteCompletionMarker(opts.IMPLPath, date); err != nil {
-		return fmt.Errorf("engine.MarkIMPLComplete: write marker: %w", err)
+		return result.NewFailure[MarkCompleteData]([]result.SAWError{
+			result.NewFatal("ENGINE_MARK_COMPLETE_FAILED", "engine.MarkIMPLComplete: write marker failed").WithCause(err),
+		})
 	}
 
 	// E18: Update project context
@@ -682,7 +687,9 @@ func MarkIMPLComplete(ctx context.Context, opts MarkIMPLCompleteOpts) error {
 
 	// Archive: move IMPL from docs/IMPL/ to docs/IMPL/complete/
 	if _, err := protocol.ArchiveIMPL(opts.IMPLPath); err != nil {
-		return fmt.Errorf("engine.MarkIMPLComplete: archive: %w", err)
+		return result.NewFailure[MarkCompleteData]([]result.SAWError{
+			result.NewFatal("ENGINE_MARK_COMPLETE_FAILED", "engine.MarkIMPLComplete: archive failed").WithCause(err),
+		})
 	}
 
 	// Emit impl_complete after successful archival.
@@ -690,7 +697,7 @@ func MarkIMPLComplete(ctx context.Context, opts MarkIMPLCompleteOpts) error {
 	implSlug := implSlugFromPath(opts.IMPLPath)
 	opts.ObsEmitter.Emit(ctx, observability.NewImplCompleteEvent(implSlug))
 
-	return nil
+	return result.NewSuccess(MarkCompleteData{IMPLPath: opts.IMPLPath, Date: date})
 }
 
 // implSlugFromPath derives an IMPL slug from a file path such as

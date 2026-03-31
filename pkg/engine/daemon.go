@@ -8,6 +8,7 @@ import (
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/autonomy"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/queue"
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
 )
 
 // DaemonOpts configures the daemon run loop.
@@ -39,7 +40,14 @@ var daemonCheckQueueFunc = func(ctx context.Context, opts CheckQueueOpts) (*Chec
 
 // daemonRunScoutFunc is the function called to generate an IMPL doc.
 var daemonRunScoutFunc = func(ctx context.Context, opts RunScoutOpts, onChunk func(string)) error {
-	return RunScout(ctx, opts, onChunk)
+	res := RunScout(ctx, opts, onChunk)
+	if res.IsFatal() {
+		if len(res.Errors) > 0 {
+			return fmt.Errorf("%s", res.Errors[0].Message)
+		}
+		return fmt.Errorf("RunScout failed")
+	}
+	return nil
 }
 
 // daemonFinalizeWaveFunc is the function called to finalize a wave.
@@ -54,7 +62,14 @@ var daemonAutoRemediateFunc = func(ctx context.Context, opts AutoRemediateOpts) 
 
 // daemonMarkIMPLCompleteFunc is the function called to mark an IMPL complete.
 var daemonMarkIMPLCompleteFunc = func(ctx context.Context, opts MarkIMPLCompleteOpts) error {
-	return MarkIMPLComplete(ctx, opts)
+	res := MarkIMPLComplete(ctx, opts)
+	if res.IsFatal() {
+		if len(res.Errors) > 0 {
+			return fmt.Errorf("%s", res.Errors[0].Message)
+		}
+		return fmt.Errorf("mark IMPL complete failed")
+	}
+	return nil
 }
 
 // daemonCreateWorktreesFunc is the function called to create worktrees before a wave.
@@ -95,7 +110,7 @@ var daemonLoadIMPLWavesFunc = func(implPath string) ([]int, error) {
 
 // RunDaemon runs the daemon loop until ctx is cancelled.
 // It sequentially processes IMPL queue items through the full Scout → Wave → Merge → Complete cycle.
-func RunDaemon(ctx context.Context, opts DaemonOpts) error {
+func RunDaemon(ctx context.Context, opts DaemonOpts) result.Result[DaemonData] {
 	if opts.PollInterval <= 0 {
 		opts.PollInterval = 30 * time.Second
 	}
@@ -107,6 +122,7 @@ func RunDaemon(ctx context.Context, opts DaemonOpts) error {
 	}
 
 	state := &DaemonState{Running: true}
+	completedCount := 0
 	emit("daemon_started", state)
 
 	defer func() {
@@ -118,7 +134,7 @@ func RunDaemon(ctx context.Context, opts DaemonOpts) error {
 		// Check context before each iteration.
 		select {
 		case <-ctx.Done():
-			return nil
+			return result.NewSuccess(DaemonData{RepoPath: opts.RepoPath, CompletedCount: completedCount})
 		default:
 		}
 
@@ -137,12 +153,12 @@ func RunDaemon(ctx context.Context, opts DaemonOpts) error {
 		if err != nil {
 			// Context cancellation during queue check.
 			if ctx.Err() != nil {
-				return nil
+				return result.NewSuccess(DaemonData{RepoPath: opts.RepoPath, CompletedCount: completedCount})
 			}
 			// Transient error — sleep and retry.
 			select {
 			case <-ctx.Done():
-				return nil
+				return result.NewSuccess(DaemonData{RepoPath: opts.RepoPath, CompletedCount: completedCount})
 			case <-time.After(opts.PollInterval):
 			}
 			continue
@@ -165,7 +181,7 @@ func RunDaemon(ctx context.Context, opts DaemonOpts) error {
 		if !queueResult.Advanced {
 			select {
 			case <-ctx.Done():
-				return nil
+				return result.NewSuccess(DaemonData{RepoPath: opts.RepoPath, CompletedCount: completedCount})
 			case <-time.After(opts.PollInterval):
 			}
 			continue
@@ -187,7 +203,7 @@ func RunDaemon(ctx context.Context, opts DaemonOpts) error {
 		if err != nil {
 			if ctx.Err() != nil {
 				// Context cancelled mid-item — clean shutdown.
-				return nil
+				return result.NewSuccess(DaemonData{RepoPath: opts.RepoPath, CompletedCount: completedCount})
 			}
 			// Item processing failed — mark blocked.
 			blocked = true
@@ -215,6 +231,7 @@ func RunDaemon(ctx context.Context, opts DaemonOpts) error {
 
 		if !blocked {
 			state.CompletedCount++
+		completedCount++
 			emit("daemon_impl_complete", map[string]interface{}{
 				"slug":            slug,
 				"completed_count": state.CompletedCount,

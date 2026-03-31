@@ -12,46 +12,49 @@ import (
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
 )
 
-// TestRunScout_MissingScoutMd verifies that RunScout returns an error when scout.md is missing (L1).
+// TestRunScout_MissingScoutMd verifies that RunScout returns a fatal result when scout.md is missing (L1).
 func TestRunScout_MissingScoutMd(t *testing.T) {
 	dir := t.TempDir()
 	nonexistentSAWRepo := filepath.Join(dir, "nonexistent-saw-repo")
 
-	err := RunScout(context.Background(), RunScoutOpts{
+	res := RunScout(context.Background(), RunScoutOpts{
 		Feature:     "test feature",
 		RepoPath:    dir,
 		IMPLOutPath: filepath.Join(dir, "IMPL-test.yaml"),
 		SAWRepoPath: nonexistentSAWRepo,
 	}, func(string) {})
-	if err == nil {
-		t.Fatal("expected error when scout.md is missing, got nil")
+	if !res.IsFatal() {
+		t.Fatal("expected fatal result when scout.md is missing, got success")
 	}
-	if !strings.Contains(err.Error(), "scout.md not found") {
-		t.Errorf("expected error to mention 'scout.md not found', got: %v", err)
+	if len(res.Errors) == 0 {
+		t.Fatal("expected errors in fatal result, got none")
+	}
+	if !strings.Contains(res.Errors[0].Message, "scout.md not found") {
+		t.Errorf("expected error to mention 'scout.md not found', got: %v", res.Errors[0].Message)
 	}
 }
 
-// TestRunScoutMissingFeature verifies that RunScout returns an error when Feature is empty.
+// TestRunScoutMissingFeature verifies that RunScout returns a fatal result when Feature is empty.
 func TestRunScoutMissingFeature(t *testing.T) {
-	err := RunScout(context.Background(), RunScoutOpts{
+	res := RunScout(context.Background(), RunScoutOpts{
 		Feature:     "",
 		RepoPath:    "/tmp/repo",
 		IMPLOutPath: "/tmp/repo/IMPL.md",
 	}, func(string) {})
-	if err == nil {
-		t.Fatal("expected error when Feature is empty, got nil")
+	if !res.IsFatal() {
+		t.Fatal("expected fatal result when Feature is empty, got success")
 	}
 }
 
-// TestStartWaveEmptyIMPL verifies that StartWave returns an error when the IMPL path does not exist.
+// TestStartWaveEmptyIMPL verifies that StartWave returns a fatal result when the IMPL path does not exist.
 func TestStartWaveEmptyIMPL(t *testing.T) {
-	err := StartWave(context.Background(), RunWaveOpts{
+	res := StartWave(context.Background(), RunWaveOpts{
 		IMPLPath: "/nonexistent/path/IMPL.md",
 		RepoPath: "/tmp/repo",
 		Slug:     "test",
 	}, func(Event) {})
-	if err == nil {
-		t.Fatal("expected error when IMPL path does not exist, got nil")
+	if !res.IsFatal() {
+		t.Fatal("expected fatal result when IMPL path does not exist, got success")
 	}
 }
 

@@ -49,8 +49,8 @@ func TestRunScout_BedrockStructuredRouting(t *testing.T) {
 	// but the error path should trace through runScoutStructuredBedrock, NOT through
 	// the generic API backend. The error will contain "Bedrock run" or "AWS credentials"
 	// rather than "API run".
-	err := RunScout(context.Background(), opts, func(string) {})
-	if err == nil {
+	res := RunScout(context.Background(), opts, func(string) {})
+	if !res.IsFatal() {
 		// In an environment where AWS is configured and Bedrock is accessible this
 		// could theoretically succeed, which is also fine.
 		t.Log("RunScout with Bedrock backend succeeded (AWS credentials available)")
@@ -58,7 +58,10 @@ func TestRunScout_BedrockStructuredRouting(t *testing.T) {
 	}
 
 	// We expect the error to originate from the Bedrock path.
-	errStr := err.Error()
+	if len(res.Errors) == 0 {
+		t.Fatal("expected errors in fatal result, got none")
+	}
+	errStr := res.Errors[0].Message
 	if strings.Contains(errStr, "runScoutStructuredBedrock") || strings.Contains(errStr, "Bedrock run") ||
 		strings.Contains(errStr, "AWS credentials") || strings.Contains(errStr, "bedrock") ||
 		strings.Contains(errStr, "AWS config failed") {
@@ -69,7 +72,7 @@ func TestRunScout_BedrockStructuredRouting(t *testing.T) {
 	// If the error mentions "runScoutStructured" without "Bedrock" it means we hit the
 	// API path instead, which would indicate a routing bug.
 	if strings.Contains(errStr, "runScoutStructured:") && !strings.Contains(errStr, "runScoutStructuredBedrock") {
-		t.Errorf("expected error from Bedrock path but got API-path error: %v", err)
+		t.Errorf("expected error from Bedrock path but got API-path error: %v", errStr)
 	}
 }
 
@@ -92,15 +95,18 @@ func TestRunScout_APIStructuredRouting(t *testing.T) {
 		},
 	}
 
-	err := RunScout(context.Background(), opts, func(string) {})
-	if err == nil {
+	res := RunScout(context.Background(), opts, func(string) {})
+	if !res.IsFatal() {
 		t.Log("RunScout with API backend succeeded (API credentials available)")
 		return
 	}
 
 	// Error should NOT mention the Bedrock path.
-	errStr := err.Error()
+	if len(res.Errors) == 0 {
+		return
+	}
+	errStr := res.Errors[0].Message
 	if strings.Contains(errStr, "runScoutStructuredBedrock") {
-		t.Errorf("expected error from API path but got Bedrock-path error: %v", err)
+		t.Errorf("expected error from API path but got Bedrock-path error: %v", errStr)
 	}
 }
