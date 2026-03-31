@@ -313,7 +313,7 @@ func StepVerifyBuild(ctx context.Context, opts FinalizeWaveOpts, onEvent EventCa
 
 	if !passed {
 		// Attempt auto-diagnosis using H7 pattern matching
-		manifest, loadErr := protocol.Load(context.TODO(), opts.IMPLPath)
+		manifest, loadErr := protocol.Load(ctx, opts.IMPLPath)
 		var diagnosis *builddiag.Diagnosis
 		if loadErr == nil {
 			language := inferLanguageFromTestCommand(manifest.TestCommand)
@@ -569,7 +569,7 @@ func StepPopulateIntegrationChecklist(ctx context.Context, opts FinalizeWaveOpts
 		}, nil, nil
 	}
 
-	if saveRes := protocol.Save(context.TODO(), updated, opts.IMPLPath); saveRes.IsFatal() {
+	if saveRes := protocol.Save(ctx, updated, opts.IMPLPath); saveRes.IsFatal() {
 		saveErrMsg := "save failed"
 		if len(saveRes.Errors) > 0 {
 			saveErrMsg = saveRes.Errors[0].Message
