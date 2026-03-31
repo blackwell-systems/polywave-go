@@ -1,6 +1,7 @@
 package protocol
 
 import (
+	"context"
 	"testing"
 )
 
@@ -19,7 +20,7 @@ func TestVerifyDependencies_Wave1NoDepsTriviallyValid(t *testing.T) {
 		CompletionReports: map[string]CompletionReport{},
 	}
 
-	res := VerifyDependenciesAvailable(manifest, 1)
+	res := VerifyDependenciesAvailable(context.Background(), manifest, 1)
 	if !res.IsSuccess() {
 		t.Fatalf("unexpected failure: %+v", res.Errors)
 	}
@@ -61,7 +62,7 @@ func TestVerifyDependencies_Wave2AllDepsCompleted(t *testing.T) {
 		},
 	}
 
-	res := VerifyDependenciesAvailable(manifest, 2)
+	res := VerifyDependenciesAvailable(context.Background(), manifest, 2)
 	if !res.IsSuccess() {
 		t.Fatalf("unexpected failure: %+v", res.Errors)
 	}
@@ -99,7 +100,7 @@ func TestVerifyDependencies_Wave2MissingCompletionReport(t *testing.T) {
 		},
 	}
 
-	res := VerifyDependenciesAvailable(manifest, 2)
+	res := VerifyDependenciesAvailable(context.Background(), manifest, 2)
 	if !res.IsSuccess() {
 		t.Fatalf("unexpected failure: %+v", res.Errors)
 	}
@@ -136,7 +137,7 @@ func TestVerifyDependencies_Wave2DepStatusPartial(t *testing.T) {
 		},
 	}
 
-	res := VerifyDependenciesAvailable(manifest, 2)
+	res := VerifyDependenciesAvailable(context.Background(), manifest, 2)
 	if !res.IsSuccess() {
 		t.Fatalf("unexpected failure: %+v", res.Errors)
 	}
@@ -161,7 +162,7 @@ func TestVerifyDependencies_WaveNotFound(t *testing.T) {
 		},
 	}
 
-	res := VerifyDependenciesAvailable(manifest, 99)
+	res := VerifyDependenciesAvailable(context.Background(), manifest, 99)
 	if !res.IsFatal() {
 		t.Fatal("expected FATAL result for missing wave")
 	}

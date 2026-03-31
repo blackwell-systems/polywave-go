@@ -218,7 +218,7 @@ func PrepareWave(ctx context.Context, opts PrepareWaveOpts) (*PrepareWaveResult,
 
 	// Step: Dependency output verification (H2, wave > 1 only)
 	if opts.WaveNum > 1 {
-		depResult := protocol.VerifyDependenciesAvailable(doc, opts.WaveNum)
+		depResult := protocol.VerifyDependenciesAvailable(ctx, doc, opts.WaveNum)
 		if depResult.IsFatal() || !depResult.GetData().Valid {
 			var missing []string
 			for _, agent := range depResult.GetData().Agents {
