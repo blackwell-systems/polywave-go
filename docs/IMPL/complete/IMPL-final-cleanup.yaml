@@ -1,3 +1,4 @@
+completion_date: "2026-03-31"
 title: 'Final Cleanup: resolveAgentBranch wiring, manifest.go ctx, and %w sweep'
 feature_slug: final-cleanup
 verdict: SUITABLE_WITH_CAVEATS
@@ -264,6 +265,7 @@ waves:
             If no code was changed, go build/vet/test will pass unchanged.
           files:
             - docs/IMPL/IMPL-final-cleanup-item3-report.md
+      base_commit: a3f2b5925602e0845d689969ea22e020c9c1dfbc
 quality_gates:
     level: standard
     gates:
@@ -276,6 +278,27 @@ quality_gates:
         - type: test
           command: go test ./pkg/protocol/...
           required: true
+completion_reports:
+    A:
+        status: complete
+        branch: saw/final-cleanup/wave1-agent-A
+        commit: b4ac025
+        files_changed:
+            - pkg/protocol/merge_agents.go
+            - pkg/protocol/commit_verify.go
+            - pkg/protocol/cleanup.go
+        verification: PASS
+        notes: Wired resolveAgentBranch into merge_agents.go (both single-repo and multi-repo merge loops), commit_verify.go (rev-list path), and cleanup.go (branch deletion). manifest.go and worktree.go left unchanged per spec — no ctx changes needed, no resolveAgentBranch for creation path. All 22 tests pass.
+    B:
+        status: complete
+        branch: saw/final-cleanup/wave1-agent-B
+        commit: 1831f2c
+        files_changed:
+            - docs/IMPL/IMPL-final-cleanup-item3-report.md
+        files_created:
+            - docs/IMPL/IMPL-final-cleanup-item3-report.md
+        verification: PASS
+        notes: Investigated all fmt.Errorf calls. 353 non-test calls without %w; 19 use %v but all format non-error types ([]SAWError, []string, bool, result.Result[bool]). Zero calls wrap an error value with %v instead of %w. No source code changes needed. Claim of 229 eligible calls is not supported by the codebase.
 pre_mortem:
     overall_risk: low
     rows:
@@ -320,5 +343,5 @@ critic_report:
     summary: Skipped by operator
     reviewed_at: "2026-03-31T21:21:04Z"
     issue_count: 0
-state: "REVIEWED"
+state: COMPLETE
 injection_method: hook
