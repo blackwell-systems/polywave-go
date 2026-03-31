@@ -33,7 +33,7 @@ Output format matches the Scout IMPL doc command specification.`,
 			extractor.RegisterBuildSystemParser(&commands.PackageJSONParser{})
 
 			// Extract commands
-			commandSet, err := extractor.Extract(repoRoot)
+			commandSet, err := extractor.Extract(cmd.Context(), repoRoot)
 			if err != nil {
 				return fmt.Errorf("extract commands: %w", err)
 			}

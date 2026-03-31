@@ -70,7 +70,7 @@ func ValidateScaffold(scaffoldPath string, implPath string) (*ValidationResult, 
 	extractor.RegisterBuildSystemParser(&commands.MakefileParser{})
 	extractor.RegisterBuildSystemParser(&commands.PackageJSONParser{})
 
-	commandSet, err := extractor.Extract(repoRoot)
+	commandSet, err := extractor.Extract(context.TODO(), repoRoot)
 	if err != nil || commandSet.Commands.Build == "" {
 		result.Build.Status = "SKIP"
 		result.Build.Errors = []string{"No build command found"}
