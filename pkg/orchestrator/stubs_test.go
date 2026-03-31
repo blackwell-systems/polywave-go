@@ -20,9 +20,8 @@ func TestRunStubScanNoFiles(t *testing.T) {
 	}
 
 	// sawRepoPath points to nonexistent dir — script won't be found.
-	err := RunStubScan(implDocPath, 1, map[string]*protocol.CompletionReport{}, filepath.Join(tmpDir, "nonexistent-saw-repo"), nil)
-	if err != nil {
-		t.Errorf("RunStubScan returned non-nil error: %v", err)
+	if res := RunStubScan(implDocPath, 1, map[string]*protocol.CompletionReport{}, filepath.Join(tmpDir, "nonexistent-saw-repo"), nil); !res.IsSuccess() {
+		t.Errorf("RunStubScan returned failure: %v", res.Errors)
 	}
 
 	content, readErr := os.ReadFile(implDocPath)
@@ -57,9 +56,8 @@ func TestRunStubScanMissingScript(t *testing.T) {
 	// Point to a directory that definitely won't have scan-stubs.sh.
 	nonexistentRepo := filepath.Join(tmpDir, "no-such-repo")
 
-	err := RunStubScan(implDocPath, 2, reports, nonexistentRepo, nil)
-	if err != nil {
-		t.Errorf("RunStubScan should return nil even when script is missing, got: %v", err)
+	if res := RunStubScan(implDocPath, 2, reports, nonexistentRepo, nil); !res.IsSuccess() {
+		t.Errorf("RunStubScan should return success even when script is missing, got: %v", res.Errors)
 	}
 
 	content, readErr := os.ReadFile(implDocPath)
@@ -97,9 +95,8 @@ func TestRunStubScanAppendsSection(t *testing.T) {
 
 	// Use a nonexistent sawRepoPath so the script is "not found" — this still
 	// appends the section header, which is what this test validates.
-	err := RunStubScan(implDocPath, 1, reports, filepath.Join(tmpDir, "fake-saw-repo"), nil)
-	if err != nil {
-		t.Errorf("RunStubScan returned non-nil error: %v", err)
+	if res := RunStubScan(implDocPath, 1, reports, filepath.Join(tmpDir, "fake-saw-repo"), nil); !res.IsSuccess() {
+		t.Errorf("RunStubScan returned failure: %v", res.Errors)
 	}
 
 	content, readErr := os.ReadFile(implDocPath)

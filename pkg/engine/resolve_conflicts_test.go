@@ -224,34 +224,40 @@ func TestResolveConflicts_BuildsPromptWithAgentContext(t *testing.T) {
 	}
 }
 
-// TestResolveConflicts_OptsValidation verifies error on empty IMPLPath, empty RepoPath.
+// TestResolveConflicts_OptsValidation verifies fatal result on empty IMPLPath, empty RepoPath.
 func TestResolveConflicts_OptsValidation(t *testing.T) {
 	ctx := context.Background()
 
 	tests := []struct {
 		name    string
 		opts    ResolveConflictsOpts
-		wantErr string
+		wantMsg string
 	}{
 		{
 			name:    "empty IMPLPath",
 			opts:    ResolveConflictsOpts{RepoPath: "/tmp/repo", WaveNum: 1},
-			wantErr: "IMPLPath is required",
+			wantMsg: "IMPLPath is required",
 		},
 		{
 			name:    "empty RepoPath",
 			opts:    ResolveConflictsOpts{IMPLPath: "/tmp/impl.yaml", WaveNum: 1},
-			wantErr: "RepoPath is required",
+			wantMsg: "RepoPath is required",
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := ResolveConflicts(ctx, tt.opts)
-			if err == nil {
-				t.Errorf("expected error, got nil")
-			} else if !strings.Contains(err.Error(), tt.wantErr) {
-				t.Errorf("expected error containing %q, got %q", tt.wantErr, err.Error())
+			res := ResolveConflicts(ctx, tt.opts)
+			if !res.IsFatal() {
+				t.Errorf("expected fatal result, got non-fatal")
+				return
+			}
+			if len(res.Errors) == 0 {
+				t.Errorf("expected at least one error in fatal result")
+				return
+			}
+			if !strings.Contains(res.Errors[0].Message, tt.wantMsg) {
+				t.Errorf("expected error message containing %q, got %q", tt.wantMsg, res.Errors[0].Message)
 			}
 		})
 	}

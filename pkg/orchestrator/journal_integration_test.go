@@ -15,19 +15,19 @@ func TestPrepareAgentContext_NoJournal(t *testing.T) {
 	tmpDir := t.TempDir()
 
 	// Call PrepareAgentContext when no .saw-state directory exists
-	context, err := PrepareAgentContext(PrepareAgentContextOpts{
+	res := PrepareAgentContext(PrepareAgentContextOpts{
 		ProjectRoot: tmpDir,
 		WaveNum:     1,
 		AgentID:     "agent-A",
 		MaxEntries:  50,
 	})
-	if err != nil {
-		t.Fatalf("PrepareAgentContext failed: %v", err)
+	if !res.IsSuccess() {
+		t.Fatalf("PrepareAgentContext failed: %v", res.Errors)
 	}
 
 	// Should return empty string (not error) when no journal exists
-	if context != "" {
-		t.Errorf("Expected empty string for missing journal, got: %s", context)
+	if res.GetData().ContextMD != "" {
+		t.Errorf("Expected empty string for missing journal, got: %s", res.GetData().ContextMD)
 	}
 }
 
@@ -83,15 +83,17 @@ func TestPrepareAgentContext_WithJournal(t *testing.T) {
 	f.Close()
 
 	// Call PrepareAgentContext
-	context, err := PrepareAgentContext(PrepareAgentContextOpts{
+	res := PrepareAgentContext(PrepareAgentContextOpts{
 		ProjectRoot: tmpDir,
 		WaveNum:     1,
 		AgentID:     "agent-A",
 		MaxEntries:  50,
 	})
-	if err != nil {
-		t.Fatalf("PrepareAgentContext failed: %v", err)
+	if !res.IsSuccess() {
+		t.Fatalf("PrepareAgentContext failed: %v", res.Errors)
 	}
+
+	context := res.GetData().ContextMD
 
 	// Verify context was generated
 	if context == "" {
@@ -143,15 +145,17 @@ func TestPrepareAgentContext_MaxEntriesLimit(t *testing.T) {
 	f.Close()
 
 	// Call with maxEntries=10 (should only process last 10 entries)
-	context, err := PrepareAgentContext(PrepareAgentContextOpts{
+	res := PrepareAgentContext(PrepareAgentContextOpts{
 		ProjectRoot: tmpDir,
 		WaveNum:     1,
 		AgentID:     "agent-B",
 		MaxEntries:  10,
 	})
-	if err != nil {
-		t.Fatalf("PrepareAgentContext failed: %v", err)
+	if !res.IsSuccess() {
+		t.Fatalf("PrepareAgentContext failed: %v", res.Errors)
 	}
+
+	context := res.GetData().ContextMD
 
 	if context == "" {
 		t.Fatalf("Expected non-empty context")
@@ -190,17 +194,17 @@ func TestPrepareAgentContext_DefaultMaxEntries(t *testing.T) {
 	f.Close()
 
 	// Call with maxEntries=0 (should default to 50)
-	context, err := PrepareAgentContext(PrepareAgentContextOpts{
+	res := PrepareAgentContext(PrepareAgentContextOpts{
 		ProjectRoot: tmpDir,
 		WaveNum:     2,
 		AgentID:     "agent-C",
 		MaxEntries:  0,
 	})
-	if err != nil {
-		t.Fatalf("PrepareAgentContext failed: %v", err)
+	if !res.IsSuccess() {
+		t.Fatalf("PrepareAgentContext failed: %v", res.Errors)
 	}
 
-	if context == "" {
+	if res.GetData().ContextMD == "" {
 		t.Fatalf("Expected non-empty context")
 	}
 }
@@ -219,9 +223,8 @@ func TestWriteJournalEntry_CreatesJournalDir(t *testing.T) {
 		},
 	}
 
-	err := WriteJournalEntry(tmpDir, 1, "agent-D", entry)
-	if err != nil {
-		t.Fatalf("WriteJournalEntry failed: %v", err)
+	if res := WriteJournalEntry(tmpDir, 1, "agent-D", entry); !res.IsSuccess() {
+		t.Fatalf("WriteJournalEntry failed: %v", res.Errors)
 	}
 
 	// Verify journal directory was created
@@ -254,8 +257,8 @@ func TestWriteJournalEntry_AppendsEntry(t *testing.T) {
 		ToolUseID: "toolu_001",
 		Input:     map[string]interface{}{"file_path": "file1.go"},
 	}
-	if err := WriteJournalEntry(tmpDir, 1, "agent-E", entry1); err != nil {
-		t.Fatalf("First WriteJournalEntry failed: %v", err)
+	if res := WriteJournalEntry(tmpDir, 1, "agent-E", entry1); !res.IsSuccess() {
+		t.Fatalf("First WriteJournalEntry failed: %v", res.Errors)
 	}
 
 	// Write second entry
@@ -266,8 +269,8 @@ func TestWriteJournalEntry_AppendsEntry(t *testing.T) {
 		ToolUseID: "toolu_002",
 		Input:     map[string]interface{}{"file_path": "file2.go", "content": "data"},
 	}
-	if err := WriteJournalEntry(tmpDir, 1, "agent-E", entry2); err != nil {
-		t.Fatalf("Second WriteJournalEntry failed: %v", err)
+	if res := WriteJournalEntry(tmpDir, 1, "agent-E", entry2); !res.IsSuccess() {
+		t.Fatalf("Second WriteJournalEntry failed: %v", res.Errors)
 	}
 
 	// Read index.jsonl and verify both entries present

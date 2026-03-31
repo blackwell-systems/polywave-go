@@ -13,52 +13,92 @@ import (
 	bedrockbackend "github.com/blackwell-systems/scout-and-wave-go/pkg/agent/backend/bedrock"
 	openaibackend "github.com/blackwell-systems/scout-and-wave-go/pkg/agent/backend/openai"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
 )
+
+// ResolveData holds data returned by ResolveConflicts.
+type ResolveData struct {
+	FilesResolved []string `json:"files_resolved"`
+	CommitCreated bool     `json:"commit_created"`
+}
+
+// ResolveFileData holds data returned by resolveConflictedFile.
+type ResolveFileData struct {
+	File string `json:"file"`
+}
 
 // ResolveConflicts resolves all conflicted files in a merge using Claude.
 // It reads conflicted files from git, builds prompts with IMPL context,
 // calls Claude to resolve each file, writes resolved content back, and commits.
 //
-// Returns error on first file that cannot be resolved (partial failure aborts).
-func ResolveConflicts(ctx context.Context, opts ResolveConflictsOpts) error {
+// Returns fatal result on first file that cannot be resolved (partial failure aborts).
+func ResolveConflicts(ctx context.Context, opts ResolveConflictsOpts) result.Result[ResolveData] {
 	if opts.IMPLPath == "" {
-		return fmt.Errorf("engine.ResolveConflicts: IMPLPath is required")
+		return result.NewFailure[ResolveData]([]result.SAWError{
+			result.NewFatal("ENGINE_RESOLVE_INVALID_OPTS",
+				"engine.ResolveConflicts: IMPLPath is required"),
+		})
 	}
 	if opts.RepoPath == "" {
-		return fmt.Errorf("engine.ResolveConflicts: RepoPath is required")
+		return result.NewFailure[ResolveData]([]result.SAWError{
+			result.NewFatal("ENGINE_RESOLVE_INVALID_OPTS",
+				"engine.ResolveConflicts: RepoPath is required"),
+		})
 	}
 
 	// Load IMPL manifest for agent context
 	manifest, err := protocol.Load(opts.IMPLPath)
 	if err != nil {
-		return fmt.Errorf("engine.ResolveConflicts: failed to load IMPL manifest: %w", err)
+		return result.NewFailure[ResolveData]([]result.SAWError{
+			result.NewFatal("ENGINE_RESOLVE_LOAD_FAILED",
+				fmt.Sprintf("engine.ResolveConflicts: failed to load IMPL manifest: %v", err)).
+				WithContext("impl_path", opts.IMPLPath),
+		})
 	}
 
 	// Get list of conflicted files
 	conflictedFiles, err := git.ConflictedFiles(opts.RepoPath)
 	if err != nil {
-		return fmt.Errorf("engine.ResolveConflicts: failed to get conflicted files: %w", err)
+		return result.NewFailure[ResolveData]([]result.SAWError{
+			result.NewFatal("ENGINE_RESOLVE_GIT_FAILED",
+				fmt.Sprintf("engine.ResolveConflicts: failed to get conflicted files: %v", err)).
+				WithContext("repo_path", opts.RepoPath),
+		})
 	}
 
 	if len(conflictedFiles) == 0 {
-		return fmt.Errorf("engine.ResolveConflicts: no conflicted files found")
+		return result.NewFailure[ResolveData]([]result.SAWError{
+			result.NewFatal("ENGINE_RESOLVE_NO_CONFLICTS",
+				"engine.ResolveConflicts: no conflicted files found"),
+		})
 	}
 
 	// Select backend for conflict resolution
 	b, err := selectConflictResolutionBackend(opts.ChatModel)
 	if err != nil {
-		return fmt.Errorf("engine.ResolveConflicts: failed to select backend: %w", err)
+		return result.NewFailure[ResolveData]([]result.SAWError{
+			result.NewFatal("ENGINE_RESOLVE_BACKEND_FAILED",
+				fmt.Sprintf("engine.ResolveConflicts: failed to select backend: %v", err)),
+		})
 	}
 
 	// Resolve each conflicted file
+	var resolved []string
 	for _, file := range conflictedFiles {
 		if opts.OnProgress != nil {
 			opts.OnProgress(file, "resolving")
 		}
 
-		if err := resolveConflictedFile(ctx, file, manifest, opts, b); err != nil {
-			return fmt.Errorf("engine.ResolveConflicts: failed to resolve %s: %w", file, err)
+		fileRes := resolveConflictedFile(ctx, file, manifest, opts, b)
+		if fileRes.IsFatal() {
+			return result.NewFailure[ResolveData]([]result.SAWError{
+				result.NewFatal("ENGINE_RESOLVE_FILE_FAILED",
+					fmt.Sprintf("engine.ResolveConflicts: failed to resolve %s: %s", file, fileRes.Errors[0].Message)).
+					WithContext("file", file),
+			})
 		}
+
+		resolved = append(resolved, file)
 
 		if opts.OnProgress != nil {
 			opts.OnProgress(file, "resolved")
@@ -67,63 +107,86 @@ func ResolveConflicts(ctx context.Context, opts ResolveConflictsOpts) error {
 
 	// Commit the merge
 	if _, err := git.Run(opts.RepoPath, "commit", "--no-edit"); err != nil {
-		return fmt.Errorf("engine.ResolveConflicts: failed to commit merge: %w", err)
+		return result.NewFailure[ResolveData]([]result.SAWError{
+			result.NewFatal("ENGINE_RESOLVE_COMMIT_FAILED",
+				fmt.Sprintf("engine.ResolveConflicts: failed to commit merge: %v", err)).
+				WithContext("repo_path", opts.RepoPath),
+		})
 	}
 
-	return nil
+	return result.NewSuccess(ResolveData{
+		FilesResolved: resolved,
+		CommitCreated: true,
+	})
 }
 
 // resolveConflictedFile resolves a single conflicted file using Claude.
-func resolveConflictedFile(ctx context.Context, file string, manifest *protocol.IMPLManifest, opts ResolveConflictsOpts, b backend.Backend) error {
+func resolveConflictedFile(ctx context.Context, file string, manifest *protocol.IMPLManifest, opts ResolveConflictsOpts, b backend.Backend) result.Result[ResolveFileData] {
 	// Read conflicted file content
 	filePath := filepath.Join(opts.RepoPath, file)
 	content, err := os.ReadFile(filePath)
 	if err != nil {
-		return fmt.Errorf("failed to read conflicted file: %w", err)
+		return result.NewFailure[ResolveFileData]([]result.SAWError{
+			result.NewFatal("ENGINE_RESOLVE_FILE_READ_FAILED",
+				fmt.Sprintf("failed to read conflicted file: %v", err)).
+				WithContext("file", file),
+		})
 	}
 
 	// Build context from IMPL manifest
-	agentContext := buildAgentContext(file, manifest, opts.WaveNum)
+	agentCtx := buildAgentContext(file, manifest, opts.WaveNum)
 
 	// Build prompts
 	systemPrompt := buildSystemPrompt()
-	userMessage := buildUserMessage(string(content), file, agentContext)
+	userMessage := buildUserMessage(string(content), file, agentCtx)
 
 	// Call Claude to resolve the conflict (streaming for live output)
-	resolved, err := b.RunStreaming(ctx, systemPrompt, userMessage, opts.RepoPath, func(chunk string) {
+	resolvedContent, err := b.RunStreaming(ctx, systemPrompt, userMessage, opts.RepoPath, func(chunk string) {
 		if opts.OnOutput != nil {
 			opts.OnOutput(chunk)
 		}
 	})
 	if err != nil {
-		return fmt.Errorf("backend call failed: %w", err)
+		return result.NewFailure[ResolveFileData]([]result.SAWError{
+			result.NewFatal("ENGINE_RESOLVE_BACKEND_CALL_FAILED",
+				fmt.Sprintf("backend call failed: %v", err)).
+				WithContext("file", file),
+		})
 	}
 
 	// Write resolved content back to file
-	if err := os.WriteFile(filePath, []byte(resolved), 0644); err != nil {
-		return fmt.Errorf("failed to write resolved file: %w", err)
+	if err := os.WriteFile(filePath, []byte(resolvedContent), 0644); err != nil {
+		return result.NewFailure[ResolveFileData]([]result.SAWError{
+			result.NewFatal("ENGINE_RESOLVE_FILE_WRITE_FAILED",
+				fmt.Sprintf("failed to write resolved file: %v", err)).
+				WithContext("file", file),
+		})
 	}
 
 	// Stage the resolved file
 	if _, err := git.Run(opts.RepoPath, "add", file); err != nil {
-		return fmt.Errorf("git add failed: %w", err)
+		return result.NewFailure[ResolveFileData]([]result.SAWError{
+			result.NewFatal("ENGINE_RESOLVE_GIT_ADD_FAILED",
+				fmt.Sprintf("git add failed: %v", err)).
+				WithContext("file", file),
+		})
 	}
 
-	return nil
+	return result.NewSuccess(ResolveFileData{File: file})
 }
 
 // agentContextInfo holds agent context for a file.
 type agentContextInfo struct {
-	Owners              []string // agent IDs that own this file
-	AgentTasks          map[string]string // agent ID -> task description
-	RelevantContracts   []protocol.InterfaceContract
+	Owners            []string // agent IDs that own this file
+	AgentTasks        map[string]string
+	RelevantContracts []protocol.InterfaceContract
 }
 
 // buildAgentContext extracts relevant agent and contract information from the manifest.
 func buildAgentContext(file string, manifest *protocol.IMPLManifest, waveNum int) agentContextInfo {
 	ctx := agentContextInfo{
-		Owners:     make([]string, 0),
-		AgentTasks: make(map[string]string),
+		Owners:            make([]string, 0),
+		AgentTasks:        make(map[string]string),
 		RelevantContracts: make([]protocol.InterfaceContract, 0),
 	}
 
@@ -230,9 +293,9 @@ func selectConflictResolutionBackend(chatModel string) (backend.Backend, error) 
 	// Configure backend with single-shot settings
 	config := backend.Config{
 		Model:     bareModel,
-		MaxTurns:  1,      // Single-shot, no tool loop
-		MaxTokens: 16384,  // Conflicts can be large
-		ReadOnly:  true,   // No file writes via tools
+		MaxTurns:  1,     // Single-shot, no tool loop
+		MaxTokens: 16384, // Conflicts can be large
+		ReadOnly:  true,  // No file writes via tools
 	}
 
 	// Select backend based on provider
@@ -274,4 +337,3 @@ func selectConflictResolutionBackend(chatModel string) (backend.Backend, error) 
 		return nil, fmt.Errorf("no API key found for default backend (set ANTHROPIC_API_KEY or use provider prefix)")
 	}
 }
-

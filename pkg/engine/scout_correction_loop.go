@@ -12,6 +12,17 @@ import (
 // MaxScoutCorrectionRetries is the default number of correction retries before giving up.
 const MaxScoutCorrectionRetries = 3
 
+// CorrectionData holds data returned by ScoutCorrectionLoop.
+type CorrectionData struct {
+	Attempts    int    `json:"attempts"`
+	IMPLOutPath string `json:"impl_out_path"`
+}
+
+// SetBlockedData holds data returned by setIMPLStateBlocked.
+type SetBlockedData struct {
+	IMPLPath string `json:"impl_path"`
+}
+
 // ScoutCorrectionOpts configures the E16 Scout correction loop.
 type ScoutCorrectionOpts struct {
 	ScoutOpts  RunScoutOpts
@@ -23,7 +34,7 @@ type ScoutCorrectionOpts struct {
 	// validateFn overrides IMPL doc validation for testing. If nil, uses validateIMPLDoc.
 	validateFn func(implPath string) ([]result.SAWError, error)
 	// setStateFn overrides state-setting for testing. If nil, uses setIMPLStateBlocked.
-	setStateFn func(implPath string) error
+	setStateFn func(implPath string) result.Result[SetBlockedData]
 }
 
 // ScoutCorrectionLoop runs RunScout followed by E16 validation, retrying up to
@@ -31,9 +42,10 @@ type ScoutCorrectionOpts struct {
 // prepends a correction prompt describing the specific failures so the Scout
 // agent can fix them.
 //
-// If validation passes on any attempt, it returns nil. If all retries are
-// exhausted, it sets the IMPL doc state to BLOCKED and returns an error.
-func ScoutCorrectionLoop(ctx context.Context, opts ScoutCorrectionOpts, onChunk func(string)) error {
+// If validation passes on any attempt, it returns a SUCCESS result.
+// If all retries are exhausted, it sets the IMPL doc state to BLOCKED and
+// returns a FATAL result.
+func ScoutCorrectionLoop(ctx context.Context, opts ScoutCorrectionOpts, onChunk func(string)) result.Result[CorrectionData] {
 	maxRetries := opts.MaxRetries
 	if maxRetries <= 0 {
 		maxRetries = MaxScoutCorrectionRetries
@@ -53,14 +65,20 @@ func ScoutCorrectionLoop(ctx context.Context, opts ScoutCorrectionOpts, onChunk 
 	}
 
 	var lastErrors []result.SAWError
+	attempts := 0
 
 	for attempt := 0; attempt <= maxRetries; attempt++ {
 		// Check context before each attempt.
 		select {
 		case <-ctx.Done():
-			return ctx.Err()
+			return result.NewFailure[CorrectionData]([]result.SAWError{
+				result.NewFatal("CONTEXT_CANCELLED",
+					fmt.Sprintf("context cancelled: %v", ctx.Err())),
+			})
 		default:
 		}
+
+		attempts = attempt + 1
 
 		// On retries, prepend a correction prompt to the feature description.
 		scoutOpts := opts.ScoutOpts
@@ -80,35 +98,51 @@ func ScoutCorrectionLoop(ctx context.Context, opts ScoutCorrectionOpts, onChunk 
 		// Run the Scout agent.
 		err := runScout(ctx, scoutOpts, onChunk)
 		if err != nil {
-			return fmt.Errorf("scout correction loop: RunScout failed on attempt %d: %w", attempt+1, err)
+			return result.NewFailure[CorrectionData]([]result.SAWError{
+				result.NewFatal("ENGINE_SCOUT_RUN_FAILED",
+					fmt.Sprintf("scout correction loop: RunScout failed on attempt %d: %v", attempts, err)).
+					WithContext("attempt", fmt.Sprintf("%d", attempts)),
+			})
 		}
 
 		// Validate the output IMPL doc.
 		validationErrors, err := validate(scoutOpts.IMPLOutPath)
 		if err != nil {
-			return fmt.Errorf("scout correction loop: validation failed on attempt %d: %w", attempt+1, err)
+			return result.NewFailure[CorrectionData]([]result.SAWError{
+				result.NewFatal("ENGINE_SCOUT_VALIDATION_FAILED",
+					fmt.Sprintf("scout correction loop: validation failed on attempt %d: %v", attempts, err)).
+					WithContext("attempt", fmt.Sprintf("%d", attempts)),
+			})
 		}
 
 		if len(validationErrors) == 0 {
 			// Validation passed.
-			return nil
+			return result.NewSuccess(CorrectionData{
+				Attempts:    attempts,
+				IMPLOutPath: scoutOpts.IMPLOutPath,
+			})
 		}
 
 		lastErrors = validationErrors
 	}
 
 	// All retries exhausted. Set IMPL doc state to blocked.
-	if err := setState(opts.ScoutOpts.IMPLOutPath); err != nil {
+	setRes := setState(opts.ScoutOpts.IMPLOutPath)
+	if setRes.IsFatal() {
 		// Non-fatal: log but still return the validation error.
-		fmt.Printf("scout correction loop: failed to set IMPL state to BLOCKED: %v\n", err)
+		fmt.Printf("scout correction loop: failed to set IMPL state to BLOCKED: %s\n", setRes.Errors[0].Message)
 	}
 
 	errorMsgs := make([]string, len(lastErrors))
 	for i, e := range lastErrors {
 		errorMsgs[i] = e.Message
 	}
-	return fmt.Errorf("scout correction loop: validation failed after %d retries: %s",
-		maxRetries, strings.Join(errorMsgs, "; "))
+	return result.NewFailure[CorrectionData]([]result.SAWError{
+		result.NewFatal("ENGINE_SCOUT_CORRECTION_EXHAUSTED",
+			fmt.Sprintf("scout correction loop: validation failed after %d retries: %s",
+				maxRetries, strings.Join(errorMsgs, "; "))).
+			WithContext("retries", fmt.Sprintf("%d", maxRetries)),
+	})
 }
 
 // buildCorrectionPrompt constructs a prompt describing validation errors for
@@ -137,17 +171,25 @@ func validateIMPLDoc(implPath string) ([]result.SAWError, error) {
 
 // setIMPLStateBlocked updates the IMPL doc state to BLOCKED after exhausting
 // correction retries.
-func setIMPLStateBlocked(implPath string) error {
+func setIMPLStateBlocked(implPath string) result.Result[SetBlockedData] {
 	manifest, err := protocol.Load(implPath)
 	if err != nil {
-		return err
+		return result.NewFailure[SetBlockedData]([]result.SAWError{
+			result.NewFatal("ENGINE_SET_BLOCKED_LOAD_FAILED",
+				fmt.Sprintf("failed to load manifest: %v", err)).
+				WithContext("impl_path", implPath),
+		})
 	}
 	manifest.State = protocol.StateBlocked
 	if saveRes := protocol.Save(manifest, implPath); saveRes.IsFatal() {
+		errMsg := "failed to save manifest"
 		if len(saveRes.Errors) > 0 {
-			return fmt.Errorf("%s", saveRes.Errors[0].Message)
+			errMsg = saveRes.Errors[0].Message
 		}
-		return fmt.Errorf("failed to save manifest")
+		return result.NewFailure[SetBlockedData]([]result.SAWError{
+			result.NewFatal("ENGINE_SET_BLOCKED_SAVE_FAILED", errMsg).
+				WithContext("impl_path", implPath),
+		})
 	}
-	return nil
+	return result.NewSuccess(SetBlockedData{IMPLPath: implPath})
 }

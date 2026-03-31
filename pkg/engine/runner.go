@@ -413,9 +413,13 @@ func StartWave(ctx context.Context, opts RunWaveOpts, onEvent func(Event)) error
 		}
 		orch.SetWorktreePaths(wtPaths)
 
-		if err := orch.RunWave(waveNum); err != nil {
-			publish("run_failed", map[string]string{"error": err.Error()})
-			return fmt.Errorf("engine.StartWave: RunWave %d: %w", waveNum, err)
+		if runRes := orch.RunWave(waveNum); runRes.IsFatal() {
+			errMsg := "RunWave failed"
+			if len(runRes.Errors) > 0 {
+				errMsg = runRes.Errors[0].Message
+			}
+			publish("run_failed", map[string]string{"error": errMsg})
+			return fmt.Errorf("engine.StartWave: RunWave %d: %s", waveNum, errMsg)
 		}
 
 		// E20: Post-wave stub scan (informational only).
@@ -451,16 +455,24 @@ func StartWave(ctx context.Context, opts RunWaveOpts, onEvent func(Event)) error
 			}
 		}
 
-		if err := orch.MergeWave(waveNum); err != nil {
-			publish("run_failed", map[string]string{"error": err.Error()})
-			return fmt.Errorf("engine.StartWave: MergeWave %d: %w", waveNum, err)
+		if mergeRes := orch.MergeWave(waveNum); mergeRes.IsFatal() {
+			errMsg := "MergeWave failed"
+			if len(mergeRes.Errors) > 0 {
+				errMsg = mergeRes.Errors[0].Message
+			}
+			publish("run_failed", map[string]string{"error": errMsg})
+			return fmt.Errorf("engine.StartWave: MergeWave %d: %s", waveNum, errMsg)
 		}
 
 		testCmd := orch.IMPLDoc().TestCommand
 		if testCmd != "" {
-			if err := orch.RunVerification(testCmd); err != nil {
-				publish("run_failed", map[string]string{"error": err.Error()})
-				return fmt.Errorf("engine.StartWave: RunVerification %d: %w", waveNum, err)
+			if verRes := orch.RunVerification(testCmd); verRes.IsFatal() {
+				errMsg := "RunVerification failed"
+				if len(verRes.Errors) > 0 {
+					errMsg = verRes.Errors[0].Message
+				}
+				publish("run_failed", map[string]string{"error": errMsg})
+				return fmt.Errorf("engine.StartWave: RunVerification %d: %s", waveNum, errMsg)
 			}
 		}
 
@@ -496,11 +508,15 @@ func StartWave(ctx context.Context, opts RunWaveOpts, onEvent func(Event)) error
 			}
 		}
 
-		if err := orch.UpdateIMPLStatus(waveNum); err != nil {
+		if statusRes := orch.UpdateIMPLStatus(waveNum); statusRes.IsFatal() {
 			// Non-fatal: log but don't abort.
+			errMsg := "UpdateIMPLStatus failed"
+			if len(statusRes.Errors) > 0 {
+				errMsg = statusRes.Errors[0].Message
+			}
 			publish("update_status_failed", map[string]string{
 				"wave":  opts.Slug,
-				"error": err.Error(),
+				"error": errMsg,
 			})
 		}
 
@@ -519,9 +535,13 @@ func StartWave(ctx context.Context, opts RunWaveOpts, onEvent func(Event)) error
 		Waves:   len(waves),
 		Agents:  totalAgents,
 	}
-	if err := orchestrator.UpdateContextMD(opts.RepoPath, entry); err != nil {
+	if ctxRes := orchestrator.UpdateContextMD(opts.RepoPath, entry); ctxRes.IsFatal() {
 		// Non-fatal: log but don't abort.
-		loggerFrom(opts.Logger).Warn("engine: E18 UpdateContextMD failed", "err", err)
+		errMsg := "UpdateContextMD failed"
+		if len(ctxRes.Errors) > 0 {
+			errMsg = ctxRes.Errors[0].Message
+		}
+		loggerFrom(opts.Logger).Warn("engine: E18 UpdateContextMD failed", "err", errMsg)
 	}
 
 	publish("run_complete", orchestrator.RunCompletePayload{
@@ -819,7 +839,13 @@ func RunSingleWave(ctx context.Context, opts RunWaveOpts, waveNum int, onEvent f
 		orch.SetWorktreePaths(paths)
 	}
 
-	return orch.RunWave(waveNum)
+	if runRes := orch.RunWave(waveNum); runRes.IsFatal() {
+		if len(runRes.Errors) > 0 {
+			return fmt.Errorf("%s", runRes.Errors[0].Message)
+		}
+		return fmt.Errorf("RunWave failed")
+	}
+	return nil
 }
 
 // RunSingleAgent runs exactly one agent from the specified wave. This is used
@@ -856,7 +882,13 @@ func RunSingleAgent(ctx context.Context, opts RunWaveOpts, waveNum int, agentLet
 		}
 	}
 
-	return orch.RunAgent(waveNum, agentLetter, promptPrefix)
+	if agentRes := orch.RunAgent(waveNum, agentLetter, promptPrefix); agentRes.IsFatal() {
+		if len(agentRes.Errors) > 0 {
+			return fmt.Errorf("%s", agentRes.Errors[0].Message)
+		}
+		return fmt.Errorf("RunAgent failed")
+	}
+	return nil
 }
 
 // MergeWave merges the agent branches for the given wave into the repo's main branch.
@@ -871,8 +903,11 @@ func MergeWave(ctx context.Context, opts RunMergeOpts) error {
 	}
 
 	// Merge the wave
-	if err := orch.MergeWave(opts.WaveNum); err != nil {
-		return err
+	if mergeRes := orch.MergeWave(opts.WaveNum); mergeRes.IsFatal() {
+		if len(mergeRes.Errors) > 0 {
+			return fmt.Errorf("%s", mergeRes.Errors[0].Message)
+		}
+		return fmt.Errorf("MergeWave failed")
 	}
 
 	// Archive journals for all agents in this wave (non-fatal)
@@ -908,7 +943,13 @@ func RunVerification(ctx context.Context, opts RunVerificationOpts) error {
 	if err != nil {
 		return fmt.Errorf("engine.RunVerification: %w", err)
 	}
-	return orch.RunVerification(testCmd)
+	if verRes := orch.RunVerification(testCmd); verRes.IsFatal() {
+		if len(verRes.Errors) > 0 {
+			return fmt.Errorf("%s", verRes.Errors[0].Message)
+		}
+		return fmt.Errorf("RunVerification failed")
+	}
+	return nil
 }
 
 // UpdateIMPLStatus ticks status checkboxes for completed agents.
@@ -1248,16 +1289,25 @@ func startWaveWithGate(ctx context.Context, opts RunWaveOpts, onEvent func(Event
 	for i, wave := range waves {
 		waveNum := wave.Number
 
-		if err := orch.RunWave(waveNum); err != nil {
-			return err
+		if runRes := orch.RunWave(waveNum); runRes.IsFatal() {
+			if len(runRes.Errors) > 0 {
+				return fmt.Errorf("%s", runRes.Errors[0].Message)
+			}
+			return fmt.Errorf("RunWave failed")
 		}
-		if err := orch.MergeWave(waveNum); err != nil {
-			return err
+		if mergeRes := orch.MergeWave(waveNum); mergeRes.IsFatal() {
+			if len(mergeRes.Errors) > 0 {
+				return fmt.Errorf("%s", mergeRes.Errors[0].Message)
+			}
+			return fmt.Errorf("MergeWave failed")
 		}
 		testCmd := orch.IMPLDoc().TestCommand
 		if testCmd != "" {
-			if err := orch.RunVerification(testCmd); err != nil {
-				return err
+			if verRes := orch.RunVerification(testCmd); verRes.IsFatal() {
+				if len(verRes.Errors) > 0 {
+					return fmt.Errorf("%s", verRes.Errors[0].Message)
+				}
+				return fmt.Errorf("RunVerification failed")
 			}
 		}
 

@@ -11,6 +11,7 @@ import (
 
 	"github.com/blackwell-systems/scout-and-wave-go/internal/git"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
 )
 
 // MarkProgramCompleteOpts consolidates all inputs for MarkProgramComplete.
@@ -35,6 +36,19 @@ type MarkProgramCompleteResult struct {
 	ImplsComplete  int    `json:"impls_complete"`
 }
 
+// VerifyData holds data returned by verifyAllTiersComplete.
+type VerifyData struct {
+	TiersChecked int      `json:"tiers_checked"`
+	ImplsChecked int      `json:"impls_checked"`
+	Incomplete   []string `json:"incomplete,omitempty"`
+}
+
+// WriteMarkerData holds data returned by writeProgramCompleteMarker.
+type WriteMarkerData struct {
+	ManifestPath string `json:"manifest_path"`
+	Date         string `json:"date"`
+}
+
 // MarkProgramComplete verifies all tiers complete, writes the SAW:PROGRAM:COMPLETE
 // marker, archives the manifest, updates CONTEXT.md, and commits. Returns a
 // structured result.
@@ -57,8 +71,9 @@ func MarkProgramComplete(ctx context.Context, opts MarkProgramCompleteOpts) (Mar
 	}
 
 	// 3. Verify all tiers complete — hard error if not
-	if err := verifyAllTiersComplete(manifest); err != nil {
-		return MarkProgramCompleteResult{}, fmt.Errorf("mark-program-complete: %w", err)
+	verifyRes := verifyAllTiersComplete(manifest)
+	if verifyRes.IsFatal() {
+		return MarkProgramCompleteResult{}, fmt.Errorf("mark-program-complete: %s", verifyRes.Errors[0].Message)
 	}
 
 	// 4. Count tiers and impls
@@ -66,8 +81,9 @@ func MarkProgramComplete(ctx context.Context, opts MarkProgramCompleteOpts) (Mar
 	implsCount := len(manifest.Impls)
 
 	// 5. Write SAW:PROGRAM:COMPLETE marker
-	if err := writeProgramCompleteMarker(opts.ManifestPath, date); err != nil {
-		return MarkProgramCompleteResult{}, fmt.Errorf("mark-program-complete: failed to update manifest: %w", err)
+	markerRes := writeProgramCompleteMarker(opts.ManifestPath, date)
+	if markerRes.IsFatal() {
+		return MarkProgramCompleteResult{}, fmt.Errorf("mark-program-complete: failed to update manifest: %s", markerRes.Errors[0].Message)
 	}
 
 	// 6. Archive to docs/PROGRAM/complete/ — non-fatal
@@ -107,7 +123,7 @@ func MarkProgramComplete(ctx context.Context, opts MarkProgramCompleteOpts) (Mar
 }
 
 // verifyAllTiersComplete checks that all IMPLs in all tiers have status "complete".
-func verifyAllTiersComplete(manifest *protocol.PROGRAMManifest) error {
+func verifyAllTiersComplete(manifest *protocol.PROGRAMManifest) result.Result[VerifyData] {
 	implStatus := make(map[string]string)
 	for _, impl := range manifest.Impls {
 		implStatus[impl.Slug] = impl.Status
@@ -124,17 +140,29 @@ func verifyAllTiersComplete(manifest *protocol.PROGRAMManifest) error {
 	}
 
 	if len(incomplete) > 0 {
-		return fmt.Errorf("not all tiers complete — incomplete IMPLs: %s", strings.Join(incomplete, ", "))
+		return result.NewFailure[VerifyData]([]result.SAWError{
+			result.NewFatal("ENGINE_VERIFY_TIERS_INCOMPLETE",
+				fmt.Sprintf("not all tiers complete — incomplete IMPLs: %s", strings.Join(incomplete, ", "))).
+				WithContext("incomplete_count", fmt.Sprintf("%d", len(incomplete))),
+		})
 	}
-	return nil
+
+	return result.NewSuccess(VerifyData{
+		TiersChecked: len(manifest.Tiers),
+		ImplsChecked: len(manifest.Impls),
+	})
 }
 
 // writeProgramCompleteMarker updates the manifest YAML file to set state: COMPLETE,
 // completion_date, and appends the SAW:PROGRAM:COMPLETE marker.
-func writeProgramCompleteMarker(manifestPath, date string) error {
+func writeProgramCompleteMarker(manifestPath, date string) result.Result[WriteMarkerData] {
 	data, err := os.ReadFile(manifestPath)
 	if err != nil {
-		return fmt.Errorf("cannot read manifest: %w", err)
+		return result.NewFailure[WriteMarkerData]([]result.SAWError{
+			result.NewFatal("ENGINE_MARKER_READ_FAILED",
+				fmt.Sprintf("cannot read manifest: %v", err)).
+				WithContext("manifest_path", manifestPath),
+		})
 	}
 
 	lines := strings.Split(string(data), "\n")
@@ -183,9 +211,17 @@ func writeProgramCompleteMarker(manifestPath, date string) error {
 
 	content := strings.Join(filtered, "\n")
 	if err := os.WriteFile(manifestPath, []byte(content), 0644); err != nil {
-		return fmt.Errorf("cannot write manifest: %w", err)
+		return result.NewFailure[WriteMarkerData]([]result.SAWError{
+			result.NewFatal("ENGINE_MARKER_WRITE_FAILED",
+				fmt.Sprintf("cannot write manifest: %v", err)).
+				WithContext("manifest_path", manifestPath),
+		})
 	}
-	return nil
+
+	return result.NewSuccess(WriteMarkerData{
+		ManifestPath: manifestPath,
+		Date:         date,
+	})
 }
 
 // updateContextForProgram appends a program-level completion entry to CONTEXT.md.

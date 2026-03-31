@@ -27,6 +27,7 @@ import (
 	openaibackend "github.com/blackwell-systems/scout-and-wave-go/pkg/agent/backend/openai"
 	"github.com/blackwell-systems/scout-and-wave-go/internal/git"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/tools"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/worktree"
 )
@@ -43,12 +44,14 @@ func init() {
 // *protocol.IMPLManifest signature. This adapter is temporary — once Agent B
 // changes protocol.ValidateInvariants to accept *IMPLManifest directly, this
 // can be replaced with a direct reference.
-func validateManifestInvariantsAdapter(manifest *protocol.IMPLManifest) error {
+func validateManifestInvariantsAdapter(manifest *protocol.IMPLManifest) result.Result[ValidateData] {
 	if manifest == nil {
-		return nil
+		return result.NewSuccess(ValidateData{WavesChecked: 0})
 	}
 	// Perform I1 validation directly using manifest data (same logic as protocol.ValidateInvariants).
+	wavesChecked := 0
 	for _, wave := range manifest.Waves {
+		wavesChecked++
 		seen := make(map[string]string) // "repo:file" -> agent ID
 		for _, agent := range wave.Agents {
 			for _, file := range agent.Files {
@@ -62,16 +65,18 @@ func validateManifestInvariantsAdapter(manifest *protocol.IMPLManifest) error {
 				}
 				key := repo + ":" + file
 				if prev, ok := seen[key]; ok {
-					return fmt.Errorf(
-						"I1 violation in Wave %d: file %q claimed by both Agent %s and Agent %s",
-						wave.Number, file, prev, agent.ID,
-					)
+					return result.NewFailure[ValidateData]([]result.SAWError{
+						result.NewFatal(result.CodeDisjointOwnership, fmt.Sprintf(
+							"I1 violation in Wave %d: file %q claimed by both Agent %s and Agent %s",
+							wave.Number, file, prev, agent.ID,
+						)),
+					})
 				}
 				seen[key] = agent.ID
 			}
 		}
 	}
-	return nil
+	return result.NewSuccess(ValidateData{WavesChecked: wavesChecked})
 }
 
 // defaultAgentTimeout is the maximum time RunWave waits per agent for a
@@ -83,11 +88,13 @@ var defaultAgentPollInterval = 10 * time.Second
 
 // validateInvariantsFunc is replaced by pkg/protocol via SetValidateInvariantsFunc.
 // Default no-op for Wave 1 compilation.
-var validateInvariantsFunc = func(doc *protocol.IMPLManifest) error { return nil }
+var validateInvariantsFunc = func(doc *protocol.IMPLManifest) result.Result[ValidateData] {
+	return result.NewSuccess(ValidateData{})
+}
 
 // SetValidateInvariantsFunc allows pkg/protocol to inject the real implementation
 // without a direct import cycle.
-func SetValidateInvariantsFunc(f func(doc *protocol.IMPLManifest) error) {
+func SetValidateInvariantsFunc(f func(doc *protocol.IMPLManifest) result.Result[ValidateData]) {
 	validateInvariantsFunc = f
 }
 
@@ -117,11 +124,15 @@ const MaxTimeoutRetries = 1
 
 // mergeWaveFunc is replaced by merge.go via init().
 // Default no-op for compilation.
-var mergeWaveFunc = func(o *Orchestrator, waveNum int) error { return nil }
+var mergeWaveFunc = func(o *Orchestrator, waveNum int) result.Result[MergeData] {
+	return result.NewSuccess(MergeData{WaveNum: waveNum})
+}
 
 // runVerificationFunc is replaced by verification.go via init().
 // Default no-op for compilation.
-var runVerificationFunc = func(o *Orchestrator, testCommand string) error { return nil }
+var runVerificationFunc = func(o *Orchestrator, testCommand string) result.Result[VerificationData] {
+	return result.NewSuccess(VerificationData{TestCommand: testCommand})
+}
 
 // worktreeCreatorFunc is a seam for tests: it creates a worktree for wave/agent
 // and returns the worktree path. Tests can replace this to avoid real git ops.
@@ -226,13 +237,15 @@ type BackendConfig struct {
 }
 
 // validateModelName ensures model name contains only safe characters and is
-// within reasonable length limits. Returns error if validation fails.
-func validateModelName(model string) error {
+// within reasonable length limits. Returns result failure if validation fails.
+func validateModelName(model string) result.Result[ModelData] {
 	if model == "" {
-		return nil // empty is allowed (falls back to defaults)
+		return result.NewSuccess(ModelData{Model: model}) // empty is allowed (falls back to defaults)
 	}
 	if len(model) > 200 {
-		return fmt.Errorf("model name too long (max 200 chars)")
+		return result.NewFailure[ModelData]([]result.SAWError{
+			result.NewFatal(result.CodeInvalidFieldValue, "model name too long (max 200 chars)"),
+		})
 	}
 	// Allow alphanumeric, hyphens, dots, colons, underscores, slashes (for paths like us.anthropic.X)
 	for _, ch := range model {
@@ -240,10 +253,13 @@ func validateModelName(model string) error {
 			!(ch >= 'A' && ch <= 'Z') &&
 			!(ch >= '0' && ch <= '9') &&
 			ch != '-' && ch != '.' && ch != ':' && ch != '_' && ch != '/' {
-			return fmt.Errorf("model name contains invalid character: %q", ch)
+			return result.NewFailure[ModelData]([]result.SAWError{
+				result.NewFatal(result.CodeInvalidFieldValue,
+					fmt.Sprintf("model name contains invalid character: %q", ch)),
+			})
 		}
 	}
-	return nil
+	return result.NewSuccess(ModelData{Model: model})
 }
 
 // parseProviderPrefix splits a provider-qualified model string.
@@ -291,8 +307,12 @@ func expandBedrockModelID(shortName string) string {
 // newBackendFunc constructs a backend.Backend from config. Seam for tests.
 var newBackendFunc = func(cfg BackendConfig) (backend.Backend, error) {
 	// Validate model name before processing to prevent injection attacks.
-	if err := validateModelName(cfg.Model); err != nil {
-		return nil, fmt.Errorf("orchestrator: invalid model name: %w", err)
+	if res := validateModelName(cfg.Model); res.IsFatal() {
+		msg := "orchestrator: invalid model name"
+		if len(res.Errors) > 0 {
+			msg = fmt.Sprintf("orchestrator: invalid model name: %s", res.Errors[0].Message)
+		}
+		return nil, fmt.Errorf("%s", msg)
 	}
 	
 	// Parse any provider prefix from the model string (e.g. "openai:gpt-4o").
@@ -512,28 +532,42 @@ func (o *Orchestrator) RepoPath() string {
 }
 
 // TransitionTo advances the state machine to newState.
-// It returns a descriptive error if the transition is not permitted.
-func (o *Orchestrator) TransitionTo(newState protocol.ProtocolState) error {
-	if !isValidTransition(o.state, newState) {
-		return fmt.Errorf(
-			"orchestrator: invalid state transition from %s to %s",
-			o.state, newState,
-		)
+// It returns a fatal result if the transition is not permitted.
+func (o *Orchestrator) TransitionTo(newState protocol.ProtocolState) result.Result[TransitionData] {
+	from := o.state
+	if !isValidTransition(from, newState) {
+		return result.NewFailure[TransitionData]([]result.SAWError{
+			result.NewFatal(result.CodeStateTransitionInvalid, fmt.Sprintf(
+				"orchestrator: invalid state transition from %s to %s",
+				from, newState,
+			)),
+		})
 	}
 	o.state = newState
-	return nil
+	return result.NewSuccess(TransitionData{
+		From: string(from),
+		To:   string(newState),
+	})
 }
 
 // RunWave executes all agents in wave waveNum concurrently. Each agent receives
 // its own git worktree and the backend handles all LLM interaction internally.
 // RunWave blocks until all agents complete (or one fails), then returns.
-func (o *Orchestrator) RunWave(waveNum int) error {
+func (o *Orchestrator) RunWave(waveNum int) result.Result[WaveData] {
 	if o.implDoc == nil {
-		return fmt.Errorf("orchestrator.RunWave: no IMPL doc loaded")
+		return result.NewFailure[WaveData]([]result.SAWError{
+			result.NewFatal(result.CodeIMPLNotFound, "orchestrator.RunWave: no IMPL doc loaded"),
+		})
 	}
 	// I1: Validate disjoint file ownership before any worktrees are created.
-	if err := validateInvariantsFunc(o.implDoc); err != nil {
-		return fmt.Errorf("orchestrator.RunWave: invariant violation: %w", err)
+	if res := validateInvariantsFunc(o.implDoc); res.IsFatal() {
+		msg := "orchestrator.RunWave: invariant violation"
+		if len(res.Errors) > 0 {
+			msg = fmt.Sprintf("orchestrator.RunWave: invariant violation: %s", res.Errors[0].Message)
+		}
+		return result.NewFailure[WaveData]([]result.SAWError{
+			result.NewFatal(result.CodeInvariantViolation, msg),
+		})
 	}
 	// Find the wave in the doc.
 	var wave *protocol.Wave
@@ -544,13 +578,16 @@ func (o *Orchestrator) RunWave(waveNum int) error {
 		}
 	}
 	if wave == nil && len(o.implDoc.Waves) > 0 {
-		return fmt.Errorf("orchestrator.RunWave: wave %d not found in IMPL doc", waveNum)
+		return result.NewFailure[WaveData]([]result.SAWError{
+			result.NewFatal(result.CodeWaveNotReady, fmt.Sprintf(
+				"orchestrator.RunWave: wave %d not found in IMPL doc", waveNum)),
+		})
 	}
 	o.currentWave = waveNum
 
 	// Nothing to do if there are no waves defined.
 	if wave == nil {
-		return nil
+		return result.NewSuccess(WaveData{WaveNum: waveNum, AgentCount: 0})
 	}
 
 	// Reset per-agent retry counts for this wave run (transient state).
@@ -564,7 +601,10 @@ func (o *Orchestrator) RunWave(waveNum int) error {
 	wm := worktree.New(o.repoPath, slug)
 	defaultBackend, err := newBackendFunc(BackendConfig{Kind: "auto", Model: o.defaultModel})
 	if err != nil {
-		return fmt.Errorf("orchestrator.RunWave: failed to create backend: %w", err)
+		return result.NewFailure[WaveData]([]result.SAWError{
+			result.NewFatal(result.CodeAgentLaunchFailed,
+				fmt.Sprintf("orchestrator.RunWave: failed to create backend: %s", err.Error())),
+		})
 	}
 	defaultRunner := newRunnerFunc(defaultBackend, wm)
 
@@ -604,7 +644,10 @@ func (o *Orchestrator) RunWave(waveNum int) error {
 			}
 		}
 		if !found {
-			return fmt.Errorf("orchestrator.RunWave: prioritized agent %s not found in wave %d", agentID, waveNum)
+			return result.NewFailure[WaveData]([]result.SAWError{
+				result.NewFatal(result.CodeAgentLaunchFailed, fmt.Sprintf(
+					"orchestrator.RunWave: prioritized agent %s not found in wave %d", agentID, waveNum)),
+			})
 		}
 
 		eg.Go(func() error {
@@ -633,7 +676,9 @@ func (o *Orchestrator) RunWave(waveNum int) error {
 	}
 
 	if err := eg.Wait(); err != nil {
-		return err
+		return result.NewFailure[WaveData]([]result.SAWError{
+			result.NewFatal(result.CodeAgentLaunchFailed, err.Error()),
+		})
 	}
 
 	// All agents in the wave completed successfully.
@@ -645,7 +690,7 @@ func (o *Orchestrator) RunWave(waveNum int) error {
 		},
 	})
 
-	return nil
+	return result.NewSuccess(WaveData{WaveNum: waveNum, AgentCount: len(wave.Agents)})
 }
 
 // wtIMPLPath derives the IMPL doc path inside the agent's worktree.
@@ -1129,9 +1174,11 @@ func autoCommitWorktree(wtPath string, waveNum int, agentLetter string, baseSHA 
 // by letter. This is used for single-agent reruns. If promptPrefix is non-empty,
 // it is prepended to the agent's task prompt (e.g. scope-reduction hints for
 // timeout reruns).
-func (o *Orchestrator) RunAgent(waveNum int, agentLetter string, promptPrefix string) error {
+func (o *Orchestrator) RunAgent(waveNum int, agentLetter string, promptPrefix string) result.Result[AgentData] {
 	if o.implDoc == nil {
-		return fmt.Errorf("orchestrator.RunAgent: no IMPL doc loaded")
+		return result.NewFailure[AgentData]([]result.SAWError{
+			result.NewFatal(result.CodeIMPLNotFound, "orchestrator.RunAgent: no IMPL doc loaded"),
+		})
 	}
 	// Find the wave.
 	var wave *protocol.Wave
@@ -1142,7 +1189,10 @@ func (o *Orchestrator) RunAgent(waveNum int, agentLetter string, promptPrefix st
 		}
 	}
 	if wave == nil {
-		return fmt.Errorf("orchestrator.RunAgent: wave %d not found", waveNum)
+		return result.NewFailure[AgentData]([]result.SAWError{
+			result.NewFatal(result.CodeWaveNotReady, fmt.Sprintf(
+				"orchestrator.RunAgent: wave %d not found", waveNum)),
+		})
 	}
 	// Find the agent in the wave.
 	var protoAgent *protocol.Agent
@@ -1153,7 +1203,10 @@ func (o *Orchestrator) RunAgent(waveNum int, agentLetter string, promptPrefix st
 		}
 	}
 	if protoAgent == nil {
-		return fmt.Errorf("orchestrator.RunAgent: agent %s not found in wave %d", agentLetter, waveNum)
+		return result.NewFailure[AgentData]([]result.SAWError{
+			result.NewFatal(result.CodeAgentLaunchFailed, fmt.Sprintf(
+				"orchestrator.RunAgent: agent %s not found in wave %d", agentLetter, waveNum)),
+		})
 	}
 
 	// Use protocol.Agent directly (no agentToSpec adapter needed).
@@ -1168,36 +1221,47 @@ func (o *Orchestrator) RunAgent(waveNum int, agentLetter string, promptPrefix st
 	wm := worktree.New(o.repoPath, o.implSlug())
 	b, err := newBackendFunc(BackendConfig{Kind: "auto", Model: o.defaultModel})
 	if err != nil {
-		return fmt.Errorf("orchestrator.RunAgent: create backend: %w", err)
+		return result.NewFailure[AgentData]([]result.SAWError{
+			result.NewFatal(result.CodeAgentLaunchFailed,
+				fmt.Sprintf("orchestrator.RunAgent: create backend: %s", err.Error())),
+		})
 	}
 	if spec.Model != "" && spec.Model != o.defaultModel {
 		b, err = newBackendFunc(BackendConfig{Kind: "auto", Model: spec.Model})
 		if err != nil {
-			return fmt.Errorf("orchestrator.RunAgent: create backend for model %s: %w", spec.Model, err)
+			return result.NewFailure[AgentData]([]result.SAWError{
+				result.NewFatal(result.CodeAgentLaunchFailed, fmt.Sprintf(
+					"orchestrator.RunAgent: create backend for model %s: %s", spec.Model, err.Error())),
+			})
 		}
 	}
 	runner := newRunnerFunc(b, wm)
 
-	return o.launchAgent(context.Background(), runner, wm, waveNum, spec)
+	if launchErr := o.launchAgent(context.Background(), runner, wm, waveNum, spec); launchErr != nil {
+		return result.NewFailure[AgentData]([]result.SAWError{
+			result.NewFatal(result.CodeAgentLaunchFailed, launchErr.Error()),
+		})
+	}
+	return result.NewSuccess(AgentData{WaveNum: waveNum, AgentLetter: agentLetter})
 }
 
 // MergeWave merges the worktrees for wave waveNum.
 // Implementation is provided by merge.go via mergeWaveFunc.
-func (o *Orchestrator) MergeWave(waveNum int) error {
+func (o *Orchestrator) MergeWave(waveNum int) result.Result[MergeData] {
 	return mergeWaveFunc(o, waveNum)
 }
 
 // RunVerification runs the post-merge test command.
 // Implementation is provided by verification.go via runVerificationFunc.
-func (o *Orchestrator) RunVerification(testCommand string) error {
+func (o *Orchestrator) RunVerification(testCommand string) result.Result[VerificationData] {
 	return runVerificationFunc(o, testCommand)
 }
 
 // UpdateIMPLStatus ticks the Status table checkboxes in the IMPL doc for all
-// agents in waveNum that reported status: complete. Non-fatal: returns nil
-// if no Status section found. Returns error only on file I/O failure.
-func (o *Orchestrator) UpdateIMPLStatus(waveNum int) error {
-	// 1. Find wave in o.implDoc.Waves by waveNum. If not found, return nil.
+// agents in waveNum that reported status: complete. Non-fatal: returns success
+// if no Status section found. Returns failure only on file I/O failure.
+func (o *Orchestrator) UpdateIMPLStatus(waveNum int) result.Result[UpdateData] {
+	// 1. Find wave in o.implDoc.Waves by waveNum. If not found, return success.
 	var wave *protocol.Wave
 	for i := range o.implDoc.Waves {
 		if o.implDoc.Waves[i].Number == waveNum {
@@ -1206,14 +1270,14 @@ func (o *Orchestrator) UpdateIMPLStatus(waveNum int) error {
 		}
 	}
 	if wave == nil {
-		return nil
+		return result.NewSuccess(UpdateData{WaveNum: waveNum, CompletedAgents: nil})
 	}
 
 	// 2. Load manifest and check completion reports.
 	//    If report not found or status != StatusComplete, skip.
 	manifest, err := protocol.Load(o.implDocPath)
 	if err != nil {
-		return nil // Cannot determine completed agents without manifest
+		return result.NewSuccess(UpdateData{WaveNum: waveNum, CompletedAgents: nil}) // Cannot determine completed agents without manifest
 	}
 
 	var completedLetters []string
@@ -1228,17 +1292,19 @@ func (o *Orchestrator) UpdateIMPLStatus(waveNum int) error {
 		completedLetters = append(completedLetters, a.ID)
 	}
 
-	// 4. If no complete agents, return nil.
+	// 4. If no complete agents, return success.
 	if len(completedLetters) == 0 {
-		return nil
+		return result.NewSuccess(UpdateData{WaveNum: waveNum, CompletedAgents: nil})
 	}
 
 	// 5. Call protocol.UpdateIMPLStatus to tick checkboxes.
 	res := protocol.UpdateIMPLStatus(o.implDocPath, completedLetters)
 	if res.IsFatal() && len(res.Errors) > 0 {
-		return fmt.Errorf("%s", res.Errors[0].Message)
+		return result.NewFailure[UpdateData]([]result.SAWError{
+			result.NewFatal(result.CodeStatusUpdateFailed, res.Errors[0].Message),
+		})
 	}
-	return nil
+	return result.NewSuccess(UpdateData{WaveNum: waveNum, CompletedAgents: completedLetters})
 }
 
 // buildWaveConstraints loads the IMPL manifest and builds per-agent constraints

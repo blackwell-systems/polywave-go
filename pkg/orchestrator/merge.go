@@ -7,6 +7,7 @@ import (
 
 	"github.com/blackwell-systems/scout-and-wave-go/internal/git"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
 )
 
 func init() {
@@ -15,30 +16,42 @@ func init() {
 
 // executeMergeWave implements the full SAW merge procedure for waveNum.
 // Called by Orchestrator.MergeWave via the mergeWaveFunc variable (set in init()).
-func executeMergeWave(o *Orchestrator, waveNum int) error {
+func executeMergeWave(o *Orchestrator, waveNum int) result.Result[MergeData] {
 	// Step 1: Find wave in IMPL doc.
 	wave := o.IMPLDoc().FindWave(waveNum)
 	if wave == nil {
-		return fmt.Errorf("executeMergeWave: wave %d not found in IMPL doc", waveNum)
+		return result.NewFailure[MergeData]([]result.SAWError{
+			result.NewFatal(result.CodeWaveNotReady,
+				fmt.Sprintf("executeMergeWave: wave %d not found in IMPL doc", waveNum)),
+		})
 	}
 
 	// Step 2: Load manifest and check completion reports; abort if any agent is partial or blocked.
 	manifest, err := protocol.Load(o.implDocPath)
 	if err != nil {
-		return fmt.Errorf("executeMergeWave: loading manifest: %w", err)
+		return result.NewFailure[MergeData]([]result.SAWError{
+			result.NewFatal(result.CodeIMPLParseFailed,
+				fmt.Sprintf("executeMergeWave: loading manifest: %s", err.Error())),
+		})
 	}
 
 	reports := make(map[string]*protocol.CompletionReport, len(wave.Agents))
 	for _, agent := range wave.Agents {
 		protoReport, ok := manifest.CompletionReports[agent.ID]
 		if !ok {
-			return fmt.Errorf("executeMergeWave: no completion report for agent %s", agent.ID)
+			return result.NewFailure[MergeData]([]result.SAWError{
+				result.NewFatal(result.CodeCompletionReportMissing,
+					fmt.Sprintf("executeMergeWave: no completion report for agent %s", agent.ID)),
+			})
 		}
 
 		report := &protoReport
 
 		if report.Status == protocol.StatusPartial || report.Status == protocol.StatusBlocked {
-			return fmt.Errorf("executeMergeWave: agent %s has status %q — merge aborted", agent.ID, report.Status)
+			return result.NewFailure[MergeData]([]result.SAWError{
+				result.NewFatal(result.CodeInvalidMergeState, fmt.Sprintf(
+					"executeMergeWave: agent %s has status %q — merge aborted", agent.ID, report.Status)),
+			})
 		}
 		reports[agent.ID] = report
 	}
@@ -46,7 +59,10 @@ func executeMergeWave(o *Orchestrator, waveNum int) error {
 	// Step 3: Record base commit before any merges.
 	baseCommit, err := git.RevParse(o.repoPath, "HEAD")
 	if err != nil {
-		return fmt.Errorf("executeMergeWave: resolving HEAD: %w", err)
+		return result.NewFailure[MergeData]([]result.SAWError{
+			result.NewFatal(result.CodeCommitMissing,
+				fmt.Sprintf("executeMergeWave: resolving HEAD: %s", err.Error())),
+		})
 	}
 
 	// Build per-agent repo map for cross-repo support.
@@ -64,7 +80,10 @@ func executeMergeWave(o *Orchestrator, waveNum int) error {
 	// merged and deleted.
 	mergeLog, err := protocol.LoadMergeLog(o.implDocPath, waveNum)
 	if err != nil {
-		return fmt.Errorf("executeMergeWave: loading merge-log: %w", err)
+		return result.NewFailure[MergeData]([]result.SAWError{
+			result.NewFatal(result.CodeIMPLParseFailed,
+				fmt.Sprintf("executeMergeWave: loading merge-log: %s", err.Error())),
+		})
 	}
 
 	// Filter out already-merged agents before verification.
@@ -80,21 +99,22 @@ func executeMergeWave(o *Orchestrator, waveNum int) error {
 	// If all agents already merged, we're done (full idempotency).
 	if len(pendingReports) == 0 {
 		o.log().Debug("executeMergeWave: all agents already merged", "wave", waveNum)
-		return nil
+		return result.NewSuccess(MergeData{WaveNum: waveNum})
 	}
 
 	// Step 5: Verify each pending agent has commits beyond base.
-	if err := verifyAgentCommits(o.repoPath, baseCommit, pendingReports, agentRepoDir); err != nil {
-		return err
+	if res := verifyAgentCommits(o.repoPath, baseCommit, pendingReports, agentRepoDir); res.IsFatal() {
+		return result.NewFailure[MergeData](res.Errors)
 	}
 
 	// Step 6: Check for file conflicts across pending agents.
-	if err := predictConflicts(pendingReports); err != nil {
-		return err
+	if res := predictConflicts(pendingReports); res.IsFatal() {
+		return result.NewFailure[MergeData](res.Errors)
 	}
 
 	// Step 7 & 8: Merge each complete agent; clean up worktree afterward.
 	// Cross-repo agents are merged in their own repos.
+	var mergedAgents []string
 	for _, agent := range wave.Agents {
 		report, ok := reports[agent.ID]
 		if !ok || report.Status != protocol.StatusComplete {
@@ -142,13 +162,19 @@ func executeMergeWave(o *Orchestrator, waveNum int) error {
 		mergeMsg := fmt.Sprintf("Merge %s: %s", branch, agent.ID)
 
 		if err := git.MergeNoFF(mergeRepo, branch, mergeMsg); err != nil {
-			return fmt.Errorf("executeMergeWave: merging %s in %s: %w", branch, mergeRepo, err)
+			return result.NewFailure[MergeData]([]result.SAWError{
+				result.NewFatal(result.CodeMergeConflict, fmt.Sprintf(
+					"executeMergeWave: merging %s in %s: %s", branch, mergeRepo, err.Error())),
+			})
 		}
 
 		// Get merge commit SHA
 		mergeSHA, err := git.RevParse(mergeRepo, "HEAD")
 		if err != nil {
-			return fmt.Errorf("executeMergeWave: getting merge SHA for %s: %w", agent.ID, err)
+			return result.NewFailure[MergeData]([]result.SAWError{
+				result.NewFatal(result.CodeCommitMissing, fmt.Sprintf(
+					"executeMergeWave: getting merge SHA for %s: %s", agent.ID, err.Error())),
+			})
 		}
 
 		// Record merge in log (E9)
@@ -172,17 +198,20 @@ func executeMergeWave(o *Orchestrator, waveNum int) error {
 		if err := git.DeleteBranch(mergeRepo, branch); err != nil {
 			o.log().Warn("executeMergeWave: could not delete branch", "branch", branch, "err", err)
 		}
+
+		mergedAgents = append(mergedAgents, agent.ID)
 	}
 
-	return nil
+	return result.NewSuccess(MergeData{WaveNum: waveNum})
 }
 
 // predictConflicts cross-references files_changed and files_created from all
-// completion reports. Returns error if any file appears in >1 agent's lists.
+// completion reports. Returns failure if any file appears in >1 agent's lists.
 // Excludes files matching "docs/IMPL/" prefix.
-func predictConflicts(reports map[string]*protocol.CompletionReport) error {
+func predictConflicts(reports map[string]*protocol.CompletionReport) result.Result[ConflictData] {
 	// map of filename -> first agent letter that claimed it
 	seen := make(map[string]string)
+	filesChecked := 0
 
 	for letter, report := range reports {
 		all := append(report.FilesChanged, report.FilesCreated...)
@@ -190,9 +219,13 @@ func predictConflicts(reports map[string]*protocol.CompletionReport) error {
 			if strings.HasPrefix(f, "docs/IMPL/") {
 				continue
 			}
+			filesChecked++
 			if prev, exists := seen[f]; exists {
 				if prev != letter {
-					return fmt.Errorf("predictConflicts: file %q claimed by both agent %s and agent %s", f, prev, letter)
+					return result.NewFailure[ConflictData]([]result.SAWError{
+						result.NewFatal(result.CodeMergeConflict, fmt.Sprintf(
+							"predictConflicts: file %q claimed by both agent %s and agent %s", f, prev, letter)),
+					})
 				}
 			} else {
 				seen[f] = letter
@@ -200,13 +233,14 @@ func predictConflicts(reports map[string]*protocol.CompletionReport) error {
 		}
 	}
 
-	return nil
+	return result.NewSuccess(ConflictData{FilesChecked: filesChecked})
 }
 
 // verifyAgentCommits checks each agent with status:complete has at least 1 commit
 // on its branch beyond baseCommit. agentRepoDir maps agent IDs to their repo
 // paths for cross-repo waves; agents not in the map use repoPath.
-func verifyAgentCommits(repoPath, baseCommit string, reports map[string]*protocol.CompletionReport, agentRepoDir map[string]string) error {
+func verifyAgentCommits(repoPath, baseCommit string, reports map[string]*protocol.CompletionReport, agentRepoDir map[string]string) result.Result[VerifyCommitsData] {
+	agentsVerified := 0
 	for letter, report := range reports {
 		if report.Status != protocol.StatusComplete {
 			continue
@@ -214,7 +248,10 @@ func verifyAgentCommits(repoPath, baseCommit string, reports map[string]*protoco
 
 		branch := report.Branch
 		if branch == "" {
-			return fmt.Errorf("verifyAgentCommits: agent %s report has empty branch field", letter)
+			return result.NewFailure[VerifyCommitsData]([]result.SAWError{
+				result.NewFatal(result.CodeCommitMissing, fmt.Sprintf(
+					"verifyAgentCommits: agent %s report has empty branch field", letter)),
+			})
 		}
 
 		// Skip diff check for no-op agents (auto-committed with no changes).
@@ -232,9 +269,14 @@ func verifyAgentCommits(repoPath, baseCommit string, reports map[string]*protoco
 		// merged into HEAD (idempotent retry after cleanup deleted the branch).
 		if !git.BranchExists(checkRepo, branch) {
 			if report.Commit != "" && git.IsAncestor(checkRepo, report.Commit, "HEAD") {
+				agentsVerified++
 				continue // already merged
 			}
-			return fmt.Errorf("verifyAgentCommits: agent %s branch %q does not exist in %s and commit %q is not merged into HEAD", letter, branch, checkRepo, report.Commit)
+			return result.NewFailure[VerifyCommitsData]([]result.SAWError{
+				result.NewFatal(result.CodeCommitMissing, fmt.Sprintf(
+					"verifyAgentCommits: agent %s branch %q does not exist in %s and commit %q is not merged into HEAD",
+					letter, branch, checkRepo, report.Commit)),
+			})
 		}
 
 		// Use HEAD..branch in the agent's own repo for cross-repo agents
@@ -246,12 +288,20 @@ func verifyAgentCommits(repoPath, baseCommit string, reports map[string]*protoco
 
 		files, err := git.DiffNameOnly(checkRepo, diffBase, branch)
 		if err != nil {
-			return fmt.Errorf("verifyAgentCommits: diffing agent %s branch %q: %w", letter, branch, err)
+			return result.NewFailure[VerifyCommitsData]([]result.SAWError{
+				result.NewFatal(result.CodeCommitMissing, fmt.Sprintf(
+					"verifyAgentCommits: diffing agent %s branch %q: %s", letter, branch, err.Error())),
+			})
 		}
 		if len(files) == 0 {
-			return fmt.Errorf("verifyAgentCommits: ISOLATION FAILURE — agent %s branch %q has no commits beyond %s", letter, branch, diffBase)
+			return result.NewFailure[VerifyCommitsData]([]result.SAWError{
+				result.NewFatal(result.CodeIsolationVerifyFailed, fmt.Sprintf(
+					"verifyAgentCommits: ISOLATION FAILURE — agent %s branch %q has no commits beyond %s",
+					letter, branch, diffBase)),
+			})
 		}
+		agentsVerified++
 	}
 
-	return nil
+	return result.NewSuccess(VerifyCommitsData{AgentsVerified: agentsVerified})
 }

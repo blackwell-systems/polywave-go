@@ -45,8 +45,12 @@ Exit codes:
 			}
 
 			// Sync status from disk before displaying (non-fatal on error)
-			if syncErr := engine.SyncProgramStatusFromDisk(manifestPath, repoPath); syncErr != nil {
-				fmt.Fprintf(os.Stderr, "program-status: warning: sync from disk failed: %v\n", syncErr)
+			if syncRes := engine.SyncProgramStatusFromDisk(manifestPath, repoPath); syncRes.IsFatal() {
+				syncErrMsg := "unknown error"
+				if len(syncRes.Errors) > 0 {
+					syncErrMsg = syncRes.Errors[0].Message
+				}
+				fmt.Fprintf(os.Stderr, "program-status: warning: sync from disk failed: %s\n", syncErrMsg)
 			}
 
 			// Get program status

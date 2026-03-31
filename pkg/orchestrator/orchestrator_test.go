@@ -14,6 +14,7 @@ import (
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/agent"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/agent/backend"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/worktree"
 )
 
@@ -109,17 +110,17 @@ quality_gates:
 	}
 }
 
-// TestRunWaveNilDoc verifies that RunWave returns an error when no waves are defined.
+// TestRunWaveNilDoc verifies that RunWave returns a failure when no waves are defined.
 // (Uses an empty doc with no Waves, then requests wave 1 — not found error.)
 func TestRunWaveNilDoc(t *testing.T) {
 	// Orchestrator with a doc that has waves defined — request a non-existent wave.
 	o := makeOrchWithWave(1, "A")
-	err := o.RunWave(99)
-	if err == nil {
-		t.Fatal("expected error for missing wave 99, got nil")
+	res := o.RunWave(99)
+	if !res.IsFatal() {
+		t.Fatal("expected failure for missing wave 99, got success")
 	}
-	if !strings.Contains(err.Error(), "99") {
-		t.Errorf("error should mention wave number 99, got: %v", err)
+	if len(res.Errors) == 0 || !strings.Contains(res.Errors[0].Message, "99") {
+		t.Errorf("error should mention wave number 99, got: %v", res.Errors)
 	}
 }
 
@@ -165,9 +166,9 @@ func TestSetValidateInvariantsFunc(t *testing.T) {
 	t.Cleanup(func() { validateInvariantsFunc = orig })
 
 	called := false
-	SetValidateInvariantsFunc(func(_ *protocol.IMPLManifest) error {
+	SetValidateInvariantsFunc(func(_ *protocol.IMPLManifest) result.Result[ValidateData] {
 		called = true
-		return nil
+		return result.NewSuccess(ValidateData{})
 	})
 	_ = validateInvariantsFunc(nil)
 	if !called {
@@ -182,14 +183,14 @@ func TestMergeWave_DelegatesTo_mergeWaveFunc(t *testing.T) {
 	t.Cleanup(func() { mergeWaveFunc = orig })
 
 	var gotWave int
-	mergeWaveFunc = func(_ *Orchestrator, waveNum int) error {
+	mergeWaveFunc = func(_ *Orchestrator, waveNum int) result.Result[MergeData] {
 		gotWave = waveNum
-		return nil
+		return result.NewSuccess(MergeData{WaveNum: waveNum})
 	}
 
 	o := makeOrch()
-	if err := o.MergeWave(3); err != nil {
-		t.Fatalf("MergeWave returned error: %v", err)
+	if res := o.MergeWave(3); res.IsFatal() {
+		t.Fatalf("MergeWave returned failure: %v", res.Errors)
 	}
 	if gotWave != 3 {
 		t.Errorf("mergeWaveFunc called with wave %d, want 3", gotWave)
@@ -202,30 +203,30 @@ func TestRunVerification_DelegatesTo_runVerificationFunc(t *testing.T) {
 	t.Cleanup(func() { runVerificationFunc = orig })
 
 	var gotCmd string
-	runVerificationFunc = func(_ *Orchestrator, cmd string) error {
+	runVerificationFunc = func(_ *Orchestrator, cmd string) result.Result[VerificationData] {
 		gotCmd = cmd
-		return nil
+		return result.NewSuccess(VerificationData{TestCommand: cmd})
 	}
 
 	o := makeOrch()
-	if err := o.RunVerification("go test ./..."); err != nil {
-		t.Fatalf("RunVerification returned error: %v", err)
+	if res := o.RunVerification("go test ./..."); res.IsFatal() {
+		t.Fatalf("RunVerification returned failure: %v", res.Errors)
 	}
 	if gotCmd != "go test ./..." {
 		t.Errorf("runVerificationFunc called with %q, want %q", gotCmd, "go test ./...")
 	}
 }
 
-// TestRunWave_WaveNotFound verifies that RunWave returns an error when the
+// TestRunWave_WaveNotFound verifies that RunWave returns a failure when the
 // requested wave number is absent from the IMPL doc.
 func TestRunWave_WaveNotFound(t *testing.T) {
 	o := makeOrchWithWave(1, "A", "B")
-	err := o.RunWave(99)
-	if err == nil {
-		t.Fatal("expected error for missing wave 99, got nil")
+	res := o.RunWave(99)
+	if !res.IsFatal() {
+		t.Fatal("expected failure for missing wave 99, got success")
 	}
-	if !strings.Contains(err.Error(), "99") {
-		t.Errorf("error should mention wave number 99, got: %v", err)
+	if len(res.Errors) == 0 || !strings.Contains(res.Errors[0].Message, "99") {
+		t.Errorf("error should mention wave number 99, got: %v", res.Errors)
 	}
 }
 
@@ -286,8 +287,8 @@ func TestRunWave_LaunchesAllAgents(t *testing.T) {
 	}
 	o := newFromDoc(doc, "/repo", "/repo/IMPL.md")
 
-	if err := o.RunWave(1); err != nil {
-		t.Fatalf("RunWave returned unexpected error: %v", err)
+	if res := o.RunWave(1); res.IsFatal() {
+		t.Fatalf("RunWave returned unexpected failure: %v", res.Errors)
 	}
 
 	if n := atomic.LoadInt32(&worktreeCount); n != 2 {
@@ -343,12 +344,12 @@ func TestRunWave_ReturnsErrorOnAgentFailure(t *testing.T) {
 	}
 	o := newFromDoc(doc, "/repo", "/repo/IMPL.md")
 
-	err := o.RunWave(1)
-	if err == nil {
-		t.Fatal("expected error when agent B fails, got nil")
+	res := o.RunWave(1)
+	if !res.IsFatal() {
+		t.Fatal("expected failure when agent B fails, got success")
 	}
-	if !strings.Contains(err.Error(), "simulated agent failure") {
-		t.Errorf("error should contain the agent failure message, got: %v", err)
+	if len(res.Errors) == 0 || !strings.Contains(res.Errors[0].Message, "simulated agent failure") {
+		t.Errorf("error should contain the agent failure message, got: %v", res.Errors)
 	}
 }
 
@@ -372,8 +373,8 @@ func TestTransitionTo_ValidTransitions(t *testing.T) {
 		o := makeOrch()
 		o.state = tc.from
 
-		if err := o.TransitionTo(tc.to); err != nil {
-			t.Errorf("TransitionTo(%s -> %s): unexpected error: %v", tc.from, tc.to, err)
+		if res := o.TransitionTo(tc.to); res.IsFatal() {
+			t.Errorf("TransitionTo(%s -> %s): unexpected failure: %v", tc.from, tc.to, res.Errors)
 		}
 		if o.State() != tc.to {
 			t.Errorf("after TransitionTo(%s -> %s): state is %s, want %s",
@@ -382,18 +383,18 @@ func TestTransitionTo_ValidTransitions(t *testing.T) {
 	}
 }
 
-// TestTransitionTo_InvalidTransition verifies that an illegal transition returns an error.
+// TestTransitionTo_InvalidTransition verifies that an illegal transition returns a failure.
 func TestTransitionTo_InvalidTransition(t *testing.T) {
 	o := makeOrch()
-	err := o.TransitionTo(protocol.StateComplete)
-	if err == nil {
-		t.Fatal("expected error for SCOUT_PENDING -> COMPLETE, got nil")
+	res := o.TransitionTo(protocol.StateComplete)
+	if !res.IsFatal() {
+		t.Fatal("expected failure for SCOUT_PENDING -> COMPLETE, got success")
 	}
-	if !strings.Contains(err.Error(), "SCOUT_PENDING") {
-		t.Errorf("error should mention source state SCOUT_PENDING, got: %v", err)
+	if len(res.Errors) == 0 || !strings.Contains(res.Errors[0].Message, "SCOUT_PENDING") {
+		t.Errorf("error should mention source state SCOUT_PENDING, got: %v", res.Errors)
 	}
-	if !strings.Contains(err.Error(), "COMPLETE") {
-		t.Errorf("error should mention target state COMPLETE, got: %v", err)
+	if len(res.Errors) == 0 || !strings.Contains(res.Errors[0].Message, "COMPLETE") {
+		t.Errorf("error should mention target state COMPLETE, got: %v", res.Errors)
 	}
 	if o.State() != protocol.StateScoutPending {
 		t.Errorf("state changed after invalid transition: got %s", o.State())
@@ -417,9 +418,9 @@ func TestTransitionTo_TerminalState(t *testing.T) {
 		for _, target := range allStates {
 			o := makeOrch()
 			o.state = terminal
-			err := o.TransitionTo(target)
-			if err == nil {
-				t.Errorf("expected error transitioning from terminal state %s to %s, got nil",
+			res := o.TransitionTo(target)
+			if !res.IsFatal() {
+				t.Errorf("expected failure transitioning from terminal state %s to %s, got success",
 					terminal, target)
 			}
 		}
@@ -512,8 +513,8 @@ func TestSetEventPublisher_NilPublisher_NoOp(t *testing.T) {
 
 	o := makeOrchWithWave(1, "A")
 
-	if err := o.RunWave(1); err != nil {
-		t.Fatalf("RunWave with nil publisher returned unexpected error: %v", err)
+	if res := o.RunWave(1); res.IsFatal() {
+		t.Fatalf("RunWave with nil publisher returned unexpected failure: %v", res.Errors)
 	}
 }
 
@@ -557,8 +558,8 @@ func TestPublish_EmitsAgentStarted(t *testing.T) {
 	o := makeOrchWithWave(1, "A")
 	o.SetEventPublisher(publisher)
 
-	if err := o.RunWave(1); err != nil {
-		t.Fatalf("RunWave returned unexpected error: %v", err)
+	if res := o.RunWave(1); res.IsFatal() {
+		t.Fatalf("RunWave returned unexpected failure: %v", res.Errors)
 	}
 
 	mu.Lock()
@@ -702,8 +703,8 @@ func TestLaunchAgent_PollsWorktreeIMPLDoc(t *testing.T) {
 	}
 	o := newFromDoc(doc, repoPath, implDocPath)
 
-	if err := o.RunWave(1); err != nil {
-		t.Fatalf("RunWave returned unexpected error: %v", err)
+	if res := o.RunWave(1); res.IsFatal() {
+		t.Fatalf("RunWave returned unexpected failure: %v", res.Errors)
 	}
 
 	if gotIMPLPath != wantIMPLPath {
@@ -766,8 +767,8 @@ func TestLaunchAgentE23FallbackOnExtractError(t *testing.T) {
 	// Use a non-existent implDocPath so ExtractAgentContext always errors.
 	o := newFromDoc(doc, "/repo", "/nonexistent/IMPL.md")
 
-	if err := o.RunWave(1); err != nil {
-		t.Fatalf("RunWave returned unexpected error: %v", err)
+	if res := o.RunWave(1); res.IsFatal() {
+		t.Fatalf("RunWave returned unexpected failure: %v", res.Errors)
 	}
 
 	// The backend should have been called with the original prompt (fallback).
@@ -825,8 +826,8 @@ func TestLaunchAgentE19BlockedEvent(t *testing.T) {
 		mu.Unlock()
 	})
 
-	if err := o.RunWave(1); err != nil {
-		t.Fatalf("RunWave returned unexpected error: %v", err)
+	if res := o.RunWave(1); res.IsFatal() {
+		t.Fatalf("RunWave returned unexpected failure: %v", res.Errors)
 	}
 
 	mu.Lock()
@@ -918,9 +919,9 @@ func TestExecuteRetryLoop_TransientRetries(t *testing.T) {
 		mu.Unlock()
 	})
 
-	// RunWave should return nil because the retry succeeds.
-	if err := o.RunWave(1); err != nil {
-		t.Fatalf("RunWave returned error, want nil: %v", err)
+	// RunWave should return success because the retry succeeds.
+	if res := o.RunWave(1); res.IsFatal() {
+		t.Fatalf("RunWave returned failure, want success: %v", res.Errors)
 	}
 
 	mu.Lock()
@@ -1083,8 +1084,8 @@ func TestRunWave_AgentPrioritization(t *testing.T) {
 
 	o := makeOrchWithWave(1, "A", "B", "C")
 
-	if err := o.RunWave(1); err != nil {
-		t.Fatalf("RunWave returned error: %v", err)
+	if res := o.RunWave(1); res.IsFatal() {
+		t.Fatalf("RunWave returned failure: %v", res.Errors)
 	}
 
 	// Verify prioritization function was called
@@ -1162,8 +1163,8 @@ func TestRunWave_AgentPrioritizedEvent(t *testing.T) {
 		mu.Unlock()
 	})
 
-	if err := o.RunWave(1); err != nil {
-		t.Fatalf("RunWave returned error: %v", err)
+	if res := o.RunWave(1); res.IsFatal() {
+		t.Fatalf("RunWave returned failure: %v", res.Errors)
 	}
 
 	// Find the agent_prioritized event
