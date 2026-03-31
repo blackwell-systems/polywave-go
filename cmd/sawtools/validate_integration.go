@@ -7,6 +7,7 @@ import (
 	"os"
 
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
 	"github.com/spf13/cobra"
 	"gopkg.in/yaml.v3"
 )
@@ -57,7 +58,7 @@ Exits 0 if no gaps found (both reports valid), exits 1 if gaps are detected.`,
 			// Step 3: Persist heuristic report to manifest
 			waveKey := fmt.Sprintf("wave%d", waveNum)
 			if appendRes := protocol.AppendIntegrationReport(manifestPath, waveKey, report); appendRes.IsFatal() {
-				return fmt.Errorf("validate-integration: failed to persist heuristic report: %w", errors.Join(sawErrsToErrors(appendRes.Errors)...))
+				return fmt.Errorf("validate-integration: failed to persist heuristic report: %w", errors.Join(result.ToErrors(appendRes.Errors)...))
 			}
 
 			// Step 3.5: Wiring declaration check (E35 Layer 3B)
