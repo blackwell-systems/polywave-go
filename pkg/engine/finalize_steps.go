@@ -483,7 +483,7 @@ func StepCheckTypeCollisions(ctx context.Context, opts FinalizeWaveOpts, onEvent
 		}, nil, nil
 	}
 
-	report, err := collision.DetectCollisions(opts.IMPLPath, opts.WaveNum, opts.RepoPath)
+	report, err := collision.DetectCollisions(ctx, opts.IMPLPath, opts.WaveNum, opts.RepoPath)
 	if err != nil {
 		detail := fmt.Sprintf("collision detection error: %v", err)
 		emitStepEvent(onEvent, stepName, "failed", detail)

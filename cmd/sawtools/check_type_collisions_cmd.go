@@ -26,7 +26,7 @@ resolution.`,
 				repoDir = "."
 			}
 
-			report, err := collision.DetectCollisions(manifestPath, waveNum, repoDir)
+			report, err := collision.DetectCollisions(cmd.Context(), manifestPath, waveNum, repoDir)
 			if err != nil {
 				return fmt.Errorf("check-type-collisions: %w", err)
 			}

@@ -1,6 +1,7 @@
 package collision
 
 import (
+	"context"
 	"sort"
 	"testing"
 )
@@ -358,4 +359,13 @@ func TestDetectCollisions(t *testing.T) {
 	// This test requires a real IMPL manifest and git repo with branches,
 	// so we'll skip it in unit tests. Integration tests would cover this.
 	t.Skip("Requires real IMPL manifest and git repository")
+}
+
+func TestDetectCollisionsContextCancellation(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel() // cancel immediately
+	_, err := DetectCollisions(ctx, "nonexistent.yaml", 1, "/tmp")
+	if err == nil {
+		t.Error("DetectCollisions() expected error on cancelled context, got nil")
+	}
 }
