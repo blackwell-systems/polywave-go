@@ -1,6 +1,7 @@
 package analyzer
 
 import (
+	"context"
 	"fmt"
 	"go/ast"
 	"go/parser"
@@ -42,7 +43,7 @@ type CascadeCandidate struct {
 // 3. Classify each match as syntax or semantic based on AST context
 // 4. Assign severity: high (import/type decl), medium (var decl), low (comment/string)
 // 5. Sort results by file path, then line number for determinism
-func DetectCascades(repoRoot string, renames []RenameInfo) (CascadeResult, error) {
+func DetectCascades(ctx context.Context, repoRoot string, renames []RenameInfo) (CascadeResult, error) {
 	var candidates []CascadeCandidate
 
 	// Build map of old type names to rename info for quick lookup
@@ -55,6 +56,11 @@ func DetectCascades(repoRoot string, renames []RenameInfo) (CascadeResult, error
 	err := filepath.Walk(repoRoot, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			return err
+		}
+
+		// Check for context cancellation
+		if ctx.Err() != nil {
+			return ctx.Err()
 		}
 
 		// Skip vendor, .git, and hidden directories
