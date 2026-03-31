@@ -237,6 +237,18 @@ func TestCheckAgentLOCBudget(t *testing.T) {
 		if got[0].Severity != "error" {
 			t.Errorf("severity = %q, want error", got[0].Severity)
 		}
+		if !strings.Contains(got[0].Message, "foo.go") {
+			t.Errorf("expected foo.go in message, got: %s", got[0].Message)
+		}
+		if !strings.Contains(got[0].Message, "1200") {
+			t.Errorf("expected 1200 in message, got: %s", got[0].Message)
+		}
+		if !strings.Contains(got[0].Message, "bar.go") {
+			t.Errorf("expected bar.go in message, got: %s", got[0].Message)
+		}
+		if !strings.Contains(got[0].Message, "900") {
+			t.Errorf("expected 900 in message, got: %s", got[0].Message)
+		}
 	})
 
 	t.Run("action=new files are skipped even if large", func(t *testing.T) {
@@ -250,6 +262,26 @@ func TestCheckAgentLOCBudget(t *testing.T) {
 		got := CheckAgentLOCBudget(m, dir, 2000)
 		if len(got) != 0 {
 			t.Errorf("expected 0 errors (action=new skipped), got %v", got)
+		}
+	})
+
+	t.Run("single file over budget — file name and line count in message", func(t *testing.T) {
+		dir := t.TempDir()
+		writeLines(t, filepath.Join(dir, "bigfile.go"), 3000)
+		m := &IMPLManifest{
+			FileOwnership: []FileOwnership{
+				{File: "bigfile.go", Agent: "A", Wave: 1, Action: "modify"},
+			},
+		}
+		got := CheckAgentLOCBudget(m, dir, 2000)
+		if len(got) != 1 {
+			t.Fatalf("expected 1 error, got %d: %v", len(got), got)
+		}
+		if !strings.Contains(got[0].Message, "bigfile.go") {
+			t.Errorf("expected bigfile.go in message, got: %s", got[0].Message)
+		}
+		if !strings.Contains(got[0].Message, "3000") {
+			t.Errorf("expected 3000 in message, got: %s", got[0].Message)
 		}
 	})
 
