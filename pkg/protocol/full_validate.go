@@ -19,8 +19,9 @@ type FullValidateData struct {
 
 // FullValidateOpts controls validation behavior.
 type FullValidateOpts struct {
-	AutoFix   bool // auto-correct fixable issues (gate types, unknown keys)
-	UseSolver bool // use CSP solver for wave assignment validation
+	AutoFix   bool   // auto-correct fixable issues (gate types, unknown keys)
+	UseSolver bool   // use CSP solver for wave assignment validation
+	RepoPath  string // optional: absolute path to repo root for file-existence checks
 }
 
 // FullValidate runs all validation checks on an IMPL manifest file.
@@ -103,6 +104,15 @@ func FullValidate(manifestPath string, opts FullValidateOpts) result.Result[Full
 	} else {
 		errs = append(errs, Validate(m)...)
 	}
+
+	// Step 6b: File-existence check using the caller-supplied RepoPath.
+	// ValidateFileExistence is also called (with empty string) inside Validate()
+	// for backward compatibility; this call uses the real repo path when available.
+	feErrs := ValidateFileExistence(m, opts.RepoPath)
+	errs = append(errs, feErrs...)
+
+	// TODO(saw-system-hardening): wired by Agent B — CheckAgentLOCBudget call goes here
+	// errs = append(errs, CheckAgentLOCBudget(m, opts.RepoPath, 2000)...)
 
 	// Step 7: E16 typed-block validation
 	docErrs, docErr := ValidateIMPLDoc(manifestPath)

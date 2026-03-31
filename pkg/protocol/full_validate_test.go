@@ -353,6 +353,57 @@ quality_gates:
 	}
 }
 
+func TestFullValidate_GhostFileTarget(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	// Manifest with one action=modify entry pointing to a file that does NOT exist.
+	manifest := `title: "Ghost File Feature"
+feature_slug: "ghost-file-feature"
+verdict: "SUITABLE"
+state: "WAVE_EXECUTING"
+waves:
+  - number: 1
+    agents:
+      - id: "A"
+        task: "implement feature"
+      - id: "B"
+        task: "implement tests"
+file_ownership:
+  - file: "pkg/does_not_exist.go"
+    agent: "A"
+    wave: 1
+    action: "modify"
+  - file: "pkg/other.go"
+    agent: "B"
+    wave: 1
+    action: "new"
+quality_gates:
+  level: "standard"
+`
+	path := writeManifest(t, tmpDir, "IMPL-ghost.yaml", manifest)
+
+	// RepoPath is tmpDir — the file pkg/does_not_exist.go is absent there.
+	res := FullValidate(path, FullValidateOpts{RepoPath: tmpDir})
+	if res.IsFatal() {
+		t.Fatalf("expected non-fatal result, got fatal: %v", res.Errors)
+	}
+	data := res.GetData()
+	if data.Valid {
+		t.Error("expected Valid=false when action=modify file is missing on disk")
+	}
+
+	foundFileMissing := false
+	for _, e := range data.Errors {
+		if e.Code == result.CodeFileMissing {
+			foundFileMissing = true
+			break
+		}
+	}
+	if !foundFileMissing {
+		t.Errorf("expected at least one error with code %q, got errors: %v", result.CodeFileMissing, data.Errors)
+	}
+}
+
 func TestAppendWiringReport(t *testing.T) {
 	tmpDir := t.TempDir()
 
