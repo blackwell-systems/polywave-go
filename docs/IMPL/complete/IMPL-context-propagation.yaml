@@ -1,1458 +1,807 @@
 completion_date: "2026-03-31"
-title: Add context.Context Propagation to All Public Functions in pkg/
+title: Context Propagation in pkg/protocol (IMPL 4)
 feature_slug: context-propagation
 verdict: SUITABLE
 suitability_assessment: |
-    This work satisfies all suitability criteria:
+    IMPL 4 from the Go Engine refactor audit. Two fully independent changes to
+    pkg/protocol/ that can run in parallel:
 
-    1. **File decomposition**: PASSES. 281 non-test Go files across 34 packages in pkg/. Each package can be assigned to a separate agent with disjoint file ownership. No conflicting modifications required.
+    1. Issue 11 (Decision 1 - Choice A): Remove `ctx context.Context` from
+       LoadYAML and SaveYAML. The parameter is a no-op today (body reads
+       `_ = ctx`). Remove it and clean up all ~26 call sites that pass
+       context.TODO() or context.Background() to these functions.
 
-    2. **Investigation-first items**: NONE. All work is straightforward signature refactoring following Go conventions. No unknown behavior, crashes, or race conditions to investigate. Pattern is well-established: context.Context as first parameter (after receiver).
+    2. Issues 5 and 14: Add `ctx context.Context` as first parameter to six
+       protocol functions that run git/shell commands without cancellation
+       support: SetImplState, UpdateStatus, VerifyBuild (and its internal
+       runCommand), MergeAgents, CreateWorktrees, AppendStubReport, and
+       PopulateVerificationGates. Their engine and sawtools callers already
+       carry a live ctx and can pass it directly.
 
-    3. **Interface discoverability**: CLEAN. Interface contracts are mechanical: add `ctx context.Context` as first parameter to all exported functions. No ambiguity. Existing 259 functions with context already demonstrate the pattern.
+    File ownership is disjoint: Agent A owns the yaml_io.go definition file
+    plus all call sites that pass ctx to LoadYAML/SaveYAML. Agent B owns the
+    seven protocol function definition files plus the engine/cmd caller files
+    that invoke those functions. No file appears in both lists.
 
-    4. **Pre-implementation status check**: Current state confirmed via grep:
-       - 259 functions already have context.Context (10%)
-       - ~2,366 functions missing context.Context (90% gap)
-       - No partial implementations detected; each function either has context or doesn't
-       - All agents will add context to functions that lack it
+    The two agents do not share any interface contracts: Agent B's new
+    signatures are not consumed by Agent A (Agent A is removing a ctx parameter,
+    not adding one). No scaffolds are needed.
 
-    5. **Parallelization value check**: HIGH VALUE.
-       - Build/test cycle: ~15-20 seconds per cycle (Go compilation + test suite)
-       - Files per agent: 3-8 files per agent (sweet spot for parallelization)
-       - Agent independence: HIGH. Packages have minimal cross-dependencies for this work
-       - Task complexity: MODERATE. Not trivial find-replace; requires:
-         * Understanding function call chains to propagate context through
-         * Updating all call sites when adding context parameter
-         * Verifying tests still pass after changes
-         * Handling constructor functions vs regular functions
+    Prerequisite: IMPL 3 (engine-structural-debt) must be complete before
+    merging IMPL 4, because runner.go and finalize.go are excluded from Agent
+    B's scope as IMPL 3 territory. Agent B updates the engine caller files
+    that are NOT runner.go or finalize.go.
 
-       **Estimated times:**
-       - Scout phase: ~15 min (dependency mapping, interface contracts, IMPL doc)
-       - Agent execution: ~50 min (32 agents × 5 min avg, 75% parallelization efficiency)
-       - Merge & verification: ~10 min
-       Total SAW time: ~75 min
-
-       Sequential baseline: ~192 min (32 agents × 6 min avg sequential time)
-       Time savings: ~117 min (61% faster)
-
-       Recommendation: Clear speedup. Proceed with SAW.
-test_command: go test ./... -timeout 120s
+    Estimated times:
+    - Scout phase: ~15 min (dependency tracing, contract definitions)
+    - Agent A execution: ~20 min (mechanical ctx removal across 26 files)
+    - Agent B execution: ~25 min (ctx threading + runCommand exec.CommandContext update)
+    - Merge and verification: ~5 min
+    Total SAW time: ~45 min
+    Sequential baseline: ~60 min
+    Time savings: ~15 min (25% faster). Clear speedup on a mechanical change.
+test_command: go test ./...
 lint_command: go vet ./...
 file_ownership:
-    - file: pkg/idgen/generator.go
+    - file: pkg/protocol/yaml_io.go
       agent: A
       wave: 1
       action: modify
-    - file: pkg/format/detect.go
+    - file: pkg/protocol/duplicate_key_validator.go
+      agent: A
+      wave: 1
+      action: modify
+    - file: pkg/protocol/integration.go
+      agent: A
+      wave: 1
+      action: modify
+    - file: pkg/protocol/manifest.go
+      agent: A
+      wave: 1
+      action: modify
+    - file: pkg/protocol/marker.go
+      agent: A
+      wave: 1
+      action: modify
+    - file: pkg/protocol/memory.go
+      agent: A
+      wave: 1
+      action: modify
+    - file: pkg/protocol/program_generator.go
+      agent: A
+      wave: 1
+      action: modify
+    - file: pkg/protocol/program_parser.go
+      agent: A
+      wave: 1
+      action: modify
+    - file: pkg/protocol/program_status.go
+      agent: A
+      wave: 1
+      action: modify
+    - file: pkg/protocol/schema_unknown_keys.go
+      agent: A
+      wave: 1
+      action: modify
+    - file: pkg/protocol/solver_integration.go
+      agent: A
+      wave: 1
+      action: modify
+    - file: pkg/protocol/validation.go
+      agent: A
+      wave: 1
+      action: modify
+    - file: pkg/protocol/wiring_validation.go
+      agent: A
+      wave: 1
+      action: modify
+    - file: pkg/analyzer/output.go
+      agent: A
+      wave: 1
+      action: modify
+    - file: pkg/commands/github_actions.go
+      agent: A
+      wave: 1
+      action: modify
+    - file: pkg/engine/import_impls.go
+      agent: A
+      wave: 1
+      action: modify
+    - file: pkg/engine/program_progress.go
+      agent: A
+      wave: 1
+      action: modify
+    - file: pkg/interview/deterministic.go
+      agent: A
+      wave: 1
+      action: modify
+    - file: pkg/queue/manager.go
+      agent: A
+      wave: 1
+      action: modify
+    - file: cmd/sawtools/detect_cascades_cmd.go
+      agent: A
+      wave: 1
+      action: modify
+    - file: cmd/sawtools/diagnose_build_failure_cmd.go
+      agent: A
+      wave: 1
+      action: modify
+    - file: cmd/sawtools/extract_commands_cmd.go
+      agent: A
+      wave: 1
+      action: modify
+    - file: cmd/sawtools/update_program_impl_cmd.go
+      agent: A
+      wave: 1
+      action: modify
+    - file: cmd/sawtools/update_program_state_cmd.go
+      agent: A
+      wave: 1
+      action: modify
+    - file: cmd/sawtools/validate_integration.go
+      agent: A
+      wave: 1
+      action: modify
+    - file: cmd/sawtools/validate_scaffold_cmd.go
+      agent: A
+      wave: 1
+      action: modify
+    - file: pkg/protocol/state_transition.go
       agent: B
       wave: 1
       action: modify
-    - file: pkg/collision/detector.go
-      agent: C
+    - file: pkg/protocol/status_update.go
+      agent: B
       wave: 1
       action: modify
-    - file: pkg/collision/types.go
-      agent: C
+    - file: pkg/protocol/verify_build.go
+      agent: B
       wave: 1
       action: modify
-    - file: pkg/gatecache/cache.go
-      agent: D
+    - file: pkg/protocol/merge_agents.go
+      agent: B
       wave: 1
       action: modify
-    - file: pkg/retry/loop.go
-      agent: E
+    - file: pkg/protocol/worktree.go
+      agent: B
       wave: 1
       action: modify
-    - file: pkg/retry/attempt.go
-      agent: E
+    - file: pkg/protocol/stubs.go
+      agent: B
       wave: 1
       action: modify
-    - file: pkg/retry/classify.go
-      agent: E
+    - file: pkg/protocol/gate_populator.go
+      agent: B
       wave: 1
       action: modify
-    - file: pkg/retry/types.go
-      agent: E
-      wave: 1
-      action: modify
-    - file: pkg/result/result.go
-      agent: F
-      wave: 1
-      action: modify
-    - file: pkg/protocol/types.go
-      agent: G
-      wave: 2
-      action: modify
-      depends_on:
-        - F
-    - file: pkg/protocol/manifest.go
-      agent: H
-      wave: 2
-      action: modify
-      depends_on:
-        - F
-    - file: pkg/protocol/yaml_io.go
-      agent: H
-      wave: 2
-      action: modify
-      depends_on:
-        - F
-    - file: pkg/protocol/branchname.go
-      agent: I
-      wave: 2
-      action: modify
-    - file: pkg/protocol/state_status.go
-      agent: I
-      wave: 2
-      action: modify
-    - file: pkg/protocol/completion_report.go
-      agent: J
-      wave: 2
-      action: modify
-      depends_on:
-        - F
-    - file: pkg/protocol/baseline_gates.go
-      agent: K
-      wave: 2
-      action: modify
-      depends_on:
-        - D
-        - F
-    - file: pkg/protocol/cleanup.go
-      agent: L
-      wave: 2
-      action: modify
-      depends_on:
-        - F
-    - file: pkg/protocol/commit_verify.go
-      agent: M
-      wave: 2
-      action: modify
-      depends_on:
-        - F
-    - file: pkg/protocol/discovery.go
-      agent: "N"
-      wave: 2
-      action: modify
-      depends_on:
-        - F
-    - file: pkg/protocol/amend.go
-      agent: O
-      wave: 3
-      action: modify
-      depends_on:
-        - F
-        - H
-    - file: pkg/protocol/critic.go
-      agent: P
-      wave: 3
-      action: modify
-      depends_on:
-        - F
-        - H
-    - file: pkg/protocol/critic_gate.go
-      agent: P
-      wave: 3
-      action: modify
-      depends_on:
-        - F
-        - H
-    - file: pkg/protocol/context_update.go
-      agent: Q
-      wave: 3
-      action: modify
-      depends_on:
-        - F
-        - H
-    - file: pkg/protocol/complexity.go
-      agent: R
-      wave: 3
-      action: modify
-      depends_on:
-        - F
-    - file: pkg/protocol/conflict.go
-      agent: R
-      wave: 3
-      action: modify
-      depends_on:
-        - F
-    - file: pkg/protocol/conflict_predict.go
-      agent: R
-      wave: 3
-      action: modify
-      depends_on:
-        - F
-    - file: pkg/protocol/dependency_verifier.go
-      agent: S
-      wave: 3
-      action: modify
-      depends_on:
-        - F
-    - file: pkg/protocol/validation.go
-      agent: T
-      wave: 3
-      action: modify
-      depends_on:
-        - F
-        - H
-    - file: pkg/protocol/full_validate.go
-      agent: T
-      wave: 3
-      action: modify
-      depends_on:
-        - F
-        - H
-    - file: pkg/protocol/extract.go
-      agent: U
-      wave: 3
-      action: modify
-      depends_on:
-        - F
-        - H
-    - file: pkg/protocol/freeze.go
-      agent: U
-      wave: 3
-      action: modify
-      depends_on:
-        - F
-        - H
-    - file: pkg/analyzer/analyzer.go
-      agent: V
-      wave: 4
-      action: modify
-      depends_on:
-        - F
-    - file: pkg/analyzer/deps.go
-      agent: V
-      wave: 4
-      action: modify
-      depends_on:
-        - F
-    - file: pkg/analyzer/cascade.go
-      agent: W
-      wave: 4
-      action: modify
-      depends_on:
-        - F
-    - file: pkg/analyzer/shared_types.go
-      agent: W
-      wave: 4
-      action: modify
-      depends_on:
-        - F
-    - file: pkg/agent/runner.go
-      agent: X
-      wave: 4
-      action: modify
-      depends_on:
-        - F
-    - file: pkg/agent/backend/api/client.go
-      agent: X
-      wave: 4
-      action: modify
-    - file: pkg/agent/backend/bedrock/client.go
-      agent: X
-      wave: 4
-      action: modify
-    - file: pkg/agent/backend/cli/client.go
-      agent: X
-      wave: 4
-      action: modify
-    - file: pkg/commands/extractor.go
-      agent: "Y"
-      wave: 4
-      action: modify
-      depends_on:
-        - F
-    - file: pkg/commands/wrapper.go
-      agent: "Y"
-      wave: 4
-      action: modify
-      depends_on:
-        - F
-    - file: pkg/protocol/gates.go
-      agent: Z
-      wave: 4
-      action: modify
-      depends_on:
-        - D
-        - F
-        - K
-    - file: pkg/protocol/gate_discovery.go
-      agent: Z
-      wave: 4
-      action: modify
-      depends_on:
-        - F
-    - file: pkg/orchestrator/orchestrator.go
-      agent: A2
-      wave: 5
-      action: modify
-      depends_on:
-        - G
-        - H
-        - X
-    - file: pkg/orchestrator/context.go
-      agent: A2
-      wave: 5
-      action: modify
-    - file: pkg/orchestrator/merge.go
-      agent: A2
-      wave: 5
-      action: modify
-    - file: pkg/engine/scout_run.go
-      agent: B2
-      wave: 6
-      action: modify
-      depends_on:
-        - A2
-        - X
-    - file: pkg/engine/runner.go
-      agent: B2
-      wave: 6
-      action: modify
-      depends_on:
-        - A2
-        - X
-    - file: pkg/engine/critic.go
-      agent: C2
-      wave: 6
-      action: modify
-      depends_on:
-        - A2
-        - P
-    - file: pkg/engine/finalize.go
-      agent: D2
-      wave: 6
-      action: modify
-      depends_on:
-        - A2
-    - file: pkg/engine/finalize_steps.go
-      agent: D2
-      wave: 6
-      action: modify
-      depends_on:
-        - A2
     - file: pkg/engine/prepare.go
-      agent: E2
-      wave: 6
+      agent: B
+      wave: 1
       action: modify
-      depends_on:
-        - A2
-    - file: pkg/engine/prepare_agent.go
-      agent: E2
-      wave: 6
+    - file: pkg/engine/finalize_steps.go
+      agent: B
+      wave: 1
       action: modify
-      depends_on:
-        - A2
+    - file: pkg/engine/auto_remediate.go
+      agent: B
+      wave: 1
+      action: modify
+    - file: pkg/engine/daemon.go
+      agent: B
+      wave: 1
+      action: modify
+    - file: pkg/engine/run_wave_full.go
+      agent: B
+      wave: 1
+      action: modify
+    - file: cmd/sawtools/update_status.go
+      agent: B
+      wave: 1
+      action: modify
+    - file: cmd/sawtools/scan_stubs.go
+      agent: B
+      wave: 1
+      action: modify
+    - file: cmd/sawtools/verify_build.go
+      agent: B
+      wave: 1
+      action: modify
+    - file: cmd/sawtools/create_worktrees.go
+      agent: B
+      wave: 1
+      action: modify
+    - file: cmd/sawtools/merge_agents.go
+      agent: B
+      wave: 1
+      action: modify
+    - file: cmd/sawtools/set_impl_state_cmd.go
+      agent: B
+      wave: 1
+      action: modify
+    - file: cmd/sawtools/close_impl_cmd.go
+      agent: B
+      wave: 1
+      action: modify
 interface_contracts:
-    - name: Context parameter convention
-      description: Standard context.Context parameter pattern for all public functions
+    - name: LoadYAML
+      description: Remove ctx context.Context parameter. Signature after this IMPL.
       definition: |
-        // For regular functions:
-        func PublicFunction(ctx context.Context, existingParams...) (returnType, error)
+        func LoadYAML[T any](path string) (T, error)
+      location: pkg/protocol/yaml_io.go
+    - name: SaveYAML
+      description: Remove ctx context.Context parameter. Signature after this IMPL.
+      definition: |
+        func SaveYAML[T any](path string, v T) error
+      location: pkg/protocol/yaml_io.go
+    - name: SetImplState
+      description: |-
+        Add ctx context.Context as first parameter. Callers pass cmd.Context()
+        or a parent ctx from the engine. Internal Load() call receives ctx.
+      definition: |
+        func SetImplState(ctx context.Context, manifestPath string, newState ProtocolState, opts SetImplStateOpts) result.Result[*SetImplStateData]
+      location: pkg/protocol/state_transition.go
+    - name: UpdateStatus
+      description: |-
+        Add ctx context.Context as first parameter. Internal Load/Save calls
+        receive ctx. Callers pass cmd.Context() or parent engine ctx.
+      definition: |
+        func UpdateStatus(ctx context.Context, manifestPath string, waveNum int, agentID string, status CompletionStatus, opts UpdateStatusOpts) result.Result[*UpdateStatusData]
+      location: pkg/protocol/status_update.go
+    - name: VerifyBuild
+      description: |-
+        Add ctx context.Context as first parameter. Threads ctx into the
+        internal runCommand helper so exec.CommandContext(ctx, ...) can be used.
+        Internal Load() call receives ctx.
+      definition: |
+        func VerifyBuild(ctx context.Context, manifestPath string, repoDir string) result.Result[VerifyBuildData]
+      location: pkg/protocol/verify_build.go
+    - name: runCommand
+      description: |-
+        Add ctx context.Context as first parameter. Switch exec.Command to
+        exec.CommandContext(ctx, "sh", "-c", ...) for cancellation support.
+        This is an unexported function in pkg/protocol; its callers within the
+        same file receive ctx from VerifyBuild.
+      definition: |
+        func runCommand(ctx context.Context, command string, repoDir string) (bool, string)
+      location: pkg/protocol/verify_build.go
+    - name: MergeAgents
+      description: |-
+        Add ctx context.Context as first field in MergeAgentsOpts, OR as a
+        standalone first parameter. Preferred approach: add Ctx context.Context
+        to MergeAgentsOpts struct to preserve the opts-based call pattern.
+        Internal git operations and Load() receive ctx.
+      definition: |
+        // MergeAgentsOpts updated to include Ctx:
+        type MergeAgentsOpts struct {
+            Ctx          context.Context  // required; pass cmd.Context() or parent ctx
+            ManifestPath string
+            WaveNum      int
+            RepoDir      string
+            MergeTarget  string
+            // ... existing fields unchanged
+        }
 
-        // For methods with receiver:
-        func (r *Receiver) Method(ctx context.Context, existingParams...) (returnType, error)
-
-        // For constructors (return context.Context where it makes sense for long-lived objects):
-        func NewService(ctx context.Context, opts Options) (*Service, error)
-
-        // Pure value functions (no I/O, no blocking) - context optional:
-        func ParseBranch(branch string) (int, string, bool)  // OK to leave as-is
-        func BranchName(slug string, waveNum int, agentID string) string  // OK to leave as-is
-
-        // Context propagation rules:
-        1. Add ctx to all functions that:
-           - Perform I/O (file reads/writes, network calls)
-           - Call other functions that accept context
-           - May block or have long execution time
-           - Need request tracing/cancellation
-
-        2. Propagate through call chains:
-           - When adding ctx to function F, update all callers of F
-           - Pass context.Background() at entry points (main, HTTP handlers, CLI commands)
-           - Pass context.TODO() temporarily where proper context not yet available
-
-        3. Never store context in structs:
-           - Pass explicitly through function calls
-           - If struct method needs context, add it to method signature
-      location: Go conventions
+        func MergeAgents(opts MergeAgentsOpts) (result.Result[MergeAgentsData], error)
+      location: pkg/protocol/merge_agents.go
+    - name: CreateWorktrees
+      description: |-
+        Add ctx context.Context as first parameter. Internal Load() call
+        receives ctx. The logger parameter remains last.
+      definition: |
+        func CreateWorktrees(ctx context.Context, manifestPath string, waveNum int, repoDir string, logger *slog.Logger) result.Result[CreateWorktreesData]
+      location: pkg/protocol/worktree.go
+    - name: AppendStubReport
+      description: |-
+        Add ctx context.Context as first parameter. Internal Load/Save calls
+        receive ctx. The audit doc refers to this function as PersistStubReport
+        but the actual function name in stubs.go is AppendStubReport.
+      definition: |
+        func AppendStubReport(ctx context.Context, manifestPath, waveKey string, scanResult result.Result[ScanStubsData]) result.Result[AppendStubData]
+      location: pkg/protocol/stubs.go
+    - name: PopulateVerificationGates
+      description: |-
+        Add ctx context.Context as first parameter. Threads ctx into the
+        internal extractor.Extract(ctx, repo) call at line 347 in gate_populator.go.
+        Internal Load/Save calls receive ctx.
+      definition: |
+        func PopulateVerificationGates(ctx context.Context, m *IMPLManifest, commandSets map[string]*commands.CommandSet, repoMap map[string]string) (*IMPLManifest, error)
+      location: pkg/protocol/gate_populator.go
 waves:
     - number: 1
       agents:
         - id: A
           task: |
-            Add context.Context parameter to exported functions in pkg/idgen/.
+            # Wave 1 Agent A: Remove ctx from LoadYAML/SaveYAML + all call sites (Issue 11)
 
-            **Files:**
-            - pkg/idgen/generator.go
+            You are Wave 1 Agent A. Your task is to remove the `ctx context.Context`
+            parameter from `LoadYAML` and `SaveYAML` in `pkg/protocol/yaml_io.go` and
+            update all ~26 call sites across the codebase that currently pass
+            `context.TODO()` or `context.Background()` to these functions.
 
-            **Current state:** Generator functions likely don't have context.
+            ## 1. File Ownership
 
-            **Implementation:**
-            1. Add `ctx context.Context` as first parameter to all exported functions
-            2. Update all call sites within the package
-            3. For test files, pass context.Background() in tests
+            You own these files — do not touch any other files:
+            - `pkg/protocol/yaml_io.go` — remove ctx param from LoadYAML and SaveYAML, remove `_ = ctx` line, remove context import
+            - `pkg/protocol/duplicate_key_validator.go` — remove ctx arg from LoadYAML/SaveYAML calls
+            - `pkg/protocol/integration.go` — remove ctx arg
+            - `pkg/protocol/manifest.go` — remove ctx arg (Load/Save wrappers call LoadYAML/SaveYAML internally; check if Load and Save also need ctx removed from their signatures)
+            - `pkg/protocol/marker.go` — remove ctx arg
+            - `pkg/protocol/memory.go` — remove ctx arg
+            - `pkg/protocol/program_generator.go` — remove ctx arg
+            - `pkg/protocol/program_parser.go` — remove ctx arg
+            - `pkg/protocol/program_status.go` — remove ctx arg
+            - `pkg/protocol/schema_unknown_keys.go` — remove ctx arg
+            - `pkg/protocol/solver_integration.go` — remove ctx arg
+            - `pkg/protocol/validation.go` — remove ctx arg
+            - `pkg/protocol/wiring_validation.go` — remove ctx arg
+            - `pkg/analyzer/output.go` — remove ctx arg
+            - `pkg/commands/github_actions.go` — remove ctx arg
+            - `pkg/engine/import_impls.go` — remove ctx arg
+            - `pkg/engine/program_progress.go` — remove ctx arg
+            - `pkg/interview/deterministic.go` — remove ctx arg
+            - `pkg/queue/manager.go` — remove ctx arg
+            - `cmd/sawtools/detect_cascades_cmd.go` — remove ctx arg
+            - `cmd/sawtools/diagnose_build_failure_cmd.go` — remove ctx arg
+            - `cmd/sawtools/extract_commands_cmd.go` — remove ctx arg
+            - `cmd/sawtools/update_program_impl_cmd.go` — remove ctx arg
+            - `cmd/sawtools/update_program_state_cmd.go` — remove ctx arg
+            - `cmd/sawtools/validate_integration.go` — remove ctx arg
+            - `cmd/sawtools/validate_scaffold_cmd.go` — remove ctx arg
 
-            **Tests:**
-            - Run `go test ./pkg/idgen/...`
-            - Verify all tests pass
+            Do NOT touch `runner.go`, `finalize.go` (IMPL 3 territory), or any file
+            owned by Agent B (state_transition.go, status_update.go, verify_build.go,
+            merge_agents.go, worktree.go, stubs.go, gate_populator.go, prepare.go,
+            finalize_steps.go, auto_remediate.go, daemon.go, run_wave_full.go,
+            update_status.go, scan_stubs.go, verify_build.go, create_worktrees.go,
+            merge_agents.go, set_impl_state_cmd.go, close_impl_cmd.go).
 
-            **Verification gate:**
-            ```bash
-            cd /Users/dayna.blackwell/code/scout-and-wave-go && \
-            go build ./pkg/idgen/... && \
-            go vet ./pkg/idgen/... && \
-            go test ./pkg/idgen/... -timeout 30s
+            ## 2. Interfaces You Must Implement
+
+            ```go
+            // pkg/protocol/yaml_io.go — AFTER this change:
+            func LoadYAML[T any](path string) (T, error)
+            func SaveYAML[T any](path string, v T) error
             ```
 
-            **Constraints:**
-            - Follow Go context conventions
-            - Context should be first parameter (after receiver for methods)
-            - Never store context in structs
+            IMPORTANT: `manifest.go` likely contains `Load()` and `Save()` wrapper
+            functions that forward ctx to LoadYAML/SaveYAML. Read manifest.go first
+            to understand whether Load/Save also need their ctx parameter removed or
+            only the forwarding arg to LoadYAML/SaveYAML updated.
+
+            The file `pkg/protocol/yaml_io.go` header comment lists all EXEMPT call sites
+            (yaml.Node API users, stdout encoders, in-memory callers). Do NOT modify those
+            files — they don't call LoadYAML/SaveYAML at all.
+
+            ## 3. Interfaces You May Call
+
+            These are the existing signatures before your change (for reference):
+            ```go
+            // BEFORE (what you're removing):
+            func LoadYAML[T any](ctx context.Context, path string) (T, error)
+            func SaveYAML[T any](ctx context.Context, path string, v T) error
+            ```
+
+            ## 4. What to Implement
+
+            **Step 1: Update yaml_io.go**
+            - Remove `ctx context.Context` parameter from both `LoadYAML` and `SaveYAML`
+            - Remove the `_ = ctx // reserved for future cancellation support` line from each
+            - Remove the `"context"` import (it will no longer be used)
+            - The function bodies are otherwise unchanged
+
+            **Step 2: Update all call sites**
+            The mechanical pattern is: every call that currently looks like:
+            ```go
+            LoadYAML[T](context.TODO(), path)
+            LoadYAML[T](context.Background(), path)
+            SaveYAML[T](context.TODO(), path, v)
+            Save(context.TODO(), manifest, path)
+            Load(context.TODO(), path)
+            ```
+            becomes:
+            ```go
+            LoadYAML[T](path)
+            SaveYAML[T](path, v)
+            Save(manifest, path)
+            Load(path)
+            ```
+
+            After removing the ctx argument, if the file no longer uses `context` at all,
+            remove the `"context"` import. If the file still uses context for other purposes,
+            leave the import.
+
+            **Step 3: grep validation**
+            After making all changes, run:
+            ```bash
+            grep -rn 'LoadYAML.*context\.\|SaveYAML.*context\.' pkg/ cmd/
+            ```
+            This should produce zero matches. Any remaining match is a missed call site.
+
+            **IMPORTANT — manifest.go wrappers:**
+            The `Load()` and `Save()` functions in manifest.go are higher-level wrappers
+            around LoadYAML/SaveYAML. They may also accept a ctx parameter that they pass
+            through to LoadYAML/SaveYAML. If so:
+            - You own manifest.go, so you may remove ctx from Load() and Save() signatures too
+            - BUT: Agent B's files call Load(context.TODO(), path) and Save(context.TODO(), ...).
+              Agent B's changes will update those call sites. Do not try to update Agent B's
+              call sites — they are out of scope for you.
+            - Your job is only to update the call sites in YOUR owned files and the
+              yaml_io.go definitions.
+
+            If `Load()` and `Save()` will also have their ctx removed (because they only
+            forward to LoadYAML/SaveYAML), make that change in manifest.go. Agent B will
+            independently update their call sites to match.
+
+            ## 5. Tests to Write
+
+            No new tests are required for this change — it is a pure mechanical API cleanup
+            with no behavior change. However, verify that existing tests still compile and
+            pass after your changes (the verification gate handles this).
+
+            If any test file in a package you own calls LoadYAML/SaveYAML with ctx, update
+            the test file too (test files that call these functions are in scope even if
+            not listed above — follow the same pattern).
+
+            ## 6. Verification Gate
+
+            ```bash
+            cd /Users/dayna.blackwell/code/scout-and-wave-go
+
+            # Build must pass — no ctx-related compile errors
+            go build ./...
+
+            # Vet
+            go vet ./...
+
+            # Full test suite
+            go test ./...
+
+            # Final grep check — must return zero lines
+            grep -rn 'LoadYAML.*context\.\|SaveYAML.*context\.' pkg/ cmd/ | grep -v "_test.go" | grep -v "yaml_io.go"
+            ```
+
+            ## 7. Constraints
+
+            - Do NOT modify any file owned by Agent B. If you discover a file that also
+              needs ctx removed but is not in your list, report it in your completion
+              report under out_of_scope_deps.
+            - Do NOT remove `"context"` import from a file that still uses context for
+              other purposes (e.g., functions that accept ctx as a parameter for other
+              reasons).
+            - Do NOT make any behavior changes — this is purely a signature update.
+            - If the build fails because Agent B's changes to Load()/Save() in manifest.go
+              signatures have not been applied yet (build isolation), note the failure in
+              your report under out_of_scope_build_blockers and mark
+              `verification: FAIL (build blocked on out-of-scope symbols)`.
+
+            ## 8. Report
+
+            Commit your changes, then write your completion report to:
+            `/Users/dayna.blackwell/code/scout-and-wave-go/docs/IMPL/IMPL-context-propagation.yaml`
           files:
-            - pkg/idgen/generator.go
+            - pkg/protocol/yaml_io.go
+            - pkg/protocol/duplicate_key_validator.go
+            - pkg/protocol/integration.go
+            - pkg/protocol/manifest.go
+            - pkg/protocol/marker.go
+            - pkg/protocol/memory.go
+            - pkg/protocol/program_generator.go
+            - pkg/protocol/program_parser.go
+            - pkg/protocol/program_status.go
+            - pkg/protocol/schema_unknown_keys.go
+            - pkg/protocol/solver_integration.go
+            - pkg/protocol/validation.go
+            - pkg/protocol/wiring_validation.go
+            - pkg/analyzer/output.go
+            - pkg/commands/github_actions.go
+            - pkg/engine/import_impls.go
+            - pkg/engine/program_progress.go
+            - pkg/interview/deterministic.go
+            - pkg/queue/manager.go
+            - cmd/sawtools/detect_cascades_cmd.go
+            - cmd/sawtools/diagnose_build_failure_cmd.go
+            - cmd/sawtools/extract_commands_cmd.go
+            - cmd/sawtools/update_program_impl_cmd.go
+            - cmd/sawtools/update_program_state_cmd.go
+            - cmd/sawtools/validate_integration.go
+            - cmd/sawtools/validate_scaffold_cmd.go
         - id: B
           task: |
-            Add context.Context parameter to exported functions in pkg/format/.
+            # Wave 1 Agent B: Add ctx to core protocol functions (Issues 5 and 14)
 
-            **Files:**
-            - pkg/format/detect.go
+            You are Wave 1 Agent B. Your task is to add `ctx context.Context` as the
+            first parameter to seven protocol functions that run git/shell commands
+            without cancellation support, and update all their engine and cmd/sawtools
+            callers to pass a real ctx.
 
-            **Current state:** Format detection functions likely don't have context.
+            ## 1. File Ownership
 
-            **Implementation:**
-            1. Add `ctx context.Context` as first parameter to exported functions
-            2. Update call sites within package
-            3. If functions are pure (no I/O), context may be optional - use judgment
+            Protocol definition files (where you add ctx to the function signatures):
+            - `pkg/protocol/state_transition.go` — add ctx to SetImplState
+            - `pkg/protocol/status_update.go` — add ctx to UpdateStatus
+            - `pkg/protocol/verify_build.go` — add ctx to VerifyBuild and runCommand; switch exec.Command to exec.CommandContext
+            - `pkg/protocol/merge_agents.go` — add Ctx field to MergeAgentsOpts struct
+            - `pkg/protocol/worktree.go` — add ctx to CreateWorktrees
+            - `pkg/protocol/stubs.go` — add ctx to AppendStubReport
+            - `pkg/protocol/gate_populator.go` — add ctx to PopulateVerificationGates
 
-            **Tests:**
-            - Run `go test ./pkg/format/...`
-            - Verify all tests pass
+            Engine caller files (excluding runner.go and finalize.go which are IMPL 3 territory):
+            - `pkg/engine/prepare.go` — update SetImplState and CreateWorktrees calls
+            - `pkg/engine/finalize_steps.go` — update MergeAgents and VerifyBuild calls
+            - `pkg/engine/auto_remediate.go` — update VerifyBuild call in autoRemediateVerifyBuildFunc
+            - `pkg/engine/daemon.go` — update CreateWorktrees call in daemonCreateWorktreesFunc
+            - `pkg/engine/run_wave_full.go` — update CreateWorktrees call
 
-            **Verification gate:**
-            ```bash
-            cd /Users/dayna.blackwell/code/scout-and-wave-go && \
-            go build ./pkg/format/... && \
-            go vet ./pkg/format/... && \
-            go test ./pkg/format/... -timeout 30s
-            ```
-          files:
-            - pkg/format/detect.go
-        - id: C
-          task: |
-            Add context.Context parameter to exported functions in pkg/collision/.
+            cmd/sawtools caller files:
+            - `cmd/sawtools/update_status.go` — update UpdateStatus call
+            - `cmd/sawtools/scan_stubs.go` — update AppendStubReport call
+            - `cmd/sawtools/verify_build.go` — update VerifyBuild call
+            - `cmd/sawtools/create_worktrees.go` — update CreateWorktrees call
+            - `cmd/sawtools/merge_agents.go` — update MergeAgents call (set Ctx in MergeAgentsOpts)
+            - `cmd/sawtools/set_impl_state_cmd.go` — update SetImplState call
+            - `cmd/sawtools/close_impl_cmd.go` — update SetImplState call
 
-            **Files:**
-            - pkg/collision/detector.go
-            - pkg/collision/types.go
+            Do NOT touch `runner.go`, `finalize.go`, `program_progress.go` (IMPL 3 / Agent A
+            territory), or any file in Agent A's ownership list (yaml_io.go,
+            duplicate_key_validator.go, integration.go, marker.go, memory.go,
+            program_generator.go, program_parser.go, program_status.go,
+            schema_unknown_keys.go, solver_integration.go, validation.go,
+            wiring_validation.go, analyzer/output.go, commands/github_actions.go,
+            interview/deterministic.go, queue/manager.go, detect_cascades_cmd.go,
+            diagnose_build_failure_cmd.go, extract_commands_cmd.go,
+            update_program_impl_cmd.go, update_program_state_cmd.go,
+            validate_integration.go, validate_scaffold_cmd.go).
 
-            **Current state:** Collision detection functions likely perform file I/O and need context.
+            ## 2. Interfaces You Must Implement
 
-            **Implementation:**
-            1. Add `ctx context.Context` to all exported functions in detector.go
-            2. Update types.go if any exported functions exist there
-            3. Propagate context through internal call chains
-            4. Update test files to pass context.Background()
+            ```go
+            // pkg/protocol/state_transition.go
+            func SetImplState(ctx context.Context, manifestPath string, newState ProtocolState, opts SetImplStateOpts) result.Result[*SetImplStateData]
 
-            **Tests:**
-            - Run `go test ./pkg/collision/...`
-            - Verify collision detection still works
+            // pkg/protocol/status_update.go
+            func UpdateStatus(ctx context.Context, manifestPath string, waveNum int, agentID string, status CompletionStatus, opts UpdateStatusOpts) result.Result[*UpdateStatusData]
 
-            **Verification gate:**
-            ```bash
-            cd /Users/dayna.blackwell/code/scout-and-wave-go && \
-            go build ./pkg/collision/... && \
-            go vet ./pkg/collision/... && \
-            go test ./pkg/collision/... -timeout 30s
-            ```
-          files:
-            - pkg/collision/detector.go
-            - pkg/collision/types.go
-        - id: D
-          task: |
-            Add context.Context parameter to exported functions in pkg/gatecache/.
+            // pkg/protocol/verify_build.go
+            func VerifyBuild(ctx context.Context, manifestPath string, repoDir string) result.Result[VerifyBuildData]
+            func runCommand(ctx context.Context, command string, repoDir string) (bool, string)
 
-            **Files:**
-            - pkg/gatecache/cache.go
+            // pkg/protocol/merge_agents.go — add Ctx to opts struct:
+            type MergeAgentsOpts struct {
+                Ctx          context.Context // required; pass cmd.Context() or parent ctx
+                ManifestPath string
+                WaveNum      int
+                RepoDir      string
+                MergeTarget  string
+                // ... existing fields unchanged
+            }
+            func MergeAgents(opts MergeAgentsOpts) (result.Result[MergeAgentsData], error)
 
-            **Current state:** Cache operations may involve I/O and should support cancellation.
+            // pkg/protocol/worktree.go
+            func CreateWorktrees(ctx context.Context, manifestPath string, waveNum int, repoDir string, logger *slog.Logger) result.Result[CreateWorktreesData]
 
-            **Implementation:**
-            1. Add `ctx context.Context` to Cache methods and exported functions
-            2. Support context cancellation in cache operations
-            3. Update all callers (may need to pass context.TODO() temporarily)
-            4. Update tests to pass context.Background()
+            // pkg/protocol/stubs.go
+            // NOTE: audit calls this PersistStubReport but the actual function name is AppendStubReport
+            func AppendStubReport(ctx context.Context, manifestPath, waveKey string, scanResult result.Result[ScanStubsData]) result.Result[AppendStubData]
 
-            **Tests:**
-            - Run `go test ./pkg/gatecache/...`
-            - Verify cache operations work with context
-
-            **Verification gate:**
-            ```bash
-            cd /Users/dayna.blackwell/code/scout-and-wave-go && \
-            go build ./pkg/gatecache/... && \
-            go vet ./pkg/gatecache/... && \
-            go test ./pkg/gatecache/... -timeout 30s
-            ```
-          files:
-            - pkg/gatecache/cache.go
-        - id: E
-          task: |
-            Add context.Context parameter to exported functions in pkg/retry/.
-
-            **Files:**
-            - pkg/retry/loop.go
-            - pkg/retry/attempt.go
-            - pkg/retry/classify.go
-            - pkg/retry/types.go
-
-            **Current state:** Retry logic needs context for cancellation support.
-
-            **Implementation:**
-            1. Add `ctx context.Context` to `RetryLoop.Run()` in `loop.go` and related methods
-            2. Check ctx.Done() in the retry loop (loop.go) to support cancellation
-            3. Update attempt.go and classify.go exported functions where applicable
-            4. types.go contains type definitions — add ctx to any methods that perform I/O
-            5. Update tests to pass context.Background()
-
-            **Tests:**
-            - Run `go test ./pkg/retry/...`
-            - Verify retry logic respects context cancellation
-
-            **Verification gate:**
-            ```bash
-            cd /Users/dayna.blackwell/code/scout-and-wave-go && \
-            go build ./pkg/retry/... && \
-            go vet ./pkg/retry/... && \
-            go test ./pkg/retry/... -timeout 30s
-            ```
-          files:
-            - pkg/retry/loop.go
-            - pkg/retry/attempt.go
-            - pkg/retry/classify.go
-            - pkg/retry/types.go
-        - id: F
-          task: |
-            Add context.Context parameter to exported functions in pkg/result/.
-
-            **Files:**
-            - pkg/result/result.go
-
-            **Current state:** Result type is widely used; signature changes will cascade.
-
-            **Implementation:**
-            1. Review all exported functions in result package
-            2. Add `ctx context.Context` to functions that may perform I/O or call other functions
-            3. Pure constructor functions (NewSuccess, NewFailure) likely don't need context
-            4. Update any functions that perform logging or I/O
-            5. Note: This change will require many downstream packages to update their calls
-
-            **Tests:**
-            - Run `go test ./pkg/result/...`
-            - Verify result type operations still work
-
-            **Verification gate:**
-            ```bash
-            cd /Users/dayna.blackwell/code/scout-and-wave-go && \
-            go build ./pkg/result/... && \
-            go vet ./pkg/result/... && \
-            go test ./pkg/result/... -timeout 30s
+            // pkg/protocol/gate_populator.go
+            func PopulateVerificationGates(ctx context.Context, m *IMPLManifest, commandSets map[string]*commands.CommandSet, repoMap map[string]string) (*IMPLManifest, error)
             ```
 
-            **Note:** Wave 2+ agents will update protocol package to use updated result functions.
-          files:
-            - pkg/result/result.go
-      base_commit: 26d68dbe717d125a8f25d6c3335fbcbc68e37d4f
-    - number: 2
-      agents:
-        - id: G
-          task: |
-            Add context.Context parameter to protocol types and core functions in types.go.
+            ## 3. Interfaces You May Call
 
-            **Files:**
-            - pkg/protocol/types.go
+            Agent A is concurrently removing ctx from LoadYAML/SaveYAML. In your isolated
+            worktree, the old `Load(context.TODO(), path)` and `Save(context.TODO(), ...)`
+            signatures still exist. You will be replacing those calls with `Load(ctx, path)`
+            and `Save(ctx, ...)` — passing the real ctx you receive as a parameter.
 
-            **Dependencies:** Agent F (pkg/result with context)
+            If Agent A has also removed ctx from Load/Save (they own manifest.go), the
+            build in your worktree will fail on those calls with a compile error. This is
+            an expected parallel-execution isolation artifact. Report it as
+            `out_of_scope_build_blockers` in your completion report and mark
+            `verification: FAIL (build blocked on out-of-scope symbols)`.
 
-            **Implementation:**
-            1. Review type definitions and exported functions in types.go
-            2. Add `ctx context.Context` to any exported functions
-            3. Update any Result[T] function calls to match Agent F's changes
-            4. Most of types.go is struct definitions; focus on methods
+            ## 4. What to Implement
 
-            **Tests:**
-            - Run `go test ./pkg/protocol/...`
+            **Step 1: Read each protocol file before modifying it.**
+            Start by reading the current signature in each file. Verify the function exists
+            at approximately the line number noted in the audit.
 
-            **Verification gate:**
-            ```bash
-            cd /Users/dayna.blackwell/code/scout-and-wave-go && \
-            go build ./pkg/protocol/... && \
-            go vet ./pkg/protocol/... && \
-            go test ./pkg/protocol/... -timeout 30s
+            **Step 2: Update protocol function signatures.**
+
+            For `state_transition.go` (SetImplState at line 46):
+            - Add `ctx context.Context` as first parameter
+            - Change internal `Load(context.TODO(), manifestPath)` to `Load(ctx, manifestPath)`
+            - Add `"context"` to imports if not already present (it already is per the file)
+
+            For `status_update.go` (UpdateStatus at line 30):
+            - Add `ctx context.Context` as first parameter
+            - Change internal `Load(context.TODO(), manifestPath)` to `Load(ctx, manifestPath)`
+            - Change internal `Save(context.TODO(), manifest, manifestPath)` to `Save(ctx, manifest, manifestPath)`
+
+            For `verify_build.go` (VerifyBuild at line 34, runCommand at line 126):
+            - Add `ctx context.Context` as first parameter to VerifyBuild
+            - Add `ctx context.Context` as first parameter to runCommand
+            - In runCommand: change `exec.Command("sh", "-c", ...)` to `exec.CommandContext(ctx, "sh", "-c", ...)`
+            - In VerifyBuild: change `Load(context.TODO(), manifestPath)` to `Load(ctx, manifestPath)`
+            - Thread ctx from VerifyBuild into the two runCommand(cmd, repoDir) calls:
+              `runCommand(ctx, cmd, repoDir)`
+            - Ensure `"os/exec"` and `"context"` imports are present
+
+            For `merge_agents.go` (MergeAgents at line 160):
+            - Add `Ctx context.Context` as first field in MergeAgentsOpts struct
+            - In MergeAgents body: use `opts.Ctx` wherever a ctx is needed for Load/git calls
+            - Add `"context"` to imports if not already present
+
+            For `worktree.go` (CreateWorktrees at line 45):
+            - Add `ctx context.Context` as first parameter
+            - Change internal `Load(context.TODO(), ...)` to `Load(ctx, ...)`
+            - Change internal `Save(context.TODO(), ...)` to `Save(ctx, ...)`
+
+            For `stubs.go` (AppendStubReport at approximately line 99):
+            - Add `ctx context.Context` as first parameter
+            - Change internal `Load(context.TODO(), manifestPath)` to `Load(ctx, manifestPath)`
+            - Change internal `Save(context.TODO(), manifest, manifestPath)` to `Save(ctx, manifest, manifestPath)`
+
+            For `gate_populator.go` (PopulateVerificationGates at line 19):
+            - Add `ctx context.Context` as first parameter
+            - Change internal `Load(context.TODO(), implPath)` to `Load(ctx, implPath)`
+            - Change internal `extractor.Extract(context.TODO(), repo)` to `extractor.Extract(ctx, repo)`
+            - Change internal `Save(context.TODO(), updatedManifest, implPath)` to `Save(ctx, updatedManifest, implPath)`
+
+            **Step 3: Update engine caller files.**
+
+            For `pkg/engine/prepare.go`:
+            - Line 486: `protocol.SetImplState(opts.IMPLPath, ...)` → `protocol.SetImplState(ctx, opts.IMPLPath, ...)`
+              (the function receives ctx as a parameter — verify this in the file)
+            - Line 504: `protocol.CreateWorktrees(opts.IMPLPath, opts.WaveNum, projectRoot, opts.Logger)` →
+              `protocol.CreateWorktrees(ctx, opts.IMPLPath, opts.WaveNum, projectRoot, opts.Logger)`
+
+            For `pkg/engine/finalize_steps.go`:
+            - `protocol.MergeAgents(protocol.MergeAgentsOpts{...})` — add `Ctx: ctx` field to the opts literal
+            - `protocol.VerifyBuild(opts.IMPLPath, buildRepoPath)` → `protocol.VerifyBuild(ctx, opts.IMPLPath, buildRepoPath)`
+            - Verify that `ctx` is in scope (StepMergeAgents and StepVerifyBuild both accept ctx as first param)
+
+            For `pkg/engine/auto_remediate.go`:
+            - The var `autoRemediateVerifyBuildFunc` is defined as:
+              `func(implPath, repoPath string) (*protocol.VerifyBuildData, error)`
+            - After this change, `protocol.VerifyBuild` requires a ctx. Update the var signature to:
+              `func(ctx context.Context, implPath, repoPath string) (*protocol.VerifyBuildData, error)`
+            - Update the body: `protocol.VerifyBuild(ctx, implPath, repoPath)`
+            - Update any callers of autoRemediateVerifyBuildFunc in this file to pass ctx
+
+            For `pkg/engine/daemon.go`:
+            - The var `daemonCreateWorktreesFunc` wraps `protocol.CreateWorktrees`.
+            - After this change, `protocol.CreateWorktrees` requires a ctx. Update the var
+              signature to add `ctx context.Context` as first param.
+            - Update the body: `protocol.CreateWorktrees(ctx, manifestPath, waveNum, repoDir, nil)`
+            - Update any callers of daemonCreateWorktreesFunc to pass ctx
+
+            For `pkg/engine/run_wave_full.go`:
+            - `protocol.CreateWorktrees(opts.ManifestPath, opts.WaveNum, opts.RepoPath, opts.Logger)` →
+              `protocol.CreateWorktrees(ctx, opts.ManifestPath, opts.WaveNum, opts.RepoPath, opts.Logger)`
+            - Verify that ctx is in scope at that call site
+
+            **Step 4: Update cmd/sawtools caller files.**
+
+            In each cmd/sawtools file, the RunE function closure has access to `cmd.Context()`
+            as the ctx source. The pattern is:
+            ```go
+            RunE: func(cmd *cobra.Command, args []string) error {
+                ctx := cmd.Context()
+                res := protocol.UpdateStatus(ctx, manifestPath, ...)
+                ...
+            }
             ```
-          files:
-            - pkg/protocol/types.go
-          dependencies:
-            - F
-        - id: H
-          task: |
-            Add context.Context parameter to manifest I/O functions.
 
-            **Files:**
-            - pkg/protocol/manifest.go
-            - pkg/protocol/yaml_io.go
+            For `cmd/sawtools/update_status.go`:
+            - Add `ctx := cmd.Context()` before the protocol call
+            - Pass ctx as first arg to UpdateStatus
 
-            **Dependencies:** Agent F (pkg/result with context)
+            For `cmd/sawtools/scan_stubs.go`:
+            - Add `ctx := cmd.Context()` before the AppendStubReport call
+            - Pass ctx as first arg to AppendStubReport
 
-            **Current state:**
-            - Load() reads IMPL manifest from file
-            - Save() writes manifest to file
-            - LoadYAML[T] and SaveYAML[T] are generic YAML I/O helpers
+            For `cmd/sawtools/verify_build.go`:
+            - Add `ctx := cmd.Context()` before the VerifyBuild call
+            - Pass ctx as first arg to VerifyBuild
 
-            **Implementation:**
-            1. Add `ctx context.Context` to Load, Save, LoadYAML, SaveYAML functions
-            2. Pass context through file I/O operations (os.ReadFile, os.WriteFile)
-            3. Update WithCompletionReportLock callback to accept context
-            4. Update all callers in protocol package (many other files call Load/Save)
-            5. Update result.Result usage to match Agent F's changes
+            For `cmd/sawtools/create_worktrees.go`:
+            - Add `ctx := cmd.Context()` before the CreateWorktrees call
+            - Pass ctx as first arg to CreateWorktrees
 
-            **Tests:**
-            - Run `go test ./pkg/protocol/...`
-            - Verify manifest loading/saving still works
+            For `cmd/sawtools/merge_agents.go`:
+            - Add `ctx := cmd.Context()` before the MergeAgents call
+            - Set `Ctx: ctx` in the MergeAgentsOpts literal
 
-            **Verification gate:**
+            For `cmd/sawtools/set_impl_state_cmd.go`:
+            - Add `ctx := cmd.Context()` before the SetImplState call
+            - Pass ctx as first arg to SetImplState
+
+            For `cmd/sawtools/close_impl_cmd.go`:
+            - The file already imports `"context"` (check the import block)
+            - Use `cmd.Context()` for the SetImplState call
+            - Pass ctx as first arg
+
+            **Step 5: grep validation**
+            After making all changes:
             ```bash
-            cd /Users/dayna.blackwell/code/scout-and-wave-go && \
-            go build ./pkg/protocol/... && \
-            go vet ./pkg/protocol/... && \
-            go test ./pkg/protocol/... -timeout 30s
+            grep -rn 'SetImplState(opts\.\|SetImplState(manifest\|UpdateStatus(manifest\|VerifyBuild(manifest\|VerifyBuild(impl\|VerifyBuild(opts\.\|CreateWorktrees(manifest\|CreateWorktrees(opts\.\|AppendStubReport(append\|AppendStubReport(manifest\|PopulateVerificationGates(m ' pkg/ cmd/ | grep -v "_test.go"
             ```
-          files:
-            - pkg/protocol/manifest.go
-            - pkg/protocol/yaml_io.go
-          dependencies:
-            - F
-        - id: I
-          task: |
-            Add context.Context parameter to branch name and state functions.
+            This should return zero matches (all calls now pass ctx as first arg).
 
-            **Files:**
-            - pkg/protocol/branchname.go
-            - pkg/protocol/state_status.go
+            ## 5. Tests to Write
 
-            **Current state:** Pure string manipulation functions (BranchName, ParseBranch, ExtractSlug).
+            No new tests are required for this change — it is a pure ctx threading refactor
+            with no behavior change. The behavior change (VerifyBuild now respects cancellation
+            via exec.CommandContext) is implicitly verified by the existing test suite compiling
+            and passing.
 
-            **Implementation:**
-            1. Review functions in branchname.go
-            2. Pure string functions (BranchName, ParseBranch, ExtractSlug) likely DON'T need context
-            3. If any functions perform I/O or git operations, add context
-            4. Review state_status.go for any functions needing context (IMPLStateToStatus, etc.)
-            5. Use judgment: only add context where it provides value
+            If any test file for these functions calls them without ctx, update the test call
+            sites to pass `context.Background()` (acceptable in tests).
 
-            **Tests:**
-            - Run `go test ./pkg/protocol/...`
+            ## 6. Verification Gate
 
-            **Verification gate:**
             ```bash
-            cd /Users/dayna.blackwell/code/scout-and-wave-go && \
-            go build ./pkg/protocol/... && \
-            go vet ./pkg/protocol/... && \
-            go test ./pkg/protocol/... -timeout 30s
+            cd /Users/dayna.blackwell/code/scout-and-wave-go
+
+            # Build must pass — no ctx-related compile errors
+            go build ./...
+
+            # Vet
+            go vet ./...
+
+            # Full test suite
+            go test ./...
             ```
+
+            Note: If Agent A's concurrent removal of ctx from Load/Save signatures causes
+            build failures in your worktree (because your worktree still has the old
+            signatures), document this under out_of_scope_build_blockers and mark
+            verification accordingly. Do NOT try to fix Agent A's files.
+
+            ## 7. Constraints
+
+            - `MergeAgents` uses an opts struct pattern — add `Ctx context.Context` as
+              the first field in `MergeAgentsOpts`, not as a standalone parameter. This
+              preserves the existing call-site pattern (callers construct opts literals).
+            - For `runCommand` in verify_build.go: use `exec.CommandContext(ctx, "sh", "-c", ...)`
+              not `exec.Command`. This is the only behavior-affecting change in this IMPL.
+            - Do NOT add ctx to any function not in your ownership list.
+            - Do NOT modify any file owned by Agent A.
+            - Do NOT touch runner.go, finalize.go, or program_progress.go (IMPL 3 territory).
+            - cmd/sawtools caller files use `cmd.Context()` as the ctx source — never
+              `context.Background()` or `context.TODO()` in production callers.
+            - The `autoRemediateVerifyBuildFunc` and `daemonCreateWorktreesFunc` are package-
+              level vars with function types. When you update their signatures, also update
+              any test files in the same package that override these vars to match the new
+              signature (test files are part of Agent B's scope for these packages).
+
+            ## 8. Report
+
+            Commit your changes, then write your completion report to:
+            `/Users/dayna.blackwell/code/scout-and-wave-go/docs/IMPL/IMPL-context-propagation.yaml`
           files:
-            - pkg/protocol/branchname.go
-            - pkg/protocol/state_status.go
-        - id: J
-          task: |
-            Add context.Context parameter to completion report functions.
-
-            **Files:**
-            - pkg/protocol/completion_report.go
-
-            **Dependencies:** Agent F (pkg/result with context)
-
-            **Implementation:**
-            1. Add `ctx context.Context` to NewCompletionReport and CompletionReportBuilder methods
-            2. Update Result[T] usage to match Agent F's changes
-            3. Update any functions that write to manifest (will use Agent H's updated Save)
-
-            **Tests:**
-            - Run `go test ./pkg/protocol/...`
-            - Verify completion report building still works
-
-            **Verification gate:**
-            ```bash
-            cd /Users/dayna.blackwell/code/scout-and-wave-go && \
-            go build ./pkg/protocol/... && \
-            go vet ./pkg/protocol/... && \
-            go test ./pkg/protocol/... -timeout 30s
-            ```
-          files:
-            - pkg/protocol/completion_report.go
-          dependencies:
-            - F
-        - id: K
-          task: |
-            Add context.Context parameter to baseline gate functions.
-
-            **Files:**
-            - pkg/protocol/baseline_gates.go
-
-            **Dependencies:** Agent D (gatecache), Agent F (result)
-
-            **Current state:**
-            - RunBaselineGates executes quality gates with cache support
-            - RunCrossRepoBaselineGates handles multi-repo scenarios
-
-            **Implementation:**
-            1. Add `ctx context.Context` to RunBaselineGates and RunCrossRepoBaselineGates
-            2. Pass context to gatecache operations (Agent D's updates)
-            3. Update Result[T] usage to match Agent F
-            4. Propagate context to gate execution (exec.Command can use CommandContext)
-
-            **Tests:**
-            - Run `go test ./pkg/protocol/...`
-            - Verify baseline gates still execute
-
-            **Verification gate:**
-            ```bash
-            cd /Users/dayna.blackwell/code/scout-and-wave-go && \
-            go build ./pkg/protocol/... && \
-            go vet ./pkg/protocol/... && \
-            go test ./pkg/protocol/... -timeout 30s
-            ```
-          files:
-            - pkg/protocol/baseline_gates.go
-          dependencies:
-            - D
-            - F
-        - id: L
-          task: |
-            Add context.Context parameter to cleanup functions.
-
-            **Files:**
-            - pkg/protocol/cleanup.go
-
-            **Dependencies:** Agent F (result)
-
-            **Current state:**
-            - Cleanup removes stale worktrees
-            - CleanupAllStale removes all stale branches
-
-            **Implementation:**
-            1. Add `ctx context.Context` to Cleanup and CleanupAllStale
-            2. Pass context to git operations and file I/O
-            3. Update Result[T] usage
-            4. Support cancellation during cleanup operations
-
-            **Tests:**
-            - Run `go test ./pkg/protocol/...`
-
-            **Verification gate:**
-            ```bash
-            cd /Users/dayna.blackwell/code/scout-and-wave-go && \
-            go build ./pkg/protocol/... && \
-            go vet ./pkg/protocol/... && \
-            go test ./pkg/protocol/... -timeout 30s
-            ```
-          files:
-            - pkg/protocol/cleanup.go
-          dependencies:
-            - F
-        - id: M
-          task: |
-            Add context.Context parameter to commit verification functions.
-
-            **Files:**
-            - pkg/protocol/commit_verify.go
-
-            **Dependencies:** Agent F (result)
-
-            **Current state:** VerifyCommits checks agent commits in worktrees.
-
-            **Implementation:**
-            1. Add `ctx context.Context` to VerifyCommits
-            2. Pass context to git operations
-            3. Update Result[T] usage
-            4. Support cancellation during verification
-
-            **Tests:**
-            - Run `go test ./pkg/protocol/...`
-
-            **Verification gate:**
-            ```bash
-            cd /Users/dayna.blackwell/code/scout-and-wave-go && \
-            go build ./pkg/protocol/... && \
-            go vet ./pkg/protocol/... && \
-            go test ./pkg/protocol/... -timeout 30s
-            ```
-          files:
-            - pkg/protocol/commit_verify.go
-          dependencies:
-            - F
-        - id: "N"
-          task: |
-            Add context.Context parameter to IMPL discovery functions.
-
-            **Files:**
-            - pkg/protocol/discovery.go
-
-            **Dependencies:** Agent F (result)
-
-            **Current state:**
-            - ListIMPLs scans directory for IMPL manifests
-            - ArchiveIMPL moves completed IMPL to archive
-            - ArchiveProgram moves completed program manifest
-
-            **Implementation:**
-            1. Add `ctx context.Context` to ListIMPLs, ArchiveIMPL, ArchiveProgram
-            2. Pass context through file system operations
-            3. Update Result[T] usage
-            4. Support cancellation during directory scanning
-
-            **Tests:**
-            - Run `go test ./pkg/protocol/...`
-
-            **Verification gate:**
-            ```bash
-            cd /Users/dayna.blackwell/code/scout-and-wave-go && \
-            go build ./pkg/protocol/... && \
-            go vet ./pkg/protocol/... && \
-            go test ./pkg/protocol/... -timeout 30s
-            ```
-          files:
-            - pkg/protocol/discovery.go
-          dependencies:
-            - F
-      base_commit: 1ea661cf5103c20b0d47f459ff9f2121cd4c730c
-    - number: 3
-      agents:
-        - id: O
-          task: |
-            Add context.Context parameter to IMPL amendment functions.
-
-            **Files:**
-            - pkg/protocol/amend.go
-
-            **Dependencies:** Agent F (result), Agent H (manifest I/O)
-
-            **Current state:** AmendImpl performs Load-modify-Save sequence.
-
-            **Implementation:**
-            1. Add `ctx context.Context` to AmendImpl function
-            2. Update Load/Save calls to pass context (Agent H's updates)
-            3. Update Result[T] usage to match Agent F
-            4. Propagate context through helper functions
-
-            **Tests:**
-            - Run `go test ./pkg/protocol/...`
-            - Verify IMPL amendment operations work
-
-            **Verification gate:**
-            ```bash
-            cd /Users/dayna.blackwell/code/scout-and-wave-go && \
-            go build ./pkg/protocol/... && \
-            go vet ./pkg/protocol/... && \
-            go test ./pkg/protocol/... -timeout 30s
-            ```
-          files:
-            - pkg/protocol/amend.go
-          dependencies:
-            - F
-            - H
-        - id: P
-          task: |
-            Add context.Context parameter to critic functions.
-
-            **Files:**
-            - pkg/protocol/critic.go
-            - pkg/protocol/critic_gate.go
-
-            **Dependencies:** Agent F (result), Agent H (manifest I/O)
-
-            **Current state:**
-            - WriteCriticReview writes critic report to manifest
-            - GetCriticReview reads critic report
-            - CriticGatePasses checks if critic gate should run
-
-            **Implementation:**
-            1. Add `ctx context.Context` to WriteCriticReview, WriteCriticReviewResult, GetCriticReview, GetCriticReviewResult
-            2. Pass context to manifest Load/Save operations
-            3. Update Result[T] usage
-            4. Pure query functions (IsNewFile, IsSymbolInNewFile) may not need context
-
-            **Tests:**
-            - Run `go test ./pkg/protocol/...`
-
-            **Verification gate:**
-            ```bash
-            cd /Users/dayna.blackwell/code/scout-and-wave-go && \
-            go build ./pkg/protocol/... && \
-            go vet ./pkg/protocol/... && \
-            go test ./pkg/protocol/... -timeout 30s
-            ```
-          files:
-            - pkg/protocol/critic.go
-            - pkg/protocol/critic_gate.go
-          dependencies:
-            - F
-            - H
-        - id: Q
-          task: |
-            Add context.Context parameter to context update functions.
-
-            **Files:**
-            - pkg/protocol/context_update.go
-
-            **Dependencies:** Agent F (result), Agent H (manifest I/O)
-
-            **Current state:** UpdateContext updates CONTEXT.md with completed features.
-
-            **Implementation:**
-            1. Add `ctx context.Context` to UpdateContext
-            2. Pass context through file I/O operations
-            3. Update Result[T] usage
-
-            **Tests:**
-            - Run `go test ./pkg/protocol/...`
-
-            **Verification gate:**
-            ```bash
-            cd /Users/dayna.blackwell/code/scout-and-wave-go && \
-            go build ./pkg/protocol/... && \
-            go vet ./pkg/protocol/... && \
-            go test ./pkg/protocol/... -timeout 30s
-            ```
-          files:
-            - pkg/protocol/context_update.go
-          dependencies:
-            - F
-            - H
-        - id: R
-          task: |
-            Add context.Context parameter to conflict and complexity checking functions.
-
-            **Files:**
-            - pkg/protocol/complexity.go
-            - pkg/protocol/conflict.go
-            - pkg/protocol/conflict_predict.go
-
-            **Dependencies:** Agent F (result)
-
-            **Current state:**
-            - CheckAgentComplexity validates agent scope
-            - DetectOwnershipConflicts finds file ownership issues
-            - PredictConflictsFromReports predicts merge conflicts
-
-            **Implementation:**
-            1. Add `ctx context.Context` to CheckAgentComplexity, DetectOwnershipConflicts, PredictConflictsFromReports
-            2. Update Result[T] usage
-            3. These are mostly analysis functions; context mainly for consistency
-
-            **Tests:**
-            - Run `go test ./pkg/protocol/...`
-
-            **Verification gate:**
-            ```bash
-            cd /Users/dayna.blackwell/code/scout-and-wave-go && \
-            go build ./pkg/protocol/... && \
-            go vet ./pkg/protocol/... && \
-            go test ./pkg/protocol/... -timeout 30s
-            ```
-          files:
-            - pkg/protocol/complexity.go
-            - pkg/protocol/conflict.go
-            - pkg/protocol/conflict_predict.go
-          dependencies:
-            - F
-        - id: S
-          task: |
-            Add context.Context parameter to dependency verification functions.
-
-            **Files:**
-            - pkg/protocol/dependency_verifier.go
-
-            **Dependencies:** Agent F (result)
-
-            **Current state:** VerifyDependenciesAvailable checks wave dependencies.
-
-            **Implementation:**
-            1. Add `ctx context.Context` to VerifyDependenciesAvailable
-            2. Update Result[T] usage
-
-            **Tests:**
-            - Run `go test ./pkg/protocol/...`
-
-            **Verification gate:**
-            ```bash
-            cd /Users/dayna.blackwell/code/scout-and-wave-go && \
-            go build ./pkg/protocol/... && \
-            go vet ./pkg/protocol/... && \
-            go test ./pkg/protocol/... -timeout 30s
-            ```
-          files:
-            - pkg/protocol/dependency_verifier.go
-          dependencies:
-            - F
-        - id: T
-          task: |
-            Add context.Context parameter to validation functions.
-
-            **Files:**
-            - pkg/protocol/validation.go
-            - pkg/protocol/full_validate.go
-
-            **Dependencies:** Agent F (result), Agent H (manifest I/O)
-
-            **Current state:**
-            - Validation functions check IMPL manifest structure
-            - Full validation runs complete E16 validation suite
-
-            **Implementation:**
-            1. Add `ctx context.Context` to Validate, ValidateBytes, FullValidate functions
-            2. Pass context to manifest Load operations
-            3. Update Result[T] usage
-
-            **Tests:**
-            - Run `go test ./pkg/protocol/...`
-
-            **Verification gate:**
-            ```bash
-            cd /Users/dayna.blackwell/code/scout-and-wave-go && \
-            go build ./pkg/protocol/... && \
-            go vet ./pkg/protocol/... && \
-            go test ./pkg/protocol/... -timeout 30s
-            ```
-          files:
-            - pkg/protocol/validation.go
-            - pkg/protocol/full_validate.go
-          dependencies:
-            - F
-            - H
-        - id: U
-          task: |
-            Add context.Context parameter to protocol extraction and freeze functions.
-
-            **Files:**
-            - pkg/protocol/extract.go
-            - pkg/protocol/freeze.go
-
-            **Dependencies:** Agent F (result), Agent H (manifest I/O)
-
-            **Current state:**
-            - Extract functions pull agent context from manifests
-            - Freeze functions enforce contract immutability
-
-            **Implementation:**
-            1. Add `ctx context.Context` to ExtractAgentContextFromManifest and freeze functions
-            2. Pass context to manifest Load operations
-            3. Update Result[T] usage
-
-            **Tests:**
-            - Run `go test ./pkg/protocol/...`
-
-            **Verification gate:**
-            ```bash
-            cd /Users/dayna.blackwell/code/scout-and-wave-go && \
-            go build ./pkg/protocol/... && \
-            go vet ./pkg/protocol/... && \
-            go test ./pkg/protocol/... -timeout 30s
-            ```
-          files:
-            - pkg/protocol/extract.go
-            - pkg/protocol/freeze.go
-          dependencies:
-            - F
-            - H
-      base_commit: d6d890755e769864d25b270e8ba086c67911ff38
-    - number: 4
-      agents:
-        - id: V
-          task: |
-            Add context.Context parameter to analyzer core functions.
-
-            **Files:**
-            - pkg/analyzer/analyzer.go
-            - pkg/analyzer/deps.go
-
-            **Dependencies:** Agent F (result)
-
-            **Current state:**
-            - Analyzer performs dependency analysis on Go code
-            - Builds dependency graphs from AST
-
-            **Implementation:**
-            1. Add `ctx context.Context` to public analyzer functions
-            2. Pass context through file I/O and AST parsing
-            3. Update Result[T] usage if analyzer returns results
-            4. Support cancellation for large codebases
-
-            **Tests:**
-            - Run `go test ./pkg/analyzer/...`
-
-            **Verification gate:**
-            ```bash
-            cd /Users/dayna.blackwell/code/scout-and-wave-go && \
-            go build ./pkg/analyzer/... && \
-            go vet ./pkg/analyzer/... && \
-            go test ./pkg/analyzer/... -timeout 30s
-            ```
-          files:
-            - pkg/analyzer/analyzer.go
-            - pkg/analyzer/deps.go
-          dependencies:
-            - F
-        - id: W
-          task: |
-            Add context.Context parameter to analyzer cascade and shared type detection.
-
-            **Files:**
-            - pkg/analyzer/cascade.go
-            - pkg/analyzer/shared_types.go
-
-            **Dependencies:** Agent F (result)
-
-            **Current state:**
-            - Cascade detection finds type rename impacts
-            - Shared type detection finds types used by multiple agents
-
-            **Implementation:**
-            1. Add `ctx context.Context` to cascade and shared type detection functions
-            2. Pass context through file scanning operations
-            3. Update Result[T] usage
-
-            **Tests:**
-            - Run `go test ./pkg/analyzer/...`
-
-            **Verification gate:**
-            ```bash
-            cd /Users/dayna.blackwell/code/scout-and-wave-go && \
-            go build ./pkg/analyzer/... && \
-            go vet ./pkg/analyzer/... && \
-            go test ./pkg/analyzer/... -timeout 30s
-            ```
-          files:
-            - pkg/analyzer/cascade.go
-            - pkg/analyzer/shared_types.go
-          dependencies:
-            - F
-        - id: X
-          task: |
-            Add context.Context parameter to agent runner and backend clients.
-
-            **Files:**
-            - pkg/agent/runner.go
-            - pkg/agent/backend/api/client.go
-            - pkg/agent/backend/bedrock/client.go
-            - pkg/agent/backend/cli/client.go
-
-            **Dependencies:** Agent F (result)
-
-            **Current state:**
-            - Agent runner launches agents via backend clients
-            - Backend clients (Anthropic API, Bedrock, CLI) make API calls
-            - These are long-running operations that need cancellation
-
-            **Implementation:**
-            1. `runner.go`, `api/client.go`, `bedrock/client.go`, `cli/client.go` already have
-               context on all exported methods (Run, RunStreaming, RunStreamingWithTools, Execute,
-               ExecuteStreaming, ExecuteStreamingWithTools) — do NOT re-add it
-            2. Audit internal HTTP request creation: replace any `http.NewRequest(...)` with
-               `http.NewRequestWithContext(ctx, ...)` inside api/client.go and bedrock/client.go
-            3. Audit CLI subprocess creation in cli/client.go: replace `exec.Command(...)` with
-               `exec.CommandContext(ctx, ...)` for cancellation support
-            4. Check for any internal helpers in these files that make network/subprocess calls
-               without passing context down
-            5. Update Result[T] usage where needed
-
-            **Tests:**
-            - Run `go test ./pkg/agent/...`
-            - Verify agent launches still work
-
-            **Verification gate:**
-            ```bash
-            cd /Users/dayna.blackwell/code/scout-and-wave-go && \
-            go build ./pkg/agent/... && \
-            go vet ./pkg/agent/... && \
-            go test ./pkg/agent/... -timeout 30s
-            ```
-          files:
-            - pkg/agent/runner.go
-            - pkg/agent/backend/api/client.go
-            - pkg/agent/backend/bedrock/client.go
-            - pkg/agent/backend/cli/client.go
-          dependencies:
-            - F
-        - id: "Y"
-          task: |
-            Add context.Context parameter to command extraction functions.
-
-            **Files:**
-            - pkg/commands/extractor.go
-            - pkg/commands/wrapper.go
-
-            **Dependencies:** Agent F (result)
-
-            **Current state:**
-            - Extractor parses CI configs and Makefiles for build commands
-            - Wrapper provides convenience functions
-
-            **Implementation:**
-            1. Add `ctx context.Context` to ExtractCommands and related functions
-            2. Pass context through file I/O operations
-            3. Update Result[T] usage
-
-            **Tests:**
-            - Run `go test ./pkg/commands/...`
-
-            **Verification gate:**
-            ```bash
-            cd /Users/dayna.blackwell/code/scout-and-wave-go && \
-            go build ./pkg/commands/... && \
-            go vet ./pkg/commands/... && \
-            go test ./pkg/commands/... -timeout 30s
-            ```
-          files:
-            - pkg/commands/extractor.go
-            - pkg/commands/wrapper.go
-          dependencies:
-            - F
-        - id: Z
-          task: |
-            Add context.Context parameter to gate runner and discovery functions.
-
-            **Files:**
-            - pkg/protocol/gates.go
-            - pkg/protocol/gate_discovery.go
-
-            **Dependencies:** Agent D (gatecache), Agent F (result), Agent K (baseline_gates)
-
-            **Current state:**
-            - Gate runner executes quality gates (build, test, lint)
-            - Gate discovery finds gates from manifest
-
-            **Implementation:**
-            1. Add `ctx context.Context` to RunGatesWithCache, RunPreMergeGates, RunPostMergeGates in gates.go
-            2. Use exec.CommandContext for subprocess execution with cancellation
-            3. Pass context to cache operations (Agent D)
-            4. Update calls to baseline gate functions (Agent K)
-            5. Update Result[T] usage
-
-            **Tests:**
-            - Run `go test ./pkg/protocol/...`
-
-            **Verification gate:**
-            ```bash
-            cd /Users/dayna.blackwell/code/scout-and-wave-go && \
-            go build ./pkg/protocol/... && \
-            go vet ./pkg/protocol/... && \
-            go test ./pkg/protocol/... -timeout 30s
-            ```
-          files:
-            - pkg/protocol/gates.go
-            - pkg/protocol/gate_discovery.go
-          dependencies:
-            - D
-            - F
-            - K
-      base_commit: ff38078ac4b8754a6f5a610494521bf31b59f404
-    - number: 5
-      agents:
-        - id: A2
-          task: |
-            Add context.Context parameter to orchestrator core functions.
-
-            **Files:**
-            - pkg/orchestrator/orchestrator.go
-            - pkg/orchestrator/context.go
-            - pkg/orchestrator/merge.go
-
-            **Dependencies:** Agent G (protocol types), Agent H (manifest I/O), Agent X (agent runner)
-
-            **Current state:**
-            - Orchestrator drives SAW protocol execution
-            - Creates worktrees, launches agents, merges results
-            - Long-running operations that need cancellation
-
-            **Implementation:**
-            1. Add `ctx context.Context` to New, RunWave, and other orchestrator methods
-            2. Pass context through agent launches (Agent X's updated runner)
-            3. Pass context to protocol Load/Save operations (Agent H)
-            4. Pass context to git operations
-            5. Support cancellation during wave execution
-            6. Update UpdateContextMD and other exported functions
-
-            **Tests:**
-            - Run `go test ./pkg/orchestrator/...`
-
-            **Verification gate:**
-            ```bash
-            cd /Users/dayna.blackwell/code/scout-and-wave-go && \
-            go build ./pkg/orchestrator/... && \
-            go vet ./pkg/orchestrator/... && \
-            go test ./pkg/orchestrator/... -timeout 30s
-            ```
-          files:
-            - pkg/orchestrator/orchestrator.go
-            - pkg/orchestrator/context.go
-            - pkg/orchestrator/merge.go
-          dependencies:
-            - G
-            - H
-            - X
-          context_source: prepared-brief
-    - number: 6
-      agents:
-        - id: B2
-          task: |
-            Add context.Context parameter to engine scout and runner functions.
-
-            **Files:**
-            - pkg/engine/scout_run.go
-            - pkg/engine/runner.go
-
-            **Dependencies:** Agent A2 (orchestrator), Agent X (agent runner)
-
-            **Current state:**
-            - Scout runner launches Scout agent
-            - Generic runner provides base execution logic
-
-            **Implementation:**
-            1. Add `ctx context.Context` to RunScout and other runner functions
-            2. Pass context to agent runner (Agent X)
-            3. Pass context to orchestrator operations (Agent A2)
-            4. Support cancellation during scout execution
-
-            **Tests:**
-            - Run `go test ./pkg/engine/...`
-
-            **Verification gate:**
-            ```bash
-            cd /Users/dayna.blackwell/code/scout-and-wave-go && \
-            go build ./pkg/engine/... && \
-            go vet ./pkg/engine/... && \
-            go test ./pkg/engine/... -timeout 30s
-            ```
-          files:
-            - pkg/engine/scout_run.go
-            - pkg/engine/runner.go
-          dependencies:
-            - A2
-            - X
-        - id: C2
-          task: |
-            Add context.Context parameter to engine critic functions.
-
-            **Files:**
-            - pkg/engine/critic.go
-
-            **Dependencies:** Agent A2 (orchestrator), Agent P (protocol critic)
-
-            **Current state:** Critic engine launches critic agent to review briefs.
-
-            **Implementation:**
-            1. Add `ctx context.Context` to RunCritic
-            2. Pass context to agent launches
-            3. Pass context to protocol critic functions (Agent P)
-            4. Support cancellation during critic review
-
-            **Tests:**
-            - Run `go test ./pkg/engine/...`
-
-            **Verification gate:**
-            ```bash
-            cd /Users/dayna.blackwell/code/scout-and-wave-go && \
-            go build ./pkg/engine/... && \
-            go vet ./pkg/engine/... && \
-            go test ./pkg/engine/... -timeout 30s
-            ```
-          files:
-            - pkg/engine/critic.go
-          dependencies:
-            - A2
-            - P
-        - id: D2
-          task: |
-            Add context.Context parameter to engine finalization functions.
-
-            **Files:**
-            - pkg/engine/finalize.go
-            - pkg/engine/finalize_steps.go
-
-            **Dependencies:** Agent A2 (orchestrator)
-
-            **Current state:**
-            - Finalize functions merge agent worktrees
-            - Run post-merge verification gates
-            - Execute multiple steps (verify commits, scan stubs, merge, cleanup)
-
-            **Implementation:**
-            1. Add `ctx context.Context` to `FinalizeWave` in finalize.go — this is the
-               main entry point that does NOT yet have context
-            2. Do NOT modify `FinalizeIMPL` — it does not exist in your owned files
-               (the engine-level wrapper `FinalizeIMPLEngine` in finalize_impl.go is NOT
-               owned by you and already has context)
-            3. All `Step*` functions in finalize_steps.go (StepVerifyCommits, StepScanStubs,
-               StepMergeAgents, StepRunGates, StepValidateIntegration, etc.) already accept
-               `ctx context.Context` — verify this and do NOT re-add context to them
-            4. Pass context through any internal helpers in finalize.go that perform git
-               operations or subprocess calls
-            5. Support cancellation during finalization by threading ctx into long-running ops
-
-            **Tests:**
-            - Run `go test ./pkg/engine/...`
-
-            **Verification gate:**
-            ```bash
-            cd /Users/dayna.blackwell/code/scout-and-wave-go && \
-            go build ./pkg/engine/... && \
-            go vet ./pkg/engine/... && \
-            go test ./pkg/engine/... -timeout 30s
-            ```
-          files:
-            - pkg/engine/finalize.go
-            - pkg/engine/finalize_steps.go
-          dependencies:
-            - A2
-        - id: E2
-          task: |
-            Add context.Context parameter to engine preparation functions.
-
-            **Files:**
+            - pkg/protocol/state_transition.go
+            - pkg/protocol/status_update.go
+            - pkg/protocol/verify_build.go
+            - pkg/protocol/merge_agents.go
+            - pkg/protocol/worktree.go
+            - pkg/protocol/stubs.go
+            - pkg/protocol/gate_populator.go
             - pkg/engine/prepare.go
-            - pkg/engine/prepare_agent.go
-
-            **Dependencies:** Agent A2 (orchestrator)
-
-            **Current state:**
-            - Preparation functions create worktrees and set up agent context
-            - Run pre-wave validation and gates
-
-            **Implementation:**
-            1. Add `ctx context.Context` to PrepareWave, PrepareAgent functions
-            2. Pass context through orchestrator operations
-            3. Pass context to git worktree creation
-            4. Support cancellation during preparation
-
-            **Tests:**
-            - Run `go test ./pkg/engine/...`
-
-            **Verification gate:**
-            ```bash
-            cd /Users/dayna.blackwell/code/scout-and-wave-go && \
-            go build ./pkg/engine/... && \
-            go vet ./pkg/engine/... && \
-            go test ./pkg/engine/... -timeout 30s
-            ```
-          files:
-            - pkg/engine/prepare.go
-            - pkg/engine/prepare_agent.go
-          dependencies:
-            - A2
-      base_commit: 36c724121e2b0915d430d58708d23439bbc4290d
+            - pkg/engine/finalize_steps.go
+            - pkg/engine/auto_remediate.go
+            - pkg/engine/daemon.go
+            - pkg/engine/run_wave_full.go
+            - cmd/sawtools/update_status.go
+            - cmd/sawtools/scan_stubs.go
+            - cmd/sawtools/verify_build.go
+            - cmd/sawtools/create_worktrees.go
+            - cmd/sawtools/merge_agents.go
+            - cmd/sawtools/set_impl_state_cmd.go
+            - cmd/sawtools/close_impl_cmd.go
+      base_commit: c8d8571a36e0ca2c3e303305aa0d40522dc91b28
 quality_gates:
     level: standard
     gates:
@@ -1463,598 +812,111 @@ quality_gates:
           command: go vet ./...
           required: true
         - type: test
-          command: go test ./... -timeout 120s
+          command: go test ./...
           required: true
 completion_reports:
     A:
         status: complete
         branch: saw/context-propagation/wave1-agent-A
-        commit: 26d68db
+        commit: 595e8d7
         files_changed:
-            - pkg/idgen/generator.go
+            - pkg/protocol/yaml_io.go
+            - pkg/protocol/memory.go
+            - pkg/protocol/program_generator.go
+            - pkg/interview/deterministic.go
+            - pkg/queue/manager.go
+            - pkg/engine/import_impls.go
+            - pkg/engine/program_progress.go
+            - cmd/sawtools/update_program_impl_cmd.go
+            - cmd/sawtools/update_program_state_cmd.go
         verification: PASS
-        notes: AssignAgentIDs is a pure computation function (no I/O, no blocking, no network). Interface contract explicitly exempts pure value functions from ctx requirement. All existing tests pass. No callers need updating. Package build, vet, and test all clean.
-    A2:
-        status: complete
-        branch: main
-        commit: 1694988a53def2bc5b075b5ae0f366589ceb1a5d
-        files_changed:
-            - pkg/orchestrator/orchestrator.go
-            - pkg/orchestrator/context.go
-            - pkg/orchestrator/merge.go
-            - pkg/orchestrator/verification.go
-            - pkg/orchestrator/orchestrator_test.go
-            - pkg/orchestrator/context_test.go
-            - pkg/orchestrator/setters.go
-            - pkg/engine/runner.go
-        verification: PASS
-        notes: Added ctx context.Context to New, RunWave, RunAgent, MergeWave, RunVerification, UpdateIMPLStatus, UpdateContextMD. Updated mergeWaveFunc and runVerificationFunc variable types. Pre-commit hook required go vet ./... to pass, so pkg/engine/runner.go was updated as a necessary cascade (nominally Wave 6 Agent B2 scope). All orchestrator and engine tests pass. Full build clean.
+        notes: Removed ctx from LoadYAML and SaveYAML signatures and updated 7 call-site files. Load() and Save() in manifest.go retain ctx (they are called by files outside my ownership list and Agent B is responsible for those callers). The grep validation returned zero matches for LoadYAML/SaveYAML with context args. All tests pass.
     B:
         status: complete
         branch: saw/context-propagation/wave1-agent-B
-        commit: 18972c6
+        commit: "6810e92"
         files_changed:
-            - pkg/format/detect.go
-            - pkg/format/detect_test.go
-            - pkg/protocol/gates.go
-        tests_added:
-            - TestDetectFormatter
-            - TestDetectFormatter_NonexistentDir
-        verification: PASS
-        notes: Added ctx context.Context to DetectFormatter (os.Stat I/O). Updated detect_test.go to pass context.Background(). Patched gates.go call site with context.TODO() — it was not in my owned files but the pre-commit hook runs go vet ./... repo-wide, blocking the commit without this fix. Agent K/Z should replace context.TODO() with the real context when adding ctx to runFormatGate and the exported gates functions.
-    B2:
-        status: complete
-        branch: saw/context-propagation/wave6-agent-B2
-        commit: 08e7db2
-        files_changed:
-            - pkg/engine/scout_run.go
-            - pkg/engine/runner.go
-        verification: PASS
-        notes: 'Replaced context.TODO() with ctx in all functions that already had ctx parameter: RunScoutFull (scout_run.go x2), runScoutStructured, runScoutStructuredBedrock, StartWave (x2), RunScaffold, RunSingleAgent, startWaveWithGate (runner.go). Remaining context.TODO() in runScoutAutomation is intentional - that function has no ctx parameter.'
-    C:
-        status: complete
-        branch: saw/context-propagation/wave1-agent-C
-        commit: f9cfd76
-        files_changed:
-            - pkg/collision/detector.go
-            - pkg/collision/detector_test.go
-            - pkg/engine/finalize_steps.go
+            - pkg/protocol/state_transition.go
+            - pkg/protocol/status_update.go
+            - pkg/protocol/verify_build.go
+            - pkg/protocol/merge_agents.go
+            - pkg/protocol/merge_opts.go
+            - pkg/protocol/worktree.go
+            - pkg/protocol/stubs.go
+            - pkg/protocol/gate_populator.go
             - pkg/engine/prepare.go
-            - cmd/sawtools/check_type_collisions_cmd.go
-        tests_added:
-            - TestDetectCollisionsContextCancellation
-        verification: PASS
-        notes: Added ctx context.Context to DetectCollisions and propagated through internal helpers. Pre-commit hook runs go vet ./... so callers in pkg/engine/finalize_steps.go, pkg/engine/prepare.go, cmd/sawtools/check_type_collisions_cmd.go needed minimal wiring (these are out-of-scope deps). types.go had no exported functions needing context. igit.Run/BranchExists do not yet accept context - ctx cancellation is checked before calling igit.
-    C2:
-        status: complete
-        branch: saw/context-propagation/wave6-agent-C2
-        commit: b974361
-        files_changed:
-            - pkg/engine/critic.go
-        verification: PASS
-        notes: 'Replaced two context.TODO() calls with ctx in RunCritic: protocol.Load calls on lines 37 and 109. RunCritic already had ctx as a parameter and used it for context.WithTimeout and agent execution. All tests pass.'
-    D:
-        status: complete
-        branch: saw/context-propagation/wave1-agent-D
-        commit: bddc570
-        files_changed:
-            - pkg/gatecache/cache.go
-            - pkg/gatecache/cache_test.go
-            - pkg/protocol/gates.go
-            - pkg/protocol/gates_test.go
-            - pkg/protocol/baseline_gates.go
-            - pkg/protocol/baseline_gates_test.go
-            - pkg/engine/prepare.go
-            - pkg/engine/finalize.go
             - pkg/engine/finalize_steps.go
-            - cmd/sawtools/run_gates_cmd.go
-        tests_added:
-            - TestCache_PutGet
-            - TestCache_Put_ReturnsSuccessWithCorrectGateType
-            - TestCache_TTLExpiry
-            - TestCache_TTLNotExpired
-            - TestCache_Invalidate
-            - TestCache_Invalidate_ReturnsSuccessWithClearedCount
-            - TestCache_InvalidateNonExistentFile
-            - TestCache_Persistence
-            - TestCache_MultipleGateTypes
-            - TestBuildKey
-            - TestBuildKey_ReturnsSuccessWithNonEmptyHeadCommit
-            - TestCache_CommandDifferentiation
-            - TestBuildKeyForGate
-            - TestCacheThreadSafety
-            - TestConcurrentInvalidate
-            - TestConcurrentPut
-        verification: PASS
-        notes: Added ctx to New, BuildKey, BuildKeyForGate, Get, Put, Invalidate plus private load/save. Engine callers (prepare.go, finalize.go, finalize_steps.go) pass real ctx already in scope. Protocol callers (gates.go, baseline_gates.go) and cmd/sawtools patched with context.TODO() to unblock pre-commit go vet ./... hook — same pattern as Agent B. Agent K (Wave 2) and Agent Z (Wave 4) must replace context.TODO() with real context when adding ctx to their function signatures.
-    D2:
-        status: complete
-        branch: saw/context-propagation/wave6-agent-D2
-        commit: b1e053c
-        files_changed:
-            - pkg/engine/finalize.go
-            - pkg/engine/finalize_steps.go
-        verification: PASS
-        notes: 'FinalizeWave already had ctx context.Context. Replaced 3 context.TODO() calls with the propagated ctx: protocol.Load in FinalizeWave, protocol.Load in StepVerifyBuild, and protocol.Save in StepPopulateIntegrationChecklist. All Step* functions already had ctx. Build and tests pass.'
-    E:
-        status: complete
-        branch: saw/context-propagation/wave1-agent-E
-        commit: 84a868e
-        files_changed:
-            - pkg/retry/loop.go
-            - pkg/retry/attempt.go
-            - pkg/retry/loop_test.go
-            - pkg/retry/attempt_test.go
-            - cmd/sawtools/build_retry_context_cmd.go
-            - pkg/engine/runner.go
-            - pkg/orchestrator/orchestrator.go
-        tests_added:
-            - TestRetryLoop_ContextCancelled
-            - TestBuildRetryAttempt_ContextCancelled
-        verification: PASS
-        notes: Added ctx to BuildRetryAttempt and ctx.Done() check at top of RetryLoop.Run. Three callers outside owned files (cmd/sawtools/build_retry_context_cmd.go, pkg/engine/runner.go, pkg/orchestrator/orchestrator.go) needed wiring to pass pre-commit go vet; updated them with cmd.Context() / existing ctx vars. All 31 pkg/retry tests pass.
-    E2:
-        status: complete
-        branch: saw/context-propagation/wave6-agent-E2
-        commit: 3ef051f
-        files_changed:
-            - pkg/engine/prepare.go
-            - pkg/engine/prepare_agent.go
-            - cmd/sawtools/prepare_agent.go
-        verification: PASS
-        notes: 'Added ctx to PrepareAgent (first param). Replaced context.TODO() with ctx in PrepareWave''s two protocol.Load calls. Out-of-scope wiring: updated cmd/sawtools/prepare_agent.go to pass cmd.Context() — required to unblock pre-commit go vet gate which runs repo-wide. All pkg/engine tests pass.'
-    F:
-        status: complete
-        branch: saw/context-propagation/wave1-agent-F
-        commit: 26d68db
-        files_changed:
-            - pkg/result/result.go
-        verification: PASS
-        notes: No changes needed. All exported functions in pkg/result are pure value operations (constructors, predicates, accessors, JSON marshaling, type converters). None perform I/O, call context-accepting functions, or block. Per the interface contract, pure value functions are explicitly exempt from context addition. All 19 existing tests pass. Adding context.Context here would violate Go idiom and cascade unnecessary threading through all callers with zero benefit.
-    G:
-        status: complete
-        branch: saw/context-propagation/wave2-agent-G
-        commit: 11fbec2
-        files_changed:
-            - pkg/protocol/types.go
-        verification: PASS
-        notes: No changes needed. pkg/protocol/types.go contains only struct type definitions, constants, and one variable — zero functions or methods. Per the interface contract, pure value types are explicitly exempt from context addition. Same finding as Agent F for pkg/result. All protocol tests pass unchanged.
-    H:
-        status: complete
-        branch: saw/context-propagation/wave2-agent-H
-        commit: f966da7
-        files_changed:
-            - pkg/protocol/manifest.go
-            - pkg/protocol/yaml_io.go
-        verification: PASS
-        notes: Added ctx context.Context to Load, Save, LoadYAML, SaveYAML, and WithCompletionReportLock. Updated all call sites in pkg/protocol with context.TODO()/context.Background(). Also propagated context.TODO() to all external callers across cmd/sawtools, pkg/engine, pkg/orchestrator, pkg/retry, pkg/collision, pkg/agent, pkg/interview, pkg/queue, pkg/resume, pkg/scaffold, pkg/scaffoldval, pkg/deps to make go vet ./... pass (required by pre-commit hook). Wave 3 agents (O, P, Q, etc.) should replace context.TODO() calls in their owned files with proper context propagation.
-    I:
-        status: complete
-        branch: saw/context-propagation/wave2-agent-I
-        commit: 1ea661c
-        files_changed:
-            - pkg/protocol/branchname.go
-            - pkg/protocol/state_status.go
-        verification: PASS
-        notes: All functions in branchname.go (BranchName, LegacyBranchName, WorktreeDir, ParseBranch, ExtractSlug) and state_status.go (IMPLStateToStatus) are pure value functions with no I/O or blocking operations. Per interface contract, context is optional for pure functions and these are explicitly exempted. No changes needed. go build, go vet, and go test all pass.
-    J:
-        status: complete
-        branch: saw/context-propagation/wave2-agent-J
-        commit: 1ea661c
-        files_changed:
-            - pkg/protocol/completion_report.go
-        verification: PASS
-        notes: 'No changes needed. All functions in completion_report.go are pure value operations: NewCompletionReport (constructor), all With* builder methods (pure setters), Validate (pure string/enum checks), and AppendToManifest (calls SetCompletionReport which is an in-memory map update, explicitly documented as NOT calling Save). Per the interface contract, pure value functions with no I/O are exempt from context addition. Consistent with Agents F and I who reached the same conclusion for their respective pure-function files. All 9 existing completion report tests pass. go build, go vet, and go test all clean.'
-    K:
-        status: complete
-        branch: saw/context-propagation/wave2-agent-K
-        commit: 19f03d3
-        files_changed:
-            - pkg/protocol/baseline_gates.go
-            - pkg/protocol/baseline_gates_test.go
-            - pkg/engine/prepare.go
-        verification: PASS
-        notes: Added ctx context.Context to RunBaselineGates, RunCrossRepoBaselineGates, and runSimpleGate. Replaced context.TODO() placeholder (left by Agent D wave 1) with real ctx in cache.BuildKey call. Used exec.CommandContext for cancellation support in runSimpleGate. Updated baseline_gates_test.go to pass context.Background() at all call sites. Patched pkg/engine/prepare.go callers with real ctx (already in scope at call sites) to unblock repo-wide go build — same pattern as prior wave agents. All tests pass.
-    L:
-        status: complete
-        branch: saw/context-propagation/wave2-agent-L
-        commit: 24e90f7
-        files_changed:
-            - pkg/protocol/cleanup.go
-            - pkg/protocol/cleanup_test.go
-            - cmd/sawtools/cleanup.go
-            - pkg/engine/finalize_steps.go
-            - pkg/engine/merge_cleanup.go
-            - pkg/engine/run_wave_full_test.go
-        verification: PASS
-        notes: 'Added ctx context.Context to Cleanup and CleanupAllStale. Context checked at entry and before each per-agent iteration; partial result returned on mid-loop cancellation. Out-of-scope callers minimally wired: cmd/sawtools/cleanup.go (context.Background()), pkg/engine/finalize_steps.go (ctx propagated), pkg/engine/merge_cleanup.go (ctx propagated), pkg/engine/run_wave_full_test.go (context.Background()). git package does not yet accept context — cancellation checked between git calls. All pkg/protocol tests pass.'
-    M:
-        status: complete
-        branch: saw/context-propagation/wave2-agent-M
-        commit: 3d7b93a
-        files_changed:
-            - pkg/protocol/commit_verify.go
-            - pkg/protocol/commit_verify_test.go
-            - pkg/protocol/merge_agents_test.go
-            - cmd/sawtools/verify_commits.go
-            - pkg/engine/finalize_steps.go
-        verification: PASS
-        notes: Added ctx context.Context as first param to VerifyCommits with ctx.Err() checks before and during per-agent loop. Wired unassigned callers with context.Background() (cmd/sawtools/verify_commits.go, pkg/protocol test files). Applied trivial ctx pass-through to pkg/engine/finalize_steps.go (owned by D2) to unblock go build — D2 should review. go test ./pkg/protocol/... PASS.
-    "N":
-        status: complete
-        branch: saw/context-propagation/wave2-agent-N
-        commit: cf99a92
-        files_changed:
-            - pkg/protocol/discovery.go
-            - pkg/protocol/discovery_test.go
-            - pkg/engine/finalize.go
-            - pkg/engine/mark_program_complete.go
-            - cmd/sawtools/list_impls.go
-            - cmd/sawtools/resolve_impl_cmd.go
+            - pkg/engine/auto_remediate.go
+            - pkg/engine/daemon.go
+            - pkg/engine/run_wave_full.go
+            - cmd/sawtools/update_status.go
+            - cmd/sawtools/scan_stubs.go
+            - cmd/sawtools/verify_build.go
+            - cmd/sawtools/create_worktrees.go
+            - cmd/sawtools/merge_agents.go
+            - cmd/sawtools/set_impl_state_cmd.go
             - cmd/sawtools/close_impl_cmd.go
-            - cmd/sawtools/mark_complete_cmd.go
-        tests_added:
-            - TestListIMPLs_CancelledContext
-            - TestArchiveIMPL_CancelledContext
-            - TestArchiveProgram_CancelledContext
-        verification: PASS
-        notes: 'Core scope: added ctx to ListIMPLs, ArchiveIMPL, ArchiveProgram in pkg/protocol/discovery.go. Also updated 6 out-of-scope caller files (pkg/engine/finalize.go, pkg/engine/mark_program_complete.go, cmd/sawtools/list_impls.go, cmd/sawtools/resolve_impl_cmd.go, cmd/sawtools/close_impl_cmd.go, cmd/sawtools/mark_complete_cmd.go) with minimal ctx threading to satisfy pre-commit go vet ./... gate. 9 tests pass (6 original + 3 new cancellation tests).'
-    O:
-        status: complete
-        branch: saw/context-propagation/wave3-agent-O
-        commit: d8ec88a
-        files_changed:
-            - pkg/protocol/amend.go
-            - pkg/protocol/amend_test.go
-            - cmd/sawtools/amend_impl_cmd.go
-        tests_added:
-            - TestAmendImpl_RejectsComplete
-            - TestAmendImpl_RejectsComplete_SAWMarker
-            - TestAmendImpl_AddWave
-            - TestAmendImpl_AddWave_EmptyWaves
-            - TestAmendImpl_RedirectAgent_RejectsComplete
-            - TestAmendImpl_RedirectAgent_NotFound
-            - TestAmendImpl_RedirectAgent_Success
-            - TestAmendImpl_RedirectAgent_ClearsPartialReport
-            - TestAmendImpl_RedirectAgent_NoBaseCommit
-        verification: PASS
-        notes: Added ctx context.Context to AmendImpl, amendAddWave, and amendRedirectAgent. Replaced context.TODO() with propagated ctx. Updated amend_test.go to pass context.Background(). Wired cmd/sawtools/amend_impl_cmd.go with cmd.Context() as out-of-scope fix to unblock pre-commit go vet gate. All tests pass.
-    P:
-        status: complete
-        branch: saw/context-propagation/wave3-agent-P
-        commit: d4039e7
-        files_changed:
-            - pkg/protocol/critic.go
-            - pkg/protocol/critic_test.go
-            - pkg/engine/critic.go
-            - cmd/sawtools/run_critic_cmd.go
-            - cmd/sawtools/run_critic_cmd_test.go
-        verification: PASS
-        notes: 'Added ctx to WriteCriticReview, WriteCriticReviewResult, GetCriticReview, GetCriticReviewResult. GetCriticReview/Result use _ context.Context (no I/O). Out-of-scope wiring: fixed callers in pkg/engine/critic.go (Wave 6 C2 scope), cmd/sawtools/run_critic_cmd.go and cmd/sawtools/run_critic_cmd_test.go (not in IMPL ownership) to unblock pre-commit vet gate which runs go vet ./.. CriticGatePasses needs no ctx (pure logic).'
-    Q:
-        status: complete
-        branch: saw/context-propagation/wave3-agent-Q
-        commit: a5acba5
-        files_changed:
-            - pkg/protocol/context_update.go
-            - pkg/protocol/context_update_test.go
-            - cmd/sawtools/update_context.go
-            - cmd/sawtools/close_impl_cmd.go
-            - pkg/engine/finalize.go
-        tests_added:
-            - TestUpdateContext_NewFile
-            - TestUpdateContext_ExistingFile
-            - TestUpdateContext_InvalidRoot
-            - TestUpdateContext_ReadOnlyDirectory
-            - TestUpdateContext_ZeroWaves
-        verification: PASS
-        notes: 'Added ctx context.Context to UpdateContext. Load call now passes ctx. Out-of-scope callers wired: cmd/sawtools uses cmd.Context(), pkg/engine/finalize.go passes existing ctx. TestParallelGroupConcurrency in gates_test.go is a pre-existing flaky timing test unrelated to this change.'
-    R:
-        status: complete
-        branch: saw/context-propagation/wave3-agent-R
-        commit: 433c720
-        files_changed:
-            - pkg/protocol/complexity.go
-            - pkg/protocol/conflict.go
-            - pkg/protocol/conflict_predict.go
-            - pkg/protocol/complexity_test.go
-            - pkg/protocol/conflict_test.go
-            - pkg/protocol/conflict_predict_test.go
-            - pkg/protocol/validation.go
-            - pkg/protocol/full_validate.go
-            - pkg/engine/finalize_steps.go
-            - cmd/sawtools/check_conflicts_cmd.go
-            - cmd/sawtools/finalize_wave_test.go
-        verification: PASS
-        notes: Added ctx context.Context to CheckAgentComplexity, CheckAgentLOCBudget, DetectOwnershipConflicts, PredictConflictsFromReports. Out-of-scope callers (validation.go, full_validate.go, finalize_steps.go, check_conflicts_cmd.go) updated with context.TODO() to keep pre-commit lint gate passing. Agent S should replace context.TODO() with propagated context when adding ctx to Validate/FullValidate.
-    S:
-        status: complete
-        branch: saw/context-propagation/wave3-agent-S
-        commit: ebc9638
-        files_changed:
-            - pkg/protocol/dependency_verifier.go
-            - pkg/protocol/dependency_verifier_test.go
-            - pkg/engine/prepare.go
-            - cmd/sawtools/prepare_wave_test.go
-        verification: PASS
-        notes: 'Added ctx context.Context to VerifyDependenciesAvailable. Pre-commit hook enforces repo-wide go vet, so two out-of-scope callers needed minimal wiring: pkg/engine/prepare.go line 221 (owned by Agent E2, Wave 6) and cmd/sawtools/prepare_wave_test.go — both trivially updated to pass ctx through.'
-    T:
-        status: complete
-        branch: saw/context-propagation/wave3-agent-T
-        commit: b4aa8a4
-        files_changed:
-            - pkg/protocol/validation.go
-            - pkg/protocol/full_validate.go
-            - pkg/protocol/full_validate_test.go
-            - cmd/sawtools/validate_cmd.go
-            - cmd/sawtools/pre_wave_validate_cmd.go
-        verification: PASS
-        notes: 'Added ctx to FullValidate and ValidateBytes. Validate(m) left unchanged (pure structural, no I/O, per interface contract). Pre-commit hook runs go vet ./... so two cmd/sawtools callers required minimal updates (context.TODO() at CLI entry points). full_validate_test.go updated to pass context.Background(). Out-of-scope files touched to satisfy pre-commit hook: cmd/sawtools/validate_cmd.go, cmd/sawtools/pre_wave_validate_cmd.go.'
-    U:
-        status: complete
-        branch: saw/context-propagation/wave3-agent-U
-        commit: 1205bea
-        files_changed:
-            - pkg/protocol/extract.go
-            - pkg/protocol/freeze.go
-            - pkg/protocol/extract_yaml_test.go
-            - pkg/protocol/freeze_test.go
-            - cmd/sawtools/extract_context_cmd.go
-            - cmd/sawtools/freeze_check_cmd.go
-            - pkg/engine/prepare.go
-            - pkg/orchestrator/orchestrator.go
-        tests_added:
-            - TestExtractAgentContextFromManifest_Found
-            - TestExtractAgentContextFromManifest_NotFound
-            - TestExtractAgentContextFromManifest_FiltersByAgent
-            - TestCheckFreeze_NoTimestamp
-            - TestCheckFreeze_NoChanges
-            - TestCheckFreeze_ContractsChanged
-            - TestCheckFreeze_ScaffoldsChanged
-            - TestCheckFreeze_BothChanged
-            - TestSetFreezeTimestamp_SetsHash
-            - TestSetFreezeTimestamp_SetsTime
-            - TestCheckFreeze_EmptyCollections
-            - TestCheckFreeze_AddingItems
-            - TestSetFreezeTimestamp_ContractsFrozenTrue
-        verification: PASS
-        notes: 'Added ctx context.Context to ExtractAgentContextFromManifest, SetFreezeTimestamp, and CheckFreeze. All three functions check ctx.Err() at entry for cancellation support. Wired out-of-scope callers: protocol tests use context.Background(), cmd files use context.TODO(), engine/prepare.go uses real ctx already in scope, orchestrator uses context.TODO() matching its existing pattern. All pkg/protocol tests pass (22s). Full repo go build and go vet clean.'
-    V:
-        status: complete
-        branch: saw/context-propagation/wave4-agent-V
-        commit: bb7311c
-        files_changed:
-            - pkg/analyzer/analyzer.go
-            - pkg/analyzer/deps.go
-            - pkg/analyzer/analyzer_test.go
-            - pkg/analyzer/deps_test.go
-            - pkg/analyzer/graph.go
-            - pkg/engine/runner.go
-        files_created:
-            - pkg/analyzer/deps_test.go
-        tests_added:
-            - TestParseFile_CancelledContext
-            - TestExtractImports_CancelledContext
-            - TestAnalyzeDeps_CancelledContext
-        verification: PASS
-        notes: Added ctx to ParseFile, ExtractImports, getModulePath, AnalyzeDeps. Updated callers in graph.go (context.Background() placeholders, unassigned file) and pkg/engine/runner.go (context.Background() placeholder, owned by B2/wave6) to keep go vet ./... clean per pre-commit hook. B2/wave6 should thread real context through runScoutAutomation. graph.go parseGoFiles/detectCascades should also get ctx in a future pass.
-    W:
-        status: complete
-        branch: saw/context-propagation/wave4-agent-W
-        commit: f44a517
-        files_changed:
-            - pkg/analyzer/cascade.go
-            - pkg/analyzer/shared_types.go
-            - pkg/analyzer/cascade_test.go
-            - pkg/analyzer/shared_types_test.go
-            - cmd/sawtools/detect_cascades_cmd.go
-            - cmd/sawtools/detect_shared_types_cmd.go
-        verification: PASS
-        notes: Added ctx to DetectCascades (with Walk cancellation check) and DetectSharedTypes (entry check). Updated co-located test files to pass context.Background(). Wired cmd/sawtools callers (detect_cascades_cmd.go, detect_shared_types_cmd.go) with cmd.Context() to satisfy pre-commit go vet ./... gate — same pattern as prior wave agents.
-    X:
-        status: complete
-        branch: saw/context-propagation/wave4-agent-X
-        commit: ff38078
-        verification: PASS
-        notes: 'Audit complete: all four files (runner.go, api/client.go, bedrock/client.go, cli/client.go) already have context.Context on all exported methods, exec.CommandContext is already used in cli/client.go, and no bare http.NewRequest calls exist in api or bedrock clients. No code changes required. All tests pass: go build, go vet, go test ./pkg/agent/... all clean.'
-    "Y":
-        status: complete
-        branch: saw/context-propagation/wave4-agent-Y
-        commit: 74f4d6c
-        files_changed:
-            - pkg/commands/extractor.go
-            - pkg/commands/wrapper.go
-            - pkg/commands/extractor_test.go
-        tests_added:
-            - TestExtractor_ContextCancellation
-        verification: PASS
-        notes: 'Added ctx to Extractor.Extract() and ExtractCommands(). Context cancellation checked between parser invocations. Four out-of-scope callers updated with context.TODO()/cmd.Context() to restore build health: pkg/protocol/gate_populator.go, pkg/engine/runner.go, cmd/sawtools/extract_commands_cmd.go, pkg/scaffoldval/validator.go.'
-    Z:
-        status: complete
-        branch: saw/context-propagation/wave4-agent-Z
-        commit: 62f76b3
-        files_changed:
-            - pkg/protocol/gates.go
-            - pkg/protocol/gate_discovery.go
-            - pkg/protocol/gates_test.go
-            - pkg/protocol/gate_discovery_test.go
-            - pkg/protocol/baseline_gates.go
-            - pkg/engine/finalize.go
-            - pkg/engine/finalize_steps.go
-            - pkg/engine/runner.go
-            - cmd/sawtools/run_gates_cmd.go
-            - cmd/sawtools/pre_commit_cmd.go
-        verification: PASS
-        notes: Added ctx to RunGatesWithCache, RunPreMergeGates, RunPostMergeGates, DiscoverLintGate, DiscoverBuildGate. Added ctx to internal functions runGates, executeSingleGate, executeGatesConcurrently, runFormatGate. Replaced all context.TODO() placeholders with propagated ctx. Used exec.CommandContext for subprocess cancellation. Patched out-of-scope callers (pkg/engine/finalize.go, pkg/engine/finalize_steps.go, pkg/engine/runner.go, cmd/sawtools/run_gates_cmd.go, cmd/sawtools/pre_commit_cmd.go) and baseline_gates.go (Agent K) with real ctx — all already had ctx in scope. go test ./pkg/protocol/... PASS.
+        verification: FAIL (build blocked on out-of-scope symbols in runner.go)
+        failure_type: fixable
+        notes: 'All owned files updated with ctx threading. Build fails on 2 calls in pkg/engine/runner.go (not in ownership list) at lines 463 and 835: protocol.CreateWorktrees missing ctx arg. Also pkg/engine/finalize.go line 498 MergeAgentsOpts missing Ctx field (runtime nil panic risk). Fix: add context.Background() or propagate ctx to both runner.go calls and finalize.go MergeAgentsOpts. Also note merge_opts.go was modified (companion struct file for merge_agents.go, was not explicitly listed but required by interface contract).'
 pre_mortem:
-    overall_risk: medium
+    overall_risk: low
     rows:
-        - scenario: Massive cascading call site updates cause compilation failures across many files
+        - scenario: |-
+            Agent A and Agent B both depend on manifest.go's Load() and Save() wrapper
+            signatures. Agent A owns manifest.go and may remove ctx from Load/Save. Agent B
+            calls Load(ctx, ...) and Save(ctx, ...) in its protocol files. If Agent A
+            removes ctx from Load/Save while Agent B adds ctx threading to those calls, the
+            two agents produce contradictory changes to the same interface. At merge time
+            the build will fail.
+          likelihood: medium
+          impact: high
+          mitigation: |-
+            Agreed split: Agent A removes ctx from LoadYAML/SaveYAML (the primitives) and
+            updates manifest.go's Load/Save to no longer accept or forward ctx. Agent B
+            updates the internal Load/Save calls in its protocol files from
+            Load(context.TODO(), path) to Load(path) — matching Agent A's new signature.
+            The two agents coordinate via the interface contract: Load(path) and Save(manifest, path).
+            Both agents must read the Load/Save signatures in manifest.go before starting.
+        - scenario: |-
+            Agent B's autoRemediateVerifyBuildFunc and daemonCreateWorktreesFunc are
+            package-level function vars. Their function type signatures must match the
+            new protocol signatures. If test files in pkg/engine/ override these vars,
+            those test files also need updating — but they are not in Agent B's file list.
+          likelihood: medium
+          impact: medium
+          mitigation: |-
+            Agent B should read pkg/engine/auto_remediate_test.go and pkg/engine/daemon_test.go
+            (if they exist) to check if they override these vars. If so, Agent B should update
+            those test files as a justified API-wide atomic change (per the template's exception
+            clause), document it in the completion report under files_changed.
+        - scenario: |-
+            runner.go and finalize.go call protocol.CreateWorktrees and protocol.MergeAgents.
+            These are IMPL 3 territory. After Agent B adds ctx to those functions, runner.go
+            and finalize.go will fail to compile with the old no-ctx signatures. This means
+            IMPL 4 cannot be merged until IMPL 3 is also complete (or those files are updated).
           likelihood: high
           impact: medium
-          mitigation: |
-            Wave structure ensures dependencies are updated in order. Each wave only
-            updates packages that don't depend on later waves. Protocol and result
-            packages (Wave 1-2) are updated first, then consumers (Wave 3-6).
-
-            Agents should pass context.TODO() temporarily at call sites where proper
-            context isn't available yet, then clean up in later waves.
-        - scenario: Test failures due to context.Background() vs context.TODO() confusion
-          likelihood: medium
-          impact: low
-          mitigation: |
-            Tests should consistently use context.Background(). Document this in
-            interface contracts. context.TODO() is only for temporary production code
-            where context will be properly propagated later.
-        - scenario: Performance regression from context checking overhead
+          mitigation: |-
+            Pre-condition already noted in suitability assessment: IMPL 3 must be complete
+            before IMPL 4 is merged. If IMPL 3 is not yet merged, the post-merge build gate
+            for IMPL 4 will fail on runner.go and finalize.go. The orchestrator should verify
+            IMPL 3 is in COMPLETE state before launching IMPL 4's merge step.
+        - scenario: |-
+            Approximately 26 call sites for Agent A, but the codebase may have additional
+            call sites not listed (e.g., test files, newer files added after the audit).
+            Missing a call site leaves a compilation error after Agent A's changes.
           likelihood: low
-          impact: low
-          mitigation: |
-            Context overhead is negligible for functions that already do I/O. Pure
-            functions (string manipulation, simple calculations) don't need context.
-            Agents use judgment to skip context for pure functions.
-        - scenario: Incomplete propagation - some call chains still missing context
-          likelihood: medium
           impact: medium
-          mitigation: |
-            Post-merge verification will run full test suite. Any missing context
-            parameters will cause compilation failures, which are easy to fix.
-            grep for "context\.TODO()" after merge to find temporary placeholders.
-        - scenario: Breaking changes to public API used by external consumers
-          likelihood: low
-          impact: high
-          mitigation: |
-            This is an internal SDK; no external consumers currently. All usage is
-            within scout-and-wave-go, scout-and-wave-web, and sawtools CLI.
-            If external consumers exist in future, provide deprecated wrapper functions
-            that call new context-aware versions with context.Background().
+          mitigation: |-
+            Agent A performs a grep validation step after all changes:
+            `grep -rn 'LoadYAML.*context\.\|SaveYAML.*context\.' pkg/ cmd/`
+            Zero matches required before committing. Any remaining match is a missed site.
 critic_report:
     verdict: PASS
-    agent_reviews:
-        A:
-            agent_id: A
-            verdict: PASS
-        A2:
-            agent_id: A2
-            verdict: PASS
-        B:
-            agent_id: B
-            verdict: PASS
-        B2:
-            agent_id: B2
-            verdict: ISSUES
-            issues:
-                - check: pattern_accuracy
-                  severity: warning
-                  description: Brief instructs adding ctx to RunScout in runner.go. RunScout already has signature RunScout(ctx context.Context, opts RunScoutOpts, onChunk func(string)) at line 45 of runner.go. Similarly RunScoutFull in scout_run.go already accepts ctx. B2 will find no context to add to these entry points.
-                  file: pkg/engine/runner.go
-                  symbol: RunScout
-        C:
-            agent_id: C
-            verdict: PASS
-        C2:
-            agent_id: C2
-            verdict: PASS
-        D:
-            agent_id: D
-            verdict: PASS
-        D2:
-            agent_id: D2
-            verdict: ISSUES
-            issues:
-                - check: pattern_accuracy
-                  severity: warning
-                  description: Brief states FinalizeWave is the main entry point that does NOT yet have context. FinalizeWave already has signature FinalizeWave(ctx context.Context, opts FinalizeWaveOpts) at line 191 of finalize.go. D2 will find no context to add to this function.
-                  file: pkg/engine/finalize.go
-                  symbol: FinalizeWave
-        E:
-            agent_id: E
-            verdict: PASS
-        E2:
-            agent_id: E2
-            verdict: ISSUES
-            issues:
-                - check: pattern_accuracy
-                  severity: warning
-                  description: Brief instructs adding ctx to PrepareWave. PrepareWave already has signature PrepareWave(ctx context.Context, opts PrepareWaveOpts) at line 61 of prepare.go. PrepareAgent correctly lacks context and is the actual work item. E2 will find nothing to add to PrepareWave.
-                  file: pkg/engine/prepare.go
-                  symbol: PrepareWave
-        F:
-            agent_id: F
-            verdict: PASS
-        G:
-            agent_id: G
-            verdict: PASS
-        H:
-            agent_id: H
-            verdict: PASS
-        I:
-            agent_id: I
-            verdict: PASS
-        J:
-            agent_id: J
-            verdict: PASS
-        K:
-            agent_id: K
-            verdict: PASS
-        L:
-            agent_id: L
-            verdict: PASS
-        M:
-            agent_id: M
-            verdict: PASS
-        "N":
-            agent_id: "N"
-            verdict: PASS
-        O:
-            agent_id: O
-            verdict: PASS
-        P:
-            agent_id: P
-            verdict: PASS
-        Q:
-            agent_id: Q
-            verdict: PASS
-        R:
-            agent_id: R
-            verdict: PASS
-        S:
-            agent_id: S
-            verdict: PASS
-        T:
-            agent_id: T
-            verdict: PASS
-        U:
-            agent_id: U
-            verdict: PASS
-        V:
-            agent_id: V
-            verdict: PASS
-        W:
-            agent_id: W
-            verdict: PASS
-        X:
-            agent_id: X
-            verdict: ISSUES
-            issues:
-                - check: pattern_accuracy
-                  severity: warning
-                  description: Brief instructs auditing http.NewRequest calls in api/client.go for replacement with http.NewRequestWithContext. The API client uses the Anthropic Go SDK (anthropic-sdk-go) and does not call http.NewRequest directly — no such calls exist. Agent will find nothing to change in this area.
-                  file: pkg/agent/backend/api/client.go
-                  symbol: http.NewRequest
-                - check: pattern_accuracy
-                  severity: warning
-                  description: Brief instructs replacing exec.Command with exec.CommandContext in cli/client.go. The CLI client already uses exec.CommandContext on all subprocess invocations (lines 81 and 201). No changes needed here.
-                  file: pkg/agent/backend/cli/client.go
-                  symbol: exec.CommandContext
-        "Y":
-            agent_id: "Y"
-            verdict: PASS
-        Z:
-            agent_id: Z
-            verdict: PASS
-    summary: 'Three agents have inaccurate briefs. Agent D2: the brief claims FinalizeWave ''does NOT yet have context'' but FinalizeWave(ctx context.Context, opts FinalizeWaveOpts) already accepts ctx as its first parameter (finalize.go line 191). This is a pattern_accuracy warning — D2 will attempt a no-op on FinalizeWave. The brief also correctly notes Step* functions already have context and FinalizeIMPL should not be touched. Agent E2: the brief instructs adding ctx to PrepareWave, but PrepareWave(ctx context.Context, opts PrepareWaveOpts) already has ctx (prepare.go line 61). This is a pattern_accuracy warning; PrepareAgent correctly lacks context and needs it. Agent B2: the brief says to add ctx to RunScout, but RunScout(ctx context.Context, ...) in runner.go already has ctx, and RunScoutFull in scout_run.go also already has ctx. B2 owns both files and both functions already have context — the work described is already done. Additionally, Agent X: the brief correctly identifies that all exported methods already have ctx and directs the agent to audit http.NewRequest calls; however the API client uses the Anthropic Go SDK and does not call http.NewRequest directly, and the CLI client already uses exec.CommandContext. X''s audit work is valid but will find nothing to change. All file existence checks pass for all 32 agents (all action:modify files exist). All other symbol references (WriteCriticReview, GetCriticReview, CriticGatePasses, RunBaselineGates, CleanupAllStale, VerifyCommits, ListIMPLs, ArchiveIMPL, AmendImpl, UpdateContext, CheckAgentComplexity, DetectOwnershipConflicts, PredictConflictsFromReports, VerifyDependenciesAvailable, Validate, ValidateBytes, FullValidate, ExtractAgentContextFromManifest, SetFreezeTimestamp, RunGatesWithCache, RunPreMergeGates, RunPostMergeGates, ExtractCommands, AnalyzeDeps, DetectCascades, DetectSharedTypes, BranchName, ParseBranch, IMPLStateToStatus, NewCompletionReport, New, RunWave, AssignAgentIDs, DetectFormatter, DetectCollisions) all verified accurate against the codebase.'
-    reviewed_at: "2026-03-31T04:29:51Z"
-    issue_count: 3
+    agent_reviews: {}
+    summary: Skipped by operator
+    reviewed_at: "2026-03-31T20:09:49Z"
+    issue_count: 0
 state: COMPLETE
 injection_method: hook

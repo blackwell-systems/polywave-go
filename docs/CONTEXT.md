@@ -260,3 +260,5 @@ type BackendConfig struct {
   - IMPL doc: docs/IMPL/complete/IMPL-engine-error-code-catalog.yaml
 - **engine-structural-debt**: completed 2026-03-31, 1 waves, 1 agents
   - IMPL doc: docs/IMPL/complete/IMPL-engine-structural-debt.yaml
+- **context-propagation**: completed 2026-03-31, 1 waves, 2 agents
+  - IMPL doc: docs/IMPL/complete/IMPL-context-propagation.yaml

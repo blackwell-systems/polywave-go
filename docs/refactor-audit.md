@@ -428,7 +428,7 @@ The `StepResult.Data interface{}` field and `PrepareWaveResult.Steps []StepResul
 
 ---
 
-**IMPL 4: Context propagation in `pkg/protocol/`**
+**IMPL 4: Context propagation in `pkg/protocol/` — ✅ COMPLETE (2026-03-31)**
 - Issues 5, 11, 14: Remove ctx from `LoadYAML`/`SaveYAML` (Issue 11, Choice A); add ctx to `SetImplState`, `UpdateStatus`, `VerifyBuild`, `MergeAgents`, `CreateWorktrees`, `ScanStubs`, `runCommand`
 - Scope: ~40 call site cleanups for Issue 11 + ctx additions for Issues 5 and 14
 
