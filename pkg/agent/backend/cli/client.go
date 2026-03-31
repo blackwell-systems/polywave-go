@@ -35,6 +35,8 @@ func New(claudePath string, cfg backend.Config) *Client {
 }
 
 // Run implements backend.Backend.
+// Note: Run delegates to RunStreaming, which does not parse tool_use events.
+// Post-hoc constraint enforcement (I1/I2/I6) is not applied on this path.
 func (c *Client) Run(ctx context.Context, systemPrompt, userMessage, workDir string) (string, error) {
 	return c.RunStreaming(ctx, systemPrompt, userMessage, workDir, nil)
 }
@@ -44,6 +46,8 @@ func (c *Client) Run(ctx context.Context, systemPrompt, userMessage, workDir str
 // (enabling real-time streaming). The PTY is set to 65535 columns to prevent
 // line-wrapping artifacts in JSON, and the scanner accumulates PTY-wrapped
 // fragments until a complete JSON object is assembled before parsing.
+// Note: RunStreaming does not parse tool_use content blocks. Post-hoc constraint
+// enforcement (I1/I2/I6) is not applied on this path; use RunStreamingWithTools instead.
 func (c *Client) RunStreaming(ctx context.Context, systemPrompt, userMessage, workDir string, onChunk backend.ChunkCallback) (string, error) {
 	claudePath := c.claudePath
 	if claudePath == "" {
@@ -164,6 +168,11 @@ func (c *Client) RunStreaming(ctx context.Context, systemPrompt, userMessage, wo
 // It behaves identically to RunStreaming, but additionally calls onToolCall
 // for each tool_use and tool_result event parsed from the stream.
 // Both onChunk and onToolCall may be nil.
+// When c.cfg.Constraints is non-nil, post-hoc constraint enforcement (I1/I2/I6)
+// is applied after the subprocess completes: Write and Edit events are inspected
+// against the constraint rules. Any violations are returned as an error.
+// Post-hoc means the writes already occurred; enforcement detects and reports
+// violations so the wave result can be marked as blocked.
 func (c *Client) RunStreamingWithTools(ctx context.Context, systemPrompt, userMessage, workDir string, onChunk backend.ChunkCallback, onToolCall backend.ToolCallCallback) (string, error) {
 	claudePath := c.claudePath
 	if claudePath == "" {
@@ -232,6 +241,9 @@ func (c *Client) RunStreamingWithTools(ctx context.Context, systemPrompt, userMe
 	// Track tool call start times for duration calculation.
 	toolStartTimes := make(map[string]int64)
 
+	// Accumulate tool use events for post-hoc constraint enforcement.
+	var toolUseEvents []ToolUseEvent
+
 	for scanner.Scan() {
 		// PTY converts \n -> \r\n; strip trailing \r.
 		text := strings.TrimRight(scanner.Text(), "\r")
@@ -255,46 +267,53 @@ func (c *Client) RunStreamingWithTools(ctx context.Context, systemPrompt, userMe
 		pending.Reset()
 		sb.WriteString(candidate + "\n")
 
-		// Parse event for tool call tracking.
-		if onToolCall != nil {
-			var ev streamEvent
-			if json.Unmarshal([]byte(candidate), &ev) == nil {
-				// Handle assistant messages with tool_use content blocks.
-				if ev.Type == "assistant" && ev.Message != nil {
-					for _, c := range ev.Message.Content {
-						if c.Type == "tool_use" {
+		// Parse event for tool call tracking and constraint event recording.
+		var ev streamEvent
+		if json.Unmarshal([]byte(candidate), &ev) == nil {
+			// Handle assistant messages with tool_use content blocks.
+			if ev.Type == "assistant" && ev.Message != nil {
+				for _, blk := range ev.Message.Content {
+					if blk.Type == "tool_use" {
+						// Record event for post-hoc constraint enforcement.
+						filePath := extractToolInput(blk.Name, blk.Input)
+						toolUseEvents = append(toolUseEvents, ToolUseEvent{
+							ToolName: blk.Name,
+							FilePath: filePath,
+						})
+
+						if onToolCall != nil {
 							// Record start time and emit tool_use event.
-							toolStartTimes[c.ID] = time.Now().UnixMilli()
+							toolStartTimes[blk.ID] = time.Now().UnixMilli()
 							onToolCall(backend.ToolCallEvent{
-								ID:       c.ID,
-								Name:     c.Name,
-								Input:    extractToolInput(c.Name, c.Input),
+								ID:       blk.ID,
+								Name:     blk.Name,
+								Input:    filePath,
 								IsResult: false,
 							})
 						}
 					}
 				}
-				// Handle tool_result events (top-level with tool_use_id).
-				if ev.Type == "tool_result" {
-					// Parse the full tool_result event to get tool_use_id and is_error.
-					var toolResult struct {
-						Type      string `json:"type"`
-						ToolUseID string `json:"tool_use_id"`
-						IsError   bool   `json:"is_error"`
+			}
+			// Handle tool_result events (top-level with tool_use_id).
+			if ev.Type == "tool_result" && onToolCall != nil {
+				// Parse the full tool_result event to get tool_use_id and is_error.
+				var toolResult struct {
+					Type      string `json:"type"`
+					ToolUseID string `json:"tool_use_id"`
+					IsError   bool   `json:"is_error"`
+				}
+				if json.Unmarshal([]byte(candidate), &toolResult) == nil {
+					var durationMs int64
+					if startTime, ok := toolStartTimes[toolResult.ToolUseID]; ok {
+						durationMs = time.Now().UnixMilli() - startTime
+						delete(toolStartTimes, toolResult.ToolUseID)
 					}
-					if json.Unmarshal([]byte(candidate), &toolResult) == nil {
-						var durationMs int64
-						if startTime, ok := toolStartTimes[toolResult.ToolUseID]; ok {
-							durationMs = time.Now().UnixMilli() - startTime
-							delete(toolStartTimes, toolResult.ToolUseID)
-						}
-						onToolCall(backend.ToolCallEvent{
-							ID:         toolResult.ToolUseID,
-							IsResult:   true,
-							IsError:    toolResult.IsError,
-							DurationMs: durationMs,
-						})
-					}
+					onToolCall(backend.ToolCallEvent{
+						ID:         toolResult.ToolUseID,
+						IsResult:   true,
+						IsError:    toolResult.IsError,
+						DurationMs: durationMs,
+					})
 				}
 			}
 		}
@@ -322,6 +341,20 @@ func (c *Client) RunStreamingWithTools(ctx context.Context, systemPrompt, userMe
 			return "", fmt.Errorf("cli backend: claude exited with code %d", exitErr.ExitCode())
 		}
 		return "", fmt.Errorf("cli backend: claude failed: %w", err)
+	}
+
+	// Post-hoc constraint enforcement: inspect recorded Write/Edit events against
+	// constraint rules. This runs after the subprocess completes; writes already
+	// occurred. Violations are returned as an error so the engine marks the run failed.
+	if c.cfg.Constraints != nil {
+		if violations := CheckConstraints(toolUseEvents, c.cfg.Constraints); len(violations) > 0 {
+			msgs := make([]string, 0, len(violations))
+			for _, v := range violations {
+				msgs = append(msgs, fmt.Sprintf("[%s] %s: %s", v.Invariant, v.ToolName, v.Message))
+			}
+			return sb.String(), fmt.Errorf("cli backend: post-hoc constraint violations detected (writes already occurred):\n%s",
+				strings.Join(msgs, "\n"))
+		}
 	}
 
 	return sb.String(), nil

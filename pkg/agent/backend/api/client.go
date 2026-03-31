@@ -169,20 +169,6 @@ func buildToolParams(workshop tools.Workshop) []anthropic.ToolUnionParam {
 	return toolParams
 }
 
-// executeTool looks up and executes a tool from the Workshop.
-func executeTool(ctx context.Context, workshop tools.Workshop, name string, input map[string]interface{}, workDir string) (string, bool) {
-	tool, found := workshop.Get(name)
-	if !found {
-		return fmt.Sprintf("error: unknown tool %q", name), true
-	}
-	execCtx := tools.ExecutionContext{WorkDir: workDir}
-	result, err := tool.Executor.Execute(ctx, execCtx, input)
-	if err != nil {
-		return fmt.Sprintf("error: %v", err), true
-	}
-	return result, false
-}
-
 // Run executes the agent described by systemPrompt and userMessage.
 // It runs a tool-use loop using StandardTools scoped to workDir until the model
 // signals end_turn or maxTurns is exceeded.
@@ -263,7 +249,7 @@ func (c *Client) Run(ctx context.Context, systemPrompt, userMessage, workDir str
 				inputMap = map[string]interface{}{}
 			}
 
-			result, isError := executeTool(ctx, workshop, tu.Name, inputMap, workDir)
+			result, isError := backend.ExecuteTool(ctx, workshop, tu.Name, inputMap, workDir)
 			toolResultBlocks = append(toolResultBlocks, anthropic.NewToolResultBlock(tu.ID, result, isError))
 		}
 		messages = append(messages, anthropic.NewUserMessage(toolResultBlocks...))
@@ -434,7 +420,7 @@ func (c *Client) RunStreaming(ctx context.Context, systemPrompt, userMessage, wo
 				inputMap = map[string]interface{}{}
 			}
 
-			result, isError := executeTool(ctx, workshop, blk.toolName, inputMap, workDir)
+			result, isError := backend.ExecuteTool(ctx, workshop, blk.toolName, inputMap, workDir)
 			toolResultBlocks = append(toolResultBlocks, anthropic.NewToolResultBlock(blk.toolID, result, isError))
 		}
 		messages = append(messages, anthropic.NewUserMessage(toolResultBlocks...))

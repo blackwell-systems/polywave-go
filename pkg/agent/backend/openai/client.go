@@ -116,20 +116,6 @@ func (c *Client) DedupStats() *dedup.Stats {
 	return &stats
 }
 
-// execTool looks up and executes a tool from the Workshop, returning a string result.
-func execTool(ctx context.Context, workshop tools.Workshop, name string, inputMap map[string]interface{}, workDir string) string {
-	tool, found := workshop.Get(name)
-	if !found {
-		return fmt.Sprintf("Error: unknown tool %q", name)
-	}
-	execCtx := tools.ExecutionContext{WorkDir: workDir}
-	result, err := tool.Executor.Execute(ctx, execCtx, inputMap)
-	if err != nil {
-		return fmt.Sprintf("Error: %v", err)
-	}
-	return result
-}
-
 // buildToolDefs converts Workshop tools to OpenAI function calling format.
 func buildToolDefs(workshop tools.Workshop) []map[string]interface{} {
 	allTools := workshop.All()
@@ -184,7 +170,7 @@ func (c *Client) Run(ctx context.Context, systemPrompt, userMessage, workDir str
 			// embed the tool call as JSON in content instead of using the tool_calls array.
 			if ctc := parseContentToolCall(choice.Message.Content, nameSet); ctc != nil {
 				messages = append(messages, chatMessage{Role: "assistant", Content: choice.Message.Content})
-				result := execTool(ctx, workshop, ctc.Name, ctc.Arguments, workDir)
+				result, _ := backend.ExecuteTool(ctx, workshop, ctc.Name, ctc.Arguments, workDir)
 				messages = append(messages, chatMessage{Role: "user", Content: "Function result:\n" + result})
 				continue
 			}
@@ -197,7 +183,7 @@ func (c *Client) Run(ctx context.Context, systemPrompt, userMessage, workDir str
 				if err := json.Unmarshal([]byte(tc.Function.Arguments), &inputMap); err != nil {
 					inputMap = map[string]interface{}{}
 				}
-				result := execTool(ctx, workshop, tc.Function.Name, inputMap, workDir)
+				result, _ := backend.ExecuteTool(ctx, workshop, tc.Function.Name, inputMap, workDir)
 				messages = append(messages, toolResultMessage(tc.ID, result))
 			}
 
@@ -239,7 +225,7 @@ func (c *Client) RunStreaming(ctx context.Context, systemPrompt, userMessage, wo
 		case "stop":
 			if ctc := parseContentToolCall(choice.Message.Content, nameSet); ctc != nil {
 				messages = append(messages, chatMessage{Role: "assistant", Content: choice.Message.Content})
-				result := execTool(ctx, workshop, ctc.Name, ctc.Arguments, workDir)
+				result, _ := backend.ExecuteTool(ctx, workshop, ctc.Name, ctc.Arguments, workDir)
 				messages = append(messages, chatMessage{Role: "user", Content: "Function result:\n" + result})
 				continue
 			}
@@ -252,7 +238,7 @@ func (c *Client) RunStreaming(ctx context.Context, systemPrompt, userMessage, wo
 				if err := json.Unmarshal([]byte(tc.Function.Arguments), &inputMap); err != nil {
 					inputMap = map[string]interface{}{}
 				}
-				result := execTool(ctx, workshop, tc.Function.Name, inputMap, workDir)
+				result, _ := backend.ExecuteTool(ctx, workshop, tc.Function.Name, inputMap, workDir)
 				messages = append(messages, toolResultMessage(tc.ID, result))
 			}
 

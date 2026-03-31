@@ -2,8 +2,8 @@ package bedrock
 
 import (
 	"context"
-	"fmt"
 
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/agent/backend"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/tools"
 )
 
@@ -23,16 +23,7 @@ func buildToolsJSON(workshop tools.Workshop) []interface{} {
 }
 
 // executeTool looks up a tool by name in the Workshop and executes it.
-// Returns (resultString, isError). Mirrors the pattern from api/client.go.
+// Returns (resultString, isError). Delegates to the shared backend.ExecuteTool.
 func executeTool(ctx context.Context, workshop tools.Workshop, name string, input map[string]interface{}, workDir string) (string, bool) {
-	tool, found := workshop.Get(name)
-	if !found {
-		return fmt.Sprintf("error: unknown tool %q", name), true
-	}
-	execCtx := tools.ExecutionContext{WorkDir: workDir}
-	result, err := tool.Executor.Execute(ctx, execCtx, input)
-	if err != nil {
-		return fmt.Sprintf("error: %v", err), true
-	}
-	return result, false
+	return backend.ExecuteTool(ctx, workshop, name, input, workDir)
 }
