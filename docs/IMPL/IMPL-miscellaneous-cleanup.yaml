@@ -1,0 +1,839 @@
+title: Miscellaneous Cleanup (Issues 12, 19, 20, 24, 25)
+feature_slug: miscellaneous-cleanup
+verdict: SUITABLE
+suitability_assessment: |
+    5 remaining issues from the refactor audit, not assigned to any of the 6 original IMPLs.
+    All items are independent of each other and of the completed IMPLs.
+
+    File decomposition: 11 files split cleanly across 3 agents with zero overlap.
+    Agent A owns engine event bus (Issue 19): engine.go, runner.go, runner_data_types.go.
+    Agent B owns pipeline, notify, and docs (Issues 12, 25, 24, audit cleanup).
+    Agent C owns orchestrator dead file cleanup (Issue 20): setters.go, orchestrator.go.
+
+    Agent A was split from the original 2-agent plan because runner.go (1489 lines) +
+    orchestrator.go (1350 lines) exceeded the 2000-line per-agent budget. Agent C is small
+    (Issue 20 is a 15-line move + delete) but necessary to keep Agent A within budget.
+
+    Interface discoverability: No cross-agent interface contracts. Agent A adds typed event
+    payload structs to runner_data_types.go; Agents B and C do not consume them.
+
+    Pre-implementation status check: All 5 issues confirmed present in the current codebase
+    via direct file reads. None are DONE or PARTIAL.
+
+    Parallelization value: Moderate. Build/test cycle for a Go project of this size is >30s.
+    Three fully independent agents with 3-6 files each. SUITABLE.
+
+    Estimated times:
+    - Scout phase: ~10 min
+    - Agent execution: ~3 agents x ~15 min avg = ~15 min (parallel)
+    - Merge and verification: ~5 min
+    Total SAW time: ~30 min
+
+    Sequential baseline: ~45 min
+    Time savings: ~15 min (33% faster).
+test_command: go test ./...
+lint_command: go vet ./...
+file_ownership:
+    - file: pkg/engine/engine.go
+      agent: A
+      wave: 1
+      action: modify
+    - file: pkg/engine/runner.go
+      agent: A
+      wave: 1
+      action: modify
+    - file: pkg/engine/runner_data_types.go
+      agent: A
+      wave: 1
+      action: modify
+    - file: pkg/orchestrator/setters.go
+      agent: C
+      wave: 1
+      action: delete
+    - file: pkg/orchestrator/orchestrator.go
+      agent: C
+      wave: 1
+      action: modify
+    - file: pkg/pipeline/types.go
+      agent: B
+      wave: 1
+      action: modify
+    - file: pkg/pipeline/saw_steps.go
+      agent: B
+      wave: 1
+      action: modify
+    - file: pkg/notify/slack.go
+      agent: B
+      wave: 1
+      action: modify
+    - file: pkg/notify/discord.go
+      agent: B
+      wave: 1
+      action: modify
+    - file: docs/error-codes.md
+      agent: B
+      wave: 1
+      action: modify
+    - file: docs/refactor-audit.md
+      agent: B
+      wave: 1
+      action: modify
+interface_contracts:
+    - name: Typed engine event payload structs
+      description: |
+        New types added to pkg/engine/runner_data_types.go to replace ad-hoc
+        map[string]string and map[string]interface{} payloads in runner.go publish calls.
+        engine.Event.Data changes from interface{} to any (identical types in Go).
+        Struct fields are verified against the actual call sites in runner.go.
+      definition: |
+        // RunStartedPayload — "run_started" (line 417: slug, impl_path)
+        type RunStartedPayload struct {
+          Slug     string `json:"slug"`
+          IMPLPath string `json:"impl_path"`
+        }
+        // RunFailedPayload — "run_failed" (lines 409, 1434, 1443: error)
+        type RunFailedPayload struct {
+          Error string `json:"error"`
+        }
+        // ScaffoldStartedPayload — "scaffold_started" (line 595: impl_path)
+        type ScaffoldStartedPayload struct {
+          IMPLPath string `json:"impl_path"`
+        }
+        // ScaffoldOutputPayload — "scaffold_output" (line 625: chunk)
+        type ScaffoldOutputPayload struct {
+          Chunk string `json:"chunk"`
+        }
+        // ScaffoldFailedPayload — "scaffold_failed" (lines 616, 629: error)
+        type ScaffoldFailedPayload struct {
+          Error string `json:"error"`
+        }
+        // ScaffoldCompletePayload — "scaffold_complete" (line 642: impl_path)
+        type ScaffoldCompletePayload struct {
+          IMPLPath string `json:"impl_path"`
+        }
+        // IntegrationGapsPayload — "integration_gaps_detected" (line 1379: wave, gaps count, report)
+        type IntegrationGapsPayload struct {
+          Wave   int                            `json:"wave"`
+          Gaps   int                            `json:"gaps"`
+          Report *protocol.IntegrationReport   `json:"report,omitempty"`
+        }
+        // IntegrationAgentWarningPayload — "integration_agent_warning" (line 1405: error)
+        type IntegrationAgentWarningPayload struct {
+          Error string `json:"error"`
+        }
+        // UpdateStatusFailedPayload — "update_status_failed" (line 1418: wave=slug string, error)
+        type UpdateStatusFailedPayload struct {
+          Wave  string `json:"wave"`
+          Error string `json:"error"`
+        }
+        // WaveGatePendingPayload — "wave_gate_pending" (line 1426: wave, next_wave, slug)
+        type WaveGatePendingPayload struct {
+          Wave     int    `json:"wave"`
+          NextWave int    `json:"next_wave"`
+          Slug     string `json:"slug"`
+        }
+        // WaveGateResolvedPayload — "wave_gate_resolved" (line 1437: wave, action, slug)
+        type WaveGateResolvedPayload struct {
+          Wave   int    `json:"wave"`
+          Action string `json:"action"`
+          Slug   string `json:"slug"`
+        }
+      location: pkg/engine/runner_data_types.go
+    - name: GetValue and SetValue typed accessors for pipeline.State
+      description: |
+        Generic helpers added to pkg/pipeline/types.go that provide typed access to
+        State.Values map. State.Values type changes from map[string]interface{} to
+        map[string]any (identical in Go; purely cosmetic).
+      definition: |
+        func GetValue[T any](state *State, key string) (T, bool)
+        func SetValue(state *State, key string, val any)
+      location: pkg/pipeline/types.go
+    - name: Typed Slack and Discord payload structs
+      description: |
+        Package-private structs in pkg/notify/slack.go and pkg/notify/discord.go that
+        replace map[string]interface{} in formatter and adapter methods.
+      definition: |
+        // slack.go
+        type slackText struct { Type string `json:"type"`; Text string `json:"text"` }
+        type slackSection struct { Type string; Text *slackText; Fields []*slackText }
+        type slackContext struct { Type string; Elements []*slackText }
+        type slackPayload struct { Text string; Channel string; Blocks []interface{} }
+
+        // discord.go
+        type discordField struct { Name string; Value string; Inline bool }
+        type discordEmbed struct { Title string; Description string; Color int; Fields []discordField }
+        type discordPayload struct { Content string; Embeds []discordEmbed }
+      location: pkg/notify/slack.go
+waves:
+    - number: 1
+      agents:
+        - id: A
+          task: |
+            You are Wave 1 Agent A. Your task is Issue 19 from the refactor audit:
+            replace the untyped map[string]string / map[string]interface{} payloads in the
+            engine event bus with typed per-event structs.
+
+            ## 0. CRITICAL: Isolation Verification (RUN FIRST)
+
+            ```bash
+            cd /Users/dayna.blackwell/code/scout-and-wave-go/.claude/worktrees/saw/miscellaneous-cleanup/wave1-agent-A
+            ```
+
+            Verify:
+            - pwd == /Users/dayna.blackwell/code/scout-and-wave-go/.claude/worktrees/saw/miscellaneous-cleanup/wave1-agent-A
+            - git branch --show-current == saw/miscellaneous-cleanup/wave1-agent-A
+
+            If either check fails, stop immediately and report ISOLATION VERIFICATION FAILED.
+
+            ## 1. File Ownership
+
+            You own exactly these files:
+            - `pkg/engine/engine.go` — modify: Event.Data comment + type annotation
+            - `pkg/engine/runner.go` — modify: replace map publish payloads with typed structs
+            - `pkg/engine/runner_data_types.go` — modify: add typed event payload structs
+
+            Do not touch any other files.
+
+            ## 2. Interfaces You Must Implement
+
+            Add these types to `pkg/engine/runner_data_types.go` (append after existing types).
+            The struct fields were verified against actual call sites in runner.go at scout time.
+
+            ```go
+            // RunStartedPayload is the Data for "run_started" events.
+            type RunStartedPayload struct {
+              Slug     string `json:"slug"`
+              IMPLPath string `json:"impl_path"`
+            }
+
+            // RunFailedPayload is the Data for "run_failed" events.
+            type RunFailedPayload struct {
+              Error string `json:"error"`
+            }
+
+            // ScaffoldStartedPayload is the Data for "scaffold_started" events.
+            type ScaffoldStartedPayload struct {
+              IMPLPath string `json:"impl_path"`
+            }
+
+            // ScaffoldOutputPayload is the Data for "scaffold_output" events.
+            type ScaffoldOutputPayload struct {
+              Chunk string `json:"chunk"`
+            }
+
+            // ScaffoldFailedPayload is the Data for "scaffold_failed" events.
+            type ScaffoldFailedPayload struct {
+              Error string `json:"error"`
+            }
+
+            // ScaffoldCompletePayload is the Data for "scaffold_complete" events.
+            type ScaffoldCompletePayload struct {
+              IMPLPath string `json:"impl_path"`
+            }
+
+            // IntegrationGapsPayload is the Data for "integration_gaps_detected" events.
+            // Fields: wave (int), gaps (count int), report (*protocol.IntegrationReport).
+            type IntegrationGapsPayload struct {
+              Wave   int                          `json:"wave"`
+              Gaps   int                          `json:"gaps"`
+              Report *protocol.IntegrationReport `json:"report,omitempty"`
+            }
+
+            // IntegrationAgentWarningPayload is the Data for "integration_agent_warning" events.
+            type IntegrationAgentWarningPayload struct {
+              Error string `json:"error"`
+            }
+
+            // UpdateStatusFailedPayload is the Data for "update_status_failed" events.
+            // Wave is the IMPL slug string, not a wave number.
+            type UpdateStatusFailedPayload struct {
+              Wave  string `json:"wave"`
+              Error string `json:"error"`
+            }
+
+            // WaveGatePendingPayload is the Data for "wave_gate_pending" events.
+            type WaveGatePendingPayload struct {
+              Wave     int    `json:"wave"`
+              NextWave int    `json:"next_wave"`
+              Slug     string `json:"slug"`
+            }
+
+            // WaveGateResolvedPayload is the Data for "wave_gate_resolved" events.
+            type WaveGateResolvedPayload struct {
+              Wave   int    `json:"wave"`
+              Action string `json:"action"`
+              Slug   string `json:"slug"`
+            }
+            ```
+
+            The IntegrationGapsPayload requires importing "pkg/protocol". Check the existing
+            imports in runner_data_types.go; if protocol is not already imported, add it.
+            If that import would create a cycle, define a simpler struct without the Report
+            field (just Wave and Gaps) and document the deviation in your completion report.
+
+            ## 3. Interfaces You May Call
+
+            - `orchestrator.RunCompletePayload` — already used for "run_complete" events; do not change
+            - All orchestrator typed event payloads (AgentStartedPayload, WaveCompletePayload, etc.) —
+              already typed correctly; do not change
+            - `protocol.IntegrationReport` — for IntegrationGapsPayload.Report field (if no import cycle)
+
+            ## 4. What to Implement
+
+            ### Step 1: Update engine.go
+
+            In `pkg/engine/engine.go`, find the Event struct (around line 42-45):
+            ```go
+            type Event struct {
+              Event string
+              Data  interface{}
+            }
+            ```
+            Change `Data interface{}` to `Data any` and add a comment:
+            ```go
+            // Data is a typed payload struct; see runner_data_types.go for the full list.
+            Data any
+            ```
+            `any` and `interface{}` are identical in Go — this change is backward compatible.
+
+            ### Step 2: Add typed structs to runner_data_types.go
+
+            Append all structs listed in section 2 to the end of the file.
+
+            ### Step 3: Replace raw map payloads in runner.go
+
+            Run this grep to find all publish call sites using raw maps:
+            ```bash
+            grep -n 'map\[string\]' pkg/engine/runner.go
+            ```
+
+            The complete replacement table (verified against actual line numbers):
+
+            | Line | Event name | Old payload | New payload |
+            |------|---|---|---|
+            | ~409 | "run_failed" | map[string]string{"error": msg} | RunFailedPayload{Error: msg} |
+            | ~417 | "run_started" | map[string]string{"slug": opts.Slug, "impl_path": opts.IMPLPath} | RunStartedPayload{Slug: opts.Slug, IMPLPath: opts.IMPLPath} |
+            | ~595 | "scaffold_started" | map[string]string{"impl_path": implPath} | ScaffoldStartedPayload{IMPLPath: implPath} |
+            | ~616 | "scaffold_failed" | map[string]string{"error": err.Error()} | ScaffoldFailedPayload{Error: err.Error()} |
+            | ~625 | "scaffold_output" | map[string]string{"chunk": chunk} | ScaffoldOutputPayload{Chunk: chunk} |
+            | ~629 | "scaffold_failed" | map[string]string{"error": execErr.Error()} | ScaffoldFailedPayload{Error: execErr.Error()} |
+            | ~642 | "scaffold_complete" | map[string]string{"impl_path": implPath} | ScaffoldCompletePayload{IMPLPath: implPath} |
+            | ~1379 | "integration_gaps_detected" | map[string]interface{}{"wave": waveNum, "gaps": len(...), "report": integrationReport} | IntegrationGapsPayload{Wave: waveNum, Gaps: len(integrationReport.Gaps), Report: integrationReport} |
+            | ~1405 | "integration_agent_warning" | map[string]string{"error": msg} | IntegrationAgentWarningPayload{Error: msg} |
+            | ~1418 | "update_status_failed" | map[string]string{"wave": opts.Slug, "error": errMsg} | UpdateStatusFailedPayload{Wave: opts.Slug, Error: errMsg} |
+            | ~1426 | "wave_gate_pending" | map[string]interface{}{"wave": waveNum, "next_wave": waveNum+1, "slug": opts.Slug} | WaveGatePendingPayload{Wave: waveNum, NextWave: waveNum+1, Slug: opts.Slug} |
+            | ~1434 | "run_failed" | map[string]string{"error": "gate cancelled"} | RunFailedPayload{Error: "gate cancelled"} |
+            | ~1437 | "wave_gate_resolved" | map[string]interface{}{"wave": waveNum, "action": "proceed", "slug": opts.Slug} | WaveGateResolvedPayload{Wave: waveNum, Action: "proceed", Slug: opts.Slug} |
+            | ~1443 | "run_failed" | map[string]string{"error": "gate timed out"} | RunFailedPayload{Error: "gate timed out"} |
+
+            Read each call site in runner.go to confirm the exact variable names before replacing.
+            The line numbers above are approximate — use grep to locate them precisely.
+
+            Do NOT change:
+            - `publish("run_complete", orchestrator.RunCompletePayload{...})` — already typed
+            - `publish("quality_gate_result", r)` — already typed
+            - Any `onEvent(Event{...})` where Data is already a typed struct from the orchestrator package
+
+            ## 5. Tests to Write
+
+            In `pkg/engine/runner_data_types_test.go` (new file):
+            1. `TestRunStartedPayload_JSON` — marshal RunStartedPayload{Slug: "foo", IMPLPath: "/bar"} to JSON,
+               unmarshal back, assert fields match
+            2. `TestRunFailedPayload_JSON` — same roundtrip for RunFailedPayload{Error: "test error"}
+            3. `TestWaveGatePendingPayload_JSON` — roundtrip for WaveGatePendingPayload{Wave: 1, NextWave: 2, Slug: "my-feature"}
+
+            ## 6. Verification Gate
+
+            ```bash
+            cd /Users/dayna.blackwell/code/scout-and-wave-go
+            go build ./...
+            go vet ./...
+            go test ./pkg/engine/...
+            ```
+
+            ## 7. Constraints
+
+            - `any` and `interface{}` are identical in Go. Changing `Data interface{}` to `Data any`
+              is 100% backward compatible. No compilation breaks for callers.
+            - Do NOT change the Event struct beyond the Data field annotation.
+            - Do NOT modify orchestrator event types (AgentStartedPayload etc.) — out of scope.
+            - If IntegrationGapsPayload's protocol import would create a circular dependency,
+              define the struct with only Wave int and Gaps int fields (omit Report) and note
+              the deviation. Check with: `go build ./pkg/engine/...` after adding the import.
+
+            ## 8. Report
+
+            Commit before reporting:
+            ```bash
+            cd /Users/dayna.blackwell/code/scout-and-wave-go/.claude/worktrees/saw/miscellaneous-cleanup/wave1-agent-A
+            git add pkg/engine/
+            git commit -m "wave1-agent-A: typed engine event payloads (Issue 19)"
+            ```
+
+            Append completion report to:
+            /Users/dayna.blackwell/code/scout-and-wave-go/docs/IMPL/IMPL-miscellaneous-cleanup.yaml
+          files:
+            - pkg/engine/engine.go
+            - pkg/engine/runner.go
+            - pkg/engine/runner_data_types.go
+        - id: B
+          task: |
+            You are Wave 1 Agent B. Your task covers Issue 12 (pipeline State.Values typed accessor),
+            Issue 25 (notify package typed structs), Issue 24 (docs/error-codes.md sync),
+            and the refactor-audit.md cleanup.
+
+            ## 0. CRITICAL: Isolation Verification (RUN FIRST)
+
+            ```bash
+            cd /Users/dayna.blackwell/code/scout-and-wave-go/.claude/worktrees/saw/miscellaneous-cleanup/wave1-agent-B
+            ```
+
+            Verify:
+            - pwd == /Users/dayna.blackwell/code/scout-and-wave-go/.claude/worktrees/saw/miscellaneous-cleanup/wave1-agent-B
+            - git branch --show-current == saw/miscellaneous-cleanup/wave1-agent-B
+
+            If either check fails, stop immediately and report ISOLATION VERIFICATION FAILED.
+
+            ## 1. File Ownership
+
+            You own exactly these files:
+            - `pkg/pipeline/types.go` — modify: add GetValue/SetValue helpers; change Values to map[string]any
+            - `pkg/pipeline/saw_steps.go` — modify: update requiredKey to use GetValue
+            - `pkg/notify/slack.go` — modify: replace map[string]interface{} with typed structs
+            - `pkg/notify/discord.go` — modify: replace map[string]interface{} with typed structs
+            - `docs/error-codes.md` — modify: add N018-N084 entries
+            - `docs/refactor-audit.md` — modify: add status summary to Scout IMPL Notes section
+
+            Do not touch any other files.
+
+            ## 2. Interfaces You Must Implement
+
+            ### pipeline/types.go additions
+
+            ```go
+            // GetValue retrieves a typed value from state.Values.
+            // Returns (zero, false) if the key is absent or value cannot be asserted to T.
+            func GetValue[T any](state *State, key string) (T, bool) {
+              if state.Values == nil {
+                var zero T
+                return zero, false
+              }
+              v, ok := state.Values[key]
+              if !ok {
+                var zero T
+                return zero, false
+              }
+              typed, ok := v.(T)
+              return typed, ok
+            }
+
+            // SetValue sets key in state.Values, initializing the map if nil.
+            func SetValue(state *State, key string, val any) {
+              if state.Values == nil {
+                state.Values = make(map[string]any)
+              }
+              state.Values[key] = val
+            }
+            ```
+
+            ### notify/slack.go private types
+
+            ```go
+            type slackText struct {
+              Type string `json:"type"`
+              Text string `json:"text"`
+            }
+            type slackSection struct {
+              Type   string       `json:"type"`
+              Text   *slackText   `json:"text,omitempty"`
+              Fields []*slackText `json:"fields,omitempty"`
+            }
+            type slackContext struct {
+              Type     string       `json:"type"`
+              Elements []*slackText `json:"elements"`
+            }
+            type slackPayload struct {
+              Text    string        `json:"text,omitempty"`
+              Channel string        `json:"channel,omitempty"`
+              Blocks  []interface{} `json:"blocks,omitempty"`
+            }
+            ```
+
+            ### notify/discord.go private types
+
+            ```go
+            type discordField struct {
+              Name   string `json:"name"`
+              Value  string `json:"value"`
+              Inline bool   `json:"inline"`
+            }
+            type discordEmbed struct {
+              Title       string         `json:"title"`
+              Description string         `json:"description"`
+              Color       int            `json:"color"`
+              Fields      []discordField `json:"fields,omitempty"`
+            }
+            type discordPayload struct {
+              Content string         `json:"content,omitempty"`
+              Embeds  []discordEmbed `json:"embeds,omitempty"`
+            }
+            ```
+
+            ## 3. Interfaces You May Call
+
+            - `result.SAWError`, `result.NewFatal`, `result.NewSuccess`, `result.Result[T]` —
+              all unchanged in pkg/result/
+            - Existing `requiredKey` and `requiredKeyErr` in saw_steps.go — you own saw_steps.go
+              so you may modify them
+
+            ## 4. What to Implement
+
+            ### Issue 12: Pipeline State.Values typed accessor
+
+            Read `pkg/pipeline/types.go` (36 lines total). The State struct has:
+            ```go
+            Values map[string]interface{}
+            ```
+
+            1. Change `Values map[string]interface{}` to `Values map[string]any` (cosmetic only).
+            2. Add `GetValue[T any]` and `SetValue` functions at the end of the file (see section 2).
+
+            Read `pkg/pipeline/saw_steps.go`. The `requiredKey` function (lines 22-43) accesses
+            `state.Values` directly with nil checks. Update it to use `GetValue[any]`:
+            ```go
+            func requiredKey(state *State, key string) result.Result[KeyData] {
+              v, ok := GetValue[any](state, key)
+              if !ok || v == nil {
+                return result.NewFailure[KeyData]([]result.SAWError{
+                  result.NewFatal("REQUIRED_KEY_MISSING",
+                    fmt.Sprintf("required state key %q not set", key)),
+                })
+              }
+              return result.NewSuccess(KeyData{Key: key, Found: true})
+            }
+            ```
+            Also update `requiredKeyErr` if it has its own map access (read the function body to check).
+
+            ### Issue 25: Typed notify structs
+
+            **pkg/notify/slack.go:**
+            Add the four private types (slackText, slackSection, slackContext, slackPayload)
+            at the top of the file, after the import block.
+
+            In `SlackAdapter.Send`: replace:
+            ```go
+            payload := make(map[string]interface{})
+            ```
+            With a typed slackPayload struct:
+            ```go
+            p := slackPayload{Text: msg.Text}
+            if s.destination != "" {
+              p.Channel = s.destination
+            }
+            if msg.Embeds != nil {
+              if blocks, ok := msg.Embeds.([]interface{}); ok {
+                p.Blocks = blocks
+              }
+            }
+            body, err := json.Marshal(p)
+            ```
+
+            In `SlackFormatter.Format`: replace map[string]interface{} block construction
+            with typed structs:
+            ```go
+            titleBlock := &slackSection{
+              Type: "section",
+              Text: &slackText{Type: "mrkdwn", Text: fmt.Sprintf("*%s*", event.Title)},
+            }
+            // body block (if event.Body != ""):
+            bodyBlock := &slackSection{
+              Type: "section",
+              Text: &slackText{Type: "mrkdwn", Text: event.Body},
+            }
+            // fields block (if len(event.Fields) > 0):
+            fieldItems := make([]*slackText, 0, len(event.Fields))
+            // sort keys, then append:
+            fieldItems = append(fieldItems, &slackText{
+              Type: "mrkdwn",
+              Text: fmt.Sprintf("*%s:* %s", k, event.Fields[k]),
+            })
+            fieldsBlock := &slackSection{Type: "section", Fields: fieldItems}
+            // color context block:
+            colorBlock := &slackContext{
+              Type: "context",
+              Elements: []*slackText{{
+                Type: "mrkdwn",
+                Text: fmt.Sprintf("Severity: %s | Color: %s", event.Severity, severityColor(event.Severity)),
+              }},
+            }
+            ```
+            The `blocks := []interface{}{}` slice stays as `[]interface{}` since Message.Embeds
+            is interface{}. Append typed block pointers to it.
+
+            **pkg/notify/discord.go:**
+            Add the three private types (discordField, discordEmbed, discordPayload) at the top
+            of the file, after the import block.
+
+            In `DiscordFormatter.Format`: replace map types:
+            ```go
+            fields := make([]discordField, 0, len(event.Fields))
+            // sort keys, then:
+            fields = append(fields, discordField{Name: k, Value: event.Fields[k], Inline: true})
+            embed := discordEmbed{
+              Title: event.Title, Description: event.Body, Color: color,
+            }
+            if len(fields) > 0 { embed.Fields = fields }
+            return Message{
+              Text:   event.Title + ": " + event.Body,
+              Embeds: []discordEmbed{embed},
+            }
+            ```
+
+            In `DiscordAdapter.Send`: replace `var payload interface{}`:
+            ```go
+            p := discordPayload{}
+            if msg.Embeds != nil {
+              if embeds, ok := msg.Embeds.([]discordEmbed); ok {
+                p.Embeds = embeds
+              }
+            } else {
+              p.Content = msg.Text
+            }
+            body, err := json.Marshal(p)
+            ```
+
+            ### Issue 24: docs/error-codes.md sync
+
+            Read `docs/error-codes.md`. The N — Engine section has a table ending at N017.
+            Read `pkg/result/codes.go` lines 148-218 for the N018-N084 range.
+
+            After the N017 row in the table, add a new subsection. The format should match
+            the existing table style in the doc. Add at minimum N018 through N050, and note
+            the remainder as TODO in your completion report if you cannot complete all 67 entries.
+
+            Header for the new subsection:
+            ```markdown
+            ### N018–N084 — Engine Operation Codes
+
+            These codes appear in `SAWError.Code` for fine-grained engine operation tracking.
+            They correspond to `ENGINE_*` and `CONTEXT_CANCELLED` constants in `pkg/result/codes.go`.
+
+            | Code | Description | Fix |
+            |------|-------------|-----|
+            | `CONTEXT_CANCELLED` | Operation cancelled via context. | Check if the calling context had a deadline or was cancelled. Retry if unintentional. |
+            | `ENGINE_SCOUT_INVALID_OPTS` | Scout agent received invalid or missing options. | Check the options passed to RunScout (Feature, RepoPath, IMPLOutPath are required). |
+            ...
+            ```
+
+            ### Refactor-audit.md cleanup
+
+            Read `docs/refactor-audit.md`. Find the `## Scout IMPL Notes` section (around line 364).
+            The headings for IMPL 1, 2, 3, and 4 already have completion markers.
+
+            Add this line immediately after `## Scout IMPL Notes` (before the first paragraph):
+
+            ```markdown
+            **Status as of 2026-03-31:** IMPLs 1–4 complete (see individual COMPLETE markers below).
+            IMPL 5 (protocol + backend cleanup, Issues 7/8/16/17/22) and IMPL 6 (%w sweep, Issue 15)
+            are not started. Issues 12, 19, 20, 24, and 25 from this audit are tracked separately in
+            `docs/IMPL/IMPL-miscellaneous-cleanup.yaml`.
+            ```
+
+            ## 5. Tests to Write
+
+            In `pkg/pipeline/types_test.go` (new file):
+            1. `TestGetValue_HappyPath` — SetValue then GetValue[string], assert value and ok==true
+            2. `TestGetValue_WrongType` — SetValue int, GetValue[string], assert ok==false
+            3. `TestGetValue_NilValues` — GetValue on State{} (nil Values map), assert ok==false, no panic
+            4. `TestGetValue_MissingKey` — GetValue for absent key, assert ok==false
+            5. `TestSetValue_InitializesMap` — SetValue on State{} with nil Values, assert map is non-nil
+
+            In `pkg/notify/slack_test.go` (check if it exists; create if not):
+            1. `TestSlackFormatter_TypedBlocks` — call SlackFormatter{}.Format with Event{Title: "T", Body: "B"},
+               marshal Message.Embeds to JSON, verify no marshal errors and JSON contains a "type" key
+
+            In `pkg/notify/discord_test.go` (check if it exists; create if not):
+            1. `TestDiscordFormatter_TypedEmbeds` — call DiscordFormatter{}.Format with Event{Title: "T"},
+               marshal Message.Embeds to JSON, verify "title" and "color" keys are present
+
+            ## 6. Verification Gate
+
+            ```bash
+            cd /Users/dayna.blackwell/code/scout-and-wave-go
+            go build ./...
+            go vet ./...
+            go test ./pkg/pipeline/... ./pkg/notify/...
+            ```
+
+            ## 7. Constraints
+
+            - Do NOT modify `pkg/notify/types.go` or the Message struct — out of scope.
+            - Do NOT modify `pkg/notify/telegram.go` — uses map[string]string which is acceptable.
+            - `map[string]interface{}` and `map[string]any` are identical in Go. Changing
+              State.Values is cosmetic and fully backward compatible.
+            - GetValue and SetValue are package-level functions, not State methods (avoids generics
+              on the struct which would break slice compatibility in saw_steps.go).
+
+            ## 8. Report
+
+            Commit before reporting:
+            ```bash
+            cd /Users/dayna.blackwell/code/scout-and-wave-go/.claude/worktrees/saw/miscellaneous-cleanup/wave1-agent-B
+            git add pkg/pipeline/ pkg/notify/ docs/
+            git commit -m "wave1-agent-B: typed pipeline accessor, notify structs, docs sync, audit cleanup"
+            ```
+
+            Append completion report to:
+            /Users/dayna.blackwell/code/scout-and-wave-go/docs/IMPL/IMPL-miscellaneous-cleanup.yaml
+          files:
+            - pkg/pipeline/types.go
+            - pkg/pipeline/saw_steps.go
+            - pkg/notify/slack.go
+            - pkg/notify/discord.go
+            - docs/error-codes.md
+            - docs/refactor-audit.md
+        - id: C
+          task: |
+            You are Wave 1 Agent C. Your task is Issue 20 from the refactor audit:
+            delete the dead pkg/orchestrator/setters.go file by moving SetLogger to orchestrator.go.
+
+            ## 0. CRITICAL: Isolation Verification (RUN FIRST)
+
+            ```bash
+            cd /Users/dayna.blackwell/code/scout-and-wave-go/.claude/worktrees/saw/miscellaneous-cleanup/wave1-agent-C
+            ```
+
+            Verify:
+            - pwd == /Users/dayna.blackwell/code/scout-and-wave-go/.claude/worktrees/saw/miscellaneous-cleanup/wave1-agent-C
+            - git branch --show-current == saw/miscellaneous-cleanup/wave1-agent-C
+
+            If either check fails, stop immediately and report ISOLATION VERIFICATION FAILED.
+
+            ## 1. File Ownership
+
+            You own exactly these files:
+            - `pkg/orchestrator/setters.go` — delete this file
+            - `pkg/orchestrator/orchestrator.go` — modify: add SetLogger method
+
+            Do not touch any other files.
+
+            ## 2. Interfaces You Must Implement
+
+            Move this method from setters.go to orchestrator.go (exact copy):
+
+            ```go
+            // SetLogger sets the logger used by all Orchestrator methods.
+            // Nil resets to slog.Default() fallback.
+            func (o *Orchestrator) SetLogger(logger *slog.Logger) {
+              o.logger = logger
+            }
+            ```
+
+            ## 3. Interfaces You May Call
+
+            - `Orchestrator` struct already defined in orchestrator.go
+            - `*slog.Logger` from `"log/slog"` — already imported in orchestrator.go
+
+            ## 4. What to Implement
+
+            1. Read `pkg/orchestrator/setters.go` to confirm it contains only the SetLogger method
+               and a comment about backward compatibility.
+
+            2. Read `pkg/orchestrator/orchestrator.go`. Confirm `"log/slog"` is in the import block
+               (it is — the Orchestrator struct has a `logger *slog.Logger` field).
+               Find the setter group around lines 460-471 (SetDefaultModel, SetWorktreePaths).
+
+            3. Add `SetLogger` to `orchestrator.go` immediately after `SetWorktreePaths` and before
+               the `log()` helper method (around line 473). Copy the exact method body from setters.go.
+
+            4. Delete `pkg/orchestrator/setters.go`:
+               ```bash
+               git rm pkg/orchestrator/setters.go
+               ```
+
+            5. Build and test:
+               ```bash
+               go build ./pkg/orchestrator/...
+               go test ./pkg/orchestrator/...
+               ```
+
+            ## 5. Tests to Write
+
+            No new tests needed for this trivial consolidation. Verify existing tests still pass.
+            If no orchestrator tests exist, note that in your report.
+
+            ## 6. Verification Gate
+
+            ```bash
+            cd /Users/dayna.blackwell/code/scout-and-wave-go
+            go build ./...
+            go vet ./...
+            go test ./pkg/orchestrator/...
+            ```
+
+            ## 7. Constraints
+
+            - The method signature must be identical to what is in setters.go.
+            - Do not rename, remove, or change the behavior of SetLogger.
+            - This is purely a file consolidation; zero behavioral change.
+            - Do not modify any other methods or types in orchestrator.go.
+
+            ## 8. Report
+
+            Commit before reporting:
+            ```bash
+            cd /Users/dayna.blackwell/code/scout-and-wave-go/.claude/worktrees/saw/miscellaneous-cleanup/wave1-agent-C
+            git add pkg/orchestrator/orchestrator.go
+            git rm pkg/orchestrator/setters.go
+            git commit -m "wave1-agent-C: move SetLogger to orchestrator.go, delete dead setters.go (Issue 20)"
+            ```
+
+            Append completion report to:
+            /Users/dayna.blackwell/code/scout-and-wave-go/docs/IMPL/IMPL-miscellaneous-cleanup.yaml
+          files:
+            - pkg/orchestrator/setters.go
+            - pkg/orchestrator/orchestrator.go
+quality_gates:
+    level: standard
+    gates:
+        - type: build
+          command: go build ./...
+          required: true
+        - type: lint
+          command: go vet ./...
+          required: true
+        - type: test
+          command: go test ./...
+          required: true
+pre_mortem:
+    overall_risk: low
+    rows:
+        - scenario: IntegrationGapsPayload.Report field creates a circular import (engine -> protocol -> engine)
+          likelihood: medium
+          impact: low
+          mitigation: |
+            Agent A should check for import cycles after adding the protocol import to
+            runner_data_types.go. If a cycle exists, drop the Report field and define the struct
+            with only Wave int and Gaps int. Document the deviation in the completion report.
+            The protocol package already imports engine via the injection seam, so a cycle is plausible.
+        - scenario: Message.Embeds type in notify package is not interface{} and conflicts with typed blocks
+          likelihood: low
+          impact: medium
+          mitigation: |
+            Agent B must read pkg/notify/types.go before implementing. If Message.Embeds is a
+            concrete type, adapt the formatter return value accordingly. The Send adapter side-steps
+            this via type assertion on the received value.
+        - scenario: GetValue generic function requires Go 1.18+ generics
+          likelihood: low
+          impact: high
+          mitigation: |
+            go.mod shows go 1.25.0, well above Go 1.18. Generic functions are fully supported.
+            No action needed.
+        - scenario: N018-N084 entries in codes.go are too numerous for Agent B to document fully
+          likelihood: medium
+          impact: low
+          mitigation: |
+            Agent B should add at minimum N018-N050 entries and note the remaining as TODO.
+            Partial completion is acceptable and far better than the current state.
+state: SCOUT_PENDING
+injection_method: hook

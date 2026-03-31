@@ -1,0 +1,662 @@
+title: Protocol + Backend Cleanup (IMPL 5)
+feature_slug: protocol-backend-cleanup
+verdict: SUITABLE
+suitability_assessment: |-
+    Five-issue cleanup batch. All issues are independent of the ctx decision (IMPL 4).
+
+    File decomposition: Agent A owns backend subpackages (api/, bedrock/, openai/, cli/);
+    Agent B owns protocol and pipeline files (branchname.go, types.go, pipeline/). Ownership
+    is fully disjoint — no file appears in both lists.
+
+    Interface discoverability: Both interface contracts (shared executeTool signature,
+    resolveAgentBranch signature) can be determined by reading the three existing
+    implementations before wave launch. The signatures are identical for executeTool
+    across api/ and bedrock/ (same parameters, same return type), and the OpenAI execTool
+    differs only by collapsing the isError bool into an error return — the shared version
+    adopts the (string, bool) form used by the two Anthropic backends. resolveAgentBranch
+    is derivable from the five duplicate call sites.
+
+    Issue 16 is Critical: the ScaffoldFile YAML/JSON tag mismatch (`yaml:"file"` vs
+    `json:"file_path"`) causes silent data loss on any YAML<->JSON roundtrip. This must
+    be fixed before any further tool work that reads ScaffoldFile via JSON.
+
+    Issue 22 is Low severity but mechanically simple: changing State.Errors from []error
+    to []result.SAWError. The pipeline.go file already imports result and uses SAWError
+    internally — this is a straightforward field type change.
+
+    Parallelization value: High. Both agents have non-trivial logic (especially Agent A's
+    CLI post-hoc enforcement pass) and independent file sets. Build/test cycle is
+    `go test ./...` which takes 20-30s on this repo.
+
+    Estimated times:
+    - Scout phase: ~15 min (reading 10+ source files, deriving signatures)
+    - Agent execution: ~25 min (A: ~20 min for shared executeTool + enforcement pass;
+      B: ~15 min for tag fix + roundtrip test + resolveAgentBranch + pipeline type)
+    - Merge and verification: ~5 min
+    Total SAW time: ~45 min
+
+    Sequential baseline: ~50 min (both agents sequentially)
+    Time savings: ~5 min (10% faster — value is primarily coordination and audit trail)
+
+    Recommendation: Proceed. Parallelization benefit is marginal for speed but the IMPL
+    doc provides useful coordination and documents the interface contracts.
+test_command: go test ./...
+lint_command: go vet ./...
+file_ownership:
+    - file: pkg/agent/backend/execute_tool.go
+      agent: A
+      wave: 1
+      action: new
+    - file: pkg/agent/backend/api/client.go
+      agent: A
+      wave: 1
+      action: modify
+    - file: pkg/agent/backend/bedrock/tools.go
+      agent: A
+      wave: 1
+      action: modify
+    - file: pkg/agent/backend/openai/client.go
+      agent: A
+      wave: 1
+      action: modify
+    - file: pkg/agent/backend/cli/client.go
+      agent: A
+      wave: 1
+      action: modify
+    - file: pkg/agent/backend/cli/constraint_enforcer.go
+      agent: A
+      wave: 1
+      action: new
+    - file: pkg/agent/backend/cli/constraint_enforcer_test.go
+      agent: A
+      wave: 1
+      action: new
+    - file: pkg/protocol/branchname.go
+      agent: B
+      wave: 1
+      action: new
+    - file: pkg/protocol/types.go
+      agent: B
+      wave: 1
+      action: modify
+    - file: pkg/protocol/types_test.go
+      agent: B
+      wave: 1
+      action: new
+    - file: pkg/pipeline/types.go
+      agent: B
+      wave: 1
+      action: modify
+    - file: pkg/pipeline/pipeline.go
+      agent: B
+      wave: 1
+      action: modify
+    - file: pkg/pipeline/saw_steps.go
+      agent: B
+      wave: 1
+      action: modify
+interface_contracts:
+    - name: ExecuteTool
+      description: |-
+        Shared backend helper that looks up a tool by name in the Workshop and executes it.
+        Replaces the three near-identical private functions in api/client.go, bedrock/tools.go,
+        and openai/client.go. The (string, bool) return form is used by the two Anthropic
+        backends; the OpenAI execTool's single-string return is replaced by this signature.
+      definition: |-
+        // ExecuteTool looks up and executes a tool from the Workshop.
+        // Returns (resultString, isError). isError is true when tool lookup fails or
+        // execution returns an error; in that case resultString contains the error message.
+        func ExecuteTool(ctx context.Context, workshop tools.Workshop, name string, input map[string]interface{}, workDir string) (string, bool)
+      location: pkg/agent/backend/execute_tool.go
+    - name: resolveAgentBranch
+      description: |-
+        Shared protocol helper that encapsulates the dual-lookup pattern: try the
+        slug-scoped branch name first, then fall back to the legacy branch name for
+        backward compatibility. Used by merge_agents.go, commit_verify.go, worktree.go,
+        cleanup.go, and completion_validator.go.
+      definition: |-
+        // resolveAgentBranch returns the active branch name for the given agent by checking
+        // whether the slug-scoped branch exists in repoDir; if not, falls back to the
+        // legacy branch name. isLegacy is true when the legacy fallback was used.
+        // If neither branch exists, branchName is the slug-scoped form and isLegacy is false.
+        func resolveAgentBranch(featureSlug, agentID string, waveNum int, repoDir string) (branchName string, isLegacy bool)
+      location: pkg/protocol/branchname.go
+waves:
+    - number: 1
+      agents:
+        - id: A
+          task: |-
+            ## Wave 1 Agent A: Backend cleanup — shared executeTool + CLI constraint enforcement
+
+            You are Wave 1 Agent A. Your task has two parts:
+            (1) Extract the duplicated `executeTool` function into a shared backend package.
+            (2) Implement post-hoc constraint enforcement in the CLI backend (Issue 8, Choice A).
+
+            ## 0. CRITICAL: Isolation Verification (RUN FIRST)
+
+            Run the standard isolation check for wave1-agent-A before any file modifications.
+            Verify you are in the correct worktree and on branch `saw/protocol-backend-cleanup/wave1-agent-A`.
+
+            ## 1. File Ownership
+
+            You own these files. Do not touch any other files.
+            - `pkg/agent/backend/execute_tool.go` — create (shared executeTool function)
+            - `pkg/agent/backend/api/client.go` — modify (remove local executeTool, import shared)
+            - `pkg/agent/backend/bedrock/tools.go` — modify (remove local executeTool, import shared)
+            - `pkg/agent/backend/openai/client.go` — modify (rename execTool callsites, import shared)
+            - `pkg/agent/backend/cli/client.go` — modify (plumb Constraints; add enforcement call)
+            - `pkg/agent/backend/cli/constraint_enforcer.go` — create (post-hoc enforcement pass)
+            - `pkg/agent/backend/cli/constraint_enforcer_test.go` — create (tests for enforcement pass)
+
+            ## 2. Interfaces You Must Implement
+
+            ```go
+            // In pkg/agent/backend/execute_tool.go (package backend):
+            //
+            // ExecuteTool looks up and executes a tool from the Workshop.
+            // Returns (resultString, isError). isError is true when tool lookup fails
+            // or execution returns an error; in that case resultString contains the error message.
+            func ExecuteTool(ctx context.Context, workshop tools.Workshop, name string, input map[string]interface{}, workDir string) (string, bool)
+            ```
+
+            ```go
+            // In pkg/agent/backend/cli/constraint_enforcer.go (package cli):
+            //
+            // CheckConstraints inspects the accumulated tool-use events recorded during
+            // a CLI backend run and reports any violations of I1/I2/I6 constraints.
+            // Returns a slice of violation descriptions; empty slice means no violations.
+            // This is a post-hoc pass: it cannot prevent writes, only detect them.
+            func CheckConstraints(events []ToolUseEvent, constraints *tools.Constraints) []ConstraintViolation
+
+            type ToolUseEvent struct {
+                ToolName string
+                FilePath string // extracted from Write/Edit input; empty for Bash/Read/Glob/Grep
+            }
+
+            type ConstraintViolation struct {
+                ToolName  string
+                FilePath  string
+                Invariant string // "I1", "I2", or "I6"
+                Message   string
+            }
+            ```
+
+            ## 3. Interfaces You May Call
+
+            ```go
+            // Existing constraint field on tools.Constraints:
+            tools.Constraints{
+                OwnedFiles         map[string]bool
+                FrozenPaths        map[string]bool
+                FreezeTime         *time.Time
+                AllowedPathPrefixes []string
+                AgentID            string
+                AgentRole          string
+            }
+
+            // Existing backend.Config already carries Constraints:
+            type Config struct {
+                // ...
+                Constraints *tools.Constraints
+            }
+
+            // Existing extractToolInput in cli/client.go (already in your owned file):
+            func extractToolInput(name string, inputRaw json.RawMessage) string
+            ```
+
+            ## 4. What to Implement
+
+            ### Part 1: Shared executeTool (Issue 7)
+
+            Read the three existing implementations:
+            - `pkg/agent/backend/api/client.go:173` — `executeTool(ctx, workshop, name, input, workDir) (string, bool)`
+            - `pkg/agent/backend/bedrock/tools.go:27` — identical to api version
+            - `pkg/agent/backend/openai/client.go:120` — `execTool(ctx, workshop, name, inputMap, workDir) string`
+
+            Create `pkg/agent/backend/execute_tool.go` in `package backend` with the exported
+            `ExecuteTool(ctx, workshop, name, input, workDir) (string, bool)` function. The body
+            is identical to the api/bedrock versions.
+
+            In `api/client.go`: delete the private `executeTool` function and replace the two
+            call sites with `backend.ExecuteTool(...)`.
+
+            In `bedrock/tools.go`: delete the private `executeTool` function and replace call
+            sites with `backend.ExecuteTool(...)`.
+
+            In `openai/client.go`: delete the private `execTool` function. Replace its call
+            sites with `backend.ExecuteTool(...)`. Note that `execTool` returned only `string`
+            (no isError bool); callers must be updated to handle the `(string, bool)` return.
+            Check `openai/client.go` for how `execTool`'s return was used and adapt accordingly:
+            if the OpenAI loop used the string result as the tool content and treated any non-empty
+            result as success, use `result, _ := backend.ExecuteTool(...)` or restructure to use
+            the isError bool for content-mode error reporting.
+
+            ### Part 2: CLI backend post-hoc constraint enforcement (Issue 8, Choice A)
+
+            Background: The CLI backend (`cli/client.go`) uses `--output-format stream-json` and
+            already parses `tool_use` content blocks via `extractToolInput`. It does NOT currently
+            apply `pkg/tools` constraint enforcement (I1/I2/I6) that the API and Bedrock backends
+            apply via `tools.WithConstraints`. The chosen fix (Decision 2 — Choice A) is post-hoc
+            enforcement: after the subprocess completes, inspect recorded Write/Edit invocations
+            against the constraint rules. Post-hoc means the write already happened; enforcement
+            detects and reports violations so the wave result is marked as blocked.
+
+            Implementation steps:
+
+            1. **Add event recording to `RunStreamingWithTools`** in `cli/client.go`. When parsing
+               `tool_use` content blocks, if the tool is `Write` or `Edit`, record a `ToolUseEvent`
+               with `ToolName` and `FilePath` (use the existing `extractToolInput` call which already
+               extracts `file_path` for Write/Edit). Store events in a local slice.
+
+            2. **After `cmd.Wait()` succeeds**, if `c.cfg.Constraints != nil`, call
+               `CheckConstraints(events, c.cfg.Constraints)`. If any violations are returned,
+               return an error wrapping all violation messages so the engine marks the run as failed.
+
+            3. **Create `pkg/agent/backend/cli/constraint_enforcer.go`** with the `CheckConstraints`
+               function, `ToolUseEvent` struct, and `ConstraintViolation` struct.
+               Enforcement logic:
+               - **I1 (ownership)**: if `constraints.OwnedFiles` is non-empty and
+                 `!constraints.OwnedFiles[event.FilePath]`, emit an I1 violation.
+               - **I2 (freeze)**: if `constraints.FrozenPaths[event.FilePath] && constraints.FreezeTime != nil`,
+                 emit an I2 violation.
+               - **I6 (role path)**: if `constraints.AllowedPathPrefixes` is non-empty and no prefix
+                 matches `event.FilePath`, emit an I6 violation.
+               Only check Write and Edit events (ToolName == "Write" or "Edit").
+               Skip events with empty FilePath.
+
+            4. **Update `RunStreaming`** (non-tools variant) in `cli/client.go`: it does not parse
+               tool_use events, so it cannot do post-hoc enforcement. Add a comment noting this
+               limitation; no behavior change needed.
+
+            5. The `Run` method delegates to `RunStreaming`, so it also has this limitation. Add
+               the same comment there.
+
+            ## 5. Tests to Write
+
+            In `pkg/agent/backend/cli/constraint_enforcer_test.go`:
+
+            1. `TestCheckConstraints_I1_OwnedFiles` — violation when Write targets a path not in OwnedFiles
+            2. `TestCheckConstraints_I1_AllowedPath` — no violation when Write targets an owned path
+            3. `TestCheckConstraints_I2_FrozenPath` — violation when Write targets a frozen path with non-nil FreezeTime
+            4. `TestCheckConstraints_I2_NoFreezeTime` — no violation when FrozenPaths set but FreezeTime is nil
+            5. `TestCheckConstraints_I6_RolePath` — violation when Write path doesn't match AllowedPathPrefixes
+            6. `TestCheckConstraints_I6_Allowed` — no violation when Write path matches a prefix
+            7. `TestCheckConstraints_SkipNonWriteTools` — Bash events with empty FilePath are skipped
+            8. `TestCheckConstraints_NilConstraints` — CheckConstraints returns nil when constraints is nil
+
+            ## 6. Verification Gate
+
+            ```bash
+            cd /Users/dayna.blackwell/code/scout-and-wave-go/.claude/worktrees/saw/protocol-backend-cleanup/wave1-agent-A
+            go build ./pkg/agent/backend/...
+            go vet ./pkg/agent/backend/...
+            go test ./pkg/agent/backend/...
+            ```
+
+            ## 7. Constraints
+
+            - Do NOT modify `pkg/tools/constraint_enforcer.go` or `pkg/tools/workshop_constrained.go`.
+              The post-hoc enforcement in the CLI package is independent of the middleware approach
+              used by the API/Bedrock backends.
+            - Do NOT modify any files outside `pkg/agent/backend/`. If you discover cascade changes
+              needed (e.g., in engine callers of the CLI backend), report them in your completion
+              report under `out_of_scope_deps`.
+            - The `ExecuteTool` function in `execute_tool.go` must be in `package backend` (not a
+              sub-package) so all three backends can import it without circular dependencies.
+            - For the OpenAI `execTool` replacement: the OpenAI client uses tool calls via a
+              different content structure, but the core lookup-and-execute logic is the same.
+              If adapting the return type requires non-trivial changes to OpenAI-specific parsing,
+              document those in the completion report.
+            - Post-hoc enforcement cannot prevent writes from occurring. The error returned after
+              constraint violations must be clearly labeled as post-hoc detection so callers know
+              the writes already occurred.
+
+            ## 8. Report
+
+            Commit your changes and write a structured completion report appended to the IMPL doc
+            at `/Users/dayna.blackwell/code/scout-and-wave-go/docs/IMPL/IMPL-protocol-backend-cleanup.yaml`.
+
+            ```yaml type=impl-completion-report
+            status: complete | partial | blocked
+            worktree: .claude/worktrees/saw/protocol-backend-cleanup/wave1-agent-A
+            branch: saw/protocol-backend-cleanup/wave1-agent-A
+            commit: {sha}
+            files_changed:
+              - pkg/agent/backend/api/client.go
+              - pkg/agent/backend/bedrock/tools.go
+              - pkg/agent/backend/openai/client.go
+              - pkg/agent/backend/cli/client.go
+            files_created:
+              - pkg/agent/backend/execute_tool.go
+              - pkg/agent/backend/cli/constraint_enforcer.go
+              - pkg/agent/backend/cli/constraint_enforcer_test.go
+            interface_deviations: []
+            out_of_scope_deps: []
+            tests_added:
+              - TestCheckConstraints_I1_OwnedFiles
+              - TestCheckConstraints_I1_AllowedPath
+              - TestCheckConstraints_I2_FrozenPath
+              - TestCheckConstraints_I2_NoFreezeTime
+              - TestCheckConstraints_I6_RolePath
+              - TestCheckConstraints_I6_Allowed
+              - TestCheckConstraints_SkipNonWriteTools
+              - TestCheckConstraints_NilConstraints
+            verification: PASS | FAIL
+            ```
+          files:
+            - pkg/agent/backend/execute_tool.go
+            - pkg/agent/backend/api/client.go
+            - pkg/agent/backend/bedrock/tools.go
+            - pkg/agent/backend/openai/client.go
+            - pkg/agent/backend/cli/client.go
+            - pkg/agent/backend/cli/constraint_enforcer.go
+            - pkg/agent/backend/cli/constraint_enforcer_test.go
+        - id: B
+          task: |-
+            ## Wave 1 Agent B: Protocol cleanup — ScaffoldFile tag fix, resolveAgentBranch, pipeline errors
+
+            You are Wave 1 Agent B. Your task has three parts:
+            (1) Fix the Critical ScaffoldFile YAML/JSON tag mismatch and add a roundtrip test (Issue 16).
+            (2) Extract the `resolveAgentBranch` helper from five duplicate call sites (Issue 17).
+            (3) Change `State.Errors []error` to `[]result.SAWError` in the pipeline (Issue 22).
+
+            ## 0. CRITICAL: Isolation Verification (RUN FIRST)
+
+            Run the standard isolation check for wave1-agent-B before any file modifications.
+            Verify you are in the correct worktree and on branch `saw/protocol-backend-cleanup/wave1-agent-B`.
+
+            ## 1. File Ownership
+
+            You own these files. Do not touch any other files.
+            - `pkg/protocol/branchname.go` — create (resolveAgentBranch helper)
+            - `pkg/protocol/types.go` — modify (fix ScaffoldFile tag)
+            - `pkg/protocol/types_test.go` — create (TestScaffoldFileRoundtrip)
+            - `pkg/pipeline/types.go` — modify (State.Errors type)
+            - `pkg/pipeline/pipeline.go` — modify (update Errors accumulation)
+            - `pkg/pipeline/saw_steps.go` — modify (if any direct Errors references)
+
+            ## 2. Interfaces You Must Implement
+
+            ```go
+            // In pkg/protocol/branchname.go (package protocol):
+            //
+            // resolveAgentBranch returns the active branch name for the given agent by
+            // checking whether the slug-scoped branch exists in repoDir via git.BranchExists.
+            // If the slug-scoped branch does not exist, falls back to LegacyBranchName.
+            // isLegacy is true when the legacy fallback was used.
+            // If neither branch exists, branchName is the slug-scoped form (BranchName result)
+            // and isLegacy is false.
+            func resolveAgentBranch(featureSlug, agentID string, waveNum int, repoDir string) (branchName string, isLegacy bool)
+            ```
+
+            ## 3. Interfaces You May Call
+
+            ```go
+            // Existing helpers in pkg/protocol/ (already exported, use as-is):
+            func BranchName(featureSlug string, waveNum int, agentID string) string
+            func LegacyBranchName(waveNum int, agentID string) string
+
+            // Existing git helper:
+            // import "github.com/blackwell-systems/scout-and-wave-go/internal/git"
+            func git.BranchExists(repoDir, branch string) bool
+
+            // Existing result type for pipeline:
+            // import "github.com/blackwell-systems/scout-and-wave-go/pkg/result"
+            type result.SAWError struct {
+                Code     string
+                Message  string
+                Severity string
+                // ...
+            }
+            ```
+
+            ## 4. What to Implement
+
+            ### Part 1: Fix ScaffoldFile tag mismatch — CRITICAL (Issue 16)
+
+            This is a data loss bug. In `pkg/protocol/types.go` around line 197:
+
+            ```go
+            type ScaffoldFile struct {
+                FilePath   string `yaml:"file" json:"file_path"`
+            ```
+
+            The YAML tag is `"file"` but the JSON tag is `"file_path"`. Any YAML<->JSON
+            roundtrip silently drops `FilePath` — YAML writes `file:` but JSON expects
+            `file_path:`. Fix: align the YAML tag to `yaml:"file_path"` to match JSON and
+            to match how `FilePath` is used in `scaffold_validation.go` and
+            `integration_types.go` (both use `file_path`).
+
+            After the fix, search for any test fixtures or YAML files that use the old
+            `file:` field name for ScaffoldFile entries. Run:
+            ```bash
+            grep -r 'file:' /Users/dayna.blackwell/code/scout-and-wave-go/pkg/protocol/ --include="*.go" --include="*.yaml"
+            grep -r 'file:' /Users/dayna.blackwell/code/scout-and-wave-go/pkg/protocol/ --include="*_test.go"
+            ```
+            If any test files construct `ScaffoldFile` with `file:` in YAML literals,
+            update them to `file_path:`. (The field struct tag change does not affect
+            Go struct literal construction — only marshaling/unmarshaling.)
+
+            Create `pkg/protocol/types_test.go` with `TestScaffoldFileRoundtrip`:
+            - Marshal a `ScaffoldFile{FilePath: "docs/IMPL/test.yaml", Contents: "body"}` to JSON.
+            - Unmarshal the JSON as YAML. Assert `FilePath == "docs/IMPL/test.yaml"`.
+            - Marshal the same struct to YAML. Unmarshal the YAML back to a ScaffoldFile. Assert FilePath is preserved.
+            - Test the zero-value case: `ScaffoldFile{}` marshals and unmarshals without error.
+
+            Use `encoding/json` and `gopkg.in/yaml.v3` (already a dependency in the module).
+
+            ### Part 2: Extract resolveAgentBranch (Issue 17)
+
+            The dual-lookup pattern (try slug-scoped branch, fall back to legacy) is duplicated in
+            five files. Create `pkg/protocol/branchname.go` with the unexported `resolveAgentBranch`
+            helper.
+
+            Read the five existing duplicate implementations to confirm the pattern:
+            - `pkg/protocol/merge_agents.go:290–332` (mergeAgentsSingleRepo uses BranchName + LegacyBranchName)
+            - `pkg/protocol/commit_verify.go:185–205`
+            - `pkg/protocol/worktree.go:148–172`
+            - `pkg/protocol/cleanup.go:175–210`
+            - `pkg/protocol/completion_validator.go:65–87`
+
+            The shared helper:
+            ```go
+            func resolveAgentBranch(featureSlug, agentID string, waveNum int, repoDir string) (branchName string, isLegacy bool) {
+                slug := BranchName(featureSlug, waveNum, agentID)
+                if git.BranchExists(repoDir, slug) {
+                    return slug, false
+                }
+                legacy := LegacyBranchName(waveNum, agentID)
+                if git.BranchExists(repoDir, legacy) {
+                    return legacy, true
+                }
+                return slug, false // neither exists; return slug-scoped form
+            }
+            ```
+
+            Important: this helper is UNEXPORTED (`resolveAgentBranch`, lowercase r). The five
+            files that use it are all in `package protocol`.
+
+            After creating `branchname.go`, update the five files that duplicate the pattern to call
+            `resolveAgentBranch` instead. However, those five files are NOT in your owned files list.
+            This creates a tension: you define the helper, but refactoring the callers touches files
+            you don't own.
+
+            Resolution: Create `branchname.go` with `resolveAgentBranch` (your owned file). The
+            caller refactoring (updating the five files) is out of scope for this wave. Document in
+            your completion report under `out_of_scope_deps` that the five files should be updated
+            in a follow-up pass to call `resolveAgentBranch`. This is the safe approach: the helper
+            is additive (no existing behavior changes), and the five files continue to work as-is.
+
+            ### Part 3: Change State.Errors to []result.SAWError (Issue 22)
+
+            In `pkg/pipeline/types.go`, change:
+            ```go
+            Errors []error
+            ```
+            to:
+            ```go
+            Errors []result.SAWError
+            ```
+
+            Add the required import: `"github.com/blackwell-systems/scout-and-wave-go/pkg/result"`.
+
+            In `pkg/pipeline/pipeline.go`, update the two places that append to `state.Errors`:
+            - Line ~93: `state.Errors = append(state.Errors, fmt.Errorf(...))` must change to
+              append a `result.SAWError` directly. The existing code appends a plain error alongside
+              adding a `result.SAWError` to `warnings`. Remove the plain error append and use the
+              `wrapped` `result.SAWError` that is already constructed:
+              ```go
+              // Before:
+              state.Errors = append(state.Errors, fmt.Errorf("step %q: %s", step.Name, e.Message))
+              warnings = append(warnings, wrapped)
+
+              // After:
+              warnings = append(warnings, wrapped)
+              state.Errors = append(state.Errors, wrapped)
+              ```
+
+            In `pkg/pipeline/saw_steps.go`, check the `shouldRun` helper (called from `pipeline.go`
+            via `shouldRun(step.Condition, state)`): it uses `len(state.Errors)` as a boolean. This
+            works with `[]result.SAWError` unchanged — no modification needed. Verify by reading
+            the file.
+
+            Check for any other files in `pkg/pipeline/` that reference `state.Errors` or `State.Errors`
+            and update them if needed. Do not touch files outside `pkg/pipeline/`.
+
+            ## 5. Tests to Write
+
+            In `pkg/protocol/types_test.go`:
+            1. `TestScaffoldFileRoundtrip_JSONToYAML` — marshal to JSON, unmarshal as YAML, assert FilePath preserved
+            2. `TestScaffoldFileRoundtrip_YAMLToJSON` — marshal to YAML, unmarshal as JSON, assert FilePath preserved
+            3. `TestScaffoldFileRoundtrip_ZeroValue` — zero ScaffoldFile marshals/unmarshals without error
+            4. `TestScaffoldFileRoundtrip_AllFields` — all fields (Contents, ImportPath, Status, Commit) preserved in roundtrip
+
+            ## 6. Verification Gate
+
+            ```bash
+            cd /Users/dayna.blackwell/code/scout-and-wave-go/.claude/worktrees/saw/protocol-backend-cleanup/wave1-agent-B
+            go build ./pkg/protocol/... ./pkg/pipeline/...
+            go vet ./pkg/protocol/... ./pkg/pipeline/...
+            go test ./pkg/protocol/... ./pkg/pipeline/...
+            ```
+
+            ## 7. Constraints
+
+            - Issue 16 is CRITICAL. The YAML tag fix is a one-line change but it has correctness
+              implications for any existing YAML that was written with `file:` (old tag). The fix
+              is correct because `file_path` is the canonical name everywhere else in the codebase.
+              Any old YAML fixtures using `file:` must be updated.
+            - For `resolveAgentBranch`: it is unexported by design. The five caller files that
+              duplicate the pattern are NOT your owned files — do not edit them. Create the helper
+              and document the caller refactoring as `out_of_scope_deps`.
+            - For Issue 22: `pkg/pipeline/pipeline.go` contains both the type assertion and
+              accumulation logic. The change to `state.Errors` must preserve the pipeline's
+              condition logic (`shouldRun` uses `len(state.Errors)`). The `result.SAWError` type
+              is a struct, not an interface — callers that type-asserted `state.Errors[i]` to
+              specific error types will no longer compile. Check for such call sites in
+              `pkg/pipeline/` before committing.
+            - Do NOT modify files outside your owned list. If you discover that `pkg/pipeline/`
+              has callers in other packages that read `state.Errors` as `[]error` (e.g., via
+              type assertions), report those files in your completion report.
+
+            ## 8. Report
+
+            Commit your changes and write a structured completion report appended to the IMPL doc
+            at `/Users/dayna.blackwell/code/scout-and-wave-go/docs/IMPL/IMPL-protocol-backend-cleanup.yaml`.
+
+            ```yaml type=impl-completion-report
+            status: complete | partial | blocked
+            worktree: .claude/worktrees/saw/protocol-backend-cleanup/wave1-agent-B
+            branch: saw/protocol-backend-cleanup/wave1-agent-B
+            commit: {sha}
+            files_changed:
+              - pkg/protocol/types.go
+              - pkg/pipeline/types.go
+              - pkg/pipeline/pipeline.go
+            files_created:
+              - pkg/protocol/branchname.go
+              - pkg/protocol/types_test.go
+            interface_deviations: []
+            out_of_scope_deps:
+              - "file: pkg/protocol/merge_agents.go, change: replace BranchName+LegacyBranchName dual-lookup with resolveAgentBranch, reason: caller refactoring for Issue 17 — new helper exists but callers not updated this wave"
+              - "file: pkg/protocol/commit_verify.go, change: same as above"
+              - "file: pkg/protocol/worktree.go, change: same as above"
+              - "file: pkg/protocol/cleanup.go, change: same as above"
+              - "file: pkg/protocol/completion_validator.go, change: same as above"
+            tests_added:
+              - TestScaffoldFileRoundtrip_JSONToYAML
+              - TestScaffoldFileRoundtrip_YAMLToJSON
+              - TestScaffoldFileRoundtrip_ZeroValue
+              - TestScaffoldFileRoundtrip_AllFields
+            verification: PASS | FAIL
+            ```
+          files:
+            - pkg/protocol/branchname.go
+            - pkg/protocol/types.go
+            - pkg/protocol/types_test.go
+            - pkg/pipeline/types.go
+            - pkg/pipeline/pipeline.go
+            - pkg/pipeline/saw_steps.go
+quality_gates:
+    level: standard
+    gates:
+        - type: build
+          command: go build ./...
+          required: true
+          repo: scout-and-wave-go
+        - type: lint
+          command: go vet ./...
+          required: true
+          repo: scout-and-wave-go
+        - type: test
+          command: go test ./...
+          required: true
+          repo: scout-and-wave-go
+pre_mortem:
+    overall_risk: low
+    rows:
+        - scenario: |-
+            OpenAI execTool return-type mismatch. The OpenAI `execTool` returns `string`
+            (no isError bool). The shared `ExecuteTool` returns `(string, bool)`. Call sites
+            in openai/client.go that used the single-string return may need restructuring
+            beyond a simple rename.
+          likelihood: medium
+          impact: low
+          mitigation: |-
+            Agent A reads the openai/client.go call sites before replacing. If the isError
+            bool requires non-trivial changes to OpenAI tool content handling, Agent A
+            documents the deviation in the completion report and the Orchestrator handles
+            it at post-merge review.
+        - scenario: |-
+            Issue 17 resolveAgentBranch is additive — the five caller files are not updated
+            this wave. This leaves duplicate code in place until a follow-up pass. The helper
+            is unused after this wave and a Go linter may warn about it.
+          likelihood: high
+          impact: low
+          mitigation: |-
+            Agent B adds a comment to `resolveAgentBranch` noting it is intended for caller
+            refactoring in a follow-up. The `go vet` check will not flag unused unexported
+            functions — only unused variables are flagged. The helper compiles and is
+            available for the follow-up refactor.
+        - scenario: |-
+            Issue 22 pipeline.Errors type change breaks callers in other packages that read
+            `state.Errors` as `[]error` (e.g., via type assertions or error interface calls).
+          likelihood: low
+          impact: medium
+          mitigation: |-
+            Agent B searches for `state.Errors` and `State.Errors` references across all
+            packages before committing. The pipeline package is lightly used (saw_steps.go
+            stubs delegate to the engine layer); most callers read RunData from Run() rather
+            than inspecting State.Errors directly. Any out-of-scope breaks are documented in
+            the completion report.
+        - scenario: |-
+            ScaffoldFile YAML fixture files use old `file:` tag. If test YAML fixtures in
+            `pkg/protocol/` construct ScaffoldFile via YAML with `file:` key, they will fail
+            to unmarshal FilePath after the tag change.
+          likelihood: low
+          impact: medium
+          mitigation: |-
+            Agent B greps for `file:` patterns in test YAML within pkg/protocol/ and updates
+            any found. The go test suite will catch this immediately at verification.
+state: SCOUT_PENDING
+injection_method: hook
