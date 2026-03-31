@@ -316,20 +316,14 @@ func mergeAgentsSingleRepo(ctx context.Context, manifestPath string, waveNum int
 		message := prefix + taskSummary
 
 		// Perform merge — auto-resolve conflicts using ownership table (I1)
-		// Try slug-scoped branch first, fall back to legacy branch name
+		// Resolve active branch (slug-scoped or legacy) before attempting merge.
+		activeBranch, _ := resolveAgentBranch(manifest.FeatureSlug, agent.ID, waveNum, repoDir)
 		status := MergeStatus{
 			Agent:  agent.ID,
-			Branch: branch,
+			Branch: activeBranch,
 		}
 
-		err := git.MergeNoFFWithOwnership(repoDir, branch, message, agent.ID, fileOwners)
-		if err != nil {
-			// Try legacy branch name as fallback for backward compatibility
-			err = git.MergeNoFFWithOwnership(repoDir, legacyBranch, message, agent.ID, fileOwners)
-			if err == nil {
-				status.Branch = legacyBranch
-			}
-		}
+		err := git.MergeNoFFWithOwnership(repoDir, activeBranch, message, agent.ID, fileOwners)
 		if err != nil {
 			// Merge failed - record error and stop
 			status.Success = false
@@ -472,20 +466,14 @@ func mergeAgentsMultiRepo(ctx context.Context, manifestPath string, waveNum int,
 			}
 			message := prefix + taskSummary
 
-			// Perform merge — try slug-scoped branch first, fall back to legacy
+			// Perform merge — resolve active branch (slug-scoped or legacy) before attempting merge.
+			activeBranch, _ := resolveAgentBranch(manifest.FeatureSlug, agent.ID, waveNum, absRepoDir)
 			status := MergeStatus{
 				Agent:  agent.ID,
-				Branch: branch,
+				Branch: activeBranch,
 			}
 
-			err := git.MergeNoFFWithOwnership(absRepoDir, branch, message, agent.ID, fileOwners)
-			if err != nil {
-				// Try legacy branch name as fallback for backward compatibility
-				err = git.MergeNoFFWithOwnership(absRepoDir, legacyBranch, message, agent.ID, fileOwners)
-				if err == nil {
-					status.Branch = legacyBranch
-				}
-			}
+			err := git.MergeNoFFWithOwnership(absRepoDir, activeBranch, message, agent.ID, fileOwners)
 			if err != nil {
 				// Merge failed - record error and stop
 				status.Success = false
