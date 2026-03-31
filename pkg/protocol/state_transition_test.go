@@ -48,7 +48,7 @@ func writeStateTestManifest(t *testing.T, state ProtocolState) string {
 func TestSetImplState_ValidTransition(t *testing.T) {
 	path := writeStateTestManifest(t, StateScoutPending)
 
-	res := SetImplState(path, StateReviewed, SetImplStateOpts{})
+	res := SetImplState(context.Background(), path, StateReviewed, SetImplStateOpts{})
 	if res.IsFatal() {
 		t.Fatalf("SetImplState: unexpected error: %+v", res.Errors)
 	}
@@ -77,7 +77,7 @@ func TestSetImplState_ValidTransition(t *testing.T) {
 func TestSetImplState_InvalidTransition(t *testing.T) {
 	path := writeStateTestManifest(t, StateComplete)
 
-	res := SetImplState(path, StateScoutPending, SetImplStateOpts{})
+	res := SetImplState(context.Background(), path, StateScoutPending, SetImplStateOpts{})
 	if !res.IsFatal() {
 		t.Fatal("SetImplState: expected fatal result for COMPLETE -> SCOUT_PENDING")
 	}
@@ -96,7 +96,7 @@ func TestSetImplState_AllowedTransitionsComplete(t *testing.T) {
 func TestSetImplState_BlockedCanGoBack(t *testing.T) {
 	path := writeStateTestManifest(t, StateBlocked)
 
-	res := SetImplState(path, StateReviewed, SetImplStateOpts{})
+	res := SetImplState(context.Background(), path, StateReviewed, SetImplStateOpts{})
 	if res.IsFatal() {
 		t.Fatalf("SetImplState BLOCKED -> REVIEWED: unexpected error: %+v", res.Errors)
 	}
@@ -112,7 +112,7 @@ func TestSetImplState_BlockedCanGoBack(t *testing.T) {
 func TestSetImplState_ReviewedToComplete(t *testing.T) {
 	path := writeStateTestManifest(t, StateReviewed)
 
-	res := SetImplState(path, StateComplete, SetImplStateOpts{})
+	res := SetImplState(context.Background(), path, StateComplete, SetImplStateOpts{})
 	if res.IsFatal() {
 		t.Fatalf("SetImplState REVIEWED -> COMPLETE: unexpected error: %+v", res.Errors)
 	}

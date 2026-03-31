@@ -31,9 +31,9 @@ type VerifyBuildData struct {
 //
 // Returns Result[VerifyBuildData] with all execution details.
 // Returns FATAL result for system-level failures (e.g., cannot load manifest).
-func VerifyBuild(manifestPath string, repoDir string) result.Result[VerifyBuildData] {
+func VerifyBuild(ctx context.Context, manifestPath string, repoDir string) result.Result[VerifyBuildData] {
 	// Load the manifest
-	manifest, err := Load(context.TODO(), manifestPath)
+	manifest, err := Load(ctx, manifestPath)
 	if err != nil {
 		return result.NewFailure[VerifyBuildData]([]result.SAWError{
 			{
@@ -52,7 +52,7 @@ func VerifyBuild(manifestPath string, repoDir string) result.Result[VerifyBuildD
 
 	// Run test command if present and applicable to this repo
 	if isRealCommand(manifest.TestCommand) && commandApplies(manifest.TestCommand, repoDir) {
-		testPassed, testOutput := runCommand(manifest.TestCommand, repoDir)
+		testPassed, testOutput := runCommand(ctx, manifest.TestCommand, repoDir)
 		data.TestPassed = testPassed
 		data.TestOutput = testOutput
 	} else {
@@ -62,7 +62,7 @@ func VerifyBuild(manifestPath string, repoDir string) result.Result[VerifyBuildD
 
 	// Run lint command if present and applicable to this repo
 	if isRealCommand(manifest.LintCommand) && commandApplies(manifest.LintCommand, repoDir) {
-		lintPassed, lintOutput := runCommand(manifest.LintCommand, repoDir)
+		lintPassed, lintOutput := runCommand(ctx, manifest.LintCommand, repoDir)
 		data.LintPassed = lintPassed
 		data.LintOutput = lintOutput
 	} else {
@@ -123,8 +123,8 @@ func resolveCommandPaths(command, repoDir string) string {
 
 // runCommand executes a shell command and returns (passed, combinedOutput).
 // Follows the exact pattern from gates.go: sh -c, combined stdout+stderr, exit code check.
-func runCommand(command string, repoDir string) (bool, string) {
-	cmd := exec.Command("sh", "-c", resolveCommandPaths(command, repoDir))
+func runCommand(ctx context.Context, command string, repoDir string) (bool, string) {
+	cmd := exec.CommandContext(ctx, "sh", "-c", resolveCommandPaths(command, repoDir))
 	cmd.Dir = repoDir
 
 	// Capture stdout and stderr combined

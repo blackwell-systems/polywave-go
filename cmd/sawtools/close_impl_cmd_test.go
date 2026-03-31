@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"testing"
@@ -51,7 +52,7 @@ func TestCloseImplCmd_SetsCompleteState(t *testing.T) {
 	manifestPath := writeCloseImplTestManifest(t, protocol.StateWaveVerified)
 
 	// Call SetImplState directly (the same code path wired into close-impl)
-	res := protocol.SetImplState(manifestPath, protocol.StateComplete, protocol.SetImplStateOpts{})
+	res := protocol.SetImplState(context.Background(), manifestPath, protocol.StateComplete, protocol.SetImplStateOpts{})
 	if !res.IsSuccess() {
 		t.Fatalf("SetImplState WAVE_VERIFIED -> COMPLETE failed: %v", res.Errors)
 	}
@@ -86,7 +87,7 @@ func TestCloseImplCmd_InvalidState_ContinuesGracefully(t *testing.T) {
 	manifestPath := writeCloseImplTestManifest(t, protocol.StateScoutPending)
 
 	// Transition SCOUT_PENDING -> COMPLETE is not allowed.
-	res := protocol.SetImplState(manifestPath, protocol.StateComplete, protocol.SetImplStateOpts{})
+	res := protocol.SetImplState(context.Background(), manifestPath, protocol.StateComplete, protocol.SetImplStateOpts{})
 	if res.IsSuccess() {
 		t.Fatal("expected SetImplState SCOUT_PENDING -> COMPLETE to fail, but it succeeded")
 	}

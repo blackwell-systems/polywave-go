@@ -1,6 +1,7 @@
 package protocol
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"strings"
@@ -26,7 +27,7 @@ waves: []
 	}
 
 	// Run VerifyBuild
-	res := VerifyBuild(manifestPath, tmpDir)
+	res := VerifyBuild(context.Background(), manifestPath, tmpDir)
 	if !res.IsSuccess() {
 		t.Fatalf("VerifyBuild failed: %v", res.Errors)
 	}
@@ -69,7 +70,7 @@ waves: []
 	}
 
 	// Run VerifyBuild
-	res := VerifyBuild(manifestPath, tmpDir)
+	res := VerifyBuild(context.Background(), manifestPath, tmpDir)
 	if !res.IsSuccess() {
 		t.Fatalf("VerifyBuild failed: %v", res.Errors)
 	}
@@ -112,7 +113,7 @@ waves: []
 	}
 
 	// Run VerifyBuild
-	res := VerifyBuild(manifestPath, tmpDir)
+	res := VerifyBuild(context.Background(), manifestPath, tmpDir)
 	if !res.IsSuccess() {
 		t.Fatalf("VerifyBuild failed: %v", res.Errors)
 	}

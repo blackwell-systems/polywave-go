@@ -56,7 +56,7 @@ func TestPopulateVerificationGates_GoProject(t *testing.T) {
 	repoMap := map[string]string{
 		".": ".",
 	}
-	result, err := PopulateVerificationGates(manifest, commandSets, repoMap)
+	result, err := PopulateVerificationGates(context.Background(), manifest, commandSets, repoMap)
 
 	// Verify no error
 	if err != nil {
@@ -135,7 +135,7 @@ func TestPopulateVerificationGates_Idempotent(t *testing.T) {
 	repoMap := map[string]string{
 		".": ".",
 	}
-	result, err := PopulateVerificationGates(manifest, commandSets, repoMap)
+	result, err := PopulateVerificationGates(context.Background(), manifest, commandSets, repoMap)
 	if err != nil {
 		t.Fatalf("PopulateVerificationGates failed: %v", err)
 	}
@@ -170,7 +170,7 @@ func TestPopulateVerificationGates_MissingH2Data(t *testing.T) {
 	}
 
 	// Execute with empty commandSets map
-	_, err := PopulateVerificationGates(manifest, nil, nil)
+	_, err := PopulateVerificationGates(context.Background(), manifest, nil, nil)
 
 	// Verify error returned
 	if err == nil {

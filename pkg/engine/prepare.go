@@ -483,7 +483,7 @@ func PrepareWave(ctx context.Context, opts PrepareWaveOpts) (*PrepareWaveResult,
 		os.Setenv("SAW_ALLOW_MAIN_COMMIT", "1")
 		defer os.Unsetenv("SAW_ALLOW_MAIN_COMMIT")
 
-		stateRes := protocol.SetImplState(opts.IMPLPath, protocol.StateReviewed, protocol.SetImplStateOpts{
+		stateRes := protocol.SetImplState(ctx, opts.IMPLPath, protocol.StateReviewed, protocol.SetImplStateOpts{
 			Commit:    true,
 			CommitMsg: "chore: advance IMPL state to REVIEWED (pre-wave gate passed)",
 		})
@@ -501,7 +501,7 @@ func PrepareWave(ctx context.Context, opts PrepareWaveOpts) (*PrepareWaveResult,
 	}
 
 	// Step: Create worktrees
-	wtRes := protocol.CreateWorktrees(opts.IMPLPath, opts.WaveNum, projectRoot, opts.Logger)
+	wtRes := protocol.CreateWorktrees(ctx, opts.IMPLPath, opts.WaveNum, projectRoot, opts.Logger)
 	if !wtRes.IsSuccess() {
 		recordStep(res, opts.OnEvent, "create_worktrees", "failed", fmt.Sprintf("%v", wtRes.Errors))
 		return res, fmt.Errorf("failed to create worktrees: %v", wtRes.Errors)

@@ -40,7 +40,7 @@ func saveDaemonFuncs() func() {
 
 // installNoopWorktrees replaces daemonCreateWorktreesFunc with a no-op.
 func installNoopWorktrees() {
-	daemonCreateWorktreesFunc = func(manifestPath string, waveNum int, repoDir string) (*protocol.CreateWorktreesData, error) {
+	daemonCreateWorktreesFunc = func(ctx context.Context, manifestPath string, waveNum int, repoDir string) (*protocol.CreateWorktreesData, error) {
 		return &protocol.CreateWorktreesData{}, nil
 	}
 }

@@ -19,6 +19,7 @@ func newScanStubsCmd() *cobra.Command {
 		Short: "Scan files for stub/TODO patterns (E20)",
 		Args:  cobra.MinimumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			ctx := cmd.Context()
 			res := protocol.ScanStubs(args)
 			if !res.IsSuccess() {
 				return fmt.Errorf("scan-stubs: %w", errors.Join(result.ToErrors(res.Errors)...))
@@ -26,7 +27,7 @@ func newScanStubsCmd() *cobra.Command {
 
 			if appendImpl != "" {
 				waveKey := fmt.Sprintf("wave%d", waveNum)
-				if appendRes := protocol.AppendStubReport(appendImpl, waveKey, res); appendRes.IsFatal() {
+				if appendRes := protocol.AppendStubReport(ctx, appendImpl, waveKey, res); appendRes.IsFatal() {
 					return fmt.Errorf("scan-stubs: %w", errors.Join(result.ToErrors(appendRes.Errors)...))
 				}
 			}

@@ -16,7 +16,7 @@ import (
 // a mapping from relative repo names (as specified in file_ownership) to absolute
 // paths (as used in commandSets keys). Returns a new manifest copy without
 // modifying the input.
-func PopulateVerificationGates(m *IMPLManifest, commandSets map[string]*commands.CommandSet, repoMap map[string]string) (*IMPLManifest, error) {
+func PopulateVerificationGates(ctx context.Context, m *IMPLManifest, commandSets map[string]*commands.CommandSet, repoMap map[string]string) (*IMPLManifest, error) {
 	if len(commandSets) == 0 {
 		return nil, fmt.Errorf("H2 data unavailable - run extract-commands first")
 	}
@@ -373,7 +373,7 @@ func FinalizeIMPL(implPath, repoRoot string) result.Result[FinalizeIMPLData] {
 	data.GatePopulation.Toolchain = strings.Join(toolchainList, ", ")
 
 	// Step 4: Populate verification gates
-	updatedManifest, err := PopulateVerificationGates(manifest, commandSets, repoMap)
+	updatedManifest, err := PopulateVerificationGates(context.TODO(), manifest, commandSets, repoMap)
 	if err != nil {
 		return result.NewFailure[FinalizeIMPLData]([]result.SAWError{
 			{

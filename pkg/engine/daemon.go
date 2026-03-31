@@ -73,8 +73,8 @@ var daemonMarkIMPLCompleteFunc = func(ctx context.Context, opts MarkIMPLComplete
 }
 
 // daemonCreateWorktreesFunc is the function called to create worktrees before a wave.
-var daemonCreateWorktreesFunc = func(manifestPath string, waveNum int, repoDir string) (*protocol.CreateWorktreesData, error) {
-	res := protocol.CreateWorktrees(manifestPath, waveNum, repoDir, nil)
+var daemonCreateWorktreesFunc = func(ctx context.Context, manifestPath string, waveNum int, repoDir string) (*protocol.CreateWorktreesData, error) {
+	res := protocol.CreateWorktrees(ctx, manifestPath, waveNum, repoDir, nil)
 	if !res.IsSuccess() {
 		return nil, fmt.Errorf("create worktrees failed: %v", res.Errors)
 	}
@@ -299,7 +299,7 @@ func daemonProcessItem(
 		state.CurrentWave = waveNum
 
 		// Create worktrees for this wave.
-		if _, wtErr := daemonCreateWorktreesFunc(implPath, waveNum, opts.RepoPath); wtErr != nil {
+		if _, wtErr := daemonCreateWorktreesFunc(ctx, implPath, waveNum, opts.RepoPath); wtErr != nil {
 			return fmt.Errorf("create worktrees wave %d: %w", waveNum, wtErr)
 		}
 

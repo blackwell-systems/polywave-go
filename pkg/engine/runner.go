@@ -460,7 +460,7 @@ func StartWave(ctx context.Context, opts RunWaveOpts, onEvent func(Event)) resul
 		waveNum := wave.Number
 
 		// Pre-create worktrees via protocol (handles multi-repo from file ownership).
-		wtRes := protocol.CreateWorktrees(opts.IMPLPath, waveNum, opts.RepoPath, nil)
+		wtRes := protocol.CreateWorktrees(ctx, opts.IMPLPath, waveNum, opts.RepoPath, nil)
 		if !wtRes.IsSuccess() {
 			errMsg := fmt.Sprintf("%v", wtRes.Errors)
 			return fatalf(result.CodeWaveFailed, fmt.Sprintf("engine.StartWave: CreateWorktrees wave %d: %s", waveNum, errMsg), nil)
@@ -832,7 +832,7 @@ func RunSingleWave(ctx context.Context, opts RunWaveOpts, waveNum int, onEvent f
 	// file_ownership repo: field and creates worktrees in sibling repos when
 	// needed. Feed the resulting paths into the orchestrator so launchAgent
 	// uses the correct worktree for each agent.
-	wtRes := protocol.CreateWorktrees(opts.IMPLPath, waveNum, opts.RepoPath, nil)
+	wtRes := protocol.CreateWorktrees(ctx, opts.IMPLPath, waveNum, opts.RepoPath, nil)
 	if !wtRes.IsSuccess() {
 		return result.NewFailure[WaveData]([]result.SAWError{
 			result.NewFatal(result.CodeWaveFailed, fmt.Sprintf("engine.RunSingleWave: create worktrees: %v", wtRes.Errors)),

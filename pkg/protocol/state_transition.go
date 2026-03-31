@@ -43,8 +43,8 @@ var allowedTransitions = map[ProtocolState][]ProtocolState{
 
 // SetImplState atomically reads the manifest, validates the state transition,
 // writes the new state, and optionally commits to git.
-func SetImplState(manifestPath string, newState ProtocolState, opts SetImplStateOpts) result.Result[*SetImplStateData] {
-	manifest, err := Load(context.TODO(), manifestPath)
+func SetImplState(ctx context.Context, manifestPath string, newState ProtocolState, opts SetImplStateOpts) result.Result[*SetImplStateData] {
+	manifest, err := Load(ctx, manifestPath)
 	if err != nil {
 		return result.NewFailure[*SetImplStateData]([]result.SAWError{{
 			Code:     result.CodeStateTransition,
