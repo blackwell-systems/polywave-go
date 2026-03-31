@@ -1,3 +1,4 @@
+completion_date: "2026-03-30"
 title: SAW System Hardening — Five Protocol Gap Fixes
 feature_slug: saw-system-hardening
 verdict: SUITABLE
@@ -619,6 +620,7 @@ waves:
             - pkg/protocol/gate_discovery.go
             - pkg/protocol/gate_discovery_test.go
             - cmd/sawtools/pre_commit_cmd.go
+      base_commit: 6ee9f8e71ed23a11e7616d0f0cb23b8a834f2862
 quality_gates:
     level: standard
     gates:
@@ -631,6 +633,79 @@ quality_gates:
         - type: test
           command: go test ./...
           required: true
+completion_reports:
+    A:
+        status: complete
+        branch: saw/saw-system-hardening/wave1-agent-A
+        commit: 0ba2456
+        files_changed:
+            - pkg/protocol/full_validate.go
+            - pkg/protocol/full_validate_test.go
+            - cmd/sawtools/validate_cmd.go
+        tests_added:
+            - TestFullValidate_GhostFileTarget
+        verification: PASS
+        notes: RepoPath field added to FullValidateOpts. Step 6b ValidateFileExistence call wired into FullValidate. --repo-dir flag added to validate subcommand with go.mod/go.sum inference. CheckAgentLOCBudget left as commented TODO for Agent B.
+    B:
+        status: complete
+        branch: saw/saw-system-hardening/wave1-agent-B
+        commit: c717f83
+        files_changed:
+            - pkg/protocol/complexity.go
+            - pkg/protocol/complexity_test.go
+        files_created:
+            - pkg/protocol/complexity_test.go
+        tests_added:
+            - TestCheckAgentLOCBudget/repoPath_empty_returns_nil
+            - TestCheckAgentLOCBudget/agent_with_one_file_under_2000_lines
+            - TestCheckAgentLOCBudget/agent_with_two_files_totalling_over_2000_lines
+            - TestCheckAgentLOCBudget/action=new_files_are_skipped
+            - TestCheckAgentLOCBudget/missing_action=modify_file_is_skipped_silently
+        verification: PASS
+        notes: 'CheckAgentLOCBudget implemented and all 5 tests pass. Wiring call in full_validate.go NOT uncommitted: Agent A''s RepoPath field does not yet exist in this worktree. Integration agent must uncomment the CheckAgentLOCBudget call in full_validate.go once Agent A''s RepoPath field is merged.'
+    C:
+        status: complete
+        branch: saw/saw-system-hardening/wave1-agent-C
+        commit: d82eeb0
+        files_changed:
+            - pkg/engine/prepare.go
+        verification: PASS
+        notes: 'Fixed dead-code string mismatch: changed e.Code == "I1_VIOLATION" to e.Code == result.CodeDisjointOwnership. All 6 TestPrepare tests pass. Build and vet clean.'
+    D:
+        status: complete
+        branch: saw/saw-system-hardening/wave1-agent-D
+        commit: 9a58f24
+        files_changed:
+            - pkg/protocol/status_update.go
+            - pkg/protocol/status_update_test.go
+            - cmd/sawtools/update_status.go
+            - pkg/protocol/merge_agents.go
+        files_created:
+            - pkg/protocol/status_update.go
+            - pkg/protocol/status_update_test.go
+        tests_added:
+            - TestUpdateStatus_CompleteRequiresCommit
+            - TestUpdateStatus_CompleteWithCommitInOpts
+            - TestUpdateStatus_CompleteWithExistingCommit
+            - TestUpdateStatus_PartialNoCommitRequired
+        verification: PASS
+        notes: 'UpdateStatusOpts struct added, UpdateStatus signature updated to 5 args. Commit guard blocks status=complete when no commit in opts or existing report. Out-of-scope fix: merge_agents.go two UpdateStatus call sites updated for compile compatibility (added UpdateStatusOpts{} to best-effort calls). All 8 TestUpdateStatus tests pass, full suite clean.'
+    E:
+        status: complete
+        branch: saw/saw-system-hardening/wave1-agent-E
+        commit: d4ec9ee
+        files_changed:
+            - pkg/protocol/gate_discovery.go
+            - pkg/protocol/gate_discovery_test.go
+            - cmd/sawtools/pre_commit_cmd.go
+        tests_added:
+            - TestDiscoverBuildGate/no_docs_IMPL_directory_returns_empty
+            - TestDiscoverBuildGate/active_IMPL_with_build_gate_returns_command
+            - TestDiscoverBuildGate/active_IMPL_without_build_gate_but_saw.config.json_has_build_command_returns_config_value
+            - TestDiscoverBuildGate/IMPL_in_StateComplete_is_skipped_returns_empty
+            - TestDiscoverBuildGate/build_gate_scoped_to_different_repo_is_skipped
+        verification: PASS
+        notes: Added DiscoverBuildGate mirroring DiscoverLintGate with type=build filter and build_command config fallback. Extended sawConfig struct with BuildCommand field. Refactored RunPreCommitCheck to run lint then build via shared runGateCommand helper. All 5 new tests pass; full test suite clean.
 pre_mortem:
     overall_risk: low
     rows:
@@ -693,5 +768,5 @@ critic_report:
     summary: 'All five agent briefs are accurate against the codebase. Agent D''s brief has been patched to include a ''### Existing call sites to update'' section (lines 479-493 of the IMPL doc) that explicitly identifies the 4 existing UpdateStatus call sites in status_update_test.go at lines 32, 97, 156, and 184, provides the exact before/after transformation pattern, and instructs the agent to apply it to all 4 sites before committing. The patch is correct: the actual file confirms all 4 calls use the old 4-argument signature. File ownership across all 5 agents is disjoint (11 distinct files, no overlaps). Agent B''s previously noted warning about the cross-agent full_validate.go touch remains advisory and is mitigated by the build gate. No new issues were introduced by the patch.'
     reviewed_at: "2026-03-31T01:24:10Z"
     issue_count: 0
-state: "REVIEWED"
+state: COMPLETE
 injection_method: hook

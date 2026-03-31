@@ -246,3 +246,5 @@ type BackendConfig struct {
   - IMPL doc: docs/IMPL/complete/IMPL-logging-injection-remaining.yaml
 - **result-type-migration**: completed 2026-03-30, 3 waves, 20 agents
   - IMPL doc: docs/IMPL/complete/IMPL-result-type-migration.yaml
+- **saw-system-hardening**: completed 2026-03-30, 1 waves, 5 agents
+  - IMPL doc: docs/IMPL/complete/IMPL-saw-system-hardening.yaml

@@ -1,0 +1,605 @@
+title: Post-Migration Cleanup
+feature_slug: post-migration-cleanup
+verdict: SUITABLE
+suitability_assessment: |
+    All four items are clearly scoped with disjoint file ownership. Each can be
+    implemented by a separate agent in parallel with no cross-agent dependencies.
+
+    Item 1 (shim removal): The MergeAgentsData.Success compatibility field still
+    has 3 active callers outside merge_agents.go:
+      - cmd/sawtools/merge_agents.go:36 reads result.Success
+      - pkg/engine/finalize.go:541 reads mergeData.Success
+      - pkg/engine/finalize_steps.go:237 reads mergeData.Success
+      - pkg/protocol/program_tier_finalize.go sets mergeResult.Success directly
+    All of these must migrate to result.Result[T].IsSuccess() before the field
+    can be removed from the struct definition. Agent A owns all 5 affected files:
+    merge_agents.go (struct def + remove field), merge_agents.go (CLI cmd),
+    finalize.go, finalize_steps.go, program_tier_finalize.go.
+
+    Item 2 (FullValidate wiring): full_validate.go line 114-115 has a commented-out
+    call to CheckAgentLOCBudget. Trivially safe to uncomment. Confirmed: the TODO
+    comment reads "TODO(saw-system-hardening): wired by Agent B — CheckAgentLOCBudget
+    call goes here" and CheckAgentLOCBudget is defined in complexity.go with the
+    correct signature. Agent B owns only full_validate.go.
+
+    Item 3 (EmitSync audit): All production Emit() call sites are in:
+      - cmd/sawtools/finalize_wave_obs.go (3 calls: wave_merge, wave_failed, gate_executed)
+      - cmd/sawtools/prepare_wave_obs.go (1 call: wave_start)
+      - pkg/engine/finalize.go:698 (impl_complete)
+      - pkg/engine/finalize_steps.go:145,147 (gate_executed, wave_failed per gate)
+      - pkg/engine/finalize_steps.go:238,248 (wave_failed, wave_merge per merge)
+      - pkg/engine/runner.go:67,173 (scout_launch, scout_complete)
+      - pkg/engine/program_tier_loop.go:246,280,318,335 (tier events)
+    High-signal candidates for EmitSync (store failure should be surfaced):
+      - emitWaveMerge in finalize_wave_obs.go: marks successful wave merge
+      - emitWaveStart in prepare_wave_obs.go: marks wave start
+      - impl_complete in finalize.go: final state transition
+    Low-signal (emit-and-forget is acceptable):
+      - per-gate events (gate_executed, gate_failed) in finalize_steps.go: advisory
+      - scout_launch/scout_complete in runner.go: diagnostic only
+      - program tier events in program_tier_loop.go: diagnostic only
+    Agent C owns the 4 obs helper files + finalize.go (for impl_complete migration).
+
+    Item 4 (%v -> %w): All 11 fmt.Errorf("%v") patterns in cmd/sawtools format
+    []result.SAWError slices (not plain error values). Since SAWError implements
+    the error interface (has Error() method and Unwrap()), these can be made
+    errors.Is/As-chain-compatible using errors.Join(res.Errors...) with %w.
+    However, 2 of the 11 matches are in fmt.Fprintf (interview_cmd.go, non-error
+    path) and are out of scope. Of the 9 true error-return cases, 8 are in files
+    Agent D owns; the 9th is in cmd/sawtools/merge_agents.go, which Agent A
+    already owns (Item 1). Agent D owns 8 files total.
+
+    Pre-implementation status check:
+      - Item 1: TODO comment present at line 142 of merge_agents.go, callers confirmed.
+      - Item 2: Commented-out call confirmed at line 114-115 of full_validate.go.
+      - Items 3 & 4: Confirmed via grep; all call sites located.
+
+    Suitability: SUITABLE. 4 agents with fully disjoint file ownership. Item 1
+    requires migrating 4 call sites (surgical but multi-file), others are
+    one-liners or small batched changes. All can run in parallel — Wave 1 only.
+
+    Estimated times:
+    - Scout phase: ~10 min (dependency mapping, interface contracts, IMPL doc)
+    - Agent execution: ~15 min (4 agents x ~8 min avg, parallel)
+    - Merge and verification: ~5 min
+    Total SAW time: ~30 min
+
+    Sequential baseline: ~40 min (4 tasks x 10 min avg sequential time)
+    Time savings: ~10 min (25% faster)
+
+    Recommendation: Clear speedup for item 1 (multi-file migration) and item 4
+    (batched pattern across 8 files). Items 2 and 3 are small enough that the
+    parallelism benefit is modest but the coordination value is high.
+test_command: go test ./...
+lint_command: go vet ./...
+file_ownership:
+    - file: pkg/protocol/merge_agents.go
+      agent: A
+      wave: 1
+      action: modify
+    - file: cmd/sawtools/merge_agents.go
+      agent: A
+      wave: 1
+      action: modify
+    - file: pkg/engine/finalize.go
+      agent: A
+      wave: 1
+      action: modify
+    - file: pkg/engine/finalize_steps.go
+      agent: A
+      wave: 1
+      action: modify
+    - file: pkg/protocol/program_tier_finalize.go
+      agent: A
+      wave: 1
+      action: modify
+    - file: pkg/protocol/full_validate.go
+      agent: B
+      wave: 1
+      action: modify
+    - file: cmd/sawtools/finalize_wave_obs.go
+      agent: C
+      wave: 1
+      action: modify
+    - file: cmd/sawtools/prepare_wave_obs.go
+      agent: C
+      wave: 1
+      action: modify
+    - file: cmd/sawtools/cleanup_stale_cmd.go
+      agent: D
+      wave: 1
+      action: modify
+    - file: cmd/sawtools/verify_commits.go
+      agent: D
+      wave: 1
+      action: modify
+    - file: cmd/sawtools/cleanup.go
+      agent: D
+      wave: 1
+      action: modify
+    - file: cmd/sawtools/scan_stubs.go
+      agent: D
+      wave: 1
+      action: modify
+    - file: cmd/sawtools/verify_build.go
+      agent: D
+      wave: 1
+      action: modify
+    - file: cmd/sawtools/run_gates_cmd.go
+      agent: D
+      wave: 1
+      action: modify
+    - file: cmd/sawtools/create_worktrees.go
+      agent: D
+      wave: 1
+      action: modify
+    - file: cmd/sawtools/validate_integration.go
+      agent: D
+      wave: 1
+      action: modify
+interface_contracts:
+    - name: MergeAgentsData
+      description: |
+        After shim removal (Item 1), the Success field is deleted. All callers
+        must use result.Result[MergeAgentsData].IsSuccess() instead.
+      definition: |
+        // Before (shim present):
+        type MergeAgentsData struct {
+            Wave      int           `json:"wave"`
+            Merges    []MergeStatus `json:"merges"`
+            NextState ProtocolState `json:"next_state,omitempty"`
+            Success   bool          `json:"success"` // REMOVE THIS FIELD
+        }
+
+        // After (shim removed):
+        type MergeAgentsData struct {
+            Wave      int           `json:"wave"`
+            Merges    []MergeStatus `json:"merges"`
+            NextState ProtocolState `json:"next_state,omitempty"`
+        }
+      location: pkg/protocol/merge_agents.go
+    - name: CheckAgentLOCBudget
+      description: |
+        Already implemented in complexity.go. FullValidate calls it after
+        ValidateFileExistence. Signature is stable — just uncomment the wiring call.
+      definition: |
+        func CheckAgentLOCBudget(m *IMPLManifest, repoPath string, maxLOC int) []result.SAWError
+      location: pkg/protocol/complexity.go
+    - name: EmitSync
+      description: |
+        Synchronous emit that returns result.Result[EmitData]. Agent C migrates
+        the 3 high-signal helper functions to use EmitSync and log/return errors.
+      definition: |
+        func (e *Emitter) EmitSync(ctx context.Context, event Event) result.Result[EmitData]
+      location: pkg/observability/emitter.go
+waves:
+    - number: 1
+      agents:
+        - id: A
+          task: |
+            ## Item 1: Remove the MergeAgentsData.Success compatibility shim
+
+            The `Success bool` field in `MergeAgentsData` (pkg/protocol/merge_agents.go
+            line 143) carries a TODO comment: "Remove once all consumers migrated to
+            result.Result[T].IsSuccess()". The result-type-migration IMPL is now complete.
+            Your job is to remove the field and update all 4 remaining callers.
+
+            ### Step 1 — Remove the Success field from the struct definition
+
+            In `pkg/protocol/merge_agents.go`, find `MergeAgentsData` (around line 137).
+            Delete the `Success bool` field and its comment block (lines 141-143).
+
+            Also remove all assignments to `data.Success` and `status.Success` in the
+            same file. There are 4 internal assignments to `data.Success` (lines 288,
+            341, 367, 500, 524) and the `mergeAgentsSingleRepo` and `mergeAgentsMultiRepo`
+            functions both initialize `data` with `Success: true`. Remove all of these.
+            Note: `status.Success` (on `MergeStatus`, not `MergeAgentsData`) is a
+            DIFFERENT field on a different struct — do NOT remove those.
+
+            ### Step 2 — Update cmd/sawtools/merge_agents.go
+
+            In `cmd/sawtools/merge_agents.go`, find the check at line 36:
+            ```go
+            if !result.Success {
+                return fmt.Errorf("merge-agents: one or more merges failed")
+            }
+            ```
+            The `res.IsSuccess()` check immediately above (line 28) already catches
+            merge failures via the Result type. The `result.Success` check is now
+            redundant. Delete it entirely (the `if !result.Success { ... }` block).
+
+            ### Step 3 — Update pkg/engine/finalize.go
+
+            In `pkg/engine/finalize.go`, find the check at line 541:
+            ```go
+            if !mergeData.Success {
+                return result, fmt.Errorf("engine.FinalizeWave: merge-agents encountered conflicts in %s", repoKey)
+            }
+            ```
+            The `mergeRes.IsSuccess()` check immediately above (line 536) already handles
+            this failure path. Remove the redundant `if !mergeData.Success { ... }` block.
+
+            ### Step 4 — Update pkg/engine/finalize_steps.go
+
+            In `pkg/engine/finalize_steps.go`, find the check at line 237:
+            ```go
+            if !mergeData.Success {
+                opts.ObsEmitter.Emit(ctx, observability.NewWaveFailedEvent("", opts.WaveNum, "merge-agents encountered conflicts"))
+                emitStepEvent(onEvent, stepName, "failed", "merge encountered conflicts")
+                return &StepResult{ ... }, ...
+            }
+            ```
+            The `mergeRes.IsSuccess()` pattern is used elsewhere in finalize_steps.go
+            but not immediately before this check. Verify the merge result flow in
+            `StepMergeAgents`. If there is already a `!mergeRes.IsSuccess()` check that
+            covers failure, remove the `!mergeData.Success` block. If there is no
+            prior IsSuccess check, replace `!mergeData.Success` with `!mergeRes.IsSuccess()`
+            and use `mergeRes.Errors` to drive the error detail.
+
+            ### Step 5 — Update pkg/protocol/program_tier_finalize.go
+
+            In `pkg/protocol/program_tier_finalize.go`, find all assignments and reads
+            of `.Success` on `MergeAgentsData` values (lines ~67, 70, 89, 104). Since
+            you removed the field, these must be removed or replaced.
+            - Line 67-70: struct literal `{..., Success: true}` — remove the `Success: true` field.
+            - Line 89: `mergeResult.Success = false` — remove this line. The failure is
+              already indicated by `result.NewFailure` return below it.
+            - Line 104: `mergeResult.Success = true` — remove this line. Success is
+              implied by not returning failure.
+
+            ### Step 6 — Fix %v -> %w error wrapping in cmd/sawtools/merge_agents.go
+
+            In `cmd/sawtools/merge_agents.go`, find the error return:
+
+            Change it to:
+
+            Add `"errors"` to the import block if not already present.
+            This preserves error-chain compatibility (errors.Is/errors.As) for the
+            wrapped `[]result.SAWError` slice, consistent with Item 4 changes
+            Agent D is making in the other cmd/sawtools files.
+
+            ### Verification gate
+            ```
+            go build ./...
+            go vet ./...
+            go test ./pkg/protocol/... ./pkg/engine/... ./cmd/sawtools/...
+            ```
+
+            ### Constraints
+            - Do NOT modify MergeStatus.Success — that is a different struct field tracking
+              per-agent merge outcomes, not the deprecated data-level field.
+            - Do NOT modify any test files that assert on Success — check if any tests
+              reference MergeAgentsData.Success and update those assertions to use
+              IsSuccess() on the result wrapper instead.
+          files:
+            - pkg/protocol/merge_agents.go
+            - cmd/sawtools/merge_agents.go
+            - pkg/engine/finalize.go
+            - pkg/engine/finalize_steps.go
+            - pkg/protocol/program_tier_finalize.go
+        - id: B
+          task: |
+            ## Item 2: Wire CheckAgentLOCBudget into FullValidate
+
+            In `pkg/protocol/full_validate.go`, lines 114-115 contain:
+            ```go
+            // TODO(saw-system-hardening): wired by Agent B — CheckAgentLOCBudget call goes here
+            // errs = append(errs, CheckAgentLOCBudget(m, opts.RepoPath, 2000)...)
+            ```
+
+            Uncomment line 115 and delete the TODO comment line (line 114).
+
+            The result should be:
+            ```go
+            errs = append(errs, CheckAgentLOCBudget(m, opts.RepoPath, 2000)...)
+            ```
+
+            This must appear after the `ValidateFileExistence` call (line 112) and
+            before the `ValidateIMPLDoc` call (line 118), which is exactly where it
+            is now in commented form.
+
+            `CheckAgentLOCBudget` is defined in `pkg/protocol/complexity.go` and
+            already imported (same package). The function signature is:
+            ```go
+            func CheckAgentLOCBudget(m *IMPLManifest, repoPath string, maxLOC int) []result.SAWError
+            ```
+
+            The budget limit of 2000 lines was chosen by the saw-system-hardening
+            IMPL; do not change it.
+
+            ### Verification gate
+            ```
+            go build ./pkg/protocol/...
+            go vet ./pkg/protocol/...
+            go test ./pkg/protocol/...
+            ```
+          files:
+            - pkg/protocol/full_validate.go
+        - id: C
+          task: |
+            ## Item 3: Migrate high-signal Emit calls to EmitSync
+
+            The `Emitter` now has both `Emit` (fire-and-forget) and `EmitSync`
+            (blocking, returns `result.Result[EmitData]`). For high-signal lifecycle
+            events, migrate from `Emit` to `EmitSync` **without changing function
+            signatures** — callers in finalize_wave.go and prepare_wave.go are
+            outside your ownership and must not be touched.
+
+            ### CRITICAL CONSTRAINT: Keep all function signatures void
+
+            Do NOT change any function return types. Keep every helper as:
+            ```go
+            func emitWaveMerge(emitter *observability.Emitter, implSlug string, waveNum int) {
+            ```
+            Use `EmitSync` internally and handle errors with `slog.Warn` inline.
+            This way no caller files need to change.
+
+            ### High-signal call sites to migrate
+
+            **cmd/sawtools/finalize_wave_obs.go** — `emitWaveMerge`:
+            ```go
+            func emitWaveMerge(emitter *observability.Emitter, implSlug string, waveNum int) {
+                if emitter == nil {
+                    return
+                }
+                event := observability.NewWaveMergeEvent(implSlug, waveNum)
+                if res := emitter.EmitSync(context.Background(), event); res.IsFatal() {
+                    slog.Warn("emitWaveMerge: store write failed",
+                        "slug", implSlug, "wave", waveNum,
+                        "error", res.Errors[0].Message)
+                }
+            }
+            ```
+
+            **cmd/sawtools/prepare_wave_obs.go** — `emitWaveStart`:
+            ```go
+            func emitWaveStart(emitter *observability.Emitter, implSlug string, waveNum int) {
+                if emitter == nil {
+                    return
+                }
+                event := observability.NewWaveStartEvent(implSlug, waveNum)
+                if res := emitter.EmitSync(context.Background(), event); res.IsFatal() {
+                    slog.Warn("emitWaveStart: store write failed",
+                        "slug", implSlug, "wave", waveNum,
+                        "error", res.Errors[0].Message)
+                }
+            }
+            ```
+
+            Add `"log/slog"` to the import block of each file if not already present.
+
+            ### Low-signal call sites — leave as Emit (do NOT change)
+            - `emitWaveFailed` in finalize_wave_obs.go
+            - `emitGateResult` in finalize_wave_obs.go
+            - All `opts.ObsEmitter.Emit(...)` calls in pkg/engine/
+
+            ### Verification gate
+            ```
+            go build ./cmd/sawtools/...
+            go vet ./cmd/sawtools/...
+            go test ./cmd/sawtools/...
+            ```
+
+            ### Constraints
+            - Only modify finalize_wave_obs.go and prepare_wave_obs.go.
+            - Do NOT change any function signatures or return types.
+            - Do NOT modify caller files (finalize_wave.go, prepare_wave.go).
+            - Do NOT modify any files in pkg/engine/.
+          files:
+            - cmd/sawtools/finalize_wave_obs.go
+            - cmd/sawtools/prepare_wave_obs.go
+        - id: D
+          task: |
+            ## Item 4: Replace %v with errors.Join + %w for []SAWError error wrapping
+
+            In `cmd/sawtools/`, 9 return statements use `fmt.Errorf("...: %v", res.Errors)`
+            where `res.Errors` is `[]result.SAWError`. Because `SAWError` implements
+            the `error` interface (it has an `Error()` method and `Unwrap()`), these
+            should use `errors.Join` + `%w` to preserve error chain compatibility
+            for `errors.Is`/`errors.As`.
+
+            ### The fix pattern
+
+            Before:
+            ```go
+            return fmt.Errorf("some-cmd: %v", res.Errors)
+            ```
+
+            After:
+            ```go
+            return fmt.Errorf("some-cmd: %w", errors.Join(res.Errors...))
+            ```
+
+            Note: `errors.Join` (Go 1.20+) accepts `...error`. Since `SAWError`
+            implements `error`, `res.Errors...` spreads the slice directly. This
+            project uses Go 1.25 so `errors.Join` is available. Add `"errors"` to
+            the import block if not already present; remove it from the import if
+            it was previously unused.
+
+            ### Files and specific locations
+
+            **cmd/sawtools/verify_commits.go** (line 22):
+            ```go
+            // Before:
+            return fmt.Errorf("verify-commits: %v", res.Errors)
+            // After:
+            return fmt.Errorf("verify-commits: %w", errors.Join(res.Errors...))
+            ```
+
+            **cmd/sawtools/verify_build.go** (line 20):
+            ```go
+            // Before:
+            return fmt.Errorf("verify-build: %v", res.Errors)
+            // After:
+            return fmt.Errorf("verify-build: %w", errors.Join(res.Errors...))
+            ```
+
+            **cmd/sawtools/create_worktrees.go** (line 22):
+            ```go
+            // Before:
+            return fmt.Errorf("create-worktrees: %v", res.Errors)
+            // After:
+            return fmt.Errorf("create-worktrees: %w", errors.Join(res.Errors...))
+            ```
+
+            **cmd/sawtools/scan_stubs.go** (lines 22 and 28 — two occurrences):
+            ```go
+            // Line 22 before:
+            return fmt.Errorf("scan-stubs: %v", res.Errors)
+            // Line 22 after:
+            return fmt.Errorf("scan-stubs: %w", errors.Join(res.Errors...))
+
+            // Line 28 before:
+            return fmt.Errorf("scan-stubs: %v", appendRes.Errors)
+            // Line 28 after:
+            return fmt.Errorf("scan-stubs: %w", errors.Join(appendRes.Errors...))
+            ```
+
+            **cmd/sawtools/run_gates_cmd.go** (lines 32 and 40 — two occurrences):
+            ```go
+            // Line 32 before:
+            return fmt.Errorf("run-gates: %v", res.Errors)
+            // Line 32 after:
+            return fmt.Errorf("run-gates: %w", errors.Join(res.Errors...))
+
+            // Line 40 before:
+            return fmt.Errorf("run-gates: %v", res.Errors)
+            // Line 40 after:
+            return fmt.Errorf("run-gates: %w", errors.Join(res.Errors...))
+            ```
+
+            **cmd/sawtools/cleanup.go** (line 29):
+            ```go
+            // Before:
+            return fmt.Errorf("cleanup-by-slug: %v", res.Errors)
+            // After:
+            return fmt.Errorf("cleanup-by-slug: %w", errors.Join(res.Errors...))
+            ```
+
+            **cmd/sawtools/cleanup_stale_cmd.go** (line 75):
+            ```go
+            // Before:
+            return fmt.Errorf("clean stale worktrees: %v", cleanRes.Errors)
+            // After:
+            return fmt.Errorf("clean stale worktrees: %w", errors.Join(cleanRes.Errors...))
+            ```
+
+            **cmd/sawtools/validate_integration.go** (line 59):
+            ```go
+            // Before:
+            return fmt.Errorf("validate-integration: failed to persist heuristic report: %v", appendRes.Errors)
+            // After:
+            return fmt.Errorf("validate-integration: failed to persist heuristic report: %w", errors.Join(appendRes.Errors...))
+            ```
+
+            ### DO NOT change
+            - The two `fmt.Fprintf` lines in `interview_cmd.go` that use `%v` with
+              `.Errors` — those write warning messages to stderr, not return errors,
+              and are out of scope.
+            - Any `fmt.Errorf` calls that already use `%w` with a single `error` value.
+            - Any `fmt.Errorf` calls that format non-error slices or booleans with `%v`.
+
+            ### Verification gate
+            ```
+            go build ./cmd/sawtools/...
+            go vet ./cmd/sawtools/...
+            go test ./cmd/sawtools/...
+            ```
+
+            ### Note on cmd/sawtools/merge_agents.go
+            The `%v -> %w` fix for `cmd/sawtools/merge_agents.go` is handled by Agent A,
+            who already owns that file (Item 1 shim removal). You do not need to touch
+            that file.
+          files:
+            - cmd/sawtools/cleanup_stale_cmd.go
+            - cmd/sawtools/verify_commits.go
+            - cmd/sawtools/cleanup.go
+            - cmd/sawtools/scan_stubs.go
+            - cmd/sawtools/verify_build.go
+            - cmd/sawtools/run_gates_cmd.go
+            - cmd/sawtools/create_worktrees.go
+            - cmd/sawtools/validate_integration.go
+quality_gates:
+    level: standard
+    gates:
+        - type: build
+          command: go build ./...
+          required: true
+        - type: lint
+          command: go vet ./...
+          required: true
+        - type: test
+          command: go test ./...
+          required: true
+pre_mortem:
+    overall_risk: low
+    rows:
+        - scenario: |
+            Agent A makes multiple changes to cmd/sawtools/merge_agents.go (remove
+            Success check, apply %v -> %w fix) and pkg/engine/finalize_steps.go.
+            These are independent edits to different lines in the same files, but
+            the large scope of Agent A's changes (5 files) increases the chance
+            of a missed edit or accidental omission.
+          likelihood: low
+          impact: low
+          mitigation: |
+            Agent A's task explicitly lists each change location with before/after
+            snippets. After completing, run go build and go vet to confirm no
+            residual references to MergeAgentsData.Success remain.
+        - scenario: |
+            CheckAgentLOCBudget (Item 2) begins enforcing 2000-line budget checks
+            on all existing IMPL docs in tests. If any test calls FullValidate
+            with a real repo path and owns an agent with >2000 lines, it now
+            returns a new error that the test did not expect.
+          likelihood: low
+          impact: low
+          mitigation: |
+            CheckAgentLOCBudget skips validation when repoPath is empty (returns
+            nil immediately). Most unit tests pass an empty string for RepoPath.
+            Integration tests that pass a real repo path could surface new errors,
+            but only for legitimately oversized agents — which is the intended behavior.
+        - scenario: |
+            The errors.Join pattern (Item 4) changes the string representation of
+            errors from "[{code msg sev}]" (Go's default slice formatting) to
+            "msg1\nmsg2" (errors.Join joins with newlines). Any test asserting on
+            the exact error string format could fail.
+          likelihood: low
+          impact: low
+          mitigation: |
+            grep the test files for assertions on the exact error string content
+            of the affected commands. If found, update to use errors.Is or check
+            for a prefix rather than exact match. The semantic content is the same;
+            only the formatting changes.
+        - scenario: |
+            EmitSync migration (Item 3) changes emitWaveMerge and emitWaveStart to
+            return errors. If callers (in prepare_wave.go, finalize_wave.go) do not
+            exist or are named differently than expected, the build breaks.
+          likelihood: low
+          impact: medium
+          mitigation: |
+            Agent C's brief instructs finding the callers first and handling the
+            returned error as a warning log. If the caller file is outside Agent C's
+            ownership, Agent C should only change the function signature and add
+            a TODO comment noting that callers need updating, rather than modifying
+            out-of-scope files. Post-merge, an integration pass can wire the error
+            handling into the callers.
+critic_report:
+    verdict: PASS
+    agent_reviews:
+        A:
+            agent_id: A
+            verdict: PASS
+        B:
+            agent_id: B
+            verdict: PASS
+        C:
+            agent_id: C
+            verdict: PASS
+        D:
+            agent_id: D
+            verdict: PASS
+    summary: 'All 16 files in the ownership table exist on disk. The rewritten Agent C brief resolves the previous side_effect_completeness warning. Agent C now keeps both emitWaveMerge and emitWaveStart as void functions, uses EmitSync internally, and handles errors with inline slog.Warn — no caller files need to change and no out-of-scope files are touched. All symbols referenced in the brief are accurate: EmitSync exists on *Emitter with the correct signature, IsFatal() exists on Result[T], and SAWError.Message is a valid field. Agents A, B, and D are unchanged and remain accurate: MergeAgentsData.Success field and callers are confirmed, CheckAgentLOCBudget signature matches the interface contract, and all 9 fmt.Errorf %v targets exist at the described lines. Zero errors and zero warnings.'
+    reviewed_at: "2026-03-31T01:47:27Z"
+    issue_count: 0
+state: SCOUT_PENDING
+injection_method: hook
