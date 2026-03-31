@@ -24,6 +24,8 @@ sawtools --repo-dir /path/to/repo [command] ...
 | `detect-scaffolds` | Context | Detect shared types that should be scaffold files |
 | `detect-shared-types` | Context | Alias for detect-scaffolds (legacy compatibility) |
 | `detect-cascades` | Context | Detect files affected by type renames |
+| `detect-wiring` | Context | Detect cross-agent function calls and generate wiring declarations |
+| `resolve-impl` | Context | Resolve IMPL doc path from slug, filename, or auto-select |
 | `interview` | Context | Conduct a structured requirements interview |
 | `init` | Setup | Zero-config project initialization |
 | `install-hooks` | Setup | Install SAW git hooks in repository |
@@ -34,8 +36,12 @@ sawtools --repo-dir /path/to/repo [command] ...
 | `prepare-wave` | Execution | Prepare all agents in a wave (atomic batch operation) |
 | `pre-wave-gate` | Execution | Run pre-wave readiness checks on an IMPL manifest |
 | `run-wave` | Execution | Execute full wave lifecycle end-to-end |
+| `auto` | Execution | Scout + confirm + wave: the full SAW flow in one command |
 | `run-scout` | Execution | Automated Scout execution with validation (I3) |
 | `run-critic` | Execution | Run critic agent to review briefs against codebase (E37) |
+| `run-integration-agent` | Execution | Launch integration agent to wire integration gaps (E26) |
+| `run-integration-wave` | Execution | Execute planned integration wave (E27) |
+| `pre-wave-validate` | Execution | Run E16 validation + E35 gap detection before wave execution |
 | `finalize-wave` | Execution | Finalize wave: verify, scan, gate, merge, build, cleanup |
 | `finalize-impl` | Execution | Finalize IMPL doc: validate, populate gates, validate again |
 | `close-impl` | Execution | Close an IMPL: mark complete, archive, update context, clean worktrees |
@@ -60,6 +66,7 @@ sawtools --repo-dir /path/to/repo [command] ...
 | `run-gates` | Quality | Run quality gates from manifest |
 | `run-review` | Quality | Run AI code review on the current diff |
 | `check-conflicts` | Quality | Detect file ownership conflicts |
+| `predict-conflicts` | Quality | Predict merge conflicts using hunk-level diff analysis (E11) |
 | `check-deps` | Quality | Detect dependency conflicts before wave execution |
 | `check-type-collisions` | Quality | Detect type name collisions across agent branches |
 | `validate-scaffolds` | Quality | Validate scaffold files are committed |
@@ -391,6 +398,32 @@ See `detect-scaffolds` for full documentation.
 
 ---
 
+### detect-wiring
+
+Analyze IMPL document agent task prompts for cross-agent function calls and generate wiring declarations. Detects patterns such as "calls FunctionName()", "uses pkg.FunctionName", "delegates to X", and "invokes FunctionName".
+
+```
+sawtools detect-wiring <impl-doc-path> [flags]
+```
+
+**Arguments:**
+- `impl-doc-path` -- path to IMPL document (required)
+
+**Flags:**
+- `--format` -- output format: `yaml` or `json` (default: `yaml`)
+
+**Output:** Wiring declarations (YAML or JSON) under a `wiring` key. The declarations specify which functions must be called from which files to satisfy cross-agent dependencies.
+
+**Exit codes:** 0 if analysis succeeds (even if no wiring declarations found), 1 if IMPL doc is malformed or repo root cannot be determined.
+
+**Example:**
+```bash
+sawtools detect-wiring docs/IMPL/my-feature.yaml
+sawtools detect-wiring docs/IMPL/my-feature.yaml --format json
+```
+
+---
+
 ### detect-cascades
 
 Detect files affected by type renames in a repository. Outputs cascade candidates with severity levels and reasons.
@@ -412,6 +445,38 @@ sawtools detect-cascades <repo-root> --renames <json>
 **Example:**
 ```bash
 sawtools detect-cascades . --renames '[{"old":"AuthToken","new":"SessionToken","scope":"pkg/auth"}]'
+```
+
+---
+
+### resolve-impl
+
+Resolve an `--impl` flag value (slug, filename, or path) to an absolute IMPL doc path. Supports auto-selection when exactly one pending IMPL exists. Used by orchestrators to canonicalize IMPL targeting across all commands.
+
+```
+sawtools resolve-impl [flags]
+```
+
+**Flags:**
+- `--impl` -- IMPL slug, filename (e.g. `IMPL-feature.yaml`), or path (absolute or relative). Omit to auto-select when exactly one pending IMPL exists.
+
+**Resolution order:**
+1. Absolute path → used directly if file exists
+2. Relative path (contains `/`) → resolved from cwd
+3. Filename (`*.yaml` / `*.yml`) → looked up in `<repo-dir>/docs/IMPL/`
+4. Slug → scanned against `feature_slug` in pending IMPLs
+5. Omitted → auto-selected if exactly 1 pending IMPL exists
+
+**Output:** JSON object with `impl_path` (string), `slug` (string), `resolution_method` (`auto-select` | `explicit-slug` | `explicit-filename` | `explicit-path`), and `pending_count` (int).
+
+**Exit codes:** 0 on success, 1 if the IMPL cannot be resolved (file missing, slug not found, or multiple pending IMPLs when auto-selecting).
+
+**Example:**
+```bash
+sawtools resolve-impl
+sawtools resolve-impl --impl my-feature
+sawtools resolve-impl --impl IMPL-my-feature.yaml
+sawtools resolve-impl --impl /abs/path/to/IMPL-feature.yaml
 ```
 
 ---
@@ -554,6 +619,33 @@ sawtools pre-wave-gate docs/IMPL/my-feature.yaml
 
 ---
 
+### pre-wave-validate
+
+Combined pre-wave check that runs E16 validation (invariants, gates, contracts) followed by E35 same-package caller detection. E35 detects when an agent owns a function definition but does not own all call sites in the same package, preventing post-merge build failures caused by signature drift.
+
+```
+sawtools pre-wave-validate <manifest-path> --wave <n> [flags]
+```
+
+**Arguments:**
+- `manifest-path` -- path to YAML IMPL manifest (required)
+
+**Flags:**
+- `--wave` -- wave number to validate (required)
+- `--fix` -- auto-correct fixable E16 validation issues (default: false)
+
+**Output:** JSON object with two top-level keys: `validation` (E16 result with `valid`, `error_count`, `errors`) and `e35_gaps` (with `passed` bool and `gaps` array).
+
+**Exit codes:** 0 if both E16 validation and E35 gap detection pass, 1 if either fails.
+
+**Example:**
+```bash
+sawtools pre-wave-validate docs/IMPL/my-feature.yaml --wave 1
+sawtools pre-wave-validate docs/IMPL/my-feature.yaml --wave 2 --fix
+```
+
+---
+
 ### run-wave
 
 Execute the full wave lifecycle: create worktrees, verify commits, merge agents, verify build, and cleanup.
@@ -640,6 +732,94 @@ sawtools run-critic <impl-path> [flags]
 sawtools run-critic docs/IMPL/IMPL-feature.yaml
 sawtools run-critic docs/IMPL/IMPL-feature.yaml --model claude-opus-4-6
 sawtools run-critic docs/IMPL/IMPL-feature.yaml --skip
+```
+
+---
+
+### run-integration-agent
+
+Automated integration agent workflow (E26). Runs `validate-integration` (or uses an existing integration report from the manifest), and if gaps are found, launches an integration agent to wire the exports. Verifies the build after the agent completes.
+
+```
+sawtools run-integration-agent <manifest-path> --wave <n>
+```
+
+**Arguments:**
+- `manifest-path` -- path to YAML IMPL manifest (required)
+
+**Flags:**
+- `--wave` -- wave number to check for integration gaps (required)
+
+**Output:** JSON object with `success` (bool), `gap_count` (int), `agent_launched` (bool), `build_passed` (bool), and `completion_report`. When no gaps are found, `agent_launched` is false and the command exits 0 immediately.
+
+**Exit codes:** 0 on success or when no gaps are found, 1 if the integration agent fails.
+
+**Example:**
+```bash
+sawtools run-integration-agent docs/IMPL/IMPL-feature.yaml --wave 1
+sawtools run-integration-agent docs/IMPL/IMPL-feature.yaml --wave 2
+```
+
+---
+
+### run-integration-wave
+
+Execute a planned integration wave (E27) where Scout pre-assigned the wiring work in the IMPL doc. Verifies that the target wave has `type: integration`, extracts agent briefs, and outputs metadata for the orchestrator to launch agents.
+
+```
+sawtools run-integration-wave <manifest-path> --wave <n>
+```
+
+**Arguments:**
+- `manifest-path` -- path to YAML IMPL manifest (required)
+
+**Flags:**
+- `--wave` -- wave number to execute (required; must be a wave with `type: integration`)
+
+**Output:** JSON object with `success` (bool), `wave` (int), and `agents` array. Each agent entry contains `id`, `files`, and `brief` path. Agent briefs are written to `.saw-agent-brief.md` in the repo root. Diagnostic messages go to stderr.
+
+**Exit codes:** 0 on success, 1 if the wave is not found or is not type `integration`.
+
+**Example:**
+```bash
+sawtools run-integration-wave docs/IMPL/IMPL-feature.yaml --wave 2
+```
+
+---
+
+### auto
+
+Collapse the three-step scout → review → wave flow into a single command. Runs Scout, displays the IMPL summary, prompts for confirmation, then executes all waves in sequence. The human confirmation checkpoint is preserved by default.
+
+Behavior by Scout verdict:
+- `NOT_SUITABLE` — shows reason and suggests running `/saw interview` first, exits 0
+- `SUITABLE` — shows IMPL summary, prompts for confirmation, then executes waves
+- `SUITABLE_WITH_CAVEATS` — shows IMPL summary and caveats, prompts for confirmation, then executes waves
+
+```
+sawtools auto <feature-description> [flags]
+```
+
+**Arguments:**
+- `feature-description` -- description of the feature to implement (required)
+
+**Flags:**
+- `--saw-repo` -- Scout-and-Wave protocol repo path (default: `$SAW_REPO` or `~/code/scout-and-wave`)
+- `--scout-model` -- Scout model override (e.g., `claude-opus-4-6`)
+- `--wave-model` -- wave model override (reserved for future use)
+- `--timeout` -- Scout timeout in minutes (default: 10)
+- `--skip-confirm` -- skip the confirmation prompt; proceed directly to wave execution (expert/CI use only, default: false)
+
+**Output:** Scout streaming output, IMPL summary, and wave execution progress to stdout. Final line confirms completion and prints the IMPL path.
+
+**Exit codes:** 0 on success or when verdict is `NOT_SUITABLE`, 1 if Scout or any wave fails.
+
+**Example:**
+```bash
+sawtools auto "Add audit logging to auth module"
+sawtools auto "Add caching layer" --repo-dir /path/to/project
+sawtools auto "Refactor storage layer" --skip-confirm
+sawtools auto "Add OAuth support" --scout-model claude-opus-4-6 --timeout 20
 ```
 
 ---
@@ -1372,6 +1552,32 @@ sawtools check-conflicts <manifest-path>
 **Example:**
 ```bash
 sawtools check-conflicts docs/IMPL/my-feature.yaml
+```
+
+---
+
+### predict-conflicts
+
+Predict merge conflicts for a wave using hunk-level diff analysis (E11). For each file touched by multiple agents, runs `git diff --unified=0 mergeBase..branch -- file` per agent, parses `@@` line ranges, and checks whether any two agents' modified line ranges overlap. Non-overlapping edits (e.g., cascade patches where each agent modifies a different function) produce exit 0 — only true line-range overlaps are flagged.
+
+```
+sawtools predict-conflicts <manifest-path> --wave <n>
+```
+
+**Arguments:**
+- `manifest-path` -- path to YAML IMPL manifest (required)
+
+**Flags:**
+- `--wave` -- wave number to check (required)
+
+**Output:** JSON object with `conflicts_detected` (int), `conflicts` (array of conflict predictions per file), and optional `warnings` (array of non-fatal issues encountered during analysis).
+
+**Exit codes:** 0 if no overlapping hunks found (safe to merge), 1 if overlapping hunks are detected (merge conflict likely).
+
+**Example:**
+```bash
+sawtools predict-conflicts docs/IMPL/my-feature.yaml --wave 1
+sawtools predict-conflicts docs/IMPL/my-feature.yaml --wave 2
 ```
 
 ---
