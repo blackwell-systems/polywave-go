@@ -8,13 +8,20 @@ import (
 
 func TestLoadConfig_NoFile(t *testing.T) {
 	dir := t.TempDir()
-	cfg, err := LoadConfig(dir)
-	if err != nil {
-		t.Fatalf("expected no error, got %v", err)
+	r := LoadConfig(dir)
+	if !r.IsSuccess() {
+		t.Fatalf("expected success, got %v errors", r.Errors)
+	}
+	d := r.GetData()
+	if !d.WasDefault {
+		t.Errorf("expected WasDefault=true when no file exists, got false")
 	}
 	def := DefaultConfig()
-	if cfg != def {
-		t.Errorf("expected DefaultConfig %+v, got %+v", def, cfg)
+	if d.Config != def {
+		t.Errorf("expected DefaultConfig %+v, got %+v", def, d.Config)
+	}
+	if d.ConfigPath == "" {
+		t.Errorf("expected ConfigPath to be set")
 	}
 }
 
@@ -31,18 +38,22 @@ func TestLoadConfig_ValidFile(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	cfg, err := LoadConfig(dir)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+	r := LoadConfig(dir)
+	if !r.IsSuccess() {
+		t.Fatalf("unexpected failure: %v", r.Errors)
 	}
-	if cfg.Level != LevelSupervised {
-		t.Errorf("expected level %q, got %q", LevelSupervised, cfg.Level)
+	d := r.GetData()
+	if d.WasDefault {
+		t.Errorf("expected WasDefault=false when config file is present, got true")
 	}
-	if cfg.MaxAutoRetries != 5 {
-		t.Errorf("expected max_auto_retries 5, got %d", cfg.MaxAutoRetries)
+	if d.Config.Level != LevelSupervised {
+		t.Errorf("expected level %q, got %q", LevelSupervised, d.Config.Level)
 	}
-	if cfg.MaxQueueDepth != 20 {
-		t.Errorf("expected max_queue_depth 20, got %d", cfg.MaxQueueDepth)
+	if d.Config.MaxAutoRetries != 5 {
+		t.Errorf("expected max_auto_retries 5, got %d", d.Config.MaxAutoRetries)
+	}
+	if d.Config.MaxQueueDepth != 20 {
+		t.Errorf("expected max_queue_depth 20, got %d", d.Config.MaxQueueDepth)
 	}
 }
 
@@ -52,9 +63,15 @@ func TestLoadConfig_InvalidJSON(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	_, err := LoadConfig(dir)
-	if err == nil {
-		t.Fatal("expected error for invalid JSON, got nil")
+	r := LoadConfig(dir)
+	if !r.IsFatal() {
+		t.Fatal("expected Fatal result for invalid JSON, got non-fatal")
+	}
+	if len(r.Errors) == 0 {
+		t.Fatal("expected at least one error")
+	}
+	if r.Errors[0].Code != "CONFIG_LOAD_FAILED" {
+		t.Errorf("expected error code CONFIG_LOAD_FAILED, got %q", r.Errors[0].Code)
 	}
 }
 
@@ -65,13 +82,17 @@ func TestLoadConfig_MissingAutonomySection(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	cfg, err := LoadConfig(dir)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+	r := LoadConfig(dir)
+	if !r.IsSuccess() {
+		t.Fatalf("unexpected failure: %v", r.Errors)
+	}
+	d := r.GetData()
+	if !d.WasDefault {
+		t.Errorf("expected WasDefault=true when autonomy section missing, got false")
 	}
 	def := DefaultConfig()
-	if cfg != def {
-		t.Errorf("expected DefaultConfig %+v, got %+v", def, cfg)
+	if d.Config != def {
+		t.Errorf("expected DefaultConfig %+v, got %+v", def, d.Config)
 	}
 }
 
@@ -83,15 +104,24 @@ func TestSaveConfig_NewFile(t *testing.T) {
 		MaxQueueDepth:  15,
 	}
 
-	if err := SaveConfig(dir, cfg); err != nil {
-		t.Fatalf("unexpected error: %v", err)
+	sr := SaveConfig(dir, cfg)
+	if !sr.IsSuccess() {
+		t.Fatalf("unexpected failure: %v", sr.Errors)
+	}
+	sd := sr.GetData()
+	if sd.ConfigPath == "" {
+		t.Errorf("expected ConfigPath to be set after successful save")
+	}
+	if sd.BytesWritten == 0 {
+		t.Errorf("expected BytesWritten > 0, got 0")
 	}
 
 	// Load it back and verify.
-	loaded, err := LoadConfig(dir)
-	if err != nil {
-		t.Fatalf("unexpected error loading saved config: %v", err)
+	lr := LoadConfig(dir)
+	if !lr.IsSuccess() {
+		t.Fatalf("unexpected error loading saved config: %v", lr.Errors)
 	}
+	loaded := lr.GetData().Config
 	if loaded != cfg {
 		t.Errorf("expected %+v, got %+v", cfg, loaded)
 	}
@@ -116,15 +146,17 @@ func TestSaveConfig_PreservesOtherKeys(t *testing.T) {
 		MaxAutoRetries: 4,
 		MaxQueueDepth:  8,
 	}
-	if err := SaveConfig(dir, newCfg); err != nil {
-		t.Fatalf("unexpected error: %v", err)
+	sr := SaveConfig(dir, newCfg)
+	if !sr.IsSuccess() {
+		t.Fatalf("unexpected failure: %v", sr.Errors)
 	}
 
 	// Verify autonomy section was updated.
-	loaded, err := LoadConfig(dir)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+	lr := LoadConfig(dir)
+	if !lr.IsSuccess() {
+		t.Fatalf("unexpected error loading saved config: %v", lr.Errors)
 	}
+	loaded := lr.GetData().Config
 	if loaded != newCfg {
 		t.Errorf("expected %+v, got %+v", newCfg, loaded)
 	}
