@@ -66,7 +66,7 @@ func TestRunCriticCmd_SkipFlag(t *testing.T) {
 		t.Fatalf("failed to load IMPL after run-critic --skip: %v", err)
 	}
 
-	result := protocol.GetCriticReview(manifest)
+	result := protocol.GetCriticReview(context.Background(), manifest)
 	if result == nil {
 		t.Fatal("expected critic_report to be written, got nil")
 	}
@@ -107,7 +107,7 @@ func TestRunCriticCmd_NoReviewFlag(t *testing.T) {
 		t.Fatalf("failed to load IMPL after run-critic --no-review: %v", err)
 	}
 
-	result := protocol.GetCriticReview(manifest)
+	result := protocol.GetCriticReview(context.Background(), manifest)
 	if result == nil {
 		t.Fatal("expected critic_report to be written, got nil")
 	}
@@ -200,7 +200,7 @@ func TestSetCriticReviewCmd_ValidInput(t *testing.T) {
 		t.Fatalf("failed to load IMPL after set-critic-review: %v", err)
 	}
 
-	criticResult := protocol.GetCriticReview(manifest)
+	criticResult := protocol.GetCriticReview(context.Background(), manifest)
 	if criticResult == nil {
 		t.Fatal("expected critic_report to be set, got nil")
 	}
@@ -322,7 +322,7 @@ func TestSetCriticReviewCmd_EmptyAgentReviews(t *testing.T) {
 		t.Fatalf("failed to load IMPL: %v", err)
 	}
 
-	result := protocol.GetCriticReview(manifest)
+	result := protocol.GetCriticReview(context.Background(), manifest)
 	if result == nil {
 		t.Fatal("expected critic_report to be set, got nil")
 	}

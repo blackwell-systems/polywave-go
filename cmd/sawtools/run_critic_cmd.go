@@ -75,7 +75,7 @@ Examples:
 					ReviewedAt:   time.Now().UTC().Format(time.RFC3339),
 					IssueCount:   0,
 				}
-				if err := protocol.WriteCriticReview(implPath, skipResult); err != nil {
+				if err := protocol.WriteCriticReview(cmd.Context(), implPath, skipResult); err != nil {
 					return fmt.Errorf("run-critic: failed to write skip result: %w", err)
 				}
 				fmt.Println("Critic Review: PASS (Skipped by operator)")
@@ -107,7 +107,7 @@ Examples:
 			// Reload manifest to print per-agent verdicts (AgentReviews is not in RunCriticResult).
 			updatedManifest, loadErr := protocol.Load(context.TODO(), implPath)
 			if loadErr == nil {
-				review := protocol.GetCriticReview(updatedManifest)
+				review := protocol.GetCriticReview(cmd.Context(), updatedManifest)
 				if review != nil && len(review.AgentReviews) > 0 {
 					fmt.Println("  Per-agent verdicts:")
 					for agentID, agentReview := range review.AgentReviews {
@@ -227,7 +227,7 @@ The --agent-reviews flag accepts a JSON array of AgentCriticReview objects:
 			}
 
 			// Write to IMPL doc.
-			if err := protocol.WriteCriticReview(implPath, result); err != nil {
+			if err := protocol.WriteCriticReview(cmd.Context(), implPath, result); err != nil {
 				return fmt.Errorf("set-critic-review: %w", err)
 			}
 

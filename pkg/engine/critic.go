@@ -111,7 +111,7 @@ func RunCritic(ctx context.Context, opts RunCriticOpts, onChunk func(string)) (R
 		return RunCriticResult{}, fmt.Errorf("run-critic: failed to reload IMPL doc after critic run: %w", err)
 	}
 
-	review := protocol.GetCriticReview(updatedManifest)
+	review := protocol.GetCriticReview(ctx, updatedManifest)
 	if review == nil {
 		return RunCriticResult{}, fmt.Errorf("run-critic: critic agent completed but no critic_report was written to IMPL doc")
 	}

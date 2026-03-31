@@ -77,7 +77,7 @@ func TestWriteCriticReview_WritesAndReads(t *testing.T) {
 	path := buildTestManifestWithCritic(t)
 	result := sampleCriticData()
 
-	if err := WriteCriticReview(path, result); err != nil {
+	if err := WriteCriticReview(context.Background(), path, result); err != nil {
 		t.Fatalf("WriteCriticReview() error = %v", err)
 	}
 
@@ -86,7 +86,7 @@ func TestWriteCriticReview_WritesAndReads(t *testing.T) {
 		t.Fatalf("Load() after WriteCriticReview error = %v", err)
 	}
 
-	got := GetCriticReview(manifest)
+	got := GetCriticReview(context.Background(), manifest)
 	if got == nil {
 		t.Fatal("GetCriticReview() returned nil, want non-nil")
 	}
@@ -150,7 +150,7 @@ func TestWriteCriticReview_WritesAndReads(t *testing.T) {
 // TestWriteCriticReview_FileNotFound verifies that a nonexistent path returns an error.
 func TestWriteCriticReview_FileNotFound(t *testing.T) {
 	result := sampleCriticData()
-	err := WriteCriticReview("/nonexistent/path/to/impl.yaml", result)
+	err := WriteCriticReview(context.Background(), "/nonexistent/path/to/impl.yaml", result)
 	if err == nil {
 		t.Error("WriteCriticReview() with nonexistent path should return error, got nil")
 	}
@@ -160,7 +160,7 @@ func TestWriteCriticReview_FileNotFound(t *testing.T) {
 // critic_report has been written to the manifest.
 func TestGetCriticReview_Nil(t *testing.T) {
 	manifest := &IMPLManifest{}
-	got := GetCriticReview(manifest)
+	got := GetCriticReview(context.Background(), manifest)
 	if got != nil {
 		t.Errorf("GetCriticReview(manifest without critic_report) = %v, want nil", got)
 	}
@@ -286,7 +286,7 @@ func TestWriteCriticReviewResult_Success(t *testing.T) {
 	path := buildTestManifestWithCritic(t)
 	data := sampleCriticData()
 
-	res := WriteCriticReviewResult(path, data)
+	res := WriteCriticReviewResult(context.Background(), path, data)
 	if !res.IsSuccess() {
 		t.Fatalf("WriteCriticReviewResult() Code = %q, want SUCCESS; errors = %v", res.Code, res.Errors)
 	}
@@ -304,7 +304,7 @@ func TestWriteCriticReviewResult_Success(t *testing.T) {
 // returns a FATAL result when the IMPL path does not exist.
 func TestWriteCriticReviewResult_FileNotFound(t *testing.T) {
 	data := sampleCriticData()
-	res := WriteCriticReviewResult("/nonexistent/path/to/impl.yaml", data)
+	res := WriteCriticReviewResult(context.Background(), "/nonexistent/path/to/impl.yaml", data)
 	if !res.IsFatal() {
 		t.Errorf("WriteCriticReviewResult() Code = %q, want FATAL", res.Code)
 	}
@@ -319,7 +319,7 @@ func TestGetCriticReviewResult_Success(t *testing.T) {
 	path := buildTestManifestWithCritic(t)
 	data := sampleCriticData()
 
-	if err := WriteCriticReview(path, data); err != nil {
+	if err := WriteCriticReview(context.Background(), path, data); err != nil {
 		t.Fatalf("WriteCriticReview() error = %v", err)
 	}
 
@@ -328,7 +328,7 @@ func TestGetCriticReviewResult_Success(t *testing.T) {
 		t.Fatalf("Load() error = %v", err)
 	}
 
-	res := GetCriticReviewResult(manifest)
+	res := GetCriticReviewResult(context.Background(), manifest)
 	if !res.IsSuccess() {
 		t.Fatalf("GetCriticReviewResult() Code = %q, want SUCCESS; errors = %v", res.Code, res.Errors)
 	}
@@ -349,7 +349,7 @@ func TestGetCriticReviewResult_Success(t *testing.T) {
 // returns a FATAL result when no critic_report is present in the manifest.
 func TestGetCriticReviewResult_NoCriticReport(t *testing.T) {
 	manifest := &IMPLManifest{}
-	res := GetCriticReviewResult(manifest)
+	res := GetCriticReviewResult(context.Background(), manifest)
 	if !res.IsFatal() {
 		t.Errorf("GetCriticReviewResult() Code = %q, want FATAL", res.Code)
 	}
@@ -362,7 +362,7 @@ func TestGetCriticReviewResult_NoCriticReport(t *testing.T) {
 // for a missing critic report has the expected error code.
 func TestGetCriticReviewResult_ErrorCode(t *testing.T) {
 	manifest := &IMPLManifest{}
-	res := GetCriticReviewResult(manifest)
+	res := GetCriticReviewResult(context.Background(), manifest)
 	if len(res.Errors) == 0 {
 		t.Fatal("expected at least one error")
 	}
@@ -381,7 +381,7 @@ func TestWriteCriticReviewResult_DataRoundtrip(t *testing.T) {
 	path := buildTestManifestWithCritic(t)
 	original := sampleCriticData()
 
-	writeRes := WriteCriticReviewResult(path, original)
+	writeRes := WriteCriticReviewResult(context.Background(), path, original)
 	if !writeRes.IsSuccess() {
 		t.Fatalf("WriteCriticReviewResult() failed: %v", writeRes.Errors)
 	}
@@ -391,7 +391,7 @@ func TestWriteCriticReviewResult_DataRoundtrip(t *testing.T) {
 		t.Fatalf("Load() error = %v", err)
 	}
 
-	readRes := GetCriticReviewResult(manifest)
+	readRes := GetCriticReviewResult(context.Background(), manifest)
 	if !readRes.IsSuccess() {
 		t.Fatalf("GetCriticReviewResult() failed: %v", readRes.Errors)
 	}
@@ -418,7 +418,7 @@ func TestCriticWriteResult_ResultInterface(t *testing.T) {
 	path := buildTestManifestWithCritic(t)
 	data := sampleCriticData()
 
-	res := WriteCriticReviewResult(path, data)
+	res := WriteCriticReviewResult(context.Background(), path, data)
 
 	// SUCCESS result must not report fatal, partial, or errors
 	if res.IsFatal() {

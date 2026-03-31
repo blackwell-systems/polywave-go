@@ -88,15 +88,15 @@ type CriticIssue struct {
 // Returns an error if the manifest cannot be loaded or saved.
 //
 // Deprecated: prefer WriteCriticReviewResult which returns result.Result[CriticData].
-func WriteCriticReview(implPath string, data CriticData) error {
-	manifest, err := Load(context.TODO(), implPath)
+func WriteCriticReview(ctx context.Context, implPath string, data CriticData) error {
+	manifest, err := Load(ctx, implPath)
 	if err != nil {
 		return err
 	}
 
 	manifest.CriticReport = &data
 
-	if saveRes := Save(context.TODO(), manifest, implPath); saveRes.IsFatal() && len(saveRes.Errors) > 0 {
+	if saveRes := Save(ctx, manifest, implPath); saveRes.IsFatal() && len(saveRes.Errors) > 0 {
 		return fmt.Errorf("%s", saveRes.Errors[0].Message)
 	}
 	return nil
@@ -105,8 +105,8 @@ func WriteCriticReview(implPath string, data CriticData) error {
 // WriteCriticReviewResult writes the critic result to the IMPL manifest at implPath.
 // It loads the existing manifest, sets the CriticReport field, and saves.
 // Returns a result.Result[CriticData] indicating success or failure.
-func WriteCriticReviewResult(implPath string, data CriticData) result.Result[CriticData] {
-	manifest, err := Load(context.TODO(), implPath)
+func WriteCriticReviewResult(ctx context.Context, implPath string, data CriticData) result.Result[CriticData] {
+	manifest, err := Load(ctx, implPath)
 	if err != nil {
 		return result.NewFailure[CriticData]([]result.SAWError{
 			{
@@ -119,7 +119,7 @@ func WriteCriticReviewResult(implPath string, data CriticData) result.Result[Cri
 
 	manifest.CriticReport = &data
 
-	if saveRes := Save(context.TODO(), manifest, implPath); saveRes.IsFatal() {
+	if saveRes := Save(ctx, manifest, implPath); saveRes.IsFatal() {
 		return result.NewFailure[CriticData](saveRes.Errors)
 	}
 
@@ -131,7 +131,7 @@ func WriteCriticReviewResult(implPath string, data CriticData) result.Result[Cri
 // the manifest first using protocol.Load.
 //
 // Deprecated: prefer GetCriticReviewResult which returns result.Result[CriticData].
-func GetCriticReview(manifest *IMPLManifest) *CriticData {
+func GetCriticReview(_ context.Context, manifest *IMPLManifest) *CriticData {
 	return manifest.CriticReport
 }
 
@@ -139,7 +139,7 @@ func GetCriticReview(manifest *IMPLManifest) *CriticData {
 // a result.Result[CriticData]. Returns a FATAL result if no review has been
 // written. Does not load from disk; caller must load the manifest first using
 // protocol.Load.
-func GetCriticReviewResult(manifest *IMPLManifest) result.Result[CriticData] {
+func GetCriticReviewResult(_ context.Context, manifest *IMPLManifest) result.Result[CriticData] {
 	if manifest.CriticReport == nil {
 		return result.NewFailure[CriticData]([]result.SAWError{
 			{
