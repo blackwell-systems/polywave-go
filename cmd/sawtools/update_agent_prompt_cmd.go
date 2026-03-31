@@ -24,8 +24,12 @@ func newUpdateAgentPromptCmd() *cobra.Command {
 				return fmt.Errorf("update-agent-prompt: %w", err)
 			}
 
-			if err := protocol.UpdateAgentPrompt(m, agentID, newPrompt); err != nil {
-				return fmt.Errorf("update-agent-prompt: %w", err)
+			if promptRes := protocol.UpdateAgentPrompt(m, agentID, newPrompt); promptRes.IsFatal() {
+				msg := ""
+				if len(promptRes.Errors) > 0 {
+					msg = promptRes.Errors[0].Message
+				}
+				return fmt.Errorf("update-agent-prompt: %s", msg)
 			}
 
 			if err := protocol.Save(m, manifestPath); err != nil {

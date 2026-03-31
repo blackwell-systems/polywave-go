@@ -1,7 +1,7 @@
 package protocol
 
 import (
-	"errors"
+	"os"
 	"strings"
 	"testing"
 )
@@ -28,9 +28,20 @@ func TestUpdateAgentPrompt_Success(t *testing.T) {
 		},
 	}
 
-	err := UpdateAgentPrompt(m, "A", "Updated task A")
-	if err != nil {
-		t.Fatalf("UpdateAgentPrompt returned unexpected error: %v", err)
+	res := UpdateAgentPrompt(m, "A", "Updated task A")
+	if res.IsFatal() {
+		t.Fatalf("UpdateAgentPrompt returned unexpected failure: %v", res.Errors)
+	}
+	if !res.IsSuccess() {
+		t.Fatalf("UpdateAgentPrompt expected success, got code: %s", res.Code)
+	}
+
+	data := res.GetData()
+	if !data.PromptUpdated {
+		t.Error("expected PromptUpdated to be true")
+	}
+	if data.AgentID != "A" {
+		t.Errorf("expected AgentID 'A', got %q", data.AgentID)
 	}
 
 	if m.Waves[0].Agents[0].Task != "Updated task A" {
@@ -43,7 +54,7 @@ func TestUpdateAgentPrompt_Success(t *testing.T) {
 	}
 }
 
-// TestUpdateAgentPrompt_NotFound verifies that UpdateAgentPrompt returns ErrAgentNotFound for unknown agent.
+// TestUpdateAgentPrompt_NotFound verifies that UpdateAgentPrompt returns Fatal for unknown agent.
 func TestUpdateAgentPrompt_NotFound(t *testing.T) {
 	m := &IMPLManifest{
 		Waves: []Wave{
@@ -60,21 +71,25 @@ func TestUpdateAgentPrompt_NotFound(t *testing.T) {
 		},
 	}
 
-	err := UpdateAgentPrompt(m, "Z", "New task")
-	if err == nil {
-		t.Fatal("Expected error for unknown agent ID, got nil")
+	res := UpdateAgentPrompt(m, "Z", "New task")
+	if !res.IsFatal() {
+		t.Fatal("Expected fatal result for unknown agent ID, got non-fatal")
 	}
 
-	if !errors.Is(err, ErrAgentNotFound) {
-		t.Errorf("Expected ErrAgentNotFound, got %v", err)
+	// Verify error message contains agent ID
+	found := false
+	for _, e := range res.Errors {
+		if strings.Contains(e.Message, "Z") {
+			found = true
+			break
+		}
 	}
-
-	if !strings.Contains(err.Error(), "Z") {
-		t.Errorf("Expected error message to contain agent ID 'Z', got %q", err.Error())
+	if !found {
+		t.Errorf("Expected error message to contain agent ID 'Z', got %v", res.Errors)
 	}
 }
 
-// TestUpdateAgentPrompt_EmptyID verifies that UpdateAgentPrompt returns error for empty agent ID.
+// TestUpdateAgentPrompt_EmptyID verifies that UpdateAgentPrompt returns Fatal for empty agent ID.
 func TestUpdateAgentPrompt_EmptyID(t *testing.T) {
 	m := &IMPLManifest{
 		Waves: []Wave{
@@ -91,13 +106,20 @@ func TestUpdateAgentPrompt_EmptyID(t *testing.T) {
 		},
 	}
 
-	err := UpdateAgentPrompt(m, "", "New task")
-	if err == nil {
-		t.Fatal("Expected error for empty agent ID, got nil")
+	res := UpdateAgentPrompt(m, "", "New task")
+	if !res.IsFatal() {
+		t.Fatal("Expected fatal result for empty agent ID, got non-fatal")
 	}
 
-	if !strings.Contains(err.Error(), "empty") {
-		t.Errorf("Expected error message to mention empty ID, got %q", err.Error())
+	found := false
+	for _, e := range res.Errors {
+		if strings.Contains(e.Message, "empty") {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Errorf("Expected error message to mention empty ID, got %v", res.Errors)
 	}
 }
 
@@ -133,9 +155,12 @@ func TestUpdateAgentPrompt_MultiWave(t *testing.T) {
 		},
 	}
 
-	err := UpdateAgentPrompt(m, "C", "Updated task C")
-	if err != nil {
-		t.Fatalf("UpdateAgentPrompt returned unexpected error: %v", err)
+	res := UpdateAgentPrompt(m, "C", "Updated task C")
+	if res.IsFatal() {
+		t.Fatalf("UpdateAgentPrompt returned unexpected failure: %v", res.Errors)
+	}
+	if !res.IsSuccess() {
+		t.Fatalf("UpdateAgentPrompt expected success, got code: %s", res.Code)
 	}
 
 	if m.Waves[1].Agents[1].Task != "Updated task C" {
@@ -172,9 +197,9 @@ func TestUpdateAgentPrompt_PreservesOtherFields(t *testing.T) {
 		},
 	}
 
-	err := UpdateAgentPrompt(m, "A", "Updated task A with new prompt text")
-	if err != nil {
-		t.Fatalf("UpdateAgentPrompt returned unexpected error: %v", err)
+	res := UpdateAgentPrompt(m, "A", "Updated task A with new prompt text")
+	if res.IsFatal() {
+		t.Fatalf("UpdateAgentPrompt returned unexpected failure: %v", res.Errors)
 	}
 
 	agent := m.Waves[0].Agents[0]
@@ -197,6 +222,43 @@ func TestUpdateAgentPrompt_PreservesOtherFields(t *testing.T) {
 
 	if agent.Model != "sonnet-4" {
 		t.Errorf("Expected Model to remain 'sonnet-4', got %q", agent.Model)
+	}
+}
+
+// TestUpdateIMPLStatus_NewStateReflectsCompletion verifies UpdateStatusData.NewState is set correctly.
+func TestUpdateIMPLStatus_NewStateReflectsCompletion(t *testing.T) {
+	content := `# IMPL Doc
+
+### Status
+
+| Wave | Agent | Description | Status |
+|------|-------|-------------|--------|
+| 1 | A | Task A | TO-DO |
+| 1 | B | Task B | TO-DO |
+`
+	tmpDir := t.TempDir()
+	tmpFile := tmpDir + "/impl.yaml"
+	if err := os.WriteFile(tmpFile, []byte(content), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	res := UpdateIMPLStatus(tmpFile, []string{"A"})
+	if res.IsFatal() {
+		t.Fatalf("UpdateIMPLStatus failed: %v", res.Errors)
+	}
+	if !res.IsSuccess() {
+		t.Fatalf("expected success, got code: %s", res.Code)
+	}
+
+	data := res.GetData()
+	if data.NewState != "DONE" {
+		t.Errorf("expected NewState='DONE', got %q", data.NewState)
+	}
+	if len(data.CompletedAgents) != 1 || data.CompletedAgents[0] != "A" {
+		t.Errorf("expected CompletedAgents=['A'], got %v", data.CompletedAgents)
+	}
+	if data.UpdatedPath != tmpFile {
+		t.Errorf("expected UpdatedPath=%q, got %q", tmpFile, data.UpdatedPath)
 	}
 }
 
@@ -294,5 +356,19 @@ func TestUpdateIMPLStatusBytes_EmptyAgentList(t *testing.T) {
 
 	if !strings.Contains(result, "| 1 | B | Task B | TO-DO |") {
 		t.Error("Expected agent B status to remain TO-DO")
+	}
+}
+
+// TestUpdateIMPLStatus_Fatal_BadPath verifies UpdateIMPLStatus returns Fatal for non-existent file.
+func TestUpdateIMPLStatus_Fatal_BadPath(t *testing.T) {
+	res := UpdateIMPLStatus("/nonexistent/path/to/impl.yaml", []string{"A"})
+	if !res.IsFatal() {
+		t.Error("expected fatal result for non-existent file")
+	}
+	if len(res.Errors) == 0 {
+		t.Error("expected errors in fatal result")
+	}
+	if res.Errors[0].Code != "STATUS_UPDATE_FAILED" {
+		t.Errorf("expected error code STATUS_UPDATE_FAILED, got %q", res.Errors[0].Code)
 	}
 }

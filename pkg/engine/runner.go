@@ -906,7 +906,11 @@ func RunVerification(ctx context.Context, opts RunVerificationOpts) error {
 // UpdateIMPLStatus ticks status checkboxes for completed agents.
 // Delegates to pkg/protocol.UpdateIMPLStatus.
 func UpdateIMPLStatus(implDocPath string, completedLetters []string) error {
-	return protocol.UpdateIMPLStatus(implDocPath, completedLetters)
+	res := protocol.UpdateIMPLStatus(implDocPath, completedLetters)
+	if res.IsFatal() && len(res.Errors) > 0 {
+		return fmt.Errorf("%s", res.Errors[0].Message)
+	}
+	return nil
 }
 
 // ValidateInvariants validates disjoint file ownership invariants.

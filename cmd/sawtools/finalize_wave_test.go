@@ -281,9 +281,9 @@ func TestFinalizeWave_E11BlocksOnFileConflict(t *testing.T) {
 		},
 	}
 
-	err := protocol.PredictConflictsFromReports(manifest, 1)
-	if err == nil {
-		t.Error("E11 check: expected conflict error when two agents share a file, got nil")
+	conflictRes := protocol.PredictConflictsFromReports(manifest, 1)
+	if conflictRes.IsSuccess() {
+		t.Error("E11 check: expected conflict result when two agents share a file, got success")
 	}
 }
 
@@ -310,8 +310,8 @@ func TestFinalizeWave_E11NoConflict(t *testing.T) {
 		},
 	}
 
-	if err := protocol.PredictConflictsFromReports(manifest, 1); err != nil {
-		t.Errorf("E11 check: expected nil for disjoint files, got: %v", err)
+	if res := protocol.PredictConflictsFromReports(manifest, 1); !res.IsSuccess() {
+		t.Errorf("E11 check: expected success for disjoint files, got code: %s errors: %v", res.Code, res.Errors)
 	}
 }
 

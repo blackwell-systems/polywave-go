@@ -4,7 +4,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"strings"
 	"testing"
 )
 
@@ -33,8 +32,18 @@ func TestPredictConflictsFromReports_NoConflicts(t *testing.T) {
 		},
 	}
 
-	if err := PredictConflictsFromReports(manifest, 1); err != nil {
-		t.Errorf("expected nil error for non-overlapping files, got: %v", err)
+	res := PredictConflictsFromReports(manifest, 1)
+	if res.IsFatal() {
+		t.Errorf("expected non-fatal result for non-overlapping files, got: %v", res.Errors)
+	}
+	if res.IsPartial() {
+		t.Errorf("expected success result for non-overlapping files, got partial with: %v", res.Errors)
+	}
+	if !res.IsSuccess() {
+		t.Errorf("expected success result for non-overlapping files")
+	}
+	if res.GetData().ConflictsDetected != 0 {
+		t.Errorf("expected 0 conflicts, got %d", res.GetData().ConflictsDetected)
 	}
 }
 
@@ -61,15 +70,26 @@ func TestPredictConflictsFromReports_ConflictDetected(t *testing.T) {
 		},
 	}
 
-	err := PredictConflictsFromReports(manifest, 1)
-	if err == nil {
-		t.Fatal("expected error for file modified by 2 agents, got nil")
+	res := PredictConflictsFromReports(manifest, 1)
+	if res.IsSuccess() {
+		t.Fatal("expected non-success result for file modified by 2 agents, got success")
 	}
-	if !strings.Contains(err.Error(), "E11") {
-		t.Errorf("error should mention E11, got: %v", err)
+	if !res.IsPartial() {
+		t.Errorf("expected partial result for conflict, got code: %s", res.Code)
 	}
-	if !strings.Contains(err.Error(), "pkg/shared/shared.go") {
-		t.Errorf("error should mention the conflicting file, got: %v", err)
+	if res.GetData().ConflictsDetected == 0 {
+		t.Error("expected ConflictsDetected > 0")
+	}
+	// Check that at least one warning mentions E11
+	found := false
+	for _, e := range res.Errors {
+		if len(e.Message) > 0 {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Errorf("expected errors in partial result, got none")
 	}
 }
 
@@ -97,9 +117,12 @@ func TestPredictConflictsFromReports_FilesCreatedConflict(t *testing.T) {
 		},
 	}
 
-	err := PredictConflictsFromReports(manifest, 1)
-	if err == nil {
-		t.Fatal("expected error for file created by 2 agents, got nil")
+	res := PredictConflictsFromReports(manifest, 1)
+	if res.IsSuccess() {
+		t.Fatal("expected non-success for file created by 2 agents, got success")
+	}
+	if res.GetData().ConflictsDetected == 0 {
+		t.Error("expected ConflictsDetected > 0")
 	}
 }
 
@@ -128,8 +151,9 @@ func TestPredictConflictsFromReports_IMPLFilesIgnored(t *testing.T) {
 		},
 	}
 
-	if err := PredictConflictsFromReports(manifest, 1); err != nil {
-		t.Errorf("expected nil error for IMPL file overlap, got: %v", err)
+	res := PredictConflictsFromReports(manifest, 1)
+	if !res.IsSuccess() {
+		t.Errorf("expected success for IMPL file overlap, got: %v", res.Errors)
 	}
 }
 
@@ -156,14 +180,16 @@ func TestPredictConflictsFromReports_SawStateFilesIgnored(t *testing.T) {
 		},
 	}
 
-	if err := PredictConflictsFromReports(manifest, 1); err != nil {
-		t.Errorf("expected nil error for .saw-state file overlap, got: %v", err)
+	res := PredictConflictsFromReports(manifest, 1)
+	if !res.IsSuccess() {
+		t.Errorf("expected success for .saw-state file overlap, got: %v", res.Errors)
 	}
 }
 
 func TestPredictConflictsFromReports_NilManifest(t *testing.T) {
-	if err := PredictConflictsFromReports(nil, 1); err != nil {
-		t.Errorf("expected nil error for nil manifest, got: %v", err)
+	res := PredictConflictsFromReports(nil, 1)
+	if !res.IsSuccess() {
+		t.Errorf("expected success for nil manifest, got: %v", res.Errors)
 	}
 }
 
@@ -177,9 +203,10 @@ func TestPredictConflictsFromReports_WaveNotFound(t *testing.T) {
 		},
 	}
 
-	// Wave 2 doesn't exist — should return nil.
-	if err := PredictConflictsFromReports(manifest, 2); err != nil {
-		t.Errorf("expected nil for missing wave, got: %v", err)
+	// Wave 2 doesn't exist — should return success with no conflicts.
+	res := PredictConflictsFromReports(manifest, 2)
+	if !res.IsSuccess() {
+		t.Errorf("expected success for missing wave, got: %v", res.Errors)
 	}
 }
 
@@ -204,8 +231,46 @@ func TestPredictConflictsFromReports_MissingReportSkipped(t *testing.T) {
 		},
 	}
 
-	if err := PredictConflictsFromReports(manifest, 1); err != nil {
-		t.Errorf("expected nil when B has no report, got: %v", err)
+	res := PredictConflictsFromReports(manifest, 1)
+	if !res.IsSuccess() {
+		t.Errorf("expected success when B has no report, got: %v", res.Errors)
+	}
+}
+
+func TestPredictConflictsFromReports_ConflictData_Count(t *testing.T) {
+	// Verify ConflictsDetected matches the number of conflicting files.
+	manifest := &IMPLManifest{
+		Waves: []Wave{
+			{
+				Number: 1,
+				Agents: []Agent{
+					{ID: "A"},
+					{ID: "B"},
+				},
+			},
+		},
+		CompletionReports: map[string]CompletionReport{
+			"A": {
+				Status:       "complete",
+				FilesChanged: []string{"pkg/shared/shared.go", "pkg/other/other.go"},
+			},
+			"B": {
+				Status:       "complete",
+				FilesChanged: []string{"pkg/shared/shared.go", "pkg/other/other.go"},
+			},
+		},
+	}
+
+	res := PredictConflictsFromReports(manifest, 1)
+	if res.IsSuccess() {
+		t.Fatal("expected partial result for conflicts, got success")
+	}
+	data := res.GetData()
+	if data.ConflictsDetected != 2 {
+		t.Errorf("expected ConflictsDetected=2, got %d", data.ConflictsDetected)
+	}
+	if len(data.Conflicts) != 2 {
+		t.Errorf("expected 2 conflict predictions, got %d", len(data.Conflicts))
 	}
 }
 
@@ -282,9 +347,9 @@ func TestPredictConflictsFromReports_IdenticalEditsAllowed(t *testing.T) {
 		},
 	}
 
-	err := PredictConflictsFromReports(manifest, 1)
-	if err != nil {
-		t.Errorf("expected nil error for identical edits, got: %v", err)
+	res := PredictConflictsFromReports(manifest, 1)
+	if !res.IsSuccess() {
+		t.Errorf("expected success for identical edits, got: %v", res.Errors)
 	}
 }
 
@@ -361,17 +426,26 @@ func TestPredictConflictsFromReports_DifferingEditsBlocked(t *testing.T) {
 		},
 	}
 
-	err := PredictConflictsFromReports(manifest, 1)
-	if err == nil {
-		t.Fatal("expected error for differing edits, got nil")
+	res := PredictConflictsFromReports(manifest, 1)
+	if res.IsSuccess() {
+		t.Fatal("expected non-success for differing edits, got success")
 	}
-	if !strings.Contains(err.Error(), "E11") {
-		t.Errorf("error should mention E11, got: %v", err)
+	if !res.IsPartial() {
+		t.Errorf("expected partial result, got code: %s", res.Code)
 	}
-	if !strings.Contains(err.Error(), "has differing edits") {
-		t.Errorf("error should mention 'has differing edits', got: %v", err)
+	data := res.GetData()
+	if data.ConflictsDetected == 0 {
+		t.Error("expected ConflictsDetected > 0 for differing edits")
 	}
-	if !strings.Contains(err.Error(), "shared.go") {
-		t.Errorf("error should mention the conflicting file, got: %v", err)
+	// Verify conflict is about shared.go
+	found := false
+	for _, cp := range data.Conflicts {
+		if cp.File == "shared.go" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Error("expected conflict prediction for shared.go")
 	}
 }

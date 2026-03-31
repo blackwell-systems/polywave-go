@@ -5,7 +5,20 @@ import (
 	"fmt"
 
 	"github.com/blackwell-systems/scout-and-wave-go/internal/git"
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
 )
+
+// ConflictData holds the result of conflict prediction.
+type ConflictData struct {
+	ConflictsDetected int
+	Conflicts         []ConflictPrediction
+}
+
+// ConflictPrediction describes a single predicted conflict.
+type ConflictPrediction struct {
+	File   string
+	Agents []string
+}
 
 // PredictConflictsFromReports cross-references completion reports for all agents
 // in the given wave to detect files that appear in more than one agent's report.
@@ -14,10 +27,11 @@ import (
 // (files outside .saw-state/ or docs/IMPL/) that appears in multiple agents'
 // files_changed or files_created lists is flagged as a conflict risk.
 //
-// Returns a descriptive error if any conflict is detected, nil otherwise.
-func PredictConflictsFromReports(manifest *IMPLManifest, waveNum int) error {
+// Returns Partial if conflicts are detected (warnings), Success if none.
+// Returns Fatal if an unexpected failure occurs.
+func PredictConflictsFromReports(manifest *IMPLManifest, waveNum int) result.Result[ConflictData] {
 	if manifest == nil {
-		return nil
+		return result.NewSuccess(ConflictData{})
 	}
 
 	// Find the target wave.
@@ -29,7 +43,7 @@ func PredictConflictsFromReports(manifest *IMPLManifest, waveNum int) error {
 		}
 	}
 	if targetWave == nil {
-		return nil
+		return result.NewSuccess(ConflictData{})
 	}
 
 	// Build map: file -> list of agent IDs that reported touching it.
@@ -55,7 +69,8 @@ func PredictConflictsFromReports(manifest *IMPLManifest, waveNum int) error {
 
 	// Collect conflicts: any file touched by 2+ agents.
 	// Enhancement: Compare file content hashes - identical edits are allowed.
-	var conflicts []string
+	var conflictPredictions []ConflictPrediction
+	var conflictMessages []string
 	for file, agents := range fileAgents {
 		if len(agents) > 1 {
 			// Check if all agents produced identical content
@@ -63,16 +78,41 @@ func PredictConflictsFromReports(manifest *IMPLManifest, waveNum int) error {
 				// Identical edits - safe to merge, skip conflict
 				continue
 			}
-			conflicts = append(conflicts, fmt.Sprintf("  %s has differing edits (agents: %v)", file, agents))
+			conflictPredictions = append(conflictPredictions, ConflictPrediction{
+				File:   file,
+				Agents: agents,
+			})
+			conflictMessages = append(conflictMessages, fmt.Sprintf("  %s has differing edits (agents: %v)", file, agents))
 		}
 	}
 
-	if len(conflicts) == 0 {
-		return nil
+	data := ConflictData{
+		ConflictsDetected: len(conflictPredictions),
+		Conflicts:         conflictPredictions,
 	}
 
-	return fmt.Errorf("E11 conflict prediction: %d file(s) appear in multiple agent reports (merge conflict risk):\n%s",
-		len(conflicts), joinLines(conflicts))
+	if len(conflictPredictions) == 0 {
+		return result.NewSuccess(data)
+	}
+
+	// Return Partial with warnings for each conflict (merge conflict risk).
+	warnings := make([]result.SAWError, 0, len(conflictPredictions))
+	for _, cp := range conflictPredictions {
+		warnings = append(warnings, result.NewWarning(
+			"CONFLICT_PREDICT_FAILED",
+			fmt.Sprintf("E11 conflict prediction: %s has differing edits (agents: %v)", cp.File, cp.Agents),
+		))
+	}
+	// Also add a summary warning
+	warnings = append([]result.SAWError{
+		result.NewWarning(
+			"CONFLICT_PREDICT_FAILED",
+			fmt.Sprintf("E11 conflict prediction: %d file(s) appear in multiple agent reports (merge conflict risk):\n%s",
+				len(conflictPredictions), joinLines(conflictMessages)),
+		),
+	}, warnings...)
+
+	return result.NewPartial(data, warnings)
 }
 
 // isIMPLStateFile returns true for IMPL doc paths and .saw-state/ files, which
