@@ -137,9 +137,12 @@ func TestValidateRepoMatch_Match(t *testing.T) {
 		},
 	}
 
-	err := ValidateRepoMatch(m, "/home/user/code/my-project", nil)
-	if err != nil {
-		t.Errorf("expected nil for matching repo, got: %v", err)
+	res := ValidateRepoMatch(m, "/home/user/code/my-project", nil)
+	if res.IsFatal() {
+		t.Errorf("expected success for matching repo, got FATAL: %v", res.Errors)
+	}
+	if !res.IsSuccess() {
+		t.Errorf("expected SUCCESS result, got code: %s", res.Code)
 	}
 }
 
@@ -164,15 +167,30 @@ func TestValidateRepoMatch_Mismatch(t *testing.T) {
 		{Name: "target-repo", Path: targetRepo},
 	}
 
-	err := ValidateRepoMatch(m, worktreeRepo, configRepos)
-	if err == nil {
-		t.Fatal("expected error for mismatched repo, got nil")
+	res := ValidateRepoMatch(m, worktreeRepo, configRepos)
+	if res.IsSuccess() {
+		t.Fatal("expected non-success for mismatched repo")
 	}
-	if !strings.Contains(err.Error(), "target-repo") {
-		t.Errorf("error should mention target repo name, got: %v", err)
+	if len(res.Errors) == 0 {
+		t.Fatal("expected errors for mismatched repo")
 	}
-	if !strings.Contains(err.Error(), "aborting") {
-		t.Errorf("error should contain 'aborting', got: %v", err)
+	found := false
+	for _, e := range res.Errors {
+		if strings.Contains(e.Message, "target-repo") {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("error should mention target repo name, got: %v", res.Errors)
+	}
+	found = false
+	for _, e := range res.Errors {
+		if strings.Contains(e.Message, "aborting") {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("error should contain 'aborting', got: %v", res.Errors)
 	}
 }
 
@@ -186,8 +204,55 @@ func TestValidateRepoMatch_SingleRepoNoField(t *testing.T) {
 
 	// Even though fallback resolves to a different basename, single-repo
 	// with no repo: fields should pass
-	err := ValidateRepoMatch(m, "/any/path/whatever", nil)
-	if err != nil {
-		t.Errorf("expected nil for single-repo no-field case, got: %v", err)
+	res := ValidateRepoMatch(m, "/any/path/whatever", nil)
+	if res.IsFatal() {
+		t.Errorf("expected success for single-repo no-field case, got FATAL: %v", res.Errors)
+	}
+}
+
+// TestValidateRepoMatch_MismatchesPopulated verifies that ValidateRepoData.Mismatches
+// lists all detected mismatches.
+func TestValidateRepoMatch_MismatchesPopulated(t *testing.T) {
+	parent := t.TempDir()
+	targetRepo := filepath.Join(parent, "target-repo")
+	worktreeRepo := filepath.Join(parent, "wrong-repo")
+	if err := os.MkdirAll(targetRepo, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(worktreeRepo, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	m := &IMPLManifest{
+		FileOwnership: []FileOwnership{
+			{File: "pkg/foo/bar.go", Agent: "A", Action: "modify", Repo: "target-repo"},
+		},
+	}
+
+	configRepos := []RepoEntry{
+		{Name: "target-repo", Path: targetRepo},
+	}
+
+	res := ValidateRepoMatch(m, worktreeRepo, configRepos)
+	if res.IsSuccess() {
+		t.Fatal("expected non-success result for mismatch scenario")
+	}
+
+	data := res.GetData()
+	if data.Valid {
+		t.Error("Expected ValidateRepoData.Valid to be false on mismatch")
+	}
+	if len(data.Mismatches) == 0 {
+		t.Error("Expected ValidateRepoData.Mismatches to list mismatches, got empty slice")
+	}
+
+	found := false
+	for _, m := range data.Mismatches {
+		if strings.Contains(m, "target-repo") {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("Mismatches should mention target repo name, got: %v", data.Mismatches)
 	}
 }

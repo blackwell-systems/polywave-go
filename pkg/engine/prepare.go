@@ -198,9 +198,16 @@ func PrepareWave(ctx context.Context, opts PrepareWaveOpts) (*PrepareWaveResult,
 	}
 
 	// Step: Repo match validation
-	if err := protocol.ValidateRepoMatch(doc, projectRoot, repos); err != nil {
-		recordStep(res, opts.OnEvent, "repo_match", "failed", err.Error())
-		return res, fmt.Errorf("repo mismatch: %w", err)
+	repoMatchRes := protocol.ValidateRepoMatch(doc, projectRoot, repos)
+	if repoMatchRes.IsFatal() || (repoMatchRes.IsPartial() && !repoMatchRes.GetData().Valid) {
+		var errMsg string
+		if len(repoMatchRes.Errors) > 0 {
+			errMsg = repoMatchRes.Errors[0].Message
+		} else {
+			errMsg = "repo mismatch"
+		}
+		recordStep(res, opts.OnEvent, "repo_match", "failed", errMsg)
+		return res, fmt.Errorf("repo mismatch: %s", errMsg)
 	}
 	recordStep(res, opts.OnEvent, "repo_match", "success", "repo match validated")
 

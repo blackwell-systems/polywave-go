@@ -37,8 +37,9 @@ func TestCheckFreeze_NoChanges(t *testing.T) {
 
 	// Set freeze timestamp and compute hashes
 	now := time.Now()
-	if err := SetFreezeTimestamp(manifest, now); err != nil {
-		t.Fatalf("SetFreezeTimestamp failed: %v", err)
+	res := SetFreezeTimestamp(manifest, now)
+	if res.IsFatal() {
+		t.Fatalf("SetFreezeTimestamp failed: %v", res.Errors)
 	}
 
 	// Check freeze with no changes
@@ -64,8 +65,9 @@ func TestCheckFreeze_ContractsChanged(t *testing.T) {
 
 	// Set freeze timestamp
 	now := time.Now()
-	if err := SetFreezeTimestamp(manifest, now); err != nil {
-		t.Fatalf("SetFreezeTimestamp failed: %v", err)
+	res := SetFreezeTimestamp(manifest, now)
+	if res.IsFatal() {
+		t.Fatalf("SetFreezeTimestamp failed: %v", res.Errors)
 	}
 
 	// Modify interface contracts
@@ -102,8 +104,9 @@ func TestCheckFreeze_ScaffoldsChanged(t *testing.T) {
 
 	// Set freeze timestamp
 	now := time.Now()
-	if err := SetFreezeTimestamp(manifest, now); err != nil {
-		t.Fatalf("SetFreezeTimestamp failed: %v", err)
+	res := SetFreezeTimestamp(manifest, now)
+	if res.IsFatal() {
+		t.Fatalf("SetFreezeTimestamp failed: %v", res.Errors)
 	}
 
 	// Modify scaffolds
@@ -140,8 +143,9 @@ func TestCheckFreeze_BothChanged(t *testing.T) {
 
 	// Set freeze timestamp
 	now := time.Now()
-	if err := SetFreezeTimestamp(manifest, now); err != nil {
-		t.Fatalf("SetFreezeTimestamp failed: %v", err)
+	res := SetFreezeTimestamp(manifest, now)
+	if res.IsFatal() {
+		t.Fatalf("SetFreezeTimestamp failed: %v", res.Errors)
 	}
 
 	// Modify both contracts and scaffolds
@@ -183,8 +187,9 @@ func TestSetFreezeTimestamp_SetsHash(t *testing.T) {
 	}
 
 	now := time.Now()
-	if err := SetFreezeTimestamp(manifest, now); err != nil {
-		t.Fatalf("SetFreezeTimestamp failed: %v", err)
+	res := SetFreezeTimestamp(manifest, now)
+	if res.IsFatal() {
+		t.Fatalf("SetFreezeTimestamp failed: %v", res.Errors)
 	}
 
 	if manifest.FrozenContractsHash == "" {
@@ -213,8 +218,9 @@ func TestSetFreezeTimestamp_SetsTime(t *testing.T) {
 	}
 
 	now := time.Now()
-	if err := SetFreezeTimestamp(manifest, now); err != nil {
-		t.Fatalf("SetFreezeTimestamp failed: %v", err)
+	res := SetFreezeTimestamp(manifest, now)
+	if res.IsFatal() {
+		t.Fatalf("SetFreezeTimestamp failed: %v", res.Errors)
 	}
 
 	if manifest.WorktreesCreatedAt == nil {
@@ -236,8 +242,9 @@ func TestCheckFreeze_EmptyCollections(t *testing.T) {
 
 	// Set freeze timestamp
 	now := time.Now()
-	if err := SetFreezeTimestamp(manifest, now); err != nil {
-		t.Fatalf("SetFreezeTimestamp failed: %v", err)
+	res := SetFreezeTimestamp(manifest, now)
+	if res.IsFatal() {
+		t.Fatalf("SetFreezeTimestamp failed: %v", res.Errors)
 	}
 
 	// Check freeze - should not error with empty collections
@@ -263,8 +270,9 @@ func TestCheckFreeze_AddingItems(t *testing.T) {
 
 	// Set freeze timestamp
 	now := time.Now()
-	if err := SetFreezeTimestamp(manifest, now); err != nil {
-		t.Fatalf("SetFreezeTimestamp failed: %v", err)
+	res := SetFreezeTimestamp(manifest, now)
+	if res.IsFatal() {
+		t.Fatalf("SetFreezeTimestamp failed: %v", res.Errors)
 	}
 
 	// Add new items (which changes the hash)
@@ -306,5 +314,36 @@ func TestComputeHash_Deterministic(t *testing.T) {
 
 	if hash1 != hash2 {
 		t.Errorf("Hash should be deterministic: got %s and %s", hash1, hash2)
+	}
+}
+
+// TestSetFreezeTimestamp_ContractsFrozenTrue verifies FreezeData.ContractsFrozen is true after freeze.
+func TestSetFreezeTimestamp_ContractsFrozenTrue(t *testing.T) {
+	manifest := &IMPLManifest{
+		InterfaceContracts: []InterfaceContract{
+			{Name: "TestInterface", Definition: "func Test()", Location: "test.go"},
+		},
+		Scaffolds: []ScaffoldFile{
+			{FilePath: "scaffold.go", Contents: "package test"},
+		},
+	}
+
+	now := time.Now()
+	res := SetFreezeTimestamp(manifest, now)
+	if res.IsFatal() {
+		t.Fatalf("SetFreezeTimestamp failed: %v", res.Errors)
+	}
+
+	if !res.IsSuccess() {
+		t.Fatalf("Expected SUCCESS result, got code: %s", res.Code)
+	}
+
+	data := res.GetData()
+	if !data.ContractsFrozen {
+		t.Error("Expected FreezeData.ContractsFrozen to be true after freeze")
+	}
+
+	if data.FreezeTimestamp.IsZero() {
+		t.Error("Expected FreezeData.FreezeTimestamp to be set")
 	}
 }
