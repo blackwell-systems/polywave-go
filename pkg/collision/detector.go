@@ -1,6 +1,7 @@
 package collision
 
 import (
+	"context"
 	"fmt"
 	"go/ast"
 	"go/parser"
@@ -27,7 +28,10 @@ import (
 // 7. Generate resolution suggestions (keep alphabetically first agent)
 //
 // Returns CollisionReport with Valid=false if any collisions detected.
-func DetectCollisions(manifestPath string, waveNum int, repoPath string) (CollisionReport, error) {
+func DetectCollisions(ctx context.Context, manifestPath string, waveNum int, repoPath string) (CollisionReport, error) {
+	if err := ctx.Err(); err != nil {
+		return CollisionReport{}, err
+	}
 	// Load IMPL manifest
 	manifest, err := protocol.Load(manifestPath)
 	if err != nil {
@@ -48,6 +52,9 @@ func DetectCollisions(manifestPath string, waveNum int, repoPath string) (Collis
 
 	// Scan each agent's branch for type declarations
 	for _, agent := range wave.Agents {
+		if err := ctx.Err(); err != nil {
+			return CollisionReport{}, err
+		}
 		branchName := buildBranchName(slug, waveNum, agent.ID)
 
 		// Try slug-scoped branch first, fall back to legacy
@@ -61,13 +68,13 @@ func DetectCollisions(manifestPath string, waveNum int, repoPath string) (Collis
 		}
 
 		// Get changed .go files in this branch
-		changedFiles, err := getChangedGoFiles(repoPath, branchName)
+		changedFiles, err := getChangedGoFiles(ctx, repoPath, branchName)
 		if err != nil {
 			return CollisionReport{}, fmt.Errorf("get changed files for agent %s: %w", agent.ID, err)
 		}
 
 		// Extract type declarations from changed files
-		types, err := extractTypesFromFiles(repoPath, branchName, changedFiles)
+		types, err := extractTypesFromFiles(ctx, repoPath, branchName, changedFiles)
 		if err != nil {
 			return CollisionReport{}, fmt.Errorf("extract types for agent %s: %w", agent.ID, err)
 		}
@@ -103,7 +110,10 @@ func buildBranchName(slug string, waveNum int, agentID string) string {
 
 // getChangedGoFiles returns the list of .go files changed in the given branch
 // relative to main. Uses three-dot diff to find changes introduced by the branch.
-func getChangedGoFiles(repoPath, branchName string) ([]string, error) {
+func getChangedGoFiles(ctx context.Context, repoPath, branchName string) ([]string, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	// Use three-dot range to get changes introduced by branch
 	out, err := igit.Run(repoPath, "diff", "main..."+branchName, "--name-only", "--", "*.go")
 	if err != nil {
@@ -129,10 +139,13 @@ func getChangedGoFiles(repoPath, branchName string) ([]string, error) {
 
 // extractTypesFromFiles checks out each file from the branch and extracts
 // type declarations using AST parsing.
-func extractTypesFromFiles(repoPath, branchName string, files []string) ([]TypeDeclaration, error) {
+func extractTypesFromFiles(ctx context.Context, repoPath, branchName string, files []string) ([]TypeDeclaration, error) {
 	var allTypes []TypeDeclaration
 
 	for _, file := range files {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
 		// Get file content from branch
 		content, err := igit.Run(repoPath, "show", branchName+":"+file)
 		if err != nil {
