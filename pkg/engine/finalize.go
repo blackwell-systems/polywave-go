@@ -111,6 +111,17 @@ func (r *FinalizeWaveResult) firstGateResults() []protocol.GateResult {
 	return nil
 }
 
+// firstRepoOpts returns a copy of opts with RepoPath overridden by the first
+// value in repos. When repos is empty, opts is returned unchanged.
+// This eliminates the copy-pasted firstRepo patterns in FinalizeWave.
+func firstRepoOpts(opts FinalizeWaveOpts, repos map[string]string) FinalizeWaveOpts {
+	for _, rp := range repos {
+		opts.RepoPath = rp
+		break
+	}
+	return opts
+}
+
 // ExtractReposFromManifest extracts unique repos from file_ownership for the
 // given wave. Returns repos map (repo key -> absolute path) and agentRepos map
 // (agent ID -> repo key). For single-repo IMPLs, returns {"." -> defaultRepo}.
@@ -302,24 +313,18 @@ func FinalizeWave(ctx context.Context, opts FinalizeWaveOpts) (*FinalizeWaveResu
 			for repoKey, repoPath := range repos {
 				repoOpts := opts
 				repoOpts.RepoPath = repoPath
-				verifyStepResult, stepErr := StepVerifyCommits(ctx, repoOpts, onEvent)
+				_, verifyData, stepErr := StepVerifyCommits(ctx, repoOpts, onEvent)
 				if stepErr != nil {
 					return result, fmt.Errorf("engine.FinalizeWave: verify-commits failed in %s: %w", repoKey, stepErr)
 				}
-				if verifyData, ok := verifyStepResult.Data.(protocol.VerifyCommitsData); ok {
-					result.VerifyCommits[repoKey] = &verifyData
+				if verifyData != nil {
+					result.VerifyCommits[repoKey] = verifyData
 				}
 			}
 
 			// Step 1.1: VerifyCompletionReports (I4) — manifest-level, run once
 			{
-				firstRepo := opts.RepoPath
-				for _, rp := range repos {
-					firstRepo = rp
-					break
-				}
-				repoOpts := opts
-				repoOpts.RepoPath = firstRepo
+				repoOpts := firstRepoOpts(opts, repos)
 				_, stepErr := StepVerifyCompletionReports(ctx, repoOpts, manifest, onEvent)
 				if stepErr != nil {
 					return result, fmt.Errorf("engine.FinalizeWave: %w", stepErr)
@@ -328,13 +333,7 @@ func FinalizeWave(ctx context.Context, opts FinalizeWaveOpts) (*FinalizeWaveResu
 
 			// Step 1.2: CheckAgentStatuses (E7) — manifest-level, run once
 			{
-				firstRepo := opts.RepoPath
-				for _, rp := range repos {
-					firstRepo = rp
-					break
-				}
-				repoOpts := opts
-				repoOpts.RepoPath = firstRepo
+				repoOpts := firstRepoOpts(opts, repos)
 				_, stepErr := StepCheckAgentStatuses(ctx, repoOpts, manifest, onEvent)
 				if stepErr != nil {
 					return result, fmt.Errorf("engine.FinalizeWave: %w", stepErr)
@@ -343,13 +342,7 @@ func FinalizeWave(ctx context.Context, opts FinalizeWaveOpts) (*FinalizeWaveResu
 
 			// Step 1.3: PredictConflicts (E11) — manifest-level, run once
 			{
-				firstRepo := opts.RepoPath
-				for _, rp := range repos {
-					firstRepo = rp
-					break
-				}
-				repoOpts := opts
-				repoOpts.RepoPath = firstRepo
+				repoOpts := firstRepoOpts(opts, repos)
 				_, stepErr := StepPredictConflicts(ctx, repoOpts, manifest, onEvent)
 				if stepErr != nil {
 					return result, fmt.Errorf("engine.FinalizeWave: %w", stepErr)
@@ -358,19 +351,13 @@ func FinalizeWave(ctx context.Context, opts FinalizeWaveOpts) (*FinalizeWaveResu
 
 			// Step 2: ScanStubs (E20) — manifest-level, run once against first repo
 			{
-				firstRepo := opts.RepoPath
-				for _, rp := range repos {
-					firstRepo = rp
-					break
-				}
-				repoOpts := opts
-				repoOpts.RepoPath = firstRepo
-				stubStepResult, stepErr := StepScanStubs(ctx, repoOpts, manifest, onEvent)
+				repoOpts := firstRepoOpts(opts, repos)
+				_, stubData, stepErr := StepScanStubs(ctx, repoOpts, manifest, onEvent)
 				if stepErr != nil {
 					return result, fmt.Errorf("engine.FinalizeWave: %w", stepErr)
 				}
-				if stubData, ok := stubStepResult.Data.(protocol.ScanStubsData); ok {
-					result.StubReport = &stubData
+				if stubData != nil {
+					result.StubReport = stubData
 				}
 			}
 
@@ -468,13 +455,7 @@ func FinalizeWave(ctx context.Context, opts FinalizeWaveOpts) (*FinalizeWaveResu
 
 			// Step 3.5: ValidateIntegration (E25) — run once (first repo)
 			{
-				firstRepo := opts.RepoPath
-				for _, rp := range repos {
-					firstRepo = rp
-					break
-				}
-				repoOpts := opts
-				repoOpts.RepoPath = firstRepo
+				repoOpts := firstRepoOpts(opts, repos)
 				_, integrationReport, stepErr := StepValidateIntegration(ctx, repoOpts, manifest, onEvent)
 				if stepErr != nil {
 					return result, fmt.Errorf("engine.FinalizeWave: %w", stepErr)
@@ -484,13 +465,7 @@ func FinalizeWave(ctx context.Context, opts FinalizeWaveOpts) (*FinalizeWaveResu
 
 			// Step 3.6: CheckWiringDeclarations (E35, non-fatal) — run once
 			{
-				firstRepo := opts.RepoPath
-				for _, rp := range repos {
-					firstRepo = rp
-					break
-				}
-				repoOpts := opts
-				repoOpts.RepoPath = firstRepo
+				repoOpts := firstRepoOpts(opts, repos)
 				_, wiringData, _ := StepCheckWiringDeclarations(ctx, repoOpts, manifest, onEvent)
 				if wiringData != nil {
 					result.WiringReport = wiringData
@@ -539,13 +514,7 @@ func FinalizeWave(ctx context.Context, opts FinalizeWaveOpts) (*FinalizeWaveResu
 
 			// Step 4.2: PopulateIntegrationChecklist (M5, non-fatal) — run once
 			{
-				firstRepo := opts.RepoPath
-				for _, rp := range repos {
-					firstRepo = rp
-					break
-				}
-				repoOpts := opts
-				repoOpts.RepoPath = firstRepo
+				repoOpts := firstRepoOpts(opts, repos)
 				_, updatedManifest, _ := StepPopulateIntegrationChecklist(ctx, repoOpts, manifest, onEvent)
 				if updatedManifest != nil {
 					manifest = updatedManifest
@@ -562,19 +531,15 @@ func FinalizeWave(ctx context.Context, opts FinalizeWaveOpts) (*FinalizeWaveResu
 	for repoKey, repoPath := range repos {
 		repoOpts := opts
 		repoOpts.RepoPath = repoPath
-		verifyBuildStepResult, stepErr := StepVerifyBuild(ctx, repoOpts, onEvent)
+		verifyBuildStepResult, verifyData, stepErr := StepVerifyBuild(ctx, repoOpts, onEvent)
 		if stepErr != nil {
 			allBuildPassed = false
-			// Extract verify build data for the result
+			if verifyData != nil {
+				result.VerifyBuild[repoKey] = verifyData
+			}
+			// Diagnosis is still in StepResult.Data as map[string]interface{}
 			if verifyBuildStepResult != nil && verifyBuildStepResult.Data != nil {
-				if verifyData, ok := verifyBuildStepResult.Data.(protocol.VerifyBuildData); ok {
-					result.VerifyBuild[repoKey] = &verifyData
-				} else if dataMap, ok := verifyBuildStepResult.Data.(map[string]interface{}); ok {
-					if vb, ok := dataMap["verify_build"]; ok {
-						if verifyData, ok := vb.(protocol.VerifyBuildData); ok {
-							result.VerifyBuild[repoKey] = &verifyData
-						}
-					}
+				if dataMap, ok := verifyBuildStepResult.Data.(map[string]interface{}); ok {
 					if d, ok := dataMap["diagnosis"]; ok {
 						if diagnosis, ok := d.(*builddiag.Diagnosis); ok {
 							result.BuildDiagnosis[repoKey] = diagnosis
@@ -583,20 +548,16 @@ func FinalizeWave(ctx context.Context, opts FinalizeWaveOpts) (*FinalizeWaveResu
 				}
 			}
 			// Still run cleanup before returning
-			cleanupStepResult, _ := StepCleanup(ctx, opts, onEvent)
-			if cleanupStepResult != nil {
-				if cleanupData, ok := cleanupStepResult.Data.(protocol.CleanupData); ok {
-					result.CleanupResult["."] = &cleanupData
-				}
+			_, cleanupData, _ := StepCleanup(ctx, opts, onEvent)
+			if cleanupData != nil {
+				result.CleanupResult["."] = cleanupData
 			}
 			return result, fmt.Errorf("engine.FinalizeWave: verify-build failed in %s: %w", repoKey, stepErr)
 		}
-		if verifyBuildStepResult != nil && verifyBuildStepResult.Data != nil {
-			if verifyData, ok := verifyBuildStepResult.Data.(protocol.VerifyBuildData); ok {
-				result.VerifyBuild[repoKey] = &verifyData
-				if !verifyData.TestPassed || !verifyData.LintPassed {
-					allBuildPassed = false
-				}
+		if verifyData != nil {
+			result.VerifyBuild[repoKey] = verifyData
+			if !verifyData.TestPassed || !verifyData.LintPassed {
+				allBuildPassed = false
 			}
 		}
 	}
@@ -613,11 +574,9 @@ func FinalizeWave(ctx context.Context, opts FinalizeWaveOpts) (*FinalizeWaveResu
 		for _, gate := range postGateResults {
 			if gate.Required && !gate.Passed {
 				// Still run cleanup before returning
-				cleanupStepResult, _ := StepCleanup(ctx, opts, onEvent)
-				if cleanupStepResult != nil {
-					if cleanupData, ok := cleanupStepResult.Data.(protocol.CleanupData); ok {
-						result.CleanupResult["."] = &cleanupData
-					}
+				_, cleanupData, _ := StepCleanup(ctx, opts, onEvent)
+				if cleanupData != nil {
+					result.CleanupResult["."] = cleanupData
 				}
 				return result, fmt.Errorf("engine.FinalizeWave: required post-merge gate %q failed in %s", gate.Type, repoKey)
 			}
@@ -628,11 +587,9 @@ func FinalizeWave(ctx context.Context, opts FinalizeWaveOpts) (*FinalizeWaveResu
 	for repoKey, repoPath := range repos {
 		repoOpts := opts
 		repoOpts.RepoPath = repoPath
-		cleanupStepResult, _ := StepCleanup(ctx, repoOpts, onEvent)
-		if cleanupStepResult != nil {
-			if cleanupData, ok := cleanupStepResult.Data.(protocol.CleanupData); ok {
-				result.CleanupResult[repoKey] = &cleanupData
-			}
+		_, cleanupData, _ := StepCleanup(ctx, repoOpts, onEvent)
+		if cleanupData != nil {
+			result.CleanupResult[repoKey] = cleanupData
 		}
 	}
 
@@ -688,7 +645,7 @@ func MarkIMPLComplete(ctx context.Context, opts MarkIMPLCompleteOpts) result.Res
 
 	// Emit impl_complete after successful archival.
 	// Derive the slug from the IMPL path basename (e.g. IMPL-my-feature.yaml → my-feature).
-	implSlug := implSlugFromPath(opts.IMPLPath)
+	implSlug := protocol.ExtractIMPLSlug(opts.IMPLPath, nil)
 	if opts.ObsEmitter != nil {
 		if r := opts.ObsEmitter.EmitSync(ctx, observability.NewImplCompleteEvent(implSlug)); !r.IsSuccess() {
 			loggerFrom(opts.Logger).Warn("engine: impl_complete emit failed", "slug", implSlug, "err", r.Errors)
@@ -696,22 +653,6 @@ func MarkIMPLComplete(ctx context.Context, opts MarkIMPLCompleteOpts) result.Res
 	}
 
 	return result.NewSuccess(MarkCompleteData{IMPLPath: opts.IMPLPath, Date: date})
-}
-
-// implSlugFromPath derives an IMPL slug from a file path such as
-// /path/to/IMPL-my-feature.yaml → "my-feature".
-func implSlugFromPath(path string) string {
-	base := filepath.Base(path)
-	// Strip extension
-	if ext := filepath.Ext(base); ext != "" {
-		base = base[:len(base)-len(ext)]
-	}
-	// Strip "IMPL-" prefix if present
-	const prefix = "IMPL-"
-	if len(base) > len(prefix) && base[:len(prefix)] == prefix {
-		return base[len(prefix):]
-	}
-	return base
 }
 
 // inferLanguageFromTestCommand infers the programming language from a test command string.

@@ -63,7 +63,7 @@ func RunScout(ctx context.Context, opts RunScoutOpts, onChunk func(string)) resu
 	startTime := time.Now()
 
 	// E40: Emit scout_launch after validation passes.
-	implSlug := implSlugFromIMPLPath(opts.IMPLOutPath)
+	implSlug := protocol.ExtractIMPLSlug(opts.IMPLOutPath, nil)
 	if opts.ObsEmitter != nil {
 		if r := opts.ObsEmitter.EmitSync(ctx, observability.NewScoutLaunchEvent(implSlug)); !r.IsSuccess() {
 			loggerFrom(opts.Logger).Warn("engine: scout_launch emit failed", "slug", implSlug, "err", r.Errors)
@@ -182,21 +182,6 @@ func RunScout(ctx context.Context, opts RunScoutOpts, onChunk func(string)) resu
 		IMPLOutPath: opts.IMPLOutPath,
 		Feature:     opts.Feature,
 	})
-}
-
-// implSlugFromIMPLPath derives an IMPL slug from a file path such as
-// /path/to/IMPL-my-feature.yaml → "my-feature".
-// This is a runner-local helper mirroring implSlugFromPath in finalize.go.
-func implSlugFromIMPLPath(path string) string {
-	base := filepath.Base(path)
-	if ext := filepath.Ext(base); ext != "" {
-		base = base[:len(base)-len(ext)]
-	}
-	const prefix = "IMPL-"
-	if len(base) > len(prefix) && base[:len(prefix)] == prefix {
-		return base[len(prefix):]
-	}
-	return base
 }
 
 // RunPlanner executes a Planner agent to produce a PROGRAM manifest.
@@ -489,15 +474,6 @@ func StartWave(ctx context.Context, opts RunWaveOpts, onEvent func(Event)) resul
 		}
 		orch.SetWorktreePaths(wtPaths)
 
-		if runRes := orch.RunWave(ctx, waveNum); runRes.IsFatal() {
-			errMsg := "RunWave failed"
-			if len(runRes.Errors) > 0 {
-				errMsg = runRes.Errors[0].Message
-			}
-			publish("run_failed", map[string]string{"error": errMsg})
-			return fatalf(result.CodeWaveFailed, fmt.Sprintf("engine.StartWave: RunWave %d: %s", waveNum, errMsg), nil)
-		}
-
 		// E20: Post-wave stub scan (informational only).
 		if doc := orch.IMPLDoc(); doc != nil {
 			manifest, err := protocol.Load(ctx, opts.IMPLPath)
@@ -533,77 +509,9 @@ func StartWave(ctx context.Context, opts RunWaveOpts, onEvent func(Event)) resul
 			}
 		}
 
-		if mergeRes := orch.MergeWave(ctx, waveNum); mergeRes.IsFatal() {
-			errMsg := "MergeWave failed"
-			if len(mergeRes.Errors) > 0 {
-				errMsg = mergeRes.Errors[0].Message
-			}
-			publish("run_failed", map[string]string{"error": errMsg})
-			return fatalf(result.CodeWaveFailed, fmt.Sprintf("engine.StartWave: MergeWave %d: %s", waveNum, errMsg), nil)
+		if err := runOneWave(ctx, orch, opts, waveNum, i, len(waves), publish, nil); err != nil {
+			return fatalf(result.CodeWaveFailed, err.Error(), err)
 		}
-
-		testCmd := orch.IMPLDoc().TestCommand
-		if testCmd != "" {
-			if verRes := orch.RunVerification(ctx, testCmd); verRes.IsFatal() {
-				errMsg := "RunVerification failed"
-				if len(verRes.Errors) > 0 {
-					errMsg = verRes.Errors[0].Message
-				}
-				publish("run_failed", map[string]string{"error": errMsg})
-				return fatalf(result.CodeWaveFailed, fmt.Sprintf("engine.StartWave: RunVerification %d: %s", waveNum, errMsg), nil)
-			}
-		}
-
-		// E25: Post-wave integration validation
-		manifest, loadErr := protocol.Load(ctx, opts.IMPLPath)
-		if loadErr == nil {
-			integrationReport, intErr := protocol.ValidateIntegration(manifest, waveNum, opts.RepoPath)
-			if intErr == nil && integrationReport != nil && !integrationReport.Valid {
-				publish("integration_gaps_detected", map[string]interface{}{
-					"wave":   waveNum,
-					"gaps":   len(integrationReport.Gaps),
-					"report": integrationReport,
-				})
-
-				// E26: Launch integration agent to wire gaps
-				intModel := opts.IntegrationModel
-				if intModel == "" {
-					intModel = opts.WaveModel
-				}
-				intAgentRes := RunIntegrationAgent(ctx, RunIntegrationAgentOpts{
-					IMPLPath: opts.IMPLPath,
-					RepoPath: opts.RepoPath,
-					WaveNum:  waveNum,
-					Report:   integrationReport,
-					Model:    intModel,
-				}, func(ev Event) { onEvent(ev) })
-				if intAgentRes.IsFatal() {
-					// Non-fatal: log but don't abort wave
-					msg := "integration agent failed"
-					if len(intAgentRes.Errors) > 0 {
-						msg = intAgentRes.Errors[0].Message
-					}
-					publish("integration_agent_warning", map[string]string{
-						"error": msg,
-					})
-				}
-			}
-		}
-
-		if statusRes := orch.UpdateIMPLStatus(ctx, waveNum); statusRes.IsFatal() {
-			// Non-fatal: log but don't abort.
-			errMsg := "UpdateIMPLStatus failed"
-			if len(statusRes.Errors) > 0 {
-				errMsg = statusRes.Errors[0].Message
-			}
-			publish("update_status_failed", map[string]string{
-				"wave":  opts.Slug,
-				"error": errMsg,
-			})
-		}
-
-		// Between waves, pause at gate (no-op in engine layer — callers handle gating).
-		_ = i
 	}
 
 	// E18: Update project memory after final wave completes.
@@ -1421,6 +1329,127 @@ func buildProgramContractsSection(manifest *protocol.PROGRAMManifest, repoPath s
 	return sb.String()
 }
 
+// runOneWave is the per-wave body shared by StartWave and startWaveWithGate.
+// publish forwards event notifications. waveIdx is the 0-based index into the
+// waves slice; totalWaves is len(waves). gateCh is nil when called from StartWave.
+// When non-nil, after each wave except the last (waveIdx < totalWaves-1),
+// runOneWave waits for a bool from gateCh: true = proceed, false = abort.
+func runOneWave(
+	ctx context.Context,
+	orch *orchestrator.Orchestrator,
+	opts RunWaveOpts,
+	waveNum int,
+	waveIdx int,
+	totalWaves int,
+	publish func(event string, data interface{}),
+	gateCh <-chan bool,
+) error {
+	if runRes := orch.RunWave(ctx, waveNum); runRes.IsFatal() {
+		errMsg := "RunWave failed"
+		if len(runRes.Errors) > 0 {
+			errMsg = runRes.Errors[0].Message
+		}
+		return fmt.Errorf("engine.runOneWave: RunWave %d: %s", waveNum, errMsg)
+	}
+
+	if mergeRes := orch.MergeWave(ctx, waveNum); mergeRes.IsFatal() {
+		errMsg := "MergeWave failed"
+		if len(mergeRes.Errors) > 0 {
+			errMsg = mergeRes.Errors[0].Message
+		}
+		return fmt.Errorf("engine.runOneWave: MergeWave %d: %s", waveNum, errMsg)
+	}
+
+	testCmd := orch.IMPLDoc().TestCommand
+	if testCmd != "" {
+		if verRes := orch.RunVerification(ctx, testCmd); verRes.IsFatal() {
+			errMsg := "RunVerification failed"
+			if len(verRes.Errors) > 0 {
+				errMsg = verRes.Errors[0].Message
+			}
+			return fmt.Errorf("engine.runOneWave: RunVerification %d: %s", waveNum, errMsg)
+		}
+	}
+
+	// E25: Post-wave integration validation
+	manifest, loadErr := protocol.Load(ctx, opts.IMPLPath)
+	if loadErr == nil {
+		integrationReport, intErr := protocol.ValidateIntegration(manifest, waveNum, opts.RepoPath)
+		if intErr == nil && integrationReport != nil && !integrationReport.Valid {
+			publish("integration_gaps_detected", map[string]interface{}{
+				"wave":   waveNum,
+				"gaps":   len(integrationReport.Gaps),
+				"report": integrationReport,
+			})
+
+			// E26: Launch integration agent to wire gaps
+			intModel := opts.IntegrationModel
+			if intModel == "" {
+				intModel = opts.WaveModel
+			}
+			intAgentRes := RunIntegrationAgent(ctx, RunIntegrationAgentOpts{
+				IMPLPath: opts.IMPLPath,
+				RepoPath: opts.RepoPath,
+				WaveNum:  waveNum,
+				Report:   integrationReport,
+				Model:    intModel,
+			}, func(ev Event) {
+				publish(ev.Event, ev.Data)
+			})
+			if intAgentRes.IsFatal() {
+				// Non-fatal: log but don't abort wave
+				msg := "integration agent failed"
+				if len(intAgentRes.Errors) > 0 {
+					msg = intAgentRes.Errors[0].Message
+				}
+				publish("integration_agent_warning", map[string]string{
+					"error": msg,
+				})
+			}
+		}
+	}
+
+	if statusRes := orch.UpdateIMPLStatus(ctx, waveNum); statusRes.IsFatal() {
+		// Non-fatal: log but don't abort.
+		errMsg := "UpdateIMPLStatus failed"
+		if len(statusRes.Errors) > 0 {
+			errMsg = statusRes.Errors[0].Message
+		}
+		publish("update_status_failed", map[string]string{
+			"wave":  opts.Slug,
+			"error": errMsg,
+		})
+	}
+
+	// Gate wait: pause between waves when gateCh is provided.
+	if waveIdx < totalWaves-1 && gateCh != nil {
+		publish("wave_gate_pending", map[string]interface{}{
+			"wave":      waveNum,
+			"next_wave": waveNum + 1,
+			"slug":      opts.Slug,
+		})
+		select {
+		case ok := <-gateCh:
+			if !ok {
+				publish("run_failed", map[string]string{"error": "gate cancelled"})
+				return fmt.Errorf("startWaveWithGate: gate cancelled at wave %d", waveNum)
+			}
+			publish("wave_gate_resolved", map[string]interface{}{
+				"wave":   waveNum,
+				"action": "proceed",
+				"slug":   opts.Slug,
+			})
+		case <-time.After(30 * time.Minute):
+			publish("run_failed", map[string]string{"error": "gate timed out"})
+			return fmt.Errorf("startWaveWithGate: gate timed out at wave %d", waveNum)
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+	}
+
+	return nil
+}
+
 // startWaveWithGate runs waves with an inter-wave gate. gateCh receives true to
 // proceed or false to abort. Used internally to support wave-by-wave execution
 // with external approval gates.
@@ -1446,91 +1475,8 @@ func startWaveWithGate(ctx context.Context, opts RunWaveOpts, onEvent func(Event
 
 	for i, wave := range waves {
 		waveNum := wave.Number
-
-		if runRes := orch.RunWave(ctx, waveNum); runRes.IsFatal() {
-			if len(runRes.Errors) > 0 {
-				return fmt.Errorf("%s", runRes.Errors[0].Message)
-			}
-			return fmt.Errorf("RunWave failed")
-		}
-		if mergeRes := orch.MergeWave(ctx, waveNum); mergeRes.IsFatal() {
-			if len(mergeRes.Errors) > 0 {
-				return fmt.Errorf("%s", mergeRes.Errors[0].Message)
-			}
-			return fmt.Errorf("MergeWave failed")
-		}
-		testCmd := orch.IMPLDoc().TestCommand
-		if testCmd != "" {
-			if verRes := orch.RunVerification(ctx, testCmd); verRes.IsFatal() {
-				if len(verRes.Errors) > 0 {
-					return fmt.Errorf("%s", verRes.Errors[0].Message)
-				}
-				return fmt.Errorf("RunVerification failed")
-			}
-		}
-
-		// E25: Post-wave integration validation
-		manifest, loadErr := protocol.Load(ctx, opts.IMPLPath)
-		if loadErr == nil {
-			integrationReport, intErr := protocol.ValidateIntegration(manifest, waveNum, opts.RepoPath)
-			if intErr == nil && integrationReport != nil && !integrationReport.Valid {
-				publish("integration_gaps_detected", map[string]interface{}{
-					"wave":   waveNum,
-					"gaps":   len(integrationReport.Gaps),
-					"report": integrationReport,
-				})
-
-				// E26: Launch integration agent to wire gaps
-				intModel := opts.IntegrationModel
-				if intModel == "" {
-					intModel = opts.WaveModel
-				}
-				intAgentRes2 := RunIntegrationAgent(ctx, RunIntegrationAgentOpts{
-					IMPLPath: opts.IMPLPath,
-					RepoPath: opts.RepoPath,
-					WaveNum:  waveNum,
-					Report:   integrationReport,
-					Model:    intModel,
-				}, func(ev Event) { onEvent(ev) })
-				if intAgentRes2.IsFatal() {
-					// Non-fatal: log but don't abort wave
-					msg2 := "integration agent failed"
-					if len(intAgentRes2.Errors) > 0 {
-						msg2 = intAgentRes2.Errors[0].Message
-					}
-					publish("integration_agent_warning", map[string]string{
-						"error": msg2,
-					})
-				}
-			}
-		}
-
-		_ = orch.UpdateIMPLStatus(ctx, waveNum)
-
-		if i < len(waves)-1 && gateCh != nil {
-			nextWave := waves[i+1].Number
-			publish("wave_gate_pending", map[string]interface{}{
-				"wave":      waveNum,
-				"next_wave": nextWave,
-				"slug":      opts.Slug,
-			})
-			select {
-			case ok := <-gateCh:
-				if !ok {
-					publish("run_failed", map[string]string{"error": "gate cancelled"})
-					return fmt.Errorf("startWaveWithGate: gate cancelled at wave %d", waveNum)
-				}
-				publish("wave_gate_resolved", map[string]interface{}{
-					"wave":   waveNum,
-					"action": "proceed",
-					"slug":   opts.Slug,
-				})
-			case <-time.After(30 * time.Minute):
-				publish("run_failed", map[string]string{"error": "gate timed out"})
-				return fmt.Errorf("startWaveWithGate: gate timed out at wave %d", waveNum)
-			case <-ctx.Done():
-				return ctx.Err()
-			}
+		if err := runOneWave(ctx, orch, opts, waveNum, i, len(waves), publish, gateCh); err != nil {
+			return err
 		}
 	}
 

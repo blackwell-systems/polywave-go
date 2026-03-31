@@ -54,7 +54,7 @@ waves:
 
 	onEvent, events := collectStepEvents()
 
-	result, err := StepVerifyCommits(context.Background(), FinalizeWaveOpts{
+	result, _, err := StepVerifyCommits(context.Background(), FinalizeWaveOpts{
 		IMPLPath: implPath,
 		RepoPath: repoRoot,
 		WaveNum:  1,
@@ -95,7 +95,7 @@ waves:
 `)
 
 	// nil onEvent should not panic
-	result, _ := StepVerifyCommits(context.Background(), FinalizeWaveOpts{
+	result, _, _ := StepVerifyCommits(context.Background(), FinalizeWaveOpts{
 		IMPLPath: implPath,
 		RepoPath: repoRoot,
 		WaveNum:  1,
@@ -127,7 +127,7 @@ waves:
 
 	onEvent, events := collectStepEvents()
 
-	result, err := StepScanStubs(context.Background(), FinalizeWaveOpts{
+	result, _, err := StepScanStubs(context.Background(), FinalizeWaveOpts{
 		IMPLPath: implPath,
 		RepoPath: repoRoot,
 		WaveNum:  1,
@@ -195,7 +195,7 @@ completion_reports:
 	}
 
 	// Without RequireNoStubs: should succeed (informational)
-	result, err := StepScanStubs(context.Background(), FinalizeWaveOpts{
+	result, _, err := StepScanStubs(context.Background(), FinalizeWaveOpts{
 		IMPLPath: implPath,
 		RepoPath: repoRoot,
 		WaveNum:  1,
@@ -209,7 +209,7 @@ completion_reports:
 	}
 
 	// With RequireNoStubs: should fail
-	result, err = StepScanStubs(context.Background(), FinalizeWaveOpts{
+	result, _, err = StepScanStubs(context.Background(), FinalizeWaveOpts{
 		IMPLPath:       implPath,
 		RepoPath:       repoRoot,
 		WaveNum:        1,
@@ -285,7 +285,7 @@ waves:
 
 	onEvent, events := collectStepEvents()
 
-	result, err := StepCleanup(context.Background(), FinalizeWaveOpts{
+	result, _, err := StepCleanup(context.Background(), FinalizeWaveOpts{
 		IMPLPath: implPath,
 		RepoPath: repoRoot,
 		WaveNum:  1,
@@ -362,7 +362,7 @@ waves:
 
 	onEvent, events := collectStepEvents()
 
-	result, err := StepVerifyBuild(context.Background(), FinalizeWaveOpts{
+	result, _, err := StepVerifyBuild(context.Background(), FinalizeWaveOpts{
 		IMPLPath: implPath,
 		RepoPath: repoRoot,
 		WaveNum:  1,
@@ -925,4 +925,33 @@ completion_reports:
 		t.Fatal("expected error from FinalizeWave (no git repo)")
 	}
 	// Just verify it didn't panic — that's the backward compat guarantee
+}
+
+func TestFirstRepoOpts_EmptyRepos(t *testing.T) {
+	opts := FinalizeWaveOpts{
+		RepoPath: "/original/repo",
+		IMPLPath: "/some/IMPL-test.yaml",
+		WaveNum:  1,
+	}
+	result := firstRepoOpts(opts, map[string]string{})
+	if result.RepoPath != "/original/repo" {
+		t.Errorf("expected RepoPath=%q when repos is empty, got %q", "/original/repo", result.RepoPath)
+	}
+}
+
+func TestFirstRepoOpts_SingleEntry(t *testing.T) {
+	opts := FinalizeWaveOpts{
+		RepoPath: "/original/repo",
+		IMPLPath: "/some/IMPL-test.yaml",
+		WaveNum:  1,
+	}
+	repos := map[string]string{"myrepo": "/first/repo/path"}
+	result := firstRepoOpts(opts, repos)
+	if result.RepoPath != "/first/repo/path" {
+		t.Errorf("expected RepoPath=%q when repos has one entry, got %q", "/first/repo/path", result.RepoPath)
+	}
+	// Original opts should be unchanged
+	if opts.RepoPath != "/original/repo" {
+		t.Errorf("expected original opts to be unchanged, got RepoPath=%q", opts.RepoPath)
+	}
 }

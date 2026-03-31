@@ -22,7 +22,7 @@ func emitStepEvent(onEvent EventCallback, step, status, detail string) {
 
 // StepVerifyCommits verifies that all agents in the wave have committed work (I5).
 // This is a fatal gate: agents with no commits block the merge entirely.
-func StepVerifyCommits(ctx context.Context, opts FinalizeWaveOpts, onEvent EventCallback) (*StepResult, error) {
+func StepVerifyCommits(ctx context.Context, opts FinalizeWaveOpts, onEvent EventCallback) (*StepResult, *protocol.VerifyCommitsData, error) {
 	const stepName = "verify-commits"
 	emitStepEvent(onEvent, stepName, "running", "")
 
@@ -33,7 +33,7 @@ func StepVerifyCommits(ctx context.Context, opts FinalizeWaveOpts, onEvent Event
 			Step:   stepName,
 			Status: "failed",
 			Detail: fmt.Sprintf("%v", verifyRes.Errors),
-		}, fmt.Errorf("verify-commits: %v", verifyRes.Errors)
+		}, nil, fmt.Errorf("verify-commits: %v", verifyRes.Errors)
 	}
 
 	verifyData := verifyRes.GetData()
@@ -52,7 +52,7 @@ func StepVerifyCommits(ctx context.Context, opts FinalizeWaveOpts, onEvent Event
 			Status: "failed",
 			Detail: "agents with no commits",
 			Data:   verifyData,
-		}, fmt.Errorf("verify-commits found agents with no commits")
+		}, nil, fmt.Errorf("verify-commits found agents with no commits")
 	}
 
 	emitStepEvent(onEvent, stepName, "complete", "")
@@ -60,12 +60,12 @@ func StepVerifyCommits(ctx context.Context, opts FinalizeWaveOpts, onEvent Event
 		Step:   stepName,
 		Status: "success",
 		Data:   verifyData,
-	}, nil
+	}, &verifyData, nil
 }
 
 // StepScanStubs scans changed files for TODO/FIXME markers (E20).
 // Informational by default; fatal when opts.RequireNoStubs is true.
-func StepScanStubs(ctx context.Context, opts FinalizeWaveOpts, manifest *protocol.IMPLManifest, onEvent EventCallback) (*StepResult, error) {
+func StepScanStubs(ctx context.Context, opts FinalizeWaveOpts, manifest *protocol.IMPLManifest, onEvent EventCallback) (*StepResult, *protocol.ScanStubsData, error) {
 	const stepName = "scan-stubs"
 	emitStepEvent(onEvent, stepName, "running", "")
 
@@ -85,7 +85,7 @@ func StepScanStubs(ctx context.Context, opts FinalizeWaveOpts, manifest *protoco
 			Step:   stepName,
 			Status: "skipped",
 			Detail: "no changed files to scan",
-		}, nil
+		}, nil, nil
 	}
 
 	stubRes := protocol.ScanStubs(changedFiles)
@@ -97,7 +97,7 @@ func StepScanStubs(ctx context.Context, opts FinalizeWaveOpts, manifest *protoco
 			Step:   stepName,
 			Status: "success",
 			Detail: fmt.Sprintf("scan error (non-fatal): %v", stubRes.Errors),
-		}, nil
+		}, nil, nil
 	}
 
 	stubData := stubRes.GetData()
@@ -110,7 +110,7 @@ func StepScanStubs(ctx context.Context, opts FinalizeWaveOpts, manifest *protoco
 			Status: "failed",
 			Detail: fmt.Sprintf("%d stub(s) detected (RequireNoStubs=true)", len(stubData.Hits)),
 			Data:   stubData,
-		}, fmt.Errorf("%d stub(s) detected in changed files (RequireNoStubs=true)", len(stubData.Hits))
+		}, nil, fmt.Errorf("%d stub(s) detected in changed files (RequireNoStubs=true)", len(stubData.Hits))
 	}
 
 	emitStepEvent(onEvent, stepName, "complete", fmt.Sprintf("%d stub(s) found (informational)", len(stubData.Hits)))
@@ -119,7 +119,7 @@ func StepScanStubs(ctx context.Context, opts FinalizeWaveOpts, manifest *protoco
 		Status: "success",
 		Detail: fmt.Sprintf("%d stub(s) found", len(stubData.Hits)),
 		Data:   stubData,
-	}, nil
+	}, &stubData, nil
 }
 
 // StepRunGates executes quality gates for the wave (E21) with caching support.
@@ -279,7 +279,7 @@ func StepFixGoMod(ctx context.Context, opts FinalizeWaveOpts, onEvent EventCallb
 }
 
 // StepVerifyBuild runs the test_command and lint_command to verify the build after merge.
-func StepVerifyBuild(ctx context.Context, opts FinalizeWaveOpts, onEvent EventCallback) (*StepResult, error) {
+func StepVerifyBuild(ctx context.Context, opts FinalizeWaveOpts, onEvent EventCallback) (*StepResult, *protocol.VerifyBuildData, error) {
 	const stepName = "verify-build"
 	emitStepEvent(onEvent, stepName, "running", "")
 
@@ -305,7 +305,7 @@ func StepVerifyBuild(ctx context.Context, opts FinalizeWaveOpts, onEvent EventCa
 			Step:   stepName,
 			Status: "failed",
 			Detail: fmt.Sprintf("%v", verifyBuildRes.Errors),
-		}, fmt.Errorf("verify-build: %v", verifyBuildRes.Errors)
+		}, nil, fmt.Errorf("verify-build: %v", verifyBuildRes.Errors)
 	}
 
 	verifyData := verifyBuildRes.GetData()
@@ -327,7 +327,7 @@ func StepVerifyBuild(ctx context.Context, opts FinalizeWaveOpts, onEvent EventCa
 
 		detail := fmt.Sprintf("test_passed=%v, lint_passed=%v", verifyData.TestPassed, verifyData.LintPassed)
 		emitStepEvent(onEvent, stepName, "failed", detail)
-		result := &StepResult{
+		stepResult := &StepResult{
 			Step:   stepName,
 			Status: "failed",
 			Detail: detail,
@@ -335,12 +335,12 @@ func StepVerifyBuild(ctx context.Context, opts FinalizeWaveOpts, onEvent EventCa
 		}
 		// Attach diagnosis to Data if available
 		if diagnosis != nil {
-			result.Data = map[string]interface{}{
+			stepResult.Data = map[string]interface{}{
 				"verify_build": verifyData,
 				"diagnosis":    diagnosis,
 			}
 		}
-		return result, fmt.Errorf("verify-build failed (test_passed=%v, lint_passed=%v)", verifyData.TestPassed, verifyData.LintPassed)
+		return stepResult, &verifyData, fmt.Errorf("verify-build failed (test_passed=%v, lint_passed=%v)", verifyData.TestPassed, verifyData.LintPassed)
 	}
 
 	emitStepEvent(onEvent, stepName, "complete", "")
@@ -348,12 +348,12 @@ func StepVerifyBuild(ctx context.Context, opts FinalizeWaveOpts, onEvent EventCa
 		Step:   stepName,
 		Status: "success",
 		Data:   verifyData,
-	}, nil
+	}, &verifyData, nil
 }
 
 // StepCleanup removes worktrees and agent branches after merge.
 // Non-fatal: cleanup failure does not fail the wave.
-func StepCleanup(ctx context.Context, opts FinalizeWaveOpts, onEvent EventCallback) (*StepResult, error) {
+func StepCleanup(ctx context.Context, opts FinalizeWaveOpts, onEvent EventCallback) (*StepResult, *protocol.CleanupData, error) {
 	const stepName = "cleanup"
 	emitStepEvent(onEvent, stepName, "running", "")
 
@@ -366,7 +366,7 @@ func StepCleanup(ctx context.Context, opts FinalizeWaveOpts, onEvent EventCallba
 			Step:   stepName,
 			Status: "success",
 			Detail: fmt.Sprintf("cleanup error (non-fatal): %v", err),
-		}, nil
+		}, nil, nil
 	}
 
 	cleanupData := cleanupResult.GetData()
@@ -375,7 +375,7 @@ func StepCleanup(ctx context.Context, opts FinalizeWaveOpts, onEvent EventCallba
 		Step:   stepName,
 		Status: "success",
 		Data:   cleanupData,
-	}, nil
+	}, &cleanupData, nil
 }
 
 // StepVerifyCompletionReports checks that every agent in the wave has a
