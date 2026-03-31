@@ -2,6 +2,7 @@ package protocol
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"log/slog"
 	"os"
@@ -121,7 +122,7 @@ func executeSingleGate(gate QualityGate, repoDir string, cache *gatecache.Cache,
 	// a cache miss rather than returning a stale result.
 	var cacheKey gatecache.CacheKey
 	if cache != nil {
-		keyResult := cache.BuildKeyForGate(repoDir, gate.Command)
+		keyResult := cache.BuildKeyForGate(context.TODO(), repoDir, gate.Command) //nolint:context // TODO: Agent Z (Wave 4) should replace with real context when adding ctx to executeSingleGate
 		if keyResult.IsSuccess() {
 			cacheKey = keyResult.GetData()
 		}
@@ -132,7 +133,7 @@ func executeSingleGate(gate QualityGate, repoDir string, cache *gatecache.Cache,
 
 	// Check the cache first (only when we successfully built a key)
 	if cache != nil && cacheKey.HeadCommit != "" {
-		if cached, ok := cache.Get(cacheKey, gate.Type); ok {
+		if cached, ok := cache.Get(context.TODO(), cacheKey, gate.Type); ok { //nolint:context // TODO: Agent Z (Wave 4) replace with real context
 			skipReason := fmt.Sprintf("cached at SHA %s", cacheKey.HeadCommit)
 			log.Debug("protocol: gate skipped (cached)", "gate", gate.Type, "sha", cacheKey.HeadCommit)
 			return GateResult{
@@ -198,7 +199,7 @@ func executeSingleGate(gate QualityGate, repoDir string, cache *gatecache.Cache,
 	// Store in cache (ignore errors — cache is best-effort).
 	// Only store when we have a valid key (HeadCommit non-empty).
 	if cache != nil && cacheKey.HeadCommit != "" {
-		_ = cache.Put(cacheKey, gate.Type, gatecache.CachedResult{
+		_ = cache.Put(context.TODO(), cacheKey, gate.Type, gatecache.CachedResult{ //nolint:context // TODO: Agent Z (Wave 4) replace with real context
 			GateType: gate.Type,
 			Command:  gate.Command,
 			Passed:   result.Passed,
@@ -325,7 +326,7 @@ func runFormatGate(gate QualityGate, repoDir string, cache *gatecache.Cache, log
 	// In fix mode: invalidate the cache so subsequent gates
 	// see the freshly-formatted files.
 	if gate.Fix && cache != nil {
-		_ = cache.Invalidate()
+		_ = cache.Invalidate(context.TODO()) //nolint:context // TODO: Agent Z (Wave 4) replace with real context
 	}
 
 	// Parse structured errors from formatter output.

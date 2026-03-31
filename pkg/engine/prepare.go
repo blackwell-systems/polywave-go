@@ -353,7 +353,7 @@ func PrepareWave(ctx context.Context, opts PrepareWaveOpts) (*PrepareWaveResult,
 	var cache *gatecache.Cache
 	if !opts.NoCache {
 		stateDir := protocol.SAWStateDir(projectRoot)
-		cache = gatecache.New(stateDir, gatecache.DefaultTTL)
+		cache = gatecache.New(ctx, stateDir, gatecache.DefaultTTL)
 	}
 
 	baselineRes := protocol.RunBaselineGates(doc, opts.WaveNum, projectRoot, cache)

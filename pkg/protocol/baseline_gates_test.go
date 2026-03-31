@@ -1,6 +1,7 @@
 package protocol
 
 import (
+	"context"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -156,7 +157,7 @@ func TestRunBaselineGates_CommitSHAPopulated(t *testing.T) {
 	if err := os.MkdirAll(stateDir, 0755); err != nil {
 		t.Fatalf("failed to create state dir: %v", err)
 	}
-	cache := gatecache.New(stateDir, time.Minute)
+	cache := gatecache.New(context.Background(), stateDir, time.Minute)
 
 	res := RunBaselineGates(manifest, 1, repoDir, cache)
 	if !res.IsSuccess() {

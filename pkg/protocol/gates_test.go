@@ -1,6 +1,7 @@
 package protocol
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -266,7 +267,7 @@ func TestRunGatesWithCache_NilCache(t *testing.T) {
 
 func TestRunGatesWithCache_CacheHit(t *testing.T) {
 	dir := t.TempDir()
-	cache := gatecache.New(dir, 5*time.Minute)
+	cache := gatecache.New(context.Background(), dir, 5*time.Minute)
 
 	// Manually seed the cache with a passing result.
 	// We need to use the same key that BuildKey would return.  Since /tmp is
@@ -287,12 +288,12 @@ func TestRunGatesWithCache_CacheHit(t *testing.T) {
 		Stdout:   "cached stdout",
 		Stderr:   "",
 	}
-	if putResult := cache.Put(fakeKey, "build", seedResult); putResult.IsFatal() {
+	if putResult := cache.Put(context.Background(), fakeKey, "build", seedResult); putResult.IsFatal() {
 		t.Fatalf("seeding cache failed: %v", putResult.Errors)
 	}
 
 	// Verify the seeded value is retrievable
-	got, ok := cache.Get(fakeKey, "build")
+	got, ok := cache.Get(context.Background(), fakeKey, "build")
 	if !ok {
 		t.Fatal("seeded cache entry not found")
 	}
@@ -306,7 +307,7 @@ func TestRunGatesWithCache_CacheHit(t *testing.T) {
 
 func TestRunGatesWithCache_CacheMissRunsGate(t *testing.T) {
 	dir := t.TempDir()
-	cache := gatecache.New(dir, 5*time.Minute)
+	cache := gatecache.New(context.Background(), dir, 5*time.Minute)
 
 	manifest := &IMPLManifest{
 		QualityGates: &QualityGates{
@@ -334,7 +335,7 @@ func TestRunGatesWithCache_CacheMissRunsGate(t *testing.T) {
 
 func TestRunGatesWithCache_EmptyManifest(t *testing.T) {
 	dir := t.TempDir()
-	cache := gatecache.New(dir, 5*time.Minute)
+	cache := gatecache.New(context.Background(), dir, 5*time.Minute)
 
 	manifest := &IMPLManifest{}
 
@@ -425,7 +426,7 @@ func TestRunGates_ParsedErrors_Passing(t *testing.T) {
 // ParsedErrors (same as RunGates, since /tmp is not a git repo → fallback).
 func TestRunGatesWithCache_ParsedErrors(t *testing.T) {
 	dir := t.TempDir()
-	cache := gatecache.New(dir, 5*time.Minute)
+	cache := gatecache.New(context.Background(), dir, 5*time.Minute)
 
 	manifest := &IMPLManifest{
 		QualityGates: &QualityGates{
@@ -516,7 +517,7 @@ func TestRunGates_FormatGate_CheckMode(t *testing.T) {
 // the command and, when a cache is provided, the cache is invalidated after execution.
 func TestRunGates_FormatGate_FixMode(t *testing.T) {
 	dir := t.TempDir()
-	cache := gatecache.New(dir, 5*time.Minute)
+	cache := gatecache.New(context.Background(), dir, 5*time.Minute)
 
 	manifest := &IMPLManifest{
 		QualityGates: &QualityGates{
@@ -817,7 +818,7 @@ func TestRunGatesWithCache_CommandChange(t *testing.T) {
 	gitCmd("add", ".")
 	gitCmd("commit", "-m", "initial")
 
-	cache := gatecache.New(cacheDir, 5*time.Minute)
+	cache := gatecache.New(context.Background(), cacheDir, 5*time.Minute)
 
 	// First run with command "echo v1" — populates cache.
 	manifest1 := &IMPLManifest{
@@ -940,7 +941,7 @@ func TestPhaseOrdering(t *testing.T) {
 	// Create a temp git repo so cache can build keys
 	repoDir := t.TempDir()
 	cacheDir := t.TempDir()
-	cache := gatecache.New(cacheDir, 5*time.Minute)
+	cache := gatecache.New(context.Background(), cacheDir, 5*time.Minute)
 
 	gitCmd := func(args ...string) {
 		cmd := exec.Command("git", args...)
@@ -1004,7 +1005,7 @@ func TestPhaseOrdering(t *testing.T) {
 func TestParallelGroupConcurrency(t *testing.T) {
 	repoDir := t.TempDir()
 	cacheDir := t.TempDir()
-	cache := gatecache.New(cacheDir, 5*time.Minute)
+	cache := gatecache.New(context.Background(), cacheDir, 5*time.Minute)
 
 	gitCmd := func(args ...string) {
 		cmd := exec.Command("git", args...)
@@ -1054,7 +1055,7 @@ func TestParallelGroupConcurrency(t *testing.T) {
 func TestBackwardCompat(t *testing.T) {
 	repoDir := t.TempDir()
 	cacheDir := t.TempDir()
-	cache := gatecache.New(cacheDir, 5*time.Minute)
+	cache := gatecache.New(context.Background(), cacheDir, 5*time.Minute)
 
 	gitCmd := func(args ...string) {
 		cmd := exec.Command("git", args...)
@@ -1160,7 +1161,7 @@ func TestValidateQualityGate(t *testing.T) {
 func TestFormatGateInvalidatesCacheAcrossPhases(t *testing.T) {
 	repoDir := t.TempDir()
 	cacheDir := t.TempDir()
-	cache := gatecache.New(cacheDir, 5*time.Minute)
+	cache := gatecache.New(context.Background(), cacheDir, 5*time.Minute)
 
 	gitCmd := func(args ...string) {
 		cmd := exec.Command("git", args...)
@@ -1230,7 +1231,7 @@ func TestEmptyPhaseDefaults(t *testing.T) {
 func TestParallelErrorCollection(t *testing.T) {
 	repoDir := t.TempDir()
 	cacheDir := t.TempDir()
-	cache := gatecache.New(cacheDir, 5*time.Minute)
+	cache := gatecache.New(context.Background(), cacheDir, 5*time.Minute)
 
 	gitCmd := func(args ...string) {
 		cmd := exec.Command("git", args...)
@@ -1286,7 +1287,7 @@ func TestParallelErrorCollection(t *testing.T) {
 func TestMixedSequentialParallel(t *testing.T) {
 	repoDir := t.TempDir()
 	cacheDir := t.TempDir()
-	cache := gatecache.New(cacheDir, 5*time.Minute)
+	cache := gatecache.New(context.Background(), cacheDir, 5*time.Minute)
 
 	gitCmd := func(args ...string) {
 		cmd := exec.Command("git", args...)
@@ -1336,7 +1337,7 @@ func TestMixedSequentialParallel(t *testing.T) {
 func TestParallelGroupIsolation(t *testing.T) {
 	repoDir := t.TempDir()
 	cacheDir := t.TempDir()
-	cache := gatecache.New(cacheDir, 5*time.Minute)
+	cache := gatecache.New(context.Background(), cacheDir, 5*time.Minute)
 
 	gitCmd := func(args ...string) {
 		cmd := exec.Command("git", args...)
@@ -1387,7 +1388,7 @@ func TestParallelGroupIsolation(t *testing.T) {
 func TestRaceDetection(t *testing.T) {
 	repoDir := t.TempDir()
 	cacheDir := t.TempDir()
-	cache := gatecache.New(cacheDir, 5*time.Minute)
+	cache := gatecache.New(context.Background(), cacheDir, 5*time.Minute)
 
 	gitCmd := func(args ...string) {
 		cmd := exec.Command("git", args...)
@@ -1492,7 +1493,7 @@ func TestRunGatesWithCache_RepoScoping(t *testing.T) {
 	repoDir := makeTempGitRepo(t)
 	repoName := filepath.Base(repoDir)
 
-	cache := gatecache.New(t.TempDir(), 5*time.Minute)
+	cache := gatecache.New(context.Background(), t.TempDir(), 5*time.Minute)
 
 	manifest := &IMPLManifest{
 		QualityGates: &QualityGates{
@@ -1520,7 +1521,7 @@ func TestRunGatesWithCache_RepoScoping_NoRepoField(t *testing.T) {
 	// Gates with empty Repo run regardless of repoDir — both appear in results.
 	repoDir := makeTempGitRepo(t)
 
-	cache := gatecache.New(t.TempDir(), 5*time.Minute)
+	cache := gatecache.New(context.Background(), t.TempDir(), 5*time.Minute)
 
 	manifest := &IMPLManifest{
 		QualityGates: &QualityGates{
