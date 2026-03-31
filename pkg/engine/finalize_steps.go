@@ -571,13 +571,17 @@ func StepPopulateIntegrationChecklist(ctx context.Context, opts FinalizeWaveOpts
 		}, nil, nil
 	}
 
-	if saveErr := protocol.Save(updated, opts.IMPLPath); saveErr != nil {
-		loggerFrom(opts.Logger).Warn("engine.StepPopulateIntegrationChecklist", "save_err", saveErr)
-		emitStepEvent(onEvent, stepName, "complete", fmt.Sprintf("save error (non-fatal): %v", saveErr))
+	if saveRes := protocol.Save(updated, opts.IMPLPath); saveRes.IsFatal() {
+		saveErrMsg := "save failed"
+		if len(saveRes.Errors) > 0 {
+			saveErrMsg = saveRes.Errors[0].Message
+		}
+		loggerFrom(opts.Logger).Warn("engine.StepPopulateIntegrationChecklist", "save_err", saveErrMsg)
+		emitStepEvent(onEvent, stepName, "complete", fmt.Sprintf("save error (non-fatal): %v", saveErrMsg))
 		return &StepResult{
 			Step:   stepName,
 			Status: "success",
-			Detail: fmt.Sprintf("save error (non-fatal): %v", saveErr),
+			Detail: fmt.Sprintf("save error (non-fatal): %v", saveErrMsg),
 		}, nil, nil
 	}
 

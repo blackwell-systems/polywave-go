@@ -63,8 +63,12 @@ Idempotent: safe to run multiple times (won't duplicate items).`,
 			}
 
 			// Save updated manifest
-			if err := protocol.Save(updated, manifestPath); err != nil {
-				return fmt.Errorf("populate-integration-checklist: failed to save manifest: %w", err)
+			if saveRes := protocol.Save(updated, manifestPath); saveRes.IsFatal() {
+				saveErrMsg := "save failed"
+				if len(saveRes.Errors) > 0 {
+					saveErrMsg = saveRes.Errors[0].Message
+				}
+				return fmt.Errorf("populate-integration-checklist: failed to save manifest: %s", saveErrMsg)
 			}
 
 			// Build JSON output

@@ -52,12 +52,8 @@ func FullValidate(manifestPath string, opts FullValidateOpts) result.Result[Full
 	if opts.AutoFix {
 		totalFixed += FixGateTypes(m)
 		if totalFixed > 0 {
-			if err := Save(m, manifestPath); err != nil {
-				return result.NewFailure[FullValidateData]([]result.SAWError{{
-					Code:     result.CodeManifestInvalid,
-					Message:  fmt.Sprintf("failed to write corrections: %v", err),
-					Severity: "fatal",
-				}})
+			if saveRes := Save(m, manifestPath); saveRes.IsFatal() {
+				return result.NewFailure[FullValidateData](saveRes.Errors)
 			}
 		}
 

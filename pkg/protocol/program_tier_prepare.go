@@ -89,8 +89,12 @@ func PrepareTier(programManifestPath string, tierNumber int, repoDir string) (*P
 
 		fixCount := FixGateTypes(m)
 		if fixCount > 0 {
-			if saveErr := Save(m, implPath); saveErr != nil {
-				return nil, fmt.Errorf("cannot save IMPL %q after fixes: %w", slug, saveErr)
+			if saveRes := Save(m, implPath); saveRes.IsFatal() {
+				saveMsg := ""
+				if len(saveRes.Errors) > 0 {
+					saveMsg = saveRes.Errors[0].Message
+				}
+				return nil, fmt.Errorf("cannot save IMPL %q after fixes: %s", slug, saveMsg)
 			}
 		}
 

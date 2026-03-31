@@ -216,9 +216,13 @@ saw_name: %s
 			}
 		}
 	}
-	if err := protocol.Save(doc, opts.ManifestPath); err != nil {
+	if saveRes := protocol.Save(doc, opts.ManifestPath); saveRes.IsFatal() {
 		// Non-fatal: log but don't abort agent preparation
-		fmt.Fprintf(os.Stderr, "prepare-agent: warning: failed to persist context_source: %v\n", err)
+		saveErrMsg := "save failed"
+		if len(saveRes.Errors) > 0 {
+			saveErrMsg = saveRes.Errors[0].Message
+		}
+		fmt.Fprintf(os.Stderr, "prepare-agent: warning: failed to persist context_source: %v\n", saveErrMsg)
 	}
 
 	// Initialize journal observer

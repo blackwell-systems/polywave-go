@@ -55,8 +55,12 @@ func newSolveCmd() *cobra.Command {
 			}
 
 			// Write the corrected manifest.
-			if err := protocol.Save(fixed, manifestPath); err != nil {
-				return fmt.Errorf("solve: writing manifest: %w", err)
+			if saveRes := protocol.Save(fixed, manifestPath); saveRes.IsFatal() {
+				saveErrMsg := "save failed"
+				if len(saveRes.Errors) > 0 {
+					saveErrMsg = saveRes.Errors[0].Message
+				}
+				return fmt.Errorf("solve: writing manifest: %s", saveErrMsg)
 			}
 
 			fmt.Printf("✓ Manifest updated with %d wave reassignments (%d agents, %d waves)\n",

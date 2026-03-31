@@ -74,7 +74,13 @@ func newSetCompletionCmd() *cobra.Command {
 				if appendErr := builder.AppendToManifest(m); appendErr != nil {
 					return fmt.Errorf("set-completion: %w", appendErr)
 				}
-				return protocol.Save(m, manifestPath)
+				if saveRes := protocol.Save(m, manifestPath); saveRes.IsFatal() {
+					if len(saveRes.Errors) > 0 {
+						return fmt.Errorf("set-completion: %s", saveRes.Errors[0].Message)
+					}
+					return fmt.Errorf("set-completion: failed to save manifest")
+				}
+				return nil
 			}); err != nil {
 				return err
 			}

@@ -28,8 +28,12 @@ func newUpdateAgentPromptCmd() *cobra.Command {
 				return fmt.Errorf("update-agent-prompt: %w", err)
 			}
 
-			if err := protocol.Save(m, manifestPath); err != nil {
-				return fmt.Errorf("update-agent-prompt: %w", err)
+			if saveRes := protocol.Save(m, manifestPath); saveRes.IsFatal() {
+				saveErrMsg := "save failed"
+				if len(saveRes.Errors) > 0 {
+					saveErrMsg = saveRes.Errors[0].Message
+				}
+				return fmt.Errorf("update-agent-prompt: %s", saveErrMsg)
 			}
 
 			result := struct {

@@ -6,9 +6,24 @@ import (
 	"os"
 	"strings"
 	"sync"
+	"time"
 
 	"gopkg.in/yaml.v3"
+
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
 )
+
+// SaveManifestData holds the result payload for a successful Save call.
+type SaveManifestData struct {
+	ManifestPath string
+	Timestamp    time.Time
+}
+
+// SetReportData holds the result payload for a successful SetCompletionReport call.
+type SetReportData struct {
+	AgentID   string
+	ReportSet bool
+}
 
 // ErrAgentNotFound is returned when SetCompletionReport is called with an unknown agent ID.
 var ErrAgentNotFound = errors.New("agent not found in manifest")
@@ -96,22 +111,29 @@ func isYAMLDuplicateKeyError(err error) bool {
 }
 
 // Save writes an IMPLManifest to the specified path as YAML.
-// Returns an error if the file cannot be written or the manifest cannot be marshaled.
+// Returns a Fatal result if the file cannot be written or the manifest cannot be marshaled.
 //
 // Cannot use SaveYAML: Save is the canonical write path for IMPLManifest and is called
 // via WithCompletionReportLock. Routing through the generic helper would invert the
 // dependency — callers should use Save (not SaveYAML) for IMPLManifest.
-func Save(m *IMPLManifest, path string) error {
+func Save(m *IMPLManifest, path string) result.Result[SaveManifestData] {
 	data, err := yaml.Marshal(m)
 	if err != nil {
-		return fmt.Errorf("failed to marshal manifest to YAML: %w", err)
+		return result.NewFailure[SaveManifestData]([]result.SAWError{
+			result.NewFatal("MANIFEST_SAVE_FAILED", fmt.Sprintf("failed to marshal manifest to YAML: %v", err)),
+		})
 	}
 
 	if err := os.WriteFile(path, data, 0644); err != nil {
-		return fmt.Errorf("failed to write manifest file: %w", err)
+		return result.NewFailure[SaveManifestData]([]result.SAWError{
+			result.NewFatal("MANIFEST_SAVE_FAILED", fmt.Sprintf("failed to write manifest file: %v", err)),
+		})
 	}
 
-	return nil
+	return result.NewSuccess(SaveManifestData{
+		ManifestPath: path,
+		Timestamp:    time.Now(),
+	})
 }
 
 // CurrentWave returns the first wave that has incomplete agents (agents without completion reports).
@@ -136,10 +158,12 @@ func CurrentWave(m *IMPLManifest) *Wave {
 }
 
 // SetCompletionReport registers a completion report for the specified agent.
-// Returns an error if the agent ID is not found in any wave or if the agent ID is empty.
-func SetCompletionReport(m *IMPLManifest, agentID string, report CompletionReport) error {
+// Returns a Fatal result if the agent ID is not found in any wave or if the agent ID is empty.
+func SetCompletionReport(m *IMPLManifest, agentID string, report CompletionReport) result.Result[SetReportData] {
 	if agentID == "" {
-		return fmt.Errorf("agent ID cannot be empty")
+		return result.NewFailure[SetReportData]([]result.SAWError{
+			result.NewFatal("REPORT_SET_FAILED", "agent ID cannot be empty").WithContext("agent_id", agentID),
+		})
 	}
 
 	// Verify agent exists in manifest
@@ -157,7 +181,9 @@ func SetCompletionReport(m *IMPLManifest, agentID string, report CompletionRepor
 	}
 
 	if !found {
-		return fmt.Errorf("%w: %s", ErrAgentNotFound, agentID)
+		return result.NewFailure[SetReportData]([]result.SAWError{
+			result.NewFatal("REPORT_SET_FAILED", fmt.Sprintf("%s: %s", ErrAgentNotFound, agentID)).WithContext("agent_id", agentID),
+		})
 	}
 
 	// Initialize map if nil
@@ -168,5 +194,8 @@ func SetCompletionReport(m *IMPLManifest, agentID string, report CompletionRepor
 	// Store report
 	m.CompletionReports[agentID] = report
 
-	return nil
+	return result.NewSuccess(SetReportData{
+		AgentID:   agentID,
+		ReportSet: true,
+	})
 }

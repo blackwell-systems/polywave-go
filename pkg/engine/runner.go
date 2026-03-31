@@ -259,8 +259,12 @@ func runScoutStructured(ctx context.Context, opts RunScoutOpts, prompt string, o
 	}
 
 	// Persist to disk.
-	if err := protocol.Save(&manifest, opts.IMPLOutPath); err != nil {
-		return nil, fmt.Errorf("runScoutStructured: save manifest: %w", err)
+	if saveRes := protocol.Save(&manifest, opts.IMPLOutPath); saveRes.IsFatal() {
+		saveErrMsg := "save failed"
+		if len(saveRes.Errors) > 0 {
+			saveErrMsg = saveRes.Errors[0].Message
+		}
+		return nil, fmt.Errorf("runScoutStructured: save manifest: %s", saveErrMsg)
 	}
 
 	return &manifest, nil
@@ -325,8 +329,12 @@ func runScoutStructuredBedrock(ctx context.Context, opts RunScoutOpts, prompt st
 	}
 
 	// Persist to disk.
-	if err := protocol.Save(&manifest, opts.IMPLOutPath); err != nil {
-		return nil, fmt.Errorf("runScoutStructuredBedrock: save manifest: %w", err)
+	if saveRes := protocol.Save(&manifest, opts.IMPLOutPath); saveRes.IsFatal() {
+		saveErrMsg := "save failed"
+		if len(saveRes.Errors) > 0 {
+			saveErrMsg = saveRes.Errors[0].Message
+		}
+		return nil, fmt.Errorf("runScoutStructuredBedrock: save manifest: %s", saveErrMsg)
 	}
 
 	return &manifest, nil

@@ -136,7 +136,13 @@ func runWaveAgentStructured(ctx context.Context, opts RunWaveOpts, agentSpec pro
 		if appendErr := builder.AppendToManifest(manifest); appendErr != nil {
 			return fmt.Errorf("append report for agent %s: %w", agentSpec.ID, appendErr)
 		}
-		return protocol.Save(manifest, opts.IMPLPath)
+		if saveRes := protocol.Save(manifest, opts.IMPLPath); saveRes.IsFatal() {
+			if len(saveRes.Errors) > 0 {
+				return fmt.Errorf("%s", saveRes.Errors[0].Message)
+			}
+			return fmt.Errorf("failed to save manifest")
+		}
+		return nil
 	}); saveErr != nil {
 		return nil, fmt.Errorf("runWaveAgentStructured: save report for agent %s: %w", agentSpec.ID, saveErr)
 	}

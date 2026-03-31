@@ -143,5 +143,11 @@ func setIMPLStateBlocked(implPath string) error {
 		return err
 	}
 	manifest.State = protocol.StateBlocked
-	return protocol.Save(manifest, implPath)
+	if saveRes := protocol.Save(manifest, implPath); saveRes.IsFatal() {
+		if len(saveRes.Errors) > 0 {
+			return fmt.Errorf("%s", saveRes.Errors[0].Message)
+		}
+		return fmt.Errorf("failed to save manifest")
+	}
+	return nil
 }

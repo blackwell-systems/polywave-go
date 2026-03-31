@@ -98,8 +98,12 @@ func AppendStubReport(manifestPath, waveKey string, scanResult result.Result[Sca
 	}
 	data := scanResult.GetData()
 	manifest.StubReports[waveKey] = &data
-	if err := Save(manifest, manifestPath); err != nil {
-		return fmt.Errorf("AppendStubReport: failed to save manifest: %w", err)
+	if saveRes := Save(manifest, manifestPath); saveRes.IsFatal() {
+		msg := ""
+		if len(saveRes.Errors) > 0 {
+			msg = saveRes.Errors[0].Message
+		}
+		return fmt.Errorf("AppendStubReport: failed to save manifest: %s", msg)
 	}
 	return nil
 }

@@ -2,7 +2,18 @@ package protocol
 
 import (
 	"fmt"
+	"os"
+
+	"gopkg.in/yaml.v3"
+
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
 )
+
+// SaveMemoryData holds the result payload for a successful SaveProjectMemory call.
+type SaveMemoryData struct {
+	MemoryPath   string
+	BytesWritten int
+}
 
 // ProjectMemory represents the contents of docs/CONTEXT.md in structured YAML format.
 // It serves as project memory for Scout-and-Wave protocol implementations.
@@ -72,12 +83,23 @@ func LoadProjectMemory(path string) (*ProjectMemory, error) {
 }
 
 // SaveProjectMemory writes a ProjectMemory to the specified path as YAML.
-// Returns an error if the file cannot be written or the memory cannot be marshaled.
-func SaveProjectMemory(path string, pm *ProjectMemory) error {
-	if err := SaveYAML(path, pm); err != nil {
-		return fmt.Errorf("failed to write project memory file: %w", err)
+// Returns a Fatal result if the file cannot be written or the memory cannot be marshaled.
+func SaveProjectMemory(path string, pm *ProjectMemory) result.Result[SaveMemoryData] {
+	data, err := yaml.Marshal(pm)
+	if err != nil {
+		return result.NewFailure[SaveMemoryData]([]result.SAWError{
+			result.NewFatal("MEMORY_SAVE_FAILED", fmt.Sprintf("failed to marshal project memory: %v", err)),
+		})
 	}
-	return nil
+	if err := os.WriteFile(path, data, 0644); err != nil {
+		return result.NewFailure[SaveMemoryData]([]result.SAWError{
+			result.NewFatal("MEMORY_SAVE_FAILED", fmt.Sprintf("failed to write project memory file: %v", err)),
+		})
+	}
+	return result.NewSuccess(SaveMemoryData{
+		MemoryPath:   path,
+		BytesWritten: len(data),
+	})
 }
 
 // AddCompletedFeature appends a feature to the memory's completed features list.

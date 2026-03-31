@@ -107,8 +107,8 @@ func createManifest(t *testing.T, repoDir string, waves []Wave) string {
 	}
 
 	manifestPath := filepath.Join(repoDir, "IMPL.yaml")
-	if err := Save(manifest, manifestPath); err != nil {
-		t.Fatalf("failed to save manifest: %v", err)
+	if saveRes := Save(manifest, manifestPath); saveRes.IsFatal() {
+		t.Fatalf("failed to save manifest: %v", saveRes.Errors)
 	}
 
 	return manifestPath
