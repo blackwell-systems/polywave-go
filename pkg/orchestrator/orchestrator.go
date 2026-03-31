@@ -470,6 +470,12 @@ func (o *Orchestrator) SetWorktreePaths(paths map[string]string) {
 	o.worktreePaths = paths
 }
 
+// SetLogger sets the logger used by all Orchestrator methods.
+// Nil resets to slog.Default() fallback.
+func (o *Orchestrator) SetLogger(logger *slog.Logger) {
+	o.logger = logger
+}
+
 // log returns the configured logger, falling back to slog.Default() if nil.
 func (o *Orchestrator) log() *slog.Logger {
 	if o.logger == nil {
