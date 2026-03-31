@@ -138,9 +138,6 @@ type MergeAgentsData struct {
 	Wave      int           `json:"wave"`
 	Merges    []MergeStatus `json:"merges"`
 	NextState ProtocolState `json:"next_state,omitempty"` // State after successful merge
-	// Success field maintained for backward compatibility with legacy code
-	// TODO: Remove once all consumers migrated to result.Result[T].IsSuccess()
-	Success bool `json:"success"`
 }
 
 // MergeAgents merges all agent branches from a specified wave into their respective repositories.
@@ -283,9 +280,8 @@ func mergeAgentsSingleRepo(manifestPath string, waveNum int, repoDir string, man
 
 	// Initialize result data
 	data := MergeAgentsData{
-		Wave:    waveNum,
-		Merges:  make([]MergeStatus, 0, len(targetWave.Agents)),
-		Success: true, // Set to false on merge failure for backward compat
+		Wave:   waveNum,
+		Merges: make([]MergeStatus, 0, len(targetWave.Agents)),
 	}
 
 	// Merge each agent branch
@@ -338,7 +334,6 @@ func mergeAgentsSingleRepo(manifestPath string, waveNum int, repoDir string, man
 			status.Success = false
 			status.Error = err.Error()
 			data.Merges = append(data.Merges, status)
-			data.Success = false // Set for backward compat
 			// Return partial result with failures
 			return result.NewPartial(data, []result.SAWError{{
 				Code:     "MERGE_CONFLICT",
@@ -364,7 +359,6 @@ func mergeAgentsSingleRepo(manifestPath string, waveNum int, repoDir string, man
 				status.Success = false
 				status.Error = fmt.Sprintf("merge operation succeeded but agent commit %s not found in HEAD history (verification failed)", report.Commit)
 				data.Merges = append(data.Merges, status)
-				data.Success = false
 				return result.NewPartial(data, []result.SAWError{{
 					Code:     "MERGE_VERIFICATION_FAILED",
 					Message:  fmt.Sprintf("agent %s: merge succeeded but commit %s not in HEAD history", agent.ID, report.Commit),
@@ -431,9 +425,8 @@ func mergeAgentsMultiRepo(manifestPath string, waveNum int, manifest *IMPLManife
 
 	// Initialize combined result data
 	data := MergeAgentsData{
-		Wave:    waveNum,
-		Merges:  make([]MergeStatus, 0, len(targetWave.Agents)),
-		Success: true, // Set to false on merge failure for backward compat
+		Wave:   waveNum,
+		Merges: make([]MergeStatus, 0, len(targetWave.Agents)),
 	}
 
 	// Merge each repository group
@@ -497,7 +490,6 @@ func mergeAgentsMultiRepo(manifestPath string, waveNum int, manifest *IMPLManife
 				status.Success = false
 				status.Error = fmt.Sprintf("%s (repo: %s)", err.Error(), repoDir)
 				data.Merges = append(data.Merges, status)
-				data.Success = false // Set for backward compat
 				// Return partial result with failures
 				return result.NewPartial(data, []result.SAWError{{
 					Code:     "MERGE_CONFLICT",
@@ -521,7 +513,6 @@ func mergeAgentsMultiRepo(manifestPath string, waveNum int, manifest *IMPLManife
 					status.Success = false
 					status.Error = fmt.Sprintf("merge operation succeeded but agent commit %s not found in HEAD history (verification failed, repo: %s)", report.Commit, repoDir)
 					data.Merges = append(data.Merges, status)
-					data.Success = false
 					return result.NewPartial(data, []result.SAWError{{
 						Code:     "MERGE_VERIFICATION_FAILED",
 						Message:  fmt.Sprintf("agent %s in repo %s: merge succeeded but commit %s not in HEAD history", agent.ID, repoDir, report.Commit),

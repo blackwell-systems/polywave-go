@@ -33,9 +33,6 @@ func newMergeAgentsCmd() *cobra.Command {
 			out, _ := json.MarshalIndent(result, "", "  ")
 			fmt.Println(string(out))
 
-			if !result.Success {
-				return fmt.Errorf("merge-agents: one or more merges failed")
-			}
 			return nil
 		},
 	}

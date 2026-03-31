@@ -223,8 +223,7 @@ func FinalizeWave(ctx context.Context, opts FinalizeWaveOpts) (*FinalizeWaveResu
 	if opts.SkipMerge {
 		for repoKey := range repos {
 			result.MergeResult[repoKey] = &protocol.MergeAgentsData{
-				Wave:    opts.WaveNum,
-				Success: true,
+				Wave: opts.WaveNum,
 			}
 		}
 		// Warning if worktrees still exist
@@ -293,8 +292,7 @@ func FinalizeWave(ctx context.Context, opts FinalizeWaveOpts) (*FinalizeWaveResu
 			// Populate synthetic merge results for all repos
 			for repoKey := range repos {
 				result.MergeResult[repoKey] = &protocol.MergeAgentsData{
-					Wave:    opts.WaveNum,
-					Success: true,
+					Wave: opts.WaveNum,
 				}
 			}
 		} else {
@@ -518,8 +516,7 @@ func FinalizeWave(ctx context.Context, opts FinalizeWaveOpts) (*FinalizeWaveResu
 			for repoKey, repoPath := range repos {
 				if skipMergeAgents {
 					result.MergeResult[repoKey] = &protocol.MergeAgentsData{
-						Wave:    opts.WaveNum,
-						Success: true,
+						Wave: opts.WaveNum,
 					}
 					continue
 				}
@@ -538,9 +535,6 @@ func FinalizeWave(ctx context.Context, opts FinalizeWaveOpts) (*FinalizeWaveResu
 				}
 				mergeData := mergeRes.GetData()
 				result.MergeResult[repoKey] = &mergeData
-				if !mergeData.Success {
-					return result, fmt.Errorf("engine.FinalizeWave: merge-agents encountered conflicts in %s", repoKey)
-				}
 			}
 
 			// Step 4.2: PopulateIntegrationChecklist (M5, non-fatal) — run once

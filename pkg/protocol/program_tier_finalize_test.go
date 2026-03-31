@@ -47,9 +47,8 @@ func TestFinalizeTierData_JSONFields(t *testing.T) {
 		TierNumber: 1,
 		ImplMergeResults: map[string]*MergeAgentsData{
 			"my-impl": {
-				Wave:    1,
-				Merges:  []MergeStatus{{Agent: "my-impl", Branch: "saw/program/p/tier1-impl-my-impl", Success: true}},
-				Success: true,
+				Wave:   1,
+				Merges: []MergeStatus{{Agent: "my-impl", Branch: "saw/program/p/tier1-impl-my-impl", Success: true}},
 			},
 		},
 		TierGateResult: &TierGateData{

@@ -93,12 +93,9 @@ func TestFinalizeWave_SoloWaveSkipsVerifyCommits(t *testing.T) {
 
 	// Simulate the bypass: populate a synthetic MergeResult as finalize-wave would.
 	mergeResult := make(map[string]*protocol.MergeAgentsData)
-	mergeResult["."] = &protocol.MergeAgentsData{Wave: 1, Success: true}
+	mergeResult["."] = &protocol.MergeAgentsData{Wave: 1}
 
 	// Confirm the synthetic result is set correctly (no VerifyCommits needed).
-	if !mergeResult["."].Success {
-		t.Error("synthetic MergeResult.Success should be true for solo wave bypass")
-	}
 	if mergeResult["."].Wave != 1 {
 		t.Errorf("MergeResult.Wave = %d, want 1", mergeResult["."].Wave)
 	}
@@ -138,10 +135,10 @@ func TestFinalizeWave_AllBranchesAbsentSkipsMerge(t *testing.T) {
 
 	// Simulate the bypass: populate a synthetic MergeResult as finalize-wave would.
 	mergeResult := make(map[string]*protocol.MergeAgentsData)
-	mergeResult["."] = &protocol.MergeAgentsData{Wave: 1, Success: true}
+	mergeResult["."] = &protocol.MergeAgentsData{Wave: 1}
 
-	if !mergeResult["."].Success {
-		t.Error("synthetic MergeResult.Success should be true for all-branches-absent bypass")
+	if mergeResult["."].Wave != 1 {
+		t.Errorf("MergeResult.Wave = %d, want 1 for all-branches-absent bypass", mergeResult["."].Wave)
 	}
 }
 
