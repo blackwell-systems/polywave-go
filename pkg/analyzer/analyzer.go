@@ -1,6 +1,7 @@
 package analyzer
 
 import (
+	"context"
 	"fmt"
 	"go/ast"
 	"go/parser"
@@ -22,18 +23,26 @@ func New() *Analyzer {
 
 // ParseFile parses a Go source file at the given path and returns its AST.
 // Returns error if file cannot be read or contains syntax errors.
-func (a *Analyzer) ParseFile(path string) (*ast.File, error) {
+// Respects context cancellation before performing I/O.
+func (a *Analyzer) ParseFile(ctx context.Context, path string) (*ast.File, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	return parser.ParseFile(a.fset, path, nil, parser.ImportsOnly)
 }
 
 // ExtractImports returns all local import paths from a parsed AST.
 // Filters out stdlib imports (no slash in path, or starts with known stdlib prefix).
 // For local imports like "github.com/user/repo/pkg/foo", resolves to absolute file path.
-func (a *Analyzer) ExtractImports(file *ast.File, repoRoot string) ([]string, error) {
+// Respects context cancellation before performing I/O.
+func (a *Analyzer) ExtractImports(ctx context.Context, file *ast.File, repoRoot string) ([]string, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	var imports []string
 
 	// Get module path from go.mod
-	modulePath, err := getModulePath(repoRoot)
+	modulePath, err := getModulePath(ctx, repoRoot)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get module path: %w", err)
 	}
@@ -160,7 +169,11 @@ func ResolveImportPath(importPath, repoRoot, modulePath string) (string, error) 
 }
 
 // getModulePath reads the go.mod file and extracts the module path.
-func getModulePath(repoRoot string) (string, error) {
+// Respects context cancellation before performing file I/O.
+func getModulePath(ctx context.Context, repoRoot string) (string, error) {
+	if err := ctx.Err(); err != nil {
+		return "", err
+	}
 	goModPath := filepath.Join(repoRoot, "go.mod")
 	content, err := os.ReadFile(goModPath)
 	if err != nil {

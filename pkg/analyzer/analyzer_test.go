@@ -1,6 +1,7 @@
 package analyzer
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"strings"
@@ -28,7 +29,7 @@ func main() {
 	}
 
 	a := New()
-	file, err := a.ParseFile(testFile)
+	file, err := a.ParseFile(context.Background(), testFile)
 	if err != nil {
 		t.Fatalf("ParseFile() error = %v", err)
 	}
@@ -62,7 +63,7 @@ func main() {}
 	}
 
 	a := New()
-	_, err := a.ParseFile(testFile)
+	_, err := a.ParseFile(context.Background(), testFile)
 	if err == nil {
 		t.Fatal("ParseFile() expected error for syntax error, got nil")
 	}
@@ -102,12 +103,12 @@ func main() {}
 	}
 
 	a := New()
-	file, err := a.ParseFile(testFile)
+	file, err := a.ParseFile(context.Background(), testFile)
 	if err != nil {
 		t.Fatalf("ParseFile() error = %v", err)
 	}
 
-	imports, err := a.ExtractImports(file, tmpDir)
+	imports, err := a.ExtractImports(context.Background(), file, tmpDir)
 	if err != nil {
 		t.Fatalf("ExtractImports() error = %v", err)
 	}
@@ -145,12 +146,12 @@ func main() {}
 	}
 
 	a := New()
-	file, err := a.ParseFile(testFile)
+	file, err := a.ParseFile(context.Background(), testFile)
 	if err != nil {
 		t.Fatalf("ParseFile() error = %v", err)
 	}
 
-	imports, err := a.ExtractImports(file, tmpDir)
+	imports, err := a.ExtractImports(context.Background(), file, tmpDir)
 	if err != nil {
 		t.Fatalf("ExtractImports() error = %v", err)
 	}
@@ -272,7 +273,7 @@ require (
 		t.Fatalf("failed to write go.mod: %v", err)
 	}
 
-	modulePath, err := getModulePath(tmpDir)
+	modulePath, err := getModulePath(context.Background(), tmpDir)
 	if err != nil {
 		t.Fatalf("getModulePath() error = %v", err)
 	}
@@ -310,7 +311,7 @@ import (
 	}
 
 	a := New()
-	file, err := a.ParseFile(testFile)
+	file, err := a.ParseFile(context.Background(), testFile)
 	if err != nil {
 		t.Fatalf("ParseFile() error = %v", err)
 	}
@@ -354,12 +355,12 @@ func main() {}
 	}
 
 	a := New()
-	file, err := a.ParseFile(testFile)
+	file, err := a.ParseFile(context.Background(), testFile)
 	if err != nil {
 		t.Fatalf("ParseFile() error = %v", err)
 	}
 
-	imports, err := a.ExtractImports(file, tmpDir)
+	imports, err := a.ExtractImports(context.Background(), file, tmpDir)
 	if err != nil {
 		t.Fatalf("ExtractImports() error = %v", err)
 	}
@@ -367,5 +368,68 @@ func main() {}
 	// C import should be filtered as stdlib
 	if len(imports) != 0 {
 		t.Errorf("expected 0 imports (C filtered), got %d: %v", len(imports), imports)
+	}
+}
+
+func TestParseFile_CancelledContext(t *testing.T) {
+	tmpDir := t.TempDir()
+	testFile := filepath.Join(tmpDir, "main.go")
+
+	content := `package main
+
+func main() {}
+`
+	if err := os.WriteFile(testFile, []byte(content), 0644); err != nil {
+		t.Fatalf("failed to write test file: %v", err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel() // cancel before calling ParseFile
+
+	a := New()
+	_, err := a.ParseFile(ctx, testFile)
+	if err == nil {
+		t.Fatal("ParseFile() expected error for cancelled context, got nil")
+	}
+}
+
+func TestExtractImports_CancelledContext(t *testing.T) {
+	tmpDir := t.TempDir()
+	pkgDir := filepath.Join(tmpDir, "pkg", "protocol")
+	if err := os.MkdirAll(pkgDir, 0755); err != nil {
+		t.Fatalf("failed to create pkg dir: %v", err)
+	}
+
+	goModContent := `module github.com/blackwell-systems/scout-and-wave-go
+
+go 1.25.0
+`
+	if err := os.WriteFile(filepath.Join(tmpDir, "go.mod"), []byte(goModContent), 0644); err != nil {
+		t.Fatalf("failed to write go.mod: %v", err)
+	}
+
+	testFile := filepath.Join(tmpDir, "main.go")
+	content := `package main
+
+import "fmt"
+
+func main() { _ = fmt.Sprintf("") }
+`
+	if err := os.WriteFile(testFile, []byte(content), 0644); err != nil {
+		t.Fatalf("failed to write test file: %v", err)
+	}
+
+	a := New()
+	file, err := a.ParseFile(context.Background(), testFile)
+	if err != nil {
+		t.Fatalf("ParseFile() error = %v", err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel() // cancel before calling ExtractImports
+
+	_, err = a.ExtractImports(ctx, file, tmpDir)
+	if err == nil {
+		t.Fatal("ExtractImports() expected error for cancelled context, got nil")
 	}
 }
