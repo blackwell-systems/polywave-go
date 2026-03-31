@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"os/exec"
@@ -13,8 +14,9 @@ import (
 // Returns nil on pass (including silent pass with no gate configured).
 // Returns error with gate output on failure.
 func RunPreCommitCheck(repoDir string) error {
+	ctx := context.Background()
 	// Lint gate (existing behavior)
-	lintCmd, err := protocol.DiscoverLintGate(repoDir)
+	lintCmd, err := protocol.DiscoverLintGate(ctx, repoDir)
 	if err != nil {
 		return fmt.Errorf("pre-commit-check: %w", err)
 	}
@@ -26,7 +28,7 @@ func RunPreCommitCheck(repoDir string) error {
 	}
 
 	// Build gate (new — runs after lint so lint fails fast)
-	buildCmd, err := protocol.DiscoverBuildGate(repoDir)
+	buildCmd, err := protocol.DiscoverBuildGate(ctx, repoDir)
 	if err != nil {
 		return fmt.Errorf("pre-commit-check: %w", err)
 	}

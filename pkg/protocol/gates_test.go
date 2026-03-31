@@ -18,7 +18,7 @@ import (
 func TestRunGates_NoGates(t *testing.T) {
 	// Test with nil QualityGates
 	manifest := &IMPLManifest{}
-	result := runGates(manifest, 1, "/tmp", nil)
+	result := runGates(context.Background(), manifest, 1, "/tmp", nil)
 	if !result.IsSuccess() {
 		t.Fatalf("expected success, got: %v", result.Errors)
 	}
@@ -32,7 +32,7 @@ func TestRunGates_NoGates(t *testing.T) {
 		Level: "quick",
 		Gates: []QualityGate{},
 	}
-	result = runGates(manifest, 1, "/tmp", nil)
+	result = runGates(context.Background(), manifest, 1, "/tmp", nil)
 	if !result.IsSuccess() {
 		t.Fatalf("expected success, got: %v", result.Errors)
 	}
@@ -56,7 +56,7 @@ func TestRunGates_PassingGate(t *testing.T) {
 		},
 	}
 
-	res := runGates(manifest, 1, "/tmp", nil)
+	res := runGates(context.Background(), manifest, 1, "/tmp", nil)
 	if !res.IsSuccess() {
 		t.Fatalf("expected success, got: %v", res.Errors)
 	}
@@ -101,7 +101,7 @@ func TestRunGates_FailingGate(t *testing.T) {
 		},
 	}
 
-	res := runGates(manifest, 1, "/tmp", nil)
+	res := runGates(context.Background(), manifest, 1, "/tmp", nil)
 	if !res.IsSuccess() {
 		t.Fatalf("expected success (gate failures don't fail Result), got: %v", res.Errors)
 	}
@@ -139,7 +139,7 @@ func TestRunGates_MixedGates(t *testing.T) {
 		},
 	}
 
-	res := runGates(manifest, 1, "/tmp", nil)
+	res := runGates(context.Background(), manifest, 1, "/tmp", nil)
 	if !res.IsSuccess() {
 		t.Fatalf("expected success, got: %v", res.Errors)
 	}
@@ -180,7 +180,7 @@ func TestRunGates_CapturesOutput(t *testing.T) {
 		},
 	}
 
-	res := runGates(manifest, 1, "/tmp", nil)
+	res := runGates(context.Background(), manifest, 1, "/tmp", nil)
 	if !res.IsSuccess() {
 		t.Fatalf("expected success, got: %v", res.Errors)
 	}
@@ -213,7 +213,7 @@ func TestRunGates_NonExistentCommand(t *testing.T) {
 		},
 	}
 
-	res := runGates(manifest, 1, "/tmp", nil)
+	res := runGates(context.Background(), manifest, 1, "/tmp", nil)
 	if !res.IsSuccess() {
 		t.Fatalf("expected success (gate failures don't fail Result), got: %v", res.Errors)
 	}
@@ -249,7 +249,7 @@ func TestRunGatesWithCache_NilCache(t *testing.T) {
 		},
 	}
 
-	res := RunGatesWithCache(manifest, 1, "/tmp", nil, nil)
+	res := RunGatesWithCache(context.Background(), manifest, 1, "/tmp", nil, nil)
 	if !res.IsSuccess() {
 		t.Fatalf("expected success, got: %v", res.Errors)
 	}
@@ -320,7 +320,7 @@ func TestRunGatesWithCache_CacheMissRunsGate(t *testing.T) {
 
 	// /tmp is almost certainly not a git repo; BuildKey should fail and we
 	// fall back to RunGates (cache miss path runs the gate normally).
-	res := RunGatesWithCache(manifest, 1, "/tmp", cache, nil)
+	res := RunGatesWithCache(context.Background(), manifest, 1, "/tmp", cache, nil)
 	if !res.IsSuccess() {
 		t.Fatalf("expected success, got: %v", res.Errors)
 	}
@@ -339,7 +339,7 @@ func TestRunGatesWithCache_EmptyManifest(t *testing.T) {
 
 	manifest := &IMPLManifest{}
 
-	res := RunGatesWithCache(manifest, 1, "/tmp", cache, nil)
+	res := RunGatesWithCache(context.Background(), manifest, 1, "/tmp", cache, nil)
 	if !res.IsSuccess() {
 		t.Fatalf("expected success, got: %v", res.Errors)
 	}
@@ -369,7 +369,7 @@ func TestRunGates_ParsedErrors_Build(t *testing.T) {
 		},
 	}
 
-	res := runGates(manifest, 1, "/tmp", nil)
+	res := runGates(context.Background(), manifest, 1, "/tmp", nil)
 	if !res.IsSuccess() {
 		t.Fatalf("expected success, got: %v", res.Errors)
 	}
@@ -404,7 +404,7 @@ func TestRunGates_ParsedErrors_Passing(t *testing.T) {
 		},
 	}
 
-	res := runGates(manifest, 1, "/tmp", nil)
+	res := runGates(context.Background(), manifest, 1, "/tmp", nil)
 	if !res.IsSuccess() {
 		t.Fatalf("expected success, got: %v", res.Errors)
 	}
@@ -441,7 +441,7 @@ func TestRunGatesWithCache_ParsedErrors(t *testing.T) {
 		},
 	}
 
-	res := RunGatesWithCache(manifest, 1, "/tmp", cache, nil)
+	res := RunGatesWithCache(context.Background(), manifest, 1, "/tmp", cache, nil)
 	if !res.IsSuccess() {
 		t.Fatalf("expected success, got: %v", res.Errors)
 	}
@@ -493,7 +493,7 @@ func TestRunGates_FormatGate_CheckMode(t *testing.T) {
 		},
 	}
 
-	res := runGates(manifest, 1, t.TempDir(), nil)
+	res := runGates(context.Background(), manifest, 1, t.TempDir(), nil)
 	if !res.IsSuccess() {
 		t.Fatalf("expected success, got: %v", res.Errors)
 	}
@@ -534,7 +534,7 @@ func TestRunGates_FormatGate_FixMode(t *testing.T) {
 		},
 	}
 
-	res := RunGatesWithCache(manifest, 1, t.TempDir(), cache, nil)
+	res := RunGatesWithCache(context.Background(), manifest, 1, t.TempDir(), cache, nil)
 	if !res.IsSuccess() {
 		t.Fatalf("expected success, got: %v", res.Errors)
 	}
@@ -574,7 +574,7 @@ func TestRunGates_FormatGate_SkipNoFormatter(t *testing.T) {
 		},
 	}
 
-	res := runGates(manifest, 1, emptyDir, nil)
+	res := runGates(context.Background(), manifest, 1, emptyDir, nil)
 	if !res.IsSuccess() {
 		t.Fatalf("expected success, got: %v", res.Errors)
 	}
@@ -619,7 +619,7 @@ func TestRunGates_FormatGate_ExplicitCommandSucceeds(t *testing.T) {
 		},
 	}
 
-	res := runGates(manifest, 1, tmpDir, nil)
+	res := runGates(context.Background(), manifest, 1, tmpDir, nil)
 	if !res.IsSuccess() {
 		t.Fatalf("expected success, got: %v", res.Errors)
 	}
@@ -683,7 +683,7 @@ func TestRunPreMergeGates_OnlyRunsPreMerge(t *testing.T) {
 		},
 	}
 
-	res := RunPreMergeGates(manifest, 1, "/tmp", nil, nil)
+	res := RunPreMergeGates(context.Background(), manifest, 1, "/tmp", nil, nil)
 	if !res.IsSuccess() {
 		t.Fatalf("expected success, got: %v", res.Errors)
 	}
@@ -709,7 +709,7 @@ func TestRunPostMergeGates_OnlyRunsPostMerge(t *testing.T) {
 		},
 	}
 
-	res := RunPostMergeGates(manifest, 1, "/tmp", nil)
+	res := RunPostMergeGates(context.Background(), manifest, 1, "/tmp", nil)
 	if !res.IsSuccess() {
 		t.Fatalf("expected success, got: %v", res.Errors)
 	}
@@ -734,7 +734,7 @@ func TestRunPreMergeGates_EmptyWhenNoneMatch(t *testing.T) {
 		},
 	}
 
-	res := RunPreMergeGates(manifest, 1, "/tmp", nil, nil)
+	res := RunPreMergeGates(context.Background(), manifest, 1, "/tmp", nil, nil)
 	if !res.IsSuccess() {
 		t.Fatalf("expected success, got: %v", res.Errors)
 	}
@@ -756,7 +756,7 @@ func TestRunPostMergeGates_EmptyWhenNoneMatch(t *testing.T) {
 		},
 	}
 
-	res := RunPostMergeGates(manifest, 1, "/tmp", nil)
+	res := RunPostMergeGates(context.Background(), manifest, 1, "/tmp", nil)
 	if !res.IsSuccess() {
 		t.Fatalf("expected success, got: %v", res.Errors)
 	}
@@ -779,7 +779,7 @@ func TestRunPreMergeGates_BackwardCompat(t *testing.T) {
 		},
 	}
 
-	res := RunPreMergeGates(manifest, 1, "/tmp", nil, nil)
+	res := RunPreMergeGates(context.Background(), manifest, 1, "/tmp", nil, nil)
 	if !res.IsSuccess() {
 		t.Fatalf("expected success, got: %v", res.Errors)
 	}
@@ -829,7 +829,7 @@ func TestRunGatesWithCache_CommandChange(t *testing.T) {
 			},
 		},
 	}
-	res1 := RunGatesWithCache(manifest1, 1, repoDir, cache, nil)
+	res1 := RunGatesWithCache(context.Background(), manifest1, 1, repoDir, cache, nil)
 	if !res1.IsSuccess() {
 		t.Fatalf("first run error: %v", res1.Errors)
 	}
@@ -842,7 +842,7 @@ func TestRunGatesWithCache_CommandChange(t *testing.T) {
 	}
 
 	// Second run with same command "echo v1" — should be a cache hit.
-	res2 := RunGatesWithCache(manifest1, 1, repoDir, cache, nil)
+	res2 := RunGatesWithCache(context.Background(), manifest1, 1, repoDir, cache, nil)
 	if !res2.IsSuccess() {
 		t.Fatalf("second run error: %v", res2.Errors)
 	}
@@ -866,7 +866,7 @@ func TestRunGatesWithCache_CommandChange(t *testing.T) {
 			},
 		},
 	}
-	res3 := RunGatesWithCache(manifest2, 1, repoDir, cache, nil)
+	res3 := RunGatesWithCache(context.Background(), manifest2, 1, repoDir, cache, nil)
 	if !res3.IsSuccess() {
 		t.Fatalf("third run error: %v", res3.Errors)
 	}
@@ -973,7 +973,7 @@ func TestPhaseOrdering(t *testing.T) {
 		},
 	}
 
-	res := RunGatesWithCache(manifest, 1, repoDir, cache, nil)
+	res := RunGatesWithCache(context.Background(), manifest, 1, repoDir, cache, nil)
 	if !res.IsSuccess() {
 		t.Fatalf("expected success, got: %v", res.Errors)
 	}
@@ -1036,7 +1036,7 @@ func TestParallelGroupConcurrency(t *testing.T) {
 	}
 
 	start := time.Now()
-	res := RunGatesWithCache(manifest, 1, repoDir, cache, nil)
+	res := RunGatesWithCache(context.Background(), manifest, 1, repoDir, cache, nil)
 	elapsed := time.Since(start)
 
 	if !res.IsSuccess() {
@@ -1084,7 +1084,7 @@ func TestBackwardCompat(t *testing.T) {
 		},
 	}
 
-	res := RunGatesWithCache(manifest, 1, repoDir, cache, nil)
+	res := RunGatesWithCache(context.Background(), manifest, 1, repoDir, cache, nil)
 	if !res.IsSuccess() {
 		t.Fatalf("expected success, got: %v", res.Errors)
 	}
@@ -1191,7 +1191,7 @@ func TestFormatGateInvalidatesCacheAcrossPhases(t *testing.T) {
 		},
 	}
 
-	res := RunGatesWithCache(manifest, 1, repoDir, cache, nil)
+	res := RunGatesWithCache(context.Background(), manifest, 1, repoDir, cache, nil)
 	if !res.IsSuccess() {
 		t.Fatalf("expected success, got: %v", res.Errors)
 	}
@@ -1260,7 +1260,7 @@ func TestParallelErrorCollection(t *testing.T) {
 		},
 	}
 
-	res := RunGatesWithCache(manifest, 1, repoDir, cache, nil)
+	res := RunGatesWithCache(context.Background(), manifest, 1, repoDir, cache, nil)
 	if !res.IsSuccess() {
 		t.Fatalf("expected success (gate failures don't fail Result), got: %v", res.Errors)
 	}
@@ -1317,7 +1317,7 @@ func TestMixedSequentialParallel(t *testing.T) {
 		},
 	}
 
-	res := RunGatesWithCache(manifest, 1, repoDir, cache, nil)
+	res := RunGatesWithCache(context.Background(), manifest, 1, repoDir, cache, nil)
 	if !res.IsSuccess() {
 		t.Fatalf("expected success, got: %v", res.Errors)
 	}
@@ -1367,7 +1367,7 @@ func TestParallelGroupIsolation(t *testing.T) {
 		},
 	}
 
-	res := RunGatesWithCache(manifest, 1, repoDir, cache, nil)
+	res := RunGatesWithCache(context.Background(), manifest, 1, repoDir, cache, nil)
 	if !res.IsSuccess() {
 		t.Fatalf("expected success, got: %v", res.Errors)
 	}
@@ -1421,7 +1421,7 @@ func TestRaceDetection(t *testing.T) {
 
 	// Run multiple times to increase chance of race detection
 	for i := 0; i < 5; i++ {
-		res := RunGatesWithCache(manifest, 1, repoDir, cache, nil)
+		res := RunGatesWithCache(context.Background(), manifest, 1, repoDir, cache, nil)
 		if !res.IsSuccess() {
 			t.Fatalf("iteration %d: expected success, got: %v", i, res.Errors)
 		}
@@ -1446,7 +1446,7 @@ func TestRunGates_RepoScoping(t *testing.T) {
 		},
 	}
 
-	res := runGates(manifest, 1, repoDir, nil)
+	res := runGates(context.Background(), manifest, 1, repoDir, nil)
 	if !res.IsSuccess() {
 		t.Fatalf("expected success, got: %v", res.Errors)
 	}
@@ -1475,7 +1475,7 @@ func TestRunGates_RepoScoping_NoRepoField(t *testing.T) {
 		},
 	}
 
-	res := runGates(manifest, 1, repoDir, nil)
+	res := runGates(context.Background(), manifest, 1, repoDir, nil)
 	if !res.IsSuccess() {
 		t.Fatalf("expected success, got: %v", res.Errors)
 	}
@@ -1504,7 +1504,7 @@ func TestRunGatesWithCache_RepoScoping(t *testing.T) {
 		},
 	}
 
-	res := RunGatesWithCache(manifest, 1, repoDir, cache, nil)
+	res := RunGatesWithCache(context.Background(), manifest, 1, repoDir, cache, nil)
 	if !res.IsSuccess() {
 		t.Fatalf("expected success, got: %v", res.Errors)
 	}
@@ -1532,7 +1532,7 @@ func TestRunGatesWithCache_RepoScoping_NoRepoField(t *testing.T) {
 		},
 	}
 
-	res := RunGatesWithCache(manifest, 1, repoDir, cache, nil)
+	res := RunGatesWithCache(context.Background(), manifest, 1, repoDir, cache, nil)
 	if !res.IsSuccess() {
 		t.Fatalf("expected success, got: %v", res.Errors)
 	}

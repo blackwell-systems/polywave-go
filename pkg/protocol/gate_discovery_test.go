@@ -1,6 +1,7 @@
 package protocol
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"testing"
@@ -231,7 +232,7 @@ quality_gates:
 			dir := t.TempDir()
 			tt.setup(t, dir)
 
-			got, err := DiscoverLintGate(dir)
+			got, err := DiscoverLintGate(context.Background(), dir)
 			if (err != nil) != tt.wantErr {
 				t.Fatalf("DiscoverLintGate() error = %v, wantErr %v", err, tt.wantErr)
 			}
@@ -366,7 +367,7 @@ quality_gates:
 			dir := t.TempDir()
 			tt.setup(t, dir)
 
-			got, err := DiscoverBuildGate(dir)
+			got, err := DiscoverBuildGate(context.Background(), dir)
 			if (err != nil) != tt.wantErr {
 				t.Fatalf("DiscoverBuildGate() error = %v, wantErr %v", err, tt.wantErr)
 			}

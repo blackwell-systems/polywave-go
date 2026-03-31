@@ -513,7 +513,7 @@ func StartWave(ctx context.Context, opts RunWaveOpts, onEvent func(Event)) resul
 
 		// E21: Post-wave quality gates before merge.
 		if doc := orch.IMPLDoc(); doc != nil && doc.QualityGates != nil {
-			gateRes := protocol.RunPreMergeGates(doc, waveNum, opts.RepoPath, nil, nil)
+			gateRes := protocol.RunPreMergeGates(ctx, doc, waveNum, opts.RepoPath, nil, nil)
 			if gateRes.IsSuccess() || gateRes.IsPartial() {
 				gatesData := gateRes.GetData()
 				for _, r := range gatesData.Gates {
