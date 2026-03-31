@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -19,7 +20,7 @@ func newVerifyCommitsCmd() *cobra.Command {
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			manifestPath := args[0]
-			res := protocol.VerifyCommits(manifestPath, waveNum, repoDir)
+			res := protocol.VerifyCommits(context.Background(), manifestPath, waveNum, repoDir)
 			if !res.IsSuccess() {
 				return fmt.Errorf("verify-commits: %w", errors.Join(result.ToErrors(res.Errors)...))
 			}

@@ -1,6 +1,7 @@
 package protocol
 
 import (
+	"context"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -153,7 +154,7 @@ waves:
 	createBranchWithCommits(t, repoDir, "saw/test-feature/wave1-agent-B", 1)
 
 	// Verify commits
-	res := VerifyCommits(manifestPath, 1, repoDir)
+	res := VerifyCommits(context.Background(), manifestPath, 1, repoDir)
 
 	// Check result is successful
 	if !res.IsSuccess() {
@@ -251,7 +252,7 @@ waves:
 	}
 
 	// Verify commits
-	res := VerifyCommits(manifestPath, 1, repoDir)
+	res := VerifyCommits(context.Background(), manifestPath, 1, repoDir)
 
 	// Check result is partial (success with warnings)
 	if !res.IsPartial() {
@@ -310,7 +311,7 @@ waves:
 	// Don't create the branch at all
 
 	// Verify commits
-	res := VerifyCommits(manifestPath, 1, repoDir)
+	res := VerifyCommits(context.Background(), manifestPath, 1, repoDir)
 
 	// Check result is partial (success with warnings)
 	if !res.IsPartial() {
