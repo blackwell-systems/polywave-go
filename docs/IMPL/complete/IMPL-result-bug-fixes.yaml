@@ -1,3 +1,4 @@
+completion_date: "2026-03-31"
 title: pkg/result Bug Fixes
 feature_slug: result-bug-fixes
 verdict: SUITABLE
@@ -411,6 +412,7 @@ waves:
           files:
             - pkg/result/codes.go
             - pkg/result/codes_test.go
+      base_commit: 8f57f64bc99272dc8d2dd07a796cbd83c4b11872
 quality_gates:
     level: standard
     gates:
@@ -423,6 +425,31 @@ quality_gates:
         - type: test
           command: go test ./pkg/result/...
           required: true
+completion_reports:
+    A:
+        status: complete
+        branch: saw/result-bug-fixes/wave1-agent-A
+        commit: ffd1e38
+        files_changed:
+            - pkg/result/result.go
+            - pkg/result/result_test.go
+        tests_added:
+            - TestNewFailurePanicsOnEmptySlice
+        verification: PASS
+        notes: All four bugs fixed. encoding/json import removed from result.go. contains/searchString helpers replaced with strings.Contains. Identity MarshalJSON/UnmarshalJSON deleted. NewFailure dead branch removed and panic guard added. All existing tests pass plus new panic test.
+    B:
+        status: complete
+        branch: saw/result-bug-fixes/wave1-agent-B
+        commit: 7ec4f77
+        files_changed:
+            - pkg/result/codes.go
+            - pkg/result/codes_test.go
+        files_created:
+            - pkg/result/codes_test.go
+        tests_added:
+            - TestNCodesFollowNamingPattern
+        verification: PASS
+        notes: Renamed all N018-N084 string values to Nxxx_DESCRIPTION pattern. Updated block comment. Removed redundant inline N-number comments. Created codes_test.go with pattern verification test. All 67 subtests pass.
 pre_mortem:
     overall_risk: low
     rows:
@@ -461,5 +488,5 @@ pre_mortem:
           mitigation: |
             Agent A's scope is explicitly result.go and result_test.go. Agent B's new file is
             codes_test.go — a distinct filename. No conflict possible.
-state: "REVIEWED"
+state: COMPLETE
 injection_method: hook

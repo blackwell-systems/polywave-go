@@ -300,3 +300,5 @@ type BackendConfig struct {
   - IMPL doc: docs/IMPL/complete/IMPL-hooks-bug-fixes.yaml
 - **scaffoldval-bug-fixes**: completed 2026-03-31, 1 waves, 2 agents
   - IMPL doc: docs/IMPL/complete/IMPL-scaffoldval-bug-fixes.yaml
+- **result-bug-fixes**: completed 2026-03-31, 1 waves, 2 agents
+  - IMPL doc: docs/IMPL/complete/IMPL-result-bug-fixes.yaml
