@@ -2124,6 +2124,18 @@
         "cached_at": "2026-03-26T01:28:07.696314-07:00"
       }
     },
+    "56dab89d853e4a155df794a284d42ee7": {
+      "test": {
+        "gate_type": "test",
+        "command": "go test ./pkg/scaffoldval/... -cover",
+        "passed": true,
+        "exit_code": 0,
+        "stdout": "ok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/scaffoldval\t(cached)\tcoverage: 89.8% of statements\n",
+        "stderr": "",
+        "from_cache": true,
+        "cached_at": "2026-04-01T16:16:47.781712-07:00"
+      }
+    },
     "56eb23023aa0e38a131be5d261528fff": {
       "lint": {
         "gate_type": "lint",
@@ -4452,6 +4464,18 @@
         "cached_at": "2026-03-24T23:05:31.057374-07:00"
       }
     },
+    "adbd88349a2b7343005baf4b3207ec0a": {
+      "lint": {
+        "gate_type": "lint",
+        "command": "go vet ./pkg/scaffoldval/...",
+        "passed": true,
+        "exit_code": 0,
+        "stdout": "",
+        "stderr": "",
+        "from_cache": true,
+        "cached_at": "2026-04-01T16:16:47.462695-07:00"
+      }
+    },
     "ae23e5ce01c9e83af200ea091504315b": {
       "lint": {
         "gate_type": "lint",
@@ -4690,6 +4714,18 @@
         "stderr": "",
         "from_cache": true,
         "cached_at": "2026-03-31T20:12:17.221009-07:00"
+      }
+    },
+    "b4d2b1b7df8e65808da7f13d5c23b6c3": {
+      "build": {
+        "gate_type": "build",
+        "command": "go build ./pkg/scaffoldval/...",
+        "passed": true,
+        "exit_code": 0,
+        "stdout": "",
+        "stderr": "",
+        "from_cache": true,
+        "cached_at": "2026-04-01T16:16:47.117143-07:00"
       }
     },
     "b5e6c0b8578b39f9fabfb6a41904b928": {
