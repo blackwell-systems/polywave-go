@@ -18,6 +18,7 @@ func newPrepareWaveCmd() *cobra.Command {
 	var mergeTarget string
 	var commitBaseline bool
 	var jsonOnly bool
+	var skipCritic bool
 
 	cmd := &cobra.Command{
 		Use:   "prepare-wave <manifest-path>",
@@ -53,10 +54,20 @@ waves that execute on the main branch.`,
 
 			// E37: Critic gate — only enforce when threshold is met (3+ agents in wave 1 OR 2+ repos).
 			if protocol.E37Required(manifest) && !protocol.CriticGatePasses(manifest, true) {
-				if manifest.CriticReport == nil {
-					return fmt.Errorf("prepare-wave: E37 critic gate: no critic report found — run 'sawtools run-critic' first")
+				if skipCritic {
+					skipped, err := protocol.SkipCriticForIMPL(context.TODO(), manifestPath, manifest)
+					if err != nil {
+						return fmt.Errorf("prepare-wave: E37 critic gate: --skip-critic failed: %w", err)
+					}
+					if skipped {
+						fmt.Fprintln(os.Stderr, "prepare-wave: E37 critic gate auto-skipped (--skip-critic)")
+					}
+				} else {
+					if manifest.CriticReport == nil {
+						return fmt.Errorf("prepare-wave: E37 critic gate: no critic report found — run 'sawtools run-critic' first or use --skip-critic")
+					}
+					return fmt.Errorf("prepare-wave: E37 critic gate: ISSUES verdict contains blocking errors — review critic report and fix errors before proceeding")
 				}
-				return fmt.Errorf("prepare-wave: E37 critic gate: ISSUES verdict contains blocking errors — review critic report and fix errors before proceeding")
 			}
 
 			// Determine project root from manifest path or --repo-dir flag
@@ -120,6 +131,7 @@ waves that execute on the main branch.`,
 	cmd.Flags().StringVar(&mergeTarget, "merge-target", "", "Baseline branch for verification (default: current HEAD)")
 	cmd.Flags().BoolVar(&commitBaseline, "commit-baseline", false, "Auto-commit baseline fixes if working directory is dirty")
 	cmd.Flags().BoolVar(&jsonOnly, "json-only", false, "Suppress progress messages (only output JSON result)")
+	cmd.Flags().BoolVar(&skipCritic, "skip-critic", false, "Auto-skip E37 critic gate if no critic report exists")
 
 	return cmd
 }
