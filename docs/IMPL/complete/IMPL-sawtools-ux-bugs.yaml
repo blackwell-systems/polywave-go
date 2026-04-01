@@ -1,3 +1,4 @@
+completion_date: "2026-03-31"
 title: 'sawtools UX Bug Fixes: branch drift, solo-wave REVIEWED state, and untracked SAW files in --commit-state'
 feature_slug: sawtools-ux-bugs
 verdict: SUITABLE
@@ -280,6 +281,7 @@ waves:
             - pkg/engine/prepare_agent.go
             - pkg/engine/prepare.go
             - pkg/engine/prepare_test.go
+      base_commit: 888a3d135e0483e5b133be3eef157bc1faaf99cb
 quality_gates:
     level: standard
     gates:
@@ -292,6 +294,28 @@ quality_gates:
         - type: test
           command: go test ./...
           required: true
+completion_reports:
+    A:
+        status: complete
+        branch: saw/sawtools-ux-bugs/wave1-agent-A
+        commit: f1f1aac
+        files_changed:
+            - cmd/sawtools/close_impl_cmd.go
+        verification: PASS
+        notes: Added branch-restore step after Step 5 cleanup. Imports git and strings packages. branch_restored bool added to JSON output. All TestCloseImpl tests pass.
+    B:
+        status: complete
+        branch: saw/sawtools-ux-bugs/wave1-agent-B
+        commit: 6597f6e
+        files_changed:
+            - pkg/engine/prepare_agent.go
+            - pkg/engine/prepare.go
+            - pkg/engine/prepare_test.go
+        tests_added:
+            - TestIsSAWOwnedPath/untracked_docs/IMPL_file_is_SAW-owned
+            - TestIsSAWOwnedPath/docs/CONTEXT.md_is_SAW-owned
+        verification: PASS
+        notes: 'Bug 2: advanceStateToReviewed added to prepare_agent.go, called when NoWorktree=true and state is SCOUT_PENDING or SCOUT_VALIDATING. Bug 3: isSAWOwnedPath expanded to include docs/IMPL/ prefix and docs/CONTEXT.md. Existing test case updated (docs/IMPL/ other-feature now correctly returns true). All 41 packages pass.'
 pre_mortem:
     overall_risk: low
     rows:
@@ -336,5 +360,5 @@ pre_mortem:
             The step is best-effort (failure emits a warning, not an error). If the checkout
             fails, close-impl still completes successfully. Future work could detect the
             default branch name from git config, but that is out of scope here.
-state: "REVIEWED"
+state: COMPLETE
 injection_method: hook
