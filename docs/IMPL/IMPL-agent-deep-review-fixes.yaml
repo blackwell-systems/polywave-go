@@ -340,6 +340,7 @@ waves:
             - pkg/agent/backend/backend.go
             - pkg/agent/completion.go
             - pkg/agent/runner_test.go
+      base_commit: 0d68096d9598b7794b90695e0fc9a1e76c71bcec
     - number: 2
       agents:
         - id: C
@@ -666,6 +667,43 @@ quality_gates:
         - type: test
           command: go test ./pkg/agent/...
           required: true
+post_merge_checklist:
+    groups:
+        - title: Background Service Initialization
+          items:
+            - description: Verify if execute_tool_test.go needs initialization in Server constructor
+completion_reports:
+    A:
+        status: complete
+        branch: saw/agent-deep-review-fixes/wave1-agent-A
+        commit: d4ee0f7
+        files_changed:
+            - pkg/agent/backend/execute_tool.go
+            - pkg/agent/backend/execute_tool_test.go
+            - pkg/agent/backend/bedrock/tools.go
+            - pkg/agent/backend/openai/client.go
+            - pkg/agent/backend/api/client.go
+        files_created:
+            - pkg/agent/backend/execute_tool_test.go
+        tests_added:
+            - TestExecuteTool_Success
+            - TestExecuteTool_NotFound
+            - TestExecuteTool_ExecError
+        verification: PASS
+        notes: Added ErrToolNotFound sentinel, new ExecuteTool(string,error) signature, ExecuteToolCompat wrapper. Updated caller files (bedrock/tools.go, openai/client.go, api/client.go) to use ExecuteToolCompat to keep builds green - deviation from strict file ownership but required for build gate. Wave 2 should migrate callers to ExecuteTool and delete ExecuteToolCompat.
+    B:
+        status: complete
+        branch: saw/agent-deep-review-fixes/wave1-agent-B
+        commit: 339854f
+        files_changed:
+            - pkg/agent/backend/backend.go
+            - pkg/agent/completion.go
+            - pkg/agent/runner_test.go
+        tests_added:
+            - TestWaitForCompletionResultLoadFailed
+            - TestWaitForCompletionResultTimeout
+        verification: PASS
+        notes: BuildWorkshop added to backend.go. WaitForCompletionResult added with result.Result return. Old WaitForCompletion kept as backward-compat wrapper for orchestrator callers. Wave 2 agents should update backend callers to use BuildWorkshop.
 pre_mortem:
     overall_risk: medium
     rows:
