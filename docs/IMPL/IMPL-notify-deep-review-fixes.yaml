@@ -1,0 +1,515 @@
+title: Fix all issues from pkg/notify deep review
+feature_slug: notify-deep-review-fixes
+verdict: SUITABLE
+suitability_assessment: |
+    All 8 issues from the deep review are clearly specified with exact file/line references.
+    No investigation needed. Work decomposes cleanly into 3 agents with disjoint file ownership:
+    Agent A owns Slack adapter + tests, Agent B owns Discord + Telegram adapters,
+    Agent C owns README + new types_test.go. All agents are independent (wave 1 only).
+
+    Estimated times:
+    - Scout phase: ~5 min
+    - Agent execution: ~5 min (3 agents x 3 min avg, fully parallel)
+    - Merge & verification: ~2 min
+    Total SAW time: ~12 min
+
+    Sequential baseline: ~12 min (3 agents x 4 min avg)
+    Time savings: ~5 min (42% faster)
+
+    Recommendation: Clear speedup. Three fully parallel agents with non-trivial test writing.
+test_command: go test ./pkg/notify/...
+lint_command: go vet ./pkg/notify/...
+file_ownership:
+    - file: pkg/notify/slack.go
+      agent: A
+      wave: 1
+      action: modify
+    - file: pkg/notify/slack_test.go
+      agent: A
+      wave: 1
+      action: modify
+    - file: pkg/notify/discord.go
+      agent: B
+      wave: 1
+      action: modify
+    - file: pkg/notify/telegram.go
+      agent: B
+      wave: 1
+      action: modify
+    - file: pkg/notify/README.md
+      agent: C
+      wave: 1
+      action: modify
+    - file: pkg/notify/types_test.go
+      agent: C
+      wave: 1
+      action: new
+interface_contracts:
+    - name: SendData.MessageID population
+      description: All three adapters must populate MessageID from API responses when available
+      definition: |
+        // Slack Bot API: parse "ts" field from JSON response
+        var apiResp struct {
+            OK    bool   `json:"ok"`
+            Error string `json:"error"`
+            TS    string `json:"ts"`
+        }
+        // Use apiResp.TS as MessageID
+
+        // Discord: parse "id" field from JSON response body
+        var discordResp struct {
+            ID string `json:"id"`
+        }
+        // Use discordResp.ID as MessageID
+
+        // Telegram: parse "result.message_id" from JSON response
+        var telegramResp struct {
+            OK     bool `json:"ok"`
+            Result struct {
+                MessageID int `json:"message_id"`
+            } `json:"result"`
+        }
+        // Use fmt.Sprintf("%d", telegramResp.Result.MessageID) as MessageID
+      location: pkg/notify/slack.go, pkg/notify/discord.go, pkg/notify/telegram.go
+waves:
+    - number: 1
+      agents:
+        - id: A
+          task: |
+            ## Role
+            Fix Slack adapter bugs and add missing bot token tests.
+
+            ## What to implement
+
+            ### 1. HIGH: Fix silent JSON decode failure (slack.go line 155-165)
+            The current code at line 160:
+            ```go
+            if err := json.NewDecoder(resp.Body).Decode(&apiResp); err == nil && !apiResp.OK {
+            ```
+            silently succeeds when JSON decode fails. Split into two separate checks:
+
+            ```go
+            if err := json.NewDecoder(resp.Body).Decode(&apiResp); err != nil {
+                return result.NewFailure[SendData]([]result.SAWError{
+                    {Code: "SLACK_DECODE_ERROR", Message: fmt.Sprintf("slack: decode API response: %v", err), Severity: "fatal"},
+                })
+            }
+            if !apiResp.OK {
+                return result.NewFailure[SendData]([]result.SAWError{
+                    {Code: "SLACK_API_ERROR", Message: fmt.Sprintf("slack: API error: %s", apiResp.Error), Severity: "fatal"},
+                })
+            }
+            ```
+
+            ### 2. MEDIUM: Populate MessageID from Slack Bot API response (slack.go line 155-170)
+            Add `TS string json:"ts"` to the apiResp struct. After the OK check, use apiResp.TS
+            as the MessageID in the returned SendData. Only for bot token mode -- webhook mode
+            does not return a message ID, so leave MessageID empty for webhook sends.
+
+            The success return (currently line 167-170) should become:
+            ```go
+            sd := SendData{
+                Timestamp: time.Now(),
+                Provider:  "slack",
+            }
+            if s.token != "" {
+                sd.MessageID = apiResp.TS
+            }
+            return result.NewSuccess(sd)
+            ```
+
+            Move the apiResp variable declaration and body decode to only run in bot token mode
+            (it's already inside the `if s.token != ""` block). Keep the success return after the block.
+
+            ### 3. HIGH: Add bot token mode tests (slack_test.go)
+            Add three new test functions using httptest.NewServer:
+
+            **TestSlackAdapter_Send_BotTokenSuccess**: Create a SlackAdapter with token + destination
+            (no webhook_url). Mock server returns `{"ok":true,"ts":"1234567890.123456"}`. Verify:
+            - Request has Authorization: Bearer header
+            - Request URL path is /api/chat.postMessage (the mock server will receive the request at its root, but verify Content-Type and auth header)
+            - Request body contains "channel" field
+            - Result is success
+            - SendData.MessageID equals "1234567890.123456"
+            - SendData.Provider equals "slack"
+
+            To test bot token mode, you need to override the API URL. The SlackAdapter currently
+            hardcodes "https://slack.com/api/chat.postMessage". Create the adapter directly as
+            `&SlackAdapter{token: "xoxb-test", destination: "#test", client: srv.Client()}` and
+            then the token != "" branch will use the hardcoded URL. BUT that won't hit the test
+            server. Instead, you need to make the adapter hit the test server URL.
+
+            The cleanest approach: construct the adapter via NewSlackAdapter with token+destination,
+            then type-assert to *SlackAdapter and replace the client. But the hardcoded URL
+            "https://slack.com/api/chat.postMessage" is the problem. You'll need to also add a
+            `botAPIURL` field to SlackAdapter (unexported, defaults to the real URL, overridable
+            for tests). Set it in the test to srv.URL. Update Send() to use `s.botAPIURL` instead
+            of the hardcoded string. Default it in NewSlackAdapter:
+            ```go
+            botAPIURL: "https://slack.com/api/chat.postMessage",
+            ```
+
+            **TestSlackAdapter_Send_BotTokenAPIError**: Mock returns `{"ok":false,"error":"channel_not_found"}`.
+            Verify result is fatal with code "SLACK_API_ERROR" and message contains "channel_not_found".
+
+            **TestSlackAdapter_Send_BotTokenDecodeError**: Mock returns invalid JSON (e.g., `{invalid`).
+            Verify result is fatal with code "SLACK_DECODE_ERROR".
+
+            ### 4. MEDIUM: Add doc comments for adapter-specific error codes
+            Add a block comment near the top of slack.go (after the import block, before the type
+            declarations) explaining the adapter-specific error codes:
+            ```go
+            // Slack adapter error codes (not registered in pkg/result/codes.go because
+            // this package is designed as an extractable library with its own error domain):
+            //   SLACK_MARSHAL_ERROR   — JSON marshal of outbound payload failed
+            //   SLACK_REQUEST_ERROR   — http.NewRequestWithContext failed
+            //   SLACK_SEND_ERROR      — HTTP client.Do failed (non-context error)
+            //   SLACK_RATE_LIMITED    — 429 Too Many Requests
+            //   SLACK_HTTP_ERROR      — non-2xx HTTP status (not 429)
+            //   SLACK_API_ERROR       — Bot API returned {"ok": false}
+            //   SLACK_DECODE_ERROR    — Bot API response JSON decode failed
+            ```
+
+            ## Interfaces
+            - SendData struct in types.go (read-only, do not modify): has MessageID string field
+            - result.NewSuccess, result.NewFailure from pkg/result (read-only)
+            - result.CodeContextCancelled from pkg/result/codes.go (read-only)
+
+            ## Tests
+            - Existing tests must continue to pass (webhook mode tests)
+            - Add TestSlackAdapter_Send_BotTokenSuccess
+            - Add TestSlackAdapter_Send_BotTokenAPIError
+            - Add TestSlackAdapter_Send_BotTokenDecodeError
+
+            ## Verification gate
+            ```bash
+            go build ./pkg/notify/... && go vet ./pkg/notify/... && go test ./pkg/notify/... -count=1 -run "TestSlack"
+            ```
+
+            ## Constraints
+            - Do NOT modify types.go, discord.go, telegram.go, or README.md
+            - Keep all changes within pkg/notify/slack.go and pkg/notify/slack_test.go
+            - The new botAPIURL field must be unexported and default to the real Slack API URL
+          files:
+            - pkg/notify/slack.go
+            - pkg/notify/slack_test.go
+        - id: B
+          task: |
+            ## Role
+            Fix Discord and Telegram adapters: populate MessageID and add comment.
+
+            ## What to implement
+
+            ### 1. MEDIUM: Populate MessageID in Discord adapter (discord.go ~line 114-128)
+            After the HTTP status check (line 114-122), before the success return, parse the
+            response body to extract the message ID. Discord webhooks with `?wait=true` return
+            a message object with an "id" field. Without `?wait=true`, Discord returns 204 No Content
+            and there's no body to parse.
+
+            Update the adapter to append `?wait=true` to the webhook URL so Discord returns the
+            message object. Then parse the response:
+            ```go
+            var discordResp struct {
+                ID string `json:"id"`
+            }
+            // Best-effort parse -- if decode fails, we still got a 2xx so the message was sent.
+            // Just leave MessageID empty.
+            json.NewDecoder(resp.Body).Decode(&discordResp)
+            ```
+
+            Update the webhookURL in the request to append "?wait=true":
+            ```go
+            reqURL := a.webhookURL + "?wait=true"
+            ```
+            (Add this before the http.NewRequestWithContext call, use reqURL instead of a.webhookURL)
+
+            Return SendData with MessageID:
+            ```go
+            return result.NewSuccess(SendData{
+                MessageID: discordResp.ID,
+                Timestamp: time.Now(),
+                Provider:  "discord",
+            })
+            ```
+
+            ### 2. MEDIUM: Populate MessageID in Telegram adapter (telegram.go ~line 96-111)
+            After the HTTP status check, before the success return, parse the response body:
+            ```go
+            var telegramResp struct {
+                OK     bool `json:"ok"`
+                Result struct {
+                    MessageID int `json:"message_id"`
+                } `json:"result"`
+            }
+            var msgID string
+            if err := json.NewDecoder(resp.Body).Decode(&telegramResp); err == nil && telegramResp.OK {
+                msgID = fmt.Sprintf("%d", telegramResp.Result.MessageID)
+            }
+            ```
+
+            Update the success return to include MessageID:
+            ```go
+            return result.NewSuccess(SendData{
+                MessageID: msgID,
+                Timestamp: time.Now(),
+                Provider:  "telegram",
+            })
+            ```
+
+            Note: Telegram's existing test server already returns `{"ok":true}` so the existing
+            tests won't break -- msgID will just be "0" since message_id defaults to 0.
+            Update the test server in TestTelegramAdapter_SendSuccess to return a message_id:
+            ```go
+            w.Write([]byte(`{"ok":true,"result":{"message_id":42}}`))
+            ```
+            Then verify data.MessageID == "42" in the test assertions. This requires modifying
+            telegram_test.go -- but that file is NOT in your ownership. Instead, make the parse
+            best-effort so existing tests still pass: if message_id is 0, leave MessageID as
+            empty string:
+            ```go
+            if err == nil && telegramResp.OK && telegramResp.Result.MessageID > 0 {
+                msgID = fmt.Sprintf("%d", telegramResp.Result.MessageID)
+            }
+            ```
+            This way the existing test (which returns `{"ok":true}` with no result.message_id)
+            still passes with empty MessageID.
+
+            Wait -- re-reading telegram_test.go, the test server returns `{"ok":true}` which
+            will decode with MessageID=0. With the > 0 check, msgID stays empty. Good.
+
+            Actually, looking more carefully at telegram_test.go line 56-57, it writes
+            `{"ok":true}`. The test does NOT check MessageID. So even if we set it to "0",
+            the test passes. But using > 0 is cleaner.
+
+            ### 3. LOW: Add comment to Discord's embeds assertion block (discord.go ~line 65-68)
+            The Slack adapter has a detailed comment explaining the type assertion fallback
+            (slack.go lines 81-85). Discord lacks this. Add a similar comment before line 65:
+            ```go
+            // msg.Embeds must be []discordEmbed (as produced by DiscordFormatter.Format)
+            // for the assertion to succeed. If Embeds is any other type (e.g. nil
+            // or []interface{}), the assertion fails silently and the message falls
+            // back to content-only mode. Callers using a non-Discord formatter
+            // must ensure Embeds is []discordEmbed or leave it nil.
+            ```
+
+            ### 4. MEDIUM: Add doc comments for adapter-specific error codes
+            Add block comments near the top of discord.go and telegram.go (after imports,
+            before type declarations) explaining the error codes, similar to:
+
+            discord.go:
+            ```go
+            // Discord adapter error codes (not registered in pkg/result/codes.go because
+            // this package is designed as an extractable library with its own error domain):
+            //   DISCORD_MARSHAL_ERROR   — JSON marshal of outbound payload failed
+            //   DISCORD_REQUEST_ERROR   — http.NewRequestWithContext failed
+            //   DISCORD_SEND_ERROR      — HTTP client.Do failed (non-context error)
+            //   DISCORD_RATE_LIMITED    — 429 Too Many Requests
+            //   DISCORD_HTTP_ERROR      — non-2xx HTTP status (not 429)
+            ```
+
+            telegram.go:
+            ```go
+            // Telegram adapter error codes (not registered in pkg/result/codes.go because
+            // this package is designed as an extractable library with its own error domain):
+            //   TELEGRAM_MARSHAL_ERROR   — JSON marshal of outbound payload failed
+            //   TELEGRAM_REQUEST_ERROR   — http.NewRequestWithContext failed
+            //   TELEGRAM_SEND_ERROR      — HTTP client.Do failed (non-context error)
+            //   TELEGRAM_RATE_LIMITED    — 429 Too Many Requests
+            //   TELEGRAM_HTTP_ERROR      — non-2xx HTTP status (not 429)
+            ```
+
+            ## Interfaces
+            - SendData struct in types.go (read-only): has MessageID string field
+            - result.NewSuccess, result.NewFailure from pkg/result (read-only)
+            - The `fmt` package is already imported in telegram.go. discord.go does NOT import
+              fmt.Sprintf for the MessageID -- but discordResp.ID is already a string, so no
+              fmt needed there.
+
+            ## Tests
+            - All existing discord_test.go and telegram_test.go tests must continue to pass
+            - The Discord ?wait=true change means the test server will now receive requests
+              with "?wait=true" appended. The existing test servers return 204/200 without
+              a body or with an empty body, so json.Decode will fail silently and MessageID
+              will be empty. Existing tests still pass.
+            - Note: TestDiscordAdapter_SendSuccess currently expects 204 No Content from the
+              server. With ?wait=true, Discord returns 200 OK with a JSON body. The test mock
+              returns 204 which is still 2xx so it passes the status check. The json.Decode
+              on an empty body will just fail silently. All good.
+
+            ## Verification gate
+            ```bash
+            go build ./pkg/notify/... && go vet ./pkg/notify/... && go test ./pkg/notify/... -count=1 -run "TestDiscord|TestTelegram"
+            ```
+
+            ## Constraints
+            - Do NOT modify slack.go, slack_test.go, types.go, or README.md
+            - Keep changes within pkg/notify/discord.go and pkg/notify/telegram.go only
+          files:
+            - pkg/notify/discord.go
+            - pkg/notify/telegram.go
+        - id: C
+          task: |
+            ## Role
+            Fix README documentation and add missing readWithFallback unit test.
+
+            ## What to implement
+
+            ### 1. MEDIUM: Fix Adapter.Send return type in README (README.md lines 68-77)
+            The Custom Adapters section shows the wrong return type:
+            ```go
+            type Adapter interface {
+                Name() string
+                Send(ctx context.Context, msg Message) error
+            }
+            ```
+
+            Update to match the actual interface in types.go:
+            ```go
+            type Adapter interface {
+                Name() string
+                Send(ctx context.Context, msg Message) result.Result[SendData]
+            }
+            ```
+
+            Also add the import context to the code block. The full corrected block should be:
+            ```go
+            import "github.com/blackwell-systems/scout-and-wave-go/pkg/result"
+
+            type Adapter interface {
+                Name() string
+                Send(ctx context.Context, msg Message) result.Result[SendData]
+            }
+
+            type Formatter interface {
+                Format(event Event) Message
+            }
+            ```
+
+            ### 2. LOW: Add TestReadWithFallback table-driven test (new file types_test.go)
+            Create pkg/notify/types_test.go with a table-driven test for readWithFallback:
+
+            ```go
+            package notify
+
+            import "testing"
+
+            func TestReadWithFallback(t *testing.T) {
+                tests := []struct {
+                    name     string
+                    cfg      map[string]string
+                    key      string
+                    fallback string
+                    want     string
+                }{
+                    {
+                        name:     "primary key present",
+                        cfg:      map[string]string{"token": "abc", "bot_token": "def"},
+                        key:      "token",
+                        fallback: "bot_token",
+                        want:     "abc",
+                    },
+                    {
+                        name:     "fallback key used",
+                        cfg:      map[string]string{"bot_token": "def"},
+                        key:      "token",
+                        fallback: "bot_token",
+                        want:     "def",
+                    },
+                    {
+                        name:     "neither key present",
+                        cfg:      map[string]string{"other": "val"},
+                        key:      "token",
+                        fallback: "bot_token",
+                        want:     "",
+                    },
+                    {
+                        name:     "primary key empty falls back",
+                        cfg:      map[string]string{"token": "", "bot_token": "def"},
+                        key:      "token",
+                        fallback: "bot_token",
+                        want:     "def",
+                    },
+                    {
+                        name:     "both empty",
+                        cfg:      map[string]string{"token": "", "bot_token": ""},
+                        key:      "token",
+                        fallback: "bot_token",
+                        want:     "",
+                    },
+                    {
+                        name:     "nil map",
+                        cfg:      nil,
+                        key:      "token",
+                        fallback: "bot_token",
+                        want:     "",
+                    },
+                }
+                for _, tt := range tests {
+                    t.Run(tt.name, func(t *testing.T) {
+                        got := readWithFallback(tt.cfg, tt.key, tt.fallback)
+                        if got != tt.want {
+                            t.Errorf("readWithFallback() = %q, want %q", got, tt.want)
+                        }
+                    })
+                }
+            }
+            ```
+
+            Note: readWithFallback is unexported, so the test must be in package notify
+            (not notify_test). Check that the nil map case actually works -- looking at
+            the implementation: `cfg[key]` on a nil map returns "" in Go, so it works.
+
+            ## Interfaces
+            - readWithFallback(cfg map[string]string, key, fallbackKey string) string (in types.go, unexported)
+
+            ## Tests
+            - TestReadWithFallback with 6 test cases as specified above
+            - Existing tests must not be affected
+
+            ## Verification gate
+            ```bash
+            go build ./pkg/notify/... && go vet ./pkg/notify/... && go test ./pkg/notify/... -count=1 -run "TestReadWithFallback"
+            ```
+
+            ## Constraints
+            - Do NOT modify any .go files other than creating types_test.go
+            - Do NOT modify slack.go, discord.go, telegram.go, or their test files
+            - The README update is the only modification to an existing file
+          files:
+            - pkg/notify/README.md
+            - pkg/notify/types_test.go
+quality_gates:
+    level: standard
+    gates:
+        - type: build
+          command: go build ./pkg/notify/...
+          required: true
+        - type: lint
+          command: go vet ./pkg/notify/...
+          required: true
+        - type: test
+          command: go test ./pkg/notify/... -count=1
+          required: true
+pre_mortem:
+    overall_risk: low
+    rows:
+        - scenario: Discord ?wait=true changes break existing test expectations
+          likelihood: low
+          impact: medium
+          mitigation: Agent B's task specifies best-effort JSON decode so empty responses still work. Existing tests return 204 which is 2xx.
+        - scenario: Slack botAPIURL field addition causes merge conflicts with other PRs
+          likelihood: low
+          impact: low
+          mitigation: Field is added to an unexported struct in a leaf package with no upstream dependents.
+        - scenario: readWithFallback nil map test panics
+          likelihood: low
+          impact: low
+          mitigation: Go map index on nil returns zero value. Verified in implementation analysis.
+critic_report:
+    verdict: PASS
+    agent_reviews: {}
+    summary: Skipped by operator (--skip-critic)
+    reviewed_at: "2026-04-01T15:37:48Z"
+    issue_count: 0
+state: REVIEWED
+injection_method: hook

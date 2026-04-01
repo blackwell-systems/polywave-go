@@ -636,6 +636,18 @@
         "cached_at": "2026-03-30T09:54:38.711083-07:00"
       }
     },
+    "1fe596387b7856af892c6c30f7a80135": {
+      "lint": {
+        "gate_type": "lint",
+        "command": "go vet ./pkg/agent/...",
+        "passed": true,
+        "exit_code": 0,
+        "stdout": "",
+        "stderr": "",
+        "from_cache": true,
+        "cached_at": "2026-04-01T08:34:01.216094-07:00"
+      }
+    },
     "203b9153751a1e0591de496eff9be95f": {
       "test": {
         "gate_type": "test",
@@ -1260,6 +1272,18 @@
         "cached_at": "2026-03-25T13:17:45.765506-07:00"
       }
     },
+    "3710acae4347932f03ddd2569fdb95d6": {
+      "build": {
+        "gate_type": "build",
+        "command": "go build ./pkg/agent/...",
+        "passed": true,
+        "exit_code": 0,
+        "stdout": "",
+        "stderr": "",
+        "from_cache": true,
+        "cached_at": "2026-04-01T08:29:00.221359-07:00"
+      }
+    },
     "38a0ae40e308f78dda575eb39fba53e0": {
       "test": {
         "gate_type": "test",
@@ -1438,6 +1462,18 @@
         "stderr": "",
         "from_cache": true,
         "cached_at": "2026-03-30T12:31:49.657116-07:00"
+      }
+    },
+    "4083d8924cd1a85373cabff8124ee492": {
+      "build": {
+        "gate_type": "build",
+        "command": "go build ./pkg/agent/...",
+        "passed": true,
+        "exit_code": 0,
+        "stdout": "",
+        "stderr": "",
+        "from_cache": true,
+        "cached_at": "2026-04-01T08:34:00.827339-07:00"
       }
     },
     "40bd68d6ff3ff6457bdcfd1de2440dd4": {
@@ -3624,6 +3660,18 @@
         "cached_at": "2026-03-24T22:56:24.143713-07:00"
       }
     },
+    "999adea3364fd9a4cae8646dd564a605": {
+      "test": {
+        "gate_type": "test",
+        "command": "go test ./pkg/agent/...",
+        "passed": true,
+        "exit_code": 0,
+        "stdout": "ok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/agent\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/agent/backend\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/agent/backend/api\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/agent/backend/bedrock\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/agent/backend/cli\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/agent/backend/openai\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/agent/dedup\t(cached)\n",
+        "stderr": "",
+        "from_cache": true,
+        "cached_at": "2026-04-01T08:29:01.035159-07:00"
+      }
+    },
     "99f9d375a22242846f2119babf67b894": {
       "build": {
         "gate_type": "build",
@@ -4018,6 +4066,18 @@
         "stderr": "",
         "from_cache": true,
         "cached_at": "2026-03-24T21:57:33.89-07:00"
+      }
+    },
+    "ab9b4d329924b990ccdbb9d5de34f22c": {
+      "lint": {
+        "gate_type": "lint",
+        "command": "go vet ./pkg/agent/...",
+        "passed": true,
+        "exit_code": 0,
+        "stdout": "",
+        "stderr": "",
+        "from_cache": true,
+        "cached_at": "2026-04-01T08:29:00.628016-07:00"
       }
     },
     "aba483462f9409fffbd74524ae4d7061": {
@@ -5866,6 +5926,18 @@
         "stderr": "",
         "from_cache": true,
         "cached_at": "2026-03-31T23:21:00.08392-07:00"
+      }
+    },
+    "e476e1c93943e43989b5014f8dc07998": {
+      "test": {
+        "gate_type": "test",
+        "command": "go test ./pkg/agent/...",
+        "passed": true,
+        "exit_code": 0,
+        "stdout": "ok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/agent\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/agent/backend\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/agent/backend/api\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/agent/backend/bedrock\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/agent/backend/cli\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/agent/backend/openai\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/agent/dedup\t(cached)\n",
+        "stderr": "",
+        "from_cache": true,
+        "cached_at": "2026-04-01T08:34:01.607383-07:00"
       }
     },
     "e5a6b023dbd4a8e0cb7e261cb8995fcd": {

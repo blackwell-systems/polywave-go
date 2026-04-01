@@ -1,3 +1,4 @@
+completion_date: "2026-04-01"
 title: Fix all issues from pkg/agent deep review
 feature_slug: agent-deep-review-fixes
 verdict: SUITABLE
@@ -655,6 +656,7 @@ waves:
           files:
             - pkg/agent/dedup/cache_test.go
             - pkg/agent/dedup/middleware.go
+      base_commit: 27a3ca649de1186e7dfddf6ab3985facf0cfa855
 quality_gates:
     level: standard
     gates:
@@ -704,6 +706,79 @@ completion_reports:
             - TestWaitForCompletionResultTimeout
         verification: PASS
         notes: BuildWorkshop added to backend.go. WaitForCompletionResult added with result.Result return. Old WaitForCompletion kept as backward-compat wrapper for orchestrator callers. Wave 2 agents should update backend callers to use BuildWorkshop.
+    C:
+        status: complete
+        branch: saw/agent-deep-review-fixes/wave2-agent-C
+        commit: af469e8
+        files_changed:
+            - pkg/agent/backend/api/client.go
+            - pkg/agent/backend/api/client_test.go
+        tests_added:
+            - TestRun_MultiTurnToolExecution
+            - TestRun_SingleTurnEndTurn
+            - TestDedupStats_NilBeforeRun
+            - TestCommitCount_ZeroBeforeRun
+        verification: PASS
+        notes: Race condition fixed with sync.Mutex. Migrated to shared BuildWorkshop and ExecuteTool. Silent unmarshal errors now logged. RunStreamingWithTools forwards onToolCall via cfg. All 9 tests pass with -race.
+    D:
+        status: complete
+        branch: saw/agent-deep-review-fixes/wave2-agent-D
+        commit: "6346115"
+        files_changed:
+            - pkg/agent/backend/bedrock/client.go
+            - pkg/agent/backend/bedrock/tools.go
+            - pkg/agent/backend/bedrock/converse.go
+            - pkg/agent/backend/bedrock/converse_test.go
+            - pkg/agent/backend/bedrock/client_test.go
+        verification: PASS
+        notes: All 6 bedrock fixes applied. 23 tests pass with race detector. Dead code removed (buildConverseMessages, buildToolsJSON, 3 test functions). Migrated to shared BuildWorkshop and ExecuteTool. maxTurns default aligned to 50.
+    E:
+        status: complete
+        branch: saw/agent-deep-review-fixes/wave2-agent-E
+        commit: 96e3d25
+        files_changed:
+            - pkg/agent/backend/openai/client.go
+            - pkg/agent/backend/openai/client_test.go
+        tests_added:
+            - TestParseContentToolCall_EmptyContent
+            - TestParseContentToolCall_ValidJSONNoName
+            - TestParseContentToolCall_UnknownToolName
+            - TestParseContentToolCall_KnownToolName
+            - TestParseContentToolCall_NotJSON
+            - TestRunStreamingWithTools_EmitsToolCallEvents
+            - TestCommitCount_NilConstraints
+        verification: PASS
+        notes: 'All 6 fixes applied: BuildWorkshop migration, ExecuteTool migration, slog.Warn on unmarshal, RunStreamingWithTools onToolCall emission, CommitCount method, parseContentToolCall tests. Streaming length check was already present. 13 tests passing.'
+    F:
+        status: complete
+        branch: saw/agent-deep-review-fixes/wave2-agent-F
+        commit: 3f3c99c
+        files_changed:
+            - pkg/agent/backend/cli/client.go
+            - pkg/agent/backend/cli/client_test.go
+        tests_added:
+            - TestBuildCLIArgs_Default
+            - TestBuildCLIArgs_WithModel
+            - TestBuildCLIArgs_WithMaxTurns
+            - TestBuildPrompt
+            - TestDedupStats_ReturnsNil
+            - TestCommitCount_ReturnsZero
+        verification: PASS
+        notes: Extracted buildCLIArgs, buildPrompt, readPTYStream helpers. Added DedupStats/CommitCount stubs. All 18 tests passing.
+    G:
+        status: complete
+        branch: saw/agent-deep-review-fixes/wave2-agent-G
+        commit: da20db4
+        files_changed:
+            - pkg/agent/dedup/cache_test.go
+        tests_added:
+            - TestMiddleware_ReadError
+            - TestInvalidate_NonExistent
+            - TestMiddleware_ErrorPropagation
+            - TestCache_EmptyContent
+            - TestCache_LargeContent
+        verification: PASS
+        notes: Added 5 edge case tests for dedup cache and middleware. All 12 tests pass with -race. No changes needed to middleware.go — error propagation was already correct.
 pre_mortem:
     overall_risk: medium
     rows:
@@ -727,5 +802,5 @@ pre_mortem:
           likelihood: medium
           impact: medium
           mitigation: Agent B must grep for callers across the entire repo before changing. Provide compat wrapper if needed.
-state: REVIEWED
+state: COMPLETE
 injection_method: hook

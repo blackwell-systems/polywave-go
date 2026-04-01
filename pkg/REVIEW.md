@@ -8,13 +8,13 @@ Each reviewed package gets scouted → IMPL'd → closed before being marked don
 
 | Package | Reviewed | IMPL Scouted | IMPL Closed |
 |---------|----------|--------------|-------------|
-| agent | ✅ | | |
-| agent/backend | ✅ (with agent) | | |
-| agent/backend/api | ✅ (with agent) | | |
-| agent/backend/bedrock | ✅ (with agent) | | |
-| agent/backend/cli | ✅ (with agent) | | |
-| agent/backend/openai | ✅ (with agent) | | |
-| agent/dedup | ✅ (with agent) | | |
+| agent | ✅ | ✅ | ✅ |
+| agent/backend | ✅ (with agent) | ✅ | ✅ |
+| agent/backend/api | ✅ (with agent) | ✅ | ✅ |
+| agent/backend/bedrock | ✅ (with agent) | ✅ | ✅ |
+| agent/backend/cli | ✅ (with agent) | ✅ | ✅ |
+| agent/backend/openai | ✅ (with agent) | ✅ | ✅ |
+| agent/dedup | ✅ (with agent) | ✅ | ✅ |
 | analyzer | | | |
 | autonomy | | | |
 | builddiag | | | |
@@ -31,7 +31,7 @@ Each reviewed package gets scouted → IMPL'd → closed before being marked don
 | idgen | | | |
 | interview | | | |
 | journal | | | |
-| notify | | | |
+| notify | ✅ | | |
 | observability | | | |
 | orchestrator | | | |
 | pipeline | | | |
