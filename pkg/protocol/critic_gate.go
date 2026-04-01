@@ -1,5 +1,34 @@
 package protocol
 
+// E37Required returns true when a critic review is required before wave execution.
+// The E37 trigger conditions are:
+//   - Wave 1 has 3 or more agents, OR
+//   - file_ownership spans 2 or more distinct repositories
+//
+// This is the single authoritative implementation of E37 threshold logic.
+// Callers: checkCriticReview (pre_wave_gate.go), PrepareTier (program_tier_prepare.go).
+func E37Required(m *IMPLManifest) bool {
+	wave1Agents := 0
+	for _, wave := range m.Waves {
+		if wave.Number == 1 {
+			wave1Agents = len(wave.Agents)
+			break
+		}
+	}
+
+	repoSet := make(map[string]bool)
+	for _, r := range m.Repositories {
+		repoSet[r] = true
+	}
+	for _, fo := range m.FileOwnership {
+		if fo.Repo != "" {
+			repoSet[fo.Repo] = true
+		}
+	}
+
+	return wave1Agents >= 3 || len(repoSet) >= 2
+}
+
 // CriticGatePasses implements E37 critic gate enforcement logic.
 // Returns true when the wave should proceed, false when it should be blocked.
 //
