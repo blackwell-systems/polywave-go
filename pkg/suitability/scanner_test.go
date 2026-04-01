@@ -626,7 +626,8 @@ func TestParseRequirements_HeaderWithLocation(t *testing.T) {
 
 Some description of the feature.
 
-**Location:** pkg/auth/handler.go, pkg/auth/middleware.go
+Location: pkg/auth/handler.go
+Location: pkg/auth/middleware.go
 
 More details here.
 
@@ -634,7 +635,7 @@ More details here.
 
 Another requirement.
 
-**Location:** migrations/001_init.sql
+Location: migrations/001_init.sql
 `
 
 	reqResult := ParseRequirements(content)
