@@ -4152,6 +4152,18 @@
         "cached_at": "2026-03-31T23:20:01.484301-07:00"
       }
     },
+    "bb525d8db2dd346fdcff9d9b7842951b": {
+      "test": {
+        "gate_type": "test",
+        "command": "go test ./pkg/engine/... ./pkg/engine/workspace/...",
+        "passed": false,
+        "exit_code": 1,
+        "stdout": "FAIL\t./pkg/engine/workspace/... [setup failed]\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/engine\t(cached)\nFAIL\n",
+        "stderr": "# ./pkg/engine/workspace/...\npattern ./pkg/engine/workspace/...: lstat ./pkg/engine/workspace/: no such file or directory\n",
+        "from_cache": true,
+        "cached_at": "2026-04-01T01:28:22.731779-07:00"
+      }
+    },
     "bb90227087ef84a23be3b5cdec0d007b": {
       "lint": {
         "gate_type": "lint",
@@ -4186,6 +4198,18 @@
         "stderr": "",
         "from_cache": true,
         "cached_at": "2026-03-25T22:14:16.76632-07:00"
+      }
+    },
+    "bd143bd83ceeed11b2ecc01f6d557d51": {
+      "lint": {
+        "gate_type": "lint",
+        "command": "go vet ./...",
+        "passed": true,
+        "exit_code": 0,
+        "stdout": "",
+        "stderr": "",
+        "from_cache": true,
+        "cached_at": "2026-04-01T01:28:22.081664-07:00"
       }
     },
     "bd8059ea0cadbc801f856210a78bbbac": {
@@ -4366,6 +4390,18 @@
         "stderr": "",
         "from_cache": true,
         "cached_at": "2026-03-30T22:35:53.831237-07:00"
+      }
+    },
+    "c36a661d7618ef8674be13a64f092607": {
+      "build": {
+        "gate_type": "build",
+        "command": "go build ./...",
+        "passed": true,
+        "exit_code": 0,
+        "stdout": "",
+        "stderr": "",
+        "from_cache": true,
+        "cached_at": "2026-04-01T01:28:21.111978-07:00"
       }
     },
     "c42b789eb1e97629e35c76072ac49bca": {
