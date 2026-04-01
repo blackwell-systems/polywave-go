@@ -1,0 +1,564 @@
+title: pkg/config Code Review Hardening
+feature_slug: config-hardening
+verdict: SUITABLE
+suitability_assessment: |
+    9 code-review findings across 4 files. Pre-implementation status check:
+
+    Issue 1 (CRITICAL — 0600 perms after atomic write): TODO. Save() performs
+    temp-file + rename but never calls os.Chmod on the final path.
+
+    Issue 2 (HIGH — nil manifest guard): TODO. GetWaveState and GetAllWaveStates
+    dereference manifest.Waves and manifest.CompletionReports without a nil check;
+    a nil pointer passed by a caller panics immediately.
+
+    Issue 3 (HIGH — propagate legacy migration errors): TODO. The two json.Unmarshal
+    calls in the legacy repo migration block (lines 161, 167) silently ignore errors
+    via `:= json.Unmarshal(...); err == nil` guards. If those fail for unexpected
+    reasons the migration is silently skipped; errors should be logged at minimum.
+
+    Issue 4 (HIGH — consolidate walk-up logic): PARTIAL. FindConfigPath already
+    exists in pkg/config/config.go (exported, complete). pkg/autonomy/config.go
+    still has its own inline walk (filepath.Join + os.Stat loop). pkg/agent/backend/
+    configfile.go has findConfigFile (unexported duplicate). Both callers need to
+    be updated to call config.FindConfigPath.
+
+    Issue 5 (MEDIUM — autonomy.SaveConfig key preservation): DONE. Current
+    pkg/autonomy/config.go SaveConfig (lines 88–99) already reads the existing
+    file into `raw map[string]any`, unmarshals it, updates the "autonomy" key,
+    and writes the full map back. No fix needed. Agent C will add a test confirming
+    this behavior.
+
+    Issue 6 (MEDIUM — remove dead GateResults field): TODO. WaveState.GateResults
+    is declared but never populated anywhere in the codebase.
+
+    Issue 7 (MEDIUM — wave number context in errors): TODO. GetAllWaveStates
+    returns the raw error from GetWaveState with no wave-number context added.
+
+    Issue 8 (LOW — slog.Warn in LoadOrDefault): TODO. LoadOrDefault silently falls
+    back to defaults with no log output.
+
+    Issue 9 (LOW — distinct error codes in Save()): TODO. All Save() error paths
+    use CodeConfigInvalid (N014); JSON marshal failures should be distinguished
+    from filesystem I/O failures.
+
+    File decomposition: 3 agents with fully disjoint ownership.
+    Agent A: pkg/config/config.go + config_test.go  (issues 1, 3, 8, 9)
+    Agent B: pkg/config/state.go + state_test.go    (issues 2, 6, 7)
+    Agent C: pkg/autonomy/config.go + pkg/agent/backend/configfile.go (issue 4)
+    All agents are independent; single wave.
+
+    Estimated times:
+    - Scout phase: ~10 min
+    - Agent execution: ~3 agents x ~10 min avg, parallel = ~10 min
+    - Merge and verification: ~3 min
+    Total SAW time: ~23 min
+
+    Sequential baseline: ~3 agents x 12 min = ~36 min
+    Time savings: ~13 min (36% faster)
+
+    Recommendation: Clear speedup. All agents are fully independent and can run
+    in parallel in a single wave.
+test_command: go test ./pkg/config/... ./pkg/autonomy/... ./pkg/agent/backend/...
+lint_command: go vet ./...
+file_ownership:
+    - file: pkg/config/config.go
+      agent: A
+      wave: 1
+      action: modify
+    - file: pkg/config/config_test.go
+      agent: A
+      wave: 1
+      action: modify
+    - file: pkg/result/codes.go
+      agent: A
+      wave: 1
+      action: modify
+    - file: pkg/config/state.go
+      agent: B
+      wave: 1
+      action: modify
+    - file: pkg/config/state_test.go
+      agent: B
+      wave: 1
+      action: modify
+    - file: pkg/autonomy/config.go
+      agent: C
+      wave: 1
+      action: modify
+    - file: pkg/agent/backend/configfile.go
+      agent: C
+      wave: 1
+      action: modify
+    - file: pkg/agent/backend/configfile_test.go
+      agent: C
+      wave: 1
+      action: new
+interface_contracts:
+    - name: FindConfigPath
+      description: |-
+        Exported walk-up function already defined in pkg/config/config.go.
+        Callers in pkg/autonomy/config.go and pkg/agent/backend/configfile.go
+        must be updated to use this instead of their local duplicates.
+      definition: |
+        // FindConfigPath walks up from startDir looking for saw.config.json.
+        // Returns the absolute path if found, empty string if not.
+        func FindConfigPath(startDir string) string
+      location: pkg/config/config.go
+    - name: Save (error code distinctions)
+      description: |-
+        Save() must distinguish JSON marshal/re-parse failures (CodeConfigInvalid)
+        from filesystem I/O failures. Introduce CodeConfigIOFailed or reuse existing
+        N-codes. The cleanest approach: JSON marshal/unmarshal errors keep
+        CodeConfigInvalid (N014); filesystem errors (CreateTemp, Write, Close, Rename,
+        Chmod) use a new descriptive message but the same CodeConfigInvalid code
+        with a distinct prefix in the message, OR use CodeConfigInvalid for marshal
+        and a new constant for I/O. Check codes.go — N014 is the only config-specific
+        code. Agent A should add a CodeConfigIOFailed = "N018_CONFIG_IO_FAILED" constant
+        to pkg/result/codes.go and use it for filesystem operations in Save().
+        NOTE: N018 is already taken (CONTEXT_CANCELLED). Use a free slot.
+        Looking at codes.go: the N-range has N001–N084 occupied. Agent A should
+        scan codes.go for the next free N-slot above N084 and define
+        CodeConfigIOFailed there, then update Save() to use it for I/O paths.
+      definition: |
+        // Agent A must add to pkg/result/codes.go — find the next free N-slot
+        // above N084:
+        CodeConfigIOFailed = "N085_CONFIG_IO_FAILED" // or next available
+
+        // Save() error code usage after fix:
+        // JSON marshal/unmarshal failures → CodeConfigInvalid (N014)
+        // os.CreateTemp, tmpFile.Write, tmpFile.Close, os.Rename, os.Chmod → CodeConfigIOFailed
+      location: pkg/result/codes.go
+waves:
+    - number: 1
+      agents:
+        - id: A
+          task: |
+            ## Context
+            You are fixing 4 issues found during a code review of pkg/config/config.go.
+            All changes stay within pkg/config/config.go, pkg/config/config_test.go,
+            and pkg/result/codes.go (one new constant).
+
+            ## Files to modify
+            - pkg/config/config.go
+            - pkg/config/config_test.go
+            - pkg/result/codes.go (add one constant only — do not touch other constants)
+
+            ## Issue 1 (CRITICAL) — Enforce 0600 permissions after atomic write in Save()
+
+            After `os.Rename(tmpPath, configPath)` succeeds, add:
+            ```go
+            if err := os.Chmod(configPath, 0600); err != nil {
+                return result.NewFailure[bool]([]result.SAWError{
+                    result.NewError(result.CodeConfigIOFailed, "failed to set config permissions: "+err.Error()),
+                })
+            }
+            ```
+            This ensures saw.config.json (which holds API keys) is never world-readable.
+
+            ## Issue 3 (HIGH) — Propagate errors in legacy migration block
+
+            In Load(), the legacy repo migration block (around lines 159–176) uses:
+            ```go
+            if err := json.Unmarshal(data, &raw); err == nil {
+                if repoRaw, ok := raw["repo"]; ok {
+                    var legacy struct { ... }
+                    if err := json.Unmarshal(repoRaw, &legacy); err == nil && legacy.Path != "" {
+            ```
+            The outer `json.Unmarshal(data, &raw)` silently swallows errors. If it fails,
+            migration is skipped silently. The inner `json.Unmarshal(repoRaw, &legacy)` also
+            silently skips.
+
+            Fix: return a failure result for the outer unmarshal (the raw map unmarshal that
+            should always succeed if we got here — the earlier `json.Unmarshal(data, &cfg)`
+            succeeded, so this should never fail). Add slog.Warn for the inner unmarshal
+            failure (the "repo" key exists but is malformed JSON), which is a data-quality
+            warning not a fatal error. Import "log/slog" if not already imported.
+
+            Specifically:
+            - Outer: `if err := json.Unmarshal(data, &raw); err != nil { return result.NewFailure... }`
+            - Inner: if repoRaw unmarshal fails AND legacy.Path is empty, log
+              `slog.Warn("legacy repo migration: malformed repo entry", "path", path, "err", err)`
+              and continue (do not return failure — the config loaded fine, migration just can't run).
+
+            ## Issue 8 (LOW) — slog.Warn in LoadOrDefault when falling back to defaults
+
+            In LoadOrDefault(), after `r := Load(startDir)` returns a failure, before returning
+            the default config, add:
+            ```go
+            slog.Warn("LoadOrDefault: falling back to default config",
+                "reason", r.Errors[0].Message,
+                "startDir", startDir)
+            ```
+            Import "log/slog" at the top of config.go.
+
+            ## Issue 9 (LOW) — Distinct error codes in Save()
+
+            In pkg/result/codes.go, find the next available N-slot above N084. Currently N001–N084
+            are all occupied. Add:
+            ```go
+            // N085: config file I/O failed (permission set, write, rename)
+            CodeConfigIOFailed = "N085_CONFIG_IO_FAILED"
+            ```
+            Add it in the Engine error codes block (N001-N099), after the last existing N-entry.
+
+            Then update Save() in pkg/config/config.go to use CodeConfigIOFailed for all
+            filesystem operations:
+            - os.CreateTemp failure → CodeConfigIOFailed
+            - tmpFile.Write failure → CodeConfigIOFailed
+            - tmpFile.Close failure → CodeConfigIOFailed
+            - os.Rename failure → CodeConfigIOFailed
+            - os.Chmod failure (new, from issue 1) → CodeConfigIOFailed
+
+            Keep CodeConfigInvalid for the three JSON marshal/unmarshal failures at the
+            top of Save().
+
+            ## Tests to add in config_test.go
+
+            Add these test cases:
+
+            1. TestSave_FilePermissions: Create a new SAWConfig, call Save(), stat the written
+               file, assert `info.Mode().Perm() == 0600`.
+
+            2. TestLoadOrDefault_LogsWarn: This is harder to test without log capture. Write a
+               simple test that calls LoadOrDefault with a temp dir (no config file) and asserts
+               the returned config has default values — this validates the function still works
+               after the slog call is added. (The existing TestLoadOrDefault_FallsBack already
+               covers this; you may add a comment rather than a duplicate test.)
+
+            3. TestLoad_LegacyMigrationMalformedRepo: Write a config file with
+               `{"repo": "not-an-object"}` (repo is a string, not an object). Call Load().
+               Assert success (config loads with empty Repos, migration skipped gracefully).
+
+            ## Verification gate
+            ```
+            go build ./...
+            go vet ./pkg/config/... ./pkg/result/...
+            go test ./pkg/config/...
+            ```
+          files:
+            - pkg/config/config.go
+            - pkg/config/config_test.go
+            - pkg/result/codes.go
+        - id: B
+          task: |
+            ## Context
+            You are fixing 3 issues found during a code review of pkg/config/state.go.
+            All changes stay within pkg/config/state.go and pkg/config/state_test.go.
+
+            ## Files to modify
+            - pkg/config/state.go
+            - pkg/config/state_test.go
+
+            ## Issue 2 (HIGH) — Add nil manifest guard to GetWaveState and GetAllWaveStates
+
+            GetWaveState(manifest, waveNum) dereferences manifest.Waves on its first line
+            inside the for loop. If manifest is nil this panics.
+
+            Add a nil guard at the top of GetWaveState:
+            ```go
+            if manifest == nil {
+                return result.NewFailure[*WaveState]([]result.SAWError{
+                    result.NewError(result.CodeConfigInvalid, "manifest is nil"),
+                })
+            }
+            ```
+
+            GetAllWaveStates similarly accesses manifest.Waves on its first line.
+            Add the same nil guard at the top of GetAllWaveStates:
+            ```go
+            if manifest == nil {
+                return result.NewFailure[[]WaveState]([]result.SAWError{
+                    result.NewError(result.CodeConfigInvalid, "manifest is nil"),
+                })
+            }
+            ```
+
+            Also guard manifest.CompletionReports in GetWaveState: the map lookup
+            `manifest.CompletionReports[reportKey]` is safe on a nil map (returns zero
+            value, ok=false) in Go, so no additional guard is needed there. But if
+            manifest is non-nil and CompletionReports is nil, the lookup is already safe.
+
+            ## Issue 6 (MEDIUM) — Remove dead GateResults field from WaveState
+
+            The GateResults field in WaveState is declared but never populated anywhere
+            in the codebase. Remove it:
+
+            Before:
+            ```go
+            type WaveState struct {
+                WaveNum         int                            `json:"wave_num"`
+                TotalAgents     int                            `json:"total_agents"`
+                CompletedAgents []string                       `json:"completed_agents"`
+                FailedAgents    []string                       `json:"failed_agents"`
+                PendingAgents   []string                       `json:"pending_agents"`
+                GateResults     map[string]protocol.GateResult `json:"gate_results,omitempty"`
+                IsComplete      bool                           `json:"is_complete"`
+                MergeState      string                         `json:"merge_state,omitempty"`
+            }
+            ```
+
+            After:
+            ```go
+            type WaveState struct {
+                WaveNum         int      `json:"wave_num"`
+                TotalAgents     int      `json:"total_agents"`
+                CompletedAgents []string `json:"completed_agents"`
+                FailedAgents    []string `json:"failed_agents"`
+                PendingAgents   []string `json:"pending_agents"`
+                IsComplete      bool     `json:"is_complete"`
+                MergeState      string   `json:"merge_state,omitempty"`
+            }
+            ```
+
+            After removing GateResults, check whether `protocol.GateResult` is still
+            imported anywhere in state.go. If the `protocol` import is only used for
+            `protocol.GateResult` and the wave/agent/completion-report types, verify
+            the remaining uses and keep the import — do NOT remove it if it is still
+            needed for `protocol.IMPLManifest`, `protocol.Wave`, etc.
+
+            ## Issue 7 (MEDIUM) — Add wave number context to errors in GetAllWaveStates
+
+            GetAllWaveStates currently returns the raw error from GetWaveState:
+            ```go
+            if r.IsFatal() {
+                return result.NewFailure[[]WaveState](r.Errors)
+            }
+            ```
+
+            Wrap the error to include which wave number caused the failure:
+            ```go
+            if r.IsFatal() {
+                wrapped := make([]result.SAWError, len(r.Errors))
+                for i, e := range r.Errors {
+                    wrapped[i] = result.NewError(e.Code,
+                        fmt.Sprintf("wave %d: %s", w.Number, e.Message))
+                }
+                return result.NewFailure[[]WaveState](wrapped)
+            }
+            ```
+
+            `fmt` is already imported. Verify `result.SAWError` has `Code` and `Message`
+            fields by checking pkg/result — use whatever field names exist (the existing
+            code in state.go uses `result.NewError(result.CodeWaveNotReady, ...)` pattern
+            so Code and Message are accessible).
+
+            ## Tests to add in state_test.go
+
+            Add these test cases:
+
+            1. TestGetWaveState_NilManifest: Call `GetWaveState(nil, 1)`. Assert IsFatal()
+               is true and Errors is non-empty.
+
+            2. TestGetAllWaveStates_NilManifest: Call `GetAllWaveStates(nil)`. Assert
+               IsFatal() is true.
+
+            3. TestGetAllWaveStates_ErrorContainsWaveNumber: Create a manifest with wave 3
+               and an unreachable error condition. The simplest way: create a manifest with
+               one wave (number 3), then manually verify that if GetWaveState were to fail,
+               the wrapping includes "wave 3:". You can test this indirectly by mocking a
+               bad wave state — the simplest approach is to look for whether the error message
+               format is correct in the unit test by calling a helper that constructs the
+               error message directly. Alternatively, add a test that constructs a scenario
+               where GetWaveState would fail (e.g., waveNum mismatch), but GetAllWaveStates
+               iterates over the actual wave list so it won't fail for valid waves. The wrapping
+               code is best validated by a unit test that calls GetWaveState with a wave that
+               doesn't exist when the manifest has a bad wave number — this scenario won't
+               arise in GetAllWaveStates since it iterates manifest.Waves. Add a comment
+               in the test noting this and test the nil-manifest paths thoroughly instead.
+
+            4. Verify the existing TestGetAllWaveStates test still passes after the wrapping
+               change (it should, since no errors occur in that test).
+
+            ## Verification gate
+            ```
+            go build ./...
+            go vet ./pkg/config/...
+            go test ./pkg/config/...
+            ```
+          files:
+            - pkg/config/state.go
+            - pkg/config/state_test.go
+        - id: C
+          task: |
+            ## Context
+            You are fixing issue 4 from a code review: consolidate the duplicated
+            walk-up-for-saw.config.json logic. The canonical implementation is
+            already exported as `config.FindConfigPath` in pkg/config/config.go.
+            Two callers have their own private copies that must be replaced.
+
+            ## Files to modify
+            - pkg/autonomy/config.go
+            - pkg/agent/backend/configfile.go
+
+            ## Issue 4 (HIGH) — Use config.FindConfigPath in both callers
+
+            ### pkg/agent/backend/configfile.go
+
+            Current state: `findConfigFile(dir string) string` is an unexported function
+            (lines 48–61) that duplicates FindConfigPath logic. It is called only by
+            `LoadProvidersFromConfig` in the same file.
+
+            Fix:
+            1. Add import: `"github.com/blackwell-systems/scout-and-wave-go/pkg/config"`
+            2. Delete the entire `findConfigFile` function (lines 48–61).
+            3. In `LoadProvidersFromConfig`, replace:
+               ```go
+               path := findConfigFile(dir)
+               ```
+               with:
+               ```go
+               path := config.FindConfigPath(dir)
+               ```
+
+            Verify the existing behavior is preserved:
+            - config.FindConfigPath accepts a startDir string and returns empty string
+              if not found — same contract as findConfigFile.
+            - config.FindConfigPath uses filepath.Abs internally; findConfigFile did not.
+              This means config.FindConfigPath is slightly more robust for relative paths,
+              which is a safe improvement.
+
+            ### pkg/autonomy/config.go
+
+            Current state: LoadConfig constructs the path directly as
+            `filepath.Join(repoPath, configFileName)` (line 33). This does NOT walk up
+            parent directories — it only checks the exact directory passed in. This is
+            intentionally different from the walk-up behavior and matches the autonomy
+            package's contract (always write/read from the given repo directory).
+
+            For LoadConfig, the direct filepath.Join is correct behavior — do NOT
+            replace it with FindConfigPath. The autonomy package is given an explicit
+            repoPath and should not walk up.
+
+            For SaveConfig, similarly, `path := filepath.Join(repoPath, configFileName)`
+            (line 83) is intentional.
+
+            Therefore, for pkg/autonomy/config.go:
+            - Remove the `const configFileName = "saw.config.json"` declaration (line 13)
+              since it duplicates the constant in pkg/config. Import the constant from
+              pkg/config instead: `config.configFileName` — WAIT: configFileName is
+              unexported in pkg/config. Do NOT expose it. Instead, keep the local
+              `configFileName` constant in pkg/autonomy/config.go since it cannot be
+              imported from pkg/config (unexported). The deduplication goal for issue 4
+              is specifically about the walk-up logic, not the filename constant.
+            - The autonomy package's direct path construction is intentional and correct.
+              No changes needed to pkg/autonomy/config.go for issue 4.
+            - Add a test in pkg/autonomy (NOT in your owned files) — actually, do not
+              add tests in files you do not own. Focus on pkg/agent/backend/configfile.go.
+
+            ### Issue 5 (MEDIUM) — Confirm autonomy.SaveConfig already preserves keys
+
+            Issue 5 from the code review stated SaveConfig "starts from empty map and
+            clobbers everything". Check the current code at pkg/autonomy/config.go:
+            - Lines 85-86: `raw := make(map[string]any)`
+            - Lines 88-99: reads existing file and unmarshals into `raw` if present
+            - Line 109: `raw["autonomy"] = json.RawMessage(cfgBytes)`
+
+            This is already correct — the file is read first, existing keys are
+            preserved, and only the autonomy key is updated. Issue 5 is DONE.
+
+            Add a comment above the SaveConfig function:
+            ```go
+            // SaveConfig writes cfg back to saw.config.json in repoPath.
+            // It reads the existing file first to preserve other top-level keys,
+            // then updates (or creates) the "autonomy" key. Non-autonomy keys
+            // (providers, repos, agent, etc.) are preserved unchanged.
+            ```
+            (The existing comment already says this — verify it matches and update
+            only if the existing comment differs from the code behavior.)
+
+            ### Tests
+
+            For pkg/agent/backend/configfile.go: the package has no test file.
+            Add a new file pkg/agent/backend/configfile_test.go with:
+
+            1. TestLoadProvidersFromConfig_NotFound: Call LoadProvidersFromConfig with
+               a temp dir (no config file). Assert returned SAWProviders is zero value
+               (empty struct).
+
+            2. TestLoadProvidersFromConfig_Found: Create a temp dir with a saw.config.json
+               containing a providers.anthropic.api_key. Call LoadProvidersFromConfig.
+               Assert the API key is returned.
+
+            3. TestLoadProvidersFromConfig_WalksUp: Create dir/sub/ and place saw.config.json
+               in dir/ only. Call LoadProvidersFromConfig(sub). Assert the API key is found
+               (verifies the walk-up behavior through config.FindConfigPath).
+
+            The test file is in package `backend` (same package as configfile.go).
+
+            ## Verification gate
+            ```
+            go build ./...
+            go vet ./pkg/agent/backend/... ./pkg/autonomy/...
+            go test ./pkg/agent/backend/... ./pkg/autonomy/...
+            ```
+          files:
+            - pkg/autonomy/config.go
+            - pkg/agent/backend/configfile.go
+            - pkg/agent/backend/configfile_test.go
+quality_gates:
+    level: standard
+    gates:
+        - type: build
+          command: go build ./...
+          required: true
+        - type: test
+          command: go test ./pkg/config/... ./pkg/autonomy/... ./pkg/agent/backend/...
+          required: true
+        - type: lint
+          command: go vet ./pkg/config/... ./pkg/autonomy/... ./pkg/agent/backend/...
+          required: true
+pre_mortem:
+    overall_risk: low
+    rows:
+        - scenario: |-
+            Agent A adds CodeConfigIOFailed to pkg/result/codes.go but picks an N-slot
+            that conflicts with a constant added by a concurrent wave or already present.
+          likelihood: low
+          impact: medium
+          mitigation: |-
+            The current codes.go has N001-N084 defined. Agent A scans for the next free
+            slot above N084 and uses N085. Since no other wave touches codes.go in this
+            IMPL, no conflict is possible. The agent's brief says "N085 or next available"
+            so the agent must grep the file before adding.
+        - scenario: |-
+            Agent C's new configfile_test.go adds it to pkg/agent/backend, which is a
+            package that may have existing test infrastructure or build constraints that
+            make adding a new test file non-trivial.
+          likelihood: low
+          impact: low
+          mitigation: |-
+            The backend package is a standard Go package with no known test-incompatible
+            build tags. The test file uses only os, path/filepath, testing, and json —
+            all stdlib. If the package has a _test.go already with conflicting helpers,
+            Agent C can use a distinct helper function name.
+        - scenario: |-
+            Removing GateResults from WaveState breaks a caller outside pkg/config
+            that references the field (e.g., a web app or CLI command that reads
+            WaveState.GateResults).
+          likelihood: low
+          impact: medium
+          mitigation: |-
+            GateResults is declared with omitempty and was never populated, so any caller
+            that reads it would always get nil/zero. A grep of the codebase before
+            starting will confirm no callers reference GateResults by field name. If any
+            are found, the field should be kept with a deprecation comment instead.
+        - scenario: |-
+            pkg/config import cycle: Agent C adds config import to pkg/agent/backend,
+            which may create a circular dependency if pkg/config already imports
+            pkg/agent/backend or anything it depends on.
+          likelihood: low
+          impact: high
+          mitigation: |-
+            Agent C must verify the import graph before adding the import:
+            run `go list -f '{{.Imports}}' github.com/blackwell-systems/scout-and-wave-go/pkg/config`
+            and confirm pkg/agent/backend is not in the transitive import set.
+            If a cycle is detected, the fix is to keep findConfigFile as a private
+            duplicate and add a comment referencing the canonical implementation.
+critic_report:
+    verdict: PASS
+    agent_reviews: {}
+    summary: Skipped by operator
+    reviewed_at: "2026-04-01T00:46:57Z"
+    issue_count: 0
+state: "REVIEWED"
+injection_method: hook
