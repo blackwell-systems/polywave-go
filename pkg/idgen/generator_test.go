@@ -4,14 +4,17 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
 )
 
 // TestAssignAgentIDs_Sequential_SmallCount tests sequential mode with a small count.
 func TestAssignAgentIDs_Sequential_SmallCount(t *testing.T) {
-	ids, err := AssignAgentIDs(8, nil)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+	res := AssignAgentIDs(8, nil)
+	if !res.IsSuccess() {
+		t.Fatalf("expected success, got: %v", res.Errors)
 	}
+	ids := res.GetData()
 
 	expected := []string{"A", "B", "C", "D", "E", "F", "G", "H"}
 	if len(ids) != len(expected) {
@@ -27,10 +30,11 @@ func TestAssignAgentIDs_Sequential_SmallCount(t *testing.T) {
 
 // TestAssignAgentIDs_Sequential_Exactly26 tests sequential mode with exactly 26 agents (A-Z).
 func TestAssignAgentIDs_Sequential_Exactly26(t *testing.T) {
-	ids, err := AssignAgentIDs(26, nil)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+	res := AssignAgentIDs(26, nil)
+	if !res.IsSuccess() {
+		t.Fatalf("expected success, got: %v", res.Errors)
 	}
+	ids := res.GetData()
 
 	if len(ids) != 26 {
 		t.Fatalf("expected 26 IDs, got %d", len(ids))
@@ -47,10 +51,11 @@ func TestAssignAgentIDs_Sequential_Exactly26(t *testing.T) {
 
 // TestAssignAgentIDs_Sequential_MultiGeneration tests sequential mode spanning into second generation.
 func TestAssignAgentIDs_Sequential_MultiGeneration(t *testing.T) {
-	ids, err := AssignAgentIDs(30, nil)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+	res := AssignAgentIDs(30, nil)
+	if !res.IsSuccess() {
+		t.Fatalf("expected success, got: %v", res.Errors)
 	}
+	ids := res.GetData()
 
 	if len(ids) != 30 {
 		t.Fatalf("expected 30 IDs, got %d", len(ids))
@@ -76,10 +81,11 @@ func TestAssignAgentIDs_Sequential_MultiGeneration(t *testing.T) {
 
 // TestAssignAgentIDs_Sequential_ThreeGenerations tests sequential mode spanning three generations.
 func TestAssignAgentIDs_Sequential_ThreeGenerations(t *testing.T) {
-	ids, err := AssignAgentIDs(54, nil)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+	res := AssignAgentIDs(54, nil)
+	if !res.IsSuccess() {
+		t.Fatalf("expected success, got: %v", res.Errors)
 	}
+	ids := res.GetData()
 
 	if len(ids) != 54 {
 		t.Fatalf("expected 54 IDs, got %d", len(ids))
@@ -121,10 +127,11 @@ func TestAssignAgentIDs_Grouped_Basic(t *testing.T) {
 		{"ui"}, {"ui"}, {"ui"}, {"ui"},
 	}
 
-	ids, err := AssignAgentIDs(9, grouping)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+	res := AssignAgentIDs(9, grouping)
+	if !res.IsSuccess() {
+		t.Fatalf("expected success, got: %v", res.Errors)
 	}
+	ids := res.GetData()
 
 	expected := []string{"A", "A2", "A3", "B", "B2", "C", "C2", "C3", "C4"}
 	if len(ids) != len(expected) {
@@ -146,10 +153,11 @@ func TestAssignAgentIDs_Grouped_SingleAgentPerGroup(t *testing.T) {
 		{"ui"},
 	}
 
-	ids, err := AssignAgentIDs(3, grouping)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+	res := AssignAgentIDs(3, grouping)
+	if !res.IsSuccess() {
+		t.Fatalf("expected success, got: %v", res.Errors)
 	}
+	ids := res.GetData()
 
 	expected := []string{"A", "B", "C"}
 	if len(ids) != len(expected) {
@@ -169,10 +177,11 @@ func TestAssignAgentIDs_Grouped_AllSameTag(t *testing.T) {
 		{"data"}, {"data"}, {"data"}, {"data"}, {"data"},
 	}
 
-	ids, err := AssignAgentIDs(5, grouping)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+	res := AssignAgentIDs(5, grouping)
+	if !res.IsSuccess() {
+		t.Fatalf("expected success, got: %v", res.Errors)
 	}
+	ids := res.GetData()
 
 	expected := []string{"A", "A2", "A3", "A4", "A5"}
 	if len(ids) != len(expected) {
@@ -196,10 +205,11 @@ func TestAssignAgentIDs_Grouped_EmptyTags(t *testing.T) {
 		{"api"},      // first "api" agent
 	}
 
-	ids, err := AssignAgentIDs(5, grouping)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+	res := AssignAgentIDs(5, grouping)
+	if !res.IsSuccess() {
+		t.Fatalf("expected success, got: %v", res.Errors)
 	}
+	ids := res.GetData()
 
 	// Expected behavior:
 	// - Empty tag groups get their own letter (first appearance)
@@ -221,27 +231,29 @@ func TestAssignAgentIDs_Grouped_EmptyTags(t *testing.T) {
 
 // TestAssignAgentIDs_InvalidCount_Zero tests error on count=0.
 func TestAssignAgentIDs_InvalidCount_Zero(t *testing.T) {
-	_, err := AssignAgentIDs(0, nil)
-	if err == nil {
-		t.Fatal("expected error for count=0, got nil")
+	res := AssignAgentIDs(0, nil)
+	if !res.IsFatal() {
+		t.Fatal("expected fatal error for count=0, got success")
 	}
-
-	errMsg := err.Error()
-	if errMsg != "count must be > 0, got 0" {
-		t.Errorf("unexpected error message: %v", err)
+	if res.Errors[0].Code != result.CodeAgentCountInvalid {
+		t.Errorf("expected code %s, got %s", result.CodeAgentCountInvalid, res.Errors[0].Code)
+	}
+	if !strings.Contains(res.Errors[0].Message, "count must be > 0") {
+		t.Errorf("expected message to contain 'count must be > 0', got: %s", res.Errors[0].Message)
 	}
 }
 
 // TestAssignAgentIDs_InvalidCount_Negative tests error on negative count.
 func TestAssignAgentIDs_InvalidCount_Negative(t *testing.T) {
-	_, err := AssignAgentIDs(-5, nil)
-	if err == nil {
-		t.Fatal("expected error for count=-5, got nil")
+	res := AssignAgentIDs(-5, nil)
+	if !res.IsFatal() {
+		t.Fatal("expected fatal error for count=-5, got success")
 	}
-
-	errMsg := err.Error()
-	if errMsg != "count must be > 0, got -5" {
-		t.Errorf("unexpected error message: %v", err)
+	if res.Errors[0].Code != result.CodeAgentCountInvalid {
+		t.Errorf("expected code %s, got %s", result.CodeAgentCountInvalid, res.Errors[0].Code)
+	}
+	if !strings.Contains(res.Errors[0].Message, "count must be > 0") {
+		t.Errorf("expected message to contain 'count must be > 0', got: %s", res.Errors[0].Message)
 	}
 }
 
@@ -251,23 +263,25 @@ func TestAssignAgentIDs_GroupingLengthMismatch(t *testing.T) {
 		{"data"}, {"api"}, {"ui"},
 	}
 
-	_, err := AssignAgentIDs(5, grouping)
-	if err == nil {
-		t.Fatal("expected error for grouping length mismatch, got nil")
+	res := AssignAgentIDs(5, grouping)
+	if !res.IsFatal() {
+		t.Fatal("expected fatal error for grouping length mismatch, got success")
 	}
-
-	errMsg := err.Error()
-	if errMsg != "grouping length (3) must match count (5)" {
-		t.Errorf("unexpected error message: %v", err)
+	if res.Errors[0].Code != result.CodeAgentCountMismatch {
+		t.Errorf("expected code %s, got %s", result.CodeAgentCountMismatch, res.Errors[0].Code)
+	}
+	if !strings.Contains(res.Errors[0].Message, "grouping length") {
+		t.Errorf("expected message to contain 'grouping length', got: %s", res.Errors[0].Message)
 	}
 }
 
 // TestAssignAgentIDs_NilGrouping tests that nil grouping triggers sequential mode.
 func TestAssignAgentIDs_NilGrouping(t *testing.T) {
-	ids, err := AssignAgentIDs(5, nil)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+	res := AssignAgentIDs(5, nil)
+	if !res.IsSuccess() {
+		t.Fatalf("expected success, got: %v", res.Errors)
 	}
+	ids := res.GetData()
 
 	expected := []string{"A", "B", "C", "D", "E"}
 	if len(ids) != len(expected) {
@@ -286,23 +300,25 @@ func TestAssignAgentIDs_EmptyGrouping(t *testing.T) {
 	// Empty slice [][]string{} has length 0, which fails length-mismatch validation when count != 0.
 	// Only nil triggers sequential mode; a non-nil empty slice is treated as grouped mode
 	// and rejected by the length-mismatch check.
-	_, err := AssignAgentIDs(5, [][]string{})
-	if err == nil {
-		t.Fatal("expected error for empty grouping with count=5, got nil")
+	res := AssignAgentIDs(5, [][]string{})
+	if !res.IsFatal() {
+		t.Fatal("expected fatal error for empty grouping with count=5, got success")
 	}
-
-	errMsg := err.Error()
-	if errMsg != "grouping length (0) must match count (5)" {
-		t.Errorf("unexpected error message: %v", err)
+	if res.Errors[0].Code != result.CodeAgentCountMismatch {
+		t.Errorf("expected code %s, got %s", result.CodeAgentCountMismatch, res.Errors[0].Code)
+	}
+	if !strings.Contains(res.Errors[0].Message, "grouping length") {
+		t.Errorf("expected message to contain 'grouping length', got: %s", res.Errors[0].Message)
 	}
 }
 
 // TestAssignAgentIDs_MaxSupportedAgents tests maximum supported count (234 = 26*9).
 func TestAssignAgentIDs_MaxSupportedAgents(t *testing.T) {
-	ids, err := AssignAgentIDs(234, nil)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+	res := AssignAgentIDs(234, nil)
+	if !res.IsSuccess() {
+		t.Fatalf("expected success, got: %v", res.Errors)
 	}
+	ids := res.GetData()
 
 	if len(ids) != 234 {
 		t.Fatalf("expected 234 IDs, got %d", len(ids))
@@ -337,15 +353,15 @@ func TestAssignAgentIDs_MaxSupportedAgents(t *testing.T) {
 
 // TestAssignAgentIDs_ExceedsMaximum tests error when count exceeds 234.
 func TestAssignAgentIDs_ExceedsMaximum(t *testing.T) {
-	_, err := AssignAgentIDs(235, nil)
-	if err == nil {
-		t.Fatal("expected error for count=235, got nil")
+	res := AssignAgentIDs(235, nil)
+	if !res.IsFatal() {
+		t.Fatal("expected fatal error for count=235, got success")
 	}
-
-	errMsg := err.Error()
-	expectedMsg := "count 235 exceeds maximum 234 agents (26 letters × 9 generations)"
-	if errMsg != expectedMsg {
-		t.Errorf("expected error %q, got %q", expectedMsg, errMsg)
+	if res.Errors[0].Code != result.CodeAgentLimitExceeded {
+		t.Errorf("expected code %s, got %s", result.CodeAgentLimitExceeded, res.Errors[0].Code)
+	}
+	if !strings.Contains(res.Errors[0].Message, "exceeds maximum 234") {
+		t.Errorf("expected message to contain 'exceeds maximum 234', got: %s", res.Errors[0].Message)
 	}
 }
 
@@ -368,10 +384,11 @@ func TestAssignAgentIDs_OutputMatchesRegex(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			ids, err := AssignAgentIDs(tc.count, tc.grouping)
-			if err != nil {
-				t.Fatalf("unexpected error: %v", err)
+			res := AssignAgentIDs(tc.count, tc.grouping)
+			if !res.IsSuccess() {
+				t.Fatalf("expected success, got: %v", res.Errors)
 			}
+			ids := res.GetData()
 
 			for i, id := range ids {
 				if !agentIDRegex.MatchString(id) {
@@ -391,14 +408,15 @@ func TestAssignAgentIDs_Grouped_TooManyAgentsPerCategory(t *testing.T) {
 		grouping[i] = []string{"data"}
 	}
 
-	_, err := AssignAgentIDs(10, grouping)
-	if err == nil {
-		t.Fatal("expected error for >9 agents in a single category, got nil")
+	res := AssignAgentIDs(10, grouping)
+	if !res.IsFatal() {
+		t.Fatal("expected fatal error for >9 agents in a single category, got success")
 	}
-
-	errMsg := err.Error()
-	if !strings.Contains(errMsg, "category") || !strings.Contains(errMsg, "9") {
-		t.Errorf("error message should mention \"category\" and \"9\", got: %q", errMsg)
+	if res.Errors[0].Code != result.CodeCategoryLimitExceeded {
+		t.Errorf("expected code %s, got %s", result.CodeCategoryLimitExceeded, res.Errors[0].Code)
+	}
+	if !strings.Contains(res.Errors[0].Message, "category") || !strings.Contains(res.Errors[0].Message, "9") {
+		t.Errorf("error message should mention \"category\" and \"9\", got: %q", res.Errors[0].Message)
 	}
 }
 
@@ -411,14 +429,15 @@ func TestAssignAgentIDs_Grouped_TooManyCategories(t *testing.T) {
 		grouping[i] = []string{fmt.Sprintf("cat%d", i)}
 	}
 
-	_, err := AssignAgentIDs(27, grouping)
-	if err == nil {
-		t.Fatal("expected error for >26 distinct categories, got nil")
+	res := AssignAgentIDs(27, grouping)
+	if !res.IsFatal() {
+		t.Fatal("expected fatal error for >26 distinct categories, got success")
 	}
-
-	errMsg := err.Error()
-	if !strings.Contains(errMsg, "26") && !strings.Contains(errMsg, "categories") {
-		t.Errorf("error message should mention \"26\" or \"categories\", got: %q", errMsg)
+	if res.Errors[0].Code != result.CodeCategoryCountExceeded {
+		t.Errorf("expected code %s, got %s", result.CodeCategoryCountExceeded, res.Errors[0].Code)
+	}
+	if !strings.Contains(res.Errors[0].Message, "26") && !strings.Contains(res.Errors[0].Message, "categories") {
+		t.Errorf("error message should mention \"26\" or \"categories\", got: %q", res.Errors[0].Message)
 	}
 }
 
@@ -440,20 +459,23 @@ func TestAssignAgentIDs_StabilityCheck(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			// Generate IDs three times
-			ids1, err := AssignAgentIDs(tc.count, tc.grouping)
-			if err != nil {
-				t.Fatalf("run 1 failed: %v", err)
+			res1 := AssignAgentIDs(tc.count, tc.grouping)
+			if !res1.IsSuccess() {
+				t.Fatalf("run 1 failed: %v", res1.Errors)
 			}
+			ids1 := res1.GetData()
 
-			ids2, err := AssignAgentIDs(tc.count, tc.grouping)
-			if err != nil {
-				t.Fatalf("run 2 failed: %v", err)
+			res2 := AssignAgentIDs(tc.count, tc.grouping)
+			if !res2.IsSuccess() {
+				t.Fatalf("run 2 failed: %v", res2.Errors)
 			}
+			ids2 := res2.GetData()
 
-			ids3, err := AssignAgentIDs(tc.count, tc.grouping)
-			if err != nil {
-				t.Fatalf("run 3 failed: %v", err)
+			res3 := AssignAgentIDs(tc.count, tc.grouping)
+			if !res3.IsSuccess() {
+				t.Fatalf("run 3 failed: %v", res3.Errors)
 			}
+			ids3 := res3.GetData()
 
 			// Verify all three runs produce identical output
 			if len(ids1) != len(ids2) || len(ids1) != len(ids3) {
