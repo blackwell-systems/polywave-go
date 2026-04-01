@@ -3,6 +3,7 @@ package commands
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -431,8 +432,4 @@ jobs:
 }
 
 // Helper function
-func contains(s, substr string) bool {
-	return len(s) > 0 && len(substr) > 0 && (s == substr || len(s) > len(substr) &&
-		(s[:len(substr)] == substr || s[len(s)-len(substr):] == substr ||
-		 len(s) > len(substr)+1 && s[1:len(substr)+1] == substr))
-}
+func contains(s, substr string) bool { return strings.Contains(s, substr) }

@@ -49,7 +49,8 @@ func (p *PackageJSONParser) ParseBuildSystem(repoRoot string) (*CommandSet, erro
 	cmdSet.Commands.Build = extractCommand(pkg.Scripts, []string{"build", "compile"})
 	cmdSet.Commands.Test.Full = extractCommand(pkg.Scripts, []string{"test", "test:unit", "test:e2e"})
 	cmdSet.Commands.Lint.Check = extractCommand(pkg.Scripts, []string{"lint", "eslint"})
-	cmdSet.Commands.Format.Check = extractCommand(pkg.Scripts, []string{"format", "prettier"})
+	cmdSet.Commands.Format.Fix = extractCommand(pkg.Scripts, []string{"prettier"})
+	cmdSet.Commands.Format.Check = extractCommand(pkg.Scripts, []string{"format"})
 
 	// Handle monorepo workspaces (roadmap edge case #3)
 	if len(pkg.Workspaces) > 0 {
