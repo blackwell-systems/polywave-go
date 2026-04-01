@@ -144,7 +144,192 @@ func DetectE35Gaps(m *IMPLManifest, waveNum int, repoRoot string) ([]E35Gap, err
 		}
 	}
 
+	// Also detect test file cascades
+	testGaps, err := detectTestCascades(m, waveNum, repoRoot)
+	if err == nil {
+		gaps = append(gaps, testGaps...)
+	}
+	// Note: we don't fail on test cascade detection errors — they're advisory
+
 	return gaps, nil
+}
+
+// detectTestCascades finds test files that reference changed interfaces but
+// are not owned by any agent in the wave. This prevents post-merge test
+// compilation failures when interface signatures change.
+//
+// Detection algorithm:
+// 1. For each agent's owned files, identify interface/type definitions
+// 2. For each interface found, locate test files in same package
+// 3. Check if test file calls interface methods (Parse, Detect, etc.)
+// 4. If test file NOT owned by any agent, report as cascade candidate
+func detectTestCascades(m *IMPLManifest, waveNum int, repoRoot string) ([]E35Gap, error) {
+	if m == nil {
+		return nil, fmt.Errorf("manifest is nil")
+	}
+	if repoRoot == "" {
+		return nil, fmt.Errorf("repoRoot is empty")
+	}
+
+	// Build agent file ownership map
+	agentFiles := make(map[string]map[string]bool)
+	allOwnedFiles := make(map[string]bool)
+	for _, fo := range m.FileOwnership {
+		if fo.Wave != waveNum {
+			continue
+		}
+		if agentFiles[fo.Agent] == nil {
+			agentFiles[fo.Agent] = make(map[string]bool)
+		}
+		agentFiles[fo.Agent][fo.File] = true
+		allOwnedFiles[fo.File] = true
+	}
+
+	// Build interface/type definitions from owned files
+	type interfaceDef struct {
+		name   string
+		file   string
+		pkg    string
+		pkgDir string
+		agent  string
+	}
+	var interfaces []interfaceDef
+
+	for agentID, files := range agentFiles {
+		for file := range files {
+			if !strings.HasSuffix(file, ".go") || strings.HasSuffix(file, "_test.go") {
+				continue
+			}
+
+			absPath := filepath.Join(repoRoot, file)
+			ifaces, pkgName, pkgDir, err := extractInterfaces(absPath)
+			if err != nil {
+				continue
+			}
+
+			for _, iface := range ifaces {
+				interfaces = append(interfaces, interfaceDef{
+					name:   iface,
+					file:   file,
+					pkg:    pkgName,
+					pkgDir: pkgDir,
+					agent:  agentID,
+				})
+			}
+		}
+	}
+
+	// For each interface, find test files in same package that reference it
+	var gaps []E35Gap
+	for _, iface := range interfaces {
+		testFiles, err := filepath.Glob(filepath.Join(iface.pkgDir, "*_test.go"))
+		if err != nil {
+			continue
+		}
+
+		var orphanedTests []string
+		for _, testFile := range testFiles {
+			relPath, err := filepath.Rel(repoRoot, testFile)
+			if err != nil {
+				continue
+			}
+
+			// Skip if test file is owned by an agent
+			if allOwnedFiles[relPath] {
+				continue
+			}
+
+			// Check if test file references the interface
+			refs, err := findInterfaceReferences(testFile, iface.name)
+			if err != nil || len(refs) == 0 {
+				continue
+			}
+
+			for _, line := range refs {
+				orphanedTests = append(orphanedTests, fmt.Sprintf("%s:%d", relPath, line))
+			}
+		}
+
+		if len(orphanedTests) > 0 {
+			gaps = append(gaps, E35Gap{
+				Agent:        iface.agent,
+				FunctionName: iface.name,
+				DefinedIn:    iface.file,
+				CalledFrom:   orphanedTests,
+				Package:      iface.pkg,
+			})
+		}
+	}
+
+	return gaps, nil
+}
+
+// extractInterfaces parses a Go file and returns interface/type names
+func extractInterfaces(absPath string) ([]string, string, string, error) {
+	fset := token.NewFileSet()
+	f, err := parser.ParseFile(fset, absPath, nil, 0)
+	if err != nil {
+		return nil, "", "", err
+	}
+
+	pkgName := f.Name.Name
+	pkgDir := filepath.Dir(absPath)
+
+	var interfaces []string
+	for _, decl := range f.Decls {
+		if genDecl, ok := decl.(*ast.GenDecl); ok && genDecl.Tok == token.TYPE {
+			for _, spec := range genDecl.Specs {
+				if typeSpec, ok := spec.(*ast.TypeSpec); ok {
+					if _, isInterface := typeSpec.Type.(*ast.InterfaceType); isInterface {
+						interfaces = append(interfaces, typeSpec.Name.Name)
+					}
+					// Also detect struct types (for signature changes like Parse method)
+					if _, isStruct := typeSpec.Type.(*ast.StructType); isStruct {
+						interfaces = append(interfaces, typeSpec.Name.Name)
+					}
+				}
+			}
+		}
+	}
+
+	return interfaces, pkgName, pkgDir, nil
+}
+
+// findInterfaceReferences searches a test file for references to an interface
+// (e.g., "parser := &CargoLockParser{}" or "var p LockFileParser")
+func findInterfaceReferences(absPath, interfaceName string) ([]int, error) {
+	data, err := os.ReadFile(absPath)
+	if err != nil {
+		return nil, err
+	}
+
+	fset := token.NewFileSet()
+	f, err := parser.ParseFile(fset, absPath, data, 0)
+	if err != nil {
+		return nil, err
+	}
+
+	var lines []int
+	ast.Inspect(f, func(n ast.Node) bool {
+		// Detect type references in variable declarations, assignments, composites
+		switch node := n.(type) {
+		case *ast.CompositeLit:
+			if ident, ok := node.Type.(*ast.Ident); ok && ident.Name == interfaceName {
+				pos := fset.Position(node.Pos())
+				lines = append(lines, pos.Line)
+			}
+		case *ast.ValueSpec:
+			if node.Type != nil {
+				if ident, ok := node.Type.(*ast.Ident); ok && ident.Name == interfaceName {
+					pos := fset.Position(node.Pos())
+					lines = append(lines, pos.Line)
+				}
+			}
+		}
+		return true
+	})
+
+	return lines, nil
 }
 
 // extractFunctions parses a Go file and returns:

@@ -3,6 +3,7 @@ package protocol
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -227,5 +228,199 @@ func Main() {
 	// No gap expected: cross-package calls are not E35 violations
 	if len(gaps) != 0 {
 		t.Errorf("expected 0 gaps (cross-package calls OK), got %d: %+v", len(gaps), gaps)
+	}
+}
+
+// TestDetectTestCascades_OrphanedTestFile verifies that test cascade detection
+// catches test files that reference interfaces but are not owned by any agent.
+func TestDetectTestCascades_OrphanedTestFile(t *testing.T) {
+	// Create temporary directory structure
+	tmpDir := t.TempDir()
+	pkgDir := filepath.Join(tmpDir, "pkg", "parser")
+	if err := os.MkdirAll(pkgDir, 0755); err != nil {
+		t.Fatalf("failed to create test directory: %v", err)
+	}
+
+	// Create interface definition file (owned by Agent A)
+	defFile := filepath.Join(pkgDir, "lockfile.go")
+	defContent := `package parser
+
+type LockFileParser interface {
+	Parse(path string) error
+	Detect() bool
+}
+
+type CargoLockParser struct {
+	data []byte
+}
+`
+	if err := os.WriteFile(defFile, []byte(defContent), 0644); err != nil {
+		t.Fatalf("failed to write definition file: %v", err)
+	}
+
+	// Create orphaned test file (NOT owned by any agent)
+	testFile := filepath.Join(pkgDir, "lockfile_test.go")
+	testContent := `package parser
+
+import "testing"
+
+func TestCargoLockParser(t *testing.T) {
+	parser := &CargoLockParser{}
+	if parser == nil {
+		t.Fatal("parser is nil")
+	}
+}
+
+func TestLockFileParser(t *testing.T) {
+	var p LockFileParser = &CargoLockParser{}
+	if p == nil {
+		t.Fatal("parser is nil")
+	}
+}
+`
+	if err := os.WriteFile(testFile, []byte(testContent), 0644); err != nil {
+		t.Fatalf("failed to write test file: %v", err)
+	}
+
+	// Create manifest with Wave 1
+	manifest := &IMPLManifest{
+		Title:       "Test Cascade Detection",
+		FeatureSlug: "test-cascade",
+		Verdict:     "SUITABLE",
+		Repository:  tmpDir,
+		FileOwnership: []FileOwnership{
+			{File: "pkg/parser/lockfile.go", Agent: "A", Wave: 1},
+			// Note: lockfile_test.go is NOT in file ownership
+		},
+		Waves: []Wave{
+			{
+				Number: 1,
+				Agents: []Agent{
+					{ID: "A", Task: "Implement parser", Files: []string{"pkg/parser/lockfile.go"}},
+				},
+			},
+		},
+	}
+
+	// Run E35 detection (which now includes test cascade detection)
+	gaps, err := DetectE35Gaps(manifest, 1, tmpDir)
+	if err != nil {
+		t.Fatalf("DetectE35Gaps failed: %v", err)
+	}
+
+	// Verify gap detected for orphaned test file
+	if len(gaps) == 0 {
+		t.Fatalf("expected at least 1 gap for orphaned test file, got 0")
+	}
+
+	// Find gaps related to test files
+	var testGaps []E35Gap
+	for _, gap := range gaps {
+		for _, caller := range gap.CalledFrom {
+			if strings.Contains(caller, "lockfile_test.go") {
+				testGaps = append(testGaps, gap)
+				break
+			}
+		}
+	}
+
+	if len(testGaps) == 0 {
+		t.Fatalf("expected gaps related to lockfile_test.go, got none. All gaps: %+v", gaps)
+	}
+
+	// Verify gap structure
+	gap := testGaps[0]
+	if gap.Agent != "A" {
+		t.Errorf("expected agent A, got %q", gap.Agent)
+	}
+	if gap.FunctionName != "LockFileParser" && gap.FunctionName != "CargoLockParser" {
+		t.Errorf("expected function name LockFileParser or CargoLockParser, got %q", gap.FunctionName)
+	}
+	if gap.DefinedIn != "pkg/parser/lockfile.go" {
+		t.Errorf("expected definedIn pkg/parser/lockfile.go, got %q", gap.DefinedIn)
+	}
+	if gap.Package != "parser" {
+		t.Errorf("expected package parser, got %q", gap.Package)
+	}
+
+	t.Logf("Test cascade gap detected successfully: %+v", gap)
+}
+
+// TestDetectTestCascades_TestFileOwned verifies that no gap is reported when
+// the test file IS owned by an agent.
+func TestDetectTestCascades_TestFileOwned(t *testing.T) {
+	tmpDir := t.TempDir()
+	pkgDir := filepath.Join(tmpDir, "pkg", "parser")
+	if err := os.MkdirAll(pkgDir, 0755); err != nil {
+		t.Fatalf("failed to create test directory: %v", err)
+	}
+
+	// Create interface definition file
+	defFile := filepath.Join(pkgDir, "lockfile.go")
+	defContent := `package parser
+
+type LockFileParser interface {
+	Parse(path string) error
+}
+`
+	if err := os.WriteFile(defFile, []byte(defContent), 0644); err != nil {
+		t.Fatalf("failed to write definition file: %v", err)
+	}
+
+	// Create test file (owned by same agent)
+	testFile := filepath.Join(pkgDir, "lockfile_test.go")
+	testContent := `package parser
+
+import "testing"
+
+func TestLockFileParser(t *testing.T) {
+	var p LockFileParser
+	if p != nil {
+		t.Fatal("parser should be nil")
+	}
+}
+`
+	if err := os.WriteFile(testFile, []byte(testContent), 0644); err != nil {
+		t.Fatalf("failed to write test file: %v", err)
+	}
+
+	manifest := &IMPLManifest{
+		Title:       "Test Cascade No Gap",
+		FeatureSlug: "test-cascade-no-gap",
+		Verdict:     "SUITABLE",
+		Repository:  tmpDir,
+		FileOwnership: []FileOwnership{
+			{File: "pkg/parser/lockfile.go", Agent: "A", Wave: 1},
+			{File: "pkg/parser/lockfile_test.go", Agent: "A", Wave: 1}, // Test file IS owned
+		},
+		Waves: []Wave{
+			{
+				Number: 1,
+				Agents: []Agent{
+					{ID: "A", Task: "Implement parser", Files: []string{"pkg/parser/lockfile.go", "pkg/parser/lockfile_test.go"}},
+				},
+			},
+		},
+	}
+
+	gaps, err := DetectE35Gaps(manifest, 1, tmpDir)
+	if err != nil {
+		t.Fatalf("DetectE35Gaps failed: %v", err)
+	}
+
+	// No gaps expected: test file is owned by agent
+	// (Filter out any non-test-related gaps)
+	var testGaps []E35Gap
+	for _, gap := range gaps {
+		for _, caller := range gap.CalledFrom {
+			if strings.Contains(caller, "_test.go") {
+				testGaps = append(testGaps, gap)
+				break
+			}
+		}
+	}
+
+	if len(testGaps) != 0 {
+		t.Errorf("expected 0 test cascade gaps (test file is owned), got %d: %+v", len(testGaps), testGaps)
 	}
 }
