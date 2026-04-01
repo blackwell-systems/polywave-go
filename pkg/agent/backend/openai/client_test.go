@@ -204,3 +204,110 @@ func TestNew_BaseURLOverride(t *testing.T) {
 		t.Errorf("expected %q, got %q", "override ok", result)
 	}
 }
+
+// TestParseContentToolCall_EmptyContent verifies that empty content returns nil.
+func TestParseContentToolCall_EmptyContent(t *testing.T) {
+	nameSet := map[string]bool{"Bash": true}
+	if got := parseContentToolCall("", nameSet); got != nil {
+		t.Errorf("expected nil for empty content, got %+v", got)
+	}
+	if got := parseContentToolCall("   ", nameSet); got != nil {
+		t.Errorf("expected nil for whitespace content, got %+v", got)
+	}
+}
+
+// TestParseContentToolCall_ValidJSONNoName verifies that JSON without a "name" field returns nil.
+func TestParseContentToolCall_ValidJSONNoName(t *testing.T) {
+	nameSet := map[string]bool{"Bash": true}
+	content := `{"arguments": {"command": "echo hello"}}`
+	if got := parseContentToolCall(content, nameSet); got != nil {
+		t.Errorf("expected nil for JSON without name, got %+v", got)
+	}
+}
+
+// TestParseContentToolCall_UnknownToolName verifies that JSON with an unregistered tool returns nil.
+func TestParseContentToolCall_UnknownToolName(t *testing.T) {
+	nameSet := map[string]bool{"Bash": true}
+	content := `{"name": "UnknownTool", "arguments": {"key": "value"}}`
+	if got := parseContentToolCall(content, nameSet); got != nil {
+		t.Errorf("expected nil for unknown tool name, got %+v", got)
+	}
+}
+
+// TestParseContentToolCall_KnownToolName verifies that valid JSON with a known tool name succeeds.
+func TestParseContentToolCall_KnownToolName(t *testing.T) {
+	nameSet := map[string]bool{"Bash": true, "Read": true}
+	content := `{"name": "Bash", "arguments": {"command": "echo hello"}}`
+	got := parseContentToolCall(content, nameSet)
+	if got == nil {
+		t.Fatal("expected non-nil result for known tool name")
+	}
+	if got.Name != "Bash" {
+		t.Errorf("expected Name %q, got %q", "Bash", got.Name)
+	}
+	cmd, ok := got.Arguments["command"].(string)
+	if !ok || cmd != "echo hello" {
+		t.Errorf("expected arguments[command] = %q, got %v", "echo hello", got.Arguments["command"])
+	}
+}
+
+// TestParseContentToolCall_NotJSON verifies that non-JSON content returns nil.
+func TestParseContentToolCall_NotJSON(t *testing.T) {
+	nameSet := map[string]bool{"Bash": true}
+	if got := parseContentToolCall("Hello, I'm a chat message", nameSet); got != nil {
+		t.Errorf("expected nil for non-JSON content, got %+v", got)
+	}
+}
+
+// TestRunStreamingWithTools_EmitsToolCallEvents verifies that onToolCall is called during tool use.
+func TestRunStreamingWithTools_EmitsToolCallEvents(t *testing.T) {
+	callCount := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		callCount++
+		if callCount == 1 {
+			tcs := []toolCall{{
+				ID:   "call_1",
+				Type: "function",
+				Function: toolFunction{
+					Name:      "Bash",
+					Arguments: `{"command":"echo hello"}`,
+				},
+			}}
+			w.Write(mockChatResponse("tool_calls", "", tcs))
+		} else {
+			w.Write(mockChatResponse("stop", "done", nil))
+		}
+	}))
+	defer srv.Close()
+
+	var toolEvents []backend.ToolCallEvent
+	client := New(backend.Config{}).WithAPIKey("test-key").WithBaseURL(srv.URL)
+	result, err := client.RunStreamingWithTools(
+		context.Background(), "", "run bash", t.TempDir(),
+		nil, // no chunk callback
+		func(ev backend.ToolCallEvent) {
+			toolEvents = append(toolEvents, ev)
+		},
+	)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result != "done" {
+		t.Errorf("expected %q, got %q", "done", result)
+	}
+	if len(toolEvents) == 0 {
+		t.Error("expected at least one tool call event, got none")
+	}
+	if len(toolEvents) > 0 && toolEvents[0].Name != "Bash" {
+		t.Errorf("expected tool event Name %q, got %q", "Bash", toolEvents[0].Name)
+	}
+}
+
+// TestCommitCount_NilConstraints verifies CommitCount returns 0 without constraints.
+func TestCommitCount_NilConstraints(t *testing.T) {
+	client := New(backend.Config{})
+	if got := client.CommitCount(); got != 0 {
+		t.Errorf("CommitCount() = %d, want 0", got)
+	}
+}
