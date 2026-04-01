@@ -3,6 +3,7 @@ package backend
 import (
 	"context"
 
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/agent/dedup"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/tools"
 )
 
@@ -87,6 +88,43 @@ type ToolCallEvent struct {
 // ToolCallCallback is called for each tool_use/tool_result event parsed
 // from the CLI stream. Implementations must be goroutine-safe.
 type ToolCallCallback func(ev ToolCallEvent)
+
+// WorkshopResult holds the workshop and associated trackers created by BuildWorkshop.
+type WorkshopResult struct {
+	Workshop      tools.Workshop
+	DedupCache    *dedup.Cache
+	CommitTracker *tools.CommitTracker
+}
+
+// BuildWorkshop creates a Workshop with middleware applied based on config.
+// readOnly controls whether write tools are included.
+// cfg provides constraints and onToolCall callback configuration.
+// Returns the workshop plus dedup cache and commit tracker references.
+func BuildWorkshop(workDir string, readOnly bool, cfg Config) WorkshopResult {
+	var w tools.Workshop
+	if readOnly {
+		w = tools.ReadOnlyTools(workDir)
+	} else {
+		w = tools.StandardTools(workDir)
+	}
+	var dc *dedup.Cache
+	w, dc = dedup.WithDedup(w)
+	var ct *tools.CommitTracker
+	if cfg.Constraints != nil {
+		w, ct = tools.WithConstraints(w, *cfg.Constraints)
+	}
+	if cfg.OnToolCall != nil {
+		w = tools.WithTiming(w, func(ev tools.ToolCallEvent) {
+			cfg.OnToolCall(ToolCallEvent{
+				Name:       ev.ToolName,
+				DurationMs: ev.DurationMs,
+				IsError:    ev.IsError,
+				IsResult:   true,
+			})
+		})
+	}
+	return WorkshopResult{Workshop: w, DedupCache: dc, CommitTracker: ct}
+}
 
 // Backend is the abstraction both the API client and the CLI client implement.
 // Runner accepts a Backend and delegates all LLM interaction through it.
