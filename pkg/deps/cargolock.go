@@ -2,9 +2,10 @@ package deps
 
 import (
 	"bufio"
-	"fmt"
 	"os"
 	"strings"
+
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
 )
 
 // CargoLockParser implements LockFileParser for Rust Cargo.lock files
@@ -17,10 +18,12 @@ type CargoLockParser struct{}
 //	name = "serde"
 //	version = "1.0.136"
 //	source = "registry+https://github.com/rust-lang/crates.io-index"
-func (p *CargoLockParser) Parse(filePath string) ([]PackageInfo, error) {
+func (p *CargoLockParser) Parse(filePath string) result.Result[[]PackageInfo] {
 	file, err := os.Open(filePath)
 	if err != nil {
-		return nil, fmt.Errorf("failed to open Cargo.lock: %w", err)
+		return result.NewFailure[[]PackageInfo]([]result.SAWError{
+			result.NewFatal(result.CodeDepLockFileOpen, "failed to open Cargo.lock: "+err.Error()),
+		})
 	}
 	defer file.Close()
 
@@ -34,8 +37,8 @@ func (p *CargoLockParser) Parse(filePath string) ([]PackageInfo, error) {
 
 		// Start of a new package section
 		if line == "[[package]]" {
-			// Save previous package if exists
-			if currentPackage != nil {
+			// Save previous package if exists and has a valid name
+			if currentPackage != nil && currentPackage.Name != "" {
 				packages = append(packages, *currentPackage)
 			}
 			// Start new package
@@ -61,28 +64,17 @@ func (p *CargoLockParser) Parse(filePath string) ([]PackageInfo, error) {
 	}
 
 	if err := scanner.Err(); err != nil {
-		return nil, fmt.Errorf("error reading Cargo.lock: %w", err)
+		return result.NewFailure[[]PackageInfo]([]result.SAWError{
+			result.NewError(result.CodeDepLockFileParse, "error reading Cargo.lock: "+err.Error()),
+		})
 	}
 
-	return packages, nil
+	return result.NewSuccess(packages)
 }
 
 // Detect checks if this parser can handle the given file
 func (p *CargoLockParser) Detect(filePath string) bool {
 	return strings.HasSuffix(filePath, "Cargo.lock")
-}
-
-// unquoteTOML removes quotes from TOML string values
-// Input: "value" or 'value'
-// Output: value
-func unquoteTOML(s string) string {
-	s = strings.TrimSpace(s)
-	if len(s) >= 2 {
-		if (s[0] == '"' && s[len(s)-1] == '"') || (s[0] == '\'' && s[len(s)-1] == '\'') {
-			return s[1 : len(s)-1]
-		}
-	}
-	return s
 }
 
 func init() {
