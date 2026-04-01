@@ -1,0 +1,381 @@
+title: Fix pkg/hooks Code Review Findings
+feature_slug: hooks-review-fixes
+verdict: SUITABLE
+suitability_assessment: |
+    All five questions resolved cleanly:
+
+    1. **File decomposition:** Work naturally decomposes into 4 agents across 4 files (disjoint ownership):
+       - Agent A: scout_boundaries.go (hardcoded string, ignored error)
+       - Agent B: prelaunch_gate.go (Result[T] migration, dead code)
+       - Agent C: scout_boundaries_test.go (test gap for Walk error)
+       - Agent D: prelaunch_gate_test.go (test gap for critic verdict fail)
+
+    2. **Investigation-first:** No investigation needed. All findings are code quality issues with known fixes.
+
+    3. **Interface discoverability:** No cross-agent interfaces. Each agent works on isolated files.
+
+    4. **Pre-implementation status:** All findings are TODO (verified via code review). No items already resolved.
+
+    5. **Parallelization value check:**
+       - Build/test cycle: ~0.5s (go test ./pkg/hooks — fast cycle, minimal parallelization benefit)
+       - Files per agent: 1 file each (low implementation time per agent)
+       - Agent independence: Fully independent (single wave)
+       - Task complexity: Simple fixes (use constant, check error, add test cases)
+
+       **Time estimate:**
+       - Scout phase: ~5 min (dependency mapping, IMPL doc)
+       - Agent execution: 4 agents × 3 min avg = ~12 min sequential, ~4 min parallel (3× speedup)
+       - Merge & verification: ~2 min
+       - Total SAW time: ~11 min
+       - Sequential baseline: ~15 min
+       - Time savings: ~4 min (27% faster)
+
+       **Verdict:** SUITABLE. Marginal time savings (~4 min), but significant coordination value:
+       - Atomic fix of all 6 findings in one merge
+       - Test coverage maintained (no gaps between findings)
+       - Clear audit trail (IMPL doc as completion proof)
+       - Good practice for small-scope SAW workflows
+
+    Proceed with full analysis.
+test_command: go test ./pkg/hooks -timeout 120s
+lint_command: go vet ./pkg/hooks
+file_ownership:
+    - file: pkg/hooks/scout_boundaries.go
+      agent: A
+      wave: 1
+      action: modify
+    - file: pkg/hooks/prelaunch_gate.go
+      agent: B
+      wave: 1
+      action: modify
+    - file: pkg/hooks/scout_boundaries_test.go
+      agent: C
+      wave: 1
+      action: modify
+    - file: pkg/hooks/prelaunch_gate_test.go
+      agent: D
+      wave: 1
+      action: modify
+interface_contracts: []
+waves:
+    - number: 1
+      agents:
+        - id: A
+          task: |
+            ## What to Implement
+
+            Fix two code review findings in `pkg/hooks/scout_boundaries.go`:
+
+            **Finding 1 (medium priority):** Lines 69, 77 use hardcoded string `"SCOUT_BOUNDARY_VIOLATION"` instead of the constant `result.CodeScoutBoundaryViolation` from `pkg/result/codes.go`.
+
+            **Finding 2 (medium priority):** Line 50 silently discards the error from `filepath.Rel(repoPath, path)` by assigning it to `_`.
+
+            ## Interface Contracts (Existing, Do Not Change)
+
+            - `ValidateScoutWrites(repoPath, expectedIMPLPath string, startTime time.Time) result.Result[ValidateData]` (lines 26-98)
+            - `IsValidScoutPath(filePath string) bool` (lines 100-117)
+            - `result.CodeScoutBoundaryViolation` constant from `pkg/result/codes.go` (line 159)
+
+            ## Tests Expected
+
+            No new tests needed. Existing tests in `scout_boundaries_test.go` cover both code paths. Verify:
+            - `TestValidateScoutWrites` suite still passes (lines 40-210)
+            - `TestIsValidScoutPath` still passes (lines 10-38)
+
+            ## Verification Gate
+
+            ```bash
+            go build ./pkg/hooks && \
+            go vet ./pkg/hooks && \
+            go test ./pkg/hooks -timeout 120s
+            ```
+
+            All must pass with no new lint warnings.
+
+            ## Constraints
+
+            - Replace both occurrences of `"SCOUT_BOUNDARY_VIOLATION"` (lines 69, 77) with `result.CodeScoutBoundaryViolation`
+            - For line 50 `filepath.Rel()` error: check the error and handle gracefully. If `filepath.Rel` fails, use the absolute path instead of the relative path (the validation logic still works correctly with absolute paths).
+            - Do not change function signatures or behavior
+            - Preserve all existing comments
+            - Do not modify test files (Agent C owns scout_boundaries_test.go)
+          files:
+            - pkg/hooks/scout_boundaries.go
+        - id: B
+          task: |
+            ## What to Implement
+
+            Fix two code review findings in `pkg/hooks/prelaunch_gate.go`:
+
+            **Finding 3 (high priority):** Function `PreLaunchGate` (lines 43-88) returns `*PreLaunchResult` instead of `result.Result[PreLaunchResult]`. Migrate to Result[T] pattern for consistency with the rest of the codebase.
+
+            **Finding 6 (medium priority):** `PreLaunchGate` function is not called anywhere in the main codebase (dead code). After migration, verify whether this function should be removed or integrated into the wave preparation flow. If it's intended for future use but not yet integrated, add a comment documenting its purpose and integration plan.
+
+            ## Interface Contracts (Existing, Modified)
+
+            **Before (current):**
+            ```go
+            func PreLaunchGate(
+                manifest *protocol.IMPLManifest,
+                waveNum int,
+                agentID string,
+                repoRoot string,
+                wtPath string,
+            ) *PreLaunchResult
+            ```
+
+            **After (Result[T] migration):**
+            ```go
+            func PreLaunchGate(
+                manifest *protocol.IMPLManifest,
+                waveNum int,
+                agentID string,
+                repoRoot string,
+                wtPath string,
+            ) result.Result[PreLaunchResult]
+            ```
+
+            Return values:
+            - `result.NewSuccess(PreLaunchResult{...})` when all checks pass or only warnings present
+            - `result.NewPartial(PreLaunchResult{...}, []result.SAWError{...})` when some checks fail but results are still useful
+            - `result.NewFailure[PreLaunchResult]([]result.SAWError{...})` on fatal validation errors
+
+            ## Tests Expected
+
+            Update all test calls to use Result[T] unwrapping. In `prelaunch_gate_test.go`, replace:
+            ```go
+            result := PreLaunchGate(m, 1, "A", "/tmp/repo", "")
+            if !result.Ready { ... }
+            ```
+
+            With:
+            ```go
+            res := PreLaunchGate(m, 1, "A", "/tmp/repo", "")
+            if !res.IsSuccess() && !res.IsPartial() {
+                t.Errorf("PreLaunchGate failed: %v", res.Errors)
+            }
+            result := res.GetData()
+            if !result.Ready { ... }
+            ```
+
+            All existing tests must pass after migration. Do NOT add new test cases (Agent D owns test file).
+
+            ## Verification Gate
+
+            ```bash
+            go build ./pkg/hooks && \
+            go vet ./pkg/hooks && \
+            go test ./pkg/hooks -timeout 120s
+            ```
+
+            All must pass. Test coverage must remain ≥92.7%.
+
+            ## Constraints
+
+            - Preserve all 7 pre-launch checks (validation, wave_exists, agent_exists, worktree_branch, scaffolds_committed, ownership_disjoint, critic_review)
+            - The `Ready` field logic (true only if no "fail" status) must remain unchanged in the PreLaunchResult struct
+            - Add a doc comment explaining why PreLaunchGate exists but isn't yet integrated (e.g., "PreLaunchGate is prepared for integration into wave preparation flow (ticket TBD)" or "PreLaunchGate was exploratory — consider removal if not needed by Q2 2026")
+            - Do not modify test files (Agent D owns prelaunch_gate_test.go)
+          files:
+            - pkg/hooks/prelaunch_gate.go
+        - id: C
+          task: |
+            ## What to Implement
+
+            Fix code review finding 4 in `pkg/hooks/scout_boundaries_test.go`:
+
+            **Finding 4 (low priority):** Missing test for `filepath.Walk` error handling in `ValidateScoutWrites`. The function returns a Fatal error when `filepath.Walk` fails (scout_boundaries.go:67-70), but no test exercises this path.
+
+            ## Interface Contracts (Existing, Do Not Change)
+
+            - `ValidateScoutWrites(repoPath, expectedIMPLPath string, startTime time.Time) result.Result[ValidateData]` from scout_boundaries.go
+
+            ## Tests Expected
+
+            Add a new test case `TestValidateScoutWrites_WalkError` to the test suite around line 210 (after existing tests). Trigger a `filepath.Walk` error by passing an invalid `repoPath` (e.g., a file instead of a directory, or a path with permission issues). Verify:
+            - Result is Fatal (`res.IsFatal()` or `!res.IsSuccess()`)
+            - Error code is `result.CodeScoutBoundaryViolation`
+            - Error message contains "walk failed"
+
+            Example approach:
+            ```go
+            func TestValidateScoutWrites_WalkError(t *testing.T) {
+                // Create a temp file (not a directory) to trigger Walk error
+                tmpFile := filepath.Join(t.TempDir(), "not-a-dir")
+                if err := os.WriteFile(tmpFile, []byte("x"), 0644); err != nil {
+                    t.Fatal(err)
+                }
+
+                // Pass the file as repoPath (Walk expects a directory)
+                res := ValidateScoutWrites(tmpFile, "", time.Now())
+                if res.IsSuccess() {
+                    t.Errorf("expected Failure for invalid repoPath, got Success")
+                }
+                if len(res.Errors) == 0 {
+                    t.Errorf("expected errors, got none")
+                }
+                // Check error code and message
+                if res.Errors[0].Code != result.CodeScoutBoundaryViolation {
+                    t.Errorf("expected code %s, got %s", result.CodeScoutBoundaryViolation, res.Errors[0].Code)
+                }
+                if !strings.Contains(res.Errors[0].Message, "walk failed") {
+                    t.Errorf("expected 'walk failed' in message, got: %s", res.Errors[0].Message)
+                }
+            }
+            ```
+
+            ## Verification Gate
+
+            ```bash
+            go build ./pkg/hooks && \
+            go vet ./pkg/hooks && \
+            go test ./pkg/hooks -timeout 120s
+            ```
+
+            All must pass. Test coverage should increase slightly (currently 92.7%).
+
+            ## Constraints
+
+            - Do not modify scout_boundaries.go (Agent A owns it)
+            - Do not modify existing tests
+            - Use `t.TempDir()` for test isolation
+            - Follow existing test naming conventions (`TestValidateScoutWrites_*`)
+          files:
+            - pkg/hooks/scout_boundaries_test.go
+        - id: D
+          task: |
+            ## What to Implement
+
+            Fix code review finding 5 in `pkg/hooks/prelaunch_gate_test.go`:
+
+            **Finding 5 (low priority):** Missing test for critic verdict "fail" in `PreLaunchGate`. The function checks `CriticReport.Verdict` and returns a "fail" status when verdict is not "pass" or "skipped" (prelaunch_gate.go:304-324), but no test exercises the "fail" case.
+
+            ## Interface Contracts (Existing, Modified by Agent B)
+
+            **Agent B is migrating PreLaunchGate to Result[T] pattern.** Your tests must use the Result[T] API:
+
+            ```go
+            res := PreLaunchGate(m, 1, "A", "/tmp/repo", "")
+            if !res.IsSuccess() && !res.IsPartial() {
+                t.Errorf("PreLaunchGate failed: %v", res.Errors)
+            }
+            result := res.GetData()
+            // Now test result.Ready, result.Checks, etc.
+            ```
+
+            ## Tests Expected
+
+            Add a new test case `TestPreLaunchGate_CriticFailed` to the test suite around line 212 (after `TestPreLaunchGate_CriticPassed`). Set up a manifest with:
+            - 3+ agents (to trigger E37 critic requirement)
+            - `CriticReport.Verdict = protocol.CriticVerdictIssues` (or any non-pass, non-skipped value)
+            - `CriticReport.IssueCount > 0`
+
+            Verify:
+            - `result.Ready == false` (gate should block launch)
+            - The `critic_review` check has `Status == "fail"`
+            - Error message mentions issue count (e.g., "critic review failed with N issue(s)")
+
+            Example structure:
+            ```go
+            func TestPreLaunchGate_CriticFailed(t *testing.T) {
+                m := validManifest()
+                // Add 3rd agent to trigger critic requirement
+                m.Waves[0].Agents = append(m.Waves[0].Agents, protocol.Agent{
+                    ID: "C", Task: "task", Files: []string{"pkg/foo/qux.go"},
+                })
+                m.FileOwnership = append(m.FileOwnership, protocol.FileOwnership{
+                    File: "pkg/foo/qux.go", Agent: "C", Wave: 1,
+                })
+                m.CriticReport = &protocol.CriticData{
+                    Verdict: protocol.CriticVerdictIssues,
+                    IssueCount: 3,
+                }
+
+                res := PreLaunchGate(m, 1, "A", "/tmp/repo", "")
+                data := res.GetData()
+
+                if data.Ready {
+                    t.Errorf("expected Ready=false when critic fails")
+                }
+
+                for _, c := range data.Checks {
+                    if c.Name == "critic_review" {
+                        if c.Status != "fail" {
+                            t.Errorf("critic_review: expected fail, got %s: %s", c.Status, c.Message)
+                        }
+                        if !strings.Contains(c.Message, "3 issue") {
+                            t.Errorf("expected issue count in message, got: %s", c.Message)
+                        }
+                        return
+                    }
+                }
+                t.Errorf("critic_review check not found")
+            }
+            ```
+
+            ## Verification Gate
+
+            ```bash
+            go build ./pkg/hooks && \
+            go vet ./pkg/hooks && \
+            go test ./pkg/hooks -timeout 120s
+            ```
+
+            All must pass. Test coverage should increase slightly.
+
+            ## Constraints
+
+            - Do not modify prelaunch_gate.go (Agent B owns it)
+            - Do not modify existing tests
+            - Follow existing test naming conventions (`TestPreLaunchGate_*`)
+            - Use the `validManifest()` helper function for test setup
+            - Import `strings` package if needed for `strings.Contains` assertions
+          files:
+            - pkg/hooks/prelaunch_gate_test.go
+quality_gates:
+    level: standard
+    gates:
+        - type: build
+          command: go build ./pkg/hooks
+          required: true
+        - type: lint
+          command: go vet ./pkg/hooks
+          required: true
+        - type: test
+          command: go test ./pkg/hooks -timeout 120s
+          required: true
+pre_mortem:
+    overall_risk: low
+    rows:
+        - scenario: Agent B's Result[T] migration breaks existing tests before Agent D fixes them
+          likelihood: low
+          impact: low
+          mitigation: Agents are fully independent (disjoint file ownership). Agent B does not modify test files. Agent D updates tests for the new API after merge.
+        - scenario: Finding 6 (dead code) investigation reveals PreLaunchGate should be removed, invalidating Agent B's work
+          likelihood: low
+          impact: low
+          mitigation: Agent B adds a doc comment explaining status. If removal is needed later, it's a trivial 1-file delete.
+        - scenario: Test coverage drops below 92.7% after fixes
+          likelihood: low
+          impact: low
+          mitigation: Agents C and D add test cases. If coverage drops, fail the verification gate and retry.
+critic_report:
+    verdict: PASS
+    agent_reviews:
+        A:
+            agent_id: A
+            verdict: PASS
+        B:
+            agent_id: B
+            verdict: PASS
+        C:
+            agent_id: C
+            verdict: PASS
+        D:
+            agent_id: D
+            verdict: PASS
+    summary: 'Verified 4 agents across 4 files. All checks passed. Files exist, line numbers are accurate, and all symbols (CodeScoutBoundaryViolation, CodeDisjointOwnership, E37Required, AllScaffoldsCommitted, CriticVerdictIssues, Result[T] API) are correct. Ready for wave execution.'
+    reviewed_at: "2026-04-01T18:20:37Z"
+    issue_count: 0
+state: SCOUT_PENDING
+injection_method: hook
