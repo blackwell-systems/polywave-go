@@ -70,7 +70,7 @@ func (o *JournalObserver) Checkpoint(name string) result.Result[CheckpointData] 
 	}
 
 	// Create checkpoints directory if it doesn't exist
-	checkpointsDir := filepath.Join(string(o.JournalDir), "checkpoints")
+	checkpointsDir := filepath.Join(o.JournalDir, "checkpoints")
 	if err := os.MkdirAll(checkpointsDir, 0755); err != nil {
 		return result.NewFailure[CheckpointData]([]result.SAWError{{
 			Code:     "CHECKPOINT_FAILED",
@@ -90,7 +90,7 @@ func (o *JournalObserver) Checkpoint(name string) result.Result[CheckpointData] 
 	}
 
 	// Count entries in index.jsonl
-	entryCount, err := countJSONLLines(string(o.IndexPath))
+	entryCount, err := countJSONLLines(o.IndexPath)
 	if err != nil && !os.IsNotExist(err) {
 		return result.NewFailure[CheckpointData]([]result.SAWError{{
 			Code:     "CHECKPOINT_FAILED",
@@ -104,15 +104,21 @@ func (o *JournalObserver) Checkpoint(name string) result.Result[CheckpointData] 
 
 	// Copy index.jsonl (optional - may not exist for empty journal)
 	indexSnapshot := snapshotPrefix + "-index.jsonl"
-	_ = copyFileIfExists(string(o.IndexPath), indexSnapshot)
+	if r := copyFileIfExists(o.IndexPath, indexSnapshot); r.IsFatal() {
+		o.log().Debug("checkpoint: index.jsonl not copied (may not exist)", "err", r.Errors[0].Message)
+	}
 
 	// Copy cursor.json (optional - may not exist for empty journal)
 	cursorSnapshot := snapshotPrefix + "-cursor.json"
-	_ = copyFileIfExists(string(o.CursorPath), cursorSnapshot)
+	if r := copyFileIfExists(o.CursorPath, cursorSnapshot); r.IsFatal() {
+		o.log().Debug("checkpoint: cursor.json not copied (may not exist)", "err", r.Errors[0].Message)
+	}
 
 	// Copy recent.json (optional - may not exist yet)
 	recentSnapshot := snapshotPrefix + "-recent.json"
-	_ = copyFileIfExists(string(o.RecentPath), recentSnapshot)
+	if r := copyFileIfExists(o.RecentPath, recentSnapshot); r.IsFatal() {
+		o.log().Debug("checkpoint: recent.json not copied (may not exist)", "err", r.Errors[0].Message)
+	}
 
 	// Create checkpoint metadata
 	checkpoint := Checkpoint{
@@ -150,7 +156,7 @@ func (o *JournalObserver) Checkpoint(name string) result.Result[CheckpointData] 
 
 // ListCheckpoints returns all checkpoints with metadata, sorted by timestamp (oldest first).
 func (o *JournalObserver) ListCheckpoints() ([]Checkpoint, error) {
-	checkpointsDir := filepath.Join(string(o.JournalDir), "checkpoints")
+	checkpointsDir := filepath.Join(o.JournalDir, "checkpoints")
 
 	// If checkpoints directory doesn't exist, return empty list
 	if _, err := os.Stat(checkpointsDir); os.IsNotExist(err) {
@@ -207,7 +213,7 @@ func (o *JournalObserver) ListCheckpoints() ([]Checkpoint, error) {
 // Does NOT delete checkpoint files (checkpoints are immutable).
 // Returns failure if checkpoint doesn't exist or restoration fails.
 func (o *JournalObserver) RestoreCheckpoint(name string) result.Result[RestoreData] {
-	checkpointsDir := filepath.Join(string(o.JournalDir), "checkpoints")
+	checkpointsDir := filepath.Join(o.JournalDir, "checkpoints")
 	metadataPath := filepath.Join(checkpointsDir, fmt.Sprintf("%s.json", name))
 
 	// Verify checkpoint exists
@@ -240,21 +246,21 @@ func (o *JournalObserver) RestoreCheckpoint(name string) result.Result[RestoreDa
 
 	// Restore index.jsonl (delete target if snapshot doesn't exist - restoring to empty state)
 	indexSnapshot := checkpoint.SnapshotPath + "-index.jsonl"
-	if r := copyFileIfExists(indexSnapshot, string(o.IndexPath)); r.IsFatal() {
+	if r := copyFileIfExists(indexSnapshot, o.IndexPath); r.IsFatal() {
 		// Snapshot doesn't exist - restore to empty state by removing target
-		os.Remove(string(o.IndexPath))
+		os.Remove(o.IndexPath)
 	}
 
 	// Restore cursor.json (delete target if snapshot doesn't exist)
 	cursorSnapshot := checkpoint.SnapshotPath + "-cursor.json"
-	if r := copyFileIfExists(cursorSnapshot, string(o.CursorPath)); r.IsFatal() {
-		os.Remove(string(o.CursorPath))
+	if r := copyFileIfExists(cursorSnapshot, o.CursorPath); r.IsFatal() {
+		os.Remove(o.CursorPath)
 	}
 
 	// Restore recent.json (optional)
 	recentSnapshot := checkpoint.SnapshotPath + "-recent.json"
-	if r := copyFileIfExists(recentSnapshot, string(o.RecentPath)); r.IsFatal() {
-		os.Remove(string(o.RecentPath))
+	if r := copyFileIfExists(recentSnapshot, o.RecentPath); r.IsFatal() {
+		os.Remove(o.RecentPath)
 	}
 
 	return result.NewSuccess(RestoreData{
@@ -267,7 +273,7 @@ func (o *JournalObserver) RestoreCheckpoint(name string) result.Result[RestoreDa
 // DeleteCheckpoint removes checkpoint metadata and snapshot files.
 // Returns failure if checkpoint doesn't exist or deletion fails.
 func (o *JournalObserver) DeleteCheckpoint(name string) result.Result[DeleteData] {
-	checkpointsDir := filepath.Join(string(o.JournalDir), "checkpoints")
+	checkpointsDir := filepath.Join(o.JournalDir, "checkpoints")
 	metadataPath := filepath.Join(checkpointsDir, fmt.Sprintf("%s.json", name))
 
 	// Verify checkpoint exists
