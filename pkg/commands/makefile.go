@@ -77,7 +77,7 @@ func parseMakefileTargets(file *os.File) (map[string]*makeTarget, []string) {
 		}
 
 		// Check if this is a target line (contains ':')
-		if strings.Contains(line, ":") && !strings.HasPrefix(line, "\t") && !strings.HasPrefix(line, "    ") {
+		if strings.Contains(line, ":") && !strings.HasPrefix(line, "\t") {
 			parts := strings.SplitN(line, ":", 2)
 			if len(parts) == 2 {
 				targetName := strings.TrimSpace(parts[0])
@@ -103,7 +103,7 @@ func parseMakefileTargets(file *os.File) (map[string]*makeTarget, []string) {
 				targets[targetName] = currentTarget
 				targetOrder = append(targetOrder, targetName)
 			}
-		} else if currentTarget != nil && (strings.HasPrefix(line, "\t") || strings.HasPrefix(line, "    ")) {
+		} else if currentTarget != nil && strings.HasPrefix(line, "\t") {
 			// This is a command line for the current target
 			cmd := strings.TrimSpace(line)
 			if cmd != "" && !strings.HasPrefix(cmd, "@") && !strings.HasPrefix(cmd, "-") {
@@ -123,34 +123,42 @@ func parseMakefileTargets(file *os.File) (map[string]*makeTarget, []string) {
 	return targets, targetOrder
 }
 
-// resolveTargetChains finds leaf targets (those with no further dependencies or with actual commands)
+// collectLeaves recursively collects leaf targets (targets with commands) reachable
+// from name, using a visited set to prevent infinite loops in circular dependencies.
+func collectLeaves(name string, targets map[string]*makeTarget, visited map[string]bool) []*makeTarget {
+	if _, exists := targets[name]; !exists {
+		return nil
+	}
+	if visited[name] {
+		return nil
+	}
+	visited[name] = true
+
+	target := targets[name]
+	if len(target.commands) > 0 {
+		return []*makeTarget{target}
+	}
+
+	var leaves []*makeTarget
+	for _, dep := range target.dependencies {
+		leaves = append(leaves, collectLeaves(dep, targets, visited)...)
+	}
+	return leaves
+}
+
+// resolveTargetChains finds leaf targets by recursively resolving transitive
+// dependencies. A leaf target is one that has actual commands (not just deps).
 func resolveTargetChains(targets map[string]*makeTarget, targetOrder []string) (map[string]*makeTarget, []string) {
 	leafTargets := make(map[string]*makeTarget)
 	leafOrder := []string{}
 
 	for _, name := range targetOrder {
-		target := targets[name]
-		// If target has commands, it's a leaf
-		if len(target.commands) > 0 {
-			if _, exists := leafTargets[name]; !exists {
-				leafTargets[name] = target
-				leafOrder = append(leafOrder, name)
-			}
-			continue
-		}
-
-		// If target has no dependencies, skip it (empty target)
-		if len(target.dependencies) == 0 {
-			continue
-		}
-
-		// If target only has dependencies, collect leaf dependencies
-		for _, dep := range target.dependencies {
-			if depTarget, exists := targets[dep]; exists && len(depTarget.commands) > 0 {
-				if _, exists := leafTargets[dep]; !exists {
-					leafTargets[dep] = depTarget
-					leafOrder = append(leafOrder, dep)
-				}
+		visited := make(map[string]bool)
+		leaves := collectLeaves(name, targets, visited)
+		for _, leaf := range leaves {
+			if _, exists := leafTargets[leaf.name]; !exists {
+				leafTargets[leaf.name] = leaf
+				leafOrder = append(leafOrder, leaf.name)
 			}
 		}
 	}
