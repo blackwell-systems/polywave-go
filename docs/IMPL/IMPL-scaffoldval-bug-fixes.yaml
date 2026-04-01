@@ -1,0 +1,595 @@
+title: Fix 6 known bugs in pkg/scaffoldval
+feature_slug: scaffoldval-bug-fixes
+verdict: SUITABLE
+suitability_assessment: |
+    The 6 bugs decompose cleanly across 2 agents with fully disjoint file ownership:
+    - Agent A: types.go + types_test.go (Bugs 2 and 3)
+    - Agent B: validator.go + validator_test.go + cmd/sawtools/validate_scaffold_cmd.go (Bugs 1, 4, 5, 6)
+
+    All bugs are fully specified; no root-cause investigation is needed before implementation.
+    Interface contracts are determinable before execution. The signature change to ValidateScaffold
+    (adding ctx context.Context as first param and repoRoot string) is known at planning time and
+    captured in the interface contract. The single caller (validate_scaffold_cmd.go) is assigned to
+    Agent B so all callsite updates land in one agent.
+
+    No cross-agent type dependencies — Agent A touches only ValidationResult/ValidationStep behavior,
+    Agent B touches only the validator pipeline and its callers.
+
+    Suitability assessment by bug:
+    - Bug 1 (checkImports): TODO — broken behavior confirmed in validator.go:130-145
+    - Bug 2 (OverallStatus all-SKIP): TODO — types.go:30-36 returns PASS; test at line 97-103 encodes broken behavior
+    - Bug 3 (TypeReferences hardcoded PASS): TODO — validator.go:53 confirmed
+    - Bug 4 (repoRoot fragile derivation): TODO — validator.go:65 confirmed
+    - Bug 5 (extractImports re-parses raw text): TODO — validator.go:34-49, 97-127 confirmed
+    - Bug 6 (no context/timeout): TODO — validator.go:81 confirmed, no ctx threading
+
+    Estimated times:
+    - Scout phase: ~10 min
+    - Agent execution: ~10 min (2 parallel agents, ~10 min avg)
+    - Merge and verification: ~5 min
+    Total SAW time: ~25 min
+
+    Sequential baseline: ~20 min (2 tasks x ~10 min sequential)
+    Time savings: parallel execution saves ~10 min. Clear speedup for a focused bug-fix batch.
+test_command: go test ./pkg/scaffoldval/... ./cmd/sawtools/...
+lint_command: go vet ./...
+file_ownership:
+    - file: pkg/scaffoldval/types.go
+      agent: A
+      wave: 1
+      action: modify
+    - file: pkg/scaffoldval/types_test.go
+      agent: A
+      wave: 1
+      action: modify
+    - file: pkg/scaffoldval/validator.go
+      agent: B
+      wave: 1
+      action: modify
+    - file: pkg/scaffoldval/validator_test.go
+      agent: B
+      wave: 1
+      action: modify
+    - file: cmd/sawtools/validate_scaffold_cmd.go
+      agent: B
+      wave: 1
+      action: modify
+interface_contracts:
+    - name: ValidateScaffold
+      description: |-
+        Updated signature adds ctx as first param and optional repoRoot as third param.
+        repoRoot is used to locate go.mod for import resolution (Bug 1) and to avoid
+        fragile filepath.Dir derivation (Bug 4). If repoRoot is empty string, the function
+        walks upward from implPath to find go.mod.
+      definition: |
+        func ValidateScaffold(ctx context.Context, scaffoldPath string, implPath string, repoRoot string) (*ValidationResult, error)
+      location: pkg/scaffoldval/validator.go
+    - name: OverallStatus
+      description: |-
+        Fixed to return "SKIP" when all steps are SKIP, rather than silently returning "PASS".
+        Only returns "PASS" when at least one step is PASS and no step is FAIL.
+      definition: |
+        func (r *ValidationResult) OverallStatus() string {
+            // Returns "FAIL" if any step is FAIL
+            // Returns "SKIP" if no step is PASS or FAIL (all SKIP)
+            // Returns "PASS" if no step is FAIL and at least one is PASS
+        }
+      location: pkg/scaffoldval/types.go
+waves:
+    - number: 1
+      agents:
+        - id: A
+          task: |
+            ## Files to modify
+            - `pkg/scaffoldval/types.go`
+            - `pkg/scaffoldval/types_test.go`
+
+            ## Bug 2 — Fix OverallStatus treats all-SKIP as PASS
+
+            In `pkg/scaffoldval/types.go`, the `OverallStatus()` method at lines 30-36
+            currently returns `"PASS"` when no step is FAIL — including when all steps are SKIP.
+            This silently passes a never-validated scaffold.
+
+            Fix the logic to:
+            1. Return `"FAIL"` if any step status is `"FAIL"` (unchanged)
+            2. Return `"SKIP"` if no step is `"PASS"` or `"FAIL"` (i.e., all are `"SKIP"`)
+            3. Return `"PASS"` otherwise (at least one step is PASS and none are FAIL)
+
+            The new implementation:
+            ```go
+            func (r *ValidationResult) OverallStatus() string {
+                if r.Syntax.Status == "FAIL" || r.Imports.Status == "FAIL" ||
+                    r.TypeReferences.Status == "FAIL" || r.Build.Status == "FAIL" {
+                    return "FAIL"
+                }
+                if r.Syntax.Status == "PASS" || r.Imports.Status == "PASS" ||
+                    r.TypeReferences.Status == "PASS" || r.Build.Status == "PASS" {
+                    return "PASS"
+                }
+                return "SKIP"
+            }
+            ```
+
+            ## Bug 3 — TypeReferences step permanently hardcoded to PASS
+
+            In `pkg/scaffoldval/validator.go`, Step 3 at line 53 always sets:
+            ```go
+            result.TypeReferences.Status = "PASS" // Simplified for now
+            ```
+            This is a false PASS — the code never actually checks anything.
+
+            Note: Bug 3's fix touches validator.go, which is owned by Agent B. Agent A owns
+            only types.go and types_test.go. The instruction below for types_test.go
+            concerns updating the test that encodes the broken OverallStatus behavior for
+            Bug 2 only.
+
+            ## Test updates in types_test.go
+
+            ### TestValidationResult_OverallStatus_AllSkip (line 97-104)
+            This test currently expects `"PASS"` for an all-SKIP result:
+            ```go
+            if status != "PASS" {
+                t.Errorf("Expected OverallStatus to be PASS when all steps skipped, got %s", status)
+            }
+            ```
+            Update it to expect `"SKIP"`:
+            ```go
+            if status != "SKIP" {
+                t.Errorf("Expected OverallStatus to be SKIP when all steps skipped, got %s", status)
+            }
+            ```
+
+            Also add a new test case `TestValidationResult_OverallStatus_MixedSkipPass` that
+            verifies when some steps are SKIP and one is PASS, OverallStatus returns "PASS":
+            ```go
+            func TestValidationResult_OverallStatus_MixedSkipPass(t *testing.T) {
+                result := &ValidationResult{
+                    Syntax:         ValidationStep{Status: "PASS"},
+                    Imports:        ValidationStep{Status: "SKIP"},
+                    TypeReferences: ValidationStep{Status: "SKIP"},
+                    Build:          ValidationStep{Status: "SKIP"},
+                }
+                status := result.OverallStatus()
+                if status != "PASS" {
+                    t.Errorf("Expected OverallStatus to be PASS when some steps pass and none fail, got %s", status)
+                }
+            }
+            ```
+
+            ## Verification gate
+            ```
+            go build ./pkg/scaffoldval/...
+            go vet ./pkg/scaffoldval/...
+            go test ./pkg/scaffoldval/... -run "TestValidationResult|TestNewValidationResult" -v
+            ```
+          files:
+            - pkg/scaffoldval/types.go
+            - pkg/scaffoldval/types_test.go
+        - id: B
+          task: |
+            ## Files to modify
+            - `pkg/scaffoldval/validator.go`
+            - `pkg/scaffoldval/validator_test.go`
+            - `cmd/sawtools/validate_scaffold_cmd.go`
+
+            ## Overview of changes
+            You are fixing Bugs 1, 3, 4, 5, and 6 in `pkg/scaffoldval/validator.go` and updating
+            all callers and tests to match the new `ValidateScaffold` signature.
+
+            ## Bug 6 — Add context.Context as first parameter (do this first)
+
+            Change the signature of `ValidateScaffold` from:
+            ```go
+            func ValidateScaffold(scaffoldPath string, implPath string) (*ValidationResult, error)
+            ```
+            to:
+            ```go
+            func ValidateScaffold(ctx context.Context, scaffoldPath string, implPath string, repoRoot string) (*ValidationResult, error)
+            ```
+
+            Use `exec.CommandContext(ctx, "sh", "-c", ...)` at line 81 instead of
+            `exec.Command("sh", "-c", ...)` to give the build step a cancellable timeout.
+
+            ## Bug 4 — Fix fragile repoRoot derivation
+
+            Currently at line 65:
+            ```go
+            repoRoot := filepath.Dir(filepath.Dir(implPath))
+            ```
+            This assumes exactly 2 directories deep (e.g. `docs/IMPL/foo.yaml`). It breaks for
+            archived paths like `docs/IMPL/complete/foo.yaml`.
+
+            Replace with: if the `repoRoot` parameter is non-empty, use it directly. If it is
+            empty string, walk upward from `filepath.Dir(implPath)` looking for a `go.mod` file.
+            Stop when `go.mod` is found; that directory is the repo root. If the walk reaches
+            the filesystem root without finding `go.mod`, fall back to the original
+            `filepath.Dir(filepath.Dir(implPath))` behavior as a last resort.
+
+            Helper function (add as unexported function in validator.go):
+            ```go
+            // findRepoRoot walks upward from dir looking for go.mod.
+            // Returns dir itself if go.mod is found there, continues walking up otherwise.
+            // Falls back to the original 2-dir-up heuristic if go.mod is not found.
+            func findRepoRoot(startDir string) string {
+                dir := startDir
+                for {
+                    if _, err := os.Stat(filepath.Join(dir, "go.mod")); err == nil {
+                        return dir
+                    }
+                    parent := filepath.Dir(dir)
+                    if parent == dir {
+                        // Reached filesystem root without finding go.mod
+                        return filepath.Dir(startDir) // fallback
+                    }
+                    dir = parent
+                }
+            }
+            ```
+
+            In `ValidateScaffold`, replace line 65 with:
+            ```go
+            root := repoRoot
+            if root == "" {
+                root = findRepoRoot(filepath.Dir(implPath))
+            }
+            ```
+            Then use `root` wherever `repoRoot` was used (lines 73, 82).
+
+            ## Bug 1 — Fix checkImports marks all third-party imports as missing
+
+            The current `checkImports` function at lines 130-145 marks every import containing
+            a dot as missing, without consulting `go.mod`. Fix:
+
+            1. Change `checkImports` to accept `repoRoot string` as a second parameter:
+               ```go
+               func checkImports(imports []string, repoRoot string) []string
+               ```
+
+            2. Parse `go.mod` at `filepath.Join(repoRoot, "go.mod")` to extract all `require`
+               module path prefixes. Use `golang.org/x/mod/modfile` if available, or parse
+               manually by reading lines of the form `\trequire (\n\t\t<module> <version>\n\t)`
+               and also single-line `require <module> <version>`.
+
+               Since this repo does not import `golang.org/x/mod`, implement a simple line-based
+               parser. Read the file, look for lines inside a `require (...)` block and
+               single-line `require` directives, extract the module path (first field after
+               `require` or first field in the require block). Collect all module paths into a set.
+
+            3. For each import that contains a dot, check if it has a prefix that matches any
+               `require` entry in go.mod. If it does, skip it (it is a known dependency).
+               Only mark it as missing if it contains a dot AND no go.mod require entry is a
+               prefix of the import path.
+
+            Also extract the module name itself from go.mod (`module github.com/...`) and skip
+            imports whose path starts with that module name (they are local packages).
+
+            Updated `checkImports` logic:
+            ```go
+            func checkImports(imports []string, repoRoot string) []string {
+                moduleName, requires := parseGoMod(filepath.Join(repoRoot, "go.mod"))
+                var missing []string
+                for _, imp := range imports {
+                    if !strings.Contains(imp, ".") {
+                        continue // standard library
+                    }
+                    if moduleName != "" && strings.HasPrefix(imp, moduleName) {
+                        continue // local package
+                    }
+                    found := false
+                    for _, req := range requires {
+                        if strings.HasPrefix(imp, req) {
+                            found = true
+                            break
+                        }
+                    }
+                    if !found {
+                        missing = append(missing, imp)
+                    }
+                }
+                return missing
+            }
+            ```
+
+            Add a helper `parseGoMod(goModPath string) (moduleName string, requires []string)`:
+            ```go
+            func parseGoMod(goModPath string) (string, []string) {
+                data, err := os.ReadFile(goModPath)
+                if err != nil {
+                    return "", nil
+                }
+                var moduleName string
+                var requires []string
+                lines := strings.Split(string(data), "\n")
+                inRequire := false
+                for _, line := range lines {
+                    trimmed := strings.TrimSpace(line)
+                    if strings.HasPrefix(trimmed, "module ") {
+                        moduleName = strings.TrimSpace(strings.TrimPrefix(trimmed, "module "))
+                        continue
+                    }
+                    if trimmed == "require (" {
+                        inRequire = true
+                        continue
+                    }
+                    if inRequire && trimmed == ")" {
+                        inRequire = false
+                        continue
+                    }
+                    if inRequire {
+                        // line is like: github.com/foo/bar v1.2.3 or github.com/foo/bar v1.2.3 // indirect
+                        parts := strings.Fields(trimmed)
+                        if len(parts) >= 2 {
+                            requires = append(requires, parts[0])
+                        }
+                        continue
+                    }
+                    if strings.HasPrefix(trimmed, "require ") {
+                        // single-line: require github.com/foo/bar v1.2.3
+                        rest := strings.TrimPrefix(trimmed, "require ")
+                        parts := strings.Fields(rest)
+                        if len(parts) >= 1 {
+                            requires = append(requires, parts[0])
+                        }
+                    }
+                }
+                return moduleName, requires
+            }
+            ```
+
+            Update the call site at line 40 to pass `root`:
+            ```go
+            missingImports := checkImports(imports, root)
+            ```
+
+            ## Bug 5 — Fix extractImports to use the already-parsed AST
+
+            Step 1 of `ValidateScaffold` at lines 22-30 parses the file with the Go parser but
+            discards the result (`_, err := parser.ParseFile(...)`). Step 2 at lines 34-39 reads
+            the file again as raw text and calls `extractImports`.
+
+            Fix:
+
+            1. Capture the parsed `*ast.File` in Step 1:
+               ```go
+               fset := token.NewFileSet()
+               astFile, err := parser.ParseFile(fset, scaffoldPath, nil, parser.AllErrors)
+               if err != nil {
+                   // ... existing FAIL handling unchanged ...
+                   return result, nil
+               }
+               result.Syntax.Status = "PASS"
+               ```
+
+            2. Replace the raw-text `extractImports` call in Step 2 with a new AST-based helper
+               `importsFromAST` that reads `astFile.Imports` directly:
+               ```go
+               // importsFromAST extracts import paths from a parsed *ast.File.
+               func importsFromAST(f *ast.File) []string {
+                   var imports []string
+                   for _, imp := range f.Imports {
+                       // imp.Path.Value is a quoted string like `"fmt"`
+                       path := strings.Trim(imp.Path.Value, `"`)
+                       imports = append(imports, path)
+                   }
+                   return imports
+               }
+               ```
+               Add `"go/ast"` to imports (it may already be available via `go/parser`; check if
+               `*ast.File` is accessible — it is, since `go/parser` returns `*ast.File`).
+
+            3. Remove the raw `os.ReadFile` call in Step 2 (lines 34-37) and replace:
+               ```go
+               imports := importsFromAST(astFile)
+               missingImports := checkImports(imports, root)
+               ```
+
+            4. Keep the exported `extractImports(content string) []string` function for now —
+               it is tested by `TestExtractImports` in validator_test.go. Do not remove it;
+               just stop calling it from `ValidateScaffold`.
+
+            ## Bug 3 — Fix TypeReferences hardcoded PASS
+
+            At line 53, replace:
+            ```go
+            result.TypeReferences.Status = "PASS" // Simplified for now
+            ```
+            with:
+            ```go
+            // Type reference checking is not yet implemented. Return SKIP (honest signaling)
+            // rather than a false PASS. The parsed AST (astFile) is available for future use.
+            result.TypeReferences.Status = "SKIP"
+            ```
+            Add a comment: `// astFile is available here for future type-reference checking`
+
+            ## Caller update — cmd/sawtools/validate_scaffold_cmd.go
+
+            The `validate_scaffold_cmd.go` calls `scaffoldval.ValidateScaffold(scaffoldPath, implDoc)`
+            at line 34. Update to pass context and empty repoRoot (allowing the walk-up fallback):
+            ```go
+            result, err := scaffoldval.ValidateScaffold(cmd.Context(), scaffoldPath, implDoc, "")
+            ```
+            Add `"context"` to the import block if not already present. The `cmd.Context()` method
+            is available on cobra.Command and returns the command's context (set by cobra from the
+            root context or background by default).
+
+            ## Test updates in validator_test.go
+
+            ### TestCheckImports_ThirdParty (lines 346-369)
+            This test calls `checkImports(imports)` with the old single-argument signature and
+            expects 2 missing imports (encoding the broken behavior).
+
+            Update it to:
+            1. Pass a temp dir with a go.mod that does NOT list `github.com/example/pkg` or
+               `golang.org/x/sync`, so both should still be flagged missing:
+               ```go
+               func TestCheckImports_ThirdParty(t *testing.T) {
+                   tmpDir := t.TempDir()
+                   goModContent := "module example.com/test\n\ngo 1.21\n"
+                   goModPath := filepath.Join(tmpDir, "go.mod")
+                   if err := os.WriteFile(goModPath, []byte(goModContent), 0644); err != nil {
+                       t.Fatalf("Failed to write go.mod: %v", err)
+                   }
+                   imports := []string{
+                       "fmt",
+                       "github.com/example/pkg",
+                       "golang.org/x/sync/errgroup",
+                   }
+                   result := checkImports(imports, tmpDir)
+                   if len(result) != 2 {
+                       t.Errorf("Expected 2 missing imports, got %d: %v", len(result), result)
+                   }
+                   expectedMissing := map[string]bool{
+                       "github.com/example/pkg":     true,
+                       "golang.org/x/sync/errgroup": true,
+                   }
+                   for _, imp := range result {
+                       if !expectedMissing[imp] {
+                           t.Errorf("Unexpected missing import: %s", imp)
+                       }
+                   }
+               }
+               ```
+
+            2. Add a new test `TestCheckImports_ThirdPartyInGoMod` that verifies imports listed
+               in go.mod are NOT flagged:
+               ```go
+               func TestCheckImports_ThirdPartyInGoMod(t *testing.T) {
+                   tmpDir := t.TempDir()
+                   goModContent := "module example.com/test\n\ngo 1.21\n\nrequire (\n\tgithub.com/example/pkg v1.0.0\n\tgolang.org/x/sync v0.1.0\n)\n"
+                   goModPath := filepath.Join(tmpDir, "go.mod")
+                   if err := os.WriteFile(goModPath, []byte(goModContent), 0644); err != nil {
+                       t.Fatalf("Failed to write go.mod: %v", err)
+                   }
+                   imports := []string{
+                       "fmt",
+                       "github.com/example/pkg",
+                       "golang.org/x/sync/errgroup",
+                   }
+                   result := checkImports(imports, tmpDir)
+                   if len(result) != 0 {
+                       t.Errorf("Expected no missing imports when all third-party are in go.mod, got: %v", result)
+                   }
+               }
+               ```
+
+            ### TestCheckImports_StandardLib (line 337-344)
+            Update to pass an empty string repoRoot (no go.mod needed for stdlib-only test):
+            ```go
+            result := checkImports(imports, "")
+            ```
+
+            ### TestCheckImports_Mixed (line 371-385)
+            Update similarly: create a tmpDir with a go.mod that does NOT list `github.com/example/pkg`
+            or `golang.org/x/sync`, then pass tmpDir:
+            ```go
+            func TestCheckImports_Mixed(t *testing.T) {
+                tmpDir := t.TempDir()
+                goModContent := "module example.com/test\n\ngo 1.21\n"
+                if err := os.WriteFile(filepath.Join(tmpDir, "go.mod"), []byte(goModContent), 0644); err != nil {
+                    t.Fatalf("Failed to write go.mod: %v", err)
+                }
+                imports := []string{
+                    "fmt",
+                    "github.com/example/pkg",
+                    "os",
+                    "strings",
+                    "golang.org/x/sync/errgroup",
+                }
+                result := checkImports(imports, tmpDir)
+                if len(result) != 2 {
+                    t.Errorf("Expected 2 missing imports, got %d: %v", len(result), result)
+                }
+            }
+            ```
+
+            ### TestValidateScaffold_* tests (all top-level tests)
+            All calls to `ValidateScaffold(scaffoldPath, implPath)` must be updated to
+            `ValidateScaffold(context.Background(), scaffoldPath, implPath, "")`.
+            Add `"context"` to imports in validator_test.go.
+
+            The test `TestValidateScaffold_ValidScaffold` currently expects
+            `result.TypeReferences.Status != "PASS"` at line 63. After Bug 3 fix, TypeReferences
+            returns "SKIP". Update that check to accept "SKIP":
+            ```go
+            if result.TypeReferences.Status != "SKIP" && result.TypeReferences.Status != "PASS" {
+                t.Errorf("Expected type reference check to be SKIP or PASS, got %s: %v", result.TypeReferences.Status, result.TypeReferences.Errors)
+            }
+            ```
+
+            ### TestValidateScaffold_MissingImport (lines 127-194)
+            After Bug 1 fix, `checkImports` now consults go.mod. The test scaffold uses
+            `github.com/example/missing` which is NOT in the tmpDir's go.mod (the test creates
+            a go.mod with no requires). Verify this test still passes — the import should still
+            be flagged since it's not in go.mod. No behavioral change needed here, just the
+            signature update for `ValidateScaffold`.
+
+            ## Verification gate
+            ```
+            go build ./pkg/scaffoldval/... ./cmd/sawtools/...
+            go vet ./pkg/scaffoldval/... ./cmd/sawtools/...
+            go test ./pkg/scaffoldval/... -v
+            go test ./cmd/sawtools/... -run TestValidateScaffoldCmd -v
+            ```
+          files:
+            - pkg/scaffoldval/validator.go
+            - pkg/scaffoldval/validator_test.go
+            - cmd/sawtools/validate_scaffold_cmd.go
+quality_gates:
+    level: standard
+    gates:
+        - type: build
+          command: go build ./...
+          required: true
+        - type: lint
+          command: go vet ./...
+          required: true
+        - type: test
+          command: go test ./pkg/scaffoldval/... ./cmd/sawtools/...
+          required: true
+pre_mortem:
+    overall_risk: low
+    rows:
+        - scenario: |-
+            Bug 5 AST import extraction: importsFromAST uses ast.File.Imports which contains
+            the quoted string path value (e.g. `"fmt"`). Agent must call strings.Trim with
+            backtick-quoted doublequote char, not a regular string. Incorrect unquoting leaves
+            quote characters in import paths.
+          likelihood: medium
+          impact: medium
+          mitigation: |-
+            Brief explicitly states: `path := strings.Trim(imp.Path.Value, `"`)`
+            and notes imp.Path.Value is a quoted string. Test coverage in TestExtractImports
+            (which still exercises the old extractImports) plus new ValidateScaffold integration
+            tests will catch this.
+        - scenario: |-
+            Bug 1 go.mod parser: single-line require directives (require github.com/foo v1.0.0)
+            are less common but valid. If parseGoMod only handles block-form requires, some
+            modules may still be flagged as missing.
+          likelihood: low
+          impact: low
+          mitigation: |-
+            Brief includes explicit handling for both block-form and single-line require forms.
+            TestCheckImports_ThirdPartyInGoMod exercises the block form.
+        - scenario: |-
+            Signature change (Bug 6) breaks cmd/sawtools/validate_scaffold_cmd_test.go which
+            calls newValidateScaffoldCmd() — an indirect caller. The CLI test does not call
+            ValidateScaffold directly but exercises the full command. If validate_scaffold_cmd.go
+            is updated but test infra is not, tests still compile since tests call the Cobra command.
+          likelihood: low
+          impact: low
+          mitigation: |-
+            validate_scaffold_cmd.go is in Agent B's ownership. Agent B updates it as part of the
+            caller update step. The cmd test file is not in Agent B's file ownership since it does
+            not need changes — it calls the command via Cobra, not ValidateScaffold directly.
+        - scenario: |-
+            Bug 3 fix changes TypeReferences from PASS to SKIP. The OverallStatus logic (Bug 2,
+            owned by Agent A) also changes. If both agents finish but are merged in the wrong order,
+            test TestValidationResult_OverallStatus_AllPass in types_test.go (which sets all 4 steps
+            to PASS) could regress if merged with an intermediate state.
+          likelihood: low
+          impact: low
+          mitigation: |-
+            Both agents run in Wave 1 with fully disjoint files. They are merged together by the
+            orchestrator after both complete. No intermediate state is committed.
+state: SCOUT_PENDING
+injection_method: hook

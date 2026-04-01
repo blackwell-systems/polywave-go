@@ -1,0 +1,608 @@
+title: pkg/notify Bug Fixes
+feature_slug: notify-bug-fixes
+verdict: SUITABLE
+suitability_assessment: |
+    7 bugs across 5 files in pkg/notify. File decomposition is clean with one
+    cross-agent dependency: Bug 2's shared HTTP timeout constant in types.go must
+    be defined before discord.go and telegram.go can reference it (both are in the
+    same package, so duplicate const declaration would be a compile error).
+
+    Resolution: 2-wave structure. Wave 1 handles dispatcher (Agent A) and the
+    slack+types work (Agent B, which adds the shared constant and moves
+    readWithFallback). Wave 2 handles discord+telegram (Agent C), which references
+    the constant already present in types.go after Agent B merges.
+
+    Test impact: TestDispatch_NoAdapters and part of TestDispatcher_AddRemove
+    assert the current (incorrect) SUCCESS behavior for zero adapters. Agent A
+    must flip both to expect FATAL. Similarly, telegram_test.go asserts
+    parse_mode=Markdown; Agent C must update that assertion to HTML.
+
+    Suitability gate answers:
+    1. File decomposition: 5 source files + 4 test files = 9 distinct files,
+       3 agents, fully disjoint. PASS.
+    2. No root-cause investigation needed. PASS.
+    3. Interface contracts are well-defined (constant names, function moves,
+       formatter output format). PASS.
+    4. All 7 items are TODO. PASS.
+    5. Build + test cycle: go test ./pkg/notify/... runs quickly, but 3 agents
+       and non-trivial logic changes (behavior flip, formatter rewrite, refactor)
+       make parallelization worthwhile. PASS.
+
+    Estimated times:
+    - Scout phase: ~10 min
+    - Agent execution: Wave 1 (2 agents x ~10 min avg) = ~10 min; Wave 2 (~10 min) = ~10 min
+    - Merge and verification: ~5 min
+    Total SAW time: ~35 min
+    Sequential baseline: 3 agents x 15 min avg = ~45 min
+    Time savings: ~10 min (22% faster)
+    Recommendation: Clear speedup, proceed.
+test_command: go test ./pkg/notify/... ./pkg/result/...
+lint_command: go vet ./pkg/notify/... ./pkg/result/...
+file_ownership:
+    - file: pkg/notify/dispatcher.go
+      agent: A
+      wave: 1
+      action: modify
+    - file: pkg/notify/dispatcher_test.go
+      agent: A
+      wave: 1
+      action: modify
+    - file: pkg/result/codes.go
+      agent: A
+      wave: 1
+      action: modify
+    - file: pkg/notify/types.go
+      agent: B
+      wave: 1
+      action: modify
+    - file: pkg/notify/slack.go
+      agent: B
+      wave: 1
+      action: modify
+    - file: pkg/notify/slack_test.go
+      agent: B
+      wave: 1
+      action: modify
+    - file: pkg/notify/discord.go
+      agent: C
+      wave: 2
+      action: modify
+      depends_on:
+        - B
+    - file: pkg/notify/telegram.go
+      agent: C
+      wave: 2
+      action: modify
+      depends_on:
+        - B
+    - file: pkg/notify/discord_test.go
+      agent: C
+      wave: 2
+      action: modify
+      depends_on:
+        - B
+    - file: pkg/notify/telegram_test.go
+      agent: C
+      wave: 2
+      action: modify
+      depends_on:
+        - B
+interface_contracts:
+    - name: CodeDispatchNoAdapters
+      description: New result code constant for the zero-adapter FATAL case in Dispatch.
+      definition: |
+        // In pkg/result/codes.go, Engine error codes section (N018+):
+        CodeDispatchNoAdapters = "DISPATCH_NO_ADAPTERS"
+      location: pkg/result/codes.go
+    - name: CodeDispatchAllFailed
+      description: Promoted constant replacing the inline "DISPATCH_ALL_FAILED" string.
+      definition: |
+        // In pkg/result/codes.go, Engine error codes section (N018+):
+        CodeDispatchAllFailed = "DISPATCH_ALL_FAILED"
+      location: pkg/result/codes.go
+    - name: defaultHTTPTimeout
+      description: |
+        Shared HTTP timeout constant defined in types.go, used by all three adapter
+        constructors (NewSlackAdapter, NewDiscordAdapter, NewTelegramAdapter).
+      definition: |
+        // In pkg/notify/types.go:
+        const defaultHTTPTimeout = 10 * time.Second
+      location: pkg/notify/types.go
+    - name: readWithFallback
+      description: |
+        Helper moved from slack.go to types.go so it can be shared with telegram.go
+        without duplication. Signature is unchanged.
+      definition: |
+        // In pkg/notify/types.go:
+        // readWithFallback reads key from cfg, falling back to fallbackKey.
+        func readWithFallback(cfg map[string]string, key, fallbackKey string) string
+      location: pkg/notify/types.go
+    - name: TelegramFormatter.Format
+      description: |
+        Rewritten to emit HTML-formatted text (parse_mode=HTML) instead of legacy
+        Markdown. Title wrapped in <b>...</b>; fields formatted as
+        <i>key:</i> value per field.
+      definition: |
+        // Output format (HTML):
+        // <b>Title</b>
+        // Body text
+        //
+        // <i>fieldkey:</i> fieldvalue
+        // ...
+        //
+        // parse_mode payload field changes from "Markdown" to "HTML"
+      location: pkg/notify/telegram.go
+waves:
+    - number: 1
+      agents:
+        - id: A
+          task: |
+            ## What to implement
+
+            Fix Bugs 1 and 4 in dispatcher.go, dispatcher_test.go, and pkg/result/codes.go.
+
+            ### Bug 1 — Dispatch returns SUCCESS for zero adapters (should be FATAL)
+
+            File: `pkg/notify/dispatcher.go`, lines 37-39.
+
+            The doc comment (line 27-28) says "FATAL if no adapters are registered" but
+            the code returns `result.NewSuccess(DispatchData{})`. Fix: change the zero-adapter
+            branch to return `result.NewFailure` using the new constant `result.CodeDispatchNoAdapters`.
+
+            Current code:
+            ```go
+            if len(snapshot) == 0 {
+                return result.NewSuccess(DispatchData{})
+            }
+            ```
+
+            Replace with:
+            ```go
+            if len(snapshot) == 0 {
+                return result.NewFailure[DispatchData]([]result.SAWError{
+                    {
+                        Code:     result.CodeDispatchNoAdapters,
+                        Message:  "dispatch: no adapters registered",
+                        Severity: "fatal",
+                    },
+                })
+            }
+            ```
+
+            ### Bug 4 — DISPATCH_ALL_FAILED inline string
+
+            File: `pkg/result/codes.go`.
+
+            Add two new constants in the Engine error codes section (alongside
+            CodeContextCancelled at line 149). Insert after CodeContextCancelled:
+
+            ```go
+            // CodeDispatchNoAdapters is emitted by Dispatcher.Dispatch when no adapters are registered.
+            CodeDispatchNoAdapters = "DISPATCH_NO_ADAPTERS"
+            // CodeDispatchAllFailed is emitted by Dispatcher.Dispatch when all adapters fail.
+            CodeDispatchAllFailed = "DISPATCH_ALL_FAILED"
+            ```
+
+            File: `pkg/notify/dispatcher.go`, line 123.
+
+            Replace the inline string `"DISPATCH_ALL_FAILED"` with `result.CodeDispatchAllFailed`.
+
+            Current:
+            ```go
+            Code: "DISPATCH_ALL_FAILED",
+            ```
+            Replace with:
+            ```go
+            Code: result.CodeDispatchAllFailed,
+            ```
+
+            ### Test updates in dispatcher_test.go
+
+            Two existing tests assert the current incorrect behavior and MUST be updated:
+
+            1. `TestDispatch_NoAdapters` (line 123-129): currently expects `IsSuccess()`.
+               Change to expect `IsFatal()` and verify the error code is
+               `result.CodeDispatchNoAdapters`:
+               ```go
+               func TestDispatch_NoAdapters(t *testing.T) {
+                   d := NewDispatcher()
+                   res := d.Dispatch(context.Background(), Event{}, mockFormatter{})
+                   if !res.IsFatal() {
+                       t.Fatalf("dispatch with no adapters should be FATAL, got: %q", res.Code)
+                   }
+                   if len(res.Errors) == 0 || res.Errors[0].Code != result.CodeDispatchNoAdapters {
+                       t.Errorf("expected DISPATCH_NO_ADAPTERS error, got %v", res.Errors)
+                   }
+               }
+               ```
+
+            2. `TestDispatcher_AddRemove` (line 131-153): after `d.RemoveAdapter("x")`,
+               the test dispatches again and asserts `IsSuccess()` on `res2` (line 147).
+               With the fix, dispatching with zero adapters is now FATAL. Update the
+               expectation for `res2`:
+               ```go
+               // After remove, dispatch should fail with no adapters.
+               res2 := d.Dispatch(context.Background(), Event{Title: "t2"}, mockFormatter{})
+               if !res2.IsFatal() {
+                   t.Fatalf("expected FATAL after remove, got %q", res2.Code)
+               }
+               ```
+               Remove the `a.calls.Load() != 1` check for `res2` (the adapter was removed
+               so it will not be called; the check is still valid but the success assertion
+               was the broken one).
+
+            ## Interfaces to implement against
+            - `result.CodeDispatchNoAdapters = "DISPATCH_NO_ADAPTERS"` (you are defining this)
+            - `result.CodeDispatchAllFailed = "DISPATCH_ALL_FAILED"` (you are defining this)
+            - `result.NewFailure[DispatchData]` — existing function, no changes needed
+
+            ## Tests to write / update
+            - Update `TestDispatch_NoAdapters` as described above
+            - Update `TestDispatcher_AddRemove` as described above
+            - All other existing dispatcher tests must continue to pass
+
+            ## Verification gate
+            ```
+            go build ./...
+            go vet ./pkg/notify/... ./pkg/result/...
+            go test ./pkg/notify/... ./pkg/result/...
+            ```
+
+            ## Constraints
+            - Do not modify any files outside: pkg/notify/dispatcher.go,
+              pkg/notify/dispatcher_test.go, pkg/result/codes.go
+            - The two new constants must be in pkg/result/codes.go, not inlined
+            - Do not change any other dispatcher behavior or method signatures
+          files:
+            - pkg/notify/dispatcher.go
+            - pkg/notify/dispatcher_test.go
+            - pkg/result/codes.go
+        - id: B
+          task: |
+            ## What to implement
+
+            Fix Bugs 2 (Slack HTTP timeout), 5 (Slack embeds comment), 6 (severityColor
+            default), and 7 (move readWithFallback) across types.go, slack.go, and
+            slack_test.go.
+
+            ### Bug 7 — Move readWithFallback from slack.go to types.go
+
+            This must be done FIRST as it affects both slack.go and telegram.go (telegram.go
+            already calls readWithFallback which it gets from the same package).
+
+            File: `pkg/notify/slack.go`, lines 37-43.
+
+            Remove the `readWithFallback` function definition entirely from slack.go.
+            The function signature:
+            ```go
+            func readWithFallback(cfg map[string]string, key, fallbackKey string) string {
+                if v := cfg[key]; v != "" {
+                    return v
+                }
+                return cfg[fallbackKey]
+            }
+            ```
+
+            File: `pkg/notify/types.go`.
+
+            Add the function (with its comment) to types.go. Place it after the `Formatter`
+            interface definition (after line 58 in the original file). Also add the
+            `time` import if not already present (it is — line 5). The function is
+            unexported, package-local; no import changes needed.
+
+            ### Bug 2 — HTTP timeout constant in types.go, applied in slack.go
+
+            File: `pkg/notify/types.go`.
+
+            Add the following constant. Place it immediately before or after the
+            `readWithFallback` function you just moved there:
+            ```go
+            // defaultHTTPTimeout is the timeout applied to all outbound HTTP clients
+            // in notify adapters (Slack, Discord, Telegram).
+            const defaultHTTPTimeout = 10 * time.Second
+            ```
+
+            The `time` package is already imported in types.go (line 5). Confirm
+            `"time"` is in the import block; if it is not (check the file), add it.
+
+            File: `pkg/notify/slack.go`.
+
+            In `NewSlackAdapter` (line 72-78), replace:
+            ```go
+            client: &http.Client{},
+            ```
+            with:
+            ```go
+            client: &http.Client{Timeout: defaultHTTPTimeout},
+            ```
+
+            ### Bug 5 — Document Slack embeds type assertion
+
+            File: `pkg/notify/slack.go`, lines 89-93 in the `Send` method.
+
+            Add a comment above the type assertion block clarifying the contract:
+            ```go
+            // msg.Embeds must be []interface{} (as produced by SlackFormatter.Format)
+            // for the assertion to succeed. If Embeds is any other type (e.g. nil
+            // or []discordEmbed), the assertion fails silently and the message falls
+            // back to plain text (msg.Text only). Callers using a non-Slack formatter
+            // must ensure Embeds is []interface{} or leave it nil.
+            if blocks, ok := msg.Embeds.([]interface{}); ok {
+                p.Blocks = blocks
+            }
+            ```
+
+            ### Bug 6 — severityColor default returns wrong color
+
+            File: `pkg/notify/slack.go`, lines 184-188.
+
+            Change the `default` case in `severityColor` from green to neutral gray:
+            ```go
+            default:
+                return "#808080" // neutral gray for unrecognized severity
+            ```
+
+            ### Test updates in slack_test.go
+
+            The existing tests do NOT check the default/unknown severity color path.
+            Add one new test for Bug 6:
+
+            ```go
+            func TestSlackFormatter_UnknownSeverity(t *testing.T) {
+                f := &SlackFormatter{}
+                event := Event{
+                    Severity: Severity("unknown"),
+                    Title:    "Unknown Severity",
+                }
+                msg := f.Format(event)
+                blocks := msg.Embeds.([]interface{})
+                contextBlock, ok := blocks[len(blocks)-1].(*slackContext)
+                if !ok {
+                    t.Fatal("expected last block to be *slackContext")
+                }
+                text := contextBlock.Elements[0].Text
+                // default case must now return gray, not green
+                if text != "Severity: unknown | Color: #808080" {
+                    t.Errorf("unexpected context text for unknown severity: %s", text)
+                }
+            }
+            ```
+
+            No changes to existing Slack tests (they test known severities and are
+            unaffected by the default case change).
+
+            ## Interfaces to implement against
+            - `const defaultHTTPTimeout = 10 * time.Second` (you are defining this in types.go)
+            - `readWithFallback` function (you are moving it to types.go — same signature)
+            - telegram.go already calls readWithFallback by package-local name; moving it
+              to types.go (same package) requires no import changes in telegram.go
+
+            ## Tests to write / update
+            - Add `TestSlackFormatter_UnknownSeverity` as described
+            - All existing slack tests must continue to pass
+
+            ## Verification gate
+            ```
+            go build ./...
+            go vet ./pkg/notify/...
+            go test ./pkg/notify/...
+            ```
+
+            ## Constraints
+            - Do not modify dispatcher.go, dispatcher_test.go, discord.go, telegram.go,
+              discord_test.go, or telegram_test.go
+            - readWithFallback must appear in types.go only (not in slack.go after this change)
+            - defaultHTTPTimeout must appear in types.go only
+            - Do not apply the HTTP timeout to discord.go or telegram.go (Agent C does that)
+          files:
+            - pkg/notify/types.go
+            - pkg/notify/slack.go
+            - pkg/notify/slack_test.go
+    - number: 2
+      agents:
+        - id: C
+          task: |
+            ## What to implement
+
+            Fix Bugs 2 (HTTP timeout for Discord and Telegram) and Bug 3 (Telegram
+            parse mode HTML migration) across discord.go, telegram.go, discord_test.go,
+            and telegram_test.go.
+
+            Agent B (Wave 1) has already:
+            - Defined `const defaultHTTPTimeout = 10 * time.Second` in types.go
+            - Moved `readWithFallback` to types.go
+
+            Your work builds on those changes.
+
+            ### Bug 2 — HTTP timeout in NewDiscordAdapter and NewTelegramAdapter
+
+            File: `pkg/notify/discord.go`.
+
+            In `NewDiscordAdapter` (line 53-57), replace:
+            ```go
+            client: &http.Client{},
+            ```
+            with:
+            ```go
+            client: &http.Client{Timeout: defaultHTTPTimeout},
+            ```
+
+            File: `pkg/notify/telegram.go`.
+
+            In `NewTelegramAdapter` (line 36-41), replace:
+            ```go
+            client: &http.Client{},
+            ```
+            with:
+            ```go
+            client: &http.Client{Timeout: defaultHTTPTimeout},
+            ```
+
+            Both files are in package `notify`. `defaultHTTPTimeout` is defined in
+            types.go (same package) — reference it directly, no import needed.
+
+            ### Bug 3 — Telegram parse mode: migrate from Markdown to HTML
+
+            **Part 1: Change parse_mode in Send (telegram.go)**
+
+            File: `pkg/notify/telegram.go`, line 54.
+
+            Change the payload map:
+            ```go
+            "parse_mode": "Markdown",
+            ```
+            to:
+            ```go
+            "parse_mode": "HTML",
+            ```
+
+            **Part 2: Rewrite TelegramFormatter.Format to emit HTML**
+
+            File: `pkg/notify/telegram.go`, function `TelegramFormatter.Format` (line 117-143).
+
+            Replace the Markdown formatting with HTML formatting:
+            - Title: `<b>Title</b>` instead of `*Title*`
+            - Fields: `<i>key:</i> value` instead of `_key:_ value`
+            - Body text: unchanged (plain text, no Markdown/HTML wrapping needed)
+
+            New implementation:
+            ```go
+            func (f *TelegramFormatter) Format(event Event) Message {
+                var sb strings.Builder
+                sb.WriteString("<b>")
+                sb.WriteString(event.Title)
+                sb.WriteString("</b>\n")
+                sb.WriteString(event.Body)
+
+                if len(event.Fields) > 0 {
+                    sb.WriteString("\n")
+                    keys := make([]string, 0, len(event.Fields))
+                    for k := range event.Fields {
+                        keys = append(keys, k)
+                    }
+                    sort.Strings(keys)
+                    for _, k := range keys {
+                        sb.WriteString("\n<i>")
+                        sb.WriteString(k)
+                        sb.WriteString(":</i> ")
+                        sb.WriteString(event.Fields[k])
+                    }
+                }
+
+                return Message{
+                    Text: sb.String(),
+                }
+            }
+            ```
+
+            ### Test updates in telegram_test.go
+
+            1. `TestTelegramAdapter_SendSuccess` (line 41-84): line 81 asserts
+               `receivedBody["parse_mode"] != "Markdown"`. Update to expect `"HTML"`:
+               ```go
+               if receivedBody["parse_mode"] != "HTML" {
+                   t.Errorf("expected parse_mode 'HTML', got %q", receivedBody["parse_mode"])
+               }
+               ```
+
+            2. `TestTelegramFormatter_Format` (line 163-190): the test asserts Markdown
+               formatting. Update all format assertions to expect HTML:
+               ```go
+               if !strings.Contains(msg.Text, "<b>Agent B Failed</b>") {
+                   t.Error("expected HTML bold title")
+               }
+               if !strings.Contains(msg.Text, "Build error in pkg/api") {
+                   t.Error("expected body text")
+               }
+               if !strings.Contains(msg.Text, "<i>agent:</i> B") {
+                   t.Errorf("expected HTML field formatting, got: %s", msg.Text)
+               }
+               if !strings.Contains(msg.Text, "<i>wave:</i> 2") {
+                   t.Errorf("expected HTML wave field, got: %s", msg.Text)
+               }
+               ```
+
+            3. `TestTelegramFormatter_FormatNoFields` (line 192-204): asserts
+               `expected := "*Simple Event*\nNo extra fields"`. Update to HTML:
+               ```go
+               expected := "<b>Simple Event</b>\nNo extra fields"
+               ```
+
+            No changes needed in discord_test.go (the timeout change does not affect
+            observable test behavior — tests use `srv.Client()` which already has its
+            own transport).
+
+            ## Interfaces to implement against
+            - `const defaultHTTPTimeout = 10 * time.Second` — defined in types.go by Agent B
+            - `readWithFallback` — defined in types.go by Agent B (already used by telegram.go)
+
+            ## Tests to write / update
+            - Update `TestTelegramAdapter_SendSuccess`: change parse_mode assertion to "HTML"
+            - Update `TestTelegramFormatter_Format`: change Markdown assertions to HTML
+            - Update `TestTelegramFormatter_FormatNoFields`: change expected string to HTML format
+            - All existing discord tests must continue to pass unchanged
+
+            ## Verification gate
+            ```
+            go build ./...
+            go vet ./pkg/notify/...
+            go test ./pkg/notify/...
+            ```
+
+            ## Constraints
+            - Do not modify dispatcher.go, dispatcher_test.go, types.go, slack.go, slack_test.go,
+              or pkg/result/codes.go
+            - Reference defaultHTTPTimeout directly (same package) — do not redefine it
+            - telegram.go must no longer contain readWithFallback definition (Agent B moved it)
+            - Use HTML parse_mode throughout — do not leave any "Markdown" parse_mode references
+          files:
+            - pkg/notify/discord.go
+            - pkg/notify/telegram.go
+            - pkg/notify/discord_test.go
+            - pkg/notify/telegram_test.go
+          dependencies:
+            - B
+quality_gates:
+    level: standard
+    gates:
+        - type: build
+          command: go build ./...
+          required: true
+          repo: scout-and-wave-go
+        - type: lint
+          command: go vet ./pkg/notify/... ./pkg/result/...
+          required: true
+          repo: scout-and-wave-go
+        - type: test
+          command: go test ./pkg/notify/... ./pkg/result/...
+          required: true
+          repo: scout-and-wave-go
+pre_mortem:
+    overall_risk: low
+    rows:
+        - scenario: |
+            Agent C references defaultHTTPTimeout before Agent B's Wave 1 merges. If the orchestrator launches Agent C before Wave 1 is fully merged, the build will fail with "undefined: defaultHTTPTimeout".
+          likelihood: low
+          impact: high
+          mitigation: |
+            Wave structure enforces Agent C is in Wave 2 and cannot start until Wave 1 (A + B) completes and merges. The dependency on B is explicit in file_ownership and agent dependencies.
+        - scenario: |
+            telegram_test.go has three tests checking Markdown format strings. If Agent C misses one test (e.g. FormatNoFields), the test suite will fail on the merged result even if Agent C's individual build passed.
+          likelihood: medium
+          impact: low
+          mitigation: |
+            Agent C task explicitly lists all three tests to update with exact expected strings. Run go test ./pkg/notify/... as the final gate.
+        - scenario: |
+            TestDispatcher_AddRemove in dispatcher_test.go has a second dispatch call after RemoveAdapter that currently asserts IsSuccess. If Agent A only fixes TestDispatch_NoAdapters and misses this second assertion, the test suite will fail.
+          likelihood: medium
+          impact: low
+          mitigation: |
+            Agent A task explicitly calls out both tests to update, including the specific lines. The task description lists line 147 as the affected assertion.
+        - scenario: |
+            readWithFallback is removed from slack.go by Agent B but telegram.go already references it by package-local name. If Agent B only adds it to types.go without verifying telegram.go compiles, the move is incomplete. However this is not a wave-ordering risk since both files are in the same package and Agent B owns slack.go and types.go.
+          likelihood: low
+          impact: low
+          mitigation: |
+            Agent B task explicitly states telegram.go already calls readWithFallback and that moving it to types.go (same package) requires no import changes. Agent B's verification gate runs go build ./... which will catch any missing symbol immediately.
+state: SCOUT_PENDING
+injection_method: hook

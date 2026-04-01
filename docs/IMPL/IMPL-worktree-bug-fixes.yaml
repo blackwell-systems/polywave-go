@@ -1,0 +1,285 @@
+title: pkg/worktree Bug Fixes (5 known bugs)
+feature_slug: worktree-bug-fixes
+verdict: SUITABLE_WITH_CAVEATS
+suitability_assessment: |
+    All 5 bugs are confined to two files: pkg/worktree/manager.go and
+    pkg/worktree/manager_test.go. A single agent can fix both without
+    parallelization overhead. Suitability caveat: this is a solo-agent
+    IMPL — no parallelism, but the IMPL doc provides value as an audit
+    trail and progress tracker per the feature description constraint.
+
+    Pre-implementation status:
+    - Bug 1 (WasTracked hardcoded): TODO
+    - Bug 2 (double error conversion): TODO
+    - Bug 3 (non-deterministic order): TODO
+    - Bug 4 (opaque duplicate-path error): TODO
+    - Bug 5 (concurrency comment missing): TODO
+
+    Test file impact: Bug 1's resolution removes the WasTracked field or
+    makes it meaningful; the existing test assertion at manager_test.go:83
+    (`if !data.WasTracked`) must be updated to match whichever approach
+    is taken.
+
+    Estimated times:
+    - Scout phase: ~5 min
+    - Agent execution: ~10 min (1 agent, 2 files, straightforward edits)
+    - Merge & verification: ~2 min
+    Total SAW time: ~17 min
+    Sequential baseline: ~12 min
+    Recommendation: Marginal gains from parallelization; value is coordination
+    and audit trail.
+test_command: go test ./pkg/worktree/...
+lint_command: go vet ./pkg/worktree/...
+file_ownership:
+    - file: pkg/worktree/manager.go
+      agent: A
+      wave: 1
+      action: modify
+    - file: pkg/worktree/manager_test.go
+      agent: A
+      wave: 1
+      action: modify
+interface_contracts:
+    - name: RemoveData
+      description: |
+        Result payload for a successful Remove operation.
+        Bug 1 fix: remove the WasTracked field entirely — it was always
+        hardcoded true in the success path and could never be false.
+        Callers that checked WasTracked were reading a constant.
+      definition: |
+        type RemoveData struct {
+            RemovedPath string
+        }
+      location: pkg/worktree/manager.go
+    - name: Manager (concurrency comment)
+      description: |
+        Bug 5 fix: add doc comment noting the Manager is not safe for
+        concurrent use, since m.active is an unsynchronized map.
+      definition: |
+        // Manager tracks and manages git worktrees for SAW wave agents.
+        // Manager is not safe for concurrent use.
+        type Manager struct { ... }
+      location: pkg/worktree/manager.go
+    - name: Manager.Create
+      description: |
+        Bug 4 fix: add os.Stat pre-check before calling git.WorktreeAdd.
+        If the computed worktree path already exists on disk, return a
+        clear diagnostic error instead of letting git.WorktreeAdd surface
+        a raw git error.
+      definition: |
+        func (m *Manager) Create(wave int, agent string) (string, error)
+        // Pre-check: if wtPath already exists, return:
+        // fmt.Errorf("manager: worktree path %q already exists; remove it
+        //   or use a different wave/agent combination before retrying: %w", wtPath, err)
+      location: pkg/worktree/manager.go
+    - name: Manager.List
+      description: |
+        Bug 3 fix: sort output slice before returning so callers receive a
+        deterministic ordering.
+      definition: |
+        func (m *Manager) List() []string
+        // Returns paths sorted with sort.Strings before return.
+      location: pkg/worktree/manager.go
+    - name: Manager.CleanupAll
+      description: |
+        Bug 2 fix: replace the Fatal->Warning->Fatal double conversion with
+        a simple []string of failed paths. Build the final error slice once
+        at the end using result.NewFatal directly (no intermediate Warning).
+        Bug 3 fix: sort RemovedPaths before returning inside CleanupData.
+      definition: |
+        func (m *Manager) CleanupAll() result.Result[CleanupData]
+        // Internal change: replace []result.SAWError warnings accumulator
+        // with []string failedPaths. At the end, if len(failedPaths) > 0,
+        // build []result.SAWError from failedPaths in one pass.
+        // Sort removedPaths with sort.Strings before populating CleanupData.
+      location: pkg/worktree/manager.go
+waves:
+    - number: 1
+      agents:
+        - id: A
+          task: |
+            ## Context
+
+            Fix 5 known bugs in `pkg/worktree/manager.go` and update the
+            corresponding test file `pkg/worktree/manager_test.go`.
+
+            Repo root: `/Users/dayna.blackwell/workspace/code/scout-and-wave-go`
+
+            ## Files to modify
+
+            - `pkg/worktree/manager.go`
+            - `pkg/worktree/manager_test.go`
+
+            ## Bug fixes (implement all 5)
+
+            ### Bug 1 — Remove WasTracked from RemoveData (Medium)
+
+            In `RemoveData`, the `WasTracked bool` field is hardcoded to `true`
+            in every code path that reaches `result.NewSuccess(RemoveData{...})`.
+            The field can never be `false` so it is semantically meaningless.
+
+            **Fix in manager.go:**
+            - Remove `WasTracked bool` from the `RemoveData` struct.
+            - Update the `result.NewSuccess(RemoveData{...})` call in `Remove()`
+              to only populate `RemovedPath`.
+
+            **Fix in manager_test.go:**
+            - Remove the assertion block at lines 83-85:
+              ```go
+              if !data.WasTracked {
+                  t.Error("RemoveData.WasTracked should be true")
+              }
+              ```
+              This assertion was testing a constant and is no longer meaningful.
+
+            ### Bug 2 — Eliminate double error conversion in CleanupAll (Medium)
+
+            In `CleanupAll()`, failed removals go Fatal → Warning → Fatal:
+            1. `m.Remove(path)` returns a Fatal result with `result.NewFatal(...)` errors.
+            2. The loop converts each Fatal error to `result.NewWarning(...)` to collect it.
+            3. Later, when all removals fail, the code converts those Warnings back to
+               `result.NewFatal(...)` errors.
+
+            **Fix:** Replace the `var warnings []result.SAWError` accumulator with a
+            `var failedPaths []string`. On each failed removal, append the path to
+            `failedPaths` and log the warning (as already done). At the end of the
+            function, if `len(failedPaths) > 0`, build the `[]result.SAWError` from
+            `failedPaths` in a single pass using `result.NewFatal(...)` directly —
+            no intermediate Warning conversion.
+
+            The three return branches (Success / Partial / Fatal) remain; only the
+            accumulation mechanism changes. For the Partial case, pass the Fatal errors
+            directly to `result.NewPartial(data, errs)`.
+
+            Preserve the existing `m.log().Warn(...)` call for each failed path.
+
+            ### Bug 3 — Sort List() and CleanupAll RemovedPaths (Low)
+
+            Both `List()` and the `removedPaths` slice in `CleanupAll()` iterate over
+            `m.active` (a `map[string]string`), producing non-deterministic order.
+
+            **Fix in List():** Add `sort.Strings(paths)` immediately before `return paths`.
+
+            **Fix in CleanupAll():** Add `sort.Strings(removedPaths)` immediately before
+            populating `CleanupData.RemovedPaths`.
+
+            Add `"sort"` to the import block if not already present.
+
+            ### Bug 4 — Clear diagnostic on duplicate worktree path (Low)
+
+            In `Create()`, if the computed worktree path already exists on disk,
+            `git.WorktreeAdd` returns a raw git error message that gives no guidance
+            to the caller.
+
+            **Fix:** After computing `wtPath` (line 71 in current source), add:
+
+            ```go
+            if _, err := os.Stat(wtPath); err == nil {
+                return "", fmt.Errorf("manager: worktree path %q already exists; "+
+                    "remove it or use a different wave/agent combination before retrying", wtPath)
+            }
+            ```
+
+            Place this check after `os.MkdirAll(wtDir, ...)` succeeds and before
+            `git.WorktreeAdd(...)` is called.
+
+            No test change required for Bug 4 (the existing integration test exercises
+            a clean path; a dedicated duplicate-path test is not required by this task).
+
+            ### Bug 5 — Document concurrency safety on Manager struct (Low)
+
+            The `m.active` map has no mutex and the Manager doc comment does not warn
+            callers.
+
+            **Fix:** Change the `Manager` struct doc comment from:
+            ```go
+            // Manager tracks and manages git worktrees for SAW wave agents.
+            ```
+            to:
+            ```go
+            // Manager tracks and manages git worktrees for SAW wave agents.
+            // Manager is not safe for concurrent use.
+            ```
+
+            ## Verification gate
+
+            Run from the repo root:
+
+            ```
+            go build ./pkg/worktree/...
+            go vet ./pkg/worktree/...
+            go test ./pkg/worktree/...
+            ```
+
+            All three commands must pass with no errors before marking complete.
+
+            ## Constraints
+
+            - Do NOT change any exported function signatures (other than `RemoveData`
+              struct field removal, which is a breaking change intentionally called out
+              in Bug 1).
+            - Do NOT introduce new dependencies beyond `"sort"` (already in stdlib).
+            - Do NOT add new test functions; only remove/update the WasTracked assertion
+              per Bug 1 and ensure existing tests continue to pass.
+          files:
+            - pkg/worktree/manager.go
+            - pkg/worktree/manager_test.go
+          context_source: prepared-brief
+quality_gates:
+    level: standard
+    gates:
+        - type: build
+          command: go build ./pkg/worktree/...
+          required: true
+        - type: lint
+          command: go vet ./pkg/worktree/...
+          required: true
+        - type: test
+          command: go test ./pkg/worktree/...
+          required: true
+completion_reports:
+    A:
+        status: complete
+        branch: saw/finalize-tier-thick-orchestrator/wave2-agent-B
+        commit: 0b0c27e
+        files_changed:
+            - pkg/worktree/manager.go
+            - pkg/worktree/manager_test.go
+        verification: PASS
+        notes: All 5 bugs fixed. Build, vet, and all 6 tests pass. WasTracked removal is breaking but intentional per spec — no callers outside these two files. Committed to existing branch (solo agent on non-main branch per actual repo state).
+pre_mortem:
+    overall_risk: low
+    rows:
+        - scenario: |
+            RemoveData.WasTracked removal is a breaking API change. If any caller
+            outside pkg/worktree references data.WasTracked, the build will fail.
+          likelihood: low
+          impact: high
+          mitigation: |
+            Run `grep -r "WasTracked" /Users/dayna.blackwell/workspace/code/scout-and-wave-go`
+            before finalizing. If external callers exist, the agent must also update
+            those call sites. A quick grep at time of writing shows only manager.go
+            and manager_test.go reference WasTracked.
+        - scenario: |
+            sort import already present (unlikely for this package) causing a
+            duplicate import compile error.
+          likelihood: low
+          impact: low
+          mitigation: |
+            The agent checks the existing import block before adding "sort".
+            The current import block (fmt, log/slog, os, path/filepath, three
+            external imports) does not include sort, so no conflict expected.
+        - scenario: |
+            TestCleanupAllPartial at manager_test.go:197 asserts
+            `data.RemovedPaths[0] == wt1` by index. After Bug 3's sort fix,
+            the single-element slice still has index 0, so no test breakage.
+            If the test had 2+ elements indexed by position, the sort would
+            break the assertion — but the partial test only checks one removed
+            path by name in a set, not by position.
+          likelihood: low
+          impact: low
+          mitigation: |
+            Line 197 asserts `data.RemovedPaths[0] != wt1` only when
+            len == 1, which is safe. No mitigation needed beyond awareness.
+state: SCOUT_PENDING
+injection_method: hook

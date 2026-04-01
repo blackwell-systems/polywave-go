@@ -1,0 +1,651 @@
+completion_date: "2026-03-31"
+title: Fix bugs and quality issues in pkg/scaffold
+feature_slug: scaffold-bug-fixes
+verdict: SUITABLE
+suitability_assessment: |
+    The work decomposes cleanly across 2 agents with disjoint file ownership. The
+    key dependency is that Agent A creates pkg/scaffold/types.go (shared
+    extractTypeNames function) which Agent B must use to replace the duplicated
+    extractTypeDefinitions logic in post_agent.go. This mandates 2 sequential waves.
+
+    All 7 bugs are fully specified — no investigation-first items. Interface
+    contracts (extractTypeNames signature) are fully determinable before execution.
+    All bugs are confirmed TODO from reading the source; none were already fixed.
+
+    Estimated times:
+    - Scout phase: ~10 min (dependency mapping, contract writing, IMPL doc)
+    - Agent execution: ~15 min (wave 1 Agent A: 3 files + rename + sort fixes;
+      wave 2 Agent B: 2 files consuming shared function)
+    - Merge and verification: ~5 min
+    Total SAW time: ~30 min
+
+    Sequential baseline: ~40 min (all 5 files sequentially with context switching)
+    Time savings: ~10 min (25% faster)
+
+    Recommendation: Clear speedup for wave 1 alone; wave 2 is fast follow-on.
+    Proceed as SUITABLE.
+test_command: go test ./pkg/scaffold/...
+lint_command: go vet ./pkg/scaffold/...
+file_ownership:
+    - file: pkg/scaffold/types.go
+      agent: A
+      wave: 1
+      action: new
+    - file: pkg/scaffold/pre_agent.go
+      agent: A
+      wave: 1
+      action: modify
+    - file: pkg/scaffold/pre_agent_test.go
+      agent: A
+      wave: 1
+      action: modify
+    - file: pkg/scaffold/integration_test.go
+      agent: A
+      wave: 1
+      action: modify
+    - file: pkg/scaffold/post_agent.go
+      agent: B
+      wave: 2
+      action: modify
+      depends_on:
+        - A
+    - file: pkg/scaffold/post_agent_test.go
+      agent: B
+      wave: 2
+      action: modify
+      depends_on:
+        - A
+interface_contracts:
+    - name: extractTypeNames
+      description: |-
+        Shared function that extracts type names from a text string using package-level
+        compiled regexes. Replaces the combined regex in pre_agent.go and the 4-regex
+        loop in post_agent.go's extractTypeDefinitions. Deduplicates results before
+        returning. This is the single authoritative implementation of type-name
+        extraction logic.
+      definition: |
+        // typeNameRe is a compiled package-level regex matching type definition keywords
+        // across Go, Rust, TypeScript, and Python.
+        // Matches: "type TypeName struct", "type TypeName interface", "struct TypeName",
+        // "interface TypeName", "class TypeName", "enum TypeName".
+        var typeNameRe = regexp.MustCompile(`(?m)^\s*(?:type|struct|interface|class|enum)\s+(\w+)\s+(?:struct|interface|enum|class|\{)`)
+
+        // extractTypeNames returns deduplicated type names found in text.
+        // Uses package-level typeNameRe to avoid repeated compilation.
+        func extractTypeNames(text string) []string
+      location: pkg/scaffold/types.go
+    - name: ScaffoldCandidate
+      description: |-
+        The ReferencedBy field is renamed to Locations with JSON tag "locations" to
+        accurately reflect that it contains file path strings, not agent ID strings.
+        The struct comment is updated accordingly.
+      definition: |
+        // ScaffoldCandidate represents a type that should be extracted to a scaffold file.
+        type ScaffoldCandidate struct {
+            TypeName      string   `json:"type_name"`
+            Locations     []string `json:"locations"`      // File path locations referencing this type
+            SuggestedFile string   `json:"suggested_file"` // internal/types/<name>.go
+            Definition    string   `json:"definition"`     // Full type definition
+        }
+      location: pkg/scaffold/pre_agent.go
+    - name: extractUniqueLocations
+      description: |-
+        Renamed from extractAgentsFromLocations. Returns a sorted, deduplicated slice
+        of location strings from the locations map. Replaces the misleadingly named
+        prior function.
+      definition: |
+        // extractUniqueLocations returns a sorted slice of unique location strings.
+        func extractUniqueLocations(locations map[string]bool) []string
+      location: pkg/scaffold/pre_agent.go
+waves:
+    - number: 1
+      agents:
+        - id: A
+          task: |
+            ## What to Implement
+
+            Fix bugs 1, 2, 4, 5, 6, and 7 in pkg/scaffold/pre_agent.go, create
+            pkg/scaffold/types.go with the shared extractTypeNames function, and update
+            pkg/scaffold/pre_agent_test.go and pkg/scaffold/integration_test.go to reflect
+            the renamed field.
+
+            ### File: pkg/scaffold/types.go (NEW)
+
+            Create this file in `package scaffold`. It must contain:
+
+            1. A package-level compiled regex variable:
+               ```go
+               var typeNameRe = regexp.MustCompile(`(?m)^\s*(?:type|struct|interface|class|enum)\s+(\w+)\s+(?:struct|interface|enum|class|\{)`)
+               ```
+
+            2. The shared `extractTypeNames` function:
+               ```go
+               // extractTypeNames returns deduplicated type names found in text.
+               // It uses the package-level typeNameRe to avoid repeated compilation on hot paths.
+               func extractTypeNames(text string) []string {
+                   matches := typeNameRe.FindAllStringSubmatch(text, -1)
+                   seen := make(map[string]bool)
+                   var names []string
+                   for _, m := range matches {
+                       if len(m) > 1 && !seen[m[1]] {
+                           seen[m[1]] = true
+                           names = append(names, m[1])
+                       }
+                   }
+                   return names
+               }
+               ```
+
+            ### File: pkg/scaffold/pre_agent.go (MODIFY)
+
+            Apply these changes in order:
+
+            **Bug 4 — Remove inline typePattern compilation.**
+            The current line 32 compiles `typePattern` inside `DetectScaffoldsPreAgent`. Remove
+            this local variable. Replace all uses of `typePattern` in `DetectScaffoldsPreAgent`
+            with the package-level `typeNameRe` from types.go. Specifically, replace:
+            ```go
+            typePattern := regexp.MustCompile(`...`)
+            matches := typePattern.FindAllStringSubmatch(contract.Definition, -1)
+            ```
+            with:
+            ```go
+            matches := typeNameRe.FindAllStringSubmatch(contract.Definition, -1)
+            ```
+
+            **Bug 5 — Rename ReferencedBy to Locations.**
+            In the `ScaffoldCandidate` struct:
+            - Rename field `ReferencedBy []string` to `Locations []string`
+            - Change JSON tag from `"referenced_by"` to `"locations"`
+            - Update struct comment from `// Agent IDs` to `// File path locations referencing this type`
+
+            In `DetectScaffoldsPreAgent`, update the struct literal that sets `ReferencedBy:` to
+            set `Locations:` instead (line ~66).
+
+            **Bug 5 — Rename extractAgentsFromLocations to extractUniqueLocations.**
+            Rename the function `extractAgentsFromLocations` to `extractUniqueLocations`.
+            Update the function comment to read:
+            ```go
+            // extractUniqueLocations returns a sorted slice of unique location strings.
+            // Location format is typically "pkg/module/file.go" or similar.
+            ```
+            Remove the multi-line comment block inside the function that explains the proxy
+            relationship. Replace function body with a sorted implementation (see Bug 1 below).
+            Update the call site in `DetectScaffoldsPreAgent` to use the new name.
+
+            **Bug 1 — Sort all output slices.**
+            In `extractUniqueLocations` (the renamed function), sort the result before returning:
+            ```go
+            func extractUniqueLocations(locations map[string]bool) []string {
+                result := make([]string, 0, len(locations))
+                for loc := range locations {
+                    result = append(result, loc)
+                }
+                sort.Strings(result)
+                return result
+            }
+            ```
+
+            In `DetectScaffoldsPreAgent`, after the loop that builds `scaffolds`, sort the slice
+            by TypeName before returning:
+            ```go
+            sort.Slice(scaffolds, func(i, j int) bool {
+                return scaffolds[i].TypeName < scaffolds[j].TypeName
+            })
+            ```
+            Add `"sort"` to the import block.
+
+            **Bug 6 — Sanitize typeName in extractTypeDefinition.**
+            In `extractTypeDefinition` at line ~88, the patterns slice interpolates `typeName`
+            directly into regex strings. Wrap each interpolation with `regexp.QuoteMeta`:
+            ```go
+            patterns := []string{
+                `(?s)type\s+` + regexp.QuoteMeta(typeName) + `\s+struct\s*\{[^}]*\}`,
+                `(?s)type\s+` + regexp.QuoteMeta(typeName) + `\s+interface\s*\{[^}]*\}`,
+                `(?s)interface\s+` + regexp.QuoteMeta(typeName) + `\s*\{[^}]*\}`,
+                `(?s)class\s+` + regexp.QuoteMeta(typeName) + `\s*\{[^}]*\}`,
+            }
+            ```
+
+            **Bug 7 — Document nested brace limitation.**
+            In `extractTypeDefinition`, the pattern `[^}]*` cannot handle nested braces
+            (e.g. embedded struct literals). Add a `// Note:` comment above the patterns slice:
+            ```go
+            // Note: [^}]* patterns do not handle nested struct literals (embedded structs
+            // with their own braces). If a type contains embedded struct literals, only the
+            // outer brace is matched and extraction may be incomplete. This is a known
+            // limitation; use the fallback placeholder for complex nested types.
+            ```
+
+            ### File: pkg/scaffold/pre_agent_test.go (MODIFY)
+
+            1. **Update all references to `ReferencedBy` field.**
+               Search the file for `.ReferencedBy` — there are occurrences at lines 48, 49,
+               335, 336 (verify by grep). Change each `.ReferencedBy` to `.Locations`.
+
+            2. **Add determinism test.**
+               Add a new test function `TestDetectScaffoldsPreAgent_DeterministicOrder`:
+               ```go
+               func TestDetectScaffoldsPreAgent_DeterministicOrder(t *testing.T) {
+                   contracts := []protocol.InterfaceContract{
+                       {Name: "C1", Definition: `type Zebra struct { X int }`, Location: "pkg/z/z.go"},
+                       {Name: "C2", Definition: `type Zebra struct { X int }`, Location: "pkg/a/a.go"},
+                       {Name: "C3", Definition: `type Apple struct { Y string }`, Location: "pkg/z/z.go"},
+                       {Name: "C4", Definition: `type Apple struct { Y string }`, Location: "pkg/b/b.go"},
+                   }
+
+                   result1, err := DetectScaffoldsPreAgent(contracts)
+                   if err != nil {
+                       t.Fatalf("unexpected error: %v", err)
+                   }
+                   result2, err := DetectScaffoldsPreAgent(contracts)
+                   if err != nil {
+                       t.Fatalf("unexpected error: %v", err)
+                   }
+
+                   if len(result1.ScaffoldsNeeded) != len(result2.ScaffoldsNeeded) {
+                       t.Fatalf("non-deterministic length: %d vs %d", len(result1.ScaffoldsNeeded), len(result2.ScaffoldsNeeded))
+                   }
+
+                   for i := range result1.ScaffoldsNeeded {
+                       s1, s2 := result1.ScaffoldsNeeded[i], result2.ScaffoldsNeeded[i]
+                       if s1.TypeName != s2.TypeName {
+                           t.Errorf("non-deterministic TypeName at index %d: %q vs %q", i, s1.TypeName, s2.TypeName)
+                       }
+                       for j := range s1.Locations {
+                           if s1.Locations[j] != s2.Locations[j] {
+                               t.Errorf("non-deterministic Locations[%d] for type %q: %q vs %q",
+                                   j, s1.TypeName, s1.Locations[j], s2.Locations[j])
+                           }
+                       }
+                   }
+
+                   // Verify alphabetical order: Apple before Zebra
+                   if result1.ScaffoldsNeeded[0].TypeName != "Apple" {
+                       t.Errorf("expected Apple first (alphabetical), got %q", result1.ScaffoldsNeeded[0].TypeName)
+                   }
+                   if result1.ScaffoldsNeeded[1].TypeName != "Zebra" {
+                       t.Errorf("expected Zebra second (alphabetical), got %q", result1.ScaffoldsNeeded[1].TypeName)
+                   }
+               }
+               ```
+
+            3. **Add extractTypeNames unit test.**
+               Add a new test function `TestExtractTypeNames_AllPatterns` that covers all 4
+               pattern variants directly (do not rely on DetectScaffoldsPreAgent indirection):
+               ```go
+               func TestExtractTypeNames_AllPatterns(t *testing.T) {
+                   tests := []struct {
+                       name    string
+                       input   string
+                       want    []string
+                   }{
+                       {
+                           name:  "Go struct keyword",
+                           input: "type Config struct {",
+                           want:  []string{"Config"},
+                       },
+                       {
+                           name:  "Go interface keyword",
+                           input: "type Logger interface {",
+                           want:  []string{"Logger"},
+                       },
+                       {
+                           name:  "Bare struct (Rust)",
+                           input: "struct Metrics {",
+                           want:  []string{"Metrics"},
+                       },
+                       {
+                           name:  "Bare interface (TypeScript)",
+                           input: "interface ApiResponse {",
+                           want:  []string{"ApiResponse"},
+                       },
+                       {
+                           name:  "Python class",
+                           input: "class DataProcessor {",
+                           want:  []string{"DataProcessor"},
+                       },
+                       {
+                           name:  "Enum",
+                           input: "enum Status {",
+                           want:  []string{"Status"},
+                       },
+                       {
+                           name:  "Multiple types",
+                           input: "type A struct {\ntype B interface {",
+                           want:  []string{"A", "B"},
+                       },
+                       {
+                           name:  "Deduplication",
+                           input: "type A struct {\ntype A struct {",
+                           want:  []string{"A"},
+                       },
+                       {
+                           name:  "Empty string",
+                           input: "",
+                           want:  nil,
+                       },
+                   }
+                   for _, tc := range tests {
+                       t.Run(tc.name, func(t *testing.T) {
+                           got := extractTypeNames(tc.input)
+                           if len(got) != len(tc.want) {
+                               t.Fatalf("extractTypeNames(%q) = %v, want %v", tc.input, got, tc.want)
+                           }
+                           for i := range tc.want {
+                               if got[i] != tc.want[i] {
+                                   t.Errorf("extractTypeNames[%d] = %q, want %q", i, got[i], tc.want[i])
+                               }
+                           }
+                       })
+                   }
+               }
+               ```
+
+            ### File: pkg/scaffold/integration_test.go (MODIFY)
+
+            The integration test at line ~82 unmarshals JSON with a struct that has field
+            `ReferencedBy []string \`json:"referenced_by"\``. After the rename to `Locations`
+            with JSON tag `"locations"`, this will silently fail to unmarshal (field will be nil).
+
+            Update the anonymous struct in `TestCLI_PreAgentMode_DetectsSharedTypes` (the
+            `result` variable) from:
+            ```go
+            var result struct {
+                ScaffoldsNeeded []struct {
+                    TypeName      string   `json:"type_name"`
+                    ReferencedBy  []string `json:"referenced_by"`
+                    SuggestedFile string   `json:"suggested_file"`
+                    Definition    string   `json:"definition"`
+                } `json:"scaffolds_needed"`
+            }
+            ```
+            to:
+            ```go
+            var result struct {
+                ScaffoldsNeeded []struct {
+                    TypeName      string   `json:"type_name"`
+                    Locations     []string `json:"locations"`
+                    SuggestedFile string   `json:"suggested_file"`
+                    Definition    string   `json:"definition"`
+                } `json:"scaffolds_needed"`
+            }
+            ```
+
+            Then update all references to `.ReferencedBy` within that test to `.Locations`
+            (lines ~103 and ~104 in the original file).
+
+            ## Verification Gate
+
+            ```
+            go build ./...
+            go vet ./pkg/scaffold/...
+            go test ./pkg/scaffold/ -run 'TestDetectScaffoldsPreAgent|TestExtractTypeNames' -v
+            ```
+
+            ## Constraints
+
+            - Do NOT modify post_agent.go or post_agent_test.go — those are Agent B's files.
+            - Do NOT modify wrapper.go — it only calls DetectScaffoldsPreAgent and does not
+              reference field names; no change needed.
+            - The extractTypeNames function must be unexported (lowercase). It is package-internal.
+            - The typeNameRe package-level var must live in types.go, not pre_agent.go, so
+              that post_agent.go can use it without re-declaring it in the same package.
+            - Add "sort" to imports in pre_agent.go; remove "regexp" from imports if it is no
+              longer needed after removing the inline typePattern compilation. Check: regexp is
+              still needed for extractTypeDefinition (uses regexp.MustCompile and regexp.QuoteMeta),
+              so keep the "regexp" import in pre_agent.go.
+          files:
+            - pkg/scaffold/types.go
+            - pkg/scaffold/pre_agent.go
+            - pkg/scaffold/pre_agent_test.go
+            - pkg/scaffold/integration_test.go
+          context_source: prepared-brief
+    - number: 2
+      agents:
+        - id: B
+          task: |
+            ## What to Implement
+
+            Fix bugs 1, 2, and 3 in pkg/scaffold/post_agent.go by replacing the
+            duplicated type-extraction logic with the shared extractTypeNames function
+            from types.go (created by Agent A in Wave 1). Also add determinism fixes
+            for the non-deterministic slices. Update post_agent_test.go with a
+            determinism test.
+
+            Agent A (Wave 1) has already:
+            - Created pkg/scaffold/types.go with extractTypeNames(text string) []string
+              and package-level typeNameRe
+            - The function is unexported, same package — you can call it directly
+
+            ### File: pkg/scaffold/post_agent.go (MODIFY)
+
+            **Bug 2 and Bug 3 — Replace extractTypeDefinitions with extractTypeNames.**
+
+            The function `extractTypeDefinitions` (lines 92–149) compiles 4 regexes on every
+            call and duplicates the logic that now lives in extractTypeNames. Replace the entire
+            `extractTypeDefinitions` function body with a delegation to `extractTypeNames`:
+
+            ```go
+            // extractTypeDefinitions searches for type definitions in agent task text.
+            // It delegates to extractTypeNames which uses a package-level compiled regex,
+            // avoiding repeated regex compilation on the hot path.
+            func extractTypeDefinitions(taskText string) []string {
+                return extractTypeNames(taskText)
+            }
+            ```
+
+            Keep the function name `extractTypeDefinitions` (do not rename it) because the
+            call site in `DetectScaffoldsPostAgent` uses that name and it is tested in
+            post_agent_test.go via `TestExtractTypeDefinitions`. The wrapper keeps the
+            public-facing name stable while delegating to the shared implementation.
+
+            Remove the `"regexp"` import from post_agent.go if it is no longer used after
+            this change. Check: regexp is only used in `extractTypeDefinitions`'s old 4
+            local var declarations. After replacement, it is unused — remove it.
+
+            **Bug 1 — Sort all output slices.**
+
+            In `DetectScaffoldsPostAgent`, there are three non-deterministic map iterations:
+
+            1. `for typeName, agentMap := range typeDefinitions` — builds `conflicts` slice.
+               After the loop, sort conflicts by TypeName:
+               ```go
+               sort.Slice(conflicts, func(i, j int) bool {
+                   return conflicts[i].TypeName < conflicts[j].TypeName
+               })
+               ```
+
+            2. Inside the conflict-building block, `for agentID, agentFiles := range agentMap`
+               builds the `agents` slice. Sort it after the loop:
+               ```go
+               sort.Strings(agents)
+               ```
+
+            3. Inside the conflict-building block, `for file := range filesSet` builds the
+               `files` slice. Sort it after the loop:
+               ```go
+               sort.Strings(files)
+               ```
+
+            Add `"sort"` to the import block. Remove `"strings"` from imports only if it is
+            not used elsewhere in the file. Check: `strings.ToLower` is used in the
+            `resolution` string — keep `"strings"`.
+
+            The final `DetectScaffoldsPostAgent` function structure should be:
+            ```
+            typeDefinitions loop → populate map
+            conflicts-building loop → for each typeName with ≥2 agents:
+              collect agents → sort.Strings(agents)
+              collect files → sort.Strings(files)
+              append TypeConflict
+            sort.Slice(conflicts by TypeName)
+            return PostAgentResult{Conflicts: conflicts}
+            ```
+
+            ### File: pkg/scaffold/post_agent_test.go (MODIFY)
+
+            1. **Add determinism test.**
+               Add a new test function `TestDetectScaffoldsPostAgent_DeterministicOrder`:
+               ```go
+               func TestDetectScaffoldsPostAgent_DeterministicOrder(t *testing.T) {
+                   manifest := &protocol.IMPLManifest{
+                       Waves: []protocol.Wave{
+                           {
+                               Number: 1,
+                               Agents: []protocol.Agent{
+                                   {ID: "A", Task: `type Zebra struct {}`, Files: []string{"pkg/z/z.go"}},
+                                   {ID: "B", Task: `type Zebra struct {}`, Files: []string{"pkg/a/a.go"}},
+                                   {ID: "C", Task: `type Apple struct {}`, Files: []string{"pkg/c/c.go"}},
+                                   {ID: "D", Task: `type Apple struct {}`, Files: []string{"pkg/d/d.go"}},
+                               },
+                           },
+                       },
+                   }
+
+                   result1, err := DetectScaffoldsPostAgent(manifest)
+                   if err != nil {
+                       t.Fatalf("unexpected error: %v", err)
+                   }
+                   result2, err := DetectScaffoldsPostAgent(manifest)
+                   if err != nil {
+                       t.Fatalf("unexpected error: %v", err)
+                   }
+
+                   if len(result1.Conflicts) != len(result2.Conflicts) {
+                       t.Fatalf("non-deterministic conflict count: %d vs %d",
+                           len(result1.Conflicts), len(result2.Conflicts))
+                   }
+
+                   for i := range result1.Conflicts {
+                       c1, c2 := result1.Conflicts[i], result2.Conflicts[i]
+                       if c1.TypeName != c2.TypeName {
+                           t.Errorf("non-deterministic TypeName at index %d: %q vs %q",
+                               i, c1.TypeName, c2.TypeName)
+                       }
+                   }
+
+                   // Verify alphabetical order: Apple before Zebra
+                   if len(result1.Conflicts) != 2 {
+                       t.Fatalf("expected 2 conflicts, got %d", len(result1.Conflicts))
+                   }
+                   if result1.Conflicts[0].TypeName != "Apple" {
+                       t.Errorf("expected Apple first, got %q", result1.Conflicts[0].TypeName)
+                   }
+                   if result1.Conflicts[1].TypeName != "Zebra" {
+                       t.Errorf("expected Zebra second, got %q", result1.Conflicts[1].TypeName)
+                   }
+               }
+               ```
+
+            ## Verification Gate
+
+            ```
+            go build ./...
+            go vet ./pkg/scaffold/...
+            go test ./pkg/scaffold/ -run 'TestDetectScaffoldsPostAgent|TestExtractTypeDefinitions' -v
+            ```
+
+            ## Constraints
+
+            - Do NOT modify pre_agent.go, pre_agent_test.go, integration_test.go, or
+              types.go — those belong to Agent A.
+            - Keep the `extractTypeDefinitions` function name. Tests in post_agent_test.go
+              call it directly via `TestExtractTypeDefinitions`. Only replace its body.
+            - The `extractTypeNames` function from types.go is in the same package
+              (package scaffold) — call it directly without any import.
+            - Do not remove `"strings"` from imports — strings.ToLower is used on line ~70
+              for the resolution suggestion.
+          files:
+            - pkg/scaffold/post_agent.go
+            - pkg/scaffold/post_agent_test.go
+          dependencies:
+            - A
+          context_source: prepared-brief
+quality_gates:
+    level: standard
+    gates:
+        - type: build
+          command: go build ./...
+          required: true
+        - type: lint
+          command: go vet ./pkg/scaffold/...
+          required: true
+        - type: test
+          command: go test ./pkg/scaffold/...
+          required: true
+completion_reports:
+    A:
+        status: complete
+        branch: saw/finalize-tier-thick-orchestrator/wave2-agent-B
+        commit: 438a50b
+        files_changed:
+            - pkg/scaffold/types.go
+            - pkg/scaffold/pre_agent.go
+            - pkg/scaffold/pre_agent_test.go
+            - pkg/scaffold/integration_test.go
+        files_created:
+            - pkg/scaffold/types.go
+        tests_added:
+            - TestDetectScaffoldsPreAgent_DeterministicOrder
+            - TestExtractTypeNames_AllPatterns
+        verification: PASS
+        notes: All 6 bugs fixed. 18 tests pass. types.go created with package-level typeNameRe and extractTypeNames. ScaffoldCandidate.ReferencedBy renamed to Locations. extractAgentsFromLocations renamed to extractUniqueLocations with sort. Deterministic output via sort.Slice on scaffolds and sort.Strings on locations. regexp.QuoteMeta applied to extractTypeDefinition patterns. Nested brace limitation documented.
+    B:
+        status: complete
+        branch: saw/finalize-tier-thick-orchestrator/wave2-agent-B
+        commit: cf036cf
+        files_changed:
+            - pkg/scaffold/post_agent.go
+            - pkg/scaffold/post_agent_test.go
+        tests_added:
+            - TestDetectScaffoldsPostAgent_DeterministicOrder
+        verification: PASS
+        notes: Replaced extractTypeDefinitions body with delegation to extractTypeNames. Added sort.Strings for agents/files slices and sort.Slice for conflicts slice. Updated Mixed_with_prose test case to use structured definitions (new regex requires start-of-line match). All 13 tests pass.
+pre_mortem:
+    overall_risk: low
+    rows:
+        - scenario: |-
+            Agent B calls extractTypeNames before types.go exists (worktree ordering issue).
+            If Agent B's worktree is created before Wave 1 merges, types.go will be absent.
+          likelihood: low
+          impact: high
+          mitigation: |-
+            Wave 2 does not start until Wave 1 is fully merged. The wave-based execution
+            model guarantees types.go exists in the repo before Agent B's worktree is
+            created. No action needed.
+        - scenario: |-
+            Duplicate package-level var name. types.go defines typeNameRe; if the old
+            typePattern local var in pre_agent.go is not removed, two vars exist (one
+            package-level, one function-local). The function-local shadows the package var
+            and Agent A's change would have no effect.
+          likelihood: medium
+          impact: medium
+          mitigation: |-
+            Agent A brief explicitly states to remove the local typePattern variable and
+            replace the call site. Build gate will not catch this (shadowing is legal Go);
+            the test gate must exercise the function to catch regressions.
+        - scenario: |-
+            integration_test.go field rename miss. The JSON struct in integration_test.go
+            uses "referenced_by" tag. If Agent A updates pre_agent.go but misses the
+            integration test, the test will silently pass (json.Unmarshal ignores unknown
+            fields) but the Locations field will always be nil, causing the
+            len(scaffold.ReferencedBy) check to be a nil-length check instead.
+          likelihood: medium
+          impact: medium
+          mitigation: |-
+            Agent A brief calls out the exact lines (82–90) in integration_test.go to
+            update. The test checks `len(scaffold.Locations) < 2` which will fail with
+            a nil slice, surfacing the miss at test time.
+        - scenario: |-
+            regexp import removed prematurely from pre_agent.go. After removing the
+            typePattern local var, Agent A might also remove the regexp import, but
+            extractTypeDefinition still uses regexp.MustCompile and regexp.QuoteMeta.
+          likelihood: low
+          impact: medium
+          mitigation: |-
+            Agent A brief explicitly warns to keep the "regexp" import in pre_agent.go
+            because extractTypeDefinition still uses it. Build gate (go build ./...) will
+            catch a missing import immediately.
+state: COMPLETE
+injection_method: hook

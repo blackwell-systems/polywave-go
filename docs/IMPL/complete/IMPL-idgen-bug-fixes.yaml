@@ -1,3 +1,4 @@
+completion_date: "2026-03-31"
 title: Fix bugs and dead code in pkg/idgen
 feature_slug: idgen-bug-fixes
 verdict: SUITABLE_WITH_CAVEATS
@@ -199,6 +200,19 @@ quality_gates:
         - type: test
           command: go test ./pkg/idgen/...
           required: true
+completion_reports:
+    A:
+        status: complete
+        branch: saw/finalize-tier-thick-orchestrator/wave2-agent-B
+        commit: 5215a01
+        files_changed:
+            - pkg/idgen/generator.go
+            - pkg/idgen/generator_test.go
+        tests_added:
+            - TestAssignAgentIDs_Grouped_TooManyAgentsPerCategory
+            - TestAssignAgentIDs_Grouped_TooManyCategories
+        verification: PASS
+        notes: All 5 bugs fixed. 20 tests pass (18 pre-existing + 2 new). go build, go vet, go test all clean.
 pre_mortem:
     overall_risk: low
     rows:
@@ -232,5 +246,5 @@ pre_mortem:
           likelihood: low
           impact: low
           mitigation: '`go build ./...` in the verification gate catches this immediately.'
-state: SCOUT_PENDING
+state: COMPLETE
 injection_method: hook

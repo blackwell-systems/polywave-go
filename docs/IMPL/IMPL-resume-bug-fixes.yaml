@@ -1,0 +1,410 @@
+title: pkg/resume Bug Fixes
+feature_slug: resume-bug-fixes
+verdict: SUITABLE
+suitability_assessment: |
+    Six known bugs across detect.go, worktree_status.go, and sessions.go (sessions.go has
+    no bugs). The work decomposes cleanly across three agents in two waves:
+
+    Wave 1 (parallel):
+    - Agent A: detect.go + pkg/engine/prepare.go + cmd/sawtools/resume_detect_cmd.go
+      (Bugs 1, 2, 4a/4b, 5, 6 — all detect.go bugs plus caller signature updates)
+    - Agent B: worktree_status.go + worktree_status_test.go
+      (Bugs 3 and 4c — stale comment removal and fmt.Sscanf replacement)
+
+    Wave 2 (serial, depends on Agent A):
+    - Agent A2: detect_test.go
+      (Update all Detect/DetectWithConfig call sites to new signatures from Bug 6)
+
+    detect_test.go must be in Wave 2 because it calls Detect() and DetectWithConfig() with
+    the new context.Context signatures introduced by Agent A in Wave 1. Building detect_test.go
+    in Wave 1 against the old signatures would cause compilation failure.
+
+    All interfaces are fully defined before agents launch. No root cause analysis required.
+
+    Estimated times:
+    - Scout phase: ~10 min
+    - Agent execution: Wave 1 ~15 min wall (2 parallel agents), Wave 2 ~5 min
+    - Merge and verification: ~5 min
+    Total SAW time: ~35 min
+    Sequential baseline: ~45 min
+    Recommendation: Clear speedup from Wave 1 parallelism.
+test_command: go test ./pkg/resume/...
+lint_command: go vet ./...
+file_ownership:
+    - file: pkg/resume/detect.go
+      agent: A
+      wave: 1
+      action: modify
+    - file: pkg/engine/prepare.go
+      agent: A
+      wave: 1
+      action: modify
+    - file: cmd/sawtools/resume_detect_cmd.go
+      agent: A
+      wave: 1
+      action: modify
+    - file: pkg/resume/worktree_status.go
+      agent: B
+      wave: 1
+      action: modify
+    - file: pkg/resume/worktree_status_test.go
+      agent: B
+      wave: 1
+      action: modify
+    - file: pkg/resume/detect_test.go
+      agent: A2
+      wave: 2
+      action: modify
+      depends_on:
+        - A
+interface_contracts:
+    - name: Detect
+      description: |
+        Updated signature threads context.Context as first argument so protocol.Load
+        receives the caller's context instead of context.TODO().
+      definition: |
+        func Detect(ctx context.Context, repoPath string) ([]SessionState, error)
+      location: pkg/resume/detect.go
+    - name: DetectWithConfig
+      description: |
+        Updated signature threads context.Context as first argument.
+      definition: |
+        func DetectWithConfig(ctx context.Context, repoPaths []string) ([]SessionState, error)
+      location: pkg/resume/detect.go
+    - name: buildActionAndCommandInternal
+      description: |
+        Updated signature accepts pre-computed currentWave to avoid redundant
+        determineCurrentWave call inside the function.
+      definition: |
+        func buildActionAndCommandInternal(
+            implPath string,
+            manifest *protocol.IMPLManifest,
+            orphaned []string,
+            dirtyWorktrees []DirtyWorktree,
+            completed []string,
+            currentWave int,
+        ) (string, string)
+      location: pkg/resume/detect.go
+waves:
+    - number: 1
+      agents:
+        - id: A
+          task: |
+            Fix bugs 1, 2, 4 (detect.go sites), 5, and 6 in pkg/resume/detect.go and its
+            callers.
+
+            ## Files to modify
+            - pkg/resume/detect.go
+            - pkg/engine/prepare.go
+            - cmd/sawtools/resume_detect_cmd.go
+
+            ## Bug 1 — Delete dead function `buildActionAndCommand` (detect.go:277-292)
+
+            Delete the entire `buildActionAndCommand` function (lines 277-292). It is never
+            called by buildSessionState (which calls buildActionAndCommandInternal directly)
+            and produces broken commands because it passes implPath="" to
+            buildActionAndCommandInternal.
+
+            Also delete the doc comment above it (the comment that starts with
+            "// buildActionAndCommand returns the human-readable SuggestedAction...").
+
+            ## Bug 2 — Remove redundant `determineCurrentWave` call in `buildActionAndCommandInternal`
+
+            `buildSessionState` computes `currentWave := determineCurrentWave(manifest, orphaned)`
+            at line 164, but then `buildActionAndCommandInternal` ignores the passed-in state and
+            calls `determineCurrentWave` again internally at line 303.
+
+            Fix:
+            1. Add `currentWave int` as the last parameter to `buildActionAndCommandInternal`.
+               New signature:
+               ```go
+               func buildActionAndCommandInternal(
+                   implPath string,
+                   manifest *protocol.IMPLManifest,
+                   orphaned []string,
+                   dirtyWorktrees []DirtyWorktree,
+                   completed []string,
+                   currentWave int,
+               ) (string, string)
+               ```
+            2. Remove the line `currentWave := determineCurrentWave(manifest, orphaned)` from
+               inside `buildActionAndCommandInternal` (currently the first statement of that
+               function body).
+            3. Update the call site in `buildSessionState` (~line 170) to pass the
+               already-computed `currentWave`:
+               ```go
+               suggestedAction, resumeCommand := buildActionAndCommandInternal(implPath, manifest, orphaned, dirty, completed, currentWave)
+               ```
+
+            ## Bug 4 — Replace `fmt.Sscanf` with `strconv.Atoi` (detect.go:239 and detect.go:483)
+
+            There are two fmt.Sscanf call sites in detect.go that parse wave numbers:
+
+            Site 1 (in `determineCurrentWave`, ~line 239):
+            ```go
+            // Before:
+            waveNum := 0
+            fmt.Sscanf(m[1], "%d", &waveNum)
+            // After:
+            waveNum, err := strconv.Atoi(m[1])
+            if err != nil {
+                continue
+            }
+            ```
+
+            Site 2 (in `detectOrphanedWorktrees`, ~line 483):
+            ```go
+            // Before:
+            waveNum := 0
+            fmt.Sscanf(m[1], "%d", &waveNum)
+            // After:
+            waveNum, err := strconv.Atoi(m[1])
+            if err != nil {
+                continue
+            }
+            ```
+
+            Add `"strconv"` to the import block if not already present. Do NOT remove `"fmt"` —
+            it is used in fmt.Errorf and fmt.Sprintf calls elsewhere in detect.go.
+
+            ## Bug 5 — Document filename/slug invariant in `loadCompletedSlugs`
+
+            In `loadCompletedSlugs` (~line 378-398), add a comment immediately before the slug
+            extraction line documenting the invariant:
+
+            ```go
+            // Invariant: IMPL filenames follow the pattern "IMPL-{slug}.yaml" where {slug}
+            // matches the FeatureSlug field inside the manifest. Scout agents are responsible
+            // for ensuring this invariant holds when creating IMPL docs. If a filename and
+            // FeatureSlug diverge, completed IMPLs may not be excluded from orphan detection.
+            slug := strings.TrimSuffix(strings.TrimPrefix(name, "IMPL-"), ".yaml")
+            ```
+
+            ## Bug 6 — Thread `context.Context` through `Detect` and `DetectWithConfig`
+
+            ### detect.go changes
+
+            Update `Detect` signature and body:
+            ```go
+            // Before:
+            func Detect(repoPath string) ([]SessionState, error) {
+                return DetectWithConfig([]string{repoPath})
+            }
+            // After:
+            func Detect(ctx context.Context, repoPath string) ([]SessionState, error) {
+                return DetectWithConfig(ctx, []string{repoPath})
+            }
+            ```
+
+            Update `DetectWithConfig` signature:
+            ```go
+            // Before:
+            func DetectWithConfig(repoPaths []string) ([]SessionState, error) {
+            // After:
+            func DetectWithConfig(ctx context.Context, repoPaths []string) ([]SessionState, error) {
+            ```
+
+            Inside `DetectWithConfig`, change the protocol.Load call (~line 98):
+            ```go
+            // Before:
+            manifest, err := protocol.Load(context.TODO(), implPath)
+            // After:
+            manifest, err := protocol.Load(ctx, implPath)
+            ```
+
+            The `"context"` import is already present (used for context.TODO()). No import
+            change needed.
+
+            ### pkg/engine/prepare.go caller update
+
+            At line 104, update the resume.Detect call. The enclosing function already has
+            `ctx context.Context` in scope:
+            ```go
+            // Before:
+            if sessions, err := resume.Detect(projectRoot); err == nil {
+            // After:
+            if sessions, err := resume.Detect(ctx, projectRoot); err == nil {
+            ```
+
+            ### cmd/sawtools/resume_detect_cmd.go caller update
+
+            At line 26, update the resume.Detect call using cmd.Context():
+            ```go
+            // Before:
+            sessions, err := resume.Detect(repoDir)
+            // After:
+            sessions, err := resume.Detect(cmd.Context(), repoDir)
+            ```
+
+            ## Verification gate
+            ```
+            go build ./...
+            go vet ./...
+            go test ./pkg/resume/... ./pkg/engine/... ./cmd/sawtools/...
+            ```
+          files: []
+        - id: B
+          task: |
+            Fix bugs 3 and 4 (worktree_status.go site) in pkg/resume/worktree_status.go.
+
+            ## Files to modify
+            - pkg/resume/worktree_status.go
+            - pkg/resume/worktree_status_test.go
+
+            ## Bug 3 — Delete stale SAW agent coordination comment (worktree_status.go:26-27)
+
+            Delete the following two-line comment from worktree_status.go (lines 26-27):
+            ```
+            // NOTE: Agent A (detect.go) also declares this struct as part of the SessionState
+            // extension. The Integration Agent will deduplicate at merge time — only one
+            // declaration should remain in the final package.
+            ```
+
+            The comment appears immediately above the `DirtyWorktree` struct declaration.
+            After deletion, the struct declaration should immediately follow any preceding
+            blank line or its own doc comment (// DirtyWorktree describes...).
+
+            The struct itself must NOT be modified — only the two stale comment lines are removed.
+
+            ## Bug 4 — Replace `fmt.Sscanf` with `strconv.Atoi` (worktree_status.go:90)
+
+            In `ClassifyWorktrees`, there is one fmt.Sscanf call that parses waveNum (~line 90):
+            ```go
+            // Before:
+            waveNum := 0
+            fmt.Sscanf(m[1], "%d", &waveNum)
+            agentID := m[2]
+
+            // After:
+            waveNum, err := strconv.Atoi(m[1])
+            if err != nil {
+                continue
+            }
+            agentID := m[2]
+            ```
+
+            Add `"strconv"` to the import block.
+
+            Regarding `"fmt"`: inspect the file carefully. The current worktree_status.go
+            imports fmt but after removing fmt.Sscanf, fmt may no longer be used. Check every
+            line — if fmt is not referenced anywhere else, remove it from the import block.
+
+            ## worktree_status_test.go
+
+            No test changes are required for Bug 3 or Bug 4. The existing tests exercise the
+            same behavior (strconv.Atoi and fmt.Sscanf produce identical results for valid
+            integer strings). Optionally, add a test case for a branch name with a
+            non-integer wave number (e.g., "saw/my-slug/waveXX-agent-A") to verify the
+            continue path, if the test harness makes this straightforward.
+
+            ## Verification gate
+            ```
+            go build ./...
+            go vet ./...
+            go test ./pkg/resume/...
+            ```
+          files: []
+    - number: 2
+      agents:
+        - id: A2
+          task: |
+            Update detect_test.go to use the new Detect and DetectWithConfig signatures
+            introduced by Agent A in Wave 1 (Bug 6).
+
+            ## Files to modify
+            - pkg/resume/detect_test.go
+
+            ## Changes required
+
+            Every call to `Detect(` and `DetectWithConfig(` in detect_test.go must be updated
+            to pass `context.Background()` as the first argument:
+
+            - `Detect(root)` → `Detect(context.Background(), root)`
+            - `DetectWithConfig(repoPaths)` → `DetectWithConfig(context.Background(), repoPaths)`
+
+            Search the file for all occurrences:
+            ```
+            grep -n "Detect(" pkg/resume/detect_test.go
+            ```
+
+            Based on the current file there are approximately 12 call sites across these tests:
+            - TestDetect_NoIMPLDocs
+            - TestDetect_NoIMPLDir
+            - TestDetect_CompleteIMPL
+            - TestDetect_NotSuitableIMPL
+            - TestDetect_CompleteInSubdir_Skipped
+            - TestDetect_InProgressIMPL
+            - TestDetect_FailedAgent
+            - TestDetect_BlockedAgent
+            - TestDetect_ProgressCalculation
+            - TestDetect_ProgressZeroAgents
+            - TestDetect_SkipsNoWorkStarted
+            - TestDetect_SuggestedAction_FailedAgents
+            - TestDetect_SuggestedAction_StartNextWave
+            - TestDetect_SuggestedAction_ResumeCurrentWave
+
+            Update every one. Do not miss any.
+
+            Add `"context"` to the import block in detect_test.go if not already present.
+
+            ## Verification gate
+            ```
+            go build ./...
+            go vet ./...
+            go test ./pkg/resume/...
+            ```
+          files:
+            - pkg/resume/detect_test.go
+          dependencies:
+            - A
+quality_gates:
+    level: standard
+    gates:
+        - type: build
+          command: go build ./...
+          required: true
+        - type: lint
+          command: go vet ./...
+          required: true
+        - type: test
+          command: go test ./pkg/resume/... ./pkg/engine/... ./cmd/sawtools/...
+          required: true
+pre_mortem:
+    overall_risk: low
+    rows:
+        - scenario: |
+            Agent A removes `fmt` from detect.go imports after replacing fmt.Sscanf, but
+            fmt is still used in multiple fmt.Errorf/fmt.Sprintf calls throughout detect.go.
+            This causes a compile error.
+          likelihood: medium
+          impact: high
+          mitigation: |
+            Agent A's brief explicitly warns to NOT remove fmt from detect.go. The build
+            gate catches this immediately.
+        - scenario: |
+            Agent A2 misses one of the Detect() call sites in detect_test.go (approximately
+            14 sites), leaving a call with the old single-argument signature.
+          likelihood: medium
+          impact: medium
+          mitigation: |
+            Agent A2's brief lists all known test function names and instructs grep verification.
+            The build gate catches any missed site before tests run.
+        - scenario: |
+            Agent B removes `fmt` from worktree_status.go after replacing fmt.Sscanf, but
+            fmt is still used elsewhere in that file.
+          likelihood: low
+          impact: high
+          mitigation: |
+            Agent B's brief instructs careful inspection before import removal. The build
+            gate catches this immediately.
+        - scenario: |
+            The `buildActionAndCommand` deletion (Bug 1) breaks a caller not found by grep.
+            The function is unexported so this is impossible from outside the package.
+          likelihood: low
+          impact: low
+          mitigation: |
+            buildActionAndCommand is unexported. The package-internal search confirmed no
+            callers within the package (buildSessionState calls buildActionAndCommandInternal
+            directly). Safe to delete.
+state: SCOUT_PENDING
+injection_method: hook

@@ -1,0 +1,489 @@
+title: Fix bugs and quality issues in pkg/hooks
+feature_slug: hooks-bug-fixes
+verdict: SUITABLE
+suitability_assessment: |
+    Two independent file pairs within pkg/hooks with no shared types or cross-file
+    dependencies between them. All 9 issues map cleanly to two disjoint ownership
+    groups: Agent A owns prelaunch_gate.go + prelaunch_gate_test.go (bugs 1-3, 6-8)
+    and Agent B owns scout_boundaries.go + scout_boundaries_test.go (bugs 4-5, 9).
+
+    Suitability gate answers:
+    1. File decomposition: 4 files split 2+2 — fully disjoint, no shared types.
+    2. Investigation-first: All bugs are clearly specified with line numbers and
+       exact fixes. No root cause analysis needed.
+    3. Interface discoverability: No new exported interfaces. All changes are
+       internal refactors or parameter additions to private functions.
+    4. Pre-implementation status: All 9 issues confirmed TODO by reading current
+       source. None are already implemented.
+    5. Parallelization value: Build/test cycle is `go test ./pkg/hooks/...` (~2-5s).
+       2 independent agents with non-trivial logic changes. Marginal time savings
+       but coordination value as audit trail.
+
+    Estimated times:
+    - Scout phase: ~10 min
+    - Agent execution: ~2 agents x ~15 min = ~15 min total (parallel)
+    - Merge and verification: ~5 min
+    Total SAW time: ~30 min
+    Sequential baseline: ~35 min
+    Recommendation: Marginal gains. Proceed — the disjoint split is clean and
+    the IMPL doc provides audit trail value.
+test_command: go test ./pkg/hooks/...
+lint_command: go vet ./pkg/hooks/...
+file_ownership:
+    - file: pkg/hooks/prelaunch_gate.go
+      agent: A
+      wave: 1
+      action: modify
+    - file: pkg/hooks/prelaunch_gate_test.go
+      agent: A
+      wave: 1
+      action: modify
+    - file: pkg/hooks/scout_boundaries.go
+      agent: B
+      wave: 1
+      action: modify
+    - file: pkg/hooks/scout_boundaries_test.go
+      agent: B
+      wave: 1
+      action: modify
+interface_contracts:
+    - name: checkWaveExists
+      description: |-
+        Updated to accept agentID parameter so it can report whether the specific
+        agent being launched has already completed, not just whether all agents in
+        the wave are done.
+      definition: |
+        func checkWaveExists(m *protocol.IMPLManifest, waveNum int, agentID string) PreLaunchCheck
+      location: pkg/hooks/prelaunch_gate.go
+    - name: checkManifestValidation
+      description: |-
+        Updated to separate warning-severity results from error-severity results.
+        Returns "warn" when only warnings exist, "fail" only for error-severity issues.
+        Mirrors the pattern used in pkg/protocol/pre_wave_gate.go checkValidation.
+      definition: |
+        func checkManifestValidation(m *protocol.IMPLManifest) PreLaunchCheck
+        // Internal behavior change: filters []result.SAWError by Severity field
+        // "warning" -> warnMsgs, else -> errMsgs; returns "warn" if only warnings.
+      location: pkg/hooks/prelaunch_gate.go
+    - name: IsValidScoutPath
+      description: |-
+        Updated to handle both relative and absolute paths correctly. Uses
+        filepath component matching rather than full-path string comparison so
+        that absolute paths like /repo/docs/IMPL/IMPL-x.yaml also return true.
+      definition: |
+        func IsValidScoutPath(filePath string) bool
+        // Accepts both relative ("docs/IMPL/IMPL-x.yaml") and absolute paths.
+        // Returns true iff the two path components above the file are "IMPL" and "docs",
+        // and the filename has prefix "IMPL-" and suffix ".yaml".
+      location: pkg/hooks/scout_boundaries.go
+waves:
+    - number: 1
+      agents:
+        - id: A
+          task: |
+            Fix bugs 1, 2, 3, 6, 7, and 8 in pkg/hooks/prelaunch_gate.go and
+            pkg/hooks/prelaunch_gate_test.go.
+
+            ## What to implement
+
+            ### Bug 1 (HIGH): checkCriticReviewRequired uses wrong E37 threshold
+            Location: prelaunch_gate.go lines 282-326, specifically 284-291.
+
+            Current code manually sums agents across ALL waves:
+            ```go
+            totalAgents := 0
+            for _, wave := range m.Waves {
+                totalAgents += len(wave.Agents)
+            }
+            isMultiRepo := len(m.Repositories) > 0
+            if totalAgents >= 3 || isMultiRepo {
+            ```
+
+            Fix: replace the manual count block with a call to `protocol.E37Required(m)`.
+            The `protocol.E37Required` function (pkg/protocol/critic_gate.go) is the
+            single authoritative E37 implementation: it checks wave 1 agent count >= 3
+            OR multi-repo. This eliminates the divergence where a 2-wave IMPL with 2+2
+            agents triggers the hook gate but not E37Required.
+
+            The fixed block inside the `if m.CriticReport == nil` branch should become:
+            ```go
+            if protocol.E37Required(m) {
+                return PreLaunchCheck{
+                    Name:    "critic_review",
+                    Status:  "fail",
+                    Message: fmt.Sprintf("E37: critic review required but not run"),
+                }
+            }
+            ```
+            You may retain or improve the diagnostic message text as long as it no
+            longer manually counts totalAgents across all waves.
+
+            ### Bug 2 (MEDIUM): checkOwnershipDisjoint calls protocol.Validate twice
+            Location: PreLaunchGate (lines 43-85) and checkOwnershipDisjoint (258-280).
+
+            Refactor PreLaunchGate to call protocol.Validate exactly once at the top,
+            store the result in a local variable, and pass that slice to both
+            checkManifestValidation and checkOwnershipDisjoint. Change the signatures of
+            both functions to accept the pre-computed []result.SAWError instead of
+            re-running validation internally.
+
+            Updated function signatures:
+            ```go
+            func checkManifestValidation(errs []result.SAWError) PreLaunchCheck
+            func checkOwnershipDisjoint(errs []result.SAWError) PreLaunchCheck
+            ```
+
+            In PreLaunchGate, call validation once:
+            ```go
+            validationErrs := protocol.Validate(manifest)
+            result.Checks = append(result.Checks, checkManifestValidation(validationErrs))
+            // ... other checks ...
+            result.Checks = append(result.Checks, checkOwnershipDisjoint(validationErrs))
+            ```
+
+            ### Bug 3 (MEDIUM): checkManifestValidation treats warnings as failures
+            Location: prelaunch_gate.go lines 87-106.
+
+            After applying Bug 2's refactor (function now accepts []result.SAWError),
+            separate warnings from errors exactly as pkg/protocol/pre_wave_gate.go does
+            in checkValidation (lines 62-84 of pre_wave_gate.go):
+
+            ```go
+            func checkManifestValidation(errs []result.SAWError) PreLaunchCheck {
+                if len(errs) == 0 {
+                    return PreLaunchCheck{Name: "validation", Status: "pass", Message: "manifest is valid"}
+                }
+                var errMsgs, warnMsgs []string
+                for _, e := range errs {
+                    if e.Severity == "warning" {
+                        warnMsgs = append(warnMsgs, e.Message)
+                    } else {
+                        errMsgs = append(errMsgs, e.Message)
+                    }
+                }
+                if len(errMsgs) == 0 {
+                    return PreLaunchCheck{Name: "validation", Status: "warn", Message: strings.Join(warnMsgs, "; ")}
+                }
+                return PreLaunchCheck{Name: "validation", Status: "fail", Message: strings.Join(errMsgs, "; ")}
+            }
+            ```
+
+            ### Bug 6 (MEDIUM): checkWaveExists doesn't report specific agent completion
+            Location: prelaunch_gate.go lines 108-147.
+
+            The function currently reports "wave X already has all N agents completed"
+            without mentioning whether the specific agentID that was requested is among
+            the completed agents. Update the function signature to accept agentID:
+
+            ```go
+            func checkWaveExists(m *protocol.IMPLManifest, waveNum int, agentID string) PreLaunchCheck
+            ```
+
+            When all agents are complete, also check if the specific agentID has a
+            completion report and include it in the message:
+
+            ```go
+            if completedCount == len(wave.Agents) {
+                if _, agentDone := m.CompletionReports[agentID]; agentDone {
+                    return PreLaunchCheck{
+                        Name:    "wave_exists",
+                        Status:  "warn",
+                        Message: fmt.Sprintf("wave %d: agent %s already complete (all %d agents done)", waveNum, agentID, completedCount),
+                    }
+                }
+                return PreLaunchCheck{
+                    Name:    "wave_exists",
+                    Status:  "warn",
+                    Message: fmt.Sprintf("wave %d already has all %d agents completed", waveNum, completedCount),
+                }
+            }
+            ```
+
+            Update the call site in PreLaunchGate to pass agentID:
+            ```go
+            result.Checks = append(result.Checks, checkWaveExists(manifest, waveNum, agentID))
+            ```
+
+            ### Bug 7 (LOW): fmt.Sprintf no-op in test
+            Location: prelaunch_gate_test.go line 424.
+
+            Current:
+            ```go
+            if fmt.Sprintf("%s", c.Message) == "" {
+            ```
+            Fix: replace with:
+            ```go
+            if c.Message == "" {
+            ```
+            Also remove the `"fmt"` import if it is no longer used after this change
+            (check all usages of fmt in the test file first — `fmt.Sprintf` is also
+            used on line 165, so the import will still be needed).
+
+            ### Bug 8 (LOW): TestPreLaunchGate_WorktreeBranchMismatch swallows git setup errors
+            Location: prelaunch_gate_test.go lines 282-293.
+
+            Current code calls cmd.CombinedOutput() without checking errors:
+            ```go
+            cmd := exec.Command("git", args...)
+            cmd.CombinedOutput()
+            ```
+            and:
+            ```go
+            os.WriteFile(emptyFile, []byte(""), 0644)
+            ```
+
+            Fix: check every error and use t.Fatalf on failure, mirroring the pattern
+            in TestPreLaunchGate_WorktreeBranch (lines 228-247):
+            ```go
+            for _, args := range [][]string{
+                {"-C", dir, "config", "user.email", "test@test.com"},
+                {"-C", dir, "config", "user.name", "Test"},
+            } {
+                cmd := exec.Command("git", args...)
+                if out, err := cmd.CombinedOutput(); err != nil {
+                    t.Fatalf("git config failed: %v\n%s", err, out)
+                }
+            }
+
+            emptyFile := filepath.Join(dir, ".gitkeep")
+            if err := os.WriteFile(emptyFile, []byte(""), 0644); err != nil {
+                t.Fatalf("write file: %v", err)
+            }
+            for _, args := range [][]string{
+                {"-C", dir, "add", "."},
+                {"-C", dir, "commit", "-m", "init"},
+            } {
+                cmd := exec.Command("git", args...)
+                if out, err := cmd.CombinedOutput(); err != nil {
+                    t.Fatalf("git %v failed: %v\n%s", args, err, out)
+                }
+            }
+            ```
+
+            ## Verification gate
+            ```
+            go build ./...
+            go vet ./pkg/hooks/...
+            go test ./pkg/hooks/... -run TestPreLaunchGate
+            ```
+
+            ## Constraints
+            - Do not modify scout_boundaries.go or scout_boundaries_test.go (Agent B owns those).
+            - Do not change any exported types (PreLaunchCheck, PreLaunchResult, PreLaunchGate).
+            - The PreLaunchGate function signature must remain unchanged.
+            - After Bug 2's refactor, protocol.Validate must be called exactly once in PreLaunchGate.
+            - The "fmt" import in prelaunch_gate_test.go should be retained as long as it is used
+              elsewhere in that file.
+          files:
+            - pkg/hooks/prelaunch_gate.go
+            - pkg/hooks/prelaunch_gate_test.go
+        - id: B
+          task: |
+            Fix bugs 4, 5, and 9 in pkg/hooks/scout_boundaries.go and
+            pkg/hooks/scout_boundaries_test.go.
+
+            ## What to implement
+
+            ### Bug 4 (MEDIUM): IsValidScoutPath silently returns false for absolute paths
+            Location: scout_boundaries.go lines 104-111.
+
+            Current code:
+            ```go
+            func IsValidScoutPath(filePath string) bool {
+                normalized := filepath.Clean(filePath)
+                dir := filepath.Dir(normalized)
+                base := filepath.Base(normalized)
+                return dir == "docs/IMPL" && strings.HasPrefix(base, "IMPL-") && strings.HasSuffix(base, ".yaml")
+            }
+            ```
+
+            The `dir == "docs/IMPL"` string comparison only works for relative paths.
+            For an absolute path like `/repo/docs/IMPL/IMPL-x.yaml`, `filepath.Dir`
+            returns `/repo/docs/IMPL` which does not equal `"docs/IMPL"`.
+
+            Fix: use path component matching that works for both relative and absolute paths:
+            ```go
+            func IsValidScoutPath(filePath string) bool {
+                normalized := filepath.Clean(filePath)
+                dir := filepath.Dir(normalized)
+                base := filepath.Base(normalized)
+                // Validate filename
+                if !strings.HasPrefix(base, "IMPL-") || !strings.HasSuffix(base, ".yaml") {
+                    return false
+                }
+                // Validate directory: must end with "docs/IMPL" (handles both relative and absolute paths)
+                // Use filepath.Base twice to check the last two path components.
+                implDir := filepath.Base(dir)             // must be "IMPL"
+                docsDir := filepath.Base(filepath.Dir(dir)) // must be "docs"
+                return implDir == "IMPL" && docsDir == "docs"
+            }
+            ```
+
+            ### Bug 5 (MEDIUM): Duplication between IsValidScoutPath and inline check in ValidateScoutWrites
+            Location: scout_boundaries.go lines 58-61 (inline check in Walk callback).
+
+            Current inline check in the Walk callback:
+            ```go
+            dir := filepath.Dir(relPath)
+            base := filepath.Base(relPath)
+            if dir == "docs/IMPL" && strings.HasPrefix(base, "IMPL-") && strings.HasSuffix(base, ".yaml") {
+                return nil // Allowed
+            }
+            ```
+
+            After fixing Bug 4, replace the inline three-condition check with a call to
+            IsValidScoutPath:
+            ```go
+            // Check if it's a valid IMPL doc in docs/IMPL/
+            if IsValidScoutPath(relPath) {
+                return nil // Allowed
+            }
+            ```
+
+            Remove the now-unused local variables `dir` and `base` from the Walk callback.
+            Note: `relPath` is a relative path (e.g., "docs/IMPL/IMPL-x.yaml") because it
+            was computed via `filepath.Rel(repoPath, path)`. Since Bug 4's fix makes
+            IsValidScoutPath work correctly for relative paths (the component check works for
+            both), this is safe.
+
+            ### Bug 9 (LOW): Missing test for ValidateScoutWrites with bad expectedIMPLPath
+            Location: scout_boundaries_test.go — add new test case.
+
+            Add a new subtest inside TestValidateScoutWrites (or as a standalone test)
+            that verifies: when expectedIMPLPath is outside docs/IMPL/ (e.g. a path in /tmp/),
+            any file actually written under docs/ is still reported as a violation rather
+            than silently skipped.
+
+            Example test to add:
+            ```go
+            t.Run("File under docs still flagged when expectedIMPLPath is outside docs/IMPL", func(t *testing.T) {
+                // Use a fresh temp dir
+                freshDir := t.TempDir()
+                freshIMPL := filepath.Join(freshDir, "docs", "IMPL")
+                if err := os.MkdirAll(freshIMPL, 0755); err != nil {
+                    t.Fatal(err)
+                }
+
+                // Write a file that Scout is allowed to write
+                validImpl := filepath.Join(freshIMPL, "IMPL-allowed.yaml")
+                if err := os.WriteFile(validImpl, []byte("content"), 0644); err != nil {
+                    t.Fatal(err)
+                }
+
+                // Use a bad expectedIMPLPath (outside docs/IMPL/)
+                badExpected := filepath.Join("/tmp", "bad-path.yaml")
+                res := ValidateScoutWrites(freshDir, badExpected, startTime)
+
+                // The valid IMPL file was written by Scout but it matches the boundary rule,
+                // so it should NOT be a violation (IsValidScoutPath(relPath) returns true).
+                // The function should return Success because the file is in docs/IMPL/.
+                if !res.IsSuccess() {
+                    t.Errorf("Expected SUCCESS: file in docs/IMPL/ should be allowed regardless of expectedIMPLPath, got code=%q errors=%v", res.Code, res.Errors)
+                }
+            })
+            ```
+
+            Also add a test that verifies a file in docs/IMPL/ is NOT flagged even when
+            it differs from expectedIMPLPath (verifying IsValidScoutPath path is used for
+            all docs/IMPL/ files):
+            ```go
+            t.Run("Any IMPL doc in docs/IMPL is allowed even if not expectedIMPLPath", func(t *testing.T) {
+                freshDir := t.TempDir()
+                freshIMPL := filepath.Join(freshDir, "docs", "IMPL")
+                if err := os.MkdirAll(freshIMPL, 0755); err != nil {
+                    t.Fatal(err)
+                }
+                if err := os.WriteFile(filepath.Join(freshIMPL, "IMPL-different.yaml"), []byte("x"), 0644); err != nil {
+                    t.Fatal(err)
+                }
+                // expectedIMPLPath points to a different IMPL file
+                differentExpected := filepath.Join(freshIMPL, "IMPL-expected.yaml")
+                res := ValidateScoutWrites(freshDir, differentExpected, startTime)
+                if !res.IsSuccess() {
+                    t.Errorf("Expected SUCCESS for IMPL doc in docs/IMPL/, got code=%q", res.Code)
+                }
+            })
+            ```
+
+            ## Verification gate
+            ```
+            go build ./...
+            go vet ./pkg/hooks/...
+            go test ./pkg/hooks/... -run TestIsValidScoutPath
+            go test ./pkg/hooks/... -run TestValidateScoutWrites
+            ```
+
+            ## Constraints
+            - Do not modify prelaunch_gate.go or prelaunch_gate_test.go (Agent A owns those).
+            - The IsValidScoutPath and ValidateScoutWrites exported function signatures must
+              remain unchanged.
+            - After Bug 5's refactor, the dir and base local variables in the Walk callback
+              should be removed if no longer needed; verify they are not used elsewhere in
+              the same closure before removing them.
+          files:
+            - pkg/hooks/scout_boundaries.go
+            - pkg/hooks/scout_boundaries_test.go
+quality_gates:
+    level: standard
+    gates:
+        - type: build
+          command: go build ./...
+          required: true
+        - type: lint
+          command: go vet ./pkg/hooks/...
+          required: true
+        - type: test
+          command: go test ./pkg/hooks/...
+          required: true
+pre_mortem:
+    overall_risk: low
+    rows:
+        - scenario: |-
+            Bug 2 refactor breaks the PreLaunchGate call chain. Changing checkManifestValidation
+            and checkOwnershipDisjoint signatures requires updating the call sites in PreLaunchGate.
+            If the agent updates the function bodies but misses the call site update, the code
+            will not compile.
+          likelihood: low
+          impact: high
+          mitigation: |-
+            Agent A's brief explicitly lists the call site update (PreLaunchGate body)
+            alongside the function signature changes. Build gate `go build ./...` will
+            catch a missed update immediately before tests run.
+        - scenario: |-
+            Bug 4 path component check is too broad. Using filepath.Base twice to match
+            "IMPL" and "docs" could match a path like "other/docs/IMPL/IMPL-x.yaml" which
+            is not the intended docs/IMPL directory in the repo root.
+          likelihood: low
+          impact: low
+          mitigation: |-
+            The Walk in ValidateScoutWrites starts from the repo's docs/ directory so all
+            relPaths are already rooted at "docs/". For IsValidScoutPath called from
+            external code with arbitrary absolute paths, matching the last two components is
+            the intended behavior — it mirrors the design intent. The existing tests
+            already cover "Complete subdir" (docs/IMPL/complete/IMPL-old.yaml → false),
+            which validates the single-level check is correct.
+        - scenario: |-
+            Bug 5 refactor changes behavior: the old inline check used dir == "docs/IMPL"
+            (relative-path only) while IsValidScoutPath after Bug 4 uses component matching.
+            If relPath has an unexpected form (e.g. a path separator difference on Windows),
+            the two might disagree.
+          likelihood: low
+          impact: low
+          mitigation: |-
+            This is a darwin/linux-only repo (darwin is the dev platform per env). filepath
+            uses forward slashes. The tests use filepath.Join which normalizes separators.
+            The component check in Bug 4 uses filepath.Base/Dir which is also
+            separator-aware. No Windows risk in practice.
+        - scenario: |-
+            TestPreLaunchGate_CriticRequired test breaks after Bug 1 fix. The test adds
+            a 3rd agent to wave 1, which is exactly the E37Required threshold (wave1 >= 3).
+            After fixing to use protocol.E37Required, the test should still pass — but if
+            E37Required's threshold changes in the future, the test expectation may diverge.
+          likelihood: low
+          impact: low
+          mitigation: |-
+            The test is structurally correct: 3 agents in wave 1 triggers E37Required.
+            No mitigation needed. The existing TestPreLaunchGate_CriticRequired test passes
+            with both the old code and the new code for this case.
+state: SCOUT_PENDING
+injection_method: hook

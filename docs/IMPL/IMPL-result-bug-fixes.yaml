@@ -1,0 +1,465 @@
+title: pkg/result Bug Fixes
+feature_slug: result-bug-fixes
+verdict: SUITABLE
+suitability_assessment: |
+    Five known bugs across three files with clean disjoint ownership. All questions resolve:
+
+    1. File decomposition: result.go+result_test.go → Agent A; codes.go → Agent B. Fully disjoint.
+    2. No investigation required: all bugs are precisely located with exact fix instructions.
+    3. Interface contracts: no cross-agent interfaces needed — all changes are self-contained within each file.
+    4. Pre-implementation status check: all 5 bugs confirmed present in current codebase via direct inspection.
+    5. Parallelization value: modest (2 agents, 3 files total). Value is primarily coordination and audit trail.
+
+    Bug 5 scope assessment: grep confirmed that all callers reference N018-N084 string values via their
+    Go constant names (CodeContextCancelled, CodeScoutInvalidOpts, etc.), not via raw string literals.
+    No switch/case statements or test assertions use the raw ENGINE_* strings. The rename is fully
+    contained to codes.go — Agent B owns only that one file. No cascade files needed.
+
+    NewFailure empty-slice callers: grep found zero existing callers passing nil or empty slices,
+    confirming the panic guard (Bug 2) is a safe addition with no call-site updates needed.
+
+    Estimated times:
+    - Scout phase: ~10 min
+    - Agent execution: ~15 min (2 agents x ~7 min avg, parallel)
+    - Merge and verification: ~3 min
+    Total SAW time: ~28 min
+
+    Sequential baseline: ~20 min (2 agents x 10 min sequential)
+    Recommendation: Marginal speed gain; primary value is audit trail and verified correctness.
+test_command: go test ./pkg/result/...
+lint_command: go vet ./pkg/result/...
+file_ownership:
+    - file: pkg/result/result.go
+      agent: A
+      wave: 1
+      action: modify
+    - file: pkg/result/result_test.go
+      agent: A
+      wave: 1
+      action: modify
+    - file: pkg/result/codes.go
+      agent: B
+      wave: 1
+      action: modify
+    - file: pkg/result/codes_test.go
+      agent: B
+      wave: 1
+      action: new
+interface_contracts:
+    - name: NewFailure
+      description: |
+        Guard against empty errors slice. Panics at programming-error boundary.
+        Dead branch removed. Signature unchanged.
+      definition: |
+        // NewFailure creates a failed Result with structured errors.
+        // Panics if errors is empty — passing an empty slice is a programming error.
+        func NewFailure[T any](errors []SAWError) Result[T] {
+            if len(errors) == 0 {
+                panic("result.NewFailure called with empty errors slice")
+            }
+            return Result[T]{
+                Errors: errors,
+                Code:   "FATAL",
+            }
+        }
+      location: pkg/result/result.go
+waves:
+    - number: 1
+      agents:
+        - id: A
+          task: |
+            Fix four bugs in pkg/result/result.go and pkg/result/result_test.go.
+
+            ## What to implement
+
+            ### Bug 1 — Remove dead branch in NewFailure (result.go:136-145)
+            The current NewFailure function has an `if len(errors) > 0 && errors[0].Severity != "fatal"`
+            branch that sets `code = "FATAL"` — identical to the value already assigned. It is
+            unreachable dead code with a misleading comment.
+
+            Delete the entire if block. The function body after the fix:
+            ```go
+            func NewFailure[T any](errors []SAWError) Result[T] {
+                code := "FATAL"
+                return Result[T]{
+                    Errors: errors,
+                    Code:   code,
+                }
+            }
+            ```
+            (Bug 2 below will further simplify this.)
+
+            ### Bug 2 — Add empty-slice guard in NewFailure (result.go:136-145)
+            After removing the dead branch (Bug 1), add a panic guard at the top of NewFailure
+            for the empty-errors-slice case. The final function after both Bug 1 and Bug 2:
+
+            ```go
+            // NewFailure creates a failed Result with structured errors.
+            // Panics if errors is empty — passing an empty slice is a programming error.
+            func NewFailure[T any](errors []SAWError) Result[T] {
+                if len(errors) == 0 {
+                    panic("result.NewFailure called with empty errors slice")
+                }
+                return Result[T]{
+                    Errors: errors,
+                    Code:   "FATAL",
+                }
+            }
+            ```
+
+            Grep confirmed zero existing callers pass empty slices, so no call-site changes needed.
+
+            ### Bug 3 — Replace contains/searchString helpers in result_test.go (result_test.go:651-662)
+            Two helper functions manually reimplement strings.Contains:
+            - `func contains(s, substr string) bool` (line 651)
+            - `func searchString(s, substr string) bool` (line 655)
+
+            Steps:
+            1. Add `"strings"` to the import block in result_test.go.
+            2. Find all call sites of `contains(...)` in the test file (currently line 643 and 647).
+               Replace each `contains(x, y)` call with `strings.Contains(x, y)`.
+            3. Delete both helper functions (lines 651-662).
+
+            ### Bug 4 — Delete identity MarshalJSON/UnmarshalJSON methods (result.go:148-157)
+            These two methods use the Alias trick but add no custom logic — they are identical
+            to default encoding/json struct marshaling. Delete both methods entirely:
+
+            ```go
+            // DELETE these two methods:
+            func (r Result[T]) MarshalJSON() ([]byte, error) { ... }
+            func (r *Result[T]) UnmarshalJSON(data []byte) error { ... }
+            ```
+
+            After deletion, remove `"encoding/json"` from the imports in result.go IF no other
+            usage of the json package remains. Verify by checking whether any other code in
+            result.go still references `json.`.  (It does not — the import can be removed.)
+
+            The TestJSONMarshalUnmarshal and TestSAWErrorCauseNotSerialized tests must continue
+            to pass; they use json.Marshal/json.Unmarshal on the caller side, which works fine
+            with default struct marshaling.
+
+            ## Tests to add or update
+
+            Add one new test for the Bug 2 panic guard in result_test.go:
+
+            ```go
+            // TestNewFailurePanicsOnEmptySlice verifies NewFailure panics when called with an empty errors slice.
+            func TestNewFailurePanicsOnEmptySlice(t *testing.T) {
+                defer func() {
+                    r := recover()
+                    if r == nil {
+                        t.Fatal("expected panic, got none")
+                    }
+                    msg, ok := r.(string)
+                    if !ok {
+                        t.Fatalf("expected string panic, got %T: %v", r, r)
+                    }
+                    if msg != "result.NewFailure called with empty errors slice" {
+                        t.Errorf("panic message = %q, want %q", msg, "result.NewFailure called with empty errors slice")
+                    }
+                }()
+                _ = NewFailure[string]([]SAWError{})
+            }
+            ```
+
+            No other test changes are needed. The existing TestNewFailure, TestJSONMarshalUnmarshal,
+            and TestSAWErrorCauseNotSerialized tests exercise the fixed code paths correctly.
+
+            ## Verification gate
+            ```
+            go build ./pkg/result/...
+            go vet ./pkg/result/...
+            go test ./pkg/result/...
+            ```
+
+            All existing tests must pass. The new TestNewFailurePanicsOnEmptySlice test must pass.
+
+            ## Constraints
+            - Do not modify codes.go — that file belongs to Agent B.
+            - Do not change any function signatures. NewFailure's public signature is unchanged.
+            - Do not add new exported functions or types.
+            - The `encoding/json` import in result.go must be removed if (and only if) it becomes unused.
+            - Do not touch any files outside pkg/result/.
+          files:
+            - pkg/result/result.go
+            - pkg/result/result_test.go
+        - id: B
+          task: |
+            Fix one bug in pkg/result/codes.go: rename N018-N084 string constant values to follow
+            the Nxxx_DESCRIPTION pattern used by N001-N017.
+
+            ## What to implement
+
+            ### Bug 5 — N018-N084 naming inconsistency (codes.go:149-217)
+
+            Constants N001-N017 use values like "N001_PREPARE_WAVE_FAILED".
+            Constants N018-N084 use ad-hoc strings like "CONTEXT_CANCELLED", "ENGINE_SCOUT_INVALID_OPTS", etc.
+
+            Rename the string *values* of all N018-N084 constants to follow the Nxxx_DESCRIPTION pattern.
+            The Go *constant names* (CodeContextCancelled, CodeScoutInvalidOpts, etc.) do NOT change.
+            Only the string values on the right-hand side of the = assignment change.
+
+            **Important:** Grep confirmed that no callers use the raw string values in switch/case
+            statements or string comparisons. All callers reference the Go constant names. Therefore
+            this is a contained rename with no cascade files.
+
+            The mapping to apply (Go constant name → new string value):
+
+            ```
+            CodeContextCancelled          = "N018_CONTEXT_CANCELLED"
+            CodeScoutInvalidOpts          = "N019_SCOUT_INVALID_OPTS"
+            CodeScoutRunFailed            = "N020_SCOUT_RUN_FAILED"
+            CodeScoutBoundaryViolation    = "N021_SCOUT_BOUNDARY_VIOLATION"
+            CodePlannerInvalidOpts        = "N022_PLANNER_INVALID_OPTS"
+            CodePlannerFailed             = "N023_PLANNER_FAILED"
+            CodeWaveInvalidOpts           = "N024_WAVE_INVALID_OPTS"
+            CodeWaveFailed                = "N025_WAVE_FAILED"
+            CodeWaveSequencingFailed      = "N026_WAVE_SEQUENCING_FAILED"
+            CodeHookVerifyFailed          = "N027_HOOK_VERIFY_FAILED"
+            CodeScaffoldRunFailed         = "N028_SCAFFOLD_RUN_FAILED"
+            CodeAgentRunFailed            = "N029_AGENT_RUN_FAILED"
+            CodeAgentRunInvalidOpts       = "N030_AGENT_RUN_INVALID_OPTS"
+            CodeMergeWaveFailed           = "N031_MERGE_WAVE_FAILED"
+            CodeMergeWaveInvalidOpts      = "N032_MERGE_WAVE_INVALID_OPTS"
+            CodeEngineVerificationFailed  = "N033_ENGINE_VERIFICATION_FAILED"
+            CodeUpdateStatusFailed        = "N034_UPDATE_STATUS_FAILED"
+            CodeValidateFailed            = "N035_VALIDATE_FAILED"
+            CodeJournalArchiveFailed      = "N036_JOURNAL_ARCHIVE_FAILED"
+            CodeMarkCompleteFailed        = "N037_MARK_COMPLETE_FAILED"
+            CodeMarkCompleteInvalidOpts   = "N038_MARK_COMPLETE_INVALID_OPTS"
+            CodeVerifyTiersIncomplete     = "N039_VERIFY_TIERS_INCOMPLETE"
+            CodeMarkerReadFailed          = "N040_MARKER_READ_FAILED"
+            CodeMarkerWriteFailed         = "N041_MARKER_WRITE_FAILED"
+            CodeUpdateProgParseFailed     = "N042_UPDATE_PROG_PARSE_FAILED"
+            CodeUpdateProgSlugNotFound    = "N043_UPDATE_PROG_SLUG_NOT_FOUND"
+            CodeSyncParseFailed           = "N044_SYNC_PARSE_FAILED"
+            CodeSyncStatusFailed          = "N045_SYNC_STATUS_FAILED"
+            CodeWriteManifestFailed       = "N046_WRITE_MANIFEST_FAILED"
+            CodeRestoreLoadFailed         = "N047_RESTORE_LOAD_FAILED"
+            CodeRestoreSaveFailed         = "N048_RESTORE_SAVE_FAILED"
+            CodeTestLoadFailed            = "N049_TEST_LOAD_FAILED"
+            CodeTestNoCommand             = "N050_TEST_NO_COMMAND"
+            CodeTestPipeFailed            = "N051_TEST_PIPE_FAILED"
+            CodeTestStartFailed           = "N052_TEST_START_FAILED"
+            CodeTestCommandFailed         = "N053_TEST_COMMAND_FAILED"
+            CodeScoutRunnerFailed         = "N054_SCOUT_RUNNER_FAILED"
+            CodeScoutValidationFailed     = "N055_SCOUT_VALIDATION_FAILED"
+            CodeScoutCorrectionExhausted  = "N056_SCOUT_CORRECTION_EXHAUSTED"
+            CodeSetBlockedLoadFailed      = "N057_SET_BLOCKED_LOAD_FAILED"
+            CodeSetBlockedSaveFailed      = "N058_SET_BLOCKED_SAVE_FAILED"
+            CodeFixBuildInvalidOpts       = "N059_FIX_BUILD_INVALID_OPTS"
+            CodeFixBuildFailed            = "N060_FIX_BUILD_FAILED"
+            CodeGomodFixupFailed          = "N061_GOMOD_FIXUP_FAILED"
+            CodeCleanupFailed             = "N062_CLEANUP_FAILED"
+            CodeResolveInvalidOpts        = "N063_RESOLVE_INVALID_OPTS"
+            CodeResolveLoadFailed         = "N064_RESOLVE_LOAD_FAILED"
+            CodeResolveGitFailed          = "N065_RESOLVE_GIT_FAILED"
+            CodeResolveNoConflicts        = "N066_RESOLVE_NO_CONFLICTS"
+            CodeResolveBackendFailed      = "N067_RESOLVE_BACKEND_FAILED"
+            CodeResolveFileFailed         = "N068_RESOLVE_FILE_FAILED"
+            CodeResolveCommitFailed       = "N069_RESOLVE_COMMIT_FAILED"
+            CodeResolveFileReadFailed     = "N070_RESOLVE_FILE_READ_FAILED"
+            CodeResolveBackendCallFailed  = "N071_RESOLVE_BACKEND_CALL_FAILED"
+            CodeResolveFileWriteFailed    = "N072_RESOLVE_FILE_WRITE_FAILED"
+            CodeResolveGitAddFailed       = "N073_RESOLVE_GIT_ADD_FAILED"
+            CodeExportFileExists          = "N074_EXPORT_FILE_EXISTS"
+            CodeExportNoEntries           = "N075_EXPORT_NO_ENTRIES"
+            CodeExportWriteFailed         = "N076_EXPORT_WRITE_FAILED"
+            CodeIntegrationInvalidOpts    = "N077_INTEGRATION_INVALID_OPTS"
+            CodeIntegrationLoadFailed     = "N078_INTEGRATION_LOAD_FAILED"
+            CodeIntegrationNoConnectors   = "N079_INTEGRATION_NO_CONNECTORS"
+            CodeIntegrationPromptFailed   = "N080_INTEGRATION_PROMPT_FAILED"
+            CodeIntegrationBackendFailed  = "N081_INTEGRATION_BACKEND_FAILED"
+            CodeIntegrationAgentFailed    = "N082_INTEGRATION_AGENT_FAILED"
+            CodeChatInvalidOpts           = "N083_CHAT_INVALID_OPTS"
+            CodeChatFailed                = "N084_CHAT_FAILED"
+            ```
+
+            Also update the block comment that currently reads:
+            `// N018-N084: Engine operation codes — ad-hoc strings migrated from pkg/engine/ and pkg/notify/`
+            to:
+            `// N018-N084: Engine operation codes (renamed to follow Nxxx_DESCRIPTION pattern)`
+
+            Remove the inline `// N018`, `// N019`, ... `// N084` comments that were tracking the
+            ad-hoc numbering — they are now redundant because the prefix is encoded in the string value.
+
+            Do NOT change:
+            - N085_CONFIG_IO_FAILED (already follows the pattern)
+            - Any constant in the V, W, B, G, A, P, or T ranges
+            - Any Go constant identifier name
+
+            ## Tests to add or update
+
+            Add a test in the existing test file (result_test.go is owned by Agent A — you cannot
+            modify it). Instead, add a new test file pkg/result/codes_test.go that verifies the
+            naming pattern:
+
+            ```go
+            package result
+
+            import (
+                "strings"
+                "testing"
+            )
+
+            // TestNCodesFollowNamingPattern verifies all N-range constants N018-N084
+            // follow the "Nxxx_DESCRIPTION" naming pattern.
+            func TestNCodesFollowNamingPattern(t *testing.T) {
+                ncodes := []struct {
+                    name  string
+                    value string
+                }{
+                    {"CodeContextCancelled", CodeContextCancelled},
+                    {"CodeScoutInvalidOpts", CodeScoutInvalidOpts},
+                    {"CodeScoutRunFailed", CodeScoutRunFailed},
+                    {"CodeScoutBoundaryViolation", CodeScoutBoundaryViolation},
+                    {"CodePlannerInvalidOpts", CodePlannerInvalidOpts},
+                    {"CodePlannerFailed", CodePlannerFailed},
+                    {"CodeWaveInvalidOpts", CodeWaveInvalidOpts},
+                    {"CodeWaveFailed", CodeWaveFailed},
+                    {"CodeWaveSequencingFailed", CodeWaveSequencingFailed},
+                    {"CodeHookVerifyFailed", CodeHookVerifyFailed},
+                    {"CodeScaffoldRunFailed", CodeScaffoldRunFailed},
+                    {"CodeAgentRunFailed", CodeAgentRunFailed},
+                    {"CodeAgentRunInvalidOpts", CodeAgentRunInvalidOpts},
+                    {"CodeMergeWaveFailed", CodeMergeWaveFailed},
+                    {"CodeMergeWaveInvalidOpts", CodeMergeWaveInvalidOpts},
+                    {"CodeEngineVerificationFailed", CodeEngineVerificationFailed},
+                    {"CodeUpdateStatusFailed", CodeUpdateStatusFailed},
+                    {"CodeValidateFailed", CodeValidateFailed},
+                    {"CodeJournalArchiveFailed", CodeJournalArchiveFailed},
+                    {"CodeMarkCompleteFailed", CodeMarkCompleteFailed},
+                    {"CodeMarkCompleteInvalidOpts", CodeMarkCompleteInvalidOpts},
+                    {"CodeVerifyTiersIncomplete", CodeVerifyTiersIncomplete},
+                    {"CodeMarkerReadFailed", CodeMarkerReadFailed},
+                    {"CodeMarkerWriteFailed", CodeMarkerWriteFailed},
+                    {"CodeUpdateProgParseFailed", CodeUpdateProgParseFailed},
+                    {"CodeUpdateProgSlugNotFound", CodeUpdateProgSlugNotFound},
+                    {"CodeSyncParseFailed", CodeSyncParseFailed},
+                    {"CodeSyncStatusFailed", CodeSyncStatusFailed},
+                    {"CodeWriteManifestFailed", CodeWriteManifestFailed},
+                    {"CodeRestoreLoadFailed", CodeRestoreLoadFailed},
+                    {"CodeRestoreSaveFailed", CodeRestoreSaveFailed},
+                    {"CodeTestLoadFailed", CodeTestLoadFailed},
+                    {"CodeTestNoCommand", CodeTestNoCommand},
+                    {"CodeTestPipeFailed", CodeTestPipeFailed},
+                    {"CodeTestStartFailed", CodeTestStartFailed},
+                    {"CodeTestCommandFailed", CodeTestCommandFailed},
+                    {"CodeScoutRunnerFailed", CodeScoutRunnerFailed},
+                    {"CodeScoutValidationFailed", CodeScoutValidationFailed},
+                    {"CodeScoutCorrectionExhausted", CodeScoutCorrectionExhausted},
+                    {"CodeSetBlockedLoadFailed", CodeSetBlockedLoadFailed},
+                    {"CodeSetBlockedSaveFailed", CodeSetBlockedSaveFailed},
+                    {"CodeFixBuildInvalidOpts", CodeFixBuildInvalidOpts},
+                    {"CodeFixBuildFailed", CodeFixBuildFailed},
+                    {"CodeGomodFixupFailed", CodeGomodFixupFailed},
+                    {"CodeCleanupFailed", CodeCleanupFailed},
+                    {"CodeResolveInvalidOpts", CodeResolveInvalidOpts},
+                    {"CodeResolveLoadFailed", CodeResolveLoadFailed},
+                    {"CodeResolveGitFailed", CodeResolveGitFailed},
+                    {"CodeResolveNoConflicts", CodeResolveNoConflicts},
+                    {"CodeResolveBackendFailed", CodeResolveBackendFailed},
+                    {"CodeResolveFileFailed", CodeResolveFileFailed},
+                    {"CodeResolveCommitFailed", CodeResolveCommitFailed},
+                    {"CodeResolveFileReadFailed", CodeResolveFileReadFailed},
+                    {"CodeResolveBackendCallFailed", CodeResolveBackendCallFailed},
+                    {"CodeResolveFileWriteFailed", CodeResolveFileWriteFailed},
+                    {"CodeResolveGitAddFailed", CodeResolveGitAddFailed},
+                    {"CodeExportFileExists", CodeExportFileExists},
+                    {"CodeExportNoEntries", CodeExportNoEntries},
+                    {"CodeExportWriteFailed", CodeExportWriteFailed},
+                    {"CodeIntegrationInvalidOpts", CodeIntegrationInvalidOpts},
+                    {"CodeIntegrationLoadFailed", CodeIntegrationLoadFailed},
+                    {"CodeIntegrationNoConnectors", CodeIntegrationNoConnectors},
+                    {"CodeIntegrationPromptFailed", CodeIntegrationPromptFailed},
+                    {"CodeIntegrationBackendFailed", CodeIntegrationBackendFailed},
+                    {"CodeIntegrationAgentFailed", CodeIntegrationAgentFailed},
+                    {"CodeChatInvalidOpts", CodeChatInvalidOpts},
+                    {"CodeChatFailed", CodeChatFailed},
+                }
+                for _, tc := range ncodes {
+                    t.Run(tc.name, func(t *testing.T) {
+                        // Must match N + 3 digits + underscore + uppercase description
+                        if len(tc.value) < 5 {
+                            t.Errorf("%s = %q: too short to match Nxxx_ pattern", tc.name, tc.value)
+                            return
+                        }
+                        if tc.value[0] != 'N' {
+                            t.Errorf("%s = %q: must start with 'N'", tc.name, tc.value)
+                        }
+                        if !strings.Contains(tc.value, "_") {
+                            t.Errorf("%s = %q: must contain underscore separator", tc.name, tc.value)
+                        }
+                    })
+                }
+            }
+            ```
+
+            ## Verification gate
+            ```
+            go build ./pkg/result/...
+            go vet ./pkg/result/...
+            go test ./pkg/result/...
+            ```
+
+            ## Constraints
+            - Do not modify result.go or result_test.go — those belong to Agent A.
+            - Do not change any Go constant identifier names (only change the string values).
+            - Do not change constants outside the N018-N084 range.
+            - The new codes_test.go file must be in `package result` (not `package result_test`).
+            - Do not touch any files outside pkg/result/.
+          files:
+            - pkg/result/codes.go
+            - pkg/result/codes_test.go
+quality_gates:
+    level: standard
+    gates:
+        - type: build
+          command: go build ./...
+          required: true
+        - type: lint
+          command: go vet ./pkg/result/...
+          required: true
+        - type: test
+          command: go test ./pkg/result/...
+          required: true
+pre_mortem:
+    overall_risk: low
+    rows:
+        - scenario: |
+            Bug 4 removal of MarshalJSON/UnmarshalJSON causes import removal of "encoding/json"
+            from result.go, but if another usage was missed the build will fail.
+          likelihood: low
+          impact: low
+          mitigation: |
+            Agent A must verify after deletion that no other reference to the `json` package
+            remains in result.go before removing the import. Running `go build ./pkg/result/...`
+            immediately catches this.
+        - scenario: |
+            Bug 2 panic guard breaks an existing caller that was not found by grep
+            (e.g., generated code or a call site added after scouting).
+          likelihood: low
+          impact: medium
+          mitigation: |
+            Grep confirmed zero existing callers pass empty or nil slices. The full test suite
+            `go test ./...` at merge time catches any missed call site. The panic message is
+            clear enough to diagnose immediately.
+        - scenario: |
+            Bug 5 rename causes a test in pkg/notify or pkg/engine that asserts on the old
+            string values (e.g., checking err.Code == "ENGINE_SCOUT_FAILED") to fail.
+          likelihood: low
+          impact: medium
+          mitigation: |
+            Grep across all *_test.go files confirmed zero test files assert on the raw ENGINE_*
+            or CONTEXT_CANCELLED string values. All test files reference the constants by their
+            Go names. Running `go test ./...` post-merge catches any miss.
+        - scenario: |
+            Agent B's new codes_test.go conflicts with a file that Agent A also creates
+            (e.g., if Agent A decides to split test helpers into a separate file).
+          likelihood: low
+          impact: low
+          mitigation: |
+            Agent A's scope is explicitly result.go and result_test.go. Agent B's new file is
+            codes_test.go — a distinct filename. No conflict possible.
+state: SCOUT_PENDING
+injection_method: hook
