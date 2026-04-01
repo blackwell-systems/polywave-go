@@ -315,5 +315,5 @@ pre_mortem:
           likelihood: low
           impact: low
           mitigation: Agent B must verify coverage via `go test -cover` in verification gate. All 6 error paths are already covered by existing tests.
-state: SCOUT_PENDING
+state: "REVIEWED"
 injection_method: hook
