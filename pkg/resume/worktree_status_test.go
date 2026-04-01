@@ -177,6 +177,7 @@ func TestClassifyWorktrees_MixedDirtyClean(t *testing.T) {
 	}
 }
 
+
 // TestClassifyWorktrees_SlugFiltering verifies that worktrees belonging to a
 // different slug are filtered out and do not appear in the results.
 func TestClassifyWorktrees_SlugFiltering(t *testing.T) {

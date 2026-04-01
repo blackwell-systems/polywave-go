@@ -3,9 +3,9 @@ package resume
 import (
 	"bufio"
 	"bytes"
-	"fmt"
 	"log/slog"
 	"os"
+	"strconv"
 	"strings"
 
 	"github.com/blackwell-systems/scout-and-wave-go/internal/git"
@@ -21,9 +21,6 @@ func loggerFrom(l *slog.Logger) *slog.Logger {
 }
 
 // DirtyWorktree describes a SAW agent worktree and whether it has uncommitted changes.
-// NOTE: Agent A (detect.go) also declares this struct as part of the SessionState
-// extension. The Integration Agent will deduplicate at merge time — only one
-// declaration should remain in the final package.
 type DirtyWorktree struct {
 	Path       string `json:"path"`
 	Branch     string `json:"branch"`
@@ -86,8 +83,10 @@ func ClassifyWorktrees(worktreePaths []string, manifest *protocol.IMPLManifest, 
 		}
 
 		// Extract wave number and agent ID from the regex match groups.
-		waveNum := 0
-		fmt.Sscanf(m[1], "%d", &waveNum)
+		waveNum, err := strconv.Atoi(m[1])
+		if err != nil {
+			continue
+		}
 		agentID := m[2]
 
 		hasChanges := isWorktreeDirty(wt, lockedPaths, log)
