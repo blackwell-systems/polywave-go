@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"os"
 	"strings"
@@ -25,14 +26,16 @@ const (
 
 // Client is an OpenAI-compatible backend. It implements backend.Backend.
 type Client struct {
-	apiKey     string
-	model      string
-	baseURL    string
-	maxTokens  int
-	maxTurns   int
-	onToolCall backend.ToolCallCallback
-	readOnly   bool
-	dedupCache *dedup.Cache
+	apiKey        string
+	model         string
+	baseURL       string
+	maxTokens     int
+	maxTurns      int
+	onToolCall    backend.ToolCallCallback
+	readOnly      bool
+	cfg           backend.Config
+	commitTracker *tools.CommitTracker
+	dedupCache    *dedup.Cache
 }
 
 // New creates a new Client configured from cfg.
@@ -69,29 +72,25 @@ func New(cfg backend.Config) *Client {
 		maxTurns:   maxTurns,
 		onToolCall: cfg.OnToolCall,
 		readOnly:   cfg.ReadOnly,
+		cfg:        cfg,
 	}
 }
 
 // buildWorkshop creates a Workshop with middleware applied based on client config.
 func (c *Client) buildWorkshop(workDir string) tools.Workshop {
-	var w tools.Workshop
-	if c.readOnly {
-		w = tools.ReadOnlyTools(workDir)
-	} else {
-		w = tools.StandardTools(workDir)
+	result := backend.BuildWorkshop(workDir, c.readOnly, c.cfg)
+	c.dedupCache = result.DedupCache
+	c.commitTracker = result.CommitTracker
+	return result.Workshop
+}
+
+// CommitCount returns the number of git commits tracked by the constraint
+// middleware. Returns 0 if constraints are not configured or no commits detected.
+func (c *Client) CommitCount() int {
+	if c.commitTracker == nil {
+		return 0
 	}
-	w, c.dedupCache = dedup.WithDedup(w)
-	if c.onToolCall != nil {
-		w = tools.WithTiming(w, func(ev tools.ToolCallEvent) {
-			c.onToolCall(backend.ToolCallEvent{
-				Name:       ev.ToolName,
-				DurationMs: ev.DurationMs,
-				IsError:    ev.IsError,
-				IsResult:   true,
-			})
-		})
-	}
-	return w
+	return c.commitTracker.Count
 }
 
 // WithAPIKey sets the API key. Returns c for chaining.
@@ -170,7 +169,13 @@ func (c *Client) Run(ctx context.Context, systemPrompt, userMessage, workDir str
 			// embed the tool call as JSON in content instead of using the tool_calls array.
 			if ctc := parseContentToolCall(choice.Message.Content, nameSet); ctc != nil {
 				messages = append(messages, chatMessage{Role: "assistant", Content: choice.Message.Content})
-				result, _ := backend.ExecuteToolCompat(ctx, workshop, ctc.Name, ctc.Arguments, workDir)
+				result, err := backend.ExecuteTool(ctx, workshop, ctc.Name, ctc.Arguments, workDir)
+				if err != nil {
+					slog.Warn("openai: content-mode tool call failed", "tool", ctc.Name, "error", err)
+				}
+				if c.onToolCall != nil {
+					c.onToolCall(backend.ToolCallEvent{Name: ctc.Name, IsResult: true, IsError: err != nil})
+				}
 				messages = append(messages, chatMessage{Role: "user", Content: "Function result:\n" + result})
 				continue
 			}
@@ -181,9 +186,16 @@ func (c *Client) Run(ctx context.Context, systemPrompt, userMessage, workDir str
 			for _, tc := range choice.Message.ToolCalls {
 				var inputMap map[string]interface{}
 				if err := json.Unmarshal([]byte(tc.Function.Arguments), &inputMap); err != nil {
+					slog.Warn("openai: failed to unmarshal tool call arguments", "tool", tc.Function.Name, "error", err)
 					inputMap = map[string]interface{}{}
 				}
-				result, _ := backend.ExecuteToolCompat(ctx, workshop, tc.Function.Name, inputMap, workDir)
+				result, execErr := backend.ExecuteTool(ctx, workshop, tc.Function.Name, inputMap, workDir)
+				if execErr != nil {
+					slog.Warn("openai: tool execution failed", "tool", tc.Function.Name, "error", execErr)
+				}
+				if c.onToolCall != nil {
+					c.onToolCall(backend.ToolCallEvent{Name: tc.Function.Name, IsResult: true, IsError: execErr != nil})
+				}
 				messages = append(messages, toolResultMessage(tc.ID, result))
 			}
 
@@ -225,7 +237,13 @@ func (c *Client) RunStreaming(ctx context.Context, systemPrompt, userMessage, wo
 		case "stop":
 			if ctc := parseContentToolCall(choice.Message.Content, nameSet); ctc != nil {
 				messages = append(messages, chatMessage{Role: "assistant", Content: choice.Message.Content})
-				result, _ := backend.ExecuteToolCompat(ctx, workshop, ctc.Name, ctc.Arguments, workDir)
+				result, err := backend.ExecuteTool(ctx, workshop, ctc.Name, ctc.Arguments, workDir)
+				if err != nil {
+					slog.Warn("openai: content-mode tool call failed", "tool", ctc.Name, "error", err)
+				}
+				if c.onToolCall != nil {
+					c.onToolCall(backend.ToolCallEvent{Name: ctc.Name, IsResult: true, IsError: err != nil})
+				}
 				messages = append(messages, chatMessage{Role: "user", Content: "Function result:\n" + result})
 				continue
 			}
@@ -236,9 +254,16 @@ func (c *Client) RunStreaming(ctx context.Context, systemPrompt, userMessage, wo
 			for _, tc := range choice.Message.ToolCalls {
 				var inputMap map[string]interface{}
 				if err := json.Unmarshal([]byte(tc.Function.Arguments), &inputMap); err != nil {
+					slog.Warn("openai: failed to unmarshal tool call arguments", "tool", tc.Function.Name, "error", err)
 					inputMap = map[string]interface{}{}
 				}
-				result, _ := backend.ExecuteToolCompat(ctx, workshop, tc.Function.Name, inputMap, workDir)
+				result, execErr := backend.ExecuteTool(ctx, workshop, tc.Function.Name, inputMap, workDir)
+				if execErr != nil {
+					slog.Warn("openai: tool execution failed", "tool", tc.Function.Name, "error", execErr)
+				}
+				if c.onToolCall != nil {
+					c.onToolCall(backend.ToolCallEvent{Name: tc.Function.Name, IsResult: true, IsError: execErr != nil})
+				}
 				messages = append(messages, toolResultMessage(tc.ID, result))
 			}
 
@@ -251,9 +276,19 @@ func (c *Client) RunStreaming(ctx context.Context, systemPrompt, userMessage, wo
 }
 
 // RunStreamingWithTools implements backend.Backend.
-// OpenAI backend does not yet support tool call event streaming, so this
-// delegates to RunStreaming (no-op for onToolCall).
+// It temporarily overrides c.onToolCall so that tool call events are emitted
+// to the caller-supplied callback in addition to the config-level callback.
 func (c *Client) RunStreamingWithTools(ctx context.Context, systemPrompt, userMessage, workDir string, onChunk backend.ChunkCallback, onToolCall backend.ToolCallCallback) (string, error) {
+	if onToolCall != nil {
+		prev := c.onToolCall
+		c.onToolCall = func(ev backend.ToolCallEvent) {
+			if prev != nil {
+				prev(ev)
+			}
+			onToolCall(ev)
+		}
+		defer func() { c.onToolCall = prev }()
+	}
 	return c.RunStreaming(ctx, systemPrompt, userMessage, workDir, onChunk)
 }
 
