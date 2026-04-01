@@ -10,6 +10,7 @@ import (
 
 	anthropic "github.com/anthropics/anthropic-sdk-go"
 	"github.com/anthropics/anthropic-sdk-go/option"
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
 )
 
 const (
@@ -17,10 +18,6 @@ const (
 	defaultThreshold = 70
 	maxDiffBytes     = 50000
 )
-
-// testBaseURL overrides the Anthropic API base URL when non-empty.
-// Set this in tests to point at a mock httptest.Server.
-var testBaseURL string
 
 // reviewResponse is the JSON shape we ask the LLM to produce.
 type reviewResponse struct {
@@ -30,9 +27,9 @@ type reviewResponse struct {
 }
 
 // ReviewDiff submits the merged diff to the LLM and returns a ReviewResult.
-// Returns error if the API call fails or response cannot be parsed.
-// Returns a zero ReviewResult (Passed=true) when diff is empty.
-func ReviewDiff(ctx context.Context, diff string, opts ReviewOpts) (*ReviewResult, error) {
+// Returns a failure result if the API call fails or response cannot be parsed.
+// Returns a success result with Skipped=true when diff is empty.
+func ReviewDiff(ctx context.Context, diff string, opts ReviewOpts) result.Result[ReviewResult] {
 	// Apply defaults.
 	if opts.Model == "" {
 		opts.Model = defaultModel
@@ -47,19 +44,22 @@ func ReviewDiff(ctx context.Context, diff string, opts ReviewOpts) (*ReviewResul
 
 	// Empty diff — nothing to review.
 	if diff == "" {
-		return &ReviewResult{
+		return result.NewSuccess(ReviewResult{
 			Dimensions: []DimensionScore{},
-			Overall:    0,
+			Overall:    100,
 			Passed:     true,
+			Skipped:    true,
 			Summary:    "No changes to review.",
 			Model:      opts.Model,
 			DiffBytes:  0,
-		}, nil
+		})
 	}
 
 	apiKey := os.Getenv("ANTHROPIC_API_KEY")
 	if apiKey == "" {
-		return nil, fmt.Errorf("ANTHROPIC_API_KEY not set; code review requires API access")
+		return result.NewFailure[ReviewResult]([]result.SAWError{
+			result.NewFatal("CODEREVIEW_ERROR", "ANTHROPIC_API_KEY not set; code review requires API access"),
+		})
 	}
 
 	// Truncate large diffs.
@@ -92,12 +92,12 @@ Do not include any text outside the JSON object.`, dimList)
 	// Build user message.
 	userMsg := fmt.Sprintf("Please review the following git diff:\n\n%s", diff)
 	if truncated {
-		userMsg += "\n\n[diff truncated to 50000 bytes]"
+		userMsg += fmt.Sprintf("\n\n[diff truncated to %d bytes]", maxDiffBytes)
 	}
 
 	clientOpts := []option.RequestOption{option.WithAPIKey(apiKey)}
-	if testBaseURL != "" {
-		clientOpts = append(clientOpts, option.WithBaseURL(testBaseURL))
+	if opts.BaseURL != "" {
+		clientOpts = append(clientOpts, option.WithBaseURL(opts.BaseURL))
 	}
 	client := anthropic.NewClient(clientOpts...)
 
@@ -114,7 +114,10 @@ Do not include any text outside the JSON object.`, dimList)
 
 	resp, err := client.Messages.New(ctx, params)
 	if err != nil {
-		return nil, fmt.Errorf("anthropic API error: %w", err)
+		return result.NewFailure[ReviewResult]([]result.SAWError{
+			result.NewFatal("CODEREVIEW_API_ERROR",
+				fmt.Sprintf("anthropic API error (model=%s, diffBytes=%d): %s", opts.Model, len(diff), err.Error())).WithCause(err),
+		})
 	}
 
 	// Extract text content.
@@ -129,10 +132,19 @@ Do not include any text outside the JSON object.`, dimList)
 	var parsed reviewResponse
 	rawText := strings.TrimSpace(responseText.String())
 	if err := json.Unmarshal([]byte(rawText), &parsed); err != nil {
-		return nil, fmt.Errorf("failed to parse review response as JSON: %w\nraw response: %s", err, rawText)
+		return result.NewFailure[ReviewResult]([]result.SAWError{
+			result.NewFatal("CODEREVIEW_ERROR",
+				fmt.Sprintf("failed to parse review response as JSON: %v\nraw response: %s", err, rawText)).WithCause(err),
+		})
 	}
 
-	result := &ReviewResult{
+	if err := validateReviewResponse(parsed); err != nil {
+		return result.NewFailure[ReviewResult]([]result.SAWError{
+			result.NewFatal("CODEREVIEW_INVALID_RESPONSE", err.Error()),
+		})
+	}
+
+	res := ReviewResult{
 		Dimensions: parsed.Dimensions,
 		Overall:    parsed.Overall,
 		Passed:     parsed.Overall >= opts.Threshold,
@@ -142,27 +154,31 @@ Do not include any text outside the JSON object.`, dimList)
 		Truncated:  truncated,
 	}
 
-	return result, nil
+	return result.NewSuccess(res)
 }
 
 // RunCodeReview runs the AI code review gate for the given repo after merge.
-// Returns (nil, nil) when code review is disabled (cfg.Enabled == false).
+// Returns a success result with Skipped=true when code review is disabled (cfg.Enabled == false).
 // Gets the diff via git diff HEAD~1..HEAD; falls back to git show HEAD if
 // the repo has fewer than two commits.
-func RunCodeReview(ctx context.Context, repoPath string, cfg CodeReviewConfig) (*ReviewResult, error) {
+func RunCodeReview(ctx context.Context, repoPath string, cfg CodeReviewConfig) result.Result[ReviewResult] {
 	if !cfg.Enabled {
-		return nil, nil
+		return result.NewSuccess(ReviewResult{Skipped: true})
 	}
 
 	// Try HEAD~1..HEAD first.
 	diffCmd := exec.CommandContext(ctx, "git", "-C", repoPath, "diff", "HEAD~1..HEAD")
-	diffOut, err := diffCmd.Output()
-	if err != nil {
+	diffOut, firstErr := diffCmd.Output()
+	if firstErr != nil {
 		// Fall back to git show HEAD (works even with a single commit).
 		showCmd := exec.CommandContext(ctx, "git", "-C", repoPath, "show", "HEAD")
-		diffOut, err = showCmd.Output()
-		if err != nil {
-			return nil, fmt.Errorf("failed to get diff for code review: %w", err)
+		var fallbackErr error
+		diffOut, fallbackErr = showCmd.Output()
+		if fallbackErr != nil {
+			return result.NewFailure[ReviewResult]([]result.SAWError{
+				result.NewFatal("CODEREVIEW_GIT_FAILED",
+					fmt.Sprintf("failed to get diff for code review: %v (fallback error: %v)", firstErr, fallbackErr)),
+			})
 		}
 	}
 
@@ -173,4 +189,22 @@ func RunCodeReview(ctx context.Context, repoPath string, cfg CodeReviewConfig) (
 	}
 
 	return ReviewDiff(ctx, string(diffOut), reviewOpts)
+}
+
+// validateReviewResponse validates the parsed LLM response structure.
+// It checks that Dimensions is non-empty, each dimension score is in [0,100],
+// and Summary is non-empty.
+func validateReviewResponse(parsed reviewResponse) error {
+	if len(parsed.Dimensions) == 0 {
+		return fmt.Errorf("review response has no dimensions")
+	}
+	for _, d := range parsed.Dimensions {
+		if d.Score < 0 || d.Score > 100 {
+			return fmt.Errorf("dimension %q score %d out of range [0,100]", d.Name, d.Score)
+		}
+	}
+	if parsed.Summary == "" {
+		return fmt.Errorf("review response has empty summary")
+	}
+	return nil
 }

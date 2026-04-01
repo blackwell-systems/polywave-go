@@ -40,6 +40,7 @@ type ReviewResult struct {
 	Model      string           `json:"model"`
 	DiffBytes  int              `json:"diff_bytes"`
 	Truncated  bool             `json:"truncated,omitempty"`
+	Skipped    bool             `json:"skipped,omitempty"`
 }
 
 // ReviewOpts configures a single call to ReviewDiff.
@@ -50,6 +51,7 @@ type ReviewOpts struct {
 	Model      string   // Anthropic model ID; defaults to "claude-haiku-4-5"
 	Threshold  int      // Minimum overall score to pass (0-100); default 70
 	Dimensions []string // Subset of standard dimensions; empty = all 5
+	BaseURL    string   // optional API base URL override (used in tests)
 }
 
 // CodeReviewConfig mirrors the saw.config.json "code_review" section.
