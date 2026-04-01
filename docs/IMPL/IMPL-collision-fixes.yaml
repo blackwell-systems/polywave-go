@@ -1,0 +1,249 @@
+title: Fix pkg/collision code review issues
+feature_slug: collision-fixes
+verdict: SUITABLE_WITH_CAVEATS
+suitability_assessment: |
+    All 4 issues and the missing test case are confined to two files in the same package:
+    pkg/collision/detector.go and pkg/collision/detector_test.go. Parallel execution
+    across multiple agents would require splitting a single file between agents, which
+    violates I1 (disjoint file ownership). A single-agent wave is the correct structure.
+
+    Parallelization value is low — the changes are small targeted fixes (context.TODO
+    replacement, pkgPath normalization, a debug log line, a safety comment, and one test
+    case). Sequential implementation would take roughly the same time as SAW coordination
+    overhead. The IMPL doc provides value as an audit trail and a precise, reviewable
+    specification of each fix.
+
+    Caveat: With only 1 agent this is effectively sequential execution. Proceeding
+    because the IMPL doc spec value justifies it for a code-review-driven fix set.
+
+    Estimated times:
+    - Scout phase: ~5 min
+    - Agent execution: ~8 min (1 agent, 2 files, 5 targeted changes)
+    - Merge & verification: ~2 min
+    Total SAW time: ~15 min
+
+    Sequential baseline: ~8 min
+    Time savings: minimal — coordination overhead roughly equals agent execution time.
+    Recommendation: Marginal gains. Proceeding for audit trail value.
+test_command: go test ./pkg/collision/...
+lint_command: go vet ./pkg/collision/...
+file_ownership:
+    - file: pkg/collision/detector.go
+      agent: A
+      wave: 1
+      action: modify
+    - file: pkg/collision/detector_test.go
+      agent: A
+      wave: 1
+      action: modify
+interface_contracts:
+    - name: extractTypeDecls (pkgPath normalization)
+      description: |
+        When filepath.Dir(filePath) returns ".", normalize pkgPath to "" so that
+        root-package files produce keys like "/TypeName" rather than "./TypeName".
+        This ensures consistent collision detection for files at the repo root
+        (e.g., "main.go").
+      definition: |
+        // Inside extractTypeDecls, after line 179:
+        pkgPath := filepath.Dir(filePath)
+        if pkgPath == "." {
+            pkgPath = ""
+        }
+      location: pkg/collision/detector.go
+    - name: extractTypesFromFiles (git show error logging)
+      description: |
+        When git show fails for a file, log at debug level before continuing.
+        The package uses log/slog (standard library) consistent with the rest of
+        the codebase. The logger is obtained via slog.Default().
+      definition: |
+        // Replace the silent continue at lines 151-153:
+        content, err := igit.Run(repoPath, "show", branchName+":"+file)
+        if err != nil {
+            slog.Debug("skipping file: git show failed", "file", file, "branch", branchName, "err", err)
+            continue
+        }
+      location: pkg/collision/detector.go
+    - name: detectCollisionsInTypes (concurrency safety comment)
+      description: |
+        Add a comment above the map append at line 223 (inside the loop body)
+        making the non-goroutine-safe constraint explicit.
+      definition: |
+        // NOT goroutine-safe: this map is accessed and mutated from a single goroutine.
+        // If this loop is ever parallelized, protect typeOccurrences with a sync.Mutex.
+        typeOccurrences[key] = append(typeOccurrences[key], agentID)
+      location: pkg/collision/detector.go
+waves:
+    - number: 1
+      agents:
+        - id: A
+          task: |
+            ## What to implement
+
+            Apply 4 targeted fixes to pkg/collision/detector.go and add 1 missing test
+            case to pkg/collision/detector_test.go. All changes are in the same package.
+
+            ### Fix 1 — CRITICAL: Replace context.TODO() with ctx (detector.go line 36)
+
+            At line 36 in DetectCollisions(), change:
+              manifest, err := protocol.Load(context.TODO(), manifestPath)
+            to:
+              manifest, err := protocol.Load(ctx, manifestPath)
+
+            The function already receives a ctx parameter that is checked on line 32.
+            Using context.TODO() here defeats cancellation propagation to protocol.Load.
+
+            ### Fix 2 — CRITICAL: Normalize root-package pkgPath (detector.go lines 171-179)
+
+            In extractTypeDecls(), after the line:
+              pkgPath := filepath.Dir(filePath)
+            add immediately below it:
+              if pkgPath == "." {
+                  pkgPath = ""
+              }
+
+            Rationale: filepath.Dir("main.go") returns ".", which produces collision
+            keys like "./TypeName". Normalizing to "" gives "/TypeName" — consistent
+            with how other top-level packages are handled and avoids the anomalous
+            dot-slash prefix in collision reports.
+
+            ### Fix 3 — HIGH: Add debug log on git show failure (detector.go lines 151-153)
+
+            In extractTypesFromFiles(), find the block:
+              content, err := igit.Run(repoPath, "show", branchName+":"+file)
+              if err != nil {
+                  // File might have been deleted or is binary — skip
+                  continue
+              }
+
+            Change it to:
+              content, err := igit.Run(repoPath, "show", branchName+":"+file)
+              if err != nil {
+                  slog.Debug("skipping file: git show failed", "file", file, "branch", branchName, "err", err)
+                  continue
+              }
+
+            Add "log/slog" to the import block at the top of detector.go (it is part of
+            the Go standard library, no new dependency). The existing import block already
+            has several stdlib imports — insert slog alphabetically among them.
+
+            ### Fix 4 — MEDIUM: Add concurrency safety comment (detector.go line 223)
+
+            In detectCollisionsInTypes(), find the map append inside the inner for loop:
+              typeOccurrences[key] = append(typeOccurrences[key], agentID)
+
+            Add a comment immediately above it:
+              // NOT goroutine-safe: this map is written from a single goroutine.
+              // Do not parallelize this loop without protecting typeOccurrences with a sync.Mutex.
+
+            ### Fix 5 — TEST: Add root-package file test case (detector_test.go)
+
+            In TestExtractTypeDecls, add a new test case entry to the existing tests slice.
+            Insert it after the "type alias" case and before the "multiple types" case:
+
+              {
+                  name:     "root package file - filepath.Dir returns dot",
+                  filePath: "main.go",
+                  content: `package main
+
+            type AppConfig struct {
+                Port int
+            }
+            `,
+                  want: []TypeDeclaration{
+                      {Name: "AppConfig", Package: "", Kind: "struct"},
+                  },
+                  wantErr: false,
+              },
+
+            This test verifies that a file at the repo root (where filepath.Dir returns ".")
+            produces a TypeDeclaration with Package: "" rather than Package: ".".
+
+            ## Verification gate
+
+            Run after all changes:
+              go build ./pkg/collision/...
+              go vet ./pkg/collision/...
+              go test ./pkg/collision/...
+
+            All existing tests must continue to pass. The new test case must pass.
+
+            ## Constraints
+
+            - Do NOT change any function signatures or exported types.
+            - Do NOT modify pkg/collision/types.go.
+            - The only import to add is "log/slog" (stdlib). No new dependencies.
+            - Do NOT change test infrastructure (skip directives, helper functions).
+            - The concurrency comment (Fix 4) is documentation only — do not add a mutex
+              or change the function's behavior.
+          files:
+            - pkg/collision/detector.go
+            - pkg/collision/detector_test.go
+          context_source: prepared-brief
+quality_gates:
+    level: standard
+    gates:
+        - type: build
+          command: go build ./pkg/collision/...
+          required: true
+          repo: scout-and-wave-go
+        - type: lint
+          command: go vet ./pkg/collision/...
+          required: true
+          repo: scout-and-wave-go
+        - type: test
+          command: go test ./pkg/collision/...
+          required: true
+          repo: scout-and-wave-go
+completion_reports:
+    A:
+        status: complete
+        branch: saw/program/config-hardening-and-collision-fixes-and-commands-fixes/tier1-impl-collision-fixes
+        commit: 7c5f1e5
+        files_changed:
+            - pkg/collision/detector.go
+            - pkg/collision/detector_test.go
+        tests_added:
+            - TestExtractTypeDecls/root_package_file_-_filepath.Dir_returns_dot
+        verification: PASS
+        notes: 'All 5 fixes applied: ctx propagation, pkgPath normalization, slog debug log, concurrency comment, new test case. All existing tests pass plus new test.'
+pre_mortem:
+    overall_risk: low
+    rows:
+        - scenario: |
+            The "log/slog" import conflicts with an existing logger injection pattern
+            in the collision package. If the package has a package-level logger variable
+            or accepts a *slog.Logger parameter, using slog.Default() may be inconsistent.
+          likelihood: low
+          impact: low
+          mitigation: |
+            The collision package currently has no logger injection — no *slog.Logger
+            parameters or package-level logger variables exist in detector.go or types.go.
+            Using slog.Default() is consistent with how simple packages log in this codebase.
+            Verified by reading all three files in the package.
+        - scenario: |
+            The root-package pkgPath normalization (. -> "") changes collision key format
+            from "./TypeName" to "/TypeName". If any existing caller parses these keys
+            expecting the "./" prefix, it would break.
+          likelihood: low
+          impact: medium
+          mitigation: |
+            CollisionReport is consumed by CLI output formatting and callers that only
+            read the TypeCollision.Package field — they do not parse the raw map keys.
+            The internal key format is an implementation detail of detectCollisionsInTypes
+            and never escapes the function. The fix is safe.
+        - scenario: |
+            The new test case for root-package files fails because the pkgPath
+            normalization fix is not applied, causing Package to be "." instead of "".
+          likelihood: low
+          impact: low
+          mitigation: |
+            Fix 2 and Fix 5 (test) are in the same file batch assigned to Agent A,
+            so they are implemented together. The test directly validates the fix.
+critic_report:
+    verdict: PASS
+    agent_reviews: {}
+    summary: Skipped by operator
+    reviewed_at: "2026-04-01T00:47:33Z"
+    issue_count: 0
+state: SCOUT_PENDING
+injection_method: manual-fallback

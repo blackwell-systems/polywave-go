@@ -1,0 +1,424 @@
+title: 'Critic Gate Fixes: E37 Threshold in validate and prepare-tier'
+feature_slug: critic-gate-fixes
+verdict: SUITABLE
+suitability_assessment: |
+    Two related bugs, both fixable in a single wave with disjoint file ownership.
+
+    Bug 1 — prepare-tier applies CriticGatePasses unconditionally: In
+    pkg/protocol/program_tier_prepare.go, step 4.5 calls CriticGatePasses(m, true) for
+    every IMPL regardless of agent count or repo count. The threshold logic (3+ agents
+    OR 2+ repos) only lives in pre_wave_gate.go (checkCriticReview). No shared helper
+    exists. Any IMPL with a nil CriticReport fails prepare-tier, even a 1-agent IMPL.
+
+    Bug 2 — validate applies E37 with no threshold: pkg/protocol/validation.go calls
+    Validate(m) which does not check E37 at all. The E37 enforcement in full_validate.go
+    comes only through the Validate() call chain — but Validate() has no E37 check.
+    Checking the actual flow: FullValidate calls Validate(m) and ValidateIMPLDoc (E16).
+    Neither checks critic_report existence. So the bug description's claim that validate
+    fails on empty critic_report needs verification: grep shows no E37 check in Validate().
+
+    Re-examination: The actual bug surface is:
+    - prepare-tier (program_tier_prepare.go) calls CriticGatePasses without threshold
+      guard, blocking 1-agent IMPLs that never need a critic review.
+    - The fix requires: (a) extract the threshold logic from checkCriticReview into a
+      shared helper E37Required(m *IMPLManifest) bool in critic_gate.go, (b) use that
+      helper in program_tier_prepare.go before calling CriticGatePasses, (c) use the same
+      helper in pre_wave_gate.go's checkCriticReview to eliminate duplication.
+
+    File decomposition:
+    - Agent A: pkg/protocol/critic_gate.go — add E37Required() helper
+    - Agent B: pkg/protocol/pre_wave_gate.go — use E37Required() instead of inline logic
+    - Agent C: pkg/protocol/program_tier_prepare.go — guard CriticGatePasses with E37Required()
+
+    All three files are in the same package, independent at the AST level (analyze-deps
+    confirms wave_candidate: 0 for all). The only ordering constraint is that Agent A's
+    new E37Required function must be available before Agents B and C can import it —
+    but since all three are in the same package (protocol), no import change is needed.
+    The function will be visible to B and C in the same compilation unit.
+
+    Because all three files are in the same Go package (protocol), agents B and C can
+    reference E37Required() without any import change. The single-wave structure is valid.
+
+    Parallelization value: moderate. Three small files, short build cycle (go test ./pkg/protocol/...
+    runs in ~5s). However, the coordination artifact has value as an audit trail and
+    the changes are clean to decompose. SUITABLE.
+
+    Estimated times:
+    - Scout phase: ~8 min
+    - Agent execution: ~3 agents x ~8 min avg = ~8 min with parallelism
+    - Merge and verification: ~3 min
+    Total SAW time: ~19 min
+    Sequential baseline: ~24 min
+    Time savings: ~5 min (21% faster)
+    Recommendation: Marginal gains. Proceed — the coordination artifact is the primary value.
+test_command: go test ./pkg/protocol/... ./cmd/sawtools/...
+lint_command: go vet ./...
+file_ownership:
+    - file: pkg/protocol/critic_gate.go
+      agent: A
+      wave: 1
+      action: modify
+    - file: pkg/protocol/critic_gate_test.go
+      agent: A
+      wave: 1
+      action: modify
+    - file: pkg/protocol/pre_wave_gate.go
+      agent: B
+      wave: 1
+      action: modify
+    - file: pkg/protocol/pre_wave_gate_test.go
+      agent: B
+      wave: 1
+      action: modify
+    - file: pkg/protocol/program_tier_prepare.go
+      agent: C
+      wave: 1
+      action: modify
+    - file: pkg/protocol/program_tier_prepare_test.go
+      agent: C
+      wave: 1
+      action: modify
+interface_contracts:
+    - name: E37Required
+      description: |
+        Returns true if the E37 critic gate is required for this manifest.
+        Threshold: wave 1 has 3+ agents OR file_ownership spans 2+ distinct repos.
+        This is the single source of truth for the E37 trigger condition; both
+        pre_wave_gate.go and program_tier_prepare.go must use this function instead
+        of duplicating the threshold logic inline.
+      definition: |
+        // E37Required returns true when a critic review is required before wave execution.
+        // The E37 trigger conditions are:
+        //   - Wave 1 has 3 or more agents, OR
+        //   - file_ownership spans 2 or more distinct repositories
+        //
+        // This is the single authoritative implementation of E37 threshold logic.
+        // Callers: checkCriticReview (pre_wave_gate.go), PrepareTier (program_tier_prepare.go).
+        func E37Required(m *IMPLManifest) bool
+      location: pkg/protocol/critic_gate.go
+waves:
+    - number: 1
+      agents:
+        - id: A
+          task: |
+            ## What to implement
+
+            Add a new exported function `E37Required` to `pkg/protocol/critic_gate.go`.
+            This function extracts the E37 threshold logic that currently lives inline
+            in `checkCriticReview` (pre_wave_gate.go) and provides a single authoritative
+            implementation that other callers can use.
+
+            ## Exact signature
+
+            ```go
+            // E37Required returns true when a critic review is required before wave execution.
+            // The E37 trigger conditions are:
+            //   - Wave 1 has 3 or more agents, OR
+            //   - file_ownership spans 2 or more distinct repositories
+            //
+            // This is the single authoritative implementation of E37 threshold logic.
+            // Callers: checkCriticReview (pre_wave_gate.go), PrepareTier (program_tier_prepare.go).
+            func E37Required(m *IMPLManifest) bool {
+            ```
+
+            ## Implementation
+
+            Copy the threshold logic from `checkCriticReview` in `pre_wave_gate.go` (lines 90-110):
+            - Count wave 1 agents: iterate m.Waves, find wave.Number == 1, count len(wave.Agents)
+            - Build repo set: add each entry in m.Repositories; add each fo.Repo from m.FileOwnership
+              where fo.Repo != ""
+            - Return true if wave1Agents >= 3 OR len(repoSet) >= 2
+
+            Do NOT remove the inline logic from pre_wave_gate.go — Agent B owns that file.
+
+            ## Tests to add (pkg/protocol/critic_gate_test.go)
+
+            Add the following test cases:
+
+            1. TestE37Required_BelowThreshold: manifest with 2 agents in wave 1, no repo tags
+               → expect false
+
+            2. TestE37Required_ThreeAgents: manifest with 3 agents in wave 1, no repo tags
+               → expect true
+
+            3. TestE37Required_TwoAgents: manifest with exactly 2 agents in wave 1
+               → expect false (boundary: 2 is below threshold)
+
+            4. TestE37Required_MultiRepo_Repositories: manifest with 2 entries in
+               m.Repositories, 2 agents in wave 1 → expect true (multi-repo trigger)
+
+            5. TestE37Required_MultiRepo_FileOwnership: manifest with file_ownership entries
+               carrying 2 distinct repo: values, 2 agents in wave 1 → expect true
+
+            6. TestE37Required_SingleRepo: manifest with all file_ownership entries carrying
+               the same repo: "my-repo" value, 2 agents → expect false
+
+            7. TestE37Required_NoWaves: manifest with no waves → expect false (0 < 3)
+
+            ## Verification gate
+
+            ```
+            go build ./pkg/protocol/...
+            go vet ./pkg/protocol/...
+            go test ./pkg/protocol/... -run TestE37Required -v
+            go test ./pkg/protocol/... -run TestCriticGate -v
+            ```
+
+            ## Constraints
+
+            - Do NOT modify any file outside pkg/protocol/critic_gate.go and
+              pkg/protocol/critic_gate_test.go
+            - The function must be exported (capital E) so program_tier_prepare.go and
+              pre_wave_gate.go can call it
+            - Do not change any existing function signatures in critic_gate.go
+          files:
+            - pkg/protocol/critic_gate.go
+            - pkg/protocol/critic_gate_test.go
+        - id: B
+          task: |
+            ## What to implement
+
+            Refactor `checkCriticReview` in `pkg/protocol/pre_wave_gate.go` to use the
+            new `E37Required(m)` function from `critic_gate.go` instead of duplicating the
+            threshold logic inline.
+
+            ## Context
+
+            Current `checkCriticReview` (lines 87-145 of pre_wave_gate.go) has this structure:
+            ```
+            func checkCriticReview(m *IMPLManifest) PreWaveGateCheck {
+                if m.CriticReport == nil {
+                    // inline threshold: wave1Agents, repoSet, isMultiRepo ...
+                    if wave1Agents >= 3 || isMultiRepo {
+                        return fail check
+                    }
+                    return pass check
+                }
+                // ... verdict handling ...
+            }
+            ```
+
+            Agent A is adding `E37Required(m *IMPLManifest) bool` to critic_gate.go in the
+            same package. You may call it directly since both files are in package protocol.
+
+            ## Change to make
+
+            Replace the inline block that computes wave1Agents / repoSet / isMultiRepo with
+            a single call to `E37Required(m)`. The logic and behavior must remain identical:
+
+            ```go
+            func checkCriticReview(m *IMPLManifest) PreWaveGateCheck {
+                if m.CriticReport == nil {
+                    if E37Required(m) {
+                        // compute wave1Agents and repoCount for the message (or use a helper)
+                        return PreWaveGateCheck{
+                            Name:    "critic_review",
+                            Status:  "fail",
+                            Message: "E37: critic review required but not run. Run critic or use --no-critic to skip.",
+                        }
+                    }
+                    return PreWaveGateCheck{
+                        Name:    "critic_review",
+                        Status:  "pass",
+                        Message: "critic review not required (threshold not met)",
+                    }
+                }
+                // ... rest unchanged ...
+            }
+            ```
+
+            NOTE on the error message: The current message includes dynamic agent count and
+            repo count (fmt.Sprintf). You may either:
+            (a) Keep the dynamic counts by computing them separately after E37Required returns true
+                (wave1Agents and repoSet are small to compute twice), OR
+            (b) Simplify the message to drop the counts.
+            Either approach is acceptable. Prefer (a) to maintain the existing diagnostic quality.
+
+            ## Tests to update (pkg/protocol/pre_wave_gate_test.go)
+
+            The existing tests must continue to pass unchanged. No new tests are required
+            for this refactor — Agent A's tests for E37Required cover the threshold logic,
+            and the existing pre_wave_gate tests cover the end-to-end behavior.
+
+            Do verify the existing tests pass:
+            - TestPreWaveGate_ValidManifest (2 agents → no critic required)
+            - TestPreWaveGate_ThreeAgentsNoCriticReport (3 agents → fail)
+            - TestPreWaveGate_MultiRepoNoCriticReport (multi-repo → fail)
+
+            ## Verification gate
+
+            ```
+            go build ./pkg/protocol/...
+            go vet ./pkg/protocol/...
+            go test ./pkg/protocol/... -run TestPreWaveGate -v
+            ```
+
+            ## Constraints
+
+            - Only modify pkg/protocol/pre_wave_gate.go and pkg/protocol/pre_wave_gate_test.go
+            - The observable behavior of checkCriticReview must be identical before and after
+            - Do NOT add or remove any check in PreWaveGate; only refactor checkCriticReview
+            - E37Required is defined by Agent A in critic_gate.go (same package); call it directly
+          files:
+            - pkg/protocol/pre_wave_gate.go
+            - pkg/protocol/pre_wave_gate_test.go
+        - id: C
+          task: |
+            ## What to implement
+
+            Fix Bug 1 in `pkg/protocol/program_tier_prepare.go`: guard the E37 critic gate
+            check (step 4.5) with the same threshold that pre_wave_gate.go uses. Currently
+            `PrepareTier` calls `CriticGatePasses(m, true)` unconditionally, causing any
+            IMPL with a nil CriticReport to fail — even 1-agent or 2-agent IMPLs that
+            don't trigger E37.
+
+            ## Context
+
+            Current code (lines 118-128 of program_tier_prepare.go):
+            ```go
+            // Step 4.5: E37 critic gate enforcement (auto mode for program execution).
+            if !CriticGatePasses(m, true) {
+                vr := IMPLValidationResult{
+                    ImplSlug: slug,
+                    Valid:    false,
+                    Errors:   []string{"E37 critic gate failed — ISSUES verdict with errors"},
+                }
+                result.Validations = append(result.Validations, vr)
+                result.Success = false
+                return result, nil
+            }
+            ```
+
+            `CriticGatePasses` returns false when `m.CriticReport == nil`, which is true
+            for any freshly-scouted IMPL that has never had the critic run. This blocks
+            1-agent and 2-agent IMPLs unnecessarily.
+
+            Agent A is adding `E37Required(m *IMPLManifest) bool` to critic_gate.go (same
+            package). Call it directly.
+
+            ## Change to make
+
+            Wrap the existing critic gate check with an E37 threshold guard:
+
+            ```go
+            // Step 4.5: E37 critic gate enforcement (auto mode for program execution).
+            // Only enforce when the threshold is met: 3+ agents in wave 1 OR 2+ repos.
+            if E37Required(m) && !CriticGatePasses(m, true) {
+                vr := IMPLValidationResult{
+                    ImplSlug: slug,
+                    Valid:    false,
+                    Errors:   []string{"E37 critic gate required but not satisfied — run `sawtools run-critic` or `sawtools run-critic --skip` before prepare-tier"},
+                }
+                result.Validations = append(result.Validations, vr)
+                result.Success = false
+                return result, nil
+            }
+            ```
+
+            The error message improvement (more actionable than the current "ISSUES verdict
+            with errors") is intentional — include it exactly as shown above.
+
+            ## Tests to add (pkg/protocol/program_tier_prepare_test.go)
+
+            The existing TestPrepareTier_E37CriticGateEnforcement is skipped with t.Skip().
+            Replace the skip with actual test cases. The test requires a temp IMPL YAML on
+            disk (PrepareTier loads from path) and a temp program YAML referencing it.
+
+            Add these test cases:
+
+            1. TestPrepareTier_E37NotRequired_SmallIMPL: an IMPL with 2 agents in wave 1,
+               no CriticReport → PrepareTier should succeed (no E37 block). Use a minimal
+               valid IMPL with two agents and two files.
+
+            2. TestPrepareTier_E37Required_MissingReport: an IMPL with 3 agents in wave 1,
+               no CriticReport → PrepareTier should fail with E37 message in Validations.
+
+            3. TestPrepareTier_E37Required_WithPassReport: an IMPL with 3 agents in wave 1,
+               CriticReport.Verdict == "PASS" → PrepareTier should succeed (critic passed).
+
+            For all test cases: create temp IMPL YAML files using os.CreateTemp, write
+            minimal valid YAML, create temp program YAML referencing those slugs, pass
+            the program path to PrepareTier. Use t.TempDir() and t.Cleanup for file cleanup.
+
+            Note: TestPrepareTier_E37NotRequired_SmallIMPL may fail at the worktree creation
+            step (step 5) since there is no real git repo. Structure the test to check only
+            the Validations slice for the E37 case — the test passes if the IMPL reaches
+            worktree creation without an E37 block (a worktree error at step 5 is acceptable).
+
+            ## Verification gate
+
+            ```
+            go build ./pkg/protocol/...
+            go vet ./pkg/protocol/...
+            go test ./pkg/protocol/... -run TestPrepareTier -v
+            ```
+
+            ## Constraints
+
+            - Only modify pkg/protocol/program_tier_prepare.go and
+              pkg/protocol/program_tier_prepare_test.go
+            - The single-line change `if !CriticGatePasses(m, true)` becomes
+              `if E37Required(m) && !CriticGatePasses(m, true)` — no other logic changes
+            - Update the error message string as shown above
+            - E37Required is defined by Agent A in critic_gate.go (same package); call it directly
+            - Do not change any other part of PrepareTier
+          files:
+            - pkg/protocol/program_tier_prepare.go
+            - pkg/protocol/program_tier_prepare_test.go
+quality_gates:
+    level: standard
+    gates:
+        - type: build
+          command: go build ./...
+          required: true
+        - type: lint
+          command: go vet ./...
+          required: true
+        - type: test
+          command: go test ./pkg/protocol/... ./cmd/sawtools/...
+          required: true
+pre_mortem:
+    overall_risk: low
+    rows:
+        - scenario: |
+            Agent B or C writes a call to E37Required before Agent A has committed it.
+            Since all three run in parallel worktrees and E37Required is a new symbol,
+            compilation in B and C worktrees will fail with "undefined: E37Required".
+          likelihood: high
+          impact: high
+          mitigation: |
+            This is expected worktree isolation behavior. Each agent writes its code and
+            commits. At merge time the full package compiles correctly because all three
+            files land together. Agent B and C should include a comment noting the dependency
+            and not attempt to build the full package during their verification gate — instead
+            run `go vet` on just their file or use `go build -overlay` if needed. Alternatively,
+            agents B and C can add a local stub for E37Required in their worktree to allow
+            build verification, then remove it before committing (with a note in the commit
+            message). The orchestrator merge step resolves this naturally.
+        - scenario: |
+            The existing TestPrepareTier_E37CriticGateEnforcement test (currently skipped
+            with t.Skip) gets un-skipped by Agent C but the test infra for writing temp
+            IMPL files is more complex than expected, causing test failures.
+          likelihood: medium
+          impact: low
+          mitigation: |
+            Agent C's task explicitly scopes the test to check only Validations slice and
+            accept a worktree-creation failure. If temp file setup is still too complex,
+            the agent may leave the skip in place and add a separate integration test file.
+        - scenario: |
+            The error message change in program_tier_prepare.go breaks an existing test
+            that asserts the old message "E37 critic gate failed — ISSUES verdict with errors".
+          likelihood: low
+          impact: low
+          mitigation: |
+            The existing TestPrepareTier_E37CriticGateEnforcement is skipped (t.Skip), so no
+            existing test checks that exact string. If any other test does, Agent C will find
+            it in the test run and update the expected string.
+critic_report:
+    verdict: PASS
+    agent_reviews: {}
+    summary: Skipped by operator
+    reviewed_at: "2026-04-01T01:15:03Z"
+    issue_count: 0
+state: SCOUT_PENDING
+injection_method: hook
