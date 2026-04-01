@@ -5,7 +5,7 @@ package tools
 func StandardTools(workDir string) Workshop {
 	reg := NewWorkshop()
 
-	reg.Register(Tool{ //nolint: result ignored, duplicates cannot occur in StandardTools
+	if res := reg.Register(Tool{
 		Name:        "read_file",
 		Description: "Read the contents of a file. Absolute paths pass through; relative paths resolve against working directory.",
 		Namespace:   "file",
@@ -20,9 +20,11 @@ func StandardTools(workDir string) Workshop {
 			"required": []string{"file_path"},
 		},
 		Executor: &FileReadExecutor{},
-	})
+	}); res.IsFatal() {
+		panic("StandardTools: duplicate tool name: " + res.Errors[0].Context["tool_name"])
+	}
 
-	reg.Register(Tool{ //nolint: result ignored, duplicates cannot occur in StandardTools
+	if res := reg.Register(Tool{
 		Name:        "write_file",
 		Description: "Write content to a file, creating parent directories as needed.",
 		Namespace:   "file",
@@ -41,9 +43,11 @@ func StandardTools(workDir string) Workshop {
 			"required": []string{"file_path", "content"},
 		},
 		Executor: &FileWriteExecutor{},
-	})
+	}); res.IsFatal() {
+		panic("StandardTools: duplicate tool name: " + res.Errors[0].Context["tool_name"])
+	}
 
-	reg.Register(Tool{ //nolint: result ignored, duplicates cannot occur in StandardTools
+	if res := reg.Register(Tool{
 		Name:        "list_directory",
 		Description: "List files in a directory. Path is relative to working directory.",
 		Namespace:   "file",
@@ -57,9 +61,11 @@ func StandardTools(workDir string) Workshop {
 			},
 		},
 		Executor: &FileListExecutor{},
-	})
+	}); res.IsFatal() {
+		panic("StandardTools: duplicate tool name: " + res.Errors[0].Context["tool_name"])
+	}
 
-	reg.Register(Tool{ //nolint: result ignored, duplicates cannot occur in StandardTools
+	if res := reg.Register(Tool{
 		Name:        "bash",
 		Description: "Execute a shell command in the working directory. Returns combined stdout+stderr.",
 		Namespace:   "bash",
@@ -74,9 +80,11 @@ func StandardTools(workDir string) Workshop {
 			"required": []string{"command"},
 		},
 		Executor: &BashExecutor{},
-	})
+	}); res.IsFatal() {
+		panic("StandardTools: duplicate tool name: " + res.Errors[0].Context["tool_name"])
+	}
 
-	reg.Register(Tool{ //nolint: result ignored, duplicates cannot occur in StandardTools
+	if res := reg.Register(Tool{
 		Name:        "edit_file",
 		Description: "Replace old_string with new_string in a file. Fails if old_string is not found.",
 		Namespace:   "file",
@@ -99,9 +107,11 @@ func StandardTools(workDir string) Workshop {
 			"required": []string{"file_path", "old_string", "new_string"},
 		},
 		Executor: &EditExecutor{},
-	})
+	}); res.IsFatal() {
+		panic("StandardTools: duplicate tool name: " + res.Errors[0].Context["tool_name"])
+	}
 
-	reg.Register(Tool{ //nolint: result ignored, duplicates cannot occur in StandardTools
+	if res := reg.Register(Tool{
 		Name:        "glob",
 		Description: "Find files matching a glob pattern relative to the working directory. Returns one match per line.",
 		Namespace:   "file",
@@ -116,9 +126,11 @@ func StandardTools(workDir string) Workshop {
 			"required": []string{"pattern"},
 		},
 		Executor: &GlobExecutor{},
-	})
+	}); res.IsFatal() {
+		panic("StandardTools: duplicate tool name: " + res.Errors[0].Context["tool_name"])
+	}
 
-	reg.Register(Tool{ //nolint: result ignored, duplicates cannot occur in StandardTools
+	if res := reg.Register(Tool{
 		Name:        "grep",
 		Description: "Search for a pattern in files. Uses rg (ripgrep) if available, otherwise falls back to line-by-line scan.",
 		Namespace:   "file",
@@ -137,7 +149,9 @@ func StandardTools(workDir string) Workshop {
 			"required": []string{"pattern"},
 		},
 		Executor: &GrepExecutor{},
-	})
+	}); res.IsFatal() {
+		panic("StandardTools: duplicate tool name: " + res.Errors[0].Context["tool_name"])
+	}
 
 	return reg
 }
