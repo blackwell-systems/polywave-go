@@ -18,28 +18,36 @@ import (
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/resume"
 )
 
-// fireEvent safely invokes the OnEvent callback if non-nil.
+// fireEvent is a nil-safe wrapper for EventCallback.
+// It checks cb != nil before calling to avoid panics when callers omit the callback.
+// Used by PrepareWave to fire step events; the finalize pipeline uses the equivalent
+// emitStepEvent in finalize_steps.go.
 func fireEvent(cb EventCallback, step, status, detail string) {
 	if cb != nil {
 		cb(step, status, detail)
 	}
 }
 
-// recordStep appends a StepResult to the result and fires an event.
+// recordStep appends a StepResult (no Data field) to res.Steps and fires an event via fireEvent.
+// All prepare-pipeline steps use this helper for uniform logging and event emission.
 func recordStep(res *PrepareWaveResult, cb EventCallback, step, status, detail string) {
 	sr := StepResult{Step: step, Status: status, Detail: detail}
 	res.Steps = append(res.Steps, sr)
 	fireEvent(cb, step, status, detail)
 }
 
-// recordStepWithData appends a StepResult with structured data to the result and fires an event.
+// recordStepWithData is the same as recordStep but attaches a structured data payload to the
+// StepResult. Used when a step produces structured output (e.g. collision report, dependency
+// check result) that callers may need to inspect beyond the human-readable detail string.
 func recordStepWithData(res *PrepareWaveResult, cb EventCallback, step, status, detail string, data interface{}) {
 	sr := StepResult{Step: step, Status: status, Detail: detail, Data: data}
 	res.Steps = append(res.Steps, sr)
 	fireEvent(cb, step, status, detail)
 }
 
-// loadSAWConfigRepos reads saw.config.json and returns the repos array.
+// loadSAWConfigRepos reads saw.config.json from configPath and returns the repos array.
+// Returns nil (not an error) if the file is absent or unparseable; callers treat nil
+// as "single-repo mode".
 func loadSAWConfigRepos(configPath string) []protocol.RepoEntry {
 	data, err := os.ReadFile(configPath)
 	if err != nil {
@@ -56,7 +64,9 @@ func loadSAWConfigRepos(configPath string) []protocol.RepoEntry {
 
 // isSAWOwnedPath reports whether the given git-porcelain relative path
 // is a SAW-managed state file that is safe to auto-commit in program context.
-// A path is SAW-owned if it is the IMPL yaml file or falls under .saw-state/.
+// A path is SAW-owned if it matches any of: the IMPL yaml file (repo-relative),
+// any path under .saw-state/, any path under docs/IMPL/, docs/CONTEXT.md,
+// go.work, or go.work.sum.
 func isSAWOwnedPath(path, implPath, projectRoot string) bool {
 	// Normalize implPath to repo-relative
 	rel, err := filepath.Rel(projectRoot, implPath)
@@ -79,8 +89,39 @@ func isSAWOwnedPath(path, implPath, projectRoot string) bool {
 
 // PrepareWave encapsulates the full wave preparation pipeline.
 // It performs all pre-flight checks, creates worktrees, extracts agent briefs,
-// and initializes journal observers. On failure, returns a partial result with
-// completed steps.
+// and initializes journal observers.
+//
+// Pipeline sequence (steps run in order):
+//
+//   - resume_detection:       warns on orphaned worktrees from prior sessions
+//   - dep_check:              validates IMPL dependency graph for wave N
+//   - load_manifest:          loads and validates the IMPL YAML
+//   - wave_sequencing:        (wave > 1 only) enforces I3 — wave N-1 must be
+//     verified before wave N launches
+//   - critic_verdict:         E37 gate — enforces critic approval when threshold
+//     is met (3+ wave-1 agents OR 2+ repos)
+//   - stale_cleanup:          removes old worktrees from the same IMPL slug
+//   - repo_match:             validates that opts.RepoPath matches the IMPL's repo
+//   - dep_outputs:            (wave > 1 only) H2 gate — prior-wave outputs must be
+//     available
+//   - ownership_coverage:     (wave > 1 only) H1 advisory — warns if prior wave
+//     agents modified files outside their declared ownership
+//   - file_existence:         validates that files in file_ownership exist (or are
+//     new); repo-mismatch failures are fatal
+//   - merge_target_checkout:  (when MergeTarget set) checks out the merge-target
+//     branch; restores original branch on function exit via defer (P1 fix)
+//   - working_dir_check:      fails fast if working directory is dirty (unless
+//     CommitBaseline or CommitState is set)
+//   - create_worktrees:       calls protocol.CreateWorktrees for each agent
+//   - extract_briefs:         calls protocol.ExtractContext for each agent brief
+//   - journal_init:           initialises per-agent journal observers
+//
+// On failure, returns a partial *PrepareWaveResult with Success: false and Steps
+// populated up to the failure point. Callers can inspect Steps to surface the
+// failed step name.
+//
+// Side effect: writes .saw-state/active-impl with opts.IMPLPath so SubagentStop
+// hooks can find the active IMPL doc.
 func PrepareWave(ctx context.Context, opts PrepareWaveOpts) (*PrepareWaveResult, error) {
 	res := &PrepareWaveResult{
 		Wave:    opts.WaveNum,
