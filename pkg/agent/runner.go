@@ -9,20 +9,17 @@ import (
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/agent/backend"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/agent/dedup"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/worktree"
 )
 
 // Runner orchestrates agent execution in worktree contexts.
 type Runner struct {
-	client    backend.Backend
-	worktrees *worktree.Manager
+	client backend.Backend
 }
 
-// NewRunner creates a Runner backed by the given Backend and worktree Manager.
-func NewRunner(b backend.Backend, worktrees *worktree.Manager) *Runner {
+// NewRunner creates a Runner backed by the given Backend.
+func NewRunner(b backend.Backend) *Runner {
 	return &Runner{
-		client:    b,
-		worktrees: worktrees,
+		client: b,
 	}
 }
 
