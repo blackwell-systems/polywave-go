@@ -51,8 +51,8 @@ waves that execute on the main branch.`,
 				return fmt.Errorf("prepare-wave: failed to load manifest: %w", err)
 			}
 
-			// E37: Critic gate — blocks on errors; warnings-only ISSUES proceed (automated step).
-			if !protocol.CriticGatePasses(manifest, true) {
+			// E37: Critic gate — only enforce when threshold is met (3+ agents in wave 1 OR 2+ repos).
+			if protocol.E37Required(manifest) && !protocol.CriticGatePasses(manifest, true) {
 				if manifest.CriticReport == nil {
 					return fmt.Errorf("prepare-wave: E37 critic gate: no critic report found — run 'sawtools run-critic' first")
 				}

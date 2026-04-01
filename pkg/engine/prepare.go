@@ -134,8 +134,10 @@ func PrepareWave(ctx context.Context, opts PrepareWaveOpts) (*PrepareWaveResult,
 			fmt.Sprintf("wave %d verified — launching wave %d", opts.WaveNum-1, opts.WaveNum))
 	}
 
-	// Step: E37 critic verdict enforcement (using CriticGatePasses helper)
-	if !protocol.CriticGatePasses(doc, false) {
+	// Step: E37 critic verdict enforcement — only applies when threshold is met (3+ wave-1 agents OR 2+ repos).
+	if !protocol.E37Required(doc) {
+		recordStep(res, opts.OnEvent, "critic_verdict", "skipped", "threshold not met — critic review not required")
+	} else if !protocol.CriticGatePasses(doc, false) {
 		// Gate failed — either no critic report or ISSUES with errors
 		if doc.CriticReport == nil {
 			recordStep(res, opts.OnEvent, "critic_verdict", "failed", "no critic report present")
@@ -153,24 +155,18 @@ func PrepareWave(ctx context.Context, opts PrepareWaveOpts) (*PrepareWaveResult,
 		detail := fmt.Sprintf("critic found %d error(s) in agent briefs", errorCount)
 		recordStep(res, opts.OnEvent, "critic_verdict", "failed", detail)
 		return res, fmt.Errorf("E37: critic found %d error(s) in agent briefs — fix before launching wave", errorCount)
-	}
-	// Gate passed — either PASS verdict or ISSUES with warnings only
-	if doc.CriticReport != nil {
+	} else {
+		// Gate passed — PASS verdict, ISSUES with warnings only, or SKIPPED
 		switch doc.CriticReport.Verdict {
 		case protocol.CriticVerdictIssues:
-			// Warnings only (errorCount == 0 since gate passed)
 			warningCount := doc.CriticReport.IssueCount
 			recordStep(res, opts.OnEvent, "critic_verdict", "success",
 				fmt.Sprintf("critic found %d warning(s) only — proceeding (advisory)", warningCount))
 		case protocol.CriticVerdictSkipped:
 			recordStep(res, opts.OnEvent, "critic_verdict", "skipped", "critic review was skipped")
-		case protocol.CriticVerdictPass:
-			recordStep(res, opts.OnEvent, "critic_verdict", "success", "critic review passed")
 		default:
-			recordStep(res, opts.OnEvent, "critic_verdict", "success", fmt.Sprintf("verdict: %s", doc.CriticReport.Verdict))
+			recordStep(res, opts.OnEvent, "critic_verdict", "success", "critic review passed")
 		}
-	} else {
-		recordStep(res, opts.OnEvent, "critic_verdict", "skipped", "no critic report present")
 	}
 
 	// Step: Stale worktree cleanup for same slug
