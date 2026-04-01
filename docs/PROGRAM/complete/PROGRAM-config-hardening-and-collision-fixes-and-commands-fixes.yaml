@@ -1,0 +1,50 @@
+title: 'Auto-generated PROGRAM: pkg/config Code Review Hardening, Fix pkg/collision code review issues, Fix pkg/commands and gate_populator code review issues'
+program_slug: config-hardening-and-collision-fixes-and-commands-fixes
+state: COMPLETE
+completion_date: "2026-03-31"
+created: "2026-04-01T00:33:18Z"
+updated: "2026-04-01T00:33:18Z"
+impls:
+    - slug: config-hardening
+      title: pkg/config Code Review Hardening
+      tier: 1
+      estimated_agents: 3
+      estimated_waves: 1
+      key_outputs:
+        - FindConfigPath
+        - Save (error code distinctions)
+      status: complete
+    - slug: collision-fixes
+      title: Fix pkg/collision code review issues
+      tier: 1
+      estimated_agents: 1
+      estimated_waves: 1
+      key_outputs:
+        - extractTypeDecls (pkgPath normalization)
+        - extractTypesFromFiles (git show error logging)
+        - detectCollisionsInTypes (concurrency safety comment)
+      status: complete
+    - slug: commands-fixes
+      title: Fix pkg/commands and gate_populator code review issues
+      tier: 1
+      estimated_agents: 2
+      estimated_waves: 1
+      key_outputs:
+        - resolveTargetChains (updated)
+        - DetermineFocusedTestPattern (updated)
+      status: complete
+tiers:
+    - number: 1
+      impls:
+        - config-hardening
+        - collision-fixes
+        - commands-fixes
+completion:
+    tiers_complete: 0
+    tiers_total: 1
+    impls_complete: 0
+    impls_total: 3
+    total_agents: 6
+    total_waves: 3
+
+SAW:PROGRAM:COMPLETE

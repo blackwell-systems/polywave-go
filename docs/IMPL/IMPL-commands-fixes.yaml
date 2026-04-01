@@ -301,6 +301,7 @@ waves:
           files:
             - pkg/protocol/gate_populator.go
             - go.mod
+      base_commit: 7006e513974d347e95bf1b4d115ff874e9a1aa7b
 quality_gates:
     level: standard
     gates:
@@ -313,6 +314,32 @@ quality_gates:
         - type: test
           command: go test ./...
           required: true
+completion_reports:
+    A:
+        status: complete
+        branch: saw/commands-fixes/wave1-agent-A
+        commit: 14ed43a
+        files_changed:
+            - pkg/commands/makefile.go
+            - pkg/commands/makefile_test.go
+            - pkg/commands/package_json.go
+            - pkg/commands/package_json_test.go
+            - pkg/commands/github_actions.go
+            - pkg/commands/github_actions_test.go
+        tests_added:
+            - TestMakefileParser_TransitiveDependencies
+        verification: PASS
+        notes: 'All 5 fixes applied: (1) removed 4-space indentation in makefile.go lines 80+106, (2) rewrote resolveTargetChains to recursively resolve transitive deps with visited set, (3) prettier classified as Format.Fix in package_json.go, (4) fixed broken contains() in github_actions_test.go using strings.Contains, (5) added priority order comment in github_actions.go. 42 tests pass.'
+    D:
+        status: complete
+        branch: saw/commands-fixes/wave1-agent-D
+        commit: cd5fc22
+        files_changed:
+            - pkg/protocol/gate_populator.go
+            - go.mod
+            - go.sum
+        verification: PASS
+        notes: Replaced deprecated strings.Title with cases.Title(language.Und).String() from golang.org/x/text. golang.org/x/text was already present in go.mod (upgraded from v0.27.0 to v0.35.0). Build, vet, and all 24 protocol tests pass.
 pre_mortem:
     overall_risk: low
     rows:
@@ -359,5 +386,5 @@ critic_report:
     summary: Skipped by operator
     reviewed_at: "2026-04-01T00:47:33Z"
     issue_count: 0
-state: "REVIEWED"
+state: REVIEWED
 injection_method: hook

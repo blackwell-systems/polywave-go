@@ -174,6 +174,7 @@ type BackendConfig struct {
   - IMPL doc: docs/IMPL/complete/IMPL-determinism-remaining.yaml
 
 ## Features Completed
+- Program: Auto-generated PROGRAM: pkg/config Code Review Hardening, Fix pkg/collision code review issues, Fix pkg/commands and gate_populator code review issues (config-hardening-and-collision-fixes-and-commands-fixes) — 1 tiers, 3 IMPLs, 2026-03-31
 - Program: Go Engine Enhancements (create-program-cross-repo-and-program-wave-conflict-and-engine-reference-injection) — 2 tiers, 3 IMPLs, 2026-03-25
 - Program: engine-hardening (engine-hardening) — 1 tiers, 2 IMPLs, 2026-03-22
 - **types-consolidation**: completed 2026-03-22, 3 waves, 5 agents

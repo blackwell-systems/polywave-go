@@ -495,6 +495,7 @@ waves:
             - pkg/autonomy/config.go
             - pkg/agent/backend/configfile.go
             - pkg/agent/backend/configfile_test.go
+      base_commit: 7006e513974d347e95bf1b4d115ff874e9a1aa7b
 quality_gates:
     level: standard
     gates:
@@ -507,6 +508,52 @@ quality_gates:
         - type: lint
           command: go vet ./pkg/config/... ./pkg/autonomy/... ./pkg/agent/backend/...
           required: true
+completion_reports:
+    A:
+        status: complete
+        branch: saw/config-hardening/wave1-agent-A
+        commit: 56a179b
+        files_changed:
+            - pkg/config/config.go
+            - pkg/config/config_test.go
+            - pkg/result/codes.go
+        files_created:
+            - pkg/result/codes.go
+        tests_added:
+            - TestSave_FilePermissions
+            - TestLoad_LegacyMigrationMalformedRepo
+            - TestLoadOrDefault_DefaultValues
+        verification: PASS
+        notes: 'All 4 issues fixed: 0600 chmod after Save rename, CodeConfigIOFailed (N085) for all I/O paths, legacy migration outer error propagated + inner slog.Warn, LoadOrDefault slog.Warn on fallback. All 16 pkg/config tests pass.'
+    B:
+        status: complete
+        branch: saw/config-hardening/wave1-agent-B
+        commit: 68cb994
+        files_changed:
+            - pkg/config/state.go
+            - pkg/config/state_test.go
+        tests_added:
+            - TestGetWaveState_NilManifest
+            - TestGetAllWaveStates_NilManifest
+            - TestGetAllWaveStates_ErrorWrapping_NilManifestMessage
+        verification: PASS
+        notes: 'All 3 issues fixed: nil guards added to GetWaveState and GetAllWaveStates (Issue 2), dead GateResults field removed from WaveState (Issue 6), error wrapping with wave number context added to GetAllWaveStates (Issue 7). protocol import retained as it is still used for IMPLManifest, Wave, and status constants. 19 tests pass.'
+    C:
+        status: complete
+        branch: saw/config-hardening/wave1-agent-C
+        commit: e9ae569
+        files_changed:
+            - pkg/agent/backend/configfile.go
+            - pkg/agent/backend/configfile_test.go
+            - pkg/autonomy/config.go
+        files_created:
+            - pkg/agent/backend/configfile_test.go
+        tests_added:
+            - TestLoadProvidersFromConfig_NotFound
+            - TestLoadProvidersFromConfig_Found
+            - TestLoadProvidersFromConfig_WalksUp
+        verification: PASS
+        notes: Deleted private findConfigFile from configfile.go and replaced with config.FindConfigPath. Added 3 tests covering not-found, found, and walk-up cases. Updated SaveConfig comment in autonomy/config.go to clarify key preservation. Issue 5 (SaveConfig already preserves keys) confirmed correct — no logic change needed.
 pre_mortem:
     overall_risk: low
     rows:
@@ -560,5 +607,5 @@ critic_report:
     summary: Skipped by operator
     reviewed_at: "2026-04-01T00:46:57Z"
     issue_count: 0
-state: "REVIEWED"
+state: REVIEWED
 injection_method: hook
