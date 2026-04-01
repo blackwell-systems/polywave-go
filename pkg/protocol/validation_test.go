@@ -44,6 +44,40 @@ func TestValidateI1DisjointOwnership_Violation(t *testing.T) {
 	}
 }
 
+// TestValidateI1DisjointOwnership_CatchesDuplicates tests that the I1 check catches
+// duplicate ownership when 3+ agents own the same file in the same wave.
+func TestValidateI1DisjointOwnership_CatchesDuplicates(t *testing.T) {
+	m := &IMPLManifest{
+		FeatureSlug: "test-i1",
+		FileOwnership: []FileOwnership{
+			{File: "checker_test.go", Agent: "A", Wave: 1},
+			{File: "checker_test.go", Agent: "G", Wave: 1},
+			{File: "checker_test.go", Agent: "H", Wave: 1},
+		},
+		Waves: []Wave{
+			{Number: 1, Agents: []Agent{
+				{ID: "A", Files: []string{"checker_test.go"}},
+				{ID: "G", Files: []string{"checker_test.go"}},
+				{ID: "H", Files: []string{"checker_test.go"}},
+			}},
+		},
+	}
+	errs := validateI1DisjointOwnership(m, "test-i1")
+	if len(errs) == 0 {
+		t.Fatal("expected I1 violation error, got none")
+	}
+	foundDisjoint := false
+	for _, e := range errs {
+		if e.Code == result.CodeDisjointOwnership {
+			foundDisjoint = true
+			break
+		}
+	}
+	if !foundDisjoint {
+		t.Errorf("expected CodeDisjointOwnership error, got: %v", errs)
+	}
+}
+
 // TestValidateI2AgentDependencies_Valid tests valid cross-wave dependencies.
 func TestValidateI2AgentDependencies_Valid(t *testing.T) {
 	m := &IMPLManifest{
