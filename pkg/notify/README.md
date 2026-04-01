@@ -66,9 +66,11 @@ Titles are bold, fields are italicized key-value pairs.
 Implement the `Adapter` and `Formatter` interfaces:
 
 ```go
+import "github.com/blackwell-systems/scout-and-wave-go/pkg/result"
+
 type Adapter interface {
     Name() string
-    Send(ctx context.Context, msg Message) error
+    Send(ctx context.Context, msg Message) result.Result[SendData]
 }
 
 type Formatter interface {
