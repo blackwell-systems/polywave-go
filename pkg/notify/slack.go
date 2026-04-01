@@ -34,6 +34,16 @@ type slackPayload struct {
 	Blocks  []interface{} `json:"blocks,omitempty"`
 }
 
+// Slack adapter error codes (not registered in pkg/result/codes.go because
+// this package is designed as an extractable library with its own error domain):
+//   SLACK_MARSHAL_ERROR   — JSON marshal of outbound payload failed
+//   SLACK_REQUEST_ERROR   — http.NewRequestWithContext failed
+//   SLACK_SEND_ERROR      — HTTP client.Do failed (non-context error)
+//   SLACK_RATE_LIMITED    — 429 Too Many Requests
+//   SLACK_HTTP_ERROR      — non-2xx HTTP status (not 429)
+//   SLACK_API_ERROR       — Bot API returned {"ok": false}
+//   SLACK_DECODE_ERROR    — Bot API response JSON decode failed
+
 // SlackAdapter sends notifications via Slack incoming webhooks or Bot API.
 // Supports two modes:
 //   - Webhook mode: set "webhook_url" — posts to the channel configured in the webhook
@@ -43,6 +53,7 @@ type SlackAdapter struct {
 	token       string
 	destination string
 	client      *http.Client
+	botAPIURL   string
 }
 
 // NewSlackAdapter creates a new Slack adapter from configuration.
@@ -66,6 +77,7 @@ func NewSlackAdapter(cfg map[string]string) (Adapter, error) {
 		token:       token,
 		destination: destination,
 		client:      &http.Client{Timeout: defaultHTTPTimeout},
+		botAPIURL:   "https://slack.com/api/chat.postMessage",
 	}, nil
 }
 
@@ -99,7 +111,7 @@ func (s *SlackAdapter) Send(ctx context.Context, msg Message) result.Result[Send
 	// Bot token mode: POST to chat.postMessage API
 	var targetURL string
 	if s.token != "" {
-		targetURL = "https://slack.com/api/chat.postMessage"
+		targetURL = s.botAPIURL
 	} else {
 		targetURL = s.webhookURL
 	}
@@ -152,22 +164,32 @@ func (s *SlackAdapter) Send(ctx context.Context, msg Message) result.Result[Send
 	}
 
 	// Bot API returns {"ok": false, "error": "..."} on failure even with 200
+	var apiResp struct {
+		OK    bool   `json:"ok"`
+		Error string `json:"error"`
+		TS    string `json:"ts"`
+	}
 	if s.token != "" {
-		var apiResp struct {
-			OK    bool   `json:"ok"`
-			Error string `json:"error"`
+		if err := json.NewDecoder(resp.Body).Decode(&apiResp); err != nil {
+			return result.NewFailure[SendData]([]result.SAWError{
+				{Code: "SLACK_DECODE_ERROR", Message: fmt.Sprintf("slack: decode API response: %v", err), Severity: "fatal"},
+			})
 		}
-		if err := json.NewDecoder(resp.Body).Decode(&apiResp); err == nil && !apiResp.OK {
+		if !apiResp.OK {
 			return result.NewFailure[SendData]([]result.SAWError{
 				{Code: "SLACK_API_ERROR", Message: fmt.Sprintf("slack: API error: %s", apiResp.Error), Severity: "fatal"},
 			})
 		}
 	}
 
-	return result.NewSuccess(SendData{
+	sd := SendData{
 		Timestamp: time.Now(),
 		Provider:  "slack",
-	})
+	}
+	if s.token != "" {
+		sd.MessageID = apiResp.TS
+	}
+	return result.NewSuccess(sd)
 }
 
 // severityColor maps severity levels to Slack color codes.
