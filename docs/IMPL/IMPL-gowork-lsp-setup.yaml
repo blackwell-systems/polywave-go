@@ -408,5 +408,5 @@ pre_mortem:
             (not in either agent's file). No duplicate risk for loggerFrom. The only
             cross-package symbol is StepGoWorkSetup/StepGoWorkRestore, defined by A and
             called by B — no duplication possible.
-state: SCOUT_PENDING
+state: "REVIEWED"
 injection_method: hook
