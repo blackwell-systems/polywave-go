@@ -846,6 +846,23 @@ quality_gates:
           command: go test ./pkg/tools/... -count=1
           required: true
 completion_reports:
+    A:
+        status: complete
+        branch: saw/tools-bug-fixes/wave1-agent-A
+        commit: 98c6b05
+        files_changed:
+            - pkg/tools/role_middleware.go
+            - pkg/tools/constraint_enforcer.go
+            - pkg/tools/workshop_constrained.go
+            - pkg/tools/role_middleware_test.go
+            - pkg/tools/constraint_enforcer_test.go
+            - pkg/tools/workshop_constrained_test.go
+        tests_added:
+            - TestRolePath_PathKeyFallback
+            - TestConstraintEnforcer_I6_ScoutBlocksNonYamlIMPLPath
+            - TestWithConstraints_BashNoConstraintMiddleware
+        verification: PASS
+        notes: Bugs 1+2+3+5+8(workshop half) all fixed. 50 tests pass. GOWORK=off required for commit due to workspace conflict with worktree - pre-commit hook runs go vet which picks up workspace conflict; GOWORK=off resolves it cleanly.
     B:
         status: complete
         branch: saw/tools-bug-fixes/wave1-agent-B
