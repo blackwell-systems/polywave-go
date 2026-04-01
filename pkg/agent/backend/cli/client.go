@@ -19,6 +19,16 @@ import (
 // ansiRE matches ANSI/VT100 escape sequences emitted by a PTY-connected process.
 var ansiRE = regexp.MustCompile(`\x1b(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])`)
 
+// nonJSONCap is the maximum number of bytes accumulated in nonJSON builders.
+const nonJSONCap = 4096
+
+// IsClaudeCodeSession returns true when the current process is running inside
+// a Claude Code session (CLAUDECODE env var is set). This check must be
+// performed before the env filtering loop strips the variable.
+func IsClaudeCodeSession() bool {
+	return os.Getenv("CLAUDECODE") != ""
+}
+
 // Client implements backend.Backend by shelling out to the claude CLI.
 type Client struct {
 	claudePath string
@@ -49,6 +59,10 @@ func (c *Client) Run(ctx context.Context, systemPrompt, userMessage, workDir str
 // Note: RunStreaming does not parse tool_use content blocks. Post-hoc constraint
 // enforcement (I1/I2/I6) is not applied on this path; use RunStreamingWithTools instead.
 func (c *Client) RunStreaming(ctx context.Context, systemPrompt, userMessage, workDir string, onChunk backend.ChunkCallback) (string, error) {
+	if IsClaudeCodeSession() {
+		return "", fmt.Errorf("cli backend: cannot spawn claude subprocess from within a Claude Code session — the nested process will fail. Run from a standalone terminal, or use --skip to bypass agent execution")
+	}
+
 	claudePath := c.claudePath
 	if claudePath == "" {
 		claudePath = c.cfg.BinaryPath
@@ -112,6 +126,9 @@ func (c *Client) RunStreaming(ctx context.Context, systemPrompt, userMessage, wo
 
 	// pending accumulates PTY-wrapped fragments until we have a full JSON object.
 	var pending strings.Builder
+	// nonJSON accumulates non-JSON output (error messages, warnings) for error reporting.
+	var nonJSON strings.Builder
+	nonJSONTruncated := false
 
 	for scanner.Scan() {
 		// PTY converts \n -> \r\n; strip trailing \r.
@@ -128,7 +145,23 @@ func (c *Client) RunStreaming(ctx context.Context, systemPrompt, userMessage, wo
 		// Test if we have a complete JSON object yet.
 		var probe json.RawMessage
 		if json.Unmarshal([]byte(candidate), &probe) != nil {
-			// Incomplete — keep accumulating (PTY wrapped mid-JSON).
+			// If pending was empty before this line (i.e., the line itself is not valid JSON
+			// and we are not accumulating a multi-line fragment), capture it as non-JSON.
+			if pending.Len() == len(text) {
+				if !nonJSONTruncated {
+					if nonJSON.Len()+len(text)+1 > nonJSONCap {
+						nonJSONTruncated = true
+					} else {
+						if nonJSON.Len() > 0 {
+							nonJSON.WriteByte('\n')
+						}
+						nonJSON.WriteString(text)
+					}
+				}
+				// Reset pending — this line is non-JSON, not a fragment.
+				pending.Reset()
+			}
+			// Incomplete JSON fragment — keep accumulating (PTY wrapped mid-JSON).
 			continue
 		}
 
@@ -156,7 +189,14 @@ func (c *Client) RunStreaming(ctx context.Context, systemPrompt, userMessage, wo
 			return "", fmt.Errorf("cli backend: context cancelled: %w", ctx.Err())
 		}
 		if exitErr, ok := err.(*exec.ExitError); ok {
-			return "", fmt.Errorf("cli backend: claude exited with code %d", exitErr.ExitCode())
+			msg := fmt.Sprintf("cli backend: claude exited with code %d", exitErr.ExitCode())
+			if extra := strings.TrimSpace(nonJSON.String()); extra != "" {
+				if nonJSONTruncated {
+					extra += "... (truncated)"
+				}
+				msg += ": " + extra
+			}
+			return "", fmt.Errorf("%s", msg)
 		}
 		return "", fmt.Errorf("cli backend: claude failed: %w", err)
 	}
@@ -174,6 +214,10 @@ func (c *Client) RunStreaming(ctx context.Context, systemPrompt, userMessage, wo
 // Post-hoc means the writes already occurred; enforcement detects and reports
 // violations so the wave result can be marked as blocked.
 func (c *Client) RunStreamingWithTools(ctx context.Context, systemPrompt, userMessage, workDir string, onChunk backend.ChunkCallback, onToolCall backend.ToolCallCallback) (string, error) {
+	if IsClaudeCodeSession() {
+		return "", fmt.Errorf("cli backend: cannot spawn claude subprocess from within a Claude Code session — the nested process will fail. Run from a standalone terminal, or use --skip to bypass agent execution")
+	}
+
 	claudePath := c.claudePath
 	if claudePath == "" {
 		claudePath = c.cfg.BinaryPath
@@ -237,6 +281,9 @@ func (c *Client) RunStreamingWithTools(ctx context.Context, systemPrompt, userMe
 
 	// pending accumulates PTY-wrapped fragments until we have a full JSON object.
 	var pending strings.Builder
+	// nonJSON accumulates non-JSON output (error messages, warnings) for error reporting.
+	var nonJSON strings.Builder
+	nonJSONTruncated := false
 
 	// Track tool call start times for duration calculation.
 	toolStartTimes := make(map[string]int64)
@@ -259,7 +306,23 @@ func (c *Client) RunStreamingWithTools(ctx context.Context, systemPrompt, userMe
 		// Test if we have a complete JSON object yet.
 		var probe json.RawMessage
 		if json.Unmarshal([]byte(candidate), &probe) != nil {
-			// Incomplete — keep accumulating (PTY wrapped mid-JSON).
+			// If pending was empty before this line (i.e., the line itself is not valid JSON
+			// and we are not accumulating a multi-line fragment), capture it as non-JSON.
+			if pending.Len() == len(text) {
+				if !nonJSONTruncated {
+					if nonJSON.Len()+len(text)+1 > nonJSONCap {
+						nonJSONTruncated = true
+					} else {
+						if nonJSON.Len() > 0 {
+							nonJSON.WriteByte('\n')
+						}
+						nonJSON.WriteString(text)
+					}
+				}
+				// Reset pending — this line is non-JSON, not a fragment.
+				pending.Reset()
+			}
+			// Incomplete JSON fragment — keep accumulating (PTY wrapped mid-JSON).
 			continue
 		}
 
@@ -338,7 +401,14 @@ func (c *Client) RunStreamingWithTools(ctx context.Context, systemPrompt, userMe
 			return "", fmt.Errorf("cli backend: context cancelled: %w", ctx.Err())
 		}
 		if exitErr, ok := err.(*exec.ExitError); ok {
-			return "", fmt.Errorf("cli backend: claude exited with code %d", exitErr.ExitCode())
+			msg := fmt.Sprintf("cli backend: claude exited with code %d", exitErr.ExitCode())
+			if extra := strings.TrimSpace(nonJSON.String()); extra != "" {
+				if nonJSONTruncated {
+					extra += "... (truncated)"
+				}
+				msg += ": " + extra
+			}
+			return "", fmt.Errorf("%s", msg)
 		}
 		return "", fmt.Errorf("cli backend: claude failed: %w", err)
 	}
