@@ -244,3 +244,13 @@ const (
 	CodeToolTimeout  = "T004_TOOL_TIMEOUT"
 )
 
+// Suitability error codes (S001-S099)
+const (
+	CodeSuitabilityRepoRootEmpty     = "S001_REPO_ROOT_EMPTY"
+	CodeSuitabilityClassifyFailed    = "S002_CLASSIFY_FAILED"
+	CodeSuitabilityFileStatFailed    = "S003_FILE_STAT_FAILED"
+	CodeSuitabilityFileReadFailed    = "S004_FILE_READ_FAILED"
+	CodeSuitabilityRequirementsRead  = "S005_REQUIREMENTS_READ"
+	CodeSuitabilityRequirementsParse = "S006_REQUIREMENTS_PARSE"
+)
+
