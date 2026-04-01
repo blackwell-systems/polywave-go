@@ -1,0 +1,791 @@
+title: Fix pkg/deps Review Findings
+feature_slug: pkg-deps-review-fixes
+verdict: SUITABLE
+suitability_assessment: |-
+    Suitability Gate Assessment:
+
+    1. **File decomposition:** Yes — 20 findings span 9 files (checker.go, types.go,
+       5 parser files, checker_test.go, codes.go). Findings can be cleanly assigned to
+       disjoint file ownership across multiple agents.
+
+    2. **Investigation-first items:** No — all issues are clear from code inspection.
+       Critical bugs (F5 repo root calculation, F4/F6 silent errors, F19 wrong condition)
+       are identifiable without runtime investigation.
+
+    3. **Interface discoverability:** Yes — Result[T] migration requires updating
+       CheckDeps and Parse interface, but contracts are deterministic (return signatures
+       are specified in pkg/result/result.go). Error code additions to codes.go are
+       straightforward.
+
+    4. **Pre-implementation status check:** No automated check needed — review findings
+       are from manual code audit (not an external requirements doc). All 20 findings are
+       confirmed present in current codebase.
+
+    5. **Parallelization value check:** High value — 8 agents with independent file
+       ownership, 5-8 files per agent, complex logic changes (not simple edits). Build/test
+       cycle is ~2s (go test ./pkg/deps), but test additions require careful verification.
+       Parallelization benefit comes from logical independence, not cycle length.
+
+    Estimated times:
+    - Scout phase: ~8 min (dependency analysis, interface contracts, 8 agent briefs)
+    - Agent execution: ~4-6 min (8 agents × 3-5 min avg, fully parallel — Wave 1 has
+      no cross-agent dependencies)
+    - Merge & verification: ~3 min (go test ./pkg/deps post-merge, validate error codes)
+    Total SAW time: ~15-17 min
+
+    Sequential baseline: ~24-30 min (8 tasks × 3-4 min each)
+    Time savings: ~9-13 min (37-43% faster)
+
+    Recommendation: Clear speedup. Independent file ownership across 8 agents eliminates
+    coordination overhead. Single-wave execution maximizes parallelization.
+test_command: go test ./... -timeout 120s
+lint_command: go vet ./...
+file_ownership:
+    - file: pkg/deps/checker.go
+      agent: A
+      wave: 1
+      action: modify
+    - file: pkg/deps/types.go
+      agent: B
+      wave: 1
+      action: modify
+    - file: pkg/result/codes.go
+      agent: C
+      wave: 1
+      action: modify
+    - file: pkg/deps/gosum.go
+      agent: D
+      wave: 1
+      action: modify
+    - file: pkg/deps/packagelock.go
+      agent: D
+      wave: 1
+      action: modify
+    - file: pkg/deps/cargolock.go
+      agent: E
+      wave: 1
+      action: modify
+    - file: pkg/deps/poetrylock.go
+      agent: F
+      wave: 1
+      action: modify
+    - file: pkg/deps/gomod.go
+      agent: G
+      wave: 1
+      action: modify
+    - file: pkg/deps/checker_test.go
+      agent: H
+      wave: 1
+      action: modify
+interface_contracts:
+    - name: CheckDeps
+      description: |-
+        Main entry point for dependency conflict detection — MUST migrate from
+        (*ConflictReport, error) to result.Result[ConflictReport]
+      definition: func CheckDeps(implPath string, wave int) result.Result[ConflictReport]
+      location: pkg/deps/checker.go:24
+    - name: LockFileParser.Parse
+      description: |-
+        Parser interface method — MUST migrate from ([]PackageInfo, error) to
+        result.Result[[]PackageInfo]. All 5 parser implementations must update.
+      definition: |-
+        type LockFileParser interface {
+          Parse(filePath string) result.Result[[]PackageInfo]
+          Detect(filePath string) bool
+        }
+      location: pkg/deps/types.go:6
+    - name: Dependency Check Error Codes
+      description: |-
+        New error codes for dependency validation in D001-D099 range. All parsers
+        and CheckDeps must use these instead of hardcoded strings.
+      definition: |-
+        const (
+          CodeDepLockFileOpen       = "D001_LOCK_FILE_OPEN"
+          CodeDepLockFileParse      = "D002_LOCK_FILE_PARSE"
+          CodeDepMissingDeps        = "D003_MISSING_DEPS"
+          CodeDepVersionConflict    = "D004_VERSION_CONFLICT"
+          CodeDepInvalidToml        = "D005_INVALID_TOML"
+          CodeDepMalformedPackage   = "D006_MALFORMED_PACKAGE"
+          CodeDepUnsupportedVersion = "D007_UNSUPPORTED_VERSION"
+          CodeDepEmptyPackage       = "D008_EMPTY_PACKAGE"
+          CodeDepGoModRead          = "D009_GOMOD_READ"
+          CodeDepGoModParse         = "D010_GOMOD_PARSE"
+          CodeDepRepoRootInvalid    = "D011_REPO_ROOT_INVALID"
+        )
+      location: pkg/result/codes.go
+    - name: getModulePath
+      description: |-
+        Helper must signal errors instead of returning empty string. Callers cannot
+        currently distinguish "no go.mod" from "failed to read go.mod". Return
+        result.Result[string] with CodeDepGoModRead/CodeDepGoModParse.
+      definition: func getModulePath(repoRoot string) result.Result[string]
+      location: pkg/deps/checker.go:334
+    - name: unquoteTOML
+      description: |-
+        Shared TOML quote removal helper — extract to package-level to eliminate
+        duplication between cargolock.go and poetrylock.go
+      definition: |-
+        func unquoteTOML(s string) string {
+          s = strings.TrimSpace(s)
+          if len(s) >= 2 {
+            if (s[0] == '"' && s[len(s)-1] == '"') || (s[0] == '\'' && s[len(s)-1] == '\'') {
+              return s[1 : len(s)-1]
+            }
+          }
+          return s
+        }
+      location: pkg/deps/helpers.go
+waves:
+    - number: 1
+      agents:
+        - id: A
+          task: |-
+            ## What to Implement
+
+            Fix critical bugs and migrate error handling in checker.go:
+
+            **Critical bugs (must fix):**
+            1. **F5 — Repo root calculation hardcodes 3-level depth** (line 32): Replace
+               `filepath.Dir(filepath.Dir(filepath.Dir(implPath)))` with `protocol.GetRepoRoot(implPath)`.
+               Current code breaks for non-standard layouts (e.g., `docs/IMPL/subdir/file.yaml`
+               would go up 3 levels to wrong location). Use protocol helper for robustness.
+
+            2. **F4 — getModulePath returns empty string on error** (lines 266-269): Silent
+               failures prevent distinguishing "no go.mod" from "failed to read". Migrate
+               getModulePath to return `result.Result[string]` and propagate error with
+               `CodeDepGoModRead` or `CodeDepGoModParse`. Update caller at line 265 to check
+               result and handle failure explicitly.
+
+            3. **F6 — Parser errors silently ignored in loop** (lines 64-67): `continue`
+               statement suppresses all lock file parse errors. Log the error with structured
+               SAWError before continuing so orchestrator can surface parse failures. Use
+               `CodeDepLockFileParse` and include file path in error context.
+
+            **Result[T] migration:**
+            - Update `CheckDeps` signature: `func CheckDeps(implPath string, wave int) result.Result[ConflictReport]`
+            - Replace `return nil, fmt.Errorf(...)` with `result.NewFailure[ConflictReport]([]SAWError{...})`
+            - Replace `return report, nil` with `result.NewSuccess(report)` (line 152)
+            - Use codes from Agent C's definitions: `CodeDepRepoRootInvalid`, `CodeDepMissingDeps`, etc.
+
+            **Dead code removal:**
+            - Delete `NormalizePackageName` function (lines 222-231) — never called
+
+            **Error standardization:**
+            - Lines 28, 49, 55: Replace hardcoded strings with `CodeDepRepoRootInvalid`,
+              `CodeDepMissingDeps` error codes
+
+            ## Interfaces & Dependencies
+
+            **Imports:**
+            - Add: `"github.com/blackwell-systems/scout-and-wave-go/pkg/result"`
+            - Existing: pkg/protocol (for GetRepoRoot helper)
+
+            **Calls to Agent B types:**
+            - `LockFileParser` interface — signature changes to `Parse(string) result.Result[[]PackageInfo]`
+            - Loop at line 62-73 must call new signature and handle `result.Result[[]PackageInfo]`
+
+            **Calls to Agent C codes:**
+            - Import error constants: `result.CodeDepLockFileParse`, `CodeDepGoModRead`, etc.
+
+            **Helper extraction:**
+            - Move TOML unquoting to shared helper (Agent E/F will reference it)
+
+            ## Tests & Verification
+
+            **Existing tests to update:**
+            - `TestCheckDeps_NoConflicts` (line 68) — expects `result.Result[ConflictReport]`, check `result.IsSuccess()`
+            - `TestCheckDeps_EmptyWave` (line 94) — update assertion to `result.IsSuccess()`
+            - `TestCheckDeps_ReplaceDirective` (line 265) — update return type check
+
+            **New test cases to add:**
+            1. `TestCheckDeps_RepoRootInvalid` — verify `CodeDepRepoRootInvalid` on malformed IMPL path
+            2. `TestCheckDeps_ParserErrorLogged` — verify parser error is captured (not silently dropped)
+            3. `TestGetModulePath_NoGoMod` — verify `result.IsFatal()` when go.mod missing
+            4. `TestGetModulePath_InvalidFormat` — verify `CodeDepGoModParse` on malformed go.mod
+
+            **Verification gate (run in worktree):**
+            ```bash
+            go build ./pkg/deps && \
+            go vet ./pkg/deps && \
+            go test ./pkg/deps -run TestCheckDeps -v
+            ```
+
+            ## Constraints
+
+            - DO NOT change `findLockPackage` logic (lines 175-192) — prefix matching is correct
+            - DO NOT modify `isLocalReplace` (lines 155-169) — Agent H owns test coverage for this
+            - Preserve all existing behavior except silent error suppression
+            - Keep `CheckDeps` function signature at line 24 position (callers in cmd/ and pkg/engine
+              will need updating later, but that's outside this agent's scope)
+          files:
+            - pkg/deps/checker.go
+        - id: B
+          task: |-
+            ## What to Implement
+
+            Migrate `LockFileParser` interface from `([]PackageInfo, error)` to `result.Result[[]PackageInfo]`:
+
+            **Interface update (types.go line 6):**
+            ```go
+            type LockFileParser interface {
+              Parse(filePath string) result.Result[[]PackageInfo]
+              Detect(filePath string) bool
+            }
+            ```
+
+            **Why this change:**
+            - Eliminates inconsistent error handling across 5 parser implementations (some wrap, some don't)
+            - Allows parsers to return structured errors with codes (D002_LOCK_FILE_PARSE, D005_INVALID_TOML, etc.)
+            - Unifies empty-package handling (poetrylock.go returns error, others return empty slice)
+
+            **No other changes to types.go** — ConflictReport, PackageInfo, MissingDep, VersionConflict
+            remain unchanged. Only the Parse method signature migrates.
+
+            ## Interfaces & Dependencies
+
+            **Downstream callers of Parse:**
+            - Agent A (checker.go line 63): loops over parsers and calls `parser.Parse(lockFile)`
+            - Agent D (gosum.go, packagelock.go): must update Parse implementations
+            - Agent E (cargolock.go): must update Parse implementation
+            - Agent F (poetrylock.go): must update Parse implementation
+
+            **No dependencies on other agents** — this is a pure signature change, no logic migration
+
+            ## Tests & Verification
+
+            **No test file changes needed** — checker_test.go (Agent H) already uses the parsers
+            through the interface. Mock parser at line 285-314 must be updated to match new signature,
+            but that's Agent H's responsibility.
+
+            **Verification gate (run in worktree):**
+            ```bash
+            go build ./pkg/deps && \
+            go vet ./pkg/deps && \
+            echo "Interface signature updated — parser implementations tested by agents D/E/F"
+            ```
+
+            ## Constraints
+
+            - DO NOT change PackageInfo field names or structure (line 13-17)
+            - DO NOT add methods to LockFileParser — only migrate Parse signature
+            - DO NOT touch ConflictReport or related types (lines 20-40)
+          files:
+            - pkg/deps/types.go
+        - id: C
+          task: |-
+            ## What to Implement
+
+            Add dependency check error codes (D001-D099 range) to pkg/result/codes.go:
+
+            **Insert after line 267 (Suitability error codes section):**
+            ```go
+            // Dependency check error codes (D001-D099)
+            const (
+              CodeDepLockFileOpen       = "D001_LOCK_FILE_OPEN"
+              CodeDepLockFileParse      = "D002_LOCK_FILE_PARSE"
+              CodeDepMissingDeps        = "D003_MISSING_DEPS"
+              CodeDepVersionConflict    = "D004_VERSION_CONFLICT"
+              CodeDepInvalidToml        = "D005_INVALID_TOML"
+              CodeDepMalformedPackage   = "D006_MALFORMED_PACKAGE"
+              CodeDepUnsupportedVersion = "D007_UNSUPPORTED_VERSION"
+              CodeDepEmptyPackage       = "D008_EMPTY_PACKAGE"
+              CodeDepGoModRead          = "D009_GOMOD_READ"
+              CodeDepGoModParse         = "D010_GOMOD_PARSE"
+              CodeDepRepoRootInvalid    = "D011_REPO_ROOT_INVALID"
+            )
+            ```
+
+            **Update package doc comment (lines 1-13):**
+            Add D001-D099 to the code ranges table:
+            ```go
+            // Code ranges by domain:
+            //
+            //   V001-V099: Validation errors (IMPL doc structure, schema, fields)
+            //   W001-W099: Warning codes (advisory only, never block execution)
+            //   B001-B099: Build and gate errors (compilation, test, lint failures)
+            //   G001-G099: Git errors (merge conflicts, worktree, commit issues)
+            //   A001-A099: Agent errors (launch, timeout, brief extraction)
+            //   N001-N099: Engine errors (orchestration, state machine)
+            //   P001-P099: Protocol errors (invariant violations, execution rules)
+            //   T001-T099: Tool/parse errors (errparse output, tool runner failures)
+            //   S001-S099: Suitability error codes
+            //   D001-D099: Dependency check errors (lock file parsing, missing deps)
+            ```
+
+            **Why these codes:**
+            - D001-D002: File-level errors (open failed, parse failed)
+            - D003-D004: Analysis results (missing deps found, version conflicts detected)
+            - D005-D008: Parser-specific errors (TOML invalid, package malformed, empty package)
+            - D009-D011: go.mod errors (read failed, parse failed, repo root invalid)
+
+            ## Interfaces & Dependencies
+
+            **Consumed by:**
+            - Agent A (checker.go): uses D001, D002, D003, D011
+            - Agent D (gosum.go, packagelock.go): uses D001, D002
+            - Agent E (cargolock.go): uses D001, D002, D005, D006
+            - Agent F (poetrylock.go): uses D001, D002, D005, D008
+            - Agent G (gomod.go): uses D009, D010
+
+            **No dependencies** — this agent just adds constants to codes.go
+
+            ## Tests & Verification
+
+            **No test changes needed** — error codes are constants, tested implicitly when used.
+
+            **Verification gate (run in worktree):**
+            ```bash
+            go build ./pkg/result && \
+            go vet ./pkg/result && \
+            grep -c "CodeDep" pkg/result/codes.go  # should output 11
+            ```
+
+            ## Constraints
+
+            - DO NOT renumber existing codes (V001-S099) — preserve all existing constants
+            - DO NOT reuse code numbers — D001-D099 range must be contiguous
+            - Follow naming convention: `CodeDep<CamelCaseDescription>`
+          files:
+            - pkg/result/codes.go
+        - id: D
+          task: |-
+            ## What to Implement
+
+            Migrate gosum.go and packagelock.go parsers to Result[T] pattern and fix error handling:
+
+            **gosum.go (GoSumParser):**
+            1. **Result[T] migration:**
+               - Update `Parse` signature (line 13): `func (p *GoSumParser) Parse(filePath string) result.Result[[]PackageInfo]`
+               - Line 14-16: Replace `return nil, err` with `result.NewFailure[[]PackageInfo]([]result.SAWError{result.NewFatal(result.CodeDepLockFileOpen, "failed to open go.sum: " + err.Error())})`
+               - Line 63-64: Replace `return nil, err` with `result.NewFailure[[]PackageInfo]([]result.SAWError{result.NewError(result.CodeDepLockFileParse, "error reading go.sum: " + err.Error())})`
+               - Line 73: Replace `return result, nil` with `result.NewSuccess(result)`
+
+            2. **Inconsistent error wrapping (F15):**
+               - Line 16: Use `CodeDepLockFileOpen` (currently unwrapped)
+               - Line 64: Use `CodeDepLockFileParse` (currently unwrapped)
+
+            **packagelock.go (PackageLockParser):**
+            1. **Result[T] migration:**
+               - Update `Parse` signature (line 26): `func (p *PackageLockParser) Parse(filePath string) result.Result[[]PackageInfo]`
+               - Line 30: Replace `return nil, fmt.Errorf(...)` with `result.NewFailure[[]PackageInfo]([]result.SAWError{result.NewFatal(result.CodeDepLockFileOpen, "failed to read package-lock.json: " + err.Error())})`
+               - Line 36: Replace `return nil, fmt.Errorf(...)` with `result.NewFailure[[]PackageInfo]([]result.SAWError{result.NewFatal(result.CodeDepLockFileParse, "failed to parse package-lock.json: " + err.Error())})`
+               - Line 41: Replace `return nil, fmt.Errorf(...)` with `result.NewFailure[[]PackageInfo]([]result.SAWError{result.NewError(result.CodeDepUnsupportedVersion, fmt.Sprintf("unsupported lockfile version %d (requires >= 2)", lockFile.LockfileVersion))})`
+               - Line 71: Replace `return packages, nil` with `result.NewSuccess(packages)`
+
+            2. **PackageInfo.Source inconsistency (F18):**
+               - Line 67: gosum.go uses module name as Source, packagelock.go uses Resolved URL
+               - No change needed — both are valid (lock file format differs)
+
+            ## Interfaces & Dependencies
+
+            **Imports:**
+            - Add to both files: `"github.com/blackwell-systems/scout-and-wave-go/pkg/result"`
+
+            **Interface conformance:**
+            - Agent B updates LockFileParser.Parse signature
+            - These parsers must match: `Parse(filePath string) result.Result[[]PackageInfo]`
+
+            **Error codes from Agent C:**
+            - `result.CodeDepLockFileOpen`
+            - `result.CodeDepLockFileParse`
+            - `result.CodeDepUnsupportedVersion`
+
+            ## Tests & Verification
+
+            **Existing tests to update (in checker_test.go, Agent H scope):**
+            - goSumParser mock at line 285 must return `result.Result[[]PackageInfo]`
+            - No tests directly in gosum.go or packagelock.go
+
+            **New test cases (add to checker_test.go, Agent H scope):**
+            - Test gosum.go Parse with missing file → verify `CodeDepLockFileOpen`
+            - Test packagelock.go Parse with invalid JSON → verify `CodeDepLockFileParse`
+            - Test packagelock.go Parse with lockfileVersion=1 → verify `CodeDepUnsupportedVersion`
+
+            **Verification gate (run in worktree):**
+            ```bash
+            go build ./pkg/deps && \
+            go vet ./pkg/deps && \
+            go test ./pkg/deps -run TestGoSum -v && \
+            go test ./pkg/deps -run TestPackageLock -v
+            ```
+
+            ## Constraints
+
+            - DO NOT change parser registration (init() functions at end of each file)
+            - DO NOT modify Detect() implementations — only Parse() migrates
+            - Preserve all existing parsing logic (line formats, field extraction)
+            - DO NOT unify Source field usage across parsers (ecosystem-specific is correct)
+          files:
+            - pkg/deps/gosum.go
+            - pkg/deps/packagelock.go
+        - id: E
+          task: |-
+            ## What to Implement
+
+            Migrate cargolock.go to Result[T] and fix bugs:
+
+            **Result[T] migration:**
+            1. Update `Parse` signature (line 20): `func (p *CargoLockParser) Parse(filePath string) result.Result[[]PackageInfo]`
+            2. Line 23: Replace `return nil, fmt.Errorf(...)` with `result.NewFailure[[]PackageInfo]([]result.SAWError{result.NewFatal(result.CodeDepLockFileOpen, "failed to open Cargo.lock: " + err.Error())})`
+            3. Line 64: Replace `return nil, fmt.Errorf(...)` with `result.NewFailure[[]PackageInfo]([]result.SAWError{result.NewError(result.CodeDepLockFileParse, "error reading Cargo.lock: " + err.Error())})`
+            4. Line 67: Replace `return packages, nil` with `result.NewSuccess(packages)`
+
+            **Bug fixes:**
+            1. **F16 — Empty package.Name not checked before append** (lines 59-61):
+               ```go
+               if currentPackage != nil && currentPackage.Name != "" {
+                 packages = append(packages, *currentPackage)
+               }
+               ```
+               Currently only checks at line 59 (after scanner.Err()), not at line 38 when starting
+               a new package. Add the same check before line 39 append.
+
+            2. **F14 — TOML quote removal duplicated** (lines 78-86):
+               - Move `unquoteTOML` to shared helper file (pkg/deps/helpers.go)
+               - Replace calls at lines 49, 51, 53 with helper function
+               - Agent F (poetrylock.go) also uses this — coordinate via helper file
+
+            **Error wrapping inconsistency (F15):**
+            - Line 23: Wrap with `CodeDepLockFileOpen`
+            - Line 64: Wrap with `CodeDepLockFileParse`
+
+            ## Interfaces & Dependencies
+
+            **Imports:**
+            - Add: `"github.com/blackwell-systems/scout-and-wave-go/pkg/result"`
+
+            **Interface conformance:**
+            - Agent B updates LockFileParser.Parse signature
+            - Must match: `Parse(filePath string) result.Result[[]PackageInfo]`
+
+            **Error codes from Agent C:**
+            - `result.CodeDepLockFileOpen`
+            - `result.CodeDepLockFileParse`
+            - `result.CodeDepMalformedPackage` (for empty package name check)
+
+            **Shared helper:**
+            - Extract `unquoteTOML` to pkg/deps/helpers.go (new file, this agent creates it)
+            - Agent F will import and use the same helper
+
+            ## Tests & Verification
+
+            **New test cases (add to checker_test.go, Agent H scope):**
+            - `TestCargoLockParser_EmptyPackageName` — verify `CodeDepMalformedPackage`
+            - `TestCargoLockParser_MissingFile` — verify `CodeDepLockFileOpen`
+            - `TestCargoLockParser_UnquoteTOML` — verify quote removal with helper
+
+            **Verification gate (run in worktree):**
+            ```bash
+            go build ./pkg/deps && \
+            go vet ./pkg/deps && \
+            go test ./pkg/deps -run TestCargo -v
+            ```
+
+            ## Constraints
+
+            - DO NOT change TOML parsing logic beyond quote removal extraction
+            - DO NOT modify Detect() or init() — only Parse() migrates
+            - Preserve field extraction order (name, version, source)
+            - Create pkg/deps/helpers.go with only `unquoteTOML` function (no other helpers)
+          files:
+            - pkg/deps/cargolock.go
+        - id: F
+          task: |-
+            ## What to Implement
+
+            Migrate poetrylock.go to Result[T] and fix bugs:
+
+            **Result[T] migration:**
+            1. Update `Parse` signature (line 14): `func (p *PoetryLockParser) Parse(filePath string) result.Result[[]PackageInfo]`
+            2. Line 17: Replace `return nil, fmt.Errorf(...)` with `result.NewFailure[[]PackageInfo]([]result.SAWError{result.NewFatal(result.CodeDepLockFileOpen, "failed to open poetry.lock: " + err.Error())})`
+            3. Line 79: Replace `return nil, fmt.Errorf(...)` with `result.NewFailure[[]PackageInfo]([]result.SAWError{result.NewError(result.CodeDepLockFileParse, "error reading poetry.lock: " + err.Error())})`
+            4. Line 83: Replace `return nil, fmt.Errorf(...)` with `result.NewFailure[[]PackageInfo]([]result.SAWError{result.NewError(result.CodeDepEmptyPackage, "no packages found in poetry.lock (possible malformed TOML)")})`
+            5. Line 86: Replace `return packages, nil` with `result.NewSuccess(packages)`
+
+            **Bug fixes:**
+            1. **F19 — Wrong condition for section end detection** (line 42):
+               Current: `if line == "" || (strings.HasPrefix(line, "[") && !strings.HasPrefix(line, "[["))`
+               Problem: Ends package section on `[package.dependencies]` (incorrect)
+               Fix: `if line == "" || strings.HasPrefix(line, "[[") || (strings.HasPrefix(line, "[") && !strings.HasPrefix(line, "[[") && inPackageSection)`
+               This ends the section only on empty line, new `[[package]]`, or a top-level `[metadata]`.
+
+            2. **F8 — Inconsistent empty package handling** (lines 82-84):
+               Poetrylock.go returns error for empty packages, other parsers return empty slice.
+               Keep the error (it's correct) — poetry.lock with zero packages is malformed TOML.
+               Use `CodeDepEmptyPackage`.
+
+            3. **F14 — TOML quote removal duplicated** (lines 56, 62, 68):
+               - Import `unquoteTOML` from pkg/deps/helpers.go (Agent E creates this)
+               - Replace `strings.Trim(value, `"`)` with `unquoteTOML(value)` at lines 56, 62, 68
+
+            ## Interfaces & Dependencies
+
+            **Imports:**
+            - Add: `"github.com/blackwell-systems/scout-and-wave-go/pkg/result"`
+
+            **Interface conformance:**
+            - Agent B updates LockFileParser.Parse signature
+            - Must match: `Parse(filePath string) result.Result[[]PackageInfo]`
+
+            **Error codes from Agent C:**
+            - `result.CodeDepLockFileOpen`
+            - `result.CodeDepLockFileParse`
+            - `result.CodeDepEmptyPackage`
+
+            **Shared helper:**
+            - Agent E extracts `unquoteTOML` to pkg/deps/helpers.go
+            - Import and use at lines 56, 62, 68
+
+            ## Tests & Verification
+
+            **New test cases (add to checker_test.go, Agent H scope):**
+            - `TestPoetryLockParser_SectionEndDetection` — verify line 42 fix handles `[package.dependencies]` correctly
+            - `TestPoetryLockParser_EmptyFile` — verify `CodeDepEmptyPackage` on malformed TOML
+            - `TestPoetryLockParser_MissingFile` — verify `CodeDepLockFileOpen`
+
+            **Verification gate (run in worktree):**
+            ```bash
+            go build ./pkg/deps && \
+            go vet ./pkg/deps && \
+            go test ./pkg/deps -run TestPoetry -v
+            ```
+
+            ## Constraints
+
+            - DO NOT change field parsing order (name, version, source)
+            - DO NOT modify Detect() or init() — only Parse() migrates
+            - Preserve `inPackageSection` flag logic (line 23) — only fix section end condition
+            - Keep empty package error (do NOT unify with other parsers' empty slice behavior)
+          files:
+            - pkg/deps/poetrylock.go
+        - id: G
+          task: |-
+            ## What to Implement
+
+            Add tests for ParseGoModReplace function (currently untested, F9):
+
+            **Test coverage gaps in gomod.go:**
+            - `ParseGoModReplace` function (lines 9-103) has 0 direct tests
+            - `parseReplaceDirective` helper (lines 72-103) has 0 tests
+            - Only indirect coverage via `TestCheckDeps_ReplaceDirective` in checker_test.go
+
+            **New test cases to add to checker_test.go:**
+
+            1. `TestParseGoModReplace_SingleLine` — test single-line replace:
+               ```go
+               replace github.com/foo/bar => ./local
+               ```
+               Verify map contains "github.com/foo/bar"
+
+            2. `TestParseGoModReplace_Block` — test multi-line block:
+               ```
+               replace (
+                 github.com/foo/bar => ./local
+                 github.com/baz/qux v1.0.0 => ./other
+               )
+               ```
+               Verify map contains both keys
+
+            3. `TestParseGoModReplace_VersionedReplacement` — test versioned replacement (NOT local):
+               ```
+               replace github.com/foo/bar => github.com/fork/bar v2.0.0
+               ```
+               Verify map is EMPTY (versioned replacements are not local)
+
+            4. `TestParseGoModReplace_MissingFile` — verify empty map when go.mod doesn't exist
+
+            5. `TestParseGoModReplace_MalformedDirective` — test lines with no "=>" or empty fields:
+               ```
+               replace
+               replace =>
+               replace foo
+               ```
+               Verify these are silently skipped (defensive parsing)
+
+            6. `TestParseGoModReplace_Comments` — test comment and blank line handling:
+               ```
+               // This is a comment
+               replace (
+                 // Another comment
+                 github.com/foo/bar => ./local
+               )
+               ```
+               Verify map contains "github.com/foo/bar"
+
+            ## Interfaces & Dependencies
+
+            **Function under test:**
+            - `ParseGoModReplace(goModPath string) map[string]struct{}` (gomod.go:9)
+            - Helper: `parseReplaceDirective(directive string) (string, bool)` (gomod.go:72)
+
+            **No dependencies on other agents** — pure test additions
+
+            ## Tests & Verification
+
+            **Test structure pattern (follow existing style in checker_test.go):**
+            ```go
+            func TestParseGoModReplace_<Scenario>(t *testing.T) {
+              // Create temp go.mod with specific content
+              tmpDir := t.TempDir()
+              goModPath := filepath.Join(tmpDir, "go.mod")
+              content := `...`
+              if err := os.WriteFile(goModPath, []byte(content), 0644); err != nil {
+                t.Fatalf("failed to write go.mod: %v", err)
+              }
+
+              result := ParseGoModReplace(goModPath)
+
+              // Assertions
+              if _, ok := result["github.com/foo/bar"]; !ok {
+                t.Errorf("expected module in result")
+              }
+            }
+            ```
+
+            **Verification gate (run in worktree):**
+            ```bash
+            go build ./pkg/deps && \
+            go vet ./pkg/deps && \
+            go test ./pkg/deps -run TestParseGoModReplace -v
+            ```
+
+            ## Constraints
+
+            - DO NOT modify gomod.go implementation — only add tests
+            - Place tests in checker_test.go (not a new gomod_test.go file)
+            - Follow existing test naming convention: `TestParseGoModReplace_<Scenario>`
+            - Use `t.TempDir()` for file creation (matches existing pattern)
+            - DO NOT test internal scanner logic — test public function behavior only
+          files:
+            - pkg/deps/gomod.go
+        - id: H
+          task: |-
+            ## What to Implement
+
+            Add test coverage for untested helpers and update existing tests for Result[T] migration:
+
+            **New tests for untested helpers (currently 0 coverage):**
+            1. `TestIsStdLib` (checker.go:233-257, F10) — test cases:
+               - `isStdLib("fmt")` → true
+               - `isStdLib("encoding/json")` → true
+               - `isStdLib("github.com/foo/bar")` → false
+               - `isStdLib("golang.org/x/tools")` → false (extended stdlib in go.mod)
+               - `isStdLib("example.com")` → false (has dot before slash)
+
+            2. `TestGetModulePath` (checker.go:334-352, F11) — test cases:
+               - Valid go.mod with `module example.com/foo` → returns "example.com/foo"
+               - Missing go.mod → returns error
+               - Malformed go.mod (no module directive) → returns error
+               - go.mod with comments and blank lines → parses correctly
+
+            3. `TestExtractExternalImports` (checker.go:259-332, F12) — 70-line complex function:
+               - File with stdlib imports only → empty result
+               - File with external imports → returns import list
+               - File with local imports (module path prefix) → filters out local
+               - File that doesn't exist yet (new file) → skips gracefully
+               - Non-Go file (.yaml) → skips
+
+            4. `TestIsLocalReplace` (checker.go:155-169, F13) — direct tests:
+               - Exact match: `isLocalReplace(map[string]struct{}{"github.com/foo/bar": {}}, "github.com/foo/bar")` → true
+               - Prefix match: `isLocalReplace(map[string]struct{}{"github.com/foo": {}}, "github.com/foo/bar/baz")` → true
+               - No match: `isLocalReplace(map[string]struct{}{}, "github.com/foo/bar")` → false
+               - Longest prefix wins: `isLocalReplace(map[string]struct{}{"github.com/foo": {}, "github.com/foo/bar": {}}, "github.com/foo/bar/baz")` → true (bar, not foo)
+
+            **Update existing tests for Result[T] migration:**
+            - Line 285-314: Update `goSumParser` mock to return `result.Result[[]PackageInfo]`
+            - Lines 68-74, 94-109, 265-283: Update assertions to check `result.IsSuccess()` instead of `error == nil`
+
+            ## Interfaces & Dependencies
+
+            **Functions under test:**
+            - `isStdLib(importPath string) bool` (checker.go:233)
+            - `getModulePath(repoRoot string) (string, error)` — migrates to `result.Result[string]` by Agent A
+            - `extractExternalImports(repoRoot string, ownedFiles map[string]string) (map[string][]string, error)` — migrates to `result.Result[...]` by Agent A
+            - `isLocalReplace(localReplace map[string]struct{}, importPath string) bool` (checker.go:155)
+
+            **Result[T] migration dependencies:**
+            - Agent A migrates CheckDeps to return `result.Result[ConflictReport]`
+            - Agent B migrates LockFileParser.Parse to return `result.Result[[]PackageInfo]`
+            - Update test assertions to match new signatures
+
+            ## Tests & Verification
+
+            **Test file structure:**
+            - All tests go in `checker_test.go` (lines 1-316)
+            - Follow existing pattern: `func TestFunctionName_Scenario(t *testing.T)`
+            - Use `t.TempDir()` for file creation (matches existing style)
+
+            **Verification gate (run in worktree):**
+            ```bash
+            go build ./pkg/deps && \
+            go vet ./pkg/deps && \
+            go test ./pkg/deps -v -cover
+            ```
+
+            Coverage should increase from 85.9% to >92% with these additions.
+
+            ## Constraints
+
+            - DO NOT modify checker.go implementation — only add/update tests
+            - Place all tests in checker_test.go (no new test files)
+            - Update existing tests minimally (only Result[T] return type checks)
+            - Use table-driven tests for isStdLib and isLocalReplace (multiple cases)
+            - DO NOT test internal implementation details — test public function contracts
+          files:
+            - pkg/deps/checker_test.go
+quality_gates:
+    level: standard
+    gates:
+        - type: build
+          command: go build ./...
+          required: true
+          repo: scout-and-wave-go
+        - type: test
+          command: go test ./pkg/deps -timeout 30s
+          required: true
+          repo: scout-and-wave-go
+        - type: lint
+          command: go vet ./pkg/deps
+          required: true
+          repo: scout-and-wave-go
+pre_mortem:
+    overall_risk: medium
+    rows:
+        - scenario: Agent E creates helpers.go but Agent F reads it before merge
+          likelihood: medium
+          impact: high
+          mitigation: |-
+            Both agents are in Wave 1 (parallel) so Agent F cannot read helpers.go from
+            Agent E's worktree. FALSE ALARM — this is not a cross-wave dependency. Agent F
+            will fail to build until merge, but that's expected. Post-merge build will succeed
+            when both files land together. No mitigation needed — Wave 1 isolation is correct.
+        - scenario: Result[T] migration breaks existing callers outside pkg/deps
+          likelihood: high
+          impact: medium
+          mitigation: |-
+            CheckDeps is called from cmd/sawtools and pkg/engine. Post-merge, run full test
+            suite (go test ./...) to detect breakage. Create follow-up issue to migrate
+            callers if needed. This is acceptable technical debt — isolated to pkg/deps
+            for now.
+        - scenario: Error code constants D001-D099 conflict with future additions
+          likelihood: low
+          impact: low
+          mitigation: |-
+            Agent C adds 11 codes (D001-D011), leaving D012-D099 unused. No conflict risk
+            unless 88+ new dependency codes are needed. Document the range in codes.go
+            package comment (already done in brief).
+        - scenario: unquoteTOML helper extraction causes import cycle
+          likelihood: low
+          impact: medium
+          mitigation: |-
+            helpers.go is in pkg/deps (same package as cargolock.go and poetrylock.go),
+            so no import needed — direct function call. No import cycle possible.
+        - scenario: Test coverage target (>92%) not met after Agent H completes
+          likelihood: medium
+          impact: low
+          mitigation: |-
+            Agent H briefs specify 4 new test functions covering untested helpers. If
+            coverage <92%, add tests for edge cases (error paths, empty inputs). Coverage
+            is advisory, not blocking — medium priority.
+state: SCOUT_PENDING
+injection_method: hook

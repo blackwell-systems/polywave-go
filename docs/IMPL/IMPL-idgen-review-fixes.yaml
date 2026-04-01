@@ -1,0 +1,319 @@
+title: Fix pkg/idgen code review findings
+feature_slug: idgen-review-fixes
+verdict: SUITABLE
+suitability_assessment: |
+    This work is suitable for SAW with the following assessment:
+
+    **Decomposition:** 2 agents with disjoint file ownership:
+    - Agent A: pkg/result/codes.go (add I001-I099 error codes)
+    - Agent B: pkg/idgen/generator.go + generator_test.go (migrate to Result[T] + use error codes)
+
+    **Investigation-first items:** None. The work is well-defined: migrate AssignAgentIDs
+    to return result.Result[[]string] and replace 6 hardcoded fmt.Errorf calls with
+    result.NewFailure using error codes defined by Agent A.
+
+    **Interface discoverability:** All interfaces are known:
+    - Agent A defines 6 error codes: CodeAgentCountInvalid through CodeInvalidAgentIDGenerated
+    - Agent B consumes those codes and returns result.Result[[]string]
+
+    **Pre-implementation status:** All 3 findings are TODO (not yet addressed).
+    No existing Result[T] usage in pkg/idgen/generator.go.
+
+    **Parallelization value:** Moderate. Two independent files, short build cycle (<5s),
+    98.3% test coverage provides fast verification. Single wave execution saves ~2 min
+    over sequential implementation (parallel test execution + single merge overhead vs
+    sequential edits).
+
+    **Finding #3 deferral:** The test coupling issue (generator_test.go:377 accesses
+    package-private agentIDRegex) is low priority and deferred. It does not block the
+    Result[T] migration or error code conformance.
+
+    Estimated times:
+    - Scout phase: ~5 min (dependency mapping, interface contracts, IMPL doc)
+    - Agent execution: ~3 min (2 agents × 1.5 min avg, parallel execution)
+    - Merge & verification: ~2 min
+    Total SAW time: ~10 min
+
+    Sequential baseline: ~12 min (2 agents × 5 min avg sequential time + 2 integration steps)
+    Time savings: ~2 min (17% faster)
+
+    Recommendation: Clear speedup with strong coordination value. The IMPL doc provides
+    an audit trail for the Result[T] migration pattern that other packages will follow.
+test_command: go test ./pkg/idgen ./pkg/result
+lint_command: go vet ./pkg/idgen ./pkg/result
+file_ownership:
+    - file: pkg/result/codes.go
+      agent: A
+      wave: 1
+      action: modify
+    - file: pkg/idgen/generator.go
+      agent: B
+      wave: 1
+      action: modify
+    - file: pkg/idgen/generator_test.go
+      agent: B
+      wave: 1
+      action: modify
+interface_contracts:
+    - name: CodeAgentCountInvalid
+      description: Error code for invalid agent count (count must be > 0)
+      definition: |
+        const CodeAgentCountInvalid = "I001_AGENT_COUNT_INVALID"
+      location: pkg/result/codes.go
+    - name: CodeAgentCountMismatch
+      description: Error code for grouping length mismatch
+      definition: |
+        const CodeAgentCountMismatch = "I002_AGENT_COUNT_MISMATCH"
+      location: pkg/result/codes.go
+    - name: CodeAgentLimitExceeded
+      description: Error code for exceeding maximum 234 agents
+      definition: |
+        const CodeAgentLimitExceeded = "I003_AGENT_LIMIT_EXCEEDED"
+      location: pkg/result/codes.go
+    - name: CodeCategoryLimitExceeded
+      description: Error code for exceeding 9 agents per category in grouped mode
+      definition: |
+        const CodeCategoryLimitExceeded = "I004_CATEGORY_LIMIT_EXCEEDED"
+      location: pkg/result/codes.go
+    - name: CodeCategoryCountExceeded
+      description: Error code for exceeding 26 distinct categories in grouped mode
+      definition: |
+        const CodeCategoryCountExceeded = "I005_CATEGORY_COUNT_EXCEEDED"
+      location: pkg/result/codes.go
+    - name: CodeInvalidAgentIDGenerated
+      description: Error code for invalid agent ID format generated internally
+      definition: |
+        const CodeInvalidAgentIDGenerated = "I006_INVALID_AGENT_ID_GENERATED"
+      location: pkg/result/codes.go
+    - name: AssignAgentIDs (migrated signature)
+      description: Migrated function signature returning Result[[]string]
+      definition: |
+        func AssignAgentIDs(count int, grouping [][]string) result.Result[[]string]
+      location: pkg/idgen/generator.go
+waves:
+    - number: 1
+      agents:
+        - id: A
+          task: |
+            ## Task: Define I001-I099 error codes for agent ID generation
+
+            Add 6 error code constants to pkg/result/codes.go in the I001-I099 range:
+
+            1. CodeAgentCountInvalid = "I001_AGENT_COUNT_INVALID" (count must be > 0)
+            2. CodeAgentCountMismatch = "I002_AGENT_COUNT_MISMATCH" (grouping length must match count)
+            3. CodeAgentLimitExceeded = "I003_AGENT_LIMIT_EXCEEDED" (count exceeds maximum 234 agents)
+            4. CodeCategoryLimitExceeded = "I004_CATEGORY_LIMIT_EXCEEDED" (more than 9 agents in one category)
+            5. CodeCategoryCountExceeded = "I005_CATEGORY_COUNT_EXCEEDED" (more than 26 distinct categories)
+            6. CodeInvalidAgentIDGenerated = "I006_INVALID_AGENT_ID_GENERATED" (invalid agent ID format generated internally)
+
+            **Placement:**
+            - Add a comment block before the constants: `// Agent ID generation error codes (I001-I099)`
+            - Insert after the existing error code ranges (after S001-S099 block at line 267)
+            - Use the same const block style as existing ranges (one per line)
+
+            **Interface contract enforcement:**
+            - Exact code strings defined above
+            - I001-I099 range reserved for agent ID generation domain
+
+            **Testing:**
+            - No new tests required (constants only)
+            - Verify constants compile: `go build ./pkg/result`
+
+            **Verification gate:**
+            ```bash
+            go build ./pkg/result && \
+            go vet ./pkg/result && \
+            grep -q "I001_AGENT_COUNT_INVALID" pkg/result/codes.go && \
+            grep -q "I006_INVALID_AGENT_ID_GENERATED" pkg/result/codes.go
+            ```
+
+            **Constraints:**
+            - Do not modify existing error codes
+            - Maintain alphabetical ordering by range prefix (V, W, B, G, A, N, Q, P, T, S, I)
+            - Follow existing comment style for range documentation
+          files:
+            - pkg/result/codes.go
+        - id: B
+          task: |
+            ## Task: Migrate AssignAgentIDs to Result[[]string] and use error codes
+
+            **Objective:** Fix review findings #1 and #2 by migrating AssignAgentIDs return
+            type from `([]string, error)` to `result.Result[[]string]` and replacing 6
+            hardcoded fmt.Errorf calls with result.NewFailure using error codes from Agent A.
+
+            **Files:**
+            - pkg/idgen/generator.go (main implementation)
+            - pkg/idgen/generator_test.go (update test expectations)
+
+            **Changes required:**
+
+            1. **Import addition** (generator.go line 3-6):
+               Add `"github.com/blackwell-systems/scout-and-wave-go/pkg/result"` to imports
+
+            2. **Function signature** (generator.go line 27):
+               Change:
+               ```go
+               func AssignAgentIDs(count int, grouping [][]string) ([]string, error)
+               ```
+               To:
+               ```go
+               func AssignAgentIDs(count int, grouping [][]string) result.Result[[]string]
+               ```
+
+            3. **Error returns** (6 locations):
+               - Line 30: `count must be > 0` → `result.NewFailure[[]string]([]result.SAWError{result.NewError(result.CodeAgentCountInvalid, fmt.Sprintf("count must be > 0, got %d", count))})`
+               - Line 34: `grouping length mismatch` → `result.NewFailure[[]string]([]result.SAWError{result.NewError(result.CodeAgentCountMismatch, fmt.Sprintf("grouping length (%d) must match count (%d)", len(grouping), count))})`
+               - Line 39: `count exceeds maximum` → `result.NewFailure[[]string]([]result.SAWError{result.NewError(result.CodeAgentLimitExceeded, fmt.Sprintf("count %d exceeds maximum 234 agents (26 letters × 9 generations)", count))})`
+               - Line 57: `category limit exceeded` → `result.NewFailure[[]string]([]result.SAWError{result.NewError(result.CodeCategoryLimitExceeded, fmt.Sprintf("category %q has %d agents, maximum is 9 per category", category, n))})`
+               - Line 63: `category count exceeded` → `result.NewFailure[[]string]([]result.SAWError{result.NewError(result.CodeCategoryCountExceeded, fmt.Sprintf("grouped mode requires ≤ 26 distinct categories, got %d", len(categoryCounts)))})`
+               - Line 79: `generated invalid agent ID` → `result.NewFailure[[]string]([]result.SAWError{result.NewError(result.CodeInvalidAgentIDGenerated, fmt.Sprintf("generated invalid agent ID %q at index %d", id, i))})`
+
+            4. **Success return** (line 83):
+               Change:
+               ```go
+               return ids, nil
+               ```
+               To:
+               ```go
+               return result.NewSuccess(ids)
+               ```
+
+            5. **Test updates** (generator_test.go):
+               Update all test assertions from `(ids, err)` pattern to `res result.Result[[]string]` pattern:
+               - Success cases: Check `res.IsSuccess()` and extract data via `res.GetData()`
+               - Error cases: Check `res.IsFatal()` and verify error codes in `res.Errors[0].Code`
+
+               Example transformation (line 11-14):
+               Before:
+               ```go
+               ids, err := AssignAgentIDs(8, nil)
+               if err != nil {
+                   t.Fatalf("unexpected error: %v", err)
+               }
+               ```
+               After:
+               ```go
+               res := AssignAgentIDs(8, nil)
+               if !res.IsSuccess() {
+                   t.Fatalf("expected success, got: %v", res.Errors)
+               }
+               ids := res.GetData()
+               ```
+
+               Example error case transformation (line 224-232):
+               Before:
+               ```go
+               _, err := AssignAgentIDs(0, nil)
+               if err == nil {
+                   t.Fatal("expected error for count=0, got nil")
+               }
+               errMsg := err.Error()
+               if errMsg != "count must be > 0, got 0" {
+                   t.Errorf("unexpected error message: %v", err)
+               }
+               ```
+               After:
+               ```go
+               res := AssignAgentIDs(0, nil)
+               if !res.IsFatal() {
+                   t.Fatal("expected fatal error for count=0, got success")
+               }
+               if res.Errors[0].Code != result.CodeAgentCountInvalid {
+                   t.Errorf("expected code %s, got %s", result.CodeAgentCountInvalid, res.Errors[0].Code)
+               }
+               if !strings.Contains(res.Errors[0].Message, "count must be > 0") {
+                   t.Errorf("expected message to contain 'count must be > 0', got: %s", res.Errors[0].Message)
+               }
+               ```
+
+            6. **Update godoc comment** (generator.go line 11-26):
+               Change the Returns section from:
+               ```
+               Returns:
+                 - []string: Ordered agent IDs (e.g., ["A", "B", "C"] or ["A", "A2", "B"])
+                 - error: If count <= 0 or grouping length mismatch
+               ```
+               To:
+               ```
+               Returns:
+                 - result.Result[[]string]: Success with ordered agent IDs (e.g., ["A", "B", "C"])
+                   or failure with structured error codes:
+                   - I001_AGENT_COUNT_INVALID: count <= 0
+                   - I002_AGENT_COUNT_MISMATCH: grouping length != count
+                   - I003_AGENT_LIMIT_EXCEEDED: count > 234
+                   - I004_CATEGORY_LIMIT_EXCEEDED: >9 agents in one category
+                   - I005_CATEGORY_COUNT_EXCEEDED: >26 distinct categories
+                   - I006_INVALID_AGENT_ID_GENERATED: invalid ID format generated
+               ```
+
+            **Interface contract enforcement:**
+            - Function signature: `func AssignAgentIDs(count int, grouping [][]string) result.Result[[]string]`
+            - Error codes: Use exact codes defined by Agent A (I001-I006)
+            - No behavior changes to ID generation logic (sequential/grouped modes unchanged)
+
+            **Testing:**
+            All 14 existing test cases must pass with updated assertions. Test coverage must remain ≥98%.
+
+            **Verification gate:**
+            ```bash
+            go build ./pkg/idgen && \
+            go vet ./pkg/idgen && \
+            go test -v ./pkg/idgen 2>&1 | grep -E "(PASS|ok)" && \
+            go test -cover ./pkg/idgen 2>&1 | grep -E "coverage: [0-9]+\.[0-9]+% of statements" | awk '{if ($2 >= 98.0) exit 0; else exit 1}'
+            ```
+
+            **Constraints:**
+            - Do not modify ID generation logic (generateSequentialIDs, generateGroupedIDs unchanged)
+            - Do not modify agentIDRegex pattern
+            - Test function names and test case structure unchanged (only assertion patterns change)
+            - Finding #3 (test coupling to agentIDRegex) is deferred—do not address it
+          files:
+            - pkg/idgen/generator.go
+            - pkg/idgen/generator_test.go
+quality_gates:
+    level: standard
+    gates:
+        - type: build
+          command: go build ./pkg/idgen ./pkg/result
+          required: true
+        - type: lint
+          command: go vet ./pkg/idgen ./pkg/result
+          required: true
+        - type: test
+          command: go test ./pkg/idgen ./pkg/result
+          required: true
+post_merge_checklist:
+    groups:
+        - title: Cascade Candidate Updates
+          items:
+            - description: Update caller in pkg/engine/scout_run.go (line 214) to handle result.Result[[]string]
+              command: grep -A 5 "idgen.AssignAgentIDs" pkg/engine/scout_run.go
+            - description: Update caller in cmd/sawtools/assign_agent_ids_cmd.go (line 53) to handle result.Result[[]string]
+              command: grep -A 5 "idgen.AssignAgentIDs" cmd/sawtools/assign_agent_ids_cmd.go
+        - title: Full Workspace Verification
+          items:
+            - description: Run full workspace build
+              command: go build ./...
+            - description: Run full test suite
+              command: go test ./...
+pre_mortem:
+    overall_risk: low
+    rows:
+        - scenario: Test assertions fail due to incorrect Result[T] unwrapping pattern
+          likelihood: medium
+          impact: low
+          mitigation: Agent B must follow exact transformation pattern shown in task (res.IsSuccess(), res.GetData(), res.IsFatal(), res.Errors[0].Code)
+        - scenario: Cascade candidates (2 callers) cause compilation errors after merge
+          likelihood: high
+          impact: medium
+          mitigation: Post-merge checklist includes verification steps for both callers (pkg/engine/scout_run.go:214, cmd/sawtools/assign_agent_ids_cmd.go:53). Orchestrator must manually update these callers or create a follow-up IMPL if updates are complex.
+        - scenario: Error code range I001-I099 conflicts with future additions
+          likelihood: low
+          impact: low
+          mitigation: I001-I099 is a new range; codes.go has room for expansion. No existing codes in this range per codes.go inspection.
+        - scenario: Test coverage drops below 98.3% due to unreachable error paths
+          likelihood: low
+          impact: low
+          mitigation: Agent B must verify coverage via `go test -cover` in verification gate. All 6 error paths are already covered by existing tests.
+state: SCOUT_PENDING
+injection_method: hook
