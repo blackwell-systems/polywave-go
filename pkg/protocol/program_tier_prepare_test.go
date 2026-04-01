@@ -2,7 +2,10 @@ package protocol
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -141,18 +144,194 @@ func TestIMPLValidationResult_JSONOmitEmpty(t *testing.T) {
 	}
 }
 
-// TestPrepareTier_E37CriticGateEnforcement verifies that PrepareTier enforces
-// E37 critic gate checks in auto mode (program execution context).
-// This test verifies the integration of CriticGatePasses within PrepareTier,
-// not the full critic gate logic (which is tested in critic_gate_test.go).
-func TestPrepareTier_E37CriticGateEnforcement(t *testing.T) {
-	// Note: This is a minimal unit test to verify the E37 enforcement hook exists.
-	// Full integration testing requires test fixtures with critic reports, which
-	// is out of scope for this change. The test verifies that:
-	// 1. PrepareTier calls CriticGatePasses with autoMode=true
-	// 2. Failure results in validation error with E37 message
+// writeTempIMPL creates a minimal valid IMPL YAML at {repoDir}/docs/IMPL/IMPL-{slug}.yaml.
+// agentCount controls how many agents appear in wave 1.
+// criticReport is an optional YAML block to include under critic_report:.
+// Returns the IMPL path.
+func writeTempIMPL(t *testing.T, repoDir, slug string, agentCount int, criticReport string) string {
+	t.Helper()
 
-	// The actual enforcement is tested via the existing TestPrepareTier_* suite
-	// which will fail if E37 logic breaks the validation flow.
-	t.Skip("E37 enforcement requires test fixtures with critic reports - integration tested via full prepare-tier workflow")
+	implDir := filepath.Join(repoDir, "docs", "IMPL")
+	if err := os.MkdirAll(implDir, 0o755); err != nil {
+		t.Fatalf("failed to create docs/IMPL dir: %v", err)
+	}
+
+	// Build agents and file_ownership entries.
+	agentLines := ""
+	ownershipLines := ""
+	for i := 0; i < agentCount; i++ {
+		id := string(rune('A' + i))
+		file := fmt.Sprintf("pkg/test/%s_file.go", strings.ToLower(id))
+		agentLines += fmt.Sprintf("      - id: %s\n        task: implement part %s\n        files:\n          - %s\n", id, id, file)
+		ownershipLines += fmt.Sprintf("  - file: %s\n    agent: %s\n    wave: 1\n    action: new\n", file, id)
+	}
+
+	criticBlock := ""
+	if criticReport != "" {
+		criticBlock = "critic_report:\n" + criticReport
+	}
+
+	content := fmt.Sprintf(`title: Test IMPL %s
+feature_slug: %s
+verdict: SUITABLE
+waves:
+  - number: 1
+    agents:
+%sfile_ownership:
+%sinterface_contracts: []
+%s`, slug, slug, agentLines, ownershipLines, criticBlock)
+
+	implPath := filepath.Join(implDir, fmt.Sprintf("IMPL-%s.yaml", slug))
+	if err := os.WriteFile(implPath, []byte(content), 0o644); err != nil {
+		t.Fatalf("failed to write IMPL YAML: %v", err)
+	}
+	return implPath
+}
+
+// writeTempProgram creates a minimal program YAML referencing the given slugs in tier 1.
+// Returns the program YAML path.
+func writeTempProgram(t *testing.T, slugs []string) string {
+	t.Helper()
+
+	implsBlock := ""
+	for _, slug := range slugs {
+		implsBlock += fmt.Sprintf("  - slug: %s\n    title: Test %s\n    tier: 1\n    status: pending\n", slug, slug)
+	}
+
+	implRefsBlock := ""
+	for _, slug := range slugs {
+		implRefsBlock += fmt.Sprintf("    - %s\n", slug)
+	}
+
+	content := fmt.Sprintf(`title: Test Program
+program_slug: test-prog
+state: TIER_EXECUTING
+impls:
+%stiers:
+  - number: 1
+    impls:
+%scompletion:
+  tiers_complete: 0
+  tiers_total: 1
+  impls_complete: 0
+  impls_total: %d
+  total_agents: 0
+  total_waves: 0
+`, implsBlock, implRefsBlock, len(slugs))
+
+	f, err := os.CreateTemp("", "program-*.yaml")
+	if err != nil {
+		t.Fatalf("failed to create temp program file: %v", err)
+	}
+	t.Cleanup(func() { os.Remove(f.Name()) })
+	if _, err := f.WriteString(content); err != nil {
+		f.Close()
+		t.Fatalf("failed to write program YAML: %v", err)
+	}
+	f.Close()
+	return f.Name()
+}
+
+// TestPrepareTier_E37NotRequired_SmallIMPL verifies that an IMPL with 2 agents in
+// wave 1 and no CriticReport is not blocked by E37 — E37 is not required at
+// that scale.
+//
+// The test passes if PrepareTier does NOT return an E37 validation error.
+// A worktree-creation failure at step 5 (no real git repo) is acceptable.
+func TestPrepareTier_E37NotRequired_SmallIMPL(t *testing.T) {
+	repoDir := t.TempDir()
+	slug := "small-impl"
+
+	// 2 agents in wave 1, no CriticReport.
+	writeTempIMPL(t, repoDir, slug, 2, "")
+
+	programPath := writeTempProgram(t, []string{slug})
+
+	result, err := PrepareTier(programPath, 1, repoDir)
+	if err != nil {
+		t.Fatalf("PrepareTier returned unexpected error: %v", err)
+	}
+
+	// Verify no E37 error appears in Validations.
+	for _, vr := range result.Validations {
+		for _, errMsg := range vr.Errors {
+			if strings.Contains(errMsg, "E37 critic gate") {
+				t.Errorf("unexpected E37 block for 2-agent IMPL: %s", errMsg)
+			}
+		}
+	}
+	// Note: result.Success may be false due to step 5 (worktree creation) failing
+	// in a temp dir with no real git repo — that is acceptable for this test.
+}
+
+// TestPrepareTier_E37Required_MissingReport verifies that an IMPL with 3 agents in
+// wave 1 and no CriticReport is blocked by E37.
+func TestPrepareTier_E37Required_MissingReport(t *testing.T) {
+	repoDir := t.TempDir()
+	slug := "large-impl"
+
+	// 3 agents in wave 1, no CriticReport — E37 threshold met.
+	writeTempIMPL(t, repoDir, slug, 3, "")
+
+	programPath := writeTempProgram(t, []string{slug})
+
+	result, err := PrepareTier(programPath, 1, repoDir)
+	if err != nil {
+		t.Fatalf("PrepareTier returned unexpected error: %v", err)
+	}
+
+	if result.Success {
+		t.Fatal("expected PrepareTier to fail for 3-agent IMPL with no CriticReport, got Success=true")
+	}
+
+	// Verify E37 error message appears in Validations.
+	found := false
+	for _, vr := range result.Validations {
+		for _, errMsg := range vr.Errors {
+			if strings.Contains(errMsg, "E37 critic gate required") {
+				found = true
+			}
+		}
+	}
+	if !found {
+		t.Errorf("expected E37 critic gate validation error in Validations, but none found; Validations: %+v", result.Validations)
+	}
+}
+
+// TestPrepareTier_E37Required_WithPassReport verifies that an IMPL with 3 agents in
+// wave 1 and a PASS CriticReport is NOT blocked by E37.
+//
+// The test passes if PrepareTier does NOT return an E37 validation error.
+// A worktree-creation failure at step 5 (no real git repo) is acceptable.
+func TestPrepareTier_E37Required_WithPassReport(t *testing.T) {
+	repoDir := t.TempDir()
+	slug := "large-impl-with-pass"
+
+	// PASS critic report — all good.
+	criticBlock := `  verdict: PASS
+  agent_reviews: {}
+  summary: all good
+  reviewed_at: "2026-01-01T00:00:00Z"
+  issue_count: 0
+`
+	// 3 agents in wave 1, PASS CriticReport — E37 required but satisfied.
+	writeTempIMPL(t, repoDir, slug, 3, criticBlock)
+
+	programPath := writeTempProgram(t, []string{slug})
+
+	result, err := PrepareTier(programPath, 1, repoDir)
+	if err != nil {
+		t.Fatalf("PrepareTier returned unexpected error: %v", err)
+	}
+
+	// Verify no E37 error appears in Validations.
+	for _, vr := range result.Validations {
+		for _, errMsg := range vr.Errors {
+			if strings.Contains(errMsg, "E37 critic gate") {
+				t.Errorf("unexpected E37 block for 3-agent IMPL with PASS critic report: %s", errMsg)
+			}
+		}
+	}
+	// Note: result.Success may be false due to step 5 (worktree creation) failing
+	// in a temp dir with no real git repo — that is acceptable for this test.
 }

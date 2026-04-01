@@ -5,6 +5,29 @@ import (
 	"fmt"
 )
 
+// E37Required is a build stub for this worktree only.
+// The authoritative implementation is in critic_gate.go (Agent A).
+// Integration: remove this stub after merging Agent A's branch.
+func E37Required(m *IMPLManifest) bool {
+	wave1Agents := 0
+	for _, wave := range m.Waves {
+		if wave.Number == 1 {
+			wave1Agents = len(wave.Agents)
+			break
+		}
+	}
+	repoSet := make(map[string]bool)
+	for _, r := range m.Repositories {
+		repoSet[r] = true
+	}
+	for _, fo := range m.FileOwnership {
+		if fo.Repo != "" {
+			repoSet[fo.Repo] = true
+		}
+	}
+	return wave1Agents >= 3 || len(repoSet) >= 2
+}
+
 // PrepareTierResult contains the structured output of preparing a program tier.
 // It includes per-step results for conflict checking, IMPL validation, and
 // worktree creation.
@@ -116,11 +139,12 @@ func PrepareTier(programManifestPath string, tierNumber int, repoDir string) (*P
 		}
 
 		// Step 4.5: E37 critic gate enforcement (auto mode for program execution).
-		if !CriticGatePasses(m, true) {
+		// Only enforce when the threshold is met: 3+ agents in wave 1 OR 2+ repos.
+		if E37Required(m) && !CriticGatePasses(m, true) {
 			vr := IMPLValidationResult{
 				ImplSlug: slug,
 				Valid:    false,
-				Errors:   []string{"E37 critic gate failed — ISSUES verdict with errors"},
+				Errors:   []string{"E37 critic gate required but not satisfied — run `sawtools run-critic` or `sawtools run-critic --skip` before prepare-tier"},
 			}
 			result.Validations = append(result.Validations, vr)
 			result.Success = false
