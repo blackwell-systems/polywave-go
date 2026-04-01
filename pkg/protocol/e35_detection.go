@@ -6,6 +6,7 @@ import (
 	"go/parser"
 	"go/token"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 )
@@ -74,7 +75,14 @@ func DetectE35Gaps(m *IMPLManifest, waveNum int, repoRoot string) ([]E35Gap, err
 				continue
 			}
 
+			// Skip functions that already existed at HEAD — they are being modified,
+			// not newly introduced. Only new functions require caller ownership (E35).
+			existingAtHEAD := existingFunctionsInHEAD(repoRoot, file)
+
 			for _, fn := range funcs {
+				if existingAtHEAD[fn] {
+					continue
+				}
 				allFuncs = append(allFuncs, funcDef{
 					name:   fn,
 					file:   file,
@@ -164,6 +172,35 @@ func extractFunctions(absPath string) ([]string, string, string, error) {
 	}
 
 	return funcs, pkgName, pkgDir, nil
+}
+
+// existingFunctionsInHEAD returns the set of function names present in the file
+// at HEAD (before this wave's changes). If the file doesn't exist at HEAD (it's
+// a new file planned by the Scout), returns an empty set — all functions are new.
+//
+// This is used to avoid false-positive E35 gaps: a function that already existed
+// and is merely being modified does not require new caller ownership.
+func existingFunctionsInHEAD(repoRoot, relPath string) map[string]bool {
+	cmd := exec.Command("git", "-C", repoRoot, "show", "HEAD:"+relPath)
+	out, err := cmd.Output()
+	if err != nil {
+		// File doesn't exist at HEAD — it's a new file, all functions are new.
+		return map[string]bool{}
+	}
+
+	fset := token.NewFileSet()
+	f, parseErr := parser.ParseFile(fset, relPath, out, 0)
+	if parseErr != nil {
+		return map[string]bool{}
+	}
+
+	existing := make(map[string]bool)
+	for _, decl := range f.Decls {
+		if fn, ok := decl.(*ast.FuncDecl); ok {
+			existing[fn.Name.Name] = true
+		}
+	}
+	return existing
 }
 
 // findCallSites parses a Go file and returns line numbers where the specified

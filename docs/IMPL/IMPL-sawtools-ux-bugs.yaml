@@ -1,0 +1,340 @@
+title: 'sawtools UX Bug Fixes: branch drift, solo-wave REVIEWED state, and untracked SAW files in --commit-state'
+feature_slug: sawtools-ux-bugs
+verdict: SUITABLE
+suitability_assessment: |
+    Three isolated, independently reproducible bugs affecting the solo-wave and program-context
+    workflows. Each bug lives in a different file with no overlapping ownership. All fixes are
+    well-scoped (< 30 lines each) with clear behavioral contracts:
+
+    Bug 1 — close-impl branch drift: cmd/sawtools/close_impl_cmd.go
+    Bug 2 — solo-wave missing REVIEWED advance: pkg/engine/prepare_agent.go
+    Bug 3 — commit-state misses untracked SAW files: pkg/engine/prepare.go
+
+    File decomposition is clean: three agents, three disjoint files, single wave. No shared types
+    or cross-agent interfaces are introduced. Parallelization value: moderate — three agents ×
+    ~5 min each = 15 min sequential; parallel saves ~10 min. More importantly, the IMPL doc
+    provides an audit trail of the exact code changes and their rationale.
+
+    Estimated times:
+    - Scout phase: ~10 min
+    - Agent execution: ~15 min (3 agents × ~5 min, fully parallel)
+    - Merge & verification: ~5 min
+    Total SAW time: ~30 min
+
+    Sequential baseline: ~20 min
+    Time savings: marginal on speed; primary value is coordination and audit trail.
+test_command: go test ./...
+lint_command: go vet ./...
+file_ownership:
+    - file: cmd/sawtools/close_impl_cmd.go
+      agent: A
+      wave: 1
+      action: modify
+    - file: cmd/sawtools/main.go
+      agent: A
+      wave: 1
+      action: modify
+    - file: pkg/engine/prepare_agent.go
+      agent: B
+      wave: 1
+      action: modify
+    - file: pkg/engine/prepare.go
+      agent: B
+      wave: 1
+      action: modify
+    - file: pkg/engine/prepare_test.go
+      agent: B
+      wave: 1
+      action: modify
+interface_contracts:
+    - name: isSAWOwnedPath (expanded)
+      description: |
+        Existing helper in pkg/engine/prepare.go. Must be expanded to also classify
+        untracked files under docs/IMPL/ and docs/CONTEXT.md as SAW-owned so that
+        --commit-state can stage them without treating them as user code.
+      definition: |
+        // Before (only covers .saw-state/ and the active IMPL yaml):
+        return trimmed == rel ||
+            strings.HasPrefix(trimmed, ".saw-state/") ||
+            strings.HasPrefix(trimmed, ".saw-state\\")
+
+        // After (also covers docs/IMPL/ directory and docs/CONTEXT.md):
+        return trimmed == rel ||
+            strings.HasPrefix(trimmed, ".saw-state/") ||
+            strings.HasPrefix(trimmed, ".saw-state\\") ||
+            strings.HasPrefix(trimmed, "docs/IMPL/") ||
+            trimmed == "docs/CONTEXT.md"
+      location: pkg/engine/prepare.go
+    - name: advanceStateToReviewed (new helper in prepare_agent.go)
+      description: |
+        New unexported helper function extracted into pkg/engine/prepare_agent.go
+        that replicates the advance_state logic from PrepareWave. Called from
+        PrepareAgent when NoWorktree=true and the IMPL state is SCOUT_PENDING or
+        SCOUT_VALIDATING. Returns an error message string (empty = success) so the
+        caller can log a warning without aborting.
+      definition: |
+        // advanceStateToReviewed transitions the IMPL doc from SCOUT_PENDING (or
+        // SCOUT_VALIDATING) to REVIEWED. It is a best-effort operation: failure logs
+        // a warning but does not abort agent preparation.
+        // Returns ("", nil) on success, ("warning message", nil) on non-fatal failure.
+        func advanceStateToReviewed(ctx context.Context, implPath string) string {
+            os.Setenv("SAW_ALLOW_MAIN_COMMIT", "1")
+            defer os.Unsetenv("SAW_ALLOW_MAIN_COMMIT")
+            stateRes := protocol.SetImplState(ctx, implPath, protocol.StateReviewed, protocol.SetImplStateOpts{
+                Commit:    true,
+                CommitMsg: "chore: advance IMPL state to REVIEWED (solo-wave prepare-agent)",
+            })
+            if stateRes.IsFatal() {
+                if len(stateRes.Errors) > 0 {
+                    return stateRes.Errors[0].Message
+                }
+                return "unknown error advancing to REVIEWED"
+            }
+            return ""
+        }
+      location: pkg/engine/prepare_agent.go
+    - name: restoreMainBranchAfterClose (inline logic in close_impl_cmd.go)
+      description: |
+        After the stale worktree and .saw-state cleanup steps in close-impl, detect
+        whether the main working tree is currently on a SAW-managed branch (pattern:
+        "saw/*/wave*" or the legacy "wave*-agent-*") and, if so, run
+        `git checkout main`. This is a best-effort step: failure emits a warning but
+        does not fail the close-impl command.
+      definition: |
+        // After cleanup steps in newCloseImplCmd:
+        branchOut, branchErr := git.Run(projectRoot, "branch", "--show-current")
+        if branchErr == nil {
+            currentBranch := strings.TrimSpace(branchOut)
+            isSAWBranch := strings.HasPrefix(currentBranch, "saw/") ||
+                (strings.HasPrefix(currentBranch, "wave") && strings.Contains(currentBranch, "-agent-"))
+            if isSAWBranch {
+                if _, checkoutErr := git.Run(projectRoot, "checkout", "main"); checkoutErr != nil {
+                    fmt.Fprintf(os.Stderr, "close-impl: warning: could not restore main branch: %v\n", checkoutErr)
+                } else {
+                    fmt.Fprintf(os.Stderr, "close-impl: restored main branch (was on %s)\n", currentBranch)
+                }
+            }
+        }
+      location: cmd/sawtools/close_impl_cmd.go
+waves:
+    - number: 1
+      agents:
+        - id: A
+          task: |
+            ## Bug 1 — Restore main branch after close-impl cleanup
+
+            **File:** `cmd/sawtools/close_impl_cmd.go`
+
+            After the existing "Step 5: Clean .saw-state wave directories" block and before
+            building the JSON output, add a branch-restore step.
+
+            The step must:
+            1. Run `git branch --show-current` using `git.Run(projectRoot, "branch", "--show-current")`.
+            2. Trim whitespace from the output to get `currentBranch`.
+            3. Classify as a SAW branch if:
+               - `strings.HasPrefix(currentBranch, "saw/")`, OR
+               - `strings.HasPrefix(currentBranch, "wave") && strings.Contains(currentBranch, "-agent-")`
+            4. If it IS a SAW branch: run `git.Run(projectRoot, "checkout", "main")`.
+               - On success: `fmt.Fprintf(os.Stderr, "close-impl: restored main branch (was on %s)\n", currentBranch)`
+               - On error: `fmt.Fprintf(os.Stderr, "close-impl: warning: could not restore main branch: %v\n", checkoutErr)` — do NOT return the error; this step is best-effort.
+            5. If it is NOT a SAW branch, do nothing.
+            6. Add a `branch_restored` field to the JSON output map (type `bool`; set to true when `git checkout main` succeeded).
+
+            You must add `"strings"` to the import block if it is not already present. The
+            `git` package is already imported indirectly via `protocol`, but `close_impl_cmd.go`
+            does not import it directly. Add:
+            `"github.com/blackwell-systems/scout-and-wave-go/internal/git"` to the imports.
+
+            **Verification gate:**
+            ```
+            go build ./cmd/sawtools/... && go vet ./cmd/sawtools/... && go test ./cmd/sawtools/... -run TestCloseImpl
+            ```
+          files:
+            - cmd/sawtools/close_impl_cmd.go
+            - cmd/sawtools/main.go
+        - id: B
+          task: |
+            ## Bug 2 — Solo-wave prepare-agent must advance IMPL state to REVIEWED
+
+            **File:** `pkg/engine/prepare_agent.go`
+
+            The `PrepareAgent` function in this file is used for solo waves (NoWorktree=true).
+            When the IMPL state is `SCOUT_PENDING` or `SCOUT_VALIDATING`, `close-impl` later
+            fails with "transition from SCOUT_PENDING to COMPLETE is not allowed" because the
+            state machine never reached REVIEWED.
+
+            `PrepareWave` in `pkg/engine/prepare.go` (which you do NOT own) already handles
+            this via its `advance_state` step. You must replicate that logic in `PrepareAgent`
+            for the `NoWorktree=true` path.
+
+            **Changes to make:**
+
+            1. Add a new unexported helper function `advanceStateToReviewed` in this file
+               (do NOT add it to prepare.go — that is owned by Agent C):
+
+               ```go
+               // advanceStateToReviewed transitions the IMPL doc from SCOUT_PENDING or
+               // SCOUT_VALIDATING to REVIEWED. Best-effort: failure returns a warning
+               // message without aborting the caller. Returns "" on success.
+               func advanceStateToReviewed(ctx context.Context, implPath string) string {
+                   os.Setenv("SAW_ALLOW_MAIN_COMMIT", "1")
+                   defer os.Unsetenv("SAW_ALLOW_MAIN_COMMIT")
+                   stateRes := protocol.SetImplState(ctx, implPath, protocol.StateReviewed, protocol.SetImplStateOpts{
+                       Commit:    true,
+                       CommitMsg: "chore: advance IMPL state to REVIEWED (solo-wave prepare-agent)",
+                   })
+                   if stateRes.IsFatal() {
+                       if len(stateRes.Errors) > 0 {
+                           return stateRes.Errors[0].Message
+                       }
+                       return "unknown error advancing to REVIEWED"
+                   }
+                   return ""
+               }
+               ```
+
+            2. In `PrepareAgent`, after the `context_source` is determined and persisted to the
+               IMPL doc (after the `protocol.Save` call around line 220), and BEFORE the
+               journal observer is initialized, add the advance-state call:
+
+               ```go
+               // Advance IMPL state to REVIEWED for solo-wave agents (NoWorktree path).
+               // PrepareWave does this via its advance_state step; solo paths skip PrepareWave.
+               if opts.NoWorktree && (doc.State == protocol.StateScoutPending || doc.State == protocol.StateScoutValidating) {
+                   if warnMsg := advanceStateToReviewed(ctx, opts.ManifestPath); warnMsg != "" {
+                       fmt.Fprintf(os.Stderr, "prepare-agent: warning: could not advance to REVIEWED: %s\n", warnMsg)
+                   }
+               }
+               ```
+
+            3. Ensure `"os"` is in the import block (it already is, but verify). The `protocol`
+               package import is already present.
+
+            **Verification gate (Bug 2):**
+            ```
+            go build ./pkg/engine/... && go vet ./pkg/engine/... && go test ./pkg/engine/... -run TestPrepareAgent
+            ```
+
+            ---
+
+            ## Bug 3 — --commit-state misses untracked SAW-managed files
+
+            **File:** `pkg/engine/prepare.go`
+
+            The `isSAWOwnedPath` helper (around line 57) classifies git-porcelain status
+            lines as SAW-owned vs user code. Currently it only recognizes:
+            - The active IMPL yaml file itself
+            - Files under `.saw-state/`
+
+            This means newly created, untracked files such as:
+            - `docs/IMPL/IMPL-<new-feature>.yaml`
+            - `docs/IMPL/complete/IMPL-<archived>.yaml`
+            - `docs/CONTEXT.md`
+
+            …are classified as "user code" and block `prepare-wave --commit-state`.
+
+            **Change to make:**
+
+            Expand `isSAWOwnedPath` to also recognize `docs/IMPL/` and `docs/CONTEXT.md`
+            as SAW-owned paths. The function is at approximately line 57-74.
+
+            Replace the return statement:
+            ```go
+            // Before:
+            return trimmed == rel ||
+                strings.HasPrefix(trimmed, ".saw-state/") ||
+                strings.HasPrefix(trimmed, ".saw-state\\")
+            ```
+            with:
+            ```go
+            // After:
+            return trimmed == rel ||
+                strings.HasPrefix(trimmed, ".saw-state/") ||
+                strings.HasPrefix(trimmed, ".saw-state\\") ||
+                strings.HasPrefix(trimmed, "docs/IMPL/") ||
+                trimmed == "docs/CONTEXT.md"
+            ```
+
+            No other changes to `prepare.go` are required. Do not modify the `PrepareWave`
+            function body, the `CommitState` staging loop, or any other function.
+
+            **Accuracy check:** Before editing, run:
+            ```bash
+            grep -n "isSAWOwnedPath" pkg/engine/prepare.go
+            grep -n "HasPrefix.*saw-state" pkg/engine/prepare.go
+            ```
+            Confirm the function is at approximately line 57 and the return statement
+            matches the "Before" form shown above.
+
+            **Test:** Add a test case to `pkg/engine/prepare_test.go` (the isSAWOwnedPath
+            unit tests at the bottom of that file) verifying:
+            - `isSAWOwnedPath("?? docs/IMPL/IMPL-foo.yaml", "/repo/docs/IMPL/IMPL-bar.yaml", "/repo")` returns true
+            - `isSAWOwnedPath(" M docs/CONTEXT.md", "/repo/docs/IMPL/IMPL-bar.yaml", "/repo")` returns true
+            - `isSAWOwnedPath(" M cmd/sawtools/main.go", "/repo/docs/IMPL/IMPL-bar.yaml", "/repo")` still returns false
+
+            **Verification gate (Bug 3):**
+            ```
+            go build ./pkg/engine/... && go vet ./pkg/engine/... && go test ./pkg/engine/... -run TestIsSAWOwnedPath
+            ```
+          files:
+            - pkg/engine/prepare_agent.go
+            - pkg/engine/prepare.go
+            - pkg/engine/prepare_test.go
+quality_gates:
+    level: standard
+    gates:
+        - type: build
+          command: go build ./...
+          required: true
+        - type: lint
+          command: go vet ./...
+          required: true
+        - type: test
+          command: go test ./...
+          required: true
+pre_mortem:
+    overall_risk: low
+    rows:
+        - scenario: |
+            Agent A adds the `internal/git` import but close_impl_cmd.go already imports
+            something that re-exports git.Run indirectly. The agent might add a duplicate
+            or incorrect import path.
+          likelihood: low
+          impact: low
+          mitigation: |
+            Agent A brief explicitly states the import path
+            `github.com/blackwell-systems/scout-and-wave-go/internal/git` and instructs the
+            agent to check existing imports before adding.
+        - scenario: |
+            Agent B defines `advanceStateToReviewed` but prepare.go (Agent C's file) already
+            has a local version or the symbol is exported from protocol. Duplicate symbol
+            in same package causes build failure.
+          likelihood: low
+          impact: medium
+          mitigation: |
+            The function is defined as unexported and package-local to `prepare_agent.go`.
+            Agent C only touches `prepare.go` (a different file in the same package). Both
+            agents are told which file they own; the function name does not appear in
+            prepare.go. The interface contract explicitly states "do NOT add it to prepare.go".
+        - scenario: |
+            Agent C's new `isSAWOwnedPath` test uses a porcelain prefix format that doesn't
+            match what the function expects (the `??` prefix for untracked vs ` M ` for modified).
+            Tests pass locally but real-world untracked files still aren't classified.
+          likelihood: low
+          impact: medium
+          mitigation: |
+            Agent C brief includes both a `??` (untracked) and ` M ` (modified) test case.
+            The function strips the 2-char prefix via `strings.TrimSpace(trimmed[2:])`,
+            so the prefix format doesn't actually matter after trimming — but both cases
+            are covered in the test to be explicit.
+        - scenario: |
+            The `git checkout main` in close-impl fails because the repo uses a branch
+            named `master` or `trunk` instead of `main`.
+          likelihood: low
+          impact: low
+          mitigation: |
+            The step is best-effort (failure emits a warning, not an error). If the checkout
+            fails, close-impl still completes successfully. Future work could detect the
+            default branch name from git config, but that is out of scope here.
+state: SCOUT_PENDING
+injection_method: hook
