@@ -604,5 +604,5 @@ pre_mortem:
           impact: low
           mitigation: |
             Agent B task explicitly states telegram.go already calls readWithFallback and that moving it to types.go (same package) requires no import changes. Agent B's verification gate runs go build ./... which will catch any missing symbol immediately.
-state: SCOUT_PENDING
+state: "REVIEWED"
 injection_method: hook
