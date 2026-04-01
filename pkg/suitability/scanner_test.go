@@ -5,8 +5,6 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
 )
 
 func TestScanPreImplementation_AllDone(t *testing.T) {

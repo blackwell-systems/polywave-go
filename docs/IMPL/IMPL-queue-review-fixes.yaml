@@ -1,0 +1,231 @@
+title: Fix pkg/queue review findings — error code conformance, result.Result migration, bug fixes, test gaps
+feature_slug: queue-review-fixes
+verdict: SUITABLE
+suitability_assessment: |
+    File decomposition: 2 files (manager.go + manager_test.go), disjoint ownership. Agent A handles error code additions + Result migration in manager.go. Agent B adds test coverage in manager_test.go. No conflicting modifications.
+
+    Investigation-first items: None. All issues are deterministic and well-defined (hardcoded strings, nil check after append, test gaps).
+
+    Interface discoverability: No cross-agent interfaces. Both agents work independently on their files. Error codes added by Agent A are already referenced in manager.go (no signature changes). Test additions by Agent B call existing public methods.
+
+    Pre-implementation status: None of the 11 review findings are currently implemented. All work is TODO.
+
+    Parallelization value: High. Build + test cycle for Go takes ~5-10s. 2 agents with independent files benefit from parallel execution. Agent A: 9 error code replacements + completedSlugs() refactor + bug fix. Agent B: 4 new test functions (error path coverage). Sequential time: ~15-20 min. SAW time: ~10-12 min (5-7 min scout + 5 min wave). Clear speedup + coordination value (error codes must be added before test assertions reference them, enforced via wave structure).
+test_command: go test ./pkg/queue/... -timeout 30s
+lint_command: go vet ./pkg/queue/...
+file_ownership:
+    - file: pkg/result/codes.go
+      agent: A
+      wave: 1
+      action: modify
+    - file: pkg/queue/manager.go
+      agent: A
+      wave: 1
+      action: modify
+    - file: pkg/queue/manager_test.go
+      agent: B
+      wave: 2
+      action: modify
+interface_contracts:
+    - name: Queue error code constants (Q001-Q006)
+      description: Six new error code constants in pkg/result/codes.go for queue operations
+      definition: |
+        const (
+          CodeQueueAddFailed           = "Q001_QUEUE_ADD_FAILED"
+          CodeQueueListFailed          = "Q002_QUEUE_LIST_FAILED"
+          CodeQueueEmpty               = "Q003_QUEUE_EMPTY"
+          CodeQueueStatusUpdateFailed  = "Q004_QUEUE_STATUS_UPDATE_FAILED"
+          CodeQueueCompletedScanFailed = "Q005_QUEUE_COMPLETED_SCAN_FAILED"
+          CodeQueueCorruptedFile       = "Q006_QUEUE_CORRUPTED_FILE"
+        )
+
+        Q001: MkdirAll or SaveYAML failures in Add()
+        Q002: ReadDir or LoadYAML failures in List()
+        Q003: Next() returns no eligible items (blocking error, not fatal failure)
+        Q004: UpdateStatus() failures (read, load, save, or slug not found)
+        Q005: completedSlugs() failures (cannot read queue or complete dir)
+        Q006: Corrupted YAML files in queue or complete dir
+      location: pkg/result/codes.go (after line 225, in Q001-Q099 range comment block)
+    - name: completedSlugs() returns result.Result[map[string]bool]
+      description: Private helper refactored to return Result[T] instead of bare error
+      definition: |
+        func (m *Manager) completedSlugs() result.Result[map[string]bool] {
+          // Replaces: (map[string]bool, error)
+          // Returns SUCCESS with completed slug map on success
+          // Returns FATAL with Q005 code on dir read failures
+          // Returns PARTIAL with Q006 warnings for corrupted files (continues scan)
+        }
+      location: pkg/queue/manager.go:154
+waves:
+    - number: 1
+      agents:
+        - id: A
+          task: |
+            ## What to implement
+
+            1. **Add queue error codes to pkg/result/codes.go:**
+               - Add a Q001-Q099 comment block after line 225 (after N085 constant)
+               - Define 6 constants as specified in interface_contracts
+               - Use the pattern: `CodeQueueAddFailed = "Q001_QUEUE_ADD_FAILED"` (CamelCase constant name, UPPER_SNAKE_CASE string value)
+
+            2. **Replace 9 hardcoded error strings in pkg/queue/manager.go:**
+               - Line 83: "QUEUE_ADD_FAILED" → result.CodeQueueAddFailed
+               - Line 92: "QUEUE_ADD_FAILED" → result.CodeQueueAddFailed
+               - Line 112: "QUEUE_LIST_FAILED" → result.CodeQueueListFailed
+               - Line 129: "QUEUE_LIST_FAILED" → result.CodeQueueListFailed
+               - Line 224: "QUEUE_LIST_FAILED" → result.CodeQueueCompletedScanFailed (more specific code for completedSlugs failure)
+               - Line 246: "QUEUE_EMPTY" → result.CodeQueueEmpty
+               - Line 257: "QUEUE_STATUS_UPDATE_FAILED" → result.CodeQueueStatusUpdateFailed
+               - Line 273: "QUEUE_STATUS_UPDATE_FAILED" → result.CodeQueueStatusUpdateFailed
+               - Line 280: "QUEUE_STATUS_UPDATE_FAILED" → result.CodeQueueStatusUpdateFailed
+               - Line 291: "QUEUE_STATUS_UPDATE_FAILED" → result.CodeQueueStatusUpdateFailed
+
+            3. **Refactor completedSlugs() to return result.Result[map[string]bool]:**
+               - Change signature at line 154 from `(map[string]bool, error)` to `result.Result[map[string]bool]`
+               - Replace `return nil, fmt.Errorf(...)` at lines 160, 177 with `return result.NewFailure[map[string]bool]([]result.SAWError{result.NewFatal(result.CodeQueueCompletedScanFailed, "...")})`
+               - Replace `return completed, nil` at line 208 with `return result.NewSuccess(completed)`
+               - Update callers at lines 158, 221-226:
+                 * Change `listResult := m.List()` (already Result[T])
+                 * Change `completed, err := m.completedSlugs()` to `completedResult := m.completedSlugs()`
+                 * Change `if err != nil { return result.NewFailure[Item](...)` to `if completedResult.IsFatal() { return result.NewFailure[Item](completedResult.Errors) }`
+                 * Change `for _, item := range listResult.GetData().Items` (already correct)
+                 * Change `for _, dep := range item.DependsOn { if !completed[dep] ...` to `completed := completedResult.GetData(); for _, dep := range item.DependsOn { if !completed[dep] ...`
+
+            4. **Remove unreachable nil check at lines 140-142:**
+               - Delete the block:
+                 ```go
+                 if items == nil {
+                   items = []Item{}
+                 }
+                 ```
+               - This check is unreachable after `append()` at line 133 (Go slice semantics guarantee non-nil after append)
+
+            ## Interfaces this agent will implement
+
+            - Queue error code constants (Q001-Q006) in pkg/result/codes.go
+            - completedSlugs() returns result.Result[map[string]bool] in pkg/queue/manager.go
+
+            ## Tests to add
+
+            None. Agent B adds test coverage in wave 2.
+
+            ## Verification gate (run these commands before marking complete)
+
+            ```bash
+            cd /Users/dayna.blackwell/workspace/code/scout-and-wave-go
+            go build ./pkg/queue/...
+            go vet ./pkg/queue/...
+            go test ./pkg/queue/... -timeout 30s
+            ```
+
+            All three must pass with exit code 0.
+
+            ## Constraints
+
+            - Do NOT change public method signatures (Add, List, Next, UpdateStatus). Only completedSlugs() signature changes.
+            - Do NOT add new error codes beyond Q001-Q006. Use existing codes for other errors.
+            - Do NOT remove existing test coverage. Only modify implementation code.
+            - Follow Go naming conventions: CamelCase for exported constants, descriptive names for internal variables.
+            - Error messages must be descriptive (include operation context, not just "failed").
+          files:
+            - pkg/result/codes.go
+            - pkg/queue/manager.go
+    - number: 2
+      agents:
+        - id: B
+          task: |
+            ## What to implement
+
+            Add test coverage for error paths in pkg/queue/manager_test.go:
+
+            1. **TestAdd_MkdirFails:**
+               - Simulate os.MkdirAll() failure by using a read-only temp dir or invalid path
+               - Verify result.IsFatal() returns true
+               - Verify error code is result.CodeQueueAddFailed
+               - Pattern: Create temp dir, chmod 0444, attempt Add()
+
+            2. **TestList_CorruptedYAML:**
+               - Create queue dir with a .yaml file containing invalid YAML
+               - Verify List() returns Fatal with result.CodeQueueListFailed
+               - Pattern: Write `[]]]corrupted` to queue/001-test.yaml, call List()
+
+            3. **TestCompletedSlugs_CompleteDir_ReadFailure:**
+               - Indirectly test completedSlugs() error handling via Next()
+               - Create a queue item with depends_on, but break complete dir access (chmod 0000 or delete mid-scan)
+               - Verify Next() returns Fatal with result.CodeQueueCompletedScanFailed
+               - Pattern: Create queue item with DependsOn: ["prereq"], chmod complete dir 0000, call Next()
+
+            4. **TestUpdateStatus_SaveYAMLFails:**
+               - Create queue item, then make the file read-only (chmod 0444)
+               - Call UpdateStatus("slug", "new-status")
+               - Verify result.IsFatal() returns true and error code is result.CodeQueueStatusUpdateFailed
+               - Pattern: Add item, get file path, chmod 0444, attempt UpdateStatus()
+
+            ## Interfaces this agent will consume
+
+            - Queue error code constants (Q001-Q006) from pkg/result/codes.go (Wave 1 Agent A)
+            - completedSlugs() returns result.Result[map[string]bool] (Wave 1 Agent A)
+
+            ## Tests to add
+
+            4 new test functions in pkg/queue/manager_test.go:
+            - TestAdd_MkdirFails
+            - TestList_CorruptedYAML
+            - TestCompletedSlugs_CompleteDir_ReadFailure
+            - TestUpdateStatus_SaveYAMLFails
+
+            ## Verification gate (run these commands before marking complete)
+
+            ```bash
+            cd /Users/dayna.blackwell/workspace/code/scout-and-wave-go
+            go build ./pkg/queue/...
+            go vet ./pkg/queue/...
+            go test ./pkg/queue/... -timeout 30s
+            ```
+
+            All three must pass. Verify new tests execute and pass (not skipped).
+
+            ## Constraints
+
+            - Do NOT modify pkg/queue/manager.go. Only add tests.
+            - Do NOT skip tests with t.Skip(). All new tests must be executable on all platforms.
+            - Use t.TempDir() for all test directories (automatic cleanup).
+            - Prefer chmod-based failure simulation over OS-specific syscalls (portable across macOS/Linux).
+            - Clean up test state (restore permissions) in defer blocks to avoid polluting test environment.
+          files:
+            - pkg/queue/manager_test.go
+          dependencies:
+            - A
+quality_gates:
+    level: standard
+    gates:
+        - type: build
+          command: go build ./pkg/queue/...
+          required: true
+        - type: lint
+          command: go vet ./pkg/queue/...
+          required: true
+        - type: test
+          command: go test ./pkg/queue/... -timeout 30s
+          required: true
+pre_mortem:
+    overall_risk: low
+    rows:
+        - scenario: Agent A changes completedSlugs() signature but forgets to update callers at lines 158, 221-226
+          likelihood: medium
+          impact: high
+          mitigation: Verification gate will catch compilation failure. Agent A prompt explicitly lists both call sites with before/after code.
+        - scenario: Agent B's chmod-based failure tests are not portable (fail on Windows)
+          likelihood: low
+          impact: medium
+          mitigation: Go's os.Chmod works on Windows (read-only flag maps to +R attribute). If test fails on Windows, Agent B prompt says to use os-specific skip with runtime.GOOS check.
+        - scenario: Wave 2 test additions reference Q005/Q006 codes before they exist (if Agent A fails validation)
+          likelihood: low
+          impact: high
+          mitigation: Wave structure enforces ordering — Wave 2 cannot start until Wave 1 passes all gates. Compilation failure in Wave 1 blocks Wave 2.
+        - scenario: Removing nil check at lines 140-142 causes panic if append logic changes in the future
+          likelihood: low
+          impact: low
+          mitigation: Go slice semantics guarantee append() always returns non-nil. The check is defensive but unreachable. Removal is safe. If future refactor adds a code path where items is not assigned via append, linter or tests will catch it.
+state: SCOUT_PENDING
+injection_method: hook
