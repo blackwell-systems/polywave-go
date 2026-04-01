@@ -31,7 +31,10 @@ type PrepareWaveOpts struct {
 	// before the working-directory check. Does NOT commit user code changes.
 	// Intended for program-context prepare-wave calls.
 	CommitState bool
-	OnEvent     EventCallback
+	// NoGoWork disables the gowork_setup step in PrepareWave.
+	// Use when go.work management conflicts with an existing workspace setup.
+	NoGoWork bool
+	OnEvent  EventCallback
 	Logger         *slog.Logger // optional: nil falls back to slog.Default()
 }
 

@@ -72,7 +72,9 @@ func isSAWOwnedPath(path, implPath, projectRoot string) bool {
 		strings.HasPrefix(trimmed, ".saw-state/") ||
 		strings.HasPrefix(trimmed, ".saw-state\\") ||
 		strings.HasPrefix(trimmed, "docs/IMPL/") ||
-		trimmed == "docs/CONTEXT.md"
+		trimmed == "docs/CONTEXT.md" ||
+		trimmed == "go.work" ||
+		trimmed == "go.work.sum"
 }
 
 // PrepareWave encapsulates the full wave preparation pipeline.
@@ -570,6 +572,16 @@ func PrepareWave(ctx context.Context, opts PrepareWaveOpts) (*PrepareWaveResult,
 	res.Worktrees = worktreeResult.Worktrees
 	recordStep(res, opts.OnEvent, "create_worktrees", "success",
 		fmt.Sprintf("created %d worktree(s)", len(worktreeResult.Worktrees)))
+
+	// Step: gowork_setup — create/update go.work for LSP cross-package resolution
+	if !opts.NoGoWork {
+		goworkResult := StepGoWorkSetup(ctx, projectRoot, opts.WaveNum, worktreeResult.Worktrees, opts.OnEvent, opts.Logger)
+		if goworkResult != nil {
+			recordStepWithData(res, opts.OnEvent, goworkResult.Step, goworkResult.Status, goworkResult.Detail, goworkResult.Data)
+		}
+	} else {
+		recordStep(res, opts.OnEvent, "gowork_setup", "skipped", "--no-gowork flag set")
+	}
 
 	// Step: Verify pre-commit hooks (H10)
 	for _, wtInfo := range worktreeResult.Worktrees {

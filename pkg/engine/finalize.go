@@ -527,6 +527,12 @@ func FinalizeWave(ctx context.Context, opts FinalizeWaveOpts) (*FinalizeWaveResu
 	// Step 4.5: Fix go.mod replace paths
 	_, _ = StepFixGoMod(ctx, opts, onEvent)
 
+	// Step 4.6: Restore go.work to pre-wave state
+	for _, repoPath := range repos {
+		_ = StepGoWorkRestore(ctx, repoPath, opts.WaveNum, onEvent, opts.Logger)
+		break // run once — go.work is repo-root-scoped, not per-repo
+	}
+
 	// Step 5: VerifyBuild — per repo
 	allBuildPassed := true
 	for repoKey, repoPath := range repos {

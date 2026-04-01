@@ -20,6 +20,7 @@ func newPrepareWaveCmd() *cobra.Command {
 	var commitState bool
 	var jsonOnly bool
 	var skipCritic bool
+	var noGoWork bool
 
 	cmd := &cobra.Command{
 		Use:   "prepare-wave <manifest-path>",
@@ -93,6 +94,7 @@ to fail with a descriptive error.`,
 				NoCache:        noCache,
 				CommitBaseline: commitBaseline,
 				CommitState:    commitState,
+				NoGoWork:       noGoWork,
 				Logger:         newSawLogger(),
 				OnEvent: func(step string, status string, detail string) {
 					if !jsonOnly {
@@ -142,6 +144,7 @@ to fail with a descriptive error.`,
 	cmd.Flags().BoolVar(&commitState, "commit-state", false, "Auto-commit SAW-owned state changes (IMPL yaml + gate-cache) before working-dir check. Does not commit user code.")
 	cmd.Flags().BoolVar(&jsonOnly, "json-only", false, "Suppress progress messages (only output JSON result)")
 	cmd.Flags().BoolVar(&skipCritic, "skip-critic", false, "Auto-skip E37 critic gate if no critic report exists")
+	cmd.Flags().BoolVar(&noGoWork, "no-gowork", false, "Skip go.work setup for LSP cross-package resolution (Go repos only)")
 
 	return cmd
 }
