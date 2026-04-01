@@ -84,29 +84,6 @@ func checkValidation(m *IMPLManifest) PreWaveGateCheck {
 	}
 }
 
-// E37Required is a build stub for this worktree branch. The authoritative
-// implementation lives in critic_gate.go (Agent A). This stub must be removed
-// during wave merge when Agent A's critic_gate.go is present in the same package.
-func E37Required(m *IMPLManifest) bool {
-	wave1Agents := 0
-	for _, wave := range m.Waves {
-		if wave.Number == 1 {
-			wave1Agents = len(wave.Agents)
-			break
-		}
-	}
-	repoSet := make(map[string]bool)
-	for _, r := range m.Repositories {
-		repoSet[r] = true
-	}
-	for _, fo := range m.FileOwnership {
-		if fo.Repo != "" {
-			repoSet[fo.Repo] = true
-		}
-	}
-	return wave1Agents >= 3 || len(repoSet) >= 2
-}
-
 // checkCriticReview checks whether a critic review has been run when required (E37).
 // It delegates the threshold decision to E37Required (critic_gate.go) to avoid
 // duplicating the wave1-agents / multi-repo logic inline.
