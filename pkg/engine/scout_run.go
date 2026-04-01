@@ -34,6 +34,13 @@ type RunCriticResult struct {
 	ReviewedAt string `json:"reviewed_at"`
 }
 
+// BuildCriticPromptOpts configures prompt-building for the critic agent
+// without launching it. Used by --backend agent-tool.
+type BuildCriticPromptOpts struct {
+	IMPLPath    string // absolute path to IMPL doc (required)
+	SAWRepoPath string // optional; falls back to $SAW_REPO then ~/code/scout-and-wave
+}
+
 // runCriticFn is the function variable through which RunScoutFull calls the
 // critic gate. It is set by pkg/engine/critic.go (Agent D) via its package
 // init(). Before critic.go is present (e.g. in agent C's isolated worktree),

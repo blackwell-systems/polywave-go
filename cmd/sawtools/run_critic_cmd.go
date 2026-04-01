@@ -25,6 +25,7 @@ func newRunCriticCmd() *cobra.Command {
 		skip        bool
 		criticModel string
 		timeout     int // minutes
+		backendMode string
 	)
 
 	cmd := &cobra.Command{
@@ -63,6 +64,19 @@ Examples:
 			// --skip is an alias for --no-review.
 			if skip {
 				noReview = true
+			}
+
+			// Handle --backend agent-tool: print assembled prompt to stdout and exit.
+			if backendMode == "agent-tool" {
+				prompt, err := engine.BuildCriticPrompt(cmd.Context(), engine.BuildCriticPromptOpts{
+					IMPLPath:    implPath,
+					SAWRepoPath: "",
+				})
+				if err != nil {
+					return fmt.Errorf("run-critic: failed to build critic prompt: %w", err)
+				}
+				fmt.Print(prompt)
+				return nil
 			}
 
 			// Handle --no-review / --skip: write PASS result immediately without launching an agent.
@@ -142,6 +156,7 @@ Examples:
 	cmd.Flags().BoolVar(&skip, "skip", false, "Alias for --no-review")
 	cmd.Flags().StringVar(&criticModel, "model", "", "Model override for critic agent (e.g. claude-opus-4-6)")
 	cmd.Flags().IntVar(&timeout, "timeout", 20, "Timeout in minutes (default: 20)")
+	cmd.Flags().StringVar(&backendMode, "backend", "cli", "Backend mode: cli (default) or agent-tool")
 
 	return cmd
 }

@@ -17,26 +17,24 @@ func init() {
 	runCriticFn = RunCritic
 }
 
-// RunCritic runs the critic agent end-to-end: loads the IMPL doc, discovers
-// repo roots, loads the critic-agent.md prompt, launches the agent, reads the
-// critic_report from the IMPL doc, and returns a structured result. The caller
-// is responsible for handling --no-review / --skip before invoking this.
-func RunCritic(ctx context.Context, opts RunCriticOpts, onChunk func(string)) (RunCriticResult, error) {
-	log := loggerFrom(opts.Logger)
-	_ = log
-
+// BuildCriticPrompt extracts the prompt-building logic from RunCritic into a
+// reusable function. It loads the IMPL doc, collects repo roots, loads
+// critic-agent.md with reference injection, and returns the assembled prompt
+// string. Used by --backend agent-tool to emit the prompt without spawning a
+// subprocess.
+func BuildCriticPrompt(ctx context.Context, opts BuildCriticPromptOpts) (string, error) {
 	// Validate IMPL path is absolute and exists.
 	if !filepath.IsAbs(opts.IMPLPath) {
-		return RunCriticResult{}, fmt.Errorf("run-critic: impl-path must be absolute (got %q)", opts.IMPLPath)
+		return "", fmt.Errorf("run-critic: impl-path must be absolute (got %q)", opts.IMPLPath)
 	}
 	if _, err := os.Stat(opts.IMPLPath); err != nil {
-		return RunCriticResult{}, fmt.Errorf("run-critic: impl path does not exist: %s", opts.IMPLPath)
+		return "", fmt.Errorf("run-critic: impl path does not exist: %s", opts.IMPLPath)
 	}
 
 	// Load the IMPL doc to collect repo roots.
 	manifest, err := protocol.Load(ctx, opts.IMPLPath)
 	if err != nil {
-		return RunCriticResult{}, fmt.Errorf("run-critic: failed to load IMPL doc: %w", err)
+		return "", fmt.Errorf("run-critic: failed to load IMPL doc: %w", err)
 	}
 
 	// Collect repo roots from the manifest; fall back to inferring from the IMPL path.
@@ -56,7 +54,7 @@ func RunCritic(ctx context.Context, opts RunCriticOpts, onChunk func(string)) (R
 	if sawRepo == "" {
 		home, err := os.UserHomeDir()
 		if err != nil {
-			return RunCriticResult{}, fmt.Errorf("run-critic: cannot determine home directory: %w", err)
+			return "", fmt.Errorf("run-critic: cannot determine home directory: %w", err)
 		}
 		sawRepo = filepath.Join(home, "code", "scout-and-wave")
 	}
@@ -74,8 +72,25 @@ func RunCritic(ctx context.Context, opts RunCriticOpts, onChunk func(string)) (R
 	for _, root := range repoPaths {
 		repoRootsSection += fmt.Sprintf("- %s\n", root)
 	}
-	prompt := fmt.Sprintf("%s\n\n## IMPL Doc Path\n%s\n\n## Repository Root(s)\n%s",
-		criticMdContent, opts.IMPLPath, repoRootsSection)
+	return fmt.Sprintf("%s\n\n## IMPL Doc Path\n%s\n\n## Repository Root(s)\n%s",
+		criticMdContent, opts.IMPLPath, repoRootsSection), nil
+}
+
+// RunCritic runs the critic agent end-to-end: loads the IMPL doc, discovers
+// repo roots, loads the critic-agent.md prompt, launches the agent, reads the
+// critic_report from the IMPL doc, and returns a structured result. The caller
+// is responsible for handling --no-review / --skip before invoking this.
+func RunCritic(ctx context.Context, opts RunCriticOpts, onChunk func(string)) (RunCriticResult, error) {
+	log := loggerFrom(opts.Logger)
+	_ = log
+
+	prompt, err := BuildCriticPrompt(ctx, BuildCriticPromptOpts{
+		IMPLPath:    opts.IMPLPath,
+		SAWRepoPath: opts.SAWRepoPath,
+	})
+	if err != nil {
+		return RunCriticResult{}, err
+	}
 
 	// Apply context timeout (default 20 minutes).
 	timeoutMinutes := opts.Timeout
@@ -85,12 +100,18 @@ func RunCritic(ctx context.Context, opts RunCriticOpts, onChunk func(string)) (R
 	ctx, cancel := context.WithTimeout(ctx, time.Duration(timeoutMinutes)*time.Minute)
 	defer cancel()
 
-	// Determine working directory for the agent.
-	workDir := ""
-	if len(repoPaths) > 0 {
-		workDir = repoPaths[0]
-	} else {
-		workDir = filepath.Dir(opts.IMPLPath)
+	// Determine working directory for the agent by reloading the manifest.
+	workDir := filepath.Dir(opts.IMPLPath)
+	if wdManifest, wdErr := protocol.Load(ctx, opts.IMPLPath); wdErr == nil {
+		wdRepoPaths := collectRepoPaths(wdManifest)
+		if len(wdRepoPaths) == 0 {
+			if inferredRoot := inferRepoRoot(opts.IMPLPath); inferredRoot != "" {
+				wdRepoPaths = []string{inferredRoot}
+			}
+		}
+		if len(wdRepoPaths) > 0 {
+			workDir = wdRepoPaths[0]
+		}
 	}
 
 	// Initialise backend and launch the critic agent.
