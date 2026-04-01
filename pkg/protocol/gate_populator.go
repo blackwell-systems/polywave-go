@@ -6,6 +6,9 @@ import (
 	"path/filepath"
 	"strings"
 
+	"golang.org/x/text/cases"
+	"golang.org/x/text/language"
+
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/commands"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
 )
@@ -168,7 +171,7 @@ func DetermineFocusedTestPattern(files []string, commandSet *commands.CommandSet
 		// Extract package name from path (e.g., "pkg/auth" -> "auth")
 		pkgName := filepath.Base(pkgPath)
 		// Capitalize first letter for test prefix
-		testPrefix := "Test" + strings.Title(pkgName)
+		testPrefix := "Test" + cases.Title(language.Und).String(pkgName)
 		// Replace template placeholders
 		pattern := strings.ReplaceAll(commandSet.Commands.Test.FocusedPattern, "{package}", pkgPath)
 		pattern = strings.ReplaceAll(pattern, "{TestPrefix}", testPrefix)
