@@ -1,3 +1,4 @@
+completion_date: "2026-04-01"
 title: Document the engine step pipeline system
 feature_slug: engine-doc
 verdict: SUITABLE_WITH_CAVEATS
@@ -438,6 +439,7 @@ waves:
             No logic changes should be present in the diff.
           files:
             - pkg/engine/doc.go
+      base_commit: daba588bf65700e49a1308216e04a926df118740
 quality_gates:
     level: standard
     gates:
@@ -453,6 +455,32 @@ quality_gates:
           command: go test ./pkg/engine/...
           required: true
           repo: scout-and-wave-go
+completion_reports:
+    A:
+        status: complete
+        branch: saw/engine-doc/wave1-agent-A
+        commit: 6e145e8
+        files_changed:
+            - pkg/engine/step_types.go
+            - pkg/engine/finalize_steps.go
+        verification: PASS
+        notes: All doc comments improved per brief. go vet, go build, go test all pass. No logic changes.
+    B:
+        status: complete
+        branch: saw/engine-doc/wave1-agent-B
+        commit: f80b9e7
+        files_changed:
+            - pkg/engine/prepare.go
+        verification: PASS
+        notes: 'Expanded doc comments for PrepareWave (full pipeline sequence, failure behavior, side effect), fireEvent (nil-safe wrapper), recordStep, recordStepWithData, loadSAWConfigRepos, and isSAWOwnedPath. No logic changes. All gates pass: go build, go vet, go test, go doc.'
+    C:
+        status: complete
+        branch: saw/engine-doc/wave1-agent-C
+        commit: 88ea5fd
+        files_changed:
+            - pkg/engine/doc.go
+        verification: PASS
+        notes: Added Step Pipeline section to package doc comment. go vet clean, go doc confirms section heading present, all tests pass (18.5s).
 pre_mortem:
     overall_risk: low
     rows:
@@ -517,5 +545,5 @@ critic_report:
     summary: 'All three agent briefs are structurally sound. The four owned files exist and contain the symbols described. No symbol name errors, no missing imports, no broken patterns. Three advisory warnings were found: (1) Agent A''s brief states StepGoWorkSetup and StepGoWorkRestore will be added by a future wave, but they already exist in gowork_steps.go with doc comments — the caveat is stale but does not cause incorrect behavior since Agent A is correctly scoped to finalize_steps.go. (2) Agent B''s optional isSAWOwnedPath pattern list omits go.work and go.work.sum, which the actual function also matches — if Agent B follows the brief literally, the resulting doc comment will be incomplete. (3) Agent C''s brief states FinalizeWave has 14 steps, but the actual pipeline also calls StepGoWorkRestore from gowork_steps.go making the true count 15 — the step count in the doc comment Agent C writes will be off by one.'
     reviewed_at: "2026-04-01T07:31:14Z"
     issue_count: 3
-state: "REVIEWED"
+state: COMPLETE
 injection_method: hook

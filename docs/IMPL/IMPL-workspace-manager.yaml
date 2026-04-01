@@ -315,10 +315,18 @@ waves:
             **GoWorkspaceManager.Setup(repoRoot string, waveNum int, worktreePaths []string) error:**
             - Call os.MkdirAll on BackupDir(repoRoot, waveNum).
             - Back up `go.work` and `go.work.sum` to the backup dir if they exist.
+            - **Same-module detection (critical — fixes "module appears multiple times in workspace"):**
+              Parse the root module path from `go.mod` (read line by line; find the line starting
+              with "module ", trim prefix and whitespace). For each worktreePath, read
+              `<worktreePath>/go.mod` and check if its module declaration matches the root module
+              path. Collect only non-matching paths into `filteredPaths`.
+              If `filteredPaths` is empty (all worktrees share the root module path), return nil
+              early — no go.work needed; gopls already resolves the full module in each worktree
+              because the worktree is a full clone of the same single-module repo.
             - If go.work did not exist: run `go work init .` (exec.Command, Dir=repoRoot).
               If it fails, return a formatted error.
-            - For each worktreePath: run `go work use <path>` (Dir=repoRoot). Best-effort; do not
-              return error on failure.
+            - For each path in `filteredPaths` (not all worktreePaths): run `go work use <path>`
+              (Dir=repoRoot). Best-effort; do not return error on failure.
             - Append `"\n// SAW-managed: restored by finalize-wave\n"` to go.work.
             - Return nil on success.
 
@@ -341,12 +349,17 @@ waves:
             4. `TestGoWorkspaceManager_Restore_RestoresFromBackup`
             5. `TestGoWorkspaceManager_Restore_DeletesGoWorkWhenNoBackup`
 
+            6. `TestGoWorkspaceManager_Setup_SkipsSameModuleWorktrees`: create go.mod declaring
+               "module example.com/foo" + a fake worktree dir with its own go.mod declaring the
+               same "module example.com/foo"; call Setup; verify go.work was NOT created (early
+               return because all worktrees share the root module path).
+
             Skip tests invoking the go binary if `exec.LookPath("go")` fails.
 
             ## Constraints
             - Package: `package workspace`
             - DO NOT import `pkg/engine` — circular import. Use `protocol.SAWStateDir` directly via BackupDir.
-            - Imports for go_manager.go: `context`, `fmt`, `os`, `os/exec`, `path/filepath`
+            - Imports for go_manager.go: `fmt`, `os`, `os/exec`, `path/filepath`
               plus `github.com/blackwell-systems/scout-and-wave-go/pkg/protocol`.
 
             ## Verification gate
@@ -935,5 +948,25 @@ pre_mortem:
             calls `git worktree remove --force` which deletes the directory entirely. The files
             are not in the main repo and do not affect the main working tree. Documented in the
             TypeScript manager godoc.
+critic_report:
+    verdict: PASS
+    agent_reviews:
+        A:
+            agent_id: A
+            verdict: PASS
+            issues: []
+            notes: "FIXED before wave: brief listed 'context' as required import for go_manager.go but Setup/Restore have no context.Context parameter and use exec.Command. Removed context from imports list to prevent compile error."
+        B:
+            agent_id: B
+            verdict: PASS
+        C:
+            agent_id: C
+            verdict: PASS
+        D:
+            agent_id: D
+            verdict: PASS
+    summary: 'All 4 Wave 1 agents pass. Agent A context import issue fixed before wave launch (removed unused context import from go_manager.go brief). BackupDir pattern correct, same-module detection approach valid, pkg/engine/workspace/ sub-package does not exist, agents B/C/D file references are correct.'
+    reviewed_at: "2026-04-01T08:27:11Z"
+    issue_count: 0
 state: SCOUT_PENDING
 injection_method: hook

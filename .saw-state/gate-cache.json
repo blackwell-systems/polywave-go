@@ -1272,6 +1272,18 @@
         "cached_at": "2026-03-24T22:46:10.172941-07:00"
       }
     },
+    "3da2a0b2c727286f6da4615450107b6e": {
+      "lint": {
+        "gate_type": "lint",
+        "command": "go vet ./pkg/engine/...",
+        "passed": true,
+        "exit_code": 0,
+        "stdout": "",
+        "stderr": "",
+        "from_cache": true,
+        "cached_at": "2026-04-01T00:42:39.123369-07:00"
+      }
+    },
     "3eb618850da3ab2f85e47fa6f4fc9c19": {
       "lint": {
         "gate_type": "lint",
@@ -1522,6 +1534,18 @@
         "stderr": "",
         "from_cache": true,
         "cached_at": "2026-04-01T00:36:38.057224-07:00"
+      }
+    },
+    "49761cded350304237ba1690304ee3a0": {
+      "test": {
+        "gate_type": "test",
+        "command": "go test ./pkg/tools/... -count=1",
+        "passed": true,
+        "exit_code": 0,
+        "stdout": "ok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/tools\t0.229s\n",
+        "stderr": "",
+        "from_cache": true,
+        "cached_at": "2026-04-01T00:39:45.207593-07:00"
       }
     },
     "49e4870237270e6ab2eceaceb4bb2cc4": {
@@ -2688,6 +2712,18 @@
         "cached_at": "2026-03-25T02:39:15.961925-07:00"
       }
     },
+    "7bb19b636ca721e2354868abbf530382": {
+      "lint": {
+        "gate_type": "lint",
+        "command": "go vet ./pkg/tools/...",
+        "passed": true,
+        "exit_code": 0,
+        "stdout": "",
+        "stderr": "",
+        "from_cache": true,
+        "cached_at": "2026-04-01T00:39:44.644492-07:00"
+      }
+    },
     "7bc110d63ecca4418d29a89b3b6e5804": {
       "build": {
         "gate_type": "build",
@@ -3804,6 +3840,18 @@
         "cached_at": "2026-03-24T20:43:23.797396-07:00"
       }
     },
+    "aec606164b4bd1be25142d823720a7f6": {
+      "build": {
+        "gate_type": "build",
+        "command": "go build ./pkg/tools/...",
+        "passed": true,
+        "exit_code": 0,
+        "stdout": "",
+        "stderr": "",
+        "from_cache": true,
+        "cached_at": "2026-04-01T00:39:44.37912-07:00"
+      }
+    },
     "aed5936de68f91692b05953aeb8e4312": {
       "build": {
         "gate_type": "build",
@@ -4224,6 +4272,18 @@
         "cached_at": "2026-03-30T12:32:40.597414-07:00"
       }
     },
+    "bf4eb6fbb53533d962a59e4da2a11ff0": {
+      "build": {
+        "gate_type": "build",
+        "command": "go build ./pkg/engine/...",
+        "passed": true,
+        "exit_code": 0,
+        "stdout": "",
+        "stderr": "",
+        "from_cache": true,
+        "cached_at": "2026-04-01T00:42:38.460583-07:00"
+      }
+    },
     "bfee6906c2790e80ee994c0adc36401d": {
       "build": {
         "gate_type": "build",
@@ -4512,6 +4572,18 @@
         "cached_at": "2026-03-26T02:49:26.891089-07:00"
       }
     },
+    "c9bf9be1f4c43cd054349e360231c47d": {
+      "lint": {
+        "gate_type": "lint",
+        "command": "go vet ./pkg/engine/...",
+        "passed": true,
+        "exit_code": 0,
+        "stdout": "",
+        "stderr": "",
+        "from_cache": true,
+        "cached_at": "2026-04-01T00:38:39.056757-07:00"
+      }
+    },
     "c9ec99663f88857fceee92365b5c7d97": {
       "build": {
         "gate_type": "build",
@@ -4666,6 +4738,18 @@
         "stderr": "",
         "from_cache": true,
         "cached_at": "2026-03-25T01:13:40.36289-07:00"
+      }
+    },
+    "cf07cee44c79d7666e4860bc485ef84e": {
+      "build": {
+        "gate_type": "build",
+        "command": "go build ./pkg/engine/...",
+        "passed": true,
+        "exit_code": 0,
+        "stdout": "",
+        "stderr": "",
+        "from_cache": true,
+        "cached_at": "2026-04-01T00:38:38.484932-07:00"
       }
     },
     "cf43d028444a7149c41235132b474df5": {
@@ -4990,6 +5074,18 @@
         "stderr": "# github.com/blackwell-systems/scout-and-wave-go/pkg/protocol\n# [github.com/blackwell-systems/scout-and-wave-go/pkg/protocol]\nvet: pkg/protocol/cleanup_test.go:103:55: not enough arguments in call to Cleanup\n\thave (string, number, string)\n\twant (string, int, string, *slog.Logger)\n# github.com/blackwell-systems/scout-and-wave-go/pkg/engine\n# [github.com/blackwell-systems/scout-and-wave-go/pkg/engine]\nvet: pkg/engine/run_wave_full_test.go:123:60: not enough arguments in call to protocol.CreateWorktrees\n\thave (string, number, string)\n\twant (string, int, string, *slog.Logger)\n",
         "from_cache": true,
         "cached_at": "2026-03-30T12:28:27.800903-07:00"
+      }
+    },
+    "dc69eb034974ca663792c39faab8461d": {
+      "test": {
+        "gate_type": "test",
+        "command": "go test ./pkg/engine/...",
+        "passed": true,
+        "exit_code": 0,
+        "stdout": "ok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/engine\t18.296s\n",
+        "stderr": "",
+        "from_cache": true,
+        "cached_at": "2026-04-01T00:42:59.190523-07:00"
       }
     },
     "dc784c9bbcbf84e01cb1359094fa53ea": {
@@ -5650,6 +5746,18 @@
         "stderr": "",
         "from_cache": true,
         "cached_at": "2026-03-31T22:30:10.903546-07:00"
+      }
+    },
+    "f73cbf59f99152ce185925bacc5c947d": {
+      "test": {
+        "gate_type": "test",
+        "command": "go test ./pkg/engine/...",
+        "passed": true,
+        "exit_code": 0,
+        "stdout": "ok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/engine\t17.421s\n",
+        "stderr": "",
+        "from_cache": true,
+        "cached_at": "2026-04-01T00:38:57.356729-07:00"
       }
     },
     "f78f74d10ca6e819a475079ded5aa846": {
