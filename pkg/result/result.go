@@ -13,7 +13,6 @@
 package result
 
 import (
-	"encoding/json"
 	"fmt"
 )
 
@@ -133,27 +132,15 @@ func NewPartial[T any](data T, warnings []SAWError) Result[T] {
 }
 
 // NewFailure creates a failed Result with structured errors.
+// Panics if errors is empty — passing an empty slice is a programming error.
 func NewFailure[T any](errors []SAWError) Result[T] {
-	code := "FATAL"
-	if len(errors) > 0 && errors[0].Severity != "fatal" {
-		code = "FATAL" // Still fatal if operation failed
+	if len(errors) == 0 {
+		panic("result.NewFailure called with empty errors slice")
 	}
 	return Result[T]{
 		Errors: errors,
-		Code:   code,
+		Code:   "FATAL",
 	}
-}
-
-// MarshalJSON implements json.Marshaler for Result[T].
-func (r Result[T]) MarshalJSON() ([]byte, error) {
-	type Alias Result[T]
-	return json.Marshal((Alias)(r))
-}
-
-// UnmarshalJSON implements json.Unmarshaler for Result[T].
-func (r *Result[T]) UnmarshalJSON(data []byte) error {
-	type Alias Result[T]
-	return json.Unmarshal(data, (*Alias)(r))
 }
 
 // ToErrors converts a slice of SAWError to a slice of error so callers can
