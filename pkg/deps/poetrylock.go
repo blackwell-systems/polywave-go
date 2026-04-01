@@ -2,19 +2,20 @@ package deps
 
 import (
 	"bufio"
-	"fmt"
 	"os"
 	"strings"
+
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
 )
 
 // PoetryLockParser parses Python poetry.lock files (TOML format)
 type PoetryLockParser struct{}
 
 // Parse reads a poetry.lock file and extracts package metadata
-func (p *PoetryLockParser) Parse(filePath string) ([]PackageInfo, error) {
+func (p *PoetryLockParser) Parse(filePath string) result.Result[[]PackageInfo] {
 	file, err := os.Open(filePath)
 	if err != nil {
-		return nil, fmt.Errorf("failed to open poetry.lock: %w", err)
+		return result.NewFailure[[]PackageInfo]([]result.SAWError{result.NewFatal(result.CodeDepLockFileOpen, "failed to open poetry.lock: "+err.Error())})
 	}
 	defer file.Close()
 
@@ -39,7 +40,7 @@ func (p *PoetryLockParser) Parse(filePath string) ([]PackageInfo, error) {
 		}
 
 		// End of package section (empty line or start of new section)
-		if line == "" || (strings.HasPrefix(line, "[") && !strings.HasPrefix(line, "[[")) {
+		if line == "" || strings.HasPrefix(line, "[[") || (strings.HasPrefix(line, "[") && !strings.HasPrefix(line, "[[") && inPackageSection) {
 			if currentPackage != nil && currentPackage.Name != "" {
 				packages = append(packages, *currentPackage)
 				currentPackage = nil
@@ -53,19 +54,19 @@ func (p *PoetryLockParser) Parse(filePath string) ([]PackageInfo, error) {
 			// Parse name field: name = "requests"
 			if strings.HasPrefix(line, "name = ") {
 				value := strings.TrimPrefix(line, "name = ")
-				currentPackage.Name = strings.Trim(value, `"`)
+				currentPackage.Name = unquoteTOML(value)
 			}
 
 			// Parse version field: version = "2.28.1"
 			if strings.HasPrefix(line, "version = ") {
 				value := strings.TrimPrefix(line, "version = ")
-				currentPackage.Version = strings.Trim(value, `"`)
+				currentPackage.Version = unquoteTOML(value)
 			}
 
 			// Parse source field (if present): source = "https://..."
 			if strings.HasPrefix(line, "source = ") {
 				value := strings.TrimPrefix(line, "source = ")
-				currentPackage.Source = strings.Trim(value, `"`)
+				currentPackage.Source = unquoteTOML(value)
 			}
 		}
 	}
@@ -76,14 +77,14 @@ func (p *PoetryLockParser) Parse(filePath string) ([]PackageInfo, error) {
 	}
 
 	if err := scanner.Err(); err != nil {
-		return nil, fmt.Errorf("error reading poetry.lock: %w", err)
+		return result.NewFailure[[]PackageInfo]([]result.SAWError{result.NewError(result.CodeDepLockFileParse, "error reading poetry.lock: "+err.Error())})
 	}
 
 	if len(packages) == 0 {
-		return nil, fmt.Errorf("no packages found in poetry.lock (possible malformed TOML)")
+		return result.NewFailure[[]PackageInfo]([]result.SAWError{result.NewError(result.CodeDepEmptyPackage, "no packages found in poetry.lock (possible malformed TOML)")})
 	}
 
-	return packages, nil
+	return result.NewSuccess(packages)
 }
 
 // Detect checks if this parser can handle the given file
