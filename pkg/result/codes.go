@@ -11,6 +11,7 @@
 //	P001-P099: Protocol errors (invariant violations, execution rules)
 //	T001-T099: Tool/parse errors (errparse output, tool runner failures)
 //	S001-S099: Suitability error codes
+//	I001-I099: Agent ID generation errors
 //	D001-D099: Dependency check errors (lock file parsing, missing deps)
 package result
 
@@ -265,6 +266,16 @@ const (
 	CodeSuitabilityFileReadFailed    = "S004_FILE_READ_FAILED"
 	CodeSuitabilityRequirementsRead  = "S005_REQUIREMENTS_READ"
 	CodeSuitabilityRequirementsParse = "S006_REQUIREMENTS_PARSE"
+)
+
+// Agent ID generation error codes (I001-I099)
+const (
+	CodeAgentCountInvalid        = "I001_AGENT_COUNT_INVALID"
+	CodeAgentCountMismatch       = "I002_AGENT_COUNT_MISMATCH"
+	CodeAgentLimitExceeded       = "I003_AGENT_LIMIT_EXCEEDED"
+	CodeCategoryLimitExceeded    = "I004_CATEGORY_LIMIT_EXCEEDED"
+	CodeCategoryCountExceeded    = "I005_CATEGORY_COUNT_EXCEEDED"
+	CodeInvalidAgentIDGenerated  = "I006_INVALID_AGENT_ID_GENERATED"
 )
 
 // Dependency check error codes (D001-D099)
