@@ -2,6 +2,7 @@ package bedrock
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"testing"
 
@@ -28,119 +29,38 @@ func newMockWorkshop(toolDefs ...tools.Tool) tools.Workshop {
 	return w
 }
 
-// TestBuildToolsJSON verifies that buildToolsJSON converts a Workshop with multiple
-// tools into the correct Bedrock/Anthropic Messages API JSON structure.
-func TestBuildToolsJSON(t *testing.T) {
-	w := newMockWorkshop(
-		tools.Tool{
-			Name:        "read_file",
-			Description: "Read a file",
-			InputSchema: map[string]interface{}{
-				"type": "object",
-				"properties": map[string]interface{}{
-					"file_path": map[string]interface{}{
-						"type":        "string",
-						"description": "Path to the file",
-					},
-				},
-				"required": []string{"file_path"},
-			},
-			Executor: &mockExecutor{result: "content"},
-		},
-		tools.Tool{
-			Name:        "bash",
-			Description: "Run a shell command",
-			InputSchema: map[string]interface{}{
-				"type": "object",
-				"properties": map[string]interface{}{
-					"command": map[string]interface{}{
-						"type":        "string",
-						"description": "Shell command to execute",
-					},
-				},
-				"required": []string{"command"},
-			},
-			Executor: &mockExecutor{result: "output"},
-		},
-	)
-
-	result := buildToolsJSON(w)
-
-	if len(result) != 2 {
-		t.Fatalf("expected 2 tools, got %d", len(result))
-	}
-
-	// Tools are sorted by name via Workshop.All(), so bash comes first.
-	for _, item := range result {
-		toolMap, ok := item.(map[string]interface{})
-		if !ok {
-			t.Fatalf("expected map[string]interface{}, got %T", item)
-		}
-
-		name, ok := toolMap["name"].(string)
-		if !ok || name == "" {
-			t.Error("tool missing 'name' field")
-		}
-		desc, ok := toolMap["description"].(string)
-		if !ok || desc == "" {
-			t.Error("tool missing 'description' field")
-		}
-		schema, ok := toolMap["input_schema"]
-		if !ok || schema == nil {
-			t.Error("tool missing 'input_schema' field")
-		}
-	}
-
-	// Verify specific tool order (All() sorts by name).
-	first := result[0].(map[string]interface{})
-	if first["name"] != "bash" {
-		t.Errorf("expected first tool to be 'bash', got %q", first["name"])
-	}
-	second := result[1].(map[string]interface{})
-	if second["name"] != "read_file" {
-		t.Errorf("expected second tool to be 'read_file', got %q", second["name"])
-	}
-}
-
-// TestBuildToolsJSON_Empty verifies that buildToolsJSON returns an empty slice
-// for an empty workshop.
-func TestBuildToolsJSON_Empty(t *testing.T) {
-	w := tools.NewWorkshop()
-	result := buildToolsJSON(w)
-	if len(result) != 0 {
-		t.Errorf("expected 0 tools, got %d", len(result))
-	}
-}
-
-// TestExecuteTool_KnownTool verifies that executeTool looks up and executes
-// a known tool, returning its result with isError=false.
+// TestExecuteTool_KnownTool verifies that backend.ExecuteTool looks up and executes
+// a known tool, returning its result with nil error.
 func TestExecuteTool_KnownTool(t *testing.T) {
 	w := newMockWorkshop(tools.Tool{
 		Name:     "bash",
 		Executor: &mockExecutor{result: "hello world"},
 	})
 
-	result, isError := executeTool(context.Background(), w, "bash", map[string]interface{}{
+	result, err := backend.ExecuteTool(context.Background(), w, "bash", map[string]interface{}{
 		"command": "echo hello",
 	}, t.TempDir())
 
-	if isError {
-		t.Error("expected isError=false for known tool")
+	if err != nil {
+		t.Errorf("expected nil error for known tool, got %v", err)
 	}
 	if result != "hello world" {
 		t.Errorf("expected %q, got %q", "hello world", result)
 	}
 }
 
-// TestExecuteTool_UnknownTool verifies that executeTool returns an error message
-// and isError=true for a tool not in the workshop.
+// TestExecuteTool_UnknownTool verifies that backend.ExecuteTool returns ErrToolNotFound
+// for a tool not in the workshop.
 func TestExecuteTool_UnknownTool(t *testing.T) {
 	w := tools.NewWorkshop()
 
-	result, isError := executeTool(context.Background(), w, "nonexistent", nil, t.TempDir())
+	result, err := backend.ExecuteTool(context.Background(), w, "nonexistent", nil, t.TempDir())
 
-	if !isError {
-		t.Error("expected isError=true for unknown tool")
+	if err == nil {
+		t.Error("expected error for unknown tool")
+	}
+	if !errors.Is(err, backend.ErrToolNotFound) {
+		t.Errorf("expected ErrToolNotFound, got %v", err)
 	}
 	if result == "" {
 		t.Error("expected non-empty error message")
@@ -151,18 +71,18 @@ func TestExecuteTool_UnknownTool(t *testing.T) {
 	}
 }
 
-// TestExecuteTool_ExecutionError verifies that executeTool returns an error message
-// and isError=true when the tool executor returns an error.
+// TestExecuteTool_ExecutionError verifies that backend.ExecuteTool returns an error
+// when the tool executor returns an error.
 func TestExecuteTool_ExecutionError(t *testing.T) {
 	w := newMockWorkshop(tools.Tool{
 		Name:     "failing_tool",
 		Executor: &mockExecutor{err: errMock},
 	})
 
-	result, isError := executeTool(context.Background(), w, "failing_tool", nil, t.TempDir())
+	result, err := backend.ExecuteTool(context.Background(), w, "failing_tool", nil, t.TempDir())
 
-	if !isError {
-		t.Error("expected isError=true for execution error")
+	if err == nil {
+		t.Error("expected error for execution error")
 	}
 	if result == "" {
 		t.Error("expected non-empty error message")
@@ -247,11 +167,12 @@ func TestBuildWorkshop_ReadOnlyMode(t *testing.T) {
 func TestBuildWorkshop_WithTimingCallback(t *testing.T) {
 	var called bool
 	c := &Client{
-		cfg:      backend.Config{},
-		readOnly: false,
-		onToolCall: func(ev backend.ToolCallEvent) {
-			called = true
+		cfg: backend.Config{
+			OnToolCall: func(ev backend.ToolCallEvent) {
+				called = true
+			},
 		},
+		readOnly: false,
 	}
 
 	w := c.buildWorkshop(t.TempDir())
@@ -272,11 +193,11 @@ func TestBuildWorkshop_WithTimingCallback(t *testing.T) {
 	}
 }
 
-// TestMaxTurns_Default verifies that maxTurns returns 200 when cfg.MaxTurns is 0.
+// TestMaxTurns_Default verifies that maxTurns returns 50 when cfg.MaxTurns is 0.
 func TestMaxTurns_Default(t *testing.T) {
 	c := &Client{cfg: backend.Config{MaxTurns: 0}}
-	if got := c.maxTurns(); got != 200 {
-		t.Errorf("expected default maxTurns=200, got %d", got)
+	if got := c.maxTurns(); got != 50 {
+		t.Errorf("expected default maxTurns=50, got %d", got)
 	}
 }
 
