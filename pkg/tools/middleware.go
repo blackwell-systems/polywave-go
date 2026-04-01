@@ -22,8 +22,10 @@ type ToolCallEvent struct {
 }
 
 // Apply wraps an executor with a stack of middleware functions.
-// Middleware are applied right-to-left: the first middleware in the list
-// is the outermost (executes first in the call chain).
+// Middleware are applied right-to-left: the last element in the slice is
+// applied first (becomes innermost), so the first element is the outermost
+// and executes first in the call chain.
+// Example: Apply(exec, A, B, C) produces A(B(C(exec))).
 func Apply(executor ToolExecutor, middlewares ...Middleware) ToolExecutor {
 	result := executor
 	for i := len(middlewares) - 1; i >= 0; i-- {
