@@ -6,6 +6,7 @@ package config
 
 import (
 	"encoding/json"
+	"log/slog"
 	"os"
 	"path/filepath"
 
@@ -158,19 +159,26 @@ func Load(startDir string) result.Result[*SAWConfig] {
 	// Backward compatibility: migrate legacy repo.path to repos array.
 	if len(cfg.Repos) == 0 {
 		var raw map[string]json.RawMessage
-		if err := json.Unmarshal(data, &raw); err == nil {
-			if repoRaw, ok := raw["repo"]; ok {
-				var legacy struct {
-					Path string `json:"path"`
-					Name string `json:"name"`
+		if err := json.Unmarshal(data, &raw); err != nil {
+			return result.NewFailure[*SAWConfig]([]result.SAWError{
+				result.NewError(result.CodeConfigInvalid, "failed to re-parse config for migration: "+err.Error()),
+			})
+		}
+		if repoRaw, ok := raw["repo"]; ok {
+			var legacy struct {
+				Path string `json:"path"`
+				Name string `json:"name"`
+			}
+			if err := json.Unmarshal(repoRaw, &legacy); err != nil || legacy.Path == "" {
+				if err != nil {
+					slog.Warn("legacy repo migration: malformed repo entry", "path", path, "err", err)
 				}
-				if err := json.Unmarshal(repoRaw, &legacy); err == nil && legacy.Path != "" {
-					name := legacy.Name
-					if name == "" {
-						name = filepath.Base(legacy.Path)
-					}
-					cfg.Repos = []RepoEntry{{Name: name, Path: legacy.Path}}
+			} else {
+				name := legacy.Name
+				if name == "" {
+					name = filepath.Base(legacy.Path)
 				}
+				cfg.Repos = []RepoEntry{{Name: name, Path: legacy.Path}}
 			}
 		}
 	}
@@ -221,7 +229,7 @@ func Save(repoPath string, cfg *SAWConfig) result.Result[bool] {
 	tmpFile, err := os.CreateTemp(repoPath, ".saw-config-*.tmp")
 	if err != nil {
 		return result.NewFailure[bool]([]result.SAWError{
-			result.NewError(result.CodeConfigInvalid, "failed to create temp file: "+err.Error()),
+			result.NewError(result.CodeConfigIOFailed, "failed to create temp file: "+err.Error()),
 		})
 	}
 	tmpPath := tmpFile.Name()
@@ -230,20 +238,26 @@ func Save(repoPath string, cfg *SAWConfig) result.Result[bool] {
 		tmpFile.Close()
 		os.Remove(tmpPath)
 		return result.NewFailure[bool]([]result.SAWError{
-			result.NewError(result.CodeConfigInvalid, "failed to write temp file: "+err.Error()),
+			result.NewError(result.CodeConfigIOFailed, "failed to write temp file: "+err.Error()),
 		})
 	}
 	if err := tmpFile.Close(); err != nil {
 		os.Remove(tmpPath)
 		return result.NewFailure[bool]([]result.SAWError{
-			result.NewError(result.CodeConfigInvalid, "failed to close temp file: "+err.Error()),
+			result.NewError(result.CodeConfigIOFailed, "failed to close temp file: "+err.Error()),
 		})
 	}
 
 	if err := os.Rename(tmpPath, configPath); err != nil {
 		os.Remove(tmpPath)
 		return result.NewFailure[bool]([]result.SAWError{
-			result.NewError(result.CodeConfigInvalid, "failed to rename temp file: "+err.Error()),
+			result.NewError(result.CodeConfigIOFailed, "failed to rename temp file: "+err.Error()),
+		})
+	}
+
+	if err := os.Chmod(configPath, 0600); err != nil {
+		return result.NewFailure[bool]([]result.SAWError{
+			result.NewError(result.CodeConfigIOFailed, "failed to set config permissions: "+err.Error()),
 		})
 	}
 
@@ -258,6 +272,9 @@ func LoadOrDefault(startDir string) *SAWConfig {
 	if r.IsSuccess() {
 		return r.GetData()
 	}
+	slog.Warn("LoadOrDefault: falling back to default config",
+		"reason", r.Errors[0].Message,
+		"startDir", startDir)
 	return &SAWConfig{
 		Autonomy: AutonomyConfig{
 			Level:          "gated",

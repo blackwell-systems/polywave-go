@@ -215,6 +215,9 @@ const (
 	CodeIntegrationAgentFailed   = "ENGINE_INTEGRATION_AGENT_FAILED"   // N082
 	CodeChatInvalidOpts          = "ENGINE_CHAT_INVALID_OPTS"          // N083
 	CodeChatFailed               = "ENGINE_CHAT_FAILED"                // N084
+
+	// N085: config file I/O failed (permission set, write, rename)
+	CodeConfigIOFailed = "N085_CONFIG_IO_FAILED"
 )
 
 // Protocol error codes (P001-P099)
