@@ -3180,6 +3180,18 @@
         "cached_at": "2026-03-25T22:14:16.152644-07:00"
       }
     },
+    "8722834eb88360436663395b9e76a0c4": {
+      "test": {
+        "gate_type": "test",
+        "command": "go test ./pkg/errparse/... ./pkg/protocol/...",
+        "passed": true,
+        "exit_code": 0,
+        "stdout": "ok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/errparse\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/protocol\t(cached)\n",
+        "stderr": "",
+        "from_cache": true,
+        "cached_at": "2026-04-01T08:21:13.752859-07:00"
+      }
+    },
     "876daa6f7aedd1d21bc0fd666a230db0": {
       "build": {
         "gate_type": "build",
@@ -4884,6 +4896,18 @@
         "cached_at": "2026-03-31T19:01:20.070853-07:00"
       }
     },
+    "c7e8b2963e0ef98e16d583a28f7d1fd4": {
+      "test": {
+        "gate_type": "test",
+        "command": "go test ./pkg/errparse/... ./pkg/protocol/...",
+        "passed": true,
+        "exit_code": 0,
+        "stdout": "ok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/errparse\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/protocol\t(cached)\n",
+        "stderr": "",
+        "from_cache": true,
+        "cached_at": "2026-04-01T08:23:58.30246-07:00"
+      }
+    },
     "c7f1664be76af48a9c5562e37f796ea7": {
       "test": {
         "gate_type": "test",
@@ -5940,6 +5964,18 @@
         "cached_at": "2026-03-25T12:40:15.431066-07:00"
       }
     },
+    "ecee0d3870ec21bc9f34f484de62097e": {
+      "lint": {
+        "gate_type": "lint",
+        "command": "go vet ./pkg/errparse/... ./pkg/protocol/...",
+        "passed": true,
+        "exit_code": 0,
+        "stdout": "",
+        "stderr": "",
+        "from_cache": true,
+        "cached_at": "2026-04-01T08:23:57.613868-07:00"
+      }
+    },
     "ed47f874584cc42f22175d3040624422": {
       "build": {
         "gate_type": "build",
@@ -6144,6 +6180,30 @@
         "cached_at": "2026-03-31T22:30:10.903546-07:00"
       }
     },
+    "f52d4186e22eb68aefd9b3881ef4c821": {
+      "lint": {
+        "gate_type": "lint",
+        "command": "go vet ./pkg/errparse/... ./pkg/protocol/...",
+        "passed": true,
+        "exit_code": 0,
+        "stdout": "",
+        "stderr": "",
+        "from_cache": true,
+        "cached_at": "2026-04-01T08:21:13.066018-07:00"
+      }
+    },
+    "f612e13f00efb5bf12a390e038a990e5": {
+      "build": {
+        "gate_type": "build",
+        "command": "go build ./pkg/errparse/... ./pkg/protocol/...",
+        "passed": true,
+        "exit_code": 0,
+        "stdout": "",
+        "stderr": "",
+        "from_cache": true,
+        "cached_at": "2026-04-01T08:21:12.668903-07:00"
+      }
+    },
     "f73cbf59f99152ce185925bacc5c947d": {
       "test": {
         "gate_type": "test",
@@ -6178,6 +6238,18 @@
         "stderr": "",
         "from_cache": true,
         "cached_at": "2026-03-26T10:16:36.998488-07:00"
+      }
+    },
+    "f921ea6de4a5bdb5f044e7ca8168897e": {
+      "build": {
+        "gate_type": "build",
+        "command": "go build ./pkg/errparse/... ./pkg/protocol/...",
+        "passed": true,
+        "exit_code": 0,
+        "stdout": "",
+        "stderr": "",
+        "from_cache": true,
+        "cached_at": "2026-04-01T08:23:57.215776-07:00"
       }
     },
     "f96d321916ebe1505496481f40848117": {

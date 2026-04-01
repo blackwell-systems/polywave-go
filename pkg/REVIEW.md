@@ -24,7 +24,7 @@ Each reviewed package gets scouted → IMPL'd → closed before being marked don
 | config | | | |
 | deps | | | |
 | engine | | | |
-| errparse | ✅ | | |
+| errparse | ✅ | ✅ | ✅ |
 | format | | | |
 | gatecache | | | |
 | hooks | | | |

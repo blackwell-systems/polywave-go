@@ -1,3 +1,4 @@
+completion_date: "2026-04-01"
 title: Fix all issues from pkg/errparse deep review
 feature_slug: errparse-deep-review-fixes
 verdict: SUITABLE
@@ -336,6 +337,7 @@ waves:
             - A
             - B
             - C
+      base_commit: 4315402ae2368f53fb729ded4397812bde993025
 quality_gates:
     level: standard
     gates:
@@ -373,6 +375,19 @@ completion_reports:
             - pkg/errparse/python_parsers.go
         verification: PASS
         notes: Added init() registering 3 Python parsers. Fixed pointer-to-slice brittleness in PytestParser.Parse by switching to index-based tracking. Removed unused loop variable.
+    D:
+        status: complete
+        branch: saw/errparse-deep-review-fixes/wave2-agent-D
+        commit: a3dd158
+        files_changed:
+            - pkg/errparse/registry.go
+            - pkg/errparse/registry_test.go
+        tests_added:
+            - TestAllParsers_Registered
+            - TestParseOutput_Integration
+            - TestRuffParser_NonConsecutiveHelp
+        verification: PASS
+        notes: 'Added 3 test functions: all-parsers registration check, 11-case integration table test, ruff non-consecutive help edge cases. Added slog.Warn in ParseOutput for unregistered parsers. npm-test test case uses realistic Jest output with bullet marker.'
 pre_mortem:
     overall_risk: low
     rows:
@@ -403,5 +418,5 @@ critic_report:
     summary: 'All 3 Wave 1 agent briefs verified against codebase. Agent A: all 4 Go parser struct names (GoBuildParser, GoTestParser, GoVetParser, GolangciLintParser) confirmed in go_parsers.go. The unused _ = i at line 163 with loop var i at line 143 confirmed; i has no other use in function body. Agent B: all 3 JS parser struct names (TscParser, EslintParser, NpmTestParser) confirmed in js_parsers.go. The _ = currentTest line at 295 confirmed present; currentTest IS used at lines 252 and 288 making the suppression unnecessary. ASCII dash separators at lines 12-13, 56-57, 170-171, 178-179 confirmed. Agent C: all 3 Python parser struct names (PytestParser, MypyParser, RuffParser) confirmed in python_parsers.go. Pointer-to-slice pattern at lines 129 and 154 confirmed. Declaration at line 66, nil checks at lines 83, 95, 137, 161 confirmed. Unused _ = i at line 70 confirmed. Register() signature in registry.go takes Parser interface, confirmed. init() pattern in format_parsers.go lines 9-14 confirmed as the canonical registration pattern. No parser name collisions between format_parsers (gofmt, prettier-format, ruff-format, cargo-fmt) and the new registrations (go-build, go-test, go-vet, golangci-lint, tsc, eslint, npm-test, pytest, mypy, ruff).'
     reviewed_at: "2026-04-01T15:17:19Z"
     issue_count: 0
-state: REVIEWED
+state: COMPLETE
 injection_method: hook
