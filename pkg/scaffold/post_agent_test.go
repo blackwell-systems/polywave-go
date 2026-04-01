@@ -271,9 +271,14 @@ type User struct {}
 			name: "Mixed with prose",
 			taskText: `
 We need to implement an authentication system.
-The type AuthToken struct will store credentials.
-Also create interface SessionManager for lifecycle.
+type AuthToken struct {
+    Token string
+}
+interface SessionManager {
+    Create() AuthToken
+}
 `,
+			// Structured definitions at start of line are matched.
 			expected: []string{"AuthToken", "SessionManager"},
 		},
 	}
@@ -356,6 +361,55 @@ func TestDetectScaffoldsPostAgent_MultipleWaves(t *testing.T) {
 	conflict := result.Conflicts[0]
 	if conflict.TypeName != "Logger" {
 		t.Errorf("expected type name 'Logger', got '%s'", conflict.TypeName)
+	}
+}
+
+func TestDetectScaffoldsPostAgent_DeterministicOrder(t *testing.T) {
+	manifest := &protocol.IMPLManifest{
+		Waves: []protocol.Wave{
+			{
+				Number: 1,
+				Agents: []protocol.Agent{
+					{ID: "A", Task: `type Zebra struct {}`, Files: []string{"pkg/z/z.go"}},
+					{ID: "B", Task: `type Zebra struct {}`, Files: []string{"pkg/a/a.go"}},
+					{ID: "C", Task: `type Apple struct {}`, Files: []string{"pkg/c/c.go"}},
+					{ID: "D", Task: `type Apple struct {}`, Files: []string{"pkg/d/d.go"}},
+				},
+			},
+		},
+	}
+
+	result1, err := DetectScaffoldsPostAgent(manifest)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	result2, err := DetectScaffoldsPostAgent(manifest)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if len(result1.Conflicts) != len(result2.Conflicts) {
+		t.Fatalf("non-deterministic conflict count: %d vs %d",
+			len(result1.Conflicts), len(result2.Conflicts))
+	}
+
+	for i := range result1.Conflicts {
+		c1, c2 := result1.Conflicts[i], result2.Conflicts[i]
+		if c1.TypeName != c2.TypeName {
+			t.Errorf("non-deterministic TypeName at index %d: %q vs %q",
+				i, c1.TypeName, c2.TypeName)
+		}
+	}
+
+	// Verify alphabetical order: Apple before Zebra
+	if len(result1.Conflicts) != 2 {
+		t.Fatalf("expected 2 conflicts, got %d", len(result1.Conflicts))
+	}
+	if result1.Conflicts[0].TypeName != "Apple" {
+		t.Errorf("expected Apple first, got %q", result1.Conflicts[0].TypeName)
+	}
+	if result1.Conflicts[1].TypeName != "Zebra" {
+		t.Errorf("expected Zebra second, got %q", result1.Conflicts[1].TypeName)
 	}
 }
 

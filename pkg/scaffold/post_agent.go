@@ -1,7 +1,7 @@
 package scaffold
 
 import (
-	"regexp"
+	"sort"
 	"strings"
 
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
@@ -59,12 +59,14 @@ func DetectScaffoldsPostAgent(manifest *protocol.IMPLManifest) (*PostAgentResult
 					filesSet[file] = true
 				}
 			}
+			sort.Strings(agents)
 
 			// Convert files set to sorted list
 			var files []string
 			for file := range filesSet {
 				files = append(files, file)
 			}
+			sort.Strings(files)
 
 			// Generate resolution suggestion
 			resolution := "Extract to internal/types/" + strings.ToLower(typeName) + ".go"
@@ -77,6 +79,9 @@ func DetectScaffoldsPostAgent(manifest *protocol.IMPLManifest) (*PostAgentResult
 			})
 		}
 	}
+	sort.Slice(conflicts, func(i, j int) bool {
+		return conflicts[i].TypeName < conflicts[j].TypeName
+	})
 
 	return &PostAgentResult{
 		Conflicts: conflicts,
@@ -84,66 +89,8 @@ func DetectScaffoldsPostAgent(manifest *protocol.IMPLManifest) (*PostAgentResult
 }
 
 // extractTypeDefinitions searches for type definitions in agent task text.
-// It matches patterns like:
-//   - type Name struct
-//   - interface Name
-//   - enum Name
-//   - class Name
+// It delegates to extractTypeNames which uses a package-level compiled regex,
+// avoiding repeated regex compilation on the hot path.
 func extractTypeDefinitions(taskText string) []string {
-	var typeNames []string
-	seen := make(map[string]bool)
-
-	// Pattern 1: Go-style type definitions (type Name struct|interface)
-	goTypeRe := regexp.MustCompile(`type\s+(\w+)\s+(struct|interface)`)
-	matches := goTypeRe.FindAllStringSubmatch(taskText, -1)
-	for _, match := range matches {
-		if len(match) > 1 {
-			typeName := match[1]
-			if !seen[typeName] {
-				typeNames = append(typeNames, typeName)
-				seen[typeName] = true
-			}
-		}
-	}
-
-	// Pattern 2: Interface definitions (interface Name)
-	interfaceRe := regexp.MustCompile(`interface\s+(\w+)`)
-	matches = interfaceRe.FindAllStringSubmatch(taskText, -1)
-	for _, match := range matches {
-		if len(match) > 1 {
-			typeName := match[1]
-			if !seen[typeName] {
-				typeNames = append(typeNames, typeName)
-				seen[typeName] = true
-			}
-		}
-	}
-
-	// Pattern 3: Enum definitions (enum Name)
-	enumRe := regexp.MustCompile(`enum\s+(\w+)`)
-	matches = enumRe.FindAllStringSubmatch(taskText, -1)
-	for _, match := range matches {
-		if len(match) > 1 {
-			typeName := match[1]
-			if !seen[typeName] {
-				typeNames = append(typeNames, typeName)
-				seen[typeName] = true
-			}
-		}
-	}
-
-	// Pattern 4: Class definitions (class Name)
-	classRe := regexp.MustCompile(`class\s+(\w+)`)
-	matches = classRe.FindAllStringSubmatch(taskText, -1)
-	for _, match := range matches {
-		if len(match) > 1 {
-			typeName := match[1]
-			if !seen[typeName] {
-				typeNames = append(typeNames, typeName)
-				seen[typeName] = true
-			}
-		}
-	}
-
-	return typeNames
+	return extractTypeNames(taskText)
 }
