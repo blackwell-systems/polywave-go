@@ -25,7 +25,9 @@ type ItemStatus struct {
 	Missing      []string `json:"missing,omitempty"`
 }
 
-// Requirement represents a single item from audit/requirements doc
+// Requirement represents a single item from an audit or requirements document.
+// It contains an ID (e.g., "F1", "SEC-01"), a description of the requirement,
+// and a list of files expected to implement it.
 type Requirement struct {
 	ID          string   // "F1", "SEC-01", etc.
 	Description string
