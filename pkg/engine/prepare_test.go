@@ -200,9 +200,19 @@ func TestIsSAWOwnedPath(t *testing.T) {
 			want: false,
 		},
 		{
-			name: "docs IMPL yaml that does NOT match implPath is not SAW-owned",
+			name: "docs IMPL yaml that does NOT match implPath is SAW-owned (docs/IMPL/ dir is SAW-owned)",
 			path: " M docs/IMPL/IMPL-other-feature.yaml",
-			want: false,
+			want: true,
+		},
+		{
+			name: "untracked docs/IMPL file is SAW-owned",
+			path: "?? docs/IMPL/IMPL-foo.yaml",
+			want: true,
+		},
+		{
+			name: "docs/CONTEXT.md is SAW-owned",
+			path: " M docs/CONTEXT.md",
+			want: true,
 		},
 		{
 			name: "windows path separator .saw-state is SAW-owned",
