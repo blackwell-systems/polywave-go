@@ -1,3 +1,4 @@
+completion_date: "2026-03-31"
 title: Fix 6 known bugs in pkg/scaffoldval
 feature_slug: scaffoldval-bug-fixes
 verdict: SUITABLE
@@ -534,6 +535,7 @@ waves:
             - pkg/scaffoldval/validator.go
             - pkg/scaffoldval/validator_test.go
             - cmd/sawtools/validate_scaffold_cmd.go
+      base_commit: a1bb2428454f6e08562b35456848200894cb151e
 quality_gates:
     level: standard
     gates:
@@ -546,6 +548,31 @@ quality_gates:
         - type: test
           command: go test ./pkg/scaffoldval/... ./cmd/sawtools/...
           required: true
+completion_reports:
+    A:
+        status: complete
+        branch: saw/scaffoldval-bug-fixes/wave1-agent-A
+        commit: e7761cf
+        files_changed:
+            - pkg/scaffoldval/types.go
+            - pkg/scaffoldval/types_test.go
+        tests_added:
+            - TestValidationResult_OverallStatus_AllSkip
+            - TestValidationResult_OverallStatus_MixedSkipPass
+        verification: PASS
+        notes: Fixed OverallStatus to return SKIP when all steps are SKIP. Updated AllSkip test expectation from PASS to SKIP. Added MixedSkipPass test. All 6 targeted tests pass.
+    B:
+        status: complete
+        branch: saw/scaffoldval-bug-fixes/wave1-agent-B
+        commit: 9b745e4
+        files_changed:
+            - pkg/scaffoldval/validator.go
+            - pkg/scaffoldval/validator_test.go
+            - cmd/sawtools/validate_scaffold_cmd.go
+        tests_added:
+            - TestCheckImports_ThirdPartyInGoMod
+        verification: PASS
+        notes: 'Fixed bugs 1,3,4,5,6 in validator.go. Bug6: added ctx+repoRoot params to ValidateScaffold. Bug4: findRepoRoot walks up to go.mod. Bug1: checkImports+parseGoMod consults go.mod requires. Bug5: importsFromAST reuses already-parsed AST. Bug3: TypeReferences returns SKIP instead of false PASS. Updated all test call sites and cmd caller. All 25 tests pass.'
 pre_mortem:
     overall_risk: low
     rows:
@@ -591,5 +618,5 @@ pre_mortem:
           mitigation: |-
             Both agents run in Wave 1 with fully disjoint files. They are merged together by the
             orchestrator after both complete. No intermediate state is committed.
-state: "REVIEWED"
+state: COMPLETE
 injection_method: hook
