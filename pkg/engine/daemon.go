@@ -231,7 +231,7 @@ func RunDaemon(ctx context.Context, opts DaemonOpts) result.Result[DaemonData] {
 
 		if !blocked {
 			state.CompletedCount++
-		completedCount++
+			completedCount++
 			emit("daemon_impl_complete", map[string]interface{}{
 				"slug":            slug,
 				"completed_count": state.CompletedCount,

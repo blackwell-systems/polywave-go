@@ -115,7 +115,7 @@ func SaveConfig(repoPath string, cfg Config) result.Result[SaveConfigData] {
 		})
 	}
 
-	if err := os.WriteFile(path, out, 0644); err != nil {
+	if err := os.WriteFile(path, out, 0600); err != nil {
 		return result.NewFailure[SaveConfigData]([]result.SAWError{
 			result.NewFatal("CONFIG_SAVE_FAILED", fmt.Sprintf("failed to write config file: %v", err)).WithCause(err),
 		})
