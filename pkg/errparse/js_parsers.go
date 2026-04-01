@@ -9,10 +9,16 @@ import (
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
 )
 
-// ---------------------------------------------------------------------------
+func init() {
+	Register(&TscParser{})
+	Register(&EslintParser{})
+	Register(&NpmTestParser{})
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // TscParser – parses TypeScript compiler output.
 // Format: src/file.ts(10,5): error TS2322: Type 'X' is not assignable to type 'Y'
-// ---------------------------------------------------------------------------
+// ─────────────────────────────────────────────────────────────────────────────
 
 // tscLineRe matches a single tsc diagnostic line.
 // Group 1 = file, 2 = line, 3 = col, 4 = severity, 5 = message
@@ -53,11 +59,11 @@ func (p *TscParser) Parse(stdout, stderr string) *ParseResult {
 	return pr
 }
 
-// ---------------------------------------------------------------------------
+// ─────────────────────────────────────────────────────────────────────────────
 // EslintParser – parses ESLint output (text and JSON formats).
 // Text format: src/file.ts:10:5: 'x' is not defined [no-undef]
 // JSON format: the standard ESLint JSON reporter output.
-// ---------------------------------------------------------------------------
+// ─────────────────────────────────────────────────────────────────────────────
 
 // eslintTextRe matches a single ESLint text-format diagnostic.
 // Group 1 = file, 2 = line, 3 = col, 4 = message, 5 = rule (optional)
@@ -167,7 +173,7 @@ func (p *EslintParser) Parse(stdout, stderr string) *ParseResult {
 	return pr
 }
 
-// ---------------------------------------------------------------------------
+// ─────────────────────────────────────────────────────────────────────────────
 // NpmTestParser – parses Jest / Vitest output.
 // Recognises:
 //
@@ -175,7 +181,7 @@ func (p *EslintParser) Parse(stdout, stderr string) *ParseResult {
 //	● Test Suite › test name
 //	and file:line references in stack traces.
 //
-// ---------------------------------------------------------------------------
+// ─────────────────────────────────────────────────────────────────────────────
 
 // failFileRe matches "FAIL <file>" lines (Jest / Vitest).
 var failFileRe = regexp.MustCompile(`^(?:FAIL|✗)\s+(.+\.(?:test|spec)\.[jt]sx?)`)
@@ -292,7 +298,6 @@ func (p *NpmTestParser) Parse(stdout, stderr string) *ParseResult {
 			continue
 		}
 
-		_ = currentTest // avoid unused-variable lint error
 	}
 	return pr
 }
