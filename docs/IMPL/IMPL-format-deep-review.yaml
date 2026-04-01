@@ -1,0 +1,384 @@
+title: Deep review and refactoring of pkg/format package
+feature_slug: format-deep-review
+verdict: SUITABLE
+suitability_assessment: |
+    Suitability gate passed on all five criteria:
+
+    1. File decomposition: 2 files (detect.go, detect_test.go) — cleanly splits into
+       1 implementation agent + 1 test agent with disjoint ownership. Single-wave execution.
+
+    2. Investigation-first items: None. Package behavior is well-understood with 100%
+       test coverage. Review findings are clear: unused context parameter, zero-value
+       error handling pattern that differs from canonical Result[T] pattern used
+       elsewhere in the codebase, and potential simplification opportunities.
+
+    3. Interface discoverability: Yes. The key interface change (DetectFormatter
+       returning Result[FormatConfig] instead of FormatConfig) is fully specifiable
+       upfront. Single caller in pkg/protocol/gates.go is in scope for same-wave update.
+
+    4. Pre-implementation status: All changes are TODO. Current state:
+       - DetectFormatter returns FormatConfig (not Result[FormatConfig])
+       - context.Context parameter is unused (imported but never referenced in function body)
+       - No error codes for detection failures
+       - Zero-value return on all failure paths (inconsistent with Result[T] pattern)
+
+    5. Parallelization value: Low. Only 2 files, simple changes, fast test cycle (<1s).
+       Sequential implementation would be ~5-8 min. SAW overhead (scout ~8 min + wave
+       ~5 min + merge ~2 min = ~15 min) exceeds sequential time.
+
+       However, coordination value is HIGH: this establishes the pattern for pkg/*
+       deep reviews (9+ packages remaining). The IMPL doc serves as an audit trail
+       and reference for future reviews, documenting the rationale for Result[T]
+       adoption and error code assignment. Proceed as SUITABLE WITH CAVEATS.
+
+    Estimated times:
+    - Scout phase: ~8 min (pattern analysis, interface contracts)
+    - Agent execution: ~5 min (1 parallel wave, 2 agents)
+    - Merge & verification: ~2 min
+    Total SAW time: ~15 min
+
+    Sequential baseline: ~8 min (manual implementation + test)
+    Time delta: +7 min (SAW overhead dominates for this small package)
+
+    Recommendation: Proceed for coordination value and pattern establishment,
+    not for speed. The IMPL doc will be referenced during subsequent pkg/* reviews.
+test_command: go test ./pkg/format/... -timeout 30s
+lint_command: go vet ./pkg/format/...
+file_ownership:
+    - file: pkg/result/codes.go
+      agent: A
+      wave: 1
+      action: modify
+    - file: pkg/format/detect.go
+      agent: A
+      wave: 1
+      action: modify
+    - file: pkg/protocol/gates.go
+      agent: A
+      wave: 1
+      action: modify
+    - file: pkg/format/detect_test.go
+      agent: B
+      wave: 1
+      action: modify
+interface_contracts:
+    - name: DetectData
+      description: Result payload for a successful DetectFormatter operation
+      definition: |
+        type DetectData struct {
+            Config FormatConfig
+        }
+      location: pkg/format/detect.go
+    - name: DetectFormatter signature change
+      description: Return Result[DetectData] instead of FormatConfig
+      definition: |
+        func DetectFormatter(projectRoot string) result.Result[DetectData]
+      location: pkg/format/detect.go
+    - name: CodeFormatterDetectionFailed
+      description: New error code for formatter detection failures (non-existent directory, permission errors)
+      definition: |
+        CodeFormatterDetectionFailed = "F001_FORMATTER_DETECTION_FAILED"
+      location: pkg/result/codes.go
+    - name: FormatConfig struct (unchanged)
+      description: Public struct remains as-is (no changes to fields)
+      definition: |
+        type FormatConfig struct {
+            Tool        string
+            CheckCmd    string
+            FixCmd      string
+            Description string
+        }
+      location: pkg/format/detect.go
+waves:
+    - number: 1
+      agents:
+        - id: A
+          task: |
+            ## Role
+            Core format package migration: Remove unused context parameter, migrate to Result[DetectData], add error codes, update caller in pkg/protocol/gates.go.
+
+            ## What to implement
+
+            ### 1. Add error code to pkg/result/codes.go
+            In the new Format error codes block (F001-F099), add after the existing blocks:
+            ```go
+            // Format errors (F001-F099)
+            CodeFormatterDetectionFailed = "F001_FORMATTER_DETECTION_FAILED"
+            ```
+
+            ### 2. Update pkg/format/detect.go
+
+            **Add DetectData type** (after FormatConfig struct, before DetectFormatter function):
+            ```go
+            // DetectData wraps the result of a successful formatter detection.
+            type DetectData struct {
+                Config FormatConfig
+            }
+            ```
+
+            **Change DetectFormatter signature** from:
+            ```go
+            func DetectFormatter(ctx context.Context, projectRoot string) FormatConfig
+            ```
+            to:
+            ```go
+            func DetectFormatter(projectRoot string) result.Result[DetectData]
+            ```
+
+            **Remove context import** from line 4 (no longer needed).
+
+            **Convert function body**:
+            - Replace all `return FormatConfig{...}` with `return result.NewSuccess(DetectData{Config: FormatConfig{...}})`
+            - Replace final zero-value return `return FormatConfig{}` with:
+              ```go
+              return result.NewSuccess(DetectData{Config: FormatConfig{}})
+              ```
+              (No formatter detected is not an error — it's a valid outcome. Tests verify this.)
+            - Add error handling for os.Stat failures that are NOT os.ErrNotExist:
+              At each os.Stat call (lines 32, 41, 51, 61), change from:
+              ```go
+              if _, err := os.Stat(filepath.Join(projectRoot, "go.mod")); err == nil {
+              ```
+              to:
+              ```go
+              if _, err := os.Stat(filepath.Join(projectRoot, "go.mod")); err == nil {
+                  // success path unchanged
+              } else if !os.IsNotExist(err) {
+                  // stat failed for reasons other than "file doesn't exist" (permission, I/O error, etc.)
+                  return result.NewFailure[DetectData]([]result.SAWError{
+                      result.NewFatal(result.CodeFormatterDetectionFailed, fmt.Sprintf("failed to check for go.mod: %v", err)).
+                          WithContext("file", "go.mod").
+                          WithContext("project_root", projectRoot),
+                  })
+              }
+              ```
+              Apply this pattern to all 4 marker file checks (go.mod, package.json, pyproject.toml/setup.py loop, Cargo.toml).
+
+            **Update godoc** for DetectFormatter:
+            - Remove "context.Context" from parameter description
+            - Add "Returns Result[DetectData] with SUCCESS and empty FormatConfig when no formatter is detected (not an error)."
+            - Add "Returns FATAL with CodeFormatterDetectionFailed when os.Stat fails for reasons other than file-not-found (permission errors, I/O failures)."
+
+            ### 3. Update pkg/protocol/gates.go
+
+            **Update import** (line 15): Add `"fmt"` if not already present (needed for error formatting).
+
+            **Update runFormatGate caller** (line 285):
+            From:
+            ```go
+            cfg := format.DetectFormatter(ctx, repoDir)
+            if cfg.Tool == "" {
+            ```
+            To:
+            ```go
+            detectResult := format.DetectFormatter(repoDir)
+            if detectResult.IsFatal() {
+                result.Passed = false
+                result.Stderr = fmt.Sprintf("formatter detection failed: %v", detectResult.Errors[0].Message)
+                return result
+            }
+            cfg := detectResult.GetData().Config
+            if cfg.Tool == "" {
+            ```
+
+            **Rationale**: runFormatGate already returns GateResult (not Result[T]), so unwrap the Result[DetectData] inline rather than propagating it further.
+
+            ## Interface contracts to implement
+
+            All signatures from interface_contracts section above. Key points:
+            - DetectFormatter signature change: remove context.Context, return result.Result[DetectData]
+            - DetectData is the new wrapper type
+            - CodeFormatterDetectionFailed is the new error code for stat failures
+            - FormatConfig struct is unchanged
+
+            ## Tests to write or modify
+
+            No new tests needed in this agent's scope. Agent B will update detect_test.go to:
+            - Remove context.Background() from all DetectFormatter calls
+            - Unwrap Result[DetectData] via .GetData().Config
+            - Add new test case for stat failure (permission denied on projectRoot)
+
+            ## Verification gate
+
+            Run these commands in sequence:
+            ```bash
+            go build ./pkg/format/...
+            go vet ./pkg/format/...
+            go test ./pkg/format/... -timeout 30s
+            go build ./pkg/protocol/...
+            go vet ./pkg/protocol/...
+            ```
+
+            All must pass. The test run will fail initially because Agent B hasn't updated
+            the test file yet — that's expected. Focus on build + vet passing for your owned files.
+
+            ## Constraints
+
+            - Do NOT change FormatConfig struct fields (Tool, CheckCmd, FixCmd, Description) — public API
+            - Do NOT change detection priority or logic (go.mod > package.json > pyproject.toml/setup.py > Cargo.toml)
+            - Do NOT add logging or complexity — keep the function simple
+            - os.Stat failures that ARE os.ErrNotExist must NOT return errors (file-not-found is the normal case for markers that don't exist)
+          files:
+            - pkg/format/detect.go
+            - pkg/protocol/gates.go
+            - pkg/result/codes.go
+        - id: B
+          task: |
+            ## Role
+            Test updates: Remove context.Background() calls, unwrap Result[DetectData], add stat failure test case.
+
+            ## What to implement
+
+            ### 1. Update all DetectFormatter calls in pkg/format/detect_test.go
+
+            **In TestDetectFormatter** (line 112):
+            From:
+            ```go
+            got := DetectFormatter(context.Background(), dir)
+            ```
+            To:
+            ```go
+            detectResult := DetectFormatter(dir)
+            if !detectResult.IsSuccess() {
+                t.Fatalf("DetectFormatter failed: %v", detectResult.Errors)
+            }
+            got := detectResult.GetData().Config
+            ```
+
+            Apply this pattern to BOTH test functions:
+            - TestDetectFormatter (line 112)
+            - TestDetectFormatter_NonexistentDir (line 134)
+
+            **In TestDetectFormatter_NonexistentDir** (line 134):
+            From:
+            ```go
+            got := DetectFormatter(context.Background(), "/nonexistent/path/that/does/not/exist")
+            if got.Tool != "" {
+                t.Errorf("expected zero FormatConfig for nonexistent dir, got Tool=%q", got.Tool)
+            }
+            ```
+            To:
+            ```go
+            detectResult := DetectFormatter("/nonexistent/path/that/does/not/exist")
+            if !detectResult.IsSuccess() {
+                t.Fatalf("expected success for nonexistent dir, got: %v", detectResult.Errors)
+            }
+            got := detectResult.GetData().Config
+            if got.Tool != "" {
+                t.Errorf("expected zero FormatConfig for nonexistent dir, got Tool=%q", got.Tool)
+            }
+            ```
+
+            **Remove context import** (line 4): No longer needed.
+
+            ### 2. Add new test case for stat failure (permission denied)
+
+            Add this test function after TestDetectFormatter_NonexistentDir:
+            ```go
+            func TestDetectFormatter_StatFailure(t *testing.T) {
+                // Create a directory with a marker file, then make the directory unreadable
+                // to force os.Stat to fail with permission denied (not os.ErrNotExist).
+                dir, err := os.MkdirTemp("", "format-stat-fail-*")
+                if err != nil {
+                    t.Fatalf("MkdirTemp: %v", err)
+                }
+                defer os.RemoveAll(dir)
+
+                markerPath := filepath.Join(dir, "go.mod")
+                if err := os.WriteFile(markerPath, []byte(""), 0644); err != nil {
+                    t.Fatalf("WriteFile: %v", err)
+                }
+
+                // Make the directory unreadable (chmod 000) to force stat to fail
+                if err := os.Chmod(dir, 0000); err != nil {
+                    t.Fatalf("Chmod: %v", err)
+                }
+                defer os.Chmod(dir, 0755) // restore before cleanup
+
+                result := DetectFormatter(dir)
+                if !result.IsFatal() {
+                    t.Fatalf("expected FATAL for stat failure, got Code=%s", result.Code)
+                }
+                if len(result.Errors) == 0 {
+                    t.Fatalf("expected errors, got none")
+                }
+                if result.Errors[0].Code != "F001_FORMATTER_DETECTION_FAILED" {
+                    t.Errorf("expected CodeFormatterDetectionFailed, got %s", result.Errors[0].Code)
+                }
+            }
+            ```
+
+            **Note on test reliability**: The permission-denied test may be skipped on systems
+            where chmod 000 doesn't prevent os.Stat (e.g., running as root). If the test fails
+            with "expected FATAL, got SUCCESS", add a skip:
+            ```go
+            if !result.IsFatal() {
+                t.Skip("chmod 000 did not block os.Stat on this system (running as root?)")
+            }
+            ```
+
+            ## Interface contracts to implement
+
+            None (test-only changes). Agent A owns the interface contract implementations.
+
+            ## Tests to write or modify
+
+            Update all existing test cases to:
+            - Remove context.Background() parameter
+            - Unwrap Result[DetectData] via detectResult.IsSuccess() check + .GetData().Config
+
+            Add one new test case:
+            - TestDetectFormatter_StatFailure (permission denied scenario)
+
+            ## Verification gate
+
+            Run these commands in sequence:
+            ```bash
+            go build ./pkg/format/...
+            go vet ./pkg/format/...
+            go test ./pkg/format/... -timeout 30s -v
+            ```
+
+            All must pass. The -v flag will show each test case name for clarity.
+
+            ## Constraints
+
+            - Do NOT modify detect.go (Agent A owns that file)
+            - Do NOT change test table structure or test case names (preserve existing coverage)
+            - Do NOT add external dependencies (os, filepath, testing already imported)
+            - The new test case MUST use a real filesystem directory (no mocks) to verify stat failure handling
+          files:
+            - pkg/format/detect_test.go
+quality_gates:
+    level: standard
+    gates:
+        - type: build
+          command: go build ./pkg/format/... ./pkg/protocol/...
+          required: true
+        - type: lint
+          command: go vet ./pkg/format/... ./pkg/protocol/...
+          required: true
+        - type: test
+          command: go test ./pkg/format/... -timeout 30s
+          required: true
+pre_mortem:
+    overall_risk: low
+    rows:
+        - scenario: Agent A's changes to pkg/protocol/gates.go break format gate execution
+          likelihood: low
+          impact: medium
+          mitigation: Agent A must verify runFormatGate still skips correctly when cfg.Tool is empty (line 286-291). Existing tests in pkg/protocol/gates_test.go cover this path (TestRunGates_FormatGate_NoFormatterDetected).
+        - scenario: Context removal breaks downstream callers we haven't identified
+          likelihood: low
+          impact: low
+          mitigation: Only one caller exists (pkg/protocol/gates.go line 285), which Agent A updates. Grep confirmed no other callers.
+        - scenario: Permission-denied test case fails on CI due to root privileges
+          likelihood: medium
+          impact: low
+          mitigation: Agent B's task includes a skip instruction for systems where chmod 000 doesn't block stat. Test will skip rather than fail.
+        - scenario: Zero-value return (no formatter detected) is incorrectly treated as error
+          likelihood: low
+          impact: medium
+          mitigation: Agent A's task explicitly states "No formatter detected is not an error" and maps it to SUCCESS with empty Config. runFormatGate checks cfg.Tool == "" and skips the gate (existing behavior preserved).
+state: SCOUT_PENDING
+injection_method: hook
