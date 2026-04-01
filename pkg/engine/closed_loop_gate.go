@@ -56,7 +56,7 @@ var closedLoopRunAgentFunc = func(ctx context.Context, model string, prompt stri
 	if err != nil {
 		return fmt.Errorf("closed_loop_gate: backend init: %w", err)
 	}
-	runner := agent.NewRunner(b, nil)
+	runner := agent.NewRunner(b)
 	spec := &protocol.Agent{
 		ID:   "fix",
 		Task: prompt,

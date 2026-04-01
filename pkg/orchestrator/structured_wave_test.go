@@ -103,7 +103,7 @@ func TestLaunchAgentStructured_FallbackToCLI(t *testing.T) {
 		return fake, nil
 	}
 	newRunnerFunc = func(b backend.Backend, wm *worktree.Manager) *agent.Runner {
-		return agent.NewRunner(b, wm)
+		return agent.NewRunner(b)
 	}
 
 	doc := &protocol.IMPLManifest{
@@ -119,7 +119,7 @@ func TestLaunchAgentStructured_FallbackToCLI(t *testing.T) {
 	o := newFromDoc(doc, "/repo", "/repo/IMPL.md")
 
 	wm := worktree.New("/repo", "test-slug")
-	runner := agent.NewRunner(fake, wm)
+	runner := agent.NewRunner(fake)
 
 	// Use the CLI model on the agent spec.
 	agentSpec := protocol.Agent{ID: "A", Task: "do work", Model: "cli:kimi"}
@@ -186,7 +186,7 @@ func TestLaunchAgentStructured_APIPath(t *testing.T) {
 	})
 
 	wm := worktree.New(dir, "test-slug")
-	runner := agent.NewRunner(&fakeBackend{}, wm)
+	runner := agent.NewRunner(&fakeBackend{})
 	agentSpec := protocol.Agent{ID: "A", Task: "do work"}
 
 	err := o.launchAgentStructured(context.Background(), runner, wm, 1, agentSpec)
@@ -259,7 +259,7 @@ func TestLaunchAgentStructured_PublishesBlockedEvent(t *testing.T) {
 	})
 
 	wm := worktree.New(dir, "test-slug")
-	runner := agent.NewRunner(&fakeBackend{}, wm)
+	runner := agent.NewRunner(&fakeBackend{})
 	agentSpec := protocol.Agent{ID: "A", Task: "do work"}
 
 	err := o.launchAgentStructured(context.Background(), runner, wm, 1, agentSpec)
@@ -331,7 +331,7 @@ func TestLaunchAgentStructured_WorktreeCreationFailure(t *testing.T) {
 	})
 
 	wm := worktree.New("/repo", "test-slug")
-	runner := agent.NewRunner(&fakeBackend{}, wm)
+	runner := agent.NewRunner(&fakeBackend{})
 	agentSpec := protocol.Agent{ID: "A", Task: "do work"}
 
 	err := o.launchAgentStructured(context.Background(), runner, wm, 1, agentSpec)
@@ -393,7 +393,7 @@ func TestLaunchAgentStructured_StructuredFunctionError(t *testing.T) {
 	})
 
 	wm := worktree.New("/repo", "test-slug")
-	runner := agent.NewRunner(&fakeBackend{}, wm)
+	runner := agent.NewRunner(&fakeBackend{})
 	agentSpec := protocol.Agent{ID: "A", Task: "do work"}
 
 	err := o.launchAgentStructured(context.Background(), runner, wm, 1, agentSpec)
@@ -475,7 +475,7 @@ func TestLaunchAgentStructured_OnChunkForwarding(t *testing.T) {
 	})
 
 	wm := worktree.New(dir, "test-slug")
-	runner := agent.NewRunner(&fakeBackend{}, wm)
+	runner := agent.NewRunner(&fakeBackend{})
 	agentSpec := protocol.Agent{ID: "A", Task: "do work"}
 
 	err := o.launchAgentStructured(context.Background(), runner, wm, 1, agentSpec)
@@ -525,7 +525,7 @@ func TestSetRunWaveAgentStructuredFunc(t *testing.T) {
 	}
 	o := newFromDoc(doc, "/repo", "/repo/IMPL.md")
 	wm := worktree.New("/repo", "test-slug")
-	runner := agent.NewRunner(&fakeBackend{}, wm)
+	runner := agent.NewRunner(&fakeBackend{})
 
 	// The error is expected; we just want to verify it was called.
 	_ = o.launchAgentStructured(context.Background(), runner, wm, 1, protocol.Agent{ID: "A", Task: "do work"})

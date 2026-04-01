@@ -137,7 +137,7 @@ func RunIntegrationAgent(ctx context.Context, opts RunIntegrationAgentOpts, onEv
 	_ = constraints // Constraints available for future tool enforcement.
 
 	// Create agent runner and execute with streaming.
-	runner := agent.NewRunner(b, nil)
+	runner := agent.NewRunner(b)
 	spec := &protocol.Agent{
 		ID:   "integrator",
 		Task: prompt,

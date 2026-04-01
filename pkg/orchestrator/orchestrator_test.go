@@ -271,7 +271,7 @@ func TestRunWave_LaunchesAllAgents(t *testing.T) {
 		return fake, nil
 	}
 	newRunnerFunc = func(b backend.Backend, wm *worktree.Manager) *agent.Runner {
-		return agent.NewRunner(b, wm)
+		return agent.NewRunner(b)
 	}
 
 	doc := &protocol.IMPLManifest{
@@ -328,7 +328,7 @@ func TestRunWave_ReturnsErrorOnAgentFailure(t *testing.T) {
 		return fake, nil
 	}
 	newRunnerFunc = func(b backend.Backend, wm *worktree.Manager) *agent.Runner {
-		return agent.NewRunner(b, wm)
+		return agent.NewRunner(b)
 	}
 
 	doc := &protocol.IMPLManifest{
@@ -508,7 +508,7 @@ func TestSetEventPublisher_NilPublisher_NoOp(t *testing.T) {
 		return fake, nil
 	}
 	newRunnerFunc = func(b backend.Backend, wm *worktree.Manager) *agent.Runner {
-		return agent.NewRunner(b, wm)
+		return agent.NewRunner(b)
 	}
 
 	o := makeOrchWithWave(1, "A")
@@ -544,7 +544,7 @@ func TestPublish_EmitsAgentStarted(t *testing.T) {
 		return fake, nil
 	}
 	newRunnerFunc = func(b backend.Backend, wm *worktree.Manager) *agent.Runner {
-		return agent.NewRunner(b, wm)
+		return agent.NewRunner(b)
 	}
 
 	var mu sync.Mutex
@@ -688,7 +688,7 @@ func TestLaunchAgent_PollsWorktreeIMPLDoc(t *testing.T) {
 		return fake, nil
 	}
 	newRunnerFunc = func(b backend.Backend, wm *worktree.Manager) *agent.Runner {
-		return agent.NewRunner(b, wm)
+		return agent.NewRunner(b)
 	}
 
 	doc := &protocol.IMPLManifest{
@@ -748,7 +748,7 @@ func TestLaunchAgentE23FallbackOnExtractError(t *testing.T) {
 		return fake, nil
 	}
 	newRunnerFunc = func(b backend.Backend, wm *worktree.Manager) *agent.Runner {
-		return agent.NewRunner(b, wm)
+		return agent.NewRunner(b)
 	}
 
 	// IMPL doc path does not exist, so ExtractAgentContext will fail.
@@ -814,7 +814,7 @@ func TestLaunchAgentE19BlockedEvent(t *testing.T) {
 		return fake, nil
 	}
 	newRunnerFunc = func(b backend.Backend, wm *worktree.Manager) *agent.Runner {
-		return agent.NewRunner(b, wm)
+		return agent.NewRunner(b)
 	}
 
 	var mu sync.Mutex
@@ -907,7 +907,7 @@ func TestExecuteRetryLoop_TransientRetries(t *testing.T) {
 		return fake, nil
 	}
 	newRunnerFunc = func(b backend.Backend, wm *worktree.Manager) *agent.Runner {
-		return agent.NewRunner(b, wm)
+		return agent.NewRunner(b)
 	}
 
 	var mu sync.Mutex
@@ -1068,7 +1068,7 @@ func TestRunWave_AgentPrioritization(t *testing.T) {
 		return fake, nil
 	}
 	newRunnerFunc = func(b backend.Backend, wm *worktree.Manager) *agent.Runner {
-		return agent.NewRunner(b, wm)
+		return agent.NewRunner(b)
 	}
 
 	// Track that prioritization was called with correct parameters
@@ -1144,7 +1144,7 @@ func TestRunWave_AgentPrioritizedEvent(t *testing.T) {
 		return fake, nil
 	}
 	newRunnerFunc = func(b backend.Backend, wm *worktree.Manager) *agent.Runner {
-		return agent.NewRunner(b, wm)
+		return agent.NewRunner(b)
 	}
 
 	// Mock prioritization: reverse the agent order

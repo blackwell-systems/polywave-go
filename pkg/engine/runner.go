@@ -135,7 +135,7 @@ func RunScout(ctx context.Context, opts RunScoutOpts, onChunk func(string)) resu
 				result.NewFatal(result.CodeScoutRunFailed, "engine.RunScout: backend init failed").WithCause(bErr),
 			})
 		}
-		runner := agent.NewRunner(b, nil)
+		runner := agent.NewRunner(b)
 		spec := &protocol.Agent{ID: "scout", Task: prompt}
 		_, execErr = runner.ExecuteStreamingWithTools(ctx, spec, opts.RepoPath, onChunk, nil)
 	}
@@ -248,7 +248,7 @@ func RunPlanner(ctx context.Context, opts RunPlannerOpts, onChunk func(string)) 
 			result.NewFatal(result.CodePlannerFailed, "engine.RunPlanner: backend init failed").WithCause(bErr),
 		})
 	}
-	runner := agent.NewRunner(b, nil)
+	runner := agent.NewRunner(b)
 	spec := &protocol.Agent{ID: "planner", Task: prompt}
 	_, execErr := runner.ExecuteStreamingWithTools(ctx, spec, opts.RepoPath, onChunk, nil)
 	if execErr != nil {
@@ -618,7 +618,7 @@ func RunScaffold(opts RunScaffoldOpts) result.Result[ScaffoldData] {
 			result.NewFatal(result.CodeScaffoldRunFailed, "engine.RunScaffold: backend init failed").WithCause(err),
 		})
 	}
-	runner := agent.NewRunner(b, nil)
+	runner := agent.NewRunner(b)
 	spec := &protocol.Agent{ID: "scaffold", Task: prompt}
 
 	onChunk := func(chunk string) {

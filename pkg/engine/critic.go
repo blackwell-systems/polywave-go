@@ -119,7 +119,7 @@ func RunCritic(ctx context.Context, opts RunCriticOpts, onChunk func(string)) (R
 	if bErr != nil {
 		return RunCriticResult{}, fmt.Errorf("run-critic: backend init: %w", bErr)
 	}
-	runner := agent.NewRunner(b, nil)
+	runner := agent.NewRunner(b)
 	spec := &protocol.Agent{ID: "critic", Task: prompt}
 	_, execErr := runner.ExecuteStreamingWithTools(ctx, spec, workDir, onChunk, nil)
 	if execErr != nil {
