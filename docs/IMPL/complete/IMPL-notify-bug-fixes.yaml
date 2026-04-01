@@ -1,3 +1,4 @@
+completion_date: "2026-03-31"
 title: pkg/notify Bug Fixes
 feature_slug: notify-bug-fixes
 verdict: SUITABLE
@@ -398,6 +399,7 @@ waves:
             - pkg/notify/types.go
             - pkg/notify/slack.go
             - pkg/notify/slack_test.go
+      base_commit: 663bbcfac61b2edef7f3de1b210b2c9b0eaeecdc
     - number: 2
       agents:
         - id: C
@@ -562,6 +564,7 @@ waves:
             - pkg/notify/telegram_test.go
           dependencies:
             - B
+          context_source: prepared-brief
 quality_gates:
     level: standard
     gates:
@@ -577,6 +580,41 @@ quality_gates:
           command: go test ./pkg/notify/... ./pkg/result/...
           required: true
           repo: scout-and-wave-go
+completion_reports:
+    A:
+        status: complete
+        branch: saw/notify-bug-fixes/wave1-agent-A
+        commit: 97f50d6
+        files_changed:
+            - pkg/notify/dispatcher.go
+            - pkg/notify/dispatcher_test.go
+            - pkg/result/codes.go
+        tests_added:
+            - TestDispatch_NoAdapters
+            - TestDispatcher_AddRemove
+        verification: PASS
+    B:
+        status: complete
+        branch: saw/notify-bug-fixes/wave1-agent-B
+        commit: f42fe7e
+        files_changed:
+            - pkg/notify/types.go
+            - pkg/notify/slack.go
+            - pkg/notify/slack_test.go
+        tests_added:
+            - TestSlackFormatter_UnknownSeverity
+        verification: PASS
+        notes: All 4 bugs fixed. readWithFallback moved to types.go; defaultHTTPTimeout defined in types.go and applied to SlackAdapter; Embeds type assertion documented; severityColor default changed from green to gray. 1 new test added. All existing tests pass.
+    C:
+        status: complete
+        branch: saw/notify-bug-fixes/wave2-agent-C
+        commit: f6e377b
+        files_changed:
+            - pkg/notify/discord.go
+            - pkg/notify/telegram.go
+            - pkg/notify/telegram_test.go
+        verification: PASS
+        notes: 'Bug 2 fixed for Discord and Telegram adapters (HTTP timeout applied). Bug 3 fixed: Telegram parse_mode changed from Markdown to HTML; TelegramFormatter.Format rewritten to emit HTML bold/italic tags. Three test assertions updated to expect HTML format. All tests pass.'
 pre_mortem:
     overall_risk: low
     rows:
@@ -604,5 +642,5 @@ pre_mortem:
           impact: low
           mitigation: |
             Agent B task explicitly states telegram.go already calls readWithFallback and that moving it to types.go (same package) requires no import changes. Agent B's verification gate runs go build ./... which will catch any missing symbol immediately.
-state: "REVIEWED"
+state: COMPLETE
 injection_method: hook

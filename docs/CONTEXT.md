@@ -304,3 +304,5 @@ type BackendConfig struct {
   - IMPL doc: docs/IMPL/complete/IMPL-result-bug-fixes.yaml
 - **resume-bug-fixes**: completed 2026-03-31, 2 waves, 3 agents
   - IMPL doc: docs/IMPL/complete/IMPL-resume-bug-fixes.yaml
+- **notify-bug-fixes**: completed 2026-03-31, 2 waves, 3 agents
+  - IMPL doc: docs/IMPL/complete/IMPL-notify-bug-fixes.yaml
