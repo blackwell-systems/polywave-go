@@ -218,6 +218,33 @@ test:
 	}
 }
 
+func TestMakefileParser_TransitiveDependencies(t *testing.T) {
+	tmpDir := t.TempDir()
+	makefilePath := filepath.Join(tmpDir, "Makefile")
+
+	// 3-level chain: test → integration → test-unit (only test-unit has commands)
+	makefileContent := "test: integration\nintegration: test-unit\ntest-unit:\n\tgo test ./... -short\n"
+
+	if err := os.WriteFile(makefilePath, []byte(makefileContent), 0644); err != nil {
+		t.Fatalf("Failed to write Makefile: %v", err)
+	}
+
+	parser := &MakefileParser{}
+	cmdSet, err := parser.ParseBuildSystem(tmpDir)
+	if err != nil {
+		t.Fatalf("ParseBuildSystem failed: %v", err)
+	}
+
+	if cmdSet == nil {
+		t.Fatal("Expected CommandSet, got nil")
+	}
+
+	// Should resolve transitively to test-unit
+	if cmdSet.Commands.Test.Full != "make test-unit" {
+		t.Errorf("Expected test command 'make test-unit', got '%s'", cmdSet.Commands.Test.Full)
+	}
+}
+
 func TestMakefileParser_MultipleTargetsOfSameType(t *testing.T) {
 	tmpDir := t.TempDir()
 	makefilePath := filepath.Join(tmpDir, "Makefile")

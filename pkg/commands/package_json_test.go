@@ -208,7 +208,7 @@ func TestPackageJSONParser_AlternativeScriptNames(t *testing.T) {
 	if cmdSet.Commands.Lint.Check != "npm run eslint" {
 		t.Errorf("expected Lint.Check 'npm run eslint', got %q", cmdSet.Commands.Lint.Check)
 	}
-	if cmdSet.Commands.Format.Check != "npm run prettier" {
-		t.Errorf("expected Format.Check 'npm run prettier', got %q", cmdSet.Commands.Format.Check)
+	if cmdSet.Commands.Format.Fix != "npm run prettier" {
+		t.Errorf("expected Format.Fix 'npm run prettier', got %q", cmdSet.Commands.Format.Fix)
 	}
 }

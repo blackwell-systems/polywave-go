@@ -259,7 +259,10 @@ func (p *GithubActionsParser) detectToolchain(commands []string) string {
 		}
 	}
 
-	// Find the toolchain with the highest count
+	// Find the toolchain with the highest count.
+	// Tie-breaking priority order: Go > Rust > Node > Python.
+	// Each language block uses strictly-greater-than (>) so in ties the first
+	// language encountered in this order wins.
 	max := 0
 	toolchain := ""
 
