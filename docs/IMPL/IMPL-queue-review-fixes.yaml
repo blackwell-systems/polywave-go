@@ -130,6 +130,7 @@ waves:
           files:
             - pkg/result/codes.go
             - pkg/queue/manager.go
+      base_commit: 5dddb4c8057db62adc1edb2250fd80da2829f7f4
     - number: 2
       agents:
         - id: B
@@ -208,6 +209,17 @@ quality_gates:
         - type: test
           command: go test ./pkg/queue/... -timeout 30s
           required: true
+completion_reports:
+    A:
+        status: complete
+        branch: saw/queue-review-fixes/wave1-agent-A
+        commit: c148fea
+        files_changed:
+            - pkg/result/codes.go
+            - pkg/queue/manager.go
+            - pkg/queue/manager_test.go
+        verification: PASS
+        notes: 'Implementation complete. All 4 tasks done: (1) Added Q001-Q006 constants, (2) Replaced 9 hardcoded error strings with constants, (3) Refactored completedSlugs() to return Result[T], (4) Removed unreachable nil check. Post-implementation fix: Updated 3 test assertions in manager_test.go to use new error code constants instead of hardcoded strings (TestNext_QueueEmpty, TestNext_NoneEligible, TestUpdateStatus_NotFound). All tests now pass.'
 pre_mortem:
     overall_risk: low
     rows:
@@ -227,5 +239,5 @@ pre_mortem:
           likelihood: low
           impact: low
           mitigation: Go slice semantics guarantee append() always returns non-nil. The check is defensive but unreachable. Removal is safe. If future refactor adds a code path where items is not assigned via append, linter or tests will catch it.
-state: "REVIEWED"
+state: REVIEWED
 injection_method: hook
