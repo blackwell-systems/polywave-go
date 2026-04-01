@@ -80,9 +80,6 @@ func TestManagerCreateRemoveRoundtrip(t *testing.T) {
 	if data.RemovedPath != wtPath {
 		t.Errorf("RemoveData.RemovedPath = %q; want %q", data.RemovedPath, wtPath)
 	}
-	if !data.WasTracked {
-		t.Error("RemoveData.WasTracked should be true")
-	}
 
 	// Manager should no longer track the worktree.
 	list = m.List()

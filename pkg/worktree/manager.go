@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"sort"
 
 	"github.com/blackwell-systems/scout-and-wave-go/internal/git"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
@@ -18,7 +19,6 @@ import (
 // RemoveData holds the result payload for a successful Remove operation.
 type RemoveData struct {
 	RemovedPath string
-	WasTracked  bool
 }
 
 // CleanupData holds the result payload for a CleanupAll operation.
@@ -28,6 +28,7 @@ type CleanupData struct {
 }
 
 // Manager tracks and manages git worktrees for SAW wave agents.
+// Manager is not safe for concurrent use.
 type Manager struct {
 	repoPath string
 	slug     string            // IMPL feature slug for slug-scoped branch naming
@@ -75,6 +76,11 @@ func (m *Manager) Create(wave int, agent string) (string, error) {
 		return "", fmt.Errorf("failed to create worktree base directory %q: %w", wtDir, err)
 	}
 
+	if _, err := os.Stat(wtPath); err == nil {
+		return "", fmt.Errorf("manager: worktree path %q already exists; "+
+			"remove it or use a different wave/agent combination before retrying", wtPath)
+	}
+
 	if err := git.WorktreeAdd(m.repoPath, wtPath, branch); err != nil {
 		return "", fmt.Errorf("manager: create worktree for wave %d agent %s: %w", wave, agent, err)
 	}
@@ -113,7 +119,6 @@ func (m *Manager) Remove(path string) result.Result[RemoveData] {
 	delete(m.active, path)
 	return result.NewSuccess(RemoveData{
 		RemovedPath: path,
-		WasTracked:  true,
 	})
 }
 
@@ -128,40 +133,41 @@ func (m *Manager) CleanupAll() result.Result[CleanupData] {
 	}
 
 	var removedPaths []string
-	var warnings []result.SAWError
+	var failedPaths []string
 
 	for _, path := range paths {
 		r := m.Remove(path)
 		if r.IsFatal() {
-			// Collect warnings from each failed removal.
-			for _, e := range r.Errors {
-				w := result.NewWarning("WORKTREE_CLEANUP_FAILED", e.Message).WithCause(e.Cause)
-				warnings = append(warnings, w)
-			}
+			failedPaths = append(failedPaths, path)
 			m.log().Warn("manager: cleanup error", "path", path)
 		} else {
 			removedPaths = append(removedPaths, path)
 		}
 	}
 
+	sort.Strings(removedPaths)
 	data := CleanupData{
 		RemovedCount: len(removedPaths),
 		RemovedPaths: removedPaths,
 	}
 
-	if len(warnings) == 0 {
+	if len(failedPaths) == 0 {
 		return result.NewSuccess(data)
 	}
+
+	// Build errors from failed paths in a single pass.
+	errs := make([]result.SAWError, 0, len(failedPaths))
+	for _, p := range failedPaths {
+		errs = append(errs, result.NewFatal("WORKTREE_CLEANUP_FAILED",
+			fmt.Sprintf("manager: failed to remove worktree %q", p)))
+	}
+
 	if len(removedPaths) == 0 {
 		// All removals failed — total failure.
-		var errs []result.SAWError
-		for _, w := range warnings {
-			errs = append(errs, result.NewFatal("WORKTREE_CLEANUP_FAILED", w.Message).WithCause(w.Cause))
-		}
 		return result.NewFailure[CleanupData](errs)
 	}
 	// Some succeeded, some failed — partial.
-	return result.NewPartial(data, warnings)
+	return result.NewPartial(data, errs)
 }
 
 // List returns the absolute paths of all currently tracked worktrees.
@@ -170,5 +176,6 @@ func (m *Manager) List() []string {
 	for path := range m.active {
 		paths = append(paths, path)
 	}
+	sort.Strings(paths)
 	return paths
 }
