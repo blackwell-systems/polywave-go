@@ -35,7 +35,13 @@ func (d *Dispatcher) Dispatch(ctx context.Context, event Event, formatter Format
 	d.mu.RUnlock()
 
 	if len(snapshot) == 0 {
-		return result.NewSuccess(DispatchData{})
+		return result.NewFailure[DispatchData]([]result.SAWError{
+			{
+				Code:     result.CodeDispatchNoAdapters,
+				Message:  "dispatch: no adapters registered",
+				Severity: "fatal",
+			},
+		})
 	}
 
 	// Check context before spawning goroutines.
@@ -120,7 +126,7 @@ func (d *Dispatcher) Dispatch(ctx context.Context, event Event, formatter Format
 	if sentCount == 0 {
 		return result.NewFailure[DispatchData]([]result.SAWError{
 			{
-				Code:     "DISPATCH_ALL_FAILED",
+				Code:     result.CodeDispatchAllFailed,
 				Message:  fmt.Sprintf("all %d adapters failed", failedCount),
 				Severity: "fatal",
 			},

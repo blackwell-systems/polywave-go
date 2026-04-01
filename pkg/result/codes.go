@@ -147,6 +147,10 @@ const (
 
 	// CodeContextCancelled is emitted when an operation is cancelled via context.
 	CodeContextCancelled = "N018_CONTEXT_CANCELLED"
+	// CodeDispatchNoAdapters is emitted by Dispatcher.Dispatch when no adapters are registered.
+	CodeDispatchNoAdapters = "DISPATCH_NO_ADAPTERS"
+	// CodeDispatchAllFailed is emitted by Dispatcher.Dispatch when all adapters fail.
+	CodeDispatchAllFailed = "DISPATCH_ALL_FAILED"
 
 	// Scout operation codes
 	CodeScoutInvalidOpts         = "N019_SCOUT_INVALID_OPTS"
