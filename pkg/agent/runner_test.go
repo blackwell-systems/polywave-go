@@ -5,14 +5,11 @@ import (
 	"strings"
 	"testing"
 	"time"
-
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/worktree"
 )
 
 // TestNewRunner verifies that NewRunner with a nil backend returns a non-nil Runner.
 func TestNewRunner(t *testing.T) {
-	wm := worktree.New("/tmp", "test-slug")
-	r := NewRunner(nil, wm)
+	r := NewRunner(nil)
 	if r == nil {
 		t.Fatal("NewRunner returned nil")
 	}
