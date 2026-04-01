@@ -36,7 +36,7 @@ Each reviewed package gets scouted → IMPL'd → closed before being marked don
 | orchestrator | | | |
 | pipeline | | | |
 | protocol | | | |
-| queue | ✅ | | |
+| queue | ✅ | ✅ | ✅ |
 | result | | | |
 | resume | | | |
 | retry | | | |
