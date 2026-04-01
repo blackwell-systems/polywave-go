@@ -211,10 +211,11 @@ func RunScoutFull(ctx context.Context, opts RunScoutFullOpts, onChunk func(strin
 		if hasAgentIDErrors {
 			agentCount := countAgentsFromErrors(errs)
 			if agentCount > 0 {
-				correctIDs, err := idgen.AssignAgentIDs(agentCount, nil)
-				if err != nil {
-					return RunScoutFullResult{}, fmt.Errorf("engine.RunScoutFull: failed to generate agent IDs: %w", err)
+				res := idgen.AssignAgentIDs(agentCount, nil)
+				if res.IsFatal() {
+					return RunScoutFullResult{}, fmt.Errorf("engine.RunScoutFull: failed to generate agent IDs: %s", res.Errors[0].Message)
 				}
+				correctIDs := res.GetData()
 				log.Warn("RunScoutFull: agent ID validation errors found; manual correction required",
 					"correct_ids", strings.Join(correctIDs, " "))
 				return RunScoutFullResult{}, fmt.Errorf("engine.RunScoutFull: IMPL doc validation failed (agent ID errors); suggested IDs: %s",

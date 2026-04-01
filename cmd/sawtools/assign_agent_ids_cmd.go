@@ -50,10 +50,11 @@ Examples:
 			}
 
 			// Generate IDs
-			ids, err := idgen.AssignAgentIDs(count, grouping)
-			if err != nil {
-				return err
+			res := idgen.AssignAgentIDs(count, grouping)
+			if res.IsFatal() {
+				return fmt.Errorf("assign-agent-ids: %s", res.Errors[0].Message)
 			}
+			ids := res.GetData()
 
 			// Output space-separated IDs
 			fmt.Fprintln(cmd.OutOrStdout(), strings.Join(ids, " "))
