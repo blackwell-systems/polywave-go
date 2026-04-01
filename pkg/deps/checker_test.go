@@ -427,8 +427,12 @@ func (p *failingParser) Detect(filePath string) bool {
 	return filepath.Base(filePath) == "go.sum"
 }
 
-func (p *failingParser) Parse(filePath string) ([]PackageInfo, error) {
-	return nil, fmt.Errorf("simulated parse failure")
+func (p *failingParser) Parse(filePath string) result.Result[[]PackageInfo] {
+	return result.NewFailure[[]PackageInfo]([]result.SAWError{
+		result.NewError("D002_LOCK_FILE_PARSE", "simulated parse failure"),
+	})
+}
+
 // TestParseGoModReplace_SingleLine tests single-line replace directive parsing
 func TestParseGoModReplace_SingleLine(t *testing.T) {
 	tmpDir := t.TempDir()
@@ -609,10 +613,12 @@ func (p *goSumParser) Detect(filePath string) bool {
 	return filepath.Base(filePath) == "go.sum"
 }
 
-func (p *goSumParser) Parse(filePath string) ([]PackageInfo, error) {
+func (p *goSumParser) Parse(filePath string) result.Result[[]PackageInfo] {
 	data, err := os.ReadFile(filePath)
 	if err != nil {
-		return nil, err
+		return result.NewFailure[[]PackageInfo]([]result.SAWError{
+			result.NewFatal("D001_LOCK_FILE_OPEN", fmt.Sprintf("failed to read file: %v", err)),
+		})
 	}
 	seen := make(map[string]struct{})
 	var packages []PackageInfo
@@ -630,7 +636,7 @@ func (p *goSumParser) Parse(filePath string) ([]PackageInfo, error) {
 		seen[modName] = struct{}{}
 		packages = append(packages, PackageInfo{Name: modName, Version: version})
 	}
-	return packages, nil
+	return result.NewSuccess(packages)
 }
 
 // TestIsStdLib verifies the isStdLib helper correctly identifies standard library packages
@@ -702,17 +708,16 @@ func TestGetModulePath(t *testing.T) {
 				t.Fatalf("failed to write go.mod: %v", err)
 			}
 
-			got, err := getModulePath(tmpDir)
+			res := getModulePath(tmpDir)
 			if tt.wantError {
-				if err == nil {
-					t.Error("expected error, got nil")
+				if res.IsSuccess() {
+					t.Error("expected error, got success")
 				}
 			} else {
-				if err != nil {
-					t.Errorf("unexpected error: %v", err)
-				}
-				if got != tt.wantPath {
-					t.Errorf("getModulePath() = %q, want %q", got, tt.wantPath)
+				if !res.IsSuccess() {
+					t.Errorf("unexpected error: %v", res.Errors)
+				} else if res.GetData() != tt.wantPath {
+					t.Errorf("getModulePath() = %q, want %q", res.GetData(), tt.wantPath)
 				}
 			}
 		})
@@ -721,9 +726,9 @@ func TestGetModulePath(t *testing.T) {
 	// Test missing go.mod
 	t.Run("missing go.mod", func(t *testing.T) {
 		tmpDir := t.TempDir()
-		_, err := getModulePath(tmpDir)
-		if err == nil {
-			t.Error("expected error for missing go.mod, got nil")
+		res := getModulePath(tmpDir)
+		if res.IsSuccess() {
+			t.Error("expected error for missing go.mod, got success")
 		}
 	})
 }

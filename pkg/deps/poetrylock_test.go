@@ -52,13 +52,14 @@ content-hash = "abc123"
 	}
 
 	parser := &PoetryLockParser{}
-	packages, err := parser.Parse(lockFile)
+	res := parser.Parse(lockFile)
 
-	if err != nil {
-		t.Fatalf("Parse failed: %v", err)
+	if !res.IsSuccess() {
+		t.Fatalf("Parse failed: %v", res.Errors)
 	}
 
-	if len(packages) != 3 {
+	packages := res.GetData()
+	if len(packages) !=3 {
 		t.Errorf("Expected 3 packages, got %d", len(packages))
 	}
 
@@ -104,14 +105,14 @@ content-hash = "abc123"
 	}
 
 	parser := &PoetryLockParser{}
-	_, err := parser.Parse(lockFile)
+	res := parser.Parse(lockFile)
 
-	if err == nil {
-		t.Error("Expected error for file with no packages, got nil")
+	if res.IsSuccess() {
+		t.Error("Expected error for file with no packages, got success")
 	}
 
-	if err != nil && err.Error() != "no packages found in poetry.lock (possible malformed TOML)" {
-		t.Errorf("Expected 'no packages found' error, got: %v", err)
+	if !res.IsSuccess() && len(res.Errors) > 0 && res.Errors[0].Message != "no packages found in poetry.lock (possible malformed TOML)" {
+		t.Errorf("Expected 'no packages found' error, got: %v", res.Errors[0].Message)
 	}
 }
 
@@ -130,22 +131,25 @@ version = 2.28.1-also-unquoted
 	}
 
 	parser := &PoetryLockParser{}
-	packages, err := parser.Parse(lockFile)
+	res := parser.Parse(lockFile)
 
 	// Our parser is lenient and tries to extract what it can
 	// But with malformed data, it should either return an error or empty packages
-	if err == nil && len(packages) > 0 {
-		// If it parsed something, verify it handled the malformed data
-		// In this case, it might extract partial data
-		if packages[0].Name == "" || packages[0].Version == "" {
-			// Acceptable: extracted structure but missing data
-			return
+	if res.IsSuccess() {
+		packages := res.GetData()
+		if len(packages) > 0 {
+			// If it parsed something, verify it handled the malformed data
+			// In this case, it might extract partial data
+			if packages[0].Name == "" || packages[0].Version == "" {
+				// Acceptable: extracted structure but missing data
+				return
+			}
 		}
-	}
 
-	// If no packages were extracted, it should return an error
-	if len(packages) == 0 && err == nil {
-		t.Error("Expected error for malformed TOML, got nil with no packages")
+		// If no packages were extracted, it should return an error
+		if len(packages) == 0 {
+			t.Error("Expected error for malformed TOML, got success with no packages")
+		}
 	}
 }
 
@@ -203,12 +207,13 @@ optional = false
 	}
 
 	parser := &PoetryLockParser{}
-	packages, err := parser.Parse(lockFile)
+	res := parser.Parse(lockFile)
 
-	if err != nil {
-		t.Fatalf("Parse failed: %v", err)
+	if !res.IsSuccess() {
+		t.Fatalf("Parse failed: %v", res.Errors)
 	}
 
+	packages := res.GetData()
 	// Parser should return ALL packages (both optional and required)
 	// per constraint: "Parse both optional and required packages (no filtering)"
 	if len(packages) != 3 {
@@ -247,13 +252,14 @@ optional = false
 	}
 
 	parser := &PoetryLockParser{}
-	packages, err := parser.Parse(lockFile)
+	res := parser.Parse(lockFile)
 
-	if err != nil {
-		t.Fatalf("Parse failed: %v", err)
+	if !res.IsSuccess() {
+		t.Fatalf("Parse failed: %v", res.Errors)
 	}
 
-	if len(packages) != 1 {
+	packages := res.GetData()
+	if len(packages) !=1 {
 		t.Fatalf("Expected 1 package, got %d", len(packages))
 	}
 

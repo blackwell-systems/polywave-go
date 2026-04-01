@@ -741,6 +741,7 @@ waves:
             - DO NOT test internal implementation details — test public function contracts
           files:
             - pkg/deps/checker_test.go
+      base_commit: 0aa1a3cc4cf22195f4d5a52ed1482aff6104e8d5
 quality_gates:
     level: standard
     gates:
@@ -756,6 +757,93 @@ quality_gates:
           command: go vet ./pkg/deps
           required: true
           repo: scout-and-wave-go
+completion_reports:
+    A:
+        status: complete
+        branch: saw/pkg-deps-review-fixes/wave1-agent-A
+        commit: a9a6da6b605c2d1aaad0e07e6fe5625669b208ee
+        files_changed:
+            - pkg/deps/checker.go
+            - pkg/deps/checker_test.go
+        tests_added:
+            - TestCheckDeps_RepoRootInvalid
+            - TestCheckDeps_ParserErrorLogged
+            - TestGetModulePath_NoGoMod
+            - TestGetModulePath_InvalidFormat
+        verification: PASS
+        notes: 'All critical bugs fixed (F4, F5, F6). CheckDeps migrated to result.Result[ConflictReport]. NormalizePackageName dead code removed. 9 tests passing including 4 new tests for error handling. Out-of-scope dependencies: (1) Agent B must update LockFileParser.Parse to return result.Result[[]PackageInfo], (2) Agent C must add D001-D011 error codes to pkg/result/codes.go (currently using hardcoded strings like ''D011_REPO_ROOT_INVALID'').'
+    B:
+        status: complete
+        branch: saw/pkg-deps-review-fixes/wave1-agent-B
+        commit: 0a9adc2
+        files_changed:
+            - pkg/deps/types.go
+        verification: PASS
+        notes: 'Interface signature updated successfully. Added result package import. LockFileParser.Parse now returns result.Result[[]PackageInfo] instead of ([]PackageInfo, error). Out-of-scope: Parser implementations (Agents D/E/F) and checker.go caller (Agent A) must be updated to match new signature - verified by expected build errors.'
+    C:
+        status: complete
+        branch: saw/pkg-deps-review-fixes/wave1-agent-C
+        commit: "6568587"
+        files_changed:
+            - pkg/result/codes.go
+        verification: PASS
+        notes: Added 11 dependency check error codes (D001-D011) to pkg/result/codes.go. Updated package doc comment to include D001-D099 in code ranges table. Build, vet, and grep verification passed.
+    D:
+        status: complete
+        branch: saw/pkg-deps-review-fixes/wave1-agent-D
+        commit: 4eb5017
+        files_changed:
+            - pkg/deps/gosum.go
+            - pkg/deps/packagelock.go
+        verification: PASS
+        notes: Parser migration complete. Both parsers now return result.Result[[]PackageInfo] and use proper error codes (CodeDepLockFileOpen, CodeDepLockFileParse, CodeDepUnsupportedVersion). Build currently fails due to missing dependencies from Agent B (LockFileParser interface not yet updated) and Agent C (error codes not yet defined), which is expected in parallel execution. Code is ready for integration once those agents complete their work.
+    E:
+        status: complete
+        branch: saw/pkg-deps-review-fixes/wave1-agent-E
+        commit: 62a8671
+        files_changed:
+            - pkg/deps/cargolock.go
+            - pkg/deps/helpers.go
+        files_created:
+            - pkg/deps/helpers.go
+        verification: PASS
+        notes: 'cargolock.go migration complete: Parse now returns result.Result[[]PackageInfo] with proper error codes (CodeDepLockFileOpen, CodeDepLockFileParse). Fixed F16 bug (empty package.Name check at line 41). Fixed F14 bug (extracted unquoteTOML to pkg/deps/helpers.go). Build currently fails in isolated worktree due to missing parallel agent changes (Agent B interface, Agent C error codes), which is expected and will resolve at merge.'
+    F:
+        status: complete
+        branch: saw/pkg-deps-review-fixes/wave1-agent-F
+        commit: dec1419
+        files_changed:
+            - pkg/deps/poetrylock.go
+        verification: PASS - Implementation complete. Build pending Agent B (interface update) and Agent C (error codes).
+        notes: 'All poetrylock.go changes complete: (1) Result[T] migration with all 5 return paths updated, (2) F19 bug fix - section end detection now correctly handles [package.dependencies], (3) F8 bug - kept error for empty packages as specified, (4) F14 bug fix - replaced strings.Trim with unquoteTOML. Out-of-scope dependencies: Agent B must update LockFileParser interface, Agent C must add error code constants (CodeDepLockFileOpen, CodeDepLockFileParse, CodeDepEmptyPackage). Build will succeed after Agent B and C complete.'
+    G:
+        status: complete
+        branch: saw/pkg-deps-review-fixes/wave1-agent-G
+        commit: acbd4f2
+        files_changed:
+            - pkg/deps/checker_test.go
+        tests_added:
+            - TestParseGoModReplace_SingleLine
+            - TestParseGoModReplace_Block
+            - TestParseGoModReplace_VersionedReplacement
+            - TestParseGoModReplace_MissingFile
+            - TestParseGoModReplace_MalformedDirective
+            - TestParseGoModReplace_Comments
+        verification: PASS
+        notes: Added 6 comprehensive test cases for ParseGoModReplace function. Tests cover single-line directives, multi-line blocks, versioned replacements (both pseudo-version and space-separated), missing files, malformed directives, and comment handling. All tests pass. Documented known implementation limitation where space-separated version replacements are not filtered (only pseudo-versions with @ are filtered).
+    H:
+        status: complete
+        branch: saw/pkg-deps-review-fixes/wave1-agent-H
+        commit: ca41f18
+        files_changed:
+            - pkg/deps/checker_test.go
+        tests_added:
+            - TestIsStdLib
+            - TestGetModulePath
+            - TestExtractExternalImports
+            - TestIsLocalReplace
+        verification: PASS
+        notes: 'Added test coverage for 4 previously untested helper functions. Coverage increased from 85.9% to 88.6%. Note: Tests written for current function signatures (traditional error returns). Once Agents A and B complete Result[T] migration, existing test assertions in checker_test.go lines 68-74, 94-109, 265-283, and 285-314 will need updating to check result.IsSuccess() instead of error==nil. The 4 new test functions may also need signature updates if their target functions are migrated to Result[T].'
 pre_mortem:
     overall_risk: medium
     rows:

@@ -33,10 +33,11 @@ func TestPackageLockParser_Parse_Valid(t *testing.T) {
 	defer os.Remove(tmpFile)
 
 	parser := &PackageLockParser{}
-	packages, err := parser.Parse(tmpFile)
-	if err != nil {
-		t.Fatalf("Parse() failed: %v", err)
+	res := parser.Parse(tmpFile)
+	if !res.IsSuccess() {
+		t.Fatalf("Parse() failed: %v", res.Errors)
 	}
+	packages := res.GetData()
 
 	if len(packages) != 2 {
 		t.Fatalf("expected 2 packages, got %d", len(packages))
@@ -83,10 +84,11 @@ func TestPackageLockParser_Parse_EmptyPackages(t *testing.T) {
 	defer os.Remove(tmpFile)
 
 	parser := &PackageLockParser{}
-	packages, err := parser.Parse(tmpFile)
-	if err != nil {
-		t.Fatalf("Parse() failed: %v", err)
+	res := parser.Parse(tmpFile)
+	if !res.IsSuccess() {
+		t.Fatalf("Parse() failed: %v", res.Errors)
 	}
+	packages := res.GetData()
 
 	if len(packages) != 0 {
 		t.Errorf("expected 0 packages for empty packages map, got %d", len(packages))
@@ -110,8 +112,8 @@ func TestPackageLockParser_Parse_MalformedJSON(t *testing.T) {
 	defer os.Remove(tmpFile)
 
 	parser := &PackageLockParser{}
-	_, err := parser.Parse(tmpFile)
-	if err == nil {
+	res := parser.Parse(tmpFile)
+	if res.IsSuccess() {
 		t.Error("Parse() should return error for malformed JSON")
 	}
 }
@@ -186,10 +188,11 @@ func TestPackageLockParser_StripNodeModulesPrefix(t *testing.T) {
 	defer os.Remove(tmpFile)
 
 	parser := &PackageLockParser{}
-	packages, err := parser.Parse(tmpFile)
-	if err != nil {
-		t.Fatalf("Parse() failed: %v", err)
+	res := parser.Parse(tmpFile)
+	if !res.IsSuccess() {
+		t.Fatalf("Parse() failed: %v", res.Errors)
 	}
+	packages := res.GetData()
 
 	if len(packages) != 2 {
 		t.Fatalf("expected 2 packages, got %d", len(packages))
@@ -242,12 +245,12 @@ func TestPackageLockParser_Parse_UnsupportedVersion(t *testing.T) {
 	defer os.Remove(tmpFile)
 
 	parser := &PackageLockParser{}
-	_, err := parser.Parse(tmpFile)
-	if err == nil {
+	res := parser.Parse(tmpFile)
+	if res.IsSuccess() {
 		t.Error("Parse() should return error for unsupported lockfile version")
 	}
-	if !strings.Contains(err.Error(), "unsupported lockfile version") {
-		t.Errorf("error message should mention unsupported version, got: %v", err)
+	if len(res.Errors) > 0 && !strings.Contains(res.Errors[0].Message, "unsupported lockfile version") {
+		t.Errorf("error message should mention unsupported version, got: %v", res.Errors[0].Message)
 	}
 }
 
@@ -272,10 +275,11 @@ func TestPackageLockParser_Parse_SkipsRootPackage(t *testing.T) {
 	defer os.Remove(tmpFile)
 
 	parser := &PackageLockParser{}
-	packages, err := parser.Parse(tmpFile)
-	if err != nil {
-		t.Fatalf("Parse() failed: %v", err)
+	res := parser.Parse(tmpFile)
+	if !res.IsSuccess() {
+		t.Fatalf("Parse() failed: %v", res.Errors)
 	}
+	packages := res.GetData()
 
 	// Should only have lodash, not the root package
 	if len(packages) != 1 {
@@ -314,10 +318,11 @@ func TestPackageLockParser_Parse_SkipsPackagesWithoutVersion(t *testing.T) {
 	defer os.Remove(tmpFile)
 
 	parser := &PackageLockParser{}
-	packages, err := parser.Parse(tmpFile)
-	if err != nil {
-		t.Fatalf("Parse() failed: %v", err)
+	res := parser.Parse(tmpFile)
+	if !res.IsSuccess() {
+		t.Fatalf("Parse() failed: %v", res.Errors)
 	}
+	packages := res.GetData()
 
 	// Should only have lodash, workspace without version should be skipped
 	if len(packages) != 1 {

@@ -24,10 +24,11 @@ golang.org/x/sync v0.5.0/go.mod h1:Czt+wKu1gCyEFDUtn0jG5QVvpJ6rzVqr5aXyt9drQfk=
 	}
 
 	parser := &GoSumParser{}
-	packages, err := parser.Parse(goSumPath)
-	if err != nil {
-		t.Fatalf("Parse() error = %v", err)
+	res := parser.Parse(goSumPath)
+	if !res.IsSuccess() {
+		t.Fatalf("Parse() error = %v", res.Errors)
 	}
+	packages := res.GetData()
 
 	// Should have 3 unique packages (each has 2 lines, we skip /go.mod lines)
 	if len(packages) != 3 {
@@ -74,10 +75,11 @@ func TestGoSumParser_Parse_EmptyFile(t *testing.T) {
 	}
 
 	parser := &GoSumParser{}
-	packages, err := parser.Parse(goSumPath)
-	if err != nil {
-		t.Fatalf("Parse() error = %v", err)
+	res := parser.Parse(goSumPath)
+	if !res.IsSuccess() {
+		t.Fatalf("Parse() error = %v", res.Errors)
 	}
+	packages := res.GetData()
 
 	if len(packages) != 0 {
 		t.Errorf("Parse() returned %d packages for empty file, want 0", len(packages))
@@ -102,10 +104,11 @@ golang.org/x/sync v0.5.0 h1:60k92dhOjHxJkrqnwsfl8KuaHbn/5dl0lUPUklKo3qE=
 	}
 
 	parser := &GoSumParser{}
-	packages, err := parser.Parse(goSumPath)
-	if err != nil {
-		t.Fatalf("Parse() error = %v", err)
+	res := parser.Parse(goSumPath)
+	if !res.IsSuccess() {
+		t.Fatalf("Parse() error = %v", res.Errors)
 	}
+	packages := res.GetData()
 
 	// Should have 3 valid packages, malformed lines should be skipped
 	if len(packages) != 3 {
@@ -199,10 +202,11 @@ github.com/stretchr/testify v1.8.4/go.mod h1:sz/lmYIOXD/1dqDmKjjqLyZ2RngseejIcXl
 	}
 
 	parser := &GoSumParser{}
-	packages, err := parser.Parse(goSumPath)
-	if err != nil {
-		t.Fatalf("Parse() error = %v", err)
+	res := parser.Parse(goSumPath)
+	if !res.IsSuccess() {
+		t.Fatalf("Parse() error = %v", res.Errors)
 	}
+	packages := res.GetData()
 
 	// Should return only 1 package, not 2 (the /go.mod line should be skipped)
 	if len(packages) != 1 {
@@ -237,10 +241,11 @@ github.com/google/uuid v1.3.0/go.mod h1:TIyPZe4MgqvfeYDBFedMoGGpEw/LqOeaOT+nhxU+
 	}
 
 	parser := &GoSumParser{}
-	packages, err := parser.Parse(goSumPath)
-	if err != nil {
-		t.Fatalf("Parse() error = %v", err)
+	res := parser.Parse(goSumPath)
+	if !res.IsSuccess() {
+		t.Fatalf("Parse() error = %v", res.Errors)
 	}
+	packages := res.GetData()
 
 	// Should have 2 unique packages despite whitespace variations
 	if len(packages) != 2 {

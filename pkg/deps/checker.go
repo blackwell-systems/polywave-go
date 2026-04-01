@@ -79,15 +79,14 @@ func CheckDeps(implPath string, wave int) result.Result[ConflictReport] {
 	for _, lockFile := range lockFiles {
 		for _, parser := range parsers {
 			if parser.Detect(lockFile) {
-				// Note: This assumes Agent B has updated Parse signature to return result.Result[[]PackageInfo]
-				// For backward compatibility during migration, handle old signature with type assertion
-				packages, err := parser.Parse(lockFile)
-				if err != nil {
+				// Agent B updated Parse signature to return result.Result[[]PackageInfo]
+				parseRes := parser.Parse(lockFile)
+				if !parseRes.IsSuccess() {
 					// F6: Log parser error instead of silently dropping it
-					parseErrors = append(parseErrors, result.NewError("D002_LOCK_FILE_PARSE",
-						fmt.Sprintf("failed to parse lock file %s: %v", lockFile, err)).WithCause(err))
+					parseErrors = append(parseErrors, parseRes.Errors...)
 					continue
 				}
+				packages := parseRes.GetData()
 				for _, pkg := range packages {
 					lockFilePackages[pkg.Name] = pkg
 				}

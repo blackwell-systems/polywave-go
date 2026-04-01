@@ -34,12 +34,13 @@ checksum = "8e8d9fa5c3b3d9f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3"
 	}
 
 	parser := &CargoLockParser{}
-	packages, err := parser.Parse(cargoLock)
+	res := parser.Parse(cargoLock)
 
-	if err != nil {
-		t.Fatalf("Parse() error = %v, want nil", err)
+	if !res.IsSuccess() {
+		t.Fatalf("Parse() error = %v, want nil", res.Errors)
 	}
 
+	packages := res.GetData()
 	if len(packages) != 2 {
 		t.Fatalf("got %d packages, want 2", len(packages))
 	}
@@ -80,13 +81,14 @@ version = 3
 	}
 
 	parser := &CargoLockParser{}
-	packages, err := parser.Parse(cargoLock)
+	res := parser.Parse(cargoLock)
 
-	if err != nil {
-		t.Fatalf("Parse() error = %v, want nil", err)
+	if !res.IsSuccess() {
+		t.Fatalf("Parse() error = %v, want nil", res.Errors)
 	}
 
-	if len(packages) != 0 {
+	packages := res.GetData()
+	if len(packages) !=0 {
 		t.Errorf("got %d packages, want 0", len(packages))
 	}
 }
@@ -108,13 +110,14 @@ name = "incomplete"
 	}
 
 	parser := &CargoLockParser{}
-	packages, err := parser.Parse(cargoLock)
+	res := parser.Parse(cargoLock)
 
 	// Parser should not error on incomplete sections, but should still parse what it can
-	if err != nil {
-		t.Errorf("Parse() error = %v, want nil (parser should be lenient)", err)
+	if !res.IsSuccess() {
+		t.Errorf("Parse() error = %v, want nil (parser should be lenient)", res.Errors)
 	}
 
+	packages := res.GetData()
 	// Should still parse the package with just a name
 	if len(packages) != 1 {
 		t.Errorf("got %d packages, want 1", len(packages))
@@ -126,10 +129,10 @@ name = "incomplete"
 
 func TestCargoLockParser_Parse_FileNotFound(t *testing.T) {
 	parser := &CargoLockParser{}
-	_, err := parser.Parse("/nonexistent/Cargo.lock")
+	res := parser.Parse("/nonexistent/Cargo.lock")
 
-	if err == nil {
-		t.Error("Parse() error = nil, want error for nonexistent file")
+	if res.IsSuccess() {
+		t.Error("Parse() success, want error for nonexistent file")
 	}
 }
 
@@ -211,13 +214,14 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 	}
 
 	parser := &CargoLockParser{}
-	packages, err := parser.Parse(cargoLock)
+	res := parser.Parse(cargoLock)
 
-	if err != nil {
-		t.Fatalf("Parse() error = %v, want nil", err)
+	if !res.IsSuccess() {
+		t.Fatalf("Parse() error = %v, want nil", res.Errors)
 	}
 
-	if len(packages) != 4 {
+	packages := res.GetData()
+	if len(packages) !=4 {
 		t.Fatalf("got %d packages, want 4", len(packages))
 	}
 
