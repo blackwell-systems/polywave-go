@@ -3,7 +3,8 @@ package backend
 import (
 	"encoding/json"
 	"os"
-	"path/filepath"
+
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/config"
 )
 
 // SAWProviders mirrors the providers section of saw.config.json.
@@ -27,7 +28,7 @@ type SAWProviders struct {
 // and returns the providers section. Returns zero value if not found.
 func LoadProvidersFromConfig(dir string) SAWProviders {
 	var providers SAWProviders
-	path := findConfigFile(dir)
+	path := config.FindConfigPath(dir)
 	if path == "" {
 		return providers
 	}
@@ -44,18 +45,3 @@ func LoadProvidersFromConfig(dir string) SAWProviders {
 	return providers
 }
 
-// findConfigFile walks up from dir looking for saw.config.json.
-func findConfigFile(dir string) string {
-	for i := 0; i < 10; i++ {
-		candidate := filepath.Join(dir, "saw.config.json")
-		if _, err := os.Stat(candidate); err == nil {
-			return candidate
-		}
-		parent := filepath.Dir(dir)
-		if parent == dir {
-			break
-		}
-		dir = parent
-	}
-	return ""
-}

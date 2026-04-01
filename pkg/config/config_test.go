@@ -305,3 +305,71 @@ func TestLoadOrDefault_LoadsWhenExists(t *testing.T) {
 		t.Errorf("level = %q, want %q", loaded.Autonomy.Level, "full")
 	}
 }
+
+// TestSave_FilePermissions verifies that Save() writes saw.config.json with
+// 0600 permissions, ensuring API keys are never world-readable.
+func TestSave_FilePermissions(t *testing.T) {
+	dir := t.TempDir()
+	cfg := &SAWConfig{
+		Providers: ProvidersConfig{
+			Anthropic: AnthropicProvider{APIKey: "secret-key"},
+		},
+	}
+
+	r := Save(dir, cfg)
+	if !r.IsSuccess() {
+		t.Fatalf("save failed: %v", r.Errors)
+	}
+
+	info, err := os.Stat(filepath.Join(dir, configFileName))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if perm := info.Mode().Perm(); perm != 0600 {
+		t.Errorf("file permissions = %04o, want 0600", perm)
+	}
+}
+
+// TestLoad_LegacyMigrationMalformedRepo verifies that a config file with a
+// "repo" key that is not an object (e.g. a string) loads successfully with
+// empty Repos — migration is skipped gracefully.
+func TestLoad_LegacyMigrationMalformedRepo(t *testing.T) {
+	dir := t.TempDir()
+	// repo is a string, not an object — malformed for migration purposes.
+	raw := []byte(`{"repo": "not-an-object"}`)
+	if err := os.WriteFile(filepath.Join(dir, configFileName), raw, 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	r := Load(dir)
+	if !r.IsSuccess() {
+		t.Fatalf("expected success (migration should be skipped gracefully), got: %v", r.Errors)
+	}
+	c := r.GetData()
+	if len(c.Repos) != 0 {
+		t.Errorf("repos len = %d, want 0 (migration skipped)", len(c.Repos))
+	}
+}
+
+// TestLoadOrDefault_DefaultValues confirms that LoadOrDefault returns the
+// expected default values when no config file exists, validating behavior
+// after the slog.Warn call was added.
+// (The existing TestLoadOrDefault_FallsBack also covers this; this test
+// makes the intent explicit after Issue 8 changes.)
+func TestLoadOrDefault_DefaultValues(t *testing.T) {
+	dir := t.TempDir() // no config file
+	cfg := LoadOrDefault(dir)
+
+	if cfg == nil {
+		t.Fatal("expected non-nil config")
+	}
+	if cfg.Autonomy.Level != "gated" {
+		t.Errorf("level = %q, want \"gated\"", cfg.Autonomy.Level)
+	}
+	if cfg.Autonomy.MaxAutoRetries != 2 {
+		t.Errorf("max_auto_retries = %d, want 2", cfg.Autonomy.MaxAutoRetries)
+	}
+	if cfg.Autonomy.MaxQueueDepth != 10 {
+		t.Errorf("max_queue_depth = %d, want 10", cfg.Autonomy.MaxQueueDepth)
+	}
+}
