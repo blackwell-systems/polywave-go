@@ -101,7 +101,7 @@ func PrepareWave(ctx context.Context, opts PrepareWaveOpts) (*PrepareWaveResult,
 	_ = os.WriteFile(filepath.Join(sawStateDir, "active-impl"), []byte(opts.IMPLPath), 0o644)
 
 	// Step: Resume detection — warn on orphaned worktrees
-	if sessions, err := resume.Detect(projectRoot); err == nil {
+	if sessions, err := resume.Detect(ctx, projectRoot); err == nil {
 		for _, s := range sessions {
 			if len(s.OrphanedWorktrees) > 0 {
 				detail := fmt.Sprintf("%d orphaned worktree(s) for %s (wave %d)",

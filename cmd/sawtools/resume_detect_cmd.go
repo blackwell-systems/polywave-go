@@ -23,7 +23,7 @@ in-progress SAW sessions. Output is a JSON array written to stdout.
 An empty array is written when no interrupted sessions are found.`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			sessions, err := resume.Detect(repoDir)
+			sessions, err := resume.Detect(cmd.Context(), repoDir)
 			if err != nil {
 				return fmt.Errorf("resume-detect: %w", err)
 			}
