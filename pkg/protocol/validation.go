@@ -110,6 +110,23 @@ func validateI1DisjointOwnership(m *IMPLManifest, slug string) []result.SAWError
 	return errs
 }
 
+// ValidateI1DisjointOwnership is a public wrapper around validateI1DisjointOwnership
+// for use by prepare-wave runtime enforcement. It validates I1 compliance for a
+// specific wave number by filtering the file_ownership table.
+func ValidateI1DisjointOwnership(m *IMPLManifest, waveNum int) []result.SAWError {
+	// Build a filtered manifest with only this wave's ownership entries
+	filtered := &IMPLManifest{
+		FeatureSlug:   m.FeatureSlug,
+		FileOwnership: []FileOwnership{},
+	}
+	for _, fo := range m.FileOwnership {
+		if fo.Wave == waveNum {
+			filtered.FileOwnership = append(filtered.FileOwnership, fo)
+		}
+	}
+	return validateI1DisjointOwnership(filtered, m.FeatureSlug)
+}
+
 // validateI2AgentDependencies checks that all agent dependencies reference agents in prior waves only.
 // An agent in wave N may only depend on agents in waves 1..(N-1).
 func validateI2AgentDependencies(m *IMPLManifest, slug string) []result.SAWError {

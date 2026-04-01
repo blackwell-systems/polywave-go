@@ -183,6 +183,22 @@ func PrepareWave(ctx context.Context, opts PrepareWaveOpts) (*PrepareWaveResult,
 	}
 	recordStep(res, opts.OnEvent, "load_manifest", "success", "manifest loaded")
 
+	// Step: I1 fast-fail check (early detection)
+	// This runs before wave_sequencing and other expensive operations to catch
+	// Scout planning errors immediately. The existing I1 check at line 537 remains
+	// as defense-in-depth but runs later in the pipeline.
+	i1Errs := protocol.ValidateI1DisjointOwnership(doc, opts.WaveNum)
+	if len(i1Errs) > 0 {
+		var errMsgs []string
+		for _, e := range i1Errs {
+			errMsgs = append(errMsgs, e.Message)
+		}
+		detail := fmt.Sprintf("I1 violation detected: %s", strings.Join(errMsgs, "; "))
+		recordStep(res, opts.OnEvent, "i1_fast_fail", "failed", detail)
+		return res, fmt.Errorf("I1 violation: %s", detail)
+	}
+	recordStep(res, opts.OnEvent, "i1_fast_fail", "success", "No duplicate file ownership (early check)")
+
 	// Step: I3 wave sequencing gate — Wave N-1 must be verified before Wave N launches.
 	// Prevents Wave N from launching while Wave N-1 is still executing, blocked, or unmerged.
 	if opts.WaveNum > 1 {
