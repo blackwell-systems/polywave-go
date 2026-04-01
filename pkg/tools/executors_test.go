@@ -2,6 +2,8 @@ package tools
 
 import (
 	"context"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -90,7 +92,12 @@ func TestGrepFallback_NonexistentRoot(t *testing.T) {
 }
 
 func TestGrepFallback_FindsMatches(t *testing.T) {
-	// Use /tmp which should exist
-	_ = grepFallback("/tmp", "test")
-	// Just verify no panic; /tmp may or may not have matching files
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "match.txt"), []byte("hello test world\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	got := grepFallback(dir, "test")
+	if got == "" {
+		t.Error("expected non-empty output for matching file")
+	}
 }
