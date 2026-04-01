@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
 )
 
 var (
@@ -22,12 +24,18 @@ var (
 )
 
 // ScanPreImplementation analyzes files against requirements to classify status
-func ScanPreImplementation(repoRoot string, requirements []Requirement) (*SuitabilityResult, error) {
+func ScanPreImplementation(repoRoot string, requirements []Requirement) result.Result[SuitabilityResult] {
 	if repoRoot == "" {
-		return nil, fmt.Errorf("repoRoot cannot be empty")
+		return result.NewFailure[SuitabilityResult]([]result.SAWError{
+			{
+				Code:     result.CodeSuitabilityRepoRootEmpty,
+				Message:  "repo root cannot be empty",
+				Severity: "fatal",
+			},
+		})
 	}
 
-	result := &SuitabilityResult{
+	scanResult := SuitabilityResult{
 		PreImplementation: PreImplStatus{
 			TotalItems: len(requirements),
 			ItemStatus: make([]ItemStatus, 0, len(requirements)),
@@ -37,27 +45,32 @@ func ScanPreImplementation(repoRoot string, requirements []Requirement) (*Suitab
 	for _, req := range requirements {
 		status, err := classifyRequirement(repoRoot, req)
 		if err != nil {
-			return nil, fmt.Errorf("failed to classify requirement %s: %w", req.ID, err)
+			sawErr := result.SAWError{
+				Code:     result.CodeSuitabilityClassifyFailed,
+				Message:  fmt.Sprintf("failed to classify requirement %s", req.ID),
+				Severity: "fatal",
+			}.WithCause(err)
+			return result.NewFailure[SuitabilityResult]([]result.SAWError{sawErr})
 		}
 
-		result.PreImplementation.ItemStatus = append(result.PreImplementation.ItemStatus, status)
+		scanResult.PreImplementation.ItemStatus = append(scanResult.PreImplementation.ItemStatus, status)
 
 		switch status.Status {
 		case "DONE":
-			result.PreImplementation.Done++
+			scanResult.PreImplementation.Done++
 		case "PARTIAL":
-			result.PreImplementation.Partial++
+			scanResult.PreImplementation.Partial++
 		case "TODO":
-			result.PreImplementation.Todo++
+			scanResult.PreImplementation.Todo++
 		}
 	}
 
 	// Calculate time saved: 7 min per DONE item, 3 min per PARTIAL item
-	result.PreImplementation.TimeSavedMinutes =
-		(result.PreImplementation.Done * 7) +
-			(result.PreImplementation.Partial * 3)
+	scanResult.PreImplementation.TimeSavedMinutes =
+		(scanResult.PreImplementation.Done * 7) +
+			(scanResult.PreImplementation.Partial * 3)
 
-	return result, nil
+	return result.NewSuccess(scanResult)
 }
 
 // classifyRequirement analyzes a requirement across all its target files
@@ -76,7 +89,7 @@ func classifyRequirement(repoRoot string, req Requirement) (ItemStatus, error) {
 	for _, file := range req.Files {
 		status, err := ClassifyFile(filepath.Join(repoRoot, file), req)
 		if err != nil {
-			return ItemStatus{}, err
+			return ItemStatus{Missing: []string{}}, err
 		}
 		fileStatuses = append(fileStatuses, status)
 	}
@@ -92,6 +105,7 @@ func aggregateFileStatuses(reqID string, statuses []ItemStatus) ItemStatus {
 			ID:           reqID,
 			Status:       "TODO",
 			Completeness: 0.0,
+			Missing:      []string{},
 		}
 	}
 

@@ -1,10 +1,11 @@
 package suitability
 
 import (
-	"fmt"
 	"os"
 	"regexp"
 	"strings"
+
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
 )
 
 var (
@@ -15,42 +16,48 @@ var (
 
 // AnalyzeSuitability is a convenience wrapper for engine integration.
 // It parses requirements from the given file and returns suitability results.
-// If requirementsFile is empty or doesn't exist, returns nil result (no error).
-func AnalyzeSuitability(requirementsFile string, repoRoot string) (*SuitabilityResult, error) {
+// If requirementsFile is empty or doesn't exist, returns success with zero-initialized struct.
+func AnalyzeSuitability(requirementsFile string, repoRoot string) result.Result[SuitabilityResult] {
 	if requirementsFile == "" {
-		return nil, nil
+		return result.NewSuccess(SuitabilityResult{})
 	}
 
 	// Check if file exists
 	if _, err := os.Stat(requirementsFile); os.IsNotExist(err) {
-		return nil, nil // Non-fatal: requirements file not found
+		return result.NewSuccess(SuitabilityResult{}) // Non-fatal: requirements file not found
 	} else if err != nil {
-		return nil, fmt.Errorf("stat requirements file: %w", err)
+		sawErr := result.SAWError{
+			Code:     result.CodeSuitabilityFileStatFailed,
+			Message:  "failed to stat requirements file",
+			Severity: "fatal",
+		}.WithCause(err)
+		return result.NewFailure[SuitabilityResult]([]result.SAWError{sawErr})
 	}
 
 	// Read requirements document
 	reqData, err := os.ReadFile(requirementsFile)
 	if err != nil {
-		return nil, fmt.Errorf("read requirements: %w", err)
+		sawErr := result.SAWError{
+			Code:     result.CodeSuitabilityRequirementsRead,
+			Message:  "failed to read requirements file",
+			Severity: "fatal",
+		}.WithCause(err)
+		return result.NewFailure[SuitabilityResult]([]result.SAWError{sawErr})
 	}
 
 	// Parse requirements
-	requirements, err := ParseRequirements(string(reqData))
-	if err != nil {
-		return nil, fmt.Errorf("parse requirements: %w", err)
+	reqResult := ParseRequirements(string(reqData))
+	if reqResult.IsFatal() {
+		return result.NewFailure[SuitabilityResult](reqResult.Errors)
 	}
+	requirements := reqResult.GetData()
 
 	if len(requirements) == 0 {
-		return nil, nil // No requirements found, not an error
+		return result.NewSuccess(SuitabilityResult{}) // No requirements found, not an error
 	}
 
 	// Scan pre-implementation status
-	result, err := ScanPreImplementation(repoRoot, requirements)
-	if err != nil {
-		return nil, fmt.Errorf("scan pre-implementation: %w", err)
-	}
-
-	return result, nil
+	return ScanPreImplementation(repoRoot, requirements)
 }
 
 // ParseRequirements extracts structured requirements from markdown or plain text.
@@ -63,7 +70,7 @@ func AnalyzeSuitability(requirementsFile string, repoRoot string) (*SuitabilityR
 //	Location: pkg/session/timeout.go
 //
 // Returns a slice of Requirement structs with ID, Description, and Files populated.
-func ParseRequirements(content string) ([]Requirement, error) {
+func ParseRequirements(content string) result.Result[[]Requirement] {
 	var requirements []Requirement
 
 	// Pattern 1: Markdown headers with "Location:" field
@@ -128,5 +135,5 @@ func ParseRequirements(content string) ([]Requirement, error) {
 		}
 	}
 
-	return requirements, nil
+	return result.NewSuccess(requirements)
 }

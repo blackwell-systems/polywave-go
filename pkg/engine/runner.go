@@ -1174,25 +1174,26 @@ func runScoutAutomation(repoPath string, featureDescription string) string {
 	var targetFiles []string
 	requirementsFile := detectRequirementsFile(repoPath, featureDescription)
 	if requirementsFile != "" {
-		suitResult, suitErr := suitability.AnalyzeSuitability(requirementsFile, repoPath)
-		if suitErr != nil {
+		suitResult := suitability.AnalyzeSuitability(requirementsFile, repoPath)
+		if suitResult.IsFatal() {
 			sections = append(sections, "### Pre-Implementation Status (H1a)\nSkipped - no requirements file")
-		} else if suitResult == nil {
-			sections = append(sections, "### Pre-Implementation Status (H1a)\nSkipped - no requirements file")
-		} else {
+		} else if suitResult.IsSuccess() {
+			data := suitResult.GetData()
 			// Cannot use protocol.SaveYAML: marshaling to []byte for inline string formatting, not to a file.
-			suitYAML, err := yaml.Marshal(suitResult)
+			suitYAML, err := yaml.Marshal(data)
 			if err != nil {
 				sections = append(sections, "### Pre-Implementation Status (H1a)\nSkipped - no requirements file")
 			} else {
 				sections = append(sections, fmt.Sprintf("### Pre-Implementation Status (H1a)\n```yaml\n%s```", string(suitYAML)))
 				// Extract target files from suitability results
-				for _, item := range suitResult.PreImplementation.ItemStatus {
+				for _, item := range data.PreImplementation.ItemStatus {
 					if item.File != "" {
 						targetFiles = append(targetFiles, item.File)
 					}
 				}
 			}
+		} else {
+			sections = append(sections, "### Pre-Implementation Status (H1a)\nSkipped - no requirements file")
 		}
 	} else {
 		sections = append(sections, "### Pre-Implementation Status (H1a)\nSkipped - no requirements file")
