@@ -321,6 +321,8 @@ waves:
             - Any path under .saw-state/
             - Any path under docs/IMPL/
             - docs/CONTEXT.md
+            - go.work
+            - go.work.sum
 
             If the existing comment already mentions these patterns, leave it as-is.
 
@@ -372,8 +374,9 @@ waves:
 
             ### How steps compose into pipelines
 
-            FinalizeWave assembles the finalize pipeline (14 steps) and PrepareWave
-            assembles the prepare pipeline (~14 steps). Both pipelines stop on first
+            FinalizeWave assembles the finalize pipeline (15 steps, including
+            StepGoWorkRestore) and PrepareWave assembles the prepare pipeline
+            (~14 steps, including StepGoWorkSetup). Both pipelines stop on first
             fatal error and return a partial result so callers can inspect which
             step failed. Individual steps are exported and callable independently
             for testing, CLI integration (sawtools finalize-wave --step-by-step),
@@ -481,5 +484,38 @@ pre_mortem:
           mitigation: |-
             Task prompt references function names, not line numbers. Agent B can use
             grep or go to definition to locate each function.
+critic_report:
+    verdict: PASS
+    agent_reviews:
+        A:
+            agent_id: A
+            verdict: PASS
+            issues:
+                - check: symbol_accuracy
+                  severity: warning
+                  description: 'The brief caveat states StepGoWorkSetup and StepGoWorkRestore will be added by a future IMPL-gowork-lsp-setup wave, but both functions already exist in pkg/engine/gowork_steps.go with doc comments. The caveat is factually stale. No incorrect agent action results: Agent A is correctly scoped to the 14 Step* functions in finalize_steps.go only.'
+                  file: pkg/engine/gowork_steps.go
+                  symbol: StepGoWorkSetup
+        B:
+            agent_id: B
+            verdict: PASS
+            issues:
+                - check: pattern_accuracy
+                  severity: warning
+                  description: 'The brief instructs Agent B to optionally document isSAWOwnedPath as matching four patterns: IMPL yaml, .saw-state/, docs/IMPL/, and docs/CONTEXT.md. The actual implementation at line 71-77 of prepare.go also matches go.work and go.work.sum. If Agent B follows the brief literally, the new doc comment will omit two valid match patterns, making it incomplete and potentially misleading to future readers of the comment.'
+                  file: pkg/engine/prepare.go
+                  symbol: isSAWOwnedPath
+        C:
+            agent_id: C
+            verdict: PASS
+            issues:
+                - check: pattern_accuracy
+                  severity: warning
+                  description: The brief instructs Agent C to write that FinalizeWave assembles a pipeline of 14 steps. The actual FinalizeWave in finalize.go also calls StepGoWorkRestore (from gowork_steps.go line 532), making the pipeline 15 steps total. The doc Agent C produces will state an incorrect step count.
+                  file: pkg/engine/finalize.go
+                  symbol: FinalizeWave
+    summary: 'All three agent briefs are structurally sound. The four owned files exist and contain the symbols described. No symbol name errors, no missing imports, no broken patterns. Three advisory warnings were found: (1) Agent A''s brief states StepGoWorkSetup and StepGoWorkRestore will be added by a future wave, but they already exist in gowork_steps.go with doc comments — the caveat is stale but does not cause incorrect behavior since Agent A is correctly scoped to finalize_steps.go. (2) Agent B''s optional isSAWOwnedPath pattern list omits go.work and go.work.sum, which the actual function also matches — if Agent B follows the brief literally, the resulting doc comment will be incomplete. (3) Agent C''s brief states FinalizeWave has 14 steps, but the actual pipeline also calls StepGoWorkRestore from gowork_steps.go making the true count 15 — the step count in the doc comment Agent C writes will be off by one.'
+    reviewed_at: "2026-04-01T07:31:14Z"
+    issue_count: 3
 state: SCOUT_PENDING
 injection_method: hook
