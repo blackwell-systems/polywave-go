@@ -194,10 +194,11 @@ Location: pkg/session/manager.go
 This should be skipped.
 `
 
-	requirements, err := parseRequirements(content)
-	if err != nil {
-		t.Fatalf("parseRequirements failed: %v", err)
+	reqResult := suitability.ParseRequirements(content)
+	if reqResult.IsFatal() {
+		t.Fatalf("parse requirements: %v", reqResult.Errors)
 	}
+	requirements := reqResult.GetData()
 
 	if len(requirements) != 2 {
 		t.Fatalf("expected 2 requirements, got %d", len(requirements))
@@ -230,10 +231,11 @@ INVALID: Missing pipe delimiter
 F3: Another feature | pkg/feature/feature.go
 `
 
-	requirements, err := parseRequirements(content)
-	if err != nil {
-		t.Fatalf("parseRequirements failed: %v", err)
+	reqResult := suitability.ParseRequirements(content)
+	if reqResult.IsFatal() {
+		t.Fatalf("parse requirements: %v", reqResult.Errors)
 	}
+	requirements := reqResult.GetData()
 
 	if len(requirements) != 3 {
 		t.Fatalf("expected 3 requirements, got %d", len(requirements))
@@ -261,10 +263,11 @@ F3: Another feature | pkg/feature/feature.go
 func TestParseRequirements_EmptyDocument(t *testing.T) {
 	content := ""
 
-	requirements, err := parseRequirements(content)
-	if err != nil {
-		t.Fatalf("parseRequirements failed: %v", err)
+	reqResult := suitability.ParseRequirements(content)
+	if reqResult.IsFatal() {
+		t.Fatalf("parse requirements: %v", reqResult.Errors)
 	}
+	requirements := reqResult.GetData()
 
 	if len(requirements) != 0 {
 		t.Errorf("expected 0 requirements from empty document, got %d", len(requirements))
@@ -279,10 +282,11 @@ This should be skipped.
 Also skipped.
 `
 
-	requirements, err := parseRequirements(content)
-	if err != nil {
-		t.Fatalf("parseRequirements failed: %v", err)
+	reqResult := suitability.ParseRequirements(content)
+	if reqResult.IsFatal() {
+		t.Fatalf("parse requirements: %v", reqResult.Errors)
 	}
+	requirements := reqResult.GetData()
 
 	if len(requirements) != 0 {
 		t.Errorf("expected 0 requirements (no locations), got %d", len(requirements))
