@@ -312,6 +312,7 @@ func (o *JournalObserver) extractToolResult(block map[string]interface{}, timest
 	if err := os.WriteFile(contentFile, []byte(fullContent), 0644); err == nil {
 		contentFile = filepath.Join("tool-results", fmt.Sprintf("%s.txt", toolUseID))
 	} else {
+		o.log().Warn("failed to write tool result content file", "tool_use_id", toolUseID, "err", err)
 		contentFile = ""
 	}
 
@@ -460,7 +461,9 @@ func (o *JournalObserver) updateRecent(newEntries []ToolEntry) result.Result[Upd
 	// Load existing recent entries
 	var existing []ToolEntry
 	if data, err := os.ReadFile(o.RecentPath); err == nil {
-		_ = json.Unmarshal(data, &existing)
+		if err := json.Unmarshal(data, &existing); err != nil {
+			o.log().Debug("failed to parse recent.json, starting fresh", "err", err)
+		}
 	}
 
 	// Append new entries
