@@ -14,6 +14,7 @@ import (
 )
 
 // emitStepEvent is a nil-safe helper for calling an EventCallback.
+// It is safe to call with a nil onEvent; the call is a no-op in that case.
 func emitStepEvent(onEvent EventCallback, step, status, detail string) {
 	if onEvent != nil {
 		onEvent(step, status, detail)
@@ -204,7 +205,12 @@ func StepValidateIntegration(ctx context.Context, opts FinalizeWaveOpts, manifes
 	}, integrationReport, nil
 }
 
-// StepMergeAgents merges agent branches into the target branch.
+// StepMergeAgents merges all agent branches for the wave into MergeTarget
+// (or HEAD when MergeTarget is empty).
+//
+// Skipped automatically for waves of type "integration": integration agents
+// commit directly to the target branch, so no worktree branches exist to
+// merge. Fatal on any merge error.
 func StepMergeAgents(ctx context.Context, opts FinalizeWaveOpts, onEvent EventCallback) (*StepResult, error) {
 	const stepName = "merge-agents"
 	emitStepEvent(onEvent, stepName, "running", "")
@@ -249,7 +255,11 @@ func StepMergeAgents(ctx context.Context, opts FinalizeWaveOpts, onEvent EventCa
 	}, nil
 }
 
-// StepFixGoMod fixes go.mod replace paths that may have been corrupted by worktree artifacts.
+// StepFixGoMod repairs go.mod replace directives that may have been corrupted
+// by worktree artifacts. It calls FixGoModReplacePaths, which corrects
+// relative replace paths that pointed into a now-deleted worktree directory.
+//
+// Non-fatal: errors are logged as warnings and the step always returns success.
 func StepFixGoMod(ctx context.Context, opts FinalizeWaveOpts, onEvent EventCallback) (*StepResult, error) {
 	const stepName = "fix-gomod"
 	emitStepEvent(onEvent, stepName, "running", "")
@@ -279,7 +289,20 @@ func StepFixGoMod(ctx context.Context, opts FinalizeWaveOpts, onEvent EventCallb
 	}, nil
 }
 
-// StepVerifyBuild runs the test_command and lint_command to verify the build after merge.
+// StepVerifyBuild runs the test_command and lint_command defined in the IMPL
+// manifest to verify the build after merge. Pass/fail is determined by
+// VerifyBuildData.TestPassed and VerifyBuildData.LintPassed; both must be
+// true for the step to succeed.
+//
+// In program context (MergeTarget set), the step runs in the merge-target
+// worktree path rather than opts.RepoPath so the test suite sees the merged
+// changes, not the pre-merge state of the main branch.
+//
+// On failure, the step attempts H7 auto-diagnosis via
+// builddiag.DiagnoseError, using pattern matching against the combined test
+// and lint output. When a diagnosis is available, StepResult.Data is set to
+// map[string]interface{}{"verify_build": verifyData, "diagnosis": diagnosis}
+// instead of the plain VerifyBuildData value.
 func StepVerifyBuild(ctx context.Context, opts FinalizeWaveOpts, onEvent EventCallback) (*StepResult, *protocol.VerifyBuildData, error) {
 	const stepName = "verify-build"
 	emitStepEvent(onEvent, stepName, "running", "")
@@ -471,6 +494,11 @@ func StepPredictConflicts(ctx context.Context, opts FinalizeWaveOpts, manifest *
 // StepCheckTypeCollisions runs opt-in type collision detection using
 // pkg/collision.DetectCollisions. Skips when CollisionDetectionEnabled is
 // false. Fatal when CollisionReport.Valid == false.
+//
+// The CollisionReport is always returned alongside the StepResult (even on
+// success) so callers can inspect it independently of the step outcome.
+// CollisionDetectionEnabled is typically set to true by the CLI and left
+// false by the web app.
 func StepCheckTypeCollisions(ctx context.Context, opts FinalizeWaveOpts, onEvent EventCallback) (*StepResult, *collision.CollisionReport, error) {
 	const stepName = "check-type-collisions"
 	emitStepEvent(onEvent, stepName, "running", "")
@@ -516,6 +544,10 @@ func StepCheckTypeCollisions(ctx context.Context, opts FinalizeWaveOpts, onEvent
 // StepCheckWiringDeclarations validates wiring declarations in the manifest
 // (E35). Non-fatal: gaps are surfaced but do not block merge. Returns
 // (success, nil, nil) when manifest.Wiring is empty.
+//
+// Wiring gaps are surfaced in WiringValidationData.Gaps and do not block
+// merge, but they cause the caller to set
+// FinalizeWaveResult.IntegrationActionRequired = true.
 func StepCheckWiringDeclarations(ctx context.Context, opts FinalizeWaveOpts, manifest *protocol.IMPLManifest, onEvent EventCallback) (*StepResult, *protocol.WiringValidationData, error) {
 	const stepName = "check-wiring-declarations"
 	emitStepEvent(onEvent, stepName, "running", "")
@@ -555,6 +587,11 @@ func StepCheckWiringDeclarations(ctx context.Context, opts FinalizeWaveOpts, man
 // StepPopulateIntegrationChecklist calls protocol.PopulateIntegrationChecklist
 // and saves the updated manifest (M5). Non-fatal: errors are logged but do not
 // block merge.
+//
+// When successful, it saves the updated manifest back to opts.IMPLPath via
+// protocol.Save and returns the updated *protocol.IMPLManifest so the caller
+// can substitute it for the in-memory manifest for the remainder of the
+// finalization pipeline.
 func StepPopulateIntegrationChecklist(ctx context.Context, opts FinalizeWaveOpts, manifest *protocol.IMPLManifest, onEvent EventCallback) (*StepResult, *protocol.IMPLManifest, error) {
 	const stepName = "populate-integration-checklist"
 	emitStepEvent(onEvent, stepName, "running", "")
