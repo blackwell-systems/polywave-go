@@ -11,19 +11,23 @@ import (
 
 // WaveState consolidates all state for a wave from the IMPL manifest.
 type WaveState struct {
-	WaveNum         int                   `json:"wave_num"`
-	TotalAgents     int                   `json:"total_agents"`
-	CompletedAgents []string              `json:"completed_agents"`
-	FailedAgents    []string              `json:"failed_agents"`
-	PendingAgents   []string              `json:"pending_agents"`
-	GateResults     map[string]protocol.GateResult `json:"gate_results,omitempty"`
-	IsComplete      bool                  `json:"is_complete"`
-	MergeState      string                `json:"merge_state,omitempty"`
+	WaveNum         int      `json:"wave_num"`
+	TotalAgents     int      `json:"total_agents"`
+	CompletedAgents []string `json:"completed_agents"`
+	FailedAgents    []string `json:"failed_agents"`
+	PendingAgents   []string `json:"pending_agents"`
+	IsComplete      bool     `json:"is_complete"`
+	MergeState      string   `json:"merge_state,omitempty"`
 }
 
 // GetWaveState derives the complete state of a wave from the IMPL manifest.
 // This is the single query function -- no .saw-state/ directory needed.
 func GetWaveState(manifest *protocol.IMPLManifest, waveNum int) result.Result[*WaveState] {
+	if manifest == nil {
+		return result.NewFailure[*WaveState]([]result.SAWError{
+			result.NewError(result.CodeConfigInvalid, "manifest is nil"),
+		})
+	}
 	// Find the wave by number.
 	var wave *protocol.Wave
 	for i := range manifest.Waves {
@@ -95,11 +99,21 @@ func GetWaveState(manifest *protocol.IMPLManifest, waveNum int) result.Result[*W
 
 // GetAllWaveStates derives the state of all waves from the IMPL manifest.
 func GetAllWaveStates(manifest *protocol.IMPLManifest) result.Result[[]WaveState] {
+	if manifest == nil {
+		return result.NewFailure[[]WaveState]([]result.SAWError{
+			result.NewError(result.CodeConfigInvalid, "manifest is nil"),
+		})
+	}
 	states := make([]WaveState, 0, len(manifest.Waves))
 	for _, w := range manifest.Waves {
 		r := GetWaveState(manifest, w.Number)
 		if r.IsFatal() {
-			return result.NewFailure[[]WaveState](r.Errors)
+			wrapped := make([]result.SAWError, len(r.Errors))
+			for i, e := range r.Errors {
+				wrapped[i] = result.NewError(e.Code,
+					fmt.Sprintf("wave %d: %s", w.Number, e.Message))
+			}
+			return result.NewFailure[[]WaveState](wrapped)
 		}
 		states = append(states, *r.GetData())
 	}

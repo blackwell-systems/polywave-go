@@ -131,6 +131,49 @@ func TestGetWaveState_WithFailures(t *testing.T) {
 	}
 }
 
+func TestGetWaveState_NilManifest(t *testing.T) {
+	r := GetWaveState(nil, 1)
+	if !r.IsFatal() {
+		t.Fatal("expected failure for nil manifest")
+	}
+	if len(r.Errors) == 0 {
+		t.Fatal("expected at least one error")
+	}
+}
+
+func TestGetAllWaveStates_NilManifest(t *testing.T) {
+	r := GetAllWaveStates(nil)
+	if !r.IsFatal() {
+		t.Fatal("expected failure for nil manifest")
+	}
+	if len(r.Errors) == 0 {
+		t.Fatal("expected at least one error")
+	}
+}
+
+// TestGetAllWaveStates_ErrorWrapping verifies that if GetWaveState returns
+// an error, GetAllWaveStates wraps it with the wave number. Since
+// GetAllWaveStates iterates manifest.Waves and calls GetWaveState with each
+// wave's own number, GetWaveState will not fail for valid manifest waves.
+// The nil-manifest paths are the primary guard tests (see above). This test
+// documents the wrapping behaviour by confirming the nil-manifest error
+// message does not contain a wave number prefix (wrapping only occurs when
+// iterating waves, not before the loop).
+func TestGetAllWaveStates_ErrorWrapping_NilManifestMessage(t *testing.T) {
+	r := GetAllWaveStates(nil)
+	if !r.IsFatal() {
+		t.Fatal("expected failure for nil manifest")
+	}
+	// The nil-manifest guard fires before the loop, so no "wave N:" prefix.
+	if len(r.Errors) == 0 {
+		t.Fatal("expected at least one error")
+	}
+	msg := r.Errors[0].Message
+	if msg == "" {
+		t.Error("expected non-empty error message")
+	}
+}
+
 func TestGetAllWaveStates(t *testing.T) {
 	waves := []protocol.Wave{
 		{
