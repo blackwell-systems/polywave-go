@@ -12,6 +12,15 @@ type PrepareTierOpts struct {
 	TierNumber          int
 	RepoDir             string
 	SkipCritic          bool // When true, auto-write synthetic PASS for IMPLs requiring E37 with no critic report
+
+	// RunPrepareWave controls whether the caller should run prepare-wave for
+	// each IMPL. When true, the CLI adapter iterates IMPLs and calls
+	// engine.PrepareWave with CommitState: true between calls.
+	// This field is informational for the protocol layer; actual prepare-wave
+	// calls happen in the CLI adapter to avoid circular imports.
+	RunPrepareWave bool
+	WaveNum        int    // Wave number to pass to prepare-wave (defaults to 1)
+	MergeTarget    string // Baseline branch for prepare-wave calls (empty = HEAD)
 }
 
 // PrepareTierResult contains the structured output of preparing a program tier.
@@ -23,12 +32,27 @@ type PrepareTierResult struct {
 	Validations   []IMPLValidationResult `json:"validations"`
 	Branches      []ProgramWorktreeInfo  `json:"branches"`
 	Success       bool                   `json:"success"`
+
+	// PrepareWaveResults holds per-IMPL prepare-wave results.
+	// Non-nil only when PrepareTierOpts.RunPrepareWave is true.
+	PrepareWaveResults []IMPLPrepareWaveResult `json:"prepare_wave_results,omitempty"`
 }
 
 // ConflictCheckResult contains the outcome of cross-IMPL file ownership analysis.
 type ConflictCheckResult struct {
 	Conflicts []IMPLFileConflict `json:"conflicts"`
 	Disjoint  bool               `json:"disjoint"`
+}
+
+// IMPLPrepareWaveResult captures the result of a prepare-wave call for a
+// single IMPL within a tier. Used when PrepareTierOpts.RunPrepareWave is true.
+// AgentBriefs and Worktrees use protocol-level types to avoid a circular import
+// with pkg/engine.
+type IMPLPrepareWaveResult struct {
+	ImplSlug  string         `json:"impl_slug"`
+	Success   bool           `json:"success"`
+	Worktrees []WorktreeInfo `json:"worktrees"`
+	Error     string         `json:"error,omitempty"`
 }
 
 // IMPLValidationResult contains the validation outcome for a single IMPL doc.
