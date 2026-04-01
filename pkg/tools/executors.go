@@ -14,15 +14,34 @@ import (
 	"github.com/blackwell-systems/scout-and-wave-go/internal/git"
 )
 
+// extractStringInput retrieves a string value from an input map by key.
+// Returns (value, true) if the key exists and contains a non-empty string.
+// Returns ("", false) if the key is absent, the value is the wrong type, or
+// the string is empty.
+func extractStringInput(input map[string]interface{}, key string) (string, bool) {
+	if input == nil {
+		return "", false
+	}
+	v, ok := input[key]
+	if !ok {
+		return "", false
+	}
+	s, ok := v.(string)
+	return s, ok && s != ""
+}
+
 // FileReadExecutor implements the ToolExecutor interface for reading files.
 type FileReadExecutor struct{}
 
 // Execute reads a file. Absolute paths pass through; relative paths resolve
 // against the working directory.
 func (e *FileReadExecutor) Execute(ctx context.Context, execCtx ExecutionContext, input map[string]interface{}) (string, error) {
-	path, _ := input["file_path"].(string)
-	if path == "" {
-		path, _ = input["path"].(string) // fallback for legacy callers
+	path, ok := extractStringInput(input, "file_path")
+	if !ok {
+		path, ok = extractStringInput(input, "path")
+	}
+	if !ok {
+		return "input validation failed: 'file_path' must be a non-empty string", nil
 	}
 	abs := resolvePath(execCtx.WorkDir, path)
 	data, err := os.ReadFile(abs)
@@ -38,11 +57,14 @@ type FileWriteExecutor struct{}
 // Execute writes content to a file, creating parent directories as needed.
 // Absolute paths pass through; relative paths resolve against working directory.
 func (e *FileWriteExecutor) Execute(ctx context.Context, execCtx ExecutionContext, input map[string]interface{}) (string, error) {
-	path, _ := input["file_path"].(string)
-	if path == "" {
-		path, _ = input["path"].(string)
+	path, ok := extractStringInput(input, "file_path")
+	if !ok {
+		path, ok = extractStringInput(input, "path")
 	}
-	content, _ := input["content"].(string)
+	if !ok {
+		return "input validation failed: 'file_path' must be a non-empty string", nil
+	}
+	content, _ := input["content"].(string) // content may be empty; that is valid
 	abs := resolvePath(execCtx.WorkDir, path)
 	if err := os.MkdirAll(filepath.Dir(abs), 0o755); err != nil {
 		return fmt.Sprintf("error creating dirs: %v", err), nil
@@ -59,7 +81,7 @@ type FileListExecutor struct{}
 // Execute lists files in a directory.
 // Absolute paths pass through; relative paths resolve against working directory.
 func (e *FileListExecutor) Execute(ctx context.Context, execCtx ExecutionContext, input map[string]interface{}) (string, error) {
-	path, _ := input["path"].(string)
+	path, _ := input["path"].(string) // empty path defaults to "." below; intentional
 	if path == "" {
 		path = "."
 	}
@@ -80,7 +102,10 @@ type BashExecutor struct{}
 
 // Execute runs a shell command in the working directory with a 60-second timeout.
 func (e *BashExecutor) Execute(ctx context.Context, execCtx ExecutionContext, input map[string]interface{}) (string, error) {
-	command, _ := input["command"].(string)
+	command, ok := extractStringInput(input, "command")
+	if !ok {
+		return "input validation failed: 'command' must be a non-empty string", nil
+	}
 	timeoutCtx, cancel := context.WithTimeout(ctx, 60*time.Second)
 	defer cancel()
 	cmd := exec.CommandContext(timeoutCtx, "bash", "-c", command)
@@ -177,9 +202,12 @@ type EditExecutor struct{}
 
 // Execute replaces old_string with new_string in a file. Fails if old_string is not found.
 func (e *EditExecutor) Execute(ctx context.Context, execCtx ExecutionContext, input map[string]interface{}) (string, error) {
-	path, _ := input["file_path"].(string)
-	oldStr, _ := input["old_string"].(string)
-	newStr, _ := input["new_string"].(string)
+	path, ok := extractStringInput(input, "file_path")
+	if !ok {
+		return "input validation failed: 'file_path' must be a non-empty string", nil
+	}
+	oldStr, _ := input["old_string"].(string) // empty caught by Contains check below
+	newStr, _ := input["new_string"].(string) // empty string is a valid replacement
 	abs := resolvePath(execCtx.WorkDir, path)
 	data, err := os.ReadFile(abs)
 	if err != nil {
@@ -243,7 +271,7 @@ func (e *GrepExecutor) Execute(ctx context.Context, execCtx ExecutionContext, in
 // grepFallback scans files under root for lines containing substr.
 func grepFallback(root, substr string) string {
 	var results strings.Builder
-	_ = filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
+	if walkErr := filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
 		if err != nil || info.IsDir() {
 			return nil
 		}
@@ -261,8 +289,13 @@ func grepFallback(root, substr string) string {
 				results.WriteString(fmt.Sprintf("%s:%d:%s\n", path, lineNum, line))
 			}
 		}
+		if err := scanner.Err(); err != nil {
+			results.WriteString(fmt.Sprintf("[warning: read error in %s: %v]\n", path, err))
+		}
 		return nil
-	})
+	}); walkErr != nil {
+		results.WriteString(fmt.Sprintf("[warning: walk error: %v]\n", walkErr))
+	}
 	return results.String()
 }
 
