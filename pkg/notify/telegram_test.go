@@ -78,8 +78,8 @@ func TestTelegramAdapter_SendSuccess(t *testing.T) {
 	if receivedBody["chat_id"] != "-100123" {
 		t.Errorf("expected chat_id '-100123', got %q", receivedBody["chat_id"])
 	}
-	if receivedBody["parse_mode"] != "Markdown" {
-		t.Errorf("expected parse_mode 'Markdown', got %q", receivedBody["parse_mode"])
+	if receivedBody["parse_mode"] != "HTML" {
+		t.Errorf("expected parse_mode 'HTML', got %q", receivedBody["parse_mode"])
 	}
 }
 
@@ -175,17 +175,17 @@ func TestTelegramFormatter_Format(t *testing.T) {
 	}
 
 	msg := f.Format(event)
-	if !strings.Contains(msg.Text, "*Agent B Failed*") {
-		t.Error("expected Markdown bold title")
+	if !strings.Contains(msg.Text, "<b>Agent B Failed</b>") {
+		t.Error("expected HTML bold title")
 	}
 	if !strings.Contains(msg.Text, "Build error in pkg/api") {
 		t.Error("expected body text")
 	}
-	if !strings.Contains(msg.Text, "_agent:_ B") {
-		t.Errorf("expected field formatting, got: %s", msg.Text)
+	if !strings.Contains(msg.Text, "<i>agent:</i> B") {
+		t.Errorf("expected HTML field formatting, got: %s", msg.Text)
 	}
-	if !strings.Contains(msg.Text, "_wave:_ 2") {
-		t.Errorf("expected wave field, got: %s", msg.Text)
+	if !strings.Contains(msg.Text, "<i>wave:</i> 2") {
+		t.Errorf("expected HTML wave field, got: %s", msg.Text)
 	}
 }
 
@@ -197,7 +197,7 @@ func TestTelegramFormatter_FormatNoFields(t *testing.T) {
 	}
 
 	msg := f.Format(event)
-	expected := "*Simple Event*\nNo extra fields"
+	expected := "<b>Simple Event</b>\nNo extra fields"
 	if msg.Text != expected {
 		t.Errorf("expected %q, got %q", expected, msg.Text)
 	}

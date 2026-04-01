@@ -36,7 +36,7 @@ func NewTelegramAdapter(cfg map[string]string) (Adapter, error) {
 	return &TelegramAdapter{
 		token:       token,
 		destination: destination,
-		client:      &http.Client{},
+		client:      &http.Client{Timeout: defaultHTTPTimeout},
 		baseURL:     "https://api.telegram.org",
 	}, nil
 }
@@ -51,7 +51,7 @@ func (a *TelegramAdapter) Send(ctx context.Context, msg Message) result.Result[S
 	payload := map[string]string{
 		"chat_id":    a.destination,
 		"text":       msg.Text,
-		"parse_mode": "Markdown",
+		"parse_mode": "HTML",
 	}
 
 	body, err := json.Marshal(payload)
@@ -110,29 +110,28 @@ func (a *TelegramAdapter) Send(ctx context.Context, msg Message) result.Result[S
 	})
 }
 
-// TelegramFormatter formats events into Telegram Markdown messages.
+// TelegramFormatter formats events into Telegram HTML messages.
 type TelegramFormatter struct{}
 
-// Format transforms an Event into a Telegram Markdown Message.
+// Format transforms an Event into a Telegram HTML Message.
 func (f *TelegramFormatter) Format(event Event) Message {
 	var sb strings.Builder
-	sb.WriteString("*")
+	sb.WriteString("<b>")
 	sb.WriteString(event.Title)
-	sb.WriteString("*\n")
+	sb.WriteString("</b>\n")
 	sb.WriteString(event.Body)
 
 	if len(event.Fields) > 0 {
 		sb.WriteString("\n")
-		// Sort keys for deterministic output.
 		keys := make([]string, 0, len(event.Fields))
 		for k := range event.Fields {
 			keys = append(keys, k)
 		}
 		sort.Strings(keys)
 		for _, k := range keys {
-			sb.WriteString("\n_")
+			sb.WriteString("\n<i>")
 			sb.WriteString(k)
-			sb.WriteString(":_ ")
+			sb.WriteString(":</i> ")
 			sb.WriteString(event.Fields[k])
 		}
 	}
