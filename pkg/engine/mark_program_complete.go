@@ -86,7 +86,30 @@ func MarkProgramComplete(ctx context.Context, opts MarkProgramCompleteOpts) (Mar
 		return MarkProgramCompleteResult{}, fmt.Errorf("mark-program-complete: failed to update manifest: %s", markerRes.Errors[0].Message)
 	}
 
-	// 6. Archive to docs/PROGRAM/complete/ — non-fatal
+	// 6. Close each IMPL in the program (E15: write completion marker + archive)
+	for _, impl := range manifest.Impls {
+		if impl.Status != "complete" {
+			continue
+		}
+		implPath, _ := protocol.ResolveIMPLPath(opts.RepoDir, impl.Slug)
+		if _, err := os.Stat(implPath); os.IsNotExist(err) {
+			logger.Info("mark-program-complete: IMPL already archived", "slug", impl.Slug)
+			continue
+		}
+		res := MarkIMPLComplete(ctx, MarkIMPLCompleteOpts{
+			IMPLPath: implPath,
+			RepoPath: opts.RepoDir,
+			Date:     date,
+			Logger:   logger,
+		})
+		if res.IsFatal() {
+			logger.Warn("mark-program-complete: failed to close IMPL", "slug", impl.Slug, "error", res.Errors[0].Message)
+		} else {
+			logger.Info("mark-program-complete: closed IMPL", "slug", impl.Slug)
+		}
+	}
+
+	// 7. Archive PROGRAM to docs/PROGRAM/complete/ — non-fatal
 	archivedPath, archiveErr := protocol.ArchiveProgram(ctx, opts.ManifestPath)
 	if archiveErr != nil {
 		logger.Warn("mark-program-complete: archive warning", "error", archiveErr)
@@ -95,19 +118,19 @@ func MarkProgramComplete(ctx context.Context, opts MarkProgramCompleteOpts) (Mar
 		logger.Info("mark-program-complete: archived", "path", archivedPath)
 	}
 
-	// 7. Update CONTEXT.md — non-fatal
+	// 9. Update CONTEXT.md — non-fatal
 	contextPath, ctxErr := updateContextForProgram(manifest, opts.RepoDir, date, tiersCount, implsCount)
 	if ctxErr != nil {
 		logger.Warn("mark-program-complete: failed to update CONTEXT.md", "error", ctxErr)
 	}
 
-	// 8. Commit — non-fatal
+	// 10. Commit — non-fatal
 	commitSHA, commitErr := commitProgramComplete(opts.RepoDir, archivedPath, contextPath, manifest.ProgramSlug)
 	if commitErr != nil {
 		logger.Warn("mark-program-complete: failed to commit", "error", commitErr)
 	}
 
-	// 9. Return populated result
+	// 11. Return populated result
 	return MarkProgramCompleteResult{
 		Completed:      true,
 		ProgramSlug:    manifest.ProgramSlug,
