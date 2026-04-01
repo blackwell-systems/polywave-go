@@ -1,0 +1,363 @@
+title: Fix pkg/commands and gate_populator code review issues
+feature_slug: commands-fixes
+verdict: SUITABLE
+suitability_assessment: |
+    Six distinct bugs across five files, all well-specified with exact line numbers and
+    fixes. Clean file decomposition: makefile.go/makefile_test.go (issues 1 and 6),
+    package_json.go/package_json_test.go (issue 3), github_actions.go/github_actions_test.go
+    (issues 4 and 5), and gate_populator.go+go.mod (issue 2). All four groups are
+    independent — no cross-agent interfaces required. Single-wave parallel execution
+    is ideal.
+
+    Suitability gate results:
+    1. File decomposition: 4 disjoint agent groups covering 7 files. No conflicts.
+    2. Investigation-first: All root causes are fully specified in the requirements. No
+       unknown crashes to investigate.
+    3. Interface discoverability: No cross-agent interfaces. Each agent works in isolation.
+    4. Pre-implementation status: All six issues confirmed present in current code.
+       strings.Title at gate_populator.go:172; space-indent checks at makefile.go:80,106;
+       prettier at .Check in package_json.go:52; broken contains() at github_actions_test.go:434;
+       order-dependent tiebreak at github_actions.go:225; one-level-deep chain at makefile.go:127.
+    5. Parallelization value: Go build+test cycle is fast, but 4 parallel agents across
+       disjoint files saves coordination overhead. Clear speedup for bug fixes.
+
+    golang.org/x/text is NOT present in go.mod. Agent D must run `go get golang.org/x/text`
+    to add it before updating gate_populator.go.
+
+    Estimated times:
+    - Scout phase: ~5 min
+    - Agent execution: ~4 agents x 8 min avg = 32 min total, ~8 min with full parallelism
+    - Merge and verification: ~3 min
+    Total SAW time: ~16 min
+    Sequential baseline: ~4 x 8 = 32 min
+    Time savings: ~16 min (50% faster)
+    Recommendation: Clear speedup.
+test_command: go test ./...
+lint_command: go vet ./...
+file_ownership:
+    - file: pkg/commands/makefile.go
+      agent: A
+      wave: 1
+      action: modify
+    - file: pkg/commands/makefile_test.go
+      agent: A
+      wave: 1
+      action: modify
+    - file: pkg/commands/extractor.go
+      agent: A
+      wave: 1
+      action: modify
+    - file: pkg/commands/wrapper.go
+      agent: A
+      wave: 1
+      action: modify
+    - file: pkg/commands/package_json.go
+      agent: A
+      wave: 1
+      action: modify
+    - file: pkg/commands/package_json_test.go
+      agent: A
+      wave: 1
+      action: modify
+    - file: pkg/commands/github_actions.go
+      agent: A
+      wave: 1
+      action: modify
+    - file: pkg/commands/github_actions_test.go
+      agent: A
+      wave: 1
+      action: modify
+    - file: pkg/protocol/gate_populator.go
+      agent: D
+      wave: 1
+      action: modify
+    - file: go.mod
+      agent: D
+      wave: 1
+      action: modify
+interface_contracts:
+    - name: resolveTargetChains (updated)
+      description: |
+        Recursively resolves Makefile target chains to find transitive leaf targets.
+        Replaces the one-level-deep implementation.
+      definition: |
+        func resolveTargetChains(targets map[string]*makeTarget, targetOrder []string) (map[string]*makeTarget, []string)
+        // Same signature, updated body to handle transitive deps via visited set.
+      location: pkg/commands/makefile.go
+    - name: DetermineFocusedTestPattern (updated)
+      description: |
+        Uses cases.Title(language.Und).String(pkgName) instead of deprecated strings.Title.
+      definition: |
+        func DetermineFocusedTestPattern(files []string, commandSet *commands.CommandSet) string
+        // Same signature, updated import: golang.org/x/text/cases + golang.org/x/text/language
+      location: pkg/protocol/gate_populator.go
+waves:
+    - number: 1
+      agents:
+        - id: A
+          task: |
+            Fix two bugs in `pkg/commands/makefile.go`.
+
+            ## What to implement
+
+            ### Fix 1: Remove space-indentation acceptance (CRITICAL — lines 80 and 106)
+
+            Makefiles only allow tab indentation. The current code incorrectly accepts
+            4-space indentation as valid. Remove all `strings.HasPrefix(line, "    ")` checks.
+
+            **Line 80** — target detection guard. The current condition is:
+            ```go
+            if strings.Contains(line, ":") && !strings.HasPrefix(line, "\t") && !strings.HasPrefix(line, "    ") {
+            ```
+            Change to:
+            ```go
+            if strings.Contains(line, ":") && !strings.HasPrefix(line, "\t") {
+            ```
+
+            **Line 106** — command line detection. The current condition is:
+            ```go
+            } else if currentTarget != nil && (strings.HasPrefix(line, "\t") || strings.HasPrefix(line, "    ")) {
+            ```
+            Change to:
+            ```go
+            } else if currentTarget != nil && strings.HasPrefix(line, "\t") {
+            ```
+
+            ### Fix 2: Recursive target chain resolution (MEDIUM — lines 127-159)
+
+            The current `resolveTargetChains` function only resolves one level of
+            dependencies. For a Makefile like:
+            ```
+            test: integration
+            integration: test-unit
+            test-unit:
+                go test ./... -short
+            ```
+            The current code would find `integration` as a dependency of `test`, but
+            since `integration` has no commands of its own, it would be skipped rather
+            than recursed into to find `test-unit`.
+
+            Rewrite `resolveTargetChains` to recursively resolve dependencies using a
+            visited set to prevent infinite loops. The algorithm:
+
+            1. Define a helper function `collectLeaves(name string, targets map[string]*makeTarget, visited map[string]bool) []*makeTarget` that:
+               - Returns empty slice if name not in targets or already visited
+               - Marks name as visited
+               - If target has commands, returns `[]*makeTarget{target}`
+               - Otherwise, recurses into each dependency and collects their leaves
+            2. For each target in `targetOrder`, call `collectLeaves` and add results to `leafTargets`/`leafOrder` (deduplicating by name)
+
+            The function signature remains the same:
+            ```go
+            func resolveTargetChains(targets map[string]*makeTarget, targetOrder []string) (map[string]*makeTarget, []string)
+            ```
+
+            ## Tests
+
+            No test file changes are required. The existing `TestMakefileParser_TargetChaining`
+            test covers a two-level chain (test → build, lint, test-unit) and already passes
+            because those direct deps have commands. However, you should add a test
+            `TestMakefileParser_TransitiveDependencies` in `pkg/commands/makefile_test.go`
+            that covers a 3-level chain (test → integration → test-unit where test-unit
+            has the actual command). The test should verify that `make test-unit` is
+            extracted as the test command.
+
+            Also, `TestMakefileParser_TabIndentation` already verifies that tab-only
+            indentation works. No changes needed there.
+
+            ## Verification gate
+
+            ```bash
+            go build ./...
+            go vet ./...
+            go test ./pkg/commands/...
+            ```
+
+            ## Constraints
+
+            - Do not modify any file outside `pkg/commands/makefile.go` and
+              `pkg/commands/makefile_test.go`.
+            - The helper `collectLeaves` should be unexported (lowercase).
+            - Use a `map[string]bool` visited set, not a slice, for O(1) lookup.
+            ### Fix 3: prettier classified as Check instead of Fix (HIGH — package_json.go line 52)
+
+            prettier writes files by default — Fix mode, not Check. Change line 52.
+            Replace the single line with two:
+              cmdSet.Commands.Format.Fix = extractCommand(pkg.Scripts, []string{"prettier"})
+              cmdSet.Commands.Format.Check = extractCommand(pkg.Scripts, []string{"format"})
+            Update TestPackageJSONParser_AlternativeScriptNames (~line 212) to assert
+            Format.Fix instead of Format.Check for prettier.
+
+            ### Fix 4: Broken contains() helper (HIGH — github_actions_test.go lines 434-438)
+
+            Replace the broken helper body with:
+              func contains(s, substr string) bool { return strings.Contains(s, substr) }
+            Add "strings" to the test file imports if not already present.
+
+            ### Fix 5: Document toolchain tie-breaking order (MEDIUM — github_actions.go ~line 225)
+
+            Add a comment before the max := 0 declaration documenting the priority order
+            Go > Rust > Node > Python. Do NOT change the logic itself.
+
+            ## Verification gate
+
+            go build ./...
+            go vet ./...
+            go test ./pkg/commands/...
+
+            ## Constraints
+
+            - Do not modify extractor.go or wrapper.go — you own them for E35 but they need no changes.
+            - Do not change extractCommand helper — only call sites change.
+            - Use strings.Contains for the contains() fix — do not re-implement.
+          files:
+            - pkg/commands/makefile.go
+            - pkg/commands/makefile_test.go
+            - pkg/commands/package_json.go
+            - pkg/commands/package_json_test.go
+            - pkg/commands/github_actions.go
+            - pkg/commands/github_actions_test.go
+            - pkg/commands/extractor.go
+            - pkg/commands/wrapper.go
+        - id: D
+          task: |
+            Fix the deprecated `strings.Title` usage in `pkg/protocol/gate_populator.go`
+            and add the required `golang.org/x/text` dependency to `go.mod`.
+
+            ## What to implement
+
+            ### Context
+
+            `strings.Title` is deprecated since Go 1.18 (and the project targets Go 1.25).
+            The replacement is `cases.Title(language.Und).String(s)` from the
+            `golang.org/x/text` package.
+
+            The affected line is in `DetermineFocusedTestPattern` in
+            `pkg/protocol/gate_populator.go`:
+            ```go
+            testPrefix := "Test" + strings.Title(pkgName)
+            ```
+
+            ### Step 1: Add golang.org/x/text to go.mod
+
+            `golang.org/x/text` is NOT currently in go.mod. Run:
+            ```bash
+            cd /Users/dayna.blackwell/workspace/code/scout-and-wave-go && go get golang.org/x/text@latest
+            ```
+
+            This will update both `go.mod` and `go.sum` to include the dependency.
+            If `go get` fails due to network issues, use the most recent stable version
+            explicitly: `go get golang.org/x/text@v0.21.0`.
+
+            ### Step 2: Update gate_populator.go imports
+
+            In `pkg/protocol/gate_populator.go`, the current import block includes `"strings"`.
+            Add the two new imports:
+            ```go
+            "golang.org/x/text/cases"
+            "golang.org/x/text/language"
+            ```
+
+            The `"strings"` import must remain (it is used elsewhere in the file).
+
+            ### Step 3: Replace strings.Title call
+
+            In `DetermineFocusedTestPattern`, find the line (approximately line 172):
+            ```go
+            testPrefix := "Test" + strings.Title(pkgName)
+            ```
+
+            Replace it with:
+            ```go
+            testPrefix := "Test" + cases.Title(language.Und).String(pkgName)
+            ```
+
+            ### Verification
+
+            After making changes, confirm there are no remaining `strings.Title` references
+            in the file:
+            ```bash
+            grep -n "strings.Title" /Users/dayna.blackwell/workspace/code/scout-and-wave-go/pkg/protocol/gate_populator.go
+            ```
+            Expected output: empty (no matches).
+
+            ## Verification gate
+
+            ```bash
+            go build ./...
+            go vet ./...
+            go test ./pkg/protocol/...
+            ```
+
+            ## Constraints
+
+            - Modify only `pkg/protocol/gate_populator.go` and `go.mod` (and `go.sum`
+              as a side effect of `go get`).
+            - Use `language.Und` (Undetermined/universal) for the language tag — this
+              matches the behavior of `strings.Title` for ASCII identifiers.
+            - Do not change any logic in `DetermineFocusedTestPattern` other than the
+              `strings.Title` call.
+            - `go.sum` is modified automatically by `go get`; commit it along with `go.mod`.
+          files:
+            - pkg/protocol/gate_populator.go
+            - go.mod
+quality_gates:
+    level: standard
+    gates:
+        - type: build
+          command: go build ./...
+          required: true
+        - type: lint
+          command: go vet ./...
+          required: true
+        - type: test
+          command: go test ./...
+          required: true
+pre_mortem:
+    overall_risk: low
+    rows:
+        - scenario: |
+            Agent D runs `go get golang.org/x/text` but network is unavailable or module
+            proxy is down. The go.mod update fails.
+          likelihood: low
+          impact: medium
+          mitigation: |
+            Use an explicit version: `go get golang.org/x/text@v0.21.0`. If proxy fails,
+            set GONOSUMCHECK or use GOFLAGS=-mod=mod. The agent should fall back to the
+            explicit version flag if `@latest` fails.
+        - scenario: |
+            Agent B's test analysis is wrong: TestPackageJSONParser_SimpleScripts actually
+            breaks after the prettier/format split because the fixture `format` script
+            maps to Fix not Check.
+          likelihood: low
+          impact: low
+          mitigation: |
+            The fixture script is named `"format"` which maps to Format.Check in the new
+            code (only `prettier` maps to Fix). The assertion `Format.Check != "npm run format"`
+            remains correct. If the test still fails, agent B should re-read the fixture
+            and assertion carefully.
+        - scenario: |
+            Agent A's recursive `resolveTargetChains` introduces an infinite loop for
+            Makefiles with circular dependencies (e.g., a: b, b: a).
+          likelihood: low
+          impact: medium
+          mitigation: |
+            The visited set in `collectLeaves` prevents revisiting nodes. Agent A must
+            pass the same visited map through all recursive calls (not create a new map
+            per call).
+        - scenario: |
+            go.sum conflict at merge: Agent D modifies go.sum and another in-flight
+            branch also has go.sum changes.
+          likelihood: low
+          impact: low
+          mitigation: |
+            Merge Agent D first or run `go mod tidy` post-merge to regenerate go.sum
+            deterministically.
+critic_report:
+    verdict: PASS
+    agent_reviews: {}
+    summary: Skipped by operator
+    reviewed_at: "2026-04-01T00:47:33Z"
+    issue_count: 0
+state: "REVIEWED"
+injection_method: hook
