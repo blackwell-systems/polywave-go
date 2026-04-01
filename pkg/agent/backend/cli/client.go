@@ -14,6 +14,7 @@ import (
 	"github.com/creack/pty"
 
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/agent/backend"
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/agent/dedup"
 )
 
 // ansiRE matches ANSI/VT100 escape sequences emitted by a PTY-connected process.
@@ -43,6 +44,38 @@ func New(claudePath string, cfg backend.Config) *Client {
 		cfg:        cfg,
 	}
 }
+
+// buildCLIArgs constructs the common CLI argument list for the claude binary.
+func (c *Client) buildCLIArgs(prompt string) []string {
+	args := []string{
+		"--print",
+		"--output-format", "stream-json",
+		"--allowedTools", "Bash,Read,Write,Edit,Glob,Grep",
+		"--dangerously-skip-permissions",
+	}
+	if c.cfg.Model != "" {
+		args = append(args, "--model", c.cfg.Model)
+	}
+	if c.cfg.MaxTurns > 0 {
+		args = append(args, "--max-turns", fmt.Sprintf("%d", c.cfg.MaxTurns))
+	}
+	args = append(args, "-p", prompt)
+	return args
+}
+
+// buildPrompt combines systemPrompt and userMessage into a single prompt string.
+func buildPrompt(systemPrompt, userMessage string) string {
+	if systemPrompt == "" {
+		return userMessage
+	}
+	return systemPrompt + "\n\n" + userMessage
+}
+
+// DedupStats returns nil for CLI backend — dedup runs inside the claude subprocess.
+func (c *Client) DedupStats() *dedup.Stats { return nil }
+
+// CommitCount returns 0 for CLI backend — commit tracking is post-hoc via constraints.
+func (c *Client) CommitCount() int { return 0 }
 
 // Run implements backend.Backend.
 // Note: Run delegates to RunStreaming, which does not parse tool_use events.
@@ -75,26 +108,8 @@ func (c *Client) RunStreaming(ctx context.Context, systemPrompt, userMessage, wo
 		}
 	}
 
-	var prompt string
-	if systemPrompt == "" {
-		prompt = userMessage
-	} else {
-		prompt = systemPrompt + "\n\n" + userMessage
-	}
-
-	args := []string{
-		"--print",
-		"--output-format", "stream-json",
-		"--allowedTools", "Bash,Read,Write,Edit,Glob,Grep",
-		"--dangerously-skip-permissions",
-	}
-	if c.cfg.Model != "" {
-		args = append(args, "--model", c.cfg.Model)
-	}
-	if c.cfg.MaxTurns > 0 {
-		args = append(args, "--max-turns", fmt.Sprintf("%d", c.cfg.MaxTurns))
-	}
-	args = append(args, "-p", prompt)
+	prompt := buildPrompt(systemPrompt, userMessage)
+	args := c.buildCLIArgs(prompt)
 
 	cmd := exec.CommandContext(ctx, claudePath, args...)
 	cmd.Dir = workDir
@@ -119,64 +134,15 @@ func (c *Client) RunStreaming(ctx context.Context, systemPrompt, userMessage, wo
 	// uint16 max = 65535; virtually no stream-json event reaches this length.
 	_ = pty.Setsize(ptmx, &pty.Winsize{Rows: 50, Cols: 65535})
 
-	var sb strings.Builder
-	scanner := bufio.NewScanner(ptmx)
-	// 1 MB scanner buffer for large tool-result lines.
-	scanner.Buffer(make([]byte, 1024*1024), 1024*1024)
-
-	// pending accumulates PTY-wrapped fragments until we have a full JSON object.
-	var pending strings.Builder
-	// nonJSON accumulates non-JSON output (error messages, warnings) for error reporting.
-	var nonJSON strings.Builder
-	nonJSONTruncated := false
-
-	for scanner.Scan() {
-		// PTY converts \n -> \r\n; strip trailing \r.
-		text := strings.TrimRight(scanner.Text(), "\r")
-		// Strip ANSI escape sequences.
-		text = ansiRE.ReplaceAllString(text, "")
-		if text == "" {
-			continue
-		}
-
-		pending.WriteString(text)
-		candidate := pending.String()
-
-		// Test if we have a complete JSON object yet.
-		var probe json.RawMessage
-		if json.Unmarshal([]byte(candidate), &probe) != nil {
-			// If pending was empty before this line (i.e., the line itself is not valid JSON
-			// and we are not accumulating a multi-line fragment), capture it as non-JSON.
-			if pending.Len() == len(text) {
-				if !nonJSONTruncated {
-					if nonJSON.Len()+len(text)+1 > nonJSONCap {
-						nonJSONTruncated = true
-					} else {
-						if nonJSON.Len() > 0 {
-							nonJSON.WriteByte('\n')
-						}
-						nonJSON.WriteString(text)
-					}
-				}
-				// Reset pending — this line is non-JSON, not a fragment.
-				pending.Reset()
-			}
-			// Incomplete JSON fragment — keep accumulating (PTY wrapped mid-JSON).
-			continue
-		}
-
-		// Complete JSON object — process it.
-		pending.Reset()
-		sb.WriteString(candidate + "\n")
-
+	rawOutput, nonJSON, scanErr := c.readPTYStream(ctx, ptmx, func(candidate string) {
 		if onChunk != nil {
 			if formatted := formatStreamEvent(candidate); formatted != "" {
 				onChunk(formatted + "\n")
 			}
 		}
-	}
+	})
 
-	if scanErr := scanner.Err(); scanErr != nil {
+	if scanErr != nil {
 		if ctx.Err() != nil {
 			_ = cmd.Wait()
 			return "", fmt.Errorf("cli backend: context cancelled: %w", ctx.Err())
@@ -190,10 +156,7 @@ func (c *Client) RunStreaming(ctx context.Context, systemPrompt, userMessage, wo
 		}
 		if exitErr, ok := err.(*exec.ExitError); ok {
 			msg := fmt.Sprintf("cli backend: claude exited with code %d", exitErr.ExitCode())
-			if extra := strings.TrimSpace(nonJSON.String()); extra != "" {
-				if nonJSONTruncated {
-					extra += "... (truncated)"
-				}
+			if extra := strings.TrimSpace(nonJSON); extra != "" {
 				msg += ": " + extra
 			}
 			return "", fmt.Errorf("%s", msg)
@@ -201,7 +164,7 @@ func (c *Client) RunStreaming(ctx context.Context, systemPrompt, userMessage, wo
 		return "", fmt.Errorf("cli backend: claude failed: %w", err)
 	}
 
-	return sb.String(), nil
+	return rawOutput, nil
 }
 
 // RunStreamingWithTools implements backend.Backend.
@@ -230,26 +193,8 @@ func (c *Client) RunStreamingWithTools(ctx context.Context, systemPrompt, userMe
 		}
 	}
 
-	var prompt string
-	if systemPrompt == "" {
-		prompt = userMessage
-	} else {
-		prompt = systemPrompt + "\n\n" + userMessage
-	}
-
-	args := []string{
-		"--print",
-		"--output-format", "stream-json",
-		"--allowedTools", "Bash,Read,Write,Edit,Glob,Grep",
-		"--dangerously-skip-permissions",
-	}
-	if c.cfg.Model != "" {
-		args = append(args, "--model", c.cfg.Model)
-	}
-	if c.cfg.MaxTurns > 0 {
-		args = append(args, "--max-turns", fmt.Sprintf("%d", c.cfg.MaxTurns))
-	}
-	args = append(args, "-p", prompt)
+	prompt := buildPrompt(systemPrompt, userMessage)
+	args := c.buildCLIArgs(prompt)
 
 	cmd := exec.CommandContext(ctx, claudePath, args...)
 	cmd.Dir = workDir
@@ -274,62 +219,13 @@ func (c *Client) RunStreamingWithTools(ctx context.Context, systemPrompt, userMe
 	// uint16 max = 65535; virtually no stream-json event reaches this length.
 	_ = pty.Setsize(ptmx, &pty.Winsize{Rows: 50, Cols: 65535})
 
-	var sb strings.Builder
-	scanner := bufio.NewScanner(ptmx)
-	// 1 MB scanner buffer for large tool-result lines.
-	scanner.Buffer(make([]byte, 1024*1024), 1024*1024)
-
-	// pending accumulates PTY-wrapped fragments until we have a full JSON object.
-	var pending strings.Builder
-	// nonJSON accumulates non-JSON output (error messages, warnings) for error reporting.
-	var nonJSON strings.Builder
-	nonJSONTruncated := false
-
 	// Track tool call start times for duration calculation.
 	toolStartTimes := make(map[string]int64)
 
 	// Accumulate tool use events for post-hoc constraint enforcement.
 	var toolUseEvents []ToolUseEvent
 
-	for scanner.Scan() {
-		// PTY converts \n -> \r\n; strip trailing \r.
-		text := strings.TrimRight(scanner.Text(), "\r")
-		// Strip ANSI escape sequences.
-		text = ansiRE.ReplaceAllString(text, "")
-		if text == "" {
-			continue
-		}
-
-		pending.WriteString(text)
-		candidate := pending.String()
-
-		// Test if we have a complete JSON object yet.
-		var probe json.RawMessage
-		if json.Unmarshal([]byte(candidate), &probe) != nil {
-			// If pending was empty before this line (i.e., the line itself is not valid JSON
-			// and we are not accumulating a multi-line fragment), capture it as non-JSON.
-			if pending.Len() == len(text) {
-				if !nonJSONTruncated {
-					if nonJSON.Len()+len(text)+1 > nonJSONCap {
-						nonJSONTruncated = true
-					} else {
-						if nonJSON.Len() > 0 {
-							nonJSON.WriteByte('\n')
-						}
-						nonJSON.WriteString(text)
-					}
-				}
-				// Reset pending — this line is non-JSON, not a fragment.
-				pending.Reset()
-			}
-			// Incomplete JSON fragment — keep accumulating (PTY wrapped mid-JSON).
-			continue
-		}
-
-		// Complete JSON object — process it.
-		pending.Reset()
-		sb.WriteString(candidate + "\n")
-
+	rawOutput, nonJSON, scanErr := c.readPTYStream(ctx, ptmx, func(candidate string) {
 		// Parse event for tool call tracking and constraint event recording.
 		var ev streamEvent
 		if json.Unmarshal([]byte(candidate), &ev) == nil {
@@ -386,9 +282,9 @@ func (c *Client) RunStreamingWithTools(ctx context.Context, systemPrompt, userMe
 				onChunk(formatted + "\n")
 			}
 		}
-	}
+	})
 
-	if scanErr := scanner.Err(); scanErr != nil {
+	if scanErr != nil {
 		if ctx.Err() != nil {
 			_ = cmd.Wait()
 			return "", fmt.Errorf("cli backend: context cancelled: %w", ctx.Err())
@@ -402,10 +298,7 @@ func (c *Client) RunStreamingWithTools(ctx context.Context, systemPrompt, userMe
 		}
 		if exitErr, ok := err.(*exec.ExitError); ok {
 			msg := fmt.Sprintf("cli backend: claude exited with code %d", exitErr.ExitCode())
-			if extra := strings.TrimSpace(nonJSON.String()); extra != "" {
-				if nonJSONTruncated {
-					extra += "... (truncated)"
-				}
+			if extra := strings.TrimSpace(nonJSON); extra != "" {
 				msg += ": " + extra
 			}
 			return "", fmt.Errorf("%s", msg)
@@ -422,12 +315,85 @@ func (c *Client) RunStreamingWithTools(ctx context.Context, systemPrompt, userMe
 			for _, v := range violations {
 				msgs = append(msgs, fmt.Sprintf("[%s] %s: %s", v.Invariant, v.ToolName, v.Message))
 			}
-			return sb.String(), fmt.Errorf("cli backend: post-hoc constraint violations detected (writes already occurred):\n%s",
+			return rawOutput, fmt.Errorf("cli backend: post-hoc constraint violations detected (writes already occurred):\n%s",
 				strings.Join(msgs, "\n"))
 		}
 	}
 
-	return sb.String(), nil
+	return rawOutput, nil
+}
+
+// ── PTY stream reading ───────────────────────────────────────────────────────
+
+// ptyEventHandler is called for each complete JSON object read from the PTY stream.
+type ptyEventHandler func(candidate string)
+
+// readPTYStream reads PTY output, strips ANSI codes, reassembles PTY-wrapped
+// JSON fragments, and calls onEvent for each complete JSON object.
+// Returns the raw JSON output (newline-separated), any non-JSON text (for error
+// reporting, truncated with suffix if over nonJSONCap), and the scanner error.
+func (c *Client) readPTYStream(ctx context.Context, ptmx *os.File, onEvent ptyEventHandler) (rawOutput string, nonJSONText string, scanErr error) {
+	var sb strings.Builder
+	scanner := bufio.NewScanner(ptmx)
+	// 1 MB scanner buffer for large tool-result lines.
+	scanner.Buffer(make([]byte, 1024*1024), 1024*1024)
+
+	// pending accumulates PTY-wrapped fragments until we have a full JSON object.
+	var pending strings.Builder
+	// nonJSON accumulates non-JSON output (error messages, warnings) for error reporting.
+	var nonJSON strings.Builder
+	nonJSONTruncated := false
+
+	for scanner.Scan() {
+		// PTY converts \n -> \r\n; strip trailing \r.
+		text := strings.TrimRight(scanner.Text(), "\r")
+		// Strip ANSI escape sequences.
+		text = ansiRE.ReplaceAllString(text, "")
+		if text == "" {
+			continue
+		}
+
+		pending.WriteString(text)
+		candidate := pending.String()
+
+		// Test if we have a complete JSON object yet.
+		var probe json.RawMessage
+		if json.Unmarshal([]byte(candidate), &probe) != nil {
+			// If pending was empty before this line (i.e., the line itself is not valid JSON
+			// and we are not accumulating a multi-line fragment), capture it as non-JSON.
+			if pending.Len() == len(text) {
+				if !nonJSONTruncated {
+					if nonJSON.Len()+len(text)+1 > nonJSONCap {
+						nonJSONTruncated = true
+					} else {
+						if nonJSON.Len() > 0 {
+							nonJSON.WriteByte('\n')
+						}
+						nonJSON.WriteString(text)
+					}
+				}
+				// Reset pending — this line is non-JSON, not a fragment.
+				pending.Reset()
+			}
+			// Incomplete JSON fragment — keep accumulating (PTY wrapped mid-JSON).
+			continue
+		}
+
+		// Complete JSON object — process it.
+		pending.Reset()
+		sb.WriteString(candidate + "\n")
+
+		if onEvent != nil {
+			onEvent(candidate)
+		}
+	}
+
+	nonJSONStr := nonJSON.String()
+	if nonJSONTruncated {
+		nonJSONStr += "... (truncated)"
+	}
+
+	return sb.String(), nonJSONStr, scanner.Err()
 }
 
 // ── stream-json event parsing ────────────────────────────────────────────────
