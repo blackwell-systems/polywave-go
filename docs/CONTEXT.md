@@ -336,3 +336,5 @@ type BackendConfig struct {
   - IMPL doc: docs/IMPL/complete/IMPL-queue-review-fixes.yaml
 - **pkg-deps-review-fixes**: completed 2026-04-01, 1 waves, 8 agents
   - IMPL doc: docs/IMPL/complete/IMPL-deps-review-fixes.yaml
+- **idgen-review-fixes**: completed 2026-04-01, 1 waves, 2 agents
+  - IMPL doc: docs/IMPL/complete/IMPL-idgen-review-fixes.yaml

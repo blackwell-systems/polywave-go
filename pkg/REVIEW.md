@@ -28,7 +28,7 @@ Each reviewed package gets scouted → IMPL'd → closed before being marked don
 | format | | | |
 | gatecache | | | |
 | hooks | ✅ | ✅ | |
-| idgen | ✅ | ✅ | |
+| idgen | ✅ | ✅ | ✅ |
 | interview | | | |
 | journal | | | |
 | notify | ✅ | ✅ | ✅ |

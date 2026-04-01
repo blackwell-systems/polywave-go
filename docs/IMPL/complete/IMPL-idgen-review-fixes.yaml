@@ -1,3 +1,4 @@
+completion_date: "2026-04-01"
 title: Fix pkg/idgen code review findings
 feature_slug: idgen-review-fixes
 verdict: SUITABLE
@@ -270,6 +271,7 @@ waves:
           files:
             - pkg/idgen/generator.go
             - pkg/idgen/generator_test.go
+      base_commit: 3196dbbca62dc393ccbace191dc6066e4ac47e9b
 quality_gates:
     level: standard
     gates:
@@ -296,6 +298,23 @@ post_merge_checklist:
               command: go build ./...
             - description: Run full test suite
               command: go test ./...
+completion_reports:
+    A:
+        status: complete
+        branch: saw/idgen-review-fixes/wave1-agent-A
+        commit: ee6b00b
+        files_changed:
+            - pkg/result/codes.go
+        verification: PASS
+    B:
+        status: complete
+        branch: saw/idgen-review-fixes/wave1-agent-B
+        commit: ba835e3
+        files_changed:
+            - pkg/idgen/generator.go
+            - pkg/idgen/generator_test.go
+        verification: PASS
+        notes: 'Migrated AssignAgentIDs to Result[[]string]. All 6 error returns now use structured I001-I006 codes. All 14 tests updated and passing. Coverage: 98.3%. Note: Merged Agent A''s commit (ee6b00b) to access I001-I006 error codes required by interface contracts.'
 pre_mortem:
     overall_risk: low
     rows:
@@ -315,5 +334,5 @@ pre_mortem:
           likelihood: low
           impact: low
           mitigation: Agent B must verify coverage via `go test -cover` in verification gate. All 6 error paths are already covered by existing tests.
-state: "REVIEWED"
+state: COMPLETE
 injection_method: hook
