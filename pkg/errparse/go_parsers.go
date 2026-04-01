@@ -8,6 +8,13 @@ import (
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
 )
 
+func init() {
+	Register(&GoBuildParser{})
+	Register(&GoTestParser{})
+	Register(&GoVetParser{})
+	Register(&GolangciLintParser{})
+}
+
 // ansiEscape matches ANSI color/control escape sequences.
 var ansiEscape = regexp.MustCompile(`\x1b\[[0-9;]*[mGKHF]`)
 
@@ -140,7 +147,7 @@ func (p *GoTestParser) Parse(stdout, stderr string) *ParseResult {
 	inPanic := false
 	var panicMsg string
 
-	for i, line := range lines {
+	for _, line := range lines {
 		line = strings.TrimRight(line, "\r")
 
 		// Detect FAIL lines
@@ -160,7 +167,6 @@ func (p *GoTestParser) Parse(stdout, stderr string) *ParseResult {
 		if m := panicRe.FindStringSubmatch(line); m != nil {
 			inPanic = true
 			panicMsg = m[1]
-			_ = i
 			pr.Errors = append(pr.Errors, result.SAWError{
 				Code:     result.CodeToolError,
 				Severity: "error",
