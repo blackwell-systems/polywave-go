@@ -1,6 +1,7 @@
 package resume
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -64,7 +65,7 @@ func simpleManifest() *protocol.IMPLManifest {
 func TestDetect_NoIMPLDocs(t *testing.T) {
 	root := makeRepoWithIMPLDir(t)
 
-	sessions, err := Detect(root)
+	sessions, err := Detect(context.Background(), root)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -76,7 +77,7 @@ func TestDetect_NoIMPLDocs(t *testing.T) {
 func TestDetect_NoIMPLDir(t *testing.T) {
 	root := t.TempDir() // no docs/IMPL at all
 
-	sessions, err := Detect(root)
+	sessions, err := Detect(context.Background(), root)
 	if err != nil {
 		t.Fatalf("expected no error for missing IMPL dir, got %v", err)
 	}
@@ -93,7 +94,7 @@ func TestDetect_CompleteIMPL(t *testing.T) {
 	m.State = protocol.StateComplete
 	writeManifest(t, implDir, "IMPL-test.yaml", m)
 
-	sessions, err := Detect(root)
+	sessions, err := Detect(context.Background(), root)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -110,7 +111,7 @@ func TestDetect_NotSuitableIMPL(t *testing.T) {
 	m.State = protocol.StateNotSuitable
 	writeManifest(t, implDir, "IMPL-ns.yaml", m)
 
-	sessions, err := Detect(root)
+	sessions, err := Detect(context.Background(), root)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -127,7 +128,7 @@ func TestDetect_CompleteInSubdir_Skipped(t *testing.T) {
 	m := simpleManifest()
 	writeManifest(t, completeDir, "IMPL-old.yaml", m)
 
-	sessions, err := Detect(root)
+	sessions, err := Detect(context.Background(), root)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -146,7 +147,7 @@ func TestDetect_InProgressIMPL(t *testing.T) {
 	m.CompletionReports["A"] = protocol.CompletionReport{Status: "complete"}
 	writeManifest(t, implDir, "IMPL-wip.yaml", m)
 
-	sessions, err := Detect(root)
+	sessions, err := Detect(context.Background(), root)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -185,7 +186,7 @@ func TestDetect_FailedAgent(t *testing.T) {
 	m.CompletionReports["B"] = protocol.CompletionReport{Status: "partial"}
 	writeManifest(t, implDir, "IMPL-fail.yaml", m)
 
-	sessions, err := Detect(root)
+	sessions, err := Detect(context.Background(), root)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -210,7 +211,7 @@ func TestDetect_BlockedAgent(t *testing.T) {
 	m.CompletionReports["A"] = protocol.CompletionReport{Status: "blocked"}
 	writeManifest(t, implDir, "IMPL-blocked.yaml", m)
 
-	sessions, err := Detect(root)
+	sessions, err := Detect(context.Background(), root)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -246,7 +247,7 @@ func TestDetect_ProgressCalculation(t *testing.T) {
 	}
 	writeManifest(t, implDir, "IMPL-multi.yaml", m)
 
-	sessions, err := Detect(root)
+	sessions, err := Detect(context.Background(), root)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -283,7 +284,7 @@ func TestDetect_ProgressZeroAgents(t *testing.T) {
 	}
 	writeManifest(t, implDir, "IMPL-empty.yaml", m)
 
-	sessions, err := Detect(root)
+	sessions, err := Detect(context.Background(), root)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -302,7 +303,7 @@ func TestDetect_SkipsNoWorkStarted(t *testing.T) {
 	m.State = protocol.StateWavePending
 	writeManifest(t, implDir, "IMPL-new.yaml", m)
 
-	sessions, err := Detect(root)
+	sessions, err := Detect(context.Background(), root)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -320,7 +321,7 @@ func TestDetect_SuggestedAction_FailedAgents(t *testing.T) {
 	m.CompletionReports["A"] = protocol.CompletionReport{Status: "partial"}
 	writeManifest(t, implDir, "IMPL-failed.yaml", m)
 
-	sessions, err := Detect(root)
+	sessions, err := Detect(context.Background(), root)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -356,7 +357,7 @@ func TestDetect_SuggestedAction_StartNextWave(t *testing.T) {
 	}
 	writeManifest(t, implDir, "IMPL-tw.yaml", m)
 
-	sessions, err := Detect(root)
+	sessions, err := Detect(context.Background(), root)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -383,7 +384,7 @@ func TestDetect_SuggestedAction_ResumeCurrentWave(t *testing.T) {
 	m.CompletionReports["A"] = protocol.CompletionReport{Status: "complete"}
 	writeManifest(t, implDir, "IMPL-resume.yaml", m)
 
-	sessions, err := Detect(root)
+	sessions, err := Detect(context.Background(), root)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -407,7 +408,7 @@ func TestDetect_ResumeCommand(t *testing.T) {
 	m.CompletionReports["A"] = protocol.CompletionReport{Status: "complete"}
 	implPath := writeManifest(t, implDir, "IMPL-cmd.yaml", m)
 
-	sessions, err := Detect(root)
+	sessions, err := Detect(context.Background(), root)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -430,7 +431,7 @@ func TestDetect_ResumeCommand_FailedAgent(t *testing.T) {
 	m.CompletionReports["A"] = protocol.CompletionReport{Status: "partial"}
 	implPath := writeManifest(t, implDir, "IMPL-fcmd.yaml", m)
 
-	sessions, err := Detect(root)
+	sessions, err := Detect(context.Background(), root)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -584,7 +585,7 @@ func TestDetect_MultipleIMPLs(t *testing.T) {
 	m2.CompletionReports["A"] = protocol.CompletionReport{Status: "complete"}
 	writeManifest(t, implDir, "IMPL-two.yaml", m2)
 
-	sessions, err := Detect(root)
+	sessions, err := Detect(context.Background(), root)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -598,7 +599,7 @@ func TestDetect_MultipleIMPLs(t *testing.T) {
 // TestDetectWithConfig_EmptyRepoList verifies that an empty repo list returns
 // empty results with no error.
 func TestDetectWithConfig_EmptyRepoList(t *testing.T) {
-	sessions, err := DetectWithConfig([]string{})
+	sessions, err := DetectWithConfig(context.Background(), []string{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -626,7 +627,7 @@ func TestDetectWithConfig_MultipleRepos(t *testing.T) {
 	m2.CompletionReports["A"] = protocol.CompletionReport{Status: "partial"}
 	writeManifest(t, filepath.Join(repo2, "docs", "IMPL"), "IMPL-r2.yaml", m2)
 
-	sessions, err := DetectWithConfig([]string{repo1, repo2})
+	sessions, err := DetectWithConfig(context.Background(), []string{repo1, repo2})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -685,7 +686,7 @@ func TestBuildAction_DirtyWorktrees(t *testing.T) {
 	dirtyWorktrees := []DirtyWorktree{
 		{Path: "/some/worktree/path/wave1-agent-A", Branch: "saw/test-feature/wave1-agent-A", AgentID: "A", WaveNum: 1, HasChanges: true},
 	}
-	action, _ := buildActionAndCommandInternal(implPath, manifest, orphaned, dirtyWorktrees, nil)
+	action, _ := buildActionAndCommandInternal(implPath, manifest, orphaned, dirtyWorktrees, nil, 1)
 	wantDirty := "Resume wave 1 (agents have uncommitted work)"
 	if action != wantDirty {
 		t.Errorf("dirty action = %q, want %q", action, wantDirty)
@@ -695,14 +696,14 @@ func TestBuildAction_DirtyWorktrees(t *testing.T) {
 	cleanWorktrees := []DirtyWorktree{
 		{Path: "/some/worktree/path/wave1-agent-A", Branch: "saw/test-feature/wave1-agent-A", AgentID: "A", WaveNum: 1, HasChanges: false},
 	}
-	action, _ = buildActionAndCommandInternal(implPath, manifest, orphaned, cleanWorktrees, nil)
+	action, _ = buildActionAndCommandInternal(implPath, manifest, orphaned, cleanWorktrees, nil, 1)
 	wantClean := "Clean up orphaned worktrees, then resume wave 1"
 	if action != wantClean {
 		t.Errorf("clean action = %q, want %q", action, wantClean)
 	}
 
 	// Case 3: no dirty worktrees slice at all -> still produces cleanup action
-	action, _ = buildActionAndCommandInternal(implPath, manifest, orphaned, nil, nil)
+	action, _ = buildActionAndCommandInternal(implPath, manifest, orphaned, nil, nil, 1)
 	if action != wantClean {
 		t.Errorf("nil dirtyWorktrees action = %q, want %q", action, wantClean)
 	}
