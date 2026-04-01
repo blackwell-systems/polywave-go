@@ -1,0 +1,693 @@
+title: Fix all issues from pkg/agent deep review
+feature_slug: agent-deep-review-fixes
+verdict: SUITABLE
+suitability_assessment: |
+    Suitability gate:
+    1. File decomposition: 12+ files across 5 packages — easily parallelizable with disjoint ownership.
+    2. Investigation-first: No unknowns — all issues have identified root causes and fix strategies.
+    3. Interface discoverability: ExecuteTool signature change is the main cross-agent contract.
+       It can be defined upfront (Wave 1 changes the signature, Wave 2 updates callers).
+    4. Pre-implementation status: All issues confirmed present in current code via manual review.
+    5. Parallelization value: go test ./pkg/agent/... takes ~4s. 6 agents in Wave 2 working
+       in parallel on separate backend packages provides clear speedup.
+
+    Estimated times:
+    - Scout phase: ~10 min
+    - Agent execution: ~15 min (2 waves, 7 agents total, ~5 min avg per agent)
+    - Merge & verification: ~5 min
+    Total SAW time: ~30 min
+
+    Sequential baseline: ~35 min (7 agents x 5 min avg)
+    Time savings: ~5 min (14% faster)
+
+    Recommendation: Clear speedup from Wave 2 parallelism (6 independent backend agents).
+    Additional coordination value from tracking 20+ fixes across related files.
+test_command: go test ./pkg/agent/...
+lint_command: go vet ./pkg/agent/...
+file_ownership:
+    - file: pkg/agent/backend/execute_tool.go
+      agent: A
+      wave: 1
+      action: modify
+    - file: pkg/agent/backend/execute_tool_test.go
+      agent: A
+      wave: 1
+      action: new
+    - file: pkg/agent/backend/backend.go
+      agent: B
+      wave: 1
+      action: modify
+    - file: pkg/agent/completion.go
+      agent: B
+      wave: 1
+      action: modify
+    - file: pkg/agent/runner_test.go
+      agent: B
+      wave: 1
+      action: modify
+    - file: pkg/agent/backend/api/client.go
+      agent: C
+      wave: 2
+      action: modify
+      depends_on:
+        - A
+        - B
+    - file: pkg/agent/backend/api/client_test.go
+      agent: C
+      wave: 2
+      action: modify
+      depends_on:
+        - A
+        - B
+    - file: pkg/agent/backend/bedrock/client.go
+      agent: D
+      wave: 2
+      action: modify
+      depends_on:
+        - A
+        - B
+    - file: pkg/agent/backend/bedrock/tools.go
+      agent: D
+      wave: 2
+      action: modify
+      depends_on:
+        - A
+        - B
+    - file: pkg/agent/backend/bedrock/converse.go
+      agent: D
+      wave: 2
+      action: modify
+      depends_on:
+        - A
+        - B
+    - file: pkg/agent/backend/bedrock/converse_test.go
+      agent: D
+      wave: 2
+      action: modify
+      depends_on:
+        - A
+        - B
+    - file: pkg/agent/backend/bedrock/client_test.go
+      agent: D
+      wave: 2
+      action: modify
+      depends_on:
+        - A
+        - B
+    - file: pkg/agent/backend/openai/client.go
+      agent: E
+      wave: 2
+      action: modify
+      depends_on:
+        - A
+        - B
+    - file: pkg/agent/backend/openai/client_test.go
+      agent: E
+      wave: 2
+      action: modify
+      depends_on:
+        - A
+        - B
+    - file: pkg/agent/backend/cli/client.go
+      agent: F
+      wave: 2
+      action: modify
+      depends_on:
+        - A
+        - B
+    - file: pkg/agent/backend/cli/client_test.go
+      agent: F
+      wave: 2
+      action: modify
+      depends_on:
+        - A
+        - B
+    - file: pkg/agent/dedup/cache_test.go
+      agent: G
+      wave: 2
+      action: modify
+    - file: pkg/agent/dedup/middleware.go
+      agent: G
+      wave: 2
+      action: modify
+interface_contracts:
+    - name: ExecuteTool
+      description: |
+        Shared tool execution helper — signature changes from (string, bool) to (string, error).
+        The error distinguishes "tool not found" (sentinel) from "execution error" (wrapped).
+      definition: |
+        // ErrToolNotFound is returned when a tool name is not registered in the Workshop.
+        var ErrToolNotFound = errors.New("unknown tool")
+
+        // ExecuteTool looks up and executes a tool from the Workshop.
+        // Returns the result string and any error. Returns ErrToolNotFound (wrapped)
+        // when the tool name is not registered. Execution errors are returned
+        // with the error message as the result string for backward compatibility
+        // with tool_result blocks that expect a string.
+        func ExecuteTool(ctx context.Context, workshop tools.Workshop, name string, input map[string]interface{}, workDir string) (string, error)
+      location: pkg/agent/backend/execute_tool.go
+    - name: BuildWorkshop
+      description: |
+        Shared workshop builder extracted from 3 backends. Applies dedup, constraints,
+        and timing middleware in consistent order.
+      definition: |
+        // WorkshopResult holds the workshop and associated trackers created by BuildWorkshop.
+        type WorkshopResult struct {
+            Workshop      tools.Workshop
+            DedupCache    *dedup.Cache
+            CommitTracker *tools.CommitTracker
+        }
+
+        // BuildWorkshop creates a Workshop with middleware applied based on config.
+        // readOnly controls whether write tools are included.
+        // cfg provides constraints and onToolCall callback configuration.
+        // Returns the workshop plus dedup cache and commit tracker references.
+        func BuildWorkshop(workDir string, readOnly bool, cfg Config) WorkshopResult
+      location: pkg/agent/backend/backend.go
+waves:
+    - number: 1
+      agents:
+        - id: A
+          task: |
+            ## Role
+            Fix ExecuteTool signature and add error distinguishing + tests.
+
+            ## What to implement
+
+            **1. Change ExecuteTool signature from `(string, bool)` to `(string, error)`**
+            in `pkg/agent/backend/execute_tool.go`:
+
+            - Add `var ErrToolNotFound = errors.New("unknown tool")` sentinel error.
+            - When tool not found: return `(fmt.Sprintf("error: unknown tool %q", name), fmt.Errorf("%w: %q", ErrToolNotFound, name))`.
+            - When tool execution fails: return `(fmt.Sprintf("error: %v", err), err)`.
+            - On success: return `(result, nil)`.
+            - Add `import "errors"` to the import block.
+
+            **2. Create `pkg/agent/backend/execute_tool_test.go`** with tests:
+            - `TestExecuteTool_Success`: mock workshop, verify (result, nil).
+            - `TestExecuteTool_NotFound`: verify error wraps ErrToolNotFound, result contains "unknown tool".
+            - `TestExecuteTool_ExecError`: verify error is the execution error, result contains error message.
+            - Use `errors.Is(err, ErrToolNotFound)` to test sentinel.
+
+            ## Interfaces
+            ```go
+            var ErrToolNotFound = errors.New("unknown tool")
+            func ExecuteTool(ctx context.Context, workshop tools.Workshop, name string, input map[string]interface{}, workDir string) (string, error)
+            ```
+
+            ## Verification
+            ```bash
+            go build ./pkg/agent/backend/...
+            go vet ./pkg/agent/backend/...
+            go test ./pkg/agent/backend/ -run TestExecuteTool -v
+            ```
+
+            ## Constraints
+            - Do NOT update callers (other backends) — that is Wave 2's job.
+            - The file will not compile in isolation after this change because callers
+              use the old `(string, bool)` signature. That is expected. The build gate
+              for this wave covers only `go build ./pkg/agent/backend/` (the package itself).
+              Actually, since callers import this package, the build will fail. To avoid this,
+              keep the old function as a deprecated wrapper during Wave 1:
+              ```go
+              // Deprecated: Use ExecuteTool which returns error. Remove after Wave 2 migration.
+              func ExecuteToolLegacy(ctx context.Context, workshop tools.Workshop, name string, input map[string]interface{}, workDir string) (string, bool) {
+                  result, err := ExecuteTool(ctx, workshop, name, input, workDir)
+                  return result, err != nil
+              }
+              ```
+              Then rename the old callers to use ExecuteToolLegacy in a separate step,
+              OR simply keep the old signature as an alias. Wave 2 agents will update all
+              callers to use the new `(string, error)` signature and remove the legacy wrapper.
+
+              **Simpler approach**: Add the new function as `ExecuteToolV2` returning `(string, error)`,
+              keep the old `ExecuteTool` unchanged. Wave 2 agents migrate callers from
+              `ExecuteTool` to `ExecuteToolV2`. After Wave 2 merges, the old function can be removed.
+              This avoids any build breakage between waves.
+
+            Actually, use the simplest approach that keeps builds green:
+            1. Rename current `ExecuteTool` to `executeToolLegacy` (unexported).
+            2. Add new `ExecuteTool` with `(string, error)` return.
+            3. Have `executeToolLegacy` call `ExecuteTool` internally.
+            4. Update the one in-package caller (`bedrock/tools.go` calls `backend.ExecuteTool`) — but
+               that's in Wave 2. So instead: keep both exported: `ExecuteTool` (new signature) and
+               `ExecuteToolCompat` (old signature wrapping new).
+
+            **Final decision**: Keep it simple. Add the NEW `ExecuteTool` with `(string, error)`.
+            Rename the old one to `ExecuteToolCompat(...)  (string, bool)` which calls the new one.
+            All existing callers still compile via `ExecuteToolCompat`. Wave 2 agents migrate
+            callers to `ExecuteTool` and delete `ExecuteToolCompat`.
+          files:
+            - pkg/agent/backend/execute_tool.go
+            - pkg/agent/backend/execute_tool_test.go
+        - id: B
+          task: |
+            ## Role
+            Extract shared BuildWorkshop helper and fix completion.go error handling.
+
+            ## What to implement
+
+            **1. Add `BuildWorkshop` to `pkg/agent/backend/backend.go`**:
+
+            Extract the duplicated workshop-building pattern from api/bedrock/openai backends
+            into a shared helper. All three backends have identical logic:
+            ```go
+            var w tools.Workshop
+            if readOnly { w = tools.ReadOnlyTools(workDir) } else { w = tools.StandardTools(workDir) }
+            w, dedupCache = dedup.WithDedup(w)
+            if constraints != nil { w, commitTracker = tools.WithConstraints(w, *constraints) }
+            if onToolCall != nil { w = tools.WithTiming(w, ...) }
+            ```
+
+            Add to `backend.go`:
+            ```go
+            type WorkshopResult struct {
+                Workshop      tools.Workshop
+                DedupCache    *dedup.Cache
+                CommitTracker *tools.CommitTracker
+            }
+
+            func BuildWorkshop(workDir string, readOnly bool, cfg Config) WorkshopResult {
+                var w tools.Workshop
+                if readOnly {
+                    w = tools.ReadOnlyTools(workDir)
+                } else {
+                    w = tools.StandardTools(workDir)
+                }
+                var dc *dedup.Cache
+                w, dc = dedup.WithDedup(w)
+                var ct *tools.CommitTracker
+                if cfg.Constraints != nil {
+                    w, ct = tools.WithConstraints(w, *cfg.Constraints)
+                }
+                if cfg.OnToolCall != nil {
+                    w = tools.WithTiming(w, func(ev tools.ToolCallEvent) {
+                        cfg.OnToolCall(ToolCallEvent{
+                            Name:       ev.ToolName,
+                            DurationMs: ev.DurationMs,
+                            IsError:    ev.IsError,
+                            IsResult:   true,
+                        })
+                    })
+                }
+                return WorkshopResult{Workshop: w, DedupCache: dc, CommitTracker: ct}
+            }
+            ```
+
+            Add necessary imports: `dedup` and `tools` packages.
+
+            **2. Fix `pkg/agent/completion.go` error handling**:
+
+            - Change return type from `(*protocol.CompletionReport, error)` to
+              `result.Result[*protocol.CompletionReport]`.
+            - Replace `fmt.Errorf(...)` on line 26 with `result.NewFatalResult[*protocol.CompletionReport]`
+              using error code `"AGENT_COMPLETION_LOAD_FAILED"`.
+            - Replace `fmt.Errorf(...)` on lines 37-38 with `result.NewFatalResult[*protocol.CompletionReport]`
+              using error code `"AGENT_COMPLETION_TIMEOUT"`.
+            - Return `result.NewSuccess(report)` on line 31.
+            - Update imports: add `result` package, remove `fmt` if no longer used.
+
+            Check for callers of `WaitForCompletion` in the repo before changing the signature.
+            If callers exist outside this wave's ownership, provide both the old and new
+            signature (old wrapping new) to avoid breakage. Use grep:
+            `grep -rn "WaitForCompletion" --include="*.go"` to find callers.
+
+            ## Interfaces
+            See interface_contracts above for BuildWorkshop.
+
+            WaitForCompletion new signature:
+            ```go
+            func WaitForCompletion(implDocPath, agentID string, timeout, pollInterval time.Duration) result.Result[*protocol.CompletionReport]
+            ```
+
+            ## Verification
+            ```bash
+            go build ./pkg/agent/...
+            go vet ./pkg/agent/...
+            go test ./pkg/agent/ -v
+            ```
+
+            ## Constraints
+            - Do NOT update backend callers of buildWorkshop — Wave 2 agents will do that.
+            - Check for WaitForCompletion callers and handle backward compatibility.
+            - Update pkg/agent/runner_test.go to use the new Result return type.
+            - pkg/orchestrator/orchestrator.go also calls WaitForCompletion (outside this IMPL scope).
+              You MUST keep backward compatibility: provide a compat wrapper with the old
+              (\*protocol.CompletionReport, error) signature, or do not change the return type at all
+              if it would break orchestrator. The safest approach: keep the public function with the
+              same signature and add a new WaitForCompletionResult() with result.Result return.
+          files:
+            - pkg/agent/backend/backend.go
+            - pkg/agent/completion.go
+            - pkg/agent/runner_test.go
+    - number: 2
+      agents:
+        - id: C
+          task: |
+            ## Role
+            Fix API backend issues: race condition, silent unmarshal errors, use shared helpers.
+
+            ## What to implement
+
+            **1. Fix race condition in dedup cache (HIGH)**:
+            In `pkg/agent/backend/api/client.go`, `buildWorkshop()` writes `c.dedupCache`
+            and `DedupStats()` reads it without synchronization.
+            - Add `sync.Mutex` field to Client: `mu sync.Mutex`.
+            - In `buildWorkshop`: lock mu around the assignment of `c.dedupCache` and `c.commitTracker`.
+            - In `DedupStats()`: lock mu around the read of `c.dedupCache`.
+            - In `CommitCount()`: lock mu around the read of `c.commitTracker`.
+            - Add `"sync"` to imports.
+
+            **2. Use shared BuildWorkshop from Wave 1**:
+            - Replace the `buildWorkshop` method body with a call to `backend.BuildWorkshop(workDir, c.readOnly, c.cfg)`.
+            - Store the result's DedupCache and CommitTracker on the client (under mutex).
+            - Remove the now-unused local workshop building logic.
+
+            **3. Fix silent JSON unmarshal failures (MEDIUM)**:
+            In `Run()` (line 248) and `RunStreaming()` (line 419), `json.Unmarshal` errors
+            silently create empty maps. Add `log/slog` logging:
+            ```go
+            if err := json.Unmarshal(tu.Input, &inputMap); err != nil {
+                slog.Warn("api: failed to unmarshal tool input", "tool", tu.Name, "error", err)
+                inputMap = map[string]interface{}{}
+            }
+            ```
+
+            **4. Migrate from ExecuteToolCompat to ExecuteTool (MEDIUM)**:
+            Replace all calls to `backend.ExecuteToolCompat(ctx, workshop, name, input, workDir)`
+            (or `backend.ExecuteTool` with old signature) with the new `backend.ExecuteTool`
+            that returns `(string, error)`. Handle the error appropriately:
+            - For Anthropic API: map to `isError` bool for `NewToolResultBlock`.
+            ```go
+            result, err := backend.ExecuteTool(ctx, workshop, tu.Name, inputMap, workDir)
+            isError := err != nil
+            toolResultBlocks = append(toolResultBlocks, anthropic.NewToolResultBlock(tu.ID, result, isError))
+            ```
+
+            **5. Fix RunStreamingWithTools not forwarding onToolCall (MEDIUM)**:
+            Currently `RunStreamingWithTools` delegates to `RunStreaming` and ignores `onToolCall`.
+            Add tool call event emission in the streaming tool-use loop, similar to Bedrock's pattern:
+            emit a ToolCallEvent before and after each tool execution.
+
+            **6. Add test for multi-turn tool execution**:
+            In `client_test.go`, add a test that sets up a mock HTTP server returning
+            a tool_calls response followed by a stop response, verifying the tool loop works.
+
+            ## Verification
+            ```bash
+            go build ./pkg/agent/backend/api/...
+            go vet ./pkg/agent/backend/api/...
+            go test ./pkg/agent/backend/api/ -v -race
+            ```
+          files:
+            - pkg/agent/backend/api/client.go
+            - pkg/agent/backend/api/client_test.go
+          dependencies:
+            - A
+            - B
+        - id: D
+          task: |
+            ## Role
+            Fix Bedrock backend issues: nil pointer, tool ID, dead code, maxTurns, use shared helpers.
+
+            ## What to implement
+
+            **1. Fix potential nil pointer in streaming (HIGH)**:
+            In `pkg/agent/backend/bedrock/client.go` `RunStreamingWithTools`, around line 365:
+            - `currentIndex` is initialized to 0 but may not be updated if `ContentBlockIndex` is nil.
+            - Fix: Always check `ContentBlockIndex != nil` before using it. If nil, auto-increment
+              `currentIndex` based on the number of content blocks seen so far.
+            - Also ensure text block accumulators are initialized proactively when a
+              `ContentBlockStart` event arrives, regardless of whether it's a tool_use block.
+
+            **2. Fix missing tool ID in streaming events (MEDIUM)**:
+            In `RunStreamingWithTools` around lines 536-540, the `ToolCallEvent` emitted
+            before tool execution is missing `ID: toolBlk.id`. Add it:
+            ```go
+            onToolCall(backend.ToolCallEvent{
+                ID:    toolBlk.id,
+                Name:  toolBlk.name,
+                Input: inputStr,
+            })
+            ```
+
+            **3. Use shared BuildWorkshop from Wave 1**:
+            - Replace the `buildWorkshop` method body with `backend.BuildWorkshop(workDir, c.readOnly, c.cfg)`.
+            - Store DedupCache and CommitTracker from the result.
+            - Add mutex protection like API backend (same race condition applies).
+
+            **4. Migrate from executeTool/ExecuteToolCompat to ExecuteTool**:
+            - In `bedrock/tools.go`, update the local `executeTool` wrapper to call
+              `backend.ExecuteTool` (new signature returning error) and adapt the return.
+            - Or better: remove the local wrapper entirely and call `backend.ExecuteTool`
+              directly in `client.go`, converting `error` to `bool` for the Bedrock result blocks.
+
+            **5. Remove dead code (LOW)**:
+            - Remove `buildConverseMessages()` from `converse.go` (zero callers in production code).
+            - Remove `buildToolsJSON()` from `tools.go` (only called in tests).
+            - Update `converse_test.go`: remove `TestBuildConverseMessages` and
+              `TestBuildConverseMessages_ErrorToolResult` tests.
+            - Update `client_test.go`: remove `TestBuildToolsJSON` test if it exists.
+
+            **6. Align maxTurns default (LOW)**:
+            In `client.go` `maxTurns()` method, change default from 200 to 50 to match
+            API and OpenAI backends. Add a comment explaining the default.
+
+            ## Verification
+            ```bash
+            go build ./pkg/agent/backend/bedrock/...
+            go vet ./pkg/agent/backend/bedrock/...
+            go test ./pkg/agent/backend/bedrock/ -v -race
+            ```
+          files:
+            - pkg/agent/backend/bedrock/client.go
+            - pkg/agent/backend/bedrock/tools.go
+            - pkg/agent/backend/bedrock/converse.go
+            - pkg/agent/backend/bedrock/converse_test.go
+            - pkg/agent/backend/bedrock/client_test.go
+          dependencies:
+            - A
+            - B
+        - id: E
+          task: |
+            ## Role
+            Fix OpenAI backend issues: streaming length check, constraint propagation,
+            unmarshal errors, use shared helpers.
+
+            ## What to implement
+
+            **1. Fix streaming chunk.Choices[0] without length check (MEDIUM)**:
+            In `pkg/agent/backend/openai/client.go` `streamFinalTurn()`, around line 304:
+            ```go
+            // Before (unsafe):
+            delta := chunk.Choices[0].Delta.Content
+            // After (safe):
+            if len(chunk.Choices) == 0 {
+                continue
+            }
+            delta := chunk.Choices[0].Delta.Content
+            ```
+
+            **2. Add constraint middleware to OpenAI workshop building (MEDIUM)**:
+            Currently `buildWorkshop` in OpenAI backend does NOT apply constraints
+            (missing `tools.WithConstraints` call). The OpenAI Client struct also lacks
+            `cfg backend.Config` and `commitTracker *tools.CommitTracker` fields.
+            Fix by using the shared `backend.BuildWorkshop` from Wave 1:
+            - Add `cfg backend.Config` field to Client.
+            - In `New()`, store `cfg` on the client.
+            - Replace `buildWorkshop` body with `backend.BuildWorkshop(workDir, c.readOnly, c.cfg)`.
+            - Store the CommitTracker from the result.
+            - Add `CommitCount() int` method.
+
+            **3. Fix silent JSON unmarshal failures (MEDIUM)**:
+            In `Run()` and `RunStreaming()`, the `json.Unmarshal` error for tool call
+            arguments silently creates empty maps. Add slog.Warn logging (same pattern as API fix).
+
+            **4. Migrate from ExecuteToolCompat to ExecuteTool**:
+            Replace all `backend.ExecuteTool` or `backend.ExecuteToolCompat` calls with the new
+            `backend.ExecuteTool` returning `(string, error)`. The `_` (ignored bool) becomes
+            checking `err != nil`.
+
+            **5. Fix RunStreamingWithTools ignoring onToolCall (MEDIUM)**:
+            Same as API backend — currently delegates to RunStreaming and discards onToolCall.
+            Add tool call event emission in the tool-use loops.
+
+            **6. Add test for parseContentToolCall edge cases**:
+            Add tests in `client_test.go`:
+            - Empty content string
+            - Valid JSON but no "name" field
+            - Valid JSON with unknown tool name
+            - Valid JSON with known tool name (success path)
+
+            ## Verification
+            ```bash
+            go build ./pkg/agent/backend/openai/...
+            go vet ./pkg/agent/backend/openai/...
+            go test ./pkg/agent/backend/openai/ -v -race
+            ```
+          files:
+            - pkg/agent/backend/openai/client.go
+            - pkg/agent/backend/openai/client_test.go
+          dependencies:
+            - A
+            - B
+        - id: F
+          task: |
+            ## Role
+            Fix CLI backend issues: duplicate code extraction, add DedupStats/CommitCount.
+
+            ## What to implement
+
+            **1. Extract duplicate CLI args construction (MEDIUM)**:
+            In `pkg/agent/backend/cli/client.go`, lines 85-97 and 240-252 are identical
+            argument construction. Extract to a helper:
+            ```go
+            func (c *Client) buildCLIArgs(prompt string) []string {
+                args := []string{
+                    "--print",
+                    "--output-format", "stream-json",
+                    "--allowedTools", "Bash,Read,Write,Edit,Glob,Grep",
+                    "--dangerously-skip-permissions",
+                }
+                if c.cfg.Model != "" {
+                    args = append(args, "--model", c.cfg.Model)
+                }
+                if c.cfg.MaxTurns > 0 {
+                    args = append(args, "--max-turns", fmt.Sprintf("%d", c.cfg.MaxTurns))
+                }
+                args = append(args, "-p", prompt)
+                return args
+            }
+            ```
+            Also extract the prompt construction:
+            ```go
+            func buildPrompt(systemPrompt, userMessage string) string {
+                if systemPrompt == "" {
+                    return userMessage
+                }
+                return systemPrompt + "\n\n" + userMessage
+            }
+            ```
+
+            **2. Extract duplicate PTY stream reading (MEDIUM)**:
+            Lines 133-176 in `RunStreaming` and 294-388 in `RunStreamingWithTools` share
+            the core PTY reading/buffering/ANSI stripping logic. Extract a helper:
+            ```go
+            type ptyEventHandler func(candidate string)
+
+            func (c *Client) readPTYStream(ctx context.Context, ptmx *os.File, onEvent ptyEventHandler) (rawOutput string, nonJSON string, err error)
+            ```
+            Both RunStreaming and RunStreamingWithTools call this with different event handlers.
+            RunStreaming's handler just calls `formatStreamEvent` + `onChunk`.
+            RunStreamingWithTools' handler additionally parses tool events and records constraints.
+
+            **3. Add DedupStats() and CommitCount() methods (LOW)**:
+            CLI backend doesn't expose these. Since CLI backend shells out to claude
+            (no in-process workshop for dedup), these should return zero/nil with a comment:
+            ```go
+            // DedupStats returns nil for CLI backend — dedup runs inside the claude subprocess.
+            func (c *Client) DedupStats() *dedup.Stats { return nil }
+
+            // CommitCount returns 0 for CLI backend — commit tracking is post-hoc via constraints.
+            func (c *Client) CommitCount() int { return 0 }
+            ```
+            Add `dedup` import.
+
+            **4. Add tests for the extracted helpers**:
+            Add tests in `client_test.go`:
+            - `TestBuildCLIArgs_Default`: verify default args.
+            - `TestBuildCLIArgs_WithModel`: verify --model flag.
+            - `TestBuildPrompt`: verify prompt construction.
+
+            ## Verification
+            ```bash
+            go build ./pkg/agent/backend/cli/...
+            go vet ./pkg/agent/backend/cli/...
+            go test ./pkg/agent/backend/cli/ -v
+            ```
+          files:
+            - pkg/agent/backend/cli/client.go
+            - pkg/agent/backend/cli/client_test.go
+          dependencies:
+            - A
+            - B
+        - id: G
+          task: |
+            ## Role
+            Add dedup middleware edge case tests.
+
+            ## What to implement
+
+            **1. Add edge case tests to `pkg/agent/dedup/cache_test.go`**:
+
+            - `TestMiddleware_ReadError`: Create a middleware-wrapped workshop, execute
+              read_file on a non-existent path, verify the error propagates correctly
+              and the cache is NOT populated (error reads should not be cached).
+
+            - `TestInvalidate_NonExistent`: Call `Invalidate("/does/not/exist")` on
+              an empty cache — should not panic or error.
+
+            - `TestMiddleware_ErrorPropagation`: Create a mock executor that returns
+              an error from Execute, wrap it with WithDedup, verify the error
+              propagates through the middleware without being swallowed.
+
+            - `TestCache_EmptyContent`: Call `Check("/file.txt", []byte{})` — verify
+              it handles empty content correctly (0 lines).
+
+            - `TestCache_LargeContent`: Call `Check` with 10000-line content, verify
+              stats reflect correct line count on hit.
+
+            **2. Add edge case to middleware.go**:
+            In `WithDedup`, the `read_file` handler checks `strings.HasPrefix(result, "error:")`.
+            Also add a nil/error check: if `err != nil`, return early without caching:
+            ```go
+            // Already correct — err is returned before cache check.
+            // Just verify this in a test.
+            ```
+            Actually, looking at the code, error propagation is already correct (line 32-33
+            returns early on err != nil). The test should verify this behavior.
+
+            ## Verification
+            ```bash
+            go test ./pkg/agent/dedup/ -v -race
+            ```
+          files:
+            - pkg/agent/dedup/cache_test.go
+            - pkg/agent/dedup/middleware.go
+quality_gates:
+    level: standard
+    gates:
+        - type: build
+          command: go build ./pkg/agent/...
+          required: true
+        - type: lint
+          command: go vet ./pkg/agent/...
+          required: true
+        - type: test
+          command: go test ./pkg/agent/...
+          required: true
+pre_mortem:
+    overall_risk: medium
+    rows:
+        - scenario: ExecuteTool signature change causes build failures between waves
+          likelihood: medium
+          impact: high
+          mitigation: Wave 1 Agent A provides ExecuteToolCompat wrapper with old (string, bool) signature. Wave 2 agents migrate callers and delete the compat wrapper.
+        - scenario: BuildWorkshop import cycle with dedup package
+          likelihood: low
+          impact: medium
+          mitigation: backend.go already imports tools; adding dedup import follows existing pattern. Verify import graph in Wave 1.
+        - scenario: Race condition fix changes API client behavior under concurrent use
+          likelihood: low
+          impact: low
+          mitigation: Mutex only guards dedupCache/commitTracker field assignment, not tool execution. No observable behavior change.
+        - scenario: Removing buildConverseMessages dead code breaks uncommitted work
+          likelihood: low
+          impact: low
+          mitigation: Agent D should grep for callers before removing. Function has zero callers in current codebase.
+        - scenario: WaitForCompletion signature change breaks callers outside pkg/agent
+          likelihood: medium
+          impact: medium
+          mitigation: Agent B must grep for callers across the entire repo before changing. Provide compat wrapper if needed.
+state: REVIEWED
+injection_method: hook

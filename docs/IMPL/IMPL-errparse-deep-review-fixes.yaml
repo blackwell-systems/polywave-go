@@ -1,0 +1,381 @@
+title: Fix all issues from pkg/errparse deep review
+feature_slug: errparse-deep-review-fixes
+verdict: SUITABLE
+suitability_assessment: |
+    All five suitability gate questions resolve cleanly:
+    1. File decomposition: 5 files across 2 packages, all disjoint ownership possible.
+       Wave 1 has 3 independent parser files (go/js/python); Wave 2 has tests + registry.go.
+    2. No investigation needed — all issues identified with specific locations.
+    3. Interfaces fully discoverable — Register() and Parser interface already exist.
+    4. All items are TODO status — no prior implementation.
+    5. Parallelization value: 3 agents run in parallel in Wave 1. Coordination value
+       is clear even with fast build cycle (~2s). Each agent owns 1 file with focused changes.
+
+    Estimated times:
+    - Scout phase: ~8 min
+    - Agent execution: ~5 min (3 parallel wave 1 + 1 wave 2)
+    - Merge & verification: ~3 min
+    Total SAW time: ~16 min
+    Sequential baseline: ~20 min
+    Time savings: ~4 min (20% faster)
+    Recommendation: Marginal speed gains but clean decomposition and coordination value.
+test_command: go test ./pkg/errparse/... ./pkg/protocol/...
+lint_command: go vet ./pkg/errparse/... ./pkg/protocol/...
+file_ownership:
+    - file: pkg/errparse/go_parsers.go
+      agent: A
+      wave: 1
+      action: modify
+    - file: pkg/errparse/js_parsers.go
+      agent: B
+      wave: 1
+      action: modify
+    - file: pkg/errparse/python_parsers.go
+      agent: C
+      wave: 1
+      action: modify
+    - file: pkg/errparse/registry_test.go
+      agent: D
+      wave: 2
+      action: modify
+    - file: pkg/errparse/registry.go
+      agent: D
+      wave: 2
+      action: modify
+interface_contracts:
+    - name: init() registration pattern
+      description: |
+        Each parser file must register its parsers via init(), matching the
+        pattern established in format_parsers.go.
+      definition: |
+        func init() {
+            Register(&ParserName{})
+        }
+      location: pkg/errparse/format_parsers.go
+    - name: ParseOutput nil-parser logging
+      description: |
+        When ParseOutput detects a tool name but no parser is registered,
+        it should log a warning via slog.Warn before returning nil.
+      definition: |
+        // In ParseOutput(), after toolName is detected but GetParser returns nil:
+        slog.Warn("errparse: no parser registered for detected tool",
+            "tool", toolName,
+            "gate_type", gateType,
+            "command", command)
+      location: pkg/errparse/registry.go
+waves:
+    - number: 1
+      agents:
+        - id: A
+          task: |
+            ## Go Parser Registration and Cleanup
+
+            **What to implement:**
+
+            1. Add `init()` function to `pkg/errparse/go_parsers.go` that registers all 4 parsers:
+               ```go
+               func init() {
+                   Register(&GoBuildParser{})
+                   Register(&GoTestParser{})
+                   Register(&GoVetParser{})
+                   Register(&GolangciLintParser{})
+               }
+               ```
+               Place it after the imports, before the first helper function (`stripANSI`),
+               matching the pattern in `format_parsers.go` lines 9-14.
+
+            2. Fix unused variable at line 163: `_ = i`. The loop at line 143 is
+               `for i, line := range lines` but `i` is only referenced at line 163 as
+               `_ = i` and nowhere else in the function body. Change the loop header to
+               `for _, line := range lines` and remove the `_ = i` line.
+
+            **Interfaces:**
+            - Follow exact registration pattern from `format_parsers.go` lines 9-14.
+            - No new types or exports.
+
+            **Tests:**
+            - Existing tests in `go_parsers_test.go` must continue to pass.
+            - Registration will be tested by Agent D in Wave 2.
+
+            **Verification gate:**
+            ```
+            go build ./pkg/errparse/... && go vet ./pkg/errparse/... && go test ./pkg/errparse/...
+            ```
+
+            **Constraints:**
+            - Only modify `pkg/errparse/go_parsers.go`.
+            - Use unicode box-drawing separator style `// ─────` (not ASCII dashes)
+              to match the existing style in this file.
+          files:
+            - pkg/errparse/go_parsers.go
+        - id: B
+          task: |
+            ## JS Parser Registration and Cleanup
+
+            **What to implement:**
+
+            1. Add `init()` function to `pkg/errparse/js_parsers.go` that registers all 3 parsers:
+               ```go
+               func init() {
+                   Register(&TscParser{})
+                   Register(&EslintParser{})
+                   Register(&NpmTestParser{})
+               }
+               ```
+               Place it after the imports, before the first parser type definition.
+
+            2. Fix comment separator style inconsistency. The file currently uses ASCII
+               dashes `// -----------` (lines 12-13, 56-57, 170-171, 178-179 approximately).
+               Change ALL separator comment lines to use unicode box-drawing characters:
+               `// ─────────────────────────────────────────────────────────────────────────────`
+               to match the style used in `go_parsers.go` and `format_parsers.go`.
+
+            3. Remove the unnecessary lint suppression line at line 295:
+               `_ = currentTest // avoid unused-variable lint error`
+               This line is unnecessary because `currentTest` IS actually used in the
+               function — it is read at lines 252 and 288 as `Message: currentTest`.
+               The comment claiming it's unused is incorrect. Simply delete line 295.
+               Do NOT remove the `currentTest` variable declaration or its assignments —
+               the variable is actively used.
+
+            **Interfaces:**
+            - Follow exact registration pattern from `format_parsers.go` lines 9-14.
+            - No new types or exports.
+
+            **Tests:**
+            - Existing tests in `js_parsers_test.go` must continue to pass.
+            - Registration will be tested by Agent D in Wave 2.
+
+            **Verification gate:**
+            ```
+            go build ./pkg/errparse/... && go vet ./pkg/errparse/... && go test ./pkg/errparse/...
+            ```
+
+            **Constraints:**
+            - Only modify `pkg/errparse/js_parsers.go`.
+          files:
+            - pkg/errparse/js_parsers.go
+        - id: C
+          task: |
+            ## Python Parser Registration and Pointer-to-Slice Fix
+
+            **What to implement:**
+
+            1. Add `init()` function to `pkg/errparse/python_parsers.go` that registers all 3 parsers:
+               ```go
+               func init() {
+                   Register(&PytestParser{})
+                   Register(&MypyParser{})
+                   Register(&RuffParser{})
+               }
+               ```
+               Place it after the imports, before the first parser type definition.
+
+            2. Fix pointer-to-slice-element brittleness in `PytestParser.Parse()`.
+               Currently at lines 129 and 154:
+               ```go
+               pendingFailed = &pr.Errors[len(pr.Errors)-1]
+               ```
+               This takes a pointer into a slice that may be reallocated by subsequent
+               `append()` calls, making the pointer dangle.
+
+               Fix by tracking the index instead of a pointer:
+               - Change `var pendingFailed *result.SAWError` (line 66) to `pendingFailedIdx := -1`
+               - Change `pendingFailed = &pr.Errors[len(pr.Errors)-1]` (2 occurrences) to
+                 `pendingFailedIdx = len(pr.Errors) - 1`
+               - Change all reads like `pendingFailed.File` to `pr.Errors[pendingFailedIdx].File`
+               - Change all nil checks `pendingFailed != nil` to `pendingFailedIdx >= 0`
+
+               Occurrences to update (all in PytestParser.Parse):
+               - Line 66: declaration
+               - Lines 83-88: nil check + field reads (short location reference block)
+               - Lines 95-100: nil check + field writes (flush before new FAILED)
+               - Line 129: pointer assignment
+               - Lines 137-143: nil check + field writes (flush before collection error)
+               - Line 154: pointer assignment
+               - Lines 161-166: nil check + field writes (final flush)
+
+            3. Fix unused loop variable at line 70: `_ = i`. The loop at line 68 is
+               `for i, raw := range lines` and line 70 has `_ = i`. Change the loop to
+               `for _, raw := range lines` and remove the `_ = i` line.
+
+            **Interfaces:**
+            - Follow exact registration pattern from `format_parsers.go` lines 9-14.
+            - No new types or exports. The `pendingFailed` change is internal only.
+
+            **Tests:**
+            - Existing tests in `python_parsers_test.go` must continue to pass.
+            - Registration will be tested by Agent D in Wave 2.
+
+            **Verification gate:**
+            ```
+            go build ./pkg/errparse/... && go vet ./pkg/errparse/... && go test ./pkg/errparse/...
+            ```
+
+            **Constraints:**
+            - Only modify `pkg/errparse/python_parsers.go`.
+            - Use unicode box-drawing separator style `// ─────` to match existing style.
+          files:
+            - pkg/errparse/python_parsers.go
+    - number: 2
+      agents:
+        - id: D
+          task: |
+            ## Registration Tests, Integration Tests, and ParseOutput Warning
+
+            **What to implement:**
+
+            ### 1. Add comprehensive registration test to `pkg/errparse/registry_test.go`
+
+            Add `TestAllParsers_Registered` that verifies ALL 14 parsers are registered
+            via their `init()` functions:
+
+            ```go
+            func TestAllParsers_Registered(t *testing.T) {
+                tools := []string{
+                    "gofmt", "prettier-format", "ruff-format", "cargo-fmt",
+                    "go-build", "go-test", "go-vet", "golangci-lint",
+                    "tsc", "eslint", "npm-test",
+                    "pytest", "mypy", "ruff",
+                }
+                for _, tool := range tools {
+                    p := GetParser(tool)
+                    if p == nil {
+                        t.Errorf("parser %q not registered — missing init() call?", tool)
+                        continue
+                    }
+                    if p.Name() != tool {
+                        t.Errorf("parser %q has Name() = %q", tool, p.Name())
+                    }
+                }
+            }
+            ```
+
+            ### 2. Add ParseOutput integration tests to `pkg/errparse/registry_test.go`
+
+            Add `TestParseOutput_Integration` using table-driven tests that call
+            `ParseOutput(gateType, command, stdout, stderr)` with realistic sample
+            output for each tool. Cover these dispatch paths:
+
+            | gateType | command | stdout | stderr | expectedTool |
+            |----------|---------|--------|--------|-------------|
+            | "build" | "go build ./..." | "" | "main.go:10:5: undefined: foo" | "go-build" |
+            | "test" | "go test ./..." | "--- FAIL: TestFoo (0.00s)\n\tfoo_test.go:10: expected 1" | "" | "go-test" |
+            | "lint" | "go vet ./..." | "" | "main.go:5:2: unreachable code" | "go-vet" |
+            | "lint" | "golangci-lint run" | "" | "main.go:5:2: unused variable (deadcode)" | "golangci-lint" |
+            | "typecheck" | "tsc --noEmit" | "src/file.ts(10,5): error TS2322: bad type" | "" | "tsc" |
+            | "lint" | "eslint ." | "" | "src/file.ts:5:1: 'x' unused [no-unused-vars]" | "eslint" |
+            | "test" | "npm test" | "FAIL src/file.test.ts" | "" | "npm-test" |
+            | "test" | "pytest" | "FAILED tests/test_foo.py::test_add - AssertionError" | "" | "pytest" |
+            | "typecheck" | "mypy ." | "src/foo.py:10: error: Incompatible types [assignment]" | "" | "mypy" |
+            | "lint" | "ruff check ." | "src/foo.py:10:1: E501 Line too long" | "" | "ruff" |
+            | "format" | "gofmt -l ." | "main.go" | "" | "gofmt" |
+
+            For each case verify: non-nil result, correct Tool field, at least 1 error.
+
+            ### 3. Add ruff edge case test for non-consecutive suggestions
+
+            Add `TestRuffParser_NonConsecutiveHelp` to `pkg/errparse/registry_test.go`.
+
+            Test case 1 — help line separated by non-matching line:
+            ```
+            src/a.py:1:1: E501 Line too long
+            Found 1 error.
+              = help: Shorten the line
+            src/b.py:2:1: W291 Trailing whitespace
+            ```
+            Verify: `a.py` error has Suggestion="Shorten the line", `b.py` has empty Suggestion.
+
+            Test case 2 — help line after intervening error:
+            ```
+            src/a.py:1:1: E501 Line too long
+            src/b.py:2:1: W291 Trailing whitespace
+              = help: Remove trailing whitespace
+            ```
+            Verify: `a.py` has empty Suggestion, `b.py` has Suggestion="Remove trailing whitespace".
+
+            ### 4. Add slog.Warn to ParseOutput in `pkg/errparse/registry.go`
+
+            In the `ParseOutput` function in `registry.go`, when `GetParser(toolName)`
+            returns nil (lines 110-113), add a warning log before returning nil:
+
+            ```go
+            parser := GetParser(toolName)
+            if parser == nil {
+                slog.Warn("errparse: no parser registered for detected tool",
+                    "tool", toolName,
+                    "gate_type", gateType,
+                    "command", command)
+                return nil
+            }
+            ```
+
+            Add `"log/slog"` to the imports of `registry.go`.
+
+            **Interfaces:**
+            - No new exported functions or types.
+
+            **Tests:**
+            - All 3 new tests must pass.
+            - All existing tests must continue to pass.
+
+            **Verification gate:**
+            ```
+            go build ./pkg/errparse/... ./pkg/protocol/... && go vet ./pkg/errparse/... ./pkg/protocol/... && go test ./pkg/errparse/... ./pkg/protocol/...
+            ```
+
+            **Constraints:**
+            - Modify `pkg/errparse/registry_test.go` (add 3 new test functions).
+            - Modify `pkg/errparse/registry.go` (add slog.Warn + import in ParseOutput).
+            - Do NOT modify any other files.
+          files:
+            - pkg/errparse/registry_test.go
+            - pkg/errparse/registry.go
+          dependencies:
+            - A
+            - B
+            - C
+quality_gates:
+    level: standard
+    gates:
+        - type: build
+          command: go build ./pkg/errparse/... ./pkg/protocol/...
+          required: true
+        - type: lint
+          command: go vet ./pkg/errparse/... ./pkg/protocol/...
+          required: true
+        - type: test
+          command: go test ./pkg/errparse/... ./pkg/protocol/...
+          required: true
+pre_mortem:
+    overall_risk: low
+    rows:
+        - scenario: init() registration order causes test flakiness
+          likelihood: low
+          impact: low
+          mitigation: Go init() order within a package is deterministic (alphabetical by filename). No ordering issues expected.
+        - scenario: pendingFailedIdx refactor in python_parsers.go changes behavior
+          likelihood: low
+          impact: medium
+          mitigation: Agent C must verify all existing python_parsers_test.go tests pass. The index-based approach is semantically equivalent.
+        - scenario: Ruff help line attachment test reveals parser bug
+          likelihood: medium
+          impact: low
+          mitigation: If the test reveals incorrect behavior, Agent D should document it as a known issue rather than fixing the parser (which is Agent C's file).
+critic_report:
+    verdict: PASS
+    agent_reviews:
+        A:
+            agent_id: A
+            verdict: PASS
+        B:
+            agent_id: B
+            verdict: PASS
+        C:
+            agent_id: C
+            verdict: PASS
+    summary: 'All 3 Wave 1 agent briefs verified against codebase. Agent A: all 4 Go parser struct names (GoBuildParser, GoTestParser, GoVetParser, GolangciLintParser) confirmed in go_parsers.go. The unused _ = i at line 163 with loop var i at line 143 confirmed; i has no other use in function body. Agent B: all 3 JS parser struct names (TscParser, EslintParser, NpmTestParser) confirmed in js_parsers.go. The _ = currentTest line at 295 confirmed present; currentTest IS used at lines 252 and 288 making the suppression unnecessary. ASCII dash separators at lines 12-13, 56-57, 170-171, 178-179 confirmed. Agent C: all 3 Python parser struct names (PytestParser, MypyParser, RuffParser) confirmed in python_parsers.go. Pointer-to-slice pattern at lines 129 and 154 confirmed. Declaration at line 66, nil checks at lines 83, 95, 137, 161 confirmed. Unused _ = i at line 70 confirmed. Register() signature in registry.go takes Parser interface, confirmed. init() pattern in format_parsers.go lines 9-14 confirmed as the canonical registration pattern. No parser name collisions between format_parsers (gofmt, prettier-format, ruff-format, cargo-fmt) and the new registrations (go-build, go-test, go-vet, golangci-lint, tsc, eslint, npm-test, pytest, mypy, ruff).'
+    reviewed_at: "2026-04-01T15:17:19Z"
+    issue_count: 0
+state: REVIEWED
+injection_method: hook

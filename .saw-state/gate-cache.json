@@ -2196,6 +2196,18 @@
         "cached_at": "2026-03-31T15:30:54.697073-07:00"
       }
     },
+    "61e3d07790e76c812a72f2bb8cfed2d2": {
+      "lint": {
+        "gate_type": "lint",
+        "command": "go vet ./pkg/codereview/... ./cmd/sawtools/...",
+        "passed": true,
+        "exit_code": 0,
+        "stdout": "",
+        "stderr": "",
+        "from_cache": true,
+        "cached_at": "2026-04-01T01:50:20.92291-07:00"
+      }
+    },
     "6214fbb3ee1e35918c5c9e9ba503fc4d": {
       "test": {
         "gate_type": "test",
@@ -3648,6 +3660,18 @@
         "cached_at": "2026-03-31T20:56:54.823191-07:00"
       }
     },
+    "a2476b1513c2d4bb770090a507f07e17": {
+      "test": {
+        "gate_type": "test",
+        "command": "go test ./pkg/codereview/... ./cmd/sawtools/...",
+        "passed": true,
+        "exit_code": 0,
+        "stdout": "ok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/codereview\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/cmd/sawtools\t(cached)\n",
+        "stderr": "",
+        "from_cache": true,
+        "cached_at": "2026-04-01T01:54:15.273245-07:00"
+      }
+    },
     "a24c1f3b8f6ab1b396edddcdabc247c1": {
       "lint": {
         "gate_type": "lint",
@@ -4114,6 +4138,18 @@
         "stderr": "# github.com/blackwell-systems/scout-and-wave-go/pkg/protocol\npkg/protocol/program_tier_prepare.go:127:70: not enough arguments in call to CreateProgramWorktrees\n\thave (string, int, string)\n\twant (string, int, string, *slog.Logger)\n",
         "from_cache": true,
         "cached_at": "2026-03-30T10:53:07.743222-07:00"
+      }
+    },
+    "b31f157713d017e6e6268e5ad20acc47": {
+      "test": {
+        "gate_type": "test",
+        "command": "go test ./pkg/codereview/... ./cmd/sawtools/...",
+        "passed": true,
+        "exit_code": 0,
+        "stdout": "ok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/codereview\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/cmd/sawtools\t2.102s\n",
+        "stderr": "",
+        "from_cache": true,
+        "cached_at": "2026-04-01T01:50:24.331432-07:00"
       }
     },
     "b3693c5f8bc7d9728cdfbfe7867885fe": {
@@ -4596,6 +4632,18 @@
         "cached_at": "2026-04-01T00:22:47.94724-07:00"
       }
     },
+    "c43de05b75aa41d17aacff667d367612": {
+      "build": {
+        "gate_type": "build",
+        "command": "go build ./...",
+        "passed": true,
+        "exit_code": 0,
+        "stdout": "",
+        "stderr": "",
+        "from_cache": true,
+        "cached_at": "2026-04-01T01:54:14.10895-07:00"
+      }
+    },
     "c4b84ecf2374cd71ec636811a638347f": {
       "test": {
         "gate_type": "test",
@@ -4800,6 +4848,18 @@
         "cached_at": "2026-03-26T02:49:26.891089-07:00"
       }
     },
+    "c92160d8060b5d54fb2d347328aa0336": {
+      "build": {
+        "gate_type": "build",
+        "command": "go build ./...",
+        "passed": true,
+        "exit_code": 0,
+        "stdout": "",
+        "stderr": "",
+        "from_cache": true,
+        "cached_at": "2026-04-01T01:50:20.376161-07:00"
+      }
+    },
     "c9bf9be1f4c43cd054349e360231c47d": {
       "lint": {
         "gate_type": "lint",
@@ -4870,6 +4930,18 @@
         "stderr": "",
         "from_cache": true,
         "cached_at": "2026-03-26T11:39:53.801351-07:00"
+      }
+    },
+    "cae965fc14d9e5f5042a1effbc3f80f6": {
+      "lint": {
+        "gate_type": "lint",
+        "command": "go vet ./pkg/codereview/... ./cmd/sawtools/...",
+        "passed": true,
+        "exit_code": 0,
+        "stdout": "",
+        "stderr": "",
+        "from_cache": true,
+        "cached_at": "2026-04-01T01:54:14.662764-07:00"
       }
     },
     "caf369c15685744b273e63fa55871e86": {
