@@ -7,6 +7,12 @@ import (
 	"strings"
 )
 
+var (
+	headerPattern   = regexp.MustCompile(`(?m)^##\s+([A-Za-z0-9_-]+):\s*(.+)$`)
+	locationPattern = regexp.MustCompile(`(?m)^Location:\s*(.+)$`)
+	plainPattern    = regexp.MustCompile(`^([A-Za-z0-9_-]+):\s*([^|]+)\|\s*(.+)$`)
+)
+
 // AnalyzeSuitability is a convenience wrapper for engine integration.
 // It parses requirements from the given file and returns suitability results.
 // If requirementsFile is empty or doesn't exist, returns nil result (no error).
@@ -63,8 +69,6 @@ func ParseRequirements(content string) ([]Requirement, error) {
 	// Pattern 1: Markdown headers with "Location:" field
 	// ## F1: Description
 	// Location: path/to/file.go
-	headerPattern := regexp.MustCompile(`(?m)^##\s+([A-Za-z0-9_-]+):\s*(.+)$`)
-	locationPattern := regexp.MustCompile(`(?m)^Location:\s*(.+)$`)
 
 	lines := strings.Split(content, "\n")
 
@@ -95,21 +99,17 @@ func ParseRequirements(content string) ([]Requirement, error) {
 				}
 			}
 
-			// Only add requirement if it has at least one file location
-			if len(files) > 0 {
-				requirements = append(requirements, Requirement{
-					ID:          id,
-					Description: description,
-					Files:       files,
-				})
-			}
+			requirements = append(requirements, Requirement{
+				ID:          id,
+				Description: description,
+				Files:       files, // may be nil if no Location found
+			})
 		}
 	}
 
 	// Pattern 2: Plain text format (fallback)
 	// F1: Description | path/to/file.go
 	if len(requirements) == 0 {
-		plainPattern := regexp.MustCompile(`^([A-Za-z0-9_-]+):\s*([^|]+)\|\s*(.+)$`)
 		for _, line := range lines {
 			line = strings.TrimSpace(line)
 			if matches := plainPattern.FindStringSubmatch(line); matches != nil {
