@@ -1,3 +1,4 @@
+completion_date: "2026-03-31"
 title: Fix bugs and quality issues in pkg/hooks
 feature_slug: hooks-bug-fixes
 verdict: SUITABLE
@@ -423,6 +424,7 @@ waves:
           files:
             - pkg/hooks/scout_boundaries.go
             - pkg/hooks/scout_boundaries_test.go
+      base_commit: 66cbdc929a082c87a0e2afd88d3b7cb70b024cf4
 quality_gates:
     level: standard
     gates:
@@ -435,6 +437,30 @@ quality_gates:
         - type: test
           command: go test ./pkg/hooks/...
           required: true
+completion_reports:
+    A:
+        status: complete
+        branch: saw/hooks-bug-fixes/wave1-agent-A
+        commit: 2fcaa51
+        files_changed:
+            - pkg/hooks/prelaunch_gate.go
+            - pkg/hooks/prelaunch_gate_test.go
+        verification: PASS
+        notes: All 6 bugs fixed. 16 TestPreLaunchGate tests pass. protocol.Validate called once (Bug 2); warnings separated from errors (Bug 3); E37Required used for critic threshold (Bug 1); checkWaveExists reports specific agentID completion (Bug 6); fmt.Sprintf no-op removed and fmt import dropped (Bug 7); git setup errors checked with t.Fatalf in WorktreeBranchMismatch test (Bug 8).
+    B:
+        status: complete
+        branch: saw/hooks-bug-fixes/wave1-agent-B
+        commit: 8d0ba96
+        files_changed:
+            - pkg/hooks/scout_boundaries.go
+            - pkg/hooks/scout_boundaries_test.go
+        tests_added:
+            - TestIsValidScoutPath/Absolute_path_valid
+            - TestIsValidScoutPath/Absolute_path_deep
+            - TestValidateScoutWrites/File_under_docs_still_flagged_when_expectedIMPLPath_is_outside_docs/IMPL
+            - TestValidateScoutWrites/Any_IMPL_doc_in_docs/IMPL_is_allowed_even_if_not_expectedIMPLPath
+        verification: PASS
+        notes: 'Bug 4: IsValidScoutPath now uses path component matching (filepath.Base twice) instead of string equality, correctly handling both relative and absolute paths. Bug 5: Inline three-condition check in Walk callback replaced with IsValidScoutPath call; unused dir/base locals removed. Bug 9: Two new subtests added for expectedIMPLPath-outside-docs/IMPL and any-IMPL-doc-in-docs/IMPL scenarios. All 7 TestValidateScoutWrites subtests and all 12 TestIsValidScoutPath subtests pass.'
 pre_mortem:
     overall_risk: low
     rows:
@@ -485,5 +511,5 @@ pre_mortem:
             The test is structurally correct: 3 agents in wave 1 triggers E37Required.
             No mitigation needed. The existing TestPreLaunchGate_CriticRequired test passes
             with both the old code and the new code for this case.
-state: "REVIEWED"
+state: COMPLETE
 injection_method: hook
