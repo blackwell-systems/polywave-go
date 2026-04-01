@@ -55,9 +55,7 @@ func ValidateScoutWrites(repoPath, expectedIMPLPath string, startTime time.Time)
 		}
 
 		// Check if it's a valid IMPL doc in docs/IMPL/
-		dir := filepath.Dir(relPath)
-		base := filepath.Base(relPath)
-		if dir == "docs/IMPL" && strings.HasPrefix(base, "IMPL-") && strings.HasSuffix(base, ".yaml") {
+		if IsValidScoutPath(relPath) {
 			return nil // Allowed
 		}
 
@@ -101,11 +99,19 @@ func ValidateScoutWrites(repoPath, expectedIMPLPath string, startTime time.Time)
 
 // IsValidScoutPath checks if a file path is within Scout's write boundaries.
 // Used for pre-execution validation (CLI hooks) and testing.
+// Accepts both relative ("docs/IMPL/IMPL-x.yaml") and absolute paths.
 func IsValidScoutPath(filePath string) bool {
 	normalized := filepath.Clean(filePath)
 	dir := filepath.Dir(normalized)
 	base := filepath.Base(normalized)
 
-	// Allow only docs/IMPL/IMPL-*.yaml (not subdirectories)
-	return dir == "docs/IMPL" && strings.HasPrefix(base, "IMPL-") && strings.HasSuffix(base, ".yaml")
+	// Validate filename
+	if !strings.HasPrefix(base, "IMPL-") || !strings.HasSuffix(base, ".yaml") {
+		return false
+	}
+	// Validate directory: must end with "docs/IMPL" (handles both relative and absolute paths)
+	// Use filepath.Base twice to check the last two path components.
+	implDir := filepath.Base(dir)              // must be "IMPL"
+	docsDir := filepath.Base(filepath.Dir(dir)) // must be "docs"
+	return implDir == "IMPL" && docsDir == "docs"
 }
