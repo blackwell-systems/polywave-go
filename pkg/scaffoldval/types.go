@@ -26,11 +26,16 @@ func NewValidationResult() *ValidationResult {
 	}
 }
 
-// OverallStatus returns PASS if all steps passed, FAIL if any failed
+// OverallStatus returns FAIL if any step failed, SKIP if all steps are skipped,
+// or PASS if at least one step passed and none failed.
 func (r *ValidationResult) OverallStatus() string {
 	if r.Syntax.Status == "FAIL" || r.Imports.Status == "FAIL" ||
 		r.TypeReferences.Status == "FAIL" || r.Build.Status == "FAIL" {
 		return "FAIL"
 	}
-	return "PASS"
+	if r.Syntax.Status == "PASS" || r.Imports.Status == "PASS" ||
+		r.TypeReferences.Status == "PASS" || r.Build.Status == "PASS" {
+		return "PASS"
+	}
+	return "SKIP"
 }
