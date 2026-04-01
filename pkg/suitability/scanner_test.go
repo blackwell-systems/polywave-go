@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
 )
 
 func TestScanPreImplementation_AllDone(t *testing.T) {
@@ -88,36 +90,38 @@ func TestAnotherFunc(t *testing.T) {
 		},
 	}
 
-	result, err := ScanPreImplementation(tmpDir, requirements)
-	if err != nil {
-		t.Fatalf("ScanPreImplementation failed: %v", err)
+	scanResult := ScanPreImplementation(tmpDir, requirements)
+	if scanResult.IsFatal() {
+		t.Fatalf("ScanPreImplementation failed: %v", scanResult.Errors)
 	}
 
-	if result.PreImplementation.TotalItems != 1 {
-		t.Errorf("expected TotalItems=1, got %d", result.PreImplementation.TotalItems)
+	data := scanResult.GetData()
+
+	if data.PreImplementation.TotalItems != 1 {
+		t.Errorf("expected TotalItems=1, got %d", data.PreImplementation.TotalItems)
 	}
 
-	if result.PreImplementation.Done != 1 {
-		t.Errorf("expected Done=1, got %d", result.PreImplementation.Done)
+	if data.PreImplementation.Done != 1 {
+		t.Errorf("expected Done=1, got %d", data.PreImplementation.Done)
 	}
 
-	if result.PreImplementation.Partial != 0 {
-		t.Errorf("expected Partial=0, got %d", result.PreImplementation.Partial)
+	if data.PreImplementation.Partial != 0 {
+		t.Errorf("expected Partial=0, got %d", data.PreImplementation.Partial)
 	}
 
-	if result.PreImplementation.Todo != 0 {
-		t.Errorf("expected Todo=0, got %d", result.PreImplementation.Todo)
+	if data.PreImplementation.Todo != 0 {
+		t.Errorf("expected Todo=0, got %d", data.PreImplementation.Todo)
 	}
 
-	if result.PreImplementation.TimeSavedMinutes != 7 {
-		t.Errorf("expected TimeSavedMinutes=7, got %d", result.PreImplementation.TimeSavedMinutes)
+	if data.PreImplementation.TimeSavedMinutes != 7 {
+		t.Errorf("expected TimeSavedMinutes=7, got %d", data.PreImplementation.TimeSavedMinutes)
 	}
 
-	if len(result.PreImplementation.ItemStatus) != 1 {
-		t.Fatalf("expected 1 item status, got %d", len(result.PreImplementation.ItemStatus))
+	if len(data.PreImplementation.ItemStatus) != 1 {
+		t.Fatalf("expected 1 item status, got %d", len(data.PreImplementation.ItemStatus))
 	}
 
-	item := result.PreImplementation.ItemStatus[0]
+	item := data.PreImplementation.ItemStatus[0]
 	if item.Status != "DONE" {
 		t.Errorf("expected status=DONE, got %s", item.Status)
 	}
@@ -220,31 +224,33 @@ func TestPartial(t *testing.T) {
 		{ID: "F3", Description: "Todo feature", Files: []string{"todo.go"}},
 	}
 
-	result, err := ScanPreImplementation(tmpDir, requirements)
-	if err != nil {
-		t.Fatalf("ScanPreImplementation failed: %v", err)
+	scanResult := ScanPreImplementation(tmpDir, requirements)
+	if scanResult.IsFatal() {
+		t.Fatalf("ScanPreImplementation failed: %v", scanResult.Errors)
 	}
 
-	if result.PreImplementation.TotalItems != 3 {
-		t.Errorf("expected TotalItems=3, got %d", result.PreImplementation.TotalItems)
+	data := scanResult.GetData()
+
+	if data.PreImplementation.TotalItems != 3 {
+		t.Errorf("expected TotalItems=3, got %d", data.PreImplementation.TotalItems)
 	}
 
-	if result.PreImplementation.Done != 1 {
-		t.Errorf("expected Done=1, got %d", result.PreImplementation.Done)
+	if data.PreImplementation.Done != 1 {
+		t.Errorf("expected Done=1, got %d", data.PreImplementation.Done)
 	}
 
-	if result.PreImplementation.Partial != 1 {
-		t.Errorf("expected Partial=1, got %d", result.PreImplementation.Partial)
+	if data.PreImplementation.Partial != 1 {
+		t.Errorf("expected Partial=1, got %d", data.PreImplementation.Partial)
 	}
 
-	if result.PreImplementation.Todo != 1 {
-		t.Errorf("expected Todo=1, got %d", result.PreImplementation.Todo)
+	if data.PreImplementation.Todo != 1 {
+		t.Errorf("expected Todo=1, got %d", data.PreImplementation.Todo)
 	}
 
 	// Time saved: 1 DONE * 7 + 1 PARTIAL * 3 = 10 minutes
 	expectedTime := 10
-	if result.PreImplementation.TimeSavedMinutes != expectedTime {
-		t.Errorf("expected TimeSavedMinutes=%d, got %d", expectedTime, result.PreImplementation.TimeSavedMinutes)
+	if data.PreImplementation.TimeSavedMinutes != expectedTime {
+		t.Errorf("expected TimeSavedMinutes=%d, got %d", expectedTime, data.PreImplementation.TimeSavedMinutes)
 	}
 }
 
@@ -257,30 +263,32 @@ func TestScanPreImplementation_AllTodo(t *testing.T) {
 		{ID: "F3", Description: "Missing feature 3", Files: []string{"missing3.go"}},
 	}
 
-	result, err := ScanPreImplementation(tmpDir, requirements)
-	if err != nil {
-		t.Fatalf("ScanPreImplementation failed: %v", err)
+	scanResult := ScanPreImplementation(tmpDir, requirements)
+	if scanResult.IsFatal() {
+		t.Fatalf("ScanPreImplementation failed: %v", scanResult.Errors)
 	}
 
-	if result.PreImplementation.Done != 0 {
-		t.Errorf("expected Done=0, got %d", result.PreImplementation.Done)
+	data := scanResult.GetData()
+
+	if data.PreImplementation.Done != 0 {
+		t.Errorf("expected Done=0, got %d", data.PreImplementation.Done)
 	}
 
-	if result.PreImplementation.Partial != 0 {
-		t.Errorf("expected Partial=0, got %d", result.PreImplementation.Partial)
+	if data.PreImplementation.Partial != 0 {
+		t.Errorf("expected Partial=0, got %d", data.PreImplementation.Partial)
 	}
 
-	if result.PreImplementation.Todo != 3 {
-		t.Errorf("expected Todo=3, got %d", result.PreImplementation.Todo)
+	if data.PreImplementation.Todo != 3 {
+		t.Errorf("expected Todo=3, got %d", data.PreImplementation.Todo)
 	}
 
 	// All TODO: no time saved
-	if result.PreImplementation.TimeSavedMinutes != 0 {
-		t.Errorf("expected TimeSavedMinutes=0, got %d", result.PreImplementation.TimeSavedMinutes)
+	if data.PreImplementation.TimeSavedMinutes != 0 {
+		t.Errorf("expected TimeSavedMinutes=0, got %d", data.PreImplementation.TimeSavedMinutes)
 	}
 
 	// Verify all items have correct status
-	for i, item := range result.PreImplementation.ItemStatus {
+	for i, item := range data.PreImplementation.ItemStatus {
 		if item.Status != "TODO" {
 			t.Errorf("item %d: expected status=TODO, got %s", i, item.Status)
 		}
@@ -543,10 +551,12 @@ func TestContainsTodoPatterns_StubFalsePositive(t *testing.T) {
 func TestParseRequirements_HeaderWithoutLocation(t *testing.T) {
 	content := "## F1: Add authentication handler\n\nSome description but no location field.\n"
 
-	reqs, err := ParseRequirements(content)
-	if err != nil {
-		t.Fatalf("ParseRequirements returned error: %v", err)
+	reqResult := ParseRequirements(content)
+	if reqResult.IsFatal() {
+		t.Fatalf("ParseRequirements returned error: %v", reqResult.Errors)
 	}
+
+	reqs := reqResult.GetData()
 
 	if len(reqs) != 1 {
 		t.Fatalf("expected 1 requirement, got %d", len(reqs))
@@ -559,6 +569,110 @@ func TestParseRequirements_HeaderWithoutLocation(t *testing.T) {
 
 	if len(req.Files) != 0 {
 		t.Errorf("expected Files to be nil/empty, got %v", req.Files)
+	}
+}
+
+// TestAnalyzeSuitability_EmptyFile verifies that an empty requirementsFile
+// returns success with a zero-initialized struct (not an error).
+func TestAnalyzeSuitability_EmptyFile(t *testing.T) {
+	tmpDir := t.TempDir()
+	analysisResult := AnalyzeSuitability("", tmpDir)
+	if !analysisResult.IsSuccess() {
+		t.Errorf("expected success, got %s with errors: %v", analysisResult.Code, analysisResult.Errors)
+	}
+	data := analysisResult.GetData()
+	if data.PreImplementation.TotalItems != 0 {
+		t.Errorf("expected 0 items, got %d", data.PreImplementation.TotalItems)
+	}
+}
+
+// TestAnalyzeSuitability_FileNotFound verifies that a missing requirements file
+// returns success (not error), treating it as "no requirements to check".
+func TestAnalyzeSuitability_FileNotFound(t *testing.T) {
+	tmpDir := t.TempDir()
+	nonexistentFile := filepath.Join(tmpDir, "nonexistent-requirements.md")
+	analysisResult := AnalyzeSuitability(nonexistentFile, tmpDir)
+	if !analysisResult.IsSuccess() {
+		t.Errorf("expected success for missing file, got %s with errors: %v", analysisResult.Code, analysisResult.Errors)
+	}
+	data := analysisResult.GetData()
+	if data.PreImplementation.TotalItems != 0 {
+		t.Errorf("expected 0 items, got %d", data.PreImplementation.TotalItems)
+	}
+}
+
+// TestAnalyzeSuitability_EmptyRequirements verifies that a requirements file
+// with no parseable requirements returns success with empty results.
+func TestAnalyzeSuitability_EmptyRequirements(t *testing.T) {
+	tmpDir := t.TempDir()
+	reqFile := filepath.Join(tmpDir, "requirements.md")
+	emptyContent := "# Requirements Document\n\nNo actual requirements here.\n"
+	if err := os.WriteFile(reqFile, []byte(emptyContent), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	analysisResult := AnalyzeSuitability(reqFile, tmpDir)
+	if !analysisResult.IsSuccess() {
+		t.Errorf("expected success for empty requirements, got %s with errors: %v", analysisResult.Code, analysisResult.Errors)
+	}
+	data := analysisResult.GetData()
+	if data.PreImplementation.TotalItems != 0 {
+		t.Errorf("expected 0 items, got %d", data.PreImplementation.TotalItems)
+	}
+}
+
+// TestParseRequirements_HeaderWithLocation verifies that markdown parsing
+// correctly extracts the Location field into the Files slice.
+func TestParseRequirements_HeaderWithLocation(t *testing.T) {
+	content := `## F1: Add authentication handler
+
+Some description of the feature.
+
+**Location:** pkg/auth/handler.go, pkg/auth/middleware.go
+
+More details here.
+
+## F2: Add database migration
+
+Another requirement.
+
+**Location:** migrations/001_init.sql
+`
+
+	reqResult := ParseRequirements(content)
+	if reqResult.IsFatal() {
+		t.Fatalf("ParseRequirements failed: %v", reqResult.Errors)
+	}
+
+	reqs := reqResult.GetData()
+
+	if len(reqs) != 2 {
+		t.Fatalf("expected 2 requirements, got %d", len(reqs))
+	}
+
+	// Check F1
+	if reqs[0].ID != "F1" {
+		t.Errorf("expected ID=F1, got %q", reqs[0].ID)
+	}
+	if len(reqs[0].Files) != 2 {
+		t.Fatalf("expected 2 files for F1, got %d", len(reqs[0].Files))
+	}
+	if reqs[0].Files[0] != "pkg/auth/handler.go" {
+		t.Errorf("expected first file='pkg/auth/handler.go', got %q", reqs[0].Files[0])
+	}
+	if reqs[0].Files[1] != "pkg/auth/middleware.go" {
+		t.Errorf("expected second file='pkg/auth/middleware.go', got %q", reqs[0].Files[1])
+	}
+
+	// Check F2
+	if reqs[1].ID != "F2" {
+		t.Errorf("expected ID=F2, got %q", reqs[1].ID)
+	}
+	if len(reqs[1].Files) != 1 {
+		t.Fatalf("expected 1 file for F2, got %d", len(reqs[1].Files))
+	}
+	if reqs[1].Files[0] != "migrations/001_init.sql" {
+		t.Errorf("expected file='migrations/001_init.sql', got %q", reqs[1].Files[0])
 	}
 }
 
