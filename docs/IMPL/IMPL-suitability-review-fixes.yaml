@@ -1,0 +1,535 @@
+title: Fix pkg/suitability review findings
+feature_slug: suitability-review-fixes
+verdict: SUITABLE
+suitability_assessment: |
+    All five suitability gate criteria pass:
+
+    1. **File decomposition:** Work spans 8 distinct files (scanner.go, wrapper.go,
+       types.go, analyze_suitability_cmd.go, analyze_suitability_cmd_test.go, runner.go,
+       scanner_test.go, codes.go) with 3 agents modifying disjoint file sets. Agent A
+       owns scanner.go+wrapper.go+codes.go+runner.go (signature changes + engine caller),
+       Agent B owns analyze_suitability_cmd.go+analyze_suitability_cmd_test.go
+       (deduplication fix + test updates), Agent C owns scanner_test.go+types.go (test
+       coverage + doc comments). No conflicts.
+
+    2. **Investigation-first items:** No unknowns. All 13 findings are documented with
+       exact line numbers, root causes, and fix requirements. No crash analysis or race
+       condition reproduction needed.
+
+    3. **Interface discoverability:** Return type changes are fully specified
+       (result.Result[SuitabilityResult], result.Result[[]Requirement]). Error code
+       additions follow existing Code* naming pattern in pkg/result/codes.go. No
+       cross-agent coordination needed — changes are additive (error codes) and
+       within-package (signature changes).
+
+    4. **Pre-implementation status check:** All findings are TODO — no partial or done
+       items. Codebase review confirms:
+       - scanner.go/wrapper.go still return (*T, error) patterns
+       - fmt.Errorf() calls still present (9 total)
+       - cmd parseRequirements() still duplicates wrapper.ParseRequirements()
+       - ItemStatus.Missing still initialized as nil in scanner.go:79
+       - Tests for wrapper functions missing
+
+    5. **Parallelization value check:** Agents are independent (Wave 1 only), but
+       parallelization benefit is clear:
+       - Build/test cycle: ~5-8s for go test ./pkg/suitability/... (not trivial)
+       - Files per agent: Agent A owns 2 files, Agent B owns 1, Agent C owns 2 (avg 1.7)
+       - Task complexity: HIGH — signature changes cascade to callers, test additions
+         require understanding classification logic, error conformance requires adding
+         6 new error codes + converting 9 call sites
+       - Agent independence: All agents modify different files (disjoint ownership)
+
+       Estimated times:
+       - Scout phase: ~8 min (reading 8 files, mapping error patterns, defining contracts)
+       - Agent execution: ~18 min (3 agents × 6 min avg, full parallel)
+       - Merge & verification: ~4 min (repo-wide tests, build, validate signatures)
+       Total SAW time: ~30 min
+
+       Sequential baseline: ~42 min (3 agents × ~12 min avg sequential time + ~6 min overhead)
+       Time savings: ~12 min (29% faster)
+
+       Recommendation: Clear speedup. The signature changes require careful coordination
+       (agent must update both scanner.go and wrapper.go atomically) — isolation prevents
+       mid-change errors that would occur if done sequentially.
+test_command: go test ./pkg/suitability/...
+lint_command: go vet ./pkg/suitability/...
+file_ownership:
+    - file: pkg/suitability/scanner.go
+      agent: A
+      wave: 1
+      action: modify
+    - file: pkg/suitability/wrapper.go
+      agent: A
+      wave: 1
+      action: modify
+    - file: pkg/result/codes.go
+      agent: A
+      wave: 1
+      action: modify
+    - file: cmd/sawtools/analyze_suitability_cmd.go
+      agent: B
+      wave: 1
+      action: modify
+    - file: cmd/sawtools/analyze_suitability_cmd_test.go
+      agent: B
+      wave: 1
+      action: modify
+    - file: pkg/engine/runner.go
+      agent: A
+      wave: 1
+      action: modify
+    - file: pkg/suitability/scanner_test.go
+      agent: C
+      wave: 1
+      action: modify
+    - file: pkg/suitability/types.go
+      agent: C
+      wave: 1
+      action: modify
+interface_contracts:
+    - name: ScanPreImplementation
+      description: Migrate return type from (*SuitabilityResult, error) to result.Result[SuitabilityResult]
+      definition: |
+        func ScanPreImplementation(repoRoot string, requirements []Requirement) result.Result[SuitabilityResult]
+      location: pkg/suitability/scanner.go
+    - name: AnalyzeSuitability
+      description: Migrate return type from (*SuitabilityResult, error) to result.Result[SuitabilityResult]
+      definition: |
+        func AnalyzeSuitability(requirementsFile string, repoRoot string) result.Result[SuitabilityResult]
+      location: pkg/suitability/wrapper.go
+    - name: ParseRequirements
+      description: Migrate return type from ([]Requirement, error) to result.Result[[]Requirement]
+      definition: |
+        func ParseRequirements(content string) result.Result[[]Requirement]
+      location: pkg/suitability/wrapper.go
+    - name: Suitability error codes
+      description: Add 6 new error codes to pkg/result/codes.go for suitability operations
+      definition: |
+        const (
+          CodeSuitabilityRepoRootEmpty       = "S001_REPO_ROOT_EMPTY"
+          CodeSuitabilityClassifyFailed      = "S002_CLASSIFY_FAILED"
+          CodeSuitabilityFileStatFailed      = "S003_FILE_STAT_FAILED"
+          CodeSuitabilityFileReadFailed      = "S004_FILE_READ_FAILED"
+          CodeSuitabilityRequirementsRead    = "S005_REQUIREMENTS_READ"
+          CodeSuitabilityRequirementsParse   = "S006_REQUIREMENTS_PARSE"
+        )
+      location: pkg/result/codes.go
+waves:
+    - number: 1
+      agents:
+        - id: A
+          task: |
+            ## What to Implement
+
+            Migrate pkg/suitability to result.Result[T] pattern and add conforming error codes.
+
+            **Signature changes (3 functions):**
+
+            1. `scanner.go:25` — `ScanPreImplementation()`
+               - FROM: `func ScanPreImplementation(repoRoot string, requirements []Requirement) (*SuitabilityResult, error)`
+               - TO: `func ScanPreImplementation(repoRoot string, requirements []Requirement) result.Result[SuitabilityResult]`
+
+            2. `wrapper.go:19` — `AnalyzeSuitability()`
+               - FROM: `func AnalyzeSuitability(requirementsFile string, repoPath string) (*SuitabilityResult, error)`
+               - TO: `func AnalyzeSuitability(requirementsFile string, repoPath string) result.Result[SuitabilityResult]`
+
+            3. `wrapper.go:66` — `ParseRequirements()`
+               - FROM: `func ParseRequirements(content string) ([]Requirement, error)`
+               - TO: `func ParseRequirements(content string) result.Result[[]Requirement]`
+
+            **Error code additions (pkg/result/codes.go):**
+
+            Add these 6 constants to the file (insert after existing T001-T099 tool error codes, before the closing comment):
+
+            ```go
+            // Suitability error codes (S001-S099)
+            const (
+              CodeSuitabilityRepoRootEmpty       = "S001_REPO_ROOT_EMPTY"
+              CodeSuitabilityClassifyFailed      = "S002_CLASSIFY_FAILED"
+              CodeSuitabilityFileStatFailed      = "S003_FILE_STAT_FAILED"
+              CodeSuitabilityFileReadFailed      = "S004_FILE_READ_FAILED"
+              CodeSuitabilityRequirementsRead    = "S005_REQUIREMENTS_READ"
+              CodeSuitabilityRequirementsParse   = "S006_REQUIREMENTS_PARSE"
+            )
+            ```
+
+            **Error handling migration (9 fmt.Errorf calls):**
+
+            Replace all fmt.Errorf() calls with result.SAWError using the new codes:
+
+            - `scanner.go:27` (repoRoot empty) → result.NewFailure with S001_REPO_ROOT_EMPTY
+            - `scanner.go:40` (classify failed) → result.NewFailure with S002_CLASSIFY_FAILED
+            - `scanner.go:175` (file read failed) → result.NewFailure with S004_FILE_READ_FAILED
+            - `wrapper.go:28` (file stat failed) → result.NewFailure with S003_FILE_STAT_FAILED
+            - `wrapper.go:34` (requirements read) → result.NewFailure with S005_REQUIREMENTS_READ
+            - `wrapper.go:40` (requirements parse) → result.NewFailure with S006_REQUIREMENTS_PARSE
+            - `wrapper.go:50` (scan failed) → result.NewFailure with S002_CLASSIFY_FAILED
+
+            **Bug fix: ItemStatus.Missing initialization (scanner.go:79)**
+
+            Change `return ItemStatus{}` to `return ItemStatus{Missing: []string{}}` to ensure slice is empty, not nil.
+
+            **Bug fix: AnalyzeSuitability triple nullability (wrapper.go:21,26,44)**
+
+            Current code returns (nil, nil) for three distinct conditions. Replace with:
+            - `requirementsFile == ""` → return result.NewSuccess(SuitabilityResult{}) with zero-initialized struct
+            - File doesn't exist → return result.NewSuccess(SuitabilityResult{}) with zero-initialized struct
+            - Empty requirements → return result.NewSuccess(SuitabilityResult{}) with zero-initialized struct
+
+            All three cases are success states (no requirements to scan), not errors.
+
+            **Signature fix: ParseRequirements always returns nil error (wrapper.go:131)**
+
+            The function declares error return but always returns nil. Remove the error return entirely
+            (part of signature migration to result.Result[[]Requirement]). Change line 131 from:
+            ```go
+            return requirements, nil
+            ```
+            to:
+            ```go
+            return result.NewSuccess(requirements)
+            ```
+
+            ## Interface Contracts
+
+            Follow the result.Result[T] pattern from pkg/notify/slack.go:88:
+            - Success: `return result.NewSuccess(data)`
+            - Failure: `return result.NewFailure[T]([]result.SAWError{...})`
+            - Partial: `return result.NewPartial(data, []result.SAWError{warnings})`
+
+            Error construction:
+            ```go
+            result.SAWError{
+              Code:     result.CodeSuitabilityRepoRootEmpty,  // use new constants
+              Message:  "repo root cannot be empty",
+              Severity: "fatal",
+            }
+            ```
+
+            Wrap existing errors with `.WithCause(err)`:
+            ```go
+            result.NewFailure[SuitabilityResult]([]result.SAWError{
+              result.SAWError{
+                Code:     result.CodeSuitabilityFileReadFailed,
+                Message:  fmt.Sprintf("failed to read file %s", filePath),
+                Severity: "fatal",
+              }.WithCause(err),
+            })
+            ```
+
+            ## Tests
+
+            No new tests needed — Agent C will add wrapper function tests in scanner_test.go.
+
+            Your changes will break existing tests temporarily (signature changes), but Agent C
+            will fix them when adding comprehensive wrapper coverage.
+
+            ## Verification Gate
+
+            ```bash
+            cd /Users/dayna.blackwell/workspace/code/scout-and-wave-go
+            go build ./pkg/suitability/... && \
+            go vet ./pkg/suitability/... && \
+            go test ./pkg/suitability/...
+            ```
+
+            Pass criteria: All commands exit 0. Tests will fail initially (signature changes),
+            but must pass after all agents complete.
+
+            **Engine caller update (pkg/engine/runner.go:1177):**
+
+            Update the AnalyzeSuitability() caller in runner.go to handle the new signature:
+
+            Current (line 1177-1181):
+            ```go
+            suitResult, err := suitability.AnalyzeSuitability(requirementsFile, repoRoot)
+            if err != nil {
+                logger.Error("suitability analysis failed", "error", err)
+            }
+            if suitResult != nil {
+            ```
+
+            Change to:
+            ```go
+            suitResult := suitability.AnalyzeSuitability(requirementsFile, repoRoot)
+            if suitResult.IsFatal() {
+                logger.Error("suitability analysis failed", "error", suitResult.Errors[0])
+            }
+            if suitResult.IsSuccess() {
+                data := suitResult.GetData()
+            ```
+
+            And update line 1182 onwards to use `data.PreImplementation` instead of `suitResult.PreImplementation`.
+
+            ## Constraints
+
+            - Do NOT change classifyRequirement() or ClassifyFile() signatures — they are internal helpers
+            - Do NOT export classifyRequirement() — review finding 10 is LOW priority, not in scope
+            - Import result package: `"github.com/blackwell-systems/scout-and-wave-go/pkg/result"`
+            - Preserve all existing comments and logic — only change return types and error handling
+          files:
+            - pkg/suitability/scanner.go
+            - pkg/suitability/wrapper.go
+            - pkg/result/codes.go
+            - pkg/engine/runner.go
+        - id: B
+          task: |
+            ## What to Implement
+
+            Fix HIGH priority code duplication between cmd and wrapper (89% similarity).
+
+            **Current state:**
+            - `cmd/sawtools/analyze_suitability_cmd.go:102-174` has `parseRequirements()` function
+            - `pkg/suitability/wrapper.go:66-132` has `ParseRequirements()` function
+            - The cmd version duplicates the wrapper logic instead of calling it
+
+            **Fix:**
+
+            1. Delete the entire `parseRequirements()` function (lines 102-174) from analyze_suitability_cmd.go
+            2. Update line 45 from:
+               ```go
+               requirements, err := parseRequirements(string(reqData))
+               ```
+               to:
+               ```go
+               reqResult := suitability.ParseRequirements(string(reqData))
+               if reqResult.IsFatal() {
+                 return fmt.Errorf("parse requirements: %v", reqResult.Errors[0])
+               }
+               requirements := reqResult.GetData()
+               ```
+
+            3. Update line 62 to handle new signature:
+               ```go
+               result := suitability.ScanPreImplementation(repoRootFlag, requirements)
+               if result.IsFatal() {
+                 return fmt.Errorf("scan pre-implementation: %v", result.Errors[0])
+               }
+               ```
+
+            4. Update line 68 to extract data:
+               ```go
+               data, err = json.MarshalIndent(result.GetData(), "", "  ")
+               ```
+
+            **Fix test file (cmd/sawtools/analyze_suitability_cmd_test.go):**
+
+            The test file calls the deleted parseRequirements() function 4 times:
+            - Line 197
+            - Line 233
+            - Line 264
+            - Line 282
+
+            Update all 4 call sites from:
+            ```go
+            requirements, err := parseRequirements(content)
+            ```
+            to:
+            ```go
+            reqResult := suitability.ParseRequirements(content)
+            if reqResult.IsFatal() {
+                t.Fatalf("parse requirements: %v", reqResult.Errors)
+            }
+            requirements := reqResult.GetData()
+            ```
+
+            **Rationale:**
+
+            The cmd function was added after wrapper.ParseRequirements() already existed.
+            It duplicated the logic to avoid dealing with the wrapper's error return type.
+            Agent A is migrating wrapper to result.Result[T], which makes calling it from
+            cmd simpler. Delete the duplication entirely — always call the wrapper.
+
+            The test file also called the duplicated function, so it must be updated too.
+
+            ## Interface Contracts
+
+            Agent A is changing wrapper.ParseRequirements() signature:
+            - FROM: `([]Requirement, error)`
+            - TO: `result.Result[[]Requirement]`
+
+            And wrapper.ScanPreImplementation() signature:
+            - FROM: `(*SuitabilityResult, error)`
+            - TO: `result.Result[SuitabilityResult]`
+
+            Use these patterns:
+            - Check failure: `if result.IsFatal() { ... }`
+            - Extract data: `requirements := result.GetData()`
+
+            ## Tests
+
+            No new tests needed — cmd tests already call ScanPreImplementation via the RunE handler.
+
+            ## Verification Gate
+
+            ```bash
+            cd /Users/dayna.blackwell/workspace/code/scout-and-wave-go
+            go build ./cmd/sawtools/... && \
+            go vet ./cmd/sawtools/... && \
+            go test ./cmd/sawtools/...
+            ```
+
+            Pass criteria: All commands exit 0. Build confirms deduplication succeeded.
+
+            ## Constraints
+
+            - Do NOT modify the cobra command structure (flags, RunE, etc.)
+            - Do NOT change the JSON marshaling logic (lines 68-80)
+            - Import result package if not already present
+            - Preserve all existing comments and error messages
+          files:
+            - cmd/sawtools/analyze_suitability_cmd.go
+            - cmd/sawtools/analyze_suitability_cmd_test.go
+        - id: C
+          task: |
+            ## What to Implement
+
+            Add missing test coverage for wrapper functions and doc comments.
+
+            **Test additions (scanner_test.go):**
+
+            Add these 4 test functions after existing tests:
+
+            1. `TestAnalyzeSuitability_EmptyFile` — verify empty requirementsFile returns success with zero-initialized struct
+            2. `TestAnalyzeSuitability_FileNotFound` — verify missing file returns success (not error)
+            3. `TestAnalyzeSuitability_EmptyRequirements` — verify empty requirements returns success
+            4. `TestParseRequirements_HeaderWithLocation` — verify markdown parsing with Location field
+
+            Each test should:
+            - Use t.TempDir() for file setup
+            - Call the wrapper function (AnalyzeSuitability or ParseRequirements)
+            - Verify result.IsSuccess() is true
+            - Verify result.GetData() returns expected struct
+
+            Example test structure:
+            ```go
+            func TestAnalyzeSuitability_EmptyFile(t *testing.T) {
+              result := suitability.AnalyzeSuitability("", t.TempDir())
+              if !result.IsSuccess() {
+                t.Errorf("expected success, got %s", result.Code)
+              }
+              data := result.GetData()
+              if data.PreImplementation.TotalItems != 0 {
+                t.Errorf("expected 0 items, got %d", data.PreImplementation.TotalItems)
+              }
+            }
+            ```
+
+            **Doc comment addition (types.go:29):**
+
+            Add this doc comment above the Requirement type definition:
+
+            ```go
+            // Requirement represents a single item from an audit or requirements document.
+            // It contains an ID (e.g., "F1", "SEC-01"), a description of the requirement,
+            // and a list of files expected to implement it.
+            type Requirement struct {
+            ```
+
+            **Test update for signature changes:**
+
+            Update all existing test calls to ScanPreImplementation to handle new return type:
+            - FROM: `result, err := suitability.ScanPreImplementation(...)`
+            - TO: `scanResult := suitability.ScanPreImplementation(...)`
+            - Add: `if scanResult.IsFatal() { t.Fatalf("scan failed: %v", scanResult.Errors) }`
+            - Change: `result` references to `scanResult.GetData()`
+
+            Same pattern for ClassifyFile calls (no signature change, but consistency).
+
+            ## Interface Contracts
+
+            Agent A is changing three function signatures:
+            - `ScanPreImplementation()` returns `result.Result[SuitabilityResult]`
+            - `AnalyzeSuitability()` returns `result.Result[SuitabilityResult]`
+            - `ParseRequirements()` returns `result.Result[[]Requirement]`
+
+            All tests must use:
+            - `result.IsSuccess()` to check success
+            - `result.IsFatal()` to check failure
+            - `result.GetData()` to extract data
+
+            ## Tests
+
+            Your tests ARE the deliverable. Verify they pass:
+
+            ```bash
+            cd /Users/dayna.blackwell/workspace/code/scout-and-wave-go
+            go test ./pkg/suitability/... -v -run "TestAnalyzeSuitability|TestParseRequirements"
+            ```
+
+            ## Verification Gate
+
+            ```bash
+            cd /Users/dayna.blackwell/workspace/code/scout-and-wave-go
+            go build ./pkg/suitability/... && \
+            go vet ./pkg/suitability/... && \
+            go test ./pkg/suitability/...
+            ```
+
+            Pass criteria: All commands exit 0. Test coverage for wrapper functions now exists.
+
+            ## Constraints
+
+            - Do NOT modify existing test logic (TestScanPreImplementation_AllDone, etc.) beyond signature updates
+            - Do NOT add tests for internal helpers (classifyRequirement, aggregateFileStatuses)
+            - Do NOT modify types.go beyond adding the doc comment
+            - Import result package: `"github.com/blackwell-systems/scout-and-wave-go/pkg/result"`
+          files:
+            - pkg/suitability/scanner_test.go
+            - pkg/suitability/types.go
+quality_gates:
+    level: standard
+    gates:
+        - type: build
+          command: go build ./...
+          required: true
+        - type: lint
+          command: go vet ./pkg/suitability/... ./cmd/sawtools/... ./pkg/engine/...
+          required: true
+        - type: test
+          command: go test ./pkg/suitability/... ./cmd/sawtools/...
+          required: true
+pre_mortem:
+    overall_risk: low
+    rows:
+        - scenario: Agent A signature changes break existing tests before Agent C fixes them
+          likelihood: high
+          impact: low
+          mitigation: Expected — tests will fail mid-wave. Agent C updates all test call sites to new signatures. Full test suite passes post-merge.
+        - scenario: Agent B deletes parseRequirements() but test file calls it 4 times
+          likelihood: low
+          impact: low
+          mitigation: RESOLVED by critic gate — added analyze_suitability_cmd_test.go to Agent B's ownership. Agent B now fixes all 4 test call sites when deduplicating.
+        - scenario: Caller in pkg/engine/runner.go breaks due to signature change
+          likelihood: low
+          impact: low
+          mitigation: RESOLVED by critic gate — added pkg/engine/runner.go to Agent A's ownership. Agent A updates the caller when changing signatures. Quality gates now run `go build ./...` to catch repo-wide breakage.
+        - scenario: Error code range S001-S099 conflicts with future additions
+          likelihood: low
+          impact: low
+          mitigation: pkg/result/codes.go has clear range comments (V001-V099, W001-W099, etc.). S001-S099 reserved for suitability. No conflicts expected.
+        - scenario: ParseRequirements signature change breaks cmd after Agent B deduplicates
+          likelihood: low
+          impact: low
+          mitigation: Agent B updates cmd to call new signature — no gap. Both agents complete in same wave, merge is atomic.
+critic_report:
+    verdict: PASS
+    agent_reviews:
+        A:
+            agent_id: A
+            verdict: PASS
+            issues: []
+            resolution: Added pkg/engine/runner.go to Agent A ownership with instructions to update caller. Quality gates expanded to `go build ./...` to catch repo-wide breakage.
+        B:
+            agent_id: B
+            verdict: PASS
+            issues: []
+            resolution: Added cmd/sawtools/analyze_suitability_cmd_test.go to Agent B ownership with instructions to fix 4 parseRequirements() test call sites.
+        C:
+            agent_id: C
+            verdict: PASS
+    summary: 'E37 critic review re-run after fixes: PASS. All 3 agents now clear. Previous issues resolved: (1) Added cmd/sawtools/analyze_suitability_cmd_test.go to Agent B file ownership + task updated to fix 4 test call sites, (2) Added pkg/engine/runner.go to Agent A file ownership + task updated to update engine caller, (3) Quality gates expanded to `go build ./...` to catch repository-wide build failures.'
+    reviewed_at: "2026-04-01T17:12:00Z"
+    issue_count: 0
+state: SCOUT_PENDING
+injection_method: hook

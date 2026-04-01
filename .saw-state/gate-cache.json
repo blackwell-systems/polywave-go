@@ -684,6 +684,18 @@
         "cached_at": "2026-03-31T19:08:40.036871-07:00"
       }
     },
+    "20fa34898aa7214fdc2adad5d0bd8614": {
+      "build": {
+        "gate_type": "build",
+        "command": "go build ./pkg/notify/...",
+        "passed": true,
+        "exit_code": 0,
+        "stdout": "",
+        "stderr": "",
+        "from_cache": true,
+        "cached_at": "2026-04-01T08:37:53.068895-07:00"
+      }
+    },
     "210102ebb23659f3b58a3b45a9b81d06": {
       "test": {
         "gate_type": "test",
@@ -1584,6 +1596,18 @@
         "cached_at": "2026-03-25T03:02:50.209573-07:00"
       }
     },
+    "457101bf0a766c12efbf54e04cfe0309": {
+      "test": {
+        "gate_type": "test",
+        "command": "go test ./pkg/notify/... -count=1",
+        "passed": true,
+        "exit_code": 0,
+        "stdout": "ok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/notify\t0.195s\n",
+        "stderr": "",
+        "from_cache": true,
+        "cached_at": "2026-04-01T08:37:54.020029-07:00"
+      }
+    },
     "457517fd035ebc263e07f6764f0c53be": {
       "build": {
         "gate_type": "build",
@@ -1642,6 +1666,18 @@
         "stderr": "",
         "from_cache": true,
         "cached_at": "2026-03-26T02:45:42.111217-07:00"
+      }
+    },
+    "4714d1bfb14885b964415ee26f99193b": {
+      "lint": {
+        "gate_type": "lint",
+        "command": "go vet ./pkg/notify/...",
+        "passed": true,
+        "exit_code": 0,
+        "stdout": "",
+        "stderr": "",
+        "from_cache": true,
+        "cached_at": "2026-04-01T08:40:09.339977-07:00"
       }
     },
     "474dff14d6cc9e29ac1da0c49c169b54": {
@@ -3648,6 +3684,18 @@
         "cached_at": "2026-03-31T20:08:55.268578-07:00"
       }
     },
+    "994428ece3c7be1be63bc71344c5f2c1": {
+      "build": {
+        "gate_type": "build",
+        "command": "go build ./pkg/notify/...",
+        "passed": true,
+        "exit_code": 0,
+        "stdout": "",
+        "stderr": "",
+        "from_cache": true,
+        "cached_at": "2026-04-01T08:40:09.009826-07:00"
+      }
+    },
     "998ec0a92cace53c139bb61e243c2065": {
       "test": {
         "gate_type": "test",
@@ -3850,6 +3898,18 @@
         "stderr": "",
         "from_cache": true,
         "cached_at": "2026-03-31T20:08:31.468523-07:00"
+      }
+    },
+    "a25d0963cbed50f673d504c99c6c7896": {
+      "lint": {
+        "gate_type": "lint",
+        "command": "go vet ./pkg/notify/...",
+        "passed": true,
+        "exit_code": 0,
+        "stdout": "",
+        "stderr": "",
+        "from_cache": true,
+        "cached_at": "2026-04-01T08:37:53.409163-07:00"
       }
     },
     "a2918bf841f53bf9750a797e035783ac": {
@@ -5290,6 +5350,18 @@
         "stderr": "",
         "from_cache": true,
         "cached_at": "2026-03-26T09:52:24.186254-07:00"
+      }
+    },
+    "cf56235ba558b2d365093d0cafc76638": {
+      "test": {
+        "gate_type": "test",
+        "command": "go test ./pkg/notify/... -count=1",
+        "passed": true,
+        "exit_code": 0,
+        "stdout": "ok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/notify\t0.293s\n",
+        "stderr": "",
+        "from_cache": true,
+        "cached_at": "2026-04-01T08:40:10.099264-07:00"
       }
     },
     "cf9d9a03747c6fecc628cf93d3d14a7c": {

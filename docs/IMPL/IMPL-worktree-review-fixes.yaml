@@ -1,0 +1,421 @@
+title: Fix pkg/worktree review findings — bug fixes, result.Result migration, error conformance, test gaps, dead code removal
+feature_slug: worktree-review-fixes
+verdict: SUITABLE
+suitability_assessment: |
+    Suitability gate passed on all five criteria:
+
+    1. File decomposition: 9 files across 4 packages — cleanly splits into 4 agents
+       with disjoint ownership. The core worktree changes (manager.go, manager_test.go,
+       codes.go) form one unit; the orchestrator source updates and test updates split
+       into two agents; and the dead code cleanup in agent/runner is independent.
+
+    2. Investigation-first items: None. All findings are well-characterized with
+       clear remediation paths. No unknown root causes.
+
+    3. Interface discoverability: Yes. The key interface change (Create() returning
+       result.Result[CreateData] instead of (string, error)) is fully specifiable
+       upfront. The worktreeCreatorFunc seam signature change cascades predictably.
+
+    4. Pre-implementation status: All 9 findings are TODO (none done, none partial).
+       Note: Finding 9 (concurrency doc) is already done — manager.go line 32 has
+       "Manager is not safe for concurrent use." — so only 8 findings remain.
+
+    5. Parallelization value: Build/test cycle >30s (Go module with many packages).
+       Wave 1 has 2 independent agents; Wave 2 has 2 dependent agents. Clear speedup
+       for Wave 1 where the core changes and dead code cleanup run in parallel.
+
+    Estimated times:
+    - Scout phase: ~8 min
+    - Agent execution: ~10 min (2 agents parallel in W1 ~5 min + 2 agents parallel in W2 ~5 min)
+    - Merge & verification: ~3 min
+    Total SAW time: ~21 min
+
+    Sequential baseline: ~24 min (4 agents x ~6 min avg)
+    Time savings: ~3 min (12% faster)
+
+    Recommendation: Clear speedup from Wave 1 parallelism. Wave 2 split is for
+    LOC budget compliance (orchestrator files exceed 2000 lines combined).
+test_command: go test ./pkg/worktree/... ./pkg/agent/... ./pkg/orchestrator/...
+lint_command: go vet ./pkg/worktree/... ./pkg/agent/... ./pkg/orchestrator/...
+file_ownership:
+    - file: pkg/result/codes.go
+      agent: A
+      wave: 1
+      action: modify
+    - file: pkg/worktree/manager.go
+      agent: A
+      wave: 1
+      action: modify
+    - file: pkg/worktree/manager_test.go
+      agent: A
+      wave: 1
+      action: modify
+    - file: pkg/agent/runner.go
+      agent: B
+      wave: 1
+      action: modify
+    - file: pkg/agent/runner_test.go
+      agent: B
+      wave: 1
+      action: modify
+    - file: pkg/orchestrator/orchestrator.go
+      agent: C
+      wave: 2
+      action: modify
+    - file: pkg/orchestrator/structured_wave.go
+      agent: C
+      wave: 2
+      action: modify
+    - file: pkg/orchestrator/orchestrator_test.go
+      agent: D
+      wave: 2
+      action: modify
+    - file: pkg/orchestrator/structured_wave_test.go
+      agent: D
+      wave: 2
+      action: modify
+interface_contracts:
+    - name: CreateData
+      description: Result payload for a successful Create operation
+      definition: |
+        type CreateData struct {
+            Path   string // absolute path to created worktree
+            Branch string // branch name created for the worktree
+        }
+      location: pkg/worktree/manager.go
+    - name: Manager.Create
+      description: Create returns result.Result[CreateData] instead of (string, error)
+      definition: |
+        func (m *Manager) Create(wave int, agent string) result.Result[CreateData]
+      location: pkg/worktree/manager.go
+    - name: CodeWorktreeRemoveFailed
+      description: New canonical error code constant for worktree removal failures
+      definition: |
+        CodeWorktreeRemoveFailed = "G008_WORKTREE_REMOVE_FAILED"
+      location: pkg/result/codes.go
+    - name: worktreeCreatorFunc
+      description: Updated test seam — unwraps Result internally, keeps (string, error) outer return
+      definition: |
+        var worktreeCreatorFunc = func(wm *worktree.Manager, waveNum int, agentLetter string) (string, error) {
+            r := wm.Create(waveNum, agentLetter)
+            if r.IsFatal() {
+                return "", r.Errors[0]
+            }
+            return r.GetData().Path, nil
+        }
+      location: pkg/orchestrator/orchestrator.go
+waves:
+    - number: 1
+      agents:
+        - id: A
+          task: |
+            ## Role
+            Core worktree package fixes: error code migration, Create() result.Result migration, error conformance, test gaps.
+
+            ## What to implement
+
+            ### 1. Add CodeWorktreeRemoveFailed to pkg/result/codes.go
+            In the Git error codes block (G001-G099), add after CodeWorktreeCleanup (G007):
+            ```go
+            CodeWorktreeRemoveFailed = "G008_WORKTREE_REMOVE_FAILED"
+            ```
+
+            ### 2. Migrate Create() in pkg/worktree/manager.go
+
+            **Add CreateData type** (after CleanupData, before Manager struct):
+            ```go
+            type CreateData struct {
+                Path   string
+                Branch string
+            }
+            ```
+
+            **Change Create() signature** from:
+            ```go
+            func (m *Manager) Create(wave int, agent string) (string, error)
+            ```
+            to:
+            ```go
+            func (m *Manager) Create(wave int, agent string) result.Result[CreateData]
+            ```
+
+            **Convert all error returns** in Create() from `fmt.Errorf` to `result.NewFailure[CreateData]`:
+
+            - MkdirAll failure (line 76): use `result.CodeWorktreeCreateFailed` (G001)
+            - Path already exists (line 80): use `result.CodeWorktreeCreateFailed` (G001)
+            - git.WorktreeAdd failure (line 85): use `result.CodeWorktreeCreateFailed` (G001)
+            - Success return: `result.NewSuccess(CreateData{Path: wtPath, Branch: branch})`
+
+            **Standardize error message prefixes**: Replace inconsistent "manager: " prefix
+            with "worktree: " throughout the file (Create, Remove, CleanupAll, log.Warn calls).
+
+            ### 3. Fix error codes in Remove() and CleanupAll()
+            Replace string literal `"WORKTREE_REMOVE_FAILED"` with `result.CodeWorktreeRemoveFailed`
+            (the new G008 constant). There are 2 occurrences in Remove() (lines 104 and 110).
+
+            Replace string literal `"WORKTREE_CLEANUP_FAILED"` with `result.CodeWorktreeCleanup`
+            (existing G007 constant). There is 1 occurrence in CleanupAll() (line 161).
+
+            ### 4. Keep SetLogger() — add a test for it
+            SetLogger follows the same pattern as orchestrator.SetLogger and journal.SetLogger.
+            Keep it for consistency. Add a test instead.
+
+            ### 5. Update pkg/worktree/manager_test.go
+
+            **Update existing tests** for new Create() return type:
+            - `TestManagerCreateRemoveRoundtrip` (line 53): Change from `wtPath, err := m.Create(1, "D")`
+              to `r := m.Create(1, "D")`, check `r.IsFatal()`, use `r.GetData().Path`.
+            - `TestCleanupAllSuccess` (lines 113, 117): Same pattern for Create calls.
+            - `TestCleanupAllPartial` (line 174): Same pattern.
+
+            **Update TestRemoveUntrackedPath** (line 101): Change expected error code from
+            `"WORKTREE_REMOVE_FAILED"` to `result.CodeWorktreeRemoveFailed`. Add import
+            of result package if not already imported.
+
+            **Add new tests:**
+
+            a. `TestCreateAlreadyExists` — Create a worktree, then try creating the same
+               wave/agent again. Verify it returns Fatal with CodeWorktreeCreateFailed.
+
+            b. `TestCreateInvalidRepoRoot` — Call Create with a path where git is not
+               initialized (use t.TempDir() without git init). Verify it returns Fatal.
+
+            c. `TestSetLogger` — Call SetLogger with a custom logger, verify log() returns it.
+
+            d. `TestListEmpty` — Verify List() on a fresh manager returns empty slice (not nil).
+
+            ## Interfaces
+            - `CreateData` struct: `Path string`, `Branch string`
+            - `Create()` returns `result.Result[CreateData]`
+            - `CodeWorktreeRemoveFailed = "G008_WORKTREE_REMOVE_FAILED"` in result/codes.go
+
+            ## Verification gate
+            ```
+            go build ./pkg/worktree/... ./pkg/result/... && go vet ./pkg/worktree/... && go test ./pkg/worktree/...
+            ```
+
+            ## Constraints
+            - Do NOT modify any files outside pkg/worktree/ and pkg/result/codes.go
+            - The orchestrator callers will be updated in Wave 2 — the build may fail
+              in pkg/orchestrator until then. That is expected.
+          files:
+            - pkg/result/codes.go
+            - pkg/worktree/manager.go
+            - pkg/worktree/manager_test.go
+        - id: B
+          task: |
+            ## Role
+            Remove dead code from pkg/agent/runner.go: unused worktrees field.
+
+            ## What to implement
+
+            ### 1. Remove unused field from Runner struct in pkg/agent/runner.go
+            The `worktrees *worktree.Manager` field (line 18) is never accessed — grep
+            confirms `r.worktrees` has zero occurrences. Remove:
+            - The `worktrees` field from the Runner struct (line 18)
+            - The `worktrees` parameter from `NewRunner` (line 22)
+            - The field assignment in `NewRunner` (line 25)
+            - The import of `"github.com/blackwell-systems/scout-and-wave-go/pkg/worktree"`
+
+            After removal, Runner struct should be:
+            ```go
+            type Runner struct {
+                client backend.Backend
+            }
+            ```
+
+            And NewRunner should be:
+            ```go
+            func NewRunner(b backend.Backend) *Runner {
+                return &Runner{client: b}
+            }
+            ```
+
+            ### 2. Update pkg/agent/runner_test.go
+            - Remove the `worktree.New("/tmp", "test-slug")` call and the `wm` variable
+            - Change `NewRunner(nil, wm)` to `NewRunner(nil)`
+            - Remove the import of `"github.com/blackwell-systems/scout-and-wave-go/pkg/worktree"`
+
+            ### 3. DO NOT update orchestrator callers yet
+            The orchestrator calls `newRunnerFunc(b, wm)` which passes a *worktree.Manager.
+            This will be updated by Agent C in Wave 2. The build WILL fail in
+            pkg/orchestrator until Wave 2 completes — that is expected and acceptable.
+
+            ## Interfaces
+            - `NewRunner(b backend.Backend) *Runner` — single parameter, no worktree.Manager
+
+            ## Verification gate
+            ```
+            go build ./pkg/agent/... && go vet ./pkg/agent/... && go test ./pkg/agent/...
+            ```
+
+            ## Constraints
+            - Only modify pkg/agent/runner.go and pkg/agent/runner_test.go
+            - Do NOT touch orchestrator files — Agent C handles those in Wave 2
+          files:
+            - pkg/agent/runner.go
+            - pkg/agent/runner_test.go
+    - number: 2
+      agents:
+        - id: C
+          task: |
+            ## Role
+            Update orchestrator source files to match new worktree.Create() and agent.NewRunner() signatures.
+
+            ## What to implement
+
+            ### 1. Update worktreeCreatorFunc in pkg/orchestrator/orchestrator.go
+            The function variable at ~line 139 currently reads:
+            ```go
+            var worktreeCreatorFunc = func(wm *worktree.Manager, waveNum int, agentLetter string) (string, error) {
+                return wm.Create(waveNum, agentLetter)
+            }
+            ```
+
+            Change to unwrap the result.Result:
+            ```go
+            var worktreeCreatorFunc = func(wm *worktree.Manager, waveNum int, agentLetter string) (string, error) {
+                r := wm.Create(waveNum, agentLetter)
+                if r.IsFatal() {
+                    return "", r.Errors[0]
+                }
+                return r.GetData().Path, nil
+            }
+            ```
+
+            The outer return type stays `(string, error)` so all callers of worktreeCreatorFunc
+            (launchAgent at ~line 762 and launchAgentStructured in structured_wave.go at ~line 70)
+            continue to work unchanged. No changes needed in structured_wave.go.
+
+            ### 2. Update newRunnerFunc in pkg/orchestrator/orchestrator.go
+            The function variable at ~line 442 currently reads:
+            ```go
+            var newRunnerFunc = func(b backend.Backend, wm *worktree.Manager) *agent.Runner {
+                return agent.NewRunner(b, wm)
+            }
+            ```
+
+            Change to match the new single-parameter NewRunner:
+            ```go
+            var newRunnerFunc = func(b backend.Backend, wm *worktree.Manager) *agent.Runner {
+                return agent.NewRunner(b)
+            }
+            ```
+
+            Keep the `wm *worktree.Manager` parameter in the function signature —
+            the worktree manager is still passed at call sites for worktree creation.
+            Only the internal call to `agent.NewRunner` drops the wm argument.
+
+            ### 3. Verify structured_wave.go compiles
+            structured_wave.go calls `worktreeCreatorFunc(wm, waveNum, protoAgent.ID)` at
+            ~line 70. Since the function signature is unchanged (still returns (string, error)),
+            no edits are needed. Verify the build passes.
+
+            ## Interfaces
+            - `worktreeCreatorFunc` keeps `(string, error)` return but unwraps Result internally
+            - `newRunnerFunc` keeps `(*worktree.Manager)` param but calls `agent.NewRunner(b)` internally
+
+            ## Verification gate
+            ```
+            go build ./pkg/orchestrator/... && go vet ./pkg/orchestrator/...
+            ```
+
+            ## Constraints
+            - Only modify pkg/orchestrator/orchestrator.go and pkg/orchestrator/structured_wave.go
+            - Do NOT modify test files — Agent D handles those
+            - The worktreeCreatorFunc wrapper converts Result[CreateData] back to (string, error)
+              to minimize cascading changes to all launchAgent callers
+            - Do NOT change the launchAgent or launchAgentStructured function signatures
+          files:
+            - pkg/orchestrator/orchestrator.go
+            - pkg/orchestrator/structured_wave.go
+          dependencies:
+            - A
+            - B
+        - id: D
+          task: |
+            ## Role
+            Verify and update orchestrator test files to compile with the new signatures.
+
+            ## What to implement
+
+            ### 1. Verify pkg/orchestrator/orchestrator_test.go compiles
+            The test file overrides `worktreeCreatorFunc` and `newRunnerFunc` in many places.
+            These overrides mock the functions without calling `wm.Create()` or `agent.NewRunner()`
+            directly, so they should compile without changes.
+
+            Specifically, check all occurrences of these patterns:
+            - `worktreeCreatorFunc = func(_ *worktree.Manager, _ int, id string) (string, error)`
+              — These mock implementations return canned paths/errors. They do NOT call
+              wm.Create() internally, so the changed Create() return type does not affect them.
+            - `newRunnerFunc = func(b backend.Backend, wm *worktree.Manager) *agent.Runner`
+              — These mock implementations return test runners. They do NOT call
+              agent.NewRunner() internally, so the removed parameter does not affect them.
+
+            If any test override DOES call `wm.Create()` directly (unlikely but check),
+            update it to unwrap the Result.
+
+            If any test override DOES call `agent.NewRunner(b, wm)` directly (unlikely but
+            check), update it to `agent.NewRunner(b)`.
+
+            ### 2. Verify pkg/orchestrator/structured_wave_test.go compiles
+            Same verification as above. Check all overrides of `worktreeCreatorFunc` and
+            `newRunnerFunc`. They should be mocks that don't call the real implementations.
+
+            ### 3. Run the full test suite
+            After verification, run `go test ./pkg/orchestrator/...` to confirm all tests pass.
+
+            ## Interfaces
+            No new interfaces. Verify existing test seams compile with upstream changes.
+
+            ## Verification gate
+            ```
+            go build ./... && go vet ./pkg/orchestrator/... && go test ./pkg/orchestrator/...
+            ```
+
+            ## Constraints
+            - Only modify pkg/orchestrator/orchestrator_test.go and pkg/orchestrator/structured_wave_test.go
+            - Do NOT modify source files — Agent C handles those
+            - If no changes are needed (tests compile as-is), commit a no-op or skip
+          files:
+            - pkg/orchestrator/orchestrator_test.go
+            - pkg/orchestrator/structured_wave_test.go
+          dependencies:
+            - A
+            - B
+quality_gates:
+    level: standard
+    gates:
+        - type: build
+          command: go build ./...
+          required: true
+        - type: lint
+          command: go vet ./...
+          required: true
+        - type: test
+          command: go test ./pkg/worktree/... ./pkg/agent/... ./pkg/orchestrator/...
+          required: true
+pre_mortem:
+    overall_risk: low
+    rows:
+        - scenario: Create() signature change breaks intermediate build between waves
+          likelihood: high
+          impact: low
+          mitigation: |
+            Expected and acceptable. Wave 1 agents verify their own packages only.
+            Wave 2 agents run `go build ./...` to verify full build after updating callers.
+        - scenario: orchestrator_test.go test seams need more changes than expected
+          likelihood: low
+          impact: medium
+          mitigation: |
+            The test seams mock worktreeCreatorFunc without calling wm.Create() directly,
+            so the inner signature change should not affect them. Agent D should grep for
+            all occurrences of worktreeCreatorFunc and newRunnerFunc in test files to verify.
+        - scenario: Removing worktrees field from Runner breaks an untested code path
+          likelihood: low
+          impact: low
+          mitigation: |
+            Grep confirmed r.worktrees has zero occurrences outside struct definition.
+            The field is definitively unused.
+state: WAVE_PENDING
+injection_method: hook

@@ -1,3 +1,4 @@
+completion_date: "2026-04-01"
 title: Fix all issues from pkg/notify deep review
 feature_slug: notify-deep-review-fixes
 verdict: SUITABLE
@@ -478,6 +479,7 @@ waves:
           files:
             - pkg/notify/README.md
             - pkg/notify/types_test.go
+      base_commit: 0d4e39dee82c03994280441d8f5fb86d76e47391
 quality_gates:
     level: standard
     gates:
@@ -490,6 +492,41 @@ quality_gates:
         - type: test
           command: go test ./pkg/notify/... -count=1
           required: true
+completion_reports:
+    A:
+        status: complete
+        branch: saw/notify-deep-review-fixes/wave1-agent-A
+        commit: b624ce7
+        files_changed:
+            - pkg/notify/slack.go
+            - pkg/notify/slack_test.go
+        tests_added:
+            - TestSlackAdapter_Send_BotTokenSuccess
+            - TestSlackAdapter_Send_BotTokenAPIError
+            - TestSlackAdapter_Send_BotTokenDecodeError
+        verification: PASS
+        notes: Fixed silent JSON decode bug, added TS/MessageID population for bot token mode, added botAPIURL field for testability, added error code doc comments. All 17 Slack tests pass.
+    B:
+        status: complete
+        branch: saw/notify-deep-review-fixes/wave1-agent-B
+        commit: 48081dd
+        files_changed:
+            - pkg/notify/discord.go
+            - pkg/notify/telegram.go
+        verification: PASS
+        notes: 'Discord: added ?wait=true and response body parsing for MessageID. Telegram: added best-effort response parsing with >0 guard. Added error code doc comments and embeds assertion comment. All existing tests pass.'
+    C:
+        status: complete
+        branch: saw/notify-deep-review-fixes/wave1-agent-C
+        commit: 0cf7a09
+        files_changed:
+            - pkg/notify/README.md
+            - pkg/notify/types_test.go
+        files_created:
+            - pkg/notify/types_test.go
+        tests_added:
+            - TestReadWithFallback
+        verification: PASS
 pre_mortem:
     overall_risk: low
     rows:
@@ -511,5 +548,5 @@ critic_report:
     summary: Skipped by operator (--skip-critic)
     reviewed_at: "2026-04-01T15:37:48Z"
     issue_count: 0
-state: REVIEWED
+state: COMPLETE
 injection_method: hook

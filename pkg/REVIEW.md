@@ -28,21 +28,21 @@ Each reviewed package gets scouted → IMPL'd → closed before being marked don
 | format | | | |
 | gatecache | | | |
 | hooks | | | |
-| idgen | | | |
+| idgen | ✅ | | |
 | interview | | | |
 | journal | | | |
-| notify | ✅ | | |
+| notify | ✅ | ✅ | ✅ |
 | observability | | | |
 | orchestrator | | | |
 | pipeline | | | |
 | protocol | | | |
-| queue | | | |
+| queue | ✅ | | |
 | result | | | |
 | resume | | | |
 | retry | | | |
 | scaffold | | | |
 | scaffoldval | | | |
-| solver | | | |
-| suitability | | | |
+| solver | ✅ | | |
+| suitability | ✅ | | |
 | tools | | | |
-| worktree | | | |
+| worktree | ✅ | | |

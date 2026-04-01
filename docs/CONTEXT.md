@@ -326,3 +326,5 @@ type BackendConfig struct {
   - IMPL doc: docs/IMPL/complete/IMPL-errparse-deep-review-fixes.yaml
 - **agent-deep-review-fixes**: completed 2026-04-01, 2 waves, 7 agents
   - IMPL doc: docs/IMPL/complete/IMPL-agent-deep-review-fixes.yaml
+- **notify-deep-review-fixes**: completed 2026-04-01, 1 waves, 3 agents
+  - IMPL doc: docs/IMPL/complete/IMPL-notify-deep-review-fixes.yaml
