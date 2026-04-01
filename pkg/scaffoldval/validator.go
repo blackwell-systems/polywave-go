@@ -13,25 +13,26 @@ import (
 
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/commands"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
 )
 
 // ValidateScaffold runs the validation pipeline on a scaffold file.
 // ctx is used to cancel the build step. repoRoot, if non-empty, is used directly;
 // if empty, the function walks upward from implPath looking for go.mod.
-func ValidateScaffold(ctx context.Context, scaffoldPath string, implPath string, repoRoot string) (*ValidationResult, error) {
-	result := NewValidationResult()
+func ValidateScaffold(ctx context.Context, scaffoldPath string, implPath string, repoRoot string) result.Result[*ValidationResult] {
+	vr := NewValidationResult()
 
 	// Step 1: Syntax check (parse Go file)
 	fset := token.NewFileSet()
 	astFile, err := parser.ParseFile(fset, scaffoldPath, nil, parser.AllErrors)
 	if err != nil {
-		result.Syntax.Status = "FAIL"
-		result.Syntax.Errors = []string{err.Error()}
-		result.Syntax.Fixes = []string{"Fix syntax error at reported location"}
-		result.Syntax.AutoFixable = false
-		return result, nil // Stop here if syntax fails
+		vr.Syntax.Status = "FAIL"
+		vr.Syntax.Errors = []string{err.Error()}
+		vr.Syntax.Fixes = []string{"Fix syntax error at reported location"}
+		vr.Syntax.AutoFixable = false
+		return result.NewSuccess(vr) // Stop here if syntax fails
 	}
-	result.Syntax.Status = "PASS"
+	vr.Syntax.Status = "PASS"
 
 	// Step 2: Import resolution (check if imports exist)
 	// Determine repo root before checking imports
@@ -44,12 +45,12 @@ func ValidateScaffold(ctx context.Context, scaffoldPath string, implPath string,
 	missingImports := checkImports(imports, root)
 
 	if len(missingImports) > 0 {
-		result.Imports.Status = "FAIL"
-		result.Imports.Errors = missingImports
-		result.Imports.Fixes = []string{fmt.Sprintf("Add missing imports: %v", missingImports)}
-		result.Imports.AutoFixable = true
+		vr.Imports.Status = "FAIL"
+		vr.Imports.Errors = missingImports
+		vr.Imports.Fixes = []string{fmt.Sprintf("Add missing imports: %v", missingImports)}
+		vr.Imports.AutoFixable = true
 	} else {
-		result.Imports.Status = "PASS"
+		vr.Imports.Status = "PASS"
 	}
 
 	// Step 3: Type references (check for undeclared types)
@@ -57,15 +58,15 @@ func ValidateScaffold(ctx context.Context, scaffoldPath string, implPath string,
 	// rather than a false PASS. The parsed AST (astFile) is available for future use.
 	// astFile is available here for future type-reference checking
 	_ = astFile
-	result.TypeReferences.Status = "SKIP"
+	vr.TypeReferences.Status = "SKIP"
 
 	// Step 4: Build check (compile scaffold in isolation)
 	// Extract build command from IMPL doc using pkg/commands
 	_, err = protocol.Load(ctx, implPath)
 	if err != nil {
-		result.Build.Status = "SKIP"
-		result.Build.Errors = []string{fmt.Sprintf("Failed to parse IMPL manifest: %v", err)}
-		return result, nil // Continue without build check
+		vr.Build.Status = "SKIP"
+		vr.Build.Errors = []string{fmt.Sprintf("Failed to parse IMPL manifest: %v", err)}
+		return result.NewSuccess(vr) // Continue without build check
 	}
 
 	// Extract build command using commands package
@@ -76,9 +77,9 @@ func ValidateScaffold(ctx context.Context, scaffoldPath string, implPath string,
 
 	commandSet, err := extractor.Extract(ctx, root)
 	if err != nil || commandSet.Commands.Build == "" {
-		result.Build.Status = "SKIP"
-		result.Build.Errors = []string{"No build command found"}
-		return result, nil
+		vr.Build.Status = "SKIP"
+		vr.Build.Errors = []string{"No build command found"}
+		return result.NewSuccess(vr)
 	}
 
 	// Run build command with cancellable context
@@ -86,15 +87,15 @@ func ValidateScaffold(ctx context.Context, scaffoldPath string, implPath string,
 	cmd.Dir = root
 	output, err := cmd.CombinedOutput()
 	if err != nil {
-		result.Build.Status = "FAIL"
-		result.Build.Errors = []string{string(output)}
-		result.Build.Fixes = []string{"Fix compilation errors in scaffold"}
-		result.Build.AutoFixable = false
+		vr.Build.Status = "FAIL"
+		vr.Build.Errors = []string{string(output)}
+		vr.Build.Fixes = []string{"Fix compilation errors in scaffold"}
+		vr.Build.AutoFixable = false
 	} else {
-		result.Build.Status = "PASS"
+		vr.Build.Status = "PASS"
 	}
 
-	return result, nil
+	return result.NewSuccess(vr)
 }
 
 // findRepoRoot walks upward from startDir looking for go.mod.

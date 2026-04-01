@@ -48,10 +48,12 @@ go 1.21
 		t.Fatalf("Failed to create go.mod: %v", err)
 	}
 
-	result, err := ValidateScaffold(context.Background(), scaffoldPath, implPath, "")
-	if err != nil {
-		t.Fatalf("ValidateScaffold returned error: %v", err)
+	res := ValidateScaffold(context.Background(), scaffoldPath, implPath, "")
+	if res.IsFatal() {
+		t.Fatalf("ValidateScaffold returned fatal result: %v", res.Errors)
 	}
+
+	result := res.GetData()
 
 	if result.Syntax.Status != "PASS" {
 		t.Errorf("Expected syntax check to PASS, got %s: %v", result.Syntax.Status, result.Syntax.Errors)
@@ -102,10 +104,12 @@ waves: []
 		t.Fatalf("Failed to create IMPL manifest: %v", err)
 	}
 
-	result, err := ValidateScaffold(context.Background(), scaffoldPath, implPath, "")
-	if err != nil {
-		t.Fatalf("ValidateScaffold returned error: %v", err)
+	res := ValidateScaffold(context.Background(), scaffoldPath, implPath, "")
+	if res.IsFatal() {
+		t.Fatalf("ValidateScaffold returned fatal result: %v", res.Errors)
 	}
+
+	result := res.GetData()
 
 	if result.Syntax.Status != "FAIL" {
 		t.Errorf("Expected syntax check to FAIL, got %s", result.Syntax.Status)
@@ -170,10 +174,12 @@ go 1.21
 		t.Fatalf("Failed to create go.mod: %v", err)
 	}
 
-	result, err := ValidateScaffold(context.Background(), scaffoldPath, implPath, "")
-	if err != nil {
-		t.Fatalf("ValidateScaffold returned error: %v", err)
+	res := ValidateScaffold(context.Background(), scaffoldPath, implPath, "")
+	if res.IsFatal() {
+		t.Fatalf("ValidateScaffold returned fatal result: %v", res.Errors)
 	}
+
+	result := res.GetData()
 
 	if result.Syntax.Status != "PASS" {
 		t.Errorf("Expected syntax check to PASS, got %s", result.Syntax.Status)
@@ -245,10 +251,12 @@ go 1.21
 		t.Fatalf("Failed to create go.mod: %v", err)
 	}
 
-	result, err := ValidateScaffold(context.Background(), scaffoldPath, implPath, "")
-	if err != nil {
-		t.Fatalf("ValidateScaffold returned error: %v", err)
+	res := ValidateScaffold(context.Background(), scaffoldPath, implPath, "")
+	if res.IsFatal() {
+		t.Fatalf("ValidateScaffold returned fatal result: %v", res.Errors)
 	}
+
+	result := res.GetData()
 
 	if result.Syntax.Status != "PASS" {
 		t.Errorf("Expected syntax check to PASS, got %s", result.Syntax.Status)
