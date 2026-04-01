@@ -212,6 +212,121 @@ func TestNewSlackAdapter_BackwardCompat(t *testing.T) {
 	}
 }
 
+func TestSlackAdapter_Send_BotTokenSuccess(t *testing.T) {
+	var receivedBody map[string]interface{}
+	var receivedAuthHeader string
+	var receivedContentType string
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		receivedAuthHeader = r.Header.Get("Authorization")
+		receivedContentType = r.Header.Get("Content-Type")
+		body, _ := io.ReadAll(r.Body)
+		json.Unmarshal(body, &receivedBody)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte(`{"ok":true,"ts":"1234567890.123456"}`))
+	}))
+	defer server.Close()
+
+	adapter := &SlackAdapter{
+		token:       "xoxb-test",
+		destination: "#test",
+		client:      server.Client(),
+		botAPIURL:   server.URL,
+	}
+
+	msg := Message{Text: "bot token test", Embeds: []interface{}{}}
+	res := adapter.Send(context.Background(), msg)
+	if !res.IsSuccess() {
+		t.Fatalf("expected success, got %q: %v", res.Code, res.Errors)
+	}
+
+	data := res.GetData()
+	if data.MessageID != "1234567890.123456" {
+		t.Errorf("expected MessageID \"1234567890.123456\", got %q", data.MessageID)
+	}
+	if data.Provider != "slack" {
+		t.Errorf("expected Provider \"slack\", got %q", data.Provider)
+	}
+	if receivedAuthHeader != "Bearer xoxb-test" {
+		t.Errorf("expected Authorization \"Bearer xoxb-test\", got %q", receivedAuthHeader)
+	}
+	if receivedContentType != "application/json" {
+		t.Errorf("expected Content-Type \"application/json\", got %q", receivedContentType)
+	}
+	channel, ok := receivedBody["channel"].(string)
+	if !ok || channel != "#test" {
+		t.Errorf("expected channel \"#test\", got %v", receivedBody["channel"])
+	}
+}
+
+func TestSlackAdapter_Send_BotTokenAPIError(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte(`{"ok":false,"error":"channel_not_found"}`))
+	}))
+	defer server.Close()
+
+	adapter := &SlackAdapter{
+		token:       "xoxb-test",
+		destination: "#nonexistent",
+		client:      server.Client(),
+		botAPIURL:   server.URL,
+	}
+
+	res := adapter.Send(context.Background(), Message{Text: "test"})
+	if !res.IsFatal() {
+		t.Fatalf("expected FATAL result, got %q", res.Code)
+	}
+	if len(res.Errors) == 0 || res.Errors[0].Code != "SLACK_API_ERROR" {
+		t.Errorf("expected SLACK_API_ERROR, got %v", res.Errors)
+	}
+	if len(res.Errors) > 0 {
+		msg := res.Errors[0].Message
+		if !contains(msg, "channel_not_found") {
+			t.Errorf("expected message to contain \"channel_not_found\", got %q", msg)
+		}
+	}
+}
+
+func TestSlackAdapter_Send_BotTokenDecodeError(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte(`{invalid`))
+	}))
+	defer server.Close()
+
+	adapter := &SlackAdapter{
+		token:       "xoxb-test",
+		destination: "#test",
+		client:      server.Client(),
+		botAPIURL:   server.URL,
+	}
+
+	res := adapter.Send(context.Background(), Message{Text: "test"})
+	if !res.IsFatal() {
+		t.Fatalf("expected FATAL result, got %q", res.Code)
+	}
+	if len(res.Errors) == 0 || res.Errors[0].Code != "SLACK_DECODE_ERROR" {
+		t.Errorf("expected SLACK_DECODE_ERROR, got %v", res.Errors)
+	}
+}
+
+// contains checks if substr is in s (test helper to avoid strings import).
+func contains(s, substr string) bool {
+	return len(s) >= len(substr) && searchString(s, substr)
+}
+
+func searchString(s, substr string) bool {
+	for i := 0; i <= len(s)-len(substr); i++ {
+		if s[i:i+len(substr)] == substr {
+			return true
+		}
+	}
+	return false
+}
+
 func TestSlackFormatter_Info(t *testing.T) {
 	f := &SlackFormatter{}
 	event := Event{
