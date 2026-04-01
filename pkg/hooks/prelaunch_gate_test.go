@@ -1,7 +1,6 @@
 package hooks
 
 import (
-	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -280,17 +279,23 @@ func TestPreLaunchGate_WorktreeBranchMismatch(t *testing.T) {
 		{"-C", dir, "config", "user.name", "Test"},
 	} {
 		cmd := exec.Command("git", args...)
-		cmd.CombinedOutput()
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git config failed: %v\n%s", err, out)
+		}
 	}
 
 	emptyFile := filepath.Join(dir, ".gitkeep")
-	os.WriteFile(emptyFile, []byte(""), 0644)
+	if err := os.WriteFile(emptyFile, []byte(""), 0644); err != nil {
+		t.Fatalf("write file: %v", err)
+	}
 	for _, args := range [][]string{
 		{"-C", dir, "add", "."},
 		{"-C", dir, "commit", "-m", "init"},
 	} {
 		cmd := exec.Command("git", args...)
-		cmd.CombinedOutput()
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v failed: %v\n%s", args, err, out)
+		}
 	}
 
 	// Stay on default branch (wrong branch)
@@ -421,7 +426,7 @@ func TestPreLaunchGate_AgentExistsWhenWaveMissing(t *testing.T) {
 			if c.Status != "fail" {
 				t.Errorf("agent_exists: expected fail when wave is missing, got %s", c.Status)
 			}
-			if fmt.Sprintf("%s", c.Message) == "" {
+			if c.Message == "" {
 				t.Errorf("agent_exists: message should not be empty")
 			}
 			return

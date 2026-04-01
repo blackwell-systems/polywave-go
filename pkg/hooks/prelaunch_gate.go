@@ -51,11 +51,14 @@ func PreLaunchGate(
 		Checks: make([]PreLaunchCheck, 0, 7),
 	}
 
+	// Run validation once and pass results to both validation checks (Bug 2)
+	validationErrs := protocol.Validate(manifest)
+
 	// 1. Validation
-	result.Checks = append(result.Checks, checkManifestValidation(manifest))
+	result.Checks = append(result.Checks, checkManifestValidation(validationErrs))
 
 	// 2. Wave exists
-	result.Checks = append(result.Checks, checkWaveExists(manifest, waveNum))
+	result.Checks = append(result.Checks, checkWaveExists(manifest, waveNum, agentID))
 
 	// 3. Agent exists
 	result.Checks = append(result.Checks, checkAgentExists(manifest, waveNum, agentID))
@@ -67,7 +70,7 @@ func PreLaunchGate(
 	result.Checks = append(result.Checks, checkScaffoldsCommitted(manifest))
 
 	// 6. Ownership disjoint (I1)
-	result.Checks = append(result.Checks, checkOwnershipDisjoint(manifest))
+	result.Checks = append(result.Checks, checkOwnershipDisjoint(validationErrs))
 
 	// 7. Critic review
 	result.Checks = append(result.Checks, checkCriticReviewRequired(manifest))
@@ -84,28 +87,25 @@ func PreLaunchGate(
 	return result
 }
 
-func checkManifestValidation(m *protocol.IMPLManifest) PreLaunchCheck {
-	errs := protocol.Validate(m)
+func checkManifestValidation(errs []result.SAWError) PreLaunchCheck {
 	if len(errs) == 0 {
-		return PreLaunchCheck{
-			Name:    "validation",
-			Status:  "pass",
-			Message: "manifest is valid",
+		return PreLaunchCheck{Name: "validation", Status: "pass", Message: "manifest is valid"}
+	}
+	var errMsgs, warnMsgs []string
+	for _, e := range errs {
+		if e.Severity == "warning" {
+			warnMsgs = append(warnMsgs, e.Message)
+		} else {
+			errMsgs = append(errMsgs, e.Message)
 		}
 	}
-
-	msgs := make([]string, 0, len(errs))
-	for _, e := range errs {
-		msgs = append(msgs, e.Message)
+	if len(errMsgs) == 0 {
+		return PreLaunchCheck{Name: "validation", Status: "warn", Message: strings.Join(warnMsgs, "; ")}
 	}
-	return PreLaunchCheck{
-		Name:    "validation",
-		Status:  "fail",
-		Message: strings.Join(msgs, "; "),
-	}
+	return PreLaunchCheck{Name: "validation", Status: "fail", Message: strings.Join(errMsgs, "; ")}
 }
 
-func checkWaveExists(m *protocol.IMPLManifest, waveNum int) PreLaunchCheck {
+func checkWaveExists(m *protocol.IMPLManifest, waveNum int, agentID string) PreLaunchCheck {
 	var wave *protocol.Wave
 	for i := range m.Waves {
 		if m.Waves[i].Number == waveNum {
@@ -131,6 +131,13 @@ func checkWaveExists(m *protocol.IMPLManifest, waveNum int) PreLaunchCheck {
 			}
 		}
 		if completedCount == len(wave.Agents) {
+			if _, agentDone := m.CompletionReports[agentID]; agentDone {
+				return PreLaunchCheck{
+					Name:    "wave_exists",
+					Status:  "warn",
+					Message: fmt.Sprintf("wave %d: agent %s already complete (all %d agents done)", waveNum, agentID, completedCount),
+				}
+			}
 			return PreLaunchCheck{
 				Name:    "wave_exists",
 				Status:  "warn",
@@ -255,8 +262,7 @@ func checkScaffoldsCommitted(m *protocol.IMPLManifest) PreLaunchCheck {
 	}
 }
 
-func checkOwnershipDisjoint(m *protocol.IMPLManifest) PreLaunchCheck {
-	errs := protocol.Validate(m)
+func checkOwnershipDisjoint(errs []result.SAWError) PreLaunchCheck {
 	i1Violations := make([]string, 0)
 	for _, e := range errs {
 		if e.Code == result.CodeDisjointOwnership {
@@ -281,18 +287,11 @@ func checkOwnershipDisjoint(m *protocol.IMPLManifest) PreLaunchCheck {
 
 func checkCriticReviewRequired(m *protocol.IMPLManifest) PreLaunchCheck {
 	if m.CriticReport == nil {
-		totalAgents := 0
-		for _, wave := range m.Waves {
-			totalAgents += len(wave.Agents)
-		}
-
-		isMultiRepo := len(m.Repositories) > 0
-
-		if totalAgents >= 3 || isMultiRepo {
+		if protocol.E37Required(m) {
 			return PreLaunchCheck{
 				Name:    "critic_review",
 				Status:  "fail",
-				Message: fmt.Sprintf("E37: critic review required (%d agents, multi-repo=%v) but not run", totalAgents, isMultiRepo),
+				Message: "E37: critic review required but not run",
 			}
 		}
 		return PreLaunchCheck{
