@@ -36,10 +36,10 @@ Outputs structured YAML with:
 			}
 
 			// Diagnose error
-			diagnosis, err := builddiag.DiagnoseError(string(content), language)
-			if err != nil {
-				return fmt.Errorf("failed to diagnose error: %w", err)
-			}
+			diagnosis := builddiag.DiagnoseError(string(content), language)
+		if diagnosis == nil {
+			return fmt.Errorf("failed to diagnose error: unsupported language %s", language)
+		}
 
 			// Output YAML to command's configured output.
 			// Cannot use protocol.SaveYAML: writes to an io.Writer (stdout), not a file path,

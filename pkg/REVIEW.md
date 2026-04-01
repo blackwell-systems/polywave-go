@@ -25,7 +25,7 @@ Each reviewed package gets scouted → IMPL'd → closed before being marked don
 | deps | ✅ | ✅ | |
 | engine | | | |
 | errparse | ✅ | ✅ | ✅ |
-| format | | | |
+| format | ✅ | ❌ (NOT_SUITABLE) | N/A |
 | gatecache | | | |
 | hooks | ✅ | ✅ | |
 | idgen | ✅ | ✅ | ✅ |
@@ -41,7 +41,7 @@ Each reviewed package gets scouted → IMPL'd → closed before being marked don
 | resume | | | |
 | retry | | | |
 | scaffold | ✅ | | |
-| scaffoldval | ✅ | ✅ | |
+| scaffoldval | ✅ | ✅ | ✅ |
 | solver | ✅ | | |
 | suitability | ✅ | ✅ | ✅ |
 | tools | | | |
