@@ -41,7 +41,7 @@ Each reviewed package gets scouted → IMPL'd → closed before being marked don
 | resume | | | |
 | retry | | | |
 | scaffold | ✅ | | |
-| scaffoldval | | | |
+| scaffoldval | ✅ | ✅ | |
 | solver | ✅ | | |
 | suitability | ✅ | ✅ | ✅ |
 | tools | | | |
