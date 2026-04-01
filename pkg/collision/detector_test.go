@@ -55,6 +55,20 @@ type UserID = string
 			wantErr: false,
 		},
 		{
+			name:     "root package file - filepath.Dir returns dot",
+			filePath: "main.go",
+			content: `package main
+
+type AppConfig struct {
+    Port int
+}
+`,
+			want: []TypeDeclaration{
+				{Name: "AppConfig", Package: "", Kind: "struct"},
+			},
+			wantErr: false,
+		},
+		{
 			name:     "multiple types",
 			filePath: "pkg/models/types.go",
 			content: `package models

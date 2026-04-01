@@ -6,6 +6,7 @@ import (
 	"go/ast"
 	"go/parser"
 	"go/token"
+	"log/slog"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -33,7 +34,7 @@ func DetectCollisions(ctx context.Context, manifestPath string, waveNum int, rep
 		return CollisionReport{}, err
 	}
 	// Load IMPL manifest
-	manifest, err := protocol.Load(context.TODO(), manifestPath)
+	manifest, err := protocol.Load(ctx, manifestPath)
 	if err != nil {
 		return CollisionReport{}, fmt.Errorf("load manifest: %w", err)
 	}
@@ -149,7 +150,7 @@ func extractTypesFromFiles(ctx context.Context, repoPath, branchName string, fil
 		// Get file content from branch
 		content, err := igit.Run(repoPath, "show", branchName+":"+file)
 		if err != nil {
-			// File might have been deleted or is binary — skip
+			slog.Debug("skipping file: git show failed", "file", file, "branch", branchName, "err", err)
 			continue
 		}
 
@@ -177,6 +178,9 @@ func extractTypeDecls(filePath, content string) ([]TypeDeclaration, error) {
 
 	// Derive package path from file path (e.g., "pkg/service/handler.go" → "pkg/service")
 	pkgPath := filepath.Dir(filePath)
+	if pkgPath == "." {
+		pkgPath = ""
+	}
 
 	// Only inspect top-level declarations (node.Decls), not recursively.
 	// ast.Inspect with return true would visit function bodies and catch
@@ -220,6 +224,8 @@ func detectCollisionsInTypes(agentTypes map[string][]TypeDeclaration) []TypeColl
 	for agentID, types := range agentTypes {
 		for _, t := range types {
 			key := t.Package + "/" + t.Name
+			// NOT goroutine-safe: this map is written from a single goroutine.
+			// Do not parallelize this loop without protecting typeOccurrences with a sync.Mutex.
 			typeOccurrences[key] = append(typeOccurrences[key], agentID)
 		}
 	}
