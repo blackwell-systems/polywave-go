@@ -225,6 +225,16 @@ const (
 	CodeConfigIOFailed = "N085_CONFIG_IO_FAILED"
 )
 
+// Queue error codes (Q001-Q099)
+const (
+	CodeQueueAddFailed           = "Q001_QUEUE_ADD_FAILED"
+	CodeQueueListFailed          = "Q002_QUEUE_LIST_FAILED"
+	CodeQueueEmpty               = "Q003_QUEUE_EMPTY"
+	CodeQueueStatusUpdateFailed  = "Q004_QUEUE_STATUS_UPDATE_FAILED"
+	CodeQueueCompletedScanFailed = "Q005_QUEUE_COMPLETED_SCAN_FAILED"
+	CodeQueueCorruptedFile       = "Q006_QUEUE_CORRUPTED_FILE"
+)
+
 // Protocol error codes (P001-P099)
 const (
 	CodeStateTransitionInvalid  = "P001_STATE_TRANSITION_INVALID"
