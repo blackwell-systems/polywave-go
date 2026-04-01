@@ -342,11 +342,26 @@ func FinalizeWave(ctx context.Context, opts FinalizeWaveOpts) (*FinalizeWaveResu
 			}
 
 			// Step 1.3: PredictConflicts (E11) — manifest-level, run once
+			// Use enhanced version with auto-merge capability
 			{
 				repoOpts := firstRepoOpts(opts, repos)
-				_, stepErr := StepPredictConflicts(ctx, repoOpts, manifest, onEvent)
+				_, conflictData, stepErr := StepPredictConflictsEnhanced(ctx, repoOpts, manifest, onEvent)
 				if stepErr != nil {
 					return result, fmt.Errorf("engine.FinalizeWave: %w", stepErr)
+				}
+
+				// If all conflicts are auto-mergeable, attempt auto-merge
+				if conflictData != nil && conflictData.AutoMergeable > 0 && conflictData.AutoMergeable == conflictData.ConflictsDetected {
+					_, autoMergeResults, autoMergeErr := StepAutoMergeAppendConflicts(ctx, repoOpts, manifest, conflictData.Conflicts, onEvent)
+					if autoMergeErr != nil {
+						return result, fmt.Errorf("engine.FinalizeWave: %w", autoMergeErr)
+					}
+
+					// Track how many agents were successfully merged
+					mergedCount := countMergedAgents(autoMergeResults)
+					if mergedCount > 0 {
+						loggerFrom(opts.Logger).Info("engine.FinalizeWave: auto-merged agents", "count", mergedCount)
+					}
 				}
 			}
 
@@ -692,4 +707,15 @@ func containsAny(s string, substrs ...string) bool {
 		}
 	}
 	return false
+}
+
+// countMergedAgents counts the total number of agents successfully merged across all auto-merge results.
+func countMergedAgents(results []AutoMergeData) int {
+	count := 0
+	for _, r := range results {
+		if !r.FallbackNeeded {
+			count += r.MergesApplied
+		}
+	}
+	return count
 }
