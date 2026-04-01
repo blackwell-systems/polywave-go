@@ -25,11 +25,12 @@ Prevents agents wasting time on dependency thrashing.`,
 			implPath := args[0]
 
 			// Run conflict detection
-			report, err := deps.CheckDeps(implPath, wave)
-			if err != nil {
-				return fmt.Errorf("failed to check deps: %w", err)
+			res := deps.CheckDeps(implPath, wave)
+			if !res.IsSuccess() {
+				return fmt.Errorf("failed to check deps: %v", res.Errors)
 			}
 
+			report := res.GetData()
 			// Output JSON
 			enc := json.NewEncoder(os.Stdout)
 			enc.SetIndent("", "  ")

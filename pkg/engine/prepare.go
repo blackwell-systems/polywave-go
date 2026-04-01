@@ -711,11 +711,12 @@ func checkPreviousWaveVerified(doc *protocol.IMPLManifest, prevWaveNum int) resu
 
 // checkDependencies wraps deps.CheckDeps to return nil report if no conflicts detected.
 func checkDependencies(implPath string, wave int) (*deps.ConflictReport, error) {
-	report, err := deps.CheckDeps(implPath, wave)
-	if err != nil {
-		return nil, err
+	res := deps.CheckDeps(implPath, wave)
+	if !res.IsSuccess() {
+		return nil, fmt.Errorf("dependency check failed: %v", res.Errors)
 	}
 
+	report := res.GetData()
 	realConflicts := 0
 	for _, vc := range report.VersionConflicts {
 		if vc.ResolutionNeeded {
@@ -726,7 +727,7 @@ func checkDependencies(implPath string, wave int) (*deps.ConflictReport, error) 
 		return nil, nil
 	}
 
-	return report, nil
+	return &report, nil
 }
 
 // verifyHookInWorktree checks that a pre-commit hook exists and is executable.
