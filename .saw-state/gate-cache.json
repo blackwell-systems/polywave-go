@@ -1056,6 +1056,18 @@
         "cached_at": "2026-03-25T18:04:41.081524-07:00"
       }
     },
+    "32aaeb3f9e3a08def30d017beebcda27": {
+      "build": {
+        "gate_type": "build",
+        "command": "go build ./pkg/engine/...",
+        "passed": true,
+        "exit_code": 0,
+        "stdout": "",
+        "stderr": "",
+        "from_cache": true,
+        "cached_at": "2026-04-01T00:36:10.445794-07:00"
+      }
+    },
     "337777e2bd8cb20cb7843bc8c0534d66": {
       "test": {
         "gate_type": "test",
@@ -1618,6 +1630,18 @@
         "stderr": "",
         "from_cache": true,
         "cached_at": "2026-03-30T09:44:02.949664-07:00"
+      }
+    },
+    "5273090768c4fa1ca7ffa69ffef85372": {
+      "test": {
+        "gate_type": "test",
+        "command": "go test ./pkg/engine/...",
+        "passed": false,
+        "exit_code": 1,
+        "stdout": "2026/04/01 00:36:13 WARN protocol: git worktree prune failed repo=/var/folders/3z/jbjrfl4578z013f8fdh5w0tr0000gp/T/TestStepCleanup_NoWorktrees4098001532/001/repo err=\"git worktree prune failed: exit status 128: fatal: not a git repository (or any of the parent directories): .git\"\n2026/04/01 00:36:13 WARN protocol: git worktree prune failed repo=/var/folders/3z/jbjrfl4578z013f8fdh5w0tr0000gp/T/TestFinalizeWave_MergeTargetPropagation3104389893/001/repo err=\"git worktree prune failed: exit status 128: fatal: not a git repository (or any of the parent directories): .git\"\n2026/04/01 00:36:14 WARN protocol: git worktree prune failed repo=/var/folders/3z/jbjrfl4578z013f8fdh5w0tr0000gp/T/TestFinalizeWave_RequireNoStubs_BlocksOnStubs102372611/001/repo err=\"git worktree prune failed: exit status 128: fatal: not a git repository (or any of the parent directories): .git\"\n2026/04/01 00:36:14 WARN protocol: git worktree prune failed repo=/var/folders/3z/jbjrfl4578z013f8fdh5w0tr0000gp/T/TestFinalizeWave_EnforceIntegrationValidation_BlocksOnGaps3299586646/001/repo err=\"git worktree prune failed: exit status 128: fatal: not a git repository (or any of the parent directories): .git\"\n2026/04/01 00:36:14 WARN protocol: git worktree prune failed repo=/var/folders/3z/jbjrfl4578z013f8fdh5w0tr0000gp/T/TestFinalizeWave_DefaultBehavior_Unchanged1629681486/001/repo err=\"git worktree prune failed: exit status 128: fatal: not a git repository (or any of the parent directories): .git\"\n2026/04/01 00:36:14 WARN protocol: git worktree prune failed repo=/var/folders/3z/jbjrfl4578z013f8fdh5w0tr0000gp/T/TestFinalizeWave_IntegrationError_NonFatal3392085899/001/repo err=\"git worktree prune failed: exit status 128: fatal: not a git repository (or any of the parent directories): .git\"\n2026/04/01 00:36:14 WARN protocol: git worktree prune failed repo=/var/folders/3z/jbjrfl4578z013f8fdh5w0tr0000gp/T/TestFinalizeWave_ResultMapFields3753202561/001/repo err=\"git worktree prune failed: exit status 128: fatal: not a git repository (or any of the parent directories): .git\"\n2026/04/01 00:36:14 WARN protocol: git worktree prune failed repo=/var/folders/3z/jbjrfl4578z013f8fdh5w0tr0000gp/T/TestFinalizeWave_SingleRepoMapKey4185574813/001/repo err=\"git worktree prune failed: exit status 128: fatal: not a git repository (or any of the parent directories): .git\"\n2026/04/01 00:36:14 INFO finalize-tier: step 1 — closing IMPLs tier=1\n2026/04/01 00:36:14 INFO finalize-tier: step 1 — closing IMPLs tier=99\n2026/04/01 00:36:15 INFO finalize-tier: step 1 — closing IMPLs tier=1\n2026/04/01 00:36:15 INFO finalize-tier: IMPL not found on disk (already archived?) slug=test-impl\n2026/04/01 00:36:15 INFO finalize-tier: step 2 — merging IMPL branches tier=1\n2026/04/01 00:36:15 INFO finalize-tier: branch not found (already merged or never created) branch=saw/program/test-prog/tier1-impl-test-impl\n2026/04/01 00:36:15 INFO finalize-tier: step 3 — running tier gate tier=1\n2026/04/01 00:36:15 WARN finalize-tier: tier gate failed error=\"not all IMPLs in tier are complete\"\n2026/04/01 00:36:15 INFO gowork_setup: backed up go.work\n--- FAIL: TestJournalIntegration_ArchiveJournal (0.00s)\n    runner_test.go:154: JournalDir: /var/folders/3z/jbjrfl4578z013f8fdh5w0tr0000gp/T/TestJournalIntegration_ArchiveJournal1145148647/001/.saw-state/wave1/agent/A\n    runner_test.go:155: ProjectRoot: /var/folders/3z/jbjrfl4578z013f8fdh5w0tr0000gp/T/TestJournalIntegration_ArchiveJournal1145148647/001\n    runner_test.go:166: ArchiveJournal failed: archive journal: cannot parse wave/agent from journal dir: /var/folders/3z/jbjrfl4578z013f8fdh5w0tr0000gp/T/TestJournalIntegration_ArchiveJournal1145148647/001/.saw-state/wave1/agent/A\nFAIL\nFAIL\tgithub.com/blackwell-systems/scout-and-wave-go/pkg/engine\t18.917s\nFAIL\n",
+        "stderr": "",
+        "from_cache": true,
+        "cached_at": "2026-04-01T00:36:30.642064-07:00"
       }
     },
     "5382c3622ed232db71b90e6aac5c69f3": {
@@ -5062,6 +5086,18 @@
         "stderr": "",
         "from_cache": true,
         "cached_at": "2026-03-31T22:06:29.182128-07:00"
+      }
+    },
+    "dfd7ae063037a25bed98aa18cd0fcac4": {
+      "lint": {
+        "gate_type": "lint",
+        "command": "go vet ./pkg/engine/...",
+        "passed": true,
+        "exit_code": 0,
+        "stdout": "",
+        "stderr": "",
+        "from_cache": true,
+        "cached_at": "2026-04-01T00:36:10.922504-07:00"
       }
     },
     "e052fbf9e4aaaaffbd8652929561a7da": {
