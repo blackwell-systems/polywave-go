@@ -1644,6 +1644,18 @@
         "cached_at": "2026-03-26T09:55:39.30421-07:00"
       }
     },
+    "5008b458483116d2b2b459e60c4aeb39": {
+      "lint": {
+        "gate_type": "lint",
+        "command": "go vet ./...",
+        "passed": true,
+        "exit_code": 0,
+        "stdout": "",
+        "stderr": "",
+        "from_cache": true,
+        "cached_at": "2026-04-01T01:28:56.435322-07:00"
+      }
+    },
     "51031cbd195ff37679dab830f2da023c": {
       "test": {
         "gate_type": "test",
@@ -1750,6 +1762,18 @@
         "stderr": "",
         "from_cache": true,
         "cached_at": "2026-03-30T18:54:44.490877-07:00"
+      }
+    },
+    "55882646c96597b21892ae9121d3aa77": {
+      "test": {
+        "gate_type": "test",
+        "command": "go test ./pkg/engine/... ./pkg/engine/workspace/...",
+        "passed": false,
+        "exit_code": 1,
+        "stdout": "FAIL\t./pkg/engine/workspace/... [setup failed]\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/engine\t(cached)\nFAIL\n",
+        "stderr": "# ./pkg/engine/workspace/...\npattern ./pkg/engine/workspace/...: lstat ./pkg/engine/workspace/: no such file or directory\n",
+        "from_cache": true,
+        "cached_at": "2026-04-01T01:28:57.145986-07:00"
       }
     },
     "5609b90c6ddee7b83469901e6349f911": {
@@ -1870,6 +1894,18 @@
         "stderr": "",
         "from_cache": true,
         "cached_at": "2026-03-30T09:38:31.799573-07:00"
+      }
+    },
+    "57d2186592eb49f57be5b0b75634b2b1": {
+      "build": {
+        "gate_type": "build",
+        "command": "go build ./...",
+        "passed": true,
+        "exit_code": 0,
+        "stdout": "",
+        "stderr": "",
+        "from_cache": true,
+        "cached_at": "2026-04-01T01:28:55.61452-07:00"
       }
     },
     "589aac9cc97be83f838cb3b6e97ab03a": {
