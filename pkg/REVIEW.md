@@ -45,4 +45,4 @@ Each reviewed package gets scouted → IMPL'd → closed before being marked don
 | solver | ✅ | | |
 | suitability | ✅ | | |
 | tools | | | |
-| worktree | ✅ | | |
+| worktree | ✅ | ✅ | ✅ |
