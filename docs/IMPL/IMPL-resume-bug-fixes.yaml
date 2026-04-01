@@ -406,5 +406,5 @@ pre_mortem:
             buildActionAndCommand is unexported. The package-internal search confirmed no
             callers within the package (buildSessionState calls buildActionAndCommandInternal
             directly). Safe to delete.
-state: SCOUT_PENDING
+state: "REVIEWED"
 injection_method: hook
