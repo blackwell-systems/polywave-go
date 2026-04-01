@@ -107,6 +107,7 @@ const (
 	CodeDirtyWorktree        = "G005_DIRTY_WORKTREE"
 	CodeHookInstallFailed    = "G006_HOOK_INSTALL_FAILED"
 	CodeWorktreeCleanup      = "G007_WORKTREE_CLEANUP"
+	CodeWorktreeRemoveFailed = "G008_WORKTREE_REMOVE_FAILED"
 )
 
 // Agent error codes (A001-A099)
