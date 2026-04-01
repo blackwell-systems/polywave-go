@@ -7,8 +7,10 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"os"
 	"strings"
+	"sync"
 
 	anthropic "github.com/anthropics/anthropic-sdk-go"
 	"github.com/anthropics/anthropic-sdk-go/option"
@@ -36,6 +38,8 @@ type Client struct {
 	onToolCall    backend.ToolCallCallback // optional: timing events for Observatory
 	readOnly      bool                     // if true, block write_file/edit_file
 	cfg           backend.Config           // full config for constraint access
+
+	mu            sync.Mutex
 	commitTracker *tools.CommitTracker
 	dedupCache    *dedup.Cache
 }
@@ -82,45 +86,36 @@ func New(apiKey string, cfg backend.Config) *Client {
 
 // buildWorkshop creates a Workshop with middleware applied based on client config.
 func (c *Client) buildWorkshop(workDir string) tools.Workshop {
-	var w tools.Workshop
-	if c.readOnly {
-		w = tools.ReadOnlyTools(workDir)
-	} else {
-		w = tools.StandardTools(workDir)
-	}
-	w, c.dedupCache = dedup.WithDedup(w)
-	if c.cfg.Constraints != nil {
-		w, c.commitTracker = tools.WithConstraints(w, *c.cfg.Constraints)
-	}
-	if c.onToolCall != nil {
-		w = tools.WithTiming(w, func(ev tools.ToolCallEvent) {
-			c.onToolCall(backend.ToolCallEvent{
-				Name:       ev.ToolName,
-				DurationMs: ev.DurationMs,
-				IsError:    ev.IsError,
-				IsResult:   true,
-			})
-		})
-	}
-	return w
+	result := backend.BuildWorkshop(workDir, c.readOnly, c.cfg)
+	c.mu.Lock()
+	c.dedupCache = result.DedupCache
+	c.commitTracker = result.CommitTracker
+	c.mu.Unlock()
+	return result.Workshop
 }
 
 // CommitCount returns the number of git commits tracked by the constraint
 // middleware. Returns 0 if constraints are not configured or no commits detected.
 func (c *Client) CommitCount() int {
-	if c.commitTracker == nil {
+	c.mu.Lock()
+	ct := c.commitTracker
+	c.mu.Unlock()
+	if ct == nil {
 		return 0
 	}
-	return c.commitTracker.Count
+	return ct.Count
 }
 
 // DedupStats returns dedup metrics from the most recent Run call.
 // Returns nil if no run has been made yet.
 func (c *Client) DedupStats() *dedup.Stats {
-	if c.dedupCache == nil {
+	c.mu.Lock()
+	dc := c.dedupCache
+	c.mu.Unlock()
+	if dc == nil {
 		return nil
 	}
-	stats := c.dedupCache.Stats()
+	stats := dc.Stats()
 	return &stats
 }
 
@@ -246,10 +241,12 @@ func (c *Client) Run(ctx context.Context, systemPrompt, userMessage, workDir str
 
 			var inputMap map[string]interface{}
 			if err := json.Unmarshal(tu.Input, &inputMap); err != nil {
+				slog.Warn("api: failed to unmarshal tool input", "tool", tu.Name, "error", err)
 				inputMap = map[string]interface{}{}
 			}
 
-			result, isError := backend.ExecuteToolCompat(ctx, workshop, tu.Name, inputMap, workDir)
+			result, err := backend.ExecuteTool(ctx, workshop, tu.Name, inputMap, workDir)
+			isError := err != nil
 			toolResultBlocks = append(toolResultBlocks, anthropic.NewToolResultBlock(tu.ID, result, isError))
 		}
 		messages = append(messages, anthropic.NewUserMessage(toolResultBlocks...))
@@ -417,10 +414,12 @@ func (c *Client) RunStreaming(ctx context.Context, systemPrompt, userMessage, wo
 
 			var inputMap map[string]interface{}
 			if err := json.Unmarshal(inputJSON, &inputMap); err != nil {
+				slog.Warn("api: failed to unmarshal tool input", "tool", blk.toolName, "error", err)
 				inputMap = map[string]interface{}{}
 			}
 
-			result, isError := backend.ExecuteToolCompat(ctx, workshop, blk.toolName, inputMap, workDir)
+			result, err := backend.ExecuteTool(ctx, workshop, blk.toolName, inputMap, workDir)
+			isError := err != nil
 			toolResultBlocks = append(toolResultBlocks, anthropic.NewToolResultBlock(blk.toolID, result, isError))
 		}
 		messages = append(messages, anthropic.NewUserMessage(toolResultBlocks...))
@@ -437,8 +436,15 @@ func (c *Client) RunStreaming(ctx context.Context, systemPrompt, userMessage, wo
 }
 
 // RunStreamingWithTools implements backend.Backend.
-// API backend does not yet support tool call event streaming, so this
-// delegates to RunStreaming (no-op for onToolCall).
+// It delegates to RunStreaming, temporarily installing onToolCall into the
+// client's config so that tool call events are forwarded through the timing
+// middleware. If onToolCall is nil, it behaves identically to RunStreaming.
 func (c *Client) RunStreamingWithTools(ctx context.Context, systemPrompt, userMessage, workDir string, onChunk backend.ChunkCallback, onToolCall backend.ToolCallCallback) (string, error) {
+	if onToolCall != nil {
+		// Temporarily set onToolCall so buildWorkshop picks it up via cfg.
+		origCb := c.cfg.OnToolCall
+		c.cfg.OnToolCall = onToolCall
+		defer func() { c.cfg.OnToolCall = origCb }()
+	}
 	return c.RunStreaming(ctx, systemPrompt, userMessage, workDir, onChunk)
 }
