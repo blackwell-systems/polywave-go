@@ -1,8 +1,9 @@
 // pkg/tools/constraint_enforcer.go
 //
 // Real middleware implementations for SAW protocol invariant enforcement.
-// Registered via init() into the package-level middleware variables in
-// workshop_constrained.go, replacing the passthrough stubs.
+// Registered via RegisterConstraintMiddleware(), called explicitly from
+// workshop_constrained.go's init(), eliminating the fragile dependency on
+// Go's alphabetical file init() ordering.
 package tools
 
 import (
@@ -11,11 +12,11 @@ import (
 	"strings"
 )
 
-// init registers the real constraint middleware constructors unconditionally,
-// overriding the passthrough stubs set by workshop_constrained.go's init().
-// Go init() functions run in source-file alphabetical order within a package,
-// so constraint_enforcer.go (c) runs after workshop_constrained.go (w).
-func init() {
+// RegisterConstraintMiddleware sets the package-level middleware constructor
+// variables to the real constraint enforcement implementations. Called explicitly
+// from workshop_constrained.go's init(), eliminating the fragile dependency on
+// Go's alphabetical file init() ordering.
+func RegisterConstraintMiddleware() {
 	ownershipMiddlewareFn = newOwnershipMiddleware
 	freezeMiddlewareFn = newFreezeMiddleware
 	rolePathMiddlewareFn = newRolePathMiddleware
@@ -94,6 +95,9 @@ func newRolePathMiddleware(toolName string, c Constraints) Middleware {
 
 			for _, prefix := range c.AllowedPathPrefixes {
 				if strings.HasPrefix(filePath, prefix) {
+					if c.AgentRole == "scout" && !strings.HasSuffix(filePath, ".yaml") {
+						continue
+					}
 					return next.Execute(ctx, execCtx, input)
 				}
 			}

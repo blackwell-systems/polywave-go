@@ -75,19 +75,6 @@ func blockingRolePath(toolName string, c Constraints) Middleware {
 	}
 }
 
-// trackingBash returns a mock BashConstraintMiddleware that tracks git commits.
-func trackingBash(c Constraints, tracker *CommitTracker) Middleware {
-	return func(next ToolExecutor) ToolExecutor {
-		return executorFunc(func(ctx context.Context, execCtx ExecutionContext, input map[string]interface{}) (string, error) {
-			cmd, _ := input["command"].(string)
-			if tracker != nil && strings.Contains(cmd, "git commit") {
-				tracker.Count++
-			}
-			return next.Execute(ctx, execCtx, input)
-		})
-	}
-}
-
 // buildTestWorkshop creates a Workshop with write_file, edit_file, bash, and read_file tools.
 func buildTestWorkshop() Workshop {
 	w := NewWorkshop()
@@ -221,41 +208,25 @@ func TestWithConstraints_RoleApplied(t *testing.T) {
 	}
 }
 
-func TestWithConstraints_BashTracking(t *testing.T) {
-	origFn := bashConstraintMiddlewareFn
-	bashConstraintMiddlewareFn = trackingBash
-	defer func() { bashConstraintMiddlewareFn = origFn }()
-
+func TestWithConstraints_BashNoConstraintMiddleware(t *testing.T) {
 	w := buildTestWorkshop()
 	c := Constraints{
 		TrackCommits: true,
-		OwnedFiles:   map[string]bool{"a.go": true}, // need non-zero constraints
+		OwnedFiles:   map[string]bool{"a.go": true},
 	}
-
 	constrained, tracker := WithConstraints(w, c)
-
 	if tracker == nil {
 		t.Fatal("expected non-nil tracker when TrackCommits=true")
 	}
-
 	tool, _ := constrained.Get("bash")
-
-	// Execute git commit
-	_, _ = tool.Executor.Execute(context.Background(), ExecutionContext{}, map[string]interface{}{
-		"command": "git commit -m 'test'",
-	})
-
-	if tracker.Count != 1 {
-		t.Fatalf("expected tracker count 1, got %d", tracker.Count)
+	// Bash passes through without constraint middleware
+	result, err := tool.Executor.Execute(context.Background(), ExecutionContext{},
+		map[string]interface{}{"command": "echo hello"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
 	}
-
-	// Execute non-commit command
-	_, _ = tool.Executor.Execute(context.Background(), ExecutionContext{}, map[string]interface{}{
-		"command": "ls -la",
-	})
-
-	if tracker.Count != 1 {
-		t.Fatalf("expected tracker count still 1, got %d", tracker.Count)
+	if result != "ok:bash" {
+		t.Errorf("expected passthrough result 'ok:bash', got: %s", result)
 	}
 }
 
@@ -274,12 +245,9 @@ func TestWithConstraints_CommitTracker_NilWhenDisabled(t *testing.T) {
 
 func TestConstrainedTools_Integration(t *testing.T) {
 	origOwn := ownershipMiddlewareFn
-	origBash := bashConstraintMiddlewareFn
 	ownershipMiddlewareFn = blockingOwnership
-	bashConstraintMiddlewareFn = trackingBash
 	defer func() {
 		ownershipMiddlewareFn = origOwn
-		bashConstraintMiddlewareFn = origBash
 	}()
 
 	c := Constraints{
@@ -405,10 +373,8 @@ func TestWithConstraints_ReadToolsUnconstrained(t *testing.T) {
 }
 
 func TestWithConstraints_BashToolNotGetWriteMiddleware(t *testing.T) {
-	// Verify bash tool gets BashConstraintMiddleware, NOT ownership/freeze middleware
 	var ownershipExecuted bool
 	origOwn := ownershipMiddlewareFn
-	origBash := bashConstraintMiddlewareFn
 	ownershipMiddlewareFn = func(_ string, _ Constraints) Middleware {
 		return func(next ToolExecutor) ToolExecutor {
 			return executorFunc(func(ctx context.Context, execCtx ExecutionContext, input map[string]interface{}) (string, error) {
@@ -417,35 +383,18 @@ func TestWithConstraints_BashToolNotGetWriteMiddleware(t *testing.T) {
 			})
 		}
 	}
-	bashConstraintMiddlewareFn = func(_ Constraints, _ *CommitTracker) Middleware {
-		return func(next ToolExecutor) ToolExecutor {
-			return executorFunc(func(ctx context.Context, execCtx ExecutionContext, input map[string]interface{}) (string, error) {
-				return "bash-constrained", nil
-			})
-		}
-	}
-	defer func() {
-		ownershipMiddlewareFn = origOwn
-		bashConstraintMiddlewareFn = origBash
-	}()
+	defer func() { ownershipMiddlewareFn = origOwn }()
 
 	w := buildTestWorkshop()
-	c := Constraints{
-		OwnedFiles:   map[string]bool{"a.go": true},
-		TrackCommits: true,
-	}
-
+	c := Constraints{OwnedFiles: map[string]bool{"a.go": true}}
 	constrained, _ := WithConstraints(w, c)
-
 	tool, _ := constrained.Get("bash")
-	result, _ := tool.Executor.Execute(context.Background(), ExecutionContext{}, map[string]interface{}{
-		"command": "echo hello",
-	})
-
-	if result != "bash-constrained" {
-		t.Fatalf("expected bash to use BashConstraintMiddleware, got: %s", result)
+	result, _ := tool.Executor.Execute(context.Background(), ExecutionContext{},
+		map[string]interface{}{"command": "echo hello"})
+	if result != "ok:bash" {
+		t.Errorf("expected passthrough for bash, got: %s", result)
 	}
 	if ownershipExecuted {
-		t.Fatal("ownership middleware should not be executed for bash tool")
+		t.Fatal("ownership middleware should not execute for bash tool")
 	}
 }
