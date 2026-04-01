@@ -17,6 +17,7 @@ func newPrepareWaveCmd() *cobra.Command {
 	var noCache bool
 	var mergeTarget string
 	var commitBaseline bool
+	var commitState bool
 	var jsonOnly bool
 	var skipCritic bool
 
@@ -37,7 +38,14 @@ exits with code 1 and prints a JSON report. Resolve conflicts in main branch and
 
 NOTE: For solo agents (1 agent in wave), use prepare-agent --no-worktree instead.
 prepare-wave always creates worktrees, which is unnecessary overhead for single-agent
-waves that execute on the main branch.`,
+waves that execute on the main branch.
+
+Use --commit-state in PROGRAM context when calling prepare-wave for
+multiple IMPLs in a tier. SAW-owned state changes (IMPL yaml state
+advances, gate-cache updates) are auto-committed so the second
+prepare-wave call does not fail with "working directory is dirty".
+User code changes are NOT auto-committed; they still cause the command
+to fail with a descriptive error.`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if waveNum == 0 {
@@ -84,6 +92,7 @@ waves that execute on the main branch.`,
 				MergeTarget:    mergeTarget,
 				NoCache:        noCache,
 				CommitBaseline: commitBaseline,
+				CommitState:    commitState,
 				Logger:         newSawLogger(),
 				OnEvent: func(step string, status string, detail string) {
 					if !jsonOnly {
@@ -130,6 +139,7 @@ waves that execute on the main branch.`,
 	cmd.Flags().BoolVar(&noCache, "no-cache", false, "Disable baseline gate result caching")
 	cmd.Flags().StringVar(&mergeTarget, "merge-target", "", "Baseline branch for verification (default: current HEAD)")
 	cmd.Flags().BoolVar(&commitBaseline, "commit-baseline", false, "Auto-commit baseline fixes if working directory is dirty")
+	cmd.Flags().BoolVar(&commitState, "commit-state", false, "Auto-commit SAW-owned state changes (IMPL yaml + gate-cache) before working-dir check. Does not commit user code.")
 	cmd.Flags().BoolVar(&jsonOnly, "json-only", false, "Suppress progress messages (only output JSON result)")
 	cmd.Flags().BoolVar(&skipCritic, "skip-critic", false, "Auto-skip E37 critic gate if no critic report exists")
 
