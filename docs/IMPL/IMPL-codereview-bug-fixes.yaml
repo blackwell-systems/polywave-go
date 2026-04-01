@@ -512,5 +512,5 @@ pre_mortem:
           mitigation: |-
             Agent A's task provides all NewFailure call sites verbatim, each with exactly
             one SAWError element. Any panic would surface immediately in the smoke test gate.
-state: SCOUT_PENDING
+state: "REVIEWED"
 injection_method: hook
