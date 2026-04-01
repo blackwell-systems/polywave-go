@@ -137,7 +137,11 @@ var runVerificationFunc = func(ctx context.Context, o *Orchestrator, testCommand
 // worktreeCreatorFunc is a seam for tests: it creates a worktree for wave/agent
 // and returns the worktree path. Tests can replace this to avoid real git ops.
 var worktreeCreatorFunc = func(wm *worktree.Manager, waveNum int, agentLetter string) (string, error) {
-	return wm.Create(waveNum, agentLetter)
+	r := wm.Create(waveNum, agentLetter)
+	if r.IsFatal() {
+		return "", r.Errors[0]
+	}
+	return r.GetData().Path, nil
 }
 
 // implSlug loads the IMPL manifest and returns the feature slug.
@@ -440,7 +444,7 @@ func NewBackendFromModel(model string) (backend.Backend, error) {
 // newRunnerFunc is a seam for tests: constructs the agent.Runner used by RunWave.
 // Tests can replace this to inject a fake Backend without real API calls.
 var newRunnerFunc = func(b backend.Backend, wm *worktree.Manager) *agent.Runner {
-	return agent.NewRunner(b, wm)
+	return agent.NewRunner(b)
 }
 
 // Orchestrator drives SAW protocol wave coordination.
