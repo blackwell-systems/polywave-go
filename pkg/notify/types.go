@@ -56,3 +56,15 @@ type Adapter interface {
 type Formatter interface {
 	Format(event Event) Message
 }
+
+// defaultHTTPTimeout is the timeout applied to all outbound HTTP clients
+// in notify adapters (Slack, Discord, Telegram).
+const defaultHTTPTimeout = 10 * time.Second
+
+// readWithFallback reads key from cfg, falling back to fallbackKey.
+func readWithFallback(cfg map[string]string, key, fallbackKey string) string {
+	if v := cfg[key]; v != "" {
+		return v
+	}
+	return cfg[fallbackKey]
+}
