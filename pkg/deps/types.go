@@ -1,9 +1,11 @@
 package deps
 
+import "github.com/blackwell-systems/scout-and-wave-go/pkg/result"
+
 // LockFileParser interface for multi-language lock file parsing
 type LockFileParser interface {
 	// Parse reads a lock file and returns package metadata
-	Parse(filePath string) ([]PackageInfo, error)
+	Parse(filePath string) result.Result[[]PackageInfo]
 
 	// Detect checks if this parser can handle the given file
 	Detect(filePath string) bool
