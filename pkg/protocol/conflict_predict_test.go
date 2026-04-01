@@ -598,3 +598,308 @@ func TestPredictConflictsFromReports_DifferingEditsBlocked(t *testing.T) {
 		t.Error("expected conflict prediction for shared.go")
 	}
 }
+
+func TestAnalyzeDiffPattern_AppendOnly(t *testing.T) {
+	// Create a temporary git repo with append-only changes
+	tmpDir := t.TempDir()
+	repoPath := filepath.Join(tmpDir, "test-repo")
+
+	if err := os.MkdirAll(repoPath, 0755); err != nil {
+		t.Fatal(err)
+	}
+	runGit := func(args ...string) {
+		cmd := exec.Command("git", args...)
+		cmd.Dir = repoPath
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v failed: %v\n%s", args, err, out)
+		}
+	}
+
+	runGit("init")
+	runGit("config", "user.email", "test@example.com")
+	runGit("config", "user.name", "Test User")
+	runGit("config", "init.defaultBranch", "main")
+
+	// Base file
+	testFile := filepath.Join(repoPath, "code.go")
+	if err := os.WriteFile(testFile, []byte("package main\n\nfunc Existing() {}\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	runGit("add", ".")
+	runGit("commit", "-m", "initial")
+	runGit("branch", "-M", "main")
+
+	// Agent branch with append-only changes
+	runGit("checkout", "-b", "agent-branch")
+	if err := os.WriteFile(testFile, []byte("package main\n\nfunc Existing() {}\n\nfunc New() {}\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	runGit("add", ".")
+	runGit("commit", "-m", "add new function")
+
+	// Analyze pattern
+	analysis, err := AnalyzeDiffPattern(repoPath, "main", "agent-branch", "code.go")
+	if err != nil {
+		t.Fatalf("AnalyzeDiffPattern failed: %v", err)
+	}
+	if analysis == nil {
+		t.Fatal("expected non-nil analysis")
+	}
+	if analysis.Pattern != DiffPatternAppendOnly {
+		t.Errorf("expected DiffPatternAppendOnly, got %s", analysis.Pattern)
+	}
+	if len(analysis.Hunks) == 0 {
+		t.Error("expected hunks to be populated")
+	}
+}
+
+func TestAnalyzeDiffPattern_LineEdits(t *testing.T) {
+	// Create a temporary git repo with line edit changes
+	tmpDir := t.TempDir()
+	repoPath := filepath.Join(tmpDir, "test-repo")
+
+	if err := os.MkdirAll(repoPath, 0755); err != nil {
+		t.Fatal(err)
+	}
+	runGit := func(args ...string) {
+		cmd := exec.Command("git", args...)
+		cmd.Dir = repoPath
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v failed: %v\n%s", args, err, out)
+		}
+	}
+
+	runGit("init")
+	runGit("config", "user.email", "test@example.com")
+	runGit("config", "user.name", "Test User")
+	runGit("config", "init.defaultBranch", "main")
+
+	// Base file
+	testFile := filepath.Join(repoPath, "code.go")
+	if err := os.WriteFile(testFile, []byte("package main\n\nfunc Existing(x int) int { return x }\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	runGit("add", ".")
+	runGit("commit", "-m", "initial")
+	runGit("branch", "-M", "main")
+
+	// Agent branch with line edits (modify existing function signature)
+	runGit("checkout", "-b", "agent-branch")
+	if err := os.WriteFile(testFile, []byte("package main\n\nfunc Existing(ctx context.Context, x int) int { return x }\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	runGit("add", ".")
+	runGit("commit", "-m", "add context parameter")
+
+	// Analyze pattern
+	analysis, err := AnalyzeDiffPattern(repoPath, "main", "agent-branch", "code.go")
+	if err != nil {
+		t.Fatalf("AnalyzeDiffPattern failed: %v", err)
+	}
+	if analysis == nil {
+		t.Fatal("expected non-nil analysis")
+	}
+	if analysis.Pattern != DiffPatternLineEdits {
+		t.Errorf("expected DiffPatternLineEdits, got %s", analysis.Pattern)
+	}
+}
+
+func TestPredictConflictsWithStrategy_AutoMergeable(t *testing.T) {
+	// Create a temporary git repo with two agents doing append-only changes
+	tmpDir := t.TempDir()
+	repoPath := filepath.Join(tmpDir, "test-repo")
+
+	if err := os.MkdirAll(repoPath, 0755); err != nil {
+		t.Fatal(err)
+	}
+	runGit := func(args ...string) {
+		cmd := exec.Command("git", args...)
+		cmd.Dir = repoPath
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v failed: %v\n%s", args, err, out)
+		}
+	}
+
+	runGit("init")
+	runGit("config", "user.email", "test@example.com")
+	runGit("config", "user.name", "Test User")
+	runGit("config", "init.defaultBranch", "main")
+
+	// Base file with multiple functions to avoid insertion point conflicts
+	testFile := filepath.Join(repoPath, "shared.go")
+	baseContent := `package shared
+
+func Base1() {}
+
+func Base2() {}
+
+func Base3() {}
+`
+	if err := os.WriteFile(testFile, []byte(baseContent), 0644); err != nil {
+		t.Fatal(err)
+	}
+	runGit("add", ".")
+	runGit("commit", "-m", "initial")
+	runGit("branch", "-M", "main")
+
+	// Agent A: append-only (add FuncA after Base1, non-overlapping position)
+	runGit("checkout", "-b", "saw/test-feature/wave1-agent-A")
+	contentA := `package shared
+
+func Base1() {}
+
+func FuncA() {}
+
+func Base2() {}
+
+func Base3() {}
+`
+	if err := os.WriteFile(testFile, []byte(contentA), 0644); err != nil {
+		t.Fatal(err)
+	}
+	runGit("add", ".")
+	runGit("commit", "-m", "agent A: add FuncA")
+
+	// Agent B: append-only (add FuncB after Base3, different position)
+	runGit("checkout", "main")
+	runGit("checkout", "-b", "saw/test-feature/wave1-agent-B")
+	contentB := `package shared
+
+func Base1() {}
+
+func Base2() {}
+
+func Base3() {}
+
+func FuncB() {}
+`
+	if err := os.WriteFile(testFile, []byte(contentB), 0644); err != nil {
+		t.Fatal(err)
+	}
+	runGit("add", ".")
+	runGit("commit", "-m", "agent B: add FuncB")
+
+	manifest := &IMPLManifest{
+		Repository:  repoPath,
+		FeatureSlug: "test-feature",
+		Waves: []Wave{
+			{
+				Number: 1,
+				Agents: []Agent{{ID: "A"}, {ID: "B"}},
+			},
+		},
+		CompletionReports: map[string]CompletionReport{
+			"A": {Status: "complete", FilesChanged: []string{"shared.go"}},
+			"B": {Status: "complete", FilesChanged: []string{"shared.go"}},
+		},
+	}
+
+	res := PredictConflictsWithStrategy(context.Background(), manifest, 1)
+	if res.IsFatal() {
+		t.Fatalf("unexpected fatal result: %v", res.Errors)
+	}
+	data := res.GetData()
+	if data.ConflictsDetected == 0 {
+		t.Error("expected conflicts to be detected (even if auto-mergeable)")
+	}
+	if data.AutoMergeable == 0 {
+		t.Error("expected at least one auto-mergeable conflict")
+	}
+	// Check that at least one conflict has automatic strategy
+	foundAutomatic := false
+	for _, cp := range data.Conflicts {
+		if cp.Strategy == MergeStrategyAutomatic {
+			foundAutomatic = true
+			break
+		}
+	}
+	if !foundAutomatic {
+		t.Error("expected at least one conflict with automatic merge strategy")
+	}
+}
+
+func TestPredictConflictsWithStrategy_ManualRequired(t *testing.T) {
+	// Create a temporary git repo with two agents editing the same lines
+	tmpDir := t.TempDir()
+	repoPath := filepath.Join(tmpDir, "test-repo")
+
+	if err := os.MkdirAll(repoPath, 0755); err != nil {
+		t.Fatal(err)
+	}
+	runGit := func(args ...string) {
+		cmd := exec.Command("git", args...)
+		cmd.Dir = repoPath
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v failed: %v\n%s", args, err, out)
+		}
+	}
+
+	runGit("init")
+	runGit("config", "user.email", "test@example.com")
+	runGit("config", "user.name", "Test User")
+	runGit("config", "init.defaultBranch", "main")
+
+	// Base file
+	testFile := filepath.Join(repoPath, "shared.go")
+	if err := os.WriteFile(testFile, []byte("package shared\n\nfunc Func() int { return 1 }\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	runGit("add", ".")
+	runGit("commit", "-m", "initial")
+	runGit("branch", "-M", "main")
+
+	// Agent A: edit line 3
+	runGit("checkout", "-b", "saw/test-feature/wave1-agent-A")
+	if err := os.WriteFile(testFile, []byte("package shared\n\nfunc Func() int { return 2 }\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	runGit("add", ".")
+	runGit("commit", "-m", "agent A: change return value to 2")
+
+	// Agent B: edit same line differently
+	runGit("checkout", "main")
+	runGit("checkout", "-b", "saw/test-feature/wave1-agent-B")
+	if err := os.WriteFile(testFile, []byte("package shared\n\nfunc Func() int { return 3 }\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	runGit("add", ".")
+	runGit("commit", "-m", "agent B: change return value to 3")
+
+	manifest := &IMPLManifest{
+		Repository:  repoPath,
+		FeatureSlug: "test-feature",
+		Waves: []Wave{
+			{
+				Number: 1,
+				Agents: []Agent{{ID: "A"}, {ID: "B"}},
+			},
+		},
+		CompletionReports: map[string]CompletionReport{
+			"A": {Status: "complete", FilesChanged: []string{"shared.go"}},
+			"B": {Status: "complete", FilesChanged: []string{"shared.go"}},
+		},
+	}
+
+	res := PredictConflictsWithStrategy(context.Background(), manifest, 1)
+	if res.IsFatal() {
+		t.Fatalf("unexpected fatal result: %v", res.Errors)
+	}
+	data := res.GetData()
+	if data.ConflictsDetected == 0 {
+		t.Error("expected conflicts to be detected")
+	}
+	// Check that at least one conflict requires manual merge
+	foundManual := false
+	for _, cp := range data.Conflicts {
+		if cp.Strategy == MergeStrategyManual {
+			foundManual = true
+			if cp.Reason == "" {
+				t.Error("expected reason to be populated for manual merge")
+			}
+			break
+		}
+	}
+	if !foundManual {
+		t.Error("expected at least one conflict requiring manual merge")
+	}
+}
