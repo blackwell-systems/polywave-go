@@ -420,5 +420,5 @@ critic_report:
     summary: Skipped by operator
     reviewed_at: "2026-04-01T01:15:03Z"
     issue_count: 0
-state: SCOUT_PENDING
+state: "REVIEWED"
 injection_method: hook
