@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/queue"
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
 	"github.com/spf13/cobra"
 )
 
@@ -125,7 +126,7 @@ func newQueueNextCmd() *cobra.Command {
 			var output interface{}
 			if nextRes.IsFatal() {
 				// QUEUE_EMPTY is not an error to the CLI caller — report next: nil.
-				if len(nextRes.Errors) > 0 && nextRes.Errors[0].Code == "QUEUE_EMPTY" {
+				if len(nextRes.Errors) > 0 && nextRes.Errors[0].Code == result.CodeQueueEmpty {
 					output = map[string]interface{}{"next": nil}
 				} else {
 					return fmt.Errorf("queue next: %s", nextRes.Errors[0].Message)

@@ -6,6 +6,7 @@ import (
 
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/autonomy"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/queue"
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
 )
 
 // CheckQueueOpts configures a CheckQueue call.
@@ -45,7 +46,7 @@ func CheckQueue(ctx context.Context, opts CheckQueueOpts) (*CheckQueueResult, er
 	nextRes := mgr.Next()
 	if nextRes.IsFatal() {
 		// QUEUE_EMPTY is not an error — it means no eligible items.
-		if len(nextRes.Errors) > 0 && nextRes.Errors[0].Code == "QUEUE_EMPTY" {
+		if len(nextRes.Errors) > 0 && nextRes.Errors[0].Code == result.CodeQueueEmpty {
 			return &CheckQueueResult{
 				Advanced: false,
 				Reason:   "no_items",

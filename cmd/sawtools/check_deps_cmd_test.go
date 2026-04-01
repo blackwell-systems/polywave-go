@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"testing"
 
@@ -24,6 +25,13 @@ func TestCheckDepsCmd_InvalidIMPLPath(t *testing.T) {
 func TestCheckDepsCmd_WaveFlag(t *testing.T) {
 	// Create a temporary IMPL doc with multiple waves
 	tmpDir := t.TempDir()
+
+	// Initialize as git repository
+	initCmd := exec.Command("git", "init")
+	initCmd.Dir = tmpDir
+	if err := initCmd.Run(); err != nil {
+		t.Fatalf("Failed to init git repo: %v", err)
+	}
 
 	// Create docs/IMPL subdirectory structure
 	docsDir := filepath.Join(tmpDir, "docs", "IMPL")
@@ -123,6 +131,13 @@ func TestCheckDepsCmd_JSONOutput(t *testing.T) {
 	// Create a simple test case to avoid os.Exit() issue
 	tmpDir := t.TempDir()
 
+	// Initialize as git repository
+	initCmd := exec.Command("git", "init")
+	initCmd.Dir = tmpDir
+	if err := initCmd.Run(); err != nil {
+		t.Fatalf("Failed to init git repo: %v", err)
+	}
+
 	// Create docs/IMPL subdirectory structure
 	docsDir := filepath.Join(tmpDir, "docs", "IMPL")
 	if err := os.MkdirAll(docsDir, 0755); err != nil {
@@ -206,6 +221,13 @@ go 1.21
 func TestCheckDepsCmd_NoConflicts(t *testing.T) {
 	// Create a minimal test setup with no dependencies
 	tmpDir := t.TempDir()
+
+	// Initialize as git repository
+	initCmd := exec.Command("git", "init")
+	initCmd.Dir = tmpDir
+	if err := initCmd.Run(); err != nil {
+		t.Fatalf("Failed to init git repo: %v", err)
+	}
 
 	// Create docs/IMPL subdirectory structure
 	docsDir := filepath.Join(tmpDir, "docs", "IMPL")

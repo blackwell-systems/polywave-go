@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -202,6 +203,13 @@ func TestQueueNextCmd(t *testing.T) {
 // TestQueueNextCmd_Empty verifies that next returns {\"next\": null} when queue is empty.
 func TestQueueNextCmd_Empty(t *testing.T) {
 	tmpDir := t.TempDir()
+
+	// Initialize as git repository
+	initCmd := exec.Command("git", "init")
+	initCmd.Dir = tmpDir
+	if err := initCmd.Run(); err != nil {
+		t.Fatalf("Failed to init git repo: %v", err)
+	}
 
 	origRepoDir := repoDir
 	repoDir = tmpDir
