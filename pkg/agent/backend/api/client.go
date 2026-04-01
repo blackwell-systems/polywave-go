@@ -249,7 +249,7 @@ func (c *Client) Run(ctx context.Context, systemPrompt, userMessage, workDir str
 				inputMap = map[string]interface{}{}
 			}
 
-			result, isError := backend.ExecuteTool(ctx, workshop, tu.Name, inputMap, workDir)
+			result, isError := backend.ExecuteToolCompat(ctx, workshop, tu.Name, inputMap, workDir)
 			toolResultBlocks = append(toolResultBlocks, anthropic.NewToolResultBlock(tu.ID, result, isError))
 		}
 		messages = append(messages, anthropic.NewUserMessage(toolResultBlocks...))
@@ -420,7 +420,7 @@ func (c *Client) RunStreaming(ctx context.Context, systemPrompt, userMessage, wo
 				inputMap = map[string]interface{}{}
 			}
 
-			result, isError := backend.ExecuteTool(ctx, workshop, blk.toolName, inputMap, workDir)
+			result, isError := backend.ExecuteToolCompat(ctx, workshop, blk.toolName, inputMap, workDir)
 			toolResultBlocks = append(toolResultBlocks, anthropic.NewToolResultBlock(blk.toolID, result, isError))
 		}
 		messages = append(messages, anthropic.NewUserMessage(toolResultBlocks...))
