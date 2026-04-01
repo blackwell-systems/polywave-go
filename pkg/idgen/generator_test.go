@@ -1,6 +1,8 @@
 package idgen
 
 import (
+	"fmt"
+	"strings"
 	"testing"
 )
 
@@ -279,11 +281,11 @@ func TestAssignAgentIDs_NilGrouping(t *testing.T) {
 	}
 }
 
-// TestAssignAgentIDs_EmptyGrouping tests that empty grouping slice is treated as sequential mode.
+// TestAssignAgentIDs_EmptyGrouping tests that empty grouping slice fails length-mismatch validation.
 func TestAssignAgentIDs_EmptyGrouping(t *testing.T) {
-	// Empty slice [][]string{} has length 0, which will fail validation if count != 0
-	// This is expected behavior - if you pass a grouping array, it must match count
-	// To trigger sequential mode, pass nil instead
+	// Empty slice [][]string{} has length 0, which fails length-mismatch validation when count != 0.
+	// Only nil triggers sequential mode; a non-nil empty slice is treated as grouped mode
+	// and rejected by the length-mismatch check.
 	_, err := AssignAgentIDs(5, [][]string{})
 	if err == nil {
 		t.Fatal("expected error for empty grouping with count=5, got nil")
@@ -377,6 +379,46 @@ func TestAssignAgentIDs_OutputMatchesRegex(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// TestAssignAgentIDs_Grouped_TooManyAgentsPerCategory tests that grouped mode rejects
+// more than 9 agents in a single category.
+func TestAssignAgentIDs_Grouped_TooManyAgentsPerCategory(t *testing.T) {
+	// 10 entries all tagged "data" — exceeds the 9-per-category limit
+	grouping := make([][]string, 10)
+	for i := range grouping {
+		grouping[i] = []string{"data"}
+	}
+
+	_, err := AssignAgentIDs(10, grouping)
+	if err == nil {
+		t.Fatal("expected error for >9 agents in a single category, got nil")
+	}
+
+	errMsg := err.Error()
+	if !strings.Contains(errMsg, "category") || !strings.Contains(errMsg, "9") {
+		t.Errorf("error message should mention \"category\" and \"9\", got: %q", errMsg)
+	}
+}
+
+// TestAssignAgentIDs_Grouped_TooManyCategories tests that grouped mode rejects
+// more than 26 distinct categories.
+func TestAssignAgentIDs_Grouped_TooManyCategories(t *testing.T) {
+	// 27 entries each with a unique category tag
+	grouping := make([][]string, 27)
+	for i := range grouping {
+		grouping[i] = []string{fmt.Sprintf("cat%d", i)}
+	}
+
+	_, err := AssignAgentIDs(27, grouping)
+	if err == nil {
+		t.Fatal("expected error for >26 distinct categories, got nil")
+	}
+
+	errMsg := err.Error()
+	if !strings.Contains(errMsg, "26") && !strings.Contains(errMsg, "categories") {
+		t.Errorf("error message should mention \"26\" or \"categories\", got: %q", errMsg)
 	}
 }
 

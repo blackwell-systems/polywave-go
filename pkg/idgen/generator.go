@@ -9,7 +9,7 @@ import (
 var agentIDRegex = regexp.MustCompile(`^[A-Z][2-9]?$`)
 
 // AssignAgentIDs generates agent IDs following the ^[A-Z][2-9]?$ pattern.
-// If grouping is nil/empty, uses sequential mode (A-Z, A2-Z2, ...).
+// If grouping is nil, uses sequential mode (A-Z, A2-Z2, ...).
 // If grouping is provided, groups by category tags and assigns multi-gen IDs.
 //
 // Parameters:
@@ -21,7 +21,7 @@ var agentIDRegex = regexp.MustCompile(`^[A-Z][2-9]?$`)
 //   - error: If count <= 0 or grouping length mismatch
 //
 // Behavior:
-//   - If grouping is nil/empty: Sequential mode (A-Z for first 26, then A2-Z2, etc.)
+//   - If grouping is nil: Sequential mode (A-Z for first 26, then A2-Z2, etc.)
 //   - If grouping provided: Group by category tags, assign multi-generation IDs
 //     (e.g., tags ["data", "data", "api"] → IDs ["A", "A2", "B"])
 func AssignAgentIDs(count int, grouping [][]string) ([]string, error) {
@@ -39,13 +39,38 @@ func AssignAgentIDs(count int, grouping [][]string) ([]string, error) {
 		return nil, fmt.Errorf("count %d exceeds maximum 234 agents (26 letters × 9 generations)", count)
 	}
 
+	// Upfront validation for grouped mode
+	if grouping != nil {
+		// Count agents per category and track distinct categories
+		categoryCounts := make(map[string]int)
+		for _, tags := range grouping {
+			category := ""
+			if len(tags) > 0 {
+				category = tags[0]
+			}
+			categoryCounts[category]++
+		}
+
+		// Check per-category agent cap
+		for category, n := range categoryCounts {
+			if n > 9 {
+				return nil, fmt.Errorf("category %q has %d agents, maximum is 9 per category", category, n)
+			}
+		}
+
+		// Check category count cap
+		if len(categoryCounts) > 26 {
+			return nil, fmt.Errorf("grouped mode requires ≤ 26 distinct categories, got %d", len(categoryCounts))
+		}
+	}
+
 	var ids []string
 
-	// Sequential mode: grouping is nil or empty
-	if grouping == nil || len(grouping) == 0 {
+	// Sequential mode: grouping is nil
+	if grouping == nil {
 		ids = generateSequentialIDs(count)
 	} else {
-		ids = generateGroupedIDs(count, grouping)
+		ids = generateGroupedIDs(grouping)
 	}
 
 	// Validate all generated IDs
@@ -78,12 +103,12 @@ func generateSequentialIDs(count int) []string {
 
 // generateGroupedIDs creates agent IDs in grouped mode, assigning multi-generation
 // IDs within each category group.
-func generateGroupedIDs(count int, grouping [][]string) []string {
-	// Step 1: Build map of category → agent indices
-	categoryIndices := make(map[string][]int)
+func generateGroupedIDs(grouping [][]string) []string {
+	// Step 1: Build order of first appearance
+	seen := make(map[string]bool)
 	categoryOrder := []string{} // Track order of first appearance
 
-	for i, tags := range grouping {
+	for _, tags := range grouping {
 		// Use first tag as category key (or empty string if no tags)
 		category := ""
 		if len(tags) > 0 {
@@ -91,11 +116,10 @@ func generateGroupedIDs(count int, grouping [][]string) []string {
 		}
 
 		// Track first appearance order
-		if _, exists := categoryIndices[category]; !exists {
+		if !seen[category] {
+			seen[category] = true
 			categoryOrder = append(categoryOrder, category)
 		}
-
-		categoryIndices[category] = append(categoryIndices[category], i)
 	}
 
 	// Step 2: Assign letters to categories in order of first appearance
@@ -105,7 +129,7 @@ func generateGroupedIDs(count int, grouping [][]string) []string {
 	}
 
 	// Step 3: Assign generation numbers within each category
-	ids := make([]string, count)
+	ids := make([]string, len(grouping))
 	categoryGeneration := make(map[string]int) // Track generation counter per category
 
 	for i, tags := range grouping {
