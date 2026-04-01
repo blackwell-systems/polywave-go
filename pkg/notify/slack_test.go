@@ -291,6 +291,25 @@ func TestSlackFormatter_Error(t *testing.T) {
 	}
 }
 
+func TestSlackFormatter_UnknownSeverity(t *testing.T) {
+	f := &SlackFormatter{}
+	event := Event{
+		Severity: Severity("unknown"),
+		Title:    "Unknown Severity",
+	}
+	msg := f.Format(event)
+	blocks := msg.Embeds.([]interface{})
+	contextBlock, ok := blocks[len(blocks)-1].(*slackContext)
+	if !ok {
+		t.Fatal("expected last block to be *slackContext")
+	}
+	text := contextBlock.Elements[0].Text
+	// default case must now return gray, not green
+	if text != "Severity: unknown | Color: #808080" {
+		t.Errorf("unexpected context text for unknown severity: %s", text)
+	}
+}
+
 func TestSlackFormatter_TypedBlocks(t *testing.T) {
 	f := &SlackFormatter{}
 	event := Event{Title: "T", Body: "B"}

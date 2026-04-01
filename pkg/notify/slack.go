@@ -34,14 +34,6 @@ type slackPayload struct {
 	Blocks  []interface{} `json:"blocks,omitempty"`
 }
 
-// readWithFallback reads key from cfg, falling back to fallbackKey.
-func readWithFallback(cfg map[string]string, key, fallbackKey string) string {
-	if v := cfg[key]; v != "" {
-		return v
-	}
-	return cfg[fallbackKey]
-}
-
 // SlackAdapter sends notifications via Slack incoming webhooks or Bot API.
 // Supports two modes:
 //   - Webhook mode: set "webhook_url" — posts to the channel configured in the webhook
@@ -73,7 +65,7 @@ func NewSlackAdapter(cfg map[string]string) (Adapter, error) {
 		webhookURL:  url,
 		token:       token,
 		destination: destination,
-		client:      &http.Client{},
+		client:      &http.Client{Timeout: defaultHTTPTimeout},
 	}, nil
 }
 
@@ -86,6 +78,11 @@ func (s *SlackAdapter) Send(ctx context.Context, msg Message) result.Result[Send
 	if s.destination != "" {
 		p.Channel = s.destination
 	}
+	// msg.Embeds must be []interface{} (as produced by SlackFormatter.Format)
+	// for the assertion to succeed. If Embeds is any other type (e.g. nil
+	// or []discordEmbed), the assertion fails silently and the message falls
+	// back to plain text (msg.Text only). Callers using a non-Slack formatter
+	// must ensure Embeds is []interface{} or leave it nil.
 	if msg.Embeds != nil {
 		if blocks, ok := msg.Embeds.([]interface{}); ok {
 			p.Blocks = blocks
@@ -183,7 +180,7 @@ func severityColor(s Severity) string {
 	case SeverityError:
 		return "#cc0000" // danger (red)
 	default:
-		return "#36a64f"
+		return "#808080" // neutral gray for unrecognized severity
 	}
 }
 
