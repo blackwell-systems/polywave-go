@@ -5,8 +5,10 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
+	"github.com/blackwell-systems/scout-and-wave-go/internal/git"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
 	"github.com/spf13/cobra"
 )
@@ -129,6 +131,23 @@ Examples:
 				}
 			}
 
+			// Step 6: Restore main branch if currently on a SAW-managed branch
+			branchRestored := false
+			branchOut, branchErr := git.Run(projectRoot, "branch", "--show-current")
+			if branchErr == nil {
+				currentBranch := strings.TrimSpace(branchOut)
+				isSAWBranch := strings.HasPrefix(currentBranch, "saw/") ||
+					(strings.HasPrefix(currentBranch, "wave") && strings.Contains(currentBranch, "-agent-"))
+				if isSAWBranch {
+					if _, checkoutErr := git.Run(projectRoot, "checkout", "main"); checkoutErr != nil {
+						fmt.Fprintf(os.Stderr, "close-impl: warning: could not restore main branch: %v\n", checkoutErr)
+					} else {
+						fmt.Fprintf(os.Stderr, "close-impl: restored main branch (was on %s)\n", currentBranch)
+						branchRestored = true
+					}
+				}
+			}
+
 			out, _ := json.Marshal(map[string]interface{}{
 				"marked":            true,
 				"date":              date,
@@ -137,6 +156,7 @@ Examples:
 				"context_path":      contextData,
 				"worktrees_cleaned": cleanedCount,
 				"state_cleaned":     stateCleanedCount,
+				"branch_restored":   branchRestored,
 			})
 			fmt.Println(string(out))
 			return nil
