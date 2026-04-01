@@ -79,7 +79,7 @@ func GenerateReport(config ReportConfig) error`,
 	var result struct {
 		ScaffoldsNeeded []struct {
 			TypeName      string   `json:"type_name"`
-			ReferencedBy  []string `json:"referenced_by"`
+			Locations     []string `json:"locations"`
 			SuggestedFile string   `json:"suggested_file"`
 			Definition    string   `json:"definition"`
 		} `json:"scaffolds_needed"`
@@ -100,8 +100,8 @@ func GenerateReport(config ReportConfig) error`,
 			foundMetricSnapshot = true
 
 			// Verify it's referenced by at least 2 agents
-			if len(scaffold.ReferencedBy) < 2 {
-				t.Errorf("Expected MetricSnapshot to be referenced by ≥2 agents, got %d", len(scaffold.ReferencedBy))
+			if len(scaffold.Locations) < 2 {
+				t.Errorf("Expected MetricSnapshot to be referenced by ≥2 agents, got %d", len(scaffold.Locations))
 			}
 
 			// Verify suggested file follows pattern

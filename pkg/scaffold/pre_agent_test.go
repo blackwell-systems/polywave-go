@@ -45,8 +45,8 @@ func StoreMetric(m MetricSnapshot) error`,
 		t.Errorf("expected TypeName 'MetricSnapshot', got '%s'", scaffold.TypeName)
 	}
 
-	if len(scaffold.ReferencedBy) != 2 {
-		t.Errorf("expected 2 references, got %d", len(scaffold.ReferencedBy))
+	if len(scaffold.Locations) != 2 {
+		t.Errorf("expected 2 references, got %d", len(scaffold.Locations))
 	}
 
 	if scaffold.SuggestedFile != "internal/types/metricsnapshot.go" {
@@ -284,6 +284,116 @@ type Logger interface {
 	}
 }
 
+func TestDetectScaffoldsPreAgent_DeterministicOrder(t *testing.T) {
+	contracts := []protocol.InterfaceContract{
+		{Name: "C1", Definition: `type Zebra struct { X int }`, Location: "pkg/z/z.go"},
+		{Name: "C2", Definition: `type Zebra struct { X int }`, Location: "pkg/a/a.go"},
+		{Name: "C3", Definition: `type Apple struct { Y string }`, Location: "pkg/z/z.go"},
+		{Name: "C4", Definition: `type Apple struct { Y string }`, Location: "pkg/b/b.go"},
+	}
+
+	result1, err := DetectScaffoldsPreAgent(contracts)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	result2, err := DetectScaffoldsPreAgent(contracts)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if len(result1.ScaffoldsNeeded) != len(result2.ScaffoldsNeeded) {
+		t.Fatalf("non-deterministic length: %d vs %d", len(result1.ScaffoldsNeeded), len(result2.ScaffoldsNeeded))
+	}
+
+	for i := range result1.ScaffoldsNeeded {
+		s1, s2 := result1.ScaffoldsNeeded[i], result2.ScaffoldsNeeded[i]
+		if s1.TypeName != s2.TypeName {
+			t.Errorf("non-deterministic TypeName at index %d: %q vs %q", i, s1.TypeName, s2.TypeName)
+		}
+		for j := range s1.Locations {
+			if s1.Locations[j] != s2.Locations[j] {
+				t.Errorf("non-deterministic Locations[%d] for type %q: %q vs %q",
+					j, s1.TypeName, s1.Locations[j], s2.Locations[j])
+			}
+		}
+	}
+
+	// Verify alphabetical order: Apple before Zebra
+	if result1.ScaffoldsNeeded[0].TypeName != "Apple" {
+		t.Errorf("expected Apple first (alphabetical), got %q", result1.ScaffoldsNeeded[0].TypeName)
+	}
+	if result1.ScaffoldsNeeded[1].TypeName != "Zebra" {
+		t.Errorf("expected Zebra second (alphabetical), got %q", result1.ScaffoldsNeeded[1].TypeName)
+	}
+}
+
+func TestExtractTypeNames_AllPatterns(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+		want  []string
+	}{
+		{
+			name:  "Go struct keyword",
+			input: "type Config struct {",
+			want:  []string{"Config"},
+		},
+		{
+			name:  "Go interface keyword",
+			input: "type Logger interface {",
+			want:  []string{"Logger"},
+		},
+		{
+			name:  "Bare struct (Rust)",
+			input: "struct Metrics {",
+			want:  []string{"Metrics"},
+		},
+		{
+			name:  "Bare interface (TypeScript)",
+			input: "interface ApiResponse {",
+			want:  []string{"ApiResponse"},
+		},
+		{
+			name:  "Python class",
+			input: "class DataProcessor {",
+			want:  []string{"DataProcessor"},
+		},
+		{
+			name:  "Enum",
+			input: "enum Status {",
+			want:  []string{"Status"},
+		},
+		{
+			name:  "Multiple types",
+			input: "type A struct {\ntype B interface {",
+			want:  []string{"A", "B"},
+		},
+		{
+			name:  "Deduplication",
+			input: "type A struct {\ntype A struct {",
+			want:  []string{"A"},
+		},
+		{
+			name:  "Empty string",
+			input: "",
+			want:  nil,
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := extractTypeNames(tc.input)
+			if len(got) != len(tc.want) {
+				t.Fatalf("extractTypeNames(%q) = %v, want %v", tc.input, got, tc.want)
+			}
+			for i := range tc.want {
+				if got[i] != tc.want[i] {
+					t.Errorf("extractTypeNames[%d] = %q, want %q", i, got[i], tc.want[i])
+				}
+			}
+		})
+	}
+}
+
 func TestDetectScaffoldsPreAgent_EmptyContracts(t *testing.T) {
 	result, err := DetectScaffoldsPreAgent([]protocol.InterfaceContract{})
 	if err != nil {
@@ -332,7 +442,7 @@ func TestDetectScaffoldsPreAgent_DuplicateReferences(t *testing.T) {
 	}
 
 	// Should have exactly 2 unique locations
-	if len(result.ScaffoldsNeeded[0].ReferencedBy) != 2 {
-		t.Errorf("expected 2 unique references (deduplicated by location), got %d", len(result.ScaffoldsNeeded[0].ReferencedBy))
+	if len(result.ScaffoldsNeeded[0].Locations) != 2 {
+		t.Errorf("expected 2 unique references (deduplicated by location), got %d", len(result.ScaffoldsNeeded[0].Locations))
 	}
 }
