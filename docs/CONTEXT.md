@@ -273,3 +273,9 @@ type BackendConfig struct {
   - IMPL doc: docs/IMPL/complete/IMPL-critic-gate-fixes.yaml
 - **program-status-sync**: completed 2026-03-31, 1 waves, 1 agents
   - IMPL doc: docs/IMPL/complete/IMPL-program-status-sync.yaml
+- **config-hardening**: completed 2026-03-31, 1 waves, 3 agents
+  - IMPL doc: docs/IMPL/complete/IMPL-config-hardening.yaml
+- **collision-fixes**: completed 2026-03-31, 1 waves, 1 agents
+  - IMPL doc: docs/IMPL/complete/IMPL-collision-fixes.yaml
+- **commands-fixes**: completed 2026-03-31, 1 waves, 2 agents
+  - IMPL doc: docs/IMPL/complete/IMPL-commands-fixes.yaml

@@ -1,3 +1,4 @@
+completion_date: "2026-03-31"
 title: pkg/config Code Review Hardening
 feature_slug: config-hardening
 verdict: SUITABLE
@@ -607,5 +608,5 @@ critic_report:
     summary: Skipped by operator
     reviewed_at: "2026-04-01T00:46:57Z"
     issue_count: 0
-state: REVIEWED
+state: COMPLETE
 injection_method: hook

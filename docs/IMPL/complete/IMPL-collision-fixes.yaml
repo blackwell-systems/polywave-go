@@ -1,3 +1,4 @@
+completion_date: "2026-03-31"
 title: Fix pkg/collision code review issues
 feature_slug: collision-fixes
 verdict: SUITABLE_WITH_CAVEATS
@@ -245,5 +246,5 @@ critic_report:
     summary: Skipped by operator
     reviewed_at: "2026-04-01T00:47:33Z"
     issue_count: 0
-state: SCOUT_PENDING
+state: COMPLETE
 injection_method: manual-fallback

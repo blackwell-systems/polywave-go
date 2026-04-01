@@ -1,3 +1,4 @@
+completion_date: "2026-03-31"
 title: Fix pkg/commands and gate_populator code review issues
 feature_slug: commands-fixes
 verdict: SUITABLE
@@ -386,5 +387,5 @@ critic_report:
     summary: Skipped by operator
     reviewed_at: "2026-04-01T00:47:33Z"
     issue_count: 0
-state: REVIEWED
+state: COMPLETE
 injection_method: hook
