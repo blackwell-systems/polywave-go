@@ -54,6 +54,25 @@ func loadSAWConfigRepos(configPath string) []protocol.RepoEntry {
 	return cfg.Repos
 }
 
+// isSAWOwnedPath reports whether the given git-porcelain relative path
+// is a SAW-managed state file that is safe to auto-commit in program context.
+// A path is SAW-owned if it is the IMPL yaml file or falls under .saw-state/.
+func isSAWOwnedPath(path, implPath, projectRoot string) bool {
+	// Normalize implPath to repo-relative
+	rel, err := filepath.Rel(projectRoot, implPath)
+	if err != nil {
+		rel = implPath
+	}
+	// git porcelain output has a 3-char prefix (e.g. " M "), trim it
+	trimmed := strings.TrimSpace(path)
+	if len(trimmed) > 3 {
+		trimmed = strings.TrimSpace(trimmed[2:])
+	}
+	return trimmed == rel ||
+		strings.HasPrefix(trimmed, ".saw-state/") ||
+		strings.HasPrefix(trimmed, ".saw-state\\")
+}
+
 // PrepareWave encapsulates the full wave preparation pipeline.
 // It performs all pre-flight checks, creates worktrees, extracts agent briefs,
 // and initializes journal observers. On failure, returns a partial result with
@@ -335,6 +354,49 @@ func PrepareWave(ctx context.Context, opts PrepareWaveOpts) (*PrepareWaveResult,
 
 			recordStep(res, opts.OnEvent, "commit_baseline", "success",
 				fmt.Sprintf("committed %d file(s)", fileCount))
+		} else if opts.CommitState {
+			// Classify dirty files: SAW-owned vs user code
+			var sawFiles []string
+			var userFiles []string
+			for _, f := range modifiedFiles {
+				if isSAWOwnedPath(f, opts.IMPLPath, projectRoot) {
+					sawFiles = append(sawFiles, f)
+				} else {
+					userFiles = append(userFiles, f)
+				}
+			}
+			if len(userFiles) > 0 {
+				detail := fmt.Sprintf("%d user-code file(s) modified — --commit-state only commits SAW state files; commit user code manually", len(userFiles))
+				recordStep(res, opts.OnEvent, "working_dir_check", "failed", detail)
+				return res, fmt.Errorf("working directory has user-code changes: %d file(s) (--commit-state does not commit user code)", len(userFiles))
+			}
+			if len(sawFiles) == 0 {
+				recordStep(res, opts.OnEvent, "working_dir_check", "success", "working directory is clean")
+			} else {
+				os.Setenv("SAW_ALLOW_MAIN_COMMIT", "1")
+				defer os.Unsetenv("SAW_ALLOW_MAIN_COMMIT")
+				for _, f := range sawFiles {
+					// Stage each SAW-owned file individually (not -A)
+					trimmed := strings.TrimSpace(f)
+					if len(trimmed) > 3 {
+						trimmed = strings.TrimSpace(trimmed[2:])
+					}
+					if _, addErr := git.Run(projectRoot, "add", trimmed); addErr != nil {
+						recordStep(res, opts.OnEvent, "commit_state", "failed",
+							fmt.Sprintf("failed to stage %s: %v", trimmed, addErr))
+						return res, fmt.Errorf("failed to stage SAW state file %s: %w", trimmed, addErr)
+					}
+				}
+				commitMsg := fmt.Sprintf("chore: update SAW state for wave %d preparation\n\nAuto-committed %d SAW state file(s): %s",
+					opts.WaveNum, len(sawFiles), strings.Join(sawFiles, ", "))
+				if _, commitErr := git.Run(projectRoot, "commit", "-m", commitMsg); commitErr != nil {
+					recordStep(res, opts.OnEvent, "commit_state", "failed",
+						fmt.Sprintf("failed to commit: %v", commitErr))
+					return res, fmt.Errorf("failed to commit SAW state files: %w", commitErr)
+				}
+				recordStep(res, opts.OnEvent, "commit_state", "success",
+					fmt.Sprintf("committed %d SAW state file(s)", len(sawFiles)))
+			}
 		} else {
 			// Working directory is dirty but auto-commit not requested
 			detail := fmt.Sprintf("%d modified file(s) detected. Use --commit-baseline to auto-commit, or commit manually", fileCount)

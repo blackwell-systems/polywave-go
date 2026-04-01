@@ -27,7 +27,11 @@ type PrepareWaveOpts struct {
 	MergeTarget    string
 	NoCache        bool
 	CommitBaseline bool          // Auto-commit baseline fixes if working directory is dirty
-	OnEvent        EventCallback
+	// CommitState auto-commits SAW-owned state changes (IMPL yaml + gate-cache)
+	// before the working-directory check. Does NOT commit user code changes.
+	// Intended for program-context prepare-wave calls.
+	CommitState bool
+	OnEvent     EventCallback
 	Logger         *slog.Logger // optional: nil falls back to slog.Default()
 }
 
