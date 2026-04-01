@@ -10,6 +10,8 @@
 //	N001-N099: Engine errors (orchestration, state machine)
 //	P001-P099: Protocol errors (invariant violations, execution rules)
 //	T001-T099: Tool/parse errors (errparse output, tool runner failures)
+//	S001-S099: Suitability error codes
+//	D001-D099: Dependency check errors (lock file parsing, missing deps)
 package result
 
 // Validation error codes (V001-V099)
@@ -263,5 +265,20 @@ const (
 	CodeSuitabilityFileReadFailed    = "S004_FILE_READ_FAILED"
 	CodeSuitabilityRequirementsRead  = "S005_REQUIREMENTS_READ"
 	CodeSuitabilityRequirementsParse = "S006_REQUIREMENTS_PARSE"
+)
+
+// Dependency check error codes (D001-D099)
+const (
+	CodeDepLockFileOpen       = "D001_LOCK_FILE_OPEN"
+	CodeDepLockFileParse      = "D002_LOCK_FILE_PARSE"
+	CodeDepMissingDeps        = "D003_MISSING_DEPS"
+	CodeDepVersionConflict    = "D004_VERSION_CONFLICT"
+	CodeDepInvalidToml        = "D005_INVALID_TOML"
+	CodeDepMalformedPackage   = "D006_MALFORMED_PACKAGE"
+	CodeDepUnsupportedVersion = "D007_UNSUPPORTED_VERSION"
+	CodeDepEmptyPackage       = "D008_EMPTY_PACKAGE"
+	CodeDepGoModRead          = "D009_GOMOD_READ"
+	CodeDepGoModParse         = "D010_GOMOD_PARSE"
+	CodeDepRepoRootInvalid    = "D011_REPO_ROOT_INVALID"
 )
 
