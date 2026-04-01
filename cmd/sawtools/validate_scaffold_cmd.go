@@ -31,10 +31,11 @@ Outputs structured YAML with pass/fail status per step.`,
 			}
 
 			// Run validation
-			result, err := scaffoldval.ValidateScaffold(cmd.Context(), scaffoldPath, implDoc, "")
-			if err != nil {
-				return fmt.Errorf("validation failed: %w", err)
+			res := scaffoldval.ValidateScaffold(cmd.Context(), scaffoldPath, implDoc, "")
+			if res.IsFatal() {
+				return fmt.Errorf("validation failed: %s", res.Errors[0].Message)
 			}
+			result := res.GetData()
 
 			// Output YAML to command's output stream (for testability).
 			// Cannot use protocol.SaveYAML: writes to an io.Writer (stdout), not a file path,
