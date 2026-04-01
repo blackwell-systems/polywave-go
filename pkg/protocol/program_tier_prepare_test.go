@@ -1,6 +1,7 @@
 package protocol
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -12,7 +13,7 @@ import (
 // TestPrepareTier_ManifestNotFound verifies that PrepareTier returns an error
 // when the manifest file does not exist.
 func TestPrepareTier_ManifestNotFound(t *testing.T) {
-	_, err := PrepareTier("/nonexistent/path/program.yaml", 1, ".")
+	_, err := PrepareTier(PrepareTierOpts{ProgramManifestPath: "/nonexistent/path/program.yaml", TierNumber: 1, RepoDir: "."})
 	if err == nil {
 		t.Fatal("expected error for non-existent manifest path, got nil")
 	}
@@ -45,7 +46,7 @@ completion:
 	}
 	f.Close()
 
-	_, err = PrepareTier(f.Name(), 99, ".")
+	_, err = PrepareTier(PrepareTierOpts{ProgramManifestPath: f.Name(), TierNumber: 99, RepoDir: "."})
 	if err == nil {
 		t.Fatal("expected error for missing tier, got nil")
 	}
@@ -157,11 +158,12 @@ func writeTempIMPL(t *testing.T, repoDir, slug string, agentCount int, criticRep
 	}
 
 	// Build agents and file_ownership entries.
+	// Use slug in file paths to ensure uniqueness across IMPLs in the same repoDir.
 	agentLines := ""
 	ownershipLines := ""
 	for i := 0; i < agentCount; i++ {
 		id := string(rune('A' + i))
-		file := fmt.Sprintf("pkg/test/%s_file.go", strings.ToLower(id))
+		file := fmt.Sprintf("pkg/test/%s/%s_file.go", slug, strings.ToLower(id))
 		agentLines += fmt.Sprintf("      - id: %s\n        task: implement part %s\n        files:\n          - %s\n", id, id, file)
 		ownershipLines += fmt.Sprintf("  - file: %s\n    agent: %s\n    wave: 1\n    action: new\n", file, id)
 	}
@@ -247,7 +249,7 @@ func TestPrepareTier_E37NotRequired_SmallIMPL(t *testing.T) {
 
 	programPath := writeTempProgram(t, []string{slug})
 
-	result, err := PrepareTier(programPath, 1, repoDir)
+	result, err := PrepareTier(PrepareTierOpts{ProgramManifestPath: programPath, TierNumber: 1, RepoDir: repoDir})
 	if err != nil {
 		t.Fatalf("PrepareTier returned unexpected error: %v", err)
 	}
@@ -275,7 +277,7 @@ func TestPrepareTier_E37Required_MissingReport(t *testing.T) {
 
 	programPath := writeTempProgram(t, []string{slug})
 
-	result, err := PrepareTier(programPath, 1, repoDir)
+	result, err := PrepareTier(PrepareTierOpts{ProgramManifestPath: programPath, TierNumber: 1, RepoDir: repoDir})
 	if err != nil {
 		t.Fatalf("PrepareTier returned unexpected error: %v", err)
 	}
@@ -319,7 +321,7 @@ func TestPrepareTier_E37Required_WithPassReport(t *testing.T) {
 
 	programPath := writeTempProgram(t, []string{slug})
 
-	result, err := PrepareTier(programPath, 1, repoDir)
+	result, err := PrepareTier(PrepareTierOpts{ProgramManifestPath: programPath, TierNumber: 1, RepoDir: repoDir})
 	if err != nil {
 		t.Fatalf("PrepareTier returned unexpected error: %v", err)
 	}
@@ -334,4 +336,139 @@ func TestPrepareTier_E37Required_WithPassReport(t *testing.T) {
 	}
 	// Note: result.Success may be false due to step 5 (worktree creation) failing
 	// in a temp dir with no real git repo — that is acceptable for this test.
+}
+
+// TestPrepareTier_CollectsAllE37Failures verifies that when multiple IMPLs in a
+// tier all require E37 and none have a critic report, ALL failures are collected
+// instead of returning on the first failure.
+func TestPrepareTier_CollectsAllE37Failures(t *testing.T) {
+	repoDir := t.TempDir()
+	slugs := []string{"impl-alpha", "impl-beta", "impl-gamma"}
+
+	// All 3 IMPLs: 3 agents each, no CriticReport — all require E37.
+	for _, slug := range slugs {
+		writeTempIMPL(t, repoDir, slug, 3, "")
+	}
+
+	programPath := writeTempProgram(t, slugs)
+
+	result, err := PrepareTier(PrepareTierOpts{ProgramManifestPath: programPath, TierNumber: 1, RepoDir: repoDir})
+	if err != nil {
+		t.Fatalf("PrepareTier returned unexpected error: %v", err)
+	}
+
+	if result.Success {
+		t.Fatal("expected PrepareTier to fail when all IMPLs have E37 failures, got Success=true")
+	}
+
+	// Count E37 failures across all validations.
+	e37FailCount := 0
+	for _, vr := range result.Validations {
+		for _, errMsg := range vr.Errors {
+			if strings.Contains(errMsg, "E37 critic gate required") {
+				e37FailCount++
+			}
+		}
+	}
+
+	if e37FailCount < 3 {
+		t.Errorf("expected E37 failures for all 3 IMPLs, got %d; Validations: %+v", e37FailCount, result.Validations)
+	}
+}
+
+// TestPrepareTier_SkipCritic verifies that when SkipCritic is true, IMPLs
+// requiring E37 with no critic report are auto-skipped and validation passes.
+// A worktree-creation failure at step 5 is acceptable.
+func TestPrepareTier_SkipCritic(t *testing.T) {
+	repoDir := t.TempDir()
+	slugs := []string{"skip-impl-1", "skip-impl-2"}
+
+	// Both IMPLs: 3 agents, no CriticReport — both require E37.
+	for _, slug := range slugs {
+		writeTempIMPL(t, repoDir, slug, 3, "")
+	}
+
+	programPath := writeTempProgram(t, slugs)
+
+	result, err := PrepareTier(PrepareTierOpts{
+		ProgramManifestPath: programPath,
+		TierNumber:          1,
+		RepoDir:             repoDir,
+		SkipCritic:          true,
+	})
+	if err != nil {
+		t.Fatalf("PrepareTier returned unexpected error: %v", err)
+	}
+
+	// Verify no E37 failures in result.Validations.
+	for _, vr := range result.Validations {
+		for _, errMsg := range vr.Errors {
+			if strings.Contains(errMsg, "E37 critic gate") {
+				t.Errorf("unexpected E37 failure with SkipCritic=true: %s", errMsg)
+			}
+		}
+	}
+	// Note: result.Success may be false due to step 5 (worktree creation) failing
+	// in a temp dir with no real git repo — that is acceptable for this test.
+}
+
+// TestSkipCriticForIMPL_WritesPass verifies that SkipCriticForIMPL writes a
+// synthetic PASS critic report and the manifest reloads with the correct verdict.
+func TestSkipCriticForIMPL_WritesPass(t *testing.T) {
+	repoDir := t.TempDir()
+	slug := "skip-test-impl"
+
+	// 3 agents, no CriticReport — E37 required.
+	implPath := writeTempIMPL(t, repoDir, slug, 3, "")
+
+	m, err := Load(context.TODO(), implPath)
+	if err != nil {
+		t.Fatalf("failed to load IMPL: %v", err)
+	}
+
+	skipped, err := SkipCriticForIMPL(context.TODO(), implPath, m)
+	if err != nil {
+		t.Fatalf("SkipCriticForIMPL returned error: %v", err)
+	}
+	if !skipped {
+		t.Fatal("expected SkipCriticForIMPL to return true (skip written), got false")
+	}
+
+	// Reload and verify.
+	m2, err := Load(context.TODO(), implPath)
+	if err != nil {
+		t.Fatalf("failed to reload IMPL after skip: %v", err)
+	}
+	if m2.CriticReport == nil {
+		t.Fatal("expected CriticReport to be set after skip, got nil")
+	}
+	if m2.CriticReport.Verdict != CriticVerdictPass {
+		t.Errorf("expected CriticReport.Verdict == %q, got %q", CriticVerdictPass, m2.CriticReport.Verdict)
+	}
+	if !strings.Contains(m2.CriticReport.Summary, "skip-critic") {
+		t.Errorf("expected CriticReport.Summary to contain 'skip-critic', got %q", m2.CriticReport.Summary)
+	}
+}
+
+// TestSkipCriticForIMPL_NotRequired verifies that SkipCriticForIMPL returns
+// (false, nil) for an IMPL that does not meet the E37 threshold (2 agents).
+func TestSkipCriticForIMPL_NotRequired(t *testing.T) {
+	repoDir := t.TempDir()
+	slug := "small-skip-impl"
+
+	// 2 agents — below E37 threshold.
+	implPath := writeTempIMPL(t, repoDir, slug, 2, "")
+
+	m, err := Load(context.TODO(), implPath)
+	if err != nil {
+		t.Fatalf("failed to load IMPL: %v", err)
+	}
+
+	skipped, err := SkipCriticForIMPL(context.TODO(), implPath, m)
+	if err != nil {
+		t.Fatalf("SkipCriticForIMPL returned unexpected error: %v", err)
+	}
+	if skipped {
+		t.Fatal("expected SkipCriticForIMPL to return false (not required), got true")
+	}
 }

@@ -11,6 +11,7 @@ import (
 
 func newPrepareTierCmd() *cobra.Command {
 	var tierNum int
+	var skipCritic bool
 
 	cmd := &cobra.Command{
 		Use:   "prepare-tier <program-manifest>",
@@ -35,7 +36,12 @@ Exit codes:
 		RunE: func(cmd *cobra.Command, args []string) error {
 			manifestPath := args[0]
 
-			result, err := protocol.PrepareTier(manifestPath, tierNum, repoDir)
+			result, err := protocol.PrepareTier(protocol.PrepareTierOpts{
+				ProgramManifestPath: manifestPath,
+				TierNumber:          tierNum,
+				RepoDir:             repoDir,
+				SkipCritic:          skipCritic,
+			})
 			if err != nil {
 				if result == nil {
 					return fmt.Errorf("prepare-tier: %w", err)
@@ -56,6 +62,7 @@ Exit codes:
 
 	cmd.Flags().IntVar(&tierNum, "tier", 0, "Tier number to prepare (required)")
 	_ = cmd.MarkFlagRequired("tier")
+	cmd.Flags().BoolVar(&skipCritic, "skip-critic", false, "Auto-skip E37 critic gate for IMPLs missing critic reports")
 
 	return cmd
 }
