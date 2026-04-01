@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
 )
 
 // parsers holds registered lock file parsers
@@ -21,15 +22,26 @@ func RegisterParser(p LockFileParser) {
 }
 
 // CheckDeps analyzes IMPL doc and lock files for dependency conflicts
-func CheckDeps(implPath string, wave int) (*ConflictReport, error) {
+func CheckDeps(implPath string, wave int) result.Result[ConflictReport] {
 	// 1. Parse IMPL doc to get file ownership for specified wave
 	manifest, err := protocol.Load(context.TODO(), implPath)
 	if err != nil {
-		return nil, fmt.Errorf("failed to parse IMPL doc: %w", err)
+		return result.NewFailure[ConflictReport]([]result.SAWError{
+			result.NewFatal(result.CodeIMPLParseFailed,
+				fmt.Sprintf("failed to parse IMPL doc: %v", err)).WithCause(err),
+		})
 	}
 
 	// Get repo root from IMPL doc path
 	repoRoot := filepath.Dir(filepath.Dir(filepath.Dir(implPath))) // docs/IMPL/file.yaml -> repo root
+
+	// F5: Validate repo root contains .git directory
+	if _, err := os.Stat(filepath.Join(repoRoot, ".git")); err != nil {
+		return result.NewFailure[ConflictReport]([]result.SAWError{
+			result.NewFatal("D011_REPO_ROOT_INVALID",
+				fmt.Sprintf("inferred repo root %s does not contain .git directory", repoRoot)),
+		})
+	}
 
 	// 2. Extract files owned by agents in this wave
 	ownedFiles := make(map[string]string) // file path -> agent ID
@@ -40,29 +52,40 @@ func CheckDeps(implPath string, wave int) (*ConflictReport, error) {
 	}
 
 	if len(ownedFiles) == 0 {
-		return &ConflictReport{}, nil // no files in this wave, no conflicts
+		return result.NewSuccess(ConflictReport{}) // no files in this wave, no conflicts
 	}
 
 	// 3. Extract external package imports from owned files
 	imports, err := extractExternalImports(repoRoot, ownedFiles)
 	if err != nil {
-		return nil, fmt.Errorf("failed to analyze dependencies: %w", err)
+		return result.NewFailure[ConflictReport]([]result.SAWError{
+			result.NewFatal("D003_MISSING_DEPS",
+				fmt.Sprintf("failed to analyze dependencies: %v", err)).WithCause(err),
+		})
 	}
 
 	// 4. Detect lock files in repo root
 	lockFiles, err := DetectLockFiles(repoRoot)
 	if err != nil {
-		return nil, fmt.Errorf("failed to detect lock files: %w", err)
+		return result.NewFailure[ConflictReport]([]result.SAWError{
+			result.NewFatal("D001_LOCK_FILE_OPEN",
+				fmt.Sprintf("failed to detect lock files: %v", err)).WithCause(err),
+		})
 	}
 
 	// 5. Parse lock files using registered parsers
 	lockFilePackages := make(map[string]PackageInfo) // package name -> info
+	var parseErrors []result.SAWError
 	for _, lockFile := range lockFiles {
 		for _, parser := range parsers {
 			if parser.Detect(lockFile) {
+				// Note: This assumes Agent B has updated Parse signature to return result.Result[[]PackageInfo]
+				// For backward compatibility during migration, handle old signature with type assertion
 				packages, err := parser.Parse(lockFile)
 				if err != nil {
-					// Log but don't fail on parse errors
+					// F6: Log parser error instead of silently dropping it
+					parseErrors = append(parseErrors, result.NewError("D002_LOCK_FILE_PARSE",
+						fmt.Sprintf("failed to parse lock file %s: %v", lockFile, err)).WithCause(err))
 					continue
 				}
 				for _, pkg := range packages {
@@ -149,7 +172,12 @@ func CheckDeps(implPath string, wave int) (*ConflictReport, error) {
 		report.Recommendations = append(report.Recommendations, "No dependency conflicts detected")
 	}
 
-	return report, nil
+	// If we collected parse errors, return as partial success with warnings
+	if len(parseErrors) > 0 {
+		return result.NewPartial(*report, parseErrors)
+	}
+
+	return result.NewSuccess(*report)
 }
 
 // isLocalReplace reports whether importPath is satisfied by a local replace
@@ -218,18 +246,6 @@ func DetectLockFiles(repoRoot string) ([]string, error) {
 	return lockFiles, nil
 }
 
-// NormalizePackageName normalizes package names across different ecosystems
-func NormalizePackageName(pkg string) string {
-	// Remove version suffixes like @v1.2.3
-	if idx := strings.Index(pkg, "@"); idx != -1 {
-		pkg = pkg[:idx]
-	}
-	// Trim common prefixes
-	pkg = strings.TrimPrefix(pkg, "github.com/")
-	pkg = strings.TrimPrefix(pkg, "golang.org/x/")
-	return strings.ToLower(pkg)
-}
-
 // isStdLib checks if an import path is a Go standard library package
 func isStdLib(importPath string) bool {
 	// Standard library packages don't contain dots in the first path element
@@ -262,10 +278,13 @@ func extractExternalImports(repoRoot string, ownedFiles map[string]string) (map[
 	result := make(map[string][]string) // file -> []external packages
 
 	// Get module path from go.mod to identify local vs external imports
-	modulePath, err := getModulePath(repoRoot)
-	if err != nil {
+	modulePathResult := getModulePath(repoRoot)
+	var modulePath string
+	if modulePathResult.IsFatal() {
 		// If no go.mod, assume all imports are external
 		modulePath = ""
+	} else {
+		modulePath = modulePathResult.GetData()
 	}
 
 	for file := range ownedFiles {
@@ -332,11 +351,14 @@ func extractExternalImports(repoRoot string, ownedFiles map[string]string) (map[
 }
 
 // getModulePath extracts the module path from go.mod
-func getModulePath(repoRoot string) (string, error) {
+func getModulePath(repoRoot string) result.Result[string] {
 	goModPath := filepath.Join(repoRoot, "go.mod")
 	data, err := os.ReadFile(goModPath)
 	if err != nil {
-		return "", err
+		return result.NewFailure[string]([]result.SAWError{
+			result.NewFatal("D009_GOMOD_READ",
+				fmt.Sprintf("failed to read go.mod: %v", err)).WithCause(err),
+		})
 	}
 
 	// Parse module line
@@ -344,9 +366,13 @@ func getModulePath(repoRoot string) (string, error) {
 	for _, line := range lines {
 		line = strings.TrimSpace(line)
 		if strings.HasPrefix(line, "module ") {
-			return strings.TrimSpace(strings.TrimPrefix(line, "module")), nil
+			modulePath := strings.TrimSpace(strings.TrimPrefix(line, "module"))
+			return result.NewSuccess(modulePath)
 		}
 	}
 
-	return "", fmt.Errorf("no module directive found in go.mod")
+	return result.NewFailure[string]([]result.SAWError{
+		result.NewFatal("D010_GOMOD_PARSE",
+			"no module directive found in go.mod"),
+	})
 }

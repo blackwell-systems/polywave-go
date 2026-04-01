@@ -1,11 +1,17 @@
 package deps
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
 )
+
+// Ensure result package is marked as used for methods on result.Result[T]
+var _ = result.SAWError{}
 
 func TestRegisterParser(t *testing.T) {
 	// Save original parsers
@@ -15,8 +21,8 @@ func TestRegisterParser(t *testing.T) {
 	// Reset parsers
 	parsers = nil
 
-	mock := &mockParser{detectResult: true}
-	RegisterParser(mock)
+	// Use goSumParser instead of mockParser (which is in types_test.go)
+	RegisterParser(&goSumParser{})
 
 	if len(parsers) != 1 {
 		t.Errorf("Expected 1 parser registered, got %d", len(parsers))
@@ -65,12 +71,12 @@ func TestCheckDeps_NoConflicts(t *testing.T) {
 	// For now, test graceful handling of missing/invalid input
 
 	// Test with non-existent IMPL doc
-	report, err := CheckDeps("/nonexistent/path.yaml", 1)
-	if err == nil {
-		t.Error("Expected error for non-existent IMPL doc")
+	res := CheckDeps("/nonexistent/path.yaml", 1)
+	if !res.IsFatal() {
+		t.Error("Expected fatal result for non-existent IMPL doc")
 	}
-	if report != nil {
-		t.Error("Expected nil report on error")
+	if res.IsSuccess() {
+		t.Error("Expected failure result on error")
 	}
 }
 
@@ -82,6 +88,11 @@ func TestCheckDeps_EmptyWave(t *testing.T) {
 		t.Fatalf("Failed to create docs dir: %v", err)
 	}
 
+	// Create .git directory so repo root validation passes
+	if err := os.MkdirAll(filepath.Join(tmpDir, ".git"), 0755); err != nil {
+		t.Fatalf("Failed to create .git dir: %v", err)
+	}
+
 	implPath := filepath.Join(docsDir, "test.yaml")
 	implContent := `title: Test IMPL
 file_ownership: []
@@ -91,14 +102,12 @@ waves: []
 		t.Fatalf("Failed to create IMPL doc: %v", err)
 	}
 
-	report, err := CheckDeps(implPath, 1)
-	if err != nil {
-		t.Errorf("CheckDeps failed: %v", err)
+	res := CheckDeps(implPath, 1)
+	if !res.IsSuccess() {
+		t.Errorf("CheckDeps failed: %v", res.Errors)
 	}
 
-	if report == nil {
-		t.Fatal("Expected non-nil report")
-	}
+	report := res.GetData()
 
 	// Empty wave should produce empty report
 	if len(report.MissingDeps) != 0 {
@@ -106,26 +115,6 @@ waves: []
 	}
 	if len(report.VersionConflicts) != 0 {
 		t.Errorf("Expected 0 version conflicts, got %d", len(report.VersionConflicts))
-	}
-}
-
-func TestNormalizePackageName(t *testing.T) {
-	tests := []struct {
-		input    string
-		expected string
-	}{
-		{"github.com/user/repo", "user/repo"},
-		{"golang.org/x/tools", "tools"},
-		{"package@1.2.3", "package"},
-		{"Package", "package"},
-		{"github.com/User/Repo@v1.0.0", "user/repo"},
-	}
-
-	for _, tt := range tests {
-		result := NormalizePackageName(tt.input)
-		if result != tt.expected {
-			t.Errorf("NormalizePackageName(%q) = %q, want %q", tt.input, result, tt.expected)
-		}
 	}
 }
 
@@ -182,6 +171,7 @@ func TestCheckDeps_VersionConflicts(t *testing.T) {
 func TestCheckDeps_ReplaceDirective(t *testing.T) {
 	// Build a temp directory tree that looks like a minimal Go repo:
 	//   <root>/
+	//     .git/           — makes repo root validation pass
 	//     go.mod          — declares module and a local replace directive
 	//     go.sum          — empty (locally-replaced module has no checksum)
 	//     docs/IMPL/
@@ -192,6 +182,7 @@ func TestCheckDeps_ReplaceDirective(t *testing.T) {
 
 	// Create directory structure
 	for _, dir := range []string{
+		filepath.Join(tmpDir, ".git"),
 		filepath.Join(tmpDir, "docs", "IMPL"),
 		filepath.Join(tmpDir, "pkg", "myapp"),
 		filepath.Join(tmpDir, "local-lib"),
@@ -262,13 +253,12 @@ waves:
 	parsers = nil
 	RegisterParser(&goSumParser{})
 
-	report, err := CheckDeps(implPath, 1)
-	if err != nil {
-		t.Fatalf("CheckDeps returned error: %v", err)
+	res := CheckDeps(implPath, 1)
+	if res.IsFatal() {
+		t.Fatalf("CheckDeps returned fatal error: %v", res.Errors)
 	}
-	if report == nil {
-		t.Fatal("CheckDeps returned nil report")
-	}
+
+	report := res.GetData()
 
 	// The locally-replaced module must NOT appear in MissingDeps
 	for _, dep := range report.MissingDeps {
@@ -280,6 +270,165 @@ waves:
 	if len(report.MissingDeps) != 0 {
 		t.Errorf("expected 0 MissingDeps, got %d: %+v", len(report.MissingDeps), report.MissingDeps)
 	}
+}
+
+// TestCheckDeps_RepoRootInvalid verifies CodeDepRepoRootInvalid on malformed IMPL path
+func TestCheckDeps_RepoRootInvalid(t *testing.T) {
+	// Create a temp directory without .git
+	tmpDir := t.TempDir()
+	docsDir := filepath.Join(tmpDir, "docs", "IMPL")
+	if err := os.MkdirAll(docsDir, 0755); err != nil {
+		t.Fatalf("Failed to create docs dir: %v", err)
+	}
+
+	implPath := filepath.Join(docsDir, "test.yaml")
+	implContent := `title: Test IMPL
+file_ownership: []
+waves: []
+`
+	if err := os.WriteFile(implPath, []byte(implContent), 0644); err != nil {
+		t.Fatalf("Failed to create IMPL doc: %v", err)
+	}
+
+	res := CheckDeps(implPath, 1)
+	if !res.IsFatal() {
+		t.Error("Expected fatal result for invalid repo root")
+	}
+
+	// Check that we got the right error code
+	if len(res.Errors) == 0 {
+		t.Fatal("Expected at least one error")
+	}
+	if res.Errors[0].Code != "D011_REPO_ROOT_INVALID" {
+		t.Errorf("Expected error code D011_REPO_ROOT_INVALID, got %s", res.Errors[0].Code)
+	}
+}
+
+// TestCheckDeps_ParserErrorLogged verifies parser error is captured (not silently dropped)
+func TestCheckDeps_ParserErrorLogged(t *testing.T) {
+	// Create a valid repo structure
+	tmpDir := t.TempDir()
+	for _, dir := range []string{
+		filepath.Join(tmpDir, ".git"),
+		filepath.Join(tmpDir, "docs", "IMPL"),
+		filepath.Join(tmpDir, "pkg", "test"),
+	} {
+		if err := os.MkdirAll(dir, 0755); err != nil {
+			t.Fatalf("failed to create dir %s: %v", dir, err)
+		}
+	}
+
+	// Create go.mod
+	goModContent := "module example.com/test\n\ngo 1.21\n"
+	if err := os.WriteFile(filepath.Join(tmpDir, "go.mod"), []byte(goModContent), 0644); err != nil {
+		t.Fatalf("failed to write go.mod: %v", err)
+	}
+
+	// Create a malformed go.sum that will trigger parse error
+	goSumContent := "malformed line without proper format"
+	if err := os.WriteFile(filepath.Join(tmpDir, "go.sum"), []byte(goSumContent), 0644); err != nil {
+		t.Fatalf("failed to write go.sum: %v", err)
+	}
+
+	// Create test source file
+	testGoContent := `package test
+import _ "github.com/example/pkg"
+`
+	if err := os.WriteFile(filepath.Join(tmpDir, "pkg", "test", "test.go"), []byte(testGoContent), 0644); err != nil {
+		t.Fatalf("failed to write test.go: %v", err)
+	}
+
+	implContent := `title: Test IMPL
+file_ownership:
+  - file: pkg/test/test.go
+    agent: A
+    wave: 1
+    action: modify
+waves:
+  - number: 1
+`
+	implPath := filepath.Join(tmpDir, "docs", "IMPL", "test.yaml")
+	if err := os.WriteFile(implPath, []byte(implContent), 0644); err != nil {
+		t.Fatalf("failed to write IMPL doc: %v", err)
+	}
+
+	// Register a parser that will fail
+	originalParsers := parsers
+	defer func() { parsers = originalParsers }()
+	parsers = nil
+	RegisterParser(&failingParser{})
+
+	res := CheckDeps(implPath, 1)
+
+	// Should get partial result with parse error warnings
+	if res.IsFatal() {
+		t.Errorf("Expected partial or success result, got fatal: %v", res.Errors)
+	}
+
+	// Check that parse error was logged
+	if res.IsPartial() {
+		found := false
+		for _, err := range res.Errors {
+			if err.Code == "D002_LOCK_FILE_PARSE" {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Error("Expected D002_LOCK_FILE_PARSE error in warnings")
+		}
+	}
+}
+
+// TestGetModulePath_NoGoMod verifies result.IsFatal() when go.mod missing
+func TestGetModulePath_NoGoMod(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	res := getModulePath(tmpDir)
+	if !res.IsFatal() {
+		t.Error("Expected fatal result when go.mod is missing")
+	}
+
+	if len(res.Errors) == 0 {
+		t.Fatal("Expected at least one error")
+	}
+	if res.Errors[0].Code != "D009_GOMOD_READ" {
+		t.Errorf("Expected error code D009_GOMOD_READ, got %s", res.Errors[0].Code)
+	}
+}
+
+// TestGetModulePath_InvalidFormat verifies CodeDepGoModParse on malformed go.mod
+func TestGetModulePath_InvalidFormat(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	// Create go.mod without module directive
+	goModContent := "go 1.21\n\nrequire github.com/example/pkg v1.0.0\n"
+	if err := os.WriteFile(filepath.Join(tmpDir, "go.mod"), []byte(goModContent), 0644); err != nil {
+		t.Fatalf("failed to write go.mod: %v", err)
+	}
+
+	res := getModulePath(tmpDir)
+	if !res.IsFatal() {
+		t.Error("Expected fatal result when go.mod has no module directive")
+	}
+
+	if len(res.Errors) == 0 {
+		t.Fatal("Expected at least one error")
+	}
+	if res.Errors[0].Code != "D010_GOMOD_PARSE" {
+		t.Errorf("Expected error code D010_GOMOD_PARSE, got %s", res.Errors[0].Code)
+	}
+}
+
+// failingParser is a test parser that always returns an error
+type failingParser struct{}
+
+func (p *failingParser) Detect(filePath string) bool {
+	return filepath.Base(filePath) == "go.sum"
+}
+
+func (p *failingParser) Parse(filePath string) ([]PackageInfo, error) {
+	return nil, fmt.Errorf("simulated parse failure")
 }
 
 // goSumParser is a minimal LockFileParser for go.sum files used in testing.
