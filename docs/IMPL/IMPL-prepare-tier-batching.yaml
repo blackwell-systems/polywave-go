@@ -386,6 +386,7 @@ waves:
             - cmd/sawtools/prepare_tier_cmd.go
             - cmd/sawtools/prepare_wave.go
             - cmd/sawtools/prepare_tier_cmd_test.go
+      base_commit: 5576205a8d7e2750ef7fa4b2df84ed5657eca957
 quality_gates:
     level: standard
     gates:
@@ -413,5 +414,5 @@ pre_mortem:
           likelihood: medium
           impact: low
           mitigation: Agent A is explicitly tasked with updating all 5 existing test call sites. The tests are all in program_tier_prepare_test.go which Agent A owns.
-state: "REVIEWED"
+state: REVIEWED
 injection_method: hook
