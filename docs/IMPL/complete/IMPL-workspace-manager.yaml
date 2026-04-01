@@ -1,3 +1,4 @@
+completion_date: "2026-04-01"
 title: Multi-language WorkspaceManager for worktree LSP resolution
 feature_slug: workspace-manager
 verdict: SUITABLE
@@ -870,6 +871,7 @@ waves:
             - cmd/sawtools/prepare_wave.go
           dependencies:
             - E
+      base_commit: 6e73492a4a3fdf56b37e4460e314e2e73b40d4ed
 quality_gates:
     level: standard
     gates:
@@ -991,6 +993,18 @@ completion_reports:
             - TestDetectAndSetup_OnEventCalled
         verification: PASS
         notes: Dispatcher complete. All 5 tests pass. Pre-commit hook requires GOWORK=off due to SAW-managed go.work including same-module worktree — committed with GOWORK=off env var.
+    F:
+        status: complete
+        branch: saw/workspace-manager/wave3-agent-F
+        commit: c43b991
+        files_changed:
+            - pkg/engine/gowork_steps.go
+            - pkg/engine/step_types.go
+            - pkg/engine/prepare.go
+            - pkg/engine/finalize.go
+            - cmd/sawtools/prepare_wave.go
+        verification: PASS
+        notes: Wired workspace dispatcher into engine and CLI. StepGoWorkSetup/StepGoWorkRestore delegate to GoWorkspaceManager. PrepareWave now calls workspace.DetectAndSetup (multi-language), FinalizeWave calls workspace.DetectAndRestore. NoWorkspaceSetup added to PrepareWaveOpts; --no-gowork kept as deprecated alias. All gowork tests pass (6/6). Full engine test suite passes.
 pre_mortem:
     overall_risk: medium
     rows:
@@ -1077,5 +1091,5 @@ critic_report:
     summary: All 4 Wave 1 agents pass. Agent A context import issue fixed before wave launch (removed unused context import from go_manager.go brief). BackupDir pattern correct, same-module detection approach valid, pkg/engine/workspace/ sub-package does not exist, agents B/C/D file references are correct.
     reviewed_at: "2026-04-01T08:27:11Z"
     issue_count: 0
-state: REVIEWED
+state: COMPLETE
 injection_method: hook

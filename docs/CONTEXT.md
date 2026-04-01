@@ -318,3 +318,5 @@ type BackendConfig struct {
   - IMPL doc: docs/IMPL/complete/IMPL-tools-bug-fixes.yaml
 - **engine-doc**: completed 2026-04-01, 1 waves, 3 agents
   - IMPL doc: docs/IMPL/complete/IMPL-engine-doc.yaml
+- **workspace-manager**: completed 2026-04-01, 3 waves, 6 agents
+  - IMPL doc: docs/IMPL/complete/IMPL-workspace-manager.yaml
