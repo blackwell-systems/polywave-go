@@ -8,6 +8,12 @@ import (
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
 )
 
+func init() {
+	Register(&PytestParser{})
+	Register(&MypyParser{})
+	Register(&RuffParser{})
+}
+
 // ──────────────────────────────────────────────
 // PytestParser
 // ──────────────────────────────────────────────
@@ -63,11 +69,10 @@ func (p *PytestParser) Parse(stdout, stderr string) *ParseResult {
 	}
 
 	var currentTracebacks []traceRef
-	var pendingFailed *result.SAWError // the FAILED line we last saw (by position)
+	pendingFailedIdx := -1 // index into pr.Errors for the FAILED line we last saw
 
-	for i, raw := range lines {
+	for _, raw := range lines {
 		line := strings.TrimRight(raw, "\r")
-		_ = i
 
 		// Traceback file reference
 		if m := pytestTracebackFileRe.FindStringSubmatch(line); m != nil {
@@ -80,10 +85,10 @@ func (p *PytestParser) Parse(stdout, stderr string) *ParseResult {
 		if m := pytestLocationRe.FindStringSubmatch(line); m != nil {
 			lineNum, _ := strconv.Atoi(m[2])
 			// If we have a pending FAILED entry, annotate it
-			if pendingFailed != nil {
-				if pendingFailed.File == "" || pendingFailed.File == extractPytestFile(pendingFailed.Message) {
-					pendingFailed.File = m[1]
-					pendingFailed.Line = lineNum
+			if pendingFailedIdx >= 0 {
+				if pr.Errors[pendingFailedIdx].File == "" || pr.Errors[pendingFailedIdx].File == extractPytestFile(pr.Errors[pendingFailedIdx].Message) {
+					pr.Errors[pendingFailedIdx].File = m[1]
+					pr.Errors[pendingFailedIdx].Line = lineNum
 				}
 			}
 			continue
@@ -92,11 +97,11 @@ func (p *PytestParser) Parse(stdout, stderr string) *ParseResult {
 		// FAILED line
 		if m := pytestFailedRe.FindStringSubmatch(line); m != nil {
 			// Flush traceback info into the previous pending item if any
-			if pendingFailed != nil && len(currentTracebacks) > 0 {
+			if pendingFailedIdx >= 0 && len(currentTracebacks) > 0 {
 				deepest := currentTracebacks[len(currentTracebacks)-1]
-				if pendingFailed.File == "" {
-					pendingFailed.File = deepest.file
-					pendingFailed.Line = deepest.line
+				if pr.Errors[pendingFailedIdx].File == "" {
+					pr.Errors[pendingFailedIdx].File = deepest.file
+					pr.Errors[pendingFailedIdx].Line = deepest.line
 				}
 			}
 
@@ -126,7 +131,7 @@ func (p *PytestParser) Parse(stdout, stderr string) *ParseResult {
 			}
 
 			pr.Errors = append(pr.Errors, se)
-			pendingFailed = &pr.Errors[len(pr.Errors)-1]
+			pendingFailedIdx = len(pr.Errors) - 1
 			currentTracebacks = nil
 			continue
 		}
@@ -134,11 +139,11 @@ func (p *PytestParser) Parse(stdout, stderr string) *ParseResult {
 		// ERROR collecting ...
 		if m := pytestCollectionErrorRe.FindStringSubmatch(line); m != nil {
 			// Flush previous
-			if pendingFailed != nil && len(currentTracebacks) > 0 {
+			if pendingFailedIdx >= 0 && len(currentTracebacks) > 0 {
 				deepest := currentTracebacks[len(currentTracebacks)-1]
-				if pendingFailed.File == "" {
-					pendingFailed.File = deepest.file
-					pendingFailed.Line = deepest.line
+				if pr.Errors[pendingFailedIdx].File == "" {
+					pr.Errors[pendingFailedIdx].File = deepest.file
+					pr.Errors[pendingFailedIdx].Line = deepest.line
 				}
 			}
 
@@ -151,18 +156,18 @@ func (p *PytestParser) Parse(stdout, stderr string) *ParseResult {
 				Tool:     "pytest",
 			}
 			pr.Errors = append(pr.Errors, se)
-			pendingFailed = &pr.Errors[len(pr.Errors)-1]
+			pendingFailedIdx = len(pr.Errors) - 1
 			currentTracebacks = nil
 			continue
 		}
 	}
 
 	// Flush the last pending item
-	if pendingFailed != nil && len(currentTracebacks) > 0 {
+	if pendingFailedIdx >= 0 && len(currentTracebacks) > 0 {
 		deepest := currentTracebacks[len(currentTracebacks)-1]
-		if pendingFailed.File == "" {
-			pendingFailed.File = deepest.file
-			pendingFailed.Line = deepest.line
+		if pr.Errors[pendingFailedIdx].File == "" {
+			pr.Errors[pendingFailedIdx].File = deepest.file
+			pr.Errors[pendingFailedIdx].Line = deepest.line
 		}
 	}
 
