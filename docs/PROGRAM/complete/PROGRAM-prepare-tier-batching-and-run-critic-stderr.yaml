@@ -1,6 +1,7 @@
 title: 'Auto-generated PROGRAM: Batch E37 failures in prepare-tier and add --skip-critic flag, CLI Backend Stderr Capture and Claude Code Context Detection'
 program_slug: prepare-tier-batching-and-run-critic-stderr
-state: REVIEWED
+state: COMPLETE
+completion_date: "2026-03-31"
 created: "2026-04-01T01:46:50Z"
 updated: "2026-04-01T01:46:50Z"
 impls:
@@ -35,3 +36,5 @@ completion:
     impls_total: 2
     total_agents: 4
     total_waves: 2
+
+SAW:PROGRAM:COMPLETE

@@ -174,6 +174,7 @@ type BackendConfig struct {
   - IMPL doc: docs/IMPL/complete/IMPL-determinism-remaining.yaml
 
 ## Features Completed
+- Program: Auto-generated PROGRAM: Batch E37 failures in prepare-tier and add --skip-critic flag, CLI Backend Stderr Capture and Claude Code Context Detection (prepare-tier-batching-and-run-critic-stderr) — 1 tiers, 2 IMPLs, 2026-03-31
 - Program: Auto-generated PROGRAM: pkg/config Code Review Hardening, Fix pkg/collision code review issues, Fix pkg/commands and gate_populator code review issues (config-hardening-and-collision-fixes-and-commands-fixes) — 1 tiers, 3 IMPLs, 2026-03-31
 - Program: Go Engine Enhancements (create-program-cross-repo-and-program-wave-conflict-and-engine-reference-injection) — 2 tiers, 3 IMPLs, 2026-03-25
 - Program: engine-hardening (engine-hardening) — 1 tiers, 2 IMPLs, 2026-03-22
@@ -279,6 +280,10 @@ type BackendConfig struct {
   - IMPL doc: docs/IMPL/complete/IMPL-collision-fixes.yaml
 - **commands-fixes**: completed 2026-03-31, 1 waves, 2 agents
   - IMPL doc: docs/IMPL/complete/IMPL-commands-fixes.yaml
+- **prepare-tier-batching**: completed 2026-03-31, 1 waves, 2 agents
+  - IMPL doc: docs/IMPL/complete/IMPL-prepare-tier-batching.yaml
+- **run-critic-stderr**: completed 2026-03-31, 1 waves, 2 agents
+  - IMPL doc: docs/IMPL/complete/IMPL-run-critic-stderr.yaml
 - **prepare-tier-batching**: completed 2026-03-31, 1 waves, 2 agents
   - IMPL doc: docs/IMPL/complete/IMPL-prepare-tier-batching.yaml
 - **run-critic-stderr**: completed 2026-03-31, 1 waves, 2 agents
