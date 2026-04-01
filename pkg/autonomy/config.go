@@ -78,7 +78,8 @@ func LoadConfig(repoPath string) result.Result[LoadConfigData] {
 
 // SaveConfig writes cfg back to saw.config.json in repoPath.
 // It reads the existing file first to preserve other top-level keys,
-// then updates (or creates) the "autonomy" key.
+// then updates (or creates) the "autonomy" key. Non-autonomy keys
+// (providers, repos, agent, etc.) are preserved unchanged.
 func SaveConfig(repoPath string, cfg Config) result.Result[SaveConfigData] {
 	path := filepath.Join(repoPath, configFileName)
 
