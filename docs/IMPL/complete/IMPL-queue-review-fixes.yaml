@@ -1,3 +1,4 @@
+completion_date: "2026-04-01"
 title: Fix pkg/queue review findings — error code conformance, result.Result migration, bug fixes, test gaps
 feature_slug: queue-review-fixes
 verdict: SUITABLE
@@ -197,6 +198,7 @@ waves:
             - pkg/queue/manager_test.go
           dependencies:
             - A
+      base_commit: c3149ac32247b4981877769c043af99b4d2f6df9
 quality_gates:
     level: standard
     gates:
@@ -220,6 +222,19 @@ completion_reports:
             - pkg/queue/manager_test.go
         verification: PASS
         notes: 'Implementation complete. All 4 tasks done: (1) Added Q001-Q006 constants, (2) Replaced 9 hardcoded error strings with constants, (3) Refactored completedSlugs() to return Result[T], (4) Removed unreachable nil check. Post-implementation fix: Updated 3 test assertions in manager_test.go to use new error code constants instead of hardcoded strings (TestNext_QueueEmpty, TestNext_NoneEligible, TestUpdateStatus_NotFound). All tests now pass.'
+    B:
+        status: complete
+        branch: saw/queue-review-fixes/wave2-agent-B
+        commit: 07eeb31
+        files_changed:
+            - pkg/queue/manager_test.go
+        tests_added:
+            - TestAdd_MkdirFails
+            - TestList_CorruptedYAML
+            - TestCompletedSlugs_CompleteDir_ReadFailure
+            - TestUpdateStatus_SaveYAMLFails
+        verification: PASS
+        notes: All 4 error path tests implemented and passing. Tests verify Fatal results with correct error codes (Q001, Q002, Q004, Q005). Platform-portable chmod-based failure simulation used throughout.
 pre_mortem:
     overall_risk: low
     rows:
@@ -239,5 +254,5 @@ pre_mortem:
           likelihood: low
           impact: low
           mitigation: Go slice semantics guarantee append() always returns non-nil. The check is defensive but unreachable. Removal is safe. If future refactor adds a code path where items is not assigned via append, linter or tests will catch it.
-state: REVIEWED
+state: COMPLETE
 injection_method: hook

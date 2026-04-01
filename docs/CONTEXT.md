@@ -332,3 +332,5 @@ type BackendConfig struct {
   - IMPL doc: docs/IMPL/complete/IMPL-suitability-review-fixes.yaml
 - **worktree-review-fixes**: completed 2026-04-01, 2 waves, 4 agents
   - IMPL doc: docs/IMPL/complete/IMPL-worktree-review-fixes.yaml
+- **queue-review-fixes**: completed 2026-04-01, 2 waves, 2 agents
+  - IMPL doc: docs/IMPL/complete/IMPL-queue-review-fixes.yaml
