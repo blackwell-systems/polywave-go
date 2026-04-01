@@ -8,3 +8,7 @@
 .saw-agent-brief.md
 docs/IMPL/.saw-state/
 *.bak
+
+# SAW-managed go workspace files (created/restored by prepare-wave/finalize-wave)
+go.work
+go.work.sum
