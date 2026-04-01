@@ -80,7 +80,7 @@ func (m *Manager) Add(item Item) result.Result[AddData] {
 	dir := m.queueDir()
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return result.NewFailure[AddData]([]result.SAWError{
-			result.NewFatal("QUEUE_ADD_FAILED", fmt.Sprintf("create queue dir: %s", err.Error())).WithCause(err),
+			result.NewFatal(result.CodeQueueAddFailed, fmt.Sprintf("create queue dir: %s", err.Error())).WithCause(err),
 		})
 	}
 
@@ -89,7 +89,7 @@ func (m *Manager) Add(item Item) result.Result[AddData] {
 
 	if err := protocol.SaveYAML(path, &item); err != nil {
 		return result.NewFailure[AddData]([]result.SAWError{
-			result.NewFatal("QUEUE_ADD_FAILED", err.Error()).WithCause(err),
+			result.NewFatal(result.CodeQueueAddFailed, err.Error()).WithCause(err),
 		})
 	}
 
@@ -109,7 +109,7 @@ func (m *Manager) List() result.Result[ListData] {
 			return result.NewSuccess(ListData{Items: []Item{}, Count: 0})
 		}
 		return result.NewFailure[ListData]([]result.SAWError{
-			result.NewFatal("QUEUE_LIST_FAILED", fmt.Sprintf("read dir: %s", err.Error())).WithCause(err),
+			result.NewFatal(result.CodeQueueListFailed, fmt.Sprintf("read dir: %s", err.Error())).WithCause(err),
 		})
 	}
 
@@ -126,7 +126,7 @@ func (m *Manager) List() result.Result[ListData] {
 		item, err := protocol.LoadYAML[Item](path)
 		if err != nil {
 			return result.NewFailure[ListData]([]result.SAWError{
-				result.NewFatal("QUEUE_LIST_FAILED", err.Error()).WithCause(err),
+				result.NewFatal(result.CodeQueueListFailed, err.Error()).WithCause(err),
 			})
 		}
 		item.FilePath = path
@@ -136,10 +136,6 @@ func (m *Manager) List() result.Result[ListData] {
 	sort.Slice(items, func(i, j int) bool {
 		return items[i].Priority < items[j].Priority
 	})
-
-	if items == nil {
-		items = []Item{}
-	}
 
 	return result.NewSuccess(ListData{Items: items, Count: len(items)})
 }
@@ -151,13 +147,15 @@ type implSlug struct {
 
 // completedSlugs returns the set of slugs that are "complete" by scanning
 // both the queue directory and docs/IMPL/complete/.
-func (m *Manager) completedSlugs() (map[string]bool, error) {
+func (m *Manager) completedSlugs() result.Result[map[string]bool] {
 	completed := make(map[string]bool)
 
 	// Check queue items for complete status
 	listResult := m.List()
 	if listResult.IsFatal() {
-		return nil, fmt.Errorf("completedSlugs: %s", listResult.Errors[0].Message)
+		return result.NewFailure[map[string]bool]([]result.SAWError{
+			result.NewFatal(result.CodeQueueCompletedScanFailed, listResult.Errors[0].Message),
+		})
 	}
 	for _, item := range listResult.GetData().Items {
 		if item.Status == "complete" && item.Slug != "" {
@@ -172,9 +170,11 @@ func (m *Manager) completedSlugs() (map[string]bool, error) {
 	entries, err := os.ReadDir(completeDir)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return completed, nil
+			return result.NewSuccess(completed)
 		}
-		return nil, fmt.Errorf("queue.Manager.completedSlugs: read complete dir: %w", err)
+		return result.NewFailure[map[string]bool]([]result.SAWError{
+			result.NewFatal(result.CodeQueueCompletedScanFailed, fmt.Sprintf("read complete dir: %s", err.Error())).WithCause(err),
+		})
 	}
 	for _, e := range entries {
 		if e.IsDir() {
@@ -205,7 +205,7 @@ func (m *Manager) completedSlugs() (map[string]bool, error) {
 		}
 	}
 
-	return completed, nil
+	return result.NewSuccess(completed)
 }
 
 // Next returns the highest-priority (lowest number) item whose status is
@@ -218,12 +218,11 @@ func (m *Manager) Next() result.Result[Item] {
 	}
 	items := listResult.GetData().Items
 
-	completed, err := m.completedSlugs()
-	if err != nil {
-		return result.NewFailure[Item]([]result.SAWError{
-			result.NewFatal("QUEUE_LIST_FAILED", err.Error()).WithCause(err),
-		})
+	completedResult := m.completedSlugs()
+	if completedResult.IsFatal() {
+		return result.NewFailure[Item](completedResult.Errors)
 	}
+	completed := completedResult.GetData()
 
 	for i := range items {
 		item := &items[i]
@@ -243,7 +242,7 @@ func (m *Manager) Next() result.Result[Item] {
 	}
 
 	return result.NewFailure[Item]([]result.SAWError{
-		result.NewFatal("QUEUE_EMPTY", "no eligible items in queue"),
+		result.NewFatal(result.CodeQueueEmpty, "no eligible items in queue"),
 	})
 }
 
@@ -254,7 +253,7 @@ func (m *Manager) UpdateStatus(slug string, status string) result.Result[UpdateS
 	entries, err := os.ReadDir(dir)
 	if err != nil {
 		return result.NewFailure[UpdateStatusData]([]result.SAWError{
-			result.NewFatal("QUEUE_STATUS_UPDATE_FAILED", fmt.Sprintf("read dir: %s", err.Error())).WithCause(err),
+			result.NewFatal(result.CodeQueueStatusUpdateFailed, fmt.Sprintf("read dir: %s", err.Error())).WithCause(err),
 		})
 	}
 
@@ -270,14 +269,14 @@ func (m *Manager) UpdateStatus(slug string, status string) result.Result[UpdateS
 		item, err := protocol.LoadYAML[Item](path)
 		if err != nil {
 			return result.NewFailure[UpdateStatusData]([]result.SAWError{
-				result.NewFatal("QUEUE_STATUS_UPDATE_FAILED", err.Error()).WithCause(err),
+				result.NewFatal(result.CodeQueueStatusUpdateFailed, err.Error()).WithCause(err),
 			})
 		}
 		if item.Slug == slug {
 			item.Status = status
 			if err := protocol.SaveYAML(path, &item); err != nil {
 				return result.NewFailure[UpdateStatusData]([]result.SAWError{
-					result.NewFatal("QUEUE_STATUS_UPDATE_FAILED", err.Error()).WithCause(err),
+					result.NewFatal(result.CodeQueueStatusUpdateFailed, err.Error()).WithCause(err),
 				})
 			}
 			return result.NewSuccess(UpdateStatusData{
@@ -288,6 +287,6 @@ func (m *Manager) UpdateStatus(slug string, status string) result.Result[UpdateS
 	}
 
 	return result.NewFailure[UpdateStatusData]([]result.SAWError{
-		result.NewFatal("QUEUE_STATUS_UPDATE_FAILED", fmt.Sprintf("slug %q not found in queue", slug)),
+		result.NewFatal(result.CodeQueueStatusUpdateFailed, fmt.Sprintf("slug %q not found in queue", slug)),
 	})
 }
