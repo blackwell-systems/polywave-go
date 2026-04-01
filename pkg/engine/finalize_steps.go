@@ -628,3 +628,174 @@ func StepPopulateIntegrationChecklist(ctx context.Context, opts FinalizeWaveOpts
 		Data:   updated,
 	}, updated, nil
 }
+
+// StepPredictConflictsEnhanced replaces StepPredictConflicts with pattern analysis.
+// Returns fatal error only when conflicts require manual intervention.
+// Auto-mergeable conflicts proceed to StepAutoMergeAppendConflicts.
+func StepPredictConflictsEnhanced(ctx context.Context, opts FinalizeWaveOpts, manifest *protocol.IMPLManifest, onEvent EventCallback) (*StepResult, *protocol.ConflictDataEnhanced, error) {
+	const stepName = "predict-conflicts-enhanced"
+	emitStepEvent(onEvent, stepName, "running", "")
+
+	conflictRes := protocol.PredictConflictsWithStrategy(ctx, manifest, opts.WaveNum)
+	if !conflictRes.IsSuccess() {
+		msg := ""
+		if len(conflictRes.Errors) > 0 {
+			msg = conflictRes.Errors[0].Message
+		}
+		emitStepEvent(onEvent, stepName, "failed", msg)
+		return &StepResult{
+			Step:   stepName,
+			Status: "failed",
+			Detail: msg,
+		}, nil, fmt.Errorf("predict-conflicts-enhanced: %s", msg)
+	}
+
+	conflictData := conflictRes.GetData()
+
+	// If no conflicts detected, return success
+	if conflictData.ConflictsDetected == 0 {
+		emitStepEvent(onEvent, stepName, "complete", "no conflicts detected")
+		return &StepResult{
+			Step:   stepName,
+			Status: "success",
+			Detail: "no conflicts detected",
+			Data:   conflictData,
+		}, &conflictData, nil
+	}
+
+	// If all conflicts are auto-mergeable, proceed
+	if conflictData.AutoMergeable == conflictData.ConflictsDetected {
+		detail := fmt.Sprintf("%d auto-mergeable conflict(s)", conflictData.AutoMergeable)
+		emitStepEvent(onEvent, stepName, "complete", detail)
+		return &StepResult{
+			Step:   stepName,
+			Status: "success",
+			Detail: detail,
+			Data:   conflictData,
+		}, &conflictData, nil
+	}
+
+	// Mixed strategies: some conflicts require manual intervention
+	detail := fmt.Sprintf("%d conflict(s) detected, %d auto-mergeable, %d require manual merge",
+		conflictData.ConflictsDetected, conflictData.AutoMergeable, conflictData.ConflictsDetected-conflictData.AutoMergeable)
+	emitStepEvent(onEvent, stepName, "failed", detail)
+	return &StepResult{
+		Step:   stepName,
+		Status: "failed",
+		Detail: detail,
+		Data:   conflictData,
+	}, &conflictData, fmt.Errorf("predict-conflicts-enhanced: %s", detail)
+}
+
+// AutoMergeData holds the result of automatic merge for append-only conflicts
+type AutoMergeData struct {
+	File           string
+	Agents         []string
+	MergeOrder     []string
+	MergesApplied  int
+	FallbackNeeded bool
+	Reason         string
+}
+
+// StepAutoMergeAppendConflicts attempts automatic merge for append-only conflicts.
+// Returns fatal error if merge produces conflicts (fallback to manual).
+func StepAutoMergeAppendConflicts(ctx context.Context, opts FinalizeWaveOpts, manifest *protocol.IMPLManifest, conflicts []protocol.ConflictPredictionEnhanced, onEvent EventCallback) (*StepResult, []AutoMergeData, error) {
+	const stepName = "auto-merge-append-conflicts"
+	emitStepEvent(onEvent, stepName, "running", "")
+
+	var results []AutoMergeData
+
+	// Filter for automatic merge strategy conflicts only
+	autoMergeConflicts := make([]protocol.ConflictPredictionEnhanced, 0)
+	for _, c := range conflicts {
+		if c.Strategy == protocol.MergeStrategyAutomatic || c.Strategy == protocol.MergeStrategySequential {
+			autoMergeConflicts = append(autoMergeConflicts, c)
+		}
+	}
+
+	if len(autoMergeConflicts) == 0 {
+		emitStepEvent(onEvent, stepName, "complete", "no auto-mergeable conflicts")
+		return &StepResult{
+			Step:   stepName,
+			Status: "success",
+			Detail: "no auto-mergeable conflicts",
+		}, results, nil
+	}
+
+	// For each conflict, merge agents in the specified order
+	for _, conflict := range autoMergeConflicts {
+		mergeData := AutoMergeData{
+			File:       conflict.File,
+			Agents:     conflict.Agents,
+			MergeOrder: conflict.MergeOrder,
+		}
+
+		// Merge agents one by one
+		for _, agentID := range conflict.MergeOrder {
+			branch := protocol.BranchName(manifest.FeatureSlug, opts.WaveNum, agentID)
+			mergeMsg := fmt.Sprintf("Auto-merge agent %s (append-only)", agentID)
+
+			// Perform merge
+			if err := git.MergeNoFF(opts.RepoPath, branch, mergeMsg); err != nil {
+				mergeData.FallbackNeeded = true
+				mergeData.Reason = fmt.Sprintf("merge failed for agent %s: %v", agentID, err)
+				results = append(results, mergeData)
+
+				// Abort merge and return error
+				_, _ = git.Run(opts.RepoPath, "merge", "--abort")
+				emitStepEvent(onEvent, stepName, "failed", mergeData.Reason)
+				return &StepResult{
+					Step:   stepName,
+					Status: "failed",
+					Detail: mergeData.Reason,
+					Data:   results,
+				}, results, fmt.Errorf("auto-merge-append-conflicts: %s", mergeData.Reason)
+			}
+
+			// Check for conflicts after merge
+			conflictedFiles, err := git.ConflictedFiles(opts.RepoPath)
+			if err != nil {
+				mergeData.FallbackNeeded = true
+				mergeData.Reason = fmt.Sprintf("failed to check conflicts after merging agent %s: %v", agentID, err)
+				results = append(results, mergeData)
+
+				emitStepEvent(onEvent, stepName, "failed", mergeData.Reason)
+				return &StepResult{
+					Step:   stepName,
+					Status: "failed",
+					Detail: mergeData.Reason,
+					Data:   results,
+				}, results, fmt.Errorf("auto-merge-append-conflicts: %s", mergeData.Reason)
+			}
+
+			if len(conflictedFiles) > 0 {
+				mergeData.FallbackNeeded = true
+				mergeData.Reason = fmt.Sprintf("unexpected conflict after merging agent %s: %v", agentID, conflictedFiles)
+				results = append(results, mergeData)
+
+				// Abort merge and return error
+				_, _ = git.Run(opts.RepoPath, "merge", "--abort")
+				emitStepEvent(onEvent, stepName, "failed", mergeData.Reason)
+				return &StepResult{
+					Step:   stepName,
+					Status: "failed",
+					Detail: mergeData.Reason,
+					Data:   results,
+				}, results, fmt.Errorf("auto-merge-append-conflicts: %s", mergeData.Reason)
+			}
+
+			mergeData.MergesApplied++
+		}
+
+		results = append(results, mergeData)
+	}
+
+	detail := fmt.Sprintf("%d file(s) auto-merged successfully", len(results))
+	emitStepEvent(onEvent, stepName, "complete", detail)
+	return &StepResult{
+		Step:   stepName,
+		Status: "success",
+		Detail: detail,
+		Data:   results,
+	}, results, nil
+}
