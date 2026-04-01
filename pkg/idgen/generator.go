@@ -3,6 +3,8 @@ package idgen
 import (
 	"fmt"
 	"regexp"
+
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
 )
 
 // agentIDRegex matches valid agent IDs: A-Z optionally followed by 2-9
@@ -17,26 +19,32 @@ var agentIDRegex = regexp.MustCompile(`^[A-Z][2-9]?$`)
 //   - grouping: Optional array of category tags (length must equal count if provided)
 //
 // Returns:
-//   - []string: Ordered agent IDs (e.g., ["A", "B", "C"] or ["A", "A2", "B"])
-//   - error: If count <= 0 or grouping length mismatch
+//   - result.Result[[]string]: Success with ordered agent IDs (e.g., ["A", "B", "C"])
+//     or failure with structured error codes:
+//     - I001_AGENT_COUNT_INVALID: count <= 0
+//     - I002_AGENT_COUNT_MISMATCH: grouping length != count
+//     - I003_AGENT_LIMIT_EXCEEDED: count > 234
+//     - I004_CATEGORY_LIMIT_EXCEEDED: >9 agents in one category
+//     - I005_CATEGORY_COUNT_EXCEEDED: >26 distinct categories
+//     - I006_INVALID_AGENT_ID_GENERATED: invalid ID format generated
 //
 // Behavior:
 //   - If grouping is nil: Sequential mode (A-Z for first 26, then A2-Z2, etc.)
 //   - If grouping provided: Group by category tags, assign multi-generation IDs
 //     (e.g., tags ["data", "data", "api"] → IDs ["A", "A2", "B"])
-func AssignAgentIDs(count int, grouping [][]string) ([]string, error) {
+func AssignAgentIDs(count int, grouping [][]string) result.Result[[]string] {
 	// Validation
 	if count <= 0 {
-		return nil, fmt.Errorf("count must be > 0, got %d", count)
+		return result.NewFailure[[]string]([]result.SAWError{result.NewError(result.CodeAgentCountInvalid, fmt.Sprintf("count must be > 0, got %d", count))})
 	}
 
 	if grouping != nil && len(grouping) != count {
-		return nil, fmt.Errorf("grouping length (%d) must match count (%d)", len(grouping), count)
+		return result.NewFailure[[]string]([]result.SAWError{result.NewError(result.CodeAgentCountMismatch, fmt.Sprintf("grouping length (%d) must match count (%d)", len(grouping), count))})
 	}
 
 	// Check for >234 agents (26 letters * 9 generations = 234 max)
 	if count > 234 {
-		return nil, fmt.Errorf("count %d exceeds maximum 234 agents (26 letters × 9 generations)", count)
+		return result.NewFailure[[]string]([]result.SAWError{result.NewError(result.CodeAgentLimitExceeded, fmt.Sprintf("count %d exceeds maximum 234 agents (26 letters × 9 generations)", count))})
 	}
 
 	// Upfront validation for grouped mode
@@ -54,13 +62,13 @@ func AssignAgentIDs(count int, grouping [][]string) ([]string, error) {
 		// Check per-category agent cap
 		for category, n := range categoryCounts {
 			if n > 9 {
-				return nil, fmt.Errorf("category %q has %d agents, maximum is 9 per category", category, n)
+				return result.NewFailure[[]string]([]result.SAWError{result.NewError(result.CodeCategoryLimitExceeded, fmt.Sprintf("category %q has %d agents, maximum is 9 per category", category, n))})
 			}
 		}
 
 		// Check category count cap
 		if len(categoryCounts) > 26 {
-			return nil, fmt.Errorf("grouped mode requires ≤ 26 distinct categories, got %d", len(categoryCounts))
+			return result.NewFailure[[]string]([]result.SAWError{result.NewError(result.CodeCategoryCountExceeded, fmt.Sprintf("grouped mode requires ≤ 26 distinct categories, got %d", len(categoryCounts)))})
 		}
 	}
 
@@ -76,11 +84,11 @@ func AssignAgentIDs(count int, grouping [][]string) ([]string, error) {
 	// Validate all generated IDs
 	for i, id := range ids {
 		if !agentIDRegex.MatchString(id) {
-			return nil, fmt.Errorf("generated invalid agent ID %q at index %d", id, i)
+			return result.NewFailure[[]string]([]result.SAWError{result.NewError(result.CodeInvalidAgentIDGenerated, fmt.Sprintf("generated invalid agent ID %q at index %d", id, i))})
 		}
 	}
 
-	return ids, nil
+	return result.NewSuccess(ids)
 }
 
 // generateSequentialIDs creates agent IDs in sequential mode: A-Z, then A2-Z2, etc.
