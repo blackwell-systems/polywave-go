@@ -58,12 +58,13 @@ func TestReviewOptsDefaults(t *testing.T) {
 	// defaults in the returned result.
 	// For the model default check, we directly call ReviewDiff with an empty diff
 	// and verify the model field in the result.
-	result, err := ReviewDiff(context.Background(), "", ReviewOpts{})
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+	res := ReviewDiff(context.Background(), "", ReviewOpts{})
+	if res.IsFatal() {
+		t.Fatalf("unexpected fatal: %v", res.Errors)
 	}
-	if result.Model != defaultModel {
-		t.Errorf("expected default model %q, got %q", defaultModel, result.Model)
+	got := res.GetData()
+	if got.Model != defaultModel {
+		t.Errorf("expected default model %q, got %q", defaultModel, got.Model)
 	}
 
 	// Also verify threshold default is applied (70) by checking a non-empty diff
@@ -73,37 +74,40 @@ func TestReviewOptsDefaults(t *testing.T) {
 	}
 }
 
-// TestReviewDiffEmptyDiff verifies that an empty diff returns Passed=true, Overall=0.
+// TestReviewDiffEmptyDiff verifies that an empty diff returns Passed=true, Overall=100, Skipped=true.
 func TestReviewDiffEmptyDiff(t *testing.T) {
-	result, err := ReviewDiff(context.Background(), "", ReviewOpts{})
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+	res := ReviewDiff(context.Background(), "", ReviewOpts{})
+	if res.IsFatal() {
+		t.Fatalf("unexpected fatal: %v", res.Errors)
 	}
-	if result == nil {
-		t.Fatal("expected non-nil result for empty diff")
-	}
-	if !result.Passed {
+	got := res.GetData()
+	if !got.Passed {
 		t.Error("expected Passed=true for empty diff")
 	}
-	if result.Overall != 0 {
-		t.Errorf("expected Overall=0 for empty diff, got %d", result.Overall)
+	if got.Overall != 100 {
+		t.Errorf("expected Overall=100 for empty diff, got %d", got.Overall)
 	}
-	if result.DiffBytes != 0 {
-		t.Errorf("expected DiffBytes=0 for empty diff, got %d", result.DiffBytes)
+	if !got.Skipped {
+		t.Error("expected Skipped=true for empty diff")
+	}
+	if got.DiffBytes != 0 {
+		t.Errorf("expected DiffBytes=0 for empty diff, got %d", got.DiffBytes)
 	}
 }
 
-// TestRunCodeReviewDisabled verifies that a disabled config returns (nil, nil).
+// TestRunCodeReviewDisabled verifies that a disabled config returns a successful
+// result with Skipped=true.
 func TestRunCodeReviewDisabled(t *testing.T) {
 	cfg := CodeReviewConfig{
 		Enabled: false,
 	}
-	result, err := RunCodeReview(context.Background(), t.TempDir(), cfg)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+	res := RunCodeReview(context.Background(), t.TempDir(), cfg)
+	if res.IsFatal() {
+		t.Fatalf("expected success, got fatal: %v", res.Errors)
 	}
-	if result != nil {
-		t.Errorf("expected nil result for disabled config, got %+v", result)
+	got := res.GetData()
+	if !got.Skipped {
+		t.Errorf("expected Skipped=true for disabled config")
 	}
 }
 
@@ -132,35 +136,29 @@ func TestReviewDiffWithMockAPI(t *testing.T) {
 	// Set ANTHROPIC_API_KEY (mock server doesn't validate it).
 	t.Setenv("ANTHROPIC_API_KEY", "test-key")
 
-	// Override base URL for testing.
-	old := testBaseURL
-	testBaseURL = srv.URL
-	defer func() { testBaseURL = old }()
-
-	result, err := ReviewDiff(context.Background(), "diff --git a/foo.go b/foo.go\n+func Foo() {}", ReviewOpts{
+	res := ReviewDiff(context.Background(), "diff --git a/foo.go b/foo.go\n+func Foo() {}", ReviewOpts{
 		Model:     "claude-haiku-4-5",
 		Threshold: 70,
+		BaseURL:   srv.URL,
 	})
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+	if res.IsFatal() {
+		t.Fatalf("unexpected fatal: %v", res.Errors)
 	}
-	if result == nil {
-		t.Fatal("expected non-nil result")
+	got := res.GetData()
+	if got.Overall != 80 {
+		t.Errorf("expected Overall=80, got %d", got.Overall)
 	}
-	if result.Overall != 80 {
-		t.Errorf("expected Overall=80, got %d", result.Overall)
-	}
-	if !result.Passed {
+	if !got.Passed {
 		t.Error("expected Passed=true (80 >= 70)")
 	}
-	if len(result.Dimensions) != 5 {
-		t.Errorf("expected 5 dimensions, got %d", len(result.Dimensions))
+	if len(got.Dimensions) != 5 {
+		t.Errorf("expected 5 dimensions, got %d", len(got.Dimensions))
 	}
-	if result.Summary == "" {
+	if got.Summary == "" {
 		t.Error("expected non-empty summary")
 	}
-	if result.Model != "claude-haiku-4-5" {
-		t.Errorf("expected model claude-haiku-4-5, got %q", result.Model)
+	if got.Model != "claude-haiku-4-5" {
+		t.Errorf("expected model claude-haiku-4-5, got %q", got.Model)
 	}
 }
 
@@ -182,22 +180,20 @@ func TestReviewDiffThresholdFail(t *testing.T) {
 
 	t.Setenv("ANTHROPIC_API_KEY", "test-key")
 
-	old := testBaseURL
-	testBaseURL = srv.URL
-	defer func() { testBaseURL = old }()
-
-	result, err := ReviewDiff(context.Background(), "some diff content", ReviewOpts{
+	res := ReviewDiff(context.Background(), "some diff content", ReviewOpts{
 		Threshold: 70,
+		BaseURL:   srv.URL,
 	})
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+	if res.IsFatal() {
+		t.Fatalf("unexpected fatal: %v", res.Errors)
 	}
-	if result.Passed {
+	got := res.GetData()
+	if got.Passed {
 		t.Error("expected Passed=false (40 < 70)")
 	}
 }
 
-// TestReviewDiffNoAPIKey verifies that missing ANTHROPIC_API_KEY returns an error.
+// TestReviewDiffNoAPIKey verifies that missing ANTHROPIC_API_KEY returns a fatal result.
 func TestReviewDiffNoAPIKey(t *testing.T) {
 	// Unset the API key for this test.
 	orig := os.Getenv("ANTHROPIC_API_KEY")
@@ -208,9 +204,9 @@ func TestReviewDiffNoAPIKey(t *testing.T) {
 		}
 	}()
 
-	_, err := ReviewDiff(context.Background(), "some diff", ReviewOpts{})
-	if err == nil {
-		t.Fatal("expected error when ANTHROPIC_API_KEY is not set")
+	res := ReviewDiff(context.Background(), "some diff", ReviewOpts{})
+	if !res.IsFatal() {
+		t.Fatal("expected fatal result when ANTHROPIC_API_KEY is not set")
 	}
 }
 
@@ -239,18 +235,51 @@ func TestReviewDiffTruncation(t *testing.T) {
 
 	t.Setenv("ANTHROPIC_API_KEY", "test-key")
 
-	old := testBaseURL
-	testBaseURL = srv.URL
-	defer func() { testBaseURL = old }()
-
-	result, err := ReviewDiff(context.Background(), string(largeDiff), ReviewOpts{})
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+	res := ReviewDiff(context.Background(), string(largeDiff), ReviewOpts{
+		BaseURL: srv.URL,
+	})
+	if res.IsFatal() {
+		t.Fatalf("unexpected fatal: %v", res.Errors)
 	}
-	if !result.Truncated {
+	got := res.GetData()
+	if !got.Truncated {
 		t.Error("expected Truncated=true for large diff")
 	}
-	if result.DiffBytes != maxDiffBytes+100 {
-		t.Errorf("expected DiffBytes=%d, got %d", maxDiffBytes+100, result.DiffBytes)
+	if got.DiffBytes != maxDiffBytes+100 {
+		t.Errorf("expected DiffBytes=%d, got %d", maxDiffBytes+100, got.DiffBytes)
+	}
+}
+
+// TestValidateReviewResponseFailure tests that an empty dimensions list in the
+// LLM response triggers a fatal result (Bug 3 validation).
+func TestValidateReviewResponseFailure(t *testing.T) {
+	// Empty dimensions should trigger validation failure.
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.Write(mockAnthropicResponse(`{"dimensions":[],"overall":80,"summary":"ok"}`))
+	}))
+	defer srv.Close()
+	t.Setenv("ANTHROPIC_API_KEY", "test-key")
+	res := ReviewDiff(context.Background(), "some diff", ReviewOpts{
+		BaseURL: srv.URL,
+	})
+	if !res.IsFatal() {
+		t.Error("expected fatal result for empty dimensions in LLM response")
+	}
+}
+
+// TestReviewDiffEmptyDiffScore tests the Bug 4 semantic fix: empty diff returns
+// Overall=100 and Skipped=true.
+func TestReviewDiffEmptyDiffScore(t *testing.T) {
+	res := ReviewDiff(context.Background(), "", ReviewOpts{})
+	if res.IsFatal() {
+		t.Fatalf("unexpected fatal: %v", res.Errors)
+	}
+	got := res.GetData()
+	if got.Overall != 100 {
+		t.Errorf("empty diff: expected Overall=100, got %d", got.Overall)
+	}
+	if !got.Skipped {
+		t.Error("empty diff: expected Skipped=true")
 	}
 }

@@ -27,19 +27,19 @@ func newRunReviewCmd() *cobra.Command {
 				Dimensions: nil,
 			}
 
-			result, err := codereview.RunCodeReview(context.Background(), repoDir, cfg)
-			if err != nil {
-				return fmt.Errorf("run-review: %w", err)
+			res := codereview.RunCodeReview(context.Background(), repoDir, cfg)
+			if res.IsFatal() {
+				return fmt.Errorf("run-review: %v", res.Errors[0].Message)
 			}
-
-			out, err := json.MarshalIndent(result, "", "  ")
+			got := res.GetData()
+			out, err := json.MarshalIndent(got, "", "  ")
 			if err != nil {
 				return fmt.Errorf("run-review: marshal result: %w", err)
 			}
 			fmt.Println(string(out))
 
-			if blocking && result != nil && !result.Passed {
-				return fmt.Errorf("run-review: code review failed (overall score %d < threshold %d)", result.Overall, threshold)
+			if blocking && !got.Skipped && !got.Passed {
+				return fmt.Errorf("run-review: code review failed (overall score %d < threshold %d)", got.Overall, threshold)
 			}
 			return nil
 		},
