@@ -263,7 +263,7 @@ waves:
 
             ## Bug 5 -- Hardcoded ExitCode: 0 (~line 340)
 
-            In `extractTestRuns`, the TestRun is created with a hardcoded zero:
+            In `extractTestResults`, the TestRun is created with a hardcoded zero:
             ```go
             results = append(results, TestRun{
                 Command:   command,
@@ -280,7 +280,7 @@ waves:
             The `context.go` file already imports both `"regexp"` and `"fmt"`.
             All regexp vars in this file are compiled as local variables inside
             functions (not package-level). Follow that same style: declare
-            `exitCodePattern` as a local `var` inside `extractTestRuns`, near the
+            `exitCodePattern` as a local `var` inside `extractTestResults`, near the
             other local regexp declarations at the top of that function:
             ```go
             exitCodePattern := regexp.MustCompile(`exit status (\d+)`)
@@ -305,7 +305,7 @@ waves:
 
             Add the following test cases to `context_test.go`. Use the same
             package-internal test style as the existing tests (package journal, no
-            testify, plain t.Errorf). The `extractTestRuns` function is unexported
+            testify, plain t.Errorf). The `extractTestResults` function is unexported
             and accessible from the test file since it is in the same package.
 
             **TestExtractTestRuns_ExitCodeParsed**: create a pair of ToolEntry
@@ -314,12 +314,12 @@ waves:
               ToolUseID="bash1", Input=map[string]interface{}{"command":"go test ./..."}
             - A tool_result entry with Kind="tool_result", ToolUseID="bash1",
               Preview="--- FAIL\nexit status 1"
-            Call `extractTestRuns(entries)`. Assert len(results)==1 and
+            Call `extractTestResults(entries)`. Assert len(results)==1 and
             results[0].ExitCode==1.
 
             **TestExtractTestRuns_ExitCodeDefaultsToZero**: create a pair of
             ToolEntry values where the tool_result Preview contains "--- PASS\nok"
-            but no "exit status" string. Call `extractTestRuns(entries)`. Assert
+            but no "exit status" string. Call `extractTestResults(entries)`. Assert
             results[0].ExitCode==0.
 
             Run:
@@ -377,7 +377,7 @@ pre_mortem:
             loop was inside that block. No other references to `i` remain. Agent
             must run `go build` after the change to confirm.
         - scenario: |
-            Agent D declares `exitCodePattern` as a local var inside extractTestRuns.
+            Agent D declares `exitCodePattern` as a local var inside extractTestResults.
             If the function already has a variable named `exitCodePattern` from a
             prior edit (unlikely), there would be a redeclaration error.
           likelihood: low
@@ -396,5 +396,23 @@ pre_mortem:
             by this fix. ExitCode defaults to 0 in that case, matching the current
             hardcoded behavior. No code change needed; document in a comment if
             desired.
+critic_report:
+    verdict: PASS
+    agent_reviews:
+        A:
+            agent_id: A
+            verdict: PASS
+        B:
+            agent_id: B
+            verdict: PASS
+        C:
+            agent_id: C
+            verdict: PASS
+        D:
+            agent_id: D
+            verdict: PASS
+    summary: 'All four agents verified. Agent D brief corrected: extractTestRuns renamed to extractTestResults (actual function name in context.go line 277) after critic review.'
+    reviewed_at: "2026-04-01T07:21:37Z"
+    issue_count: 0
 state: SCOUT_PENDING
 injection_method: hook

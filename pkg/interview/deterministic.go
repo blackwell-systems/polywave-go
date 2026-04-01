@@ -42,9 +42,14 @@ func (m *DeterministicManager) Start(cfg InterviewConfig) (*InterviewDoc, *Inter
 		maxQ = 18
 	}
 
+	id, err := newID()
+	if err != nil {
+		return nil, nil, fmt.Errorf("generating interview ID: %w", err)
+	}
+
 	now := time.Now()
 	doc := &InterviewDoc{
-		ID:             newID(),
+		ID:             id,
 		Slug:           slug,
 		Status:         "in_progress",
 		Mode:           ModeDeterministic,
@@ -89,7 +94,12 @@ func (m *DeterministicManager) Answer(doc *InterviewDoc, answer string) (*Interv
 		// Save state after going back.
 		docPath := filepath.Join(m.docsDir, fmt.Sprintf("INTERVIEW-%s.yaml", doc.Slug))
 		if saveResult := m.Save(doc, docPath); saveResult.IsFatal() {
-			sawErr := saveResult.Errors[0]
+			var sawErr error
+			if len(saveResult.Errors) > 0 {
+				sawErr = saveResult.Errors[0]
+			} else {
+				sawErr = fmt.Errorf("unknown save error (no error details)")
+			}
 			return doc, currentQ, fmt.Errorf("saving interview state: %w", sawErr)
 		}
 
@@ -116,6 +126,7 @@ func (m *DeterministicManager) Answer(doc *InterviewDoc, answer string) (*Interv
 		Question:   currentQ.Text,
 		Answer:     answer,
 		Timestamp:  time.Now(),
+		FieldName:  currentQ.FieldName,
 	})
 
 	// Apply answer to spec data.
@@ -131,7 +142,9 @@ func (m *DeterministicManager) Answer(doc *InterviewDoc, answer string) (*Interv
 	}
 
 	// Check phase transition.
-	checkPhaseTransition(doc)
+	if err := checkPhaseTransition(doc); err != nil {
+		return doc, nil, fmt.Errorf("phase transition: %w", err)
+	}
 
 	// If phase is complete, mark status.
 	if doc.Phase == PhaseComplete {
@@ -147,7 +160,12 @@ func (m *DeterministicManager) Answer(doc *InterviewDoc, answer string) (*Interv
 	// Save state.
 	docPath := filepath.Join(m.docsDir, fmt.Sprintf("INTERVIEW-%s.yaml", doc.Slug))
 	if saveResult := m.Save(doc, docPath); saveResult.IsFatal() {
-		sawErr := saveResult.Errors[0]
+		var sawErr error
+		if len(saveResult.Errors) > 0 {
+			sawErr = saveResult.Errors[0]
+		} else {
+			sawErr = fmt.Errorf("unknown save error (no error details)")
+		}
 		return doc, nextQ, fmt.Errorf("saving interview state: %w", sawErr)
 	}
 
@@ -212,9 +230,13 @@ func HandleBackCommand(doc *InterviewDoc, answer string) bool {
 }
 
 // getFieldNameFromHistory extracts the field name from a history turn.
-// We need to match the question text to the phaseQuestions list.
+// Uses the stored FieldName directly when available; falls back to fragile
+// 20-character prefix matching for turns recorded before FieldName was introduced.
 func getFieldNameFromHistory(doc *InterviewDoc, turn InterviewTurn) string {
-	// Match question text to find field name.
+	if turn.FieldName != "" {
+		return turn.FieldName
+	}
+	// Fallback for turns recorded before FieldName was introduced.
 	for _, q := range phaseQuestions {
 		if q.Phase == turn.Phase && strings.Contains(turn.Question, q.Text[:min(len(q.Text), 20)]) {
 			return q.Field
@@ -283,12 +305,16 @@ func recalculatePhase(doc *InterviewDoc) {
 	// Keep checking transitions until we can't advance anymore.
 	for {
 		oldPhase := doc.Phase
-		checkPhaseTransition(doc)
+		if err := checkPhaseTransition(doc); err != nil {
+			// This is an internal consistency error that should not occur in practice.
+			fmt.Fprintf(os.Stderr, "interview: recalculatePhase: %v\n", err)
+			break
+		}
 		if doc.Phase == oldPhase {
 			// No transition happened, we're at the correct phase.
 			break
 		}
-		// If we've reached the phase where there are unanswered questions, stop.
+		// If we've reached PhaseComplete, stop.
 		if doc.Phase == PhaseComplete {
 			break
 		}
@@ -367,11 +393,13 @@ func (m *DeterministicManager) Save(doc *InterviewDoc, docPath string) result.Re
 }
 
 // newID generates a random UUID-formatted ID (xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx).
-func newID() string {
+func newID() (string, error) {
 	b := make([]byte, 16)
-	_, _ = rand.Read(b)
+	if _, err := rand.Read(b); err != nil {
+		return "", fmt.Errorf("newID: rand.Read: %w", err)
+	}
 	return fmt.Sprintf("%08x-%04x-%04x-%04x-%012x",
-		b[0:4], b[4:6], b[6:8], b[8:10], b[10:16])
+		b[0:4], b[4:6], b[6:8], b[8:10], b[10:16]), nil
 }
 
 // generateSlug creates a URL-friendly slug from a description.
@@ -539,15 +567,12 @@ func applyReviewAnswer(doc *InterviewDoc, field, answer string, isSkip bool) {
 // splitCSV splits a comma-separated string into trimmed, non-empty strings.
 func splitCSV(s string) []string {
 	parts := strings.Split(s, ",")
-	var result []string
+	result := make([]string, 0)
 	for _, p := range parts {
 		p = strings.TrimSpace(p)
 		if p != "" {
 			result = append(result, p)
 		}
-	}
-	if result == nil {
-		result = []string{}
 	}
 	return result
 }

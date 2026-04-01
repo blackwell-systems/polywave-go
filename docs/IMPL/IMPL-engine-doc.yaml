@@ -1,0 +1,485 @@
+title: Document the engine step pipeline system
+feature_slug: engine-doc
+verdict: SUITABLE_WITH_CAVEATS
+suitability_assessment: |
+    Documentation-only IMPL targeting pkg/engine in scout-and-wave-go. All five
+    suitability questions resolve cleanly.
+
+    File decomposition: Four files receive doc comment edits with disjoint ownership.
+    Agent A owns step_types.go and finalize_steps.go (related types and their
+    step function docs). Agent B owns prepare.go. Agent C owns doc.go. No file
+    appears in more than one agent's ownership.
+
+    Investigation-first: None needed. The code is fully implemented; the gap is
+    documentation coverage only.
+
+    Interface discoverability: N/A — no new interfaces. Agents add prose to
+    existing exported symbols.
+
+    Pre-implementation status: All four files exist. Doc gaps confirmed by audit:
+    - step_types.go: EventCallback and StepResult have thin single-line comments;
+      PrepareWaveResult.Success and AgentBriefInfo fields undocumented.
+    - finalize_steps.go: 14 exported Step* functions have comments but several are
+      one-liners lacking return-value context, pipeline position, and non-obvious
+      failure modes (StepMergeAgents, StepVerifyBuild H7 diagnosis omitted, etc.).
+    - prepare.go: PrepareWave entry point has a 2-line doc; fireEvent/recordStep/
+      recordStepWithData helpers have minimal inline docs.
+    - doc.go: No Step Pipeline section exists at all.
+
+    Parallelization value: Low per-agent time (doc-only edits), but SAW provides
+    coordination value as a structured audit trail and ensures all four files are
+    addressed in one wave without drift. Three independent agents in a single wave
+    maximizes throughput.
+
+    Caveat: StepGoWorkSetup and StepGoWorkRestore (to be added in IMPL-gowork-lsp-setup.yaml)
+    are out of scope here. Their doc comments will be written as part of that wave.
+
+    Estimated times:
+    - Scout phase: ~10 min
+    - Agent execution: ~3 agents x 5 min = ~15 min (parallel, so ~5 min wall time)
+    - Merge and verification: ~3 min
+    Total SAW time: ~18 min
+
+    Sequential baseline: ~15 min
+    Time savings: marginal. Value is coordination, not speed.
+
+    Recommendation: Proceed. The IMPL doc provides an audit trail and ensures
+    complete coverage across all four files.
+test_command: go test ./pkg/engine/...
+lint_command: go vet ./pkg/engine/...
+file_ownership:
+    - file: pkg/engine/step_types.go
+      agent: A
+      wave: 1
+      action: modify
+      repo: scout-and-wave-go
+    - file: pkg/engine/finalize_steps.go
+      agent: A
+      wave: 1
+      action: modify
+      repo: scout-and-wave-go
+    - file: pkg/engine/prepare.go
+      agent: B
+      wave: 1
+      action: modify
+      repo: scout-and-wave-go
+    - file: pkg/engine/doc.go
+      agent: C
+      wave: 1
+      action: modify
+      repo: scout-and-wave-go
+interface_contracts:
+    - name: EventCallback
+      description: |-
+        Composable event hook. CLI callers print to stdout; web app callers
+        publish SSE events. The nil-safe contract is load-bearing — every Step*
+        function passes it to emitStepEvent/fireEvent without a nil guard.
+      definition: |
+        type EventCallback func(step string, status string, detail string)
+        // step:   machine-readable step name (e.g. "verify-commits", "run-gates")
+        // status: "running" | "complete" | "failed" | "skipped" | "warning"
+        // detail: human-readable message (empty string is valid)
+      location: pkg/engine/step_types.go
+    - name: StepResult
+      description: |-
+        Common return value for every Step* function. Data is typed to the
+        concrete protocol.*Data struct for the step; callers must type-assert.
+      definition: |
+        type StepResult struct {
+            Step   string      // machine-readable step name, matches EventCallback step arg
+            Status string      // "success" | "failed" | "skipped"
+            Detail string      // human-readable summary (empty when Status=="success")
+            Data   interface{} // typed protocol.*Data payload; nil when step was skipped
+        }
+      location: pkg/engine/step_types.go
+    - name: PrepareWave
+      description: |-
+        Engine entry point for wave preparation. Runs all pre-flight checks,
+        creates worktrees, extracts agent briefs, and initialises journal
+        observers. Returns a partial result on failure so callers can surface
+        completed steps.
+      definition: |
+        func PrepareWave(ctx context.Context, opts PrepareWaveOpts) (*PrepareWaveResult, error)
+      location: pkg/engine/prepare.go
+    - name: FinalizeWave
+      description: |-
+        Engine entry point for the post-agent finalization pipeline. Drives
+        the ordered step sequence: verify-commits → scan-stubs → run-gates →
+        merge-agents → verify-build → cleanup. Stops on first fatal failure
+        and returns a partial result.
+      definition: |
+        func FinalizeWave(ctx context.Context, opts FinalizeWaveOpts) (*FinalizeWaveResult, error)
+      location: pkg/engine/finalize.go
+waves:
+    - number: 1
+      agents:
+        - id: A
+          task: |
+            ## Role
+            You are a documentation agent. Add or improve Go doc comments in
+            pkg/engine/step_types.go and pkg/engine/finalize_steps.go in the
+            scout-and-wave-go repository at /Users/dayna.blackwell/workspace/code/scout-and-wave-go.
+
+            Do NOT change any logic, signatures, or struct fields. Only add or
+            edit Go doc comments (lines beginning with `//` immediately above a
+            declaration).
+
+            ## Files to edit
+
+            ### pkg/engine/step_types.go
+
+            **EventCallback** — expand the existing two-line comment to cover:
+            - What the three parameters mean (step = machine-readable step name,
+              status = "running"|"complete"|"failed"|"skipped"|"warning",
+              detail = human-readable message)
+            - That nil is safe to pass; every Step* function passes it through
+              emitStepEvent/fireEvent which guards nil internally
+            - The divergence pattern: CLI callers print progress lines; web app
+              callers publish SSE events to connected browser clients
+
+            **StepResult** — the current comment is "the common return type for
+            individual step functions." Expand to:
+            - State what Step and Status contain (Step mirrors the step arg in
+              EventCallback; Status is "success", "failed", or "skipped")
+            - Document Data: typed as interface{} because each step returns a
+              different protocol.*Data struct; callers must type-assert to the
+              documented concrete type
+            - Add field-level comments above Step, Status, Detail, and Data
+
+            **PrepareWaveOpts** — add field-level comments for any fields that
+            lack them. Specifically:
+            - CommitState: note that it auto-commits only SAW-owned files (IMPL
+              yaml, gate-cache, docs/IMPL/, docs/CONTEXT.md); does NOT commit
+              user code changes; intended for program-context prepare-wave calls
+            - OnEvent: note nil is safe
+            - Logger: note nil falls back to slog.Default()
+
+            **PrepareWaveResult** — expand the current "captures results of all
+            preparation steps" comment to note:
+            - Success is false when any step returned an error; Steps contains
+              the partial results up to the failure point
+            - Worktrees and AgentBriefs are populated only when Success is true
+            - OriginalBranch is set when PrepareWaveOpts.MergeTarget is non-empty
+              (P1: the branch before merge-target checkout, restored on exit)
+            Add field-level comments for Worktrees, AgentBriefs, Steps, Success,
+            and OriginalBranch.
+
+            **AgentBriefInfo** — add a struct-level comment explaining this is
+            metadata about a prepared agent brief file (not the brief content
+            itself). Add field-level comments for BriefPath (absolute path),
+            BriefLength (character count of brief content), JournalDir (absolute
+            path to the agent's debug journal directory), FilesOwned (count from
+            file_ownership), Repo (empty for single-repo IMPLs, matches
+            file_ownership.Repo for multi-repo), and MergeTarget (empty string
+            means HEAD).
+
+            ### pkg/engine/finalize_steps.go
+
+            Audit all 14 exported Step* functions. For each function listed below,
+            improve the doc comment per the instructions given. Functions not listed
+            already have adequate comments; verify them but do not expand them.
+
+            **StepMergeAgents** — current comment is a one-liner. Expand to note:
+            - Merges all agent branches for the wave into MergeTarget (or HEAD if
+              MergeTarget is empty)
+            - Skipped automatically for waves of type "integration" (agents commit
+              directly to the target branch; no worktree branches exist to merge)
+            - Fatal on any merge error
+
+            **StepVerifyBuild** — current comment is "runs the test_command and
+            lint_command to verify the build after merge." Expand to note:
+            - Uses VerifyBuildData fields TestPassed and LintPassed to determine
+              overall pass/fail
+            - In program context (MergeTarget set), runs in the merge-target
+              worktree path rather than opts.RepoPath so the test suite sees merged
+              changes
+            - On failure, attempts H7 auto-diagnosis (builddiag.DiagnoseError)
+              using pattern matching against the error log; diagnosis is attached
+              to StepResult.Data as map[string]interface{}{"verify_build":...,
+              "diagnosis":...} when available
+
+            **StepFixGoMod** — current comment mentions "worktree artifacts." Expand
+            to note:
+            - Non-fatal: errors are logged as warnings and the step always returns
+              success
+            - Runs FixGoModReplacePaths which repairs relative replace directives
+              that may point into a now-deleted worktree path
+
+            **StepCheckTypeCollisions** — current comment explains opt-in behavior.
+            Add a note that the collision report is always returned alongside the
+            StepResult (even on success) so the caller can inspect it, and that the
+            step is typically enabled by the CLI (CollisionDetectionEnabled=true)
+            and left false by the web app.
+
+            **StepCheckWiringDeclarations** — current comment is accurate. Add one
+            sentence noting that wiring gaps are surfaced in
+            WiringValidationData.Gaps and do not block merge, but set
+            FinalizeWaveResult.IntegrationActionRequired = true in the caller.
+
+            **StepPopulateIntegrationChecklist** — add a note that when successful,
+            it saves the updated manifest back to opts.IMPLPath (via protocol.Save)
+            and returns the updated *protocol.IMPLManifest so the caller can
+            substitute it for the in-memory manifest.
+
+            Also add a brief comment above the unexported helper emitStepEvent
+            noting that it is nil-safe (the function already has one, but confirm
+            it mentions nil-safety explicitly).
+
+            ## Verification gate
+
+            After editing, run from the repo root:
+              go vet ./pkg/engine/...
+              go doc ./pkg/engine
+
+            Both must complete without errors. No logic changes should be present
+            in the diff (verify with `git diff --stat`).
+          files:
+            - pkg/engine/step_types.go
+            - pkg/engine/finalize_steps.go
+        - id: B
+          task: |
+            ## Role
+            You are a documentation agent. Add or improve Go doc comments in
+            pkg/engine/prepare.go in the scout-and-wave-go repository at
+            /Users/dayna.blackwell/workspace/code/scout-and-wave-go.
+
+            Do NOT change any logic, signatures, or fields. Only add or edit
+            Go doc comments (lines beginning with `//` immediately above a
+            declaration).
+
+            ## File to edit: pkg/engine/prepare.go
+
+            ### PrepareWave (exported entry point, line ~78)
+
+            The current two-line comment reads:
+              "PrepareWave encapsulates the full wave preparation pipeline.
+               It performs all pre-flight checks, creates worktrees, extracts
+               agent briefs, and initializes journal observers. On failure,
+               returns a partial result with completed steps."
+
+            Expand to a full doc comment that covers:
+
+            1. Pipeline sequence — list the named steps in order as they appear
+               in the function body:
+               - resume_detection: warns on orphaned worktrees from prior sessions
+               - dep_check: validates IMPL dependency graph for wave N
+               - load_manifest: loads and validates the IMPL YAML
+               - wave_sequencing: (wave > 1 only) enforces I3 — wave N-1 must be
+                 verified before wave N launches
+               - critic_verdict: E37 gate — enforces critic approval when threshold
+                 is met (3+ wave-1 agents OR 2+ repos)
+               - stale_cleanup: removes old worktrees from the same IMPL slug
+               - repo_match: validates that opts.RepoPath matches the IMPL's repo
+               - dep_outputs: (wave > 1 only) H2 gate — prior-wave outputs must be
+                 available
+               - ownership_coverage: (wave > 1 only) H1 advisory — warns if prior
+                 wave agents modified files outside their declared ownership
+               - file_existence: validates that files in file_ownership exist (or
+                 are new); repo-mismatch failures are fatal
+               - merge_target_checkout: (when MergeTarget set) checks out the
+                 merge-target branch; restores original branch on function exit
+                 via defer (P1 fix)
+               - working_dir_check: fails fast if working directory is dirty
+                 (unless CommitBaseline or CommitState is set)
+               - create_worktrees: calls protocol.CreateWorktrees for each agent
+               - extract_briefs: calls protocol.ExtractContext for each agent brief
+               - journal_init: initialises per-agent journal observers
+
+            2. On failure — returns a partial *PrepareWaveResult with
+               Success: false and Steps populated up to the failure point.
+               Callers can inspect Steps to surface the failed step name.
+
+            3. Side effect — writes .saw-state/active-impl with opts.IMPLPath so
+               SubagentStop hooks can find the active IMPL doc.
+
+            ### fireEvent (unexported helper, line ~21)
+
+            Expand the current one-line comment to note:
+            - Nil-safe wrapper for EventCallback — checks cb != nil before calling
+            - Used by PrepareWave to fire step events; the finalize pipeline uses
+              the equivalent emitStepEvent in finalize_steps.go
+
+            ### recordStep (unexported helper, line ~28)
+
+            Expand the current one-line comment to note:
+            - Appends a StepResult (no Data field) to res.Steps AND fires an event
+            - All prepare-pipeline steps use this for uniform logging and event
+              emission
+
+            ### recordStepWithData (unexported helper, line ~35)
+
+            Expand the one-line comment to note:
+            - Same as recordStep but attaches a structured data payload to the
+              StepResult; used when a step produces structured output (e.g.
+              collision report, dependency check result)
+
+            ### isSAWOwnedPath (unexported helper, line ~57)
+
+            The current comment accurately describes the function. Optionally add
+            one sentence listing the concrete patterns it matches:
+            - The IMPL yaml file (repo-relative path)
+            - Any path under .saw-state/
+            - Any path under docs/IMPL/
+            - docs/CONTEXT.md
+
+            If the existing comment already mentions these patterns, leave it as-is.
+
+            ### loadSAWConfigRepos (unexported helper, line ~42)
+
+            Add a brief doc comment if one is absent. It should note:
+            - Reads saw.config.json from configPath and returns the repos array
+            - Returns nil (not an error) if the file is absent or unparseable;
+              callers treat nil as "single-repo mode"
+
+            ## Verification gate
+
+            After editing, run from the repo root:
+              go vet ./pkg/engine/...
+              go doc ./pkg/engine
+
+            Both must complete without errors. No logic changes should be present
+            in the diff (verify with `git diff --stat`).
+          files:
+            - pkg/engine/prepare.go
+        - id: C
+          task: |
+            ## Role
+            You are a documentation agent. Extend pkg/engine/doc.go in the
+            scout-and-wave-go repository at
+            /Users/dayna.blackwell/workspace/code/scout-and-wave-go with a new
+            Step Pipeline section.
+
+            Do NOT change any existing content in doc.go. Only add a new section
+            after the existing "# Multi-Wave Orchestration" section and before the
+            closing `package engine` declaration.
+
+            ## What to add
+
+            Add a `# Step Pipeline` section to the package doc comment. The section
+            must cover the following topics clearly and concisely:
+
+            ### What Step functions are
+
+            Step functions are exported functions with names beginning `Step*`
+            (e.g. StepVerifyCommits, StepRunGates, StepMergeAgents). Each step:
+            - Takes a context, FinalizeWaveOpts (or PrepareWaveOpts), and usually
+              the loaded manifest and an EventCallback
+            - Returns a *StepResult, an optional typed data pointer
+              (e.g. *protocol.VerifyCommitsData), and an error
+            - Emits events via the EventCallback at start ("running") and end
+              ("complete" or "failed")
+            - Is nil-safe with respect to EventCallback — the callback may be nil
+
+            ### How steps compose into pipelines
+
+            FinalizeWave assembles the finalize pipeline (14 steps) and PrepareWave
+            assembles the prepare pipeline (~14 steps). Both pipelines stop on first
+            fatal error and return a partial result so callers can inspect which
+            step failed. Individual steps are exported and callable independently
+            for testing, CLI integration (sawtools finalize-wave --step-by-step),
+            or custom orchestration.
+
+            ### How EventCallback drives CLI vs web divergence
+
+            EventCallback is the single extension point that separates CLI and web
+            behavior without branching in the engine:
+            - CLI: passes a callback that prints step name and status to stdout
+            - Web app: passes a callback that publishes SSE events to connected
+              browser clients
+            - Tests / programmatic use: may pass nil (all steps guard nil before
+              calling)
+            This pattern means the engine has no import of CLI or web packages; the
+            caller injects behavior.
+
+            ### How to add a new step
+
+            1. Add the step function to finalize_steps.go (for finalize pipeline)
+               or prepare.go (for prepare pipeline) following the signature pattern:
+                 func StepMyStep(ctx context.Context, opts FinalizeWaveOpts,
+                     manifest *protocol.IMPLManifest,
+                     onEvent EventCallback) (*StepResult, *protocol.MyStepData, error)
+            2. Call emitStepEvent(onEvent, stepName, "running", "") at the start
+               and emitStepEvent(onEvent, stepName, "complete"|"failed", detail)
+               at the end.
+            3. Insert the call site in FinalizeWave (finalize.go) at the correct
+               pipeline position.
+            4. Write a doc comment following the pattern of existing steps: one
+               sentence stating what the step checks, one sentence stating its
+               fatality (fatal or non-fatal), and any relevant rule codes (E*, I*,
+               M*, H*) in parentheses.
+
+            ### Known out-of-scope functions
+
+            StepGoWorkSetup and StepGoWorkRestore will be added by the
+            IMPL-gowork-lsp-setup wave. Their doc comments will be written as part
+            of that wave.
+
+            ## Format requirements
+
+            - Use Go doc comment style (`// # Step Pipeline` header, then `//`
+              prefixed prose lines)
+            - Use `//` fenced code blocks (indented with a tab under a `//` line)
+              for the signature example
+            - Do not use blank `//` lines inside a single paragraph (they create
+              separate paragraphs in godoc)
+            - The section must appear inside the existing block comment before
+              `package engine`, not as a separate comment block
+
+            ## Verification gate
+
+            After editing, run from the repo root:
+              go vet ./pkg/engine/...
+              go doc ./pkg/engine
+
+            go doc output must include the "Step Pipeline" section heading.
+            No logic changes should be present in the diff.
+          files:
+            - pkg/engine/doc.go
+quality_gates:
+    level: standard
+    gates:
+        - type: build
+          command: go build ./pkg/engine/...
+          required: true
+          repo: scout-and-wave-go
+        - type: lint
+          command: go vet ./pkg/engine/...
+          required: true
+          repo: scout-and-wave-go
+        - type: test
+          command: go test ./pkg/engine/...
+          required: true
+          repo: scout-and-wave-go
+pre_mortem:
+    overall_risk: low
+    rows:
+        - scenario: Agent A or B accidentally deletes or reorders an existing comment while expanding it, causing go vet to report a formatting issue or godoc to misrender.
+          likelihood: low
+          impact: low
+          mitigation: |-
+            The verification gate `go vet ./pkg/engine/...` and `go doc ./pkg/engine`
+            catches rendering issues immediately. Agent task prompts instruct agents
+            to verify `git diff --stat` shows no logic changes.
+        - scenario: Agent C's new section in doc.go breaks the existing package comment structure (e.g., adds a second `package engine` line or malforms the comment block).
+          likelihood: low
+          impact: medium
+          mitigation: |-
+            `go vet` catches malformed package comments. The task prompt explicitly
+            requires adding content inside the existing comment block before the
+            `package engine` declaration.
+        - scenario: StepGoWorkSetup or StepGoWorkRestore are added to finalize_steps.go by the gowork-lsp-setup wave before this IMPL completes, creating a merge conflict in finalize_steps.go.
+          likelihood: low
+          impact: medium
+          mitigation: |-
+            These two functions are explicitly noted as out of scope in both Agent A's
+            task and Agent C's doc.go task. If the gowork wave merges first, Agent A
+            should add placeholder doc comments for those two functions or leave them
+            to the gowork wave. The gowork IMPL should be checked for ordering.
+        - scenario: Agent B cannot find the exact line numbers for prepare.go helpers because the file is long and the offset references may drift.
+          likelihood: low
+          impact: low
+          mitigation: |-
+            Task prompt references function names, not line numbers. Agent B can use
+            grep or go to definition to locate each function.
+state: SCOUT_PENDING
+injection_method: hook

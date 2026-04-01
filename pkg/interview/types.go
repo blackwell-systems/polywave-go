@@ -44,6 +44,7 @@ type InterviewTurn struct {
 	Question   string         `yaml:"question"`
 	Answer     string         `yaml:"answer"`
 	Timestamp  time.Time      `yaml:"timestamp"`
+	FieldName  string         `yaml:"field_name,omitempty"`
 }
 
 // SpecData holds the structured output being built across all phases.

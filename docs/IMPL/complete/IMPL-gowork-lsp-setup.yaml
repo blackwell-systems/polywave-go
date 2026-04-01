@@ -1,3 +1,4 @@
+completion_date: "2026-04-01"
 title: go.work LSP Setup for Wave Worktrees
 feature_slug: gowork-lsp-setup
 verdict: SUITABLE
@@ -341,6 +342,7 @@ waves:
             - pkg/engine/step_types.go
             - pkg/engine/finalize.go
             - .gitignore
+      base_commit: 54bb8f2b06ca52b52118cd5cf73d5edfe6a0bd2b
 quality_gates:
     level: standard
     gates:
@@ -353,6 +355,40 @@ quality_gates:
         - type: test
           command: go test ./...
           required: true
+completion_reports:
+    A:
+        status: complete
+        branch: saw/gowork-lsp-setup/wave1-agent-A
+        commit: db1fb3d
+        files_changed:
+            - pkg/engine/gowork_steps.go
+            - pkg/engine/gowork_steps_test.go
+        files_created:
+            - pkg/engine/gowork_steps.go
+            - pkg/engine/gowork_steps_test.go
+        tests_added:
+            - TestStepGoWorkSetup_SkipsNonGoRepo
+            - TestStepGoWorkSetup_CreatesGoWork
+            - TestStepGoWorkSetup_BacksUpExistingGoWork
+            - TestStepGoWorkRestore_RestoresFromBackup
+            - TestStepGoWorkRestore_DeletesGoWorkWhenNoBackup
+            - TestStepGoWorkRestore_NilCallback
+        verification: PASS
+        notes: Both step functions implemented. All 6 tests pass. StepGoWorkSetup backs up go.work/go.work.sum before modifying, runs go work init + go work use for each worktree, appends SAW comment. StepGoWorkRestore restores from backup or deletes. Both non-fatal. Wire into PrepareWave/FinalizeWave is out-of-scope (other agents).
+    B:
+        status: complete
+        branch: saw/gowork-lsp-setup/wave1-agent-B
+        commit: 0ac4571
+        files_changed:
+            - pkg/engine/step_types.go
+            - pkg/engine/prepare.go
+            - pkg/engine/finalize.go
+            - cmd/sawtools/prepare_wave.go
+            - .gitignore
+        files_created:
+            - pkg/engine/gowork_steps.go
+        verification: PASS
+        notes: Build stub created for gowork_steps.go (Agent A owns the real implementation). Stub uses correct signatures from interface contract and will be replaced at merge. StepGoWorkRestore returns *StepResult (1 value), not 2 — brief code snippet had _, _ = which was wrong; fixed to _ =.
 pre_mortem:
     overall_risk: low
     rows:
@@ -408,5 +444,5 @@ pre_mortem:
             (not in either agent's file). No duplicate risk for loggerFrom. The only
             cross-package symbol is StepGoWorkSetup/StepGoWorkRestore, defined by A and
             called by B — no duplication possible.
-state: "REVIEWED"
+state: COMPLETE
 injection_method: hook
