@@ -145,8 +145,8 @@ func TestJournalIntegration_ArchiveJournal(t *testing.T) {
 	dir := t.TempDir()
 	ji := NewJournalIntegration(dir, nil)
 
-	// Create observer - use the format that archive.go expects (wave1/agent-A)
-	observer, err := journal.NewObserver(dir, "wave1/agent-A")
+	// Create observer - use dash-separated format matching prepare-wave convention
+	observer, err := journal.NewObserver(dir, "wave1-agent-A")
 	if err != nil {
 		t.Fatalf("failed to create observer: %v", err)
 	}
@@ -168,8 +168,7 @@ func TestJournalIntegration_ArchiveJournal(t *testing.T) {
 
 	// Verify archive was created
 	// The archive name is derived from the journal directory structure
-	// which NewObserver creates as .saw-state/wave1/agent/A (parsing wave1/agent-A)
-	// So the archive becomes wave1-agent-agent.tar.gz (agent is the folder name)
+	// which NewObserver creates as .saw-state/wave1/agent-A (parsing wave1-agent-A)
 	archiveDir := filepath.Join(dir, ".saw-state", "archive")
 	entries, err := os.ReadDir(archiveDir)
 	if err != nil {
