@@ -1,3 +1,4 @@
+completion_date: "2026-03-31"
 title: pkg/resume Bug Fixes
 feature_slug: resume-bug-fixes
 verdict: SUITABLE
@@ -382,6 +383,14 @@ completion_reports:
             - cmd/sawtools/resume_detect_cmd.go
         verification: PASS
         notes: All 5 bugs fixed. go build ./... and go vet (non-test) clean. pkg/engine and cmd/sawtools tests pass. pkg/resume tests fail at compile time because detect_test.go still uses old Detect/DetectWithConfig signatures — this is expected and is Wave 2 Agent A2 scope. Committed with --no-verify because the pre-commit hook runs go vet ./... which includes the test file; the IMPL doc explicitly documents this cross-wave dependency.
+    A2:
+        status: complete
+        branch: saw/resume-bug-fixes/wave2-agent-A2
+        commit: 8a021aa
+        files_changed:
+            - pkg/resume/detect_test.go
+        verification: PASS
+        notes: Updated all 17 Detect( call sites and 2 DetectWithConfig( call sites to pass context.Background() as first argument. Added context import. Also updated 3 buildActionAndCommandInternal( call sites in TestBuildAction_DirtyWorktrees to pass currentWave=1 as new last parameter (from Bug 2 fix in Wave 1). go build, go vet, go test ./pkg/resume/... ./pkg/engine/... ./cmd/sawtools/... all pass.
     B:
         status: complete
         branch: saw/resume-bug-fixes/wave1-agent-B
@@ -428,5 +437,5 @@ pre_mortem:
             buildActionAndCommand is unexported. The package-internal search confirmed no
             callers within the package (buildSessionState calls buildActionAndCommandInternal
             directly). Safe to delete.
-state: REVIEWED
+state: COMPLETE
 injection_method: hook
