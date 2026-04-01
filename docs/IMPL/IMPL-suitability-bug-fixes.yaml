@@ -1,0 +1,369 @@
+title: Fix bugs and quality issues in pkg/suitability
+feature_slug: suitability-bug-fixes
+verdict: SUITABLE
+suitability_assessment: |
+    All six quality issues are fully specified with exact line numbers and fix
+    descriptions. No investigation is required before implementation.
+
+    File decomposition: clean disjoint split across 3 files:
+    - Agent A owns scanner.go (bugs 1a/hasSignificantContent regex, 2/stub false
+      positive, 5/TestCoverage aggregation, and the wrong comment on line 42)
+    - Agent B owns wrapper.go + scanner_test.go (bug 3/ParseRequirements regex
+      vars, bug 4/silent data loss, and the 20-empty-test replacement)
+
+    All bugs are confirmed present in the current source:
+    - scanner.go:42 comment says "7 min per TODO item" — CONFIRMED present
+    - scanner.go:190 bare (?i)stub pattern — CONFIRMED present
+    - scanner.go:196 regexp.MatchString loop recompiling — CONFIRMED present
+    - scanner.go:209 regexp.MustCompile inside hasSignificantContent — CONFIRMED present
+    - scanner.go:120-123 TestCoverage always from statuses[0] — CONFIRMED present
+    - wrapper.go:98-105 silently drops reqs without Location — CONFIRMED present
+    - scanner_test.go:75-153 20 empty TestEdgeCase functions — CONFIRMED present
+
+    No cross-agent interface contracts are needed: both agents work in the same
+    Go package (package suitability) and do not define types consumed by the other.
+    The only coordination concern is the package-level var declarations in scanner.go
+    (Agent A) which Agent B's tests may exercise; Agent B's tests already call
+    exported functions so this is transparent.
+
+    Parallelization value: moderate. The test rewrite (Agent B) is the largest
+    single task and benefits from running concurrently with the scanner.go fixes
+    (Agent A). Go test cycle for this package is fast (<5s) so the primary value
+    is clean isolation and audit trail, not raw time savings.
+
+    Estimated times:
+    - Scout phase: ~10 min
+    - Agent execution: ~2 agents x ~10 min avg = ~10 min (parallel)
+    - Merge and verification: ~3 min
+    Total SAW time: ~23 min
+
+    Sequential baseline: ~20 min
+    Time savings: marginal (~3 min). Value is coordination and audit trail.
+
+    Recommendation: Proceed. Clean parallelization with no coordination risk.
+test_command: go test ./pkg/suitability/...
+lint_command: go vet ./pkg/suitability/...
+file_ownership:
+    - file: pkg/suitability/scanner.go
+      agent: A
+      wave: 1
+      action: modify
+    - file: pkg/suitability/wrapper.go
+      agent: B
+      wave: 1
+      action: modify
+    - file: pkg/suitability/scanner_test.go
+      agent: B
+      wave: 1
+      action: modify
+interface_contracts:
+    - name: containsTodoPatterns (updated stub pattern)
+      description: |-
+        After fix, the stub pattern uses a word-boundary anchor so that
+        identifiers like NewStubServer, buildstub, and stubService do not trigger
+        a false positive. All other patterns are unchanged.
+      definition: |
+        // Package-level compiled patterns replace the per-call MatchString loop.
+        var todoPatterns = []*regexp.Regexp{
+            regexp.MustCompile(`(?i)TODO`),
+            regexp.MustCompile(`(?i)FIXME`),
+            regexp.MustCompile(`(?i)HACK`),
+            regexp.MustCompile(`(?i)XXX`),
+            regexp.MustCompile(`(?i)\bstub\b`),   // word-boundary anchored
+            regexp.MustCompile(`(?i)not implemented`),
+            regexp.MustCompile(`(?i)placeholder`),
+        }
+        func containsTodoPatterns(content string) bool
+      location: pkg/suitability/scanner.go
+    - name: hasSignificantContent (package-level regex)
+      description: |-
+        The funcPattern regex is promoted to a package-level var so it is
+        compiled once at program startup rather than on every call.
+      definition: |
+        var funcPattern = regexp.MustCompile(`func\s+\w+`)
+        func hasSignificantContent(content string) bool
+      location: pkg/suitability/scanner.go
+    - name: aggregateFileStatuses (worst-coverage fix)
+      description: |-
+        TestCoverage is set to the worst (lowest) coverage value across all
+        statuses rather than always using statuses[0]. Severity ranking:
+        none < low < medium < high.
+      definition: |
+        func aggregateFileStatuses(reqID string, statuses []ItemStatus) ItemStatus
+        // TestCoverage field is now the minimum coverage across all statuses.
+      location: pkg/suitability/scanner.go
+    - name: ParseRequirements (package-level regex + no-file path)
+      description: |-
+        headerPattern, locationPattern, and plainPattern are promoted to
+        package-level vars. Requirements with a valid header but no Location
+        field are included as no-file requirements (Files: nil) rather than
+        silently dropped, using the same path as classifyRequirement already
+        handles for zero-file requirements.
+      definition: |
+        var (
+            headerPattern   = regexp.MustCompile(`(?m)^##\s+([A-Za-z0-9_-]+):\s*(.+)$`)
+            locationPattern = regexp.MustCompile(`(?m)^Location:\s*(.+)$`)
+            plainPattern    = regexp.MustCompile(`^([A-Za-z0-9_-]+):\s*([^|]+)\|\s*(.+)$`)
+        )
+        func ParseRequirements(content string) ([]Requirement, error)
+        // Requirements without a Location are included with Files: nil.
+      location: pkg/suitability/wrapper.go
+waves:
+    - number: 1
+      agents:
+        - id: A
+          task: |
+            ## Role
+            You are a Wave Agent implementing bug fixes and quality improvements
+            in pkg/suitability/scanner.go for the scout-and-wave-go repository.
+
+            ## Owned file
+            pkg/suitability/scanner.go
+
+            ## What to implement
+
+            ### Fix 1 — Promote funcPattern to package-level var (scanner.go:209)
+            `hasSignificantContent` currently calls `regexp.MustCompile(`func\s+\w+``)`
+            on every invocation. Move the compile to a package-level var:
+
+            ```go
+            var funcPattern = regexp.MustCompile(`func\s+\w+`)
+            ```
+
+            Remove the local `funcPattern` declaration inside `hasSignificantContent`
+            and use the package-level var in its place. No other behaviour changes.
+
+            ### Fix 2 — Promote todoPatterns to package-level compiled slice (scanner.go:184-202)
+            `containsTodoPatterns` currently uses a `[]string` patterns slice and calls
+            `regexp.MatchString` inside the loop, recompiling all 7 patterns on every
+            call.
+
+            Replace the string slice with a package-level `[]*regexp.Regexp` slice
+            compiled at init time:
+
+            ```go
+            var todoPatterns = []*regexp.Regexp{
+                regexp.MustCompile(`(?i)TODO`),
+                regexp.MustCompile(`(?i)FIXME`),
+                regexp.MustCompile(`(?i)HACK`),
+                regexp.MustCompile(`(?i)XXX`),
+                regexp.MustCompile(`(?i)\bstub\b`),
+                regexp.MustCompile(`(?i)not implemented`),
+                regexp.MustCompile(`(?i)placeholder`),
+            }
+            ```
+
+            Update `containsTodoPatterns` to iterate over `todoPatterns` and call
+            `.MatchString(content)` on each compiled pattern. This also fixes Bug 2
+            (the stub false positive) in one step — the `(?i)\bstub\b` word-boundary
+            anchor is part of this change.
+
+            ### Fix 3 — Correct the wrong comment (scanner.go:42)
+            The comment on the `TimeSavedMinutes` calculation line currently reads:
+            `// Calculate time saved: 7 min per TODO item, 3 min per PARTIAL item`
+
+            The formula is `Done * 7 + Partial * 3`. Fix the comment to accurately
+            describe the formula:
+            `// Calculate time saved: 7 min per DONE item, 3 min per PARTIAL item`
+
+            ### Fix 4 — Use worst TestCoverage in aggregateFileStatuses (scanner.go:120-123)
+            Currently `aggregateFileStatuses` always takes `TestCoverage` from
+            `statuses[0]`. This is inconsistent with how `Status` uses worst-wins logic.
+
+            Define a helper that ranks coverage strings by severity:
+            - "none" = 0, "low" = 1, "medium" = 2, "high" = 3
+
+            Track the worst (lowest rank) coverage seen while iterating and set that
+            as the result's `TestCoverage`. If no status has a non-empty `TestCoverage`,
+            leave it empty (preserve existing nil-coverage behaviour).
+
+            Example after fix: if statuses are ["high", "low", "medium"], the
+            aggregated result has TestCoverage = "low".
+
+            ## Tests
+            Agent B owns scanner_test.go and will add tests that exercise
+            checkTestCoverage boundary conditions and the stub false positive. Your
+            changes to scanner.go must not break the existing test suite. Run:
+
+            ```
+            go test ./pkg/suitability/...
+            ```
+
+            ## Constraints
+            - Do NOT modify scanner_test.go (owned by Agent B).
+            - Do NOT modify wrapper.go or types.go.
+            - Package-level vars must be declared at the top of the file in the var block,
+              below the import block.
+            - The `regexp` import is already present; no new imports are needed.
+
+            ## Verification gate
+            ```
+            go build ./pkg/suitability/...
+            go vet ./pkg/suitability/...
+            go test ./pkg/suitability/...
+            ```
+          files: []
+        - id: B
+          task: |
+            ## Role
+            You are a Wave Agent implementing bug fixes and quality improvements
+            in pkg/suitability/wrapper.go and pkg/suitability/scanner_test.go
+            for the scout-and-wave-go repository.
+
+            ## Owned files
+            - pkg/suitability/wrapper.go
+            - pkg/suitability/scanner_test.go
+
+            ## What to implement
+
+            ### Fix 1 — Promote regex vars to package-level in ParseRequirements (wrapper.go:66-67,112)
+            `ParseRequirements` currently compiles `headerPattern`, `locationPattern`,
+            and `plainPattern` on every invocation (inside the function body).
+
+            Move all three to package-level vars:
+
+            ```go
+            var (
+                headerPattern   = regexp.MustCompile(`(?m)^##\s+([A-Za-z0-9_-]+):\s*(.+)$`)
+                locationPattern = regexp.MustCompile(`(?m)^Location:\s*(.+)$`)
+                plainPattern    = regexp.MustCompile(`^([A-Za-z0-9_-]+):\s*([^|]+)\|\s*(.+)$`)
+            )
+            ```
+
+            Remove the local declarations from inside `ParseRequirements`. No
+            behavioural changes yet (that is Fix 2 below).
+
+            ### Fix 2 — Include requirements without a Location field (wrapper.go:98-105)
+            Currently, when a `## F1: Description` header is found but no `Location:`
+            field appears in the 10-line lookahead window, the requirement is silently
+            dropped (the `if len(files) > 0` guard on line 99 skips it entirely).
+
+            Fix: always append the requirement, whether or not files were found.
+            Requirements with no files use `Files: nil` (or an empty slice), which
+            the existing `classifyRequirement` function already handles gracefully via
+            the `len(req.Files) == 0` branch that returns `{Status: "TODO", Missing:
+            ["no files specified"]}`.
+
+            Change the guarded block from:
+
+            ```go
+            if len(files) > 0 {
+                requirements = append(requirements, Requirement{...})
+            }
+            ```
+
+            to an unconditional append:
+
+            ```go
+            requirements = append(requirements, Requirement{
+                ID:          id,
+                Description: description,
+                Files:       files,  // may be nil if no Location found
+            })
+            ```
+
+            ### Fix 3 — Replace 20 empty TestEdgeCase functions with real tests (scanner_test.go:75-153)
+            The 20 `TestEdgeCase1` through `TestEdgeCase20` functions in the inline
+            test content string (lines 75-153 of the test file that is written to disk
+            as `testContent`) exist only to pad the file past 100 lines to fool the
+            `checkTestCoverage` heuristic. Remove them and replace with real tests
+            that cover `checkTestCoverage` boundary conditions.
+
+            Specifically, in `scanner_test.go`, add a new top-level test function
+            `TestCheckTestCoverage_Boundaries` that creates temp files and calls
+            `checkTestCoverage` directly to verify:
+
+            - Exactly 49 lines → returns "low"
+            - Exactly 50 lines → returns "medium"
+            - Exactly 100 lines → returns "medium"  (boundary: 100 is not > 100)
+            - Exactly 101 lines → returns "high"
+            - 0 lines / non-existent file → returns "none"
+
+            Also add a test `TestContainsTodoPatterns_StubFalsePositive` that verifies:
+            - `containsTodoPatterns("func NewStubServer() {}")` returns false
+            - `containsTodoPatterns("type stubService struct{}")` returns false
+            - `containsTodoPatterns("// stub implementation")` returns true  (bare word)
+            - `containsTodoPatterns("x := buildstub()")` returns false
+
+            Also add a test `TestParseRequirements_HeaderWithoutLocation` that verifies:
+            - A markdown document with a valid `## F1: Description` header but no
+              `Location:` line results in a requirement being returned (not silently
+              dropped), with `Files` being nil or empty and `ID == "F1"`.
+
+            Additionally, update the inline `testContent` string inside
+            `TestScanPreImplementation_AllDone` (which currently has the 20 empty
+            edge-case functions) to remove those padding functions. The test file
+            written to disk no longer needs to be >100 lines via padding; if the test
+            relies on "high" coverage classification, use `generateTestPadding` to
+            produce a properly-sized test file OR adjust the test assertion to match
+            the actual line count of the inline content. Do not leave empty test
+            functions in any string or file the test writes.
+
+            ## Constraints
+            - Do NOT modify scanner.go or types.go (owned by Agent A and neither
+              respectively).
+            - The `regexp` import in wrapper.go is already present; no new imports needed.
+            - New test functions in scanner_test.go must use only the `testing` package
+              and `os`/`path/filepath` (already imported).
+            - `checkTestCoverage` and `containsTodoPatterns` are unexported functions in
+              the same package (package suitability), so tests in `scanner_test.go`
+              (also package suitability) can call them directly.
+
+            ## Verification gate
+            ```
+            go build ./pkg/suitability/...
+            go vet ./pkg/suitability/...
+            go test ./pkg/suitability/...
+            ```
+          files: []
+quality_gates:
+    level: standard
+    gates:
+        - type: build
+          command: go build ./pkg/suitability/...
+          required: true
+        - type: lint
+          command: go vet ./pkg/suitability/...
+          required: true
+        - type: test
+          command: go test ./pkg/suitability/...
+          required: true
+pre_mortem:
+    overall_risk: low
+    rows:
+        - scenario: |-
+            Agent B's TestScanPreImplementation_AllDone writes an inline testContent
+            string that currently has the 20 empty edge-case functions. After removing
+            those, the inline file written to disk will have fewer than 100 lines,
+            changing the expected TestCoverage from "high" to something lower. If Agent B
+            does not update the assertion accordingly, the test will fail.
+          likelihood: medium
+          impact: low
+          mitigation: |-
+            Agent B's task explicitly requires either adjusting the inline content to
+            remain >100 lines via generateTestPadding or updating the assertion to match
+            the actual line count. The task prompt calls this out directly.
+        - scenario: |-
+            Agent A and Agent B both write to the same Go package (package suitability).
+            If Agent A declares a package-level var with the same name as something Agent B
+            writes in the test file, there will be a compile error at merge time.
+          likelihood: low
+          impact: medium
+          mitigation: |-
+            Agent B's test file is in package suitability (not package suitability_test),
+            so name collisions are theoretically possible. However, Agent B only adds test
+            functions prefixed with Test*, and Agent A only adds package-level vars
+            (funcPattern, todoPatterns) and a coverage-rank helper. No name overlap is
+            expected. Post-merge build gate will catch any collision immediately.
+        - scenario: |-
+            The coverageRank helper function that Agent A adds to scanner.go for the
+            TestCoverage worst-wins logic could have the same name as a function Agent B
+            adds to the test file if Agent B independently defines a similar helper.
+          likelihood: low
+          impact: low
+          mitigation: |-
+            Agent A's helper is unexported and lives in scanner.go. Agent B's task does
+            not instruct it to define any helpers by that name. If a collision occurs,
+            the post-merge build gate catches it and the fix is a trivial rename.
+state: SCOUT_PENDING
+injection_method: hook

@@ -1,0 +1,236 @@
+title: Fix bugs and dead code in pkg/idgen
+feature_slug: idgen-bug-fixes
+verdict: SUITABLE_WITH_CAVEATS
+suitability_assessment: |
+    Only two files change (generator.go and generator_test.go), both in the same package.
+    This is a single-agent, single-wave IMPL by design — the feature request explicitly asks
+    for that structure. Parallelization value is low (the changes are small and sequential),
+    but the IMPL doc provides value as an audit trail and progress tracker.
+
+    Pre-implementation status check:
+    - Bug 1 (dead categoryIndices map): TODO — map is built and populated at lines 83-98
+      of generator.go but never read after that; confirmed dead code.
+    - Bug 2 (no per-category agent cap): TODO — generateGroupedIDs has no guard preventing
+      more than 9 agents per category; 10 same-category agents produce "A10" which fails the
+      post-generation regex with an opaque error.
+    - Bug 3 (no category count cap): TODO — no guard preventing 27+ distinct categories;
+      letter assignment at line 104 produces rune('A' + 26) = '[' which is invalid.
+    - Bug 4 (doc/behavior mismatch + unreachable branch): TODO — docstring at line 12 says
+      "nil/empty grouping uses sequential mode" but the empty-non-nil path fails validation
+      at line 33-35 (grouping length mismatch) before reaching the sequential branch at line 45.
+      The `len(grouping) == 0` half of the OR condition at line 45 is unreachable.
+      TestAssignAgentIDs_EmptyGrouping already asserts the correct (failing) behavior,
+      but its comment on line 284 says "This is expected behavior" — that comment must be
+      updated to match the corrected docstring.
+    - Bug 5 (redundant count param in generateGroupedIDs): TODO — the caller at line 48
+      passes count but since len(grouping) == count is already validated, the private
+      function can simply use len(grouping) and drop the parameter.
+
+    All five issues are confirmed TODO. No prior implementation found.
+
+    Caveats: single-agent execution — parallelization benefit is minimal. Value is
+    coordination artifact and audit trail.
+
+    Estimated times:
+    - Scout phase: ~5 min
+    - Agent execution: ~10 min (1 agent, 2 files, targeted changes + new tests)
+    - Merge and verification: ~2 min
+    Total SAW time: ~17 min
+
+    Sequential baseline: ~12 min
+    Time savings: marginal (overhead roughly equals savings at this scale).
+    Recommendation: Proceed — explicit test coverage for two new error paths justifies
+    the coordination overhead.
+test_command: go test ./pkg/idgen/...
+lint_command: go vet ./pkg/idgen/...
+file_ownership:
+    - file: pkg/idgen/generator.go
+      agent: A
+      wave: 1
+      action: modify
+    - file: pkg/idgen/generator_test.go
+      agent: A
+      wave: 1
+      action: modify
+interface_contracts:
+    - name: AssignAgentIDs
+      description: |-
+        Public entry point — signature unchanged. Validation now rejects grouped-mode
+        inputs that would produce invalid IDs upfront rather than letting the
+        post-generation regex catch them with a confusing message.
+      definition: |
+        func AssignAgentIDs(count int, grouping [][]string) ([]string, error)
+        // Behavior after fix:
+        //   - grouping == nil → sequential mode
+        //   - grouping != nil → grouped mode; validated upfront:
+        //       • len(distinct categories) must be ≤ 26
+        //       • agents per category must be ≤ 9
+        //   - grouping != nil && len(grouping) == 0 → fails length-mismatch validation
+        //     (only nil triggers sequential mode — docstring corrected to say this)
+      location: pkg/idgen/generator.go
+    - name: generateGroupedIDs
+      description: |-
+        Private helper — count parameter removed. Uses len(grouping) internally since
+        the caller already ensures len(grouping) == count. Dead categoryIndices map removed.
+      definition: |
+        func generateGroupedIDs(grouping [][]string) []string
+      location: pkg/idgen/generator.go
+waves:
+    - number: 1
+      agents:
+        - id: A
+          task: |
+            ## What to implement
+
+            Fix five confirmed bugs in `pkg/idgen/generator.go` and add tests in
+            `pkg/idgen/generator_test.go`. Make no changes to any other file.
+
+            ### Fix 1 — Remove dead `categoryIndices` map (Bug 1, low)
+
+            In `generateGroupedIDs` (line 81), the map `categoryIndices` (declared line 83,
+            populated at line 98) is never read after population. Remove:
+            - The declaration: `categoryIndices := make(map[string][]int)`
+            - The append statement: `categoryIndices[category] = append(categoryIndices[category], i)`
+            Leave `categoryOrder` and everything else intact — `categoryOrder` IS used.
+
+            ### Fix 2 — Add per-category agent cap (Bug 2, medium)
+
+            In `AssignAgentIDs`, after the existing `count > 234` check and before calling
+            `generateGroupedIDs`, add upfront validation for grouped mode:
+
+            When `grouping != nil`, count agents per category. If any category has more than
+            9 agents, return an error with a clear message such as:
+              `fmt.Errorf("category %q has %d agents, maximum is 9 per category", category, n)`
+
+            Use the same first-tag extraction logic that `generateGroupedIDs` uses:
+            if `len(tags) > 0` use `tags[0]`, else use `""` as the category key.
+
+            This prevents "A10", "A11", etc. from reaching the post-generation regex check.
+
+            ### Fix 3 — Add category count cap (Bug 3, medium)
+
+            In the same upfront validation block (grouped mode, after the per-category cap
+            check), count distinct categories. If there are more than 26, return:
+              `fmt.Errorf("grouped mode requires ≤ 26 distinct categories, got %d", n)`
+
+            This prevents `rune('A' + 26)` = `'['` from being assigned as a letter.
+
+            ### Fix 4 — Correct docstring and remove unreachable branch condition (Bug 4, low)
+
+            a. Update the public docstring on `AssignAgentIDs` (lines 11-26). The current
+               text says "If grouping is nil/empty, uses sequential mode". Change this to
+               accurately describe behavior: only nil triggers sequential mode. An empty
+               non-nil slice fails the length-mismatch validation before reaching the
+               sequential branch. Suggested replacement for the relevant line:
+                 "If grouping is nil, uses sequential mode (A-Z, A2-Z2, ...)."
+
+            b. At line 45, the condition reads:
+                 `if grouping == nil || len(grouping) == 0 {`
+               The `len(grouping) == 0` half is unreachable because an empty non-nil slice
+               with count > 0 fails the length-mismatch check at line 33. Simplify to:
+                 `if grouping == nil {`
+
+            ### Fix 5 — Remove redundant `count` parameter from `generateGroupedIDs` (Bug 5, low)
+
+            Change the private function signature from:
+              `func generateGroupedIDs(count int, grouping [][]string) []string`
+            to:
+              `func generateGroupedIDs(grouping [][]string) []string`
+
+            Inside the function body, replace all uses of `count` with `len(grouping)`.
+            There is exactly one use: `ids := make([]string, count)` → `ids := make([]string, len(grouping))`.
+
+            Update the call site at line 48:
+              `ids = generateGroupedIDs(count, grouping)` → `ids = generateGroupedIDs(grouping)`
+
+            ### Tests to add in `generator_test.go`
+
+            Add the following three test functions. Do not modify existing tests except
+            as noted in (c) below.
+
+            a. `TestAssignAgentIDs_Grouped_TooManyAgentsPerCategory`
+               Call `AssignAgentIDs(10, grouping)` where grouping is 10 entries all tagged
+               `"data"`. Expect a non-nil error. Verify the error message contains "category"
+               and "9" (or the full string — your choice) so it is clearly a validation
+               error, not a regex error.
+
+            b. `TestAssignAgentIDs_Grouped_TooManyCategories`
+               Build a grouping slice with 27 entries, each with a unique tag ("cat0" through
+               "cat26"). Call `AssignAgentIDs(27, grouping)`. Expect a non-nil error. Verify
+               the error message mentions "26" or "categories".
+
+            c. Update the comment in `TestAssignAgentIDs_EmptyGrouping` (lines 284-286).
+               The current comment says "This is expected behavior — if you pass a grouping
+               array, it must match count / To trigger sequential mode, pass nil instead."
+               Update it to be consistent with the corrected docstring: passing an empty
+               non-nil slice fails the length-mismatch validation; only nil triggers
+               sequential mode. The test assertion and behavior do NOT change, only the comment.
+
+            ## Verification gate
+
+            ```
+            go build ./...
+            go vet ./pkg/idgen/...
+            go test ./pkg/idgen/...
+            ```
+
+            All existing tests must continue to pass. The two new error-path tests must pass.
+
+            ## Constraints
+
+            - Touch only `pkg/idgen/generator.go` and `pkg/idgen/generator_test.go`.
+            - Do not change any exported function signatures other than the private
+              `generateGroupedIDs` (which you are removing the `count` parameter from).
+            - Do not reformat unrelated code; keep diffs minimal.
+            - Follow existing code style: `fmt.Errorf` for errors, no external dependencies.
+          files:
+            - pkg/idgen/generator.go
+            - pkg/idgen/generator_test.go
+          context_source: prepared-brief
+quality_gates:
+    level: standard
+    gates:
+        - type: build
+          command: go build ./...
+          required: true
+        - type: lint
+          command: go vet ./pkg/idgen/...
+          required: true
+        - type: test
+          command: go test ./pkg/idgen/...
+          required: true
+pre_mortem:
+    overall_risk: low
+    rows:
+        - scenario: |-
+            The upfront category-count and per-category-cap validation is added inside
+            AssignAgentIDs but placed AFTER the length-mismatch check and BEFORE the call
+            to generateGroupedIDs. If placed in the wrong order (e.g., before the
+            length-mismatch check), a caller passing mismatched lengths would get a
+            different error message than the existing test expects.
+          likelihood: low
+          impact: medium
+          mitigation: |-
+            Place new validation after the existing `len(grouping) != count` guard.
+            Existing tests (TestAssignAgentIDs_GroupingLengthMismatch) will catch
+            ordering mistakes immediately.
+        - scenario: |-
+            The per-category cap check iterates grouping to build a count map, using the
+            same first-tag logic as generateGroupedIDs. If the implementation uses a
+            slightly different key extraction (e.g., fails to handle empty tag slices),
+            the cap check and the ID assignment will disagree on category membership,
+            causing valid inputs to be rejected or invalid inputs to slip through.
+          likelihood: low
+          impact: medium
+          mitigation: |-
+            Extract the category-key logic into a single inline expression (or a small
+            helper) used by both the validation block and generateGroupedIDs. The existing
+            TestAssignAgentIDs_Grouped_EmptyTags test exercises the empty-tag path.
+        - scenario: |-
+            Removing the `count` parameter from generateGroupedIDs while forgetting to
+            update the call site produces a compile error.
+          likelihood: low
+          impact: low
+          mitigation: '`go build ./...` in the verification gate catches this immediately.'
+state: SCOUT_PENDING
+injection_method: hook
