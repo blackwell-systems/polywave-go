@@ -13,6 +13,13 @@ import (
 	"strings"
 )
 
+// DiffStats holds statistics for a git diff
+type DiffStats struct {
+	FilesChanged int
+	LinesAdded   int
+	LinesRemoved int
+}
+
 // Run executes a git command in repoPath with the given args.
 // It returns combined stdout+stderr output and any error encountered.
 func Run(repoPath string, args ...string) (string, error) {
@@ -659,4 +666,57 @@ func Version() (string, error) {
 		return "", fmt.Errorf("git --version failed: %w", err)
 	}
 	return strings.TrimSpace(string(out)), nil
+}
+
+// GetDiffStats runs git diff --numstat between fromRef and toRef for file
+// and returns parsed statistics. Returns zero stats on empty diff (no changes).
+// Returns an error if the diff contains binary files (not supported) or if git fails.
+func GetDiffStats(repoPath, fromRef, toRef, file string) (*DiffStats, error) {
+	rangeArg := fromRef + ".." + toRef
+	out, err := RunOutput(repoPath, "diff", "--numstat", rangeArg, "--", file)
+	if err != nil {
+		return nil, fmt.Errorf("git diff --numstat failed: %w", err)
+	}
+
+	trimmed := strings.TrimSpace(out)
+	if trimmed == "" {
+		// No changes — return zero stats
+		return &DiffStats{FilesChanged: 0, LinesAdded: 0, LinesRemoved: 0}, nil
+	}
+
+	// Parse --numstat format: <added>\t<removed>\t<file>
+	// Binary files show "-" for stats — return error
+	lines := strings.Split(trimmed, "\n")
+	stats := &DiffStats{}
+
+	for _, line := range lines {
+		fields := strings.Split(line, "\t")
+		if len(fields) < 3 {
+			continue // Malformed line, skip
+		}
+
+		addedStr := fields[0]
+		removedStr := fields[1]
+
+		// Binary files show "-" for stats
+		if addedStr == "-" || removedStr == "-" {
+			return nil, fmt.Errorf("binary file detected in diff (not supported): %s", fields[2])
+		}
+
+		added, err := strconv.Atoi(addedStr)
+		if err != nil {
+			return nil, fmt.Errorf("failed to parse added lines %q: %w", addedStr, err)
+		}
+
+		removed, err := strconv.Atoi(removedStr)
+		if err != nil {
+			return nil, fmt.Errorf("failed to parse removed lines %q: %w", removedStr, err)
+		}
+
+		stats.FilesChanged++
+		stats.LinesAdded += added
+		stats.LinesRemoved += removed
+	}
+
+	return stats, nil
 }

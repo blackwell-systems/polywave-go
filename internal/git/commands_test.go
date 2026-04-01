@@ -756,3 +756,160 @@ func TestInstallHooks_CreatesHooksDirectory(t *testing.T) {
 		t.Fatalf("hook not found at %s: %v", targetHookPath, err)
 	}
 }
+
+// TestGetDiffStats_AppendOnly verifies that GetDiffStats correctly identifies
+// append-only patterns (LinesAdded > 0, LinesRemoved == 0).
+func TestGetDiffStats_AppendOnly(t *testing.T) {
+	dir := initTestRepo(t)
+
+	// Create and commit a file
+	filePath := dir + "/append.txt"
+	if err := os.WriteFile(filePath, []byte("line 1\n"), 0644); err != nil {
+		t.Fatalf("failed to write file: %v", err)
+	}
+	if err := Add(dir, "append.txt"); err != nil {
+		t.Fatalf("Add failed: %v", err)
+	}
+	if _, err := CommitWithMessage(dir, "add append.txt"); err != nil {
+		t.Fatalf("CommitWithMessage failed: %v", err)
+	}
+
+	// Get the base commit SHA
+	baseCommit, err := RevParse(dir, "HEAD")
+	if err != nil {
+		t.Fatalf("RevParse failed: %v", err)
+	}
+
+	// Append new lines (append-only pattern)
+	if err := os.WriteFile(filePath, []byte("line 1\nline 2\nline 3\n"), 0644); err != nil {
+		t.Fatalf("failed to append to file: %v", err)
+	}
+	if err := Add(dir, "append.txt"); err != nil {
+		t.Fatalf("Add failed: %v", err)
+	}
+	if _, err := CommitWithMessage(dir, "append lines"); err != nil {
+		t.Fatalf("CommitWithMessage failed: %v", err)
+	}
+
+	// Get the new commit SHA
+	newCommit, err := RevParse(dir, "HEAD")
+	if err != nil {
+		t.Fatalf("RevParse failed: %v", err)
+	}
+
+	// Get diff stats
+	stats, err := GetDiffStats(dir, baseCommit, newCommit, "append.txt")
+	if err != nil {
+		t.Fatalf("GetDiffStats returned error: %v", err)
+	}
+
+	// Verify append-only pattern: LinesAdded > 0, LinesRemoved == 0
+	if stats.LinesAdded == 0 {
+		t.Errorf("expected LinesAdded > 0 for append-only, got %d", stats.LinesAdded)
+	}
+	if stats.LinesRemoved != 0 {
+		t.Errorf("expected LinesRemoved == 0 for append-only, got %d", stats.LinesRemoved)
+	}
+	if stats.FilesChanged != 1 {
+		t.Errorf("expected FilesChanged == 1, got %d", stats.FilesChanged)
+	}
+}
+
+// TestGetDiffStats_LineEdits verifies that GetDiffStats correctly identifies
+// line edit patterns (both LinesAdded > 0 and LinesRemoved > 0).
+func TestGetDiffStats_LineEdits(t *testing.T) {
+	dir := initTestRepo(t)
+
+	// Create and commit a file
+	filePath := dir + "/edit.txt"
+	if err := os.WriteFile(filePath, []byte("line 1\nline 2\nline 3\n"), 0644); err != nil {
+		t.Fatalf("failed to write file: %v", err)
+	}
+	if err := Add(dir, "edit.txt"); err != nil {
+		t.Fatalf("Add failed: %v", err)
+	}
+	if _, err := CommitWithMessage(dir, "add edit.txt"); err != nil {
+		t.Fatalf("CommitWithMessage failed: %v", err)
+	}
+
+	// Get the base commit SHA
+	baseCommit, err := RevParse(dir, "HEAD")
+	if err != nil {
+		t.Fatalf("RevParse failed: %v", err)
+	}
+
+	// Edit lines (replace content, causing both additions and deletions)
+	if err := os.WriteFile(filePath, []byte("modified line 1\nline 2\nmodified line 3\nline 4\n"), 0644); err != nil {
+		t.Fatalf("failed to edit file: %v", err)
+	}
+	if err := Add(dir, "edit.txt"); err != nil {
+		t.Fatalf("Add failed: %v", err)
+	}
+	if _, err := CommitWithMessage(dir, "edit lines"); err != nil {
+		t.Fatalf("CommitWithMessage failed: %v", err)
+	}
+
+	// Get the new commit SHA
+	newCommit, err := RevParse(dir, "HEAD")
+	if err != nil {
+		t.Fatalf("RevParse failed: %v", err)
+	}
+
+	// Get diff stats
+	stats, err := GetDiffStats(dir, baseCommit, newCommit, "edit.txt")
+	if err != nil {
+		t.Fatalf("GetDiffStats returned error: %v", err)
+	}
+
+	// Verify line edit pattern: both LinesAdded > 0 and LinesRemoved > 0
+	if stats.LinesAdded == 0 {
+		t.Errorf("expected LinesAdded > 0 for line edits, got %d", stats.LinesAdded)
+	}
+	if stats.LinesRemoved == 0 {
+		t.Errorf("expected LinesRemoved > 0 for line edits, got %d", stats.LinesRemoved)
+	}
+	if stats.FilesChanged != 1 {
+		t.Errorf("expected FilesChanged == 1, got %d", stats.FilesChanged)
+	}
+}
+
+// TestGetDiffStats_NoChanges verifies that GetDiffStats returns zero stats
+// when there are no changes between commits.
+func TestGetDiffStats_NoChanges(t *testing.T) {
+	dir := initTestRepo(t)
+
+	// Create and commit a file
+	filePath := dir + "/nochange.txt"
+	if err := os.WriteFile(filePath, []byte("content\n"), 0644); err != nil {
+		t.Fatalf("failed to write file: %v", err)
+	}
+	if err := Add(dir, "nochange.txt"); err != nil {
+		t.Fatalf("Add failed: %v", err)
+	}
+	if _, err := CommitWithMessage(dir, "add nochange.txt"); err != nil {
+		t.Fatalf("CommitWithMessage failed: %v", err)
+	}
+
+	// Get the commit SHA
+	commit, err := RevParse(dir, "HEAD")
+	if err != nil {
+		t.Fatalf("RevParse failed: %v", err)
+	}
+
+	// Get diff stats for same commit (no changes)
+	stats, err := GetDiffStats(dir, commit, commit, "nochange.txt")
+	if err != nil {
+		t.Fatalf("GetDiffStats returned error: %v", err)
+	}
+
+	// Verify zero stats
+	if stats.FilesChanged != 0 {
+		t.Errorf("expected FilesChanged == 0 for no changes, got %d", stats.FilesChanged)
+	}
+	if stats.LinesAdded != 0 {
+		t.Errorf("expected LinesAdded == 0 for no changes, got %d", stats.LinesAdded)
+	}
+	if stats.LinesRemoved != 0 {
+		t.Errorf("expected LinesRemoved == 0 for no changes, got %d", stats.LinesRemoved)
+	}
+}
