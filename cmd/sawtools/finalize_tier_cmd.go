@@ -17,11 +17,14 @@ func newFinalizeTierCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "finalize-tier <program-manifest>",
 		Short: "Finalize a program tier: merge all IMPL branches and run tier gate",
-		Long: `Finalizes a program tier by merging all IMPL branches into main in sequence,
-then running the tier-level quality gates.
+		Long: `Finalizes a program tier using the full thick-orchestrator sequence:
+  1. Close all complete IMPLs (mark-complete + archive + update context)
+  2. Merge IMPL branches to main, handling worktree-checked-out branches
+  3. Run tier-level quality gates
+  4. Update IMPL statuses in the PROGRAM manifest and commit
 
-Analogous to finalize-wave but operates at the program tier level.
-Stops on the first merge failure and does not run the tier gate if any merge fails.
+Analogous to finalize-wave and prepare-wave: no manual preconditions required.
+Idempotent: already-closed IMPLs and already-merged branches are skipped.
 
 When --auto is set, automatically advances to the next tier after the gate passes.
 
@@ -31,23 +34,28 @@ Examples:
   sawtools finalize-tier program.yaml --tier 1 --auto
 
 Exit codes:
-  0 - All merges succeeded and tier gate passed
-  1 - One or more merges failed or tier gate failed
+  0 - All steps succeeded
+  1 - One or more steps failed
   2 - Parse error or tier not found`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			manifestPath := args[0]
 
-			result, err := protocol.FinalizeTier(manifestPath, tierNum, repoDir)
+			engineResult, err := engine.FinalizeTierEngine(cmd.Context(), engine.FinalizeTierOpts{
+				ManifestPath: manifestPath,
+				TierNumber:   tierNum,
+				RepoDir:      repoDir,
+				Logger:       newSawLogger(),
+			})
 			if err != nil {
 				return err
 			}
 
-			out, _ := json.MarshalIndent(result, "", "  ")
+			out, _ := json.MarshalIndent(engineResult, "", "  ")
 			fmt.Fprintln(cmd.OutOrStdout(), string(out))
 
-			if !result.IsSuccess() {
-				return fmt.Errorf("finalize-tier: one or more merges failed or tier gate failed")
+			if len(engineResult.Errors) > 0 {
+				return fmt.Errorf("finalize-tier: %s", engineResult.Errors[0])
 			}
 
 			// If --auto is set and tier gate passed, advance to next tier
