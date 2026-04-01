@@ -695,6 +695,71 @@ func TestArchive_ResultDataMatchesMetadata(t *testing.T) {
 	}
 }
 
+func TestArchive_PathParsingExact(t *testing.T) {
+	// Verify that agent-C2 is parsed correctly from wave3/agent-C2 path
+	tmpDir := t.TempDir()
+	journalDir := filepath.Join(tmpDir, ".saw-state", "wave3", "agent-C2")
+	if err := os.MkdirAll(journalDir, 0755); err != nil {
+		t.Fatalf("creating journal dir: %v", err)
+	}
+
+	// Create a non-empty index.jsonl
+	if err := os.WriteFile(filepath.Join(journalDir, "index.jsonl"), []byte("entry1\nentry2\n"), 0644); err != nil {
+		t.Fatalf("creating index.jsonl: %v", err)
+	}
+
+	observer := &JournalObserver{
+		ProjectRoot: tmpDir,
+		JournalDir:  journalDir,
+		AgentID:     "C2",
+	}
+
+	r := observer.Archive()
+	if !r.IsSuccess() {
+		t.Fatalf("Archive failed: %v", r.Errors[0].Message)
+	}
+
+	data := r.GetData()
+	if data.Wave != 3 {
+		t.Errorf("expected wave 3, got %d", data.Wave)
+	}
+	if data.Agent != "C2" {
+		t.Errorf("expected agent C2, got %s", data.Agent)
+	}
+}
+
+func TestArchive_PathParsingNoFallback(t *testing.T) {
+	// Verify that a directory following "wave1" that does NOT start with "agent-"
+	// does NOT set the agent (so Archive returns a parse failure).
+	tmpDir := t.TempDir()
+	journalDir := filepath.Join(tmpDir, ".saw-state", "wave1", "somedir")
+	if err := os.MkdirAll(journalDir, 0755); err != nil {
+		t.Fatalf("creating journal dir: %v", err)
+	}
+
+	// Create a non-empty index.jsonl
+	if err := os.WriteFile(filepath.Join(journalDir, "index.jsonl"), []byte("entry1\n"), 0644); err != nil {
+		t.Fatalf("creating index.jsonl: %v", err)
+	}
+
+	observer := &JournalObserver{
+		ProjectRoot: tmpDir,
+		JournalDir:  journalDir,
+		AgentID:     "somedir",
+	}
+
+	r := observer.Archive()
+	if r.IsSuccess() {
+		t.Fatal("Archive should fail when agent dir does not use agent- prefix; got success with agent=" + r.GetData().Agent)
+	}
+	if !r.IsFatal() {
+		t.Error("expected IsFatal() to be true")
+	}
+	if !strings.Contains(r.Errors[0].Message, "cannot parse wave/agent") {
+		t.Errorf("expected 'cannot parse wave/agent' error, got: %v", r.Errors[0].Message)
+	}
+}
+
 func TestExtract_ReturnsData(t *testing.T) {
 	// Verify Extract result data is populated
 	tmpDir := t.TempDir()
