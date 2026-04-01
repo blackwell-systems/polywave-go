@@ -21,7 +21,7 @@ Each reviewed package gets scouted → IMPL'd → closed before being marked don
 | codereview | | | |
 | collision | ✅ | ✅ | |
 | commands | | | |
-| config | | | |
+| config | ✅ | ✅ | ✅ |
 | deps | ✅ | ✅ | |
 | engine | | | |
 | errparse | ✅ | ✅ | ✅ |
