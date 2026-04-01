@@ -123,8 +123,11 @@ func TestDispatch_ContextCancellation(t *testing.T) {
 func TestDispatch_NoAdapters(t *testing.T) {
 	d := NewDispatcher()
 	res := d.Dispatch(context.Background(), Event{}, mockFormatter{})
-	if !res.IsSuccess() {
-		t.Fatalf("dispatch with no adapters should succeed, got: %q", res.Code)
+	if !res.IsFatal() {
+		t.Fatalf("dispatch with no adapters should be FATAL, got: %q", res.Code)
+	}
+	if len(res.Errors) == 0 || res.Errors[0].Code != result.CodeDispatchNoAdapters {
+		t.Errorf("expected DISPATCH_NO_ADAPTERS error, got %v", res.Errors)
 	}
 }
 
@@ -142,10 +145,10 @@ func TestDispatcher_AddRemove(t *testing.T) {
 	}
 
 	d.RemoveAdapter("x")
-	// Dispatch again; removed adapter should NOT be called.
+	// After remove, dispatch should fail with no adapters.
 	res2 := d.Dispatch(context.Background(), Event{Title: "t2"}, mockFormatter{})
-	if !res2.IsSuccess() {
-		t.Fatalf("unexpected result: %q errors: %v", res2.Code, res2.Errors)
+	if !res2.IsFatal() {
+		t.Fatalf("expected FATAL after remove, got %q", res2.Code)
 	}
 	if a.calls.Load() != 1 {
 		t.Error("adapter should not have been called after Remove")
