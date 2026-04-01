@@ -1,6 +1,9 @@
 package errparse
 
-import "strings"
+import (
+	"log/slog"
+	"strings"
+)
 
 // registry is the package-level map from tool name to Parser.
 var registry = map[string]Parser{}
@@ -109,6 +112,10 @@ func ParseOutput(gateType string, command string, stdout string, stderr string) 
 
 	parser := GetParser(toolName)
 	if parser == nil {
+		slog.Warn("errparse: no parser registered for detected tool",
+			"tool", toolName,
+			"gate_type", gateType,
+			"command", command)
 		return nil
 	}
 
