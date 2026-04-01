@@ -93,13 +93,27 @@ func TestValidationResult_OverallStatus_OneFail(t *testing.T) {
 	}
 }
 
-// TestValidationResult_OverallStatus_AllSkip returns PASS when all skipped
+// TestValidationResult_OverallStatus_AllSkip returns SKIP when all skipped
 func TestValidationResult_OverallStatus_AllSkip(t *testing.T) {
 	result := NewValidationResult()
 
 	status := result.OverallStatus()
+	if status != "SKIP" {
+		t.Errorf("Expected OverallStatus to be SKIP when all steps skipped, got %s", status)
+	}
+}
+
+// TestValidationResult_OverallStatus_MixedSkipPass returns PASS when some steps pass and none fail
+func TestValidationResult_OverallStatus_MixedSkipPass(t *testing.T) {
+	result := &ValidationResult{
+		Syntax:         ValidationStep{Status: "PASS"},
+		Imports:        ValidationStep{Status: "SKIP"},
+		TypeReferences: ValidationStep{Status: "SKIP"},
+		Build:          ValidationStep{Status: "SKIP"},
+	}
+	status := result.OverallStatus()
 	if status != "PASS" {
-		t.Errorf("Expected OverallStatus to be PASS when all steps skipped, got %s", status)
+		t.Errorf("Expected OverallStatus to be PASS when some steps pass and none fail, got %s", status)
 	}
 }
 
