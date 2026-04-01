@@ -52,7 +52,7 @@ func NewDiscordAdapter(cfg map[string]string) (Adapter, error) {
 	}
 	return &DiscordAdapter{
 		webhookURL: url,
-		client:     &http.Client{},
+		client:     &http.Client{Timeout: defaultHTTPTimeout},
 	}, nil
 }
 
