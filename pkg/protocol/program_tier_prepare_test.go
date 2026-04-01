@@ -450,6 +450,126 @@ func TestSkipCriticForIMPL_WritesPass(t *testing.T) {
 	}
 }
 
+// TestPrepareTierResult_PrepareWaveResults_JSONFields verifies that
+// PrepareTierResult serializes prepare_wave_results when set and omits it
+// when nil (omitempty).
+func TestPrepareTierResult_PrepareWaveResults_JSONFields(t *testing.T) {
+	// When PrepareWaveResults is nil, the field should be omitted.
+	rNil := &PrepareTierResult{
+		Tier:    1,
+		Success: true,
+	}
+	dataNil, err := json.Marshal(rNil)
+	if err != nil {
+		t.Fatalf("failed to marshal PrepareTierResult (nil PrepareWaveResults): %v", err)
+	}
+	var decodedNil map[string]interface{}
+	if err := json.Unmarshal(dataNil, &decodedNil); err != nil {
+		t.Fatalf("failed to unmarshal JSON: %v", err)
+	}
+	if _, ok := decodedNil["prepare_wave_results"]; ok {
+		t.Error("expected 'prepare_wave_results' to be omitted when nil (omitempty), but it was present")
+	}
+
+	// When PrepareWaveResults is set, the field should be serialized.
+	rSet := &PrepareTierResult{
+		Tier:    1,
+		Success: true,
+		PrepareWaveResults: []IMPLPrepareWaveResult{
+			{ImplSlug: "test-impl", Success: true},
+		},
+	}
+	dataSet, err := json.Marshal(rSet)
+	if err != nil {
+		t.Fatalf("failed to marshal PrepareTierResult (with PrepareWaveResults): %v", err)
+	}
+	var decodedSet map[string]interface{}
+	if err := json.Unmarshal(dataSet, &decodedSet); err != nil {
+		t.Fatalf("failed to unmarshal JSON: %v", err)
+	}
+	if _, ok := decodedSet["prepare_wave_results"]; !ok {
+		t.Error("expected 'prepare_wave_results' to be present when set, but it was missing")
+	}
+	items, ok := decodedSet["prepare_wave_results"].([]interface{})
+	if !ok || len(items) != 1 {
+		t.Errorf("expected prepare_wave_results to have 1 item, got %v", decodedSet["prepare_wave_results"])
+	}
+}
+
+// TestIMPLPrepareWaveResult_JSONFields verifies that IMPLPrepareWaveResult
+// serializes with expected field names and that error is omitted when empty.
+func TestIMPLPrepareWaveResult_JSONFields(t *testing.T) {
+	r := &IMPLPrepareWaveResult{
+		ImplSlug:  "my-impl",
+		Success:   true,
+		Worktrees: []WorktreeInfo{},
+	}
+
+	data, err := json.Marshal(r)
+	if err != nil {
+		t.Fatalf("failed to marshal IMPLPrepareWaveResult: %v", err)
+	}
+
+	var decoded map[string]interface{}
+	if err := json.Unmarshal(data, &decoded); err != nil {
+		t.Fatalf("failed to unmarshal JSON: %v", err)
+	}
+
+	// Verify required fields are present.
+	expectedFields := []string{"impl_slug", "success", "worktrees"}
+	for _, field := range expectedFields {
+		if _, ok := decoded[field]; !ok {
+			t.Errorf("expected JSON field %q to be present, but it was missing", field)
+		}
+	}
+
+	// Verify error is omitted when empty (omitempty).
+	if _, ok := decoded["error"]; ok {
+		t.Error("expected 'error' field to be omitted when empty (omitempty), but it was present")
+	}
+
+	// Verify error is present when set.
+	rWithErr := &IMPLPrepareWaveResult{
+		ImplSlug: "fail-impl",
+		Success:  false,
+		Error:    "something went wrong",
+	}
+	dataErr, err := json.Marshal(rWithErr)
+	if err != nil {
+		t.Fatalf("failed to marshal IMPLPrepareWaveResult with error: %v", err)
+	}
+	var decodedErr map[string]interface{}
+	if err := json.Unmarshal(dataErr, &decodedErr); err != nil {
+		t.Fatalf("failed to unmarshal JSON: %v", err)
+	}
+	if _, ok := decodedErr["error"]; !ok {
+		t.Error("expected 'error' field to be present when set, but it was missing")
+	}
+}
+
+// TestPrepareTierOpts_NewFields verifies that the new fields exist on
+// PrepareTierOpts by constructing the struct (compile-time check).
+func TestPrepareTierOpts_NewFields(t *testing.T) {
+	opts := PrepareTierOpts{
+		ProgramManifestPath: "test.yaml",
+		TierNumber:          1,
+		RepoDir:             ".",
+		SkipCritic:          false,
+		RunPrepareWave:      true,
+		WaveNum:             1,
+		MergeTarget:         "main",
+	}
+	if !opts.RunPrepareWave {
+		t.Error("expected RunPrepareWave=true")
+	}
+	if opts.WaveNum != 1 {
+		t.Error("expected WaveNum=1")
+	}
+	if opts.MergeTarget != "main" {
+		t.Errorf("expected MergeTarget=%q, got %q", "main", opts.MergeTarget)
+	}
+}
+
 // TestSkipCriticForIMPL_NotRequired verifies that SkipCriticForIMPL returns
 // (false, nil) for an IMPL that does not meet the E37 threshold (2 agents).
 func TestSkipCriticForIMPL_NotRequired(t *testing.T) {
