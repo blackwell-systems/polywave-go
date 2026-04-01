@@ -268,6 +268,15 @@ const (
 	CodeSuitabilityRequirementsParse = "S006_REQUIREMENTS_PARSE"
 )
 
+// Scaffold validation error codes (SV01-SV10)
+const (
+	CodeScaffoldSyntaxFail   = "SV01_SYNTAX_FAIL"        // go/parser failed
+	CodeScaffoldImportFail   = "SV02_IMPORT_FAIL"        // missing imports detected
+	CodeScaffoldBuildFail    = "SV03_BUILD_FAIL"         // build command failed
+	CodeScaffoldParseFail    = "SV04_PARSE_FAIL"         // AST parse error (distinct from syntax fail)
+	CodeScaffoldProtocolLoad = "SV05_PROTOCOL_LOAD_FAIL" // IMPL doc load failed
+)
+
 // Agent ID generation error codes (I001-I099)
 const (
 	CodeAgentCountInvalid        = "I001_AGENT_COUNT_INVALID"
