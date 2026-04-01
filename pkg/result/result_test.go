@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"testing"
 )
 
@@ -640,25 +641,30 @@ func TestSAWErrorCauseNotSerialized(t *testing.T) {
 	}
 	// Cause should not appear in JSON
 	jsonStr := string(data)
-	if contains(jsonStr, "secret cause") {
+	if strings.Contains(jsonStr, "secret cause") {
 		t.Error("Cause should not be serialized to JSON")
 	}
-	if contains(jsonStr, "cause") {
+	if strings.Contains(jsonStr, "cause") {
 		t.Error("Cause field should not appear in JSON")
 	}
 }
 
-func contains(s, substr string) bool {
-	return len(s) >= len(substr) && searchString(s, substr)
-}
-
-func searchString(s, substr string) bool {
-	for i := 0; i <= len(s)-len(substr); i++ {
-		if s[i:i+len(substr)] == substr {
-			return true
+// TestNewFailurePanicsOnEmptySlice verifies NewFailure panics when called with an empty errors slice.
+func TestNewFailurePanicsOnEmptySlice(t *testing.T) {
+	defer func() {
+		r := recover()
+		if r == nil {
+			t.Fatal("expected panic, got none")
 		}
-	}
-	return false
+		msg, ok := r.(string)
+		if !ok {
+			t.Fatalf("expected string panic, got %T: %v", r, r)
+		}
+		if msg != "result.NewFailure called with empty errors slice" {
+			t.Errorf("panic message = %q, want %q", msg, "result.NewFailure called with empty errors slice")
+		}
+	}()
+	_ = NewFailure[string]([]SAWError{})
 }
 
 // TestToErrors verifies the ToErrors helper converts []SAWError to []error.
