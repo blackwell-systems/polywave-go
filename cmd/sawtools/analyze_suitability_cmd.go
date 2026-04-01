@@ -44,7 +44,15 @@ Output is JSON with status, test coverage, and time savings estimates.`,
 			if reqResult.IsFatal() {
 				return fmt.Errorf("parse requirements: %v", reqResult.Errors[0])
 			}
-			requirements := reqResult.GetData()
+			allRequirements := reqResult.GetData()
+
+			// Filter to only requirements with locations (command requirement)
+			var requirements []suitability.Requirement
+			for _, req := range allRequirements {
+				if len(req.Files) > 0 {
+					requirements = append(requirements, req)
+				}
+			}
 
 			if len(requirements) == 0 {
 				return fmt.Errorf("no valid requirements found in %s", requirementsFlag)

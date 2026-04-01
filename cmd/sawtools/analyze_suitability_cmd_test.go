@@ -200,8 +200,10 @@ This should be skipped.
 	}
 	requirements := reqResult.GetData()
 
-	if len(requirements) != 2 {
-		t.Fatalf("expected 2 requirements, got %d", len(requirements))
+	// Parser includes all requirements, even those without locations
+	// (filtering happens at command level in analyze_suitability_cmd.go)
+	if len(requirements) != 3 {
+		t.Fatalf("expected 3 requirements (parser includes all headers), got %d", len(requirements))
 	}
 
 	// Verify F1
@@ -221,6 +223,14 @@ This should be skipped.
 	}
 	if len(requirements[1].Files) != 2 {
 		t.Errorf("expected 2 files for SEC-01, got %d", len(requirements[1].Files))
+	}
+
+	// Verify F3 was included (even without location)
+	if requirements[2].ID != "F3" {
+		t.Errorf("expected ID F3, got %s", requirements[2].ID)
+	}
+	if len(requirements[2].Files) != 0 {
+		t.Errorf("expected F3 to have no files, got %v", requirements[2].Files)
 	}
 }
 
@@ -288,7 +298,17 @@ Also skipped.
 	}
 	requirements := reqResult.GetData()
 
-	if len(requirements) != 0 {
-		t.Errorf("expected 0 requirements (no locations), got %d", len(requirements))
+	// Parser includes requirements even without locations
+	// (filtering happens at command level in analyze_suitability_cmd.go)
+	if len(requirements) != 2 {
+		t.Errorf("expected 2 requirements (parser includes headers without locations), got %d", len(requirements))
+	}
+
+	// Verify both have empty Files arrays
+	if len(requirements) >= 1 && len(requirements[0].Files) != 0 {
+		t.Errorf("expected F1 to have no files, got %v", requirements[0].Files)
+	}
+	if len(requirements) >= 2 && len(requirements[1].Files) != 0 {
+		t.Errorf("expected F2 to have no files, got %v", requirements[1].Files)
 	}
 }
