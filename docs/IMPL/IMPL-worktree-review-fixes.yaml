@@ -255,6 +255,7 @@ waves:
           files:
             - pkg/agent/runner.go
             - pkg/agent/runner_test.go
+      base_commit: 189e4a25486276119bc511bc9affa51e29c99b92
     - number: 2
       agents:
         - id: C
@@ -395,6 +396,31 @@ quality_gates:
         - type: test
           command: go test ./pkg/worktree/... ./pkg/agent/... ./pkg/orchestrator/...
           required: true
+completion_reports:
+    A:
+        status: complete
+        branch: saw/worktree-review-fixes/wave1-agent-A
+        commit: 3315eac
+        files_changed:
+            - pkg/result/codes.go
+            - pkg/worktree/manager.go
+            - pkg/worktree/manager_test.go
+        tests_added:
+            - TestCreateAlreadyExists
+            - TestCreateInvalidRepoRoot
+            - TestSetLogger
+            - TestListEmpty
+        verification: PASS
+        notes: All worktree package changes complete. Added G008 error code, migrated Create() to result.Result[CreateData], standardized error codes and prefixes. All 10 tests passing. Pre-commit hook failed on orchestrator.go (Wave 2 scope) as expected per brief constraints.
+    B:
+        status: complete
+        branch: saw/worktree-review-fixes/wave1-agent-B
+        commit: d687d66
+        files_changed:
+            - pkg/agent/runner.go
+            - pkg/agent/runner_test.go
+        verification: PASS
+        notes: Removed unused worktrees field from Runner struct and NewRunner constructor. All pkg/agent tests pass. Build failure in pkg/orchestrator is expected and will be resolved by Agent C in Wave 2.
 pre_mortem:
     overall_risk: low
     rows:
