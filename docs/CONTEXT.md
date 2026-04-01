@@ -279,3 +279,7 @@ type BackendConfig struct {
   - IMPL doc: docs/IMPL/complete/IMPL-collision-fixes.yaml
 - **commands-fixes**: completed 2026-03-31, 1 waves, 2 agents
   - IMPL doc: docs/IMPL/complete/IMPL-commands-fixes.yaml
+- **prepare-tier-batching**: completed 2026-03-31, 1 waves, 2 agents
+  - IMPL doc: docs/IMPL/complete/IMPL-prepare-tier-batching.yaml
+- **run-critic-stderr**: completed 2026-03-31, 1 waves, 2 agents
+  - IMPL doc: docs/IMPL/complete/IMPL-run-critic-stderr.yaml

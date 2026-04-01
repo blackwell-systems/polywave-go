@@ -1,3 +1,4 @@
+completion_date: "2026-03-31"
 title: Batch E37 failures in prepare-tier and add --skip-critic flag
 feature_slug: prepare-tier-batching
 verdict: SUITABLE_WITH_CAVEATS
@@ -447,5 +448,5 @@ pre_mortem:
           likelihood: medium
           impact: low
           mitigation: Agent A is explicitly tasked with updating all 5 existing test call sites. The tests are all in program_tier_prepare_test.go which Agent A owns.
-state: REVIEWED
+state: COMPLETE
 injection_method: hook

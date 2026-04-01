@@ -1,3 +1,4 @@
+completion_date: "2026-03-31"
 title: CLI Backend Stderr Capture and Claude Code Context Detection
 feature_slug: run-critic-stderr
 verdict: SUITABLE
@@ -414,7 +415,7 @@ pre_mortem:
           likelihood: low
           impact: low
           mitigation: Cap nonJSON builder at 4KB. Most error messages are short. Truncate with '... (truncated)' suffix if exceeded.
-state: REVIEWED
+state: COMPLETE
 injection_method: hook
 integration_reports:
     wave1:
