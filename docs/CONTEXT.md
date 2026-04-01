@@ -294,3 +294,5 @@ type BackendConfig struct {
   - IMPL doc: docs/IMPL/complete/IMPL-suitability-bug-fixes.yaml
 - **scaffold-bug-fixes**: completed 2026-03-31, 2 waves, 2 agents
   - IMPL doc: docs/IMPL/complete/IMPL-scaffold-bug-fixes.yaml
+- **worktree-bug-fixes**: completed 2026-03-31, 1 waves, 1 agents
+  - IMPL doc: docs/IMPL/complete/IMPL-worktree-bug-fixes.yaml

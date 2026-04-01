@@ -1,3 +1,4 @@
+completion_date: "2026-03-31"
 title: pkg/worktree Bug Fixes (5 known bugs)
 feature_slug: worktree-bug-fixes
 verdict: SUITABLE_WITH_CAVEATS
@@ -281,5 +282,5 @@ pre_mortem:
           mitigation: |
             Line 197 asserts `data.RemovedPaths[0] != wt1` only when
             len == 1, which is safe. No mitigation needed beyond awareness.
-state: SCOUT_PENDING
+state: COMPLETE
 injection_method: hook
