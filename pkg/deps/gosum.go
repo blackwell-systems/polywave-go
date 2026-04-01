@@ -4,16 +4,18 @@ import (
 	"bufio"
 	"os"
 	"strings"
+
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
 )
 
 // GoSumParser implements LockFileParser for go.sum files
 type GoSumParser struct{}
 
 // Parse reads a go.sum file and returns package metadata
-func (p *GoSumParser) Parse(filePath string) ([]PackageInfo, error) {
+func (p *GoSumParser) Parse(filePath string) result.Result[[]PackageInfo] {
 	file, err := os.Open(filePath)
 	if err != nil {
-		return nil, err
+		return result.NewFailure[[]PackageInfo]([]result.SAWError{result.NewFatal(result.CodeDepLockFileOpen, "failed to open go.sum: "+err.Error())})
 	}
 	defer file.Close()
 
@@ -61,16 +63,16 @@ func (p *GoSumParser) Parse(filePath string) ([]PackageInfo, error) {
 	}
 
 	if err := scanner.Err(); err != nil {
-		return nil, err
+		return result.NewFailure[[]PackageInfo]([]result.SAWError{result.NewError(result.CodeDepLockFileParse, "error reading go.sum: "+err.Error())})
 	}
 
 	// Convert map to slice
-	result := make([]PackageInfo, 0, len(uniquePackages))
+	packages := make([]PackageInfo, 0, len(uniquePackages))
 	for _, pkg := range uniquePackages {
-		result = append(result, pkg)
+		packages = append(packages, pkg)
 	}
 
-	return result, nil
+	return result.NewSuccess(packages)
 }
 
 // Detect checks if this parser can handle the given file

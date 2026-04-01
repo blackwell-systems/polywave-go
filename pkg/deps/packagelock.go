@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"os"
 	"strings"
+
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
 )
 
 // PackageLockParser parses npm package-lock.json files (v7+)
@@ -23,22 +25,22 @@ type packageLockPackage struct {
 }
 
 // Parse reads package-lock.json and returns package metadata
-func (p *PackageLockParser) Parse(filePath string) ([]PackageInfo, error) {
+func (p *PackageLockParser) Parse(filePath string) result.Result[[]PackageInfo] {
 	// Read the file
 	data, err := os.ReadFile(filePath)
 	if err != nil {
-		return nil, fmt.Errorf("failed to read package-lock.json: %w", err)
+		return result.NewFailure[[]PackageInfo]([]result.SAWError{result.NewFatal(result.CodeDepLockFileOpen, "failed to read package-lock.json: "+err.Error())})
 	}
 
 	// Parse JSON
 	var lockFile packageLockFile
 	if err := json.Unmarshal(data, &lockFile); err != nil {
-		return nil, fmt.Errorf("failed to parse package-lock.json: %w", err)
+		return result.NewFailure[[]PackageInfo]([]result.SAWError{result.NewFatal(result.CodeDepLockFileParse, "failed to parse package-lock.json: "+err.Error())})
 	}
 
 	// Check lockfile version (support v7+ which is lockfileVersion >= 2)
 	if lockFile.LockfileVersion < 2 {
-		return nil, fmt.Errorf("unsupported lockfile version %d (requires >= 2 for npm v7+)", lockFile.LockfileVersion)
+		return result.NewFailure[[]PackageInfo]([]result.SAWError{result.NewError(result.CodeDepUnsupportedVersion, fmt.Sprintf("unsupported lockfile version %d (requires >= 2)", lockFile.LockfileVersion))})
 	}
 
 	// Extract packages
@@ -68,7 +70,7 @@ func (p *PackageLockParser) Parse(filePath string) ([]PackageInfo, error) {
 		})
 	}
 
-	return packages, nil
+	return result.NewSuccess(packages)
 }
 
 // Detect checks if this parser can handle the given file
