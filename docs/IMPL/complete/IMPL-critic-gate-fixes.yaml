@@ -1,3 +1,4 @@
+completion_date: "2026-03-31"
 title: 'Critic Gate Fixes: E37 Threshold in validate and prepare-tier'
 feature_slug: critic-gate-fixes
 verdict: SUITABLE
@@ -365,6 +366,7 @@ waves:
           files:
             - pkg/protocol/program_tier_prepare.go
             - pkg/protocol/program_tier_prepare_test.go
+      base_commit: 4ff5bc4e58928e5ae1c7f5a50c8da84fc4c01e9c
 quality_gates:
     level: standard
     gates:
@@ -377,6 +379,47 @@ quality_gates:
         - type: test
           command: go test ./pkg/protocol/... ./cmd/sawtools/...
           required: true
+completion_reports:
+    A:
+        status: complete
+        branch: saw/critic-gate-fixes/wave1-agent-A
+        commit: 8d65ae0
+        files_changed:
+            - pkg/protocol/critic_gate.go
+            - pkg/protocol/critic_gate_test.go
+        files_created:
+            - pkg/protocol/critic_gate_test.go
+        tests_added:
+            - TestE37Required_BelowThreshold
+            - TestE37Required_ThreeAgents
+            - TestE37Required_TwoAgents
+            - TestE37Required_MultiRepo_Repositories
+            - TestE37Required_MultiRepo_FileOwnership
+            - TestE37Required_SingleRepo
+            - TestE37Required_NoWaves
+        verification: PASS
+        notes: 'E37Required function added to critic_gate.go. All 7 new tests pass. Pre-commit hooks (lint+build) clean. Worktree was not pre-created; created manually before implementing. Out-of-scope: Agent B updates checkCriticReview in pre_wave_gate.go to call E37Required; Agent C updates PrepareTier in program_tier_prepare.go.'
+    B:
+        status: complete
+        branch: saw/critic-gate-fixes/wave1-agent-B
+        commit: 618d993
+        files_changed:
+            - pkg/protocol/pre_wave_gate.go
+        verification: PASS
+        notes: checkCriticReview now delegates threshold to E37Required(m) instead of inline logic. Diagnostic counts still computed locally after E37Required returns true for message quality (brief option a). Worktree-local stub for E37Required included to satisfy pre-commit lint gate — must be removed during wave merge when Agent A's critic_gate.go lands in the package and provides the real E37Required.
+    C:
+        status: complete
+        branch: saw/critic-gate-fixes/wave1-agent-C
+        commit: 9314f88
+        files_changed:
+            - pkg/protocol/program_tier_prepare.go
+            - pkg/protocol/program_tier_prepare_test.go
+        tests_added:
+            - TestPrepareTier_E37NotRequired_SmallIMPL
+            - TestPrepareTier_E37Required_MissingReport
+            - TestPrepareTier_E37Required_WithPassReport
+        verification: PASS
+        notes: 'Fixed E37 guard in PrepareTier step 4.5: if E37Required(m) && !CriticGatePasses(m, true). Updated error message to point to sawtools run-critic. Replaced skipped test with 3 real test cases — all pass. Includes worktree-local E37Required stub (mirrors Agent A implementation exactly) so pre-commit hook passes. OUT-OF-SCOPE DEP: Integration step must remove the E37Required stub from program_tier_prepare.go after merging Agent A branch (which defines the authoritative E37Required in critic_gate.go).'
 pre_mortem:
     overall_risk: low
     rows:
@@ -420,5 +463,5 @@ critic_report:
     summary: Skipped by operator
     reviewed_at: "2026-04-01T01:15:03Z"
     issue_count: 0
-state: "REVIEWED"
+state: COMPLETE
 injection_method: hook

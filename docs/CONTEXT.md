@@ -269,3 +269,7 @@ type BackendConfig struct {
   - IMPL doc: docs/IMPL/complete/IMPL-miscellaneous-cleanup.yaml
 - **final-cleanup**: completed 2026-03-31, 1 waves, 2 agents
   - IMPL doc: docs/IMPL/complete/IMPL-final-cleanup.yaml
+- **critic-gate-fixes**: completed 2026-03-31, 1 waves, 3 agents
+  - IMPL doc: docs/IMPL/complete/IMPL-critic-gate-fixes.yaml
+- **program-status-sync**: completed 2026-03-31, 1 waves, 1 agents
+  - IMPL doc: docs/IMPL/complete/IMPL-program-status-sync.yaml

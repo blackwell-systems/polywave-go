@@ -1,0 +1,417 @@
+title: Batch E37 failures in prepare-tier and add --skip-critic flag
+feature_slug: prepare-tier-batching
+verdict: SUITABLE_WITH_CAVEATS
+suitability_assessment: |
+    Suitability: SUITABLE WITH CAVEATS
+
+    1. File decomposition: 4 source files + 2 test files across pkg/protocol and cmd/sawtools.
+       Agent A owns protocol-layer changes (PrepareTier collect-all + helper).
+       Agent B owns CLI-layer changes (--skip-critic flags for both commands).
+       Disjoint ownership is clean.
+
+    2. Investigation-first: No. The problem is well-understood: PrepareTier returns early
+       on first E37 failure (line 128), and there is no --skip-critic flag. Solution is
+       straightforward.
+
+    3. Interface discoverability: Yes. The cross-agent interface is a new PrepareTierOpts
+       struct and a SkipCriticForIMPL helper function. Both can be fully specified.
+
+    4. Pre-implementation status: All three fixes are TODO. No partial implementation exists.
+
+    5. Parallelization value: 2 agents, single wave. Build/test cycle is ~30s (Go).
+       The coordination value justifies SAW even though 2 agents is marginal for
+       speed gains. The IMPL doc serves as audit trail and interface spec.
+
+    Caveat: PrepareTier signature changes from positional args to opts struct.
+    This is a breaking change for callers. The only caller is prepare_tier_cmd.go
+    which Agent B owns, so the change is contained within this IMPL.
+
+    Estimated times:
+    - Scout phase: ~8 min
+    - Agent execution: ~5 min (2 agents x 5 min avg, single wave)
+    - Merge and verification: ~3 min
+    Total SAW time: ~16 min
+
+    Sequential baseline: ~12 min (2 tasks x 6 min avg)
+    Time savings: marginal (~4 min overhead vs parallel gain)
+
+    Recommendation: Coordination value justifies SAW. Interface spec prevents
+    signature mismatch between protocol and CLI layers.
+test_command: go test ./pkg/protocol/... ./cmd/sawtools/...
+lint_command: go vet ./...
+file_ownership:
+    - file: pkg/protocol/program_tier_prepare.go
+      agent: A
+      wave: 1
+      action: modify
+    - file: pkg/protocol/critic_gate.go
+      agent: A
+      wave: 1
+      action: modify
+    - file: pkg/protocol/program_tier_prepare_test.go
+      agent: A
+      wave: 1
+      action: modify
+    - file: cmd/sawtools/prepare_tier_cmd.go
+      agent: B
+      wave: 1
+      action: modify
+    - file: cmd/sawtools/prepare_wave.go
+      agent: B
+      wave: 1
+      action: modify
+    - file: cmd/sawtools/prepare_tier_cmd_test.go
+      agent: B
+      wave: 1
+      action: new
+interface_contracts:
+    - name: PrepareTierOpts
+      description: Options struct for PrepareTier, replacing positional arguments and adding SkipCritic flag
+      definition: |
+        type PrepareTierOpts struct {
+            ProgramManifestPath string
+            TierNumber          int
+            RepoDir             string
+            SkipCritic          bool // When true, auto-write synthetic PASS for IMPLs requiring E37 with no critic report
+        }
+      location: pkg/protocol/program_tier_prepare.go
+    - name: PrepareTier (updated signature)
+      description: PrepareTier now accepts PrepareTierOpts instead of positional args, collects all failures instead of returning early
+      definition: |
+        func PrepareTier(opts PrepareTierOpts) (*PrepareTierResult, error)
+      location: pkg/protocol/program_tier_prepare.go
+    - name: SkipCriticForIMPL
+      description: Writes a synthetic PASS critic report for a single IMPL if E37 is required and no critic report exists. Returns true if a skip was written, false if no skip was needed.
+      definition: |
+        func SkipCriticForIMPL(ctx context.Context, implPath string, m *IMPLManifest) (bool, error)
+      location: pkg/protocol/critic_gate.go
+waves:
+    - number: 1
+      agents:
+        - id: A
+          task: |
+            ## Role
+            Protocol-layer changes: batch E37 failures and add SkipCriticForIMPL helper.
+
+            ## What to implement
+
+            ### 1. Add PrepareTierOpts struct and update PrepareTier signature
+
+            In `pkg/protocol/program_tier_prepare.go`:
+
+            Add a new opts struct before PrepareTier:
+            ```go
+            type PrepareTierOpts struct {
+                ProgramManifestPath string
+                TierNumber          int
+                RepoDir             string
+                SkipCritic          bool
+            }
+            ```
+
+            Change `func PrepareTier(programManifestPath string, tierNumber int, repoDir string) (*PrepareTierResult, error)`
+            to `func PrepareTier(opts PrepareTierOpts) (*PrepareTierResult, error)`.
+
+            Update the function body to read from `opts.ProgramManifestPath`, `opts.TierNumber`, `opts.RepoDir`.
+
+            ### 2. Change early-return to collect-all for validation failures
+
+            Current behavior (lines 113-116 and 120-129): the validation loop returns immediately on the first
+            failure (both validation errors and E37 failures). Change this to:
+
+            - Add a `hasFailure := false` variable before the loop.
+            - When `!vr.Valid` (line 113): set `hasFailure = true` but do NOT return. Continue the loop.
+            - When E37 check fails (line 120-129): append the E37 validation result, set `hasFailure = true`,
+              but do NOT return. Continue the loop.
+            - After the loop completes, if `hasFailure` is true, set `result.Success = false` and return
+              `result, nil` (skip the worktree creation step).
+
+            IMPORTANT: The E37 check on line 120 currently creates a NEW `vr` variable that shadows the
+            validation `vr` from line 103. The existing code appends both the validation result (line 111)
+            and the E37 result (line 126) for the same slug. Keep this pattern: each IMPL gets a validation
+            entry, and if E37 also fails, it gets an additional E37 entry. This matches the current
+            behavior for the failing IMPL and extends it to all IMPLs.
+
+            ### 3. Add --skip-critic support in PrepareTier
+
+            When `opts.SkipCritic` is true, instead of recording an E37 failure, call
+            `SkipCriticForIMPL(context.TODO(), implPath, m)`. If the skip succeeds, do NOT
+            add an E37 failure entry. If the skip fails (error from SkipCriticForIMPL), add
+            an E37 failure entry with the error message.
+
+            The logic flow for each IMPL in the loop should be:
+            ```
+            if E37Required(m) && !CriticGatePasses(m, true) {
+                if opts.SkipCritic {
+                    skipped, err := SkipCriticForIMPL(context.TODO(), implPath, m)
+                    if err != nil {
+                        // record failure
+                    }
+                    // if skipped successfully, continue without failure
+                } else {
+                    // record E37 failure as before, but don't return early
+                }
+            }
+            ```
+
+            ### 4. Add SkipCriticForIMPL helper
+
+            In `pkg/protocol/critic_gate.go`, add:
+
+            ```go
+            func SkipCriticForIMPL(ctx context.Context, implPath string, m *IMPLManifest) (bool, error) {
+                if !E37Required(m) {
+                    return false, nil // not required, no skip needed
+                }
+                if CriticGatePasses(m, true) {
+                    return false, nil // already passes, no skip needed
+                }
+                skipResult := CriticData{
+                    Verdict:      CriticVerdictPass,
+                    AgentReviews: map[string]AgentCriticReview{},
+                    Summary:      "Skipped by operator (--skip-critic)",
+                    ReviewedAt:   time.Now().UTC().Format(time.RFC3339),
+                    IssueCount:   0,
+                }
+                if err := WriteCriticReview(ctx, implPath, skipResult); err != nil {
+                    return false, fmt.Errorf("failed to write synthetic PASS for %s: %w", implPath, err)
+                }
+                return true, nil
+            }
+            ```
+
+            This requires adding `"time"` to the import block in critic_gate.go. The file
+            currently has no imports — add an import block with `"context"`, `"fmt"`, and `"time"`.
+
+            ### 5. Update tests
+
+            In `pkg/protocol/program_tier_prepare_test.go`:
+
+            **Update existing test calls**: All calls to `PrepareTier(path, num, dir)` must change to
+            `PrepareTier(PrepareTierOpts{ProgramManifestPath: path, TierNumber: num, RepoDir: dir})`.
+            There are 5 calls across 4 test functions:
+            - TestPrepareTier_ManifestNotFound (line 15)
+            - TestPrepareTier_TierNotFound (line 48)
+            - TestPrepareTier_E37NotRequired_SmallIMPL (line 250)
+            - TestPrepareTier_E37Required_MissingReport (line 278)
+            - TestPrepareTier_E37Required_WithPassReport (line 322)
+
+            **Add new test: TestPrepareTier_CollectsAllE37Failures**
+
+            Create a test with 3 IMPLs in a tier, all with 3+ agents and no critic report.
+            Use `writeTempIMPL` and `writeTempProgram` helpers already in the file.
+            Verify that `result.Validations` contains E37 failures for ALL 3 IMPLs, not just the first.
+
+            **Add new test: TestPrepareTier_SkipCritic**
+
+            Create a test with 2 IMPLs requiring E37, pass `SkipCritic: true`.
+            Verify that the validation passes for both (no E37 failures in result.Validations).
+            The test will still fail at step 5 (worktree creation in temp dir) — that is acceptable.
+
+            **Add new test: TestSkipCriticForIMPL_WritesPass**
+
+            In `pkg/protocol/program_tier_prepare_test.go` (or a new section at the bottom):
+            Create a temp IMPL with 3 agents, no critic report. Call SkipCriticForIMPL.
+            Verify returns (true, nil). Reload the manifest and verify CriticReport.Verdict == "PASS"
+            and Summary contains "skip-critic".
+
+            **Add new test: TestSkipCriticForIMPL_NotRequired**
+
+            Create a temp IMPL with 2 agents (below threshold). Call SkipCriticForIMPL.
+            Verify returns (false, nil) — no skip needed.
+
+            ## Interfaces
+
+            Uses existing: E37Required, CriticGatePasses, WriteCriticReview, CriticData,
+            CriticVerdictPass, AgentCriticReview (all in pkg/protocol).
+
+            Defines new: PrepareTierOpts (program_tier_prepare.go), SkipCriticForIMPL (critic_gate.go).
+
+            ## Verification gate
+
+            ```bash
+            cd /Users/dayna.blackwell/workspace/code/scout-and-wave-go && go build ./... && go vet ./... && go test ./pkg/protocol/... -run "TestPrepareTier|TestSkipCritic" -v
+            ```
+
+            ## Constraints
+
+            - Do NOT modify any files in cmd/sawtools/. Agent B owns those.
+            - The SkipCriticForIMPL function must use WriteCriticReview (not WriteCriticReviewResult)
+              because it needs a simple error return, matching the pattern in run_critic_cmd.go lines 71-83.
+            - The synthetic PASS must match the format in run_critic_cmd.go (Verdict: "PASS",
+              Summary: "Skipped by operator", empty AgentReviews map). Use "Skipped by operator (--skip-critic)"
+              as the summary to distinguish from manual `run-critic --skip`.
+          files:
+            - pkg/protocol/program_tier_prepare.go
+            - pkg/protocol/critic_gate.go
+            - pkg/protocol/program_tier_prepare_test.go
+        - id: B
+          task: |
+            ## Role
+            CLI-layer changes: add --skip-critic flag to prepare-tier and prepare-wave commands.
+
+            ## What to implement
+
+            ### 1. Add --skip-critic flag to prepare-tier command
+
+            In `cmd/sawtools/prepare_tier_cmd.go`:
+
+            Add a `skipCritic bool` variable alongside the existing `tierNum` variable (line 13).
+
+            Update the `protocol.PrepareTier` call (line 38) to use the new opts struct:
+            ```go
+            result, err := protocol.PrepareTier(protocol.PrepareTierOpts{
+                ProgramManifestPath: manifestPath,
+                TierNumber:          tierNum,
+                RepoDir:             repoDir,
+                SkipCritic:          skipCritic,
+            })
+            ```
+
+            Add the flag registration after the existing `--tier` flag (line 57):
+            ```go
+            cmd.Flags().BoolVar(&skipCritic, "skip-critic", false, "Auto-skip E37 critic gate for IMPLs missing critic reports")
+            ```
+
+            ### 2. Add --skip-critic flag to prepare-wave command
+
+            In `cmd/sawtools/prepare_wave.go`:
+
+            Add a `skipCritic bool` variable alongside the existing flag vars (after line 19).
+
+            Modify the E37 check block (lines 54-59). Currently it calls `protocol.CriticGatePasses`
+            and returns an error if it fails. Change it to:
+
+            ```go
+            // E37: Critic gate check
+            if !protocol.CriticGatePasses(manifest, true) {
+                if skipCritic {
+                    skipped, err := protocol.SkipCriticForIMPL(context.TODO(), manifestPath, manifest)
+                    if err != nil {
+                        return fmt.Errorf("prepare-wave: E37 critic gate: --skip-critic failed: %w", err)
+                    }
+                    if skipped {
+                        fmt.Fprintln(os.Stderr, "prepare-wave: E37 critic gate auto-skipped (--skip-critic)")
+                    }
+                } else {
+                    if manifest.CriticReport == nil {
+                        return fmt.Errorf("prepare-wave: E37 critic gate: no critic report found — run 'sawtools run-critic' first or use --skip-critic")
+                    }
+                    return fmt.Errorf("prepare-wave: E37 critic gate: ISSUES verdict contains blocking errors — review critic report and fix errors before proceeding")
+                }
+            }
+            ```
+
+            Note: the existing error messages should be updated to mention `--skip-critic` as an alternative.
+
+            Add the flag registration after the existing flags (after line 122):
+            ```go
+            cmd.Flags().BoolVar(&skipCritic, "skip-critic", false, "Auto-skip E37 critic gate if no critic report exists")
+            ```
+
+            ### 3. Add CLI tests
+
+            Create `cmd/sawtools/prepare_tier_cmd_test.go`:
+
+            ```go
+            package main
+
+            import (
+                "strings"
+                "testing"
+            )
+
+            func TestPrepareTierCmd_HasSkipCriticFlag(t *testing.T) {
+                cmd := newPrepareTierCmd()
+                flag := cmd.Flags().Lookup("skip-critic")
+                if flag == nil {
+                    t.Fatal("expected --skip-critic flag to be registered")
+                }
+                if flag.DefValue != "false" {
+                    t.Errorf("expected --skip-critic default to be false, got %q", flag.DefValue)
+                }
+            }
+
+            func TestPrepareTierCmd_RequiresTierFlag(t *testing.T) {
+                cmd := newPrepareTierCmd()
+                cmd.SetArgs([]string{"/tmp/nonexistent.yaml"})
+                err := cmd.Execute()
+                if err == nil {
+                    t.Fatal("expected error when --tier is not provided")
+                }
+                if !strings.Contains(err.Error(), "tier") {
+                    t.Errorf("expected error about tier flag, got: %s", err.Error())
+                }
+            }
+            ```
+
+            Also add a test in the same file or in `prepare_wave_test.go`:
+
+            ```go
+            func TestPrepareWaveCmd_HasSkipCriticFlag(t *testing.T) {
+                cmd := newPrepareWaveCmd()
+                flag := cmd.Flags().Lookup("skip-critic")
+                if flag == nil {
+                    t.Fatal("expected --skip-critic flag to be registered on prepare-wave")
+                }
+            }
+            ```
+
+            If adding to prepare_wave_test.go would violate file ownership (Agent B does not
+            own that file), put this test in `prepare_tier_cmd_test.go` instead — both commands
+            are constructed in the same package and accessible.
+
+            ## Interfaces
+
+            Consumes from Agent A:
+            - `protocol.PrepareTierOpts` struct — used to call `protocol.PrepareTier(opts)`
+            - `protocol.SkipCriticForIMPL(ctx, path, manifest)` — called from prepare-wave when --skip-critic is set
+
+            ## Verification gate
+
+            ```bash
+            cd /Users/dayna.blackwell/workspace/code/scout-and-wave-go && go build ./cmd/sawtools/... && go vet ./cmd/sawtools/... && go test ./cmd/sawtools/... -run "TestPrepareTierCmd|TestPrepareWaveCmd_HasSkipCritic" -v
+            ```
+
+            ## Constraints
+
+            - Do NOT modify any files in pkg/protocol/. Agent A owns those.
+            - The PrepareTierOpts struct is defined by Agent A. Use the exact field names:
+              ProgramManifestPath, TierNumber, RepoDir, SkipCritic.
+            - The SkipCriticForIMPL function signature is: func(ctx context.Context, implPath string, m *IMPLManifest) (bool, error).
+              Import context and call with context.TODO().
+            - The `repoDir` variable is a package-level var from root.go, already available.
+            - prepare_wave.go already imports "context" and "github.com/blackwell-systems/scout-and-wave-go/pkg/protocol".
+          files:
+            - cmd/sawtools/prepare_tier_cmd.go
+            - cmd/sawtools/prepare_wave.go
+            - cmd/sawtools/prepare_tier_cmd_test.go
+quality_gates:
+    level: standard
+    gates:
+        - type: build
+          command: go build ./...
+          required: true
+        - type: lint
+          command: go vet ./...
+          required: true
+        - type: test
+          command: go test ./pkg/protocol/... ./cmd/sawtools/...
+          required: true
+pre_mortem:
+    overall_risk: low
+    rows:
+        - scenario: Agent B compiles against PrepareTierOpts before Agent A defines it
+          likelihood: low
+          impact: medium
+          mitigation: Both agents are in wave 1 with isolated worktrees. Agent B will define the struct usage based on the interface contract. Merge will reconcile.
+        - scenario: Synthetic PASS format diverges from run-critic --skip format
+          likelihood: low
+          impact: low
+          mitigation: Interface contract specifies exact CriticData fields matching run_critic_cmd.go lines 71-77. SkipCriticForIMPL helper centralizes the format.
+        - scenario: Existing tests break due to PrepareTier signature change
+          likelihood: medium
+          impact: low
+          mitigation: Agent A is explicitly tasked with updating all 5 existing test call sites. The tests are all in program_tier_prepare_test.go which Agent A owns.
+state: SCOUT_PENDING
+injection_method: hook

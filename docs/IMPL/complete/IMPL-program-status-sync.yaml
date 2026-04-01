@@ -1,3 +1,4 @@
+completion_date: "2026-03-31"
 title: PROGRAM manifest IMPL status sync on finalize-wave
 feature_slug: program-status-sync
 verdict: SUITABLE
@@ -203,6 +204,7 @@ waves:
           files:
             - pkg/protocol/program_tier_gate.go
             - pkg/protocol/program_tier_gate_test.go
+          context_source: prepared-brief
 quality_gates:
     level: standard
     gates:
@@ -215,6 +217,19 @@ quality_gates:
         - type: test
           command: go test ./pkg/protocol/... -run TestRunTierGate
           required: true
+completion_reports:
+    A:
+        status: complete
+        branch: main
+        commit: a7ba677
+        files_changed:
+            - pkg/protocol/program_tier_gate.go
+            - pkg/protocol/program_tier_gate_test.go
+        tests_added:
+            - TestRunTierGate_ReadsFromDisk_Complete
+            - TestRunTierGate_FallsBackToManifest_WhenDocMissing
+        verification: PASS
+        notes: 'Bug fixed: RunTierGate now calls enrichIMPLStatusesFromDisk to overlay real-time IMPL doc state before checking completion. Fallback to manifest values when repoPath empty or doc missing. All 11 TestRunTierGate tests pass.'
 pre_mortem:
     overall_risk: low
     rows:
@@ -252,5 +267,11 @@ pre_mortem:
             IMPL docs there, so enrichIMPLStatusesFromDisk returns fallback values
             (the manifest Status). The existing test behavior is unchanged. The
             agent must verify this by running the existing tests unchanged.
-state: SCOUT_PENDING
+critic_report:
+    verdict: PASS
+    agent_reviews: {}
+    summary: Skipped by operator
+    reviewed_at: "2026-04-01T01:17:18Z"
+    issue_count: 0
+state: COMPLETE
 injection_method: hook

@@ -1,0 +1,384 @@
+title: CLI Backend Stderr Capture and Claude Code Context Detection
+feature_slug: run-critic-stderr
+verdict: SUITABLE
+suitability_assessment: |
+    Suitability gate results:
+
+    1. File decomposition: 6 distinct files will change across 2 agents with
+       disjoint ownership. Agent A owns the CLI backend (client.go + test). Agent B
+       owns the run-critic command and engine critic/scout_run files.
+
+    2. Investigation-first items: None. The root cause is already identified: pty.Start()
+       merges stderr into the PTY, so error messages from early crashes are discarded by
+       the JSON parsing loop. The Claude Code nesting issue is understood (CLAUDECODE env
+       var stripping is insufficient).
+
+    3. Interface discoverability: Yes. The changes are internal to the CLI backend package
+       and the run-critic command. No cross-agent interface contracts are needed beyond a
+       simple helper function signature.
+
+    4. Pre-implementation status: All three fixes are TODO. No prior implementation exists.
+
+    5. Parallelization value: 2 agents in wave 1 working on independent files. The Go
+       build+test cycle is ~30s. Each agent touches 2-4 files. Clear speedup over
+       sequential since both agents can run build+test independently.
+
+    Estimated times:
+    - Scout phase: ~5 min
+    - Agent execution: ~8 min (2 agents x 8 min avg, single wave)
+    - Merge and verification: ~3 min
+    Total SAW time: ~16 min
+
+    Sequential baseline: ~20 min (2 agents x 10 min avg sequential)
+    Time savings: ~4 min (20% faster)
+
+    Recommendation: Clear speedup. The agents are fully independent (single wave)
+    and each involves non-trivial logic with tests.
+test_command: go test ./...
+lint_command: go vet ./...
+file_ownership:
+    - file: pkg/agent/backend/cli/client.go
+      agent: A
+      wave: 1
+      action: modify
+    - file: pkg/agent/backend/cli/client_test.go
+      agent: A
+      wave: 1
+      action: new
+    - file: cmd/sawtools/run_critic_cmd.go
+      agent: B
+      wave: 1
+      action: modify
+    - file: cmd/sawtools/run_critic_cmd_test.go
+      agent: B
+      wave: 1
+      action: new
+    - file: pkg/engine/critic.go
+      agent: B
+      wave: 1
+      action: modify
+    - file: pkg/engine/scout_run.go
+      agent: B
+      wave: 1
+      action: modify
+interface_contracts:
+    - name: IsClaudeCodeSession
+      description: |
+        Detects whether the current process is running inside a Claude Code session
+        by checking for the CLAUDECODE environment variable (before it is stripped).
+        Returns true if nested spawning would fail.
+      definition: |
+        func IsClaudeCodeSession() bool
+      location: pkg/agent/backend/cli/client.go
+    - name: BuildCriticPrompt
+      description: |
+        Extracts the prompt-building logic from RunCritic into a reusable function.
+        Loads the IMPL doc, collects repo roots, loads critic-agent.md with reference
+        injection, and returns the assembled prompt string. Used by --backend agent-tool
+        to emit the prompt without spawning a subprocess.
+      definition: |
+        func BuildCriticPrompt(ctx context.Context, opts BuildCriticPromptOpts) (string, error)
+
+        type BuildCriticPromptOpts struct {
+            IMPLPath    string // absolute path to IMPL doc (required)
+            SAWRepoPath string // optional; falls back to $SAW_REPO then ~/code/scout-and-wave
+        }
+      location: pkg/engine/critic.go
+waves:
+    - number: 1
+      agents:
+        - id: A
+          task: |
+            ## Role
+            Fix the CLI backend to capture non-JSON output and detect Claude Code nesting.
+
+            ## What to implement
+
+            ### Fix 1: Capture non-JSON PTY output for error messages
+
+            In `pkg/agent/backend/cli/client.go`, both `RunStreaming` and `RunStreamingWithTools`
+            use `pty.Start()` which merges stdout and stderr into the PTY. When the subprocess
+            crashes early (before producing JSON), error text is discarded by the JSON parsing loop
+            because it fails `json.Unmarshal` and is treated as an incomplete JSON fragment.
+
+            Add a `nonJSON` `strings.Builder` to both methods. In the scanning loop, when a line:
+            1. Fails `json.Unmarshal` as a standalone line, AND
+            2. The `pending` buffer is empty (i.e., we are NOT accumulating a multi-line JSON fragment)
+
+            ...capture that line in `nonJSON`. This captures error messages, warnings, and any
+            other non-JSON output the subprocess emits.
+
+            Then, when `cmd.Wait()` returns an `*exec.ExitError`, include the non-JSON content:
+            ```go
+            if exitErr, ok := err.(*exec.ExitError); ok {
+                msg := fmt.Sprintf("cli backend: claude exited with code %d", exitErr.ExitCode())
+                if extra := strings.TrimSpace(nonJSON.String()); extra != "" {
+                    msg += ": " + extra
+                }
+                return "", fmt.Errorf("%s", msg)
+            }
+            ```
+
+            IMPORTANT: The `pending` buffer accumulates fragments of a single JSON object that
+            was split across PTY line boundaries. Only capture to `nonJSON` when `pending` is
+            empty AND the line itself is not valid JSON. When `pending` is non-empty, the line
+            is a continuation of an in-progress JSON object and should continue to be appended
+            to `pending` as it is today.
+
+            Apply this pattern to BOTH `RunStreaming` (line ~116) and `RunStreamingWithTools`
+            (line ~247). The logic is identical in both methods.
+
+            Also cap `nonJSON` at 4096 bytes to prevent unbounded accumulation. When the cap
+            is exceeded, stop appending new lines. When including in the error message, if it
+            was truncated add "... (truncated)" suffix.
+
+            ### Fix 2: Detect Claude Code session and fail fast
+
+            Add an exported function `IsClaudeCodeSession() bool` that checks `os.Getenv("CLAUDECODE")`.
+            The CLAUDECODE env var is set by the Claude Code runtime. Check it BEFORE the env
+            filtering loop strips it.
+
+            At the top of both `RunStreaming` and `RunStreamingWithTools`, before any command
+            construction, add:
+            ```go
+            if IsClaudeCodeSession() {
+                return "", fmt.Errorf("cli backend: cannot spawn claude subprocess from within a Claude Code session — the nested process will fail. Run from a standalone terminal, or use --skip to bypass agent execution")
+            }
+            ```
+
+            ### Tests
+
+            Create `pkg/agent/backend/cli/client_test.go` with:
+
+            1. `TestIsClaudeCodeSession_Detected` — set CLAUDECODE=1 via t.Setenv, call
+               IsClaudeCodeSession(), assert true.
+            2. `TestIsClaudeCodeSession_NotDetected` — ensure CLAUDECODE is not set, call
+               IsClaudeCodeSession(), assert false.
+            3. `TestRunStreaming_ClaudeCodeSessionBlocked` — set CLAUDECODE=1 via t.Setenv,
+               create a Client, call RunStreaming, assert error contains
+               "cannot spawn claude subprocess from within a Claude Code session".
+            4. `TestRunStreamingWithTools_ClaudeCodeSessionBlocked` — same but for
+               RunStreamingWithTools.
+
+            Note: Testing the non-JSON capture requires a real subprocess, which is not
+            practical in unit tests. The Claude Code detection tests are sufficient for
+            unit coverage. The non-JSON capture will be verified manually.
+
+            ## Interfaces
+
+            - `func IsClaudeCodeSession() bool` — exported, in client.go
+            - Non-JSON capture is internal to the scanning loop, no new exported API
+
+            ## Verification gate
+            ```bash
+            cd /Users/dayna.blackwell/workspace/code/scout-and-wave-go && go build ./pkg/agent/backend/cli/... && go test ./pkg/agent/backend/cli/... -v
+            ```
+
+            ## Constraints
+            - Only modify files in pkg/agent/backend/cli/
+            - Do not change the Backend interface
+            - Do not change the pty.Start() approach (it is needed for Node.js line buffering)
+            - Keep the env filtering loop that strips CLAUDECODE — the detection must happen BEFORE it
+          files:
+            - pkg/agent/backend/cli/client.go
+            - pkg/agent/backend/cli/client_test.go
+        - id: B
+          task: |
+            ## Role
+            Add --backend flag to run-critic and extract prompt-building into a reusable function.
+
+            ## What to implement
+
+            ### Fix 3: Add --backend flag to run-critic
+
+            In `cmd/sawtools/run_critic_cmd.go`, add a `--backend` string flag to `newRunCriticCmd()`.
+            Valid values: `"cli"` (default), `"agent-tool"`.
+
+            When `--backend agent-tool` is specified:
+            1. Load the IMPL doc and build the critic prompt (same logic as engine.RunCritic
+               does internally — load manifest, collect repo roots, load critic-agent.md,
+               assemble the prompt)
+            2. Print the assembled prompt to stdout
+            3. Exit 0 without spawning a subprocess
+
+            This allows the Orchestrator (or a human) to capture the prompt and launch it
+            via the Claude Code Agent tool instead of the CLI backend.
+
+            Implementation approach:
+            - Add the flag: `cmd.Flags().StringVar(&backendMode, "backend", "cli", "Backend mode: cli (default) or agent-tool")`
+            - Early in RunE, after the --skip/--no-review check, add:
+              ```go
+              if backendMode == "agent-tool" {
+                  prompt, err := engine.BuildCriticPrompt(cmd.Context(), engine.BuildCriticPromptOpts{
+                      IMPLPath:    implPath,
+                      SAWRepoPath: "", // uses default resolution
+                  })
+                  if err != nil {
+                      return fmt.Errorf("run-critic: failed to build critic prompt: %w", err)
+                  }
+                  fmt.Print(prompt)
+                  return nil
+              }
+              ```
+
+            ### Changes to pkg/engine/critic.go
+
+            Extract prompt-building from RunCritic into a new exported function BuildCriticPrompt.
+            The existing RunCritic function (lines 24-125) builds a prompt in lines 37-78 then
+            launches the agent. Extract lines 28-78 into BuildCriticPrompt:
+
+            ```go
+            func BuildCriticPrompt(ctx context.Context, opts BuildCriticPromptOpts) (string, error) {
+                // Validate IMPL path is absolute and exists (same as RunCritic lines 29-34)
+                if !filepath.IsAbs(opts.IMPLPath) {
+                    return "", fmt.Errorf("run-critic: impl-path must be absolute (got %q)", opts.IMPLPath)
+                }
+                if _, err := os.Stat(opts.IMPLPath); err != nil {
+                    return "", fmt.Errorf("run-critic: impl path does not exist: %s", opts.IMPLPath)
+                }
+
+                // Load manifest, collect repo roots (lines 37-49)
+                manifest, err := protocol.Load(ctx, opts.IMPLPath)
+                if err != nil {
+                    return "", fmt.Errorf("run-critic: failed to load IMPL doc: %w", err)
+                }
+                repoPaths := collectRepoPaths(manifest)
+                if len(repoPaths) == 0 {
+                    inferredRoot := inferRepoRoot(opts.IMPLPath)
+                    if inferredRoot != "" {
+                        repoPaths = []string{inferredRoot}
+                    }
+                }
+
+                // Resolve SAW repo path (lines 52-62)
+                sawRepo := opts.SAWRepoPath
+                if sawRepo == "" {
+                    sawRepo = os.Getenv("SAW_REPO")
+                }
+                if sawRepo == "" {
+                    home, err := os.UserHomeDir()
+                    if err != nil {
+                        return "", fmt.Errorf("run-critic: cannot determine home directory: %w", err)
+                    }
+                    sawRepo = filepath.Join(home, "code", "scout-and-wave")
+                }
+
+                // Load critic-agent.md with ref injection (lines 65-70)
+                criticMdPath := filepath.Join(sawRepo, "implementations", "claude-code", "prompts", "agents", "critic-agent.md")
+                criticMdContent, err := LoadTypePromptWithRefs(criticMdPath)
+                if err != nil {
+                    criticMdContent = "You are a Critic Agent. ..."  // same fallback as current
+                }
+
+                // Assemble prompt (lines 73-78)
+                repoRootsSection := ""
+                for _, root := range repoPaths {
+                    repoRootsSection += fmt.Sprintf("- %s\n", root)
+                }
+                return fmt.Sprintf("%s\n\n## IMPL Doc Path\n%s\n\n## Repository Root(s)\n%s",
+                    criticMdContent, opts.IMPLPath, repoRootsSection), nil
+            }
+            ```
+
+            Then update RunCritic to call BuildCriticPrompt:
+            ```go
+            func RunCritic(ctx context.Context, opts RunCriticOpts, onChunk func(string)) (RunCriticResult, error) {
+                log := loggerFrom(opts.Logger)
+                _ = log
+
+                prompt, err := BuildCriticPrompt(ctx, BuildCriticPromptOpts{
+                    IMPLPath:    opts.IMPLPath,
+                    SAWRepoPath: opts.SAWRepoPath,
+                })
+                if err != nil {
+                    return RunCriticResult{}, err
+                }
+
+                // Apply context timeout (same as current lines 81-86)
+                // ... rest of RunCritic unchanged from line 81 onward ...
+            }
+            ```
+
+            IMPORTANT: The `collectRepoPaths` and `inferRepoRoot` functions already exist in
+            critic.go (lines 129-155). They are also duplicated in run_critic_cmd.go (lines
+            259-285). Do NOT remove the duplicates — that is a separate cleanup task. Just
+            use the ones in critic.go from BuildCriticPrompt.
+
+            ### Changes to pkg/engine/scout_run.go
+
+            Add the `BuildCriticPromptOpts` struct after line 35 (after RunCriticResult):
+            ```go
+            // BuildCriticPromptOpts configures prompt-building for the critic agent
+            // without launching it. Used by --backend agent-tool.
+            type BuildCriticPromptOpts struct {
+                IMPLPath    string // absolute path to IMPL doc (required)
+                SAWRepoPath string // optional; falls back to $SAW_REPO then ~/code/scout-and-wave
+            }
+            ```
+
+            ### Tests
+
+            Create `cmd/sawtools/run_critic_cmd_test.go` with:
+
+            1. `TestRunCriticCmd_BackendFlagRegistered` — instantiate the command via
+               newRunCriticCmd(), verify the --backend flag exists and defaults to "cli".
+            2. `TestRunCriticCmd_SkipFlagStillWorks` — verify --skip flag is still registered.
+
+            Note: Testing --backend agent-tool end-to-end requires a real IMPL doc and
+            critic-agent.md, so keep tests focused on flag registration.
+
+            ## Interfaces
+
+            - `func BuildCriticPrompt(ctx context.Context, opts BuildCriticPromptOpts) (string, error)` in pkg/engine/critic.go
+            - `type BuildCriticPromptOpts struct` in pkg/engine/scout_run.go
+            - `--backend` flag on run-critic command
+
+            ## Verification gate
+            ```bash
+            cd /Users/dayna.blackwell/workspace/code/scout-and-wave-go && go build ./cmd/sawtools/... && go test ./cmd/sawtools/... ./pkg/engine/... -v -run "TestRunCritic|TestBuildCriticPrompt"
+            ```
+
+            ## Constraints
+            - Only modify files listed in your ownership: cmd/sawtools/run_critic_cmd.go, cmd/sawtools/run_critic_cmd_test.go, pkg/engine/critic.go, pkg/engine/scout_run.go
+            - Do not change the Backend interface or the CLI client
+            - BuildCriticPrompt must be usable independently of RunCritic
+            - The --backend flag must not break existing --skip/--no-review behavior
+            - Existing tests in pkg/engine/critic_test.go must continue to pass
+          files:
+            - cmd/sawtools/run_critic_cmd.go
+            - cmd/sawtools/run_critic_cmd_test.go
+            - pkg/engine/critic.go
+            - pkg/engine/scout_run.go
+quality_gates:
+    level: standard
+    gates:
+        - type: build
+          command: go build ./...
+          required: true
+        - type: lint
+          command: go vet ./...
+          required: true
+        - type: test
+          command: go test ./pkg/agent/backend/cli/... ./cmd/sawtools/... ./pkg/engine/...
+          required: true
+pre_mortem:
+    overall_risk: low
+    rows:
+        - scenario: pty.Start() merges stderr into PTY — non-JSON lines may include PTY control sequences
+          likelihood: medium
+          impact: low
+          mitigation: The existing ansiRE regex already strips ANSI escape sequences. Non-JSON capture happens after ANSI stripping, so control sequences are already removed.
+        - scenario: Claude Code sets additional env vars beyond CLAUDECODE that cause nesting failures
+          likelihood: medium
+          impact: low
+          mitigation: IsClaudeCodeSession checks CLAUDECODE which is the primary indicator. If other vars are discovered, the function can be extended later.
+        - scenario: BuildCriticPrompt extraction changes RunCritic behavior subtly
+          likelihood: low
+          impact: medium
+          mitigation: Existing critic_test.go tests for RunCritic continue to pass. Agent B must ensure the extracted function preserves identical prompt assembly.
+        - scenario: Non-JSON capture accumulates large amounts of text from verbose subprocess output
+          likelihood: low
+          impact: low
+          mitigation: Cap nonJSON builder at 4KB. Most error messages are short. Truncate with '... (truncated)' suffix if exceeded.
+state: REVIEWED
+injection_method: hook
