@@ -4,13 +4,14 @@
 package resume
 
 import (
-	"context"
 	"bufio"
 	"bytes"
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 
 	"github.com/blackwell-systems/scout-and-wave-go/internal/git"
@@ -55,8 +56,8 @@ type worktreeEntry struct {
 // skips manifests with state COMPLETE or NOT_SUITABLE, and returns a SessionState
 // for each manifest that appears to be in progress.
 // Detect is backward-compatible: it delegates to DetectWithConfig with a single repo.
-func Detect(repoPath string) ([]SessionState, error) {
-	return DetectWithConfig([]string{repoPath})
+func Detect(ctx context.Context, repoPath string) ([]SessionState, error) {
+	return DetectWithConfig(ctx, []string{repoPath})
 }
 
 // DetectWithConfig scans for interrupted SAW sessions across multiple repositories.
@@ -64,7 +65,7 @@ func Detect(repoPath string) ([]SessionState, error) {
 // skips manifests with state COMPLETE or NOT_SUITABLE, and returns a SessionState
 // for each manifest that appears to be in progress.
 // Worktrees are scanned across ALL repos so that cross-repo worktrees are found.
-func DetectWithConfig(repoPaths []string) ([]SessionState, error) {
+func DetectWithConfig(ctx context.Context, repoPaths []string) ([]SessionState, error) {
 	if len(repoPaths) == 0 {
 		return []SessionState{}, nil
 	}
@@ -95,7 +96,7 @@ func DetectWithConfig(repoPaths []string) ([]SessionState, error) {
 
 			implPath := filepath.Join(implDir, name)
 
-			manifest, err := protocol.Load(context.TODO(), implPath)
+			manifest, err := protocol.Load(ctx, implPath)
 			if err != nil {
 				// Skip unreadable / malformed manifests.
 				continue
@@ -167,7 +168,7 @@ func buildSessionState(repoPaths []string, implPath string, manifest *protocol.I
 	dirty, _ := ClassifyWorktrees(orphaned, manifest, nil)
 
 	// Step 3: Build suggested action and resume command using dirty classification.
-	suggestedAction, resumeCommand := buildActionAndCommandInternal(implPath, manifest, orphaned, dirty, completed)
+	suggestedAction, resumeCommand := buildActionAndCommandInternal(implPath, manifest, orphaned, dirty, completed, currentWave)
 
 	// Progress percentage.
 	var progressPct float64
@@ -235,8 +236,10 @@ func determineCurrentWave(manifest *protocol.IMPLManifest, orphaned []string) in
 		if m == nil {
 			continue
 		}
-		waveNum := 0
-		fmt.Sscanf(m[1], "%d", &waveNum)
+		waveNum, err := strconv.Atoi(m[1])
+		if err != nil {
+			continue
+		}
 		if waveNum > 0 && (lowest == 0 || waveNum < lowest) {
 			lowest = waveNum
 		}
@@ -268,29 +271,6 @@ func isCurrentWaveFullyComplete(manifest *protocol.IMPLManifest, waveNum int, co
 	return false
 }
 
-// buildActionAndCommand returns the human-readable SuggestedAction and the
-// exact sawtools ResumeCommand for the given session state.
-// When orphaned worktrees exist, the action distinguishes dirty (uncommitted work)
-// from clean (safe to remove) worktrees.
-// NOTE: This exported-signature version is provided for interface contract compliance.
-// buildSessionState uses buildActionAndCommandInternal which also accepts implPath.
-func buildActionAndCommand(
-	manifest *protocol.IMPLManifest,
-	orphaned []string,
-	dirtyWorktrees []DirtyWorktree,
-) (string, string) {
-	// Reconstruct context needed for action/command strings.
-	// Without implPath we cannot produce full sawtools commands; callers that need
-	// full command strings should use buildActionAndCommandInternal.
-	var completed []string
-	for id, report := range manifest.CompletionReports {
-		if report.Status == protocol.StatusComplete {
-			completed = append(completed, id)
-		}
-	}
-	return buildActionAndCommandInternal("", manifest, orphaned, dirtyWorktrees, completed)
-}
-
 // buildActionAndCommandInternal is the full implementation used by buildSessionState.
 // It accepts implPath explicitly so resume commands include the correct IMPL doc path.
 func buildActionAndCommandInternal(
@@ -299,9 +279,8 @@ func buildActionAndCommandInternal(
 	orphaned []string,
 	dirtyWorktrees []DirtyWorktree,
 	completed []string,
+	currentWave int,
 ) (string, string) {
-	currentWave := determineCurrentWave(manifest, orphaned)
-
 	// Collect failed agents from completion reports.
 	var failed []string
 	for _, wave := range manifest.Waves {
@@ -388,6 +367,10 @@ func loadCompletedSlugs(repoPath string) map[string]bool {
 		}
 		name := entry.Name()
 		if strings.HasPrefix(name, "IMPL-") && strings.HasSuffix(name, ".yaml") {
+			// Invariant: IMPL filenames follow the pattern "IMPL-{slug}.yaml" where {slug}
+			// matches the FeatureSlug field inside the manifest. Scout agents are responsible
+			// for ensuring this invariant holds when creating IMPL docs. If a filename and
+			// FeatureSlug diverge, completed IMPLs may not be excluded from orphan detection.
 			slug := strings.TrimSuffix(strings.TrimPrefix(name, "IMPL-"), ".yaml")
 			if slug != "" {
 				slugs[slug] = true
@@ -479,8 +462,10 @@ func detectOrphanedWorktrees(repoPaths []string, manifest *protocol.IMPLManifest
 			}
 
 			// Check if the wave is fully merged.
-			waveNum := 0
-			fmt.Sscanf(m[1], "%d", &waveNum)
+			waveNum, err := strconv.Atoi(m[1])
+			if err != nil {
+				continue
+			}
 			agents, known := waveAgents[waveNum]
 			if !known {
 				// Wave not in manifest — orphaned.
