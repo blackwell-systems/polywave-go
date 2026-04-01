@@ -19,15 +19,15 @@ Each reviewed package gets scouted → IMPL'd → closed before being marked don
 | autonomy | | | |
 | builddiag | | | |
 | codereview | | | |
-| collision | | | |
+| collision | ✅ | ✅ | |
 | commands | | | |
 | config | | | |
-| deps | | | |
+| deps | ✅ | | |
 | engine | | | |
 | errparse | ✅ | ✅ | ✅ |
 | format | | | |
 | gatecache | | | |
-| hooks | ✅ | | |
+| hooks | ✅ | ✅ | |
 | idgen | ✅ | | |
 | interview | | | |
 | journal | | | |
@@ -40,9 +40,9 @@ Each reviewed package gets scouted → IMPL'd → closed before being marked don
 | result | | | |
 | resume | | | |
 | retry | | | |
-| scaffold | | | |
+| scaffold | ✅ | | |
 | scaffoldval | | | |
 | solver | ✅ | | |
-| suitability | ✅ | | |
+| suitability | ✅ | ✅ | ✅ |
 | tools | | | |
 | worktree | ✅ | ✅ | ✅ |
