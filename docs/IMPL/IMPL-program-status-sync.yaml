@@ -1,0 +1,256 @@
+title: PROGRAM manifest IMPL status sync on finalize-wave
+feature_slug: program-status-sync
+verdict: SUITABLE
+suitability_assessment: |
+    The bug is confined to a single protocol function: RunTierGate in
+    pkg/protocol/program_tier_gate.go reads impl.Status directly from the
+    in-memory PROGRAMManifest struct, which is populated from disk at parse
+    time and never refreshed. When finalize-wave completes, WriteCompletionMarker
+    sets state: COMPLETE in the IMPL doc on disk, but the PROGRAM manifest's
+    impls[].status field is never updated, so RunTierGate always sees "pending".
+
+    Fix direction: enrich IMPL statuses from disk inside RunTierGate before
+    performing the completion check, reusing the existing enrichIMPLStatusesFromDisk
+    helper that GetProgramStatus already calls. This is a self-contained change
+    with no signature modifications: repoPath is already in scope, and the
+    helper is already in the same package.
+
+    Suitability: 2 files change (gate logic + test), clearly disjoint. 1 wave,
+    1 agent is sufficient. The fix is targeted, well-contained, and testable.
+
+    Estimated times:
+    - Scout phase: ~5 min
+    - Agent execution: ~10 min (1 agent, 2 files, logic + tests)
+    - Merge & verification: ~3 min
+    Total SAW time: ~18 min
+
+    Sequential baseline: ~12 min
+    Time savings: marginal; value is audit trail and interface spec.
+
+    Recommendation: Coordination value independent of speed. The IMPL doc
+    provides a clear record of the fix and test coverage expectations.
+test_command: go test ./...
+lint_command: go vet ./...
+file_ownership:
+    - file: pkg/protocol/program_tier_gate.go
+      agent: A
+      wave: 1
+      action: modify
+    - file: pkg/protocol/program_tier_gate_test.go
+      agent: A
+      wave: 1
+      action: modify
+interface_contracts:
+    - name: RunTierGate
+      description: |
+        RunTierGate verifies that all IMPLs in a tier are complete and runs the
+        tier-level quality gates. Signature is unchanged — repoPath already exists.
+        The fix enriches IMPL statuses from disk (via enrichIMPLStatusesFromDisk)
+        before checking impl.Status, so finalized IMPL docs are seen as "complete"
+        without the operator calling update-program-impl manually.
+      definition: |
+        func RunTierGate(manifest *PROGRAMManifest, tierNumber int, repoPath string) result.Result[*TierGateData]
+        // No signature change. No callers require updates.
+      location: pkg/protocol/program_tier_gate.go
+    - name: enrichIMPLStatusesFromDisk
+      description: |
+        Existing unexported helper in program_status.go that reads each IMPL
+        doc from disk and maps state -> status. RunTierGate will call this to
+        build an enriched statusMap before checking completion.
+      definition: |
+        func enrichIMPLStatusesFromDisk(statusMap map[string]string, repoPath string) map[string]string
+        // Already in pkg/protocol; no change to its signature or behavior.
+      location: pkg/protocol/program_status.go
+waves:
+    - number: 1
+      agents:
+        - id: A
+          task: |
+            ## What to implement
+
+            Fix the bug where `RunTierGate` in `pkg/protocol/program_tier_gate.go`
+            reads IMPL completion status from the stale in-memory PROGRAMManifest
+            instead of from the authoritative IMPL doc state on disk.
+
+            ### Root cause
+
+            `RunTierGate` builds `implStatus` by reading `impl.Status` from
+            `manifest.Impls` (the PROGRAM manifest's impls array). This value was
+            set at PROGRAM parse time and is never refreshed. When `finalize-wave`
+            calls `WriteCompletionMarker`, it sets `state: COMPLETE` in the IMPL
+            doc on disk but does NOT update the PROGRAM manifest's `impls[].status`.
+            So `RunTierGate` always sees "pending" and fails with "not all IMPLs in
+            tier are complete".
+
+            ### Fix in `pkg/protocol/program_tier_gate.go`
+
+            At the start of `RunTierGate`, after finding the tier, build an
+            initial statusMap from the in-memory manifest (as a fallback), then
+            call `enrichIMPLStatusesFromDisk` to overlay real-time status from
+            disk. Use the enriched map when checking completion.
+
+            The `enrichIMPLStatusesFromDisk` function is already defined in
+            `pkg/protocol/program_status.go` in the same package. Call it
+            directly — no import changes needed.
+
+            Concrete change:
+
+            After the tier lookup and before the IMPL status loop, add:
+
+            ```go
+            // Build initial status map from manifest (fallback values).
+            implStatusMap := make(map[string]string, len(manifest.Impls))
+            for _, impl := range manifest.Impls {
+                implStatusMap[impl.Slug] = impl.Status
+            }
+            // Enrich from IMPL docs on disk so finalized IMPLs are seen as complete.
+            if repoPath != "" {
+                implStatusMap = enrichIMPLStatusesFromDisk(implStatusMap, repoPath)
+            }
+            ```
+
+            Then replace the per-IMPL status lookup loop to read from
+            `implStatusMap` instead of searching `manifest.Impls` directly.
+
+            The updated per-IMPL loop should look like:
+
+            ```go
+            for _, implSlug := range tier.Impls {
+                implStatus, found := implStatusMap[implSlug]
+                if !found {
+                    implStatus = "not_found"
+                    data.AllImplsDone = false
+                }
+                status := ImplTierStatus{
+                    Slug:   implSlug,
+                    Status: implStatus,
+                }
+                data.ImplStatuses = append(data.ImplStatuses, status)
+                if implStatus != "complete" {
+                    data.AllImplsDone = false
+                }
+            }
+            ```
+
+            This replaces the current inner loop that searches `manifest.Impls`
+            for each slug with a simple map lookup after enrichment.
+
+            ### Tests in `pkg/protocol/program_tier_gate_test.go`
+
+            Add two new test functions after the existing tests:
+
+            **Test 1: `TestRunTierGate_ReadsFromDisk_Complete`**
+
+            Scenario: PROGRAM manifest has `impls[].status = "pending"` for an
+            IMPL, but an IMPL doc on disk has `state: COMPLETE`. The tier gate
+            should pass (sees the IMPL as complete via disk read).
+
+            Setup:
+            1. Create a tmp directory as repoPath.
+            2. Write a minimal IMPL YAML file at
+               `<repoPath>/docs/IMPL/IMPL-<slug>.yaml` with content:
+               ```yaml
+               state: COMPLETE
+               feature_slug: my-impl
+               title: My Impl
+               ```
+            3. Construct a PROGRAMManifest with that IMPL's slug and
+               `Status: "pending"` in the impls array.
+            4. Call `RunTierGate(manifest, 1, repoPath)`.
+            5. Assert `result.AllImplsDone == true` and `result.Passed == true`.
+
+            Use `os.MkdirAll` to create `<repoPath>/docs/IMPL/` and
+            `os.WriteFile` to write the IMPL YAML.
+
+            **Test 2: `TestRunTierGate_FallsBackToManifest_WhenDocMissing`**
+
+            Scenario: PROGRAM manifest has `impls[].status = "pending"` and no
+            IMPL doc exists on disk. The tier gate should fail (status stays
+            "pending" — the fallback path).
+
+            Setup:
+            1. Create a tmp directory as repoPath (no IMPL doc written).
+            2. Construct a PROGRAMManifest with one IMPL, `Status: "pending"`.
+            3. Call `RunTierGate(manifest, 1, repoPath)`.
+            4. Assert `result.AllImplsDone == false` and `result.Passed == false`.
+
+            Use `require` and `assert` from `github.com/stretchr/testify` as
+            the existing tests do. Import `os` and `path/filepath` for test
+            setup. Do NOT import any package outside the existing test file's
+            import list except those two standard library packages.
+
+            ### Verification gate
+
+            Run:
+            ```
+            go build ./...
+            go vet ./pkg/protocol/...
+            go test ./pkg/protocol/... -run TestRunTierGate
+            ```
+
+            All must pass with exit code 0. The new tests must not be skipped.
+
+            ### Constraints
+
+            - Do NOT change the signature of `RunTierGate`.
+            - Do NOT change `enrichIMPLStatusesFromDisk` or any function in
+              `program_status.go`.
+            - Do NOT add any new exported functions or types.
+            - The fix must be backward-compatible: if repoPath is empty string,
+              skip disk enrichment and fall back to manifest values only.
+            - The fix must be idempotent: calling RunTierGate multiple times
+              produces the same result if the disk state hasn't changed.
+          files:
+            - pkg/protocol/program_tier_gate.go
+            - pkg/protocol/program_tier_gate_test.go
+quality_gates:
+    level: standard
+    gates:
+        - type: build
+          command: go build ./...
+          required: true
+        - type: lint
+          command: go vet ./...
+          required: true
+        - type: test
+          command: go test ./pkg/protocol/... -run TestRunTierGate
+          required: true
+pre_mortem:
+    overall_risk: low
+    rows:
+        - scenario: |
+            enrichIMPLStatusesFromDisk searches fixed subdirectory paths
+            (docs/IMPL/complete/, docs/IMPL/, etc.) and may miss an IMPL doc
+            stored at a custom path via abs_path in the PROGRAM manifest.
+          likelihood: low
+          impact: medium
+          mitigation: |
+            The existing enrichIMPLStatusesFromDisk already handles this case the
+            same way GetProgramStatus does — it uses abs_path fallback via
+            IMPLPath(). No additional handling needed; behavior is consistent
+            with the status display path already in production.
+        - scenario: |
+            The disk read in RunTierGate adds latency for large PROGRAM manifests
+            with many IMPLs, since each IMPL doc is read from disk on every
+            RunTierGate call.
+          likelihood: low
+          impact: low
+          mitigation: |
+            enrichIMPLStatusesFromDisk gracefully swallows read errors and returns
+            the fallback status. The function already exists and is used in the hot
+            path of program-status. For gate checking (called infrequently at tier
+            boundaries), the added latency is negligible.
+        - scenario: |
+            A test that constructs a PROGRAMManifest with Status="complete" and
+            passes an empty repoPath may behave differently after the fix because
+            the enrichment is skipped when repoPath=="". Existing tests use the
+            manifest values directly.
+          likelihood: low
+          impact: low
+          mitigation: |
+            Existing tests pass non-empty repoPath (a tmpDir) but do not write
+            IMPL docs there, so enrichIMPLStatusesFromDisk returns fallback values
+            (the manifest Status). The existing test behavior is unchanged. The
+            agent must verify this by running the existing tests unchanged.
+state: SCOUT_PENDING
+injection_method: hook
