@@ -37,32 +37,28 @@ func RunTierGate(manifest *PROGRAMManifest, tierNumber int, repoPath string) res
 		Passed:       true,
 	}
 
+	// Build initial status map from manifest (fallback values).
+	implStatusMap := make(map[string]string, len(manifest.Impls))
+	for _, impl := range manifest.Impls {
+		implStatusMap[impl.Slug] = impl.Status
+	}
+	// Enrich from IMPL docs on disk so finalized IMPLs are seen as complete.
+	if repoPath != "" {
+		implStatusMap = enrichIMPLStatusesFromDisk(implStatusMap, repoPath)
+	}
+
 	// Check all IMPLs in the tier
 	for _, implSlug := range tier.Impls {
-		// Find the matching IMPL in the manifest
-		var implStatus string
-		found := false
-		for _, impl := range manifest.Impls {
-			if impl.Slug == implSlug {
-				implStatus = impl.Status
-				found = true
-				break
-			}
-		}
-
+		implStatus, found := implStatusMap[implSlug]
 		if !found {
-			// IMPL referenced in tier but not defined in impls list
 			implStatus = "not_found"
 			data.AllImplsDone = false
 		}
-
 		status := ImplTierStatus{
 			Slug:   implSlug,
 			Status: implStatus,
 		}
 		data.ImplStatuses = append(data.ImplStatuses, status)
-
-		// Check if this IMPL is complete
 		if implStatus != "complete" {
 			data.AllImplsDone = false
 		}

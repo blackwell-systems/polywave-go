@@ -351,6 +351,68 @@ func TestRunTierGate_GateCommandWithWorkingDirectory(t *testing.T) {
 	assert.Contains(t, result.GateResults[0].Stdout, filepath.Base(tmpDir))
 }
 
+func TestRunTierGate_ReadsFromDisk_Complete(t *testing.T) {
+	// Scenario: PROGRAM manifest has status="pending" but IMPL doc on disk has state: COMPLETE.
+	// The tier gate should pass (enriched from disk).
+	tmpDir, err := os.MkdirTemp("", "tier-gate-disk-*")
+	require.NoError(t, err)
+	defer os.RemoveAll(tmpDir)
+
+	implDir := filepath.Join(tmpDir, "docs", "IMPL")
+	require.NoError(t, os.MkdirAll(implDir, 0755))
+
+	implContent := "state: COMPLETE\nfeature_slug: my-impl\ntitle: My Impl\n"
+	require.NoError(t, os.WriteFile(filepath.Join(implDir, "IMPL-my-impl.yaml"), []byte(implContent), 0644))
+
+	manifest := &PROGRAMManifest{
+		Impls: []ProgramIMPL{
+			{Slug: "my-impl", Status: "pending"},
+		},
+		Tiers: []ProgramTier{
+			{
+				Number: 1,
+				Impls:  []string{"my-impl"},
+			},
+		},
+	}
+
+	res := RunTierGate(manifest, 1, tmpDir)
+	require.False(t, res.IsFatal(), "unexpected fatal: %+v", res.Errors)
+	result := res.GetData()
+	require.NotNil(t, result)
+
+	assert.True(t, result.AllImplsDone, "expected AllImplsDone=true when disk state is COMPLETE")
+	assert.True(t, result.Passed, "expected Passed=true when disk state is COMPLETE")
+}
+
+func TestRunTierGate_FallsBackToManifest_WhenDocMissing(t *testing.T) {
+	// Scenario: PROGRAM manifest has status="pending" and no IMPL doc on disk.
+	// The tier gate should fail (falls back to manifest status).
+	tmpDir, err := os.MkdirTemp("", "tier-gate-fallback-*")
+	require.NoError(t, err)
+	defer os.RemoveAll(tmpDir)
+
+	manifest := &PROGRAMManifest{
+		Impls: []ProgramIMPL{
+			{Slug: "missing-impl", Status: "pending"},
+		},
+		Tiers: []ProgramTier{
+			{
+				Number: 1,
+				Impls:  []string{"missing-impl"},
+			},
+		},
+	}
+
+	res := RunTierGate(manifest, 1, tmpDir)
+	require.False(t, res.IsFatal(), "unexpected fatal: %+v", res.Errors)
+	result := res.GetData()
+	require.NotNil(t, result)
+
+	assert.False(t, result.AllImplsDone, "expected AllImplsDone=false when doc is missing")
+	assert.False(t, result.Passed, "expected Passed=false when doc is missing")
+}
+
 func TestRunTierGate_MixedStatuses(t *testing.T) {
 	manifest := &PROGRAMManifest{
 		Impls: []ProgramIMPL{
