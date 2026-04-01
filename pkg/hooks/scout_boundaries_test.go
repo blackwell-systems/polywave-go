@@ -15,6 +15,8 @@ func TestIsValidScoutPath(t *testing.T) {
 	}{
 		{"Valid IMPL doc", "docs/IMPL/IMPL-feature-name.yaml", true},
 		{"Valid with hyphens", "docs/IMPL/IMPL-multi-word-feature.yaml", true},
+		{"Absolute path valid", "/repo/docs/IMPL/IMPL-feature.yaml", true},
+		{"Absolute path deep", "/home/user/projects/myrepo/docs/IMPL/IMPL-x.yaml", true},
 		{"Source code", "src/main.go", false},
 		{"CONTEXT.md", "docs/CONTEXT.md", false},
 		{"REQUIREMENTS.md", "docs/REQUIREMENTS.md", false},
@@ -160,6 +162,49 @@ func TestValidateScoutWrites(t *testing.T) {
 		res := ValidateScoutWrites(emptyDir, filepath.Join(emptyDir, "docs/IMPL/IMPL-x.yaml"), startTime)
 		if !res.IsSuccess() {
 			t.Errorf("Expected SUCCESS when no docs dir, got code=%q", res.Code)
+		}
+	})
+
+	t.Run("File under docs still flagged when expectedIMPLPath is outside docs/IMPL", func(t *testing.T) {
+		// Use a fresh temp dir
+		freshDir := t.TempDir()
+		freshIMPL := filepath.Join(freshDir, "docs", "IMPL")
+		if err := os.MkdirAll(freshIMPL, 0755); err != nil {
+			t.Fatal(err)
+		}
+
+		// Write a file that Scout is allowed to write
+		validImpl := filepath.Join(freshIMPL, "IMPL-allowed.yaml")
+		if err := os.WriteFile(validImpl, []byte("content"), 0644); err != nil {
+			t.Fatal(err)
+		}
+
+		// Use a bad expectedIMPLPath (outside docs/IMPL/)
+		badExpected := filepath.Join("/tmp", "bad-path.yaml")
+		res := ValidateScoutWrites(freshDir, badExpected, startTime)
+
+		// The valid IMPL file was written by Scout but it matches the boundary rule,
+		// so it should NOT be a violation (IsValidScoutPath(relPath) returns true).
+		// The function should return Success because the file is in docs/IMPL/.
+		if !res.IsSuccess() {
+			t.Errorf("Expected SUCCESS: file in docs/IMPL/ should be allowed regardless of expectedIMPLPath, got code=%q errors=%v", res.Code, res.Errors)
+		}
+	})
+
+	t.Run("Any IMPL doc in docs/IMPL is allowed even if not expectedIMPLPath", func(t *testing.T) {
+		freshDir := t.TempDir()
+		freshIMPL := filepath.Join(freshDir, "docs", "IMPL")
+		if err := os.MkdirAll(freshIMPL, 0755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(freshIMPL, "IMPL-different.yaml"), []byte("x"), 0644); err != nil {
+			t.Fatal(err)
+		}
+		// expectedIMPLPath points to a different IMPL file
+		differentExpected := filepath.Join(freshIMPL, "IMPL-expected.yaml")
+		res := ValidateScoutWrites(freshDir, differentExpected, startTime)
+		if !res.IsSuccess() {
+			t.Errorf("Expected SUCCESS for IMPL doc in docs/IMPL/, got code=%q", res.Code)
 		}
 	})
 }
