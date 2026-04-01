@@ -9,10 +9,7 @@ func TestGoPatterns_MissingPackage(t *testing.T) {
 	/usr/local/go/src/github.com/foo/bar (from $GOROOT)
 	/home/user/go/src/github.com/foo/bar (from $GOPATH)`
 
-	diag, err := DiagnoseError(errorLog, "go")
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
+	diag := DiagnoseError(errorLog, "go")
 
 	if diag.Pattern != "missing_package" {
 		t.Errorf("expected pattern 'missing_package', got %q", diag.Pattern)
@@ -35,10 +32,7 @@ func TestGoPatterns_MissingPackage(t *testing.T) {
 func TestGoPatterns_UndefinedIdentifier(t *testing.T) {
 	errorLog := `main.go:10:5: undefined: SomeFunction`
 
-	diag, err := DiagnoseError(errorLog, "go")
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
+	diag := DiagnoseError(errorLog, "go")
 
 	if diag.Pattern != "undefined_identifier" {
 		t.Errorf("expected pattern 'undefined_identifier', got %q", diag.Pattern)
@@ -56,10 +50,7 @@ func TestGoPatterns_UndefinedIdentifier(t *testing.T) {
 func TestGoPatterns_TypeMismatch(t *testing.T) {
 	errorLog := `main.go:15:10: cannot use myFunc (type func(int) string) as type Handler in argument to RegisterHandler`
 
-	diag, err := DiagnoseError(errorLog, "go")
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
+	diag := DiagnoseError(errorLog, "go")
 
 	if diag.Pattern != "type_mismatch" {
 		t.Errorf("expected pattern 'type_mismatch', got %q", diag.Pattern)
@@ -79,10 +70,7 @@ func TestGoPatterns_ImportCycle(t *testing.T) {
 	imports github.com/user/project/pkg/bar
 	imports github.com/user/project/pkg/foo: import cycle not allowed`
 
-	diag, err := DiagnoseError(errorLog, "go")
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
+	diag := DiagnoseError(errorLog, "go")
 
 	if diag.Pattern != "import_cycle" {
 		t.Errorf("expected pattern 'import_cycle', got %q", diag.Pattern)
@@ -100,10 +88,7 @@ func TestGoPatterns_ImportCycle(t *testing.T) {
 func TestGoPatterns_SyntaxError(t *testing.T) {
 	errorLog := `main.go:20:15: syntax error: unexpected comma, expecting )`
 
-	diag, err := DiagnoseError(errorLog, "go")
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
+	diag := DiagnoseError(errorLog, "go")
 
 	if diag.Pattern != "syntax_error" {
 		t.Errorf("expected pattern 'syntax_error', got %q", diag.Pattern)
@@ -122,10 +107,7 @@ func TestGoPatterns_MissingGoSumEntry(t *testing.T) {
 	errorLog := `verifying github.com/foo/bar@v1.2.3: missing go.sum entry; to add it:
 	go mod download github.com/foo/bar`
 
-	diag, err := DiagnoseError(errorLog, "go")
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
+	diag := DiagnoseError(errorLog, "go")
 
 	if diag.Pattern != "missing_go_sum_entry" {
 		t.Errorf("expected pattern 'missing_go_sum_entry', got %q", diag.Pattern)
@@ -184,10 +166,7 @@ func TestGoPatterns_PackageNotInGOROOT(t *testing.T) {
 	// Test alternative wording for missing package
 	errorLog := `main.go:3:8: package github.com/unknown/pkg is not in GOROOT (/usr/local/go/src/github.com/unknown/pkg)`
 
-	diag, err := DiagnoseError(errorLog, "go")
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
+	diag := DiagnoseError(errorLog, "go")
 
 	if diag.Pattern != "missing_package" {
 		t.Errorf("expected pattern 'missing_package', got %q", diag.Pattern)

@@ -24,10 +24,7 @@ func TestJSPatterns_ModuleNotFound(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			diag, err := DiagnoseError(tt.errorLog, "javascript")
-			if err != nil {
-				t.Fatalf("DiagnoseError() error = %v", err)
-			}
+			diag := DiagnoseError(tt.errorLog, "javascript")
 			if diag.Pattern != tt.wantName {
 				t.Errorf("Pattern = %v, want %v", diag.Pattern, tt.wantName)
 			}
@@ -44,10 +41,7 @@ func TestJSPatterns_ModuleNotFound(t *testing.T) {
 func TestJSPatterns_PropertyNotExist(t *testing.T) {
 	errorLog := "TS2339: Property 'foo' does not exist on type 'Bar'"
 
-	diag, err := DiagnoseError(errorLog, "typescript")
-	if err != nil {
-		t.Fatalf("DiagnoseError() error = %v", err)
-	}
+	diag := DiagnoseError(errorLog, "typescript")
 
 	if diag.Pattern != "property_not_exist" {
 		t.Errorf("Pattern = %v, want property_not_exist", diag.Pattern)
@@ -63,10 +57,7 @@ func TestJSPatterns_PropertyNotExist(t *testing.T) {
 func TestJSPatterns_SyntaxError(t *testing.T) {
 	errorLog := "SyntaxError: Unexpected token )"
 
-	diag, err := DiagnoseError(errorLog, "js")
-	if err != nil {
-		t.Fatalf("DiagnoseError() error = %v", err)
-	}
+	diag := DiagnoseError(errorLog, "js")
 
 	if diag.Pattern != "syntax_error" {
 		t.Errorf("Pattern = %v, want syntax_error", diag.Pattern)
@@ -82,10 +73,7 @@ func TestJSPatterns_SyntaxError(t *testing.T) {
 func TestJSPatterns_TypeAnyImplicit(t *testing.T) {
 	errorLog := "TS7006: Parameter 'config' implicitly has an 'any' type"
 
-	diag, err := DiagnoseError(errorLog, "typescript")
-	if err != nil {
-		t.Fatalf("DiagnoseError() error = %v", err)
-	}
+	diag := DiagnoseError(errorLog, "typescript")
 
 	if diag.Pattern != "type_any_implicit" {
 		t.Errorf("Pattern = %v, want type_any_implicit", diag.Pattern)
@@ -115,10 +103,7 @@ func TestJSPatterns_ImportPathInvalid(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			diag, err := DiagnoseError(tt.errorLog, "typescript")
-			if err != nil {
-				t.Fatalf("DiagnoseError() error = %v", err)
-			}
+			diag := DiagnoseError(tt.errorLog, "typescript")
 			if diag.Pattern != "import_path_invalid" {
 				t.Errorf("Pattern = %v, want import_path_invalid", diag.Pattern)
 			}
@@ -139,10 +124,7 @@ func TestJSPatterns_MultipleAliases(t *testing.T) {
 
 	for _, alias := range aliases {
 		t.Run(alias, func(t *testing.T) {
-			diag, err := DiagnoseError(errorLog, alias)
-			if err != nil {
-				t.Fatalf("DiagnoseError(%q) error = %v", alias, err)
-			}
+			diag := DiagnoseError(errorLog, alias)
 			if diag.Pattern != "module_not_found" {
 				t.Errorf("Pattern = %v, want module_not_found for alias %q", diag.Pattern, alias)
 			}

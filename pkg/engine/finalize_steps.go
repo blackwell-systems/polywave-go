@@ -343,7 +343,7 @@ func StepVerifyBuild(ctx context.Context, opts FinalizeWaveOpts, onEvent EventCa
 			language := inferLanguageFromTestCommand(manifest.TestCommand)
 			if language != "" {
 				errorLog := verifyData.TestOutput + "\n" + verifyData.LintOutput
-				if d, diagErr := builddiag.DiagnoseError(errorLog, language); diagErr == nil {
+				if d := builddiag.DiagnoseError(errorLog, language); d != nil {
 					diagnosis = d
 				}
 			}

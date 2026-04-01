@@ -61,10 +61,7 @@ func TestRustPatterns_CannotFindValue(t *testing.T) {
 10 |     foo();
    |     ^^^ not found in this scope`
 
-	diag, err := DiagnoseError(errorLog, "rust")
-	if err != nil {
-		t.Fatalf("Unexpected error: %v", err)
-	}
+	diag := DiagnoseError(errorLog, "rust")
 
 	if diag.Pattern != "cannot_find_value" {
 		t.Errorf("Expected pattern 'cannot_find_value', got %s", diag.Pattern)
@@ -92,10 +89,7 @@ func TestRustPatterns_TraitBoundNotSatisfied(t *testing.T) {
 15 |     println!("{}", value);
    |     ^^^^^^^^^^^^^^^^^^^^^^ the trait 'Display' is not implemented for 'T'`
 
-	diag, err := DiagnoseError(errorLog, "rust")
-	if err != nil {
-		t.Fatalf("Unexpected error: %v", err)
-	}
+	diag := DiagnoseError(errorLog, "rust")
 
 	if diag.Pattern != "trait_bound_not_satisfied" {
 		t.Errorf("Expected pattern 'trait_bound_not_satisfied', got %s", diag.Pattern)
@@ -123,10 +117,7 @@ func TestRustPatterns_MismatchedTypes(t *testing.T) {
 20 |     return "hello";
    |            ^^^^^^^ expected 'i32', found '&str'`
 
-	diag, err := DiagnoseError(errorLog, "rust")
-	if err != nil {
-		t.Fatalf("Unexpected error: %v", err)
-	}
+	diag := DiagnoseError(errorLog, "rust")
 
 	if diag.Pattern != "mismatched_types" {
 		t.Errorf("Expected pattern 'mismatched_types', got %s", diag.Pattern)
@@ -154,10 +145,7 @@ func TestRustPatterns_UnresolvedImport(t *testing.T) {
 1 | use std::foo;
   |     ^^^^^^^^ no 'foo' in the root`
 
-	diag, err := DiagnoseError(errorLog, "rust")
-	if err != nil {
-		t.Fatalf("Unexpected error: %v", err)
-	}
+	diag := DiagnoseError(errorLog, "rust")
 
 	if diag.Pattern != "unresolved_import" {
 		t.Errorf("Expected pattern 'unresolved_import', got %s", diag.Pattern)
@@ -185,10 +173,7 @@ func TestRustPatterns_MacroUndefined(t *testing.T) {
 25 |     debug!("value: {}", x);
    |     ^^^^^`
 
-	diag, err := DiagnoseError(errorLog, "rust")
-	if err != nil {
-		t.Fatalf("Unexpected error: %v", err)
-	}
+	diag := DiagnoseError(errorLog, "rust")
 
 	if diag.Pattern != "macro_undefined" {
 		t.Errorf("Expected pattern 'macro_undefined', got %s", diag.Pattern)
@@ -244,10 +229,7 @@ func TestRustPatterns_ErrorCodeMatching(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			diag, err := DiagnoseError(tt.errorLog, "rust")
-			if err != nil {
-				t.Fatalf("Unexpected error: %v", err)
-			}
+			diag := DiagnoseError(tt.errorLog, "rust")
 
 			if diag.Pattern != tt.wantPattern {
 				t.Errorf("Expected pattern '%s', got '%s'", tt.wantPattern, diag.Pattern)

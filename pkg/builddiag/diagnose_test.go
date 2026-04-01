@@ -1,7 +1,6 @@
 package builddiag
 
 import (
-	"strings"
 	"testing"
 )
 
@@ -62,11 +61,8 @@ func TestDiagnoseError_KnownPattern(t *testing.T) {
 	RegisterPatterns("go", patterns)
 
 	errorLog := "main.go:10:5: undefined: fmt"
-	diag, err := DiagnoseError(errorLog, "go")
+	diag := DiagnoseError(errorLog, "go")
 
-	if err != nil {
-		t.Fatalf("Unexpected error: %v", err)
-	}
 
 	if diag.Pattern != "missing_import" {
 		t.Errorf("Expected pattern 'missing_import', got %s", diag.Pattern)
@@ -107,11 +103,8 @@ func TestDiagnoseError_NoMatch(t *testing.T) {
 	RegisterPatterns("go", patterns)
 
 	errorLog := "some random error that doesn't match"
-	diag, err := DiagnoseError(errorLog, "go")
+	diag := DiagnoseError(errorLog, "go")
 
-	if err != nil {
-		t.Fatalf("Unexpected error: %v", err)
-	}
 
 	if diag.Pattern != "unknown" {
 		t.Errorf("Expected pattern 'unknown', got %s", diag.Pattern)
@@ -139,14 +132,10 @@ func TestDiagnoseError_UnsupportedLanguage(t *testing.T) {
 	catalogs = make(map[string][]ErrorPattern)
 
 	errorLog := "some error"
-	_, err := DiagnoseError(errorLog, "unsupported")
+	diag := DiagnoseError(errorLog, "unsupported")
 
-	if err == nil {
-		t.Fatal("Expected error for unsupported language, got nil")
-	}
-
-	if !strings.Contains(err.Error(), "unsupported language") {
-		t.Errorf("Expected 'unsupported language' error, got: %v", err)
+	if diag != nil {
+		t.Fatalf("Expected nil for unsupported language, got: %+v", diag)
 	}
 }
 
@@ -180,11 +169,8 @@ func TestDiagnoseError_InvalidRegex(t *testing.T) {
 	RegisterPatterns("testlang", patterns)
 
 	errorLog := "valid error message"
-	diag, err := DiagnoseError(errorLog, "testlang")
+	diag := DiagnoseError(errorLog, "testlang")
 
-	if err != nil {
-		t.Fatalf("Unexpected error: %v", err)
-	}
 
 	// Should skip bad regex and match good pattern
 	if diag.Pattern != "good_pattern" {
@@ -248,11 +234,7 @@ func TestRegisterPatterns_CaseInsensitive(t *testing.T) {
 
 	// DiagnoseError should work with any case
 	errorLog := "test error"
-	diag, err := DiagnoseError(errorLog, "Go")
-
-	if err != nil {
-		t.Fatalf("Expected case-insensitive lookup to work, got error: %v", err)
-	}
+	diag := DiagnoseError(errorLog, "Go")
 
 	if diag.Pattern != "test" {
 		t.Errorf("Expected pattern 'test', got %s", diag.Pattern)

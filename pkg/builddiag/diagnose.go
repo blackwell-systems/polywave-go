@@ -1,7 +1,6 @@
 package builddiag
 
 import (
-	"fmt"
 	"regexp"
 	"strings"
 )
@@ -14,11 +13,12 @@ func RegisterPatterns(language string, patterns []ErrorPattern) {
 	catalogs[strings.ToLower(language)] = patterns
 }
 
-// DiagnoseError matches error log against language patterns
-func DiagnoseError(errorLog string, language string) (*Diagnosis, error) {
+// DiagnoseError matches error log against language patterns.
+// Returns nil for unsupported languages.
+func DiagnoseError(errorLog string, language string) *Diagnosis {
 	patterns, ok := catalogs[strings.ToLower(language)]
 	if !ok {
-		return nil, fmt.Errorf("unsupported language: %s", language)
+		return nil
 	}
 
 	// Try each pattern in order (highest confidence first)
@@ -35,7 +35,7 @@ func DiagnoseError(errorLog string, language string) (*Diagnosis, error) {
 				Fix:         pattern.Fix,
 				Rationale:   pattern.Rationale,
 				AutoFixable: pattern.AutoFixable,
-			}, nil
+			}
 		}
 	}
 
@@ -46,7 +46,7 @@ func DiagnoseError(errorLog string, language string) (*Diagnosis, error) {
 		Fix:         "Manual investigation required",
 		Rationale:   "No known pattern matched this error",
 		AutoFixable: false,
-	}, nil
+	}
 }
 
 // SupportedLanguages returns list of languages with pattern catalogs

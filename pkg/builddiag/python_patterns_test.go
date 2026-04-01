@@ -10,10 +10,7 @@ func TestPythonPatterns_ModuleNotFound(t *testing.T) {
     import requests
 ModuleNotFoundError: No module named 'requests'`
 
-	diag, err := DiagnoseError(errorLog, "python")
-	if err != nil {
-		t.Fatalf("DiagnoseError failed: %v", err)
-	}
+	diag := DiagnoseError(errorLog, "python")
 
 	if diag.Pattern != "module_not_found" {
 		t.Errorf("Expected pattern 'module_not_found', got '%s'", diag.Pattern)
@@ -35,10 +32,7 @@ func TestPythonPatterns_NameNotDefined(t *testing.T) {
     print(result)
 NameError: name 'result' is not defined`
 
-	diag, err := DiagnoseError(errorLog, "python")
-	if err != nil {
-		t.Fatalf("DiagnoseError failed: %v", err)
-	}
+	diag := DiagnoseError(errorLog, "python")
 
 	if diag.Pattern != "name_not_defined" {
 		t.Errorf("Expected pattern 'name_not_defined', got '%s'", diag.Pattern)
@@ -57,10 +51,7 @@ func TestPythonPatterns_SyntaxError(t *testing.T) {
              ^
 SyntaxError: invalid syntax`
 
-	diag, err := DiagnoseError(errorLog, "python")
-	if err != nil {
-		t.Fatalf("DiagnoseError failed: %v", err)
-	}
+	diag := DiagnoseError(errorLog, "python")
 
 	if diag.Pattern != "syntax_error" {
 		t.Errorf("Expected pattern 'syntax_error', got '%s'", diag.Pattern)
@@ -79,10 +70,7 @@ func TestPythonPatterns_ImportError(t *testing.T) {
     from mymodule import nonexistent_function
 ImportError: cannot import name 'nonexistent_function' from 'mymodule'`
 
-	diag, err := DiagnoseError(errorLog, "python")
-	if err != nil {
-		t.Fatalf("DiagnoseError failed: %v", err)
-	}
+	diag := DiagnoseError(errorLog, "python")
 
 	if diag.Pattern != "import_error" {
 		t.Errorf("Expected pattern 'import_error', got '%s'", diag.Pattern)
@@ -101,10 +89,7 @@ func TestPythonPatterns_IndentationError(t *testing.T) {
         ^
 IndentationError: expected an indented block`
 
-	diag, err := DiagnoseError(errorLog, "python")
-	if err != nil {
-		t.Fatalf("DiagnoseError failed: %v", err)
-	}
+	diag := DiagnoseError(errorLog, "python")
 
 	if diag.Pattern != "indentation_error" {
 		t.Errorf("Expected pattern 'indentation_error', got '%s'", diag.Pattern)
@@ -123,10 +108,7 @@ func TestPythonPatterns_TypeError(t *testing.T) {
     return x + y
 TypeError: unsupported operand type(s) for +: 'int' and 'str'`
 
-	diag, err := DiagnoseError(errorLog, "python")
-	if err != nil {
-		t.Fatalf("DiagnoseError failed: %v", err)
-	}
+	diag := DiagnoseError(errorLog, "python")
 
 	if diag.Pattern != "type_error" {
 		t.Errorf("Expected pattern 'type_error', got '%s'", diag.Pattern)
@@ -143,19 +125,13 @@ func TestPythonPatterns_MultipleAliases(t *testing.T) {
 	errorLog := `ModuleNotFoundError: No module named 'numpy'`
 
 	// Test "python" alias
-	diag1, err := DiagnoseError(errorLog, "python")
-	if err != nil {
-		t.Fatalf("DiagnoseError with 'python' failed: %v", err)
-	}
+	diag1 := DiagnoseError(errorLog, "python")
 	if diag1.Pattern != "module_not_found" {
 		t.Errorf("Expected 'python' alias to work, got pattern '%s'", diag1.Pattern)
 	}
 
 	// Test "py" alias
-	diag2, err := DiagnoseError(errorLog, "py")
-	if err != nil {
-		t.Fatalf("DiagnoseError with 'py' failed: %v", err)
-	}
+	diag2 := DiagnoseError(errorLog, "py")
 	if diag2.Pattern != "module_not_found" {
 		t.Errorf("Expected 'py' alias to work, got pattern '%s'", diag2.Pattern)
 	}
