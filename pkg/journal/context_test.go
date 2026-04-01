@@ -206,6 +206,66 @@ func TestExtractTestResults_GoTestWithFailures(t *testing.T) {
 	}
 }
 
+func TestExtractTestRuns_ExitCodeParsed(t *testing.T) {
+	now := time.Now()
+	entries := []ToolEntry{
+		{
+			Timestamp: now,
+			Kind:      "tool_use",
+			ToolName:  "Bash",
+			ToolUseID: "bash1",
+			Input: map[string]interface{}{
+				"command": "go test ./...",
+			},
+		},
+		{
+			Timestamp: now.Add(time.Second),
+			Kind:      "tool_result",
+			ToolUseID: "bash1",
+			Preview:   "--- FAIL\nexit status 1",
+		},
+	}
+
+	results := extractTestResults(entries)
+
+	if len(results) != 1 {
+		t.Fatalf("Expected 1 test result, got %d", len(results))
+	}
+	if results[0].ExitCode != 1 {
+		t.Errorf("Expected ExitCode 1, got %d", results[0].ExitCode)
+	}
+}
+
+func TestExtractTestRuns_ExitCodeDefaultsToZero(t *testing.T) {
+	now := time.Now()
+	entries := []ToolEntry{
+		{
+			Timestamp: now,
+			Kind:      "tool_use",
+			ToolName:  "Bash",
+			ToolUseID: "bash1",
+			Input: map[string]interface{}{
+				"command": "go test ./...",
+			},
+		},
+		{
+			Timestamp: now.Add(time.Second),
+			Kind:      "tool_result",
+			ToolUseID: "bash1",
+			Preview:   "--- PASS\nok",
+		},
+	}
+
+	results := extractTestResults(entries)
+
+	if len(results) != 1 {
+		t.Fatalf("Expected 1 test result, got %d", len(results))
+	}
+	if results[0].ExitCode != 0 {
+		t.Errorf("Expected ExitCode 0, got %d", results[0].ExitCode)
+	}
+}
+
 func TestExtractTestResults_MultipleRuns(t *testing.T) {
 	now := time.Now()
 	entries := []ToolEntry{

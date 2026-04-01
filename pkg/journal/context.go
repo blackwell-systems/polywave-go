@@ -281,6 +281,7 @@ func extractTestResults(entries []ToolEntry) []TestRun {
 	testCmdPattern := regexp.MustCompile(`(?i)(go test|npm test|cargo test|pytest|python -m pytest)`)
 	// Patterns for test output
 	goTestCountPattern := regexp.MustCompile(`(\d+) passed?|(\d+) failed?`)
+	exitCodePattern := regexp.MustCompile(`exit status (\d+)`)
 
 	for i, entry := range entries {
 		if entry.Kind != "tool_use" || entry.ToolName != "Bash" {
@@ -332,12 +333,16 @@ func extractTestResults(entries []ToolEntry) []TestRun {
 			}
 		}
 
+		exitCode := 0
+		if m := exitCodePattern.FindStringSubmatch(result.Preview); len(m) > 1 {
+			fmt.Sscanf(m[1], "%d", &exitCode)
+		}
 		results = append(results, TestRun{
 			Command:   command,
 			Passed:    passed,
 			Failed:    failed,
 			Timestamp: result.Timestamp,
-			ExitCode:  0, // TODO: parse from result if available
+			ExitCode:  exitCode,
 		})
 	}
 
