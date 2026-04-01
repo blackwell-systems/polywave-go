@@ -591,5 +591,5 @@ pre_mortem:
           mitigation: |-
             Both agents run in Wave 1 with fully disjoint files. They are merged together by the
             orchestrator after both complete. No intermediate state is committed.
-state: SCOUT_PENDING
+state: "REVIEWED"
 injection_method: hook
