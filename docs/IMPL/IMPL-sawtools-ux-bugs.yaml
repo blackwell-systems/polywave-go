@@ -336,5 +336,5 @@ pre_mortem:
             The step is best-effort (failure emits a warning, not an error). If the checkout
             fails, close-impl still completes successfully. Future work could detect the
             default branch name from git config, but that is out of scope here.
-state: SCOUT_PENDING
+state: "REVIEWED"
 injection_method: hook
