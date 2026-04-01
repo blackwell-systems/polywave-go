@@ -365,5 +365,5 @@ pre_mortem:
             Agent A's helper is unexported and lives in scanner.go. Agent B's task does
             not instruct it to define any helpers by that name. If a collision occurs,
             the post-merge build gate catches it and the fix is a trivial rename.
-state: SCOUT_PENDING
+state: "REVIEWED"
 injection_method: hook
