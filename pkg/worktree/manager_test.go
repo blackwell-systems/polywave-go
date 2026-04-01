@@ -1,9 +1,13 @@
 package worktree
 
 import (
+	"log/slog"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"testing"
+
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
 )
 
 // TestManagerNew verifies that New returns a non-nil Manager with slug.
@@ -50,11 +54,12 @@ func TestManagerCreateRemoveRoundtrip(t *testing.T) {
 	repoDir := setupGitRepo(t)
 	m := New(repoDir, "test-feature")
 
-	wtPath, err := m.Create(1, "D")
-	if err != nil {
-		t.Fatalf("Create returned unexpected error: %v", err)
+	r := m.Create(1, "D")
+	if r.IsFatal() {
+		t.Fatalf("Create returned fatal result: %v", r.Errors)
 	}
 
+	wtPath := r.GetData().Path
 	expectedPath := filepath.Join(repoDir, ".claude", "worktrees", "saw", "test-feature", "wave1-agent-D")
 	if wtPath != expectedPath {
 		t.Errorf("Create path = %q; want %q", wtPath, expectedPath)
@@ -70,13 +75,13 @@ func TestManagerCreateRemoveRoundtrip(t *testing.T) {
 	}
 
 	// Remove — git.WorktreeRemove and git.DeleteBranch are stubs; both succeed.
-	r := m.Remove(wtPath)
-	if r.IsFatal() {
-		t.Fatalf("Remove returned fatal result: %v", r.Errors)
+	removeResult := m.Remove(wtPath)
+	if removeResult.IsFatal() {
+		t.Fatalf("Remove returned fatal result: %v", removeResult.Errors)
 	}
 
 	// Verify RemoveData has the correct path.
-	data := r.GetData()
+	data := removeResult.GetData()
 	if data.RemovedPath != wtPath {
 		t.Errorf("RemoveData.RemovedPath = %q; want %q", data.RemovedPath, wtPath)
 	}
@@ -98,8 +103,8 @@ func TestRemoveUntrackedPath(t *testing.T) {
 	if len(r.Errors) == 0 {
 		t.Fatal("Remove of untracked path should have errors")
 	}
-	if r.Errors[0].Code != "WORKTREE_REMOVE_FAILED" {
-		t.Errorf("error code = %q; want %q", r.Errors[0].Code, "WORKTREE_REMOVE_FAILED")
+	if r.Errors[0].Code != "G008_WORKTREE_REMOVE_FAILED" {
+		t.Errorf("error code = %q; want %q", r.Errors[0].Code, "G008_WORKTREE_REMOVE_FAILED")
 	}
 }
 
@@ -110,14 +115,16 @@ func TestCleanupAllSuccess(t *testing.T) {
 	m := New(repoDir, "cleanup-test")
 
 	// Create two worktrees.
-	wt1, err := m.Create(1, "A")
-	if err != nil {
-		t.Fatalf("Create wt1: %v", err)
+	r1 := m.Create(1, "A")
+	if r1.IsFatal() {
+		t.Fatalf("Create wt1: %v", r1.Errors)
 	}
-	wt2, err := m.Create(1, "B")
-	if err != nil {
-		t.Fatalf("Create wt2: %v", err)
+	wt1 := r1.GetData().Path
+	r2 := m.Create(1, "B")
+	if r2.IsFatal() {
+		t.Fatalf("Create wt2: %v", r2.Errors)
 	}
+	wt2 := r2.GetData().Path
 
 	r := m.CleanupAll()
 	if r.IsFatal() {
@@ -171,10 +178,11 @@ func TestCleanupAllPartial(t *testing.T) {
 	m := New(repoDir, "partial-test")
 
 	// Create one real worktree that will succeed.
-	wt1, err := m.Create(1, "A")
-	if err != nil {
-		t.Fatalf("Create wt1: %v", err)
+	r1 := m.Create(1, "A")
+	if r1.IsFatal() {
+		t.Fatalf("Create wt1: %v", r1.Errors)
 	}
+	wt1 := r1.GetData().Path
 
 	// Inject a fake tracked path that will fail removal (no real worktree).
 	fakePath := "/tmp/nonexistent-worktree-for-test"
@@ -196,5 +204,80 @@ func TestCleanupAllPartial(t *testing.T) {
 	}
 	if len(r.Errors) == 0 {
 		t.Error("Partial result should have warnings for failed removal")
+	}
+}
+
+// TestCreateAlreadyExists verifies Create returns Fatal when attempting to
+// create a worktree that already exists.
+func TestCreateAlreadyExists(t *testing.T) {
+	repoDir := setupGitRepo(t)
+	m := New(repoDir, "duplicate-test")
+
+	// Create a worktree successfully.
+	r1 := m.Create(1, "C")
+	if r1.IsFatal() {
+		t.Fatalf("First Create failed: %v", r1.Errors)
+	}
+
+	// Attempt to create the same wave/agent worktree again.
+	r2 := m.Create(1, "C")
+	if !r2.IsFatal() {
+		t.Fatal("Create of already-existing worktree should return Fatal")
+	}
+	if len(r2.Errors) == 0 {
+		t.Fatal("Create should have errors")
+	}
+	if r2.Errors[0].Code != result.CodeWorktreeCreateFailed {
+		t.Errorf("error code = %q; want %q", r2.Errors[0].Code, result.CodeWorktreeCreateFailed)
+	}
+}
+
+// TestCreateInvalidRepoRoot verifies Create returns Fatal when the repo path
+// is not a valid git repository.
+func TestCreateInvalidRepoRoot(t *testing.T) {
+	invalidRepo := t.TempDir()
+	m := New(invalidRepo, "invalid-repo-test")
+
+	r := m.Create(1, "X")
+	if !r.IsFatal() {
+		t.Fatal("Create with invalid repo root should return Fatal")
+	}
+	if len(r.Errors) == 0 {
+		t.Fatal("Create should have errors")
+	}
+	if r.Errors[0].Code != result.CodeWorktreeCreateFailed {
+		t.Errorf("error code = %q; want %q", r.Errors[0].Code, result.CodeWorktreeCreateFailed)
+	}
+}
+
+// TestSetLogger verifies SetLogger correctly configures the manager's logger.
+func TestSetLogger(t *testing.T) {
+	m := New("/some/repo", "logger-test")
+
+	// Default logger should be slog.Default().
+	if m.log() != slog.Default() {
+		t.Error("log() should return slog.Default() before SetLogger is called")
+	}
+
+	// Set a custom logger.
+	customLogger := slog.New(slog.NewTextHandler(os.Stderr, nil))
+	m.SetLogger(customLogger)
+
+	// log() should now return the custom logger.
+	if m.log() != customLogger {
+		t.Error("log() should return custom logger after SetLogger")
+	}
+}
+
+// TestListEmpty verifies List() returns an empty slice (not nil) on a fresh manager.
+func TestListEmpty(t *testing.T) {
+	m := New("/some/repo", "empty-list-test")
+
+	list := m.List()
+	if list == nil {
+		t.Fatal("List() should return empty slice, not nil")
+	}
+	if len(list) != 0 {
+		t.Errorf("List() on fresh manager: got len=%d; want 0", len(list))
 	}
 }

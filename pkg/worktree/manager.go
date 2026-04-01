@@ -27,6 +27,12 @@ type CleanupData struct {
 	RemovedPaths []string
 }
 
+// CreateData holds the result payload for a successful Create operation.
+type CreateData struct {
+	Path   string
+	Branch string
+}
+
 // Manager tracks and manages git worktrees for SAW wave agents.
 // Manager is not safe for concurrent use.
 type Manager struct {
@@ -66,32 +72,40 @@ func (m *Manager) log() *slog.Logger {
 //	{repoPath}/.claude/worktrees/saw/{slug}/wave{wave}-agent-{agent}
 //
 // A new branch with the slug-scoped name is created from HEAD.
-// Returns the absolute path to the created worktree.
-func (m *Manager) Create(wave int, agent string) (string, error) {
+// Returns a result.Result[CreateData] with the path and branch on success.
+func (m *Manager) Create(wave int, agent string) result.Result[CreateData] {
 	branch := protocol.BranchName(m.slug, wave, agent)
 	wtPath := protocol.WorktreeDir(m.repoPath, m.slug, wave, agent)
 	wtDir := filepath.Dir(wtPath)
 
 	if err := os.MkdirAll(wtDir, 0o755); err != nil {
-		return "", fmt.Errorf("failed to create worktree base directory %q: %w", wtDir, err)
+		return result.NewFailure[CreateData]([]result.SAWError{
+			result.NewFatal(result.CodeWorktreeCreateFailed,
+				fmt.Sprintf("worktree: failed to create worktree base directory %q: %v", wtDir, err)).WithCause(err),
+		})
 	}
 
 	if _, err := os.Stat(wtPath); err == nil {
-		return "", fmt.Errorf("manager: worktree path %q already exists; "+
-			"remove it or use a different wave/agent combination before retrying", wtPath)
+		return result.NewFailure[CreateData]([]result.SAWError{
+			result.NewFatal(result.CodeWorktreeCreateFailed,
+				fmt.Sprintf("worktree: worktree path %q already exists; remove it or use a different wave/agent combination before retrying", wtPath)),
+		})
 	}
 
 	if err := git.WorktreeAdd(m.repoPath, wtPath, branch); err != nil {
-		return "", fmt.Errorf("manager: create worktree for wave %d agent %s: %w", wave, agent, err)
+		return result.NewFailure[CreateData]([]result.SAWError{
+			result.NewFatal(result.CodeWorktreeCreateFailed,
+				fmt.Sprintf("worktree: create worktree for wave %d agent %s: %v", wave, agent, err)).WithCause(err),
+		})
 	}
 
 	if err := git.InstallHooks(m.repoPath, wtPath); err != nil {
 		// Non-fatal: log but do not abort worktree creation.
-		m.log().Warn("manager: could not install pre-commit hook", "path", wtPath, "err", err)
+		m.log().Warn("worktree: could not install pre-commit hook", "path", wtPath, "err", err)
 	}
 
 	m.active[wtPath] = branch
-	return wtPath, nil
+	return result.NewSuccess(CreateData{Path: wtPath, Branch: branch})
 }
 
 // Remove removes the worktree at the given absolute path and deletes its branch.
@@ -101,19 +115,19 @@ func (m *Manager) Remove(path string) result.Result[RemoveData] {
 	branch, ok := m.active[path]
 	if !ok {
 		return result.NewFailure[RemoveData]([]result.SAWError{
-			result.NewFatal("WORKTREE_REMOVE_FAILED", fmt.Sprintf("manager: worktree %q is not tracked", path)),
+			result.NewFatal(result.CodeWorktreeRemoveFailed, fmt.Sprintf("worktree: worktree %q is not tracked", path)),
 		})
 	}
 
 	if err := git.WorktreeRemove(m.repoPath, path); err != nil {
 		return result.NewFailure[RemoveData]([]result.SAWError{
-			result.NewFatal("WORKTREE_REMOVE_FAILED", fmt.Sprintf("manager: remove worktree %q: %v", path, err)).WithCause(err),
+			result.NewFatal(result.CodeWorktreeRemoveFailed, fmt.Sprintf("worktree: remove worktree %q: %v", path, err)).WithCause(err),
 		})
 	}
 
 	if err := git.DeleteBranch(m.repoPath, branch); err != nil {
 		// Log but don't fail — the worktree itself is already removed.
-		m.log().Warn("manager: could not delete branch", "branch", branch, "err", err)
+		m.log().Warn("worktree: could not delete branch", "branch", branch, "err", err)
 	}
 
 	delete(m.active, path)
@@ -139,7 +153,7 @@ func (m *Manager) CleanupAll() result.Result[CleanupData] {
 		r := m.Remove(path)
 		if r.IsFatal() {
 			failedPaths = append(failedPaths, path)
-			m.log().Warn("manager: cleanup error", "path", path)
+			m.log().Warn("worktree: cleanup error", "path", path)
 		} else {
 			removedPaths = append(removedPaths, path)
 		}
@@ -158,8 +172,8 @@ func (m *Manager) CleanupAll() result.Result[CleanupData] {
 	// Build errors from failed paths in a single pass.
 	errs := make([]result.SAWError, 0, len(failedPaths))
 	for _, p := range failedPaths {
-		errs = append(errs, result.NewFatal("WORKTREE_CLEANUP_FAILED",
-			fmt.Sprintf("manager: failed to remove worktree %q", p)))
+		errs = append(errs, result.NewFatal(result.CodeWorktreeCleanup,
+			fmt.Sprintf("worktree: failed to remove worktree %q", p)))
 	}
 
 	if len(removedPaths) == 0 {
