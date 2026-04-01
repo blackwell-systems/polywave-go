@@ -795,10 +795,73 @@ func TestPreviewRequirements(t *testing.T) {
 func TestNewIDFormat(t *testing.T) {
 	uuidRegex := regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$`)
 	for i := 0; i < 10; i++ {
-		id := newID()
+		id, err := newID()
+		if err != nil {
+			t.Fatalf("newID() returned error: %v", err)
+		}
 		if !uuidRegex.MatchString(id) {
 			t.Errorf("newID() = %q, does not match UUID format xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx", id)
 		}
+	}
+}
+
+// TestNewID_ReturnsIDAndNoError verifies newID() returns a valid UUID-formatted string and nil error.
+func TestNewID_ReturnsIDAndNoError(t *testing.T) {
+	uuidRegex := regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$`)
+	for i := 0; i < 10; i++ {
+		id, err := newID()
+		if err != nil {
+			t.Fatalf("newID() returned unexpected error: %v", err)
+		}
+		if !uuidRegex.MatchString(id) {
+			t.Errorf("newID() = %q, does not match UUID format", id)
+		}
+	}
+}
+
+// TestCheckPhaseTransition_InvalidSkipReturnsError verifies single-step transitions return nil.
+func TestCheckPhaseTransition_InvalidSkipReturnsError(t *testing.T) {
+	doc := &InterviewDoc{
+		Phase: PhaseOverview,
+		SpecData: SpecData{
+			Overview: OverviewSpec{
+				Title:          "Test",
+				Goal:           "A goal",
+				SuccessMetrics: []string{},
+				NonGoals:       []string{},
+			},
+		},
+	}
+	err := checkPhaseTransition(doc)
+	if err != nil {
+		t.Errorf("expected nil error for single-step transition, got: %v", err)
+	}
+	if doc.Phase != PhaseScope {
+		t.Errorf("expected PhaseScope, got %s", doc.Phase)
+	}
+}
+
+// TestAnswer_SaveResult_EmptyErrors verifies that if Save returns a FATAL result,
+// the Errors slice is non-empty (confirming the bounds-check fix is meaningful).
+func TestAnswer_SaveResult_EmptyErrors(t *testing.T) {
+	dir := t.TempDir()
+	mgr := NewDeterministicManager(dir)
+	doc := &InterviewDoc{
+		ID: "test", Slug: "test", Status: "in_progress",
+		Phase: PhaseOverview, MaxQuestions: 18,
+		History: []InterviewTurn{},
+	}
+	blockingFile := filepath.Join(dir, "blocked")
+	if err := os.WriteFile(blockingFile, []byte("x"), 0o644); err != nil {
+		t.Fatalf("setup: %v", err)
+	}
+	badPath := filepath.Join(blockingFile, "INTERVIEW-test.yaml")
+	saveResult := mgr.Save(doc, badPath)
+	if !saveResult.IsFatal() {
+		t.Fatal("expected FATAL result")
+	}
+	if len(saveResult.Errors) == 0 {
+		t.Fatal("expected non-empty Errors on FATAL result; bounds-check fix is needed")
 	}
 }
 
