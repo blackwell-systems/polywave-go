@@ -45,6 +45,29 @@ func writeTestIMPL(t *testing.T, content string) string {
 	return implPath
 }
 
+// TestRunCriticCmd_BackendFlagRegistered verifies the --backend flag exists on
+// the run-critic command and defaults to "cli".
+func TestRunCriticCmd_BackendFlagRegistered(t *testing.T) {
+	cmd := newRunCriticCmd()
+	flag := cmd.Flags().Lookup("backend")
+	if flag == nil {
+		t.Fatal("expected --backend flag to be registered on run-critic command")
+	}
+	if flag.DefValue != "cli" {
+		t.Errorf("expected --backend default to be %q, got %q", "cli", flag.DefValue)
+	}
+}
+
+// TestRunCriticCmd_SkipFlagStillWorks verifies the --skip flag is still
+// registered on the run-critic command after adding --backend.
+func TestRunCriticCmd_SkipFlagStillWorks(t *testing.T) {
+	cmd := newRunCriticCmd()
+	flag := cmd.Flags().Lookup("skip")
+	if flag == nil {
+		t.Fatal("expected --skip flag to be registered on run-critic command")
+	}
+}
+
 // TestRunCriticCmd_SkipFlag verifies that --skip writes a PASS result with
 // "Skipped by operator" summary and exits 0 without launching an agent.
 func TestRunCriticCmd_SkipFlag(t *testing.T) {
