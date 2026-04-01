@@ -8,30 +8,19 @@ package tools
 //
 // After wave merge, these point to the real middleware constructors.
 var (
-	ownershipMiddlewareFn    func(toolName string, c Constraints) Middleware
-	freezeMiddlewareFn       func(toolName string, c Constraints) Middleware
-	bashConstraintMiddlewareFn func(c Constraints, tracker *CommitTracker) Middleware
-	rolePathMiddlewareFn     func(toolName string, c Constraints) Middleware
+	ownershipMiddlewareFn func(toolName string, c Constraints) Middleware
+	freezeMiddlewareFn    func(toolName string, c Constraints) Middleware
+	rolePathMiddlewareFn  func(toolName string, c Constraints) Middleware
 )
 
-// initMiddlewareFns sets up the middleware constructor references.
-// Called from the init functions in the middleware source files,
-// or set directly in tests.
 func init() {
-	// These will be nil until the corresponding agent files are merged.
-	// WithConstraints checks for nil before calling.
-	if ownershipMiddlewareFn == nil {
-		ownershipMiddlewareFn = defaultOwnershipMiddleware
-	}
-	if freezeMiddlewareFn == nil {
-		freezeMiddlewareFn = defaultFreezeMiddleware
-	}
-	if bashConstraintMiddlewareFn == nil {
-		bashConstraintMiddlewareFn = defaultBashConstraintMiddleware
-	}
-	if rolePathMiddlewareFn == nil {
-		rolePathMiddlewareFn = defaultRolePathMiddleware
-	}
+	// Set passthrough stubs, then immediately replace with real implementations.
+	// The explicit RegisterConstraintMiddleware() call replaces reliance on
+	// Go's alphabetical file init() ordering.
+	ownershipMiddlewareFn = defaultOwnershipMiddleware
+	freezeMiddlewareFn = defaultFreezeMiddleware
+	rolePathMiddlewareFn = defaultRolePathMiddleware
+	RegisterConstraintMiddleware()
 }
 
 // Default stubs that will be replaced when agent files are merged.
@@ -41,10 +30,6 @@ func defaultOwnershipMiddleware(_ string, _ Constraints) Middleware {
 }
 
 func defaultFreezeMiddleware(_ string, _ Constraints) Middleware {
-	return func(next ToolExecutor) ToolExecutor { return next }
-}
-
-func defaultBashConstraintMiddleware(_ Constraints, _ *CommitTracker) Middleware {
 	return func(next ToolExecutor) ToolExecutor { return next }
 }
 
@@ -86,9 +71,9 @@ func WithConstraints(w Workshop, c Constraints) (Workshop, *CommitTracker) {
 
 		switch {
 		case t.Name == "bash":
-			// Bash tool gets BashConstraintMiddleware (handles I1 + I5)
-			mw := bashConstraintMiddlewareFn(c, tracker)
-			t.Executor = mw(t.Executor)
+			// TODO(I5): Bash constraint enforcement (commit tracking) is deferred.
+			// The bashConstraintMiddlewareFn stub was a permanent passthrough and
+			// has been removed. Re-introduce real I5 enforcement here when needed.
 
 		case writableTools[t.Name]:
 			// Write/edit tools get the constraint middleware stack.
@@ -112,7 +97,9 @@ func WithConstraints(w Workshop, c Constraints) (Workshop, *CommitTracker) {
 			// Read-only tools (read_file, glob, grep, list_directory): no constraints
 		}
 
-		wrapped.Register(t) // nolint: result ignored, duplicates cannot occur here (iterating w.All())
+		if res := wrapped.Register(t); res.IsFatal() {
+			panic("WithConstraints: duplicate tool name: " + t.Name)
+		}
 	}
 
 	return wrapped, tracker

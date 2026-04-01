@@ -28,8 +28,8 @@ func RolePathMiddleware(toolName string, c Constraints) Middleware {
 				return next.Execute(ctx, execCtx, input)
 			}
 
-			// Extract file_path from input
-			filePath, _ := input["file_path"].(string)
+			// Extract file path from input (checks "file_path" then "path" fallback)
+			filePath := extractFilePath(input)
 			if filePath == "" {
 				return next.Execute(ctx, execCtx, input)
 			}
@@ -51,10 +51,10 @@ func RolePathMiddleware(toolName string, c Constraints) Middleware {
 			if role == "" {
 				role = "unknown"
 			}
-			return fmt.Sprintf(
+			return "", fmt.Errorf(
 				"BLOCKED: %s agent cannot write to %s. Allowed paths: %v",
 				role, filePath, c.AllowedPathPrefixes,
-			), nil
+			)
 		})
 	}
 }

@@ -302,9 +302,42 @@ func TestConstraintEnforcer_Composition(t *testing.T) {
 	}
 }
 
-// TestConstraintEnforcer_InitRegistersRealImplementations verifies that the init()
-// function unconditionally sets all three package-level middleware variables to
-// the real implementations (not the passthrough stubs).
+// TestConstraintEnforcer_I6_ScoutBlocksNonYamlIMPLPath verifies that newRolePathMiddleware
+// blocks scout writes to paths with the right prefix but wrong extension.
+func TestConstraintEnforcer_I6_ScoutBlocksNonYamlIMPLPath(t *testing.T) {
+	c := Constraints{
+		AgentRole:           "scout",
+		AllowedPathPrefixes: []string{"docs/IMPL/IMPL-"},
+	}
+	mw := newRolePathMiddleware("edit_file", c)
+	wrapped := mw(enforcerPassthrough())
+
+	// Right prefix but not .yaml — should be blocked
+	_, err := wrapped.Execute(context.Background(), ExecutionContext{}, map[string]interface{}{
+		"file_path": "docs/IMPL/IMPL-foo.txt",
+	})
+	if err == nil {
+		t.Fatal("expected I6_VIOLATION for non-.yaml file with scout role, got nil")
+	}
+	if !strings.Contains(err.Error(), "I6_VIOLATION") {
+		t.Errorf("expected I6_VIOLATION, got: %v", err)
+	}
+
+	// .yaml extension — should be allowed
+	result, err := wrapped.Execute(context.Background(), ExecutionContext{}, map[string]interface{}{
+		"file_path": "docs/IMPL/IMPL-foo.yaml",
+	})
+	if err != nil {
+		t.Fatalf("unexpected error for .yaml file: %v", err)
+	}
+	if result != "ok" {
+		t.Errorf("expected 'ok', got %q", result)
+	}
+}
+
+// TestConstraintEnforcer_InitRegistersRealImplementations verifies that after init()
+// all three package-level middleware variables point to real implementations
+// (not the passthrough stubs).
 func TestConstraintEnforcer_InitRegistersRealImplementations(t *testing.T) {
 	// After init() runs, the package-level vars should point to real implementations.
 	// We verify this by checking that they produce violations (not passthroughs).

@@ -49,17 +49,20 @@ func TestRolePath_ScoutBlocksSourceCode(t *testing.T) {
 	result, err := wrapped.Execute(context.Background(), ExecutionContext{}, map[string]interface{}{
 		"file_path": "pkg/foo.go",
 	})
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+	if err == nil {
+		t.Fatal("expected error for blocked path, got nil")
 	}
 	if called {
 		t.Fatal("executor was called; expected block")
 	}
-	if !strings.Contains(result, "BLOCKED") {
-		t.Errorf("expected BLOCKED message, got %q", result)
+	if result != "" {
+		t.Errorf("expected empty result on violation, got %q", result)
 	}
-	if !strings.Contains(result, "scout") {
-		t.Errorf("expected role in message, got %q", result)
+	if !strings.Contains(err.Error(), "BLOCKED") {
+		t.Errorf("expected BLOCKED in error message, got %q", err.Error())
+	}
+	if !strings.Contains(err.Error(), "scout") {
+		t.Errorf("expected role in error message, got %q", err.Error())
 	}
 }
 
@@ -76,14 +79,17 @@ func TestRolePath_ScoutBlocksNonIMPLYaml(t *testing.T) {
 	result, err := wrapped.Execute(context.Background(), ExecutionContext{}, map[string]interface{}{
 		"file_path": "docs/IMPL/IMPL-foo.txt",
 	})
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+	if err == nil {
+		t.Fatal("expected error for non-.yaml file, got nil")
 	}
 	if called {
 		t.Fatal("executor was called; expected block for non-.yaml file")
 	}
-	if !strings.Contains(result, "BLOCKED") {
-		t.Errorf("expected BLOCKED message, got %q", result)
+	if result != "" {
+		t.Errorf("expected empty result on violation, got %q", result)
+	}
+	if !strings.Contains(err.Error(), "BLOCKED") {
+		t.Errorf("expected BLOCKED in error message, got %q", err.Error())
 	}
 
 	// Different path entirely
@@ -91,14 +97,17 @@ func TestRolePath_ScoutBlocksNonIMPLYaml(t *testing.T) {
 	result, err = wrapped.Execute(context.Background(), ExecutionContext{}, map[string]interface{}{
 		"file_path": "docs/other.yaml",
 	})
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+	if err == nil {
+		t.Fatal("expected error for non-IMPL path, got nil")
 	}
 	if called {
 		t.Fatal("executor was called; expected block for non-IMPL path")
 	}
-	if !strings.Contains(result, "BLOCKED") {
-		t.Errorf("expected BLOCKED message, got %q", result)
+	if result != "" {
+		t.Errorf("expected empty result on violation, got %q", result)
+	}
+	if !strings.Contains(err.Error(), "BLOCKED") {
+		t.Errorf("expected BLOCKED in error message, got %q", err.Error())
 	}
 }
 
@@ -149,17 +158,20 @@ func TestRolePath_ScaffoldBlocksOtherPaths(t *testing.T) {
 	result, err := wrapped.Execute(context.Background(), ExecutionContext{}, map[string]interface{}{
 		"file_path": "cmd/main.go",
 	})
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+	if err == nil {
+		t.Fatal("expected error for blocked path, got nil")
 	}
 	if called {
 		t.Fatal("executor was called; expected block for non-scaffold path")
 	}
-	if !strings.Contains(result, "BLOCKED") {
-		t.Errorf("expected BLOCKED message, got %q", result)
+	if result != "" {
+		t.Errorf("expected empty result on violation, got %q", result)
 	}
-	if !strings.Contains(result, "scaffold") {
-		t.Errorf("expected role in message, got %q", result)
+	if !strings.Contains(err.Error(), "BLOCKED") {
+		t.Errorf("expected BLOCKED in error message, got %q", err.Error())
+	}
+	if !strings.Contains(err.Error(), "scaffold") {
+		t.Errorf("expected role in error message, got %q", err.Error())
 	}
 }
 
@@ -180,6 +192,42 @@ func TestRolePath_EmptyPrefixes_Passthrough(t *testing.T) {
 	}
 	if !called {
 		t.Fatal("executor was not called; expected passthrough with empty prefixes")
+	}
+	if result != "ok" {
+		t.Errorf("expected 'ok', got %q", result)
+	}
+}
+
+func TestRolePath_PathKeyFallback(t *testing.T) {
+	var called bool
+	c := Constraints{
+		AllowedPathPrefixes: []string{"docs/IMPL/IMPL-"},
+		AgentRole:           "scout",
+	}
+	mw := RolePathMiddleware("edit_file", c)
+	wrapped := mw(newPassthroughExecutor(&called))
+
+	// edit_file uses "path" key — should be blocked
+	_, err := wrapped.Execute(context.Background(), ExecutionContext{}, map[string]interface{}{
+		"path": "pkg/foo.go",
+	})
+	if err == nil {
+		t.Fatal("expected error for blocked path via 'path' key")
+	}
+	if called {
+		t.Fatal("executor should not have been called")
+	}
+
+	// Allowed IMPL yaml via "path" key
+	called = false
+	result, err := wrapped.Execute(context.Background(), ExecutionContext{}, map[string]interface{}{
+		"path": "docs/IMPL/IMPL-test.yaml",
+	})
+	if err != nil {
+		t.Fatalf("unexpected error for allowed path via 'path' key: %v", err)
+	}
+	if !called {
+		t.Fatal("executor should have been called for allowed path")
 	}
 	if result != "ok" {
 		t.Errorf("expected 'ok', got %q", result)
