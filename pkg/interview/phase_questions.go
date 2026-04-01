@@ -146,7 +146,7 @@ func fieldIsPopulated(doc *InterviewDoc, phase InterviewPhase, field string) boo
 // Guard: if the transition would skip more than one phase forward, panic.
 // Backward transitions are NOT guarded here — they are handled by
 // recalculatePhase (which resets to PhaseOverview and replays forward-only).
-func checkPhaseTransition(doc *InterviewDoc) {
+func checkPhaseTransition(doc *InterviewDoc) error {
 	prevPhase := doc.Phase
 
 	switch doc.Phase {
@@ -185,9 +185,10 @@ func checkPhaseTransition(doc *InterviewDoc) {
 		newOrder, newOk := phaseOrder[doc.Phase]
 		prevOrder, prevOk := phaseOrder[prevPhase]
 		if newOk && prevOk && newOrder > prevOrder+1 {
-			panic(fmt.Sprintf("interview: invalid phase skip: %s → %s", prevPhase, doc.Phase))
+			return fmt.Errorf("interview: invalid phase skip: %s → %s", prevPhase, doc.Phase)
 		}
 	}
+	return nil
 }
 
 // Helper functions to check if all questions in a phase have been asked.
