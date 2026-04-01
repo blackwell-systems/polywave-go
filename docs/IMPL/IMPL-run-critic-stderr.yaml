@@ -349,6 +349,7 @@ waves:
             - cmd/sawtools/run_critic_cmd_test.go
             - pkg/engine/critic.go
             - pkg/engine/scout_run.go
+      base_commit: 1378bff9e092432219356b37467add12d1d03bab
 quality_gates:
     level: standard
     gates:
@@ -361,6 +362,39 @@ quality_gates:
         - type: test
           command: go test ./pkg/agent/backend/cli/... ./cmd/sawtools/... ./pkg/engine/...
           required: true
+completion_reports:
+    A:
+        status: complete
+        branch: saw/run-critic-stderr/wave1-agent-A
+        commit: 34a2f8b
+        files_changed:
+            - pkg/agent/backend/cli/client.go
+            - pkg/agent/backend/cli/client_test.go
+        files_created:
+            - pkg/agent/backend/cli/client_test.go
+        tests_added:
+            - TestIsClaudeCodeSession_Detected
+            - TestIsClaudeCodeSession_NotDetected
+            - TestRunStreaming_ClaudeCodeSessionBlocked
+            - TestRunStreamingWithTools_ClaudeCodeSessionBlocked
+        verification: PASS
+        notes: IsClaudeCodeSession() added, nesting guard at top of both Run methods, nonJSON builder with 4096-byte cap in both scanning loops, ExitError messages now include captured non-JSON output. All 12 tests pass.
+    B:
+        status: complete
+        branch: saw/run-critic-stderr/wave1-agent-B
+        commit: 91ba2ed
+        files_changed:
+            - cmd/sawtools/run_critic_cmd.go
+            - cmd/sawtools/run_critic_cmd_test.go
+            - pkg/engine/critic.go
+            - pkg/engine/scout_run.go
+        files_created:
+            - cmd/sawtools/run_critic_cmd_test.go
+        tests_added:
+            - TestRunCriticCmd_BackendFlagRegistered
+            - TestRunCriticCmd_SkipFlagStillWorks
+        verification: PASS
+        notes: BuildCriticPrompt extracted from RunCritic. --backend agent-tool flag added. RunCritic now delegates to BuildCriticPrompt. BuildCriticPromptOpts added to scout_run.go. All quality gates pass.
 pre_mortem:
     overall_risk: low
     rows:
@@ -382,3 +416,17 @@ pre_mortem:
           mitigation: Cap nonJSON builder at 4KB. Most error messages are short. Truncate with '... (truncated)' suffix if exceeded.
 state: REVIEWED
 injection_method: hook
+integration_reports:
+    wave1:
+        wave: 1
+        gaps:
+            - export_name: RunScoutFullResult
+              file_path: pkg/engine/scout_run.go
+              agent_id: B
+              category: type_usage
+              severity: error
+              reason: exported type "RunScoutFullResult" has no call-sites outside its defining file
+              suggested_fix: Use type RunScoutFullResult in appropriate location
+              search_results: []
+        valid: false
+        summary: 'Wave 1: 1 integration gap(s) detected, 1 error(s)'
