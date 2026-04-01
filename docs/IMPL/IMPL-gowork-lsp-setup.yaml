@@ -1,0 +1,412 @@
+title: go.work LSP Setup for Wave Worktrees
+feature_slug: gowork-lsp-setup
+verdict: SUITABLE
+suitability_assessment: |-
+    File decomposition: The feature touches 4 distinct files — pkg/engine/prepare.go (new
+    gowork_setup step), pkg/engine/finalize_steps.go (new gowork_restore step),
+    cmd/sawtools/prepare_wave.go (--no-gowork flag), and pkg/engine/prepare_test.go or a
+    new test file for the gowork step. These split cleanly across 2 agents with disjoint
+    ownership.
+
+    Investigation-first items: None. The behavior is well-specified (go work init, go work
+    use, backup/restore). No root cause analysis required.
+
+    Interface discoverability: The cross-agent interface is minimal — Agent A adds a new
+    step function in pkg/engine/finalize_steps.go; Agent B adds the complementary step in
+    prepare.go. No shared types introduced that don't already exist.
+
+    Pre-implementation status: Feature is entirely new. No prior implementation found. The
+    repo has no go.work file (confirmed). The .saw-state/wave{N}/ directory pattern is
+    already established.
+
+    Parallelization value: 2 agents, 2-3 files each, non-trivial logic (subprocess exec,
+    file backup/restore, conditional detection, test coverage). Build/test cycle for Go is
+    ~10-20s. Moderate parallelization benefit. SUITABLE.
+
+    Estimated times:
+    - Scout phase: ~15 min
+    - Agent execution: ~2 agents x 15 min = ~30 min, parallelized to ~15 min
+    - Merge and verification: ~3 min
+    Total SAW time: ~33 min
+
+    Sequential baseline: ~40 min
+    Time savings: ~7 min (17% faster)
+
+    Recommendation: Marginal speed savings; primary value is coordination and parallel
+    spec enforcement.
+test_command: go test ./...
+lint_command: go vet ./...
+file_ownership:
+    - file: pkg/engine/gowork_steps.go
+      agent: A
+      wave: 1
+      action: new
+    - file: pkg/engine/gowork_steps_test.go
+      agent: A
+      wave: 1
+      action: new
+    - file: pkg/engine/prepare.go
+      agent: B
+      wave: 1
+      action: modify
+    - file: cmd/sawtools/prepare_wave.go
+      agent: B
+      wave: 1
+      action: modify
+    - file: pkg/engine/step_types.go
+      agent: B
+      wave: 1
+      action: modify
+    - file: pkg/engine/finalize.go
+      agent: B
+      wave: 1
+      action: modify
+    - file: .gitignore
+      agent: B
+      wave: 1
+      action: modify
+interface_contracts:
+    - name: StepGoWorkSetup
+      description: |-
+        New step function added to pkg/engine/gowork_steps.go. Called in PrepareWave
+        immediately after create_worktrees succeeds. Skipped when go.mod is absent from
+        repo root (non-Go repo) or when NoGoWork option is true. Non-fatal on subprocess
+        error — logs warning and records step status "warning" but does not return error.
+      definition: |-
+        // StepGoWorkSetup creates or updates go.work at repoRoot to include all worktree
+        // paths for the current wave, enabling gopls cross-package type resolution during
+        // agent execution. Only runs for Go repos (go.mod present at repoRoot).
+        // If go.work already exists, its content is backed up to
+        // .saw-state/wave{N}/go.work.backup before modification.
+        // Non-fatal: subprocess failure logs a warning but does not fail the wave.
+        func StepGoWorkSetup(ctx context.Context, repoRoot string, waveNum int, worktrees []protocol.WorktreeInfo, onEvent EventCallback, logger *slog.Logger) *StepResult
+      location: pkg/engine/gowork_steps.go
+    - name: StepGoWorkRestore
+      description: |-
+        New step function added to pkg/engine/gowork_steps.go. Called in FinalizeWave
+        immediately before StepCleanup (after merge succeeds). Restores go.work to its
+        pre-wave state: if .saw-state/wave{N}/go.work.backup exists, overwrite go.work
+        with its content; otherwise delete go.work entirely. Non-fatal on error.
+      definition: |-
+        // StepGoWorkRestore restores go.work at repoRoot to its pre-wave state.
+        // If .saw-state/wave{N}/go.work.backup exists, it overwrites go.work with the
+        // backup content and removes the backup file. If the backup does not exist,
+        // go.work is deleted (it was created by StepGoWorkSetup and did not exist before).
+        // Non-fatal: errors log a warning but do not fail the wave.
+        func StepGoWorkRestore(ctx context.Context, repoRoot string, waveNum int, onEvent EventCallback, logger *slog.Logger) *StepResult
+      location: pkg/engine/gowork_steps.go
+    - name: PrepareWaveOpts.NoGoWork
+      description: |-
+        New bool field added to PrepareWaveOpts in pkg/engine/step_types.go.
+        When true, StepGoWorkSetup is skipped entirely. CLI wires --no-gowork flag to
+        this field in cmd/sawtools/prepare_wave.go.
+      definition: |-
+        // NoGoWork disables the gowork_setup step in PrepareWave.
+        // Use when go.work management conflicts with an existing workspace setup.
+        NoGoWork bool
+      location: pkg/engine/step_types.go
+waves:
+    - number: 1
+      agents:
+        - id: A
+          task: |-
+            ## What to implement
+
+            Create `pkg/engine/gowork_steps.go` implementing two new step functions:
+            `StepGoWorkSetup` and `StepGoWorkRestore`. Also create
+            `pkg/engine/gowork_steps_test.go` with tests for both functions.
+
+            ### StepGoWorkSetup
+
+            Function signature:
+            ```go
+            func StepGoWorkSetup(ctx context.Context, repoRoot string, waveNum int, worktrees []protocol.WorktreeInfo, onEvent EventCallback, logger *slog.Logger) *StepResult
+            ```
+
+            Behavior:
+            1. Check if `go.mod` exists at `repoRoot`. If absent, emit step event
+               `(gowork_setup, skipped, "not a Go repo")` and return success StepResult.
+            2. Build the backup dir path: `filepath.Join(protocol.SAWStateDir(repoRoot), fmt.Sprintf("wave%d", waveNum))`.
+               Ensure the directory exists with `os.MkdirAll`.
+            3. Check if `go.work` exists at `repoRoot`.
+               - If yes: read its content and write to `<backupDir>/go.work.backup`.
+                 Log via `loggerFrom(logger).Info("gowork_setup: backed up go.work")`.
+               - If no: do nothing for backup.
+               Also check if `go.work.sum` exists at `repoRoot`.
+               - If yes: read its content and write to `<backupDir>/go.work.sum.backup`.
+               - If no: do nothing for backup.
+            4. Run `go work init .` using `os/exec` with working directory `repoRoot`.
+               If it fails, log a warning (non-fatal) and return StepResult with
+               status "warning", detail containing the error. Do not return an error
+               from the function itself — callers must not treat this as fatal.
+               Note: if go.work already exists from step 3, `go work init .` may fail
+               with "already in workspace"; in that case skip running init and proceed
+               to `go work use` calls. Check for this by re-checking if go.work exists
+               after writing the backup.
+            5. For each `worktrees` entry, run `go work use <worktree.Path>` with
+               working directory `repoRoot`. Log warnings on failure (non-fatal).
+            6. Append a comment line `// SAW-managed: restored by finalize-wave` to
+               go.work using `os.OpenFile` with append mode.
+            7. Emit step event `(gowork_setup, success, "go.work updated with N worktree(s)")`.
+            8. Return StepResult{Step: "gowork_setup", Status: "success"}.
+
+            Use `emitStepEvent(onEvent, "gowork_setup", ...)` for all events.
+            Import `loggerFrom` from the same package (it exists in finalize_steps.go).
+            Use `os/exec` for subprocess calls. Do NOT use `internal/git` — that's git-specific.
+
+            ### StepGoWorkRestore
+
+            Function signature:
+            ```go
+            func StepGoWorkRestore(ctx context.Context, repoRoot string, waveNum int, onEvent EventCallback, logger *slog.Logger) *StepResult
+            ```
+
+            Behavior:
+            1. Build backup dir: `filepath.Join(protocol.SAWStateDir(repoRoot), fmt.Sprintf("wave%d", waveNum))`.
+            2. Restore go.work:
+               - Build backup path: `<backupDir>/go.work.backup`.
+               - If backup exists: read content, write to `filepath.Join(repoRoot, "go.work")`,
+                 remove backup file. Emit `(gowork_restore, success, "go.work restored from backup")`.
+               - If no backup: delete `filepath.Join(repoRoot, "go.work")` if it exists (ignore
+                 NotExist errors). Emit `(gowork_restore, success, "go.work removed (was not present before wave)")`.
+            3. Restore go.work.sum:
+               - Build backup path: `<backupDir>/go.work.sum.backup`.
+               - If backup exists: read content, write to `filepath.Join(repoRoot, "go.work.sum")`,
+                 remove backup file.
+               - If no backup: delete `filepath.Join(repoRoot, "go.work.sum")` if it exists (ignore
+                 NotExist errors).
+               - Emit `(gowork_restore, success, "go.work.sum handled")`.
+            4. On any error in steps 2-3, log warning (non-fatal), emit `(gowork_restore, warning, err.Error())`,
+               return StepResult with status "warning".
+            5. Return StepResult{Step: "gowork_restore", Status: "success"}.
+
+            ### Tests in gowork_steps_test.go
+
+            Write tests in `package engine` (not `engine_test`). Use `t.TempDir()` for
+            isolation. Follow the `makeTestIMPL` + `collectStepEvents` helper pattern from
+            `finalize_steps_test.go` (those helpers are in the same package).
+
+            Required tests:
+            - `TestStepGoWorkSetup_SkipsNonGoRepo`: repoRoot without go.mod →
+              result.Status == "success", step detail contains "not a Go repo",
+              no go.work created.
+            - `TestStepGoWorkSetup_CreatesGoWork`: repoRoot with go.mod present,
+              2 fake worktree paths (create the dirs so `go work use` can find them).
+              Verify go.work is created at repoRoot. Note: actual `go work` subprocess
+              requires a valid Go workspace; use `t.Skip` if the `go` binary is unavailable,
+              or mock via checking the backup/file-existence behavior only.
+              Alternative: write the test to verify the backup-creation logic and the
+              non-fatal warning path by making `go work init` fail (point repoRoot to a
+              non-Go location despite having go.mod). Focus on file-system side effects.
+            - `TestStepGoWorkSetup_BacksUpExistingGoWork`: create a go.work at repoRoot
+              with content "// original". After calling StepGoWorkSetup, verify that
+              `.saw-state/wave1/go.work.backup` contains "// original".
+            - `TestStepGoWorkRestore_RestoresFromBackup`: create a backup file with
+              content "// backed-up". After StepGoWorkRestore, verify go.work at repoRoot
+              contains "// backed-up" and backup file is gone.
+            - `TestStepGoWorkRestore_DeletesGoWorkWhenNoBackup`: create a go.work at
+              repoRoot. Call StepGoWorkRestore with no backup file. Verify go.work is
+              deleted and result.Status == "success".
+            - `TestStepGoWorkRestore_NilCallback`: StepGoWorkRestore with nil onEvent
+              should not panic.
+
+            ## Verification gate
+
+            ```
+            cd /Users/dayna.blackwell/workspace/code/scout-and-wave-go && go build ./pkg/engine/ && go vet ./pkg/engine/ && go test ./pkg/engine/ -run TestStepGoWork -v
+            ```
+
+            ## Constraints
+
+            - Do not modify any existing files — only create the two new files.
+            - Use `log/slog` (not `fmt.Println`) for logging, via `loggerFrom(logger)`.
+            - `loggerFrom` is defined in `pkg/engine/finalize_steps.go`; it is in the
+              same package so you can call it directly.
+            - All subprocess calls are non-fatal: errors become warnings, not pipeline failures.
+            - The function returns `*StepResult`, never an error — caller decides fatality.
+          files:
+            - pkg/engine/gowork_steps.go
+            - pkg/engine/gowork_steps_test.go
+        - id: B
+          task: |-
+            ## What to implement
+
+            Wire the two new step functions (`StepGoWorkSetup` and `StepGoWorkRestore`)
+            into the prepare and finalize pipelines, and add the `NoGoWork` option.
+            Modify 4 existing files:
+
+            ### 1. pkg/engine/step_types.go — add NoGoWork field
+
+            In `PrepareWaveOpts`, add a new field after `CommitState`:
+            ```go
+            // NoGoWork disables the gowork_setup step in PrepareWave.
+            // Use when go.work management conflicts with an existing workspace setup.
+            NoGoWork bool
+            ```
+
+            ### 2. pkg/engine/prepare.go — add gowork_setup step
+
+            After the `create_worktrees` step succeeds (line ~570-572, after
+            `recordStep(res, opts.OnEvent, "create_worktrees", "success", ...)`),
+            add the gowork_setup step:
+
+            ```go
+            // Step: gowork_setup — create/update go.work for LSP cross-package resolution
+            if !opts.NoGoWork {
+                goworkResult := StepGoWorkSetup(ctx, projectRoot, opts.WaveNum, worktreeResult.Worktrees, opts.OnEvent, opts.Logger)
+                if goworkResult != nil {
+                    recordStepWithData(res, opts.OnEvent, goworkResult.Step, goworkResult.Status, goworkResult.Detail, goworkResult.Data)
+                }
+            } else {
+                recordStep(res, opts.OnEvent, "gowork_setup", "skipped", "--no-gowork flag set")
+            }
+            ```
+
+            Note: the gowork_setup step is always non-fatal. Do not add error returns.
+            The step function itself handles logging.
+
+            ### 3. pkg/engine/finalize.go — add gowork_restore step
+
+            Find the existing `// Step 4.5: Fix go.mod replace paths` comment (line ~527).
+            Add `StepGoWorkRestore` immediately after it (after the `StepFixGoMod` call):
+
+            ```go
+            // Step 4.6: Restore go.work to pre-wave state
+            for _, repoPath := range repos {
+                _, _ = StepGoWorkRestore(ctx, repoPath, opts.WaveNum, onEvent, opts.Logger)
+                break // run once — go.work is repo-root-scoped, not per-repo
+            }
+            ```
+
+            The `break` ensures we only run once even in cross-repo IMPLs (go.work is at
+            a single repo root). If `repos` is empty this is a no-op.
+
+            ### 4. pkg/engine/prepare.go — expand isSAWOwnedPath
+
+            The `isSAWOwnedPath` helper classifies git porcelain status lines as
+            SAW-owned vs user code. Add `go.work` and `go.work.sum` to the recognized
+            patterns so `--commit-state` doesn't treat them as blocking user code:
+
+            ```go
+            // After the existing .saw-state/ checks, add:
+            trimmed == "go.work" ||
+            trimmed == "go.work.sum" ||
+            ```
+
+            ### 5. .gitignore — exclude go.work and go.work.sum
+
+            Add to `.gitignore` at the repo root:
+            ```
+            # SAW-managed go workspace files (created/restored by prepare-wave/finalize-wave)
+            go.work
+            go.work.sum
+            ```
+
+            Check whether go.work and go.work.sum are already in .gitignore before adding.
+
+            ### 6. cmd/sawtools/prepare_wave.go — add --no-gowork flag
+
+            1. Add a new local variable: `var noGoWork bool`
+            2. In the `cmd.Flags()` block at the bottom, add:
+               ```go
+               cmd.Flags().BoolVar(&noGoWork, "no-gowork", false, "Skip go.work setup for LSP cross-package resolution (Go repos only)")
+               ```
+            3. In the `engine.PrepareWaveOpts{...}` struct literal, add:
+               ```go
+               NoGoWork: noGoWork,
+               ```
+
+            ## Verification gate
+
+            ```
+            cd /Users/dayna.blackwell/workspace/code/scout-and-wave-go && go build ./... && go vet ./pkg/engine/ && go vet ./cmd/sawtools/ && go test ./pkg/engine/ -run TestPrepareWave -v
+            ```
+
+            ## Constraints
+
+            - In `prepare.go`, the gowork_setup step must come AFTER `verify_hooks` and
+              BEFORE `extract_briefs` (or after `create_worktrees` — pick the location
+              after create_worktrees succeeds, before `verify_hooks` is also acceptable).
+              The key requirement: worktrees must exist before gowork_setup runs.
+            - Do NOT change any existing function signatures.
+            - Do NOT touch `gowork_steps.go` — Agent A owns that file.
+            - In `finalize.go`, the restore must happen before `StepCleanup` (step 6)
+              so that go.work is restored before worktrees are removed.
+            - The `PrepareWaveOpts.NoGoWork` field addition must match the interface
+              contract exactly as specified.
+            - The `isSAWOwnedPath` change is additive only — do not alter existing checks.
+          files:
+            - pkg/engine/prepare.go
+            - cmd/sawtools/prepare_wave.go
+            - pkg/engine/step_types.go
+            - pkg/engine/finalize.go
+            - .gitignore
+quality_gates:
+    level: standard
+    gates:
+        - type: build
+          command: go build ./...
+          required: true
+        - type: lint
+          command: go vet ./...
+          required: true
+        - type: test
+          command: go test ./...
+          required: true
+pre_mortem:
+    overall_risk: low
+    rows:
+        - scenario: |-
+            `go work init .` or `go work use` subprocess fails in a worktree context because
+            the go binary version doesn't support go workspaces (requires Go 1.18+).
+          likelihood: low
+          impact: low
+          mitigation: |-
+            Both step functions are non-fatal — failures log warnings and return status
+            "warning" but do not fail the wave. The go.mod check confirms it's a Go repo
+            but doesn't gate on Go version; callers get a warning and continue.
+        - scenario: |-
+            Agent B calls `StepGoWorkSetup` before Agent A has created the file, causing
+            a compile error in prepare.go.
+          likelihood: high
+          impact: medium
+          mitigation: |-
+            Both agents are in Wave 1 and work in isolated worktrees. Agent B modifies
+            prepare.go to call `StepGoWorkSetup(...)` — this will compile in Agent B's
+            worktree because the Go compiler only checks at build time. Agent A creates
+            gowork_steps.go in its worktree. After merge of both branches, the combined
+            codebase compiles. The verify-build step catches any issues. Agents should
+            NOT compile the full binary in isolation — only their owned packages.
+        - scenario: |-
+            go.work file left behind if finalize-wave crashes or is interrupted between
+            merge and StepGoWorkRestore.
+          likelihood: low
+          impact: low
+          mitigation: |-
+            The go.work file is dev-only tooling (gopls). Leaving it behind doesn't break
+            builds. The next prepare-wave run will back it up again and overwrite it.
+            A user can also manually delete it.
+        - scenario: |-
+            In cross-repo IMPLs, the `for _, repoPath := range repos { break }` pattern
+            picks a non-deterministic repo to run restore on.
+          likelihood: low
+          impact: low
+          mitigation: |-
+            go.work is at the primary repo root. For cross-repo IMPLs, the primary repo
+            is opts.RepoPath. The `repos` map always includes "." -> opts.RepoPath for
+            single-repo IMPLs. For cross-repo, the restore should use opts.RepoPath
+            directly instead of ranging the map. Agent B should use `opts.RepoPath`
+            directly in the StepGoWorkRestore call rather than ranging repos.
+        - scenario: |-
+            Agent B's changes to prepare.go introduce a same-package duplicate of a helper
+            function that Agent A also defines (e.g., loggerFrom).
+          likelihood: low
+          impact: medium
+          mitigation: |-
+            Both agents are told explicitly: Agent A creates gowork_steps.go (new file),
+            Agent B modifies prepare.go (existing file). loggerFrom is in finalize_steps.go
+            (not in either agent's file). No duplicate risk for loggerFrom. The only
+            cross-package symbol is StepGoWorkSetup/StepGoWorkRestore, defined by A and
+            called by B — no duplication possible.
+state: SCOUT_PENDING
+injection_method: hook

@@ -1,0 +1,905 @@
+title: pkg/tools Bug Fixes
+feature_slug: tools-bug-fixes
+verdict: SUITABLE
+suitability_assessment: |
+    All 8 bugs are localized to 6 files in pkg/tools. The work decomposes across
+    3 agents with disjoint file ownership.
+
+    File decomposition:
+    - Agent A owns role_middleware.go, constraint_enforcer.go, workshop_constrained.go,
+      and their test files (Bugs 1, 2, 3, 5, and 8-workshop). The tightly coupled init()
+      dependency between constraint_enforcer.go and workshop_constrained.go requires them
+      to be in the same worktree to avoid cross-agent compilation failures.
+    - Agent B owns standard.go only (Bug 8-standard). Simple nolint replacements,
+      no cross-file dependencies.
+    - Agent C owns executors.go, middleware.go, and the new executors_test.go
+      (Bugs 4, 6, 7). Fully independent of A and B.
+
+    Interface discoverability: All cross-agent interfaces are stable — no new exported
+    types are introduced. extractFilePath() already exists in constraint_enforcer.go and
+    is unexported. The extractStringInput() helper added in executors.go is also unexported.
+    No cross-agent interface contracts are needed.
+
+    Parallelization value: Go build+test cycle (~0.3s for this package) is fast, so
+    parallelism saves little wall-clock time. The 3-agent split provides coordination
+    value as an audit trail and prevents agents from modifying the same files.
+    Verdict: SUITABLE WITH CAVEATS — coordination value justifies SAW, not speed.
+
+    Estimated times:
+    - Scout phase: ~15 min
+    - Agent execution: ~30 min (3 agents x ~10 min avg, parallel wave 1)
+    - Merge and verification: ~5 min
+    Total SAW time: ~50 min
+    Sequential baseline: ~45 min (3 x 15 min)
+    Time savings: marginal; value is in structured audit trail and isolated commits.
+test_command: go test ./pkg/tools/...
+lint_command: go vet ./pkg/tools/...
+file_ownership:
+    - file: pkg/tools/role_middleware.go
+      agent: A
+      wave: 1
+      action: modify
+    - file: pkg/tools/constraint_enforcer.go
+      agent: A
+      wave: 1
+      action: modify
+    - file: pkg/tools/workshop_constrained.go
+      agent: A
+      wave: 1
+      action: modify
+    - file: pkg/tools/role_middleware_test.go
+      agent: A
+      wave: 1
+      action: modify
+    - file: pkg/tools/constraint_enforcer_test.go
+      agent: A
+      wave: 1
+      action: modify
+    - file: pkg/tools/workshop_constrained_test.go
+      agent: A
+      wave: 1
+      action: modify
+    - file: pkg/tools/standard.go
+      agent: B
+      wave: 1
+      action: modify
+    - file: pkg/tools/executors.go
+      agent: C
+      wave: 1
+      action: modify
+    - file: pkg/tools/middleware.go
+      agent: C
+      wave: 1
+      action: modify
+    - file: pkg/tools/executors_test.go
+      agent: C
+      wave: 1
+      action: new
+interface_contracts:
+    - name: extractFilePath
+      description: |-
+        Already exists in constraint_enforcer.go. Checks "file_path" key first,
+        then "path" key fallback. Used by all three constraint middleware functions.
+        After Bug 1's fix, RolePathMiddleware in role_middleware.go must delegate to
+        this same function rather than using only the "file_path" key.
+      definition: |
+        func extractFilePath(input map[string]interface{}) string
+      location: pkg/tools/constraint_enforcer.go
+    - name: extractStringInput
+      description: |-
+        New unexported helper to be added in executors.go for Bug 4. Returns
+        (value, true) when key exists and contains a non-empty string. Returns
+        ("", false) when key is absent, wrong type, or empty string.
+      definition: |
+        func extractStringInput(input map[string]interface{}, key string) (string, bool)
+      location: pkg/tools/executors.go
+    - name: RolePathMiddleware
+      description: |-
+        Exported function in role_middleware.go. External behavior must not change —
+        callers in pkg/agent/backend still depend on it. After Bug 1's fix, path
+        extraction delegates to extractFilePath(). After Bug 2's fix, violations
+        return ("", error) instead of ("BLOCKED: ...", nil). Existing tests that
+        check strings.Contains(result, "BLOCKED") must be updated to check err.
+      definition: |
+        func RolePathMiddleware(toolName string, c Constraints) Middleware
+      location: pkg/tools/role_middleware.go
+waves:
+    - number: 1
+      agents:
+        - id: A
+          task: |
+            ## Role
+            Fix Bugs 1, 2, 3, 5 (both sides), and the workshop_constrained.go half of
+            Bug 8. All changes are in pkg/tools/ — read every file in the package before
+            making changes.
+
+            ## Files to Read First
+            Read all of these before writing anything:
+            - pkg/tools/role_middleware.go
+            - pkg/tools/constraint_enforcer.go
+            - pkg/tools/workshop_constrained.go
+            - pkg/tools/role_middleware_test.go
+            - pkg/tools/constraint_enforcer_test.go
+            - pkg/tools/workshop_constrained_test.go
+
+            ---
+
+            ## Bug 1+2: Consolidate RolePathMiddleware (CRITICAL)
+
+            **File: pkg/tools/role_middleware.go**
+
+            Problem 1: Path extraction at line 32 uses only `input["file_path"].(string)`,
+            missing the "path" key that edit_file uses. extractFilePath() in
+            constraint_enforcer.go already handles both keys correctly.
+
+            Problem 2: Violation return at lines 54-57 uses `fmt.Sprintf(...), nil`
+            (string message + nil error). All other constraint middleware return `"", err`.
+
+            Fix both in RolePathMiddleware:
+
+            1. Replace the inline path extraction:
+               OLD: `filePath, _ := input["file_path"].(string)`
+               NEW: `filePath := extractFilePath(input)`
+               (extractFilePath is in the same package — no import needed)
+
+            2. Remove the early-return for empty filePath if filePath comes from
+               extractFilePath (it already returns "" only when both keys are absent or empty).
+               The passthrough for empty path is still correct — keep it.
+
+            3. Change the violation return from:
+               ```go
+               return fmt.Sprintf(
+                   "BLOCKED: %s agent cannot write to %s. Allowed paths: %v",
+                   role, filePath, c.AllowedPathPrefixes,
+               ), nil
+               ```
+               To:
+               ```go
+               return "", fmt.Errorf(
+                   "BLOCKED: %s agent cannot write to %s. Allowed paths: %v",
+                   role, filePath, c.AllowedPathPrefixes,
+               )
+               ```
+
+            The Scout .yaml suffix check (lines 40-45) remains exactly as-is — do NOT
+            remove or move it.
+
+            Also add the Scout .yaml suffix check to `newRolePathMiddleware` in
+            constraint_enforcer.go (lines 95-98 only check HasPrefix, not .yaml for scout).
+            After the `if strings.HasPrefix(filePath, prefix)` match (line 96), add:
+            ```go
+            if c.AgentRole == "scout" && !strings.HasSuffix(filePath, ".yaml") {
+                continue
+            }
+            ```
+            This keeps internal (newRolePathMiddleware) and exported (RolePathMiddleware)
+            behaviors in sync for the scout role.
+
+            ---
+
+            ## Bug 3: Remove bashConstraintMiddlewareFn stub (MEDIUM)
+
+            **File: pkg/tools/workshop_constrained.go**
+
+            bashConstraintMiddlewareFn is a permanent passthrough — I5 is silently
+            unenforced. Remove the stub infrastructure:
+
+            1. Remove the `bashConstraintMiddlewareFn` var declaration (line 13).
+
+            2. Remove the `defaultBashConstraintMiddleware` function (lines 47-49).
+
+            3. Remove the nil-guard for bashConstraintMiddlewareFn from init() (lines 29-31).
+
+            4. In WithConstraints, the `case t.Name == "bash":` block calls
+               `bashConstraintMiddlewareFn(c, tracker)`. Replace the entire case with:
+               ```go
+               case t.Name == "bash":
+                   // TODO(I5): Bash constraint enforcement (commit tracking) is deferred.
+                   // The bashConstraintMiddlewareFn stub was a permanent passthrough and
+                   // has been removed. Re-introduce real I5 enforcement here when needed.
+               ```
+               Since no middleware is applied, this case effectively falls through to
+               "no constraints applied" — same as the default case for read-only tools.
+               You may also remove the case entirely and rely on default; include the TODO
+               comment in a block comment above the switch if you do.
+
+            5. CommitTracker struct and the `if c.TrackCommits { tracker = &CommitTracker{} }`
+               logic in WithConstraints remain unchanged. The tracker is still returned from
+               WithConstraints even though bash no longer calls it — callers can still observe
+               commit counts if they wire bash tracking manually.
+
+            ---
+
+            ## Bug 5: Fix init() order dependency (CRITICAL)
+
+            The current design relies on alphabetical file init() order:
+            constraint_enforcer.go (c) runs after workshop_constrained.go (w), so
+            constraint_enforcer's init() can override the stubs set by workshop_constrained's
+            init(). This is fragile.
+
+            **File: pkg/tools/constraint_enforcer.go**
+
+            Remove the entire init() function (lines 14-22):
+            ```go
+            // REMOVE THIS:
+            func init() {
+                ownershipMiddlewareFn = newOwnershipMiddleware
+                freezeMiddlewareFn = newFreezeMiddleware
+                rolePathMiddlewareFn = newRolePathMiddleware
+            }
+            ```
+
+            Add a new exported constructor function that workshop_constrained.go will call:
+            ```go
+            // RegisterConstraintMiddleware sets the package-level middleware constructor
+            // variables to the real constraint enforcement implementations. Called explicitly
+            // from workshop_constrained.go's init(), eliminating the fragile dependency on
+            // Go's alphabetical file init() ordering.
+            func RegisterConstraintMiddleware() {
+                ownershipMiddlewareFn = newOwnershipMiddleware
+                freezeMiddlewareFn = newFreezeMiddleware
+                rolePathMiddlewareFn = newRolePathMiddleware
+            }
+            ```
+
+            **File: pkg/tools/workshop_constrained.go**
+
+            Replace the existing init() function with a version that calls
+            RegisterConstraintMiddleware() directly, removing the nil-guard pattern:
+
+            ```go
+            func init() {
+                // Set passthrough stubs, then immediately replace with real implementations.
+                // The explicit RegisterConstraintMiddleware() call replaces reliance on
+                // Go's alphabetical file init() ordering.
+                ownershipMiddlewareFn = defaultOwnershipMiddleware
+                freezeMiddlewareFn = defaultFreezeMiddleware
+                rolePathMiddlewareFn = defaultRolePathMiddleware
+                RegisterConstraintMiddleware()
+            }
+            ```
+
+            Remove the bashConstraintMiddlewareFn nil-guard from init() as part of Bug 3.
+            The final init() will only set the three non-bash stubs and then call
+            RegisterConstraintMiddleware().
+
+            ---
+
+            ## Bug 8 (workshop_constrained.go half): Replace nolint (LOW)
+
+            **File: pkg/tools/workshop_constrained.go**
+
+            In WithConstraints, the `wrapped.Register(t)` call (near line 115) uses:
+            ```go
+            wrapped.Register(t) // nolint: result ignored, duplicates cannot occur here
+            ```
+            Replace with explicit panic-on-failure:
+            ```go
+            if res := wrapped.Register(t); res.IsFatal() {
+                panic("WithConstraints: duplicate tool name: " + t.Name)
+            }
+            ```
+
+            ---
+
+            ## Test Updates
+
+            **File: pkg/tools/role_middleware_test.go**
+
+            After Bug 2's fix, violations return errors, not string messages. Update every
+            test that checks `strings.Contains(result, "BLOCKED")`:
+
+            - TestRolePath_ScoutBlocksSourceCode (line 40): Change to check `err != nil`
+              and `strings.Contains(err.Error(), "BLOCKED")`. The result check `result != ""` should
+              also be changed — result will now be "" on violation (not the BLOCKED string).
+
+            - TestRolePath_ScoutBlocksNonIMPLYaml (line 66): Same pattern — both sub-cases
+              check `strings.Contains(result, "BLOCKED")`. Change to error checks.
+
+            - TestRolePath_ScaffoldBlocksOtherPaths (line 140): Same pattern.
+
+            Additionally, add a new test `TestRolePath_PathKeyFallback` to cover the Bug 1
+            fix (the "path" key fallback that was previously missing):
+            ```go
+            func TestRolePath_PathKeyFallback(t *testing.T) {
+                var called bool
+                c := Constraints{
+                    AllowedPathPrefixes: []string{"docs/IMPL/IMPL-"},
+                    AgentRole:           "scout",
+                }
+                mw := RolePathMiddleware("edit_file", c)
+                wrapped := mw(newPassthroughExecutor(&called))
+
+                // edit_file uses "path" key — should be blocked
+                _, err := wrapped.Execute(context.Background(), ExecutionContext{}, map[string]interface{}{
+                    "path": "pkg/foo.go",
+                })
+                if err == nil {
+                    t.Fatal("expected error for blocked path via 'path' key")
+                }
+                if called {
+                    t.Fatal("executor should not have been called")
+                }
+
+                // Allowed IMPL yaml via "path" key
+                called = false
+                result, err := wrapped.Execute(context.Background(), ExecutionContext{}, map[string]interface{}{
+                    "path": "docs/IMPL/IMPL-test.yaml",
+                })
+                if err != nil {
+                    t.Fatalf("unexpected error for allowed path via 'path' key: %v", err)
+                }
+                if !called {
+                    t.Fatal("executor should have been called for allowed path")
+                }
+                if result != "ok" {
+                    t.Errorf("expected 'ok', got %q", result)
+                }
+            }
+            ```
+
+            **File: pkg/tools/constraint_enforcer_test.go**
+
+            Add a test for the Scout .yaml suffix check in newRolePathMiddleware (previously
+            missing — only the exported RolePathMiddleware had it):
+            ```go
+            func TestConstraintEnforcer_I6_ScoutBlocksNonYamlIMPLPath(t *testing.T) {
+                c := Constraints{
+                    AgentRole:           "scout",
+                    AllowedPathPrefixes: []string{"docs/IMPL/IMPL-"},
+                }
+                mw := newRolePathMiddleware("edit_file", c)
+                wrapped := mw(enforcerPassthrough())
+
+                // Right prefix but not .yaml — should be blocked
+                _, err := wrapped.Execute(context.Background(), ExecutionContext{}, map[string]interface{}{
+                    "file_path": "docs/IMPL/IMPL-foo.txt",
+                })
+                if err == nil {
+                    t.Fatal("expected I6_VIOLATION for non-.yaml file with scout role, got nil")
+                }
+                if !strings.Contains(err.Error(), "I6_VIOLATION") {
+                    t.Errorf("expected I6_VIOLATION, got: %v", err)
+                }
+
+                // .yaml extension — should be allowed
+                result, err := wrapped.Execute(context.Background(), ExecutionContext{}, map[string]interface{}{
+                    "file_path": "docs/IMPL/IMPL-foo.yaml",
+                })
+                if err != nil {
+                    t.Fatalf("unexpected error for .yaml file: %v", err)
+                }
+                if result != "ok" {
+                    t.Errorf("expected 'ok', got %q", result)
+                }
+            }
+            ```
+
+            Update TestConstraintEnforcer_InitRegistersRealImplementations: after Bug 5,
+            constraint_enforcer.go no longer has its own init(). The test still verifies
+            that the package-level vars point to real implementations (they do, because
+            workshop_constrained.go's init calls RegisterConstraintMiddleware). The test
+            body is unchanged — it only verifies behavior, not the registration mechanism.
+
+            **File: pkg/tools/workshop_constrained_test.go**
+
+            After removing bashConstraintMiddlewareFn (Bug 3), several tests reference it
+            and must be updated:
+
+            1. Remove the `trackingBash` helper function (lines 79-89) — it is only used
+               in bash-tracking tests. It will no longer compile.
+
+            2. TestWithConstraints_BashTracking (line 224): This test injects a mock bash
+               middleware via bashConstraintMiddlewareFn. After Bug 3, the bash tool has no
+               constraint middleware. Rewrite to verify passthrough:
+               ```go
+               func TestWithConstraints_BashNoConstraintMiddleware(t *testing.T) {
+                   w := buildTestWorkshop()
+                   c := Constraints{
+                       TrackCommits: true,
+                       OwnedFiles:   map[string]bool{"a.go": true},
+                   }
+                   constrained, tracker := WithConstraints(w, c)
+                   if tracker == nil {
+                       t.Fatal("expected non-nil tracker when TrackCommits=true")
+                   }
+                   tool, _ := constrained.Get("bash")
+                   // Bash passes through without constraint middleware
+                   result, err := tool.Executor.Execute(context.Background(), ExecutionContext{},
+                       map[string]interface{}{"command": "echo hello"})
+                   if err != nil {
+                       t.Fatalf("unexpected error: %v", err)
+                   }
+                   if result != "ok:bash" {
+                       t.Errorf("expected passthrough result 'ok:bash', got: %s", result)
+                   }
+               }
+               ```
+
+            3. TestWithConstraints_BashToolNotGetWriteMiddleware (line 407): Remove the
+               bashConstraintMiddlewareFn injection; keep the ownershipExecuted check:
+               ```go
+               func TestWithConstraints_BashToolNotGetWriteMiddleware(t *testing.T) {
+                   var ownershipExecuted bool
+                   origOwn := ownershipMiddlewareFn
+                   ownershipMiddlewareFn = func(_ string, _ Constraints) Middleware {
+                       return func(next ToolExecutor) ToolExecutor {
+                           return executorFunc(func(ctx context.Context, execCtx ExecutionContext, input map[string]interface{}) (string, error) {
+                               ownershipExecuted = true
+                               return next.Execute(ctx, execCtx, input)
+                           })
+                       }
+                   }
+                   defer func() { ownershipMiddlewareFn = origOwn }()
+
+                   w := buildTestWorkshop()
+                   c := Constraints{OwnedFiles: map[string]bool{"a.go": true}}
+                   constrained, _ := WithConstraints(w, c)
+                   tool, _ := constrained.Get("bash")
+                   result, _ := tool.Executor.Execute(context.Background(), ExecutionContext{},
+                       map[string]interface{}{"command": "echo hello"})
+                   if result != "ok:bash" {
+                       t.Errorf("expected passthrough for bash, got: %s", result)
+                   }
+                   if ownershipExecuted {
+                       t.Fatal("ownership middleware should not execute for bash tool")
+                   }
+               }
+               ```
+
+            4. TestConstrainedTools_Integration (line 275): Remove the `origBash` /
+               `bashConstraintMiddlewareFn` injection. The test's verify-tracker section
+               should simply confirm `tracker != nil` without injecting mock bash middleware.
+               Remove lines that save/restore/inject bashConstraintMiddlewareFn. Keep all
+               other assertions (7 tools present, ownership applies to write_file,
+               read_file is unconstrained).
+
+            5. TestWithConstraints_CommitTracker_NilWhenDisabled (line 262): This test
+               does not reference bashConstraintMiddlewareFn directly — it only checks
+               that tracker is nil when TrackCommits=false. It should work unchanged.
+               Verify it still passes.
+
+            After all changes, run:
+            ```
+            go build ./pkg/tools/... && go vet ./pkg/tools/... && go test ./pkg/tools/... -count=1
+            ```
+            All tests must pass.
+
+            ## Verification Gate
+            ```
+            go build ./pkg/tools/... && go vet ./pkg/tools/... && go test ./pkg/tools/... -count=1
+            ```
+          files:
+            - pkg/tools/role_middleware.go
+            - pkg/tools/constraint_enforcer.go
+            - pkg/tools/workshop_constrained.go
+            - pkg/tools/role_middleware_test.go
+            - pkg/tools/constraint_enforcer_test.go
+            - pkg/tools/workshop_constrained_test.go
+        - id: B
+          task: |
+            ## Role
+            Fix Bug 8 in standard.go — replace nolint suppression on Register() calls
+            with explicit panic-on-failure. This is a contained, independent change.
+
+            ## File to Read First
+            Read pkg/tools/standard.go in full before making changes.
+
+            ## Bug 8: Replace nolint in standard.go (LOW)
+
+            **File: pkg/tools/standard.go**
+
+            All 7 `reg.Register(...)` calls in StandardTools() use `//nolint: result ignored`
+            to suppress the return value check. Replace each with an explicit panic-on-failure
+            pattern. Duplicate tool names in StandardTools are a programmer error, not a
+            runtime condition, so panic is the correct behavior.
+
+            For each of the 7 Register calls, change from:
+            ```go
+            reg.Register(Tool{ //nolint: result ignored, duplicates cannot occur in StandardTools
+                ...
+            })
+            ```
+            To:
+            ```go
+            if res := reg.Register(Tool{
+                ...
+            }); res.IsFatal() {
+                panic("StandardTools: duplicate tool name: " + res.Errors[0].Context["tool_name"])
+            }
+            ```
+
+            The 7 tool registrations are (in order in the file):
+            1. read_file (line ~8)
+            2. write_file (line ~25)
+            3. list_directory (line ~46)
+            4. bash (line ~62)
+            5. edit_file (line ~79)
+            6. glob (line ~104)
+            7. grep (line ~121)
+
+            The panic message format should be consistent across all 7 calls.
+
+            ## Verification Gate
+            ```
+            go build ./pkg/tools/... && go vet ./pkg/tools/... && go test ./pkg/tools/... -count=1 -run TestStandard
+            ```
+            Note: there are no dedicated tests for StandardTools in the standard test files
+            (TestStandardToolsRegistration in workshop_test.go uses a mock, not the real
+            StandardTools). The build and vet gates are the primary verification here.
+            The full test suite (go test ./pkg/tools/... -count=1) should also pass.
+          files:
+            - pkg/tools/standard.go
+        - id: C
+          task: |
+            ## Role
+            Fix Bugs 4, 6, and 7 — in pkg/tools/executors.go and pkg/tools/middleware.go.
+            Also create pkg/tools/executors_test.go with tests for the new validation behavior.
+            These changes are fully independent of Agents A and B.
+
+            ## Files to Read First
+            Read both files in full before making changes:
+            - pkg/tools/executors.go
+            - pkg/tools/middleware.go
+
+            ---
+
+            ## Bug 4: Silent type assertion failures in executors (MEDIUM)
+
+            **File: pkg/tools/executors.go**
+
+            Multiple executors use the `val, _ := input["key"].(string)` pattern which
+            silently produces an empty string when the key is missing or wrong type.
+
+            Add an unexported helper at the top of the file, after the import block and
+            before the first type declaration:
+
+            ```go
+            // extractStringInput retrieves a string value from an input map by key.
+            // Returns (value, true) if the key exists and contains a non-empty string.
+            // Returns ("", false) if the key is absent, the value is the wrong type, or
+            // the string is empty.
+            func extractStringInput(input map[string]interface{}, key string) (string, bool) {
+                if input == nil {
+                    return "", false
+                }
+                v, ok := input[key]
+                if !ok {
+                    return "", false
+                }
+                s, ok := v.(string)
+                return s, ok && s != ""
+            }
+            ```
+
+            Then update each executor:
+
+            **FileReadExecutor.Execute** (~lines 22-26):
+            Replace:
+            ```go
+            path, _ := input["file_path"].(string)
+            if path == "" {
+                path, _ = input["path"].(string) // fallback for legacy callers
+            }
+            ```
+            With:
+            ```go
+            path, ok := extractStringInput(input, "file_path")
+            if !ok {
+                path, ok = extractStringInput(input, "path")
+            }
+            if !ok {
+                return "input validation failed: 'file_path' must be a non-empty string", nil
+            }
+            ```
+
+            **FileWriteExecutor.Execute** (~lines 41-45):
+            Replace:
+            ```go
+            path, _ := input["file_path"].(string)
+            if path == "" {
+                path, _ = input["path"].(string)
+            }
+            content, _ := input["content"].(string)
+            ```
+            With:
+            ```go
+            path, ok := extractStringInput(input, "file_path")
+            if !ok {
+                path, ok = extractStringInput(input, "path")
+            }
+            if !ok {
+                return "input validation failed: 'file_path' must be a non-empty string", nil
+            }
+            content, _ := input["content"].(string) // content may be empty; that is valid
+            ```
+
+            **FileListExecutor.Execute** (~lines 62-65):
+            The default of "." is intentional for missing path. Keep the existing pattern
+            but add a comment:
+            ```go
+            path, _ := input["path"].(string) // empty path defaults to "." below; intentional
+            ```
+            No functional change here.
+
+            **BashExecutor.Execute** (~line 83):
+            Replace:
+            ```go
+            command, _ := input["command"].(string)
+            ```
+            With:
+            ```go
+            command, ok := extractStringInput(input, "command")
+            if !ok {
+                return "input validation failed: 'command' must be a non-empty string", nil
+            }
+            ```
+
+            **EditExecutor.Execute** (~lines 180-182):
+            Replace:
+            ```go
+            path, _ := input["file_path"].(string)
+            oldStr, _ := input["old_string"].(string)
+            newStr, _ := input["new_string"].(string)
+            ```
+            With:
+            ```go
+            path, ok := extractStringInput(input, "file_path")
+            if !ok {
+                return "input validation failed: 'file_path' must be a non-empty string", nil
+            }
+            oldStr, _ := input["old_string"].(string) // empty caught by Contains check below
+            newStr, _ := input["new_string"].(string) // empty string is a valid replacement
+            ```
+
+            ---
+
+            ## Bug 6: grepFallback ignores scanner.Err() (LOW)
+
+            **File: pkg/tools/executors.go**
+
+            In `grepFallback` (~lines 244-267):
+
+            1. Check scanner.Err() after the scan loop. After:
+               ```go
+               for scanner.Scan() {
+                   lineNum++
+                   ...
+               }
+               ```
+               Add:
+               ```go
+               if err := scanner.Err(); err != nil {
+                   results.WriteString(fmt.Sprintf("[warning: read error in %s: %v]\n", path, err))
+               }
+               ```
+
+            2. Capture the Walk error instead of discarding it. Change:
+               ```go
+               _ = filepath.Walk(root, func(...) error {
+                   ...
+               })
+               ```
+               To:
+               ```go
+               if walkErr := filepath.Walk(root, func(...) error {
+                   ...
+               }); walkErr != nil {
+                   results.WriteString(fmt.Sprintf("[warning: walk error: %v]\n", walkErr))
+               }
+               ```
+
+            ---
+
+            ## Bug 7: Fix/clarify middleware order comment (LOW)
+
+            **File: pkg/tools/middleware.go**
+
+            Read the Apply function comment carefully (lines 24-26 and the loop body).
+            The loop iterates from `len(middlewares)-1` down to 0 — meaning the LAST
+            middleware in the slice becomes the innermost wrapper, and the FIRST middleware
+            becomes the outermost wrapper (executes first).
+
+            The current comment reads:
+            ```
+            // Apply wraps an executor with a stack of middleware functions.
+            // Middleware are applied right-to-left: the first middleware in the list
+            // is the outermost (executes first in the call chain).
+            ```
+
+            This description is correct. Replace it with a version that is unambiguous
+            and includes an example to prevent future confusion:
+            ```go
+            // Apply wraps an executor with a stack of middleware functions.
+            // Middleware are applied right-to-left: the last element in the slice is
+            // applied first (becomes innermost), so the first element is the outermost
+            // and executes first in the call chain.
+            // Example: Apply(exec, A, B, C) produces A(B(C(exec))).
+            ```
+
+            ---
+
+            ## New Test File
+
+            **File: pkg/tools/executors_test.go** (CREATE NEW)
+
+            Create this file in package tools (internal test, not package tools_test):
+
+            ```go
+            package tools
+
+            import (
+                "context"
+                "strings"
+                "testing"
+            )
+
+            func TestExtractStringInput_NilMap(t *testing.T) {
+                _, ok := extractStringInput(nil, "file_path")
+                if ok {
+                    t.Error("expected false for nil map")
+                }
+            }
+
+            func TestExtractStringInput_MissingKey(t *testing.T) {
+                _, ok := extractStringInput(map[string]interface{}{"other": "val"}, "file_path")
+                if ok {
+                    t.Error("expected false for missing key")
+                }
+            }
+
+            func TestExtractStringInput_WrongType(t *testing.T) {
+                _, ok := extractStringInput(map[string]interface{}{"file_path": 42}, "file_path")
+                if ok {
+                    t.Error("expected false for non-string value")
+                }
+            }
+
+            func TestExtractStringInput_EmptyString(t *testing.T) {
+                _, ok := extractStringInput(map[string]interface{}{"file_path": ""}, "file_path")
+                if ok {
+                    t.Error("expected false for empty string")
+                }
+            }
+
+            func TestExtractStringInput_ValidString(t *testing.T) {
+                v, ok := extractStringInput(map[string]interface{}{"file_path": "foo.go"}, "file_path")
+                if !ok {
+                    t.Error("expected true for valid string")
+                }
+                if v != "foo.go" {
+                    t.Errorf("expected 'foo.go', got %q", v)
+                }
+            }
+
+            func TestFileWriteExecutor_MissingFilePath(t *testing.T) {
+                ex := &FileWriteExecutor{}
+                result, err := ex.Execute(context.Background(),
+                    ExecutionContext{WorkDir: "/tmp"},
+                    map[string]interface{}{"content": "hello"})
+                if err != nil {
+                    t.Fatalf("unexpected error: %v", err)
+                }
+                if !strings.Contains(result, "input validation failed") {
+                    t.Errorf("expected validation error message, got %q", result)
+                }
+            }
+
+            func TestFileWriteExecutor_WrongTypeFilePath(t *testing.T) {
+                ex := &FileWriteExecutor{}
+                result, err := ex.Execute(context.Background(),
+                    ExecutionContext{WorkDir: "/tmp"},
+                    map[string]interface{}{"file_path": 123, "content": "hello"})
+                if err != nil {
+                    t.Fatalf("unexpected error: %v", err)
+                }
+                if !strings.Contains(result, "input validation failed") {
+                    t.Errorf("expected validation error for wrong type, got %q", result)
+                }
+            }
+
+            func TestBashExecutor_MissingCommand(t *testing.T) {
+                ex := &BashExecutor{}
+                result, err := ex.Execute(context.Background(),
+                    ExecutionContext{WorkDir: "/tmp"},
+                    map[string]interface{}{})
+                if err != nil {
+                    t.Fatalf("unexpected error: %v", err)
+                }
+                if !strings.Contains(result, "input validation failed") {
+                    t.Errorf("expected validation error message, got %q", result)
+                }
+            }
+
+            func TestGrepFallback_NonexistentRoot(t *testing.T) {
+                // Should not panic; may return walk error note or empty string
+                result := grepFallback("/nonexistent/path/zzzz", "pattern")
+                _ = result // just verify no panic
+            }
+
+            func TestGrepFallback_FindsMatches(t *testing.T) {
+                // Use /tmp which should exist
+                _ = grepFallback("/tmp", "test")
+                // Just verify no panic; /tmp may or may not have matching files
+            }
+            ```
+
+            ## Verification Gate
+            ```
+            go build ./pkg/tools/... && go vet ./pkg/tools/... && go test ./pkg/tools/... -count=1 -run "TestExtractStringInput|TestFileWriteExecutor|TestBashExecutor|TestGrepFallback|TestApply"
+            ```
+          files:
+            - pkg/tools/executors.go
+            - pkg/tools/middleware.go
+            - pkg/tools/executors_test.go
+quality_gates:
+    level: standard
+    gates:
+        - type: build
+          command: go build ./pkg/tools/...
+          required: true
+        - type: lint
+          command: go vet ./pkg/tools/...
+          required: true
+        - type: test
+          command: go test ./pkg/tools/... -count=1
+          required: true
+pre_mortem:
+    overall_risk: low
+    rows:
+        - scenario: |-
+            role_middleware_test.go tests check strings.Contains(result, "BLOCKED") for
+            violation cases. After Bug 2's fix changes violations to return errors, those
+            assertions will fail at compile or test time if not updated. Agent A owns both
+            the source and test files, so the fix and test update must happen together.
+          likelihood: medium
+          impact: medium
+          mitigation: |-
+            The task prompt explicitly names all three test functions to update:
+            TestRolePath_ScoutBlocksSourceCode, TestRolePath_ScoutBlocksNonIMPLYaml,
+            TestRolePath_ScaffoldBlocksOtherPaths. The verification gate runs the full
+            test suite, surfacing any missed updates immediately.
+        - scenario: |-
+            workshop_constrained_test.go has multiple references to bashConstraintMiddlewareFn
+            across different tests (TestWithConstraints_BashTracking, TestWithConstraints_
+            BashToolNotGetWriteMiddleware, TestConstrainedTools_Integration). After Bug 3
+            removes the variable, the package will fail to compile if any reference is missed.
+          likelihood: medium
+          impact: high
+          mitigation: |-
+            All affected test functions are named in the task prompt with explicit rewrites.
+            Compilation failure is immediate and obvious. The task prompt covers 4 specific
+            test functions; the agent should grep for any remaining references to
+            bashConstraintMiddlewareFn before committing.
+        - scenario: |-
+            RegisterConstraintMiddleware() is defined in constraint_enforcer.go (Agent A's
+            file) and called from workshop_constrained.go (also Agent A's file). Since both
+            are in the same worktree and same agent, there is no cross-worktree dependency.
+            This was the original decomposition risk; assigning both files to Agent A resolves it.
+          likelihood: low
+          impact: low
+          mitigation: No mitigation needed — the risk is eliminated by the single-agent ownership.
+        - scenario: |-
+            Bug 7 (middleware.go comment) — after reading the actual file, Agent C may
+            determine the comment is already accurate and only add a clarifying example.
+            The task spec anticipates this outcome.
+          likelihood: low
+          impact: low
+          mitigation: |-
+            Task prompt explicitly instructs the agent to read lines 24-26 and decide.
+            Either outcome (fix incorrect comment or add clarifying example sentence) is
+            acceptable. No test coverage for comments; no breakage risk.
+        - scenario: |-
+            Agent C creates executors_test.go in package tools (internal). If another test
+            file in the package already defines a function with the same name as a helper
+            in the new test file (e.g., newPassthroughExecutor in role_middleware_test.go),
+            the package will fail to compile.
+          likelihood: low
+          impact: medium
+          mitigation: |-
+            The test functions in executors_test.go use names prefixed with Test* and
+            helper names distinct from those in role_middleware_test.go and
+            constraint_enforcer_test.go. Agent C should grep for existing test helper
+            names before creating executors_test.go to confirm no collisions.
+state: SCOUT_PENDING
+injection_method: hook

@@ -1,0 +1,516 @@
+title: pkg/codereview Bug Fixes
+feature_slug: codereview-bug-fixes
+verdict: SUITABLE
+suitability_assessment: |-
+    7 bugs across pkg/codereview (reviewer.go, types.go, reviewer_test.go) and
+    cmd/sawtools/run_review_cmd.go. File decomposition is clean:
+
+    - types.go receives additive-only struct changes (Skipped bool, BaseURL string).
+      Scaffolded before Wave 1 so both agents can compile independently.
+    - reviewer.go receives all logic changes (return-type migration + 6 bug fixes).
+      Agent A also owns types.go for the additive struct fields.
+    - reviewer_test.go and run_review_cmd.go receive caller-side updates to consume
+      the new result.Result[ReviewResult] return type. Agent B owns both.
+
+    The two Wave-1 agents compile against the scaffold-provided type contract, so
+    they can run in parallel without coordination. Bug 1 (return-type migration)
+    is the highest-leverage change; all other bugs are independent patches in
+    reviewer.go and do not affect the caller interface beyond the return-type change.
+
+    No investigation-first items — all root causes are identified and localized.
+    All cross-agent interfaces (updated ReviewDiff/RunCodeReview signatures, new
+    ReviewResult fields) are fully specifiable before Wave 1 launches.
+
+    Estimated times:
+    - Scout phase: ~10 min
+    - Agent execution: ~2 agents x 15 min avg, accounting for parallelism = ~15 min
+    - Merge and verification: ~5 min
+    Total SAW time: ~30 min
+    Sequential baseline: ~40 min
+    Time savings: ~10 min (25% faster)
+    Recommendation: Clear speedup for a non-trivial logic change with test updates.
+test_command: go test ./pkg/codereview/... ./cmd/sawtools/...
+lint_command: go vet ./pkg/codereview/... ./cmd/sawtools/...
+file_ownership:
+    - file: pkg/codereview/types.go
+      agent: A
+      wave: 1
+      action: modify
+    - file: pkg/codereview/reviewer.go
+      agent: A
+      wave: 1
+      action: modify
+    - file: pkg/codereview/reviewer_test.go
+      agent: B
+      wave: 1
+      action: modify
+    - file: cmd/sawtools/run_review_cmd.go
+      agent: B
+      wave: 1
+      action: modify
+interface_contracts:
+    - name: ReviewDiff
+      description: |-
+        Primary review function. Return type changes from (*ReviewResult, error) to
+        result.Result[ReviewResult]. All error paths use result.NewFailure; success
+        paths use result.NewSuccess.
+      definition: |
+        func ReviewDiff(ctx context.Context, diff string, opts ReviewOpts) result.Result[ReviewResult]
+      location: pkg/codereview/reviewer.go
+    - name: RunCodeReview
+      description: |-
+        Top-level review runner. Return type changes from (*ReviewResult, error) to
+        result.Result[ReviewResult]. Disabled config returns result.NewSuccess with
+        Skipped=true instead of (nil, nil).
+      definition: |
+        func RunCodeReview(ctx context.Context, repoPath string, cfg CodeReviewConfig) result.Result[ReviewResult]
+      location: pkg/codereview/reviewer.go
+    - name: ReviewResult
+      description: |-
+        Struct extended with Skipped bool field (additive only). Used as the Data
+        type in result.Result[ReviewResult].
+      definition: |
+        type ReviewResult struct {
+            Dimensions []DimensionScore `json:"dimensions"`
+            Overall    int              `json:"overall"`
+            Passed     bool             `json:"passed"`
+            Summary    string           `json:"summary"`
+            Model      string           `json:"model"`
+            DiffBytes  int              `json:"diff_bytes"`
+            Truncated  bool             `json:"truncated,omitempty"`
+            Skipped    bool             `json:"skipped,omitempty"`
+        }
+      location: pkg/codereview/types.go
+    - name: ReviewOpts
+      description: |-
+        Extended with BaseURL string field for dependency-injected test mock URL.
+        Replaces package-level testBaseURL variable.
+      definition: |
+        type ReviewOpts struct {
+            Model      string
+            Threshold  int
+            Dimensions []string
+            BaseURL    string // optional API base URL override (used in tests)
+        }
+      location: pkg/codereview/types.go
+    - name: validateReviewResponse
+      description: |-
+        New unexported helper. Validates parsed LLM response: non-empty Dimensions,
+        each dimension score 0-100 inclusive, non-empty Summary. Returns an error
+        if any check fails; caller wraps it in result.NewFailure.
+      definition: |
+        func validateReviewResponse(parsed reviewResponse) error
+      location: pkg/codereview/reviewer.go
+waves:
+    - number: 1
+      agents:
+        - id: A
+          task: |-
+            ## Role
+            You are a Wave Agent implementing bug fixes in `pkg/codereview/reviewer.go`
+            and `pkg/codereview/types.go`.
+
+            ## What to Implement
+
+            ### Step 0 — types.go: add new fields (prerequisite for all other changes)
+
+            In `pkg/codereview/types.go`, make two additive changes:
+
+            1. Add `Skipped bool` field to `ReviewResult` after the `Truncated` field:
+               ```go
+               Truncated  bool             `json:"truncated,omitempty"`
+               Skipped    bool             `json:"skipped,omitempty"`
+               ```
+
+            2. Add `BaseURL string` field to `ReviewOpts` after the `Dimensions` field:
+               ```go
+               Dimensions []string // Subset of standard dimensions; empty = all 5
+               BaseURL    string   // optional API base URL override (used in tests)
+               ```
+
+            Do not change any other fields or comments in types.go.
+
+            ### Bug 1 — result.Result[ReviewResult] return types
+
+            Change both `ReviewDiff` and `RunCodeReview` to return
+            `result.Result[ReviewResult]` (not a pointer, not a 2-tuple).
+
+            Import path: `github.com/blackwell-systems/scout-and-wave-go/pkg/result`
+
+            Apply these mappings throughout both functions:
+
+            - `return nil, fmt.Errorf(...)` -> `return result.NewFailure[ReviewResult]([]result.SAWError{result.NewFatal("CODEREVIEW_ERROR", <message>).WithCause(err)})`
+            - `return &ReviewResult{...}, nil` -> `return result.NewSuccess(ReviewResult{...})`
+            - `return ReviewDiff(...)` in RunCodeReview -> just `return ReviewDiff(...)` (types now match)
+            - Disabled config `return nil, nil` -> `return result.NewSuccess(ReviewResult{Skipped: true})`
+
+            Remove the `error` return value from both signatures entirely.
+
+            ### Bug 2 — Remove global testBaseURL, use ReviewOpts.BaseURL
+
+            Delete the `var testBaseURL string` package-level variable (line 23).
+
+            In ReviewDiff, replace:
+            ```go
+            if testBaseURL != "" {
+                clientOpts = append(clientOpts, option.WithBaseURL(testBaseURL))
+            }
+            ```
+            with:
+            ```go
+            if opts.BaseURL != "" {
+                clientOpts = append(clientOpts, option.WithBaseURL(opts.BaseURL))
+            }
+            ```
+
+            ### Bug 3 — Validate LLM response
+
+            After the `json.Unmarshal` call (currently around line 131), call a new
+            unexported function `validateReviewResponse`. Define it at the bottom of
+            reviewer.go:
+
+            ```go
+            func validateReviewResponse(parsed reviewResponse) error {
+                if len(parsed.Dimensions) == 0 {
+                    return fmt.Errorf("review response has no dimensions")
+                }
+                for _, d := range parsed.Dimensions {
+                    if d.Score < 0 || d.Score > 100 {
+                        return fmt.Errorf("dimension %q score %d out of range [0,100]", d.Name, d.Score)
+                    }
+                }
+                if parsed.Summary == "" {
+                    return fmt.Errorf("review response has empty summary")
+                }
+                return nil
+            }
+            ```
+
+            In the ReviewDiff body, after unmarshal succeeds, call it:
+            ```go
+            if err := validateReviewResponse(parsed); err != nil {
+                return result.NewFailure[ReviewResult]([]result.SAWError{
+                    result.NewFatal("CODEREVIEW_INVALID_RESPONSE", err.Error()),
+                })
+            }
+            ```
+
+            ### Bug 4 — Empty diff Overall=100 and Skipped=true
+
+            In the empty-diff early-return block, change `Overall: 0` to `Overall: 100`
+            and add `Skipped: true`:
+            ```go
+            return result.NewSuccess(ReviewResult{
+                Dimensions: []DimensionScore{},
+                Overall:    100,
+                Passed:     true,
+                Skipped:    true,
+                Summary:    "No changes to review.",
+                Model:      opts.Model,
+                DiffBytes:  0,
+            })
+            ```
+
+            ### Bug 5 — Dynamic truncation message
+
+            Replace the hardcoded string:
+            ```go
+            userMsg += "\n\n[diff truncated to 50000 bytes]"
+            ```
+            with:
+            ```go
+            userMsg += fmt.Sprintf("\n\n[diff truncated to %d bytes]", maxDiffBytes)
+            ```
+
+            ### Bug 6 — Preserve first git error in fallback
+
+            In RunCodeReview, capture the first git error before the fallback:
+            ```go
+            diffCmd := exec.CommandContext(ctx, "git", "-C", repoPath, "diff", "HEAD~1..HEAD")
+            diffOut, firstErr := diffCmd.Output()
+            if firstErr != nil {
+                showCmd := exec.CommandContext(ctx, "git", "-C", repoPath, "show", "HEAD")
+                var fallbackErr error
+                diffOut, fallbackErr = showCmd.Output()
+                if fallbackErr != nil {
+                    return result.NewFailure[ReviewResult]([]result.SAWError{
+                        result.NewFatal("CODEREVIEW_GIT_FAILED",
+                            fmt.Sprintf("failed to get diff for code review: %v (fallback error: %v)", firstErr, fallbackErr)),
+                    })
+                }
+            }
+            ```
+
+            ### Bug 7 — API error context
+
+            Change the Anthropic API error return from:
+            ```go
+            return nil, fmt.Errorf("anthropic API error: %w", err)
+            ```
+            to:
+            ```go
+            return result.NewFailure[ReviewResult]([]result.SAWError{
+                result.NewFatal("CODEREVIEW_API_ERROR",
+                    fmt.Sprintf("anthropic API error (model=%s, diffBytes=%d): %s", opts.Model, len(diff), err.Error())).WithCause(err),
+            })
+            ```
+
+            ## Verification Gate
+
+            ```
+            go build ./pkg/codereview/...
+            go vet ./pkg/codereview/...
+            go test ./pkg/codereview/... -run TestAllDimensionsConstant
+            ```
+
+            Note: The full test suite in reviewer_test.go will have compilation errors
+            until Agent B updates it (Agent B works in parallel). The single test above
+            does not call ReviewDiff and compiles cleanly as a smoke test.
+
+            ## Constraints
+
+            - Do NOT change ReviewDiff or RunCodeReview parameter lists.
+            - Do NOT use result.Result[*ReviewResult] — the Data type is ReviewResult (value, not pointer).
+            - The `validateReviewResponse` function must be defined exactly once in reviewer.go.
+            - Remove all `error` return values from both public functions.
+            - The `fmt` import is already present in reviewer.go; add the `result` import.
+            - Do not modify reviewer_test.go — that is Agent B's file.
+          files:
+            - pkg/codereview/types.go
+            - pkg/codereview/reviewer.go
+        - id: B
+          task: |-
+            ## Role
+            You are a Wave Agent updating tests and the CLI caller in `pkg/codereview` to
+            consume the new `result.Result[ReviewResult]` return types from `ReviewDiff`
+            and `RunCodeReview`.
+
+            ## Context
+
+            Agent A is updating `reviewer.go` and `types.go` in parallel. You will compile
+            against the same scaffold-provided types. The key changes you must accommodate:
+
+            - `ReviewDiff` now returns `result.Result[ReviewResult]` (no error return)
+            - `RunCodeReview` now returns `result.Result[ReviewResult]` (no error return)
+            - `ReviewResult` has a new `Skipped bool` field
+            - `ReviewOpts` has a new `BaseURL string` field (replaces global testBaseURL)
+            - Empty diff returns `Overall: 100, Skipped: true` (not `Overall: 0`)
+            - Disabled config returns a success result with `Skipped: true` (not nil)
+
+            Read `pkg/codereview/types.go` first to confirm the current struct definitions.
+            The scaffold agent will have already applied these field additions before Wave 1 starts.
+
+            ## File 1: pkg/codereview/reviewer_test.go
+
+            Update every test that calls `ReviewDiff` or `RunCodeReview` to use the new
+            return type. Add import `github.com/blackwell-systems/scout-and-wave-go/pkg/result`
+            only if you need to reference result types by name; if you only call methods
+            (IsFatal, GetData, etc.), no explicit import is needed.
+
+            **IMPORTANT: variable naming.** The existing tests use `result` as a local
+            variable name. This will shadow the imported `result` package and cause a
+            compile error. Rename all local data variables to `got` or `rr` throughout.
+
+            **Pattern for all ReviewDiff / RunCodeReview calls:**
+            ```go
+            // OLD:
+            result, err := ReviewDiff(ctx, diff, opts)
+            if err != nil { t.Fatalf(...) }
+            if result == nil { t.Fatal(...) }
+            // access: result.Overall, result.Passed, etc.
+
+            // NEW:
+            res := ReviewDiff(ctx, diff, opts)
+            if res.IsFatal() { t.Fatalf("unexpected fatal: %v", res.Errors) }
+            got := res.GetData()
+            // access: got.Overall, got.Passed, etc.
+            ```
+
+            Apply this pattern to every test that calls ReviewDiff or RunCodeReview.
+
+            **TestReviewOptsDefaults** — update:
+            ```go
+            res := ReviewDiff(context.Background(), "", ReviewOpts{})
+            if res.IsFatal() { t.Fatalf("unexpected fatal: %v", res.Errors) }
+            got := res.GetData()
+            if got.Model != defaultModel {
+                t.Errorf("expected default model %q, got %q", defaultModel, got.Model)
+            }
+            ```
+
+            **TestReviewDiffEmptyDiff** — update expectations:
+            - `Overall` should now be `100` (not `0`) — change the assertion from `!= 0` to `!= 100`.
+            - Add assertion: `if !got.Skipped { t.Error("expected Skipped=true for empty diff") }`
+            - Remove the nil check (GetData() never returns nil).
+
+            **TestRunCodeReviewDisabled** — update: disabled config now returns a
+            successful result with `Skipped: true`. Change assertions:
+            ```go
+            res := RunCodeReview(context.Background(), t.TempDir(), cfg)
+            if res.IsFatal() { t.Fatalf("expected success, got fatal: %v", res.Errors) }
+            got := res.GetData()
+            if !got.Skipped { t.Errorf("expected Skipped=true for disabled config") }
+            ```
+
+            **Tests using testBaseURL (TestReviewDiffWithMockAPI, TestReviewDiffThresholdFail,
+            TestReviewDiffTruncation)** — remove the `old := testBaseURL` / `testBaseURL = srv.URL` /
+            `defer func() { testBaseURL = old }()` pattern. Instead pass `BaseURL: srv.URL`
+            in the ReviewOpts struct passed to ReviewDiff.
+
+            **TestReviewDiffNoAPIKey** — update to use result return:
+            ```go
+            res := ReviewDiff(context.Background(), "some diff", ReviewOpts{})
+            if !res.IsFatal() { t.Fatal("expected fatal result when ANTHROPIC_API_KEY is not set") }
+            ```
+
+            **Add TestValidateReviewResponseFailure** — new test for Bug 3 validation:
+            ```go
+            func TestValidateReviewResponseFailure(t *testing.T) {
+                // Empty dimensions should trigger validation failure.
+                srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+                    w.Header().Set("Content-Type", "application/json")
+                    w.Write(mockAnthropicResponse(`{"dimensions":[],"overall":80,"summary":"ok"}`))
+                }))
+                defer srv.Close()
+                t.Setenv("ANTHROPIC_API_KEY", "test-key")
+                res := ReviewDiff(context.Background(), "some diff", ReviewOpts{
+                    BaseURL: srv.URL,
+                })
+                if !res.IsFatal() {
+                    t.Error("expected fatal result for empty dimensions in LLM response")
+                }
+            }
+            ```
+
+            **Add TestReviewDiffEmptyDiffScore** — new test for Bug 4 semantic fix:
+            ```go
+            func TestReviewDiffEmptyDiffScore(t *testing.T) {
+                res := ReviewDiff(context.Background(), "", ReviewOpts{})
+                if res.IsFatal() { t.Fatalf("unexpected fatal: %v", res.Errors) }
+                got := res.GetData()
+                if got.Overall != 100 {
+                    t.Errorf("empty diff: expected Overall=100, got %d", got.Overall)
+                }
+                if !got.Skipped {
+                    t.Error("empty diff: expected Skipped=true")
+                }
+            }
+            ```
+
+            ## File 2: cmd/sawtools/run_review_cmd.go
+
+            Update RunE body to consume the new return type.
+
+            Replace the entire RunE body block handling RunCodeReview and its result:
+            ```go
+            // OLD:
+            result, err := codereview.RunCodeReview(context.Background(), repoDir, cfg)
+            if err != nil {
+                return fmt.Errorf("run-review: %w", err)
+            }
+            out, err := json.MarshalIndent(result, "", "  ")
+            if err != nil {
+                return fmt.Errorf("run-review: marshal result: %w", err)
+            }
+            fmt.Println(string(out))
+            if blocking && result != nil && !result.Passed {
+                return fmt.Errorf("run-review: code review failed (overall score %d < threshold %d)", result.Overall, threshold)
+            }
+
+            // NEW:
+            res := codereview.RunCodeReview(context.Background(), repoDir, cfg)
+            if res.IsFatal() {
+                return fmt.Errorf("run-review: %v", res.Errors[0].Message)
+            }
+            got := res.GetData()
+            out, err := json.MarshalIndent(got, "", "  ")
+            if err != nil {
+                return fmt.Errorf("run-review: marshal result: %w", err)
+            }
+            fmt.Println(string(out))
+            if blocking && !got.Skipped && !got.Passed {
+                return fmt.Errorf("run-review: code review failed (overall score %d < threshold %d)", got.Overall, threshold)
+            }
+            ```
+
+            After the rewrite, check: does this file explicitly reference any type from
+            the `result` package by name? If not (you only call methods on `res`), do not
+            add a `result` import — Go will refuse to compile an unused import.
+
+            ## Verification Gate
+
+            ```
+            go build ./cmd/sawtools/... ./pkg/codereview/...
+            go vet ./cmd/sawtools/... ./pkg/codereview/...
+            go test ./pkg/codereview/... ./cmd/sawtools/...
+            ```
+
+            ## Constraints
+
+            - All existing tests must pass after adaptation.
+            - The two new tests (TestValidateReviewResponseFailure, TestReviewDiffEmptyDiffScore)
+              must be added and must pass.
+            - Do not modify reviewer.go or types.go — those are Agent A's files.
+            - Do not reference `testBaseURL` in any test; it will be deleted by Agent A.
+              Use `BaseURL` field in ReviewOpts instead.
+            - Do not add unused imports.
+          files:
+            - pkg/codereview/reviewer_test.go
+            - cmd/sawtools/run_review_cmd.go
+quality_gates:
+    level: standard
+    gates:
+        - type: build
+          command: go build ./...
+          required: true
+        - type: lint
+          command: go vet ./pkg/codereview/... ./cmd/sawtools/...
+          required: true
+        - type: test
+          command: go test ./pkg/codereview/... ./cmd/sawtools/...
+          required: true
+pre_mortem:
+    overall_risk: low
+    rows:
+        - scenario: |-
+            Agent B tests reference `testBaseURL` which Agent A deletes. If Agent B's
+            worktree doesn't include Agent A's deletion, the tests will still compile
+            (the global still exists in the worktree) but will fail at runtime because
+            BaseURL is not threaded to the HTTP client. Merge resolves this.
+          likelihood: medium
+          impact: low
+          mitigation: |-
+            Agent B's task explicitly instructs removal of testBaseURL usage and
+            replacement with ReviewOpts.BaseURL. Pattern is provided verbatim. Reviewer
+            should verify no testBaseURL references remain in the test file at merge time.
+        - scenario: |-
+            Variable name collision in run_review_cmd.go and reviewer_test.go: existing
+            code uses `result` as a local variable name. If Agent B imports the `result`
+            package and also declares a local `result` variable, the compiler will reject
+            it with "result declared but not used" or a shadowing error.
+          likelihood: high
+          impact: medium
+          mitigation: |-
+            Agent B's task specifies using `res` for the Result return value and `got` for
+            the extracted data, and explicitly warns about this collision. The task also
+            notes that the result package import may not be needed if only methods are called.
+        - scenario: |-
+            TestReviewDiffEmptyDiff currently asserts Overall=0. After Bug 4 fix it must
+            be Overall=100. Agent B's worktree has the updated test but Agent A's reviewer.go
+            worktree still has Overall=0, causing test failure in A's isolated run.
+          likelihood: medium
+          impact: low
+          mitigation: |-
+            Agent A's task specifies Overall=100 in the empty-diff return block. The test
+            mismatch is expected in A's worktree (test file not modified there). The
+            post-merge full test run is the canonical correctness gate.
+        - scenario: |-
+            result.NewFailure panics when called with an empty errors slice. Agent A could
+            accidentally pass an empty slice.
+          likelihood: low
+          impact: high
+          mitigation: |-
+            Agent A's task provides all NewFailure call sites verbatim, each with exactly
+            one SAWError element. Any panic would surface immediately in the smoke test gate.
+state: SCOUT_PENDING
+injection_method: hook
