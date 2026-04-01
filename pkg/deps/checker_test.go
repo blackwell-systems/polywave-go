@@ -282,6 +282,178 @@ waves:
 	}
 }
 
+// TestParseGoModReplace_SingleLine tests single-line replace directive parsing
+func TestParseGoModReplace_SingleLine(t *testing.T) {
+	tmpDir := t.TempDir()
+	goModPath := filepath.Join(tmpDir, "go.mod")
+	content := `module example.com/test
+
+go 1.21
+
+replace github.com/foo/bar => ./local
+`
+	if err := os.WriteFile(goModPath, []byte(content), 0644); err != nil {
+		t.Fatalf("failed to write go.mod: %v", err)
+	}
+
+	result := ParseGoModReplace(goModPath)
+
+	if _, ok := result["github.com/foo/bar"]; !ok {
+		t.Errorf("expected 'github.com/foo/bar' in result, got: %v", result)
+	}
+	if len(result) != 1 {
+		t.Errorf("expected 1 module in result, got %d", len(result))
+	}
+}
+
+// TestParseGoModReplace_Block tests multi-line replace block parsing
+func TestParseGoModReplace_Block(t *testing.T) {
+	tmpDir := t.TempDir()
+	goModPath := filepath.Join(tmpDir, "go.mod")
+	content := `module example.com/test
+
+go 1.21
+
+replace (
+	github.com/foo/bar => ./local
+	github.com/baz/qux v1.0.0 => ./other
+)
+`
+	if err := os.WriteFile(goModPath, []byte(content), 0644); err != nil {
+		t.Fatalf("failed to write go.mod: %v", err)
+	}
+
+	result := ParseGoModReplace(goModPath)
+
+	if _, ok := result["github.com/foo/bar"]; !ok {
+		t.Errorf("expected 'github.com/foo/bar' in result")
+	}
+	if _, ok := result["github.com/baz/qux"]; !ok {
+		t.Errorf("expected 'github.com/baz/qux' in result")
+	}
+	if len(result) != 2 {
+		t.Errorf("expected 2 modules in result, got %d", len(result))
+	}
+}
+
+// TestParseGoModReplace_VersionedReplacement tests versioned module replacements.
+// The implementation only filters pseudo-versions (with "@"), not regular semantic versions.
+func TestParseGoModReplace_VersionedReplacement(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	t.Run("PseudoVersion", func(t *testing.T) {
+		// Pseudo-versions with @ are correctly filtered
+		content := `module example.com/test
+
+go 1.21
+
+replace github.com/foo/bar => github.com/fork/bar@v2.0.0+incompatible
+`
+		path := filepath.Join(tmpDir, "go.mod.pseudo")
+		if err := os.WriteFile(path, []byte(content), 0644); err != nil {
+			t.Fatalf("failed to write go.mod: %v", err)
+		}
+
+		result := ParseGoModReplace(path)
+		if len(result) != 0 {
+			t.Errorf("expected empty result for pseudo-version replacement, got: %v", result)
+		}
+	})
+
+	t.Run("SpaceSeparatedVersion", func(t *testing.T) {
+		// Space-separated versions are NOT filtered (known limitation)
+		content := `module example.com/test
+
+go 1.21
+
+replace github.com/foo/bar => github.com/fork/bar v2.0.0
+`
+		path := filepath.Join(tmpDir, "go.mod.space")
+		if err := os.WriteFile(path, []byte(content), 0644); err != nil {
+			t.Fatalf("failed to write go.mod: %v", err)
+		}
+
+		result := ParseGoModReplace(path)
+
+		// Current implementation does not detect space-separated version syntax.
+		// It only checks for "@" which catches pseudo-versions but not "module vX.Y.Z" format.
+		if _, ok := result["github.com/foo/bar"]; !ok {
+			t.Errorf("current implementation includes space-separated version replacements")
+		}
+	})
+}
+
+// TestParseGoModReplace_MissingFile tests behavior when go.mod doesn't exist
+func TestParseGoModReplace_MissingFile(t *testing.T) {
+	tmpDir := t.TempDir()
+	goModPath := filepath.Join(tmpDir, "nonexistent.mod")
+
+	result := ParseGoModReplace(goModPath)
+
+	if result == nil {
+		t.Error("expected non-nil map, got nil")
+	}
+	if len(result) != 0 {
+		t.Errorf("expected empty map for missing file, got %d entries", len(result))
+	}
+}
+
+// TestParseGoModReplace_MalformedDirective tests defensive parsing of malformed directives
+func TestParseGoModReplace_MalformedDirective(t *testing.T) {
+	tmpDir := t.TempDir()
+	goModPath := filepath.Join(tmpDir, "go.mod")
+	content := `module example.com/test
+
+go 1.21
+
+replace
+replace =>
+replace foo
+replace github.com/good/pkg => ./local
+`
+	if err := os.WriteFile(goModPath, []byte(content), 0644); err != nil {
+		t.Fatalf("failed to write go.mod: %v", err)
+	}
+
+	result := ParseGoModReplace(goModPath)
+
+	// Only the well-formed directive should be parsed
+	if _, ok := result["github.com/good/pkg"]; !ok {
+		t.Errorf("expected 'github.com/good/pkg' in result")
+	}
+	if len(result) != 1 {
+		t.Errorf("expected 1 module in result, got %d", len(result))
+	}
+}
+
+// TestParseGoModReplace_Comments tests handling of comments and blank lines
+func TestParseGoModReplace_Comments(t *testing.T) {
+	tmpDir := t.TempDir()
+	goModPath := filepath.Join(tmpDir, "go.mod")
+	content := `module example.com/test
+
+go 1.21
+
+// This is a comment
+replace (
+	// Another comment
+	github.com/foo/bar => ./local
+)
+`
+	if err := os.WriteFile(goModPath, []byte(content), 0644); err != nil {
+		t.Fatalf("failed to write go.mod: %v", err)
+	}
+
+	result := ParseGoModReplace(goModPath)
+
+	if _, ok := result["github.com/foo/bar"]; !ok {
+		t.Errorf("expected 'github.com/foo/bar' in result, got: %v", result)
+	}
+	if len(result) != 1 {
+		t.Errorf("expected 1 module in result, got %d", len(result))
+	}
+}
+
 // goSumParser is a minimal LockFileParser for go.sum files used in testing.
 // It reads "module version hash" lines and returns a PackageInfo per module.
 type goSumParser struct{}
