@@ -3,6 +3,7 @@ package suitability
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -70,88 +71,7 @@ func TestAnotherFunc(t *testing.T) {
 	// Test that it doesn't panic
 	AnotherFunc()
 }
-
-// Additional test cases to reach >100 lines
-func TestEdgeCase1(t *testing.T) {
-	// edge case test
-}
-
-func TestEdgeCase2(t *testing.T) {
-	// edge case test
-}
-
-func TestEdgeCase3(t *testing.T) {
-	// edge case test
-}
-
-func TestEdgeCase4(t *testing.T) {
-	// edge case test
-}
-
-func TestEdgeCase5(t *testing.T) {
-	// edge case test
-}
-
-func TestEdgeCase6(t *testing.T) {
-	// edge case test
-}
-
-func TestEdgeCase7(t *testing.T) {
-	// edge case test
-}
-
-func TestEdgeCase8(t *testing.T) {
-	// edge case test
-}
-
-func TestEdgeCase9(t *testing.T) {
-	// edge case test
-}
-
-func TestEdgeCase10(t *testing.T) {
-	// edge case test
-}
-
-func TestEdgeCase11(t *testing.T) {
-	// edge case test
-}
-
-func TestEdgeCase12(t *testing.T) {
-	// edge case test
-}
-
-func TestEdgeCase13(t *testing.T) {
-	// edge case test
-}
-
-func TestEdgeCase14(t *testing.T) {
-	// edge case test
-}
-
-func TestEdgeCase15(t *testing.T) {
-	// edge case test
-}
-
-func TestEdgeCase16(t *testing.T) {
-	// edge case test
-}
-
-func TestEdgeCase17(t *testing.T) {
-	// edge case test
-}
-
-func TestEdgeCase18(t *testing.T) {
-	// edge case test
-}
-
-func TestEdgeCase19(t *testing.T) {
-	// edge case test
-}
-
-func TestEdgeCase20(t *testing.T) {
-	// edge case test
-}
-`
+` + generateTestPadding(70)
 
 	if err := os.WriteFile(mainFile, []byte(mainContent), 0644); err != nil {
 		t.Fatal(err)
@@ -542,6 +462,103 @@ func helper2() {}
 				t.Errorf("expected test coverage=%s, got %s", tt.expectedCoverage, status.TestCoverage)
 			}
 		})
+	}
+}
+
+// TestCheckTestCoverage_Boundaries verifies the boundary conditions of checkTestCoverage.
+func TestCheckTestCoverage_Boundaries(t *testing.T) {
+	tests := []struct {
+		name     string
+		lines    int
+		expected string
+	}{
+		{"exactly 49 lines", 49, "low"},
+		{"exactly 50 lines", 50, "medium"},
+		{"exactly 100 lines", 100, "medium"},
+		{"exactly 101 lines", 101, "high"},
+		{"non-existent file", -1, "none"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if tt.lines < 0 {
+				// Non-existent file path
+				got := checkTestCoverage("/nonexistent/path/file_test.go")
+				if got != tt.expected {
+					t.Errorf("expected %q, got %q", tt.expected, got)
+				}
+				return
+			}
+
+			tmpDir := t.TempDir()
+			testFile := filepath.Join(tmpDir, "file_test.go")
+
+			// Build a string with exactly tt.lines lines as counted by strings.Split.
+			// strings.Split counts the trailing empty element from a trailing newline,
+			// so we build lines joined by \n without a trailing newline to get exact counts.
+			lines := make([]string, tt.lines)
+			for i := range lines {
+				lines[i] = "// line"
+			}
+			content := strings.Join(lines, "\n")
+			if err := os.WriteFile(testFile, []byte(content), 0644); err != nil {
+				t.Fatal(err)
+			}
+
+			got := checkTestCoverage(testFile)
+			if got != tt.expected {
+				t.Errorf("lines=%d: expected %q, got %q", tt.lines, tt.expected, got)
+			}
+		})
+	}
+}
+
+// TestContainsTodoPatterns_StubFalsePositive verifies that word-boundary anchoring
+// prevents identifiers like NewStubServer and buildstub from triggering the stub pattern.
+func TestContainsTodoPatterns_StubFalsePositive(t *testing.T) {
+	tests := []struct {
+		name     string
+		content  string
+		expected bool
+	}{
+		{"NewStubServer identifier", "func NewStubServer() {}", false},
+		{"stubService type", "type stubService struct{}", false},
+		{"bare stub word in comment", "// stub implementation", true},
+		{"buildstub identifier", "x := buildstub()", false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := containsTodoPatterns(tt.content)
+			if got != tt.expected {
+				t.Errorf("containsTodoPatterns(%q) = %v, expected %v", tt.content, got, tt.expected)
+			}
+		})
+	}
+}
+
+// TestParseRequirements_HeaderWithoutLocation verifies that a header with no
+// Location field is still included in the result (with Files == nil), rather
+// than being silently dropped.
+func TestParseRequirements_HeaderWithoutLocation(t *testing.T) {
+	content := "## F1: Add authentication handler\n\nSome description but no location field.\n"
+
+	reqs, err := ParseRequirements(content)
+	if err != nil {
+		t.Fatalf("ParseRequirements returned error: %v", err)
+	}
+
+	if len(reqs) != 1 {
+		t.Fatalf("expected 1 requirement, got %d", len(reqs))
+	}
+
+	req := reqs[0]
+	if req.ID != "F1" {
+		t.Errorf("expected ID=F1, got %q", req.ID)
+	}
+
+	if len(req.Files) != 0 {
+		t.Errorf("expected Files to be nil/empty, got %v", req.Files)
 	}
 }
 
