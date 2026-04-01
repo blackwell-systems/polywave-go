@@ -217,6 +217,7 @@ waves:
             - Use unicode box-drawing separator style `// ─────` to match existing style.
           files:
             - pkg/errparse/python_parsers.go
+      base_commit: cff79c64ad7938b8b8ef81c1951a37f4335c1776
     - number: 2
       agents:
         - id: D
@@ -347,6 +348,31 @@ quality_gates:
         - type: test
           command: go test ./pkg/errparse/... ./pkg/protocol/...
           required: true
+completion_reports:
+    A:
+        status: complete
+        branch: saw/errparse-deep-review-fixes/wave1-agent-A
+        commit: e4026ee
+        files_changed:
+            - pkg/errparse/go_parsers.go
+        verification: PASS
+        notes: Added init() registering all 4 Go parsers. Fixed unused loop variable i in GoTestParser.Parse. All existing tests pass.
+    B:
+        status: complete
+        branch: saw/errparse-deep-review-fixes/wave1-agent-B
+        commit: 0dd89f4
+        files_changed:
+            - pkg/errparse/js_parsers.go
+        verification: PASS
+        notes: Added init() registering TscParser, EslintParser, NpmTestParser. Replaced all ASCII dash separators with unicode box-drawing chars. Removed unnecessary lint suppression line 295. All existing tests pass.
+    C:
+        status: complete
+        branch: saw/errparse-deep-review-fixes/wave1-agent-C
+        commit: 790d156
+        files_changed:
+            - pkg/errparse/python_parsers.go
+        verification: PASS
+        notes: Added init() registering 3 Python parsers. Fixed pointer-to-slice brittleness in PytestParser.Parse by switching to index-based tracking. Removed unused loop variable.
 pre_mortem:
     overall_risk: low
     rows:

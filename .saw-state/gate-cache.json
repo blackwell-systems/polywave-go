@@ -1,5 +1,17 @@
 {
   "entries": {
+    "008b1d712c2c931b6f4f76529eb76f5a": {
+      "build": {
+        "gate_type": "build",
+        "command": "go build ./pkg/errparse/... ./pkg/protocol/...",
+        "passed": true,
+        "exit_code": 0,
+        "stdout": "",
+        "stderr": "",
+        "from_cache": true,
+        "cached_at": "2026-04-01T08:17:37.190666-07:00"
+      }
+    },
     "0184a6ac19b9472d22dd46a41e769217": {
       "test": {
         "gate_type": "test",
@@ -58,6 +70,18 @@
         "stderr": "",
         "from_cache": true,
         "cached_at": "2026-03-27T12:36:36.344765-07:00"
+      }
+    },
+    "049230cc3b3df60479cae57cdd9e6b4d": {
+      "test": {
+        "gate_type": "test",
+        "command": "go test ./pkg/errparse/... ./pkg/protocol/...",
+        "passed": true,
+        "exit_code": 0,
+        "stdout": "ok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/errparse\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/protocol\t(cached)\n",
+        "stderr": "",
+        "from_cache": true,
+        "cached_at": "2026-04-01T08:17:38.252175-07:00"
       }
     },
     "05053c802e3ac961a5e979704ce0934f": {
@@ -1716,6 +1740,18 @@
         "cached_at": "2026-03-26T09:55:39.30421-07:00"
       }
     },
+    "4f9bf6b266db2edce218ab0127d2e008": {
+      "build": {
+        "gate_type": "build",
+        "command": "go build ./pkg/errparse/... ./pkg/protocol/...",
+        "passed": true,
+        "exit_code": 0,
+        "stdout": "",
+        "stderr": "",
+        "from_cache": true,
+        "cached_at": "2026-04-01T08:20:22.905786-07:00"
+      }
+    },
     "5008b458483116d2b2b459e60c4aeb39": {
       "lint": {
         "gate_type": "lint",
@@ -2338,6 +2374,18 @@
         "stderr": "",
         "from_cache": true,
         "cached_at": "2026-03-25T12:46:04.76317-07:00"
+      }
+    },
+    "6636be84180c2b1280bc04ea18ece409": {
+      "lint": {
+        "gate_type": "lint",
+        "command": "go vet ./pkg/errparse/... ./pkg/protocol/...",
+        "passed": true,
+        "exit_code": 0,
+        "stdout": "",
+        "stderr": "",
+        "from_cache": true,
+        "cached_at": "2026-04-01T08:17:37.589007-07:00"
       }
     },
     "66d609449985f2cb26bf562e7ed8af18": {
@@ -3372,6 +3420,18 @@
         "cached_at": "2026-03-25T21:09:35.208948-07:00"
       }
     },
+    "91bbf0faa8b2be389555e48cfe483fec": {
+      "lint": {
+        "gate_type": "lint",
+        "command": "go vet ./pkg/errparse/... ./pkg/protocol/...",
+        "passed": true,
+        "exit_code": 0,
+        "stdout": "",
+        "stderr": "",
+        "from_cache": true,
+        "cached_at": "2026-04-01T08:20:23.316951-07:00"
+      }
+    },
     "92c2b31b7ce97d6cceaf6d90956740c0": {
       "test": {
         "gate_type": "test",
@@ -3874,6 +3934,18 @@
         "stderr": "",
         "from_cache": true,
         "cached_at": "2026-03-25T18:09:17.028083-07:00"
+      }
+    },
+    "aaea66d9d4a3cd9ab04810cfd247eeab": {
+      "test": {
+        "gate_type": "test",
+        "command": "go test ./pkg/errparse/... ./pkg/protocol/...",
+        "passed": true,
+        "exit_code": 0,
+        "stdout": "ok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/errparse\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/protocol\t(cached)\n",
+        "stderr": "",
+        "from_cache": true,
+        "cached_at": "2026-04-01T08:20:23.994912-07:00"
       }
     },
     "ab10a3bd77d14bd4f880a57a98c997fb": {
