@@ -660,3 +660,55 @@ func Version() (string, error) {
 	}
 	return strings.TrimSpace(string(out)), nil
 }
+
+// DiffStats holds statistics for a git diff
+type DiffStats struct {
+	FilesChanged  int
+	LinesAdded    int
+	LinesRemoved  int
+}
+
+// GetDiffStats runs git diff --numstat between fromRef and toRef for file
+// and returns parsed statistics. Returns zero stats on error (safe default).
+func GetDiffStats(repoPath, fromRef, toRef, file string) (*DiffStats, error) {
+	rangeArg := fromRef + ".." + toRef
+	out, err := RunOutput(repoPath, "diff", "--numstat", rangeArg, "--", file)
+	if err != nil {
+		return &DiffStats{}, fmt.Errorf("git diff --numstat failed: %w", err)
+	}
+
+	trimmed := strings.TrimSpace(out)
+	if trimmed == "" {
+		// No changes for this file
+		return &DiffStats{}, nil
+	}
+
+	// Parse numstat output: "added	removed	filename"
+	// Example: "10	5	pkg/file.go"
+	lines := strings.Split(trimmed, "\n")
+	if len(lines) == 0 {
+		return &DiffStats{}, nil
+	}
+
+	// Take first line (should be the only line for single file)
+	fields := strings.Fields(lines[0])
+	if len(fields) < 3 {
+		return &DiffStats{}, fmt.Errorf("unexpected numstat format: %s", lines[0])
+	}
+
+	added, err := strconv.Atoi(fields[0])
+	if err != nil {
+		// Binary files show "-" instead of numbers
+		added = 0
+	}
+	removed, err := strconv.Atoi(fields[1])
+	if err != nil {
+		removed = 0
+	}
+
+	return &DiffStats{
+		FilesChanged: 1,
+		LinesAdded:   added,
+		LinesRemoved: removed,
+	}, nil
+}

@@ -23,6 +23,102 @@ type ConflictPrediction struct {
 	Agents []string
 }
 
+// DiffPattern classifies the type of changes in a git diff
+type DiffPattern string
+
+const (
+	DiffPatternAppendOnly DiffPattern = "append_only"
+	DiffPatternLineEdits  DiffPattern = "line_edits"
+	DiffPatternDeletions  DiffPattern = "deletions"
+	DiffPatternMixed      DiffPattern = "mixed"
+)
+
+// DiffAnalysis holds the result of analyzing a single agent's diff for one file
+type DiffAnalysis struct {
+	AgentID string
+	File    string
+	Pattern DiffPattern
+	Hunks   []HunkRange
+	Hash    string
+}
+
+// MergeStrategy suggests how to resolve a detected conflict
+type MergeStrategy string
+
+const (
+	MergeStrategyAutomatic  MergeStrategy = "automatic"
+	MergeStrategyManual     MergeStrategy = "manual"
+	MergeStrategySequential MergeStrategy = "sequential"
+)
+
+// ConflictPredictionEnhanced extends ConflictPrediction with strategy metadata
+type ConflictPredictionEnhanced struct {
+	File         string
+	Agents       []string
+	Strategy     MergeStrategy
+	Reason       string
+	MergeOrder   []string
+	DiffAnalyses []*DiffAnalysis
+}
+
+// ConflictDataEnhanced extends ConflictData with strategy recommendations
+type ConflictDataEnhanced struct {
+	ConflictsDetected int
+	Conflicts         []ConflictPredictionEnhanced
+	AutoMergeable     int
+}
+
+// AnalyzeDiffPattern inspects the diff between baseRef and agentBranch for file
+// and returns the pattern classification.
+func AnalyzeDiffPattern(repoPath, baseRef, agentBranch, file string) (*DiffAnalysis, error) {
+	if repoPath == "" {
+		return nil, fmt.Errorf("repoPath required")
+	}
+
+	// Get diff with zero context to extract hunks
+	diff, err := git.DiffUnifiedZero(repoPath, baseRef, agentBranch, file)
+	if err != nil {
+		return nil, fmt.Errorf("git diff failed: %w", err)
+	}
+
+	hunks := parseDiffHunks(diff)
+
+	// Get diff stats to determine pattern
+	stats, err := git.GetDiffStats(repoPath, baseRef, agentBranch, file)
+	if err != nil {
+		// Fallback to conservative pattern on stats error
+		return &DiffAnalysis{
+			File:    file,
+			Pattern: DiffPatternMixed,
+			Hunks:   hunks,
+		}, nil
+	}
+
+	// Classify pattern based on stats
+	pattern := DiffPatternMixed
+	if stats.LinesRemoved == 0 && stats.LinesAdded > 0 {
+		// Pure additions → append-only
+		pattern = DiffPatternAppendOnly
+	} else if stats.LinesRemoved > 0 && stats.LinesAdded == 0 {
+		pattern = DiffPatternDeletions
+	} else if stats.LinesRemoved > 0 && stats.LinesAdded > 0 {
+		pattern = DiffPatternLineEdits
+	}
+
+	// Get file hash from agent branch
+	hash, err := computeFileHashInBranch(repoPath, agentBranch, file)
+	if err != nil {
+		hash = "" // Non-fatal, leave empty
+	}
+
+	return &DiffAnalysis{
+		File:    file,
+		Pattern: pattern,
+		Hunks:   hunks,
+		Hash:    hash,
+	}, nil
+}
+
 // PredictConflictsFromReports cross-references completion reports for all agents
 // in the given wave to detect files that appear in more than one agent's report.
 //
@@ -122,6 +218,280 @@ func PredictConflictsFromReports(ctx context.Context, manifest *IMPLManifest, wa
 	}, warnings...)
 
 	return result.NewPartial(data, warnings)
+}
+
+// PredictConflictsWithStrategy is the enhanced E11 function that analyzes patterns
+func PredictConflictsWithStrategy(ctx context.Context, manifest *IMPLManifest, waveNum int) result.Result[ConflictDataEnhanced] {
+	_ = ctx
+	if manifest == nil {
+		return result.NewSuccess(ConflictDataEnhanced{})
+	}
+
+	// Find the target wave
+	var targetWave *Wave
+	for i := range manifest.Waves {
+		if manifest.Waves[i].Number == waveNum {
+			targetWave = &manifest.Waves[i]
+			break
+		}
+	}
+	if targetWave == nil {
+		return result.NewSuccess(ConflictDataEnhanced{})
+	}
+
+	// Build map: file -> list of agent IDs that reported touching it
+	fileAgents := make(map[string][]string)
+	for _, agent := range targetWave.Agents {
+		report, ok := manifest.CompletionReports[agent.ID]
+		if !ok {
+			continue
+		}
+		seen := make(map[string]bool)
+		allFiles := append([]string{}, report.FilesChanged...)
+		allFiles = append(allFiles, report.FilesCreated...)
+		for _, f := range allFiles {
+			if f == "" || isIMPLStateFile(f) {
+				continue
+			}
+			if !seen[f] {
+				seen[f] = true
+				fileAgents[f] = append(fileAgents[f], agent.ID)
+			}
+		}
+	}
+
+	// Find merge base for this wave (common ancestor of all agent branches)
+	var mergeBase string
+	if manifest.Repository != "" && manifest.FeatureSlug != "" && len(fileAgents) > 0 {
+		// Get any two agents to find merge base
+		var firstAgent, secondAgent string
+		for _, agents := range fileAgents {
+			if len(agents) >= 2 {
+				firstAgent = agents[0]
+				secondAgent = agents[1]
+				break
+			}
+		}
+		if firstAgent != "" && secondAgent != "" {
+			branchFmt := func(id string) string {
+				return fmt.Sprintf("saw/%s/wave%d-agent-%s", manifest.FeatureSlug, waveNum, id)
+			}
+			base, err := git.MergeBase(manifest.Repository, branchFmt(firstAgent), branchFmt(secondAgent))
+			if err == nil {
+				mergeBase = base
+			}
+		}
+	}
+
+	// Analyze conflicts with pattern detection
+	var conflictPredictions []ConflictPredictionEnhanced
+	var conflictMessages []string
+	autoMergeableCount := 0
+
+	for file, agents := range fileAgents {
+		if len(agents) <= 1 {
+			continue
+		}
+
+		// Pass 1: identical content check (existing E11 logic)
+		if manifest.FeatureSlug != "" && allAgentsHaveSameContent(manifest, file, agents, waveNum) {
+			continue
+		}
+
+		// Pass 2: analyze diff patterns for each agent
+		var analyses []*DiffAnalysis
+		if mergeBase != "" && manifest.FeatureSlug != "" {
+			for _, agentID := range agents {
+				branchName := fmt.Sprintf("saw/%s/wave%d-agent-%s", manifest.FeatureSlug, waveNum, agentID)
+				analysis, err := AnalyzeDiffPattern(manifest.Repository, mergeBase, branchName, file)
+				if err == nil && analysis != nil {
+					analysis.AgentID = agentID
+					analyses = append(analyses, analysis)
+				}
+			}
+		}
+
+		// Determine merge strategy based on patterns
+		strategy, reason := determineMergeStrategy(analyses, agents)
+
+		// Determine merge order (for sequential merges)
+		mergeOrder := agents
+		if strategy == MergeStrategySequential {
+			// Sort by pattern safety: append-only first, then line edits, then mixed
+			mergeOrder = sortAgentsByPattern(analyses, agents)
+		}
+
+		conflictPredictions = append(conflictPredictions, ConflictPredictionEnhanced{
+			File:         file,
+			Agents:       agents,
+			Strategy:     strategy,
+			Reason:       reason,
+			MergeOrder:   mergeOrder,
+			DiffAnalyses: analyses,
+		})
+
+		if strategy == MergeStrategyAutomatic {
+			autoMergeableCount++
+			conflictMessages = append(conflictMessages,
+				fmt.Sprintf("  %s: auto-mergeable (%s) (agents: %v)", file, reason, agents))
+		} else {
+			conflictMessages = append(conflictMessages,
+				fmt.Sprintf("  %s: %s (%s) (agents: %v)", file, strategy, reason, agents))
+		}
+	}
+
+	data := ConflictDataEnhanced{
+		ConflictsDetected: len(conflictPredictions),
+		Conflicts:         conflictPredictions,
+		AutoMergeable:     autoMergeableCount,
+	}
+
+	if len(conflictPredictions) == 0 {
+		return result.NewSuccess(data)
+	}
+
+	// Return Partial with warnings for each conflict
+	warnings := make([]result.SAWError, 0, len(conflictPredictions)+1)
+	warnings = append(warnings, result.NewWarning(
+		"CONFLICT_PREDICT_ENHANCED",
+		fmt.Sprintf("E11 enhanced conflict prediction: %d file(s) with conflicts detected (%d auto-mergeable):\n%s",
+			len(conflictPredictions), autoMergeableCount, joinLines(conflictMessages)),
+	))
+	for _, cp := range conflictPredictions {
+		if cp.Strategy != MergeStrategyAutomatic {
+			warnings = append(warnings, result.NewWarning(
+				"CONFLICT_PREDICT_ENHANCED",
+				fmt.Sprintf("%s requires %s merge: %s (agents: %v)",
+					cp.File, cp.Strategy, cp.Reason, cp.Agents),
+			))
+		}
+	}
+
+	return result.NewPartial(data, warnings)
+}
+
+// determineMergeStrategy analyzes diff patterns to suggest merge approach
+func determineMergeStrategy(analyses []*DiffAnalysis, agents []string) (MergeStrategy, string) {
+	if len(analyses) == 0 {
+		// No pattern data - be conservative
+		return MergeStrategyManual, "no diff analysis available"
+	}
+
+	// Count pattern types
+	appendOnlyCount := 0
+	lineEditsCount := 0
+	deletionsCount := 0
+	mixedCount := 0
+	overlappingHunks := false
+
+	for _, a := range analyses {
+		switch a.Pattern {
+		case DiffPatternAppendOnly:
+			appendOnlyCount++
+		case DiffPatternLineEdits:
+			lineEditsCount++
+		case DiffPatternDeletions:
+			deletionsCount++
+		case DiffPatternMixed:
+			mixedCount++
+		}
+	}
+
+	// Check for overlapping hunks between agents
+	if len(analyses) >= 2 {
+		for i := 0; i < len(analyses); i++ {
+			for j := i + 1; j < len(analyses); j++ {
+				if hunksOverlap(analyses[i].Hunks, analyses[j].Hunks) {
+					overlappingHunks = true
+					break
+				}
+			}
+			if overlappingHunks {
+				break
+			}
+		}
+	}
+
+	// Decision logic (conservative approach)
+	if overlappingHunks {
+		return MergeStrategyManual, "overlapping line ranges detected"
+	}
+
+	// All agents doing pure append-only changes
+	if appendOnlyCount == len(analyses) && appendOnlyCount > 0 {
+		return MergeStrategyAutomatic, "all agents append-only (new functions/tests)"
+	}
+
+	// Mix of append-only and no overlaps
+	if appendOnlyCount > 0 && lineEditsCount == 0 && deletionsCount == 0 && mixedCount == 0 {
+		return MergeStrategyAutomatic, "all append-only changes"
+	}
+
+	// Non-overlapping hunks with safe patterns
+	if !overlappingHunks && mixedCount == 0 && deletionsCount == 0 {
+		return MergeStrategySequential, "non-overlapping edits (cascade pattern)"
+	}
+
+	// Default to manual for safety
+	reason := "mixed patterns detected"
+	if mixedCount > 0 {
+		reason = "complex mixed changes detected"
+	} else if deletionsCount > 0 {
+		reason = "deletions require review"
+	} else if lineEditsCount > 0 {
+		reason = "line edits require review"
+	}
+	return MergeStrategyManual, reason
+}
+
+// sortAgentsByPattern returns agents sorted by merge safety (append-only first)
+func sortAgentsByPattern(analyses []*DiffAnalysis, agents []string) []string {
+	// Build pattern map
+	patternMap := make(map[string]DiffPattern)
+	for _, a := range analyses {
+		patternMap[a.AgentID] = a.Pattern
+	}
+
+	// Sort: append-only, then line edits, then deletions, then mixed
+	sorted := make([]string, len(agents))
+	copy(sorted, agents)
+
+	// Simple priority sort
+	type agentPriority struct {
+		id       string
+		priority int
+	}
+	priorities := make([]agentPriority, len(agents))
+	for i, id := range agents {
+		pattern := patternMap[id]
+		priority := 4 // default (unknown)
+		switch pattern {
+		case DiffPatternAppendOnly:
+			priority = 1
+		case DiffPatternLineEdits:
+			priority = 2
+		case DiffPatternDeletions:
+			priority = 3
+		case DiffPatternMixed:
+			priority = 4
+		}
+		priorities[i] = agentPriority{id: id, priority: priority}
+	}
+
+	// Sort by priority
+	for i := 0; i < len(priorities); i++ {
+		for j := i + 1; j < len(priorities); j++ {
+			if priorities[j].priority < priorities[i].priority {
+				priorities[i], priorities[j] = priorities[j], priorities[i]
+			}
+		}
+	}
+
+	result := make([]string, len(priorities))
+	for i, p := range priorities {
+		result[i] = p.id
+	}
+	return result
 }
 
 // isIMPLStateFile returns true for IMPL doc paths and .saw-state/ files, which
