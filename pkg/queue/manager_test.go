@@ -402,3 +402,141 @@ func TestSlugFromTitle(t *testing.T) {
 		}
 	}
 }
+
+func TestAdd_MkdirFails(t *testing.T) {
+	// Create a temp dir and make it read-only to simulate MkdirAll failure
+	baseDir := t.TempDir()
+	readOnlyDir := filepath.Join(baseDir, "readonly")
+	if err := os.MkdirAll(readOnlyDir, 0o755); err != nil {
+		t.Fatalf("setup: create dir: %v", err)
+	}
+
+	// Make it read-only to prevent subdirectory creation
+	if err := os.Chmod(readOnlyDir, 0o444); err != nil {
+		t.Fatalf("setup: chmod: %v", err)
+	}
+	defer os.Chmod(readOnlyDir, 0o755) // Restore for cleanup
+
+	mgr := NewManager(readOnlyDir)
+	item := Item{
+		Title:    "Test Feature",
+		Priority: 1,
+		Slug:     "test-feature",
+	}
+
+	res := mgr.Add(item)
+	if !res.IsFatal() {
+		t.Fatal("expected Fatal result when MkdirAll fails")
+	}
+	if len(res.Errors) == 0 {
+		t.Fatal("expected errors in Fatal result")
+	}
+	if res.Errors[0].Code != result.CodeQueueAddFailed {
+		t.Errorf("error code = %q, want %q", res.Errors[0].Code, result.CodeQueueAddFailed)
+	}
+}
+
+func TestList_CorruptedYAML(t *testing.T) {
+	dir := t.TempDir()
+	mgr := NewManager(dir)
+
+	// Create queue directory
+	queueDir := filepath.Join(dir, "docs", "IMPL", "queue")
+	if err := os.MkdirAll(queueDir, 0o755); err != nil {
+		t.Fatalf("setup: create dir: %v", err)
+	}
+
+	// Write corrupted YAML
+	corruptedPath := filepath.Join(queueDir, "001-test.yaml")
+	corruptedContent := "[]]]corrupted"
+	if err := os.WriteFile(corruptedPath, []byte(corruptedContent), 0o644); err != nil {
+		t.Fatalf("setup: write corrupted file: %v", err)
+	}
+
+	listRes := mgr.List()
+	if !listRes.IsFatal() {
+		t.Fatal("expected Fatal result when YAML is corrupted")
+	}
+	if len(listRes.Errors) == 0 {
+		t.Fatal("expected errors in Fatal result")
+	}
+	if listRes.Errors[0].Code != result.CodeQueueListFailed {
+		t.Errorf("error code = %q, want %q", listRes.Errors[0].Code, result.CodeQueueListFailed)
+	}
+}
+
+func TestCompletedSlugs_CompleteDir_ReadFailure(t *testing.T) {
+	dir := t.TempDir()
+	mgr := NewManager(dir)
+
+	// Create complete directory
+	completeDir := filepath.Join(dir, "docs", "IMPL", "complete")
+	if err := os.MkdirAll(completeDir, 0o755); err != nil {
+		t.Fatalf("setup: create complete dir: %v", err)
+	}
+
+	// Add a queue item with dependencies
+	item := Item{
+		Title:     "Dependent Feature",
+		Priority:  1,
+		Slug:      "dependent",
+		DependsOn: []string{"prereq"},
+	}
+	addRes := mgr.Add(item)
+	if addRes.IsFatal() {
+		t.Fatalf("setup: Add: %v", addRes.Errors[0].Message)
+	}
+
+	// Make complete dir unreadable to trigger ReadDir failure in completedSlugs()
+	if err := os.Chmod(completeDir, 0o000); err != nil {
+		t.Fatalf("setup: chmod complete dir: %v", err)
+	}
+	defer os.Chmod(completeDir, 0o755) // Restore for cleanup
+
+	// Next() should fail when completedSlugs() fails to scan complete dir
+	nextRes := mgr.Next()
+	if !nextRes.IsFatal() {
+		t.Fatal("expected Fatal result when complete dir is unreadable")
+	}
+	if len(nextRes.Errors) == 0 {
+		t.Fatal("expected errors in Fatal result")
+	}
+	if nextRes.Errors[0].Code != result.CodeQueueCompletedScanFailed {
+		t.Errorf("error code = %q, want %q", nextRes.Errors[0].Code, result.CodeQueueCompletedScanFailed)
+	}
+}
+
+func TestUpdateStatus_SaveYAMLFails(t *testing.T) {
+	dir := t.TempDir()
+	mgr := NewManager(dir)
+
+	// Add an item
+	item := Item{
+		Title:    "Test Feature",
+		Priority: 1,
+		Slug:     "test-feature",
+	}
+	addRes := mgr.Add(item)
+	if addRes.IsFatal() {
+		t.Fatalf("setup: Add: %v", addRes.Errors[0].Message)
+	}
+
+	// Get the file path and make it read-only
+	filePath := addRes.GetData().FilePath
+	if err := os.Chmod(filePath, 0o444); err != nil {
+		t.Fatalf("setup: chmod file: %v", err)
+	}
+	defer os.Chmod(filePath, 0o644) // Restore for cleanup
+
+	// Attempt to update status should fail
+	updateRes := mgr.UpdateStatus("test-feature", "in_progress")
+	if !updateRes.IsFatal() {
+		t.Fatal("expected Fatal result when file is read-only")
+	}
+	if len(updateRes.Errors) == 0 {
+		t.Fatal("expected errors in Fatal result")
+	}
+	if updateRes.Errors[0].Code != result.CodeQueueStatusUpdateFailed {
+		t.Errorf("error code = %q, want %q", updateRes.Errors[0].Code, result.CodeQueueStatusUpdateFailed)
+	}
+}
