@@ -5,6 +5,15 @@ import (
 	"fmt"
 )
 
+// PrepareTierOpts contains the options for PrepareTier, replacing positional
+// arguments and adding a SkipCritic flag.
+type PrepareTierOpts struct {
+	ProgramManifestPath string
+	TierNumber          int
+	RepoDir             string
+	SkipCritic          bool // When true, auto-write synthetic PASS for IMPLs requiring E37 with no critic report
+}
+
 // PrepareTierResult contains the structured output of preparing a program tier.
 // It includes per-step results for conflict checking, IMPL validation, and
 // worktree creation.
@@ -31,8 +40,9 @@ type IMPLValidationResult struct {
 }
 
 // PrepareTier is an atomic batching function that combines conflict checking,
-// IMPL validation, and worktree creation for a program tier. It aborts on any
-// failure and returns a partial result with Success=false.
+// IMPL validation, and worktree creation for a program tier. It collects all
+// failures instead of aborting on the first one, and returns a result with
+// Success=false if any failure occurs.
 //
 // Steps:
 //  1. Parse program manifest.
@@ -40,8 +50,8 @@ type IMPLValidationResult struct {
 //  3. Check for cross-IMPL file ownership conflicts.
 //  4. Validate each IMPL doc (with auto-fix of gate types).
 //  5. Create worktrees for the tier.
-func PrepareTier(programManifestPath string, tierNumber int, repoDir string) (*PrepareTierResult, error) {
-	manifest, err := ParseProgramManifest(programManifestPath)
+func PrepareTier(opts PrepareTierOpts) (*PrepareTierResult, error) {
+	manifest, err := ParseProgramManifest(opts.ProgramManifestPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse program manifest: %w", err)
 	}
@@ -49,21 +59,21 @@ func PrepareTier(programManifestPath string, tierNumber int, repoDir string) (*P
 	// Find the tier by number.
 	var targetTier *ProgramTier
 	for i := range manifest.Tiers {
-		if manifest.Tiers[i].Number == tierNumber {
+		if manifest.Tiers[i].Number == opts.TierNumber {
 			targetTier = &manifest.Tiers[i]
 			break
 		}
 	}
 	if targetTier == nil {
-		return nil, fmt.Errorf("tier %d not found in program manifest", tierNumber)
+		return nil, fmt.Errorf("tier %d not found in program manifest", opts.TierNumber)
 	}
 
 	result := &PrepareTierResult{
-		Tier: tierNumber,
+		Tier: opts.TierNumber,
 	}
 
 	// Step 3: Conflict check.
-	report, err := CheckIMPLConflicts(targetTier.Impls, repoDir)
+	report, err := CheckIMPLConflicts(targetTier.Impls, opts.RepoDir)
 	if err != nil {
 		return nil, fmt.Errorf("conflict check failed: %w", err)
 	}
@@ -76,9 +86,10 @@ func PrepareTier(programManifestPath string, tierNumber int, repoDir string) (*P
 		return result, nil
 	}
 
-	// Step 4: IMPL validation.
+	// Step 4: IMPL validation — collect all failures instead of returning early.
+	hasFailure := false
 	for _, slug := range targetTier.Impls {
-		implPath, err := ResolveIMPLPath(repoDir, slug)
+		implPath, err := ResolveIMPLPath(opts.RepoDir, slug)
 		if err != nil {
 			return nil, fmt.Errorf("cannot resolve IMPL %q: %w", slug, err)
 		}
@@ -111,26 +122,45 @@ func PrepareTier(programManifestPath string, tierNumber int, repoDir string) (*P
 		result.Validations = append(result.Validations, vr)
 
 		if !vr.Valid {
-			result.Success = false
-			return result, nil
+			hasFailure = true
+			continue
 		}
 
 		// Step 4.5: E37 critic gate enforcement (auto mode for program execution).
 		// Only enforce when the threshold is met: 3+ agents in wave 1 OR 2+ repos.
 		if E37Required(m) && !CriticGatePasses(m, true) {
-			vr := IMPLValidationResult{
-				ImplSlug: slug,
-				Valid:    false,
-				Errors:   []string{"E37 critic gate required but not satisfied — run `sawtools run-critic` or `sawtools run-critic --skip` before prepare-tier"},
+			if opts.SkipCritic {
+				skipped, skipErr := SkipCriticForIMPL(context.TODO(), implPath, m)
+				if skipErr != nil {
+					e37vr := IMPLValidationResult{
+						ImplSlug: slug,
+						Valid:    false,
+						Errors:   []string{fmt.Sprintf("E37 critic gate: failed to write synthetic PASS: %v", skipErr)},
+					}
+					result.Validations = append(result.Validations, e37vr)
+					hasFailure = true
+				}
+				// If skipped successfully, continue without failure.
+				_ = skipped
+			} else {
+				e37vr := IMPLValidationResult{
+					ImplSlug: slug,
+					Valid:    false,
+					Errors:   []string{"E37 critic gate required but not satisfied — run `sawtools run-critic` or `sawtools run-critic --skip` before prepare-tier"},
+				}
+				result.Validations = append(result.Validations, e37vr)
+				hasFailure = true
 			}
-			result.Validations = append(result.Validations, vr)
-			result.Success = false
-			return result, nil
 		}
 	}
 
+	if hasFailure {
+		result.Success = false
+		return result, nil
+	}
+
 	// Step 5: Create worktrees.
-	wtResult := CreateProgramWorktrees(programManifestPath, tierNumber, repoDir, nil)
+	wtResult := CreateProgramWorktrees(opts.ProgramManifestPath, opts.TierNumber, opts.RepoDir, nil)
 	if !wtResult.IsSuccess() {
 		result.Success = false
 		result.Branches = []ProgramWorktreeInfo{}

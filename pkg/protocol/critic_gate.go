@@ -1,5 +1,11 @@
 package protocol
 
+import (
+	"context"
+	"fmt"
+	"time"
+)
+
 // E37Required returns true when a critic review is required before wave execution.
 // The E37 trigger conditions are:
 //   - Wave 1 has 3 or more agents, OR
@@ -73,4 +79,27 @@ func CriticGatePasses(m *IMPLManifest, autoMode bool) bool {
 		return true // Auto mode — proceed
 	}
 	return false // Manual mode — surface to user
+}
+
+// SkipCriticForIMPL writes a synthetic PASS critic report for a single IMPL
+// if E37 is required and no passing critic report exists. Returns true if a
+// skip was written, false if no skip was needed (E37 not required or already passes).
+func SkipCriticForIMPL(ctx context.Context, implPath string, m *IMPLManifest) (bool, error) {
+	if !E37Required(m) {
+		return false, nil // not required, no skip needed
+	}
+	if CriticGatePasses(m, true) {
+		return false, nil // already passes, no skip needed
+	}
+	skipResult := CriticData{
+		Verdict:      CriticVerdictPass,
+		AgentReviews: map[string]AgentCriticReview{},
+		Summary:      "Skipped by operator (--skip-critic)",
+		ReviewedAt:   time.Now().UTC().Format(time.RFC3339),
+		IssueCount:   0,
+	}
+	if err := WriteCriticReview(ctx, implPath, skipResult); err != nil {
+		return false, fmt.Errorf("failed to write synthetic PASS for %s: %w", implPath, err)
+	}
+	return true, nil
 }
