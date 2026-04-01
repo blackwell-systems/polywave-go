@@ -8,6 +8,19 @@ import (
 	"strings"
 )
 
+var (
+	funcPattern = regexp.MustCompile(`func\s+\w+`)
+	todoPatterns = []*regexp.Regexp{
+		regexp.MustCompile(`(?i)TODO`),
+		regexp.MustCompile(`(?i)FIXME`),
+		regexp.MustCompile(`(?i)HACK`),
+		regexp.MustCompile(`(?i)XXX`),
+		regexp.MustCompile(`(?i)\bstub\b`),
+		regexp.MustCompile(`(?i)not implemented`),
+		regexp.MustCompile(`(?i)placeholder`),
+	}
+)
+
 // ScanPreImplementation analyzes files against requirements to classify status
 func ScanPreImplementation(repoRoot string, requirements []Requirement) (*SuitabilityResult, error) {
 	if repoRoot == "" {
@@ -39,7 +52,7 @@ func ScanPreImplementation(repoRoot string, requirements []Requirement) (*Suitab
 		}
 	}
 
-	// Calculate time saved: 7 min per TODO item, 3 min per PARTIAL item
+	// Calculate time saved: 7 min per DONE item, 3 min per PARTIAL item
 	result.PreImplementation.TimeSavedMinutes =
 		(result.PreImplementation.Done * 7) +
 			(result.PreImplementation.Partial * 3)
@@ -117,9 +130,25 @@ func aggregateFileStatuses(reqID string, statuses []ItemStatus) ItemStatus {
 		Missing:      allMissing,
 	}
 
-	// Set test coverage from first file (if available)
-	if len(statuses) > 0 && statuses[0].TestCoverage != "" {
-		result.TestCoverage = statuses[0].TestCoverage
+	// Set test coverage to the worst (lowest) coverage across all files
+	coverageRank := map[string]int{"none": 0, "low": 1, "medium": 2, "high": 3}
+	worstCoverage := ""
+	worstRank := 4 // higher than any valid rank
+	for _, s := range statuses {
+		if s.TestCoverage == "" {
+			continue
+		}
+		rank, ok := coverageRank[s.TestCoverage]
+		if !ok {
+			continue
+		}
+		if worstCoverage == "" || rank < worstRank {
+			worstCoverage = s.TestCoverage
+			worstRank = rank
+		}
+	}
+	if worstCoverage != "" {
+		result.TestCoverage = worstCoverage
 	}
 
 	return result
@@ -182,23 +211,11 @@ func ClassifyFile(filePath string, req Requirement) (ItemStatus, error) {
 
 // containsTodoPatterns checks for TODO, FIXME, HACK, XXX, stub patterns
 func containsTodoPatterns(content string) bool {
-	patterns := []string{
-		`(?i)TODO`,
-		`(?i)FIXME`,
-		`(?i)HACK`,
-		`(?i)XXX`,
-		`(?i)stub`,
-		`(?i)not implemented`,
-		`(?i)placeholder`,
-	}
-
-	for _, pattern := range patterns {
-		matched, _ := regexp.MatchString(pattern, content)
-		if matched {
+	for _, pattern := range todoPatterns {
+		if pattern.MatchString(content) {
 			return true
 		}
 	}
-
 	return false
 }
 
@@ -206,7 +223,6 @@ func containsTodoPatterns(content string) bool {
 // (not just package declaration, imports, and comments)
 func hasSignificantContent(content string) bool {
 	// Quick heuristic: look for function declarations
-	funcPattern := regexp.MustCompile(`func\s+\w+`)
 	funcMatches := funcPattern.FindAllString(content, -1)
 
 	// If we have at least one function, consider it implemented
