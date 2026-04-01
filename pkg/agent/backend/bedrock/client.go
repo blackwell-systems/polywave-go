@@ -10,6 +10,7 @@ import (
 	"log/slog"
 	"os"
 	"strings"
+	"sync"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
@@ -33,6 +34,7 @@ type Client struct {
 	dedupCache    *dedup.Cache
 	outputSchema  map[string]any // optional: structured output schema
 	logger        *slog.Logger
+	mu            sync.Mutex // protects dedupCache and commitTracker
 }
 
 // SetLogger configures the logger used for debug traces and diagnostics.
@@ -252,28 +254,14 @@ func (c *Client) RunStreaming(ctx context.Context, systemPrompt, userPrompt, _ s
 }
 
 // buildWorkshop creates a Workshop with middleware applied based on client config.
+// Uses the shared backend.BuildWorkshop helper for consistent middleware ordering.
 func (c *Client) buildWorkshop(workDir string) tools.Workshop {
-	var w tools.Workshop
-	if c.readOnly {
-		w = tools.ReadOnlyTools(workDir)
-	} else {
-		w = tools.StandardTools(workDir)
-	}
-	w, c.dedupCache = dedup.WithDedup(w)
-	if c.cfg.Constraints != nil {
-		w, c.commitTracker = tools.WithConstraints(w, *c.cfg.Constraints)
-	}
-	if c.onToolCall != nil {
-		w = tools.WithTiming(w, func(ev tools.ToolCallEvent) {
-			c.onToolCall(backend.ToolCallEvent{
-				Name:       ev.ToolName,
-				DurationMs: ev.DurationMs,
-				IsError:    ev.IsError,
-				IsResult:   true,
-			})
-		})
-	}
-	return w
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	result := backend.BuildWorkshop(workDir, c.readOnly, c.cfg)
+	c.dedupCache = result.DedupCache
+	c.commitTracker = result.CommitTracker
+	return result.Workshop
 }
 
 // CommitCount returns the number of git commits tracked by the constraint
@@ -363,13 +351,19 @@ func (c *Client) RunStreamingWithTools(ctx context.Context, systemPrompt, userPr
 		blockMap := make(map[int]*toolBlock)              // index -> tool block
 		textBlocks := make(map[int]*strings.Builder)      // index -> text accumulator
 		currentIndex := 0
+		nextAutoIndex := 0 // auto-increment when ContentBlockIndex is nil
 
 		for event := range stream.Events() {
 			switch v := event.(type) {
 			case *types.ConverseStreamOutputMemberContentBlockStart:
 				if v.Value.ContentBlockIndex != nil {
 					currentIndex = int(*v.Value.ContentBlockIndex)
+				} else {
+					// ContentBlockIndex is nil; auto-increment based on blocks seen.
+					currentIndex = nextAutoIndex
 				}
+				nextAutoIndex = currentIndex + 1
+
 				if v.Value.Start != nil {
 					if toolUse, ok := v.Value.Start.(*types.ContentBlockStartMemberToolUse); ok {
 						blockMap[currentIndex] = &toolBlock{
@@ -378,7 +372,7 @@ func (c *Client) RunStreamingWithTools(ctx context.Context, systemPrompt, userPr
 						}
 					}
 				}
-				// Initialize text block accumulator
+				// Initialize text block accumulator for non-tool blocks
 				if _, exists := blockMap[currentIndex]; !exists {
 					textBlocks[currentIndex] = &strings.Builder{}
 				}
@@ -517,12 +511,14 @@ func (c *Client) RunStreamingWithTools(ctx context.Context, systemPrompt, userPr
 			// Emit tool call event
 			if onToolCall != nil {
 				onToolCall(backend.ToolCallEvent{
+					ID:    toolBlk.id,
 					Name:  toolBlk.name,
 					Input: inputStr,
 				})
 			}
 
-			result, isError := executeTool(ctx, workshop, toolBlk.name, inputMap, workDir)
+			result, execErr := backend.ExecuteTool(ctx, workshop, toolBlk.name, inputMap, workDir)
+			isError := execErr != nil
 
 			// Debug: log tool calls and results for diagnosis (off by default, opt-in via SAW_LOG_LEVEL=DEBUG)
 			truncResult := result
@@ -569,7 +565,8 @@ func (c *Client) maxTurns() int {
 	if c.cfg.MaxTurns > 0 {
 		return c.cfg.MaxTurns
 	}
-	return 200
+	// Default matches API and OpenAI backends.
+	return 50
 }
 
 func (c *Client) maxTokens() int {
