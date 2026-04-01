@@ -226,6 +226,14 @@ saw_name: %s
 		fmt.Fprintf(os.Stderr, "prepare-agent: warning: failed to persist context_source: %v\n", saveErrMsg)
 	}
 
+	// Advance IMPL state to REVIEWED for solo-wave agents (NoWorktree path).
+	// PrepareWave does this via its advance_state step; solo paths skip PrepareWave.
+	if opts.NoWorktree && (doc.State == protocol.StateScoutPending || doc.State == protocol.StateScoutValidating) {
+		if warnMsg := advanceStateToReviewed(ctx, opts.ManifestPath); warnMsg != "" {
+			fmt.Fprintf(os.Stderr, "prepare-agent: warning: could not advance to REVIEWED: %s\n", warnMsg)
+		}
+	}
+
 	// Initialize journal observer
 	fullAgentID := fmt.Sprintf("wave%d-agent-%s", opts.WaveNum, opts.AgentID)
 	observer, err := journal.NewObserver(opts.ProjectRoot, fullAgentID)
@@ -259,4 +267,23 @@ saw_name: %s
 	}
 
 	return result, nil
+}
+
+// advanceStateToReviewed transitions the IMPL doc from SCOUT_PENDING or
+// SCOUT_VALIDATING to REVIEWED. Best-effort: failure returns a warning
+// message without aborting the caller. Returns "" on success.
+func advanceStateToReviewed(ctx context.Context, implPath string) string {
+	os.Setenv("SAW_ALLOW_MAIN_COMMIT", "1")
+	defer os.Unsetenv("SAW_ALLOW_MAIN_COMMIT")
+	stateRes := protocol.SetImplState(ctx, implPath, protocol.StateReviewed, protocol.SetImplStateOpts{
+		Commit:    true,
+		CommitMsg: "chore: advance IMPL state to REVIEWED (solo-wave prepare-agent)",
+	})
+	if stateRes.IsFatal() {
+		if len(stateRes.Errors) > 0 {
+			return stateRes.Errors[0].Message
+		}
+		return "unknown error advancing to REVIEWED"
+	}
+	return ""
 }

@@ -70,7 +70,9 @@ func isSAWOwnedPath(path, implPath, projectRoot string) bool {
 	}
 	return trimmed == rel ||
 		strings.HasPrefix(trimmed, ".saw-state/") ||
-		strings.HasPrefix(trimmed, ".saw-state\\")
+		strings.HasPrefix(trimmed, ".saw-state\\") ||
+		strings.HasPrefix(trimmed, "docs/IMPL/") ||
+		trimmed == "docs/CONTEXT.md"
 }
 
 // PrepareWave encapsulates the full wave preparation pipeline.
