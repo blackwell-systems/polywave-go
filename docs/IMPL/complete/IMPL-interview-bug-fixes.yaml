@@ -1,3 +1,4 @@
+completion_date: "2026-04-01"
 title: pkg/interview Bug Fixes
 feature_slug: interview-bug-fixes
 verdict: SUITABLE
@@ -598,6 +599,20 @@ completion_reports:
             - pkg/interview/phase_questions.go
         verification: PASS
         notes: checkPhaseTransition signature updated from void to error. panic replaced with fmt.Errorf, return nil added at end. go vet clean, pre-commit build gate passed. Callers in deterministic.go not updated — Agent B's scope.
+    B:
+        status: complete
+        branch: main
+        commit: e5902a5
+        files_changed:
+            - pkg/interview/deterministic.go
+            - pkg/interview/types.go
+            - pkg/interview/deterministic_test.go
+        tests_added:
+            - TestNewID_ReturnsIDAndNoError
+            - TestCheckPhaseTransition_InvalidSkipReturnsError
+            - TestAnswer_SaveResult_EmptyErrors
+        verification: PASS
+        notes: 'All 6 fixes applied. deterministic.go+types.go changes were captured in baseline commit 12fad18; test file changes in e5902a5. 40 tests passing. Fix 1: checkPhaseTransition error propagation in Answer() and recalculatePhase(). Fix 2: bounds-checked Errors[0] in both Save failure paths. Fix 3: newID() returns (string,error). Fix 4: FieldName added to InterviewTurn, populated and used in getFieldNameFromHistory() with fallback. Fix 5: splitCSV uses make([]string,0) removing unreachable nil check. Fix 6: corrected misleading comment in recalculatePhase().'
 pre_mortem:
     overall_risk: low
     rows:
@@ -637,5 +652,5 @@ pre_mortem:
             This is expected and acceptable in Wave 1. The quality gate for Wave 1 is
             go vet only (not go build ./...). Agent A's brief explicitly notes that the build
             will fail due to callers and that this is acceptable for Wave 1.
-state: REVIEWED
+state: COMPLETE
 injection_method: hook

@@ -310,3 +310,7 @@ type BackendConfig struct {
   - IMPL doc: docs/IMPL/complete/IMPL-sawtools-ux-bugs.yaml
 - **gowork-lsp-setup**: completed 2026-04-01, 1 waves, 2 agents
   - IMPL doc: docs/IMPL/complete/IMPL-gowork-lsp-setup.yaml
+- **interview-bug-fixes**: completed 2026-04-01, 2 waves, 2 agents
+  - IMPL doc: docs/IMPL/complete/IMPL-interview-bug-fixes.yaml
+- **journal-bug-fixes**: completed 2026-04-01, 1 waves, 4 agents
+  - IMPL doc: docs/IMPL/complete/IMPL-journal-bug-fixes.yaml

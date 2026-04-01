@@ -1,3 +1,4 @@
+completion_date: "2026-04-01"
 title: pkg/journal Bug Fixes
 feature_slug: journal-bug-fixes
 verdict: SUITABLE
@@ -331,6 +332,7 @@ waves:
           files:
             - pkg/journal/context.go
             - pkg/journal/context_test.go
+      base_commit: 1d66904ac9a4e7a37681dedb6c076ccf046280d1
 quality_gates:
     level: standard
     gates:
@@ -343,6 +345,47 @@ quality_gates:
         - type: test
           command: go test ./pkg/journal/...
           required: true
+completion_reports:
+    A:
+        status: complete
+        branch: saw/journal-bug-fixes/wave1-agent-A
+        commit: 93f03d8
+        files_changed:
+            - pkg/journal/observer.go
+        verification: PASS
+        notes: 'Bug 1: replaced silent _ = json.Unmarshal with Debug log in updateRecent. Bug 3: added Warn log on WriteFile failure in extractToolResult. Build, vet, and tests all pass.'
+    B:
+        status: complete
+        branch: saw/journal-bug-fixes/wave1-agent-B
+        commit: 0c1875a
+        files_changed:
+            - pkg/journal/checkpoint.go
+        verification: PASS
+        notes: 'Bug 2 fixed: replaced three swallowed copy errors with debug log calls using o.log().Debug(). Bug 4 fixed: removed all string() casts around o.JournalDir, o.IndexPath, o.CursorPath, o.RecentPath throughout checkpoint.go. Zero string(o. occurrences remain. Build, vet, and test all pass.'
+    C:
+        status: complete
+        branch: saw/journal-bug-fixes/wave1-agent-C
+        commit: e039b19
+        files_changed:
+            - pkg/journal/archive.go
+            - pkg/journal/archive_test.go
+        tests_added:
+            - TestArchive_PathParsingExact
+            - TestArchive_PathParsingNoFallback
+        verification: PASS
+        notes: 'Bug 6 fixed: removed fallback block that incorrectly set agent for any directory following a wave* segment. Bug 4 confirmed N/A: no string(o.) casts exist in archive.go. Two regression tests added and passing. All 15 pkg/journal tests pass.'
+    D:
+        status: complete
+        branch: saw/journal-bug-fixes/wave1-agent-D
+        commit: 4d7085a
+        files_changed:
+            - pkg/journal/context.go
+            - pkg/journal/context_test.go
+        tests_added:
+            - TestExtractTestRuns_ExitCodeParsed
+            - TestExtractTestRuns_ExitCodeDefaultsToZero
+        verification: PASS
+        notes: 'Bug 5 fixed: replaced hardcoded ExitCode:0 with parsed exit code from result.Preview using regexp. Two new tests added. All gates pass.'
 pre_mortem:
     overall_risk: low
     rows:
@@ -414,5 +457,5 @@ critic_report:
     summary: 'All four agents verified. Agent D brief corrected: extractTestRuns renamed to extractTestResults (actual function name in context.go line 277) after critic review.'
     reviewed_at: "2026-04-01T07:21:37Z"
     issue_count: 0
-state: "REVIEWED"
+state: COMPLETE
 injection_method: hook

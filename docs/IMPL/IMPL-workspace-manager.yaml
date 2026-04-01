@@ -1,1023 +1,939 @@
-title: 'Multi-language WorkspaceManager for worktree LSP resolution'
+title: Multi-language WorkspaceManager for worktree LSP resolution
 feature_slug: workspace-manager
 verdict: SUITABLE
 suitability_assessment: |
-  The work decomposes cleanly across disjoint files with independent ownership for each
-  concern: the interface+Go manager, TypeScript manager, Rust manager, Python manager,
-  dispatcher, tests, and CLI wiring. Each implementation is self-contained and can be
-  developed in parallel in Wave 1, with only the dispatcher/wiring integration in Wave 2.
+    The work decomposes cleanly across disjoint files with independent ownership for each
+    concern: the interface+Go manager, TypeScript manager, Rust manager, Python manager,
+    dispatcher, tests, and CLI wiring. Each implementation is self-contained and can be
+    developed in parallel in Wave 1, with only the dispatcher in Wave 2 and engine/CLI
+    wiring in Wave 3.
 
-  File decomposition: 9 new files across pkg/engine/workspace/ plus 2 existing files
-  to update (step_types.go, prepare.go, gowork_steps.go, prepare_wave.go CLI). Clear
-  disjoint ownership is achievable.
+    File decomposition: 9 new files across pkg/engine/workspace/ plus 5 existing files
+    to update (gowork_steps.go, step_types.go, prepare.go, finalize.go, prepare_wave.go).
+    Clear disjoint ownership is achievable.
 
-  Investigation-first: None required. The existing GoWorkSetup pattern is fully understood
-  from reading gowork_steps.go; all four language manager implementations follow the same
-  backup/restore pattern and their detection logic is deterministic (file existence checks).
+    Investigation-first: None required. The existing GoWorkSetup pattern is fully understood
+    from reading gowork_steps.go; all four language manager implementations follow the same
+    backup/restore pattern and their detection logic is deterministic (file existence checks).
 
-  Interface discoverability: The WorkspaceManager interface is fully specifiable before
-  implementation starts. All four implementations share the same Language()/Detect()/Setup()/Restore()
-  contract. The dispatcher signature (DetectAndSetup/DetectAndRestore) is also fixed.
+    Interface discoverability: The WorkspaceManager interface is fully specifiable before
+    implementation starts. All four implementations share the same Language()/Detect()/Setup()/Restore()
+    contract. The dispatcher signature (DetectAndSetup/DetectAndRestore) is also fixed.
 
-  Parallelization value: HIGH. Wave 1 has 4 independent agents each creating a new file
-  implementing a different language manager. Wave 2 wires the dispatcher and refactors
-  existing code. The go test cycle is moderate (~5-15s). Net savings are meaningful.
+    Parallelization value: HIGH. Wave 1 has 4 independent agents each creating a new file
+    implementing a different language manager. The go test cycle is moderate (~5-15s).
+    Net savings are meaningful with 4 parallel agents in Wave 1.
 
-  Architectural decisions resolved:
-  1. Multi-language repos (both go.mod and package.json): ALL detected managers run.
-     Rationale: a Go backend + TS frontend repo benefits from both workspace setups.
-     Managers are independent; running multiple is cheap and additive.
-  2. Opt-out granularity: Replace NoGoWork bool with NoWorkspaceSetup bool (global opt-out).
-     Rationale: per-language opt-out is premature complexity; users who need to disable
-     workspace setup for a specific language are rare, and global opt-out covers the main
-     use case (CI environments that manage their own workspace files).
-  3. Package location: pkg/engine/workspace/ (new sub-package). pkg/engine already has
-     75 files; keeping managers in a sub-package improves discoverability and keeps the
-     engine package from growing further.
-  4. Backup location: Same .saw-state/wave{N}/ convention. Each manager uses a distinct
-     filename suffix (e.g. Cargo.toml.backup, tsconfig.json.backup, pyrightconfig.json.backup).
+    Architectural decisions resolved:
+    1. Multi-language repos (both go.mod and package.json): ALL detected managers run.
+       Rationale: a Go backend + TS frontend repo benefits from both workspace setups.
+       Managers are independent; running multiple is cheap and additive.
+    2. Opt-out granularity: Replace NoGoWork bool with NoWorkspaceSetup bool (global opt-out).
+       Rationale: per-language opt-out is premature complexity; global opt-out covers the main
+       use case (CI environments that manage their own workspace files).
+    3. Package location: pkg/engine/workspace/ (new sub-package). pkg/engine already has
+       75 files; keeping managers in a sub-package improves discoverability.
+    4. Backup location: Same .saw-state/wave{N}/ convention. Each manager uses a distinct
+       filename suffix (e.g. Cargo.toml.backup, tsconfig.json.backup, pyrightconfig.json.backup).
 
-  Estimated times:
-  - Scout phase: ~15 min (this analysis)
-  - Agent execution: ~40 min (4 Wave 1 agents x ~8 min avg + 2 Wave 2 agents x ~10 min avg, accounting for parallelism)
-  - Merge and verification: ~5 min
-  Total SAW time: ~60 min
-  Sequential baseline: ~90 min
-  Time savings: ~30 min (33% faster)
-  Recommendation: Clear speedup. Proceed with parallel execution.
-
+    Estimated times:
+    - Scout phase: ~15 min (this analysis)
+    - Agent execution: ~50 min (4 Wave 1 agents x ~8 min avg in parallel + Wave 2 ~10 min + Wave 3 ~10 min)
+    - Merge and verification: ~8 min
+    Total SAW time: ~73 min
+    Sequential baseline: ~105 min
+    Time savings: ~32 min (30% faster)
+    Recommendation: Clear speedup. Proceed with parallel execution.
 test_command: go test ./pkg/engine/... ./pkg/engine/workspace/...
 lint_command: go vet ./...
-state: SCOUT_PENDING
-
-quality_gates:
-  level: standard
-  gates:
-    - type: build
-      command: go build ./...
-      required: true
-    - type: lint
-      command: go vet ./...
-      required: true
-    - type: test
-      command: go test ./pkg/engine/... ./pkg/engine/workspace/...
-      required: true
-
-scaffolds:
-  - file: pkg/engine/workspace/workspace.go
-    contents: |
-      WorkspaceManager interface definition:
-        Language() string
-        Detect(repoRoot string) bool
-        Setup(repoRoot string, worktreePaths []string) error
-        Restore(repoRoot string) error
-      DetectAndSetup(ctx, repoRoot, waveNum, worktrees, onEvent, logger) *engine.StepResult
-      DetectAndRestore(ctx, repoRoot, waveNum, onEvent, logger) *engine.StepResult
-      BackupDir(repoRoot string, waveNum int) string  -- shared helper
-    import_path: github.com/blackwell-systems/scout-and-wave-go/pkg/engine/workspace
-    status: pending
-
 file_ownership:
-  # Wave 0 - scaffold
-  - file: pkg/engine/workspace/workspace.go
-    agent: scaffold
-    wave: 0
-    action: new
-    depends_on: []
-
-  # Wave 1 - four parallel language manager implementations
-  - file: pkg/engine/workspace/go_manager.go
-    agent: A
-    wave: 1
-    action: new
-    depends_on: []
-  - file: pkg/engine/workspace/go_manager_test.go
-    agent: A
-    wave: 1
-    action: new
-    depends_on: []
-
-  - file: pkg/engine/workspace/typescript_manager.go
-    agent: B
-    wave: 1
-    action: new
-    depends_on: []
-  - file: pkg/engine/workspace/typescript_manager_test.go
-    agent: B
-    wave: 1
-    action: new
-    depends_on: []
-
-  - file: pkg/engine/workspace/rust_manager.go
-    agent: C
-    wave: 1
-    action: new
-    depends_on: []
-  - file: pkg/engine/workspace/rust_manager_test.go
-    agent: C
-    wave: 1
-    action: new
-    depends_on: []
-
-  - file: pkg/engine/workspace/python_manager.go
-    agent: D
-    wave: 1
-    action: new
-    depends_on: []
-  - file: pkg/engine/workspace/python_manager_test.go
-    agent: D
-    wave: 1
-    action: new
-    depends_on: []
-
-  # Wave 2 - dispatcher, refactor existing code, CLI flag update
-  - file: pkg/engine/workspace/dispatcher.go
-    agent: E
-    wave: 2
-    action: new
-    depends_on: [A, B, C, D]
-  - file: pkg/engine/workspace/dispatcher_test.go
-    agent: E
-    wave: 2
-    action: new
-    depends_on: [A, B, C, D]
-
-  - file: pkg/engine/gowork_steps.go
-    agent: F
-    wave: 2
-    action: modify
-    depends_on: [A]
-  - file: pkg/engine/step_types.go
-    agent: F
-    wave: 2
-    action: modify
-    depends_on: []
-  - file: pkg/engine/prepare.go
-    agent: F
-    wave: 2
-    action: modify
-    depends_on: [E]
-  - file: cmd/sawtools/prepare_wave.go
-    agent: F
-    wave: 2
-    action: modify
-    depends_on: []
-
+    - file: pkg/engine/workspace/workspace.go
+      agent: A
+      wave: 1
+      action: new
+    - file: pkg/engine/workspace/go_manager.go
+      agent: A
+      wave: 1
+      action: new
+    - file: pkg/engine/workspace/go_manager_test.go
+      agent: A
+      wave: 1
+      action: new
+    - file: pkg/engine/workspace/typescript_manager.go
+      agent: B
+      wave: 1
+      action: new
+    - file: pkg/engine/workspace/typescript_manager_test.go
+      agent: B
+      wave: 1
+      action: new
+    - file: pkg/engine/workspace/rust_manager.go
+      agent: C
+      wave: 1
+      action: new
+    - file: pkg/engine/workspace/rust_manager_test.go
+      agent: C
+      wave: 1
+      action: new
+    - file: pkg/engine/workspace/python_manager.go
+      agent: D
+      wave: 1
+      action: new
+    - file: pkg/engine/workspace/python_manager_test.go
+      agent: D
+      wave: 1
+      action: new
+    - file: pkg/engine/workspace/dispatcher.go
+      agent: E
+      wave: 2
+      action: new
+      depends_on:
+        - A
+        - B
+        - C
+        - D
+    - file: pkg/engine/workspace/dispatcher_test.go
+      agent: E
+      wave: 2
+      action: new
+      depends_on:
+        - A
+        - B
+        - C
+        - D
+    - file: pkg/engine/gowork_steps.go
+      agent: F
+      wave: 3
+      action: modify
+      depends_on:
+        - E
+    - file: pkg/engine/step_types.go
+      agent: F
+      wave: 3
+      action: modify
+    - file: pkg/engine/prepare.go
+      agent: F
+      wave: 3
+      action: modify
+      depends_on:
+        - E
+    - file: pkg/engine/finalize.go
+      agent: F
+      wave: 3
+      action: modify
+      depends_on:
+        - E
+    - file: cmd/sawtools/prepare_wave.go
+      agent: F
+      wave: 3
+      action: modify
 interface_contracts:
-  - name: WorkspaceManager
-    description: |
-      Language-agnostic interface for workspace file management in wave agent worktrees.
-      All four language managers implement this interface.
-    definition: |
-      // WorkspaceManager manages workspace configuration files for a specific language
-      // so that LSP tools can resolve cross-package types in wave agent worktrees.
-      type WorkspaceManager interface {
-          // Language returns the canonical name: "go", "typescript", "rust", "python"
-          Language() string
-          // Detect returns true if this manager applies to the repo at repoRoot.
-          // Detection is based on marker file presence (e.g. go.mod, tsconfig.json, Cargo.toml).
-          Detect(repoRoot string) bool
-          // Setup modifies workspace configuration to include all worktreePaths for LSP resolution.
-          // If workspace config exists, it is backed up first to BackupDir(repoRoot, waveNum).
-          // Non-fatal: errors are returned but callers log warnings rather than aborting.
-          Setup(repoRoot string, waveNum int, worktreePaths []string) error
-          // Restore reverts workspace configuration to its pre-wave state.
-          // If a backup exists in BackupDir(repoRoot, waveNum), it is restored and the backup
-          // is deleted. If no backup exists, the created config file is deleted entirely.
-          Restore(repoRoot string, waveNum int) error
-      }
-    location: pkg/engine/workspace/workspace.go
-
-  - name: BackupDir
-    description: Shared helper returning the .saw-state/wave{N}/ path for a given repo root and wave number.
-    definition: |
-      // BackupDir returns the directory used for backing up workspace config files
-      // for the given wave. Callers use this to store and retrieve backup files.
-      // Example: /path/to/repo/.saw-state/wave1/
-      func BackupDir(repoRoot string, waveNum int) string
-    location: pkg/engine/workspace/workspace.go
-
-  - name: DetectAndSetup
-    description: |
-      Dispatcher that runs Setup on all detected WorkspaceManagers for the repo.
-      Returns a StepResult per the engine step conventions (non-fatal on individual manager errors).
-    definition: |
-      // DetectAndSetup runs Setup on every WorkspaceManager that Detect() returns true for.
-      // All detected managers run; partial failures log warnings but do not abort.
-      // Returns a single StepResult summarizing the outcome.
-      func DetectAndSetup(
-          ctx context.Context,
-          repoRoot string,
-          waveNum int,
-          worktrees []protocol.WorktreeInfo,
-          onEvent engine.EventCallback,
-          logger *slog.Logger,
-      ) *engine.StepResult
-    location: pkg/engine/workspace/dispatcher.go
-
-  - name: DetectAndRestore
-    description: |
-      Dispatcher that runs Restore on all WorkspaceManagers. All registered managers attempt
-      restore regardless of whether they were active at setup time, since detection state is
-      not persisted (idempotent: missing backup = no-op).
-    definition: |
-      // DetectAndRestore runs Restore on every WorkspaceManager that Detect() returns true for.
-      // Non-fatal: errors log warnings but do not abort.
-      func DetectAndRestore(
-          ctx context.Context,
-          repoRoot string,
-          waveNum int,
-          onEvent engine.EventCallback,
-          logger *slog.Logger,
-      ) *engine.StepResult
-    location: pkg/engine/workspace/dispatcher.go
-
-  - name: GoWorkspaceManager
-    description: |
-      Implements WorkspaceManager for Go repos using go.work. Refactored from the existing
-      StepGoWorkSetup/StepGoWorkRestore logic in gowork_steps.go. The step functions become
-      thin wrappers over GoWorkspaceManager.Setup/Restore.
-    definition: |
-      type GoWorkspaceManager struct{}
-
-      func (m *GoWorkspaceManager) Language() string          { return "go" }
-      func (m *GoWorkspaceManager) Detect(repoRoot string) bool
-      func (m *GoWorkspaceManager) Setup(repoRoot string, waveNum int, worktreePaths []string) error
-      func (m *GoWorkspaceManager) Restore(repoRoot string, waveNum int) error
-    location: pkg/engine/workspace/go_manager.go
-
-  - name: TypeScriptWorkspaceManager
-    description: |
-      Implements WorkspaceManager for TypeScript/JavaScript repos.
-      TS detection: tsconfig.json at repoRoot.
-      JS-only (no tsconfig.json) detection: package.json with "workspaces" key or just package.json.
-      TS setup: create per-worktree tsconfig.worktree.json files + add project references to root tsconfig.json.
-      JS setup: add worktree paths to package.json "workspaces" array.
-      Restore: revert changes; delete created tsconfig.worktree.json files.
-    definition: |
-      type TypeScriptWorkspaceManager struct{}
-
-      func (m *TypeScriptWorkspaceManager) Language() string          { return "typescript" }
-      func (m *TypeScriptWorkspaceManager) Detect(repoRoot string) bool
-      func (m *TypeScriptWorkspaceManager) Setup(repoRoot string, waveNum int, worktreePaths []string) error
-      func (m *TypeScriptWorkspaceManager) Restore(repoRoot string, waveNum int) error
-    location: pkg/engine/workspace/typescript_manager.go
-
-  - name: RustWorkspaceManager
-    description: |
-      Implements WorkspaceManager for Rust repos using Cargo.toml workspace members.
-      Detection: Cargo.toml at repoRoot containing a [workspace] section.
-      Setup: surgically append worktree paths to the members array in Cargo.toml.
-        Backup Cargo.toml to .saw-state/wave{N}/Cargo.toml.backup before modification.
-        Use string-level TOML editing (find the members array, append entries) — not full rewrite.
-      Restore: restore Cargo.toml from backup, or delete the SAW-managed members if no backup.
-    definition: |
-      type RustWorkspaceManager struct{}
-
-      func (m *RustWorkspaceManager) Language() string          { return "rust" }
-      func (m *RustWorkspaceManager) Detect(repoRoot string) bool
-      func (m *RustWorkspaceManager) Setup(repoRoot string, waveNum int, worktreePaths []string) error
-      func (m *RustWorkspaceManager) Restore(repoRoot string, waveNum int) error
-    location: pkg/engine/workspace/rust_manager.go
-
-  - name: PythonWorkspaceManager
-    description: |
-      Implements WorkspaceManager for Python repos using Pyright configuration.
-      Detection: pyrightconfig.json or pyproject.toml at repoRoot.
-      Setup (pyrightconfig.json): add worktree paths to "extraPaths" array. Create the file if absent.
-      Setup (pyproject.toml with [tool.pyright]): add paths to extraPaths under [tool.pyright].
-      Backup: back up pyrightconfig.json to .saw-state/wave{N}/pyrightconfig.json.backup.
-        If created from scratch (no prior file), no backup — restore deletes it.
-      Restore: restore from backup or delete the SAW-created file.
-    definition: |
-      type PythonWorkspaceManager struct{}
-
-      func (m *PythonWorkspaceManager) Language() string          { return "python" }
-      func (m *PythonWorkspaceManager) Detect(repoRoot string) bool
-      func (m *PythonWorkspaceManager) Setup(repoRoot string, waveNum int, worktreePaths []string) error
-      func (m *PythonWorkspaceManager) Restore(repoRoot string, waveNum int) error
-    location: pkg/engine/workspace/python_manager.go
-
-  - name: PrepareWaveOpts.NoWorkspaceSetup
-    description: |
-      Replaces NoGoWork bool in PrepareWaveOpts. Global opt-out for all WorkspaceManager setup.
-      The CLI flag becomes --no-workspace-setup (alias --no-gowork for backward compatibility).
-    definition: |
-      // In step_types.go PrepareWaveOpts:
-      // NoWorkspaceSetup disables all WorkspaceManager setup steps in PrepareWave.
-      // Use when the caller manages workspace files externally.
-      // Replaces the deprecated NoGoWork field.
-      NoWorkspaceSetup bool
-    location: pkg/engine/step_types.go
-
+    - name: WorkspaceManager
+      description: |
+        Language-agnostic interface for workspace file management in wave agent worktrees.
+        All four language managers implement this interface.
+      definition: |
+        // WorkspaceManager manages workspace configuration files for a specific language
+        // so that LSP tools can resolve cross-package types in wave agent worktrees.
+        type WorkspaceManager interface {
+            // Language returns the canonical name: "go", "typescript", "rust", "python"
+            Language() string
+            // Detect returns true if this manager applies to the repo at repoRoot.
+            Detect(repoRoot string) bool
+            // Setup modifies workspace configuration to include all worktreePaths for LSP resolution.
+            // Backs up existing config to BackupDir(repoRoot, waveNum) before modification.
+            Setup(repoRoot string, waveNum int, worktreePaths []string) error
+            // Restore reverts workspace configuration to its pre-wave state.
+            // If a backup exists, it is restored and deleted. If no backup, the SAW-created file is deleted.
+            Restore(repoRoot string, waveNum int) error
+        }
+      location: pkg/engine/workspace/workspace.go
+    - name: BackupDir
+      description: Shared helper returning the .saw-state/wave{N}/ path for backup files.
+      definition: |
+        func BackupDir(repoRoot string, waveNum int) string
+        // Returns filepath.Join(protocol.SAWStateDir(repoRoot), fmt.Sprintf("wave%d", waveNum))
+      location: pkg/engine/workspace/workspace.go
+    - name: StepResult
+      description: |
+        Local StepResult type in the workspace package, mirroring engine.StepResult.
+        Defined here to avoid a circular import between pkg/engine and pkg/engine/workspace.
+      definition: |
+        // StepResult mirrors engine.StepResult to avoid circular import with pkg/engine.
+        type StepResult struct {
+            Step   string
+            Status string
+            Detail string
+        }
+      location: pkg/engine/workspace/workspace.go
+    - name: DetectAndSetup
+      description: |
+        Dispatcher that runs Setup on all detected WorkspaceManagers. All detected managers
+        run; partial failures log warnings but do not abort (non-fatal design).
+      definition: |
+        func DetectAndSetup(
+            ctx context.Context,
+            repoRoot string,
+            waveNum int,
+            worktrees []protocol.WorktreeInfo,
+            onEvent func(step, status, detail string),
+            logger *slog.Logger,
+        ) *StepResult
+      location: pkg/engine/workspace/dispatcher.go
+    - name: DetectAndRestore
+      description: |
+        Dispatcher that runs Restore on all detected WorkspaceManagers. Non-fatal.
+      definition: |
+        func DetectAndRestore(
+            ctx context.Context,
+            repoRoot string,
+            waveNum int,
+            onEvent func(step, status, detail string),
+            logger *slog.Logger,
+        ) *StepResult
+      location: pkg/engine/workspace/dispatcher.go
+    - name: GoWorkspaceManager
+      description: |
+        Implements WorkspaceManager for Go repos using go.work.
+        Refactored from existing StepGoWorkSetup/StepGoWorkRestore logic in gowork_steps.go.
+      definition: |
+        type GoWorkspaceManager struct{}
+        func (m *GoWorkspaceManager) Language() string
+        func (m *GoWorkspaceManager) Detect(repoRoot string) bool
+        func (m *GoWorkspaceManager) Setup(repoRoot string, waveNum int, worktreePaths []string) error
+        func (m *GoWorkspaceManager) Restore(repoRoot string, waveNum int) error
+      location: pkg/engine/workspace/go_manager.go
+    - name: TypeScriptWorkspaceManager
+      description: |
+        Implements WorkspaceManager for TypeScript/JavaScript repos.
+        Detect: tsconfig.json or package.json at repoRoot.
+        TS: uses project references in tsconfig.json + per-worktree tsconfig.worktree.json.
+        JS-only: adds worktree paths to package.json workspaces array.
+      definition: |
+        type TypeScriptWorkspaceManager struct{}
+        func (m *TypeScriptWorkspaceManager) Language() string
+        func (m *TypeScriptWorkspaceManager) Detect(repoRoot string) bool
+        func (m *TypeScriptWorkspaceManager) Setup(repoRoot string, waveNum int, worktreePaths []string) error
+        func (m *TypeScriptWorkspaceManager) Restore(repoRoot string, waveNum int) error
+      location: pkg/engine/workspace/typescript_manager.go
+    - name: RustWorkspaceManager
+      description: |
+        Implements WorkspaceManager for Rust repos.
+        Detect: Cargo.toml at repoRoot containing [workspace] section.
+        Setup: surgically appends worktree paths to the members array in Cargo.toml.
+        Backup: Cargo.toml backed up to .saw-state/wave{N}/Cargo.toml.backup.
+      definition: |
+        type RustWorkspaceManager struct{}
+        func (m *RustWorkspaceManager) Language() string
+        func (m *RustWorkspaceManager) Detect(repoRoot string) bool
+        func (m *RustWorkspaceManager) Setup(repoRoot string, waveNum int, worktreePaths []string) error
+        func (m *RustWorkspaceManager) Restore(repoRoot string, waveNum int) error
+      location: pkg/engine/workspace/rust_manager.go
+    - name: PythonWorkspaceManager
+      description: |
+        Implements WorkspaceManager for Python repos.
+        Detect: pyrightconfig.json or pyproject.toml at repoRoot.
+        pyrightconfig.json: adds worktree paths to extraPaths array (creates file if absent).
+        pyproject.toml: adds paths to [tool.pyright] extraPaths.
+      definition: |
+        type PythonWorkspaceManager struct{}
+        func (m *PythonWorkspaceManager) Language() string
+        func (m *PythonWorkspaceManager) Detect(repoRoot string) bool
+        func (m *PythonWorkspaceManager) Setup(repoRoot string, waveNum int, worktreePaths []string) error
+        func (m *PythonWorkspaceManager) Restore(repoRoot string, waveNum int) error
+      location: pkg/engine/workspace/python_manager.go
+    - name: PrepareWaveOpts.NoWorkspaceSetup
+      description: |
+        Replaces NoGoWork bool in PrepareWaveOpts. Global opt-out for all WorkspaceManager setup.
+        The CLI flag is --no-workspace-setup; --no-gowork is kept as a deprecated alias.
+      definition: |
+        // In step_types.go PrepareWaveOpts:
+        NoWorkspaceSetup bool // disables all WorkspaceManager setup; replaces deprecated NoGoWork
+      location: pkg/engine/step_types.go
 waves:
-  - number: 1
-    agents:
-      - id: A
-        task: |
-          ## Context
-          You are implementing the Go language WorkspaceManager in a new sub-package
-          `pkg/engine/workspace/` for the scout-and-wave-go repo at
-          `github.com/blackwell-systems/scout-and-wave-go`.
-
-          The scaffold file `pkg/engine/workspace/workspace.go` already exists and defines
-          the `WorkspaceManager` interface, `BackupDir` helper, and package-level imports.
-          Read it before implementing.
-
-          ## What to implement
-
-          ### File: `pkg/engine/workspace/go_manager.go`
-
-          Implement `GoWorkspaceManager` that satisfies `WorkspaceManager`.
-
-          The logic is a direct extraction from the existing `pkg/engine/gowork_steps.go`.
-          Read that file in full before writing. Your implementation must replicate the same
-          behavior in the `Setup` and `Restore` methods, removing the EventCallback and
-          slog.Logger parameters from the method signatures (those belong to the dispatcher
-          layer, not the manager). Internal errors are returned as error values.
-
-          **GoWorkspaceManager.Detect:**
-          - Return true iff `go.mod` exists at `repoRoot`.
-
-          **GoWorkspaceManager.Setup(repoRoot string, waveNum int, worktreePaths []string) error:**
-          - Build backup dir via `BackupDir(repoRoot, waveNum)`.
-          - Back up `go.work` (and `go.work.sum`) to `backupDir/go.work.backup` (and `go.work.sum.backup`)
-            if they exist.
-          - If go.work did not exist: run `go work init .` (exec.Command, Dir=repoRoot).
-            If it fails, return error (non-fatal handled by dispatcher).
-          - For each worktreePath: run `go work use <path>` (exec.Command, Dir=repoRoot).
-            Log failures but do not return error (best-effort).
-          - Append `"\n// SAW-managed: restored by finalize-wave\n"` to go.work.
-          - Return nil on success.
-
-          **GoWorkspaceManager.Restore(repoRoot string, waveNum int) error:**
-          - Build backup dir path.
-          - If `backupDir/go.work.backup` exists: overwrite `go.work` with its content; delete backup.
-          - Else: delete `go.work` (ignore os.IsNotExist).
-          - If `backupDir/go.work.sum.backup` exists: overwrite `go.work.sum` with its content; delete backup.
-          - Else: delete `go.work.sum` (ignore os.IsNotExist).
-          - Return nil.
-
-          ### File: `pkg/engine/workspace/go_manager_test.go`
-
-          Package: `workspace` (same package, not `workspace_test`).
-
-          Write tests:
-          1. `TestGoWorkspaceManager_Detect_TrueWhenGoModExists`: create tmpdir with go.mod; assert Detect returns true.
-          2. `TestGoWorkspaceManager_Detect_FalseWhenNoGoMod`: create tmpdir without go.mod; assert Detect returns false.
-          3. `TestGoWorkspaceManager_Setup_BacksUpExistingGoWork`: create go.mod + existing go.work; call Setup;
-             verify backup file exists at `BackupDir(root, 1)/go.work.backup` with original content.
-          4. `TestGoWorkspaceManager_Restore_RestoresFromBackup`: create backup file; call Restore;
-             verify go.work has backup content and backup file is deleted.
-          5. `TestGoWorkspaceManager_Restore_DeletesGoWorkWhenNoBackup`: create go.work (no backup);
-             call Restore; verify go.work is deleted.
-
-          Skip tests that invoke the `go` binary if `exec.LookPath("go")` fails.
-
-          ## Constraints
-          - Package: `package workspace`
-          - Import path for protocol: `github.com/blackwell-systems/scout-and-wave-go/pkg/protocol`
-          - Use `os.MkdirAll` for backup dir creation (same pattern as existing gowork_steps.go).
-          - Do NOT import `pkg/engine` — circular import risk. Use `protocol.SAWStateDir` directly.
-          - The `BackupDir` function is defined in `workspace.go` (the scaffold); call it from your code.
-
-          ## Verification gate
-          ```
-          go build ./pkg/engine/workspace/
-          go vet ./pkg/engine/workspace/
-          go test ./pkg/engine/workspace/ -run TestGoWorkspaceManager
-          ```
-        files:
-          - pkg/engine/workspace/go_manager.go
-          - pkg/engine/workspace/go_manager_test.go
-        dependencies: []
-
-      - id: B
-        task: |
-          ## Context
-          You are implementing the TypeScript/JavaScript WorkspaceManager in a new sub-package
-          `pkg/engine/workspace/` for the scout-and-wave-go repo.
-
-          The scaffold file `pkg/engine/workspace/workspace.go` already exists and defines
-          the `WorkspaceManager` interface. Read it before implementing.
-
-          ## What to implement
-
-          ### File: `pkg/engine/workspace/typescript_manager.go`
-
-          Implement `TypeScriptWorkspaceManager` satisfying `WorkspaceManager`.
-
-          **Detect:**
-          - Return true iff `tsconfig.json` OR `package.json` exists at `repoRoot`.
-
-          **Setup(repoRoot string, waveNum int, worktreePaths []string) error:**
-
-          *TypeScript path* (tsconfig.json exists at repoRoot):
-          1. Back up `tsconfig.json` to `BackupDir(repoRoot, waveNum)/tsconfig.json.backup`.
-          2. Read the existing `tsconfig.json` as raw JSON bytes.
-          3. For each worktreePath, create a `tsconfig.worktree.json` file in that path:
-             ```json
-             {
-               "extends": "<relative-path-from-worktree-to-repo-root-tsconfig>",
-               "compilerOptions": { "composite": true }
-             }
-             ```
-             The `extends` value is the relative path from the worktree directory to
-             `repoRoot/tsconfig.json` (use `filepath.Rel`).
-          4. Parse the root `tsconfig.json` as a `map[string]interface{}` (encoding/json).
-             Add/append to the `"references"` array the relative path entries:
-             ```json
-             { "path": "<relative-path-from-repoRoot-to-worktreePath>" }
-             ```
-          5. Marshal back to JSON (json.MarshalIndent with 2-space indent) and write to tsconfig.json.
-
-          *JavaScript path* (package.json exists, no tsconfig.json):
-          1. Back up `package.json` to `BackupDir(repoRoot, waveNum)/package.json.backup`.
-          2. Parse `package.json` as `map[string]interface{}`.
-          3. Append relative worktree paths (from repoRoot) to the `"workspaces"` array.
-             If `"workspaces"` key absent, create it.
-          4. Marshal back (json.MarshalIndent) and write.
-
-          **Restore(repoRoot string, waveNum int) error:**
-          - If `tsconfig.json.backup` exists in backup dir: restore tsconfig.json from backup; delete backup.
-            Also delete any `tsconfig.worktree.json` files that were created (read backup dir for a
-            SAW-managed manifest of created files, OR simply attempt to remove tsconfig.worktree.json
-            from each path listed in the current root tsconfig "references" that are under .saw-state or
-            worktree paths — simplest approach: just restore backup tsconfig.json, which removes the
-            references; separately delete any tsconfig.worktree.json inside subdirs if found by scanning).
-            Simplest correct approach: restore tsconfig.json from backup (the references pointing to
-            worktree tsconfigs are gone); do NOT attempt to enumerate worktrees (paths no longer known).
-          - Else if `tsconfig.json` exists: delete it (was SAW-created — but this case is unlikely since
-            tsconfig.json pre-existed if we backed it up; skip this branch).
-          - If `package.json.backup` exists: restore package.json from backup; delete backup.
-          - Return nil.
-
-          ### File: `pkg/engine/workspace/typescript_manager_test.go`
-
-          Package: `package workspace`.
-
-          Tests:
-          1. `TestTypeScriptManager_Detect_TsConfig`: tmpdir with tsconfig.json → true.
-          2. `TestTypeScriptManager_Detect_PackageJson`: tmpdir with package.json → true.
-          3. `TestTypeScriptManager_Detect_Neither`: empty tmpdir → false.
-          4. `TestTypeScriptManager_Setup_TSPath_AddsReferences`: create tsconfig.json with
-             `{"compilerOptions":{}}`, call Setup with one worktreePath; verify tsconfig.json
-             now has `"references"` array with correct path entry; verify backup exists.
-          5. `TestTypeScriptManager_Setup_JSPath_AddsWorkspaces`: create package.json with
-             `{"name":"test"}`, call Setup; verify package.json has `"workspaces"` with correct path.
-          6. `TestTypeScriptManager_Restore_FromBackup`: create backup tsconfig.json; call Restore;
-             verify tsconfig.json is restored and backup deleted.
-
-          ## Constraints
-          - Package: `package workspace`
-          - Use only standard library: `encoding/json`, `os`, `path/filepath`.
-          - Do NOT import `pkg/engine` (circular import risk).
-          - Call `BackupDir` from workspace.go scaffold.
-          - Use `os.MkdirAll` for backup dir creation.
-          - JSON modification must NOT use a custom TOML/JSON library — only `encoding/json`.
-
-          ## Verification gate
-          ```
-          go build ./pkg/engine/workspace/
-          go vet ./pkg/engine/workspace/
-          go test ./pkg/engine/workspace/ -run TestTypeScriptManager
-          ```
-        files:
-          - pkg/engine/workspace/typescript_manager.go
-          - pkg/engine/workspace/typescript_manager_test.go
-        dependencies: []
-
-      - id: C
-        task: |
-          ## Context
-          You are implementing the Rust WorkspaceManager in a new sub-package
-          `pkg/engine/workspace/` for the scout-and-wave-go repo.
-
-          The scaffold file `pkg/engine/workspace/workspace.go` defines the `WorkspaceManager`
-          interface. Read it before implementing.
-
-          ## What to implement
-
-          ### File: `pkg/engine/workspace/rust_manager.go`
-
-          Implement `RustWorkspaceManager` satisfying `WorkspaceManager`.
-
-          **Detect:**
-          - Read `Cargo.toml` at repoRoot. Return true iff the file exists AND contains
-            the string `[workspace]` (simple string search using `strings.Contains`).
-
-          **Setup(repoRoot string, waveNum int, worktreePaths []string) error:**
-          1. Read `Cargo.toml` bytes.
-          2. Back up to `BackupDir(repoRoot, waveNum)/Cargo.toml.backup`.
-          3. Find the `[workspace]` section and its `members` array using line-by-line string
-             editing (do NOT use a TOML library). The editing strategy:
-             - Search for a line matching `members = [` or `members=[` (after trimming spaces).
-             - Find the closing `]` of the members array (may be on same line for single-line
-               arrays, or on a subsequent line for multi-line).
-             - For multi-line: insert new lines before the closing `]`, each of the form:
-               `  "<relative-path>",` where relative-path is computed via `filepath.Rel(repoRoot, worktreePath)`.
-             - For single-line `members = ["foo", "bar"]`: replace the closing `]` with `,
-               "<rel-path>"]`.
-             - Append a comment `# SAW-managed: restored by finalize-wave` after the last inserted entry.
-          4. Write modified Cargo.toml back.
-          5. Return nil.
-
-          Important: the backup-then-restore approach means surgical editing is best-effort.
-          If parsing is ambiguous, log the issue and return an error (the dispatcher treats
-          this as non-fatal).
-
-          **Restore(repoRoot string, waveNum int) error:**
-          - If `Cargo.toml.backup` exists in backup dir: overwrite Cargo.toml; delete backup.
-          - Else: no-op (Cargo.toml was not modified since we would have backed it up first).
-          - Return nil.
-
-          ### File: `pkg/engine/workspace/rust_manager_test.go`
-
-          Package: `package workspace`.
-
-          Tests:
-          1. `TestRustManager_Detect_TrueWithWorkspaceSection`: create Cargo.toml with `[workspace]`; assert true.
-          2. `TestRustManager_Detect_FalseWithoutWorkspaceSection`: create Cargo.toml without `[workspace]`; assert false.
-          3. `TestRustManager_Detect_FalseNoFile`: empty tmpdir; assert false.
-          4. `TestRustManager_Setup_BacksUpCargoToml`: create Cargo.toml with multiline members; call Setup;
-             verify backup exists with original content.
-          5. `TestRustManager_Setup_AddsMembers_MultiLine`: create Cargo.toml with:
-             ```
-             [workspace]
-             members = [
-               "crate_a",
-             ]
-             ```
-             Call Setup with one worktree path. Verify the resulting Cargo.toml contains the
-             worktree relative path in the members array and the SAW comment.
-          6. `TestRustManager_Restore_FromBackup`: create backup; call Restore; verify Cargo.toml
-             is restored and backup is deleted.
-
-          ## Constraints
-          - Package: `package workspace`
-          - Standard library only: `bufio`, `bytes`, `os`, `path/filepath`, `strings`.
-          - No external TOML library.
-          - Do NOT import `pkg/engine`.
-          - Call `BackupDir` from workspace.go scaffold.
-
-          ## Verification gate
-          ```
-          go build ./pkg/engine/workspace/
-          go vet ./pkg/engine/workspace/
-          go test ./pkg/engine/workspace/ -run TestRustManager
-          ```
-        files:
-          - pkg/engine/workspace/rust_manager.go
-          - pkg/engine/workspace/rust_manager_test.go
-        dependencies: []
-
-      - id: D
-        task: |
-          ## Context
-          You are implementing the Python WorkspaceManager in a new sub-package
-          `pkg/engine/workspace/` for the scout-and-wave-go repo.
-
-          The scaffold file `pkg/engine/workspace/workspace.go` defines the `WorkspaceManager`
-          interface. Read it before implementing.
-
-          ## What to implement
-
-          ### File: `pkg/engine/workspace/python_manager.go`
-
-          Implement `PythonWorkspaceManager` satisfying `WorkspaceManager`.
-
-          **Detect:**
-          - Return true iff `pyrightconfig.json` OR `pyproject.toml` exists at `repoRoot`.
-
-          **Setup(repoRoot string, waveNum int, worktreePaths []string) error:**
-
-          *pyrightconfig.json path* (pyrightconfig.json exists OR neither file exists but detection passed
-          — wait, detection requires at least one file, so this is: pyrightconfig.json exists):
-          1. Read pyrightconfig.json (or start with `{}` if creation is needed). Detect
-             presence via os.Stat. If exists, back it up to `BackupDir(repoRoot, waveNum)/pyrightconfig.json.backup`.
-          2. Parse as `map[string]interface{}`.
-          3. Append relative worktree paths (computed via `filepath.Rel(repoRoot, wt)`) to the
-             `"extraPaths"` array. Create the array if absent.
-          4. Marshal with `json.MarshalIndent` and write to `pyrightconfig.json`.
-
-          *pyproject.toml path* (only pyproject.toml exists, no pyrightconfig.json):
-          1. Back up pyproject.toml to `BackupDir(repoRoot, waveNum)/pyproject.toml.backup`.
-          2. Read pyproject.toml as raw bytes.
-          3. Search for `[tool.pyright]` section using line-by-line string editing.
-             If found: look for an `extraPaths` key in that section. If it exists, append entries.
-             If not found in section: append `extraPaths = ["<path1>", "<path2>"]` after
-             the last key in [tool.pyright].
-             If `[tool.pyright]` section absent: append to end of file:
-             ```
-             [tool.pyright]
-             extraPaths = ["<path1>", "<path2>"]
-             # SAW-managed: restored by finalize-wave
-             ```
-          4. Write modified pyproject.toml back.
-
-          **Restore(repoRoot string, waveNum int) error:**
-          - If `pyrightconfig.json.backup` exists: restore pyrightconfig.json from backup; delete backup.
-          - Else if `pyrightconfig.json` exists (was SAW-created from scratch): delete it.
-          - If `pyproject.toml.backup` exists: restore pyproject.toml from backup; delete backup.
-          - Return nil.
-
-          ### File: `pkg/engine/workspace/python_manager_test.go`
-
-          Package: `package workspace`.
-
-          Tests:
-          1. `TestPythonManager_Detect_TruePyrightConfig`: tmpdir with pyrightconfig.json → true.
-          2. `TestPythonManager_Detect_TruePyprojectToml`: tmpdir with pyproject.toml → true.
-          3. `TestPythonManager_Detect_False`: empty tmpdir → false.
-          4. `TestPythonManager_Setup_PyrightConfig_CreatesIfAbsent`: tmpdir with pyproject.toml only
-             (so detect=true); but pyrightconfig.json absent → Setup should still handle gracefully
-             (creates pyrightconfig.json from scratch, no backup needed since file was absent).
-             Verify pyrightconfig.json is created with extraPaths.
-          5. `TestPythonManager_Setup_PyrightConfig_BacksUpAndAddsExtraPaths`: pyrightconfig.json exists
-             with `{"extraPaths": ["existing"]}`, call Setup; verify backup exists, verify output has
-             both "existing" and the new worktree path.
-          6. `TestPythonManager_Restore_FromBackup_PyRight`: create pyrightconfig.json.backup; call Restore;
-             verify pyrightconfig.json restored and backup deleted.
-          7. `TestPythonManager_Restore_DeletesCreatedPyrightConfig`: pyrightconfig.json exists, no backup
-             (was SAW-created); call Restore; verify pyrightconfig.json deleted.
-
-          ## Constraints
-          - Package: `package workspace`
-          - Standard library: `bufio`, `bytes`, `encoding/json`, `os`, `path/filepath`, `strings`.
-          - Do NOT import `pkg/engine`.
-          - Call `BackupDir` from workspace.go scaffold.
-          - For the "created from scratch" case (pyrightconfig.json absent before Setup): do NOT
-            write a backup, so Restore knows to delete it rather than restore it.
-
-          ## Verification gate
-          ```
-          go build ./pkg/engine/workspace/
-          go vet ./pkg/engine/workspace/
-          go test ./pkg/engine/workspace/ -run TestPythonManager
-          ```
-        files:
-          - pkg/engine/workspace/python_manager.go
-          - pkg/engine/workspace/python_manager_test.go
-        dependencies: []
-
-  - number: 2
-    agents:
-      - id: E
-        task: |
-          ## Context
-          You are implementing the dispatcher for the `pkg/engine/workspace` sub-package and
-          writing integration-level tests. Wave 1 has completed, so all four manager files
-          (go_manager.go, typescript_manager.go, rust_manager.go, python_manager.go) exist.
-
-          Read `pkg/engine/workspace/workspace.go` (scaffold) and all four manager files before
-          implementing.
-
-          ## What to implement
-
-          ### File: `pkg/engine/workspace/dispatcher.go`
-
-          Package: `package workspace`
-
-          ```go
-          package workspace
-
-          import (
-              "context"
-              "fmt"
-              "log/slog"
-
-              "github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
-          )
-          ```
-
-          **`allManagers()` (unexported):**
-          Returns `[]WorkspaceManager` with one instance of each: `&GoWorkspaceManager{}`,
-          `&TypeScriptWorkspaceManager{}`, `&RustWorkspaceManager{}`, `&PythonWorkspaceManager{}`.
-          This is the registry of all managers. Adding a new language = adding one line here.
-
-          **`DetectAndSetup`:**
-          ```go
-          func DetectAndSetup(
-              ctx context.Context,
-              repoRoot string,
-              waveNum int,
-              worktrees []protocol.WorktreeInfo,
-              onEvent func(step, status, detail string),
-              logger *slog.Logger,
-          ) *StepResult
-          ```
-          - Build `worktreePaths []string` from `worktrees` (extract `.Path` field from each WorktreeInfo).
-          - For each manager in `allManagers()`:
-            - If `!manager.Detect(repoRoot)`: skip.
-            - Call `manager.Setup(repoRoot, waveNum, worktreePaths)`.
-            - If error: log warning (non-fatal); record in a warnings slice; call onEvent(stepName, "warning", ...).
-            - Else: record success.
-          - Build a StepResult:
-            - Status "success" if no errors, "warning" if any errors.
-            - Detail: e.g. "workspace setup: go=ok typescript=skipped rust=ok python=warning(err msg)".
-          - Call `onEvent("workspace_setup", status, detail)` if onEvent non-nil.
-          - Return StepResult.
-
-          Note: `StepResult` is defined in `pkg/engine/step_types.go`. The dispatcher is in
-          `pkg/engine/workspace/` which CANNOT import `pkg/engine` (circular). Define a local
-          `StepResult` struct in workspace.go (the scaffold) or define it in dispatcher.go.
-          Check whether workspace.go scaffold already defines a local StepResult; if not, add:
-          ```go
-          // StepResult mirrors engine.StepResult to avoid circular import with pkg/engine.
-          type StepResult struct {
-              Step   string
-              Status string
-              Detail string
-          }
-          ```
-
-          **`DetectAndRestore`:**
-          ```go
-          func DetectAndRestore(
-              ctx context.Context,
-              repoRoot string,
-              waveNum int,
-              onEvent func(step, status, detail string),
-              logger *slog.Logger,
-          ) *StepResult
-          ```
-          Same pattern as DetectAndSetup but calls Restore instead of Setup.
-          Step name: `"workspace_restore"`.
-
-          ### File: `pkg/engine/workspace/dispatcher_test.go`
-
-          Package: `package workspace`.
-
-          Tests:
-          1. `TestDetectAndSetup_SkipsUndetectedManagers`: empty tmpdir (no go.mod, no tsconfig.json,
-             etc.); call DetectAndSetup; verify result.Status == "success" and no errors.
-          2. `TestDetectAndSetup_GoRepo_RunsGoManager`: tmpdir with go.mod; call DetectAndSetup (no
-             go binary needed since go work init will fail non-fatally); verify Status is "success" or
-             "warning" (non-fatal), not an error panic.
-          3. `TestDetectAndRestore_GoRepo_RunsGoManager`: create go.work in tmpdir + go.mod; call
-             DetectAndRestore; verify go.work is removed (no backup = delete path).
-          4. `TestDetectAndSetup_MultiLanguage_RunsAll`: create tmpdir with both go.mod and tsconfig.json;
-             call DetectAndSetup; verify both managers ran (check that tsconfig.json was backed up
-             AND go-related path was attempted).
-
-          ## Constraints
-          - Package: `package workspace`
-          - The `StepResult` struct MUST be local to the workspace package (no import of pkg/engine).
-          - `onEvent` parameter type: `func(step, status, detail string)` — matches `engine.EventCallback`
-            signature but is declared as an anonymous func type to avoid the circular import.
-          - Standard logger: if logger is nil, use `slog.Default()`.
-          - Import `github.com/blackwell-systems/scout-and-wave-go/pkg/protocol` for `WorktreeInfo`.
-
-          ## Verification gate
-          ```
-          go build ./pkg/engine/workspace/
-          go vet ./pkg/engine/workspace/
-          go test ./pkg/engine/workspace/...
-          ```
-        files:
-          - pkg/engine/workspace/dispatcher.go
-          - pkg/engine/workspace/dispatcher_test.go
-        dependencies: [A, B, C, D]
-
-      - id: F
-        task: |
-          ## Context
-          You are wiring the new `pkg/engine/workspace` dispatcher into the engine and CLI.
-          Wave 1 is complete (all four language managers exist) and Agent E has completed
-          (dispatcher.go exists in pkg/engine/workspace/).
-
-          Read these files in full before making any changes:
-          - `pkg/engine/workspace/dispatcher.go` (the new dispatcher, just merged)
-          - `pkg/engine/workspace/workspace.go` (scaffold with StepResult type)
-          - `pkg/engine/gowork_steps.go` (existing step functions to refactor)
-          - `pkg/engine/step_types.go` (PrepareWaveOpts to update)
-          - `pkg/engine/prepare.go` (wiring of StepGoWorkSetup — lines ~576-584)
-          - `pkg/engine/finalize.go` (wiring of StepGoWorkRestore — lines ~531-534)
-          - `cmd/sawtools/prepare_wave.go` (--no-gowork flag — lines ~23, 97, 147)
-
-          ## What to change
-
-          ### 1. `pkg/engine/step_types.go` — replace NoGoWork with NoWorkspaceSetup
-
-          In `PrepareWaveOpts`:
-          - Add: `// NoWorkspaceSetup disables all WorkspaceManager setup steps in PrepareWave.\n// Replaces the deprecated NoGoWork field.\nNoWorkspaceSetup bool`
-          - Keep `NoGoWork bool` as a deprecated alias with a comment: `// Deprecated: use NoWorkspaceSetup. Will be removed in a future version.`
-          - Do NOT remove NoGoWork yet (callers may use it; backward compat wave).
-
-          ### 2. `pkg/engine/gowork_steps.go` — make StepGoWorkSetup/Restore delegate to workspace package
-
-          Both `StepGoWorkSetup` and `StepGoWorkRestore` must remain as exported functions with
-          identical signatures (callers must not break). Change their bodies to delegate to the
-          new workspace package:
-
-          **StepGoWorkSetup** — replace body with:
-          ```go
-          import "github.com/blackwell-systems/scout-and-wave-go/pkg/engine/workspace"
-
-          func StepGoWorkSetup(ctx context.Context, repoRoot string, waveNum int, worktrees []protocol.WorktreeInfo, onEvent EventCallback, logger *slog.Logger) *StepResult {
-              // Extract worktree paths
-              paths := make([]string, len(worktrees))
-              for i, wt := range worktrees {
-                  paths[i] = wt.Path
-              }
-              mgr := &workspace.GoWorkspaceManager{}
-              if !mgr.Detect(repoRoot) {
-                  emitStepEvent(onEvent, "gowork_setup", "skipped", "not a Go repo")
-                  return &StepResult{Step: "gowork_setup", Status: "success", Detail: "not a Go repo"}
-              }
-              if err := mgr.Setup(repoRoot, waveNum, paths); err != nil {
-                  emitStepEvent(onEvent, "gowork_setup", "warning", err.Error())
-                  return &StepResult{Step: "gowork_setup", Status: "warning", Detail: err.Error()}
-              }
-              detail := fmt.Sprintf("go.work updated with %d worktree(s)", len(worktrees))
-              emitStepEvent(onEvent, "gowork_setup", "success", detail)
-              return &StepResult{Step: "gowork_setup", Status: "success", Detail: detail}
-          }
-          ```
-
-          **StepGoWorkRestore** — replace body with:
-          ```go
-          func StepGoWorkRestore(ctx context.Context, repoRoot string, waveNum int, onEvent EventCallback, logger *slog.Logger) *StepResult {
-              mgr := &workspace.GoWorkspaceManager{}
-              if err := mgr.Restore(repoRoot, waveNum); err != nil {
-                  emitStepEvent(onEvent, "gowork_restore", "warning", err.Error())
-                  return &StepResult{Step: "gowork_restore", Status: "warning", Detail: err.Error()}
-              }
-              emitStepEvent(onEvent, "gowork_restore", "success", "workspace restored")
-              return &StepResult{Step: "gowork_restore", Status: "success"}
-          }
-          ```
-
-          Remove the old inline logic (os.ReadFile/WriteFile/exec.Command blocks) from both functions.
-          Keep all imports that are still used; remove those that are no longer needed (os, os/exec, etc.)
-          if they are no longer referenced.
-
-          ### 3. `pkg/engine/prepare.go` — wire DetectAndSetup
-
-          Locate the block at lines ~576-584:
-          ```go
-          if !opts.NoGoWork {
-              goworkResult := StepGoWorkSetup(...)
-              ...
-          } else {
-              recordStep(res, opts.OnEvent, "gowork_setup", "skipped", "--no-gowork flag set")
-          }
-          ```
-
-          Replace with:
-          ```go
-          if !opts.NoWorkspaceSetup && !opts.NoGoWork {
-              wsResult := workspace.DetectAndSetup(ctx, projectRoot, opts.WaveNum, worktreeResult.Worktrees, opts.OnEvent, opts.Logger)
-              if wsResult != nil {
-                  recordStep(res, opts.OnEvent, wsResult.Step, wsResult.Status, wsResult.Detail)
-              }
-          } else {
-              recordStep(res, opts.OnEvent, "workspace_setup", "skipped", "--no-workspace-setup flag set")
-          }
-          ```
-
-          Add import: `"github.com/blackwell-systems/scout-and-wave-go/pkg/engine/workspace"`
-
-          Note: `workspace.DetectAndSetup` returns `*workspace.StepResult`, not `*engine.StepResult`.
-          The `recordStep` call takes `step, status, detail string` so extract those fields directly.
-
-          ### 4. `pkg/engine/finalize.go` — wire DetectAndRestore
-
-          Locate lines ~531-534:
-          ```go
-          // Step 4.6: Restore go.work to pre-wave state
-          for _, repoPath := range repos {
-              _ = StepGoWorkRestore(ctx, repoPath, opts.WaveNum, onEvent, opts.Logger)
-              break // run once — go.work is repo-root-scoped, not per-repo
-          }
-          ```
-
-          Replace with:
-          ```go
-          // Step 4.6: Restore workspace config to pre-wave state (all detected languages)
-          for _, repoPath := range repos {
-              _ = workspace.DetectAndRestore(ctx, repoPath, opts.WaveNum, onEvent, opts.Logger)
-              break // run once — workspace files are repo-root-scoped, not per-repo
-          }
-          ```
-
-          Add import: `"github.com/blackwell-systems/scout-and-wave-go/pkg/engine/workspace"`
-
-          Note: `workspace.DetectAndRestore` returns `*workspace.StepResult`. The result is currently
-          discarded (same pattern as the existing call). Keep it discarded.
-
-          ### 5. `cmd/sawtools/prepare_wave.go` — add --no-workspace-setup flag
-
-          Locate the `noGoWork` variable declaration (line ~23) and the flag registration (line ~147).
-
-          Add alongside the existing noGoWork:
-          ```go
-          var noWorkspaceSetup bool
-          ```
-
-          In the PrepareWaveOpts construction (line ~97):
-          ```go
-          NoWorkspaceSetup: noWorkspaceSetup || noGoWork,
-          ```
-
-          Add flag registration after the existing `--no-gowork` flag:
-          ```go
-          cmd.Flags().BoolVar(&noWorkspaceSetup, "no-workspace-setup", false,
-              "Skip all WorkspaceManager setup steps (Go go.work, TS tsconfig, Rust Cargo.toml, Python pyrightconfig)")
-          ```
-
-          Keep the existing `--no-gowork` flag and `noGoWork` variable as deprecated aliases.
-
-          ## Verification gate
-          ```
-          go build ./...
-          go vet ./...
-          go test ./pkg/engine/... ./pkg/engine/workspace/...
-          ```
-        files:
-          - pkg/engine/gowork_steps.go
-          - pkg/engine/step_types.go
-          - pkg/engine/prepare.go
-          - pkg/engine/finalize.go
-          - cmd/sawtools/prepare_wave.go
-        dependencies: [E]
-
+    - number: 1
+      agents:
+        - id: A
+          task: |
+            ## Context
+            You are implementing the `pkg/engine/workspace` sub-package foundation and the
+            Go language WorkspaceManager for the scout-and-wave-go repo at
+            `github.com/blackwell-systems/scout-and-wave-go`.
+
+            This agent creates three files: the package foundation (workspace.go), the Go
+            manager implementation, and its tests. The workspace.go file defines the shared
+            interface and helpers that all other agents in this wave will also use — so write
+            it first, then implement the Go manager.
+
+            ## What to implement
+
+            ### File: `pkg/engine/workspace/workspace.go`
+
+            ```go
+            package workspace
+
+            import (
+                "fmt"
+                "path/filepath"
+
+                "github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
+            )
+
+            // WorkspaceManager manages workspace configuration files for a specific language
+            // so that LSP tools can resolve cross-package types in wave agent worktrees.
+            type WorkspaceManager interface {
+                Language() string
+                Detect(repoRoot string) bool
+                Setup(repoRoot string, waveNum int, worktreePaths []string) error
+                Restore(repoRoot string, waveNum int) error
+            }
+
+            // StepResult mirrors engine.StepResult to avoid a circular import.
+            type StepResult struct {
+                Step   string
+                Status string
+                Detail string
+            }
+
+            // BackupDir returns the .saw-state/wave{N}/ directory for backup files.
+            func BackupDir(repoRoot string, waveNum int) string {
+                return filepath.Join(protocol.SAWStateDir(repoRoot), fmt.Sprintf("wave%d", waveNum))
+            }
+            ```
+
+            ### File: `pkg/engine/workspace/go_manager.go`
+
+            Implement `GoWorkspaceManager` satisfying `WorkspaceManager`.
+
+            The logic is a direct extraction from `pkg/engine/gowork_steps.go`. Read that file
+            in full before implementing. Replicate the same behavior without EventCallback or
+            slog.Logger in the method signatures — those belong to the dispatcher.
+
+            **GoWorkspaceManager.Detect:**
+            - Return true iff `go.mod` exists at `repoRoot`.
+
+            **GoWorkspaceManager.Setup(repoRoot string, waveNum int, worktreePaths []string) error:**
+            - Call os.MkdirAll on BackupDir(repoRoot, waveNum).
+            - Back up `go.work` and `go.work.sum` to the backup dir if they exist.
+            - If go.work did not exist: run `go work init .` (exec.Command, Dir=repoRoot).
+              If it fails, return a formatted error.
+            - For each worktreePath: run `go work use <path>` (Dir=repoRoot). Best-effort; do not
+              return error on failure.
+            - Append `"\n// SAW-managed: restored by finalize-wave\n"` to go.work.
+            - Return nil on success.
+
+            **GoWorkspaceManager.Restore(repoRoot string, waveNum int) error:**
+            - If `backupDir/go.work.backup` exists: overwrite go.work with it; delete backup.
+            - Else: delete go.work (ignore os.IsNotExist).
+            - If `backupDir/go.work.sum.backup` exists: overwrite go.work.sum with it; delete backup.
+            - Else: delete go.work.sum (ignore os.IsNotExist).
+            - Return nil.
+
+            ### File: `pkg/engine/workspace/go_manager_test.go`
+
+            Package: `package workspace`.
+
+            Write tests:
+            1. `TestGoWorkspaceManager_Detect_TrueWhenGoModExists`
+            2. `TestGoWorkspaceManager_Detect_FalseWhenNoGoMod`
+            3. `TestGoWorkspaceManager_Setup_BacksUpExistingGoWork`: create go.mod + existing go.work;
+               call Setup; verify backup at BackupDir(root,1)/go.work.backup has original content.
+            4. `TestGoWorkspaceManager_Restore_RestoresFromBackup`
+            5. `TestGoWorkspaceManager_Restore_DeletesGoWorkWhenNoBackup`
+
+            Skip tests invoking the go binary if `exec.LookPath("go")` fails.
+
+            ## Constraints
+            - Package: `package workspace`
+            - DO NOT import `pkg/engine` — circular import. Use `protocol.SAWStateDir` directly via BackupDir.
+            - Imports for go_manager.go: `context`, `fmt`, `os`, `os/exec`, `path/filepath`
+              plus `github.com/blackwell-systems/scout-and-wave-go/pkg/protocol`.
+
+            ## Verification gate
+            ```
+            go build ./pkg/engine/workspace/
+            go vet ./pkg/engine/workspace/
+            go test ./pkg/engine/workspace/ -run TestGoWorkspaceManager
+            ```
+          files:
+            - pkg/engine/workspace/workspace.go
+            - pkg/engine/workspace/go_manager.go
+            - pkg/engine/workspace/go_manager_test.go
+        - id: B
+          task: |
+            ## Context
+            You are implementing the TypeScript/JavaScript WorkspaceManager in
+            `pkg/engine/workspace/` for the scout-and-wave-go repo.
+
+            Agent A is writing `pkg/engine/workspace/workspace.go` in parallel with you.
+            That file defines the `WorkspaceManager` interface, `StepResult` struct, and
+            `BackupDir` helper. Treat it as already existing before you start (it will be
+            merged before your Wave 1 worktrees are used). If workspace.go doesn't yet exist
+            when you read the directory, create it as a placeholder with just the package
+            declaration and the interface — then implement your manager files.
+
+            Actually, workspace.go will be written by Agent A. Do NOT create workspace.go
+            yourself. Only create typescript_manager.go and typescript_manager_test.go.
+            Your files must compile assuming workspace.go exists with the WorkspaceManager
+            interface, StepResult, and BackupDir as defined in the interface contracts.
+
+            ## What to implement
+
+            ### File: `pkg/engine/workspace/typescript_manager.go`
+
+            ```go
+            package workspace
+            ```
+
+            **TypeScriptWorkspaceManager.Detect:**
+            - Return true iff `tsconfig.json` OR `package.json` exists at `repoRoot`.
+
+            **TypeScriptWorkspaceManager.Setup(repoRoot string, waveNum int, worktreePaths []string) error:**
+
+            *TypeScript path* (tsconfig.json exists):
+            1. os.MkdirAll BackupDir(repoRoot, waveNum).
+            2. Back up tsconfig.json to backupDir/tsconfig.json.backup.
+            3. For each worktreePath, create tsconfig.worktree.json in that dir:
+               ```json
+               {
+                 "extends": "<filepath.Rel(worktreePath, filepath.Join(repoRoot, \"tsconfig.json\"))>",
+                 "compilerOptions": { "composite": true }
+               }
+               ```
+            4. Parse root tsconfig.json as map[string]interface{}. Append to "references" array:
+               `{"path": "<filepath.Rel(repoRoot, worktreePath)>"}` for each worktree.
+               Create "references" if absent.
+            5. json.MarshalIndent with 2-space indent; write back.
+
+            *JavaScript path* (only package.json exists, no tsconfig.json):
+            1. os.MkdirAll BackupDir(repoRoot, waveNum).
+            2. Back up package.json to backupDir/package.json.backup.
+            3. Parse as map[string]interface{}, append relative paths to "workspaces" array
+               (create if absent), marshal and write back.
+
+            **TypeScriptWorkspaceManager.Restore(repoRoot string, waveNum int) error:**
+            - If tsconfig.json.backup exists: restore tsconfig.json from backup; delete backup.
+            - If package.json.backup exists: restore package.json from backup; delete backup.
+            - Return nil.
+
+            Note: per-worktree tsconfig.worktree.json files are left in place on restore
+            (they're in worktree directories that will be cleaned up by StepCleanup). This
+            simplifies restore and is safe because worktree dirs are deleted by finalize-wave.
+
+            ### File: `pkg/engine/workspace/typescript_manager_test.go`
+
+            Package: `package workspace`.
+
+            Tests:
+            1. `TestTypeScriptManager_Detect_TsConfig`: tmpdir with tsconfig.json → true.
+            2. `TestTypeScriptManager_Detect_PackageJson`: tmpdir with package.json → true.
+            3. `TestTypeScriptManager_Detect_Neither`: empty tmpdir → false.
+            4. `TestTypeScriptManager_Setup_TSPath_AddsReferences`: create tsconfig.json
+               `{"compilerOptions":{}}` + one worktreePath subdir; call Setup; verify tsconfig.json
+               has "references" array with one entry, and backup exists.
+            5. `TestTypeScriptManager_Setup_JSPath_AddsWorkspaces`: package.json only; call Setup;
+               verify "workspaces" key added with relative path.
+            6. `TestTypeScriptManager_Restore_FromBackup`: create tsconfig.json.backup; call Restore;
+               verify tsconfig.json restored and backup deleted.
+
+            ## Constraints
+            - Package: `package workspace`
+            - Standard library only: encoding/json, os, path/filepath.
+            - DO NOT import pkg/engine.
+            - BackupDir is defined in workspace.go (same package — call directly).
+
+            ## Verification gate
+            ```
+            go build ./pkg/engine/workspace/
+            go vet ./pkg/engine/workspace/
+            go test ./pkg/engine/workspace/ -run TestTypeScriptManager
+            ```
+          files:
+            - pkg/engine/workspace/typescript_manager.go
+            - pkg/engine/workspace/typescript_manager_test.go
+        - id: C
+          task: |
+            ## Context
+            You are implementing the Rust WorkspaceManager in `pkg/engine/workspace/` for
+            the scout-and-wave-go repo.
+
+            Agent A is writing workspace.go in parallel. DO NOT create workspace.go yourself.
+            Only create rust_manager.go and rust_manager_test.go. Your files must compile
+            assuming workspace.go exists with WorkspaceManager interface, StepResult, and
+            BackupDir.
+
+            ## What to implement
+
+            ### File: `pkg/engine/workspace/rust_manager.go`
+
+            ```go
+            package workspace
+            ```
+
+            **RustWorkspaceManager.Detect:**
+            - Read Cargo.toml at repoRoot. Return true iff file exists AND content contains
+              the string `[workspace]` (use strings.Contains).
+
+            **RustWorkspaceManager.Setup(repoRoot string, waveNum int, worktreePaths []string) error:**
+            1. Read Cargo.toml bytes.
+            2. os.MkdirAll BackupDir(repoRoot, waveNum).
+            3. Back up Cargo.toml to backupDir/Cargo.toml.backup.
+            4. Line-by-line string editing to append members (no TOML library):
+               - Scan for a line with `members` followed by `[` on the same line, or just `[`.
+               - Locate the closing `]` of the members array.
+               - Before the closing `]`, insert lines:
+                 `  "<filepath.Rel(repoRoot, worktreePath)>",` for each worktreePath.
+               - Append `  # SAW-managed: restored by finalize-wave` as the last inserted line.
+               - If no members array found: return an error (do not write partial file).
+            5. Write modified bytes back to Cargo.toml.
+            6. Return nil.
+
+            **RustWorkspaceManager.Restore(repoRoot string, waveNum int) error:**
+            - If backupDir/Cargo.toml.backup exists: overwrite Cargo.toml; delete backup.
+            - Else: no-op (Cargo.toml is only written after a backup, so absent backup = nothing to undo).
+            - Return nil.
+
+            ### File: `pkg/engine/workspace/rust_manager_test.go`
+
+            Package: `package workspace`.
+
+            Tests:
+            1. `TestRustManager_Detect_TrueWithWorkspaceSection`
+            2. `TestRustManager_Detect_FalseWithoutWorkspaceSection`
+            3. `TestRustManager_Detect_FalseNoFile`
+            4. `TestRustManager_Setup_BacksUpCargoToml`: verify backup written with original content.
+            5. `TestRustManager_Setup_AddsMembers_MultiLine`: Cargo.toml with:
+               ```
+               [workspace]
+               members = [
+                 "crate_a",
+               ]
+               ```
+               Call Setup with one worktreePath relative to repoRoot. Verify the resulting
+               Cargo.toml contains the new relative path in the members array.
+            6. `TestRustManager_Restore_FromBackup`
+
+            ## Constraints
+            - Package: `package workspace`
+            - Standard library: bufio, bytes, os, path/filepath, strings.
+            - No external TOML library.
+            - DO NOT import pkg/engine.
+
+            ## Verification gate
+            ```
+            go build ./pkg/engine/workspace/
+            go vet ./pkg/engine/workspace/
+            go test ./pkg/engine/workspace/ -run TestRustManager
+            ```
+          files:
+            - pkg/engine/workspace/rust_manager.go
+            - pkg/engine/workspace/rust_manager_test.go
+        - id: D
+          task: |
+            ## Context
+            You are implementing the Python WorkspaceManager in `pkg/engine/workspace/` for
+            the scout-and-wave-go repo.
+
+            Agent A is writing workspace.go in parallel. DO NOT create workspace.go yourself.
+            Only create python_manager.go and python_manager_test.go. Your files must compile
+            assuming workspace.go exists with WorkspaceManager interface, StepResult, and
+            BackupDir.
+
+            ## What to implement
+
+            ### File: `pkg/engine/workspace/python_manager.go`
+
+            ```go
+            package workspace
+            ```
+
+            **PythonWorkspaceManager.Detect:**
+            - Return true iff pyrightconfig.json OR pyproject.toml exists at repoRoot.
+
+            **PythonWorkspaceManager.Setup(repoRoot string, waveNum int, worktreePaths []string) error:**
+
+            Compute relative paths: `relPath, _ = filepath.Rel(repoRoot, wt)` for each worktreePath.
+
+            *pyrightconfig.json path* (pyrightconfig.json exists):
+            1. os.MkdirAll BackupDir(repoRoot, waveNum).
+            2. Back up pyrightconfig.json to backupDir/pyrightconfig.json.backup.
+            3. Parse as map[string]interface{}. Append relPaths to "extraPaths" array (create if absent).
+            4. json.MarshalIndent and write.
+
+            *pyrightconfig.json absent but pyproject.toml exists*:
+            1. os.MkdirAll BackupDir(repoRoot, waveNum).
+            2. Back up pyproject.toml to backupDir/pyproject.toml.backup.
+            3. Line-by-line edit: find [tool.pyright]. If found and has extraPaths key, append.
+               If [tool.pyright] present but no extraPaths, add extraPaths line.
+               If [tool.pyright] absent, append to end of file:
+               `\n[tool.pyright]\nextraPaths = ["path1", "path2"]\n# SAW-managed: restored by finalize-wave\n`
+            4. Write modified bytes.
+
+            *pyrightconfig.json absent, pyproject.toml also absent* (unlikely given Detect check,
+            but defensive): create pyrightconfig.json from scratch with {"extraPaths": [...relPaths]}.
+            Do NOT create a backup (file didn't exist; Restore will delete it).
+
+            **PythonWorkspaceManager.Restore(repoRoot string, waveNum int) error:**
+            - If pyrightconfig.json.backup exists: restore; delete backup.
+            - Else if pyrightconfig.json exists: delete it (was SAW-created from scratch).
+            - If pyproject.toml.backup exists: restore; delete backup.
+            - Return nil.
+
+            ### File: `pkg/engine/workspace/python_manager_test.go`
+
+            Package: `package workspace`.
+
+            Tests:
+            1. `TestPythonManager_Detect_TruePyrightConfig`
+            2. `TestPythonManager_Detect_TruePyprojectToml`
+            3. `TestPythonManager_Detect_False`
+            4. `TestPythonManager_Setup_PyrightConfig_BacksUpAndAddsExtraPaths`:
+               pyrightconfig.json with `{"extraPaths": ["existing"]}`, verify backup and updated paths.
+            5. `TestPythonManager_Setup_CreatesPyrightConfigFromScratch`:
+               neither pyrightconfig.json nor pyproject.toml (but tmpdir exists); call Setup with
+               pyproject.toml written (so Detect=true), but no pyrightconfig.json.
+               Wait — Detect requires at least one file. Test: tmpdir with pyproject.toml only.
+               Call Setup; verify pyrightconfig.json is NOT created (pyproject.toml path taken instead)
+               and pyproject.toml backup exists.
+            6. `TestPythonManager_Restore_FromBackup_PyRight`: create backup; verify restore and delete.
+            7. `TestPythonManager_Restore_DeletesCreatedPyrightConfig`: no backup; pyrightconfig.json
+               exists; Restore deletes it.
+
+            ## Constraints
+            - Package: `package workspace`
+            - Standard library: bufio, bytes, encoding/json, os, path/filepath, strings.
+            - DO NOT import pkg/engine.
+
+            ## Verification gate
+            ```
+            go build ./pkg/engine/workspace/
+            go vet ./pkg/engine/workspace/
+            go test ./pkg/engine/workspace/ -run TestPythonManager
+            ```
+          files:
+            - pkg/engine/workspace/python_manager.go
+            - pkg/engine/workspace/python_manager_test.go
+    - number: 2
+      agents:
+        - id: E
+          task: |
+            ## Context
+            You are implementing the dispatcher for the `pkg/engine/workspace` sub-package.
+            Wave 1 is complete: workspace.go, go_manager.go, typescript_manager.go,
+            rust_manager.go, and python_manager.go all exist. Read them before implementing.
+
+            ## What to implement
+
+            ### File: `pkg/engine/workspace/dispatcher.go`
+
+            ```go
+            package workspace
+
+            import (
+                "context"
+                "fmt"
+                "log/slog"
+
+                "github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
+            )
+            ```
+
+            **`allManagers()` (unexported function):**
+            ```go
+            func allManagers() []WorkspaceManager {
+                return []WorkspaceManager{
+                    &GoWorkspaceManager{},
+                    &TypeScriptWorkspaceManager{},
+                    &RustWorkspaceManager{},
+                    &PythonWorkspaceManager{},
+                }
+            }
+            ```
+
+            **`DetectAndSetup`:**
+            - Build worktreePaths []string from worktrees (extract .Path from each WorktreeInfo).
+            - For each manager in allManagers():
+              - If !manager.Detect(repoRoot): skip with detail noting language was skipped.
+              - Call manager.Setup(repoRoot, waveNum, worktreePaths).
+              - On error: record warning (non-fatal); if onEvent non-nil call onEvent(fmt.Sprintf("workspace_setup_%s", lang), "warning", err.Error()).
+              - On success: if onEvent non-nil call onEvent(fmt.Sprintf("workspace_setup_%s", lang), "success", "ok").
+            - Build overall status: "success" if no errors encountered, "warning" otherwise.
+            - Build detail string summarizing results, e.g. "workspace setup: go=ok typescript=skipped rust=ok".
+            - If onEvent non-nil: call onEvent("workspace_setup", status, detail).
+            - Return &StepResult{Step: "workspace_setup", Status: status, Detail: detail}.
+
+            Use slog.Default() if logger is nil.
+
+            **`DetectAndRestore`:**
+            Same pattern, calls Restore instead of Setup.
+            Step name prefix: "workspace_restore".
+            Overall step name: "workspace_restore".
+
+            ### File: `pkg/engine/workspace/dispatcher_test.go`
+
+            Package: `package workspace`.
+
+            Tests:
+            1. `TestDetectAndSetup_SkipsAllWhenEmptyDir`: empty tmpdir; verify status "success", no panic.
+            2. `TestDetectAndSetup_GoRepo_NonFatal`: tmpdir with go.mod; call DetectAndSetup;
+               verify result non-nil and status is "success" or "warning" (go work init may fail in test env).
+            3. `TestDetectAndRestore_GoRepo_RemovesGoWork`: tmpdir with go.mod + go.work; call DetectAndRestore;
+               verify go.work removed (no backup = delete path).
+            4. `TestDetectAndSetup_MultiLanguage`: tmpdir with both go.mod and tsconfig.json;
+               call DetectAndSetup; verify tsconfig.json was backed up (evidence both managers ran).
+            5. `TestDetectAndSetup_OnEventCalled`: provide a capturing onEvent func; verify it receives
+               at least one "workspace_setup" call.
+
+            ## Constraints
+            - Package: `package workspace`
+            - DO NOT import pkg/engine (circular). EventCallback is declared as func(step, status, detail string).
+            - StepResult is the local type from workspace.go.
+            - Use context parameter but do not require it for current implementation (reserved for future use).
+
+            ## Verification gate
+            ```
+            go build ./pkg/engine/workspace/
+            go vet ./pkg/engine/workspace/
+            go test ./pkg/engine/workspace/...
+            ```
+          files:
+            - pkg/engine/workspace/dispatcher.go
+            - pkg/engine/workspace/dispatcher_test.go
+          dependencies:
+            - A
+            - B
+            - C
+            - D
+    - number: 3
+      agents:
+        - id: F
+          task: |
+            ## Context
+            You are wiring the `pkg/engine/workspace` dispatcher into the engine and CLI.
+            Waves 1 and 2 are complete: workspace.go, all four manager files, and
+            dispatcher.go exist in pkg/engine/workspace/.
+
+            Read these files in full before making any changes:
+            - `pkg/engine/workspace/dispatcher.go` — DetectAndSetup/DetectAndRestore signatures
+            - `pkg/engine/workspace/workspace.go` — StepResult type
+            - `pkg/engine/gowork_steps.go` — functions to refactor
+            - `pkg/engine/step_types.go` — PrepareWaveOpts to update
+            - `pkg/engine/prepare.go` — wiring location (search for "NoGoWork" or "gowork_setup")
+            - `pkg/engine/finalize.go` — wiring location (search for "StepGoWorkRestore" or "go.work")
+            - `cmd/sawtools/prepare_wave.go` — flag registration
+
+            ## What to change
+
+            ### 1. `pkg/engine/step_types.go`
+
+            In `PrepareWaveOpts`, add after the `NoGoWork bool` field:
+            ```go
+            // NoWorkspaceSetup disables all WorkspaceManager setup steps in PrepareWave.
+            // Replaces the deprecated NoGoWork field.
+            NoWorkspaceSetup bool
+            ```
+            Keep `NoGoWork bool` with a deprecation comment:
+            ```go
+            // Deprecated: use NoWorkspaceSetup. Will be removed in a future version.
+            NoGoWork bool
+            ```
+
+            ### 2. `pkg/engine/gowork_steps.go`
+
+            Replace the body of `StepGoWorkSetup` to delegate to GoWorkspaceManager:
+            ```go
+            func StepGoWorkSetup(ctx context.Context, repoRoot string, waveNum int, worktrees []protocol.WorktreeInfo, onEvent EventCallback, logger *slog.Logger) *StepResult {
+                paths := make([]string, len(worktrees))
+                for i, wt := range worktrees {
+                    paths[i] = wt.Path
+                }
+                mgr := &workspace.GoWorkspaceManager{}
+                if !mgr.Detect(repoRoot) {
+                    emitStepEvent(onEvent, "gowork_setup", "skipped", "not a Go repo")
+                    return &StepResult{Step: "gowork_setup", Status: "success", Detail: "not a Go repo"}
+                }
+                if err := mgr.Setup(repoRoot, waveNum, paths); err != nil {
+                    emitStepEvent(onEvent, "gowork_setup", "warning", err.Error())
+                    return &StepResult{Step: "gowork_setup", Status: "warning", Detail: err.Error()}
+                }
+                detail := fmt.Sprintf("go.work updated with %d worktree(s)", len(worktrees))
+                emitStepEvent(onEvent, "gowork_setup", "success", detail)
+                return &StepResult{Step: "gowork_setup", Status: "success", Detail: detail}
+            }
+            ```
+
+            Replace the body of `StepGoWorkRestore` to delegate to GoWorkspaceManager:
+            ```go
+            func StepGoWorkRestore(ctx context.Context, repoRoot string, waveNum int, onEvent EventCallback, logger *slog.Logger) *StepResult {
+                mgr := &workspace.GoWorkspaceManager{}
+                if err := mgr.Restore(repoRoot, waveNum); err != nil {
+                    emitStepEvent(onEvent, "gowork_restore", "warning", err.Error())
+                    return &StepResult{Step: "gowork_restore", Status: "warning", Detail: err.Error()}
+                }
+                emitStepEvent(onEvent, "gowork_restore", "success", "go.work restored")
+                return &StepResult{Step: "gowork_restore", Status: "success"}
+            }
+            ```
+
+            Add import: `"github.com/blackwell-systems/scout-and-wave-go/pkg/engine/workspace"`
+            Remove unused imports (os, os/exec, path/filepath if no longer used in this file).
+            Keep: context, fmt, log/slog, protocol.
+
+            Verify `gowork_steps_test.go` still compiles and passes — the step function signatures
+            are unchanged, only the bodies. Run `go test ./pkg/engine/ -run TestStepGoWork` to confirm.
+
+            ### 3. `pkg/engine/prepare.go`
+
+            Find the block that checks `!opts.NoGoWork` and calls `StepGoWorkSetup` (search for
+            "NoGoWork" in the file). Replace it with:
+            ```go
+            // Step: workspace_setup — configure all detected language workspace files for LSP resolution
+            if !opts.NoWorkspaceSetup && !opts.NoGoWork {
+                wsResult := workspace.DetectAndSetup(ctx, projectRoot, opts.WaveNum, worktreeResult.Worktrees, opts.OnEvent, opts.Logger)
+                if wsResult != nil {
+                    recordStep(res, opts.OnEvent, wsResult.Step, wsResult.Status, wsResult.Detail)
+                }
+            } else {
+                recordStep(res, opts.OnEvent, "workspace_setup", "skipped", "--no-workspace-setup flag set")
+            }
+            ```
+
+            Add import: `"github.com/blackwell-systems/scout-and-wave-go/pkg/engine/workspace"`
+
+            Note: workspace.DetectAndSetup returns *workspace.StepResult (not *engine.StepResult).
+            Extract .Step, .Status, .Detail fields directly. This is safe because both StepResult
+            types have the same three fields.
+
+            ### 4. `pkg/engine/finalize.go`
+
+            Find the block that calls `StepGoWorkRestore` (search for "StepGoWorkRestore").
+            Replace:
+            ```go
+            // Step 4.6: Restore go.work to pre-wave state
+            for _, repoPath := range repos {
+                _ = StepGoWorkRestore(ctx, repoPath, opts.WaveNum, onEvent, opts.Logger)
+                break // run once — go.work is repo-root-scoped, not per-repo
+            }
+            ```
+            With:
+            ```go
+            // Step 4.6: Restore workspace config to pre-wave state (all detected languages)
+            for _, repoPath := range repos {
+                _ = workspace.DetectAndRestore(ctx, repoPath, opts.WaveNum, onEvent, opts.Logger)
+                break // run once — workspace files are repo-root-scoped, not per-repo
+            }
+            ```
+
+            Add import: `"github.com/blackwell-systems/scout-and-wave-go/pkg/engine/workspace"`
+
+            ### 5. `cmd/sawtools/prepare_wave.go`
+
+            Add `var noWorkspaceSetup bool` alongside the existing `var noGoWork bool`.
+
+            In the PrepareWaveOpts construction, add:
+            `NoWorkspaceSetup: noWorkspaceSetup || noGoWork,`
+
+            After the existing `--no-gowork` flag registration, add:
+            ```go
+            cmd.Flags().BoolVar(&noWorkspaceSetup, "no-workspace-setup", false,
+                "Skip all WorkspaceManager setup (go.work, tsconfig.json, Cargo.toml, pyrightconfig.json)")
+            ```
+
+            Keep the existing `--no-gowork` flag as a deprecated alias.
+
+            ## Verification gate
+            ```
+            go build ./...
+            go vet ./...
+            go test ./pkg/engine/... ./pkg/engine/workspace/...
+            ```
+          files:
+            - pkg/engine/gowork_steps.go
+            - pkg/engine/step_types.go
+            - pkg/engine/prepare.go
+            - pkg/engine/finalize.go
+            - cmd/sawtools/prepare_wave.go
+          dependencies:
+            - E
+quality_gates:
+    level: standard
+    gates:
+        - type: build
+          command: go build ./...
+          required: true
+        - type: lint
+          command: go vet ./...
+          required: true
+        - type: test
+          command: go test ./pkg/engine/... ./pkg/engine/workspace/...
+          required: true
 pre_mortem:
-  overall_risk: medium
-  rows:
-    - scenario: |
-        TypeScript project references change the root tsconfig.json in-place. If Setup
-        succeeds but something fails mid-Restore (process kill, disk full), tsconfig.json
-        is left in modified state with worktree references pointing to deleted worktree dirs.
-      likelihood: low
-      impact: medium
-      mitigation: |
-        The backup-first approach (Step 1 of Setup backs up before any write) means a
-        failed Restore still leaves a backup file in .saw-state/. Users can manually
-        restore by copying .saw-state/wave{N}/tsconfig.json.backup to tsconfig.json.
-        Add a note to the TypeScript manager's godoc comment documenting this recovery path.
-
-    - scenario: |
-        Cargo.toml workspace members addition uses line-level string editing, which is
-        fragile. A non-standard members array format (e.g., inline comment after `]`,
-        or members listed without trailing comma) could result in invalid TOML or missed
-        insertion.
-      likelihood: medium
-      impact: medium
-      mitigation: |
-        The backup-before-write approach means the original Cargo.toml is always
-        recoverable. The RustWorkspaceManager.Setup should return an error if it cannot
-        find the closing `]` of the members array (fail-safe: no partial write). The
-        dispatcher treats this as non-fatal (warning, not abort). Test with both
-        single-line and multi-line members array formats.
-
-    - scenario: |
-        Python pyrightconfig.json creation from scratch: if Setup creates the file but
-        Restore checks for a backup (which doesn't exist because the file was created
-        from scratch), the Restore code path must handle the "created, no backup" case
-        by deleting the created file rather than being a no-op.
-      likelihood: medium
-      impact: low
-      mitigation: |
-        Python manager must distinguish between "file existed before Setup (backed up)"
-        vs "file created by Setup (no backup)". The absence of a backup file is the signal
-        to delete the file on Restore. This is documented in the interface contract.
-        Test TestPythonManager_Restore_DeletesCreatedPyrightConfig covers this case.
-
-    - scenario: |
-        Circular import: pkg/engine/workspace imports pkg/engine for StepResult or
-        EventCallback types. Since pkg/engine imports pkg/engine/workspace (via dispatcher
-        calls in prepare.go and finalize.go), this would create a cycle.
-      likelihood: high
-      impact: high
-      mitigation: |
-        Mitigated by design: workspace.StepResult is defined locally in the workspace
-        package (not imported from pkg/engine). The EventCallback type is declared as
-        an anonymous func type `func(step, status, detail string)` in dispatcher.go
-        rather than importing engine.EventCallback. Agent E's brief explicitly calls this
-        out as a constraint.
-
-    - scenario: |
-        The existing StepGoWorkSetup/StepGoWorkRestore tests in gowork_steps_test.go
-        test the old inline logic. After Agent F refactors those functions to delegate
-        to GoWorkspaceManager, the existing tests may still pass (they test behavior,
-        not implementation) or may need updates if the delegation changes observable
-        behavior (e.g., backup file location or error detail strings).
-      likelihood: low
-      impact: low
-      mitigation: |
-        GoWorkspaceManager is a direct extraction of the existing logic. Backup file
-        paths and error strings are preserved. Existing tests should continue to pass.
-        Agent F should run `go test ./pkg/engine/ -run TestStepGoWork` after refactoring
-        to confirm.
-
-    - scenario: |
-        Agent F modifies prepare.go and finalize.go which are large, heavily-used files
-        with 75+ dependent callers. A mistaken edit could break unrelated functionality.
-      likelihood: low
-      impact: high
-      mitigation: |
-        Agent F's task is targeted: replace two well-delimited blocks (one in prepare.go
-        ~lines 576-584, one in finalize.go ~lines 531-534). The brief includes exact
-        before/after code. The verification gate runs the full test suite. Agent F must
-        read both files before editing to identify the exact line ranges.
+    overall_risk: medium
+    rows:
+        - scenario: |
+            Circular import: pkg/engine/workspace imports pkg/engine for StepResult or
+            EventCallback types, while pkg/engine imports pkg/engine/workspace via dispatcher
+            calls in prepare.go and finalize.go. This would create a compile-time cycle.
+          likelihood: high
+          impact: high
+          mitigation: |
+            Mitigated by design. workspace.StepResult is defined locally in workspace.go.
+            The EventCallback type is declared as an anonymous func type in dispatcher.go
+            rather than importing engine.EventCallback. All agent briefs include this as
+            an explicit constraint. The "DO NOT import pkg/engine" constraint appears in
+            every Wave 1 agent brief and Agent E's brief.
+        - scenario: |
+            Cargo.toml members array uses non-standard formatting (inline comment after
+            closing bracket, single-line members, no trailing comma) that breaks the
+            line-level string editing in RustWorkspaceManager.Setup.
+          likelihood: medium
+          impact: low
+          mitigation: |
+            Backup-before-write means the original is always recoverable. RustWorkspaceManager.Setup
+            returns an error if it cannot find the members array closing bracket, preventing a
+            partial write. The dispatcher treats Setup errors as non-fatal (warning). The agent
+            brief requires testing both single-line and multi-line members array formats.
+        - scenario: |
+            Agent B creates workspace.go instead of only typescript_manager.go because
+            workspace.go doesn't exist yet in its worktree (Wave 1 is parallel — Agent A's
+            workspace.go is not yet merged when B starts).
+          likelihood: medium
+          impact: medium
+          mitigation: |
+            Agent B's brief explicitly states "DO NOT create workspace.go yourself. Only create
+            typescript_manager.go and typescript_manager_test.go." The same constraint appears
+            in Agents C and D's briefs. At merge time, Agent A's workspace.go wins (it's the
+            authoritative version). If B/C/D create a stub, StepMergeAgents will conflict —
+            but only if they actually wrote conflicting content. The briefs are clear.
+        - scenario: |
+            Agent F modifies prepare.go and finalize.go, which are large heavily-used files
+            with many callers. A mistaken broader edit could break unrelated functionality.
+          likelihood: low
+          impact: high
+          mitigation: |
+            Agent F's task targets well-delimited blocks identified by search terms (NoGoWork,
+            StepGoWorkRestore). The brief includes exact before/after code. The verification
+            gate runs the full test suite (go test ./pkg/engine/...).
+        - scenario: |
+            Python pyrightconfig.json created from scratch by Setup: Restore must know to delete
+            it rather than attempt to restore from a nonexistent backup. If this logic is wrong,
+            Restore is a no-op and pyrightconfig.json is left behind after the wave.
+          likelihood: medium
+          impact: low
+          mitigation: |
+            The Restore logic explicitly handles this: if pyrightconfig.json.backup absent AND
+            pyrightconfig.json exists, delete it. Test TestPythonManager_Restore_DeletesCreatedPyrightConfig
+            covers this exact case. Agent D's brief calls this out explicitly.
+        - scenario: |
+            TypeScript manager leaves per-worktree tsconfig.worktree.json files in place
+            after restore (they're in worktree directories). If StepCleanup fails or is skipped,
+            these files may accumulate across waves.
+          likelihood: low
+          impact: low
+          mitigation: |
+            These files are inside worktree directories which are git worktrees. StepCleanup
+            calls `git worktree remove --force` which deletes the directory entirely. The files
+            are not in the main repo and do not affect the main working tree. Documented in the
+            TypeScript manager godoc.
+state: SCOUT_PENDING
+injection_method: hook
