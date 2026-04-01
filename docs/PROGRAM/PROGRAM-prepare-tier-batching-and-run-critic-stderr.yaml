@@ -13,7 +13,7 @@ impls:
         - PrepareTierOpts
         - PrepareTier (updated signature)
         - SkipCriticForIMPL
-      status: pending
+      status: complete
     - slug: run-critic-stderr
       title: CLI Backend Stderr Capture and Claude Code Context Detection
       tier: 1
@@ -22,7 +22,7 @@ impls:
       key_outputs:
         - IsClaudeCodeSession
         - BuildCriticPrompt
-      status: pending
+      status: complete
 tiers:
     - number: 1
       impls:
