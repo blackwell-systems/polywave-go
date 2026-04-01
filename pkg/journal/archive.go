@@ -71,18 +71,12 @@ func (o *JournalObserver) Archive() result.Result[ArchiveData] {
 	var wave int
 	var agent string
 
-	for i, part := range parts {
+	for _, part := range parts {
 		if strings.HasPrefix(part, "wave") {
 			fmt.Sscanf(part, "wave%d", &wave)
 		}
 		if strings.HasPrefix(part, "agent-") {
 			agent = strings.TrimPrefix(part, "agent-")
-		}
-		// Also check if part matches just the agent ID
-		if i > 0 && strings.HasPrefix(parts[i-1], "wave") {
-			if !strings.HasPrefix(part, "agent-") {
-				agent = part
-			}
 		}
 	}
 
