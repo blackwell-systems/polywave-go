@@ -23,7 +23,7 @@ func buildToolsJSON(workshop tools.Workshop) []interface{} {
 }
 
 // executeTool looks up a tool by name in the Workshop and executes it.
-// Returns (resultString, isError). Delegates to the shared backend.ExecuteTool.
+// Returns (resultString, isError). Delegates to the shared backend.ExecuteToolCompat.
 func executeTool(ctx context.Context, workshop tools.Workshop, name string, input map[string]interface{}, workDir string) (string, bool) {
-	return backend.ExecuteTool(ctx, workshop, name, input, workDir)
+	return backend.ExecuteToolCompat(ctx, workshop, name, input, workDir)
 }

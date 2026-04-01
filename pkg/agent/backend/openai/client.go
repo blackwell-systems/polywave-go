@@ -170,7 +170,7 @@ func (c *Client) Run(ctx context.Context, systemPrompt, userMessage, workDir str
 			// embed the tool call as JSON in content instead of using the tool_calls array.
 			if ctc := parseContentToolCall(choice.Message.Content, nameSet); ctc != nil {
 				messages = append(messages, chatMessage{Role: "assistant", Content: choice.Message.Content})
-				result, _ := backend.ExecuteTool(ctx, workshop, ctc.Name, ctc.Arguments, workDir)
+				result, _ := backend.ExecuteToolCompat(ctx, workshop, ctc.Name, ctc.Arguments, workDir)
 				messages = append(messages, chatMessage{Role: "user", Content: "Function result:\n" + result})
 				continue
 			}
@@ -183,7 +183,7 @@ func (c *Client) Run(ctx context.Context, systemPrompt, userMessage, workDir str
 				if err := json.Unmarshal([]byte(tc.Function.Arguments), &inputMap); err != nil {
 					inputMap = map[string]interface{}{}
 				}
-				result, _ := backend.ExecuteTool(ctx, workshop, tc.Function.Name, inputMap, workDir)
+				result, _ := backend.ExecuteToolCompat(ctx, workshop, tc.Function.Name, inputMap, workDir)
 				messages = append(messages, toolResultMessage(tc.ID, result))
 			}
 
@@ -225,7 +225,7 @@ func (c *Client) RunStreaming(ctx context.Context, systemPrompt, userMessage, wo
 		case "stop":
 			if ctc := parseContentToolCall(choice.Message.Content, nameSet); ctc != nil {
 				messages = append(messages, chatMessage{Role: "assistant", Content: choice.Message.Content})
-				result, _ := backend.ExecuteTool(ctx, workshop, ctc.Name, ctc.Arguments, workDir)
+				result, _ := backend.ExecuteToolCompat(ctx, workshop, ctc.Name, ctc.Arguments, workDir)
 				messages = append(messages, chatMessage{Role: "user", Content: "Function result:\n" + result})
 				continue
 			}
@@ -238,7 +238,7 @@ func (c *Client) RunStreaming(ctx context.Context, systemPrompt, userMessage, wo
 				if err := json.Unmarshal([]byte(tc.Function.Arguments), &inputMap); err != nil {
 					inputMap = map[string]interface{}{}
 				}
-				result, _ := backend.ExecuteTool(ctx, workshop, tc.Function.Name, inputMap, workDir)
+				result, _ := backend.ExecuteToolCompat(ctx, workshop, tc.Function.Name, inputMap, workDir)
 				messages = append(messages, toolResultMessage(tc.ID, result))
 			}
 
