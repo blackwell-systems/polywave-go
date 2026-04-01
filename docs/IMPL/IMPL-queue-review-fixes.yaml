@@ -227,5 +227,5 @@ pre_mortem:
           likelihood: low
           impact: low
           mitigation: Go slice semantics guarantee append() always returns non-nil. The check is defensive but unreachable. Removal is safe. If future refactor adds a code path where items is not assigned via append, linter or tests will catch it.
-state: SCOUT_PENDING
+state: "REVIEWED"
 injection_method: hook
