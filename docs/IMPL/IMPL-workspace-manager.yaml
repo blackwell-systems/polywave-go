@@ -718,6 +718,7 @@ waves:
             - B
             - C
             - D
+      base_commit: 3fd004377605ea2b0532f77b39dff53ad9dc39a7
     - number: 3
       agents:
         - id: F
@@ -881,6 +882,11 @@ quality_gates:
         - type: test
           command: go test ./pkg/engine/...
           required: true
+post_merge_checklist:
+    groups:
+        - title: Background Service Initialization
+          items:
+            - description: Verify if dispatcher_test.go needs initialization in Server constructor
 completion_reports:
     A:
         status: complete
@@ -967,6 +973,24 @@ completion_reports:
             - TestPythonManager_Restore_DeletesCreatedPyrightConfig
         verification: PASS
         notes: All 7 tests pass (GOWORK=off required due to duplicate module in go.work with 4 worktrees). workspace.go stub created for compilation; will be superseded by Agent A's authoritative version at merge. Pre-commit hook skipped due to go.work duplicate module issue (known worktree limitation).
+    E:
+        status: complete
+        branch: saw/workspace-manager/wave2-agent-E
+        commit: af06626
+        files_changed:
+            - pkg/engine/workspace/dispatcher.go
+            - pkg/engine/workspace/dispatcher_test.go
+        files_created:
+            - pkg/engine/workspace/dispatcher.go
+            - pkg/engine/workspace/dispatcher_test.go
+        tests_added:
+            - TestDetectAndSetup_SkipsAllWhenEmptyDir
+            - TestDetectAndSetup_GoRepo_NonFatal
+            - TestDetectAndRestore_GoRepo_RemovesGoWork
+            - TestDetectAndSetup_MultiLanguage
+            - TestDetectAndSetup_OnEventCalled
+        verification: PASS
+        notes: Dispatcher complete. All 5 tests pass. Pre-commit hook requires GOWORK=off due to SAW-managed go.work including same-module worktree — committed with GOWORK=off env var.
 pre_mortem:
     overall_risk: medium
     rows:
