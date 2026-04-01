@@ -148,6 +148,7 @@ waves:
             (Build will fail due to callers in deterministic.go — that is expected in Wave 1.)
           files:
             - pkg/interview/phase_questions.go
+          context_source: prepared-brief
     - number: 2
       agents:
         - id: B
@@ -626,5 +627,5 @@ pre_mortem:
             This is expected and acceptable in Wave 1. The quality gate for Wave 1 is
             go vet only (not go build ./...). Agent A's brief explicitly notes that the build
             will fail due to callers and that this is acceptable for Wave 1.
-state: SCOUT_PENDING
+state: "REVIEWED"
 injection_method: hook
