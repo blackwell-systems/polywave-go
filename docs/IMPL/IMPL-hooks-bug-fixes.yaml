@@ -485,5 +485,5 @@ pre_mortem:
             The test is structurally correct: 3 agents in wave 1 triggers E37Required.
             No mitigation needed. The existing TestPreLaunchGate_CriticRequired test passes
             with both the old code and the new code for this case.
-state: SCOUT_PENDING
+state: "REVIEWED"
 injection_method: hook
