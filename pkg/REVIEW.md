@@ -17,7 +17,7 @@ Each reviewed package gets scouted → IMPL'd → closed before being marked don
 | agent/dedup | ✅ (with agent) | ✅ | ✅ |
 | analyzer | | | |
 | autonomy | | | |
-| builddiag | | | |
+| builddiag | ✅ | ❌ (NOT_SUITABLE) | N/A |
 | codereview | | | |
 | collision | ✅ | ✅ | |
 | commands | | | |
