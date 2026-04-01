@@ -12,6 +12,14 @@ import (
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
 )
 
+// Discord adapter error codes (not registered in pkg/result/codes.go because
+// this package is designed as an extractable library with its own error domain):
+//   DISCORD_MARSHAL_ERROR   — JSON marshal of outbound payload failed
+//   DISCORD_REQUEST_ERROR   — http.NewRequestWithContext failed
+//   DISCORD_SEND_ERROR      — HTTP client.Do failed (non-context error)
+//   DISCORD_RATE_LIMITED    — 429 Too Many Requests
+//   DISCORD_HTTP_ERROR      — non-2xx HTTP status (not 429)
+
 type discordField struct {
 	Name   string `json:"name"`
 	Value  string `json:"value"`
@@ -62,6 +70,11 @@ func (a *DiscordAdapter) Name() string { return "discord" }
 // Send delivers a formatted message to the Discord webhook endpoint.
 func (a *DiscordAdapter) Send(ctx context.Context, msg Message) result.Result[SendData] {
 	p := discordPayload{}
+	// msg.Embeds must be []discordEmbed (as produced by DiscordFormatter.Format)
+	// for the assertion to succeed. If Embeds is any other type (e.g. nil
+	// or []interface{}), the assertion fails silently and the message falls
+	// back to content-only mode. Callers using a non-Discord formatter
+	// must ensure Embeds is []discordEmbed or leave it nil.
 	if msg.Embeds != nil {
 		if embeds, ok := msg.Embeds.([]discordEmbed); ok {
 			p.Embeds = embeds
@@ -77,7 +90,8 @@ func (a *DiscordAdapter) Send(ctx context.Context, msg Message) result.Result[Se
 		})
 	}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, a.webhookURL, bytes.NewReader(body))
+	reqURL := a.webhookURL + "?wait=true"
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, reqURL, bytes.NewReader(body))
 	if err != nil {
 		return result.NewFailure[SendData]([]result.SAWError{
 			{Code: "DISCORD_REQUEST_ERROR", Message: fmt.Sprintf("discord: create request: %v", err), Severity: "fatal"},
@@ -121,7 +135,15 @@ func (a *DiscordAdapter) Send(ctx context.Context, msg Message) result.Result[Se
 		})
 	}
 
+	var discordResp struct {
+		ID string `json:"id"`
+	}
+	// Best-effort parse -- if decode fails, we still got a 2xx so the message was sent.
+	// Just leave MessageID empty.
+	json.NewDecoder(resp.Body).Decode(&discordResp)
+
 	return result.NewSuccess(SendData{
+		MessageID: discordResp.ID,
 		Timestamp: time.Now(),
 		Provider:  "discord",
 	})

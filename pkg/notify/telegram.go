@@ -13,6 +13,14 @@ import (
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
 )
 
+// Telegram adapter error codes (not registered in pkg/result/codes.go because
+// this package is designed as an extractable library with its own error domain):
+//   TELEGRAM_MARSHAL_ERROR   — JSON marshal of outbound payload failed
+//   TELEGRAM_REQUEST_ERROR   — http.NewRequestWithContext failed
+//   TELEGRAM_SEND_ERROR      — HTTP client.Do failed (non-context error)
+//   TELEGRAM_RATE_LIMITED    — 429 Too Many Requests
+//   TELEGRAM_HTTP_ERROR      — non-2xx HTTP status (not 429)
+
 // TelegramAdapter sends notifications via the Telegram Bot API.
 type TelegramAdapter struct {
 	token       string
@@ -104,7 +112,19 @@ func (a *TelegramAdapter) Send(ctx context.Context, msg Message) result.Result[S
 		})
 	}
 
+	var telegramResp struct {
+		OK     bool `json:"ok"`
+		Result struct {
+			MessageID int `json:"message_id"`
+		} `json:"result"`
+	}
+	var msgID string
+	if err := json.NewDecoder(resp.Body).Decode(&telegramResp); err == nil && telegramResp.OK && telegramResp.Result.MessageID > 0 {
+		msgID = fmt.Sprintf("%d", telegramResp.Result.MessageID)
+	}
+
 	return result.NewSuccess(SendData{
+		MessageID: msgID,
 		Timestamp: time.Now(),
 		Provider:  "telegram",
 	})
