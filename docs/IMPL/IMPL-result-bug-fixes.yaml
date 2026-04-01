@@ -461,5 +461,5 @@ pre_mortem:
           mitigation: |
             Agent A's scope is explicitly result.go and result_test.go. Agent B's new file is
             codes_test.go — a distinct filename. No conflict possible.
-state: SCOUT_PENDING
+state: "REVIEWED"
 injection_method: hook
