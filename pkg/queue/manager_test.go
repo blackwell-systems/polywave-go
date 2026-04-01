@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
 	"gopkg.in/yaml.v3"
 )
 
@@ -191,8 +192,8 @@ func TestNext_QueueEmpty(t *testing.T) {
 	if len(nextRes.Errors) == 0 {
 		t.Fatal("expected errors in Fatal result")
 	}
-	if nextRes.Errors[0].Code != "QUEUE_EMPTY" {
-		t.Errorf("error code = %q, want %q", nextRes.Errors[0].Code, "QUEUE_EMPTY")
+	if nextRes.Errors[0].Code != result.CodeQueueEmpty {
+		t.Errorf("error code = %q, want %q", nextRes.Errors[0].Code, result.CodeQueueEmpty)
 	}
 }
 
@@ -244,8 +245,8 @@ func TestNext_NoneEligible(t *testing.T) {
 	if !nextRes.IsFatal() {
 		t.Errorf("expected Fatal when no items eligible, got Code=%q", nextRes.Code)
 	}
-	if nextRes.Errors[0].Code != "QUEUE_EMPTY" {
-		t.Errorf("error code = %q, want %q", nextRes.Errors[0].Code, "QUEUE_EMPTY")
+	if nextRes.Errors[0].Code != result.CodeQueueEmpty {
+		t.Errorf("error code = %q, want %q", nextRes.Errors[0].Code, result.CodeQueueEmpty)
 	}
 }
 
@@ -376,8 +377,8 @@ func TestUpdateStatus_NotFound(t *testing.T) {
 	if !updateRes.IsFatal() {
 		t.Fatal("expected Fatal result for nonexistent slug")
 	}
-	if updateRes.Errors[0].Code != "QUEUE_STATUS_UPDATE_FAILED" {
-		t.Errorf("error code = %q, want %q", updateRes.Errors[0].Code, "QUEUE_STATUS_UPDATE_FAILED")
+	if updateRes.Errors[0].Code != result.CodeQueueStatusUpdateFailed {
+		t.Errorf("error code = %q, want %q", updateRes.Errors[0].Code, result.CodeQueueStatusUpdateFailed)
 	}
 }
 
