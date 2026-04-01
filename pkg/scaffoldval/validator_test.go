@@ -1,6 +1,7 @@
 package scaffoldval
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"testing"
@@ -47,7 +48,7 @@ go 1.21
 		t.Fatalf("Failed to create go.mod: %v", err)
 	}
 
-	result, err := ValidateScaffold(scaffoldPath, implPath)
+	result, err := ValidateScaffold(context.Background(), scaffoldPath, implPath, "")
 	if err != nil {
 		t.Fatalf("ValidateScaffold returned error: %v", err)
 	}
@@ -60,8 +61,8 @@ go 1.21
 		t.Errorf("Expected import check to PASS, got %s: %v", result.Imports.Status, result.Imports.Errors)
 	}
 
-	if result.TypeReferences.Status != "PASS" {
-		t.Errorf("Expected type reference check to PASS, got %s: %v", result.TypeReferences.Status, result.TypeReferences.Errors)
+	if result.TypeReferences.Status != "SKIP" && result.TypeReferences.Status != "PASS" {
+		t.Errorf("Expected type reference check to be SKIP or PASS, got %s: %v", result.TypeReferences.Status, result.TypeReferences.Errors)
 	}
 
 	// Build check will run (may pass or fail depending on environment)
@@ -101,7 +102,7 @@ waves: []
 		t.Fatalf("Failed to create IMPL manifest: %v", err)
 	}
 
-	result, err := ValidateScaffold(scaffoldPath, implPath)
+	result, err := ValidateScaffold(context.Background(), scaffoldPath, implPath, "")
 	if err != nil {
 		t.Fatalf("ValidateScaffold returned error: %v", err)
 	}
@@ -159,7 +160,17 @@ waves: []
 		t.Fatalf("Failed to create IMPL manifest: %v", err)
 	}
 
-	result, err := ValidateScaffold(scaffoldPath, implPath)
+	// Create go.mod that does NOT list github.com/example/missing
+	goModPath := filepath.Join(tmpDir, "go.mod")
+	goModContent := `module example.com/test
+
+go 1.21
+`
+	if err := os.WriteFile(goModPath, []byte(goModContent), 0644); err != nil {
+		t.Fatalf("Failed to create go.mod: %v", err)
+	}
+
+	result, err := ValidateScaffold(context.Background(), scaffoldPath, implPath, "")
 	if err != nil {
 		t.Fatalf("ValidateScaffold returned error: %v", err)
 	}
@@ -234,7 +245,7 @@ go 1.21
 		t.Fatalf("Failed to create go.mod: %v", err)
 	}
 
-	result, err := ValidateScaffold(scaffoldPath, implPath)
+	result, err := ValidateScaffold(context.Background(), scaffoldPath, implPath, "")
 	if err != nil {
 		t.Fatalf("ValidateScaffold returned error: %v", err)
 	}
@@ -336,7 +347,7 @@ func main() {}
 
 func TestCheckImports_StandardLib(t *testing.T) {
 	imports := []string{"fmt", "os", "strings", "io"}
-	result := checkImports(imports)
+	result := checkImports(imports, "")
 
 	if len(result) != 0 {
 		t.Errorf("Expected no missing imports for standard library, got: %v", result)
@@ -344,21 +355,25 @@ func TestCheckImports_StandardLib(t *testing.T) {
 }
 
 func TestCheckImports_ThirdParty(t *testing.T) {
+	tmpDir := t.TempDir()
+	goModContent := "module example.com/test\n\ngo 1.21\n"
+	goModPath := filepath.Join(tmpDir, "go.mod")
+	if err := os.WriteFile(goModPath, []byte(goModContent), 0644); err != nil {
+		t.Fatalf("Failed to write go.mod: %v", err)
+	}
 	imports := []string{
 		"fmt",
 		"github.com/example/pkg",
 		"golang.org/x/sync/errgroup",
 	}
-	result := checkImports(imports)
-
-	// Should flag third-party imports
+	result := checkImports(imports, tmpDir)
 	if len(result) != 2 {
 		t.Errorf("Expected 2 missing imports, got %d: %v", len(result), result)
 	}
 
 	expectedMissing := map[string]bool{
-		"github.com/example/pkg":       true,
-		"golang.org/x/sync/errgroup":   true,
+		"github.com/example/pkg":     true,
+		"golang.org/x/sync/errgroup": true,
 	}
 
 	for _, imp := range result {
@@ -368,7 +383,30 @@ func TestCheckImports_ThirdParty(t *testing.T) {
 	}
 }
 
+func TestCheckImports_ThirdPartyInGoMod(t *testing.T) {
+	tmpDir := t.TempDir()
+	goModContent := "module example.com/test\n\ngo 1.21\n\nrequire (\n\tgithub.com/example/pkg v1.0.0\n\tgolang.org/x/sync v0.1.0\n)\n"
+	goModPath := filepath.Join(tmpDir, "go.mod")
+	if err := os.WriteFile(goModPath, []byte(goModContent), 0644); err != nil {
+		t.Fatalf("Failed to write go.mod: %v", err)
+	}
+	imports := []string{
+		"fmt",
+		"github.com/example/pkg",
+		"golang.org/x/sync/errgroup",
+	}
+	result := checkImports(imports, tmpDir)
+	if len(result) != 0 {
+		t.Errorf("Expected no missing imports when all third-party are in go.mod, got: %v", result)
+	}
+}
+
 func TestCheckImports_Mixed(t *testing.T) {
+	tmpDir := t.TempDir()
+	goModContent := "module example.com/test\n\ngo 1.21\n"
+	if err := os.WriteFile(filepath.Join(tmpDir, "go.mod"), []byte(goModContent), 0644); err != nil {
+		t.Fatalf("Failed to write go.mod: %v", err)
+	}
 	imports := []string{
 		"fmt",
 		"github.com/example/pkg",
@@ -376,9 +414,7 @@ func TestCheckImports_Mixed(t *testing.T) {
 		"strings",
 		"golang.org/x/sync/errgroup",
 	}
-	result := checkImports(imports)
-
-	// Should only flag third-party imports
+	result := checkImports(imports, tmpDir)
 	if len(result) != 2 {
 		t.Errorf("Expected 2 missing imports, got %d: %v", len(result), result)
 	}

@@ -3,6 +3,7 @@ package scaffoldval
 import (
 	"context"
 	"fmt"
+	"go/ast"
 	"go/parser"
 	"go/token"
 	"os"
@@ -14,13 +15,15 @@ import (
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
 )
 
-// ValidateScaffold runs the validation pipeline on a scaffold file
-func ValidateScaffold(scaffoldPath string, implPath string) (*ValidationResult, error) {
+// ValidateScaffold runs the validation pipeline on a scaffold file.
+// ctx is used to cancel the build step. repoRoot, if non-empty, is used directly;
+// if empty, the function walks upward from implPath looking for go.mod.
+func ValidateScaffold(ctx context.Context, scaffoldPath string, implPath string, repoRoot string) (*ValidationResult, error) {
 	result := NewValidationResult()
 
 	// Step 1: Syntax check (parse Go file)
 	fset := token.NewFileSet()
-	_, err := parser.ParseFile(fset, scaffoldPath, nil, parser.AllErrors)
+	astFile, err := parser.ParseFile(fset, scaffoldPath, nil, parser.AllErrors)
 	if err != nil {
 		result.Syntax.Status = "FAIL"
 		result.Syntax.Errors = []string{err.Error()}
@@ -31,13 +34,14 @@ func ValidateScaffold(scaffoldPath string, implPath string) (*ValidationResult, 
 	result.Syntax.Status = "PASS"
 
 	// Step 2: Import resolution (check if imports exist)
-	content, err := os.ReadFile(scaffoldPath)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read scaffold: %w", err)
+	// Determine repo root before checking imports
+	root := repoRoot
+	if root == "" {
+		root = findRepoRoot(filepath.Dir(implPath))
 	}
 
-	imports := extractImports(string(content))
-	missingImports := checkImports(imports)
+	imports := importsFromAST(astFile)
+	missingImports := checkImports(imports, root)
 
 	if len(missingImports) > 0 {
 		result.Imports.Status = "FAIL"
@@ -49,20 +53,20 @@ func ValidateScaffold(scaffoldPath string, implPath string) (*ValidationResult, 
 	}
 
 	// Step 3: Type references (check for undeclared types)
-	// Parse AST and look for type references
-	result.TypeReferences.Status = "PASS" // Simplified for now
+	// Type reference checking is not yet implemented. Return SKIP (honest signaling)
+	// rather than a false PASS. The parsed AST (astFile) is available for future use.
+	// astFile is available here for future type-reference checking
+	_ = astFile
+	result.TypeReferences.Status = "SKIP"
 
 	// Step 4: Build check (compile scaffold in isolation)
 	// Extract build command from IMPL doc using pkg/commands
-	_, err = protocol.Load(context.TODO(), implPath)
+	_, err = protocol.Load(ctx, implPath)
 	if err != nil {
 		result.Build.Status = "SKIP"
 		result.Build.Errors = []string{fmt.Sprintf("Failed to parse IMPL manifest: %v", err)}
 		return result, nil // Continue without build check
 	}
-
-	// Get repo root (parent of docs/ directory)
-	repoRoot := filepath.Dir(filepath.Dir(implPath))
 
 	// Extract build command using commands package
 	extractor := commands.New()
@@ -70,16 +74,16 @@ func ValidateScaffold(scaffoldPath string, implPath string) (*ValidationResult, 
 	extractor.RegisterBuildSystemParser(&commands.MakefileParser{})
 	extractor.RegisterBuildSystemParser(&commands.PackageJSONParser{})
 
-	commandSet, err := extractor.Extract(context.TODO(), repoRoot)
+	commandSet, err := extractor.Extract(ctx, root)
 	if err != nil || commandSet.Commands.Build == "" {
 		result.Build.Status = "SKIP"
 		result.Build.Errors = []string{"No build command found"}
 		return result, nil
 	}
 
-	// Run build command
-	cmd := exec.Command("sh", "-c", commandSet.Commands.Build)
-	cmd.Dir = repoRoot
+	// Run build command with cancellable context
+	cmd := exec.CommandContext(ctx, "sh", "-c", commandSet.Commands.Build)
+	cmd.Dir = root
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		result.Build.Status = "FAIL"
@@ -93,7 +97,37 @@ func ValidateScaffold(scaffoldPath string, implPath string) (*ValidationResult, 
 	return result, nil
 }
 
-// extractImports parses import statements from Go source
+// findRepoRoot walks upward from startDir looking for go.mod.
+// Returns the directory containing go.mod if found.
+// Falls back to filepath.Dir(startDir) if go.mod is not found.
+func findRepoRoot(startDir string) string {
+	dir := startDir
+	for {
+		if _, err := os.Stat(filepath.Join(dir, "go.mod")); err == nil {
+			return dir
+		}
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			// Reached filesystem root without finding go.mod
+			return filepath.Dir(startDir) // fallback
+		}
+		dir = parent
+	}
+}
+
+// importsFromAST extracts import paths from a parsed *ast.File.
+func importsFromAST(f *ast.File) []string {
+	var imports []string
+	for _, imp := range f.Imports {
+		// imp.Path.Value is a quoted string like `"fmt"`
+		path := strings.Trim(imp.Path.Value, `"`)
+		imports = append(imports, path)
+	}
+	return imports
+}
+
+// extractImports parses import statements from Go source.
+// Kept for backward compatibility with TestExtractImports.
 func extractImports(content string) []string {
 	var imports []string
 	lines := strings.Split(content, "\n")
@@ -126,20 +160,72 @@ func extractImports(content string) []string {
 	return imports
 }
 
-// checkImports verifies imports exist (simplified: checks standard lib only)
-func checkImports(imports []string) []string {
-	var missing []string
-
-	for _, imp := range imports {
-		// Simple heuristic: standard library imports don't have dots
-		if !strings.Contains(imp, ".") {
-			continue // Assume standard lib exists
-		}
-
-		// For third-party imports, check if package exists in go.mod
-		// (Simplified: mark as missing if not in standard lib)
-		missing = append(missing, imp)
+// parseGoMod parses a go.mod file and returns the module name and all required module paths.
+func parseGoMod(goModPath string) (string, []string) {
+	data, err := os.ReadFile(goModPath)
+	if err != nil {
+		return "", nil
 	}
+	var moduleName string
+	var requires []string
+	lines := strings.Split(string(data), "\n")
+	inRequire := false
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if strings.HasPrefix(trimmed, "module ") {
+			moduleName = strings.TrimSpace(strings.TrimPrefix(trimmed, "module "))
+			continue
+		}
+		if trimmed == "require (" {
+			inRequire = true
+			continue
+		}
+		if inRequire && trimmed == ")" {
+			inRequire = false
+			continue
+		}
+		if inRequire {
+			// line is like: github.com/foo/bar v1.2.3 or github.com/foo/bar v1.2.3 // indirect
+			parts := strings.Fields(trimmed)
+			if len(parts) >= 2 {
+				requires = append(requires, parts[0])
+			}
+			continue
+		}
+		if strings.HasPrefix(trimmed, "require ") {
+			// single-line: require github.com/foo/bar v1.2.3
+			rest := strings.TrimPrefix(trimmed, "require ")
+			parts := strings.Fields(rest)
+			if len(parts) >= 1 {
+				requires = append(requires, parts[0])
+			}
+		}
+	}
+	return moduleName, requires
+}
 
+// checkImports verifies imports exist by consulting go.mod.
+// repoRoot is the directory containing go.mod.
+func checkImports(imports []string, repoRoot string) []string {
+	moduleName, requires := parseGoMod(filepath.Join(repoRoot, "go.mod"))
+	var missing []string
+	for _, imp := range imports {
+		if !strings.Contains(imp, ".") {
+			continue // standard library
+		}
+		if moduleName != "" && strings.HasPrefix(imp, moduleName) {
+			continue // local package
+		}
+		found := false
+		for _, req := range requires {
+			if strings.HasPrefix(imp, req) {
+				found = true
+				break
+			}
+		}
+		if !found {
+			missing = append(missing, imp)
+		}
+	}
 	return missing
 }

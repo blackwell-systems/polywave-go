@@ -31,7 +31,7 @@ Outputs structured YAML with pass/fail status per step.`,
 			}
 
 			// Run validation
-			result, err := scaffoldval.ValidateScaffold(scaffoldPath, implDoc)
+			result, err := scaffoldval.ValidateScaffold(cmd.Context(), scaffoldPath, implDoc, "")
 			if err != nil {
 				return fmt.Errorf("validation failed: %w", err)
 			}
