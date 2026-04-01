@@ -414,5 +414,5 @@ critic_report:
     summary: 'All four agents verified. Agent D brief corrected: extractTestRuns renamed to extractTestResults (actual function name in context.go line 277) after critic review.'
     reviewed_at: "2026-04-01T07:21:37Z"
     issue_count: 0
-state: SCOUT_PENDING
+state: "REVIEWED"
 injection_method: hook
