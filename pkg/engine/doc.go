@@ -78,4 +78,50 @@
 //	}
 //
 // See docs/reference/architecture.md for engine flow and examples/library-usage/ for complete examples.
+//
+// # Step Pipeline
+//
+// Step functions are the individual units of work inside PrepareWave and
+// FinalizeWave. Each exported Step* function (e.g. StepVerifyCommits,
+// StepRunGates, StepMergeAgents) follows a common signature:
+//
+//	func StepMyStep(ctx context.Context, opts FinalizeWaveOpts,
+//	    manifest *protocol.IMPLManifest,
+//	    onEvent EventCallback) (*StepResult, *protocol.MyStepData, error)
+//
+// Every step: takes a context, the wave options struct (FinalizeWaveOpts or
+// PrepareWaveOpts), the loaded manifest, and an EventCallback; returns a
+// *StepResult, an optional typed data pointer (e.g. *protocol.VerifyCommitsData),
+// and an error. Steps emit events via EventCallback at start ("running") and at
+// completion ("complete" or "failed"). All steps are nil-safe with respect to
+// EventCallback — the callback may be nil and steps guard before calling.
+//
+// FinalizeWave assembles the finalize pipeline (~15 steps, including
+// StepGoWorkRestore) and PrepareWave assembles the prepare pipeline (~14 steps,
+// including StepGoWorkSetup). Both pipelines stop on the first fatal error and
+// return a partial result so callers can inspect which step failed. Individual
+// steps are exported and callable independently for testing, CLI integration
+// (sawtools finalize-wave --step-by-step), or custom orchestration.
+//
+// EventCallback is the single extension point that separates CLI and web
+// behavior without branching in the engine:
+//   - CLI: passes a callback that prints step name and status to stdout
+//   - Web app: passes a callback that publishes SSE events to connected browser clients
+//   - Tests / programmatic use: may pass nil (all steps guard nil before calling)
+//
+// This pattern means the engine has no import of CLI or web packages; the caller
+// injects behavior.
+//
+// To add a new step:
+//  1. Add the step function to finalize_steps.go (for finalize pipeline) or
+//     prepare.go (for prepare pipeline) following the signature pattern above.
+//  2. Call emitStepEvent(onEvent, stepName, "running", "") at the start and
+//     emitStepEvent(onEvent, stepName, "complete"|"failed", detail) at the end.
+//  3. Insert the call site in FinalizeWave (finalize.go) at the correct pipeline position.
+//  4. Write a doc comment following the pattern of existing steps: one sentence
+//     stating what the step checks, one sentence stating its fatality (fatal or
+//     non-fatal), and any relevant rule codes (E*, I*, M*, H*) in parentheses.
+//
+// Note: StepGoWorkSetup and StepGoWorkRestore will be added by the
+// IMPL-gowork-lsp-setup wave. Their doc comments will be written as part of that wave.
 package engine
