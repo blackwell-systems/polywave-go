@@ -57,9 +57,11 @@ type PrepareWaveOpts struct {
 	// NOT commit user code changes. Intended for program-context prepare-wave
 	// calls where the orchestrator manages SAW state between waves.
 	CommitState bool
-	// NoGoWork disables the gowork_setup step in PrepareWave.
-	// Use when go.work management conflicts with an existing workspace setup.
+	// Deprecated: use NoWorkspaceSetup. Will be removed in a future version.
 	NoGoWork bool
+	// NoWorkspaceSetup disables all WorkspaceManager setup steps in PrepareWave.
+	// Replaces the deprecated NoGoWork field.
+	NoWorkspaceSetup bool
 	// OnEvent is the event callback fired at each step transition. nil is safe.
 	OnEvent EventCallback
 	// Logger is an optional structured logger. nil falls back to slog.Default().

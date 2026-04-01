@@ -11,6 +11,7 @@ import (
 	"github.com/blackwell-systems/scout-and-wave-go/internal/git"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/collision"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/deps"
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/engine/workspace"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/gatecache"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/journal"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
@@ -614,14 +615,14 @@ func PrepareWave(ctx context.Context, opts PrepareWaveOpts) (*PrepareWaveResult,
 	recordStep(res, opts.OnEvent, "create_worktrees", "success",
 		fmt.Sprintf("created %d worktree(s)", len(worktreeResult.Worktrees)))
 
-	// Step: gowork_setup — create/update go.work for LSP cross-package resolution
-	if !opts.NoGoWork {
-		goworkResult := StepGoWorkSetup(ctx, projectRoot, opts.WaveNum, worktreeResult.Worktrees, opts.OnEvent, opts.Logger)
-		if goworkResult != nil {
-			recordStepWithData(res, opts.OnEvent, goworkResult.Step, goworkResult.Status, goworkResult.Detail, goworkResult.Data)
+	// Step: workspace_setup — configure all detected language workspace files for LSP resolution
+	if !opts.NoWorkspaceSetup && !opts.NoGoWork {
+		wsResult := workspace.DetectAndSetup(ctx, projectRoot, opts.WaveNum, worktreeResult.Worktrees, opts.OnEvent, opts.Logger)
+		if wsResult != nil {
+			recordStep(res, opts.OnEvent, wsResult.Step, wsResult.Status, wsResult.Detail)
 		}
 	} else {
-		recordStep(res, opts.OnEvent, "gowork_setup", "skipped", "--no-gowork flag set")
+		recordStep(res, opts.OnEvent, "workspace_setup", "skipped", "--no-workspace-setup flag set")
 	}
 
 	// Step: Verify pre-commit hooks (H10)
