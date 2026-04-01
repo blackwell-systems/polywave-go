@@ -21,6 +21,7 @@ func newPrepareWaveCmd() *cobra.Command {
 	var jsonOnly bool
 	var skipCritic bool
 	var noGoWork bool
+	var noWorkspaceSetup bool
 
 	cmd := &cobra.Command{
 		Use:   "prepare-wave <manifest-path>",
@@ -87,15 +88,16 @@ to fail with a descriptive error.`,
 
 			// Build engine options
 			opts := engine.PrepareWaveOpts{
-				IMPLPath:       manifestPath,
-				RepoPath:       projectRoot,
-				WaveNum:        waveNum,
-				MergeTarget:    mergeTarget,
-				NoCache:        noCache,
-				CommitBaseline: commitBaseline,
-				CommitState:    commitState,
-				NoGoWork:       noGoWork,
-				Logger:         newSawLogger(),
+				IMPLPath:         manifestPath,
+				RepoPath:         projectRoot,
+				WaveNum:          waveNum,
+				MergeTarget:      mergeTarget,
+				NoCache:          noCache,
+				CommitBaseline:   commitBaseline,
+				CommitState:      commitState,
+				NoGoWork:         noGoWork,
+				NoWorkspaceSetup: noWorkspaceSetup || noGoWork,
+				Logger:           newSawLogger(),
 				OnEvent: func(step string, status string, detail string) {
 					if !jsonOnly {
 						fmt.Fprintf(os.Stderr, "prepare-wave: [%s] %s — %s\n", step, status, detail)
@@ -145,6 +147,8 @@ to fail with a descriptive error.`,
 	cmd.Flags().BoolVar(&jsonOnly, "json-only", false, "Suppress progress messages (only output JSON result)")
 	cmd.Flags().BoolVar(&skipCritic, "skip-critic", false, "Auto-skip E37 critic gate if no critic report exists")
 	cmd.Flags().BoolVar(&noGoWork, "no-gowork", false, "Skip go.work setup for LSP cross-package resolution (Go repos only)")
+	cmd.Flags().BoolVar(&noWorkspaceSetup, "no-workspace-setup", false,
+		"Skip all WorkspaceManager setup (go.work, tsconfig.json, Cargo.toml, pyrightconfig.json)")
 
 	return cmd
 }
