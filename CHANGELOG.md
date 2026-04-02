@@ -4,6 +4,37 @@ All notable changes to the Scout-and-Wave Go engine will be documented in this f
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [Unreleased]
+
+### Added
+- `TestAllCodesAreUnique` in `codes_test.go` — exhaustive uniqueness check across all ~220 exported constants
+- `CodeDispatchNoAdapters`/`CodeDispatchAllFailed` added to the naming pattern test in `codes_test.go`
+- `Q001-Q099` and `R001-R099` range entries added to `pkg/result` package doc comment
+- `CodeSessionSaveFailed = "N088_SESSION_SAVE_FAILED"` added to `pkg/result/codes.go`
+- `TestLoadAgentSessions_CorruptedJSON`, `TestClassifyWorktrees_LockedWorktree`, `TestDetectOrphanedWorktrees_LiveGitPath` new tests in `pkg/resume`
+- `pkg/engine/finalize.go` writes `.saw-state/wave{N}/branch-refs.json` before first step executes — enables mid-run failure recovery by recording branch tip SHAs
+
+### Changed
+- `pkg/result/codes.go`: `CodeDispatchNoAdapters` value renamed from `"DISPATCH_NO_ADAPTERS"` to `"N086_DISPATCH_NO_ADAPTERS"`
+- `pkg/result/codes.go`: `CodeDispatchAllFailed` value renamed from `"DISPATCH_ALL_FAILED"` to `"N087_DISPATCH_ALL_FAILED"`
+- `pkg/result/codes.go`: `TestNCodesFollowNamingPattern` regex strengthened to `^[A-Z][0-9]{3}_[A-Z0-9_]+$`
+- `NewPartial` `warnings` parameter renamed to `errs` (doc-only change)
+- `pkg/resume`: `LoadAgentSessions` return type changed from `(map[string]AgentSession, error)` to `result.Result[map[string]AgentSession]`
+- `pkg/resume`: `Detect` and `DetectWithConfig` return types changed from `([]SessionState, error)` to `result.Result[[]SessionState]`
+- `pkg/resume`: All 5 inline `result.SAWError{Code: "SESSION_SAVE_FAILED", ...}` literals in `SaveAgentSession` replaced with `result.NewFatal(result.CodeSessionSaveFailed, ...).WithContext(...).WithCause(err)` builder pattern
+- `pkg/resume`: `ClassifyWorktrees` error return removed (was always nil; callers already discarded it)
+- `pkg/resume`: Inlined `loggerFrom` and `branchViaSymbolicRef` private helpers (one-use abstractions)
+- `pkg/resume`: Local variable `result` in `ClassifyWorktrees` renamed to `classified`
+- `pkg/resume`: Removed duplicate `manifest.Waves` walk in `buildActionAndCommandInternal` — now receives pre-computed `failed []string`
+- `pkg/resume`: Fixed macOS symlink path mismatch in `detectLockedWorktreePaths`/`isWorktreeDirty` (`/private/var` vs `/var`) by applying `filepath.EvalSymlinks` normalization
+- `pkg/resume`: Updated callers `cmd/sawtools/resume_detect_cmd.go` and `pkg/engine/prepare.go` for new return types
+- `pkg/collision/detector.go`: Skip files deleted in an agent branch instead of returning fatal error — fixes `finalize-wave` failure when an agent's task is to delete a file
+- `cmd/sawtools/validate_briefs_cmd.go`: Set `SilenceUsage: true` — prevents cobra from appending usage text after JSON output on validation failure, fixing `TestValidateBriefsCmd_InvalidBriefs`
+
+### Removed
+- Deleted dead `SV01-SV05` scaffold validation const block from `pkg/result/codes.go` (zero callers; migrated to V036-V038 in a prior release)
+- Deleted `pkg/result/errors.go` — `Errorf` and `WrapCode` had zero non-test callers; use `result.NewFatal(...).WithCause(err)` instead
+
 ## Version History
 
 | Version | Date | Headline |
