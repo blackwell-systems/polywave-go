@@ -31,31 +31,18 @@ func SaveAgentSession(stateDir string, slug string, session AgentSession) result
 	sessionsDir := filepath.Join(stateDir, "sessions")
 	if err := os.MkdirAll(sessionsDir, 0o755); err != nil {
 		return result.NewFailure[SaveSessionData]([]result.SAWError{
-			{
-				Code:     "SESSION_SAVE_FAILED",
-				Message:  fmt.Sprintf("resume.SaveAgentSession: creating sessions dir: %v", err),
-				Severity: "fatal",
-				Context:  map[string]string{"slug": slug},
-				Cause:    err,
-			},
+			result.NewFatal(result.CodeSessionSaveFailed, fmt.Sprintf("resume.SaveAgentSession: creating sessions dir: %v", err)).WithContext("slug", slug).WithCause(err),
 		})
 	}
 
 	dest := sessionsFilePath(stateDir, slug)
 
 	// Read existing file if present.
-	existing, err := LoadAgentSessions(stateDir, slug)
-	if err != nil {
-		return result.NewFailure[SaveSessionData]([]result.SAWError{
-			{
-				Code:     "SESSION_SAVE_FAILED",
-				Message:  fmt.Sprintf("resume.SaveAgentSession: loading existing sessions: %v", err),
-				Severity: "fatal",
-				Context:  map[string]string{"slug": slug},
-				Cause:    err,
-			},
-		})
+	loadRes := LoadAgentSessions(stateDir, slug)
+	if !loadRes.IsSuccess() {
+		return result.NewFailure[SaveSessionData](loadRes.Errors)
 	}
+	existing := loadRes.GetData()
 
 	// Add or update the entry for this agent.
 	existing[session.AgentID] = session
@@ -63,13 +50,7 @@ func SaveAgentSession(stateDir string, slug string, session AgentSession) result
 	data, err := json.MarshalIndent(existing, "", "  ")
 	if err != nil {
 		return result.NewFailure[SaveSessionData]([]result.SAWError{
-			{
-				Code:     "SESSION_SAVE_FAILED",
-				Message:  fmt.Sprintf("resume.SaveAgentSession: marshalling JSON: %v", err),
-				Severity: "fatal",
-				Context:  map[string]string{"slug": slug},
-				Cause:    err,
-			},
+			result.NewFatal(result.CodeSessionSaveFailed, fmt.Sprintf("resume.SaveAgentSession: marshalling JSON: %v", err)).WithContext("slug", slug).WithCause(err),
 		})
 	}
 
@@ -77,13 +58,7 @@ func SaveAgentSession(stateDir string, slug string, session AgentSession) result
 	tmp := dest + ".tmp"
 	if err := os.WriteFile(tmp, data, 0o644); err != nil {
 		return result.NewFailure[SaveSessionData]([]result.SAWError{
-			{
-				Code:     "SESSION_SAVE_FAILED",
-				Message:  fmt.Sprintf("resume.SaveAgentSession: writing temp file: %v", err),
-				Severity: "fatal",
-				Context:  map[string]string{"slug": slug},
-				Cause:    err,
-			},
+			result.NewFatal(result.CodeSessionSaveFailed, fmt.Sprintf("resume.SaveAgentSession: writing temp file: %v", err)).WithContext("slug", slug).WithCause(err),
 		})
 	}
 
@@ -91,13 +66,7 @@ func SaveAgentSession(stateDir string, slug string, session AgentSession) result
 		// Clean up temp file on failure.
 		_ = os.Remove(tmp)
 		return result.NewFailure[SaveSessionData]([]result.SAWError{
-			{
-				Code:     "SESSION_SAVE_FAILED",
-				Message:  fmt.Sprintf("resume.SaveAgentSession: renaming temp file: %v", err),
-				Severity: "fatal",
-				Context:  map[string]string{"slug": slug},
-				Cause:    err,
-			},
+			result.NewFatal(result.CodeSessionSaveFailed, fmt.Sprintf("resume.SaveAgentSession: renaming temp file: %v", err)).WithContext("slug", slug).WithCause(err),
 		})
 	}
 
@@ -108,27 +77,31 @@ func SaveAgentSession(stateDir string, slug string, session AgentSession) result
 }
 
 // LoadAgentSessions loads agent sessions from .saw-state/sessions/{slug}.json.
-// Returns an empty map (not an error) if the file does not exist.
-// Returns an error only on I/O or JSON parse failures.
-func LoadAgentSessions(stateDir string, slug string) (map[string]AgentSession, error) {
+// Returns a successful Result with an empty map when the file does not exist.
+// Returns a fatal Result with CodeSessionSaveFailed on I/O or JSON parse failures.
+func LoadAgentSessions(stateDir string, slug string) result.Result[map[string]AgentSession] {
 	path := sessionsFilePath(stateDir, slug)
 
 	data, err := os.ReadFile(path)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return map[string]AgentSession{}, nil
+			return result.NewSuccess(map[string]AgentSession{})
 		}
-		return nil, fmt.Errorf("resume.LoadAgentSessions: reading %s: %w", path, err)
+		return result.NewFailure[map[string]AgentSession]([]result.SAWError{
+			result.NewFatal(result.CodeSessionSaveFailed, fmt.Sprintf("resume.LoadAgentSessions: reading %s: %v", path, err)).WithContext("slug", slug).WithCause(err),
+		})
 	}
 
 	var sessions map[string]AgentSession
 	if err := json.Unmarshal(data, &sessions); err != nil {
-		return nil, fmt.Errorf("resume.LoadAgentSessions: parsing %s: %w", path, err)
+		return result.NewFailure[map[string]AgentSession]([]result.SAWError{
+			result.NewFatal(result.CodeSessionSaveFailed, fmt.Sprintf("resume.LoadAgentSessions: parsing %s: %v", path, err)).WithContext("slug", slug).WithCause(err),
+		})
 	}
 
 	if sessions == nil {
 		sessions = map[string]AgentSession{}
 	}
 
-	return sessions, nil
+	return result.NewSuccess(sessions)
 }
