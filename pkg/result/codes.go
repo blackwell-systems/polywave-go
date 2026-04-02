@@ -12,6 +12,7 @@
 //	T001-T099: Tool/parse errors (errparse output, tool runner failures)
 //	S001-S099: Suitability error codes
 //	C001-C099: Collision detection errors
+//	K001-K099: Cache errors (gatecache operations)
 //	I001-I099: Agent ID generation errors
 //	D001-D099: Dependency check errors (lock file parsing, missing deps)
 //	E001-E099: Command extraction errors (workflow/package parsing, toolchain detection)
@@ -286,6 +287,22 @@ const (
 	CodeCollisionContextCancelled   = "C009_CONTEXT_CANCELLED"
 	CodeCollisionBranchNotFound     = "C010_BRANCH_NOT_FOUND"
 	CodeCollisionInvalidInput       = "C011_INVALID_INPUT"
+)
+
+// Cache error codes (K001-K099)
+const (
+	// CodeCacheMiss is emitted when Get finds no entry or entry is expired
+	CodeCacheMiss = "K001_CACHE_MISS"
+	// CodeCacheBuildKeyFailed is emitted when BuildKey/BuildKeyForGate fails
+	CodeCacheBuildKeyFailed = "K002_CACHE_BUILD_KEY_FAILED"
+	// CodeCachePutFailed is emitted when Put fails to save cache to disk
+	CodeCachePutFailed = "K003_CACHE_PUT_FAILED"
+	// CodeCacheInvalidateFailed is emitted when Invalidate fails to remove cache file
+	CodeCacheInvalidateFailed = "K004_CACHE_INVALIDATE_FAILED"
+	// CodeCachePutCancelled is emitted when Put is cancelled via context
+	CodeCachePutCancelled = "K005_CACHE_PUT_CANCELLED"
+	// CodeCacheInvalidateCancelled is emitted when Invalidate is cancelled
+	CodeCacheInvalidateCancelled = "K006_CACHE_INVALIDATE_CANCELLED"
 )
 
 // Scaffold validation error codes (SV01-SV10)
