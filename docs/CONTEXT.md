@@ -340,3 +340,5 @@ type BackendConfig struct {
   - IMPL doc: docs/IMPL/complete/IMPL-idgen-review-fixes.yaml
 - **hooks-review-fixes**: completed 2026-04-01, 1 waves, 4 agents
   - IMPL doc: docs/IMPL/complete/IMPL-hooks-review-fixes.yaml
+- **collision-review-findings**: completed 2026-04-01, 1 waves, 3 agents
+  - IMPL doc: docs/IMPL/complete/IMPL-collision-review-findings.yaml
