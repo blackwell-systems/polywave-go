@@ -1,3 +1,4 @@
+completion_date: "2026-04-01"
 title: Fix pkg/hooks Code Review Findings
 feature_slug: hooks-review-fixes
 verdict: SUITABLE
@@ -332,6 +333,7 @@ waves:
             - Import `strings` package if needed for `strings.Contains` assertions
           files:
             - pkg/hooks/prelaunch_gate_test.go
+      base_commit: 287a40466438c54bc469d7a17f8ad4211f48785b
 quality_gates:
     level: standard
     gates:
@@ -344,6 +346,44 @@ quality_gates:
         - type: test
           command: go test ./pkg/hooks -timeout 120s
           required: true
+completion_reports:
+    A:
+        status: complete
+        branch: saw/hooks-review-fixes/wave1-agent-A
+        commit: 1c6fd5d
+        files_changed:
+            - pkg/hooks/scout_boundaries.go
+        verification: PASS
+        notes: 'Fixed both code review findings: (1) Replaced hardcoded ''SCOUT_BOUNDARY_VIOLATION'' strings on lines 69 and 77 with result.CodeScoutBoundaryViolation constant. (2) Added error handling for filepath.Rel() on line 50 - now uses absolute path as fallback if relative path computation fails. Build and vet pass. Out-of-scope dependency: pkg/hooks/scout_boundaries_test.go (Agent C) must update test assertions to use result.CodeScoutBoundaryViolation constant value ''N021_SCOUT_BOUNDARY_VIOLATION'' instead of old hardcoded string.'
+    B:
+        status: complete
+        branch: saw/hooks-review-fixes/wave1-agent-B
+        commit: 6889cb1
+        files_changed:
+            - pkg/hooks/prelaunch_gate.go
+            - pkg/hooks/prelaunch_gate_test.go
+        verification: PASS
+        notes: Migrated PreLaunchGate to Result[T] pattern. Added doc comment explaining function is not yet integrated (Finding 6). Updated all 16 test functions to use Result[T] unwrapping. All tests passing. Build, vet, and test gates pass.
+    C:
+        status: complete
+        branch: saw/hooks-review-fixes/wave1-agent-C
+        commit: 25ad83e
+        files_changed:
+            - pkg/hooks/scout_boundaries_test.go
+        tests_added:
+            - TestValidateScoutWrites/WalkError_returns_Fatal
+        verification: PASS
+        notes: Added test for filepath.Walk error handling in ValidateScoutWrites. Test triggers Walk error by passing a file instead of directory as repoPath. All verification gates pass.
+    D:
+        status: complete
+        branch: saw/hooks-review-fixes/wave1-agent-D
+        commit: ee4c119
+        files_changed:
+            - pkg/hooks/prelaunch_gate_test.go
+        tests_added:
+            - TestPreLaunchGate_CriticFailed
+        verification: PASS
+        notes: Added test case for critic verdict ISSUES. Test verifies Ready=false and critic_review status=fail when CriticReport.Verdict is ISSUES with IssueCount > 0. All verification gates passed.
 pre_mortem:
     overall_risk: low
     rows:
@@ -374,8 +414,8 @@ critic_report:
         D:
             agent_id: D
             verdict: PASS
-    summary: 'Verified 4 agents across 4 files. All checks passed. Files exist, line numbers are accurate, and all symbols (CodeScoutBoundaryViolation, CodeDisjointOwnership, E37Required, AllScaffoldsCommitted, CriticVerdictIssues, Result[T] API) are correct. Ready for wave execution.'
+    summary: Verified 4 agents across 4 files. All checks passed. Files exist, line numbers are accurate, and all symbols (CodeScoutBoundaryViolation, CodeDisjointOwnership, E37Required, AllScaffoldsCommitted, CriticVerdictIssues, Result[T] API) are correct. Ready for wave execution.
     reviewed_at: "2026-04-01T18:20:37Z"
     issue_count: 0
-state: "REVIEWED"
+state: COMPLETE
 injection_method: hook
