@@ -7,6 +7,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 ## [Unreleased]
 
 ### Added
+- `CodeInterviewSaveFailed = "N089_INTERVIEW_SAVE_FAILED"` and `CodeRequirementsWriteFailed = "N090_REQUIREMENTS_WRITE_FAILED"` added to `pkg/result/codes.go`
+- `StartData`, `ResumeData`, `AnswerData`, `CompileData` result payload structs added to `pkg/interview/types.go`; `SaveDocData` and `WriteReqData` moved from implementation files into `types.go`
+- 4 new tests in `pkg/interview`: `TestDeterministicManager_Compile`, `TestHandleBackCommand_ClearAllPhases`, `TestNextPhaseName_AllCases`, `TestResume_Complete`
 - `TestAllCodesAreUnique` in `codes_test.go` — exhaustive uniqueness check across all ~220 exported constants
 - `CodeDispatchNoAdapters`/`CodeDispatchAllFailed` added to the naming pattern test in `codes_test.go`
 - `Q001-Q099` and `R001-R099` range entries added to `pkg/result` package doc comment
@@ -15,6 +18,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - `pkg/engine/finalize.go` writes `.saw-state/wave{N}/branch-refs.json` before first step executes — enables mid-run failure recovery by recording branch tip SHAs
 
 ### Changed
+- `pkg/interview`: `Manager` interface — all 5 methods (`Start`, `Resume`, `Answer`, `Compile`, and `CompileToRequirements`) now return `result.Result[T]` instead of multi-return `(T, error)` tuples
+- `pkg/interview/compiler.go`: Removed `RegisterCompiler`, `compileFunc` package-level var, and `init()` — dead scaffolding from parallel compilation workaround; `Compile` now calls `WriteRequirementsFile` directly
+- `pkg/interview`: Removed `PreviewRequirements` wrapper function; callers use `CompileToRequirements` directly
+- `pkg/interview`: Removed `min(a, b int) int` helper shadowing Go 1.21+ builtin; replaced with builtin at call site
+- `pkg/interview`: `recalculatePhase` error return now propagated instead of written to `os.Stderr`
+- `pkg/interview/phase_questions.go`: `checkPhaseTransition` now returns `*result.SAWError` using `result.CodeInvalidState` (`V008_INVALID_STATE`)
+- `pkg/interview`: All inline `"INTERVIEW_SAVE_FAILED"` and `"REQUIREMENTS_WRITE_FAILED"` strings replaced with `result.CodeInterviewSaveFailed` and `result.CodeRequirementsWriteFailed` registered constants
+- `cmd/sawtools/interview_cmd.go`: Updated to unpack `result.Result[T]` at all Manager call sites; removed dead `capitalize` function (zero callers)
+- `pkg/interview`: Deleted duplicate `TestNewID_ReturnsIDAndNoError` test
 - `pkg/result/codes.go`: `CodeDispatchNoAdapters` value renamed from `"DISPATCH_NO_ADAPTERS"` to `"N086_DISPATCH_NO_ADAPTERS"`
 - `pkg/result/codes.go`: `CodeDispatchAllFailed` value renamed from `"DISPATCH_ALL_FAILED"` to `"N087_DISPATCH_ALL_FAILED"`
 - `pkg/result/codes.go`: `TestNCodesFollowNamingPattern` regex strengthened to `^[A-Z][0-9]{3}_[A-Z0-9_]+$`
