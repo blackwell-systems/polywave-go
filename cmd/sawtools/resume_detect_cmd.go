@@ -25,7 +25,10 @@ An empty array is written when no interrupted sessions are found.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			res := resume.Detect(cmd.Context(), repoDir)
 			if !res.IsSuccess() {
-				return fmt.Errorf("resume-detect: %v", res.Errors)
+				if len(res.Errors) > 0 {
+					return fmt.Errorf("resume-detect: %s", res.Errors[0].Message)
+				}
+				return fmt.Errorf("resume-detect: detection failed")
 			}
 			sessions := res.GetData()
 
