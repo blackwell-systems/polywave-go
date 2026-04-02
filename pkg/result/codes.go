@@ -11,6 +11,7 @@
 //	P001-P099: Protocol errors (invariant violations, execution rules)
 //	T001-T099: Tool/parse errors (errparse output, tool runner failures)
 //	S001-S099: Suitability error codes
+//	C001-C099: Collision detection errors
 //	I001-I099: Agent ID generation errors
 //	D001-D099: Dependency check errors (lock file parsing, missing deps)
 package result
@@ -266,6 +267,21 @@ const (
 	CodeSuitabilityFileReadFailed    = "S004_FILE_READ_FAILED"
 	CodeSuitabilityRequirementsRead  = "S005_REQUIREMENTS_READ"
 	CodeSuitabilityRequirementsParse = "S006_REQUIREMENTS_PARSE"
+)
+
+// Collision error codes (C001-C099)
+const (
+	CodeCollisionLoadManifestFailed = "C001_LOAD_MANIFEST_FAILED"
+	CodeCollisionInvalidWave        = "C002_INVALID_WAVE"
+	CodeCollisionGetFilesFailed     = "C003_GET_FILES_FAILED"
+	CodeCollisionExtractTypesFailed = "C004_EXTRACT_TYPES_FAILED"
+	CodeCollisionGitDiffFailed      = "C005_GIT_DIFF_FAILED"
+	CodeCollisionParseFailed        = "C006_PARSE_FAILED"
+	CodeCollisionKeyParseFailed     = "C007_KEY_PARSE_FAILED"
+	CodeCollisionGitShowFailed      = "C008_GIT_SHOW_FAILED"
+	CodeCollisionContextCancelled   = "C009_CONTEXT_CANCELLED"
+	CodeCollisionBranchNotFound     = "C010_BRANCH_NOT_FOUND"
+	CodeCollisionInvalidInput       = "C011_INVALID_INPUT"
 )
 
 // Scaffold validation error codes (SV01-SV10)
