@@ -133,7 +133,8 @@ func executeSingleGate(ctx context.Context, gate QualityGate, repoDir string, ca
 
 	// Check the cache first (only when we successfully built a key)
 	if cache != nil && cacheKey.HeadCommit != "" {
-		if cached, ok := cache.Get(ctx, cacheKey, gate.Type); ok {
+		if getResult := cache.Get(ctx, cacheKey, gate.Type); getResult.IsSuccess() {
+			cached := getResult.GetData().Result
 			skipReason := fmt.Sprintf("cached at SHA %s", cacheKey.HeadCommit)
 			log.Debug("protocol: gate skipped (cached)", "gate", gate.Type, "sha", cacheKey.HeadCommit)
 			return GateResult{

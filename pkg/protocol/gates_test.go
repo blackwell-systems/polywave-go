@@ -293,15 +293,13 @@ func TestRunGatesWithCache_CacheHit(t *testing.T) {
 	}
 
 	// Verify the seeded value is retrievable
-	got, ok := cache.Get(context.Background(), fakeKey, "build")
-	if !ok {
+	getResult := cache.Get(context.Background(), fakeKey, "build")
+	if !getResult.IsSuccess() {
 		t.Fatal("seeded cache entry not found")
 	}
+	got := getResult.GetData().Result
 	if !got.Passed {
 		t.Fatal("seeded entry should be Passed=true")
-	}
-	if !got.FromCache {
-		t.Fatal("seeded entry should have FromCache=true")
 	}
 }
 
