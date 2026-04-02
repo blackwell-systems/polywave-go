@@ -47,6 +47,13 @@ type CachedResult struct {
 	TTL       time.Duration `json:"-"`
 }
 
+// GetData wraps successful cache hits.
+type GetData struct {
+	Result    CachedResult `json:"result"`
+	Key       string       `json:"key"`        // hex hash of CacheKey
+	FromCache bool         `json:"from_cache"` // always true for Get
+}
+
 // PutData is returned on successful Put operations.
 type PutData struct {
 	Key       string    // hex of hashed CacheKey
@@ -60,8 +67,8 @@ type InvalidateData struct {
 }
 
 // IsExpired reports whether this cached result has exceeded its TTL.
-func (r *CachedResult) IsExpired() bool {
-	ttl := r.TTL
+func (r *CachedResult) IsExpired(cacheTTL time.Duration) bool {
+	ttl := cacheTTL
 	if ttl == 0 {
 		ttl = DefaultTTL
 	}
@@ -158,27 +165,35 @@ func (c *Cache) BuildKeyForGate(ctx context.Context, repoDir string, command str
 	return result.NewSuccess(key)
 }
 
-// Get returns the cached result for (key, gateType) if it exists and has not
-// expired. The returned CachedResult has its TTL field populated from the cache.
-func (c *Cache) Get(ctx context.Context, key CacheKey, gateType string) (*CachedResult, bool) {
+// Get returns the cached result for (key, gateType) if it exists and has not expired.
+// Returns Result[GetData] with code="CACHE_MISS" (non-fatal) on miss or expiry.
+func (c *Cache) Get(ctx context.Context, key CacheKey, gateType string) result.Result[GetData] {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 
 	h := hashKey(key)
 	inner, ok := c.entries[h]
 	if !ok {
-		return nil, false
+		return result.NewFailure[GetData]([]result.SAWError{
+			result.NewWarning("CACHE_MISS", "cache entry not found or expired"),
+		})
 	}
 	r, ok := inner[gateType]
 	if !ok {
-		return nil, false
+		return result.NewFailure[GetData]([]result.SAWError{
+			result.NewWarning("CACHE_MISS", "cache entry not found or expired"),
+		})
 	}
-	// Populate TTL for expiry check
-	r.TTL = c.ttl
-	if r.IsExpired() {
-		return nil, false
+	if r.IsExpired(c.ttl) {
+		return result.NewFailure[GetData]([]result.SAWError{
+			result.NewWarning("CACHE_MISS", "cache entry not found or expired"),
+		})
 	}
-	return &r, true
+	return result.NewSuccess(GetData{
+		Result:    r,
+		Key:       h,
+		FromCache: true,
+	})
 }
 
 // Put stores result under (key, gateType) and persists the cache to disk.
@@ -252,11 +267,11 @@ func (c *Cache) load(ctx context.Context) error {
 		if os.IsNotExist(err) {
 			return nil // No cache file yet; that's fine
 		}
-		return fmt.Errorf("gatecache: read cache file: %w", err)
+		return fmt.Errorf("CACHE_LOAD_FAILED: read cache file: %w", err)
 	}
 	var cf cacheFile
 	if err := json.Unmarshal(data, &cf); err != nil {
-		return fmt.Errorf("gatecache: parse cache file: %w", err)
+		return fmt.Errorf("CACHE_LOAD_FAILED: parse cache file: %w", err)
 	}
 	if cf.Entries != nil {
 		c.entries = cf.Entries
@@ -271,16 +286,16 @@ func (c *Cache) save(ctx context.Context) error {
 		return fmt.Errorf("gatecache: save cancelled: %w", err)
 	}
 	if err := os.MkdirAll(c.stateDir, 0755); err != nil {
-		return fmt.Errorf("gatecache: create state dir: %w", err)
+		return fmt.Errorf("CACHE_SAVE_FAILED: create state dir: %w", err)
 	}
 	cf := cacheFile{Entries: c.entries}
 	data, err := json.MarshalIndent(cf, "", "  ")
 	if err != nil {
-		return fmt.Errorf("gatecache: marshal cache: %w", err)
+		return fmt.Errorf("CACHE_SAVE_FAILED: marshal cache: %w", err)
 	}
 	path := filepath.Join(c.stateDir, cacheFileName)
 	if err := os.WriteFile(path, data, 0644); err != nil {
-		return fmt.Errorf("gatecache: write cache file: %w", err)
+		return fmt.Errorf("CACHE_SAVE_FAILED: write cache file: %w", err)
 	}
 	return nil
 }
