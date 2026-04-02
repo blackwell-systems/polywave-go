@@ -24,6 +24,11 @@ type PreLaunchResult struct {
 }
 
 // PreLaunchGate validates all preconditions before launching a wave agent.
+//
+// NOTE: This function is not yet integrated into the wave preparation flow.
+// It was built as a defense-in-depth validation layer but remains unused.
+// Consider integration into `sawtools prepare-wave` or removal if not needed by Q3 2026.
+//
 // Parameters:
 //
 //	manifest  - parsed IMPL manifest
@@ -46,8 +51,8 @@ func PreLaunchGate(
 	agentID string,
 	repoRoot string,
 	wtPath string,
-) *PreLaunchResult {
-	result := &PreLaunchResult{
+) result.Result[PreLaunchResult] {
+	data := &PreLaunchResult{
 		Checks: make([]PreLaunchCheck, 0, 7),
 	}
 
@@ -55,36 +60,45 @@ func PreLaunchGate(
 	validationErrs := protocol.Validate(manifest)
 
 	// 1. Validation
-	result.Checks = append(result.Checks, checkManifestValidation(validationErrs))
+	data.Checks = append(data.Checks, checkManifestValidation(validationErrs))
 
 	// 2. Wave exists
-	result.Checks = append(result.Checks, checkWaveExists(manifest, waveNum, agentID))
+	data.Checks = append(data.Checks, checkWaveExists(manifest, waveNum, agentID))
 
 	// 3. Agent exists
-	result.Checks = append(result.Checks, checkAgentExists(manifest, waveNum, agentID))
+	data.Checks = append(data.Checks, checkAgentExists(manifest, waveNum, agentID))
 
 	// 4. Worktree branch
-	result.Checks = append(result.Checks, checkWorktreeBranch(manifest, waveNum, agentID, wtPath))
+	data.Checks = append(data.Checks, checkWorktreeBranch(manifest, waveNum, agentID, wtPath))
 
 	// 5. Scaffolds committed
-	result.Checks = append(result.Checks, checkScaffoldsCommitted(manifest))
+	data.Checks = append(data.Checks, checkScaffoldsCommitted(manifest))
 
 	// 6. Ownership disjoint (I1)
-	result.Checks = append(result.Checks, checkOwnershipDisjoint(validationErrs))
+	data.Checks = append(data.Checks, checkOwnershipDisjoint(validationErrs))
 
 	// 7. Critic review
-	result.Checks = append(result.Checks, checkCriticReviewRequired(manifest))
+	data.Checks = append(data.Checks, checkCriticReviewRequired(manifest))
 
 	// Ready is true only if no check has status "fail"
-	result.Ready = true
-	for _, check := range result.Checks {
+	data.Ready = true
+	var errors []result.SAWError
+	for _, check := range data.Checks {
 		if check.Status == "fail" {
-			result.Ready = false
-			break
+			data.Ready = false
+			errors = append(errors, result.SAWError{
+				Code:     result.CodeWaveNotReady,
+				Severity: "error",
+				Message:  fmt.Sprintf("%s: %s", check.Name, check.Message),
+			})
 		}
 	}
 
-	return result
+	// Return based on failure state
+	if len(errors) > 0 {
+		return result.NewPartial(*data, errors)
+	}
+	return result.NewSuccess(*data)
 }
 
 func checkManifestValidation(errs []result.SAWError) PreLaunchCheck {

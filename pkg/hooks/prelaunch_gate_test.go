@@ -35,7 +35,12 @@ func validManifest() *protocol.IMPLManifest {
 
 func TestPreLaunchGate_AllPass(t *testing.T) {
 	m := validManifest()
-	result := PreLaunchGate(m, 1, "A", "/tmp/repo", "")
+	res := PreLaunchGate(m, 1, "A", "/tmp/repo", "")
+
+	if !res.IsSuccess() && !res.IsPartial() {
+		t.Errorf("PreLaunchGate failed: %v", res.Errors)
+	}
+	result := res.GetData()
 
 	if !result.Ready {
 		t.Errorf("expected Ready=true, got false")
@@ -54,7 +59,12 @@ func TestPreLaunchGate_AllPass(t *testing.T) {
 
 func TestPreLaunchGate_MissingWave(t *testing.T) {
 	m := validManifest()
-	result := PreLaunchGate(m, 99, "A", "/tmp/repo", "")
+	res := PreLaunchGate(m, 99, "A", "/tmp/repo", "")
+
+	if !res.IsSuccess() && !res.IsPartial() {
+		t.Errorf("PreLaunchGate failed: %v", res.Errors)
+	}
+	result := res.GetData()
 
 	if result.Ready {
 		t.Errorf("expected Ready=false for missing wave")
@@ -76,7 +86,12 @@ func TestPreLaunchGate_MissingWave(t *testing.T) {
 
 func TestPreLaunchGate_MissingAgent(t *testing.T) {
 	m := validManifest()
-	result := PreLaunchGate(m, 1, "Z", "/tmp/repo", "")
+	res := PreLaunchGate(m, 1, "Z", "/tmp/repo", "")
+
+	if !res.IsSuccess() && !res.IsPartial() {
+		t.Errorf("PreLaunchGate failed: %v", res.Errors)
+	}
+	result := res.GetData()
 
 	if result.Ready {
 		t.Errorf("expected Ready=false for missing agent")
@@ -98,7 +113,12 @@ func TestPreLaunchGate_UncommittedScaffolds(t *testing.T) {
 	m.Scaffolds = []protocol.ScaffoldFile{
 		{FilePath: "pkg/types.go", Status: "pending"},
 	}
-	result := PreLaunchGate(m, 1, "A", "/tmp/repo", "")
+	res := PreLaunchGate(m, 1, "A", "/tmp/repo", "")
+
+	if !res.IsSuccess() && !res.IsPartial() {
+		t.Errorf("PreLaunchGate failed: %v", res.Errors)
+	}
+	result := res.GetData()
 
 	if result.Ready {
 		t.Errorf("expected Ready=false for uncommitted scaffolds")
@@ -121,7 +141,12 @@ func TestPreLaunchGate_AllAgentsCompleted(t *testing.T) {
 		"A": {Status: "complete", Commit: "abc1234", Branch: "saw/test-feature/wave1-agent-A"},
 		"B": {Status: "complete", Commit: "def5678", Branch: "saw/test-feature/wave1-agent-B"},
 	}
-	result := PreLaunchGate(m, 1, "A", "/tmp/repo", "")
+	res := PreLaunchGate(m, 1, "A", "/tmp/repo", "")
+
+	if !res.IsSuccess() && !res.IsPartial() {
+		t.Errorf("PreLaunchGate failed: %v", res.Errors)
+	}
+	result := res.GetData()
 
 	// Should still be "ready" (warn, not fail) but wave_exists should warn
 	for _, c := range result.Checks {
@@ -142,7 +167,12 @@ func TestPreLaunchGate_I1Violation(t *testing.T) {
 		{File: "pkg/foo/bar.go", Agent: "A", Wave: 1},
 		{File: "pkg/foo/bar.go", Agent: "B", Wave: 1},
 	}
-	result := PreLaunchGate(m, 1, "A", "/tmp/repo", "")
+	res := PreLaunchGate(m, 1, "A", "/tmp/repo", "")
+
+	if !res.IsSuccess() && !res.IsPartial() {
+		t.Errorf("PreLaunchGate failed: %v", res.Errors)
+	}
+	result := res.GetData()
 
 	if result.Ready {
 		t.Errorf("expected Ready=false for I1 violation")
@@ -169,7 +199,12 @@ func TestPreLaunchGate_CriticRequired(t *testing.T) {
 		File: "pkg/foo/qux.go", Agent: "C", Wave: 1,
 	})
 
-	result := PreLaunchGate(m, 1, "A", "/tmp/repo", "")
+	res := PreLaunchGate(m, 1, "A", "/tmp/repo", "")
+
+	if !res.IsSuccess() && !res.IsPartial() {
+		t.Errorf("PreLaunchGate failed: %v", res.Errors)
+	}
+	result := res.GetData()
 
 	if result.Ready {
 		t.Errorf("expected Ready=false when critic review required but missing")
@@ -198,7 +233,12 @@ func TestPreLaunchGate_CriticPassed(t *testing.T) {
 		Verdict: protocol.CriticVerdictPass,
 	}
 
-	result := PreLaunchGate(m, 1, "A", "/tmp/repo", "")
+	res := PreLaunchGate(m, 1, "A", "/tmp/repo", "")
+
+	if !res.IsSuccess() && !res.IsPartial() {
+		t.Errorf("PreLaunchGate failed: %v", res.Errors)
+	}
+	result := res.GetData()
 
 	for _, c := range result.Checks {
 		if c.Name == "critic_review" {
@@ -253,7 +293,12 @@ func TestPreLaunchGate_WorktreeBranch(t *testing.T) {
 	}
 
 	m := validManifest()
-	result := PreLaunchGate(m, 1, "A", "/tmp/repo", dir)
+	res := PreLaunchGate(m, 1, "A", "/tmp/repo", dir)
+
+	if !res.IsSuccess() && !res.IsPartial() {
+		t.Errorf("PreLaunchGate failed: %v", res.Errors)
+	}
+	result := res.GetData()
 
 	for _, c := range result.Checks {
 		if c.Name == "worktree_branch" {
@@ -300,7 +345,12 @@ func TestPreLaunchGate_WorktreeBranchMismatch(t *testing.T) {
 
 	// Stay on default branch (wrong branch)
 	m := validManifest()
-	result := PreLaunchGate(m, 1, "A", "/tmp/repo", dir)
+	res := PreLaunchGate(m, 1, "A", "/tmp/repo", dir)
+
+	if !res.IsSuccess() && !res.IsPartial() {
+		t.Errorf("PreLaunchGate failed: %v", res.Errors)
+	}
+	result := res.GetData()
 
 	for _, c := range result.Checks {
 		if c.Name == "worktree_branch" {
@@ -315,7 +365,12 @@ func TestPreLaunchGate_WorktreeBranchMismatch(t *testing.T) {
 
 func TestPreLaunchGate_WorktreeNonexistent(t *testing.T) {
 	m := validManifest()
-	result := PreLaunchGate(m, 1, "A", "/tmp/repo", "/nonexistent/path/that/does/not/exist")
+	res := PreLaunchGate(m, 1, "A", "/tmp/repo", "/nonexistent/path/that/does/not/exist")
+
+	if !res.IsSuccess() && !res.IsPartial() {
+		t.Errorf("PreLaunchGate failed: %v", res.Errors)
+	}
+	result := res.GetData()
 
 	for _, c := range result.Checks {
 		if c.Name == "worktree_branch" {
@@ -335,7 +390,12 @@ func TestPreLaunchGate_ReadyOnlyFalseOnFail(t *testing.T) {
 		"A": {Status: "complete", Commit: "abc1234", Branch: "saw/test-feature/wave1-agent-A"},
 		"B": {Status: "complete", Commit: "def5678", Branch: "saw/test-feature/wave1-agent-B"},
 	}
-	result := PreLaunchGate(m, 1, "A", "/tmp/repo", "")
+	res := PreLaunchGate(m, 1, "A", "/tmp/repo", "")
+
+	if !res.IsSuccess() && !res.IsPartial() {
+		t.Errorf("PreLaunchGate failed: %v", res.Errors)
+	}
+	result := res.GetData()
 
 	// wave_exists should be "warn" but Ready should still be true
 	hasWarn := false
@@ -358,7 +418,12 @@ func TestPreLaunchGate_ReadyOnlyFalseOnFail(t *testing.T) {
 func TestPreLaunchGate_CheckNames(t *testing.T) {
 	// Verify all expected check names are present
 	m := validManifest()
-	result := PreLaunchGate(m, 1, "A", "/tmp/repo", "")
+	res := PreLaunchGate(m, 1, "A", "/tmp/repo", "")
+
+	if !res.IsSuccess() && !res.IsPartial() {
+		t.Errorf("PreLaunchGate failed: %v", res.Errors)
+	}
+	result := res.GetData()
 
 	expectedNames := []string{
 		"validation",
@@ -387,7 +452,12 @@ func TestPreLaunchGate_CommittedScaffoldsPass(t *testing.T) {
 	m.Scaffolds = []protocol.ScaffoldFile{
 		{FilePath: "pkg/types.go", Status: "committed"},
 	}
-	result := PreLaunchGate(m, 1, "A", "/tmp/repo", "")
+	res := PreLaunchGate(m, 1, "A", "/tmp/repo", "")
+
+	if !res.IsSuccess() && !res.IsPartial() {
+		t.Errorf("PreLaunchGate failed: %v", res.Errors)
+	}
+	result := res.GetData()
 
 	for _, c := range result.Checks {
 		if c.Name == "scaffolds_committed" {
@@ -404,7 +474,12 @@ func TestPreLaunchGate_MultiRepo_CriticRequired(t *testing.T) {
 	m := validManifest()
 	m.Repositories = []string{"/repo1", "/repo2"}
 
-	result := PreLaunchGate(m, 1, "A", "/tmp/repo", "")
+	res := PreLaunchGate(m, 1, "A", "/tmp/repo", "")
+
+	if !res.IsSuccess() && !res.IsPartial() {
+		t.Errorf("PreLaunchGate failed: %v", res.Errors)
+	}
+	result := res.GetData()
 
 	for _, c := range result.Checks {
 		if c.Name == "critic_review" {
@@ -419,7 +494,12 @@ func TestPreLaunchGate_MultiRepo_CriticRequired(t *testing.T) {
 
 func TestPreLaunchGate_AgentExistsWhenWaveMissing(t *testing.T) {
 	m := validManifest()
-	result := PreLaunchGate(m, 99, "A", "/tmp/repo", "")
+	res := PreLaunchGate(m, 99, "A", "/tmp/repo", "")
+
+	if !res.IsSuccess() && !res.IsPartial() {
+		t.Errorf("PreLaunchGate failed: %v", res.Errors)
+	}
+	result := res.GetData()
 
 	for _, c := range result.Checks {
 		if c.Name == "agent_exists" {
