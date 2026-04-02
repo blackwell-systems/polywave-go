@@ -24,7 +24,7 @@ func (w *mockWorkshop) Register(tool Tool) result.Result[RegisterData] {
 	if _, exists := w.tools[tool.Name]; exists {
 		return result.NewFailure[RegisterData]([]result.SAWError{
 			{
-				Code:     "TOOL_ALREADY_REGISTERED",
+				Code:     result.CodeToolAlreadyRegistered,
 				Message:  "tool already registered: " + tool.Name,
 				Severity: "fatal",
 				Context:  map[string]string{"tool_name": tool.Name},
@@ -153,8 +153,8 @@ func TestRegisterDuplicate(t *testing.T) {
 	if len(res2.Errors) == 0 {
 		t.Fatal("Expected errors in Fatal result")
 	}
-	if res2.Errors[0].Code != "TOOL_ALREADY_REGISTERED" {
-		t.Errorf("Expected error code TOOL_ALREADY_REGISTERED, got %s", res2.Errors[0].Code)
+	if res2.Errors[0].Code != result.CodeToolAlreadyRegistered {
+		t.Errorf("Expected error code %s, got %s", result.CodeToolAlreadyRegistered, res2.Errors[0].Code)
 	}
 }
 
