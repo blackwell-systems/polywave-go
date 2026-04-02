@@ -39,7 +39,7 @@ func (w *DefaultWorkshop) Register(tool Tool) result.Result[RegisterData] {
 	if _, exists := w.tools[tool.Name]; exists {
 		return result.NewFailure[RegisterData]([]result.SAWError{
 			{
-				Code:     "TOOL_ALREADY_REGISTERED",
+				Code:     result.CodeToolAlreadyRegistered,
 				Message:  fmt.Sprintf("tool %q already registered", tool.Name),
 				Severity: "fatal",
 				Context:  map[string]string{"tool_name": tool.Name},
