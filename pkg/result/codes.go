@@ -258,6 +258,9 @@ const (
 	CodeParsePanic   = "T002_PARSE_PANIC"
 	CodeToolNotFound = "T003_TOOL_NOT_FOUND"
 	CodeToolTimeout  = "T004_TOOL_TIMEOUT"
+	// CodeToolAlreadyRegistered is emitted when Workshop.Register receives
+	// a tool name that is already registered.
+	CodeToolAlreadyRegistered = "T005_TOOL_ALREADY_REGISTERED"
 )
 
 // Suitability error codes (S001-S099)
