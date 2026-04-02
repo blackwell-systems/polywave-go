@@ -11,6 +11,25 @@ import (
 	"strings"
 )
 
+// goKeywordsAndBuiltins is a package-level set of Go language keywords and
+// common builtins. Symbols in this set are filtered out of extractSymbols
+// output to avoid false-positive symbol_missing errors.
+var goKeywordsAndBuiltins = map[string]bool{
+	"error": true, "ctx": true, "err": true, "ok": true,
+	"func": true, "type": true, "const": true, "var": true,
+	"struct": true, "interface": true, "map": true, "chan": true,
+	"string": true, "int": true, "bool": true, "byte": true,
+	"rune": true, "nil": true, "true": true, "false": true,
+	"len": true, "cap": true, "make": true, "new": true,
+	"append": true, "copy": true, "close": true, "delete": true,
+	"panic": true, "recover": true, "print": true, "println": true,
+	"return": true, "range": true, "for": true, "if": true,
+	"else": true, "switch": true, "case": true, "default": true,
+	"break": true, "continue": true, "go": true, "defer": true,
+	"select": true, "import": true, "package": true,
+	"result": true, "context": true, "fmt": true,
+}
+
 // BriefValidationData is the structured result of ValidateBriefs.
 type BriefValidationData struct {
 	Valid        bool                       `json:"valid"`
@@ -89,6 +108,18 @@ func ValidateBriefs(ctx context.Context, implPath string) (BriefValidationData, 
 			var issues []BriefIssue
 			newFiles := agentNewFiles[agent.ID]
 			ownedFiles := agentFiles[agent.ID]
+
+			// If every owned file is action:new, skip symbol+line checks entirely.
+			// The agent is creating files from scratch; no symbols exist yet.
+			allNew := len(newFiles) > 0 && len(newFiles) == len(ownedFiles)
+			if allNew {
+				agentResults[agent.ID] = AgentBriefResult{
+					AgentID: agent.ID,
+					Passed:  true,
+					Issues:  nil,
+				}
+				continue
+			}
 
 			// Check symbol references.
 			symbols := extractSymbols(agent.Task)
@@ -212,6 +243,12 @@ func briefResolveFilePath(fo FileOwnership, defaultRepoRoot string) string {
 //   - Backtick-wrapped identifiers: `FuncName`, `TypeName`, `method()`
 //   - Code block declarations: type X struct, func Y(), const Z
 //
+// Three categories of false-positive symbols are filtered before returning:
+//  1. Package-qualified symbols (e.g. `result.NewFatal`) — skipped entirely.
+//  2. Go keywords and common builtins — see goKeywordsAndBuiltins.
+//  3. Deletion-context symbols — symbols that appear in a sentence containing
+//     a deletion verb ("delete", "remove", etc.).
+//
 // Returns unique symbol names (deduplicated).
 func extractSymbols(taskText string) []string {
 	seen := make(map[string]bool)
@@ -220,6 +257,10 @@ func extractSymbols(taskText string) []string {
 	addSymbol := func(s string) {
 		s = strings.TrimSuffix(s, "()")
 		s = strings.TrimSuffix(s, "(")
+		// Skip package-qualified references (e.g. result.NewFatal, fo.Action).
+		if strings.Contains(s, ".") {
+			return
+		}
 		if s != "" && !seen[s] {
 			seen[s] = true
 			symbols = append(symbols, s)
@@ -250,8 +291,69 @@ func extractSymbols(taskText string) []string {
 		addSymbol(m[1])
 	}
 
+	// Filter C — Build deletion-context exclusion set.
+	deletionVerbs := []string{"delete ", "remove ", "deleted ", "removing ",
+		"deleting ", "drop ", "Delete ", "Remove "}
+	deletionSymbols := make(map[string]bool)
+	sentences := splitSentences(taskText)
+	for _, sentence := range sentences {
+		hasDeletion := false
+		for _, verb := range deletionVerbs {
+			if strings.Contains(sentence, verb) {
+				hasDeletion = true
+				break
+			}
+		}
+		if hasDeletion {
+			for _, m := range reBacktickType.FindAllStringSubmatch(sentence, -1) {
+				deletionSymbols[m[1]] = true
+			}
+			for _, m := range reBacktickFunc.FindAllStringSubmatch(sentence, -1) {
+				sym := strings.TrimSuffix(m[1], "()")
+				sym = strings.TrimSuffix(sym, "(")
+				deletionSymbols[sym] = true
+			}
+		}
+	}
+
+	// Apply deletion filter.
+	var afterDeletion []string
+	for _, s := range symbols {
+		if !deletionSymbols[s] {
+			afterDeletion = append(afterDeletion, s)
+		}
+	}
+	symbols = afterDeletion
+
+	// Filter B — Remove Go keywords and common builtins.
+	var filtered []string
+	for _, s := range symbols {
+		if !goKeywordsAndBuiltins[s] {
+			filtered = append(filtered, s)
+		}
+	}
+	symbols = filtered
+
 	sort.Strings(symbols)
 	return symbols
+}
+
+// splitSentences splits text into sentences for deletion-context detection.
+// Splits on ". ", ".\n", and bare newlines.
+func splitSentences(text string) []string {
+	// Normalize line endings, then split on sentence boundaries.
+	text = strings.ReplaceAll(text, ".\n", ". ")
+	parts := strings.Split(text, ". ")
+	var sentences []string
+	for _, p := range parts {
+		for _, line := range strings.Split(p, "\n") {
+			line = strings.TrimSpace(line)
+			if line != "" {
+				sentences = append(sentences, line)
+			}
+		}
+	}
+	return sentences
 }
 
 // extractLineReferences parses task text for line number mentions.

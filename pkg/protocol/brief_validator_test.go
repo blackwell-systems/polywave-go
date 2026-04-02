@@ -346,6 +346,124 @@ waves:
 	}
 }
 
+func TestExtractSymbols_PackageQualifiedSkipped(t *testing.T) {
+	taskText := "Call `result.NewFatal` and `fo.Action` from the handler. Also use `ValidSymbol`."
+	symbols := extractSymbols(taskText)
+	for _, s := range symbols {
+		if strings.Contains(s, ".") {
+			t.Errorf("package-qualified symbol %q should be filtered out", s)
+		}
+	}
+	found := false
+	for _, s := range symbols {
+		if s == "ValidSymbol" {
+			found = true
+		}
+	}
+	if !found {
+		t.Error("expected ValidSymbol (unqualified) to be retained")
+	}
+}
+
+func TestExtractSymbols_GoKeywordsFiltered(t *testing.T) {
+	taskText := "Use `error`, `ctx`, `err`, `string`, `bool` and `MyActualType`."
+	symbols := extractSymbols(taskText)
+	keywords := []string{"error", "ctx", "err", "string", "bool"}
+	for _, kw := range keywords {
+		for _, s := range symbols {
+			if s == kw {
+				t.Errorf("keyword %q should be filtered out of symbols", kw)
+			}
+		}
+	}
+	found := false
+	for _, s := range symbols {
+		if s == "MyActualType" {
+			found = true
+		}
+	}
+	if !found {
+		t.Error("expected MyActualType to be retained after keyword filter")
+	}
+}
+
+func TestExtractSymbols_DeletionContextSkipped(t *testing.T) {
+	taskText := "Delete `Errorf` and remove `WrapCode` from errors.go. Keep `ValidKeeper`."
+	symbols := extractSymbols(taskText)
+	for _, s := range symbols {
+		if s == "Errorf" {
+			t.Error("Errorf is in deletion context and should be skipped")
+		}
+		if s == "WrapCode" {
+			t.Error("WrapCode is in deletion context and should be skipped")
+		}
+	}
+	found := false
+	for _, s := range symbols {
+		if s == "ValidKeeper" {
+			found = true
+		}
+	}
+	if !found {
+		t.Error("expected ValidKeeper (not in deletion context) to be retained")
+	}
+}
+
+func TestValidateBriefs_AllNewFilesSkipped(t *testing.T) {
+	tmp := t.TempDir()
+
+	implContent := `title: All New Files Test
+feature_slug: all-new-test
+verdict: SUITABLE
+test_command: go test ./...
+lint_command: go vet ./...
+repository: ` + tmp + `
+file_ownership:
+  - file: pkg/newpkg/types.go
+    agent: D
+    wave: 1
+    action: new
+  - file: pkg/newpkg/handler.go
+    agent: D
+    wave: 1
+    action: new
+waves:
+  - number: 1
+    agents:
+      - id: D
+        task: |
+          Create ` + "`" + `NewService` + "`" + ` and ` + "`" + `BrandNewType` + "`" + ` in pkg/newpkg/types.go.
+          Also add ` + "`" + `HandleRequest` + "`" + ` in pkg/newpkg/handler.go.
+        files:
+          - pkg/newpkg/types.go
+          - pkg/newpkg/handler.go
+`
+	implPath := filepath.Join(tmp, "IMPL-all-new.yaml")
+	if err := os.WriteFile(implPath, []byte(implContent), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	ctx := t.Context()
+	result, err := ValidateBriefs(ctx, implPath)
+	if err != nil {
+		t.Fatalf("ValidateBriefs returned error: %v", err)
+	}
+
+	agentD, ok := result.AgentResults["D"]
+	if !ok {
+		t.Fatal("expected result for agent D")
+	}
+
+	for _, issue := range agentD.Issues {
+		if issue.Check == "symbol_missing" {
+			t.Errorf("unexpected symbol_missing for all-new-file agent: %+v", issue)
+		}
+	}
+	if !agentD.Passed {
+		t.Errorf("expected all-new-file agent to pass, issues: %+v", agentD.Issues)
+	}
+}
+
 func TestValidateBriefs_MissingSymbol(t *testing.T) {
 	tmp := t.TempDir()
 
