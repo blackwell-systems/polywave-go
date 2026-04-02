@@ -16,6 +16,7 @@ import (
 
 	"github.com/blackwell-systems/scout-and-wave-go/internal/git"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
 )
 
 // SessionState describes the state of an interrupted SAW session.
@@ -56,7 +57,7 @@ type worktreeEntry struct {
 // skips manifests with state COMPLETE or NOT_SUITABLE, and returns a SessionState
 // for each manifest that appears to be in progress.
 // Detect is backward-compatible: it delegates to DetectWithConfig with a single repo.
-func Detect(ctx context.Context, repoPath string) ([]SessionState, error) {
+func Detect(ctx context.Context, repoPath string) result.Result[[]SessionState] {
 	return DetectWithConfig(ctx, []string{repoPath})
 }
 
@@ -65,9 +66,9 @@ func Detect(ctx context.Context, repoPath string) ([]SessionState, error) {
 // skips manifests with state COMPLETE or NOT_SUITABLE, and returns a SessionState
 // for each manifest that appears to be in progress.
 // Worktrees are scanned across ALL repos so that cross-repo worktrees are found.
-func DetectWithConfig(ctx context.Context, repoPaths []string) ([]SessionState, error) {
+func DetectWithConfig(ctx context.Context, repoPaths []string) result.Result[[]SessionState] {
 	if len(repoPaths) == 0 {
-		return []SessionState{}, nil
+		return result.NewSuccess([]SessionState{})
 	}
 
 	var sessions []SessionState
@@ -80,7 +81,11 @@ func DetectWithConfig(ctx context.Context, repoPaths []string) ([]SessionState, 
 			if os.IsNotExist(err) {
 				continue
 			}
-			return nil, fmt.Errorf("resume.DetectWithConfig: reading %s: %w", implDir, err)
+			return result.NewFailure[[]SessionState]([]result.SAWError{
+				result.NewFatal(result.CodeSessionSaveFailed,
+					fmt.Sprintf("resume.DetectWithConfig: reading %s: %v", implDir, err)).
+					WithContext("implDir", implDir).WithCause(err),
+			})
 		}
 
 		for _, entry := range entries {
@@ -127,7 +132,7 @@ func DetectWithConfig(ctx context.Context, repoPaths []string) ([]SessionState, 
 		sessions = []SessionState{}
 	}
 
-	return sessions, nil
+	return result.NewSuccess(sessions)
 }
 
 // buildSessionState constructs a SessionState from a loaded manifest.
@@ -168,7 +173,7 @@ func buildSessionState(repoPaths []string, implPath string, manifest *protocol.I
 	dirty := ClassifyWorktrees(orphaned, manifest, nil)
 
 	// Step 3: Build suggested action and resume command using dirty classification.
-	suggestedAction, resumeCommand := buildActionAndCommandInternal(implPath, manifest, orphaned, dirty, completed, currentWave)
+	suggestedAction, resumeCommand := buildActionAndCommandInternal(implPath, manifest, orphaned, dirty, completed, failed, currentWave)
 
 	// Progress percentage.
 	var progressPct float64
@@ -184,8 +189,8 @@ func buildSessionState(repoPaths []string, implPath string, manifest *protocol.I
 	var agentSessions map[string]AgentSession
 	if len(repoPaths) > 0 {
 		stateDir := protocol.SAWStateDir(repoPaths[0])
-		if loaded, err := LoadAgentSessions(stateDir, manifest.FeatureSlug); err == nil {
-			agentSessions = loaded
+		if loadRes := LoadAgentSessions(stateDir, manifest.FeatureSlug); loadRes.IsSuccess() {
+			agentSessions = loadRes.GetData()
 		}
 	}
 
@@ -279,22 +284,9 @@ func buildActionAndCommandInternal(
 	orphaned []string,
 	dirtyWorktrees []DirtyWorktree,
 	completed []string,
+	failed []string,
 	currentWave int,
 ) (string, string) {
-	// Collect failed agents from completion reports.
-	var failed []string
-	for _, wave := range manifest.Waves {
-		for _, agent := range wave.Agents {
-			report, exists := manifest.CompletionReports[agent.ID]
-			if !exists {
-				continue
-			}
-			if report.Status == protocol.StatusPartial || report.Status == protocol.StatusBlocked {
-				failed = append(failed, agent.ID)
-			}
-		}
-	}
-
 	switch {
 	case len(failed) > 0:
 		ids := strings.Join(failed, ", ")
