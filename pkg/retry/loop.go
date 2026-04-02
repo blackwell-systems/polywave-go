@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
 )
 
 // RetryLoop manages the E24 verification loop. When a quality gate fails after
@@ -106,7 +107,7 @@ func (rl *RetryLoop) Run(ctx context.Context, failedGate QualityGateFailure, onE
 	retrySlug := fmt.Sprintf("%s-retry-%d", parentSlug, rl.attempt)
 	retryIMPLPath, err := rl.saveRetryIMPL(retryManifest, retrySlug)
 	if err != nil {
-		return nil, fmt.Errorf("RetryLoop.Run: failed to save retry IMPL: %w", err)
+		return nil, result.WrapCode(err, result.CodeRetrySaveIMPLFailed, "failed to save retry IMPL")
 	}
 
 	finalState := "retrying"
@@ -143,15 +144,15 @@ func (rl *RetryLoop) GenerateRetryIMPL(failedFiles []string, gateOutput string) 
 func (rl *RetryLoop) saveRetryIMPL(m *protocol.IMPLManifest, slug string) (string, error) {
 	implDir := protocol.IMPLDir(rl.cfg.RepoPath)
 	if err := os.MkdirAll(implDir, 0755); err != nil {
-		return "", fmt.Errorf("saveRetryIMPL: cannot create %s: %w", implDir, err)
+		return "", result.WrapCode(err, result.CodeRetryIMPLDirCreateFailed, "cannot create IMPL dir %s", implDir)
 	}
 
 	absPath := protocol.IMPLPath(rl.cfg.RepoPath, slug)
 	if saveRes := protocol.Save(context.TODO(), m, absPath); saveRes.IsFatal() {
 		if len(saveRes.Errors) > 0 {
-			return "", fmt.Errorf("%s", saveRes.Errors[0].Message)
+			return "", result.Errorf(result.CodeRetrySaveIMPLFailed, "%s", saveRes.Errors[0].Message)
 		}
-		return "", fmt.Errorf("failed to save IMPL manifest")
+		return "", result.Errorf(result.CodeRetrySaveIMPLFailed, "failed to save IMPL manifest to %s", absPath)
 	}
 
 	// Return the path relative to RepoPath for portability.
