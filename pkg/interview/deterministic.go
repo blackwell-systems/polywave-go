@@ -14,11 +14,6 @@ import (
 )
 
 // SaveDocData holds metadata returned from a successful Save call.
-type SaveDocData struct {
-	DocPath   string
-	Timestamp time.Time
-}
-
 // DeterministicManager implements the Manager interface using a fixed question set.
 type DeterministicManager struct {
 	docsDir string

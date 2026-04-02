@@ -10,11 +10,6 @@ import (
 )
 
 // WriteReqData holds metadata returned from a successful WriteRequirementsFile call.
-type WriteReqData struct {
-	OutputPath string
-	LineCount  int
-}
-
 func init() {
 	RegisterCompiler(CompileToRequirements)
 }
