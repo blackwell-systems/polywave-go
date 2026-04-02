@@ -271,6 +271,69 @@ func TestNamespaceEmpty(t *testing.T) {
 	}
 }
 
+// TestDefaultWorkshopNamespace tests that DefaultWorkshop.Namespace() correctly filters
+// tools by prefix and returns them in sorted order.
+// This test uses NewWorkshop() to ensure the real implementation is tested, not just mocks.
+//
+// NOTE: As of 2026-04-01, Namespace() is not actively used in the codebase outside of tests.
+// This test preserves functionality for future namespace-based tool filtering features.
+func TestDefaultWorkshopNamespace(t *testing.T) {
+	workshop := NewWorkshop()
+
+	tools := []Tool{
+		{Name: "file:read", Description: "Read", Namespace: "file", Executor: &mockExecutor{}},
+		{Name: "file:write", Description: "Write", Namespace: "file", Executor: &mockExecutor{}},
+		{Name: "file:list", Description: "List", Namespace: "file", Executor: &mockExecutor{}},
+		{Name: "bash", Description: "Bash", Namespace: "bash", Executor: &mockExecutor{}},
+		{Name: "git:commit", Description: "Commit", Namespace: "git", Executor: &mockExecutor{}},
+	}
+
+	for _, tool := range tools {
+		res := workshop.Register(tool)
+		if !res.IsSuccess() {
+			t.Fatalf("Register %s failed: %v", tool.Name, res.Errors)
+		}
+	}
+
+	// Test file: namespace
+	fileTools := workshop.Namespace("file:")
+	if len(fileTools) != 3 {
+		t.Errorf("Expected 3 file: tools, got %d", len(fileTools))
+	}
+
+	// Verify sorted order
+	expectedFileOrder := []string{"file:list", "file:read", "file:write"}
+	for i, tool := range fileTools {
+		if tool.Name != expectedFileOrder[i] {
+			t.Errorf("file: tools[%d]: expected %s, got %s", i, expectedFileOrder[i], tool.Name)
+		}
+	}
+
+	// Test git: namespace
+	gitTools := workshop.Namespace("git:")
+	if len(gitTools) != 1 {
+		t.Errorf("Expected 1 git: tool, got %d", len(gitTools))
+	}
+	if len(gitTools) > 0 && gitTools[0].Name != "git:commit" {
+		t.Errorf("Expected git:commit, got %s", gitTools[0].Name)
+	}
+
+	// Test bash namespace (no colon)
+	bashTools := workshop.Namespace("bash")
+	if len(bashTools) != 1 {
+		t.Errorf("Expected 1 bash tool, got %d", len(bashTools))
+	}
+	if len(bashTools) > 0 && bashTools[0].Name != "bash" {
+		t.Errorf("Expected bash, got %s", bashTools[0].Name)
+	}
+
+	// Test nonexistent namespace
+	noneTools := workshop.Namespace("nonexistent:")
+	if len(noneTools) != 0 {
+		t.Errorf("Expected 0 tools for nonexistent namespace, got %d", len(noneTools))
+	}
+}
+
 // TestStandardToolsRegistration tests that StandardTools() registers all 4 tools with correct namespaces
 func TestStandardToolsRegistration(t *testing.T) {
 	// Create a mock workshop with standard tools manually registered

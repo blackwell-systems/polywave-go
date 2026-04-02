@@ -86,6 +86,10 @@ func (w *DefaultWorkshop) All() []Tool {
 // Namespace returns all tools whose names start with the given prefix,
 // sorted by name for determinism. This enables namespace filtering for
 // agent-specific tool subsets (e.g., "file:" for file tools).
+//
+// NOTE: As of 2026-04-01, this method is not actively used in the codebase
+// outside of tests. It is preserved for future namespace-based tool filtering
+// (e.g., per-agent tool restrictions beyond RolePathMiddleware).
 func (w *DefaultWorkshop) Namespace(prefix string) []Tool {
 	w.mu.RLock()
 	defer w.mu.RUnlock()
