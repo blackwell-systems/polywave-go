@@ -266,7 +266,11 @@ func TestPreLaunchGate_CriticFailed(t *testing.T) {
 		IssueCount: 3,
 	}
 
-	result := PreLaunchGate(m, 1, "A", "/tmp/repo", "")
+	res := PreLaunchGate(m, 1, "A", "/tmp/repo", "")
+	if !res.IsSuccess() && !res.IsPartial() {
+		t.Fatalf("PreLaunchGate failed: %v", res.Errors)
+	}
+	result := res.GetData()
 
 	if result.Ready {
 		t.Errorf("expected Ready=false when critic fails")

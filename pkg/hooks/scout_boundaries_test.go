@@ -93,8 +93,8 @@ func TestValidateScoutWrites(t *testing.T) {
 			t.Error("Expected Violations to be populated")
 		}
 		for _, v := range data.Violations {
-			if v.Code != "SCOUT_BOUNDARY_VIOLATION" {
-				t.Errorf("Expected error code SCOUT_BOUNDARY_VIOLATION, got %q", v.Code)
+			if v.Code != "N021_SCOUT_BOUNDARY_VIOLATION" {
+				t.Errorf("Expected error code N021_SCOUT_BOUNDARY_VIOLATION, got %q", v.Code)
 			}
 		}
 	})
@@ -224,8 +224,8 @@ func TestValidateScoutWrites(t *testing.T) {
 			t.Errorf("expected errors, got none")
 		}
 		// Check error code and message
-		if res.Errors[0].Code != "SCOUT_BOUNDARY_VIOLATION" {
-			t.Errorf("expected code SCOUT_BOUNDARY_VIOLATION, got %s", res.Errors[0].Code)
+		if res.Errors[0].Code != "N021_SCOUT_BOUNDARY_VIOLATION" {
+			t.Errorf("expected code N021_SCOUT_BOUNDARY_VIOLATION, got %s", res.Errors[0].Code)
 		}
 		if res.Errors[0].Message == "" {
 			t.Errorf("expected non-empty error message")
