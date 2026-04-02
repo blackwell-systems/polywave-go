@@ -25,7 +25,7 @@ const (
 type Config struct {
 	Level          Level `json:"level" yaml:"level"`
 	MaxAutoRetries int   `json:"max_auto_retries" yaml:"max_auto_retries"`
-	MaxQueueDepth  int   `json:"max_queue_depth" yaml:"max_queue_depth"`
+	MaxQueueDepth  int   `json:"max_queue_depth" yaml:"max_queue_depth"` // Reserved for future queue depth limiting; not currently enforced
 }
 
 // DefaultConfig returns the default autonomy configuration (gated level).
