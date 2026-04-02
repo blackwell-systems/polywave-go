@@ -1,5 +1,7 @@
 package commands
 
+import "github.com/blackwell-systems/scout-and-wave-go/pkg/result"
+
 // CommandSet represents extracted build/test/lint/format commands
 type CommandSet struct {
 	Toolchain        string
@@ -41,14 +43,24 @@ type Module struct {
 	FocusedRecommended bool
 }
 
+// ParseCIData wraps the result of ParseCI operation
+type ParseCIData struct {
+	CommandSet *CommandSet
+}
+
 // Parser interface for CI systems (GitHub Actions, GitLab CI, CircleCI)
 type CIParser interface {
-	ParseCI(repoRoot string) (*CommandSet, error)
+	ParseCI(repoRoot string) result.Result[ParseCIData]
 	Priority() int
+}
+
+// ParseBuildSystemData wraps the result of ParseBuildSystem operation
+type ParseBuildSystemData struct {
+	CommandSet *CommandSet
 }
 
 // Parser interface for build systems (Makefile, package.json, etc.)
 type BuildSystemParser interface {
-	ParseBuildSystem(repoRoot string) (*CommandSet, error)
+	ParseBuildSystem(repoRoot string) result.Result[ParseBuildSystemData]
 	Priority() int
 }

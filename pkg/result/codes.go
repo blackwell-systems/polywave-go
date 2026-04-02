@@ -14,6 +14,7 @@
 //	C001-C099: Collision detection errors
 //	I001-I099: Agent ID generation errors
 //	D001-D099: Dependency check errors (lock file parsing, missing deps)
+//	E001-E099: Command extraction errors (workflow/package parsing, toolchain detection)
 package result
 
 // Validation error codes (V001-V099)
@@ -316,5 +317,15 @@ const (
 	CodeDepGoModRead          = "D009_GOMOD_READ"
 	CodeDepGoModParse         = "D010_GOMOD_PARSE"
 	CodeDepRepoRootInvalid    = "D011_REPO_ROOT_INVALID"
+)
+
+// Command extraction error codes (E001-E099)
+const (
+	CodeCommandExtractWorkflowRead  = "E001_WORKFLOW_READ"
+	CodeCommandExtractWorkflowParse = "E002_WORKFLOW_PARSE"
+	CodeCommandExtractPackageRead   = "E003_PACKAGE_READ"
+	CodeCommandExtractPackageParse  = "E004_PACKAGE_PARSE"
+	CodeCommandExtractNoToolchain   = "E005_NO_TOOLCHAIN"
+	CodeCommandExtractCancelled     = "E006_EXTRACT_CANCELLED"
 )
 
