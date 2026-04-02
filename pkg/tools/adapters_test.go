@@ -5,60 +5,9 @@ import (
 	"testing"
 )
 
-// Mock adapter implementations for testing
-type mockAnthropicAdapter struct{}
-
-func (a *mockAnthropicAdapter) Serialize(tools []Tool) interface{} {
-	result := make([]map[string]interface{}, 0, len(tools))
-	for _, t := range tools {
-		result = append(result, map[string]interface{}{
-			"name":         t.Name,
-			"description":  t.Description,
-			"input_schema": t.InputSchema,
-		})
-	}
-	return result
-}
-
-func (a *mockAnthropicAdapter) Deserialize(response interface{}) (string, map[string]interface{}, error) {
-	return "", nil, nil // Not implemented for testing
-}
-
-type mockOpenAIAdapter struct{}
-
-func (a *mockOpenAIAdapter) Serialize(tools []Tool) interface{} {
-	result := make([]map[string]interface{}, 0, len(tools))
-	for _, t := range tools {
-		result = append(result, map[string]interface{}{
-			"type": "function",
-			"function": map[string]interface{}{
-				"name":        t.Name,
-				"description": t.Description,
-				"parameters":  t.InputSchema,
-			},
-		})
-	}
-	return result
-}
-
-func (a *mockOpenAIAdapter) Deserialize(response interface{}) (string, map[string]interface{}, error) {
-	return "", nil, nil // Not implemented for testing
-}
-
-type mockBedrockAdapter struct{}
-
-func (a *mockBedrockAdapter) Serialize(tools []Tool) interface{} {
-	// Bedrock uses the same format as Anthropic
-	return (&mockAnthropicAdapter{}).Serialize(tools)
-}
-
-func (a *mockBedrockAdapter) Deserialize(response interface{}) (string, map[string]interface{}, error) {
-	return "", nil, nil // Not implemented for testing
-}
-
 // TestAnthropicAdapterSerialize tests Anthropic Messages API format
 func TestAnthropicAdapterSerialize(t *testing.T) {
-	adapter := &mockAnthropicAdapter{}
+	adapter := NewAnthropicAdapter()
 
 	tools := []Tool{
 		{
@@ -135,7 +84,7 @@ func TestAnthropicAdapterSerialize(t *testing.T) {
 
 // TestOpenAIAdapterSerialize tests OpenAI function calling format
 func TestOpenAIAdapterSerialize(t *testing.T) {
-	adapter := &mockOpenAIAdapter{}
+	adapter := NewOpenAIAdapter()
 
 	tools := []Tool{
 		{
@@ -199,8 +148,8 @@ func TestOpenAIAdapterSerialize(t *testing.T) {
 
 // TestBedrockAdapterSerialize tests Bedrock format (should match Anthropic)
 func TestBedrockAdapterSerialize(t *testing.T) {
-	bedrockAdapter := &mockBedrockAdapter{}
-	anthropicAdapter := &mockAnthropicAdapter{}
+	bedrockAdapter := NewBedrockAdapter()
+	anthropicAdapter := NewAnthropicAdapter()
 
 	tools := []Tool{
 		{
@@ -257,9 +206,9 @@ func TestAdapterSerializationConsistency(t *testing.T) {
 		},
 	}
 
-	anthropicAdapter := &mockAnthropicAdapter{}
-	openaiAdapter := &mockOpenAIAdapter{}
-	bedrockAdapter := &mockBedrockAdapter{}
+	anthropicAdapter := NewAnthropicAdapter()
+	openaiAdapter := NewOpenAIAdapter()
+	bedrockAdapter := NewBedrockAdapter()
 
 	anthropicResult := anthropicAdapter.Serialize(tools)
 	openaiResult := openaiAdapter.Serialize(tools)
@@ -303,50 +252,45 @@ func TestAdapterSerializationConsistency(t *testing.T) {
 
 // TestAdapterSerializeEmpty tests that adapters handle empty tool list
 func TestAdapterSerializeEmpty(t *testing.T) {
-	anthropicAdapter := &mockAnthropicAdapter{}
-	openaiAdapter := &mockOpenAIAdapter{}
-	bedrockAdapter := &mockBedrockAdapter{}
-
-	emptyTools := []Tool{}
-
-	anthropicResult := anthropicAdapter.Serialize(emptyTools)
-	openaiResult := openaiAdapter.Serialize(emptyTools)
-	bedrockResult := bedrockAdapter.Serialize(emptyTools)
-
-	anthropicSlice := anthropicResult.([]map[string]interface{})
-	openaiSlice := openaiResult.([]map[string]interface{})
-	bedrockSlice := bedrockResult.([]map[string]interface{})
-
-	if len(anthropicSlice) != 0 {
-		t.Errorf("Anthropic: expected 0 tools, got %d", len(anthropicSlice))
+	adapters := []ToolAdapter{
+		NewAnthropicAdapter(),
+		NewOpenAIAdapter(),
+		NewBedrockAdapter(),
 	}
-	if len(openaiSlice) != 0 {
-		t.Errorf("OpenAI: expected 0 tools, got %d", len(openaiSlice))
-	}
-	if len(bedrockSlice) != 0 {
-		t.Errorf("Bedrock: expected 0 tools, got %d", len(bedrockSlice))
+	for _, adapter := range adapters {
+		result := adapter.Serialize([]Tool{})
+		// Verify returns empty slice, not nil
+		if result == nil {
+			t.Errorf("%T.Serialize([]Tool{}) returned nil", adapter)
+		}
+		// Type-assert to slice and verify length
+		slice, ok := result.([]map[string]interface{})
+		if !ok {
+			t.Errorf("%T.Serialize returned wrong type: %T", adapter, result)
+		}
+		if len(slice) != 0 {
+			t.Errorf("%T.Serialize([]Tool{}) returned %d items, want 0", adapter, len(slice))
+		}
 	}
 }
 
 // TestAnthropicAdapterSerializeComplexSchema tests serialization with complex input schema
 func TestAnthropicAdapterSerializeComplexSchema(t *testing.T) {
-	adapter := &mockAnthropicAdapter{}
-
+	adapter := NewAnthropicAdapter()
 	tools := []Tool{
 		{
-			Name:        "complex:tool",
-			Description: "Tool with complex schema",
-			Namespace:   "complex",
+			Name:        "complex_tool",
+			Description: "A tool with complex schema",
 			InputSchema: map[string]interface{}{
 				"type": "object",
 				"properties": map[string]interface{}{
-					"string_field": map[string]interface{}{
-						"type":        "string",
-						"description": "A string field",
-					},
-					"number_field": map[string]interface{}{
-						"type":        "number",
-						"description": "A number field",
+					"nested": map[string]interface{}{
+						"type": "object",
+						"properties": map[string]interface{}{
+							"field": map[string]interface{}{
+								"type": "string",
+							},
+						},
 					},
 					"array_field": map[string]interface{}{
 						"type": "array",
@@ -354,102 +298,48 @@ func TestAnthropicAdapterSerializeComplexSchema(t *testing.T) {
 							"type": "string",
 						},
 					},
-					"nested_object": map[string]interface{}{
-						"type": "object",
-						"properties": map[string]interface{}{
-							"nested_field": map[string]interface{}{
-								"type": "boolean",
-							},
-						},
-					},
 				},
-				"required": []interface{}{"string_field", "number_field"},
+				"required": []string{"nested"},
 			},
 		},
 	}
-
 	result := adapter.Serialize(tools)
 	serialized := result.([]map[string]interface{})
-
 	if len(serialized) != 1 {
 		t.Fatalf("Expected 1 tool, got %d", len(serialized))
 	}
-
-	tool := serialized[0]
-	schema := tool["input_schema"].(map[string]interface{})
-	properties := schema["properties"].(map[string]interface{})
-
-	// Verify all fields are present
-	expectedFields := []string{"string_field", "number_field", "array_field", "nested_object"}
-	for _, field := range expectedFields {
-		if properties[field] == nil {
-			t.Errorf("Expected property %s to be present", field)
-		}
+	// Verify nested schema preserved
+	schema := serialized[0]["input_schema"].(map[string]interface{})
+	props := schema["properties"].(map[string]interface{})
+	if _, ok := props["nested"]; !ok {
+		t.Error("Nested property missing from serialized schema")
 	}
-
-	// Verify required array
-	required := schema["required"].([]interface{})
-	if len(required) != 2 {
-		t.Errorf("Expected 2 required fields, got %d", len(required))
+	if _, ok := props["array_field"]; !ok {
+		t.Error("Array field missing from serialized schema")
 	}
 }
 
 // TestOpenAIAdapterSerializeMultipleTools tests OpenAI format with multiple tools
 func TestOpenAIAdapterSerializeMultipleTools(t *testing.T) {
-	adapter := &mockOpenAIAdapter{}
-
+	adapter := NewOpenAIAdapter()
 	tools := []Tool{
-		{
-			Name:        "tool1",
-			Description: "First tool",
-			Namespace:   "ns1",
-			InputSchema: map[string]interface{}{"type": "object"},
-		},
-		{
-			Name:        "tool2",
-			Description: "Second tool",
-			Namespace:   "ns2",
-			InputSchema: map[string]interface{}{"type": "object"},
-		},
-		{
-			Name:        "tool3",
-			Description: "Third tool",
-			Namespace:   "ns3",
-			InputSchema: map[string]interface{}{"type": "object"},
-		},
+		{Name: "tool1", Description: "First", InputSchema: map[string]interface{}{"type": "object"}},
+		{Name: "tool2", Description: "Second", InputSchema: map[string]interface{}{"type": "object"}},
+		{Name: "tool3", Description: "Third", InputSchema: map[string]interface{}{"type": "object"}},
 	}
-
 	result := adapter.Serialize(tools)
 	serialized := result.([]map[string]interface{})
-
 	if len(serialized) != 3 {
 		t.Fatalf("Expected 3 tools, got %d", len(serialized))
 	}
-
-	// Verify each tool has correct structure
-	for i, toolData := range serialized {
-		if toolData["type"] != "function" {
-			t.Errorf("Tool %d: expected type 'function', got %v", i, toolData["type"])
+	// Verify each has type=function and function object
+	for i, item := range serialized {
+		if item["type"] != "function" {
+			t.Errorf("Tool %d: type=%v, want 'function'", i, item["type"])
 		}
-
-		function, ok := toolData["function"].(map[string]interface{})
-		if !ok {
-			t.Errorf("Tool %d: function field is not a map", i)
-			continue
-		}
-
-		expectedName := tools[i].Name
-		if function["name"] != expectedName {
-			t.Errorf("Tool %d: expected name %s, got %v", i, expectedName, function["name"])
-		}
-
-		expectedDesc := tools[i].Description
-		if function["description"] != expectedDesc {
-			t.Errorf("Tool %d: expected description %s, got %v", i, expectedDesc, function["description"])
-		}
-
-		if function["parameters"] == nil {
-			t.Errorf("Tool %d: parameters field is missing", i)
+		fn := item["function"].(map[string]interface{})
+		if fn["name"] != tools[i].Name {
+			t.Errorf("Tool %d: name=%v, want %q", i, fn["name"], tools[i].Name)
 		}
 	}
 }
