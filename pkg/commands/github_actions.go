@@ -7,25 +7,46 @@ import (
 	"runtime"
 	"strings"
 
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
 	"gopkg.in/yaml.v3"
+)
+
+// Temporary local error code constants until Agent A's codes.go changes merge.
+// These duplicate Agent A's definitions in pkg/result/codes.go.
+// Post-merge: Integration Agent should remove these local definitions.
+const (
+	_localCodeCommandExtractWorkflowRead  = "E001_WORKFLOW_READ"
+	_localCodeCommandExtractWorkflowParse = "E002_WORKFLOW_PARSE"
 )
 
 // GithubActionsParser extracts commands from .github/workflows/*.yml files
 type GithubActionsParser struct{}
 
+// ParseCIData wraps the result of ParseCI operation
+type ParseCIData struct {
+	CommandSet *CommandSet
+}
+
+// ParseWorkflowData wraps the result of parseWorkflowFile operation
+type ParseWorkflowData struct {
+	Commands []string
+}
+
 // ParseCI implements CIParser interface
-func (p *GithubActionsParser) ParseCI(repoRoot string) (*CommandSet, error) {
+func (p *GithubActionsParser) ParseCI(repoRoot string) result.Result[ParseCIData] {
 	workflowsDir := filepath.Join(repoRoot, ".github", "workflows")
 
 	// Return nil (not error) when .github/workflows/ doesn't exist
 	if _, err := os.Stat(workflowsDir); os.IsNotExist(err) {
-		return nil, nil
+		return result.NewSuccess(ParseCIData{CommandSet: nil})
 	}
 
 	// Find all YAML workflow files
 	entries, err := os.ReadDir(workflowsDir)
 	if err != nil {
-		return nil, fmt.Errorf("reading workflows directory: %w", err)
+		return result.NewFailure[ParseCIData]([]result.SAWError{
+			result.NewFatal(_localCodeCommandExtractWorkflowRead, fmt.Sprintf("reading workflows directory: %v", err)),
+		})
 	}
 
 	var allCommands []string
@@ -41,11 +62,12 @@ func (p *GithubActionsParser) ParseCI(repoRoot string) (*CommandSet, error) {
 		}
 
 		workflowPath := filepath.Join(workflowsDir, name)
-		commands, err := p.parseWorkflowFile(workflowPath)
-		if err != nil {
+		r := p.parseWorkflowFile(workflowPath)
+		if r.IsFatal() {
 			// Skip malformed files rather than failing entirely
 			continue
 		}
+		commands := r.GetData().Commands
 
 		if len(commands) > 0 {
 			allCommands = append(allCommands, commands...)
@@ -54,7 +76,7 @@ func (p *GithubActionsParser) ParseCI(repoRoot string) (*CommandSet, error) {
 	}
 
 	if len(allCommands) == 0 {
-		return nil, nil
+		return result.NewSuccess(ParseCIData{CommandSet: nil})
 	}
 
 	// Classify commands into build/test/lint/format
@@ -65,7 +87,7 @@ func (p *GithubActionsParser) ParseCI(repoRoot string) (*CommandSet, error) {
 	cmdSet.Commands = p.classifyCommands(allCommands)
 	cmdSet.Toolchain = p.detectToolchain(allCommands)
 
-	return cmdSet, nil
+	return result.NewSuccess(ParseCIData{CommandSet: cmdSet})
 }
 
 // Priority returns 100 (higher than Makefile)
@@ -74,10 +96,12 @@ func (p *GithubActionsParser) Priority() int {
 }
 
 // parseWorkflowFile parses a single GitHub Actions workflow file
-func (p *GithubActionsParser) parseWorkflowFile(path string) ([]string, error) {
+func (p *GithubActionsParser) parseWorkflowFile(path string) result.Result[ParseWorkflowData] {
 	data, err := os.ReadFile(path)
 	if err != nil {
-		return nil, fmt.Errorf("reading workflow file: %w", err)
+		return result.NewFailure[ParseWorkflowData]([]result.SAWError{
+			result.NewFatal(_localCodeCommandExtractWorkflowRead, fmt.Sprintf("reading workflow file %s: %v", path, err)),
+		})
 	}
 
 	var workflow struct {
@@ -93,7 +117,9 @@ func (p *GithubActionsParser) parseWorkflowFile(path string) ([]string, error) {
 
 	// Cannot use protocol.LoadYAML: data is already-read bytes from the caller, not a file path.
 	if err := yaml.Unmarshal(data, &workflow); err != nil {
-		return nil, fmt.Errorf("parsing YAML: %w", err)
+		return result.NewFailure[ParseWorkflowData]([]result.SAWError{
+			result.NewFatal(_localCodeCommandExtractWorkflowParse, fmt.Sprintf("parsing YAML in %s: %v", path, err)),
+		})
 	}
 
 	var commands []string
@@ -148,7 +174,7 @@ func (p *GithubActionsParser) parseWorkflowFile(path string) ([]string, error) {
 		}
 	}
 
-	return commands, nil
+	return result.NewSuccess(ParseWorkflowData{Commands: commands})
 }
 
 // classifyCommands categorizes commands by pattern matching

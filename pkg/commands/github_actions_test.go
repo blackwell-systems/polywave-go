@@ -38,11 +38,12 @@ jobs:
 	}
 
 	parser := &GithubActionsParser{}
-	cmdSet, err := parser.ParseCI(tmpDir)
-	if err != nil {
-		t.Fatalf("ParseCI failed: %v", err)
+	r := parser.ParseCI(tmpDir)
+	if r.IsFatal() {
+		t.Fatalf("ParseCI failed: %v", r.Errors)
 	}
 
+	cmdSet := r.GetData().CommandSet
 	if cmdSet == nil {
 		t.Fatal("expected non-nil CommandSet")
 	}
@@ -116,11 +117,12 @@ jobs:
 	}
 
 	parser := &GithubActionsParser{}
-	cmdSet, err := parser.ParseCI(tmpDir)
-	if err != nil {
-		t.Fatalf("ParseCI failed: %v", err)
+	r := parser.ParseCI(tmpDir)
+	if r.IsFatal() {
+		t.Fatalf("ParseCI failed: %v", r.Errors)
 	}
 
+	cmdSet := r.GetData().CommandSet
 	if cmdSet == nil {
 		t.Fatal("expected non-nil CommandSet")
 	}
@@ -139,12 +141,13 @@ func TestGithubActionsParser_NoWorkflows(t *testing.T) {
 	tmpDir := t.TempDir()
 
 	parser := &GithubActionsParser{}
-	cmdSet, err := parser.ParseCI(tmpDir)
-	if err != nil {
-		t.Fatalf("ParseCI failed: %v", err)
+	r := parser.ParseCI(tmpDir)
+	if r.IsFatal() {
+		t.Fatalf("ParseCI failed: %v", r.Errors)
 	}
 
-	// Should return nil (not error) when directory doesn't exist
+	// Should return nil CommandSet (not error) when directory doesn't exist
+	cmdSet := r.GetData().CommandSet
 	if cmdSet != nil {
 		t.Errorf("expected nil CommandSet when workflows directory absent, got %+v", cmdSet)
 	}
@@ -174,14 +177,15 @@ jobs:
 	}
 
 	parser := &GithubActionsParser{}
-	cmdSet, err := parser.ParseCI(tmpDir)
+	r := parser.ParseCI(tmpDir)
 
 	// Should not fail - malformed files are skipped
-	if err != nil {
-		t.Fatalf("ParseCI should not fail on malformed YAML: %v", err)
+	if r.IsFatal() {
+		t.Fatalf("ParseCI should not fail on malformed YAML: %v", r.Errors)
 	}
 
-	// Should return nil since no valid workflows found
+	// Should return nil CommandSet since no valid workflows found
+	cmdSet := r.GetData().CommandSet
 	if cmdSet != nil {
 		t.Error("expected nil CommandSet when only malformed workflows present")
 	}
@@ -226,11 +230,12 @@ jobs:
 	}
 
 	parser := &GithubActionsParser{}
-	cmdSet, err := parser.ParseCI(tmpDir)
-	if err != nil {
-		t.Fatalf("ParseCI failed: %v", err)
+	r := parser.ParseCI(tmpDir)
+	if r.IsFatal() {
+		t.Fatalf("ParseCI failed: %v", r.Errors)
 	}
 
+	cmdSet := r.GetData().CommandSet
 	if cmdSet == nil {
 		t.Fatal("expected non-nil CommandSet")
 	}
@@ -286,11 +291,12 @@ jobs:
 	}
 
 	parser := &GithubActionsParser{}
-	cmdSet, err := parser.ParseCI(tmpDir)
-	if err != nil {
-		t.Fatalf("ParseCI failed: %v", err)
+	r := parser.ParseCI(tmpDir)
+	if r.IsFatal() {
+		t.Fatalf("ParseCI failed: %v", r.Errors)
 	}
 
+	cmdSet := r.GetData().CommandSet
 	if cmdSet == nil {
 		t.Fatal("expected non-nil CommandSet")
 	}
@@ -334,11 +340,12 @@ jobs:
 	}
 
 	parser := &GithubActionsParser{}
-	cmdSet, err := parser.ParseCI(tmpDir)
-	if err != nil {
-		t.Fatalf("ParseCI failed: %v", err)
+	r := parser.ParseCI(tmpDir)
+	if r.IsFatal() {
+		t.Fatalf("ParseCI failed: %v", r.Errors)
 	}
 
+	cmdSet := r.GetData().CommandSet
 	if cmdSet == nil {
 		t.Fatal("expected non-nil CommandSet")
 	}
@@ -415,11 +422,12 @@ jobs:
 			}
 
 			parser := &GithubActionsParser{}
-			cmdSet, err := parser.ParseCI(tmpDir)
-			if err != nil {
-				t.Fatalf("ParseCI failed: %v", err)
+			r := parser.ParseCI(tmpDir)
+			if r.IsFatal() {
+				t.Fatalf("ParseCI failed: %v", r.Errors)
 			}
 
+			cmdSet := r.GetData().CommandSet
 			if cmdSet == nil {
 				t.Fatal("expected non-nil CommandSet")
 			}
