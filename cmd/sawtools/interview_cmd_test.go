@@ -2,7 +2,6 @@ package main
 
 import (
 	"bytes"
-	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -31,7 +30,7 @@ func newMockManager(docsDir string) *mockManager {
 	}
 }
 
-func (m *mockManager) Start(cfg interview.InterviewConfig) (*interview.InterviewDoc, *interview.InterviewQuestion, error) {
+func (m *mockManager) Start(cfg interview.InterviewConfig) result.Result[interview.StartData] {
 	doc := &interview.InterviewDoc{
 		ID:             "test-id",
 		Slug:           "test-feature",
@@ -42,16 +41,19 @@ func (m *mockManager) Start(cfg interview.InterviewConfig) (*interview.Interview
 		UpdatedAt:      time.Now(),
 		Phase:          interview.PhaseOverview,
 		QuestionCursor: 0,
-		MaxQuestions:    len(m.questions),
+		MaxQuestions:   len(m.questions),
 	}
-	return doc, m.questions[0], nil
+	return result.NewSuccess(interview.StartData{Doc: doc, Question: m.questions[0]})
 }
 
-func (m *mockManager) Resume(docPath string) (*interview.InterviewDoc, *interview.InterviewQuestion, error) {
-	return nil, nil, fmt.Errorf("resume not implemented in mock")
+func (m *mockManager) Resume(docPath string) result.Result[interview.ResumeData] {
+	return result.NewFailure[interview.ResumeData]([]result.SAWError{
+		result.NewFatal(result.CodeInterviewSaveFailed, "resume not implemented in mock").
+			WithContext("path", docPath),
+	})
 }
 
-func (m *mockManager) Answer(doc *interview.InterviewDoc, answer string) (*interview.InterviewDoc, *interview.InterviewQuestion, error) {
+func (m *mockManager) Answer(doc *interview.InterviewDoc, answer string) result.Result[interview.AnswerData] {
 	doc.History = append(doc.History, interview.InterviewTurn{
 		TurnNumber: len(doc.History) + 1,
 		Phase:      doc.Phase,
@@ -65,33 +67,37 @@ func (m *mockManager) Answer(doc *interview.InterviewDoc, answer string) (*inter
 	if doc.QuestionCursor >= len(m.questions) {
 		doc.Status = "complete"
 		doc.Phase = interview.PhaseComplete
-		return doc, nil, nil
+		return result.NewSuccess(interview.AnswerData{Doc: doc, Question: nil})
 	}
 	next := m.questions[doc.QuestionCursor]
 	doc.Phase = next.Phase
-	return doc, next, nil
+	return result.NewSuccess(interview.AnswerData{Doc: doc, Question: next})
 }
 
-func (m *mockManager) Compile(doc *interview.InterviewDoc, outputPath string) (string, error) {
+func (m *mockManager) Compile(doc *interview.InterviewDoc, outputPath string) result.Result[interview.CompileData] {
 	content := "# REQUIREMENTS\n\nGenerated from interview.\n"
 	if err := os.MkdirAll(filepath.Dir(outputPath), 0o755); err != nil {
-		return "", err
+		return result.NewFailure[interview.CompileData]([]result.SAWError{
+			result.NewFatal(result.CodeRequirementsWriteFailed, err.Error()).WithContext("path", outputPath).WithCause(err),
+		})
 	}
 	if err := os.WriteFile(outputPath, []byte(content), 0o644); err != nil {
-		return "", err
+		return result.NewFailure[interview.CompileData]([]result.SAWError{
+			result.NewFatal(result.CodeRequirementsWriteFailed, err.Error()).WithContext("path", outputPath).WithCause(err),
+		})
 	}
-	return outputPath, nil
+	return result.NewSuccess(interview.CompileData{OutputPath: outputPath})
 }
 
 func (m *mockManager) Save(doc *interview.InterviewDoc, docPath string) result.Result[interview.SaveDocData] {
 	if err := os.MkdirAll(filepath.Dir(docPath), 0o755); err != nil {
 		return result.NewFailure[interview.SaveDocData]([]result.SAWError{
-			result.NewFatal("INTERVIEW_SAVE_FAILED", err.Error()).WithContext("path", docPath).WithCause(err),
+			result.NewFatal(result.CodeInterviewSaveFailed, err.Error()).WithContext("path", docPath).WithCause(err),
 		})
 	}
 	if err := os.WriteFile(docPath, []byte("mock interview doc"), 0o644); err != nil {
 		return result.NewFailure[interview.SaveDocData]([]result.SAWError{
-			result.NewFatal("INTERVIEW_SAVE_FAILED", err.Error()).WithContext("path", docPath).WithCause(err),
+			result.NewFatal(result.CodeInterviewSaveFailed, err.Error()).WithContext("path", docPath).WithCause(err),
 		})
 	}
 	return result.NewSuccess(interview.SaveDocData{DocPath: docPath})

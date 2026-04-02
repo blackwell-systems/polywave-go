@@ -67,7 +67,6 @@ Examples:
 			var (
 				doc      *interview.InterviewDoc
 				question *interview.InterviewQuestion
-				err      error
 			)
 
 			if resumePath != "" {
@@ -79,22 +78,28 @@ Examples:
 				if _, statErr := os.Stat(absResume); os.IsNotExist(statErr) {
 					return fmt.Errorf("resume file not found: %s", absResume)
 				}
-				doc, question, err = mgr.Resume(absResume)
-				if err != nil {
-					return fmt.Errorf("failed to resume interview: %w", err)
+				resumeResult := mgr.Resume(absResume)
+				if resumeResult.IsFatal() {
+					return fmt.Errorf("failed to resume interview: %v", resumeResult.Errors)
 				}
+				resumeData := resumeResult.GetData()
+				doc = resumeData.Doc
+				question = resumeData.Question
 			} else {
 				// Start new interview
 				cfg := interview.InterviewConfig{
-					Description: description,
-					Mode:        interview.InterviewMode(mode),
+					Description:  description,
+					Mode:         interview.InterviewMode(mode),
 					MaxQuestions: maxQuestions,
-					ProjectPath: projectPath,
+					ProjectPath:  projectPath,
 				}
-				doc, question, err = mgr.Start(cfg)
-				if err != nil {
-					return fmt.Errorf("failed to start interview: %w", err)
+				startResult := mgr.Start(cfg)
+				if startResult.IsFatal() {
+					return fmt.Errorf("failed to start interview: %v", startResult.Errors)
 				}
+				startData := startResult.GetData()
+				doc = startData.Doc
+				question = startData.Question
 			}
 
 			// Resolve output path
@@ -110,9 +115,9 @@ Examples:
 				if !nonInteractive {
 					// Show preview before final confirmation
 					if question.FieldName == "_confirm" {
-						preview, previewErr := interview.PreviewRequirements(doc)
-						if previewErr == nil {
-							fmt.Fprintf(writer, "\n--- Preview of REQUIREMENTS.md ---\n%s\n", preview)
+						previewResult := interview.CompileToRequirements(doc)
+						if !previewResult.IsFatal() && previewResult.Data != nil {
+							fmt.Fprintf(writer, "\n--- Preview of REQUIREMENTS.md ---\n%s\n", *previewResult.Data)
 						}
 					}
 
@@ -138,10 +143,13 @@ Examples:
 				answer := reader.Text()
 
 				// Record the answer and get next question
-				doc, question, err = mgr.Answer(doc, answer)
-				if err != nil {
-					return fmt.Errorf("failed to record answer: %w", err)
+				ansResult := mgr.Answer(doc, answer)
+				if ansResult.IsFatal() {
+					return fmt.Errorf("failed to record answer: %v", ansResult.Errors)
 				}
+				ansData := ansResult.GetData()
+				doc = ansData.Doc
+				question = ansData.Question
 
 				// Save state after each turn
 				docPath := interviewDocPath(docsDir, doc.Slug)
@@ -151,10 +159,11 @@ Examples:
 			}
 
 			// Interview complete — compile to REQUIREMENTS.md
-			outPath, compileErr := mgr.Compile(doc, outputPath)
-			if compileErr != nil {
-				return fmt.Errorf("failed to compile requirements: %w", compileErr)
+			compileResult := mgr.Compile(doc, outputPath)
+			if compileResult.IsFatal() {
+				return fmt.Errorf("failed to compile requirements: %v", compileResult.Errors)
 			}
+			outPath := compileResult.GetData().OutputPath
 
 			// Save final state
 			docPath := interviewDocPath(docsDir, doc.Slug)

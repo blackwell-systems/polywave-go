@@ -13,7 +13,6 @@ import (
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
 )
 
-// SaveDocData holds metadata returned from a successful Save call.
 // DeterministicManager implements the Manager interface using a fixed question set.
 type DeterministicManager struct {
 	docsDir string
@@ -26,7 +25,7 @@ func NewDeterministicManager(docsDir string) *DeterministicManager {
 }
 
 // Start initializes a new interview and returns the first question.
-func (m *DeterministicManager) Start(cfg InterviewConfig) (*InterviewDoc, *InterviewQuestion, error) {
+func (m *DeterministicManager) Start(cfg InterviewConfig) result.Result[StartData] {
 	slug := cfg.Slug
 	if slug == "" {
 		slug = generateSlug(cfg.Description)
@@ -39,7 +38,11 @@ func (m *DeterministicManager) Start(cfg InterviewConfig) (*InterviewDoc, *Inter
 
 	id, err := newID()
 	if err != nil {
-		return nil, nil, fmt.Errorf("generating interview ID: %w", err)
+		return result.NewFailure[StartData]([]result.SAWError{
+			result.NewFatal(result.CodeInterviewSaveFailed,
+				fmt.Sprintf("generating interview ID: %s", err.Error())).
+				WithCause(err),
+		})
 	}
 
 	now := time.Now()
@@ -53,33 +56,37 @@ func (m *DeterministicManager) Start(cfg InterviewConfig) (*InterviewDoc, *Inter
 		UpdatedAt:      now,
 		Phase:          PhaseOverview,
 		QuestionCursor: 0,
-		MaxQuestions:    maxQ,
+		MaxQuestions:   maxQ,
 		Progress:       0.0,
 		SpecData:       SpecData{},
 		History:        []InterviewTurn{},
 	}
 
 	q := generateQuestion(doc)
-	return doc, q, nil
+	return result.NewSuccess(StartData{Doc: doc, Question: q})
 }
 
 // Resume loads an existing interview from its YAML file and returns the current question.
-func (m *DeterministicManager) Resume(docPath string) (*InterviewDoc, *InterviewQuestion, error) {
+func (m *DeterministicManager) Resume(docPath string) result.Result[ResumeData] {
 	doc, err := protocol.LoadYAML[InterviewDoc](docPath)
 	if err != nil {
-		return nil, nil, fmt.Errorf("resume interview doc: %w", err)
+		return result.NewFailure[ResumeData]([]result.SAWError{
+			result.NewFatal(result.CodeInterviewSaveFailed,
+				fmt.Sprintf("resume interview doc: %s", err.Error())).
+				WithContext("path", docPath).WithCause(err),
+		})
 	}
 
 	if doc.Status == "complete" {
-		return &doc, nil, nil
+		return result.NewSuccess(ResumeData{Doc: &doc, Question: nil})
 	}
 
 	q := generateQuestion(&doc)
-	return &doc, q, nil
+	return result.NewSuccess(ResumeData{Doc: &doc, Question: q})
 }
 
 // Answer records a user response, advances the state machine, and returns the next question.
-func (m *DeterministicManager) Answer(doc *InterviewDoc, answer string) (*InterviewDoc, *InterviewQuestion, error) {
+func (m *DeterministicManager) Answer(doc *InterviewDoc, answer string) result.Result[AnswerData] {
 	// Handle "back" command first.
 	if HandleBackCommand(doc, answer) {
 		// Back was processed — regenerate current question and return.
@@ -89,29 +96,23 @@ func (m *DeterministicManager) Answer(doc *InterviewDoc, answer string) (*Interv
 		// Save state after going back.
 		docPath := filepath.Join(m.docsDir, fmt.Sprintf("INTERVIEW-%s.yaml", doc.Slug))
 		if saveResult := m.Save(doc, docPath); saveResult.IsFatal() {
-			var sawErr error
-			if len(saveResult.Errors) > 0 {
-				sawErr = saveResult.Errors[0]
-			} else {
-				sawErr = fmt.Errorf("unknown save error (no error details)")
-			}
-			return doc, currentQ, fmt.Errorf("saving interview state: %w", sawErr)
+			return result.NewFailure[AnswerData](saveResult.Errors)
 		}
 
-		return doc, currentQ, nil
+		return result.NewSuccess(AnswerData{Doc: doc, Question: currentQ})
 	}
 
 	// Get current question to record it.
 	currentQ := generateQuestion(doc)
 	if currentQ == nil {
-		return doc, nil, nil
+		return result.NewSuccess(AnswerData{Doc: doc, Question: nil})
 	}
 
 	// Validate required fields.
 	if validationErr := ValidateRequiredField(currentQ, answer); validationErr != "" {
 		// Validation failed — return same question with error in Hint field.
 		currentQ.Hint = validationErr
-		return doc, currentQ, nil
+		return result.NewSuccess(AnswerData{Doc: doc, Question: currentQ})
 	}
 
 	// Record the turn.
@@ -136,9 +137,9 @@ func (m *DeterministicManager) Answer(doc *InterviewDoc, answer string) (*Interv
 		doc.Progress = 1.0
 	}
 
-	// Check phase transition.
-	if err := checkPhaseTransition(doc); err != nil {
-		return doc, nil, fmt.Errorf("phase transition: %w", err)
+	// Check phase transition. checkPhaseTransition now returns *result.SAWError.
+	if sawErr := checkPhaseTransition(doc); sawErr != nil {
+		return result.NewFailure[AnswerData]([]result.SAWError{*sawErr})
 	}
 
 	// If phase is complete, mark status.
@@ -155,16 +156,10 @@ func (m *DeterministicManager) Answer(doc *InterviewDoc, answer string) (*Interv
 	// Save state.
 	docPath := filepath.Join(m.docsDir, fmt.Sprintf("INTERVIEW-%s.yaml", doc.Slug))
 	if saveResult := m.Save(doc, docPath); saveResult.IsFatal() {
-		var sawErr error
-		if len(saveResult.Errors) > 0 {
-			sawErr = saveResult.Errors[0]
-		} else {
-			sawErr = fmt.Errorf("unknown save error (no error details)")
-		}
-		return doc, nextQ, fmt.Errorf("saving interview state: %w", sawErr)
+		return result.NewFailure[AnswerData](saveResult.Errors)
 	}
 
-	return doc, nextQ, nil
+	return result.NewSuccess(AnswerData{Doc: doc, Question: nextQ})
 }
 
 // ValidateRequiredField checks if a required field answer is valid.
@@ -300,9 +295,10 @@ func recalculatePhase(doc *InterviewDoc) {
 	// Keep checking transitions until we can't advance anymore.
 	for {
 		oldPhase := doc.Phase
-		if err := checkPhaseTransition(doc); err != nil {
-			// This is an internal consistency error that should not occur in practice.
-			fmt.Fprintf(os.Stderr, "interview: recalculatePhase: %v\n", err)
+		if sawErr := checkPhaseTransition(doc); sawErr != nil {
+			// Internal consistency error — not expected in practice.
+			// recalculatePhase is called from HandleBackCommand which returns bool.
+			// Leave the phase as-is and break.
 			break
 		}
 		if doc.Phase == oldPhase {
@@ -316,58 +312,25 @@ func recalculatePhase(doc *InterviewDoc) {
 	}
 }
 
-// min returns the minimum of two integers.
-func min(a, b int) int {
-	if a < b {
-		return a
-	}
-	return b
-}
-
-// compileFunc is the function used to generate requirements markdown.
-// Defaults to CompileToRequirements from compiler.go (Agent B).
-// This indirection allows the build to succeed before compiler.go is merged.
-var compileFunc func(doc *InterviewDoc) (string, error)
-
 // Compile generates REQUIREMENTS.md from a complete InterviewDoc.
-// Delegates content generation to CompileToRequirements (compiler.go),
-// then writes the result to outputPath.
-func (m *DeterministicManager) Compile(doc *InterviewDoc, outputPath string) (string, error) {
-	fn := compileFunc
-	if fn == nil {
-		return "", fmt.Errorf("CompileToRequirements not available (compiler.go not yet merged)")
+// Delegates to WriteRequirementsFile (compiler.go).
+func (m *DeterministicManager) Compile(doc *InterviewDoc, outputPath string) result.Result[CompileData] {
+	writeResult := WriteRequirementsFile(doc, outputPath)
+	if writeResult.IsFatal() {
+		return result.NewFailure[CompileData](writeResult.Errors)
 	}
-	content, err := fn(doc)
-	if err != nil {
-		return "", fmt.Errorf("compiling requirements: %w", err)
-	}
-
-	dir := filepath.Dir(outputPath)
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return "", fmt.Errorf("creating output directory: %w", err)
-	}
-
-	if err := os.WriteFile(outputPath, []byte(content), 0o644); err != nil {
-		return "", fmt.Errorf("writing requirements: %w", err)
-	}
-
 	doc.RequirementsPath = outputPath
-	return outputPath, nil
-}
-
-// RegisterCompiler sets the compile function. Called by compiler.go's init().
-func RegisterCompiler(fn func(doc *InterviewDoc) (string, error)) {
-	compileFunc = fn
+	return result.NewSuccess(CompileData{OutputPath: outputPath})
 }
 
 // Save persists the InterviewDoc to a YAML file.
 // Returns a Result containing the doc path and timestamp on success,
-// or a FATAL result with code "INTERVIEW_SAVE_FAILED" on failure.
+// or a FATAL result with code CodeInterviewSaveFailed on failure.
 func (m *DeterministicManager) Save(doc *InterviewDoc, docPath string) result.Result[SaveDocData] {
 	dir := filepath.Dir(docPath)
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return result.NewFailure[SaveDocData]([]result.SAWError{
-			result.NewFatal("INTERVIEW_SAVE_FAILED", fmt.Sprintf("creating directory %s: %s", dir, err.Error())).
+			result.NewFatal(result.CodeInterviewSaveFailed, fmt.Sprintf("creating directory %s: %s", dir, err.Error())).
 				WithContext("path", docPath).
 				WithCause(err),
 		})
@@ -375,7 +338,7 @@ func (m *DeterministicManager) Save(doc *InterviewDoc, docPath string) result.Re
 
 	if err := protocol.SaveYAML(docPath, doc); err != nil {
 		return result.NewFailure[SaveDocData]([]result.SAWError{
-			result.NewFatal("INTERVIEW_SAVE_FAILED", fmt.Sprintf("save interview doc: %s", err.Error())).
+			result.NewFatal(result.CodeInterviewSaveFailed, fmt.Sprintf("save interview doc: %s", err.Error())).
 				WithContext("path", docPath).
 				WithCause(err),
 		})

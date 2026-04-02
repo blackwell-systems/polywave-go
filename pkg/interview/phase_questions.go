@@ -1,6 +1,10 @@
 package interview
 
-import "fmt"
+import (
+	"fmt"
+
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
+)
 
 // phaseOrder maps each InterviewPhase to its sequential position (0-indexed).
 // Used to detect invalid skip-phase transitions in checkPhaseTransition.
@@ -143,10 +147,10 @@ func fieldIsPopulated(doc *InterviewDoc, phase InterviewPhase, field string) boo
 
 // checkPhaseTransition checks if all required fields for the current phase
 // are filled and advances to the next phase if so.
-// Guard: if the transition would skip more than one phase forward, panic.
+// Guard: if the transition would skip more than one phase forward, returns a SAWError.
 // Backward transitions are NOT guarded here — they are handled by
 // recalculatePhase (which resets to PhaseOverview and replays forward-only).
-func checkPhaseTransition(doc *InterviewDoc) error {
+func checkPhaseTransition(doc *InterviewDoc) *result.SAWError {
 	prevPhase := doc.Phase
 
 	switch doc.Phase {
@@ -185,7 +189,9 @@ func checkPhaseTransition(doc *InterviewDoc) error {
 		newOrder, newOk := phaseOrder[doc.Phase]
 		prevOrder, prevOk := phaseOrder[prevPhase]
 		if newOk && prevOk && newOrder > prevOrder+1 {
-			return fmt.Errorf("interview: invalid phase skip: %s → %s", prevPhase, doc.Phase)
+			sawErr := result.NewError(result.CodeInvalidState,
+				fmt.Sprintf("interview: invalid phase skip: %s → %s", prevPhase, doc.Phase))
+			return &sawErr
 		}
 	}
 	return nil

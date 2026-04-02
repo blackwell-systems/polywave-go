@@ -5,16 +5,21 @@ import (
 	"path/filepath"
 	"regexp"
 	"testing"
+
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
 )
 
 func TestDeterministicManager_Start(t *testing.T) {
 	mgr := NewDeterministicManager(t.TempDir())
-	doc, q, err := mgr.Start(InterviewConfig{
+	startResult := mgr.Start(InterviewConfig{
 		Description: "My Test Feature",
 	})
-	if err != nil {
-		t.Fatalf("Start returned error: %v", err)
+	if startResult.IsFatal() {
+		t.Fatalf("Start returned error: %v", startResult.Errors)
 	}
+	data := startResult.GetData()
+	doc := data.Doc
+	q := data.Question
 	if doc == nil {
 		t.Fatal("doc is nil")
 	}
@@ -46,12 +51,15 @@ func TestDeterministicManager_Start(t *testing.T) {
 
 func TestDeterministicManager_FullFlow(t *testing.T) {
 	mgr := NewDeterministicManager(t.TempDir())
-	doc, q, err := mgr.Start(InterviewConfig{
+	startResult := mgr.Start(InterviewConfig{
 		Description: "Full Flow Test",
 	})
-	if err != nil {
-		t.Fatalf("Start error: %v", err)
+	if startResult.IsFatal() {
+		t.Fatalf("Start error: %v", startResult.Errors)
 	}
+	startData := startResult.GetData()
+	doc := startData.Doc
+	q := startData.Question
 
 	// Drive through all phases with minimal answers.
 	answers := []string{
@@ -84,10 +92,13 @@ func TestDeterministicManager_FullFlow(t *testing.T) {
 			t.Fatalf("question is nil at step %d (answer: %q), doc phase: %s, status: %s",
 				i, ans, doc.Phase, doc.Status)
 		}
-		doc, q, err = mgr.Answer(doc, ans)
-		if err != nil {
-			t.Fatalf("Answer error at step %d: %v", i, err)
+		ansResult := mgr.Answer(doc, ans)
+		if ansResult.IsFatal() {
+			t.Fatalf("Answer error at step %d: %v", i, ansResult.Errors)
 		}
+		ansData := ansResult.GetData()
+		doc = ansData.Doc
+		q = ansData.Question
 	}
 
 	if doc.Status != "complete" {
@@ -106,40 +117,49 @@ func TestDeterministicManager_FullFlow(t *testing.T) {
 
 func TestDeterministicManager_PhaseTransition_Overview(t *testing.T) {
 	mgr := NewDeterministicManager(t.TempDir())
-	doc, q, err := mgr.Start(InterviewConfig{Description: "Phase Test"})
-	if err != nil {
-		t.Fatalf("Start error: %v", err)
+	startResult := mgr.Start(InterviewConfig{Description: "Phase Test"})
+	if startResult.IsFatal() {
+		t.Fatalf("Start error: %v", startResult.Errors)
 	}
+	doc := startResult.GetData().Doc
+	var q *InterviewQuestion
 
 	// Answer title
-	doc, q, err = mgr.Answer(doc, "Test Title")
-	if err != nil {
-		t.Fatalf("Answer error: %v", err)
+	r := mgr.Answer(doc, "Test Title")
+	if r.IsFatal() {
+		t.Fatalf("Answer error: %v", r.Errors)
 	}
+	doc = r.GetData().Doc
+	q = r.GetData().Question
+	_ = q
 	if doc.Phase != PhaseOverview {
 		t.Errorf("should still be in overview after just title, got %s", doc.Phase)
 	}
 
 	// Answer goal
-	doc, q, err = mgr.Answer(doc, "Test Goal")
-	if err != nil {
-		t.Fatalf("Answer error: %v", err)
+	r = mgr.Answer(doc, "Test Goal")
+	if r.IsFatal() {
+		t.Fatalf("Answer error: %v", r.Errors)
 	}
+	doc = r.GetData().Doc
 	if doc.Phase != PhaseOverview {
 		t.Errorf("should still be in overview (optional fields not yet asked), got %s", doc.Phase)
 	}
 
 	// Answer success_metrics (skip)
-	doc, q, err = mgr.Answer(doc, "skip")
-	if err != nil {
-		t.Fatalf("Answer error: %v", err)
+	r = mgr.Answer(doc, "skip")
+	if r.IsFatal() {
+		t.Fatalf("Answer error: %v", r.Errors)
 	}
+	doc = r.GetData().Doc
 
 	// Answer non_goals (skip) — should now transition
-	doc, q, err = mgr.Answer(doc, "skip")
-	if err != nil {
-		t.Fatalf("Answer error: %v", err)
+	r = mgr.Answer(doc, "skip")
+	if r.IsFatal() {
+		t.Fatalf("Answer error: %v", r.Errors)
 	}
+	doc = r.GetData().Doc
+	q = r.GetData().Question
 	if doc.Phase != PhaseScope {
 		t.Errorf("expected phase scope after overview complete, got %s", doc.Phase)
 	}
@@ -153,16 +173,17 @@ func TestDeterministicManager_PhaseTransition_Overview(t *testing.T) {
 
 func TestDeterministicManager_PhaseTransition_RequiresTitle(t *testing.T) {
 	mgr := NewDeterministicManager(t.TempDir())
-	doc, _, err := mgr.Start(InterviewConfig{Description: "Requires Title Test"})
-	if err != nil {
-		t.Fatalf("Start error: %v", err)
+	startResult := mgr.Start(InterviewConfig{Description: "Requires Title Test"})
+	if startResult.IsFatal() {
+		t.Fatalf("Start error: %v", startResult.Errors)
 	}
+	doc := startResult.GetData().Doc
 
 	// Manually set goal but not title, then check transition.
 	doc.SpecData.Overview.Goal = "some goal"
 	doc.SpecData.Overview.SuccessMetrics = []string{}
 	doc.SpecData.Overview.NonGoals = []string{}
-	checkPhaseTransition(doc)
+	_ = checkPhaseTransition(doc)
 
 	if doc.Phase != PhaseOverview {
 		t.Errorf("should NOT advance without title, got phase %s", doc.Phase)
@@ -171,26 +192,33 @@ func TestDeterministicManager_PhaseTransition_RequiresTitle(t *testing.T) {
 
 func TestDeterministicManager_SkipOptional(t *testing.T) {
 	mgr := NewDeterministicManager(t.TempDir())
-	doc, _, err := mgr.Start(InterviewConfig{Description: "Skip Test"})
-	if err != nil {
-		t.Fatalf("Start error: %v", err)
+	startResult := mgr.Start(InterviewConfig{Description: "Skip Test"})
+	if startResult.IsFatal() {
+		t.Fatalf("Start error: %v", startResult.Errors)
 	}
+	doc := startResult.GetData().Doc
 
 	// Answer title
-	doc, _, err = mgr.Answer(doc, "Title")
-	if err != nil {
-		t.Fatalf("Answer error: %v", err)
+	r := mgr.Answer(doc, "Title")
+	if r.IsFatal() {
+		t.Fatalf("Answer error: %v", r.Errors)
 	}
+	doc = r.GetData().Doc
+
 	// Answer goal
-	doc, _, err = mgr.Answer(doc, "Goal")
-	if err != nil {
-		t.Fatalf("Answer error: %v", err)
+	r = mgr.Answer(doc, "Goal")
+	if r.IsFatal() {
+		t.Fatalf("Answer error: %v", r.Errors)
 	}
+	doc = r.GetData().Doc
+
 	// Skip success_metrics
-	doc, _, err = mgr.Answer(doc, "skip")
-	if err != nil {
-		t.Fatalf("Answer error: %v", err)
+	r = mgr.Answer(doc, "skip")
+	if r.IsFatal() {
+		t.Fatalf("Answer error: %v", r.Errors)
 	}
+	doc = r.GetData().Doc
+
 	// Verify success_metrics is empty slice (not nil)
 	if doc.SpecData.Overview.SuccessMetrics == nil {
 		t.Error("expected empty slice for skipped success_metrics, got nil")
@@ -200,10 +228,11 @@ func TestDeterministicManager_SkipOptional(t *testing.T) {
 	}
 
 	// Skip non_goals — should advance to scope
-	doc, _, err = mgr.Answer(doc, "SKIP") // test case-insensitive
-	if err != nil {
-		t.Fatalf("Answer error: %v", err)
+	r = mgr.Answer(doc, "SKIP") // test case-insensitive
+	if r.IsFatal() {
+		t.Fatalf("Answer error: %v", r.Errors)
 	}
+	doc = r.GetData().Doc
 	if doc.Phase != PhaseScope {
 		t.Errorf("expected scope after skipping optional overview fields, got %s", doc.Phase)
 	}
@@ -214,24 +243,30 @@ func TestDeterministicManager_Resume(t *testing.T) {
 	mgr := NewDeterministicManager(dir)
 
 	// Start and answer a few questions.
-	doc, _, err := mgr.Start(InterviewConfig{Description: "Resume Test"})
-	if err != nil {
-		t.Fatalf("Start error: %v", err)
+	startResult := mgr.Start(InterviewConfig{Description: "Resume Test"})
+	if startResult.IsFatal() {
+		t.Fatalf("Start error: %v", startResult.Errors)
 	}
-	doc, _, err = mgr.Answer(doc, "My Title")
-	if err != nil {
-		t.Fatalf("Answer error: %v", err)
+	doc := startResult.GetData().Doc
+
+	r := mgr.Answer(doc, "My Title")
+	if r.IsFatal() {
+		t.Fatalf("Answer error: %v", r.Errors)
 	}
+	doc = r.GetData().Doc
 
 	// Save explicitly.
 	docPath := filepath.Join(dir, "INTERVIEW-"+doc.Slug+".yaml")
 	// Answer already saved via mgr.Answer, but let's verify resume.
 
 	// Resume from saved file.
-	doc2, q2, err := mgr.Resume(docPath)
-	if err != nil {
-		t.Fatalf("Resume error: %v", err)
+	resumeResult := mgr.Resume(docPath)
+	if resumeResult.IsFatal() {
+		t.Fatalf("Resume error: %v", resumeResult.Errors)
 	}
+	resumeData := resumeResult.GetData()
+	doc2 := resumeData.Doc
+	q2 := resumeData.Question
 	if doc2.SpecData.Overview.Title != "My Title" {
 		t.Errorf("expected title 'My Title', got %q", doc2.SpecData.Overview.Title)
 	}
@@ -296,10 +331,11 @@ func TestDeterministicManager_SaveAndLoad(t *testing.T) {
 	dir := t.TempDir()
 	mgr := NewDeterministicManager(dir)
 
-	doc, _, err := mgr.Start(InterviewConfig{Description: "Save Load"})
-	if err != nil {
-		t.Fatalf("Start error: %v", err)
+	startResult := mgr.Start(InterviewConfig{Description: "Save Load"})
+	if startResult.IsFatal() {
+		t.Fatalf("Start error: %v", startResult.Errors)
 	}
+	doc := startResult.GetData().Doc
 
 	docPath := filepath.Join(dir, "INTERVIEW-"+doc.Slug+".yaml")
 	saveResult := mgr.Save(doc, docPath)
@@ -325,10 +361,11 @@ func TestDeterministicManager_SaveAndLoad(t *testing.T) {
 	}
 
 	// Load it back.
-	doc2, _, err := mgr.Resume(docPath)
-	if err != nil {
-		t.Fatalf("Resume error: %v", err)
+	resumeResult := mgr.Resume(docPath)
+	if resumeResult.IsFatal() {
+		t.Fatalf("Resume error: %v", resumeResult.Errors)
 	}
+	doc2 := resumeResult.GetData().Doc
 	if doc2.Slug != doc.Slug {
 		t.Errorf("slug mismatch: %q vs %q", doc2.Slug, doc.Slug)
 	}
@@ -338,10 +375,11 @@ func TestDeterministicManager_SaveFailure(t *testing.T) {
 	dir := t.TempDir()
 	mgr := NewDeterministicManager(dir)
 
-	doc, _, err := mgr.Start(InterviewConfig{Description: "Save Fail"})
-	if err != nil {
-		t.Fatalf("Start error: %v", err)
+	startResult := mgr.Start(InterviewConfig{Description: "Save Fail"})
+	if startResult.IsFatal() {
+		t.Fatalf("Start error: %v", startResult.Errors)
 	}
+	doc := startResult.GetData().Doc
 
 	// Use a path where the directory cannot be created (file blocks it).
 	blockingFile := filepath.Join(dir, "blocked")
@@ -357,8 +395,8 @@ func TestDeterministicManager_SaveFailure(t *testing.T) {
 	if len(saveResult.Errors) == 0 {
 		t.Fatal("expected at least one error in FATAL result")
 	}
-	if saveResult.Errors[0].Code != "INTERVIEW_SAVE_FAILED" {
-		t.Errorf("expected error code INTERVIEW_SAVE_FAILED, got %q", saveResult.Errors[0].Code)
+	if saveResult.Errors[0].Code != result.CodeInterviewSaveFailed {
+		t.Errorf("expected error code %s, got %q", result.CodeInterviewSaveFailed, saveResult.Errors[0].Code)
 	}
 	if saveResult.Errors[0].Context["path"] != badPath {
 		t.Errorf("expected path context %q, got %q", badPath, saveResult.Errors[0].Context["path"])
@@ -621,10 +659,13 @@ func TestAnswer_ValidationRejectsEmpty(t *testing.T) {
 	}
 
 	// Answer with empty string on required field (first question is title, required).
-	resultDoc, resultQ, err := mgr.Answer(doc, "")
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+	ansResult := mgr.Answer(doc, "")
+	if ansResult.IsFatal() {
+		t.Fatalf("unexpected error: %v", ansResult.Errors)
 	}
+	ansData := ansResult.GetData()
+	resultDoc := ansData.Doc
+	resultQ := ansData.Question
 
 	// Verify we got the same question back (cursor didn't advance).
 	if resultDoc.QuestionCursor != 0 {
@@ -673,10 +714,13 @@ func TestAnswer_BackIntegration(t *testing.T) {
 	}
 
 	// Answer with "back".
-	resultDoc, resultQ, err := mgr.Answer(doc, "back")
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+	ansResult := mgr.Answer(doc, "back")
+	if ansResult.IsFatal() {
+		t.Fatalf("unexpected error: %v", ansResult.Errors)
 	}
+	ansData := ansResult.GetData()
+	resultDoc := ansData.Doc
+	resultQ := ansData.Question
 
 	// Verify cursor was decremented.
 	if resultDoc.QuestionCursor != 1 {
@@ -714,18 +758,18 @@ func TestFormatPhaseProgress_Overview(t *testing.T) {
 		},
 	}
 
-	result := FormatPhaseProgress(doc)
+	r := FormatPhaseProgress(doc)
 
 	// Verify format includes phase name, answered/total, and next phase.
-	if !contains(result, "overview") && !contains(result, "Overview") {
-		t.Errorf("expected result to contain 'overview', got: %q", result)
+	if !contains(r, "overview") && !contains(r, "Overview") {
+		t.Errorf("expected result to contain 'overview', got: %q", r)
 	}
-	if !contains(result, "Next: Scope") && !contains(result, "Next: scope") {
-		t.Errorf("expected result to contain 'Next: Scope', got: %q", result)
+	if !contains(r, "Next: Scope") && !contains(r, "Next: scope") {
+		t.Errorf("expected result to contain 'Next: Scope', got: %q", r)
 	}
 	// Should show 1/4 (4 questions in overview phase).
-	if !contains(result, "1/4") {
-		t.Errorf("expected result to contain '1/4', got: %q", result)
+	if !contains(r, "1/4") {
+		t.Errorf("expected result to contain '1/4', got: %q", r)
 	}
 }
 
@@ -739,23 +783,23 @@ func TestFormatPhaseProgress_Review(t *testing.T) {
 		},
 	}
 
-	result := FormatPhaseProgress(doc)
+	r := FormatPhaseProgress(doc)
 
 	// Verify format includes phase name and "Next: Done".
-	if !contains(result, "review") && !contains(result, "Review") {
-		t.Errorf("expected result to contain 'review', got: %q", result)
+	if !contains(r, "review") && !contains(r, "Review") {
+		t.Errorf("expected result to contain 'review', got: %q", r)
 	}
-	if !contains(result, "Next: Done") {
-		t.Errorf("expected result to contain 'Next: Done', got: %q", result)
+	if !contains(r, "Next: Done") {
+		t.Errorf("expected result to contain 'Next: Done', got: %q", r)
 	}
 	// Should show 1/2 (2 questions in review phase).
-	if !contains(result, "1/2") {
-		t.Errorf("expected result to contain '1/2', got: %q", result)
+	if !contains(r, "1/2") {
+		t.Errorf("expected result to contain '1/2', got: %q", r)
 	}
 }
 
-// TestPreviewRequirements verifies returns non-empty markdown string.
-func TestPreviewRequirements(t *testing.T) {
+// TestCompileToRequirements_DirectCall verifies the compiler produces valid markdown.
+func TestCompileToRequirements_DirectCall(t *testing.T) {
 	doc := &InterviewDoc{
 		ID:   "test-doc",
 		Slug: "test-slug",
@@ -770,10 +814,11 @@ func TestPreviewRequirements(t *testing.T) {
 		},
 	}
 
-	preview, err := PreviewRequirements(doc)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+	r := CompileToRequirements(doc)
+	if r.IsFatal() {
+		t.Fatalf("unexpected error: %v", r.Errors)
 	}
+	preview := *r.Data
 
 	if preview == "" {
 		t.Error("expected non-empty preview string, got empty")
@@ -805,20 +850,6 @@ func TestNewIDFormat(t *testing.T) {
 	}
 }
 
-// TestNewID_ReturnsIDAndNoError verifies newID() returns a valid UUID-formatted string and nil error.
-func TestNewID_ReturnsIDAndNoError(t *testing.T) {
-	uuidRegex := regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$`)
-	for i := 0; i < 10; i++ {
-		id, err := newID()
-		if err != nil {
-			t.Fatalf("newID() returned unexpected error: %v", err)
-		}
-		if !uuidRegex.MatchString(id) {
-			t.Errorf("newID() = %q, does not match UUID format", id)
-		}
-	}
-}
-
 // TestCheckPhaseTransition_InvalidSkipReturnsError verifies single-step transitions return nil.
 func TestCheckPhaseTransition_InvalidSkipReturnsError(t *testing.T) {
 	doc := &InterviewDoc{
@@ -832,9 +863,9 @@ func TestCheckPhaseTransition_InvalidSkipReturnsError(t *testing.T) {
 			},
 		},
 	}
-	err := checkPhaseTransition(doc)
-	if err != nil {
-		t.Errorf("expected nil error for single-step transition, got: %v", err)
+	sawErr := checkPhaseTransition(doc)
+	if sawErr != nil {
+		t.Errorf("expected nil error for single-step transition, got: %v", sawErr)
 	}
 	if doc.Phase != PhaseScope {
 		t.Errorf("expected PhaseScope, got %s", doc.Phase)
@@ -880,7 +911,7 @@ func TestCheckPhaseTransition_NoPanic_SingleStep(t *testing.T) {
 		},
 	}
 	// Should not panic
-	checkPhaseTransition(doc)
+	_ = checkPhaseTransition(doc)
 	if doc.Phase != PhaseScope {
 		t.Errorf("expected PhaseScope after overview complete, got %s", doc.Phase)
 	}
@@ -909,6 +940,174 @@ func TestNonInteractive_LogicGuard(t *testing.T) {
 	// Guard logic: if nonInteractive were true, this string would NOT be written to output.
 	// The actual suppression is validated by integration, not unit test.
 	// This test confirms the function itself works correctly when called.
+}
+
+// TestDeterministicManager_Compile verifies the Compile method writes a file and returns the path.
+func TestDeterministicManager_Compile(t *testing.T) {
+	tmpDir := t.TempDir()
+	mgr := NewDeterministicManager(tmpDir)
+
+	// Build a minimal complete doc
+	doc := &InterviewDoc{
+		Slug:   "compile-test",
+		Status: "complete",
+		Phase:  PhaseComplete,
+		SpecData: SpecData{
+			Overview: OverviewSpec{Title: "Compile Test", Goal: "Test compile"},
+			Scope:    ScopeSpec{InScope: []string{"feature A"}},
+		},
+	}
+	outputPath := filepath.Join(tmpDir, "docs", "REQUIREMENTS.md")
+
+	// Success path
+	compileResult := mgr.Compile(doc, outputPath)
+	if compileResult.IsFatal() {
+		t.Fatalf("Compile returned fatal: %v", compileResult.Errors)
+	}
+	data := compileResult.GetData()
+	if data.OutputPath != outputPath {
+		t.Errorf("expected OutputPath %q, got %q", outputPath, data.OutputPath)
+	}
+	if _, err := os.Stat(outputPath); os.IsNotExist(err) {
+		t.Fatalf("expected file at %s", outputPath)
+	}
+
+	// Write-failure path
+	blockingFile := filepath.Join(tmpDir, "blocked")
+	if err := os.WriteFile(blockingFile, []byte("x"), 0o644); err != nil {
+		t.Fatalf("setup: %v", err)
+	}
+	badPath := filepath.Join(blockingFile, "REQUIREMENTS.md")
+	failResult := mgr.Compile(doc, badPath)
+	if !failResult.IsFatal() {
+		t.Fatalf("expected FATAL result for unwritable path, got code: %s", failResult.Code)
+	}
+}
+
+// TestResume_Complete verifies that resuming a completed interview returns nil question.
+func TestResume_Complete(t *testing.T) {
+	dir := t.TempDir()
+	mgr := NewDeterministicManager(dir)
+
+	// Start and complete a full interview
+	startResult := mgr.Start(InterviewConfig{Description: "Resume Complete Test"})
+	if startResult.IsFatal() {
+		t.Fatalf("Start error: %v", startResult.Errors)
+	}
+	doc := startResult.GetData().Doc
+	doc.Status = "complete"
+	doc.Phase = PhaseComplete
+
+	// Save the completed doc
+	docPath := filepath.Join(dir, "INTERVIEW-"+doc.Slug+".yaml")
+	saveResult := mgr.Save(doc, docPath)
+	if saveResult.IsFatal() {
+		t.Fatalf("Save error: %v", saveResult.Errors)
+	}
+
+	// Resume from a complete interview
+	resumeResult := mgr.Resume(docPath)
+	if resumeResult.IsFatal() {
+		t.Fatalf("Resume error: %v", resumeResult.Errors)
+	}
+	data := resumeResult.GetData()
+	if data.Doc.Status != "complete" {
+		t.Errorf("expected status complete, got %s", data.Doc.Status)
+	}
+	if data.Question != nil {
+		t.Errorf("expected nil question for complete interview, got: %+v", data.Question)
+	}
+}
+
+// TestNextPhaseName_AllCases verifies nextPhaseName returns correct strings for all phases.
+func TestNextPhaseName_AllCases(t *testing.T) {
+	tests := []struct {
+		phase InterviewPhase
+		want  string
+	}{
+		{PhaseOverview, "Scope"},
+		{PhaseScope, "Requirements"},
+		{PhaseRequirements, "Interfaces"},
+		{PhaseInterfaces, "Stories"},
+		{PhaseStories, "Review"},
+		{PhaseReview, "Done"},
+		{PhaseComplete, "Done"},
+	}
+	for _, tt := range tests {
+		got := nextPhaseName(tt.phase)
+		if got != tt.want {
+			t.Errorf("nextPhaseName(%s) = %q, want %q", tt.phase, got, tt.want)
+		}
+	}
+}
+
+// TestHandleBackCommand_ClearAllPhases verifies clearSpecField works for each phase/field combo.
+func TestHandleBackCommand_ClearAllPhases(t *testing.T) {
+	// Test clearSpecField for each non-Overview phase
+	phases := []struct {
+		phase      InterviewPhase
+		field      string
+		setupSpec  func(doc *InterviewDoc)
+		checkClear func(doc *InterviewDoc) bool
+	}{
+		{
+			phase:      PhaseScope,
+			field:      "in_scope",
+			setupSpec:  func(doc *InterviewDoc) { doc.SpecData.Scope.InScope = []string{"feat"} },
+			checkClear: func(doc *InterviewDoc) bool { return doc.SpecData.Scope.InScope == nil },
+		},
+		{
+			phase:      PhaseScope,
+			field:      "out_of_scope",
+			setupSpec:  func(doc *InterviewDoc) { doc.SpecData.Scope.OutOfScope = []string{"x"} },
+			checkClear: func(doc *InterviewDoc) bool { return doc.SpecData.Scope.OutOfScope == nil },
+		},
+		{
+			phase:      PhaseRequirements,
+			field:      "functional",
+			setupSpec:  func(doc *InterviewDoc) { doc.SpecData.Requirements.Functional = []string{"r1"} },
+			checkClear: func(doc *InterviewDoc) bool { return doc.SpecData.Requirements.Functional == nil },
+		},
+		{
+			phase:      PhaseInterfaces,
+			field:      "data_models",
+			setupSpec:  func(doc *InterviewDoc) { doc.SpecData.Interfaces.DataModels = []string{"m1"} },
+			checkClear: func(doc *InterviewDoc) bool { return doc.SpecData.Interfaces.DataModels == nil },
+		},
+		{
+			phase:      PhaseStories,
+			field:      "stories",
+			setupSpec:  func(doc *InterviewDoc) { doc.SpecData.Stories = []string{"s1"} },
+			checkClear: func(doc *InterviewDoc) bool { return doc.SpecData.Stories == nil },
+		},
+		{
+			phase:      PhaseReview,
+			field:      "open_questions",
+			setupSpec:  func(doc *InterviewDoc) { doc.SpecData.OpenQuestions = []string{"q1"} },
+			checkClear: func(doc *InterviewDoc) bool { return doc.SpecData.OpenQuestions == nil },
+		},
+	}
+
+	for _, tt := range phases {
+		t.Run(string(tt.phase)+"_"+tt.field, func(t *testing.T) {
+			doc := &InterviewDoc{
+				Phase:          tt.phase,
+				QuestionCursor: 1,
+				MaxQuestions:   18,
+				History: []InterviewTurn{
+					{TurnNumber: 1, Phase: tt.phase, FieldName: tt.field, Answer: "value"},
+				},
+			}
+			tt.setupSpec(doc)
+			handled := HandleBackCommand(doc, "back")
+			if !handled {
+				t.Fatalf("expected HandleBackCommand to return true")
+			}
+			if !tt.checkClear(doc) {
+				t.Errorf("field %s.%s was not cleared after back", tt.phase, tt.field)
+			}
+		})
+	}
 }
 
 // contains is a helper to check if a string contains a substring (case-sensitive).
