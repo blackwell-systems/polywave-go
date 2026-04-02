@@ -56,6 +56,13 @@ func newValidateCmd() *cobra.Command {
 				RepoPath:  effectiveRepoDir,
 			})
 
+			if res.IsFatal() {
+				for _, e := range res.Errors {
+					fmt.Fprintf(os.Stderr, "validate: %s: %s\n", e.Code, e.Message)
+				}
+				return fmt.Errorf("validate: failed to validate manifest")
+			}
+
 			data := res.GetData()
 			out, _ := json.MarshalIndent(data, "", "  ")
 			fmt.Println(string(out))
