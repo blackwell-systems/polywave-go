@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
 )
 
 func TestCompileToRequirements_FullDoc(t *testing.T) {
@@ -29,10 +31,11 @@ func TestCompileToRequirements_FullDoc(t *testing.T) {
 		},
 	}
 
-	result, err := CompileToRequirements(doc)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+	r := CompileToRequirements(doc)
+	if r.IsFatal() {
+		t.Fatalf("unexpected error: %v", r.Errors)
 	}
+	got := *r.Data
 
 	// Verify all sections are present
 	requiredSections := []string{
@@ -47,25 +50,25 @@ func TestCompileToRequirements_FullDoc(t *testing.T) {
 		"## Architectural Decisions Already Made",
 	}
 	for _, section := range requiredSections {
-		if !strings.Contains(result, section) {
-			t.Errorf("missing section %q in output:\n%s", section, result)
+		if !strings.Contains(got, section) {
+			t.Errorf("missing section %q in output:\n%s", section, got)
 		}
 	}
 
 	// Verify specific content rendered
-	if !strings.Contains(result, "Build a CLI tool for testing") {
+	if !strings.Contains(got, "Build a CLI tool for testing") {
 		t.Error("expected goal in Project Type section")
 	}
-	if !strings.Contains(result, "GitHub API") {
+	if !strings.Contains(got, "GitHub API") {
 		t.Error("expected external integrations")
 	}
-	if !strings.Contains(result, "Must deploy to Kubernetes") {
+	if !strings.Contains(got, "Must deploy to Kubernetes") {
 		t.Error("expected constraints in Architectural Decisions")
 	}
-	if !strings.Contains(result, "99.9% uptime SLA") {
+	if !strings.Contains(got, "99.9% uptime SLA") {
 		t.Error("expected non-functional requirements in Architectural Decisions")
 	}
-	if !strings.Contains(result, "PostgreSQL for primary storage") {
+	if !strings.Contains(got, "PostgreSQL for primary storage") {
 		t.Error("expected data models in Storage section")
 	}
 }
@@ -80,19 +83,20 @@ func TestCompileToRequirements_EmptyFields(t *testing.T) {
 		},
 	}
 
-	result, err := CompileToRequirements(doc)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+	r := CompileToRequirements(doc)
+	if r.IsFatal() {
+		t.Fatalf("unexpected error: %v", r.Errors)
 	}
+	got := *r.Data
 
 	// Count placeholder occurrences — most sections should have placeholders
-	placeholderCount := strings.Count(result, placeholder)
+	placeholderCount := strings.Count(got, placeholder)
 	if placeholderCount < 5 {
-		t.Errorf("expected at least 5 placeholder comments for empty fields, got %d\n%s", placeholderCount, result)
+		t.Errorf("expected at least 5 placeholder comments for empty fields, got %d\n%s", placeholderCount, got)
 	}
 
 	// Title should still be rendered
-	if !strings.Contains(result, "# Requirements: Empty Project") {
+	if !strings.Contains(got, "# Requirements: Empty Project") {
 		t.Error("expected title even with empty fields")
 	}
 }
@@ -108,29 +112,30 @@ func TestCompileToRequirements_KeyConcernsFromScope(t *testing.T) {
 		},
 	}
 
-	result, err := CompileToRequirements(doc)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+	r := CompileToRequirements(doc)
+	if r.IsFatal() {
+		t.Fatalf("unexpected error: %v", r.Errors)
 	}
+	got := *r.Data
 
 	// Verify numbered list
-	if !strings.Contains(result, "1. User management") {
+	if !strings.Contains(got, "1. User management") {
 		t.Error("expected numbered item 1")
 	}
-	if !strings.Contains(result, "2. API gateway") {
+	if !strings.Contains(got, "2. API gateway") {
 		t.Error("expected numbered item 2")
 	}
-	if !strings.Contains(result, "3. Monitoring") {
+	if !strings.Contains(got, "3. Monitoring") {
 		t.Error("expected numbered item 3")
 	}
-	if !strings.Contains(result, "4. Alerting") {
+	if !strings.Contains(got, "4. Alerting") {
 		t.Error("expected numbered item 4")
 	}
 
 	// Should NOT have placeholder for Key Concerns
-	keyConcernsIdx := strings.Index(result, "## Key Concerns")
-	storageIdx := strings.Index(result, "## Storage")
-	keyConcernsSection := result[keyConcernsIdx:storageIdx]
+	keyConcernsIdx := strings.Index(got, "## Key Concerns")
+	storageIdx := strings.Index(got, "## Storage")
+	keyConcernsSection := got[keyConcernsIdx:storageIdx]
 	if strings.Contains(keyConcernsSection, placeholder) {
 		t.Error("Key Concerns should not have placeholder when InScope items exist")
 	}
@@ -148,17 +153,18 @@ func TestCompileToRequirements_ArchDecisionsFromConstraints(t *testing.T) {
 		},
 	}
 
-	result, err := CompileToRequirements(doc)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+	r := CompileToRequirements(doc)
+	if r.IsFatal() {
+		t.Fatalf("unexpected error: %v", r.Errors)
 	}
+	got := *r.Data
 
 	// Find the Arch Decisions section
-	archIdx := strings.Index(result, "## Architectural Decisions Already Made")
+	archIdx := strings.Index(got, "## Architectural Decisions Already Made")
 	if archIdx == -1 {
 		t.Fatal("missing Architectural Decisions section")
 	}
-	archSection := result[archIdx:]
+	archSection := got[archIdx:]
 
 	expectedItems := []string{
 		"Must use gRPC",
@@ -185,15 +191,16 @@ func TestCompileToRequirements_Warnings(t *testing.T) {
 		},
 	}
 
-	result, err := CompileToRequirements(doc)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+	r := CompileToRequirements(doc)
+	if r.IsFatal() {
+		t.Fatalf("unexpected error: %v", r.Errors)
 	}
+	got := *r.Data
 
-	if !strings.Contains(result, "## Warnings") {
+	if !strings.Contains(got, "## Warnings") {
 		t.Error("expected '## Warnings' section when truncated with missing required fields")
 	}
-	if !strings.Contains(result, "truncated at max_questions limit") {
+	if !strings.Contains(got, "truncated at max_questions limit") {
 		t.Error("expected truncation warning message in output")
 	}
 }
@@ -210,12 +217,13 @@ func TestCompileToRequirements_NoWarnings_NotTruncated(t *testing.T) {
 		},
 	}
 
-	result, err := CompileToRequirements(doc)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+	r := CompileToRequirements(doc)
+	if r.IsFatal() {
+		t.Fatalf("unexpected error: %v", r.Errors)
 	}
+	got := *r.Data
 
-	if strings.Contains(result, "## Warnings") {
+	if strings.Contains(got, "## Warnings") {
 		t.Error("expected NO Warnings section when not truncated")
 	}
 }
@@ -241,12 +249,13 @@ func TestCompileToRequirements_NoWarnings_Complete(t *testing.T) {
 		},
 	}
 
-	result, err := CompileToRequirements(doc)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+	r := CompileToRequirements(doc)
+	if r.IsFatal() {
+		t.Fatalf("unexpected error: %v", r.Errors)
 	}
+	got := *r.Data
 
-	if strings.Contains(result, "## Warnings") {
+	if strings.Contains(got, "## Warnings") {
 		t.Error("expected NO Warnings section when required fields are all populated")
 	}
 }
@@ -300,7 +309,11 @@ func TestWriteRequirementsFile(t *testing.T) {
 	}
 
 	// Verify it's the same as CompileToRequirements output
-	expected, _ := CompileToRequirements(doc)
+	compileR := CompileToRequirements(doc)
+	if compileR.IsFatal() {
+		t.Fatalf("CompileToRequirements failed: %v", compileR.Errors)
+	}
+	expected := *compileR.Data
 	if fileContent != expected {
 		t.Error("written file content does not match CompileToRequirements output")
 	}
@@ -330,8 +343,8 @@ func TestWriteRequirementsFile_WriteFailure(t *testing.T) {
 	if len(writeResult.Errors) == 0 {
 		t.Fatal("expected at least one error in FATAL result")
 	}
-	if writeResult.Errors[0].Code != "REQUIREMENTS_WRITE_FAILED" {
-		t.Errorf("expected error code REQUIREMENTS_WRITE_FAILED, got %q", writeResult.Errors[0].Code)
+	if writeResult.Errors[0].Code != result.CodeRequirementsWriteFailed {
+		t.Errorf("expected error code %s, got %q", result.CodeRequirementsWriteFailed, writeResult.Errors[0].Code)
 	}
 	if writeResult.Errors[0].Context["path"] != outputPath {
 		t.Errorf("expected path context %q, got %q", outputPath, writeResult.Errors[0].Context["path"])

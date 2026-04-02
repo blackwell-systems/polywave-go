@@ -9,25 +9,16 @@ import (
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
 )
 
-// WriteReqData holds metadata returned from a successful WriteRequirementsFile call.
-func init() {
-	RegisterCompiler(CompileToRequirements)
-}
-
 const placeholder = "<!-- placeholder — fill in before running /saw bootstrap -->"
-
-// PreviewRequirements generates a preview of the compiled REQUIREMENTS.md content
-// for display before the final confirmation question.
-func PreviewRequirements(doc *InterviewDoc) (string, error) {
-	return CompileToRequirements(doc)
-}
 
 // CompileToRequirements converts a completed InterviewDoc into the
 // REQUIREMENTS.md format expected by saw-bootstrap.md Phase 0.
 // Returns the rendered markdown string.
-func CompileToRequirements(doc *InterviewDoc) (string, error) {
+func CompileToRequirements(doc *InterviewDoc) result.Result[string] {
 	if doc == nil {
-		return "", fmt.Errorf("interview doc is nil")
+		return result.NewFailure[string]([]result.SAWError{
+			result.NewFatal(result.CodeRequirementsWriteFailed, "interview doc is nil"),
+		})
 	}
 
 	var b strings.Builder
@@ -122,26 +113,27 @@ func CompileToRequirements(doc *InterviewDoc) (string, error) {
 		b.WriteString("- Interview truncated at max_questions limit. Some phases incomplete.\n")
 	}
 
-	return b.String(), nil
+	return result.NewSuccess(b.String())
 }
 
 // WriteRequirementsFile writes the compiled REQUIREMENTS.md to disk.
 // Returns a Result containing the output path and line count on success,
-// or a FATAL result with code "REQUIREMENTS_WRITE_FAILED" on failure.
+// or a FATAL result with code CodeRequirementsWriteFailed on failure.
 func WriteRequirementsFile(doc *InterviewDoc, outputPath string) result.Result[WriteReqData] {
-	content, err := CompileToRequirements(doc)
-	if err != nil {
+	compileResult := CompileToRequirements(doc)
+	if compileResult.IsFatal() {
 		return result.NewFailure[WriteReqData]([]result.SAWError{
-			result.NewFatal("REQUIREMENTS_WRITE_FAILED", fmt.Sprintf("compiling requirements: %s", err.Error())).
-				WithContext("path", outputPath).
-				WithCause(err),
+			result.NewFatal(result.CodeRequirementsWriteFailed,
+				fmt.Sprintf("compiling requirements: %s", compileResult.Errors[0].Message)).
+				WithContext("path", outputPath),
 		})
 	}
+	content := *compileResult.Data
 
 	dir := filepath.Dir(outputPath)
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return result.NewFailure[WriteReqData]([]result.SAWError{
-			result.NewFatal("REQUIREMENTS_WRITE_FAILED", fmt.Sprintf("creating output directory: %s", err.Error())).
+			result.NewFatal(result.CodeRequirementsWriteFailed, fmt.Sprintf("creating output directory: %s", err.Error())).
 				WithContext("path", outputPath).
 				WithCause(err),
 		})
@@ -149,7 +141,7 @@ func WriteRequirementsFile(doc *InterviewDoc, outputPath string) result.Result[W
 
 	if err := os.WriteFile(outputPath, []byte(content), 0o644); err != nil {
 		return result.NewFailure[WriteReqData]([]result.SAWError{
-			result.NewFatal("REQUIREMENTS_WRITE_FAILED", fmt.Sprintf("writing requirements file: %s", err.Error())).
+			result.NewFatal(result.CodeRequirementsWriteFailed, fmt.Sprintf("writing requirements file: %s", err.Error())).
 				WithContext("path", outputPath).
 				WithCause(err),
 		})
