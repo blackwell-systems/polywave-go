@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
 )
 
 // RetryAttempt is the unified per-attempt state carrier.
@@ -46,12 +47,12 @@ func BuildRetryAttempt(ctx context.Context, manifestPath string, agentID string,
 	}
 	m, err := protocol.Load(context.TODO(), manifestPath)
 	if err != nil {
-		return nil, fmt.Errorf("retry: failed to load manifest: %w", err)
+		return nil, result.WrapCode(err, result.CodeRetryLoadManifestFailed, "failed to load manifest at %s", manifestPath)
 	}
 
 	report, ok := m.CompletionReports[agentID]
 	if !ok {
-		return nil, fmt.Errorf("retry: no completion report found for agent %q", agentID)
+		return nil, result.Errorf(result.CodeRetryReportMissing, "no completion report found for agent %s in manifest %s", agentID, manifestPath)
 	}
 
 	// Combine Notes and Verification as the error output source.

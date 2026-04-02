@@ -329,3 +329,11 @@ const (
 	CodeCommandExtractCancelled     = "E006_EXTRACT_CANCELLED"
 )
 
+// Retry error codes (R001-R099)
+const (
+	CodeRetryLoadManifestFailed  = "R001_LOAD_MANIFEST_FAILED"  // protocol.Load failed
+	CodeRetryReportMissing       = "R002_REPORT_MISSING"        // agent has no completion report
+	CodeRetrySaveIMPLFailed      = "R003_SAVE_IMPL_FAILED"      // failed to write retry IMPL to disk
+	CodeRetryIMPLDirCreateFailed = "R004_IMPL_DIR_CREATE_FAILED" // os.MkdirAll failed
+)
+
