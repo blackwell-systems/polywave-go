@@ -84,6 +84,9 @@ func TestNCodesFollowNamingPattern(t *testing.T) {
 		{"CodeChatInvalidOpts", CodeChatInvalidOpts},
 		{"CodeChatFailed", CodeChatFailed},
 		{"CodeConfigIOFailed", CodeConfigIOFailed},
+		{"CodeSessionSaveFailed", CodeSessionSaveFailed},
+		{"CodeInterviewSaveFailed", CodeInterviewSaveFailed},
+		{"CodeRequirementsWriteFailed", CodeRequirementsWriteFailed},
 	}
 	for _, tc := range ncodes {
 		t.Run(tc.name, func(t *testing.T) {
@@ -267,6 +270,9 @@ func TestAllCodesAreUnique(t *testing.T) {
 		{"CodeChatInvalidOpts", CodeChatInvalidOpts},
 		{"CodeChatFailed", CodeChatFailed},
 		{"CodeConfigIOFailed", CodeConfigIOFailed},
+		{"CodeSessionSaveFailed", CodeSessionSaveFailed},
+		{"CodeInterviewSaveFailed", CodeInterviewSaveFailed},
+		{"CodeRequirementsWriteFailed", CodeRequirementsWriteFailed},
 		// Q codes
 		{"CodeQueueAddFailed", CodeQueueAddFailed},
 		{"CodeQueueListFailed", CodeQueueListFailed},

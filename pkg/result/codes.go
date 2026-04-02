@@ -235,6 +235,10 @@ const (
 
 	// N088: session save/load failed in pkg/resume (SaveAgentSession, LoadAgentSessions, DetectWithConfig)
 	CodeSessionSaveFailed = "N088_SESSION_SAVE_FAILED"
+	// N089: interview save failed (replaces inline "INTERVIEW_SAVE_FAILED" in pkg/interview)
+	CodeInterviewSaveFailed = "N089_INTERVIEW_SAVE_FAILED"
+	// N090: requirements write failed (replaces inline "REQUIREMENTS_WRITE_FAILED" in pkg/interview)
+	CodeRequirementsWriteFailed = "N090_REQUIREMENTS_WRITE_FAILED"
 )
 
 // Queue error codes (Q001-Q099)
