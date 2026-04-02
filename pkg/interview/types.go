@@ -121,22 +121,57 @@ type InterviewConfig struct {
 	ProjectPath  string        `yaml:"project_path,omitempty"`
 }
 
+// StartData holds the result payload returned by Manager.Start.
+type StartData struct {
+	Doc      *InterviewDoc
+	Question *InterviewQuestion
+}
+
+// ResumeData holds the result payload returned by Manager.Resume.
+type ResumeData struct {
+	Doc      *InterviewDoc
+	Question *InterviewQuestion // nil when Status == "complete"
+}
+
+// AnswerData holds the result payload returned by Manager.Answer.
+type AnswerData struct {
+	Doc      *InterviewDoc
+	Question *InterviewQuestion // nil when PhaseComplete reached
+}
+
+// CompileData holds the result payload returned by Manager.Compile.
+type CompileData struct {
+	OutputPath string
+}
+
+// SaveDocData holds metadata returned from a successful Save call.
+type SaveDocData struct {
+	DocPath   string
+	Timestamp time.Time
+}
+
+// WriteReqData holds metadata returned from a successful WriteRequirementsFile call.
+type WriteReqData struct {
+	OutputPath string
+	LineCount  int
+}
+
 // Manager is the interface for the interview state machine.
 // Deterministic and LLM-backed implementations satisfy this interface.
 type Manager interface {
 	// Start initializes a new interview and returns the first question.
-	Start(cfg InterviewConfig) (*InterviewDoc, *InterviewQuestion, error)
+	Start(cfg InterviewConfig) result.Result[StartData]
 
 	// Resume loads an existing interview from its YAML file and returns the current question.
-	Resume(docPath string) (*InterviewDoc, *InterviewQuestion, error)
+	Resume(docPath string) result.Result[ResumeData]
 
 	// Answer records a user response, advances the state machine, and returns the next question.
-	// Returns (doc, nil, nil) when the interview reaches PhaseComplete.
-	Answer(doc *InterviewDoc, answer string) (*InterviewDoc, *InterviewQuestion, error)
+	// Returns a Result containing (doc, nil question) when the interview reaches PhaseComplete.
+	Answer(doc *InterviewDoc, answer string) result.Result[AnswerData]
 
 	// Compile generates docs/REQUIREMENTS.md from a complete InterviewDoc.
 	// Returns the path to the generated file.
-	Compile(doc *InterviewDoc, outputPath string) (string, error)
+	Compile(doc *InterviewDoc, outputPath string) result.Result[CompileData]
 
 	// Save persists the InterviewDoc to its YAML file.
 	Save(doc *InterviewDoc, docPath string) result.Result[SaveDocData]
