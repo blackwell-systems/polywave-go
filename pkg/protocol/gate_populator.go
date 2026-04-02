@@ -347,8 +347,13 @@ func FinalizeIMPL(implPath, repoRoot string) result.Result[FinalizeIMPLData] {
 	extractor.RegisterBuildSystemParser(&commands.PackageJSONParser{})
 
 	for _, repo := range repos {
-		commandSet, err := extractor.Extract(context.TODO(), repo)
-		if err != nil || commandSet == nil {
+		r := extractor.Extract(context.TODO(), repo)
+		if r.IsFatal() {
+			// Skip repos without H2 data - agents may have manually-specified gates
+			continue
+		}
+		commandSet := r.GetData().CommandSet
+		if commandSet == nil {
 			// Skip repos without H2 data - agents may have manually-specified gates
 			continue
 		}

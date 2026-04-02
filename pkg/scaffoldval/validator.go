@@ -75,8 +75,14 @@ func ValidateScaffold(ctx context.Context, scaffoldPath string, implPath string,
 	extractor.RegisterBuildSystemParser(&commands.MakefileParser{})
 	extractor.RegisterBuildSystemParser(&commands.PackageJSONParser{})
 
-	commandSet, err := extractor.Extract(ctx, root)
-	if err != nil || commandSet.Commands.Build == "" {
+	r := extractor.Extract(ctx, root)
+	if r.IsFatal() {
+		vr.Build.Status = "SKIP"
+		vr.Build.Errors = []string{"No build command found"}
+		return result.NewSuccess(vr)
+	}
+	commandSet := r.GetData().CommandSet
+	if commandSet == nil || commandSet.Commands.Build == "" {
 		vr.Build.Status = "SKIP"
 		vr.Build.Errors = []string{"No build command found"}
 		return result.NewSuccess(vr)

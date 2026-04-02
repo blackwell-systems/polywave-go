@@ -2700,6 +2700,18 @@
         "cached_at": "2026-03-26T11:54:10.995794-07:00"
       }
     },
+    "6a3333844b5198d30538b45cbf1e0e2e": {
+      "test": {
+        "gate_type": "test",
+        "command": "go test ./pkg/commands/... -coverprofile=/tmp/commands-coverage.out \u0026\u0026 go tool cover -func=/tmp/commands-coverage.out | grep \"^total:\" | awk '{if ($3 \u003c \"92.0%\") exit 1}'",
+        "passed": false,
+        "exit_code": 1,
+        "stdout": "FAIL\tgithub.com/blackwell-systems/scout-and-wave-go/pkg/commands [build failed]\nFAIL\n",
+        "stderr": "# github.com/blackwell-systems/scout-and-wave-go/pkg/commands [github.com/blackwell-systems/scout-and-wave-go/pkg/commands.test]\npkg/commands/extractor.go:54:54: assignment mismatch: 2 variables but parser.ParseCI returns 1 value\npkg/commands/extractor.go:72:54: assignment mismatch: 2 variables but parser.ParseBuildSystem returns 1 value\npkg/commands/extractor.go:96:52: assignment mismatch: 2 variables but LanguageDefaults returns 1 value\npkg/commands/github_actions.go:35:20: undefined: _localCodeCommandExtractWorkflowRead\npkg/commands/extractor_test.go:87:29: cannot use \u0026mockCIParser{…} (value of type *mockCIParser) as CIParser value in argument to extractor.RegisterCIParser: *mockCIParser does not implement CIParser (wrong type for method ParseCI)\n\t\thave ParseCI(string) (*CommandSet, error)\n\t\twant ParseCI(string) result.Result[ParseCIData]\npkg/commands/extractor_test.go:92:38: cannot use \u0026mockBuildSystemParser{…} (value of type *mockBuildSystemParser) as BuildSystemParser value in argument to extractor.RegisterBuildSystemParser: *mockBuildSystemParser does not implement BuildSystemParser (wrong type for method ParseBuildSystem)\n\t\thave ParseBuildSystem(string) (*CommandSet, error)\n\t\twant ParseBuildSystem(string) result.Result[ParseBuildSystemData]\npkg/commands/extractor_test.go:122:21: cannot use mockLanguageDefaults (value of type func(repoRoot string) (*CommandSet, error)) as func(repoRoot string) result.Result[LanguageDefaultsData] value in assignment\npkg/commands/extractor_test.go:127:29: cannot use \u0026mockCIParser{…} (value of type *mockCIParser) as CIParser value in argument to extractor.RegisterCIParser: *mockCIParser does not implement CIParser (wrong type for method ParseCI)\n\t\thave ParseCI(string) (*CommandSet, error)\n\t\twant ParseCI(string) result.Result[ParseCIData]\npkg/commands/extractor_test.go:132:38: cannot use \u0026mockBuildSystemParser{…} (value of type *mockBuildSystemParser) as BuildSystemParser value in argument to extractor.RegisterBuildSystemParser: *mockBuildSystemParser does not implement BuildSystemParser (wrong type for method ParseBuildSystem)\n\t\thave ParseBuildSystem(string) (*CommandSet, error)\n\t\twant ParseBuildSystem(string) result.Result[ParseBuildSystemData]\npkg/commands/extractor_test.go:172:29: cannot use \u0026mockCIParser{…} (value of type *mockCIParser) as CIParser value in argument to extractor.RegisterCIParser: *mockCIParser does not implement CIParser (wrong type for method ParseCI)\n\t\thave ParseCI(string) (*CommandSet, error)\n\t\twant ParseCI(string) result.Result[ParseCIData]\npkg/commands/extractor_test.go:172:29: too many errors\n",
+        "from_cache": true,
+        "cached_at": "2026-04-01T20:45:46.1157-07:00"
+      }
+    },
     "6ad30f98b2c302ad5f673f8e6612388b": {
       "test": {
         "gate_type": "test",
@@ -4102,6 +4114,18 @@
         "stderr": "",
         "from_cache": true,
         "cached_at": "2026-03-26T09:55:38.366044-07:00"
+      }
+    },
+    "9d30fbd3ec2a259ddd5fc7520539df56": {
+      "build": {
+        "gate_type": "build",
+        "command": "go build ./pkg/commands/...",
+        "passed": false,
+        "exit_code": 1,
+        "stdout": "",
+        "stderr": "# github.com/blackwell-systems/scout-and-wave-go/pkg/commands\npkg/commands/extractor.go:54:22: assignment mismatch: 2 variables but parser.ParseCI returns 1 value\npkg/commands/extractor.go:72:22: assignment mismatch: 2 variables but parser.ParseBuildSystem returns 1 value\npkg/commands/extractor.go:96:21: assignment mismatch: 2 variables but LanguageDefaults returns 1 value\npkg/commands/github_actions.go:35:20: undefined: _localCodeCommandExtractWorkflowRead\n",
+        "from_cache": true,
+        "cached_at": "2026-04-01T20:45:45.455038-07:00"
       }
     },
     "9d7f9b4c34961a9a9fd014ffbbf6d99f": {
@@ -5926,6 +5950,18 @@
         "stderr": "",
         "from_cache": true,
         "cached_at": "2026-04-01T00:09:16.411188-07:00"
+      }
+    },
+    "d264dd7dffcfbf6b1bbf817d9d4d1d2f": {
+      "lint": {
+        "gate_type": "lint",
+        "command": "go vet ./pkg/commands/...",
+        "passed": false,
+        "exit_code": 1,
+        "stdout": "",
+        "stderr": "# github.com/blackwell-systems/scout-and-wave-go/pkg/commands\n# [github.com/blackwell-systems/scout-and-wave-go/pkg/commands]\nvet: pkg/commands/extractor.go:54:22: assignment mismatch: 2 variables but parser.ParseCI returns 1 value\n",
+        "from_cache": true,
+        "cached_at": "2026-04-01T20:45:45.779401-07:00"
       }
     },
     "d2c32801ed0371b15c4c9c01d2a50613": {

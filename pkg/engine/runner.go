@@ -1157,12 +1157,12 @@ func runScoutAutomation(repoPath string, featureDescription string) string {
 	var sections []string
 
 	// H2: Extract build/test/lint commands
-	commandsResult, commandsErr := commands.ExtractCommands(context.TODO(), repoPath)
-	if commandsErr != nil {
+	commandsResult := commands.ExtractCommands(context.TODO(), repoPath)
+	if commandsResult.IsFatal() {
 		sections = append(sections, "### Build/Test Commands (H2)\nNot detected")
 	} else {
 		// Cannot use protocol.SaveYAML: marshaling to []byte for inline string formatting, not to a file.
-		commandsYAML, err := yaml.Marshal(commandsResult)
+		commandsYAML, err := yaml.Marshal(commandsResult.GetData().CommandSet)
 		if err != nil {
 			sections = append(sections, "### Build/Test Commands (H2)\nNot detected")
 		} else {

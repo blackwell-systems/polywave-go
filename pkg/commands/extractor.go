@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"sort"
+
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
 )
 
 // Extractor orchestrates priority-based command resolution across CI parsers
@@ -38,24 +40,32 @@ type parserResult struct {
 	priority   int
 }
 
+// ExtractData wraps the result of Extract operation
+type ExtractData struct {
+	CommandSet *CommandSet
+}
+
 // Extract is the main entry point for command extraction. It orchestrates
 // priority-based resolution across CI parsers and build system parsers.
 // Returns the highest-priority CommandSet found, or language defaults if
 // no config files are present. The ctx parameter allows cancellation of the
 // extraction process between parser invocations.
-func (e *Extractor) Extract(ctx context.Context, repoRoot string) (*CommandSet, error) {
+func (e *Extractor) Extract(ctx context.Context, repoRoot string) result.Result[ExtractData] {
 	var results []parserResult
 
 	// Collect results from CI parsers
 	for _, parser := range e.ciParsers {
 		if err := ctx.Err(); err != nil {
-			return nil, fmt.Errorf("extraction cancelled: %w", err)
+			return result.NewFailure[ExtractData]([]result.SAWError{
+				result.NewFatal(result.CodeCommandExtractCancelled, fmt.Sprintf("extraction cancelled: %v", err)),
+			})
 		}
-		commandSet, err := parser.ParseCI(repoRoot)
-		if err != nil {
+		r := parser.ParseCI(repoRoot)
+		if r.IsFatal() {
 			// Log error but continue with other parsers
 			continue
 		}
+		commandSet := r.GetData().CommandSet
 		if commandSet != nil {
 			results = append(results, parserResult{
 				commandSet: commandSet,
@@ -67,13 +77,16 @@ func (e *Extractor) Extract(ctx context.Context, repoRoot string) (*CommandSet, 
 	// Collect results from build system parsers
 	for _, parser := range e.buildSystemParsers {
 		if err := ctx.Err(); err != nil {
-			return nil, fmt.Errorf("extraction cancelled: %w", err)
+			return result.NewFailure[ExtractData]([]result.SAWError{
+				result.NewFatal(result.CodeCommandExtractCancelled, fmt.Sprintf("extraction cancelled: %v", err)),
+			})
 		}
-		commandSet, err := parser.ParseBuildSystem(repoRoot)
-		if err != nil {
+		r := parser.ParseBuildSystem(repoRoot)
+		if r.IsFatal() {
 			// Log error but continue with other parsers
 			continue
 		}
+		commandSet := r.GetData().CommandSet
 		if commandSet != nil {
 			results = append(results, parserResult{
 				commandSet: commandSet,
@@ -89,13 +102,13 @@ func (e *Extractor) Extract(ctx context.Context, repoRoot string) (*CommandSet, 
 
 	// Return highest-priority result if available
 	if len(results) > 0 {
-		return results[0].commandSet, nil
+		return result.NewSuccess(ExtractData{CommandSet: results[0].commandSet})
 	}
 
 	// Fall back to language defaults
-	commandSet, err := LanguageDefaults(repoRoot)
-	if err != nil {
-		return nil, fmt.Errorf("all parsers returned nil and language defaults failed: %w", err)
+	r := LanguageDefaults(repoRoot)
+	if r.IsFatal() {
+		return result.NewFailure[ExtractData](r.Errors)
 	}
-	return commandSet, nil
+	return result.NewSuccess(ExtractData{CommandSet: r.GetData().CommandSet})
 }

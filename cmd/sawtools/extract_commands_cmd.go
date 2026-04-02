@@ -33,13 +33,18 @@ Output format matches the Scout IMPL doc command specification.`,
 			extractor.RegisterBuildSystemParser(&commands.PackageJSONParser{})
 
 			// Extract commands
-			commandSet, err := extractor.Extract(cmd.Context(), repoRoot)
-			if err != nil {
-				return fmt.Errorf("extract commands: %w", err)
+			r := extractor.Extract(cmd.Context(), repoRoot)
+			if r.IsFatal() {
+				if len(r.Errors) > 0 {
+					return fmt.Errorf("extract commands: %s", r.Errors[0].Message)
+				}
+				return fmt.Errorf("extract commands: unknown error")
 			}
+			commandSet := r.GetData().CommandSet
 
 			// Serialize to requested format
 			var data []byte
+			var err error
 			switch formatFlag {
 			case "yaml":
 				// Cannot use protocol.SaveYAML: marshaling to []byte for stdout, not to a file path.

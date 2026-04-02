@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"testing"
+
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
 )
 
 // Mock CI parser for testing
@@ -13,11 +15,11 @@ type mockCIParser struct {
 	err        error
 }
 
-func (m *mockCIParser) ParseCI(repoRoot string) (*CommandSet, error) {
+func (m *mockCIParser) ParseCI(repoRoot string) result.Result[ParseCIData] {
 	if m.err != nil {
-		return nil, m.err
+		return result.NewFailure[ParseCIData]([]result.SAWError{result.NewFatal("MOCK_ERROR", m.err.Error())})
 	}
-	return m.commandSet, nil
+	return result.NewSuccess(ParseCIData{CommandSet: m.commandSet})
 }
 
 func (m *mockCIParser) Priority() int {
@@ -31,11 +33,11 @@ type mockBuildSystemParser struct {
 	err        error
 }
 
-func (m *mockBuildSystemParser) ParseBuildSystem(repoRoot string) (*CommandSet, error) {
+func (m *mockBuildSystemParser) ParseBuildSystem(repoRoot string) result.Result[ParseBuildSystemData] {
 	if m.err != nil {
-		return nil, m.err
+		return result.NewFailure[ParseBuildSystemData]([]result.SAWError{result.NewFatal("MOCK_ERROR", m.err.Error())})
 	}
-	return m.commandSet, nil
+	return result.NewSuccess(ParseBuildSystemData{CommandSet: m.commandSet})
 }
 
 func (m *mockBuildSystemParser) Priority() int {
@@ -45,17 +47,19 @@ func (m *mockBuildSystemParser) Priority() int {
 // Mock LanguageDefaults function for testing
 var originalLanguageDefaults = LanguageDefaults
 
-func mockLanguageDefaults(repoRoot string) (*CommandSet, error) {
-	return &CommandSet{
-		Toolchain: "go",
-		Commands: Commands{
-			Build: "go build ./...",
-			Test: TestCommands{
-				Full: "go test ./...",
+func mockLanguageDefaults(repoRoot string) result.Result[LanguageDefaultsData] {
+	return result.NewSuccess(LanguageDefaultsData{
+		CommandSet: &CommandSet{
+			Toolchain: "go",
+			Commands: Commands{
+				Build: "go build ./...",
+				Test: TestCommands{
+					Full: "go test ./...",
+				},
 			},
+			DetectionSources: []string{"defaults"},
 		},
-		DetectionSources: []string{"defaults"},
-	}, nil
+	})
 }
 
 func TestExtractor_PriorityResolution(t *testing.T) {
@@ -95,13 +99,14 @@ func TestExtractor_PriorityResolution(t *testing.T) {
 	})
 
 	// Execute
-	result, err := extractor.Extract(context.Background(), "/fake/repo")
+	r := extractor.Extract(context.Background(), "/fake/repo")
 
 	// Verify
-	if err != nil {
-		t.Fatalf("Expected no error, got %v", err)
+	if r.IsFatal() {
+		t.Fatalf("Expected no error, got %v", r.Errors)
 	}
 
+	result := r.GetData().CommandSet
 	if result == nil {
 		t.Fatal("Expected non-nil result")
 	}
@@ -135,13 +140,14 @@ func TestExtractor_FallbackToDefaults(t *testing.T) {
 	})
 
 	// Execute
-	result, err := extractor.Extract(context.Background(), "/fake/repo")
+	r := extractor.Extract(context.Background(), "/fake/repo")
 
 	// Verify
-	if err != nil {
-		t.Fatalf("Expected no error, got %v", err)
+	if r.IsFatal() {
+		t.Fatalf("Expected no error, got %v", r.Errors)
 	}
 
+	result := r.GetData().CommandSet
 	if result == nil {
 		t.Fatal("Expected non-nil result")
 	}
@@ -181,13 +187,14 @@ func TestExtractor_NilResults(t *testing.T) {
 	})
 
 	// Execute
-	result, err := extractor.Extract(context.Background(), "/fake/repo")
+	r := extractor.Extract(context.Background(), "/fake/repo")
 
 	// Verify
-	if err != nil {
-		t.Fatalf("Expected no error, got %v", err)
+	if r.IsFatal() {
+		t.Fatalf("Expected no error, got %v", r.Errors)
 	}
 
+	result := r.GetData().CommandSet
 	if result == nil {
 		t.Fatal("Expected non-nil result")
 	}
@@ -206,13 +213,14 @@ func TestExtractor_EmptyParsers(t *testing.T) {
 	extractor := New()
 
 	// Execute with no parsers registered
-	result, err := extractor.Extract(context.Background(), "/fake/repo")
+	r := extractor.Extract(context.Background(), "/fake/repo")
 
 	// Verify
-	if err != nil {
-		t.Fatalf("Expected no error, got %v", err)
+	if r.IsFatal() {
+		t.Fatalf("Expected no error, got %v", r.Errors)
 	}
 
+	result := r.GetData().CommandSet
 	if result == nil {
 		t.Fatal("Expected non-nil result")
 	}
@@ -248,13 +256,14 @@ func TestExtractor_ErrorHandling(t *testing.T) {
 	})
 
 	// Execute
-	result, err := extractor.Extract(context.Background(), "/fake/repo")
+	r := extractor.Extract(context.Background(), "/fake/repo")
 
 	// Verify
-	if err != nil {
-		t.Fatalf("Expected no error (errors should be ignored), got %v", err)
+	if r.IsFatal() {
+		t.Fatalf("Expected no error (errors should be ignored), got %v", r.Errors)
 	}
 
+	result := r.GetData().CommandSet
 	if result == nil {
 		t.Fatal("Expected non-nil result")
 	}
@@ -297,13 +306,14 @@ func TestExtractor_PriorityTies(t *testing.T) {
 	})
 
 	// Execute
-	result, err := extractor.Extract(context.Background(), "/fake/repo")
+	r := extractor.Extract(context.Background(), "/fake/repo")
 
 	// Verify
-	if err != nil {
-		t.Fatalf("Expected no error, got %v", err)
+	if r.IsFatal() {
+		t.Fatalf("Expected no error, got %v", r.Errors)
 	}
 
+	result := r.GetData().CommandSet
 	if result == nil {
 		t.Fatal("Expected non-nil result")
 	}
@@ -326,42 +336,38 @@ func TestExtractor_ContextCancellation(t *testing.T) {
 	})
 
 	// Execute with cancelled context
-	result, err := extractor.Extract(ctx, "/fake/repo")
+	r := extractor.Extract(ctx, "/fake/repo")
 
 	// Verify cancellation is propagated
-	if err == nil {
-		t.Fatal("Expected error from cancelled context, got nil")
+	if !r.IsFatal() {
+		t.Fatal("Expected error from cancelled context, got success")
 	}
 
-	if result != nil {
-		t.Errorf("Expected nil result on cancellation, got %v", result)
+	if len(r.Errors) == 0 {
+		t.Error("Expected error details, got empty error list")
 	}
 }
 
 func TestExtractor_LanguageDefaultsError(t *testing.T) {
 	// Setup: Replace LanguageDefaults with error-returning mock
 	defer func() { LanguageDefaults = originalLanguageDefaults }()
-	LanguageDefaults = func(repoRoot string) (*CommandSet, error) {
-		return nil, errors.New("language detection failed")
+	LanguageDefaults = func(repoRoot string) result.Result[LanguageDefaultsData] {
+		return result.NewFailure[LanguageDefaultsData]([]result.SAWError{
+			result.NewFatal("LANG_DETECT_FAILED", "language detection failed"),
+		})
 	}
 
 	extractor := New()
 
 	// Execute with no valid parsers
-	result, err := extractor.Extract(context.Background(), "/fake/repo")
+	r := extractor.Extract(context.Background(), "/fake/repo")
 
 	// Verify
-	if err == nil {
+	if !r.IsFatal() {
 		t.Fatal("Expected error when language defaults fail")
 	}
 
-	if result != nil {
-		t.Errorf("Expected nil result on error, got %v", result)
-	}
-
-	// Error message should mention both parser failure and defaults failure
-	expectedMsg := "all parsers returned nil and language defaults failed"
-	if err.Error()[:len(expectedMsg)] != expectedMsg {
-		t.Errorf("Expected error message starting with '%s', got '%s'", expectedMsg, err.Error())
+	if len(r.Errors) == 0 {
+		t.Error("Expected error details, got empty error list")
 	}
 }
