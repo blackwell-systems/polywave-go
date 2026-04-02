@@ -32,7 +32,7 @@ func (p *GithubActionsParser) ParseCI(repoRoot string) result.Result[ParseCIData
 	entries, err := os.ReadDir(workflowsDir)
 	if err != nil {
 		return result.NewFailure[ParseCIData]([]result.SAWError{
-			result.NewFatal(_localCodeCommandExtractWorkflowRead, fmt.Sprintf("reading workflows directory: %v", err)),
+			result.NewFatal(result.CodeCommandExtractWorkflowRead, fmt.Sprintf("reading workflows directory: %v", err)),
 		})
 	}
 
