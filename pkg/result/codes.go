@@ -17,6 +17,8 @@
 //	D001-D099: Dependency check errors (lock file parsing, missing deps)
 //	E001-E099: Command extraction errors (workflow/package parsing, toolchain detection)
 //	X001-X099: Scout automation static analysis errors (check-callers, check-test-cascade, suggest-wave-structure)
+//	Q001-Q099: Queue errors
+//	R001-R099: Retry errors
 package result
 
 // Validation error codes (V001-V099)
@@ -151,14 +153,14 @@ const (
 	// N017: program status computation failed (replaces "E_PROGRAM_STATUS" in program_status.go)
 	CodeProgramStatusFailed = "N017_PROGRAM_STATUS_FAILED"
 
-	// N018-N084: Engine operation codes (renamed to follow Nxxx_DESCRIPTION pattern)
+	// N018-N087: Engine operation codes (renamed to follow Nxxx_DESCRIPTION pattern)
 
 	// CodeContextCancelled is emitted when an operation is cancelled via context.
 	CodeContextCancelled = "N018_CONTEXT_CANCELLED"
 	// CodeDispatchNoAdapters is emitted by Dispatcher.Dispatch when no adapters are registered.
-	CodeDispatchNoAdapters = "DISPATCH_NO_ADAPTERS"
+	CodeDispatchNoAdapters = "N086_DISPATCH_NO_ADAPTERS"
 	// CodeDispatchAllFailed is emitted by Dispatcher.Dispatch when all adapters fail.
-	CodeDispatchAllFailed = "DISPATCH_ALL_FAILED"
+	CodeDispatchAllFailed = "N087_DISPATCH_ALL_FAILED"
 
 	// Scout operation codes
 	CodeScoutInvalidOpts         = "N019_SCOUT_INVALID_OPTS"
@@ -304,15 +306,6 @@ const (
 	CodeCachePutCancelled = "K005_CACHE_PUT_CANCELLED"
 	// CodeCacheInvalidateCancelled is emitted when Invalidate is cancelled
 	CodeCacheInvalidateCancelled = "K006_CACHE_INVALIDATE_CANCELLED"
-)
-
-// Scaffold validation error codes (SV01-SV10)
-const (
-	CodeScaffoldSyntaxFail   = "SV01_SYNTAX_FAIL"        // go/parser failed
-	CodeScaffoldImportFail   = "SV02_IMPORT_FAIL"        // missing imports detected
-	CodeScaffoldBuildFail    = "SV03_BUILD_FAIL"         // build command failed
-	CodeScaffoldParseFail    = "SV04_PARSE_FAIL"         // AST parse error (distinct from syntax fail)
-	CodeScaffoldProtocolLoad = "SV05_PROTOCOL_LOAD_FAIL" // IMPL doc load failed
 )
 
 // Agent ID generation error codes (I001-I099)

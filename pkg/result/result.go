@@ -4,7 +4,7 @@
 // This package replaces 68 distinct *Result types found throughout the codebase
 // with a single generic Result[T] wrapper that supports:
 //   - Full success (Code: "SUCCESS", Data present, no errors)
-//   - Partial success (Code: "PARTIAL", Data present, warnings in Errors)
+//   - Partial success (Code: "PARTIAL", Data present, errors in Errors)
 //   - Total failure (Code: "FATAL", no Data, fatal errors in Errors)
 //
 // The unified interface eliminates inconsistent success checking patterns
@@ -123,10 +123,10 @@ func NewSuccess[T any](data T) Result[T] {
 }
 
 // NewPartial creates a partially successful Result with data and warnings.
-func NewPartial[T any](data T, warnings []SAWError) Result[T] {
+func NewPartial[T any](data T, errs []SAWError) Result[T] {
 	return Result[T]{
 		Data:   &data,
-		Errors: warnings,
+		Errors: errs,
 		Code:   "PARTIAL",
 	}
 }
