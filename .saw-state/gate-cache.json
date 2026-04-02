@@ -660,6 +660,18 @@
         "cached_at": "2026-03-30T12:31:28.207297-07:00"
       }
     },
+    "1bd565088e9224375ce36d697abab737": {
+      "build": {
+        "gate_type": "build",
+        "command": "go build ./...",
+        "passed": true,
+        "exit_code": 0,
+        "stdout": "",
+        "stderr": "",
+        "from_cache": true,
+        "cached_at": "2026-04-02T11:00:32.491421-07:00"
+      }
+    },
     "1c42564ae1dbd298450a4c6be15946c3": {
       "test": {
         "gate_type": "test",
@@ -2196,6 +2208,18 @@
         "cached_at": "2026-03-26T00:53:10.089976-07:00"
       }
     },
+    "541c33e58ae4785923f34e607df664b0": {
+      "test": {
+        "gate_type": "test",
+        "command": "go test ./...",
+        "passed": true,
+        "exit_code": 0,
+        "stdout": "ok  \tgithub.com/blackwell-systems/scout-and-wave-go/cmd/sawtools\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/internal/git\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/agent\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/agent/backend\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/agent/backend/api\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/agent/backend/bedrock\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/agent/backend/cli\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/agent/backend/openai\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/agent/dedup\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/analyzer\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/autonomy\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/builddiag\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/codereview\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/collision\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/commands\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/config\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/deps\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/engine\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/engine/workspace\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/errparse\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/format\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/gatecache\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/hooks\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/idgen\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/interview\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/journal\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/notify\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/observability\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/observability/sqlite\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/orchestrator\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/pipeline\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/protocol\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/queue\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/result\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/resume\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/retry\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/scaffold\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/scaffoldval\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/solver\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/suitability\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/tools\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/worktree\t(cached)\n",
+        "stderr": "",
+        "from_cache": true,
+        "cached_at": "2026-04-02T11:04:41.817261-07:00"
+      }
+    },
     "549dc7d2f2bdcdf6da2b762d4c79a1b6": {
       "test": {
         "gate_type": "test",
@@ -2808,6 +2832,18 @@
         "cached_at": "2026-04-01T08:17:37.589007-07:00"
       }
     },
+    "668c05fdb90493115ca1beb7d7525ef5": {
+      "lint": {
+        "gate_type": "lint",
+        "command": "go vet ./...",
+        "passed": true,
+        "exit_code": 0,
+        "stdout": "",
+        "stderr": "",
+        "from_cache": true,
+        "cached_at": "2026-04-02T11:00:34.609902-07:00"
+      }
+    },
     "66d609449985f2cb26bf562e7ed8af18": {
       "test": {
         "gate_type": "test",
@@ -2878,6 +2914,18 @@
         "stderr": "# github.com/blackwell-systems/scout-and-wave-go/pkg/commands [github.com/blackwell-systems/scout-and-wave-go/pkg/commands.test]\npkg/commands/extractor.go:54:54: assignment mismatch: 2 variables but parser.ParseCI returns 1 value\npkg/commands/extractor.go:72:54: assignment mismatch: 2 variables but parser.ParseBuildSystem returns 1 value\npkg/commands/extractor.go:96:52: assignment mismatch: 2 variables but LanguageDefaults returns 1 value\npkg/commands/github_actions.go:35:20: undefined: _localCodeCommandExtractWorkflowRead\npkg/commands/extractor_test.go:87:29: cannot use \u0026mockCIParser{…} (value of type *mockCIParser) as CIParser value in argument to extractor.RegisterCIParser: *mockCIParser does not implement CIParser (wrong type for method ParseCI)\n\t\thave ParseCI(string) (*CommandSet, error)\n\t\twant ParseCI(string) result.Result[ParseCIData]\npkg/commands/extractor_test.go:92:38: cannot use \u0026mockBuildSystemParser{…} (value of type *mockBuildSystemParser) as BuildSystemParser value in argument to extractor.RegisterBuildSystemParser: *mockBuildSystemParser does not implement BuildSystemParser (wrong type for method ParseBuildSystem)\n\t\thave ParseBuildSystem(string) (*CommandSet, error)\n\t\twant ParseBuildSystem(string) result.Result[ParseBuildSystemData]\npkg/commands/extractor_test.go:122:21: cannot use mockLanguageDefaults (value of type func(repoRoot string) (*CommandSet, error)) as func(repoRoot string) result.Result[LanguageDefaultsData] value in assignment\npkg/commands/extractor_test.go:127:29: cannot use \u0026mockCIParser{…} (value of type *mockCIParser) as CIParser value in argument to extractor.RegisterCIParser: *mockCIParser does not implement CIParser (wrong type for method ParseCI)\n\t\thave ParseCI(string) (*CommandSet, error)\n\t\twant ParseCI(string) result.Result[ParseCIData]\npkg/commands/extractor_test.go:132:38: cannot use \u0026mockBuildSystemParser{…} (value of type *mockBuildSystemParser) as BuildSystemParser value in argument to extractor.RegisterBuildSystemParser: *mockBuildSystemParser does not implement BuildSystemParser (wrong type for method ParseBuildSystem)\n\t\thave ParseBuildSystem(string) (*CommandSet, error)\n\t\twant ParseBuildSystem(string) result.Result[ParseBuildSystemData]\npkg/commands/extractor_test.go:172:29: cannot use \u0026mockCIParser{…} (value of type *mockCIParser) as CIParser value in argument to extractor.RegisterCIParser: *mockCIParser does not implement CIParser (wrong type for method ParseCI)\n\t\thave ParseCI(string) (*CommandSet, error)\n\t\twant ParseCI(string) result.Result[ParseCIData]\npkg/commands/extractor_test.go:172:29: too many errors\n",
         "from_cache": true,
         "cached_at": "2026-04-01T20:45:46.1157-07:00"
+      }
+    },
+    "6aabe57c61f884c7418db3f507ec997c": {
+      "build": {
+        "gate_type": "build",
+        "command": "go build ./...",
+        "passed": true,
+        "exit_code": 0,
+        "stdout": "",
+        "stderr": "",
+        "from_cache": true,
+        "cached_at": "2026-04-02T11:04:40.270164-07:00"
       }
     },
     "6ad30f98b2c302ad5f673f8e6612388b": {
@@ -4234,6 +4282,18 @@
         "stderr": "",
         "from_cache": true,
         "cached_at": "2026-03-31T14:03:50.915822-07:00"
+      }
+    },
+    "98753014e17a1e68e2959d5de92684a7": {
+      "test": {
+        "gate_type": "test",
+        "command": "go test ./...",
+        "passed": true,
+        "exit_code": 0,
+        "stdout": "ok  \tgithub.com/blackwell-systems/scout-and-wave-go/cmd/sawtools\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/internal/git\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/agent\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/agent/backend\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/agent/backend/api\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/agent/backend/bedrock\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/agent/backend/cli\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/agent/backend/openai\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/agent/dedup\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/analyzer\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/autonomy\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/builddiag\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/codereview\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/collision\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/commands\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/config\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/deps\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/engine\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/engine/workspace\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/errparse\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/format\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/gatecache\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/hooks\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/idgen\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/interview\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/journal\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/notify\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/observability\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/observability/sqlite\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/orchestrator\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/pipeline\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/protocol\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/queue\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/result\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/resume\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/retry\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/scaffold\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/scaffoldval\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/solver\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/suitability\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/tools\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/worktree\t(cached)\n",
+        "stderr": "",
+        "from_cache": true,
+        "cached_at": "2026-04-02T11:00:34.028462-07:00"
       }
     },
     "98a45c8a8e8d66d9e0ae04842443525a": {
@@ -6118,6 +6178,18 @@
         "stderr": "",
         "from_cache": true,
         "cached_at": "2026-04-01T00:38:38.484932-07:00"
+      }
+    },
+    "cf0d012e0364d877c306d880127bdf05": {
+      "lint": {
+        "gate_type": "lint",
+        "command": "go vet ./...",
+        "passed": true,
+        "exit_code": 0,
+        "stdout": "",
+        "stderr": "",
+        "from_cache": true,
+        "cached_at": "2026-04-02T11:04:42.519186-07:00"
       }
     },
     "cf43d028444a7149c41235132b474df5": {
