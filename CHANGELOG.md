@@ -134,6 +134,36 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [Unreleased]
+
+### Added
+
+- **`pkg/protocol/brief_validator.go`:** New `ValidateBriefs(ctx, implPath)` function performs language-agnostic pre-wave brief accuracy checks. Extracts symbols (backtick-quoted identifiers, `type X struct`, `func Y()` patterns) and line number references from each agent's task description, then verifies: (1) every referenced symbol exists in the agent's owned files via `grep`, with fuzzy Levenshtein suggestions when not found; (2) every line number reference is valid (file has that many lines via `wc -l`). Returns `BriefValidationData` with per-agent `AgentBriefResult` entries and a `"N agents validated, M issues found"` summary. Skips existence checks for `action: new` files.
+- **`pkg/protocol/check_callers.go`:** New `CheckCallers(ctx, repoDir, symbolName)` function walks all `.go` files under `repoDir` (skipping `vendor/` and `.git/`), returns every (file, line, context) tuple where `symbolName` appears as a call expression. Returns `result.Result[[]CallerSite]`. Supports plain function names (`GetData`) and method call expressions (`cache.Get`). Test files are included in the scan.
+- **`pkg/protocol/check_callers.go`:** New `ListErrorRanges(ctx, repoDir)` function parses the package-doc comment block in `pkg/result/codes.go` and returns all declared error code ranges as `result.Result[[]ErrorCodeRange]`. Lets Scout and agents choose unoccupied code prefix letters without guessing.
+- **`pkg/protocol/check_test_cascade.go`:** New `CheckTestCascade(ctx, m, repoDir)` pre-flight gate. For each agent whose task description contains change keywords (`"migrate"`, `"change signature"`, `"change return type"`, `"rename"`, etc.), extracts backtick-quoted symbol names, then walks `*_test.go` files across the entire repo looking for any test file that calls a changed symbol but is NOT in `m.FileOwnership`. Returns `result.Result[[]TestCascadeError]` — success with empty slice when all test callers are covered, otherwise a list of orphaned call sites with symbol, file, line, and responsible agents.
+- **`pkg/protocol/suggest_wave_structure.go`:** New `SuggestWaveStructure(ctx, m, repoDir)` validator. Identifies symbols whose signatures are changing (from `InterfaceContracts` and agent task keywords), finds callers in `FileOwnership`, and checks: callers in earlier waves (error), same-wave callers missing `depends_on` (warning), later-wave callers missing `depends_on` referencing the defining agent (error). Returns `result.Result[[]WaveStructureProblem]`.
+- **`cmd/sawtools/validate_briefs_cmd.go`:** New `sawtools validate-briefs <manifest-path>` CLI command. Calls `protocol.ValidateBriefs`, emits JSON output with per-agent results and suggestions, exits 1 if `"valid": false`.
+- **`cmd/sawtools/check_callers_cmd.go`:** New `sawtools check-callers <symbol-name> --repo-dir <path>` CLI command. Returns JSON array of `{file, line, context}` call sites. Used by Scout and critic agent to enumerate all callers including test files before planning interface migrations.
+- **`cmd/sawtools/list_error_ranges_cmd.go`:** New `sawtools list-error-ranges --repo-dir <path>` CLI command. Returns JSON array of all allocated error code ranges from `pkg/result/codes.go`.
+- **`cmd/sawtools/suggest_wave_structure_cmd.go`:** New `sawtools suggest-wave-structure <manifest-path> --repo-dir <path>` CLI command. Exits 0 when no wave structure problems found, exits 1 if any problems would cause E21A failures.
+- **`cmd/sawtools/check_test_cascade_cmd.go`:** New `sawtools check-test-cascade <manifest-path> --repo-dir <path>` CLI command. Exits 0 when all test callers are covered, exits 1 when orphaned test callers are found.
+- **`pkg/result/codes.go`:** New `K001–K099` cache error code range with constants: `CodeCacheMiss` (K001), `CodeCacheBuildKeyFailed` (K002), `CodeCachePutFailed` (K003), `CodeCacheInvalidateFailed` (K004), `CodeCachePutCancelled` (K005), `CodeCacheInvalidateCancelled` (K006).
+- **`pkg/result/codes.go`:** New `X001–X099` scout automation static analysis error range with constants: `CodeCheckCallerInvalidInput` (X001), `CodeCheckCallerFileRead` (X002), `CodeTestCascadeOrphan` (X003), `CodeWaveStructureCallerBefore` (X004), `CodeWaveStructureMissingDep` (X005).
+- **`pkg/gatecache/cache.go`:** New `GetData` struct wrapping successful cache hits (`Result`, `Key`, `FromCache` fields). Returned by the migrated `Cache.Get` signature.
+
+### Changed
+
+- **`pkg/gatecache/cache.go`:** `Cache.Get` return type changed from `(*CachedResult, bool)` to `result.Result[GetData]`. Cache misses and expired entries now return a non-fatal `Result` with code `"CACHE_MISS"` instead of `nil, false`. All protocol callers updated to use `.GetData()` and `.IsFatal()` on the result.
+- **`cmd/sawtools/pre_wave_validate_cmd.go`:** Added Step 3 (test cascade check) to `pre-wave-validate`. The `PreWaveValidateResult` struct gains a `TestCascade TestCascadeCheckResult` field. `CheckTestCascade` runs after E35 gap detection; cascade check failures are non-fatal if the manifest itself is valid (logged to stderr, not surfaced as exit 1). The combined JSON output now includes `test_cascade.passed` and `test_cascade.errors`.
+- **`pkg/engine/critic.go`:** `RunCritic` (via `BuildCriticPrompt`) now returns an error if `critic-agent.md` is not found at the expected path, instead of falling back to a hardcoded fallback prompt. Error message includes the full path and instructs the user to verify SAW installation or set `SAW_REPO`.
+- **`cmd/sawtools/` command registration:** `check-callers`, `list-error-ranges`, `suggest-wave-structure`, and `check-test-cascade` registered in `main.go`.
+
+### Fixed
+
+- **`pkg/protocol/brief_validator.go`:** `symbol_missing` and `line_invalid` check severities changed from `"warning"` to `"error"`. Previously these issues were advisory only; they now block validation (`passed: false`) so that Scout cannot proceed with inaccurate briefs.
+- **`pkg/gatecache/cache_test.go`:** Updated `Result.Code` assertions after `Cache.Get` migration from `(*CachedResult, bool)` to `result.Result[GetData]`.
+
 ## [0.63.0] - 2026-03-18
 
 ### Fixed
