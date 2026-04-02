@@ -377,5 +377,5 @@ critic_report:
     summary: 'Verified 4 agents across 4 files. All checks passed. Files exist, line numbers are accurate, and all symbols (CodeScoutBoundaryViolation, CodeDisjointOwnership, E37Required, AllScaffoldsCommitted, CriticVerdictIssues, Result[T] API) are correct. Ready for wave execution.'
     reviewed_at: "2026-04-01T18:20:37Z"
     issue_count: 0
-state: SCOUT_PENDING
+state: "REVIEWED"
 injection_method: hook
