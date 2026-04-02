@@ -1,18 +1,22 @@
 package result
 
 import (
-	"strings"
+	"regexp"
 	"testing"
 )
 
-// TestNCodesFollowNamingPattern verifies all N-range constants N018-N084
-// follow the "Nxxx_DESCRIPTION" naming pattern.
+var nCodePattern = regexp.MustCompile(`^[A-Z][0-9]{3}_[A-Z0-9_]+$`)
+
+// TestNCodesFollowNamingPattern verifies all N-range constants follow the
+// "Nxxx_DESCRIPTION" naming pattern.
 func TestNCodesFollowNamingPattern(t *testing.T) {
 	ncodes := []struct {
 		name  string
 		value string
 	}{
 		{"CodeContextCancelled", CodeContextCancelled},
+		{"CodeDispatchNoAdapters", CodeDispatchNoAdapters},
+		{"CodeDispatchAllFailed", CodeDispatchAllFailed},
 		{"CodeScoutInvalidOpts", CodeScoutInvalidOpts},
 		{"CodeScoutRunFailed", CodeScoutRunFailed},
 		{"CodeScoutBoundaryViolation", CodeScoutBoundaryViolation},
@@ -79,20 +83,281 @@ func TestNCodesFollowNamingPattern(t *testing.T) {
 		{"CodeIntegrationAgentFailed", CodeIntegrationAgentFailed},
 		{"CodeChatInvalidOpts", CodeChatInvalidOpts},
 		{"CodeChatFailed", CodeChatFailed},
+		{"CodeConfigIOFailed", CodeConfigIOFailed},
 	}
 	for _, tc := range ncodes {
 		t.Run(tc.name, func(t *testing.T) {
-			// Must match N + 3 digits + underscore + uppercase description
-			if len(tc.value) < 5 {
-				t.Errorf("%s = %q: too short to match Nxxx_ pattern", tc.name, tc.value)
-				return
-			}
-			if tc.value[0] != 'N' {
-				t.Errorf("%s = %q: must start with 'N'", tc.name, tc.value)
-			}
-			if !strings.Contains(tc.value, "_") {
-				t.Errorf("%s = %q: must contain underscore separator", tc.name, tc.value)
+			if !nCodePattern.MatchString(tc.value) {
+				t.Errorf("%s = %q: does not match pattern ^[A-Z][0-9]{3}_[A-Z0-9_]+$", tc.name, tc.value)
 			}
 		})
+	}
+}
+
+// TestAllCodesAreUnique verifies no two exported string constants in the
+// result package share the same value. Duplicate values cause silent
+// misidentification of errors in callers.
+func TestAllCodesAreUnique(t *testing.T) {
+	allCodes := []struct {
+		name  string
+		value string
+	}{
+		// V codes
+		{"CodeManifestInvalid", CodeManifestInvalid},
+		{"CodeDisjointOwnership", CodeDisjointOwnership},
+		{"CodeSameWaveDependency", CodeSameWaveDependency},
+		{"CodeWaveNotOneIndexed", CodeWaveNotOneIndexed},
+		{"CodeRequiredFieldsMissing", CodeRequiredFieldsMissing},
+		{"CodeFileOwnershipIncomplete", CodeFileOwnershipIncomplete},
+		{"CodeDependencyCycle", CodeDependencyCycle},
+		{"CodeInvalidState", CodeInvalidState},
+		{"CodeInvalidAgentID", CodeInvalidAgentID},
+		{"CodeInvalidGateType", CodeInvalidGateType},
+		{"CodeInvalidActionEnum", CodeInvalidActionEnum},
+		{"CodeDuplicateKey", CodeDuplicateKey},
+		{"CodeUnknownKey", CodeUnknownKey},
+		{"CodeInvalidScaffoldStatus", CodeInvalidScaffoldStatus},
+		{"CodeInvalidPreMortemRisk", CodeInvalidPreMortemRisk},
+		{"CodeJSONSchemaFailed", CodeJSONSchemaFailed},
+		{"CodeSlugMismatch", CodeSlugMismatch},
+		{"CodeInvalidSlugFormat", CodeInvalidSlugFormat},
+		{"CodeOrphanFile", CodeOrphanFile},
+		{"CodeInconsistentRepo", CodeInconsistentRepo},
+		{"CodeKnownIssueMissingTitle", CodeKnownIssueMissingTitle},
+		{"CodeInvalidFailureType", CodeInvalidFailureType},
+		{"CodeInvalidMergeState", CodeInvalidMergeState},
+		{"CodeProgramInvalid", CodeProgramInvalid},
+		{"CodeTierMismatch", CodeTierMismatch},
+		{"CodeTierOrderViolation", CodeTierOrderViolation},
+		{"CodeInvalidConsumer", CodeInvalidConsumer},
+		{"CodeInvalidDependency", CodeInvalidDependency},
+		{"CodeP1FileOverlap", CodeP1FileOverlap},
+		{"CodeP2ContractRedefinition", CodeP2ContractRedefinition},
+		{"CodeIMPLFileMissing", CodeIMPLFileMissing},
+		{"CodeIMPLStateMismatch", CodeIMPLStateMismatch},
+		{"CodeCompletionBounds", CodeCompletionBounds},
+		{"CodeImplsTotalMismatch", CodeImplsTotalMismatch},
+		{"CodeP1Violation", CodeP1Violation},
+		{"CodeInvalidEnum", CodeInvalidEnum},
+		{"CodeInvalidPath", CodeInvalidPath},
+		{"CodeCrossField", CodeCrossField},
+		{"CodeInvalidFieldValue", CodeInvalidFieldValue},
+		{"CodeUnscopedGate", CodeUnscopedGate},
+		{"CodeFileMissing", CodeFileMissing},
+		{"CodeInvalidWorktreeName", CodeInvalidWorktreeName},
+		{"CodeInvalidVerification", CodeInvalidVerification},
+		{"CodeMissingChecklist", CodeMissingChecklist},
+		{"CodeRepoMismatch", CodeRepoMismatch},
+		{"CodeParseError", CodeParseError},
+		{"CodeTrivialScope", CodeTrivialScope},
+		// W codes
+		{"CodeAgentScopeLarge", CodeAgentScopeLarge},
+		{"CodeCompletionVerificationWarning", CodeCompletionVerificationWarning},
+		// B codes
+		{"CodeBuildFailed", CodeBuildFailed},
+		{"CodeTestFailed", CodeTestFailed},
+		{"CodeLintFailed", CodeLintFailed},
+		{"CodeFormatCheckFailed", CodeFormatCheckFailed},
+		{"CodeGateTimeout", CodeGateTimeout},
+		{"CodeGateCommandMissing", CodeGateCommandMissing},
+		{"CodeStubDetected", CodeStubDetected},
+		{"CodeGateInputInvalid", CodeGateInputInvalid},
+		// G codes
+		{"CodeWorktreeCreateFailed", CodeWorktreeCreateFailed},
+		{"CodeMergeConflict", CodeMergeConflict},
+		{"CodeCommitMissing", CodeCommitMissing},
+		{"CodeBranchExists", CodeBranchExists},
+		{"CodeDirtyWorktree", CodeDirtyWorktree},
+		{"CodeHookInstallFailed", CodeHookInstallFailed},
+		{"CodeWorktreeCleanup", CodeWorktreeCleanup},
+		{"CodeWorktreeRemoveFailed", CodeWorktreeRemoveFailed},
+		// A codes
+		{"CodeAgentTimeout", CodeAgentTimeout},
+		{"CodeAgentStubDetected", CodeAgentStubDetected},
+		{"CodeCompletionReportMissing", CodeCompletionReportMissing},
+		{"CodeVerificationFailed", CodeVerificationFailed},
+		{"CodeAgentLaunchFailed", CodeAgentLaunchFailed},
+		{"CodeBriefExtractFail", CodeBriefExtractFail},
+		{"CodeJournalInitFail", CodeJournalInitFail},
+		// N codes
+		{"CodePrepareWaveFailed", CodePrepareWaveFailed},
+		{"CodeFinalizeWaveFailed", CodeFinalizeWaveFailed},
+		{"CodeScoutFailed", CodeScoutFailed},
+		{"CodeIsolationVerifyFailed", CodeIsolationVerifyFailed},
+		{"CodeIMPLNotFound", CodeIMPLNotFound},
+		{"CodeIMPLParseFailed", CodeIMPLParseFailed},
+		{"CodeWaveNotReady", CodeWaveNotReady},
+		{"CodeStateTransition", CodeStateTransition},
+		{"CodeContextError", CodeContextError},
+		{"CodeBaselineError", CodeBaselineError},
+		{"CodeStaleWorktree", CodeStaleWorktree},
+		{"CodeFreezeError", CodeFreezeError},
+		{"CodeConfigNotFound", CodeConfigNotFound},
+		{"CodeConfigInvalid", CodeConfigInvalid},
+		{"CodeStatusUpdateFailed", CodeStatusUpdateFailed},
+		{"CodeTierGateFailed", CodeTierGateFailed},
+		{"CodeProgramStatusFailed", CodeProgramStatusFailed},
+		{"CodeContextCancelled", CodeContextCancelled},
+		{"CodeDispatchNoAdapters", CodeDispatchNoAdapters},
+		{"CodeDispatchAllFailed", CodeDispatchAllFailed},
+		{"CodeScoutInvalidOpts", CodeScoutInvalidOpts},
+		{"CodeScoutRunFailed", CodeScoutRunFailed},
+		{"CodeScoutBoundaryViolation", CodeScoutBoundaryViolation},
+		{"CodePlannerInvalidOpts", CodePlannerInvalidOpts},
+		{"CodePlannerFailed", CodePlannerFailed},
+		{"CodeWaveInvalidOpts", CodeWaveInvalidOpts},
+		{"CodeWaveFailed", CodeWaveFailed},
+		{"CodeWaveSequencingFailed", CodeWaveSequencingFailed},
+		{"CodeHookVerifyFailed", CodeHookVerifyFailed},
+		{"CodeScaffoldRunFailed", CodeScaffoldRunFailed},
+		{"CodeAgentRunFailed", CodeAgentRunFailed},
+		{"CodeAgentRunInvalidOpts", CodeAgentRunInvalidOpts},
+		{"CodeMergeWaveFailed", CodeMergeWaveFailed},
+		{"CodeMergeWaveInvalidOpts", CodeMergeWaveInvalidOpts},
+		{"CodeEngineVerificationFailed", CodeEngineVerificationFailed},
+		{"CodeUpdateStatusFailed", CodeUpdateStatusFailed},
+		{"CodeValidateFailed", CodeValidateFailed},
+		{"CodeJournalArchiveFailed", CodeJournalArchiveFailed},
+		{"CodeMarkCompleteFailed", CodeMarkCompleteFailed},
+		{"CodeMarkCompleteInvalidOpts", CodeMarkCompleteInvalidOpts},
+		{"CodeVerifyTiersIncomplete", CodeVerifyTiersIncomplete},
+		{"CodeMarkerReadFailed", CodeMarkerReadFailed},
+		{"CodeMarkerWriteFailed", CodeMarkerWriteFailed},
+		{"CodeUpdateProgParseFailed", CodeUpdateProgParseFailed},
+		{"CodeUpdateProgSlugNotFound", CodeUpdateProgSlugNotFound},
+		{"CodeSyncParseFailed", CodeSyncParseFailed},
+		{"CodeSyncStatusFailed", CodeSyncStatusFailed},
+		{"CodeWriteManifestFailed", CodeWriteManifestFailed},
+		{"CodeRestoreLoadFailed", CodeRestoreLoadFailed},
+		{"CodeRestoreSaveFailed", CodeRestoreSaveFailed},
+		{"CodeTestLoadFailed", CodeTestLoadFailed},
+		{"CodeTestNoCommand", CodeTestNoCommand},
+		{"CodeTestPipeFailed", CodeTestPipeFailed},
+		{"CodeTestStartFailed", CodeTestStartFailed},
+		{"CodeTestCommandFailed", CodeTestCommandFailed},
+		{"CodeScoutRunnerFailed", CodeScoutRunnerFailed},
+		{"CodeScoutValidationFailed", CodeScoutValidationFailed},
+		{"CodeScoutCorrectionExhausted", CodeScoutCorrectionExhausted},
+		{"CodeSetBlockedLoadFailed", CodeSetBlockedLoadFailed},
+		{"CodeSetBlockedSaveFailed", CodeSetBlockedSaveFailed},
+		{"CodeFixBuildInvalidOpts", CodeFixBuildInvalidOpts},
+		{"CodeFixBuildFailed", CodeFixBuildFailed},
+		{"CodeGomodFixupFailed", CodeGomodFixupFailed},
+		{"CodeCleanupFailed", CodeCleanupFailed},
+		{"CodeResolveInvalidOpts", CodeResolveInvalidOpts},
+		{"CodeResolveLoadFailed", CodeResolveLoadFailed},
+		{"CodeResolveGitFailed", CodeResolveGitFailed},
+		{"CodeResolveNoConflicts", CodeResolveNoConflicts},
+		{"CodeResolveBackendFailed", CodeResolveBackendFailed},
+		{"CodeResolveFileFailed", CodeResolveFileFailed},
+		{"CodeResolveCommitFailed", CodeResolveCommitFailed},
+		{"CodeResolveFileReadFailed", CodeResolveFileReadFailed},
+		{"CodeResolveBackendCallFailed", CodeResolveBackendCallFailed},
+		{"CodeResolveFileWriteFailed", CodeResolveFileWriteFailed},
+		{"CodeResolveGitAddFailed", CodeResolveGitAddFailed},
+		{"CodeExportFileExists", CodeExportFileExists},
+		{"CodeExportNoEntries", CodeExportNoEntries},
+		{"CodeExportWriteFailed", CodeExportWriteFailed},
+		{"CodeIntegrationInvalidOpts", CodeIntegrationInvalidOpts},
+		{"CodeIntegrationLoadFailed", CodeIntegrationLoadFailed},
+		{"CodeIntegrationNoConnectors", CodeIntegrationNoConnectors},
+		{"CodeIntegrationPromptFailed", CodeIntegrationPromptFailed},
+		{"CodeIntegrationBackendFailed", CodeIntegrationBackendFailed},
+		{"CodeIntegrationAgentFailed", CodeIntegrationAgentFailed},
+		{"CodeChatInvalidOpts", CodeChatInvalidOpts},
+		{"CodeChatFailed", CodeChatFailed},
+		{"CodeConfigIOFailed", CodeConfigIOFailed},
+		// Q codes
+		{"CodeQueueAddFailed", CodeQueueAddFailed},
+		{"CodeQueueListFailed", CodeQueueListFailed},
+		{"CodeQueueEmpty", CodeQueueEmpty},
+		{"CodeQueueStatusUpdateFailed", CodeQueueStatusUpdateFailed},
+		{"CodeQueueCompletedScanFailed", CodeQueueCompletedScanFailed},
+		{"CodeQueueCorruptedFile", CodeQueueCorruptedFile},
+		// P codes
+		{"CodeStateTransitionInvalid", CodeStateTransitionInvalid},
+		{"CodeProgramValidationFailed", CodeProgramValidationFailed},
+		{"CodeMigrationBoundaryUnsafe", CodeMigrationBoundaryUnsafe},
+		{"CodeDepsNotMet", CodeDepsNotMet},
+		{"CodeInvariantViolation", CodeInvariantViolation},
+		{"CodeExecutionRule", CodeExecutionRule},
+		{"CodeWiringGap", CodeWiringGap},
+		// T codes
+		{"CodeToolError", CodeToolError},
+		{"CodeParsePanic", CodeParsePanic},
+		{"CodeToolNotFound", CodeToolNotFound},
+		{"CodeToolTimeout", CodeToolTimeout},
+		{"CodeToolAlreadyRegistered", CodeToolAlreadyRegistered},
+		// S codes
+		{"CodeSuitabilityRepoRootEmpty", CodeSuitabilityRepoRootEmpty},
+		{"CodeSuitabilityClassifyFailed", CodeSuitabilityClassifyFailed},
+		{"CodeSuitabilityFileStatFailed", CodeSuitabilityFileStatFailed},
+		{"CodeSuitabilityFileReadFailed", CodeSuitabilityFileReadFailed},
+		{"CodeSuitabilityRequirementsRead", CodeSuitabilityRequirementsRead},
+		{"CodeSuitabilityRequirementsParse", CodeSuitabilityRequirementsParse},
+		// C codes
+		{"CodeCollisionLoadManifestFailed", CodeCollisionLoadManifestFailed},
+		{"CodeCollisionInvalidWave", CodeCollisionInvalidWave},
+		{"CodeCollisionGetFilesFailed", CodeCollisionGetFilesFailed},
+		{"CodeCollisionExtractTypesFailed", CodeCollisionExtractTypesFailed},
+		{"CodeCollisionGitDiffFailed", CodeCollisionGitDiffFailed},
+		{"CodeCollisionParseFailed", CodeCollisionParseFailed},
+		{"CodeCollisionKeyParseFailed", CodeCollisionKeyParseFailed},
+		{"CodeCollisionGitShowFailed", CodeCollisionGitShowFailed},
+		{"CodeCollisionContextCancelled", CodeCollisionContextCancelled},
+		{"CodeCollisionBranchNotFound", CodeCollisionBranchNotFound},
+		{"CodeCollisionInvalidInput", CodeCollisionInvalidInput},
+		// K codes
+		{"CodeCacheMiss", CodeCacheMiss},
+		{"CodeCacheBuildKeyFailed", CodeCacheBuildKeyFailed},
+		{"CodeCachePutFailed", CodeCachePutFailed},
+		{"CodeCacheInvalidateFailed", CodeCacheInvalidateFailed},
+		{"CodeCachePutCancelled", CodeCachePutCancelled},
+		{"CodeCacheInvalidateCancelled", CodeCacheInvalidateCancelled},
+		// I codes
+		{"CodeAgentCountInvalid", CodeAgentCountInvalid},
+		{"CodeAgentCountMismatch", CodeAgentCountMismatch},
+		{"CodeAgentLimitExceeded", CodeAgentLimitExceeded},
+		{"CodeCategoryLimitExceeded", CodeCategoryLimitExceeded},
+		{"CodeCategoryCountExceeded", CodeCategoryCountExceeded},
+		{"CodeInvalidAgentIDGenerated", CodeInvalidAgentIDGenerated},
+		// D codes
+		{"CodeDepLockFileOpen", CodeDepLockFileOpen},
+		{"CodeDepLockFileParse", CodeDepLockFileParse},
+		{"CodeDepMissingDeps", CodeDepMissingDeps},
+		{"CodeDepVersionConflict", CodeDepVersionConflict},
+		{"CodeDepInvalidToml", CodeDepInvalidToml},
+		{"CodeDepMalformedPackage", CodeDepMalformedPackage},
+		{"CodeDepUnsupportedVersion", CodeDepUnsupportedVersion},
+		{"CodeDepEmptyPackage", CodeDepEmptyPackage},
+		{"CodeDepGoModRead", CodeDepGoModRead},
+		{"CodeDepGoModParse", CodeDepGoModParse},
+		{"CodeDepRepoRootInvalid", CodeDepRepoRootInvalid},
+		// E codes
+		{"CodeCommandExtractWorkflowRead", CodeCommandExtractWorkflowRead},
+		{"CodeCommandExtractWorkflowParse", CodeCommandExtractWorkflowParse},
+		{"CodeCommandExtractPackageRead", CodeCommandExtractPackageRead},
+		{"CodeCommandExtractPackageParse", CodeCommandExtractPackageParse},
+		{"CodeCommandExtractNoToolchain", CodeCommandExtractNoToolchain},
+		{"CodeCommandExtractCancelled", CodeCommandExtractCancelled},
+		// R codes
+		{"CodeRetryLoadManifestFailed", CodeRetryLoadManifestFailed},
+		{"CodeRetryReportMissing", CodeRetryReportMissing},
+		{"CodeRetrySaveIMPLFailed", CodeRetrySaveIMPLFailed},
+		{"CodeRetryIMPLDirCreateFailed", CodeRetryIMPLDirCreateFailed},
+		// X codes
+		{"CodeCheckCallerInvalidInput", CodeCheckCallerInvalidInput},
+		{"CodeCheckCallerFileRead", CodeCheckCallerFileRead},
+		{"CodeTestCascadeOrphan", CodeTestCascadeOrphan},
+		{"CodeWaveStructureCallerBefore", CodeWaveStructureCallerBefore},
+		{"CodeWaveStructureMissingDep", CodeWaveStructureMissingDep},
+	}
+
+	seen := make(map[string]string) // value -> constant name
+	for _, c := range allCodes {
+		if prev, exists := seen[c.value]; exists {
+			t.Errorf("duplicate code value %q: used by both %s and %s", c.value, prev, c.name)
+		}
+		seen[c.value] = c.name
 	}
 }
