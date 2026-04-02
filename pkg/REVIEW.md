@@ -16,7 +16,7 @@ Each reviewed package gets scouted → IMPL'd → closed before being marked don
 | agent/backend/openai | ✅ (with agent) | ✅ | ✅ |
 | agent/dedup | ✅ (with agent) | ✅ | ✅ |
 | analyzer | | | |
-| autonomy | ✅ | ✅ | |
+| autonomy | ✅ | ✅ | ✅ |
 | builddiag | ✅ | ❌ (NOT_SUITABLE) | N/A |
 | codereview | | | |
 | collision | ✅ | ✅ | |
