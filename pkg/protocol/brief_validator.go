@@ -128,7 +128,7 @@ func ValidateBriefs(ctx context.Context, implPath string) (BriefValidationData, 
 					}
 					issues = append(issues, BriefIssue{
 						Check:       "symbol_missing",
-						Severity:    "warning",
+						Severity:    "error",
 						Description: fmt.Sprintf("symbol %q not found in owned files", sym),
 						File:        checkedFile,
 						Symbol:      sym,
@@ -150,7 +150,7 @@ func ValidateBriefs(ctx context.Context, implPath string) (BriefValidationData, 
 					if !checkLineValid(resolvedPath, lineNum) {
 						issues = append(issues, BriefIssue{
 							Check:       "line_invalid",
-							Severity:    "warning",
+							Severity:    "error",
 							Description: fmt.Sprintf("line %d referenced but file %q may not have that many lines", lineNum, filePath),
 							File:        resolvedPath,
 							LineNumber:  lineNum,
