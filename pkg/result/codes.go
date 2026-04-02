@@ -11,6 +11,7 @@
 //	P001-P099: Protocol errors (invariant violations, execution rules)
 //	T001-T099: Tool/parse errors (errparse output, tool runner failures)
 //	S001-S099: Suitability error codes
+//	C001-C099: Collision detection errors
 //	I001-I099: Agent ID generation errors
 //	D001-D099: Dependency check errors (lock file parsing, missing deps)
 package result
@@ -268,6 +269,21 @@ const (
 	CodeSuitabilityRequirementsParse = "S006_REQUIREMENTS_PARSE"
 )
 
+// Collision error codes (C001-C099)
+const (
+	CodeCollisionLoadManifestFailed = "C001_LOAD_MANIFEST_FAILED"
+	CodeCollisionInvalidWave        = "C002_INVALID_WAVE"
+	CodeCollisionGetFilesFailed     = "C003_GET_FILES_FAILED"
+	CodeCollisionExtractTypesFailed = "C004_EXTRACT_TYPES_FAILED"
+	CodeCollisionGitDiffFailed      = "C005_GIT_DIFF_FAILED"
+	CodeCollisionParseFailed        = "C006_PARSE_FAILED"
+	CodeCollisionKeyParseFailed     = "C007_KEY_PARSE_FAILED"
+	CodeCollisionGitShowFailed      = "C008_GIT_SHOW_FAILED"
+	CodeCollisionContextCancelled   = "C009_CONTEXT_CANCELLED"
+	CodeCollisionBranchNotFound     = "C010_BRANCH_NOT_FOUND"
+	CodeCollisionInvalidInput       = "C011_INVALID_INPUT"
+)
+
 // Scaffold validation error codes (SV01-SV10)
 const (
 	CodeScaffoldSyntaxFail   = "SV01_SYNTAX_FAIL"        // go/parser failed
@@ -300,5 +316,20 @@ const (
 	CodeDepGoModRead          = "D009_GOMOD_READ"
 	CodeDepGoModParse         = "D010_GOMOD_PARSE"
 	CodeDepRepoRootInvalid    = "D011_REPO_ROOT_INVALID"
+)
+
+// Collision detection error codes (C001-C099)
+const (
+	CodeCollisionLoadManifestFailed = "C001_LOAD_MANIFEST_FAILED" // IMPL manifest load failed
+	CodeCollisionInvalidWave        = "C002_INVALID_WAVE"         // Wave number out of range
+	CodeCollisionGetFilesFailed     = "C003_GET_FILES_FAILED"     // Git diff failed to get changed files
+	CodeCollisionExtractTypesFailed = "C004_EXTRACT_TYPES_FAILED" // Type extraction failed
+	CodeCollisionGitDiffFailed      = "C005_GIT_DIFF_FAILED"      // Git diff command failed
+	CodeCollisionParseFailed        = "C006_PARSE_FAILED"         // AST parse failed
+	CodeCollisionKeyParseFailed     = "C007_KEY_PARSE_FAILED"     // Type key parsing failed
+	CodeCollisionGitShowFailed      = "C008_GIT_SHOW_FAILED"      // Git show command failed
+	CodeCollisionContextCancelled   = "C009_CONTEXT_CANCELLED"    // Context cancelled during operation
+	CodeCollisionBranchNotFound     = "C010_BRANCH_NOT_FOUND"     // Agent branch not found
+	CodeCollisionInvalidInput       = "C011_INVALID_INPUT"        // Invalid input parameters
 )
 

@@ -13,6 +13,7 @@ import (
 
 	igit "github.com/blackwell-systems/scout-and-wave-go/internal/git"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
 )
 
 // DetectCollisions scans all agent branches for the given wave, extracts new type
@@ -29,19 +30,25 @@ import (
 // 7. Generate resolution suggestions (keep alphabetically first agent)
 //
 // Returns CollisionReport with Valid=false if any collisions detected.
-func DetectCollisions(ctx context.Context, manifestPath string, waveNum int, repoPath string) (CollisionReport, error) {
+func DetectCollisions(ctx context.Context, manifestPath string, waveNum int, repoPath string) result.Result[CollisionReport] {
 	if err := ctx.Err(); err != nil {
-		return CollisionReport{}, err
+		return result.NewFailure[CollisionReport]([]result.SAWError{
+			result.NewFatal(result.CodeCollisionContextCancelled, err.Error()).WithCause(err),
+		})
 	}
 	// Load IMPL manifest
 	manifest, err := protocol.Load(ctx, manifestPath)
 	if err != nil {
-		return CollisionReport{}, fmt.Errorf("load manifest: %w", err)
+		return result.NewFailure[CollisionReport]([]result.SAWError{
+			result.NewFatal(result.CodeCollisionLoadManifestFailed, fmt.Sprintf("load manifest: %s", err.Error())).WithCause(err),
+		})
 	}
 
 	// Find target wave
 	if waveNum < 1 || waveNum > len(manifest.Waves) {
-		return CollisionReport{}, fmt.Errorf("invalid wave number %d (manifest has %d waves)", waveNum, len(manifest.Waves))
+		return result.NewFailure[CollisionReport]([]result.SAWError{
+			result.NewFatal(result.CodeCollisionInvalidWave, fmt.Sprintf("invalid wave number %d (manifest has %d waves)", waveNum, len(manifest.Waves))),
+		})
 	}
 	wave := manifest.Waves[waveNum-1]
 
@@ -54,7 +61,9 @@ func DetectCollisions(ctx context.Context, manifestPath string, waveNum int, rep
 	// Scan each agent's branch for type declarations
 	for _, agent := range wave.Agents {
 		if err := ctx.Err(); err != nil {
-			return CollisionReport{}, err
+			return result.NewFailure[CollisionReport]([]result.SAWError{
+				result.NewFatal(result.CodeCollisionContextCancelled, err.Error()).WithCause(err),
+			})
 		}
 		branchName := buildBranchName(slug, waveNum, agent.ID)
 
@@ -69,16 +78,22 @@ func DetectCollisions(ctx context.Context, manifestPath string, waveNum int, rep
 		}
 
 		// Get changed .go files in this branch
-		changedFiles, err := getChangedGoFiles(ctx, repoPath, branchName)
-		if err != nil {
-			return CollisionReport{}, fmt.Errorf("get changed files for agent %s: %w", agent.ID, err)
+		changedFilesResult := getChangedGoFiles(ctx, repoPath, branchName)
+		if changedFilesResult.IsFatal() {
+			return result.NewFailure[CollisionReport]([]result.SAWError{
+				result.NewFatal(result.CodeCollisionGetFilesFailed, fmt.Sprintf("get changed files for agent %s: %s", agent.ID, changedFilesResult.Errors[0].Message)).WithCause(changedFilesResult.Errors[0]),
+			})
 		}
+		changedFiles := changedFilesResult.GetData()
 
 		// Extract type declarations from changed files
-		types, err := extractTypesFromFiles(ctx, repoPath, branchName, changedFiles)
-		if err != nil {
-			return CollisionReport{}, fmt.Errorf("extract types for agent %s: %w", agent.ID, err)
+		typesResult := extractTypesFromFiles(ctx, repoPath, branchName, changedFiles)
+		if typesResult.IsFatal() {
+			return result.NewFailure[CollisionReport]([]result.SAWError{
+				result.NewFatal(result.CodeCollisionExtractTypesFailed, fmt.Sprintf("extract types for agent %s: %s", agent.ID, typesResult.Errors[0].Message)).WithCause(typesResult.Errors[0]),
+			})
 		}
+		types := typesResult.GetData()
 
 		agentTypes[agent.ID] = types
 	}
@@ -94,10 +109,10 @@ func DetectCollisions(ctx context.Context, manifestPath string, waveNum int, rep
 		return collisions[i].TypeName < collisions[j].TypeName
 	})
 
-	return CollisionReport{
+	return result.NewSuccess(CollisionReport{
 		Collisions: collisions,
 		Valid:      len(collisions) == 0,
-	}, nil
+	})
 }
 
 // buildBranchName constructs the branch name for a given slug, wave, and agent.
@@ -111,19 +126,23 @@ func buildBranchName(slug string, waveNum int, agentID string) string {
 
 // getChangedGoFiles returns the list of .go files changed in the given branch
 // relative to main. Uses three-dot diff to find changes introduced by the branch.
-func getChangedGoFiles(ctx context.Context, repoPath, branchName string) ([]string, error) {
+func getChangedGoFiles(ctx context.Context, repoPath, branchName string) result.Result[[]string] {
 	if err := ctx.Err(); err != nil {
-		return nil, err
+		return result.NewFailure[[]string]([]result.SAWError{
+			result.NewFatal(result.CodeCollisionContextCancelled, err.Error()).WithCause(err),
+		})
 	}
 	// Use three-dot range to get changes introduced by branch
 	out, err := igit.Run(repoPath, "diff", "main..."+branchName, "--name-only", "--", "*.go")
 	if err != nil {
-		return nil, fmt.Errorf("git diff: %w", err)
+		return result.NewFailure[[]string]([]result.SAWError{
+			result.NewFatal(result.CodeCollisionGitDiffFailed, fmt.Sprintf("git diff: %s", err.Error())).WithCause(err),
+		})
 	}
 
 	trimmed := strings.TrimSpace(out)
 	if trimmed == "" {
-		return []string{}, nil
+		return result.NewSuccess([]string{})
 	}
 
 	files := strings.Split(trimmed, "\n")
@@ -135,45 +154,52 @@ func getChangedGoFiles(ctx context.Context, repoPath, branchName string) ([]stri
 		}
 	}
 
-	return goFiles, nil
+	return result.NewSuccess(goFiles)
 }
 
 // extractTypesFromFiles checks out each file from the branch and extracts
 // type declarations using AST parsing.
-func extractTypesFromFiles(ctx context.Context, repoPath, branchName string, files []string) ([]TypeDeclaration, error) {
+func extractTypesFromFiles(ctx context.Context, repoPath, branchName string, files []string) result.Result[[]TypeDeclaration] {
 	var allTypes []TypeDeclaration
 
 	for _, file := range files {
 		if err := ctx.Err(); err != nil {
-			return nil, err
+			return result.NewFailure[[]TypeDeclaration]([]result.SAWError{
+				result.NewFatal(result.CodeCollisionContextCancelled, err.Error()).WithCause(err),
+			})
 		}
 		// Get file content from branch
 		content, err := igit.Run(repoPath, "show", branchName+":"+file)
 		if err != nil {
-			slog.Debug("skipping file: git show failed", "file", file, "branch", branchName, "err", err)
-			continue
+			return result.NewFailure[[]TypeDeclaration]([]result.SAWError{
+				result.NewFatal(result.CodeCollisionGitShowFailed, fmt.Sprintf("git show failed for %s on branch %s: %s", file, branchName, err.Error())).WithCause(err),
+			})
 		}
 
 		// Parse AST
-		types, err := extractTypeDecls(file, content)
-		if err != nil {
-			// Error parsing — fail fast per constraints
-			return nil, fmt.Errorf("parse %s: %w", file, err)
+		typesResult := extractTypeDecls(file, content)
+		if typesResult.IsFatal() {
+			return result.NewFailure[[]TypeDeclaration]([]result.SAWError{
+				result.NewFatal(result.CodeCollisionParseFailed, fmt.Sprintf("parse %s: %s", file, typesResult.Errors[0].Message)).WithCause(typesResult.Errors[0]),
+			})
 		}
+		types := typesResult.GetData()
 
 		allTypes = append(allTypes, types...)
 	}
 
-	return allTypes, nil
+	return result.NewSuccess(allTypes)
 }
 
 // extractTypeDecls parses a Go source file and extracts type declarations.
 // Returns TypeDeclaration structs for each type defined in the file.
-func extractTypeDecls(filePath, content string) ([]TypeDeclaration, error) {
+func extractTypeDecls(filePath, content string) result.Result[[]TypeDeclaration] {
 	fset := token.NewFileSet()
 	node, err := parser.ParseFile(fset, filePath, content, parser.ParseComments)
 	if err != nil {
-		return nil, err
+		return result.NewFailure[[]TypeDeclaration]([]result.SAWError{
+			result.NewFatal(result.CodeCollisionParseFailed, fmt.Sprintf("parse file %s: %s", filePath, err.Error())).WithCause(err),
+		})
 	}
 
 	// Derive package path from file path (e.g., "pkg/service/handler.go" → "pkg/service")
@@ -212,7 +238,7 @@ func extractTypeDecls(filePath, content string) ([]TypeDeclaration, error) {
 		}
 	}
 
-	return decls, nil
+	return result.NewSuccess(decls)
 }
 
 // detectCollisionsInTypes finds type name collisions across agents.
@@ -241,6 +267,10 @@ func detectCollisionsInTypes(agentTypes map[string][]TypeDeclaration) []TypeColl
 
 		// Parse key back into package and type name
 		lastSlash := strings.LastIndex(key, "/")
+		if lastSlash == -1 {
+			slog.Warn("invalid type key format (missing slash separator)", "key", key)
+			continue
+		}
 		pkg := key[:lastSlash]
 		typeName := key[lastSlash+1:]
 
