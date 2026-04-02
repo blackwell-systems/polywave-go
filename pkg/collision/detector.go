@@ -171,6 +171,10 @@ func extractTypesFromFiles(ctx context.Context, repoPath, branchName string, fil
 		// Get file content from branch
 		content, err := igit.Run(repoPath, "show", branchName+":"+file)
 		if err != nil {
+			// File was deleted in this branch — no types to extract, not a collision.
+			if strings.Contains(err.Error(), "exists on disk, but not in") {
+				continue
+			}
 			return result.NewFailure[[]TypeDeclaration]([]result.SAWError{
 				result.NewFatal(result.CodeCollisionGitShowFailed, fmt.Sprintf("git show failed for %s on branch %s: %s", file, branchName, err.Error())).WithCause(err),
 			})
