@@ -80,7 +80,7 @@ Examples:
 				}
 				resumeResult := mgr.Resume(absResume)
 				if resumeResult.IsFatal() {
-					return fmt.Errorf("failed to resume interview: %v", resumeResult.Errors)
+					return fmt.Errorf("failed to resume interview: %s", resumeResult.Errors[0].Message)
 				}
 				resumeData := resumeResult.GetData()
 				doc = resumeData.Doc
@@ -95,7 +95,7 @@ Examples:
 				}
 				startResult := mgr.Start(cfg)
 				if startResult.IsFatal() {
-					return fmt.Errorf("failed to start interview: %v", startResult.Errors)
+					return fmt.Errorf("failed to start interview: %s", startResult.Errors[0].Message)
 				}
 				startData := startResult.GetData()
 				doc = startData.Doc
@@ -145,7 +145,7 @@ Examples:
 				// Record the answer and get next question
 				ansResult := mgr.Answer(doc, answer)
 				if ansResult.IsFatal() {
-					return fmt.Errorf("failed to record answer: %v", ansResult.Errors)
+					return fmt.Errorf("failed to record answer: %s", ansResult.Errors[0].Message)
 				}
 				ansData := ansResult.GetData()
 				doc = ansData.Doc
@@ -161,7 +161,7 @@ Examples:
 			// Interview complete — compile to REQUIREMENTS.md
 			compileResult := mgr.Compile(doc, outputPath)
 			if compileResult.IsFatal() {
-				return fmt.Errorf("failed to compile requirements: %v", compileResult.Errors)
+				return fmt.Errorf("failed to compile requirements: %s", compileResult.Errors[0].Message)
 			}
 			outPath := compileResult.GetData().OutputPath
 
@@ -215,16 +215,4 @@ func interviewDocPath(docsDir, slug string) string {
 		slug = "untitled"
 	}
 	return filepath.Join(docsDir, fmt.Sprintf("INTERVIEW-%s.yaml", slug))
-}
-
-// capitalize returns the string with its first letter uppercased.
-func capitalize(s string) string {
-	if s == "" {
-		return s
-	}
-	r := []rune(s)
-	if r[0] >= 'a' && r[0] <= 'z' {
-		r[0] -= 'a' - 'A'
-	}
-	return string(r)
 }
