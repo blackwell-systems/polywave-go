@@ -26,9 +26,9 @@ type SaveConfigData struct {
 }
 
 // LoadConfig loads autonomy configuration from saw.config.json in repoPath.
-// If the file doesn't exist, DefaultConfig() is returned with WasDefault=true.
-// If the file exists but contains invalid JSON, a Fatal result is returned.
-// If the autonomy section is missing, DefaultConfig() is returned with WasDefault=true.
+// Returns Result[LoadConfigData] with success when file is found and parsed,
+// or with WasDefault=true when file is missing or autonomy section is absent.
+// Returns fatal result on JSON parse errors.
 func LoadConfig(repoPath string) result.Result[LoadConfigData] {
 	path := filepath.Join(repoPath, configFileName)
 
@@ -42,14 +42,14 @@ func LoadConfig(repoPath string) result.Result[LoadConfigData] {
 			})
 		}
 		return result.NewFailure[LoadConfigData]([]result.SAWError{
-			result.NewFatal("CONFIG_LOAD_FAILED", fmt.Sprintf("failed to read config file: %v", err)).WithCause(err),
+			result.NewFatal("CONFIG_LOAD_FAILED", fmt.Sprintf("failed to read %s: %v", path, err)).WithCause(err),
 		})
 	}
 
 	var raw map[string]json.RawMessage
 	if err := json.Unmarshal(data, &raw); err != nil {
 		return result.NewFailure[LoadConfigData]([]result.SAWError{
-			result.NewFatal("CONFIG_LOAD_FAILED", fmt.Sprintf("invalid JSON in config file: %v", err)).WithCause(err),
+			result.NewFatal("CONFIG_LOAD_FAILED", fmt.Sprintf("invalid JSON in %s: %v", path, err)).WithCause(err),
 		})
 	}
 
@@ -65,7 +65,7 @@ func LoadConfig(repoPath string) result.Result[LoadConfigData] {
 	var cfg Config
 	if err := json.Unmarshal(autonomyRaw, &cfg); err != nil {
 		return result.NewFailure[LoadConfigData]([]result.SAWError{
-			result.NewFatal("CONFIG_LOAD_FAILED", fmt.Sprintf("failed to parse autonomy config: %v", err)).WithCause(err),
+			result.NewFatal("CONFIG_LOAD_FAILED", fmt.Sprintf("failed to parse autonomy config in %s: %v", path, err)).WithCause(err),
 		})
 	}
 
@@ -76,10 +76,10 @@ func LoadConfig(repoPath string) result.Result[LoadConfigData] {
 	})
 }
 
-// SaveConfig writes cfg back to saw.config.json in repoPath.
-// It reads the existing file first to preserve other top-level keys,
-// then updates (or creates) the "autonomy" key. Non-autonomy keys
-// (providers, repos, agent, etc.) are preserved unchanged.
+// SaveConfig writes cfg to the autonomy section of saw.config.json in repoPath.
+// If the file exists, other top-level keys (providers, repos, agent, etc.) are
+// preserved. If the file does not exist, it is created with only the autonomy key.
+// Returns Result[SaveConfigData] with ConfigPath and BytesWritten on success.
 func SaveConfig(repoPath string, cfg Config) result.Result[SaveConfigData] {
 	path := filepath.Join(repoPath, configFileName)
 
@@ -89,13 +89,13 @@ func SaveConfig(repoPath string, cfg Config) result.Result[SaveConfigData] {
 	data, err := os.ReadFile(path)
 	if err != nil && !errors.Is(err, os.ErrNotExist) {
 		return result.NewFailure[SaveConfigData]([]result.SAWError{
-			result.NewFatal("CONFIG_SAVE_FAILED", fmt.Sprintf("failed to read existing config file: %v", err)).WithCause(err),
+			result.NewFatal("CONFIG_SAVE_FAILED", fmt.Sprintf("failed to read existing %s: %v", path, err)).WithCause(err),
 		})
 	}
 	if err == nil {
 		if err := json.Unmarshal(data, &raw); err != nil {
 			return result.NewFailure[SaveConfigData]([]result.SAWError{
-				result.NewFatal("CONFIG_SAVE_FAILED", fmt.Sprintf("invalid JSON in existing config file: %v", err)).WithCause(err),
+				result.NewFatal("CONFIG_SAVE_FAILED", fmt.Sprintf("invalid JSON in existing %s: %v", path, err)).WithCause(err),
 			})
 		}
 	}
@@ -104,7 +104,7 @@ func SaveConfig(repoPath string, cfg Config) result.Result[SaveConfigData] {
 	cfgBytes, err := json.Marshal(cfg)
 	if err != nil {
 		return result.NewFailure[SaveConfigData]([]result.SAWError{
-			result.NewFatal("CONFIG_SAVE_FAILED", fmt.Sprintf("failed to marshal config: %v", err)).WithCause(err),
+			result.NewFatal("CONFIG_SAVE_FAILED", fmt.Sprintf("failed to marshal config for %s: %v", path, err)).WithCause(err),
 		})
 	}
 	raw["autonomy"] = json.RawMessage(cfgBytes)
@@ -112,13 +112,13 @@ func SaveConfig(repoPath string, cfg Config) result.Result[SaveConfigData] {
 	out, err := json.MarshalIndent(raw, "", "  ")
 	if err != nil {
 		return result.NewFailure[SaveConfigData]([]result.SAWError{
-			result.NewFatal("CONFIG_SAVE_FAILED", fmt.Sprintf("failed to marshal config to JSON: %v", err)).WithCause(err),
+			result.NewFatal("CONFIG_SAVE_FAILED", fmt.Sprintf("failed to marshal %s to JSON: %v", path, err)).WithCause(err),
 		})
 	}
 
 	if err := os.WriteFile(path, out, 0600); err != nil {
 		return result.NewFailure[SaveConfigData]([]result.SAWError{
-			result.NewFatal("CONFIG_SAVE_FAILED", fmt.Sprintf("failed to write config file: %v", err)).WithCause(err),
+			result.NewFatal("CONFIG_SAVE_FAILED", fmt.Sprintf("failed to write %s: %v", path, err)).WithCause(err),
 		})
 	}
 
