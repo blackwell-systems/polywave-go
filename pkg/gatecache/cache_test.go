@@ -37,7 +37,7 @@ func TestCache_PutGet(t *testing.T) {
 	}
 
 	getResult := c.Get(ctx, key, "build")
-	if getResult.Code == "CACHE_MISS" {
+	if !getResult.IsSuccess() {
 		t.Fatal("expected cache hit, got CACHE_MISS")
 	}
 	if !getResult.IsSuccess() {
@@ -139,11 +139,14 @@ func TestCache_Get_ReturnsMissCodeOnExpiry(t *testing.T) {
 	}
 
 	getResult := c.Get(ctx, key, "test")
-	if getResult.Code != "CACHE_MISS" {
-		t.Errorf("expected CACHE_MISS code on expiry, got %q", getResult.Code)
+	if getResult.IsSuccess() {
+		t.Errorf("expected CACHE_MISS on expiry but got a hit: %v", getResult.GetData())
 	}
-	if getResult.IsFatal() {
-		t.Error("CACHE_MISS should be non-fatal")
+	if len(getResult.Errors) == 0 || getResult.Errors[0].Code != "CACHE_MISS" {
+		t.Errorf("expected CACHE_MISS error code, got %v", getResult.Errors)
+	}
+	if len(getResult.Errors) > 0 && getResult.Errors[0].Severity == "fatal" {
+		t.Error("CACHE_MISS should have warning severity, not fatal")
 	}
 }
 
@@ -167,11 +170,11 @@ func TestCache_TTLExpiry(t *testing.T) {
 	}
 
 	getResult := c.Get(ctx, key, "test")
-	if getResult.Code != "CACHE_MISS" {
-		t.Errorf("expected CACHE_MISS due to TTL expiry, got code=%q", getResult.Code)
+	if getResult.IsSuccess() {
+		t.Errorf("expected CACHE_MISS due to TTL expiry but got a hit: %v", getResult.GetData())
 	}
-	if getResult.IsFatal() {
-		t.Error("CACHE_MISS should be non-fatal")
+	if len(getResult.Errors) == 0 || getResult.Errors[0].Code != "CACHE_MISS" {
+		t.Errorf("expected CACHE_MISS error code, got %v", getResult.Errors)
 	}
 }
 
@@ -192,7 +195,7 @@ func TestCache_TTLNotExpired(t *testing.T) {
 	}
 
 	getResult := c.Get(ctx, key, "lint")
-	if getResult.Code == "CACHE_MISS" {
+	if !getResult.IsSuccess() {
 		t.Fatal("expected cache hit, got CACHE_MISS")
 	}
 	if !getResult.IsSuccess() {
@@ -230,7 +233,7 @@ func TestCache_Invalidate(t *testing.T) {
 
 	// Entries should be gone
 	getResult := c.Get(ctx, key, "build")
-	if getResult.Code != "CACHE_MISS" {
+	if getResult.IsSuccess() {
 		t.Errorf("expected CACHE_MISS after Invalidate, got code=%q", getResult.Code)
 	}
 
@@ -305,7 +308,7 @@ func TestCache_Persistence(t *testing.T) {
 	c2 := New(ctx, dir, DefaultTTL)
 
 	getResult := c2.Get(ctx, key, "vet")
-	if getResult.Code == "CACHE_MISS" {
+	if !getResult.IsSuccess() {
 		t.Fatal("expected cache hit after reload from disk, got CACHE_MISS")
 	}
 	if !getResult.IsSuccess() {
@@ -352,7 +355,7 @@ func TestCache_MultipleGateTypes(t *testing.T) {
 
 	for _, g := range gates {
 		getResult := c.Get(ctx, key, g.gateType)
-		if getResult.Code == "CACHE_MISS" {
+		if !getResult.IsSuccess() {
 			t.Errorf("expected hit for gate %q, got CACHE_MISS", g.gateType)
 			continue
 		}
@@ -495,11 +498,11 @@ func TestCache_CommandDifferentiation(t *testing.T) {
 	}
 
 	getResult2 := c.Get(ctx, key2, "build")
-	if getResult2.Code != "CACHE_MISS" {
+	if getResult2.IsSuccess() {
 		t.Error("expected CACHE_MISS for key2 (different Command), but got hit")
 	}
 	getResult1 := c.Get(ctx, key1, "build")
-	if getResult1.Code == "CACHE_MISS" {
+	if !getResult1.IsSuccess() {
 		t.Error("expected cache hit for key1, got CACHE_MISS")
 	}
 }
@@ -590,7 +593,7 @@ func TestCacheThreadSafety(t *testing.T) {
 	// Verify all entries exist after concurrent writes
 	for i := 0; i < 10; i++ {
 		getResult := cache.Get(ctx, key, fmt.Sprintf("type-%d", i))
-		if getResult.Code == "CACHE_MISS" {
+		if !getResult.IsSuccess() {
 			t.Errorf("expected gate type-%d to exist after concurrent Put", i)
 		}
 	}
@@ -666,7 +669,7 @@ func TestConcurrentPut(t *testing.T) {
 	for i := 0; i < numGoroutines; i++ {
 		gateType := fmt.Sprintf("parallel-gate-%d", i)
 		getResult := cache.Get(ctx, key, gateType)
-		if getResult.Code == "CACHE_MISS" {
+		if !getResult.IsSuccess() {
 			t.Errorf("expected gate %q to exist, got CACHE_MISS", gateType)
 			continue
 		}
