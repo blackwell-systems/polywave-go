@@ -208,3 +208,20 @@ func TestBuildPromptText_FixRequired(t *testing.T) {
 		t.Error("BuildPromptText missing retry context heading")
 	}
 }
+
+func TestBuildRetryAttempt_LoadManifestFailed(t *testing.T) {
+	// Write invalid YAML to trigger protocol.Load failure
+	dir := t.TempDir()
+	manifestPath := filepath.Join(dir, "invalid.yaml")
+	if err := os.WriteFile(manifestPath, []byte("invalid: [yaml"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err := retry.BuildRetryAttempt(context.Background(), manifestPath, "A", 1)
+	if err == nil {
+		t.Fatal("expected error for invalid manifest")
+	}
+	if !strings.Contains(err.Error(), "load manifest") {
+		t.Errorf("error message should mention 'load manifest', got: %v", err)
+	}
+}

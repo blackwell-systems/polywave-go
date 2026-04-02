@@ -504,6 +504,119 @@ func TestRetryLoop_ContextCancelled(t *testing.T) {
 	}
 }
 
+// TestRetryLoop_Run_NilContext verifies that Run handles nil context by
+// defaulting to context.Background().
+func TestRetryLoop_Run_NilContext(t *testing.T) {
+	tmpDir := t.TempDir()
+	cfg := RetryConfig{MaxRetries: 2, RepoPath: tmpDir}
+	loop := NewRetryLoop(cfg)
+
+	gate := QualityGateFailure{
+		GateType:    "build",
+		Command:     "go build ./...",
+		Output:      "error",
+		FailedFiles: []string{"file.go"},
+	}
+
+	// Pass nil context — should default to context.Background()
+	res, err := loop.Run(nil, gate, nil)
+	if err != nil {
+		t.Fatalf("Run with nil context should succeed, got: %v", err)
+	}
+	if res.AttemptNumber != 1 {
+		t.Errorf("AttemptNumber = %d, want 1", res.AttemptNumber)
+	}
+}
+
+// TestRetryLoop_saveRetryIMPL_Errors verifies error handling in saveRetryIMPL
+// for MkdirAll failure path.
+func TestRetryLoop_saveRetryIMPL_Errors(t *testing.T) {
+	// MkdirAll failure: write-protected directory
+	tmpDir := t.TempDir()
+	protectedDir := filepath.Join(tmpDir, "protected")
+	if err := os.Mkdir(protectedDir, 0444); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg := RetryConfig{MaxRetries: 2, RepoPath: protectedDir}
+	loop := NewRetryLoop(cfg)
+
+	m := &protocol.IMPLManifest{
+		Title:       "Test",
+		FeatureSlug: "test",
+		Verdict:     "SUITABLE",
+	}
+
+	_, err := loop.saveRetryIMPL(m, "test-slug")
+	if err == nil {
+		t.Fatal("expected error for MkdirAll failure")
+	}
+	if !strings.Contains(err.Error(), "create") {
+		t.Errorf("error should mention 'create', got: %v", err)
+	}
+}
+
+// TestRetryLoop_saveRetryIMPL_SaveFailed verifies error handling when
+// protocol.Save fails due to write permission issues.
+func TestRetryLoop_saveRetryIMPL_SaveFailed(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	// Create the IMPL directory first
+	implDir := filepath.Join(tmpDir, "docs", "IMPL")
+	if err := os.MkdirAll(implDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	// Make the directory read-only so Save will fail
+	if err := os.Chmod(implDir, 0444); err != nil {
+		t.Fatal(err)
+	}
+	// Restore permissions after test
+	defer os.Chmod(implDir, 0755)
+
+	cfg := RetryConfig{MaxRetries: 2, RepoPath: tmpDir}
+	loop := NewRetryLoop(cfg)
+
+	m := &protocol.IMPLManifest{
+		Title:       "Test",
+		FeatureSlug: "test",
+		Verdict:     "SUITABLE",
+	}
+
+	_, err := loop.saveRetryIMPL(m, "test-slug")
+	if err == nil {
+		t.Fatal("expected error for protocol.Save failure")
+	}
+	if !strings.Contains(err.Error(), "save") && !strings.Contains(err.Error(), "failed") {
+		t.Errorf("error should mention 'save' or 'failed', got: %v", err)
+	}
+}
+
+// TestRetryLoop_filesFromIMPL_LoadError verifies filesFromIMPL returns nil
+// when protocol.Load fails (e.g., manifest file does not exist).
+func TestRetryLoop_filesFromIMPL_LoadError(t *testing.T) {
+	tmpDir := t.TempDir()
+	invalidPath := filepath.Join(tmpDir, "nonexistent.yaml")
+	cfg := RetryConfig{IMPLPath: invalidPath, RepoPath: tmpDir}
+	loop := NewRetryLoop(cfg)
+
+	// filesFromIMPL should return nil when protocol.Load fails
+	files := loop.filesFromIMPL()
+	if files != nil {
+		t.Errorf("filesFromIMPL should return nil for missing file, got: %v", files)
+	}
+}
+
+// TestRetryLoop_gateCommandFromIMPL_LoadError verifies gateCommandFromIMPL
+// returns default command when protocol.Load fails.
+func TestRetryLoop_gateCommandFromIMPL_LoadError(t *testing.T) {
+	invalidPath := "/nonexistent/path.yaml"
+	cmd := gateCommandFromIMPL(invalidPath)
+	if cmd != "go build ./..." {
+		t.Errorf("gateCommandFromIMPL should return default on load error, got: %q", cmd)
+	}
+}
+
 // helper: ensures fmt and strings are used.
 var _ = fmt.Sprintf
 var _ = strings.Contains
