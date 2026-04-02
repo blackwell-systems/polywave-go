@@ -2,8 +2,10 @@ package engine
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log/slog"
+	"os"
 	"strings"
 	"time"
 
@@ -215,6 +217,10 @@ func FinalizeWave(ctx context.Context, opts FinalizeWaveOpts) (*FinalizeWaveResu
 
 	// Extract repos from manifest for multi-repo support.
 	repos, _ := ExtractReposFromManifest(manifest, opts.WaveNum, opts.RepoPath)
+
+	// Write branch-refs.json before any step that can fail, so mid-run failures
+	// are recoverable: read the file, create the branch refs, retry finalize-wave.
+	writeBranchRefs(manifest, opts.WaveNum, opts.RepoPath)
 
 	result := &FinalizeWaveResult{
 		Wave:             opts.WaveNum,
@@ -707,6 +713,44 @@ func containsAny(s string, substrs ...string) bool {
 		}
 	}
 	return false
+}
+
+// writeBranchRefs records each agent's current branch tip SHA to
+// .saw-state/wave{N}/branch-refs.json before any finalize step executes.
+// On mid-run failure, the file enables recovery:
+//
+//	cat .saw-state/wave1/branch-refs.json  # {"A":"<sha>","B":"<sha>"}
+//	git branch saw/<slug>/wave1-agent-A <sha>
+//	sawtools finalize-wave ...
+//
+// Errors are silently swallowed — this is a best-effort record.
+func writeBranchRefs(manifest *protocol.IMPLManifest, waveNum int, repoPath string) {
+	refs := make(map[string]string)
+	for _, w := range manifest.Waves {
+		if w.Number != waveNum {
+			continue
+		}
+		for _, agent := range w.Agents {
+			branch := protocol.BranchName(manifest.FeatureSlug, waveNum, agent.ID)
+			sha, err := git.Run(repoPath, "rev-parse", branch)
+			if err != nil {
+				continue
+			}
+			refs[agent.ID] = strings.TrimSpace(sha)
+		}
+		break
+	}
+	if len(refs) == 0 {
+		return
+	}
+	data, err := json.MarshalIndent(refs, "", "  ")
+	if err != nil {
+		return
+	}
+	stateDir := protocol.SAWStateDir(repoPath)
+	waveDir := filepath.Join(stateDir, fmt.Sprintf("wave%d", waveNum))
+	_ = os.MkdirAll(waveDir, 0o755)
+	_ = os.WriteFile(filepath.Join(waveDir, "branch-refs.json"), data, 0o644)
 }
 
 // countMergedAgents counts the total number of agents successfully merged across all auto-merge results.
