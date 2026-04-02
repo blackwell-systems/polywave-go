@@ -35,6 +35,7 @@ type SessionState struct {
 	ResumeCommand     string                  `json:"resume_command"`
 	DirtyWorktrees    []DirtyWorktree         `json:"dirty_worktrees,omitempty"`
 	AgentSessions     map[string]AgentSession `json:"agent_sessions,omitempty"`
+	RecoverySteps     []protocol.RecoveryStep `json:"recovery_steps,omitempty"`
 }
 
 // AgentSession holds session tracking information for a launched agent.
@@ -210,6 +211,7 @@ func buildSessionState(repoPaths []string, implPath string, manifest *protocol.I
 		DirtyWorktrees:    dirty,
 		AgentSessions:     agentSessions,
 	}
+	ss.RecoverySteps = BuildRecoverySteps(ss, manifest)
 
 	return ss, nil
 }
