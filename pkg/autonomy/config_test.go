@@ -3,6 +3,7 @@ package autonomy
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -167,20 +168,26 @@ func TestSaveConfig_PreservesOtherKeys(t *testing.T) {
 		t.Fatal(err)
 	}
 	content := string(raw)
-	if !containsSubstring(content, "other_section") {
+	if !strings.Contains(content, "other_section") {
 		t.Errorf("other_section was not preserved in saved config: %s", content)
 	}
 }
 
-func containsSubstring(s, sub string) bool {
-	return len(s) >= len(sub) && (s == sub || len(s) > 0 && findSubstring(s, sub))
-}
+func TestSaveConfig_WritePermissionError(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "saw.config.json")
 
-func findSubstring(s, sub string) bool {
-	for i := 0; i <= len(s)-len(sub); i++ {
-		if s[i:i+len(sub)] == sub {
-			return true
-		}
+	// Create file as read-only to trigger write error
+	if err := os.WriteFile(path, []byte("{}"), 0444); err != nil {
+		t.Fatal(err)
 	}
-	return false
+
+	cfg := Config{Level: LevelGated, MaxAutoRetries: 2, MaxQueueDepth: 10}
+	sr := SaveConfig(dir, cfg)
+	if !sr.IsFatal() {
+		t.Fatalf("expected fatal result when file is read-only, got success")
+	}
+	if len(sr.Errors) == 0 || sr.Errors[0].Code != "CONFIG_SAVE_FAILED" {
+		t.Errorf("expected CONFIG_SAVE_FAILED error code")
+	}
 }
