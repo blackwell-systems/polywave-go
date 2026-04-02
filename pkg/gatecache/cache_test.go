@@ -36,10 +36,15 @@ func TestCache_PutGet(t *testing.T) {
 		t.Fatalf("Put failed: %v", putResult.Errors)
 	}
 
-	got, ok := c.Get(ctx, key, "build")
-	if !ok {
-		t.Fatal("expected cache hit, got miss")
+	getResult := c.Get(ctx, key, "build")
+	if getResult.Code == "CACHE_MISS" {
+		t.Fatal("expected cache hit, got CACHE_MISS")
 	}
+	if !getResult.IsSuccess() {
+		t.Fatalf("Get failed: %v", getResult.Errors)
+	}
+	data := getResult.GetData()
+	got := data.Result
 	if got.GateType != "build" {
 		t.Errorf("GateType mismatch: got %q, want %q", got.GateType, "build")
 	}
@@ -49,7 +54,7 @@ func TestCache_PutGet(t *testing.T) {
 	if got.Stdout != "build output" {
 		t.Errorf("Stdout mismatch: got %q, want %q", got.Stdout, "build output")
 	}
-	if !got.FromCache {
+	if !data.FromCache {
 		t.Error("expected FromCache=true after Put")
 	}
 }
@@ -81,6 +86,67 @@ func TestCache_Put_ReturnsSuccessWithCorrectGateType(t *testing.T) {
 	}
 }
 
+func TestCache_Get_ReturnsGetDataStruct(t *testing.T) {
+	ctx := context.Background()
+	dir := t.TempDir()
+	c := New(ctx, dir, DefaultTTL)
+
+	key := CacheKey{HeadCommit: "abc123"}
+	r := CachedResult{
+		GateType: "test",
+		Passed:   true,
+		Command:  "go test",
+	}
+
+	putResult := c.Put(ctx, key, "test", r)
+	if putResult.IsFatal() {
+		t.Fatalf("Put failed: %v", putResult.Errors)
+	}
+
+	getResult := c.Get(ctx, key, "test")
+	if !getResult.IsSuccess() {
+		t.Fatalf("expected success, got code=%q errors=%v", getResult.Code, getResult.Errors)
+	}
+	data := getResult.GetData()
+	if data.Key == "" {
+		t.Error("Key should not be empty")
+	}
+	if !data.FromCache {
+		t.Error("FromCache should be true for Get")
+	}
+	if data.Result.GateType != "test" {
+		t.Errorf("Result.GateType: got %q, want %q", data.Result.GateType, "test")
+	}
+}
+
+func TestCache_Get_ReturnsMissCodeOnExpiry(t *testing.T) {
+	ctx := context.Background()
+	dir := t.TempDir()
+	ttl := 50 * time.Millisecond
+	c := New(ctx, dir, ttl)
+
+	key := CacheKey{HeadCommit: "deadbeef"}
+	// Set CachedAt to already-expired timestamp
+	r := CachedResult{
+		GateType: "test",
+		Passed:   true,
+		CachedAt: time.Now().Add(-100 * time.Millisecond),
+	}
+
+	putResult := c.Put(ctx, key, "test", r)
+	if putResult.IsFatal() {
+		t.Fatalf("Put failed: %v", putResult.Errors)
+	}
+
+	getResult := c.Get(ctx, key, "test")
+	if getResult.Code != "CACHE_MISS" {
+		t.Errorf("expected CACHE_MISS code on expiry, got %q", getResult.Code)
+	}
+	if getResult.IsFatal() {
+		t.Error("CACHE_MISS should be non-fatal")
+	}
+}
+
 func TestCache_TTLExpiry(t *testing.T) {
 	ctx := context.Background()
 	dir := t.TempDir()
@@ -100,9 +166,12 @@ func TestCache_TTLExpiry(t *testing.T) {
 		t.Fatalf("Put failed: %v", putResult.Errors)
 	}
 
-	got, ok := c.Get(ctx, key, "test")
-	if ok {
-		t.Errorf("expected cache miss due to TTL expiry, but got hit: %+v", got)
+	getResult := c.Get(ctx, key, "test")
+	if getResult.Code != "CACHE_MISS" {
+		t.Errorf("expected CACHE_MISS due to TTL expiry, got code=%q", getResult.Code)
+	}
+	if getResult.IsFatal() {
+		t.Error("CACHE_MISS should be non-fatal")
 	}
 }
 
@@ -122,10 +191,14 @@ func TestCache_TTLNotExpired(t *testing.T) {
 		t.Fatalf("Put failed: %v", putResult.Errors)
 	}
 
-	got, ok := c.Get(ctx, key, "lint")
-	if !ok {
-		t.Fatal("expected cache hit, got miss")
+	getResult := c.Get(ctx, key, "lint")
+	if getResult.Code == "CACHE_MISS" {
+		t.Fatal("expected cache hit, got CACHE_MISS")
 	}
+	if !getResult.IsSuccess() {
+		t.Fatalf("Get failed: %v", getResult.Errors)
+	}
+	got := getResult.GetData().Result
 	if got.GateType != "lint" {
 		t.Errorf("GateType mismatch: got %q", got.GateType)
 	}
@@ -156,8 +229,9 @@ func TestCache_Invalidate(t *testing.T) {
 	}
 
 	// Entries should be gone
-	if _, ok := c.Get(ctx, key, "build"); ok {
-		t.Error("expected cache miss after Invalidate, got hit")
+	getResult := c.Get(ctx, key, "build")
+	if getResult.Code != "CACHE_MISS" {
+		t.Errorf("expected CACHE_MISS after Invalidate, got code=%q", getResult.Code)
 	}
 
 	// Cache file should be removed
@@ -230,10 +304,15 @@ func TestCache_Persistence(t *testing.T) {
 	// Create a new cache instance from the same directory — it should load from disk
 	c2 := New(ctx, dir, DefaultTTL)
 
-	got, ok := c2.Get(ctx, key, "vet")
-	if !ok {
-		t.Fatal("expected cache hit after reload from disk, got miss")
+	getResult := c2.Get(ctx, key, "vet")
+	if getResult.Code == "CACHE_MISS" {
+		t.Fatal("expected cache hit after reload from disk, got CACHE_MISS")
 	}
+	if !getResult.IsSuccess() {
+		t.Fatalf("Get failed: %v", getResult.Errors)
+	}
+	data := getResult.GetData()
+	got := data.Result
 	if got.GateType != "vet" {
 		t.Errorf("GateType mismatch after reload: got %q", got.GateType)
 	}
@@ -243,7 +322,7 @@ func TestCache_Persistence(t *testing.T) {
 	if got.Stdout != "vet ok" {
 		t.Errorf("Stdout mismatch after reload: got %q", got.Stdout)
 	}
-	if !got.FromCache {
+	if !data.FromCache {
 		t.Error("expected FromCache=true after reload")
 	}
 }
@@ -272,11 +351,16 @@ func TestCache_MultipleGateTypes(t *testing.T) {
 	}
 
 	for _, g := range gates {
-		got, ok := c.Get(ctx, key, g.gateType)
-		if !ok {
-			t.Errorf("expected hit for gate %q, got miss", g.gateType)
+		getResult := c.Get(ctx, key, g.gateType)
+		if getResult.Code == "CACHE_MISS" {
+			t.Errorf("expected hit for gate %q, got CACHE_MISS", g.gateType)
 			continue
 		}
+		if !getResult.IsSuccess() {
+			t.Errorf("Get failed for gate %q: %v", g.gateType, getResult.Errors)
+			continue
+		}
+		got := getResult.GetData().Result
 		if got.Passed != g.passed {
 			t.Errorf("gate %q: Passed mismatch: got %v, want %v", g.gateType, got.Passed, g.passed)
 		}
@@ -410,11 +494,13 @@ func TestCache_CommandDifferentiation(t *testing.T) {
 		t.Fatalf("Put failed: %v", putResult.Errors)
 	}
 
-	if _, ok := c.Get(ctx, key2, "build"); ok {
-		t.Error("expected cache miss for key2 (different Command), but got hit")
+	getResult2 := c.Get(ctx, key2, "build")
+	if getResult2.Code != "CACHE_MISS" {
+		t.Error("expected CACHE_MISS for key2 (different Command), but got hit")
 	}
-	if _, ok := c.Get(ctx, key1, "build"); !ok {
-		t.Error("expected cache hit for key1, got miss")
+	getResult1 := c.Get(ctx, key1, "build")
+	if getResult1.Code == "CACHE_MISS" {
+		t.Error("expected cache hit for key1, got CACHE_MISS")
 	}
 }
 
@@ -496,14 +582,15 @@ func TestCacheThreadSafety(t *testing.T) {
 			}
 			_ = cache.Put(ctx, key, fmt.Sprintf("type-%d", idx), r)
 			// Concurrent reads
-			_, _ = cache.Get(ctx, key, fmt.Sprintf("type-%d", idx))
+			_ = cache.Get(ctx, key, fmt.Sprintf("type-%d", idx))
 		}(i)
 	}
 	wg.Wait()
 
 	// Verify all entries exist after concurrent writes
 	for i := 0; i < 10; i++ {
-		if _, ok := cache.Get(ctx, key, fmt.Sprintf("type-%d", i)); !ok {
+		getResult := cache.Get(ctx, key, fmt.Sprintf("type-%d", i))
+		if getResult.Code == "CACHE_MISS" {
 			t.Errorf("expected gate type-%d to exist after concurrent Put", i)
 		}
 	}
@@ -529,7 +616,7 @@ func TestConcurrentInvalidate(t *testing.T) {
 					Passed:   true,
 				}
 				_ = cache.Put(ctx, key, r.GateType, r)
-				_, _ = cache.Get(ctx, key, r.GateType)
+				_ = cache.Get(ctx, key, r.GateType)
 			}
 		}(i)
 	}
@@ -578,11 +665,16 @@ func TestConcurrentPut(t *testing.T) {
 	// Verify all gate types exist and have correct values
 	for i := 0; i < numGoroutines; i++ {
 		gateType := fmt.Sprintf("parallel-gate-%d", i)
-		got, ok := cache.Get(ctx, key, gateType)
-		if !ok {
-			t.Errorf("expected gate %q to exist, got miss", gateType)
+		getResult := cache.Get(ctx, key, gateType)
+		if getResult.Code == "CACHE_MISS" {
+			t.Errorf("expected gate %q to exist, got CACHE_MISS", gateType)
 			continue
 		}
+		if !getResult.IsSuccess() {
+			t.Errorf("Get failed for gate %q: %v", gateType, getResult.Errors)
+			continue
+		}
+		got := getResult.GetData().Result
 		expectedPassed := i%2 == 0
 		if got.Passed != expectedPassed {
 			t.Errorf("gate %q: expected Passed=%v, got %v", gateType, expectedPassed, got.Passed)
