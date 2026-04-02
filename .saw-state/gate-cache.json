@@ -396,6 +396,18 @@
         "cached_at": "2026-03-30T22:35:53.16254-07:00"
       }
     },
+    "113876b754877598abf45891480ba16a": {
+      "lint": {
+        "gate_type": "lint",
+        "command": "go vet ./pkg/tools/...",
+        "passed": true,
+        "exit_code": 0,
+        "stdout": "",
+        "stderr": "",
+        "from_cache": true,
+        "cached_at": "2026-04-01T21:41:34.283222-07:00"
+      }
+    },
     "11b61a6212d16aea958d0744782e5cfa": {
       "build": {
         "gate_type": "build",
@@ -3466,6 +3478,18 @@
         "stderr": "",
         "from_cache": true,
         "cached_at": "2026-03-30T13:28:39.690899-07:00"
+      }
+    },
+    "7ce0c50506ec9b86ace79d0fbb20b7a9": {
+      "test": {
+        "gate_type": "test",
+        "command": "go test ./pkg/tools/... -v",
+        "passed": true,
+        "exit_code": 0,
+        "stdout": "=== RUN   TestAnthropicAdapterSerialize\n--- PASS: TestAnthropicAdapterSerialize (0.00s)\n=== RUN   TestOpenAIAdapterSerialize\n--- PASS: TestOpenAIAdapterSerialize (0.00s)\n=== RUN   TestBedrockAdapterSerialize\n--- PASS: TestBedrockAdapterSerialize (0.00s)\n=== RUN   TestAdapterSerializationConsistency\n--- PASS: TestAdapterSerializationConsistency (0.00s)\n=== RUN   TestAdapterSerializeEmpty\n--- PASS: TestAdapterSerializeEmpty (0.00s)\n=== RUN   TestAnthropicAdapterSerializeComplexSchema\n--- PASS: TestAnthropicAdapterSerializeComplexSchema (0.00s)\n=== RUN   TestOpenAIAdapterSerializeMultipleTools\n--- PASS: TestOpenAIAdapterSerializeMultipleTools (0.00s)\n=== RUN   TestConstraintEnforcer_I1_OwnedFileSucceeds\n--- PASS: TestConstraintEnforcer_I1_OwnedFileSucceeds (0.00s)\n=== RUN   TestConstraintEnforcer_I1_UnownedFileReturnsViolation\n--- PASS: TestConstraintEnforcer_I1_UnownedFileReturnsViolation (0.00s)\n=== RUN   TestConstraintEnforcer_I1_PathKeyFallback\n--- PASS: TestConstraintEnforcer_I1_PathKeyFallback (0.00s)\n=== RUN   TestConstraintEnforcer_I2_FrozenPathReturnsViolation\n--- PASS: TestConstraintEnforcer_I2_FrozenPathReturnsViolation (0.00s)\n=== RUN   TestConstraintEnforcer_I2_NonFrozenPathSucceeds\n--- PASS: TestConstraintEnforcer_I2_NonFrozenPathSucceeds (0.00s)\n=== RUN   TestConstraintEnforcer_I2_NilFreezeTimeDisablesFreeze\n--- PASS: TestConstraintEnforcer_I2_NilFreezeTimeDisablesFreeze (0.00s)\n=== RUN   TestConstraintEnforcer_I6_ScoutAllowedPathSucceeds\n--- PASS: TestConstraintEnforcer_I6_ScoutAllowedPathSucceeds (0.00s)\n=== RUN   TestConstraintEnforcer_I6_ScoutBlocksSourceCode\n--- PASS: TestConstraintEnforcer_I6_ScoutBlocksSourceCode (0.00s)\n=== RUN   TestConstraintEnforcer_I6_EmptyPrefixesPassthrough\n--- PASS: TestConstraintEnforcer_I6_EmptyPrefixesPassthrough (0.00s)\n=== RUN   TestConstraintEnforcer_Composition\n--- PASS: TestConstraintEnforcer_Composition (0.00s)\n=== RUN   TestConstraintEnforcer_I6_ScoutBlocksNonYamlIMPLPath\n--- PASS: TestConstraintEnforcer_I6_ScoutBlocksNonYamlIMPLPath (0.00s)\n=== RUN   TestConstraintEnforcer_InitRegistersRealImplementations\n--- PASS: TestConstraintEnforcer_InitRegistersRealImplementations (0.00s)\n=== RUN   TestExtractStringInput_NilMap\n--- PASS: TestExtractStringInput_NilMap (0.00s)\n=== RUN   TestExtractStringInput_MissingKey\n--- PASS: TestExtractStringInput_MissingKey (0.00s)\n=== RUN   TestExtractStringInput_WrongType\n--- PASS: TestExtractStringInput_WrongType (0.00s)\n=== RUN   TestExtractStringInput_EmptyString\n--- PASS: TestExtractStringInput_EmptyString (0.00s)\n=== RUN   TestExtractStringInput_ValidString\n--- PASS: TestExtractStringInput_ValidString (0.00s)\n=== RUN   TestFileWriteExecutor_MissingFilePath\n--- PASS: TestFileWriteExecutor_MissingFilePath (0.00s)\n=== RUN   TestFileWriteExecutor_WrongTypeFilePath\n--- PASS: TestFileWriteExecutor_WrongTypeFilePath (0.00s)\n=== RUN   TestBashExecutor_MissingCommand\n--- PASS: TestBashExecutor_MissingCommand (0.00s)\n=== RUN   TestGrepFallback_NonexistentRoot\n--- PASS: TestGrepFallback_NonexistentRoot (0.00s)\n=== RUN   TestGrepFallback_FindsMatches\n--- PASS: TestGrepFallback_FindsMatches (0.00s)\n=== RUN   TestApplyMiddleware\n--- PASS: TestApplyMiddleware (0.00s)\n=== RUN   TestLoggingMiddleware\n--- PASS: TestLoggingMiddleware (0.01s)\n=== RUN   TestLoggingMiddlewareError\n--- PASS: TestLoggingMiddlewareError (0.00s)\n=== RUN   TestTimingMiddleware\n--- PASS: TestTimingMiddleware (0.01s)\n=== RUN   TestValidationMiddleware\n--- PASS: TestValidationMiddleware (0.00s)\n=== RUN   TestMiddlewareStack\n--- PASS: TestMiddlewareStack (0.00s)\n=== RUN   TestMiddlewareErrorPropagation\n--- PASS: TestMiddlewareErrorPropagation (0.00s)\n=== RUN   TestTimingMiddleware_RealImplementation\n--- PASS: TestTimingMiddleware_RealImplementation (0.01s)\n=== RUN   TestPermissionMiddleware_Blocks\n--- PASS: TestPermissionMiddleware_Blocks (0.00s)\n=== RUN   TestPermissionMiddleware_Allows\n--- PASS: TestPermissionMiddleware_Allows (0.00s)\n=== RUN   TestWithTiming_AppliedToAllTools\n--- PASS: TestWithTiming_AppliedToAllTools (0.00s)\n=== RUN   TestWithPermissions_BlocksWriteTools\n--- PASS: TestWithPermissions_BlocksWriteTools (0.00s)\n=== RUN   TestReadOnlyTools_Registered\n--- PASS: TestReadOnlyTools_Registered (0.00s)\n=== RUN   TestRolePath_ScoutAllowsIMPLYaml\n--- PASS: TestRolePath_ScoutAllowsIMPLYaml (0.00s)\n=== RUN   TestRolePath_ScoutBlocksSourceCode\n--- PASS: TestRolePath_ScoutBlocksSourceCode (0.00s)\n=== RUN   TestRolePath_ScoutBlocksNonIMPLYaml\n--- PASS: TestRolePath_ScoutBlocksNonIMPLYaml (0.00s)\n=== RUN   TestRolePath_ScaffoldAllowsScaffoldPaths\n--- PASS: TestRolePath_ScaffoldAllowsScaffoldPaths (0.00s)\n=== RUN   TestRolePath_ScaffoldBlocksOtherPaths\n--- PASS: TestRolePath_ScaffoldBlocksOtherPaths (0.00s)\n=== RUN   TestRolePath_EmptyPrefixes_Passthrough\n--- PASS: TestRolePath_EmptyPrefixes_Passthrough (0.00s)\n=== RUN   TestRolePath_PathKeyFallback\n--- PASS: TestRolePath_PathKeyFallback (0.00s)\n=== RUN   TestRolePath_OnlyAppliesToWriteTools\n--- PASS: TestRolePath_OnlyAppliesToWriteTools (0.00s)\n=== RUN   TestWithConstraints_ZeroValue_Passthrough\n--- PASS: TestWithConstraints_ZeroValue_Passthrough (0.00s)\n=== RUN   TestWithConstraints_OwnershipApplied\n--- PASS: TestWithConstraints_OwnershipApplied (0.00s)\n=== RUN   TestWithConstraints_FreezeApplied\n--- PASS: TestWithConstraints_FreezeApplied (0.00s)\n=== RUN   TestWithConstraints_RoleApplied\n--- PASS: TestWithConstraints_RoleApplied (0.00s)\n=== RUN   TestWithConstraints_BashNoConstraintMiddleware\n--- PASS: TestWithConstraints_BashNoConstraintMiddleware (0.00s)\n=== RUN   TestWithConstraints_CommitTracker_NilWhenDisabled\n--- PASS: TestWithConstraints_CommitTracker_NilWhenDisabled (0.00s)\n=== RUN   TestConstrainedTools_Integration\n--- PASS: TestConstrainedTools_Integration (0.00s)\n=== RUN   TestWithConstraints_MultipleMiddleware_Order\n--- PASS: TestWithConstraints_MultipleMiddleware_Order (0.00s)\n=== RUN   TestWithConstraints_ReadToolsUnconstrained\n--- PASS: TestWithConstraints_ReadToolsUnconstrained (0.00s)\n=== RUN   TestWithConstraints_BashToolNotGetWriteMiddleware\n--- PASS: TestWithConstraints_BashToolNotGetWriteMiddleware (0.00s)\n=== RUN   TestRegisterAndGet\n--- PASS: TestRegisterAndGet (0.00s)\n=== RUN   TestRegisterDuplicate\n--- PASS: TestRegisterDuplicate (0.00s)\n=== RUN   TestRegisterTotalToolsIncrements\n--- PASS: TestRegisterTotalToolsIncrements (0.00s)\n=== RUN   TestAll\n--- PASS: TestAll (0.00s)\n=== RUN   TestNamespace\n--- PASS: TestNamespace (0.00s)\n=== RUN   TestNamespaceEmpty\n--- PASS: TestNamespaceEmpty (0.00s)\n=== RUN   TestStandardToolsRegistration\n--- PASS: TestStandardToolsRegistration (0.00s)\nPASS\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/tools\t0.198s\n",
+        "stderr": "",
+        "from_cache": true,
+        "cached_at": "2026-04-01T21:41:34.029988-07:00"
       }
     },
     "7e6160e593ddbb721fc58236704c21c1": {
@@ -6694,6 +6718,18 @@
         "stderr": "",
         "from_cache": true,
         "cached_at": "2026-03-25T22:20:31.545462-07:00"
+      }
+    },
+    "e6543096b08af6c6afbbe88d9ec39044": {
+      "build": {
+        "gate_type": "build",
+        "command": "go build ./pkg/tools/...",
+        "passed": true,
+        "exit_code": 0,
+        "stdout": "",
+        "stderr": "",
+        "from_cache": true,
+        "cached_at": "2026-04-01T21:41:33.479349-07:00"
       }
     },
     "e664ae9f406fccf8ebcf1f6d51db79b5": {
