@@ -35,11 +35,15 @@ Exit codes:
 		RunE: func(cmd *cobra.Command, args []string) error {
 			manifestPath := args[0]
 
-			rc, err := retry.BuildRetryAttempt(cmd.Context(), manifestPath, agentID, attemptNum)
-			if err != nil {
-				return fmt.Errorf("build-retry-context: %w", err)
+			rcResult := retry.BuildRetryAttempt(cmd.Context(), manifestPath, agentID, attemptNum)
+			if rcResult.IsFatal() {
+				if len(rcResult.Errors) > 0 {
+					return fmt.Errorf("build-retry-context: %s", rcResult.Errors[0].Message)
+				}
+				return fmt.Errorf("build-retry-context: unknown error")
 			}
 
+			rc := rcResult.GetData()
 			out, err := json.MarshalIndent(rc, "", "  ")
 			if err != nil {
 				return fmt.Errorf("build-retry-context: failed to marshal output: %w", err)

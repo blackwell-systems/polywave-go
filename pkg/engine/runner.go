@@ -892,11 +892,16 @@ func RunSingleAgent(ctx context.Context, opts RunWaveOpts, waveNum int, agentLet
 		manifest, loadErr := protocol.Load(ctx, opts.IMPLPath)
 		if loadErr == nil {
 			if report, ok := manifest.CompletionReports[agentLetter]; ok && report.Status != protocol.StatusComplete {
-				rc, rcErr := retry.BuildRetryAttempt(ctx, opts.IMPLPath, agentLetter, 1)
-				if rcErr != nil {
-					loggerFrom(opts.Logger).Debug("engine.RunSingleAgent: retry context (best-effort)", "err", rcErr)
-				} else if rc != nil && rc.PromptText != "" {
-					promptPrefix = rc.PromptText
+				rcResult := retry.BuildRetryAttempt(ctx, opts.IMPLPath, agentLetter, 1)
+				if rcResult.IsFatal() {
+					if len(rcResult.Errors) > 0 {
+						loggerFrom(opts.Logger).Debug("engine.RunSingleAgent: retry context (best-effort)", "err", rcResult.Errors[0])
+					}
+				} else {
+					rc := rcResult.GetData()
+					if rc != nil && rc.PromptText != "" {
+						promptPrefix = rc.PromptText
+					}
 				}
 			}
 		}

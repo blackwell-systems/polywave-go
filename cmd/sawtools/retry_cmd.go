@@ -73,11 +73,15 @@ Output is JSON to stdout for programmatic consumption.`,
 				FailedFiles: failedFiles,
 			}
 
-			result, err := rl.Run(cmd.Context(), gate, nil)
-			if err != nil {
-				return fmt.Errorf("retry: %w", err)
+			runResult := rl.Run(cmd.Context(), gate, nil)
+			if runResult.IsFatal() {
+				if len(runResult.Errors) > 0 {
+					return fmt.Errorf("retry: %s", runResult.Errors[0].Message)
+				}
+				return fmt.Errorf("retry: unknown error")
 			}
 
+			result := runResult.GetData()
 			// Print JSON result to stdout.
 			out, err := json.MarshalIndent(result, "", "  ")
 			if err != nil {
