@@ -5,20 +5,13 @@ import (
 	"bytes"
 	"log/slog"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 
 	"github.com/blackwell-systems/scout-and-wave-go/internal/git"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
 )
-
-// loggerFrom returns the provided logger or slog.Default() if nil.
-func loggerFrom(l *slog.Logger) *slog.Logger {
-	if l == nil {
-		return slog.Default()
-	}
-	return l
-}
 
 // DirtyWorktree describes a SAW agent worktree and whether it has uncommitted changes.
 type DirtyWorktree struct {
@@ -36,8 +29,11 @@ type DirtyWorktree struct {
 // manifest's FeatureSlug are included. Worktrees with non-matching branches are
 // skipped. Paths that do not exist are silently skipped. Git failures are treated
 // as clean (not an error). Locked worktrees are conservatively treated as dirty.
-func ClassifyWorktrees(worktreePaths []string, manifest *protocol.IMPLManifest, logger *slog.Logger) ([]DirtyWorktree, error) {
-	log := loggerFrom(logger)
+func ClassifyWorktrees(worktreePaths []string, manifest *protocol.IMPLManifest, logger *slog.Logger) []DirtyWorktree {
+	log := logger
+	if log == nil {
+		log = slog.Default()
+	}
 	// Build the required slug prefix for branch filtering.
 	slugPrefix := ""
 	if manifest != nil && manifest.FeatureSlug != "" {
@@ -50,7 +46,7 @@ func ClassifyWorktrees(worktreePaths []string, manifest *protocol.IMPLManifest, 
 		lockedPaths = detectLockedWorktreePaths(worktreePaths[0])
 	}
 
-	var result []DirtyWorktree
+	var classified []DirtyWorktree
 
 	for _, wt := range worktreePaths {
 		// Skip non-existent paths silently.
@@ -91,7 +87,7 @@ func ClassifyWorktrees(worktreePaths []string, manifest *protocol.IMPLManifest, 
 
 		hasChanges := isWorktreeDirty(wt, lockedPaths, log)
 
-		result = append(result, DirtyWorktree{
+		classified = append(classified, DirtyWorktree{
 			Path:       wt,
 			Branch:     branch,
 			AgentID:    agentID,
@@ -100,19 +96,27 @@ func ClassifyWorktrees(worktreePaths []string, manifest *protocol.IMPLManifest, 
 		})
 	}
 
-	if result == nil {
-		result = []DirtyWorktree{}
+	if classified == nil {
+		classified = []DirtyWorktree{}
 	}
 
-	return result, nil
+	return classified
 }
 
 // isWorktreeDirty returns true if the worktree at path has uncommitted changes or
 // is locked (locked = conservatively assume work in progress).
 func isWorktreeDirty(path string, lockedPaths map[string]bool, logger *slog.Logger) bool {
-	log := loggerFrom(logger)
+	log := logger
+	if log == nil {
+		log = slog.Default()
+	}
 
-	if lockedPaths[path] {
+	// Resolve symlinks so the lookup matches git's canonical path output.
+	resolvedPath := path
+	if rp, err := filepath.EvalSymlinks(path); err == nil {
+		resolvedPath = rp
+	}
+	if lockedPaths[resolvedPath] {
 		return true
 	}
 
@@ -136,7 +140,11 @@ func resolveWorktreeBranch(path string) string {
 	info, err := os.Stat(headPath)
 	if err != nil {
 		// No .git at all — try symbolic-ref as fallback.
-		return branchViaSymbolicRef(path)
+		branch, err := git.SymbolicRef(path)
+		if err != nil {
+			return ""
+		}
+		return branch
 	}
 
 	if info.IsDir() {
@@ -153,11 +161,6 @@ func resolveWorktreeBranch(path string) string {
 	}
 
 	// Linked worktree: .git is a file pointing to the gitdir.
-	return branchViaSymbolicRef(path)
-}
-
-// branchViaSymbolicRef uses `git symbolic-ref HEAD` to return the current branch.
-func branchViaSymbolicRef(path string) string {
 	branch, err := git.SymbolicRef(path)
 	if err != nil {
 		return ""
@@ -192,7 +195,14 @@ func detectLockedWorktreePaths(anyRepoPath string) map[string]bool {
 			continue
 		}
 		if strings.HasPrefix(line, "worktree ") {
-			currentPath = strings.TrimPrefix(line, "worktree ")
+			raw := strings.TrimPrefix(line, "worktree ")
+			// Normalize: git may output real paths (e.g. /private/var on macOS);
+			// store the canonical form so lookups against EvalSymlinks-resolved paths match.
+			if rp, err := filepath.EvalSymlinks(raw); err == nil {
+				currentPath = rp
+			} else {
+				currentPath = raw
+			}
 			continue
 		}
 		if strings.HasPrefix(line, "locked") {

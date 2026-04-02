@@ -70,10 +70,7 @@ func TestClassifyWorktrees_DirtyWorktree(t *testing.T) {
 	}
 
 	manifest := makeManifest("my-slug")
-	result, err := ClassifyWorktrees([]string{wtPath}, manifest, nil)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
+	result := ClassifyWorktrees([]string{wtPath}, manifest, nil)
 
 	if len(result) != 1 {
 		t.Fatalf("expected 1 result, got %d", len(result))
@@ -104,10 +101,7 @@ func TestClassifyWorktrees_CleanWorktree(t *testing.T) {
 
 	// No changes — worktree is clean.
 	manifest := makeManifest("my-slug")
-	result, err := ClassifyWorktrees([]string{wtPath}, manifest, nil)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
+	result := ClassifyWorktrees([]string{wtPath}, manifest, nil)
 
 	if len(result) != 1 {
 		t.Fatalf("expected 1 result, got %d", len(result))
@@ -127,10 +121,7 @@ func TestClassifyWorktrees_CleanWorktree(t *testing.T) {
 // exist is silently skipped and returns an empty slice with no error.
 func TestClassifyWorktrees_NonexistentPath(t *testing.T) {
 	manifest := makeManifest("my-slug")
-	result, err := ClassifyWorktrees([]string{"/no/such/path/ever"}, manifest, nil)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
+	result := ClassifyWorktrees([]string{"/no/such/path/ever"}, manifest, nil)
 	if len(result) != 0 {
 		t.Errorf("expected empty result for nonexistent path, got %d entries", len(result))
 	}
@@ -154,10 +145,7 @@ func TestClassifyWorktrees_MixedDirtyClean(t *testing.T) {
 	}
 
 	manifest := makeManifest("my-slug")
-	result, err := ClassifyWorktrees([]string{dirtyPath, cleanPath}, manifest, nil)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
+	result := ClassifyWorktrees([]string{dirtyPath, cleanPath}, manifest, nil)
 
 	if len(result) != 2 {
 		t.Fatalf("expected 2 results, got %d", len(result))
@@ -177,7 +165,6 @@ func TestClassifyWorktrees_MixedDirtyClean(t *testing.T) {
 	}
 }
 
-
 // TestClassifyWorktrees_SlugFiltering verifies that worktrees belonging to a
 // different slug are filtered out and do not appear in the results.
 func TestClassifyWorktrees_SlugFiltering(t *testing.T) {
@@ -191,15 +178,41 @@ func TestClassifyWorktrees_SlugFiltering(t *testing.T) {
 	addWorktree(t, repo, otherPath, "saw/other-slug/wave1-agent-B")
 
 	manifest := makeManifest("my-slug")
-	result, err := ClassifyWorktrees([]string{matchPath, otherPath}, manifest, nil)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
+	result := ClassifyWorktrees([]string{matchPath, otherPath}, manifest, nil)
 
 	if len(result) != 1 {
 		t.Fatalf("expected 1 result (only matching slug), got %d", len(result))
 	}
 	if result[0].Path != matchPath {
 		t.Errorf("expected matchPath=%s, got %s", matchPath, result[0].Path)
+	}
+}
+
+// TestClassifyWorktrees_LockedWorktree verifies that a locked worktree is
+// conservatively treated as dirty (HasChanges=true) even with no uncommitted files.
+func TestClassifyWorktrees_LockedWorktree(t *testing.T) {
+	repo := makeTestRepo(t)
+	wtDir := t.TempDir()
+	wtPath := filepath.Join(wtDir, "wt-locked")
+	branch := "saw/my-slug/wave1-agent-A"
+	addWorktree(t, repo, wtPath, branch)
+
+	// Lock the worktree.
+	lockCmd := exec.Command("git", "-C", repo, "worktree", "lock", wtPath)
+	if out, err := lockCmd.CombinedOutput(); err != nil {
+		t.Skipf("git worktree lock not supported: %v\n%s", err, out)
+	}
+	t.Cleanup(func() {
+		exec.Command("git", "-C", repo, "worktree", "unlock", wtPath).Run()
+	})
+
+	manifest := makeManifest("my-slug")
+	result := ClassifyWorktrees([]string{wtPath}, manifest, nil)
+
+	if len(result) != 1 {
+		t.Fatalf("expected 1 result, got %d", len(result))
+	}
+	if !result[0].HasChanges {
+		t.Error("locked worktree should be treated as dirty (HasChanges=true)")
 	}
 }
