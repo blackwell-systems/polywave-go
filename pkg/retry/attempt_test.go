@@ -45,10 +45,11 @@ func TestBuildRetryAttempt_Complete(t *testing.T) {
 		t.Fatalf("failed to write test manifest: %v", err)
 	}
 
-	ra, err := retry.BuildRetryAttempt(context.Background(), manifestPath, "A", 2)
-	if err != nil {
-		t.Fatalf("BuildRetryAttempt() returned error: %v", err)
+	res := retry.BuildRetryAttempt(context.Background(), manifestPath, "A", 2)
+	if res.IsFatal() {
+		t.Fatalf("BuildRetryAttempt() returned error: %v", res.Errors[0])
 	}
+	ra := res.GetData()
 
 	if ra.AgentID != "A" {
 		t.Errorf("AgentID = %q; want %q", ra.AgentID, "A")
@@ -84,10 +85,11 @@ func TestBuildRetryAttempt_ExcerptTruncation(t *testing.T) {
 		t.Fatalf("failed to write test manifest: %v", err)
 	}
 
-	ra, err := retry.BuildRetryAttempt(context.Background(), manifestPath, "A", 1)
-	if err != nil {
-		t.Fatalf("BuildRetryAttempt() returned error: %v", err)
+	res := retry.BuildRetryAttempt(context.Background(), manifestPath, "A", 1)
+	if res.IsFatal() {
+		t.Fatalf("BuildRetryAttempt() returned error: %v", res.Errors[0])
 	}
+	ra := res.GetData()
 
 	if len(ra.ErrorExcerpt) > 2000 {
 		t.Errorf("ErrorExcerpt length %d exceeds 2000-char limit", len(ra.ErrorExcerpt))
@@ -123,10 +125,11 @@ completion_reports:
 		t.Fatalf("failed to write test manifest: %v", err)
 	}
 
-	ra, err := retry.BuildRetryAttempt(context.Background(), manifestPath, "A", 1)
-	if err != nil {
-		t.Fatalf("BuildRetryAttempt() returned error: %v", err)
+	res := retry.BuildRetryAttempt(context.Background(), manifestPath, "A", 1)
+	if res.IsFatal() {
+		t.Fatalf("BuildRetryAttempt() returned error: %v", res.Errors[0])
 	}
+	ra := res.GetData()
 
 	if ra.FailureType != "fixable" {
 		t.Errorf("FailureType = %q; want %q", ra.FailureType, "fixable")
@@ -161,12 +164,12 @@ waves:
 		t.Fatalf("failed to write test manifest: %v", err)
 	}
 
-	_, err := retry.BuildRetryAttempt(context.Background(), manifestPath, "A", 1)
-	if err == nil {
+	res := retry.BuildRetryAttempt(context.Background(), manifestPath, "A", 1)
+	if !res.IsFatal() {
 		t.Fatal("expected error for missing completion report, got nil")
 	}
-	if !strings.Contains(err.Error(), "no completion report found") {
-		t.Errorf("error message %q does not mention missing report", err.Error())
+	if !strings.Contains(res.Errors[0].Error(), "no completion report found") {
+		t.Errorf("error message %q does not mention missing report", res.Errors[0].Error())
 	}
 }
 
@@ -177,12 +180,12 @@ func TestBuildRetryAttempt_ContextCancelled(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel() // cancel immediately
 
-	_, err := retry.BuildRetryAttempt(ctx, manifestPath, "A", 1)
-	if err == nil {
+	res := retry.BuildRetryAttempt(ctx, manifestPath, "A", 1)
+	if !res.IsFatal() {
 		t.Fatal("expected error for cancelled context, got nil")
 	}
-	if err != context.Canceled {
-		t.Errorf("error = %v; want context.Canceled", err)
+	if res.Errors[0].Cause != context.Canceled {
+		t.Errorf("error cause = %v; want context.Canceled", res.Errors[0].Cause)
 	}
 }
 
@@ -217,11 +220,11 @@ func TestBuildRetryAttempt_LoadManifestFailed(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	_, err := retry.BuildRetryAttempt(context.Background(), manifestPath, "A", 1)
-	if err == nil {
+	res := retry.BuildRetryAttempt(context.Background(), manifestPath, "A", 1)
+	if !res.IsFatal() {
 		t.Fatal("expected error for invalid manifest")
 	}
-	if !strings.Contains(err.Error(), "load manifest") {
-		t.Errorf("error message should mention 'load manifest', got: %v", err)
+	if !strings.Contains(res.Errors[0].Error(), "load manifest") {
+		t.Errorf("error message should mention 'load manifest', got: %v", res.Errors[0])
 	}
 }
