@@ -118,6 +118,10 @@ func main() {
 		newInstallHooksCmd(),
 		newSetInjectionMethodCmd(),
 		newPreWaveValidateCmd(),
+		newCheckCallersCmd(),
+		newListErrorRangesCmd(),
+		newSuggestWaveStructureCmd(),
+		newCheckTestCascadeCmd(),
 	)
 	if err := rootCmd.Execute(); err != nil {
 		fmt.Fprintln(os.Stderr, err)
