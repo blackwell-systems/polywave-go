@@ -16,6 +16,7 @@
 //	I001-I099: Agent ID generation errors
 //	D001-D099: Dependency check errors (lock file parsing, missing deps)
 //	E001-E099: Command extraction errors (workflow/package parsing, toolchain detection)
+//	X001-X099: Scout automation static analysis errors (check-callers, check-test-cascade, suggest-wave-structure)
 package result
 
 // Validation error codes (V001-V099)
@@ -351,9 +352,23 @@ const (
 
 // Retry error codes (R001-R099)
 const (
-	CodeRetryLoadManifestFailed  = "R001_LOAD_MANIFEST_FAILED"  // protocol.Load failed
-	CodeRetryReportMissing       = "R002_REPORT_MISSING"        // agent has no completion report
-	CodeRetrySaveIMPLFailed      = "R003_SAVE_IMPL_FAILED"      // failed to write retry IMPL to disk
+	CodeRetryLoadManifestFailed  = "R001_LOAD_MANIFEST_FAILED"   // protocol.Load failed
+	CodeRetryReportMissing       = "R002_REPORT_MISSING"         // agent has no completion report
+	CodeRetrySaveIMPLFailed      = "R003_SAVE_IMPL_FAILED"       // failed to write retry IMPL to disk
 	CodeRetryIMPLDirCreateFailed = "R004_IMPL_DIR_CREATE_FAILED" // os.MkdirAll failed
+)
+
+// Scout automation error codes (X001-X099)
+const (
+	// CodeCheckCallerInvalidInput is emitted when check-callers receives invalid input
+	CodeCheckCallerInvalidInput = "X001_INVALID_INPUT"
+	// CodeCheckCallerFileRead is emitted when a file cannot be read during caller scan
+	CodeCheckCallerFileRead = "X002_FILE_READ"
+	// CodeTestCascadeOrphan is emitted when a test file calls a changed symbol but is not assigned to any agent
+	CodeTestCascadeOrphan = "X003_TEST_CASCADE_ORPHAN"
+	// CodeWaveStructureCallerBefore is emitted when callers of a changed symbol are in an earlier wave
+	CodeWaveStructureCallerBefore = "X004_WAVE_STRUCTURE_CALLER_BEFORE"
+	// CodeWaveStructureMissingDep is emitted when callers in a later wave lack depends_on for the changing agent
+	CodeWaveStructureMissingDep = "X005_WAVE_STRUCTURE_MISSING_DEP"
 )
 
