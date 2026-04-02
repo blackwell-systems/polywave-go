@@ -232,6 +232,9 @@ const (
 
 	// N085: config file I/O failed (permission set, write, rename)
 	CodeConfigIOFailed = "N085_CONFIG_IO_FAILED"
+
+	// N088: session save/load failed in pkg/resume (SaveAgentSession, LoadAgentSessions, DetectWithConfig)
+	CodeSessionSaveFailed = "N088_SESSION_SAVE_FAILED"
 )
 
 // Queue error codes (Q001-Q099)
