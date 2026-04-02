@@ -4,6 +4,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
@@ -204,6 +205,40 @@ func TestPreLaunchGate_CriticPassed(t *testing.T) {
 		if c.Name == "critic_review" {
 			if c.Status != "pass" {
 				t.Errorf("critic_review: expected pass, got %s: %s", c.Status, c.Message)
+			}
+			return
+		}
+	}
+	t.Errorf("critic_review check not found")
+}
+
+func TestPreLaunchGate_CriticFailed(t *testing.T) {
+	m := validManifest()
+	// Add a third agent to trigger critic requirement
+	m.Waves[0].Agents = append(m.Waves[0].Agents, protocol.Agent{
+		ID: "C", Task: "implement qux", Files: []string{"pkg/foo/qux.go"},
+	})
+	m.FileOwnership = append(m.FileOwnership, protocol.FileOwnership{
+		File: "pkg/foo/qux.go", Agent: "C", Wave: 1,
+	})
+	m.CriticReport = &protocol.CriticData{
+		Verdict:    protocol.CriticVerdictIssues,
+		IssueCount: 3,
+	}
+
+	result := PreLaunchGate(m, 1, "A", "/tmp/repo", "")
+
+	if result.Ready {
+		t.Errorf("expected Ready=false when critic fails")
+	}
+
+	for _, c := range result.Checks {
+		if c.Name == "critic_review" {
+			if c.Status != "fail" {
+				t.Errorf("critic_review: expected fail, got %s: %s", c.Status, c.Message)
+			}
+			if !strings.Contains(c.Message, "3 issue") {
+				t.Errorf("expected issue count in message, got: %s", c.Message)
 			}
 			return
 		}
