@@ -39,7 +39,7 @@ Each reviewed package gets scouted → IMPL'd → closed before being marked don
 | queue | ✅ | ✅ | ✅ |
 | result | | | |
 | resume | | | |
-| retry | | | |
+| retry | ✅ | ✅ | ✅ |
 | scaffold | ✅ | ✅ | ✅ |
 | scaffoldval | ✅ | ✅ | ✅ |
 | solver | ✅ | ✅ | ✅ |
