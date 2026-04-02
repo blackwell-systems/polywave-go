@@ -6,6 +6,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
 )
 
 func makeTestSession(agentID string, waveNum int) AgentSession {
@@ -39,10 +41,11 @@ func TestSaveAndLoadAgentSession(t *testing.T) {
 		t.Error("SaveSessionData.Timestamp should not be zero")
 	}
 
-	sessions, err := LoadAgentSessions(stateDir, slug)
-	if err != nil {
-		t.Fatalf("LoadAgentSessions: %v", err)
+	loadRes := LoadAgentSessions(stateDir, slug)
+	if !loadRes.IsSuccess() {
+		t.Fatalf("LoadAgentSessions: %v", loadRes.Errors)
 	}
+	sessions := loadRes.GetData()
 
 	got, ok := sessions["A"]
 	if !ok {
@@ -80,10 +83,11 @@ func TestSaveAgentSession_UpdateExisting(t *testing.T) {
 		t.Fatalf("SaveAgentSession B: %v", res.Errors)
 	}
 
-	sessions, err := LoadAgentSessions(stateDir, slug)
-	if err != nil {
-		t.Fatalf("LoadAgentSessions: %v", err)
+	loadRes := LoadAgentSessions(stateDir, slug)
+	if !loadRes.IsSuccess() {
+		t.Fatalf("LoadAgentSessions: %v", loadRes.Errors)
 	}
+	sessions := loadRes.GetData()
 
 	if len(sessions) != 2 {
 		t.Fatalf("expected 2 sessions, got %d", len(sessions))
@@ -102,10 +106,11 @@ func TestLoadAgentSessions_FileNotExist(t *testing.T) {
 	stateDir := t.TempDir()
 	slug := "nonexistent"
 
-	sessions, err := LoadAgentSessions(stateDir, slug)
-	if err != nil {
-		t.Fatalf("expected no error for missing file, got: %v", err)
+	res := LoadAgentSessions(stateDir, slug)
+	if !res.IsSuccess() {
+		t.Fatalf("expected success for missing file, got errors: %v", res.Errors)
 	}
+	sessions := res.GetData()
 	if sessions == nil {
 		t.Fatal("expected empty map, got nil")
 	}
@@ -138,10 +143,11 @@ func TestSaveAgentSession_CreatesDirectory(t *testing.T) {
 	}
 
 	// Verify the file exists and is readable.
-	sessions, err := LoadAgentSessions(stateDir, slug)
-	if err != nil {
-		t.Fatalf("LoadAgentSessions: %v", err)
+	loadRes := LoadAgentSessions(stateDir, slug)
+	if !loadRes.IsSuccess() {
+		t.Fatalf("LoadAgentSessions: %v", loadRes.Errors)
 	}
+	sessions := loadRes.GetData()
 	if _, ok := sessions["A"]; !ok {
 		t.Error("expected session A to be present after directory creation")
 	}
@@ -197,13 +203,38 @@ func TestSaveAgentSession_FailureReturnsFatal(t *testing.T) {
 	}
 
 	sawErr := res.Errors[0]
-	if sawErr.Code != "SESSION_SAVE_FAILED" {
-		t.Errorf("error code: got %q, want %q", sawErr.Code, "SESSION_SAVE_FAILED")
+	if sawErr.Code != result.CodeSessionSaveFailed {
+		t.Errorf("error code: got %q, want %q", sawErr.Code, result.CodeSessionSaveFailed)
 	}
 	if sawErr.Context["slug"] != slug {
 		t.Errorf("error context slug: got %q, want %q", sawErr.Context["slug"], slug)
 	}
 	if !strings.Contains(sawErr.Message, "resume.SaveAgentSession") {
 		t.Errorf("error message should contain function name, got: %q", sawErr.Message)
+	}
+}
+
+// TestLoadAgentSessions_CorruptedJSON verifies that a malformed JSON file returns a fatal result.
+func TestLoadAgentSessions_CorruptedJSON(t *testing.T) {
+	stateDir := t.TempDir()
+	slug := "corrupt"
+	// Write malformed JSON to the sessions file.
+	sessionsDir := filepath.Join(stateDir, "sessions")
+	if err := os.MkdirAll(sessionsDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	bad := filepath.Join(sessionsDir, slug+".json")
+	if err := os.WriteFile(bad, []byte("{not valid json"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	res := LoadAgentSessions(stateDir, slug)
+	if res.IsSuccess() {
+		t.Fatal("expected failure for corrupted JSON, got success")
+	}
+	if len(res.Errors) == 0 {
+		t.Fatal("expected at least one error")
+	}
+	if res.Errors[0].Code != result.CodeSessionSaveFailed {
+		t.Errorf("code = %q, want %q", res.Errors[0].Code, result.CodeSessionSaveFailed)
 	}
 }
