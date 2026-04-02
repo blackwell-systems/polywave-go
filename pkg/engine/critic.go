@@ -63,8 +63,7 @@ func BuildCriticPrompt(ctx context.Context, opts BuildCriticPromptOpts) (string,
 	criticMdPath := filepath.Join(sawRepo, "implementations", "claude-code", "prompts", "agents", "critic-agent.md")
 	criticMdContent, err := LoadTypePromptWithRefs(criticMdPath)
 	if err != nil {
-		// Fallback prompt if the file doesn't exist yet.
-		criticMdContent = "You are a Critic Agent. Review every agent brief in the IMPL doc against the actual codebase. Verify file_existence, symbol_accuracy, pattern_accuracy, interface_consistency, import_chains, and side_effect_completeness. Write the result using: sawtools set-critic-review <impl-path> --verdict <PASS|ISSUES> --summary <text> --issue-count <N> --agent-reviews <JSON>"
+		return "", fmt.Errorf("run-critic: critic-agent.md not found at %s — verify SAW installation or set SAW_REPO environment variable: %w", criticMdPath, err)
 	}
 
 	// Build the repo-roots section for the prompt.
