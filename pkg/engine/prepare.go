@@ -571,10 +571,10 @@ func PrepareWave(ctx context.Context, opts PrepareWaveOpts) (*PrepareWaveResult,
 	recordStep(res, opts.OnEvent, "i1_disjoint", "success", "ownership is disjoint")
 
 	// Step: Type collision check (E41)
-	collisionReport, err := collision.DetectCollisions(ctx, opts.IMPLPath, opts.WaveNum, projectRoot)
-	if err != nil {
-		recordStep(res, opts.OnEvent, "type_collision", "warning", err.Error())
-	} else if !collisionReport.Valid {
+	collisionRes := collision.DetectCollisions(ctx, opts.IMPLPath, opts.WaveNum, projectRoot)
+	if collisionRes.IsFatal() {
+		recordStep(res, opts.OnEvent, "type_collision", "warning", collisionRes.Errors[0].Message)
+	} else if !collisionRes.GetData().Valid {
 		recordStep(res, opts.OnEvent, "type_collision", "failed", "type collisions detected")
 		return res, fmt.Errorf("type collisions detected - resolve before creating worktrees")
 	} else {

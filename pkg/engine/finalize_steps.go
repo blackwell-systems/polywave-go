@@ -512,17 +512,18 @@ func StepCheckTypeCollisions(ctx context.Context, opts FinalizeWaveOpts, onEvent
 		}, nil, nil
 	}
 
-	report, err := collision.DetectCollisions(ctx, opts.IMPLPath, opts.WaveNum, opts.RepoPath)
-	if err != nil {
-		detail := fmt.Sprintf("collision detection error: %v", err)
+	collisionRes := collision.DetectCollisions(ctx, opts.IMPLPath, opts.WaveNum, opts.RepoPath)
+	if collisionRes.IsFatal() {
+		detail := fmt.Sprintf("collision detection error: %v", collisionRes.Errors[0].Message)
 		emitStepEvent(onEvent, stepName, "failed", detail)
 		return &StepResult{
 			Step:   stepName,
 			Status: "failed",
 			Detail: detail,
-		}, nil, fmt.Errorf("check-type-collisions: %w", err)
+		}, nil, fmt.Errorf("check-type-collisions: %s", collisionRes.Errors[0].Message)
 	}
 
+	report := collisionRes.GetData()
 	if !report.Valid {
 		emitStepEvent(onEvent, stepName, "failed", "collisions detected")
 		return &StepResult{

@@ -26,11 +26,12 @@ resolution.`,
 				repoDir = "."
 			}
 
-			report, err := collision.DetectCollisions(cmd.Context(), manifestPath, waveNum, repoDir)
-			if err != nil {
-				return fmt.Errorf("check-type-collisions: %w", err)
+			res := collision.DetectCollisions(cmd.Context(), manifestPath, waveNum, repoDir)
+			if res.IsFatal() {
+				return fmt.Errorf("check-type-collisions: %s", res.Errors[0].Message)
 			}
 
+			report := res.GetData()
 			out, _ := json.MarshalIndent(report, "", "  ")
 			fmt.Println(string(out))
 
