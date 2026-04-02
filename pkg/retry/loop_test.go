@@ -30,10 +30,11 @@ func TestRetryLoop_MaxRetries(t *testing.T) {
 	}
 
 	// First attempt — should produce a retry IMPL
-	r1, err := loop.Run(context.Background(), gate, nil)
-	if err != nil {
-		t.Fatalf("attempt 1: unexpected error: %v", err)
+	res1 := loop.Run(context.Background(), gate, nil)
+	if res1.IsFatal() {
+		t.Fatalf("attempt 1: unexpected error: %v", res1.Errors[0])
 	}
+	r1 := res1.GetData()
 	if r1.FinalState != "retrying" {
 		t.Errorf("attempt 1: FinalState = %q, want %q", r1.FinalState, "retrying")
 	}
@@ -45,10 +46,11 @@ func TestRetryLoop_MaxRetries(t *testing.T) {
 	}
 
 	// Second attempt — should still produce a retry IMPL (last allowed attempt)
-	r2, err := loop.Run(context.Background(), gate, nil)
-	if err != nil {
-		t.Fatalf("attempt 2: unexpected error: %v", err)
+	res2 := loop.Run(context.Background(), gate, nil)
+	if res2.IsFatal() {
+		t.Fatalf("attempt 2: unexpected error: %v", res2.Errors[0])
 	}
+	r2 := res2.GetData()
 	if r2.AttemptNumber != 2 {
 		t.Errorf("attempt 2: AttemptNumber = %d, want 2", r2.AttemptNumber)
 	}
@@ -58,12 +60,13 @@ func TestRetryLoop_MaxRetries(t *testing.T) {
 
 	// Third attempt — exceeds MaxRetries=2, should be blocked
 	var events []Event
-	r3, err := loop.Run(context.Background(), gate, func(e Event) {
+	res3 := loop.Run(context.Background(), gate, func(e Event) {
 		events = append(events, e)
 	})
-	if err != nil {
-		t.Fatalf("attempt 3: unexpected error: %v", err)
+	if res3.IsFatal() {
+		t.Fatalf("attempt 3: unexpected error: %v", res3.Errors[0])
 	}
+	r3 := res3.GetData()
 	if r3.FinalState != "blocked" {
 		t.Errorf("attempt 3: FinalState = %q, want %q", r3.FinalState, "blocked")
 	}
@@ -106,12 +109,13 @@ func TestRetryLoop_PassOnFirstRetry(t *testing.T) {
 	}
 
 	var events []Event
-	result, err := loop.Run(context.Background(), gate, func(e Event) {
+	res := loop.Run(context.Background(), gate, func(e Event) {
 		events = append(events, e)
 	})
-	if err != nil {
-		t.Fatalf("Run returned error: %v", err)
+	if res.IsFatal() {
+		t.Fatalf("Run returned error: %v", res.Errors[0])
 	}
+	result := res.GetData()
 
 	// Should have FinalState "retrying" (not blocked)
 	if result.FinalState != "retrying" {
@@ -167,11 +171,11 @@ func TestRetryResult_States(t *testing.T) {
 
 	states := make([]string, 0, 4)
 	for i := 0; i < 4; i++ {
-		r, err := loop.Run(context.Background(), gate, nil)
-		if err != nil {
-			t.Fatalf("attempt %d: unexpected error: %v", i+1, err)
+		res := loop.Run(context.Background(), gate, nil)
+		if res.IsFatal() {
+			t.Fatalf("attempt %d: unexpected error: %v", i+1, res.Errors[0])
 		}
-		states = append(states, r.FinalState)
+		states = append(states, res.GetData().FinalState)
 	}
 
 	// Expected states: retrying, retrying, blocked, blocked
@@ -211,10 +215,11 @@ func TestRetryLoop_IMPLFileContents(t *testing.T) {
 		FailedFiles: []string{"pkg/retry/loop.go"},
 	}
 
-	result, err := loop.Run(context.Background(), gate, nil)
-	if err != nil {
-		t.Fatalf("Run error: %v", err)
+	res := loop.Run(context.Background(), gate, nil)
+	if res.IsFatal() {
+		t.Fatalf("Run error: %v", res.Errors[0])
 	}
+	result := res.GetData()
 
 	absPath := filepath.Join(tmpDir, result.RetryIMPL)
 	loaded, err := protocol.Load(context.TODO(), absPath)
@@ -275,10 +280,11 @@ func TestRetryLoop_FilenameFormat(t *testing.T) {
 		FailedFiles: []string{"file.go"},
 	}
 
-	result, err := loop.Run(context.Background(), gate, nil)
-	if err != nil {
-		t.Fatalf("Run error: %v", err)
+	res := loop.Run(context.Background(), gate, nil)
+	if res.IsFatal() {
+		t.Fatalf("Run error: %v", res.Errors[0])
 	}
+	result := res.GetData()
 
 	expected := filepath.Join("docs", "IMPL", "IMPL-my-slug-retry-1.yaml")
 	if result.RetryIMPL != expected {
@@ -441,10 +447,11 @@ func TestRetryLoop_FallbackToIMPLFiles(t *testing.T) {
 		FailedFiles: nil,
 	}
 
-	result, err := loop.Run(context.Background(), gate, nil)
-	if err != nil {
-		t.Fatalf("Run error: %v", err)
+	res := loop.Run(context.Background(), gate, nil)
+	if res.IsFatal() {
+		t.Fatalf("Run error: %v", res.Errors[0])
 	}
+	result := res.GetData()
 
 	// Load the generated IMPL and check it includes the parent's files
 	absPath := filepath.Join(tmpDir, result.RetryIMPL)
@@ -491,12 +498,12 @@ func TestRetryLoop_ContextCancelled(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel() // cancel before calling Run
 
-	_, err := loop.Run(ctx, gate, nil)
-	if err == nil {
+	res := loop.Run(ctx, gate, nil)
+	if !res.IsFatal() {
 		t.Fatal("expected error for cancelled context, got nil")
 	}
-	if err != context.Canceled {
-		t.Errorf("Run error = %v; want context.Canceled", err)
+	if res.Errors[0].Cause != context.Canceled {
+		t.Errorf("Run error cause = %v; want context.Canceled", res.Errors[0].Cause)
 	}
 	// attempt counter should not have been incremented
 	if loop.attempt != 0 {
@@ -519,12 +526,12 @@ func TestRetryLoop_Run_NilContext(t *testing.T) {
 	}
 
 	// Pass nil context — should default to context.Background()
-	res, err := loop.Run(nil, gate, nil)
-	if err != nil {
-		t.Fatalf("Run with nil context should succeed, got: %v", err)
+	res := loop.Run(nil, gate, nil)
+	if res.IsFatal() {
+		t.Fatalf("Run with nil context should succeed, got: %v", res.Errors[0])
 	}
-	if res.AttemptNumber != 1 {
-		t.Errorf("AttemptNumber = %d, want 1", res.AttemptNumber)
+	if res.GetData().AttemptNumber != 1 {
+		t.Errorf("AttemptNumber = %d, want 1", res.GetData().AttemptNumber)
 	}
 }
 
@@ -547,12 +554,12 @@ func TestRetryLoop_saveRetryIMPL_Errors(t *testing.T) {
 		Verdict:     "SUITABLE",
 	}
 
-	_, err := loop.saveRetryIMPL(m, "test-slug")
-	if err == nil {
+	res := loop.saveRetryIMPL(m, "test-slug")
+	if !res.IsFatal() {
 		t.Fatal("expected error for MkdirAll failure")
 	}
-	if !strings.Contains(err.Error(), "create") {
-		t.Errorf("error should mention 'create', got: %v", err)
+	if !strings.Contains(res.Errors[0].Error(), "create") {
+		t.Errorf("error should mention 'create', got: %v", res.Errors[0])
 	}
 }
 
@@ -583,12 +590,12 @@ func TestRetryLoop_saveRetryIMPL_SaveFailed(t *testing.T) {
 		Verdict:     "SUITABLE",
 	}
 
-	_, err := loop.saveRetryIMPL(m, "test-slug")
-	if err == nil {
+	res := loop.saveRetryIMPL(m, "test-slug")
+	if !res.IsFatal() {
 		t.Fatal("expected error for protocol.Save failure")
 	}
-	if !strings.Contains(err.Error(), "save") && !strings.Contains(err.Error(), "failed") {
-		t.Errorf("error should mention 'save' or 'failed', got: %v", err)
+	if !strings.Contains(res.Errors[0].Error(), "save") && !strings.Contains(res.Errors[0].Error(), "failed") {
+		t.Errorf("error should mention 'save' or 'failed', got: %v", res.Errors[0])
 	}
 }
 

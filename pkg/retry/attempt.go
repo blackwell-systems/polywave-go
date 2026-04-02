@@ -41,18 +41,24 @@ const maxExcerptLen = 2000
 //   - ctx is cancelled or deadline exceeded
 //   - the manifest cannot be loaded
 //   - the agent has no completion report in the manifest
-func BuildRetryAttempt(ctx context.Context, manifestPath string, agentID string, attemptNum int) (*RetryAttempt, error) {
+func BuildRetryAttempt(ctx context.Context, manifestPath string, agentID string, attemptNum int) result.Result[*RetryAttempt] {
 	if err := ctx.Err(); err != nil {
-		return nil, err
+		return result.NewFailure[*RetryAttempt]([]result.SAWError{
+			result.NewFatal("RETRY_CONTEXT_CANCELLED", err.Error()).WithCause(err),
+		})
 	}
 	m, err := protocol.Load(context.TODO(), manifestPath)
 	if err != nil {
-		return nil, result.WrapCode(err, result.CodeRetryLoadManifestFailed, "failed to load manifest at %s", manifestPath)
+		return result.NewFailure[*RetryAttempt]([]result.SAWError{
+			result.NewFatal(result.CodeRetryLoadManifestFailed, fmt.Sprintf("failed to load manifest at %s: %s", manifestPath, err.Error())).WithCause(err),
+		})
 	}
 
 	report, ok := m.CompletionReports[agentID]
 	if !ok {
-		return nil, result.Errorf(result.CodeRetryReportMissing, "no completion report found for agent %s in manifest %s", agentID, manifestPath)
+		return result.NewFailure[*RetryAttempt]([]result.SAWError{
+			result.NewFatal(result.CodeRetryReportMissing, fmt.Sprintf("no completion report found for agent %s in manifest %s", agentID, manifestPath)),
+		})
 	}
 
 	// Combine Notes and Verification as the error output source.
@@ -102,7 +108,7 @@ func BuildRetryAttempt(ctx context.Context, manifestPath string, agentID string,
 		GatePassed:     gatePassed,
 		GateOutput:     gateOutput,
 	}
-	return ra, nil
+	return result.NewSuccess(ra)
 }
 
 // BuildPromptText formats a markdown retry prompt for the agent.
