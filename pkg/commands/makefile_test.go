@@ -29,11 +29,12 @@ fmt:
 	}
 
 	parser := &MakefileParser{}
-	cmdSet, err := parser.ParseBuildSystem(tmpDir)
-	if err != nil {
-		t.Fatalf("ParseBuildSystem failed: %v", err)
+	r := parser.ParseBuildSystem(tmpDir)
+	if r.IsFatal() {
+		t.Fatalf("ParseBuildSystem failed: %v", r.Errors)
 	}
 
+	cmdSet := r.GetData().CommandSet
 	if cmdSet == nil {
 		t.Fatal("Expected CommandSet, got nil")
 	}
@@ -83,11 +84,12 @@ test-unit:
 	}
 
 	parser := &MakefileParser{}
-	cmdSet, err := parser.ParseBuildSystem(tmpDir)
-	if err != nil {
-		t.Fatalf("ParseBuildSystem failed: %v", err)
+	r := parser.ParseBuildSystem(tmpDir)
+	if r.IsFatal() {
+		t.Fatalf("ParseBuildSystem failed: %v", r.Errors)
 	}
 
+	cmdSet := r.GetData().CommandSet
 	if cmdSet == nil {
 		t.Fatal("Expected CommandSet, got nil")
 	}
@@ -110,11 +112,12 @@ func TestMakefileParser_NoMakefile(t *testing.T) {
 	tmpDir := t.TempDir()
 
 	parser := &MakefileParser{}
-	cmdSet, err := parser.ParseBuildSystem(tmpDir)
-	if err != nil {
-		t.Fatalf("Expected no error, got: %v", err)
+	r := parser.ParseBuildSystem(tmpDir)
+	if r.IsFatal() {
+		t.Fatalf("Expected no error, got: %v", r.Errors)
 	}
 
+	cmdSet := r.GetData().CommandSet
 	if cmdSet != nil {
 		t.Errorf("Expected nil CommandSet when Makefile doesn't exist, got: %+v", cmdSet)
 	}
@@ -134,11 +137,12 @@ func TestMakefileParser_EmptyTargets(t *testing.T) {
 	}
 
 	parser := &MakefileParser{}
-	cmdSet, err := parser.ParseBuildSystem(tmpDir)
-	if err != nil {
-		t.Fatalf("ParseBuildSystem failed: %v", err)
+	r := parser.ParseBuildSystem(tmpDir)
+	if r.IsFatal() {
+		t.Fatalf("ParseBuildSystem failed: %v", r.Errors)
 	}
 
+	cmdSet := r.GetData().CommandSet
 	if cmdSet != nil {
 		t.Errorf("Expected nil CommandSet for empty Makefile, got: %+v", cmdSet)
 	}
@@ -165,11 +169,12 @@ func TestMakefileParser_TabIndentation(t *testing.T) {
 	}
 
 	parser := &MakefileParser{}
-	cmdSet, err := parser.ParseBuildSystem(tmpDir)
-	if err != nil {
-		t.Fatalf("ParseBuildSystem failed: %v", err)
+	r := parser.ParseBuildSystem(tmpDir)
+	if r.IsFatal() {
+		t.Fatalf("ParseBuildSystem failed: %v", r.Errors)
 	}
 
+	cmdSet := r.GetData().CommandSet
 	if cmdSet == nil {
 		t.Fatal("Expected CommandSet, got nil")
 	}
@@ -199,11 +204,12 @@ test:
 	}
 
 	parser := &MakefileParser{}
-	cmdSet, err := parser.ParseBuildSystem(tmpDir)
-	if err != nil {
-		t.Fatalf("ParseBuildSystem failed: %v", err)
+	r := parser.ParseBuildSystem(tmpDir)
+	if r.IsFatal() {
+		t.Fatalf("ParseBuildSystem failed: %v", r.Errors)
 	}
 
+	cmdSet := r.GetData().CommandSet
 	if cmdSet == nil {
 		t.Fatal("Expected CommandSet, got nil")
 	}
@@ -230,11 +236,12 @@ func TestMakefileParser_TransitiveDependencies(t *testing.T) {
 	}
 
 	parser := &MakefileParser{}
-	cmdSet, err := parser.ParseBuildSystem(tmpDir)
-	if err != nil {
-		t.Fatalf("ParseBuildSystem failed: %v", err)
+	r := parser.ParseBuildSystem(tmpDir)
+	if r.IsFatal() {
+		t.Fatalf("ParseBuildSystem failed: %v", r.Errors)
 	}
 
+	cmdSet := r.GetData().CommandSet
 	if cmdSet == nil {
 		t.Fatal("Expected CommandSet, got nil")
 	}
@@ -267,11 +274,12 @@ test-integration:
 	}
 
 	parser := &MakefileParser{}
-	cmdSet, err := parser.ParseBuildSystem(tmpDir)
-	if err != nil {
-		t.Fatalf("ParseBuildSystem failed: %v", err)
+	r := parser.ParseBuildSystem(tmpDir)
+	if r.IsFatal() {
+		t.Fatalf("ParseBuildSystem failed: %v", r.Errors)
 	}
 
+	cmdSet := r.GetData().CommandSet
 	if cmdSet == nil {
 		t.Fatal("Expected CommandSet, got nil")
 	}

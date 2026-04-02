@@ -2,32 +2,37 @@ package commands
 
 import (
 	"bufio"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
 )
 
 // MakefileParser extracts commands from Makefile targets
 type MakefileParser struct{}
 
 // ParseBuildSystem parses a Makefile and extracts build/test/lint/format commands
-func (p *MakefileParser) ParseBuildSystem(repoRoot string) (*CommandSet, error) {
+func (p *MakefileParser) ParseBuildSystem(repoRoot string) result.Result[ParseBuildSystemData] {
 	makefilePath := filepath.Join(repoRoot, "Makefile")
 
 	// Return nil (not error) when Makefile doesn't exist
 	if _, err := os.Stat(makefilePath); os.IsNotExist(err) {
-		return nil, nil
+		return result.NewSuccess(ParseBuildSystemData{CommandSet: nil})
 	}
 
 	file, err := os.Open(makefilePath)
 	if err != nil {
-		return nil, err
+		return result.NewFailure[ParseBuildSystemData]([]result.SAWError{
+			result.NewFatal(result.CodeCommandExtractWorkflowRead, fmt.Sprintf("reading Makefile: %v", err)),
+		})
 	}
 	defer file.Close()
 
 	targets, targetOrder := parseMakefileTargets(file)
 	if len(targets) == 0 {
-		return nil, nil
+		return result.NewSuccess(ParseBuildSystemData{CommandSet: nil})
 	}
 
 	// Resolve target chains to find leaf targets
@@ -45,7 +50,7 @@ func (p *MakefileParser) ParseBuildSystem(repoRoot string) (*CommandSet, error) 
 		classifyAndAssignCommand(targetName, cmd, cmdSet)
 	}
 
-	return cmdSet, nil
+	return result.NewSuccess(ParseBuildSystemData{CommandSet: cmdSet})
 }
 
 // Priority returns 50 (lower than CI parsers, higher than package.json)

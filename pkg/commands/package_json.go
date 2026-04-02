@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
 )
 
 // PackageJSONParser extracts build/test/lint/format commands from npm/yarn scripts
@@ -17,27 +19,31 @@ type packageJSON struct {
 }
 
 // ParseBuildSystem reads package.json and extracts commands from the scripts section
-func (p *PackageJSONParser) ParseBuildSystem(repoRoot string) (*CommandSet, error) {
+func (p *PackageJSONParser) ParseBuildSystem(repoRoot string) result.Result[ParseBuildSystemData] {
 	pkgPath := filepath.Join(repoRoot, "package.json")
 
 	// Return nil (not error) when package.json doesn't exist
 	if _, err := os.Stat(pkgPath); os.IsNotExist(err) {
-		return nil, nil
+		return result.NewSuccess(ParseBuildSystemData{CommandSet: nil})
 	}
 
 	data, err := os.ReadFile(pkgPath)
 	if err != nil {
-		return nil, fmt.Errorf("reading package.json: %w", err)
+		return result.NewFailure[ParseBuildSystemData]([]result.SAWError{
+			result.NewFatal(result.CodeCommandExtractPackageRead, fmt.Sprintf("reading package.json: %v", err)),
+		})
 	}
 
 	var pkg packageJSON
 	if err := json.Unmarshal(data, &pkg); err != nil {
-		return nil, fmt.Errorf("parsing package.json: %w", err)
+		return result.NewFailure[ParseBuildSystemData]([]result.SAWError{
+			result.NewFatal(result.CodeCommandExtractPackageParse, fmt.Sprintf("parsing package.json: %v", err)),
+		})
 	}
 
 	// If no scripts section, nothing to extract
 	if len(pkg.Scripts) == 0 {
-		return nil, nil
+		return result.NewSuccess(ParseBuildSystemData{CommandSet: nil})
 	}
 
 	cmdSet := &CommandSet{
@@ -57,7 +63,7 @@ func (p *PackageJSONParser) ParseBuildSystem(repoRoot string) (*CommandSet, erro
 		cmdSet.Commands.Test.FocusedPattern = buildWorkspacePattern(cmdSet.Commands.Test.Full, pkg.Workspaces)
 	}
 
-	return cmdSet, nil
+	return result.NewSuccess(ParseBuildSystemData{CommandSet: cmdSet})
 }
 
 // Priority returns 40 (lower than Makefile's 50, higher than language defaults)

@@ -11,21 +11,8 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// Temporary local error code constants until Agent A's codes.go changes merge.
-// These duplicate Agent A's definitions in pkg/result/codes.go.
-// Post-merge: Integration Agent should remove these local definitions.
-const (
-	_localCodeCommandExtractWorkflowRead  = "E001_WORKFLOW_READ"
-	_localCodeCommandExtractWorkflowParse = "E002_WORKFLOW_PARSE"
-)
-
 // GithubActionsParser extracts commands from .github/workflows/*.yml files
 type GithubActionsParser struct{}
-
-// ParseCIData wraps the result of ParseCI operation
-type ParseCIData struct {
-	CommandSet *CommandSet
-}
 
 // ParseWorkflowData wraps the result of parseWorkflowFile operation
 type ParseWorkflowData struct {
@@ -100,7 +87,7 @@ func (p *GithubActionsParser) parseWorkflowFile(path string) result.Result[Parse
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return result.NewFailure[ParseWorkflowData]([]result.SAWError{
-			result.NewFatal(_localCodeCommandExtractWorkflowRead, fmt.Sprintf("reading workflow file %s: %v", path, err)),
+			result.NewFatal(result.CodeCommandExtractWorkflowRead, fmt.Sprintf("reading workflow file %s: %v", path, err)),
 		})
 	}
 
@@ -118,7 +105,7 @@ func (p *GithubActionsParser) parseWorkflowFile(path string) result.Result[Parse
 	// Cannot use protocol.LoadYAML: data is already-read bytes from the caller, not a file path.
 	if err := yaml.Unmarshal(data, &workflow); err != nil {
 		return result.NewFailure[ParseWorkflowData]([]result.SAWError{
-			result.NewFatal(_localCodeCommandExtractWorkflowParse, fmt.Sprintf("parsing YAML in %s: %v", path, err)),
+			result.NewFatal(result.CodeCommandExtractWorkflowParse, fmt.Sprintf("parsing YAML in %s: %v", path, err)),
 		})
 	}
 

@@ -23,11 +23,12 @@ func TestPackageJSONParser_SimpleScripts(t *testing.T) {
 	}
 
 	parser := &PackageJSONParser{}
-	cmdSet, err := parser.ParseBuildSystem(tmpDir)
-	if err != nil {
-		t.Fatalf("ParseBuildSystem failed: %v", err)
+	r := parser.ParseBuildSystem(tmpDir)
+	if r.IsFatal() {
+		t.Fatalf("ParseBuildSystem failed: %v", r.Errors)
 	}
 
+	cmdSet := r.GetData().CommandSet
 	if cmdSet == nil {
 		t.Fatal("expected CommandSet, got nil")
 	}
@@ -76,11 +77,12 @@ func TestPackageJSONParser_MonorepoWorkspaces(t *testing.T) {
 	}
 
 	parser := &PackageJSONParser{}
-	cmdSet, err := parser.ParseBuildSystem(tmpDir)
-	if err != nil {
-		t.Fatalf("ParseBuildSystem failed: %v", err)
+	r := parser.ParseBuildSystem(tmpDir)
+	if r.IsFatal() {
+		t.Fatalf("ParseBuildSystem failed: %v", r.Errors)
 	}
 
+	cmdSet := r.GetData().CommandSet
 	if cmdSet == nil {
 		t.Fatal("expected CommandSet, got nil")
 	}
@@ -102,12 +104,13 @@ func TestPackageJSONParser_NoPackageJSON(t *testing.T) {
 	tmpDir := t.TempDir()
 
 	parser := &PackageJSONParser{}
-	cmdSet, err := parser.ParseBuildSystem(tmpDir)
+	r := parser.ParseBuildSystem(tmpDir)
 
 	// Should return nil (not error) when package.json doesn't exist
-	if err != nil {
-		t.Errorf("expected nil error when package.json absent, got: %v", err)
+	if r.IsFatal() {
+		t.Errorf("expected nil error when package.json absent, got: %v", r.Errors)
 	}
+	cmdSet := r.GetData().CommandSet
 	if cmdSet != nil {
 		t.Errorf("expected nil CommandSet when package.json absent, got: %+v", cmdSet)
 	}
@@ -128,12 +131,13 @@ func TestPackageJSONParser_MalformedJSON(t *testing.T) {
 	}
 
 	parser := &PackageJSONParser{}
-	cmdSet, err := parser.ParseBuildSystem(tmpDir)
+	r := parser.ParseBuildSystem(tmpDir)
 
 	// Should return error for syntax errors
-	if err == nil {
-		t.Error("expected error for malformed JSON, got nil")
+	if !r.IsFatal() {
+		t.Error("expected error for malformed JSON, got success")
 	}
+	cmdSet := r.GetData().CommandSet
 	if cmdSet != nil {
 		t.Errorf("expected nil CommandSet for malformed JSON, got: %+v", cmdSet)
 	}
@@ -151,12 +155,13 @@ func TestPackageJSONParser_EmptyScripts(t *testing.T) {
 	}
 
 	parser := &PackageJSONParser{}
-	cmdSet, err := parser.ParseBuildSystem(tmpDir)
+	r := parser.ParseBuildSystem(tmpDir)
 
 	// Should return nil when no scripts section exists
-	if err != nil {
-		t.Errorf("expected nil error when no scripts, got: %v", err)
+	if r.IsFatal() {
+		t.Errorf("expected nil error when no scripts, got: %v", r.Errors)
 	}
+	cmdSet := r.GetData().CommandSet
 	if cmdSet != nil {
 		t.Errorf("expected nil CommandSet when no scripts, got: %+v", cmdSet)
 	}
@@ -189,11 +194,12 @@ func TestPackageJSONParser_AlternativeScriptNames(t *testing.T) {
 	}
 
 	parser := &PackageJSONParser{}
-	cmdSet, err := parser.ParseBuildSystem(tmpDir)
-	if err != nil {
-		t.Fatalf("ParseBuildSystem failed: %v", err)
+	r := parser.ParseBuildSystem(tmpDir)
+	if r.IsFatal() {
+		t.Fatalf("ParseBuildSystem failed: %v", r.Errors)
 	}
 
+	cmdSet := r.GetData().CommandSet
 	if cmdSet == nil {
 		t.Fatal("expected CommandSet, got nil")
 	}

@@ -15,11 +15,12 @@ func TestLanguageDefaults_Go(t *testing.T) {
 	}
 
 	// Call LanguageDefaults
-	result, err := LanguageDefaults(tmpDir)
-	if err != nil {
-		t.Fatalf("LanguageDefaults returned error: %v", err)
+	r := LanguageDefaults(tmpDir)
+	if r.IsFatal() {
+		t.Fatalf("LanguageDefaults returned error: %v", r.Errors)
 	}
 
+	result := r.GetData().CommandSet
 	// Verify toolchain
 	if result.Toolchain != "go" {
 		t.Errorf("expected toolchain 'go', got %q", result.Toolchain)
@@ -63,11 +64,12 @@ func TestLanguageDefaults_Rust(t *testing.T) {
 	}
 
 	// Call LanguageDefaults
-	result, err := LanguageDefaults(tmpDir)
-	if err != nil {
-		t.Fatalf("LanguageDefaults returned error: %v", err)
+	r := LanguageDefaults(tmpDir)
+	if r.IsFatal() {
+		t.Fatalf("LanguageDefaults returned error: %v", r.Errors)
 	}
 
+	result := r.GetData().CommandSet
 	// Verify toolchain
 	if result.Toolchain != "rust" {
 		t.Errorf("expected toolchain 'rust', got %q", result.Toolchain)
@@ -111,11 +113,12 @@ func TestLanguageDefaults_Node(t *testing.T) {
 	}
 
 	// Call LanguageDefaults
-	result, err := LanguageDefaults(tmpDir)
-	if err != nil {
-		t.Fatalf("LanguageDefaults returned error: %v", err)
+	r := LanguageDefaults(tmpDir)
+	if r.IsFatal() {
+		t.Fatalf("LanguageDefaults returned error: %v", r.Errors)
 	}
 
+	result := r.GetData().CommandSet
 	// Verify toolchain
 	if result.Toolchain != "node" {
 		t.Errorf("expected toolchain 'node', got %q", result.Toolchain)
@@ -156,11 +159,12 @@ func TestLanguageDefaults_Python(t *testing.T) {
 	}
 
 	// Call LanguageDefaults
-	result, err := LanguageDefaults(tmpDir)
-	if err != nil {
-		t.Fatalf("LanguageDefaults returned error: %v", err)
+	r := LanguageDefaults(tmpDir)
+	if r.IsFatal() {
+		t.Fatalf("LanguageDefaults returned error: %v", r.Errors)
 	}
 
+	result := r.GetData().CommandSet
 	// Verify toolchain
 	if result.Toolchain != "python" {
 		t.Errorf("expected toolchain 'python', got %q", result.Toolchain)
@@ -197,14 +201,13 @@ func TestLanguageDefaults_NoMarkers(t *testing.T) {
 	tmpDir := t.TempDir()
 
 	// Call LanguageDefaults - should return error
-	result, err := LanguageDefaults(tmpDir)
-	if err == nil {
-		t.Fatalf("expected error when no marker files present, got result: %+v", result)
+	r := LanguageDefaults(tmpDir)
+	if !r.IsFatal() {
+		t.Fatalf("expected error when no marker files present, got success: %+v", r.GetData())
 	}
 
 	// Verify error message mentions the missing files
-	errMsg := err.Error()
-	if errMsg == "" {
-		t.Error("expected non-empty error message")
+	if len(r.Errors) == 0 {
+		t.Error("expected error list, got empty")
 	}
 }
