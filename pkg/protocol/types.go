@@ -216,6 +216,25 @@ type PreMortemRow struct {
 	Mitigation string `yaml:"mitigation" json:"mitigation"`
 }
 
+// FailureCategory classifies an agent failure for recovery step generation.
+type FailureCategory string
+
+const (
+	FailureCategoryTransient   FailureCategory = "transient"
+	FailureCategoryFixable     FailureCategory = "fixable"
+	FailureCategoryNeedsReplan FailureCategory = "needs_replan"
+	FailureCategoryTimeout     FailureCategory = "timeout"
+	FailureCategoryUnknown     FailureCategory = "unknown"
+)
+
+// RecoveryStep is one actionable recovery action returned by BuildRecoverySteps.
+type RecoveryStep struct {
+	Priority    int             `json:"priority"`
+	Description string          `json:"description"`
+	Command     string          `json:"command,omitempty"`
+	Category    FailureCategory `json:"category,omitempty"`
+}
+
 // KnownIssue records an issue discovered during scout phase with status and workaround.
 type KnownIssue struct {
 	Title       string `yaml:"title" json:"title"`
