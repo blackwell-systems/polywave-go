@@ -47,7 +47,12 @@ func ValidateScoutWrites(repoPath, expectedIMPLPath string, startTime time.Time)
 		}
 
 		// Get relative path from repo root
-		relPath, _ := filepath.Rel(repoPath, path)
+		relPath, err := filepath.Rel(repoPath, path)
+		if err != nil {
+			// If we can't compute relative path, use absolute path
+			// Validation logic works correctly with absolute paths
+			relPath = path
+		}
 
 		// Check if it's the expected IMPL doc
 		if path == expectedIMPLPath {
@@ -66,7 +71,7 @@ func ValidateScoutWrites(repoPath, expectedIMPLPath string, startTime time.Time)
 
 	if err != nil {
 		return result.NewFailure[ValidateData]([]result.SAWError{
-			result.NewFatal("SCOUT_BOUNDARY_VIOLATION", fmt.Sprintf("scout boundaries validation: walk failed: %v", err)),
+			result.NewFatal(result.CodeScoutBoundaryViolation, fmt.Sprintf("scout boundaries validation: walk failed: %v", err)),
 		})
 	}
 
@@ -74,7 +79,7 @@ func ValidateScoutWrites(repoPath, expectedIMPLPath string, startTime time.Time)
 		violations := make([]result.SAWError, len(unexpectedWrites))
 		for i, path := range unexpectedWrites {
 			violations[i] = result.SAWError{
-				Code:    "SCOUT_BOUNDARY_VIOLATION",
+				Code:    result.CodeScoutBoundaryViolation,
 				Message: fmt.Sprintf("Scout wrote file outside permitted boundaries: %s", path),
 				Severity: "warning",
 				File:    path,
