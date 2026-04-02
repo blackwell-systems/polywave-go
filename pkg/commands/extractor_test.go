@@ -371,3 +371,30 @@ func TestExtractor_LanguageDefaultsError(t *testing.T) {
 		t.Error("Expected error details, got empty error list")
 	}
 }
+
+func TestExtractCommands(t *testing.T) {
+	// Setup: Replace LanguageDefaults with mock
+	defer func() { LanguageDefaults = originalLanguageDefaults }()
+	LanguageDefaults = mockLanguageDefaults
+
+	// Execute: ExtractCommands wrapper should delegate to Extract
+	r := ExtractCommands(context.Background(), "/fake/repo")
+
+	// Verify
+	if r.IsFatal() {
+		t.Fatalf("expected success, got errors: %v", r.Errors)
+	}
+
+	commandSet := r.GetData().CommandSet
+	if commandSet == nil {
+		t.Fatal("expected non-nil CommandSet")
+	}
+
+	if commandSet.Toolchain != "go" {
+		t.Errorf("expected go toolchain, got %s", commandSet.Toolchain)
+	}
+
+	if commandSet.Commands.Build != "go build ./..." {
+		t.Errorf("expected 'go build ./...', got %s", commandSet.Commands.Build)
+	}
+}
