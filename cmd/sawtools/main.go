@@ -122,6 +122,7 @@ func main() {
 		newListErrorRangesCmd(),
 		newSuggestWaveStructureCmd(),
 		newCheckTestCascadeCmd(),
+		newValidateBriefsCmd(),
 	)
 	if err := rootCmd.Execute(); err != nil {
 		fmt.Fprintln(os.Stderr, err)
