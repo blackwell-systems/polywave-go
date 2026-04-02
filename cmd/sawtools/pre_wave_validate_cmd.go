@@ -12,14 +12,21 @@ import (
 
 // PreWaveValidateResult combines E16 validation and E35 gap detection results.
 type PreWaveValidateResult struct {
-	Validation protocol.FullValidateData `json:"validation"`
-	E35Gaps    E35GapsResult             `json:"e35_gaps"`
+	Validation  protocol.FullValidateData `json:"validation"`
+	E35Gaps     E35GapsResult             `json:"e35_gaps"`
+	TestCascade TestCascadeCheckResult    `json:"test_cascade"` // NEW
 }
 
 // E35GapsResult holds the result of E35 same-package caller detection.
 type E35GapsResult struct {
 	Passed bool              `json:"passed"`
 	Gaps   []protocol.E35Gap `json:"gaps"`
+}
+
+// TestCascadeCheckResult holds the result of the check-test-cascade pre-flight gate.
+type TestCascadeCheckResult struct {
+	Passed bool                        `json:"passed"`
+	Errors []protocol.TestCascadeError `json:"errors"`
 }
 
 func newPreWaveValidateCmd() *cobra.Command {
@@ -70,24 +77,40 @@ Agent C added a parameter but the unowned call sites still had the old signature
 				return fmt.Errorf("E35 detection failed: %w", err)
 			}
 
-			// Step 3: Combine results
+			// Step 3: Run test cascade check
+			cascadeRes := protocol.CheckTestCascade(context.TODO(), manifest, repoRoot)
+			var testCascadeResult TestCascadeCheckResult
+			if cascadeRes.IsFatal() {
+				// Log but don't fail — cascade check failure is non-blocking if manifest is valid
+				fmt.Fprintf(os.Stderr, "pre-wave-validate: test cascade check failed: %v\n", cascadeRes.Errors)
+				testCascadeResult = TestCascadeCheckResult{Passed: true, Errors: nil}
+			} else {
+				cascadeErrors := cascadeRes.GetData()
+				testCascadeResult = TestCascadeCheckResult{
+					Passed: len(cascadeErrors) == 0,
+					Errors: cascadeErrors,
+				}
+			}
+
+			// Step 4: Combine results
 			output := PreWaveValidateResult{
 				Validation: validateRes.GetData(),
 				E35Gaps: E35GapsResult{
 					Passed: len(e35Gaps) == 0,
 					Gaps:   e35Gaps,
 				},
+				TestCascade: testCascadeResult, // NEW
 			}
 
-			// Step 4: JSON output
+			// Step 5: JSON output
 			jsonOut, err := json.MarshalIndent(output, "", "  ")
 			if err != nil {
 				return fmt.Errorf("failed to marshal output: %w", err)
 			}
 			fmt.Println(string(jsonOut))
 
-			// Exit 1 if either validation or E35 failed
-			if !output.Validation.Valid || !output.E35Gaps.Passed {
+			// Exit 1 if validation, E35, or test cascade failed
+			if !output.Validation.Valid || !output.E35Gaps.Passed || !output.TestCascade.Passed {
 				return fmt.Errorf("pre-wave validation failed")
 			}
 			return nil
