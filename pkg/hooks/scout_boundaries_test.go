@@ -207,4 +207,28 @@ func TestValidateScoutWrites(t *testing.T) {
 			t.Errorf("Expected SUCCESS for IMPL doc in docs/IMPL/, got code=%q", res.Code)
 		}
 	})
+
+	t.Run("WalkError returns Fatal", func(t *testing.T) {
+		// Create a temp file (not a directory) to trigger Walk error
+		tmpFile := filepath.Join(t.TempDir(), "not-a-dir")
+		if err := os.WriteFile(tmpFile, []byte("x"), 0644); err != nil {
+			t.Fatal(err)
+		}
+
+		// Pass the file as repoPath (Walk expects a directory)
+		res := ValidateScoutWrites(tmpFile, "", time.Now())
+		if res.IsSuccess() {
+			t.Errorf("expected Failure for invalid repoPath, got Success")
+		}
+		if len(res.Errors) == 0 {
+			t.Errorf("expected errors, got none")
+		}
+		// Check error code and message
+		if res.Errors[0].Code != "SCOUT_BOUNDARY_VIOLATION" {
+			t.Errorf("expected code SCOUT_BOUNDARY_VIOLATION, got %s", res.Errors[0].Code)
+		}
+		if res.Errors[0].Message == "" {
+			t.Errorf("expected non-empty error message")
+		}
+	})
 }
