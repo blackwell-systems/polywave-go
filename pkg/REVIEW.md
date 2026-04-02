@@ -27,7 +27,7 @@ Each reviewed package gets scouted → IMPL'd → closed before being marked don
 | errparse | ✅ | ✅ | ✅ |
 | format | ✅ | ❌ (NOT_SUITABLE) | N/A |
 | gatecache | | | |
-| hooks | ✅ | ✅ | |
+| hooks | ✅ | ✅ | ✅ |
 | idgen | ✅ | ✅ | ✅ |
 | interview | | | |
 | journal | | | |
