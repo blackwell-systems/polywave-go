@@ -19,10 +19,10 @@ Each reviewed package gets scouted → IMPL'd → closed before being marked don
 | autonomy | ✅ | ✅ | ✅ |
 | builddiag | ✅ | ❌ (NOT_SUITABLE) | N/A |
 | codereview | ✅ | ❌ (NOT_SUITABLE) | N/A |
-| collision | ✅ | ✅ | |
+| collision | ✅ | ✅ | ✅ |
 | commands | | | |
 | config | ✅ | ✅ | ✅ |
-| deps | ✅ | ✅ | |
+| deps | ✅ | ✅ | ✅ |
 | engine | | | |
 | errparse | ✅ | ✅ | ✅ |
 | format | ✅ | ❌ (NOT_SUITABLE) | N/A |
@@ -40,9 +40,9 @@ Each reviewed package gets scouted → IMPL'd → closed before being marked don
 | result | | | |
 | resume | | | |
 | retry | | | |
-| scaffold | ✅ | | |
+| scaffold | ✅ | ✅ | ✅ |
 | scaffoldval | ✅ | ✅ | ✅ |
-| solver | ✅ | | |
+| solver | ✅ | ✅ | ✅ |
 | suitability | ✅ | ✅ | ✅ |
 | tools | | | |
 | worktree | ✅ | ✅ | ✅ |
