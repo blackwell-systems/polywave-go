@@ -22,7 +22,8 @@ Checks:
 
 Language-agnostic validation using grep and line counting.
 Run this in Scout step 17 to catch errors before critic gate.`,
-		Args: cobra.ExactArgs(1),
+		Args:         cobra.ExactArgs(1),
+		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			manifestPath := args[0]
 
