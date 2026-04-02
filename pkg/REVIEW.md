@@ -20,7 +20,7 @@ Each reviewed package gets scouted → IMPL'd → closed before being marked don
 | builddiag | ✅ | ❌ (NOT_SUITABLE) | N/A |
 | codereview | ✅ | ❌ (NOT_SUITABLE) | N/A |
 | collision | ✅ | ✅ | ✅ |
-| commands | | | |
+| commands | ✅ | ✅ | ✅ |
 | config | ✅ | ✅ | ✅ |
 | deps | ✅ | ✅ | ✅ |
 | engine | | | |
