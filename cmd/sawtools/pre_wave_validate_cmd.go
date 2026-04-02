@@ -12,9 +12,10 @@ import (
 
 // PreWaveValidateResult combines E16 validation and E35 gap detection results.
 type PreWaveValidateResult struct {
-	Validation  protocol.FullValidateData `json:"validation"`
-	E35Gaps     E35GapsResult             `json:"e35_gaps"`
-	TestCascade TestCascadeCheckResult    `json:"test_cascade"` // NEW
+	Validation    protocol.FullValidateData `json:"validation"`
+	E35Gaps       E35GapsResult             `json:"e35_gaps"`
+	TestCascade   TestCascadeCheckResult    `json:"test_cascade"`
+	WaveStructure WaveStructureCheckResult  `json:"wave_structure"` // Step 4
 }
 
 // E35GapsResult holds the result of E35 same-package caller detection.
@@ -29,6 +30,12 @@ type TestCascadeCheckResult struct {
 	Errors []protocol.TestCascadeError `json:"errors"`
 }
 
+// WaveStructureCheckResult holds the result of the suggest-wave-structure pre-flight gate.
+type WaveStructureCheckResult struct {
+	Passed   bool                             `json:"passed"`
+	Problems []protocol.WaveStructureProblem `json:"problems"`
+}
+
 func newPreWaveValidateCmd() *cobra.Command {
 	var waveNum int
 	var autoFix bool
@@ -39,6 +46,8 @@ func newPreWaveValidateCmd() *cobra.Command {
 		Long: `Pre-wave validation combines:
   1. E16 validation (invariants, gates, contracts)
   2. E35 gap detection (same-package caller validation)
+  3. E46 test cascade detection
+  4. Wave structure check (X004/X005)
 
 E35 detects when an agent owns a function definition but does not own all
 call sites in the same package. This prevents build failures after merge.
@@ -92,14 +101,31 @@ Agent C added a parameter but the unowned call sites still had the old signature
 				}
 			}
 
-			// Step 4: Combine results
+			// Step 4: Run wave structure check
+			waveStructureRes := protocol.SuggestWaveStructure(context.TODO(), manifest, repoRoot)
+			var waveStructureResult WaveStructureCheckResult
+			if waveStructureRes.IsFatal() {
+				// Log but don't fail — fatal means the check itself errored (e.g. nil manifest),
+				// not that problems were found.
+				fmt.Fprintf(os.Stderr, "pre-wave-validate: wave structure check failed: %v\n", waveStructureRes.Errors)
+				waveStructureResult = WaveStructureCheckResult{Passed: true, Problems: nil}
+			} else {
+				problems := waveStructureRes.GetData()
+				waveStructureResult = WaveStructureCheckResult{
+					Passed:   len(problems) == 0,
+					Problems: problems,
+				}
+			}
+
+			// Combine results
 			output := PreWaveValidateResult{
 				Validation: validateRes.GetData(),
 				E35Gaps: E35GapsResult{
 					Passed: len(e35Gaps) == 0,
 					Gaps:   e35Gaps,
 				},
-				TestCascade: testCascadeResult, // NEW
+				TestCascade:   testCascadeResult,
+				WaveStructure: waveStructureResult, // Step 4
 			}
 
 			// Step 5: JSON output
@@ -109,8 +135,8 @@ Agent C added a parameter but the unowned call sites still had the old signature
 			}
 			fmt.Println(string(jsonOut))
 
-			// Exit 1 if validation, E35, or test cascade failed
-			if !output.Validation.Valid || !output.E35Gaps.Passed || !output.TestCascade.Passed {
+			// Exit 1 if validation, E35, test cascade, or wave structure failed
+			if !output.Validation.Valid || !output.E35Gaps.Passed || !output.TestCascade.Passed || !output.WaveStructure.Passed {
 				return fmt.Errorf("pre-wave validation failed")
 			}
 			return nil
