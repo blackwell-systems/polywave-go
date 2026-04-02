@@ -391,3 +391,175 @@ func TestMiddlewareErrorPropagation(t *testing.T) {
 		t.Error("Middleware 2 was not called")
 	}
 }
+
+// TestTimingMiddleware_RealImplementation tests the real TimingMiddleware
+func TestTimingMiddleware_RealImplementation(t *testing.T) {
+	var captured ToolCallEvent
+	callback := func(evt ToolCallEvent) {
+		captured = evt
+	}
+
+	executor := executorFunc(func(ctx context.Context, execCtx ExecutionContext, input map[string]interface{}) (string, error) {
+		time.Sleep(10 * time.Millisecond)
+		return "ok", nil
+	})
+
+	middleware := TimingMiddleware("test:tool", callback)
+	wrapped := middleware(executor)
+
+	_, err := wrapped.Execute(context.Background(), ExecutionContext{}, map[string]interface{}{})
+	if err != nil {
+		t.Fatalf("Execute failed: %v", err)
+	}
+
+	if captured.ToolName != "test:tool" {
+		t.Errorf("ToolName: got %q, want 'test:tool'", captured.ToolName)
+	}
+	if captured.DurationMs < 10 {
+		t.Errorf("DurationMs: got %d, want >= 10", captured.DurationMs)
+	}
+	if captured.IsError {
+		t.Error("IsError should be false for successful execution")
+	}
+}
+
+// TestPermissionMiddleware_Blocks tests that PermissionMiddleware blocks disallowed tools
+func TestPermissionMiddleware_Blocks(t *testing.T) {
+	allowed := map[string]bool{"read_file": true}
+	executor := executorFunc(func(ctx context.Context, execCtx ExecutionContext, input map[string]interface{}) (string, error) {
+		return "should not reach", nil
+	})
+
+	middleware := PermissionMiddleware("write_file", allowed)
+	wrapped := middleware(executor)
+
+	result, err := wrapped.Execute(context.Background(), ExecutionContext{}, map[string]interface{}{})
+	if err != nil {
+		t.Errorf("Expected nil error (permissions return message, not error), got: %v", err)
+	}
+	if !strings.Contains(result, "not permitted") {
+		t.Errorf("Expected denial message, got: %s", result)
+	}
+}
+
+// TestPermissionMiddleware_Allows tests that PermissionMiddleware allows permitted tools
+func TestPermissionMiddleware_Allows(t *testing.T) {
+	allowed := map[string]bool{"write_file": true}
+	executor := executorFunc(func(ctx context.Context, execCtx ExecutionContext, input map[string]interface{}) (string, error) {
+		return "success", nil
+	})
+
+	middleware := PermissionMiddleware("write_file", allowed)
+	wrapped := middleware(executor)
+
+	result, err := wrapped.Execute(context.Background(), ExecutionContext{}, map[string]interface{}{})
+	if err != nil {
+		t.Fatalf("Execute failed: %v", err)
+	}
+	if result != "success" {
+		t.Errorf("Expected 'success', got %q", result)
+	}
+}
+
+// TestWithTiming_AppliedToAllTools tests that WithTiming wraps all tools
+func TestWithTiming_AppliedToAllTools(t *testing.T) {
+	baseWorkshop := NewWorkshop()
+	baseWorkshop.Register(Tool{
+		Name: "tool1",
+		Executor: executorFunc(func(ctx context.Context, execCtx ExecutionContext, input map[string]interface{}) (string, error) {
+			return "ok", nil
+		}),
+	})
+	baseWorkshop.Register(Tool{
+		Name: "tool2",
+		Executor: executorFunc(func(ctx context.Context, execCtx ExecutionContext, input map[string]interface{}) (string, error) {
+			return "ok", nil
+		}),
+	})
+
+	var events []ToolCallEvent
+	callback := func(evt ToolCallEvent) {
+		events = append(events, evt)
+	}
+
+	wrapped := WithTiming(baseWorkshop, callback)
+	tools := wrapped.All()
+	if len(tools) != 2 {
+		t.Fatalf("Expected 2 tools, got %d", len(tools))
+	}
+
+	// Execute both tools
+	for _, tool := range tools {
+		tool.Executor.Execute(context.Background(), ExecutionContext{}, map[string]interface{}{})
+	}
+
+	if len(events) != 2 {
+		t.Errorf("Expected 2 timing events, got %d", len(events))
+	}
+}
+
+// TestWithPermissions_BlocksWriteTools tests that WithPermissions blocks write tools
+func TestWithPermissions_BlocksWriteTools(t *testing.T) {
+	baseWorkshop := NewWorkshop()
+	baseWorkshop.Register(Tool{
+		Name: "read_file",
+		Executor: executorFunc(func(ctx context.Context, execCtx ExecutionContext, input map[string]interface{}) (string, error) {
+			return "read ok", nil
+		}),
+	})
+	baseWorkshop.Register(Tool{
+		Name: "write_file",
+		Executor: executorFunc(func(ctx context.Context, execCtx ExecutionContext, input map[string]interface{}) (string, error) {
+			return "write ok", nil
+		}),
+	})
+
+	allowed := map[string]bool{"read_file": true}
+	wrapped := WithPermissions(baseWorkshop, allowed)
+
+	readTool, _ := wrapped.Get("read_file")
+	result, _ := readTool.Executor.Execute(context.Background(), ExecutionContext{}, map[string]interface{}{})
+	if result != "read ok" {
+		t.Errorf("read_file should be allowed, got: %s", result)
+	}
+
+	writeTool, _ := wrapped.Get("write_file")
+	result, _ = writeTool.Executor.Execute(context.Background(), ExecutionContext{}, map[string]interface{}{})
+	if !strings.Contains(result, "not permitted") {
+		t.Errorf("write_file should be blocked, got: %s", result)
+	}
+}
+
+// TestReadOnlyTools_Registered tests that ReadOnlyTools creates a workshop with 7 tools
+func TestReadOnlyTools_Registered(t *testing.T) {
+	workshop := ReadOnlyTools("/tmp")
+	tools := workshop.All()
+	if len(tools) != 7 {
+		t.Errorf("Expected 7 standard tools, got %d", len(tools))
+	}
+
+	// Verify read_file is allowed
+	readTool, ok := workshop.Get("read_file")
+	if !ok {
+		t.Fatal("read_file not found")
+	}
+	result, _ := readTool.Executor.Execute(context.Background(), ExecutionContext{WorkDir: "/tmp"}, map[string]interface{}{
+		"file_path": "nonexistent.txt",
+	})
+	if strings.Contains(result, "not permitted") {
+		t.Error("read_file should not be blocked")
+	}
+
+	// Verify write_file is blocked
+	writeTool, ok := workshop.Get("write_file")
+	if !ok {
+		t.Fatal("write_file not found")
+	}
+	result, _ = writeTool.Executor.Execute(context.Background(), ExecutionContext{WorkDir: "/tmp"}, map[string]interface{}{
+		"file_path": "/tmp/test.txt",
+		"content":   "test",
+	})
+	if !strings.Contains(result, "not permitted") {
+		t.Errorf("write_file should be blocked, got: %s", result)
+	}
+}
