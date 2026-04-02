@@ -37,8 +37,8 @@ Each reviewed package gets scouted → IMPL'd → closed before being marked don
 | pipeline | | | |
 | protocol | | | |
 | queue | ✅ | ✅ | ✅ |
-| result | | | |
-| resume | | | |
+| result | ✅ | ✅ | ✅ |
+| resume | ✅ | ✅ | ✅ |
 | retry | ✅ | ✅ | ✅ |
 | scaffold | ✅ | ✅ | ✅ |
 | scaffoldval | ✅ | ✅ | ✅ |
