@@ -41,11 +41,14 @@ Events are streamed as JSON lines to stdout.`,
 
 			// Override level if --autonomy flag is set.
 			if autonomyLevel != "" {
-				lvl, err := autonomy.ParseLevel(autonomyLevel)
-				if err != nil {
-					return fmt.Errorf("daemon: invalid autonomy level: %w", err)
+				r := autonomy.ParseLevel(autonomyLevel)
+				if r.IsFatal() {
+					if len(r.Errors) > 0 {
+						return fmt.Errorf("daemon: invalid autonomy level: %s", r.Errors[0].Message)
+					}
+					return fmt.Errorf("daemon: invalid autonomy level")
 				}
-				cfg.Level = lvl
+				cfg.Level = r.GetData().Level
 			}
 
 			opts := engine.DaemonOpts{

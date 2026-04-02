@@ -1,6 +1,10 @@
 package autonomy
 
-import "fmt"
+import (
+	"fmt"
+
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
+)
 
 // Level represents the autonomy level for orchestrator decision-making.
 type Level string
@@ -69,20 +73,29 @@ func ShouldAutoApprove(level Level, stage Stage) bool {
 // cfg.Level is returned.
 func EffectiveLevel(cfg Config, overrideLevel string) Level {
 	if overrideLevel != "" {
-		if l, err := ParseLevel(overrideLevel); err == nil {
-			return l
+		if r := ParseLevel(overrideLevel); r.IsSuccess() {
+			return r.GetData().Level
 		}
 	}
 	return cfg.Level
 }
 
+// ParseLevelData holds the result of a successful ParseLevel call.
+type ParseLevelData struct {
+	Level Level
+}
+
 // ParseLevel validates that s is a known autonomy level and returns it.
-// Returns an error for any unrecognised value.
-func ParseLevel(s string) (Level, error) {
+// Returns a Result with ParseLevelData on success, or a FATAL result with
+// structured error on failure.
+func ParseLevel(s string) result.Result[ParseLevelData] {
 	switch Level(s) {
 	case LevelGated, LevelSupervised, LevelAutonomous:
-		return Level(s), nil
+		return result.NewSuccess(ParseLevelData{Level: Level(s)})
 	default:
-		return "", fmt.Errorf("autonomy: unknown level %q (valid: gated, supervised, autonomous)", s)
+		return result.NewFailure[ParseLevelData]([]result.SAWError{
+			result.NewFatal("AUTONOMY_INVALID_LEVEL",
+				fmt.Sprintf("unknown level %q (valid: gated, supervised, autonomous)", s)),
+		})
 	}
 }

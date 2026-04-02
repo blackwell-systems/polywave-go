@@ -102,24 +102,34 @@ func TestParseLevel_Valid(t *testing.T) {
 		{"autonomous", LevelAutonomous},
 	}
 	for _, tc := range tests {
-		got, err := ParseLevel(tc.input)
-		if err != nil {
-			t.Errorf("ParseLevel(%q) unexpected error: %v", tc.input, err)
+		r := ParseLevel(tc.input)
+		if !r.IsSuccess() {
+			t.Errorf("ParseLevel(%q) expected success, got fatal with errors: %v", tc.input, r.Errors)
 			continue
 		}
+		got := r.GetData().Level
 		if got != tc.want {
 			t.Errorf("ParseLevel(%q) = %q, want %q", tc.input, got, tc.want)
 		}
 	}
 }
 
-// TestParseLevel_Invalid verifies that an unknown string returns an error.
+// TestParseLevel_Invalid verifies that an unknown string returns a fatal result.
 func TestParseLevel_Invalid(t *testing.T) {
 	invalids := []string{"", "GATED", "fully_auto", "none", "  supervised"}
 	for _, s := range invalids {
-		_, err := ParseLevel(s)
-		if err == nil {
-			t.Errorf("ParseLevel(%q) expected error, got nil", s)
+		r := ParseLevel(s)
+		if !r.IsFatal() {
+			t.Errorf("ParseLevel(%q) expected fatal result, got success/partial", s)
+			continue
+		}
+		// Verify error code is present and correct.
+		if len(r.Errors) == 0 {
+			t.Errorf("ParseLevel(%q) fatal result has no errors", s)
+			continue
+		}
+		if r.Errors[0].Code != "AUTONOMY_INVALID_LEVEL" {
+			t.Errorf("ParseLevel(%q) error code = %q, want %q", s, r.Errors[0].Code, "AUTONOMY_INVALID_LEVEL")
 		}
 	}
 }
