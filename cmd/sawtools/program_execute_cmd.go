@@ -85,10 +85,11 @@ Exit codes:
 				OnEvent:      onEvent,
 			}
 
-			result, err := engine.RunTierLoop(ctx, opts)
-			if err != nil {
-				return fmt.Errorf("program-execute: %w", err)
+			res := engine.RunTierLoop(ctx, opts)
+			if res.IsFatal() {
+				return fmt.Errorf("program-execute: %s", res.Errors[0].Message)
 			}
+			result := res.GetData()
 
 			// Output final result as JSON
 			out, _ := json.MarshalIndent(result, "", "  ")

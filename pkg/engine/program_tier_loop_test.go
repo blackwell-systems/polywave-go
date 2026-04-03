@@ -7,6 +7,7 @@ import (
 
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/observability"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
 )
 
 // buildTierLoopManifest builds a manifest for tier loop testing.
@@ -82,9 +83,9 @@ func TestTierLoop_AutoTriggerReplan_ConstructsCorrectReason(t *testing.T) {
 	defer func() { replanProgramFunc = origReplan }()
 
 	var capturedOpts ReplanProgramOpts
-	replanProgramFunc = func(opts ReplanProgramOpts) (*ReplanResult, error) {
+	replanProgramFunc = func(opts ReplanProgramOpts) result.Result[ReplanResult] {
 		capturedOpts = opts
-		return &ReplanResult{ValidationPassed: true}, nil
+		return result.NewSuccess(ReplanResult{ValidationPassed: true})
 	}
 
 	gateResult := &protocol.TierGateData{
@@ -101,11 +102,12 @@ func TestTierLoop_AutoTriggerReplan_ConstructsCorrectReason(t *testing.T) {
 		},
 	}
 
-	result, err := AutoTriggerReplan("/tmp/manifest.yaml", 2, gateResult, "opus")
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+	res := AutoTriggerReplan("/tmp/manifest.yaml", 2, gateResult, "opus")
+	if res.IsFatal() {
+		t.Fatalf("unexpected fatal: %v", res.Errors[0].Message)
 	}
-	if !result.ValidationPassed {
+	replanResult := res.GetData()
+	if !replanResult.ValidationPassed {
 		t.Error("expected validation passed")
 	}
 

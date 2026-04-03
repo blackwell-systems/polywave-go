@@ -149,18 +149,22 @@ func TestMarkProgramComplete_NotComplete_TierPending(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	_, err := engine.MarkProgramComplete(context.Background(), engine.MarkProgramCompleteOpts{
+	res := engine.MarkProgramComplete(context.Background(), engine.MarkProgramCompleteOpts{
 		ManifestPath: manifestPath,
 		RepoDir:      tmpDir,
 	})
-	if err == nil {
-		t.Fatal("expected error for incomplete tiers, got nil")
+	if !res.IsFatal() {
+		t.Fatal("expected fatal result for incomplete tiers, got success/partial")
 	}
-	if !strings.Contains(err.Error(), "impl-b") {
-		t.Errorf("expected error to mention impl-b, got: %s", err.Error())
+	if len(res.Errors) == 0 {
+		t.Fatal("expected errors for incomplete tiers, got none")
 	}
-	if !strings.Contains(err.Error(), "pending") {
-		t.Errorf("expected error to mention 'pending' status, got: %s", err.Error())
+	errMsg := res.Errors[0].Message
+	if !strings.Contains(errMsg, "impl-b") {
+		t.Errorf("expected error to mention impl-b, got: %s", errMsg)
+	}
+	if !strings.Contains(errMsg, "pending") {
+		t.Errorf("expected error to mention 'pending' status, got: %s", errMsg)
 	}
 }
 
@@ -241,14 +245,18 @@ completion:
 		t.Fatal(err)
 	}
 
-	_, err := engine.MarkProgramComplete(context.Background(), engine.MarkProgramCompleteOpts{
+	res := engine.MarkProgramComplete(context.Background(), engine.MarkProgramCompleteOpts{
 		ManifestPath: manifestPath,
 		RepoDir:      tmpDir,
 	})
-	if err == nil {
-		t.Fatal("expected error for impl with missing status, got nil")
+	if !res.IsFatal() {
+		t.Fatal("expected fatal result for impl with missing status, got success/partial")
 	}
-	if !strings.Contains(err.Error(), "impl-x") {
-		t.Errorf("expected error to mention impl-x, got: %s", err.Error())
+	if len(res.Errors) == 0 {
+		t.Fatal("expected errors for impl with missing status, got none")
+	}
+	errMsg := res.Errors[0].Message
+	if !strings.Contains(errMsg, "impl-x") {
+		t.Errorf("expected error to mention impl-x, got: %s", errMsg)
 	}
 }

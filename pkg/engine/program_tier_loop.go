@@ -10,6 +10,7 @@ import (
 	"github.com/blackwell-systems/scout-and-wave-go/internal/git"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/observability"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
 )
 
 // TierLoopOpts configures the tier execution loop.
@@ -66,20 +67,27 @@ var launchParallelScoutsFunc = func(ctx context.Context, opts ParallelScoutOpts)
 // RunTierLoop is the full tier execution loop that reads a PROGRAM manifest,
 // partitions IMPLs, launches Scouts in parallel, executes waves, runs tier gates,
 // freezes contracts, and advances to the next tier. It implements E28-E34.
-func RunTierLoop(ctx context.Context, opts TierLoopOpts) (*TierLoopResult, error) {
-	result := &TierLoopResult{}
+func RunTierLoop(ctx context.Context, opts TierLoopOpts) result.Result[TierLoopResult] {
+	loopResult := TierLoopResult{}
 
 	manifest, err := protocol.ParseProgramManifest(opts.ManifestPath)
 	if err != nil {
-		return nil, fmt.Errorf("RunTierLoop: parse manifest: %w", err)
+		return result.NewFailure[TierLoopResult]([]result.SAWError{
+			result.NewFatal(result.CodeIMPLParseFailed,
+				fmt.Sprintf("RunTierLoop: parse manifest: %s", err)).
+				WithContext("manifest_path", opts.ManifestPath),
+		})
 	}
 
 	for {
 		select {
 		case <-ctx.Done():
-			result.FinalState = "cancelled"
-			result.Errors = append(result.Errors, ctx.Err().Error())
-			return result, ctx.Err()
+			loopResult.FinalState = "cancelled"
+			loopResult.Errors = append(loopResult.Errors, ctx.Err().Error())
+			return result.NewFailure[TierLoopResult]([]result.SAWError{
+				result.NewFatal(result.CodeContextCancelled,
+					fmt.Sprintf("RunTierLoop: context cancelled: %s", ctx.Err())),
+			})
 		default:
 		}
 
@@ -87,9 +95,9 @@ func RunTierLoop(ctx context.Context, opts TierLoopOpts) (*TierLoopResult, error
 		currentTier := findCurrentTier(manifest)
 		if currentTier == -1 {
 			// All tiers complete
-			result.ProgramComplete = true
-			result.FinalState = "complete"
-			return result, nil
+			loopResult.ProgramComplete = true
+			loopResult.FinalState = "complete"
+			return result.NewSuccess(loopResult)
 		}
 
 		emitEvent(opts.OnEvent, TierLoopEvent{
@@ -106,17 +114,25 @@ func RunTierLoop(ctx context.Context, opts TierLoopOpts) (*TierLoopResult, error
 		tierSlugs := getTierSlugs(manifest, currentTier)
 		conflictReport, conflictErr := protocol.CheckIMPLConflicts(tierSlugs, opts.RepoPath)
 		if conflictErr != nil {
-			result.Errors = append(result.Errors, fmt.Sprintf("P1+ tier conflict check failed: %s", conflictErr))
-			result.FinalState = "conflict_check_error"
-			return result, fmt.Errorf("P1+ tier conflict check failed: %w", conflictErr)
+			loopResult.Errors = append(loopResult.Errors, fmt.Sprintf("P1+ tier conflict check failed: %s", conflictErr))
+			loopResult.FinalState = "conflict_check_error"
+			return result.NewFailure[TierLoopResult]([]result.SAWError{
+				result.NewFatal(result.CodeP1Violation,
+					fmt.Sprintf("P1+ tier conflict check failed: %s", conflictErr)).
+					WithContext("tier", fmt.Sprintf("%d", currentTier)),
+			})
 		}
 		if len(conflictReport.Conflicts) > 0 {
 			for _, c := range conflictReport.Conflicts {
-				result.Errors = append(result.Errors,
+				loopResult.Errors = append(loopResult.Errors,
 					fmt.Sprintf("file ownership conflict: %s claimed by %s", c.File, strings.Join(c.Impls, ", ")))
 			}
-			result.FinalState = "conflict_detected"
-			return result, fmt.Errorf("RunTierLoop: %d file ownership conflict(s) detected in tier %d", len(conflictReport.Conflicts), currentTier)
+			loopResult.FinalState = "conflict_detected"
+			return result.NewFailure[TierLoopResult]([]result.SAWError{
+				result.NewFatal(result.CodeP1Violation,
+					fmt.Sprintf("RunTierLoop: %d file ownership conflict(s) detected in tier %d", len(conflictReport.Conflicts), currentTier)).
+					WithContext("tier", fmt.Sprintf("%d", currentTier)),
+			})
 		}
 
 		// Step 4: Launch parallel Scouts for pending IMPLs
@@ -136,16 +152,24 @@ func RunTierLoop(ctx context.Context, opts TierLoopOpts) (*TierLoopResult, error
 				OnEvent:      opts.OnEvent,
 			})
 			if scoutErr != nil {
-				result.Errors = append(result.Errors, fmt.Sprintf("scout launch failed: %s", scoutErr))
-				result.FinalState = "scout_failed"
-				return result, fmt.Errorf("RunTierLoop: launch scouts: %w", scoutErr)
+				loopResult.Errors = append(loopResult.Errors, fmt.Sprintf("scout launch failed: %s", scoutErr))
+				loopResult.FinalState = "scout_failed"
+				return result.NewFailure[TierLoopResult]([]result.SAWError{
+					result.NewFatal(result.CodeScoutFailed,
+						fmt.Sprintf("RunTierLoop: launch scouts: %s", scoutErr)).
+						WithContext("tier", fmt.Sprintf("%d", currentTier)),
+				})
 			}
 			if len(scoutResult.Failed) > 0 {
 				for slug, errMsg := range scoutResult.Errors {
-					result.Errors = append(result.Errors, fmt.Sprintf("scout %s failed: %s", slug, errMsg))
+					loopResult.Errors = append(loopResult.Errors, fmt.Sprintf("scout %s failed: %s", slug, errMsg))
 				}
-				result.FinalState = "scout_partial_failure"
-				return result, fmt.Errorf("RunTierLoop: %d scouts failed", len(scoutResult.Failed))
+				loopResult.FinalState = "scout_partial_failure"
+				return result.NewFailure[TierLoopResult]([]result.SAWError{
+					result.NewFatal(result.CodeScoutFailed,
+						fmt.Sprintf("RunTierLoop: %d scouts failed", len(scoutResult.Failed))).
+						WithContext("tier", fmt.Sprintf("%d", currentTier)),
+				})
 			}
 		}
 
@@ -154,18 +178,18 @@ func RunTierLoop(ctx context.Context, opts TierLoopOpts) (*TierLoopResult, error
 			validationErrs := protocol.ValidateProgramImportMode(manifest, opts.RepoPath)
 			if len(validationErrs) > 0 {
 				for _, ve := range validationErrs {
-					result.Errors = append(result.Errors, fmt.Sprintf("[%s] %s", ve.Code, ve.Message))
+					loopResult.Errors = append(loopResult.Errors, fmt.Sprintf("[%s] %s", ve.Code, ve.Message))
 				}
 			}
 		}
 
 		// Step 7: If NOT autoMode, return with RequiresReview
 		if !opts.AutoMode {
-			result.RequiresReview = true
-			result.TiersExecuted = countCompleteTiers(manifest)
-			result.TiersRemaining = len(manifest.Tiers) - result.TiersExecuted
-			result.FinalState = "awaiting_review"
-			return result, nil
+			loopResult.RequiresReview = true
+			loopResult.TiersExecuted = countCompleteTiers(manifest)
+			loopResult.TiersRemaining = len(manifest.Tiers) - loopResult.TiersExecuted
+			loopResult.FinalState = "awaiting_review"
+			return result.NewSuccess(loopResult)
 		}
 
 		// Step 8: Execute waves for each IMPL in the tier, respecting serial_waves
@@ -195,23 +219,27 @@ func RunTierLoop(ctx context.Context, opts TierLoopOpts) (*TierLoopResult, error
 				if isCrossImplSerialWaveBlocked(manifest, currentTier, slug, waveNum, waveProgress) {
 					// In fully sequential execution, this should not happen because we
 					// complete one serial wave at a time. Log and continue.
-					result.Errors = append(result.Errors,
+					loopResult.Errors = append(loopResult.Errors,
 						fmt.Sprintf("unexpected serial wave block: impl=%s wave=%d", slug, waveNum))
 					continue
 				}
 
 				implPath := findIMPLDocPath(opts.RepoPath, slug)
 				if implPath == "" {
-					result.Errors = append(result.Errors,
+					loopResult.Errors = append(loopResult.Errors,
 						fmt.Sprintf("IMPL doc not found for %s", slug))
-					result.FinalState = "impl_not_found"
-					return result, fmt.Errorf("RunTierLoop: IMPL doc not found for slug %q", slug)
+					loopResult.FinalState = "impl_not_found"
+					return result.NewFailure[TierLoopResult]([]result.SAWError{
+						result.NewFatal(result.CodeIMPLNotFound,
+							fmt.Sprintf("RunTierLoop: IMPL doc not found for slug %q", slug)).
+							WithContext("slug", slug),
+					})
 				}
 
 				implBranch := protocol.ProgramBranchName(manifest.ProgramSlug, currentTier, slug)
 				if !git.BranchExists(opts.RepoPath, implBranch) {
 					if _, err := git.Run(opts.RepoPath, "checkout", "-b", implBranch); err != nil {
-						result.Errors = append(result.Errors,
+						loopResult.Errors = append(loopResult.Errors,
 							fmt.Sprintf("failed to create IMPL branch %s: %s", implBranch, err))
 						continue
 					}
@@ -224,10 +252,33 @@ func RunTierLoop(ctx context.Context, opts TierLoopOpts) (*TierLoopResult, error
 					MergeTarget:  implBranch,
 				})
 				if waveErr != nil {
-					result.Errors = append(result.Errors,
+					loopResult.Errors = append(loopResult.Errors,
 						fmt.Sprintf("wave %d for %s failed: %s", waveNum, slug, waveErr))
 				} else {
 					waveProgress[slug] = waveNum
+
+					// Persist wave completion status to disk after each successful wave.
+					// Re-read the manifest to ensure we merge with any on-disk changes,
+					// then update the in-memory state and save.
+					if freshManifest, parseErr := protocol.ParseProgramManifest(opts.ManifestPath); parseErr == nil {
+						// Update IMPL status to reflect progress (wave completed for this slug)
+						for i := range freshManifest.Impls {
+							if freshManifest.Impls[i].Slug == slug {
+								// Mark as in-progress if not already complete
+								if freshManifest.Impls[i].Status == "pending" || freshManifest.Impls[i].Status == "scouting" || freshManifest.Impls[i].Status == "reviewed" {
+									freshManifest.Impls[i].Status = "reviewed"
+								}
+								break
+							}
+						}
+						// Non-fatal: save error is logged but does not abort execution
+						if saveErr := protocol.SaveYAML(opts.ManifestPath, freshManifest); saveErr == nil {
+							// Reload in-memory manifest so subsequent iterations see updated state
+							if reloaded, reloadErr := protocol.ParseProgramManifest(opts.ManifestPath); reloadErr == nil {
+								manifest = reloaded
+							}
+						}
+					}
 				}
 			}
 
@@ -250,12 +301,17 @@ func RunTierLoop(ctx context.Context, opts TierLoopOpts) (*TierLoopResult, error
 		// Steps 9-12: AdvanceTierAutomatically runs the tier gate (E29), freezes
 		// contracts (E30), and advances the tier (E33). Do NOT call RunTierGate
 		// separately — AdvanceTierAutomatically owns the canonical gate invocation.
-		advResult, advErr := AdvanceTierAutomatically(manifest, currentTier, opts.RepoPath, opts.AutoMode)
-		if advErr != nil {
-			result.Errors = append(result.Errors, fmt.Sprintf("advance tier error: %s", advErr))
-			result.FinalState = "advance_error"
-			return result, fmt.Errorf("RunTierLoop: advance tier: %w", advErr)
+		advRes := AdvanceTierAutomatically(manifest, currentTier, opts.RepoPath, opts.AutoMode)
+		if advRes.IsFatal() {
+			loopResult.Errors = append(loopResult.Errors, fmt.Sprintf("advance tier error: %s", advRes.Errors[0].Message))
+			loopResult.FinalState = "advance_error"
+			return result.NewFailure[TierLoopResult]([]result.SAWError{
+				result.NewFatal(advRes.Errors[0].Code,
+					fmt.Sprintf("RunTierLoop: advance tier: %s", advRes.Errors[0].Message)).
+					WithContext("tier", fmt.Sprintf("%d", currentTier)),
+			})
 		}
+		advResult := advRes.GetData()
 
 		// Surface the gate result from AdvanceTierAutomatically.
 		gateResult := advResult.GateResult
@@ -277,27 +333,42 @@ func RunTierLoop(ctx context.Context, opts TierLoopOpts) (*TierLoopResult, error
 					Detail: "Tier gate failed, triggering replan",
 				})
 
-				_, replanErr := AutoTriggerReplan(opts.ManifestPath, currentTier, gateResult, opts.Model)
-				if replanErr != nil {
-					result.Errors = append(result.Errors, fmt.Sprintf("replan failed: %s", replanErr))
-					result.FinalState = "replan_failed"
-					return result, fmt.Errorf("RunTierLoop: replan: %w", replanErr)
+				// Write REPLANNING state to manifest before the replan call
+				if freshManifest, parseErr := protocol.ParseProgramManifest(opts.ManifestPath); parseErr == nil {
+					freshManifest.State = protocol.ProgramState("REPLANNING")
+					// Non-fatal: state write error is ignored; replan proceeds regardless
+					_ = protocol.SaveYAML(opts.ManifestPath, freshManifest)
+				}
+
+				replanRes := AutoTriggerReplan(opts.ManifestPath, currentTier, gateResult, opts.Model)
+				if replanRes.IsFatal() {
+					loopResult.Errors = append(loopResult.Errors, fmt.Sprintf("replan failed: %s", replanRes.Errors[0].Message))
+					loopResult.FinalState = "replan_failed"
+					return result.NewFailure[TierLoopResult]([]result.SAWError{
+						result.NewFatal(replanRes.Errors[0].Code,
+							fmt.Sprintf("RunTierLoop: replan: %s", replanRes.Errors[0].Message)).
+							WithContext("tier", fmt.Sprintf("%d", currentTier)),
+					})
 				}
 
 				// Re-parse manifest after replan
 				manifest, err = protocol.ParseProgramManifest(opts.ManifestPath)
 				if err != nil {
-					return nil, fmt.Errorf("RunTierLoop: re-parse after replan: %w", err)
+					return result.NewFailure[TierLoopResult]([]result.SAWError{
+						result.NewFatal(result.CodeIMPLParseFailed,
+							fmt.Sprintf("RunTierLoop: re-parse after replan: %s", err)).
+							WithContext("manifest_path", opts.ManifestPath),
+					})
 				}
 				// Continue loop to retry the tier
 				continue
 			}
 
-			result.FinalState = "gate_failed"
-			result.Errors = append(result.Errors, "tier gate failed")
-			result.TiersExecuted = countCompleteTiers(manifest)
-			result.TiersRemaining = len(manifest.Tiers) - result.TiersExecuted
-			return result, nil
+			loopResult.FinalState = "gate_failed"
+			loopResult.Errors = append(loopResult.Errors, "tier gate failed")
+			loopResult.TiersExecuted = countCompleteTiers(manifest)
+			loopResult.TiersRemaining = len(manifest.Tiers) - loopResult.TiersExecuted
+			return result.NewSuccess(loopResult)
 		}
 
 		// E40: Emit tier_gate_passed.
@@ -313,11 +384,11 @@ func RunTierLoop(ctx context.Context, opts TierLoopOpts) (*TierLoopResult, error
 		}
 
 		if advResult.ProgramComplete {
-			result.ProgramComplete = true
-			result.FinalState = "complete"
-			result.TiersExecuted = len(manifest.Tiers)
-			result.TiersRemaining = 0
-			return result, nil
+			loopResult.ProgramComplete = true
+			loopResult.FinalState = "complete"
+			loopResult.TiersExecuted = len(manifest.Tiers)
+			loopResult.TiersRemaining = 0
+			return result.NewSuccess(loopResult)
 		}
 
 		if advResult.AdvancedToNext {
@@ -327,15 +398,15 @@ func RunTierLoop(ctx context.Context, opts TierLoopOpts) (*TierLoopResult, error
 				Detail: fmt.Sprintf("Advancing from tier %d to %d", currentTier, advResult.NextTier),
 			})
 			nilSafeEmit(ctx, opts.ObsEmitter, observability.NewTierAdvancedEvent(manifest.ProgramSlug, currentTier))
-			result.TiersExecuted++
+			loopResult.TiersExecuted++
 		} else if !opts.AutoMode {
 			// Non-auto mode: check if this is the final tier.
 			if isFinalTier(manifest, currentTier) {
-				result.ProgramComplete = true
-				result.FinalState = "complete"
-				result.TiersExecuted = len(manifest.Tiers)
-				result.TiersRemaining = 0
-				return result, nil
+				loopResult.ProgramComplete = true
+				loopResult.FinalState = "complete"
+				loopResult.TiersExecuted = len(manifest.Tiers)
+				loopResult.TiersRemaining = 0
+				return result.NewSuccess(loopResult)
 			}
 			emitEvent(opts.OnEvent, TierLoopEvent{
 				Type:   "tier_advanced",
@@ -343,13 +414,17 @@ func RunTierLoop(ctx context.Context, opts TierLoopOpts) (*TierLoopResult, error
 				Detail: fmt.Sprintf("Advancing from tier %d to %d", currentTier, currentTier+1),
 			})
 			nilSafeEmit(ctx, opts.ObsEmitter, observability.NewTierAdvancedEvent(manifest.ProgramSlug, currentTier))
-			result.TiersExecuted++
+			loopResult.TiersExecuted++
 		}
 
 		// Re-parse manifest to pick up any status changes
 		manifest, err = protocol.ParseProgramManifest(opts.ManifestPath)
 		if err != nil {
-			return nil, fmt.Errorf("RunTierLoop: re-parse manifest: %w", err)
+			return result.NewFailure[TierLoopResult]([]result.SAWError{
+				result.NewFatal(result.CodeIMPLParseFailed,
+					fmt.Sprintf("RunTierLoop: re-parse manifest: %s", err)).
+					WithContext("manifest_path", opts.ManifestPath),
+			})
 		}
 	}
 }
@@ -398,7 +473,7 @@ var replanProgramFunc = ReplanProgram
 // AutoTriggerReplan automatically triggers Planner re-engagement when a tier
 // gate fails (E34). It constructs a reason string from gate failure details
 // and calls ReplanProgram.
-func AutoTriggerReplan(manifestPath string, tierNumber int, gateResult *protocol.TierGateData, model string) (*ReplanResult, error) {
+func AutoTriggerReplan(manifestPath string, tierNumber int, gateResult *protocol.TierGateData, model string) result.Result[ReplanResult] {
 	reason := buildReplanReason(tierNumber, gateResult)
 
 	return replanProgramFunc(ReplanProgramOpts{

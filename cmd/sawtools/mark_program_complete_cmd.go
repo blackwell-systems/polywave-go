@@ -41,14 +41,15 @@ Exit codes:
 				repoDir = cwd
 			}
 
-			result, err := engine.MarkProgramComplete(cmd.Context(), engine.MarkProgramCompleteOpts{
+			res := engine.MarkProgramComplete(cmd.Context(), engine.MarkProgramCompleteOpts{
 				ManifestPath: manifestPath,
 				RepoDir:      repoDir,
 				Date:         date,
 			})
-			if err != nil {
-				return err
+			if res.IsFatal() {
+				return fmt.Errorf("mark-program-complete: %s", res.Errors[0].Message)
 			}
+			result := res.GetData()
 
 			out, _ := json.MarshalIndent(result, "", "  ")
 			fmt.Fprintln(cmd.OutOrStdout(), string(out))

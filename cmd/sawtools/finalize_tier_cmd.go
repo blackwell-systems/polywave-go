@@ -69,10 +69,11 @@ Exit codes:
 					return fmt.Errorf("finalize-tier: failed to parse manifest for auto-advance: %w", err)
 				}
 
-				advanceResult, err := engine.AdvanceTierAutomatically(manifest, tierNum, repoDir, true)
-				if err != nil {
-					return fmt.Errorf("finalize-tier: auto-advance failed: %w", err)
+				advRes := engine.AdvanceTierAutomatically(manifest, tierNum, repoDir, true)
+				if advRes.IsFatal() {
+					return fmt.Errorf("finalize-tier: auto-advance failed: %s", advRes.Errors[0].Message)
 				}
+				advanceResult := advRes.GetData()
 
 				advOut, _ := json.MarshalIndent(advanceResult, "", "  ")
 				fmt.Fprintln(cmd.OutOrStdout(), string(advOut))

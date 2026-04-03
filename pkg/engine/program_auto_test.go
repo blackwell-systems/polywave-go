@@ -50,10 +50,11 @@ func TestAdvanceTierAutomatically_AutoMode_AdvanceToNext(t *testing.T) {
 	// No TierGates defined → RunTierGate will pass (no required gates to fail)
 	// No ProgramContracts → FreezeContracts has nothing to freeze → Success=true
 
-	result, err := AdvanceTierAutomatically(manifest, 1, repoPath, true)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+	res := AdvanceTierAutomatically(manifest, 1, repoPath, true)
+	if res.IsFatal() {
+		t.Fatalf("unexpected fatal: %v", res.Errors[0].Message)
 	}
+	result := res.GetData()
 
 	if !result.AdvancedToNext {
 		t.Errorf("expected AdvancedToNext=true, got false")
@@ -78,10 +79,11 @@ func TestAdvanceTierAutomatically_AutoMode_FinalTier(t *testing.T) {
 	repoPath := t.TempDir()
 	manifest := buildTestManifest(2)
 
-	result, err := AdvanceTierAutomatically(manifest, 2, repoPath, true)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+	res := AdvanceTierAutomatically(manifest, 2, repoPath, true)
+	if res.IsFatal() {
+		t.Fatalf("unexpected fatal: %v", res.Errors[0].Message)
 	}
+	result := res.GetData()
 
 	if result.AdvancedToNext {
 		t.Errorf("expected AdvancedToNext=false for final tier, got true")
@@ -100,10 +102,11 @@ func TestAdvanceTierAutomatically_ManualMode_HumanGate(t *testing.T) {
 	repoPath := t.TempDir()
 	manifest := buildTestManifest(2)
 
-	result, err := AdvanceTierAutomatically(manifest, 1, repoPath, false)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+	res := AdvanceTierAutomatically(manifest, 1, repoPath, false)
+	if res.IsFatal() {
+		t.Fatalf("unexpected fatal: %v", res.Errors[0].Message)
 	}
+	result := res.GetData()
 
 	if result.AdvancedToNext {
 		t.Errorf("expected AdvancedToNext=false in manual mode, got true")
@@ -131,10 +134,11 @@ func TestAdvanceTierAutomatically_GateFails(t *testing.T) {
 		},
 	}
 
-	result, err := AdvanceTierAutomatically(manifest, 1, repoPath, true)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+	res := AdvanceTierAutomatically(manifest, 1, repoPath, true)
+	if res.IsFatal() {
+		t.Fatalf("unexpected fatal: %v", res.Errors[0].Message)
 	}
+	result := res.GetData()
 
 	if result.AdvancedToNext {
 		t.Errorf("expected AdvancedToNext=false when gate fails, got true")
@@ -165,10 +169,11 @@ func TestAdvanceTierAutomatically_FreezeFails(t *testing.T) {
 		},
 	}
 
-	result, err := AdvanceTierAutomatically(manifest, 1, repoPath, true)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+	res := AdvanceTierAutomatically(manifest, 1, repoPath, true)
+	if res.IsFatal() {
+		t.Fatalf("unexpected fatal: %v", res.Errors[0].Message)
 	}
+	result := res.GetData()
 
 	if result.AdvancedToNext {
 		t.Errorf("expected AdvancedToNext=false when freeze fails, got true")
@@ -329,10 +334,11 @@ func TestAdvanceTierAutomatically_ScoredIMPLOrder_PopulatedOnAdvance(t *testing.
 		},
 	}
 
-	result, err := AdvanceTierAutomatically(manifest, 1, repoPath, true)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+	res := AdvanceTierAutomatically(manifest, 1, repoPath, true)
+	if res.IsFatal() {
+		t.Fatalf("unexpected fatal: %v", res.Errors[0].Message)
 	}
+	result := res.GetData()
 
 	if !result.AdvancedToNext {
 		t.Fatalf("expected AdvancedToNext=true")
@@ -360,10 +366,11 @@ func TestAdvanceTierAutomatically_ScoredIMPLOrder_EmptyOnGateFail(t *testing.T) 
 		},
 	}
 
-	result, err := AdvanceTierAutomatically(manifest, 1, repoPath, true)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+	res := AdvanceTierAutomatically(manifest, 1, repoPath, true)
+	if res.IsFatal() {
+		t.Fatalf("unexpected fatal: %v", res.Errors[0].Message)
 	}
+	result := res.GetData()
 
 	if result.AdvancedToNext {
 		t.Error("expected AdvancedToNext=false when gate fails")
@@ -410,13 +417,11 @@ completion:
 		FailedTier:          1,
 	}
 
-	result, err := ReplanProgram(opts)
-	if err != nil {
-		t.Fatalf("ReplanProgram returned unexpected error: %v", err)
+	res := ReplanProgram(opts)
+	if res.IsFatal() {
+		t.Fatalf("ReplanProgram returned unexpected fatal: %v", res.Errors[0].Message)
 	}
-	if result == nil {
-		t.Fatal("expected non-nil result")
-	}
+	result := res.GetData()
 	if result.RevisedManifestPath != manifestPath {
 		t.Errorf("expected manifest path %q, got %q", manifestPath, result.RevisedManifestPath)
 	}
@@ -430,8 +435,8 @@ func TestReplanProgram_ValidationFails(t *testing.T) {
 		Reason:              "testing read failure",
 	}
 
-	_, err := ReplanProgram(opts)
-	if err == nil {
-		t.Fatal("expected error for missing manifest, got nil")
+	res := ReplanProgram(opts)
+	if !res.IsFatal() {
+		t.Fatal("expected fatal result for missing manifest, got success/partial")
 	}
 }

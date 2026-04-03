@@ -53,10 +53,11 @@ Exit codes:
 			}
 
 			// Call engine function
-			result, err := engine.ReplanProgram(opts)
-			if err != nil {
-				return fmt.Errorf("program-replan: %w", err)
+			res := engine.ReplanProgram(opts)
+			if res.IsFatal() {
+				return fmt.Errorf("program-replan: %s", res.Errors[0].Message)
 			}
+			result := res.GetData()
 
 			// Output JSON result
 			out, _ := json.MarshalIndent(result, "", "  ")

@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
 )
 
 // TierAdvanceResult is returned by AdvanceTierAutomatically.
@@ -46,8 +47,7 @@ type ReplanResult struct {
 }
 
 // AdvanceTierAutomatically checks tier gate, freezes contracts, and advances
-// to next tier if --auto mode is active. Returns true if advanced, false if
-// human review required.
+// to next tier if --auto mode is active. Returns result.Result[TierAdvanceResult].
 //
 // Logic:
 //  1. Run RunTierGate to verify tier completion.
@@ -55,62 +55,70 @@ type ReplanResult struct {
 //  3. If gate passes and autoMode=false: RequiresReview=true (human gate).
 //  4. If gate passes and autoMode=true: freeze contracts, then either mark
 //     ProgramComplete (final tier) or set AdvancedToNext=true, NextTier=completedTier+1.
-func AdvanceTierAutomatically(manifest *protocol.PROGRAMManifest, completedTier int, repoPath string, autoMode bool) (*TierAdvanceResult, error) {
-	result := &TierAdvanceResult{
+func AdvanceTierAutomatically(manifest *protocol.PROGRAMManifest, completedTier int, repoPath string, autoMode bool) result.Result[TierAdvanceResult] {
+	data := TierAdvanceResult{
 		TierNumber: completedTier,
 	}
 
 	// Step 1: Run tier gate
 	gateRes := protocol.RunTierGate(manifest, completedTier, repoPath)
 	if gateRes.IsFatal() {
-		return nil, fmt.Errorf("AdvanceTierAutomatically: run tier gate: %s", gateRes.Errors[0].Message)
+		return result.NewFailure[TierAdvanceResult]([]result.SAWError{
+			result.NewFatal(result.CodeTierGateFailed,
+				fmt.Sprintf("AdvanceTierAutomatically: run tier gate: %s", gateRes.Errors[0].Message)).
+				WithContext("tier", fmt.Sprintf("%d", completedTier)),
+		})
 	}
 	gateResult := gateRes.GetData()
-	result.GateResult = gateResult
+	data.GateResult = gateResult
 
 	// Step 2: Gate failed — requires human review
 	if !gateResult.Passed {
-		result.RequiresReview = true
-		result.AdvancedToNext = false
-		return result, nil
+		data.RequiresReview = true
+		data.AdvancedToNext = false
+		return result.NewSuccess(data)
 	}
 
 	// Step 3: Gate passed but auto mode is off — defer to human
 	if !autoMode {
-		result.RequiresReview = true
-		result.AdvancedToNext = false
-		return result, nil
+		data.RequiresReview = true
+		data.AdvancedToNext = false
+		return result.NewSuccess(data)
 	}
 
 	// Step 4: Auto mode — freeze contracts
 	freezeRes := protocol.FreezeContracts(manifest, completedTier, repoPath)
 	if freezeRes.IsFatal() {
-		return nil, fmt.Errorf("AdvanceTierAutomatically: freeze contracts: %s", freezeRes.Errors[0].Message)
+		return result.NewFailure[TierAdvanceResult]([]result.SAWError{
+			result.NewFatal(result.CodeFreezeError,
+				fmt.Sprintf("AdvanceTierAutomatically: freeze contracts: %s", freezeRes.Errors[0].Message)).
+				WithContext("tier", fmt.Sprintf("%d", completedTier)),
+		})
 	}
 	freezeResult := freezeRes.GetData()
-	result.FreezeResult = freezeResult
+	data.FreezeResult = freezeResult
 
 	if !freezeResult.Success {
-		result.RequiresReview = true
-		result.AdvancedToNext = false
-		result.Errors = append(result.Errors, freezeResult.Errors...)
-		return result, nil
+		data.RequiresReview = true
+		data.AdvancedToNext = false
+		data.Errors = append(data.Errors, freezeResult.Errors...)
+		return result.NewSuccess(data)
 	}
 
 	// Determine if this was the final tier
 	finalTier := isFinalTier(manifest, completedTier)
 	if finalTier {
-		result.ProgramComplete = true
-		result.AdvancedToNext = false
+		data.ProgramComplete = true
+		data.AdvancedToNext = false
 	} else {
-		result.AdvancedToNext = true
-		result.NextTier = completedTier + 1
+		data.AdvancedToNext = true
+		data.NextTier = completedTier + 1
 		// Score the next tier's pending IMPLs so callers can display priority
 		// order before launching. The caller is responsible for honoring ConcurrencyCap.
-		result.ScoredIMPLOrder = ScoreTierIMPLs(manifest, result.NextTier)
+		data.ScoredIMPLOrder = ScoreTierIMPLs(manifest, data.NextTier)
 	}
 
-	return result, nil
+	return result.NewSuccess(data)
 }
 
 // ScoreTierIMPLs scores all pending IMPLs in tierNumber and returns them sorted by
@@ -181,11 +189,15 @@ func isFinalTier(manifest *protocol.PROGRAMManifest, tierNumber int) bool {
 
 // ReplanProgram launches the Planner agent to revise a PROGRAM manifest based on
 // execution feedback (tier gate failure, blocked IMPL, etc.).
-func ReplanProgram(opts ReplanProgramOpts) (*ReplanResult, error) {
+func ReplanProgram(opts ReplanProgramOpts) result.Result[ReplanResult] {
 	// Step 1: Read existing PROGRAM manifest
 	manifestData, err := os.ReadFile(opts.ProgramManifestPath)
 	if err != nil {
-		return nil, fmt.Errorf("ReplanProgram: read manifest: %w", err)
+		return result.NewFailure[ReplanResult]([]result.SAWError{
+			result.NewFatal(result.CodeIMPLParseFailed,
+				fmt.Sprintf("ReplanProgram: read manifest: %s", err)).
+				WithContext("manifest_path", opts.ProgramManifestPath),
+		})
 	}
 
 	// Step 2: Construct revision prompt
@@ -205,22 +217,34 @@ func ReplanProgram(opts ReplanProgramOpts) (*ReplanResult, error) {
 	if plannerRes.IsFatal() {
 		msg := "ReplanProgram: planner agent failed"
 		if len(plannerRes.Errors) > 0 {
-			msg = fmt.Sprintf("ReplanProgram: planner agent: %s", plannerRes.Errors[0].Message)
+			// Propagate the structured SAWError code upward rather than wrapping
+			return result.NewFailure[ReplanResult]([]result.SAWError{
+				result.NewFatal(plannerRes.Errors[0].Code,
+					fmt.Sprintf("ReplanProgram: planner agent: %s", plannerRes.Errors[0].Message)),
+			})
 		}
-		return nil, fmt.Errorf("%s", msg)
+		return result.NewFailure[ReplanResult]([]result.SAWError{
+			result.NewFatal(result.CodePlannerFailed, msg),
+		})
 	}
 
 	// Step 5: Validate revised manifest
 	_, parseErr := protocol.ParseProgramManifest(opts.ProgramManifestPath)
-	result := &ReplanResult{
+	data := ReplanResult{
 		RevisedManifestPath: opts.ProgramManifestPath,
 		ValidationPassed:    parseErr == nil,
 		ChangesSummary:      strings.Join(chunks, ""),
 	}
 	if parseErr != nil {
-		result.Errors = append(result.Errors, parseErr.Error())
+		data.Errors = append(data.Errors, parseErr.Error())
+		// Validation failure is a partial success: replan ran but manifest is invalid.
+		return result.NewPartial(data, []result.SAWError{
+			result.NewError(result.CodeIMPLParseFailed,
+				fmt.Sprintf("ReplanProgram: revised manifest parse failed: %s", parseErr)).
+				WithContext("manifest_path", opts.ProgramManifestPath),
+		})
 	}
-	return result, nil
+	return result.NewSuccess(data)
 }
 
 // buildRevisionPrompt constructs the revision prompt for the Planner agent.

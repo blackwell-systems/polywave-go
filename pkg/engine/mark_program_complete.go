@@ -51,8 +51,8 @@ type WriteMarkerData struct {
 
 // MarkProgramComplete verifies all tiers complete, writes the SAW:PROGRAM:COMPLETE
 // marker, archives the manifest, updates CONTEXT.md, and commits. Returns a
-// structured result.
-func MarkProgramComplete(ctx context.Context, opts MarkProgramCompleteOpts) (MarkProgramCompleteResult, error) {
+// structured result.Result[MarkProgramCompleteResult].
+func MarkProgramComplete(ctx context.Context, opts MarkProgramCompleteOpts) result.Result[MarkProgramCompleteResult] {
 	logger := opts.Logger
 	if logger == nil {
 		logger = slog.Default()
@@ -65,15 +65,21 @@ func MarkProgramComplete(ctx context.Context, opts MarkProgramCompleteOpts) (Mar
 	}
 
 	// 2. Parse manifest
-	manifest, err := protocol.ParseProgramManifest(opts.ManifestPath)
-	if err != nil {
-		return MarkProgramCompleteResult{}, fmt.Errorf("mark-program-complete: parse error: %w", err)
+	manifest, parseErr := protocol.ParseProgramManifest(opts.ManifestPath)
+	if parseErr != nil {
+		return result.NewFailure[MarkProgramCompleteResult]([]result.SAWError{
+			result.NewFatal(result.CodeIMPLParseFailed,
+				fmt.Sprintf("mark-program-complete: parse error: %s", parseErr)).
+				WithContext("manifest_path", opts.ManifestPath),
+		})
 	}
 
 	// 3. Verify all tiers complete — hard error if not
 	verifyRes := verifyAllTiersComplete(manifest)
 	if verifyRes.IsFatal() {
-		return MarkProgramCompleteResult{}, fmt.Errorf("mark-program-complete: %s", verifyRes.Errors[0].Message)
+		return result.NewFailure[MarkProgramCompleteResult]([]result.SAWError{
+			verifyRes.Errors[0],
+		})
 	}
 
 	// 4. Count tiers and impls
@@ -83,7 +89,9 @@ func MarkProgramComplete(ctx context.Context, opts MarkProgramCompleteOpts) (Mar
 	// 5. Write SAW:PROGRAM:COMPLETE marker
 	markerRes := writeProgramCompleteMarker(opts.ManifestPath, date)
 	if markerRes.IsFatal() {
-		return MarkProgramCompleteResult{}, fmt.Errorf("mark-program-complete: failed to update manifest: %s", markerRes.Errors[0].Message)
+		return result.NewFailure[MarkProgramCompleteResult]([]result.SAWError{
+			markerRes.Errors[0],
+		})
 	}
 
 	// 6. Close each IMPL in the program (E15: write completion marker + archive)
@@ -131,7 +139,7 @@ func MarkProgramComplete(ctx context.Context, opts MarkProgramCompleteOpts) (Mar
 	}
 
 	// 11. Return populated result
-	return MarkProgramCompleteResult{
+	data := MarkProgramCompleteResult{
 		Completed:      true,
 		ProgramSlug:    manifest.ProgramSlug,
 		Date:           date,
@@ -142,7 +150,8 @@ func MarkProgramComplete(ctx context.Context, opts MarkProgramCompleteOpts) (Mar
 		CommitSHA:      commitSHA,
 		TiersComplete:  tiersCount,
 		ImplsComplete:  implsCount,
-	}, nil
+	}
+	return result.NewSuccess(data)
 }
 
 // verifyAllTiersComplete checks that all IMPLs in all tiers have status "complete".
