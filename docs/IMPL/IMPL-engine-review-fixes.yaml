@@ -594,6 +594,7 @@ waves:
             Own ONLY program_tier_loop.go.
           files:
             - pkg/engine/program_tier_loop.go
+      base_commit: 6c73dbb0dcc210463d4ed509e852b8fcb78b3b24
     - number: 2
       agents:
         - id: F
@@ -1322,6 +1323,47 @@ quality_gates:
         - type: test
           command: go test ./pkg/engine/... ./pkg/result/... ./pkg/gatecache/... ./cmd/sawtools/...
           required: true
+completion_reports:
+    A:
+        status: complete
+        branch: saw/engine-review-fixes/wave1-agent-A
+        commit: 168e433
+        files_changed:
+            - pkg/engine/prepare.go
+        verification: PASS
+        notes: Removed all three os.Setenv/defer os.Unsetenv SAW_ALLOW_MAIN_COMMIT call sites. Added gitCommitAllowMain helper that passes the var per-subprocess via exec.Command.Env. SetImplState path needs no env var since the pre-commit hook exits 0 in non-agent-worktree context.
+    B:
+        status: complete
+        branch: saw/engine-review-fixes/wave1-agent-B
+        commit: "9719233"
+        files_changed:
+            - pkg/engine/finalize_steps.go
+            - pkg/engine/finalize.go
+        verification: PASS
+        notes: 'P0-2: Added nil guards for opts.ObsEmitter at both call sites in StepRunGates (lines 146,148). P0-3: Replaced hardcoded ''.'' with repoKey in both failure-path CleanupResult assignments in FinalizeWave (verify-build and post-merge-gates early returns). P0-allGone: Fixed allGone and isSolo OR-to-AND logic — both now initialize to true and set false when condition not met, removing the break.'
+    C:
+        status: complete
+        branch: saw/engine-review-fixes/wave1-agent-C
+        commit: "7865903"
+        files_changed:
+            - pkg/engine/scout_run.go
+        verification: PASS
+    D:
+        status: complete
+        branch: saw/engine-review-fixes/wave1-agent-D
+        commit: d8b1860
+        files_changed:
+            - pkg/engine/integration_runner.go
+        verification: PASS
+        notes: Replaced discarded constraints variable with buildIntegratorConstraints(manifest, extractConnectors(manifest)). Added injectAllowedPathsRestriction helper that prepends allowed connector file paths to the integration agent system prompt. Removed dead integrationPromptPath() function. Build, vet, and tests all pass.
+    E:
+        status: complete
+        branch: saw/engine-review-fixes/wave1-agent-E
+        commit: c87af75
+        files_changed:
+            - pkg/engine/program_tier_loop.go
+        verification: PASS
+        notes: 'Three P0 fixes applied. (1) findIMPLDocPath: loop now iterates all candidates with os.Stat; empty result is fatal return. (2) Double gate: removed standalone RunTierGate call; restructured downstream to use advResult.GateResult from AdvanceTierAutomatically. (3) P1+ conflict check: protocol.CheckIMPLConflicts added after PartitionIMPLsByStatus, fatal on conflicts or check error. All TestTierLoop tests pass; full quality gate (engine, result, gatecache, sawtools) clean.'
 pre_mortem:
     overall_risk: high
     rows:
@@ -1545,5 +1587,5 @@ critic_report:
     summary: 'Seven agents pass with no issues (A, B, C, D, F, H, J). Agent E has one error: the proposed rewrite of findIMPLDocPath drops the repoPath parameter that the current two-argument function requires. Agent G has one warning: FinalizeIMPLEngine caller finalize_impl_cmd.go is not in any agent file_ownership, creating a break when the signature changes to accept FinalizeIMPLEngineOpts. Agent K and Agent L both reference future constants from Agent N; this is pre-acknowledged in the IMPL as accepted technical debt. Agent N has five errors: three proposed constant string values collide with existing numeric codes (N003, P001, K005, I001, I002), and two proposed Go symbol names duplicate existing exported symbols (CodeDisjointOwnership already exists as V002, CodeWaveSequencingFailed already exists as N026). Agent Q has one warning: Agent Q is directed to also modify closed_loop_gate.go in the file_ownership table but that file is owned by Wave 3 Agent L; Q should only add comments if L has not already done so. Agents I, M, O, P, R, S, T, U pass file_existence and pattern_accuracy checks.'
     reviewed_at: "2026-04-03T16:28:22Z"
     issue_count: 13
-state: "REVIEWED"
+state: REVIEWED
 injection_method: hook
