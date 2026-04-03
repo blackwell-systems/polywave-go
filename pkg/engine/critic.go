@@ -61,10 +61,11 @@ func BuildCriticPrompt(ctx context.Context, opts BuildCriticPromptOpts) (string,
 
 	// Load the critic-agent.md prompt with reference injection.
 	criticMdPath := filepath.Join(sawRepo, "implementations", "claude-code", "prompts", "agents", "critic-agent.md")
-	criticMdContent, err := LoadTypePromptWithRefs(criticMdPath)
-	if err != nil {
-		return "", fmt.Errorf("run-critic: critic-agent.md not found at %s — verify SAW installation or set SAW_REPO environment variable: %w", criticMdPath, err)
+	criticMdRes := LoadTypePromptWithRefs(criticMdPath)
+	if criticMdRes.IsFatal() {
+		return "", fmt.Errorf("run-critic: critic-agent.md not found at %s — verify SAW installation or set SAW_REPO environment variable", criticMdPath)
 	}
+	criticMdContent := criticMdRes.GetData()
 
 	// Build the repo-roots section for the prompt.
 	repoRootsSection := ""

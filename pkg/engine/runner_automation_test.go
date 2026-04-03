@@ -65,7 +65,7 @@ func Bar() string {
 	// but we can verify the automation context is built correctly by
 	// examining the prompt construction logic.
 	// For this test, we'll just verify runScoutAutomation works independently.
-	automationCtx := runScoutAutomation(tmpDir, opts.Feature)
+	automationCtx := runScoutAutomation(ctx, tmpDir, opts.Feature)
 
 	// Verify automation context contains expected sections
 	if !strings.Contains(automationCtx, "## Automation Analysis Results") {
@@ -106,7 +106,7 @@ func TestRunScout_AutomationFailure(t *testing.T) {
 	}
 
 	// Test automation context generation with missing dependencies
-	automationCtx := runScoutAutomation(tmpDir, "Add feature")
+	automationCtx := runScoutAutomation(context.Background(), tmpDir, "Add feature")
 
 	// Should still return valid markdown even if tools fail
 	if !strings.Contains(automationCtx, "## Automation Analysis Results") {
@@ -225,7 +225,7 @@ go 1.21
 	}
 
 	featureDesc := "Implement features from docs/requirements.md"
-	automationCtx := runScoutAutomation(tmpDir, featureDesc)
+	automationCtx := runScoutAutomation(context.Background(), tmpDir, featureDesc)
 
 	// Should detect requirements file and run H1a
 	if !strings.Contains(automationCtx, "### Pre-Implementation Status (H1a)") {

@@ -264,12 +264,13 @@ func TestLoadTypePromptWithRefs(t *testing.T) {
 			t.Fatalf("write scout.md: %v", err)
 		}
 
-		result, err := LoadTypePromptWithRefs(filepath.Join(agentsDir, "scout.md"))
-		if err != nil {
-			t.Fatalf("unexpected error: %v", err)
+		promptRes := LoadTypePromptWithRefs(filepath.Join(agentsDir, "scout.md"))
+		if promptRes.IsFatal() {
+			t.Fatalf("unexpected failure: %v", promptRes.Errors)
 		}
-		if result != coreContent {
-			t.Errorf("expected %q, got %q", coreContent, result)
+		got := promptRes.GetData()
+		if got != coreContent {
+			t.Errorf("expected %q, got %q", coreContent, got)
 		}
 	})
 
@@ -298,28 +299,29 @@ func TestLoadTypePromptWithRefs(t *testing.T) {
 			t.Fatalf("write wave-agent-worktree.md: %v", err)
 		}
 
-		result, err := LoadTypePromptWithRefs(filepath.Join(agentsDir, "scout.md"))
-		if err != nil {
-			t.Fatalf("unexpected error: %v", err)
+		promptRes := LoadTypePromptWithRefs(filepath.Join(agentsDir, "scout.md"))
+		if promptRes.IsFatal() {
+			t.Fatalf("unexpected failure: %v", promptRes.Errors)
 		}
+		got := promptRes.GetData()
 
-		if !strings.Contains(result, "<!-- injected: references/scout-suitability-gate.md -->") {
-			t.Errorf("missing suitability-gate marker in result: %q", result)
+		if !strings.Contains(got, "<!-- injected: references/scout-suitability-gate.md -->") {
+			t.Errorf("missing suitability-gate marker in result: %q", got)
 		}
-		if !strings.Contains(result, "## Suitability Gate") {
-			t.Errorf("missing suitability gate content in result: %q", result)
+		if !strings.Contains(got, "## Suitability Gate") {
+			t.Errorf("missing suitability gate content in result: %q", got)
 		}
-		if !strings.Contains(result, "<!-- injected: references/scout-implementation-process.md -->") {
-			t.Errorf("missing implementation-process marker in result: %q", result)
+		if !strings.Contains(got, "<!-- injected: references/scout-implementation-process.md -->") {
+			t.Errorf("missing implementation-process marker in result: %q", got)
 		}
-		if !strings.Contains(result, "## Implementation Process") {
-			t.Errorf("missing implementation process content in result: %q", result)
+		if !strings.Contains(got, "## Implementation Process") {
+			t.Errorf("missing implementation process content in result: %q", got)
 		}
-		if !strings.Contains(result, "# Scout Core") {
-			t.Errorf("missing core content in result: %q", result)
+		if !strings.Contains(got, "# Scout Core") {
+			t.Errorf("missing core content in result: %q", got)
 		}
-		if strings.Contains(result, "## Worktree") {
-			t.Errorf("wave-agent content should not be included in scout result: %q", result)
+		if strings.Contains(got, "## Worktree") {
+			t.Errorf("wave-agent content should not be included in scout result: %q", got)
 		}
 	})
 
@@ -343,15 +345,16 @@ func TestLoadTypePromptWithRefs(t *testing.T) {
 			t.Fatalf("write scout-suitability-gate.md: %v", err)
 		}
 
-		result, err := LoadTypePromptWithRefs(filepath.Join(agentsDir, "scout.md"))
-		if err != nil {
-			t.Fatalf("unexpected error: %v", err)
+		promptRes := LoadTypePromptWithRefs(filepath.Join(agentsDir, "scout.md"))
+		if promptRes.IsFatal() {
+			t.Fatalf("unexpected failure: %v", promptRes.Errors)
 		}
+		got := promptRes.GetData()
 
 		// The marker should appear only once (not doubled)
-		count := strings.Count(result, "<!-- injected: references/scout-suitability-gate.md -->")
+		count := strings.Count(got, "<!-- injected: references/scout-suitability-gate.md -->")
 		if count != 1 {
-			t.Errorf("expected marker to appear exactly once, got %d times in: %q", count, result)
+			t.Errorf("expected marker to appear exactly once, got %d times in: %q", count, got)
 		}
 	})
 
@@ -375,12 +378,13 @@ func TestLoadTypePromptWithRefs(t *testing.T) {
 			t.Fatalf("write wave-agent-worktree.md: %v", err)
 		}
 
-		result, err := LoadTypePromptWithRefs(filepath.Join(agentsDir, "scout.md"))
-		if err != nil {
-			t.Fatalf("unexpected error: %v", err)
+		promptRes := LoadTypePromptWithRefs(filepath.Join(agentsDir, "scout.md"))
+		if promptRes.IsFatal() {
+			t.Fatalf("unexpected failure: %v", promptRes.Errors)
 		}
-		if result != coreContent {
-			t.Errorf("expected core only %q, got %q", coreContent, result)
+		got := promptRes.GetData()
+		if got != coreContent {
+			t.Errorf("expected core only %q, got %q", coreContent, got)
 		}
 	})
 
@@ -388,9 +392,9 @@ func TestLoadTypePromptWithRefs(t *testing.T) {
 		tmpDir := t.TempDir()
 		nonexistent := filepath.Join(tmpDir, "agents", "scout.md")
 
-		_, err := LoadTypePromptWithRefs(nonexistent)
-		if err == nil {
-			t.Fatal("expected error for missing core file, got nil")
+		promptRes := LoadTypePromptWithRefs(nonexistent)
+		if !promptRes.IsFatal() {
+			t.Fatal("expected failure for missing core file, got non-fatal result")
 		}
 	})
 }
