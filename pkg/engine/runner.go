@@ -482,7 +482,7 @@ func StartWave(ctx context.Context, opts RunWaveOpts, onEvent func(Event)) resul
 						stubReports[ag.ID] = &cr
 					}
 				}
-				_ = orchestrator.RunStubScan(opts.IMPLPath, waveNum, stubReports, "", loggerFrom(opts.Logger))
+				_ = orchestrator.RunStubScan(ctx, opts.IMPLPath, waveNum, stubReports, "", loggerFrom(opts.Logger))
 			}
 		}
 
