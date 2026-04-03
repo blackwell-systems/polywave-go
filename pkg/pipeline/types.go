@@ -6,9 +6,9 @@ import (
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
 )
 
-// StepFunc is a single pipeline step. It receives the pipeline context
-// and returns an error. Steps are executed in sequence within a stage;
-// stages may run in parallel.
+// StepFunc is a single pipeline step. It receives the shared pipeline
+// State and returns an error on failure. Steps execute sequentially
+// within a Pipeline; use multiple Pipelines for concurrent execution.
 type StepFunc func(ctx context.Context, state *State) error
 
 // ErrorStrategy defines how the pipeline handles a step failure.
@@ -31,11 +31,19 @@ type Step struct {
 
 // State carries mutable data through the pipeline.
 type State struct {
+	// RepoPath is unused by standard SAW steps; pass the repository path
+	// via Values["repo_path"] instead. Retained for future direct-field
+	// access once steps are updated.
 	RepoPath string
+	// IMPLPath is unused by standard SAW steps; pass the IMPL doc path
+	// via Values["impl_path"] instead. Retained for future direct-field
+	// access once steps are updated.
 	IMPLPath string
-	WaveNum  int
-	Values   map[string]any
-	Errors   []result.SAWError
+	// WaveNum is unused by standard SAW steps; pass the wave number
+	// via Values["wave_num"] if needed. Retained for future use.
+	WaveNum int
+	Values  map[string]any
+	Errors  []result.SAWError
 }
 
 // GetValue retrieves a typed value from state.Values.
