@@ -10,12 +10,12 @@ import (
 	"testing"
 )
 
-// TestPrepareTier_ManifestNotFound verifies that PrepareTier returns an error
+// TestPrepareTier_ManifestNotFound verifies that PrepareTier returns a fatal result
 // when the manifest file does not exist.
 func TestPrepareTier_ManifestNotFound(t *testing.T) {
-	_, err := PrepareTier(PrepareTierOpts{ProgramManifestPath: "/nonexistent/path/program.yaml", TierNumber: 1, RepoDir: "."})
-	if err == nil {
-		t.Fatal("expected error for non-existent manifest path, got nil")
+	res := PrepareTier(PrepareTierOpts{ProgramManifestPath: "/nonexistent/path/program.yaml", TierNumber: 1, RepoDir: "."})
+	if !res.IsFatal() {
+		t.Fatal("expected fatal result for non-existent manifest path, got non-fatal")
 	}
 }
 
@@ -46,9 +46,9 @@ completion:
 	}
 	f.Close()
 
-	_, err = PrepareTier(PrepareTierOpts{ProgramManifestPath: f.Name(), TierNumber: 99, RepoDir: "."})
-	if err == nil {
-		t.Fatal("expected error for missing tier, got nil")
+	res := PrepareTier(PrepareTierOpts{ProgramManifestPath: f.Name(), TierNumber: 99, RepoDir: "."})
+	if !res.IsFatal() {
+		t.Fatal("expected fatal result for missing tier, got non-fatal")
 	}
 }
 
@@ -249,10 +249,11 @@ func TestPrepareTier_E37NotRequired_SmallIMPL(t *testing.T) {
 
 	programPath := writeTempProgram(t, []string{slug})
 
-	result, err := PrepareTier(PrepareTierOpts{ProgramManifestPath: programPath, TierNumber: 1, RepoDir: repoDir})
-	if err != nil {
-		t.Fatalf("PrepareTier returned unexpected error: %v", err)
+	res := PrepareTier(PrepareTierOpts{ProgramManifestPath: programPath, TierNumber: 1, RepoDir: repoDir})
+	if res.IsFatal() {
+		t.Fatalf("PrepareTier returned unexpected fatal: %v", res.Errors)
 	}
+	result := res.GetData()
 
 	// Verify no E37 error appears in Validations.
 	for _, vr := range result.Validations {
@@ -277,10 +278,11 @@ func TestPrepareTier_E37Required_MissingReport(t *testing.T) {
 
 	programPath := writeTempProgram(t, []string{slug})
 
-	result, err := PrepareTier(PrepareTierOpts{ProgramManifestPath: programPath, TierNumber: 1, RepoDir: repoDir})
-	if err != nil {
-		t.Fatalf("PrepareTier returned unexpected error: %v", err)
+	res := PrepareTier(PrepareTierOpts{ProgramManifestPath: programPath, TierNumber: 1, RepoDir: repoDir})
+	if res.IsFatal() {
+		t.Fatalf("PrepareTier returned unexpected fatal: %v", res.Errors)
 	}
+	result := res.GetData()
 
 	if result.Success {
 		t.Fatal("expected PrepareTier to fail for 3-agent IMPL with no CriticReport, got Success=true")
@@ -321,10 +323,11 @@ func TestPrepareTier_E37Required_WithPassReport(t *testing.T) {
 
 	programPath := writeTempProgram(t, []string{slug})
 
-	result, err := PrepareTier(PrepareTierOpts{ProgramManifestPath: programPath, TierNumber: 1, RepoDir: repoDir})
-	if err != nil {
-		t.Fatalf("PrepareTier returned unexpected error: %v", err)
+	res := PrepareTier(PrepareTierOpts{ProgramManifestPath: programPath, TierNumber: 1, RepoDir: repoDir})
+	if res.IsFatal() {
+		t.Fatalf("PrepareTier returned unexpected fatal: %v", res.Errors)
 	}
+	result := res.GetData()
 
 	// Verify no E37 error appears in Validations.
 	for _, vr := range result.Validations {
@@ -352,10 +355,11 @@ func TestPrepareTier_CollectsAllE37Failures(t *testing.T) {
 
 	programPath := writeTempProgram(t, slugs)
 
-	result, err := PrepareTier(PrepareTierOpts{ProgramManifestPath: programPath, TierNumber: 1, RepoDir: repoDir})
-	if err != nil {
-		t.Fatalf("PrepareTier returned unexpected error: %v", err)
+	res := PrepareTier(PrepareTierOpts{ProgramManifestPath: programPath, TierNumber: 1, RepoDir: repoDir})
+	if res.IsFatal() {
+		t.Fatalf("PrepareTier returned unexpected fatal: %v", res.Errors)
 	}
+	result := res.GetData()
 
 	if result.Success {
 		t.Fatal("expected PrepareTier to fail when all IMPLs have E37 failures, got Success=true")
@@ -390,15 +394,16 @@ func TestPrepareTier_SkipCritic(t *testing.T) {
 
 	programPath := writeTempProgram(t, slugs)
 
-	result, err := PrepareTier(PrepareTierOpts{
+	res := PrepareTier(PrepareTierOpts{
 		ProgramManifestPath: programPath,
 		TierNumber:          1,
 		RepoDir:             repoDir,
 		SkipCritic:          true,
 	})
-	if err != nil {
-		t.Fatalf("PrepareTier returned unexpected error: %v", err)
+	if res.IsFatal() {
+		t.Fatalf("PrepareTier returned unexpected fatal: %v", res.Errors)
 	}
+	result := res.GetData()
 
 	// Verify no E37 failures in result.Validations.
 	for _, vr := range result.Validations {
@@ -426,10 +431,11 @@ func TestSkipCriticForIMPL_WritesPass(t *testing.T) {
 		t.Fatalf("failed to load IMPL: %v", err)
 	}
 
-	skipped, err := SkipCriticForIMPL(context.TODO(), implPath, m)
-	if err != nil {
-		t.Fatalf("SkipCriticForIMPL returned error: %v", err)
+	skipRes := SkipCriticForIMPL(context.TODO(), implPath, m)
+	if skipRes.IsFatal() {
+		t.Fatalf("SkipCriticForIMPL returned fatal: %v", skipRes.Errors)
 	}
+	skipped := skipRes.GetData()
 	if !skipped {
 		t.Fatal("expected SkipCriticForIMPL to return true (skip written), got false")
 	}
@@ -584,10 +590,11 @@ func TestSkipCriticForIMPL_NotRequired(t *testing.T) {
 		t.Fatalf("failed to load IMPL: %v", err)
 	}
 
-	skipped, err := SkipCriticForIMPL(context.TODO(), implPath, m)
-	if err != nil {
-		t.Fatalf("SkipCriticForIMPL returned unexpected error: %v", err)
+	skipRes := SkipCriticForIMPL(context.TODO(), implPath, m)
+	if skipRes.IsFatal() {
+		t.Fatalf("SkipCriticForIMPL returned unexpected fatal: %v", skipRes.Errors)
 	}
+	skipped := skipRes.GetData()
 	if skipped {
 		t.Fatal("expected SkipCriticForIMPL to return false (not required), got true")
 	}
