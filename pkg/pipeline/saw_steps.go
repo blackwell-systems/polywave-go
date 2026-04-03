@@ -23,7 +23,7 @@ func requiredKey(state *State, key string) result.Result[KeyData] {
 	v, ok := GetValue[any](state, key)
 	if !ok || v == nil {
 		return result.NewFailure[KeyData]([]result.SAWError{
-			result.NewFatal("REQUIRED_KEY_MISSING",
+			result.NewFatal(result.CodeRequiredKeyMissing,
 				fmt.Sprintf("required state key %q not set", key)),
 		})
 	}
@@ -35,7 +35,7 @@ func requiredKey(state *State, key string) result.Result[KeyData] {
 func requiredKeyErr(state *State, key string) error {
 	r := requiredKey(state, key)
 	if r.IsFatal() {
-		return fmt.Errorf("%s", r.Errors[0].Message)
+		return r.Errors[0]
 	}
 	return nil
 }

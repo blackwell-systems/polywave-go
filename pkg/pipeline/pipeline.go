@@ -68,7 +68,7 @@ func (p *Pipeline) Run(ctx context.Context, state *State) result.Result[RunData]
 		select {
 		case <-ctx.Done():
 			return result.NewFailure[RunData]([]result.SAWError{
-				result.NewFatal("PIPELINE_RUN_FAILED",
+				result.NewFatal(result.CodePipelineRunFailed,
 					fmt.Sprintf("pipeline %q cancelled before step %q: %v", p.name, step.Name, ctx.Err())),
 			})
 		default:
@@ -95,7 +95,7 @@ func (p *Pipeline) Run(ctx context.Context, state *State) result.Result[RunData]
 				}
 			default: // ErrorFail or unset
 				return result.NewFailure[RunData]([]result.SAWError{
-					result.NewFatal("PIPELINE_RUN_FAILED",
+					result.NewFatal(result.CodePipelineRunFailed,
 						fmt.Sprintf("pipeline %q step %q failed: %s",
 							p.name, step.Name, stepResult.Errors[0].Message)),
 				})
@@ -135,7 +135,7 @@ func shouldRun(condition string, state *State) bool {
 func executeStep(ctx context.Context, step Step, state *State) result.Result[StepData] {
 	if step.Func == nil {
 		return result.NewFailure[StepData]([]result.SAWError{
-			result.NewFatal("STEP_EXECUTION_FAILED",
+			result.NewFatal(result.CodeStepExecutionFailed,
 				fmt.Sprintf("step %q has no function", step.Name)),
 		})
 	}
@@ -145,7 +145,7 @@ func executeStep(ctx context.Context, step Step, state *State) result.Result[Ste
 	if step.ErrorStrategy != ErrorRetry {
 		if err := step.Func(ctx, state); err != nil {
 			return result.NewFailure[StepData]([]result.SAWError{
-				result.NewFatal("STEP_EXECUTION_FAILED", err.Error()).WithCause(err),
+				result.NewFatal(result.CodeStepExecutionFailed, err.Error()).WithCause(err),
 			})
 		}
 		return result.NewSuccess(StepData{
@@ -166,7 +166,7 @@ func executeStep(ctx context.Context, step Step, state *State) result.Result[Ste
 		select {
 		case <-ctx.Done():
 			return result.NewFailure[StepData]([]result.SAWError{
-				result.NewFatal("STEP_EXECUTION_FAILED", ctx.Err().Error()).WithCause(ctx.Err()),
+				result.NewFatal(result.CodeStepExecutionFailed, ctx.Err().Error()).WithCause(ctx.Err()),
 			})
 		default:
 		}
@@ -180,6 +180,6 @@ func executeStep(ctx context.Context, step Step, state *State) result.Result[Ste
 		}
 	}
 	return result.NewFailure[StepData]([]result.SAWError{
-		result.NewFatal("STEP_EXECUTION_FAILED", lastErr.Error()).WithCause(lastErr),
+		result.NewFatal(result.CodeStepExecutionFailed, lastErr.Error()).WithCause(lastErr),
 	})
 }
