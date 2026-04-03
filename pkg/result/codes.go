@@ -19,6 +19,7 @@
 //	X001-X099: Scout automation static analysis errors (check-callers, check-test-cascade, suggest-wave-structure)
 //	Q001-Q099: Queue errors
 //	R001-R099: Retry errors
+//	J001-J099: Journal errors (archive, checkpoint, observer operations)
 package result
 
 // Validation error codes (V001-V099)
@@ -370,5 +371,23 @@ const (
 	CodeWaveStructureCallerBefore = "X004_WAVE_STRUCTURE_CALLER_BEFORE"
 	// CodeWaveStructureMissingDep is emitted when callers in a later wave lack depends_on for the changing agent
 	CodeWaveStructureMissingDep = "X005_WAVE_STRUCTURE_MISSING_DEP"
+)
+
+// Journal error codes (J001-J099)
+const (
+	CodeJournalArchiveCreateFailed  = "J001_ARCHIVE_CREATE_FAILED"
+	CodeJournalArchiveMetaFailed    = "J002_ARCHIVE_META_FAILED"
+	CodeJournalArchiveExtractFailed = "J003_ARCHIVE_EXTRACT_FAILED"
+	CodeJournalArchiveListFailed    = "J004_ARCHIVE_LIST_FAILED"
+	CodeJournalArchiveCleanupFailed = "J005_ARCHIVE_CLEANUP_FAILED"
+	CodeJournalCheckpointInvalidName   = "J006_CHECKPOINT_INVALID_NAME"
+	CodeJournalCheckpointCreateFailed  = "J007_CHECKPOINT_CREATE_FAILED"
+	CodeJournalCheckpointAlreadyExists = "J008_CHECKPOINT_ALREADY_EXISTS"
+	CodeJournalCheckpointNotFound      = "J009_CHECKPOINT_NOT_FOUND"
+	CodeJournalCheckpointCopyFailed    = "J010_CHECKPOINT_COPY_FAILED"
+	CodeJournalCheckpointDeleteFailed  = "J011_CHECKPOINT_DELETE_FAILED"
+	CodeJournalObserverCursorFailed    = "J012_OBSERVER_CURSOR_FAILED"
+	CodeJournalObserverAppendFailed    = "J013_OBSERVER_APPEND_FAILED"
+	CodeJournalObserverUpdateFailed    = "J014_OBSERVER_UPDATE_FAILED"
 )
 
