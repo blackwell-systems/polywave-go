@@ -47,7 +47,7 @@ type VerifyCommitsData struct {
 //   - FATAL (Code="FATAL"): System-level failure (cannot load manifest, wave not found, etc.)
 func VerifyCommits(ctx context.Context, manifestPath string, waveNum int, repoDir string) result.Result[VerifyCommitsData] {
 	// Load the manifest
-	manifest, err := Load(context.TODO(), manifestPath)
+	manifest, err := Load(ctx, manifestPath)
 	if err != nil {
 		return result.NewFailure[VerifyCommitsData]([]result.SAWError{
 			{

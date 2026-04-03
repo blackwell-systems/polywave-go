@@ -101,9 +101,9 @@ func TestCleanup_AllRemoved(t *testing.T) {
 	}
 
 	// Run cleanup
-	cleanupResult, err := Cleanup(context.Background(), manifestPath, 1, tmpDir, nil)
-	if err != nil {
-		t.Fatalf("Cleanup failed: %v", err)
+	cleanupResult := Cleanup(context.Background(), manifestPath, 1, tmpDir, nil)
+	if cleanupResult.IsFatal() {
+		t.Fatalf("Cleanup failed: %+v", cleanupResult.Errors)
 	}
 	result := cleanupResult.GetData()
 
@@ -208,9 +208,9 @@ func TestCleanup_AlreadyGone(t *testing.T) {
 	}
 
 	// Run cleanup on nonexistent worktrees/branches (idempotent test)
-	cleanupResult, err := Cleanup(context.Background(), manifestPath, 1, tmpDir, nil)
-	if err != nil {
-		t.Fatalf("Cleanup failed: %v", err)
+	cleanupResult := Cleanup(context.Background(), manifestPath, 1, tmpDir, nil)
+	if cleanupResult.IsFatal() {
+		t.Fatalf("Cleanup failed: %+v", cleanupResult.Errors)
 	}
 	result := cleanupResult.GetData()
 
@@ -268,18 +268,19 @@ func TestCleanup_WaveNotFound(t *testing.T) {
 	}
 
 	// Try to cleanup wave 2 (doesn't exist)
-	cleanupResult, err := Cleanup(context.Background(), manifestPath, 2, tmpDir, nil)
-	if err == nil {
-		t.Fatalf("expected error for nonexistent wave, got nil")
-	}
-	if cleanupResult.IsSuccess() {
-		t.Errorf("expected non-success result for nonexistent wave, got success")
+	cleanupResult := Cleanup(context.Background(), manifestPath, 2, tmpDir, nil)
+	if !cleanupResult.IsFatal() {
+		t.Fatalf("expected fatal result for nonexistent wave, got non-fatal")
 	}
 
 	// Verify error message mentions the wave number
 	expectedErrMsg := "wave 2 not found in manifest"
-	if err.Error() != expectedErrMsg {
-		t.Errorf("expected error message %q, got %q", expectedErrMsg, err.Error())
+	if len(cleanupResult.Errors) == 0 || cleanupResult.Errors[0].Message != expectedErrMsg {
+		msg := ""
+		if len(cleanupResult.Errors) > 0 {
+			msg = cleanupResult.Errors[0].Message
+		}
+		t.Errorf("expected error message %q, got %q", expectedErrMsg, msg)
 	}
 }
 
@@ -358,9 +359,9 @@ func TestCleanup_PartialFailure(t *testing.T) {
 	}
 
 	// Run cleanup (should handle both existing and nonexistent gracefully)
-	cleanupResult, err := Cleanup(context.Background(), manifestPath, 1, tmpDir, nil)
-	if err != nil {
-		t.Fatalf("Cleanup failed: %v", err)
+	cleanupResult := Cleanup(context.Background(), manifestPath, 1, tmpDir, nil)
+	if cleanupResult.IsFatal() {
+		t.Fatalf("Cleanup failed: %+v", cleanupResult.Errors)
 	}
 	result := cleanupResult.GetData()
 
@@ -507,9 +508,9 @@ func TestCleanup_ForcesDeleteUnmergedBranches(t *testing.T) {
 	}
 
 	// Run cleanup (should force-delete the branch)
-	cleanupResult, err := Cleanup(context.Background(), manifestPath, 1, tmpDir, nil)
-	if err != nil {
-		t.Fatalf("Cleanup failed: %v", err)
+	cleanupResult := Cleanup(context.Background(), manifestPath, 1, tmpDir, nil)
+	if cleanupResult.IsFatal() {
+		t.Fatalf("Cleanup failed: %+v", cleanupResult.Errors)
 	}
 	result := cleanupResult.GetData()
 
@@ -614,9 +615,9 @@ func TestCleanup_IdempotentBranchDeletion(t *testing.T) {
 	}
 
 	// Run cleanup (should be idempotent)
-	cleanupResult, err := Cleanup(context.Background(), manifestPath, 1, tmpDir, nil)
-	if err != nil {
-		t.Fatalf("Cleanup failed: %v", err)
+	cleanupResult := Cleanup(context.Background(), manifestPath, 1, tmpDir, nil)
+	if cleanupResult.IsFatal() {
+		t.Fatalf("Cleanup failed: %+v", cleanupResult.Errors)
 	}
 	result := cleanupResult.GetData()
 
@@ -718,9 +719,9 @@ func TestCleanup_PrunesStaleWorktrees(t *testing.T) {
 	}
 
 	// Run cleanup — this should prune stale entries at the end
-	_, err = Cleanup(context.Background(), manifestPath, 1, tmpDir, nil)
-	if err != nil {
-		t.Fatalf("Cleanup failed: %v", err)
+	pruneResult := Cleanup(context.Background(), manifestPath, 1, tmpDir, nil)
+	if pruneResult.IsFatal() {
+		t.Fatalf("Cleanup failed: %+v", pruneResult.Errors)
 	}
 
 	// Verify the stale worktree entry was pruned
@@ -796,9 +797,9 @@ func TestCleanup_LegacyBranchFallback(t *testing.T) {
 	}
 
 	// Run cleanup — should find and clean up the legacy branch
-	cleanupResult, err := Cleanup(context.Background(), manifestPath, 1, tmpDir, nil)
-	if err != nil {
-		t.Fatalf("Cleanup failed: %v", err)
+	cleanupResult := Cleanup(context.Background(), manifestPath, 1, tmpDir, nil)
+	if cleanupResult.IsFatal() {
+		t.Fatalf("Cleanup failed: %+v", cleanupResult.Errors)
 	}
 	result := cleanupResult.GetData()
 
@@ -898,10 +899,11 @@ func TestCleanupAllStale_EmptyRepo(t *testing.T) {
 		t.Fatalf("failed to create initial commit: %v", err)
 	}
 
-	result, err := CleanupAllStale(context.Background(), tmpDir, false)
-	if err != nil {
-		t.Fatalf("CleanupAllStale on empty repo failed: %v", err)
+	res := CleanupAllStale(context.Background(), tmpDir, false)
+	if res.IsFatal() {
+		t.Fatalf("CleanupAllStale on empty repo failed: %+v", res.Errors)
 	}
+	result := res.GetData()
 	if result == nil {
 		t.Fatal("expected non-nil result")
 	}
