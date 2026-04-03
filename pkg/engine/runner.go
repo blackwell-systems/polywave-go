@@ -1023,10 +1023,8 @@ func UpdateIMPLStatus(implDocPath string, completedLetters []string) result.Resu
 // ValidateInvariants validates disjoint file ownership invariants.
 // Delegates to pkg/protocol.ValidateInvariants.
 func ValidateInvariants(manifest *protocol.IMPLManifest) result.Result[ValidateData] {
-	if err := protocol.ValidateInvariants(manifest); err != nil {
-		return result.NewFailure[ValidateData]([]result.SAWError{
-			result.NewFatal(result.CodeValidateFailed, err.Error()).WithCause(err),
-		})
+	if errs := protocol.ValidateInvariants(manifest); len(errs) > 0 {
+		return result.NewFailure[ValidateData](errs)
 	}
 	return result.NewSuccess(ValidateData{Valid: true})
 }

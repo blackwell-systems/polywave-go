@@ -8,15 +8,14 @@ import (
 	"bufio"
 	"fmt"
 	"strings"
+
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
 )
 
 
-// ValidateInvariants checks Invariant I1: no file appears in two different
-// agents' ownership lists within the same wave. For cross-repo waves, the key
-// is "repo:file" so files with the same name in different repos are not flagged.
-// Returns a descriptive error for the first violation found, or nil if the
-// document is clean.
-func ValidateInvariants(manifest *IMPLManifest) error {
+// ValidateInvariants checks protocol Invariant I1 (disjoint file ownership).
+// For full I1–I6 validation use Validate.
+func ValidateInvariants(manifest *IMPLManifest) []result.SAWError {
 	if manifest == nil {
 		return nil
 	}
@@ -38,10 +37,11 @@ func ValidateInvariants(manifest *IMPLManifest) error {
 				}
 				key := repo + ":" + file
 				if prev, ok := seen[key]; ok {
-					return fmt.Errorf(
+					msg := fmt.Sprintf(
 						"I1 violation in Wave %d: file %q claimed by both Agent %s and Agent %s",
 						wave.Number, file, prev, agent.ID,
 					)
+					return []result.SAWError{result.NewFatal(result.CodeDisjointOwnership, msg)}
 				}
 				seen[key] = agent.ID
 			}

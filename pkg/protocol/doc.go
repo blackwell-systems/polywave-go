@@ -24,7 +24,7 @@
 //	waves:
 //	  - number: 1
 //	    agents:
-//	      - letter: A
+//	      - id: A
 //	        task: Implement user authentication logic
 //	        completion:
 //	          status: complete
@@ -54,7 +54,7 @@
 //
 // # Validation
 //
-// ValidateInvariants checks protocol invariants (I1–I6):
+// ValidateInvariants checks I1 only; use Validate for I1–I6:
 //
 //	violations := protocol.ValidateInvariants(manifest)
 //	if len(violations) > 0 {
