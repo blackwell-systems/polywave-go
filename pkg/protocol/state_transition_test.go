@@ -134,6 +134,53 @@ func TestSetImplState_ReviewedToComplete(t *testing.T) {
 	}
 }
 
+func TestIsValidTransition(t *testing.T) {
+	valid := []struct {
+		from, to ProtocolState
+	}{
+		// Core happy-path transitions
+		{StateScoutPending, StateReviewed},
+		{StateScoutPending, StateScoutValidating},
+		{StateScoutPending, StateNotSuitable},
+		{StateScoutValidating, StateReviewed},
+		{StateReviewed, StateWavePending},
+		// close-impl without wave execution
+		{StateReviewed, StateComplete},
+		{StateWavePending, StateWaveExecuting},
+		{StateWaveExecuting, StateWaveMerging},
+		{StateWaveMerging, StateWaveVerified},
+		{StateWaveVerified, StateComplete},
+		{StateWaveVerified, StateWavePending},
+		// Blocked recovery paths
+		{StateBlocked, StateReviewed},
+		{StateBlocked, StateWaveExecuting},
+		{StateBlocked, StateWavePending},
+	}
+	for _, tc := range valid {
+		if !IsValidTransition(tc.from, tc.to) {
+			t.Errorf("IsValidTransition(%s, %s) = false, want true", tc.from, tc.to)
+		}
+	}
+
+	invalid := []struct {
+		from, to ProtocolState
+	}{
+		// Terminal states cannot be exited
+		{StateComplete, StateWavePending},
+		{StateComplete, StateReviewed},
+		{StateNotSuitable, StateReviewed},
+		// Backwards jumps not permitted
+		{StateScoutPending, StateWaveExecuting},
+		{StateScoutPending, StateComplete},
+		{StateWaveExecuting, StateWavePending},
+	}
+	for _, tc := range invalid {
+		if IsValidTransition(tc.from, tc.to) {
+			t.Errorf("IsValidTransition(%s, %s) = true, want false", tc.from, tc.to)
+		}
+	}
+}
+
 // containsAll returns true if s contains all of the given substrings.
 func containsAll(s string, subs ...string) bool {
 	for _, sub := range subs {

@@ -26,8 +26,8 @@ type SetImplStateData struct {
 
 // allowedTransitions maps each state to the set of valid next states.
 var allowedTransitions = map[ProtocolState][]ProtocolState{
-	StateScoutPending:    {StateReviewed, StateNotSuitable},
-	StateScoutValidating: {StateReviewed, StateNotSuitable},
+	StateScoutPending:    {StateScoutValidating, StateReviewed, StateNotSuitable, StateBlocked},
+	StateScoutValidating: {StateScoutValidating, StateReviewed, StateNotSuitable, StateBlocked},
 	// StateReviewed allows direct transition to COMPLETE for close-impl
 	// without wave execution (e.g., NOT_SUITABLE after review, or manual closure)
 	StateReviewed:        {StateScaffoldPending, StateWavePending, StateWaveExecuting, StateBlocked, StateComplete},
@@ -36,9 +36,30 @@ var allowedTransitions = map[ProtocolState][]ProtocolState{
 	StateWaveExecuting:   {StateWaveMerging, StateWaveVerified, StateBlocked, StateComplete},
 	StateWaveMerging:     {StateWaveVerified, StateBlocked},
 	StateWaveVerified:    {StateWavePending, StateWaveExecuting, StateComplete, StateBlocked},
-	StateBlocked:         {StateReviewed, StateWaveExecuting, StateWavePending},
-	StateComplete:        {},
-	StateNotSuitable:     {},
+	// StateBlocked can recover to any non-terminal state, or to terminal states
+	// when the operator manually closes a blocked IMPL.
+	StateBlocked: {
+		StateScoutPending, StateScoutValidating, StateReviewed,
+		StateScaffoldPending, StateWavePending, StateWaveExecuting,
+		StateWaveMerging, StateWaveVerified, StateComplete, StateNotSuitable,
+	},
+	StateComplete:    {},
+	StateNotSuitable: {},
+}
+
+// IsValidTransition reports whether transitioning from -> to is a valid
+// protocol state machine transition per the canonical allowedTransitions map.
+func IsValidTransition(from, to ProtocolState) bool {
+	allowed, ok := allowedTransitions[from]
+	if !ok {
+		return false
+	}
+	for _, s := range allowed {
+		if s == to {
+			return true
+		}
+	}
+	return false
 }
 
 // SetImplState atomically reads the manifest, validates the state transition,

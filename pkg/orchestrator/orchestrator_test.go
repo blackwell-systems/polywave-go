@@ -432,7 +432,10 @@ func TestIsValidTransition(t *testing.T) {
 	valid := []struct{ from, to protocol.ProtocolState }{
 		{protocol.StateScoutPending, protocol.StateReviewed},
 		{protocol.StateScoutPending, protocol.StateNotSuitable},
+		{protocol.StateScoutPending, protocol.StateScoutValidating},
 		{protocol.StateReviewed, protocol.StateWavePending},
+		// StateReviewed -> StateComplete is valid for close-impl without wave execution.
+		{protocol.StateReviewed, protocol.StateComplete},
 		{protocol.StateWavePending, protocol.StateWaveExecuting},
 		{protocol.StateWaveExecuting, protocol.StateWaveMerging},
 		{protocol.StateWaveMerging, protocol.StateWaveVerified},
@@ -448,7 +451,6 @@ func TestIsValidTransition(t *testing.T) {
 	invalid := []struct{ from, to protocol.ProtocolState }{
 		{protocol.StateScoutPending, protocol.StateComplete},
 		{protocol.StateScoutPending, protocol.StateWaveExecuting},
-		{protocol.StateReviewed, protocol.StateComplete},
 		{protocol.StateNotSuitable, protocol.StateReviewed},
 		{protocol.StateComplete, protocol.StateWavePending},
 		{protocol.StateWaveExecuting, protocol.StateWavePending},
