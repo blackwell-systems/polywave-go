@@ -8,6 +8,7 @@
 //	G001-G099: Git errors (merge conflicts, worktree, commit issues)
 //	A001-A099: Agent errors (launch, timeout, brief extraction)
 //	N001-N099: Engine errors (orchestration, state machine)
+//	O001-O099: Observability errors (emit, query failures)
 //	P001-P099: Protocol errors (invariant violations, execution rules)
 //	T001-T099: Tool/parse errors (errparse output, tool runner failures)
 //	S001-S099: Suitability error codes
@@ -425,5 +426,13 @@ const (
 	CodeJournalObserverCursorFailed    = "J012_OBSERVER_CURSOR_FAILED"
 	CodeJournalObserverAppendFailed    = "J013_OBSERVER_APPEND_FAILED"
 	CodeJournalObserverUpdateFailed    = "J014_OBSERVER_UPDATE_FAILED"
+)
+
+// Observability error codes (O001-O099)
+const (
+	// CodeObsEmitFailed is emitted when EmitSync fails to record an event.
+	CodeObsEmitFailed = "O001_OBS_EMIT_FAILED"
+	// CodeObsQueryFailed is emitted when Query or a query helper fails to retrieve events.
+	CodeObsQueryFailed = "O002_OBS_QUERY_FAILED"
 )
 
