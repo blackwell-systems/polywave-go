@@ -679,9 +679,9 @@ func MarkIMPLComplete(ctx context.Context, opts MarkIMPLCompleteOpts) result.Res
 	}
 
 	// Archive: move IMPL from docs/IMPL/ to docs/IMPL/complete/
-	if _, err := protocol.ArchiveIMPL(ctx, opts.IMPLPath); err != nil {
+	if archRes := protocol.ArchiveIMPL(ctx, opts.IMPLPath); archRes.IsFatal() {
 		return result.NewFailure[MarkCompleteData]([]result.SAWError{
-			result.NewFatal(result.CodeMarkCompleteFailed, "engine.MarkIMPLComplete: archive failed").WithCause(err),
+			result.NewFatal(result.CodeMarkCompleteFailed, "engine.MarkIMPLComplete: archive failed"),
 		})
 	}
 
