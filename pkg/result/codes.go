@@ -21,7 +21,7 @@
 //	R001-R099: Retry errors
 //	J001-J099: Journal errors (archive, checkpoint, observer operations)
 //	B009: gate validation failed (closed-loop gate retry input validation)
-//	N091-N095: engine init, already initialized, finalize step failed, manifest save failed, completion report set failed
+//	N091-N098: engine init, pipeline, and step failures
 //	P008-P013: type collision fatal, critic gate failed, tier conflict detected, wave not found, unknown agent in ownership, amend blocked
 //	K007: cache build key cancelled
 package result
@@ -256,6 +256,12 @@ const (
 	CodeManifestSaveFailed = "N094_MANIFEST_SAVE_FAILED"
 	// N095: completion report set failed
 	CodeReportSetFailed = "N095_REPORT_SET_FAILED"
+	// N096: pipeline Run aborted (step failure or context cancellation)
+	CodePipelineRunFailed = "N096_PIPELINE_RUN_FAILED"
+	// N097: pipeline step failed (nil Func, context cancel, retry exhausted)
+	CodeStepExecutionFailed = "N097_STEP_EXECUTION_FAILED"
+	// N098: required pipeline state key absent or nil
+	CodeRequiredKeyMissing = "N098_REQUIRED_KEY_MISSING"
 )
 
 // Queue error codes (Q001-Q099)

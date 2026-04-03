@@ -3,6 +3,8 @@ package pipeline
 import (
 	"context"
 	"testing"
+
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
 )
 
 // stateWithKeys builds a State that has the given key→value pairs set.
@@ -24,8 +26,8 @@ func TestRequiredKey_Missing(t *testing.T) {
 	if len(r.Errors) == 0 {
 		t.Fatal("expected at least one error in FATAL result")
 	}
-	if r.Errors[0].Code != "REQUIRED_KEY_MISSING" {
-		t.Errorf("expected code REQUIRED_KEY_MISSING, got %q", r.Errors[0].Code)
+	if r.Errors[0].Code != result.CodeRequiredKeyMissing {
+		t.Errorf("expected code %q, got %q", result.CodeRequiredKeyMissing, r.Errors[0].Code)
 	}
 }
 
@@ -54,8 +56,8 @@ func TestRequiredKey_NilValues(t *testing.T) {
 	if !r.IsFatal() {
 		t.Fatal("expected FATAL result when state.Values is nil")
 	}
-	if r.Errors[0].Code != "REQUIRED_KEY_MISSING" {
-		t.Errorf("expected code REQUIRED_KEY_MISSING, got %q", r.Errors[0].Code)
+	if r.Errors[0].Code != result.CodeRequiredKeyMissing {
+		t.Errorf("expected code %q, got %q", result.CodeRequiredKeyMissing, r.Errors[0].Code)
 	}
 }
 
