@@ -10,6 +10,7 @@ import (
 	"log/slog"
 
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
 )
 
 // ImportImplsOpts configures an ImportImpls run.
@@ -22,8 +23,8 @@ type ImportImplsOpts struct {
 }
 
 // ImportImpls handles IMPL discovery, manifest parsing/creation, tier
-// assignment, and PROGRAM manifest save. It returns protocol.ImportIMPLsData.
-func ImportImpls(_ context.Context, opts ImportImplsOpts) (protocol.ImportIMPLsData, error) {
+// assignment, and PROGRAM manifest save. It returns result.Result[protocol.ImportIMPLsData].
+func ImportImpls(ctx context.Context, opts ImportImplsOpts) result.Result[protocol.ImportIMPLsData] {
 	// Discover IMPL files if requested
 	var implPaths []string
 	var discoveredPaths []string
@@ -35,7 +36,9 @@ func ImportImpls(_ context.Context, opts ImportImplsOpts) (protocol.ImportIMPLsD
 		for _, pattern := range patterns {
 			matches, err := filepath.Glob(pattern)
 			if err != nil {
-				return protocol.ImportIMPLsData{}, fmt.Errorf("import-impls: glob error: %w", err)
+				return result.NewFailure[protocol.ImportIMPLsData]([]result.SAWError{
+					result.NewFatal(result.CodePrepareWaveFailed, fmt.Sprintf("import-impls: glob error: %v", err)),
+				})
 			}
 			implPaths = append(implPaths, matches...)
 		}
@@ -45,7 +48,9 @@ func ImportImpls(_ context.Context, opts ImportImplsOpts) (protocol.ImportIMPLsD
 	}
 
 	if len(implPaths) == 0 {
-		return protocol.ImportIMPLsData{}, fmt.Errorf("import-impls: no IMPL docs found")
+		return result.NewFailure[protocol.ImportIMPLsData]([]result.SAWError{
+			result.NewFatal(result.CodeIMPLNotFound, "import-impls: no IMPL docs found"),
+		})
 	}
 
 	// Parse or create program manifest
@@ -63,7 +68,9 @@ func ImportImpls(_ context.Context, opts ImportImplsOpts) (protocol.ImportIMPLsD
 			}
 			created = true
 		} else {
-			return protocol.ImportIMPLsData{}, fmt.Errorf("import-impls: failed to parse program manifest: %w", err)
+			return result.NewFailure[protocol.ImportIMPLsData]([]result.SAWError{
+				result.NewFatal(result.CodeIMPLParseFailed, fmt.Sprintf("import-impls: failed to parse program manifest: %v", err)),
+			})
 		}
 	}
 
@@ -80,9 +87,9 @@ func ImportImpls(_ context.Context, opts ImportImplsOpts) (protocol.ImportIMPLsD
 	// Parse each IMPL doc and build imported entries
 	var imported []protocol.ImportedIMPL
 	for _, implPath := range implPaths {
-		implDoc, loadErr := protocol.Load(context.TODO(), implPath)
+		implDoc, loadErr := protocol.Load(ctx, implPath)
 		if loadErr != nil {
-			fmt.Fprintf(os.Stderr, "import-impls: warning: failed to load %s: %v\n", implPath, loadErr)
+			slog.WarnContext(ctx, "import-impls: failed to load IMPL doc", "path", implPath, "err", loadErr)
 			continue
 		}
 
@@ -188,14 +195,18 @@ func ImportImpls(_ context.Context, opts ImportImplsOpts) (protocol.ImportIMPLsD
 
 	// Write updated manifest
 	if err := os.MkdirAll(filepath.Dir(opts.ProgramPath), 0755); err != nil {
-		return protocol.ImportIMPLsData{}, fmt.Errorf("import-impls: failed to create directory: %w", err)
+		return result.NewFailure[protocol.ImportIMPLsData]([]result.SAWError{
+			result.NewFatal(result.CodeWriteManifestFailed, fmt.Sprintf("import-impls: failed to create directory: %v", err)),
+		})
 	}
 	if err := protocol.SaveYAML(opts.ProgramPath, manifest); err != nil {
-		return protocol.ImportIMPLsData{}, fmt.Errorf("import-impls: %w", err)
+		return result.NewFailure[protocol.ImportIMPLsData]([]result.SAWError{
+			result.NewFatal(result.CodeWriteManifestFailed, fmt.Sprintf("import-impls: failed to save manifest: %v", err)),
+		})
 	}
 
-	// Build result
-	result := protocol.ImportIMPLsData{
+	// Build data
+	data := protocol.ImportIMPLsData{
 		ManifestPath:    opts.ProgramPath,
 		ImplsImported:   imported,
 		TierAssignments: tierAssignments,
@@ -205,10 +216,10 @@ func ImportImpls(_ context.Context, opts ImportImplsOpts) (protocol.ImportIMPLsD
 		Updated:         !created,
 	}
 	if opts.Discover {
-		result.ImplsDiscovered = discoveredPaths
+		data.ImplsDiscovered = discoveredPaths
 	}
 
-	return result, nil
+	return result.NewSuccess(data)
 }
 
 // rebuildTiers rebuilds the Tiers slice from IMPL tier assignments.

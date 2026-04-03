@@ -48,17 +48,20 @@ Examples:
 				repoDir = cwd
 			}
 
-			result, err := engine.ImportImpls(cmd.Context(), engine.ImportImplsOpts{
+			res := engine.ImportImpls(cmd.Context(), engine.ImportImplsOpts{
 				ProgramPath: programPath,
 				FromImpls:   fromImpls,
 				Discover:    discover,
 				RepoDir:     repoDir,
 			})
-			if err != nil {
-				return err
+			if res.IsFatal() {
+				if len(res.Errors) > 0 {
+					return fmt.Errorf("%s", res.Errors[0].Message)
+				}
+				return fmt.Errorf("import-impls: operation failed")
 			}
 
-			out, _ := json.MarshalIndent(result, "", "  ")
+			out, _ := json.MarshalIndent(res.GetData(), "", "  ")
 			fmt.Fprintln(cmd.OutOrStdout(), string(out))
 
 			return nil

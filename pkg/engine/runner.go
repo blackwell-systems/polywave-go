@@ -9,7 +9,6 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/agent"
@@ -87,15 +86,16 @@ func RunScout(ctx context.Context, opts RunScoutOpts, onChunk func(string)) resu
 
 	// Load scout.md prompt (L1: no fallback — missing file is a fatal error).
 	scoutMdPath := filepath.Join(sawRepo, "implementations", "claude-code", "prompts", "agents", "scout.md")
-	scoutMdContent, err := LoadTypePromptWithRefs(scoutMdPath)
-	if err != nil {
+	scoutMdRes := LoadTypePromptWithRefs(scoutMdPath)
+	if scoutMdRes.IsFatal() {
 		return result.NewFailure[ScoutData]([]result.SAWError{
-			result.NewFatal(result.CodeScoutRunFailed, fmt.Sprintf("engine.RunScout: scout.md not found at %s", scoutMdPath)).WithCause(err),
+			result.NewFatal(result.CodeScoutRunFailed, fmt.Sprintf("engine.RunScout: scout.md not found at %s", scoutMdPath)),
 		})
 	}
+	scoutMdContent := scoutMdRes.GetData()
 
 	// Run automation tools (H1a, H2, H3) before launching Scout.
-	automationContext := runScoutAutomation(opts.RepoPath, opts.Feature)
+	automationContext := runScoutAutomation(ctx, opts.RepoPath, opts.Feature)
 
 	// Load program contracts if ProgramManifestPath is set.
 	programContractsSection := ""
@@ -219,11 +219,9 @@ func RunPlanner(ctx context.Context, opts RunPlannerOpts, onChunk func(string)) 
 
 	// Load planner.md prompt with fallback.
 	plannerMdPath := filepath.Join(sawRepo, "implementations", "claude-code", "prompts", "agents", "planner.md")
-	plannerMdContent, err := LoadTypePromptWithRefs(plannerMdPath)
-	if err != nil {
-		// Fallback: LoadTypePromptWithRefs only errors on ReadFile failure of
-		// the core file. Keep the same fallback behavior as before.
-		plannerMdContent = "You are a Planner agent. Analyze the project requirements and produce a PROGRAM manifest at the specified output path. Decompose the project into features organized into dependency-ordered tiers. Define cross-feature program contracts for shared types/APIs."
+	plannerMdContent := "You are a Planner agent. Analyze the project requirements and produce a PROGRAM manifest at the specified output path. Decompose the project into features organized into dependency-ordered tiers. Define cross-feature program contracts for shared types/APIs."
+	if plannerMdRes := LoadTypePromptWithRefs(plannerMdPath); plannerMdRes.IsSuccess() {
+		plannerMdContent = plannerMdRes.GetData()
 	}
 
 	// E17: Prepend docs/CONTEXT.md if present.
@@ -546,9 +544,6 @@ func StartWave(ctx context.Context, opts RunWaveOpts, onEvent func(Event)) resul
 	})
 }
 
-// gateChannels stores per-slug gate channels used to pause the wave loop between waves.
-var gateChannels sync.Map
-
 // RunScaffold checks for pending scaffold files and runs a Scaffold agent if needed.
 // The model parameter is optional; if empty, the backend uses its default model.
 func RunScaffold(opts RunScaffoldOpts) result.Result[ScaffoldData] {
@@ -604,9 +599,9 @@ func RunScaffold(opts RunScaffoldOpts) result.Result[ScaffoldData] {
 		sawRepo = filepath.Join(home, "code", "scout-and-wave")
 	}
 	scaffoldMdPath := filepath.Join(sawRepo, "implementations", "claude-code", "prompts", "agents", "scaffold-agent.md")
-	scaffoldMdContent, err := LoadTypePromptWithRefs(scaffoldMdPath)
-	if err != nil {
-		scaffoldMdContent = "You are a Scaffold Agent. Create the stub files defined in the IMPL doc Scaffolds section."
+	scaffoldMdContent := "You are a Scaffold Agent. Create the stub files defined in the IMPL doc Scaffolds section."
+	if scaffoldMdRes := LoadTypePromptWithRefs(scaffoldMdPath); scaffoldMdRes.IsSuccess() {
+		scaffoldMdContent = scaffoldMdRes.GetData()
 	}
 
 	prompt := fmt.Sprintf("%s\n\n## IMPL Doc Path\n%s\n", scaffoldMdContent, implPath)
@@ -652,23 +647,25 @@ func RunScaffold(opts RunScaffoldOpts) result.Result[ScaffoldData] {
 //	<!-- injected: references/<filename> -->
 //
 // Missing refsDir is not an error; returns core content only.
-func LoadTypePromptWithRefs(promptPath string) (string, error) {
+func LoadTypePromptWithRefs(promptPath string) result.Result[string] {
 	coreBytes, err := os.ReadFile(promptPath)
 	if err != nil {
-		return "", err
+		return result.NewFailure[string]([]result.SAWError{
+			result.NewFatal(result.CodeScoutRunFailed, fmt.Sprintf("LoadTypePromptWithRefs: cannot read prompt file %s: %v", promptPath, err)),
+		})
 	}
 	coreContent := string(coreBytes)
 
 	refsDir := filepath.Join(filepath.Dir(filepath.Dir(promptPath)), "references")
 	if _, statErr := os.Stat(refsDir); os.IsNotExist(statErr) {
-		return coreContent, nil
+		return result.NewSuccess(coreContent)
 	}
 
 	stem := strings.TrimSuffix(filepath.Base(promptPath), ".md")
-	matches, err := filepath.Glob(filepath.Join(refsDir, stem+"-*.md"))
-	if err != nil {
+	matches, globErr := filepath.Glob(filepath.Join(refsDir, stem+"-*.md"))
+	if globErr != nil {
 		// Glob only errors on malformed patterns; safe to skip
-		return coreContent, nil
+		return result.NewSuccess(coreContent)
 	}
 
 	var injectedParts []string
@@ -690,9 +687,9 @@ func LoadTypePromptWithRefs(promptPath string) (string, error) {
 	}
 
 	if len(injectedParts) == 0 {
-		return coreContent, nil
+		return result.NewSuccess(coreContent)
 	}
-	return strings.Join(injectedParts, "") + "\n\n" + coreContent, nil
+	return result.NewSuccess(strings.Join(injectedParts, "") + "\n\n" + coreContent)
 }
 
 // readContextMD reads docs/CONTEXT.md from repoPath and returns its contents (E17).
@@ -1161,11 +1158,11 @@ func (ji *JournalIntegration) ArchiveJournal(observer *journal.JournalObserver) 
 // runScoutAutomation runs the 5 scout automation tools (H1a, H2, H3) and
 // returns a markdown section to inject into the Scout prompt. All tools are
 // best-effort: failures are logged but don't block Scout execution.
-func runScoutAutomation(repoPath string, featureDescription string) string {
+func runScoutAutomation(ctx context.Context, repoPath string, featureDescription string) string {
 	var sections []string
 
 	// H2: Extract build/test/lint commands
-	commandsResult := commands.ExtractCommands(context.TODO(), repoPath)
+	commandsResult := commands.ExtractCommands(ctx, repoPath)
 	if commandsResult.IsFatal() {
 		sections = append(sections, "### Build/Test Commands (H2)\nNot detected")
 	} else {
@@ -1208,7 +1205,7 @@ func runScoutAutomation(repoPath string, featureDescription string) string {
 	}
 
 	// H3: Analyze dependencies
-	depsResult, depsErr := analyzer.AnalyzeDeps(context.Background(), repoPath, targetFiles)
+	depsResult, depsErr := analyzer.AnalyzeDeps(ctx, repoPath, targetFiles)
 	if depsErr != nil {
 		sections = append(sections, fmt.Sprintf("### Dependency Analysis (H3)\nAnalysis failed: %v", depsErr))
 	} else {
@@ -1446,40 +1443,3 @@ func runOneWave(
 	return nil
 }
 
-// startWaveWithGate runs waves with an inter-wave gate. gateCh receives true to
-// proceed or false to abort. Used internally to support wave-by-wave execution
-// with external approval gates.
-func startWaveWithGate(ctx context.Context, opts RunWaveOpts, onEvent func(Event), gateCh <-chan bool) error {
-	publish := func(event string, data interface{}) {
-		onEvent(Event{Event: event, Data: data})
-	}
-
-	orch, err := orchestrator.New(ctx, opts.RepoPath, opts.IMPLPath)
-	if err != nil {
-		return fmt.Errorf("startWaveWithGate: %w", err)
-	}
-
-	orch.SetEventPublisher(func(ev orchestrator.OrchestratorEvent) {
-		onEvent(Event{Event: ev.Event, Data: ev.Data})
-	})
-
-	waves := orch.IMPLDoc().Waves
-	totalAgents := 0
-	for _, w := range waves {
-		totalAgents += len(w.Agents)
-	}
-
-	for i, wave := range waves {
-		waveNum := wave.Number
-		if err := runOneWave(ctx, orch, opts, waveNum, i, len(waves), publish, gateCh); err != nil {
-			return err
-		}
-	}
-
-	publish("run_complete", orchestrator.RunCompletePayload{
-		Status: "success",
-		Waves:  len(waves),
-		Agents: totalAgents,
-	})
-	return nil
-}
