@@ -1419,7 +1419,7 @@ func runOneWave(
 		if len(statusRes.Errors) > 0 {
 			errMsg = statusRes.Errors[0].Message
 		}
-		publish("update_status_failed", UpdateStatusFailedPayload{Wave: opts.Slug, Error: errMsg})
+		publish("update_status_failed", UpdateStatusFailedPayload{Slug: opts.Slug, Error: errMsg})
 	}
 
 	// Gate wait: pause between waves when gateCh is provided.

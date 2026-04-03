@@ -154,9 +154,9 @@ type IntegrationAgentWarningPayload struct {
 }
 
 // UpdateStatusFailedPayload is the Data for "update_status_failed" events.
-// Wave is the IMPL slug string, not a wave number.
+// Slug is the IMPL slug string identifying which IMPL failed the status update.
 type UpdateStatusFailedPayload struct {
-	Wave  string `json:"wave"`
+	Slug  string `json:"slug"`
 	Error string `json:"error"`
 }
 

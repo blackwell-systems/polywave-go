@@ -24,7 +24,7 @@ type EventCallback func(step string, status string, detail string)
 // StepResult is the common return type for individual step functions.
 //
 // Step mirrors the step argument in EventCallback (machine-readable step
-// name). Status is one of "success", "failed", or "skipped".
+// name). Status is one of "success", "failed", "skipped", or "warning".
 //
 // Data holds the typed protocol.*Data struct for the step; callers must
 // type-assert to the documented concrete type for each Step* function.
@@ -33,7 +33,10 @@ type StepResult struct {
 	// Step is the machine-readable step name, matching the step arg passed to
 	// EventCallback (e.g. "verify-commits", "run-gates").
 	Step string `json:"step"`
-	// Status is one of "success", "failed", or "skipped".
+	// Status is one of "success", "failed", "skipped", or "warning".
+	// Note: EventCallback uses "complete" as an alias for "success" to
+	// describe the same outcome; treat "complete" and "success" as equivalent
+	// when consuming status values from event callbacks.
 	Status string `json:"status"`
 	// Detail is a human-readable summary; typically empty on success and
 	// populated with an error or warning message on failure or skip.
@@ -58,6 +61,7 @@ type PrepareWaveOpts struct {
 	// calls where the orchestrator manages SAW state between waves.
 	CommitState bool
 	// Deprecated: use NoWorkspaceSetup. Will be removed in a future version.
+	// TODO: Remove once cmd/sawtools/prepare_wave.go no longer references NoGoWork.
 	NoGoWork bool
 	// NoWorkspaceSetup disables all WorkspaceManager setup steps in PrepareWave.
 	// Replaces the deprecated NoGoWork field.
