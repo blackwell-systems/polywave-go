@@ -290,6 +290,52 @@ func TestPipeline_ConditionOnFailure(t *testing.T) {
 	}
 }
 
+// TestPipeline_NilFunc verifies that a Step with no Func set causes a
+// FATAL result with code CodeStepExecutionFailed.
+func TestPipeline_NilFunc(t *testing.T) {
+	p := New("nil-func-test")
+	p.AddStep(Step{
+		Name:          "no-func",
+		ErrorStrategy: ErrorFail,
+		// Func intentionally left nil
+	})
+	r := p.Run(context.Background(), makeState())
+	if !r.IsFatal() {
+		t.Fatal("expected FATAL result for nil Func")
+	}
+	if len(r.Errors) == 0 {
+		t.Fatal("expected at least one error in FATAL result")
+	}
+	// Pipeline.Run wraps step errors with CodePipelineRunFailed at the pipeline level.
+	// The nil-Func error is still recorded by executeStep (CodeStepExecutionFailed),
+	// but the outer result uses CodePipelineRunFailed.
+	if r.Errors[0].Code != result.CodePipelineRunFailed {
+		t.Errorf("expected code %q, got %q",
+			result.CodePipelineRunFailed, r.Errors[0].Code)
+	}
+}
+
+// TestPipeline_ErrorFail_Code verifies that a step failure returns
+// PIPELINE_RUN_FAILED as the error code (not an arbitrary string).
+func TestPipeline_ErrorFail_Code(t *testing.T) {
+	p := New("fail-code-test")
+	p.AddStep(Step{
+		Name:          "bad",
+		ErrorStrategy: ErrorFail,
+		Func: func(ctx context.Context, state *State) error {
+			return errors.New("deliberate failure")
+		},
+	})
+	r := p.Run(context.Background(), makeState())
+	if !r.IsFatal() {
+		t.Fatal("expected FATAL result")
+	}
+	if r.Errors[0].Code != result.CodePipelineRunFailed {
+		t.Errorf("expected code %q, got %q",
+			result.CodePipelineRunFailed, r.Errors[0].Code)
+	}
+}
+
 // TestState_ValuesMap verifies that state.Values correctly carries data between steps.
 func TestState_ValuesMap(t *testing.T) {
 	p := New("values-test")

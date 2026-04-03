@@ -2,6 +2,7 @@ package pipeline
 
 import (
 	"context"
+	"errors"
 	"testing"
 
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
@@ -58,6 +59,22 @@ func TestRequiredKey_NilValues(t *testing.T) {
 	}
 	if r.Errors[0].Code != result.CodeRequiredKeyMissing {
 		t.Errorf("expected code %q, got %q", result.CodeRequiredKeyMissing, r.Errors[0].Code)
+	}
+}
+
+// TestRequiredKeyErr_ReturnsSAWError verifies that requiredKeyErr returns
+// a SAWError (not a plain fmt.Errorf string) so the Code field is preserved.
+func TestRequiredKeyErr_ReturnsSAWError(t *testing.T) {
+	err := requiredKeyErr(makeState(), "nonexistent_key")
+	if err == nil {
+		t.Fatal("expected error for missing key")
+	}
+	var sawErr result.SAWError
+	if !errors.As(err, &sawErr) {
+		t.Fatalf("expected SAWError, got %T: %v", err, err)
+	}
+	if sawErr.Code != result.CodeRequiredKeyMissing {
+		t.Errorf("expected code %q, got %q", result.CodeRequiredKeyMissing, sawErr.Code)
 	}
 }
 
