@@ -119,28 +119,28 @@ func hashKey(key CacheKey) string {
 func (c *Cache) BuildKey(ctx context.Context, repoDir string) result.Result[CacheKey] {
 	if err := ctx.Err(); err != nil {
 		return result.NewFailure[CacheKey]([]result.SAWError{
-			result.NewFatal("CACHE_BUILD_KEY_CANCELLED", fmt.Sprintf("gatecache: context cancelled: %v", err)).WithCause(err),
+			result.NewFatal(result.CodeCacheBuildKeyCancelled, fmt.Sprintf("gatecache: context cancelled: %v", err)).WithCause(err),
 		})
 	}
 
 	headCommit, err := git.RunOutput(repoDir, "rev-parse", "HEAD")
 	if err != nil {
 		return result.NewFailure[CacheKey]([]result.SAWError{
-			result.NewFatal("CACHE_BUILD_KEY_FAILED", fmt.Sprintf("gatecache: get HEAD: %v", err)).WithCause(err),
+			result.NewFatal(result.CodeCacheBuildKeyFailed, fmt.Sprintf("gatecache: get HEAD: %v", err)).WithCause(err),
 		})
 	}
 
 	stagedStat, err := git.RunOutput(repoDir, "diff", "--cached", "--stat")
 	if err != nil {
 		return result.NewFailure[CacheKey]([]result.SAWError{
-			result.NewFatal("CACHE_BUILD_KEY_FAILED", fmt.Sprintf("gatecache: get staged stat: %v", err)).WithCause(err),
+			result.NewFatal(result.CodeCacheBuildKeyFailed, fmt.Sprintf("gatecache: get staged stat: %v", err)).WithCause(err),
 		})
 	}
 
 	unstagedStat, err := git.RunOutput(repoDir, "diff", "--stat")
 	if err != nil {
 		return result.NewFailure[CacheKey]([]result.SAWError{
-			result.NewFatal("CACHE_BUILD_KEY_FAILED", fmt.Sprintf("gatecache: get unstaged stat: %v", err)).WithCause(err),
+			result.NewFatal(result.CodeCacheBuildKeyFailed, fmt.Sprintf("gatecache: get unstaged stat: %v", err)).WithCause(err),
 		})
 	}
 
@@ -175,18 +175,18 @@ func (c *Cache) Get(ctx context.Context, key CacheKey, gateType string) result.R
 	inner, ok := c.entries[h]
 	if !ok {
 		return result.NewFailure[GetData]([]result.SAWError{
-			result.NewWarning("CACHE_MISS", "cache entry not found or expired"),
+			result.NewWarning(result.CodeCacheMiss, "cache entry not found or expired"),
 		})
 	}
 	r, ok := inner[gateType]
 	if !ok {
 		return result.NewFailure[GetData]([]result.SAWError{
-			result.NewWarning("CACHE_MISS", "cache entry not found or expired"),
+			result.NewWarning(result.CodeCacheMiss, "cache entry not found or expired"),
 		})
 	}
 	if r.IsExpired(c.ttl) {
 		return result.NewFailure[GetData]([]result.SAWError{
-			result.NewWarning("CACHE_MISS", "cache entry not found or expired"),
+			result.NewWarning(result.CodeCacheMiss, "cache entry not found or expired"),
 		})
 	}
 	return result.NewSuccess(GetData{
@@ -200,7 +200,7 @@ func (c *Cache) Get(ctx context.Context, key CacheKey, gateType string) result.R
 func (c *Cache) Put(ctx context.Context, key CacheKey, gateType string, r CachedResult) result.Result[PutData] {
 	if err := ctx.Err(); err != nil {
 		return result.NewFailure[PutData]([]result.SAWError{
-			result.NewFatal("CACHE_PUT_CANCELLED", fmt.Sprintf("gatecache: context cancelled: %v", err)).WithCause(err),
+			result.NewFatal(result.CodeCachePutCancelled, fmt.Sprintf("gatecache: context cancelled: %v", err)).WithCause(err),
 		})
 	}
 
@@ -218,7 +218,7 @@ func (c *Cache) Put(ctx context.Context, key CacheKey, gateType string, r Cached
 	c.entries[h][gateType] = r
 	if err := c.save(ctx); err != nil {
 		return result.NewFailure[PutData]([]result.SAWError{
-			result.NewFatal("CACHE_PUT_FAILED", fmt.Sprintf("gatecache: save cache: %v", err)).WithCause(err),
+			result.NewFatal(result.CodeCachePutFailed, fmt.Sprintf("gatecache: save cache: %v", err)).WithCause(err),
 		})
 	}
 	return result.NewSuccess(PutData{
@@ -232,7 +232,7 @@ func (c *Cache) Put(ctx context.Context, key CacheKey, gateType string, r Cached
 func (c *Cache) Invalidate(ctx context.Context) result.Result[InvalidateData] {
 	if err := ctx.Err(); err != nil {
 		return result.NewFailure[InvalidateData]([]result.SAWError{
-			result.NewFatal("CACHE_INVALIDATE_CANCELLED", fmt.Sprintf("gatecache: context cancelled: %v", err)).WithCause(err),
+			result.NewFatal(result.CodeCacheInvalidateCancelled, fmt.Sprintf("gatecache: context cancelled: %v", err)).WithCause(err),
 		})
 	}
 
@@ -249,7 +249,7 @@ func (c *Cache) Invalidate(ctx context.Context) result.Result[InvalidateData] {
 	path := filepath.Join(c.stateDir, cacheFileName)
 	if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
 		return result.NewFailure[InvalidateData]([]result.SAWError{
-			result.NewFatal("CACHE_INVALIDATE_FAILED", fmt.Sprintf("gatecache: remove cache file: %v", err)).WithCause(err),
+			result.NewFatal(result.CodeCacheInvalidateFailed, fmt.Sprintf("gatecache: remove cache file: %v", err)).WithCause(err),
 		})
 	}
 	return result.NewSuccess(InvalidateData{ClearedCount: count})

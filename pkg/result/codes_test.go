@@ -87,6 +87,9 @@ func TestNCodesFollowNamingPattern(t *testing.T) {
 		{"CodeSessionSaveFailed", CodeSessionSaveFailed},
 		{"CodeInterviewSaveFailed", CodeInterviewSaveFailed},
 		{"CodeRequirementsWriteFailed", CodeRequirementsWriteFailed},
+		{"CodeEngineInitFailed", CodeEngineInitFailed},
+		{"CodeEngineAlreadyInitialized", CodeEngineAlreadyInitialized},
+		{"CodeFinalizeStepFailed", CodeFinalizeStepFailed},
 	}
 	for _, tc := range ncodes {
 		t.Run(tc.name, func(t *testing.T) {
@@ -165,6 +168,7 @@ func TestAllCodesAreUnique(t *testing.T) {
 		{"CodeGateCommandMissing", CodeGateCommandMissing},
 		{"CodeStubDetected", CodeStubDetected},
 		{"CodeGateInputInvalid", CodeGateInputInvalid},
+		{"CodeGateValidationFailed", CodeGateValidationFailed},
 		// G codes
 		{"CodeWorktreeCreateFailed", CodeWorktreeCreateFailed},
 		{"CodeMergeConflict", CodeMergeConflict},
@@ -273,6 +277,9 @@ func TestAllCodesAreUnique(t *testing.T) {
 		{"CodeSessionSaveFailed", CodeSessionSaveFailed},
 		{"CodeInterviewSaveFailed", CodeInterviewSaveFailed},
 		{"CodeRequirementsWriteFailed", CodeRequirementsWriteFailed},
+		{"CodeEngineInitFailed", CodeEngineInitFailed},
+		{"CodeEngineAlreadyInitialized", CodeEngineAlreadyInitialized},
+		{"CodeFinalizeStepFailed", CodeFinalizeStepFailed},
 		// Q codes
 		{"CodeQueueAddFailed", CodeQueueAddFailed},
 		{"CodeQueueListFailed", CodeQueueListFailed},
@@ -288,6 +295,9 @@ func TestAllCodesAreUnique(t *testing.T) {
 		{"CodeInvariantViolation", CodeInvariantViolation},
 		{"CodeExecutionRule", CodeExecutionRule},
 		{"CodeWiringGap", CodeWiringGap},
+		{"CodeTypeCollisionFatal", CodeTypeCollisionFatal},
+		{"CodeCriticGateFailed", CodeCriticGateFailed},
+		{"CodeTierConflictDetected", CodeTierConflictDetected},
 		// T codes
 		{"CodeToolError", CodeToolError},
 		{"CodeParsePanic", CodeParsePanic},
@@ -320,6 +330,7 @@ func TestAllCodesAreUnique(t *testing.T) {
 		{"CodeCacheInvalidateFailed", CodeCacheInvalidateFailed},
 		{"CodeCachePutCancelled", CodeCachePutCancelled},
 		{"CodeCacheInvalidateCancelled", CodeCacheInvalidateCancelled},
+		{"CodeCacheBuildKeyCancelled", CodeCacheBuildKeyCancelled},
 		// I codes
 		{"CodeAgentCountInvalid", CodeAgentCountInvalid},
 		{"CodeAgentCountMismatch", CodeAgentCountMismatch},
