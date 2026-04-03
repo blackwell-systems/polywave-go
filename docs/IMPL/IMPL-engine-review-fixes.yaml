@@ -279,19 +279,6 @@ file_ownership:
         - K
         - L
         - M
-    - file: cmd/sawtools/prepare_wave.go
-      agent: U
-      wave: 5
-      action: modify
-      depends_on:
-        - F
-        - G
-        - H
-        - I
-        - J
-        - K
-        - L
-        - M
     - file: cmd/sawtools/import_impls_cmd.go
       agent: U
       wave: 5
@@ -1310,7 +1297,6 @@ waves:
             - cmd/sawtools/analyze_deps_cmd.go
             - cmd/sawtools/run_scout_cmd.go
             - cmd/sawtools/finalize_wave.go
-            - cmd/sawtools/prepare_wave.go
             - cmd/sawtools/import_impls_cmd.go
             - cmd/sawtools/debug_journal.go
             - cmd/sawtools/finalize_impl_cmd.go
