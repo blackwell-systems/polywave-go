@@ -44,7 +44,7 @@ func UpdateIMPLStatus(path string, completedAgents []string) result.Result[IMPLS
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return result.NewFailure[IMPLStatusData]([]result.SAWError{
-			result.NewFatal("STATUS_UPDATE_FAILED",
+			result.NewFatal(result.CodeStatusUpdateFailed,
 				fmt.Sprintf("UpdateIMPLStatus: cannot read %q: %v", path, err)),
 		})
 	}
@@ -53,7 +53,7 @@ func UpdateIMPLStatus(path string, completedAgents []string) result.Result[IMPLS
 
 	if err := os.WriteFile(path, updated, 0644); err != nil {
 		return result.NewFailure[IMPLStatusData]([]result.SAWError{
-			result.NewFatal("STATUS_UPDATE_FAILED",
+			result.NewFatal(result.CodeStatusUpdateFailed,
 				fmt.Sprintf("UpdateIMPLStatus: cannot write %q: %v", path, err)),
 		})
 	}

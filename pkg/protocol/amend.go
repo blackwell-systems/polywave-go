@@ -32,15 +32,14 @@ type AmendImplData struct {
 	Warnings      []string // non-fatal issues detected during amend
 }
 
-// amendBlocked is an internal error code used in SAWError when a hard
-// protocol invariant prevents the amend. Callers can check for this code via
-// result.Errors[0].Code when result.IsFatal() is true.
-const amendBlocked = "AMEND_BLOCKED"
+// amendBlocked is a placeholder for result.CodeAmendBlocked (added by protocol-review-fixes
+// Agent A). Replace with result.CodeAmendBlocked once that constant lands.
+const amendBlocked = "P013_AMEND_BLOCKED"
 
 // AmendImpl performs the amend operation described by opts on the manifest at
 // opts.ManifestPath, saves the updated manifest, and returns the result.
-// Returns a fatal Result with Code "AMEND_BLOCKED" if a hard invariant would
-// be violated.
+// Returns a fatal Result with Code result.CodeAmendBlocked (P013_AMEND_BLOCKED)
+// if a hard invariant would be violated.
 func AmendImpl(ctx context.Context, opts AmendImplOpts) result.Result[AmendImplData] {
 	// Step 1: Load manifest
 	m, err := Load(ctx, opts.ManifestPath)
