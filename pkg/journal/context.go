@@ -8,8 +8,8 @@ import (
 	"time"
 )
 
-// FileModification represents a detected file change from Edit/Write tool use
-type FileModification struct {
+// fileModification represents a detected file change from Edit/Write tool use
+type fileModification struct {
 	Path         string
 	LinesAdded   int
 	LinesDeleted int
@@ -17,8 +17,8 @@ type FileModification struct {
 	Operation    string // "added", "modified", "deleted"
 }
 
-// TestRun represents a detected test execution from Bash tool results
-type TestRun struct {
+// testRun represents a detected test execution from Bash tool results
+type testRun struct {
 	Command   string
 	Passed    int
 	Failed    int
@@ -26,8 +26,8 @@ type TestRun struct {
 	ExitCode  int
 }
 
-// GitCommit represents a detected git commit from Bash tool results
-type GitCommit struct {
+// gitCommit represents a detected git commit from Bash tool results
+type gitCommit struct {
 	SHA        string
 	Message    string
 	Branch     string
@@ -37,8 +37,8 @@ type GitCommit struct {
 	Timestamp  time.Time
 }
 
-// GateStatus represents verification gate execution status
-type GateStatus struct {
+// gateStatus represents verification gate execution status
+type gateStatus struct {
 	Command   string
 	Status    string // "PASS", "FAIL", "PENDING"
 	Timestamp time.Time
@@ -46,9 +46,9 @@ type GateStatus struct {
 
 // GenerateContext analyzes journal entries and produces markdown summary for agent context injection.
 // maxEntries limits how many entries to process; if 0, all entries are processed.
-func GenerateContext(entries []ToolEntry, maxEntries int) (string, error) {
+func GenerateContext(entries []ToolEntry, maxEntries int) string {
 	if len(entries) == 0 {
-		return "## Session Context (Recovered from Tool Journal)\n\n**No tool activity recorded yet.**\n", nil
+		return "## Session Context (Recovered from Tool Journal)\n\n**No tool activity recorded yet.**\n"
 	}
 
 	// Apply max entries limit if specified
@@ -194,12 +194,12 @@ func GenerateContext(entries []ToolEntry, maxEntries int) (string, error) {
 		}
 	}
 
-	return sb.String(), nil
+	return sb.String()
 }
 
 // extractFilesModified parses Edit and Write tool calls to detect file modifications
-func extractFilesModified(entries []ToolEntry) []FileModification {
-	fileMap := make(map[string]*FileModification)
+func extractFilesModified(entries []ToolEntry) []fileModification {
+	fileMap := make(map[string]*fileModification)
 
 	for _, entry := range entries {
 		if entry.Kind != "tool_use" {
@@ -250,7 +250,7 @@ func extractFilesModified(entries []ToolEntry) []FileModification {
 				existing.LinesDeleted += linesDeleted
 				existing.LastEdited = entry.Timestamp
 			} else {
-				fileMap[path] = &FileModification{
+				fileMap[path] = &fileModification{
 					Path:         path,
 					LinesAdded:   linesAdded,
 					LinesDeleted: linesDeleted,
@@ -262,7 +262,7 @@ func extractFilesModified(entries []ToolEntry) []FileModification {
 	}
 
 	// Convert map to sorted slice (by timestamp, newest first)
-	result := make([]FileModification, 0, len(fileMap))
+	result := make([]fileModification, 0, len(fileMap))
 	for _, fm := range fileMap {
 		result = append(result, *fm)
 	}
@@ -274,8 +274,8 @@ func extractFilesModified(entries []ToolEntry) []FileModification {
 }
 
 // extractTestResults parses Bash tool results looking for test command patterns
-func extractTestResults(entries []ToolEntry) []TestRun {
-	var results []TestRun
+func extractTestResults(entries []ToolEntry) []testRun {
+	var results []testRun
 
 	// Patterns for test commands
 	testCmdPattern := regexp.MustCompile(`(?i)(go test|npm test|cargo test|pytest|python -m pytest)`)
@@ -337,7 +337,7 @@ func extractTestResults(entries []ToolEntry) []TestRun {
 		if m := exitCodePattern.FindStringSubmatch(result.Preview); len(m) > 1 {
 			fmt.Sscanf(m[1], "%d", &exitCode)
 		}
-		results = append(results, TestRun{
+		results = append(results, testRun{
 			Command:   command,
 			Passed:    passed,
 			Failed:    failed,
@@ -350,8 +350,8 @@ func extractTestResults(entries []ToolEntry) []TestRun {
 }
 
 // extractGitCommits parses Bash tool results looking for git commit commands
-func extractGitCommits(entries []ToolEntry) []GitCommit {
-	var commits []GitCommit
+func extractGitCommits(entries []ToolEntry) []gitCommit {
+	var commits []gitCommit
 
 	gitCommitPattern := regexp.MustCompile(`git\s+(?:-C\s+\S+\s+)?commit`)
 	shaPattern := regexp.MustCompile(`\[([^\s\]]+)\s+([a-f0-9]{7,40})\]`)
@@ -413,7 +413,7 @@ func extractGitCommits(entries []ToolEntry) []GitCommit {
 			}
 		}
 
-		commits = append(commits, GitCommit{
+		commits = append(commits, gitCommit{
 			SHA:        sha,
 			Message:    message,
 			Branch:     branch,
@@ -457,8 +457,8 @@ func extractScaffoldImports(entries []ToolEntry) []string {
 }
 
 // extractVerificationGates detects Field 6 gate commands (build/test/lint)
-func extractVerificationGates(entries []ToolEntry) map[string]GateStatus {
-	gates := make(map[string]GateStatus)
+func extractVerificationGates(entries []ToolEntry) map[string]gateStatus {
+	gates := make(map[string]gateStatus)
 
 	buildPattern := regexp.MustCompile(`(?i)go build|cargo build|npm run build|make build`)
 	testPattern := regexp.MustCompile(`(?i)go test|cargo test|npm test|pytest`)
@@ -511,7 +511,7 @@ func extractVerificationGates(entries []ToolEntry) map[string]GateStatus {
 
 		// Update gate status (keep most recent)
 		if existing, exists := gates[gateName]; !exists || timestamp.After(existing.Timestamp) {
-			gates[gateName] = GateStatus{
+			gates[gateName] = gateStatus{
 				Command:   command,
 				Status:    status,
 				Timestamp: timestamp,
@@ -593,7 +593,7 @@ func formatDuration(d time.Duration) string {
 	return fmt.Sprintf("%dd %dh", days, hours)
 }
 
-func formatFileChange(fm FileModification) string {
+func formatFileChange(fm fileModification) string {
 	if fm.Operation == "added" {
 		return fmt.Sprintf("added, %d lines", fm.LinesAdded)
 	}

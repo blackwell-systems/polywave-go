@@ -7,10 +7,7 @@ import (
 )
 
 func TestGenerateContext_EmptyJournal(t *testing.T) {
-	result, err := GenerateContext([]ToolEntry{}, 0)
-	if err != nil {
-		t.Fatalf("GenerateContext failed: %v", err)
-	}
+	result := GenerateContext([]ToolEntry{}, 0)
 
 	expected := "## Session Context (Recovered from Tool Journal)\n\n**No tool activity recorded yet.**\n"
 	if result != expected {
@@ -683,10 +680,7 @@ func TestGenerateContext_FullIntegration(t *testing.T) {
 		},
 	}
 
-	result, err := GenerateContext(entries, 0)
-	if err != nil {
-		t.Fatalf("GenerateContext failed: %v", err)
-	}
+	result := GenerateContext(entries, 0)
 
 	// Check key sections are present
 	expectedSections := []string{
@@ -730,10 +724,7 @@ func TestGenerateContext_MaxEntriesLimit(t *testing.T) {
 		}
 	}
 
-	result, err := GenerateContext(entries, 10)
-	if err != nil {
-		t.Fatalf("GenerateContext failed: %v", err)
-	}
+	result := GenerateContext(entries, 10)
 
 	// Should only process last 10 entries
 	if !strings.Contains(result, "**Total tool calls:** 100") {
@@ -787,23 +778,23 @@ func TestFormatDuration(t *testing.T) {
 
 func TestFormatFileChange(t *testing.T) {
 	tests := []struct {
-		fm       FileModification
+		fm       fileModification
 		expected string
 	}{
 		{
-			FileModification{Operation: "added", LinesAdded: 50},
+			fileModification{Operation: "added", LinesAdded: 50},
 			"added, 50 lines",
 		},
 		{
-			FileModification{Operation: "modified", LinesAdded: 30, LinesDeleted: 0},
+			fileModification{Operation: "modified", LinesAdded: 30, LinesDeleted: 0},
 			"added 30 lines",
 		},
 		{
-			FileModification{Operation: "modified", LinesAdded: 0, LinesDeleted: 20},
+			fileModification{Operation: "modified", LinesAdded: 0, LinesDeleted: 20},
 			"deleted 20 lines",
 		},
 		{
-			FileModification{Operation: "modified", LinesAdded: 30, LinesDeleted: 20},
+			fileModification{Operation: "modified", LinesAdded: 30, LinesDeleted: 20},
 			"+30/-20 lines",
 		},
 	}

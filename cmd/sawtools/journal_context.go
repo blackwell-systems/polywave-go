@@ -70,10 +70,7 @@ launching or resuming agents.`,
 			}
 
 			// Generate context markdown
-			contextMD, err := journal.GenerateContext(entries, maxEntries)
-			if err != nil {
-				return fmt.Errorf("context generation failed: %w", err)
-			}
+			contextMD := journal.GenerateContext(entries, maxEntries)
 
 			// Determine output path
 			outPath := outputPath
