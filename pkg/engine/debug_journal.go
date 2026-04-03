@@ -74,33 +74,40 @@ type GateStatus struct {
 
 // ExportData holds data returned by exportHTMLTimeline.
 type ExportData struct {
-	ExportPath  string `json:"export_path"`
-	EntryCount  int    `json:"entry_count"`
+	ExportPath string `json:"export_path"`
+	EntryCount int    `json:"entry_count"`
 }
 
 // DebugJournal loads, filters, and summarises a wave-agent journal.
 // It is the single entry point for all debug-journal business logic.
-func DebugJournal(opts DebugJournalOpts) (DebugJournalResult, error) {
-	result := DebugJournalResult{AgentPath: opts.AgentPath}
+func DebugJournal(opts DebugJournalOpts) result.Result[DebugJournalResult] {
+	partial := DebugJournalResult{AgentPath: opts.AgentPath}
 
 	// Resolve repo root to absolute path.
 	absRepoRoot, err := filepath.Abs(opts.RepoPath)
 	if err != nil {
-		return result, fmt.Errorf("failed to resolve repo root: %w", err)
+		return result.NewFailure[DebugJournalResult]([]result.SAWError{
+			result.NewFatal(result.CodeExportWriteFailed,
+				"failed to resolve repo root: "+err.Error()).WithCause(err),
+		})
 	}
 
 	journalPath := filepath.Join(absRepoRoot, ".saw-state", opts.AgentPath, "index.jsonl")
 
 	if _, err := os.Stat(journalPath); os.IsNotExist(err) {
-		return result, fmt.Errorf("journal not found for agent %s\n\nExpected location: %s\n\nHint: Run 'sawtools list-impls' to see available IMPL docs, then check .saw-state/ for agent journals.", opts.AgentPath, journalPath)
+		return result.NewFailure[DebugJournalResult]([]result.SAWError{
+			result.NewFatal(result.CodeExportNoEntries,
+				fmt.Sprintf("journal not found for agent %s\n\nExpected location: %s\n\nHint: Run 'sawtools list-impls' to see available IMPL docs, then check .saw-state/ for agent journals.", opts.AgentPath, journalPath)),
+		})
 	}
 
-	entries, err := loadJournalEntries(journalPath)
-	if err != nil {
-		return result, fmt.Errorf("failed to load journal: %w", err)
+	entriesResult := LoadJournalEntries(journalPath)
+	if entriesResult.IsFatal() {
+		return result.NewFailure[DebugJournalResult](entriesResult.Errors)
 	}
+	entries := entriesResult.GetData()
 
-	result.TotalCount = len(entries)
+	partial.TotalCount = len(entries)
 
 	// Apply filters.
 	filtered := entries
@@ -111,32 +118,39 @@ func DebugJournal(opts DebugJournalOpts) (DebugJournalResult, error) {
 		filtered = filtered[len(filtered)-opts.Last:]
 	}
 
-	result.FilterCount = len(filtered)
-	result.Entries = filtered
+	partial.FilterCount = len(filtered)
+	partial.Entries = filtered
 
 	// Handle HTML export.
 	if opts.Export != "" {
 		exportRes := exportHTMLTimeline(filtered, opts.AgentPath, opts.Export, opts.Force)
 		if exportRes.IsFatal() {
-			return result, fmt.Errorf("%s", exportRes.Errors[0].Message)
+			return result.NewFailure[DebugJournalResult](exportRes.Errors)
 		}
-		result.ExportPath = opts.Export
-		return result, nil
+		partial.ExportPath = opts.Export
+		return result.NewSuccess(partial)
 	}
 
 	// Populate summary when requested.
 	if opts.Summary {
-		result.Summary = buildJournalSummary(opts.AgentPath, entries, filtered)
+		partial.Summary = buildJournalSummary(opts.AgentPath, entries, filtered)
 	}
 
-	return result, nil
+	return result.NewSuccess(partial)
 }
 
 // LoadJournalEntries reads all entries from index.jsonl.
 // Returns empty slice (not error) if index.jsonl doesn't exist yet.
 // Exported so cmd-layer code (e.g. journal_context.go) can delegate to it.
-func LoadJournalEntries(journalPath string) ([]journal.ToolEntry, error) {
-	return loadJournalEntries(journalPath)
+func LoadJournalEntries(journalPath string) result.Result[[]journal.ToolEntry] {
+	entries, err := loadJournalEntries(journalPath)
+	if err != nil {
+		return result.NewFailure[[]journal.ToolEntry]([]result.SAWError{
+			result.NewFatal(result.CodeExportWriteFailed,
+				"failed to load journal: "+err.Error()).WithCause(err),
+		})
+	}
+	return result.NewSuccess(entries)
 }
 
 // loadJournalEntries is the internal implementation.
@@ -537,19 +551,19 @@ func extractGitCommits(entries []journal.ToolEntry) []GitCommit {
 			continue
 		}
 
-		var result *journal.ToolEntry
+		var res *journal.ToolEntry
 		for j := i + 1; j < len(entries) && j < i+5; j++ {
 			if entries[j].Kind == "tool_result" && entries[j].ToolUseID == entry.ToolUseID {
-				result = &entries[j]
+				res = &entries[j]
 				break
 			}
 		}
 
-		if result == nil {
+		if res == nil {
 			continue
 		}
 
-		shaMatch := shaPattern.FindStringSubmatch(result.Preview)
+		shaMatch := shaPattern.FindStringSubmatch(res.Preview)
 		if len(shaMatch) < 3 {
 			continue
 		}
@@ -571,67 +585,6 @@ func extractGitCommits(entries []journal.ToolEntry) []GitCommit {
 	}
 
 	return commits
-}
-
-func extractVerificationGates(entries []journal.ToolEntry) map[string]GateStatus {
-	gates := make(map[string]GateStatus)
-
-	buildPattern := regexp.MustCompile(`(?i)go build|cargo build|npm run build|make build`)
-	testPattern := regexp.MustCompile(`(?i)go test|cargo test|npm test|pytest`)
-	lintPattern := regexp.MustCompile(`(?i)go vet|cargo clippy|eslint|pylint|golangci-lint`)
-
-	for i, entry := range entries {
-		if entry.Kind != "tool_use" || entry.ToolName != "Bash" {
-			continue
-		}
-
-		command, ok := entry.Input["command"].(string)
-		if !ok {
-			continue
-		}
-
-		var gateName string
-		if buildPattern.MatchString(command) {
-			gateName = "Build"
-		} else if testPattern.MatchString(command) {
-			gateName = "Tests"
-		} else if lintPattern.MatchString(command) {
-			gateName = "Lint"
-		} else {
-			continue
-		}
-
-		var result *journal.ToolEntry
-		for j := i + 1; j < len(entries) && j < i+5; j++ {
-			if entries[j].Kind == "tool_result" && entries[j].ToolUseID == entry.ToolUseID {
-				result = &entries[j]
-				break
-			}
-		}
-
-		status := "PENDING"
-		timestamp := entry.Timestamp
-
-		if result != nil {
-			timestamp = result.Timestamp
-			if strings.Contains(result.Preview, "FAIL") ||
-				strings.Contains(result.Preview, "error:") ||
-				strings.Contains(result.Preview, "Error:") {
-				status = "FAIL"
-			} else {
-				status = "PASS"
-			}
-		}
-
-		if existing, exists := gates[gateName]; !exists || timestamp.After(existing.Timestamp) {
-			gates[gateName] = GateStatus{
-				Status:    status,
-				Timestamp: timestamp,
-			}
-		}
-	}
-
-	return gates
 }
 
 func checkCompletionReportWritten(entries []journal.ToolEntry) bool {
@@ -674,11 +627,4 @@ func formatDuration(d time.Duration) string {
 	days := hours / 24
 	hours = hours % 24
 	return fmt.Sprintf("%dd %dh", days, hours)
-}
-
-func formatFileChange(fm FileModification) string {
-	if fm.Operation == "added" {
-		return fmt.Sprintf("added, %d lines", fm.LinesAdded)
-	}
-	return fmt.Sprintf("%d lines added", fm.LinesAdded)
 }

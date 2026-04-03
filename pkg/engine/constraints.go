@@ -2,9 +2,9 @@ package engine
 
 import (
 	"context"
-	"fmt"
 
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/tools"
 )
 
@@ -93,12 +93,16 @@ func buildConstraints(manifest *protocol.IMPLManifest, agentID string, role stri
 //
 // Returns nil constraints (not an error) if the manifest cannot be loaded,
 // preserving backward compatibility for IMPL docs without constraint support.
-func BuildWaveConstraints(implPath string, agentID string) (*tools.Constraints, error) {
-	manifest, err := protocol.Load(context.TODO(), implPath)
+func BuildWaveConstraints(ctx context.Context, implPath string, agentID string) result.Result[*tools.Constraints] {
+	manifest, err := protocol.Load(ctx, implPath)
 	if err != nil {
-		return nil, fmt.Errorf("BuildWaveConstraints: load manifest: %w", err)
+		return result.NewFailure[*tools.Constraints]([]result.SAWError{
+			result.NewFatal(result.CodeIMPLParseFailed,
+				"BuildWaveConstraints: load manifest: "+err.Error()).
+				WithCause(err),
+		})
 	}
-	return buildConstraints(manifest, agentID, "wave"), nil
+	return result.NewSuccess(buildConstraints(manifest, agentID, "wave"))
 }
 
 // buildIntegratorConstraints builds constraints for the integrator role.
@@ -128,11 +132,15 @@ func buildIntegratorConstraints(manifest *protocol.IMPLManifest, connectors []pr
 // BuildIntegratorConstraints builds constraints for the integration agent.
 // The integrator may only write to files listed in integration_connectors.
 // It loads the manifest from implPath and uses manifest.IntegrationConnectors directly.
-func BuildIntegratorConstraints(implPath string) (*tools.Constraints, error) {
-	manifest, err := protocol.Load(context.TODO(), implPath)
+func BuildIntegratorConstraints(ctx context.Context, implPath string) result.Result[*tools.Constraints] {
+	manifest, err := protocol.Load(ctx, implPath)
 	if err != nil {
-		return nil, fmt.Errorf("BuildIntegratorConstraints: load manifest: %w", err)
+		return result.NewFailure[*tools.Constraints]([]result.SAWError{
+			result.NewFatal(result.CodeIMPLParseFailed,
+				"BuildIntegratorConstraints: load manifest: "+err.Error()).
+				WithCause(err),
+		})
 	}
 
-	return buildIntegratorConstraints(manifest, manifest.IntegrationConnectors), nil
+	return result.NewSuccess(buildIntegratorConstraints(manifest, manifest.IntegrationConnectors))
 }

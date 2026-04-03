@@ -2,12 +2,12 @@ package engine
 
 import (
 	"encoding/json"
-	"fmt"
 	"log/slog"
 	"os"
 	"path/filepath"
 
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/config"
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
 )
 
 // InitOpts holds options for RunInit.
@@ -40,20 +40,26 @@ type detectedProject struct {
 // checks, and returns a structured InitResult. The cmd file handles --force
 // validation and printing next-step messages. Calls RunVerifyInstall
 // internally (both defined in pkg/engine/).
-func RunInit(opts InitOpts) (InitResult, error) {
+func RunInit(opts InitOpts) result.Result[InitResult] {
 	// 1. Resolve absDir from opts.RepoDir via filepath.Abs
 	absDir, err := filepath.Abs(opts.RepoDir)
 	if err != nil {
-		return InitResult{}, fmt.Errorf("init: cannot resolve path %q: %w", opts.RepoDir, err)
+		return result.NewFailure[InitResult]([]result.SAWError{
+			result.NewFatal("N091_ENGINE_INIT_FAILED",
+				"init: cannot resolve path \""+opts.RepoDir+"\": "+err.Error()).
+				WithCause(err),
+		})
 	}
 
 	// 2. Compute configPath
 	configPath := filepath.Join(absDir, "saw.config.json")
 
-	// 3. Check if saw.config.json exists; if so and !opts.Force: return error
+	// 3. Check if saw.config.json exists; if so and !opts.Force: return partial with AlreadyExists
 	if _, err := os.Stat(configPath); err == nil && !opts.Force {
-		return InitResult{AlreadyExists: true}, fmt.Errorf(
-			"saw.config.json already exists at %s. Use --force to overwrite.", absDir)
+		return result.NewPartial(InitResult{AlreadyExists: true}, []result.SAWError{
+			result.NewError("N092_ENGINE_ALREADY_INITIALIZED",
+				"saw.config.json already exists at "+absDir+". Use --force to overwrite."),
+		})
 	}
 
 	// 4. Detect project
@@ -65,24 +71,34 @@ func RunInit(opts InitOpts) (InitResult, error) {
 	// 6. Save config; return error on failure
 	saveResult := config.Save(absDir, cfg)
 	if !saveResult.IsSuccess() {
-		return InitResult{}, fmt.Errorf("init: failed to write config: %v", saveResult)
+		msg := "init: failed to write config"
+		if len(saveResult.Errors) > 0 {
+			msg += ": " + saveResult.Errors[0].Message
+		}
+		return result.NewFailure[InitResult]([]result.SAWError{
+			result.NewFatal("N091_ENGINE_INIT_FAILED", msg),
+		})
 	}
 
 	// 7. Add build/test top-level keys; return error on failure
 	if err := addBuildTestKeysInternal(configPath, project); err != nil {
-		return InitResult{}, fmt.Errorf("init: failed to add build/test keys: %w", err)
+		return result.NewFailure[InitResult]([]result.SAWError{
+			result.NewFatal("N091_ENGINE_INIT_FAILED",
+				"init: failed to add build/test keys: "+err.Error()).
+				WithCause(err),
+		})
 	}
 
 	// 8. Run verify install
 	installResult := RunVerifyInstall(VerifyInstallOpts{RepoPath: absDir})
 
 	// 9. Return InitResult
-	return InitResult{
+	return result.NewSuccess(InitResult{
 		ConfigPath:    configPath,
 		Language:      project.Language,
 		ProjectName:   project.Name,
 		InstallResult: installResult,
-	}, nil
+	})
 }
 
 // detectProjectInternal scans repoDir for known marker files and returns detection results.
@@ -154,12 +170,12 @@ func generateConfigInternal(repoDir string, project detectedProject) *config.SAW
 func addBuildTestKeysInternal(configPath string, project detectedProject) error {
 	data, err := os.ReadFile(configPath)
 	if err != nil {
-		return fmt.Errorf("read config: %w", err)
+		return err
 	}
 
 	var raw map[string]json.RawMessage
 	if err := json.Unmarshal(data, &raw); err != nil {
-		return fmt.Errorf("unmarshal config: %w", err)
+		return err
 	}
 
 	type buildTestEntry struct {
@@ -179,7 +195,7 @@ func addBuildTestKeysInternal(configPath string, project detectedProject) error 
 
 	output, err := json.MarshalIndent(raw, "", "  ")
 	if err != nil {
-		return fmt.Errorf("marshal config: %w", err)
+		return err
 	}
 	output = append(output, '\n')
 
@@ -187,23 +203,23 @@ func addBuildTestKeysInternal(configPath string, project detectedProject) error 
 	dir := filepath.Dir(configPath)
 	tmpFile, err := os.CreateTemp(dir, ".saw-config-*.tmp")
 	if err != nil {
-		return fmt.Errorf("create temp: %w", err)
+		return err
 	}
 	tmpPath := tmpFile.Name()
 
 	if _, err := tmpFile.Write(output); err != nil {
 		tmpFile.Close()
 		os.Remove(tmpPath)
-		return fmt.Errorf("write temp: %w", err)
+		return err
 	}
 	if err := tmpFile.Close(); err != nil {
 		os.Remove(tmpPath)
-		return fmt.Errorf("close temp: %w", err)
+		return err
 	}
 
 	if err := os.Rename(tmpPath, configPath); err != nil {
 		os.Remove(tmpPath)
-		return fmt.Errorf("rename temp: %w", err)
+		return err
 	}
 
 	return nil

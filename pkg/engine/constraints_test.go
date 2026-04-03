@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"testing"
@@ -216,10 +217,11 @@ waves:
 		t.Fatal(err)
 	}
 
-	c, err := BuildWaveConstraints(implPath, "A")
-	if err != nil {
-		t.Fatalf("BuildWaveConstraints failed: %v", err)
+	res := BuildWaveConstraints(context.Background(), implPath, "A")
+	if !res.IsSuccess() {
+		t.Fatalf("BuildWaveConstraints failed: %v", res.Errors)
 	}
+	c := res.GetData()
 	if c == nil {
 		t.Fatal("expected non-nil constraints")
 	}
@@ -248,9 +250,9 @@ waves:
 }
 
 func TestBuildWaveConstraints_Integration_BadPath(t *testing.T) {
-	_, err := BuildWaveConstraints("/nonexistent/path/IMPL.yaml", "A")
-	if err == nil {
-		t.Error("expected error for nonexistent path")
+	res := BuildWaveConstraints(context.Background(), "/nonexistent/path/IMPL.yaml", "A")
+	if res.IsSuccess() {
+		t.Error("expected failure for nonexistent path")
 	}
 }
 
@@ -362,10 +364,11 @@ integration_connectors:
 		t.Fatal(err)
 	}
 
-	c, err := BuildIntegratorConstraints(implPath)
-	if err != nil {
-		t.Fatalf("BuildIntegratorConstraints failed: %v", err)
+	res := BuildIntegratorConstraints(context.Background(), implPath)
+	if !res.IsSuccess() {
+		t.Fatalf("BuildIntegratorConstraints failed: %v", res.Errors)
 	}
+	c := res.GetData()
 	if c == nil {
 		t.Fatal("expected non-nil constraints")
 	}
@@ -404,9 +407,9 @@ func TestBuildIntegratorConstraints_NilManifest(t *testing.T) {
 }
 
 func TestBuildIntegratorConstraints_BadPath(t *testing.T) {
-	_, err := BuildIntegratorConstraints("/nonexistent/path/IMPL.yaml")
-	if err == nil {
-		t.Error("expected error for nonexistent path")
+	res := BuildIntegratorConstraints(context.Background(), "/nonexistent/path/IMPL.yaml")
+	if res.IsSuccess() {
+		t.Error("expected failure for nonexistent path")
 	}
 }
 
@@ -435,10 +438,11 @@ integration_connectors:
 		t.Fatal(err)
 	}
 
-	c, err := BuildIntegratorConstraints(implPath)
-	if err != nil {
-		t.Fatalf("BuildIntegratorConstraints failed: %v", err)
+	res := BuildIntegratorConstraints(context.Background(), implPath)
+	if !res.IsSuccess() {
+		t.Fatalf("BuildIntegratorConstraints failed: %v", res.Errors)
 	}
+	c := res.GetData()
 	if c == nil {
 		t.Fatal("expected non-nil constraints")
 	}

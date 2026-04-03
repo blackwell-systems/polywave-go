@@ -3,7 +3,6 @@ package main
 import (
 	"fmt"
 	"os"
-	"strings"
 
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/engine"
 	"github.com/spf13/cobra"
@@ -34,18 +33,29 @@ After running init, use /saw scout "feature" in Claude Code or saw serve for the
 			}
 
 			// 2. Call engine.RunInit
-			result, err := engine.RunInit(engine.InitOpts{
+			res := engine.RunInit(engine.InitOpts{
 				RepoDir: repoDir,
 				Force:   forceFlag,
 			})
 
 			// 3. Handle error: special message for already-exists case
-			if err != nil {
-				if strings.Contains(err.Error(), "already exists") {
+			if res.IsFatal() {
+				if len(res.Errors) > 0 {
+					return fmt.Errorf("%s", res.Errors[0].Message)
+				}
+				return fmt.Errorf("init failed")
+			}
+			if res.IsPartial() {
+				data := res.GetData()
+				if data.AlreadyExists {
 					fmt.Fprintf(cmd.OutOrStdout(), "saw.config.json already exists. Use --force to overwrite.\n")
 				}
-				return err
+				if len(res.Errors) > 0 {
+					return fmt.Errorf("%s", res.Errors[0].Message)
+				}
+				return fmt.Errorf("init failed")
 			}
+			result := res.GetData()
 
 			// 4. Print human-readable install check output
 			printHumanOutput(cmd, result.InstallResult)

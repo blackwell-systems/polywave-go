@@ -54,7 +54,7 @@ Examples:
 // debugJournalCommand delegates to engine.DebugJournal and handles all output.
 // Kept as a package-level function so tests and other cmd files can call it directly.
 func debugJournalCommand(repoRoot string, agentPath string, opts DebugOpts) error {
-	result, err := engine.DebugJournal(engine.DebugJournalOpts{
+	res := engine.DebugJournal(engine.DebugJournalOpts{
 		RepoPath:     repoRoot,
 		AgentPath:    agentPath,
 		Summary:      opts.Summary,
@@ -63,9 +63,13 @@ func debugJournalCommand(repoRoot string, agentPath string, opts DebugOpts) erro
 		Export:       opts.Export,
 		Force:        opts.Force,
 	})
-	if err != nil {
-		return err
+	if res.IsFatal() {
+		if len(res.Errors) > 0 {
+			return fmt.Errorf("%s", res.Errors[0].Message)
+		}
+		return fmt.Errorf("debug-journal failed")
 	}
+	result := res.GetData()
 
 	if result.TotalCount == 0 {
 		fmt.Printf("Journal for %s exists but contains no entries yet.\n", agentPath)
@@ -140,7 +144,14 @@ func debugJournalCommand(repoRoot string, agentPath string, opts DebugOpts) erro
 // loadJournalEntries delegates to engine.LoadJournalEntries so that
 // journal_context.go (which calls this package-level function) continues to compile.
 func loadJournalEntries(journalPath string) ([]journal.ToolEntry, error) {
-	return engine.LoadJournalEntries(journalPath)
+	res := engine.LoadJournalEntries(journalPath)
+	if res.IsFatal() {
+		if len(res.Errors) > 0 {
+			return nil, fmt.Errorf("%s", res.Errors[0].Message)
+		}
+		return nil, fmt.Errorf("load journal entries failed")
+	}
+	return res.GetData(), nil
 }
 
 // formatFileChangeSummary formats a FileModification for human display.
