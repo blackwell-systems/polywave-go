@@ -530,7 +530,7 @@ func FinalizeWave(ctx context.Context, opts FinalizeWaveOpts) result.Result[Fina
 					}
 					continue
 				}
-				mergeRes, mergeErr := protocol.MergeAgents(protocol.MergeAgentsOpts{
+				mergeRes := protocol.MergeAgents(protocol.MergeAgentsOpts{
 					Ctx:          ctx,
 					ManifestPath: opts.IMPLPath,
 					WaveNum:      opts.WaveNum,
@@ -538,9 +538,6 @@ func FinalizeWave(ctx context.Context, opts FinalizeWaveOpts) result.Result[Fina
 					MergeTarget:  opts.MergeTarget,
 					Logger:       opts.Logger,
 				})
-				if mergeErr != nil {
-					return fatalf("engine.FinalizeWave: merge-agents failed in %s: %v", repoKey, mergeErr)
-				}
 				if !mergeRes.IsSuccess() {
 					return fatalf("engine.FinalizeWave: merge-agents failed in %s: %v", repoKey, mergeRes.Errors)
 				}
