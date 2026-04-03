@@ -126,18 +126,21 @@ func (o *Orchestrator) launchAgentStructured(
 	}
 
 	// Re-load the manifest to get the saved completion report for status/E19 routing.
+	// TODO(wave-merge): update o.implSlug() → o.implSlug(ctx) after Agent A lands ctx param.
 	branch := protocol.BranchName(o.implSlug(), waveNum, protoAgent.ID)
 	status := "complete"
 
+	var savedReport protocol.CompletionReport
 	var savedStatus string
 	var savedFailureType string
 
-	_ = protocol.WithCompletionReportLock(context.TODO(), func(ctx context.Context) error {
+	_ = protocol.WithCompletionReportLock(ctx, func(ctx context.Context) error {
 		manifest, loadErr := protocol.Load(ctx, o.implDocPath)
 		if loadErr != nil {
 			return loadErr
 		}
 		if r, ok := manifest.CompletionReports[protoAgent.ID]; ok {
+			savedReport = r
 			savedStatus = string(r.Status)
 			savedFailureType = r.FailureType
 			status = string(r.Status)
@@ -182,6 +185,18 @@ func (o *Orchestrator) launchAgentStructured(
 				Action:      action,
 			},
 		})
+
+		switch action {
+		case ActionRetry, ActionApplyAndRelaunch, ActionRetryWithScope:
+			// E19: transient/fixable/timeout — execute retry loop (no human gate).
+			if retryErr := o.executeRetryLoop(ctx, runner, wm, waveNum, protoAgent, &savedReport); retryErr != nil {
+				return retryErr
+			}
+		case ActionReplan, ActionEscalate:
+			// E19: needs_replan/escalate — return error to surface to human.
+			return fmt.Errorf("orchestrator: agent %s: %s failure (failure_type=%s): requires human intervention",
+				protoAgent.ID, savedStatus, savedFailureType)
+		}
 	}
 
 	return nil

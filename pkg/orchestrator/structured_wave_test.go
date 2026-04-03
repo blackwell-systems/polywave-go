@@ -218,13 +218,20 @@ func TestLaunchAgentStructured_APIPath(t *testing.T) {
 
 // TestLaunchAgentStructured_PublishesBlockedEvent verifies E19: when the
 // structured run saves a "blocked" completion report, launchAgentStructured
-// publishes an agent_blocked event with RouteFailure action.
+// publishes an agent_blocked event with RouteFailure action, invokes
+// executeRetryLoop, and returns nil when the retry succeeds.
 func TestLaunchAgentStructured_PublishesBlockedEvent(t *testing.T) {
 	origCreator := worktreeCreatorFunc
 	origStructured := runWaveAgentStructuredFunc
+	origWait := waitForCompletionFunc
+	origNewBackend := newBackendFunc
+	origNewRunner := newRunnerFunc
 	t.Cleanup(func() {
 		worktreeCreatorFunc = origCreator
 		runWaveAgentStructuredFunc = origStructured
+		waitForCompletionFunc = origWait
+		newBackendFunc = origNewBackend
+		newRunnerFunc = origNewRunner
 	})
 
 	worktreeCreatorFunc = func(_ *worktree.Manager, _ int, id string) (string, error) {
@@ -243,6 +250,19 @@ func TestLaunchAgentStructured_PublishesBlockedEvent(t *testing.T) {
 		return nil
 	}
 
+	// Retry via launchAgent uses waitForCompletionFunc; return complete on retry.
+	waitForCompletionFunc = func(_, _ string, _, _ time.Duration) (*protocol.CompletionReport, error) {
+		return &protocol.CompletionReport{Status: "complete"}, nil
+	}
+
+	fake := &fakeBackend{}
+	newBackendFunc = func(_ BackendConfig) (backend.Backend, error) {
+		return fake, nil
+	}
+	newRunnerFunc = func(b backend.Backend, wm *worktree.Manager) *agent.Runner {
+		return agent.NewRunner(b)
+	}
+
 	doc := &protocol.IMPLManifest{
 		Waves: []protocol.Wave{
 			{Number: 1, Agents: []protocol.Agent{{ID: "A", Task: "do work"}}},
@@ -259,7 +279,7 @@ func TestLaunchAgentStructured_PublishesBlockedEvent(t *testing.T) {
 	})
 
 	wm := worktree.New(dir, "test-slug")
-	runner := agent.NewRunner(&fakeBackend{})
+	runner := agent.NewRunner(fake)
 	agentSpec := protocol.Agent{ID: "A", Task: "do work"}
 
 	err := o.launchAgentStructured(context.Background(), runner, wm, 1, agentSpec)
@@ -300,6 +320,89 @@ func TestLaunchAgentStructured_PublishesBlockedEvent(t *testing.T) {
 	// "transient" failure type should route to ActionRetry.
 	if payload.Action != ActionRetry {
 		t.Errorf("payload.Action = %v, want ActionRetry for transient failure", payload.Action)
+	}
+
+	// E19: verify the retry loop was invoked (auto_retry_started event must be present).
+	var retryEv *OrchestratorEvent
+	for i := range events {
+		if events[i].Event == "auto_retry_started" {
+			retryEv = &events[i]
+			break
+		}
+	}
+	if retryEv == nil {
+		t.Error("expected auto_retry_started event after agent_blocked (E19 retry loop must be invoked)")
+	}
+}
+
+// --- TestLaunchAgentStructured_E19EscalateReturnsError ---------------------------
+
+// TestLaunchAgentStructured_E19EscalateReturnsError verifies that when the
+// structured run saves a "blocked"/"needs_replan" report, launchAgentStructured
+// publishes agent_blocked and returns an error (no automatic retry for escalate).
+func TestLaunchAgentStructured_E19EscalateReturnsError(t *testing.T) {
+	origCreator := worktreeCreatorFunc
+	origStructured := runWaveAgentStructuredFunc
+	t.Cleanup(func() {
+		worktreeCreatorFunc = origCreator
+		runWaveAgentStructuredFunc = origStructured
+	})
+
+	worktreeCreatorFunc = func(_ *worktree.Manager, _ int, id string) (string, error) {
+		return "/tmp/fake-wt-" + id, nil
+	}
+
+	dir := t.TempDir()
+	implPath := buildMinimalManifestForOrchestratorTest(t, dir, "A")
+
+	runWaveAgentStructuredFunc = func(_ context.Context, gotImplPath, _ string, agentSpec protocol.Agent, _ string, _ func(string)) error {
+		saveCompletionReportToManifest(t, gotImplPath, agentSpec.ID, protocol.CompletionReport{
+			Status:      "blocked",
+			FailureType: "needs_replan",
+			Notes:       "scope decomposition wrong",
+		})
+		return nil
+	}
+
+	doc := &protocol.IMPLManifest{
+		Waves: []protocol.Wave{
+			{Number: 1, Agents: []protocol.Agent{{ID: "A", Task: "do work"}}},
+		},
+	}
+	o := newFromDoc(doc, dir, implPath)
+
+	var mu sync.Mutex
+	var events []OrchestratorEvent
+	o.SetEventPublisher(func(ev OrchestratorEvent) {
+		mu.Lock()
+		events = append(events, ev)
+		mu.Unlock()
+	})
+
+	wm := worktree.New(dir, "test-slug")
+	runner := agent.NewRunner(&fakeBackend{})
+	agentSpec := protocol.Agent{ID: "A", Task: "do work"}
+
+	err := o.launchAgentStructured(context.Background(), runner, wm, 1, agentSpec)
+	if err == nil {
+		t.Fatal("expected error for needs_replan blocked report, got nil")
+	}
+	if !strings.Contains(err.Error(), "requires human intervention") {
+		t.Errorf("expected 'requires human intervention' in error, got: %v", err)
+	}
+
+	mu.Lock()
+	defer mu.Unlock()
+
+	var foundBlocked bool
+	for _, ev := range events {
+		if ev.Event == "agent_blocked" {
+			foundBlocked = true
+			break
+		}
+	}
+	if !foundBlocked {
+		t.Error("expected agent_blocked event before error return")
 	}
 }
 
