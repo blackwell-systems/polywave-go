@@ -1,0 +1,770 @@
+title: Orchestrator Code Review Fixes
+feature_slug: orchestrator-review-fixes
+verdict: SUITABLE
+suitability_assessment: |-
+    The 11 findings decompose cleanly across disjoint files with no same-wave conflicts.
+    Wave 1: 4 parallel agents making independent changes (orchestrator.go, structured_wave.go,
+    result_types.go + journal files, transitions.go + state_transition.go).
+    Wave 2: 2 parallel agents — one updating runner.go callers (depends on Wave 1 signature
+    changes), one updating doc.go and stubs.go (depends on Wave 1 to know final API).
+    runner.go is in Wave 2 only: it depends on new signatures from orchestrator.go (Wave 1).
+    This separation avoids the V048 line-count limit while preserving logical dependency order.
+
+    Suitability check:
+    1. File decomposition: 9 distinct files, all disjoint within each wave.
+    2. No investigation required: all root causes identified in pre-digested findings.
+    3. Interface contracts: New() and NewBackendFromModel() signatures are defined below;
+       all callers are in runner.go (Wave 2 Agent A2, after signatures land in Wave 1).
+    4. Pre-implementation status: all findings are TODO.
+    5. Parallelization value: 4 parallel Wave 1 agents with non-trivial logic changes;
+       build/test cycle ~15s. Clear speedup over sequential.
+
+    Caveats:
+    - P2-3 (transitions.go): protocol.IsValidTransition() does not yet exist. Agent D
+      must add it to pkg/protocol/state_transition.go AND update transitions.go.
+    - P2-2 (journal integration deletion): Agent C must use LSP find-references before
+      deleting. Prior notes confirm zero non-test callers; deletion is safe.
+    - V048 split: runner.go (1445 lines) is separated from orchestrator.go (1365 lines)
+      into Wave 2 Agent A2 to stay within the 2000-line agent budget.
+
+    Estimated times:
+    - Scout phase: ~15 min
+    - Wave 1 execution: ~4 agents x ~12 min avg = ~12 min (parallel)
+    - Wave 2 execution: ~2 agents x ~8 min = ~8 min (parallel)
+    - Merge and verification: ~5 min
+    Total SAW time: ~40 min
+    Sequential baseline: ~6 agents x ~12 min = ~72 min
+    Time savings: ~32 min (44% faster). Clear speedup.
+test_command: go test ./pkg/orchestrator/... ./pkg/engine/...
+lint_command: go vet ./...
+file_ownership:
+    - file: pkg/orchestrator/orchestrator.go
+      agent: A
+      wave: 1
+      action: modify
+    - file: pkg/orchestrator/structured_wave.go
+      agent: B
+      wave: 1
+      action: modify
+    - file: pkg/orchestrator/result_types.go
+      agent: C
+      wave: 1
+      action: modify
+    - file: pkg/orchestrator/journal_integration.go
+      agent: C
+      wave: 1
+      action: delete
+    - file: pkg/orchestrator/journal_integration_opts.go
+      agent: C
+      wave: 1
+      action: delete
+    - file: pkg/orchestrator/journal_integration_test.go
+      agent: C
+      wave: 1
+      action: delete
+    - file: pkg/orchestrator/transitions.go
+      agent: D
+      wave: 1
+      action: modify
+    - file: pkg/protocol/state_transition.go
+      agent: D
+      wave: 1
+      action: modify
+    - file: pkg/engine/runner.go
+      agent: A2
+      wave: 2
+      action: modify
+    - file: pkg/orchestrator/doc.go
+      agent: E
+      wave: 2
+      action: modify
+    - file: pkg/orchestrator/stubs.go
+      agent: E
+      wave: 2
+      action: modify
+interface_contracts:
+    - name: New
+      description: |-
+        Public constructor for Orchestrator. Migrated from (*Orchestrator, error) to
+        result.Result[*Orchestrator] per canonical return-type convention. Callers in
+        runner.go (Wave 2 Agent A2) must be updated to use .IsFatal() / .GetData().
+      definition: |
+        func New(ctx context.Context, repoPath string, implDocPath string) result.Result[*Orchestrator]
+      location: pkg/orchestrator/orchestrator.go
+    - name: NewBackendFromModel
+      description: |-
+        Exported backend constructor. Migrated from (backend.Backend, error) to
+        result.Result[backend.Backend]. Three call sites in runner.go must be updated
+        by Wave 2 Agent A2.
+      definition: |
+        func NewBackendFromModel(model string) result.Result[backend.Backend]
+      location: pkg/orchestrator/orchestrator.go
+    - name: IsValidTransition
+      description: |-
+        New exported function in pkg/protocol exposing the allowedTransitions map
+        check. Allows orchestrator/transitions.go to delegate to protocol's canonical
+        FSM instead of maintaining a private duplicate.
+      definition: |
+        // IsValidTransition reports whether transitioning from -> to is a valid
+        // protocol state machine transition per the canonical allowedTransitions map.
+        func IsValidTransition(from, to ProtocolState) bool
+      location: pkg/protocol/state_transition.go
+    - name: RunStubScan
+      description: |-
+        Adds ctx context.Context as first parameter; changes internal exec.Command
+        to exec.CommandContext. Caller in runner.go updated by Wave 2 Agent A2.
+      definition: |
+        func RunStubScan(ctx context.Context, implDocPath string, waveNum int, reports map[string]*protocol.CompletionReport, sawRepoPath string, logger *slog.Logger) result.Result[RunStubData]
+      location: pkg/orchestrator/stubs.go
+waves:
+    - number: 1
+      agents:
+        - id: A
+          task: |-
+            ## Agent A — P0/P1 fixes in orchestrator.go
+
+            ### Context
+            `pkg/orchestrator/orchestrator.go` has five issues to fix. The runner.go
+            caller updates are handled by Wave 2 Agent A2 after your signatures land.
+
+            ### Changes required
+
+            **1. Migrate `New()` → `result.Result[*Orchestrator]`** (P0-1, line 501)
+
+            Current signature:
+            ```go
+            func New(ctx context.Context, repoPath string, implDocPath string) (*Orchestrator, error)
+            ```
+
+            New signature:
+            ```go
+            func New(ctx context.Context, repoPath string, implDocPath string) result.Result[*Orchestrator]
+            ```
+
+            On manifest load failure:
+            ```go
+            return result.NewFailure[*Orchestrator]([]result.SAWError{
+                result.NewFatal(result.CodeIMPLParseFailed,
+                    fmt.Sprintf("orchestrator.New: %s", err)),
+            })
+            ```
+            On success: `return result.NewSuccess(&Orchestrator{...})`.
+            No new data type needed; use `*Orchestrator` directly as the type param.
+
+            **2. Migrate `NewBackendFromModel()` → `result.Result[backend.Backend]`** (P0-2, line 440)
+
+            Current: `func NewBackendFromModel(model string) (backend.Backend, error)`
+            New: `func NewBackendFromModel(model string) result.Result[backend.Backend]`
+
+            Implementation:
+            ```go
+            func NewBackendFromModel(model string) result.Result[backend.Backend] {
+                b, err := newBackendFunc(BackendConfig{Model: model})
+                if err != nil {
+                    return result.NewFailure[backend.Backend]([]result.SAWError{
+                        result.NewFatal(result.CodeAgentLaunchFailed,
+                            fmt.Sprintf("orchestrator: NewBackendFromModel: %s", err)),
+                    })
+                }
+                return result.NewSuccess(b)
+            }
+            ```
+
+            **3. Fix `newBackendFunc` error chain** (P1-3, lines 318-319)
+
+            The model-validation failure branch uses `fmt.Errorf("%s", msg)` which is
+            a linter warning (non-error string passed with %s). Replace with:
+            ```go
+            if res := validateModelName(cfg.Model); res.IsFatal() {
+                errMsg := "orchestrator: invalid model name"
+                if len(res.Errors) > 0 {
+                    errMsg = fmt.Sprintf("orchestrator: invalid model name: %s", res.Errors[0].Message)
+                }
+                return nil, errors.New(errMsg)
+            }
+            ```
+            Add `"errors"` to the import block if not already present.
+
+            **4. Add `ctx` param to `implSlug()`** (P1-1, line 149-158)
+
+            Current: `func (o *Orchestrator) implSlug() string`
+            New: `func (o *Orchestrator) implSlug(ctx context.Context) string`
+
+            Replace `protocol.Load(context.Background(), ...)` with `protocol.Load(ctx, ...)`.
+
+            Update all callers within orchestrator.go. Known callers: `RunWave`,
+            `launchAgent`, `executeRetryLoop`, `RunAgent` (line ~1236). Search for
+            `o.implSlug()` to find any additional callers and
+            append `ctx` to every call. Callers are in `RunWave`, `launchAgent`,
+            and `executeRetryLoop` — all have `ctx context.Context` available.
+
+            **5. Fix `mergeWaveFunc` and `runVerificationFunc` default no-ops** (P0-4, lines 127-135)
+
+            Current defaults silently succeed. Change to return failure:
+            ```go
+            var mergeWaveFunc = func(ctx context.Context, o *Orchestrator, waveNum int) result.Result[MergeData] {
+                return result.NewFailure[MergeData]([]result.SAWError{
+                    result.NewFatal(result.CodeNotImplemented,
+                        "orchestrator: mergeWaveFunc not injected; call SetMergeWaveFunc before merging"),
+                })
+            }
+
+            var runVerificationFunc = func(ctx context.Context, o *Orchestrator, testCommand string) result.Result[VerificationData] {
+                return result.NewFailure[VerificationData]([]result.SAWError{
+                    result.NewFatal(result.CodeNotImplemented,
+                        "orchestrator: runVerificationFunc not injected; call SetRunVerificationFunc before verifying"),
+                })
+            }
+            ```
+            Check `/Users/dayna.blackwell/code/scout-and-wave-go/pkg/result/codes.go` for
+            `CodeNotImplemented`. If it does not exist, use `result.CodeAgentLaunchFailed`
+            with a descriptive message.
+
+            ### Verification gate
+            ```
+            go build ./pkg/orchestrator/...
+            go vet ./pkg/orchestrator/...
+            go test ./pkg/orchestrator/...
+            ```
+            Note: pkg/engine/runner.go will fail to compile until Wave 2 Agent A2 updates
+            callers. Run only `./pkg/orchestrator/...` gates in Wave 1.
+
+            ### Constraints
+            - Do NOT modify `newFromDoc` or any test helpers.
+            - Do NOT change `Orchestrator` struct fields.
+            - `newBackendFunc` internal var stays `(backend.Backend, error)` — only the
+              exported `NewBackendFromModel` changes return type.
+            - Use LSP find-references to confirm all `o.implSlug()` call sites.
+          files:
+            - pkg/orchestrator/orchestrator.go
+        - id: B
+          task: |-
+            ## Agent B — E19 retry loop + context.TODO() fix in structured_wave.go
+
+            ### Context
+            `pkg/orchestrator/structured_wave.go` has two bugs:
+            1. (P0-3) `launchAgentStructured` detects `partial`/`blocked` and publishes
+               `agent_blocked` but does NOT call `executeRetryLoop`. E19 routing is
+               broken for structured output agents — they never auto-retry.
+            2. (P1-2) `context.TODO()` used inside `launchAgentStructured` despite
+               the function receiving a `ctx context.Context` parameter (line 135).
+
+            ### Changes required
+
+            **1. Fix E19 retry loop** (P0-3, lines 158-185)
+
+            Currently after publishing `agent_blocked` the function returns nil.
+            Replace the bare `return nil` with the same switch as `launchAgent:1023-1033`.
+
+            First, introduce `savedReport` to capture the full CompletionReport:
+            ```go
+            var savedReport protocol.CompletionReport
+            var savedStatus string
+            var savedFailureType string
+            _ = protocol.WithCompletionReportLock(ctx, func(ctx context.Context) error {
+                manifest, loadErr := protocol.Load(ctx, o.implDocPath)
+                if loadErr != nil {
+                    return loadErr
+                }
+                if r, ok := manifest.CompletionReports[protoAgent.ID]; ok {
+                    savedReport = r
+                    savedStatus = string(r.Status)
+                    savedFailureType = r.FailureType
+                    status = string(r.Status)
+                }
+                return nil
+            })
+            ```
+
+            Then after the `agent_blocked` publish, add:
+            ```go
+            switch action {
+            case ActionRetry, ActionApplyAndRelaunch, ActionRetryWithScope:
+                if retryErr := o.executeRetryLoop(ctx, runner, wm, waveNum, protoAgent, &savedReport); retryErr != nil {
+                    return retryErr
+                }
+            case ActionReplan, ActionEscalate:
+                return fmt.Errorf("orchestrator: agent %s: %s failure (failure_type=%s): requires human intervention",
+                    protoAgent.ID, savedStatus, savedFailureType)
+            }
+            ```
+
+            `executeRetryLoop` signature:
+            ```go
+            func (o *Orchestrator) executeRetryLoop(
+                ctx context.Context,
+                runner *agent.Runner,
+                wm *worktree.Manager,
+                waveNum int,
+                agentSpec protocol.Agent,
+                report *protocol.CompletionReport,
+            ) error
+            ```
+            `runner` and `wm` are already parameters of `launchAgentStructured`.
+
+            **2. Replace `context.TODO()` with `ctx`** (P1-2, line 135)
+
+            Find:
+            ```go
+            _ = protocol.WithCompletionReportLock(context.TODO(), func(ctx context.Context) error {
+            ```
+            Replace with:
+            ```go
+            _ = protocol.WithCompletionReportLock(ctx, func(ctx context.Context) error {
+            ```
+            This is superseded by the savedReport refactor in change #1 above; if you
+            apply change #1 first, `context.TODO()` will no longer exist in the file.
+
+            ### Verification gate
+            ```
+            go build ./pkg/orchestrator/...
+            go vet ./pkg/orchestrator/...
+            go test ./pkg/orchestrator/...
+            ```
+
+            **3. Update `o.implSlug()` call at line ~129** (required for Wave 1 build)
+
+            Agent A adds a required `ctx context.Context` parameter to `implSlug()`.
+            `launchAgentStructured` at line ~129 also calls `o.implSlug()` — update it to
+            `o.implSlug(ctx)`. The `ctx` parameter is already available as the first argument
+            of `launchAgentStructured`.
+
+            ### Constraints
+            - Do NOT modify `launchAgent` in `orchestrator.go` (Agent A owns that file).
+            - Do NOT modify `executeRetryLoop` signature.
+            - The CLI-backend fallback in `launchAgentStructured` (which calls `launchAgent`)
+              is unaffected.
+            - Guard the `executeRetryLoop` call: only invoke it when `savedStatus` is
+              `"partial"` or `"blocked"` (the existing outer if-guard already ensures this).
+          files:
+            - pkg/orchestrator/structured_wave.go
+        - id: C
+          task: |-
+            ## Agent C — Dead type deletion and journal integration removal
+
+            ### Context
+            Two cleanup tasks in `pkg/orchestrator`:
+            1. (P2-1) `result_types.go` has two dead types with zero references outside
+               their declarations: `ExecuteMergeData` (lines ~63-69) and
+               `RunVerificationData` (lines ~91-95).
+            2. (P2-2) Three files implement a superseded journal integration draft.
+               `pkg/engine/runner.go` has its own independent `JournalIntegration.PrepareAgentContext`
+               that does NOT call the orchestrator version. These are dead code (~175 LOC).
+
+            ### Changes required
+
+            **1. Delete dead result types** (P2-1)
+
+            In `pkg/orchestrator/result_types.go`, delete:
+            ```go
+            // DELETE:
+            type ExecuteMergeData struct {
+                WaveNum      int      `json:"wave_num"`
+                MergedAgents []string `json:"merged_agents"`
+            }
+
+            // DELETE:
+            type RunVerificationData struct {
+                TestCommand string `json:"test_command"`
+            }
+            ```
+
+            Before deleting, confirm zero references:
+            ```bash
+            grep -rn "ExecuteMergeData\|RunVerificationData" /Users/dayna.blackwell/code/scout-and-wave-go/
+            ```
+            Expected: only the declarations in result_types.go.
+
+            **2. Delete journal integration files** (P2-2)
+
+            Confirm zero non-test callers:
+            ```bash
+            grep -rn "orchestrator\.PrepareAgentContext\|orchestrator\.WriteJournalEntry" \
+              /Users/dayna.blackwell/code/scout-and-wave-go/ \
+              --include="*.go" | grep -v "_test.go"
+            ```
+            Expected: no output.
+
+            IMPORTANT — check for `loggerFrom` before deleting:
+            ```bash
+            grep -rn "func loggerFrom" /Users/dayna.blackwell/code/scout-and-wave-go/pkg/orchestrator/
+            ```
+            If `loggerFrom` is ONLY defined in `journal_integration.go`, move it to
+            `stubs.go` BEFORE deleting. If defined elsewhere in the package, deletion
+            is safe as-is.
+
+            Then delete:
+            - `pkg/orchestrator/journal_integration.go`
+            - `pkg/orchestrator/journal_integration_opts.go`
+            - `pkg/orchestrator/journal_integration_test.go`
+
+            ### Verification gate
+            ```
+            go build ./pkg/orchestrator/...
+            go vet ./pkg/orchestrator/...
+            go test ./pkg/orchestrator/...
+            ```
+
+            ### Constraints
+            - Do NOT delete `PrepareContextData` or `WriteJournalData` from
+              `result_types.go` — only `ExecuteMergeData` and `RunVerificationData`.
+            - If `loggerFrom` would be lost, add it to `stubs.go` first; do not
+              create a separate new file for a single helper.
+          files:
+            - pkg/orchestrator/result_types.go
+            - pkg/orchestrator/journal_integration.go
+            - pkg/orchestrator/journal_integration_opts.go
+            - pkg/orchestrator/journal_integration_test.go
+        - id: D
+          task: |-
+            ## Agent D — Replace duplicate validTransitions with protocol.IsValidTransition
+
+            ### Context
+            `pkg/orchestrator/transitions.go` maintains a private `validTransitions`
+            map (P2-3) that duplicates `allowedTransitions` in
+            `pkg/protocol/state_transition.go`. No sync check exists: new protocol
+            states silently diverge. `protocol.IsValidTransition` does not yet exist —
+            you must add it.
+
+            ### Changes required
+
+            **1. Add `IsValidTransition` to `pkg/protocol/state_transition.go`**
+
+            Add after the `allowedTransitions` map declaration:
+            ```go
+            // IsValidTransition reports whether transitioning from -> to is a valid
+            // protocol state machine transition per the canonical allowedTransitions map.
+            func IsValidTransition(from, to ProtocolState) bool {
+                allowed, ok := allowedTransitions[from]
+                if !ok {
+                    return false
+                }
+                for _, s := range allowed {
+                    if s == to {
+                        return true
+                    }
+                }
+                return false
+            }
+            ```
+
+            **2. Update `pkg/orchestrator/transitions.go`**
+
+            IMPORTANT: Before removing the local map, diff the two maps to detect
+            divergence:
+            - `orchestrator/transitions.go` `validTransitions` includes
+              `StateScoutValidating` as a source state and broader `StateBlocked`
+              recovery paths (to any state).
+            - `pkg/protocol/state_transition.go` `allowedTransitions` may cover
+              fewer transitions.
+
+            If differences exist, decide per case:
+            - If orchestrator transitions are correct and protocol is missing them,
+              add the missing transitions to `allowedTransitions` in protocol first.
+            - If both maps agree, proceed with deletion.
+
+            Replace `isValidTransition` to delegate:
+            ```go
+            // isValidTransition delegates to protocol.IsValidTransition — the canonical
+            // state machine FSM. The private validTransitions map has been removed to
+            // prevent silent divergence when protocol adds new states.
+            func isValidTransition(from, to protocol.ProtocolState) bool {
+                return protocol.IsValidTransition(from, to)
+            }
+            ```
+
+            Delete the entire `validTransitions` var declaration.
+
+            **3. Add a test for `IsValidTransition`**
+
+            Add to `pkg/protocol` (check if `state_transition_test.go` exists; if not,
+            create `is_valid_transition_test.go`). Include at least 3 valid transitions
+            and 2 invalid transitions as table-driven test cases.
+
+            ### Verification gate
+            ```
+            go build ./pkg/orchestrator/... ./pkg/protocol/...
+            go vet ./pkg/orchestrator/... ./pkg/protocol/...
+            go test ./pkg/orchestrator/... ./pkg/protocol/...
+            ```
+
+            ### Constraints
+            - Do NOT modify the `allowedTransitions` map unless adding missing
+              transitions discovered during the diff.
+            - Do NOT change `TransitionTo` in `orchestrator.go` (Agent A owns that file).
+            - `isValidTransition` keeps its existing signature — only the implementation
+              changes.
+          files:
+            - pkg/orchestrator/transitions.go
+            - pkg/protocol/state_transition.go
+    - number: 2
+      agents:
+        - id: A2
+          task: |-
+            ## Agent A2 — Update runner.go callers for new orchestrator signatures
+
+            ### Context
+            Wave 1 Agent A changed two function signatures in `pkg/orchestrator/orchestrator.go`:
+            - `New()` now returns `result.Result[*Orchestrator]` (was `(*Orchestrator, error)`)
+            - `NewBackendFromModel()` now returns `result.Result[backend.Backend]` (was `(backend.Backend, error)`)
+
+            Wave 1 Agent E will change `RunStubScan()` to add a `ctx context.Context` first
+            parameter.
+
+            All callers of these three functions are in `pkg/engine/runner.go`. Your job is to
+            update all call sites in that file.
+
+            ### Changes required
+
+            **1. Update 5 callers of `orchestrator.New()`** (lines 417, 815, 873, 932, 987)
+
+            Each currently does:
+            ```go
+            orch, err := orchestrator.New(ctx, opts.RepoPath, opts.IMPLPath)
+            if err != nil {
+                return result.NewFailure[<T>](...)
+            }
+            ```
+
+            Replace with:
+            ```go
+            orchRes := orchestrator.New(ctx, opts.RepoPath, opts.IMPLPath)
+            if orchRes.IsFatal() {
+                return result.NewFailure[<T>](orchRes.Errors)
+            }
+            orch := orchRes.GetData()
+            ```
+
+            Use the correct return type `<T>` for the enclosing function at each call site.
+            Read each function's return type before substituting.
+
+            **2. Update 3 callers of `orchestrator.NewBackendFromModel()`** (lines 132, 243, 609)
+
+            Each currently does:
+            ```go
+            b, bErr := orchestrator.NewBackendFromModel(model)
+            if bErr != nil {
+                return result.NewFailure[<T>](...)
+            }
+            ```
+
+            Replace with:
+            ```go
+            bRes := orchestrator.NewBackendFromModel(model)
+            if bRes.IsFatal() {
+                return result.NewFailure[<T>](bRes.Errors)
+            }
+            b := bRes.GetData()
+            ```
+
+            **3. Update 1 caller of `orchestrator.RunStubScan()`** (line ~486)
+
+            Current:
+            ```go
+            _ = orchestrator.RunStubScan(opts.IMPLPath, waveNum, ...)
+            ```
+            New (add `ctx` as first argument):
+            ```go
+            _ = orchestrator.RunStubScan(ctx, opts.IMPLPath, waveNum, ...)
+            ```
+
+            Verify the function is called in a context that has `ctx context.Context` available.
+            If the enclosing function does not have ctx, use `context.Background()` as fallback.
+
+            ### Verification gate
+            ```
+            go build ./pkg/orchestrator/... ./pkg/engine/...
+            go vet ./pkg/orchestrator/... ./pkg/engine/...
+            go test ./pkg/orchestrator/... ./pkg/engine/...
+            ```
+
+            ### Constraints
+            - Only update call sites — do not change any function signatures in runner.go.
+            - Use LSP find-references or grep to confirm all 5+3+1 sites are found.
+            - Do not change any other code in runner.go.
+          files:
+            - pkg/engine/runner.go
+          dependencies:
+            - A
+        - id: E
+          task: |-
+            ## Agent E — doc.go rewrite and stubs.go ctx param
+
+            ### Context
+            Two hygiene tasks:
+            1. (P2-4) `pkg/orchestrator/doc.go` is completely stale. It references
+               `orchestrator.Config{BackendConfig.WaveModel}`, `orch.StartWave(ctx, 1)`,
+               `orch.RunPreMergeGates(...)` — none exist. Event names `"agent_completed"`
+               and `"wave_completed"` are wrong (actual: `"agent_complete"`, `"wave_complete"`).
+            2. (P2-5) `pkg/orchestrator/stubs.go` `RunStubScan` takes no `context.Context`
+               despite running `exec.Command`. Needs `ctx` as first param.
+
+            After Wave 1 completes, `New()` returns `result.Result[*Orchestrator]`.
+            Your doc.go must reflect this new signature.
+
+            ### Changes required
+
+            **1. Rewrite `pkg/orchestrator/doc.go`**
+
+            Replace the entire file with accurate Go documentation reflecting the
+            actual public API:
+            - Constructor: `orchestrator.New(ctx, repoPath, implDocPath)` returns
+              `result.Result[*Orchestrator]`
+            - No `Config` struct passed to `New`; `BackendConfig` is separate
+            - Primary methods: `RunWave`, `MergeWave`, `RunVerification`,
+              `UpdateIMPLStatus`, `RunAgent`, `TransitionTo`, `SetDefaultModel`,
+              `SetWorktreePaths`, `SetLogger`
+            - Event names: `"agent_complete"`, `"wave_complete"` (no trailing 'd')
+            - Remove: `StartWave`, `RunPreMergeGates`, `SSEBroker`, `WaveModel`
+            - Describe: 10-state machine, git worktree isolation, concurrent agent
+              launch, E19 failure routing, event publisher pattern
+
+            Keep doc.go as a package-level Go doc comment only. Use `// Example:`
+            comments rather than runnable example functions (avoids compile failures).
+
+            **2. Add `ctx context.Context` to `RunStubScan`** (P2-5)
+
+            Current signature:
+            ```go
+            func RunStubScan(implDocPath string, waveNum int, ...) result.Result[RunStubData]
+            ```
+
+            New signature:
+            ```go
+            func RunStubScan(ctx context.Context, implDocPath string, waveNum int, ...) result.Result[RunStubData]
+            ```
+
+            Replace `exec.Command("bash", args...)` with `exec.CommandContext(ctx, "bash", args...)`.
+            Add `"context"` to the import block if not already present.
+
+            Note: The caller in `pkg/engine/runner.go` is updated by Wave 2 Agent A2.
+            Your job is only to change the function signature in `stubs.go`.
+
+            ### Verification gate
+            ```
+            go build ./pkg/orchestrator/...
+            go vet ./pkg/orchestrator/...
+            go test ./pkg/orchestrator/...
+            ```
+            Note: `pkg/engine/runner.go` (owned by Agent A2) will compile once both
+            Wave 2 agents complete. Your isolated build covers only `./pkg/orchestrator/...`.
+
+            ### Constraints
+            - `doc.go` must compile as valid Go — only use exported identifiers that
+              actually exist in the package after Wave 1 completes.
+            - Read the post-Wave-1 `orchestrator.go` before writing doc.go examples.
+            - Do NOT change runner.go (Agent A2 owns it).
+            - Do NOT change behavior of `RunStubScan` beyond adding ctx.
+          files:
+            - pkg/orchestrator/doc.go
+            - pkg/orchestrator/stubs.go
+          dependencies:
+            - A
+quality_gates:
+    level: standard
+    gates:
+        - type: build
+          command: go build ./...
+          required: true
+        - type: lint
+          command: go vet ./...
+          required: true
+        - type: test
+          command: go test ./pkg/orchestrator/... ./pkg/engine/...
+          required: true
+pre_mortem:
+    overall_risk: low
+    rows:
+        - scenario: |-
+            Agent A migrates New() return type but pkg/engine/runner.go still compiles
+            against the old signature at Wave 1 merge time, causing build gate failure
+            before Agent A2 can fix callers.
+          likelihood: medium
+          impact: medium
+          mitigation: |-
+            Wave 1 quality gates scope to ./pkg/orchestrator/... only (not ./pkg/engine/...).
+            Wave 2 gates cover both packages. The post-wave-1 build gate should be scoped
+            accordingly. If the orchestrator runs a full `go build ./...` gate after Wave 1,
+            it will fail until A2 completes — the Orchestrator should configure the Wave 1
+            gate to scope to ./pkg/orchestrator/... and ./pkg/protocol/... only.
+        - scenario: |-
+            Agent C deletes journal_integration.go but loggerFrom() was only defined there,
+            causing a compile error in stubs.go.
+          likelihood: medium
+          impact: high
+          mitigation: |-
+            Agent C task explicitly instructs checking for loggerFrom before deleting.
+            If only found in journal_integration.go, move it to stubs.go first.
+        - scenario: |-
+            Agent D's validTransitions map diverges from protocol allowedTransitions:
+            the orchestrator map allowed StateBlocked to transition to any state, but
+            protocol's map is more restrictive. Removing validTransitions breaks tests
+            that transition from Blocked.
+          likelihood: medium
+          impact: medium
+          mitigation: |-
+            Agent D task requires diffing both maps before removal. If protocol is more
+            restrictive, missing Blocked recovery transitions must be added to protocol
+            allowedTransitions first. Tests will catch regressions at the verification gate.
+        - scenario: |-
+            Agent E rewrites doc.go referencing New() with the old signature before
+            reading post-Wave-1 orchestrator.go, causing compile failure.
+          likelihood: low
+          impact: medium
+          mitigation: |-
+            Agent E task explicitly states to read orchestrator.go after Wave 1 completes
+            and that New() returns result.Result[*Orchestrator]. Agent E should not use
+            runnable Go example functions in doc.go to avoid compile risk.
+        - scenario: |-
+            Agent B adds executeRetryLoop call but passes a zero-value savedReport
+            (report never populated because no CompletionReport existed for the agent),
+            causing the retry loop to see empty FailureType and escalate instead of retry.
+          likelihood: low
+          impact: low
+          mitigation: |-
+            The existing outer guard `if savedStatus == "partial" || savedStatus == "blocked"`
+            ensures executeRetryLoop is only called when savedReport was actually populated.
+            Agent B must not call executeRetryLoop outside that guard.
+critic_report:
+    verdict: PASS
+    agent_reviews:
+        A:
+            agent_id: A
+            verdict: ISSUES
+            issues:
+                - check: symbol_accuracy
+                  severity: warning
+                  description: Brief lists callers of o.implSlug() as RunWave, launchAgent, executeRetryLoop but omits RunAgent at line 1236 of orchestrator.go. The search instruction compensates, but the explicit list is incomplete.
+                  file: pkg/orchestrator/orchestrator.go
+                  symbol: implSlug
+                - check: symbol_accuracy
+                  severity: error
+                  description: Agent A will add ctx context.Context as a required parameter to implSlug(). structured_wave.go line 129 calls o.implSlug() and is owned by Agent B. Agent B brief has no instruction to update this call. Both agents run in the same wave, so neither can depend on the other — the pkg/orchestrator build will fail after Wave 1 unless Agent B also updates structured_wave.go line 129. This is a wave-1 compile break not covered by either brief.
+                  file: pkg/orchestrator/structured_wave.go
+                  symbol: implSlug
+        A2:
+            agent_id: A2
+            verdict: PASS
+        B:
+            agent_id: B
+            verdict: ISSUES
+            issues:
+                - check: symbol_accuracy
+                  severity: error
+                  description: structured_wave.go line 129 calls o.implSlug() with no arguments. Agent A (same wave) will add a required ctx context.Context parameter to implSlug(). Agent B owns structured_wave.go but the brief contains no instruction to update this call site. After Wave 1 this file will not compile.
+                  file: pkg/orchestrator/structured_wave.go
+                  symbol: implSlug
+        C:
+            agent_id: C
+            verdict: PASS
+        D:
+            agent_id: D
+            verdict: PASS
+        E:
+            agent_id: E
+            verdict: PASS
+    summary: 'Reviewed 5 agents across 2 waves. Two errors found. (1) Agent A''s brief instructs updating all o.implSlug() callers within orchestrator.go but the explicit caller list omits RunAgent at line 1236 — the search instruction compensates for this but the list is incomplete. More critically, Agent A will add a ctx parameter to implSlug() but structured_wave.go line 129 also calls o.implSlug() and is owned by Agent B. Agent B''s brief has no instruction to update this call, which will produce a compile error unless addressed. (2) Agent A references CodeNotImplemented which does not exist in pkg/result/codes.go — the brief correctly tells the agent to check first and fall back to CodeAgentLaunchFailed, so this is documented accurately. All other checks pass: file existence confirmed for all modify/delete targets; interface contracts are syntactically valid; RunStubScan current signature matches what E says it will change; ExecuteMergeData and RunVerificationData are dead with no non-test callers; loggerFrom is defined only in journal_integration.go and the brief correctly instructs moving it to stubs.go before deletion; executeRetryLoop signature matches what Agent B will call; allowedTransitions map exists and IsValidTransition does not yet exist (correctly identified); runner.go call sites match the stated line numbers exactly.'
+    reviewed_at: "2026-04-03T21:41:04Z"
+    issue_count: 2
+state: SCOUT_PENDING
+injection_method: hook
