@@ -45,10 +45,11 @@ automatically via pkg/engine integration.`,
 			fullAgentID := fmt.Sprintf("wave%d-agent-%s", waveNum, agentID)
 
 			// Create journal observer
-			observer, err := journal.NewObserver(projectRoot, fullAgentID)
-			if err != nil {
-				return fmt.Errorf("failed to create journal observer: %w", err)
+			obsRes := journal.NewObserver(projectRoot, fullAgentID)
+			if obsRes.IsFatal() {
+				return fmt.Errorf("failed to create journal observer: %s", obsRes.Errors[0].Message)
 			}
+			observer := obsRes.Data
 
 			// Check if already initialized
 			if _, err := os.Stat(observer.CursorPath); err == nil {

@@ -47,10 +47,11 @@ launching or resuming agents.`,
 			fullAgentID := fmt.Sprintf("wave%d-agent-%s", waveNum, agentID)
 
 			// Create journal observer
-			observer, err := journal.NewObserver(projectRoot, fullAgentID)
-			if err != nil {
-				return fmt.Errorf("failed to create journal observer: %w", err)
+			obsRes := journal.NewObserver(projectRoot, fullAgentID)
+			if obsRes.IsFatal() {
+				return fmt.Errorf("failed to create journal observer: %s", obsRes.Errors[0].Message)
 			}
+			observer := obsRes.Data
 
 			// Check if journal is initialized
 			if _, err := os.Stat(observer.CursorPath); os.IsNotExist(err) {
@@ -58,9 +59,9 @@ launching or resuming agents.`,
 			}
 
 			// Sync journal from Claude Code session logs
-			result, err := observer.Sync()
-			if err != nil {
-				return fmt.Errorf("journal sync failed: %w", err)
+			syncRes := observer.Sync()
+			if syncRes.IsFatal() {
+				return fmt.Errorf("journal sync failed: %s", syncRes.Errors[0].Message)
 			}
 
 			// Load entries from index.jsonl
@@ -86,9 +87,9 @@ launching or resuming agents.`,
 			// Output JSON result
 			response := map[string]interface{}{
 				"journal_dir":       observer.JournalDir,
-				"new_tool_uses":     result.NewToolUses,
-				"new_tool_results":  result.NewToolResults,
-				"new_bytes":         result.NewBytes,
+				"new_tool_uses":     syncRes.Data.NewToolUses,
+				"new_tool_results":  syncRes.Data.NewToolResults,
+				"new_bytes":         syncRes.Data.NewBytes,
 				"context_file":      outPath,
 				"context_length":    len(contextMD),
 				"context_available": len(contextMD) > 0,
