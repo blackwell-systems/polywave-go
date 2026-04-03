@@ -16,19 +16,19 @@ import (
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
 )
 
-// SaveCursorData holds the result data from a successful saveCursor operation.
-type SaveCursorData struct {
+// saveCursorData holds the result data from a successful saveCursor operation.
+type saveCursorData struct {
 	SessionFile string `json:"session_file"`
 	Offset      int64  `json:"offset"`
 }
 
-// AppendData holds the result data from a successful appendToIndex operation.
-type AppendData struct {
+// appendData holds the result data from a successful appendToIndex operation.
+type appendData struct {
 	EntriesAppended int `json:"entries_appended"`
 }
 
-// UpdateData holds the result data from a successful updateRecent operation.
-type UpdateData struct {
+// updateData holds the result data from a successful updateRecent operation.
+type updateData struct {
 	TotalEntries int `json:"total_entries"`
 }
 
@@ -37,6 +37,7 @@ type JournalObserver struct {
 	ProjectRoot string
 	JournalDir  string
 	AgentID     string
+	RawAgentID  string // original agentID before wave-prefix strip
 	CursorPath  string
 	IndexPath   string
 	RecentPath  string
@@ -60,65 +61,85 @@ func (o *JournalObserver) log() *slog.Logger {
 
 // NewObserver creates a journal observer instance for an agent.
 // It creates the necessary directory structure under .saw-state/wave{N}/agent-{ID}/.
-func NewObserver(projectRoot string, agentID string) (*JournalObserver, error) {
+func NewObserver(projectRoot string, agentID string) result.Result[*JournalObserver] {
+	rawAgentID := agentID
+
 	// Extract wave number from agentID (e.g., "agent-A" -> wave1)
 	// For simplicity, assume wave1 if not specified
 	waveDir := "wave1"
+	strippedAgentID := agentID
 	if strings.Contains(agentID, "wave") {
 		// Handle agentID like "wave2-agent-B"
 		parts := strings.Split(agentID, "-")
 		if len(parts) > 0 && strings.HasPrefix(parts[0], "wave") {
 			waveDir = parts[0]
-			agentID = strings.Join(parts[1:], "-")
+			strippedAgentID = strings.Join(parts[1:], "-")
 		}
 	}
 
-	journalDir := filepath.Join(protocol.SAWStateDir(projectRoot), waveDir, agentID)
-	ResultsDir := filepath.Join(journalDir, "tool-results")
+	journalDir := filepath.Join(protocol.SAWStateDir(projectRoot), waveDir, strippedAgentID)
+	resultsDir := filepath.Join(journalDir, "tool-results")
 
 	// Create directory structure
 	if err := os.MkdirAll(journalDir, 0755); err != nil {
-		return nil, fmt.Errorf("failed to create journal dir: %w", err)
+		return result.NewFailure[*JournalObserver]([]result.SAWError{{
+			Code:     result.CodeJournalObserverCursorFailed,
+			Message:  fmt.Sprintf("failed to create journal dir: %s", err.Error()),
+			Severity: "fatal",
+		}})
 	}
-	if err := os.MkdirAll(ResultsDir, 0755); err != nil {
-		return nil, fmt.Errorf("failed to create results dir: %w", err)
+	if err := os.MkdirAll(resultsDir, 0755); err != nil {
+		return result.NewFailure[*JournalObserver]([]result.SAWError{{
+			Code:     result.CodeJournalObserverCursorFailed,
+			Message:  fmt.Sprintf("failed to create results dir: %s", err.Error()),
+			Severity: "fatal",
+		}})
 	}
 
 	o := &JournalObserver{
 		ProjectRoot: projectRoot,
 		JournalDir:  journalDir,
-		AgentID:     agentID,
+		AgentID:     strippedAgentID,
+		RawAgentID:  rawAgentID,
 		CursorPath:  filepath.Join(journalDir, "cursor.json"),
 		IndexPath:   filepath.Join(journalDir, "index.jsonl"),
 		RecentPath:  filepath.Join(journalDir, "recent.json"),
-		ResultsDir:  ResultsDir,
+		ResultsDir:  resultsDir,
 	}
 
-	return o, nil
+	return result.NewSuccess(o)
 }
 
 // Sync incrementally reads the session log from the cursor position and extracts
 // tool_use and tool_result entries. Returns the number of new entries processed.
-func (o *JournalObserver) Sync() (*SyncResult, error) {
+func (o *JournalObserver) Sync() result.Result[*SyncResult] {
 	// Find the latest session file
 	sessionFile, err := o.findLatestSessionFile()
 	if err != nil {
-		return nil, fmt.Errorf("failed to find session file: %w", err)
+		return result.NewFailure[*SyncResult]([]result.SAWError{{
+			Code:     result.CodeJournalObserverCursorFailed,
+			Message:  fmt.Sprintf("failed to find session file: %s", err.Error()),
+			Severity: "fatal",
+		}})
 	}
 
 	// No session files yet - return empty result (fresh session)
 	if sessionFile == "" {
-		return &SyncResult{
+		return result.NewSuccess(&SyncResult{
 			NewToolUses:    0,
 			NewToolResults: 0,
 			NewBytes:       0,
-		}, nil
+		})
 	}
 
 	// Load cursor
 	cursor, err := o.loadCursor()
 	if err != nil {
-		return nil, fmt.Errorf("failed to load cursor: %w", err)
+		return result.NewFailure[*SyncResult]([]result.SAWError{{
+			Code:     result.CodeJournalObserverCursorFailed,
+			Message:  fmt.Sprintf("failed to load cursor: %s", err.Error()),
+			Severity: "fatal",
+		}})
 	}
 
 	// If session file changed, reset cursor
@@ -132,13 +153,21 @@ func (o *JournalObserver) Sync() (*SyncResult, error) {
 	// Open session file
 	f, err := os.Open(filepath.Join(o.getClaudeProjectDir(), sessionFile))
 	if err != nil {
-		return nil, fmt.Errorf("failed to open session file: %w", err)
+		return result.NewFailure[*SyncResult]([]result.SAWError{{
+			Code:     result.CodeJournalObserverCursorFailed,
+			Message:  fmt.Sprintf("failed to open session file: %s", err.Error()),
+			Severity: "fatal",
+		}})
 	}
 	defer f.Close()
 
 	// Seek to cursor position
 	if _, err := f.Seek(cursor.Offset, 0); err != nil {
-		return nil, fmt.Errorf("failed to seek to cursor: %w", err)
+		return result.NewFailure[*SyncResult]([]result.SAWError{{
+			Code:     result.CodeJournalObserverCursorFailed,
+			Message:  fmt.Sprintf("failed to seek to cursor: %s", err.Error()),
+			Severity: "fatal",
+		}})
 	}
 
 	// Parse new entries
@@ -164,40 +193,56 @@ func (o *JournalObserver) Sync() (*SyncResult, error) {
 	}
 
 	if err := scanner.Err(); err != nil {
-		return nil, fmt.Errorf("failed to read session file: %w", err)
+		return result.NewFailure[*SyncResult]([]result.SAWError{{
+			Code:     result.CodeJournalObserverAppendFailed,
+			Message:  fmt.Sprintf("failed to read session file: %s", err.Error()),
+			Severity: "fatal",
+		}})
 	}
 
 	// Update cursor
 	cursor.Offset += bytesRead
 	if r := o.saveCursor(cursor); r.IsFatal() {
-		return nil, fmt.Errorf("failed to save cursor: %s", r.Errors[0].Message)
+		return result.NewFailure[*SyncResult]([]result.SAWError{{
+			Code:     result.CodeJournalObserverCursorFailed,
+			Message:  fmt.Sprintf("failed to save cursor: %s", r.Errors[0].Message),
+			Severity: "fatal",
+		}})
 	}
 
 	// Append to index
 	if len(entries) > 0 {
 		if r := o.appendToIndex(entries); r.IsFatal() {
-			return nil, fmt.Errorf("failed to append to index: %s", r.Errors[0].Message)
+			return result.NewFailure[*SyncResult]([]result.SAWError{{
+				Code:     result.CodeJournalObserverAppendFailed,
+				Message:  fmt.Sprintf("failed to append to index: %s", r.Errors[0].Message),
+				Severity: "fatal",
+			}})
 		}
 
 		// Update recent cache
 		if r := o.updateRecent(entries); r.IsFatal() {
-			return nil, fmt.Errorf("failed to update recent: %s", r.Errors[0].Message)
+			return result.NewFailure[*SyncResult]([]result.SAWError{{
+				Code:     result.CodeJournalObserverUpdateFailed,
+				Message:  fmt.Sprintf("failed to update recent: %s", r.Errors[0].Message),
+				Severity: "fatal",
+			}})
 		}
 	}
 
 	// Count tool uses vs results
-	result := &SyncResult{
+	syncRes := &SyncResult{
 		NewBytes: bytesRead,
 	}
 	for _, e := range entries {
 		if e.Kind == "tool_use" {
-			result.NewToolUses++
+			syncRes.NewToolUses++
 		} else if e.Kind == "tool_result" {
-			result.NewToolResults++
+			syncRes.NewToolResults++
 		}
 	}
 
-	return result, nil
+	return result.NewSuccess(syncRes)
 }
 
 // extractToolEntries parses a Claude Code log entry and extracts tool_use and
@@ -374,10 +419,9 @@ func (o *JournalObserver) findLatestSessionFile() (string, error) {
 }
 
 // getClaudeProjectDir returns the path to the Claude Code project directory.
-// For simplicity, we use an MD5 hash of the project root basename.
+// Hashes the full project root path to produce a stable, unique directory name.
 func (o *JournalObserver) getClaudeProjectDir() string {
-	projectName := filepath.Base(o.ProjectRoot)
-	hash := md5.Sum([]byte(projectName))
+	hash := md5.Sum([]byte(o.ProjectRoot))
 	projectHash := fmt.Sprintf("%x", hash)[:16]
 
 	homeDir, err := os.UserHomeDir()
@@ -408,34 +452,34 @@ func (o *JournalObserver) loadCursor() (*SessionCursor, error) {
 }
 
 // saveCursor persists the session cursor to disk.
-func (o *JournalObserver) saveCursor(cursor *SessionCursor) result.Result[SaveCursorData] {
+func (o *JournalObserver) saveCursor(cursor *SessionCursor) result.Result[saveCursorData] {
 	data, err := json.MarshalIndent(cursor, "", "  ")
 	if err != nil {
-		return result.NewFailure[SaveCursorData]([]result.SAWError{{
-			Code:     "JOURNAL_ERROR",
+		return result.NewFailure[saveCursorData]([]result.SAWError{{
+			Code:     result.CodeJournalObserverCursorFailed,
 			Message:  err.Error(),
 			Severity: "fatal",
 		}})
 	}
 	if err := os.WriteFile(o.CursorPath, data, 0644); err != nil {
-		return result.NewFailure[SaveCursorData]([]result.SAWError{{
-			Code:     "JOURNAL_ERROR",
+		return result.NewFailure[saveCursorData]([]result.SAWError{{
+			Code:     result.CodeJournalObserverCursorFailed,
 			Message:  err.Error(),
 			Severity: "fatal",
 		}})
 	}
-	return result.NewSuccess(SaveCursorData{
+	return result.NewSuccess(saveCursorData{
 		SessionFile: cursor.SessionFile,
 		Offset:      cursor.Offset,
 	})
 }
 
 // appendToIndex appends new tool entries to the index.jsonl file.
-func (o *JournalObserver) appendToIndex(entries []ToolEntry) result.Result[AppendData] {
+func (o *JournalObserver) appendToIndex(entries []ToolEntry) result.Result[appendData] {
 	f, err := os.OpenFile(o.IndexPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 	if err != nil {
-		return result.NewFailure[AppendData]([]result.SAWError{{
-			Code:     "JOURNAL_ERROR",
+		return result.NewFailure[appendData]([]result.SAWError{{
+			Code:     result.CodeJournalObserverAppendFailed,
 			Message:  err.Error(),
 			Severity: "fatal",
 		}})
@@ -445,19 +489,19 @@ func (o *JournalObserver) appendToIndex(entries []ToolEntry) result.Result[Appen
 	encoder := json.NewEncoder(f)
 	for _, entry := range entries {
 		if err := encoder.Encode(entry); err != nil {
-			return result.NewFailure[AppendData]([]result.SAWError{{
-				Code:     "JOURNAL_ERROR",
+			return result.NewFailure[appendData]([]result.SAWError{{
+				Code:     result.CodeJournalObserverAppendFailed,
 				Message:  err.Error(),
 				Severity: "fatal",
 			}})
 		}
 	}
 
-	return result.NewSuccess(AppendData{EntriesAppended: len(entries)})
+	return result.NewSuccess(appendData{EntriesAppended: len(entries)})
 }
 
 // updateRecent maintains a sliding window of the last 30 tool entries in recent.json.
-func (o *JournalObserver) updateRecent(newEntries []ToolEntry) result.Result[UpdateData] {
+func (o *JournalObserver) updateRecent(newEntries []ToolEntry) result.Result[updateData] {
 	// Load existing recent entries
 	var existing []ToolEntry
 	if data, err := os.ReadFile(o.RecentPath); err == nil {
@@ -477,33 +521,37 @@ func (o *JournalObserver) updateRecent(newEntries []ToolEntry) result.Result[Upd
 	// Save back
 	data, err := json.MarshalIndent(existing, "", "  ")
 	if err != nil {
-		return result.NewFailure[UpdateData]([]result.SAWError{{
-			Code:     "JOURNAL_ERROR",
+		return result.NewFailure[updateData]([]result.SAWError{{
+			Code:     result.CodeJournalObserverUpdateFailed,
 			Message:  err.Error(),
 			Severity: "fatal",
 		}})
 	}
 	if err := os.WriteFile(o.RecentPath, data, 0644); err != nil {
-		return result.NewFailure[UpdateData]([]result.SAWError{{
-			Code:     "JOURNAL_ERROR",
+		return result.NewFailure[updateData]([]result.SAWError{{
+			Code:     result.CodeJournalObserverUpdateFailed,
 			Message:  err.Error(),
 			Severity: "fatal",
 		}})
 	}
-	return result.NewSuccess(UpdateData{TotalEntries: len(existing)})
+	return result.NewSuccess(updateData{TotalEntries: len(existing)})
 }
 
 // LoadJournal reads all entries from index.jsonl.
 // Returns empty slice (not error) if index.jsonl doesn't exist.
-func (o *JournalObserver) LoadJournal() ([]ToolEntry, error) {
+func (o *JournalObserver) LoadJournal() result.Result[[]ToolEntry] {
 	// Check if index file exists
 	data, err := os.ReadFile(o.IndexPath)
 	if os.IsNotExist(err) {
 		// No journal yet - return empty slice
-		return []ToolEntry{}, nil
+		return result.NewSuccess([]ToolEntry{})
 	}
 	if err != nil {
-		return nil, fmt.Errorf("failed to read index: %w", err)
+		return result.NewFailure[[]ToolEntry]([]result.SAWError{{
+			Code:     result.CodeJournalObserverAppendFailed,
+			Message:  fmt.Sprintf("failed to read index: %s", err.Error()),
+			Severity: "fatal",
+		}})
 	}
 
 	// Parse JSONL (one JSON object per line)
@@ -526,21 +574,20 @@ func (o *JournalObserver) LoadJournal() ([]ToolEntry, error) {
 		entries = append(entries, entry)
 	}
 
-	return entries, nil
+	return result.NewSuccess(entries)
 }
 
 // GenerateContext generates markdown context summary from journal entries.
 // Calls journal.GenerateContext() with loaded journal entries.
-func (o *JournalObserver) GenerateContext() (string, error) {
-	// Load all journal entries
-	entries, err := o.LoadJournal()
-	if err != nil {
-		return "", fmt.Errorf("failed to load journal: %w", err)
+func (o *JournalObserver) GenerateContext() result.Result[string] {
+	res := o.LoadJournal()
+	if res.IsFatal() {
+		return result.NewFailure[string]([]result.SAWError{{
+			Code:     result.CodeJournalObserverAppendFailed,
+			Message:  fmt.Sprintf("failed to load journal: %s", res.Errors[0].Message),
+			Severity: "fatal",
+		}})
 	}
-
-	// Call journal.GenerateContext with no limit (maxEntries=0 means all entries)
-	context := GenerateContext(entries, 0)
-
-	return context, nil
+	ctx := GenerateContext(*res.Data, 0)
+	return result.NewSuccess(ctx)
 }
-
