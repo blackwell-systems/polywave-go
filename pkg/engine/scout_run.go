@@ -250,6 +250,7 @@ func RunScoutFull(ctx context.Context, opts RunScoutFullOpts, onChunk func(strin
 	// Optional: run critic gate if agent count threshold is met.
 	// RunCritic is defined in pkg/engine/critic.go (Agent D's file).
 	// runCriticFn is set by init() in critic.go after merge; defaults to nil (skip).
+	// E37: if the critic returns verdict "ISSUES", do NOT advance to REVIEWED state.
 	if !opts.NoCritic && runCriticFn != nil {
 		manifest, loadErr := protocol.Load(ctx, implPath)
 		if loadErr != nil {
@@ -262,6 +263,13 @@ func RunScoutFull(ctx context.Context, opts RunScoutFullOpts, onChunk func(strin
 				log.Warn("RunScoutFull: critic gate failed or not available; skipping gracefully", "error", criticErr)
 			} else {
 				res.CriticVerdict = criticRes.Verdict
+				// E37: critic gate — ISSUES verdict blocks advance to REVIEWED state.
+				if criticRes.Verdict == "ISSUES" {
+					return RunScoutFullResult{
+						CriticVerdict: criticRes.Verdict,
+						IMPLPath:      res.IMPLPath,
+					}, fmt.Errorf("E37 critic gate: verdict ISSUES — resolve critic findings before proceeding")
+				}
 			}
 		}
 	}
