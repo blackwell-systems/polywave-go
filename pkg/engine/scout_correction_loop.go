@@ -32,9 +32,9 @@ type ScoutCorrectionOpts struct {
 	// runScoutFn overrides RunScout for testing. If nil, uses the real RunScout.
 	runScoutFn func(ctx context.Context, opts RunScoutOpts, onChunk func(string)) error
 	// validateFn overrides IMPL doc validation for testing. If nil, uses validateIMPLDoc.
-	validateFn func(implPath string) ([]result.SAWError, error)
+	validateFn func(ctx context.Context, implPath string) ([]result.SAWError, error)
 	// setStateFn overrides state-setting for testing. If nil, uses setIMPLStateBlocked.
-	setStateFn func(implPath string) result.Result[SetBlockedData]
+	setStateFn func(ctx context.Context, implPath string) result.Result[SetBlockedData]
 }
 
 // ScoutCorrectionLoop runs RunScout followed by E16 validation, retrying up to
@@ -115,7 +115,7 @@ func ScoutCorrectionLoop(ctx context.Context, opts ScoutCorrectionOpts, onChunk 
 		}
 
 		// Validate the output IMPL doc.
-		validationErrors, err := validate(scoutOpts.IMPLOutPath)
+		validationErrors, err := validate(ctx, scoutOpts.IMPLOutPath)
 		if err != nil {
 			return result.NewFailure[CorrectionData]([]result.SAWError{
 				result.NewFatal(result.CodeScoutValidationFailed,
@@ -136,7 +136,7 @@ func ScoutCorrectionLoop(ctx context.Context, opts ScoutCorrectionOpts, onChunk 
 	}
 
 	// All retries exhausted. Set IMPL doc state to blocked.
-	setRes := setState(opts.ScoutOpts.IMPLOutPath)
+	setRes := setState(ctx, opts.ScoutOpts.IMPLOutPath)
 	if setRes.IsFatal() {
 		// Non-fatal: log but still return the validation error.
 		fmt.Printf("scout correction loop: failed to set IMPL state to BLOCKED: %s\n", setRes.Errors[0].Message)
@@ -170,8 +170,8 @@ func buildCorrectionPrompt(errors []result.SAWError) string {
 }
 
 // validateIMPLDoc loads an IMPL doc and runs E16 validation, returning any errors.
-func validateIMPLDoc(implPath string) ([]result.SAWError, error) {
-	manifest, err := protocol.Load(context.TODO(), implPath)
+func validateIMPLDoc(ctx context.Context, implPath string) ([]result.SAWError, error) {
+	manifest, err := protocol.Load(ctx, implPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to load IMPL doc: %w", err)
 	}
@@ -180,8 +180,8 @@ func validateIMPLDoc(implPath string) ([]result.SAWError, error) {
 
 // setIMPLStateBlocked updates the IMPL doc state to BLOCKED after exhausting
 // correction retries.
-func setIMPLStateBlocked(implPath string) result.Result[SetBlockedData] {
-	manifest, err := protocol.Load(context.TODO(), implPath)
+func setIMPLStateBlocked(ctx context.Context, implPath string) result.Result[SetBlockedData] {
+	manifest, err := protocol.Load(ctx, implPath)
 	if err != nil {
 		return result.NewFailure[SetBlockedData]([]result.SAWError{
 			result.NewFatal(result.CodeSetBlockedLoadFailed,
@@ -190,7 +190,7 @@ func setIMPLStateBlocked(implPath string) result.Result[SetBlockedData] {
 		})
 	}
 	manifest.State = protocol.StateBlocked
-	if saveRes := protocol.Save(context.TODO(), manifest, implPath); saveRes.IsFatal() {
+	if saveRes := protocol.Save(ctx, manifest, implPath); saveRes.IsFatal() {
 		errMsg := "failed to save manifest"
 		if len(saveRes.Errors) > 0 {
 			errMsg = saveRes.Errors[0].Message

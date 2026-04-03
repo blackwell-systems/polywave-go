@@ -21,11 +21,11 @@ func TestScoutCorrectionLoop_SucceedsFirstTry(t *testing.T) {
 			scoutCalls++
 			return nil
 		},
-		validateFn: func(implPath string) ([]result.SAWError, error) {
+		validateFn: func(ctx context.Context, implPath string) ([]result.SAWError, error) {
 			// Passes on first try.
 			return nil, nil
 		},
-		setStateFn: func(implPath string) result.Result[SetBlockedData] {
+		setStateFn: func(ctx context.Context, implPath string) result.Result[SetBlockedData] {
 			t.Fatal("setStateFn should not be called on success")
 			return result.NewSuccess(SetBlockedData{})
 		},
@@ -68,7 +68,7 @@ func TestScoutCorrectionLoop_RetriesAndSucceeds(t *testing.T) {
 			}
 			return nil
 		},
-		validateFn: func(implPath string) ([]result.SAWError, error) {
+		validateFn: func(ctx context.Context, implPath string) ([]result.SAWError, error) {
 			// Fail first time, pass second time.
 			if scoutCalls == 1 {
 				return []result.SAWError{
@@ -77,7 +77,7 @@ func TestScoutCorrectionLoop_RetriesAndSucceeds(t *testing.T) {
 			}
 			return nil, nil
 		},
-		setStateFn: func(implPath string) result.Result[SetBlockedData] {
+		setStateFn: func(ctx context.Context, implPath string) result.Result[SetBlockedData] {
 			t.Fatal("setStateFn should not be called when retry succeeds")
 			return result.NewSuccess(SetBlockedData{})
 		},
@@ -110,14 +110,14 @@ func TestScoutCorrectionLoop_ExhaustsRetriesAndSetsState(t *testing.T) {
 			scoutCalls++
 			return nil
 		},
-		validateFn: func(implPath string) ([]result.SAWError, error) {
+		validateFn: func(ctx context.Context, implPath string) ([]result.SAWError, error) {
 			// Always fail.
 			return []result.SAWError{
 				{Code: "E16_001", Message: "missing slug field"},
 				{Code: "E16_002", Message: "no waves defined"},
 			}, nil
 		},
-		setStateFn: func(implPath string) result.Result[SetBlockedData] {
+		setStateFn: func(ctx context.Context, implPath string) result.Result[SetBlockedData] {
 			stateSet = true
 			return result.NewSuccess(SetBlockedData{IMPLPath: implPath})
 		},

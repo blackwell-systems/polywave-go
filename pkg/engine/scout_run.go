@@ -88,7 +88,7 @@ type RunScoutFullResult struct {
 //  7. Calls FinalizeIMPLEngine for gate population
 //  8. If !NoCritic and criticThresholdMet: calls engine.RunCritic (Agent D's function)
 //  9. Returns RunScoutFullResult
-func RunScoutFull(ctx context.Context, opts RunScoutFullOpts, onChunk func(string)) (RunScoutFullResult, error) {
+func RunScoutFull(ctx context.Context, opts RunScoutFullOpts, onChunk func(string)) result.Result[RunScoutFullResult] {
 	log := loggerFrom(opts.Logger)
 
 	// Resolve repoPath to absolute.
@@ -96,18 +96,27 @@ func RunScoutFull(ctx context.Context, opts RunScoutFullOpts, onChunk func(strin
 	if repoPath == "" {
 		cwd, err := os.Getwd()
 		if err != nil {
-			return RunScoutFullResult{}, fmt.Errorf("engine.RunScoutFull: failed to get current directory: %w", err)
+			return result.NewFailure[RunScoutFullResult]([]result.SAWError{
+				result.NewFatal(result.CodeScoutFailed,
+					fmt.Sprintf("engine.RunScoutFull: failed to get current directory: %v", err)),
+			})
 		}
 		repoPath = cwd
 	}
 	absRepo, err := filepath.Abs(repoPath)
 	if err != nil {
-		return RunScoutFullResult{}, fmt.Errorf("engine.RunScoutFull: failed to resolve repo path: %w", err)
+		return result.NewFailure[RunScoutFullResult]([]result.SAWError{
+			result.NewFatal(result.CodeScoutFailed,
+				fmt.Sprintf("engine.RunScoutFull: failed to resolve repo path: %v", err)),
+		})
 	}
 	repoPath = absRepo
 
 	if _, err := os.Stat(repoPath); err != nil {
-		return RunScoutFullResult{}, fmt.Errorf("engine.RunScoutFull: repo path does not exist: %s", repoPath)
+		return result.NewFailure[RunScoutFullResult]([]result.SAWError{
+			result.NewFatal(result.CodeScoutFailed,
+				fmt.Sprintf("engine.RunScoutFull: repo path does not exist: %s", repoPath)),
+		})
 	}
 
 	// Generate slug and compute IMPL path.
@@ -129,10 +138,10 @@ func RunScoutFull(ctx context.Context, opts RunScoutFullOpts, onChunk func(strin
 			protocol.StateScoutValidating:
 			log.Info("RunScoutFull: IMPL doc already exists with advanced state; skipping Scout",
 				"state", existingDoc.State, "impl_path", implPath)
-			return RunScoutFullResult{
+			return result.NewSuccess(RunScoutFullResult{
 				IMPLPath: implPath,
 				Slug:     slug,
-			}, nil
+			})
 		}
 		// StateScoutPending or unknown states: proceed with Scout.
 	}
@@ -140,7 +149,10 @@ func RunScoutFull(ctx context.Context, opts RunScoutFullOpts, onChunk func(strin
 	// Ensure docs/IMPL directory exists.
 	implDir := filepath.Dir(implPath)
 	if err := os.MkdirAll(implDir, 0755); err != nil {
-		return RunScoutFullResult{}, fmt.Errorf("engine.RunScoutFull: failed to create IMPL directory: %w", err)
+		return result.NewFailure[RunScoutFullResult]([]result.SAWError{
+			result.NewFatal(result.CodeScoutFailed,
+				fmt.Sprintf("engine.RunScoutFull: failed to create IMPL directory: %v", err)),
+		})
 	}
 
 	// Apply default timeout.
@@ -164,7 +176,7 @@ func RunScoutFull(ctx context.Context, opts RunScoutFullOpts, onChunk func(strin
 		Logger:              opts.Logger,
 	}
 
-	// Run ScoutCorrectionLoop (C9: self-healing validation).
+	// Run ScoutCorrectionLoop: launches Scout with retry-on-validation-failure.
 	correctionOpts := ScoutCorrectionOpts{
 		ScoutOpts:  scoutOpts,
 		MaxRetries: 3,
@@ -184,18 +196,27 @@ func RunScoutFull(ctx context.Context, opts RunScoutFullOpts, onChunk func(strin
 		if len(corrRes.Errors) > 0 {
 			errMsg = corrRes.Errors[0].Message
 		}
-		return RunScoutFullResult{}, fmt.Errorf("engine.RunScoutFull: Scout execution failed: %s", errMsg)
+		return result.NewFailure[RunScoutFullResult]([]result.SAWError{
+			result.NewFatal(result.CodeScoutFailed,
+				fmt.Sprintf("engine.RunScoutFull: Scout execution failed: %s", errMsg)),
+		})
 	}
 
 	// Wait for IMPL file to appear (race condition guard).
 	if !waitForFile(implPath, 10*time.Second) {
-		return RunScoutFullResult{}, fmt.Errorf("engine.RunScoutFull: IMPL doc not found at %s after Scout completion", implPath)
+		return result.NewFailure[RunScoutFullResult]([]result.SAWError{
+			result.NewFatal(result.CodeScoutFailed,
+				fmt.Sprintf("engine.RunScoutFull: IMPL doc not found at %s after Scout completion", implPath)),
+		})
 	}
 
 	// Validate IMPL doc (defense-in-depth — Scout self-validates internally).
 	errs, err := protocol.ValidateIMPLDoc(implPath)
 	if err != nil {
-		return RunScoutFullResult{}, fmt.Errorf("engine.RunScoutFull: validation system error: %w", err)
+		return result.NewFailure[RunScoutFullResult]([]result.SAWError{
+			result.NewFatal(result.CodeScoutValidationFailed,
+				fmt.Sprintf("engine.RunScoutFull: validation system error: %v", err)),
+		})
 	}
 
 	// Handle agent-ID errors with idgen.AssignAgentIDs auto-correction.
@@ -213,13 +234,19 @@ func RunScoutFull(ctx context.Context, opts RunScoutFullOpts, onChunk func(strin
 			if agentCount > 0 {
 				res := idgen.AssignAgentIDs(agentCount, nil)
 				if res.IsFatal() {
-					return RunScoutFullResult{}, fmt.Errorf("engine.RunScoutFull: failed to generate agent IDs: %s", res.Errors[0].Message)
+					return result.NewFailure[RunScoutFullResult]([]result.SAWError{
+						result.NewFatal(result.CodeScoutFailed,
+							fmt.Sprintf("engine.RunScoutFull: failed to generate agent IDs: %s", res.Errors[0].Message)),
+					})
 				}
 				correctIDs := res.GetData()
 				log.Warn("RunScoutFull: agent ID validation errors found; manual correction required",
 					"correct_ids", strings.Join(correctIDs, " "))
-				return RunScoutFullResult{}, fmt.Errorf("engine.RunScoutFull: IMPL doc validation failed (agent ID errors); suggested IDs: %s",
-					strings.Join(correctIDs, " "))
+				return result.NewFailure[RunScoutFullResult]([]result.SAWError{
+					result.NewFatal(result.CodeScoutFailed,
+						fmt.Sprintf("engine.RunScoutFull: IMPL doc validation failed (agent ID errors); suggested IDs: %s",
+							strings.Join(correctIDs, " "))),
+				})
 			}
 		}
 
@@ -228,8 +255,11 @@ func RunScoutFull(ctx context.Context, opts RunScoutFullOpts, onChunk func(strin
 		for _, e := range errs {
 			msgs = append(msgs, fmt.Sprintf("line %d [%s]: %s", e.Line, e.Code, e.Message))
 		}
-		return RunScoutFullResult{}, fmt.Errorf("engine.RunScoutFull: IMPL doc validation failed: %s",
-			strings.Join(msgs, "; "))
+		return result.NewFailure[RunScoutFullResult]([]result.SAWError{
+			result.NewFatal(result.CodeScoutValidationFailed,
+				fmt.Sprintf("engine.RunScoutFull: IMPL doc validation failed: %s",
+					strings.Join(msgs, "; "))),
+		})
 	}
 
 	// Finalize IMPL doc (M4: populate verification gates).
@@ -265,16 +295,18 @@ func RunScoutFull(ctx context.Context, opts RunScoutFullOpts, onChunk func(strin
 				res.CriticVerdict = criticRes.Verdict
 				// E37: critic gate — ISSUES verdict blocks advance to REVIEWED state.
 				if criticRes.Verdict == "ISSUES" {
-					return RunScoutFullResult{
-						CriticVerdict: criticRes.Verdict,
-						IMPLPath:      res.IMPLPath,
-					}, fmt.Errorf("E37 critic gate: verdict ISSUES — resolve critic findings before proceeding")
+					return result.NewFailure[RunScoutFullResult]([]result.SAWError{
+						result.NewFatal("P009_CRITIC_GATE_FAILED",
+							"E37 critic gate: verdict ISSUES — resolve critic findings before proceeding").
+							WithContext("impl_path", implPath).
+							WithContext("verdict", criticRes.Verdict),
+					})
 				}
 			}
 		}
 	}
 
-	return res, nil
+	return result.NewSuccess(res)
 }
 
 // generateSlug creates a URL-safe slug from a feature description.
