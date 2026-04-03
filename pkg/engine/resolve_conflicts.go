@@ -47,7 +47,7 @@ func ResolveConflicts(ctx context.Context, opts ResolveConflictsOpts) result.Res
 	}
 
 	// Load IMPL manifest for agent context
-	manifest, err := protocol.Load(context.TODO(), opts.IMPLPath)
+	manifest, err := protocol.Load(ctx, opts.IMPLPath)
 	if err != nil {
 		return result.NewFailure[ResolveData]([]result.SAWError{
 			result.NewFatal(result.CodeResolveLoadFailed,
