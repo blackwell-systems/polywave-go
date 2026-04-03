@@ -194,19 +194,20 @@ func TestListArchives_ReturnsAll(t *testing.T) {
 	}
 
 	// List archives
-	result, err := ListArchives(tmpDir)
-	if err != nil {
-		t.Fatalf("ListArchives failed: %v", err)
+	listRes := ListArchives(tmpDir)
+	if listRes.IsFatal() {
+		t.Fatalf("ListArchives failed: %v", listRes.Errors[0].Message)
 	}
+	got := listRes.GetData()
 
 	// Verify count
-	if len(result) != 3 {
-		t.Fatalf("expected 3 archives, got %d", len(result))
+	if len(got) != 3 {
+		t.Fatalf("expected 3 archives, got %d", len(got))
 	}
 
 	// Verify sorted by archived_at (oldest first)
-	for i := 1; i < len(result); i++ {
-		if result[i].ArchivedAt.Before(result[i-1].ArchivedAt) {
+	for i := 1; i < len(got); i++ {
+		if got[i].ArchivedAt.Before(got[i-1].ArchivedAt) {
 			t.Error("archives not sorted by archived_at")
 		}
 	}
@@ -644,13 +645,13 @@ func TestListArchives_EmptyDirectory(t *testing.T) {
 	tmpDir := t.TempDir()
 
 	// List archives in empty directory (archive dir doesn't even exist)
-	result, err := ListArchives(tmpDir)
-	if err != nil {
-		t.Fatalf("ListArchives failed on empty directory: %v", err)
+	listRes := ListArchives(tmpDir)
+	if listRes.IsFatal() {
+		t.Fatalf("ListArchives failed on empty directory: %v", listRes.Errors[0].Message)
 	}
 
-	if len(result) != 0 {
-		t.Errorf("expected 0 archives, got %d", len(result))
+	if len(listRes.GetData()) != 0 {
+		t.Errorf("expected 0 archives, got %d", len(listRes.GetData()))
 	}
 }
 

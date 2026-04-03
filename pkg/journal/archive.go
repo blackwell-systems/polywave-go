@@ -41,14 +41,14 @@ type ExtractData struct {
 	FilesCount  int    `json:"files_count"`
 }
 
-// CreateTarData holds the result data from a successful createTarGz operation.
-type CreateTarData struct {
-	SourceDir   string `json:"source_dir"`
-	TargetPath  string `json:"target_path"`
+// createTarData holds the result data from a successful createTarGz operation.
+type createTarData struct {
+	SourceDir  string `json:"source_dir"`
+	TargetPath string `json:"target_path"`
 }
 
-// WriteMetaData holds the result data from a successful writeMetadataAtomic operation.
-type WriteMetaData struct {
+// writeMetaData holds the result data from a successful writeMetadataAtomic operation.
+type writeMetaData struct {
 	Path string `json:"path"`
 }
 
@@ -82,7 +82,7 @@ func (o *JournalObserver) Archive() result.Result[ArchiveData] {
 
 	if wave == 0 || agent == "" {
 		return result.NewFailure[ArchiveData]([]result.SAWError{{
-			Code:     "JOURNAL_ERROR",
+			Code:     result.CodeJournalArchiveCreateFailed,
 			Message:  fmt.Sprintf("cannot parse wave/agent from journal dir: %s", o.JournalDir),
 			Severity: "fatal",
 		}})
@@ -92,7 +92,7 @@ func (o *JournalObserver) Archive() result.Result[ArchiveData] {
 	archiveDir := protocol.SAWStateArchiveDir(o.ProjectRoot)
 	if err := os.MkdirAll(archiveDir, 0755); err != nil {
 		return result.NewFailure[ArchiveData]([]result.SAWError{{
-			Code:     "JOURNAL_ERROR",
+			Code:     result.CodeJournalArchiveCreateFailed,
 			Message:  fmt.Sprintf("creating archive directory: %v", err),
 			Severity: "fatal",
 		}})
@@ -106,7 +106,7 @@ func (o *JournalObserver) Archive() result.Result[ArchiveData] {
 	// Check if archive already exists
 	if _, err := os.Stat(archivePath); err == nil {
 		return result.NewFailure[ArchiveData]([]result.SAWError{{
-			Code:     "JOURNAL_ERROR",
+			Code:     result.CodeJournalArchiveCreateFailed,
 			Message:  fmt.Sprintf("archive already exists: %s", archivePath),
 			Severity: "fatal",
 		}})
@@ -116,7 +116,7 @@ func (o *JournalObserver) Archive() result.Result[ArchiveData] {
 	originalSize, entryCount, err := calculateJournalStats(o.JournalDir)
 	if err != nil {
 		return result.NewFailure[ArchiveData]([]result.SAWError{{
-			Code:     "JOURNAL_ERROR",
+			Code:     result.CodeJournalArchiveCreateFailed,
 			Message:  fmt.Sprintf("calculating journal stats: %v", err),
 			Severity: "fatal",
 		}})
@@ -125,7 +125,7 @@ func (o *JournalObserver) Archive() result.Result[ArchiveData] {
 	// Create tar.gz archive
 	if r := createTarGz(o.JournalDir, archivePath); r.IsFatal() {
 		return result.NewFailure[ArchiveData]([]result.SAWError{{
-			Code:     "JOURNAL_ERROR",
+			Code:     result.CodeJournalArchiveCreateFailed,
 			Message:  fmt.Sprintf("creating archive: %s", r.Errors[0].Message),
 			Severity: "fatal",
 		}})
@@ -135,7 +135,7 @@ func (o *JournalObserver) Archive() result.Result[ArchiveData] {
 	stat, err := os.Stat(archivePath)
 	if err != nil {
 		return result.NewFailure[ArchiveData]([]result.SAWError{{
-			Code:     "JOURNAL_ERROR",
+			Code:     result.CodeJournalArchiveCreateFailed,
 			Message:  fmt.Sprintf("stat archive: %v", err),
 			Severity: "fatal",
 		}})
@@ -162,7 +162,7 @@ func (o *JournalObserver) Archive() result.Result[ArchiveData] {
 		// Clean up archive on metadata failure
 		os.Remove(archivePath)
 		return result.NewFailure[ArchiveData]([]result.SAWError{{
-			Code:     "JOURNAL_ERROR",
+			Code:     result.CodeJournalArchiveMetaFailed,
 			Message:  fmt.Sprintf("writing metadata: %s", r.Errors[0].Message),
 			Severity: "fatal",
 		}})
@@ -186,14 +186,15 @@ func CleanupExpired(repoPath string, retentionDays int) result.Result[CleanupDat
 	archiveDir := protocol.SAWStateArchiveDir(repoPath)
 
 	// Read all archives
-	archives, err := ListArchives(repoPath)
-	if err != nil {
+	listRes := ListArchives(repoPath)
+	if listRes.IsFatal() {
 		return result.NewFailure[CleanupData]([]result.SAWError{{
-			Code:     "JOURNAL_ERROR",
-			Message:  fmt.Sprintf("listing archives: %v", err),
+			Code:     result.CodeJournalArchiveCleanupFailed,
+			Message:  fmt.Sprintf("listing archives: %s", listRes.Errors[0].Message),
 			Severity: "fatal",
 		}})
 	}
+	archives := *listRes.Data
 
 	// Calculate cutoff time
 	cutoff := time.Now().UTC().Add(-time.Duration(retentionDays) * 24 * time.Hour)
@@ -211,14 +212,14 @@ func CleanupExpired(repoPath string, retentionDays int) result.Result[CleanupDat
 
 			if err := os.Remove(archivePath); err != nil && !os.IsNotExist(err) {
 				return result.NewFailure[CleanupData]([]result.SAWError{{
-					Code:     "JOURNAL_ERROR",
+					Code:     result.CodeJournalArchiveCleanupFailed,
 					Message:  fmt.Sprintf("removing archive %s: %v", archivePath, err),
 					Severity: "fatal",
 				}})
 			}
 			if err := os.Remove(metadataPath); err != nil && !os.IsNotExist(err) {
 				return result.NewFailure[CleanupData]([]result.SAWError{{
-					Code:     "JOURNAL_ERROR",
+					Code:     result.CodeJournalArchiveCleanupFailed,
 					Message:  fmt.Sprintf("removing metadata %s: %v", metadataPath, err),
 					Severity: "fatal",
 				}})
@@ -231,18 +232,22 @@ func CleanupExpired(repoPath string, retentionDays int) result.Result[CleanupDat
 }
 
 // ListArchives returns metadata for all archived journals, sorted by archived_at
-func ListArchives(repoPath string) ([]ArchiveMetadata, error) {
+func ListArchives(repoPath string) result.Result[[]ArchiveMetadata] {
 	archiveDir := protocol.SAWStateArchiveDir(repoPath)
 
 	// Check if archive directory exists
 	if _, err := os.Stat(archiveDir); os.IsNotExist(err) {
-		return []ArchiveMetadata{}, nil
+		return result.NewSuccess([]ArchiveMetadata{})
 	}
 
 	// Read directory
 	entries, err := os.ReadDir(archiveDir)
 	if err != nil {
-		return nil, fmt.Errorf("reading archive directory: %w", err)
+		return result.NewFailure[[]ArchiveMetadata]([]result.SAWError{{
+			Code:     result.CodeJournalArchiveListFailed,
+			Message:  fmt.Sprintf("reading archive directory: %v", err),
+			Severity: "fatal",
+		}})
 	}
 
 	// Collect metadata files
@@ -255,12 +260,20 @@ func ListArchives(repoPath string) ([]ArchiveMetadata, error) {
 		metadataPath := filepath.Join(archiveDir, entry.Name())
 		data, err := os.ReadFile(metadataPath)
 		if err != nil {
-			return nil, fmt.Errorf("reading metadata %s: %w", entry.Name(), err)
+			return result.NewFailure[[]ArchiveMetadata]([]result.SAWError{{
+				Code:     result.CodeJournalArchiveListFailed,
+				Message:  fmt.Sprintf("reading metadata %s: %v", entry.Name(), err),
+				Severity: "fatal",
+			}})
 		}
 
 		var metadata ArchiveMetadata
 		if err := json.Unmarshal(data, &metadata); err != nil {
-			return nil, fmt.Errorf("parsing metadata %s: %w", entry.Name(), err)
+			return result.NewFailure[[]ArchiveMetadata]([]result.SAWError{{
+				Code:     result.CodeJournalArchiveListFailed,
+				Message:  fmt.Sprintf("parsing metadata %s: %v", entry.Name(), err),
+				Severity: "fatal",
+			}})
 		}
 
 		archives = append(archives, metadata)
@@ -271,7 +284,7 @@ func ListArchives(repoPath string) ([]ArchiveMetadata, error) {
 		return archives[i].ArchivedAt.Before(archives[j].ArchivedAt)
 	})
 
-	return archives, nil
+	return result.NewSuccess(archives)
 }
 
 // Extract decompresses an archive to a destination path
@@ -280,7 +293,7 @@ func Extract(archivePath, destPath string) result.Result[ExtractData] {
 	archiveFile, err := os.Open(archivePath)
 	if err != nil {
 		return result.NewFailure[ExtractData]([]result.SAWError{{
-			Code:     "JOURNAL_ERROR",
+			Code:     result.CodeJournalArchiveExtractFailed,
 			Message:  fmt.Sprintf("opening archive: %v", err),
 			Severity: "fatal",
 		}})
@@ -291,7 +304,7 @@ func Extract(archivePath, destPath string) result.Result[ExtractData] {
 	gzipReader, err := gzip.NewReader(archiveFile)
 	if err != nil {
 		return result.NewFailure[ExtractData]([]result.SAWError{{
-			Code:     "JOURNAL_ERROR",
+			Code:     result.CodeJournalArchiveExtractFailed,
 			Message:  fmt.Sprintf("creating gzip reader: %v", err),
 			Severity: "fatal",
 		}})
@@ -310,7 +323,7 @@ func Extract(archivePath, destPath string) result.Result[ExtractData] {
 		}
 		if err != nil {
 			return result.NewFailure[ExtractData]([]result.SAWError{{
-				Code:     "JOURNAL_ERROR",
+				Code:     result.CodeJournalArchiveExtractFailed,
 				Message:  fmt.Sprintf("reading tar header: %v", err),
 				Severity: "fatal",
 			}})
@@ -322,7 +335,7 @@ func Extract(archivePath, destPath string) result.Result[ExtractData] {
 		// Ensure target is within destPath (security)
 		if !strings.HasPrefix(filepath.Clean(target), filepath.Clean(destPath)) {
 			return result.NewFailure[ExtractData]([]result.SAWError{{
-				Code:     "JOURNAL_ERROR",
+				Code:     result.CodeJournalArchiveExtractFailed,
 				Message:  fmt.Sprintf("invalid file path in archive: %s", header.Name),
 				Severity: "fatal",
 			}})
@@ -333,7 +346,7 @@ func Extract(archivePath, destPath string) result.Result[ExtractData] {
 			// Create directory
 			if err := os.MkdirAll(target, os.FileMode(header.Mode)); err != nil {
 				return result.NewFailure[ExtractData]([]result.SAWError{{
-					Code:     "JOURNAL_ERROR",
+					Code:     result.CodeJournalArchiveExtractFailed,
 					Message:  fmt.Sprintf("creating directory %s: %v", target, err),
 					Severity: "fatal",
 				}})
@@ -343,7 +356,7 @@ func Extract(archivePath, destPath string) result.Result[ExtractData] {
 			// Create parent directories
 			if err := os.MkdirAll(filepath.Dir(target), 0755); err != nil {
 				return result.NewFailure[ExtractData]([]result.SAWError{{
-					Code:     "JOURNAL_ERROR",
+					Code:     result.CodeJournalArchiveExtractFailed,
 					Message:  fmt.Sprintf("creating parent directory for %s: %v", target, err),
 					Severity: "fatal",
 				}})
@@ -353,7 +366,7 @@ func Extract(archivePath, destPath string) result.Result[ExtractData] {
 			outFile, err := os.OpenFile(target, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, os.FileMode(header.Mode))
 			if err != nil {
 				return result.NewFailure[ExtractData]([]result.SAWError{{
-					Code:     "JOURNAL_ERROR",
+					Code:     result.CodeJournalArchiveExtractFailed,
 					Message:  fmt.Sprintf("creating file %s: %v", target, err),
 					Severity: "fatal",
 				}})
@@ -363,7 +376,7 @@ func Extract(archivePath, destPath string) result.Result[ExtractData] {
 			if _, err := io.Copy(outFile, tarReader); err != nil {
 				outFile.Close()
 				return result.NewFailure[ExtractData]([]result.SAWError{{
-					Code:     "JOURNAL_ERROR",
+					Code:     result.CodeJournalArchiveExtractFailed,
 					Message:  fmt.Sprintf("writing file %s: %v", target, err),
 					Severity: "fatal",
 				}})
@@ -381,12 +394,12 @@ func Extract(archivePath, destPath string) result.Result[ExtractData] {
 }
 
 // Helper: createTarGz creates a tar.gz archive from a directory
-func createTarGz(sourceDir, targetPath string) result.Result[CreateTarData] {
+func createTarGz(sourceDir, targetPath string) result.Result[createTarData] {
 	// Create target file
 	outFile, err := os.Create(targetPath)
 	if err != nil {
-		return result.NewFailure[CreateTarData]([]result.SAWError{{
-			Code:     "JOURNAL_ERROR",
+		return result.NewFailure[createTarData]([]result.SAWError{{
+			Code:     result.CodeJournalArchiveCreateFailed,
 			Message:  fmt.Sprintf("creating output file: %v", err),
 			Severity: "fatal",
 		}})
@@ -451,13 +464,13 @@ func createTarGz(sourceDir, targetPath string) result.Result[CreateTarData] {
 		return nil
 	})
 	if walkErr != nil {
-		return result.NewFailure[CreateTarData]([]result.SAWError{{
-			Code:     "JOURNAL_ERROR",
+		return result.NewFailure[createTarData]([]result.SAWError{{
+			Code:     result.CodeJournalArchiveCreateFailed,
 			Message:  walkErr.Error(),
 			Severity: "fatal",
 		}})
 	}
-	return result.NewSuccess(CreateTarData{
+	return result.NewSuccess(createTarData{
 		SourceDir:  sourceDir,
 		TargetPath: targetPath,
 	})
@@ -496,12 +509,12 @@ func calculateJournalStats(journalDir string) (totalSize int64, entryCount int, 
 }
 
 // Helper: writeMetadataAtomic writes metadata file atomically
-func writeMetadataAtomic(path string, metadata ArchiveMetadata) result.Result[WriteMetaData] {
+func writeMetadataAtomic(path string, metadata ArchiveMetadata) result.Result[writeMetaData] {
 	// Marshal metadata
 	data, err := json.MarshalIndent(metadata, "", "  ")
 	if err != nil {
-		return result.NewFailure[WriteMetaData]([]result.SAWError{{
-			Code:     "JOURNAL_ERROR",
+		return result.NewFailure[writeMetaData]([]result.SAWError{{
+			Code:     result.CodeJournalArchiveMetaFailed,
 			Message:  fmt.Sprintf("marshaling metadata: %v", err),
 			Severity: "fatal",
 		}})
@@ -510,8 +523,8 @@ func writeMetadataAtomic(path string, metadata ArchiveMetadata) result.Result[Wr
 	// Write to temp file
 	tmpPath := path + ".tmp"
 	if err := os.WriteFile(tmpPath, data, 0644); err != nil {
-		return result.NewFailure[WriteMetaData]([]result.SAWError{{
-			Code:     "JOURNAL_ERROR",
+		return result.NewFailure[writeMetaData]([]result.SAWError{{
+			Code:     result.CodeJournalArchiveMetaFailed,
 			Message:  fmt.Sprintf("writing temp file: %v", err),
 			Severity: "fatal",
 		}})
@@ -520,12 +533,12 @@ func writeMetadataAtomic(path string, metadata ArchiveMetadata) result.Result[Wr
 	// Rename atomically
 	if err := os.Rename(tmpPath, path); err != nil {
 		os.Remove(tmpPath)
-		return result.NewFailure[WriteMetaData]([]result.SAWError{{
-			Code:     "JOURNAL_ERROR",
+		return result.NewFailure[writeMetaData]([]result.SAWError{{
+			Code:     result.CodeJournalArchiveMetaFailed,
 			Message:  fmt.Sprintf("renaming temp file: %v", err),
 			Severity: "fatal",
 		}})
 	}
 
-	return result.NewSuccess(WriteMetaData{Path: path})
+	return result.NewSuccess(writeMetaData{Path: path})
 }
