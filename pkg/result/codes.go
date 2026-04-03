@@ -20,6 +20,10 @@
 //	Q001-Q099: Queue errors
 //	R001-R099: Retry errors
 //	J001-J099: Journal errors (archive, checkpoint, observer operations)
+//	B009: gate validation failed (closed-loop gate retry input validation)
+//	N091-N093: engine init, already initialized, finalize step failed
+//	P008-P010: type collision fatal, critic gate failed, tier conflict detected
+//	K007: cache build key cancelled
 package result
 
 // Validation error codes (V001-V099)
@@ -106,6 +110,8 @@ const (
 	CodeStubDetected       = "B007_STUB_DETECTED"
 	// B008: gate input validation failed (replaces "E_GATE_INPUT" in gate_input_validator.go)
 	CodeGateInputInvalid = "B008_GATE_INPUT_INVALID"
+	// B009: gate validation failed (closed-loop gate retry input validation)
+	CodeGateValidationFailed = "B009_GATE_VALIDATION_FAILED"
 )
 
 // Git error codes (G001-G099)
@@ -240,6 +246,12 @@ const (
 	CodeInterviewSaveFailed = "N089_INTERVIEW_SAVE_FAILED"
 	// N090: requirements write failed (replaces inline "REQUIREMENTS_WRITE_FAILED" in pkg/interview)
 	CodeRequirementsWriteFailed = "N090_REQUIREMENTS_WRITE_FAILED"
+	// N091: engine init failed
+	CodeEngineInitFailed = "N091_ENGINE_INIT_FAILED"
+	// N092: engine already initialized
+	CodeEngineAlreadyInitialized = "N092_ENGINE_ALREADY_INITIALIZED"
+	// N093: finalize step failed
+	CodeFinalizeStepFailed = "N093_FINALIZE_STEP_FAILED"
 )
 
 // Queue error codes (Q001-Q099)
@@ -262,6 +274,12 @@ const (
 	CodeExecutionRule           = "P006_EXECUTION_RULE"
 	// P007: wiring gap detected (replaces "E_WIRING" in wiring_validation.go)
 	CodeWiringGap = "P007_WIRING_GAP"
+	// P008: E41 type collision fatal — fatal DetectCollisions infrastructure failure
+	CodeTypeCollisionFatal = "P008_TYPE_COLLISION_FATAL"
+	// P009: E37 critic gate failed
+	CodeCriticGateFailed = "P009_CRITIC_GATE_FAILED"
+	// P010: P1+ tier conflict detected
+	CodeTierConflictDetected = "P010_TIER_CONFLICT_DETECTED"
 )
 
 // Tool/parse error codes (T001-T099)
@@ -314,6 +332,8 @@ const (
 	CodeCachePutCancelled = "K005_CACHE_PUT_CANCELLED"
 	// CodeCacheInvalidateCancelled is emitted when Invalidate is cancelled
 	CodeCacheInvalidateCancelled = "K006_CACHE_INVALIDATE_CANCELLED"
+	// CodeCacheBuildKeyCancelled is emitted when BuildKey/BuildKeyForGate is cancelled via context
+	CodeCacheBuildKeyCancelled = "K007_CACHE_BUILD_KEY_CANCELLED"
 )
 
 // Agent ID generation error codes (I001-I099)
