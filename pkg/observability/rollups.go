@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"strings"
 	"time"
+
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
 )
 
 // TrendResult holds time-series data for a metric over a time range.
@@ -22,10 +24,12 @@ type TrendBucket struct {
 }
 
 // ComputeCostRollup aggregates cost events by requested dimensions.
-func ComputeCostRollup(ctx context.Context, store Store, req RollupRequest) (*RollupResult, error) {
+func ComputeCostRollup(ctx context.Context, store Store, req RollupRequest) result.Result[RollupResult] {
 	events, err := store.QueryEvents(ctx, rollupFilters(req, "cost"))
 	if err != nil {
-		return nil, fmt.Errorf("query cost events: %w", err)
+		return result.NewFailure[RollupResult]([]result.SAWError{
+			result.NewFatal("O002_OBS_QUERY_FAILED", "query cost events: "+err.Error()).WithCause(err),
+		})
 	}
 
 	groups := make(map[string]*RollupGroup)
@@ -43,28 +47,30 @@ func ComputeCostRollup(ctx context.Context, store Store, req RollupRequest) (*Ro
 		totalCost += ce.CostUSD
 	}
 
-	result := &RollupResult{
+	rollup := &RollupResult{
 		Type:      "cost",
 		Groups:    groupSlice(groups),
 		TotalCost: totalCost,
 	}
 	// Compute average cost per group.
-	if len(result.Groups) > 0 {
+	if len(rollup.Groups) > 0 {
 		var sum float64
-		for i := range result.Groups {
-			sum += result.Groups[i].TotalCost
+		for i := range rollup.Groups {
+			sum += rollup.Groups[i].TotalCost
 		}
-		result.AvgRate = sum / float64(len(result.Groups))
+		rollup.AvgRate = sum / float64(len(rollup.Groups))
 	}
-	return result, nil
+	return result.NewSuccess(*rollup)
 }
 
 // ComputeSuccessRateRollup aggregates agent performance events and calculates
 // success rates by requested dimensions.
-func ComputeSuccessRateRollup(ctx context.Context, store Store, req RollupRequest) (*RollupResult, error) {
+func ComputeSuccessRateRollup(ctx context.Context, store Store, req RollupRequest) result.Result[RollupResult] {
 	events, err := store.QueryEvents(ctx, rollupFilters(req, "agent_performance"))
 	if err != nil {
-		return nil, fmt.Errorf("query performance events: %w", err)
+		return result.NewFailure[RollupResult]([]result.SAWError{
+			result.NewFatal("O002_OBS_QUERY_FAILED", "query performance events: "+err.Error()).WithCause(err),
+		})
 	}
 
 	type bucket struct {
@@ -93,32 +99,34 @@ func ComputeSuccessRateRollup(ctx context.Context, store Store, req RollupReques
 		}
 	}
 
-	result := &RollupResult{Type: "success_rate"}
+	rollup := &RollupResult{Type: "success_rate"}
 	var rateSum float64
 	for key, b := range buckets {
 		rate := 0.0
 		if b.total > 0 {
 			rate = float64(b.success) / float64(b.total)
 		}
-		result.Groups = append(result.Groups, RollupGroup{
+		rollup.Groups = append(rollup.Groups, RollupGroup{
 			Key:         groupDims[key],
 			Count:       b.total,
 			SuccessRate: rate,
 		})
 		rateSum += rate
 	}
-	if len(result.Groups) > 0 {
-		result.AvgRate = rateSum / float64(len(result.Groups))
+	if len(rollup.Groups) > 0 {
+		rollup.AvgRate = rateSum / float64(len(rollup.Groups))
 	}
-	return result, nil
+	return result.NewSuccess(*rollup)
 }
 
 // ComputeRetryRollup aggregates agent performance events and calculates
 // average retry counts by requested dimensions.
-func ComputeRetryRollup(ctx context.Context, store Store, req RollupRequest) (*RollupResult, error) {
+func ComputeRetryRollup(ctx context.Context, store Store, req RollupRequest) result.Result[RollupResult] {
 	events, err := store.QueryEvents(ctx, rollupFilters(req, "agent_performance"))
 	if err != nil {
-		return nil, fmt.Errorf("query performance events: %w", err)
+		return result.NewFailure[RollupResult]([]result.SAWError{
+			result.NewFatal("O002_OBS_QUERY_FAILED", "query performance events: "+err.Error()).WithCause(err),
+		})
 	}
 
 	type bucket struct {
@@ -145,38 +153,37 @@ func ComputeRetryRollup(ctx context.Context, store Store, req RollupRequest) (*R
 		b.retries += pe.RetryCount
 	}
 
-	result := &RollupResult{Type: "retry_count"}
+	rollup := &RollupResult{Type: "retry_count"}
 	for key, b := range buckets {
 		avg := 0.0
 		if b.total > 0 {
 			avg = float64(b.retries) / float64(b.total)
 		}
-		result.Groups = append(result.Groups, RollupGroup{
+		rollup.Groups = append(rollup.Groups, RollupGroup{
 			Key:        groupDims[key],
 			Count:      b.total,
 			AvgRetries: avg,
 		})
 	}
-	return result, nil
+	return result.NewSuccess(*rollup)
 }
 
 // ComputeTrend computes a time-series trend for the given metric over the
 // specified time range, divided into N buckets. Supported metrics: "cost",
 // "success_rate", "retry_count".
-func ComputeTrend(opts ComputeTrendOpts) (*TrendResult, error) {
-	ctx := opts.Ctx
+func ComputeTrend(ctx context.Context, opts ComputeTrendOpts) result.Result[TrendResult] {
 	store := opts.Store
 	metric := opts.Metric
 	timeRange := opts.TimeRange
-	buckets := opts.Buckets
+	numBuckets := opts.Buckets
 
-	if buckets <= 0 {
-		buckets = 1
+	if numBuckets <= 0 {
+		numBuckets = 1
 	}
 
 	now := time.Now().UTC()
 	start := now.Add(-timeRange)
-	bucketDur := timeRange / time.Duration(buckets)
+	bucketDur := timeRange / time.Duration(numBuckets)
 
 	// Determine event type to query.
 	var eventType string
@@ -186,7 +193,9 @@ func ComputeTrend(opts ComputeTrendOpts) (*TrendResult, error) {
 	case "success_rate", "retry_count":
 		eventType = "agent_performance"
 	default:
-		return nil, fmt.Errorf("unsupported metric: %s", metric)
+		return result.NewFailure[TrendResult]([]result.SAWError{
+			result.NewFatal("O002_OBS_QUERY_FAILED", "unsupported metric: "+metric),
+		})
 	}
 
 	events, err := store.QueryEvents(ctx, QueryFilters{
@@ -196,19 +205,21 @@ func ComputeTrend(opts ComputeTrendOpts) (*TrendResult, error) {
 		Limit:      0,
 	})
 	if err != nil {
-		return nil, fmt.Errorf("query events for trend: %w", err)
+		return result.NewFailure[TrendResult]([]result.SAWError{
+			result.NewFatal("O002_OBS_QUERY_FAILED", "query events for trend: "+err.Error()).WithCause(err),
+		})
 	}
 
-	result := &TrendResult{Metric: metric, Buckets: make([]TrendBucket, buckets)}
+	trend := &TrendResult{Metric: metric, Buckets: make([]TrendBucket, numBuckets)}
 
 	// Initialize buckets.
-	for i := 0; i < buckets; i++ {
+	for i := 0; i < numBuckets; i++ {
 		bStart := start.Add(bucketDur * time.Duration(i))
 		bEnd := bStart.Add(bucketDur)
-		if i == buckets-1 {
+		if i == numBuckets-1 {
 			bEnd = now // last bucket extends to now
 		}
-		result.Buckets[i] = TrendBucket{Start: bStart, End: bEnd}
+		trend.Buckets[i] = TrendBucket{Start: bStart, End: bEnd}
 	}
 
 	// Assign events to buckets.
@@ -217,7 +228,7 @@ func ComputeTrend(opts ComputeTrendOpts) (*TrendResult, error) {
 		success int
 		retries int
 	}
-	perfBuckets := make([]perfAccum, buckets)
+	perfBuckets := make([]perfAccum, numBuckets)
 
 	for _, ev := range events {
 		ts := ev.Timestamp()
@@ -225,20 +236,20 @@ func ComputeTrend(opts ComputeTrendOpts) (*TrendResult, error) {
 		if idx < 0 {
 			idx = 0
 		}
-		if idx >= buckets {
-			idx = buckets - 1
+		if idx >= numBuckets {
+			idx = numBuckets - 1
 		}
 
 		switch metric {
 		case "cost":
 			if ce, ok := ev.(*CostEvent); ok {
-				result.Buckets[idx].Value += ce.CostUSD
-				result.Buckets[idx].Count++
+				trend.Buckets[idx].Value += ce.CostUSD
+				trend.Buckets[idx].Count++
 			}
 		case "success_rate":
 			if pe, ok := ev.(*AgentPerformanceEvent); ok {
 				perfBuckets[idx].total++
-				result.Buckets[idx].Count++
+				trend.Buckets[idx].Count++
 				if pe.Status == "success" {
 					perfBuckets[idx].success++
 				}
@@ -247,7 +258,7 @@ func ComputeTrend(opts ComputeTrendOpts) (*TrendResult, error) {
 			if pe, ok := ev.(*AgentPerformanceEvent); ok {
 				perfBuckets[idx].total++
 				perfBuckets[idx].retries += pe.RetryCount
-				result.Buckets[idx].Count++
+				trend.Buckets[idx].Count++
 			}
 		}
 	}
@@ -256,18 +267,18 @@ func ComputeTrend(opts ComputeTrendOpts) (*TrendResult, error) {
 	if metric == "success_rate" {
 		for i, pb := range perfBuckets {
 			if pb.total > 0 {
-				result.Buckets[i].Value = float64(pb.success) / float64(pb.total)
+				trend.Buckets[i].Value = float64(pb.success) / float64(pb.total)
 			}
 		}
 	} else if metric == "retry_count" {
 		for i, pb := range perfBuckets {
 			if pb.total > 0 {
-				result.Buckets[i].Value = float64(pb.retries) / float64(pb.total)
+				trend.Buckets[i].Value = float64(pb.retries) / float64(pb.total)
 			}
 		}
 	}
 
-	return result, nil
+	return result.NewSuccess(*trend)
 }
 
 // --- helpers ---
