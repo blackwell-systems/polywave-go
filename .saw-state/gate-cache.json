@@ -288,6 +288,18 @@
         "cached_at": "2026-03-25T13:08:42.775013-07:00"
       }
     },
+    "0adcbff233cbb1ec89192779b0e827ab": {
+      "test": {
+        "gate_type": "test",
+        "command": "go test ./pkg/pipeline/...",
+        "passed": true,
+        "exit_code": 0,
+        "stdout": "ok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/pipeline\t(cached)\n",
+        "stderr": "",
+        "from_cache": true,
+        "cached_at": "2026-04-03T16:36:36.10495-07:00"
+      }
+    },
     "0af78519b0301e9c03d47475724b5415": {
       "build": {
         "gate_type": "build",
@@ -1174,6 +1186,18 @@
         "stderr": "",
         "from_cache": true,
         "cached_at": "2026-03-31T22:38:33.224914-07:00"
+      }
+    },
+    "2a1b6983adbdc1e787a6c6119b21c467": {
+      "lint": {
+        "gate_type": "lint",
+        "command": "go vet ./pkg/pipeline/...",
+        "passed": true,
+        "exit_code": 0,
+        "stdout": "",
+        "stderr": "",
+        "from_cache": true,
+        "cached_at": "2026-04-03T16:39:41.203982-07:00"
       }
     },
     "2a6304330ce0d0a137d9d68dcbdbec4b": {
@@ -2508,6 +2532,18 @@
         "cached_at": "2026-03-25T03:13:44.272559-07:00"
       }
     },
+    "5631dc372a8fafba0a20321ae388e142": {
+      "build": {
+        "gate_type": "build",
+        "command": "go build ./...",
+        "passed": true,
+        "exit_code": 0,
+        "stdout": "",
+        "stderr": "",
+        "from_cache": true,
+        "cached_at": "2026-04-03T16:36:35.59134-07:00"
+      }
+    },
     "56678957979d19156dc1a56a58bf9d35": {
       "test": {
         "gate_type": "test",
@@ -2998,6 +3034,18 @@
         "stderr": "",
         "from_cache": true,
         "cached_at": "2026-03-31T15:30:54.697073-07:00"
+      }
+    },
+    "61621dfc0581e6dc680714b126e0a92c": {
+      "test": {
+        "gate_type": "test",
+        "command": "go test ./pkg/pipeline/...",
+        "passed": true,
+        "exit_code": 0,
+        "stdout": "ok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/pipeline\t(cached)\n",
+        "stderr": "",
+        "from_cache": true,
+        "cached_at": "2026-04-03T16:39:41.482431-07:00"
       }
     },
     "61e3d07790e76c812a72f2bb8cfed2d2": {
@@ -4582,6 +4630,18 @@
         "stderr": "",
         "from_cache": true,
         "cached_at": "2026-04-01T21:10:16.240979-07:00"
+      }
+    },
+    "92bf89bada214b38f4335aa6890c107b": {
+      "lint": {
+        "gate_type": "lint",
+        "command": "go vet ./pkg/pipeline/...",
+        "passed": true,
+        "exit_code": 0,
+        "stdout": "",
+        "stderr": "",
+        "from_cache": true,
+        "cached_at": "2026-04-03T16:36:35.855524-07:00"
       }
     },
     "92c2b31b7ce97d6cceaf6d90956740c0": {
@@ -6238,6 +6298,18 @@
         "stderr": "",
         "from_cache": true,
         "cached_at": "2026-03-30T10:43:19.607-07:00"
+      }
+    },
+    "c17f2a1795ea0f0d0580c725790b9790": {
+      "build": {
+        "gate_type": "build",
+        "command": "go build ./...",
+        "passed": true,
+        "exit_code": 0,
+        "stdout": "",
+        "stderr": "",
+        "from_cache": true,
+        "cached_at": "2026-04-03T16:39:40.926776-07:00"
       }
     },
     "c187f9418ccad9328593450329d12ce2": {

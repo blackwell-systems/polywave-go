@@ -2,972 +2,969 @@ title: pkg/observability Review Fixes
 feature_slug: observability-review-fixes
 verdict: SUITABLE
 suitability_assessment: |
-  pkg/observability contains 7 source files + 1 SQLite sub-package (~900 LOC source,
-  ~800 LOC tests). All tests pass. The review identifies the following issues using the
-  same principles applied to pkg/orchestrator, pkg/protocol, and pkg/pipeline:
+    pkg/observability contains 7 source files + 1 SQLite sub-package (~900 LOC source,
+    ~800 LOC tests). All tests pass. The review identifies the following issues using the
+    same principles applied to pkg/orchestrator, pkg/protocol, and pkg/pipeline:
 
-  **P0 findings (2):**
-  1. Inline error codes in emitter.go ("EVENT_EMIT_FAILED") and query.go
-     ("EVENT_QUERY_FAILED") are raw strings not registered in pkg/result/codes.go.
-     Tests assert these exact string values, making them implicit contracts.
-  2. GetAgentHistory, GetIMPLMetrics, GetProgramSummary, GetCostBreakdown, and
-     GetFailurePatterns all return (T, error) instead of result.Result[T]. These
-     are exported functions with active callers in cmd/sawtools/observability_metrics.go.
+    **P0 findings (2):**
+    1. Inline error codes in emitter.go ("EVENT_EMIT_FAILED") and query.go
+       ("EVENT_QUERY_FAILED") are raw strings not registered in pkg/result/codes.go.
+       Tests assert these exact string values, making them implicit contracts.
+    2. GetAgentHistory, GetIMPLMetrics, GetProgramSummary, GetCostBreakdown, and
+       GetFailurePatterns all return (T, error) instead of result.Result[T]. These
+       are exported functions with active callers in cmd/sawtools/observability_metrics.go.
 
-  **P1 findings (2):**
-  3. ComputeCostRollup, ComputeSuccessRateRollup, ComputeRetryRollup, and ComputeTrend
-     return (*RollupResult, error) / (*TrendResult, error) instead of result.Result[T].
-     The inline fmt.Errorf calls in these functions use bare error wrapping where
-     result.SAWError should be used.
-  4. sqlite/sqlite.go GetRollup delegates to pkg/observability's ComputeXxx functions
-     which return bare errors; these need updating after Wave 1 converts the signatures.
+    **P1 findings (2):**
+    3. ComputeCostRollup, ComputeSuccessRateRollup, ComputeRetryRollup, and ComputeTrend
+       return (*RollupResult, error) / (*TrendResult, error) instead of result.Result[T].
+       The inline fmt.Errorf calls in these functions use bare error wrapping where
+       result.SAWError should be used.
+    4. sqlite/sqlite.go GetRollup delegates to pkg/observability's ComputeXxx functions
+       which return bare errors; these need updating after Wave 1 converts the signatures.
 
-  **P2 findings (3):**
-  5. Duplicate test filter helpers: query_test.go and rollups_test.go each define
-     their own in-package filter helpers (matchesFilters vs matchFilters, eventIMPLSlug
-     vs implSlugOf) with slightly different names and logic. Consolidation reduces
-     maintenance overhead.
-  6. NewTierAdvancedEvent, NewTierGatePassedEvent, NewTierGateFailedEvent use the
-     WaveNumber field to store tier numbers. The doc comment says "tier int" but the
-     struct field is WaveNumber. A comment clarifying this intentional reuse would
-     prevent future confusion.
-  7. NewEventID panics on crypto/rand.Read failure, but since Go 1.20 this never
-     fails on any supported platform. The doc comment should note this explicitly
-     rather than suggesting the panic is reachable.
+    **P2 findings (3):**
+    5. Duplicate test filter helpers: query_test.go and rollups_test.go each define
+       their own in-package filter helpers (matchesFilters vs matchFilters, eventIMPLSlug
+       vs implSlugOf) with slightly different names and logic. Consolidation reduces
+       maintenance overhead.
+    6. NewTierAdvancedEvent, NewTierGatePassedEvent, NewTierGateFailedEvent use the
+       WaveNumber field to store tier numbers. The doc comment says "tier int" but the
+       struct field is WaveNumber. A comment clarifying this intentional reuse would
+       prevent future confusion.
+    7. NewEventID panics on crypto/rand.Read failure, but since Go 1.20 this never
+       fails on any supported platform. The doc comment should note this explicitly
+       rather than suggesting the panic is reachable.
 
-  **Caller impact of signature changes:**
-  - P0 query.go functions: direct callers are observability_metrics.go (GetIMPLMetrics,
-    GetProgramSummary, GetCostBreakdown) and query_test.go. GetAgentHistory and
-    GetFailurePatterns have no callers outside the package except tests.
-  - P1 rollup functions: direct callers are sqlite/sqlite.go (ComputeCostRollup,
-    ComputeSuccessRateRollup, ComputeRetryRollup), and rollups_test.go. ComputeTrend
-    is called only from rollups_test.go.
+    **Caller impact of signature changes:**
+    - P0 query.go functions: direct callers are observability_metrics.go (GetIMPLMetrics,
+      GetProgramSummary, GetCostBreakdown) and query_test.go. GetAgentHistory and
+      GetFailurePatterns have no callers outside the package except tests.
+    - P1 rollup functions: direct callers are sqlite/sqlite.go (ComputeCostRollup,
+      ComputeSuccessRateRollup, ComputeRetryRollup), and rollups_test.go. ComputeTrend
+      is called only from rollups_test.go.
 
-  **Decomposition (3 waves, 6 agents, fully disjoint):**
-  - Wave 1 (parallel): A (error codes + emitter.go), B (query.go conversions), D (rollups.go)
-  - Wave 2 (parallel, depends on Wave 1): C (cmd caller updates, depends on B),
-    E (sqlite.go updates, depends on D), F (test file consolidation, depends on A+B+D)
-  - No integration wave needed; all caller files are in scope.
+    **Decomposition (3 waves, 6 agents, fully disjoint):**
+    - Wave 1 (parallel): A (error codes + emitter.go), B (query.go conversions), D (rollups.go)
+    - Wave 2 (parallel, depends on Wave 1): C (cmd caller updates, depends on B),
+      E (sqlite.go updates, depends on D), F (test file consolidation, depends on A+B+D)
+    - No integration wave needed; all caller files are in scope.
 
-  **Suitability check:**
-  1. File decomposition: 8 distinct files across 2 waves, all disjoint per wave.
-  2. No investigation needed: all root causes are deterministic string literal locations.
-  3. Interfaces: new error codes defined by A (consumed by B, F); new result.Result
-     signatures defined by B (consumed by C, F) and D (consumed by E, F).
-  4. Pre-implementation status: all findings are TODO.
-  5. Parallelization value: 3 parallel Wave 1 agents with non-trivial signature changes
-     and cascading Wave 2 callers; Go build cycle ~5s. Clear coordination value.
+    **Suitability check:**
+    1. File decomposition: 8 distinct files across 2 waves, all disjoint per wave.
+    2. No investigation needed: all root causes are deterministic string literal locations.
+    3. Interfaces: new error codes defined by A (consumed by B, F); new result.Result
+       signatures defined by B (consumed by C, F) and D (consumed by E, F).
+    4. Pre-implementation status: all findings are TODO.
+    5. Parallelization value: 3 parallel Wave 1 agents with non-trivial signature changes
+       and cascading Wave 2 callers; Go build cycle ~5s. Clear coordination value.
 
-  Estimated times:
-  - Scout phase: ~25 min (deep review, caller scan, IMPL doc)
-  - Wave 1: ~3 agents x ~10 min avg = ~10 min (parallel)
-  - Wave 2: ~3 agents x ~8 min avg = ~8 min (parallel)
-  - Merge and verification: ~5 min
-  Total SAW time: ~48 min
-  Sequential baseline: ~6 agents x ~10 min = ~60 min
-  Time savings: ~12 min (20% faster). Clear coordination value.
-
+    Estimated times:
+    - Scout phase: ~25 min (deep review, caller scan, IMPL doc)
+    - Wave 1: ~3 agents x ~10 min avg = ~10 min (parallel)
+    - Wave 2: ~3 agents x ~8 min avg = ~8 min (parallel)
+    - Merge and verification: ~5 min
+    Total SAW time: ~48 min
+    Sequential baseline: ~6 agents x ~10 min = ~60 min
+    Time savings: ~12 min (20% faster). Clear coordination value.
 test_command: go test ./pkg/observability/... ./pkg/observability/sqlite/... ./cmd/sawtools/...
 lint_command: go vet ./pkg/observability/... ./pkg/observability/sqlite/... ./cmd/sawtools/...
-state: SCOUT_PENDING
-
-quality_gates:
-  level: standard
-  gates:
-    - type: build
-      command: go build ./...
-      required: true
-    - type: lint
-      command: go vet ./...
-      required: true
-    - type: test
-      command: go test ./pkg/observability/... ./pkg/observability/sqlite/... ./cmd/sawtools/...
-      required: true
-
-scaffolds: []
-
 file_ownership:
-  # Wave 1 — independent changes
-  - file: pkg/result/codes.go
-    agent: A
-    wave: 1
-    action: modify
-    depends_on: []
-  - file: pkg/observability/emitter.go
-    agent: A
-    wave: 1
-    action: modify
-    depends_on: []
-  - file: pkg/observability/query.go
-    agent: B
-    wave: 1
-    action: modify
-    depends_on: []
-  - file: pkg/observability/rollups.go
-    agent: D
-    wave: 1
-    action: modify
-    depends_on: []
-  - file: pkg/observability/rollups_opts.go
-    agent: D
-    wave: 1
-    action: modify
-    depends_on: []
-
-  # Wave 2 — callers updated after Wave 1 signature changes
-  - file: cmd/sawtools/observability_metrics.go
-    agent: C
-    wave: 2
-    action: modify
-    depends_on: [B]
-  - file: pkg/observability/sqlite/sqlite.go
-    agent: E
-    wave: 2
-    action: modify
-    depends_on: [D]
-  - file: pkg/observability/query_test.go
-    agent: F
-    wave: 2
-    action: modify
-    depends_on: [A, B]
-  - file: pkg/observability/rollups_test.go
-    agent: F
-    wave: 2
-    action: modify
-    depends_on: [A, D]
-
+    - file: pkg/result/codes.go
+      agent: A
+      wave: 1
+      action: modify
+    - file: pkg/observability/emitter.go
+      agent: A
+      wave: 1
+      action: modify
+    - file: pkg/observability/query.go
+      agent: B
+      wave: 1
+      action: modify
+    - file: pkg/observability/rollups.go
+      agent: D
+      wave: 1
+      action: modify
+    - file: pkg/observability/rollups_opts.go
+      agent: D
+      wave: 1
+      action: modify
+    - file: cmd/sawtools/observability_metrics.go
+      agent: C
+      wave: 2
+      action: modify
+      depends_on:
+        - B
+    - file: pkg/observability/sqlite/sqlite.go
+      agent: E
+      wave: 2
+      action: modify
+      depends_on:
+        - D
+    - file: pkg/observability/emitter_test.go
+      agent: F
+      wave: 2
+      action: modify
+      depends_on:
+        - A
+    - file: pkg/observability/query_test.go
+      agent: F
+      wave: 2
+      action: modify
+      depends_on:
+        - A
+        - B
+    - file: pkg/observability/rollups_test.go
+      agent: F
+      wave: 2
+      action: modify
+      depends_on:
+        - A
+        - D
 interface_contracts:
-  - name: CodeObsEmitFailed
-    description: |-
-      New error code constant for observability emit failures.
-      Replaces the hardcoded string "EVENT_EMIT_FAILED" used in emitter.go.
-      Tests in emitter_test.go currently assert this exact string and must be
-      updated to reference the constant.
-    definition: |
-      // CodeObsEmitFailed is emitted when EmitSync fails to record an event.
-      CodeObsEmitFailed = "O001_OBS_EMIT_FAILED"
-    location: pkg/result/codes.go
+    - name: CodeObsEmitFailed
+      description: |-
+        New error code constant for observability emit failures.
+        Replaces the hardcoded string "EVENT_EMIT_FAILED" used in emitter.go.
+        Tests in emitter_test.go currently assert this exact string and must be
+        updated to reference the constant.
+      definition: |
+        // CodeObsEmitFailed is emitted when EmitSync fails to record an event.
+        CodeObsEmitFailed = "O001_OBS_EMIT_FAILED"
+      location: pkg/result/codes.go
+    - name: CodeObsQueryFailed
+      description: |-
+        New error code constant for observability query failures.
+        Replaces the hardcoded string "EVENT_QUERY_FAILED" used in query.go.
+        Tests in query_test.go currently assert this exact string and must be
+        updated to reference the constant.
+      definition: |
+        // CodeObsQueryFailed is emitted when Query fails to retrieve events.
+        CodeObsQueryFailed = "O002_OBS_QUERY_FAILED"
+      location: pkg/result/codes.go
+    - name: GetAgentHistory
+      description: |-
+        Converts from ([]AgentPerformanceEvent, error) to result.Result[AgentHistoryData].
+        AgentHistoryData is a new thin wrapper holding the slice. Uses CodeObsQueryFailed
+        on store errors. Returns success with empty slice (not error) when no events match.
+        Callers: query_test.go only (no cmd/sawtools caller exists).
+      definition: |
+        type AgentHistoryData struct {
+            Events []AgentPerformanceEvent
+        }
 
-  - name: CodeObsQueryFailed
-    description: |-
-      New error code constant for observability query failures.
-      Replaces the hardcoded string "EVENT_QUERY_FAILED" used in query.go.
-      Tests in query_test.go currently assert this exact string and must be
-      updated to reference the constant.
-    definition: |
-      // CodeObsQueryFailed is emitted when Query fails to retrieve events.
-      CodeObsQueryFailed = "O002_OBS_QUERY_FAILED"
-    location: pkg/result/codes.go
+        func GetAgentHistory(ctx context.Context, store Store, agentID string, limit int) result.Result[AgentHistoryData]
+      location: pkg/observability/query.go
+    - name: GetIMPLMetrics
+      description: |-
+        Converts from (*IMPLMetrics, error) to result.Result[IMPLMetrics] (value, not pointer).
+        Uses CodeObsQueryFailed on store errors. Returns success with zero-value IMPLMetrics
+        (not error) when no data exists.
+        Callers: cmd/sawtools/observability_metrics.go (must be updated in Wave 2, Agent C).
+      definition: |
+        func GetIMPLMetrics(ctx context.Context, store Store, implSlug string) result.Result[IMPLMetrics]
+      location: pkg/observability/query.go
+    - name: GetProgramSummary
+      description: |-
+        Converts from (*ProgramSummary, error) to result.Result[ProgramSummary] (value, not pointer).
+        Uses CodeObsQueryFailed on store errors. Returns success with zero-value ProgramSummary
+        (not error) when no data exists.
+        Callers: cmd/sawtools/observability_metrics.go (must be updated in Wave 2, Agent C).
+      definition: |
+        func GetProgramSummary(ctx context.Context, store Store, programSlug string) result.Result[ProgramSummary]
+      location: pkg/observability/query.go
+    - name: GetCostBreakdown
+      description: |-
+        Converts from (map[string]float64, error) to result.Result[CostBreakdownData].
+        CostBreakdownData is a new thin wrapper holding the map. Uses CodeObsQueryFailed
+        on store errors.
+        Callers: cmd/sawtools/observability_metrics.go (must be updated in Wave 2, Agent C).
+      definition: |
+        type CostBreakdownData struct {
+            PerAgent map[string]float64
+        }
 
-  - name: GetAgentHistory
-    description: |-
-      Converts from ([]AgentPerformanceEvent, error) to result.Result[AgentHistoryData].
-      AgentHistoryData is a new thin wrapper holding the slice. Uses CodeObsQueryFailed
-      on store errors. Returns success with empty slice (not error) when no events match.
-      Callers: query_test.go only (no cmd/sawtools caller exists).
-    definition: |
-      type AgentHistoryData struct {
-          Events []AgentPerformanceEvent
-      }
+        func GetCostBreakdown(ctx context.Context, store Store, implSlug string) result.Result[CostBreakdownData]
+      location: pkg/observability/query.go
+    - name: GetFailurePatterns
+      description: |-
+        Converts from ([]FailurePattern, error) to result.Result[FailurePatternsData].
+        FailurePatternsData is a new thin wrapper holding the slice. Uses CodeObsQueryFailed
+        on store errors.
+        Callers: query_test.go only (no cmd/sawtools caller exists).
+      definition: |
+        type FailurePatternsData struct {
+            Patterns []FailurePattern
+        }
 
-      func GetAgentHistory(ctx context.Context, store Store, agentID string, limit int) result.Result[AgentHistoryData]
-    location: pkg/observability/query.go
+        func GetFailurePatterns(ctx context.Context, store Store, filters QueryFilters) result.Result[FailurePatternsData]
+      location: pkg/observability/query.go
+    - name: ComputeCostRollup
+      description: |-
+        Converts from (*RollupResult, error) to result.Result[RollupResult] (value, not pointer).
+        Replace fmt.Errorf wrapping with result.NewFatal using CodeObsQueryFailed.
+        Callers: sqlite/sqlite.go GetRollup (must be updated in Wave 2, Agent E).
+      definition: |
+        func ComputeCostRollup(ctx context.Context, store Store, req RollupRequest) result.Result[RollupResult]
+      location: pkg/observability/rollups.go
+    - name: ComputeSuccessRateRollup
+      description: |-
+        Converts from (*RollupResult, error) to result.Result[RollupResult] (value, not pointer).
+        Replace fmt.Errorf wrapping with result.NewFatal using CodeObsQueryFailed.
+        Callers: sqlite/sqlite.go GetRollup (must be updated in Wave 2, Agent E).
+      definition: |
+        func ComputeSuccessRateRollup(ctx context.Context, store Store, req RollupRequest) result.Result[RollupResult]
+      location: pkg/observability/rollups.go
+    - name: ComputeRetryRollup
+      description: |-
+        Converts from (*RollupResult, error) to result.Result[RollupResult] (value, not pointer).
+        Replace fmt.Errorf wrapping with result.NewFatal using CodeObsQueryFailed.
+        Callers: sqlite/sqlite.go GetRollup (must be updated in Wave 2, Agent E).
+      definition: |
+        func ComputeRetryRollup(ctx context.Context, store Store, req RollupRequest) result.Result[RollupResult]
+      location: pkg/observability/rollups.go
+    - name: ComputeTrend
+      description: |-
+        Converts from (*TrendResult, error) to result.Result[TrendResult] (value, not pointer).
+        Replace fmt.Errorf calls with result.NewFatal using CodeObsQueryFailed (for store errors)
+        and a new inline code for unsupported metric (or reuse CodeObsQueryFailed with a descriptive
+        message). ComputeTrendOpts.Ctx field moves ctx into the function signature instead:
+        new signature is ComputeTrend(ctx context.Context, opts ComputeTrendOpts).
+        Remove Ctx field from ComputeTrendOpts since ctx should be a first-class parameter.
+        Callers: rollups_test.go only.
+      definition: |
+        // ComputeTrendOpts updated — Ctx field removed.
+        type ComputeTrendOpts struct {
+            Store     Store
+            Metric    string
+            TimeRange time.Duration
+            Buckets   int
+        }
 
-  - name: GetIMPLMetrics
-    description: |-
-      Converts from (*IMPLMetrics, error) to result.Result[IMPLMetrics] (value, not pointer).
-      Uses CodeObsQueryFailed on store errors. Returns success with zero-value IMPLMetrics
-      (not error) when no data exists.
-      Callers: cmd/sawtools/observability_metrics.go (must be updated in Wave 2, Agent C).
-    definition: |
-      func GetIMPLMetrics(ctx context.Context, store Store, implSlug string) result.Result[IMPLMetrics]
-    location: pkg/observability/query.go
-
-  - name: GetProgramSummary
-    description: |-
-      Converts from (*ProgramSummary, error) to result.Result[ProgramSummary] (value, not pointer).
-      Uses CodeObsQueryFailed on store errors. Returns success with zero-value ProgramSummary
-      (not error) when no data exists.
-      Callers: cmd/sawtools/observability_metrics.go (must be updated in Wave 2, Agent C).
-    definition: |
-      func GetProgramSummary(ctx context.Context, store Store, programSlug string) result.Result[ProgramSummary]
-    location: pkg/observability/query.go
-
-  - name: GetCostBreakdown
-    description: |-
-      Converts from (map[string]float64, error) to result.Result[CostBreakdownData].
-      CostBreakdownData is a new thin wrapper holding the map. Uses CodeObsQueryFailed
-      on store errors.
-      Callers: cmd/sawtools/observability_metrics.go (must be updated in Wave 2, Agent C).
-    definition: |
-      type CostBreakdownData struct {
-          PerAgent map[string]float64
-      }
-
-      func GetCostBreakdown(ctx context.Context, store Store, implSlug string) result.Result[CostBreakdownData]
-    location: pkg/observability/query.go
-
-  - name: GetFailurePatterns
-    description: |-
-      Converts from ([]FailurePattern, error) to result.Result[FailurePatternsData].
-      FailurePatternsData is a new thin wrapper holding the slice. Uses CodeObsQueryFailed
-      on store errors.
-      Callers: query_test.go only (no cmd/sawtools caller exists).
-    definition: |
-      type FailurePatternsData struct {
-          Patterns []FailurePattern
-      }
-
-      func GetFailurePatterns(ctx context.Context, store Store, filters QueryFilters) result.Result[FailurePatternsData]
-    location: pkg/observability/query.go
-
-  - name: ComputeCostRollup
-    description: |-
-      Converts from (*RollupResult, error) to result.Result[RollupResult] (value, not pointer).
-      Replace fmt.Errorf wrapping with result.NewFatal using CodeObsQueryFailed.
-      Callers: sqlite/sqlite.go GetRollup (must be updated in Wave 2, Agent E).
-    definition: |
-      func ComputeCostRollup(ctx context.Context, store Store, req RollupRequest) result.Result[RollupResult]
-    location: pkg/observability/rollups.go
-
-  - name: ComputeSuccessRateRollup
-    description: |-
-      Converts from (*RollupResult, error) to result.Result[RollupResult] (value, not pointer).
-      Replace fmt.Errorf wrapping with result.NewFatal using CodeObsQueryFailed.
-      Callers: sqlite/sqlite.go GetRollup (must be updated in Wave 2, Agent E).
-    definition: |
-      func ComputeSuccessRateRollup(ctx context.Context, store Store, req RollupRequest) result.Result[RollupResult]
-    location: pkg/observability/rollups.go
-
-  - name: ComputeRetryRollup
-    description: |-
-      Converts from (*RollupResult, error) to result.Result[RollupResult] (value, not pointer).
-      Replace fmt.Errorf wrapping with result.NewFatal using CodeObsQueryFailed.
-      Callers: sqlite/sqlite.go GetRollup (must be updated in Wave 2, Agent E).
-    definition: |
-      func ComputeRetryRollup(ctx context.Context, store Store, req RollupRequest) result.Result[RollupResult]
-    location: pkg/observability/rollups.go
-
-  - name: ComputeTrend
-    description: |-
-      Converts from (*TrendResult, error) to result.Result[TrendResult] (value, not pointer).
-      Replace fmt.Errorf calls with result.NewFatal using CodeObsQueryFailed (for store errors)
-      and a new inline code for unsupported metric (or reuse CodeObsQueryFailed with a descriptive
-      message). ComputeTrendOpts.Ctx field moves ctx into the function signature instead:
-      new signature is ComputeTrend(ctx context.Context, opts ComputeTrendOpts).
-      Remove Ctx field from ComputeTrendOpts since ctx should be a first-class parameter.
-      Callers: rollups_test.go only.
-    definition: |
-      // ComputeTrendOpts updated — Ctx field removed.
-      type ComputeTrendOpts struct {
-          Store     Store
-          Metric    string
-          TimeRange time.Duration
-          Buckets   int
-      }
-
-      func ComputeTrend(ctx context.Context, opts ComputeTrendOpts) result.Result[TrendResult]
-    location: pkg/observability/rollups.go
-
+        func ComputeTrend(ctx context.Context, opts ComputeTrendOpts) result.Result[TrendResult]
+      location: pkg/observability/rollups.go
 waves:
-  - number: 1
-    agents:
-      - id: A
-        task: |
-          ## Role
-          Error code registration and emitter fix for pkg/observability (P0).
+    - number: 1
+      agents:
+        - id: A
+          task: |
+            ## Role
+            Error code registration and emitter fix for pkg/observability (P0).
 
-          ## Context
-          pkg/observability/emitter.go uses a hardcoded string "EVENT_EMIT_FAILED" in EmitSync.
-          pkg/observability/query.go uses a hardcoded string "EVENT_QUERY_FAILED" in Query.
-          Both are violations of the canonical error code pattern (codes must be constants in
-          pkg/result/codes.go with pattern O<3-DIGITS>_DESCRIPTION).
+            ## Context
+            pkg/observability/emitter.go uses a hardcoded string "EVENT_EMIT_FAILED" in EmitSync.
+            pkg/observability/query.go uses a hardcoded string "EVENT_QUERY_FAILED" in Query.
+            Both are violations of the canonical error code pattern (codes must be constants in
+            pkg/result/codes.go with pattern O<3-DIGITS>_DESCRIPTION).
 
-          ## What to implement
+            ## What to implement
 
-          ### 1. Add O-range codes to pkg/result/codes.go
-          Add a new "Observability error codes (O001-O099)" section after the J001 block.
-          Add these two constants:
-          ```go
-          // Observability error codes (O001-O099)
-          const (
-              // CodeObsEmitFailed is emitted when EmitSync fails to record an event.
-              CodeObsEmitFailed = "O001_OBS_EMIT_FAILED"
-              // CodeObsQueryFailed is emitted when Query or a query helper fails to retrieve events.
-              CodeObsQueryFailed = "O002_OBS_QUERY_FAILED"
-          )
-          ```
-          Also add O001-O099 to the range comment table at the top of the file.
-
-          ### 2. Fix emitter.go
-          In EmitSync (line ~62), replace the hardcoded "EVENT_EMIT_FAILED" string
-          with result.CodeObsEmitFailed:
-          ```go
-          result.NewFatal(result.CodeObsEmitFailed, err.Error()).WithCause(err),
-          ```
-
-          ## Tests
-          Do NOT modify test files — Agent F owns test files. The tests in emitter_test.go
-          (TestEmitSyncStoreErrorReturnsFatal line ~277) and query_test.go
-          (TestQueryFunctionStoreErrorReturnsFatal line ~373) currently assert the old string
-          literals. Leave those tests; Agent F will update them.
-
-          ## Verification gate
-          ```
-          go build ./pkg/result/... ./pkg/observability/...
-          go vet ./pkg/result/... ./pkg/observability/...
-          go test ./pkg/observability/...
-          ```
-          Note: the test assertions for error codes will fail because Agent F hasn't run yet.
-          Verify that the build and vet pass. Test failures on the two error-code assertions
-          are expected and acceptable at this stage.
-        files:
-          - pkg/result/codes.go
-          - pkg/observability/emitter.go
-        dependencies: []
-
-      - id: B
-        task: |
-          ## Role
-          Convert query.go exported functions from (T, error) to result.Result[T] (P0).
-
-          ## Context
-          GetAgentHistory, GetIMPLMetrics, GetProgramSummary, GetCostBreakdown, and
-          GetFailurePatterns all return (T, error) instead of result.Result[T].
-          These are the non-canonical return patterns identified in the review.
-
-          IMPORTANT: Agent A is simultaneously adding result.CodeObsQueryFailed to codes.go.
-          You must use result.CodeObsQueryFailed in your result.NewFatal calls. This
-          constant will exist in the codebase when your worktree is created from the
-          same base commit — do NOT define it yourself. If the constant is not yet present,
-          add a TODO comment and use the string literal "O002_OBS_QUERY_FAILED" as fallback.
-
-          Note: The Query function (line 18) already returns result.Result[QueryData] and
-          is correct — do NOT change it.
-
-          ## What to implement
-
-          ### 0. Fix the Query function inline error code (P0)
-          The Query function at line 18 already returns result.Result[QueryData] but uses
-          the hardcoded string "EVENT_QUERY_FAILED". Replace it with the constant:
-          ```go
-          result.NewFatal(result.CodeObsQueryFailed, err.Error()).WithCause(err),
-          ```
-
-          ### 1. Add new result data wrapper types
-          Add these types to query.go (above or below the existing QueryData type):
-          ```go
-          // AgentHistoryData holds the result of GetAgentHistory.
-          type AgentHistoryData struct {
-              Events []AgentPerformanceEvent
-          }
-
-          // CostBreakdownData holds the result of GetCostBreakdown.
-          type CostBreakdownData struct {
-              PerAgent map[string]float64
-          }
-
-          // FailurePatternsData holds the result of GetFailurePatterns.
-          type FailurePatternsData struct {
-              Patterns []FailurePattern
-          }
-          ```
-
-          ### 2. Convert GetAgentHistory
-          Old signature: `func GetAgentHistory(ctx context.Context, store Store, agentID string, limit int) ([]AgentPerformanceEvent, error)`
-          New signature: `func GetAgentHistory(ctx context.Context, store Store, agentID string, limit int) result.Result[AgentHistoryData]`
-
-          On store.QueryEvents error: return result.NewFailure wrapping result.NewFatal(result.CodeObsQueryFailed, err.Error()).WithCause(err)
-          On success: return result.NewSuccess(AgentHistoryData{Events: result}) where result is the
-          []AgentPerformanceEvent slice built from the type-assert loop.
-          The sort.Slice call stays in place.
-
-          ### 3. Convert GetIMPLMetrics
-          Old signature: `func GetIMPLMetrics(ctx context.Context, store Store, implSlug string) (*IMPLMetrics, error)`
-          New signature: `func GetIMPLMetrics(ctx context.Context, store Store, implSlug string) result.Result[IMPLMetrics]`
-
-          The function makes 3 separate store.QueryEvents calls. On ANY error, return failure.
-          On success: return result.NewSuccess(*metrics) (dereference the pointer, return value type).
-          Zero-value metrics on empty results remains success (not error) — keep this behavior.
-
-          ### 4. Convert GetProgramSummary
-          Old signature: `func GetProgramSummary(ctx context.Context, store Store, programSlug string) (*ProgramSummary, error)`
-          New signature: `func GetProgramSummary(ctx context.Context, store Store, programSlug string) result.Result[ProgramSummary]`
-
-          Same pattern: on any store error return failure; on success return result.NewSuccess(*summary).
-
-          ### 5. Convert GetCostBreakdown
-          Old signature: `func GetCostBreakdown(ctx context.Context, store Store, implSlug string) (map[string]float64, error)`
-          New signature: `func GetCostBreakdown(ctx context.Context, store Store, implSlug string) result.Result[CostBreakdownData]`
-
-          On store error: return failure. On success: return result.NewSuccess(CostBreakdownData{PerAgent: breakdown}).
-
-          ### 6. Convert GetFailurePatterns
-          Old signature: `func GetFailurePatterns(ctx context.Context, store Store, filters QueryFilters) ([]FailurePattern, error)`
-          New signature: `func GetFailurePatterns(ctx context.Context, store Store, filters QueryFilters) result.Result[FailurePatternsData]`
-
-          On store error: return failure. On success: return result.NewSuccess(FailurePatternsData{Patterns: result}).
-
-          ## Tests
-          Do NOT modify test files — Agent F owns them. The tests in query_test.go that call
-          these functions will not compile in your worktree because the signatures changed.
-          This is acceptable — Agent F resolves the test compilation in Wave 2.
-
-          To verify your changes compile: `go build ./pkg/observability/...`
-          Do not attempt to run the full test suite as it will fail due to test compilation errors.
-
-          ## Verification gate
-          ```
-          go build ./pkg/observability/...
-          go vet ./pkg/observability/...
-          ```
-        files:
-          - pkg/observability/query.go
-        dependencies: []
-
-      - id: D
-        task: |
-          ## Role
-          Convert rollups.go exported functions from (*T, error) to result.Result[T]
-          and fix ComputeTrend context propagation (P1).
-
-          ## Context
-          ComputeCostRollup, ComputeSuccessRateRollup, ComputeRetryRollup all return
-          (*RollupResult, error). ComputeTrend returns (*TrendResult, error) and buries
-          context inside ComputeTrendOpts.Ctx. All use bare fmt.Errorf instead of
-          result.SAWError. These are the non-canonical patterns identified in the review.
-
-          IMPORTANT: Agent A is simultaneously adding result.CodeObsQueryFailed to codes.go.
-          Use result.CodeObsQueryFailed in your result.NewFatal calls. If the constant is
-          not yet present, use the string literal "O002_OBS_QUERY_FAILED" as fallback.
-
-          ## What to implement
-
-          ### 1. Convert ComputeCostRollup
-          Old: `func ComputeCostRollup(ctx context.Context, store Store, req RollupRequest) (*RollupResult, error)`
-          New: `func ComputeCostRollup(ctx context.Context, store Store, req RollupRequest) result.Result[RollupResult]`
-
-          Replace the `return nil, fmt.Errorf(...)` on store error with:
-          ```go
-          return result.NewFailure[RollupResult]([]result.SAWError{
-              result.NewFatal(result.CodeObsQueryFailed, "query cost events: "+err.Error()).WithCause(err),
-          })
-          ```
-          Replace the final `return result, nil` with `return result.NewSuccess(*result)`.
-          (Note: `result` is used as a local variable name — rename the local var to `rollup`
-          to avoid shadowing the `result` package import. Update all references accordingly.)
-
-          ### 2. Convert ComputeSuccessRateRollup
-          Same pattern as ComputeCostRollup. Rename local `result` var to `rollup` to avoid
-          package name shadowing. Return result.Result[RollupResult].
-
-          ### 3. Convert ComputeRetryRollup
-          Same pattern. Local `result` var → `rollup`. Return result.Result[RollupResult].
-
-          ### 4. Convert ComputeTrend and update ComputeTrendOpts
-          In rollups_opts.go: remove the `Ctx context.Context` field from ComputeTrendOpts:
-          ```go
-          type ComputeTrendOpts struct {
-              Store     Store
-              Metric    string
-              TimeRange time.Duration
-              Buckets   int
-          }
-          ```
-
-          In rollups.go, update ComputeTrend:
-          Old: `func ComputeTrend(opts ComputeTrendOpts) (*TrendResult, error)`
-          New: `func ComputeTrend(ctx context.Context, opts ComputeTrendOpts) result.Result[TrendResult]`
-
-          Update the function body:
-          - Replace `ctx := opts.Ctx` and `store := opts.Store` with function params directly.
-          - Replace `return nil, fmt.Errorf("unsupported metric: %s", metric)` with:
+            ### 1. Add O-range codes to pkg/result/codes.go
+            Add a new "Observability error codes (O001-O099)" section after the J001 block.
+            Add these two constants:
             ```go
-            return result.NewFailure[TrendResult]([]result.SAWError{
-                result.NewFatal(result.CodeObsQueryFailed, "unsupported metric: "+metric),
+            // Observability error codes (O001-O099)
+            const (
+                // CodeObsEmitFailed is emitted when EmitSync fails to record an event.
+                CodeObsEmitFailed = "O001_OBS_EMIT_FAILED"
+                // CodeObsQueryFailed is emitted when Query or a query helper fails to retrieve events.
+                CodeObsQueryFailed = "O002_OBS_QUERY_FAILED"
+            )
+            ```
+            Also add O001-O099 to the range comment table at the top of the file.
+
+            ### 2. Fix emitter.go
+            In EmitSync (line ~62), replace the hardcoded "EVENT_EMIT_FAILED" string
+            with result.CodeObsEmitFailed:
+            ```go
+            result.NewFatal(result.CodeObsEmitFailed, err.Error()).WithCause(err),
+            ```
+
+            ## Tests
+            Do NOT modify test files — Agent F owns test files. The tests in emitter_test.go
+            (TestEmitSyncStoreErrorReturnsFatal line ~277) and query_test.go
+            (TestQueryFunctionStoreErrorReturnsFatal line ~373) currently assert the old string
+            literals. Leave those tests; Agent F will update them.
+
+            ## Verification gate
+            ```
+            go build ./pkg/result/... ./pkg/observability/...
+            go vet ./pkg/result/... ./pkg/observability/...
+            go test ./pkg/observability/...
+            ```
+            Note: the test assertions for error codes will fail because Agent F hasn't run yet.
+            Verify that the build and vet pass. Test failures on the two error-code assertions
+            are expected and acceptable at this stage.
+          files:
+            - pkg/result/codes.go
+            - pkg/observability/emitter.go
+        - id: B
+          task: |
+            ## Role
+            Convert query.go exported functions from (T, error) to result.Result[T] (P0).
+
+            ## Context
+            GetAgentHistory, GetIMPLMetrics, GetProgramSummary, GetCostBreakdown, and
+            GetFailurePatterns all return (T, error) instead of result.Result[T].
+            These are the non-canonical return patterns identified in the review.
+
+            IMPORTANT: Agent A is simultaneously adding result.CodeObsQueryFailed to codes.go.
+            You must use result.CodeObsQueryFailed in your result.NewFatal calls. This
+            constant will exist in the codebase when your worktree is created from the
+            same base commit — do NOT define it yourself. If the constant is not yet present,
+            add a TODO comment and use the string literal "O002_OBS_QUERY_FAILED" as fallback.
+
+            Note: The Query function (line 18) already returns result.Result[QueryData] and
+            is correct — do NOT change it.
+
+            ## What to implement
+
+            ### 0. Fix the Query function inline error code (P0)
+            The Query function at line 18 already returns result.Result[QueryData] but uses
+            the hardcoded string "EVENT_QUERY_FAILED". Replace it with the constant:
+            ```go
+            result.NewFatal(result.CodeObsQueryFailed, err.Error()).WithCause(err),
+            ```
+
+            ### 1. Add new result data wrapper types
+            Add these types to query.go (above or below the existing QueryData type):
+            ```go
+            // AgentHistoryData holds the result of GetAgentHistory.
+            type AgentHistoryData struct {
+                Events []AgentPerformanceEvent
+            }
+
+            // CostBreakdownData holds the result of GetCostBreakdown.
+            type CostBreakdownData struct {
+                PerAgent map[string]float64
+            }
+
+            // FailurePatternsData holds the result of GetFailurePatterns.
+            type FailurePatternsData struct {
+                Patterns []FailurePattern
+            }
+            ```
+
+            ### 2. Convert GetAgentHistory
+            Old signature: `func GetAgentHistory(ctx context.Context, store Store, agentID string, limit int) ([]AgentPerformanceEvent, error)`
+            New signature: `func GetAgentHistory(ctx context.Context, store Store, agentID string, limit int) result.Result[AgentHistoryData]`
+
+            On store.QueryEvents error: return result.NewFailure wrapping result.NewFatal(result.CodeObsQueryFailed, err.Error()).WithCause(err)
+            ⚠ VARIABLE SHADOWING: The current code uses a local variable named `result` to hold
+            the []AgentPerformanceEvent slice (query.go:74). After adding the `result` package import,
+            this will shadow the package name. RENAME the local variable first:
+              `result` → `events` (or `history`)
+            Then: return result.NewSuccess(AgentHistoryData{Events: events})
+            The sort.Slice call also references this var — update all occurrences.
+
+            ### 3. Convert GetIMPLMetrics
+            Old signature: `func GetIMPLMetrics(ctx context.Context, store Store, implSlug string) (*IMPLMetrics, error)`
+            New signature: `func GetIMPLMetrics(ctx context.Context, store Store, implSlug string) result.Result[IMPLMetrics]`
+
+            The function makes 3 separate store.QueryEvents calls. On ANY error, return failure.
+            On success: return result.NewSuccess(*metrics) (dereference the pointer, return value type).
+            Zero-value metrics on empty results remains success (not error) — keep this behavior.
+
+            ### 4. Convert GetProgramSummary
+            Old signature: `func GetProgramSummary(ctx context.Context, store Store, programSlug string) (*ProgramSummary, error)`
+            New signature: `func GetProgramSummary(ctx context.Context, store Store, programSlug string) result.Result[ProgramSummary]`
+
+            Same pattern: on any store error return failure; on success return result.NewSuccess(*summary).
+
+            ### 5. Convert GetCostBreakdown
+            Old signature: `func GetCostBreakdown(ctx context.Context, store Store, implSlug string) (map[string]float64, error)`
+            New signature: `func GetCostBreakdown(ctx context.Context, store Store, implSlug string) result.Result[CostBreakdownData]`
+
+            On store error: return failure. On success: return result.NewSuccess(CostBreakdownData{PerAgent: breakdown}).
+
+            ### 6. Convert GetFailurePatterns
+            Old signature: `func GetFailurePatterns(ctx context.Context, store Store, filters QueryFilters) ([]FailurePattern, error)`
+            New signature: `func GetFailurePatterns(ctx context.Context, store Store, filters QueryFilters) result.Result[FailurePatternsData]`
+
+            On store error: return failure. On success: return result.NewSuccess(FailurePatternsData{Patterns: result}).
+
+            ## Tests
+            Do NOT modify test files — Agent F owns them. The tests in query_test.go that call
+            these functions will not compile in your worktree because the signatures changed.
+            This is acceptable — Agent F resolves the test compilation in Wave 2.
+
+            To verify your changes compile: `go build ./pkg/observability/...`
+            Do not attempt to run the full test suite as it will fail due to test compilation errors.
+
+            ## Verification gate
+            ```
+            go build ./pkg/observability/...
+            go vet ./pkg/observability/...
+            ```
+          files:
+            - pkg/observability/query.go
+        - id: D
+          task: |
+            ## Role
+            Convert rollups.go exported functions from (*T, error) to result.Result[T]
+            and fix ComputeTrend context propagation (P1).
+
+            ## Context
+            ComputeCostRollup, ComputeSuccessRateRollup, ComputeRetryRollup all return
+            (*RollupResult, error). ComputeTrend returns (*TrendResult, error) and buries
+            context inside ComputeTrendOpts.Ctx. All use bare fmt.Errorf instead of
+            result.SAWError. These are the non-canonical patterns identified in the review.
+
+            IMPORTANT: Agent A is simultaneously adding result.CodeObsQueryFailed to codes.go.
+            Use result.CodeObsQueryFailed in your result.NewFatal calls. If the constant is
+            not yet present, use the string literal "O002_OBS_QUERY_FAILED" as fallback.
+
+            ## What to implement
+
+            ### 1. Convert ComputeCostRollup
+            Old: `func ComputeCostRollup(ctx context.Context, store Store, req RollupRequest) (*RollupResult, error)`
+            New: `func ComputeCostRollup(ctx context.Context, store Store, req RollupRequest) result.Result[RollupResult]`
+
+            Replace the `return nil, fmt.Errorf(...)` on store error with:
+            ```go
+            return result.NewFailure[RollupResult]([]result.SAWError{
+                result.NewFatal(result.CodeObsQueryFailed, "query cost events: "+err.Error()).WithCause(err),
             })
             ```
-          - Replace `return nil, fmt.Errorf("query events for trend: %w", err)` with:
+            Replace the final `return result, nil` with `return result.NewSuccess(*result)`.
+            (Note: `result` is used as a local variable name — rename the local var to `rollup`
+            to avoid shadowing the `result` package import. Update all references accordingly.)
+
+            ### 2. Convert ComputeSuccessRateRollup
+            Same pattern as ComputeCostRollup. Rename local `result` var to `rollup` to avoid
+            package name shadowing. Return result.Result[RollupResult].
+
+            ### 3. Convert ComputeRetryRollup
+            Same pattern. Local `result` var → `rollup`. Return result.Result[RollupResult].
+
+            ### 4. Convert ComputeTrend and update ComputeTrendOpts
+            In rollups_opts.go: remove the `Ctx context.Context` field from ComputeTrendOpts:
             ```go
-            return result.NewFailure[TrendResult]([]result.SAWError{
-                result.NewFatal(result.CodeObsQueryFailed, "query events for trend: "+err.Error()).WithCause(err),
-            })
+            type ComputeTrendOpts struct {
+                Store     Store
+                Metric    string
+                TimeRange time.Duration
+                Buckets   int
+            }
             ```
-          - Replace `return result, nil` with `return result.NewSuccess(*result)`.
-            (Again, rename local `result` var to `trend` throughout to avoid shadowing the import.)
 
-          ### 5. Update package-level imports in rollups.go
-          Ensure the import for "github.com/blackwell-systems/scout-and-wave-go/pkg/result" is
-          present in rollups.go. Remove "fmt" import if it becomes unused after the conversions.
-          Keep "context" import since it's now an explicit function param.
+            In rollups.go, update ComputeTrend:
+            Old: `func ComputeTrend(opts ComputeTrendOpts) (*TrendResult, error)`
+            New: `func ComputeTrend(ctx context.Context, opts ComputeTrendOpts) result.Result[TrendResult]`
 
-          ## Tests
-          Do NOT modify rollups_test.go — Agent F owns it. The test file will not compile
-          in your worktree because it calls the old signatures (including ComputeTrend with
-          opts.Ctx). This is acceptable.
+            Update the function body:
+            - Replace `ctx := opts.Ctx` and `store := opts.Store` with function params directly.
+            - Replace `return nil, fmt.Errorf("unsupported metric: %s", metric)` with:
+              ```go
+              return result.NewFailure[TrendResult]([]result.SAWError{
+                  result.NewFatal(result.CodeObsQueryFailed, "unsupported metric: "+metric),
+              })
+              ```
+            - Replace `return nil, fmt.Errorf("query events for trend: %w", err)` with:
+              ```go
+              return result.NewFailure[TrendResult]([]result.SAWError{
+                  result.NewFatal(result.CodeObsQueryFailed, "query events for trend: "+err.Error()).WithCause(err),
+              })
+              ```
+            - Replace `return result, nil` with `return result.NewSuccess(*result)`.
+              (Again, rename local `result` var to `trend` throughout to avoid shadowing the import.)
 
-          ## Verification gate
-          ```
-          go build ./pkg/observability/...
-          go vet ./pkg/observability/...
-          ```
-        files:
-          - pkg/observability/rollups.go
-          - pkg/observability/rollups_opts.go
-        dependencies: []
+            ### 5. Update package-level imports in rollups.go
+            Ensure the import for "github.com/blackwell-systems/scout-and-wave-go/pkg/result" is
+            present in rollups.go. Remove "fmt" import if it becomes unused after the conversions.
+            Keep "context" import since it's now an explicit function param.
 
-  - number: 2
-    agents:
-      - id: C
-        task: |
-          ## Role
-          Update cmd/sawtools/observability_metrics.go to use the new result.Result[T]
-          return types from pkg/observability (Wave 2, depends on Agent B).
+            ## Tests
+            Do NOT modify rollups_test.go — Agent F owns it. The test file will not compile
+            in your worktree because it calls the old signatures (including ComputeTrend with
+            opts.Ctx). This is acceptable.
 
-          ## Context
-          Agent B (Wave 1) converted GetIMPLMetrics, GetProgramSummary, and GetCostBreakdown
-          from (T, error) to result.Result[T]. observability_metrics.go in cmd/sawtools
-          calls all three and must be updated to use the new return types.
+            ## Verification gate
+            ```
+            go build ./pkg/observability/...
+            go vet ./pkg/observability/...
+            ```
+          files:
+            - pkg/observability/rollups.go
+            - pkg/observability/rollups_opts.go
+    - number: 2
+      agents:
+        - id: C
+          task: |
+            ## Role
+            Update cmd/sawtools/observability_metrics.go to use the new result.Result[T]
+            return types from pkg/observability (Wave 2, depends on Agent B).
 
-          ## What to implement
+            ## Context
+            Agent B (Wave 1) converted GetIMPLMetrics, GetProgramSummary, and GetCostBreakdown
+            from (T, error) to result.Result[T]. observability_metrics.go in cmd/sawtools
+            calls all three and must be updated to use the new return types.
 
-          ### 1. Update GetIMPLMetrics call (line ~45)
-          Old pattern:
-          ```go
-          metrics, err := obs.GetIMPLMetrics(ctx, store, implSlug)
-          if err != nil {
-              return fmt.Errorf("get metrics: %w", err)
-          }
-          ```
-          New pattern:
-          ```go
-          metricsRes := obs.GetIMPLMetrics(ctx, store, implSlug)
-          if !metricsRes.IsSuccess() {
-              return fmt.Errorf("get metrics: %s", metricsRes.Errors[0].Message)
-          }
-          metrics := metricsRes.GetData()
-          ```
-          Then update all usages of `metrics.TotalCost`, `metrics.TotalDurationMin`, etc.
-          to use the value (not pointer) type. The fields are the same, just accessed
-          directly instead of via pointer: `metrics.TotalCost` etc.
+            ## What to implement
 
-          ### 2. Update GetCostBreakdown call (line ~60)
-          Old pattern:
-          ```go
-          bd, err := obs.GetCostBreakdown(ctx, store, implSlug)
-          if err != nil {
-              return fmt.Errorf("get cost breakdown: %w", err)
-          }
-          if len(bd) > 0 {
-          ```
-          New pattern:
-          ```go
-          bdRes := obs.GetCostBreakdown(ctx, store, implSlug)
-          if !bdRes.IsSuccess() {
-              return fmt.Errorf("get cost breakdown: %s", bdRes.Errors[0].Message)
-          }
-          bd := bdRes.GetData().PerAgent
-          if len(bd) > 0 {
-          ```
+            ### 1. Update GetIMPLMetrics call (line ~45)
+            Old pattern:
+            ```go
+            metrics, err := obs.GetIMPLMetrics(ctx, store, implSlug)
+            if err != nil {
+                return fmt.Errorf("get metrics: %w", err)
+            }
+            ```
+            New pattern:
+            ```go
+            metricsRes := obs.GetIMPLMetrics(ctx, store, implSlug)
+            if !metricsRes.IsSuccess() {
+                return fmt.Errorf("get metrics: %s", metricsRes.Errors[0].Message)
+            }
+            metrics := metricsRes.GetData()
+            ```
+            Then update all usages of `metrics.TotalCost`, `metrics.TotalDurationMin`, etc.
+            to use the value (not pointer) type. The fields are the same, just accessed
+            directly instead of via pointer: `metrics.TotalCost` etc.
 
-          ### 3. Update GetProgramSummary call in showProgramSummary (line ~94)
-          Old pattern:
-          ```go
-          summary, err := obs.GetProgramSummary(ctx, store, programSlug)
-          if err != nil {
-              return fmt.Errorf("get program summary: %w", err)
-          }
-          ```
-          New pattern:
-          ```go
-          summaryRes := obs.GetProgramSummary(ctx, store, programSlug)
-          if !summaryRes.IsSuccess() {
-              return fmt.Errorf("get program summary: %s", summaryRes.Errors[0].Message)
-          }
-          summary := summaryRes.GetData()
-          ```
-          Then update field accesses: `summary.TotalCost`, `summary.IMPLCount`, etc.
-          These are the same field names — just accessed on value instead of pointer.
+            ### 2. Update GetCostBreakdown call (line ~60)
+            Old pattern:
+            ```go
+            bd, err := obs.GetCostBreakdown(ctx, store, implSlug)
+            if err != nil {
+                return fmt.Errorf("get cost breakdown: %w", err)
+            }
+            if len(bd) > 0 {
+            ```
+            New pattern:
+            ```go
+            bdRes := obs.GetCostBreakdown(ctx, store, implSlug)
+            if !bdRes.IsSuccess() {
+                return fmt.Errorf("get cost breakdown: %s", bdRes.Errors[0].Message)
+            }
+            bd := bdRes.GetData().PerAgent
+            if len(bd) > 0 {
+            ```
 
-          ## Verification gate
-          ```
-          go build ./cmd/sawtools/...
-          go vet ./cmd/sawtools/...
-          ```
-        files:
-          - cmd/sawtools/observability_metrics.go
-        dependencies: [B]
+            ### 3. Update GetProgramSummary call in showProgramSummary (line ~94)
+            Old pattern:
+            ```go
+            summary, err := obs.GetProgramSummary(ctx, store, programSlug)
+            if err != nil {
+                return fmt.Errorf("get program summary: %w", err)
+            }
+            ```
+            New pattern:
+            ```go
+            summaryRes := obs.GetProgramSummary(ctx, store, programSlug)
+            if !summaryRes.IsSuccess() {
+                return fmt.Errorf("get program summary: %s", summaryRes.Errors[0].Message)
+            }
+            summary := summaryRes.GetData()
+            ```
+            Then update field accesses: `summary.TotalCost`, `summary.IMPLCount`, etc.
+            These are the same field names — just accessed on value instead of pointer.
 
-      - id: E
-        task: |
-          ## Role
-          Update pkg/observability/sqlite/sqlite.go to handle the new result.Result[T]
-          return types from the rollup functions (Wave 2, depends on Agent D).
+            ## Verification gate
+            ```
+            go build ./cmd/sawtools/...
+            go vet ./cmd/sawtools/...
+            ```
+          files:
+            - cmd/sawtools/observability_metrics.go
+          dependencies:
+            - B
+        - id: E
+          task: |
+            ## Role
+            Update pkg/observability/sqlite/sqlite.go to handle the new result.Result[T]
+            return types from the rollup functions (Wave 2, depends on Agent D).
 
-          ## Context
-          Agent D (Wave 1) converted ComputeCostRollup, ComputeSuccessRateRollup, and
-          ComputeRetryRollup to return result.Result[RollupResult]. The GetRollup method
-          in sqlite.go delegates to these functions and must unwrap the result.
+            ## Context
+            Agent D (Wave 1) converted ComputeCostRollup, ComputeSuccessRateRollup, and
+            ComputeRetryRollup to return result.Result[RollupResult]. The GetRollup method
+            in sqlite.go delegates to these functions and must unwrap the result.
 
-          Also fix the inline fmt.Errorf for the unsupported rollup type (line ~156) — it
-          should use a consistent pattern with the delegated functions.
+            Also fix the inline fmt.Errorf for the unsupported rollup type (line ~156) — it
+            should use a consistent pattern with the delegated functions.
 
-          ## What to implement
+            ## What to implement
 
-          ### 1. Update GetRollup delegation (line ~146-157)
-          Old pattern:
-          ```go
-          func (s *store) GetRollup(ctx context.Context, req obs.RollupRequest) (*obs.RollupResult, error) {
-              switch req.Type {
-              case "cost":
-                  return obs.ComputeCostRollup(ctx, s, req)
-              case "success_rate":
-                  return obs.ComputeSuccessRateRollup(ctx, s, req)
-              case "retry_count":
-                  return obs.ComputeRetryRollup(ctx, s, req)
-              default:
-                  return nil, fmt.Errorf("unsupported rollup type: %s", req.Type)
-              }
-          }
-          ```
+            ### 1. Update GetRollup delegation (line ~146-157)
+            Old pattern:
+            ```go
+            func (s *store) GetRollup(ctx context.Context, req obs.RollupRequest) (*obs.RollupResult, error) {
+                switch req.Type {
+                case "cost":
+                    return obs.ComputeCostRollup(ctx, s, req)
+                case "success_rate":
+                    return obs.ComputeSuccessRateRollup(ctx, s, req)
+                case "retry_count":
+                    return obs.ComputeRetryRollup(ctx, s, req)
+                default:
+                    return nil, fmt.Errorf("unsupported rollup type: %s", req.Type)
+                }
+            }
+            ```
 
-          New pattern (the Store interface still returns (*obs.RollupResult, error), so
-          GetRollup must unwrap the result.Result to satisfy the interface):
-          ```go
-          func (s *store) GetRollup(ctx context.Context, req obs.RollupRequest) (*obs.RollupResult, error) {
-              var r result.Result[obs.RollupResult]
-              switch req.Type {
-              case "cost":
-                  r = obs.ComputeCostRollup(ctx, s, req)
-              case "success_rate":
-                  r = obs.ComputeSuccessRateRollup(ctx, s, req)
-              case "retry_count":
-                  r = obs.ComputeRetryRollup(ctx, s, req)
-              default:
-                  return nil, fmt.Errorf("unsupported rollup type: %s", req.Type)
-              }
-              if !r.IsSuccess() {
-                  return nil, fmt.Errorf("%s", r.Errors[0].Message)
-              }
-              data := r.GetData()
-              return &data, nil
-          }
-          ```
+            New pattern (the Store interface still returns (*obs.RollupResult, error), so
+            GetRollup must unwrap the result.Result to satisfy the interface):
+            ```go
+            func (s *store) GetRollup(ctx context.Context, req obs.RollupRequest) (*obs.RollupResult, error) {
+                var r result.Result[obs.RollupResult]
+                switch req.Type {
+                case "cost":
+                    r = obs.ComputeCostRollup(ctx, s, req)
+                case "success_rate":
+                    r = obs.ComputeSuccessRateRollup(ctx, s, req)
+                case "retry_count":
+                    r = obs.ComputeRetryRollup(ctx, s, req)
+                default:
+                    return nil, fmt.Errorf("unsupported rollup type: %s", req.Type)
+                }
+                if !r.IsSuccess() {
+                    return nil, fmt.Errorf("%s", r.Errors[0].Message)
+                }
+                data := r.GetData()
+                return &data, nil
+            }
+            ```
 
-          Add the result package import:
-          ```go
-          "github.com/blackwell-systems/scout-and-wave-go/pkg/result"
-          ```
+            Add the result package import:
+            ```go
+            "github.com/blackwell-systems/scout-and-wave-go/pkg/result"
+            ```
 
-          Note: The Store interface (in store.go) still declares GetRollup returning
-          (*obs.RollupResult, error). Do NOT change the Store interface — that would
-          require updating all Store implementations and is out of scope for this IMPL.
-          The sqlite implementation wraps the result internally.
+            Note: The Store interface (in store.go) still declares GetRollup returning
+            (*obs.RollupResult, error). Do NOT change the Store interface — that would
+            require updating all Store implementations and is out of scope for this IMPL.
+            The sqlite implementation wraps the result internally.
 
-          ## Verification gate
-          ```
-          go build ./pkg/observability/sqlite/...
-          go vet ./pkg/observability/sqlite/...
-          go test ./pkg/observability/sqlite/...
-          ```
-        files:
-          - pkg/observability/sqlite/sqlite.go
-        dependencies: [D]
+            ## Verification gate
+            ```
+            go build ./pkg/observability/sqlite/...
+            go vet ./pkg/observability/sqlite/...
+            go test ./pkg/observability/sqlite/...
+            ```
+          files:
+            - pkg/observability/sqlite/sqlite.go
+          dependencies:
+            - D
+        - id: F
+          task: |
+            ## Role
+            Update test files in pkg/observability to reflect new error codes and
+            new result.Result[T] signatures, and consolidate duplicated test helpers (P2).
 
-      - id: F
-        task: |
-          ## Role
-          Update test files in pkg/observability to reflect new error codes and
-          new result.Result[T] signatures, and consolidate duplicated test helpers (P2).
+            ## Context
+            Agent A added result.CodeObsEmitFailed and result.CodeObsQueryFailed to codes.go
+            and updated the production code. Tests in emitter_test.go and query_test.go still
+            assert the old string literals and must be updated to use the constants.
 
-          ## Context
-          Agent A added result.CodeObsEmitFailed and result.CodeObsQueryFailed to codes.go
-          and updated the production code. Tests in emitter_test.go and query_test.go still
-          assert the old string literals and must be updated to use the constants.
+            Agent B converted GetAgentHistory, GetIMPLMetrics, GetProgramSummary,
+            GetCostBreakdown, and GetFailurePatterns. Tests in query_test.go call these
+            functions and must be updated to use the new result.Result[T] return types.
 
-          Agent B converted GetAgentHistory, GetIMPLMetrics, GetProgramSummary,
-          GetCostBreakdown, and GetFailurePatterns. Tests in query_test.go call these
-          functions and must be updated to use the new result.Result[T] return types.
+            Agent D converted ComputeCostRollup, ComputeSuccessRateRollup, ComputeRetryRollup,
+            and ComputeTrend. Tests in rollups_test.go must be updated. The ComputeTrend
+            call in particular changed from ComputeTrend(ComputeTrendOpts{Ctx: ctx, ...})
+            to ComputeTrend(ctx, ComputeTrendOpts{...}) — Ctx field was removed from opts.
 
-          Agent D converted ComputeCostRollup, ComputeSuccessRateRollup, ComputeRetryRollup,
-          and ComputeTrend. Tests in rollups_test.go must be updated. The ComputeTrend
-          call in particular changed from ComputeTrend(ComputeTrendOpts{Ctx: ctx, ...})
-          to ComputeTrend(ctx, ComputeTrendOpts{...}) — Ctx field was removed from opts.
+            ## What to implement
 
-          ## What to implement
+            ### 1. emitter_test.go — update error code assertion (line ~277)
+            You own emitter_test.go. Update the error code assertion in
+            TestEmitSyncStoreErrorReturnsFatal (line ~277):
 
-          ### 1. emitter_test.go — error code assertion (do NOT own this file)
-          Wait — emitter_test.go is NOT in your file ownership. Do not modify it.
-          Check: is the error code assertion in emitter_test.go a problem?
-          The assertion at line ~277:
-          ```go
-          if res.Errors[0].Code != "EVENT_EMIT_FAILED" {
-          ```
-          This is in emitter_test.go which Agent A (wave 1) owns... No, Agent A owns
-          emitter.go and codes.go but NOT emitter_test.go. Let me clarify: you (Agent F)
-          own query_test.go and rollups_test.go. The emitter_test.go file is NOT in any
-          agent's ownership — update it as part of your work since it is in the same
-          package and you are the designated test agent.
+            Old:
+            ```go
+            if res.Errors[0].Code != "EVENT_EMIT_FAILED" {
+                t.Errorf("error code = %q, want EVENT_EMIT_FAILED", res.Errors[0].Code)
+            }
+            ```
+            To:
+            ```go
+            if res.Errors[0].Code != result.CodeObsEmitFailed {
+                t.Errorf("error code = %q, want %s", res.Errors[0].Code, result.CodeObsEmitFailed)
+            }
+            ```
+            Add the result package import to emitter_test.go if not present.
 
-          CORRECTION: Your ownership is query_test.go and rollups_test.go. However,
-          emitter_test.go is not assigned. To avoid a build failure, you must also update
-          emitter_test.go. Since it is in your package and not owned by another agent,
-          add it to your changes with care not to modify any behavior beyond the error code
-          assertion update.
+            ### 2. query_test.go — error code assertion (line ~373)
+            Change:
+            ```go
+            if res.Errors[0].Code != "EVENT_QUERY_FAILED" {
+                t.Errorf("error code = %q, want EVENT_QUERY_FAILED", res.Errors[0].Code)
+            }
+            ```
+            To:
+            ```go
+            if res.Errors[0].Code != result.CodeObsQueryFailed {
+                t.Errorf("error code = %q, want %s", res.Errors[0].Code, result.CodeObsQueryFailed)
+            }
+            ```
 
-          In emitter_test.go (line ~277), change:
-          ```go
-          if res.Errors[0].Code != "EVENT_EMIT_FAILED" {
-              t.Errorf("error code = %q, want EVENT_EMIT_FAILED", res.Errors[0].Code)
-          }
-          ```
-          To:
-          ```go
-          if res.Errors[0].Code != result.CodeObsEmitFailed {
-              t.Errorf("error code = %q, want %s", res.Errors[0].Code, result.CodeObsEmitFailed)
-          }
-          ```
-          Add the result package import to emitter_test.go if not present.
+            ### 3. query_test.go — update GetAgentHistory test (line ~117)
+            Old:
+            ```go
+            result, err := GetAgentHistory(ctx, store, "A", 10)
+            if err != nil {
+                t.Fatalf("GetAgentHistory returned error: %v", err)
+            }
+            if len(result) != 5 {
+            ```
+            New:
+            ```go
+            res := GetAgentHistory(ctx, store, "A", 10)
+            if !res.IsSuccess() {
+                t.Fatalf("GetAgentHistory returned failure: %v", res.Errors)
+            }
+            result := res.GetData().Events
+            if len(result) != 5 {
+            ```
 
-          ### 2. query_test.go — error code assertion (line ~373)
-          Change:
-          ```go
-          if res.Errors[0].Code != "EVENT_QUERY_FAILED" {
-              t.Errorf("error code = %q, want EVENT_QUERY_FAILED", res.Errors[0].Code)
-          }
-          ```
-          To:
-          ```go
-          if res.Errors[0].Code != result.CodeObsQueryFailed {
-              t.Errorf("error code = %q, want %s", res.Errors[0].Code, result.CodeObsQueryFailed)
-          }
-          ```
+            ### 4. query_test.go — update GetIMPLMetrics test (line ~159)
+            Old:
+            ```go
+            metrics, err := GetIMPLMetrics(ctx, store, "impl-1")
+            if err != nil {
+                t.Fatalf("GetIMPLMetrics returned error: %v", err)
+            }
+            ```
+            New:
+            ```go
+            metricsRes := GetIMPLMetrics(ctx, store, "impl-1")
+            if !metricsRes.IsSuccess() {
+                t.Fatalf("GetIMPLMetrics returned failure: %v", metricsRes.Errors)
+            }
+            metrics := metricsRes.GetData()
+            ```
 
-          ### 3. query_test.go — update GetAgentHistory test (line ~117)
-          Old:
-          ```go
-          result, err := GetAgentHistory(ctx, store, "A", 10)
-          if err != nil {
-              t.Fatalf("GetAgentHistory returned error: %v", err)
-          }
-          if len(result) != 5 {
-          ```
-          New:
-          ```go
-          res := GetAgentHistory(ctx, store, "A", 10)
-          if !res.IsSuccess() {
-              t.Fatalf("GetAgentHistory returned failure: %v", res.Errors)
-          }
-          result := res.GetData().Events
-          if len(result) != 5 {
-          ```
+            ### 5. query_test.go — update GetIMPLMetricsEmpty test (line ~221)
+            Old:
+            ```go
+            metrics, err := GetIMPLMetrics(ctx, store, "nonexistent")
+            if err != nil {
+                t.Fatalf("GetIMPLMetrics returned error: %v", err)
+            }
+            ```
+            New:
+            ```go
+            metricsRes := GetIMPLMetrics(ctx, store, "nonexistent")
+            if !metricsRes.IsSuccess() {
+                t.Fatalf("expected success for empty result, got failure: %v", metricsRes.Errors)
+            }
+            metrics := metricsRes.GetData()
+            ```
 
-          ### 4. query_test.go — update GetIMPLMetrics test (line ~159)
-          Old:
-          ```go
-          metrics, err := GetIMPLMetrics(ctx, store, "impl-1")
-          if err != nil {
-              t.Fatalf("GetIMPLMetrics returned error: %v", err)
-          }
-          ```
-          New:
-          ```go
-          metricsRes := GetIMPLMetrics(ctx, store, "impl-1")
-          if !metricsRes.IsSuccess() {
-              t.Fatalf("GetIMPLMetrics returned failure: %v", metricsRes.Errors)
-          }
-          metrics := metricsRes.GetData()
-          ```
+            ### 6. query_test.go — update GetProgramSummary test (line ~234)
+            Apply same pattern: check IsSuccess(), call GetData().
 
-          ### 5. query_test.go — update GetIMPLMetricsEmpty test (line ~221)
-          Old:
-          ```go
-          metrics, err := GetIMPLMetrics(ctx, store, "nonexistent")
-          if err != nil {
-              t.Fatalf("GetIMPLMetrics returned error: %v", err)
-          }
-          ```
-          New:
-          ```go
-          metricsRes := GetIMPLMetrics(ctx, store, "nonexistent")
-          if !metricsRes.IsSuccess() {
-              t.Fatalf("expected success for empty result, got failure: %v", metricsRes.Errors)
-          }
-          metrics := metricsRes.GetData()
-          ```
+            ### 7. query_test.go — update GetCostBreakdown test (line ~277)
+            Old:
+            ```go
+            breakdown, err := GetCostBreakdown(ctx, store, "impl-1")
+            if err != nil { ... }
+            if len(breakdown) != 2 {
+            if breakdown["A"] ... {
+            ```
+            New:
+            ```go
+            bdRes := GetCostBreakdown(ctx, store, "impl-1")
+            if !bdRes.IsSuccess() { ... }
+            breakdown := bdRes.GetData().PerAgent
+            if len(breakdown) != 2 {
+            if breakdown["A"] ... {
+            ```
 
-          ### 6. query_test.go — update GetProgramSummary test (line ~234)
-          Apply same pattern: check IsSuccess(), call GetData().
+            ### 8. query_test.go — update GetFailurePatterns test (line ~390)
+            Old:
+            ```go
+            patterns, err := GetFailurePatterns(ctx, store, QueryFilters{})
+            if err != nil { ... }
+            if len(patterns) != 2 {
+            if patterns[0].FailureType ...
+            ```
+            New:
+            ```go
+            patternsRes := GetFailurePatterns(ctx, store, QueryFilters{})
+            if !patternsRes.IsSuccess() { ... }
+            patterns := patternsRes.GetData().Patterns
+            if len(patterns) != 2 {
+            if patterns[0].FailureType ...
+            ```
 
-          ### 7. query_test.go — update GetCostBreakdown test (line ~277)
-          Old:
-          ```go
-          breakdown, err := GetCostBreakdown(ctx, store, "impl-1")
-          if err != nil { ... }
-          if len(breakdown) != 2 {
-          if breakdown["A"] ... {
-          ```
-          New:
-          ```go
-          bdRes := GetCostBreakdown(ctx, store, "impl-1")
-          if !bdRes.IsSuccess() { ... }
-          breakdown := bdRes.GetData().PerAgent
-          if len(breakdown) != 2 {
-          if breakdown["A"] ... {
-          ```
+            ### 9. rollups_test.go — update ComputeCostRollup test (line ~112)
+            Old:
+            ```go
+            result, err := ComputeCostRollup(ctx, store, req)
+            if err != nil {
+                t.Fatalf("ComputeCostRollup: %v", err)
+            }
+            ```
+            New:
+            ```go
+            res := ComputeCostRollup(ctx, store, req)
+            if !res.IsSuccess() {
+                t.Fatalf("ComputeCostRollup: %v", res.Errors)
+            }
+            result := res.GetData()
+            ```
+            Update all subsequent `result.Type`, `result.TotalCost`, `result.Groups` references.
+            Do the same for TestRollupCostEmpty, TestRollupSuccessRate, TestRollupRetry.
 
-          ### 8. query_test.go — update GetFailurePatterns test (line ~390)
-          Old:
-          ```go
-          patterns, err := GetFailurePatterns(ctx, store, QueryFilters{})
-          if err != nil { ... }
-          if len(patterns) != 2 {
-          if patterns[0].FailureType ...
-          ```
-          New:
-          ```go
-          patternsRes := GetFailurePatterns(ctx, store, QueryFilters{})
-          if !patternsRes.IsSuccess() { ... }
-          patterns := patternsRes.GetData().Patterns
-          if len(patterns) != 2 {
-          if patterns[0].FailureType ...
-          ```
+            ### 10. rollups_test.go — update ComputeTrend tests (line ~294)
+            Old ComputeTrend call:
+            ```go
+            result, err := ComputeTrend(ComputeTrendOpts{
+                Ctx:       ctx,
+                Store:     store,
+                Metric:    "cost",
+                TimeRange: 7 * 24 * time.Hour,
+                Buckets:   7,
+            })
+            if err != nil { ... }
+            ```
+            New (Ctx field removed, ctx is first param):
+            ```go
+            res := ComputeTrend(ctx, ComputeTrendOpts{
+                Store:     store,
+                Metric:    "cost",
+                TimeRange: 7 * 24 * time.Hour,
+                Buckets:   7,
+            })
+            if !res.IsSuccess() { ... }
+            result := res.GetData()
+            ```
+            Apply same update to TestRollupTrendUnsupportedMetric (the error case test).
+            For the unsupported-metric test, check `!res.IsSuccess()` instead of `err != nil`.
 
-          ### 9. rollups_test.go — update ComputeCostRollup test (line ~112)
-          Old:
-          ```go
-          result, err := ComputeCostRollup(ctx, store, req)
-          if err != nil {
-              t.Fatalf("ComputeCostRollup: %v", err)
-          }
-          ```
-          New:
-          ```go
-          res := ComputeCostRollup(ctx, store, req)
-          if !res.IsSuccess() {
-              t.Fatalf("ComputeCostRollup: %v", res.Errors)
-          }
-          result := res.GetData()
-          ```
-          Update all subsequent `result.Type`, `result.TotalCost`, `result.Groups` references.
-          Do the same for TestRollupCostEmpty, TestRollupSuccessRate, TestRollupRetry.
+            ### 11. rollups_test.go — consolidate duplicate filter helpers (P2)
+            rollups_test.go defines `matchFilters` and `implSlugOf`. query_test.go defines
+            `matchesFilters` and `eventIMPLSlug` (plus `eventAgentID`, `eventProgramSlug`).
+            These are independent test files in the same package with overlapping helpers.
+            Do NOT attempt to merge them — they use different names by design to avoid
+            redeclaration. No action needed for P2-5 beyond the note in doc.go.
 
-          ### 10. rollups_test.go — update ComputeTrend tests (line ~294)
-          Old ComputeTrend call:
-          ```go
-          result, err := ComputeTrend(ComputeTrendOpts{
-              Ctx:       ctx,
-              Store:     store,
-              Metric:    "cost",
-              TimeRange: 7 * 24 * time.Hour,
-              Buckets:   7,
-          })
-          if err != nil { ... }
-          ```
-          New (Ctx field removed, ctx is first param):
-          ```go
-          res := ComputeTrend(ctx, ComputeTrendOpts{
-              Store:     store,
-              Metric:    "cost",
-              TimeRange: 7 * 24 * time.Hour,
-              Buckets:   7,
-          })
-          if !res.IsSuccess() { ... }
-          result := res.GetData()
-          ```
-          Apply same update to TestRollupTrendUnsupportedMetric (the error case test).
-          For the unsupported-metric test, check `!res.IsSuccess()` instead of `err != nil`.
+            ### 12. Add result package import where needed
+            Ensure emitter_test.go, query_test.go have:
+            ```go
+            "github.com/blackwell-systems/scout-and-wave-go/pkg/result"
+            ```
 
-          ### 11. rollups_test.go — consolidate duplicate filter helpers (P2)
-          rollups_test.go defines `matchFilters` and `implSlugOf`. query_test.go defines
-          `matchesFilters` and `eventIMPLSlug` (plus `eventAgentID`, `eventProgramSlug`).
-          These are independent test files in the same package with overlapping helpers.
-          Do NOT attempt to merge them — they use different names by design to avoid
-          redeclaration. No action needed for P2-5 beyond the note in doc.go.
-
-          ### 12. Add result package import where needed
-          Ensure emitter_test.go, query_test.go have:
-          ```go
-          "github.com/blackwell-systems/scout-and-wave-go/pkg/result"
-          ```
-
-          ## Verification gate
-          ```
-          go build ./pkg/observability/...
-          go vet ./pkg/observability/...
-          go test ./pkg/observability/...
-          ```
-          All tests should pass after this wave.
-        files:
-          - pkg/observability/query_test.go
-          - pkg/observability/rollups_test.go
-        dependencies: [A, B, D]
-
-known_issues:
-  - title: E46 test cascade false positives on "result" symbol
-    description: |-
-      sawtools pre-wave-validate reports test cascade errors for the common local
-      variable name "result" appearing in unrelated test files (analyze_suitability_cmd_test.go,
-      baseline_output_test.go, detect_wiring_cmd_test.go, extract_commands_cmd_test.go, etc.).
-      These are false positives — those files use "result" as a local variable name (e.g.,
-      var result suitability.SuitabilityResult) with no dependency on pkg/observability
-      or pkg/observability/rollups.go. Agent D's changes to rollups.go do not affect these files.
-      The cascade detector matches on symbol name without package-level scoping.
-    affected_agents: [D]
-    severity: low
-    resolution: ignore — false positives confirmed by manual inspection
-
+            ## Verification gate
+            ```
+            go build ./pkg/observability/...
+            go vet ./pkg/observability/...
+            go test ./pkg/observability/...
+            ```
+            All tests should pass after this wave.
+          files:
+            - pkg/observability/emitter_test.go
+            - pkg/observability/query_test.go
+            - pkg/observability/rollups_test.go
+          dependencies:
+            - A
+            - B
+            - D
+quality_gates:
+    level: standard
+    gates:
+        - type: build
+          command: go build ./...
+          required: true
+        - type: lint
+          command: go vet ./...
+          required: true
+        - type: test
+          command: go test ./pkg/observability/... ./pkg/observability/sqlite/... ./cmd/sawtools/...
+          required: true
 pre_mortem:
-  overall_risk: low
-  rows:
-    - scenario: |-
-        Agent B's new wrapper types (AgentHistoryData, CostBreakdownData, FailurePatternsData)
-        conflict with Agent D's type definitions if D mistakenly adds overlapping types
-        to rollups.go.
-      likelihood: low
-      impact: medium
-      mitigation: |-
-        The wrapper types are defined in query.go (Agent B) and rollups.go (Agent D) in
-        separate files. Interface contracts specify exact type names and locations. Agents
-        should verify no type of the same name already exists before defining new ones.
-
-    - scenario: |-
-        Agent F modifies emitter_test.go (not in its file_ownership list) and conflicts
-        with a concurrent change if another agent also touches it.
-      likelihood: low
-      impact: low
-      mitigation: |-
-        No other agent owns emitter_test.go. Agent F's brief explicitly notes this edge case.
-        The change is minimal (one string literal → constant reference). If a merge conflict
-        arises, it is trivial to resolve.
-
-    - scenario: |-
-        The local variable name `result` in rollups.go shadows the `result` package import
-        after Agent D adds the import. This causes a compilation failure.
-      likelihood: medium
-      impact: medium
-      mitigation: |-
-        Agent D's brief explicitly instructs renaming the local `result` var to `rollup`
-        and `trend` in each function before adding the package import. Pre-wave validation
-        and build gate will catch this if overlooked.
-
-    - scenario: |-
-        Agent C updates observability_metrics.go but the error handling uses
-        res.Errors[0].Message without checking len(res.Errors) > 0, causing a panic
-        if Errors is empty on a non-success result.
-      likelihood: low
-      impact: medium
-      mitigation: |-
-        result.NewFailure always includes at least one SAWError. The result package
-        guarantees this — a non-success result with empty Errors slice is not constructible
-        via the canonical constructors. Agent C brief can note this assumption.
-
-    - scenario: |-
-        ComputeTrend signature change (ctx promoted to first param, Ctx removed from opts)
-        breaks callers outside the test suite that were missed in the caller scan.
-      likelihood: low
-      impact: medium
-      mitigation: |-
-        Caller scan confirmed ComputeTrend is only called from rollups_test.go in the
-        canonical source tree (not counting .claude/worktrees). Agent F updates all
-        test call sites. The worktree copies are stale and not part of the build.
+    overall_risk: low
+    rows:
+        - scenario: |-
+            Agent B's new wrapper types (AgentHistoryData, CostBreakdownData, FailurePatternsData)
+            conflict with Agent D's type definitions if D mistakenly adds overlapping types
+            to rollups.go.
+          likelihood: low
+          impact: medium
+          mitigation: |-
+            The wrapper types are defined in query.go (Agent B) and rollups.go (Agent D) in
+            separate files. Interface contracts specify exact type names and locations. Agents
+            should verify no type of the same name already exists before defining new ones.
+        - scenario: |-
+            Agent F owns emitter_test.go but only changes one assertion (error code string to
+            constant reference). Another agent might inadvertently modify it if their worktree
+            also contains the file.
+          likelihood: low
+          impact: low
+          mitigation: |-
+            emitter_test.go is in Agent F's file_ownership (wave 2, depends_on: [A]).
+            No other agent owns this file. Change is minimal and merge conflicts are trivial.
+        - scenario: |-
+            The local variable name `result` in rollups.go shadows the `result` package import
+            after Agent D adds the import. This causes a compilation failure.
+          likelihood: medium
+          impact: medium
+          mitigation: |-
+            Agent D's brief explicitly instructs renaming the local `result` var to `rollup`
+            and `trend` in each function before adding the package import. Pre-wave validation
+            and build gate will catch this if overlooked.
+        - scenario: |-
+            Agent C updates observability_metrics.go but the error handling uses
+            res.Errors[0].Message without checking len(res.Errors) > 0, causing a panic
+            if Errors is empty on a non-success result.
+          likelihood: low
+          impact: medium
+          mitigation: |-
+            result.NewFailure always includes at least one SAWError. The result package
+            guarantees this — a non-success result with empty Errors slice is not constructible
+            via the canonical constructors. Agent C brief can note this assumption.
+        - scenario: |-
+            ComputeTrend signature change (ctx promoted to first param, Ctx removed from opts)
+            breaks callers outside the test suite that were missed in the caller scan.
+          likelihood: low
+          impact: medium
+          mitigation: |-
+            Caller scan confirmed ComputeTrend is only called from rollups_test.go in the
+            canonical source tree (not counting .claude/worktrees). Agent F updates all
+            test call sites. The worktree copies are stale and not part of the build.
+known_issues:
+    - title: E46 test cascade false positives on "result" symbol
+      description: |-
+        sawtools pre-wave-validate reports test cascade errors for the common local
+        variable name "result" appearing in unrelated test files (analyze_suitability_cmd_test.go,
+        baseline_output_test.go, detect_wiring_cmd_test.go, extract_commands_cmd_test.go, etc.).
+        These are false positives — those files use "result" as a local variable name (e.g.,
+        var result suitability.SuitabilityResult) with no dependency on pkg/observability
+        or pkg/observability/rollups.go. Agent D's changes to rollups.go do not affect these files.
+        The cascade detector matches on symbol name without package-level scoping.
+      status: known-false-positive
+      workaround: Confirmed by manual inspection. These test files are in cmd/sawtools package and have no import or dependency on pkg/observability. Safe to ignore.
+critic_report:
+    verdict: PASS
+    agent_reviews:
+        A:
+            agent_id: A
+            verdict: PASS
+        B:
+            agent_id: B
+            verdict: PASS
+            issues:
+                - check: symbol_accuracy
+                  severity: warning
+                  description: 'Local variable named `result` in GetAgentHistory (query.go line 74) will shadow the result package import after Agent B adds it. The brief instructs returning result.NewSuccess(AgentHistoryData{Events: result}) without warning about this collision. Agent should rename the local var (e.g., to `history`) before adding the import, mirroring the explicit instruction given to Agent D for rollups.go.'
+                  file: pkg/observability/query.go
+                  symbol: result
+        C:
+            agent_id: C
+            verdict: PASS
+        D:
+            agent_id: D
+            verdict: PASS
+        E:
+            agent_id: E
+            verdict: PASS
+        F:
+            agent_id: F
+            verdict: PASS
+    summary: 'All 6 agents reviewed against codebase. All owned files exist (action: modify). Function signatures confirmed pre-change: GetAgentHistory/GetIMPLMetrics/GetProgramSummary/GetCostBreakdown/GetFailurePatterns return (T, error); ComputeCostRollup/ComputeSuccessRateRollup/ComputeRetryRollup return (*RollupResult, error); ComputeTrend(opts ComputeTrendOpts) returns (*TrendResult, error) with Ctx embedded in opts. Hardcoded strings EVENT_EMIT_FAILED (emitter.go:62) and EVENT_QUERY_FAILED (query.go:22) confirmed present. Neither O001_OBS_EMIT_FAILED nor O002_OBS_QUERY_FAILED exist in codes.go. observability_metrics.go callers use the old (T, error) pattern for all three calls. sqlite.go GetRollup delegates directly with return obs.ComputeXxx(). Store interface GetRollup signature (*obs.RollupResult, error) confirmed unchanged. result package exports NewFailure, NewSuccess, IsSuccess, GetData. One warning on Agent B: the local variable named result in GetAgentHistory (query.go:74) will shadow the result package import after Agent B adds it; the brief instructs returning result.NewSuccess(AgentHistoryData{Events: result}) without naming the collision. Agent D brief correctly handles this for rollups.go. No errors found; wave execution may proceed.'
+    reviewed_at: "2026-04-03T23:42:37Z"
+    issue_count: 1
+state: "REVIEWED"
+injection_method: hook

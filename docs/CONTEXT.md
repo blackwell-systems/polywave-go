@@ -348,3 +348,5 @@ type BackendConfig struct {
   - IMPL doc: docs/IMPL/complete/IMPL-orchestrator-review-fixes.yaml
 - **protocol-review-fixes**: completed 2026-04-03, 4 waves, 10 agents
   - IMPL doc: docs/IMPL/complete/IMPL-protocol-review-fixes.yaml
+- **pipeline-review-fixes**: completed 2026-04-03, 2 waves, 3 agents
+  - IMPL doc: docs/IMPL/complete/IMPL-pipeline-review-fixes.yaml
