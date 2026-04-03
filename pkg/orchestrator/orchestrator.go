@@ -8,6 +8,7 @@ package orchestrator
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
@@ -123,15 +124,21 @@ const MaxFixableRetries = 2
 const MaxTimeoutRetries = 1
 
 // mergeWaveFunc is replaced by merge.go via init().
-// Default no-op for compilation.
+// Default failure: if merge.go never ran init(), callers get an actionable error.
 var mergeWaveFunc = func(ctx context.Context, o *Orchestrator, waveNum int) result.Result[MergeData] {
-	return result.NewSuccess(MergeData{WaveNum: waveNum})
+	return result.NewFailure[MergeData]([]result.SAWError{
+		result.NewFatal(result.CodeAgentLaunchFailed,
+			"orchestrator: mergeWaveFunc not injected; call SetMergeWaveFunc before merging"),
+	})
 }
 
 // runVerificationFunc is replaced by verification.go via init().
-// Default no-op for compilation.
+// Default failure: if verification.go never ran init(), callers get an actionable error.
 var runVerificationFunc = func(ctx context.Context, o *Orchestrator, testCommand string) result.Result[VerificationData] {
-	return result.NewSuccess(VerificationData{TestCommand: testCommand})
+	return result.NewFailure[VerificationData]([]result.SAWError{
+		result.NewFatal(result.CodeAgentLaunchFailed,
+			"orchestrator: runVerificationFunc not injected; call SetRunVerificationFunc before verifying"),
+	})
 }
 
 // worktreeCreatorFunc is a seam for tests: it creates a worktree for wave/agent
@@ -146,11 +153,11 @@ var worktreeCreatorFunc = func(wm *worktree.Manager, waveNum int, agentLetter st
 
 // implSlug loads the IMPL manifest and returns the feature slug.
 // Returns empty string if the manifest can't be loaded (backward compat).
-func (o *Orchestrator) implSlug() string {
+func (o *Orchestrator) implSlug(ctx context.Context) string {
 	if o.implDocPath == "" {
 		return ""
 	}
-	manifest, err := protocol.Load(context.Background(), o.implDocPath)
+	manifest, err := protocol.Load(ctx, o.implDocPath)
 	if err != nil {
 		return ""
 	}
@@ -312,11 +319,11 @@ func expandBedrockModelID(shortName string) string {
 var newBackendFunc = func(cfg BackendConfig) (backend.Backend, error) {
 	// Validate model name before processing to prevent injection attacks.
 	if res := validateModelName(cfg.Model); res.IsFatal() {
-		msg := "orchestrator: invalid model name"
+		errMsg := "orchestrator: invalid model name"
 		if len(res.Errors) > 0 {
-			msg = fmt.Sprintf("orchestrator: invalid model name: %s", res.Errors[0].Message)
+			errMsg = fmt.Sprintf("orchestrator: invalid model name: %s", res.Errors[0].Message)
 		}
-		return nil, fmt.Errorf("%s", msg)
+		return nil, errors.New(errMsg)
 	}
 	
 	// Parse any provider prefix from the model string (e.g. "openai:gpt-4o").
@@ -437,8 +444,15 @@ var newBackendFunc = func(cfg BackendConfig) (backend.Backend, error) {
 // contain a provider prefix (e.g. "bedrock:claude-sonnet-4-6", "openai:gpt-4o").
 // This is the exported entry point for engine code that needs provider routing
 // without constructing a full BackendConfig.
-func NewBackendFromModel(model string) (backend.Backend, error) {
-	return newBackendFunc(BackendConfig{Model: model})
+func NewBackendFromModel(model string) result.Result[backend.Backend] {
+	b, err := newBackendFunc(BackendConfig{Model: model})
+	if err != nil {
+		return result.NewFailure[backend.Backend]([]result.SAWError{
+			result.NewFatal(result.CodeAgentLaunchFailed,
+				fmt.Sprintf("orchestrator: NewBackendFromModel: %s", err)),
+		})
+	}
+	return result.NewSuccess(b)
 }
 
 // newRunnerFunc is a seam for tests: constructs the agent.Runner used by RunWave.
@@ -498,21 +512,24 @@ func (o *Orchestrator) publish(ev OrchestratorEvent) {
 
 // New creates an Orchestrator by loading the IMPL doc at implDocPath.
 // Initial state is ScoutPending.
-func New(ctx context.Context, repoPath string, implDocPath string) (*Orchestrator, error) {
+func New(ctx context.Context, repoPath string, implDocPath string) result.Result[*Orchestrator] {
 	var doc *protocol.IMPLManifest
 	if implDocPath != "" {
 		var err error
 		doc, err = protocol.Load(ctx, implDocPath)
 		if err != nil {
-			return nil, fmt.Errorf("orchestrator.New: %w", err)
+			return result.NewFailure[*Orchestrator]([]result.SAWError{
+				result.NewFatal(result.CodeIMPLParseFailed,
+					fmt.Sprintf("orchestrator.New: %s", err)),
+			})
 		}
 	}
-	return &Orchestrator{
+	return result.NewSuccess(&Orchestrator{
 		state:       protocol.StateScoutPending,
 		implDoc:     doc,
 		repoPath:    repoPath,
 		implDocPath: implDocPath,
-	}, nil
+	})
 }
 
 // newFromDoc creates an Orchestrator directly from a pre-parsed IMPLManifest.
@@ -601,13 +618,13 @@ func (o *Orchestrator) RunWave(ctx context.Context, waveNum int) result.Result[W
 	}
 
 	// Reset per-agent retry counts for this wave run (transient state).
-	implSlug := o.implSlug()
+	implSlug := o.implSlug(ctx)
 	for _, a := range wave.Agents {
 		retryCountMap.Delete(fmt.Sprintf("%s:%d:%s", implSlug, waveNum, a.ID))
 	}
 
 	// Build the worktree manager and default agent runner.
-	slug := o.implSlug()
+	slug := o.implSlug(ctx)
 	wm := worktree.New(o.repoPath, slug)
 	defaultBackend, err := newBackendFunc(BackendConfig{Kind: "auto", Model: o.defaultModel})
 	if err != nil {
@@ -736,7 +753,7 @@ func (o *Orchestrator) launchAgent(
 ) error {
 	// a. Determine worktree path: use pre-computed multi-repo path if available,
 	// otherwise fall back to single-repo creation.
-	slug := o.implSlug()
+	slug := o.implSlug(ctx)
 	branch := protocol.BranchName(slug, waveNum, agentSpec.ID)
 	var wtPath string
 
@@ -815,7 +832,7 @@ func (o *Orchestrator) launchAgent(
 	// Inject retry prefix after E23 extraction (GAP-4 fix).
 	// retryPrefixMap is set by executeRetryLoop; read here after E23 so the prefix
 	// is preserved even though E23 overwrites the base prompt.
-	retryKey := fmt.Sprintf("%s:%d:%s", o.implSlug(), waveNum, agentSpec.ID)
+	retryKey := fmt.Sprintf("%s:%d:%s", o.implSlug(ctx), waveNum, agentSpec.ID)
 	if prefix, ok := retryPrefixMap.Load(retryKey); ok {
 		if prefixStr, ok2 := prefix.(string); ok2 && prefixStr != "" {
 			agentSpec.Task = prefixStr + "\n\n" + agentSpec.Task
@@ -1069,7 +1086,7 @@ func (o *Orchestrator) executeRetryLoop(
 
 	// Check and increment retry count.
 	// Use slug-scoped key to prevent cross-IMPL contamination in concurrent server runs.
-	implSlug := o.implSlug()
+	implSlug := o.implSlug(ctx)
 	key := fmt.Sprintf("%s:%d:%s", implSlug, waveNum, agentSpec.ID)
 	count := 0
 	if v, ok := retryCountMap.Load(key); ok {
@@ -1233,7 +1250,7 @@ func (o *Orchestrator) RunAgent(ctx context.Context, waveNum int, agentLetter st
 	}
 
 	// Build worktree manager and backend.
-	wm := worktree.New(o.repoPath, o.implSlug())
+	wm := worktree.New(o.repoPath, o.implSlug(ctx))
 	b, err := newBackendFunc(BackendConfig{Kind: "auto", Model: o.defaultModel})
 	if err != nil {
 		return result.NewFailure[AgentData]([]result.SAWError{
