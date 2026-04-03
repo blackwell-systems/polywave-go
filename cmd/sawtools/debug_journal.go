@@ -65,7 +65,7 @@ func debugJournalCommand(repoRoot string, agentPath string, opts DebugOpts) erro
 	})
 	if res.IsFatal() {
 		if len(res.Errors) > 0 {
-			return fmt.Errorf("%s", res.Errors[0].Message)
+			return fmt.Errorf("%s: %s", res.Errors[0].Code, res.Errors[0].Message)
 		}
 		return fmt.Errorf("debug-journal failed")
 	}
@@ -147,7 +147,7 @@ func loadJournalEntries(journalPath string) ([]journal.ToolEntry, error) {
 	res := engine.LoadJournalEntries(journalPath)
 	if res.IsFatal() {
 		if len(res.Errors) > 0 {
-			return nil, fmt.Errorf("%s", res.Errors[0].Message)
+			return nil, fmt.Errorf("%s: %s", res.Errors[0].Code, res.Errors[0].Message)
 		}
 		return nil, fmt.Errorf("load journal entries failed")
 	}

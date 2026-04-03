@@ -56,7 +56,7 @@ Examples:
 			})
 			if res.IsFatal() {
 				if len(res.Errors) > 0 {
-					return fmt.Errorf("%s", res.Errors[0].Message)
+					return fmt.Errorf("%s: %s", res.Errors[0].Code, res.Errors[0].Message)
 				}
 				return fmt.Errorf("import-impls: operation failed")
 			}
