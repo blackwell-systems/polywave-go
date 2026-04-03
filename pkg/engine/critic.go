@@ -10,11 +10,26 @@ import (
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/agent"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/orchestrator"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
 )
 
 // init wires RunCritic into the runCriticFn hook used by RunScoutFull in scout_run.go.
+// The adapter bridges between RunCritic's result.Result[RunCriticResult] return type
+// and the legacy (RunCriticResult, error) function variable type declared in scout_run.go.
+// Agent K's scout_run.go migration will update runCriticFn's type to result.Result; until
+// then this adapter maintains a compilable build.
 func init() {
-	runCriticFn = RunCritic
+	runCriticFn = func(ctx context.Context, opts RunCriticOpts, onChunk func(string)) (RunCriticResult, error) {
+		r := RunCritic(ctx, opts, onChunk)
+		if r.IsFatal() {
+			msgs := make([]string, len(r.Errors))
+			for i, e := range r.Errors {
+				msgs[i] = e.Message
+			}
+			return RunCriticResult{}, fmt.Errorf("run-critic failed: %v", msgs)
+		}
+		return r.GetData(), nil
+	}
 }
 
 // BuildCriticPrompt extracts the prompt-building logic from RunCritic into a
@@ -22,19 +37,28 @@ func init() {
 // critic-agent.md with reference injection, and returns the assembled prompt
 // string. Used by --backend agent-tool to emit the prompt without spawning a
 // subprocess.
-func BuildCriticPrompt(ctx context.Context, opts BuildCriticPromptOpts) (string, error) {
+func BuildCriticPrompt(ctx context.Context, opts BuildCriticPromptOpts) result.Result[string] {
 	// Validate IMPL path is absolute and exists.
 	if !filepath.IsAbs(opts.IMPLPath) {
-		return "", fmt.Errorf("run-critic: impl-path must be absolute (got %q)", opts.IMPLPath)
+		return result.NewFailure[string]([]result.SAWError{
+			result.NewFatal(result.CodeInvalidPath,
+				fmt.Sprintf("run-critic: impl-path must be absolute (got %q)", opts.IMPLPath)),
+		})
 	}
 	if _, err := os.Stat(opts.IMPLPath); err != nil {
-		return "", fmt.Errorf("run-critic: impl path does not exist: %s", opts.IMPLPath)
+		return result.NewFailure[string]([]result.SAWError{
+			result.NewFatal(result.CodeIMPLNotFound,
+				fmt.Sprintf("run-critic: impl path does not exist: %s", opts.IMPLPath)),
+		})
 	}
 
 	// Load the IMPL doc to collect repo roots.
 	manifest, err := protocol.Load(ctx, opts.IMPLPath)
 	if err != nil {
-		return "", fmt.Errorf("run-critic: failed to load IMPL doc: %w", err)
+		return result.NewFailure[string]([]result.SAWError{
+			result.NewFatal(result.CodeIMPLParseFailed,
+				fmt.Sprintf("run-critic: failed to load IMPL doc: %v", err)),
+		})
 	}
 
 	// Collect repo roots from the manifest; fall back to inferring from the IMPL path.
@@ -54,7 +78,10 @@ func BuildCriticPrompt(ctx context.Context, opts BuildCriticPromptOpts) (string,
 	if sawRepo == "" {
 		home, err := os.UserHomeDir()
 		if err != nil {
-			return "", fmt.Errorf("run-critic: cannot determine home directory: %w", err)
+			return result.NewFailure[string]([]result.SAWError{
+				result.NewFatal(result.CodeContextError,
+					fmt.Sprintf("run-critic: cannot determine home directory: %v", err)),
+			})
 		}
 		sawRepo = filepath.Join(home, "code", "scout-and-wave")
 	}
@@ -63,7 +90,10 @@ func BuildCriticPrompt(ctx context.Context, opts BuildCriticPromptOpts) (string,
 	criticMdPath := filepath.Join(sawRepo, "implementations", "claude-code", "prompts", "agents", "critic-agent.md")
 	criticMdContent, err := LoadTypePromptWithRefs(criticMdPath)
 	if err != nil {
-		return "", fmt.Errorf("run-critic: critic-agent.md not found at %s — verify SAW installation or set SAW_REPO environment variable: %w", criticMdPath, err)
+		return result.NewFailure[string]([]result.SAWError{
+			result.NewFatal(result.CodeBriefExtractFail,
+				fmt.Sprintf("run-critic: critic-agent.md not found at %s — verify SAW installation or set SAW_REPO environment variable: %v", criticMdPath, err)),
+		})
 	}
 
 	// Build the repo-roots section for the prompt.
@@ -71,25 +101,27 @@ func BuildCriticPrompt(ctx context.Context, opts BuildCriticPromptOpts) (string,
 	for _, root := range repoPaths {
 		repoRootsSection += fmt.Sprintf("- %s\n", root)
 	}
-	return fmt.Sprintf("%s\n\n## IMPL Doc Path\n%s\n\n## Repository Root(s)\n%s",
-		criticMdContent, opts.IMPLPath, repoRootsSection), nil
+	prompt := fmt.Sprintf("%s\n\n## IMPL Doc Path\n%s\n\n## Repository Root(s)\n%s",
+		criticMdContent, opts.IMPLPath, repoRootsSection)
+	return result.NewSuccess(prompt)
 }
 
 // RunCritic runs the critic agent end-to-end: loads the IMPL doc, discovers
 // repo roots, loads the critic-agent.md prompt, launches the agent, reads the
 // critic_report from the IMPL doc, and returns a structured result. The caller
 // is responsible for handling --no-review / --skip before invoking this.
-func RunCritic(ctx context.Context, opts RunCriticOpts, onChunk func(string)) (RunCriticResult, error) {
+func RunCritic(ctx context.Context, opts RunCriticOpts, onChunk func(string)) result.Result[RunCriticResult] {
 	log := loggerFrom(opts.Logger)
 	_ = log
 
-	prompt, err := BuildCriticPrompt(ctx, BuildCriticPromptOpts{
+	promptResult := BuildCriticPrompt(ctx, BuildCriticPromptOpts{
 		IMPLPath:    opts.IMPLPath,
 		SAWRepoPath: opts.SAWRepoPath,
 	})
-	if err != nil {
-		return RunCriticResult{}, err
+	if promptResult.IsFatal() {
+		return result.NewFailure[RunCriticResult](promptResult.Errors)
 	}
+	prompt := promptResult.GetData()
 
 	// Apply context timeout (default 20 minutes).
 	timeoutMinutes := opts.Timeout
@@ -116,32 +148,44 @@ func RunCritic(ctx context.Context, opts RunCriticOpts, onChunk func(string)) (R
 	// Initialise backend and launch the critic agent.
 	b, bErr := orchestrator.NewBackendFromModel(opts.CriticModel)
 	if bErr != nil {
-		return RunCriticResult{}, fmt.Errorf("run-critic: backend init: %w", bErr)
+		return result.NewFailure[RunCriticResult]([]result.SAWError{
+			result.NewFatal(result.CodeAgentLaunchFailed,
+				fmt.Sprintf("run-critic: backend init: %v", bErr)),
+		})
 	}
 	runner := agent.NewRunner(b)
 	spec := &protocol.Agent{ID: "critic", Task: prompt}
 	_, execErr := runner.ExecuteStreamingWithTools(ctx, spec, workDir, onChunk, nil)
 	if execErr != nil {
-		return RunCriticResult{}, fmt.Errorf("run-critic: critic agent execution failed: %w", execErr)
+		return result.NewFailure[RunCriticResult]([]result.SAWError{
+			result.NewFatal(result.CodeAgentRunFailed,
+				fmt.Sprintf("run-critic: critic agent execution failed: %v", execErr)),
+		})
 	}
 
 	// Reload the manifest to pick up the critic_report written by the agent.
 	updatedManifest, err := protocol.Load(ctx, opts.IMPLPath)
 	if err != nil {
-		return RunCriticResult{}, fmt.Errorf("run-critic: failed to reload IMPL doc after critic run: %w", err)
+		return result.NewFailure[RunCriticResult]([]result.SAWError{
+			result.NewFatal(result.CodeIMPLParseFailed,
+				fmt.Sprintf("run-critic: failed to reload IMPL doc after critic run: %v", err)),
+		})
 	}
 
 	review := protocol.GetCriticReview(ctx, updatedManifest)
 	if review == nil {
-		return RunCriticResult{}, fmt.Errorf("run-critic: critic agent completed but no critic_report was written to IMPL doc")
+		return result.NewFailure[RunCriticResult]([]result.SAWError{
+			result.NewFatal(result.CodeCompletionReportMissing,
+				"run-critic: critic agent completed but no critic_report was written to IMPL doc"),
+		})
 	}
 
-	return RunCriticResult{
+	return result.NewSuccess(RunCriticResult{
 		Verdict:    review.Verdict,
 		Summary:    review.Summary,
 		IssueCount: review.IssueCount,
 		ReviewedAt: review.ReviewedAt,
-	}, nil
+	})
 }
 
 // collectRepoPaths returns all unique repository root paths referenced by the

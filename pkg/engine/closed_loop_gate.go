@@ -9,12 +9,14 @@ import (
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/agent"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/orchestrator"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/retry"
 )
 
-// ClosedLoopRetryOpts configures a pre-merge per-agent gate retry (R3).
-// This differs from R1 auto-remediation which handles POST-merge build
-// failures for the whole wave. R3 handles PRE-merge gate failures on
+// ClosedLoopRetryOpts configures a pre-merge per-agent gate retry
+// (closed-loop: fix attempt + re-run gate).
+// This differs from auto-remediation which handles POST-merge build
+// failures for the whole wave. This handles PRE-merge gate failures on
 // individual agents still in their worktrees.
 type ClosedLoopRetryOpts struct {
 	IMPLPath     string      // path to IMPL manifest
@@ -65,19 +67,29 @@ var closedLoopRunAgentFunc = func(ctx context.Context, model string, prompt stri
 	return execErr
 }
 
-// ClosedLoopGateRetry implements R3: pre-merge per-agent gate retry.
+// ClosedLoopGateRetry implements pre-merge per-agent gate retry
+// (closed-loop: fix attempt + re-run gate).
 // When a retryable gate fails for an agent, it sends error context to
 // a fix agent running in the agent's worktree, then re-runs the gate.
 // Loops up to MaxRetries times.
-func ClosedLoopGateRetry(ctx context.Context, opts ClosedLoopRetryOpts) (*ClosedLoopRetryResult, error) {
+func ClosedLoopGateRetry(ctx context.Context, opts ClosedLoopRetryOpts) result.Result[ClosedLoopRetryResult] {
 	if opts.AgentID == "" {
-		return nil, fmt.Errorf("engine.ClosedLoopGateRetry: AgentID is required")
+		return result.NewFailure[ClosedLoopRetryResult]([]result.SAWError{
+			result.NewFatal("B009_GATE_VALIDATION_FAILED",
+				"engine.ClosedLoopGateRetry: AgentID is required"),
+		})
 	}
 	if opts.GateCommand == "" {
-		return nil, fmt.Errorf("engine.ClosedLoopGateRetry: GateCommand is required")
+		return result.NewFailure[ClosedLoopRetryResult]([]result.SAWError{
+			result.NewFatal("B009_GATE_VALIDATION_FAILED",
+				"engine.ClosedLoopGateRetry: GateCommand is required"),
+		})
 	}
 	if opts.WorktreePath == "" {
-		return nil, fmt.Errorf("engine.ClosedLoopGateRetry: WorktreePath is required")
+		return result.NewFailure[ClosedLoopRetryResult]([]result.SAWError{
+			result.NewFatal("B009_GATE_VALIDATION_FAILED",
+				"engine.ClosedLoopGateRetry: WorktreePath is required"),
+		})
 	}
 
 	maxRetries := opts.MaxRetries
@@ -103,7 +115,7 @@ func ClosedLoopGateRetry(ctx context.Context, opts ClosedLoopRetryOpts) (*Closed
 		"max_retries": maxRetries,
 	})
 
-	result := &ClosedLoopRetryResult{
+	retryResult := ClosedLoopRetryResult{
 		AgentID:    opts.AgentID,
 		GateOutput: opts.GateOutput,
 	}
@@ -111,7 +123,7 @@ func ClosedLoopGateRetry(ctx context.Context, opts ClosedLoopRetryOpts) (*Closed
 	currentOutput := opts.GateOutput
 
 	for attempt := 1; attempt <= maxRetries; attempt++ {
-		result.Attempts = attempt
+		retryResult.Attempts = attempt
 
 		publish("closed_loop_attempt", map[string]interface{}{
 			"agent_id": opts.AgentID,
@@ -129,24 +141,24 @@ func ClosedLoopGateRetry(ctx context.Context, opts ClosedLoopRetryOpts) (*Closed
 		if runErr := closedLoopRunAgentFunc(ctx, model, prompt, opts.WorktreePath); runErr != nil {
 			// Agent execution failed; update output for next iteration context
 			currentOutput = fmt.Sprintf("Fix agent error on attempt %d: %v\n\nPrior gate output:\n%s", attempt, runErr, currentOutput)
-			result.GateOutput = currentOutput
+			retryResult.GateOutput = currentOutput
 			continue
 		}
 
 		// c. Re-run the gate command in the worktree
 		gateOut, gateErr := closedLoopExecCommandFunc(ctx, opts.WorktreePath, opts.GateCommand)
 		currentOutput = gateOut
-		result.GateOutput = gateOut
+		retryResult.GateOutput = gateOut
 
 		// d. If gate passes, return Fixed=true
 		if gateErr == nil {
-			result.Fixed = true
+			retryResult.Fixed = true
 			publish("closed_loop_fixed", map[string]interface{}{
 				"agent_id": opts.AgentID,
 				"attempt":  attempt,
 				"gate":     opts.GateType,
 			})
-			return result, nil
+			return result.NewSuccess(retryResult)
 		}
 
 		// e. Still failing — loop
@@ -159,7 +171,7 @@ func ClosedLoopGateRetry(ctx context.Context, opts ClosedLoopRetryOpts) (*Closed
 		"gate":     opts.GateType,
 	})
 
-	return result, nil
+	return result.NewSuccess(retryResult)
 }
 
 // buildClosedLoopFixPrompt constructs the fix prompt for the retry agent.
