@@ -123,19 +123,19 @@ func isYAMLDuplicateKeyError(err error) bool {
 func Save(ctx context.Context, m *IMPLManifest, path string) result.Result[SaveManifestData] {
 	if err := ctx.Err(); err != nil {
 		return result.NewFailure[SaveManifestData]([]result.SAWError{
-			result.NewFatal("N094_MANIFEST_SAVE_FAILED", err.Error()),
+			result.NewFatal(result.CodeManifestSaveFailed, err.Error()),
 		})
 	}
 	data, err := yaml.Marshal(m)
 	if err != nil {
 		return result.NewFailure[SaveManifestData]([]result.SAWError{
-			result.NewFatal("N094_MANIFEST_SAVE_FAILED", fmt.Sprintf("failed to marshal manifest to YAML: %v", err)),
+			result.NewFatal(result.CodeManifestSaveFailed, fmt.Sprintf("failed to marshal manifest to YAML: %v", err)),
 		})
 	}
 
 	if err := os.WriteFile(path, data, 0644); err != nil {
 		return result.NewFailure[SaveManifestData]([]result.SAWError{
-			result.NewFatal("N094_MANIFEST_SAVE_FAILED", fmt.Sprintf("failed to write manifest file: %v", err)),
+			result.NewFatal(result.CodeManifestSaveFailed, fmt.Sprintf("failed to write manifest file: %v", err)),
 		})
 	}
 
@@ -171,7 +171,7 @@ func CurrentWave(m *IMPLManifest) *Wave {
 func SetCompletionReport(m *IMPLManifest, agentID string, report CompletionReport) result.Result[SetReportData] {
 	if agentID == "" {
 		return result.NewFailure[SetReportData]([]result.SAWError{
-			result.NewFatal("N095_REPORT_SET_FAILED", "agent ID cannot be empty").WithContext("agent_id", agentID),
+			result.NewFatal(result.CodeReportSetFailed, "agent ID cannot be empty").WithContext("agent_id", agentID),
 		})
 	}
 
@@ -191,7 +191,7 @@ func SetCompletionReport(m *IMPLManifest, agentID string, report CompletionRepor
 
 	if !found {
 		return result.NewFailure[SetReportData]([]result.SAWError{
-			result.NewFatal("N095_REPORT_SET_FAILED", fmt.Sprintf("%s: %s", ErrAgentNotFound, agentID)).WithContext("agent_id", agentID),
+			result.NewFatal(result.CodeReportSetFailed, fmt.Sprintf("%s: %s", ErrAgentNotFound, agentID)).WithContext("agent_id", agentID),
 		})
 	}
 

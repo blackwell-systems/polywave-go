@@ -32,9 +32,6 @@ type AmendImplData struct {
 	Warnings      []string // non-fatal issues detected during amend
 }
 
-// amendBlocked is a placeholder for result.CodeAmendBlocked (added by protocol-review-fixes
-// Agent A). Replace with result.CodeAmendBlocked once that constant lands.
-const amendBlocked = "P013_AMEND_BLOCKED"
 
 // AmendImpl performs the amend operation described by opts on the manifest at
 // opts.ManifestPath, saves the updated manifest, and returns the result.
@@ -57,7 +54,7 @@ func AmendImpl(ctx context.Context, opts AmendImplOpts) result.Result[AmendImplD
 	if m.CompletionDate != "" {
 		return result.NewFailure[AmendImplData]([]result.SAWError{
 			{
-				Code:     amendBlocked,
+				Code:     result.CodeAmendBlocked,
 				Message:  fmt.Sprintf("IMPL is complete (completion_date=%s); cannot amend", m.CompletionDate),
 				Severity: "fatal",
 			},
@@ -78,7 +75,7 @@ func AmendImpl(ctx context.Context, opts AmendImplOpts) result.Result[AmendImplD
 	if strings.Contains(string(rawBytes), "SAW:COMPLETE") {
 		return result.NewFailure[AmendImplData]([]result.SAWError{
 			{
-				Code:     amendBlocked,
+				Code:     result.CodeAmendBlocked,
 				Message:  "IMPL is complete (SAW:COMPLETE marker present); cannot amend",
 				Severity: "fatal",
 			},
@@ -130,7 +127,7 @@ func amendAddWave(ctx context.Context, opts AmendImplOpts, m *IMPLManifest) resu
 		}
 		return result.NewFailure[AmendImplData]([]result.SAWError{
 			{
-				Code:     amendBlocked,
+				Code:     result.CodeAmendBlocked,
 				Message:  fmt.Sprintf("validation failed after adding wave: %s", strings.Join(msgs, "; ")),
 				Severity: "fatal",
 			},
@@ -173,7 +170,7 @@ func amendRedirectAgent(ctx context.Context, opts AmendImplOpts, m *IMPLManifest
 	if waveIdx == -1 || agentIdx == -1 {
 		return result.NewFailure[AmendImplData]([]result.SAWError{
 			{
-				Code:     amendBlocked,
+				Code:     result.CodeAmendBlocked,
 				Message:  fmt.Sprintf("agent %s not found in wave %d", opts.AgentID, opts.WaveNum),
 				Severity: "fatal",
 			},
@@ -184,7 +181,7 @@ func amendRedirectAgent(ctx context.Context, opts AmendImplOpts, m *IMPLManifest
 	if cr, ok := m.CompletionReports[opts.AgentID]; ok && cr.Status == StatusComplete {
 		return result.NewFailure[AmendImplData]([]result.SAWError{
 			{
-				Code:     amendBlocked,
+				Code:     result.CodeAmendBlocked,
 				Message:  fmt.Sprintf("agent %s has a complete completion report; cannot redirect a completed agent", opts.AgentID),
 				Severity: "fatal",
 			},
@@ -210,7 +207,7 @@ func amendRedirectAgent(ctx context.Context, opts AmendImplOpts, m *IMPLManifest
 			if len(lines) > 0 {
 				return result.NewFailure[AmendImplData]([]result.SAWError{
 					{
-						Code:     amendBlocked,
+						Code:     result.CodeAmendBlocked,
 						Message:  fmt.Sprintf("agent %s has commits on branch %s; cannot redirect a committed agent", opts.AgentID, branchName),
 						Severity: "fatal",
 					},

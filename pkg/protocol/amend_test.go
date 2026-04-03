@@ -8,6 +8,8 @@ import (
 	"testing"
 
 	"gopkg.in/yaml.v3"
+
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
 )
 
 // amendTestManifest returns a minimal valid IMPLManifest for amend tests.
@@ -61,7 +63,7 @@ func TestAmendImpl_RejectsComplete(t *testing.T) {
 	if !res.IsFatal() {
 		t.Fatal("expected fatal result for complete manifest")
 	}
-	if len(res.Errors) == 0 || res.Errors[0].Code != amendBlocked {
+	if len(res.Errors) == 0 || res.Errors[0].Code != result.CodeAmendBlocked {
 		t.Errorf("expected AMEND_BLOCKED error code, got: %v", res.Errors)
 	}
 }
@@ -89,7 +91,7 @@ func TestAmendImpl_RejectsComplete_SAWMarker(t *testing.T) {
 	if !res.IsFatal() {
 		t.Fatal("expected fatal result for SAW:COMPLETE manifest")
 	}
-	if len(res.Errors) == 0 || res.Errors[0].Code != amendBlocked {
+	if len(res.Errors) == 0 || res.Errors[0].Code != result.CodeAmendBlocked {
 		t.Errorf("expected AMEND_BLOCKED error code, got: %v", res.Errors)
 	}
 }
@@ -185,7 +187,7 @@ func TestAmendImpl_RedirectAgent_RejectsComplete(t *testing.T) {
 	if !res.IsFatal() {
 		t.Fatal("expected fatal result for complete agent")
 	}
-	if len(res.Errors) == 0 || res.Errors[0].Code != amendBlocked {
+	if len(res.Errors) == 0 || res.Errors[0].Code != result.CodeAmendBlocked {
 		t.Errorf("expected AMEND_BLOCKED error code, got: %v", res.Errors)
 	}
 }
@@ -205,7 +207,7 @@ func TestAmendImpl_RedirectAgent_NotFound(t *testing.T) {
 	if !res.IsFatal() {
 		t.Fatal("expected fatal result for nonexistent agent")
 	}
-	if len(res.Errors) == 0 || res.Errors[0].Code != amendBlocked {
+	if len(res.Errors) == 0 || res.Errors[0].Code != result.CodeAmendBlocked {
 		t.Errorf("expected AMEND_BLOCKED error code, got: %v", res.Errors)
 	}
 }
