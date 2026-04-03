@@ -1,0 +1,1397 @@
+title: pkg/analyzer Canonicalization Review Fixes
+feature_slug: analyzer-review-fixes
+verdict: SUITABLE
+suitability_assessment: |
+    All five suitability questions resolve cleanly.
+
+    1. File decomposition: 14+ distinct files spread across pkg/analyzer/, pkg/result/,
+       pkg/engine/, and cmd/sawtools/. Disjoint ownership is achievable with 8 agents
+       across 4 waves.
+
+    2. No investigation-first items: All bugs are well-characterized (specific line numbers,
+       root causes identified). No runtime-only issues requiring reproduction.
+
+    3. Interface discoverability: Cross-agent contracts are fully definable upfront. The
+       trickiest point — cascade type unification (P1-9) — is resolved by a scaffold that
+       pins CascadeCandidate as the canonical type before Wave 2 agents start.
+
+    4. Pre-implementation status: Full TODO on all findings. The pkg/analyzer package was
+       recently assembled (phase2-determinism-final, detect-wiring features) but the
+       result.Result[T] migration, context propagation, and error codes were not applied.
+
+    5. Parallelization value: Build + test cycle is >10s for this module. Agents C, D, E,
+       F each touch 2-4 files with non-trivial logic changes. Wave 2 alone has 3 independent
+       agents. Clear speedup over sequential execution.
+
+    Estimated times:
+    - Scout phase: ~15 min (this doc)
+    - Agent execution: ~45 min (8 agents × ~10 min avg, accounting for 3 parallel waves)
+    - Merge and verification: ~10 min
+    Total SAW time: ~70 min
+
+    Sequential baseline: ~120 min (8 agents × ~15 min sequential)
+    Time savings: ~50 min (42% faster)
+
+    Recommendation: Clear speedup. Proceed.
+test_command: go test ./pkg/analyzer/... ./pkg/result/... ./pkg/engine/... ./cmd/sawtools/...
+lint_command: go vet ./...
+file_ownership:
+    - file: pkg/result/codes.go
+      agent: A
+      wave: 1
+      action: modify
+    - file: pkg/result/codes_test.go
+      agent: A
+      wave: 1
+      action: modify
+    - file: pkg/analyzer/javascript.go
+      agent: B
+      wave: 1
+      action: modify
+    - file: pkg/analyzer/python.go
+      agent: B
+      wave: 1
+      action: modify
+    - file: pkg/analyzer/rust.go
+      agent: B
+      wave: 1
+      action: modify
+    - file: pkg/analyzer/helpers.go
+      agent: B
+      wave: 1
+      action: new
+    - file: pkg/analyzer/javascript_test.go
+      agent: B
+      wave: 1
+      action: modify
+    - file: pkg/analyzer/python_test.go
+      agent: B
+      wave: 1
+      action: modify
+    - file: pkg/analyzer/rust_test.go
+      agent: B
+      wave: 1
+      action: modify
+    - file: pkg/analyzer/analyzer.go
+      agent: C
+      wave: 2
+      action: modify
+      depends_on:
+        - A
+    - file: pkg/analyzer/analyzer_test.go
+      agent: C
+      wave: 2
+      action: modify
+      depends_on:
+        - A
+    - file: pkg/analyzer/graph.go
+      agent: D
+      wave: 2
+      action: modify
+      depends_on:
+        - A
+        - B
+    - file: pkg/analyzer/types.go
+      agent: D
+      wave: 2
+      action: modify
+      depends_on:
+        - A
+        - B
+    - file: pkg/analyzer/graph_test.go
+      agent: D
+      wave: 2
+      action: modify
+      depends_on:
+        - A
+        - B
+    - file: pkg/analyzer/cascade.go
+      agent: E
+      wave: 2
+      action: modify
+      depends_on:
+        - A
+    - file: pkg/analyzer/output.go
+      agent: E
+      wave: 2
+      action: modify
+      depends_on:
+        - A
+    - file: pkg/analyzer/cascade_test.go
+      agent: E
+      wave: 2
+      action: modify
+      depends_on:
+        - A
+    - file: pkg/analyzer/output_test.go
+      agent: E
+      wave: 2
+      action: modify
+      depends_on:
+        - A
+    - file: pkg/analyzer/shared_types.go
+      agent: F
+      wave: 3
+      action: modify
+      depends_on:
+        - C
+        - D
+        - E
+    - file: pkg/analyzer/wiring.go
+      agent: F
+      wave: 3
+      action: modify
+      depends_on:
+        - C
+        - D
+        - E
+    - file: pkg/analyzer/shared_types_test.go
+      agent: F
+      wave: 3
+      action: modify
+      depends_on:
+        - C
+        - D
+        - E
+    - file: pkg/analyzer/wiring_test.go
+      agent: F
+      wave: 3
+      action: modify
+      depends_on:
+        - C
+        - D
+        - E
+    - file: pkg/analyzer/deps.go
+      agent: G
+      wave: 3
+      action: modify
+      depends_on:
+        - C
+        - D
+        - E
+    - file: pkg/analyzer/deps_test.go
+      agent: G
+      wave: 3
+      action: modify
+      depends_on:
+        - C
+        - D
+        - E
+    - file: pkg/analyzer/types_test.go
+      agent: G
+      wave: 3
+      action: modify
+      depends_on:
+        - C
+        - D
+        - E
+    - file: pkg/engine/runner.go
+      agent: I
+      wave: 4
+      action: modify
+      depends_on:
+        - C
+        - D
+        - E
+        - F
+        - G
+    - file: cmd/sawtools/detect_cascades_cmd_test.go
+      agent: J
+      wave: 4
+      action: modify
+      depends_on:
+        - C
+        - D
+        - E
+        - F
+        - G
+    - file: cmd/sawtools/detect_wiring_cmd_test.go
+      agent: J
+      wave: 4
+      action: modify
+      depends_on:
+        - C
+        - D
+        - E
+        - F
+        - G
+    - file: cmd/sawtools/detect_shared_types_cmd_test.go
+      agent: J
+      wave: 4
+      action: modify
+      depends_on:
+        - C
+        - D
+        - E
+        - F
+        - G
+    - file: cmd/sawtools/analyze_deps_cmd.go
+      agent: H
+      wave: 4
+      action: modify
+      depends_on:
+        - C
+        - D
+        - E
+        - F
+        - G
+    - file: cmd/sawtools/detect_wiring_cmd.go
+      agent: H
+      wave: 4
+      action: modify
+      depends_on:
+        - C
+        - D
+        - E
+        - F
+        - G
+    - file: cmd/sawtools/detect_cascades_cmd.go
+      agent: H
+      wave: 4
+      action: modify
+      depends_on:
+        - C
+        - D
+        - E
+        - F
+        - G
+    - file: cmd/sawtools/detect_shared_types_cmd.go
+      agent: H
+      wave: 4
+      action: modify
+      depends_on:
+        - C
+        - D
+        - E
+        - F
+        - G
+    - file: cmd/sawtools/analyze_deps_cmd_test.go
+      agent: H
+      wave: 4
+      action: modify
+      depends_on:
+        - C
+        - D
+        - E
+        - F
+        - G
+interface_contracts:
+    - name: Z-domain error code constants
+      description: |
+        13 new error code constants added to pkg/result/codes.go for pkg/analyzer operations.
+        Domain prefix Z, range Z001–Z013.
+      definition: |
+        const (
+            CodeAnalyzeParseFailed       = "Z001_PARSE_FAILED"
+            CodeAnalyzeGomodReadFailed   = "Z002_GOMOD_READ_FAILED"
+            CodeAnalyzeModuleNotFound    = "Z003_MODULE_NOT_FOUND"
+            CodeAnalyzeImportResolveFailed = "Z004_IMPORT_RESOLVE_FAILED"
+            CodeAnalyzeCycleDetected     = "Z005_CYCLE_DETECTED"
+            CodeAnalyzeUnsupportedLang   = "Z006_UNSUPPORTED_LANGUAGE"
+            CodeAnalyzeNodeMissing       = "Z007_NODE_MISSING"
+            CodeAnalyzeJSParserMissing   = "Z008_JS_PARSER_MISSING"
+            CodeAnalyzePythonMissing     = "Z009_PYTHON_MISSING"
+            CodeAnalyzeRustParserMissing = "Z010_RUST_PARSER_MISSING"
+            CodeAnalyzeManifestNil       = "Z011_MANIFEST_NIL"
+            CodeAnalyzeCircularAgentDep  = "Z012_CIRCULAR_AGENT_DEP"
+            CodeAnalyzeWalkFailed        = "Z013_WALK_FAILED"
+        )
+      location: pkg/result/codes.go
+    - name: Analyzer.ParseFile
+      description: Parses a Go source file; context propagated, result.Result[T] return.
+      definition: |
+        func (a *Analyzer) ParseFile(ctx context.Context, path string) result.Result[*ast.File]
+      location: pkg/analyzer/analyzer.go
+    - name: Analyzer.ExtractImports
+      description: Extracts local import paths from parsed AST; context propagated.
+      definition: |
+        func (a *Analyzer) ExtractImports(ctx context.Context, file *ast.File, repoRoot string) result.Result[[]string]
+      location: pkg/analyzer/analyzer.go
+    - name: ResolveImportPath
+      description: |
+        Package-level function (not a method on *Analyzer). Resolves a module import path to
+        an absolute directory path. Parameter order: importPath, repoRoot, modulePath.
+        Migrated to result.Result[string]; context.Context added as first param.
+      definition: |
+        func ResolveImportPath(ctx context.Context, importPath, repoRoot, modulePath string) result.Result[string]
+      location: pkg/analyzer/analyzer.go
+    - name: IsStdlib
+      description: |
+        Reports whether an import path is a Go stdlib package.
+        Simplified heuristic: first path segment has no dot (e.g. "fmt", "os", "go/ast").
+        Replaces 30-entry hardcoded prefix list.
+      definition: |
+        func IsStdlib(importPath string) bool
+      location: pkg/analyzer/analyzer.go
+    - name: BuildGraph
+      description: |
+        Builds the file-level dependency graph. Context is now the first parameter (P1-4, P0-3).
+        DepGraph.CascadeCandidates is []CascadeCandidate (canonical type after P1-9 unification).
+      definition: |
+        func BuildGraph(ctx context.Context, repoRoot string, targetFiles []string) result.Result[*DepGraph]
+      location: pkg/analyzer/graph.go
+    - name: DepGraph (updated)
+      description: |
+        CascadeCandidates field changes from []CascadeFile to []CascadeCandidate.
+        CascadeFile struct is removed from types.go.
+      definition: |
+        type DepGraph struct {
+            Nodes             []FileNode
+            Waves             map[int][]string
+            CascadeCandidates []CascadeCandidate  // was []CascadeFile
+        }
+      location: pkg/analyzer/types.go
+    - name: DetectCascades
+      description: Detects type-rename cascade candidates; migrated to result.Result[T].
+      definition: |
+        func DetectCascades(ctx context.Context, repoRoot string, renames []RenameInfo) result.Result[CascadeResult]
+      location: pkg/analyzer/cascade.go
+    - name: ToOutput
+      description: |
+        Converts DepGraph to Output. No error return (infallible conversion).
+        Output.CascadeCandidates uses CascadeCandidate directly (OutputCascade removed).
+      definition: |
+        func ToOutput(g *DepGraph) *Output
+      location: pkg/analyzer/output.go
+    - name: Output (updated)
+      description: CascadeCandidates field changes from []OutputCascade to []CascadeCandidate. OutputCascade is removed.
+      definition: |
+        type Output struct {
+            Nodes             []OutputNode        `yaml:"nodes" json:"nodes"`
+            Waves             map[int][]string    `yaml:"waves" json:"waves"`
+            CascadeCandidates []CascadeCandidate  `yaml:"cascade_candidates,omitempty" json:"cascade_candidates,omitempty"`
+        }
+      location: pkg/analyzer/output.go
+    - name: FormatYAML
+      description: Serializes Output to YAML bytes; migrated to result.Result[T].
+      definition: |
+        func FormatYAML(o *Output) result.Result[[]byte]
+      location: pkg/analyzer/output.go
+    - name: FormatJSON
+      description: Serializes Output to indented JSON bytes; migrated to result.Result[T].
+      definition: |
+        func FormatJSON(o *Output) result.Result[[]byte]
+      location: pkg/analyzer/output.go
+    - name: DetectSharedTypes
+      description: |
+        Detects shared type candidates from IMPL manifest. Migrated to result.Result[T].
+        Nil manifest returns FATAL result with Z011_MANIFEST_NIL (not empty slice + error).
+      definition: |
+        func DetectSharedTypes(ctx context.Context, manifest *protocol.IMPLManifest, repoRoot string) result.Result[[]SharedTypeCandidate]
+      location: pkg/analyzer/shared_types.go
+    - name: DetectWiring
+      description: |
+        Detects cross-agent wiring declarations from IMPL manifest task prompts.
+        Adds context.Context first param (P1-3). Migrated to result.Result[T].
+      definition: |
+        func DetectWiring(ctx context.Context, manifest *protocol.IMPLManifest, repoRoot string) result.Result[[]protocol.WiringDeclaration]
+      location: pkg/analyzer/wiring.go
+    - name: AnalyzeDeps (updated or deleted)
+      description: |
+        If callers can call BuildGraph + ToOutput directly, delete AnalyzeDeps (P1-7).
+        If kept for compatibility (runner.go uses it), update signature to result.Result[T]
+        and propagate context to BuildGraph. Decision: DELETE and update runner.go directly.
+      definition: |
+        // DELETED: pkg/engine/runner.go will call BuildGraph(ctx, ...) then ToOutput() directly.
+        // deps.go will be replaced with a file-level comment or removed from compilation.
+      location: pkg/analyzer/deps.go
+waves:
+    - number: 1
+      agents:
+        - id: A
+          task: |
+            ## Role
+            Add Z-domain error code constants to pkg/result/codes.go.
+
+            ## Context
+            pkg/analyzer currently uses bare fmt.Errorf throughout. The canonical pattern
+            in this codebase is to use typed error codes from pkg/result/codes.go so
+            callers can programmatically identify error categories. This wave adds the
+            Z001–Z013 constants to enable Wave 2/3 agents to use them.
+
+            ## What to implement
+
+            Open `/Users/dayna.blackwell/code/scout-and-wave-go/pkg/result/codes.go`.
+
+            Add a new comment block and const group after the existing J-domain codes
+            (Journal error codes, J001–J099), at the end of the file. The new block must
+            read exactly:
+
+            ```go
+            // Analyzer error codes (Z001-Z099)
+            const (
+                // CodeAnalyzeParseFailed is emitted when a Go source file cannot be parsed.
+                CodeAnalyzeParseFailed = "Z001_PARSE_FAILED"
+                // CodeAnalyzeGomodReadFailed is emitted when go.mod cannot be read.
+                CodeAnalyzeGomodReadFailed = "Z002_GOMOD_READ_FAILED"
+                // CodeAnalyzeModuleNotFound is emitted when the module path cannot be resolved.
+                CodeAnalyzeModuleNotFound = "Z003_MODULE_NOT_FOUND"
+                // CodeAnalyzeImportResolveFailed is emitted when an import path cannot be resolved to a file.
+                CodeAnalyzeImportResolveFailed = "Z004_IMPORT_RESOLVE_FAILED"
+                // CodeAnalyzeCycleDetected is emitted when a dependency cycle is found.
+                CodeAnalyzeCycleDetected = "Z005_CYCLE_DETECTED"
+                // CodeAnalyzeUnsupportedLang is emitted when the file language is not supported.
+                CodeAnalyzeUnsupportedLang = "Z006_UNSUPPORTED_LANGUAGE"
+                // CodeAnalyzeNodeMissing is emitted when a referenced file node is absent from the graph.
+                CodeAnalyzeNodeMissing = "Z007_NODE_MISSING"
+                // CodeAnalyzeJSParserMissing is emitted when the js-parser.js helper script cannot be found.
+                CodeAnalyzeJSParserMissing = "Z008_JS_PARSER_MISSING"
+                // CodeAnalyzePythonMissing is emitted when the python parser script cannot be found.
+                CodeAnalyzePythonMissing = "Z009_PYTHON_MISSING"
+                // CodeAnalyzeRustParserMissing is emitted when the rust-parser helper binary cannot be found.
+                CodeAnalyzeRustParserMissing = "Z010_RUST_PARSER_MISSING"
+                // CodeAnalyzeManifestNil is emitted when a nil manifest is passed to DetectSharedTypes or DetectWiring.
+                CodeAnalyzeManifestNil = "Z011_MANIFEST_NIL"
+                // CodeAnalyzeCircularAgentDep is emitted when a circular agent dependency is detected.
+                CodeAnalyzeCircularAgentDep = "Z012_CIRCULAR_AGENT_DEP"
+                // CodeAnalyzeWalkFailed is emitted when filepath.Walk fails during cascade detection.
+                CodeAnalyzeWalkFailed = "Z013_WALK_FAILED"
+            )
+            ```
+
+            Also update the package-level godoc comment at the top of codes.go to list
+            the new domain range:
+            ```
+            //  Z001-Z099: Analyzer errors (dependency graph, cascade, shared types, wiring)
+            ```
+
+            ## Interfaces to implement
+            See interface_contracts: "Z-domain error code constants".
+
+            ## Tests to write / update
+            Open `pkg/result/codes_test.go`. Add a test that verifies each new constant
+            has the correct string prefix (Z0nn_). Pattern: iterate a list of (constant, expected)
+            pairs and assert equality. Do not change any existing tests.
+
+            ## Verification gate
+            ```
+            go build ./pkg/result/...
+            go vet ./pkg/result/...
+            go test ./pkg/result/...
+            ```
+
+            ## Constraints
+            - Do NOT modify any existing constants. Only append.
+            - Do NOT touch any file outside pkg/result/codes.go and pkg/result/codes_test.go.
+            - The Z-domain header comment must match exactly the style used for other domains.
+          files:
+            - pkg/result/codes.go
+            - pkg/result/codes_test.go
+        - id: B
+          task: |
+            ## Role
+            Fix P0 runtime bugs in language parser helpers: javascript.go, python.go, rust.go.
+            Fix P1-5 (fileExists cross-file helper). Fix P2-7 (resolveJSImport false success).
+
+            ## Context
+            Three bugs are active correctness failures:
+            - P0-1: javascript.go:37 uses `parserScript := "js-parser.js"` as a bare relative
+              path — always fails when invoked from any directory except the source tree.
+            - P0-2 / P1-6: python.go:23 uses a Python subprocess guard that always exits 0,
+              so missing python parser scripts are never caught.
+            - P1-5: shared_types.go calls `fileExists()` which is defined in javascript.go —
+              a cross-file helper coupling. This must be moved.
+            - P2-7: javascript.go's `resolveJSImport` always returns a synthesized path rather
+              than an error when the import cannot be resolved — test accommodation baked into
+              production code.
+
+            ## What to implement
+
+            ### javascript.go
+            1. Replace the bare `parserScript := "js-parser.js"` at line 37 with a lookup
+               that searches PATH for the script, using `exec.LookPath("js-parser.js")`. If
+               not found, return `result.NewFailure[[]string]([]result.SAWError{result.NewFatal(
+               result.CodeAnalyzeJSParserMissing, "js-parser.js not found in PATH")})`.
+               NOTE: Wave 2 will change the return type to result.Result[T]. For now, keep
+               the existing ([]string, error) return but replace the fmt.Errorf with a
+               descriptive error that agents C/E can later wrap.
+            2. In `resolveJSImport`: when a resolution fails (import path cannot be mapped to
+               a known file), return `("", fmt.Errorf("cannot resolve JS import: %s", importPath))`
+               instead of returning a synthesized path. Callers must handle the error.
+            3. Move the `fileExists(path string) bool` function out of javascript.go into a new
+               unexported helper file `pkg/analyzer/helpers.go`. The function body is unchanged;
+               only the location moves.
+
+            ### python.go
+            Replace the Python subprocess existence guard at line 23. The current code runs
+            `python -c "import os; os.path.exists(...)"` which always exits 0 and never
+            detects a missing script. Replace with a direct `os.Stat(parserScript)` call in Go:
+            ```go
+            if _, err := os.Stat(parserScript); os.IsNotExist(err) {
+                return nil, fmt.Errorf("python parser script not found: %s", parserScript)
+            }
+            ```
+            Also fix the parserScript path to use the same PATH-lookup approach as javascript.go
+            (search PATH for "python-parser.py"). If not found, return an error using
+            fmt.Errorf (Wave 3 will migrate to result.Result[T]).
+
+            ### rust.go
+            NOTE: rust.go already uses `exec.LookPath("rust-parser")` at line 20. The PATH-lookup
+            fix is already in place — do NOT re-apply it. No changes are needed to rust.go's
+            path resolution. Only update any error-return patterns if they use bare panic/fmt.Errorf
+            in a way that is inconsistent with the rest of the language parsers after your other fixes.
+
+            ### pkg/analyzer/helpers.go (new file)
+            Create `pkg/analyzer/helpers.go` with:
+            ```go
+            package analyzer
+
+            import "os"
+
+            // fileExists reports whether path exists on disk.
+            func fileExists(path string) bool {
+                _, err := os.Stat(path)
+                return err == nil
+            }
+            ```
+
+            Remove `fileExists` from javascript.go after creating helpers.go.
+
+            ## Tests to write / update
+            Own and update: javascript_test.go, python_test.go, rust_test.go.
+            - `javascript_test.go`: add test that `resolveJSImport` returns an error for
+              an unresolvable import path (not a synthesized result). Update any test that
+              calls functions whose signatures changed due to exec.LookPath addition.
+            - `python_test.go`: add test that the existence guard returns an error when the
+              parser script does not exist (use a nonexistent path). Update any existing
+              tests affected by the os.Stat guard change.
+            - `rust_test.go`: add test that missing rust-parser binary returns an error.
+            - Do NOT add helpers_test.go; the fileExists helper is tested indirectly.
+
+            ## Verification gate
+            ```
+            go build ./pkg/analyzer/...
+            go vet ./pkg/analyzer/...
+            go test ./pkg/analyzer/...
+            ```
+
+            ## Constraints
+            - Do NOT change function signatures beyond what is described above.
+            - Do NOT touch any files outside javascript.go, python.go, rust.go, helpers.go,
+              and the three language parser test files.
+            - The `fileExists` function must appear in EXACTLY ONE file after this change
+              (helpers.go). Remove it from javascript.go.
+          files:
+            - pkg/analyzer/javascript.go
+            - pkg/analyzer/python.go
+            - pkg/analyzer/rust.go
+            - pkg/analyzer/helpers.go
+            - pkg/analyzer/javascript_test.go
+            - pkg/analyzer/python_test.go
+            - pkg/analyzer/rust_test.go
+    - number: 2
+      agents:
+        - id: C
+          task: |
+            ## Role
+            Migrate analyzer.go to result.Result[T]; fix P0-3 (context propagation);
+            fix P2-3 (IsStdlib heuristic simplification).
+
+            ## Context
+            This is the core Analyzer type file. Three changes:
+            - P1-1: All three public methods currently return (T, error). Migrate to result.Result[T].
+            - P0-3: ParseFile and ExtractImports call context.Background() internally instead
+              of using the caller's context. Fix: propagate ctx through to internal I/O.
+            - P2-3: IsStdlib has a 30-entry hardcoded prefix list. Replace with heuristic:
+              first path element has no dot = stdlib (e.g. "fmt", "os", "go/ast" all pass).
+
+            ## What to implement
+
+            ### analyzer.go — function signature changes
+
+            Change the three public method signatures and their return statements:
+
+            ```go
+            func (a *Analyzer) ParseFile(ctx context.Context, path string) result.Result[*ast.File]
+            func (a *Analyzer) ExtractImports(ctx context.Context, file *ast.File, repoRoot string) result.Result[[]string]
+            func ResolveImportPath(ctx context.Context, importPath, repoRoot, modulePath string) result.Result[string]
+            ```
+
+            NOTE: ResolveImportPath is a package-level function (NOT a method on *Analyzer).
+            The actual current signature is:
+              func ResolveImportPath(importPath, repoRoot, modulePath string) (string, error)
+            Parameter order: importPath first, repoRoot second, modulePath third. Do NOT reorder.
+            Add ctx as the NEW first parameter. Migrate error returns to result.Result[string].
+
+            For each function:
+            - Replace `return nil, fmt.Errorf(...)` with `return result.NewFailure[T]([]result.SAWError{result.NewFatal(result.CodeXXX, msg)})`
+              using the appropriate Z-domain code from Wave 1 (e.g. Z001_PARSE_FAILED for parse
+              errors, Z002_GOMOD_READ_FAILED for go.mod errors, Z004_IMPORT_RESOLVE_FAILED for
+              import resolution errors).
+            - Replace `return value, nil` with `return result.NewSuccess(value)`.
+            - Import `"github.com/blackwell-systems/scout-and-wave-go/pkg/result"`.
+
+            ### P0-3 context propagation
+            In `parseGoFiles` (called from graph.go's BuildGraph loop, but the internal
+            `parser.ParseFile` calls in analyzer.go), verify the ctx parameter is passed
+            through. Any internal call to `getModulePath(context.Background(), ...)` in
+            analyzer.go must become `getModulePath(ctx, ...)`.
+
+            ### P2-3 IsStdlib
+            Replace the current implementation:
+            ```go
+            func IsStdlib(importPath string) bool {
+                // New: first path element has no dot = stdlib
+                parts := strings.SplitN(importPath, "/", 2)
+                return !strings.Contains(parts[0], ".")
+            }
+            ```
+            This correctly classifies: "fmt" (stdlib), "os" (stdlib), "go/ast" (stdlib),
+            "github.com/user/repo" (not stdlib), "gopkg.in/yaml.v3" (not stdlib).
+            Remove the old hardcoded prefix slice/map entirely.
+
+            ## Interfaces to implement
+            See interface_contracts: Analyzer.ParseFile, Analyzer.ExtractImports,
+            ResolveImportPath (package-level, NOT a method), IsStdlib.
+
+            ## Tests to write / update
+            Update `analyzer_test.go`:
+            - All tests calling ParseFile/ExtractImports/ResolveImportPath must unwrap
+              result.Result[T] using `.GetData()` and `.IsSuccess()`.
+            - Add test cases for IsStdlib with the new heuristic: "fmt" → true, "os" → true,
+              "go/ast" → true, "github.com/foo/bar" → false, "gopkg.in/yaml.v3" → false.
+            - Do NOT change test behavior — tests passing today must still pass.
+
+            ## Verification gate
+            ```
+            go build ./pkg/analyzer/...
+            go vet ./pkg/analyzer/...
+            go test ./pkg/analyzer/...
+            ```
+
+            ## Constraints
+            - Own ONLY: pkg/analyzer/analyzer.go, pkg/analyzer/analyzer_test.go.
+            - Do NOT touch graph.go, cascade.go, output.go, types.go, or any other file.
+            - The `New()` constructor is unchanged (returns *Analyzer).
+            - Wave 2 Agent D owns graph.go. Do not modify it.
+          files:
+            - pkg/analyzer/analyzer.go
+            - pkg/analyzer/analyzer_test.go
+          dependencies:
+            - A
+        - id: D
+          task: |
+            ## Role
+            Migrate graph.go to result.Result[T]; add context.Context to BuildGraph (P1-4);
+            fix P0-4 (context propagation in internal detectCascades); fix P2-1
+            (computeDepth O(n²)); unify cascade types in types.go (P1-9 partial).
+
+            ## Context
+            graph.go is a 435-line file with 7 concerns. Key changes:
+            - P1-4 / P1-1: BuildGraph missing context.Context first param. Add it.
+            - P0-4: Internal call to `getModulePath(context.Background(), ...)` in
+              graph.go:357 — replace with `getModulePath(ctx, ...)`.
+            - P0-3: parseGoFiles receives a context but graph.go passes context.Background()
+              to the analyzer parse calls within the loop. Fix: propagate ctx.
+            - P2-1: computeDepth O(n²) inner loop — the `revAdj` map is already built
+              but not passed into computeDepth. Pass it as a parameter to avoid rebuilding.
+            - P1-9 (partial): DepGraph.CascadeCandidates changes from []CascadeFile to
+              []CascadeCandidate. types.go has CascadeFile and DepGraph; update both.
+
+            ## IMPORTANT: Cascade type coordination with Agent E
+            Agent E owns cascade.go where CascadeCandidate is defined. The canonical struct
+            shape is fixed in the scaffold (see scaffolds section):
+            ```go
+            type CascadeCandidate struct {
+                File        string `json:"file"`
+                Line        int    `json:"line"`
+                Match       string `json:"match"`
+                CascadeType string `json:"cascade_type"`
+                Severity    string `json:"severity"`
+                Reason      string `json:"reason"`
+            }
+            ```
+            Your job: update DepGraph to use []CascadeCandidate. The internal detectCascades
+            function in graph.go currently builds []CascadeFile. Update it to build
+            []CascadeCandidate instead, filling in all 6 fields. Use sensible defaults for
+            Line (0) and Match ("") if graph.go's cascade detection doesn't track those.
+
+            ## What to implement
+
+            ### types.go
+            1. Change DepGraph.CascadeCandidates field type from `[]CascadeFile` to `[]CascadeCandidate`.
+            2. Delete the `CascadeFile` struct entirely.
+
+            ### graph.go
+            1. Add `ctx context.Context` as the first parameter to BuildGraph:
+               `func BuildGraph(ctx context.Context, repoRoot string, targetFiles []string) result.Result[*DepGraph]`
+            2. Replace `return nil, fmt.Errorf(...)` with result.NewFailure calls using Z-domain codes:
+               - Walk failures → Z013_WALK_FAILED
+               - Parse failures → Z001_PARSE_FAILED
+               - Cycle detection → Z005_CYCLE_DETECTED
+            3. Replace `return graph, nil` with `return result.NewSuccess(graph)`.
+            4. Fix P0-4: in the internal `detectCascades` function in graph.go, replace
+               `getModulePath(context.Background(), ...)` with `getModulePath(ctx, ...)`.
+               This requires passing ctx into the internal detectCascades function.
+            5. Fix P0-3: wherever analyzer.ParseFile or analyzer.ExtractImports is called
+               inside parseGoFiles with context.Background(), replace with the caller's ctx.
+            6. Fix P2-1: extract `revAdj` from wherever it's computed and pass it to
+               computeDepth to avoid O(n²) recomputation. The exact signature change for
+               computeDepth is: add `revAdj map[string][]string` as a parameter.
+            7. Update internal cascade building to use CascadeCandidate (not CascadeFile).
+            8. Import `"github.com/blackwell-systems/scout-and-wave-go/pkg/result"`.
+
+            ## Interfaces to implement
+            See interface_contracts: BuildGraph, DepGraph (updated).
+
+            ## Tests to write / update
+            Update `graph_test.go`:
+            - All tests calling BuildGraph must add a context.Context first arg (use context.Background() in tests).
+            - Unwrap result.Result[*DepGraph] with .IsSuccess() / .GetData().
+            - Add test: BuildGraph returns Z013_WALK_FAILED when repoRoot is a nonexistent directory.
+            - Do NOT change test behavior beyond signature adaptation.
+
+            ## Verification gate
+            ```
+            go build ./pkg/analyzer/...
+            go vet ./pkg/analyzer/...
+            go test ./pkg/analyzer/...
+            ```
+
+            ## Constraints
+            - Own ONLY: pkg/analyzer/graph.go, pkg/analyzer/types.go, pkg/analyzer/graph_test.go.
+            - Do NOT touch cascade.go (Agent E owns it). Reference CascadeCandidate from cascade.go.
+            - Do NOT touch output.go (Agent E owns it).
+            - Do NOT touch analyzer.go (Agent C owns it).
+          files:
+            - pkg/analyzer/graph.go
+            - pkg/analyzer/types.go
+            - pkg/analyzer/graph_test.go
+          dependencies:
+            - A
+            - B
+        - id: E
+          task: |
+            ## Role
+            Migrate cascade.go and output.go to result.Result[T]; finalize P1-9 cascade
+            type unification (OutputCascade removed; Output uses CascadeCandidate directly).
+
+            ## Context
+            Two files with interconnected changes:
+            - cascade.go: DetectCascades currently returns (CascadeResult, error). Migrate to
+              result.Result[CascadeResult]. CascadeCandidate (the canonical type) is already
+              defined here — no struct changes needed to cascade.go itself.
+            - output.go: Output.CascadeCandidates is currently []OutputCascade. Since CascadeCandidate
+              is now the canonical type (see scaffold), remove OutputCascade and change the field
+              to []CascadeCandidate. ToOutput must be updated accordingly. FormatYAML and FormatJSON
+              migrate to result.Result[[]byte].
+
+            ## What to implement
+
+            ### cascade.go
+            Change DetectCascades signature:
+            ```go
+            func DetectCascades(ctx context.Context, repoRoot string, renames []RenameInfo) result.Result[CascadeResult]
+            ```
+            - Replace `return CascadeResult{}, fmt.Errorf("walk repo: %w", err)` with
+              `return result.NewFailure[CascadeResult]([]result.SAWError{result.NewFatal(result.CodeAnalyzeWalkFailed, err.Error())})`
+            - Replace `return CascadeResult{...}, nil` with `return result.NewSuccess(CascadeResult{...})`.
+            - Import `"github.com/blackwell-systems/scout-and-wave-go/pkg/result"`.
+
+            ### output.go
+            1. Remove the `OutputCascade` struct entirely.
+            2. Change `Output.CascadeCandidates` from `[]OutputCascade` to `[]CascadeCandidate`.
+            3. Update `ToOutput` to copy `g.CascadeCandidates` (which are already `[]CascadeCandidate`)
+               directly instead of converting from OutputCascade. The conversion loop becomes a
+               direct slice copy.
+            4. Change FormatYAML and FormatJSON signatures:
+               ```go
+               func FormatYAML(o *Output) result.Result[[]byte]
+               func FormatJSON(o *Output) result.Result[[]byte]
+               ```
+               Replace `return yaml.Marshal(o)` with:
+               ```go
+               data, err := yaml.Marshal(o)
+               if err != nil {
+                   return result.NewFailure[[]byte]([]result.SAWError{result.NewFatal(result.CodeAnalyzeParseFailed, err.Error())})
+               }
+               return result.NewSuccess(data)
+               ```
+               Same pattern for FormatJSON using json.MarshalIndent.
+            5. Import `"github.com/blackwell-systems/scout-and-wave-go/pkg/result"`.
+
+            ## Interfaces to implement
+            See interface_contracts: DetectCascades, ToOutput, Output (updated), FormatYAML, FormatJSON.
+
+            ## Tests to write / update
+            Update `cascade_test.go`:
+            - Unwrap result.Result[CascadeResult] in all tests.
+            - Add test: DetectCascades returns Z013_WALK_FAILED for nonexistent repoRoot.
+            Update `output_test.go`:
+            - Unwrap result.Result[[]byte] from FormatYAML and FormatJSON.
+            - Update any test that references OutputCascade to use CascadeCandidate.
+            - Verify ToOutput correctly passes CascadeCandidate entries through without conversion loss.
+
+            ## Verification gate
+            ```
+            go build ./pkg/analyzer/...
+            go vet ./pkg/analyzer/...
+            go test ./pkg/analyzer/...
+            ```
+
+            ## Constraints
+            - Own ONLY: pkg/analyzer/cascade.go, pkg/analyzer/output.go,
+              pkg/analyzer/cascade_test.go, pkg/analyzer/output_test.go.
+            - Do NOT touch types.go (Agent D owns it). Reference CascadeCandidate from cascade.go
+              — it is already the canonical type there.
+            - Do NOT touch graph.go (Agent D owns it).
+            - CascadeCandidate struct in cascade.go is unchanged (all 6 fields remain as-is).
+          files:
+            - pkg/analyzer/cascade.go
+            - pkg/analyzer/output.go
+            - pkg/analyzer/cascade_test.go
+            - pkg/analyzer/output_test.go
+          dependencies:
+            - A
+    - number: 3
+      agents:
+        - id: F
+          task: |
+            ## Role
+            Migrate shared_types.go and wiring.go to result.Result[T]; add context.Context to
+            DetectWiring (P1-3); fix P1-8 (findDefiningAgent false positives); fix P2-2
+            (extractTypeReferences table-driven); fix P2-6 (nil manifest consistency);
+            fix P2-5 (wiring_test.go ordering flake).
+
+            ## Context
+            Two files with several accumulated issues:
+            - P1-1 / P1-3: DetectSharedTypes and DetectWiring return (T, error). Migrate both
+              to result.Result[T]. DetectWiring also gains a context.Context first parameter.
+            - P2-6: DetectSharedTypes returns non-nil empty slice on nil manifest but returns nil
+              on context error. Should return FATAL result.Result[T] on nil manifest (Z011_MANIFEST_NIL).
+            - P1-8: findDefiningAgent (wiring.go:149-168) has a heuristic fallback that returns
+              found=true for any function name when there are 2+ agents, generating false-positive
+              wiring declarations for stdlib calls. Fix: only return found=true when the function
+              name appears in at least one agent's file_ownership file list or interface_contracts.
+            - P2-2: extractTypeReferences in shared_types.go:184-259 has 76 lines of copy-paste
+              regex patterns per language. Collapse to a table-driven loop.
+            - P2-5: TestDetectWiring_MultipleCallers (wiring_test.go:252-267) makes an ordering
+              assumption on map iteration. Fix: sort the returned declarations before asserting.
+
+            ## What to implement
+
+            ### shared_types.go
+
+            1. Change DetectSharedTypes signature:
+               ```go
+               func DetectSharedTypes(ctx context.Context, manifest *protocol.IMPLManifest, repoRoot string) result.Result[[]SharedTypeCandidate]
+               ```
+            2. Fix P2-6 nil manifest: replace the current `return []SharedTypeCandidate{}, fmt.Errorf(...)` with:
+               ```go
+               if manifest == nil {
+                   return result.NewFailure[[]SharedTypeCandidate]([]result.SAWError{
+                       result.NewFatal(result.CodeAnalyzeManifestNil, "manifest cannot be nil"),
+                   })
+               }
+               ```
+            3. Fix P2-6 context error path: replace `return nil, ctx.Err()` with:
+               ```go
+               return result.NewFailure[[]SharedTypeCandidate]([]result.SAWError{
+                   result.NewFatal(result.CodeAnalyzeWalkFailed, ctx.Err().Error()),
+               })
+               ```
+            4. Success path: replace `return candidates, nil` with `return result.NewSuccess(candidates)`.
+            5. Fix P2-2: collapse extractTypeReferences to a table-driven loop. Define a struct:
+               ```go
+               type langPattern struct {
+                   ext     string
+                   pattern *regexp.Regexp
+               }
+               ```
+               And a slice of langPattern entries (one per supported language/pattern combination).
+               The loop iterates the table and applies matching. Behavior must be identical to
+               the current per-language code.
+            6. Fix P1-5 (if fileExists usage remains after Agent B moves the helper): ensure
+               shared_types.go imports the helper from helpers.go (same package, no import needed).
+
+            ### wiring.go
+
+            1. Add `ctx context.Context` as the first parameter:
+               ```go
+               func DetectWiring(ctx context.Context, manifest *protocol.IMPLManifest, repoRoot string) result.Result[[]protocol.WiringDeclaration]
+               ```
+            2. Nil manifest check:
+               ```go
+               if manifest == nil {
+                   return result.NewFailure[[]protocol.WiringDeclaration]([]result.SAWError{
+                       result.NewFatal(result.CodeAnalyzeManifestNil, "manifest is nil"),
+                   })
+               }
+               ```
+            3. Replace all `return nil, fmt.Errorf(...)` with result.NewFailure.
+            4. Replace `return declarations, nil` with `return result.NewSuccess(declarations)`.
+            5. Fix P1-8 findDefiningAgent: change the fallback heuristic so it only reports
+               found=true when the function name matches a symbol in the manifest's
+               interface_contracts[].Name OR when it is mentioned in a file path in
+               file_ownership. The simplest fix: remove the "2+ agents" fallback entirely.
+               Only return found=true via the explicit interface_contracts lookup.
+            6. Add context cancellation check at the top:
+               ```go
+               if ctx.Err() != nil {
+                   return result.NewFailure[[]protocol.WiringDeclaration]([]result.SAWError{
+                       result.NewFatal(result.CodeAnalyzeWalkFailed, ctx.Err().Error()),
+                   })
+               }
+               ```
+
+            ### shared_types_test.go
+            - Update all tests calling DetectSharedTypes to unwrap result.Result[T].
+            - Add test: nil manifest returns FATAL result with Z011_MANIFEST_NIL code.
+
+            ### wiring_test.go
+            - Fix P2-5: in TestDetectWiring_MultipleCallers, sort the returned
+              []protocol.WiringDeclaration slice by the Agent field (NOT CallerAgent —
+              that field does not exist; the field is named Agent) before asserting, to
+              eliminate map-iteration ordering flakes.
+            - Update all tests calling DetectWiring to pass context.Background() as first arg
+              and unwrap result.Result[T].
+
+            ## Verification gate
+            ```
+            go build ./pkg/analyzer/...
+            go vet ./pkg/analyzer/...
+            go test ./pkg/analyzer/...
+            ```
+
+            ## Constraints
+            - Own ONLY: pkg/analyzer/shared_types.go, pkg/analyzer/wiring.go,
+              pkg/analyzer/shared_types_test.go, pkg/analyzer/wiring_test.go.
+            - Do NOT touch graph.go, cascade.go, output.go, types.go, or analyzer.go.
+          files:
+            - pkg/analyzer/shared_types.go
+            - pkg/analyzer/wiring.go
+            - pkg/analyzer/shared_types_test.go
+            - pkg/analyzer/wiring_test.go
+          dependencies:
+            - C
+            - D
+            - E
+        - id: G
+          task: |
+            ## Role
+            Delete AnalyzeDeps (P1-7); migrate deps_test.go to test BuildGraph directly;
+            update types_test.go for removed CascadeFile struct.
+
+            ## Context
+            After Wave 2, BuildGraph accepts context.Context and returns result.Result[*DepGraph].
+            The AnalyzeDeps wrapper in deps.go has zero unique logic — it just calls BuildGraph
+            then ToOutput. Its only caller is pkg/engine/runner.go (handled by Agent H in Wave 4).
+            This agent deletes the wrapper and adds substantive tests.
+
+            ## What to implement
+
+            ### deps.go
+            Replace the entire file content with:
+            ```go
+            // Package analyzer provides static analysis utilities.
+            // AnalyzeDeps was removed in analyzer-review-fixes (P1-7).
+            // Callers should use BuildGraph(ctx, repoRoot, files) followed by ToOutput(graph).
+            package analyzer
+            ```
+            This keeps the file present (avoids "empty package" build issues if any build
+            system references the file) but removes the exported function.
+
+            ### deps_test.go
+            Replace the existing single test (cancelled context) with a substantive test suite
+            covering BuildGraph directly (since AnalyzeDeps is gone):
+            1. TestBuildGraph_Success: call BuildGraph with a real Go source directory
+               (use `testdata/` if present, or create a temp dir with a simple .go file).
+               Assert IsSuccess() is true, returned graph has at least one node.
+            2. TestBuildGraph_NonexistentDir: call BuildGraph with a nonexistent repoRoot.
+               Assert IsFatal() is true and result contains Z013_WALK_FAILED code.
+            3. TestBuildGraph_CancelledContext: call BuildGraph with a pre-cancelled context.
+               Assert IsFatal() is true.
+            4. TestToOutput_Serialization: call BuildGraph on a real directory, then ToOutput,
+               then FormatYAML and FormatJSON. Assert both return IsSuccess() and non-empty bytes.
+            Do NOT test the old AnalyzeDeps function.
+
+            ### types_test.go
+            Update any test that references CascadeFile (the removed struct) to use
+            CascadeCandidate instead. Check that the test still exercises the same
+            DepGraph.CascadeCandidates field — just with the new type.
+
+            ## Verification gate
+            ```
+            go build ./pkg/analyzer/...
+            go vet ./pkg/analyzer/...
+            go test ./pkg/analyzer/...
+            ```
+
+            ## Constraints
+            - Own ONLY: pkg/analyzer/deps.go, pkg/analyzer/deps_test.go,
+              pkg/analyzer/types_test.go.
+            - Do NOT touch graph.go, cascade.go, output.go, or any test file Agent F owns.
+            - Do NOT add any new exported functions to deps.go — the file is a tombstone comment only.
+            - NOTE: pkg/engine/runner.go is handled by Agent I (not Agent H). Agent H owns cmd/sawtools/.
+              You do not need to coordinate with H for runner.go concerns.
+          files:
+            - pkg/analyzer/deps.go
+            - pkg/analyzer/deps_test.go
+            - pkg/analyzer/types_test.go
+          dependencies:
+            - C
+            - D
+            - E
+    - number: 4
+      agents:
+        - id: H
+          task: |
+            ## Role
+            Update cmd/sawtools callers of pkg/analyzer to use the new result.Result[T]
+            signatures. Covers all four cmd/sawtools commands and their test file.
+            Agent I handles pkg/engine/runner.go in parallel.
+
+            ## Context
+            After Waves 1-3, the pkg/analyzer package exports:
+            - BuildGraph(ctx, repoRoot, files) result.Result[*DepGraph]
+            - ToOutput(g) *Output
+            - FormatYAML(o) result.Result[[]byte]
+            - FormatJSON(o) result.Result[[]byte]
+            - DetectCascades(ctx, repoRoot, renames) result.Result[CascadeResult]
+            - DetectSharedTypes(ctx, manifest, repoRoot) result.Result[[]SharedTypeCandidate]
+            - DetectWiring(ctx, manifest, repoRoot) result.Result[[]protocol.WiringDeclaration]
+            - AnalyzeDeps is DELETED.
+
+            Agent I (parallel) handles pkg/engine/runner.go. Your job is the cmd/sawtools
+            layer: update call sites to unwrap result.Result[T] and update the test file.
+
+            ## What to implement
+
+            ### cmd/sawtools/analyze_deps_cmd.go
+            Find the calls to `BuildGraph` and `FormatYAML`/`FormatJSON`. Unwrap results:
+            ```go
+            r := analyzer.BuildGraph(ctx, repoRoot, files)
+            if r.IsFatal() {
+                return fmt.Errorf("build graph: %s", r.Errors[0].Message)
+            }
+            output := analyzer.ToOutput(r.GetData())
+            fmtResult := analyzer.FormatYAML(output)
+            if fmtResult.IsFatal() {
+                return fmt.Errorf("format: %s", fmtResult.Errors[0].Message)
+            }
+            ```
+            Use the same pattern for FormatJSON. Do NOT change the cmd's flag parsing, cobra
+            setup, or output logic — only the analyzer call sites.
+
+            ### cmd/sawtools/detect_cascades_cmd.go
+            Find the call to `DetectCascades`. Update:
+            ```go
+            r := analyzer.DetectCascades(ctx, repoRoot, renames)
+            if r.IsFatal() {
+                return fmt.Errorf("detect cascades: %s", r.Errors[0].Message)
+            }
+            cascadeResult := r.GetData()
+            ```
+
+            ### cmd/sawtools/detect_shared_types_cmd.go
+            Find the call to `DetectSharedTypes`. Update:
+            ```go
+            r := analyzer.DetectSharedTypes(ctx, manifest, repoRoot)
+            if r.IsFatal() {
+                return fmt.Errorf("detect shared types: %s", r.Errors[0].Message)
+            }
+            candidates := r.GetData()
+            ```
+
+            ### cmd/sawtools/detect_wiring_cmd.go
+            Find the call to `DetectWiring`. Update to add ctx as first arg and unwrap result:
+            ```go
+            r := analyzer.DetectWiring(ctx, manifest, repoRoot)
+            if r.IsFatal() {
+                return fmt.Errorf("detect wiring: %s", r.Errors[0].Message)
+            }
+            declarations := r.GetData()
+            ```
+            If the cmd does not already have a context.Context available, use
+            `cmd.Context()` (cobra provides this) or `context.Background()` as fallback.
+
+            ## Tests to write / update
+            No new tests required. The existing cmd tests (if any) may need signature updates
+            to compile. If they call AnalyzeDeps directly, update them to call BuildGraph.
+            Do NOT write new tests for the cmd layer in this agent.
+
+            ## Verification gate
+            ```
+            go build ./...
+            go vet ./...
+            go test ./pkg/analyzer/... ./pkg/result/... ./pkg/engine/... ./cmd/sawtools/...
+            ```
+
+            ## Constraints
+            - Own ONLY: cmd/sawtools/analyze_deps_cmd.go, cmd/sawtools/detect_wiring_cmd.go,
+              cmd/sawtools/detect_cascades_cmd.go, cmd/sawtools/detect_shared_types_cmd.go,
+              cmd/sawtools/analyze_deps_cmd_test.go.
+            - Do NOT touch pkg/engine/runner.go (Agent I owns it).
+            - Only change the analyzer call sites in each cmd file. Do NOT change flag parsing,
+              cobra setup, output formatting, or unrelated error handling.
+          files:
+            - cmd/sawtools/analyze_deps_cmd.go
+            - cmd/sawtools/detect_wiring_cmd.go
+            - cmd/sawtools/detect_cascades_cmd.go
+            - cmd/sawtools/detect_shared_types_cmd.go
+            - cmd/sawtools/analyze_deps_cmd_test.go
+          dependencies:
+            - C
+            - D
+            - E
+            - F
+            - G
+        - id: I
+          task: |
+            ## Role
+            Update pkg/engine/runner.go to replace the AnalyzeDeps call with BuildGraph+ToOutput.
+            This is a surgical single-call-site change in a 1485-line file.
+
+            ## Context
+            After Wave 3, AnalyzeDeps is deleted from pkg/analyzer/deps.go.
+            pkg/engine/runner.go has one call site at approximately line 1211. Replace it with
+            direct BuildGraph + ToOutput calls using the new result.Result[T] pattern.
+
+            ## What to implement
+
+            Open `/Users/dayna.blackwell/code/scout-and-wave-go/pkg/engine/runner.go`.
+
+            Use gopls find-references to locate the exact line for `analyzer.AnalyzeDeps(`.
+            There should be exactly one call site. If there are zero, the function may already
+            have been updated — verify and note in the completion report.
+
+            Replace the call with:
+            ```go
+            graphResult := analyzer.BuildGraph(ctx, repoRoot, targetFiles)
+            if graphResult.IsFatal() {
+                // Use the same error-return pattern used elsewhere in this function
+                return result.NewFailure[<ReturnType>](graphResult.Errors)
+            }
+            output := analyzer.ToOutput(graphResult.GetData())
+            ```
+            Adapt the error return to match the function's actual return type. Check the
+            surrounding code for the variable names `repoRoot` and `targetFiles` — they may
+            have different names in context; use the actual variable names.
+
+            ## Tests to write / update
+            Do NOT write new tests. The existing runner tests that exercise the AnalyzeDeps
+            path should still compile and pass after the replacement.
+
+            ## Verification gate
+            ```
+            go build ./pkg/engine/...
+            go vet ./pkg/engine/...
+            go test ./pkg/engine/... -run TestAnalyzeDeps -v
+            ```
+
+            ## Constraints
+            - Own ONLY: pkg/engine/runner.go.
+            - Make ONLY the AnalyzeDeps → BuildGraph+ToOutput change. Do NOT refactor
+              anything else in this 1485-line file.
+            - Use gopls find-references before editing to confirm the exact call site.
+            - If no `ctx` is in scope at the call site, use `context.Background()` with
+              a TODO comment.
+          files:
+            - pkg/engine/runner.go
+          dependencies:
+            - C
+            - D
+            - E
+            - F
+            - G
+        - id: J
+          task: |
+            ## Role
+            Update cmd/sawtools test files for detect_cascades, detect_wiring, and
+            detect_shared_types commands to compile with the new result.Result[T] signatures.
+
+            ## Context
+            After Wave 3, three pkg/analyzer functions have new signatures:
+            - DetectCascades: now returns result.Result[CascadeResult]
+            - DetectWiring: now takes context.Context first param, returns result.Result[...]
+            - DetectSharedTypes: now returns result.Result[[]SharedTypeCandidate]
+
+            The cmd files (owned by Agent H) now unwrap these results. The test files
+            exercise the commands end-to-end via newDetectCascadesCmd(), newDetectWiringCmd(),
+            newDetectSharedTypesCmd(). Tests should still pass — only signature-related
+            compilation errors need fixing.
+
+            ## What to implement
+
+            ### cmd/sawtools/detect_cascades_cmd_test.go
+            Scan for any direct calls to analyzer.DetectCascades or references to the old
+            (CascadeResult, error) return pattern. Update to unwrap result.Result[T] if needed.
+            If tests only call the cobra command via newDetectCascadesCmd() and check stdout/stderr,
+            no changes may be needed. Verify the file compiles after Wave 3 merges.
+
+            ### cmd/sawtools/detect_wiring_cmd_test.go
+            Same approach. Scan for direct analyzer.DetectWiring calls. DetectWiring now takes
+            a context.Context first param. If the test directly constructs DetectWiring calls,
+            add context.Background() as the first arg.
+
+            ### cmd/sawtools/detect_shared_types_cmd_test.go
+            Same approach. Scan for direct analyzer.DetectSharedTypes calls that need
+            result.Result[T] unwrapping.
+
+            ## Tests to write / update
+            Do NOT write new tests. Only fix compilation errors caused by the new signatures.
+            All existing test behaviors must be preserved.
+
+            ## Verification gate
+            ```
+            go build ./cmd/sawtools/...
+            go vet ./cmd/sawtools/...
+            go test ./cmd/sawtools/... -run TestDetectCascades -v
+            go test ./cmd/sawtools/... -run TestDetectWiring -v
+            go test ./cmd/sawtools/... -run TestDetectSharedTypes -v
+            ```
+
+            ## Constraints
+            - Own ONLY: cmd/sawtools/detect_cascades_cmd_test.go,
+              cmd/sawtools/detect_wiring_cmd_test.go,
+              cmd/sawtools/detect_shared_types_cmd_test.go.
+            - Do NOT change test behavior — tests that pass today must still pass.
+            - Do NOT touch any non-test files.
+          files:
+            - cmd/sawtools/detect_cascades_cmd_test.go
+            - cmd/sawtools/detect_wiring_cmd_test.go
+            - cmd/sawtools/detect_shared_types_cmd_test.go
+          dependencies:
+            - C
+            - D
+            - E
+            - F
+            - G
+quality_gates:
+    level: standard
+    gates:
+        - type: build
+          command: go build ./...
+          required: true
+        - type: lint
+          command: go vet ./...
+          required: true
+        - type: test
+          command: go test ./pkg/analyzer/... ./pkg/result/... ./pkg/engine/... ./cmd/sawtools/...
+          required: true
+pre_mortem:
+    overall_risk: medium
+    rows:
+        - scenario: |
+            Agent D and Agent E disagree on CascadeCandidate shape. D uses it in types.go/graph.go,
+            E uses it in cascade.go/output.go. If E modifies the struct definition (e.g. adds a
+            field), D's wave-2 code that constructs CascadeCandidate literals will fail to compile.
+          likelihood: medium
+          impact: high
+          mitigation: |
+            The scaffold pins the canonical CascadeCandidate struct as a Wave 2 pre-condition.
+            Both agents' briefs explicitly state the struct is unchanged and defined in cascade.go.
+            Agent D constructs CascadeCandidate with field literals — if shape drifts, build fails
+            immediately at Wave 2 merge (caught by quality gate, not at agent runtime).
+        - scenario: |
+            runner.go AnalyzeDeps call site is in a function with no context.Context in scope.
+            Agent H would need to thread context through an outer function signature — outside
+            its constrained ownership.
+          likelihood: low
+          impact: medium
+          mitigation: |
+            Agent H brief explicitly allows `context.Background()` as a fallback with a TODO comment.
+            The brief also requires gopls find-references before editing to confirm scope. Acceptable
+            short-term debt; full context propagation in runner.go was completed in a prior wave
+            (context-propagation IMPL).
+        - scenario: |
+            P2-5 test flake (TestDetectWiring_MultipleCallers ordering) causes Wave 3 gate failure
+            for Agent F even after the fix, due to other map-iteration ordering in wiring.go logic.
+          likelihood: low
+          impact: low
+          mitigation: |
+            Agent F brief instructs sorting the entire returned slice by CallerAgent before assertion.
+            If internal wiring.go also has map iteration ordering, the brief asks F to audit wiring.go
+            for all non-deterministic map iterations and sort the output slice before returning.
+        - scenario: |
+            deps.go deletion causes Wave 3 build failure if any test binary or build tag imports
+            the AnalyzeDeps symbol indirectly (e.g., via a generated mock or interface check).
+          likelihood: low
+          impact: medium
+          mitigation: |
+            Agent G replaces deps.go with a package-only tombstone file (not a deletion), so the
+            Go package still compiles. The exported symbol AnalyzeDeps is removed but the package
+            is not removed. Runner.go is updated by Agent H in the next wave.
+        - scenario: |
+            Wave 2 has 3 agents (C, D, E) all compiling pkg/analyzer. If any one of them
+            introduces a compile error (e.g. referencing CascadeFile which D deletes, or
+            OutputCascade which E deletes), the other agents' worktrees fail.
+          likelihood: medium
+          impact: medium
+          mitigation: |
+            Worktrees are isolated — each agent compiles independently. Wave 2 agents do not
+            need to merge before the next wave. The risk is that Agent D's types.go removes
+            CascadeFile while Agent C's analyzer.go (if it somehow referenced it) breaks.
+            Mitigation: Agent C brief explicitly does NOT touch types.go or cascade types.
+            Agent E brief does NOT touch types.go. Ownership is disjoint.
+        - scenario: |
+            P2-8 (move internal detectCascades from graph.go to cascade.go) was listed in the
+            findings but NOT included in any agent's scope. If it stays, graph.go remains a
+            large file but is otherwise functional.
+          likelihood: high
+          impact: low
+          mitigation: |
+            P2-8 is a simplification (code organization), not a correctness fix. Excluded
+            deliberately to keep Agent D's scope bounded. Can be a follow-up PR.
+critic_report:
+    verdict: PASS
+    agent_reviews:
+        A:
+            agent_id: A
+            verdict: PASS
+        B:
+            agent_id: B
+            verdict: ISSUES
+            issues:
+                - check: pattern_accuracy
+                  severity: warning
+                  description: rust.go already uses exec.LookPath("rust-parser") at line 20. The brief instructs to apply the same PATH-lookup fix as javascript.go for the rust-parser binary, but this fix is already present. The instruction is redundant and will not cause a breakage, but the brief description of the current state is inaccurate.
+                  file: pkg/analyzer/rust.go
+                  symbol: exec.LookPath
+        C:
+            agent_id: C
+            verdict: ISSUES
+            issues:
+                - check: symbol_accuracy
+                  severity: error
+                  description: The interface contract Analyzer.ResolveImportPath declares func (a *Analyzer) ResolveImportPath(ctx context.Context, importPath, modulePath, repoRoot string) result.Result[string] but the actual function in analyzer.go is a package-level function func ResolveImportPath(importPath, repoRoot, modulePath string) (string, error) — no receiver, different parameter order (repoRoot and modulePath are swapped), and no context.Context parameter. Agent C is told to migrate this method on *Analyzer, but no such method exists. If Agent C creates a new method, the existing package-level function still exists and callers in graph.go will continue calling the old signature. This interface contract inaccuracy will propagate to Agents D, E, F, H if they attempt to call the method form.
+                  file: pkg/analyzer/analyzer.go
+                  symbol: ResolveImportPath
+        D:
+            agent_id: D
+            verdict: PASS
+        E:
+            agent_id: E
+            verdict: PASS
+        F:
+            agent_id: F
+            verdict: ISSUES
+            issues:
+                - check: symbol_accuracy
+                  severity: warning
+                  description: The brief instructs Agent F to sort wiring_test.go declarations by CallerAgent before asserting (Fix P2-5). The WiringDeclaration struct has no CallerAgent field; the caller-identifying field is named Agent (type string). Sorting by CallerAgent will not compile. The sort key should be Agent.
+                  file: pkg/analyzer/wiring_test.go
+                  symbol: CallerAgent
+        G:
+            agent_id: G
+            verdict: ISSUES
+            issues:
+                - check: pattern_accuracy
+                  severity: warning
+                  description: The brief states runner.go is handled by Agent H in Wave 4 when describing AnalyzeDeps callers. The IMPL file_ownership table assigns pkg/engine/runner.go to Agent I, not Agent H. Agent H owns cmd/sawtools/ files. This incorrect cross-reference in Agent G's brief could cause confusion about coordination boundaries but does not block implementation since G's own files are unaffected.
+                  file: pkg/engine/runner.go
+                  symbol: AnalyzeDeps
+        H:
+            agent_id: H
+            verdict: PASS
+        I:
+            agent_id: I
+            verdict: PASS
+        J:
+            agent_id: J
+            verdict: PASS
+    summary: 'One error found across 10 agents. Agent C''s interface contract for Analyzer.ResolveImportPath is inaccurate: the actual function in analyzer.go is a package-level function (not a method on *Analyzer), has a different parameter order (importPath, repoRoot, modulePath vs contract''s importPath, modulePath, repoRoot), and takes no context.Context. The interface contract definition published to downstream agents (D, E, F, G, H, I) is wrong and will cause compile errors if those agents reference that signature. Three warnings were also found: Agent F''s brief references a non-existent field CallerAgent on WiringDeclaration (the field is Agent); Agent G''s brief incorrectly attributes runner.go to Agent H instead of Agent I; Agent B''s brief instructs a PATH-lookup fix for rust.go that is already implemented.'
+    reviewed_at: "2026-04-03T06:27:38Z"
+    issue_count: 4
+state: SCOUT_PENDING
+injection_method: hook

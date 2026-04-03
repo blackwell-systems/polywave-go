@@ -1,0 +1,1563 @@
+title: pkg/engine Canonicalization and Protocol Conformance Fixes
+feature_slug: engine-review-fixes
+verdict: SUITABLE
+suitability_assessment: |
+    pkg/engine is the core orchestration engine at 21,744 lines across 65 files. Deep review
+    identified 8 P0 correctness bugs (including two protocol violations: E37 critic gate bypass,
+    E26 integration constraint discarded), an incomplete result.Result[T] migration across ~20
+    exported functions, broken context propagation at ~12 call sites, dead code, and protocol
+    documentation drift.
+
+    File decomposition: 5-wave structure with fully disjoint per-wave ownership. P0 fixes in
+    Wave 1 (5 parallel agents, no shared files). result.Result migration split across Waves 2-3
+    by functional cluster. Dead code + docs in Wave 4. Struct fixes + callers in Wave 5.
+
+    Out of scope: runner.go decomposition (1485 lines → 6 logical units) is a separate future
+    IMPL. That refactor requires its own planning pass and is too large to bundle here.
+
+    Estimated time savings vs sequential: ~3 hours saved across 22 parallel agents.
+test_command: go test ./pkg/engine/... ./pkg/result/... ./pkg/gatecache/... ./cmd/sawtools/...
+lint_command: go vet ./...
+file_ownership:
+    - file: pkg/engine/prepare.go
+      agent: A
+      wave: 1
+      action: modify
+    - file: pkg/engine/finalize_steps.go
+      agent: B
+      wave: 1
+      action: modify
+    - file: pkg/engine/finalize.go
+      agent: B
+      wave: 1
+      action: modify
+    - file: pkg/engine/scout_run.go
+      agent: C
+      wave: 1
+      action: modify
+    - file: pkg/engine/integration_runner.go
+      agent: D
+      wave: 1
+      action: modify
+    - file: pkg/engine/program_tier_loop.go
+      agent: E
+      wave: 1
+      action: modify
+    - file: pkg/engine/prepare_agent.go
+      agent: F
+      wave: 2
+      action: modify
+      depends_on:
+        - A
+    - file: pkg/engine/finalize_tier.go
+      agent: G
+      wave: 2
+      action: modify
+      depends_on:
+        - B
+    - file: pkg/engine/finalize_impl.go
+      agent: G
+      wave: 2
+      action: modify
+      depends_on:
+        - B
+    - file: pkg/engine/run_wave_atomic.go
+      agent: H
+      wave: 2
+      action: modify
+    - file: pkg/engine/run_wave_full.go
+      agent: H
+      wave: 2
+      action: modify
+    - file: pkg/engine/runner_wave_structured.go
+      agent: H
+      wave: 2
+      action: modify
+    - file: pkg/engine/program_auto.go
+      agent: I
+      wave: 3
+      action: modify
+      depends_on:
+        - E
+    - file: pkg/engine/mark_program_complete.go
+      agent: I
+      wave: 3
+      action: modify
+    - file: pkg/engine/import_impls.go
+      agent: J
+      wave: 3
+      action: modify
+    - file: pkg/engine/runner.go
+      agent: J
+      wave: 3
+      action: modify
+    - file: pkg/engine/scout_correction_loop.go
+      agent: K
+      wave: 3
+      action: modify
+      depends_on:
+        - C
+    - file: pkg/engine/critic.go
+      agent: L
+      wave: 3
+      action: modify
+    - file: pkg/engine/closed_loop_gate.go
+      agent: L
+      wave: 3
+      action: modify
+    - file: pkg/engine/constraints.go
+      agent: M
+      wave: 3
+      action: modify
+    - file: pkg/engine/init_engine.go
+      agent: M
+      wave: 3
+      action: modify
+    - file: pkg/engine/debug_journal.go
+      agent: M
+      wave: 3
+      action: modify
+    - file: pkg/result/codes.go
+      agent: "N"
+      wave: 4
+      action: modify
+      depends_on:
+        - I
+        - J
+        - K
+        - L
+        - M
+    - file: pkg/gatecache/cache.go
+      agent: "N"
+      wave: 4
+      action: modify
+    - file: pkg/engine/gate_cache.go
+      agent: O
+      wave: 4
+      action: modify
+    - file: pkg/engine/gate_cache_test.go
+      agent: O
+      wave: 4
+      action: modify
+    - file: pkg/engine/doc.go
+      agent: P
+      wave: 4
+      action: modify
+      depends_on:
+        - F
+        - G
+        - H
+    - file: pkg/engine/gowork_steps.go
+      agent: P
+      wave: 4
+      action: modify
+    - file: protocol/execution-rules.md
+      agent: Q
+      wave: 4
+      action: modify
+    - file: pkg/engine/program_tier_loop.go
+      agent: I
+      wave: 3
+      action: modify
+      depends_on:
+        - E
+    - file: pkg/engine/scout_run.go
+      agent: K
+      wave: 3
+      action: modify
+      depends_on:
+        - C
+    - file: pkg/result/codes_test.go
+      agent: "N"
+      wave: 4
+      action: modify
+      depends_on:
+        - I
+        - J
+        - K
+        - L
+        - M
+    - file: pkg/engine/integration_runner.go
+      agent: Q
+      wave: 4
+      action: modify
+      depends_on:
+        - D
+    - file: pkg/engine/daemon.go
+      agent: Q
+      wave: 4
+      action: modify
+    - file: pkg/engine/runner_data_types.go
+      agent: R
+      wave: 5
+      action: modify
+      depends_on:
+        - "N"
+        - O
+        - P
+        - Q
+    - file: pkg/engine/step_types.go
+      agent: R
+      wave: 5
+      action: modify
+    - file: pkg/engine/chat.go
+      agent: S
+      wave: 5
+      action: modify
+    - file: pkg/engine/auto_remediate.go
+      agent: S
+      wave: 5
+      action: modify
+    - file: pkg/engine/daemon.go
+      agent: S
+      wave: 5
+      action: modify
+    - file: pkg/engine/program_wire_init.go
+      agent: S
+      wave: 5
+      action: modify
+    - file: pkg/engine/resolve_conflicts.go
+      agent: T
+      wave: 5
+      action: modify
+    - file: pkg/engine/fix_build.go
+      agent: T
+      wave: 5
+      action: modify
+    - file: pkg/engine/verify_install.go
+      agent: T
+      wave: 5
+      action: modify
+    - file: pkg/engine/finalize_tier.go
+      agent: T
+      wave: 5
+      action: modify
+      depends_on:
+        - G
+    - file: cmd/sawtools/prepare_wave.go
+      agent: S
+      wave: 5
+      action: modify
+      depends_on:
+        - F
+    - file: cmd/sawtools/analyze_deps_cmd.go
+      agent: U
+      wave: 5
+      action: modify
+      depends_on:
+        - F
+        - G
+        - H
+        - I
+        - J
+        - K
+        - L
+        - M
+    - file: cmd/sawtools/run_scout_cmd.go
+      agent: U
+      wave: 5
+      action: modify
+      depends_on:
+        - F
+        - G
+        - H
+        - I
+        - J
+        - K
+        - L
+        - M
+    - file: cmd/sawtools/finalize_wave.go
+      agent: U
+      wave: 5
+      action: modify
+      depends_on:
+        - F
+        - G
+        - H
+        - I
+        - J
+        - K
+        - L
+        - M
+    - file: cmd/sawtools/prepare_wave.go
+      agent: U
+      wave: 5
+      action: modify
+      depends_on:
+        - F
+        - G
+        - H
+        - I
+        - J
+        - K
+        - L
+        - M
+    - file: cmd/sawtools/import_impls_cmd.go
+      agent: U
+      wave: 5
+      action: modify
+      depends_on:
+        - F
+        - G
+        - H
+        - I
+        - J
+        - K
+        - L
+        - M
+    - file: cmd/sawtools/debug_journal.go
+      agent: U
+      wave: 5
+      action: modify
+      depends_on:
+        - F
+        - G
+        - H
+        - I
+        - J
+        - K
+        - L
+        - M
+    - file: cmd/sawtools/finalize_impl_cmd.go
+      agent: U
+      wave: 5
+      action: modify
+      depends_on:
+        - G
+interface_contracts:
+    - name: result.Result[T] canonical pattern
+      description: |
+        All fallible public engine functions must return result.Result[T] not (T, error).
+        Use result.NewSuccess(data) for success, result.NewFailure([]result.SAWError{...}) for
+        fatal errors, result.NewPartial(data, errs) for partial success. Use result.NewFatal(code, msg)
+        and result.NewError(code, msg) builders. Import pkg/result.
+      definition: |
+        // Success:
+        return result.NewSuccess(data)
+        // Fatal failure:
+        return result.NewFailure[T]([]result.SAWError{result.NewFatal(result.CodeXxx, msg)})
+        // Partial:
+        return result.NewPartial(data, []result.SAWError{result.NewError(result.CodeXxx, msg)})
+      location: pkg/result/result.go
+    - name: BuildWaveConstraints (new signature)
+      description: Add ctx parameter; return result.Result.
+      definition: |
+        func BuildWaveConstraints(ctx context.Context, implPath string, agentID string) result.Result[*tools.Constraints]
+      location: pkg/engine/constraints.go
+    - name: BuildIntegratorConstraints (new signature)
+      description: Add ctx parameter; return result.Result.
+      definition: |
+        func BuildIntegratorConstraints(ctx context.Context, implPath string) result.Result[*tools.Constraints]
+      location: pkg/engine/constraints.go
+    - name: FinalizeWave (new signature)
+      description: |
+        Migrate to result.Result. Wire CodeFinalizeWaveFailed ("N002_FINALIZE_WAVE_FAILED")
+        which already exists in codes.go and has never been used.
+      definition: |
+        func FinalizeWave(ctx context.Context, opts FinalizeWaveOpts) result.Result[FinalizeWaveResult]
+      location: pkg/engine/finalize.go
+    - name: PrepareWave (new signature)
+      description: Migrate to result.Result.
+      definition: |
+        func PrepareWave(ctx context.Context, opts PrepareWaveOpts) result.Result[PrepareWaveResult]
+      location: pkg/engine/prepare.go
+    - name: PrepareAgent (new signature)
+      description: Migrate to result.Result.
+      definition: |
+        func PrepareAgent(ctx context.Context, opts PrepareAgentOpts) result.Result[PrepareAgentResult]
+      location: pkg/engine/prepare_agent.go
+    - name: RunScoutFull (new signature)
+      description: Migrate to result.Result.
+      definition: |
+        func RunScoutFull(ctx context.Context, opts RunScoutFullOpts, onChunk func(string)) result.Result[RunScoutFullResult]
+      location: pkg/engine/scout_run.go
+    - name: RunTierLoop (new signature)
+      description: Migrate to result.Result.
+      definition: |
+        func RunTierLoop(ctx context.Context, opts TierLoopOpts) result.Result[TierLoopResult]
+      location: pkg/engine/program_tier_loop.go
+    - name: New error code constants (Wave 4)
+      description: |
+        New constants added to pkg/result/codes.go. IMPORTANT: CodeDisjointOwnership
+        (V002) and CodeWaveSequencingFailed (N026) ALREADY EXIST — do NOT redefine.
+        I-range (I001-I099) is Agent ID generation — do NOT use for engine init.
+        N003 = CodeScoutFailed, P001 = CodeStateTransitionInvalid, K005 = CodeCachePutCancelled
+        — all taken. Use the new slots below.
+      definition: |
+        // Append after N090 in the N-range block:
+        // N091: engine init failed (RunInit general failure)
+        CodeEngineInitFailed         = "N091_ENGINE_INIT_FAILED"
+        // N092: engine already initialized (AlreadyExists half-success path)
+        CodeEngineAlreadyInitialized = "N092_ENGINE_ALREADY_INITIALIZED"
+        // N093: finalize step failed (Step* function errors in finalize_steps.go)
+        CodeFinalizeStepFailed       = "N093_FINALIZE_STEP_FAILED"
+
+        // Append after B008 in the B-range block:
+        // B009: gate validation failed (closed-loop gate retry input validation)
+        CodeGateValidationFailed = "B009_GATE_VALIDATION_FAILED"
+
+        // Append after P007 in the P-range block:
+        // P008: type collision fatal (E41 gate bypass — fatal DetectCollisions failure)
+        CodeTypeCollisionFatal   = "P008_TYPE_COLLISION_FATAL"
+        // P009: E37 critic gate failed — verdict ISSUES, workflow must not advance to REVIEWED
+        CodeCriticGateFailed     = "P009_CRITIC_GATE_FAILED"
+        // P010: P1+ tier conflict — overlapping file ownership detected across IMPLs in same tier
+        CodeTierConflictDetected = "P010_TIER_CONFLICT_DETECTED"
+
+        // ALREADY EXIST — use directly, do NOT redefine:
+        // result.CodeDisjointOwnership    ("V002_DISJOINT_OWNERSHIP")
+        // result.CodeWaveSequencingFailed ("N026_WAVE_SEQUENCING_FAILED")
+      location: pkg/result/codes.go
+waves:
+    - number: 1
+      agents:
+        - id: A
+          task: |
+            ## Role
+            Fix P0-1: process-wide SAW_ALLOW_MAIN_COMMIT environment variable race in prepare.go.
+
+            ## Problem
+            prepare.go:398,438,603 calls os.Setenv("SAW_ALLOW_MAIN_COMMIT","1") and
+            defer os.Unsetenv(...) in multiple code paths. This is process-wide state. When
+            two waves prepare concurrently (program-tier parallelism), one wave's defer can
+            clear the variable while another wave's git commit is in flight — a data race.
+
+            ## Fix
+            1. Find all os.Setenv("SAW_ALLOW_MAIN_COMMIT", ...) calls and all matching
+               os.Unsetenv("SAW_ALLOW_MAIN_COMMIT") defers in prepare.go.
+            2. Remove them.
+            3. Identify where the git commit commands that require SAW_ALLOW_MAIN_COMMIT are
+               invoked (look for igit.Run or git.Run calls on the lines just below each Setenv).
+            4. Pass the env var per-subprocess instead: add an env override to each git.Run
+               call using the appropriate env-passing mechanism (check how igit.Run accepts
+               extra env — look for an EnvVars []string parameter or similar). If no per-command
+               env override exists, use exec.Command with Env set to append(os.Environ(),
+               "SAW_ALLOW_MAIN_COMMIT=1") for just that command.
+            5. Verify no other code in prepare.go sets/unsets this env var.
+
+            ## Verification gate
+            go build ./pkg/engine/...
+            go vet ./pkg/engine/...
+            go test ./pkg/engine/... -run TestPrepare
+
+            ## Constraints
+            Own ONLY pkg/engine/prepare.go. Do not touch other files.
+          files:
+            - pkg/engine/prepare.go
+        - id: B
+          task: |
+            ## Role
+            Fix P0-2 (nil deref panic in StepRunGates) and P0-3 (wrong repoKey on failure
+            paths in FinalizeWave) and P0-allGone (OR logic bug in finalize.go).
+
+            ## Fix 1: finalize_steps.go:146,148 — nil guard
+            StepRunGates calls opts.ObsEmitter.Emit(...) twice without nil guard.
+            ObsEmitter is documented optional (finalize.go:30). Add:
+              if opts.ObsEmitter != nil { opts.ObsEmitter.Emit(...) }
+            at BOTH call sites at lines ~146 and ~148. Pattern is already used at line ~245.
+
+            ## Fix 2: finalize.go:582,608 — multi-repo cleanup key
+            Two failure-path early returns store result.CleanupResult["."] = cleanupData
+            using hardcoded ".". The success path at lines ~616-623 correctly uses repoKey.
+            Replace both hardcoded "." with repoKey in the failure paths.
+
+            ## Fix 3: finalize.go:277-282 — allGone OR logic
+            The loop: for _, repoPath := range repos { if AllBranchesAbsent(...) { allGone = true; break } }
+            Uses OR logic — sets allGone=true if ANY repo has absent branches. This should be
+            AND logic: allGone is only true if ALL repos have absent branches.
+            Fix: initialize allGone = true before the loop. Inside the loop, set allGone = false
+            if AllBranchesAbsent returns false. Remove the break. Apply same pattern to isSolo.
+
+            ## Verification gate
+            go build ./pkg/engine/...
+            go vet ./pkg/engine/...
+            go test ./pkg/engine/... -run TestFinalize
+
+            ## Constraints
+            Own ONLY finalize_steps.go and finalize.go. Make only the described changes.
+          files:
+            - pkg/engine/finalize_steps.go
+            - pkg/engine/finalize.go
+        - id: C
+          task: |
+            ## Role
+            Fix P0-4: E37 violated — critic ISSUES verdict not checked, scout proceeds
+            to REVIEWED state regardless of critic outcome.
+
+            ## Problem
+            scout_run.go:260-266: After RunCritic returns, res.CriticVerdict is set but
+            the verdict is NEVER inspected. Execution falls through to REVIEWED state even
+            when verdict == "ISSUES". This violates E37 which states: "If overall verdict
+            is ISSUES, orchestrator does NOT enter REVIEWED state."
+
+            ## Fix
+            After the RunCritic call (around line 260-264), add a check:
+            ```go
+            if criticRes.Verdict == "ISSUES" {
+                // E37: critic gate failed — do not advance to REVIEWED
+                return RunScoutFullResult{
+                    CriticVerdict: criticRes.Verdict,
+                    IMPLPath:      res.IMPLPath,
+                }, fmt.Errorf("E37 critic gate: verdict ISSUES — resolve critic findings before proceeding")
+            }
+            ```
+            NOTE: This uses the current (T, error) signature since the result.Result migration
+            happens in Wave 3 Agent K. For now, use fmt.Errorf. Wave 3 will replace it with
+            result.NewFailure using CodeCriticGateFailed.
+
+            Also add a comment above the RunCritic call referencing E37.
+
+            ## Verification gate
+            go build ./pkg/engine/...
+            go vet ./pkg/engine/...
+            go test ./pkg/engine/... -run TestScout
+
+            ## Constraints
+            Own ONLY scout_run.go. Make only the E37 enforcement change.
+          files:
+            - pkg/engine/scout_run.go
+        - id: D
+          task: |
+            ## Role
+            Fix P0-5: E26 violated — integration agent AllowedPathPrefixes constraint
+            computed then immediately discarded.
+
+            ## Problem
+            integration_runner.go:136-137:
+              constraints := buildConstraints(manifest, "integrator", "integrator")
+              _ = constraints  // comment says "future use"
+            The AllowedPathPrefixes from the integrator constraint role is never wired into
+            the integration agent's execution. The agent can modify any file in the repo,
+            violating E26's I1 enforcement requirement.
+
+            ## Fix
+            1. Read the current integration_runner.go to understand how the agent is launched
+               (look for the ExecuteStreamingWithTools or similar call after line 137).
+            2. Find where the integration agent's tool configuration or system prompt is
+               built. Wire constraints.AllowedPathPrefixes into that configuration.
+            3. If the runner API does not support AllowedPathPrefixes directly, add it to
+               the system prompt as a restriction: build a string listing the allowed paths
+               and prepend it to the integration agent's instructions.
+            4. Remove the `_ = constraints` line and replace with actual wiring.
+            5. Also delete the dead function integrationPromptPath() at lines ~289-301
+               (it is declared but never called anywhere).
+
+            ## Verification gate
+            go build ./pkg/engine/...
+            go vet ./pkg/engine/...
+
+            ## Constraints
+            Own ONLY integration_runner.go.
+          files:
+            - pkg/engine/integration_runner.go
+        - id: E
+          task: |
+            ## Role
+            Fix P0-6, P0-7, P0-8 in program_tier_loop.go: findIMPLDocPath dead loop,
+            double gate execution, and missing P1+ conflict check.
+
+            ## Fix 1: findIMPLDocPath (lines ~497-510)
+            The function iterates a locations slice but returns on the first iteration —
+            the loop is dead code; only the first candidate is ever tried; no os.Stat check.
+            Rewrite:
+            NOTE: The actual signature is findIMPLDocPath(repoPath, slug string) — it takes
+            TWO arguments. The repoPath is needed to construct absolute paths for os.Stat.
+            Read the actual function signature before rewriting.
+
+            ```go
+            func findIMPLDocPath(repoPath, slug string) string {
+                locations := []string{
+                    filepath.Join(repoPath, "docs/IMPL", fmt.Sprintf("IMPL-%s.yaml", slug)),
+                    filepath.Join(repoPath, "docs/IMPL/complete", fmt.Sprintf("IMPL-%s.yaml", slug)),
+                    filepath.Join(repoPath, "docs/IMPL", fmt.Sprintf("IMPL-%s.yml", slug)),
+                }
+                for _, loc := range locations {
+                    if _, err := os.Stat(loc); err == nil {
+                        return loc
+                    }
+                }
+                return ""
+            }
+            ```
+            Update the caller to treat "" as a fatal error, not a silent skip.
+
+            ## Fix 2: double gate execution (lines ~229-234 and ~299)
+            In auto mode, protocol.RunTierGate is called at ~line 229, then again inside
+            AdvanceTierAutomatically at ~line 299. Remove the first call (lines ~229-234)
+            entirely. AdvanceTierAutomatically owns the canonical gate invocation.
+
+            ## Fix 3: missing P1+ conflict check (~line 100)
+            After PartitionIMPLsByStatus and before any scout/wave is launched, add:
+            ```go
+            if err := protocol.CheckIMPLConflicts(ctx, tierSlugs, opts.RepoPath); err != nil {
+                return nil, fmt.Errorf("P1+ tier conflict check failed: %w", err)
+            }
+            ```
+            (Use the actual function name — verify it exists in pkg/protocol; if the function
+            is named differently, use the correct name. If it does not exist, check if
+            ValidateProgramImportMode covers this; if not, add a TODO comment and skip.)
+            NOTE: Wave 3 Agent I will migrate to result.Result; use fmt.Errorf for now.
+
+            ## Verification gate
+            go build ./pkg/engine/...
+            go vet ./pkg/engine/...
+            go test ./pkg/engine/... -run TestTierLoop
+
+            ## Constraints
+            Own ONLY program_tier_loop.go.
+          files:
+            - pkg/engine/program_tier_loop.go
+    - number: 2
+      agents:
+        - id: F
+          task: |
+            ## Role
+            Migrate prepare_agent.go to result.Result[T]. Also fix FilesOwned count and
+            YAML quoting in saw_name frontmatter. Wave 1 Agent A already fixed prepare.go's
+            P0 issue; you only own prepare_agent.go in this wave.
+
+            ## What to implement
+
+            ### prepare_agent.go
+            1. Migrate PrepareAgent to result.Result[PrepareAgentResult]:
+               - Change signature to: func PrepareAgent(ctx context.Context, opts PrepareAgentOpts) result.Result[PrepareAgentResult]
+               - Replace all fmt.Errorf returns with result.NewFailure using appropriate codes
+               - Replace final return with result.NewSuccess(result)
+            2. Fix FilesOwned (line ~266): change len(agentFiles) to len(ownedSet) to count
+               the merged set from agent.Files + file_ownership entries.
+            3. Fix saw_name YAML quoting (line ~111): currently uses bare %s which produces
+               invalid YAML for values with brackets. Change to single-quoted YAML string:
+               fmt.Sprintf("'%s'", sawName) or equivalent safe YAML quoting.
+               NOTE: prepare.go has the same issue at line ~893 but is owned by Wave 1
+               Agent A — do NOT touch prepare.go.
+
+            ## Interfaces to implement
+            See interface_contracts: PrepareAgent (new signature).
+
+            ## Verification gate
+            go build ./pkg/engine/...
+            go vet ./pkg/engine/...
+            go test ./pkg/engine/... -run TestPrepare
+
+            ## Constraints
+            Own ONLY prepare_agent.go. Do not touch prepare.go.
+          files:
+            - pkg/engine/prepare_agent.go
+          dependencies:
+            - A
+        - id: G
+          task: |
+            ## Role
+            Migrate finalize_tier.go and finalize_impl.go to result.Result[T].
+            Wave 1 Agent B already fixed finalize.go and finalize_steps.go P0 issues.
+
+            ## finalize_tier.go
+            1. Migrate FinalizeTierEngine to result.Result[FinalizeTierResult]:
+               - Change signature to return result.Result[FinalizeTierResult]
+               - FinalizeTierResult.Errors []string → []result.SAWError
+               - Replace fmt.Errorf returns with result.NewFailure
+               - Append errors as result.SAWError via result.NewError(code, msg)
+            2. Investigate the double manifest parse (line ~54 and ~142). Read the code
+               between the two parses; if no disk write occurs between them that would
+               require a re-read, remove the second parse and use the in-memory manifest.
+
+            ## finalize_impl.go
+            1. FinalizeIMPLEngine currently returns BOTH result.Result[T] AND error — dual
+               channel signaling. Remove the error return. Migrate cancellation path to
+               result.NewFailure with CodeContextCancelled (check if this constant exists
+               in codes.go; if not use the closest equivalent).
+            2. Change signature to: func FinalizeIMPLEngine(ctx context.Context, opts FinalizeIMPLEngineOpts) result.Result[protocol.FinalizeIMPLData]
+
+            ## Verification gate
+            go build ./pkg/engine/...
+            go vet ./pkg/engine/...
+            go test ./pkg/engine/... -run TestFinalize
+
+            ## Constraints
+            Own ONLY finalize_tier.go and finalize_impl.go.
+          files:
+            - pkg/engine/finalize_tier.go
+            - pkg/engine/finalize_impl.go
+          dependencies:
+            - B
+        - id: H
+          task: |
+            ## Role
+            Migrate run_wave_atomic.go, run_wave_full.go, and runner_wave_structured.go
+            to result.Result[T]. Fix context.TODO() in captureSnapshot. Fix silent error
+            swallow in runner_wave_structured.go.
+
+            ## run_wave_atomic.go
+            1. Migrate RunWaveTransaction (and any other public functions) to result.Result[T].
+            2. captureSnapshot (line ~37): uses context.TODO() to call protocol.Load.
+               Add ctx context.Context parameter to captureSnapshot and thread caller's ctx.
+            3. restoreSnapshot (line ~59): uses context.Background() — this is INTENTIONAL
+               (rollback must complete even if caller context is cancelled). Do NOT change
+               the value; add a comment: "// context.Background() intentional: rollback must
+               complete regardless of caller cancellation."
+
+            ## run_wave_full.go
+            1. Migrate primary export to result.Result[T].
+            2. Use LSP find-references to check if RunWaveFull has any production callers.
+               If no callers exist outside test files, add // Deprecated: no production callers.
+               If callers exist, migrate them in the same wave (you own this file).
+
+            ## runner_wave_structured.go
+            1. Migrate RunWaveAgentStructured to result.Result[CompletionReport].
+            2. Fix line ~131: protocol.WithCompletionReportLock(context.TODO(), ...) →
+               use caller's ctx parameter.
+            3. Fix line ~151: finalManifest, _ := protocol.Load(context.TODO(), opts.IMPLPath)
+               The error is silently discarded. Fix:
+               finalManifest, loadErr := protocol.Load(ctx, opts.IMPLPath)
+               if loadErr != nil {
+                   // log warn but don't fail — return the completion report we have
+                   slog.WarnContext(ctx, "failed to reload manifest after save", "err", loadErr)
+               }
+
+            ## Verification gate
+            go build ./pkg/engine/...
+            go vet ./pkg/engine/...
+
+            ## Constraints
+            Own ONLY run_wave_atomic.go, run_wave_full.go, runner_wave_structured.go.
+          files:
+            - pkg/engine/run_wave_atomic.go
+            - pkg/engine/run_wave_full.go
+            - pkg/engine/runner_wave_structured.go
+    - number: 3
+      agents:
+        - id: I
+          task: |
+            ## Role
+            Migrate program_auto.go and mark_program_complete.go to result.Result[T].
+            Add REPLANNING state write and manifest write after wave completion in
+            program_tier_loop.go. Wave 1 Agent E fixed program_tier_loop.go P0 issues;
+            you continue with additional fixes.
+
+            ## program_auto.go
+            1. AdvanceTierAutomatically → result.Result[TierAdvanceResult]
+            2. ReplanProgram → result.Result[ReplanResult]
+            3. Replace fmt.Errorf wrapping of result.Result errors — instead propagate
+               the structured SAWError codes upward.
+
+            ## mark_program_complete.go
+            1. MarkProgramComplete → result.Result[MarkProgramCompleteResult]
+
+            ## program_tier_loop.go (P4 conformance additions)
+            NOTE: Wave 1 Agent E owns program_tier_loop.go. In Wave 3 you also own it
+            (sequential waves, disjoint work items).
+            1. After each wave completes in the tier loop (~line 209, waveProgress[slug]=waveNum),
+               add a manifest write to persist the wave completion status to disk.
+               Use the appropriate sawtools state-update call or protocol.Save.
+            2. When AutoTriggerReplan fires (~line 256), write REPLANNING state to the
+               manifest before the replan call.
+            3. Migrate RunTierLoop to result.Result[TierLoopResult].
+
+            ## Interfaces to implement
+            See interface_contracts: RunTierLoop (new signature).
+
+            ## Verification gate
+            go build ./pkg/engine/...
+            go vet ./pkg/engine/...
+            go test ./pkg/engine/... -run TestTierLoop
+
+            ## Constraints
+            Own program_auto.go, mark_program_complete.go, program_tier_loop.go.
+          files:
+            - pkg/engine/program_auto.go
+            - pkg/engine/mark_program_complete.go
+            - pkg/engine/program_tier_loop.go
+          dependencies:
+            - E
+        - id: J
+          task: |
+            ## Role
+            Migrate import_impls.go and targeted functions in runner.go to result.Result[T].
+            Fix context.TODO() usage. Remove dead code from runner.go.
+
+            ## import_impls.go
+            1. ImportImpls → result.Result[protocol.ImportIMPLsData]
+            2. Fix line ~83: protocol.Load(context.TODO(), ...) — the ctx param is a blank
+               identifier (_). Change the function signature to accept ctx context.Context
+               and thread it through to protocol.Load.
+            3. Replace fmt.Fprintf(os.Stderr, ...) with slog.WarnContext(ctx, ...).
+
+            ## runner.go (surgical changes only — do NOT refactor the whole file)
+            1. LoadTypePromptWithRefs (line ~655) → result.Result[string]
+            2. Fix runScoutAutomation (lines ~1168, ~1211): replace context.TODO()/
+               context.Background() with the ctx parameter available in RunScout.
+               Thread ctx through to runScoutAutomation.
+            3. Delete gateChannels sync.Map (~line 550) — has zero callers in committed code.
+            4. Delete startWaveWithGate function (~line 1452) — zero callers.
+
+            ## Verification gate
+            go build ./pkg/engine/...
+            go vet ./pkg/engine/...
+
+            ## Constraints
+            Own import_impls.go and runner.go. For runner.go: ONLY the 4 changes above.
+            Do NOT refactor or restructure runner.go beyond these targeted changes.
+          files:
+            - pkg/engine/import_impls.go
+            - pkg/engine/runner.go
+        - id: K
+          task: |
+            ## Role
+            Migrate scout_run.go and scout_correction_loop.go to result.Result[T].
+            Fix context.TODO() in scout_correction_loop.go.
+            Wave 1 Agent C added E37 enforcement to scout_run.go; build on that.
+
+            ## scout_run.go
+            1. RunScoutFull → result.Result[RunScoutFullResult] (12 fmt.Errorf paths → codes).
+               The E37 check added by Wave 1 Agent C currently returns fmt.Errorf — migrate
+               that to result.NewFailure with CodeCriticGateFailed (use string literal
+               "P009_CRITIC_GATE_FAILED" for now; Wave 4 Agent N adds the named constant).
+            2. Fix any remaining context.TODO() calls.
+            3. Fix "C9: self-healing validation" comment at line ~167 — this rule is not
+               defined in the protocol spec. Change the comment to describe the behavior
+               without citing an undefined rule number.
+
+            ## scout_correction_loop.go
+            1. Fix lines ~174,184,193: validateIMPLDoc and setIMPLStateBlocked use
+               context.TODO(). Thread the caller's ctx through to both.
+            2. Migrate ScoutCorrectionLoop to result.Result[T] if it is not already.
+
+            ## Interfaces to implement
+            See interface_contracts: RunScoutFull (new signature).
+
+            ## Verification gate
+            go build ./pkg/engine/...
+            go vet ./pkg/engine/...
+            go test ./pkg/engine/... -run TestScout
+
+            ## Constraints
+            Own scout_run.go and scout_correction_loop.go.
+          files:
+            - pkg/engine/scout_run.go
+            - pkg/engine/scout_correction_loop.go
+          dependencies:
+            - C
+        - id: L
+          task: |
+            ## Role
+            Migrate critic.go and closed_loop_gate.go to result.Result[T].
+            Fix "R3" undefined rule reference in closed_loop_gate.go.
+
+            ## critic.go
+            1. BuildCriticPrompt → result.Result[string]
+            2. RunCritic → result.Result[RunCriticResult]
+            3. Replace all fmt.Errorf with result.NewFailure using appropriate codes.
+
+            ## closed_loop_gate.go
+            1. ClosedLoopGateRetry → result.Result[ClosedLoopRetryResult]
+            2. Validation errors at lines ~74,77,80: use result.NewFatal with
+               "K005_GATE_VALIDATION_FAILED" (Wave 4 adds the constant; use string literal now).
+            3. Fix "R3" reference at lines ~15,68: "R3" is not defined in the protocol spec.
+               Remove the "R3:" citation and describe the behavior directly in the comment.
+               Example: change "R3: pre-merge per-agent gate retry" to
+               "pre-merge per-agent gate retry (closed-loop: fix attempt + re-run gate)".
+
+            ## Verification gate
+            go build ./pkg/engine/...
+            go vet ./pkg/engine/...
+            go test ./pkg/engine/... -run TestCritic
+
+            ## Constraints
+            Own critic.go and closed_loop_gate.go.
+          files:
+            - pkg/engine/critic.go
+            - pkg/engine/closed_loop_gate.go
+        - id: M
+          task: |
+            ## Role
+            Migrate constraints.go, init_engine.go, and debug_journal.go to result.Result[T].
+            Add ctx parameters to constraints functions.
+
+            ## constraints.go
+            1. BuildWaveConstraints: add ctx context.Context as first param; return
+               result.Result[*tools.Constraints]. Thread ctx to protocol.Load.
+            2. BuildIntegratorConstraints: same changes.
+            3. Replace fmt.Errorf with result.NewFailure using appropriate codes
+               (CodeIMPLParseFailed or similar for load failures).
+
+            ## init_engine.go
+            1. RunInit → result.Result[InitResult]
+            2. The AlreadyExists early-return path: currently returns non-nil InitResult
+               alongside an error. Change to result.NewPartial(InitResult{AlreadyExists: true},
+               []result.SAWError{result.NewError("N092_ENGINE_ALREADY_INITIALIZED", "config already exists")}).
+               (Wave 4 Agent N adds CodeEngineAlreadyInitialized constant; use string literal for now.)
+            3. Replace all fmt.Errorf with result.NewFailure using "N091_ENGINE_INIT_FAILED" string.
+               (Wave 4 Agent N adds CodeEngineInitFailed constant; use string literal for now.)
+
+            ## debug_journal.go
+            1. DebugJournal → result.Result[DebugJournalResult]
+            2. LoadJournalEntries → result.Result[[]journal.ToolEntry]
+            3. The inner exportHTMLTimeline already returns result.Result — stop re-wrapping
+               its errors with fmt.Errorf. Propagate its errors directly upward.
+            4. Delete extractVerificationGates (~line 576) — no callers in main branch.
+            5. Delete formatFileChange (~line 679) — no callers in main branch.
+               (Verify zero callers via LSP find-references before deleting.)
+
+            ## Interfaces to implement
+            See interface_contracts: BuildWaveConstraints, BuildIntegratorConstraints.
+
+            ## Verification gate
+            go build ./pkg/engine/...
+            go vet ./pkg/engine/...
+
+            ## Constraints
+            Own constraints.go, init_engine.go, debug_journal.go.
+          files:
+            - pkg/engine/constraints.go
+            - pkg/engine/init_engine.go
+            - pkg/engine/debug_journal.go
+    - number: 4
+      agents:
+        - id: "N"
+          task: |
+            ## Role
+            Add new error code constants to pkg/result/codes.go.
+            Replace inline string literals in pkg/gatecache/cache.go with K-range constants.
+
+            ## pkg/result/codes.go
+            Add a new comment block and const group after the existing Z-domain codes.
+            CRITICAL: Check existing codes first. The following already exist and must NOT
+            be redefined: CodeDisjointOwnership (V002), CodeWaveSequencingFailed (N026).
+            The I-range is Agent ID generation (I001=CodeAgentCountInvalid). N003=CodeScoutFailed.
+            P001=CodeStateTransitionInvalid. K005=CodeCachePutCancelled. Do NOT use these slots.
+
+            Add ONLY these new constants, in the correct range blocks:
+
+            After N090 in the N-range const block:
+            ```go
+            // N091: engine init failed
+            CodeEngineInitFailed         = "N091_ENGINE_INIT_FAILED"
+            // N092: engine already initialized
+            CodeEngineAlreadyInitialized = "N092_ENGINE_ALREADY_INITIALIZED"
+            // N093: finalize step failed
+            CodeFinalizeStepFailed       = "N093_FINALIZE_STEP_FAILED"
+            ```
+
+            After B008 in the B-range const block:
+            ```go
+            // B009: gate validation failed
+            CodeGateValidationFailed = "B009_GATE_VALIDATION_FAILED"
+            ```
+
+            After P007 in the P-range const block:
+            ```go
+            // P008: E41 type collision fatal — fatal DetectCollisions infrastructure failure
+            CodeTypeCollisionFatal   = "P008_TYPE_COLLISION_FATAL"
+            // P009: E37 critic gate failed
+            CodeCriticGateFailed     = "P009_CRITIC_GATE_FAILED"
+            // P010: P1+ tier conflict detected
+            CodeTierConflictDetected = "P010_TIER_CONFLICT_DETECTED"
+            ```
+
+            Also update the package-level godoc comment to list the new domain ranges.
+
+            ## pkg/gatecache/cache.go
+            Read lines 122,129,135,141,180,184,188 to find the inline error code strings
+            (e.g. "CACHE_BUILD_KEY_CANCELLED", "CACHE_MISS", etc.).
+            Check what K-range constants already exist in codes.go (K001-K099).
+            For each inline string literal that matches or should map to a K-range constant:
+            - If the constant exists: replace the literal with the constant name.
+            - If the constant doesn't exist: add it to codes.go first, then use it.
+
+            ## Tests
+            Update pkg/result/codes_test.go to include the new constants in the uniqueness test.
+
+            ## Verification gate
+            go build ./pkg/result/... ./pkg/gatecache/...
+            go test ./pkg/result/... ./pkg/gatecache/...
+
+            ## Constraints
+            Own pkg/result/codes.go, pkg/result/codes_test.go, pkg/gatecache/cache.go.
+          files:
+            - pkg/result/codes.go
+            - pkg/result/codes_test.go
+            - pkg/gatecache/cache.go
+          dependencies:
+            - I
+            - J
+            - K
+            - L
+            - M
+        - id: O
+          task: |
+            ## Role
+            Delete dead code: engine/gate_cache.go and engine/gate_cache_test.go.
+            These are entirely superseded by pkg/gatecache (file-backed, TTL, E38-conformant).
+            Zero production callers exist.
+
+            ## Steps
+            1. Use LSP find-references on GateResultCache and NewGateResultCache to confirm
+               zero callers outside of gate_cache_test.go itself.
+            2. If confirmed zero callers: replace gate_cache.go content with just the package
+               declaration (package engine) — or delete the file entirely if the build system
+               allows it. Prefer replacing with a tombstone comment:
+               ```go
+               // Package engine — gate_cache.go removed.
+               // Gate result caching is handled by pkg/gatecache (file-backed, E38-conformant).
+               // See: pkg/gatecache/cache.go
+               package engine
+               ```
+            3. Delete gate_cache_test.go (or replace with an empty file with just package engine_test).
+               Go requires test files to not have leftover test functions if the tested type is gone.
+               Safest: replace with `package engine_test` (empty).
+
+            ## Verification gate
+            go build ./pkg/engine/...
+            go test ./pkg/engine/...
+
+            ## Constraints
+            Own gate_cache.go and gate_cache_test.go only.
+          files:
+            - pkg/engine/gate_cache.go
+            - pkg/engine/gate_cache_test.go
+          dependencies:
+            - I
+            - J
+            - K
+            - L
+            - M
+        - id: P
+          task: |
+            ## Role
+            Fix doc.go (stale/wrong examples) and gowork_steps.go (status inconsistency).
+
+            ## pkg/engine/doc.go
+            Fix all stale examples:
+            1. Line ~8: change Prompt field to Feature in the RunScoutOpts example.
+            2. Line ~40: update RunScaffold example — the actual signature is
+               RunScaffold(opts RunScaffoldOpts) result.Result[ScaffoldData].
+               Update the example to use opts struct and unwrap result.Result.
+            3. Line ~52: ChatOpts does not exist; the type is RunChatOpts.
+               Update the example; remove the SystemPrompt field (it doesn't exist).
+            4. Line ~86: update the step function signature example to reflect the actual
+               Step* function pattern (read one real Step* function for the current signature).
+            5. Line ~126: remove the stale note "StepGoWorkSetup and StepGoWorkRestore will
+               be added" — they exist now in gowork_steps.go.
+
+            ## gowork_steps.go (line ~23-25)
+            The non-Go-repo path emits a "skipped" event but returns StepResult{Status:"success"}.
+            These should be consistent. Change the returned StepResult.Status to "skipped" to
+            match the emitted event, OR change both to "success". Pick "skipped" as it more
+            accurately describes the step (it was skipped, not successfully executed).
+
+            ## Verification gate
+            go build ./pkg/engine/...
+            go vet ./pkg/engine/...
+
+            ## Constraints
+            Own doc.go and gowork_steps.go. Make only the described documentation/status fixes.
+          files:
+            - pkg/engine/doc.go
+            - pkg/engine/gowork_steps.go
+          dependencies:
+            - F
+            - G
+            - H
+        - id: Q
+          task: |
+            ## Role
+            Fix protocol documentation drift: undefined "R3" and "C9" rule references in
+            Go comments. Add E27 cross-reference to integration_runner.go. Document daemon
+            supervised mode block behavior. Fix closed_loop_gate.go R3 comment (Wave 3
+            Agent L already removed R3 from that file; if done, verify and skip).
+
+            ## pkg/engine/integration_runner.go
+            (Wave 1 Agent D and Wave 3 already modified this file; you only add comments.)
+            Add a package-level or function-level godoc comment at the top of RunIntegrationAgent
+            referencing E26 and E27:
+            "// RunIntegrationAgent implements E26 (reactive integration gap wiring).
+            // For planned integration waves (type: integration), see E27 and the wave
+            // dispatcher in runner.go."
+
+            ## pkg/engine/daemon.go
+            Add a godoc comment to RunDaemon or DaemonOpts explaining the supervised mode
+            behavior: when the daemon is in supervised mode, it blocks on ctx.Done() waiting
+            for external cancellation. To unblock, cancel the context (e.g., send SIGINT).
+
+            ## pkg/engine/closed_loop_gate.go
+            Verify Wave 3 Agent L removed the "R3" references. If they are still present,
+            remove them now (change "R3: pre-merge per-agent gate retry" to a plain description).
+
+            ## /Users/dayna.blackwell/code/scout-and-wave/protocol/execution-rules.md
+            This is in the PROTOCOL repo (different from the engine repo).
+            Open the file and search for "R3" and "C9".
+            - If R3 is undefined: add a brief definition near the area the Go code references
+              it (pre-merge per-agent gate retry with fix attempts).
+            - If C9 is undefined: add a brief definition (self-healing validation: automatic
+              correction loop for scout validation failures, see E16).
+            - If both are already defined, no change needed — just remove the Go comment
+              citations from the engine files.
+
+            ## Verification gate
+            go build ./pkg/engine/...
+            go vet ./pkg/engine/...
+
+            ## Constraints
+            Own integration_runner.go (comment-only changes), daemon.go (comment-only),
+            closed_loop_gate.go (comment-only if needed), and
+            /Users/dayna.blackwell/code/scout-and-wave/protocol/execution-rules.md.
+            Do NOT make logic changes to any engine files.
+          files:
+            - pkg/engine/integration_runner.go
+            - pkg/engine/daemon.go
+            - protocol/execution-rules.md
+          dependencies:
+            - K
+            - L
+            - I
+            - J
+            - M
+    - number: 5
+      agents:
+        - id: R
+          task: |
+            ## Role
+            Fix struct/API inconsistencies in runner_data_types.go and step_types.go.
+
+            ## runner_data_types.go
+            1. Rename UpdateStatusFailedPayload.Wave to .Slug. This field holds a slug
+               string (not a wave number), matching WaveGatePendingPayload.Slug and
+               WaveGateResolvedPayload.Slug. Update the field name and any references
+               to it within the file. Also grep for callers of this field in pkg/engine/
+               and cmd/ and update them.
+            2. Update the godoc comment on the field.
+
+            ## step_types.go
+            1. Update StepResult.Status docstring: add "warning" as a valid fourth value
+               (currently only "success", "failed", "skipped" are listed).
+            2. Standardize EventCallback status: EventCallback uses "complete" while
+               StepResult uses "success" for the same outcome. Before changing, use
+               LSP find-references on EventCallback to check if external packages outside
+               pkg/engine consume this type. If external callers exist and check for
+               "complete", adding "success" would be a silent behavioral change for them.
+               Safe approach: update StepResult.Status docstring to also enumerate "complete"
+               as an alias for "success" (document both as valid), rather than changing
+               the emitted string values. Only change emitted "complete" → "success" if
+               no external callers check the string value.
+            3. Remove the NoGoWork deprecated field (step_types.go:61) ONLY after
+               confirming Wave 5 Agent S has removed the reference in cmd/sawtools/prepare_wave.go.
+               If S is in the same wave, coordinate: either you remove the field assuming S
+               removes the reference, or leave a // TODO comment for a follow-up.
+
+            ## Verification gate
+            go build ./pkg/engine/... ./cmd/sawtools/...
+            go vet ./pkg/engine/...
+
+            ## Constraints
+            Own runner_data_types.go and step_types.go.
+          files:
+            - pkg/engine/runner_data_types.go
+            - pkg/engine/step_types.go
+          dependencies:
+            - "N"
+            - O
+            - P
+            - Q
+        - id: S
+          task: |
+            ## Role
+            Fix chat.go (duplicate provider routing), auto_remediate.go (swallowed error),
+            daemon.go (structured error propagation), program_wire_init.go (document init),
+            and cmd/sawtools/prepare_wave.go (remove NoGoWork reference).
+
+            ## chat.go
+            Replace the manual provider-prefix routing block (lines ~63-94) with a call
+            to orchestrator.NewBackendFromModel(opts.ChatModel). This function already
+            handles all provider prefixes (openai:, ollama:, lmstudio:, anthropic:,
+            bedrock:, cli:) centrally. Delete chatExpandBedrockModelID,
+            chatParseProviderPrefix, and the manual routing block.
+
+            ## auto_remediate.go
+            Fix line ~110-112: the fix agent error is discarded:
+              if err := autoRemediateFixBuildFailureFunc(...); err != nil { _ = err }
+            Replace with:
+              if err := autoRemediateFixBuildFailureFunc(...); err != nil {
+                  slog.WarnContext(ctx, "auto-remediate fix agent failed", "err", err)
+              }
+
+            ## daemon.go
+            Fix the result.Result error flattening in daemonRunScoutFunc and
+            daemonMarkIMPLCompleteFunc (~lines 42-73): these extract Errors[0].Message
+            as a plain string, discarding the error code. Instead, wrap the SAWError
+            in a structured error that preserves the Code field, e.g.:
+              return fmt.Errorf("[%s] %s", res.Errors[0].Code, res.Errors[0].Message)
+            This preserves the code in the error message even in the plain error path.
+
+            ## program_wire_init.go
+            Add a clear comment to the init() function explaining:
+            1. Why it uses init() (wave-agent compilation independence — critic.go may not
+               be compiled in all binary variants).
+            2. How to override it in tests (set the function variable before calling).
+            3. A TODO to replace with explicit injection when compilation independence
+               constraint is lifted.
+
+            ## cmd/sawtools/prepare_wave.go
+            Line ~98: remove the NoGoWork: noGoWork assignment and replace with
+            NoWorkspaceSetup: noGoWork (or the appropriate replacement flag).
+            This unblocks the step_types.go NoGoWork field removal by Wave 5 Agent R.
+
+            ## Verification gate
+            go build ./pkg/engine/... ./cmd/sawtools/...
+            go vet ./...
+            go test ./pkg/engine/...
+
+            ## Constraints
+            Own chat.go, auto_remediate.go, daemon.go, program_wire_init.go,
+            cmd/sawtools/prepare_wave.go.
+          files:
+            - pkg/engine/chat.go
+            - pkg/engine/auto_remediate.go
+            - pkg/engine/daemon.go
+            - pkg/engine/program_wire_init.go
+            - cmd/sawtools/prepare_wave.go
+          dependencies:
+            - "N"
+            - O
+            - P
+            - Q
+        - id: T
+          task: |
+            ## Role
+            Fix context.TODO() in resolve_conflicts.go and fix_build.go. Fix redundant
+            manifest re-parse in finalize_tier.go. Replace hardcoded skill file list
+            in verify_install.go.
+
+            ## resolve_conflicts.go
+            Line ~50: protocol.Load(context.TODO(), opts.IMPLPath) → protocol.Load(ctx, opts.IMPLPath).
+            The ctx parameter is available in ResolveConflicts.
+
+            ## fix_build.go
+            Line ~37: same fix — protocol.Load(context.TODO(), ...) → protocol.Load(ctx, ...).
+
+            ## finalize_tier.go
+            (Wave 2 Agent G already migrated the result.Result; you fix the double-parse.)
+            Line ~142: manifest is re-parsed a second time with comment "Re-parse manifest
+            so enriched statuses are picked up". Investigate: if no code between the two
+            parses writes enriched statuses to disk, remove the second parse and use the
+            in-memory manifest from the first parse. Update the comment if the re-parse
+            is genuinely necessary.
+
+            ## verify_install.go
+            Line ~220: required := []string{"SKILL.md", "agent-template.md", "saw-bootstrap.md"}
+            This hardcoded list will drift. Replace with a directory scan:
+            Read the skill directory path (already in scope) and filter for .md files,
+            or read from a manifest file if one exists. If neither is practical, add a
+            comment: "// Update this list when skill files are added or renamed."
+
+            ## Verification gate
+            go build ./pkg/engine/...
+            go vet ./pkg/engine/...
+            go test ./pkg/engine/...
+
+            ## Constraints
+            Own resolve_conflicts.go, fix_build.go, finalize_tier.go (context+parse only),
+            verify_install.go.
+          files:
+            - pkg/engine/resolve_conflicts.go
+            - pkg/engine/fix_build.go
+            - pkg/engine/finalize_tier.go
+            - pkg/engine/verify_install.go
+          dependencies:
+            - G
+            - "N"
+            - O
+            - P
+            - Q
+        - id: U
+          task: |
+            ## Role
+            Update all cmd/sawtools callers broken by the result.Result[T] migrations
+            in Waves 2-4. This is a mechanical caller update — only change error handling
+            patterns, not business logic.
+
+            ## Steps
+            1. Use LSP find-references (or grep) to identify all cmd/sawtools files that
+               call the migrated functions:
+               - FinalizeWave, PrepareWave, PrepareAgent (Wave 2)
+               - RunTierLoop, AdvanceTierAutomatically, ImportImpls, LoadTypePromptWithRefs (Wave 3)
+               - RunScoutFull, ClosedLoopGateRetry, RunCritic (Wave 3)
+               - BuildWaveConstraints, BuildIntegratorConstraints, RunInit, DebugJournal (Wave 3)
+            2. For each call site, update from:
+               ```go
+               result, err := engine.SomeFunc(...)
+               if err != nil { return fmt.Errorf(...) }
+               ```
+               To:
+               ```go
+               res := engine.SomeFunc(...)
+               if res.IsFatal() {
+                   return fmt.Errorf("%s: %s", res.Errors[0].Code, res.Errors[0].Message)
+               }
+               result := res.GetData()
+               ```
+            3. Do NOT change any business logic, flag parsing, or output formatting.
+            4. Run go build ./cmd/sawtools/... after each file to catch compilation errors early.
+
+            ## Verification gate
+            go build ./...
+            go vet ./...
+            go test ./pkg/engine/... ./pkg/result/... ./pkg/gatecache/... ./cmd/sawtools/...
+
+            ## Constraints
+            Own cmd/sawtools/*.go files (except prepare_wave.go which Agent S owns).
+            Only change call-site error handling patterns.
+          files:
+            - cmd/sawtools/analyze_deps_cmd.go
+            - cmd/sawtools/run_scout_cmd.go
+            - cmd/sawtools/finalize_wave.go
+            - cmd/sawtools/prepare_wave.go
+            - cmd/sawtools/import_impls_cmd.go
+            - cmd/sawtools/debug_journal.go
+            - cmd/sawtools/finalize_impl_cmd.go
+          dependencies:
+            - I
+            - J
+            - K
+            - L
+            - M
+            - "N"
+            - O
+            - P
+            - Q
+quality_gates:
+    level: standard
+    gates:
+        - type: build
+          command: go build ./...
+          required: true
+        - type: lint
+          command: go vet ./...
+          required: true
+        - type: test
+          command: go test ./pkg/engine/... ./pkg/result/... ./pkg/gatecache/... ./cmd/sawtools/...
+          required: true
+pre_mortem:
+    overall_risk: high
+    rows:
+        - scenario: |
+            Waves 2-4 result.Result migrations break cmd/sawtools callers before Wave 5 Agent U
+            updates them. Build gate fails at Wave 3 or 4 merge.
+          likelihood: high
+          impact: high
+          mitigation: |
+            Wave 5 Agent U handles all caller updates. If go build ./... fails after Wave 2-3
+            merges, identify the specific callers and add them to Wave 5 Agent U scope before
+            proceeding. Each wave must pass go build ./pkg/engine/... (not ./...) to gate
+            locally; the full ./... gate runs at Wave 5 completion.
+        - scenario: |
+            scout_run.go is touched by Wave 1 (C), Wave 3 (K), and Wave 4 (Q). A merge
+            conflict occurs between K and Q since both touch comments in the same file.
+          likelihood: low
+          impact: medium
+          mitigation: |
+            Wave 4 Agent Q's changes to scout_run.go are comment-only (removing C9 reference).
+            Wave 3 Agent K does the result.Result migration. Since waves are sequential, K
+            merges first; Q sees the migrated file. Q should verify K's C9 fix is complete
+            before attempting changes.
+        - scenario: |
+            program_tier_loop.go owned by Wave 1 (E) and Wave 3 (I). Wave 3 merge conflict
+            if I modifies lines touched by E.
+          likelihood: medium
+          impact: medium
+          mitigation: |
+            Wave 1 Agent E's changes are confined to findIMPLDocPath, the double-gate call,
+            and CheckIMPLConflicts addition — all in the lower portion of the file. Wave 3
+            Agent I adds RunTierLoop result.Result migration and manifest writes — different
+            code areas. Mitigation: I's brief explicitly notes E's changes and avoids touching
+            them.
+        - scenario: |
+            Wave 4 Agent N adds new error code constants but Wave 2-3 agents already used
+            string literals for those codes. After Wave 4, the codes exist but aren't used.
+          likelihood: high
+          impact: low
+          mitigation: |
+            This is accepted technical debt. The string literals in Wave 2-3 are functionally
+            correct; Wave 4 constants are additive. A follow-up pass (or Wave 5) can replace
+            string literals with constants. Note this in Agent N's completion report.
+        - scenario: |
+            protocol/execution-rules.md write (Agent Q, Wave 4) is in a different repo
+            than the engine. Cross-repo commit may fail or be forgotten.
+          likelihood: medium
+          impact: low
+          mitigation: |
+            Agent Q brief explicitly lists both repo paths. Agent Q must commit to BOTH
+            repos before marking complete. The protocol repo commit is small (adding R3/C9
+            definitions or removing references).
+        - scenario: |
+            CheckIMPLConflicts may not exist in pkg/protocol under that exact name. Wave 1
+            Agent E may fail to find the function.
+          likelihood: medium
+          impact: medium
+          mitigation: |
+            Agent E brief instructs: verify function name exists; if not found, check
+            ValidateProgramImportMode or a similar function; if no equivalent exists,
+            add a TODO comment and skip. E37 and E26 P0 fixes are higher priority and must
+            not be blocked by this.
+critic_report:
+    verdict: PASS
+    agent_reviews:
+        A:
+            agent_id: A
+            verdict: PASS
+        B:
+            agent_id: B
+            verdict: PASS
+        C:
+            agent_id: C
+            verdict: PASS
+        D:
+            agent_id: D
+            verdict: PASS
+        E:
+            agent_id: E
+            verdict: ISSUES
+            issues:
+                - check: symbol_accuracy
+                  severity: error
+                  description: 'The proposed rewrite of findIMPLDocPath uses a single-parameter signature (func findIMPLDocPath(slug string) string) but the actual function at program_tier_loop.go:497 has two parameters: findIMPLDocPath(repoPath, slug string). The brief rewrite discards the repoPath parameter entirely. The replacement must retain or re-derive the repoPath to perform os.Stat calls on correct absolute paths.'
+                  file: pkg/engine/program_tier_loop.go
+                  symbol: findIMPLDocPath
+        F:
+            agent_id: F
+            verdict: PASS
+        G:
+            agent_id: G
+            verdict: ISSUES
+            issues:
+                - check: side_effect_completeness
+                  severity: warning
+                  description: Agent G changes FinalizeIMPLEngine to accept a new FinalizeIMPLEngineOpts struct (dropping the positional implPath, repoRoot string args). The caller at cmd/sawtools/finalize_impl_cmd.go:40 uses the old positional signature and is NOT listed in any agent file_ownership table. It is not owned by Agent U either. If G changes the signature, finalize_impl_cmd.go will fail to compile. Either add finalize_impl_cmd.go to G or U ownership, or keep positional args.
+                  file: cmd/sawtools/finalize_impl_cmd.go
+                  symbol: FinalizeIMPLEngine
+        H:
+            agent_id: H
+            verdict: PASS
+        I:
+            agent_id: I
+            verdict: PASS
+        J:
+            agent_id: J
+            verdict: PASS
+        K:
+            agent_id: K
+            verdict: PASS
+        L:
+            agent_id: L
+            verdict: PASS
+        M:
+            agent_id: M
+            verdict: PASS
+        "N":
+            agent_id: "N"
+            verdict: ISSUES
+            issues:
+                - check: symbol_accuracy
+                  severity: error
+                  description: CodeFinalizeStepFailed = "N003_FINALIZE_STEP_FAILED" collides with existing CodeScoutFailed = "N003_SCOUT_FAILED" at pkg/result/codes.go:138. N003 is already occupied. Use the next available N-range slot (N091 or higher based on current usage).
+                  file: pkg/result/codes.go
+                  symbol: CodeFinalizeStepFailed
+                - check: symbol_accuracy
+                  severity: error
+                  description: CodeDisjointOwnership = "O001_DISJOINT_OWNERSHIP" introduces a new Go symbol name CodeDisjointOwnership that already exists at pkg/result/codes.go:28 as CodeDisjointOwnership = "V002_DISJOINT_OWNERSHIP". This would be a duplicate declaration and will not compile. Either use a distinct symbol name or reuse the existing V002 constant.
+                  file: pkg/result/codes.go
+                  symbol: CodeDisjointOwnership
+                - check: symbol_accuracy
+                  severity: error
+                  description: CodeWaveSequencingFailed = "O002_WAVE_SEQUENCING_FAILED" introduces a new Go symbol name CodeWaveSequencingFailed that already exists at pkg/result/codes.go:174 as CodeWaveSequencingFailed = "N026_WAVE_SEQUENCING_FAILED". Duplicate symbol name; will not compile.
+                  file: pkg/result/codes.go
+                  symbol: CodeWaveSequencingFailed
+                - check: symbol_accuracy
+                  severity: error
+                  description: CodeTierConflictDetected = "P001_TIER_CONFLICT_DETECTED" collides with existing CodeStateTransitionInvalid = "P001_STATE_TRANSITION_INVALID" at pkg/result/codes.go:257. P001 is already occupied. Use the next available P-range slot (P008 or higher).
+                  file: pkg/result/codes.go
+                  symbol: CodeTierConflictDetected
+                - check: symbol_accuracy
+                  severity: error
+                  description: CodeGateValidationFailed = "K005_GATE_VALIDATION_FAILED" collides with existing CodeCachePutCancelled = "K005_CACHE_PUT_CANCELLED" at pkg/result/codes.go:314. K005 is already occupied. Use the next available K-range slot (K007 or higher).
+                  file: pkg/result/codes.go
+                  symbol: CodeGateValidationFailed
+                - check: symbol_accuracy
+                  severity: error
+                  description: CodeInitFailed = "I001_INIT_FAILED" collides with existing CodeAgentCountInvalid = "I001_AGENT_COUNT_INVALID" at pkg/result/codes.go:321. The I-range is documented as Agent ID generation errors (I001-I099), not Engine init codes. I001 is already occupied.
+                  file: pkg/result/codes.go
+                  symbol: CodeInitFailed
+                - check: symbol_accuracy
+                  severity: error
+                  description: CodeAlreadyInitialized = "I002_ALREADY_INITIALIZED" collides with existing CodeAgentCountMismatch = "I002_AGENT_COUNT_MISMATCH" at pkg/result/codes.go:322. I002 is already occupied.
+                  file: pkg/result/codes.go
+                  symbol: CodeAlreadyInitialized
+        O:
+            agent_id: O
+            verdict: PASS
+        P:
+            agent_id: P
+            verdict: ISSUES
+            issues:
+                - check: symbol_accuracy
+                  severity: warning
+                  description: doc.go line 8 currently uses Prompt as RunScoutOpts field. The actual RunScoutOpts struct at engine.go:49 uses Feature string not Prompt string. The brief says to change Prompt to Feature — this is correct and the fix direction is accurate.
+                  file: pkg/engine/doc.go
+                  symbol: RunScoutOpts.Feature
+                - check: symbol_accuracy
+                  severity: warning
+                  description: doc.go line ~52 uses ChatOpts type name. The actual type is RunChatOpts (chat.go:22, engine.go:127). The brief correctly identifies this as a fix needed. Also, RunChatOpts does NOT have a SystemPrompt field — confirmed by reading engine.go:127-134. Brief instruction to remove SystemPrompt field is correct.
+                  file: pkg/engine/doc.go
+                  symbol: RunChatOpts
+                - check: pattern_accuracy
+                  severity: warning
+                  description: 'doc.go line 125-126 contains the stale note: "Note: StepGoWorkSetup and StepGoWorkRestore will be added by the IMPL-gowork-lsp-setup wave." The brief correctly identifies this is stale since both functions now exist in gowork_steps.go. Fix direction is accurate.'
+                  file: pkg/engine/doc.go
+                  symbol: StepGoWorkSetup
+                - check: pattern_accuracy
+                  severity: warning
+                  description: 'gowork_steps.go line 24: StepGoWorkSetup emits event with status skipped but returns StepResult{Status: success} — confirmed. Brief instruction to change returned Status to skipped is accurate.'
+                  file: pkg/engine/gowork_steps.go
+                  symbol: StepGoWorkSetup
+        Q:
+            agent_id: Q
+            verdict: ISSUES
+            issues:
+                - check: file_existence
+                  severity: warning
+                  description: 'Agent Q brief and file_ownership table lists closed_loop_gate.go as owned by Q (Wave 4) but it is also owned by Wave 3 Agent L. In sequential waves this is valid — L modifies first, Q verifies. However, Q is a duplicate entry in the file_ownership for this file at Wave 4 without an explicit entry; the IMPL file_ownership table lists integration_runner.go and daemon.go for Q at wave 4 but not closed_loop_gate.go. The brief text says Q should check closed_loop_gate.go but it is not in Q file_ownership. This creates a gap: if L does not remove R3, Q has no file_ownership claim to make the change.'
+                  file: pkg/engine/closed_loop_gate.go
+                  symbol: R3
+                - check: pattern_accuracy
+                  severity: warning
+                  description: 'Agent Q brief says the protocol/execution-rules.md file is at /Users/dayna.blackwell/code/scout-and-wave/protocol/execution-rules.md (different repo). The file_ownership table entry shows relative path protocol/execution-rules.md without a repo field. The file exists in the separate scout-and-wave protocol repo. This cross-repo commit requires explicit repo context that the IMPL does not provide via a repositories field or repo: key in file_ownership.'
+                  file: protocol/execution-rules.md
+                  symbol: R3
+        R:
+            agent_id: R
+            verdict: ISSUES
+            issues:
+                - check: pattern_accuracy
+                  severity: warning
+                  description: Agent R brief says to change EventCallback status complete -> success everywhere it is emitted in gowork_steps.go and other engine files. However, step_types.go line 14 (the EventCallback docstring Agent R also owns) explicitly lists complete as a valid status value alongside running, failed, skipped, warning. Agent R is changing the contract and the docstring simultaneously, which is consistent, but callers outside pkg/engine/ that rely on receiving complete status strings will silently break. The brief does not mention checking external callers of emitStepEvent with complete.
+                  file: pkg/engine/step_types.go
+                  symbol: EventCallback
+        S:
+            agent_id: S
+            verdict: PASS
+        T:
+            agent_id: T
+            verdict: PASS
+        U:
+            agent_id: U
+            verdict: ISSUES
+            issues:
+                - check: side_effect_completeness
+                  severity: warning
+                  description: Agent U does not own cmd/sawtools/finalize_impl_cmd.go but this file calls engine.FinalizeIMPLEngine which Agent G changes signature on. If G changes to FinalizeIMPLEngineOpts, U will not update this caller. Coordinate with the G warning above.
+                  file: cmd/sawtools/finalize_impl_cmd.go
+                  symbol: FinalizeIMPLEngine
+    summary: 'Seven agents pass with no issues (A, B, C, D, F, H, J). Agent E has one error: the proposed rewrite of findIMPLDocPath drops the repoPath parameter that the current two-argument function requires. Agent G has one warning: FinalizeIMPLEngine caller finalize_impl_cmd.go is not in any agent file_ownership, creating a break when the signature changes to accept FinalizeIMPLEngineOpts. Agent K and Agent L both reference future constants from Agent N; this is pre-acknowledged in the IMPL as accepted technical debt. Agent N has five errors: three proposed constant string values collide with existing numeric codes (N003, P001, K005, I001, I002), and two proposed Go symbol names duplicate existing exported symbols (CodeDisjointOwnership already exists as V002, CodeWaveSequencingFailed already exists as N026). Agent Q has one warning: Agent Q is directed to also modify closed_loop_gate.go in the file_ownership table but that file is owned by Wave 3 Agent L; Q should only add comments if L has not already done so. Agents I, M, O, P, R, S, T, U pass file_existence and pattern_accuracy checks.'
+    reviewed_at: "2026-04-03T16:28:22Z"
+    issue_count: 13
+state: SCOUT_PENDING
+injection_method: hook
