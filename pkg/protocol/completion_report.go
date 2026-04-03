@@ -134,7 +134,7 @@ func (b *CompletionReportBuilder) AppendToManifest(manifest *IMPLManifest) error
 	if res.IsFatal() {
 		if len(res.Errors) > 0 {
 			// Preserve ErrAgentNotFound sentinel for callers that use errors.Is.
-			if res.Errors[0].Code == "REPORT_SET_FAILED" {
+			if res.Errors[0].Code == "N095_REPORT_SET_FAILED" {
 				agentID, _ := res.Errors[0].Context["agent_id"]
 				if agentID != "" {
 					return fmt.Errorf("%w: %s", ErrAgentNotFound, agentID)
