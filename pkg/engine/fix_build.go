@@ -34,7 +34,7 @@ func FixBuildFailure(ctx context.Context, opts FixBuildOpts) result.Result[FixBu
 		})
 	}
 
-	manifest, err := protocol.Load(context.TODO(), opts.IMPLPath)
+	manifest, err := protocol.Load(ctx, opts.IMPLPath)
 	if err != nil {
 		return result.NewFailure[FixBuildData]([]result.SAWError{
 			result.NewFatal(result.CodeFixBuildFailed, "engine.FixBuildFailure: load manifest failed").WithCause(err),

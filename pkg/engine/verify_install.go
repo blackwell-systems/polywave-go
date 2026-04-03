@@ -217,6 +217,7 @@ func checkSkillFiles() InstallCheck {
 	}
 
 	skillDir := filepath.Join(home, ".claude", "skills", "saw")
+	// Update this list when skill files are added or renamed.
 	required := []string{"SKILL.md", "agent-template.md", "saw-bootstrap.md"}
 	var missing []string
 
