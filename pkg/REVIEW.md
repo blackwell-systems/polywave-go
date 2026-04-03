@@ -15,7 +15,7 @@ Each reviewed package gets scouted → IMPL'd → closed before being marked don
 | agent/backend/cli | ✅ (with agent) | ✅ | ✅ |
 | agent/backend/openai | ✅ (with agent) | ✅ | ✅ |
 | agent/dedup | ✅ (with agent) | ✅ | ✅ |
-| analyzer | | | |
+| analyzer | ✅ | ✅ | ✅ |
 | autonomy | ✅ | ✅ | ✅ |
 | builddiag | ✅ | ❌ (NOT_SUITABLE) | N/A |
 | codereview | ✅ | ❌ (NOT_SUITABLE) | N/A |
@@ -23,7 +23,7 @@ Each reviewed package gets scouted → IMPL'd → closed before being marked don
 | commands | ✅ | ✅ | ✅ |
 | config | ✅ | ✅ | ✅ |
 | deps | ✅ | ✅ | ✅ |
-| engine | | | |
+| engine | ✅ | ✅ | ✅ |
 | errparse | ✅ | ✅ | ✅ |
 | format | ✅ | ❌ (NOT_SUITABLE) | N/A |
 | gatecache | ✅ | ✅ | ✅ |
