@@ -60,7 +60,9 @@ func WithCompletionReportLock(ctx context.Context, fn func(ctx context.Context) 
 // Cannot use LoadYAML: has specialized duplicate-key detection and orphaned-report validation
 // logic that the generic LoadYAML helper omits. LoadYAML delegates here for IMPLManifest.
 func Load(ctx context.Context, path string) (*IMPLManifest, error) {
-	_ = ctx // reserved for future cancellation support
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read manifest file: %w", err)
@@ -119,17 +121,21 @@ func isYAMLDuplicateKeyError(err error) bool {
 // via WithCompletionReportLock. Routing through the generic helper would invert the
 // dependency — callers should use Save (not SaveYAML) for IMPLManifest.
 func Save(ctx context.Context, m *IMPLManifest, path string) result.Result[SaveManifestData] {
-	_ = ctx // reserved for future cancellation support
+	if err := ctx.Err(); err != nil {
+		return result.NewFailure[SaveManifestData]([]result.SAWError{
+			result.NewFatal("N094_MANIFEST_SAVE_FAILED", err.Error()),
+		})
+	}
 	data, err := yaml.Marshal(m)
 	if err != nil {
 		return result.NewFailure[SaveManifestData]([]result.SAWError{
-			result.NewFatal("MANIFEST_SAVE_FAILED", fmt.Sprintf("failed to marshal manifest to YAML: %v", err)),
+			result.NewFatal("N094_MANIFEST_SAVE_FAILED", fmt.Sprintf("failed to marshal manifest to YAML: %v", err)),
 		})
 	}
 
 	if err := os.WriteFile(path, data, 0644); err != nil {
 		return result.NewFailure[SaveManifestData]([]result.SAWError{
-			result.NewFatal("MANIFEST_SAVE_FAILED", fmt.Sprintf("failed to write manifest file: %v", err)),
+			result.NewFatal("N094_MANIFEST_SAVE_FAILED", fmt.Sprintf("failed to write manifest file: %v", err)),
 		})
 	}
 
@@ -165,7 +171,7 @@ func CurrentWave(m *IMPLManifest) *Wave {
 func SetCompletionReport(m *IMPLManifest, agentID string, report CompletionReport) result.Result[SetReportData] {
 	if agentID == "" {
 		return result.NewFailure[SetReportData]([]result.SAWError{
-			result.NewFatal("REPORT_SET_FAILED", "agent ID cannot be empty").WithContext("agent_id", agentID),
+			result.NewFatal("N095_REPORT_SET_FAILED", "agent ID cannot be empty").WithContext("agent_id", agentID),
 		})
 	}
 
@@ -185,7 +191,7 @@ func SetCompletionReport(m *IMPLManifest, agentID string, report CompletionRepor
 
 	if !found {
 		return result.NewFailure[SetReportData]([]result.SAWError{
-			result.NewFatal("REPORT_SET_FAILED", fmt.Sprintf("%s: %s", ErrAgentNotFound, agentID)).WithContext("agent_id", agentID),
+			result.NewFatal("N095_REPORT_SET_FAILED", fmt.Sprintf("%s: %s", ErrAgentNotFound, agentID)).WithContext("agent_id", agentID),
 		})
 	}
 

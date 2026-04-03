@@ -29,7 +29,7 @@ type FreezeData struct {
 func SetFreezeTimestamp(ctx context.Context, m *IMPLManifest, t time.Time) result.Result[FreezeData] {
 	if err := ctx.Err(); err != nil {
 		return result.NewFailure[FreezeData]([]result.SAWError{
-			result.NewFatal("FREEZE_CANCELLED", err.Error()),
+			result.NewFatal(result.CodeContextCancelled, err.Error()),
 		})
 	}
 	m.WorktreesCreatedAt = &t
@@ -38,7 +38,7 @@ func SetFreezeTimestamp(ctx context.Context, m *IMPLManifest, t time.Time) resul
 	contractsHash, err := computeHash(m.InterfaceContracts)
 	if err != nil {
 		return result.NewFailure[FreezeData]([]result.SAWError{
-			result.NewFatal("FREEZE_FAILED", fmt.Sprintf("failed to compute contracts hash: %v", err)),
+			result.NewFatal(result.CodeFreezeError, fmt.Sprintf("failed to compute contracts hash: %v", err)),
 		})
 	}
 	m.FrozenContractsHash = contractsHash
@@ -47,7 +47,7 @@ func SetFreezeTimestamp(ctx context.Context, m *IMPLManifest, t time.Time) resul
 	scaffoldsHash, err := computeHash(m.Scaffolds)
 	if err != nil {
 		return result.NewFailure[FreezeData]([]result.SAWError{
-			result.NewFatal("FREEZE_FAILED", fmt.Sprintf("failed to compute scaffolds hash: %v", err)),
+			result.NewFatal(result.CodeFreezeError, fmt.Sprintf("failed to compute scaffolds hash: %v", err)),
 		})
 	}
 	m.FrozenScaffoldsHash = scaffoldsHash

@@ -368,7 +368,7 @@ func TestUpdateIMPLStatus_Fatal_BadPath(t *testing.T) {
 	if len(res.Errors) == 0 {
 		t.Error("expected errors in fatal result")
 	}
-	if res.Errors[0].Code != "STATUS_UPDATE_FAILED" {
-		t.Errorf("expected error code STATUS_UPDATE_FAILED, got %q", res.Errors[0].Code)
+	if res.Errors[0].Code != "N015_STATUS_UPDATE_FAILED" {
+		t.Errorf("expected error code N015_STATUS_UPDATE_FAILED, got %q", res.Errors[0].Code)
 	}
 }

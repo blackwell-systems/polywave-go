@@ -53,13 +53,13 @@ func ValidateQualityGate(gate QualityGate) result.Result[ValidateGateData] {
 	// (or empty phase, which defaults to VALIDATION — that's an error too)
 	if gate.Fix && gate.Phase != GatePhasePre && gate.Phase != "" {
 		return result.NewFailure[ValidateGateData]([]result.SAWError{
-			result.NewFatal("GATE_VALIDATION_FAILED", fmt.Sprintf("format gates with fix=true must be in PRE_VALIDATION phase (got %s)", gate.Phase)),
+			result.NewFatal(result.CodeGateValidationFailed, fmt.Sprintf("format gates with fix=true must be in PRE_VALIDATION phase (got %s)", gate.Phase)),
 		})
 	}
 	// Empty phase + fix=true is also invalid (would default to VALIDATION)
 	if gate.Fix && gate.Phase == "" {
 		return result.NewFailure[ValidateGateData]([]result.SAWError{
-			result.NewFatal("GATE_VALIDATION_FAILED", "format gates with fix=true must be in PRE_VALIDATION phase (got empty, which defaults to VALIDATION)"),
+			result.NewFatal(result.CodeGateValidationFailed, "format gates with fix=true must be in PRE_VALIDATION phase (got empty, which defaults to VALIDATION)"),
 		})
 	}
 	return result.NewSuccess(ValidateGateData{GateType: gate.Type, Valid: true})
@@ -544,7 +544,7 @@ func RunGatesWithCache(ctx context.Context, manifest *IMPLManifest, waveNumber i
 		// Validate gate before execution (BLOCKER 2 fix)
 		if vr := ValidateQualityGate(gate); vr.IsFatal() {
 			return result.NewFailure[GatesData]([]result.SAWError{
-				result.NewFatal("GATE_INVALID", fmt.Sprintf("invalid gate %s: %s", gate.Type, vr.Errors[0].Message)),
+				result.NewFatal(result.CodeGateValidationFailed, fmt.Sprintf("invalid gate %s: %s", gate.Type, vr.Errors[0].Message)),
 			})
 		}
 
