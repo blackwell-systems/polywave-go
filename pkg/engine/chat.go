@@ -7,11 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/agent/backend"
-	apiclient "github.com/blackwell-systems/scout-and-wave-go/pkg/agent/backend/api"
-	bedrockbackend "github.com/blackwell-systems/scout-and-wave-go/pkg/agent/backend/bedrock"
-	cliclient "github.com/blackwell-systems/scout-and-wave-go/pkg/agent/backend/cli"
-	openaibackend "github.com/blackwell-systems/scout-and-wave-go/pkg/agent/backend/openai"
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/orchestrator"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
 )
 
@@ -57,43 +53,18 @@ Read the IMPL doc at: %s
 Use the Read tool to read it, then answer the user's question concisely.
 You MUST NOT modify the IMPL doc or any source files. Read-only.`, opts.IMPLPath)
 
-	// Select backend: provider-prefix routing when ChatModel is set,
-	// otherwise fall back to API key → CLI heuristic.
-	apiKey := os.Getenv("ANTHROPIC_API_KEY")
-	var b backend.Backend
-	if opts.ChatModel != "" {
-		provider, bareModel := chatParseProviderPrefix(opts.ChatModel)
-		switch provider {
-		case "openai":
-			b = openaibackend.New(backend.Config{Model: bareModel, APIKey: os.Getenv("OPENAI_API_KEY")})
-		case "ollama":
-			b = openaibackend.New(backend.Config{Model: bareModel, BaseURL: "http://localhost:11434/v1"})
-		case "lmstudio":
-			b = openaibackend.New(backend.Config{Model: bareModel, BaseURL: "http://localhost:1234/v1"})
-		case "anthropic":
-			b = apiclient.New(apiKey, backend.Config{Model: bareModel})
-		case "bedrock":
-			fullID := chatExpandBedrockModelID(bareModel)
-			b = bedrockbackend.New(backend.Config{Model: fullID})
-		case "cli":
-			b = cliclient.New("", backend.Config{Model: bareModel})
-		default:
-			// Plain model name — use API if key present, else CLI.
-			if apiKey != "" {
-				b = apiclient.New(apiKey, backend.Config{Model: opts.ChatModel})
-			} else {
-				b = cliclient.New("", backend.Config{Model: opts.ChatModel})
-			}
-		}
-	} else {
-		if apiKey != "" {
-			b = apiclient.New(apiKey, backend.Config{})
-		} else {
-			b = cliclient.New("", backend.Config{})
-		}
+	// Select backend via centralized provider-prefix routing.
+	// orchestrator.NewBackendFromModel handles all prefixes (openai:, ollama:,
+	// lmstudio:, anthropic:, bedrock:, cli:) and the API-key/CLI fallback.
+	b, backendErr := orchestrator.NewBackendFromModel(opts.ChatModel)
+	if backendErr != nil {
+		return result.NewFailure[ChatData]([]result.SAWError{
+			result.NewFatal(result.CodeChatFailed, "engine.RunChat: failed to create backend").WithCause(backendErr),
+		})
 	}
 
 	// Explanatory mode for CLI/local backends (no Anthropic API key in use).
+	apiKey := os.Getenv("ANTHROPIC_API_KEY")
 	usesCLI := opts.ChatModel == "" && apiKey == ""
 	if !usesCLI {
 		if p, _ := chatParseProviderPrefix(opts.ChatModel); p == "cli" || p == "ollama" || p == "lmstudio" {
@@ -142,16 +113,18 @@ Focus on interesting insights specific to this IMPL doc rather than general prog
 }
 
 // chatExpandBedrockModelID converts short Bedrock model names to full region-prefixed IDs.
+// Still used by fix_build.go and resolve_conflicts.go for their own provider routing.
+// TODO: migrate those callers to orchestrator.NewBackendFromModel and remove this function.
 func chatExpandBedrockModelID(shortName string) string {
 	if strings.Contains(shortName, ".anthropic.") {
 		return shortName
 	}
 	mapping := map[string]string{
-		"claude-sonnet-4-5":          "us.anthropic.claude-sonnet-4-5-20250929-v1:0",
-		"claude-sonnet-4-6":          "us.anthropic.claude-sonnet-4-6",
-		"claude-opus-4-6":            "us.anthropic.claude-opus-4-6-v1",
-		"claude-haiku-4-5":           "us.anthropic.claude-haiku-4-5-20251001-v1:0",
-		"claude-haiku-4-5-20251001":  "us.anthropic.claude-haiku-4-5-20251001-v1:0",
+		"claude-sonnet-4-5":         "us.anthropic.claude-sonnet-4-5-20250929-v1:0",
+		"claude-sonnet-4-6":         "us.anthropic.claude-sonnet-4-6",
+		"claude-opus-4-6":           "us.anthropic.claude-opus-4-6-v1",
+		"claude-haiku-4-5":          "us.anthropic.claude-haiku-4-5-20251001-v1:0",
+		"claude-haiku-4-5-20251001": "us.anthropic.claude-haiku-4-5-20251001-v1:0",
 	}
 	if fullID, ok := mapping[shortName]; ok {
 		return fullID
@@ -161,6 +134,8 @@ func chatExpandBedrockModelID(shortName string) string {
 
 // chatParseProviderPrefix splits "ollama:qwen2.5-coder:32b" into ("ollama", "qwen2.5-coder:32b").
 // Returns ("", model) when no colon-prefix is present.
+// Used for explanatory-mode detection; also used by fix_build.go and resolve_conflicts.go.
+// TODO: migrate those callers to orchestrator.NewBackendFromModel and remove this function.
 func chatParseProviderPrefix(model string) (provider, bare string) {
 	idx := strings.Index(model, ":")
 	if idx < 0 {

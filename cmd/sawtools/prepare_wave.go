@@ -95,7 +95,6 @@ to fail with a descriptive error.`,
 				NoCache:          noCache,
 				CommitBaseline:   commitBaseline,
 				CommitState:      commitState,
-				NoGoWork:         noGoWork,
 				NoWorkspaceSetup: noWorkspaceSetup || noGoWork,
 				Logger:           newSawLogger(),
 				OnEvent: func(step string, status string, detail string) {

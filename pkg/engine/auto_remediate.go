@@ -3,6 +3,7 @@ package engine
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"strings"
 
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
@@ -108,8 +109,8 @@ func AutoRemediate(ctx context.Context, opts AutoRemediateOpts) (*AutoRemediateR
 		}
 
 		if err := autoRemediateFixBuildFailureFunc(ctx, fixOpts); err != nil {
-			// Fix agent itself failed — treat as failed attempt, continue loop
-			_ = err
+			// Fix agent itself failed — log and treat as failed attempt, continue loop.
+			slog.WarnContext(ctx, "auto-remediate fix agent failed", "err", err)
 		}
 
 		// Step d: Re-run VerifyBuild after fix attempt
