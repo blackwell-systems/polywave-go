@@ -110,6 +110,14 @@ var daemonLoadIMPLWavesFunc = func(implPath string) ([]int, error) {
 
 // RunDaemon runs the daemon loop until ctx is cancelled.
 // It sequentially processes IMPL queue items through the full Scout → Wave → Merge → Complete cycle.
+//
+// Supervised mode: when the autonomy level does not permit automatic approval
+// of IMPL review (autonomy.StageIMPLReview), the daemon emits a
+// "daemon_awaiting_review" event and blocks on ctx.Done(), waiting for
+// external cancellation. To unblock, cancel the context (e.g., send SIGINT
+// or call the cancel function returned by context.WithCancel). After
+// cancellation, manually advance the IMPL doc to REVIEWED state, then
+// restart the daemon to proceed with wave execution.
 func RunDaemon(ctx context.Context, opts DaemonOpts) result.Result[DaemonData] {
 	if opts.PollInterval <= 0 {
 		opts.PollInterval = 30 * time.Second

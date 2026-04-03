@@ -25,10 +25,14 @@ type RunIntegrationAgentOpts struct {
 	Logger   *slog.Logger                // optional: nil falls back to slog.Default()
 }
 
-// RunIntegrationAgent launches an LLM agent to wire integration gaps after
-// wave agents complete (E26). It reads the IntegrationReport, reads completion
-// reports, and modifies integration_connectors files to wire exports into
-// callers. Works with ALL backends (Bedrock, API, CLI) via
+// RunIntegrationAgent implements E26 (reactive integration gap wiring).
+// For planned integration waves (type: integration), see E27 and the wave
+// dispatcher in runner.go.
+//
+// It launches an LLM agent to wire integration gaps after wave agents
+// complete (E26). It reads the IntegrationReport, reads completion reports,
+// and modifies integration_connectors files to wire exports into callers.
+// Works with ALL backends (Bedrock, API, CLI) via
 // orchestrator.NewBackendFromModel.
 //
 // The integration agent runs in the MAIN repo directory (not a worktree)
