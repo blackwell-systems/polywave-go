@@ -34,10 +34,13 @@ type FinalizeTierData struct {
 //     result.NewFailure otherwise.
 //
 // Stops on the first merge failure and does not run the tier gate.
-func FinalizeTier(programManifestPath string, tierNumber int, repoDir string) (result.Result[FinalizeTierData], error) {
+func FinalizeTier(programManifestPath string, tierNumber int, repoDir string) result.Result[FinalizeTierData] {
 	manifest, err := ParseProgramManifest(programManifestPath)
 	if err != nil {
-		return result.Result[FinalizeTierData]{}, fmt.Errorf("failed to parse program manifest: %w", err)
+		return result.NewFailure[FinalizeTierData]([]result.SAWError{
+			result.NewFatal(result.CodeIMPLParseFailed,
+				fmt.Sprintf("protocol.FinalizeTier: parse failed: %v", err)),
+		})
 	}
 
 	// Find the tier by number.
@@ -49,7 +52,10 @@ func FinalizeTier(programManifestPath string, tierNumber int, repoDir string) (r
 		}
 	}
 	if targetTier == nil {
-		return result.Result[FinalizeTierData]{}, fmt.Errorf("tier %d not found in program manifest", tierNumber)
+		return result.NewFailure[FinalizeTierData]([]result.SAWError{
+			result.NewFatal(result.CodeFinalizeStepFailed,
+				fmt.Sprintf("protocol.FinalizeTier: tier %d not found in program manifest", tierNumber)),
+		})
 	}
 
 	data := FinalizeTierData{
@@ -91,7 +97,7 @@ func FinalizeTier(programManifestPath string, tierNumber int, repoDir string) (r
 				Code:     result.CodeMergeConflict,
 				Message:  fmt.Sprintf("merge failed for impl %s: %v", implSlug, mergeErr),
 				Severity: "fatal",
-			}}), nil
+			}})
 		}
 
 		mergeResult.Merges = []MergeStatus{{
@@ -114,7 +120,7 @@ func FinalizeTier(programManifestPath string, tierNumber int, repoDir string) (r
 			Code:     result.CodeTierGateFailed,
 			Message:  errMsg,
 			Severity: "fatal",
-		}}), nil
+		}})
 	}
 	gateData := gateRes.GetData()
 	data.TierGateResult = gateData
@@ -125,8 +131,8 @@ func FinalizeTier(programManifestPath string, tierNumber int, repoDir string) (r
 			Code:     result.CodeTierGateFailed,
 			Message:  fmt.Sprintf("tier gate failed for tier %d", tierNumber),
 			Severity: "fatal",
-		}}), nil
+		}})
 	}
 
-	return result.NewSuccess(data), nil
+	return result.NewSuccess(data)
 }
