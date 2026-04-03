@@ -1,6 +1,7 @@
 package gatecache
 
 import (
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
 	"context"
 	"fmt"
 	"os"
@@ -142,7 +143,7 @@ func TestCache_Get_ReturnsMissCodeOnExpiry(t *testing.T) {
 	if getResult.IsSuccess() {
 		t.Errorf("expected CACHE_MISS on expiry but got a hit: %v", getResult.GetData())
 	}
-	if len(getResult.Errors) == 0 || getResult.Errors[0].Code != "CACHE_MISS" {
+	if len(getResult.Errors) == 0 || getResult.Errors[0].Code != result.CodeCacheMiss {
 		t.Errorf("expected CACHE_MISS error code, got %v", getResult.Errors)
 	}
 	if len(getResult.Errors) > 0 && getResult.Errors[0].Severity == "fatal" {
@@ -173,7 +174,7 @@ func TestCache_TTLExpiry(t *testing.T) {
 	if getResult.IsSuccess() {
 		t.Errorf("expected CACHE_MISS due to TTL expiry but got a hit: %v", getResult.GetData())
 	}
-	if len(getResult.Errors) == 0 || getResult.Errors[0].Code != "CACHE_MISS" {
+	if len(getResult.Errors) == 0 || getResult.Errors[0].Code != result.CodeCacheMiss {
 		t.Errorf("expected CACHE_MISS error code, got %v", getResult.Errors)
 	}
 }
