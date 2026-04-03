@@ -34,8 +34,8 @@ Each reviewed package gets scouted → IMPL'd → closed before being marked don
 | notify | ✅ | ✅ | ✅ |
 | observability | | | |
 | orchestrator | ✅ | ✅ | ✅ |
-| pipeline | | | |
-| protocol | | | |
+| pipeline | ✅ | ✅ | ❌ (pending execution) |
+| protocol | ✅ | ✅ | ✅ |
 | queue | ✅ | ✅ | ✅ |
 | result | ✅ | ✅ | ✅ |
 | resume | ✅ | ✅ | ✅ |
