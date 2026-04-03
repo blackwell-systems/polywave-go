@@ -13,13 +13,29 @@ type QueryData struct {
 	Count  int
 }
 
+// AgentHistoryData holds the result of GetAgentHistory.
+type AgentHistoryData struct {
+	Events []AgentPerformanceEvent
+}
+
+// CostBreakdownData holds the result of GetCostBreakdown.
+type CostBreakdownData struct {
+	PerAgent map[string]float64
+}
+
+// FailurePatternsData holds the result of GetFailurePatterns.
+type FailurePatternsData struct {
+	Patterns []FailurePattern
+}
+
 // Query retrieves events matching the given filters and returns a result.Result[QueryData].
 // Returns a successful Result with an empty slice (not an error) when no events match.
 func Query(ctx context.Context, store Store, filters QueryFilters) result.Result[QueryData] {
 	events, err := store.QueryEvents(ctx, filters)
 	if err != nil {
 		return result.NewFailure[QueryData]([]result.SAWError{
-			result.NewFatal("EVENT_QUERY_FAILED", err.Error()).WithCause(err),
+			// TODO: replace string literal with result.CodeObsQueryFailed once Agent A's codes.go change is merged
+			result.NewFatal("O002_OBS_QUERY_FAILED", err.Error()).WithCause(err),
 		})
 	}
 	if events == nil {
@@ -57,7 +73,7 @@ type FailurePattern struct {
 
 // GetAgentHistory retrieves recent performance events for a specific agent,
 // ordered by timestamp descending.
-func GetAgentHistory(ctx context.Context, store Store, agentID string, limit int) ([]AgentPerformanceEvent, error) {
+func GetAgentHistory(ctx context.Context, store Store, agentID string, limit int) result.Result[AgentHistoryData] {
 	if limit <= 0 {
 		limit = 100
 	}
@@ -66,29 +82,32 @@ func GetAgentHistory(ctx context.Context, store Store, agentID string, limit int
 		AgentIDs:   []string{agentID},
 		Limit:      limit,
 	}
-	events, err := store.QueryEvents(ctx, filters)
+	rawEvents, err := store.QueryEvents(ctx, filters)
 	if err != nil {
-		return nil, err
+		return result.NewFailure[AgentHistoryData]([]result.SAWError{
+			// TODO: replace string literal with result.CodeObsQueryFailed once Agent A's codes.go change is merged
+			result.NewFatal("O002_OBS_QUERY_FAILED", err.Error()).WithCause(err),
+		})
 	}
 
-	result := make([]AgentPerformanceEvent, 0, len(events))
-	for _, e := range events {
+	events := make([]AgentPerformanceEvent, 0, len(rawEvents))
+	for _, e := range rawEvents {
 		if ap, ok := e.(*AgentPerformanceEvent); ok {
-			result = append(result, *ap)
+			events = append(events, *ap)
 		}
 	}
 
 	// Sort descending by timestamp.
-	sort.Slice(result, func(i, j int) bool {
-		return result[i].Time.After(result[j].Time)
+	sort.Slice(events, func(i, j int) bool {
+		return events[i].Time.After(events[j].Time)
 	})
 
-	return result, nil
+	return result.NewSuccess(AgentHistoryData{Events: events})
 }
 
 // GetIMPLMetrics aggregates all events for an IMPL into summary metrics.
 // Returns zero-value metrics (not an error) if no data exists.
-func GetIMPLMetrics(ctx context.Context, store Store, implSlug string) (*IMPLMetrics, error) {
+func GetIMPLMetrics(ctx context.Context, store Store, implSlug string) result.Result[IMPLMetrics] {
 	metrics := &IMPLMetrics{}
 
 	// Get cost events for total cost.
@@ -98,7 +117,10 @@ func GetIMPLMetrics(ctx context.Context, store Store, implSlug string) (*IMPLMet
 		Limit:      10000,
 	})
 	if err != nil {
-		return nil, err
+		return result.NewFailure[IMPLMetrics]([]result.SAWError{
+			// TODO: replace string literal with result.CodeObsQueryFailed once Agent A's codes.go change is merged
+			result.NewFatal("O002_OBS_QUERY_FAILED", err.Error()).WithCause(err),
+		})
 	}
 	for _, e := range costEvents {
 		if ce, ok := e.(*CostEvent); ok {
@@ -113,7 +135,10 @@ func GetIMPLMetrics(ctx context.Context, store Store, implSlug string) (*IMPLMet
 		Limit:      10000,
 	})
 	if err != nil {
-		return nil, err
+		return result.NewFailure[IMPLMetrics]([]result.SAWError{
+			// TODO: replace string literal with result.CodeObsQueryFailed once Agent A's codes.go change is merged
+			result.NewFatal("O002_OBS_QUERY_FAILED", err.Error()).WithCause(err),
+		})
 	}
 	var successCount int
 	for _, e := range perfEvents {
@@ -137,7 +162,10 @@ func GetIMPLMetrics(ctx context.Context, store Store, implSlug string) (*IMPLMet
 		Limit:      10000,
 	})
 	if err != nil {
-		return nil, err
+		return result.NewFailure[IMPLMetrics]([]result.SAWError{
+			// TODO: replace string literal with result.CodeObsQueryFailed once Agent A's codes.go change is merged
+			result.NewFatal("O002_OBS_QUERY_FAILED", err.Error()).WithCause(err),
+		})
 	}
 	for _, e := range actEvents {
 		if ae, ok := e.(*ActivityEvent); ok {
@@ -147,12 +175,12 @@ func GetIMPLMetrics(ctx context.Context, store Store, implSlug string) (*IMPLMet
 		}
 	}
 
-	return metrics, nil
+	return result.NewSuccess(*metrics)
 }
 
 // GetProgramSummary aggregates metrics across all IMPLs in a program.
 // Returns zero-value summary (not an error) if no data exists.
-func GetProgramSummary(ctx context.Context, store Store, programSlug string) (*ProgramSummary, error) {
+func GetProgramSummary(ctx context.Context, store Store, programSlug string) result.Result[ProgramSummary] {
 	summary := &ProgramSummary{}
 
 	// Get cost events.
@@ -162,7 +190,10 @@ func GetProgramSummary(ctx context.Context, store Store, programSlug string) (*P
 		Limit:        10000,
 	})
 	if err != nil {
-		return nil, err
+		return result.NewFailure[ProgramSummary]([]result.SAWError{
+			// TODO: replace string literal with result.CodeObsQueryFailed once Agent A's codes.go change is merged
+			result.NewFatal("O002_OBS_QUERY_FAILED", err.Error()).WithCause(err),
+		})
 	}
 	for _, e := range costEvents {
 		if ce, ok := e.(*CostEvent); ok {
@@ -177,7 +208,10 @@ func GetProgramSummary(ctx context.Context, store Store, programSlug string) (*P
 		Limit:        10000,
 	})
 	if err != nil {
-		return nil, err
+		return result.NewFailure[ProgramSummary]([]result.SAWError{
+			// TODO: replace string literal with result.CodeObsQueryFailed once Agent A's codes.go change is merged
+			result.NewFatal("O002_OBS_QUERY_FAILED", err.Error()).WithCause(err),
+		})
 	}
 	var successCount int
 	implSet := make(map[string]struct{})
@@ -197,18 +231,21 @@ func GetProgramSummary(ctx context.Context, store Store, programSlug string) (*P
 		summary.OverallSuccessRate = float64(successCount) / float64(len(perfEvents))
 	}
 
-	return summary, nil
+	return result.NewSuccess(*summary)
 }
 
 // GetCostBreakdown returns a per-agent cost breakdown for an IMPL.
-func GetCostBreakdown(ctx context.Context, store Store, implSlug string) (map[string]float64, error) {
+func GetCostBreakdown(ctx context.Context, store Store, implSlug string) result.Result[CostBreakdownData] {
 	events, err := store.QueryEvents(ctx, QueryFilters{
 		EventTypes: []string{"cost"},
 		IMPLSlugs:  []string{implSlug},
 		Limit:      10000,
 	})
 	if err != nil {
-		return nil, err
+		return result.NewFailure[CostBreakdownData]([]result.SAWError{
+			// TODO: replace string literal with result.CodeObsQueryFailed once Agent A's codes.go change is merged
+			result.NewFatal("O002_OBS_QUERY_FAILED", err.Error()).WithCause(err),
+		})
 	}
 
 	breakdown := make(map[string]float64)
@@ -217,12 +254,12 @@ func GetCostBreakdown(ctx context.Context, store Store, implSlug string) (map[st
 			breakdown[ce.AgentID] += ce.CostUSD
 		}
 	}
-	return breakdown, nil
+	return result.NewSuccess(CostBreakdownData{PerAgent: breakdown})
 }
 
 // GetFailurePatterns identifies common failure types across agents.
 // Results are sorted by count descending.
-func GetFailurePatterns(ctx context.Context, store Store, filters QueryFilters) ([]FailurePattern, error) {
+func GetFailurePatterns(ctx context.Context, store Store, filters QueryFilters) result.Result[FailurePatternsData] {
 	filters.EventTypes = []string{"agent_performance"}
 	if filters.Limit == 0 {
 		filters.Limit = 10000
@@ -230,7 +267,10 @@ func GetFailurePatterns(ctx context.Context, store Store, filters QueryFilters) 
 
 	events, err := store.QueryEvents(ctx, filters)
 	if err != nil {
-		return nil, err
+		return result.NewFailure[FailurePatternsData]([]result.SAWError{
+			// TODO: replace string literal with result.CodeObsQueryFailed once Agent A's codes.go change is merged
+			result.NewFatal("O002_OBS_QUERY_FAILED", err.Error()).WithCause(err),
+		})
 	}
 
 	type patternData struct {
@@ -253,23 +293,23 @@ func GetFailurePatterns(ctx context.Context, store Store, filters QueryFilters) 
 		pd.agents[ap.AgentID] = struct{}{}
 	}
 
-	result := make([]FailurePattern, 0, len(patterns))
+	failurePatterns := make([]FailurePattern, 0, len(patterns))
 	for ft, pd := range patterns {
 		agents := make([]string, 0, len(pd.agents))
 		for a := range pd.agents {
 			agents = append(agents, a)
 		}
 		sort.Strings(agents)
-		result = append(result, FailurePattern{
+		failurePatterns = append(failurePatterns, FailurePattern{
 			FailureType:    ft,
 			Count:          pd.count,
 			AffectedAgents: agents,
 		})
 	}
 
-	sort.Slice(result, func(i, j int) bool {
-		return result[i].Count > result[j].Count
+	sort.Slice(failurePatterns, func(i, j int) bool {
+		return failurePatterns[i].Count > failurePatterns[j].Count
 	})
 
-	return result, nil
+	return result.NewSuccess(FailurePatternsData{Patterns: failurePatterns})
 }
