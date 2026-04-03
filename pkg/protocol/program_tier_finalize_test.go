@@ -34,9 +34,9 @@ completion:
 	}
 	f.Close()
 
-	_, err = FinalizeTier(f.Name(), 99, ".")
-	if err == nil {
-		t.Fatal("expected error for missing tier, got nil")
+	res := FinalizeTier(f.Name(), 99, ".")
+	if !res.IsFatal() {
+		t.Fatal("expected fatal result for missing tier, got non-fatal")
 	}
 }
 
