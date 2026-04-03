@@ -33,8 +33,8 @@ type RestoreData struct {
 }
 
 // captureSnapshot loads the manifest from disk and copies the mutable state fields.
-func captureSnapshot(implPath string) (*implSnapshot, error) {
-	manifest, err := protocol.Load(context.TODO(), implPath)
+func captureSnapshot(ctx context.Context, implPath string) (*implSnapshot, error) {
+	manifest, err := protocol.Load(ctx, implPath)
 	if err != nil {
 		return nil, fmt.Errorf("engine.RunWaveTransaction: load snapshot: %w", err)
 	}
@@ -56,7 +56,8 @@ func captureSnapshot(implPath string) (*implSnapshot, error) {
 // snapshot values, and saves the manifest back. This handles partial state
 // written by FinalizeWave substeps.
 func restoreSnapshot(implPath string, snap *implSnapshot) result.Result[RestoreData] {
-	manifest, err := protocol.Load(context.TODO(), implPath)
+	// context.Background() intentional: rollback must complete regardless of caller cancellation.
+	manifest, err := protocol.Load(context.Background(), implPath)
 	if err != nil {
 		return result.NewFailure[RestoreData]([]result.SAWError{
 			result.NewFatal(result.CodeRestoreLoadFailed,
@@ -69,7 +70,8 @@ func restoreSnapshot(implPath string, snap *implSnapshot) result.Result[RestoreD
 	manifest.MergeState = snap.MergeState
 	manifest.CompletionReports = snap.CompletionReports
 
-	if saveRes := protocol.Save(context.TODO(), manifest, implPath); saveRes.IsFatal() {
+	// context.Background() intentional: rollback must complete regardless of caller cancellation.
+	if saveRes := protocol.Save(context.Background(), manifest, implPath); saveRes.IsFatal() {
 		saveErrMsg := "save failed"
 		if len(saveRes.Errors) > 0 {
 			saveErrMsg = saveRes.Errors[0].Message
@@ -86,23 +88,32 @@ func restoreSnapshot(implPath string, snap *implSnapshot) result.Result[RestoreD
 
 // RunWaveTransaction executes FinalizeWave atomically: on any step failure,
 // the IMPL doc state is rolled back to its value before execution began.
-// Returns (*FinalizeWaveResult, error).
-func RunWaveTransaction(ctx context.Context, opts RunWaveTransactionOpts) (*FinalizeWaveResult, error) {
+// Returns result.Result[FinalizeWaveResult].
+func RunWaveTransaction(ctx context.Context, opts RunWaveTransactionOpts) result.Result[FinalizeWaveResult] {
 	if opts.IMPLPath == "" {
-		return nil, fmt.Errorf("engine.RunWaveTransaction: IMPLPath is required")
+		return result.NewFailure[FinalizeWaveResult]([]result.SAWError{
+			result.NewFatal(result.CodeFinalizeWaveFailed,
+				"engine.RunWaveTransaction: IMPLPath is required"),
+		})
 	}
 	if opts.RepoPath == "" {
-		return nil, fmt.Errorf("engine.RunWaveTransaction: RepoPath is required")
+		return result.NewFailure[FinalizeWaveResult]([]result.SAWError{
+			result.NewFatal(result.CodeFinalizeWaveFailed,
+				"engine.RunWaveTransaction: RepoPath is required"),
+		})
 	}
 
 	// Snapshot current IMPL doc state before executing the pipeline.
-	snap, err := captureSnapshot(opts.IMPLPath)
+	snap, err := captureSnapshot(ctx, opts.IMPLPath)
 	if err != nil {
-		return nil, err
+		return result.NewFailure[FinalizeWaveResult]([]result.SAWError{
+			result.NewFatal(result.CodeFinalizeWaveFailed,
+				fmt.Sprintf("engine.RunWaveTransaction: %v", err)),
+		})
 	}
 
 	// Execute FinalizeWave with the provided options.
-	result, finalizeErr := FinalizeWave(ctx, FinalizeWaveOpts{
+	finalizeResult, finalizeErr := FinalizeWave(ctx, FinalizeWaveOpts{
 		IMPLPath:    opts.IMPLPath,
 		RepoPath:    opts.RepoPath,
 		WaveNum:     opts.WaveNum,
@@ -119,10 +130,32 @@ func RunWaveTransaction(ctx context.Context, opts RunWaveTransactionOpts) (*Fina
 			if len(restoreRes.Errors) > 0 {
 				rbErrMsg = restoreRes.Errors[0].Message
 			}
-			return result, fmt.Errorf("engine.RunWaveTransaction: rollback failed (%s) after: %w", rbErrMsg, finalizeErr)
+			msg := fmt.Sprintf("engine.RunWaveTransaction: rollback failed (%s) after: %v", rbErrMsg, finalizeErr)
+			if finalizeResult != nil {
+				return result.NewPartial(*finalizeResult, []result.SAWError{
+					result.NewFatal(result.CodeFinalizeWaveFailed, msg),
+				})
+			}
+			return result.NewFailure[FinalizeWaveResult]([]result.SAWError{
+				result.NewFatal(result.CodeFinalizeWaveFailed, msg),
+			})
 		}
-		return result, fmt.Errorf("engine.RunWaveTransaction: %w", finalizeErr)
+		msg := fmt.Sprintf("engine.RunWaveTransaction: %v", finalizeErr)
+		if finalizeResult != nil {
+			return result.NewPartial(*finalizeResult, []result.SAWError{
+				result.NewError(result.CodeFinalizeWaveFailed, msg),
+			})
+		}
+		return result.NewFailure[FinalizeWaveResult]([]result.SAWError{
+			result.NewFatal(result.CodeFinalizeWaveFailed, msg),
+		})
 	}
 
-	return result, nil
+	if finalizeResult == nil {
+		return result.NewFailure[FinalizeWaveResult]([]result.SAWError{
+			result.NewFatal(result.CodeFinalizeWaveFailed,
+				"engine.RunWaveTransaction: FinalizeWave returned nil result"),
+		})
+	}
+	return result.NewSuccess(*finalizeResult)
 }

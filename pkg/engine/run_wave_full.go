@@ -19,10 +19,10 @@ type RunWaveFullOpts struct {
 
 // RunWaveFullResult captures the results of all wave lifecycle steps.
 type RunWaveFullResult struct {
-	Wave             int                            `json:"wave"`
-	WorktreesCreated *protocol.CreateWorktreesData  `json:"worktrees_created"`
-	FinalizeResult   *FinalizeWaveResult            `json:"finalize_result,omitempty"`
-	Success          bool                           `json:"success"`
+	Wave             int                           `json:"wave"`
+	WorktreesCreated *protocol.CreateWorktreesData `json:"worktrees_created"`
+	FinalizeResult   *FinalizeWaveResult           `json:"finalize_result,omitempty"`
+	Success          bool                          `json:"success"`
 }
 
 // RunWaveFull orchestrates a complete wave lifecycle: worktree creation,
@@ -39,6 +39,10 @@ type RunWaveFullResult struct {
 // Returns a RunWaveFullResult with detailed status for each step, and an
 // error if any critical step fails. Success is true only if FinalizeWave
 // reports success (both test and lint commands pass during build verification).
+//
+// TODO(result-migration): migrate return type to result.Result[RunWaveFullResult].
+// Production callers in cmd/sawtools/run_wave_cmd.go, cmd/sawtools/auto_cmd.go,
+// and pkg/engine/program_tier_loop.go must be updated concurrently.
 func RunWaveFull(ctx context.Context, opts RunWaveFullOpts) (*RunWaveFullResult, error) {
 	result := &RunWaveFullResult{Wave: opts.WaveNum}
 
