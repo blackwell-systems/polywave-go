@@ -11,6 +11,7 @@ import (
 
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/journal"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
 )
 
 // PrepareAgentOpts configures engine.PrepareAgent. Consolidates brief generation,
@@ -41,13 +42,15 @@ type PrepareAgentResult struct {
 // PrepareAgent performs all prepare-agent work: parse IMPL doc, find agent task,
 // build brief, write .saw-agent-brief.md and .saw-ownership.json, detect
 // context_source, persist to IMPL doc, initialize journal observer.
-func PrepareAgent(ctx context.Context, opts PrepareAgentOpts) (PrepareAgentResult, error) {
-	var result PrepareAgentResult
+func PrepareAgent(ctx context.Context, opts PrepareAgentOpts) result.Result[PrepareAgentResult] {
+	var res PrepareAgentResult
 
 	// Parse IMPL doc
 	doc, err := protocol.Load(ctx, opts.ManifestPath)
 	if err != nil {
-		return result, fmt.Errorf("failed to parse IMPL doc: %w", err)
+		return result.NewFailure[PrepareAgentResult]([]result.SAWError{
+			result.NewFatal(result.CodeIMPLParseFailed, fmt.Sprintf("failed to parse IMPL doc: %v", err)),
+		})
 	}
 
 	// Find the agent's wave and task
@@ -67,7 +70,9 @@ func PrepareAgent(ctx context.Context, opts PrepareAgentOpts) (PrepareAgentResul
 	}
 
 	if agentTask == "" {
-		return result, fmt.Errorf("agent %s not found in wave %d", opts.AgentID, opts.WaveNum)
+		return result.NewFailure[PrepareAgentResult]([]result.SAWError{
+			result.NewFatal(result.CodePrepareWaveFailed, fmt.Sprintf("agent %s not found in wave %d", opts.AgentID, opts.WaveNum)),
+		})
 	}
 
 	// Extract interface contracts
@@ -105,6 +110,9 @@ func PrepareAgent(ctx context.Context, opts PrepareAgentOpts) (PrepareAgentResul
 
 	// Generate SAW-formatted name for Agent tool
 	sawName := fmt.Sprintf("[SAW:wave%d:agent-%s] %s", opts.WaveNum, opts.AgentID, taskFirstLine)
+	// Wrap in single quotes for valid YAML: values containing brackets (e.g. [SAW:...])
+	// are invalid bare YAML scalars and must be quoted.
+	sawNameYAML := fmt.Sprintf("'%s'", sawName)
 
 	// Build the agent brief with frontmatter
 	brief := fmt.Sprintf(`---
@@ -124,7 +132,7 @@ saw_name: %s
 %s
 %s%s
 `,
-		sawName,
+		sawNameYAML,
 		opts.AgentID,
 		opts.WaveNum,
 		opts.ManifestPath,
@@ -140,7 +148,9 @@ saw_name: %s
 		// Solo agent - write to .saw-state
 		stateDir := protocol.SAWStateAgentDir(opts.ProjectRoot, opts.WaveNum, fmt.Sprintf("agent-%s", opts.AgentID))
 		if err := os.MkdirAll(stateDir, 0755); err != nil {
-			return result, fmt.Errorf("failed to create state dir: %w", err)
+			return result.NewFailure[PrepareAgentResult]([]result.SAWError{
+				result.NewFatal(result.CodePrepareWaveFailed, fmt.Sprintf("failed to create state dir: %v", err)),
+			})
 		}
 		briefPath = filepath.Join(stateDir, "brief.md")
 	} else {
@@ -151,7 +161,9 @@ saw_name: %s
 
 	// Write brief
 	if err := os.WriteFile(briefPath, []byte(brief), 0644); err != nil {
-		return result, fmt.Errorf("failed to write brief: %w", err)
+		return result.NewFailure[PrepareAgentResult]([]result.SAWError{
+			result.NewFatal(result.CodePrepareWaveFailed, fmt.Sprintf("failed to write brief: %v", err)),
+		})
 	}
 
 	// Collect owned files from both agent.Files and file_ownership table.
@@ -188,7 +200,9 @@ saw_name: %s
 	}, "", "  ")
 	ownershipPath := filepath.Join(filepath.Dir(briefPath), ".saw-ownership.json")
 	if err := os.WriteFile(ownershipPath, ownershipData, 0644); err != nil {
-		return result, fmt.Errorf("failed to write ownership manifest: %w", err)
+		return result.NewFailure[PrepareAgentResult]([]result.SAWError{
+			result.NewFatal(result.CodePrepareWaveFailed, fmt.Sprintf("failed to write ownership manifest: %v", err)),
+		})
 	}
 
 	// Determine and persist context_source for this agent.
@@ -238,7 +252,9 @@ saw_name: %s
 	fullAgentID := fmt.Sprintf("wave%d-agent-%s", opts.WaveNum, opts.AgentID)
 	obsRes := journal.NewObserver(opts.ProjectRoot, fullAgentID)
 	if obsRes.IsFatal() {
-		return result, fmt.Errorf("failed to create journal observer: %s", obsRes.Errors[0].Message)
+		return result.NewFailure[PrepareAgentResult]([]result.SAWError{
+			result.NewFatal(result.CodeJournalInitFail, fmt.Sprintf("failed to create journal observer: %s", obsRes.Errors[0].Message)),
+		})
 	}
 	observer := obsRes.GetData()
 
@@ -250,11 +266,13 @@ saw_name: %s
 		}
 		cursorData, _ := json.MarshalIndent(emptyCursor, "", "  ")
 		if err := os.WriteFile(observer.CursorPath, cursorData, 0644); err != nil {
-			return result, fmt.Errorf("failed to write cursor file: %w", err)
+			return result.NewFailure[PrepareAgentResult]([]result.SAWError{
+				result.NewFatal(result.CodePrepareWaveFailed, fmt.Sprintf("failed to write cursor file: %v", err)),
+			})
 		}
 	}
 
-	result = PrepareAgentResult{
+	res = PrepareAgentResult{
 		BriefPath:     briefPath,
 		BriefLength:   len(brief),
 		JournalDir:    observer.JournalDir,
@@ -263,11 +281,11 @@ saw_name: %s
 		ResultsDir:    observer.ResultsDir,
 		AgentID:       opts.AgentID,
 		Wave:          opts.WaveNum,
-		FilesOwned:    len(agentFiles),
+		FilesOwned:    len(ownedSet),
 		ContextSource: string(contextSource),
 	}
 
-	return result, nil
+	return result.NewSuccess(res)
 }
 
 // advanceStateToReviewed transitions the IMPL doc from SCOUT_PENDING or

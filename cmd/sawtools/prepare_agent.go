@@ -42,18 +42,21 @@ This eliminates the ~10s latency of agents calling extract-context at startup.`,
 				projectRoot = repoDir
 			}
 
-			result, err := engine.PrepareAgent(cmd.Context(), engine.PrepareAgentOpts{
+			res := engine.PrepareAgent(cmd.Context(), engine.PrepareAgentOpts{
 				ManifestPath: manifestPath,
 				ProjectRoot:  projectRoot,
 				WaveNum:      waveNum,
 				AgentID:      agentID,
 				NoWorktree:   noWorktree,
 			})
-			if err != nil {
-				return err
+			if res.IsFatal() {
+				if len(res.Errors) > 0 {
+					return fmt.Errorf("%s", res.Errors[0].Message)
+				}
+				return fmt.Errorf("prepare-agent failed")
 			}
 
-			out, _ := json.MarshalIndent(result, "", "  ")
+			out, _ := json.MarshalIndent(res.GetData(), "", "  ")
 			fmt.Println(string(out))
 
 			return nil
