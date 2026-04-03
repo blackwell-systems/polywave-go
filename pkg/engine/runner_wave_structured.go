@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"strings"
 
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/agent/backend"
@@ -128,7 +129,7 @@ func runWaveAgentStructured(ctx context.Context, opts RunWaveOpts, agentSpec pro
 	}
 
 	// Persist using the consolidated package-level lock.
-	if saveErr := protocol.WithCompletionReportLock(context.TODO(), func(ctx context.Context) error {
+	if saveErr := protocol.WithCompletionReportLock(ctx, func(ctx context.Context) error {
 		manifest, loadErr := protocol.Load(ctx, opts.IMPLPath)
 		if loadErr != nil {
 			return fmt.Errorf("load manifest for agent %s: %w", agentSpec.ID, loadErr)
@@ -148,7 +149,11 @@ func runWaveAgentStructured(ctx context.Context, opts RunWaveOpts, agentSpec pro
 	}
 
 	// Re-read the saved report (with WrittenAt set by AppendToManifest).
-	finalManifest, _ := protocol.Load(context.TODO(), opts.IMPLPath)
+	finalManifest, loadErr := protocol.Load(ctx, opts.IMPLPath)
+	if loadErr != nil {
+		// log warn but don't fail — return the completion report we have
+		slog.WarnContext(ctx, "failed to reload manifest after save", "err", loadErr)
+	}
 	var finalReport protocol.CompletionReport
 	if finalManifest != nil {
 		if r, ok := finalManifest.CompletionReports[agentSpec.ID]; ok {

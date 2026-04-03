@@ -63,21 +63,18 @@ completion_reports:
 		t.Fatalf("failed to write IMPL: %v", err)
 	}
 
-	result, err := RunWaveTransaction(context.Background(), RunWaveTransactionOpts{
+	res := RunWaveTransaction(context.Background(), RunWaveTransactionOpts{
 		IMPLPath: implPath,
 		RepoPath: repoRoot,
 		WaveNum:  1,
 	})
 
 	// FinalizeWave will fail at VerifyCommits (no git repo), but we verify
-	// the wrapper returned a partial result and an error.
-	if result == nil {
-		t.Fatal("expected non-nil result from RunWaveTransaction")
+	// the wrapper returned a partial result and indicates a non-success.
+	if res.IsSuccess() {
+		t.Fatal("expected non-success result from RunWaveTransaction (no git repo)")
 	}
-	if err == nil {
-		t.Fatal("expected error from RunWaveTransaction (no git repo)")
-	}
-	t.Logf("RunWaveTransaction returned expected error: %v", err)
+	t.Logf("RunWaveTransaction returned expected non-success: code=%s", res.Code)
 }
 
 // TestRunWaveTransaction_FailureRollsBackState verifies that when FinalizeWave
@@ -133,12 +130,12 @@ completion_reports:
 	beforeMergeState := beforeManifest.MergeState
 
 	// Run transaction — will fail at VerifyCommits (no git repo).
-	_, txErr := RunWaveTransaction(context.Background(), RunWaveTransactionOpts{
+	txRes := RunWaveTransaction(context.Background(), RunWaveTransactionOpts{
 		IMPLPath: implPath,
 		RepoPath: repoRoot,
 		WaveNum:  1,
 	})
-	if txErr == nil {
+	if txRes.IsSuccess() {
 		t.Fatal("expected transaction to fail")
 	}
 
@@ -182,12 +179,12 @@ func TestRunWaveTransaction_ValidationErrors(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result, err := RunWaveTransaction(context.Background(), tt.opts)
-			if err == nil {
-				t.Fatal("expected error for missing required field")
+			res := RunWaveTransaction(context.Background(), tt.opts)
+			if res.IsSuccess() {
+				t.Fatal("expected failure for missing required field")
 			}
-			if result != nil {
-				t.Error("expected nil result for validation error")
+			if !res.IsFatal() {
+				t.Error("expected fatal result for validation error")
 			}
 		})
 	}
