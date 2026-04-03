@@ -712,6 +712,7 @@ waves:
             - pkg/engine/run_wave_atomic.go
             - pkg/engine/run_wave_full.go
             - pkg/engine/runner_wave_structured.go
+      base_commit: a73cd7dae7fc26f79953100ba0f7e657380e7770
     - number: 3
       agents:
         - id: I
@@ -1364,6 +1365,40 @@ completion_reports:
             - pkg/engine/program_tier_loop.go
         verification: PASS
         notes: 'Three P0 fixes applied. (1) findIMPLDocPath: loop now iterates all candidates with os.Stat; empty result is fatal return. (2) Double gate: removed standalone RunTierGate call; restructured downstream to use advResult.GateResult from AdvanceTierAutomatically. (3) P1+ conflict check: protocol.CheckIMPLConflicts added after PartitionIMPLsByStatus, fatal on conflicts or check error. All TestTierLoop tests pass; full quality gate (engine, result, gatecache, sawtools) clean.'
+    F:
+        status: complete
+        branch: saw/engine-review-fixes/wave2-agent-F
+        commit: 4d8e416
+        files_changed:
+            - pkg/engine/prepare_agent.go
+            - cmd/sawtools/prepare_agent.go
+        verification: PASS
+        notes: 'All three fixes applied: (1) PrepareAgent migrated to result.Result[PrepareAgentResult] with appropriate error codes, (2) FilesOwned fixed to use len(ownedSet) instead of len(agentFiles), (3) saw_name YAML quoting fixed with single quotes. Also updated cmd/sawtools/prepare_agent.go caller (out-of-scope: Wave 3 Agent U owns this) — required because pre-commit hook runs go vet ./... which caught the broken caller and blocked commit. Wave 3 Agent U should verify this update is compatible with their broader caller update work.'
+    G:
+        status: complete
+        branch: saw/engine-review-fixes/wave2-agent-G
+        commit: 93f68af
+        files_changed:
+            - pkg/engine/finalize_tier.go
+            - pkg/engine/finalize_impl.go
+            - pkg/engine/finalize_tier_test.go
+            - pkg/engine/finalize_impl_test.go
+            - pkg/engine/scout_run.go
+            - cmd/sawtools/finalize_tier_cmd.go
+            - cmd/sawtools/finalize_impl_cmd.go
+        verification: PASS
+        notes: 'Migrated finalize_tier.go and finalize_impl.go to result.Result[T]. FinalizeTierEngine: returns result.Result[FinalizeTierResult]; Errors []string->[]result.SAWError; removed second manifest parse (no disk writes to manifest between parses). FinalizeIMPLEngine: drops error return, adopts FinalizeIMPLEngineOpts struct, cancellation uses CodeContextCancelled. Out-of-scope callers scout_run.go, finalize_tier_cmd.go, finalize_impl_cmd.go, and test files updated minimally to maintain build (pre-acknowledged in IMPL doc critic notes). All quality gates pass.'
+    H:
+        status: complete
+        branch: saw/engine-review-fixes/wave2-agent-H
+        commit: 56234a9
+        files_changed:
+            - pkg/engine/run_wave_atomic.go
+            - pkg/engine/run_wave_full.go
+            - pkg/engine/runner_wave_structured.go
+            - pkg/engine/run_wave_atomic_test.go
+        verification: PASS
+        notes: 'RunWaveTransaction migrated to result.Result[FinalizeWaveResult]. captureSnapshot ctx fix applied. restoreSnapshot context.Background() documented as intentional. runner_wave_structured.go: context.TODO() in WithCompletionReportLock fixed to caller ctx; silent protocol.Load error after save now logs slog.WarnContext. RunWaveFull signature kept as (*RunWaveFullResult, error) - 3 production callers in cmd/sawtools/run_wave_cmd.go, cmd/sawtools/auto_cmd.go, pkg/engine/program_tier_loop.go are out-of-scope and would break go build ./... if signature changed; TODO comment added marking pending migration. run_wave_atomic_test.go updated to match new result.Result API.'
 pre_mortem:
     overall_risk: high
     rows:
