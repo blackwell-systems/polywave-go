@@ -900,6 +900,7 @@ waves:
             - pkg/engine/constraints.go
             - pkg/engine/init_engine.go
             - pkg/engine/debug_journal.go
+      base_commit: b53c0e7e7f4165bc8e5e4db26bfed675cb956062
     - number: 4
       agents:
         - id: "N"
@@ -1399,6 +1400,111 @@ completion_reports:
             - pkg/engine/run_wave_atomic_test.go
         verification: PASS
         notes: 'RunWaveTransaction migrated to result.Result[FinalizeWaveResult]. captureSnapshot ctx fix applied. restoreSnapshot context.Background() documented as intentional. runner_wave_structured.go: context.TODO() in WithCompletionReportLock fixed to caller ctx; silent protocol.Load error after save now logs slog.WarnContext. RunWaveFull signature kept as (*RunWaveFullResult, error) - 3 production callers in cmd/sawtools/run_wave_cmd.go, cmd/sawtools/auto_cmd.go, pkg/engine/program_tier_loop.go are out-of-scope and would break go build ./... if signature changed; TODO comment added marking pending migration. run_wave_atomic_test.go updated to match new result.Result API.'
+    I:
+        status: complete
+        branch: saw/engine-review-fixes/wave3-agent-I
+        commit: 7762b9f
+        files_changed:
+            - pkg/engine/program_auto.go
+            - pkg/engine/mark_program_complete.go
+            - pkg/engine/program_tier_loop.go
+            - pkg/engine/program_auto_test.go
+            - pkg/engine/program_tier_loop_test.go
+            - cmd/sawtools/finalize_tier_cmd.go
+            - cmd/sawtools/mark_program_complete_cmd.go
+            - cmd/sawtools/mark_program_complete_cmd_test.go
+            - cmd/sawtools/program_execute_cmd.go
+            - cmd/sawtools/program_replan_cmd.go
+        tests_added:
+            - TestAdvanceTierAutomatically_AutoMode_AdvanceToNext
+            - TestAdvanceTierAutomatically_AutoMode_FinalTier
+            - TestAdvanceTierAutomatically_ManualMode_HumanGate
+            - TestAdvanceTierAutomatically_GateFails
+            - TestAdvanceTierAutomatically_FreezeFails
+            - TestAdvanceTierAutomatically_ScoredIMPLOrder_PopulatedOnAdvance
+            - TestAdvanceTierAutomatically_ScoredIMPLOrder_EmptyOnGateFail
+            - TestReplanProgram_ValidationFails
+            - TestTierLoop_AutoTriggerReplan_ConstructsCorrectReason
+        verification: PASS
+        notes: Migrated AdvanceTierAutomatically, ReplanProgram, MarkProgramComplete, RunTierLoop, AutoTriggerReplan to result.Result[T]. Added manifest write after wave completion (SaveYAML non-fatal). Added REPLANNING state write before AutoTriggerReplan. Updated cmd/ callers (finalize_tier_cmd, mark_program_complete_cmd, program_execute_cmd, program_replan_cmd) and their tests outside brief ownership to keep build clean. CodeTierConflictDetected (P010) not in codes.go so CodeP1Violation used for tier conflict errors.
+    J:
+        status: complete
+        branch: saw/engine-review-fixes/wave3-agent-J
+        commit: 2118ad3
+        files_changed:
+            - pkg/engine/import_impls.go
+            - pkg/engine/runner.go
+            - pkg/engine/critic.go
+            - pkg/engine/runner_automation_test.go
+            - pkg/engine/runner_test.go
+            - cmd/sawtools/import_impls_cmd.go
+        verification: PASS
+        notes: 'All 4 tasks complete. ImportImpls migrated to result.Result[T] with ctx threaded. LoadTypePromptWithRefs migrated to result.Result[string]. runScoutAutomation now accepts ctx (context.TODO/Background replaced). gateChannels and startWaveWithGate deleted. Out-of-scope callers updated minimally for compilation: critic.go line 64 (Agent L scope), import_impls_cmd.go RunE (unowned), runner_test.go and runner_automation_test.go (unowned tests). All tests pass.'
+    K:
+        status: complete
+        branch: saw/engine-review-fixes/wave3-agent-K
+        commit: 7f84da4
+        files_changed:
+            - pkg/engine/scout_run.go
+            - pkg/engine/scout_correction_loop.go
+            - pkg/engine/scout_correction_loop_test.go
+            - cmd/sawtools/run_scout_cmd.go
+            - cmd/sawtools/auto_cmd.go
+        tests_added:
+            - TestScoutCorrectionLoop_SucceedsFirstTry
+            - TestScoutCorrectionLoop_RetriesAndSucceeds
+            - TestScoutCorrectionLoop_ExhaustsRetriesAndSetsState
+            - TestScoutCorrectionLoop_ContextCancelled
+            - TestBuildCorrectionPrompt
+        verification: PASS
+        notes: 'RunScoutFull migrated to result.Result[RunScoutFullResult]. ScoutCorrectionLoop: validateIMPLDoc and setIMPLStateBlocked now accept ctx; context.TODO() eliminated. C9 comment fixed. P009_CRITIC_GATE_FAILED used as string literal (Wave 4 Agent N adds named constant). cmd/sawtools callers (run_scout_cmd.go, auto_cmd.go) got minimal build-fix with TODO markers; full migration is Wave 5 Agent U scope. All 5 TestScout tests pass. go build ./... and go vet ./... clean.'
+    L:
+        status: complete
+        branch: saw/engine-review-fixes/wave3-agent-L
+        commit: 9395cd8
+        files_changed:
+            - pkg/engine/critic.go
+            - pkg/engine/closed_loop_gate.go
+            - pkg/engine/critic_test.go
+            - pkg/engine/closed_loop_gate_test.go
+            - pkg/engine/finalize.go
+            - cmd/sawtools/run_critic_cmd.go
+        tests_added:
+            - TestRunCritic_RelativePathRejected
+            - TestRunCritic_NonExistentPathRejected
+            - TestClosedLoopGateRetry_FixesOnFirstAttempt
+            - TestClosedLoopGateRetry_ExhaustsRetries
+            - TestClosedLoopGateRetry_EmitsEvents
+            - TestClosedLoopGateRetry_RunsInWorktree
+            - TestClosedLoopGateRetry_ValidationErrors
+            - TestClosedLoopGateRetry_ExhaustsEmitsEvent
+        verification: PASS
+        notes: 'Migrated critic.go and closed_loop_gate.go to result.Result[T]. init() uses adapter wrapper bridging result.Result to legacy runCriticFn type (Agent K updates scout_run.go). R3: citations removed from closed_loop_gate.go. Out-of-scope callers finalize.go and run_critic_cmd.go updated minimally to maintain build per IMPL pre-acknowledgment.'
+    M:
+        status: complete
+        branch: saw/engine-review-fixes/wave3-agent-M
+        commit: ed2a43a
+        files_changed:
+            - pkg/engine/constraints.go
+            - pkg/engine/init_engine.go
+            - pkg/engine/debug_journal.go
+            - pkg/engine/constraints_test.go
+            - pkg/engine/init_engine_test.go
+            - cmd/sawtools/debug_journal.go
+            - cmd/sawtools/init_cmd.go
+        tests_added:
+            - TestRunInit_AlreadyExists
+            - TestRunInit_Force
+            - TestRunInit_GoProject
+            - TestRunInit_UnknownProject
+            - TestRunInit_ConfigHasBuildTestKeys
+            - TestBuildWaveConstraints_Integration
+            - TestBuildWaveConstraints_Integration_BadPath
+            - TestBuildIntegratorConstraints_LoadAndBuild
+            - TestBuildIntegratorConstraints_BadPath
+            - TestBuildIntegratorConstraints_UsesManifestField
+        verification: PASS
+        notes: Migrated constraints.go, init_engine.go, debug_journal.go to result.Result[T]. Deleted extractVerificationGates and formatFileChange (zero callers in engine pkg). Updated test files to match new API. Minimally adapted cmd/sawtools/debug_journal.go and cmd/sawtools/init_cmd.go to maintain build green (pre-commit hook runs go vet ./... globally). Wave 5 Agent U should do final cleanup of those callers. cmd/sawtools/init_cmd.go is not in IMPL ownership - flagging as out-of-scope dep.
 pre_mortem:
     overall_risk: high
     rows:
