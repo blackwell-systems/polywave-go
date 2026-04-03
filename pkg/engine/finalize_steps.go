@@ -143,9 +143,13 @@ func StepRunGates(ctx context.Context, opts FinalizeWaveOpts, manifest *protocol
 
 	gatesData := gateRes.GetData()
 	for _, gate := range gatesData.Gates {
-		opts.ObsEmitter.Emit(ctx, observability.NewGateExecutedEvent(manifest.FeatureSlug, opts.WaveNum, gate.Type, gate.Passed))
+		if opts.ObsEmitter != nil {
+			opts.ObsEmitter.Emit(ctx, observability.NewGateExecutedEvent(manifest.FeatureSlug, opts.WaveNum, gate.Type, gate.Passed))
+		}
 		if gate.Required && !gate.Passed {
-			opts.ObsEmitter.Emit(ctx, observability.NewWaveFailedEvent(manifest.FeatureSlug, opts.WaveNum, fmt.Sprintf("required gate %q failed", gate.Type)))
+			if opts.ObsEmitter != nil {
+				opts.ObsEmitter.Emit(ctx, observability.NewWaveFailedEvent(manifest.FeatureSlug, opts.WaveNum, fmt.Sprintf("required gate %q failed", gate.Type)))
+			}
 			emitStepEvent(onEvent, stepName, "failed", fmt.Sprintf("required gate %q failed", gate.Type))
 			return &StepResult{
 				Step:   stepName,

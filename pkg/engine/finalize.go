@@ -263,21 +263,20 @@ func FinalizeWave(ctx context.Context, opts FinalizeWaveOpts) (*FinalizeWaveResu
 			}
 		}
 		if waveAgentCount <= 1 {
+			isSolo = true
 			for _, repoPath := range repos {
-				if protocol.WorktreesAbsent(manifest, opts.WaveNum, repoPath) {
-					isSolo = true
-					break
+				if !protocol.WorktreesAbsent(manifest, opts.WaveNum, repoPath) {
+					isSolo = false
 				}
 			}
 		}
 
-		// allBranchesAbsent: if all agent branches are absent (wave already merged and cleaned up),
+		// allBranchesAbsent: if all agent branches are absent in ALL repos (wave already merged and cleaned up),
 		// skip VerifyCommits and MergeAgents entirely.
-		allGone := false
+		allGone := true
 		for _, repoPath := range repos {
-			if protocol.AllBranchesAbsent(manifest, opts.WaveNum, repoPath) {
-				allGone = true
-				break
+			if !protocol.AllBranchesAbsent(manifest, opts.WaveNum, repoPath) {
+				allGone = false
 			}
 		}
 
@@ -579,7 +578,7 @@ func FinalizeWave(ctx context.Context, opts FinalizeWaveOpts) (*FinalizeWaveResu
 			// Still run cleanup before returning
 			_, cleanupData, _ := StepCleanup(ctx, opts, onEvent)
 			if cleanupData != nil {
-				result.CleanupResult["."] = cleanupData
+				result.CleanupResult[repoKey] = cleanupData
 			}
 			return result, fmt.Errorf("engine.FinalizeWave: verify-build failed in %s: %w", repoKey, stepErr)
 		}
@@ -605,7 +604,7 @@ func FinalizeWave(ctx context.Context, opts FinalizeWaveOpts) (*FinalizeWaveResu
 				// Still run cleanup before returning
 				_, cleanupData, _ := StepCleanup(ctx, opts, onEvent)
 				if cleanupData != nil {
-					result.CleanupResult["."] = cleanupData
+					result.CleanupResult[repoKey] = cleanupData
 				}
 				return result, fmt.Errorf("engine.FinalizeWave: required post-merge gate %q failed in %s", gate.Type, repoKey)
 			}
