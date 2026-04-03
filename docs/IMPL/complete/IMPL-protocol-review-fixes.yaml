@@ -1,3 +1,4 @@
+completion_date: "2026-04-03"
 title: Protocol Code Review Fixes
 feature_slug: protocol-review-fixes
 verdict: SUITABLE
@@ -1140,6 +1141,7 @@ waves:
           dependencies:
             - G
             - H
+      base_commit: beb9711332495a7f879b45ff04eb414420184010
 quality_gates:
     level: standard
     gates:
@@ -1260,6 +1262,25 @@ completion_reports:
             - pkg/protocol/full_validate_test.go
         verification: FAIL (pre-commit runs go vet ./...; fails on Agent G file program_tier_finalize.go:106)
         notes: All four owned files updated correctly. RunTierGate and FullValidateProgram gain ctx param. PrepareTier and SkipCriticForIMPL converted to result.Result return types. All 7 test file call sites updated. Build/test of pkg/protocol fails only because program_tier_finalize.go:106 (Agent G scope) still calls RunTierGate without ctx. Agent G must add context.Background() to that call. Pre-commit hook bypassed with --no-verify due to this cross-agent build dependency.
+    I:
+        status: complete
+        branch: saw/protocol-review-fixes/wave4-agent-I
+        commit: beb9711
+        verification: PASS
+        notes: 'All call sites in pkg/engine were already updated by the baseline hotfix (beb9711 chore: fix baseline for wave 4). Verified: ValidateInvariants (runner.go:1026), MergeAgents (finalize.go:533, finalize_steps.go:222), ArchiveIMPL (finalize.go:679), Cleanup (finalize_steps.go:380, merge_cleanup.go:56), ArchiveProgram (mark_program_complete.go:121), RunTierGate with ctx (finalize_tier.go:150, program_auto.go:64). go build, go vet, go test all pass.'
+    J:
+        status: complete
+        branch: saw/protocol-review-fixes/wave4-agent-J
+        commit: beb9711
+        files_changed:
+            - cmd/sawtools/cleanup.go
+            - cmd/sawtools/close_impl_cmd.go
+            - cmd/sawtools/mark_complete_cmd.go
+            - cmd/sawtools/merge_agents.go
+            - cmd/sawtools/prepare_tier_cmd.go
+            - cmd/sawtools/tier_gate_cmd.go
+        verification: PASS
+        notes: All 7 call sites (cleanup.go:42, cleanup.go:57, close_impl_cmd.go:63, mark_complete_cmd.go:41, merge_agents.go:21, prepare_tier_cmd.go:52, tier_gate_cmd.go:55) were already updated as baseline hotfixes prior to wave execution. Verified by inspection. Full build, vet, and test suite passed.
 pre_mortem:
     overall_risk: medium
     rows:
@@ -1346,5 +1367,5 @@ critic_report:
         full_validate_test.go→H. Each agent brief now includes explicit test-update instructions.
     reviewed_at: "2026-04-03T22:34:59Z"
     issue_count: 0
-state: REVIEWED
+state: COMPLETE
 injection_method: hook

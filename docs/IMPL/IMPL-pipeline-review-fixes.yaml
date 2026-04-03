@@ -141,11 +141,11 @@ waves:
             the Engine error codes (N001-N099) section, after N093:
 
             ```go
-            // N094: pipeline Run aborted (step failure or context cancellation)
+            // N096: pipeline Run aborted (step failure or context cancellation)
             CodePipelineRunFailed = "N096_PIPELINE_RUN_FAILED"
-            // N095: pipeline step failed (nil Func, context cancel, retry exhausted)
+            // N097: pipeline step failed (nil Func, context cancel, retry exhausted)
             CodeStepExecutionFailed = "N097_STEP_EXECUTION_FAILED"
-            // N096: required pipeline state key absent or nil
+            // N098: required pipeline state key absent or nil
             CodeRequiredKeyMissing = "N098_REQUIRED_KEY_MISSING"
             ```
 
@@ -501,5 +501,26 @@ known_issues:
         find it silently ignored. Agent B adds clarifying comments but does not
         migrate steps to use typed fields (that would be a larger refactor requiring
         callers to exist first).
-state: SCOUT_PENDING
+critic_report:
+    verdict: PASS
+    agent_reviews:
+        A:
+            agent_id: A
+            verdict: ISSUES
+            issues:
+                - check: pattern_accuracy
+                  severity: warning
+                  description: The inline code block in Agent A task shows comment numbers (// N094, // N095, // N096) that do not match the actual constant values (N096_PIPELINE_RUN_FAILED, N097_STEP_EXECUTION_FAILED, N098_REQUIRED_KEY_MISSING). The interface contracts are authoritative and self-consistent; agent should use the contract definitions, not the inline comment numbers.
+                  file: pkg/result/codes.go
+                  symbol: CodePipelineRunFailed
+        B:
+            agent_id: B
+            verdict: PASS
+        C:
+            agent_id: C
+            verdict: PASS
+    summary: 'All three agents verified against codebase. All 6 source files exist. The 3 error code constants (N096_PIPELINE_RUN_FAILED, N097_STEP_EXECUTION_FAILED, N098_REQUIRED_KEY_MISSING) are absent from codes.go as required — slots N096-N098 are free (current max is N095). All 6 inline string literals in pipeline.go and the 1 in saw_steps.go match the exact line numbers in Agent A''s brief. The requiredKeyErr function uses fmt.Errorf pattern that Agent A must replace. Agent B''s targets are confirmed: StepFunc doc comment contains the inaccurate ''stages may run in parallel'' text, and State has the unused RepoPath/IMPLPath/WaveNum typed fields. Agent C''s 3 new tests do not yet exist; pipeline_test.go already imports errors and result, but saw_steps_test.go is missing both imports as noted in the brief. One advisory warning: the inline code comment block in Agent A''s brief uses mismatched comment numbers (// N094, // N095, // N096) against the actual constant values (N096, N097, N098); the interface contracts are authoritative and self-consistent so no agent error results.'
+    reviewed_at: "2026-04-03T23:30:03Z"
+    issue_count: 1
+state: "REVIEWED"
 injection_method: hook
