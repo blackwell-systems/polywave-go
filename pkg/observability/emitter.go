@@ -59,7 +59,7 @@ func (e *Emitter) EmitSync(ctx context.Context, event Event) result.Result[EmitD
 	}
 	if err := e.store.RecordEvent(ctx, event); err != nil {
 		return result.NewFailure[EmitData]([]result.SAWError{
-			result.NewFatal("EVENT_EMIT_FAILED", err.Error()).WithCause(err),
+			result.NewFatal(result.CodeObsEmitFailed, err.Error()).WithCause(err),
 		})
 	}
 	return result.NewSuccess(EmitData{
