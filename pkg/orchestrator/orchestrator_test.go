@@ -95,10 +95,11 @@ quality_gates:
 		t.Fatalf("failed to write IMPL manifest: %v", err)
 	}
 
-	o, err := New(context.Background(), "/repo", implPath)
-	if err != nil {
-		t.Fatalf("New returned error: %v", err)
+	oRes := New(context.Background(), "/repo", implPath)
+	if oRes.IsFatal() {
+		t.Fatalf("New returned fatal error: %v", oRes.Errors)
 	}
+	o := oRes.GetData()
 	if o == nil {
 		t.Fatal("New returned nil orchestrator")
 	}
@@ -145,10 +146,11 @@ quality_gates:
 		t.Fatalf("failed to write IMPL manifest: %v", err)
 	}
 
-	o, err := New(context.Background(), "/repo", implPath)
-	if err != nil {
-		t.Fatalf("New returned error: %v", err)
+	oRes := New(context.Background(), "/repo", implPath)
+	if oRes.IsFatal() {
+		t.Fatalf("New returned fatal error: %v", oRes.Errors)
 	}
+	o := oRes.GetData()
 	if o == nil {
 		t.Fatal("New returned nil orchestrator")
 	}

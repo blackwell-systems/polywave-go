@@ -126,8 +126,7 @@ func (o *Orchestrator) launchAgentStructured(
 	}
 
 	// Re-load the manifest to get the saved completion report for status/E19 routing.
-	// TODO(wave-merge): update o.implSlug() → o.implSlug(ctx) after Agent A lands ctx param.
-	branch := protocol.BranchName(o.implSlug(), waveNum, protoAgent.ID)
+	branch := protocol.BranchName(o.implSlug(ctx), waveNum, protoAgent.ID)
 	status := "complete"
 
 	var savedReport protocol.CompletionReport

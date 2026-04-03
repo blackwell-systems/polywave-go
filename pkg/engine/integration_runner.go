@@ -121,16 +121,16 @@ func RunIntegrationAgent(ctx context.Context, opts RunIntegrationAgentOpts, onEv
 	}
 
 	// Create backend via orchestrator.NewBackendFromModel (supports all providers).
-	b, err := orchestrator.NewBackendFromModel(opts.Model)
-	if err != nil {
-		publish("integration_agent_failed", map[string]string{"error": err.Error()})
+	bRes := orchestrator.NewBackendFromModel(opts.Model)
+	if bRes.IsFatal() {
+		publish("integration_agent_failed", map[string]string{"error": bRes.Errors[0].Message})
 		return result.NewFailure[IntegrationAgentData]([]result.SAWError{{
 			Code:     result.CodeIntegrationBackendFailed,
-			Message:  fmt.Sprintf("engine.RunIntegrationAgent: backend init: %v", err),
+			Message:  fmt.Sprintf("engine.RunIntegrationAgent: backend init: %s", bRes.Errors[0].Message),
 			Severity: "fatal",
-			Cause:    err,
 		}})
 	}
+	b := bRes.GetData()
 
 	// Build constraints for integrator role (E26 I1 enforcement).
 	// AllowedPathPrefixes is derived from integration_connectors so the agent

@@ -147,13 +147,11 @@ func RunCritic(ctx context.Context, opts RunCriticOpts, onChunk func(string)) re
 	}
 
 	// Initialise backend and launch the critic agent.
-	b, bErr := orchestrator.NewBackendFromModel(opts.CriticModel)
-	if bErr != nil {
-		return result.NewFailure[RunCriticResult]([]result.SAWError{
-			result.NewFatal(result.CodeAgentLaunchFailed,
-				fmt.Sprintf("run-critic: backend init: %v", bErr)),
-		})
+	bRes := orchestrator.NewBackendFromModel(opts.CriticModel)
+	if bRes.IsFatal() {
+		return result.NewFailure[RunCriticResult](bRes.Errors)
 	}
+	b := bRes.GetData()
 	runner := agent.NewRunner(b)
 	spec := &protocol.Agent{ID: "critic", Task: prompt}
 	_, execErr := runner.ExecuteStreamingWithTools(ctx, spec, workDir, onChunk, nil)

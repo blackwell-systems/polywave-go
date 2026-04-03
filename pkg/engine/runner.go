@@ -129,12 +129,11 @@ func RunScout(ctx context.Context, opts RunScoutOpts, onChunk func(string)) resu
 			_, execErr = runScoutStructured(ctx, opts, prompt, onChunk)
 		}
 	} else {
-		b, bErr := orchestrator.NewBackendFromModel(opts.ScoutModel)
-		if bErr != nil {
-			return result.NewFailure[ScoutData]([]result.SAWError{
-				result.NewFatal(result.CodeScoutRunFailed, "engine.RunScout: backend init failed").WithCause(bErr),
-			})
+		bRes := orchestrator.NewBackendFromModel(opts.ScoutModel)
+		if bRes.IsFatal() {
+			return result.NewFailure[ScoutData](bRes.Errors)
 		}
+		b := bRes.GetData()
 		runner := agent.NewRunner(b)
 		spec := &protocol.Agent{ID: "scout", Task: prompt}
 		_, execErr = runner.ExecuteStreamingWithTools(ctx, spec, opts.RepoPath, onChunk, nil)
@@ -240,12 +239,11 @@ func RunPlanner(ctx context.Context, opts RunPlannerOpts, onChunk func(string)) 
 		model = "claude-sonnet-4-6"
 	}
 
-	b, bErr := orchestrator.NewBackendFromModel(model)
-	if bErr != nil {
-		return result.NewFailure[PlannerData]([]result.SAWError{
-			result.NewFatal(result.CodePlannerFailed, "engine.RunPlanner: backend init failed").WithCause(bErr),
-		})
+	bRes := orchestrator.NewBackendFromModel(model)
+	if bRes.IsFatal() {
+		return result.NewFailure[PlannerData](bRes.Errors)
 	}
+	b := bRes.GetData()
 	runner := agent.NewRunner(b)
 	spec := &protocol.Agent{ID: "planner", Task: prompt}
 	_, execErr := runner.ExecuteStreamingWithTools(ctx, spec, opts.RepoPath, onChunk, nil)
@@ -414,10 +412,11 @@ func StartWave(ctx context.Context, opts RunWaveOpts, onEvent func(Event)) resul
 
 	publish("run_started", RunStartedPayload{Slug: opts.Slug, IMPLPath: opts.IMPLPath})
 
-	orch, err := orchestrator.New(ctx, opts.RepoPath, opts.IMPLPath)
-	if err != nil {
-		return fatalf(result.CodeWaveFailed, fmt.Sprintf("engine.StartWave: %s", err.Error()), err)
+	orchRes := orchestrator.New(ctx, opts.RepoPath, opts.IMPLPath)
+	if orchRes.IsFatal() {
+		return result.NewFailure[StartWaveData](orchRes.Errors)
 	}
+	orch := orchRes.GetData()
 
 	if opts.WaveModel != "" {
 		orch.SetDefaultModel(opts.WaveModel)
@@ -606,13 +605,12 @@ func RunScaffold(opts RunScaffoldOpts) result.Result[ScaffoldData] {
 
 	prompt := fmt.Sprintf("%s\n\n## IMPL Doc Path\n%s\n", scaffoldMdContent, implPath)
 
-	b, err := orchestrator.NewBackendFromModel(model)
-	if err != nil {
-		publish("scaffold_failed", ScaffoldFailedPayload{Error: err.Error()})
-		return result.NewFailure[ScaffoldData]([]result.SAWError{
-			result.NewFatal(result.CodeScaffoldRunFailed, "engine.RunScaffold: backend init failed").WithCause(err),
-		})
+	bRes := orchestrator.NewBackendFromModel(model)
+	if bRes.IsFatal() {
+		publish("scaffold_failed", ScaffoldFailedPayload{Error: bRes.Errors[0].Message})
+		return result.NewFailure[ScaffoldData](bRes.Errors)
 	}
+	b := bRes.GetData()
 	runner := agent.NewRunner(b)
 	spec := &protocol.Agent{ID: "scaffold", Task: prompt}
 
@@ -812,12 +810,11 @@ func RunSingleWave(ctx context.Context, opts RunWaveOpts, waveNum int, onEvent f
 			result.NewFatal(result.CodeWaveInvalidOpts, "engine.RunSingleWave: IMPLPath is required"),
 		})
 	}
-	orch, err := orchestrator.New(ctx, opts.RepoPath, opts.IMPLPath)
-	if err != nil {
-		return result.NewFailure[WaveData]([]result.SAWError{
-			result.NewFatal(result.CodeWaveFailed, fmt.Sprintf("engine.RunSingleWave: %s", err.Error())).WithCause(err),
-		})
+	orchRes := orchestrator.New(ctx, opts.RepoPath, opts.IMPLPath)
+	if orchRes.IsFatal() {
+		return result.NewFailure[WaveData](orchRes.Errors)
 	}
+	orch := orchRes.GetData()
 	if opts.WaveModel != "" {
 		orch.SetDefaultModel(opts.WaveModel)
 	}
@@ -870,12 +867,11 @@ func RunSingleAgent(ctx context.Context, opts RunWaveOpts, waveNum int, agentLet
 			result.NewFatal(result.CodeAgentRunInvalidOpts, "engine.RunSingleAgent: IMPLPath is required"),
 		})
 	}
-	orch, err := orchestrator.New(ctx, opts.RepoPath, opts.IMPLPath)
-	if err != nil {
-		return result.NewFailure[AgentData]([]result.SAWError{
-			result.NewFatal(result.CodeAgentRunFailed, fmt.Sprintf("engine.RunSingleAgent: %s", err.Error())).WithCause(err),
-		})
+	orchRes := orchestrator.New(ctx, opts.RepoPath, opts.IMPLPath)
+	if orchRes.IsFatal() {
+		return result.NewFailure[AgentData](orchRes.Errors)
 	}
+	orch := orchRes.GetData()
 	if opts.WaveModel != "" {
 		orch.SetDefaultModel(opts.WaveModel)
 	}
@@ -929,12 +925,11 @@ func MergeWave(ctx context.Context, opts RunMergeOpts) result.Result[MergeData] 
 			result.NewFatal(result.CodeMergeWaveInvalidOpts, "engine.MergeWave: IMPLPath is required"),
 		})
 	}
-	orch, err := orchestrator.New(ctx, opts.RepoPath, opts.IMPLPath)
-	if err != nil {
-		return result.NewFailure[MergeData]([]result.SAWError{
-			result.NewFatal(result.CodeMergeWaveFailed, fmt.Sprintf("engine.MergeWave: %s", err.Error())).WithCause(err),
-		})
+	orchRes := orchestrator.New(ctx, opts.RepoPath, opts.IMPLPath)
+	if orchRes.IsFatal() {
+		return result.NewFailure[MergeData](orchRes.Errors)
 	}
+	orch := orchRes.GetData()
 
 	// Merge the wave
 	if mergeRes := orch.MergeWave(ctx, opts.WaveNum); mergeRes.IsFatal() {
@@ -984,12 +979,11 @@ func RunVerification(ctx context.Context, opts RunVerificationOpts) result.Resul
 	if testCmd == "" {
 		testCmd = "go test ./..."
 	}
-	orch, err := orchestrator.New(ctx, opts.RepoPath, "")
-	if err != nil {
-		return result.NewFailure[VerificationData]([]result.SAWError{
-			result.NewFatal(result.CodeEngineVerificationFailed, fmt.Sprintf("engine.RunVerification: %s", err.Error())).WithCause(err),
-		})
+	orchRes := orchestrator.New(ctx, opts.RepoPath, "")
+	if orchRes.IsFatal() {
+		return result.NewFailure[VerificationData](orchRes.Errors)
 	}
+	orch := orchRes.GetData()
 	if verRes := orch.RunVerification(ctx, testCmd); verRes.IsFatal() {
 		if ctx.Err() != nil {
 			return result.NewFailure[VerificationData]([]result.SAWError{

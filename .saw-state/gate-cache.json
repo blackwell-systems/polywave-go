@@ -1944,6 +1944,18 @@
         "cached_at": "2026-03-31T18:15:46.157828-07:00"
       }
     },
+    "45a87510a5089924f8af4f126d2b5ff9": {
+      "build": {
+        "gate_type": "build",
+        "command": "go build ./...",
+        "passed": true,
+        "exit_code": 0,
+        "stdout": "",
+        "stderr": "",
+        "from_cache": true,
+        "cached_at": "2026-04-03T14:47:00.05522-07:00"
+      }
+    },
     "45aa57bd85e70726c53ce616092f7712": {
       "test": {
         "gate_type": "test",
@@ -4920,6 +4932,18 @@
         "cached_at": "2026-03-25T18:09:17.028083-07:00"
       }
     },
+    "aa843b83d8d0c30fd8934b071847552d": {
+      "test": {
+        "gate_type": "test",
+        "command": "go test ./pkg/orchestrator/... ./pkg/engine/...",
+        "passed": true,
+        "exit_code": 0,
+        "stdout": "ok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/orchestrator\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/engine\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/engine/workspace\t(cached)\n",
+        "stderr": "",
+        "from_cache": true,
+        "cached_at": "2026-04-03T14:47:01.545713-07:00"
+      }
+    },
     "aaea66d9d4a3cd9ab04810cfd247eeab": {
       "test": {
         "gate_type": "test",
@@ -5770,6 +5794,18 @@
         "stderr": "",
         "from_cache": true,
         "cached_at": "2026-04-01T00:42:38.460583-07:00"
+      }
+    },
+    "bf68c4dbb8dbf25d6d1c58fdd76a244f": {
+      "lint": {
+        "gate_type": "lint",
+        "command": "go vet ./...",
+        "passed": true,
+        "exit_code": 0,
+        "stdout": "",
+        "stderr": "",
+        "from_cache": true,
+        "cached_at": "2026-04-03T14:54:26.563541-07:00"
       }
     },
     "bfee6906c2790e80ee994c0adc36401d": {
@@ -6984,6 +7020,18 @@
         "cached_at": "2026-04-01T00:25:14.065807-07:00"
       }
     },
+    "e0d58bca887fe43252934779e80cd993": {
+      "test": {
+        "gate_type": "test",
+        "command": "go test ./pkg/orchestrator/... ./pkg/engine/...",
+        "passed": true,
+        "exit_code": 0,
+        "stdout": "ok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/orchestrator\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/engine\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/engine/workspace\t(cached)\n",
+        "stderr": "",
+        "from_cache": true,
+        "cached_at": "2026-04-03T14:54:27.285184-07:00"
+      }
+    },
     "e12d4e0df5d61f856d331ffd16007eaf": {
       "build": {
         "gate_type": "build",
@@ -7138,6 +7186,18 @@
         "stderr": "",
         "from_cache": true,
         "cached_at": "2026-04-01T08:34:01.607383-07:00"
+      }
+    },
+    "e56122e9c511c5e5211840f9368e5a9d": {
+      "build": {
+        "gate_type": "build",
+        "command": "go build ./...",
+        "passed": true,
+        "exit_code": 0,
+        "stdout": "",
+        "stderr": "",
+        "from_cache": true,
+        "cached_at": "2026-04-03T14:54:25.871167-07:00"
       }
     },
     "e5a6b023dbd4a8e0cb7e261cb8995fcd": {
@@ -7594,6 +7654,18 @@
         "stderr": "",
         "from_cache": true,
         "cached_at": "2026-04-02T11:51:16.142087-07:00"
+      }
+    },
+    "f3c4fd45f874327fae6c0b51c456730b": {
+      "lint": {
+        "gate_type": "lint",
+        "command": "go vet ./...",
+        "passed": true,
+        "exit_code": 0,
+        "stdout": "",
+        "stderr": "",
+        "from_cache": true,
+        "cached_at": "2026-04-03T14:47:00.657893-07:00"
       }
     },
     "f404791cbfd226e7d23b720fadf4aa7c": {

@@ -56,12 +56,11 @@ You MUST NOT modify the IMPL doc or any source files. Read-only.`, opts.IMPLPath
 	// Select backend via centralized provider-prefix routing.
 	// orchestrator.NewBackendFromModel handles all prefixes (openai:, ollama:,
 	// lmstudio:, anthropic:, bedrock:, cli:) and the API-key/CLI fallback.
-	b, backendErr := orchestrator.NewBackendFromModel(opts.ChatModel)
-	if backendErr != nil {
-		return result.NewFailure[ChatData]([]result.SAWError{
-			result.NewFatal(result.CodeChatFailed, "engine.RunChat: failed to create backend").WithCause(backendErr),
-		})
+	bRes := orchestrator.NewBackendFromModel(opts.ChatModel)
+	if bRes.IsFatal() {
+		return result.NewFailure[ChatData](bRes.Errors)
 	}
+	b := bRes.GetData()
 
 	// Explanatory mode for CLI/local backends (no Anthropic API key in use).
 	apiKey := os.Getenv("ANTHROPIC_API_KEY")

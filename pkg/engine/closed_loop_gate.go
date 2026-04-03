@@ -54,10 +54,11 @@ var closedLoopExecCommandFunc = func(ctx context.Context, dir string, cmdStr str
 
 // closedLoopRunAgentFunc is a seam for tests: creates and runs a fix agent.
 var closedLoopRunAgentFunc = func(ctx context.Context, model string, prompt string, worktreePath string) error {
-	b, err := orchestrator.NewBackendFromModel(model)
-	if err != nil {
-		return fmt.Errorf("closed_loop_gate: backend init: %w", err)
+	bRes := orchestrator.NewBackendFromModel(model)
+	if bRes.IsFatal() {
+		return fmt.Errorf("closed_loop_gate: backend init: %s", bRes.Errors[0].Message)
 	}
+	b := bRes.GetData()
 	runner := agent.NewRunner(b)
 	spec := &protocol.Agent{
 		ID:   "fix",
