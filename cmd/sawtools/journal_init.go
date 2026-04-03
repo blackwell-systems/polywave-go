@@ -49,7 +49,7 @@ automatically via pkg/engine integration.`,
 			if obsRes.IsFatal() {
 				return fmt.Errorf("failed to create journal observer: %s", obsRes.Errors[0].Message)
 			}
-			observer := obsRes.Data
+			observer := obsRes.GetData()
 
 			// Check if already initialized
 			if _, err := os.Stat(observer.CursorPath); err == nil {

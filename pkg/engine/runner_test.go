@@ -95,10 +95,11 @@ func TestJournalIntegration_StartPeriodicSync(t *testing.T) {
 	ji := NewJournalIntegration(dir, nil)
 
 	// Create observer
-	observer, err := journal.NewObserver(dir, "wave1/agent-A")
-	if err != nil {
-		t.Fatalf("failed to create observer: %v", err)
+	obsRes := journal.NewObserver(dir, "wave1/agent-A")
+	if obsRes.IsFatal() {
+		t.Fatalf("failed to create observer: %v", obsRes.Errors[0].Message)
 	}
+	observer := obsRes.GetData()
 
 	ctx := context.Background()
 	cancel := ji.StartPeriodicSync(ctx, observer)
@@ -117,10 +118,11 @@ func TestJournalIntegration_TriggerCheckpoint(t *testing.T) {
 	ji := NewJournalIntegration(dir, nil)
 
 	// Create observer
-	observer, err := journal.NewObserver(dir, "wave1/agent-A")
-	if err != nil {
-		t.Fatalf("failed to create observer: %v", err)
+	obsRes := journal.NewObserver(dir, "wave1/agent-A")
+	if obsRes.IsFatal() {
+		t.Fatalf("failed to create observer: %v", obsRes.Errors[0].Message)
 	}
+	observer := obsRes.GetData()
 
 	// Create checkpoint
 	if err := ji.TriggerCheckpoint(observer, "001-isolation"); err != nil {
@@ -147,10 +149,11 @@ func TestJournalIntegration_ArchiveJournal(t *testing.T) {
 	ji := NewJournalIntegration(dir, nil)
 
 	// Create observer - use dash-separated format matching prepare-wave convention
-	observer, err := journal.NewObserver(dir, "wave1-agent-A")
-	if err != nil {
-		t.Fatalf("failed to create observer: %v", err)
+	obsRes := journal.NewObserver(dir, "wave1-agent-A")
+	if obsRes.IsFatal() {
+		t.Fatalf("failed to create observer: %v", obsRes.Errors[0].Message)
 	}
+	observer := obsRes.GetData()
 
 	t.Logf("JournalDir: %s", observer.JournalDir)
 	t.Logf("ProjectRoot: %s", observer.ProjectRoot)

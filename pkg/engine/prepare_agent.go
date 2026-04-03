@@ -236,10 +236,11 @@ saw_name: %s
 
 	// Initialize journal observer
 	fullAgentID := fmt.Sprintf("wave%d-agent-%s", opts.WaveNum, opts.AgentID)
-	observer, err := journal.NewObserver(opts.ProjectRoot, fullAgentID)
-	if err != nil {
-		return result, fmt.Errorf("failed to create journal observer: %w", err)
+	obsRes := journal.NewObserver(opts.ProjectRoot, fullAgentID)
+	if obsRes.IsFatal() {
+		return result, fmt.Errorf("failed to create journal observer: %s", obsRes.Errors[0].Message)
 	}
+	observer := obsRes.GetData()
 
 	// Initialize cursor if it doesn't exist
 	if _, err := os.Stat(observer.CursorPath); os.IsNotExist(err) {

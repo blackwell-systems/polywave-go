@@ -51,7 +51,7 @@ launching or resuming agents.`,
 			if obsRes.IsFatal() {
 				return fmt.Errorf("failed to create journal observer: %s", obsRes.Errors[0].Message)
 			}
-			observer := obsRes.Data
+			observer := obsRes.GetData()
 
 			// Check if journal is initialized
 			if _, err := os.Stat(observer.CursorPath); os.IsNotExist(err) {
@@ -87,9 +87,9 @@ launching or resuming agents.`,
 			// Output JSON result
 			response := map[string]interface{}{
 				"journal_dir":       observer.JournalDir,
-				"new_tool_uses":     syncRes.Data.NewToolUses,
-				"new_tool_results":  syncRes.Data.NewToolResults,
-				"new_bytes":         syncRes.Data.NewBytes,
+				"new_tool_uses":     syncRes.GetData().NewToolUses,
+				"new_tool_results":  syncRes.GetData().NewToolResults,
+				"new_bytes":         syncRes.GetData().NewBytes,
 				"context_file":      outPath,
 				"context_length":    len(contextMD),
 				"context_available": len(contextMD) > 0,

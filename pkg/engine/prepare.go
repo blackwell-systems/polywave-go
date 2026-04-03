@@ -923,10 +923,11 @@ func extractBriefsAndInitJournals(
 
 		// Initialize journal observer
 		fullAgentID := fmt.Sprintf("wave%d-agent-%s", opts.WaveNum, agentID)
-		observer, err := journal.NewObserver(agentRoot, fullAgentID)
-		if err != nil {
-			return nil, fmt.Errorf("failed to create journal observer for agent %s: %w", agentID, err)
+		obsRes := journal.NewObserver(agentRoot, fullAgentID)
+		if obsRes.IsFatal() {
+			return nil, fmt.Errorf("failed to create journal observer for agent %s: %s", agentID, obsRes.Errors[0].Message)
 		}
+		observer := obsRes.GetData()
 
 		// Initialize cursor if it doesn't exist
 		if _, err := os.Stat(observer.CursorPath); os.IsNotExist(err) {

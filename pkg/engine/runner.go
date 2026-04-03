@@ -958,8 +958,9 @@ func MergeWave(ctx context.Context, opts RunMergeOpts) result.Result[MergeData] 
 			if wave.Number == opts.WaveNum {
 				for _, ag := range wave.Agents {
 					agentPath := fmt.Sprintf("wave%d/agent-%s", opts.WaveNum, ag.ID)
-					observer, obsErr := journal.NewObserver(opts.RepoPath, agentPath)
-					if obsErr == nil {
+					obsRes := journal.NewObserver(opts.RepoPath, agentPath)
+					if obsRes.IsSuccess() {
+						observer := obsRes.GetData()
 						if archRes := observer.Archive(); archRes.IsFatal() {
 							// Log but don't fail the merge
 							loggerFrom(opts.Logger).Warn("engine: failed to archive journal for agent", "agent", ag.ID, "err", archRes.Errors[0].Message)
@@ -1065,29 +1066,31 @@ func NewJournalIntegration(repoPath string, logger func(string, ...interface{}))
 func (ji *JournalIntegration) PrepareAgentContext(waveNum int, agentID string, originalPrompt string) (enrichedPrompt string, observer *journal.JournalObserver, err error) {
 	// Create journal observer
 	agentPath := fmt.Sprintf("wave%d/agent-%s", waveNum, agentID)
-	observer, err = journal.NewObserver(ji.repoPath, agentPath)
-	if err != nil {
-		ji.logger("Failed to create journal observer", "agent", agentID, "error", err)
-		return originalPrompt, nil, fmt.Errorf("create journal observer: %w", err)
+	obsRes := journal.NewObserver(ji.repoPath, agentPath)
+	if obsRes.IsFatal() {
+		ji.logger("Failed to create journal observer", "agent", agentID, "error", obsRes.Errors[0].Message)
+		return originalPrompt, nil, fmt.Errorf("create journal observer: %s", obsRes.Errors[0].Message)
 	}
+	observer = obsRes.GetData()
 
 	// Sync from Claude Code session logs (incremental tail)
-	result, err := observer.Sync()
-	if err != nil {
-		ji.logger("Failed to sync journal", "agent", agentID, "error", err)
+	syncRes := observer.Sync()
+	if syncRes.IsFatal() {
+		ji.logger("Failed to sync journal", "agent", agentID, "error", syncRes.Errors[0].Message)
 		// Non-fatal: continue without journal recovery
 		return originalPrompt, observer, nil
 	}
 
 	// If journal has events, generate context and prepend to prompt
-	if result != nil && result.NewToolUses > 0 {
-		contextMd, err := observer.GenerateContext()
-		if err != nil {
-			ji.logger("Failed to generate context", "agent", agentID, "error", err)
+	if syncRes.GetData() != nil && syncRes.GetData().NewToolUses > 0 {
+		ctxRes := observer.GenerateContext()
+		if ctxRes.IsFatal() {
+			ji.logger("Failed to generate context", "agent", agentID, "error", ctxRes.Errors[0].Message)
 			return originalPrompt, observer, nil
 		}
+		contextMd := ctxRes.GetData()
 
-		ji.logger("Recovered session context", "agent", agentID, "tool_calls", result.NewToolUses)
+		ji.logger("Recovered session context", "agent", agentID, "tool_calls", syncRes.GetData().NewToolUses)
 		enrichedPrompt = contextMd + "\n\n---\n\n" + originalPrompt
 		return enrichedPrompt, observer, nil
 	}
@@ -1112,8 +1115,8 @@ func (ji *JournalIntegration) StartPeriodicSync(ctx context.Context, observer *j
 			select {
 			case <-ticker.C:
 				// Sync journal from Claude Code session logs
-				if _, err := observer.Sync(); err != nil {
-					ji.logger("Periodic sync failed", "error", err)
+				if sr := observer.Sync(); sr.IsFatal() {
+					ji.logger("Periodic sync failed", "error", sr.Errors[0].Message)
 				}
 			case <-ctx.Done():
 				return
