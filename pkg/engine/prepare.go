@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 
@@ -18,6 +19,21 @@ import (
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/resume"
 )
+
+// gitCommitAllowMain runs "git -C repoPath commit <args...>" with
+// SAW_ALLOW_MAIN_COMMIT=1 injected only into that subprocess's environment.
+// This avoids the process-wide os.Setenv race when two PrepareWave calls
+// run concurrently (program-tier parallelism).
+func gitCommitAllowMain(repoPath string, args ...string) error {
+	cmdArgs := append([]string{"-C", repoPath, "commit"}, args...)
+	cmd := exec.Command("git", cmdArgs...)
+	cmd.Env = append(os.Environ(), "SAW_ALLOW_MAIN_COMMIT=1")
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("%w: %s", err, strings.TrimSpace(string(out)))
+	}
+	return nil
+}
 
 // fireEvent is a nil-safe wrapper for EventCallback.
 // It checks cb != nil before calling to avoid panics when callers omit the callback.
@@ -395,8 +411,6 @@ func PrepareWave(ctx context.Context, opts PrepareWaveOpts) (*PrepareWaveResult,
 
 		if opts.CommitBaseline {
 			// Auto-commit baseline fixes
-			os.Setenv("SAW_ALLOW_MAIN_COMMIT", "1")
-			defer os.Unsetenv("SAW_ALLOW_MAIN_COMMIT")
 
 			// Stage all changes
 			if _, addErr := git.Run(projectRoot, "add", "-A"); addErr != nil {
@@ -405,10 +419,11 @@ func PrepareWave(ctx context.Context, opts PrepareWaveOpts) (*PrepareWaveResult,
 				return res, fmt.Errorf("failed to stage baseline fixes: %w", addErr)
 			}
 
-			// Commit with descriptive message
+			// Commit with descriptive message; pass SAW_ALLOW_MAIN_COMMIT per-subprocess
+			// to avoid the process-wide env race under concurrent PrepareWave calls.
 			commitMsg := fmt.Sprintf("chore: fix baseline for wave %d\n\nAuto-committed %d modified file(s) before worktree creation.",
 				opts.WaveNum, fileCount)
-			if _, commitErr := git.Run(projectRoot, "commit", "-m", commitMsg); commitErr != nil {
+			if commitErr := gitCommitAllowMain(projectRoot, "-m", commitMsg); commitErr != nil {
 				recordStep(res, opts.OnEvent, "commit_baseline", "failed",
 					fmt.Sprintf("failed to create commit: %v", commitErr))
 				return res, fmt.Errorf("failed to commit baseline fixes: %w", commitErr)
@@ -435,8 +450,6 @@ func PrepareWave(ctx context.Context, opts PrepareWaveOpts) (*PrepareWaveResult,
 			if len(sawFiles) == 0 {
 				recordStep(res, opts.OnEvent, "working_dir_check", "success", "working directory is clean")
 			} else {
-				os.Setenv("SAW_ALLOW_MAIN_COMMIT", "1")
-				defer os.Unsetenv("SAW_ALLOW_MAIN_COMMIT")
 				for _, f := range sawFiles {
 					// Stage each SAW-owned file individually (not -A)
 					trimmed := strings.TrimSpace(f)
@@ -451,7 +464,9 @@ func PrepareWave(ctx context.Context, opts PrepareWaveOpts) (*PrepareWaveResult,
 				}
 				commitMsg := fmt.Sprintf("chore: update SAW state for wave %d preparation\n\nAuto-committed %d SAW state file(s): %s",
 					opts.WaveNum, len(sawFiles), strings.Join(sawFiles, ", "))
-				if _, commitErr := git.Run(projectRoot, "commit", "-m", commitMsg); commitErr != nil {
+				// Pass SAW_ALLOW_MAIN_COMMIT per-subprocess to avoid the process-wide
+				// env race under concurrent PrepareWave calls.
+				if commitErr := gitCommitAllowMain(projectRoot, "-m", commitMsg); commitErr != nil {
 					recordStep(res, opts.OnEvent, "commit_state", "failed",
 						fmt.Sprintf("failed to commit: %v", commitErr))
 					return res, fmt.Errorf("failed to commit SAW state files: %w", commitErr)
@@ -599,10 +614,8 @@ func PrepareWave(ctx context.Context, opts PrepareWaveOpts) (*PrepareWaveResult,
 	// Auto-advance SCOUT_PENDING → REVIEWED now that validation + critic have cleared.
 	// finalize-wave needs the state to be at least REVIEWED to reach WAVE_VERIFIED.
 	if doc.State == protocol.StateScoutPending || doc.State == protocol.StateScoutValidating {
-		// Bypass isolation hook for orchestration commit
-		os.Setenv("SAW_ALLOW_MAIN_COMMIT", "1")
-		defer os.Unsetenv("SAW_ALLOW_MAIN_COMMIT")
-
+		// SAW_ALLOW_MAIN_COMMIT is not needed here: the pre-commit hook exits 0 when
+		// .saw-agent-brief.md is absent (orchestrator context, not an agent worktree).
 		stateRes := protocol.SetImplState(ctx, opts.IMPLPath, protocol.StateReviewed, protocol.SetImplStateOpts{
 			Commit:    true,
 			CommitMsg: "chore: advance IMPL state to REVIEWED (pre-wave gate passed)",
