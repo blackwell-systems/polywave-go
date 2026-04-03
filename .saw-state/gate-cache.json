@@ -744,6 +744,18 @@
         "cached_at": "2026-03-25T14:03:28.483968-07:00"
       }
     },
+    "1e24f9bb5d8d57096d881583cfabc191": {
+      "test": {
+        "gate_type": "test",
+        "command": "go test ./pkg/orchestrator/... ./pkg/engine/...",
+        "passed": true,
+        "exit_code": 0,
+        "stdout": "ok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/orchestrator\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/engine\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/engine/workspace\t(cached)\n",
+        "stderr": "",
+        "from_cache": true,
+        "cached_at": "2026-04-03T15:06:35.214849-07:00"
+      }
+    },
     "1e86c103d84ee88028c614bd00b6585d": {
       "build": {
         "gate_type": "build",
@@ -3960,6 +3972,18 @@
         "cached_at": "2026-03-26T10:16:38.624135-07:00"
       }
     },
+    "85cd230509068086b04cfc7e462f9260": {
+      "lint": {
+        "gate_type": "lint",
+        "command": "go vet ./...",
+        "passed": true,
+        "exit_code": 0,
+        "stdout": "",
+        "stderr": "",
+        "from_cache": true,
+        "cached_at": "2026-04-03T15:06:34.636147-07:00"
+      }
+    },
     "860ec86849ae4040ac45279f8af9bca5": {
       "test": {
         "gate_type": "test",
@@ -5652,6 +5676,18 @@
         "cached_at": "2026-03-25T03:03:35.003769-07:00"
       }
     },
+    "bc69ab42866d8f68772bc83be1e2a47b": {
+      "test": {
+        "gate_type": "test",
+        "command": "go test ./pkg/orchestrator/... ./pkg/engine/...",
+        "passed": true,
+        "exit_code": 0,
+        "stdout": "ok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/orchestrator\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/engine\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/engine/workspace\t(cached)\n",
+        "stderr": "",
+        "from_cache": true,
+        "cached_at": "2026-04-03T15:01:09.97242-07:00"
+      }
+    },
     "bcf01a174638bb4464a1f5b692dadf1d": {
       "lint": {
         "gate_type": "lint",
@@ -6214,6 +6250,18 @@
         "stderr": "",
         "from_cache": true,
         "cached_at": "2026-04-01T01:50:20.376161-07:00"
+      }
+    },
+    "c9370eb0c89f30a3fef89b69cb0a5974": {
+      "lint": {
+        "gate_type": "lint",
+        "command": "go vet ./...",
+        "passed": true,
+        "exit_code": 0,
+        "stdout": "",
+        "stderr": "",
+        "from_cache": true,
+        "cached_at": "2026-04-03T15:01:09.396059-07:00"
       }
     },
     "c9bf9be1f4c43cd054349e360231c47d": {
@@ -6838,6 +6886,18 @@
         "stderr": "",
         "from_cache": true,
         "cached_at": "2026-03-24T22:56:21.057586-07:00"
+      }
+    },
+    "dd243befdc8c1bd9d485809ac632300c": {
+      "build": {
+        "gate_type": "build",
+        "command": "go build ./...",
+        "passed": true,
+        "exit_code": 0,
+        "stdout": "",
+        "stderr": "",
+        "from_cache": true,
+        "cached_at": "2026-04-03T15:06:33.936062-07:00"
       }
     },
     "dd4d370d7ae7b22975bc9161a348defd": {
@@ -7618,6 +7678,18 @@
         "stderr": "",
         "from_cache": true,
         "cached_at": "2026-03-25T21:06:20.472988-07:00"
+      }
+    },
+    "f31a2e538ce65171b8c7d28e6a939160": {
+      "build": {
+        "gate_type": "build",
+        "command": "go build ./...",
+        "passed": true,
+        "exit_code": 0,
+        "stdout": "",
+        "stderr": "",
+        "from_cache": true,
+        "cached_at": "2026-04-03T15:01:08.734736-07:00"
       }
     },
     "f31f09708bb55bd13df615ab25bcf2b1": {

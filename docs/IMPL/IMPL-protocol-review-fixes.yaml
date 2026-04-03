@@ -1,0 +1,1240 @@
+title: Protocol Code Review Fixes
+feature_slug: protocol-review-fixes
+verdict: SUITABLE
+suitability_assessment: |-
+    pkg/protocol is the foundational package (97 production files, ~26k LOC) imported by
+    every other package. 26 findings across 3 priority levels — all decompose into disjoint
+    file sets with clear wave dependencies:
+    Wave 1 (foundation): new error codes + StateInterviewing + doc/parser fixes + inline
+    code replacements. All independent.
+    Wave 2 (dual-return fixes): MergeAgents, Cleanup/CleanupAllStale, ArchiveIMPL/
+    ArchiveProgram/LoadProjectMemory. Depends on Wave 1 codes landing.
+    Wave 3 (protocol-internal callers + tier/critic fixes): FinalizeTier, PrepareTier,
+    RunTierGate, SkipCriticForIMPL, FullValidateProgram. Depends on Wave 2 signatures.
+    Wave 4 (cross-package callers): pkg/engine and cmd/sawtools callers of all changed
+    functions. Depends on Wave 3 for complete picture.
+
+    Caveats:
+    - P0-1: ValidateInvariants return type change (error → []result.SAWError) has callers
+      in pkg/engine/runner.go and pkg/protocol/doc.go. orchestrator.go uses its own
+      inline adapter and does NOT call protocol.ValidateInvariants directly.
+    - P1-5: MergeAgents dual-return fix — callers in finalize.go and finalize_steps.go.
+    - P1-4: Cleanup dual-return fix — callers in finalize_steps.go and merge_cleanup.go.
+    - protocol.FinalizeTier has zero production callers (CLI delegates to engine.FinalizeTierEngine);
+      Wave 3 Agent G still fixes the signature for API correctness.
+    - protocol.FullValidateProgram has no external callers currently; Wave 3 Agent H
+      still adds ctx for API correctness. No Wave 4 update needed.
+    - Wave 4 is two parallel agents: I (pkg/engine callers) and J (cmd/sawtools callers).
+test_command: go test ./pkg/protocol/... ./pkg/engine/... ./pkg/orchestrator/... ./cmd/sawtools/...
+lint_command: go vet ./...
+file_ownership:
+    - file: pkg/result/codes.go
+      agent: A
+      wave: 1
+      action: modify
+    - file: pkg/protocol/types.go
+      agent: A
+      wave: 1
+      action: modify
+    - file: pkg/protocol/state_transition.go
+      agent: A
+      wave: 1
+      action: modify
+    - file: pkg/protocol/state_status.go
+      agent: A
+      wave: 1
+      action: modify
+    - file: pkg/protocol/validation.go
+      agent: A
+      wave: 1
+      action: modify
+    - file: pkg/protocol/parser.go
+      agent: B
+      wave: 1
+      action: modify
+    - file: pkg/protocol/doc.go
+      agent: B
+      wave: 1
+      action: modify
+    - file: pkg/protocol/manifest.go
+      agent: C
+      wave: 1
+      action: modify
+    - file: pkg/protocol/updater.go
+      agent: C
+      wave: 1
+      action: modify
+    - file: pkg/protocol/freeze.go
+      agent: C
+      wave: 1
+      action: modify
+    - file: pkg/protocol/gates.go
+      agent: C
+      wave: 1
+      action: modify
+    - file: pkg/protocol/amend.go
+      agent: C
+      wave: 1
+      action: modify
+    - file: pkg/protocol/merge_agents.go
+      agent: D
+      wave: 2
+      action: modify
+    - file: pkg/protocol/merge_agents_test.go
+      agent: D
+      wave: 2
+      action: modify
+    - file: pkg/protocol/cleanup.go
+      agent: E
+      wave: 2
+      action: modify
+    - file: pkg/protocol/commit_verify.go
+      agent: E
+      wave: 2
+      action: modify
+    - file: pkg/protocol/cleanup_test.go
+      agent: E
+      wave: 2
+      action: modify
+    - file: pkg/protocol/discovery.go
+      agent: F
+      wave: 2
+      action: modify
+    - file: pkg/protocol/memory.go
+      agent: F
+      wave: 2
+      action: modify
+    - file: pkg/protocol/discovery_test.go
+      agent: F
+      wave: 2
+      action: modify
+    - file: pkg/protocol/memory_test.go
+      agent: F
+      wave: 2
+      action: modify
+    - file: pkg/protocol/program_tier_finalize.go
+      agent: G
+      wave: 3
+      action: modify
+    - file: pkg/protocol/program_tier_finalize_test.go
+      agent: G
+      wave: 3
+      action: modify
+    - file: pkg/protocol/program_tier_gate.go
+      agent: H
+      wave: 3
+      action: modify
+    - file: pkg/protocol/program_tier_prepare.go
+      agent: H
+      wave: 3
+      action: modify
+    - file: pkg/protocol/critic_gate.go
+      agent: H
+      wave: 3
+      action: modify
+    - file: pkg/protocol/full_validate.go
+      agent: H
+      wave: 3
+      action: modify
+    - file: pkg/protocol/program_tier_gate_test.go
+      agent: H
+      wave: 3
+      action: modify
+    - file: pkg/protocol/program_tier_prepare_test.go
+      agent: H
+      wave: 3
+      action: modify
+    - file: pkg/protocol/full_validate_test.go
+      agent: H
+      wave: 3
+      action: modify
+    - file: pkg/engine/finalize.go
+      agent: I
+      wave: 4
+      action: modify
+    - file: pkg/engine/finalize_steps.go
+      agent: I
+      wave: 4
+      action: modify
+    - file: pkg/engine/finalize_tier.go
+      agent: I
+      wave: 4
+      action: modify
+    - file: pkg/engine/merge_cleanup.go
+      agent: I
+      wave: 4
+      action: modify
+    - file: pkg/engine/mark_program_complete.go
+      agent: I
+      wave: 4
+      action: modify
+    - file: pkg/engine/program_auto.go
+      agent: I
+      wave: 4
+      action: modify
+    - file: pkg/engine/runner.go
+      agent: I
+      wave: 4
+      action: modify
+    - file: cmd/sawtools/cleanup.go
+      agent: J
+      wave: 4
+      action: modify
+    - file: cmd/sawtools/close_impl_cmd.go
+      agent: J
+      wave: 4
+      action: modify
+    - file: cmd/sawtools/mark_complete_cmd.go
+      agent: J
+      wave: 4
+      action: modify
+    - file: cmd/sawtools/merge_agents.go
+      agent: J
+      wave: 4
+      action: modify
+    - file: cmd/sawtools/prepare_tier_cmd.go
+      agent: J
+      wave: 4
+      action: modify
+    - file: cmd/sawtools/tier_gate_cmd.go
+      agent: J
+      wave: 4
+      action: modify
+interface_contracts:
+    - name: ValidateInvariants
+      description: |-
+        Return type changed from bare error to []result.SAWError (P0-1/P1-1).
+        The function checks I1 (disjoint ownership) only; doc comment updated to
+        reflect this. Callers in pkg/engine/runner.go updated by Wave 4 Agent I.
+      definition: |
+        func ValidateInvariants(manifest *IMPLManifest) []result.SAWError
+      location: pkg/protocol/parser.go
+    - name: StateInterviewing
+      description: |-
+        New ProtocolState constant added to types.go (P0-2). Added to allowedTransitions
+        with target [StateScoutPending], to validateSM01StateValid, and to IMPLStateToStatus
+        as "pending". Matches state-machine.md spec.
+      definition: |
+        const StateInterviewing ProtocolState = "INTERVIEWING"
+      location: pkg/protocol/types.go
+    - name: MergeAgents
+      description: |-
+        Dual-return (result.Result[MergeAgentsData], error) → result.Result[MergeAgentsData].
+        All error conditions encoded as fatal SAWErrors. Callers updated by Wave 4 Agent I
+        (pkg/engine/finalize.go:533, pkg/engine/finalize_steps.go:222) and Agent J
+        (cmd/sawtools/merge_agents.go:21).
+      definition: |
+        func MergeAgents(opts MergeAgentsOpts) result.Result[MergeAgentsData]
+      location: pkg/protocol/merge_agents.go
+    - name: Cleanup
+      description: |-
+        Dual-return (result.Result[CleanupData], error) → result.Result[CleanupData].
+        Callers updated by Wave 4 Agent I (pkg/engine/finalize_steps.go:388,
+        pkg/engine/merge_cleanup.go:56) and Agent J (cmd/sawtools/cleanup.go:57).
+      definition: |
+        func Cleanup(ctx context.Context, manifestPath string, waveNum int, repoDir string, logger *slog.Logger) result.Result[CleanupData]
+      location: pkg/protocol/cleanup.go
+    - name: CleanupAllStale
+      description: |-
+        Changed from (*StaleCleanupData, error) to result.Result[*StaleCleanupData].
+        Uses result.NewPartial for partial-success cases. Caller updated by Agent J
+        (cmd/sawtools/cleanup.go:42).
+      definition: |
+        func CleanupAllStale(ctx context.Context, repoDir string, force bool) result.Result[*StaleCleanupData]
+      location: pkg/protocol/cleanup.go
+    - name: ArchiveIMPL
+      description: |-
+        Changed from (string, error) to result.Result[ArchiveData] where ArchiveData
+        contains NewPath string. New type defined in discovery.go. Callers updated by
+        Wave 4 Agent I (pkg/engine/finalize.go:682) and Agent J
+        (cmd/sawtools/close_impl_cmd.go:63, cmd/sawtools/mark_complete_cmd.go:41).
+      definition: |
+        type ArchiveData struct { NewPath string }
+        func ArchiveIMPL(ctx context.Context, manifestPath string) result.Result[ArchiveData]
+      location: pkg/protocol/discovery.go
+    - name: ArchiveProgram
+      description: |-
+        Same change as ArchiveIMPL. Caller updated by Wave 4 Agent I
+        (pkg/engine/mark_program_complete.go:121).
+      definition: |
+        func ArchiveProgram(ctx context.Context, manifestPath string) result.Result[ArchiveData]
+      location: pkg/protocol/discovery.go
+    - name: LoadProjectMemory
+      description: |-
+        Changed from (*ProjectMemory, error) to result.Result[*ProjectMemory].
+        Adds ctx as first parameter. No external callers identified; internal to
+        memory.go usage only.
+      definition: |
+        func LoadProjectMemory(ctx context.Context, path string) result.Result[*ProjectMemory]
+      location: pkg/protocol/memory.go
+    - name: FinalizeTier
+      description: |-
+        Dual-return (result.Result[FinalizeTierData], error) → result.Result[FinalizeTierData].
+        No production callers (CLI uses engine.FinalizeTierEngine). API correctness fix only.
+      definition: |
+        func FinalizeTier(programManifestPath string, tierNumber int, repoDir string) result.Result[FinalizeTierData]
+      location: pkg/protocol/program_tier_finalize.go
+    - name: PrepareTier
+      description: |-
+        Changed from (*PrepareTierResult, error) to result.Result[*PrepareTierResult].
+        Caller updated by Wave 4 Agent J (cmd/sawtools/prepare_tier_cmd.go:52).
+      definition: |
+        func PrepareTier(opts PrepareTierOpts) result.Result[*PrepareTierResult]
+      location: pkg/protocol/program_tier_prepare.go
+    - name: RunTierGate
+      description: |-
+        Adds ctx context.Context as first parameter. Internal timeout derived from
+        ctx rather than context.Background(). Callers updated by Wave 4 Agent I
+        (pkg/engine/finalize_tier.go:150, pkg/engine/program_auto.go:64) and
+        Agent J (cmd/sawtools/tier_gate_cmd.go:55).
+      definition: |
+        func RunTierGate(ctx context.Context, manifest *PROGRAMManifest, tierNumber int, repoPath string) result.Result[*TierGateData]
+      location: pkg/protocol/program_tier_gate.go
+    - name: SkipCriticForIMPL
+      description: |-
+        Changed from (bool, error) to result.Result[bool]. Uses WriteCriticReviewResult
+        internally instead of deprecated WriteCriticReview. Caller at
+        program_tier_prepare.go:157 updated in same wave (Agent H owns both files).
+      definition: |
+        func SkipCriticForIMPL(ctx context.Context, implPath string, m *IMPLManifest) result.Result[bool]
+      location: pkg/protocol/critic_gate.go
+    - name: FullValidateProgram
+      description: |-
+        Adds ctx context.Context as first parameter. Fixes context.TODO() at line 115
+        (passed to CheckAgentLOCBudget). No external callers identified.
+      definition: |
+        func FullValidateProgram(ctx context.Context, manifestPath string, opts FullValidateProgramOpts) result.Result[FullValidateProgramData]
+      location: pkg/protocol/full_validate.go
+waves:
+    - number: 1
+      agents:
+        - id: A
+          task: |-
+            ## Agent A — New error codes, StateInterviewing, validation update
+
+            ### Context
+            Four files need coordinated changes to add `StateInterviewing` to the protocol
+            state machine and register new canonical error codes. All changes are additive.
+
+            ### Files
+            - `pkg/result/codes.go` — add 5 new constants
+            - `pkg/protocol/types.go` — add StateInterviewing constant
+            - `pkg/protocol/state_transition.go` — add INTERVIEWING to allowedTransitions
+            - `pkg/protocol/state_status.go` — add INTERVIEWING mapping
+            - `pkg/protocol/validation.go` — add INTERVIEWING to validateSM01StateValid
+
+            ### Changes required
+
+            **1. `pkg/result/codes.go` — add new constants** (P0-3, P0-2)
+
+            Find the P-series block (currently ends at P010_TIER_CONFLICT_DETECTED) and add:
+            ```go
+            // P011: wave not found during merge
+            CodeWaveNotFound = "P011_WAVE_NOT_FOUND"
+            // P012: unknown agent referenced in file ownership
+            CodeUnknownAgentInOwnership = "P012_UNKNOWN_AGENT_IN_OWNERSHIP"
+            // P013: amend blocked due to state
+            CodeAmendBlocked = "P013_AMEND_BLOCKED"
+            ```
+
+            Find the N-series block (currently ends at N093_FINALIZE_STEP_FAILED) and add:
+            ```go
+            // N094: manifest save failed
+            CodeManifestSaveFailed = "N094_MANIFEST_SAVE_FAILED"
+            // N095: completion report set failed
+            CodeReportSetFailed = "N095_REPORT_SET_FAILED"
+            ```
+
+            Also update the comment block at the top of the N-series section to note
+            N094-N095 additions.
+
+            **2. `pkg/protocol/types.go` — add StateInterviewing** (P0-2)
+
+            In the ProtocolState constants block, add after the last existing state:
+            ```go
+            StateInterviewing ProtocolState = "INTERVIEWING"
+            ```
+
+            **3. `pkg/protocol/state_transition.go` — wire INTERVIEWING** (P0-2)
+
+            Read the file to find `allowedTransitions`. Add an entry:
+            ```go
+            StateInterviewing: {StateScoutPending},
+            ```
+
+            Per state-machine.md: INTERVIEWING → SCOUT_PENDING is the only valid
+            transition out. Also add INTERVIEWING as a reachable state from
+            StateScoutPending if not already present (check spec: this is the entry point).
+            Read state-machine.md at `/Users/dayna.blackwell/code/scout-and-wave/protocol/state-machine.md`
+            to confirm the exact allowed transitions.
+
+            **4. `pkg/protocol/state_status.go` — map INTERVIEWING** (P0-2)
+
+            In `IMPLStateToStatus`, add a case mapping `StateInterviewing` to `"pending"`.
+
+            **5. `pkg/protocol/validation.go` — add INTERVIEWING to valid set** (P0-2)
+
+            Find `validateSM01StateValid` (or equivalent function that validates state
+            string values). Add `StateInterviewing` to the set of valid states so that a
+            manifest with `state: INTERVIEWING` passes validation.
+
+            ### Verification gate
+            ```
+            go build ./pkg/result/... ./pkg/protocol/...
+            go vet ./pkg/result/... ./pkg/protocol/...
+            go test ./pkg/result/... ./pkg/protocol/...
+            ```
+
+            ### Constraints
+            - Do NOT modify any other constants or logic in codes.go.
+            - Do NOT change the allowedTransitions for existing states.
+            - State machine changes must be exactly per spec (state-machine.md).
+          files:
+            - pkg/result/codes.go
+            - pkg/protocol/types.go
+            - pkg/protocol/state_transition.go
+            - pkg/protocol/state_status.go
+            - pkg/protocol/validation.go
+        - id: B
+          task: |-
+            ## Agent B — ValidateInvariants signature fix and doc.go accuracy
+
+            ### Context
+            Two files need fixes:
+            1. `parser.go:ValidateInvariants` returns `error` instead of `[]result.SAWError` (P1-1)
+               and its doc claims I1-I6 coverage but only checks I1 (P0-1).
+            2. `doc.go` references `agent.letter` (stale field name; actual field is `id`) (P2-10)
+               and claims ValidateInvariants checks I1-I6 (P2-1).
+
+            ### Changes required
+
+            **1. `pkg/protocol/parser.go` — fix ValidateInvariants** (P0-1, P1-1)
+
+            Read parser.go first to understand the full function.
+
+            Current signature: `func ValidateInvariants(manifest *IMPLManifest) error`
+            New signature: `func ValidateInvariants(manifest *IMPLManifest) []result.SAWError`
+
+            The function body currently checks I1 (disjoint ownership). Keep the I1 check
+            logic intact. Change the return mechanism:
+            - On violation: return `[]result.SAWError{result.NewFatal(result.CodeDisjointOwnership, msg)}`
+              (use result.CodeDisjointOwnership = "V002_DISJOINT_OWNERSHIP" for I1 violations)
+            - On pass: return `nil`
+
+            Update the doc comment to accurately state:
+            `// ValidateInvariants checks protocol Invariant I1 (disjoint file ownership).`
+            `// For full I1–I6 validation use Validate.`
+
+            Add `"github.com/blackwell-systems/scout-and-wave-go/pkg/result"` to imports
+            if not already present.
+
+            **2. `pkg/protocol/doc.go` — fix stale content** (P2-1, P2-10)
+
+            Read doc.go. Find and fix:
+            a) Any YAML example showing `letter: A` → change to `id: A`
+            b) Any comment claiming `ValidateInvariants checks protocol invariants (I1–I6)` →
+               change to `ValidateInvariants checks I1 only; use Validate for I1–I6`
+
+            ### Verification gate
+            ```
+            go build ./pkg/protocol/...
+            go vet ./pkg/protocol/...
+            go test ./pkg/protocol/...
+            ```
+
+            Note: pkg/engine/runner.go and pkg/protocol/doc.go will still reference the
+            old error return (wave 4 Agent I and this agent fix those). Run only
+            `./pkg/protocol/...` gates.
+
+            ### Constraints
+            - Do NOT change the name `ValidateInvariants` — callers in Wave 4 will be updated.
+            - Do NOT add I2-I6 checks to ValidateInvariants — it stays I1-only, just with
+              the correct return type and accurate doc.
+            - Do NOT modify parser.go beyond the ValidateInvariants function.
+          files:
+            - pkg/protocol/parser.go
+            - pkg/protocol/doc.go
+        - id: C
+          task: |-
+            ## Agent C — Inline error codes → canonical constants + ctx.Err() check
+
+            ### Context
+            Five files use inline string error codes instead of canonical constants from
+            pkg/result. Replace all with the correct constants. Also add ctx.Err() check
+            to manifest.go's Load/Save functions (P1-2).
+
+            ### Files and changes
+
+            **1. `pkg/protocol/manifest.go`** (P0-3, P1-2)
+
+            Read the file to find:
+            - `"MANIFEST_SAVE_FAILED"` → replace with `result.CodeManifestSaveFailed`
+              (new constant added by Wave 1 Agent A, value "N094_MANIFEST_SAVE_FAILED")
+            - `"REPORT_SET_FAILED"` → replace with `result.CodeReportSetFailed`
+              (new constant "N095_REPORT_SET_FAILED")
+            - Add ctx.Err() check at the start of Load and Save:
+              ```go
+              if err := ctx.Err(); err != nil {
+                  return nil, err
+              }
+              ```
+
+            **2. `pkg/protocol/updater.go`** (P2-5)
+
+            Replace `"STATUS_UPDATE_FAILED"` with `result.CodeStatusUpdateFailed`
+            (already exists: "N015_STATUS_UPDATE_FAILED"). Search the file for this
+            string — it appears at lines ~47 and ~56.
+
+            **3. `pkg/protocol/freeze.go`** (P0-3)
+
+            Replace:
+            - `"FREEZE_CANCELLED"` → `result.CodeContextCancelled` ("N018_CONTEXT_CANCELLED")
+            - `"FREEZE_FAILED"` → `result.CodeFreezeError` ("N012_FREEZE_ERROR")
+
+            **4. `pkg/protocol/gates.go`** (P0-3)
+
+            Replace:
+            - `"GATE_VALIDATION_FAILED"` → `result.CodeGateValidationFailed`
+              (already exists: "B009_GATE_VALIDATION_FAILED"). Note: the inline string
+              `"GATE_VALIDATION_FAILED"` does NOT match the canonical `"B009_GATE_VALIDATION_FAILED"`.
+              This is a bug.
+            - `"GATE_INVALID"` → `result.CodeGateValidationFailed` (same constant)
+
+            **5. `pkg/protocol/amend.go`** (P0-3, P2)
+
+            Replace `"AMEND_BLOCKED"` with `result.CodeAmendBlocked`
+            (new constant "P013_AMEND_BLOCKED" added by Wave 1 Agent A).
+
+            ### Verification gate
+            ```
+            go build ./pkg/protocol/...
+            go vet ./pkg/protocol/...
+            go test ./pkg/protocol/...
+            ```
+
+            ### Constraints
+            - Use LSP or grep to find ALL occurrences of each inline string before replacing.
+            - Do NOT change any logic beyond the string literal substitutions and the
+              ctx.Err() addition.
+            - The ctx.Err() check in manifest.go must be at function entry, before any I/O.
+            - `result.CodeManifestSaveFailed` and `result.CodeAmendBlocked` are added by
+              Agent A in the same wave. If Agent A hasn't landed yet, use the string literal
+              as a placeholder and note it in your completion report; the pre-merge build
+              gate will verify both constants exist.
+          files:
+            - pkg/protocol/manifest.go
+            - pkg/protocol/updater.go
+            - pkg/protocol/freeze.go
+            - pkg/protocol/gates.go
+            - pkg/protocol/amend.go
+    - number: 2
+      agents:
+        - id: D
+          task: |-
+            ## Agent D — MergeAgents dual-return fix and inline code replacement
+
+            ### Context
+            `pkg/protocol/merge_agents.go` has two issues:
+            1. (P1-5) `MergeAgents` returns `(result.Result[MergeAgentsData], error)` —
+               dual return antipattern. Callers must handle two error channels.
+            2. (P0-3/P2-2) Inline string codes not registered in codes.go.
+
+            Wave 1 Agent A adds the missing codes this agent needs.
+
+            ### Changes required
+
+            **1. Fix `MergeAgents` return type** (P1-5)
+
+            Read merge_agents.go fully. Current signature:
+            ```go
+            func MergeAgents(opts MergeAgentsOpts) (result.Result[MergeAgentsData], error)
+            ```
+            New signature:
+            ```go
+            func MergeAgents(opts MergeAgentsOpts) result.Result[MergeAgentsData]
+            ```
+
+            All current `error` return paths (manifest load failure, wave-not-found) must
+            become `result.NewFailure[MergeAgentsData](...)`. Check the current code to
+            see how the dual return is used and merge both channels into the result.
+
+            **2. Replace inline error codes** (P0-3, P2-2)
+
+            - `"WAVE_NOT_FOUND"` → `result.CodeWaveNotFound` ("P011_WAVE_NOT_FOUND")
+            - `"UNKNOWN_AGENT_IN_OWNERSHIP"` → `result.CodeUnknownAgentInOwnership` ("P012_UNKNOWN_AGENT_IN_OWNERSHIP")
+            - `"DUPLICATE_FILE_OWNERSHIP"` → `result.CodeDisjointOwnership`
+              (already exists: "V002_DISJOINT_OWNERSHIP")
+
+            **3. Check merge_log.go TOCTOU concern** (P2-11 investigation)
+
+            Read `merge_log.go` to find `updateManifestState` (called by `SetImplState`
+            in state_transition.go). Check whether it uses `WithCompletionReportLock`.
+            If it does NOT, add a note in your completion report — do NOT fix this in this
+            agent (it would require changes outside your file ownership). If it DOES use
+            the lock, note "P2-11: TOCTOU concern is mitigated by WithCompletionReportLock".
+
+            ### Test file updates
+            Update `pkg/protocol/merge_agents_test.go` to use the new single-return signature:
+            - Replace `res, err := MergeAgents(opts)` with `res := MergeAgents(opts)` patterns.
+            - Remove `if err != nil` checks that follow MergeAgents calls.
+            - The test file must compile with `go test ./pkg/protocol/...` after your changes.
+
+            ### Verification gate
+            ```
+            go build ./pkg/protocol/...
+            go vet ./pkg/protocol/...
+            go test ./pkg/protocol/...
+            ```
+            Note: callers in pkg/engine (finalize.go:533, finalize_steps.go:222) and
+            cmd/sawtools (merge_agents.go:21) will fail to compile until Wave 4.
+            Run only `./pkg/protocol/...` gates.
+
+            ### Constraints
+            - Do NOT modify files outside merge_agents.go.
+            - merge_log.go investigation is read-only; do not modify it.
+          files:
+            - pkg/protocol/merge_agents.go
+          dependencies:
+            - A
+        - id: E
+          task: |-
+            ## Agent E — Cleanup and CleanupAllStale dual-return fixes
+
+            ### Context
+            `pkg/protocol/cleanup.go` has two functions with non-canonical return types:
+            1. (P1-4) `Cleanup` returns `(result.Result[CleanupData], error)` — dual return.
+            2. (P2-3) `CleanupAllStale` returns `(*StaleCleanupData, error)` — bare pointer+error.
+
+            Also, `commit_verify.go:50` passes `context.TODO()` where a caller ctx is
+            available (P1-2 minor fix).
+
+            ### Changes required
+
+            **1. Fix `Cleanup`** (P1-4)
+
+            Read cleanup.go fully. Change signature:
+            ```go
+            func Cleanup(ctx context.Context, manifestPath string, waveNum int, repoDir string, logger *slog.Logger) result.Result[CleanupData]
+            ```
+            All current error-return paths become `result.NewFailure[CleanupData](...)`.
+            The existing `result.Result` return paths stay as-is; merge the bare `error`
+            channel into the result.
+
+            **2. Fix `CleanupAllStale`** (P2-3)
+
+            Change signature:
+            ```go
+            func CleanupAllStale(ctx context.Context, repoDir string, force bool) result.Result[*StaleCleanupData]
+            ```
+            For partial-success cases (some cleaned, some failed), use `result.NewPartial`
+            if the result package supports it; otherwise use `result.NewSuccess` and log
+            the partial failures in the `StaleCleanupData` struct.
+
+            **3. Fix `commit_verify.go` context.TODO()** (P1-2)
+
+            Read commit_verify.go. Find the `context.TODO()` call at ~line 50 that is
+            passed to a function where the caller already has a valid `ctx context.Context`.
+            Replace with `ctx`.
+
+            ### Test file updates
+            Update `pkg/protocol/cleanup_test.go` to use the new signatures:
+            - `CleanupAllStale` now returns `result.Result[*StaleCleanupData]` (not `(*StaleCleanupData, error)`).
+            - `Cleanup` now returns `result.Result[CleanupData]` (not dual-return).
+            - Update all test call sites to remove the `err` return and use `res.IsFatal()` / `res.GetData()`.
+
+            ### Verification gate
+            ```
+            go build ./pkg/protocol/...
+            go vet ./pkg/protocol/...
+            go test ./pkg/protocol/...
+            ```
+            Note: callers in pkg/engine (finalize_steps.go:388, merge_cleanup.go:56) and
+            cmd/sawtools (cleanup.go:42,57) compile against the old signatures until Wave 4.
+            Run only `./pkg/protocol/...` gates.
+
+            ### Constraints
+            - Do NOT modify files outside cleanup.go and commit_verify.go.
+            - CleanupData and StaleCleanupData struct definitions stay unchanged.
+          files:
+            - pkg/protocol/cleanup.go
+            - pkg/protocol/commit_verify.go
+          dependencies:
+            - A
+        - id: F
+          task: |-
+            ## Agent F — ArchiveIMPL/ArchiveProgram and LoadProjectMemory result.Result migration
+
+            ### Context
+            `discovery.go` has two exported functions returning bare `(string, error)` (P1-3):
+            - `ArchiveIMPL(ctx, path) (string, error)`
+            - `ArchiveProgram(ctx, path) (string, error)`
+
+            `memory.go:LoadProjectMemory` returns `(*ProjectMemory, error)` with no context (P2-4).
+
+            Also, `"CANCELLED"` inline codes in discovery.go should use the canonical constant.
+
+            ### Changes required
+
+            **1. Add `ArchiveData` type and fix `ArchiveIMPL`/`ArchiveProgram`** (P1-3)
+
+            In discovery.go, add before the functions:
+            ```go
+            // ArchiveData holds the result of an archive operation.
+            type ArchiveData struct {
+                NewPath string `json:"new_path"`
+            }
+            ```
+
+            Change `ArchiveIMPL` signature:
+            ```go
+            func ArchiveIMPL(ctx context.Context, manifestPath string) result.Result[ArchiveData]
+            ```
+            On success: `return result.NewSuccess(ArchiveData{NewPath: newPath})`
+            On failure: `return result.NewFailure[ArchiveData]([]result.SAWError{...})`
+
+            Apply the same pattern to `ArchiveProgram`.
+
+            **2. Replace `"CANCELLED"` inline codes** (P0-3)
+
+            Replace `"CANCELLED"` with `result.CodeContextCancelled` ("N018_CONTEXT_CANCELLED").
+            Search the file — it appears at lines ~72 and ~102.
+
+            **3. Fix `LoadProjectMemory`** (P2-4)
+
+            In memory.go, change signature:
+            ```go
+            func LoadProjectMemory(ctx context.Context, path string) result.Result[*ProjectMemory]
+            ```
+            Add `if err := ctx.Err(); err != nil { return result.NewFailure... }` at entry.
+            Return `result.NewSuccess(memory)` on success, `result.NewFailure` on error.
+
+            ### Test file updates
+            Update test files to use the new signatures:
+            - `pkg/protocol/discovery_test.go`: `ArchiveIMPL`/`ArchiveProgram` now return
+              `result.Result[ArchiveData]` instead of `(string, error)`. Update test call sites
+              to use `res.GetData().NewPath` instead of the direct string return.
+            - `pkg/protocol/memory_test.go`: `LoadProjectMemory` now takes `ctx context.Context`
+              as first arg and returns `result.Result[*ProjectMemory]`. Add `context.Background()`
+              as first arg to all test call sites; replace `(mem, err)` with result pattern.
+
+            ### Verification gate
+            ```
+            go build ./pkg/protocol/...
+            go vet ./pkg/protocol/...
+            go test ./pkg/protocol/...
+            ```
+            Note: callers in pkg/engine (finalize.go:682, mark_program_complete.go:121) and
+            cmd/sawtools (close_impl_cmd.go:63, mark_complete_cmd.go:41) compile against
+            old signatures until Wave 4. Run only `./pkg/protocol/...` gates.
+
+            ### Constraints
+            - Define ArchiveData in discovery.go (not a separate file).
+            - Do NOT change ArchiveIMPL/ArchiveProgram logic beyond the return type.
+            - Do NOT change ProjectMemory struct fields.
+          files:
+            - pkg/protocol/discovery.go
+            - pkg/protocol/memory.go
+          dependencies:
+            - A
+    - number: 3
+      agents:
+        - id: G
+          task: |-
+            ## Agent G — FinalizeTier dual-return fix
+
+            ### Context
+            `pkg/protocol/program_tier_finalize.go:FinalizeTier` returns
+            `(result.Result[FinalizeTierData], error)` — dual-return antipattern (P1-6).
+            No production callers exist (CLI uses engine.FinalizeTierEngine). This is an
+            API correctness fix.
+
+            ### Changes required
+
+            Read program_tier_finalize.go. Change signature:
+            ```go
+            func FinalizeTier(programManifestPath string, tierNumber int, repoDir string) result.Result[FinalizeTierData]
+            ```
+            Encode the current `error` path (parse failure at line ~40-41) as:
+            ```go
+            return result.NewFailure[FinalizeTierData]([]result.SAWError{
+                result.NewFatal(result.CodeIMPLParseFailed,
+                    fmt.Sprintf("protocol.FinalizeTier: parse failed: %v", err)),
+            })
+            ```
+            All other current error paths use whatever code is appropriate. Use
+            `result.CodeFinalizeStepFailed` ("N093_FINALIZE_STEP_FAILED") for general
+            finalize failures.
+
+            ### Test file updates
+            Update `pkg/protocol/program_tier_finalize_test.go`:
+            - `FinalizeTier` now returns `result.Result[FinalizeTierData]` (not dual-return).
+            - Replace `res, err := FinalizeTier(...)` with `res := FinalizeTier(...)` patterns.
+            - Remove `if err != nil` checks; use `res.IsFatal()` instead.
+
+            ### Verification gate
+            ```
+            go build ./pkg/protocol/...
+            go vet ./pkg/protocol/...
+            go test ./pkg/protocol/...
+            ```
+
+            ### Constraints
+            - Only modify program_tier_finalize.go and program_tier_finalize_test.go.
+            - Do NOT change FinalizeTierData struct.
+          files:
+            - pkg/protocol/program_tier_finalize.go
+          dependencies:
+            - D
+            - E
+            - F
+        - id: H
+          task: |-
+            ## Agent H — RunTierGate ctx, PrepareTier result.Result, SkipCriticForIMPL, FullValidateProgram ctx
+
+            ### Context
+            Four files in pkg/protocol need changes. This agent owns all four because
+            program_tier_prepare.go calls SkipCriticForIMPL (critic_gate.go) — both
+            signature change must be in the same wave to avoid a half-broken build.
+
+            ### Changes required
+
+            **1. `program_tier_gate.go` — add ctx to RunTierGate** (P1-9)
+
+            Read the file. Change:
+            ```go
+            func RunTierGate(manifest *PROGRAMManifest, tierNumber int, repoPath string) result.Result[*TierGateData]
+            ```
+            to:
+            ```go
+            func RunTierGate(ctx context.Context, manifest *PROGRAMManifest, tierNumber int, repoPath string) result.Result[*TierGateData]
+            ```
+            Find the internal `runTierGateCommand` or equivalent helper that creates
+            `context.WithTimeout(context.Background(), 5*time.Minute)`. Change to:
+            `context.WithTimeout(ctx, 5*time.Minute)`.
+            Thread `ctx` through all internal helper calls.
+
+            **2. `program_tier_prepare.go` — fix PrepareTier return type** (P1-7)
+
+            Read the file. Change:
+            ```go
+            func PrepareTier(opts PrepareTierOpts) (*PrepareTierResult, error)
+            ```
+            to:
+            ```go
+            func PrepareTier(opts PrepareTierOpts) result.Result[*PrepareTierResult]
+            ```
+            Convert all `return nil, err` paths to `result.NewFailure[*PrepareTierResult](...)`.
+            Convert all `return result, nil` paths to `result.NewSuccess(result)`.
+
+            Also fix the SkipCriticForIMPL call at line ~157:
+            Current: `skip, skipErr := protocol.SkipCriticForIMPL(...)`
+            Since SkipCriticForIMPL is in the same package, the call becomes:
+            `skipRes := SkipCriticForIMPL(ctx, implPath, manifest)`
+            `if skipRes.IsFatal() { ... }`
+            `skip := skipRes.GetData()`
+
+            Note: The function has a `Success bool` field in `*PrepareTierResult`. Keep this
+            field but ensure success is only returned via `result.NewSuccess`; remove any
+            pattern where `Success: false` is set and an error is also returned.
+
+            **3. `critic_gate.go` — fix SkipCriticForIMPL** (P1-10, P2-12)
+
+            Read the file. Change:
+            ```go
+            func SkipCriticForIMPL(ctx context.Context, implPath string, m *IMPLManifest) (bool, error)
+            ```
+            to:
+            ```go
+            func SkipCriticForIMPL(ctx context.Context, implPath string, m *IMPLManifest) result.Result[bool]
+            ```
+            Find the internal call to deprecated `WriteCriticReview`. Replace with
+            `WriteCriticReviewResult` (which already returns `result.Result[CriticData]`).
+            Convert all `return false, err` paths to `result.NewFailure[bool](...)`.
+            Convert `return true/false, nil` to `result.NewSuccess(true/false)`.
+
+            **4. `full_validate.go` — add ctx to FullValidateProgram** (P1-11)
+
+            Read the file. Change:
+            ```go
+            func FullValidateProgram(manifestPath string, opts FullValidateProgramOpts) result.Result[FullValidateProgramData]
+            ```
+            to:
+            ```go
+            func FullValidateProgram(ctx context.Context, manifestPath string, opts FullValidateProgramOpts) result.Result[FullValidateProgramData]
+            ```
+            Also fix P2-7: at line ~115, `CheckAgentLOCBudget(context.TODO(), m)` →
+            `CheckAgentLOCBudget(ctx, m)`.
+            Also fix the `os.Getwd()` hidden dependency (~line 195): add a comment
+            explaining that when RepoDir is empty, the process CWD is used as fallback.
+
+            ### Test file updates
+            Update the three test files for the functions you own:
+            - `pkg/protocol/program_tier_gate_test.go`: `RunTierGate` now takes `ctx` as first
+              arg. Add `context.Background()` as first arg to all 11 test call sites.
+            - `pkg/protocol/program_tier_prepare_test.go`: `PrepareTier` now returns
+              `result.Result[*PrepareTierResult]` (not `(*PrepareTierResult, error)`); update
+              all call sites. Also `SkipCriticForIMPL` now returns `result.Result[bool]`; update
+              any test call sites for it too.
+            - `pkg/protocol/full_validate_test.go`: `FullValidateProgram` now takes `ctx` as
+              first arg. Add `context.Background()` as first arg to all test call sites.
+
+            ### Verification gate
+            ```
+            go build ./pkg/protocol/...
+            go vet ./pkg/protocol/...
+            go test ./pkg/protocol/...
+            ```
+            Note: callers in pkg/engine (finalize_tier.go:150, program_auto.go:64)
+            and cmd/sawtools (tier_gate_cmd.go:55, prepare_tier_cmd.go:52) compile
+            against old signatures until Wave 4. Run `./pkg/protocol/...` only.
+
+            ### Constraints
+            - Do NOT modify caller files outside this agent's owned files.
+            - program_tier_prepare.go calls SkipCriticForIMPL — since both are owned by
+              this agent, the call-site update must be in the same commit.
+            - PrepareTierResult.Success field may remain but must not be the only way to
+              communicate failure; failures must go through result.NewFailure.
+          files:
+            - pkg/protocol/program_tier_gate.go
+            - pkg/protocol/program_tier_prepare.go
+            - pkg/protocol/critic_gate.go
+            - pkg/protocol/full_validate.go
+          dependencies:
+            - D
+            - E
+            - F
+    - number: 4
+      agents:
+        - id: I
+          task: |-
+            ## Agent I — pkg/engine caller updates for changed protocol signatures
+
+            ### Context
+            Waves 1-3 changed these protocol signatures:
+            - `ValidateInvariants`: error → []result.SAWError
+            - `MergeAgents`: (result.Result[T], error) → result.Result[T]
+            - `Cleanup`: (result.Result[T], error) → result.Result[T]
+            - `ArchiveIMPL`: (string, error) → result.Result[ArchiveData]
+            - `ArchiveProgram`: (string, error) → result.Result[ArchiveData]
+            - `RunTierGate`: adds ctx as first param
+
+            Your job: update all call sites in pkg/engine.
+
+            ### Call sites to update
+
+            **`pkg/engine/runner.go:~1026`** (ValidateInvariants)
+            ```go
+            // Current:
+            if err := protocol.ValidateInvariants(manifest); err != nil {
+                return result.NewFailure[ValidateData](...)
+            }
+            // New:
+            if errs := protocol.ValidateInvariants(manifest); len(errs) > 0 {
+                return result.NewFailure[ValidateData](errs)
+            }
+            ```
+
+            **`pkg/engine/finalize.go:533`** (MergeAgents)
+            ```go
+            // Current:
+            mergeRes, mergeErr := protocol.MergeAgents(protocol.MergeAgentsOpts{...})
+            if mergeErr != nil { ... }
+            if mergeRes.IsFatal() { ... }
+            // New:
+            mergeRes := protocol.MergeAgents(protocol.MergeAgentsOpts{...})
+            if mergeRes.IsFatal() { ... }
+            ```
+
+            **`pkg/engine/finalize.go:682`** (ArchiveIMPL)
+            ```go
+            // Current:
+            if _, err := protocol.ArchiveIMPL(ctx, opts.IMPLPath); err != nil {
+            // New:
+            if archRes := protocol.ArchiveIMPL(ctx, opts.IMPLPath); archRes.IsFatal() {
+            ```
+
+            **`pkg/engine/finalize_steps.go:222`** (MergeAgents)
+            Same dual-return collapse pattern as finalize.go:533.
+            ```go
+            mergeRes, err := protocol.MergeAgents(...)
+            // → mergeRes := protocol.MergeAgents(...)
+            ```
+
+            **`pkg/engine/finalize_steps.go:388`** (Cleanup)
+            ```go
+            // Current:
+            cleanupResult, err := protocol.Cleanup(ctx, ...)
+            if err != nil { ... }
+            if cleanupResult.IsFatal() { ... }
+            // New:
+            cleanupResult := protocol.Cleanup(ctx, ...)
+            if cleanupResult.IsFatal() { ... }
+            ```
+
+            **`pkg/engine/merge_cleanup.go:56`** (Cleanup)
+            ```go
+            // Current:
+            _, cleanupErr := protocol.Cleanup(ctx, implPath, waveNum, repoPath, nil)
+            if cleanupErr != nil { ... }
+            // New (check IsFatal instead):
+            cleanupRes := protocol.Cleanup(ctx, implPath, waveNum, repoPath, nil)
+            if cleanupRes.IsFatal() { ... }
+            ```
+
+            **`pkg/engine/mark_program_complete.go:121`** (ArchiveProgram)
+            ```go
+            // Current:
+            archivedPath, archiveErr := protocol.ArchiveProgram(ctx, opts.ManifestPath)
+            if archiveErr != nil { ... }
+            // New:
+            archRes := protocol.ArchiveProgram(ctx, opts.ManifestPath)
+            if archRes.IsFatal() { ... }
+            archivedPath := archRes.GetData().NewPath
+            ```
+
+            **`pkg/engine/finalize_tier.go:150`** (RunTierGate — add ctx)
+            ```go
+            // Current:
+            gateRes := protocol.RunTierGate(manifest, opts.TierNumber, opts.RepoDir)
+            // New:
+            gateRes := protocol.RunTierGate(ctx, manifest, opts.TierNumber, opts.RepoDir)
+            ```
+            Verify ctx is available in the enclosing function. If not, use context.Background().
+
+            **`pkg/engine/program_auto.go:64`** (RunTierGate — add ctx)
+            ```go
+            // Current:
+            gateRes := protocol.RunTierGate(manifest, completedTier, repoPath)
+            // New:
+            gateRes := protocol.RunTierGate(ctx, manifest, completedTier, repoPath)
+            ```
+
+            ### Verification gate
+            ```
+            go build ./pkg/engine/... ./pkg/protocol/... ./pkg/orchestrator/...
+            go vet ./pkg/engine/... ./pkg/protocol/... ./pkg/orchestrator/...
+            go test ./pkg/engine/... ./pkg/protocol/... ./pkg/orchestrator/...
+            ```
+            Note: cmd/sawtools callers (Agent J, parallel) are independent. Build may fail
+            on cmd/sawtools until Agent J merges — run only `./pkg/engine/...` gates.
+
+            ### Constraints
+            - Only update call sites — do not change any function signatures.
+            - Read each enclosing function's return type before substituting failure returns.
+            - Use LSP find-references or grep to confirm all sites are found.
+            - If any call site has unusual patterns (error wrapping, multi-check), read
+              the full surrounding context before changing.
+          files:
+            - pkg/engine/finalize.go
+            - pkg/engine/finalize_steps.go
+            - pkg/engine/finalize_tier.go
+            - pkg/engine/merge_cleanup.go
+            - pkg/engine/mark_program_complete.go
+            - pkg/engine/program_auto.go
+            - pkg/engine/runner.go
+          dependencies:
+            - G
+            - H
+        - id: J
+          task: |-
+            ## Agent J — cmd/sawtools caller updates for changed protocol signatures
+
+            ### Context
+            Waves 1-3 changed these signatures. Your job: update all call sites in cmd/sawtools.
+
+            Changed signatures:
+            - `CleanupAllStale`: (*StaleCleanupData, error) → result.Result[*StaleCleanupData]
+            - `Cleanup`: (result.Result[T], error) → result.Result[T]  (drop the error)
+            - `ArchiveIMPL`: (string, error) → result.Result[ArchiveData]
+            - `MergeAgents`: (result.Result[T], error) → result.Result[T]  (drop the error)
+            - `PrepareTier`: (*PrepareTierResult, error) → result.Result[*PrepareTierResult]
+            - `RunTierGate`: adds ctx as first param
+
+            ### Call sites to update
+
+            **`cmd/sawtools/cleanup.go:42`** (CleanupAllStale)
+            ```go
+            // Current:
+            result, err := protocol.CleanupAllStale(ctx, repoDir, force)
+            // New:
+            staleRes := protocol.CleanupAllStale(ctx, repoDir, force)
+            if staleRes.IsFatal() { ... }
+            result := staleRes.GetData()
+            ```
+
+            **`cmd/sawtools/cleanup.go:57`** (Cleanup)
+            ```go
+            // Current:
+            result, err := protocol.Cleanup(ctx, manifestPath, waveNum, repoDir, nil)
+            // New (no separate err):
+            result := protocol.Cleanup(ctx, manifestPath, waveNum, repoDir, nil)
+            if result.IsFatal() { ... }
+            ```
+
+            **`cmd/sawtools/close_impl_cmd.go:63`** (ArchiveIMPL)
+            ```go
+            // Current:
+            archivedPath, err := protocol.ArchiveIMPL(cmd.Context(), manifestPath)
+            if err != nil { ... }
+            // New:
+            archRes := protocol.ArchiveIMPL(cmd.Context(), manifestPath)
+            if archRes.IsFatal() { ... }
+            archivedPath := archRes.GetData().NewPath
+            ```
+
+            **`cmd/sawtools/mark_complete_cmd.go:41`** (ArchiveIMPL)
+            Same pattern as close_impl_cmd.go:63.
+
+            **`cmd/sawtools/merge_agents.go:21`** (MergeAgents)
+            ```go
+            // Current:
+            res, err := protocol.MergeAgents(protocol.MergeAgentsOpts{...})
+            if err != nil { ... }
+            if res.IsFatal() { ... }
+            // New (drop the err):
+            res := protocol.MergeAgents(protocol.MergeAgentsOpts{...})
+            if res.IsFatal() { ... }
+            ```
+
+            **`cmd/sawtools/prepare_tier_cmd.go:52`** (PrepareTier)
+            ```go
+            // Current:
+            result, err := protocol.PrepareTier(protocol.PrepareTierOpts{...})
+            if err != nil { ... }
+            // New:
+            prepRes := protocol.PrepareTier(protocol.PrepareTierOpts{...})
+            if prepRes.IsFatal() { ... }
+            result := prepRes.GetData()
+            ```
+
+            **`cmd/sawtools/tier_gate_cmd.go:55`** (RunTierGate — add ctx)
+            ```go
+            // Current:
+            res := protocol.RunTierGate(manifest, tier, repoDir)
+            // New:
+            res := protocol.RunTierGate(cmd.Context(), manifest, tier, repoDir)
+            ```
+
+            ### Verification gate
+            ```
+            go build ./...
+            go vet ./...
+            go test ./pkg/protocol/... ./pkg/engine/... ./cmd/sawtools/...
+            ```
+            Wave 4 is the final wave — full `./...` build must pass.
+
+            ### Constraints
+            - Only update call sites.
+            - Read each file fully before editing to understand surrounding error handling.
+            - The cmd/sawtools files are thin CLI wrappers — keep changes minimal and mechanical.
+          files:
+            - cmd/sawtools/cleanup.go
+            - cmd/sawtools/close_impl_cmd.go
+            - cmd/sawtools/mark_complete_cmd.go
+            - cmd/sawtools/merge_agents.go
+            - cmd/sawtools/prepare_tier_cmd.go
+            - cmd/sawtools/tier_gate_cmd.go
+          dependencies:
+            - G
+            - H
+quality_gates:
+    level: standard
+    gates:
+        - type: build
+          command: go build ./...
+          required: true
+        - type: lint
+          command: go vet ./...
+          required: true
+        - type: test
+          command: go test ./pkg/protocol/... ./pkg/engine/... ./pkg/orchestrator/... ./cmd/sawtools/...
+          required: true
+pre_mortem:
+    overall_risk: medium
+    rows:
+        - scenario: |-
+            Agent C uses result.CodeManifestSaveFailed before Agent A's commit lands.
+            Wave 1 agents run in parallel — if Agent A is slower, Agent C has undefined
+            reference at build time.
+          likelihood: medium
+          impact: low
+          mitigation: |-
+            Agent C's brief instructs using the string literal as placeholder if the
+            constant doesn't exist yet. The pre-merge gate runs after all Wave 1 agents
+            commit, ensuring both are present before merge.
+        - scenario: |-
+            Agent D (MergeAgents) fixes the return type but the callers in finalize.go
+            expect the old dual return. Wave 4 Agent I hasn't run yet, causing post-merge
+            build failure for Wave 2.
+          likelihood: high
+          impact: medium
+          mitigation: |-
+            Wave 2 and Wave 3 quality gates are scoped to ./pkg/protocol/... only —
+            not ./... — so the broken callers in pkg/engine don't block wave merges.
+            Full ./... gate only runs at Wave 4 (Agent J's brief).
+        - scenario: |-
+            Agent H's program_tier_prepare.go changes break because SkipCriticForIMPL
+            (also owned by H) isn't committed first. If both are in the same commit, no
+            issue. If split across commits, partial build failure.
+          likelihood: low
+          impact: medium
+          mitigation: |-
+            Agent H owns both critic_gate.go and program_tier_prepare.go. The agent must
+            commit all changes in a single commit or commit critic_gate.go first. The
+            brief explicitly instructs both files are owned by the same agent.
+        - scenario: |-
+            Wave 4 Agent I misses a call site in finalize.go — the file is 700+ lines
+            with two MergeAgents calls at different locations.
+          likelihood: medium
+          impact: medium
+          mitigation: |-
+            Agent I brief lists exact line numbers for all 9 call sites. Agent is
+            instructed to use LSP find-references or grep to confirm all sites before
+            committing. Wave 4 full ./... build gate catches any missed site.
+critic_report:
+    verdict: PASS
+    agent_reviews:
+        A:
+            agent_id: A
+            verdict: PASS
+        B:
+            agent_id: B
+            verdict: PASS
+        C:
+            agent_id: C
+            verdict: PASS
+        D:
+            agent_id: D
+            verdict: PASS
+        E:
+            agent_id: E
+            verdict: PASS
+        F:
+            agent_id: F
+            verdict: PASS
+        G:
+            agent_id: G
+            verdict: PASS
+        H:
+            agent_id: H
+            verdict: PASS
+        I:
+            agent_id: I
+            verdict: PASS
+        J:
+            agent_id: J
+            verdict: PASS
+    summary: |-
+        All 35 source files exist; all current function signatures match briefs exactly.
+        Line number references verified accurate within ±2 lines. New constants (P011-P013,
+        N094-N095) confirmed non-conflicting. WriteCriticReviewResult exists and is the
+        correct SkipCriticForIMPL replacement. Original ISSUES (8 test files missing from
+        file_ownership) were resolved by Orchestrator: merge_agents_test.go→D,
+        cleanup_test.go→E, discovery_test.go+memory_test.go→F,
+        program_tier_finalize_test.go→G, program_tier_gate_test.go+program_tier_prepare_test.go+
+        full_validate_test.go→H. Each agent brief now includes explicit test-update instructions.
+    reviewed_at: "2026-04-03T22:34:59Z"
+    amended_at: "2026-04-03T22:40:00Z"
+    issue_count: 0
+state: "REVIEWED"
+injection_method: hook
