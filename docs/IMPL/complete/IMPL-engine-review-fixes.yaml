@@ -1,3 +1,4 @@
+completion_date: "2026-04-03"
 title: pkg/engine Canonicalization and Protocol Conformance Fixes
 feature_slug: engine-review-fixes
 verdict: SUITABLE
@@ -1314,6 +1315,7 @@ waves:
             - O
             - P
             - Q
+      base_commit: 5e3191c963f8c9d2a3ba349f8540c848a6514023
 quality_gates:
     level: standard
     gates:
@@ -1545,6 +1547,48 @@ completion_reports:
             - pkg/engine/daemon.go
         verification: PASS
         notes: 'comment-only changes: added E26/E27 cross-ref to RunIntegrationAgent, supervised mode block comment to RunDaemon. closed_loop_gate.go already clean (Wave 3 Agent L removed R3). Protocol repo: added R3 and C9 supplemental rule definitions to protocol/execution-rules.md (committed to main in scout-and-wave repo, SHA 0afccbb).'
+    R:
+        status: complete
+        branch: saw/engine-review-fixes/wave5-agent-R
+        commit: 162122a
+        files_changed:
+            - pkg/engine/runner_data_types.go
+            - pkg/engine/step_types.go
+            - pkg/engine/runner.go
+        verification: PASS
+        notes: '1) Renamed UpdateStatusFailedPayload.Wave to .Slug with updated godoc. 2) Updated runner.go caller (Agent J file, necessary for compilation — single-line field name fix). 3) Updated StepResult.Status docstring to add ''warning'' as fourth value and note ''complete'' as EventCallback alias for ''success''. 4) Added TODO on NoGoWork — not removed since Agent S (same wave) still references it in prepare_wave.go. Out-of-scope dep: runner.go line 1422 (Agent J ownership) updated for compilation.'
+    S:
+        status: complete
+        branch: saw/engine-review-fixes/wave5-agent-S
+        commit: 0cab1434c46f2f9c0d74c107ea6dd8a7da6a1b88
+        files_changed:
+            - pkg/engine/chat.go
+            - pkg/engine/auto_remediate.go
+            - pkg/engine/daemon.go
+            - pkg/engine/program_wire_init.go
+            - cmd/sawtools/prepare_wave.go
+        verification: PASS
+        notes: 'chat.go: replaced manual routing block with orchestrator.NewBackendFromModel; kept chatExpandBedrockModelID/chatParseProviderPrefix as shared helpers because fix_build.go and resolve_conflicts.go (not owned) call them directly — those callers should be migrated to orchestrator.NewBackendFromModel separately. auto_remediate.go: swallowed error now logged via slog.WarnContext. daemon.go: daemonRunScoutFunc and daemonMarkIMPLCompleteFunc now emit [Code] Message format. program_wire_init.go: init() documented with compilation independence rationale, test override pattern, and injection TODO. prepare_wave.go: NoGoWork field assignment removed; --no-gowork still propagates via NoWorkspaceSetup fallback.'
+    T:
+        status: complete
+        branch: saw/engine-review-fixes/wave5-agent-T
+        commit: 582f5e1
+        files_changed:
+            - pkg/engine/resolve_conflicts.go
+            - pkg/engine/fix_build.go
+            - pkg/engine/verify_install.go
+        verification: PASS
+        notes: Fixed context.TODO() in resolve_conflicts.go (line 50) and fix_build.go (line 37) by replacing with ctx parameter. Added drift comment to verify_install.go hardcoded skill file list. finalize_tier.go double-parse was already resolved by Wave 2 Agent G; comment at line 146-148 already explains the in-memory manifest usage.
+    U:
+        status: complete
+        branch: saw/engine-review-fixes/wave5-agent-U
+        commit: f53f50e
+        files_changed:
+            - cmd/sawtools/run_scout_cmd.go
+            - cmd/sawtools/import_impls_cmd.go
+            - cmd/sawtools/debug_journal.go
+        verification: PASS
+        notes: 'Updated canonical result.Result error pattern in three files: include error code in fatal messages (format ''%s: %s''). Removed stale TODO comment from run_scout_cmd.go. finalize_wave.go requires no change — engine.FinalizeWave still returns (*FinalizeWaveResult, error); migrating it would require touching run_wave_atomic.go, run_wave_full.go, daemon.go (all out-of-scope). finalize_impl_cmd.go was already updated by Agent G. analyze_deps_cmd.go calls no migrated engine functions.'
 pre_mortem:
     overall_risk: high
     rows:
@@ -1768,5 +1812,5 @@ critic_report:
     summary: 'Seven agents pass with no issues (A, B, C, D, F, H, J). Agent E has one error: the proposed rewrite of findIMPLDocPath drops the repoPath parameter that the current two-argument function requires. Agent G has one warning: FinalizeIMPLEngine caller finalize_impl_cmd.go is not in any agent file_ownership, creating a break when the signature changes to accept FinalizeIMPLEngineOpts. Agent K and Agent L both reference future constants from Agent N; this is pre-acknowledged in the IMPL as accepted technical debt. Agent N has five errors: three proposed constant string values collide with existing numeric codes (N003, P001, K005, I001, I002), and two proposed Go symbol names duplicate existing exported symbols (CodeDisjointOwnership already exists as V002, CodeWaveSequencingFailed already exists as N026). Agent Q has one warning: Agent Q is directed to also modify closed_loop_gate.go in the file_ownership table but that file is owned by Wave 3 Agent L; Q should only add comments if L has not already done so. Agents I, M, O, P, R, S, T, U pass file_existence and pattern_accuracy checks.'
     reviewed_at: "2026-04-03T16:28:22Z"
     issue_count: 13
-state: REVIEWED
+state: COMPLETE
 injection_method: hook

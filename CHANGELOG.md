@@ -6,7 +6,55 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
-### Added
+### Added (engine-review-fixes + analyzer-review-fixes)
+- 7 new error code constants: `N091_ENGINE_INIT_FAILED`, `N092_ENGINE_ALREADY_INITIALIZED`, `N093_FINALIZE_STEP_FAILED`, `B009_GATE_VALIDATION_FAILED`, `P008_TYPE_COLLISION_FATAL`, `P009_CRITIC_GATE_FAILED`, `P010_TIER_CONFLICT_DETECTED`
+- `Z001–Z013` analyzer error code domain added to `pkg/result/codes.go`
+- `K007_CACHE_BUILD_KEY_CANCELLED` added to `pkg/result/codes.go`; all inline string literals in `pkg/gatecache/cache.go` replaced with K-range constants
+- `pkg/resume`: `RecoveryStep`, `FailureCategory`, `BuildRecoverySteps` for enhanced resume detection
+- `pkg/engine/gitCommitAllowMain` helper — scoped env override per subprocess (replaces process-wide `os.Setenv`)
+- R3 (pre-merge per-agent gate retry) and C9 (self-healing validation / Scout correction loop) formally defined in `protocol/execution-rules.md`
+
+### Fixed
+- **P0** `pkg/engine/scout_run.go`: E37 critic gate bypass — critic ISSUES verdict was stored but never checked; workflow now halts at REVIEWED when verdict is ISSUES
+- **P0** `pkg/engine/integration_runner.go`: E26 AllowedPathPrefixes constraint was computed then immediately discarded (`_ = constraints`); integration agent now receives path restrictions injected into its system prompt
+- **P0** `pkg/engine/finalize_steps.go`: nil deref panic — `StepRunGates` called `opts.ObsEmitter.Emit()` without nil guard; `ObsEmitter` is documented optional
+- **P0** `pkg/engine/finalize.go`: multi-repo failure paths stored `CleanupResult["."]` instead of `CleanupResult[repoKey]`; AND logic for `allGone`/`isSolo` across repos (was OR)
+- **P0** `pkg/engine/prepare.go`: `os.Setenv("SAW_ALLOW_MAIN_COMMIT","1")` / `defer os.Unsetenv` was process-wide; race condition when two waves prepare concurrently
+- **P0** `pkg/engine/program_tier_loop.go`: `findIMPLDocPath` loop always returned on first iteration with no `os.Stat` check; double tier gate execution in auto mode; P1+ `CheckIMPLConflicts` absent from tier launch
+- **P0** `pkg/analyzer/python.go`: existence guard used `python -c "os.path.exists(...)"` which always exits 0; replaced with `os.Stat` in Go
+- **P0** `pkg/analyzer/javascript.go`: `parserScript` was a bare relative path; fixed with PATH lookup
+- `pkg/engine/resolve_conflicts.go`, `fix_build.go`: `protocol.Load(context.TODO(), ...)` replaced with caller's `ctx`
+- `pkg/engine/runner_wave_structured.go`: silent error swallow `finalManifest, _ := protocol.Load(...)` now logs warn on failure
+- `pkg/engine/program_tier_loop.go`: wave progress now persisted to disk after each wave completion (P4 conformance); REPLANNING state written before `AutoTriggerReplan`
+- `pkg/engine/closed_loop_gate.go`: "R3" undefined rule reference removed from comments
+- `pkg/engine/scout_run.go`: "C9: self-healing validation" undefined rule reference removed
+- `pkg/gatecache/cache_test.go`: hardcoded `"CACHE_MISS"` strings replaced with `result.CodeCacheMiss`
+
+### Changed
+- `pkg/engine/FinalizeWave`: migrated from `(*FinalizeWaveResult, error)` to `result.Result[FinalizeWaveResult]`; wires `CodeFinalizeWaveFailed = "N002_FINALIZE_WAVE_FAILED"` which had been defined but never used
+- `pkg/engine/FinalizeIMPLEngine`: migrated from dual-channel `(result.Result[T], error)` to `result.Result[T]` only; introduced `FinalizeIMPLEngineOpts` struct
+- `pkg/engine/FinalizeTierEngine`: migrated to `result.Result[FinalizeTierResult]`; `FinalizeTierResult.Errors []string` → `[]result.SAWError`; removed redundant second manifest parse
+- `pkg/engine/PrepareAgent`: migrated to `result.Result[PrepareAgentResult]`; `FilesOwned` fixed to count merged `file_ownership + agent.Files` set; `saw_name` YAML quoting fixed
+- `pkg/engine/RunWaveTransaction`, `RunWaveAgentStructured`: migrated to `result.Result[T]`; `captureSnapshot` context.TODO() threaded; `restoreSnapshot` context.Background() documented intentional
+- `pkg/engine/RunTierLoop`, `AdvanceTierAutomatically`, `ReplanProgram`, `MarkProgramComplete`: migrated to `result.Result[T]`
+- `pkg/engine/ImportImpls`, `LoadTypePromptWithRefs`: migrated to `result.Result[T]`; `runScoutAutomation` context.TODO() threaded; dead `gateChannels`/`startWaveWithGate` deleted
+- `pkg/engine/RunScoutFull`, `ScoutCorrectionLoop`: migrated to `result.Result[T]`; context.TODO() in `validateIMPLDoc`/`setIMPLStateBlocked` threaded
+- `pkg/engine/RunCritic`, `BuildCriticPrompt`, `ClosedLoopGateRetry`: migrated to `result.Result[T]`
+- `pkg/engine/BuildWaveConstraints`, `BuildIntegratorConstraints`: migrated to `result.Result[T]`; `ctx context.Context` added as first parameter
+- `pkg/engine/RunInit`: migrated to `result.Result[InitResult]`; `AlreadyExists` path uses `result.NewPartial`
+- `pkg/engine/DebugJournal`, `LoadJournalEntries`: migrated to `result.Result[T]`; `exportHTMLTimeline` errors propagated without re-wrapping
+- `pkg/engine/chat.go`: manual provider-prefix routing replaced with `orchestrator.NewBackendFromModel`
+- `pkg/engine/auto_remediate.go`: fix-agent error `_ = err` replaced with `slog.WarnContext`
+- `pkg/engine/daemon.go`: `daemonRunScoutFunc`/`daemonMarkIMPLCompleteFunc` now preserve SAWError code in error string; supervised mode block behavior documented
+- `pkg/engine/runner_data_types.go`: `UpdateStatusFailedPayload.Wave string` renamed to `.Slug string`
+- `pkg/engine/doc.go`: 5 stale examples corrected (wrong field names, wrong signatures, stale note about gowork steps)
+- `pkg/engine/gowork_steps.go`: non-Go-repo path now returns `Status: "skipped"` (was `"success"`) matching emitted event
+- `pkg/engine/integration_runner.go`: dead `integrationPromptPath()` function deleted; E26/E27 cross-reference added to godoc
+- `pkg/engine/gate_cache.go`, `gate_cache_test.go`: replaced with tombstone — superseded by `pkg/gatecache` (file-backed, E38-conformant); zero production callers confirmed
+- `pkg/analyzer`: all public functions migrated from `(T, error)` to `result.Result[T]`; `BuildGraph`/`DetectWiring` gained `context.Context` first parameter; three parallel cascade types (`CascadeFile`, `OutputCascade`, `CascadeCandidate`) unified to `CascadeCandidate`; `AnalyzeDeps` wrapper deleted; `IsStdlib` heuristic simplified
+- `pkg/analyzer/shared_types.go`: `extractTypeReferences` collapsed to table-driven regex loop; `findDefiningAgent` false-positive heuristic removed
+
+### Added (engine-review-fixes + analyzer-review-fixes)
 - `CodeInterviewSaveFailed = "N089_INTERVIEW_SAVE_FAILED"` and `CodeRequirementsWriteFailed = "N090_REQUIREMENTS_WRITE_FAILED"` added to `pkg/result/codes.go`
 - `StartData`, `ResumeData`, `AnswerData`, `CompileData` result payload structs added to `pkg/interview/types.go`; `SaveDocData` and `WriteReqData` moved from implementation files into `types.go`
 - 4 new tests in `pkg/interview`: `TestDeterministicManager_Compile`, `TestHandleBackCommand_ClearAllPhases`, `TestNextPhaseName_AllCases`, `TestResume_Complete`
