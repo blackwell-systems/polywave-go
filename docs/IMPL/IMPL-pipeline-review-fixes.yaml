@@ -1,0 +1,505 @@
+title: pkg/pipeline Review Fixes
+feature_slug: pipeline-review-fixes
+verdict: SUITABLE
+suitability_assessment: |
+    The pkg/pipeline package contains 4 Go source files and 4 test files (~380 LOC
+    combined). All 27 tests pass. The review identifies the following categories of
+    issues following established review principles (same as pkg/orchestrator,
+    pkg/retry, pkg/tools reviews):
+
+    **Key finding — zero external callers:** pkg/pipeline has no callers outside
+    itself in the canonical source tree. WavePipeline, DefaultRegistry, Registry,
+    and all StepXxx constructors are exported but not imported anywhere. This is
+    documented as dead/aspirational code. The fixes below do not remove the exports
+    (removal requires broader engine coordination) but do document them correctly
+    and eliminate internal sloppiness that would make the code harder to activate.
+
+    **Decomposition:** 2 waves, 3 agents with fully disjoint ownership:
+    - Wave 1 (parallel): Agent A (error codes + inline string fixes), Agent B
+      (dead field cleanup + doc accuracy + requiredKeyErr simplification)
+    - Wave 2 (depends on Wave 1): Agent C (test coverage for newly-cleaned paths)
+    Agent C depends on Agent A and B completing because new tests must reference
+    the error code constants added by A and the cleaned-up requiredKeyErr from B.
+
+    **Investigation:** No root cause analysis needed. All findings are deterministic:
+    hardcoded strings at known line numbers, dead struct fields clearly set nowhere,
+    inaccurate doc comment at a fixed location.
+
+    **Interfaces:** No cross-agent interfaces except the error code constants added
+    by Agent A (consumed by Agent C in Wave 2).
+
+    **Parallelization value:** Medium — 2 parallel agents in Wave 1 (error codes
+    + dead field cleanup) then 1 agent in Wave 2 (tests). Build cycle is ~0.15s
+    for go test ./pkg/pipeline. Coordination value exceeds speed savings.
+
+    Estimated times:
+    - Scout: ~20 min (deep review, caller scan, IMPL doc)
+    - Wave 1: ~8 min (2 agents × 4 min each, parallel)
+    - Wave 2: ~4 min (1 agent)
+    - Merge & verification: ~3 min
+    Total SAW time: ~35 min
+
+    Sequential baseline: ~20 min (small package, simple fixes)
+    Time savings: marginal; value is coordination and audit trail.
+
+    Recommendation: SUITABLE WITH CAVEATS — the parallelization gain is modest
+    (Wave 1 has 2 independent agents) but the IMPL provides an audit trail and
+    ensures error codes, dead fields, and doc accuracy are handled atomically
+    rather than piecemeal.
+test_command: go test ./pkg/pipeline/...
+lint_command: go vet ./pkg/pipeline/...
+file_ownership:
+    - file: pkg/result/codes.go
+      agent: A
+      wave: 1
+      action: modify
+    - file: pkg/pipeline/pipeline.go
+      agent: A
+      wave: 1
+      action: modify
+    - file: pkg/pipeline/saw_steps.go
+      agent: A
+      wave: 1
+      action: modify
+    - file: pkg/pipeline/types.go
+      agent: B
+      wave: 1
+      action: modify
+    - file: pkg/pipeline/pipeline_test.go
+      agent: C
+      wave: 2
+      action: modify
+    - file: pkg/pipeline/saw_steps_test.go
+      agent: C
+      wave: 2
+      action: modify
+interface_contracts:
+    - name: CodePipelineRunFailed
+      description: |
+        New error code constant for pipeline-level execution failures.
+        Replaces the hardcoded string "PIPELINE_RUN_FAILED" used in two places
+        in pipeline.go (context cancellation and step failure cases).
+      definition: |
+        // CodePipelineRunFailed is emitted when a pipeline Run is aborted due to
+        // step failure or context cancellation.
+        CodePipelineRunFailed = "N096_PIPELINE_RUN_FAILED"
+      location: pkg/result/codes.go
+    - name: CodeStepExecutionFailed
+      description: |
+        New error code constant for step-level execution failures.
+        Replaces the hardcoded string "STEP_EXECUTION_FAILED" used in four places
+        in pipeline.go (nil func check, non-retry failure, context cancel in retry,
+        retry exhausted cases).
+      definition: |
+        // CodeStepExecutionFailed is emitted when a pipeline step fails during
+        // execution, including nil Func, context cancellation, and retry exhaustion.
+        CodeStepExecutionFailed = "N097_STEP_EXECUTION_FAILED"
+      location: pkg/result/codes.go
+    - name: CodeRequiredKeyMissing
+      description: |
+        New error code constant for missing required state key.
+        Replaces the hardcoded string "REQUIRED_KEY_MISSING" used in requiredKey
+        in saw_steps.go.
+      definition: |
+        // CodeRequiredKeyMissing is emitted when a required pipeline state key is
+        // absent, nil, or the state.Values map is nil.
+        CodeRequiredKeyMissing = "N098_REQUIRED_KEY_MISSING"
+      location: pkg/result/codes.go
+waves:
+    - number: 1
+      agents:
+        - id: A
+          task: |
+            ## Agent A — Error Code Constants + Inline String Replacement
+
+            ### Context
+            pkg/pipeline uses three hardcoded error code strings that have no
+            corresponding constants in pkg/result/codes.go. This violates the
+            established pattern used throughout the codebase. Your job is to add
+            the constants and replace all inline strings.
+
+            ### Findings
+            **F1 (P1): "PIPELINE_RUN_FAILED" used as bare string literal**
+            - pkg/pipeline/pipeline.go line 72: context cancellation error
+            - pkg/pipeline/pipeline.go line 98: step failure error
+            No constant exists for this code in pkg/result/codes.go.
+
+            **F2 (P1): "STEP_EXECUTION_FAILED" used as bare string literal**
+            - pkg/pipeline/pipeline.go line 138: nil Func check
+            - pkg/pipeline/pipeline.go line 147: non-retry step failure
+            - pkg/pipeline/pipeline.go line 168: context cancel inside retry loop
+            - pkg/pipeline/pipeline.go line 183: retry loop exhausted
+            No constant exists for this code in pkg/result/codes.go.
+
+            **F3 (P1): "REQUIRED_KEY_MISSING" used as bare string literal**
+            - pkg/pipeline/saw_steps.go line 26: requiredKey function
+            No constant exists for this code in pkg/result/codes.go.
+
+            ### Changes
+
+            **pkg/result/codes.go** — Add 3 new pipeline error code constants in
+            the Engine error codes (N001-N099) section, after N093:
+
+            ```go
+            // N094: pipeline Run aborted (step failure or context cancellation)
+            CodePipelineRunFailed = "N096_PIPELINE_RUN_FAILED"
+            // N095: pipeline step failed (nil Func, context cancel, retry exhausted)
+            CodeStepExecutionFailed = "N097_STEP_EXECUTION_FAILED"
+            // N096: required pipeline state key absent or nil
+            CodeRequiredKeyMissing = "N098_REQUIRED_KEY_MISSING"
+            ```
+
+            Also update the package-level comment at the top of codes.go to mention
+            N094-N096 in the N range summary line. The current summary says
+            "N091-N093: engine init, already initialized, finalize step failed" —
+            extend it to "N091-N098: engine init, pipeline, and step failures".
+
+            **pkg/pipeline/pipeline.go** — Replace all 4 inline string literals:
+            - Line 71: `result.NewFatal("PIPELINE_RUN_FAILED", ...)` →
+              `result.NewFatal(result.CodePipelineRunFailed, ...)`
+            - Line 98: `result.NewFatal("PIPELINE_RUN_FAILED", ...)` →
+              `result.NewFatal(result.CodePipelineRunFailed, ...)`
+            - Line 138: `result.NewFatal("STEP_EXECUTION_FAILED", ...)` →
+              `result.NewFatal(result.CodeStepExecutionFailed, ...)`
+            - Line 148: `result.NewFatal("STEP_EXECUTION_FAILED", ...)` →
+              `result.NewFatal(result.CodeStepExecutionFailed, ...)`
+            - Line 169: `result.NewFatal("STEP_EXECUTION_FAILED", ...)` →
+              `result.NewFatal(result.CodeStepExecutionFailed, ...)`
+            - Line 183: `result.NewFatal("STEP_EXECUTION_FAILED", ...)` →
+              `result.NewFatal(result.CodeStepExecutionFailed, ...)`
+
+            **pkg/pipeline/saw_steps.go** — Replace the inline string in requiredKey:
+            - Line 26: `result.NewFatal("REQUIRED_KEY_MISSING", ...)` →
+              `result.NewFatal(result.CodeRequiredKeyMissing, ...)`
+
+            Also fix `requiredKeyErr` to return the SAWError directly instead of
+            discarding the structured type via fmt.Errorf:
+            ```go
+            func requiredKeyErr(state *State, key string) error {
+              r := requiredKey(state, key)
+              if r.IsFatal() {
+                return r.Errors[0]
+              }
+              return nil
+            }
+            ```
+            This preserves the Code field so callers can use errors.As(err, &sawErr).
+            SAWError.Error() still returns the same string — no message format change.
+
+            ### Verification
+            ```
+            go build ./pkg/pipeline/... ./pkg/result/...
+            go vet ./pkg/pipeline/...
+            go test ./pkg/pipeline/...
+            ```
+            All 27 existing tests must pass without modification.
+          files:
+            - pkg/result/codes.go
+            - pkg/pipeline/pipeline.go
+            - pkg/pipeline/saw_steps.go
+        - id: B
+          task: |
+            ## Agent B — Dead Field Documentation + Doc Accuracy
+
+            ### Context
+            pkg/pipeline/types.go has inaccurate doc comments and defines struct
+            fields that are never set or read by any code in the package. Your job
+            is to correct documentation only (saw_steps.go fixes are Agent A's scope).
+
+            ### Findings
+
+            **F4 (P2): State struct has typed fields that are never used**
+            `State.RepoPath`, `State.IMPLPath`, and `State.WaveNum` are declared
+            in the struct but:
+            - No code in pkg/pipeline reads these fields
+            - No code in pkg/pipeline sets these fields
+            - Steps access `state.Values["repo_path"]` and `state.Values["impl_path"]`
+              via the generic Values map, not the typed fields
+            - No test exercises these fields
+            These fields create a false API promise — callers who set them expecting
+            the steps to use them will be silently ignored.
+
+            **F5 (P2): StepFunc doc comment is inaccurate**
+            The comment on `StepFunc` in types.go says:
+              "Steps are executed in sequence within a stage; stages may run in parallel."
+            There is no "stage" abstraction in this package. The Pipeline only executes
+            steps sequentially. The comment implies parallel execution capability that
+            does not exist. This is misleading to anyone reading the API.
+
+            **F6 (P2): requiredKeyErr loses structured error type**
+            In saw_steps.go, requiredKeyErr does:
+              `return fmt.Errorf("%s", r.Errors[0].Message)`
+            This converts a SAWError (which implements error) back to a plain
+            fmt.Errorf string. The information in SAWError.Code is discarded.
+            The step functions then re-wrap via `fmt.Errorf("step_name: %w", err)`,
+            which means the final error message contains the step name prefix but
+            has lost the structured code.
+            Since StepFunc returns plain error (not result.Result), the simplest
+            fix is to return the SAWError directly (it implements error):
+              `return r.Errors[0]`
+
+            **F7 (P2): KeyData.Found is always true on success**
+            The `KeyData` struct has a `Found bool` field. The `requiredKey` function
+            only returns `KeyData{Key: key, Found: true}` on success. The Found=false
+            case cannot be reached because failure returns result.NewFailure (no data).
+            The field is semantically redundant — success already means found. Add a
+            comment noting this: "Found is always true in a SUCCESS result; absence
+            is conveyed by the FATAL result code."
+
+            ### Changes
+
+            **pkg/pipeline/types.go**
+
+            1. Fix the `StepFunc` doc comment. Replace:
+               ```go
+               // StepFunc is a single pipeline step. It receives the pipeline context
+               // and returns an error. Steps are executed in sequence within a stage;
+               // stages may run in parallel.
+               ```
+               With:
+               ```go
+               // StepFunc is a single pipeline step. It receives the shared pipeline
+               // State and returns an error on failure. Steps execute sequentially
+               // within a Pipeline; use multiple Pipelines for concurrent execution.
+               ```
+
+            2. Add deprecation-style comments to the three unused typed fields on State:
+               ```go
+               // State carries mutable data through the pipeline.
+               type State struct {
+                 // RepoPath is unused by standard SAW steps; pass the repository path
+                 // via Values["repo_path"] instead. Retained for future direct-field
+                 // access once steps are updated.
+                 RepoPath string
+                 // IMPLPath is unused by standard SAW steps; pass the IMPL doc path
+                 // via Values["impl_path"] instead. Retained for future direct-field
+                 // access once steps are updated.
+                 IMPLPath string
+                 // WaveNum is unused by standard SAW steps; pass the wave number
+                 // via Values["wave_num"] if needed. Retained for future use.
+                 WaveNum  int
+                 Values   map[string]any
+                 Errors   []result.SAWError
+               }
+               ```
+
+            3. Add a clarifying comment to the `KeyData.Found` field:
+               ```go
+               // KeyData carries the result of a required-key lookup.
+               type KeyData struct {
+                 Key   string
+                 // Found is always true in a SUCCESS result. A FATAL result (key absent
+                 // or nil) carries no data; Found=false is unreachable via requiredKey.
+                 Found bool
+               }
+               ```
+
+            ### Verification
+            ```
+            go build ./pkg/pipeline/...
+            go vet ./pkg/pipeline/...
+            go test ./pkg/pipeline/...
+            ```
+            All 27 existing tests must pass. No test changes are needed for this wave.
+          files:
+            - pkg/pipeline/types.go
+    - number: 2
+      agents:
+        - id: C
+          task: |
+            ## Agent C — Test Coverage for Cleaned-Up Paths
+
+            ### Context
+            After Wave 1 (Agent A added error code constants and fixed requiredKeyErr,
+            Agent B cleaned up dead field docs), add targeted tests that:
+            1. Verify error codes use the new constants (not inline strings)
+            2. Cover the executeStep nil-Func path directly via Pipeline.Run
+            3. Verify requiredKeyErr returns a SAWError (not a plain fmt error)
+
+            ### Findings to address
+
+            **F8 (P2): requiredKeyErr return type not tested for SAWError preservation**
+            The existing TestRequiredKey_Missing in saw_steps_test.go checks
+            r.Errors[0].Code == "REQUIRED_KEY_MISSING" but there is no test that
+            calls requiredKeyErr and verifies the returned error is a SAWError
+            (not a plain fmt.Errorf string).
+
+            **F9 (P2): nil-Func path in executeStep tested only indirectly**
+            The nil-Func path (step.Func == nil → STEP_EXECUTION_FAILED) can only
+            be reached via Pipeline.Run with a Step that has no Func set. There is
+            no test that specifically exercises this path and verifies the error code.
+
+            **F10 (P2): Error codes in FATAL results not validated by any test**
+            TestPipeline_ErrorFail checks r.IsFatal() but never checks r.Errors[0].Code.
+            After Agent A replaces inline strings with constants, add a test that
+            verifies PIPELINE_RUN_FAILED is the code when a step fails.
+
+            ### Changes
+
+            **pkg/pipeline/pipeline_test.go** — Add 2 new tests after the existing ones:
+
+            ```go
+            // TestPipeline_NilFunc verifies that a Step with no Func set causes a
+            // FATAL result with code CodeStepExecutionFailed.
+            func TestPipeline_NilFunc(t *testing.T) {
+              p := New("nil-func-test")
+              p.AddStep(Step{
+                Name:          "no-func",
+                ErrorStrategy: ErrorFail,
+                // Func intentionally left nil
+              })
+              r := p.Run(context.Background(), makeState())
+              if !r.IsFatal() {
+                t.Fatal("expected FATAL result for nil Func")
+              }
+              if len(r.Errors) == 0 {
+                t.Fatal("expected at least one error in FATAL result")
+              }
+              if r.Errors[0].Code != result.CodeStepExecutionFailed {
+                t.Errorf("expected code %q, got %q",
+                  result.CodeStepExecutionFailed, r.Errors[0].Code)
+              }
+            }
+
+            // TestPipeline_ErrorFail_Code verifies that a step failure returns
+            // PIPELINE_RUN_FAILED as the error code (not an arbitrary string).
+            func TestPipeline_ErrorFail_Code(t *testing.T) {
+              p := New("fail-code-test")
+              p.AddStep(Step{
+                Name:          "bad",
+                ErrorStrategy: ErrorFail,
+                Func: func(ctx context.Context, state *State) error {
+                  return errors.New("deliberate failure")
+                },
+              })
+              r := p.Run(context.Background(), makeState())
+              if !r.IsFatal() {
+                t.Fatal("expected FATAL result")
+              }
+              if r.Errors[0].Code != result.CodePipelineRunFailed {
+                t.Errorf("expected code %q, got %q",
+                  result.CodePipelineRunFailed, r.Errors[0].Code)
+              }
+            }
+            ```
+
+            **pkg/pipeline/saw_steps_test.go** — Add 1 new test after TestRequiredKey_NilValues:
+
+            ```go
+            // TestRequiredKeyErr_ReturnsSAWError verifies that requiredKeyErr returns
+            // a SAWError (not a plain fmt.Errorf string) so the Code field is preserved.
+            func TestRequiredKeyErr_ReturnsSAWError(t *testing.T) {
+              err := requiredKeyErr(makeState(), "nonexistent_key")
+              if err == nil {
+                t.Fatal("expected error for missing key")
+              }
+              var sawErr result.SAWError
+              if !errors.As(err, &sawErr) {
+                t.Fatalf("expected SAWError, got %T: %v", err, err)
+              }
+              if sawErr.Code != result.CodeRequiredKeyMissing {
+                t.Errorf("expected code %q, got %q", result.CodeRequiredKeyMissing, sawErr.Code)
+              }
+            }
+            ```
+
+            Import requirements: ensure `"errors"` and
+            `"github.com/blackwell-systems/scout-and-wave-go/pkg/result"` are in
+            the import block of pipeline_test.go. The `errors` import is already
+            present; `result` is already imported. For saw_steps_test.go, add
+            `"errors"` and the `result` import if not already present.
+
+            ### Verification
+            ```
+            go build ./pkg/pipeline/...
+            go vet ./pkg/pipeline/...
+            go test ./pkg/pipeline/...
+            ```
+            All 27 existing tests plus the 3 new tests must pass (30 total).
+          files:
+            - pkg/pipeline/pipeline_test.go
+            - pkg/pipeline/saw_steps_test.go
+          dependencies:
+            - A
+            - B
+quality_gates:
+    level: standard
+    gates:
+        - type: build
+          command: go build ./...
+          required: true
+        - type: lint
+          command: go vet ./pkg/pipeline/...
+          required: true
+        - type: test
+          command: go test ./pkg/pipeline/...
+          required: true
+pre_mortem:
+    overall_risk: low
+    rows:
+        - scenario: |
+            Agent A assigns wrong N-codes (e.g. N094 already used) — codes.go
+            already has N091-N093 and N096-N098 are currently free, but a concurrent
+            wave touching codes.go could grab the same slots.
+          likelihood: low
+          impact: medium
+          mitigation: |
+            Agent A must read codes.go in full before writing. The current highest
+            N code is N093. N096, N097, N098 are free. If the canonical source shows
+            a conflict at launch time, Agent A must pick the next available slot and
+            update saw_steps.go / pipeline.go to match.
+        - scenario: |
+            Agent C's TestRequiredKeyErr_ReturnsSAWError test fails because errors.As
+            does not work with SAWError (value receiver, not pointer receiver).
+          likelihood: low
+          impact: low
+          mitigation: |
+            SAWError implements the error interface via value receiver (Error() string).
+            errors.As works with value types when the target is the same type. The
+            pattern `errors.As(err, &sawErr)` where sawErr is result.SAWError is
+            correct for Go value types. If it fails, Agent C should use a direct type
+            assertion: `sawErr, ok := err.(result.SAWError)`.
+        - scenario: |
+            Removing the fmt.Errorf double-wrap in requiredKeyErr changes observable
+            error message format seen by any future caller, breaking any message
+            string comparisons.
+          likelihood: low
+          impact: low
+          mitigation: |
+            No external callers exist today. SAWError.Error() format is
+            "[severity] CODE: message" which is slightly different from
+            "step_name: required state key X not set". If this is a concern for
+            future callers, the step funcs in saw_steps.go can keep their
+            fmt.Errorf("step_name: %w", err) wrapping — the key fix is that err
+            is now a SAWError instead of a fmt string, so errors.As still works.
+        - scenario: |
+            Dead typed fields on State (RepoPath, IMPLPath, WaveNum) are actually
+            used by engine-layer code not found in the canonical grep (e.g., via
+            reflection or dynamic field access in a CLI adapter).
+          likelihood: low
+          impact: medium
+          mitigation: |
+            The caller scan confirmed zero external callers import pkg/pipeline.
+            No code outside pkg/pipeline references these fields. The fix adds
+            clarifying comments only — it does not remove the fields — so there
+            is zero breakage risk.
+known_issues:
+    - title: pkg/pipeline has zero external callers
+      description: |
+        The entire pkg/pipeline package (WavePipeline, DefaultRegistry, Registry,
+        all StepXxx constructors, Pipeline, State, GetValue, SetValue) is exported
+        but not imported by any code outside the package itself. The package is
+        aspirational infrastructure that has not yet been wired into pkg/engine or
+        any CLI command. This IMPL doc does NOT remove the dead exports — that
+        requires a separate scoping decision about whether to activate or delete
+        the package. The fixes here clean up internal quality (error codes, docs)
+        so the package is in good shape if/when it gets wired in.
+    - title: State typed fields (RepoPath, IMPLPath, WaveNum) are a latent API trap
+      description: |
+        Steps use state.Values["repo_path"] but the struct also has state.RepoPath.
+        A future caller who reads the API and sets state.RepoPath = "/path" will
+        find it silently ignored. Agent B adds clarifying comments but does not
+        migrate steps to use typed fields (that would be a larger refactor requiring
+        callers to exist first).
+state: SCOUT_PENDING
+injection_method: hook
