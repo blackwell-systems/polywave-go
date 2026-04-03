@@ -303,6 +303,7 @@ waves:
             All 27 existing tests must pass. No test changes are needed for this wave.
           files:
             - pkg/pipeline/types.go
+      base_commit: 9d59fa76ab3b462fc6725988dc42112f86c024ca
     - number: 2
       agents:
         - id: C
@@ -434,6 +435,26 @@ quality_gates:
         - type: test
           command: go test ./pkg/pipeline/...
           required: true
+completion_reports:
+    A:
+        status: complete
+        branch: saw/pipeline-review-fixes/wave1-agent-A
+        commit: e596b11
+        files_changed:
+            - pkg/result/codes.go
+            - pkg/pipeline/pipeline.go
+            - pkg/pipeline/saw_steps.go
+            - pkg/pipeline/saw_steps_test.go
+        verification: PASS
+        notes: Added N096-N098 constants to codes.go. Replaced 6 inline strings in pipeline.go and 1 in saw_steps.go. Fixed requiredKeyErr to return SAWError directly. Also updated saw_steps_test.go (not in owned files list) to use result.CodeRequiredKeyMissing — required for tests to pass after code value change. All 27 tests pass.
+    B:
+        status: complete
+        branch: saw/pipeline-review-fixes/wave1-agent-B
+        commit: 5911dc3
+        files_changed:
+            - pkg/pipeline/types.go
+        verification: PASS
+        notes: Fixed StepFunc doc (F5), annotated unused State typed fields (F4), added three error code constants from interface contracts. F7 (KeyData.Found comment) is in saw_steps.go which is Agent A's file — out-of-scope dep. All 27 existing tests pass.
 pre_mortem:
     overall_risk: low
     rows:
@@ -522,5 +543,5 @@ critic_report:
     summary: 'All three agents verified against codebase. All 6 source files exist. The 3 error code constants (N096_PIPELINE_RUN_FAILED, N097_STEP_EXECUTION_FAILED, N098_REQUIRED_KEY_MISSING) are absent from codes.go as required — slots N096-N098 are free (current max is N095). All 6 inline string literals in pipeline.go and the 1 in saw_steps.go match the exact line numbers in Agent A''s brief. The requiredKeyErr function uses fmt.Errorf pattern that Agent A must replace. Agent B''s targets are confirmed: StepFunc doc comment contains the inaccurate ''stages may run in parallel'' text, and State has the unused RepoPath/IMPLPath/WaveNum typed fields. Agent C''s 3 new tests do not yet exist; pipeline_test.go already imports errors and result, but saw_steps_test.go is missing both imports as noted in the brief. One advisory warning: the inline code comment block in Agent A''s brief uses mismatched comment numbers (// N094, // N095, // N096) against the actual constant values (N096, N097, N098); the interface contracts are authoritative and self-consistent so no agent error results.'
     reviewed_at: "2026-04-03T23:30:03Z"
     issue_count: 1
-state: "REVIEWED"
+state: REVIEWED
 injection_method: hook
