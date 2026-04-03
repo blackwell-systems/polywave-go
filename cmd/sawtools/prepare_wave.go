@@ -65,11 +65,11 @@ to fail with a descriptive error.`,
 			// E37: Critic gate — only enforce when threshold is met (3+ agents in wave 1 OR 2+ repos).
 			if protocol.E37Required(manifest) && !protocol.CriticGatePasses(manifest, true) {
 				if skipCritic {
-					skipped, err := protocol.SkipCriticForIMPL(context.TODO(), manifestPath, manifest)
-					if err != nil {
-						return fmt.Errorf("prepare-wave: E37 critic gate: --skip-critic failed: %w", err)
+					skipRes := protocol.SkipCriticForIMPL(context.TODO(), manifestPath, manifest)
+						if skipRes.IsFatal() {
+						return fmt.Errorf("prepare-wave: E37 critic gate: --skip-critic failed: %s", skipRes.Errors[0].Message)
 					}
-					if skipped {
+					if skipRes.GetData() {
 						fmt.Fprintln(os.Stderr, "prepare-wave: E37 critic gate auto-skipped (--skip-critic)")
 					}
 				} else {

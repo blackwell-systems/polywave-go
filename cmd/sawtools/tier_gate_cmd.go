@@ -52,7 +52,7 @@ Exit codes:
 			}
 
 			// Run tier gate verification
-			res := protocol.RunTierGate(manifest, tier, repoDir)
+			res := protocol.RunTierGate(cmd.Context(), manifest, tier, repoDir)
 			if res.IsFatal() {
 				return fmt.Errorf("tier-gate: %s", res.Errors[0].Message)
 			}

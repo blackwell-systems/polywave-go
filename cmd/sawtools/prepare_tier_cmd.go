@@ -49,7 +49,7 @@ Exit codes:
 		RunE: func(cmd *cobra.Command, args []string) error {
 			manifestPath := args[0]
 
-			result, err := protocol.PrepareTier(protocol.PrepareTierOpts{
+			prepRes := protocol.PrepareTier(protocol.PrepareTierOpts{
 				ProgramManifestPath: manifestPath,
 				TierNumber:          tierNum,
 				RepoDir:             repoDir,
@@ -58,12 +58,10 @@ Exit codes:
 				WaveNum:             waveNumFlag,
 				MergeTarget:         mergeTargetFlag,
 			})
-			if err != nil {
-				if result == nil {
-					return fmt.Errorf("prepare-tier: %w", err)
-				}
-				return err
+			if prepRes.IsFatal() {
+				return fmt.Errorf("prepare-tier: %s", prepRes.Errors[0].Message)
 			}
+			result := prepRes.GetData()
 
 			// Run prepare-wave for each IMPL if requested and prior steps succeeded.
 			if runPrepareWave && result.Success {

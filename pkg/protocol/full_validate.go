@@ -112,7 +112,7 @@ func FullValidate(ctx context.Context, manifestPath string, opts FullValidateOpt
 	feErrs := ValidateFileExistence(m, opts.RepoPath)
 	errs = append(errs, feErrs...)
 
-	errs = append(errs, CheckAgentLOCBudget(context.TODO(), m, opts.RepoPath, 2000)...)
+	errs = append(errs, CheckAgentLOCBudget(ctx, m, opts.RepoPath, 2000)...)
 
 	// Step 7: E16 typed-block validation
 	docErrs, docErr := ValidateIMPLDoc(manifestPath)
@@ -174,7 +174,7 @@ type FullValidateProgramOpts struct {
 }
 
 // FullValidateProgram runs all validation checks on a PROGRAM manifest file.
-func FullValidateProgram(manifestPath string, opts FullValidateProgramOpts) result.Result[FullValidateProgramData] {
+func FullValidateProgram(ctx context.Context, manifestPath string, opts FullValidateProgramOpts) result.Result[FullValidateProgramData] {
 	// Step 1: Parse manifest
 	manifest, err := ParseProgramManifest(manifestPath)
 	if err != nil {
@@ -192,6 +192,8 @@ func FullValidateProgram(manifestPath string, opts FullValidateProgramOpts) resu
 	if opts.ImportMode {
 		rd := opts.RepoDir
 		if rd == "" {
+			// When RepoDir is empty, the process CWD is used as fallback.
+			// Callers should prefer setting RepoDir explicitly for reproducibility.
 			rd, _ = os.Getwd()
 		}
 		importErrs := ValidateProgramImportMode(manifest, rd)

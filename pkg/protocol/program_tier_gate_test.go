@@ -1,6 +1,7 @@
 package protocol
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"testing"
@@ -39,7 +40,7 @@ func TestRunTierGate_AllComplete_GatesPass(t *testing.T) {
 	require.NoError(t, err)
 	defer os.RemoveAll(tmpDir)
 
-	res := RunTierGate(manifest, 1, tmpDir)
+	res := RunTierGate(context.Background(), manifest, 1, tmpDir)
 	require.False(t, res.IsFatal(), "unexpected fatal: %+v", res.Errors)
 	result := res.GetData()
 	assert.NotNil(t, result)
@@ -87,7 +88,7 @@ func TestRunTierGate_NotAllComplete(t *testing.T) {
 	require.NoError(t, err)
 	defer os.RemoveAll(tmpDir)
 
-	res := RunTierGate(manifest, 1, tmpDir)
+	res := RunTierGate(context.Background(), manifest, 1, tmpDir)
 	require.False(t, res.IsFatal(), "unexpected fatal: %+v", res.Errors)
 	result := res.GetData()
 	assert.NotNil(t, result)
@@ -142,7 +143,7 @@ func TestRunTierGate_GateFails_Required(t *testing.T) {
 	require.NoError(t, err)
 	defer os.RemoveAll(tmpDir)
 
-	res := RunTierGate(manifest, 1, tmpDir)
+	res := RunTierGate(context.Background(), manifest, 1, tmpDir)
 	require.False(t, res.IsFatal(), "unexpected fatal: %+v", res.Errors)
 	result := res.GetData()
 	assert.NotNil(t, result)
@@ -199,7 +200,7 @@ func TestRunTierGate_GateFails_NotRequired(t *testing.T) {
 	require.NoError(t, err)
 	defer os.RemoveAll(tmpDir)
 
-	res := RunTierGate(manifest, 1, tmpDir)
+	res := RunTierGate(context.Background(), manifest, 1, tmpDir)
 	require.False(t, res.IsFatal(), "unexpected fatal: %+v", res.Errors)
 	result := res.GetData()
 	assert.NotNil(t, result)
@@ -239,7 +240,7 @@ func TestRunTierGate_InvalidTier(t *testing.T) {
 	defer os.RemoveAll(tmpDir)
 
 	// Request a tier that doesn't exist
-	res := RunTierGate(manifest, 99, tmpDir)
+	res := RunTierGate(context.Background(), manifest, 99, tmpDir)
 	assert.True(t, res.IsFatal(), "expected fatal result for invalid tier")
 }
 
@@ -262,7 +263,7 @@ func TestRunTierGate_NoGates(t *testing.T) {
 	require.NoError(t, err)
 	defer os.RemoveAll(tmpDir)
 
-	res := RunTierGate(manifest, 2, tmpDir)
+	res := RunTierGate(context.Background(), manifest, 2, tmpDir)
 	require.False(t, res.IsFatal(), "unexpected fatal: %+v", res.Errors)
 	result := res.GetData()
 	assert.NotNil(t, result)
@@ -295,7 +296,7 @@ func TestRunTierGate_ImplNotFoundInManifest(t *testing.T) {
 	require.NoError(t, err)
 	defer os.RemoveAll(tmpDir)
 
-	res := RunTierGate(manifest, 1, tmpDir)
+	res := RunTierGate(context.Background(), manifest, 1, tmpDir)
 	require.False(t, res.IsFatal(), "unexpected fatal: %+v", res.Errors)
 	result := res.GetData()
 	assert.NotNil(t, result)
@@ -338,7 +339,7 @@ func TestRunTierGate_GateCommandWithWorkingDirectory(t *testing.T) {
 	require.NoError(t, err)
 	defer os.RemoveAll(tmpDir)
 
-	res := RunTierGate(manifest, 1, tmpDir)
+	res := RunTierGate(context.Background(), manifest, 1, tmpDir)
 	require.False(t, res.IsFatal(), "unexpected fatal: %+v", res.Errors)
 	result := res.GetData()
 	assert.NotNil(t, result)
@@ -376,7 +377,7 @@ func TestRunTierGate_ReadsFromDisk_Complete(t *testing.T) {
 		},
 	}
 
-	res := RunTierGate(manifest, 1, tmpDir)
+	res := RunTierGate(context.Background(), manifest, 1, tmpDir)
 	require.False(t, res.IsFatal(), "unexpected fatal: %+v", res.Errors)
 	result := res.GetData()
 	require.NotNil(t, result)
@@ -404,7 +405,7 @@ func TestRunTierGate_FallsBackToManifest_WhenDocMissing(t *testing.T) {
 		},
 	}
 
-	res := RunTierGate(manifest, 1, tmpDir)
+	res := RunTierGate(context.Background(), manifest, 1, tmpDir)
 	require.False(t, res.IsFatal(), "unexpected fatal: %+v", res.Errors)
 	result := res.GetData()
 	require.NotNil(t, result)
@@ -432,7 +433,7 @@ func TestRunTierGate_MixedStatuses(t *testing.T) {
 	require.NoError(t, err)
 	defer os.RemoveAll(tmpDir)
 
-	res := RunTierGate(manifest, 1, tmpDir)
+	res := RunTierGate(context.Background(), manifest, 1, tmpDir)
 	require.False(t, res.IsFatal(), "unexpected fatal: %+v", res.Errors)
 	result := res.GetData()
 	assert.NotNil(t, result)

@@ -224,7 +224,7 @@ completion:
 `
 	path := writeManifest(t, tmpDir, "PROGRAM-test.yaml", manifest)
 
-	res := FullValidateProgram(path, FullValidateProgramOpts{})
+	res := FullValidateProgram(context.Background(), path, FullValidateProgramOpts{})
 	if res.IsFatal() {
 		t.Fatalf("expected success, got fatal: %v", res.Errors)
 	}
@@ -263,7 +263,7 @@ completion:
 	path := writeManifest(t, tmpDir, "PROGRAM-test.yaml", manifest)
 
 	// Import mode with a repo dir that won't have the IMPL docs
-	res := FullValidateProgram(path, FullValidateProgramOpts{
+	res := FullValidateProgram(context.Background(), path, FullValidateProgramOpts{
 		ImportMode: true,
 		RepoDir:    tmpDir,
 	})

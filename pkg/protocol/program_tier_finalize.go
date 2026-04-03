@@ -1,6 +1,7 @@
 package protocol
 
 import (
+	"context"
 	"fmt"
 
 	"github.com/blackwell-systems/scout-and-wave-go/internal/git"
@@ -109,7 +110,7 @@ func FinalizeTier(programManifestPath string, tierNumber int, repoDir string) re
 	}
 
 	// All merges succeeded; run the tier gate.
-	gateRes := RunTierGate(manifest, tierNumber, repoDir)
+	gateRes := RunTierGate(context.Background(), manifest, tierNumber, repoDir)
 	if !gateRes.IsSuccess() {
 		errMsg := fmt.Sprintf("tier gate error for tier %d", tierNumber)
 		if len(gateRes.Errors) > 0 {

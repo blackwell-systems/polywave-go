@@ -13,7 +13,7 @@ import (
 // RunTierGate verifies that all IMPLs in a tier are complete and runs the tier-level
 // quality gates defined in the PROGRAM manifest. Returns structured result with
 // per-gate and per-IMPL status.
-func RunTierGate(manifest *PROGRAMManifest, tierNumber int, repoPath string) result.Result[*TierGateData] {
+func RunTierGate(ctx context.Context, manifest *PROGRAMManifest, tierNumber int, repoPath string) result.Result[*TierGateData] {
 	// Find the tier in the manifest
 	var tier *ProgramTier
 	for i := range manifest.Tiers {
@@ -74,7 +74,7 @@ func RunTierGate(manifest *PROGRAMManifest, tierNumber int, repoPath string) res
 
 	// All IMPLs are done, now run the tier gates
 	for _, gate := range manifest.TierGates {
-		gateResult := runTierGateCommand(gate, repoPath)
+		gateResult := runTierGateCommand(ctx, gate, repoPath)
 		data.GateResults = append(data.GateResults, gateResult)
 
 		// If a required gate fails, the tier fails
@@ -92,7 +92,7 @@ func RunTierGate(manifest *PROGRAMManifest, tierNumber int, repoPath string) res
 }
 
 // runTierGateCommand executes a single tier gate command with a 5-minute timeout.
-func runTierGateCommand(gate QualityGate, repoPath string) GateResult {
+func runTierGateCommand(ctx context.Context, gate QualityGate, repoPath string) GateResult {
 	result := GateResult{
 		Type:     gate.Type,
 		Command:  gate.Command,
@@ -100,8 +100,8 @@ func runTierGateCommand(gate QualityGate, repoPath string) GateResult {
 		Passed:   false,
 	}
 
-	// Create context with 5-minute timeout
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+	// Create context with 5-minute timeout derived from caller ctx
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Minute)
 	defer cancel()
 
 	// Create command with context

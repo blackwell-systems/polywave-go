@@ -2,8 +2,9 @@ package protocol
 
 import (
 	"context"
-	"fmt"
 	"time"
+
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
 )
 
 // E37Required returns true when a critic review is required before wave execution.
@@ -84,22 +85,23 @@ func CriticGatePasses(m *IMPLManifest, autoMode bool) bool {
 // SkipCriticForIMPL writes a synthetic PASS critic report for a single IMPL
 // if E37 is required and no passing critic report exists. Returns true if a
 // skip was written, false if no skip was needed (E37 not required or already passes).
-func SkipCriticForIMPL(ctx context.Context, implPath string, m *IMPLManifest) (bool, error) {
+func SkipCriticForIMPL(ctx context.Context, implPath string, m *IMPLManifest) result.Result[bool] {
 	if !E37Required(m) {
-		return false, nil // not required, no skip needed
+		return result.NewSuccess(false) // not required, no skip needed
 	}
 	if CriticGatePasses(m, true) {
-		return false, nil // already passes, no skip needed
+		return result.NewSuccess(false) // already passes, no skip needed
 	}
-	skipResult := CriticData{
+	skipData := CriticData{
 		Verdict:      CriticVerdictPass,
 		AgentReviews: map[string]AgentCriticReview{},
 		Summary:      "Skipped by operator (--skip-critic)",
 		ReviewedAt:   time.Now().UTC().Format(time.RFC3339),
 		IssueCount:   0,
 	}
-	if err := WriteCriticReview(ctx, implPath, skipResult); err != nil {
-		return false, fmt.Errorf("failed to write synthetic PASS for %s: %w", implPath, err)
+	writeRes := WriteCriticReviewResult(ctx, implPath, skipData)
+	if writeRes.IsFatal() {
+		return result.NewFailure[bool](writeRes.Errors)
 	}
-	return true, nil
+	return result.NewSuccess(true)
 }

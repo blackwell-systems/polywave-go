@@ -3,6 +3,8 @@ package protocol
 import (
 	"context"
 	"fmt"
+
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
 )
 
 // PrepareTierOpts contains the options for PrepareTier, replacing positional
@@ -74,10 +76,14 @@ type IMPLValidationResult struct {
 //  3. Check for cross-IMPL file ownership conflicts.
 //  4. Validate each IMPL doc (with auto-fix of gate types).
 //  5. Create worktrees for the tier.
-func PrepareTier(opts PrepareTierOpts) (*PrepareTierResult, error) {
+func PrepareTier(opts PrepareTierOpts) result.Result[*PrepareTierResult] {
 	manifest, err := ParseProgramManifest(opts.ProgramManifestPath)
 	if err != nil {
-		return nil, fmt.Errorf("failed to parse program manifest: %w", err)
+		return result.NewFailure[*PrepareTierResult]([]result.SAWError{{
+			Code:     result.CodeParseError,
+			Message:  fmt.Sprintf("failed to parse program manifest: %v", err),
+			Severity: "fatal",
+		}})
 	}
 
 	// Find the tier by number.
@@ -89,25 +95,33 @@ func PrepareTier(opts PrepareTierOpts) (*PrepareTierResult, error) {
 		}
 	}
 	if targetTier == nil {
-		return nil, fmt.Errorf("tier %d not found in program manifest", opts.TierNumber)
+		return result.NewFailure[*PrepareTierResult]([]result.SAWError{{
+			Code:     result.CodeParseError,
+			Message:  fmt.Sprintf("tier %d not found in program manifest", opts.TierNumber),
+			Severity: "fatal",
+		}})
 	}
 
-	result := &PrepareTierResult{
+	res := &PrepareTierResult{
 		Tier: opts.TierNumber,
 	}
 
 	// Step 3: Conflict check.
 	report, err := CheckIMPLConflicts(targetTier.Impls, opts.RepoDir)
 	if err != nil {
-		return nil, fmt.Errorf("conflict check failed: %w", err)
+		return result.NewFailure[*PrepareTierResult]([]result.SAWError{{
+			Code:     result.CodeParseError,
+			Message:  fmt.Sprintf("conflict check failed: %v", err),
+			Severity: "fatal",
+		}})
 	}
-	result.ConflictCheck = &ConflictCheckResult{
+	res.ConflictCheck = &ConflictCheckResult{
 		Conflicts: report.Conflicts,
 		Disjoint:  len(report.Conflicts) == 0,
 	}
 	if len(report.Conflicts) > 0 {
-		result.Success = false
-		return result, nil
+		res.Success = false
+		return result.NewSuccess(res)
 	}
 
 	// Step 4: IMPL validation — collect all failures instead of returning early.
@@ -115,12 +129,20 @@ func PrepareTier(opts PrepareTierOpts) (*PrepareTierResult, error) {
 	for _, slug := range targetTier.Impls {
 		implPath, err := ResolveIMPLPath(opts.RepoDir, slug)
 		if err != nil {
-			return nil, fmt.Errorf("cannot resolve IMPL %q: %w", slug, err)
+			return result.NewFailure[*PrepareTierResult]([]result.SAWError{{
+				Code:     result.CodeParseError,
+				Message:  fmt.Sprintf("cannot resolve IMPL %q: %v", slug, err),
+				Severity: "fatal",
+			}})
 		}
 
 		m, err := Load(context.TODO(), implPath)
 		if err != nil {
-			return nil, fmt.Errorf("cannot load IMPL %q: %w", slug, err)
+			return result.NewFailure[*PrepareTierResult]([]result.SAWError{{
+				Code:     result.CodeParseError,
+				Message:  fmt.Sprintf("cannot load IMPL %q: %v", slug, err),
+				Severity: "fatal",
+			}})
 		}
 
 		fixCount := FixGateTypes(m)
@@ -130,7 +152,11 @@ func PrepareTier(opts PrepareTierOpts) (*PrepareTierResult, error) {
 				if len(saveRes.Errors) > 0 {
 					saveMsg = saveRes.Errors[0].Message
 				}
-				return nil, fmt.Errorf("cannot save IMPL %q after fixes: %s", slug, saveMsg)
+				return result.NewFailure[*PrepareTierResult]([]result.SAWError{{
+					Code:     result.CodeParseError,
+					Message:  fmt.Sprintf("cannot save IMPL %q after fixes: %s", slug, saveMsg),
+					Severity: "fatal",
+				}})
 			}
 		}
 
@@ -143,7 +169,7 @@ func PrepareTier(opts PrepareTierOpts) (*PrepareTierResult, error) {
 		for _, ve := range valErrors {
 			vr.Errors = append(vr.Errors, ve.Message)
 		}
-		result.Validations = append(result.Validations, vr)
+		res.Validations = append(res.Validations, vr)
 
 		if !vr.Valid {
 			hasFailure = true
@@ -154,45 +180,48 @@ func PrepareTier(opts PrepareTierOpts) (*PrepareTierResult, error) {
 		// Only enforce when the threshold is met: 3+ agents in wave 1 OR 2+ repos.
 		if E37Required(m) && !CriticGatePasses(m, true) {
 			if opts.SkipCritic {
-				skipped, skipErr := SkipCriticForIMPL(context.TODO(), implPath, m)
-				if skipErr != nil {
+				skipRes := SkipCriticForIMPL(context.TODO(), implPath, m)
+				if skipRes.IsFatal() {
+					skipMsg := ""
+					if len(skipRes.Errors) > 0 {
+						skipMsg = skipRes.Errors[0].Message
+					}
 					e37vr := IMPLValidationResult{
 						ImplSlug: slug,
 						Valid:    false,
-						Errors:   []string{fmt.Sprintf("E37 critic gate: failed to write synthetic PASS: %v", skipErr)},
+						Errors:   []string{fmt.Sprintf("E37 critic gate: failed to write synthetic PASS: %v", skipMsg)},
 					}
-					result.Validations = append(result.Validations, e37vr)
+					res.Validations = append(res.Validations, e37vr)
 					hasFailure = true
 				}
 				// If skipped successfully, continue without failure.
-				_ = skipped
 			} else {
 				e37vr := IMPLValidationResult{
 					ImplSlug: slug,
 					Valid:    false,
 					Errors:   []string{"E37 critic gate required but not satisfied — run `sawtools run-critic` or `sawtools run-critic --skip` before prepare-tier"},
 				}
-				result.Validations = append(result.Validations, e37vr)
+				res.Validations = append(res.Validations, e37vr)
 				hasFailure = true
 			}
 		}
 	}
 
 	if hasFailure {
-		result.Success = false
-		return result, nil
+		res.Success = false
+		return result.NewSuccess(res)
 	}
 
 	// Step 5: Create worktrees.
 	wtResult := CreateProgramWorktrees(opts.ProgramManifestPath, opts.TierNumber, opts.RepoDir, nil)
 	if !wtResult.IsSuccess() {
-		result.Success = false
-		result.Branches = []ProgramWorktreeInfo{}
-		return result, nil
+		res.Success = false
+		res.Branches = []ProgramWorktreeInfo{}
+		return result.NewSuccess(res)
 	}
 	wtData := wtResult.GetData()
-	result.Branches = wtData.Worktrees
-	result.Success = true
+	res.Branches = wtData.Worktrees
+	res.Success = true
 
-	return result, nil
+	return result.NewSuccess(res)
 }
