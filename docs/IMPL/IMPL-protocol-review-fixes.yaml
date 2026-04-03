@@ -527,6 +527,7 @@ waves:
             - pkg/protocol/freeze.go
             - pkg/protocol/gates.go
             - pkg/protocol/amend.go
+      base_commit: fb2c59c6285cb4c5e523f79d3056375e82889f7c
     - number: 2
       agents:
         - id: D
@@ -1149,6 +1150,41 @@ quality_gates:
         - type: test
           command: go test ./pkg/protocol/... ./pkg/engine/... ./pkg/orchestrator/... ./cmd/sawtools/...
           required: true
+completion_reports:
+    A:
+        status: complete
+        branch: saw/protocol-review-fixes/wave1-agent-A
+        commit: 3d4415b
+        files_changed:
+            - pkg/result/codes.go
+            - pkg/protocol/types.go
+            - pkg/protocol/state_transition.go
+            - pkg/protocol/state_status.go
+            - pkg/protocol/validation.go
+        verification: PASS
+        notes: All 5 files updated. StateInterviewing added to types, transitions, status mapping, and validation. P011-P013 and N094-N095 error codes added. All pkg/result and pkg/protocol tests pass.
+    B:
+        status: complete
+        branch: saw/protocol-review-fixes/wave1-agent-B
+        commit: 88ac731
+        files_changed:
+            - pkg/protocol/parser.go
+            - pkg/protocol/doc.go
+            - pkg/engine/runner.go
+        verification: PASS
+        notes: ValidateInvariants return type fixed (error → []result.SAWError). doc.go corrected (letter→id, I1-only description). runner.go:1028 caller updated as baseline compat fix (Orchestrator applied). All tests pass.
+    C:
+        status: complete
+        branch: saw/protocol-review-fixes/wave1-agent-C
+        commit: b676ad0
+        files_changed:
+            - pkg/protocol/manifest.go
+            - pkg/protocol/updater.go
+            - pkg/protocol/freeze.go
+            - pkg/protocol/gates.go
+            - pkg/protocol/amend.go
+        verification: PASS
+        notes: 'All 5 files updated with canonical constants. result.CodeManifestSaveFailed (N094), result.CodeReportSetFailed (N095), and result.CodeAmendBlocked (P013) are placeholder string literals pending Agent A constants. amend.go keeps local amendBlocked const (value P013_AMEND_BLOCKED) since amend_test.go references it. Two cascading test failures in non-owned files require integration fixes: (1) updater_test.go:371 hardcodes STATUS_UPDATE_FAILED, needs N015_STATUS_UPDATE_FAILED; (2) completion_report.go:136 checks Code==REPORT_SET_FAILED for ErrAgentNotFound wrapping, needs N095_REPORT_SET_FAILED.'
 pre_mortem:
     overall_risk: medium
     rows:
@@ -1234,7 +1270,6 @@ critic_report:
         program_tier_finalize_test.go→G, program_tier_gate_test.go+program_tier_prepare_test.go+
         full_validate_test.go→H. Each agent brief now includes explicit test-update instructions.
     reviewed_at: "2026-04-03T22:34:59Z"
-    amended_at: "2026-04-03T22:40:00Z"
     issue_count: 0
-state: "REVIEWED"
+state: REVIEWED
 injection_method: hook
