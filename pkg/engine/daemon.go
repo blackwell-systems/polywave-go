@@ -43,7 +43,7 @@ var daemonRunScoutFunc = func(ctx context.Context, opts RunScoutOpts, onChunk fu
 	res := RunScout(ctx, opts, onChunk)
 	if res.IsFatal() {
 		if len(res.Errors) > 0 {
-			return fmt.Errorf("%s", res.Errors[0].Message)
+			return fmt.Errorf("[%s] %s", res.Errors[0].Code, res.Errors[0].Message)
 		}
 		return fmt.Errorf("RunScout failed")
 	}
@@ -65,7 +65,7 @@ var daemonMarkIMPLCompleteFunc = func(ctx context.Context, opts MarkIMPLComplete
 	res := MarkIMPLComplete(ctx, opts)
 	if res.IsFatal() {
 		if len(res.Errors) > 0 {
-			return fmt.Errorf("%s", res.Errors[0].Message)
+			return fmt.Errorf("[%s] %s", res.Errors[0].Code, res.Errors[0].Message)
 		}
 		return fmt.Errorf("mark IMPL complete failed")
 	}
