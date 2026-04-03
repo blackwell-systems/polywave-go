@@ -21,38 +21,52 @@ func loggerFrom(l *slog.Logger) *slog.Logger {
 }
 
 // CleanupAllStale removes all stale worktrees across all slugs.
-func CleanupAllStale(ctx context.Context, repoDir string, force bool) (*StaleCleanupData, error) {
+func CleanupAllStale(ctx context.Context, repoDir string, force bool) result.Result[*StaleCleanupData] {
 	if err := ctx.Err(); err != nil {
-		return nil, fmt.Errorf("cleanup all stale: %w", err)
+		return result.NewFailure[*StaleCleanupData]([]result.SAWError{
+			{
+				Code:     result.CodeWorktreeCreateFailed,
+				Message:  fmt.Sprintf("cleanup all stale: %v", err),
+				Severity: "fatal",
+			},
+		})
 	}
 	stale, err := DetectStaleWorktrees(repoDir)
 	if err != nil {
-		return nil, fmt.Errorf("detect stale worktrees: %w", err)
+		return result.NewFailure[*StaleCleanupData]([]result.SAWError{
+			{
+				Code:     result.CodeWorktreeCreateFailed,
+				Message:  fmt.Sprintf("detect stale worktrees: %v", err),
+				Severity: "fatal",
+			},
+		})
 	}
 	if len(stale) == 0 {
-		return &StaleCleanupData{
+		return result.NewSuccess(&StaleCleanupData{
 			Cleaned: []StaleWorktree{},
 			Skipped: []StaleWorktree{},
 			Errors:  []StaleCleanupFailure{},
-		}, nil
+		})
 	}
 	if err := ctx.Err(); err != nil {
-		return nil, fmt.Errorf("cleanup all stale: %w", err)
+		return result.NewFailure[*StaleCleanupData]([]result.SAWError{
+			{
+				Code:     result.CodeWorktreeCreateFailed,
+				Message:  fmt.Sprintf("cleanup all stale: %v", err),
+				Severity: "fatal",
+			},
+		})
 	}
 	res := CleanStaleWorktrees(stale, force)
 	if !res.IsSuccess() {
-		errMsg := "clean stale worktrees failed"
-		if len(res.Errors) > 0 {
-			errMsg = res.Errors[0].Message
-		}
-		// Return partial data if available
+		// Return partial data if available (some cleaned, some failed)
 		if res.Data != nil {
-			return *res.Data, fmt.Errorf("%s", errMsg)
+			return result.NewPartial(*res.Data, res.Errors)
 		}
-		return nil, fmt.Errorf("%s", errMsg)
+		return result.NewFailure[*StaleCleanupData](res.Errors)
 	}
 	data := res.GetData()
-	return data, nil
+	return result.NewSuccess(data)
 }
 
 // CleanupStatus represents the cleanup result for a single agent.
@@ -82,7 +96,7 @@ type CleanupData struct {
 //
 // Returns result.Result[CleanupData] with status for each agent, or an error if the
 // wave is not found.
-func Cleanup(ctx context.Context, manifestPath string, waveNum int, repoDir string, logger *slog.Logger) (result.Result[CleanupData], error) {
+func Cleanup(ctx context.Context, manifestPath string, waveNum int, repoDir string, logger *slog.Logger) result.Result[CleanupData] {
 	if err := ctx.Err(); err != nil {
 		return result.NewFailure[CleanupData]([]result.SAWError{
 			{
@@ -90,11 +104,11 @@ func Cleanup(ctx context.Context, manifestPath string, waveNum int, repoDir stri
 				Message:  fmt.Sprintf("cleanup cancelled: %v", err),
 				Severity: "fatal",
 			},
-		}), fmt.Errorf("cleanup cancelled: %w", err)
+		})
 	}
 	log := loggerFrom(logger)
 	// Load manifest
-	manifest, err := Load(context.TODO(), manifestPath)
+	manifest, err := Load(ctx, manifestPath)
 	if err != nil {
 		return result.NewFailure[CleanupData]([]result.SAWError{
 			{
@@ -102,7 +116,7 @@ func Cleanup(ctx context.Context, manifestPath string, waveNum int, repoDir stri
 				Message:  fmt.Sprintf("failed to load manifest: %v", err),
 				Severity: "fatal",
 			},
-		}), fmt.Errorf("failed to load manifest: %w", err)
+		})
 	}
 
 	// Find the specified wave
@@ -121,7 +135,7 @@ func Cleanup(ctx context.Context, manifestPath string, waveNum int, repoDir stri
 				Message:  fmt.Sprintf("wave %d not found in manifest", waveNum),
 				Severity: "fatal",
 			},
-		}), fmt.Errorf("wave %d not found in manifest", waveNum)
+		})
 	}
 
 	data := CleanupData{
@@ -138,7 +152,7 @@ func Cleanup(ctx context.Context, manifestPath string, waveNum int, repoDir stri
 				Message:  fmt.Sprintf("failed to resolve repo dir: %v", err),
 				Severity: "fatal",
 			},
-		}), fmt.Errorf("failed to resolve repo dir: %w", err)
+		})
 	}
 	repoParent := filepath.Dir(absRepoDir)
 
@@ -155,7 +169,7 @@ func Cleanup(ctx context.Context, manifestPath string, waveNum int, repoDir stri
 					Message:  fmt.Sprintf("cleanup cancelled after %d agents: %v", len(data.Agents), err),
 					Severity: "warning",
 				},
-			}), fmt.Errorf("cleanup cancelled: %w", err)
+			})
 		}
 
 		status := CleanupStatus{
@@ -224,5 +238,5 @@ func Cleanup(ctx context.Context, manifestPath string, waveNum int, repoDir stri
 		}
 	}
 
-	return result.NewSuccess(data), nil
+	return result.NewSuccess(data)
 }

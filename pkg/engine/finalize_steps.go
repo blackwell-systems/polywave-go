@@ -377,15 +377,15 @@ func StepCleanup(ctx context.Context, opts FinalizeWaveOpts, onEvent EventCallba
 	const stepName = "cleanup"
 	emitStepEvent(onEvent, stepName, "running", "")
 
-	cleanupResult, err := protocol.Cleanup(ctx, opts.IMPLPath, opts.WaveNum, opts.RepoPath, opts.Logger)
-	if err != nil {
+	cleanupResult := protocol.Cleanup(ctx, opts.IMPLPath, opts.WaveNum, opts.RepoPath, opts.Logger)
+	if cleanupResult.IsFatal() {
 		// Non-fatal
-		loggerFrom(opts.Logger).Warn("engine.StepCleanup", "err", err)
-		emitStepEvent(onEvent, stepName, "complete", fmt.Sprintf("error (non-fatal): %v", err))
+		loggerFrom(opts.Logger).Warn("engine.StepCleanup", "err", cleanupResult.Errors[0].Message)
+		emitStepEvent(onEvent, stepName, "complete", fmt.Sprintf("error (non-fatal): %s", cleanupResult.Errors[0].Message))
 		return &StepResult{
 			Step:   stepName,
 			Status: "success",
-			Detail: fmt.Sprintf("cleanup error (non-fatal): %v", err),
+			Detail: fmt.Sprintf("cleanup error (non-fatal): %s", cleanupResult.Errors[0].Message),
 		}, nil, nil
 	}
 

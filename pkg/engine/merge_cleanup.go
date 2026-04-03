@@ -53,13 +53,13 @@ func PostMergeCleanup(ctx context.Context, implPath string, waveNum int, repoPat
 	if onEvent != nil {
 		onEvent("cleanup", "running", fmt.Sprintf("Cleaning up wave %d worktrees", waveNum))
 	}
-	_, cleanupErr := protocol.Cleanup(ctx, implPath, waveNum, repoPath, nil)
-	if cleanupErr != nil {
+	cleanupRes := protocol.Cleanup(ctx, implPath, waveNum, repoPath, nil)
+	if cleanupRes.IsFatal() {
 		if onEvent != nil {
-			onEvent("cleanup", "error", fmt.Sprintf("Cleanup failed (non-fatal): %v", cleanupErr))
+			onEvent("cleanup", "error", fmt.Sprintf("Cleanup failed (non-fatal): %s", cleanupRes.Errors[0].Message))
 		}
 		warnings = append(warnings, result.NewWarning(result.CodeCleanupFailed,
-			fmt.Sprintf("cleanup failed: %v", cleanupErr)).
+			fmt.Sprintf("cleanup failed: %s", cleanupRes.Errors[0].Message)).
 			WithContext("impl_path", implPath).
 			WithContext("wave_num", fmt.Sprintf("%d", waveNum)))
 	} else {

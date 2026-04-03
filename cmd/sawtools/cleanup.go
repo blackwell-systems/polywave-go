@@ -39,11 +39,11 @@ func newCleanupCmd() *cobra.Command {
 			}
 
 			if allStale {
-				result, err := protocol.CleanupAllStale(ctx, repoDir, force)
-				if err != nil {
-					return fmt.Errorf("cleanup-all-stale: %w", err)
+				staleRes := protocol.CleanupAllStale(ctx, repoDir, force)
+				if staleRes.IsFatal() {
+					return fmt.Errorf("cleanup-all-stale: %s", staleRes.Errors[0].Message)
 				}
-				out, _ := json.MarshalIndent(result, "", "  ")
+				out, _ := json.MarshalIndent(staleRes.GetData(), "", "  ")
 				fmt.Println(string(out))
 				return nil
 			}
@@ -54,12 +54,12 @@ func newCleanupCmd() *cobra.Command {
 			}
 			manifestPath := args[0]
 
-			result, err := protocol.Cleanup(ctx, manifestPath, waveNum, repoDir, nil)
-			if err != nil {
-				return fmt.Errorf("cleanup: %w", err)
+			cleanRes := protocol.Cleanup(ctx, manifestPath, waveNum, repoDir, nil)
+			if cleanRes.IsFatal() {
+				return fmt.Errorf("cleanup: %s", cleanRes.Errors[0].Message)
 			}
 
-			out, _ := json.MarshalIndent(result, "", "  ")
+			out, _ := json.MarshalIndent(cleanRes.GetData(), "", "  ")
 			fmt.Println(string(out))
 			return nil
 		},
