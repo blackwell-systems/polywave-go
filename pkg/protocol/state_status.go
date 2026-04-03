@@ -9,7 +9,7 @@ func IMPLStateToStatus(state ProtocolState) string {
 		return "complete"
 	case StateWaveExecuting, StateWaveMerging, StateWaveVerified, StateWavePending:
 		return "in-progress"
-	case StateReviewed, StateScaffoldPending, StateScoutPending, StateScoutValidating:
+	case StateInterviewing, StateReviewed, StateScaffoldPending, StateScoutPending, StateScoutValidating:
 		return "pending"
 	case StateBlocked:
 		return "blocked"

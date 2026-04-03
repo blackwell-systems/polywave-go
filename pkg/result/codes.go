@@ -21,8 +21,8 @@
 //	R001-R099: Retry errors
 //	J001-J099: Journal errors (archive, checkpoint, observer operations)
 //	B009: gate validation failed (closed-loop gate retry input validation)
-//	N091-N093: engine init, already initialized, finalize step failed
-//	P008-P010: type collision fatal, critic gate failed, tier conflict detected
+//	N091-N095: engine init, already initialized, finalize step failed, manifest save failed, completion report set failed
+//	P008-P013: type collision fatal, critic gate failed, tier conflict detected, wave not found, unknown agent in ownership, amend blocked
 //	K007: cache build key cancelled
 package result
 
@@ -252,6 +252,10 @@ const (
 	CodeEngineAlreadyInitialized = "N092_ENGINE_ALREADY_INITIALIZED"
 	// N093: finalize step failed
 	CodeFinalizeStepFailed = "N093_FINALIZE_STEP_FAILED"
+	// N094: manifest save failed
+	CodeManifestSaveFailed = "N094_MANIFEST_SAVE_FAILED"
+	// N095: completion report set failed
+	CodeReportSetFailed = "N095_REPORT_SET_FAILED"
 )
 
 // Queue error codes (Q001-Q099)
@@ -280,6 +284,12 @@ const (
 	CodeCriticGateFailed = "P009_CRITIC_GATE_FAILED"
 	// P010: P1+ tier conflict detected
 	CodeTierConflictDetected = "P010_TIER_CONFLICT_DETECTED"
+	// P011: wave not found during merge
+	CodeWaveNotFound = "P011_WAVE_NOT_FOUND"
+	// P012: unknown agent referenced in file ownership
+	CodeUnknownAgentInOwnership = "P012_UNKNOWN_AGENT_IN_OWNERSHIP"
+	// P013: amend blocked due to state
+	CodeAmendBlocked = "P013_AMEND_BLOCKED"
 )
 
 // Tool/parse error codes (T001-T099)

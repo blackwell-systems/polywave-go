@@ -268,6 +268,7 @@ type ReactionEntry struct {
 type ProtocolState string
 
 const (
+	StateInterviewing    ProtocolState = "INTERVIEWING"
 	StateScoutPending    ProtocolState = "SCOUT_PENDING"
 	StateScoutValidating ProtocolState = "SCOUT_VALIDATING"
 	StateReviewed        ProtocolState = "REVIEWED"
