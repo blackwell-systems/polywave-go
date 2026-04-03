@@ -128,10 +128,11 @@ func TestJournalIntegration_TriggerCheckpoint(t *testing.T) {
 	}
 
 	// Verify checkpoint was created
-	checkpoints, err := observer.ListCheckpoints()
-	if err != nil {
-		t.Fatalf("ListCheckpoints failed: %v", err)
+	lr := observer.ListCheckpoints()
+	if !lr.IsSuccess() {
+		t.Fatalf("ListCheckpoints failed: %v", lr.Errors[0].Message)
 	}
+	checkpoints := lr.GetData()
 	if len(checkpoints) != 1 {
 		t.Fatalf("expected 1 checkpoint, got %d", len(checkpoints))
 	}

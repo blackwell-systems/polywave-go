@@ -7,6 +7,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
 )
 
 // JournalObserver is defined in observer.go - no need to redefine for tests
@@ -136,7 +138,7 @@ func TestCheckpoint_SavesMetadata(t *testing.T) {
 		t.Fatalf("Failed to read metadata: %v", err)
 	}
 
-	var checkpoint Checkpoint
+	var checkpoint CheckpointRecord
 	if err := json.Unmarshal(fileData, &checkpoint); err != nil {
 		t.Fatalf("Failed to unmarshal metadata: %v", err)
 	}
@@ -171,10 +173,11 @@ func TestListCheckpoints_ReturnsAll(t *testing.T) {
 	}
 
 	// List checkpoints
-	list, err := observer.ListCheckpoints()
-	if err != nil {
-		t.Fatalf("ListCheckpoints failed: %v", err)
+	lr := observer.ListCheckpoints()
+	if !lr.IsSuccess() {
+		t.Fatalf("ListCheckpoints failed: %v", lr.Errors[0].Message)
 	}
+	list := lr.GetData()
 
 	if len(list) != 3 {
 		t.Logf("Checkpoint names found:")
@@ -375,7 +378,7 @@ func TestCheckpoint_DuplicateName(t *testing.T) {
 	if !r2.IsFatal() {
 		t.Error("Expected IsFatal() to be true for duplicate checkpoint")
 	}
-	if r2.Errors[0].Code != "CHECKPOINT_ALREADY_EXISTS" {
+	if r2.Errors[0].Code != result.CodeJournalCheckpointAlreadyExists {
 		t.Errorf("Wrong error code: %v", r2.Errors[0].Code)
 	}
 }
@@ -392,7 +395,7 @@ func TestRestoreCheckpoint_NonexistentName(t *testing.T) {
 	if !r.IsFatal() {
 		t.Error("Expected IsFatal() to be true for nonexistent checkpoint")
 	}
-	if r.Errors[0].Code != "CHECKPOINT_NOT_FOUND" {
+	if r.Errors[0].Code != result.CodeJournalCheckpointNotFound {
 		t.Errorf("Wrong error code: %v", r.Errors[0].Code)
 	}
 	if !strings.Contains(r.Errors[0].Message, "nonexistent") {
@@ -428,7 +431,7 @@ func TestCheckpoint_CountsEntries(t *testing.T) {
 		t.Fatalf("Failed to read metadata: %v", err)
 	}
 
-	var checkpoint Checkpoint
+	var checkpoint CheckpointRecord
 	if err := json.Unmarshal(fileData, &checkpoint); err != nil {
 		t.Fatalf("Failed to unmarshal metadata: %v", err)
 	}

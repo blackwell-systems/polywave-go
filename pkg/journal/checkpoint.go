@@ -34,15 +34,15 @@ type DeleteData struct {
 	Deleted bool   `json:"deleted"`
 }
 
-// CopyData holds the result data from a successful copyFileIfExists operation.
-type CopyData struct {
-	Src      string `json:"src"`
-	Dst      string `json:"dst"`
-	BytesCopied int64 `json:"bytes_copied"`
+// copyData holds the result data from a successful copyFileIfExists operation.
+type copyData struct {
+	Src         string `json:"src"`
+	Dst         string `json:"dst"`
+	BytesCopied int64  `json:"bytes_copied"`
 }
 
-// Checkpoint represents a named snapshot of journal state at a key milestone
-type Checkpoint struct {
+// CheckpointRecord represents a named snapshot of journal state at a key milestone.
+type CheckpointRecord struct {
 	Name         string    `json:"name"`
 	Timestamp    time.Time `json:"timestamp"`
 	EntryCount   int       `json:"entry_count"`
@@ -56,14 +56,14 @@ func (o *JournalObserver) Checkpoint(name string) result.Result[CheckpointData] 
 	// Validate checkpoint name (filesystem-safe, no slashes or spaces)
 	if strings.ContainsAny(name, "/\\ ") {
 		return result.NewFailure[CheckpointData]([]result.SAWError{{
-			Code:     "CHECKPOINT_INVALID_NAME",
+			Code:     result.CodeJournalCheckpointInvalidName,
 			Message:  fmt.Sprintf("checkpoint name must be filesystem-safe (no slashes or spaces): %q", name),
 			Severity: "fatal",
 		}})
 	}
 	if name == "" {
 		return result.NewFailure[CheckpointData]([]result.SAWError{{
-			Code:     "CHECKPOINT_INVALID_NAME",
+			Code:     result.CodeJournalCheckpointInvalidName,
 			Message:  "checkpoint name cannot be empty",
 			Severity: "fatal",
 		}})
@@ -73,7 +73,7 @@ func (o *JournalObserver) Checkpoint(name string) result.Result[CheckpointData] 
 	checkpointsDir := filepath.Join(o.JournalDir, "checkpoints")
 	if err := os.MkdirAll(checkpointsDir, 0755); err != nil {
 		return result.NewFailure[CheckpointData]([]result.SAWError{{
-			Code:     "CHECKPOINT_FAILED",
+			Code:     result.CodeJournalCheckpointCreateFailed,
 			Message:  fmt.Sprintf("checkpoint %q: failed to create checkpoints directory: %v", name, err),
 			Severity: "fatal",
 		}})
@@ -83,7 +83,7 @@ func (o *JournalObserver) Checkpoint(name string) result.Result[CheckpointData] 
 	metadataPath := filepath.Join(checkpointsDir, fmt.Sprintf("%s.json", name))
 	if _, err := os.Stat(metadataPath); err == nil {
 		return result.NewFailure[CheckpointData]([]result.SAWError{{
-			Code:     "CHECKPOINT_ALREADY_EXISTS",
+			Code:     result.CodeJournalCheckpointAlreadyExists,
 			Message:  fmt.Sprintf("checkpoint %q already exists", name),
 			Severity: "fatal",
 		}})
@@ -93,7 +93,7 @@ func (o *JournalObserver) Checkpoint(name string) result.Result[CheckpointData] 
 	entryCount, err := countJSONLLines(o.IndexPath)
 	if err != nil && !os.IsNotExist(err) {
 		return result.NewFailure[CheckpointData]([]result.SAWError{{
-			Code:     "CHECKPOINT_FAILED",
+			Code:     result.CodeJournalCheckpointCreateFailed,
 			Message:  fmt.Sprintf("checkpoint %q: failed to count entries: %v", name, err),
 			Severity: "fatal",
 		}})
@@ -121,7 +121,7 @@ func (o *JournalObserver) Checkpoint(name string) result.Result[CheckpointData] 
 	}
 
 	// Create checkpoint metadata
-	checkpoint := Checkpoint{
+	checkpoint := CheckpointRecord{
 		Name:         name,
 		Timestamp:    time.Now().UTC(),
 		EntryCount:   entryCount,
@@ -132,7 +132,7 @@ func (o *JournalObserver) Checkpoint(name string) result.Result[CheckpointData] 
 	metadataBytes, err := json.MarshalIndent(checkpoint, "", "  ")
 	if err != nil {
 		return result.NewFailure[CheckpointData]([]result.SAWError{{
-			Code:     "CHECKPOINT_FAILED",
+			Code:     result.CodeJournalCheckpointCreateFailed,
 			Message:  fmt.Sprintf("checkpoint %q: failed to marshal checkpoint metadata: %v", name, err),
 			Severity: "fatal",
 		}})
@@ -140,7 +140,7 @@ func (o *JournalObserver) Checkpoint(name string) result.Result[CheckpointData] 
 
 	if err := os.WriteFile(metadataPath, metadataBytes, 0644); err != nil {
 		return result.NewFailure[CheckpointData]([]result.SAWError{{
-			Code:     "CHECKPOINT_FAILED",
+			Code:     result.CodeJournalCheckpointCreateFailed,
 			Message:  fmt.Sprintf("checkpoint %q: failed to write checkpoint metadata: %v", name, err),
 			Severity: "fatal",
 		}})
@@ -155,21 +155,25 @@ func (o *JournalObserver) Checkpoint(name string) result.Result[CheckpointData] 
 }
 
 // ListCheckpoints returns all checkpoints with metadata, sorted by timestamp (oldest first).
-func (o *JournalObserver) ListCheckpoints() ([]Checkpoint, error) {
+func (o *JournalObserver) ListCheckpoints() result.Result[[]CheckpointRecord] {
 	checkpointsDir := filepath.Join(o.JournalDir, "checkpoints")
 
 	// If checkpoints directory doesn't exist, return empty list
 	if _, err := os.Stat(checkpointsDir); os.IsNotExist(err) {
-		return []Checkpoint{}, nil
+		return result.NewSuccess([]CheckpointRecord{})
 	}
 
 	// Read all checkpoint metadata files
 	entries, err := os.ReadDir(checkpointsDir)
 	if err != nil {
-		return nil, fmt.Errorf("failed to read checkpoints directory: %w", err)
+		return result.NewFailure[[]CheckpointRecord]([]result.SAWError{{
+			Code:     result.CodeJournalCheckpointCreateFailed,
+			Message:  fmt.Sprintf("failed to read checkpoints directory: %v", err),
+			Severity: "fatal",
+		}})
 	}
 
-	var checkpoints []Checkpoint
+	var checkpoints []CheckpointRecord
 	for _, entry := range entries {
 		// Only process .json metadata files (not snapshot files like *-index.jsonl, *-cursor.json)
 		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".json") {
@@ -191,7 +195,7 @@ func (o *JournalObserver) ListCheckpoints() ([]Checkpoint, error) {
 			continue // Skip unreadable files
 		}
 
-		var checkpoint Checkpoint
+		var checkpoint CheckpointRecord
 		if err := json.Unmarshal(data, &checkpoint); err != nil {
 			continue // Skip invalid JSON
 		}
@@ -204,7 +208,7 @@ func (o *JournalObserver) ListCheckpoints() ([]Checkpoint, error) {
 		return checkpoints[i].Timestamp.Before(checkpoints[j].Timestamp)
 	})
 
-	return checkpoints, nil
+	return result.NewSuccess(checkpoints)
 }
 
 // RestoreCheckpoint rolls back journal to the specified checkpoint state.
@@ -219,7 +223,7 @@ func (o *JournalObserver) RestoreCheckpoint(name string) result.Result[RestoreDa
 	// Verify checkpoint exists
 	if _, err := os.Stat(metadataPath); os.IsNotExist(err) {
 		return result.NewFailure[RestoreData]([]result.SAWError{{
-			Code:     "CHECKPOINT_NOT_FOUND",
+			Code:     result.CodeJournalCheckpointNotFound,
 			Message:  fmt.Sprintf("checkpoint %q not found", name),
 			Severity: "fatal",
 		}})
@@ -229,16 +233,16 @@ func (o *JournalObserver) RestoreCheckpoint(name string) result.Result[RestoreDa
 	data, err := os.ReadFile(metadataPath)
 	if err != nil {
 		return result.NewFailure[RestoreData]([]result.SAWError{{
-			Code:     "CHECKPOINT_FAILED",
+			Code:     result.CodeJournalCheckpointCreateFailed,
 			Message:  fmt.Sprintf("checkpoint %q: failed to read checkpoint metadata: %v", name, err),
 			Severity: "fatal",
 		}})
 	}
 
-	var checkpoint Checkpoint
+	var checkpoint CheckpointRecord
 	if err := json.Unmarshal(data, &checkpoint); err != nil {
 		return result.NewFailure[RestoreData]([]result.SAWError{{
-			Code:     "CHECKPOINT_FAILED",
+			Code:     result.CodeJournalCheckpointCreateFailed,
 			Message:  fmt.Sprintf("checkpoint %q: failed to parse checkpoint metadata: %v", name, err),
 			Severity: "fatal",
 		}})
@@ -279,7 +283,7 @@ func (o *JournalObserver) DeleteCheckpoint(name string) result.Result[DeleteData
 	// Verify checkpoint exists
 	if _, err := os.Stat(metadataPath); os.IsNotExist(err) {
 		return result.NewFailure[DeleteData]([]result.SAWError{{
-			Code:     "CHECKPOINT_NOT_FOUND",
+			Code:     result.CodeJournalCheckpointNotFound,
 			Message:  fmt.Sprintf("checkpoint %q not found", name),
 			Severity: "fatal",
 		}})
@@ -289,16 +293,16 @@ func (o *JournalObserver) DeleteCheckpoint(name string) result.Result[DeleteData
 	data, err := os.ReadFile(metadataPath)
 	if err != nil {
 		return result.NewFailure[DeleteData]([]result.SAWError{{
-			Code:     "CHECKPOINT_FAILED",
+			Code:     result.CodeJournalCheckpointCreateFailed,
 			Message:  fmt.Sprintf("checkpoint %q: failed to read checkpoint metadata: %v", name, err),
 			Severity: "fatal",
 		}})
 	}
 
-	var checkpoint Checkpoint
+	var checkpoint CheckpointRecord
 	if err := json.Unmarshal(data, &checkpoint); err != nil {
 		return result.NewFailure[DeleteData]([]result.SAWError{{
-			Code:     "CHECKPOINT_FAILED",
+			Code:     result.CodeJournalCheckpointCreateFailed,
 			Message:  fmt.Sprintf("checkpoint %q: failed to parse checkpoint metadata: %v", name, err),
 			Severity: "fatal",
 		}})
@@ -314,7 +318,7 @@ func (o *JournalObserver) DeleteCheckpoint(name string) result.Result[DeleteData
 	for _, file := range snapshotFiles {
 		if err := os.Remove(file); err != nil && !os.IsNotExist(err) {
 			return result.NewFailure[DeleteData]([]result.SAWError{{
-				Code:     "CHECKPOINT_FAILED",
+				Code:     result.CodeJournalCheckpointDeleteFailed,
 				Message:  fmt.Sprintf("checkpoint %q: failed to delete snapshot file %s: %v", name, file, err),
 				Severity: "fatal",
 			}})
@@ -324,7 +328,7 @@ func (o *JournalObserver) DeleteCheckpoint(name string) result.Result[DeleteData
 	// Delete metadata file
 	if err := os.Remove(metadataPath); err != nil {
 		return result.NewFailure[DeleteData]([]result.SAWError{{
-			Code:     "CHECKPOINT_FAILED",
+			Code:     result.CodeJournalCheckpointDeleteFailed,
 			Message:  fmt.Sprintf("checkpoint %q: failed to delete checkpoint metadata: %v", name, err),
 			Severity: "fatal",
 		}})
@@ -372,11 +376,11 @@ func countJSONLLines(path string) (int, error) {
 
 // copyFileIfExists copies src to dst. Returns failure if src doesn't exist or copy fails.
 // Creates parent directories for dst if needed.
-func copyFileIfExists(src, dst string) result.Result[CopyData] {
+func copyFileIfExists(src, dst string) result.Result[copyData] {
 	srcFile, err := os.Open(src)
 	if err != nil {
-		return result.NewFailure[CopyData]([]result.SAWError{{
-			Code:     "COPY_FAILED",
+		return result.NewFailure[copyData]([]result.SAWError{{
+			Code:     result.CodeJournalCheckpointCopyFailed,
 			Message:  fmt.Sprintf("failed to open source file %q: %v", src, err),
 			Severity: "fatal",
 		}})
@@ -386,8 +390,8 @@ func copyFileIfExists(src, dst string) result.Result[CopyData] {
 	// Create parent directory for destination
 	dstDir := filepath.Dir(dst)
 	if err := os.MkdirAll(dstDir, 0755); err != nil {
-		return result.NewFailure[CopyData]([]result.SAWError{{
-			Code:     "COPY_FAILED",
+		return result.NewFailure[copyData]([]result.SAWError{{
+			Code:     result.CodeJournalCheckpointCopyFailed,
 			Message:  fmt.Sprintf("failed to create destination directory for %q: %v", dst, err),
 			Severity: "fatal",
 		}})
@@ -395,8 +399,8 @@ func copyFileIfExists(src, dst string) result.Result[CopyData] {
 
 	dstFile, err := os.Create(dst)
 	if err != nil {
-		return result.NewFailure[CopyData]([]result.SAWError{{
-			Code:     "COPY_FAILED",
+		return result.NewFailure[copyData]([]result.SAWError{{
+			Code:     result.CodeJournalCheckpointCopyFailed,
 			Message:  fmt.Sprintf("failed to create destination file %q: %v", dst, err),
 			Severity: "fatal",
 		}})
@@ -405,14 +409,14 @@ func copyFileIfExists(src, dst string) result.Result[CopyData] {
 
 	n, err := io.Copy(dstFile, srcFile)
 	if err != nil {
-		return result.NewFailure[CopyData]([]result.SAWError{{
-			Code:     "COPY_FAILED",
+		return result.NewFailure[copyData]([]result.SAWError{{
+			Code:     result.CodeJournalCheckpointCopyFailed,
 			Message:  fmt.Sprintf("failed to copy %q to %q: %v", src, dst, err),
 			Severity: "fatal",
 		}})
 	}
 
-	return result.NewSuccess(CopyData{
+	return result.NewSuccess(copyData{
 		Src:         src,
 		Dst:         dst,
 		BytesCopied: n,
